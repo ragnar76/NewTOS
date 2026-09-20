@@ -587,7 +587,9 @@ fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
     match opcode {
         10 => appl::appl_init(pb),
         19 => appl::appl_exit(pb),
-        11 => appl::appl_read(pb),
+        // `appl_read` blocks on an empty queue like `evnt_mesag` (A75) — it
+        // may yield to a peer too; propagate the `Switch`.
+        11 => return appl::appl_read(pb),
         12 => appl::appl_write(pb),
         13 => appl::appl_find(pb),
         14 => appl::appl_tplay(pb),

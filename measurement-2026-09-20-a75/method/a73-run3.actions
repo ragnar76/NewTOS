@@ -1,0 +1,25 @@
+# A73 regression = H02 run3 (select an item via the bar) with the bottom-left
+# park: open the C: window, select HELLO.TXT -> A, hover File (88,8) -> B,
+# move onto Info... (150,43) = desktop background under the item -> B2,
+# click -> C1 (release), D (+3 s): expected the file's info dialog for
+# HELLO.TXT, MN_SELECTED delivered, no MU_BUTTON (trace).
+1200 parkbl
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 move 220 340
+2200 arm
+2210 down
+2216 up
+2400 mark A_SELECTED
+2800 move 88 8
+3000 mark B_MENU_OPEN
+3400 move 150 43
+3600 mark B2_ITEM_HOVER
+3800 down
+3806 up
+3807 mark C1_RELEASED
+4400 mark D_THREE_SECONDS

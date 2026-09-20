@@ -253,8 +253,9 @@ fn appl_exit(pb: &mut Aespb) -> i16 {
     pb.call(APPL_EXIT, 0, 1, 0)
 }
 
-/// `appl_read(pid, 16, buf)` — non-blocking pop of one message; 1 when one was
-/// delivered, 0 when the FIFO was empty.
+/// `appl_read(pid, 16, buf)` — pop of one message; 1 when one was delivered.
+/// **Blocks on an empty FIFO** (A75, EmuTOS `aqueue`, `aes/gemqueue.c:98-124`),
+/// so callers that may find the queue empty check [`pending`] first.
 fn appl_read(pb: &mut Aespb, pid: i16) -> (i16, [i16; 8]) {
     let mut buf = [0i16; 8];
     pb.intin.fill(0);
@@ -314,10 +315,12 @@ fn pending(pid: i16) -> usize {
     tos_api::aes::window::test_msg_count(pid)
 }
 
-/// Read everything the desktop's event loop would have read by now.
+/// Read everything the desktop's event loop would have read by now (depth
+/// checked first: `appl_read` blocks on an empty FIFO).
 fn drain(pb: &mut Aespb, pid: i16) -> usize {
     let mut n = 0;
-    while appl_read(pb, pid).0 == 1 {
+    while pending(pid) > 0 {
+        assert_eq!(appl_read(pb, pid).0, 1, "a queued message must be delivered");
         n += 1;
         assert!(n < 64, "runaway queue");
     }
@@ -394,15 +397,17 @@ fn the_launch_boundary_hands_the_child_a_reset_descriptor() {
         child_pid, desk_pid,
         "slot 0 shares the desktop's AES id — the premise of this test"
     );
-    let (got, body) = appl_read(&mut pb, child_pid);
+    // Checked by depth, since `appl_read` blocks on an empty FIFO (A75); the
+    // front message, if any, names the leak.
+    let leaked = tos_api::aes::window::test_pending_msg(child_pid);
     assert_eq!(
-        (got, body[0]),
+        (pending(child_pid), leaked.map(|m| m[0]).unwrap_or(0)),
         (0, 0),
-        "phase 1: the child must start with an empty message queue; it read a \
+        "phase 1: the child must start with an empty message queue; it holds a \
          message of type {} — the desktop's, for a window handle that is not \
          its own and that save_windows() has already taken out of the live \
          window list",
-        body[0]
+        leaked.map(|m| m[0]).unwrap_or(0)
     );
 
     // ── phase 2: the control — appl_init is not the eraser ────────────────

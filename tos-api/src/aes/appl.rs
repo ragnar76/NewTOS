@@ -104,6 +104,7 @@
 
 use super::pd;
 use super::Aespb;
+use crate::bdos::process::sched;
 
 /// AES version reported in `ap_version` (`include/config.h` default).
 const AES_VERSION: i16 = 0x0340;
@@ -378,6 +379,14 @@ pub fn appl_yield(pb: &Aespb) {
 /// `QUEUE_SIZE / 2`, matching EmuTOS's 128-byte queue (`ap_rdwr(MU_SDMSG)` →
 /// `doq`, which memcpys `qpb_cnt` bytes, `gemqueue.c:36,85-125`). The bytes are
 /// then appended to the target's FIFO whole.
+///
+/// **Full queue: 0, not a block — a sanctioned deviation.** EmuTOS parks the
+/// sender (`aqueue`, `gemqueue.c:96-97,120-124`; `mwait`, `gemasync.c:117-127`)
+/// until a read of the target's *own* queue drains it; NewTOS has no second
+/// independently-scheduled AES client to perform that read and no "queue
+/// gained room" wake key, so blocking here would hang the one execution
+/// context — `docs/COMPATIBILITY.md` "`appl_write` on a full
+/// application-message queue returns 0" (A75, 2026-09-20).
 pub fn appl_write(pb: &Aespb) {
     let len_bytes = pb.intin(1).max(0) as usize;
     let buf = pb.addrin(0);
@@ -415,57 +424,86 @@ pub fn appl_write(pb: &Aespb) {
     }
     // Enqueue into the target's FIFO via the centralized poster: it appends the
     // message (with the standard redraw/arrow coalescing) AND wakes a peer
-    // blocked in `evnt_mesag`/`evnt_multi` on the target's FIFO (WAITING →
-    // READY, design §5.2) — no longer bypassing `pd::post_msg`'s wake. Returns 0
-    // if the queue is full (AUD-P1-006, a separate finding; EmuTOS blocks the
-    // sender instead of returning 0).
+    // blocked in `evnt_mesag`/`evnt_multi`/`appl_read` on the target's FIFO
+    // (WAITING → READY, design §5.2) — no longer bypassing `pd::post_msg`'s
+    // wake. Returns 0 if the queue is full: the sanctioned deviation named
+    // above (`docs/COMPATIBILITY.md`, A75; EmuTOS blocks the sender).
     // SAFETY: single trap path.
     pb.set_ret(unsafe { pd::post_words(target, &msg, words) } as i16);
 }
 
 /// Opcode 11 — `appl_read`: read a message from the calling application's
 /// pipe. `intin[0]` = own id, `intin[1]` = byte length, `addrin[0]` =
-/// destination buffer. Returns 1 when a message was delivered, 0 when the
-/// pipe is empty.
+/// destination buffer. Returns 1 with the message; **blocks while the pipe
+/// is empty** (`application.md` "Blocking behaviour (A75)").
 ///
-/// Real GEM blocks here until a message arrives; with no AES scheduler
-/// yet, the bring-up returns the pending message if present and 0
-/// otherwise (messages are posted synchronously by the menu/window code).
-pub fn appl_read(pb: &Aespb) {
+/// EmuTOS `ap_rdwr(MU_MESAG, …)` (`aes/gemaplib.c:69-89`) hands the read to
+/// `aqueue` (`aes/gemqueue.c:85-125`), whose read readiness is `p_qindex > 0`
+/// (`:98-99`) — the queue is **non-empty**; it is not "`length` bytes are
+/// buffered" (`doq` then copies `qpb_cnt` bytes unguarded, `:76-81`). A ready
+/// read is serviced at once (`doq` + `azombie(e, 1)`, `:104-107`) and returns
+/// 1; an empty queue parks the caller on `p_qdq` (`evinsert`, `:120-124`) in
+/// `dsptch()` (`mwait`, `aes/gemasync.c:117-127`) until a later write into
+/// this same queue services it (`:108-118`). There is no `0` return for
+/// "empty".
+///
+/// NewTOS blocks the way its sibling `evnt_mesag` does on the very same pipe
+/// (`event.rs`): pop the front message if one is present, else
+/// `sched::sleep(wait_mesg(idx))` — the key every poster wakes
+/// (`pd::post_msg`/`post_words` → `wake_mesg_waiter`) — and re-check on
+/// resume. A sleep that finds a runnable peer yields the `Switch` up through
+/// the dispatcher (S2 restartable block): nothing has been committed, and the
+/// re-executed trap starts over. The pop runs only on the delivering pass, so
+/// a restart never double-pops.
+pub fn appl_read(pb: &Aespb) -> Option<sched::Switch> {
     let len_bytes = pb.intin(1).max(0) as usize;
     let dest = pb.addrin(0);
     // `intin[0]` is the caller's own reported id, 0; resolve it to an
     // identity — the caller's. 1 (the Screen Manager's queue, which an
     // application reading it would block on in EmuTOS) and 2+ (no
     // accessories) name no queue an application can read here: 0.
-    // SAFETY: single trap path.
-    let Some(src) = identity_of(pb.intin(0)).and_then(|idx| unsafe { pd::by_index(idx) }) else {
+    let Some(idx) = identity_of(pb.intin(0)) else {
         pb.set_ret(0);
-        return;
+        return None;
     };
     if dest == 0 {
         pb.set_ret(0);
-        return;
+        return None;
     }
     // AP_LENGTH is a byte count; read whole WORDs, capped at the FIFO's
     // per-message limit (EmuTOS `ap_rdwr(MU_MESAG,…,length,…)`).
     let words = (len_bytes / 2).min(pd::MAX_MSG_WORDS);
     let mut buf = [0i16; pd::MAX_MSG_WORDS];
-    // Pop the FRONT of the FIFO into the requested-length window (EmuTOS
-    // `ap_rdwr(MU_RDMSG)`→`doq` dequeue, `gemqueue.c:76-81`); empty queue → 0.
-    let Some(n) = src.queue.pop_into(&mut buf[..words]) else {
-        pb.set_ret(0);
-        return;
-    };
-    // SAFETY: addrin[0] points at ≥ len_bytes of destination space.
-    unsafe {
-        let p = dest as *mut i16;
-        for (i, &w) in buf.iter().take(n).enumerate() {
-            p.add(i).write(w);
+    loop {
+        // SAFETY: single trap path; `by_index` hands out the live slot.
+        let Some(src) = (unsafe { pd::by_index(idx) }) else {
+            // No descriptor — only an identity outside the table, which
+            // `identity_of` never produces: nothing to wait on.
+            pb.set_ret(0);
+            return None;
+        };
+        // Queue non-empty (`p_qindex > 0`, `gemqueue.c:99`): pop the FRONT of
+        // the FIFO into the requested-length window (`doq` dequeue,
+        // `gemqueue.c:76-81`) and complete with 1 (`azombie(e, 1)`, `:107`).
+        if let Some(n) = src.queue.pop_into(&mut buf[..words]) {
+            // SAFETY: addrin[0] points at ≥ len_bytes of destination space.
+            unsafe {
+                let p = dest as *mut i16;
+                for (i, &w) in buf.iter().take(n).enumerate() {
+                    p.add(i).write(w);
+                }
+            }
+            src.flags |= pd::AP_MESAG;
+            pb.set_ret(1);
+            return None;
+        }
+        // Empty: block on this identity's message wake key until a write lands
+        // (`evinsert(e, &p_qdq)` + `mwait`, `gemqueue.c:120-124`,
+        // `gemasync.c:117-127`); the poster wakes `WAIT_MESG(idx)`.
+        if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_mesg(idx)) {
+            return Some(sw);
         }
     }
-    src.flags |= pd::AP_MESAG;
-    pb.set_ret(1);
 }
 
 /// Opcode 15 — `appl_trecord`: record AES events into the buffer at

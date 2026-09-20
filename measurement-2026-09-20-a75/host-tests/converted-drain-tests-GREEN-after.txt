@@ -1,0 +1,216 @@
+327 |         tree[idx].ob_state |= SELECTED;
+
+2384 |         top += gl_hbox();
+
+136 | pub fn form_alert(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+542 | pub fn form_do(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+798 | pub fn form_error(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+945 | pub fn form_center(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+1000 | pub fn form_dial(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1067 | pub fn form_button(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1090 | pub fn form_keybd(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+538 | pub fn fsel_input(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+545 | pub fn fsel_exinput(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+150 | pub fn menu_bar(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+784 | pub fn menu_icheck(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+793 | pub fn menu_ienable(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+805 | pub fn menu_tnormal(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+831 | pub fn menu_text(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+892 | pub fn menu_register(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+1032 | pub fn menu_popup(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1241 | pub fn menu_settings(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1512 | pub fn menu_attach(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1550 | pub fn menu_istart(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+989 | pub fn objc_draw(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+1182 | pub fn objc_offset(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1206 | pub fn objc_add(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1218 | pub fn objc_delete(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1232 | pub fn objc_order(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1377 | pub fn objc_change(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1425 | pub fn objc_sysvar(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1565 | pub fn objc_edit(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1953 | pub fn objc_find(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2097 | pub fn rsrc_load(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2456 | pub fn rsrc_free(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2763 | pub fn rsrc_gaddr(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2794 | pub fn rsrc_saddr(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2837 | pub fn rsrc_obfix(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+219 | pub fn scrp_read(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+228 | pub fn scrp_write(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+252 | pub fn scrp_clear(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+347 | pub fn shel_read(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+446 | pub fn shel_write(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+759 | pub fn shel_get(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+776 | pub fn shel_put(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+820 | pub fn shel_find(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+928 | pub fn shel_envrn(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+979 | pub fn shel_rdef(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+994 | pub fn shel_wdef(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+2734 | pub fn wind_create(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2802 | pub fn wind_open(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2857 | pub fn wind_close(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3029 | pub fn wind_delete(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3042 | pub fn wind_get(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3268 | pub fn wind_set(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3454 | pub fn wind_find(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3469 | pub fn wind_update(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3546 | pub fn wind_calc(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3563 | pub fn wind_new(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+556 | pub fn vsc_form(pb: &Vdipb, backend: &dyn RasterBackend) {
+ 81 | pub(crate) struct Vdipb {
+
+599 | pub fn v_show_c(pb: &Vdipb, backend: &dyn RasterBackend) {
+ 81 | pub(crate) struct Vdipb {
+
+682 | pub fn vq_mouse(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+699 | pub fn vex_butv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+703 | pub fn vex_motv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+707 | pub fn vex_curv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+711 | pub fn vex_wheelv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+717 | pub fn vex_timv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+   Compiling tos-api v0.1.0 (/Volumes/Daten/Development/PiRusTOS/tos-api)
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.20s
+     Running tests/aes_app_return_descriptor.rs (target/debug/deps/aes_app_return_descriptor-255d90acee6d8760)
+
+running 1 test
+test the_desktop_still_receives_messages_after_a_program_returns ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/aes_launch_boundary_reset.rs (target/debug/deps/aes_launch_boundary_reset-362c6e1ad899618e)
+
+running 1 test
+test the_launch_boundary_hands_the_child_a_reset_descriptor ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/aes_pd_by_slot.rs (target/debug/deps/aes_pd_by_slot-a2ae3e6a870ebfc9)
+
+running 4 tests
+test every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one ... ok
+test nine_programs_in_one_slot_rename_one_descriptor ... ok
+test reported_values_follow_emutos ... ok
+test releasing_a_slot_resets_its_descriptor_and_queue ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

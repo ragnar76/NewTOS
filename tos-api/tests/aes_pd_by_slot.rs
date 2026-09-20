@@ -322,8 +322,10 @@ fn appl_find(pb: &mut Aespb, name: &[u8; 8]) -> i16 {
     r
 }
 
-/// `appl_read(pid, 16, buf)` — non-blocking pop of one message; 1 when one
-/// was delivered, 0 when the FIFO was empty or the id has no descriptor.
+/// `appl_read(pid, 16, buf)` — pop of one message; 1 when one was delivered,
+/// 0 when the id has no descriptor. **Blocks on an empty FIFO** (A75, EmuTOS
+/// `aqueue`, `aes/gemqueue.c:98-124`), so callers that may find the queue
+/// empty check [`pending`] first — the kernel's `evnt_mesag` pattern.
 fn appl_read(pb: &mut Aespb, pid: i16) -> (i16, [i16; 8]) {
     let mut buf = [0i16; 8];
     pb.intin.fill(0);
@@ -402,10 +404,18 @@ fn wind_set_newdesk(pb: &mut Aespb) {
     pb.call(WIND_SET, 6, 1, 1);
 }
 
-/// Read everything queued for `pid`.
+/// How many messages are waiting for `pid` (`tos-api/src/aes/window.rs` test
+/// hook — reads the FIFO depth without popping).
+fn pending(pid: i16) -> usize {
+    tos_api::aes::window::test_msg_count(pid)
+}
+
+/// Read everything queued for `pid` (depth checked first: `appl_read` blocks
+/// on an empty FIFO).
 fn drain(pb: &mut Aespb, pid: i16) -> usize {
     let mut n = 0;
-    while appl_read(pb, pid).0 == 1 {
+    while pending(pid) > 0 {
+        assert_eq!(appl_read(pb, pid).0, 1, "a queued message must be delivered");
         n += 1;
         assert!(n < 64, "runaway queue");
     }
@@ -615,13 +625,15 @@ fn releasing_a_slot_resets_its_descriptor_and_queue() {
     tenant.run();
     let id = appl_init(&mut pb);
     assert_eq!(id, tenant.reported());
-    let (got, body) = appl_read(&mut pb, id);
+    // The queue must be empty — checked by depth, since `appl_read` blocks on
+    // an empty FIFO (A75); the front message, if any, names the leak.
+    let leaked = tos_api::aes::window::test_pending_msg(id);
     assert_eq!(
-        (got, body[0]),
+        (pending(id), leaked.map(|m| m[0]).unwrap_or(0)),
         (0, 0),
-        "the new tenant read the dead tenant's message (type {:#x}) — the \
+        "the new tenant inherits the dead tenant's message (type {:#x}) — the \
          slot's release did not drain the descriptor's queue",
-        body[0]
+        leaked.map(|m| m[0]).unwrap_or(0)
     );
 
     // The flag reset, seen through its one consumer (A28's argument): the
@@ -792,7 +804,7 @@ fn reported_values_follow_emutos() {
     // EmuTOS, gemsuper.c:102-105 + geminit.c:888) but no application reads it.
     let to_ctl = [0x4713, AP_CHAIN, 0, 0, 0, 0, 0, 0];
     assert_eq!(appl_write(&mut pb, SCRENMGR, &to_ctl), 1, "appl_write(1): accepted by the Screen Manager");
-    assert_eq!(appl_read(&mut pb, AP_CHAIN).0, 0, "…and not delivered to the caller");
+    assert_eq!(pending(AP_CHAIN), 0, "…and not delivered to the caller");
     assert_eq!(appl_read(&mut pb, SCRENMGR).0, 0, "appl_read(1): nothing an application can read");
     // Targets beyond the live table: no descriptor (totpds = 2 without
     // accessories, geminit.c:819).
@@ -849,12 +861,11 @@ fn reported_values_follow_emutos() {
     parent.run();
     // What the parent finds queued: the WM_REDRAWs the child's window closes
     // fanned out to `pw` (posted from inside the child's `wind_close` trap,
-    // hence stamped 0 too) — never the message the child sent to 0.
-    loop {
+    // hence stamped 0 too) — never the message the child sent to 0. (Depth
+    // checked first: `appl_read` blocks on an empty FIFO, A75.)
+    while pending(AP_CHAIN) > 0 {
         let (got, body) = appl_read(&mut pb, AP_CHAIN);
-        if got == 0 {
-            break;
-        }
+        assert_eq!(got, 1, "a queued message must be delivered");
         assert_ne!(body[0], 0x4712, "the child's appl_write(0) reached the parent's queue");
         assert_eq!(
             (body[0], body[1], body[3]),

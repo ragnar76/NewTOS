@@ -242,8 +242,10 @@ fn appl_exit(pb: &mut Aespb) -> i16 {
     pb.call(APPL_EXIT, 0, 1, 0)
 }
 
-/// `appl_read(pid, 16, buf)` — non-blocking pop of one message; 1 when one was
-/// delivered, 0 when the FIFO was empty **or the descriptor is gone**.
+/// `appl_read(pid, 16, buf)` — pop of one message; 1 when one was delivered,
+/// 0 when **the descriptor is gone**. **Blocks on an empty FIFO** (A75, EmuTOS
+/// `aqueue`, `aes/gemqueue.c:98-124`), so callers that may find the queue
+/// empty check [`pending`] first.
 fn appl_read(pb: &mut Aespb, pid: i16) -> (i16, [i16; 8]) {
     let mut buf = [0i16; 8];
     pb.intin.fill(0);
@@ -301,10 +303,18 @@ fn close_window(pb: &mut Aespb, h: i16) {
     pb.call(WIND_CLOSE, 1, 1, 0);
 }
 
-/// Read everything the desktop's event loop would have read by now.
+/// How many messages are waiting for `pid` (`tos-api/src/aes/window.rs` test
+/// hook — reads the FIFO depth without popping).
+fn pending(pid: i16) -> usize {
+    tos_api::aes::window::test_msg_count(pid)
+}
+
+/// Read everything the desktop's event loop would have read by now (depth
+/// checked first: `appl_read` blocks on an empty FIFO).
 fn drain(pb: &mut Aespb, pid: i16) -> usize {
     let mut n = 0;
-    while appl_read(pb, pid).0 == 1 {
+    while pending(pid) > 0 {
+        assert_eq!(appl_read(pb, pid).0, 1, "a queued message must be delivered");
         n += 1;
         assert!(n < 64, "runaway queue");
     }

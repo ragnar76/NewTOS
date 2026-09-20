@@ -1,0 +1,221 @@
+   Compiling tos-types v0.1.0 (/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/scr-before/tos-types)
+   Compiling tos-api v0.1.0 (/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/scr-before/tos-api)
+327 |         tree[idx].ob_state |= SELECTED;
+
+2384 |         top += gl_hbox();
+
+136 | pub fn form_alert(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+542 | pub fn form_do(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+798 | pub fn form_error(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+945 | pub fn form_center(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+1000 | pub fn form_dial(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1067 | pub fn form_button(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1090 | pub fn form_keybd(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+538 | pub fn fsel_input(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+545 | pub fn fsel_exinput(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+150 | pub fn menu_bar(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+784 | pub fn menu_icheck(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+793 | pub fn menu_ienable(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+805 | pub fn menu_tnormal(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+831 | pub fn menu_text(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+892 | pub fn menu_register(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+1032 | pub fn menu_popup(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1241 | pub fn menu_settings(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1512 | pub fn menu_attach(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1550 | pub fn menu_istart(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+989 | pub fn objc_draw(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+1182 | pub fn objc_offset(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1206 | pub fn objc_add(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1218 | pub fn objc_delete(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1232 | pub fn objc_order(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1377 | pub fn objc_change(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1425 | pub fn objc_sysvar(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1565 | pub fn objc_edit(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1953 | pub fn objc_find(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2097 | pub fn rsrc_load(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2456 | pub fn rsrc_free(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2763 | pub fn rsrc_gaddr(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2794 | pub fn rsrc_saddr(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2837 | pub fn rsrc_obfix(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+219 | pub fn scrp_read(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+228 | pub fn scrp_write(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+252 | pub fn scrp_clear(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+347 | pub fn shel_read(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+446 | pub fn shel_write(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+759 | pub fn shel_get(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+776 | pub fn shel_put(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+820 | pub fn shel_find(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+928 | pub fn shel_envrn(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+979 | pub fn shel_rdef(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+994 | pub fn shel_wdef(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+2734 | pub fn wind_create(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2802 | pub fn wind_open(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2857 | pub fn wind_close(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3029 | pub fn wind_delete(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3042 | pub fn wind_get(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3268 | pub fn wind_set(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3454 | pub fn wind_find(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3469 | pub fn wind_update(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3546 | pub fn wind_calc(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3563 | pub fn wind_new(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+556 | pub fn vsc_form(pb: &Vdipb, backend: &dyn RasterBackend) {
+ 81 | pub(crate) struct Vdipb {
+
+599 | pub fn v_show_c(pb: &Vdipb, backend: &dyn RasterBackend) {
+ 81 | pub(crate) struct Vdipb {
+
+682 | pub fn vq_mouse(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+699 | pub fn vex_butv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+703 | pub fn vex_motv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+707 | pub fn vex_curv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+711 | pub fn vex_wheelv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+717 | pub fn vex_timv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+755 | pub static H02_TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+ 19 | #![warn(missing_docs)]
+
+756 | pub fn h02_log(args: core::fmt::Arguments) {
+
+    Finished `test` profile [optimized + debuginfo] target(s) in 2.18s
+     Running tests/aes_appl_read_blocks.rs (target/debug/deps/aes_appl_read_blocks-dee3b26760a0c2b0)
+
+running 3 tests
+test appl_read_on_a_non_empty_queue_returns_1_with_the_message_without_sleeping ... ok
+test appl_write_on_a_full_queue_returns_0_without_blocking_sanctioned_deviation ... ok
+test appl_read_on_an_empty_queue_blocks_and_delivers_the_message_written_meanwhile ... FAILED
+
+failures:
+
+---- appl_read_on_an_empty_queue_blocks_and_delivers_the_message_written_meanwhile stdout ----
+
+thread 'appl_read_on_an_empty_queue_blocks_and_delivers_the_message_written_meanwhile' (3797551) panicked at tos-api/tests/aes_appl_read_blocks.rs:437:5:
+assertion `left == right` failed: appl_read on an empty queue returned 0 instead of blocking until the peer's write landed (EmuTOS aqueue, aes/gemqueue.c:98-124: no 0 for empty)
+  left: 0
+ right: 1
+
+
+failures:
+    appl_read_on_an_empty_queue_blocks_and_delivers_the_message_written_meanwhile
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test aes_appl_read_blocks`

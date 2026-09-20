@@ -1,0 +1,81 @@
+A75 -- appl_read blocks on an empty queue (EmuTOS aqueue); appl_write on a full queue keeps returning 0
+(sanctioned, docs/COMPATIBILITY.md). Developer self-evidence, 2026-09-20 (no Tester verdict). Branch
+desk-rebuild, base HEAD 27e4328, changes uncommitted in the tree. Pinned EmuTOS source
+references/emutos: aes/gemqueue.c doq :30-82, aqueue :85-125 (read readiness p_qindex > 0 :98-99, service
+:104-107, complementary service :108-118, block :120-124); aes/gemaplib.c ap_rdwr :69-89; aes/gemasync.c
+mwait :117-127; aes/gemsuper.c APPL_READ/APPL_WRITE arm :101-105. Spec (lead-written, uncommitted, left
+untouched): docs/api/aes/application.md "Blocking behaviour (A75, 2026-09-20)"; docs/COMPATIBILITY.md
+"appl_write on a full application-message queue returns 0".
+
+PRODUCT CHANGE (method/appl-read-block-a75.diff = git diff of tos-api/src/aes/{appl,mod,pd}.rs)
+  appl.rs  appl_read(pb) -> Option<sched::Switch>: resolve identity + buffer as before (0 when the id names
+           no queue / NULL buffer, unchanged), then loop: by_index(idx); pop_into(front) -> copy, AP_MESAG,
+           ret 1 (readiness = queue non-empty, gemqueue.c:98-99 -- NOT "length bytes buffered"); else
+           sched::sleep(sched::wait_mesg(idx)) -- Yield(Switch) propagates (S2 restart, nothing committed),
+           Recheck loops. appl_write's doc + the post_words comment cite the COMPATIBILITY entry.
+  mod.rs   crysbind: 11 => return appl::appl_read(pb)  (the Switch threads like evnt_mesag's).
+  pd.rs    comments only: MsgQueue::enqueue's full-queue paragraph re-justified per COMPATIBILITY (the old
+           "no AES scheduler" reason is stale; the "unreachable in practice" claim bounds frequency, not the
+           deviation); wake_mesg_waiter names appl_read as a waiter.
+  NOT changed: AUD-P1-008 (appl_read sets AP_MESAG) -- the spec section does not name it. No write-side
+  blocking (sanctioned). No stubs.
+
+HOST TESTS (host-tests/)
+  aes_appl_read_blocks-RED-before.txt   run on the HEAD scratch copy (appl.rs/mod.rs/pd.rs = HEAD, new test
+    file present): 2 passed / 1 failed --
+    appl_read_on_an_empty_queue_blocks_and_delivers_the_message_written_meanwhile: "appl_read on an empty
+    queue returned 0 instead of blocking ..." left: 0 right: 1
+  aes_appl_read_blocks-GREEN-after.txt  3 passed / 0 failed:
+    (a) appl_read_on_a_non_empty_queue_returns_1_with_the_message_without_sleeping -- key_seen == 0
+    (b) appl_read_on_an_empty_queue_blocks_and_delivers_the_message_written_meanwhile -- the host's first
+        pump_input sees PROCESS_TABLE[slot].wait_cond == sched::wait_mesg(slot), performs a re-entrant
+        appl_write(0,16,msg) (the EmuTOS peer's role), the resumed read returns (1, msg); pumps >= 2
+    (c) appl_write_on_a_full_queue_returns_0_without_blocking_sanctioned_deviation -- 8 writes -> 1, the 9th
+        -> 0 without a wake key, 8 read back in order
+  converted-drain-tests-GREEN-after.txt aes_pd_by_slot (4), aes_app_return_descriptor (1),
+    aes_launch_boundary_reset (1): their drain helpers / "empty" oracles used appl_read's 0-on-empty
+    (would spin forever now); converted to window::test_msg_count / test_pending_msg depth checks
+    (method/tests-drain-conversion-a75.diff). Before the conversion aes_pd_by_slot::reported_values_
+    follow_emutos hit SilentHost's 1_000_000-pump guard ("a trap is spinning on an exhausted pointer script").
+  xtask-test.log   cargo run -p xtask -- test = 696 passed / 0 failed / 2 ignored (baseline 693/0/2 + 3).
+
+BUILD / CLIPPY (build/)
+  build-rpi4-tree.log       cargo xtask build --board rpi4 (tos-api + kernel recompiled, appl.rs touched):
+                            rustc tos-api 64 / kernel 94 warnings, exit 0 (baseline 64/94, delta 0).
+                            No qemu-virt build (task). Tree kernel8.img sha256 9f27436dcc89576e...
+  clippy-tos-api-tests.log  cargo clippy -p tos-api --tests: lib 81 warnings (A78 baseline 81, delta 0). The
+                            only hit in a touched file, "items after a test module" pd.rs:346, is pre-existing
+                            (HEAD: mod init_tests :337 before post_msg :383). None in appl.rs / mod.rs / the
+                            four test files.
+  build-scratch-{after,before}.log  injector scratch kernels (66/105 = tree + scaffolding, equal both ways).
+  hashes: scratch kernel after 1dac471ff2755b8a..., before 16eee915c1df58bf... (== A73's after-run3 scratch
+          kernel: same HEAD + same scaffolding, reproducible); images (scratch only, not kept): sd-base
+          a6353b753930313d... (tools/make-sd-image.sh 64 MiB + NEWDESK.INF = method/newdesk-teradesk.inf,
+          #Z TeraDesk), sd-desk 2a0e0ffaaff8e0be... (make-sd-image.sh as built, placeholder NEWDESK.INF ->
+          kernel desktop).
+
+METHOD (method/) -- scratch copies only, the shared tree was never patched
+  make_scratch.sh <ws> <scratch> tree|HEAD : A75 variant of A73's (rsync of the crates; "before" = HEAD
+    tos-api/src/aes/{appl,mod,pd}.rs; diff -rq before/after = those three files only), then a68_patch.py,
+    a73_trace.py, apply_injector.py + a73_scripts_run3.rs, a68_patch2.py (all A73's, unchanged).
+  a73-run3.actions (A73's regression script, unchanged): parkbl; (300,300); double-click HARD DISC C
+    (195,35); click HELLO.TXT (220,340) -> A_SELECTED; File (88,8) -> B_MENU_OPEN; Info... (150,43) ->
+    B2_ITEM_HOVER; down/up -> C1_RELEASED; D_THREE_SECONDS.
+  run.sh / qmp_multi.py / sd-put.sh: A73's. QEMU raspi4b 640x480, -display none, -serial file, QMP
+  screendump at the serial markers; every run boots a fresh copy of the image.
+
+RUNS (screendumps/, serial/) -- grep -c "EXC\|PANIC\|panic" = 0 in all four serial logs
+  desk-{after,before}  sd-desk: marker "[desk] desktop up" + 2 s -> the kernel desktop with its C:\ window.
+    desk-after-0-desktop-up.png == desk-before-0-desktop-up.png (dee57cca7b719fab...).
+  tera-{after,before}  sd-base (#Z): "[h02] injector armed" + 2.5 s -> TeraDesk up; then A, B, B2, C1, D.
+    All six pairs byte-identical: 0 bd5dff213b5d88c1..., A f7e77f9623b7a644..., B 9e9d3c07a2f68566...
+    (= A73's A/B hashes), B2 58c809989f7b8436..., C1 = D 7474f01881fb056b... (the File Information dialog).
+    Expected: TeraDesk, QED and cflib never call appl_read (spec "Caller survey (A75)"); the change is
+    unobservable on this path. Serial: [a73] track -> Some((4, 20)), evnt_multi fired=0x0010 as in A73.
+  With #Z the shell starts TeraDesk directly ("[shell] sh_ldapp"), no "[desk] desktop up" line -- hence the
+  second image for the kernel-desktop pair.
+
+NOT RUN / NOT COVERED: real Pi 4 (Tester/Lead). qemu-virt build (task said no). No board path exercises a
+blocking appl_read (no shipped program calls it); the blocking behaviour is host-test evidence only. The
+kernel selftest selftest_aes.rs (write-then-read, non-empty queue) is not wired into the boot path and was
+not run. No commit, no git checkout/stash/reset, nothing flashed, no *.img kept.

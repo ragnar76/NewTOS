@@ -158,13 +158,22 @@ impl MsgQueue {
     /// coalesced message types are always 16 bytes.
     ///
     /// Returns `false` when the queue is full. EmuTOS instead **blocks** the
-    /// sender until a dequeue frees room (`aqueue`, `aes/gemqueue.c:120-124`,
-    /// via `p_qnq`/`evinsert`); NewTOS's bring-up has no AES scheduler to park
-    /// a synchronous kernel-side poster, so it reports the failure rather than
-    /// overwrite or silently drop an in-queue message. With same-window redraw
-    /// coalescing and a per-loop drain, a full queue is unreachable in the
-    /// desktop's actual usage (at most `MAX_WINDOWS` distinct-window redraws
-    /// per broadcast).
+    /// sender until a read of the target's *own* queue frees room (`aqueue`,
+    /// `aes/gemqueue.c:96-97,120-124`, via `p_qnq`/`evinsert`; drained by the
+    /// complementary service at `:108-118`). NewTOS reports the failure rather
+    /// than overwrite or silently drop an in-queue message — the **sanctioned
+    /// deviation** of `docs/COMPATIBILITY.md` "`appl_write` on a full
+    /// application-message queue returns 0" (A75, 2026-09-20): the cooperative
+    /// kernel has at most one scheduled AES client identity at a time, so no
+    /// second process could ever perform the draining read while a poster
+    /// sleeps, and the sleep/wake substrate has no "queue gained room" wake
+    /// key (only `WAIT_MESG`, the reader's condition). Blocking here would
+    /// hang the one execution context on every full-queue post — kernel-side
+    /// posters (`WM_REDRAW` broadcasts) included. Same-window redraw
+    /// coalescing and the per-loop drain keep the desktop's own posts well
+    /// below capacity (at most `MAX_WINDOWS` distinct-window redraws per
+    /// broadcast); that bounds how *often* the deviation is observed, not
+    /// whether it is one.
     fn enqueue(&mut self, src: &[i16], words: usize) -> bool {
         let words = words.min(MAX_MSG_WORDS);
         if words == MSG_WORDS {
@@ -421,8 +430,8 @@ pub unsafe fn post_words(idx: usize, src: &[i16], words: usize) -> bool {
     posted
 }
 
-/// Wake any AES client blocked in `evnt_mesag`/`evnt_multi` on identity
-/// `idx`'s message FIFO (WAITING → READY, sleep/wake substrate §5.2). The
+/// Wake any AES client blocked in `evnt_mesag`/`evnt_multi`/`appl_read` on
+/// identity `idx`'s message FIFO (WAITING → READY, sleep/wake substrate §5.2). The
 /// single wake point for every message poster ([`post_msg`]/[`post_words`]),
 /// matching EmuTOS's `aqueue`→`azombie`→`signal`
 /// (`emutos-cooperative-model.md` §3.3/§4.3). Not load-bearing in step 3a

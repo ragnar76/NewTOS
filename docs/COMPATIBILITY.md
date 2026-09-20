@@ -408,6 +408,63 @@ the gemlib overlay move to the native form are Developer work, open at the
 time of writing — see `TASK/A81.md` for the current status.
 
 
+**`appl_write` on a full application-message queue returns 0; EmuTOS blocks
+the sender and never returns 0** — sanctioned 2026-09-20 with A75 (following
+the AUD-P1-006 finding of 2026-07-22,
+`docs/analysis/aes-audit/p1-appl-pd-dispatch.md:128-139`). EmuTOS's `aqueue`
+blocks the writer whenever the message would not fit (`qpb_cnt > QUEUE_SIZE -
+p_qindex`, `references/emutos/aes/gemqueue.c:96-97,120-124`; `QUEUE_SIZE =
+128` bytes = 8 standard 16-byte messages, `aes/struct.h:56`) and parks it in
+`dsptch()` (`aes/gemasync.c:117-127`) until a **read of that exact target's
+own queue** drains it (`aqueue`'s companion service of `p_qnq`,
+`gemqueue.c:108-118`). Every internal EmuTOS read targets the reading
+process's own descriptor, never a foreign one (`ev_mesag`,
+`aes/gemevlib.c:116`; `ap_exit`'s drain, `aes/gemaplib.c:256-257`;
+`sh_ldapp`'s cleanup drain, `aes/gemshlib.c:655`; confirmed by an exhaustive
+`grep` over `aes/*.c` for `ap_rdwr`/`MU_MESAG`/`MU_SDMSG`), so the block is
+safe only because EmuTOS's AES is a genuine cooperative multi-process
+system: the target process (another application, the Screen Manager, a desk
+accessory) is independently scheduled and eventually reads its own queue on
+its own turn. A **self-targeted** write while the writer's own queue is
+already full is EmuTOS's own unguarded case — nothing in its source ever
+reads a foreign queue, so no other code path can ever perform the drain, and
+the process hangs forever; this is a property of EmuTOS's design, confirmed
+by reading, not a NewTOS artifact.
+
+NewTOS's cooperative kernel does not yet have a second, independently
+scheduled AES client identity that could play the "other process" role — at
+most one chain member (the desktop, a launched program, or one of its nested
+`Pexec` children) is ever the current AES caller
+(`docs/api/aes/application.md` "AES process identity and pid"; the Screen
+Manager's pid is a stamp a poster writes, not a process, H02) — and its
+sleep/wake substrate has no wake-class key for "a queue gained room", only
+`WAIT_MESG` for "a queue gained a message"
+(`tos-api/src/bdos/process/sched.rs:45-77`). Implementing EmuTOS's block
+today would therefore hang the kernel's one execution context on *every*
+full-queue write, including the cross-process ones EmuTOS itself handles
+safely — strictly worse than EmuTOS. `appl_write`
+(`tos-api/src/aes/appl.rs:381-424`) reports the failure instead
+(`pd::post_words`/`MsgQueue::enqueue` returning `false`,
+`tos-api/src/aes/pd.rs:168-201`, documented in place at `:160-167`). A
+program that checks `appl_write`'s return value for `0` sees an answer
+EmuTOS's contract does not define — none of the surveyed TeraDesk/QED/cflib
+call sites do this (`docs/api/aes/application.md` "Caller survey (A75)");
+a program that does not check it (the common case, per gemlib's own binding
+comment) behaves identically on both machines. Revisit once NewTOS has
+genuinely concurrent, independently-scheduled AES clients and a matching
+"queue gained room" wake key.
+
+**Not sanctioned, still open:** `appl_read` on an empty queue returns 0
+instead of blocking (`tos-api/src/aes/appl.rs:434-469`; AUD-P1-007). Unlike
+the write case above, EmuTOS's read-blocks-on-empty is not itself a hang
+in NewTOS's model — the cooperative sleep/wake substrate NewTOS already uses
+for `evnt_mesag`/`evnt_multi` on the very same message pipe
+(`tos-api/src/aes/event.rs:729-769,638-658`) is directly reusable for
+`appl_read`; it is simply not wired there yet. This is named in
+`docs/api/aes/application.md` "Blocking behaviour (A75)" as a fixable gap
+for the Developer, not listed here as a sanctioned deviation.
+
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that
