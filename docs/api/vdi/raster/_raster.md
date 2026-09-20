@@ -558,29 +558,48 @@ geometry; NewTOS does not expose the raw 32 bpp bytes as planes.
 
 ### NewTOS memory-MFDB format (device form, `fd_stand = 0`) — task #51
 
-A memory MFDB (`fd_addr != 0`) in NewTOS is a **32-bpp chunky truecolor**
-buffer that mirrors the framebuffer store: **one `u32` (XRGB8888) per
-pixel**, not a planar bitmap. This is a NewTOS-native format decision
-(`docs/COMPATIBILITY.md` — reproduce the *observable* save/restore
-contract, own the internal buffer layout), justified because the backend
-screen store is chunky 32 bpp (§ "the logical raster is 4-plane, the store
-is 32 bpp"): saving/restoring the raw device pixels is lossless where a
-4-plane PEL round-trip would not be.
+> **Correction (2026-09-20, A72):** this section previously described the
+> format as **32-bpp chunky** with **one `u32` (XRGB8888) per pixel** and
+> `fd_nplanes = 32`. That was stale even before A57: the memory-MFDB
+> wireformat has been **16-bit RGB565-chunky** (`fd_nplanes = 16`) since
+> the truecolor unification ("the unified 16-bit memory format (TC3b)",
+> `tos-api/src/vdi/raster.rs:634`), and the code never carried a 32-bpp
+> memory MFDB. The paragraph below is rewritten to the current source and
+> now agrees with § "AES consumer" below, which already documented
+> RGB565 words off the screen.
+
+A memory MFDB (`fd_addr != 0`) in NewTOS is a **16-bit RGB565-chunky
+truecolor** buffer: **one `UWORD` (`RRRRRGGGGG0BBBBB`, green LSB always 0)
+per pixel**, not a 32-bpp `u32`/pixel bitmap and not a planar bitmap
+(`tos-api/src/vdi/raster.rs:21-35`, module doc). This is the app-visible
+wireformat EmuTOS' own `vro_cpyfm16`/`vrt_cpyfm16` operate on raw
+(`vdi_raster.c:975-1221,1226-1326`) — observable, not an internal detail
+(`docs/COMPATIBILITY.md`). The **physical** framebuffer store stays 32-bpp
+XRGB8888; the 16↔32 conversion happens only at the screen boundary, inside
+`screen_to_mem`/`mem_to_screen` via `RasterBackend::device_to_rgb565`/
+`rgb565_to_device` (`raster.rs:37-44`). Because the screen is
+5-bit-quantised, that round-trip is lossless, so `bb_save`/`bb_restore`
+reproduce the screen pixels bit-for-bit (`raster.rs:550-554`).
 
 | MFDB field | NewTOS memory value | Meaning |
 |-----------|---------------------|---------|
-| `fd_addr` | caller-owned buffer | base of the `u32` pixel array |
+| `fd_addr` | caller-owned buffer | base of the `UWORD` (RGB565) pixel array; `bb_save`/`bb_restore` take it as a `*mut`/`*const u32` for the caller's convenience — two 16-bit pixels per `u32` word (`raster.rs:559-560,589-590`) |
 | `fd_w` / `fd_h` | region size (px) | extent; every access is bounds-checked against it |
-| `fd_wdwidth` | `(fd_w + 15) / 16` | 16-px words; **row stride in pixels = `fd_wdwidth × 16`** (padded up, mirroring EmuTOS `bb_set`'s word alignment) |
+| `fd_wdwidth` | `(fd_w + 15) / 16` | 16-px words (`mem_wdwidth`, `raster.rs:193-198`); **row stride in pixels = `fd_wdwidth × 16`** (padded up, mirroring EmuTOS `bb_set`'s word alignment) |
 | `fd_stand` | `0` (device) | chunky, not plane-sequential |
-| `fd_nplanes` | `32` | 32-bpp depth; the interleaved-stride identity `bytes/line = fd_wdwidth × fd_nplanes / 8 × 16 = fd_wdwidth × 64` holds |
+| `fd_nplanes` | `16` | truecolor depth (`CHUNKY_PLANES`, `raster.rs:61-67`); the interleaved-stride identity `bytes/line = fd_wdwidth × fd_nplanes / 8 × 16 = fd_wdwidth × 32` holds (`raster.rs:32-35`) |
 
-- **Pixel offset** of `(col, row)` = `row × (fd_wdwidth × 16) + col` `u32`
-  words — computed from the MFDB's *own* `fd_wdwidth`, **never** the screen
+- **Pixel offset** of `(col, row)` = `row × (fd_wdwidth × 16) + col` `UWORD`s
+  — computed from the MFDB's *own* `fd_wdwidth`, **never** the screen
   stride. Reads/writes outside `fd_w × fd_h` (or the buffer) are ignored.
+- `bb_save_words(w, h) = mem_wdwidth(w) * 8 * h` (`raster.rs:546-548`)
+  counts `u32` words as a counting convenience while the pixels are
+  16-bit; the byte size is `bb_save_words(w, h) * 4` = `stride16(w) * h *
+  2` (`stride16(w) = ((w + 15) / 16) * 16`).
 - This differs from the m68k planar `bb_save`, which uses `fd_stand = TRUE`
-  (plane-sequential); on NewTOS the store has no planes, so a device-form
-  chunky buffer is the natural, lossless save target.
+  (plane-sequential, 1 bit per plane word); on NewTOS the memory store is
+  chunky RGB565, so a device-form chunky buffer is the natural, lossless
+  save target.
 
 ### `vro_cpyfm` off-screen coverage (implemented, task #51)
 

@@ -866,6 +866,21 @@ saved as background. The return is `i - BUTOFF + 1` — the pressed button's
 > own drop-down save/restore has the identical dependency, see `menu.md`
 > "Used by"/Dependencies). See `_discrepancies.md` D-092.
 
+> **Correction (D-092, superseded 2026-09-20, A72): the blocking note above
+> no longer describes the current source — screen↔memory `vro_cpyfm` is
+> implemented.** Task #51 landed 2026-09-20 as A57/A71
+> (`docs/STATUS.md` Phase-13 row and the 2026-09-20 Recent Decisions
+> entry): `tos-api/src/vdi/raster.rs` wires up all four `vro_cpyfm`
+> source/destination combinations — Screen↔Screen, **Screen→Memory**
+> (`bb_save`), **Memory→Screen** (`bb_restore`), and Memory↔Memory — each
+> with the full 16-entry logic-op table (`raster.rs:550-603`,
+> `docs/api/vdi/raster/_raster.md` "`vro_cpyfm` off-screen coverage").
+> `form_alert`'s `bb_save`/`bb_restore` now save/restore the background
+> into NewTOS's one persistent AES screen buffer
+> (`tos-api/src/aes/gsxif.rs`, A57) before/after drawing — see the
+> `form_alert` (52) text above, already updated for A57. The blocking note
+> is kept for history, not because it still applies.
+
 ### `form_error` (53)
 
 **Source:** `gemsuper.c:248-249` → `fm_error` (`gemfmlib.c:436-472`).
@@ -1125,15 +1140,20 @@ codes:
     distinct "centred" underscore-fill in `ob_format` itself
     (`gemoblib.c:361-408`). Whole-string `TE_CNTR` box-centring happens
     later, in `gr_just`/`gr_gtext` (`gemgraf.c:567-605`).
-20. **`form_dial` never saves/restores the screen; `form_alert` does, but
-    NewTOS's raster layer currently can't (D-092):** `fm_dial`
-    (`gemfmlib.c:360-383`) has no `bb_save`/`bb_restore`/`vro_cpyfm` call at
-    all — it only draws animated outline boxes and asks the window manager
-    to redraw on finish. `fm_alert`'s `bb_save`/`bb_restore`
-    (`gemfmalt.c:363,390`) *do* copy Screen↔Memory via `vro_cpyfm`, which
-    per `docs/STATUS.md` (2026-07-10, item F3) is currently a no-op in
-    NewTOS for any non-screen MFDB — a VDI-layer blocker for a faithful
-    `form_alert`.
+20. **`form_dial` never saves/restores the screen; `form_alert` does
+    (D-092):** `fm_dial` (`gemfmlib.c:360-383`) has no
+    `bb_save`/`bb_restore`/`vro_cpyfm` call at all — it only draws animated
+    outline boxes and asks the window manager to redraw on finish.
+    `fm_alert`'s `bb_save`/`bb_restore` (`gemfmalt.c:363,390`) *do* copy
+    Screen↔Memory via `vro_cpyfm`, into NewTOS's one persistent AES screen
+    buffer (`tos-api/src/aes/gsxif.rs`, A57). **Correction (2026-09-20,
+    A72):** this item previously called that copy a VDI-layer no-op/blocker
+    per `docs/STATUS.md` item F3 — superseded by task #51 (landed
+    2026-09-20 as A57/A71, `docs/STATUS.md` Phase-13 row / Recent Decisions
+    2026-09-20): `vro_cpyfm` Screen→Memory/Memory→Screen/Memory↔Memory are
+    all implemented (`tos-api/src/vdi/raster.rs`,
+    `docs/api/vdi/raster/_raster.md` "`vro_cpyfm` off-screen coverage");
+    `form_alert` (52) saves/restores the background correctly.
 21. **Deselecting a `G_IMAGE` both XORs and redraws (D-093a):**
     `xor_is_ok` always returns `FALSE` for `G_IMAGE` (`gemoblib.c:114`), so
     `ob_change`'s SELECTED-toggle path does the XOR background-fill *and*
@@ -1154,10 +1174,12 @@ codes:
   `objc_change`, `form_alert`, `form_dial`: box/line/fill, text (`gr_gtext`),
   icon/image blits, and clipping (`gsx_sclip` → `vs_clip`). **`form_alert`
   additionally needs Screen↔Memory `vro_cpyfm`** for `bb_save`/`bb_restore`
-  (`gemfmalt.c:363,390`) — currently a no-op gap in NewTOS per
-  `docs/STATUS.md` (2026-07-10, item F3); see D-092. `form_dial` has **no**
-  screen save/restore dependency (D-092) — it only needs outline-box drawing
-  (`gr_growbox`/`gr_shrinkbox`) and the window manager's desktop redraw.
+  (`gemfmalt.c:363,390`) — implemented since task #51 (landed 2026-09-20 as
+  A57/A71, `docs/STATUS.md` Phase-13 row / Recent Decisions 2026-09-20; not
+  a no-op gap anymore, **correction 2026-09-20, A72**, see D-092). `form_dial`
+  has **no** screen save/restore dependency (D-092) — it only needs
+  outline-box drawing (`gr_growbox`/`gr_shrinkbox`) and the window manager's
+  desktop redraw.
 - The **Event Manager** ([`event.md`](./event.md)) for `form_do`'s modal loop
   (`ev_multi`, `ev_button`) and the mouse-owner handshake
   ([`_state.md`](./_state.md) `gl_mowner`).

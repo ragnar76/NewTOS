@@ -182,3 +182,19 @@ nachher  MD5 (kernel/src/lib.rs) = 5434f7b25c5641c7fab1fce0b1c98b85
   `tos-api/src/aes/object.rs`, `docs/STATUS.md`, `TASK/`,
   `measurement-2026-09-17-fsel/`). Der *Recent-Decisions*-Eintrag traegt deshalb
   noch keinen Commit-Hash.
+
+## Erratum (2026-09-20, A72)
+
+Zeile 142 dieser Quittung nennt „Referenz Rand 217/248, innen 218..247" fuer
+den 1-Punkt-Rahmen der Laufwerkskaesten. Das ist falsch abgeschrieben.
+Gemessen — sowohl in dieser Quittung eigener Rohdatei
+[`measurement-2026-09-17-fsel/screendumps/compare-geometry.txt`](../measurement-2026-09-17-fsel/screendumps/compare-geometry.txt)
+(Zeilen 4, 8, 10, 18, 26, 28, 30, 32, 34, 38: `ref =[(217, 246), …]`) als
+auch von [A67](A67-STATUS-DONE.MD) unabhaengig nachgemessen — ist der Rand
+bei **217/246**, innen **218..245** (A67: „Rand 217/246, Fase 1 px auf
+218/245, Flaeche 219..244"). Ob die damalige NewTOS-eigene Fase (vor dem
+A67-Fix vom Folgetag) tatsaechlich auf 218..245 statt auf die hier
+faelschlich genannten 218..247 traf, ist mit den Mitteln dieses Auftrags
+nicht neu geprueft — nur die **Referenzzahlen** dieser Quittung werden hier
+berichtigt. Keine Ruecknahme der Quittung, nur diese Richtigstellung;
+Auftrag [A72](A72.md).

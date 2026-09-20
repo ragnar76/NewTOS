@@ -3690,6 +3690,21 @@ gained a callout stating it has no save/restore dependency; `form_alert
 `docs/STATUS.md` F3); the "Dependencies → Requires" VDI bullet rewritten to
 attribute the save/restore need to `form_alert` only; new edge case #20.
 
+**Status (2026-09-20, A72): the F3 no-op premise is superseded, not this
+entry's EmuTOS source analysis.** Task #51 (Screen↔Memory `vro_cpyfm`)
+landed 2026-09-20 as A57/A71 (`docs/STATUS.md` Phase-13 row / Recent
+Decisions 2026-09-20): `tos-api/src/vdi/raster.rs` implements all four
+`vro_cpyfm` source/destination combinations, and `form_alert`'s
+`bb_save`/`bb_restore` (`gemfmalt.c:363,390`) now save/restore the
+background into NewTOS's one persistent AES screen buffer
+(`tos-api/src/aes/gsxif.rs`). The above **EmuTOS source finding stands
+unchanged** (`fm_dial` has no save/restore call, `fm_alert` does, and the
+identity of the two functions was the actual point of this entry); only
+the **NewTOS-side consequence** ("currently a no-op gap") is stale, and is
+corrected in place in `docs/api/aes/object-form.md` (the D-092 blocking
+note, edge case #20, and the "Dependencies → Requires" bullet all carry a
+dated 2026-09-20/A72 correction rather than being rewritten silently).
+
 ---
 
 ## D-093: two previously-undocumented `objc_change`/`fm_button` behaviours (`G_IMAGE` deselect does XOR *and* redraw; `fm_button` zeroes the next-object output for ordinary button clicks)
