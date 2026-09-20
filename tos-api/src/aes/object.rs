@@ -1405,8 +1405,8 @@ static IND_COLCHANGE: AtomicI16 = AtomicI16::new(1);
 static ACT_TXTMOVE: AtomicI16 = AtomicI16::new(1);
 static ACT_COLCHANGE: AtomicI16 = AtomicI16::new(0);
 static IND_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
-static ACT_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
-static BACKGR_COL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
+pub(crate) static ACT_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
+pub(crate) static BACKGR_COL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
 
 // objc_sysvar `which` selectors (obdefs.h).
 const LK3DIND: i16 = 1;
@@ -2198,12 +2198,12 @@ const IP_PATTERNS: [[u16; 4]; 8] = [
     [0xEEEE, 0xFFFF, 0xBBBB, 0xFFFF],
     [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF], // IP_SOLID
 ];
-const IP_HOLLOW: u16 = 0;
-const IP_SOLID: u16 = 7;
+pub(crate) const IP_HOLLOW: u16 = 0;
+pub(crate) const IP_SOLID: u16 = 7;
 
 /// Decode a GEM object colour word (EmuTOS `gr_crack`): returns
 /// `(border, text, pattern, inside, replace_mode)`.
-fn gr_crack(color: u16) -> (Pel, Pel, u16, Pel, bool) {
+pub(crate) fn gr_crack(color: u16) -> (Pel, Pel, u16, Pel, bool) {
     (
         ((color >> 12) & 0x0f) as Pel, // border colour
         ((color >> 8) & 0x0f) as Pel,  // text colour
@@ -2241,7 +2241,7 @@ fn xor_color(c: Pel) -> Pel {
 /// TeraDesk dropdown, `ob_spec=0x00ff1100` → IP_HOLLOW/WHITE) an opaque fill that
 /// erases whatever it covers, rather than letting the underlying pixels show
 /// through.
-fn gr_rect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, icol: Pel, ipat: u16, clip: ClipRect) {
+pub(crate) fn gr_rect(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16, icol: Pel, ipat: u16, clip: ClipRect) {
     if w <= 0 || h <= 0 {
         return;
     }

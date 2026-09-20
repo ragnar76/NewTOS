@@ -1,0 +1,10 @@
+# A79 (A79COLOR.NAP via #Z, sd-probe): the probe opens one window
+# (30,40,320,240) kind 0x0FEF named "A79 T7", waits 7 s, then applies
+# wind_set(WF_COLOR, W_NAME, 0x1172, 0x1172) (T7) and
+# wind_set(WF_COLOR, W_VSLIDE, 0x1171, 0x1171), and idles in evnt_timer.
+# The injector only parks the pointer and emits the marks.
+# Ticks are 200 Hz after the first AES pump of the first EL0 program.
+200 parkbr
+1100 mark A_DEFAULT
+2200 mark B_T7
+2800 mark C_T7_2S

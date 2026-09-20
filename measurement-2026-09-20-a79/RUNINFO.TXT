@@ -1,0 +1,129 @@
+A79 -- wind_set(WF_COLOR)/WF_DCOLOR reach the pixels: draw_frame consumes the per-gadget colour
+words; the default look sits behind a switch (FrameLook) and awaits the user's choice ("Erst Bild sehen").
+Developer self-evidence, 2026-09-20. Branch desk-rebuild, base HEAD 21c9a3c, changes uncommitted in the
+tree. Pinned EmuTOS references/emutos @ 1a7484ab: aes/gemwmlib.c:60-135 (gl_watype/gl_waspec/gl_3dflags),
+:220-227 (w_setup), :382-397 (w_setcolor), :495-616 (w_bldactive/w_bldvbar/w_bldhbar), :1336-1357
+(wm_start colour defaults), :1719-1734 (wm_set WF_COLOR/WF_DCOLOR); aes/gemoblib.c:220-277 (add_3d_effect),
+:503-508 (3D growth), :582-600,619-636 (3D substitution), :660-733 (border/fill/text arms); aes/gemgraf.c
+:547-559 (gr_rect, MD_REPLACE), :612-628 (gr_crack); vdi/vdi_fill.c:141,347 (HOLLOW pattern = 0 -> background).
+Spec/design (lead-written, uncommitted, untouched): docs/api/aes/window-graphics.md "WF_COLOR/WF_DCOLOR ->
+pixel mapping (design, A79, 2026-09-20)". One correction to the design's reading applied per the lead's
+note: IP_HOLLOW is an opaque WHITE fill (gr_rect issues FIS_HOLLOW in MD_REPLACE), not "no paint".
+
+PRODUCT CODE (uncommitted; method/product-a79.diff)
+  tos-api/src/aes/window.rs
+    FrameLook { Literal, Tos4Gray }, FRAME_LOOK: AtomicU8 (default Tos4Gray), set_frame_look(), frame_look()
+                      -- temporary decision aid (A79), no third look, no config file
+    Ink, gadget_ink(w, g, istop) -> Option<Ink>   the gadget's word (istop ? tcolor : bcolor) cracked with
+                      object::gr_crack + just_draw's 3D substitution; None = Tos4Gray keeps today's constant
+                      while the word equals the compiled default (GL_WTCOLOR_DEFAULT/GL_WBCOLOR_DEFAULT)
+    ink_of, is_3d_act, grow_3d, inside_1, draw_box_ink (border in bc + gr_rect inside), draw_elevator,
+    vbar_box / hbar_box (EmuTOS' W_VBAR/W_HBAR object rects, draw-only; the hit-test rects are untouched)
+    rect_outline(r, pel, ..) ; gadget_sel/gadget(.., ink, ..) ; draw_label(.., fg, mode, ..) ;
+    draw_vslider/draw_hslider(w, istop, ..) ; redraw_vslider/redraw_hslider compute istop ;
+    drag_elevator/watchbox pass the top window's ink ; draw_frame wires every region (outer border = W_BOX bc,
+    title box, closer/fuller, name incl. MOVER-without-NAME te_color=0 rule, info box, vbar column, arrows,
+    tracks, elevators, hbar band, corner/sizer). Drop shadow stays DROP_SHADOW_COLOR. Geometry unchanged.
+    W_*_IDX constants for all drawn gadgets. Three comments (field, WF_DCOLOR, WF_COLOR) rewritten.
+  tos-api/src/aes/object.rs   visibility only: gr_crack, gr_rect, IP_HOLLOW, IP_SOLID, ACT_BUTCOL,
+                              BACKGR_COL -> pub(crate)
+  tos-api/tests/aes_window_color_words.rs (new, 7 cases)
+  sdk/examples/a79color.c (new: the screendump probe .NAP)
+
+HOST TESTS (host-tests/)
+  aes_window_color_words-RED-before-HEAD-21c9a3c.txt   scratch copy of the crates with window.rs/object.rs =
+      HEAD and the switch stubbed out (the file's only HEAD-incompatible symbol): 6 FAILED / 1 passed --
+      t7_*: "A79: no pixel of the name band changed after WF_COLOR (was 0)" (both looks);
+      vslide_*: track pixel (328,104) = 8 (GRAY_LT) expected 1; dcolor: h2 name border left column (353,41)
+      = 0 expected 1; literal_default: W_CLOSER border right column (52,41) = 0 expected 1;
+      tos4gray_default_frames_are_pixel_identical_to_head ok (it IS the HEAD hash).
+  aes_window_color_words-GREEN-after.txt   7/7 ok.
+  xtask-test.log   cargo run -p xtask -- test = 719 passed / 0 failed / 2 ignored (baseline 712 + 7).
+  HEAD_FRAME_HASH = 0x1f60a8cef23370da: measured on HEAD with the stubbed copy alone (twice) and under
+      --shuffle-seed 7 / 99 with --test-threads=1 -- identical every time.
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log      fresh (cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat)
+                            cargo xtask build --board rpi4: rustc tos-api 64 / kernel 94, rc=0 (baseline 64/94,
+                            delta 0; the pre-existing "value assigned to `top` is never read" is in the HEAD
+                            list too). No qemu-virt build (lead's instruction).
+  kernel8-tree-sha256.txt   tree kernel8.img 4bd37bb05b0794f5... (dev, rpi4; not used for the dumps)
+  clippy-tos-api-host.txt   cargo clippy -p tos-api: 81 (baseline 81, measured by swapping HEAD copies of the
+                            two files in and out by hand -- no git checkout).
+  clippy-tos-api-test-color-words.txt   cargo clippy -p tos-api --test aes_window_color_words: 0 hits in
+                            the new test file.
+  scratch-build-{gray,lit}.log   the two scratch kernels (dev, rpi4): tos-api 67 / kernel 105 warnings = the
+                            H02/A46/A78 injector + trace scaffolding of the scratch copy (as in A78), rc=0.
+  A79COLOR.NAP              sdk/build.sh sdk/examples/a79color.c (5920 bytes, sha256 8079e0b43023abf3...)
+  make-sd-image.log
+
+ARTEFACTS (no *.img kept; hashes in manifest.sha256 under SCRATCH/)
+  kernel8 scratch GRAY   sha256 a9d7f2347d791fb2...  method/make_scratch.sh <ws> <dir> tos4gray: rsync of the
+                         crates (never the shared tree) + a79_patch.py (H02 debug_write + [aes] trace + A46
+                         DESK_UP flag; the A78 pd.rs post_msg patch dropped, its anchor moved) + apply_injector.py
+                         (a79_scripts.rs) + a78_patch2.py (dual arming: SCRIPT_TERA when an EL0 program armed,
+                         SCRIPT_DESK when "[desk] desktop up" did). Diff vs tree: method/scratch-gray-vs-tree.diff.
+  kernel8 scratch LIT    sha256 934263596a72e128...  same + FRAME_LOOK initialiser = Literal
+                         (method/scratch-lit-vs-gray.diff = 1 line). kernel/ byte-identical between the two.
+  sd-base.img            tools/make-sd-image.sh 64 (sha256 62ea1841118fb2cd...) -- kernel desktop, no #Z
+  sd-probe.img           sd-base + A79COLOR.NAP + NEWDESK.INF "#Z 01 C:\A79COLOR.NAP@" (method/sd-put.sh,
+                         sha256 9995ba54191b9163...)
+  Every run boots a fresh copy (method/run.sh).
+
+QEMU raspi4b RUNS (method/run.sh KERNEL8 IMG OUTDIR TAG 90 SPEC...; 640x480, -display none, QMP screendump
+  0.3 s after each serial mark; grep -c "EXC\|PANIC\|panic" = 0 in all four serial logs)
+  Injector scripts (method/gen_script.py, new op `parkbr` = six (+127,+127) packets -> (639,479); the old
+  `park` sweeps through the menu bar, see measurement-2026-09-20-a76/RUNINFO.TXT Nachtrag):
+    desk.actions  (SCRIPT_DESK, ticks after "[desk] desktop up"): 200 parkbr; 1100 mark A_IDLE; 1400 move
+                  (35,38) = the "C Hard disk" icon left of the boot window; 1600/1603/1608/1611 double-click;
+                  2000 parkbr; 2600 mark B_TWO_WINDOWS; 3000 mark C_TWO_WINDOWS_2S.
+                  The serial trace confirms the path: (512,352) (385,225) (258,98) (131,38) (35,38) -- never
+                  above y=38, so no menu title is crossed; a second C:\ window opens at (72,67) (staggered).
+    probe.actions (SCRIPT_TERA, ticks after the probe's first AES pump): 200 parkbr; 1100 mark A_DEFAULT;
+                  2200 mark B_T7; 2800 mark C_T7_2S. The probe applies T7 + W_VSLIDE at +7 s (1400 ticks).
+  desk-gray  / desk-lit    A_IDLE, B_TWO_WINDOWS, C_TWO_WINDOWS_2S
+  probe-gray / probe-lit   A_DEFAULT, B_T7, C_T7_2S
+  Pixel diffs (method/pixdiff.py):
+    desk-gray-A-idle vs desk-lit-A-idle             24911 px, bbox (49,44)-(591,442) = the window frame
+    desk-gray-B-two  vs desk-lit-B-two              26796 px, bbox (49,44)-(615,466) = both frames
+    desk-*-B-two vs desk-*-C-two-2s                 0 px (both looks; settled)
+    probe-gray-A-default vs probe-lit-A-default     10816 px, bbox (31,41)-(349,279) = the frame
+    probe-gray-B-t7 vs probe-lit-B-t7                7712 px, bbox (31,41)-(349,279) (name band + track are
+                                                    the SAME in both -- a changed word renders literally under
+                                                    either look; the other gadgets differ)
+    probe-gray-A-default vs probe-gray-B-t7          8361 px, bbox (53,41)-(349,233) = exactly the name band
+                                                    (53..327 x 41..63) and the slider track (327..349 x 86..233)
+    probe-*-B-t7 vs probe-*-C-t7-2s                 0 px (both looks; settled)
+    desk-gray-A-idle vs measurement-2026-09-20-a78/screendumps/desk-after-A-idle.png
+                                                    51 px, bbox (319,240)-(640,480) = the mouse sprite only
+                                                    (parked bottom-right here, at the boot centre in A78):
+                                                    the Tos4Gray kernel desktop is the A78/HEAD picture.
+  screendumps/LOOK-COMPARE.md names the pairs; pair-*.png are side-by-side composites, zoom-*.png crops.
+
+WHAT THE DUMPS SHOW (checked by eye at 4x/8x, zoom-*.png)
+  Literal, default words: every FL3DACT gadget (closer, fuller, arrows, sizer, elevators) painted on its
+  3D-grown slot with a black 1 px border, the bevel inside the border, a white face and a black glyph; the
+  name box (grown) with a black border whose left column stands next to the closer's right column (the
+  EmuTOS double line), IP_2PATT stipple, white glyph cells (md=REPLACE); info band white with a black box;
+  bar column/band white with black box borders sharing the seam row/column; tracks IP_1PATT; sizer corner
+  grown to the whole corner. Untopped window: name box hollow white, transparent text.
+  T7 under both looks: name band solid red, black border, black glyphs with red between the strokes (no
+  white glyph cells); W_VSLIDE 0x1171: track solid black outside the elevator.
+
+OUT OF SCOPE (observed, untouched)
+  (1) `bevel` draws 2 px; EmuTOS add_3d_effect draws 1 px lines (gemoblib.c:238-276). Not colour-word-driven.
+  (2) W_NAME is FL3DACT (w_bldactive :553): EmuTOS adds add_3d_effect's bevel around the name and, untopped,
+      the DISABLED IP_4PATT white dither (gemoblib.c:917-930); neither drawn today, neither colour-word-driven.
+  (3) vbar_rect/vtrack end one row above EmuTOS' W_VBAR when there is an HBAR (EmuTOS shares the seam row,
+      gemwmlib.c:585-616): in the literal look one white row between the down arrow's bottom border and the
+      shared border (zoom-lit-botright.png). Geometry -- kept.
+  (4) MOVER without NAME: EmuTOS sets te_color = 0 (gemwmlib.c:540-550, hollow white, no stipple); the
+      Tos4Gray arm keeps today's stipple there; the Literal arm follows EmuTOS.
+  (5) After wind_open of a second window the old top keeps its topped stipple outside the new rect -- in
+      both looks and in EmuTOS too (w_update clips to pt, gemwmlib.c:1004-1048). Recorded, not a defect.
+  (6) After the double-click the drive icon stays selected (inverted) in both looks -- a desk/ matter, not
+      assessed here (identical before/after A79).
+
+OPEN
+  The user's look decision (then the losing arm and the switch go), Pi acceptance (Tester/Lead; nothing
+  flashed). No commit, no git checkout/stash/reset. Scratch dirs under the session scratchpad only.

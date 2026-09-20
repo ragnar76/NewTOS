@@ -1,0 +1,11 @@
+--- /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/a79/scr-gray/tos-api/src/aes/window.rs	2026-09-20 18:55:01
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/a79/scr-lit/tos-api/src/aes/window.rs	2026-09-20 19:01:52
+@@ -2285,7 +2285,7 @@
+ 
+ /// The look in force — see [`FrameLook`]. Default `Tos4Gray` until the user
+ /// has chosen; host tests set it through [`set_frame_look`].
+-pub(crate) static FRAME_LOOK: AtomicU8 = AtomicU8::new(FrameLook::Tos4Gray as u8);
++pub(crate) static FRAME_LOOK: AtomicU8 = AtomicU8::new(FrameLook::Literal as u8); // A79-TEMP scratch: literal look
+ 
+ /// Select the frame look (A79 decision aid; see [`FrameLook`]).
+ pub fn set_frame_look(look: FrameLook) {

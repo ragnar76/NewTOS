@@ -87,6 +87,23 @@ The two TEDINFO colour words (in the non-`CONF_WITH_WINDOW_COLOURS` build) are:
 > the title bytes = "this is the active window". (Constants `IP_HOLLOW`=0,
 > `IP_2PATT`=2, `obdefs.h:32-39`.)
 
+> **Gap found while extracting A79 (2026-09-20): the two rows above are the
+> `!CONF_WITH_WINDOW_COLOURS` compile-time constants (`gemwmlib.c:538-539,
+> 779-780`, gated `#if !CONF_WITH_WINDOW_COLOURS`), which never execute on our
+> profile — `CONF_WITH_WINDOW_COLOURS` defaults to **1** (`config.h:1324-1330`),
+> required for `AES_VERSION 0x0340` (`config.h:1346`).** With it on (the actual
+> build), `W_NAME`'s topped/untopped words instead come from `gl_wtcolor`/
+> `gl_wbcolor[W_NAME]`, copied into every window at `w_setup`
+> (`gemwmlib.c:220-227`) and written by `w_setcolor` (`:382-396`). The
+> **topped** default is identical (`gl_wtcolor[W_NAME] = 0x1101 | 0xa0 =
+> 0x11a1` = `TOPPED_COLOR`, `wm_start`, `gemwmlib.c:1352`); the **untopped**
+> default is `0x1101`, not `UNTOPPED_COLOR` (`0x1100`) — `ic` is 1 (`BLACK`)
+> rather than 0 (`WHITE`). This has no visible consequence (`ip=IP_HOLLOW`
+> either way, so the fill is unpainted regardless of `ic`, see "`WF_COLOR`/
+> `WF_DCOLOR` → pixel mapping" under "NewTOS implementation notes" below), but
+> it means the two rows above are **not** what a `wind_get(WF_COLOR, W_NAME)`
+> on an untopped window returns on this profile — that call returns `0x1101`.
+
 ---
 
 ## Window-kind gadget bits (`wind_create` `kind`, `aesdefs.h:519-531`)
@@ -1309,7 +1326,10 @@ byte of any buffer the caller passed (TASK/A42).
    and `wm_set` fall through to `return FALSE` (D-053).
 4. **`WF_NEWDESK` (14) is set-only;** `WF_COLOR`/`WF_DCOLOR` use a **3-word
    input** (the only `wind_get`/`set` exception), and `WF_DCOLOR` needs no valid
-   handle and never redraws (`gemwmlib.c:1491-1503,1727-1734`).
+   handle and never redraws (`gemwmlib.c:1491-1503,1727-1734`). See "`WF_COLOR`/
+   `WF_DCOLOR` → pixel mapping" under "NewTOS implementation notes" below for
+   how the two colour words each field carries map onto rendered pixels
+   (A79, 2026-09-20).
 5. **Slider setters early-out with no redraw when the value is unchanged**
    (`if (pwin->w_hslide != pinwds[0])`, `gemwmlib.c:1705`); and, non-3D, sliders
    redraw **only on the topped window** (`gemwmlib.c:1747`). With 3D objects
@@ -1528,6 +1548,204 @@ byte of any buffer the caller passed (TASK/A42).
   matches. `tos-api/src/aes/window.rs:788-792` currently subtracts covering
   windows in window-slot order, not ascending `z`; fixing that is a Developer
   task, not covered by this spec correction.
+- **`WF_COLOR`/`WF_DCOLOR` → pixel mapping (design, A79, 2026-09-20).** `wind_set`'s
+  redraw *scope* for `WF_COLOR` is already right on both sides — EmuTOS's
+  `w_cpwalk(w_handle, gadget, MAX_DEPTH, TRUE)` (`gemwmlib.c:1754-1755`)
+  repaints only the calling window (`do_walk` iterates
+  `D.w_win[wh].w_rlist`, `gemwmlib.c:301`, using the same `wh`), and NewTOS's
+  `wind_set(WF_COLOR)` already calls `redraw_open(handle)` →
+  `draw_frame_pieces` for that one window (`window.rs:3464,3487-3502,:1031`).
+  The gap A79 found is that `draw_frame`'s fill/text calls never read
+  `w.tcolor`/`w.bcolor` at all — every region is a fixed constant. This bullet
+  is the wiring design; no `.rs` file is touched here.
+
+  **(1) What each field of a gadget's colour word governs.** `gr_crack`
+  (`gemgraf.c:612-628`) splits a colour word into border colour `bc` (bits
+  15-12), text colour `tc` (11-8), mode `md` (bit 7: 0 = `MD_TRANS`, 1 =
+  `MD_REPLACE`), interior pattern `ip` (6-4: `IP_HOLLOW`=0 … `IP_SOLID`=7,
+  `obdefs.h:32-39`), interior colour `ic` (3-0, named `WHITE`=0 … `LMAGENTA`=15,
+  `obdefs.h:109-124`). `just_draw` (`gemoblib.c:471-953`) reads a gadget's word
+  from `ob_spec`'s low 16 bits for `G_BOX`/`G_BOXCHAR`/`G_IBOX` (cracked at
+  `:614`) or from the indirect `TEDINFO.te_color` for `G_BOXTEXT` (cracked at
+  `:568`); `w_setcolor` writes into whichever one the gadget uses
+  (`gemwmlib.c:382-396`, `istop ? w_tcolor : w_bcolor`). For every gadget type
+  that reaches the shared border+fill code (`gemoblib.c:660-696`):
+  - `bc` → the object's border stroke, drawn only if `th != 0`
+    (`gr_box`, `:663-667`). `th` comes from the object's *type*, not the
+    colour word (`ob_sst`, `gemobjop.c:41-66`): `G_BOXTEXT` → `te_thickness`
+    (always 1 for `W_NAME`/`W_INFO`, `gemwmlib.c:154-157,180` `te_thickness`
+    field, `obdefs.h:180`); `G_BOX`/`G_BOXCHAR`/`G_IBOX` → the byte at
+    `ob_spec+1`, i.e. `gl_waspec`'s compiled thickness (`gemwmlib.c:84-106`).
+    **`W_BOX` is the one gadget where `bc` also colours the drop shadow** —
+    the `SHADOWED` branch reuses the same `bcol` variable
+    (`gemoblib.c:894-901`).
+  - `ic`+`ip` → the interior fill, drawn only for non-`G_IBOX` types
+    (`gemoblib.c:669-694`, `gr_rect`, `gemgraf.c:547-559`): `ip=IP_HOLLOW`
+    paints **nothing** (`FIS_HOLLOW`); `ip=IP_SOLID`(7) paints `ic` at 100 %
+    coverage (`FIS_SOLID`); `ip=1..6` paints a dithered pattern in `ic`
+    (`FIS_PATTERN` — the exact per-index dither bitmap is **not verified this
+    session**, needs deeper analysis if a test ever depends on the shade). The
+    fill is issued with a **hardcoded** `MD_REPLACE` (`gr_rect`,
+    `gemgraf.c:557-558`) regardless of `md` — `md` never affects the fill's
+    opacity, only the later text draw.
+  - **3D substitution (dormant by default).** If `(ip==IP_HOLLOW) &&
+    (ic==WHITE)`, `just_draw` silently substitutes `ip=IP_SOLID` and `ic` = the
+    gadget's `FL3DMASK` role colour — `indbutcol` (`FL3DIND`), `actbutcol`
+    (`FL3DACT`), `backgrcol` (`FL3DBAK`) (`gemoblib.c:619-636` for
+    `G_BOX`/`G_BOXCHAR`; `:582-600`, always `backgrcol`, for text types).
+    `init_3d` sets all three to `LWHITE` (index 8) once the palette has more
+    than 8 colours (`gemoblib.c:1336-1343`) — on our (truecolor) profile,
+    exactly `GRAY_LT` (`window.rs:189`). **But none of the 19 gadgets' compiled default colour
+    words have `ic==WHITE`** (table below — every default is
+    `0x1101`/`0x1111`/`0x11a1`, `ic` always 1); the substitution only fires if
+    a colour word with `ic=0,ip=0` is explicitly written via
+    `WF_COLOR`/`WF_DCOLOR`. **Today's hardcoded `GRAY_LT` gadget-face fills in
+    `draw_frame` reproduce the *substituted* colour (`LWHITE`=8=`GRAY_LT`)
+    unconditionally — not the literal default word, which paints no face fill
+    at all (hollow).** Striking coincidence, not the same thing: whether the
+    `GRAY_LT` fills stay a deliberate look choice (documented, like
+    `DROP_SHADOW_COLOR`, `window.rs:204`) or become conditional on the actual
+    colour word is a decision for the lead/Developer, not resolved by this
+    ticket.
+  - `tc`+`md` → the gadget's text/glyph, painted via `gsx_attr(TRUE, tmode,
+    tcol)` (`gemoblib.c:709`) before the final `switch` draws the string
+    (`G_BOXTEXT`/`G_TEXT`, `:732-733`) or the single glyph char (`G_BOXCHAR`,
+    `:722-731`). `md=MD_TRANS` leaves the already-painted fill/background
+    between glyph strokes; `md=MD_REPLACE` makes the VDI paint each glyph
+    cell's background white — needed for the *topped* `W_NAME` default
+    (`0x11a1`, `md`=1), and is why `draw_frame` already paints a small white
+    rectangle behind the name before the label (`window.rs:2403-2409` — an
+    approximation of per-glyph opaque-mode background with one rectangle; not
+    documented today as tracking `md`). **For a colour word with `md=0` (e.g.
+    this ticket's T7 word `0x1172`) that white-box step must not run** —
+    transparent mode means the fill colour shows through between glyph
+    strokes, not white.
+  - `W_DATA`/`W_WORK` are structurally invisible: `th=0` (`gl_waspec` byte 2
+    is `0x00`) and both are `G_IBOX`, so neither border nor fill is ever
+    drawn, and `w_bldactive` never calls `w_setcolor` for either index
+    (`gemwmlib.c:570,603` — `w_adjust` only, no colour call) — their compiled
+    `0x1101` never changes at runtime. `WF_COLOR`/`WF_DCOLOR` on gadget 6/7 is
+    a pure round-trip **in EmuTOS itself**, not only in NewTOS; no wiring is
+    needed there.
+
+  **(2) Per-gadget table** — object type, border thickness, `gl_3dflags` role
+  (`gemwmlib.c:108-127`), and the **runtime default** topped/untopped colour
+  word (`w_setup` copies `gl_wtcolor`/`gl_wbcolor` into every new window,
+  `gemwmlib.c:220-227`; the `wm_start` loop default is `0x1101` for all 19,
+  overridden for `W_NAME` (topped only, `|=0xa0` → `0x11a1`) and
+  `W_VSLIDE`/`W_HSLIDE` (`|=0x10` → `0x1111`, both topped and — since
+  `CONF_WITH_3D_OBJECTS` is on — untopped too, `gemwmlib.c:1347-1358`)):
+
+  | # | Gadget | Type | `th` | 3D role | Default word (T/U) | `bc,tc,md,ip,ic` |
+  |--:|---|---|--:|---|---|---|
+  | 0 | `W_BOX` | `G_IBOX` | 1 | NONE | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 1 | `W_TITLE` | `G_BOX` | 1 | NONE | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 2 | `W_CLOSER` | `G_BOXCHAR` | 1 | ACT | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 3 | `W_NAME` | `G_BOXTEXT` | 1 (`te_thickness`) | ACT when `kind&NAME` else NONE (`:553`) | **`0x11a1`/`0x1101`** | T:1,1,REPLACE,`IP_2PATT`,1 · U:1,1,TRANS,HOLLOW,1 |
+  | 4 | `W_FULLER` | `G_BOXCHAR` | 1 | ACT | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 5 | `W_INFO` | `G_BOXTEXT` | 1 (`te_thickness`) | NONE | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 6 | `W_DATA` | `G_IBOX` | **0** | NONE | `0x1101` (frozen, never `w_setcolor`'d) | n/a — nothing drawn |
+  | 7 | `W_WORK` | `G_IBOX` | **0** | NONE | `0x1101` (frozen) | n/a — nothing drawn |
+  | 8 | `W_SIZER` | `G_BOXCHAR` | 1 | ACT | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 9 | `W_VBAR` | `G_BOX` | 1 | NONE | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 10 | `W_UPARROW` | `G_BOXCHAR` | 1 | ACT | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 11 | `W_DNARROW` | `G_BOXCHAR` | 1 | ACT | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 12 | `W_VSLIDE` | `G_BOX` | 1 | NONE | **`0x1111`/same** | 1,1,TRANS,`IP_1PATT`,1 |
+  | 13 | `W_VELEV` | `G_BOX` | 1 | ACT | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 14 | `W_HBAR` | `G_BOX` | 1 | NONE | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 15 | `W_LFARROW` | `G_BOXCHAR` | 1 | ACT | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 16 | `W_RTARROW` | `G_BOXCHAR` | 1 | ACT | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+  | 17 | `W_HSLIDE` | `G_BOX` | 1 | NONE | **`0x1111`/same** | 1,1,TRANS,`IP_1PATT`,1 |
+  | 18 | `W_HELEV` | `G_BOX` | 1 | ACT | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
+
+  Every `ACT` gadget also gets the unconditional (colour-word-independent) 2px
+  bevel from `add_3d_effect` (`WHITE`/`LBLACK`, inverted when `SELECTED`,
+  `gemoblib.c:220-277`, fixed colours at `:252,270-272`) — that part of the 3D
+  look is **not** colour-word-driven in EmuTOS and needs no wiring.
+
+  **(3) Mapping onto `draw_frame`'s regions** (all locations are
+  `tos-api/src/aes/window.rs` unless noted; ✓ = today's hardcoded pixel
+  already equals `gr_crack(default word)`; ✗ = it does not — **flagged, not
+  fixed, by this ticket**):
+
+  | Region | Call | Gadget(idx)·field | Today's constant | Default word gives | Verdict |
+  |---|---|---|---|---|---|
+  | Outer border | `rect_outline`, `:2349` | `W_BOX`(0)·`bc` | `BLACK` | `bc=1`=`BLACK` | ✓ |
+  | Drop shadow | `draw_shadow`, `:2358` | `W_BOX`(0)·`bc` (EmuTOS reuses it) | `GRAY_LT` (deliberate deviation, `:187-204`) | `bc=1`=`BLACK` | ✗ **already an accepted, documented look decision** — wiring `W_BOX`'s `bc` into `rect_outline` must **not** also feed `draw_shadow` |
+  | Title band base | `fill_rect(...,WHITE,...)`, `:2373` | `W_TITLE`(1)·`ip,ic` | `WHITE` | `ip=HOLLOW` → no paint | ✗ undocumented |
+  | Title bottom border | `fill_rect(...,BLACK,...)`, `:2418` | `W_TITLE`(1)·`bc` | `BLACK` | `bc=1`=`BLACK` | ✓ |
+  | Name stipple/fill | `fill_pattern(TITLE_STIPPLE,...)`, `:2394-2401` | `W_NAME`(3)·`ip,ic,md` (topped only) | fixed pattern-2 black-on-white, `md=Replace` | `ip=IP_2PATT,ic=1,md=REPLACE` (topped default) | ✓ **only for the default word** — hardcoded regardless of what `WF_COLOR` stores; **this is the T7 gap** |
+  | Name pre-text white box | `fill_rect(...,WHITE,...)`, `:2408` | `W_NAME`(3)·`md` | unconditional when `istop` | approximates `md=REPLACE`'s opaque glyph background | must become conditional on `md` once wired (see (1)) |
+  | Name/info label glyphs | `draw_label`→`draw_glyph(...,BLACK,...)`, `:2334` | `W_NAME`(3)/`W_INFO`(5)·`tc` | `BLACK` | `tc=1`=`BLACK` (both) | ✓ |
+  | Info band fill | `fill_rect(...,GRAY_LT,...)`, `:2426` | `W_INFO`(5)·`ip,ic` | `GRAY_LT` | `ip=HOLLOW` → no paint | ✗ undocumented |
+  | Info bottom border | `fill_rect(...,BLACK,...)`, `:2433` | `W_INFO`(5)·`bc` | `BLACK` | `bc=1`=`BLACK` | ✓ |
+  | Closer/Fuller/Sizer/arrow face | `fill_rect(...,GRAY_LT,...)` in `gadget_sel`, `:2249` | resp. gadget·`ip,ic` | `GRAY_LT` | `ip=HOLLOW` → no paint (dormant 3D substitution would give `LWHITE`=`GRAY_LT`, see (1)) | ✗ undocumented, coincides with the *substituted* colour |
+  | …glyph | `draw_glyph(...,BLACK,...)` in `gadget_sel`, `:2253` | resp. gadget·`tc` | `BLACK` | `tc=1`=`BLACK` | ✓ |
+  | …border | *(none — `gadget_sel` draws no border line, only fill+bevel+glyph)* | resp. gadget·`bc` | — | `bc=1`=`BLACK` 1px `gr_box` stroke | ✗ EmuTOS draws a 1px black border on every gadget cell in addition to the bevel; `draw_frame` draws no such line |
+  | Bevel (2px raised/sunken edge) | `bevel`, `:2258-2269` | *(not colour-word-driven — `add_3d_effect` uses fixed `WHITE`/`LBLACK`)* | `WHITE`/`GRAY_DK` | same mechanism | ✓ correctly independent of `WF_COLOR`, no wiring needed |
+  | Vbar/Hbar column background | `fill_rect(...,GRAY_LT,...)`, `:2460,2474` | `W_VBAR`(9)/`W_HBAR`(14)·`ip,ic` | `GRAY_LT` | `ip=HOLLOW` → no paint | ✗ undocumented |
+  | V/H-slider track fill | `fill_rect(...,GRAY_LT,...)`, `:2623,2701` | `W_VSLIDE`(12)/`W_HSLIDE`(17)·`ip,ic` | `GRAY_LT` solid | `ip=IP_1PATT,ic=1` → a black dither, **not** solid gray (exact density not verified this session) | ✗ undocumented, style mismatch (solid vs. patterned) even before the shade question |
+  | V/H-slider track border | `rect_outline`, `:2624,2702` | `W_VSLIDE`(12)/`W_HSLIDE`(17)·`bc` | `BLACK` | `bc=1`=`BLACK` | ✓ |
+  | Elevator (thumb) fill | `fill_rect(...,GRAY_LT,...)`, `:2630,2707` | `W_VELEV`(13)/`W_HELEV`(18)·`ip,ic` | `GRAY_LT` | `ip=HOLLOW` → no paint | ✗ undocumented (coincides with the substituted colour, as above) |
+  | Elevator bevel | `bevel`, `:2631,2708` | *(not colour-word-driven)* | — | — | ✓ |
+  | Sizer-corner (no `SIZER`) fill+bevel | `:2492-2493` | `W_SIZER`(8)·`ip,ic` + bevel | `GRAY_LT` + bevel | `ip=HOLLOW` → no paint; bevel independent | ✗ fill / ✓ bevel |
+
+  None of the ✗ rows are in scope to fix here — the ticket asks for a
+  *design*, and "without changing today's default rendering" means whatever
+  the developer wires must still reach every ✓ row's current pixel, and, since
+  the lead has not asked for a rendering change, most plausibly keep emitting
+  each ✗ row's current constant **specifically when the stored colour word
+  still equals the compiled default**, while consuming the real
+  `ip`/`ic`/`bc`/`tc`/`md` once `WF_COLOR` has actually changed them for that
+  gadget. Whether the ✗ rows' constants become a permanent, written-down look
+  decision (like `DROP_SHADOW_COLOR`, `window.rs:204`) or are replaced by a
+  literal hollow/pattern render is a call for the lead, not resolved here.
+
+  **The contract itself is already correct on both sides — only the
+  colour-consuming half of `draw_frame` is missing:**
+  - `wind_set(handle, WF_COLOR, gadget, tcol, bcol)` on an **open** window
+    redraws **that window's** gadget immediately, clipped to its own visible
+    pieces; NewTOS's `redraw_open`/`draw_frame_pieces` already have exactly
+    this scope (above). The only change needed is for the fill/text calls
+    inside `draw_frame` to read `w.tcolor[g]`/`w.bcolor[g]` (topped/untopped
+    selected by `istop`, matching `w_setcolor`'s `istop ? w_tcolor :
+    w_bcolor`, `gemwmlib.c:388`) instead of the constants in the table above.
+  - `wind_set(_, WF_DCOLOR, gadget, tcol, bcol)` writes only `gl_wtcolor`/
+    `gl_wbcolor` and explicitly sets `gadget = -1` **before** the `do_cpwalk`
+    check, so **no window is redrawn** (`gemwmlib.c:1727-1734`, comment "do
+    not call `w_cpwalk()` in this case"); it changes what `w_setup` copies
+    into a window created **afterwards** (`:220-227`) — existing windows are
+    unchanged. NewTOS's `wind_set(WF_DCOLOR)` (`window.rs:3327-3338`) already
+    matches this exactly — it writes `gl_wtcolor()`/`gl_wbcolor()` and never
+    calls `redraw_open`. **No change needed here beyond `draw_frame`
+    consuming the per-window `tcolor`/`bcolor` a window already inherits at
+    `wind_create` (`window.rs:2840-2841`).**
+
+  **(4) Worked examples.** Window `(30,40,320,240)`, kind `0x0FEF`, open and
+  **topped** (both colour words are equal in the T7 call, so topped/untopped
+  doesn't matter for the visible result here, but an untopped `W_NAME` also
+  gets the unrelated `DISABLED` dim-overlay, `gemoblib.c:917-930`, which would
+  otherwise complicate the read):
+  - **T7 — `wind_set(h, WF_COLOR, 3, 0x1172, 0x1172)`** (`W_NAME`).
+    `gr_crack(0x1172)` = `bc=1,tc=1,md=`**`TRANS`**` (bit 7 of the low byte
+    `0x72` is 0 — not `MD_REPLACE`; a "mode replace" framing of this word is
+    imprecise, corrected here), `ip=7=IP_SOLID,ic=2=RED` (`obdefs.h:111`).
+    Expected pixels in the `W_NAME` rect: **interior 100 % `RED`** (`ic=2`,
+    `IP_SOLID` forces `FIS_SOLID` regardless of `md`, `gr_rect`,
+    `gemgraf.c:552-558`), **1px black border** (`bc=1`), **name text in
+    `BLACK`** (`tc=1`) drawn in **transparent** mode — red shows between the
+    glyph strokes, no white glyph-cell boxes (`md=0`, unlike the compiled
+    topped default `0x11a1`). Before the fix: 0 pixels change (today's
+    hardcoded stipple path never reads `tcolor[3]`); after: the whole name
+    band renders solid red with black text, no stipple.
+  - **A second case — `wind_set(h, WF_COLOR, 12, 0x1171, 0x1171)`**
+    (`W_VSLIDE`). `gr_crack(0x1171)` = `bc=1,tc=1,md=TRANS` (bit 7 of `0x71`
+    is 0), `ip=7=IP_SOLID,ic=1=BLACK`. Expected pixels in the vertical
+    slider's **track** rectangle (`draw_vslider`'s `track`,
+    `window.rs:2621-2624`): **100 % `BLACK` fill**, border also `BLACK`
+    (indistinguishable from the fill). Before the fix: today's hardcoded
+    `GRAY_LT` fill (`:2623`) is unchanged; after: the track renders solid
+    black.
 - **The frame drawing + rubber-band mechanics are reference** (NewTOS
   reimplements `w_bldactive` and the XOR trackers over its own framebuffer XOR
   primitive fed by IKBD/USB-HID mouse position, [[keyboard-via-atari-ikbd]]).

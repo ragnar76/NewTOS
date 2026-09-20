@@ -18,7 +18,9 @@
 //! Menu-Manager note); closing erases to the desktop background.
 
 use super::graf::{gl_hbox, gl_hchar, gl_wchar};
-use super::object::{render_tree_app, render_tree_lp64, Object};
+use super::object::{
+    gr_crack, gr_rect, render_tree_app, render_tree_lp64, Object, ACT_BUTCOL, BACKGR_COL, IP_HOLLOW, IP_SOLID,
+};
 use super::Aespb;
 use crate::bdos::process::Abi;
 use crate::host::{host, Host};
@@ -87,19 +89,35 @@ const BEG_MCTRL: i16 = 3;
 /// global default colour-word arrays by gadget number.
 const NUM_ELEM: usize = 19;
 
-// The `W_*` gadget object indices (gemlib.h:38-56) the default colour init
-// special-cases; only the named ones matter here.
+// The `W_*` gadget object indices (gemlib.h:38-56): the slot of each gadget's
+// colour word in `w_tcolor`/`w_bcolor` (`W_DATA` 6 / `W_WORK` 7 have no drawn
+// pixel — `th = 0`, `G_IBOX` — and are never consulted).
+const W_BOX_IDX: usize = 0;
+const W_TITLE_IDX: usize = 1;
+const W_CLOSER_IDX: usize = 2;
 const W_NAME_IDX: usize = 3;
+const W_FULLER_IDX: usize = 4;
+const W_INFO_IDX: usize = 5;
+const W_SIZER_IDX: usize = 8;
+const W_VBAR_IDX: usize = 9;
+const W_UPARROW_IDX: usize = 10;
+const W_DNARROW_IDX: usize = 11;
 const W_VSLIDE_IDX: usize = 12;
+const W_VELEV_IDX: usize = 13;
+const W_HBAR_IDX: usize = 14;
+const W_LFARROW_IDX: usize = 15;
+const W_RTARROW_IDX: usize = 16;
 const W_HSLIDE_IDX: usize = 17;
+const W_HELEV_IDX: usize = 18;
 
 /// Global default per-gadget colour words for a **topped** window (EmuTOS
 /// `gl_wtcolor`, `wm_start` gemwmlib.c:1347-1354): every slot `0x1101`
 /// (border+text black, transparent fill, pattern 0), with `W_NAME |= 0xa0` and
 /// the two sliders `|= 0x10`. These are the AES colour-word values a
-/// `wind_get(WF_DCOLOR)` must return 1:1; our procedural [`draw_frame`] does not
-/// consume them (see the note there), so they are purely round-tripped state and
-/// changing/adding them cannot alter a single pixel.
+/// `wind_get(WF_DCOLOR)` must return 1:1 — and, since A79, what
+/// [`draw_frame`] paints a gadget from ([`gadget_ink`]): under the
+/// [`FrameLook::Tos4Gray`] look a gadget whose word still equals this compiled
+/// default keeps today's constants, any other word is rendered literally.
 const GL_WTCOLOR_DEFAULT: [i16; NUM_ELEM] = {
     let mut a = [0x1101i16; NUM_ELEM];
     a[W_NAME_IDX] = 0x1101 | 0xa0; // 0x11a1
@@ -380,9 +398,11 @@ struct Window {
     hslsize: i16,
     /// Per-gadget AES colour words for the topped / untopped states (EmuTOS
     /// `w_tcolor`/`w_bcolor`, gemlib.h:81-82). Set from the live global defaults
-    /// at [`wind_create`], read/written by `WF_COLOR`. Round-tripped only — the
-    /// procedural [`draw_frame`] renders the fixed TOS4 3D look and does not
-    /// consume these, so they never affect rendering.
+    /// at [`wind_create`], read/written by `WF_COLOR`, and **consumed by
+    /// [`draw_frame`]** (A79): the frame draw cracks the word of each gadget it
+    /// paints (`istop ? w_tcolor : w_bcolor`, exactly what `w_setcolor` writes
+    /// into the `W_ACTIVE` tree, `gemwmlib.c:382-397`) into border / text /
+    /// pattern / interior colour and text mode ([`gadget_ink`]).
     tcolor: [i16; NUM_ELEM],
     bcolor: [i16; NUM_ELEM],
     /// The owner rectangle list and the `WF_FIRSTXYWH`/`WF_NEXTXYWH` cursor
@@ -2235,22 +2255,198 @@ fn calc(wtype: i16, kind: u16, r: Grect) -> Grect {
 
 // ── frame drawing ───────────────────────────────────────────────────────
 
-fn rect_outline(r: Grect, backend: &dyn RasterBackend, clip: ClipRect) {
-    backend.fill_rect(r.x, r.y, r.w, 1, BLACK, clip); // top
-    backend.fill_rect(r.x, r.y + r.h - 1, r.w, 1, BLACK, clip); // bottom
-    backend.fill_rect(r.x, r.y, 1, r.h, BLACK, clip); // left
-    backend.fill_rect(r.x + r.w - 1, r.y, 1, r.h, BLACK, clip); // right
+/// Which of the two frame looks [`draw_frame`] renders — a **temporary
+/// decision aid (A79, 2026-09-20)**, not a configuration: the user asked to
+/// see both pictures before choosing the default. Once chosen, the losing arm
+/// and this switch go away; there is no third look and no config file.
+///
+/// Both looks consume the per-window colour words `wind_set(WF_COLOR)` stores
+/// and `wind_create` inherits from `WF_DCOLOR` (EmuTOS `w_setcolor`,
+/// `aes/gemwmlib.c:382-397`); they differ only in what a gadget whose word
+/// still equals its compiled default looks like.
+#[repr(u8)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FrameLook {
+    /// Every gadget is painted from its colour word exactly as `just_draw`
+    /// paints the `W_ACTIVE` tree (`aes/gemoblib.c:610-733`): the 1px
+    /// `gr_box` border in `bc`, the interior `ip`/`ic` via `gr_rect` (hollow
+    /// = white), text in `tc` with `md`, and the 3D bevel on the `FL3DACT`
+    /// gadgets. With the compiled defaults that is white faces with black
+    /// borders, the `IP_2PATT` stipple on the topped name and `IP_1PATT`
+    /// slider tracks.
+    Literal = 0,
+    /// Today's look: the fixed TOS4-style grey (`GRAY_LT`) faces and
+    /// border-less gadget cells for every gadget whose stored word still
+    /// equals its compiled default ([`GL_WTCOLOR_DEFAULT`] /
+    /// [`GL_WBCOLOR_DEFAULT`]); a gadget whose word an application changed is
+    /// rendered literally.
+    Tos4Gray = 1,
 }
 
-/// Draw one bordered gadget cell with a centred glyph (closer/fuller/
-/// arrows/sizer). `sel` inverts it (pressed feedback).
-fn gadget_sel(r: Grect, ch: u16, sel: bool, backend: &dyn RasterBackend, clip: ClipRect) {
-    // Modern 3D gadget: grey face + bevel (raised, recessed when pressed).
-    backend.fill_rect(r.x, r.y, r.w, r.h, GRAY_LT, clip);
-    bevel(r, !sel, backend, clip);
+/// The look in force — see [`FrameLook`]. Default `Tos4Gray` until the user
+/// has chosen; host tests set it through [`set_frame_look`].
+pub(crate) static FRAME_LOOK: AtomicU8 = AtomicU8::new(FrameLook::Tos4Gray as u8);
+
+/// Select the frame look (A79 decision aid; see [`FrameLook`]).
+pub fn set_frame_look(look: FrameLook) {
+    FRAME_LOOK.store(look as u8, Ordering::Relaxed);
+}
+
+/// The frame look in force (see [`FrameLook`]).
+pub fn frame_look() -> FrameLook {
+    if FRAME_LOOK.load(Ordering::Relaxed) == FrameLook::Literal as u8 {
+        FrameLook::Literal
+    } else {
+        FrameLook::Tos4Gray
+    }
+}
+
+/// A gadget's colour word cracked for the frame draw — EmuTOS `gr_crack`
+/// (`aes/gemgraf.c:612-628`) after `just_draw`'s 3D substitution
+/// (`aes/gemoblib.c:582-600,619-636`).
+#[derive(Clone, Copy)]
+struct Ink {
+    /// Border colour (bits 15-12): the 1px `gr_box` stroke.
+    bc: Pel,
+    /// Text colour (bits 11-8): name / info / gadget glyph.
+    tc: Pel,
+    /// Interior pattern (bits 6-4), `IP_HOLLOW`..`IP_SOLID`.
+    ip: u16,
+    /// Interior colour (bits 3-0).
+    ic: Pel,
+    /// Text writing mode (bit 7): `true` = `MD_REPLACE` (the VDI paints each
+    /// glyph cell's background white), `false` = `MD_TRANS`.
+    replace: bool,
+}
+
+impl Ink {
+    fn text_mode(self) -> WriteMode {
+        if self.replace {
+            WriteMode::Replace
+        } else {
+            WriteMode::Transparent
+        }
+    }
+}
+
+/// Whether gadget `g` carries the `FL3DACT` role — `gl_3dflags`
+/// (`aes/gemwmlib.c:108-127`); `W_NAME` gets it at build time only when the
+/// window has a `NAME` (`w_bldactive`, `:553`). Every other frame gadget is
+/// `FL3DNONE`.
+fn is_3d_act(g: usize, kind: u16) -> bool {
+    matches!(
+        g,
+        W_CLOSER_IDX
+            | W_FULLER_IDX
+            | W_SIZER_IDX
+            | W_UPARROW_IDX
+            | W_DNARROW_IDX
+            | W_VELEV_IDX
+            | W_LFARROW_IDX
+            | W_RTARROW_IDX
+    ) || (g == W_NAME_IDX && kind & NAME != 0)
+}
+
+/// The ink gadget `g` of window `w` is painted with, or `None` when the
+/// [`FrameLook::Tos4Gray`] look keeps today's constants for it.
+///
+/// The word is `istop ? w_tcolor[g] : w_bcolor[g]` — what `w_setcolor` writes
+/// into the gadget's `ob_spec` / `te_color` on every `w_bldactive`
+/// (`aes/gemwmlib.c:382-397`). `just_draw` then substitutes a hollow-WHITE
+/// interior on a 3D object with the solid role colour — `actbutcol` for the
+/// `FL3DACT` box types (`aes/gemoblib.c:619-636`), `backgrcol` for a text type
+/// with any 3D role, which also drops `MD_REPLACE` to `MD_TRANS` so the VDI's
+/// white glyph background does not punch holes in it (`:582-600`). No compiled
+/// default has `ic == WHITE`, so this only ever fires on an application's word.
+fn gadget_ink(w: &Window, g: usize, istop: bool) -> Option<Ink> {
+    let word = if istop { w.tcolor[g] } else { w.bcolor[g] };
+    let default = if istop { GL_WTCOLOR_DEFAULT[g] } else { GL_WBCOLOR_DEFAULT[g] };
+    if frame_look() == FrameLook::Tos4Gray && word == default {
+        return None;
+    }
+    Some(ink_of(word as u16, is_3d_act(g, w.kind), g == W_NAME_IDX || g == W_INFO_IDX))
+}
+
+/// [`Ink`] for a raw colour word: `gr_crack` plus the 3D substitution above.
+/// `boxtext` = the gadget is a `G_BOXTEXT` (`W_NAME`/`W_INFO`, `gl_watype`,
+/// `aes/gemwmlib.c:61-81`), whose substitution rule differs from the box types'.
+fn ink_of(word: u16, d3_act: bool, boxtext: bool) -> Ink {
+    let (bc, tc, mut ip, mut ic, mut replace) = gr_crack(word);
+    if d3_act && ip == IP_HOLLOW && ic == WHITE {
+        ip = IP_SOLID;
+        if boxtext {
+            ic = BACKGR_COL.load(Ordering::Relaxed) as Pel;
+            replace = false;
+        } else {
+            ic = ACT_BUTCOL.load(Ordering::Relaxed) as Pel;
+        }
+    }
+    Ink { bc, tc, ip, ic, replace }
+}
+
+/// The rect `just_draw` paints an `FL3DACT` object on: its own rect grown by
+/// `ADJ3DSTD` on every side (`aes/gemoblib.c:503-508`) — so a `gl_wbox` ×
+/// `gl_hbox` gadget cell is drawn over its whole `adj_wbox` × `adj_hbox` slot,
+/// border on the slot's edge. Draw-only: the stored rects, the hit tests and
+/// the rectangle lists keep the un-grown cell.
+fn grow_3d(r: Grect) -> Grect {
+    Grect { x: r.x - ADJ3DSTD, y: r.y - ADJ3DSTD, w: r.w + 2 * ADJ3DSTD, h: r.h + 2 * ADJ3DSTD }
+}
+
+/// `gr_inside(&t, th)` for `th = 1` — the rect inside a 1px border.
+fn inside_1(r: Grect) -> Grect {
+    Grect { x: r.x + 1, y: r.y + 1, w: r.w - 2, h: r.h - 2 }
+}
+
+fn rect_outline(r: Grect, pel: Pel, backend: &dyn RasterBackend, clip: ClipRect) {
+    backend.fill_rect(r.x, r.y, r.w, 1, pel, clip); // top
+    backend.fill_rect(r.x, r.y + r.h - 1, r.w, 1, pel, clip); // bottom
+    backend.fill_rect(r.x, r.y, 1, r.h, pel, clip); // left
+    backend.fill_rect(r.x + r.w - 1, r.y, 1, r.h, pel, clip); // right
+}
+
+/// Border and interior of a box-type gadget as `just_draw`'s shared arm
+/// draws them (`aes/gemoblib.c:660-694`): `gr_box` in `bc` — `th = 1` for
+/// every frame gadget that paints at all (`gl_waspec` byte 2, `gemwmlib.c:84-
+/// 106`; `te_thickness = 1` for the two `TEDINFO`s, `:154-157`) — then
+/// `gr_rect(ic, ip)` on the rect `gr_inside(&t, th)` leaves, in `MD_REPLACE`:
+/// `IP_HOLLOW` is an opaque **white** fill, not a no-op.
+fn draw_box_ink(r: Grect, ink: Ink, backend: &dyn RasterBackend, clip: ClipRect) {
+    if r.w <= 0 || r.h <= 0 {
+        return;
+    }
+    rect_outline(r, ink.bc, backend, clip);
+    let i = inside_1(r);
+    gr_rect(backend, i.x, i.y, i.w, i.h, ink.ic, ink.ip, clip);
+}
+
+/// Draw one gadget cell with a centred glyph (closer/fuller/arrows/sizer).
+/// `sel` inverts the bevel (pressed feedback).
+///
+/// `ink == None` is the [`FrameLook::Tos4Gray`] default cell: grey face +
+/// bevel + black glyph, no border. `Some(ink)` is `just_draw` on the 3D-grown
+/// slot ([`grow_3d`]): border + interior from the word ([`draw_box_ink`]), the
+/// glyph in `tc`/`md` (`gsx_attr(TRUE, tmode, tcol)` then `gr_gtext`,
+/// `aes/gemoblib.c:709,722-733`), and last the bevel inside the border
+/// (`add_3d_effect`, `:949-950`, inset by `th`, `:230-237`). The glyph keeps
+/// its cell-centred position: the cell is centred in its slot.
+fn gadget_sel(r: Grect, ch: u16, sel: bool, ink: Option<Ink>, backend: &dyn RasterBackend, clip: ClipRect) {
     let gx = r.x + (r.w - 8) / 2;
     let gy = r.y + (r.h - 16) / 2;
-    backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), BLACK, WriteMode::Transparent, clip);
+    match ink {
+        None => {
+            // Modern 3D gadget: grey face + bevel (raised, recessed when pressed).
+            backend.fill_rect(r.x, r.y, r.w, r.h, GRAY_LT, clip);
+            bevel(r, !sel, backend, clip);
+            backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), BLACK, WriteMode::Transparent, clip);
+        }
+        Some(ink) => {
+            let slot = grow_3d(r);
+            draw_box_ink(slot, ink, backend, clip);
+            backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), ink.tc, ink.text_mode(), clip);
+            bevel(inside_1(slot), !sel, backend, clip);
+        }
+    }
 }
 
 /// Draw a 2-pixel 3D bevel: `raised` = white top/left + dark-grey
@@ -2268,8 +2464,8 @@ fn bevel(r: Grect, raised: bool, backend: &dyn RasterBackend, clip: ClipRect) {
     }
 }
 
-fn gadget(r: Grect, ch: u16, backend: &dyn RasterBackend, clip: ClipRect) {
-    gadget_sel(r, ch, false, backend, clip);
+fn gadget(r: Grect, ch: u16, ink: Option<Ink>, backend: &dyn RasterBackend, clip: ClipRect) {
+    gadget_sel(r, ch, false, ink, backend, clip);
 }
 
 /// The window's solid drop shadow: two black bands to the lower right of the
@@ -2323,15 +2519,28 @@ fn draw_shadow(b: Grect, backend: &dyn RasterBackend, clip: ClipRect) {
     );
 }
 
-/// Draw text left-aligned within a band, one 8×16 glyph per byte.
-fn draw_label(x: i16, y: i16, max_w: i16, s: &[u8], backend: &dyn RasterBackend, clip: ClipRect) {
+/// Draw text left-aligned within a band, one 8×16 glyph per byte, in the
+/// gadget's text colour and writing mode (`gsx_attr(TRUE, tmode, tcol)`,
+/// `aes/gemoblib.c:709`): `Replace` paints every glyph cell's background white
+/// (the VDI's replace-mode text), `Transparent` inks only the set bits.
+#[allow(clippy::too_many_arguments)]
+fn draw_label(
+    x: i16,
+    y: i16,
+    max_w: i16,
+    s: &[u8],
+    fg: Pel,
+    mode: WriteMode,
+    backend: &dyn RasterBackend,
+    clip: ClipRect,
+) {
     let cy = y + 1;
     let mut cx = x;
     for &b in s {
         if b == 0 || cx + 8 > x + max_w {
             break;
         }
-        backend.draw_glyph(cx, cy, crate::vdi::font::glyph(b as u16), BLACK, WriteMode::Transparent, clip);
+        backend.draw_glyph(cx, cy, crate::vdi::font::glyph(b as u16), fg, mode, clip);
         cx += 8;
     }
 }
@@ -2344,9 +2553,16 @@ fn draw_label(x: i16, y: i16, max_w: i16, s: &[u8], backend: &dyn RasterBackend,
 fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
     let b = w.curr;
     let kind = w.kind;
+    // The gadget's colour word for this window's topped/untopped state —
+    // `w_setcolor(pw, gadget, istop)` on each `w_bldactive` (A79).
+    let ink = |g: usize| gadget_ink(w, g, istop);
 
-    // Outer frame.
-    rect_outline(b, backend, clip);
+    // Outer frame — `W_BOX`'s border colour (`gr_crack` bits 15..12 of its
+    // word, `0x1101` → BLACK). Only the border: the drop shadow below stays
+    // [`DROP_SHADOW_COLOR`] (a documented look decision) and must not follow
+    // this word.
+    let box_bc = ink(W_BOX_IDX).map_or(BLACK, |i| i.bc);
+    rect_outline(b, box_bc, backend, clip);
 
     // …and the drop shadow that goes with it. `ob_draw` draws the `W_BOX`
     // border and its `SHADOWED` decoration in the same visit, before it
@@ -2366,56 +2582,95 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
     // `gl_wbox` × `gl_hbox` cell inset by `ADJ3DSTD`, and the closer/fuller
     // advance the name area by a full `adj_wbox`. `MOVER` alone earns the band
     // (`TGADGETS`) — the same test [`borders`] uses, so band and work area agree.
-    // Ours: white base, the name area carries a light dither on the *active*
-    // window (the classic move-bar look), plain on the inactive one.
+    // Colours come from the gadget words: `W_TITLE` (`G_BOX`, `0x1101`) is a
+    // black 1px box over the whole band with a hollow — white — interior;
+    // `W_NAME` (`G_BOXTEXT`) is topped `0x11a1` = `IP_2PATT` in BLACK under
+    // black text in `MD_REPLACE`, untopped `0x1101` = hollow under transparent
+    // text. The Tos4Gray default arm paints the same band the way it always
+    // has (white base, stipple on the active name, a white box behind the
+    // name glyphs standing in for replace-mode text, the bottom row last).
     if kind & TGADGETS != 0 {
-        let bar = Grect { x: b.x + 1, y: top, w: b.w - 2, h: ah - 1 };
-        backend.fill_rect(bar.x, bar.y, bar.w, bar.h, WHITE, clip);
+        let title = Grect { x: b.x, y: b.y, w: b.w, h: ah };
+        let title_ink = ink(W_TITLE_IDX);
+        match title_ink {
+            None => {
+                let bar = Grect { x: b.x + 1, y: top, w: b.w - 2, h: ah - 1 };
+                backend.fill_rect(bar.x, bar.y, bar.w, bar.h, WHITE, clip);
+            }
+            Some(i) => draw_box_ink(title, i, backend, clip),
+        }
 
         let gy = b.y + ADJ3DSTD;
         let mut name_x = b.x;
         let mut name_w = b.w;
         if kind & CLOSER != 0 {
             let g = Grect { x: b.x + ADJ3DSTD, y: gy, w: GL_WBOX, h: gl_hbox() };
-            gadget(g, G_CLOSE, backend, clip);
+            gadget(g, G_CLOSE, ink(W_CLOSER_IDX), backend, clip);
             name_x += aw;
             name_w -= aw;
         }
         if kind & FULLER != 0 {
             name_w -= aw;
             let g = Grect { x: name_x + name_w + ADJ3DSTD, y: gy, w: GL_WBOX, h: gl_hbox() };
-            gadget(g, G_FULL, backend, clip);
+            gadget(g, G_FULL, ink(W_FULLER_IDX), backend, clip);
         }
         // W_NAME sits `ADJ3DSTD` inside what is left (gemwmlib.c:534-537).
         name_x += ADJ3DSTD;
         name_w -= 2 * ADJ3DSTD;
-        // Active window: the classic move-bar dither behind the name.
-        if istop {
-            backend.fill_pattern(
-                name_x,
-                gy,
-                name_w,
-                gl_hbox(),
-                PatternFill { fg: BLACK, bg: WHITE, pattern: &TITLE_STIPPLE, mode: WriteMode::Replace },
-                clip,
-            );
-        }
-        // Window name (centred when there is room), on a small white box so it
-        // stays crisp over the dither (EmuTOS clears the name's glyph cells).
+        let nr = Grect { x: name_x, y: gy, w: name_w, h: gl_hbox() };
         let nlen = name_len(&w.name) as i16 * 8;
         let nx = name_x + ((name_w - nlen) / 2).max(2);
-        if istop && nlen > 0 {
-            backend.fill_rect((nx - 3).max(name_x), gy, nlen + 6, gl_hbox(), WHITE, clip);
+        // A `MOVER` without a `NAME` still gets the name box, but
+        // `w_bldactive` never calls `w_setcolor` for it and sets
+        // `gl_aname.te_color = 0` instead (`gemwmlib.c:540-550`): the stored
+        // word is not consulted — hollow, white border, no text, `FL3DNONE`.
+        let name_ink = if kind & NAME != 0 {
+            ink(W_NAME_IDX)
+        } else if frame_look() == FrameLook::Literal {
+            Some(ink_of(0, false, true))
+        } else {
+            None
+        };
+        match name_ink {
+            None => {
+                // Active window: the classic move-bar dither behind the name.
+                if istop {
+                    backend.fill_pattern(
+                        name_x,
+                        gy,
+                        name_w,
+                        gl_hbox(),
+                        PatternFill { fg: BLACK, bg: WHITE, pattern: &TITLE_STIPPLE, mode: WriteMode::Replace },
+                        clip,
+                    );
+                }
+                // Window name (centred when there is room), on a small white
+                // box so it stays crisp over the dither (EmuTOS clears the
+                // name's glyph cells).
+                if istop && nlen > 0 {
+                    backend.fill_rect((nx - 3).max(name_x), gy, nlen + 6, gl_hbox(), WHITE, clip);
+                }
+                draw_label(nx, gy, name_w, &w.name, BLACK, WriteMode::Transparent, backend, clip);
+            }
+            Some(i) => {
+                // `FL3DACT` when there is a `NAME` (`:553`) → drawn on the
+                // 3D-grown rect, whose border meets the title box's edges.
+                let name_box = if kind & NAME != 0 { grow_3d(nr) } else { nr };
+                draw_box_ink(name_box, i, backend, clip);
+                draw_label(nx, gy, name_w, &w.name, i.tc, i.text_mode(), backend, clip);
+            }
         }
-        draw_label(nx, gy, name_w, &w.name, backend, clip);
         // The title box's own bottom border row. `W_TITLE` is a `G_BOX` with
         // `ob_spec 0x00011101` — border thickness 1 (`gemwmlib.c:63,84`) — and
         // `w_bldactive` gives it `y = 0, h = adj_hbox` inside `W_BOX`
         // (`:514-517`), so that border's bottom row is `b.y + adj_hbox - 1`:
         // exactly one row **above** the first row `wm_calc` hands to the work
         // area (`tb = 1 + (adj_hbox - 1)`, `:1808-1810`). Drawing it a row lower
-        // put frame ink inside the client region on every frame redraw.
-        backend.fill_rect(b.x, b.y + ah - 1, b.w, 1, BLACK, clip);
+        // put frame ink inside the client region on every frame redraw. The
+        // literal arm drew it with the title's box above, before the gadgets.
+        if title_ink.is_none() {
+            backend.fill_rect(b.x, b.y + ah - 1, b.w, 1, BLACK, clip);
+        }
         top += ah - 1;
     }
 
@@ -2423,14 +2678,27 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
     // why [`borders`] charges a full `gl_hbox` for it.
     if kind & INFO != 0 {
         let band = Grect { x: b.x + 1, y: top, w: b.w - 2, h: gl_hbox() };
-        backend.fill_rect(band.x, band.y, band.w, band.h, GRAY_LT, clip);
-        draw_label(band.x + 2, top, band.w - 2, &w.info, backend, clip);
-        // Same rule as the title band: `W_INFO` is `gl_hbox` tall starting at
-        // `b.y + adj_hbox` (`w_bldactive`, `gemwmlib.c:561-567`) and its
-        // `gl_ainfo` TEDINFO has `te_thickness = 1` (`:153-157`), so its bottom
-        // border row is the band's last row — `wm_calc`'s work area starts on
-        // the row after it (`tb += gl_hbox`, `:1811-1812`).
-        backend.fill_rect(b.x, top + gl_hbox() - 1, b.w, 1, BLACK, clip);
+        match ink(W_INFO_IDX) {
+            None => {
+                backend.fill_rect(band.x, band.y, band.w, band.h, GRAY_LT, clip);
+                draw_label(band.x + 2, top, band.w - 2, &w.info, BLACK, WriteMode::Transparent, backend, clip);
+                // Same rule as the title band: `W_INFO` is `gl_hbox` tall
+                // starting at `b.y + adj_hbox` (`w_bldactive`, `gemwmlib.c:561-
+                // 567`) and its `gl_ainfo` TEDINFO has `te_thickness = 1`
+                // (`:153-157`), so its bottom border row is the band's last row
+                // — `wm_calc`'s work area starts on the row after it
+                // (`tb += gl_hbox`, `:1811-1812`).
+                backend.fill_rect(b.x, top + gl_hbox() - 1, b.w, 1, BLACK, clip);
+            }
+            Some(i) => {
+                // `W_INFO` is the full-width `G_BOXTEXT` box `(0, adj_hbox, w,
+                // gl_hbox)` with `te_thickness = 1`: border on all four sides
+                // (its bottom row is the one above), hollow inside, then the
+                // text in `tc`/`md`. `FL3DNONE` — no growth, no bevel.
+                draw_box_ink(Grect { x: b.x, y: top, w: b.w, h: gl_hbox() }, i, backend, clip);
+                draw_label(band.x + 2, top, band.w - 2, &w.info, i.tc, i.text_mode(), backend, clip);
+            }
+        }
         top += gl_hbox();
     }
 
@@ -2456,10 +2724,17 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
     // [`draw_vslider`], so the slider-only redraw path never erases the sizer
     // corner it does not repaint.
     if let Some(r) = vbar_rect(b, kind) {
-        let h = (r.y + r.h).min(b.y + b.h - 1) - r.y;
-        backend.fill_rect(r.x, r.y, r.w - 1, h, GRAY_LT, clip);
+        match ink(W_VBAR_IDX) {
+            None => {
+                let h = (r.y + r.h).min(b.y + b.h - 1) - r.y;
+                backend.fill_rect(r.x, r.y, r.w - 1, h, GRAY_LT, clip);
+            }
+            // `W_VBAR` is a `G_BOX` (`0x1101`): border on all four sides of
+            // the bar column as `w_bldactive` lays it out, hollow inside.
+            Some(i) => draw_box_ink(vbar_box(b, kind), i, backend, clip),
+        }
     }
-    draw_vslider(w, backend, clip);
+    draw_vslider(w, istop, backend, clip);
 
     // Bottom scroll bar (arrows + track + thumb). Fill the whole bottom band
     // first, so the corner cell next to the right bar is painted even when the
@@ -2470,10 +2745,17 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
     // band fill here would paint over the client's rectangle.
     let (havevbar, havehbar) = bars(kind);
     if havehbar {
-        let row_y = b.y + b.h - ah;
-        backend.fill_rect(b.x + 1, row_y, b.w - 2, ah - 1, GRAY_LT, clip);
+        match ink(W_HBAR_IDX) {
+            None => {
+                let row_y = b.y + b.h - ah;
+                backend.fill_rect(b.x + 1, row_y, b.w - 2, ah - 1, GRAY_LT, clip);
+            }
+            // `W_HBAR` is a `G_BOX` (`0x1101`): border on all four sides of
+            // the band as `w_bldactive` lays it out, hollow inside.
+            Some(i) => draw_box_ink(hbar_box(b, kind), i, backend, clip),
+        }
     }
-    draw_hslider(w, backend, clip);
+    draw_hslider(w, istop, backend, clip);
 
     // Corner cell (EmuTOS `W_SIZER`, gemwmlib.c:612-627): drawn whenever the
     // window has both bars or a `SIZER`, `gl_wbox` × `gl_hbox` inset by
@@ -2486,13 +2768,55 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
             w: GL_WBOX,
             h: gl_hbox(),
         };
+        let sizer_ink = ink(W_SIZER_IDX);
         if kind & SIZER != 0 {
-            gadget(g, G_SIZE, backend, clip);
+            gadget(g, G_SIZE, sizer_ink, backend, clip);
         } else {
-            backend.fill_rect(g.x, g.y, g.w, g.h, GRAY_LT, clip);
-            bevel(g, true, backend, clip);
+            match sizer_ink {
+                None => {
+                    backend.fill_rect(g.x, g.y, g.w, g.h, GRAY_LT, clip);
+                    bevel(g, true, backend, clip);
+                }
+                // The glyph-less `W_SIZER` (`ob_spec &= 0x00ffffff`) is still
+                // an `FL3DACT` `G_BOXCHAR`: grown slot, border, interior, bevel.
+                Some(i) => {
+                    let slot = grow_3d(g);
+                    draw_box_ink(slot, i, backend, clip);
+                    bevel(inside_1(slot), true, backend, clip);
+                }
+            }
         }
     }
+}
+
+/// EmuTOS's `W_VBAR` object rectangle, for the literal draw only — the
+/// rectangle `w_bldactive` hands `w_bldvbar` (`aes/gemwmlib.c:585-610`): the
+/// work area is one pixel inside the data area, narrowed by `adj_wbox - 1`
+/// when there is a vertical bar or a `SIZER` and shortened by `adj_hbox - 1`
+/// when there is a horizontal bar or a `SIZER`; the bar column then starts at
+/// `work_x + work_w`, `adj_wbox` wide, `work_h + 2` tall — so it **shares its
+/// bottom row with the horizontal band's top row**. [`vbar_rect`] (the
+/// hit-test / fill rect) stops one row short of that; the hit tests keep it.
+fn vbar_box(b: Grect, kind: u16) -> Grect {
+    let (_, havehbar) = bars(kind);
+    let sizer = kind & SIZER != 0;
+    let top = band_top(b, kind);
+    let data_h = b.y + b.h - top;
+    let work_h = data_h - 2 - if havehbar || sizer { adj_hbox() - 1 } else { 0 };
+    Grect { x: b.x + b.w - adj_wbox(), y: top, w: adj_wbox(), h: work_h + 2 }
+}
+
+/// EmuTOS's `W_HBAR` object rectangle, for the literal draw only — what
+/// `w_bldactive` hands `w_bldhbar` (`aes/gemwmlib.c:585-616`): `x = 0` in the
+/// data area (on the window's left border column), `adj_hbox` tall against
+/// the bottom edge, `work_w + 2` wide — so it **shares its right column with
+/// the vertical bar's left column**. [`hbar_rect`] (the hit-test rect) sits
+/// one column inside on both sides; the hit tests keep it.
+fn hbar_box(b: Grect, kind: u16) -> Grect {
+    let (havevbar, _) = bars(kind);
+    let sizer = kind & SIZER != 0;
+    let work_w = b.w - 2 - if havevbar || sizer { adj_wbox() - 1 } else { 0 };
+    Grect { x: b.x, y: b.y + b.h - adj_hbox(), w: work_w + 2, h: adj_hbox() }
 }
 
 /// Elevator (thumb) geometry within a scroll track `track_len` px long:
@@ -2601,34 +2925,59 @@ fn elev_rect(bar: Grect, track: (i16, i16), off: i16, len: i16, vert: bool) -> G
 /// thumb positioned + sized from `w.vslide` / `w.vslsize` (both per-mille).
 /// Shared by `draw_frame` and `wind_set(WF_VSLIDE/WF_VSLSIZ)`; drawing only
 /// the slider column leaves the work area (content) untouched.
-fn draw_vslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
+fn draw_vslider(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
     let kind = w.kind;
     let Some(bar) = vbar_rect(w.curr, kind) else {
         return;
     };
     let ah = adj_hbox();
+    let ink = |g: usize| gadget_ink(w, g, istop);
     // Arrows: a `gl_wbox` × `gl_hbox` cell inset `ADJ3DSTD` into the bar, each
     // consuming a full `adj_hbox` of it. The down arrow's extra −1 is EmuTOS'
     // (`y+h+ADJ3DSTD-1`, gemwmlib.c:424).
     if kind & UPARROW != 0 {
         let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() };
-        gadget(g, G_UP, backend, clip);
+        gadget(g, G_UP, ink(W_UPARROW_IDX), backend, clip);
     }
     if kind & DNARROW != 0 {
         let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + bar.h - ah + 1, w: GL_WBOX, h: gl_hbox() };
-        gadget(g, G_DN, backend, clip);
+        gadget(g, G_DN, ink(W_DNARROW_IDX), backend, clip);
     }
     if let Some((track_y, track_h)) = vtrack(w) {
         let track = Grect { x: bar.x, y: track_y, w: bar.w, h: track_h };
-        backend.fill_rect(track.x, track.y, track.w, track.h, GRAY_LT, clip);
-        rect_outline(track, backend, clip);
+        // `W_VSLIDE` is a `G_BOX` whose default word `0x1111` is `IP_1PATT` in
+        // BLACK under a black border; the Tos4Gray default keeps its grey.
+        match ink(W_VSLIDE_IDX) {
+            None => {
+                backend.fill_rect(track.x, track.y, track.w, track.h, GRAY_LT, clip);
+                rect_outline(track, BLACK, backend, clip);
+            }
+            Some(i) => draw_box_ink(track, i, backend, clip),
+        }
         // Thumb geometry shared with `gadget_at`/`drag_elevator` (see
         // [`thumb_geom`]): a stored −1 size renders as one gadget cell, never a
         // zero/negative-height elevator; the stored/returned value stays −1.
         let (off, thumb_h) = thumb_geom(track_h, w.vslsize, w.vslide);
         let e = elev_rect(bar, (track_y, track_h), off, thumb_h, true);
-        backend.fill_rect(e.x, e.y, e.w, e.h, GRAY_LT, clip);
-        bevel(e, true, backend, clip);
+        draw_elevator(e, ink(W_VELEV_IDX), backend, clip);
+    }
+}
+
+/// The scroll-bar elevator (`W_VELEV`/`W_HELEV`, `G_BOX` `0x1101`, `FL3DACT`):
+/// `ink == None` is the Tos4Gray grey face + bevel; `Some` is `just_draw` on
+/// the 3D-grown rect — border + interior from the word, bevel inside the
+/// border — the same arm as a glyph cell without the glyph.
+fn draw_elevator(e: Grect, ink: Option<Ink>, backend: &dyn RasterBackend, clip: ClipRect) {
+    match ink {
+        None => {
+            backend.fill_rect(e.x, e.y, e.w, e.h, GRAY_LT, clip);
+            bevel(e, true, backend, clip);
+        }
+        Some(i) => {
+            let slot = grow_3d(e);
+            draw_box_ink(slot, i, backend, clip);
+            bevel(inside_1(slot), true, backend, clip);
+        }
     }
 }
 
@@ -2646,8 +2995,9 @@ fn redraw_vslider(handle: i16) {
             // (EmuTOS `w_update` moff/mon) so a cursor over the scroll bar
             // leaves no dropping. See the note in [`compose`].
             crate::vdi::cursor_hide(backend);
+            let istop = handle == get_top();
             for r in pieces.iter().take(n) {
-                draw_vslider(w, backend, rect_clip(r.x, r.y, r.w, r.h));
+                draw_vslider(w, istop, backend, rect_clip(r.x, r.y, r.w, r.h));
             }
             crate::vdi::cursor_show(backend);
         }
@@ -2679,33 +3029,38 @@ fn htrack(w: &Window) -> Option<(i16, i16)> {
     (len > 0).then_some((left, len))
 }
 
-fn draw_hslider(w: &Window, backend: &dyn RasterBackend, clip: ClipRect) {
+fn draw_hslider(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
     let kind = w.kind;
     let Some(bar) = hbar_rect(w.curr, kind) else {
         return;
     };
     let aw = adj_wbox();
+    let ink = |g: usize| gadget_ink(w, g, istop);
     // Arrows: mirror of [`draw_vslider`] — a `gl_wbox` × `gl_hbox` cell inset
     // `ADJ3DSTD` into the band, each consuming a full `adj_wbox`
     // (gemwmlib.c:448-462).
     if kind & LFARROW != 0 {
         let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() };
-        gadget(g, G_LF, backend, clip);
+        gadget(g, G_LF, ink(W_LFARROW_IDX), backend, clip);
     }
     if kind & RTARROW != 0 {
         let g = Grect { x: bar.x + bar.w - aw + 1, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() };
-        gadget(g, G_RT, backend, clip);
+        gadget(g, G_RT, ink(W_RTARROW_IDX), backend, clip);
     }
     if let Some((track_x, track_w)) = htrack(w) {
         let track = Grect { x: track_x, y: bar.y, w: track_w, h: bar.h };
-        backend.fill_rect(track.x, track.y, track.w, track.h, GRAY_LT, clip);
-        rect_outline(track, backend, clip);
+        match ink(W_HSLIDE_IDX) {
+            None => {
+                backend.fill_rect(track.x, track.y, track.w, track.h, GRAY_LT, clip);
+                rect_outline(track, BLACK, backend, clip);
+            }
+            Some(i) => draw_box_ink(track, i, backend, clip),
+        }
         // Thumb geometry shared with `gadget_at`/`drag_elevator` (see
         // [`thumb_geom`]): a stored −1 size renders as one gadget cell.
         let (off, thumb_w) = thumb_geom(track_w, w.hslsize, w.hslide);
         let e = elev_rect(bar, (track_x, track_w), off, thumb_w, false);
-        backend.fill_rect(e.x, e.y, e.w, e.h, GRAY_LT, clip);
-        bevel(e, true, backend, clip);
+        draw_elevator(e, ink(W_HELEV_IDX), backend, clip);
     }
 }
 
@@ -2721,8 +3076,9 @@ fn redraw_hslider(handle: i16) {
             // Counting cursor bracket around the slider repaint — see
             // [`redraw_vslider`] / [`compose`].
             crate::vdi::cursor_hide(backend);
+            let istop = handle == get_top();
             for r in pieces.iter().take(n) {
-                draw_hslider(w, backend, rect_clip(r.x, r.y, r.w, r.h));
+                draw_hslider(w, istop, backend, rect_clip(r.x, r.y, r.w, r.h));
             }
             crate::vdi::cursor_show(backend);
         }
@@ -3323,7 +3679,9 @@ pub fn wind_set(pb: &Aespb) {
     // WF_DCOLOR (19) writes the *global* default gadget colour words and needs
     // no valid handle (EmuTOS wm_set, gemwmlib.c:1632-1636,1727-1734): gadget =
     // int_in[2], tcolor = int_in[3], bcolor = int_in[4] (−1 = leave unchanged).
-    // No window redraw (EmuTOS sets `gadget = -1` → no w_cpwalk).
+    // No window redraw (EmuTOS sets `gadget = -1` → no w_cpwalk): the new
+    // defaults reach only the windows `wind_create` sets up afterwards
+    // (`w_setup`, `:220-227`), whose [`draw_frame`] then paints from them.
     if field == WF_DCOLOR {
         let g = gadget_index(pb.intin(2));
         let (tc, bc) = (pb.intin(3), pb.intin(4));
@@ -3445,11 +3803,11 @@ pub fn wind_set(pb: &Aespb) {
         }
         // WF_COLOR (18): store the per-window colour words for gadget int_in[2]
         // — tcolor = int_in[3], bcolor = int_in[4] (−1 = leave unchanged) —
-        // EmuTOS wm_set gemwmlib.c:1719-1726. EmuTOS then redraws the gadget with
-        // the new colours (`do_cpwalk`); our procedural [`draw_frame`] renders the
-        // fixed TOS4 3D look and does not consume these per-gadget words, so the
-        // frame re-emit (like a WF_NAME change) is byte-identical — the words are
-        // pure round-trip state observed via WF_COLOR get.
+        // EmuTOS wm_set gemwmlib.c:1719-1726, then redraw the window's frame
+        // with them (`do_cpwalk` → `w_cpwalk(w_handle, gadget, MAX_DEPTH,
+        // TRUE)`, `:1754-1755`, clipped to the window's own rectangle list):
+        // [`draw_frame`] cracks the stored word of every gadget it paints
+        // ([`gadget_ink`]), so the re-emit shows the new colours (A79).
         WF_COLOR => {
             let g = gadget_index(pb.intin(2));
             let (tc, bc) = (pb.intin(3), pb.intin(4));
@@ -3902,16 +4260,16 @@ fn gad_rect(w: &Window, g: Gadget) -> Grect {
 /// Track the button over a closer/fuller gadget: invert it while the mouse
 /// is inside, restore on leave; return whether it was released inside
 /// (EmuTOS `gr_watchbox`).
-fn watchbox(r: Grect, ch: u16, backend: &dyn RasterBackend) -> bool {
+fn watchbox(r: Grect, ch: u16, ink: Option<Ink>, backend: &dyn RasterBackend) -> bool {
     let Some(h) = host() else { return false };
     let clip = ClipRect::full(backend.width(), backend.height());
     let mut was_in = true;
-    gadget_sel(r, ch, true, backend, clip);
+    gadget_sel(r, ch, true, ink, backend, clip);
     loop {
         let (mx, my) = crate::vdi::mouse_position();
         let now_in = inside(r, mx, my);
         if now_in != was_in {
-            gadget_sel(r, ch, now_in, backend, clip);
+            gadget_sel(r, ch, now_in, ink, backend, clip);
             was_in = now_in;
         }
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
@@ -3919,7 +4277,7 @@ fn watchbox(r: Grect, ch: u16, backend: &dyn RasterBackend) -> bool {
         }
         h.pump_input();
     }
-    gadget_sel(r, ch, false, backend, clip); // restore normal
+    gadget_sel(r, ch, false, ink, backend, clip); // restore normal
     was_in
 }
 
@@ -4211,10 +4569,13 @@ fn drag_elevator(w: &mut Window, vert: bool, backend: &dyn RasterBackend) -> i16
             w.hslide = pos;
         }
         crate::vdi::cursor_hide(backend);
+        // Only the top window's gadgets are ever dragged (`hctl_window`
+        // returns before the gadget switch for any other, `gemctrl.c:170-178`),
+        // so its topped colour words apply.
         if vert {
-            draw_vslider(w, backend, clip);
+            draw_vslider(w, true, backend, clip);
         } else {
-            draw_hslider(w, backend, clip);
+            draw_hslider(w, true, backend, clip);
         }
         crate::vdi::cursor_show(backend);
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
@@ -4412,14 +4773,16 @@ pub fn intercept() {
                 super::input::ct_msgup_hotclose();
                 return;
             }
-            if !watchbox(gad_rect(w, Gadget::Closer), G_CLOSE, backend) {
+            // The clicked window is the top one (checked above), so the
+            // gadget's topped colour word applies.
+            if !watchbox(gad_rect(w, Gadget::Closer), G_CLOSE, gadget_ink(w, W_CLOSER_IDX, true), backend) {
                 return;
             }
             msg[0] = WM_CLOSED;
             put_rect(&mut msg, ws_curr);
         }
         Gadget::Fuller => {
-            if !watchbox(gad_rect(w, Gadget::Fuller), G_FULL, backend) {
+            if !watchbox(gad_rect(w, Gadget::Fuller), G_FULL, gadget_ink(w, W_FULLER_IDX, true), backend) {
                 return;
             }
             msg[0] = WM_FULLED;
