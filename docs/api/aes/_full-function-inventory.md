@@ -257,16 +257,19 @@ eigenen, letzten Abschnitt oder gar nicht hinein.
 | 47 | `objc_change` | `redraw`-Flag 0/1 |
 | 11/12 | `appl_read`/`write` | `MU_MESAG`/`MU_SDMSG` (`gemsuper.c:103`) |
 | 14/15 | `appl_tplay`/`trecord` | Puffer und Zählwerte |
-| 112 | `rsrc_gaddr` | **`R_*`-Typen 0–14** — siehe unten |
+| 112 | `rsrc_gaddr` | **`R_*`-Typen 0–16** — siehe unten |
 | 113 | `rsrc_saddr` | dieselben Typen |
 | 122/123 | `shel_get`/`put` | Längen, Sonderfall Länge 0 |
 
 ### 2.11 `rsrc_gaddr` (112) / `rsrc_saddr` (113) — die `R_*`-Typen
 
-Die größte einzelne Unterfunktionsgruppe. NewTOS deckt laut `docs/STATUS.md`
-`R_TREE`/`R_OBJECT`/`R_STRING`/`R_IMAGEDATA`/`R_FRSTR`/`R_FRIMG` ab;
-`R_TEDINFO`…`R_BIPDATA`/`R_OBSPEC` (2–4, 7–14) sind **ehrlich unsupported**.
-`rsrc_saddr` ist ein No-op-Stub (Rule-2-Ausnahme, gesondert geführt).
+Die größte einzelne Unterfunktionsgruppe. **Korrektur (A53, 2026-09-20):**
+dieser Absatz gab noch den Task-#108-Stand wieder (6 Typen, `rsrc_saddr`
+No-op) und widersprach damit bereits der Tabelle weiter unten in diesem
+Dokument (§ „Der offene Widerspruch aus dem Auftrag ist entschieden"). NewTOS
+deckt **alle 17** `R_*`-Typen ab (`get_addr`, `tos-api/src/aes/resource.rs:2589-2650`,
+mit Zweigen für jeden Selektor `aesdefs.h:578-594`); `rsrc_saddr` ist
+implementiert (`:2693-2719`), kein Stub.
 
 **Jeder dieser Typen ist ein eigener Messfall** — und hier ist zu erwarten, dass
 sich EmuTOS und NewTOS unterscheiden. Genau dafür ist die Tabelle da.
@@ -440,7 +443,7 @@ Handle** (`:1516-1524`); alle anderen liefern vorher `FALSE`.
 | 14 | `WF_NEWDESK` | nein (`default`, `:1591-1592`) | nein | nein (Zeiger) | |
 | 15 | `WF_HSLSIZ` | ja | ja | ja | |
 | 16 | `WF_VSLSIZ` | ja | ja | ja | |
-| 17 | `WF_SCREEN` | ja (ohne Handle) | ja, aber 0/0 | ja | **Abweichung A-6** (kein persistenter Puffer) |
+| 17 | `WF_SCREEN` | ja (ohne Handle) | nein (`ret=0`, A54) | ja | **Abweichung A-6**, sanktioniert (kein persistenter Puffer, `docs/COMPATIBILITY.md`) |
 | 18 | `WF_COLOR` | ja | ja | nein (Index ungeprüft) | Gadget in `pinwds[0]`, Ausgabe `poutwds[1..2]` |
 | 19 | `WF_DCOLOR` | ja (ohne Handle) | ja | nein (dito) | |
 | 20 | `WF_OWNER` | ja (`AES_VERSION>=0x330`) | ja | ja | **V: fehlt in 1.4** |
@@ -680,9 +683,11 @@ Kein `default`; jeder unbekannte `doex` ist ein No-op mit `TRUE`.
 > veraltet.** Zeile 244 behauptet, `rsrc_gaddr` decke nur
 > `R_TREE`/`R_OBJECT`/`R_STRING`/`R_IMAGEDATA`/`R_FRSTR`/`R_FRIMG` ab und
 > `rsrc_saddr` sei ein No-op-Stub. Belegt in
-> `tos-api/src/aes/resource.rs:1345-1420` (`get_addr` mit Zweigen für alle 17)
-> und `:1451-1475` (`rsrc_saddr` schreibt den Slot über
-> `slot.access` in `ptr_size`-Breite). **STATUS.md gehört korrigiert.**
+> `tos-api/src/aes/resource.rs:2589-2650` (`get_addr` mit Zweigen für alle 17)
+> und `:2693-2719` (`rsrc_saddr` schreibt den Slot über
+> `slot.access` in `ptr_size`-Breite). **Korrigiert (A53, 2026-09-20) — siehe
+> `docs/STATUS.md` Zeile 244.** (Zeilenangaben hier stammen vom 2026-09-12 und
+> waren seither verschoben; oben auf den heutigen Stand nachgezogen.)
 
 Zwei echte Unterschiede in diesem Block, beide **Abweichung A-4**:
 
@@ -834,7 +839,16 @@ Richtungen; `objc_add/delete/order/change/find/offset`; `objc_edit` alle vier
 `scrp_read`/`scrp_write`; `shel_read/get/put/find/envrn/rdef/wdef`;
 `shel_write(2|3|4)`; `appl_init/find/yield/read/write`; `evnt_dclick`;
 `evnt_multi` **nur** mit `MU_TIMER` und `tmcount == 0`; `fsel_*` mit
-`pipath == NULL`; alle freien Opcodes; Opcode 0.
+`pipath == NULL`; Opcode 0.
+
+> **Korrektur (A53, 2026-09-20).** Diese Zeile führte bis hierher auch
+> „alle freien Opcodes" — im Widerspruch zu **Teil I** oben und zu
+> Abschnitt B unten, die beide sagen, dass jede freie Opcode-Nummer **≠ 0**
+> den blockierenden `ALNOFUNC`-Alarm auslöst (`aes/gemsuper.c:411-417`) und
+> damit **nicht** headless/frei messbar ist. Nur **Opcode 0** ist frei
+> messbar (`-1` ohne Alarm); Abschnitt B nennt den Alarm-Fall bereits
+> korrekt. Die fehlerhafte Nennung ist aus der Aufzählung oben entfernt
+> (`TASK/A53.md` „r4-Tabellenbau-Nachtrag").
 
 **Abschnitt B — blockiert auf Eingabe, eigener Abschnitt oder eigene Tabelle.**
 `evnt_keybd` 20, `evnt_button` 21, `evnt_mouse` 22, `evnt_mesag` 23,
@@ -874,8 +888,8 @@ Audit wieder entfernt).
 | A-8 | `objc_order` mit Alleinkind, `new_pos = 0` | `ob_tail = NIL`, `ob_next = NIL` (kaputter Baum, aber das ist das Soll) | `ob_tail = mov_obj`, `ob_next = parent` (repariert) | `aes/gemoblib.c:1209-1246` vs. `tos-api/src/aes/object.rs::ob_order` | **Abweichung**, gemessen |
 | A-7 | `wind_create` `kind`-Bit `HOTCLOSE` (0x1000) | Control Manager schickt `WM_CLOSED` sofort beim Druck (`aes/gemctrl.c:90,210`), `CONF_WITH_PCGEM = 1` | Bit existiert nicht | kein Treffer für `HOTCLOSE` in `tos-api/src/` | **Lücke**, nur auf echter HW prüfbar |
 | A-5 | `shel_write(SHW_RESCHNG)` (5) | `gl_changerez = 1 + isover`, `gl_nextrez = isgem` → AES startet in der neuen Auflösung neu | leert nur `s_cmd`/`s_tail`, kein Auflösungswechsel | `aes/gemshlib.c:187-191` vs. `tos-api/src/aes/shell.rs::shel_write` | **Lücke**, gelesen |
-| A-4 | `rsrc_gaddr`/`rsrc_saddr` Randfälle | keine Indexprüfung; `TRUE`, sofern Adresse ≠ `-1` (also auch für einen **Null**-Slot) | Indexprüfung; `TRUE`, sofern Adresse ≠ `0` | `aes/gemrslib.c:112-176,717-742` vs. `tos-api/src/aes/resource.rs:1345-1475` | **Abweichung** (EmuTOS teils ohne Soll), gelesen |
-| A-6 | `wind_get(WF_SCREEN)` (17) | Adresse + Länge des persistenten Menü-/Alarm-Sicherungspuffers (`gsx_mret`) | vier Nullwörter, `1` | `aes/gemwmlib.c:1563-1565` vs. `window.rs` (dokumentiert als AUD-P5-012) | **bewusste Abweichung**, gelesen |
+| A-4 | `rsrc_gaddr`/`rsrc_saddr` Randfälle | keine Indexprüfung; `TRUE`, sofern Adresse ≠ `-1` (also auch für einen **Null**-Slot) | Indexprüfung; `TRUE`, sofern Adresse ≠ `0` | `aes/gemrslib.c:112-176,717-742` vs. `tos-api/src/aes/resource.rs:2589-2719` | **Abweichung** (EmuTOS teils ohne Soll), gelesen |
+| A-6 | `wind_get(WF_SCREEN)` (17) | Adresse + Länge des persistenten Menü-/Alarm-Sicherungspuffers (`gsx_mret`) | `ret=0`, nichts geschrieben (vor A54: vier Nullwörter **und** `1`) | `aes/gemwmlib.c:1563-1565` vs. `window.rs` (Fix + Begründung: `docs/COMPATIBILITY.md` "wind_get(WF_SCREEN)") | **kein Architekturentscheid, sondern gemessener Defekt** — die r4-Messung (Fälle 331/332/439) widerlegt die frühere Einstufung als "bewusste Abweichung"; behoben und als sanktionierte Abweichung dokumentiert, siehe `TASK/A54.md` |
 | A-11 | freier Opcode ≠ 0 | `fm_show(ALNOFUNC, &opcode, 1)` — sichtbarer Alarm, dann `-1` | nur `-1`, kein Alarm | `aes/gemsuper.c:411-417` vs. `tos-api/src/aes/mod.rs::crysbind` `_`-Arm (dokumentiert als D-084) | **bewusste Abweichung**, gemessen (`-1` stimmt) |
 | A-12 | `appl_read` (11) bei leerer Schlange | blockiert (`ap_rdwr` → `ev_block(MU_MESAG)`) | `0` | `aes/gemaplib.c:96-106` vs. `tos-api/src/aes/appl.rs::appl_read` | **Abweichung**, gelesen |
 | A-13 | `appl_write` (12) bei voller Schlange | blockiert den Absender | `0` | bereits als AUD-P1-006 geführt | **Abweichung**, gelesen |

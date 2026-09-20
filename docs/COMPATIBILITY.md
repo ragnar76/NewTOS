@@ -139,6 +139,21 @@ useless (EL0 cannot execute it) and a kernel-address leak. Covered by
 does NewTOS now — `vq_gdos()` reports *no* GDOS and `vq_vgdos()` returns `-2`,
 as on Atari TOS.
 
+**Latent width mismatch, no repair yet (A53, V16 follow-up):** EmuTOS compares
+the selector as a **16-bit word** (`cmp.w #0x73,d0` / `cmp.w #0xffff,d0`,
+`references/emutos/vdi/vdi_asm.S:33-52` — only the low-order WORD of `d0`
+matters). NewTOS's arm (`kernel/src/arch/aarch64/exceptions.rs`, the
+`TrapClass::Gem` `match args.regs[0]`) compares the **full 64-bit** `x0`.
+Harmless today: no caller in the tree sets bits above the low word
+(`grep -rn 'svc[[:space:]]*#2'` over `kernel tos-api sdk tosdump tools` turns
+up none). It becomes relevant the day a real m68k binary is run through a
+thunk that has to map its 32-bit `d0` into `x0` — if that mapping ever leaves
+stale bits above bit 31 (e.g. a zero/sign-extension bug, or `x0` reused
+across calls without being fully cleared), a selector NewTOS should recognise
+(`115`, `200`, `-1`, `-2`) would instead fall through to the "leave `x0`
+unchanged" arm here. No ticket — nothing to fix before the m68k thunk exists —
+tracked as a comment at this entry per `TASK/A53.md` (V16 Nachtrag).
+
 
 **`wind_get(WF_SCREEN)` answers FALSE — NewTOS has no menu/alert buffer** —
 sanctioned 2026-09-12 with the A54 repair, and listed here because the absence

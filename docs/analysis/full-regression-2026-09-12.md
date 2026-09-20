@@ -34,6 +34,15 @@ es im 31.-August-Vorstand nicht. Das ist keiner der sechs benannten Fixes —
 vermutlich Nebenwirkung einer der vielen anderen uncommitteten Änderungen im
 Baum; Ursachen-Zuordnung ist Auditor-Arbeit, nicht Teil dieses Berichts.
 
+> **Erratum (A53, 2026-09-20).** Die Vermutung "uncommittete Änderung" ist
+> falsch. Ursache sind drei **committete** Fixes im `git log` des VDI-Pfades
+> zwischen Vorstand und Messung: `675e311` ("return d0 from the dispatcher,
+> and two adjudicated defects" — behebt genau den `d0`/`flip_y`-Stub),
+> `f76a666` ("MAX_VERTICES is 1024, and the last ten red cases adjudicated")
+> und `1eb4e68` ("set the VDI string device to SAMPLE on every dispatch").
+> Belegt in `docs/analysis/vdi-r2-improvement-traced-2026-09-12.md` §2, die
+> den Zusammenhang schon zum Zeitpunkt dieser Messung nachgetragen hat.
+
 ## Tabelle über alle neun Falltabellen
 
 | Tabelle | Läuft durch | Profil heute | Abw. ggü. EmuTOS heute | Regressions-Basis | Abw. ggü. Vorstand | Neu aufgebrochen |

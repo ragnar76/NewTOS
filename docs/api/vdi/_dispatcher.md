@@ -71,11 +71,15 @@ pointers and every `CONTRL[]`/`INTIN[]`/… index meaning below are the
 **contract** and are bit-identical across both worlds — a ported VDI
 binding marshals the same `VDIPB`.
 
-> Open question (charter): confirm selector 115 vs. the 200 mentioned in
-> `COMPATIBILITY.md` ("GEM `svc #2` sel 200") — the two docs disagree on
-> the native GEM-trap selector number. This is a NewTOS-side ABI number,
-> not an EmuTOS fact; resolve before Phase-12 wiring. Recorded in
-> [`_discrepancies.md`](_discrepancies.md) D-VDI-6.
+> **Answered (A53, 2026-09-20).** This used to log an open question
+> ("selector 115 vs. the 200 mentioned in `COMPATIBILITY.md`, the two docs
+> disagree"). They do not disagree: **both** numbers are live, for two
+> different calls sharing one trap — `COMPATIBILITY.md`'s "Trap entry" row
+> reads "GEM `svc #2` with `x0` selector **115 = VDI**, **200 = AES**",
+> and the kernel dispatcher matches that exactly
+> (`kernel/src/arch/aarch64/exceptions.rs`, `TrapClass::Gem` arm:
+> `115 => vdi::dispatch(...)`, `200 =>` the AES call). Recorded in
+> [`_discrepancies.md`](_discrepancies.md) D-VDI-6 (now closed).
 
 ---
 

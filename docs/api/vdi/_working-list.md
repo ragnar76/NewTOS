@@ -142,8 +142,16 @@ accepted value; none can fail.
 >   (`vdi_asm.S:124-125`) — previously undocumented in the attribute
 >   specs even though `_dispatcher.md` already treats `d0 = flip_y` as
 >   part of the native-trap contract. Documented in `_line-marker.md`
->   and `_text.md`; open question logged for whether NewTOS's
->   selector-based ABI needs an equivalent signal at all.
+>   and `_text.md`.
+>
+>   **Answered (A53, 2026-09-20; fixed 2026-09-12 by V16/`675e311`):** this
+>   entry used to log an open question ("whether NewTOS's selector-based ABI
+>   needs an equivalent signal at all"). It does, and NewTOS's GEM trap now
+>   produces it: `kernel/src/arch/aarch64/exceptions.rs`, selector 115
+>   returns `i64::from(vdi::dispatch(...))`, i.e. `flip_y` in `x0`
+>   (previously a hard-wired `0`, the V16 stub found and fixed by the
+>   same commit). Verified against the pinned source in
+>   `docs/analysis/vdi-r2-improvement-traced-2026-09-12.md` §3.
 > - **D-081** (global): `vsf_interior` never resets/re-validates
 >   `fill_index` when `fill_style` changes; `st_fl_ptr()` re-interprets
 >   the stale value under the new style with no bounds check. A

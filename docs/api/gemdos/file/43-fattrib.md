@@ -302,7 +302,7 @@ dosdir.c:946-1002`), EmuTOS `xchmod` + TOS4 note (`bdos/fsdir.c:382-436`,
 `391-400`). Selftest: `kernel/src/selftest_emmc.rs` `fmeta_test` (dir-GET
 assertions a-d) — note that this module is **not wired into any boot path**, so
 those assertions do not run in a normal boot and, as written, print `true`/
-`false` instead of failing (recorded in `TASK/A53.md`).
+`false` instead of failing (recorded in `TASK/T06.md`).
 
 2026-09-12 (Q07 — the trailing-separator spelling): the 2026-07-21 entry above
 claimed that `"C:\\CLIPBRD"` and `"C:\\CLIPBRD\\"` "resolve to the same

@@ -16,8 +16,15 @@
  *     exactly the LP64 `VDIPB` struct layout. The dispatcher selects the
  *     function from contrl[0]; the caller has already filled contrl[] (see
  *     the VDI_TRAP_ESC C path in gem_vdiP.h).
- *   - The GEM trap returns nothing in a register (handler leaves x0 = 0); all
- *     VDI results come back through the parameter-block arrays.
+ *   - The GEM trap returns `flip_y` (0/1) in `x0` (EmuTOS `vdi_asm.S:124-125`,
+ *     zero-extended from `d0`; NewTOS kernel dispatcher,
+ *     `kernel/src/arch/aarch64/exceptions.rs`, `115 =>
+ *     i64::from(vdi::dispatch(...))`, corrected 2026-09-12 by the V16 fix,
+ *     commit 675e311 — this comment used to say "handler leaves x0 = 0",
+ *     which was true only before that fix). All other VDI results come back
+ *     through the parameter-block arrays; this binding still discards `x0`
+ *     (`(void)x0` below) because no current caller reads `flip_y` from the
+ *     native trap.
  *
  * The kernel SVC entry saves/restores x1..x29 and only overwrites x0, so this
  * helper clobbers nothing but x0 and memory. The C signature/name is unchanged
@@ -33,7 +40,7 @@ void vdi(VDIPB *pb)
 
 	__asm__ __volatile__ (
 		"svc	#2"
-		: "+r"(x0)		/* selector in, result (0) out */
+		: "+r"(x0)		/* selector in, flip_y (0/1) out */
 		: "r"(x1)		/* parameter block */
 		: "memory", "cc"
 	);
