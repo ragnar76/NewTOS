@@ -1,0 +1,5 @@
+$FF8266.w : Falcon shift mode                : 0100
+
+$FF8280.w : HHC - Horizontal Hold Counter    : 0000
+$FF8282.w : HHT - Horizontal Hold Timer      : 018e
+be9b3c169431b4cdf0184b055cf81bb1f3469cb0731c64b99bcb7fbce7b28e13  references/emutos/etos512us.img
