@@ -1,4 +1,5 @@
-//! A79 — **`wind_set(WF_COLOR)` / `WF_DCOLOR` colour words reach the pixels.**
+//! A79 — **`wind_set(WF_COLOR)` / `WF_DCOLOR` colour words reach the pixels,
+//! and the frame is the literal rendering of those words.**
 //!
 //! EmuTOS stores the words (`wm_set`, `aes/gemwmlib.c:1719-1734`), rebuilds
 //! the window element tree with `w_bldactive` — `w_setcolor` writes each
@@ -7,7 +8,15 @@
 //! `aes/gemoblib.c:610-733`; `gr_crack`, `aes/gemgraf.c:612-628`; `gr_rect`,
 //! `:547-559`). Before this ticket NewTOS's `draw_frame` never read
 //! `w.tcolor`/`w.bcolor` (`docs/api/aes/window-graphics.md`, "`WF_COLOR`/
-//! `WF_DCOLOR` → pixel mapping (design, A79)").
+//! `WF_DCOLOR` → pixel mapping (design, A79)"). Since the user's decision of
+//! 2026-09-20 there is one look only: every gadget is painted from its word,
+//! so the compiled defaults render the picture EmuTOS itself draws — measured
+//! on a Hatari Falcon with the pinned EmuTOS build,
+//! `measurement-2026-09-20-a79/hatari-falcon-reference/` (README + `shots/`).
+//! Where a case below hard-codes a colour, the expected pixel was read off
+//! `shots/falcon-tc-window-c.png` (the `C:\` window at `(16,96,304,192)`, so
+//! frame-relative `(dx,dy)` is screen `(16+dx, 96+dy)` there) or
+//! `shots/falcon-tc-two-windows.png` for the untopped window.
 //!
 //! Cases (spec § (4) worked examples + the lead's test list):
 //!
@@ -21,14 +30,18 @@
 //! * **`WF_DCOLOR`** — changes only what `wind_create` copies into windows
 //!   created *afterwards* (`w_setup`, `gemwmlib.c:220-227`); an existing
 //!   window keeps its words and pixels even when its frame is re-emitted.
-//! * **Default-look guard** — with the `Tos4Gray` look (today's default) the
-//!   frame of a default window — topped and untopped — is pixel-identical to
-//!   the frame before this change (a whole-screen FNV-1a hash measured on
-//!   HEAD `21c9a3c`, see [`HEAD_FRAME_HASH`]).
-//! * **`Literal` look** — the default words rendered as `just_draw` renders
-//!   them: hollow (white) faces, 1px black borders, the `IP_2PATT` stipple on
-//!   the topped name, `IP_1PATT` on the slider tracks; expectations written
-//!   from the spec's per-gadget table, not from the output.
+//! * **Default topped window** — the compiled words rendered as `just_draw`
+//!   renders them: hollow (white) faces, 1px black borders, the `IP_2PATT`
+//!   stipple on the topped name, `IP_1PATT` on the slider tracks, the bevel
+//!   on every `FL3DACT` gadget; expectations written from the spec's
+//!   per-gadget table and checked against the reference PNG, not copied from
+//!   the output.
+//! * **Default untopped window** — the untopped words: name band hollow
+//!   white with a black border and black transparent text, no stipple; closer
+//!   with border, bevel and white face; info band white.
+//! * **Frame hash guard** — a whole-screen FNV-1a hash of two default windows
+//!   (one untopped, one topped), pinned so an unintended change to any frame
+//!   pixel fails loudly (see [`FRAME_HASH`] for how it was measured).
 //!
 //! Harness (raster stand-in + host + parameter block) copied from
 //! `aes_window_move_blit.rs`, with one change: `draw_glyph_sized` honours
@@ -41,7 +54,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use tos_api::aes::window::{set_frame_look, FrameLook};
 use tos_api::bdos::process::Abi;
 use tos_api::host::Host;
 use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
@@ -395,6 +407,7 @@ const KIND_ALL: i16 = KIND_0FEF | INFO;
 
 const WF_NAME: i16 = 2;
 const WF_INFO: i16 = 3;
+const WF_TOP: i16 = 10;
 const WF_NEWDESK: i16 = 14;
 const WF_COLOR: i16 = 18;
 const WF_DCOLOR: i16 = 19;
@@ -494,10 +507,9 @@ fn desk_tree() -> &'static [Obj] {
 
 /// Fresh AES window state (`wind_new`, EmuTOS `wm_new`, `aes/gemwmlib.c:
 /// 1875-1893`), a cleared framebuffer, the registered desktop background
-/// tree, and the compiled default colour words restored for both looks.
-fn fresh(look: FrameLook) -> (&'static QuietHost, Aespb) {
+/// tree, and the compiled default colour words restored.
+fn fresh() -> (&'static QuietHost, Aespb) {
     let host = rig();
-    set_frame_look(look);
     let mut pb = Aespb::new();
     pb.call(10, 0, 1, 0); // appl_init
     pb.intin.fill(0);
@@ -558,6 +570,15 @@ fn set_string(pb: &mut Aespb, handle: i16, field: i16, s: &'static [u8]) {
     pb.call(105, 6, 1, 1);
     pb.addrin[0] = 0;
     assert_eq!(pb.intout[0], 1, "wind_set({handle}, {field}, string)");
+}
+
+/// `wind_set(h, WF_TOP)`.
+fn set_top(pb: &mut Aespb, handle: i16) {
+    pb.intin.fill(0);
+    pb.intin[0] = handle;
+    pb.intin[1] = WF_TOP;
+    pb.call(105, 6, 1, 0);
+    assert_eq!(pb.intout[0], 1, "wind_set({handle}, WF_TOP)");
 }
 
 /// `wind_set(h, WF_COLOR, gadget, tcol, bcol)`.
@@ -695,11 +716,11 @@ const B7: R = R { x: 30, y: 40, w: 320, h: 240 };
 // ── T7: WF_COLOR on W_NAME ────────────────────────────────────────────────
 
 /// `wind_set(h, WF_COLOR, W_NAME, 0x1172, 0x1172)` on the open, topped survey
-/// window — checked in **both** looks, since a changed word is rendered
-/// literally under either.
-fn t7_name_band_turns_red(look: FrameLook) {
+/// window.
+#[test]
+fn t7_name_band_turns_red() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let (host, mut pb) = fresh(look);
+    let (host, mut pb) = fresh();
     let h = open_window(&mut pb, KIND_0FEF, (B7.x, B7.y, B7.w, B7.h));
     // "A A": two glyph cells with ink and one (the space) without, so the
     // `md=TRANS` claim is testable — that cell must show the fill, not white.
@@ -739,21 +760,12 @@ fn t7_name_band_turns_red(look: FrameLook) {
     assert_all(host, space, RED, "T7: the space glyph cell shows the red fill through (md=TRANS)");
 }
 
-#[test]
-fn t7_name_band_turns_red_tos4gray() {
-    t7_name_band_turns_red(FrameLook::Tos4Gray);
-}
-
-#[test]
-fn t7_name_band_turns_red_literal() {
-    t7_name_band_turns_red(FrameLook::Literal);
-}
-
 // ── W_VSLIDE 0x1171: solid black track ────────────────────────────────────
 
-fn vslide_track_turns_black(look: FrameLook) {
+#[test]
+fn vslide_track_turns_black() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let (host, mut pb) = fresh(look);
+    let (host, mut pb) = fresh();
     let h = open_window(&mut pb, KIND_0FEF, (B7.x, B7.y, B7.w, B7.h));
     let track = vtrack_0fef(B7);
     let thumb = grown(velev_default(track));
@@ -775,22 +787,12 @@ fn vslide_track_turns_black(look: FrameLook) {
     assert!(outside > before_black, "the track had {before_black} black pixels before, {outside} after");
 }
 
-#[test]
-fn vslide_track_turns_black_tos4gray() {
-    vslide_track_turns_black(FrameLook::Tos4Gray);
-}
-
-#[test]
-fn vslide_track_turns_black_literal() {
-    vslide_track_turns_black(FrameLook::Literal);
-}
-
 // ── WF_DCOLOR: later windows only ─────────────────────────────────────────
 
 #[test]
 fn dcolor_reaches_new_windows_only() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let (host, mut pb) = fresh(FrameLook::Tos4Gray);
+    let (host, mut pb) = fresh();
     // Two side-by-side windows that do not overlap.
     let b1 = R { x: 10, y: 40, w: 300, h: 200 };
     let b2 = R { x: 330, y: 40, w: 300, h: 200 };
@@ -823,14 +825,15 @@ fn dcolor_reaches_new_windows_only() {
     assert_eq!(count(host, n1, RED), 0, "h1's re-emitted frame still uses h1's words, not the new default");
 }
 
-// ── default-look regression guard ─────────────────────────────────────────
+// ── frame hash guard ──────────────────────────────────────────────────────
 
-/// Whole-screen FNV-1a hash of [`default_frames`] on HEAD `21c9a3c`, before
-/// `draw_frame` consumed a single colour word. Measured 2026-09-20 with a copy
-/// of this file that had the `set_frame_look` calls stubbed out (the only look
-/// that build had): alone, twice, and under `--shuffle-seed 7` / `99` with
-/// `--test-threads=1` — `0x1f60a8cef23370da` every time.
-const HEAD_FRAME_HASH: u64 = 0x1f60_a8ce_f233_70da;
+/// Whole-screen FNV-1a hash of [`default_frames`] under the literal look —
+/// the one look there is since the user's decision of 2026-09-20. Measured
+/// 2026-09-20 on the tree with the `FrameLook` switch removed: this binary
+/// alone, twice, and under `--shuffle-seed 7` / `99` with
+/// `--test-threads=1` — the same value every time. Re-pin it only with an
+/// EmuTOS-backed reason for the pixel change (and say which pixels).
+const FRAME_HASH: u64 = 0x259e_dc0b_844d_91a0;
 
 /// Two default windows with every gadget, names and info lines: `h1`
 /// untopped (partly covered), `h2` topped.
@@ -844,22 +847,23 @@ fn default_frames(pb: &mut Aespb) {
 }
 
 #[test]
-fn tos4gray_default_frames_are_pixel_identical_to_head() {
+fn default_frames_are_pixel_identical_to_the_pinned_hash() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let (host, mut pb) = fresh(FrameLook::Tos4Gray);
+    let (host, mut pb) = fresh();
     default_frames(&mut pb);
     let got = host.raster.hash();
     assert_eq!(
-        got, HEAD_FRAME_HASH,
-        "Tos4Gray must render a default frame exactly as HEAD did (got {got:#018x}, HEAD {HEAD_FRAME_HASH:#018x})"
+        got, FRAME_HASH,
+        "the default frames must render exactly as pinned (got {got:#018x}, pinned {FRAME_HASH:#018x})"
     );
 }
 
-// ── the Literal look on a default window ──────────────────────────────────
+// ── the default topped window against the gadget table ────────────────────
 
 /// The `IP_2PATT` dither (`vdi/vdi_fill.c` DITHER row 2, `[0x0000, 0x5555,
 /// 0x0000, 0x5555]`) at screen-aligned `(x, y)`: ink on odd rows at odd
-/// columns.
+/// columns. Reference: `falcon-tc-window-c.png` name band, rows 99/101/…
+/// carry `#` at x = 41, 43, … (odd), rows 98/100/… none.
 fn ip2_is_ink(x: i16, y: i16) -> bool {
     y.rem_euclid(4) % 2 == 1 && x.rem_euclid(16) % 2 == 1
 }
@@ -875,55 +879,79 @@ fn ip1_is_ink(x: i16, y: i16) -> bool {
     row & (0x8000 >> (x.rem_euclid(16) as u16)) != 0
 }
 
+/// Assert the bevel `add_3d_effect` leaves inside a 1px border: WHITE along
+/// the top and left, LBLACK along the bottom and right (`gemoblib.c:238-276`,
+/// colours fixed at `:252,270-272`; reference `falcon-tc-window-c.png`
+/// closer: white at x=17 / y=97, `(140,138,140)` at x=37 / y=117).
+///
+/// NewTOS's `bevel` paints those edges 2px wide where EmuTOS paints 1px
+/// (A95); the assertion samples the outermost pixel row/column of each edge
+/// — true for both widths — and stays two pixels clear of the corners, whose
+/// owner differs between the two polyline orders.
+fn assert_bevel(host: &QuietHost, ci: R, what: &str) {
+    assert_all(host, R { x: ci.x + 2, y: ci.y, w: ci.w - 4, h: 1 }, WHITE, &format!("{what} bevel top"));
+    assert_all(host, R { x: ci.x, y: ci.y + 2, w: 1, h: ci.h - 4 }, WHITE, &format!("{what} bevel left"));
+    assert_all(host, R { x: ci.x + 2, y: ci.y + ci.h - 1, w: ci.w - 4, h: 1 }, LBLACK, &format!("{what} bevel bottom"));
+    assert_all(host, R { x: ci.x + ci.w - 1, y: ci.y + 2, w: 1, h: ci.h - 4 }, LBLACK, &format!("{what} bevel right"));
+}
+
 /// A default `KIND_ALL` window rendered from its compiled colour words the
 /// way `just_draw` paints the `W_ACTIVE` tree (spec § (2) per-gadget table).
+/// Every colour named here was read off the reference PNG at the frame-
+/// relative position given in the comment (`falcon-tc-window-c.png`, frame
+/// origin `(16,96)`).
 #[test]
-fn literal_default_window_matches_the_gadget_table() {
+fn default_topped_window_matches_the_gadget_table() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-    let (host, mut pb) = fresh(FrameLook::Literal);
+    let (host, mut pb) = fresh();
     let b = R { x: 30, y: 40, w: 320, h: 240 };
     let h = open_window(&mut pb, KIND_ALL, (b.x, b.y, b.w, b.h));
     set_string(&mut pb, h, WF_NAME, b"A A\0");
     set_string(&mut pb, h, WF_INFO, b"i\0");
 
-    // W_BOX (0): 0x1101, th=1 → bc=1 border ring.
+    // W_BOX (0): 0x1101, th=1 → bc=1 border ring. Reference: row 96 and
+    // column 16 are black over the whole frame.
     assert_ring(host, b, BLACK, "W_BOX border");
 
     // W_TITLE (1): G_BOX 0x1101 at (0, 0, w, adj_hbox) → black ring, hollow
-    // (= white, `gr_rect` FIS_HOLLOW in MD_REPLACE) inside. The ADJ3DSTD
-    // margin row above the gadgets is title interior — but the FL3DACT
-    // closer/fuller/name are 3D-grown by ADJ3DSTD, so their borders reach the
-    // title box's edge; only the columns between the grown boxes stay white.
+    // (= white, `gr_rect` FIS_HOLLOW in MD_REPLACE) inside. Reference: the
+    // title's bottom border is row 118 = 96 + 23 - 1; the info box's top
+    // border follows at row 119 (a double black line is EmuTOS-correct).
     let title = R { x: b.x, y: b.y, w: b.w, h: ADJ_HBOX };
     assert_ring(host, title, BLACK, "W_TITLE border");
+    assert_all(host, R { x: b.x, y: b.y + ADJ_HBOX - 1, w: b.w, h: 1 }, BLACK, "title bottom border (ref row 118)");
+    assert_all(host, R { x: b.x, y: b.y + ADJ_HBOX, w: b.w, h: 1 }, BLACK, "info top border (ref row 119)");
 
     // W_CLOSER (2): G_BOXCHAR 0x1101, FL3DACT → grown to the full adj cell at
-    // the title's top-left: black ring, 2px bevel (white top/left, LBLACK
-    // bottom/right) inside the border, white face, black glyph.
+    // the title's top-left: black ring (reference: column 38 = 16 + 22 is
+    // black from row 96 to 118), bevel inside the border, white face, black
+    // glyph.
     let closer = grown(R { x: b.x + ADJ3DSTD, y: b.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX });
     assert_ring(host, closer, BLACK, "W_CLOSER border");
-    // `add_3d_effect` insets the bevel by `th` (`gemoblib.c:230-237`); the
-    // corner pixels belong to whichever edge `bevel` paints last, so the
-    // segments are sampled two pixels clear of the corners.
+    assert_all(host, R { x: b.x + ADJ_WBOX - 1, y: b.y, w: 1, h: ADJ_HBOX }, BLACK, "closer right border (ref col 38)");
     let ci = closer.inset(1);
-    assert_all(host, R { x: ci.x + 2, y: ci.y, w: ci.w - 4, h: 2 }, WHITE, "W_CLOSER bevel top");
-    assert_all(host, R { x: ci.x, y: ci.y + 2, w: 2, h: ci.h - 4 }, WHITE, "W_CLOSER bevel left");
-    assert_all(host, R { x: ci.x + 2, y: ci.y + ci.h - 2, w: ci.w - 4, h: 2 }, LBLACK, "W_CLOSER bevel bottom");
-    assert_all(host, R { x: ci.x + ci.w - 2, y: ci.y + 2, w: 2, h: ci.h - 4 }, LBLACK, "W_CLOSER bevel right");
+    assert_bevel(host, ci, "W_CLOSER");
     let face = ci.inset(2);
     assert!(count(host, face, BLACK) > 0, "W_CLOSER glyph in tc=1");
     assert_eq!(count(host, face, LWHITE), 0, "W_CLOSER face is hollow-white, not the 3D grey");
     assert_eq!(count(host, face, BLACK) + count(host, face, WHITE), face.w as usize * face.h as usize);
 
-    // W_NAME (3), topped: G_BOXTEXT 0x11a1 → bc=1 ring on the grown rect,
+    // W_NAME (3), topped: G_BOXTEXT 0x11a1 → bc=1 ring on the grown rect —
+    // its left column stands right next to the closer's right border
+    // (reference: columns 38 and 39 both black, the EmuTOS double line) —
     // IP_2PATT in ic=1 inside, glyphs in tc=1 with md=REPLACE (opaque cells).
     let nr = name_rect(b);
     let nbox = grown(nr);
     assert_ring(host, nbox, BLACK, "W_NAME border");
+    assert_eq!(nbox.x, closer.x + closer.w, "name box starts on the column after the closer's border");
     let nlen = 3 * 8;
     let nx = nr.x + ((nr.w - nlen) / 2).max(2);
     let cells = R { x: nx, y: nr.y + 1, w: nlen, h: 16 };
-    for (x, y, p) in pixels(host, nbox.inset(1)) {
+    // The reference's name band also carries the FL3DACT bevel (white row 97
+    // / column 40, LBLACK row 117 / right column) that NewTOS does not draw
+    // on the name yet (A95); the stipple is sampled two pixels inside the
+    // border so the assertion holds for both renderings.
+    for (x, y, p) in pixels(host, nbox.inset(3)) {
         if cells.contains(x, y) {
             continue;
         }
@@ -934,7 +962,8 @@ fn literal_default_window_matches_the_gadget_table() {
     assert_all(host, R { x: nx + 8, y: nr.y + 1, w: 8, h: 16 }, WHITE, "W_NAME md=REPLACE glyph cell");
 
     // W_INFO (5): G_BOXTEXT 0x1101 at (0, adj_hbox, w, gl_hbox) → black
-    // ring, white inside, glyph in black transparent.
+    // ring, white inside, glyph in black transparent. Reference: rows 120-136
+    // white apart from the text, row 137 black.
     let info = R { x: b.x, y: b.y + ADJ_HBOX, w: b.w, h: GL_HBOX };
     assert_ring(host, info, BLACK, "W_INFO border");
     let ii = info.inset(1);
@@ -950,11 +979,10 @@ fn literal_default_window_matches_the_gadget_table() {
     let vbar = R { x: b.x + b.w - ADJ_WBOX, y: top, w: ADJ_WBOX, h: row_y - top + 1 };
     assert_all(host, R { x: vbar.x, y: vbar.y, w: 1, h: vbar.h }, BLACK, "W_VBAR left border");
     assert_all(host, R { x: vbar.x, y: vbar.y, w: vbar.w, h: 1 }, BLACK, "W_VBAR top border");
-    // W_UPARROW (10) grown fills the column below the bar's top row; the
-    // row between its bottom border and the track is white bar interior?
-    // No — the track (W_VSLIDE) starts right after the arrow's adj cell.
+    // W_UPARROW (10) grown fills the column below the bar's top row.
     let up = grown(R { x: vbar.x + ADJ3DSTD, y: vbar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX });
     assert_ring(host, up, BLACK, "W_UPARROW border");
+    assert_bevel(host, up.inset(1), "W_UPARROW");
     assert_eq!(count(host, up.inset(3), LWHITE), 0, "W_UPARROW face is white");
 
     // W_VSLIDE (12): G_BOX 0x1111 → black ring, IP_1PATT in ic=1 inside,
@@ -972,6 +1000,7 @@ fn literal_default_window_matches_the_gadget_table() {
     // W_VELEV (13): 0x1101 FL3DACT → black ring on the grown rect, bevel,
     // white face.
     assert_ring(host, elev, BLACK, "W_VELEV border");
+    assert_bevel(host, elev.inset(1), "W_VELEV");
     assert_all(host, elev.inset(3), WHITE, "W_VELEV face");
 
     // W_HBAR (14): G_BOX 0x1101 — from the left edge to (and sharing) the
@@ -981,23 +1010,116 @@ fn literal_default_window_matches_the_gadget_table() {
     assert_all(host, R { x: hbar.x + hbar.w - 1, y: hbar.y, w: 1, h: hbar.h }, BLACK, "W_HBAR right border");
     let lf = grown(R { x: hbar.x + 1 + ADJ3DSTD, y: hbar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX });
     assert_ring(host, lf, BLACK, "W_LFARROW border");
+    assert_bevel(host, lf.inset(1), "W_LFARROW");
 
     // W_SIZER (8): 0x1101 FL3DACT with the sizer glyph → grown to the whole
     // corner: black ring, bevel, white face, black glyph.
     let sizer = grown(R { x: b.x + b.w - GL_WBOX - ADJ3DSTD, y: b.y + b.h - GL_HBOX - ADJ3DSTD, w: GL_WBOX, h: GL_HBOX });
     assert_ring(host, sizer, BLACK, "W_SIZER border");
+    assert_bevel(host, sizer.inset(1), "W_SIZER");
     let sf = sizer.inset(3);
     assert!(count(host, sf, BLACK) > 0, "W_SIZER glyph");
     assert_eq!(count(host, sf, LWHITE), 0, "W_SIZER face is white");
 
     // Nothing in the frame is the 3D grey: no default word has ic=WHITE, so
     // the `actbutcol`/`backgrcol` substitution never fires (spec § (1)).
+    // Reference: the only greys in the whole PNG are the bevel shadow
+    // `(140,138,140)` and the desktop's icon text.
     let frame_rows = [
         R { x: b.x, y: b.y, w: b.w, h: ADJ_HBOX + GL_HBOX },
         R { x: b.x, y: row_y, w: b.w, h: ADJ_HBOX },
         R { x: vbar.x, y: vbar.y, w: vbar.w, h: vbar.h },
     ];
     for r in frame_rows {
-        assert_eq!(count(host, r, LWHITE), 0, "no LWHITE anywhere in the literal frame {r:?}");
+        assert_eq!(count(host, r, LWHITE), 0, "no LWHITE anywhere in the frame {r:?}");
+    }
+}
+
+// ── the default untopped window ───────────────────────────────────────────
+
+/// The untopped words (`gl_wbcolor`, every slot `0x1101`, sliders `0x1111`)
+/// on a window another window has topped. Reference:
+/// `falcon-tc-two-windows.png` / `falcon-tc-untopped-title-zoom5x.png` — the
+/// untopped `C:\` window keeps white faces and bands, a black-bordered hollow
+/// name band without the `IP_2PATT` stipple, its closer with border and bevel.
+///
+/// EmuTOS additionally draws the untopped name `DISABLED` (`w_bldactive`,
+/// `gemwmlib.c:537`; `just_draw` overlays `IP_4PATT` in WHITE, transparent,
+/// `gemoblib.c:917-930`), which thins the glyphs to a dither. NewTOS does not
+/// draw that overlay yet (A95); the assertions below hold for both renderings
+/// — the overlay only ever turns glyph pixels white.
+#[test]
+fn default_untopped_window_renders_the_untopped_words() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh();
+    // Two side-by-side windows that do not overlap, h1 opened last (on top);
+    // a `WF_TOP` on h2 then repaints h1 "covered with deactivated borders"
+    // (`draw_change`, `gemwmlib.c:1120-1122`) — the untopped frame in full.
+    let b1 = R { x: 10, y: 40, w: 300, h: 200 };
+    let b2 = R { x: 330, y: 40, w: 300, h: 200 };
+    let h2 = open_window(&mut pb, KIND_ALL, (b2.x, b2.y, b2.w, b2.h));
+    let h1 = open_window(&mut pb, KIND_ALL, (b1.x, b1.y, b1.w, b1.h));
+    set_string(&mut pb, h1, WF_NAME, b"A A\0");
+    set_string(&mut pb, h1, WF_INFO, b"i\0");
+    set_top(&mut pb, h2);
+    assert_eq!(get_color(&mut pb, h1, W_NAME), (0x11a1, 0x1101), "h1 carries the compiled words");
+
+    // W_BOX / W_TITLE: the same black boxes as when topped.
+    assert_ring(host, b1, BLACK, "untopped W_BOX border");
+    assert_ring(host, R { x: b1.x, y: b1.y, w: b1.w, h: ADJ_HBOX }, BLACK, "untopped W_TITLE border");
+
+    // W_CLOSER: `0x1101`, FL3DACT — border, bevel, white face, black glyph
+    // (reference: the untopped closer at the top-left of the two-windows
+    // shot looks exactly like the topped one).
+    let closer = grown(R { x: b1.x + ADJ3DSTD, y: b1.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX });
+    assert_ring(host, closer, BLACK, "untopped W_CLOSER border");
+    let ci = closer.inset(1);
+    assert_bevel(host, ci, "untopped W_CLOSER");
+    let face = ci.inset(2);
+    assert!(count(host, face, BLACK) > 0, "untopped W_CLOSER glyph");
+    assert_eq!(count(host, face, BLACK) + count(host, face, WHITE), face.w as usize * face.h as usize);
+
+    // W_NAME untopped: `0x1101` = bc=1, tc=1, md=TRANS, IP_HOLLOW, ic=1 →
+    // black ring on the grown rect, white inside, black transparent glyphs,
+    // and **no** stipple: every non-glyph pixel of the interior is white.
+    let nr = name_rect(b1);
+    let nbox = grown(nr);
+    assert_ring(host, nbox, BLACK, "untopped W_NAME border");
+    let nlen = 3 * 8;
+    let nx = nr.x + ((nr.w - nlen) / 2).max(2);
+    let cells = R { x: nx, y: nr.y + 1, w: nlen, h: 16 };
+    let inner = nbox.inset(1);
+    for (x, y, p) in pixels(host, inner) {
+        if cells.contains(x, y) {
+            continue;
+        }
+        assert_eq!(p, WHITE, "untopped W_NAME is hollow white outside the glyphs, at ({x},{y})");
+    }
+    assert!(count(host, cells, BLACK) > 0, "untopped W_NAME glyphs in tc=1");
+    assert_eq!(count(host, inner, LWHITE), 0, "untopped W_NAME has no grey");
+    assert_eq!(count(host, inner, BLACK) + count(host, inner, WHITE), inner.w as usize * inner.h as usize);
+
+    // W_INFO untopped: the same `0x1101` as topped — black ring, white
+    // inside.
+    let info = R { x: b1.x, y: b1.y + ADJ_HBOX, w: b1.w, h: GL_HBOX };
+    assert_ring(host, info, BLACK, "untopped W_INFO border");
+    let ii = info.inset(1);
+    assert_eq!(count(host, ii, LWHITE), 0, "untopped W_INFO is hollow-white, not grey");
+    assert_all(host, R { x: ii.x + ii.w - 40, y: ii.y, w: 40, h: ii.h }, WHITE, "untopped W_INFO interior");
+
+    // W_VSLIDE untopped: `0x1111` (3D objects on, `gemwmlib.c:1355-1357`) →
+    // the same IP_1PATT track as topped.
+    let top = top_of(b1, true);
+    let row_y = b1.y + b1.h - ADJ_HBOX;
+    let vbar = R { x: b1.x + b1.w - ADJ_WBOX, y: top, w: ADJ_WBOX, h: row_y - top + 1 };
+    let track = R { x: vbar.x, y: vbar.y + ADJ_HBOX, w: vbar.w, h: (vbar.h - 1) - 2 * ADJ_HBOX };
+    assert_ring(host, track, BLACK, "untopped W_VSLIDE border");
+    let elev = grown(velev_default(track));
+    for (x, y, p) in pixels(host, track.inset(1)) {
+        if elev.contains(x, y) {
+            continue;
+        }
+        let want = if ip1_is_ink(x, y) { BLACK } else { WHITE };
+        assert_eq!(p, want, "untopped W_VSLIDE IP_1PATT at ({x},{y})");
     }
 }

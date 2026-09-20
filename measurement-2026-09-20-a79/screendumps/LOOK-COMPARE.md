@@ -1,5 +1,14 @@
 # A79 — the two frame looks, side by side (QEMU raspi4b, 640x480, 2026-09-20)
 
+> **Decided the same evening: the Literal look is the only look** (EmuTOS-conform;
+> reference `../hatari-falcon-reference/`). The switch is gone; the tree renders
+> what the `lit` kernel below rendered (`final-desk-B-two.png` = `desk-lit-B-two.png`,
+> 0 px). The final dumps are `final-desk-*.png` (our desktop, two windows) and
+> `final-tera-*.png` (TeraDesk via `#Z`, one window); `final-compare-ref-vs-newtos.png`
+> puts our topped window's corners next to the EmuTOS reference, and
+> `../RUNINFO.TXT` (section FINAL) lists the remaining pixel differences (A95).
+> The Tos4Gray column below is history.
+
 Two scratch kernels that differ in **one line** — the initialiser of
 `tos_api::aes::window::FRAME_LOOK` (`method/scratch-lit-vs-gray.diff`):
 

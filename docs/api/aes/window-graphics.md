@@ -1556,8 +1556,26 @@ byte of any buffer the caller passed (TASK/A42).
   `wind_set(WF_COLOR)` already calls `redraw_open(handle)` →
   `draw_frame_pieces` for that one window (`window.rs:3464,3487-3502,:1031`).
   The gap A79 found is that `draw_frame`'s fill/text calls never read
-  `w.tcolor`/`w.bcolor` at all — every region is a fixed constant. This bullet
-  is the wiring design; no `.rs` file is touched here.
+  `w.tcolor`/`w.bcolor` at all — every region was a fixed constant. This bullet
+  is the wiring design; it was implemented on 2026-09-20 (`gadget_ink` /
+  `draw_box_ink` in `window.rs`) and the look question it left open is
+  **decided (user decision, 2026-09-20): the literal rendering of the colour
+  words is the contract** — every gadget is painted from its stored word
+  exactly as `just_draw` paints the `W_ACTIVE` tree, with no per-gadget
+  constant standing in for a default word. The compiled defaults therefore
+  render EmuTOS's own window look: white (hollow) faces and bands, 1 px black
+  gadget borders, the `IP_2PATT` stipple on the topped name, `IP_1PATT` slider
+  tracks, the bevel on every `FL3DACT` gadget. The evidence is EmuTOS itself
+  on an emulated Falcon030 (Hatari, the pinned source's own `etos512us.img`,
+  truecolor **and** 256 colours):
+  `measurement-2026-09-20-a79/hatari-falcon-reference/` (README + `shots/`);
+  NewTOS's rendering next to it: `measurement-2026-09-20-a79/screendumps/
+  final-compare-ref-vs-newtos.png`, remaining pixel differences (bevel width,
+  name-box bevel, glyph centring, one-row/one-column bar geometry, the
+  `DISABLED` overlay, the old top's repaint on `wind_open`) listed in
+  `measurement-2026-09-20-a79/RUNINFO.TXT` § FINAL → A95. The one fixed
+  colour left in the frame is the drop shadow (`DROP_SHADOW_COLOR`, a separate
+  documented look decision, see the table in (3)).
 
   **(1) What each field of a gadget's colour word governs.** `gr_crack`
   (`gemgraf.c:612-628`) splits a colour word into border colour `bc` (bits
@@ -1581,10 +1599,15 @@ byte of any buffer the caller passed (TASK/A42).
     (`gemoblib.c:894-901`).
   - `ic`+`ip` → the interior fill, drawn only for non-`G_IBOX` types
     (`gemoblib.c:669-694`, `gr_rect`, `gemgraf.c:547-559`): `ip=IP_HOLLOW`
-    paints **nothing** (`FIS_HOLLOW`); `ip=IP_SOLID`(7) paints `ic` at 100 %
-    coverage (`FIS_SOLID`); `ip=1..6` paints a dithered pattern in `ic`
-    (`FIS_PATTERN` — the exact per-index dither bitmap is **not verified this
-    session**, needs deeper analysis if a test ever depends on the shade). The
+    is an **opaque white fill** (`FIS_HOLLOW` in `MD_REPLACE`: the VDI's
+    hollow pattern is all-zero, so every pixel takes the background pen —
+    corrected 2026-09-20; an earlier revision of this bullet said "paints
+    nothing", and the "→ no paint" cells of table (3) are that reading);
+    `ip=IP_SOLID`(7) paints `ic` at 100 % coverage (`FIS_SOLID`); `ip=1..6`
+    paints the VDI dither of that index in `ic` on white (`FIS_PATTERN`;
+    `IP_2PATT` = `[0x0000,0x5555,0x0000,0x5555]` — ink on odd rows at odd
+    columns, `IP_1PATT` = `[0x0000,0x4444,0x0000,0x1111]`, both confirmed
+    against the Hatari reference, `tests/aes_window_color_words.rs`). The
     fill is issued with a **hardcoded** `MD_REPLACE` (`gr_rect`,
     `gemgraf.c:557-558`) regardless of `md` — `md` never affects the fill's
     opacity, only the later text draw.
@@ -1599,14 +1622,16 @@ byte of any buffer the caller passed (TASK/A42).
     words have `ic==WHITE`** (table below — every default is
     `0x1101`/`0x1111`/`0x11a1`, `ic` always 1); the substitution only fires if
     a colour word with `ic=0,ip=0` is explicitly written via
-    `WF_COLOR`/`WF_DCOLOR`. **Today's hardcoded `GRAY_LT` gadget-face fills in
-    `draw_frame` reproduce the *substituted* colour (`LWHITE`=8=`GRAY_LT`)
-    unconditionally — not the literal default word, which paints no face fill
-    at all (hollow).** Striking coincidence, not the same thing: whether the
-    `GRAY_LT` fills stay a deliberate look choice (documented, like
-    `DROP_SHADOW_COLOR`, `window.rs:204`) or become conditional on the actual
-    colour word is a decision for the lead/Developer, not resolved by this
-    ticket.
+    `WF_COLOR`/`WF_DCOLOR`. **Before the fix, hardcoded `GRAY_LT` gadget-face
+    fills in `draw_frame` reproduced the *substituted* colour
+    (`LWHITE`=8=`GRAY_LT`) unconditionally — not the literal default word,
+    whose `IP_HOLLOW` interior is an opaque white fill (`gr_rect` issues
+    `FIS_HOLLOW` in `MD_REPLACE`, `gemgraf.c:552-558`; the VDI's hollow
+    pattern is all-zero → the background pen).** A coincidence, not the same
+    thing — and decided (2026-09-20): the grey fills are gone, the face
+    colour is the word's `ip`/`ic` (hollow = white for every compiled
+    default); the substitution above is implemented (`ink_of`) and fires only
+    for an application word with `ic == WHITE`.
   - `tc`+`md` → the gadget's text/glyph, painted via `gsx_attr(TRUE, tmode,
     tcol)` (`gemoblib.c:709`) before the final `switch` draws the string
     (`G_BOXTEXT`/`G_TEXT`, `:732-733`) or the single glyph char (`G_BOXCHAR`,
@@ -1663,10 +1688,12 @@ byte of any buffer the caller passed (TASK/A42).
   `gemoblib.c:220-277`, fixed colours at `:252,270-272`) — that part of the 3D
   look is **not** colour-word-driven in EmuTOS and needs no wiring.
 
-  **(3) Mapping onto `draw_frame`'s regions** (all locations are
-  `tos-api/src/aes/window.rs` unless noted; ✓ = today's hardcoded pixel
-  already equals `gr_crack(default word)`; ✗ = it does not — **flagged, not
-  fixed, by this ticket**):
+  **(3) Mapping onto `draw_frame`'s regions** — the gap as found on
+  2026-09-20 **before** the fix (line numbers of that revision; ✓ = the then
+  hardcoded pixel already equalled `gr_crack(default word)`; ✗ = it did not).
+  Since the fix every region renders the "Default word gives" column (the
+  drop-shadow row excepted — see its verdict); the table stays as the record
+  of what changed:
 
   | Region | Call | Gadget(idx)·field | Today's constant | Default word gives | Verdict |
   |---|---|---|---|---|---|
@@ -1690,16 +1717,15 @@ byte of any buffer the caller passed (TASK/A42).
   | Elevator bevel | `bevel`, `:2631,2708` | *(not colour-word-driven)* | — | — | ✓ |
   | Sizer-corner (no `SIZER`) fill+bevel | `:2492-2493` | `W_SIZER`(8)·`ip,ic` + bevel | `GRAY_LT` + bevel | `ip=HOLLOW` → no paint; bevel independent | ✗ fill / ✓ bevel |
 
-  None of the ✗ rows are in scope to fix here — the ticket asks for a
-  *design*, and "without changing today's default rendering" means whatever
-  the developer wires must still reach every ✓ row's current pixel, and, since
-  the lead has not asked for a rendering change, most plausibly keep emitting
-  each ✗ row's current constant **specifically when the stored colour word
-  still equals the compiled default**, while consuming the real
-  `ip`/`ic`/`bc`/`tc`/`md` once `WF_COLOR` has actually changed them for that
-  gadget. Whether the ✗ rows' constants become a permanent, written-down look
-  decision (like `DROP_SHADOW_COLOR`, `window.rs:204`) or are replaced by a
-  literal hollow/pattern render is a call for the lead, not resolved here.
+  Every ✗ row except the drop shadow was fixed by rendering the word
+  literally (decision 2026-09-20, see the head of this bullet): the gadget
+  faces, the info band, the bar column/band and the elevators are hollow →
+  white, the slider tracks `IP_1PATT`, every gadget cell gets its 1 px `bc`
+  border on the 3D-grown slot, and the name's white glyph-cell background is
+  the `md=REPLACE` text mode of its word, not a fixed rectangle. A transient
+  "keep today's grey while the word equals the compiled default" arm existed
+  for one afternoon as a decision aid (`FrameLook`) and was removed with the
+  decision; there is no switch and no second look.
 
   **The contract itself is already correct on both sides — only the
   colour-consuming half of `draw_frame` is missing:**

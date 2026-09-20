@@ -127,3 +127,110 @@ OUT OF SCOPE (observed, untouched)
 OPEN
   The user's look decision (then the losing arm and the switch go), Pi acceptance (Tester/Lead; nothing
   flashed). No commit, no git checkout/stash/reset. Scratch dirs under the session scratchpad only.
+
+======================================================================================================
+FINAL (2026-09-20, evening) -- the user chose the EmuTOS-conform look: the Literal rendering is the
+only look. The FrameLook switch and the Tos4Gray arm are gone from tos-api/src/aes/window.rs;
+gadget_ink() returns the cracked word unconditionally. Reference for the decision:
+hatari-falcon-reference/ (README.md, shots/falcon-tc-window-c*.png, falcon-tc-two-windows.png,
+compare-ref-lit-gray-5x.png). Base desk-rebuild @ fd0eb98, changes uncommitted.
+
+PRODUCT (tree)
+  tos-api/src/aes/window.rs   FrameLook / FRAME_LOOK / set_frame_look / frame_look removed; gadget_ink
+      -> Ink (no Option); gadget_sel/gadget/draw_elevator/watchbox take Ink; draw_frame's title, name,
+      info, vbar, hbar, sizer, slider-track regions keep only the literal arm; TITLE_STIPPLE, BLACK and
+      the PatternFill import dropped (dead after the removal). GRAY_LT stays (DROP_SHADOW_COLOR),
+      GRAY_DK stays (bevel). Geometry untouched.
+  tos-api/tests/aes_window_color_words.rs   Tos4Gray cases and the HEAD hash guard dropped; 6 cases:
+      t7, vslide 0x1171, dcolor, default_topped (gadget table, colours read off the reference PNG),
+      default_untopped (new: WF_TOP on the neighbour repaints h1 untopped; DISABLED overlay not asserted,
+      A95), frame hash guard FRAME_HASH = 0x259edc0b844d91a0 (measured alone x2, --shuffle-seed 7/99
+      with --test-threads=1, identical).
+  host-tests/xtask-test-final.log      cargo run -p xtask -- test = 718 passed / 0 failed / 2 ignored
+                                       (719 - 7 removed + 6 new).
+  host-tests/aes_window_color_words-final.txt   6/6 ok.
+  build/xtask-build-rpi4-final.log     fresh (cargo clean -p kernel -p tos-api --target ...) cargo xtask
+                                       build --board rpi4: tos-api 64 / kernel 94, rc 0 (delta 0).
+                                       tree kernel8.img sha256 1cc2ce10686eb98d... (dev, not used for the dumps)
+  clippy tos-api 81 -> 81; test file 0 hits. No qemu-virt build (lead's instruction).
+
+SCRATCH KERNEL (method/make_scratch_final.sh <ws> <dir>: rsync of the crates + a79_patch.py +
+  apply_injector.py final_scripts.rs + a78_patch2.py; NO look patch -- the script refuses a tree that
+  still has FRAME_LOOK)
+  kernel8 scratch FINAL   sha256 3940a44908f0b509...  build/scratch-build-final.log (tos-api 67 / kernel 105 = the
+                          injector scaffolding, as before, rc 0)
+  sd-base.img             tools/make-sd-image.sh 64 (sha256 3c5915db3c28bf86...)  build/make-sd-image-final.log
+  sd-tera.img             sd-base + NEWDESK.INF (#Z C:\APPS\TERADESK\DESKTOP.NAP, method/newdesk-tera.inf =
+                          A78's) + Apps\TERADESK\TERADESK.INF (method/teradesk-window.inf = A78's INF with
+                          the first windows.directories.pos changed to xpos 40 / ypos 40 / winw 44 / winh 14
+                          -- TeraDesk stores the work area in character cells, window.c:2140-2141 -- so the
+                          whole frame incl. sizer and both bars is on screen) (sha256 52c51f456c37f41e...)
+
+QEMU raspi4b RUNS (method/run.sh, 640x480, -display none, QMP screendump 0.3 s after each mark;
+  grep -c "EXC\|PANIC\|panic" = 0 in both serial logs)
+  final-desk  (sd-base, our desktop, method/desk.actions = the A79 script: parkbr; A_IDLE +1100;
+               double-click the "C Hard disk" icon (35,38); parkbr; B_TWO_WINDOWS +2600; C +3000)
+               screendumps/final-desk-A-idle.png, final-desk-B-two.png, final-desk-C-two-2s.png
+  final-tera  (sd-tera, TeraDesk via #Z, method/tera-window.actions: parkbr; A_IDLE +1100; double-click
+               HARD DISC C (195,35); parkbr; B_WINDOW +2600; C_WINDOW_2S +3000)
+               screendumps/final-tera-A-idle.png, final-tera-B-window.png (C:\*.* at (39,62,376,291)),
+               final-tera-C-window-2s.png
+  Pixel diffs (method/pixdiff.py):
+    final-desk-B-two  vs final-desk-C-two-2s          0 px (settled)
+    final-tera-B-window vs final-tera-C-window-2s     0 px (settled)
+    final-desk-B-two  vs desk-lit-B-two (the Literal scratch kernel of the afternoon run)   0 px
+    final-desk-A-idle vs desk-lit-A-idle                                                    0 px
+      -> removing the switch changed nothing in the rendering; the tree now draws what the "lit"
+         kernel drew.
+
+COMPARISON AGAINST THE EMUTOS REFERENCE (screendumps/final-compare-ref-vs-newtos.png: top row =
+  hatari-falcon-reference/shots/falcon-tc-window-c.png, the C:\ window at (16,96,304,192); bottom row =
+  final-tera-B-window.png, the C:\*.* window at (39,62,376,291); three frame-relative crops at 4x:
+  TL (0,0)+120x48, TR (w-72,0)+72x48, BR (w-72,h-72)+72x72. Coordinates below are frame-relative
+  (dx,dy) from the window's top-left border pixel; negative = from the right/bottom border pixel.)
+
+  SAME: every band height (title 23 rows: 0..22; info 19: 23..41; bottom band 23: -23..-1; bar column
+  23 wide: -23..-1); every border row/column (W_BOX ring; title bottom 22 + info top 23 = the EmuTOS
+  double line; info bottom 41; the shared seam row -23 / column -23; the closer/name double column
+  22/23; the name/fuller double column -24/-23; up arrow 42..64 + track top 65); IP_2PATT on the topped
+  name (odd rows, odd columns); IP_1PATT tracks; white faces and bands; black 1 px gadget borders;
+  glyph rows (closer 5..15, up arrow 48..57, sizer -18..-8).
+
+  REMAINING DIFFERENCES (-> A95; not fixed here):
+  (1) Bevel width: EmuTOS add_3d_effect draws 1 px polylines (gemoblib.c:238-276; white from
+      (x,y+h-2) up to (x,y) right to (x+w-2,y); LBLACK from (x+1,y+h-1) right to (x+w-1,y+h-1) up to
+      (x+w-1,y+1) -- both stop one pixel short of the corners), NewTOS bevel() draws 2 px on every
+      FL3DACT gadget. Closer: ref LBLACK at column 21 rows 2..21 and row 21 columns 2..21; ours
+      columns 20..21 rows 1..21 and rows 20..21 columns 1..21. Same on fuller (ref column -2 / row 21),
+      arrows, sizer, elevators.
+  (2) Name box bevel: W_NAME is FL3DACT and gets add_3d_effect in EmuTOS -- ref row 1 is white across
+      the name interior (columns 24..-25), row 21 is LBLACK (columns 25..-25), column 24 white and
+      column -25 LBLACK (rows 2..20); NewTOS draws no bevel on the name (stipple reaches rows 1 and 21
+      and columns 24/-25).
+  (3) Gadget glyph 1 px left of EmuTOS: EmuTOS centres the char in gr_inside(3D-grown cell, th) with
+      gr_just's (w+1)/2 (gemgraf.c:565-585) and the acttxtmove y-1 (gemoblib.c:735-757) -> closer cell
+      origin (8,3); NewTOS gadget_sel uses r.x + (r.w-8)/2 on the un-grown cell -> (7,3). Rows agree.
+      Ref closer ink columns 7..14 vs ours 6..13; fuller ref -15..-9 vs ours -16..-10; up arrow tip ref
+      -12..-11 vs ours -13..-12; down arrow ref -13..-10 vs ours -14..-11; sizer ref -15..-9 vs ours
+      -16..-10.
+  (4) Down arrow one row too high: ref grown cell rows -46..-24 (its bottom border row -24 directly
+      above the seam row -23); ours rows -47..-25 with a white row at -24 (vbar_rect/vtrack end one row
+      above EmuTOS' W_VBAR, gemwmlib.c:606-610). The track is one row shorter for the same reason.
+  (5) Horizontal-bar arrows one column off: right arrow ref grown cell columns -46..-24 (right border
+      directly left of the seam column -23), ours -48..-25 with a white column at -24; left arrow ref
+      columns 0..22, ours 1..23 (hbar_rect sits one column inside on both sides, see hbar_box's doc).
+      The left arrow's glyph lands on the same columns as the ref because (3) and (5) cancel there.
+  (6) Untopped frame after wind_open of a second window: EmuTOS draw_change redraws the old top
+      "covered" on an open (w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE), gemwmlib.c:1202-1209); NewTOS
+      wind_open repaints only the new window's rect + shadow, so the old top keeps its topped frame
+      outside it -- final-desk-B-two.png: the back window (48,43,544,..) lies wholly above the front
+      one's top border (y 67), and its name band (rows 45..63, x 72..568) still carries the IP_2PATT
+      stipple. (The afternoon receipt filed this as EmuTOS-equal; the draw_change lines above say
+      otherwise.) A WF_TOP repaints the old top untopped correctly (host test default_untopped_*).
+  (7) DISABLED overlay on the untopped name (W_ACTIVE[W_NAME].ob_state = DISABLED, gemwmlib.c:537;
+      IP_4PATT in WHITE, MD_TRANS, gemoblib.c:917-930): visible in falcon-tc-two-windows.png /
+      falcon-tc-untopped-title-zoom5x.png as dithered glyphs; not drawn by NewTOS.
+  Not compared: elevator length (TeraDesk sets WF_VSLSIZE from its content, EmuDESK differently) and
+  the mouse sprite (the ref has the pointer over the window's right border, rows -50..-36).
+
+OPEN: Pi acceptance (Tester/Lead; nothing flashed). No commit. No git checkout/stash/reset.
