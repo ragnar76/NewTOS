@@ -1,0 +1,2 @@
+warning: `tos-api` (lib) generated 81 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 7 suggestions)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)

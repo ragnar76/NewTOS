@@ -1,0 +1,17 @@
+# A79 final (TeraDesk via #Z, sd-tera): park the pointer bottom-right (never
+# through the menu bar), dump the idle desktop, double-click HARD DISC C
+# (195,35, as in A78) -> the C:\ directory window opens at the position
+# TERADESK.INF's first `pos` entry gives it (teradesk-window.inf: xpos 40,
+# ypos 40, work area 44x14 character cells, so the whole frame incl. sizer
+# and both scroll bars is on the 640x480 screen), park again, dump twice.
+# Ticks are 200 Hz after the first AES pump of the first EL0 program.
+200 parkbr
+1100 mark A_IDLE
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 parkbr
+2600 mark B_WINDOW
+3000 mark C_WINDOW_2S

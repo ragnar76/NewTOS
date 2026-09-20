@@ -830,15 +830,17 @@ Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
 > the pointer, read it live at every redraw, treat a NULL pointer as an
 > empty string (EmuTOS leaves NULL undefined; NewTOS resolves the ambiguity
 > to `""` rather than reproducing EmuTOS's unspecified behaviour).
-> **Current NewTOS implementation diverges** (`tos-api/src/aes/window.rs`):
-> `wind_set(WF_NAME)`/`wind_set(WF_INFO)` **copies** the string into a fixed
-> `name`/`info: [u8; NAME_CAP]` buffer (`NAME_CAP = 80`, i.e. 79 characters +
-> NUL, `:236,378-379`) via `copy_cstr` (`:2935-2953`) in the `WF_NAME`/
-> `WF_INFO` arms (`:3555-3567`, `:3568-3574`) — a snapshot taken at
-> `wind_set` time, silently truncated past 79 characters, instead of a live
-> pointer with no cap. Implementing the decision (storing and dereferencing
-> the caller's EL0 pointer at draw time) is a Developer task, not covered by
-> this spec correction.
+> **Implemented 2026-09-20 (A83)** — `tos-api/src/aes/window.rs` `LiveStr`:
+> `wind_set(WF_NAME)`/`wind_set(WF_INFO)` store the caller's pointer together
+> with the caller's process slot; `draw_frame` reads the string at every
+> frame build through the owner's mapping (`usermem::resolve_kva`, page by
+> page, so the walk ends at the owner's block end), a kernel pointer
+> directly; NULL or an unresolvable address renders as `""`. The walk is
+> bounded by the gadget's width in glyphs plus a 512-byte ceiling — a walk
+> bound, not a contract limit. The earlier 80-byte copy (`NAME_CAP`,
+> `copy_cstr`) is gone. The kernel desktop keeps its titles in the `WNode`
+> (`kernel/src/desk/win.rs` `w_name[116]`/`w_info[72]`, as EmuTOS
+> `desk/deskwin.h:73,79`).
 
 > **`WF_TOP` on the desktop handle and on a created-but-unopened handle
 > (A80, 2026-09-20).** `wm_set` runs `wm_mktop(w_handle)` whenever `w_handle !=

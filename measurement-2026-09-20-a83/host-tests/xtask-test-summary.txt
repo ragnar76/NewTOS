@@ -1,0 +1,142 @@
+     Running `target/debug/xtask test`
+     Running unittests src/lib.rs (target/debug/deps/tos_api-6503eecebe9f8f1a)
+test result: ok. 62 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_a73_event_neighbours.rs (target/debug/deps/aes_a73_event_neighbours-0387bfe921282d70)
+test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/aes_app_return_descriptor.rs (target/debug/deps/aes_app_return_descriptor-255d90acee6d8760)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_appl_init.rs (target/debug/deps/aes_appl_init-f70ecbb8c4f5a6c3)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_appl_read_blocks.rs (target/debug/deps/aes_appl_read_blocks-dee3b26760a0c2b0)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_button_dispatch.rs (target/debug/deps/aes_button_dispatch-3a6481e795d610e8)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_cicon_draw.rs (target/debug/deps/aes_cicon_draw-16b2febfcad685dd)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_desk_background.rs (target/debug/deps/aes_desk_background-32672ae9b02c75f1)
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+     Running tests/aes_dialog_undraw.rs (target/debug/deps/aes_dialog_undraw-9bc485000841c2b1)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/aes_dispatch_inlen_clamp.rs (target/debug/deps/aes_dispatch_inlen_clamp-eb87f7b47c6247bc)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/aes_form_alert_cursor_bracket.rs (target/debug/deps/aes_form_alert_cursor_bracket-da1e245127b4da75)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_global_layout.rs (target/debug/deps/aes_global_layout-1aa67cd068f7d745)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_graf_mouse_invalid.rs (target/debug/deps/aes_graf_mouse_invalid-3da3f72376467464)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/aes_icon_unaligned_raster.rs (target/debug/deps/aes_icon_unaligned_raster-0a4a9c8b765d112e)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_intout_underwrite.rs (target/debug/deps/aes_intout_underwrite-62d7ec69ad71f240)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_launch_boundary_reset.rs (target/debug/deps/aes_launch_boundary_reset-362c6e1ad899618e)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_menu_bar_height.rs (target/debug/deps/aes_menu_bar_height-7efb19c9992ca860)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_menu_click_ownership.rs (target/debug/deps/aes_menu_click_ownership-cb7c6c3380020d46)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/aes_menu_settings.rs (target/debug/deps/aes_menu_settings-4925ebb4ecf8a162)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_newdesk_root_word.rs (target/debug/deps/aes_newdesk_root_word-d39836989f9b3d07)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/aes_object_3d_box_border.rs (target/debug/deps/aes_object_3d_box_border-3bac5782e021d77b)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_object_3d_text_button.rs (target/debug/deps/aes_object_3d_text_button-7f1687603818a857)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_object_add_return.rs (target/debug/deps/aes_object_add_return-08c9c99d08a576d4)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_object_cursor_bracket.rs (target/debug/deps/aes_object_cursor_bracket-384d72e949b122a1)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_object_font.rs (target/debug/deps/aes_object_font-d0132bbb39cb4e41)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_object_nicelines.rs (target/debug/deps/aes_object_nicelines-e3f2abca4e67bebb)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_object_order_links.rs (target/debug/deps/aes_object_order_links-74890200ff651d94)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_pd_by_slot.rs (target/debug/deps/aes_pd_by_slot-a2ae3e6a870ebfc9)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_reference.rs (target/debug/deps/aes_reference-e0d3ab826e32c4cd)
+test result: ok. 204 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s
+     Running tests/aes_rsrc_gaddr_edges.rs (target/debug/deps/aes_rsrc_gaddr_edges-a59a39fda98cb900)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_rsrc_global_fields.rs (target/debug/deps/aes_rsrc_global_fields-a285dbe0673807e3)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_rsrc_load_path.rs (target/debug/deps/aes_rsrc_load_path-65130b6e3bfac101)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_rsrc_obfix_at_load.rs (target/debug/deps/aes_rsrc_obfix_at_load-579da221c24b0656)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_rsrc_per_process.rs (target/debug/deps/aes_rsrc_per_process-3a55a0423592b797)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_rsrc_short_blob.rs (target/debug/deps/aes_rsrc_short_blob-80f66bd5b56bcdbe)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_rsrc_substruct_arrays.rs (target/debug/deps/aes_rsrc_substruct_arrays-eb1c4c5cdde0465d)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_rsrc_tedinfo_reserve.rs (target/debug/deps/aes_rsrc_tedinfo_reserve-5171cefe4ac12759)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_rsrc_tedinfo_txtlen.rs (target/debug/deps/aes_rsrc_tedinfo_txtlen-42906486cfd1802a)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_screen_buffer_save_under.rs (target/debug/deps/aes_screen_buffer_save_under-2893a02208674803)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/aes_shel_roundtrip.rs (target/debug/deps/aes_shel_roundtrip-f73c7604c5b7bb4c)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_shel_write_iscr.rs (target/debug/deps/aes_shel_write_iscr-d5a9f2655a724a8d)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_wind_get_desktop_geometry.rs (target/debug/deps/aes_wind_get_desktop_geometry-9294ecc79a15c73d)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/aes_window_color_words.rs (target/debug/deps/aes_window_color_words-9c80e44b4b94f75d)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/aes_window_content.rs (target/debug/deps/aes_window_content-8bac4e55f5ed4695)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/aes_window_create_work.rs (target/debug/deps/aes_window_create_work-1468aaf2395d30c5)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/aes_window_delete_slot.rs (target/debug/deps/aes_window_delete_slot-e77cc55cf5e03575)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+     Running tests/aes_window_drag.rs (target/debug/deps/aes_window_drag-bbe54845011d36fd)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/aes_window_gadget_rect.rs (target/debug/deps/aes_window_gadget_rect-9e96942f57c7b2f9)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/aes_window_hotclose.rs (target/debug/deps/aes_window_hotclose-f93ab580a782b914)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/aes_window_move_blit.rs (target/debug/deps/aes_window_move_blit-d4a5fbf44378f22d)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/aes_window_name_get.rs (target/debug/deps/aes_window_name_get-6962294b25025231)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/aes_window_name_pointer.rs (target/debug/deps/aes_window_name_pointer-f04822feff9ae558)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+     Running tests/aes_window_rectlist_capacity.rs (target/debug/deps/aes_window_rectlist_capacity-5f2f35f99f59304b)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+     Running tests/aes_window_rectlist_zorder.rs (target/debug/deps/aes_window_rectlist_zorder-62a1dd9a9116f7e5)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+     Running tests/aes_window_screen_buffer.rs (target/debug/deps/aes_window_screen_buffer-d96cd93ac3e85b46)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/aes_window_screen_buffer_absent.rs (target/debug/deps/aes_window_screen_buffer_absent-9253cc9a6552445a)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/aes_window_slider_guard.rs (target/debug/deps/aes_window_slider_guard-9cf7dc348bd5fa76)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/aes_window_top_unopened.rs (target/debug/deps/aes_window_top_unopened-daf6f720f3025ee4)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/aes_window_virgin_slot.rs (target/debug/deps/aes_window_virgin_slot-a6c84979e3f90b8b)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/aes_window_zorder_counter.rs (target/debug/deps/aes_window_zorder_counter-b0db81c073aa1646)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/gemdos_drive_login.rs (target/debug/deps/gemdos_drive_login-31e4dac0c5b5bc15)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/gemdos_fattrib_dir.rs (target/debug/deps/gemdos_fattrib_dir-3c6587887a5f325f)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/gemdos_fs_paths.rs (target/debug/deps/gemdos_fs_paths-7c316f0897df9e6c)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/loader_ilp32_rejected.rs (target/debug/deps/loader_ilp32_rejected-7b842befca44088d)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/vdi_mouse_park.rs (target/debug/deps/vdi_mouse_park-4de8b4f977cba542)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/vdi_raster_reference.rs (target/debug/deps/vdi_raster_reference-e6b6f498ee7679c7)
+test result: ok. 59 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+     Running tests/vdi_reference.rs (target/debug/deps/vdi_reference-778fae02fa45af0c)
+test result: ok. 158 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+     Running unittests src/lib.rs (target/debug/deps/tos_types-2785e60e2e875b23)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (target/debug/deps/xtask-22b1e12ca7fd8086)
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+TOTAL passed 734 failed 0 ignored 2

@@ -1,0 +1,5 @@
+   1 warning: `tos-api` (lib test) generated 83 warnings (81 duplicates) (run `cargo clippy --fix --lib -p tos-api --tests -- ` to apply 1 suggestion)
+   1 warning: `tos-api` (lib) generated 81 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 7 suggestions)
+   1 warning: `tos-api` (test "vdi_mouse_park") generated 2 warnings
+   1 warning: `tos-api` (test "vdi_raster_reference") generated 2 warnings
+   1 warning: `tos-api` (test "vdi_reference") generated 3 warnings (2 duplicates) (run `cargo clippy --fix --test "vdi_reference" -p tos-api -- ` to apply 1 suggestion)

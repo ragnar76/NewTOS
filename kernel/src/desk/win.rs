@@ -11,7 +11,6 @@
 //! `win_bldview`, scrolling and the bulk ops — is Task #6 and lives here
 //! later; it is deliberately absent for now.
 
-use alloc::string::String;
 use alloc::vec::Vec;
 
 use tos_api::aes::object::IconBlk;
@@ -70,9 +69,18 @@ pub const WN_REBUILD: u16 = 0x8000;
 /// The desktop pseudo-window's AES handle (`DESKWH`).
 pub const DESKWH: i16 = 0;
 
+/// `LEN_ZPATH` (`include/sysconf.h:51`) — the maximum path length including
+/// the drive, which sizes the `WNODE` title buffer.
+const LEN_ZPATH: usize = 114;
+/// Size of a window's title buffer — `char w_name[LEN_ZPATH+2]`
+/// (`desk/deskwin.h:73`, "allow for leading & trailing spaces").
+pub const W_NAME_LEN: usize = LEN_ZPATH + 2;
+/// Size of a window's info-line buffer — `char w_info[72]`
+/// (`desk/deskwin.h:79`).
+pub const W_INFO_LEN: usize = 72;
+
 /// One open window, or (via [`WindowList::desktop`]) the desktop pseudo-window
 /// (EmuTOS `WNODE`, `deskwin.h:57-80`).
-#[derive(Default)]
 pub struct WNode {
     /// `WN_DESKTOP`/`WN_REBUILD` flags.
     pub w_flags: u16,
@@ -97,10 +105,41 @@ pub struct WNode {
     pub w_vnrow: i16,
     /// This window's file list (embedded, not a pointer).
     pub w_pnode: PNode,
-    /// Title-bar text (path).
-    pub w_name: String,
-    /// Info-line text (item count / total size).
-    pub w_info: String,
+    /// Title-bar text (path), NUL-terminated — EmuTOS `w_name[LEN_ZPATH+2]`
+    /// (`deskwin.h:73`), which `win_sname` fills (`deskwin.c:847-858`) and
+    /// `do_diropen` hands to `wind_set(WF_NAME)` **by address**
+    /// (`desksupp.c:451`, `pw->w_name`). The
+    /// AES keeps that pointer, not a copy (A83, `gemwmlib.c:1661`), so the
+    /// buffer lives in the node: the node sits in [`WindowList::slots`], a
+    /// `Vec` sized once by [`DeskState::win_start`] and never regrown, inside
+    /// the desktop's static state — a fixed array here, not a `String`, so
+    /// the address handed to the AES cannot move for the desktop's lifetime.
+    pub w_name: [u8; W_NAME_LEN],
+    /// Info-line text (item count / total size), NUL-terminated — EmuTOS
+    /// `w_info[72]` (`deskwin.h:79`), passed to `wind_set(WF_INFO)` by
+    /// address (`win_sinfo`, `deskwin.c:905`). Same lifetime argument as
+    /// [`Self::w_name`].
+    pub w_info: [u8; W_INFO_LEN],
+}
+
+impl Default for WNode {
+    fn default() -> Self {
+        WNode {
+            w_flags: 0,
+            w_id: 0,
+            w_obid: 0,
+            w_root: 0,
+            w_cvcol: 0,
+            w_cvrow: 0,
+            w_pncol: 0,
+            w_pnrow: 0,
+            w_vncol: 0,
+            w_vnrow: 0,
+            w_pnode: PNode::default(),
+            w_name: [0; W_NAME_LEN],
+            w_info: [0; W_INFO_LEN],
+        }
+    }
 }
 
 impl WNode {
@@ -108,6 +147,32 @@ impl WNode {
     pub fn free_slot() -> Self {
         WNode::default()
     }
+
+    /// Store `title` in [`Self::w_name`] (truncated to the buffer, always
+    /// NUL-terminated) — the `win_sname` fill (`deskwin.c:847-858`), minus the
+    /// leading/trailing spaces NewTOS's title layout does not use.
+    pub fn set_name(&mut self, title: &str) {
+        fill_cstr(&mut self.w_name, title.as_bytes());
+    }
+
+    /// Address of the title buffer for `wind_set(WF_NAME)` — `pw->w_name` as
+    /// EmuTOS passes it (`desksupp.c:451`). Stable: see [`Self::w_name`].
+    pub fn name_ptr(&self) -> u64 {
+        self.w_name.as_ptr() as u64
+    }
+
+    /// Address of the info-line buffer for `wind_set(WF_INFO)` —
+    /// `pwin->w_info` (`deskwin.c:905`). Stable: see [`Self::w_info`].
+    pub fn info_ptr(&self) -> u64 {
+        self.w_info.as_ptr() as u64
+    }
+}
+
+/// Copy `src` into `dst` as a NUL-terminated string, truncated to fit.
+fn fill_cstr(dst: &mut [u8], src: &[u8]) {
+    let n = src.len().min(dst.len() - 1);
+    dst[..n].copy_from_slice(&src[..n]);
+    dst[n] = 0;
 }
 
 /// The desktop's window list (EmuTOS `g_wdesktop`/`g_wlist`/`g_wfirst`/

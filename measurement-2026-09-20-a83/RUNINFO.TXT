@@ -1,0 +1,103 @@
+A83 -- wind_set(WF_NAME/WF_INFO) stores the caller's pointer + owner slot; every frame build reads the
+string through the owner's mapping (usermem::resolve_kva), no length limit, NULL/unresolvable -> "".
+Developer self-evidence, 2026-09-20. Branch desk-rebuild, base HEAD 9eece19, changes uncommitted in the
+tree (method/product-a83.diff). Pinned EmuTOS references/emutos @ 1a7484ab: aes/gemwmlib.c:1661,1669
+(wm_set WF_NAME/WF_INFO store *(char **)pinwds), :501-502 (w_bldactive reads w_pname/w_pinfo on every
+build), :215-216 (w_setup ""), desk/deskwin.h:73,79 (WNODE w_name[LEN_ZPATH+2], w_info[72]),
+desk/deskwin.c:847-858,905 (win_sname/win_sinfo pass the node buffers by address), include/sysconf.h:51.
+Spec: docs/api/aes/window-graphics.md "WF_NAME/WF_INFO store a pointer, not a copy; no length limit
+(contract, A83, 2026-09-20)" + the Lead decision block (untouched).
+
+PRODUCT CODE (uncommitted; method/product-a83.diff, 859 lines)
+  tos-api/src/aes/window.rs   LiveStr { ptr, slot } replaces name/info: [u8; 80]; LiveStr::of_caller
+                              (slot = process::slot_for(process::current()) inside the wind_set trap);
+                              LiveStr::read (per-page owner_kva = usermem::resolve_kva for an EL0 owner,
+                              direct for a kernel pointer, stops at NUL / limit / unresolvable page);
+                              draw_frame reads name + info live, limit = label_walk(area) = glyphs + 1,
+                              ceiling LIVE_STR_MAX = 512 (walk bound, not a contract limit);
+                              copy_cstr, NAME_CAP, name_len removed; live_title_tests (5 in-crate cases
+                              at the owner_kva seam).
+  kernel/src/desk/win.rs      WNode.w_name: [u8; 116], w_info: [u8; 72] (EmuTOS WNODE sizes), manual
+                              Default, set_name/name_ptr/info_ptr, fill_cstr; the unused Strings are gone.
+  kernel/src/desk/main.rs     set_window_strings(handle, slot, title, count, size) fills the node under
+                              global::with and calls wind_set(WF_NAME)/(WF_INFO) outside the lock;
+                              replaces set_window_title + the six stack-buffer sites; fmt_info(&mut [u8]).
+  tos-api/tests/aes_window_name_pointer.rs   #[ignore] removed from T10 and the 79-char case; doc updated.
+
+HOST TESTS (host-tests/)
+  aes_window_name_pointer-GREEN.txt   3/3 (T10, no-79-cap, NULL). RED on the copy model:
+      measurement-2026-09-20-a83-a84/host-tests/aes_window_name_pointer-RED-tree-a8d3163-include-ignored.txt
+  live_title_tests-GREEN.txt          5/5: owner mapping (same VA in slot 3 -> "OWNER" and slot 5 ->
+      "OTHER"; title = OWNER, resolver asked for slot 3 only), dangling VA -> empty title (nothing
+      dereferenced), string stops at the owner's block end, string spanning two separately allocated
+      host pages, label_walk. Modelled at the seam: a host process has no process table and
+      resolve_kva's map_pa + off + VA_OFFSET is not a host address.
+  xtask-test.log / xtask-test-summary.txt   cargo run -p xtask -- test = 734 passed / 0 failed / 2 ignored
+      (baseline 727 / 0 / 4: +2 un-ignored, +5 new).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4-fresh.log   after cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat:
+                               rustc tos-api 64 / kernel 94, rc 0 (baseline 64/94, delta 0).
+  kernel8-tree-sha256.txt      tree kernel8.img sha256 e24d72eb... (dev, rpi4, after the final comment-only edit; not used for the dumps)
+  clippy-rpi4-baseline-HEAD-9eece19.txt   cargo clippy -p kernel --features board-rpi4 with the HEAD
+                               copies of window.rs/main.rs/win.rs swapped in by hand (cp from git show,
+                               no git checkout), then my copies swapped back (cmp identical): 81 / 125.
+  clippy-rpi4-tree.txt         same command on the tree: 81 / 125 (delta 0).
+  clippy-tos-api-lib-tests.txt cargo clippy -p tos-api --lib --tests: lib-test 83 = 81 duplicates + 2
+                               pre-existing test-only (pd.rs "items after a test module" etc.); 0 hits in
+                               window.rs's test modules and 0 in aes_window_name_pointer.rs.
+  No qemu-virt build (lead's instruction).
+
+SCRATCH KERNELS (method/make_scratch.sh <ws> <dir> <scripts.rs>: rsync of the crates -- never the shared
+  tree -- + a79_patch.py (H02 debug_write + [aes] trace + A46 DESK_UP) + apply_injector.py + a78_patch2.py)
+  kernel8 scratch A   sha256 e85c61d796fda4c0...  final_scripts.rs (= A79's, byte-identical; SCRIPT_DESK =
+                      desk.actions, SCRIPT_TERA = tera-window.actions)  build/scratch-build-A-final-scripts.log
+                      (tos-api 67 / kernel 105 = the injector scaffolding, as in A79; rc 0)
+  kernel8 scratch B   sha256 3e3fddca7ed2bb3a...  nav_scripts.rs (SCRIPT_DESK = desk-nav.actions, SCRIPT_TERA
+                      as A)  build/scratch-build-B-nav-scripts.log (67 / 105, rc 0)
+  sd-base.img         tools/make-sd-image.sh 64 (sha256 c2b185ef03b10248...)  build/make-sd-image.log
+  sd-tera.img         sd-base + NEWDESK.INF (method/newdesk-tera.inf, #Z C:\APPS\TERADESK\DESKTOP.NAP) +
+                      Apps/TERADESK/TERADESK.INF (method/teradesk-window.inf) via method/sd-put.sh
+                      (sha256 7b71443f0d57c5ca...). Every run boots a fresh copy. No *.img kept.
+
+QEMU raspi4b RUNS (method/run.sh KERNEL8 IMG OUTDIR TAG TIMEOUT SPEC...; 640x480, -display none, QMP
+  screendump 0.3 s after each serial mark; grep -c "EXC\|PANIC\|panic" = 0 in all three serial logs)
+  desk  (A, sd-base)  desk.actions: parkbr; A_IDLE +1100; double-click "C Hard disk" (35,38); parkbr;
+                      B_TWO_WINDOWS +2600; C_TWO_WINDOWS_2S +3000
+                      desk-A-idle.png  sha256 9cd7377f... = a79/final-desk-A-idle.png
+                      desk-B-two.png   sha256 9638ccf0... = a79/final-desk-B-two.png (BYTE-IDENTICAL)
+                      desk-C-two-2s.png = desk-B-two.png (settled)
+  tera  (A, sd-tera)  tera-window.actions: parkbr; A_IDLE +1100; double-click HARD DISC C (195,35);
+                      parkbr; B_WINDOW +2600; C_WINDOW_2S +3000
+                      tera-A-idle.png    sha256 76965702... = a79/final-tera-A-idle.png
+                      tera-B-window.png  sha256 2280f56d... = a79/final-tera-B-window.png (BYTE-IDENTICAL;
+                      the title C:\*.* and the info line are an EL0 owner's strings read via resolve_kva)
+                      tera-C-window-2s.png = tera-B-window.png (settled)
+  nav   (B, sd-base)  desk-nav.actions: parkbr; A_IDLE +1100; double-click the ACC folder icon (94,104) in
+                      the boot window; parkbr; B_FOLDER +2600; move to the new window's closer (83,78);
+                      click +3200; parkbr; C_NAVIGATED +4200; D_NAVIGATED_2S +4600
+                      nav-A-idle.png       = a79/final-desk-A-idle.png (0 px)
+                      nav-B-folder.png     window C:\ACC\ at (72,67), info " 0 items   0 bytes used"
+                                           (open_dir_window: strings from the WNode)
+                      nav-C-navigated.png  navigate_window on the SAME window/WNode: title rewritten in
+                                           place -> C:\, info " 24 items   373645 bytes used"
+                      nav-D-navigated-2s.png = nav-C (0 px, settled)
+                      nav-C vs a79/final-desk-B-two.png: 1081 px, bbox (2,30)-(72,127) = the icon
+                      selection strip only (there the selected drive icon, here the selected ACC icon
+                      in the back window); frames and title bands identical.
+  Pixel diffs by method/pixdiff.py (A79's).
+
+OUT OF SCOPE (observed, untouched)
+  (1) docs/api/aes/window-graphics.md "Current NewTOS implementation diverges" paragraph (copy into
+      name/info[80], copy_cstr, line refs :236,378-379,:2935-2953,:3555-3574) is now stale -- the
+      decision is implemented; the spec was not in this ticket's file list.
+  (2) A96: windows of an ended process are not swept (desktop launch path, nested Pexec child);
+      pterm::release_slot does not clear the usermem block table (re-seeded at the next load), so a
+      dangling owner VA resolves into the freed pool block (old text) or, after a re-seed, into the
+      new tenant's TPA (foreign text) -- never a fault; "" only for a VA no block covers.
+  (3) A97: NEWDESK_TREE is still dereferenced raw at composite time.
+  (4) Pre-existing rustc warning "value assigned to `top` is never read" (window.rs draw_frame, info
+      band) is in the HEAD list too.
+
+OPEN: Pi acceptance (Tester/Lead; nothing flashed). No commit. No git checkout/stash/reset. Scratch
+dirs under the session scratchpad only.

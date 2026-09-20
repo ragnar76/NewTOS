@@ -1,0 +1,16 @@
+# A79 (our desktop, sd-base, no #Z): the C:\ window is open at boot. Park the
+# pointer bottom-right (never through the menu bar -- A76 Nachtrag), dump the
+# idle desktop, double-click the "C Hard disk" drive icon (35,38; outside the
+# window, whose left edge is x=48) -> a second C:\ window opens staggered by
+# (24,24) (kernel/src/desk/main.rs open_dir_window), park again, dump twice.
+# Ticks are 200 Hz after "[desk] desktop up" (A46 dual arming).
+200 parkbr
+1100 mark A_IDLE
+1400 move 35 38
+1600 down
+1603 up
+1608 down
+1611 up
+2000 parkbr
+2600 mark B_TWO_WINDOWS
+3000 mark C_TWO_WINDOWS_2S

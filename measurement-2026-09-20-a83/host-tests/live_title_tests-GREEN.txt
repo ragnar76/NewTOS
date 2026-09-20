@@ -1,0 +1,7 @@
+     Running unittests src/lib.rs (target/debug/deps/tos_api-6503eecebe9f8f1a)
+test aes::window::live_title_tests::label_walk_is_the_areas_glyph_count_plus_one ... ok
+test aes::window::live_title_tests::a_string_running_off_the_owners_block_ends_at_the_block_end ... ok
+test aes::window::live_title_tests::a_dangling_el0_pointer_is_an_empty_title_and_touches_nothing ... ok
+test aes::window::live_title_tests::the_string_is_read_through_the_owners_mapping_not_the_current_one ... ok
+test aes::window::live_title_tests::a_string_spanning_two_pages_is_read_from_both ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 57 filtered out; finished in 0.00s

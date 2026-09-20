@@ -11,11 +11,13 @@
 //! (`docs/api/aes/window-graphics.md`, "`WF_NAME`/`WF_INFO` store a pointer,
 //! not a copy; no length limit (contract, A83, 2026-09-20)").
 //!
-//! NewTOS copies the string at `wind_set` time into `name`/`info: [u8; 80]`
-//! (`tos-api/src/aes/window.rs`, `copy_cstr`): a snapshot, capped at 79
-//! characters. The A59 survey's case T10 (`TASK/A83.md`) measured it: after
-//! the in-place rewrite and a re-top, the title band was pixel-identical to
-//! the old text (0 pixels changed, 168 pixels off the reference).
+//! NewTOS used to copy the string at `wind_set` time into `name`/`info:
+//! [u8; 80]` (`copy_cstr`): a snapshot, capped at 79 characters. The A59
+//! survey's case T10 (`TASK/A83.md`) measured it: after the in-place rewrite
+//! and a re-top, the title band was pixel-identical to the old text (0 pixels
+//! changed, 168 pixels off the reference). Since A83 the AES keeps the
+//! pointer and the slot of the process that owns it (`LiveStr` in
+//! `tos-api/src/aes/window.rs`) and reads the string on every frame build.
 //!
 //! Cases:
 //!
@@ -23,15 +25,22 @@
 //!   place to `"BBBBBBBB"`, `WF_TOP` another window and back: the title band
 //!   shows `BBBBBBBB` — the same pixels as a window whose title was *set* to
 //!   `"BBBBBBBB"` through the same top/untop sequence, and different from the
-//!   `AAAAAAAA` band. **Red today** (`#[ignore]`: A83 is blocked on the
-//!   address-space question, see `TASK/A83-STATUS-UNFINISHED.MD`).
+//!   `AAAAAAAA` band. Red on the copy, green on the pointer.
 //! * **No 79-character cap** — a 100-character title on a 1900-px-wide window
 //!   paints its 86th glyph; the band differs from the same title cut at 79
-//!   characters. **Red today** (`#[ignore]`, same reason).
+//!   characters. Red on the copy, green on the pointer.
 //! * **NULL → `""`** — `wind_set(h, WF_NAME, NULL)` after a real title leaves
 //!   the band as a never-named window's (EmuTOS: undefined; NewTOS's decision
 //!   is the empty string, `w_setup`'s own initial `w_pname = ""`,
-//!   `gemwmlib.c:216`). Green today and must stay so.
+//!   `gemwmlib.c:216`). Green before and after.
+//!
+//! These cases pass **kernel (EL1) pointers**: on the host `process::current()`
+//! is null, so the AES records no owner slot and reads the pointer directly.
+//! The EL0-owner cases — the string is read through the *owner's* mapping,
+//! a dangling pointer renders as `""`, a string stops at its block end and
+//! is followed across a page boundary — need the owner's block table, which
+//! a host process has no equivalent of; they are modelled at the
+//! `usermem::resolve_kva` seam in `window.rs`'s `live_title_tests`.
 //!
 //! The screen is **1920×1080** (the current hardware profile) so that a title
 //! beyond 79 glyphs fits a name gadget at all — at 640 px the gadget clips
@@ -545,7 +554,6 @@ fn retop(pb: &mut Aespb, h1: i16, h2: i16) {
 /// new contents on the next frame repaint (EmuTOS reads `w_pname` in
 /// `w_bldactive`, `gemwmlib.c:501`, on every build).
 #[test]
-#[ignore = "A83 blocked (2026-09-20): the live pointer read needs an owner-independent access model, TASK/A83-STATUS-UNFINISHED.MD"]
 fn t10_title_rewritten_in_place_shows_on_the_next_frame_repaint() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
 
@@ -583,7 +591,6 @@ fn t10_title_rewritten_in_place_shows_on_the_next_frame_repaint() {
 /// at 79 characters (the AES never truncates; the gadget clips,
 /// `docs/api/aes/window-graphics.md`, A83 contract).
 #[test]
-#[ignore = "A83 blocked (2026-09-20): the live pointer read needs an owner-independent access model, TASK/A83-STATUS-UNFINISHED.MD"]
 fn a_title_longer_than_79_characters_is_not_truncated() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // 1900 px wide: name area = 1900 − 2·adj_wbox − 2·ADJ3DSTD = 1850 px, room

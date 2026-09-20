@@ -22,7 +22,7 @@ use super::object::{
     gr_crack, gr_rect, render_tree_app, render_tree_lp64, Object, ACT_BUTCOL, BACKGR_COL, IP_HOLLOW, IP_SOLID,
 };
 use super::Aespb;
-use crate::bdos::process::Abi;
+use crate::bdos::process::{self, usermem, Abi};
 use crate::host::{host, Host};
 use crate::vdi::backend::{ClipRect, Pel, RasterBackend, WriteMode};
 use core::cell::UnsafeCell;
@@ -233,7 +233,19 @@ const MAX_WINDOWS: usize = 15;
 /// Window-table size — the application handles **plus the desktop window at
 /// handle 0** (EmuTOS `NUM_WIN`, `gemlib.h:136` `WINDOW w_win[NUM_WIN]`).
 const NUM_WIN: usize = MAX_WINDOWS + 1;
-const NAME_CAP: usize = 80;
+
+/// Ceiling on the bytes one frame build reads from a `WF_NAME`/`WF_INFO`
+/// string — the size of the scratch buffer [`LiveStr::read`] fills and the
+/// upper bound of its walk. **A walk bound, not a contract limit** (A83):
+/// the AES stores the caller's pointer and never truncates the string
+/// (`docs/api/aes/window-graphics.md`, "`WF_NAME`/`WF_INFO` store a pointer,
+/// not a copy; no length limit"); what a frame build actually needs is the
+/// glyphs that fit the gadget, so [`draw_frame`] bounds each read by the
+/// gadget's width in characters + 1 (see [`label_walk`]) and this ceiling only
+/// caps a gadget wider than 512 glyphs (> 4096 px), where the walk stops and
+/// the label simply ends. Big enough for the 1920-px profile's widest name
+/// area (234 glyphs) and info line (240 glyphs).
+const LIVE_STR_MAX: usize = 512;
 
 /// The desktop window's AES handle (EmuTOS `DESKWH`) — the bottom of the window
 /// z-order, and **a real window**: `wm_init` runs `w_setup(ppd, DESKWH, NONE)`
@@ -353,6 +365,131 @@ fn plus_shadow(r: Grect) -> Grect {
     Grect { w: r.w + DROP_SHADOW_SIZE, h: r.h + DROP_SHADOW_SIZE, ..r }
 }
 
+/// A `WF_NAME` / `WF_INFO` string as the AES keeps it: **the caller's
+/// pointer, not a copy**, plus the address space the pointer belongs to.
+///
+/// EmuTOS's `wm_set` stores exactly the pointer the application passed —
+/// `pwin->w_pname = *(char **)pinwds` (`WF_NAME`, `aes/gemwmlib.c:1661`),
+/// `pwin->w_pinfo = *(char **)pinwds` (`WF_INFO`, `:1669`) — and `w_bldactive`
+/// hands that pointer to the `W_NAME`/`W_INFO` `TEDINFO` on **every** frame
+/// build (`gl_aname.te_ptext = … pw->w_pname; gl_ainfo.te_ptext =
+/// pw->w_pinfo;`, `:501-502`). So an application that rewrites its title
+/// buffer in place sees the new text on the next frame repaint, and no length
+/// limit exists in the AES — the gadget clips (A83 contract,
+/// `docs/api/aes/window-graphics.md`). `w_setup` starts a window at
+/// `w_pname = w_pinfo = ""` (`:215-216`): [`LiveStr::NONE`].
+///
+/// **Address space.** NewTOS is not the flat machine EmuTOS runs on: every
+/// EL0 process has its own `TTBR0` and all TPAs sit at the same low VA
+/// (`kernel/src/arch/aarch64/el0.rs`, `bdos/process/mmu.rs`), and a frame is
+/// rebuilt from *other* processes' AES calls too — a `Pexec` child
+/// compositing its parent's windows, the desktop repainting after a child's
+/// `Pterm`. A raw dereference of the stored pointer would therefore go
+/// through whichever `TTBR0` happens to be installed. Instead the string is
+/// read through **the owner's own mapping**: [`Self::slot`] records the
+/// process slot that made the `wind_set` call, and [`Self::read`] translates
+/// each page of the string with [`usermem::resolve_kva`] into the kernel
+/// high-half alias of the block the process was handed — the same authority
+/// XBIOS `Setscreen` uses for a screen base an application passes back
+/// (`xbios/screen.rs::caller_base_to_kva`). An EL1 caller (the built-in
+/// desktop, the boot-time selftests) passes a kernel VA, which is read
+/// directly. A NULL pointer, or a VA the owner has no mapping for (the
+/// process ended or freed the block — A96's zombie windows), reads as `""`:
+/// EmuTOS leaves NULL undefined and NewTOS resolves it to the empty string
+/// (Lead decision, A83, 2026-09-20).
+#[derive(Clone, Copy)]
+struct LiveStr {
+    /// The pointer exactly as the caller passed it; `0` = none → `""`.
+    ptr: u64,
+    /// The process slot whose mapping `ptr` is valid in — `Some` for an EL0
+    /// caller (`process::slot_for(process::current())` at `wind_set` time),
+    /// `None` for an EL1 caller, whose pointer is a kernel VA.
+    slot: Option<usize>,
+}
+
+impl LiveStr {
+    /// `w_pname = ""` (`w_setup`, `gemwmlib.c:215-216`): no string.
+    const NONE: LiveStr = LiveStr { ptr: 0, slot: None };
+
+    /// The string `ptr` names in the address space of the **current caller**
+    /// — taken inside the `wind_set` trap, where the caller is the process
+    /// that owns the pointer.
+    fn of_caller(ptr: u64) -> LiveStr {
+        LiveStr { ptr, slot: process::slot_for(process::current()) }
+    }
+
+    /// Read the string's current contents — at most `limit` bytes and never
+    /// more than `buf` holds — into `buf`, returning the bytes read (without
+    /// the NUL). The walk ends at the NUL, at `limit`, or at the first byte
+    /// the owner has no mapping for; a NULL pointer reads as empty.
+    ///
+    /// For an EL0 owner every **page** of the string is resolved once: a
+    /// block in the owner's table is page-aligned and page-rounded
+    /// (`usermem::Block`, `seed_tpa`/`map`/`expose`), so a page that contains
+    /// one byte of the string is contained in the same block whole, and its
+    /// kernel alias is contiguous (`map_pa + offset`) up to the page end.
+    /// Crossing into the next page re-resolves, which is where a string that
+    /// runs off the end of its block stops — the read never leaves the memory
+    /// the process was actually handed.
+    fn read<'a>(&self, buf: &'a mut [u8], limit: usize) -> &'a [u8] {
+        let n = limit.min(buf.len());
+        if self.ptr == 0 {
+            return &buf[..0];
+        }
+        let page = usermem::PAGE_SIZE;
+        let mut len = 0usize;
+        let mut kva = 0u64;
+        while len < n {
+            let va = self.ptr.wrapping_add(len as u64);
+            if len == 0 || va & (page - 1) == 0 {
+                kva = match self.slot {
+                    None => va,
+                    Some(slot) => match owner_kva(slot, va) {
+                        Some(k) => k,
+                        None => break,
+                    },
+                };
+            }
+            // SAFETY: `kva` is either the EL1 caller's own kernel VA of a
+            // NUL-terminated string (the contract `wind_set` documents for
+            // an in-kernel caller) or the kernel high-half alias of a page
+            // the owner process holds in its block table, and `kva` advances
+            // only within that page (re-resolved at each page boundary). The
+            // read is volatile: the owner may rewrite the buffer at any time.
+            let c = unsafe { core::ptr::read_volatile(kva as *const u8) };
+            if c == 0 {
+                break;
+            }
+            buf[len] = c;
+            len += 1;
+            kva = kva.wrapping_add(1);
+        }
+        &buf[..len]
+    }
+}
+
+/// The kernel high-half alias of user VA `va` in process `slot`'s mapping —
+/// [`usermem::resolve_kva`], the seam [`LiveStr::read`] reads an EL0 owner's
+/// string through. The host unit tests substitute a resolver over host
+/// buffers here ([`live_title_tests`]): a host process has no process table
+/// and cannot dereference a kernel high-half address, so the owner-slot and
+/// dangling-pointer cases are modelled at this seam (A83).
+fn owner_kva(slot: usize, va: u64) -> Option<u64> {
+    #[cfg(test)]
+    if let Some(resolve) = live_title_tests::resolver() {
+        return resolve(slot, va);
+    }
+    usermem::resolve_kva(slot, va)
+}
+
+/// The walk bound [`draw_frame`] hands [`LiveStr::read`] for a label drawn in
+/// an area `max_w` pixels wide: the glyphs that fit, plus one so that a
+/// string longer than the area is seen as such (its measured length then
+/// exceeds the area, which is all the centring needs to know).
+fn label_walk(max_w: i16) -> usize {
+    (max_w.max(0) as usize / 8) + 1
+}
+
 /// One window slot.
 #[derive(Clone, Copy)]
 struct Window {
@@ -375,8 +512,12 @@ struct Window {
     /// **not** what `wm_calc` would produce for `kind = NONE`. Maintained by
     /// [`set_curr`].
     work: Grect,
-    name: [u8; NAME_CAP],
-    info: [u8; NAME_CAP],
+    /// `w_pname` / `w_pinfo` — the **caller's pointer** to the title / info
+    /// string, exactly as `wind_set(WF_NAME)` / `wind_set(WF_INFO)` received
+    /// it (`gemwmlib.c:1661,1669`), read afresh on every frame build
+    /// (`w_bldactive`, `:501-502`). See [`LiveStr`].
+    name: LiveStr,
+    info: LiveStr,
     /// Vertical slider position (`WF_VSLIDE`, 1..1000 per-mille of travel)
     /// and thumb size (`WF_VSLSIZ`, 1..1000 per-mille of the track, or **−1**
     /// = "use default size", one gadget cell). `wind_create` inits the size to
@@ -450,8 +591,8 @@ impl Window {
         curr: Grect { x: 0, y: 0, w: 0, h: 0 },
         prev: Grect { x: 0, y: 0, w: 0, h: 0 },
         work: Grect { x: 0, y: 0, w: 0, h: 0 },
-        name: [0; NAME_CAP],
-        info: [0; NAME_CAP],
+        name: LiveStr::NONE,
+        info: LiveStr::NONE,
         vslide: 0,
         vslsize: -1,
         hslide: 0,
@@ -2557,7 +2698,11 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         name_x += ADJ3DSTD;
         name_w -= 2 * ADJ3DSTD;
         let nr = Grect { x: name_x, y: gy, w: name_w, h: gl_hbox() };
-        let nlen = name_len(&w.name) as i16 * 8;
+        // `gl_aname.te_ptext = pw->w_pname` on every build (`gemwmlib.c:501`):
+        // the caller's buffer as it reads *now*, bounded by the area.
+        let mut nbuf = [0u8; LIVE_STR_MAX];
+        let name = w.name.read(&mut nbuf, label_walk(name_w));
+        let nlen = name.len() as i16 * 8;
         let nx = name_x + ((name_w - nlen) / 2).max(2);
         // A `MOVER` without a `NAME` still gets the name box, but
         // `w_bldactive` never calls `w_setcolor` for it and sets
@@ -2568,7 +2713,7 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         let (name_ink, name_box) =
             if kind & NAME != 0 { (ink(W_NAME_IDX), grow_3d(nr)) } else { (ink_of(0, false, true), nr) };
         draw_box_ink(name_box, name_ink, backend, clip);
-        draw_label(nx, gy, name_w, &w.name, name_ink.tc, name_ink.text_mode(), backend, clip);
+        draw_label(nx, gy, name_w, name, name_ink.tc, name_ink.text_mode(), backend, clip);
         top += ah - 1;
     }
 
@@ -2583,7 +2728,10 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         // inside, then the text in `tc`/`md`. `FL3DNONE` — no growth, no bevel.
         let i = ink(W_INFO_IDX);
         draw_box_ink(Grect { x: b.x, y: top, w: b.w, h: gl_hbox() }, i, backend, clip);
-        draw_label(b.x + 3, top, b.w - 4, &w.info, i.tc, i.text_mode(), backend, clip);
+        // `gl_ainfo.te_ptext = pw->w_pinfo` (`gemwmlib.c:502`) — live, as above.
+        let mut ibuf = [0u8; LIVE_STR_MAX];
+        let info = w.info.read(&mut ibuf, label_walk(b.w - 4));
+        draw_label(b.x + 3, top, b.w - 4, info, i.tc, i.text_mode(), backend, clip);
         top += gl_hbox();
     }
 
@@ -2925,30 +3073,6 @@ fn redraw_hslider(handle: i16) {
             }
             crate::vdi::cursor_show(backend);
         }
-    }
-}
-
-fn name_len(s: &[u8]) -> usize {
-    s.iter().position(|&b| b == 0).unwrap_or(s.len())
-}
-
-fn copy_cstr(dst: &mut [u8], src: *const u8) {
-    if src.is_null() {
-        dst[0] = 0;
-        return;
-    }
-    // SAFETY: trusted GEM pointer to a NUL-terminated string.
-    unsafe {
-        let mut i = 0;
-        while i < dst.len() - 1 {
-            let c = *src.add(i);
-            dst[i] = c;
-            if c == 0 {
-                break;
-            }
-            i += 1;
-        }
-        dst[dst.len() - 1] = 0;
     }
 }
 
@@ -3559,16 +3683,25 @@ pub fn wind_set(pb: &Aespb) {
             // `wind_set_str`, AIN_LEN=0) — the latter is how ILP32 apps
             // (QED) pass it. Reading `addr_in[0]` unconditionally handed an
             // ILP32 caller an empty slot → garbage title (F7 audit).
-            let title = wf_str_ptr(pb) as *const u8;
+            //
+            // `pwin->w_pname = *(char **)pinwds` (`gemwmlib.c:1661`): the
+            // **pointer** is stored, no copy — the frame build reads the
+            // caller's buffer live ([`LiveStr`], A83). The slot of the
+            // calling process goes with it, so that a later frame build from
+            // another process's AES call reads it through the owner's
+            // mapping.
+            let title = wf_str_ptr(pb);
             if let Some(w) = win(handle) {
-                copy_cstr(&mut w.name, title);
+                w.name = LiveStr::of_caller(title);
             }
             redraw_open(handle);
         }
         WF_INFO => {
-            let info = wf_str_ptr(pb) as *const u8;
+            // `pwin->w_pinfo = *(char **)pinwds` (`gemwmlib.c:1669`) — as
+            // `WF_NAME`: the pointer and its owner, read live.
+            let info = wf_str_ptr(pb);
             if let Some(w) = win(handle) {
-                copy_cstr(&mut w.info, info);
+                w.info = LiveStr::of_caller(info);
             }
             redraw_open(handle);
         }
@@ -4980,5 +5113,286 @@ mod newdesk_root_word_tests {
         b.intin[6] = 0x7FFF;
         set_newdesk(&b.pb(Abi::Ilp32));
         assert_eq!(registered(), (ILP32_TREE, 1), "ILP32 packed wind_set(WF_NEWDESK): tree int_in[2..3], root int_in[4]");
+    }
+}
+
+#[cfg(test)]
+mod live_title_tests {
+    //! A83 — `WF_NAME`/`WF_INFO` are **pointers read live through the owner's
+    //! mapping** ([`LiveStr`]). The in-place-rewrite (T10) and no-79-cap cases
+    //! run end-to-end through the dispatcher in
+    //! `tests/aes_window_name_pointer.rs` with kernel (EL1) pointers. The
+    //! EL0-owner cases cannot: a host process has no process table, and the
+    //! kernel high-half alias `usermem::resolve_kva` computes is not a host
+    //! address. They are modelled at the [`owner_kva`] seam instead — a
+    //! resolver over host buffers stands in for the owner's block table — and
+    //! the frame is built by [`draw_frame`] directly on a raster that records
+    //! the glyphs it is asked to paint (no host installed, no shared window
+    //! table touched, so the other unit tests in this binary are unaffected).
+    //!
+    //! * **owner mapping, not the current one** — with two slots mapping the
+    //!   *same* VA to different strings, the title comes from the slot the
+    //!   `wind_set` caller owned, and the resolver is asked for that slot
+    //!   only. (`process::current()` is null on the host; the reader never
+    //!   consults it — that is the modelled statement.)
+    //! * **dangling pointer** — a VA the owner has no mapping for renders as
+    //!   `""`, and nothing is dereferenced.
+    //! * **block end** — a string that runs off the end of the owner's block
+    //!   ends there; the unmapped next page is never read.
+    //! * **page crossing** — a string spanning two pages is read from both,
+    //!   each page resolved on its own (the two pages are separate host
+    //!   allocations, so a single base-plus-offset read could not produce
+    //!   the concatenation).
+    use super::*;
+    use crate::vdi::backend::{MonoSrc, PatternFill, Rect};
+    use std::sync::Mutex;
+
+    // ── the resolver stand-in ──────────────────────────────────────────
+
+    /// One modelled block: `slot` maps `[va, va + len)` to host memory at
+    /// `host` (page-aligned VA and page-rounded length, as `usermem::Block`).
+    #[derive(Clone, Copy)]
+    struct Map {
+        slot: usize,
+        va: u64,
+        len: u64,
+        host: u64,
+    }
+
+    static MAPS: Mutex<Vec<Map>> = Mutex::new(Vec::new());
+    static ASKED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+    static ACTIVE: AtomicBool = AtomicBool::new(false);
+    /// The seam is process-global; the cases run serially.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    /// The resolver [`owner_kva`] consults while a case is running.
+    pub(super) fn resolver() -> Option<fn(usize, u64) -> Option<u64>> {
+        ACTIVE.load(Ordering::Acquire).then_some(fake_resolve)
+    }
+
+    fn fake_resolve(slot: usize, va: u64) -> Option<u64> {
+        ASKED.lock().unwrap().push(slot);
+        MAPS.lock()
+            .unwrap()
+            .iter()
+            .find(|m| m.slot == slot && va >= m.va && va - m.va < m.len)
+            .map(|m| m.host + (va - m.va))
+    }
+
+    /// Run `f` with `maps` installed at the seam, then take it down.
+    fn with_maps<R>(maps: &[Map], f: impl FnOnce() -> R) -> R {
+        *MAPS.lock().unwrap() = maps.to_vec();
+        ASKED.lock().unwrap().clear();
+        ACTIVE.store(true, Ordering::Release);
+        let r = f();
+        ACTIVE.store(false, Ordering::Release);
+        MAPS.lock().unwrap().clear();
+        r
+    }
+
+    /// A page-sized host block holding `s` at offset `at` (NUL-terminated
+    /// unless `s` fills the block to its end).
+    fn page_with(s: &[u8], at: usize) -> Box<[u8]> {
+        let mut p = vec![0u8; usermem::PAGE_SIZE as usize].into_boxed_slice();
+        p[at..at + s.len()].copy_from_slice(s);
+        p
+    }
+
+    // ── a raster that records the glyphs it paints ─────────────────────
+
+    struct GlyphLog {
+        cells: Mutex<Vec<(i16, i16, [u8; 16])>>,
+    }
+
+    impl GlyphLog {
+        fn new() -> GlyphLog {
+            GlyphLog { cells: Mutex::new(Vec::new()) }
+        }
+
+        /// The glyph rows painted at `y` (the title row), left to right.
+        fn row(&self, y: i16) -> Vec<(i16, [u8; 16])> {
+            let mut v: Vec<(i16, [u8; 16])> =
+                self.cells.lock().unwrap().iter().filter(|c| c.1 == y).map(|c| (c.0, c.2)).collect();
+            v.sort_by_key(|c| c.0);
+            v
+        }
+    }
+
+    impl RasterBackend for GlyphLog {
+        fn width(&self) -> u16 {
+            640
+        }
+        fn height(&self) -> u16 {
+            480
+        }
+        fn num_colors(&self) -> u16 {
+            256
+        }
+        fn planes(&self) -> u16 {
+            16
+        }
+        fn set_color(&self, _index: u16, _r: u16, _g: u16, _b: u16) {}
+        fn query_color(&self, _index: u16) -> (u16, u16, u16) {
+            (0, 0, 0)
+        }
+        fn set_active_palette(&self, _palette: &[u16; 256]) {}
+        fn pel_to_device16(&self, _pel: Pel) -> u16 {
+            0
+        }
+        fn device_to_rgb565(&self, _argb: u32) -> u16 {
+            0
+        }
+        fn rgb565_to_device(&self, _px: u16) -> u32 {
+            0
+        }
+        fn read_pixel(&self, _x: i16, _y: i16) -> Pel {
+            0
+        }
+        fn fill_rect(&self, _x: i16, _y: i16, _w: i16, _h: i16, _pel: Pel, _clip: ClipRect) {}
+        #[allow(clippy::too_many_arguments)]
+        fn abline(
+            &self,
+            _x0: i16,
+            _y0: i16,
+            _x1: i16,
+            _y1: i16,
+            _pel: Pel,
+            _mode: WriteMode,
+            _clip: ClipRect,
+            mask: u16,
+            _last: bool,
+        ) -> u16 {
+            mask
+        }
+        fn fill_pattern(&self, _x: i16, _y: i16, _w: i16, _h: i16, _fill: PatternFill, _clip: ClipRect) {}
+        #[allow(clippy::too_many_arguments)]
+        fn draw_glyph_sized(
+            &self,
+            x: i16,
+            y: i16,
+            glyph: &[u8],
+            _cell_w: i16,
+            _cell_h: i16,
+            _fg: Pel,
+            _mode: WriteMode,
+            _clip: ClipRect,
+        ) {
+            let mut g = [0u8; 16];
+            g[..glyph.len().min(16)].copy_from_slice(&glyph[..glyph.len().min(16)]);
+            self.cells.lock().unwrap().push((x, y, g));
+        }
+        fn blit_mono(&self, _dst: Rect, _src: MonoSrc, _fg: Pel, _bg: Pel, _m: WriteMode, _clip: ClipRect) {}
+        fn copy_rect(&self, _src: Rect, _dx: i16, _dy: i16, _op: u8, _clip: ClipRect) {}
+        fn get_device_pixel(&self, _x: i16, _y: i16) -> u32 {
+            0
+        }
+        fn put_device_pixel(&self, _x: i16, _y: i16, _argb: u32) {}
+        fn flush_rect(&self, _x0: i16, _y0: i16, _x1: i16, _y1: i16) {}
+    }
+
+    // ── the stage ──────────────────────────────────────────────────────
+
+    /// A titled window's border rect.
+    const R: Grect = Grect { x: 30, y: 40, w: 320, h: 240 };
+    /// The row [`draw_label`] paints the title glyphs on: `gy + 1`,
+    /// `gy = b.y + ADJ3DSTD` ([`draw_frame`]).
+    const TITLE_ROW: i16 = R.y + ADJ3DSTD + 1;
+
+    /// An open window with a title bar, its name string `name`.
+    fn titled(name: LiveStr) -> Window {
+        let mut w = Window::EMPTY;
+        w.in_use = true;
+        w.open = true;
+        w.kind = NAME | CLOSER | FULLER | MOVER;
+        w.curr = R;
+        w.name = name;
+        w
+    }
+
+    /// The title-row glyphs the frame of `w` paints.
+    fn title_of(w: &Window) -> Vec<(i16, [u8; 16])> {
+        let log = GlyphLog::new();
+        draw_frame(w, true, &log, ClipRect::full(640, 480));
+        log.row(TITLE_ROW)
+    }
+
+    /// The title row of a window titled by a kernel (EL1) pointer to `s` —
+    /// the reference every EL0 case is held against.
+    fn kernel_title(s: &'static [u8]) -> Vec<(i16, [u8; 16])> {
+        title_of(&titled(LiveStr { ptr: s.as_ptr() as u64, slot: None }))
+    }
+
+    const PAGE: u64 = usermem::PAGE_SIZE;
+    /// A low user VA, page-aligned, the way the EL0 heap window hands them out.
+    const VA: u64 = 0x0040_0000;
+
+    #[test]
+    fn the_string_is_read_through_the_owners_mapping_not_the_current_one() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let owner = page_with(b"OWNER\0", 0);
+        let other = page_with(b"OTHER\0", 0);
+        let maps = [
+            Map { slot: 3, va: VA, len: PAGE, host: owner.as_ptr() as u64 },
+            Map { slot: 5, va: VA, len: PAGE, host: other.as_ptr() as u64 },
+        ];
+        let (title, asked) = with_maps(&maps, || {
+            let t = title_of(&titled(LiveStr { ptr: VA, slot: Some(3) }));
+            (t, ASKED.lock().unwrap().clone())
+        });
+        assert_eq!(title, kernel_title(b"OWNER\0"), "the title must be the owner slot's string");
+        assert_ne!(title, kernel_title(b"OTHER\0"), "the same VA in another slot must not be read");
+        assert!(!asked.is_empty() && asked.iter().all(|&s| s == 3), "resolved through slots {asked:?}, not the owner's 3 only");
+    }
+
+    #[test]
+    fn a_dangling_el0_pointer_is_an_empty_title_and_touches_nothing() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let owner = page_with(b"OWNER\0", 0);
+        let maps = [Map { slot: 3, va: VA, len: PAGE, host: owner.as_ptr() as u64 }];
+        let title = with_maps(&maps, || {
+            // A VA the owner never had — a freed block, or a slot re-seeded
+            // for a new process (A96): the resolver answers `None`.
+            title_of(&titled(LiveStr { ptr: VA + 8 * PAGE, slot: Some(3) }))
+        });
+        assert_eq!(title, kernel_title(b"\0"), "an unresolvable VA must render as the empty title");
+        assert_eq!(title, title_of(&titled(LiveStr::NONE)));
+    }
+
+    #[test]
+    fn a_string_running_off_the_owners_block_ends_at_the_block_end() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        // "ABC" in the last three bytes of the block, no NUL; the next page
+        // is not the owner's.
+        let last = PAGE as usize - 3;
+        let owner = page_with(b"ABC", last);
+        let maps = [Map { slot: 3, va: VA, len: PAGE, host: owner.as_ptr() as u64 }];
+        let title = with_maps(&maps, || title_of(&titled(LiveStr { ptr: VA + last as u64, slot: Some(3) })));
+        assert_eq!(title, kernel_title(b"ABC\0"), "the read must stop at the end of the owner's block");
+    }
+
+    #[test]
+    fn a_string_spanning_two_pages_is_read_from_both() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        // Two separately allocated host pages model two pages of one block
+        // (or two adjacent blocks): the first ends with "SPAN", the second
+        // starts with "NING\0".
+        let head = page_with(b"SPAN", PAGE as usize - 4);
+        let tail = page_with(b"NING\0", 0);
+        let maps = [
+            Map { slot: 3, va: VA, len: PAGE, host: head.as_ptr() as u64 },
+            Map { slot: 3, va: VA + PAGE, len: PAGE, host: tail.as_ptr() as u64 },
+        ];
+        let title = with_maps(&maps, || title_of(&titled(LiveStr { ptr: VA + PAGE - 4, slot: Some(3) })));
+        assert_eq!(title, kernel_title(b"SPANNING\0"), "each page must be resolved on its own");
+    }
+
+    #[test]
+    fn label_walk_is_the_areas_glyph_count_plus_one() {
+        // 1850 px name area (the 1900-px window of the integration case) →
+        // 231 glyphs fit, the walk reads 232 so a longer string measures
+        // longer than the area; a degenerate area still walks one byte.
+        assert_eq!(label_walk(1850), 232);
+        assert_eq!(label_walk(0), 1);
+        assert_eq!(label_walk(-5), 1);
     }
 }

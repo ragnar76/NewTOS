@@ -1,0 +1,24 @@
+# A83 (our desktop, sd-base, no #Z): the C:\ window is open at boot at
+# (48,43). Park the pointer bottom-right (never through the menu bar), dump the
+# idle desktop, double-click the ACC folder icon (94,104) in the boot window
+# -> open_dir_window: a C:\ACC\ window opens staggered at (72,67) with its
+# title/info from the WNode buffers; park, dump. Then click that window's
+# closer (83,78 = (72+2, 67+2) + 9 into the 19x19 cell) -> WM_CLOSED ->
+# do_close_folder -> navigate_window: the same window, same WNode, title
+# rewritten in place to C:\ (the AES reads the pointer live); park, dump twice.
+# Ticks are 200 Hz after "[desk] desktop up" (A46 dual arming).
+200 parkbr
+1100 mark A_IDLE
+1400 move 94 104
+1600 down
+1603 up
+1608 down
+1611 up
+2000 parkbr
+2600 mark B_FOLDER
+3000 move 83 78
+3200 down
+3203 up
+3600 parkbr
+4200 mark C_NAVIGATED
+4600 mark D_NAVIGATED_2S

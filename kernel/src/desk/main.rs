@@ -1100,12 +1100,8 @@ fn set_window_mask(handle: i16, raw: &str) {
     if !mask.is_empty() && mask != "*.*" {
         title.push_str(&mask);
     }
-    set_window_title(handle, &title);
-
     // Info line reflects the filtered item count / size.
-    let mut info = [0u8; 64];
-    fmt_info(&mut info, count, size);
-    super::wind_set_ptr(handle, WF_INFO, info.as_ptr() as u64);
+    set_window_strings(handle, slot, &title, count, size);
 
     if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
         set_sliders(handle, sliders);
@@ -1124,14 +1120,29 @@ fn mask_normalize(raw: &str) -> String {
     }
 }
 
-/// Push a new title (`WF_NAME`) onto window `handle`. The AES copies the string
-/// during the trap, so a local buffer that outlives the call suffices.
-fn set_window_title(handle: i16, title: &str) {
-    let mut tbuf = [0u8; 96];
-    let tb = title.as_bytes();
-    let tn = tb.len().min(tbuf.len() - 1);
-    tbuf[..tn].copy_from_slice(&tb[..tn]);
-    super::wind_set_ptr(handle, WF_NAME, tbuf.as_ptr() as u64);
+/// Store `title` and the ` N items   M bytes used` line in the [`WNode`] of
+/// window slot `slot` and push both to the AES by **address** — `WF_NAME`
+/// then `WF_INFO`, as EmuTOS's `do_diropen` does with `pw->w_name`
+/// (`desksupp.c:451`, filled by `win_sname`, `deskwin.c:847-858`) and
+/// `win_sinfo` with `pwin->w_info` (`deskwin.c:875-906`). The AES
+/// keeps the pointer, not a copy (A83, `gemwmlib.c:1661,1669`), and reads it
+/// at every frame build; the strings therefore live in the node — whose
+/// address is stable for the desktop's lifetime ([`WNode::w_name`]) — and
+/// never on this stack frame.
+///
+/// [`WNode`]: super::win::WNode
+/// [`WNode::w_name`]: super::win::WNode::w_name
+fn set_window_strings(handle: i16, slot: usize, title: &str, count: usize, size: u64) {
+    let ptrs = global::with(|g| {
+        let node = &mut g.windows.slots[slot];
+        node.set_name(title);
+        fmt_info(&mut node.w_info, count, size);
+        (node.name_ptr(), node.info_ptr())
+    });
+    if let Some((name, info)) = ptrs {
+        super::wind_set_ptr(handle, WF_NAME, name);
+        super::wind_set_ptr(handle, WF_INFO, info);
+    }
 }
 
 /// `fun_search` (EmuTOS `deskfun.c:560`, `CONF_WITH_SEARCH`) — File → Search:
@@ -1617,17 +1628,9 @@ fn open_dir_window(spec: &str, title: &str) {
         return;
     };
 
-    // Title (WF_NAME) + info line (WF_INFO); both copied by the AES during the
-    // trap, so the local buffers only need to outlive the call.
-    let mut tbuf = [0u8; 96];
-    let tb = title.as_bytes();
-    let tn = tb.len().min(tbuf.len() - 1);
-    tbuf[..tn].copy_from_slice(&tb[..tn]);
-    super::wind_set_ptr(handle, WF_NAME, tbuf.as_ptr() as u64);
-
-    let mut info = [0u8; 64];
-    fmt_info(&mut info, count, size);
-    super::wind_set_ptr(handle, WF_INFO, info.as_ptr() as u64);
+    // Title (WF_NAME) + info line (WF_INFO), held in the node and passed by
+    // address (`win_sname`/`win_sinfo`; the AES keeps the pointer, A83).
+    set_window_strings(handle, slot, title, count, size);
 
     // Open at the window's saved `NEWDESK.INF` rectangle for this slot, or a
     // staggered sub-rectangle of the desktop (later windows offset so they do
@@ -1694,15 +1697,7 @@ fn navigate_window(handle: i16, spec: &str, title: &str) {
         return;
     };
 
-    let mut tbuf = [0u8; 96];
-    let tb = title.as_bytes();
-    let tn = tb.len().min(tbuf.len() - 1);
-    tbuf[..tn].copy_from_slice(&tb[..tn]);
-    super::wind_set_ptr(handle, WF_NAME, tbuf.as_ptr() as u64);
-
-    let mut info = [0u8; 64];
-    fmt_info(&mut info, count, size);
-    super::wind_set_ptr(handle, WF_INFO, info.as_ptr() as u64);
+    set_window_strings(handle, slot, title, count, size);
 
     let work = wind_get_work(handle);
     if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
@@ -1850,11 +1845,12 @@ fn child_spec(parent_spec: &str, name: &str) -> (String, String) {
     (d, title)
 }
 
-/// Build a directory-window info line ` N items   M bytes used` into `out`.
-fn fmt_info(out: &mut [u8; 64], count: usize, size: u64) {
+/// Build a directory-window info line ` N items   M bytes used` into `out`
+/// (NUL-terminated, truncated to fit) — the node's `w_info` buffer.
+fn fmt_info(out: &mut [u8], count: usize, size: u64) {
     let mut p = 0usize;
     let mut num = [0u8; 20];
-    let push = |out: &mut [u8; 64], p: &mut usize, s: &[u8]| {
+    let push = |out: &mut [u8], p: &mut usize, s: &[u8]| {
         for &b in s {
             if *p < out.len() - 1 {
                 out[*p] = b;

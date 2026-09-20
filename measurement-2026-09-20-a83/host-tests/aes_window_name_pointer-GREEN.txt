@@ -1,0 +1,5 @@
+     Running tests/aes_window_name_pointer.rs (target/debug/deps/aes_window_name_pointer-f04822feff9ae558)
+test a_title_longer_than_79_characters_is_not_truncated ... ok
+test t10_title_rewritten_in_place_shows_on_the_next_frame_repaint ... ok
+test a_null_pointer_is_an_empty_title ... ok
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
