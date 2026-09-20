@@ -1,0 +1,797 @@
+diff -ru ws-before/tos-api/src/aes/resource.rs ws-after/tos-api/src/aes/resource.rs
+--- ws-before/tos-api/src/aes/resource.rs	2026-09-20 16:48:08
++++ ws-after/tos-api/src/aes/resource.rs	2026-09-20 16:48:08
+@@ -634,6 +634,18 @@
+     /// buffer is the kernel heap's (the in-place path, freed by
+     /// [`kernel_cicon_free`]).
+     cicon_raw: Long,
++    /// The process released the blob's pool block (`raw`) itself, through
++    /// `Mfree(ap_rscmem)` ([`on_mfree`], A76). The key is no longer this
++    /// entry's to free: `rsrc_free` answers 0 for it without touching the
++    /// pool — EmuTOS's `rs_free` hits the double free in its own `dos_free`
++    /// (`gemrslib.c:699-700`, `EIMBA` → `rc = 0`) — and process end leaves
++    /// it to whoever holds the key now. Never set for the in-place path
++    /// (`raw == 0`).
++    blob_released: bool,
++    /// Likewise for the colour-icon buffer (`cicon_raw`): the process freed
++    /// it by its own address, so `rsrc_free` must not free the key again
++    /// (`free_cicon_buffers`' `dos_free` fails → `rc = -1` → 0, `:531`).
++    cicon_released: bool,
+     /// The descriptor [`relocate_and_register_core`] produced for the blob.
+     desc: Loaded,
+ }
+@@ -649,6 +661,8 @@
+         latest_unnamed: false,
+         raw: 0,
+         cicon_raw: 0,
++        blob_released: false,
++        cicon_released: false,
+         desc: Loaded::EMPTY,
+     };
+ }
+@@ -759,10 +773,57 @@
+             }
+         }
+     }
+-    t[idx] = RscEntry { owner, name, latest_unnamed: name == 0, raw, cicon_raw, desc };
++    t[idx] = RscEntry {
++        owner,
++        name,
++        latest_unnamed: name == 0,
++        raw,
++        cicon_raw,
++        blob_released: false,
++        cicon_released: false,
++        desc,
++    };
+     true
+ }
+ 
++/// The process in GEMDOS slot `slot` freed the pool block `m_start` itself
++/// (an EL0 `Mfree`/`Mshrink(0)` that resolved to a `Kind::Rsc` block — the
++/// GEMDOS side of A76, `gemdos::memory`). If that key is a blob or
++/// colour-icon buffer of one of the slot's resource entries, the entry
++/// learns it is gone: `rsrc_free` then answers 0 for it and frees nothing
++/// under it, and process end does not free the key a second time.
++///
++/// EmuTOS needs no such step because it keeps no descriptor: the blob is an
++/// ordinary `Mxalloc` block of the application (`rs_readit`,
++/// `aes/gemrslib.c:775`), `xmfree` frees it for whoever names its address
++/// (`bdos/umem.c:135-159`), and a later `rs_free` merely finds its
++/// `dos_free` failing on the unlinked block (`:699-700`) — after re-walking
++/// the freed header for the icon buffers (`free_cicon_buffers`, `:694`),
++/// its own hazard. NewTOS keeps the observable result (`rsrc_free` → 0)
++/// and skips the walk over freed memory (`docs/api/gemdos/memory/49-mfree.md`
++/// § "AES resource block"; `resource-fileselector.md` A39 callout item 8).
++///
++/// Only the entries of `slot` — the block table `Mfree` resolved the user VA
++/// through is the slot's own, so the key cannot be another process's blob
++/// (EmuTOS's no-ownership-check quirk is unreachable from EL0, where an
++/// application can only name blocks mapped into its own window).
++pub fn on_mfree(slot: usize, m_start: Long) {
++    if m_start == 0 {
++        return;
++    }
++    // SAFETY: called on the single trap path (GEMDOS `Mfree` under the BDOS
++    // giant lock), no AES call in flight.
++    let t = unsafe { table() };
++    for e in t.iter_mut().filter(|e| e.owner == slot) {
++        if e.raw == m_start && !e.blob_released {
++            e.blob_released = true;
++        }
++        if e.cicon_raw == m_start && !e.cicon_released {
++            e.cicon_released = true;
++        }
++    }
++}
++
+ /// Drop every entry of the process in GEMDOS slot `slot` (its AES identity)
+ /// — the AES side of process termination, called from `Pterm` and `Ptermres`
+ /// (`bdos::process::pterm::terminate_inner`). The blobs themselves are the
+@@ -774,7 +835,10 @@
+ /// (`pd::open`, A29) — without this it would inherit entries whose kernel
+ /// aliases point at freed pool memory. Only `slot`'s entries; every other
+ /// process keeps its state. `appl_exit` does not call this (`ap_exit`,
+-/// `aes/gemaplib.c:251-261`).
++/// `aes/gemaplib.c:251-261`). A pool block the process freed itself
++/// (`blob_released`/`cicon_released`, [`on_mfree`]) is already off `mp_mal`
++/// and is not touched — nothing here frees by key, so it cannot be freed
++/// twice.
+ pub fn on_process_exit(slot: usize) {
+     // SAFETY: called on the single trap path (`Pterm` under the BDOS giant
+     // lock), no AES call in flight.
+@@ -2471,8 +2535,10 @@
+ /// process's state is touched.
+ ///
+ /// Returns 1 only if the words named a loaded resource; 0 when they named
+-/// nothing, on a double free, and when the pool refused the block (spec
+-/// verification criterion resource-fileselector.md § `rsrc_free`).
++/// nothing, on a double free, when the pool refused the block, and when the
++/// process had already freed the blob or its icon buffer itself through
++/// `Mfree` ([`on_mfree`], A76 — EmuTOS's `dos_free` double free, `:699-700`;
++/// spec verification criterion resource-fileselector.md § `rsrc_free`).
+ pub fn rsrc_free(pb: &Aespb) {
+     let owner = caller_identity();
+     // SAFETY: single trap path; `global` is the caller's AESGLOBAL.
+@@ -2502,30 +2568,48 @@
+     // of the process (`cicon_raw`), or the kernel heap's on the in-place
+     // path.
+     if entry.cicon_raw != 0 {
+-        if let Some(slot) = crate::bdos::process::slot_for(crate::bdos::process::current()) {
+-            usermem::free_by_mstart(slot, entry.cicon_raw);
++        if entry.cicon_released {
++            // The process freed the buffer itself (`on_mfree`, A76): the
++            // key may be someone else's block by now, so it is neither
++            // freed nor dropped from the window table here. EmuTOS's
++            // `dos_free(cicon->col_data)` fails on the unlinked block:
++            // `rc = -1` → 0 (`:531`, `:695-696`).
++            rc = 0;
++        } else {
++            if let Some(slot) = crate::bdos::process::slot_for(crate::bdos::process::current()) {
++                usermem::free_by_mstart(slot, entry.cicon_raw);
++            }
++            // SAFETY: single-CPU trap context; `cicon_raw` came from
++            // `mxalloc` in `load_into_user` and has not been freed.
++            if unsafe { crate::bdos::mem::traps::mfree(entry.cicon_raw) } != 0 {
++                rc = 0; // `if (dos_free(cicon->col_data)) rc = -1;` (`:531`)
++            }
+         }
+-        // SAFETY: single-CPU trap context; `cicon_raw` came from `mxalloc`
+-        // in `load_into_user` and has not been freed.
+-        if unsafe { crate::bdos::mem::traps::mfree(entry.cicon_raw) } != 0 {
+-            rc = 0; // `if (dos_free(cicon->col_data)) rc = -1;` (`:531`)
+-        }
+     } else {
+         // SAFETY: the entry's kernel-heap buffer, freed exactly once (the
+         // entry was just cleared).
+         unsafe { kernel_cicon_free(entry.desc.cicon) };
+     }
+     if entry.raw != 0 {
+-        if let Some(slot) =
+-            crate::bdos::process::slot_for(crate::bdos::process::current())
+-        {
+-            usermem::free_by_mstart(slot, entry.raw);
++        if entry.blob_released {
++            // The process freed the blob itself (`Mfree(ap_rscmem)`,
++            // `on_mfree`, A76): EmuTOS's `dos_free(rs_global->ap_rscmem)`
++            // hits the double free, `EIMBA` → `rc = 0` (`gemrslib.c:
++            // 699-700`). Nothing is freed or dropped from the window table
++            // — the key is no longer this entry's.
++            rc = 0;
++        } else {
++            if let Some(slot) =
++                crate::bdos::process::slot_for(crate::bdos::process::current())
++            {
++                usermem::free_by_mstart(slot, entry.raw);
++            }
++            // SAFETY: single-CPU trap context (implicit BDOS lock); `raw`
++            // came from `mxalloc` in `load_into_user` and has not been freed.
++            if unsafe { crate::bdos::mem::traps::mfree(entry.raw) } != 0 {
++                rc = 0; // `if (dos_free(...)) rc = 0;` (`gemrslib.c:699-700`)
++            }
+         }
+-        // SAFETY: single-CPU trap context (implicit BDOS lock); `raw` came
+-        // from `mxalloc` in `load_into_user` and has not been freed.
+-        if unsafe { crate::bdos::mem::traps::mfree(entry.raw) } != 0 {
+-            rc = 0; // `if (dos_free(...)) rc = 0;` (`gemrslib.c:699-700`)
+-        }
+     }
+     // The caller's `AESGLOBAL` is deliberately **not** cleared: EmuTOS's
+     // `rs_free` frees the blob and leaves `ap_rscmem`/`ap_rsclen`/`ap_ptree`
+@@ -3995,23 +4079,24 @@
+     const VA_HYBRID: u64 = 0x0040_7000;
+ 
+     /// `RUN`, the process table and the resource lists are process-wide
+-    /// statics; the tests of this module must not overlap.
++    /// statics; the tests of this module — and of [`super::mfree_tests`],
++    /// which shares them — must not overlap.
+     static LOCK: Mutex<()> = Mutex::new(());
+ 
+-    fn lock() -> MutexGuard<'static, ()> {
++    pub(super) fn lock() -> MutexGuard<'static, ()> {
+         LOCK.lock().unwrap_or_else(|e| e.into_inner())
+     }
+ 
+     /// A claimed GEMDOS slot with a basepage page of its own; its AES identity
+     /// is the slot, the pid it reports 0 (the application chain's). Released
+     /// on drop.
+-    struct Proc {
+-        slot: usize,
++    pub(super) struct Proc {
++        pub(super) slot: usize,
+         page: *mut [u8; 4096],
+     }
+ 
+     impl Proc {
+-        fn new() -> Self {
++        pub(super) fn new() -> Self {
+             let slot = process::allocate_slot().expect("a free process slot");
+             let page = Box::into_raw(Box::new([0u8; 4096]));
+             PROCESS_TABLE[slot]
+@@ -4025,13 +4110,13 @@
+             crate::aes::pid_of_slot(self.slot)
+         }
+ 
+-        fn bp(&self) -> *mut BasePage {
++        pub(super) fn bp(&self) -> *mut BasePage {
+             self.page.cast::<BasePage>()
+         }
+ 
+         /// Make this the running process: every AES call now carries its
+         /// identity.
+-        fn run(&self) {
++        pub(super) fn run(&self) {
+             process::set_current(self.bp());
+         }
+     }
+@@ -4053,9 +4138,9 @@
+ 
+     /// The caller's `AESGLOBAL`: gemlib's 16 WORDs, persistent across calls
+     /// like an application's `aes_global[]`.
+-    type Global = [i16; 16];
++    pub(super) type Global = [i16; 16];
+ 
+-    fn rscmem(g: &Global) -> u32 {
++    pub(super) fn rscmem(g: &Global) -> u32 {
+         // SAFETY: 32 bytes; byte 14..18 is `ap_rscmem`.
+         let b = unsafe { std::slice::from_raw_parts(g.as_ptr() as *const u8, 32) };
+         u32::from_le_bytes(b[AP_RSCMEM_OFF..AP_RSCMEM_OFF + 4].try_into().unwrap())
+@@ -4069,7 +4154,7 @@
+ 
+     /// `_AESrscmem_set(v)` / `_AESrscfile_set(v)` — the application writing
+     /// the two words (`sdk/gemlib/overlay/gem.h`, 4 bytes at 14 and 10).
+-    fn set_words(g: &mut Global, tree: u32, mem: u32) {
++    pub(super) fn set_words(g: &mut Global, tree: u32, mem: u32) {
+         let b = g.as_mut_ptr() as *mut u8;
+         // SAFETY: 32 bytes; the two fields are only 2-byte aligned.
+         unsafe {
+@@ -4109,7 +4194,7 @@
+ 
+     /// One AES call through the real dispatcher, carrying `global` (null
+     /// allowed) → (`int_out[0]`, `addr_out[0]`).
+-    fn call(global: *mut i16, op: i16, n_intin: i16, intin: [i16; 4]) -> (i16, u64) {
++    pub(super) fn call(global: *mut i16, op: i16, n_intin: i16, intin: [i16; 4]) -> (i16, u64) {
+         let mut control = [op, n_intin, 1, 0, 0];
+         let mut intin = intin;
+         let mut intout = [0i16; 8];
+@@ -4128,11 +4213,11 @@
+         (intout[0], addrout[0])
+     }
+ 
+-    fn gaddr(g: &mut Global, rtype: i16, index: i16) -> (i16, u64) {
++    pub(super) fn gaddr(g: &mut Global, rtype: i16, index: i16) -> (i16, u64) {
+         call(g.as_mut_ptr(), 112, 2, [rtype, index, 0, 0])
+     }
+ 
+-    fn rsrc_free(g: &mut Global) -> i16 {
++    pub(super) fn rsrc_free(g: &mut Global) -> i16 {
+         call(g.as_mut_ptr(), 111, 0, [0; 4]).0
+     }
+ 
+@@ -4479,7 +4564,7 @@
+     }
+ 
+     /// The fixture: an NRSC v11 (LP64) blob.
+-    fn blob() -> Vec<u8> {
++    pub(super) fn blob() -> Vec<u8> {
+         let mut b = vec![0u8; TOTAL];
+         b[0..4].copy_from_slice(b"NRSC");
+         let hdr = [
+@@ -4890,5 +4975,376 @@
+         let rev16 = device(4, 16).rev_map_col();
+         assert_eq!(rev16[15], 1);
+         assert_eq!(rev16[255], 0);
++    }
++}
++
++#[cfg(test)]
++mod mfree_tests {
++    //! A76 — **`Mfree(ap_rscmem)` is an ordinary free of an ordinary block.**
++    //!
++    //! The blob `rsrc_load` returns is a process-owned `Mxalloc` block like any
++    //! other — EmuTOS's `rs_readit` takes it through `dos_alloc_anyram` =
++    //! `Mxalloc(_, MX_PREFTTRAM)` (`aes/gemrslib.c:775`, `util/gemdos.c:117-120`)
++    //! and stores its base in the caller's `ap_rscmem` (`:787`); nothing marks
++    //! it as the AES's. A program's own `Mfree(ap_rscmem)` therefore succeeds
++    //! (`bdos/umem.c:135-159`, `xmfree` — no ownership check), and only a
++    //! *later* `rsrc_free` observes the double free: its `dos_free` fails and
++    //! `rs_free` answers 0 (`gemrslib.c:685-708`). TeraDesk's `free_icons` →
++    //! `xrsrc_free` = `Mfree(_AESrscmem)` (`sdk/apps/teradesk/rsc_load.c:
++    //! 480-492`) is the caller; measured `Mfree(0x427000) -> -40` on the
++    //! `cicons.rsc` blob (`TASK/A76.md`). Contract: `docs/api/gemdos/memory/
++    //! 49-mfree.md` § "AES resource block", `docs/api/aes/resource-fileselector
++    //! .md` A39 callout item 8, `docs/COMPATIBILITY.md` "Resource-block
++    //! ownership (A76)".
++    //!
++    //! ## Why in-crate, and what is real here
++    //!
++    //! Like [`super::selector_tests`], these need a blob whose base the four
++    //! bytes of `ap_rscmem` can name — the EL0 shape of `load_into_user` — and
++    //! an entry registered under a **pool key**. The pool and the window are
++    //! the real ones: the block comes from `traps::mxalloc` on a BDOS pool
++    //! installed for this binary, the user VA from `usermem::map` as a
++    //! `Kind::Rsc` block, and `Mfree` goes through the GEMDOS trap entry
++    //! (`gemdos::memory::mfree`) with the test's process as `RUN`, exactly the
++    //! path an EL0 program takes. The only stand-in is the *access* alias:
++    //! `load_into_user` reaches the block through `raw + VA_OFFSET`, the kernel
++    //! high-half alias no host process maps, so the blob bytes live in a buffer
++    //! the test owns (the same split `relocate_and_register_core` gives the
++    //! loader). Nothing about the accounting under test — the pool lists, the
++    //! window table, the resource entry — is faked.
++    //!
++    //! The pool is a pure bookkeeping structure (its MDs live in a static
++    //! arena, never inside the managed range), so a range of `Long` addresses
++    //! that no one dereferences is a valid pool on the host. It is installed
++    //! once for the whole binary; nothing else in these unit tests allocates
++    //! from it.
++
++    use super::cicon_tests::blob as cicon_blob;
++    use super::selector_tests::{call, gaddr, lock, rscmem, rsrc_free, set_words, Global, Proc};
++    use super::tests::g32;
++    use super::*;
++    use crate::bdos::mem::free_all_owned::free_all_owned;
++    use crate::bdos::mem::stats::{pool_stats, PoolKind, PoolStats};
++    use crate::bdos::mem::traps;
++    use crate::trap::TrapArgs;
++    use std::sync::Once;
++    use tos_types::error::{EIMBA, E_OK};
++
++    /// A genuine NRSC v7 blob without colour icons (three trees).
++    const FSEL: &[u8] = include_bytes!("gem_fsel.nrsc");
++
++    /// A 16 MiB ST-RAM pool at `Long` addresses no one dereferences.
++    const POOL_START: u64 = 0x0100_0000;
++    const POOL_LEN: u64 = 0x0100_0000;
++
++    static POOL: Once = Once::new();
++
++    fn pool() -> PoolStats {
++        POOL.call_once(|| {
++            // SAFETY: single-threaded through `Once`, before any allocation
++            // in this binary; the range overlaps nothing the pool would
++            // dereference (it never touches the managed bytes).
++            unsafe { crate::bdos::mem::init::init(POOL_START, POOL_LEN, 0, 0) }.expect("the test pool");
++        });
++        pool_stats(PoolKind::Stram)
++    }
++
++    /// `Mfree(addr)` as the GEMDOS trap entry takes it from the running EL0
++    /// process (`gemdos/memory.rs::mfree`: user VA → pool key → pool).
++    fn mfree(addr: u64) -> Long {
++        crate::gemdos::memory::mfree(&TrapArgs { regs: [addr, 0, 0, 0, 0, 0, 0, 0], func: 0x49, svc_imm: 1 })
++    }
++
++    /// A blob loaded for the running process the way `load_into_user` loads
++    /// it (see the module comment): pool block `raw`, window VA `app_va`
++    /// (`Kind::Rsc`), relocated onto `app_va`, registered under `raw` (and
++    /// `cicon_raw`, when the blob has colour icons), reported into `global`.
++    struct PoolLoaded {
++        /// The blob's access alias (the test's buffer).
++        _words: Vec<u64>,
++        /// The colour-icon device-form buffer's access alias, if any.
++        _cicon: Vec<u16>,
++        /// Pool key of the blob.
++        raw: Long,
++        /// The blob's user VA — what the caller's `ap_rscmem` holds.
++        app_va: u64,
++        /// Pool key and user VA of the colour-icon buffer (0/0 without one).
++        cicon_raw: Long,
++        cicon_va: u64,
++    }
++
++    impl PoolLoaded {
++        fn load(app: &Proc, src: &[u8], global: &mut Global) -> Self {
++            let mut words = vec![0u64; src.len().div_ceil(8)];
++            let p = words.as_mut_ptr() as *mut u8;
++            // SAFETY: `words` holds at least `src.len()` bytes.
++            unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), p, src.len()) };
++
++            let pages = (src.len() as u64 + usermem::PAGE_SIZE - 1) & !(usermem::PAGE_SIZE - 1);
++            // SAFETY: single test thread under the selector lock (the BDOS
++            // lock's stand-in).
++            let raw = unsafe { traps::mxalloc((pages + usermem::PAGE_SIZE) as Long, MX_PREFTTRAM) };
++            assert_ne!(raw, 0, "the pool must supply the blob's block");
++            // SAFETY: `raw` is a live pool block of `pages + one page` bytes.
++            let app_va = unsafe { usermem::map(app.slot, raw, pages, usermem::Kind::Rsc) }.expect("window room");
++            assert!(app_va <= u64::from(u32::MAX), "the four bytes must be able to name the blob");
++
++            let mut cicon: Vec<u16> = Vec::new();
++            let mut cicon_raw: Long = 0;
++            let mut cicon_va: u64 = 0;
++            let mut alloc = |bytes: usize| -> Option<(u64, u64)> {
++                let pages = (bytes as u64 + usermem::PAGE_SIZE - 1) & !(usermem::PAGE_SIZE - 1);
++                // SAFETY: as above.
++                let raw = unsafe { traps::mxalloc((pages + usermem::PAGE_SIZE) as Long, MX_PREFTTRAM) };
++                assert_ne!(raw, 0, "the pool must supply the icon buffer");
++                // SAFETY: `raw` is a live pool block of `pages + one page` bytes.
++                let va = unsafe { usermem::map(app.slot, raw, pages, usermem::Kind::Rsc) }.expect("window room");
++                cicon = vec![0u16; bytes / 2];
++                cicon_raw = raw;
++                cicon_va = va;
++                Some((cicon.as_mut_ptr() as u64, va))
++            };
++            // SAFETY: `p` addresses `src.len()` writable bytes that live as
++            // long as this value; the alias buffer likewise.
++            let desc = unsafe { relocate_and_register_core(p, src.len(), app_va, Abi::Lp64, &mut alloc) }
++                .expect("the blob must relocate");
++            // SAFETY: single trap path.
++            assert!(unsafe { register(caller_identity(), raw, cicon_raw, desc) }, "room in the resource lists");
++            // SAFETY: a 32-byte caller array.
++            unsafe { report_load(global.as_mut_ptr(), &desc) };
++            assert_eq!(rscmem(global), app_va as u32, "ap_rscmem names the blob at its window VA");
++            PoolLoaded { _words: words, _cicon: cicon, raw, app_va, cicon_raw, cicon_va }
++        }
++    }
++
++    /// A running process with a fresh window table (what the loader seeds).
++    fn running() -> Proc {
++        let app = Proc::new();
++        // SAFETY: the slot is this test's; nothing of it is mapped yet.
++        unsafe { usermem::seed_tpa(app.slot, 0, 0, 0) };
++        app.run();
++        app
++    }
++
++    // ── (a) Mfree(ap_rscmem) succeeds and releases the block ───────────────
++
++    /// `xmfree` finds the blob's `m_start` on `mp_mal` like any block's and
++    /// frees it: `E_OK`, one allocated MD fewer. A second `Mfree` of the same
++    /// address is the ordinary double free, `EIMBA` (`49-mfree.md` edge case
++    /// 5). Red before A76: `-40`, the block still allocated.
++    #[test]
++    fn mfree_of_ap_rscmem_releases_the_blob_like_any_malloc_block() {
++        let _g = lock();
++        let before = pool();
++        let app = running();
++        let mut g = Global::default();
++        let x = PoolLoaded::load(&app, FSEL, &mut g);
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks + 1);
++
++        assert_eq!(mfree(x.app_va), E_OK, "Mfree(ap_rscmem) is an ordinary free");
++        let after = pool();
++        assert_eq!(after.allocated_blocks, before.allocated_blocks, "the blob's block is off mp_mal");
++        assert_eq!(after.free_bytes, before.free_bytes, "…and back on mp_mfl in full");
++        assert_eq!(mfree(x.app_va), EIMBA, "a second Mfree is the ordinary double free");
++
++        // Leave the process's list as `Pterm` does; nothing is left to free.
++        drop(app);
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks);
++    }
++
++    // ── (b) rsrc_free after the app's Mfree: 0, and it frees nothing ───────
++
++    /// `rs_free` after the program freed the blob itself: its `dos_free` hits
++    /// the already-unlinked block → `EIMBA` → 0 (`gemrslib.c:699-705`). NewTOS
++    /// must give that 0 **without** touching the pool: a block that has since
++    /// taken over the freed key belongs to someone else, and the stale window
++    /// entry must not be dropped either. Red before A76 (the `Mfree` was
++    /// refused, so the blob was still there and `rsrc_free` answered 1).
++    #[test]
++    fn rsrc_free_after_the_apps_mfree_reports_zero_and_frees_no_pool_block() {
++        let _g = lock();
++        let before = pool();
++        let app = running();
++        let mut g = Global::default();
++        let x = PoolLoaded::load(&app, FSEL, &mut g);
++        assert_eq!(mfree(x.app_va), E_OK);
++
++        // A stranger takes the freed bytes (first fit lands on the same key).
++        // SAFETY: single test thread under the lock.
++        let stranger = unsafe { traps::mxalloc(4096 * 3, MX_PREFTTRAM) };
++        assert_eq!(stranger, x.raw, "the pool re-hands the blob's key to the next block");
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks + 1);
++
++        assert_eq!(rsrc_free(&mut g), 0, "rs_free: the blob's dos_free fails → 0");
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks + 1, "rsrc_free freed nothing of the pool");
++        assert_eq!(rscmem(&g), x.app_va as u32, "rs_free writes none of the words");
++        assert_eq!(gaddr(&mut g, R_TREE, 0), (0, 0), "the entry is gone");
++        assert_eq!(rsrc_free(&mut g), 0, "nothing loaded any more");
++
++        // The stranger is untouched and still freeable.
++        // SAFETY: `stranger` is on the allocated list.
++        assert_eq!(unsafe { traps::mfree(stranger) }, E_OK, "the stranger was not freed under it");
++        drop(app);
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks);
++    }
++
++    // ── (c) process exit after the app's Mfree frees nothing twice ─────────
++
++    /// `Pterm` after the program freed the blob itself: the AES drops the
++    /// entry (`on_process_exit`) and the pool sweep (`free_all_owned`) finds
++    /// no block of this process — the blob is already off `mp_mal`, and the
++    /// AES must not have put anything back or freed the key a second time.
++    #[test]
++    fn process_exit_after_the_apps_mfree_frees_nothing_twice() {
++        let _g = lock();
++        let before = pool();
++        let app = running();
++        let mut g = Global::default();
++        let x = PoolLoaded::load(&app, FSEL, &mut g);
++        assert_eq!(mfree(x.app_va), E_OK);
++
++        on_process_exit(app.slot);
++        // SAFETY: `app.bp()` is the owner cookie the blocks were stamped with.
++        let swept = unsafe { free_all_owned(app.bp().cast()) };
++        assert_eq!(swept, 0, "nothing of this process is left on mp_mal");
++        let after = pool();
++        assert_eq!(after.allocated_blocks, before.allocated_blocks);
++        assert_eq!(after.free_bytes, before.free_bytes);
++        assert_eq!(after.free_blocks, before.free_blocks, "the free list coalesced back to its shape");
++        assert_eq!(gaddr(&mut g, R_TREE, 0), (0, 0));
++    }
++
++    // ── (d) guards: rsrc_free alone is unchanged; Mfree after it is EIMBA ──
++
++    /// The ordinary sequence: `rsrc_free` frees the blob (1), and a `Mfree`
++    /// of the freed `ap_rscmem` afterwards is the double free, `EIMBA`.
++    /// Green before and after.
++    #[test]
++    fn rsrc_free_alone_still_frees_the_blob_and_a_later_mfree_is_eimba() {
++        let _g = lock();
++        let before = pool();
++        let app = running();
++        let mut g = Global::default();
++        let x = PoolLoaded::load(&app, FSEL, &mut g);
++        assert_eq!(rsrc_free(&mut g), 1, "rsrc_free frees the named blob");
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks);
++        assert_eq!(mfree(x.app_va), EIMBA, "the blob is gone; Mfree of it is the double free");
++        assert_eq!(rsrc_free(&mut g), 0, "gemrslib.c:702-704: a second free fails");
++        drop(app);
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks);
++    }
++
++    /// A second `rsrc_load` of the same process stays loaded, selectable and
++    /// freeable after the program `Mfree`s the first — the freed key's entry
++    /// is the only one that changes.
++    #[test]
++    fn mfree_of_one_blob_leaves_the_processs_other_load_intact() {
++        let _g = lock();
++        let before = pool();
++        let app = running();
++        let mut g = Global::default();
++        let x = PoolLoaded::load(&app, FSEL, &mut g);
++        let y = PoolLoaded::load(&app, FSEL, &mut g);
++        let (y_tree, y_mem) = (g32(&g, AP_PTREE_OFF), rscmem(&g));
++        assert_eq!(mfree(x.app_va), E_OK);
++        set_words(&mut g, y_tree, y_mem);
++        let (ok, tree) = gaddr(&mut g, R_TREE, 0);
++        assert_eq!(ok, 1);
++        assert!(tree >= y.app_va && tree < y.app_va + FSEL.len() as u64, "Y answers");
++        assert_eq!(rsrc_free(&mut g), 1, "Y is freed by rsrc_free as before");
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks);
++        drop(app);
++    }
++
++    // ── (e) the colour-icon buffer ─────────────────────────────────────────
++
++    /// A blob with colour icons owns a second pool block, the device-form
++    /// buffer (`transform_all_cicons`' `dos_alloc_anyram`, `gemrslib.c:428,
++    /// 438`). A bare `Mfree(ap_rscmem)` never reaches it: it stays allocated
++    /// until `rsrc_free` — which then answers 0 for the blob's failed free
++    /// but still releases the buffer (`free_cicon_buffers` runs first,
++    /// `:694-699`) — or process end (`free_all_owned` by owner).
++    #[test]
++    fn mfree_of_ap_rscmem_leaves_the_colour_icon_buffer_until_rsrc_free() {
++        let _g = lock();
++        let before = pool();
++        let app = running();
++        let mut g = Global::default();
++        let x = PoolLoaded::load(&app, &cicon_blob(), &mut g);
++        assert_ne!(x.cicon_raw, 0, "the fixture has colour icons; a buffer was taken");
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks + 2);
++
++        assert_eq!(mfree(x.app_va), E_OK);
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks + 1, "only the blob went; the buffer stays");
++
++        assert_eq!(rsrc_free(&mut g), 0, "the blob's free fails → 0");
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks, "…but the icon buffer was released");
++        drop(app);
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks);
++    }
++
++    /// The other way round: at process end the buffer goes with the owner
++    /// sweep, the blob is not freed a second time.
++    #[test]
++    fn process_exit_after_the_apps_mfree_reclaims_the_icon_buffer_once() {
++        let _g = lock();
++        let before = pool();
++        let app = running();
++        let mut g = Global::default();
++        let x = PoolLoaded::load(&app, &cicon_blob(), &mut g);
++        assert_eq!(mfree(x.app_va), E_OK);
++
++        on_process_exit(app.slot);
++        // SAFETY: the owner cookie the blocks were stamped with.
++        let swept = unsafe { free_all_owned(app.bp().cast()) };
++        assert_eq!(swept, 1, "exactly the icon buffer was left for the sweep");
++        let after = pool();
++        assert_eq!(after.allocated_blocks, before.allocated_blocks);
++        assert_eq!(after.free_bytes, before.free_bytes);
++    }
++
++    /// The buffer is an ordinary block too: a program that frees it by its
++    /// own address (the first `col_data` of the resource) gets `E_OK`, and
++    /// the AES must not free that key again — `rsrc_free` answers 0 (EmuTOS:
++    /// `free_cicon_buffers`' `dos_free` fails, `:531`) and frees the blob
++    /// only.
++    #[test]
++    fn mfree_of_the_colour_icon_buffer_is_not_freed_again_by_rsrc_free() {
++        let _g = lock();
++        let before = pool();
++        let app = running();
++        let mut g = Global::default();
++        let x = PoolLoaded::load(&app, &cicon_blob(), &mut g);
++        assert_eq!(mfree(x.cicon_va), E_OK, "the icon buffer is the process's block");
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks + 1);
++        // A stranger takes the buffer's key.
++        // SAFETY: single test thread under the lock.
++        let stranger = unsafe { traps::mxalloc(4096 * 2, MX_PREFTTRAM) };
++        assert_eq!(stranger, x.cicon_raw);
++
++        assert_eq!(rsrc_free(&mut g), 0, "the buffer's free fails → 0");
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks + 1, "the blob went, the stranger stayed");
++        // SAFETY: `stranger` is on the allocated list.
++        assert_eq!(unsafe { traps::mfree(stranger) }, E_OK);
++        assert_eq!(mfree(x.app_va), EIMBA, "the blob is gone");
++        drop(app);
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks);
++    }
++
++    /// The window entry of a freed `Kind::Rsc` block is gone like a heap
++    /// block's: `Mshrink` of the freed VA is `EIMBA` too, and a null
++    /// `global` still names nothing.
++    #[test]
++    fn the_freed_blobs_window_entry_is_gone() {
++        let _g = lock();
++        let before = pool();
++        let app = running();
++        let mut g = Global::default();
++        let x = PoolLoaded::load(&app, FSEL, &mut g);
++        assert_eq!(mfree(x.app_va), E_OK);
++        assert!(usermem::translate(app.slot, x.app_va).is_none(), "no block starts at the freed VA");
++        assert_eq!(call(std::ptr::null_mut(), 111, 0, [0; 4]).0, 0);
++        drop(app);
++        assert_eq!(pool().allocated_blocks, before.allocated_blocks);
+     }
+ }
+diff -ru ws-before/tos-api/src/bdos/process/usermem.rs ws-after/tos-api/src/bdos/process/usermem.rs
+--- ws-before/tos-api/src/bdos/process/usermem.rs	2026-09-20 16:48:08
++++ ws-after/tos-api/src/bdos/process/usermem.rs	2026-09-20 16:48:08
+@@ -102,7 +102,8 @@
+     /// flat classic-TOS heap semantics, matching the TPA's own attributes).
+     Heap,
+     /// The AES resource (`.RSC`) blob (mapped user RW, non-executable — it is
+-    /// data). Folds the task-#99 RSC window into this table.
++    /// data). Folds the task-#99 RSC window into this table. Freeable by the
++    /// process through `Mfree` like a [`Kind::Heap`] block ([`free`], A76).
+     Rsc,
+     /// A **kernel** structure published into this process so the program can
+     /// read what a syscall handed it a pointer to ([`expose`], ADR-023). Not
+@@ -602,10 +603,17 @@
+ /// re-hands the VA, so the stale descriptors are never walked again and no
+ /// TLBI is required (QUIRK-001).
+ ///
+-/// A [`Kind::Rsc`] block is **not** reclaimable through `Mfree` — it is
+-/// managed by the AES `rsrc_free`, which tracks it by pool key
+-/// ([`free_by_mstart`]). Skipping it here (→ `EIMBA`) keeps a stray
+-/// `Mfree(rsc_va)` from racing a later `rsrc_free` into a double free.
++/// A [`Kind::Rsc`] block is freed here like a [`Kind::Heap`] one: the blob
++/// `rsrc_load` returns is an ordinary process-owned `Mxalloc` block in
++/// EmuTOS too (`rs_readit` → `dos_alloc_anyram` = `Mxalloc(_, MX_PREFTTRAM)`,
++/// `aes/gemrslib.c:775`, `util/gemdos.c:117-120`), and `xmfree` frees it
++/// for whoever passes its address (`bdos/umem.c:135-159`, no ownership
++/// check) — TeraDesk's `xrsrc_free` does exactly that with `ap_rscmem`
++/// (A76; `docs/api/gemdos/memory/49-mfree.md` § "AES resource block"). The
++/// AES entry that still holds the pool key is told by the GEMDOS `Mfree`
++/// path ([`crate::aes::resource::on_mfree`]) so a later `rsrc_free` does
++/// not free the key a second time. Only a [`Kind::Shared`] block is refused
++/// (→ `EIMBA`): a kernel structure the process never owned.
+ pub fn free(slot: usize, user_va: u64) -> Option<Long> {
+     if slot >= MAX_PROCESSES {
+         return None;
+@@ -615,9 +623,9 @@
+     let pos = blocks
+         .iter()
+         .position(|b| matches!(b, Some(bl) if bl.user_va == user_va))?;
+-    // RSC blocks are freed via `rsrc_free`, not `Mfree`; Shared blocks are
+-    // kernel structures the process never owned and must not release.
+-    if matches!(&blocks[pos], Some(bl) if bl.kind == Kind::Rsc || bl.kind == Kind::Shared) {
++    // Shared blocks are kernel structures the process never owned and must
++    // not release — EmuTOS's "address not on `mp_mal`".
++    if matches!(&blocks[pos], Some(bl) if bl.kind == Kind::Shared) {
+         return None;
+     }
+     blocks[pos].take().map(|bl| bl.m_start)
+diff -ru ws-before/tos-api/src/gemdos/memory.rs ws-after/tos-api/src/gemdos/memory.rs
+--- ws-before/tos-api/src/gemdos/memory.rs	2026-09-20 16:48:08
++++ ws-after/tos-api/src/gemdos/memory.rs	2026-09-20 16:48:08
+@@ -23,7 +23,7 @@
+ use crate::bdos::mem::traps;
+ use crate::bdos::process::{self, usermem};
+ use crate::trap::TrapArgs;
+-use tos_types::error::{EGSBF, EIMBA};
++use tos_types::error::{EGSBF, EIMBA, E_OK};
+ use tos_types::{Long, MX_PREFTTRAM, MX_STRAM, PF_TTRAMMEM};
+ 
+ /// One extra page over-allocated from the pool so the page-aligned window
+@@ -206,6 +206,38 @@
+     unsafe { el0_alloc(slot, amount, mode) }
+ }
+ 
++/// Free the block an EL0 process names by the user VA `user_va` — the
++/// common tail of [`mfree`] and a `Mshrink` to length 0.
++///
++/// The user VA is translated to the pool key through the process's block
++/// table (`EIMBA` if no tracked block starts there — EmuTOS's "not on
++/// `mp_mal`", `bdos/umem.c:148-153`) and the pool block is freed. Once it
++/// is gone, the AES is told ([`crate::aes::resource::on_mfree`]): the key
++/// may be a resource blob or icon buffer `rsrc_load` registered, which is
++/// an ordinary process-owned block in EmuTOS too (`rs_readit` →
++/// `dos_alloc_anyram`, `aes/gemrslib.c:775`) and freed by whoever passes
++/// its address — TeraDesk's `xrsrc_free` = `Mfree(ap_rscmem)` (A76,
++/// `docs/api/gemdos/memory/49-mfree.md` § "AES resource block"). The AES
++/// entry must not free that key a second time on `rsrc_free`.
++///
++/// # Safety
++///
++/// BDOS lock held; `slot` is the running EL0 process.
++unsafe fn el0_free(slot: usize, user_va: u64) -> Long {
++    let Some(m) = usermem::free(slot, user_va) else {
++        return EIMBA;
++    };
++    // SAFETY: BDOS lock held; `m` came from `Mxalloc` and is on the
++    // allocated list.
++    let rc = unsafe { traps::mfree(m) };
++    if rc == E_OK {
++        crate::aes::resource::on_mfree(slot, m);
++    }
++    // A76-TEMP (scratch copy only)
++    crate::aes::resource::a76_log(format_args!("[a76] Mfree(0x{:x}) -> {}", user_va, rc));
++    rc
++}
++
+ /// `Mfree(addr)` — GEMDOS 0x49.
+ ///
+ /// Spec:
+@@ -216,7 +248,8 @@
+ ///
+ /// For an EL0 caller `addr` is a **user VA**: translate it to the pool key
+ /// (`EIMBA` if it is not a tracked block start — matching EmuTOS's "not on
+-/// `mp_mal`") and free that. A kernel caller frees the raw address directly.
++/// `mp_mal`") and free that ([`el0_free`]). A kernel caller frees the raw
++/// address directly.
+ pub fn mfree(args: &TrapArgs) -> Long {
+     let addr = args.arg_i32(0);
+     let run = process::current();
+@@ -227,15 +260,8 @@
+     let Some(slot) = process::slot_for(run) else {
+         return EIMBA;
+     };
+-    let rc = match usermem::free(slot, addr as u64) {
+-        // SAFETY: BDOS lock held; `m` came from `Mxalloc` and is on the
+-        // allocated list.
+-        Some(m) => unsafe { traps::mfree(m) },
+-        None => EIMBA,
+-    };
+-    // A76-TEMP (scratch copy only)
+-    crate::aes::resource::a76_log(format_args!("[a76] Mfree(0x{:x}) -> {}", addr, rc));
+-    rc
++    // SAFETY: BDOS lock held; `slot` is the running EL0 process.
++    unsafe { el0_free(slot, addr as u64) }
+ }
+ 
+ /// `Mshrink(n, blk, len)` — GEMDOS 0x4A.
+@@ -272,11 +298,8 @@
+         // Mshrink-to-0 == Mfree the whole block (drop the window entry too so
+         // no stale slot lingers, then free the pool block including its
+         // alignment slack).
+-        return match usermem::free(slot, blk as u64) {
+-            // SAFETY: BDOS lock held; `m` is on the allocated list.
+-            Some(m) => unsafe { traps::mfree(m) },
+-            None => EIMBA,
+-        };
++        // SAFETY: BDOS lock held; `slot` is the running EL0 process.
++        return unsafe { el0_free(slot, blk as u64) };
+     }
+     // The window maps exactly `tb.size` bytes of this block, so the app can
+     // never hold more than that — a `Mshrink` to a longer length cannot be

@@ -1,0 +1,78 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+running 9 tests
+test aes::resource::mfree_tests::the_freed_blobs_window_entry_is_gone ... ok
+test aes::resource::mfree_tests::process_exit_after_the_apps_mfree_reclaims_the_icon_buffer_once ... ok
+test aes::resource::mfree_tests::mfree_of_ap_rscmem_leaves_the_colour_icon_buffer_until_rsrc_free ... ok
+test aes::resource::mfree_tests::mfree_of_one_blob_leaves_the_processs_other_load_intact ... ok
+test aes::resource::mfree_tests::process_exit_after_the_apps_mfree_frees_nothing_twice ... ok
+test aes::resource::mfree_tests::rsrc_free_after_the_apps_mfree_reports_zero_and_frees_no_pool_block ... ok
+test aes::resource::mfree_tests::mfree_of_ap_rscmem_releases_the_blob_like_any_malloc_block ... ok
+test aes::resource::mfree_tests::mfree_of_the_colour_icon_buffer_is_not_freed_again_by_rsrc_free ... ok
+test aes::resource::mfree_tests::rsrc_free_alone_still_frees_the_blob_and_a_later_mfree_is_eimba ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 48 filtered out; finished in 0.00s
+

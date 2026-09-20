@@ -1,0 +1,95 @@
+A76 -- Mfree(ap_rscmem) on an AES-loaded resource block succeeds (E_OK) like any Malloc block;
+the AES entry learns the block is gone, so a later rsrc_free answers 0 without touching the pool
+and process end frees nothing twice. Developer self-evidence, 2026-09-20. Branch desk-rebuild,
+base HEAD bd61b95, changes uncommitted in the tree. Pinned EmuTOS references/emutos @ 1a7484ab:
+aes/gemrslib.c:685-708 rs_free, :775-787 rs_readit (dos_alloc_anyram, ap_rscmem), util/gemdos.c:94-133
+(dos_alloc_anyram = Mxalloc(_, MX_PREFTTRAM), dos_free = Mfree), bdos/umem.c:135-159 xmfree.
+Spec (lead-written, uncommitted, untouched): docs/api/gemdos/memory/49-mfree.md § "AES resource block
+(A76, 2026-09-20)" + ADR-021 correction; docs/api/aes/resource-fileselector.md A39 callout item 8 +
+§ rsrc_free; docs/COMPATIBILITY.md "Resource-block ownership (A76)".
+
+PRODUCT CODE (uncommitted; method/kernel-a76.diff)
+  tos-api/src/bdos/process/usermem.rs   free(): Kind::Rsc is released like Kind::Heap; only Kind::Shared
+                                        stays refused (EIMBA). Kind::Rsc doc updated.
+  tos-api/src/gemdos/memory.rs          el0_free(slot, user_va) (new): the common tail of Mfree and
+                                        Mshrink(len=0): usermem::free -> traps::mfree -> on E_OK
+                                        aes::resource::on_mfree(slot, m_start). mfree()/mshrink() call it.
+  tos-api/src/aes/resource.rs           RscEntry { blob_released, cicon_released } (new flags);
+                                        on_mfree(slot, m_start) (new, pub): flags the slot's entry whose raw /
+                                        cicon_raw equals the freed key; rsrc_free: a released key -> rc = 0,
+                                        no mfree, no free_by_mstart (the key may be someone else's block now),
+                                        the other block is still freed; on_process_exit unchanged in code
+                                        (doc note) -- it never frees by key. + #[cfg(test)] mod mfree_tests
+                                        (9 cases); selector_tests helpers + cicon_tests::blob made pub(super).
+  NOT changed: docs/api/*, docs/COMPATIBILITY.md (lead's spec), pterm.rs.
+
+HOST TESTS (host-tests/)
+  mfree_tests-RED-before.txt   tree with the tests appended, fix not yet applied: 8 FAILED, all with
+      left: -40 right: 0 (Mfree(ap_rscmem) refused); the guard case
+      rsrc_free_alone_still_frees_the_blob_and_a_later_mfree_is_eimba ok.
+  mfree_tests-GREEN-after.txt  9/9 ok.
+  Counter-check (not kept as a file, reproduced by hand-editing el0_free to skip on_mfree and restoring
+      the file): rsrc_free_after_the_apps_mfree_reports_zero_and_frees_no_pool_block and
+      mfree_of_the_colour_icon_buffer_is_not_freed_again_by_rsrc_free FAILED (left: 1 right: 0) --
+      rsrc_free would have freed the stranger block that took over the key. The tests guard the AES half.
+  xtask-test.log               cargo run -p xtask -- test = 705 passed / 0 failed / 2 ignored (baseline 696 + 9).
+  Why in-crate: an entry with a real pool key needs register()/relocate_and_register_core()/report_load()
+      (private), and load_into_user's kernel high-half alias (raw + 0xFFFF_0000_0000_0000) is not host-
+      mappable. The pool (pure bookkeeping, MDs in a static arena) is installed once per lib-test binary
+      at Long addresses 0x0100_0000..0x0200_0000 that nothing dereferences; usermem::map and the GEMDOS
+      trap entry gemdos::memory::mfree are the real ones. Nothing in the accounting under test is faked.
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log         fresh (cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat)
+                               cargo xtask build --board rpi4: rustc tos-api 64 / kernel 94 warnings, exit 0
+                               (baseline 64/94, delta 0). No qemu-virt build (lead's instruction).
+  clippy-tos-api.txt           cargo clippy -p tos-api --target aarch64-unknown-none-softfloat: 81 (baseline 81).
+  clippy-kernel-rpi4.txt       cargo clippy -p kernel --target ... --features board-rpi4: 125 (baseline 125).
+  clippy-tos-api-tests.txt     cargo clippy -p tos-api --tests: lib test 83 (81 duplicates); no hit in
+                               usermem::free, el0_free, on_mfree, rsrc_free or mod mfree_tests; the two
+                               test-only hits (needless_range_loop cicon_tests, items-after-test-module pd.rs)
+                               are pre-existing.
+  scratch-build-{before,after}-rpi4-release.log, make-sd-image.log
+
+ARTEFACTS (no *.img kept)
+  kernel8 tree (dev, rpi4)            sha256 70c2749dce05f21d...
+  kernel8 scratch AFTER  (release)    sha256 f15e36d2c0e733a4...  tree + scaffolding (method/scratch-scaffolding-after.diff)
+  kernel8 scratch BEFORE (release)    sha256 fe91074fd534ae22...  same, but usermem.rs / resource.rs / memory.rs = HEAD bd61b95
+                                                     (method/scratch-before-vs-after.diff)
+  sd-tera.img                         sha256 39f5cdcd03d4df18...  tools/make-sd-image.sh <scratch>/img/sd-base.img 64
+                                      (dist/ with cicons.rsc: "installed C:\Apps\TERADESK\{DESKTOP.NAP,
+                                      desktop.rsc,icons.rsc,cicons.rsc}") + NEWDESK.INF (#Z TeraDesk) +
+                                      Apps\TERADESK\TERADESK.INF (method/*.inf, identical to A41 part 2 / A81).
+                                      Every run on a fresh copy.
+
+QEMU raspi4b RUNS (method/run.sh KERNEL8 IMG OUTDIR TAG 150 SPEC...; 640x480, -display none, QMP screendump)
+  Sequence = A41 part 2 "quit2" injector script (method/quit2.actions -> quit2_script.rs): idle -> double-click
+  HARD DISC C (195,35) -> File menu -> Quit/Shutdown (130,235) -> dialog Quit (320,313) -> TeraDesk exits ->
+  "[desk] desktop up". TeraDesk's quit path runs free_icons -> xrsrc_free -> Mfree(ap_rscmem of cicons.rsc).
+  Serial trace lines "[a76] ..." are scratch-only (method/prepare_scratch.py), no product logging.
+
+  before  (serial/before-serial.log)   rsrc_load(desktop.rsc) -> 1 ap_rscmem=0x400000; rsrc_load(cicons.rsc) -> 1
+          ap_rscmem=0x4bc000 ap_rsclen=63650 cicon_buf=153600 B; at quit: Mfree(0x74a000) -> 0,
+          Mfree(0x4bc000) -> -40   <-- the A76 defect (A41 inj5 measured it at 0x427000; the window layout
+          moved since), Mfree(0x4a0000) -> 0, rsrc_free(selector 0x400000) -> 1; exited rc=0; desktop up.
+  after   (serial/after-serial.log)    identical except  Mfree(0x4bc000) -> 0.
+  before2 / after2                      repeat with B settle 0.3 s (see below); same serial content.
+  grep -c "EXC\|PANIC\|panic" = 0 in all four logs.  diff before/after serial = exactly the one Mfree line.
+
+  Screendumps (screendumps/): A idle desktop (colour icons), B at MARK B_WINDOW_OPEN, D quit dialog,
+  G our desktop up after TeraDesk's exit.
+    run 1 (settle A 1 s, B 1 s, D 1 s, G 2 s): A, D, G byte-identical before/after; B DIFFERS -- the 1 s
+      settle after MARK B (tick 3000) lands exactly on the injector's next step (tick 3200 = move to the
+      File title): "before" shows the File menu already dropped, "after" the pointer just arrived. Harness
+      race, not a product difference (the Mfree under test happens later, at quit).
+    run 2 (B settle 0.3 s): ALL FOUR byte-identical before/after
+      (A 5148fde2..., B 9cd3090d..., D b65973b2..., G 4a7a1162... -- see manifest.sha256).
+
+OBSERVATION (out of scope, unchanged): at MARK B neither run shows an open window -- the double-click on
+  HARD DISC C selects the icon but opens nothing (A41 inj4 on 2026-09-19 showed "374035 bytes used in 24
+  items."). Identical in before (HEAD) and after, so not A76; possibly the evnt_button/double-click timing
+  after A73/A75 or the script's 8-tick press spacing. Reported to the lead, not touched.
+
+OPEN
+  Pi acceptance (real Pi 4, TeraDesk with cicons.rsc, quit) -- lead/tester; nothing flashed.
+  No commit, no git checkout/stash/reset.

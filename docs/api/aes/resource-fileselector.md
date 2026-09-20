@@ -385,6 +385,35 @@ process (`bdos/proc.c:136`, `free_all_owned`).
 >    `rsrc_gaddr` after `appl_exit`/`rsrc_free`).
 > 7. `rsrc_load` needs no prior `appl_init` (`crysbind` checks nothing,
 >    `gemsuper.c:363-365`).
+> 8. **`Mfree(ap_rscmem)` ahead of `rsrc_free` is legal and NewTOS must let it
+>    succeed (A76, 2026-09-20).** The blob `rsrc_load` returns is an ordinary
+>    process-owned `Mxalloc` block like any other — EmuTOS's own loader gets
+>    it through `dos_alloc_anyram` = `Mxalloc(_, MX_PREFTTRAM)`
+>    (`util/gemdos.c:117-120`; `aes/gemrslib.c:775`) and its own `dos_free` is
+>    a plain `Mfree` (`util/gemdos.c:130-133`); nothing marks the block as
+>    AES-owned or otherwise protected in the pool. An application calling
+>    `Mfree(ap_rscmem)` directly therefore gets `E_OK`, exactly as for any
+>    other block it owns (`docs/api/gemdos/memory/49-mfree.md`). A *later*
+>    `rsrc_free` on the same (now-freed) blob re-reads the stale `ap_rscmem`
+>    (item 6 above: nothing clears it) and its own `dos_free` hits the
+>    already-unlinked block → `EIMBA` → `rsrc_free` returns `0`
+>    (`gemrslib.c:685-708`; full derivation:
+>    `docs/api/gemdos/memory/49-mfree.md` § "AES resource block"). **NewTOS
+>    target contract:** `Mfree` on the mapped `app_va` of a `Kind::Rsc` block
+>    must return `E_OK` and release its pool block exactly as for a
+>    `Malloc`ed block, not `EIMBA` — the current refusal (`usermem::free`
+>    skips `Kind::Rsc`, `tos-api/src/bdos/process/usermem.rs:605-624`) is a
+>    **defect** (`TASK/A76.md`, measured `Mfree(0x427000) -> -40` on
+>    TeraDesk's `free_icons`), not a sanctioned deviation. Once fixed, the
+>    resource entry for that blob must learn the block is gone (so a later
+>    `rsrc_free` answers `0` without touching freed pool memory, and process
+>    exit does not free the same pool key twice) — matching EmuTOS's
+>    *observable* `rsrc_free → 0`, not its hazardous header re-walk over
+>    freed memory (see the `Mfree` spec § "AES resource block"). The
+>    colour-icon `col_data`/`sel_data` buffers are separate `Mxalloc` blocks
+>    (`transform_all_cicons`, `gemrslib.c:428,438`) and stay allocated until
+>    `rsrc_free` or process end either way — a bare `Mfree(ap_rscmem)` never
+>    reaches them.
 >
 > Where XaAES is the model — the **per-client list** of loaded resources
 > (`struct xa_client::resources`, `xa_types.h:2222`; `list_resource`,
@@ -458,6 +487,13 @@ Frees the CICON buffers (if any) and the resource blob `ap_rscmem`
 program must not `rsrc_gaddr` after `rsrc_free`. It acts on the **caller's**
 `AESGLOBAL` only (`rs_sglobe(pglobal)`, `:690`): the blob that array names, and
 no other process's load (A39 callout under `rsrc_load`).
+
+**A stray `Mfree(ap_rscmem)` ahead of `rsrc_free`** is a legal, ordinary free
+in EmuTOS — the blob is just another `Mxalloc` block — and the subsequent
+`rsrc_free` then returns `0` on the resulting double free; see the A39
+callout item 8 above and `docs/api/gemdos/memory/49-mfree.md` § "AES
+resource block" (A76, 2026-09-20) for the full derivation and the NewTOS
+target contract.
 
 ---
 
@@ -1700,9 +1736,11 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
   reporting the honest "not found". Still-unimplemented type codes
   (`R_TEDINFO`…`R_BIPDATA`, `R_OBSPEC`, 2–4/7–14) remain the documented gap
   (fall through to `addr_out[0] = 0`, `int_out[0] = 0`); QED does not use them.
-  `rsrc_saddr` currently always returns `0`/`FALSE` regardless of input — a
-  **no-op stub** (CLAUDE.md Rule 2 concern; flagged for the lead, a separate
-  task, **not** fixed here).
+  `rsrc_saddr` writes the caller's pointer into the resolved slot at the
+  blob's pointer width and returns 1, or 0 for an unknown type / an index
+  past the table (`rs_saddr`, A50, `tos-api/src/aes/resource.rs`
+  `rsrc_saddr`; the earlier "no-op stub" remark here described the state
+  before A50 — corrected 2026-09-20).
 - **`rsrc_gaddr` is the only `addr_out` writer.** NewTOS's dispatcher must copy
   `addr_out[0]` back for opcode 112 and no other (matching EmuTOS `xif`); this
   is unaffected by the native-format change and confirmed against

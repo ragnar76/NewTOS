@@ -1,0 +1,22 @@
+# A41 part 2: as quit1, then answer TeraDesk's "Quit / Shutdown Options"
+# dialog with its Quit button (320,313 -- from inj2-D-after-quit-click.png);
+# the product kernel prints "[desk] desktop up" once TeraDesk has exited.
+1100 mark A_IDLE_DESKTOP
+1800 park
+1806 move 300 300
+2000 move 195 35
+2200 down
+2203 up
+2208 down
+2211 up
+2600 move 300 300
+3000 mark B_WINDOW_OPEN
+3200 move 88 8
+3600 move 130 235
+3800 down
+3803 up
+4200 mark D_AFTER_QUIT_CLICK
+4600 move 320 313
+4800 down
+4803 up
+5200 mark F_AFTER_QUIT

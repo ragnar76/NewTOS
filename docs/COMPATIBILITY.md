@@ -346,6 +346,17 @@ Covered by `tos-api/tests/aes_rsrc_gaddr_edges.rs` (unknown type with and
 without a load, NULL slot, index past the table, absent table, nothing
 loaded, `rsrc_saddr` on each).
 
+**Resource-block ownership (A76, 2026-09-20).** Not a deviation, a contract
+point with no prior entry: the blob `rsrc_load` returns is an ordinary
+process-owned `Mxalloc` block (EmuTOS: `dos_alloc_anyram` =
+`Mxalloc(_, MX_PREFTTRAM)`, `aes/gemrslib.c:775`, `util/gemdos.c:117-120`),
+not a region `Mfree` must refuse — a program's direct `Mfree(ap_rscmem)`
+succeeds on both machines, and only a *subsequent* `rsrc_free` then observes
+the double free (`int_out[0] = 0`). NewTOS's `Kind::Rsc` refusal in
+`usermem::free` (→ `EIMBA`) is accordingly a **defect**, not a sanctioned
+choice; see `docs/api/gemdos/memory/49-mfree.md` § "AES resource block" and
+`docs/api/aes/resource-fileselector.md` § `rsrc_free` / A39 callout item 8.
+
 
 **`wind_set`'s `WF_NAME`/`WF_INFO`/`WF_NEWDESK` pointer accepts a native
 `addr_in[0]` form in addition to EmuTOS's packed one; `WF_NEWDESK`'s root

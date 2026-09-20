@@ -102,7 +102,8 @@ pub enum Kind {
     /// flat classic-TOS heap semantics, matching the TPA's own attributes).
     Heap,
     /// The AES resource (`.RSC`) blob (mapped user RW, non-executable — it is
-    /// data). Folds the task-#99 RSC window into this table.
+    /// data). Folds the task-#99 RSC window into this table. Freeable by the
+    /// process through `Mfree` like a [`Kind::Heap`] block ([`free`], A76).
     Rsc,
     /// A **kernel** structure published into this process so the program can
     /// read what a syscall handed it a pointer to ([`expose`], ADR-023). Not
@@ -602,10 +603,17 @@ pub fn resolve_kva(slot: usize, user_va: u64) -> Option<u64> {
 /// re-hands the VA, so the stale descriptors are never walked again and no
 /// TLBI is required (QUIRK-001).
 ///
-/// A [`Kind::Rsc`] block is **not** reclaimable through `Mfree` — it is
-/// managed by the AES `rsrc_free`, which tracks it by pool key
-/// ([`free_by_mstart`]). Skipping it here (→ `EIMBA`) keeps a stray
-/// `Mfree(rsc_va)` from racing a later `rsrc_free` into a double free.
+/// A [`Kind::Rsc`] block is freed here like a [`Kind::Heap`] one: the blob
+/// `rsrc_load` returns is an ordinary process-owned `Mxalloc` block in
+/// EmuTOS too (`rs_readit` → `dos_alloc_anyram` = `Mxalloc(_, MX_PREFTTRAM)`,
+/// `aes/gemrslib.c:775`, `util/gemdos.c:117-120`), and `xmfree` frees it
+/// for whoever passes its address (`bdos/umem.c:135-159`, no ownership
+/// check) — TeraDesk's `xrsrc_free` does exactly that with `ap_rscmem`
+/// (A76; `docs/api/gemdos/memory/49-mfree.md` § "AES resource block"). The
+/// AES entry that still holds the pool key is told by the GEMDOS `Mfree`
+/// path ([`crate::aes::resource::on_mfree`]) so a later `rsrc_free` does
+/// not free the key a second time. Only a [`Kind::Shared`] block is refused
+/// (→ `EIMBA`): a kernel structure the process never owned.
 pub fn free(slot: usize, user_va: u64) -> Option<Long> {
     if slot >= MAX_PROCESSES {
         return None;
@@ -615,9 +623,9 @@ pub fn free(slot: usize, user_va: u64) -> Option<Long> {
     let pos = blocks
         .iter()
         .position(|b| matches!(b, Some(bl) if bl.user_va == user_va))?;
-    // RSC blocks are freed via `rsrc_free`, not `Mfree`; Shared blocks are
-    // kernel structures the process never owned and must not release.
-    if matches!(&blocks[pos], Some(bl) if bl.kind == Kind::Rsc || bl.kind == Kind::Shared) {
+    // Shared blocks are kernel structures the process never owned and must
+    // not release — EmuTOS's "address not on `mp_mal`".
+    if matches!(&blocks[pos], Some(bl) if bl.kind == Kind::Shared) {
         return None;
     }
     blocks[pos].take().map(|bl| bl.m_start)

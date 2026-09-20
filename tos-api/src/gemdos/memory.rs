@@ -23,7 +23,7 @@
 use crate::bdos::mem::traps;
 use crate::bdos::process::{self, usermem};
 use crate::trap::TrapArgs;
-use tos_types::error::{EGSBF, EIMBA};
+use tos_types::error::{EGSBF, EIMBA, E_OK};
 use tos_types::{Long, MX_PREFTTRAM, MX_STRAM, PF_TTRAMMEM};
 
 /// One extra page over-allocated from the pool so the page-aligned window
@@ -206,6 +206,36 @@ pub fn malloc(args: &TrapArgs) -> Long {
     unsafe { el0_alloc(slot, amount, mode) }
 }
 
+/// Free the block an EL0 process names by the user VA `user_va` — the
+/// common tail of [`mfree`] and a `Mshrink` to length 0.
+///
+/// The user VA is translated to the pool key through the process's block
+/// table (`EIMBA` if no tracked block starts there — EmuTOS's "not on
+/// `mp_mal`", `bdos/umem.c:148-153`) and the pool block is freed. Once it
+/// is gone, the AES is told ([`crate::aes::resource::on_mfree`]): the key
+/// may be a resource blob or icon buffer `rsrc_load` registered, which is
+/// an ordinary process-owned block in EmuTOS too (`rs_readit` →
+/// `dos_alloc_anyram`, `aes/gemrslib.c:775`) and freed by whoever passes
+/// its address — TeraDesk's `xrsrc_free` = `Mfree(ap_rscmem)` (A76,
+/// `docs/api/gemdos/memory/49-mfree.md` § "AES resource block"). The AES
+/// entry must not free that key a second time on `rsrc_free`.
+///
+/// # Safety
+///
+/// BDOS lock held; `slot` is the running EL0 process.
+unsafe fn el0_free(slot: usize, user_va: u64) -> Long {
+    let Some(m) = usermem::free(slot, user_va) else {
+        return EIMBA;
+    };
+    // SAFETY: BDOS lock held; `m` came from `Mxalloc` and is on the
+    // allocated list.
+    let rc = unsafe { traps::mfree(m) };
+    if rc == E_OK {
+        crate::aes::resource::on_mfree(slot, m);
+    }
+    rc
+}
+
 /// `Mfree(addr)` — GEMDOS 0x49.
 ///
 /// Spec:
@@ -216,7 +246,8 @@ pub fn malloc(args: &TrapArgs) -> Long {
 ///
 /// For an EL0 caller `addr` is a **user VA**: translate it to the pool key
 /// (`EIMBA` if it is not a tracked block start — matching EmuTOS's "not on
-/// `mp_mal`") and free that. A kernel caller frees the raw address directly.
+/// `mp_mal`") and free that ([`el0_free`]). A kernel caller frees the raw
+/// address directly.
 pub fn mfree(args: &TrapArgs) -> Long {
     let addr = args.arg_i32(0);
     let run = process::current();
@@ -227,12 +258,8 @@ pub fn mfree(args: &TrapArgs) -> Long {
     let Some(slot) = process::slot_for(run) else {
         return EIMBA;
     };
-    match usermem::free(slot, addr as u64) {
-        // SAFETY: BDOS lock held; `m` came from `Mxalloc` and is on the
-        // allocated list.
-        Some(m) => unsafe { traps::mfree(m) },
-        None => EIMBA,
-    }
+    // SAFETY: BDOS lock held; `slot` is the running EL0 process.
+    unsafe { el0_free(slot, addr as u64) }
 }
 
 /// `Mshrink(n, blk, len)` — GEMDOS 0x4A.
@@ -269,11 +296,8 @@ pub fn mshrink(args: &TrapArgs) -> Long {
         // Mshrink-to-0 == Mfree the whole block (drop the window entry too so
         // no stale slot lingers, then free the pool block including its
         // alignment slack).
-        return match usermem::free(slot, blk as u64) {
-            // SAFETY: BDOS lock held; `m` is on the allocated list.
-            Some(m) => unsafe { traps::mfree(m) },
-            None => EIMBA,
-        };
+        // SAFETY: BDOS lock held; `slot` is the running EL0 process.
+        return unsafe { el0_free(slot, blk as u64) };
     }
     // The window maps exactly `tb.size` bytes of this block, so the app can
     // never hold more than that — a `Mshrink` to a longer length cannot be

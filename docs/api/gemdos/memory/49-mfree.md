@@ -190,6 +190,78 @@ return `EIMBA` rather than faulting — that is EmuTOS behaviour.
 
 ---
 
+## AES resource block (A76, 2026-09-20)
+
+**A block `rsrc_load` obtained is an ordinary process-owned `Mxalloc` block,
+not a protected region.** `rs_readit` allocates it with
+`dos_alloc_anyram(rslsize)` (`aes/gemrslib.c:775`) — a thin wrapper:
+`dos_alloc_anyram(nbytes)` is `Mxalloc(nbytes, MX_PREFTTRAM)`
+(`util/gemdos.c:117-120`; `MX_PREFTTRAM = 3`, `include/bdosdefs.h:21`) — and
+the base is stored as `rs_global->ap_rscmem = rs_hdr` right after
+(`aes/gemrslib.c:787`, in `rs_readit`). Nothing marks this block differently
+from any other `Malloc`/`Mxalloc` allocation of the same process, and
+`dos_free(maddr)` is a plain `Mfree(maddr)` (`util/gemdos.c:130-133`). The
+same holds for every colour-icon `col_data`/`sel_data` buffer
+`transform_all_cicons` allocates (`aes/gemrslib.c:428,438` —
+`dos_alloc_anyram` again, a **separate** block per `CICON`, not part of the
+`rs_hdr` blob). So an application calling `Mfree(ap_rscmem)` directly hits
+the ordinary path documented above — this block's `m_start` is on `mp_mal` —
+and gets `E_OK`, exactly like freeing any other block it owns (no ownership
+check, edge case 2).
+
+**Effect on a later `rsrc_free`.** `rs_free` (`aes/gemrslib.c:685-708`)
+re-reads `rs_hdr = pglobal->ap_rscmem` via `rs_sglobe` (`:677-678`); nothing
+at the AES layer clears `ap_rscmem` when the app frees the block directly, so
+`rs_hdr` is still that (now dangling) pointer and `rs_free` proceeds:
+
+- `free_cicon_buffers(rs_hdr)` (`:515-536`, under `CONF_WITH_COLOUR_ICONS`)
+  walks the **freed** block's header — `get_ciconblkptr` (`:484-508`) reads
+  `hdr->rsh_rssize` and the extension array at that offset — to find the
+  `CICONBLK` pointer table and `dos_free` each `col_data` buffer it lists.
+  **This reads already-freed pool memory.** That is EmuTOS's own hazard (the
+  block may since have been coalesced into `mp_mfl` or its bytes reused by a
+  later allocation) — not a contract NewTOS must reproduce byte-for-byte; it
+  is simply what happens on real EmuTOS if a program frees the blob out from
+  under `rsrc_free`.
+- `dos_free(rs_global->ap_rscmem)` (`:699`) — `Mfree` on the same address a
+  second time — finds no MD with that `m_start` on `mp_mal` (already
+  unlinked by the app's own `Mfree`) and returns `EIMBA` (edge case 5,
+  double free is a clean error, not a fault). `rc` is left `0`, so `rs_free`
+  returns `0` — the value `RSRC_FREE`'s `int_out[0]` reports
+  (`aes/gemsuper.c:366-367`; see
+  [`resource-fileselector.md`](../../aes/resource-fileselector.md) §
+  `rsrc_free`).
+
+So: **`rsrc_free` after an application `Mfree(ap_rscmem)` returns 0** in
+EmuTOS — not because `Mfree`/`dos_free` crash (a double free is a clean
+`EIMBA`, edge case 5), but because the second `dos_free` inside `rs_free`
+fails. Any crash risk lives entirely in the `free_cicon_buffers` header walk
+over freed memory, which is EmuTOS's own latent hazard, outside the `Mfree`
+contract itself.
+
+**The colour-icon `col_data`/`sel_data` blocks are not freed by
+`Mfree(ap_rscmem)` alone.** They are separate `Mxalloc` blocks
+(`transform_all_cicons`, `:428,438`), reachable only through
+`free_cicon_buffers`'s walk of the blob's own header — a bare
+`Mfree(ap_rscmem)` never runs that walk. They stay allocated (on the
+process's `mp_mal`) until either a `rsrc_free` that still finds a sound
+header frees them, or the process terminates and `free_all_owned` reclaims
+every MD whose `m_own` is this process — including these buffers —
+independently of the resource header's (possibly stale) contents
+(`bdos/proc.c:92-101`, called via `ixterm`/`xterm`, `:136,139`).
+
+**NewTOS target contract:** `Mfree` on the mapped `app_va` of a `Kind::Rsc`
+block must return `E_OK` and release its pool block exactly as for a
+`Malloc`ed block — not `EIMBA`. The AES resource entry for that blob must
+then learn the block is gone, so a later `rsrc_free` answers `0` without
+touching the freed pool memory (matching EmuTOS's *observable* `rsrc_free
+→ 0`, without reproducing its hazardous header re-walk), and process exit
+must not free the same pool key a second time. Full NewTOS-side derivation:
+[`resource-fileselector.md`](../../aes/resource-fileselector.md) §
+`rsrc_free`, A39 callout item 8.
+
+---
+
 ## Dependencies
 
 ### Requires (must be initialized / functional)
@@ -255,11 +327,24 @@ pool key (`m_start`) through the per-process block table
 `bdos::mem::traps::mfree`; a user VA that is not a tracked block start returns
 `EIMBA`, matching EmuTOS's "address not on `mp_mal`". The window page mapping is
 left in place — the freed VA is never re-handed by the bump cursor, so no TLBI is
-required (QUIRK-001). A loaded AES resource is reclaimed via `rsrc_free` (which
-tracks it by pool key), **not** `Mfree`, so a stray `Mfree(rsc_va)` returns
-`EIMBA` rather than racing `rsrc_free` into a double free. **EL1 / kernel
-callers** free the raw address directly. Discrimination: non-null
-`bdos::process::current()`, mirroring `aes::resource`.
+required (QUIRK-001). **EL1 / kernel callers** free the raw address directly.
+Discrimination: non-null `bdos::process::current()`, mirroring
+`aes::resource`.
+
+**Correction (A76, 2026-09-20).** This paragraph used to continue here: "a
+loaded AES resource is reclaimed via `rsrc_free`, not `Mfree`, so a stray
+`Mfree(rsc_va)` returns `EIMBA` rather than racing `rsrc_free` into a double
+free." That described the *current* implementation
+(`usermem::free` refuses `Kind::Rsc`, `tos-api/src/bdos/process/usermem.rs:
+605-624`), not EmuTOS's contract, and is wrong as a spec statement. EmuTOS's
+resource blob is an ordinary `Mxalloc` block (§ "AES resource block" above);
+a direct `Mfree(ap_rscmem)` there succeeds (`E_OK`) exactly like freeing any
+other block the process owns — there is no protected-region concept to
+preserve, and the double-free EmuTOS would hit on a *subsequent* `rsrc_free`
+is a clean `EIMBA`, not a fault (edge case 5). The refusal is a **defect**
+tracked as `TASK/A76.md` (measured `Mfree(0x427000) -> -40` on TeraDesk's
+`free_icons` → `xrsrc_free`), not a deliberate choice. See § "AES resource
+block" above for the full EmuTOS derivation and the target NewTOS contract.
 
 ---
 
