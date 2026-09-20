@@ -176,6 +176,11 @@ Gadget **groups** used by the frame builder and `wind_calc` (`gemwmlib.h:16-18`)
   `wind_get (104)` below).
 - ¶ `WF_OWNER` (20) exists only with `AES_VERSION >= 0x330` (the default build
   is 0x0340). Returns owner pid, open-flag, and (a partial) top/bottom z-order.
+  **The owner pid reported is 0 for every application window** (`w_owner->p_pid`,
+  `gemwmlib.c:1580`; `w_owner` set to `rlr` by `w_setup` at `wind_create` time,
+  `:1377`, and for the desktop window (`DESKWH`) by `wm_init`, `:1255,1290`) —
+  see [`application.md`](./application.md) §"AES process identity and pid"
+  (corrected 2026-09-20/A62+A56).
 
 **Note there is no `WF_HSLSIZE`/`WF_VSLSIZE` spelling** in the source — the
 macros are `WF_HSLSIZ` (15) / `WF_VSLSIZ` (16). The field *numbers* 15/16 match
@@ -256,7 +261,10 @@ rects set to `gl_rzero`, FULL set to the caller's max-extent rect.
 
 Allocates the first free window slot (`w_flags & VF_INUSE == 0`) among
 `NUM_WIN` windows (`NUM_WIN = 16` in the default `AES_VERSION > 0x0320` build;
-8 otherwise, `sysconf.h:31-36`). Records `w_owner = rlr`, `w_kind = kind`,
+8 otherwise, `sysconf.h:31-36`). Records `w_owner = rlr` (the caller's
+*identity*; the pid `WF_OWNER` **reports** back is 0 for every application
+window regardless — see [`application.md`](./application.md) §"AES process
+identity and pid"), `w_kind = kind`,
 empty name/info, sliders at top-left (`w_hslide = w_vslide = 0`), default
 slider sizes (`w_hslsiz = w_vslsiz = -1`), and stores the caller's rect as the
 window's **FULL** (max) extent. Returns the **handle** (0..NUM_WIN−1) or **−1**
@@ -372,6 +380,16 @@ screen buffer via `gsx_mret`. Result rect → `int_out[1..4]`; scalars →
 > the return code, nothing else. (Corrected 2026-09-19, A27: the previous
 > sentence here — "`int_out[1]` reads back unchanged / the input gadget
 > number" — was wrong for both machines.)
+
+> **`WF_OWNER`'s pid is a reported value, computed from identity, not looked
+> up from it (2026-09-20, A62/A56).** `wm_get` returns `pwin->w_owner->p_pid`
+> verbatim (`gemwmlib.c:1580`), and in EmuTOS that literally *is* the value —
+> `w_owner` points at the shared `rlr`, which is always pid 0 for any
+> application window. A NewTOS whose `Window.owner` is keyed by GEMDOS slot
+> (the identity, §"AES process identity and pid" in
+> [`application.md`](./application.md)) must translate at this boundary: the
+> stored owner is the slot, the value `WF_OWNER` hands back is 0 for every
+> application window regardless of which slot actually owns it.
 
 `WF_TOP`, `WF_SCREEN`, `WF_DCOLOR` do **not** require a valid handle
 (`gemwmlib.c:1517-1520`); every other field returns `FALSE` if the handle is
@@ -1029,6 +1047,22 @@ sets `msg[1] = rlr->p_pid` (sender), `msg[2] = 0` (extra bytes):
 | `WM_MOVED`   | 28 | wh | new x | new y | new w | new h | MOVER/name drag (`gemctrl.c:238`) |
 | `WM_UNTOPPED`| 30 | wh | 0 | 0 | 0 | 0 | previous top is being deactivated (`gemctrl.c:151`) |
 
+> **`msg[1]` (sender) is 1 for every row above except `WM_REDRAW`, which is 0
+> (2026-09-20, A62/A56).** `ap_sendmsg` always stamps `msg[1] = rlr->p_pid`
+> (`gemwmlib.c:855`) — the value depends on *who is running* when the send
+> happens, not on the message id. `WM_TOPPED`/`WM_CLOSED`/`WM_FULLED`/
+> `WM_ARROWED` (queued case)/`WM_HSLID`/`WM_VSLID`/`WM_SIZED`/`WM_MOVED`/
+> `WM_UNTOPPED` are all posted from inside `gemctrl.c`'s `ctlmgr()` — `rlr ==
+> ctl_pd`, pid **1** — via `ct_msgup`/`handle_arrow_msg`
+> (`gemctrl.c:81-315,111-139`). `WM_REDRAW` is posted by `w_redraw`
+> (`gemwmlib.c:904`) from `draw_change`, called synchronously from the
+> *application's own* `wind_open`/`wind_close`/`wind_set(WF_CURRXYWH)` trap
+> (`gemwmlib.c:1426,1453,1612`) — `rlr` is the application itself, pid **0**.
+> A held-down scroll arrow can additionally produce a **non-queued**
+> `WM_ARROWED` with `msg[1] = 0` instead of 1, synthesised by the reader's
+> own `evnt_mesag` — see [`event.md`](./event.md) §`evnt_mesag` and
+> [`application.md`](./application.md) §"AES process identity and pid".
+
 > **`WM_SIZED`/`WM_MOVED` carry the *proposed new border rect* in `msg[4..7]`**
 > (x,y,w,h) — the app is expected to `wind_set(WF_CURRXYWH, …)` it (possibly
 > after clamping). For `WM_HSLID`/`WM_VSLID`, `msg[4]` is the **new slider
@@ -1450,3 +1484,10 @@ byte of any buffer the caller passed (TASK/A42).
 - **`WF_OWNER` z-order** is partial in EmuTOS (returns only global top/bottom,
   not the immediate neighbours, `gemwmlib.c:1582-1588`). NewTOS can implement it
   fully; confirm no program depends on the EmuTOS partial behaviour.
+- **`WF_OWNER`'s reported pid is a *value*, not a lookup key (2026-09-20,
+  A62/A56).** `Window.owner` should keep recording the caller's *identity*
+  (GEMDOS slot / kernel-desktop index) exactly as `wind_create` does today;
+  what changes is the boundary that answers `wind_get(WF_OWNER)` — it must
+  translate that identity to the *reported* value (0 for every application
+  window) rather than handing the stored identity back verbatim. See
+  [`application.md`](./application.md) §"AES process identity and pid".

@@ -11,9 +11,14 @@
 > [`_dispatcher.md`](./_dispatcher.md).
 >
 > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
-> **Contract:** the *observable* facts — the ap_id space (small integers; 0/1
-> system, 2+ apps/DAs), `ap_count = 1` reported, the 8-char space-padded name
-> format, the 16-byte standard message, the `-1` not-found convention.
+> **Contract:** the *observable* facts — the ap_id space (**0** = the whole
+> application chain: desktop, launched program, every nested `Pexec` child;
+> **1** = a sender stamp on `msg[1]` for Screen-Manager-originated messages
+> only, not a process a program can address; **2+** = desk accessories — see
+> [`application.md`](./application.md) §"AES process identity and pid",
+> corrected 2026-09-20/A62+A56), `ap_count = 1` reported, the 8-char
+> space-padded name format, the 16-byte standard message, the `-1` not-found
+> convention.
 > **Reference (NewTOS reimplements freely):** the `AESPD`/`EVB`/`QPB` structs,
 > the ready/deferred/not-ready run lists, `dsptch`/`ev_block`, and the fixed
 > `p_queue[128]` layout — these are the EmuTOS cooperative-scheduler internals,
@@ -28,10 +33,18 @@ process descriptor (`aes/struct.h:119-155`). At start-up
 (`geminit.c:810-877`):
 
 - `num_accs = count_accs()` desk accessories are counted (`geminit.c:810`);
-- `totpds = num_accs + 2` descriptors exist — pids **0 and 1 are the two AES
-  system processes** (the desktop/ctlmgr internals), pids **2 … totpds-1** are
-  desk accessories / the running application (`geminit.c:819`,
-  `struct.h:36` `NUM_PDS = NUM_ACCS + 2`);
+- `totpds = num_accs + 2` descriptors exist. **Correction (2026-09-20,
+  A62/A56):** the previous wording here — "pids 0 and 1 are the two AES
+  system processes … pids 2…totpds-1 are desk accessories / the running
+  application" — put the running application in the wrong bucket. Per
+  `geminit.c:850-888`: **pid 0** is `D.g_int[0]`, the descriptor the
+  **entire application chain** runs on (the desktop, every shell-launched
+  program, every `Pexec` child of it — `rlr` is never reassigned by a nested
+  `Pexec`, `gemshlib.c:572`); **pid 1** is `D.g_int[1]`, a genuine second
+  process running the **Screen Manager** (`SCRENMGR`/`ctlmgr`); **pids
+  2…totpds-1** are desk accessories only (`geminit.c:236-257`, `struct.h:36`
+  `NUM_PDS = NUM_ACCS + 2`). Full model:
+  [`application.md`](./application.md) §"AES process identity and pid";
 - `curpid` hands out pids sequentially (`gempd.c:60-70`, `geminit.c:875-877`).
 
 The descriptors are held inside the single AES global area `THEGLO D`
@@ -52,6 +65,14 @@ processes and `D.g_acc[num_accs]` for accessories (`gemlib.h:118,143`).
 `rlr` is what `appl_init`/`appl_exit` read and write (`rlr->p_pid`,
 `rlr->p_flags`). NewTOS's `rlr` equivalent is "the current AES process".
 
+**`rlr` is never reassigned by a nested `Pexec`/`dos_exec`**
+(`aes/gemshlib.c:572`; full derivation in [`shell-loop.md`](./shell-loop.md)
+§0/§4) — this is why the application chain (desktop → launched program → its
+`Pexec` children, arbitrarily deep) all runs as AESPD 0, not a separate
+descriptor per program. See [`application.md`](./application.md) §"AES
+process identity and pid" (2026-09-20, A62/A56) for the reported-value
+consequences (`ap_id`, `msg[1]`, `WF_OWNER`).
+
 ---
 
 ## 2. Application id (`ap_id`)
@@ -59,7 +80,11 @@ processes and `D.g_acc[num_accs]` for accessories (`gemlib.h:118,143`).
 The application id returned by `appl_init` and stored in `global[2]` is simply
 `AESPD.p_pid` (`gemsuper.c:94`, `struct.h:129`). Properties (contract):
 
-- Small integers; **0 and 1 are system**, DAs/apps are **2+**.
+- **Correction (2026-09-20, A62/A56):** not "0 and 1 are system, DAs/apps are
+  2+" — **0** is the application (the whole chain, including nested `Pexec`
+  children), **1** is the Screen Manager's `msg[1]` sender stamp (not a
+  process a program can be), **2+** are desk accessories. See
+  [`application.md`](./application.md) §"AES process identity and pid".
 - `ap_count` reported by `appl_init` is hard-coded **1** (`gemsuper.c:93`) even
   though EmuTOS runs several AES processes — the *reported* count is 1.
 - `appl_find` resolves an 8-char name → pid (or -1); `appl_read`/`appl_write`
@@ -147,6 +172,12 @@ what a program observes is the values the `evnt_*` calls report, not the globals
 | `gl_dcrates[5]` | `gemevlib.c:33` | rate table `{450,330,275,220,165}` ms, indices 0..4 | `ev_dclick` |
 | `rlr->p_msg` | `struct.h:142-144` | control-manager fast-path `WM_ARROWED` (`action`/`wh`) that bypasses the queue | `ev_mesag` |
 
+- **`ctl_pd`'s pid (1) is what `ap_sendmsg` stamps into `msg[1]` for every
+  control-manager-originated `WM_*`/`MN_SELECTED`/`AC_OPEN` message** — see
+  [`application.md`](./application.md) §"AES process identity and pid"
+  (2026-09-20, A62/A56) for the exact call sites and the contrasting `msg[1]
+  = 0` case (`WM_REDRAW`, and a non-queued `WM_ARROWED` synthesised by the
+  reader itself).
 - The click-count / double-click timing lives in `b_click`/`b_delay`
   (`geminput.c:114-179`): a first click starts a `gl_dclick`-tick window; further
   clicks into the same state increment `gl_bclick` and extend the window; mouse
@@ -289,7 +320,10 @@ program observes is the `rsrc_gaddr` addresses, the `scrp_read` path, the
 
 ## 7. NewTOS mapping (contract vs. reference)
 
-- **Contract to keep:** ap_id = a small process id (system 0/1, apps 2+);
+- **Contract to keep:** ap_id = a small process id — **0** for the
+  application chain, **1** as the Screen-Manager sender stamp on `msg[1]`
+  only, **2+** for desk accessories (corrected 2026-09-20, A62/A56 — see
+  [`application.md`](./application.md) §"AES process identity and pid");
   `appl_init` reports `ap_count = 1`; the 8-char space-padded name; the 16-byte
   message; `-1` for not-found.
 - **Free to reimplement:** the `AESPD`/`EVB`/`QPB` structs, the run-list

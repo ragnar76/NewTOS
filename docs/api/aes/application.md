@@ -23,6 +23,156 @@
 
 ---
 
+## AES process identity and pid
+
+> **2026-09-20, A62 + A56.** Source: `aes/gempd.c` (`pd_index`, `fpdnm`,
+> `getpd`, `iprocess`), `aes/geminit.c:236-257,850-888` (accessory/SCRENMGR
+> allocation, the AESPD init loop), `aes/gemshlib.c:572,592-689` (`sh_ldapp`,
+> the "not the AESPD" comment), `aes/gemwmlib.c:851-863,904,1255,1290,1377,
+> 1579-1580` (`ap_sendmsg`, `w_redraw`, `w_setup`, `WF_OWNER`), `aes/gemctrl.c`
+> (control-manager message posters), `aes/gemevlib.c:100-117` (`ev_mesag`'s
+> fast path), `aes/gemaplib.c:54-63,251-261` (`ap_init`/`ap_exit`),
+> `aes/struct.h:36`, `include/sysconf.h:37`, `include/aesdefs.h:509` (`WM_OX`).
+> Full derivation: `docs/analysis/aes-process-table-and-apid-2026-09-20.md`.
+
+### EmuTOS's model
+
+EmuTOS keeps a **fixed** table of `NUM_PDS = NUM_ACCS + 2` process descriptors
+(`aes/struct.h:36`; `NUM_ACCS = 6`, `include/sysconf.h:37` → 8 `AESPD`s at
+most). The **live** count is `totpds = num_accs + 2` (`geminit.c:819`) — with
+zero accessories loaded, exactly **2**. The table is two arrays,
+`D.g_int[2]` (indices 0-1) and `D.g_acc[num_accs]` (indices 2+);
+`pd_index(i)` maps an index to its descriptor (`gempd.c:32-35`).
+
+| pid | Descriptor | Who runs on it | Assigned |
+|----:|-----------|-----------------|----------|
+| 0 | `D.g_int[0]` | the **entire application chain**: the desktop, every program the shell loop launches via `sh_ldapp`, and every child that program starts with `Pexec`/`dos_exec` — all of them, because `rlr` is set once at `gem_main` init and is **never reassigned** by any nested `Pexec`/`dos_exec` (`geminit.c:850-877`; only `p_name`/`p_appdir` are overwritten in place by `sh_ldapp`, `gemshlib.c:604-605,634-636`, each new launch) | init loop, `geminit.c:851-877` |
+| 1 | `D.g_int[1]` | the **Screen Manager** (`ctlmgr`) — a genuine second cooperative process that owns window-furniture clicks and menu-bar tracking: `gl_mowner = ctl_pd = iprocess("SCRENMGR", ctlmgr)` | `geminit.c:888` → `getpd()`, `gempd.c:60-70` |
+| 2… | `D.g_acc[i-2]` | desk accessories, one per `.ACC` file | `load_one_acc`, `geminit.c:236-257` → `getpd()` |
+
+`getpd()` (`gempd.c:60-70`) has exactly **two callers** in the whole AES:
+`iprocess` (used once, for SCRENMGR) and `load_one_acc`. No other code path
+ever allocates an `AESPD`. A GEMDOS-level `Pexec` is entirely invisible to
+this table — it is a BDOS call, not an AES one; `aes_run_rom_program`'s own
+comment says so explicitly (`gemshlib.c:572`, `/* this is the BDOS PD
+structure, not the AESPD */`). So "the application" in AES terms is not one
+program but the whole nested `Pexec` chain running on the one persistent
+descriptor 0 — already established for the desktop/first-launched-app case in
+[`shell-loop.md`](./shell-loop.md) §4-§5 (2026-09-01); this section extends
+it to arbitrary `Pexec` nesting depth and adds the Screen-Manager/`msg[1]`
+half of the picture.
+
+`fpdnm` (`gempd.c:38-57`) — the lookup behind both `appl_find` (name → pid)
+and `appl_write`/`appl_read`'s target resolution (`fpdnm(NULL, AP_RWID)`,
+`gemsuper.c:102-105`) — walks all `totpds` entries with **no liveness test**,
+only `p_name`/`p_pid` comparison. Consequences:
+
+- `ap_init` (`gemaplib.c:54-63`) is three unconditional statements — **it
+  cannot fail**; there is no capacity check, because the descriptor was
+  allocated once at boot, before any application could call it.
+- `ap_exit` (`gemaplib.c:251-261`) frees nothing: it drains the queue and
+  clears `AP_OPEN` only; `p_pid`/`p_name`/the rest of the flags survive — a
+  static array slot, not a heap allocation, has nothing to release (already
+  spec'd under `appl_exit` below; NewTOS's A29 fix reproduces exactly this).
+- A target of pid 0 for `appl_write`/`appl_read` always resolves to
+  `D.g_int[0]` regardless of which nested chain member is "logically"
+  running — and because EmuTOS's AES is strictly single-threaded (a `Pexec`
+  parent blocks inside `dos_exec` while its child runs), pid 0 unambiguously
+  means **whichever chain member currently holds the CPU**.
+- `appl_find(name)` can only ever report the **current** occupant's name,
+  because `p_nameit` overwrites `p_name` in place on every launch
+  (`gemshlib.c:604-605,634-635`) — a previously-launched program's name is
+  gone, not a second table entry (measured: `docs/analysis/
+  aes-process-table-and-apid-2026-09-20.md` §1a, "nine different programs" run
+  — `appl_find(previous) = -1` every time).
+
+### NewTOS contract, in two layers
+
+**(a) Identity (internal — not observed by a program).** A NewTOS AES
+client's *identity* — message queue, `AP_*` flags, name, wait-key, resource
+list (A39, `resource.rs` `RscEntry`), and window ownership (`Window.owner`) —
+is keyed by its **GEMDOS process slot**, plus one reserved index for the
+kernel-context desktop (table size `MAX_PROCESSES + 1`). Because every GEMDOS
+slot gets its own descriptor by construction, opening one can never fail on
+capacity grounds: **`appl_init` never returns `-1`** for "table full" —
+matching EmuTOS's "cannot fail" contract exactly, and for the same
+structural reason (no capacity check exists), not because NewTOS happens to
+provision enough slots.
+
+**(b) Reported value (external — what a program reads back).** The *value*
+`appl_init`/`ap_id` (`global[2]`), `appl_find`, `wind_get(WF_OWNER)`
+(`int_out[1]` = `WM_OX`, `include/aesdefs.h:509`), and `msg[1]` of the
+16-byte standard message report is **computed from the identity**, not equal
+to it, and follows EmuTOS's numbers:
+
+- **0** for every member of the application chain — the kernel-context
+  desktop, the program it launches, and any `Pexec` child at any nesting
+  depth. `ap_id == 0` is already contract, established in
+  [`shell-loop.md`](./shell-loop.md) §4-§5 and
+  [`scrap-shell.md`](./scrap-shell.md) (2026-09-01) for desktop/first-app;
+  this extends it to the full nested-`Pexec` chain (`geminit.c:850-877`,
+  `gemshlib.c:572`).
+- **1** only as a **sender stamp** on `msg[1]`, written by `ap_sendmsg`
+  (`gemwmlib.c:851-863`, `ap_msg[1] = rlr->p_pid`) while running as the
+  Screen Manager (`rlr == ctl_pd`) — there is **no NewTOS process** behind
+  this value; it is a constant the poster writes. Exact call sites, all
+  inside `gemctrl.c`'s `ctlmgr()` context via `ct_msgup`/`handle_arrow_msg`:
+  `WM_TOPPED` (`:178`), `WM_CLOSED`/`WM_FULLED` (`:210-220`), `WM_SIZED`
+  (`:259`), `WM_MOVED` (`:238`), `WM_HSLID`/`WM_VSLID` (`:300-314`),
+  `WM_UNTOPPED` (`:151`), `AC_OPEN`/`MN_SELECTED` (`:346-367`), and the
+  **queued** case of `WM_ARROWED` (`:125`, taken when the target is
+  `WAITIN`).
+- **0** for `WM_REDRAW`: `w_redraw`'s `ap_sendmsg` (`gemwmlib.c:904`) runs
+  from `draw_change`, called synchronously from `wm_open`/`wm_close`/
+  `wm_set(WF_CURRXYWH)` (`gemwmlib.c:1426,1453,1612`) — i.e. from *inside*
+  the calling application's own `wind_open`/`wind_close`/`wind_set` trap, so
+  `rlr` is the application (pid 0) at send time, not the Screen Manager.
+- **0**, exceptionally, for a **non-queued** `WM_ARROWED`: when
+  `handle_arrow_msg` finds the target not currently `WAITIN`, it stashes the
+  action directly on the target's `p_msg` instead of sending
+  (`gemctrl.c:129-133`); the target's own later `evnt_mesag` call then
+  synthesizes the message itself via `ev_mesag`, with `msg[1] = rlr->p_pid` —
+  the **reader's own** pid, 0 (`gemevlib.c:100-117`; see
+  [`event.md`](./event.md) §`evnt_mesag`). The same message id therefore
+  carries **1** or **0** in `msg[1]` depending on whether the target was
+  already blocked waiting when the arrow was clicked.
+- **`appl_write`/`appl_read` target 0** resolves to **the currently-scheduled
+  client** (the innermost active chain member) — the NewTOS analogue of
+  `fpdnm(NULL, 0)` always finding `D.g_int[0]`, because at most one chain
+  member is ever actively trapping into the AES at a time (a `Pexec` parent
+  is blocked, for the same reason EmuTOS's caller is).
+- **`WF_OWNER`** (`wind_get`, `int_out[1]`): **0** for every application
+  window (`w_owner->p_pid`, `gemwmlib.c:1580`; `w_owner` set to `rlr` by
+  `w_setup` at `wind_create` time, `gemwmlib.c:1377`, and for the desktop
+  window by `wm_init`, `gemwmlib.c:1255,1290`).
+
+### Consequences for A39 / A28 / H02 / H05 (reasoned, not re-derived here)
+
+- **A39** (resource list keyed by caller) keeps its key *kind* unchanged —
+  still "which client owns this entry" — but the key type moves from the
+  *reported* pid to the *identity* slot. This is required: giving parent and
+  child the same reported value (0) as their resource-list key would make
+  `on_process_exit` at the child's `Pterm` delete the parent's entries too
+  (the H05 regression). Identity keeps them separate; only the value
+  reported back to `appl_init`/`WF_OWNER` collapses to 0.
+- **A28** (launch-boundary reset) is unaffected in substance —
+  `register`/`flags = 0`/queue-drain still happen at the identity (slot)
+  boundary; only the numbers a test compares change, from "the slot" to "the
+  reported value."
+- **H02** (`ctl_pd` built as a flag, not a process) is exactly the shape this
+  section requires: pid 1 is a **stamp**, not a process descriptor —
+  `msg[1] = 1` must be written at the poster (the control-manager-equivalent
+  code paths above), not derived from "the current process's identity",
+  because there is no NewTOS process behind it.
+- **H05** (child's return not corrupting the parent) is preserved by the same
+  identity/value split as A39: parent and child never share an identity
+  slot, so nothing about their resource lists or queues collides, even
+  though both report `ap_id == 0` while running.
+- **`on_process_exit`** stays keyed by the GEMDOS slot (identity), unchanged
+  by this section.
+
+---
+
 ## `AESGLOBAL` — the application's AES state (`global[]`)
 
 `aes/gemrslib.h:15-27` (struct) + `include/aesdefs.h:147-157` (the `AP_*`
@@ -192,10 +342,23 @@ an existing one; reopening is not a queue reset.
 `rlr` = "run-list root" = the currently running AES process descriptor
 (`aes/aesvars.h`; see [`_state.md`](./_state.md)).
 
-> `appl_init` never actually fails in this EmuTOS build — `ap_init` always
-> returns a valid pid (the process descriptor was allocated at AES start-up).
-> The documented `-1` failure return is the contract for a NewTOS that *can*
-> fail to allocate an application slot.
+> `appl_init` never fails in EmuTOS — `ap_init` (`gemaplib.c:54-63`) is three
+> unconditional statements with no failure path at all; there is no capacity
+> check because the descriptor was allocated once at AES start-up, before any
+> application could call it (see "AES process identity and pid" above).
+>
+> **Correction (2026-09-20, A62/A56).** The previous wording here — "the
+> documented `-1` failure return is the contract for a NewTOS that *can* fail
+> to allocate an application slot" — **licensed a divergence** from EmuTOS
+> instead of naming it. EmuTOS's contract is "never `-1`", full stop. A
+> NewTOS `appl_init` that can return `-1` under input a real program can
+> produce (e.g. more than `MAX_APPS` concurrently open descriptors) is not
+> EmuTOS-faithful; per the identity model above (table sized
+> `MAX_PROCESSES + 1`, one entry per GEMDOS slot by construction), `appl_init`
+> should have no capacity-`-1` path either. Measured: `appl_init` returns
+> `-1` today at `Pexec` nesting depth 9
+> (`docs/analysis/aes-process-table-and-apid-2026-09-20.md` §1b) — this is
+> the defect A62 names, not a documented allowance.
 
 ## `appl_read` (11) / `appl_write` (12)
 
@@ -449,8 +612,14 @@ returns are pid / 0 / 1 / -1 only.
 
 1. **`ap_id` is the AES pid, not a separate handle.** `appl_init` returns
    `rlr->p_pid` and stores the same value in `global[2]`
-   (`gemsuper.c:94,99`). The AES pid is small (0/1 = system processes, 2+ =
-   accessories/applications, `geminit.c:875-877`).
+   (`gemsuper.c:94,99`). **Correction (2026-09-20, A62/A56):** the previous
+   wording here — "the AES pid is small (0/1 = system processes, 2+ =
+   accessories/applications)" — was wrong. Per `geminit.c:850-888` and
+   `gempd.c:60-70`: pid **0** is the *entire* application chain (desktop,
+   every launched program, every `Pexec` child of it — not a "system
+   process" distinct from the application); pid **1** is the Screen Manager
+   (`SCRENMGR`/`ctlmgr`), a genuine second AES process, not a flag; pid
+   **2+** is desk accessories only. See "AES process identity and pid" above.
 2. **`ap_private` — not `ap_ptree` — carries the DESKTOP `ob_spec`.**
    `appl_init` writes `global[3]` (`AP_PRIVATE`), *not* `global[5]`
    (`AP_PTREE`). `ap_ptree` stays unset until `rsrc_load` (`gemsuper.c:95-96`).
@@ -511,8 +680,10 @@ returns are pid / 0 / 1 / -1 only.
   (`gemrslib.h:15-27`).
 - **16-byte standard message** — `WORD msg[8]`; `msg[0]` = message id
   (`MN_SELECTED`/`WM_*`/`AC_*`, `include/aesdefs.h:227-243`), `msg[1]` = sender
-  ap_id, `msg[2]` = extra-byte count, `msg[3..7]` = message-specific. Shared
-  with the event manager ([`event.md`](./event.md)).
+  ap_id (**0** = application chain, **1** = Screen-Manager sender stamp only —
+  see "AES process identity and pid" above), `msg[2]` = extra-byte count,
+  `msg[3..7]` = message-specific. Shared with the event manager
+  ([`event.md`](./event.md)).
 - **`EVNTREC`** (tape record) — `gemaplib.h:17-28`.
 - **`AESPD` / `QPB`** — process descriptor + queue parameter block
   (`aes/struct.h:119-163`); reference-level (NewTOS reimplements). See
@@ -584,9 +755,16 @@ returns are pid / 0 / 1 / -1 only.
   cooperative single-AES-app (desktop) bring-up satisfies the contract with one
   process; DA concurrency can be added later without changing what `appl_init`
   reports. Open question flagged in the report.
-- **`ap_id` = the Phase-06 process id** — the AES application is a process;
-  `appl_init`/`appl_exit` bracket its life exactly as `Pexec`/`Pterm` do at the
-  GEMDOS level.
+- **`ap_id` ≠ the Phase-06 process id. Correction (2026-09-20, A62/A56):**
+  this line previously equated the *reported* `ap_id` with the GEMDOS
+  process id (i.e. "Slot + 1"), which is not what EmuTOS reports — EmuTOS's
+  `ap_id` is **0** for the whole application chain (Fall 644,
+  `measurement-2026-09-12-aes-r4/aes-r4-subfunctions.tsv`, CRC `227422B2`).
+  What *is* true, and what this line was reaching for, is only that the AES
+  application's *life* brackets a GEMDOS process's life
+  (`appl_init`/`appl_exit` inside `Pexec`/`Pterm`) — not that its reported
+  numeric id equals the GEMDOS one. See "AES process identity and pid" above
+  for the identity-vs-value split this requires.
 - **The message pipe** maps onto NewTOS's process/IPC model; the 16-byte
   standard message is what `evnt_mesag` delivers — the two are designed
   together (see [`event.md`](./event.md)).

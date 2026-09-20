@@ -320,7 +320,11 @@ sources feed it:
   posted by `gemctrl.c:129-133` while an arrow gadget is held), `ev_mesag`
   synthesizes a full `WM_ARROWED` message in place (`msg[0]=WM_ARROWED`,
   `msg[1]=p_pid`, `msg[3]=p_msg.wh`, `msg[4]=p_msg.action`) and clears
-  `p_msg.action = -1` (`gemevlib.c:102-114`).
+  `p_msg.action = -1` (`gemevlib.c:102-114`). **`p_pid` here is the reader's
+  own pid — 0 for the application chain** — unlike the normal *queued*
+  `WM_ARROWED`, which arrives via `ap_sendmsg` from the Screen Manager with
+  `msg[1] = 1` (`gemctrl.c:125`; see [`application.md`](./application.md)
+  §"AES process identity and pid", 2026-09-20/A62+A56).
 
 After the arm returns, if `msg[0] == AC_CLOSE` the dispatcher sets
 `rlr->p_flags |= AP_ACCLOSE` (`gemsuper.c:139-140`) — the desk-accessory close
@@ -486,7 +490,10 @@ dispatcher's unsupported-opcode → `-1` path (see [`_dispatcher.md`](./_dispatc
    real pipe is empty, `ev_mesag` synthesizes the `WM_ARROWED` message from
    those fields instead of reading the queue (`gemevlib.c:100-114`,
    `gemctrl.c:129-133`) — auto-repeat scrolling without flooding the 128-byte
-   queue.
+   queue. The synthesized message's `msg[1]` is the reader's own pid (0),
+   whereas the normal queued `WM_ARROWED` carries `msg[1] = 1` (Screen
+   Manager) — see [`application.md`](./application.md) §"AES process
+   identity and pid" (2026-09-20/A62+A56).
 8. **`evnt_multi` pre-drains the fork queue.** It calls `chkkbd()` + `forker()`
    before the quick checks so a keystroke or button/mouse change that arrived
    just before the call is seen on this pass, not the next (`gemevlib.c:169-170`).
@@ -542,9 +549,12 @@ dispatcher's unsupported-opcode → `-1` path (see [`_dispatcher.md`](./_dispatc
   `int_out[0..6]` tables above (`aesdefs.h:178-224`).
 - **The 16-byte standard message** — `WORD msg[8]`; `msg[0]` = message id
   (`MN_SELECTED` 10, `WM_*` 20–31, `AC_OPEN` 40 / `AC_CLOSE` 41,
-  `aesdefs.h:227-243`), `msg[1]` = sender ap_id, `msg[2]` = extra-byte count,
-  `msg[3..7]` message-specific. Shared with the application manager
-  ([`application.md`](./application.md), [`_state.md`](./_state.md) §3).
+  `aesdefs.h:227-243`), `msg[1]` = sender ap_id (**0** = application chain,
+  **1** = Screen-Manager sender stamp only — see
+  [`application.md`](./application.md) §"AES process identity and pid"),
+  `msg[2]` = extra-byte count, `msg[3..7]` message-specific. Shared with the
+  application manager ([`application.md`](./application.md),
+  [`_state.md`](./_state.md) §3).
 - **The double-click rate table** — `gl_dcrates[5] = {450, 330, 275, 220, 165}`
   ms, indices 0..4 (`gemevlib.c:33`); default index 3.
 - **`combine_cms` / `downorup` button packing** — clicks:WORD ∥ mask:byte ∥
