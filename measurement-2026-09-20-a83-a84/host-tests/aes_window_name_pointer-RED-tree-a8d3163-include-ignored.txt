@@ -1,0 +1,154 @@
+
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+
+running 3 tests
+test a_null_pointer_is_an_empty_title ... ok
+test a_title_longer_than_79_characters_is_not_truncated ... FAILED
+test t10_title_rewritten_in_place_shows_on_the_next_frame_repaint ... FAILED
+
+failures:
+
+---- a_title_longer_than_79_characters_is_not_truncated stdout ----
+
+thread 'a_title_longer_than_79_characters_is_not_truncated' (4188642) panicked at tos-api/tests/aes_window_name_pointer.rs:606:5:
+assertion `left != right` failed: A83: a 100-character title renders like its first 79 characters — the AES cut it (copy into name[80]); EmuTOS hands the whole string to the gadget
+  left: 18069069666754953653
+ right: 18069069666754953653
+
+---- t10_title_rewritten_in_place_shows_on_the_next_frame_repaint stdout ----
+
+thread 't10_title_rewritten_in_place_shows_on_the_next_frame_repaint' (4188643) panicked at tos-api/tests/aes_window_name_pointer.rs:567:5:
+assertion `left != right` failed: A83 T10: after the in-place rewrite and a re-top the title band still shows AAAAAAAA (the AES copied the string at wind_set time; EmuTOS reads the pointer on every frame build, gemwmlib.c:1661,501)
+  left: 8366661130388281744
+ right: 8366661130388281744
+
+
+failures:
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+error: test failed, to rerun pass `-p tos-api --test aes_window_name_pointer`

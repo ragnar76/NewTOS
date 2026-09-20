@@ -1,0 +1,72 @@
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index cbf757c..1cc7efe 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -3620,29 +3620,34 @@ pub fn wind_set(pb: &Aespb) {
+         }
+         // Slider positions clamp to 1..1000; sizes clamp to 1..1000 but let −1
+         // ("use default size") pass through (EmuTOS wm_set, gemwmlib.c:1643-1656).
++        // Each arm stores and redraws **only when the value changed** — `if
++        // (pwin->w_vslide != pinwds[0]) { pwin->w_vslide = pinwds[0]; gadget =
++        // W_VSLIDE; }` (`gemwmlib.c:1690-1716`): an unchanged value leaves
++        // `gadget == -1`, so `w_cpwalk` is never reached (`:1739-1755`) and
++        // not one draw operation is issued (A84).
+         WF_VSLIDE => {
+-            if let Some(w) = win(handle) {
+-                w.vslide = pb.intin(2).clamp(1, 1000);
++            let v = pb.intin(2).clamp(1, 1000);
++            if win(handle).is_some_and(|w| store_if_changed(&mut w.vslide, v)) {
++                redraw_vslider(handle);
+             }
+-            redraw_vslider(handle);
+         }
+         WF_VSLSIZ => {
+-            if let Some(w) = win(handle) {
+-                w.vslsize = slider_size(pb.intin(2));
++            let v = slider_size(pb.intin(2));
++            if win(handle).is_some_and(|w| store_if_changed(&mut w.vslsize, v)) {
++                redraw_vslider(handle);
+             }
+-            redraw_vslider(handle);
+         }
+         WF_HSLIDE => {
+-            if let Some(w) = win(handle) {
+-                w.hslide = pb.intin(2).clamp(1, 1000);
++            let v = pb.intin(2).clamp(1, 1000);
++            if win(handle).is_some_and(|w| store_if_changed(&mut w.hslide, v)) {
++                redraw_hslider(handle);
+             }
+-            redraw_hslider(handle);
+         }
+         WF_HSLSIZ => {
+-            if let Some(w) = win(handle) {
+-                w.hslsize = slider_size(pb.intin(2));
++            let v = slider_size(pb.intin(2));
++            if win(handle).is_some_and(|w| store_if_changed(&mut w.hslsize, v)) {
++                redraw_hslider(handle);
+             }
+-            redraw_hslider(handle);
+         }
+         // WF_COLOR (18): store the per-window colour words for gadget int_in[2]
+         // — tcolor = int_in[3], bcolor = int_in[4] (−1 = leave unchanged) —
+@@ -3685,6 +3690,20 @@ fn slider_size(v: i16) -> i16 {
+     }
+ }
+ 
++/// The slider arms' change guard — `if (pwin->w_hslsiz != pinwds[0]) {
++/// pwin->w_hslsiz = pinwds[0]; … }` (`gemwmlib.c:1691-1694`, likewise
++/// `:1698`, `:1705`, `:1712`): store `v` into `field` and report whether it
++/// differed, which is what decides the slider redraw. `v` is the already
++/// validated (clamped, or −1) value, as `pinwds[0]` is by then (`:1643-1656`).
++fn store_if_changed(field: &mut i16, v: i16) -> bool {
++    if *field == v {
++        false
++    } else {
++        *field = v;
++        true
++    }
++}
++
+ /// Redraw just `handle`'s frame if it is open (for name/info changes) — EmuTOS
+ /// `wm_set`'s `w_cpwalk(w_handle, W_NAME/W_INFO, MAX_DEPTH, TRUE)`
+ /// (`gemwmlib.c:1660-1675,1753-1754`), i.e. `do_walk` over the window's own

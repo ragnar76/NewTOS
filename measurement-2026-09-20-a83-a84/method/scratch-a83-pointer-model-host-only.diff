@@ -1,0 +1,83 @@
+--- /Volumes/Daten/Development/PiRusTOS/tos-api/src/aes/window.rs	2026-09-20 21:51:04
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/red-a84/tos-api/src/aes/window.rs	2026-09-20 21:57:08
+@@ -375,8 +375,8 @@
+     /// **not** what `wm_calc` would produce for `kind = NONE`. Maintained by
+     /// [`set_curr`].
+     work: Grect,
+-    name: [u8; NAME_CAP],
+-    info: [u8; NAME_CAP],
++    name: u64,
++    info: u64,
+     /// Vertical slider position (`WF_VSLIDE`, 1..1000 per-mille of travel)
+     /// and thumb size (`WF_VSLSIZ`, 1..1000 per-mille of the track, or **−1**
+     /// = "use default size", one gadget cell). `wind_create` inits the size to
+@@ -450,8 +450,8 @@
+         curr: Grect { x: 0, y: 0, w: 0, h: 0 },
+         prev: Grect { x: 0, y: 0, w: 0, h: 0 },
+         work: Grect { x: 0, y: 0, w: 0, h: 0 },
+-        name: [0; NAME_CAP],
+-        info: [0; NAME_CAP],
++        name: 0,
++        info: 0,
+         vslide: 0,
+         vslsize: -1,
+         hslide: 0,
+@@ -2557,7 +2557,8 @@
+         name_x += ADJ3DSTD;
+         name_w -= 2 * ADJ3DSTD;
+         let nr = Grect { x: name_x, y: gy, w: name_w, h: gl_hbox() };
+-        let nlen = name_len(&w.name) as i16 * 8;
++        let nbuf = live_str(w.name);
++        let nlen = name_len(&nbuf) as i16 * 8;
+         let nx = name_x + ((name_w - nlen) / 2).max(2);
+         // A `MOVER` without a `NAME` still gets the name box, but
+         // `w_bldactive` never calls `w_setcolor` for it and sets
+@@ -2568,7 +2569,7 @@
+         let (name_ink, name_box) =
+             if kind & NAME != 0 { (ink(W_NAME_IDX), grow_3d(nr)) } else { (ink_of(0, false, true), nr) };
+         draw_box_ink(name_box, name_ink, backend, clip);
+-        draw_label(nx, gy, name_w, &w.name, name_ink.tc, name_ink.text_mode(), backend, clip);
++        draw_label(nx, gy, name_w, &nbuf, name_ink.tc, name_ink.text_mode(), backend, clip);
+         top += ah - 1;
+     }
+ 
+@@ -2583,7 +2584,8 @@
+         // inside, then the text in `tc`/`md`. `FL3DNONE` — no growth, no bevel.
+         let i = ink(W_INFO_IDX);
+         draw_box_ink(Grect { x: b.x, y: top, w: b.w, h: gl_hbox() }, i, backend, clip);
+-        draw_label(b.x + 3, top, b.w - 4, &w.info, i.tc, i.text_mode(), backend, clip);
++        let ibuf = live_str(w.info);
++        draw_label(b.x + 3, top, b.w - 4, &ibuf, i.tc, i.text_mode(), backend, clip);
+         top += gl_hbox();
+     }
+ 
+@@ -2928,6 +2930,12 @@
+     }
+ }
+ 
++fn live_str(p: u64) -> [u8; 512] {
++    let mut b = [0u8; 512];
++    copy_cstr(&mut b, p as *const u8);
++    b
++}
++
+ fn name_len(s: &[u8]) -> usize {
+     s.iter().position(|&b| b == 0).unwrap_or(s.len())
+ }
+@@ -3561,14 +3569,14 @@
+             // ILP32 caller an empty slot → garbage title (F7 audit).
+             let title = wf_str_ptr(pb) as *const u8;
+             if let Some(w) = win(handle) {
+-                copy_cstr(&mut w.name, title);
++                w.name = title as u64;
+             }
+             redraw_open(handle);
+         }
+         WF_INFO => {
+             let info = wf_str_ptr(pb) as *const u8;
+             if let Some(w) = win(handle) {
+-                copy_cstr(&mut w.info, info);
++                w.info = info as u64;
+             }
+             redraw_open(handle);
+         }

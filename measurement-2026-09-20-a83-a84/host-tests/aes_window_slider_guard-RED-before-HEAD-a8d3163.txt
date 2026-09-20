@@ -1,0 +1,180 @@
+
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+  44 | pub(crate) struct Aespb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+ 81 | pub(crate) struct Vdipb {
+
+
+running 8 tests
+test a_later_change_still_draws_and_stores ... FAILED
+test an_unopened_window_stores_without_drawing ... ok
+test default_size_on_a_fresh_window_is_not_a_change ... FAILED
+test hslide_set_twice_draws_only_once ... FAILED
+test hslsiz_set_twice_draws_only_once ... FAILED
+test t8_vslide_set_twice_draws_only_once ... FAILED
+test the_guard_compares_after_clamping ... FAILED
+test vslsiz_set_twice_draws_only_once ... FAILED
+
+failures:
+
+---- a_later_change_still_draws_and_stores stdout ----
+
+thread 'a_later_change_still_draws_and_stores' (4186428) panicked at tos-api/tests/aes_window_slider_guard.rs:627:5:
+assertion failed: set_and_count(host, &mut pb, h, WF_VSLIDE, 500).is_empty()
+
+---- default_size_on_a_fresh_window_is_not_a_change stdout ----
+
+thread 'default_size_on_a_fresh_window_is_not_a_change' (4186430) panicked at tos-api/tests/aes_window_slider_guard.rs:612:5:
+A84: WF_VSLSIZ -1 on a fresh window drew 46 ops
+
+---- hslide_set_twice_draws_only_once stdout ----
+
+thread 'hslide_set_twice_draws_only_once' (4186431) panicked at tos-api/tests/aes_window_slider_guard.rs:562:5:
+A84: WF_HSLIDE 500 again issued 46 draw operations, EmuTOS issues 0 (`if (pwin->w_… != pinwds[0])`, gemwmlib.c:1690-1716); first op: Some("fill_rect x=31 y=257 w=23 h=1 pel=1")
+
+---- hslsiz_set_twice_draws_only_once stdout ----
+
+thread 'hslsiz_set_twice_draws_only_once' (4186432) panicked at tos-api/tests/aes_window_slider_guard.rs:562:5:
+A84: WF_HSLSIZ 250 again issued 46 draw operations, EmuTOS issues 0 (`if (pwin->w_… != pinwds[0])`, gemwmlib.c:1690-1716); first op: Some("fill_rect x=31 y=257 w=23 h=1 pel=1")
+
+---- t8_vslide_set_twice_draws_only_once stdout ----
+
+thread 't8_vslide_set_twice_draws_only_once' (4186433) panicked at tos-api/tests/aes_window_slider_guard.rs:562:5:
+A84: WF_VSLIDE 500 again issued 46 draw operations, EmuTOS issues 0 (`if (pwin->w_… != pinwds[0])`, gemwmlib.c:1690-1716); first op: Some("fill_rect x=327 y=63 w=23 h=1 pel=1")
+
+---- the_guard_compares_after_clamping stdout ----
+
+thread 'the_guard_compares_after_clamping' (4186434) panicked at tos-api/tests/aes_window_slider_guard.rs:562:5:
+A84: WF_VSLIDE 1500 again issued 46 draw operations, EmuTOS issues 0 (`if (pwin->w_… != pinwds[0])`, gemwmlib.c:1690-1716); first op: Some("fill_rect x=327 y=63 w=23 h=1 pel=1")
+
+---- vslsiz_set_twice_draws_only_once stdout ----
+
+thread 'vslsiz_set_twice_draws_only_once' (4186435) panicked at tos-api/tests/aes_window_slider_guard.rs:562:5:
+A84: WF_VSLSIZ 250 again issued 46 draw operations, EmuTOS issues 0 (`if (pwin->w_… != pinwds[0])`, gemwmlib.c:1690-1716); first op: Some("fill_rect x=327 y=63 w=23 h=1 pel=1")
+
+
+failures:
+
+test result: FAILED. 1 passed; 7 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `-p tos-api --test aes_window_slider_guard`

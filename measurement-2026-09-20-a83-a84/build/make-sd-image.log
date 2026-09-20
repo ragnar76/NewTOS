@@ -1,0 +1,20 @@
+Creating /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/qemu/img/sd-base.img (64 MiB, MBR + FAT16, volume NEWTOS)…
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+attached /dev/disk4
+wrote /Volumes/NEWTOS/HELLO.NCP: 4388 bytes, entry=0x1000, filesz=0x124, banner=36 bytes
+wrote /Volumes/NEWTOS/AUTO/HELLO.NCP: 4388 bytes, entry=0x1000, filesz=0x124, banner=36 bytes
+built + installed C:\HELLO2.NCP (clang-built native C program)
+built + installed C:\BIG.NCP (clang-built multi-page-TPA program)
+built + installed C:\PHYSBASE.NCP (Physbase direct-screen proof)
+built + installed C:\SCRFLIP.NCP (Setscreen page-flip proof)
+built + installed C:\DTACHILD.NCP (per-process DTA test child)
+installed C:\LIBTEST.NCP (mintlib-linked libc proof)
+installed C:\CLOCKTST.NCP (200 Hz tick / _hz_200 proof)
+installed C:\COREMARK\{CORE,COREVAL}.NCP (EEMBC CoreMark 1.0)
+  + C:\DUMPVDI.NAP + C:\VDI.TSV (VDI reference dumper, round 2)
+  ! tosdump not built (run 'make -C tosdump all'); skipping DUMPVDI
+installed C:\Apps\QED\QED.NAP + qed.rsc (ported GEM editor, LP64)
+installed C:\Apps\TERADESK\{DESKTOP.NAP,desktop.rsc,icons.rsc,cicons.rsc} (ported GEM desktop, LP64, colour icons)
+OK: MBR FAT16 partition type=0x06 start_lba=63 sectors=130977
+done: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/qemu/img/sd-base.img
+run:  cargo xtask run --sd /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/qemu/img/sd-base.img --board rpi4 --window   # raspi4b emulates the SD controller

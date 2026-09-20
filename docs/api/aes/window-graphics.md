@@ -719,7 +719,9 @@ the concrete evidence that no order-independent "same set of pieces" exists.
 
 **Source:** `gemsuper.c:345-347` → `gemwmlib.c:1623` (`wm_set`).
 Helpers: `wm_update(BEG_UPDATE/END_UPDATE)`, `draw_change` (WF_CXYWH),
-`wm_mktop` (WF_TOP), `w_cpwalk` (redraw one gadget on all/topped windows).
+`wm_mktop` (WF_TOP), `w_cpwalk` (redraw one gadget of the **target window
+alone**, clipped to that window's own rectangle list — corrected 2026-09-20,
+A82; not "all/topped windows", see "Redraw scope" below).
 **Globals written:** the `WINDOW` field being set; for WF_NEWDESK
 `gl_newdesk`/`gl_newroot`.
 
@@ -745,8 +747,8 @@ Helpers: `wm_update(BEG_UPDATE/END_UPDATE)`, `draw_change` (WF_CXYWH),
 
 | Field | Effect | Triggers redraw of |
 |-------|--------|--------------------|
-| `WF_NAME` (2) | `w_pname = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_NAME` gadget, **all open windows** (`do_cpwalk`, `:1665`) |
-| `WF_INFO` (3) | `w_pinfo = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_INFO` gadget, **all open windows** (`:1673`) |
+| `WF_NAME` (2) | `w_pname = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_NAME` gadget of **this one window**, if it is open (`w_cpwalk(w_handle,…)`, `:1665,1754-1755`; corrected 2026-09-20, A82 — see "Redraw scope" below) |
+| `WF_INFO` (3) | `w_pinfo = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_INFO` gadget of **this one window**, if it is open (`:1673,1754-1755`; A82) |
 | `WF_CXYWH` (5) | move/resize → `draw_change(handle, rect)` | **whole frame + uncovered areas** (`:1677`); a pure move of the top window is **blitted** and the mover gets no `WM_REDRAW` — see the `draw_change` note below |
 | `WF_TOP` (10) | `if (w_handle != gl_wtop) wm_mktop(w_handle)` (`:1679-1683`) — compared against the **raw** `gl_wtop` (`NIL` while nothing is open), so handle 0 always qualifies; `wm_mktop` = `ob_order(…, NIL)` + `draw_change(h, WS_CURR)` with `WS_PREV` restored afterwards (`:1605-1613`) | full topping redraw for an **open** window (`:1682`); **no pixel and no message** for the desktop handle 0 or for a created-but-unopened handle — see "`WF_TOP` on the desktop handle" below (A80, 2026-09-20) |
 | `WF_NEWDESK` (14) | set desktop-background tree `gl_newdesk`, root `gl_newroot` — root at `pinwds[2]` = `int_in[4]` (EmuTOS packed convention, D-094); NewTOS's native/packed dual mapping is A81, "Edge cases" item 16 | (next desktop redraw) `:1685` |
@@ -754,22 +756,89 @@ Helpers: `wm_update(BEG_UPDATE/END_UPDATE)`, `draw_change` (WF_CXYWH),
 | `WF_VSLSIZ` (16) | `w_vslsiz` (clamped, or −1) — only if changed | `W_VSLIDE` gadget `:1697` |
 | `WF_HSLIDE` (8) | `w_hslide` position (clamped 1..1000) — only if changed | `W_HSLIDE` gadget `:1704` |
 | `WF_VSLIDE` (9) | `w_vslide` position (clamped 1..1000) — only if changed | `W_VSLIDE` gadget `:1711` |
-| `WF_COLOR` (18) § | per-window `w_tcolor`/`w_bcolor[gadget]` (−1 skips) | that gadget, all windows `:1719` |
+| `WF_COLOR` (18) § | per-window `w_tcolor`/`w_bcolor[gadget]` (−1 skips) | that gadget of **this one window** (`w_cpwalk`, `:1719,1754-1755`; corrected 2026-09-20, A82) |
 | `WF_DCOLOR` (19) § | default `gl_wtcolor`/`gl_wbcolor[gadget]` (−1 skips) | **no** redraw (`gadget=-1`) `:1727` |
 
 Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
 
-> **Redraw scope (contract detail, corrects "redraw only affected gadget").**
-> `WF_NAME`/`WF_INFO`/`WF_COLOR` set `do_cpwalk = TRUE` — they redraw the one
-> gadget on **all open windows** (name/info apply to every window's frame).
+> **Redraw scope (contract detail, corrected 2026-09-20, A82 — this entry
+> previously claimed `WF_NAME`/`WF_INFO`/`WF_COLOR` redraw "all open
+> windows"; they do not).** `WF_NAME`/`WF_INFO`/`WF_COLOR` set `do_cpwalk =
+> TRUE` and reach `w_cpwalk(w_handle, gadget, MAX_DEPTH, TRUE)`
+> (`gemwmlib.c:1754-1755`), which draws through `do_walk(wh, …)` over
+> `D.w_win[wh].w_rlist` alone (`:286-312,363-379`) — **the owner rectangle
+> list of `w_handle`, the one window the call named**, and only if that
+> window is open (`if (pwin->w_flags & VF_ISOPEN)`, `:1662,1670`; an
+> unopened window's pointer/colour is stored but nothing is drawn). EmuTOS's
+> own comment on the `WF_NAME` arm — "update name applies to all open
+> windows" (`:1665`, likewise `:1673` for `WF_INFO`) — reads as "every open
+> window", but the code it comments contradicts that reading: in context it
+> draws the contrast with the *closed*-window case immediately above it
+> (pointer stored, no redraw at all) and with the slider arms below (redraw
+> additionally gated on **topped**, not merely on open) — not "one window"
+> vs. "every window".
 > Slider fields (`WF_HSLIDE`/`VSLIDE`/`HSLSIZ`/`VSLSIZ`) redraw **only the
-> slider gadget**, and — in the non-3D build — **only if the window is topped**
+> `W_HSLIDE`/`W_VSLIDE` object subtree of that same one window** — the
+> slider track plus its elevator/thumb child (`W_HELEV`/`W_VELEV`,
+> `w_adjust(W_HSLIDE, W_HELEV,…)`/`w_adjust(W_VSLIDE, W_VELEV,…)`, 3D variant
+> `:430-436,468-474`, non-3D variant `:663-669,704-710`), **not** the arrow
+> gadgets: `W_LFARROW`/`W_RTARROW`/`W_UPARROW`/`W_DNARROW` are siblings of
+> `W_HSLIDE`/`W_VSLIDE` under `W_HBAR`/`W_VBAR`, not descendants, and
+> `ob_draw`'s `everyobj(tree, obj, tree[obj].ob_next, …)`
+> (`gemoblib.c:959-977`) walks exactly `obj`'s own subtree. In the non-3D
+> build this redraw additionally requires the window to be topped
 > (`if (w_handle == gl_wtop)`, `gemwmlib.c:1747`); with `CONF_WITH_3D_OBJECTS`
-> (default) sliders are always visible so they redraw regardless. `WF_CXYWH`
-> and `WF_TOP` go through `draw_change`, which repaints the frame **and** every
-> uncovered area (whole-tree redraw with per-window `WM_REDRAW`). The
-> slider-position/size setters **early-out with no redraw if the value is
-> unchanged** (`if (pwin->w_hslide != pinwds[0])`).
+> (default) sliders are always visible so they redraw regardless of topped
+> state, but still scoped to that one window's subtree. `WF_CXYWH` and
+> `WF_TOP` go through `draw_change`, which is the one path that legitimately
+> repaints **multiple** windows — the frame **and** every uncovered area
+> (whole-tree redraw with per-window `WM_REDRAW`). The slider-position/size
+> setters **early-out with no redraw if the value is unchanged**
+> (`if (pwin->w_hslide != pinwds[0])`) — NewTOS currently reproduces neither
+> that guard nor the arrow exclusion (A84, `TASK/A84.md`; unobservable in
+> pixels, only in draw-call count — see edge case 5 below).
+
+> **`WF_NAME`/`WF_INFO` store a pointer, not a copy; no length limit
+> (contract, A83, 2026-09-20).** EmuTOS's `wm_set` stores exactly the
+> pointer the caller passed — `w_pname = *(char **)pinwds` (`WF_NAME`,
+> `gemwmlib.c:1661`), `w_pinfo = *(char **)pinwds` (`WF_INFO`, `:1669`) — no
+> string is copied anywhere in this arm. `w_bldactive` reads that pointer
+> straight into `gl_aname.te_ptext`/`gl_ainfo.te_ptext` on **every** frame
+> build — both the `CONF_WITH_3D_OBJECTS` variant (our reference profile,
+> `:501-502`) and the non-3D variant (`:737-738`) — reached from every
+> redraw path that calls `w_cpwalk` (`:377`): `wm_set`'s own `do_cpwalk`
+> above, `draw_change`'s frame repaint (`w_update`→`w_cpwalk`, `:1029`), and
+> the Control Manager's gadget hit test (`gemctrl.c:187`). Consequently:
+> - **The application may change its title buffer *in place* after the
+>   `wind_set` call**; the next frame redraw (top, uncover, move, or any
+>   other trigger that calls `w_bldactive`) paints the buffer's *current*
+>   contents, not a snapshot taken at `wind_set` time.
+> - **There is no length limit in the AES.** `w_bldactive` hands the raw
+>   pointer to the `TEDINFO` the object drawer paints; anything that does
+>   not fit the `W_NAME`/`W_INFO` gadget rect is clipped by the object
+>   drawer's own text clip, exactly like any other `TEDINFO` string — the
+>   AES itself never truncates or bounds-checks the string.
+> - **A NULL pointer is undefined in EmuTOS**: `*(char **)pinwds` may
+>   legally be NULL, and `w_bldactive` passes it straight to the
+>   text-drawing code with no NULL check.
+> - **Lifetime is the application's responsibility, as in EmuTOS**: the
+>   pointer must stay valid for as long as the window exists (until the
+>   next `WF_NAME`/`WF_INFO` call, `wind_delete`, or process exit) — the AES
+>   keeps only the pointer, never a copy.
+>
+> **Decision (Lead, 2026-09-20, A83): NewTOS matches this contract** — store
+> the pointer, read it live at every redraw, treat a NULL pointer as an
+> empty string (EmuTOS leaves NULL undefined; NewTOS resolves the ambiguity
+> to `""` rather than reproducing EmuTOS's unspecified behaviour).
+> **Current NewTOS implementation diverges** (`tos-api/src/aes/window.rs`):
+> `wind_set(WF_NAME)`/`wind_set(WF_INFO)` **copies** the string into a fixed
+> `name`/`info: [u8; NAME_CAP]` buffer (`NAME_CAP = 80`, i.e. 79 characters +
+> NUL, `:236,378-379`) via `copy_cstr` (`:2935-2953`) in the `WF_NAME`/
+> `WF_INFO` arms (`:3555-3567`, `:3568-3574`) — a snapshot taken at
+> `wind_set` time, silently truncated past 79 characters, instead of a live
+> pointer with no cap. Implementing the decision (storing and dereferencing
+> the caller's EL0 pointer at draw time) is a Developer task, not covered by
+> this spec correction.
 
 > **`WF_TOP` on the desktop handle and on a created-but-unopened handle
 > (A80, 2026-09-20).** `wm_set` runs `wm_mktop(w_handle)` whenever `w_handle !=
@@ -1283,9 +1352,11 @@ byte of any buffer the caller passed (TASK/A42).
 - **`wind_set(WF_HSLIDE)` clamp + change-guard:** `wind_set(h, WF_HSLIDE, 0)`
   clamps to 1; `2000` clamps to 1000; setting the current value again causes no
   redraw (`gemwmlib.c:1652-1655,1705`).
-- **`wind_set(WF_NAME)` redraws all windows' name gadget** (`do_cpwalk`), while
-  `wind_set(WF_VSLIDE)` redraws only the slider and — non-3D — only if topped
-  (`gemwmlib.c:1665,1747-1751`).
+- **`wind_set(WF_NAME)` redraws that one window's name gadget, if it is
+  open** (`w_cpwalk`, `gemwmlib.c:1665,1754-1755`; corrected 2026-09-20, A82
+  — not "all windows", see "Redraw scope" under `wind_set` (105) above),
+  while `wind_set(WF_VSLIDE)` redraws only the slider subtree of that same
+  window and — non-3D — only if topped (`gemwmlib.c:1747-1751`).
 - **`wind_find` desktop fallthrough:** `wind_find(x,y)` over empty desktop
   returns `0` (`gemwmlib.c:1769`).
 - **`graf_handle`:** returns `gl_handle` (the AES VDI workstation handle) in
@@ -1333,7 +1404,10 @@ byte of any buffer the caller passed (TASK/A42).
 5. **Slider setters early-out with no redraw when the value is unchanged**
    (`if (pwin->w_hslide != pinwds[0])`, `gemwmlib.c:1705`); and, non-3D, sliders
    redraw **only on the topped window** (`gemwmlib.c:1747`). With 3D objects
-   (default) they always redraw.
+   (default) they always redraw. The redraw itself is scoped to the
+   `W_HSLIDE`/`W_VSLIDE` subtree (slider + elevator), not the arrow gadgets —
+   see "Redraw scope" under `wind_set` (105) above. NewTOS reproduces
+   neither the change-guard nor the arrow exclusion (A84, `TASK/A84.md`).
 6. **`WM_NEWTOP` (29) and `WM_ONTOP` (31) are declared but never emitted** by
    EmuTOS's window/desktop code — TOS4 messages this build does not generate.
 7. **`WM_ARROWED` repeats while the button is held** (`handle_arrow_msg`); the

@@ -1,0 +1,26 @@
+42ef9c966bedcde9c8bdb8807011b52bc3c4174c1f8b0f43334fa2c90179e254  ./build/clippy-tos-api-host.txt
+42ef9c966bedcde9c8bdb8807011b52bc3c4174c1f8b0f43334fa2c90179e254  ./build/clippy-tos-api-tests.txt
+6128f51e0e52cc9d2f9f797d841306865e236428f21e7bea6fb6dc2f65a0c514  ./build/make-sd-image.log
+185618f27902e5011a3dd1f43a2a9e4675acdc876c9636b389b3b194b2d34301  ./build/scratch-build.log
+5219cd4c32568b9dd993676052490ee0246318218471e200c4b7cfe9cacf1a04  ./build/xtask-build-rpi4.log
+1a57fe6fe4a9a4cbd7defbef2484fa457097b4cc1c1e7c67a566f393d00bc21e  ./host-tests/aes_window_name_pointer-GREEN-under-scratch-pointer-model.txt
+8f1eb9e74f7c39fe0e040771776f5e31d8dd12cb910e168ade381515760d3d5f  ./host-tests/aes_window_name_pointer-RED-tree-a8d3163-include-ignored.txt
+257d16527e89a75ce30d84c9fde4a150e2f685451b2f29837cf380dfc9b2fec9  ./host-tests/aes_window_name_pointer-TREE-ignored.txt
+8ac64726b77ff78fc75a1907d2ad2c320455b835173503766896e8e2710dd7d7  ./host-tests/aes_window_slider_guard-GREEN-after.txt
+e4345dddb019a96e9e105d8787ae5d55dfe943c58b7d6e189a656027376979eb  ./host-tests/aes_window_slider_guard-RED-before-HEAD-a8d3163.txt
+0c7c36316823e7ef5c2d6bb041bef242b3a921f71964ef99a47ebca808e73efb  ./host-tests/xtask-test.log
+26efee296fd3acd44fc0e63af35265d5f3c272ab7142a0302a171375f62f8646  ./method/product-a84-window-rs.diff
+d0504744ccb1850effccfba165380a8814f5cfce1718bdfda6f6863d76dfc227  ./method/scratch-a83-pointer-model-host-only.diff
+e18f0c940c3e694eee012e88a8163c3b3d40e22435f57e8423dd5f4d2b74b564  ./RUNINFO.TXT
+9cd7377f0cc150e22cc4a44a8654fe6432b851f98c7dab202688dd4036bb82fd  ./screendumps/desk-A-idle.png
+9638ccf05b1896012494d77be7c9fa3e19c41154a766e7a7133e84c6be255894  ./screendumps/desk-B-two.png
+9638ccf05b1896012494d77be7c9fa3e19c41154a766e7a7133e84c6be255894  ./screendumps/desk-C-two-2s.png
+7696570220ad94cfa7eee2bf79e80bb09d1295802a4103498ac0049ae693b497  ./screendumps/tera-A-idle.png
+2280f56d688b96eca09bf000fab4a8267fc832ee2d280fce227c9c373f792daf  ./screendumps/tera-B-window.png
+2280f56d688b96eca09bf000fab4a8267fc832ee2d280fce227c9c373f792daf  ./screendumps/tera-C-window-2s.png
+ae794f7e462433b1918ca9fc7666f89b8fffb6cf695f3713942422f424693eb7  ./serial/desk-serial.log
+d359b4f83137b2a1a12dc4b6c954fa0691d81bc3e648785a689528b49f271ba9  ./serial/tera-serial.log
+# SCRATCH (not kept)
+26b76a514cb9aa0de077efa2c0daa84e5c8e70fc1d6e40abfbcd0ede636b61b7  SCRATCH/scr/kernel8.img
+031163a4800c1bd469f22c150836bcf1e512553b3fd438b5006b2bb0eec7ad81  SCRATCH/img/sd-base.img
+d1263013caffaf6f581fb6dc6a9a15969c65b8e639841ab2a6c0dfecf6917e30  SCRATCH/img/sd-tera.img

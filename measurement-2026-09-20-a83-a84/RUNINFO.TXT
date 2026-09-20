@@ -1,0 +1,121 @@
+A83 + A84 (one package) -- wind_set(WF_NAME/WF_INFO) pointer contract (A83, STOPPED after the
+pre-check) and the slider change guard (A84, landed). A82 (spec-only, Researcher) receipted alongside.
+Developer self-evidence, 2026-09-20. Branch desk-rebuild, base HEAD a8d3163, changes uncommitted in
+the tree. Pinned EmuTOS references/emutos @ 1a7484ab: aes/gemwmlib.c:205-218 (w_setup: w_pname = "",
+sliders 0/-1), :479-502 (w_bldactive 3D: gl_aname.te_ptext = pw->w_pname), :1640-1656 (wm_set
+validation), :1660-1675 (WF_NAME/WF_INFO arms), :1690-1716 (slider arms with `!= pinwds[0]` guard),
+:1739-1755 (w_cpwalk gate); desk/deskwin.h:73,79 (w_name/w_info in the WNODE); desk/deskwin.c:847-858
+(win_sname), :905 (win_sinfo -> wind_set(WF_INFO, pwin->w_info)); aes/gemshlib.c:676-677 (wm_new after
+a shell-launched GEM app). Spec (Researcher, uncommitted, untouched): docs/api/aes/window-graphics.md
+-- WF_NAME/WF_INFO rows + the A83 contract blockquote, "Redraw scope" (A82/A84), edge case 5 (A84).
+
+PRODUCT CODE (uncommitted; method/product-a84-window-rs.diff)
+  tos-api/src/aes/window.rs   wind_set arms WF_VSLIDE/WF_VSLSIZ/WF_HSLIDE/WF_HSLSIZ: validate first
+                              (clamp / slider_size), then store_if_changed(&mut w.x, v) -> redraw only
+                              when it differed (EmuTOS gemwmlib.c:1690-1716). New fn store_if_changed.
+                              Comment over the arms extended. Nothing else in the file changed
+                              (name/info/copy_cstr/WF_NAME/WF_INFO arms untouched -- A83 stopped).
+  tos-api/tests/aes_window_slider_guard.rs   (new, 8 cases, CountingBackend logs every draw entry point)
+  tos-api/tests/aes_window_name_pointer.rs   (new, 3 cases at 1920x1080: T10 + >79 chars #[ignore]
+                              with the A83 blocker as reason; NULL -> "" active and green)
+  docs/STATUS.md              Phase-13 fragment (A84/A82/A83) + one Recent Decisions row 2026-09-20
+  TASK/A84.md ERLEDIGT + Abschluss; TASK/A82.md ERLEDIGT + Abschluss; TASK/A83.md OFFEN -- BLOCKIERT +
+  Zwischenstand; receipts TASK/A84-STATUS-DONE.MD, A82-STATUS-DONE.MD, A83-STATUS-UNFINISHED.MD.
+
+A83 PRE-CHECK RESULT (the STOP; full diagnosis in TASK/A83-STATUS-UNFINISHED.MD)
+  (a) NewTOS has NO single address space: per-process TTBR0 (kernel/src/arch/aarch64/el0.rs:45-47,
+      tos-api/src/bdos/process/mmu.rs:381 install_ttbr0, exceptions.rs:1486-1502 child install,
+      :988-990 parent restore, :973 "both TPAs map at VA 0x100"). NEWDESK_TREE (window.rs:1070,
+      draw_desk_tree :1281) reads its EL0 pointer raw at composite time regardless of the current
+      process -- the same hazard, pre-existing, not this ticket. A raw EL0 read is only valid while the
+      owner is current; frames ARE rebuilt from another process's AES call (nested Pexec child over the
+      parent's windows; desktop_resume -> redraw_desktop -> form_dial(FMD_FINISH) over a dead child's
+      windows under the boot tables). The lead's rule for exactly this case: say so and STOP.
+      Proposal: keep the owner slot in Window and read through usermem::resolve_kva(slot, va)
+      (pattern: xbios/screen.rs::caller_base_to_kva), kernel pointers direct, NULL/unresolvable -> "".
+  (b) Windows survive their owner: pterm.rs:142-239 touches resources/pool/pd, never the AES window
+      table; wm_new runs only in the shell-loop arm (shell_loop.rs:327-331), not on the kernel desktop's
+      double-click path (desk/main.rs:524 run_gem_app -> launch.rs:66, gap G1/G2) nor for a nested
+      EL0 Pexec child. Ticket for the lead.
+  Kernel desktop passes STACK buffers as WF_NAME/WF_INFO (desk/main.rs:1108,1134,1626,1630,1701,1705);
+      EmuTOS keeps w_name/w_info in the WNODE (deskwin.h:73,79); our WNode has w_name/w_info: String
+      unused (desk/win.rs:101-103). Must move into the WNode when A83 lands.
+
+HOST TESTS (host-tests/)
+  aes_window_slider_guard-RED-before-HEAD-a8d3163.txt   scratch copy of the crates with window.rs = HEAD:
+      7 FAILED / 1 passed -- "WF_VSLIDE 500 again issued 46 draw operations, EmuTOS issues 0 ... first op:
+      fill_rect x=327 y=63 w=23 h=1"; hslide/hslsiz 46 ops (fill_rect x=31 y=257 ...); vslsiz 46;
+      clamp case (1000 -> 1500) 46; "WF_VSLSIZ -1 on a fresh window drew 46 ops"; a_later_change 2nd
+      call drew. (The ticket's 32 was measured on the pre-A79 frame; 46 is the literal-look frame.)
+  aes_window_slider_guard-GREEN-after.txt   8/8 ok.
+  aes_window_name_pointer-RED-tree-a8d3163-include-ignored.txt   the tree with --include-ignored:
+      2 FAILED / 1 passed -- T10 "title band still shows AAAAAAAA" (hash 8366661130388281744 both),
+      >79 "100-character title renders like its first 79" (hash 18069069666754953653 both); NULL ok.
+  aes_window_name_pointer-GREEN-under-scratch-pointer-model.txt   3/3 ok in a scratch copy with a
+      host-only pointer model (method/scratch-a83-pointer-model-host-only.diff, 83 lines, no owner
+      slot / resolve_kva -- validates that the red tests CAN go green; not product code).
+  aes_window_name_pointer-TREE-ignored.txt   the tree as shipped: 1 passed / 2 ignored.
+  xtask-test.log   cargo run -p xtask -- test = 727 passed / 0 failed / 4 ignored
+                   (baseline 718/0/2: +8 slider_guard, +1 name_pointer NULL, +2 name_pointer #[ignore]).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log      fresh (cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat)
+                            cargo xtask build --board rpi4: rustc tos-api 64 / kernel 94, rc=0
+                            (baseline 64/94, delta 0). Tree kernel8.img sha256 f037fa29cde5cbbb...
+                            (dev, rpi4; not used for the dumps). No qemu-virt build (lead's instruction).
+  clippy-tos-api-host.txt   cargo clippy -p tos-api: 81 (baseline 81); the 11 window.rs hits are the
+                            known ones (`top` never read :2587, Aespb visibility on the wind_* entry points).
+  clippy-tos-api-tests.txt  cargo clippy -p tos-api --test aes_window_slider_guard --test
+                            aes_window_name_pointer: 0 hits in the two test files (all listed warnings
+                            are the lib's).
+  scratch-build.log         the injector scratch kernel (dev, rpi4): tos-api 67 / kernel 105 = the
+                            H02/A46/A78 injector + trace scaffolding of the scratch copy (as in A79), rc=0.
+  make-sd-image.log         tools/make-sd-image.sh <scratch>/img/sd-base.img 64
+
+ARTEFACTS (no *.img kept; hashes in manifest.sha256 under SCRATCH/)
+  kernel8 scratch  sha256 26b76a514cb9aa0de077efa2c0daa84e5c8e70fc1d6e40abfbcd0ede636b61b7
+                   measurement-2026-09-20-a79/method/make_scratch_final.sh <ws> <dir>: rsync of the crates
+                   (never the shared tree) + a79_patch.py + apply_injector.py final_scripts.rs + a78_patch2.py
+                   -- the A79 method unchanged, applied to this tree (A84 guard + the two test files).
+  sd-base.img      sha256 031163a4800c1bd469f22c150836bcf1e512553b3fd438b5006b2bb0eec7ad81 (kernel desktop, no #Z)
+  sd-tera.img      sha256 d1263013caffaf6f581fb6dc6a9a15969c65b8e639841ab2a6c0dfecf6917e30
+                   = sd-base + NEWDESK.INF (a79/method/newdesk-tera.inf, #Z C:\APPS\TERADESK\DESKTOP.NAP)
+                   + Apps\TERADESK\TERADESK.INF (a79/method/teradesk-window.inf) via a79/method/sd-put.sh
+  Every run boots a fresh copy (a79/method/run.sh).
+
+QEMU raspi4b RUNS (a79/method/run.sh KERNEL8 IMG OUTDIR TAG TMO SPEC...; 640x480, -display none, QMP
+  screendump 0.3 s after each serial mark; grep -c "EXC\|PANIC\|panic" = 0 in both serial logs;
+  pointer parked bottom-right by the scripts' `parkbr`)
+  desk  (sd-base, a79/method/desk.actions: parkbr; A_IDLE +1100; double-click the "C Hard disk" icon
+         (35,38); parkbr; B_TWO_WINDOWS +2600; C_TWO_WINDOWS_2S +3000)
+         screendumps/desk-A-idle.png, desk-B-two.png, desk-C-two-2s.png   serial/desk-serial.log
+  tera  (sd-tera, a79/method/tera-window.actions: parkbr; A_IDLE +1100; double-click HARD DISC C
+         (195,35); parkbr; B_WINDOW +2600; C_WINDOW_2S +3000)
+         screendumps/tera-A-idle.png, tera-B-window.png, tera-C-window-2s.png   serial/tera-serial.log
+  Hashes vs measurement-2026-09-20-a79/screendumps (the A79 final references):
+    desk-A-idle.png      9cd7377f0cc150e22cc4a44a8654fe6432b851f98c7dab202688dd4036bb82fd = final-desk-A-idle.png
+    desk-B-two.png       9638ccf05b1896012494d77be7c9fa3e19c41154a766e7a7133e84c6be255894 = final-desk-B-two.png
+    desk-C-two-2s.png    9638ccf0...                                                        = final-desk-C-two-2s.png
+    tera-A-idle.png      7696570220ad94cfa7eee2bf79e80bb09d1295802a4103498ac0049ae693b497 = final-tera-A-idle.png
+    tera-B-window.png    2280f56d688b96eca09bf000fab4a8267fc832ee2d280fce227c9c373f792daf = final-tera-B-window.png
+    tera-C-window-2s.png 2280f56d...                                                        = final-tera-C-window-2s.png
+  All six BYTE-IDENTICAL to the A79 references, as expected: the guard changes no pixel; the desktop's
+  set_sliders after wind_open still draws (values change from the wind_create defaults), a repeated
+  identical value now draws nothing. QED not run (a file-open through the file selector by injector is
+  not cheap, and A83 -- the WF_NAME change -- did not land, so nothing about titles changed).
+
+OUT OF SCOPE (observed, untouched)
+  (1) draw_vslider/draw_hslider repaint the arrows with the track; EmuTOS's w_cpwalk(W_VSLIDE) walks the
+      W_VSLIDE/W_HSLIDE subtree only (slider + elevator). Pixel-identical; the spec's edge case 5 still
+      lists it as open (spec not touched -- Researcher/Lead).
+  (2) NEWDESK_TREE raw EL0 read at composite time under another process's TTBR0 (see A83 (a)) -- pre-existing.
+  (3) Windows survive their owner on the desktop double-click path and for a nested Pexec child (A83 (b)).
+  (4) Kernel desktop WF_NAME/WF_INFO from stack buffers (fine under the copy; dangling under the pointer
+      contract) -- to be moved into the WNode with A83.
+  (5) The spec's "NewTOS currently reproduces neither that guard nor the arrow exclusion (A84)" (Redraw
+      scope blockquote, edge case 5) is now half-stale: the guard is reproduced, the arrow exclusion is not.
+
+OPEN
+  A83: lead decision on the access model (owner slot + resolve_kva proposal) and on the window-sweep
+  finding (b); then the desktop WNode strings. Pi acceptance of A84 (Tester/Lead; nothing flashed).
+  No commit, no git checkout/stash/reset. Scratch dirs under the session scratchpad only.
