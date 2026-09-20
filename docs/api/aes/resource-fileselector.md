@@ -1099,6 +1099,19 @@ via `((CICONBLK *)spec)->mainlist` — the choice is made **once, at
 > implementation against today's backend needs the **palette-model** path
 > only.
 >
+> **Correction (A86, 2026-09-21):** this "Today" paragraph is stale — it
+> was already superseded within this same document by §5.9's 2026-09-19
+> (TASK/A41) implementation-status note, which says so explicitly: *"§5.7's
+> 'today 4 planes' is wrong for the live backend"* (below,
+> `kernel/src/vdi_backend.rs:41` `PLANES = 16`, `NUM_COLORS = 256`). The
+> live backend is Falcon truecolor, so `best_match(16)` takes every
+> 4-plane `cicons.rsc` variant as the best *lower* match, and
+> `expand_cicondata` + `transform_cicon`'s `planes > 8` branch — described
+> as deferred above — are the actual live path, implemented per §5.9. This
+> correction is added here only to stop the paragraph above from being
+> read on its own; §5.9 remains the authoritative, current account and is
+> not repeated.
+>
 > **`transform_cicon`'s truecolor branch** (`gemrslib.c:359-395`, gated
 > `#if CONF_WITH_VDI_16BIT`, active when `planes > 8`) reverses the bit
 > order of the top byte of each transformed pixel `WORD` into an 8-bit

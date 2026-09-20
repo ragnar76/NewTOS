@@ -343,12 +343,16 @@ and return with no `Vwk` allocated:
   vars. Each `Vwk` links to its physical device; the `RasterBackend`
   (`tos-api/src/vdi/backend.rs`) draws into that device's framebuffer.
 - `DEV_TAB`/`SIZ_TAB` are filled from the framebuffer geometry
-  (`hal::framebuffer`) and the bring-up palette: `[0]=width-1`,
+  (`hal::framebuffer`) and the workstation's pseudo-palette: `[0]=width-1`,
   `[1]=height-1`, `[13]=#colours`, `[35]=1` (multi-plane), `[39]`=palette
-  size. **Open question:** confirm the exact `[13]/[35]/[39]` values
-  NewTOS reports for a 640×480×16-colour (4-plane) framebuffer, and
-  whether `[3]/[4]` (pixel size in microns) are reported truthfully or
-  left at the ROM `372` — see `_discrepancies.md` D-VDI-7.
+  precision. **Resolved (D-VDI-7, 2026-09-04; corrected A86, 2026-09-21):**
+  `[13]=256`, `[35]=1`, `[39]=0` for the live Falcon-truecolor framebuffer
+  (not the "640×480×16-colour (4-plane)" figures this open question
+  previously named) — see the "Resolved `DEV_TAB`/`SIZ_TAB` values" section
+  below and `_discrepancies.md` D-VDI-7. `[3]/[4]` (pixel size in microns)
+  are reported via `get_std_pixel_size` per D-VDI-7 — **not** re-verified
+  in this pass; see this doc's "Mismatches flagged" item 2 for an
+  unresolved inconsistency between that claim and this doc's own text.
 - `work_in[10]` (NDC vs RC): the screen workstation is RC (raster, origin
   top-left); NDC scaling is a later refinement.
 
@@ -363,41 +367,52 @@ and return with no `Vwk` allocated:
 > handle, the 45-word `DEV_TAB` / 12-word `SIZ_TAB` byte indices.
 > Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
 
-> **ADR-017 cross-reference (2026-07-09, `docs/MEMORY.md`).** The
-> 640×480×16-colour numbers below are the **currently staged bring-up
-> geometry**, not a permanent fixed target: NewTOS's resolution policy is
-> now native/geometry-independent (default 1920×1080, switchable
-> 1280×800), and per ADR-017's Staging rule the physical framebuffer
-> deliberately stays at 640×480 until geometry independence is verified
-> end-to-end — only then does the target geometry change. This spec's
-> "the fixed 640×480 is only in the driver, not in the VDI table code"
-> point below is exactly the property ADR-017 relies on: `init_wk`
-> already reads `backend.width()/height()/num_colors()` fresh
-> (`workstation.rs:62-64,101-106`), so `DEV_TAB[0,1,13,35,39]` will follow
-> the framebuffer driver's geometry the moment it changes, with **no VDI
-> code change required**. The concrete `639`/`479`/`16` values below hold
-> for *today's* staged geometry only.
+> **ADR-017 cross-reference (2026-07-09, `docs/MEMORY.md`).** NewTOS's
+> resolution policy is native/geometry-independent (default 1920×1080,
+> switchable 1280×800): `init_wk` reads `backend.width()/height()/
+> num_colors()/planes()` fresh on every call (`workstation.rs:142-145`), so
+> `DEV_TAB[0,1,13,35,39]` and `INQ_TAB[4,5]` follow the framebuffer driver's
+> negotiated geometry with **no VDI code change required** when it changes.
+>
+> **Correction (A86, 2026-09-21):** this blockquote and the section below it
+> previously quoted "640×480×16-colour" as "today's staged bring-up
+> geometry", citing a since-removed `framebuffer.rs:23-25` constant pair and
+> a `NUM_COLORS=16` that predates the truecolor VDI backend. Both are stale:
+> the live backend defaults to **1920×1080** (`kernel/src/drivers/mod.rs:
+> 31-33`) and reports **256 colours / 16 planes** (`vdi_backend.rs:33,40`),
+> not 16/4. See the corrected table below.
 
-### Resolved `DEV_TAB` / `SIZ_TAB` values for the 640×480×16-colour framebuffer
+### Resolved `DEV_TAB` / `SIZ_TAB` values for the live framebuffer
 
 The ROM template `DEV_TAB_ROM`/`SIZ_TAB_ROM` lives in
 `tos-api/src/vdi/workstation.rs:24-39`; `init_wk` patches the
 geometry/colour entries from the live `RasterBackend`
-(`workstation.rs:61-117`). The backend reports `width=640`, `height=480`,
-`num_colors=16` (`kernel/src/vdi_backend.rs:130-140`, `NUM_COLORS=16` at
-`:21`). Concrete patched values:
+(`workstation.rs:141-245`). The backend reports `width=1920`,
+`height=1080` (default, negotiated — `kernel/src/drivers/mod.rs:31-33`),
+`num_colors=256`, `planes=16` (`kernel/src/vdi_backend.rs:29-40`). Concrete
+patched values:
 
 | Idx | Capability | NewTOS value | Source |
 |-----|-----------|--------------|--------|
-| 0 | x res − 1 | **639** | `xres-1`, `width()=640` (`workstation.rs:102`) |
-| 1 | y res − 1 | **479** | `yres-1`, `height()=480` (`workstation.rs:103`) |
-| 3 | pixel width (µm) | **372** (ROM default, **not** patched) | see mismatch below |
-| 4 | pixel height (µm) | **372** (ROM default, **not** patched) | see mismatch below |
-| 13 | # simultaneous colours | **16** | `ncol` (`workstation.rs:104`) |
+| 0 | x res − 1 | `width()-1` (**1919** at today's default) | `xres-1` (`workstation.rs:142,195`) |
+| 1 | y res − 1 | `height()-1` (**1079** at today's default) | `yres-1` (`workstation.rs:143,196`) |
+| 3 | pixel width (µm) | `get_std_pixel_size(xres,yres)` (live-resolution-derived) | `workstation.rs:193,197`; see mismatch note 2 below (still ROM-default in an earlier revision of this claim — re-verify, not re-checked in A86) |
+| 4 | pixel height (µm) | `get_std_pixel_size(xres,yres)` (live-resolution-derived) | `workstation.rs:193,198`; ditto |
+| 13 | # simultaneous colours | **256** | `ncol` (`workstation.rs:144,200`); EmuTOS `(v_planes<8)?(1<<v_planes):256` (`vdi_control.c:206`) — 256 for `v_planes=16` |
 | 14 | # GDPs | 10 | ROM (`workstation.rs:27`) |
-| 35 | colour capable (0=mono) | **1** | `ncol>2 → 1` (`workstation.rs:105`) |
-| 39 | palette size | **16** | `ncol` (`workstation.rs:106`) |
+| 35 | colour capable (0=mono) | **1** | `planes==1 → 0, else 1` (`workstation.rs:145,201`) |
+| 39 | palette size | **0** (`PALETTE_PRECISION`) | `workstation.rs:30,202`; EmuTOS `get_palette()` "no discrete palette" for a Videl truecolor mode without `VIDEL_COMPAT` (`bios/screen.c:846`) — **not** `ncol`, see mismatch note 4 below (now resolved, not just flagged) |
 | 44 | workstation type | 2 (in/out) | ROM |
+
+Beyond `[3]`/`[4]`'s pixel-size-in-µm question (mismatch note 2, unrelated
+to the colour model and **not re-verified in this pass**), NewTOS'
+`DEV_TAB[3,4]` are also reported by `docs/api/vdi/_discrepancies.md` D-VDI-7
+as "278/278 via `get_std_pixel_size`" — i.e. **patched**, contradicting
+mismatch note 2's "left at the ROM default, never patched" below. This
+inconsistency between two spec locations was found while re-validating this
+section for A86; it concerns pixel geometry in microns, not the colour
+model this ticket scopes, so it is flagged here and left unresolved (see
+the report's out-of-scope observations).
 
 `SIZ_TAB` (`workstation.rs:35-39`) is fixed: min/max char `0..7`, min
 line width `1` / max `40`, marker widths `15/120`, heights `11/88`. Note
@@ -438,31 +453,41 @@ entries — they come straight from the template.
    `SIZ_TAB[0..3]`; NewTOS uses the template `0/7/0/7` directly. Values
    happen to match the common case; flagged for completeness.
 4. **`DEV_TAB[39]` reports the colour count, not `get_palette()`'s
-   semantics (re-validation 2026-07-09).** `workstation.rs:106` sets
-   `dev[39] = ncol as i16` (`16`) — but per the source analysis above,
-   EmuTOS's `DEV_TAB[39]` is the DAC's RGB-choice count (`4096`/`2`/`512`/
-   `0`), a different quantity than `DEV_TAB[13]`'s colour count, which
-   NewTOS already reports correctly and separately at `[13]`. Concretely:
-   for a 16-colour palette screen with a real RGB DAC, the EmuTOS-faithful
-   `[39]` would be a colour-precision figure (the closest analogue,
-   `4096, ` since NewTOS's `vs_color` also accepts 0..1000-per-gun input
-   like STe/TT), not `16`. **Open question, not decided here:** whether
-   any real-world program branches on `DEV_TAB[39]` for a palette (as
-   opposed to truecolor) screen — if not, the mismatch is cosmetic; if a
-   program uses it to decide "is this greyscale/2-colour vs. full RGB", a
-   wrong `16` could misinform it. Flagged for the Developer's VDI code
-   audit, not fixed here (docs-only, CLAUDE.md Rule to not edit `.rs`).
+   semantics (re-validation 2026-07-09) — RESOLVED (A86, 2026-09-21).**
+   This mismatch was written against an older `workstation.rs:106` that set
+   `dev[39] = ncol as i16` (`16`). The **current** code no longer does that:
+   `dev[39] = PALETTE_PRECISION`, a dedicated constant `= 0`
+   (`workstation.rs:30,202`), matching EmuTOS's `get_palette()` "no discrete
+   palette" case for a Videl truecolor mode without `VIDEL_COMPAT`
+   (`bios/screen.c:846`) — exactly the EmuTOS-faithful answer this item's
+   own source analysis above called for. This mismatch item is superseded;
+   left in place (not deleted) as an audit trail per the ticket's "note the
+   correction" convention.
 
 ### Palette / colour model
 
-The 16 `DEV_TAB[13]`/`[39]` colours are the fixed GEM 16-colour palette
-(`vdi_backend.rs:26-43`, index 0 = white/background, 1 = black/foreground)
-emulated over the 32 bpp VideoCore framebuffer; `vs_color` mutates entries
-in the 0..1000-per-gun range (`vdi_backend.rs:142-151`).
+**Correction (A86, 2026-09-21):** this paragraph previously described "the
+16 `DEV_TAB[13]`/`[39]` colours" as "the fixed GEM 16-colour palette",
+citing a since-renumbered `vdi_backend.rs:26-43`. The live backend is a
+**256-pen Falcon truecolor** workstation, not a 16-colour palette: 256
+logical pens, each an independently settable RGB555-in-565 word
+(`vdi_backend.rs:129-142`, `ACTIVE_PALETTE`), seeded from EmuTOS'
+`videl_palette1`/`videl_palette2` defaults (`vdi_backend.rs:42-127`).
+`vs_color`/`vq_color` (opcodes 14/26) mutate/read entries in the
+0..1000-per-gun VDI range, indexed `0..255`
+(`tos-api/src/vdi/attributes.rs:388-418`, `inquiry.rs:93-145`). Index 0 =
+white / 1 = black by seeded convention (`vdi_backend.rs:52-53`), not a
+hard-coded palette — see
+[`raster/_raster.md`'s "Palette" section](../raster/_raster.md#palette--vs_colorvq_color-on-256-truecolor-pens)
+for the full citation trail (including the AES `init_3d` dependency on
+`gl_ws.ws_ncolors`).
 
 ### 1080p later
 
 `DEV_TAB[0]/[1]` already derive from the live `RasterBackend` geometry, so
-a larger negotiated mode flows through automatically once the framebuffer
-reports it; the fixed 640×480 is only in the driver
-(`framebuffer.rs:23-25`), not in the VDI table code.
+a larger or smaller negotiated mode flows through automatically once the
+framebuffer reports it. **Correction (A86, 2026-09-21):** this note
+previously said "the fixed 640×480 is only in the driver
+(`framebuffer.rs:23-25`)" — that constant pair no longer exists; the
+geometry is negotiated at boot (`AtomicU32` pair) and defaults to
+**1920×1080** on both boards (`kernel/src/drivers/mod.rs:31-33`).

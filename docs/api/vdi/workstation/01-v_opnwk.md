@@ -207,26 +207,36 @@ allocation and no free-handle scan; the physical handle is fixed).
 > driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
 
 > **ADR-017 cross-reference (2026-07-09, `docs/MEMORY.md`).** See
-> [`100-v_opnvwk`'s Pi/BCM2711 binding note](100-v_opnvwk.md#pi--bcm2711-binding) —
-> the 640×480×16 numbers below are today's staged bring-up geometry, not
-> the final NewTOS target (native, geometry-independent, default
-> 1920×1080/switchable 1280×800); the VDI table code already reads the
-> live framebuffer, so no VDI change is needed when the driver's target
-> geometry is raised.
+> [`100-v_opnvwk`'s Pi/BCM2711 binding note](100-v_opnvwk.md#pi--bcm2711-binding).
+> The VDI table code reads the live framebuffer geometry, so no VDI change
+> is needed when the driver's target geometry changes.
+>
+> **Correction (A86, 2026-09-21):** this blockquote and the bullet below it
+> previously quoted "640×480×16" `DEV_TAB` values as "today's staged bring-up
+> geometry". Both the colour figure and the resolution figure were stale —
+> see the corrected values and citations below.
 
 - **Same resolved tables as `v_opnvwk`.** `v_opnwk` runs the same `init_wk`
-  (`tos-api/src/vdi/workstation.rs:177-183` → `:61-117`), so
-  `DEV_TAB`/`SIZ_TAB` carry the identical 640×480×16-colour values pinned
-  in [`100-v_opnvwk`](100-v_opnvwk.md#pi--bcm2711-binding): `[0]=639`,
-  `[1]=479`, `[13]=16`, `[35]=1`, `[39]=16`, type `[44]=2`.
+  (`tos-api/src/vdi/workstation.rs:141-245`), so `DEV_TAB`/`SIZ_TAB` carry
+  the same values pinned in
+  [`100-v_opnvwk`](100-v_opnvwk.md#pi--bcm2711-binding): `[13]=256`
+  (colours, `NUM_COLORS`, `vdi_backend.rs:33`), `[35]=1` (colour-capable),
+  `[39]=0` (`PALETTE_PRECISION`, truecolor — `get_palette()`'s "no discrete
+  palette" case, `workstation.rs:30,202`), type `[44]=2`; `[0]`/`[1]` are
+  `width()-1`/`height()-1` of the live (negotiated, currently 1920×1080)
+  framebuffer, not a fixed `639`/`479`.
 - **Physical handle = 1.** `open_physical()` returns handle
   `PHYS_HANDLE = 1` (`tos-api/src/vdi/vwk.rs:23`,
   `workstation.rs:177-183`); the physical workstation uses a static slot,
   cannot fail, and stays open for the system lifetime.
 - **`work_in[0]` (rez+2) is effectively ignored — no mode switch.** The
-  framebuffer is a single fixed 640×480 mode; there is no `Setscreen`
-  resolution change wired to a real mode switch (XBIOS `Setscreen` only
-  stores a rez shadow — see `docs/api/xbios/05-setscreen.md#pi--bcm2711-binding`).
+  framebuffer geometry is negotiated once at boot (currently 1920×1080,
+  `kernel/src/drivers/mod.rs:31-33`), not switched per `v_opnwk` call; there
+  is no `Setscreen` resolution change wired to a real mode switch (XBIOS
+  `Setscreen` only stores a rez shadow — see
+  `docs/api/xbios/05-setscreen.md#pi--bcm2711-binding`). **Correction (A86,
+  2026-09-21):** previously said "a single fixed 640×480 mode" — stale, see
+  the corrected geometry above.
   `DEV_TAB[0,1]` always reflect the live framebuffer size regardless of
   `work_in[0]`, matching this spec's "idempotent geometry" note.
 - **Bring-up sequence is native.** `init_colors`/`timer_init`/

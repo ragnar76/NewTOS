@@ -190,6 +190,12 @@ Selecting the user pattern for drawing still requires
   background).
 - `fill_per` (perimeter) draws the outline with the *line* attributes after
   the area fill — `v_fillarea`/`v_bar` honour it (default TRUE at open).
-- For the 640×480×16-colour (4-plane) framebuffer, `INQ_TAB[4] = 4`, so a
-  valid multi-plane `vsf_udpat` count is `64` WORDs — confirm during
-  backend bring-up (`../_discrepancies.md` D-VDI-7).
+- For the live Falcon-truecolor framebuffer, `INQ_TAB[4] = planes() = 16`
+  (`kernel/src/vdi_backend.rs:35-40`; `vdi_control.c:210`), so a valid
+  multi-plane `vsf_udpat` count is `INQ_TAB[4] * 16 = 256` WORDs
+  (`tos-api/src/vdi/attributes.rs:512-526`, `count == planes as i16 * 16`;
+  EmuTOS `vdi_vsf_udpat`, `vdi_fill.c:155-160`). **Correction (A86,
+  2026-09-21):** this previously said "640×480×16-colour (4-plane)
+  framebuffer, `INQ_TAB[4] = 4`" → "`64` WORDs" — both the plane count and
+  the resulting word count were stale (D-VDI-7 resolved 2026-09-04,
+  `../_discrepancies.md`).

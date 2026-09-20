@@ -108,8 +108,13 @@ supplies the default form) (`vdi_mouse.c:69-110,593`).
   mask/data → the installed sprite has `xhot=3`, `yhot=5`,
   `bg_col=MAP_COL[1]`, `fg_col=MAP_COL[0]`, and its 16×16 shape matches the
   supplied rows.
-- `vsc_form` with `mf_bg = 99` on a 16-colour device → the mask colour
-  clamps to pen 1 (`MAP_COL[1]`).
+- `vsc_form` with `mf_bg = 256` (out of range on NewTOS' 256-pen truecolor
+  device, `backend.num_colors()`, `tos-api/src/vdi/mouse.rs:569-570`) → the
+  mask colour clamps to pen 1 (`validate_color_index`). **Correction (A86,
+  2026-09-21):** this criterion previously used `mf_bg = 99` "on a
+  16-colour device" — with the live 256-colour backend, 99 is a valid pen
+  and would **not** clamp; the trigger value is corrected to exceed the
+  actual pen count.
 
 ---
 
@@ -365,8 +370,12 @@ by `tick_int`, which also chains the old system timer vector
   16×16 pixels under the cursor, paints data pixels in the FG pen and mask
   pixels in the BG pen; `erase` restores them. No hardware sprite — the
   Shifter cursor overlay is replaced by this software composite over the
-  32bpp VideoCore buffer. The 16 CLUT indices map to RGB in
-  `kernel/src/vdi_backend.rs` (mask = white/pen 0, data = black/pen 1).
+  32bpp VideoCore buffer. **Correction (A86, 2026-09-21):** this used to say
+  "the 16 CLUT indices map to RGB" — the live backend has **256** pens, each
+  independently settable (not a 16-entry CLUT); the default mask/data pens
+  (white/pen 0, black/pen 1) map to RGB through the per-workstation
+  pseudo-palette in `kernel/src/vdi_backend.rs:129-142,232-239` — see
+  [`raster/_raster.md`'s "Palette" section](../raster/_raster.md#palette--vs_colorvq_color-on-256-truecolor-pens).
 - **MFORM install (`vsc_form`, 111).** `vsc_form` reads the 37-WORD `INTIN`
   (hotspot, reserved plane word, mask/data colours, 16 mask + 16 data rows)
   into the sprite state (`tos-api/src/vdi/mouse.rs:248-266`); the hotspot is

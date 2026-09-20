@@ -232,15 +232,18 @@ detail. See [`input/_mouse.md`](input/_mouse.md).
   its `DEV_TAB`/`INQ_TAB`/`SIZ_TAB` + palette). The **values** returned to
   programs must match EmuTOS's for the chosen framebuffer profile.
 - **Open questions** (see [`_discrepancies.md`](_discrepancies.md)):
-  the `NUM_VDI_HANDLES`/`MAX_VERTICES` profile (D-VDI-3/D-VDI-7) and the
-  exact `DEV_TAB[13/35/39]` / `INQ_TAB[4/5]` values NewTOS reports for a
-  640×480×16-colour framebuffer (D-VDI-7). **2026-07-09:** per ADR-017
-  (`docs/MEMORY.md`), 640×480 is the *currently staged* bring-up geometry,
-  not the final target (native/geometry-independent, default 1920×1080,
-  switchable 1280×800); `DEV_TAB[0,1]`/`INQ_TAB` already derive from the
-  live per-device geometry here, so this model needs no change when the
-  staged geometry is raised — only the concrete numbers quoted in
-  cross-referenced specs are provisional. `DEV_TAB[39]`'s "palette size"
-  is also not what it sounds like — see
+  the `NUM_VDI_HANDLES`/`MAX_VERTICES` profile (D-VDI-3). **Resolved
+  2026-09-04, D-VDI-7:** `DEV_TAB[13/35/39]` / `INQ_TAB[4/5]` for the live
+  Falcon-truecolor framebuffer are `256`/`1`/`0` and `16`/`0`
+  (`kernel/src/vdi_backend.rs:29-40`), not the 16-colour/4-plane figures an
+  earlier revision of this note assumed for a "640×480×16-colour"
+  bring-up screen — **correction (A86, 2026-09-21):** that framing is
+  stale on two counts, colour depth (see D-VDI-7) and resolution (the live
+  default is 1920×1080, `kernel/src/drivers/mod.rs:31-33`, not 640×480).
+  `DEV_TAB[0,1]`/`INQ_TAB` derive from the live per-device geometry, so
+  this model needs no change when the negotiated geometry changes — only
+  the concrete numbers quoted in cross-referenced specs are geometry- (not
+  colour-) dependent. `DEV_TAB[39]`'s "palette size" is also not what it
+  sounds like — see
   [`workstation/100-v_opnvwk.md`](workstation/100-v_opnvwk.md#mismatches-flagged-step-2-candidates)
   mismatch #4.

@@ -512,43 +512,161 @@ NewTOS (`reference/NEWTOS-RASTER.BIN`).
 
 ### The screen MFDB = the VideoCore framebuffer
 
+> **Correction (A86, 2026-09-21).** This section previously described the
+> screen MFDB as a **4-plane, 16-colour VDI model** (`fd_nplanes = 4`,
+> citing a since-removed `vdi_backend.rs:21`/`NUM_COLORS=16`) over a 640×480
+> framebuffer. Both figures are stale: the live backend is a **Falcon
+> truecolor** workstation — `NUM_COLORS = 256` / `PLANES = 16`
+> (`kernel/src/vdi_backend.rs:33,40`) — matching the reference profile's
+> `CONF_WITH_VIDEL` + `CONF_WITH_VDI_16BIT` gating
+> (`docs/analysis/aes-audit/emutos-config-profile.md:150,314`, "VDI-16-Bit-
+> Truecolor-Modi MÜSSEN real sein"). The 640×480 figures also outlived their
+> citation: `framebuffer.rs` no longer has compile-time `WIDTH`/`HEIGHT`
+> constants (geometry is an `AtomicU32` pair, negotiated at boot); both
+> boards default to 1920×1080 (`kernel/src/drivers/mod.rs:31-33`
+> `BOOT_WIDTH`/`BOOT_HEIGHT`; RPi4 falls back to it if the mailbox query
+> comes up empty, `bcm2711/framebuffer.rs:29-33`; QEMU uses it unconditionally,
+> `qemu_virt/ramfb.rs:80-81`). The table below reflects both corrections.
+> The rewrite below also could **not** find a dedicated `docs/MEMORY.md` ADR
+> for the truecolor VDI pivot to cite — the code itself only points at a
+> placeholder, `[ADR-0xx truecolor VDI]`
+> (`docs/api/vdi/workstation/102-vq_extnd.md:198`) — so this section cites
+> the code and the already-resolved
+> [D-VDI-7](../_discrepancies.md) discrepancy instead; flagged, not guessed.
+
 When a program passes `fd_addr == 0` (NULL MFDB), the source/destination is
 the physical screen (`tos-api/src/vdi/raster.rs:39-42,59-61`). NewTOS
 substitutes the live framebuffer rather than `v_bas_ad`/`v_planes`/
 `v_lin_wr`: the `RasterBackend` reads/writes the VideoCore buffer directly
-(`kernel/src/vdi_backend.rs` `copy_rect`/`blit_mono`), so raster ops never
-dereference the MFDB geometry for screen forms — they use the backend's
-`width()`/`height()`/`stride_px()`. The equivalent screen-MFDB values for
-the current mode:
+(`kernel/src/vdi_backend.rs` `copy_rect`/`blit_mono`, `:736-784`/`:696-734`),
+so raster ops never dereference the MFDB geometry for screen forms — they
+use the backend's `width()`/`height()`/`stride_px()`. The equivalent
+screen-MFDB values:
 
-| MFDB field | Atari screen var | NewTOS 640×480×16 value | Source |
-|-----------|------------------|-------------------------|--------|
-| `fd_addr` (screen) | `v_bas_ad` | the VideoCore fb base (CPU high-half VA) | `vdi_backend.rs:405-407`; `host_env.rs:218-229` |
-| `fd_w` | `V_REZ_HZ` | **640** | `framebuffer.rs:23` |
-| `fd_h` | `V_REZ_VT` | **480** | `framebuffer.rs:24` |
-| `fd_wdwidth` | — | **40** = `(640+15)/16` | words/row for the 640-px logical raster |
-| `fd_nplanes` | `v_planes` | **4** (16-colour VDI model) | `vdi_backend.rs:21`, `NUM_COLORS=16` |
+| MFDB field | Atari screen var | NewTOS value | Source |
+|-----------|------------------|--------------|--------|
+| `fd_addr` (screen) | `v_bas_ad` | the VideoCore fb base (CPU-visible VA) | `vdi_backend.rs:868-871` (`base_addr`) |
+| `fd_w` | `V_REZ_HZ` | **1920** (negotiated; QEMU fixed, RPi4 mailbox-negotiated with this fallback) | `kernel/src/drivers/mod.rs:31-33` (`BOOT_WIDTH`), `bcm2711/framebuffer.rs:29-33`, `qemu_virt/ramfb.rs:80-81` |
+| `fd_h` | `V_REZ_VT` | **1080** (same) | `kernel/src/drivers/mod.rs:31-33` (`BOOT_HEIGHT`) |
+| `fd_wdwidth` | — | **120** = `(1920+15)/16` | words/row for the negotiated raster width |
+| `fd_nplanes` | `v_planes` | **16** (Falcon truecolor pixel depth) | `vdi_backend.rs:35-40` (`PLANES`); matches EmuTOS `INQ_TAB[4] = v_planes` (`vdi_control.c:210`) |
 | `fd_stand` | — | 0 (device) for the screen | — |
 
-### Important: the logical raster is 4-plane, the store is 32 bpp
+### The VDI device pixel is 16-bit RGB565; the physical store is 32-bpp XRGB8888
 
-The MFDB `nplanes = 4` / `wdwidth = 40` describe the **VDI logical raster**
-(16 colours = 4 planes), *not* the physical pixel store. The physical
-VideoCore buffer is **32 bpp XRGB8888** with pitch 640 × 4 = 2560 B/line
-(`framebuffer.rs:23-25`; VC-reported pitch at `framebuffer.rs:53,192`). The
-`RasterBackend` bridges the two: PEL indices from the 4-plane model are
-expanded through the 16-entry CLUT to packed XRGB when written to the 32 bpp
-store (`vdi_backend.rs:107-110`, `pel_to_rgb`). So a program that computes a
-screen-MFDB plane offset from `nplanes/wdwidth` gets the *logical* raster
-geometry; NewTOS does not expose the raw 32 bpp bytes as planes.
+EmuTOS' Falcon truecolor VDI (`TRUECOLOR_MODE`: `v_planes > 8`,
+`vdi/vdi_defs.h:22`, active under `CONF_WITH_VDI_16BIT`) treats **the
+device pixel** — what `pixelread`/`v_get_pixel`, `vro_cpyfm16`/
+`vrt_cpyfm16`, and the truecolor draw routines read and write — as a
+**16-bit screen word**, `RRRRRGGGGG0BBBBB` (green LSB/bit 5 =
+`OVERLAY_BIT`, always 0 on a drawn pixel, `vdi_fill.c:26`;
+`vdi/vdi_defs.h:153-158`, `VwkExt.palette[256]`). This is *the* meaning of
+`fd_nplanes = 16` for both the screen MFDB and a device-form memory MFDB —
+sixteen bits per pixel, not sixteen bit-planes.
+
+NewTOS' physical framebuffer store is a **different, NewTOS-internal**
+32-bpp XRGB8888 buffer (`kernel/src/hal/framebuffer.rs:16-20` `rgb()`;
+`vdi_backend.rs:16,21` module doc) — a program never addresses this format
+directly; it exists only because the BCM2711 VideoCore has no native
+16-bit truecolor mode to allocate against. The two are bridged at exactly
+two points:
+
+- **Draw → screen.** Every VDI draw op resolves its PEL through the
+  drawing workstation's pseudo-palette to a 16-bit RGB555-in-565 word, then
+  expands each 5-bit gun to 8 bits into the 32-bpp store (`pal555_to_xrgb`,
+  `vdi_backend.rs:174-182`, called from `pel_to_rgb`, `:230-239`).
+- **Screen → 16-bit domain.** Reading the device pixel back (`v_get_pixel`,
+  `bb_save`, a memory-MFDB copy) converts the raw 32-bit store word to the
+  16-bit RGB565 word via `device_to_rgb565`/`rgb565_to_device`
+  (`vdi_backend.rs:397-424`; `tos-api/src/vdi/raster.rs:37-44` module doc).
+  Because the screen is itself 5-bit-quantised, this round-trip is lossless
+  (`raster.rs:41-44`).
+
+`fd_nplanes = 16` and `ws_ncolors`/`DEV_TAB[13] = 256` are **both**
+EmuTOS-correct simultaneously, not contradictory: EmuTOS's own formula is
+`DEV_TAB[13] = (v_planes<8) ? (1<<v_planes) : 256` (`vdi_control.c:206`) —
+for `v_planes = 16` this is the literal constant `256`, decoupled from the
+plane count (`INQ_TAB[4] = v_planes = 16`, `vdi_control.c:210`). NewTOS
+reproduces exactly this: `backend.num_colors() = NUM_COLORS = 256`
+(`vdi_backend.rs:29-33`), `backend.planes() = PLANES = 16` (`:35-40`), fed
+into `DEV_TAB[13]`/`INQ_TAB[4]` by `init_wk`/`vq_extnd`
+(`tos-api/src/vdi/workstation.rs:144-145,200,301`) — resolved and pinned
+2026-09-04 as [D-VDI-7](../_discrepancies.md).
+
+### Palette — `vs_color`/`vq_color` on 256 truecolor pens
+
+The screen has **256 logical pens**, each holding one RGB555-in-565
+pseudo-palette word — EmuTOS `VwkExt.palette[256]` (`vdi_defs.h:153-158`),
+written by `set_color16` and read by `vq_color16`
+(`vdi_col.c:601-614,811-838`). NewTOS mirrors the split exactly:
+
+- **The active draw-time palette.** One 256-entry `ACTIVE_PALETTE` array
+  the VDI dispatcher points at the drawing workstation before every
+  colour-sensitive op (`vdi_backend.rs:129-142`, citing EmuTOS
+  `CUR_WORK->ext->palette`, `vdi_line.c:459-460`), seeded from EmuTOS'
+  `videl_palette1`/`videl_palette2` device defaults (`vdi_backend.rs:42-127`,
+  verbatim from `vdi_col.c:130-199`).
+- **`vs_color` (opcode 14)** / **`vq_color` (opcode 26)** both index pens
+  `0..255` (`ncol = backend.num_colors() = 256`, range-checked against it —
+  `tos-api/src/vdi/attributes.rs:389-392`, `inquiry.rs:99-103`) and, under
+  `backend.planes() > 8`, read/write the **calling workstation's own**
+  `req_col`/pseudo-palette (`attributes.rs:395-408`, `inquiry.rs:106-121`),
+  matching EmuTOS's `vs_color16`/`vq_color16` per-`Vwk` split rather than a
+  single shared hardware DAC/CLUT.
+- **Index 0 = white, 1 = black** is a seeded *convention*, not a VDI
+  invariant: `VIDEL_PALETTE1[0] = (1000,1000,1000)` white,
+  `[1] = (0,0,0)` black (`vdi_backend.rs:52-57`, verbatim EmuTOS
+  `videl_palette1`, `vdi_col.c:130-136`), and the AES's `init_3d` relies on
+  it being redefinable: it picks `actbutcol = indbutcol = backgrcol =
+  LWHITE` (pen 8) instead of plain `WHITE` (pen 0) whenever
+  `gl_ws.ws_ncolors > LWHITE` (`aes/gemoblib.c:1327-1343`; `LWHITE = 8`,
+  `WHITE = 0`, `BLACK = 1`, `include/obdefs.h:107-117`) — true for NewTOS'
+  256, so dialogs get the Falcon light-grey 3D face colour
+  (`VIDEL_PALETTE1[8] = (733,733,733)`, `vdi_backend.rs:55`), not plain
+  white, exactly as EmuTOS does on any >16-colour Falcon screen.
+  `ws_ncolors` reaches the AES as `backend.num_colors()`
+  (`tos-api/src/aes/object.rs:2310-2316`, `xor_color` doc).
+
+### XOR semantics
+
+Two distinct EmuTOS XOR paths, both reproduced on the 32-bpp physical store:
+
+1. **`WM_XOR` draw mode** (`wrt_mode = 3`, lines/fills/text/glyphs). EmuTOS'
+   truecolor driver complements the **stored screen word** and ignores the
+   pen: `*work++ = ~temp` (`vdi/vdi_line.c:484-495`, `draw_rect_common`,
+   store at `:494`; the same pattern in the glyph blitter,
+   `vdi_textblit.c`). NewTOS' `VdiScreen::xor_pixel` (`vdi_backend.rs:
+   303-336`) reproduces the *observable* contract on the 32-bit physical
+   pixel: it complements the low 24 RGB bits in place (keeping the opaque
+   top byte) — self-inverse, matching EmuTOS bit-for-bit on a drawn pixel —
+   reached via `combine`'s `WriteMode::Xor` arm (`vdi_backend.rs:288-293`)
+   from every fill/line/glyph draw path.
+2. **`vro_cpyfm` op 6** (`BM_S_XOR_D`, the 16-entry BitBlt logic-op table,
+   `s ^ d` on the raw pixel word — `vdi_backend.rs:824-852` doc + table,
+   citing `vdi_raster.c:495-544`/`vro_cpyfm16:1008-1220`). **Screen↔Screen**
+   applies this directly to the 32-bit XRGB8888 device word (`copy_rect`,
+   `vdi_backend.rs:736-784`, using the `u32` `raster_op` at `:833-852`);
+   **Screen↔Memory / Memory↔Screen / Memory↔Memory** first convert the
+   screen pixel into the 16-bit RGB565 domain and apply the *same* table
+   there instead (`tos-api/src/vdi/raster.rs:210-229` the `u16` `raster_op`;
+   `:460-513` `screen_to_mem`/`mem_to_screen`, "apply the logic op in the
+   16-bit domain", `:463-465`) — because a memory MFDB's wireformat is
+   16-bit, not because the screen itself changes width.
+
+The rubber-band idiom (apply the same XOR twice, restores the original)
+holds for both paths — XOR is self-inverse at any word width.
+`OVERLAY_BIT` (`0x0020`, `vdi_fill.c:26`) lives only in the 16-bit domain;
+its interaction with the 24-bit physical XOR is the pre-existing,
+separately tracked **VDI-OVL-001** gap (`tos-api/src/vdi/inquiry.rs:
+171-178`), not reopened here.
 
 - **Screen-to-screen ops use the backend.** `vro_cpyfm` screen→screen maps
-  to `RasterBackend::copy_rect` (replace op 3 / XOR op 6), overlap-safe
-  (`vdi_backend.rs:345-387`); the cache clean to PoC
-  (`vdi_backend.rs:118-125`) makes the copy visible to the VideoCore
+  to `RasterBackend::copy_rect` (replace op 3 / XOR op 6, above),
+  overlap-safe (`vdi_backend.rs:736-784`); the cache clean to PoC
+  (`vdi_backend.rs:241-268`) makes the copy visible to the VideoCore
   display DMA on real hardware.
 - **Mono→colour `vrt_cpyfm`** expands a 1-plane source to fg/bg PEL via
-  `blit_mono` (`vdi_backend.rs:311-343`); the mono-source (`s_nxwd==2`)
+  `blit_mono` (`vdi_backend.rs:696-734`); the mono-source (`s_nxwd==2`)
   requirement is a contract kept above the backend.
 - **Native 64-bit MFDB pointer.** NewTOS carries the source MFDB in
   `CONTRL[7..10]` and the destination in `CONTRL[11..14]` (four WORDs each)
@@ -645,6 +763,11 @@ bracket nests on the same counter.
 ### 1080p later
 
 `fd_w`/`fd_h`/`fd_wdwidth` for the screen MFDB derive from the live
-framebuffer geometry via the `RasterBackend`; a larger negotiated mode
-flows through without changing the raster-op code. `nplanes = 4` is tied to
-the 16-colour CLUT model, independent of resolution.
+framebuffer geometry via the `RasterBackend`; a larger or smaller negotiated
+mode flows through without changing the raster-op code — already true at
+today's 1920×1080 default (`kernel/src/drivers/mod.rs:31-33`).
+**Correction (A86, 2026-09-21):** `fd_nplanes = 16` and `ws_ncolors = 256`
+are tied to the Falcon-truecolor plane/colour model
+(`vdi_backend.rs:33,40`), independent of resolution — not the "16-colour
+CLUT model" this note previously named (see the corrected "screen MFDB"
+table above).

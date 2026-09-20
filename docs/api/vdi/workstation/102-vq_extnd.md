@@ -182,12 +182,18 @@ dispatcher before `vq_extnd` runs.)
 > driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
 
 > **ADR-017 cross-reference (2026-07-09, `docs/MEMORY.md`).** See
-> [`100-v_opnvwk`'s Pi/BCM2711 binding note](100-v_opnvwk.md#pi--bcm2711-binding) —
-> `INQ_TAB[4]/[5]` below (4 planes / colour LUT) hold for today's staged
-> 640×480×16-colour bring-up geometry; they derive from `num_colors()`
-> (the CLUT model), which is unaffected by the pending geometry-only
-> resolution change (1920×1080 default / 1280×800 switchable) — this
-> spec's own "1080p later" note below already says as much.
+> [`100-v_opnvwk`'s Pi/BCM2711 binding note](100-v_opnvwk.md#pi--bcm2711-binding).
+>
+> **Correction (A86, 2026-09-21):** this blockquote previously said
+> `INQ_TAB[4]/[5]` (4 planes / colour LUT) held for "today's staged
+> 640×480×16-colour bring-up geometry" and derived from `num_colors()` — both
+> stale, and already contradicted by the "resolved 2026-09-04" section just
+> below. The live backend is a Falcon truecolor workstation:
+> `INQ_TAB[4] = planes() = 16` (not `num_colors()`), `INQ_TAB[5] = 0`
+> (`kernel/src/vdi_backend.rs:35-40`; `tos-api/src/vdi/workstation.rs:301,
+> 306`). Resolution is unaffected either way — a larger/smaller negotiated
+> framebuffer changes neither `[4]` nor `[5]` — so that part of the original
+> point stands, just not via `num_colors()`.
 
 ### Open question resolved — `INQ_TAB[4]`/`[5]`/`[14]` (2026-09-04)
 
@@ -245,6 +251,12 @@ truthful value needs the mailbox physical-display-size query, not yet done.
 
 ### 1080p later
 
-`INQ_TAB[4]/[5]` derive from `num_colors` (16), which is fixed by the VDI
-CLUT model, not the resolution; a larger framebuffer does not change the
-plane/LUT answers until a truecolor path is adopted.
+`INQ_TAB[4]/[5]` derive from `planes()` (16) and the truecolor test
+(`planes == 16`), both fixed by the Falcon-truecolor VDI model
+(`workstation.rs:301,306`), not the resolution; a larger or smaller
+negotiated framebuffer does not change the plane/LUT answers.
+**Correction (A86, 2026-09-21):** this note previously said the fields
+derived from `num_colors` (16) "until a truecolor path is adopted" — the
+truecolor VDI is already the live model (`vdi_backend.rs:33,40`,
+`NUM_COLORS = 256` / `PLANES = 16`, distinct constants); see the "resolved
+2026-09-04" section above.
