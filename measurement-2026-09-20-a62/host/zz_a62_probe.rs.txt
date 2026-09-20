@@ -1,0 +1,221 @@
+//! A62/A56 audit probe (SCRATCH COPY ONLY — never in the project tree).
+//! Drives the AES descriptor table through the real LP64 dispatcher with
+//! modelled GEMDOS process slots (the `Proc` fixture of resource.rs's tests).
+#![allow(clippy::too_many_arguments)]
+
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use tos_api::bdos::process::{self, Abi, PROCESS_TABLE};
+use tos_types::BasePage;
+use tos_api::host::Host;
+use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
+
+const SCREEN_W: u16 = 640;
+const SCREEN_H: u16 = 480;
+
+struct SinkBackend;
+impl RasterBackend for SinkBackend {
+    fn width(&self) -> u16 { SCREEN_W }
+    fn height(&self) -> u16 { SCREEN_H }
+    fn num_colors(&self) -> u16 { 256 }
+    fn planes(&self) -> u16 { 16 }
+    fn set_color(&self, _index: u16, _r: u16, _g: u16, _b: u16) {}
+    fn query_color(&self, _index: u16) -> (u16, u16, u16) { (0, 0, 0) }
+    fn set_active_palette(&self, _palette: &[u16; 256]) {}
+    fn pel_to_device16(&self, pel: Pel) -> u16 { pel as u16 }
+    fn device_to_rgb565(&self, argb: u32) -> u16 { argb as u16 }
+    fn rgb565_to_device(&self, px: u16) -> u32 { px as u32 }
+    fn read_pixel(&self, _x: i16, _y: i16) -> Pel { 0 }
+    fn fill_rect(&self, _x: i16, _y: i16, _w: i16, _h: i16, _pel: Pel, _clip: ClipRect) {}
+    fn abline(&self, _x0: i16, _y0: i16, _x1: i16, _y1: i16, _pel: Pel, _mode: WriteMode, _clip: ClipRect, mask: u16, _last: bool) -> u16 { mask }
+    fn fill_pattern(&self, _x: i16, _y: i16, _w: i16, _h: i16, _f: PatternFill, _c: ClipRect) {}
+    fn draw_glyph_sized(&self, _x: i16, _y: i16, _glyph: &[u8], _cell_w: i16, _cell_h: i16, _fg: Pel, _mode: WriteMode, _clip: ClipRect) {}
+    fn blit_mono(&self, _d: Rect, _s: MonoSrc, _fg: Pel, _bg: Pel, _m: WriteMode, _c: ClipRect) {}
+    fn copy_rect(&self, _src: Rect, _dx: i16, _dy: i16, _op: u8, _clip: ClipRect) {}
+    fn get_device_pixel(&self, _x: i16, _y: i16) -> u32 { 0 }
+    fn put_device_pixel(&self, _x: i16, _y: i16, _argb: u32) {}
+    fn flush_rect(&self, _x0: i16, _y0: i16, _x1: i16, _y1: i16) {}
+}
+
+struct SilentHost { raster: SinkBackend, clock: AtomicU64 }
+impl Host for SilentHost {
+    fn console_write_byte(&self, _byte: u8) {}
+    fn console_try_read_key(&self) -> Option<u16> { None }
+    fn raster(&self) -> Option<&dyn RasterBackend> { Some(&self.raster) }
+    fn monotonic_millis(&self) -> u64 { self.clock.load(Ordering::Relaxed) }
+    fn pump_input(&self) { self.clock.fetch_add(1, Ordering::Relaxed); }
+}
+unsafe impl Sync for SilentHost {}
+unsafe impl Send for SilentHost {}
+
+const ABI: Abi = Abi::Lp64;
+
+struct Aespb {
+    contrl: Box<[i16; 8]>, global: Box<[i16; 16]>, intin: Box<[i16; 16]>,
+    intout: Box<[i16; 16]>, addrin: Box<[u64; 4]>, addrout: Box<[u64; 4]>, block: Box<[u64; 6]>,
+}
+impl Aespb {
+    fn new() -> Aespb {
+        let mut pb = Aespb {
+            contrl: Box::new([0; 8]), global: Box::new([0; 16]), intin: Box::new([0; 16]),
+            intout: Box::new([0; 16]), addrin: Box::new([0; 4]), addrout: Box::new([0; 4]), block: Box::new([0; 6]),
+        };
+        pb.block[0] = pb.contrl.as_ptr() as u64;
+        pb.block[1] = pb.global.as_ptr() as u64;
+        pb.block[2] = pb.intin.as_ptr() as u64;
+        pb.block[3] = pb.intout.as_ptr() as u64;
+        pb.block[4] = pb.addrin.as_ptr() as u64;
+        pb.block[5] = pb.addrout.as_ptr() as u64;
+        pb
+    }
+    fn call(&mut self, opcode: i16, in_len: i16, out_len: i16, ain_len: i16) -> i16 {
+        self.contrl[0] = opcode; self.contrl[1] = in_len; self.contrl[2] = out_len;
+        self.contrl[3] = ain_len; self.contrl[4] = 0;
+        self.intout.fill(0);
+        assert!(unsafe { tos_api::aes::dispatch(self.block.as_ptr() as u64, ABI) }.is_none());
+        self.intout[0]
+    }
+}
+
+const APPL_INIT: i16 = 10;
+const APPL_READ: i16 = 11;
+const APPL_WRITE: i16 = 12;
+const APPL_FIND: i16 = 13;
+const APPL_EXIT: i16 = 19;
+const WIND_CREATE: i16 = 100;
+const WIND_GET: i16 = 104;
+const WF_OWNER: i16 = 20;
+
+fn install_host() {
+    let host: &'static SilentHost = Box::leak(Box::new(SilentHost { raster: SinkBackend, clock: AtomicU64::new(0) }));
+    let href: &'static &'static dyn Host = Box::leak(Box::new(host as &'static dyn Host));
+    tos_api::host::install_host(href);
+}
+fn appl_init(pb: &mut Aespb) -> i16 { pb.intin.fill(0); pb.call(APPL_INIT, 0, 1, 0) }
+fn appl_exit(pb: &mut Aespb) -> i16 { pb.intin.fill(0); pb.call(APPL_EXIT, 0, 1, 0) }
+fn appl_find(pb: &mut Aespb, name: &[u8; 8]) -> i16 {
+    pb.intin.fill(0);
+    pb.addrin[0] = name.as_ptr() as u64;
+    let r = pb.call(APPL_FIND, 0, 1, 1);
+    pb.addrin[0] = 0;
+    r
+}
+fn appl_write(pb: &mut Aespb, pid: i16, msg: &[i16; 8]) -> i16 {
+    pb.intin.fill(0); pb.intin[0] = pid; pb.intin[1] = 16;
+    pb.addrin[0] = msg.as_ptr() as u64;
+    let r = pb.call(APPL_WRITE, 2, 1, 1);
+    pb.addrin[0] = 0;
+    r
+}
+fn appl_read(pb: &mut Aespb, pid: i16) -> (i16, [i16; 8]) {
+    let mut buf = [0i16; 8];
+    pb.intin.fill(0); pb.intin[0] = pid; pb.intin[1] = 16;
+    pb.addrin[0] = buf.as_mut_ptr() as u64;
+    let r = pb.call(APPL_READ, 2, 1, 1);
+    pb.addrin[0] = 0;
+    (r, buf)
+}
+fn wind_create(pb: &mut Aespb) -> i16 {
+    pb.intin.fill(0); pb.intin[0] = 0x0001; pb.intin[3] = 640; pb.intin[4] = 480;
+    pb.call(WIND_CREATE, 5, 1, 0)
+}
+fn wf_owner(pb: &mut Aespb, h: i16) -> (i16, i16) {
+    pb.intin.fill(0); pb.intin[0] = h; pb.intin[1] = WF_OWNER;
+    let r = pb.call(WIND_GET, 2, 5, 0);
+    (r, pb.intout[1])
+}
+
+/// A claimed GEMDOS slot with a basepage page of its own; its AES pid is slot+1.
+struct Proc { slot: usize, page: *mut [u8; 4096] }
+impl Proc {
+    fn new() -> Self {
+        let slot = process::allocate_slot().expect("a free process slot");
+        let page = Box::into_raw(Box::new([0u8; 4096]));
+        PROCESS_TABLE[slot].basepage_kva.store(page.cast::<BasePage>(), Ordering::Release);
+        Proc { slot, page }
+    }
+    fn bp(&self) -> *mut BasePage { self.page.cast::<BasePage>() }
+    fn run(&self) { process::set_current(self.bp()); }
+}
+impl Drop for Proc {
+    fn drop(&mut self) {
+        tos_api::aes::resource::on_process_exit(tos_api::aes::pid_of_slot(self.slot));
+        if process::current() == self.bp() { process::set_current(std::ptr::null_mut()); }
+        process::free_slot(self.slot);
+        unsafe { drop(Box::from_raw(self.page)) };
+    }
+}
+
+fn name8(s: &str) -> [u8; 8] {
+    let mut n = [b' '; 8];
+    for (i, b) in s.bytes().take(8).enumerate() { n[i] = b; }
+    n
+}
+
+#[test]
+fn a62_sequential_then_nested() {
+    install_host();
+    let mut pb = Aespb::new();
+
+    // ── desktop in the kernel boot context ────────────────────────────────
+    let desk = appl_init(&mut pb);
+    println!("A62 desktop appl_init -> {desk}");
+
+    // ── Part A: 9 DIFFERENT programs one after another (kernel launch path:
+    //    register_process(slot 0, path) → child runs → appl_init/appl_exit →
+    //    close_client_if_open → Pterm frees slot 0) ─────────────────────────
+    let mut seq_ids = Vec::new();
+    for i in 1..=9 {
+        let path = format!("C:\\SEQ{i}.NAP\0");
+        let child = Proc::new();
+        assert_eq!(child.slot, 0, "sequential programs must all land in slot 0");
+        tos_api::aes::register_process(child.slot, path.as_bytes());
+        child.run();
+        let id = appl_init(&mut pb);
+        let find_self = appl_find(&mut pb, &name8(&format!("SEQ{i}")));
+        let find_prev = if i > 1 { appl_find(&mut pb, &name8(&format!("SEQ{}", i - 1))) } else { -99 };
+        println!("A62 seq #{i}: appl_init -> {id}  appl_find(self) -> {find_self}  appl_find(prev) -> {find_prev}");
+        seq_ids.push(id);
+        appl_exit(&mut pb);
+        tos_api::aes::close_client_if_open(tos_api::aes::pid_of_slot(child.slot));
+        drop(child); // Pterm: slot 0 free again
+    }
+    // desktop still addressable?
+    let probe = [0x4711, 1, 0, 0, 0, 0, 0, 0];
+    let w = appl_write(&mut pb, desk, &probe);
+    let (r, _) = appl_read(&mut pb, desk);
+    println!("A62 after 9 sequential: appl_write(desktop {desk}) -> {w}, appl_read -> {r}");
+    assert!(seq_ids.iter().all(|&i| i == 1), "sequential ids: {seq_ids:?}");
+
+    // ── Part B: NESTED — each program Pexec's the next while alive
+    //    (TeraDesk → child: EL0 Pexec path, NO register_process) ─────────────
+    let mut chain: Vec<Proc> = Vec::new();
+    let mut nested_ids = Vec::new();
+    for depth in 1..=16 {
+        let p = Proc::new();
+        p.run();
+        let id = appl_init(&mut pb);
+        let h = wind_create(&mut pb);
+        let (_, owner) = wf_owner(&mut pb, h);
+        let self_w = appl_write(&mut pb, id, &probe);
+        println!("A62 nest depth {depth}: slot {} -> appl_init {id}  wind_create {h} owner {owner}  appl_write(self) -> {self_w}", p.slot);
+        nested_ids.push(id);
+        chain.push(p);
+    }
+    println!("A62 nested ids: {nested_ids:?}");
+    // register_process on a full table (kernel launch path at depth 9): name lost?
+    tos_api::aes::register_process(8, b"C:\\NINTH.NAP\0");
+    let f = appl_find(&mut pb, &name8("NINTH"));
+    println!("A62 register_process(slot 8, NINTH.NAP) then appl_find(NINTH) -> {f}");
+    // unwind
+    while let Some(p) = chain.pop() {
+        p.run();
+        appl_exit(&mut pb);
+        drop(p);
+    }
+    process::set_current(std::ptr::null_mut());
+    // after unwinding: depth-9 program re-run in slot 8 with 8 ancestors → still -1?
+    let (first8, rest): (Vec<i16>, Vec<i16>) = (nested_ids[..8].to_vec(), nested_ids[8..].to_vec());
+    assert_eq!(first8, (1..=8).collect::<Vec<i16>>());
+    assert!(rest.iter().all(|&i| i == -1), "depth 9..16 must be -1: {rest:?}");
+}

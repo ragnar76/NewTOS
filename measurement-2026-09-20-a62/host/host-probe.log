@@ -1,0 +1,31 @@
+A62 desktop appl_init -> 1
+A62 seq #1: appl_init -> 1  appl_find(self) -> 1  appl_find(prev) -> -99
+A62 seq #2: appl_init -> 1  appl_find(self) -> 1  appl_find(prev) -> -1
+A62 seq #3: appl_init -> 1  appl_find(self) -> 1  appl_find(prev) -> -1
+A62 seq #4: appl_init -> 1  appl_find(self) -> 1  appl_find(prev) -> -1
+A62 seq #5: appl_init -> 1  appl_find(self) -> 1  appl_find(prev) -> -1
+A62 seq #6: appl_init -> 1  appl_find(self) -> 1  appl_find(prev) -> -1
+A62 seq #7: appl_init -> 1  appl_find(self) -> 1  appl_find(prev) -> -1
+A62 seq #8: appl_init -> 1  appl_find(self) -> 1  appl_find(prev) -> -1
+A62 seq #9: appl_init -> 1  appl_find(self) -> 1  appl_find(prev) -> -1
+A62 after 9 sequential: appl_write(desktop 1) -> 1, appl_read -> 1
+A62 nest depth 1: slot 0 -> appl_init 1  wind_create 1 owner 1  appl_write(self) -> 1
+A62 nest depth 2: slot 1 -> appl_init 2  wind_create 2 owner 2  appl_write(self) -> 1
+A62 nest depth 3: slot 2 -> appl_init 3  wind_create 3 owner 3  appl_write(self) -> 1
+A62 nest depth 4: slot 3 -> appl_init 4  wind_create 4 owner 4  appl_write(self) -> 1
+A62 nest depth 5: slot 4 -> appl_init 5  wind_create 5 owner 5  appl_write(self) -> 1
+A62 nest depth 6: slot 5 -> appl_init 6  wind_create 6 owner 6  appl_write(self) -> 1
+A62 nest depth 7: slot 6 -> appl_init 7  wind_create 7 owner 7  appl_write(self) -> 1
+A62 nest depth 8: slot 7 -> appl_init 8  wind_create 8 owner 8  appl_write(self) -> 1
+A62 nest depth 9: slot 8 -> appl_init -1  wind_create 9 owner 9  appl_write(self) -> 0
+A62 nest depth 10: slot 9 -> appl_init -1  wind_create 10 owner 10  appl_write(self) -> 0
+A62 nest depth 11: slot 10 -> appl_init -1  wind_create 11 owner 11  appl_write(self) -> 0
+A62 nest depth 12: slot 11 -> appl_init -1  wind_create 12 owner 12  appl_write(self) -> 0
+A62 nest depth 13: slot 12 -> appl_init -1  wind_create 13 owner 13  appl_write(self) -> 0
+A62 nest depth 14: slot 13 -> appl_init -1  wind_create 14 owner 14  appl_write(self) -> 0
+A62 nest depth 15: slot 14 -> appl_init -1  wind_create 15 owner 15  appl_write(self) -> 0
+A62 nest depth 16: slot 15 -> appl_init -1  wind_create -1 owner 0  appl_write(self) -> 0
+A62 nested ids: [1, 2, 3, 4, 5, 6, 7, 8, -1, -1, -1, -1, -1, -1, -1, -1]
+A62 register_process(slot 8, NINTH.NAP) then appl_find(NINTH) -> -1
+test a62_sequential_then_nested ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

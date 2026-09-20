@@ -1,0 +1,41 @@
+A62 + A56 -- AES-Prozesstabelle (MAX_APPS = 8) und ap_id-Vergabe. UNTERSUCHUNG, kein Fix.
+2026-09-20, Auditor. Branch desk-rebuild, HEAD 8f052b2, sauberer Baum vor und nach der Arbeit
+(git status --short leer; kernel/src/host_env.rs sha256 287ff741... vorher = nachher).
+Gepinnte EmuTOS-Quelle: references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df.
+Kein Produktcode geaendert: Sonden nur in einer SCRATCH-Kopie des Baums
+(<scratchpad>/a62/ws, rsync ohne target/.git/measurement-*/references/sdk-Fremdquellen).
+
+KERNEL
+  build/kernel8-rpi4-release.img  sha256 2a08ccad...  -- `cargo xtask build --board rpi4 --release`
+  aus der UNVERAENDERTEN Scratch-Kopie (kein Instrument, kein Trace); Sourcen = HEAD 8f052b2.
+
+SONDEN (method/)
+  nesttst.c -> NESTTST.NAP : verschachtelte Kette. Liest die Tiefe aus p_cmdlin (0x80),
+      appl_init, wind_create + wind_get(WF_OWNER), appl_write(an sich selbst), appl_find,
+      dann Pexec(0, "C:\NESTTST.NAP", tiefe+1) bis Tiefe 17, dann appl_exit, Pterm.
+      = der TeraDesk-Startweg (Pexec(0) aus EL0, H05), 16 Prozesse tief.
+  seqtst.c  -> SEQTST.NAP  : dieselbe Binaerdatei neunmal als SEQ1.NAP .. SEQ9.NAP. Jede
+      findet ihre Nummer per shel_read, meldet appl_init / appl_find(self) /
+      appl_find(vorgaenger), kettet per shel_write(SHW_EXEC) auf SEQ<n+1>, appl_exit, Pterm.
+      = acht/neun VERSCHIEDENE Programme nacheinander (A62 Punkt 1).
+  build-probe.sh: Flags/Libs identisch zu sdk/apps/chaintest/build-chaintest.sh (LP64 gemlib+libc).
+  prep-card.sh, run-qemu.sh: Karte + headless raspi4b, Stopp bei "[desk] desktop up".
+
+KARTEN (Hashes in manifest.sha256, Images selbst nicht archiviert, 64 MiB)
+  sd-base.img  = tools/make-sd-image.sh <scratch> 64      sha256 28f2a8d9...
+  sd-nest.img  = base + C:\NESTTST.NAP, NEWDESK.INF "#Z 01 C:\NESTTST.NAP@"   sha256 38c7adf8...
+  sd-seq.img   = base + C:\SEQ1..9.NAP, NEWDESK.INF "#Z 01 C:\SEQ1.NAP@"      sha256 3b309371...
+
+LAEUFE (QEMU 11.0.2, -M raspi4b, headless, serial -> serial/*.log)
+  serial/nest-serial.log  Tiefe 1..8: appl_init = 1..8 (= Slot+1); Tiefe 9..16: appl_init = -1,
+      appl_write(self) = 0; Tiefe 16: Pexec des 17. -> -39 (ENSMEM, MAX_PROCESSES = 16).
+      Alle 16 enden regulaer, danach "[desk] desktop up (1 drives)".
+  serial/seq-serial.log   SEQ1..SEQ9: appl_init = 1 bei ALLEN neun, appl_find(self) = 1,
+      appl_find(vorgaenger) = -1 (derselbe Deskriptor, umbenannt). Nie -1. Danach Desktop.
+  host/host-probe.log     dieselben zwei Ketten ueber den echten LP64-Dispatcher auf dem Host
+      (Proc-Fixture wie tos-api/src/aes/resource.rs-Tests): identische Zahlen; zusaetzlich
+      register_process(Slot 8, NINTH.NAP) bei voller Tabelle -> appl_find(NINTH) = -1 (Name still verloren).
+
+ERGEBNIS in einem Satz: die Tabelle bricht NICHT bei acht verschiedenen Programmen nacheinander
+(alle teilen pid 1), sondern bei VERSCHACHTELUNGSTIEFE 9 (pid 9 = Slot 8); Ursache ist die
+Schluesselung ueber pid = Slot+1, nicht der Name. Bericht: docs/analysis/aes-process-table-and-apid-2026-09-20.md
