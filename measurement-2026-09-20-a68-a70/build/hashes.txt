@@ -1,0 +1,7 @@
+# sha256 of the artefacts (images are scratch-only, listed for the record)
+534754a48d7f1a0004f7e5d9d1ba07ca035c8618b1ff4232146107e5abc2525f  kernel8.img
+90e03e4ab66cdac55d19fdcdff6a0c8d8a6cf7212aeb65333df260b87bcd8291  scr-after/kernel8.img
+641cbd84f35c683164a04b8ee16192b166fb39c2aa5b6530539ce92913bddc74  scr-before/kernel8.img
+ca712a984ddd65e7b3a5c8cd83833ecd82a6b4d7cea7be8c89fc117a179b7051  img/sd-base.img
+b8ab5ff83aab8ece94be88c8933d30fdbc7e5035e0e449773036fc5b8f413876  img/sd-tera-a68.img
+  (tree kernel8.img rebuilt after a doc-comment-only tweak to sst_th's rustdoc; the scratch kernels predate it, code identical)

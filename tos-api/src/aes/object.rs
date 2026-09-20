@@ -363,7 +363,8 @@ impl ObjTree {
     }
 
     /// EmuTOS `ob_sst` border-thickness word `th` (gemobjop.c:41-70), used by
-    /// `ob_center` (`form_center`) to size a SHADOWED root's drop-shadow extent.
+    /// `ob_center` (`form_center`) to size a SHADOWED root's drop-shadow extent
+    /// and by `just_draw`'s text arm (A68: the one home of the sign fold).
     /// Reproduces the per-type `switch` for **every** object type, not just the
     /// box family:
     /// - `G_TITLE` → `1`
@@ -2530,13 +2531,22 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             };
             effect_th = th;
             // 3D colour override (EmuTOS): a hollow-white box/button takes a
-            // solid 3D face colour so the bevel reads against it.
-            if ob_type != G_IBOX && ipat == IP_HOLLOW && icol == WHITE && d3 != 0 {
+            // solid 3D face colour so the bevel reads against it. Two rules,
+            // one per type family (A70, D-103):
+            // - G_BOX/G_BOXCHAR (not G_IBOX): `switch (flags & FL3DMASK)` —
+            //   FL3DIND → indbutcol, FL3DACT → actbutcol, FL3DBAK → backgrcol
+            //   (`gemoblib.c:619-636`).
+            // - G_BUTTON: `if (flags & FL3DOBJ)` → actbutcol/indbutcol, **else**
+            //   hollow white — FL3DBAK (0x0400) does not carry the FL3DOBJ bit
+            //   (0x0200), so a FL3DBAK button stays `IP_HOLLOW`/`WHITE` like a
+            //   non-3D one (`gemoblib.c:639-658`).
+            let takes_3d_face = if ob_type == G_BUTTON { d3obj } else { ob_type != G_IBOX && d3 != 0 };
+            if takes_3d_face && ipat == IP_HOLLOW && icol == WHITE {
                 ipat = IP_SOLID;
                 icol = match d3 {
                     FL3DACT => ACT_BUTCOL.load(Ordering::Relaxed) as Pel,
                     FL3DIND => IND_BUTCOL.load(Ordering::Relaxed) as Pel,
-                    _ => BACKGR_COL.load(Ordering::Relaxed) as Pel, // FL3DBAK
+                    _ => BACKGR_COL.load(Ordering::Relaxed) as Pel, // FL3DBAK, box types only
                 };
             }
             // SELECTED, but only when the object changes colour (EmuTOS
@@ -2687,7 +2697,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                 let ted = &ted;
                 // Crack the TEDINFO colour word (EmuTOS `gr_crack`): border,
                 // text, inside pattern, inside colour.
-                let (bcol, tcol, mut ipat, mut icol, _mode) = gr_crack(ted.te_color as u16);
+                let (bcol, tcol, mut ipat, mut icol, mode_replace) = gr_crack(ted.te_color as u16);
                 let mut is_box = ob_type == G_BOXTEXT || ob_type == G_FBOXTEXT;
                 // The TEDINFO thickness, for every 3D kind alike (A67, text
                 // half): EmuTOS `just_draw` never zeroes a thickness for 3D —
@@ -2699,18 +2709,34 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
                 // the file box's FTITLE caption is a G_BOXTEXT with
                 // te_thickness -1 that EmuTOS frames in black under FL3DBAK
                 // (`gemfslib.c:78`).
-                let mut th = ted.te_thickness;
+                //
+                // A68: `th` comes from `ob_sst` (`gemoblib.c:489`), whose one
+                // shared fold `if (th > 128) th -= 256` (`gemobjop.c:68-69`)
+                // makes a `te_thickness` of 255 — the raw `.rsc` word for -1,
+                // passed through unchanged by `tools/mkrsc.py` — a 1-px
+                // *outside* border. `sst_th` is that fold's single home; the
+                // raw `ted.te_thickness` is never read here.
+                let mut th = t.sst_th(obj);
                 effect_th = th;
                 // 3D background (EmuTOS `:582-599`): a hollow-white text
-                // background takes the solid 3D background colour, and a
-                // plain TEXT/FTEXT is promoted to BOXTEXT/FBOXTEXT with a zero
-                // border so the fill is drawn. A G_BOXTEXT/G_FBOXTEXT is not
-                // promoted and keeps its thickness (`:589-598` zero `th` only
-                // inside the `obtype == G_TEXT` / `G_FTEXT` arms).
+                // background takes the solid 3D background colour *for any
+                // 3D flag and any writing mode* (`:582-585`); the promotion of
+                // a plain TEXT/FTEXT to BOXTEXT/FBOXTEXT with a zero border —
+                // so the fill is drawn — happens only when the text mode is
+                // MD_REPLACE (`if (tmode == MD_REPLACE)`, `:586-599`, A69). A
+                // TRANSPARENT G_TEXT therefore stays an unboxed text (no
+                // border, no fill; the second type switch has no `case
+                // G_TEXT`, `:609-696`) and the background beside its glyphs
+                // stays visible. A G_BOXTEXT/G_FBOXTEXT is never promoted and
+                // keeps its thickness (`:589-598` zero `th` only inside the
+                // `obtype == G_TEXT` / `G_FTEXT` arms) — a TRANSPARENT one is
+                // filled `backgrcol` *and* keeps its border. (EmuTOS's
+                // `tmode = MD_TRANS` switch in the same block has no
+                // counterpart: `gsx_tblt` here always writes transparently.)
                 if d3 != 0 && ipat == IP_HOLLOW && icol == WHITE {
                     ipat = IP_SOLID;
                     icol = BACKGR_COL.load(Ordering::Relaxed) as Pel;
-                    if !is_box {
+                    if mode_replace && !is_box {
                         is_box = true;
                         th = 0;
                     }

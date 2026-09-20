@@ -4,6 +4,13 @@
 > Source: EmuTOS @ `1a7484ab`. Re-validated 2026-07-10 (AES leg, Batch 3) —
 > found and corrected D-089…D-093 (see `_discrepancies.md`), most notably
 > an inverted `th`/border-thickness sign convention (D-089).
+> Extended 2026-09-20 (TASK/A68–A70 research): the "3D handling in
+> `just_draw`" sub-list after item 3 covers the `te_thickness` sign fold's
+> single shared source (`ob_sst`, TASK/A68), the `MD_REPLACE`-gated
+> hollow-white text promotion vs. the unconditional colour override
+> (TASK/A69), and the exact `G_BUTTON`/`FL3DBAK` control flow (TASK/A70,
+> confirmed — found and corrected D-103, an imprecise "(non-3D)" phrasing
+> in item 2).
 > Primary handlers: `aes/gemoblib.c` (`ob_*`, `just_draw`, `gr_crack` via
 > `aes/gemgraf.c`), `aes/gemobed.c` (`ob_edit`, `ob_center`),
 > `aes/gemfmlib.c` (`fm_do`/`fm_dial`/`fm_keybd`/`fm_button`/`fm_error`),
@@ -194,10 +201,15 @@ the EmuTOS VDI sequence):
    `G_BUTTON`/`G_BOXTEXT`/`G_FBOXTEXT`): crack the colour word, draw the
    border with `th` thickness, then fill the inside with the cracked
    pattern/colour. `G_IBOX` draws **border only** (no fill,
-   `gemoblib.c:669`). `G_BUTTON` forces `bcol = BLACK` and a hollow-white
-   interior (non-3D) (`gemoblib.c:639-658`).
+   `gemoblib.c:669`). `G_BUTTON` forces `bcol = BLACK`; its interior is
+   hollow white **except under `FL3DOBJ`** (indicator/activator) — see the
+   D-103 correction and the "3D handling in `just_draw`" sub-list below for
+   the exact rule (`gemoblib.c:639-658`).
 3. **Text family** (`G_TEXT`/`G_BOXTEXT`/`G_FTEXT`/`G_FBOXTEXT`): copy the
-   `TEDINFO`, crack `te_color`. For the **formatted** types (`G_FTEXT`/
+   `TEDINFO`, crack `te_color`. `th` (border thickness) for these types comes
+   from the same single `ob_sst()` call as every other type — see the "3D
+   handling in `just_draw`" sub-list below for the exact source and sign
+   fold. For the **formatted** types (`G_FTEXT`/
    `G_FBOXTEXT`) merge `te_ptext` into `te_ptmplt` via `ob_format`
    (`_` slots filled, literals kept; `gemoblib.c:716-757` calls
    `ob_format`, defined at `gemoblib.c:361-408` — see the D-091 correction
@@ -220,6 +232,130 @@ the EmuTOS VDI sequence):
 > switch (`gemoblib.c:757`) and is what the earlier "TE_LEFT/RIGHT/CNTR
 > justification" phrase was actually describing, misattributed to
 > `ob_format`. See `_discrepancies.md` D-091.
+
+**3D handling in `just_draw`** (`CONF_WITH_3D_OBJECTS`, `gemoblib.c`) — three
+rules items 2–3 above elide, needed before TASK/A68–A70 may be implemented:
+
+a. **`th` for the text family comes from the *same* `ob_sst()` call as the
+   box family, with the *same* sign fold — there is no separate text-branch
+   fold path.** `just_draw` obtains `th` exactly once, at the top of the
+   function: `ch = ob_sst(tree, obj, &spec, &state, &obtype, &flags, &t,
+   &th);` (`gemoblib.c:489`). It never re-reads `edblk.te_thickness` after
+   its own `memcpy(&edblk, (TEDINFO*)spec, sizeof(TEDINFO))`
+   (`gemoblib.c:567`) — `edblk` supplies `te_font`/`te_just`/`te_ptext`/
+   `te_ptmplt`/`te_color` to the later text-drawing code, never thickness.
+   Inside `ob_sst` (`gemobjop.c:25-73`), the type switch sets `th` from
+   three mutually exclusive branches that all fall through to one shared
+   fold: `G_TITLE` → `th = 1` (`:44-46`); the **text family**
+   (`G_TEXT`/`G_BOXTEXT`/`G_FTEXT`/`G_FBOXTEXT`, `:47-53`) → `th =
+   ted->te_thickness` read directly off the TEDINFO (`:52`); the **box
+   family** (`G_BOX`/`G_BOXCHAR`/`G_IBOX`, `:54-58`) → `th =
+   *(((char*)pspec)+1)` (byte 1 of `ob_spec`); `G_BUTTON` (`:59-65`) → `th--`,
+   minus one more each for `EXIT`/`DEFAULT`. After the switch, **one**
+   unconditional fold applies to whichever value was set: `if (th > 128) th
+   -= 256;` (`gemobjop.c:68-69`), then `*pth = th` (`:70`) returns it to
+   `just_draw`. A `te_thickness` of `255` therefore folds to `th = -1` — an
+   **outside border of 1 px** (D-089's sign convention: `th < 0` ⇒ border
+   drawn outside the nominal rect, content area is the full rect). A NewTOS
+   implementation that fords the box branch through this fold but reads
+   `te_thickness` directly for the text branch without applying it has
+   duplicated `ob_sst`'s logic incompletely — EmuTOS has only the one fold,
+   shared by construction across all three branches.
+
+   **`tools/mkrsc.py` passes `te_thickness` through unmodified — the fold is
+   exclusively an AES draw-time operation, never a resource-build-time
+   one.** Both TEDINFO-conversion loops (`convert()`,
+   `tools/mkrsc.py:580-591`; `convert_rshdr()`, `:897-908`) unpack the
+   classic 28-byte TEDINFO with `struct.unpack(">IIIhhhhhhhh", ...)` — the
+   thickness field (`thick`) is read as a **signed 16-bit** Python value
+   (format code `'h'`) — and repack it unchanged into the native TEDINFO
+   using the same signed-16-bit slot in `TED_FMT` (`:429`, `:439`, `:818`).
+   No arithmetic, no `>128` fold, nothing beyond a big-endian → little-endian
+   re-encode happens to this field anywhere in `mkrsc.py` (verified: `thick`
+   has no other occurrence in the file). A classic `.rsc`'s raw 16-bit
+   `te_thickness` word — including `255` — is carried byte-for-byte into the
+   native resource; `ob_sst`'s fold is the only place the sign reinterpretation
+   happens.
+
+b. **The hollow-white → `backgrcol` colour override is unconditional; the
+   `MD_TRANS`→`MD_REPLACE`-gated *promotion* is not — these are two
+   different things inside the same `if`.** Inside the text-family case of
+   the *first* `obtype` switch (`case G_BOXTEXT: case G_FBOXTEXT: case
+   G_TEXT: case G_FTEXT:`, `gemoblib.c:563-566`; body `:567-602`), once
+   `te_color` is cracked (`gr_crack(edblk.te_color, &bcol, &tcol, &ipat,
+   &icol, &tmode)`, `:568`): `if ((flags & FL3DMASK) && (ipat == IP_HOLLOW)
+   && (icol == WHITE))` (`:582`) sets `ipat = IP_SOLID; icol = backgrcol;`
+   (`:584-585`) for **any** 3D flag combination (`FL3DIND`/`FL3DBAK`/
+   `FL3DACT` all satisfy `flags & FL3DMASK`), **independent of `tmode`**.
+   Only the nested block that follows — switching `tmode` to `MD_TRANS`
+   and, for genuine `G_TEXT`/`G_FTEXT` only, promoting `obtype` to
+   `G_BOXTEXT`/`G_FBOXTEXT` with `tmpth = th = 0` — is gated by `if (tmode
+   == MD_REPLACE)` (`:586-599`).
+   - **TRANSPARENT `G_TEXT`** (`tmode` already `MD_TRANS` from the colour
+     word): the `:586` gate is false, so `obtype` stays `G_TEXT`. The
+     *second* `obtype` switch (`gemoblib.c:609-696`) has **no** `case
+     G_TEXT:` at all (only `G_BOX`/`G_BOXCHAR`/`G_IBOX`/`G_BUTTON`/
+     `G_BOXTEXT`/`G_FBOXTEXT`), so the border/fill block (`:662-694`) never
+     runs for it — no box is ever drawn; the computed `icol`/`ipat` are
+     unused. Execution falls through to the text-drawing switch (`case
+     G_TEXT: case G_BOXTEXT:`, `:732-733`), which draws only the glyphs, in
+     the object's original `MD_TRANS` mode. **A transparent `G_TEXT` under
+     any 3D flag stays a plain, unboxed transparent text — the background
+     underneath it remains visible**, confirming A69's expectation.
+   - **TRANSPARENT `G_BOXTEXT`** (already `G_BOXTEXT`, not promoted from
+     `G_TEXT`): the same unconditional override at `:584-585` still sets
+     `icol = backgrcol`, `ipat = IP_SOLID`; the `:586` gate is again false
+     (mode already `MD_TRANS`), so `th`/`tmpth` are **not** forced to `0` —
+     they keep the value `ob_sst` computed from `te_thickness` (see (a)).
+     Because `obtype` is genuinely `G_BOXTEXT`, the second switch's `case
+     G_BOXTEXT: case G_FBOXTEXT:` (`:660-661`) *does* run: it draws the
+     border if `th != 0` (`:663-667`, in `bcol` from the cracked `te_color`)
+     and fills the interior with `gr_rect(icol, ipat, &t)` (`:692`) using
+     `icol = backgrcol`, `ipat = IP_SOLID`. **A transparent `G_BOXTEXT`'s
+     box is filled solid `backgrcol` regardless of its writing mode** —
+     confirming A69's other half. Only the *promotion* (obtype/th-zeroing),
+     not the *colour* override, is `MD_REPLACE`-gated; a genuine
+     `G_BOXTEXT` additionally keeps its original border where a promoted
+     `G_TEXT` would not have had one to begin with.
+
+c. **`G_BUTTON`'s interior colour is independent of (b) and is set entirely
+   in the *second* `obtype` switch.** `G_BUTTON` is not one of the case
+   labels in the first switch (`:563-566`), so (b)'s block never executes
+   for it; `bcol`/`ipat`/`icol` for a button come only from the second
+   switch's `case G_BUTTON:` (`gemoblib.c:639-658`): `bcol = BLACK`
+   (`:642`); then `if (flags & FL3DOBJ)` (`:647`) → `ipat = IP_SOLID; icol =
+   (flags&FL3DMASK)==FL3DACT ? actbutcol : indbutcol` (`:649-650`);
+   **else** (`:652-657`, covering both `FL3DBAK` and no 3D at all) → `ipat =
+   IP_HOLLOW; icol = WHITE`. `FL3DOBJ` is bit `0x0200` and `FL3DBAK` is the
+   disjoint bit `0x0400` (`obdefs.h:92,97`; `FL3DIND = 0x0200`, `FL3DACT =
+   0x0600`, `obdefs.h:95-96`) — `flags & FL3DOBJ` is true only for `FL3DIND`
+   and `FL3DACT`, **false for `FL3DBAK`**. After `FALLTHROUGH` (`:659`) into
+   the box-drawing code shared with `G_BOXTEXT`/`G_FBOXTEXT`
+   (`:660-695`), the only place `ipat`/`icol` can still change before the
+   final `gr_rect(icol, ipat, &t)` (`:692`) is the `SELECTED`-driven
+   `changecol` block (`:681-690`), gated on `state & SELECTED` — irrelevant
+   to an un-selected button, and unrelated to (b) (a `G_BUTTON` never
+   reaches the TEDINFO-only override in (b); there is no other hollow-white
+   → `backgrcol` rule reachable from the `G_BUTTON` case).
+   **Verdict on TASK/A70's premise: confirmed by this trace.** For an
+   un-selected `G_BUTTON` with `FL3DBAK`, EmuTOS draws `gr_rect(WHITE,
+   IP_HOLLOW, &t)` — the interior stays hollow white; only `FL3DOBJ`
+   (`FL3DIND`/`FL3DACT`) gets the solid indicator/activator colour.
+   (A *selected* `FL3DBAK` button is a separate, `state`-driven case, noted
+   only because it shares the code path: for a non-`FL3DOBJ` object
+   `changecol = !xor_is_ok(obtype, flags, spec)` (`gemoblib.c:523-524`), so
+   a selected `FL3DBAK` button may still take the `IP_HOLLOW → IP_SOLID/
+   BLACK` swap at `:683-687` — pre-existing `SELECTED` behaviour, not a 3D
+   colour exception, and out of scope for A70.)
+
+> **Correction (D-103): item 2 above ("Box family") called `G_BUTTON`'s
+> hollow-white interior "(non-3D)"; this was imprecise.** As traced in (c),
+> hollow white (`IP_HOLLOW`/`WHITE`) is the outcome whenever `flags &
+> FL3DOBJ` is false — that includes **`FL3DBAK` as well as no 3D at all**;
+> only `FL3DOBJ` (`FL3DIND`/`FL3DACT`) breaks from it. "(non-3D)" undersold
+> the rule: the correct condition is "not `FL3DOBJ`", not "not 3D" — a
+> `FL3DBAK` button is a 3D object (`CONF_WITH_3D_OBJECTS` background flag)
+> that nonetheless stays hollow white. See `_discrepancies.md` D-103.
 
 4. **`G_STRING`/`G_TITLE`/`G_BUTTON`**: draw the plain text centred (button)
    or left-aligned, vertically centred (`gemoblib.c:801-862`).

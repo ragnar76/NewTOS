@@ -1,0 +1,83 @@
+A68 / A69 / A70 -- three neighbours in just_draw's 3D handling (tos-api/src/aes/object.rs), one package.
+Developer self-evidence, 2026-09-20 (no Tester verdict). Branch desk-rebuild, base HEAD 23c6dbe, changes
+uncommitted in the tree. Pinned EmuTOS source references/emutos @ 1a7484ab: aes/gemoblib.c just_draw
+:471-953 (th via ob_sst :489; text-family colour block :563-602; box/button second switch :609-696),
+aes/gemobjop.c ob_sst :25-73 (the one fold `if (th > 128) th -= 256` :68-69). Spec (lead-written,
+uncommitted, left untouched): docs/api/aes/object-form.md "just_draw per-type rendering" items 2/3 +
+"3D handling in just_draw" (a)/(b)/(c); docs/api/_discrepancies.md D-103.
+
+DEFECTS -> FIX (method/object-rs-a68-a70.diff, the only product change)
+  A68  text arm read `ted.te_thickness` raw; EmuTOS folds once in ob_sst for every type. Now
+       `let mut th = t.sst_th(obj);` (ObjTree::sst_th already carried the fold for form_center) --
+       te_thickness 255 = 1-px outside border, effect_th (bevel inset) folded as well.
+  A69  the hollow-white -> backgrcol override stays unconditional (gemoblib.c:582-585); the
+       G_TEXT->G_BOXTEXT / G_FTEXT->G_FBOXTEXT promotion with th = 0 now only when gr_crack's
+       bit 7 (MD_REPLACE) is set (`mode_replace && !is_box`, :586-599). TRANSPARENT G_TEXT stays
+       unboxed; TRANSPARENT G_BOXTEXT is filled backgrcol and keeps its border.
+  A70  box-family arm: `takes_3d_face = if G_BUTTON { d3obj } else { !G_IBOX && d3 != 0 }` --
+       a FL3DBAK G_BUTTON stays IP_HOLLOW/WHITE (gemoblib.c:652-657); G_BOX/G_BOXCHAR keep the
+       FL3DBAK -> backgrcol mapping (:631-634).
+
+HOST TESTS (host-tests/)  tos-api/tests/aes_object_3d_text_button.rs (new, rig of aes_object_3d_box_border.rs,
+  every object at (220,100,24,16), rows over x = 217..=246; classes . white # black r red l LWHITE d LBLACK _ slate)
+  aes_object_3d_text_button-RED-before.txt   tree before the object.rs edit: 4 failed / 4 passed
+    a68_boxtext_te_thickness_255_is_a_one_pixel_outside_border        y=99 ours |___####...| want |__####...__|,
+        y=100 ours |##############################| want |__#........................#__| (255-px inside border)
+    a68_fl3dind_boxtext_te_thickness_255_draws_like_minus_one         y=97 ours |_####..._| want |####...| ; rows 98/99/116/117 all '#'
+    a69_transparent_fl3dbak_g_text_stays_unboxed_over_the_background  y=101 ours |___llllllllllllllllllllllll___| want |___********___________________|
+    a70_fl3dbak_g_button_stays_hollow_white_with_a_black_border       y=100..115 ours |__#llllllllllllllllllllllll#__| want |__#........................#__|
+    guards green before and after: a69_replace_..._promoted_and_filled_backgrcol_without_border,
+        a69_transparent_fl3dbak_g_boxtext_is_filled_backgrcol_and_keeps_its_border,
+        a70_fl3dact_g_button_takes_actbutcol (actbutcol set to RED via objc_sysvar, restored),
+        a70_fl3dbak_g_box_still_takes_backgrcol
+  aes_object_3d_text_button-GREEN-after.txt  8 passed / 0 failed.
+  xtask-test.log   cargo run -p xtask -- test = 688 passed / 0 failed / 1 ignored (baseline 680 + 8).
+
+BUILD / CLIPPY (build/)
+  build-rpi4-tree.log       cargo xtask build --board rpi4 (fresh: tos-api + kernel recompiled): rustc
+                            tos-api 64 / kernel 94 warnings, exit 0 (baseline 64/94, delta 0). No qemu-virt build (task).
+  clippy-tos-api-tests.log  cargo clippy -p tos-api --tests: 93 warnings total; none in the new test file; the one
+                            hit near the edit (object.rs:2692 "if can be collapsed into the outer match",
+                            `if ob_spec != 0` in the text arm) exists identically at HEAD (:2680) -- not new.
+  hashes.txt                kernel8.img (tree, dev) 534754a4... (rebuilt after a rustdoc-only tweak on sst_th; scratch kernels predate it); scratch injector kernels after 90e03e4a... /
+                            before 641cbd84...; images (scratch only, not kept) sd-base ca712a98... / sd-tera-a68 b8ab5ff8...
+
+METHOD (method/) -- scratch copies only, the shared tree was never patched
+  make_scratch.sh <ws> <scratch> tree|HEAD : rsync of the crates; "before" = HEAD object.rs (verified equal to
+    `git show HEAD:tos-api/src/aes/object.rs`; diff -rq before/after = object.rs only); a68_patch.py (H02
+    debug_write sink, H02_TRACE/h02_log, A46 DESK_UP flag), apply_injector.py + a68_scripts.rs (IKBD injector,
+    SCRIPT_TERA / SCRIPT_DESK), a68_patch2.py (A46 dual arming: EL0 program or "[desk] desktop up").
+    scratch-injector.diff = the scratch-only patch; object-rs-a68-a70.diff = the product change.
+  tera-dialogs.actions -> SCRIPT_TERA : park; (300,300); double-click HARD DISC C (195,35); click (220,340)
+    -> A_SELECTED +2400; File (88,8) -> B_FILE_MENU +3200; Info... (110,43) click -> D_INFO_DIALOG +4400
+    ("Disk Volume Information": FL3DBAK G_FTEXT labels with TRANSPARENT hollow-white te_color = the A69 case;
+    TeraDesk desktop.rsc: 7 TEDINFOs with (TRANS, hollow, white), 76 FL3DBAK text objects, te_thickness only
+    -1/0, 0 FL3DBAK G_BUTTONs); OK (355,377) -> E_INFO_CLOSED +5400; HARD DISC F (435,35) click
+    -> F_F_SELECTED +6200; File / Info... -> G_ALERT +7600 (form_alert "Drive does not exist." [OK]:
+    FL3DACT G_BUTTON + FL3DBAK/OUTLINED root + G_STRING = A70's unchanged neighbours).
+  desk-about.actions  -> SCRIPT_DESK : A_IDLE +1100; park; (300,300); hover Desk (22,8) -> B_DESK_MENU +1800;
+    "Desktop info..." (60,28) click -> C_ABOUT_ALERT +2800 (kernel/src/desk/main.rs do_deskmenu form_alert).
+  Images: tools/make-sd-image.sh <scratch>/img/sd-base.img 64; sd-tera-a68.img = + NEWDESK.INF (#Z TeraDesk,
+    method/newdesk-user.inf) + Apps\TERADESK\TERADESK.INF (method/teradesk-user.inf) via method/sd-put.sh.
+    Every run boots a fresh copy (method/run.sh). QEMU raspi4b 640x480, -display none, -serial file, QMP screendump.
+
+RUNS (screendumps/, serial/) -- grep -c "EXC\|PANIC\|panic" = 0 in every serial log
+  tera-after / tera-before  (sd-tera-a68, #Z TeraDesk): all six states 0 differing pixels (pixdiff.py), i.e.
+    identical sha256 per pair: A-selected a7bad277..., B-file-menu ce500fd1..., D-info-dialog 7d9a896f...,
+    E-info-closed 2a837810..., F-f-selected 1b5b5ab2..., G-alert 782950df...
+  desk-after / desk-before  (sd-base, our desktop; run 2, A_IDLE dumped at the marker without settle):
+    all three states 0 differing pixels: A-idle dee57cca..., B-desk-menu 5c7f26b8..., C-about-alert fc31426c...
+  run1-desk-idle-race/ + serial/run1-*: first desktop pair with a 0.5 s settle on A_IDLE: 13272 px, bbox
+    (52,0)-(309,315) = the File drop-down + the mouse sprite -- the injector's park sweep (319,239) -> (0,0)
+    crosses the File title at (65,0) and the dump raced the sweep (the known dump-vs-park timing race of the
+    method, measurement-2026-09-20-a78/RUNINFO.TXT); B and C of that pair were already 0 px. Not an A68-A70 effect.
+
+WHY BYTE-IDENTICAL IS THE EXPECTED RESULT (verified, not assumed)
+  A68: no shipped tree carries te_thickness = 255 (kernel-built trees use i16 -1; TeraDesk .rsc: -1/0).
+  A69: TeraDesk's TRANSPARENT FL3DBAK labels sit on a backgrcol dialog panel, so the old backgrcol fill was
+       invisible; the desk/ dialogs (dlg.rs/inf.rs/insapp.rs) use te_color 0x0100 without 3D flags (rule inert);
+       fsel's FSDIRECT/FSSELECT (te_color 0x1100, FL3DBAK) sit on the FL3DBAK root panel likewise.
+  A70: form_alert/fsel buttons are FL3DACT; no FL3DBAK G_BUTTON in any shipped tree (kernel, EmuTOS gem_rsc,
+       TeraDesk desktop.rsc scan above) -- A70 changes no current dialog.
+
+NOT RUN: real Pi 4 (Tester/Lead). qemu-virt build (task said no). No commit, no git checkout/stash/reset.

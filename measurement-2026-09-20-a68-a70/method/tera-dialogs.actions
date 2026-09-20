@@ -1,0 +1,37 @@
+# A68-A70 (TeraDesk via #Z, sd-tera): the A56 h02-info sequence (open the C:
+# window by double-clicking HARD DISC C (195,35), click (220,340), File (88,8),
+# Info... (110,43) -> "Disk Volume Information" dialog: FL3DBAK G_FTEXT labels
+# with TRANSPARENT hollow-white te_color = the A69 case), OK (355,377) closes it;
+# then the A57 alert: select HARD DISC F (435,35), File / Info... -> form_alert
+# "Drive does not exist." (FL3DACT G_BUTTON + FL3DBAK/OUTLINED root = A70's
+# unchanged neighbours). Ticks are 200 Hz after the injector arms.
+1200 park
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 move 220 340
+2210 down
+2216 up
+2400 mark A_SELECTED
+2800 move 88 8
+3200 mark B_FILE_MENU
+3400 move 110 43
+3800 down
+3806 up
+4400 mark D_INFO_DIALOG
+4600 move 355 377
+4800 down
+4806 up
+5400 mark E_INFO_CLOSED
+5600 move 435 35
+5800 down
+5806 up
+6200 mark F_F_SELECTED
+6400 move 88 8
+6800 move 110 43
+7000 down
+7006 up
+7600 mark G_ALERT

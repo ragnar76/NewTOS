@@ -4318,3 +4318,52 @@ correctly documents the 68k ABI per D-094 and remains accurate for that
 world; only the native-implementation guidance was wrong and is now fixed.
 
 ---
+
+## D-103: `just_draw`'s `G_BUTTON` hollow-white interior condition is "not `FL3DOBJ`", not "not 3D" — a `FL3DBAK` button stays hollow white too
+
+**Date:** 2026-09-20 (research task for TASK/A68–A70)
+**Phase 00b spec:** `docs/api/aes/object-form.md` (`objc_draw` / `just_draw`
+per-type rendering, item 2 "Box family" and the "3D handling in `just_draw`"
+sub-list, item (c))
+
+**Context:** TASK/A70 claims NewTOS's `object.rs` over-applies the "hollow
+white/button interior takes the 3D background colour" rule to every 3D flag
+combination, where EmuTOS restricts it to `FL3DOBJ` (indicator/activator)
+and leaves a `FL3DBAK` `G_BUTTON` hollow white. The spec's own item 2 (Box
+family) description — "`G_BUTTON` forces `bcol = BLACK` and a hollow-white
+interior (non-3D)" — was consulted to check this and found to be worded
+imprecisely enough to read as supporting the *wrong* premise (that hollow
+white applies "when not 3D", implying any 3D flag, including `FL3DBAK`,
+would leave that regime).
+
+**EmuTOS (confirmed by full trace):** `G_BUTTON`'s colours are set in the
+*second* `obtype` switch of `just_draw`, `case G_BUTTON:`
+(`aes/gemoblib.c:639-658`): `bcol = BLACK` (`:642`); `if (flags &
+FL3DOBJ)` (`:647`) → `ipat = IP_SOLID`, `icol = actbutcol`/`indbutcol`
+(`:649-650`); **else** (`:652-657`) → `ipat = IP_HOLLOW`, `icol = WHITE`.
+`FL3DOBJ` (`include/obdefs.h:92`) is bit `0x0200`; `FL3DBAK`
+(`obdefs.h:97`) is the *disjoint* bit `0x0400`; `FL3DIND = 0x0200`,
+`FL3DACT = 0x0600` (`obdefs.h:95-96`). So `flags & FL3DOBJ` is true only
+for `FL3DIND`/`FL3DACT` and **false for `FL3DBAK`** — a `FL3DBAK` button
+takes the `else` branch exactly like a non-3D button. After
+`FALLTHROUGH` (`:659`) into the shared box-drawing code
+(`case G_BOXTEXT: case G_FBOXTEXT:`, `:660-695`), the only remaining
+place `icol`/`ipat` could change before `gr_rect(icol, ipat, &t)`
+(`:692`) is the `SELECTED`-gated `changecol` block (`:681-690`), which is
+orthogonal to the 3D flag and irrelevant when the object is not selected.
+There is no separate hollow-white → `backgrcol` rule reachable from the
+`G_BUTTON` case; the rule with that shape (`gemoblib.c:582-585`) belongs to
+the *first*, TEDINFO-only `obtype` switch (`G_TEXT`/`G_BOXTEXT`/`G_FTEXT`/
+`G_FBOXTEXT`), which `G_BUTTON` never enters.
+
+**Decision:** `docs/api/aes/object-form.md` item 2's `G_BUTTON` sentence
+corrected to state the condition as "hollow white except under `FL3DOBJ`"
+rather than "(non-3D)", with a full trace and the A70 verdict recorded in a
+new "3D handling in `just_draw`" sub-list (item (c)) right after item 3.
+TASK/A70's premise is **confirmed**: EmuTOS leaves an un-selected `FL3DBAK`
+`G_BUTTON` hollow white; only `FL3DOBJ` buttons get the solid
+indicator/activator fill. Not a Compendium/Profibuch discrepancy — a
+spec-wording imprecision found while extending the spec for TASK/A68–A70,
+corrected against the EmuTOS source directly.
+
+---

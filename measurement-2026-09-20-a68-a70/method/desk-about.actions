@@ -1,0 +1,12 @@
+# A68-A70 (our desktop, sd-base, no #Z): idle dump, hover the Desk title (22,8)
+# to drop the menu, click "Desktop info..." (60,28) -> the Desk-menu form_alert
+# (kernel/src/desk/main.rs do_deskmenu). Ticks are 200 Hz after "[desk] desktop up".
+1100 mark A_IDLE
+1200 park
+1206 move 300 300
+1400 move 22 8
+1800 mark B_DESK_MENU
+2000 move 60 28
+2200 down
+2206 up
+2800 mark C_ABOUT_ALERT

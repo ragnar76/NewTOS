@@ -1,0 +1,163 @@
+
+running 8 tests
+test a68_boxtext_te_thickness_255_is_a_one_pixel_outside_border ... FAILED
+test a68_fl3dind_boxtext_te_thickness_255_draws_like_minus_one ... FAILED
+test a69_replace_fl3dbak_g_text_is_promoted_and_filled_backgrcol_without_border ... ok
+test a69_transparent_fl3dbak_g_boxtext_is_filled_backgrcol_and_keeps_its_border ... ok
+test a69_transparent_fl3dbak_g_text_stays_unboxed_over_the_background ... FAILED
+test a70_fl3dact_g_button_takes_actbutcol ... ok
+test a70_fl3dbak_g_box_still_takes_backgrcol ... ok
+test a70_fl3dbak_g_button_stays_hollow_white_with_a_black_border ... FAILED
+
+failures:
+
+---- a68_boxtext_te_thickness_255_is_a_one_pixel_outside_border stdout ----
+
+thread 'a68_boxtext_te_thickness_255_is_a_one_pixel_outside_border' (3652723) panicked at tos-api/tests/aes_object_3d_text_button.rs:525:5:
+G_BOXTEXT (te_thickness = 255): rows differ from the expectation (x 217..246)
+  y= 98  ours |___########################___|
+         want |______________________________|
+  y= 99  ours |___########################___|
+         want |__##########################__|
+  y=100  ours |##############################|
+         want |__#........................#__|
+  y=101  ours |##############################|
+         want |__#........................#__|
+  y=102  ours |##############################|
+         want |__#........................#__|
+  y=103  ours |##############################|
+         want |__#........................#__|
+  y=104  ours |##############################|
+         want |__#........................#__|
+  y=105  ours |##############################|
+         want |__#........................#__|
+  y=106  ours |##############################|
+         want |__#........................#__|
+  y=107  ours |##############################|
+         want |__#........................#__|
+  y=108  ours |##############################|
+         want |__#........................#__|
+  y=109  ours |##############################|
+         want |__#........................#__|
+  y=110  ours |##############################|
+         want |__#........................#__|
+  y=111  ours |##############################|
+         want |__#........................#__|
+  y=112  ours |##############################|
+         want |__#........................#__|
+  y=113  ours |##############################|
+         want |__#........................#__|
+  y=114  ours |##############################|
+         want |__#........................#__|
+  y=115  ours |##############################|
+         want |__#........................#__|
+  y=116  ours |___########################___|
+         want |__##########################__|
+  y=117  ours |___########################___|
+         want |______________________________|
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a68_fl3dind_boxtext_te_thickness_255_draws_like_minus_one stdout ----
+
+thread 'a68_fl3dind_boxtext_te_thickness_255_draws_like_minus_one' (3652724) panicked at tos-api/tests/aes_object_3d_text_button.rs:525:5:
+G_BOXTEXT (FL3DIND, te_thickness = 255): rows differ from the expectation (x 217..246)
+  y= 97  ours |_############################_|
+         want |##############################|
+  y= 98  ours |##############################|
+         want |#...........................l#|
+  y= 99  ours |##############################|
+         want |#.lllllllllllllllllllllllllld#|
+  y=116  ours |##############################|
+         want |#.lllllllllllllllllllllllllld#|
+  y=117  ours |##############################|
+         want |#lddddddddddddddddddddddddddd#|
+  y=118  ours |_############################_|
+         want |##############################|
+
+
+---- a69_transparent_fl3dbak_g_text_stays_unboxed_over_the_background stdout ----
+
+thread 'a69_transparent_fl3dbak_g_text_stays_unboxed_over_the_background' (3652727) panicked at tos-api/tests/aes_object_3d_text_button.rs:525:5:
+G_TEXT (FL3DBAK, TRANSPARENT): rows differ from the expectation (x 217..246)
+  y=100  ours |___llllllllllllllllllllllll___|
+         want |___********___________________|
+  y=101  ours |___llllllllllllllllllllllll___|
+         want |___********___________________|
+  y=102  ours |___l##ll##lllllllllllllllll___|
+         want |___********___________________|
+  y=103  ours |___l##ll##lllllllllllllllll___|
+         want |___********___________________|
+  y=104  ours |___l##ll##lllllllllllllllll___|
+         want |___********___________________|
+  y=105  ours |___ll####llllllllllllllllll___|
+         want |___********___________________|
+  y=106  ours |___ll####llllllllllllllllll___|
+         want |___********___________________|
+  y=107  ours |___lll##lllllllllllllllllll___|
+         want |___********___________________|
+  y=108  ours |___lll##lllllllllllllllllll___|
+         want |___********___________________|
+  y=109  ours |___ll####llllllllllllllllll___|
+         want |___********___________________|
+  y=110  ours |___ll####llllllllllllllllll___|
+         want |___********___________________|
+  y=111  ours |___l##ll##lllllllllllllllll___|
+         want |___********___________________|
+  y=112  ours |___l##ll##lllllllllllllllll___|
+         want |___********___________________|
+  y=113  ours |___l##ll##lllllllllllllllll___|
+         want |___********___________________|
+  y=114  ours |___llllllllllllllllllllllll___|
+         want |___********___________________|
+  y=115  ours |___llllllllllllllllllllllll___|
+         want |___********___________________|
+
+
+---- a70_fl3dbak_g_button_stays_hollow_white_with_a_black_border stdout ----
+
+thread 'a70_fl3dbak_g_button_stays_hollow_white_with_a_black_border' (3652730) panicked at tos-api/tests/aes_object_3d_text_button.rs:525:5:
+G_BUTTON (FL3DBAK): rows differ from the expectation (x 217..246)
+  y=100  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=101  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=102  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=103  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=104  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=105  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=106  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=107  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=108  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=109  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=110  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=111  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=112  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=113  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=114  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+  y=115  ours |__#llllllllllllllllllllllll#__|
+         want |__#........................#__|
+
+
+
+failures:
+    a68_boxtext_te_thickness_255_is_a_one_pixel_outside_border
+    a68_fl3dind_boxtext_te_thickness_255_draws_like_minus_one
+    a69_transparent_fl3dbak_g_text_stays_unboxed_over_the_background
+    a70_fl3dbak_g_button_stays_hollow_white_with_a_black_border
+
+test result: FAILED. 4 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
