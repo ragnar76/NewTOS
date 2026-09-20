@@ -468,7 +468,92 @@ c. **`G_BUTTON`'s interior colour is independent of (b) and is set entirely
    `OUTLINED` → a black box 3 px out + white box 2 px out (double frame);
    `SHADOWED` → solid drop-shadow to lower-right sized by `th`; `CHECKED`
    → check-mark char at top-left; `CROSSED` → an X; `DISABLED` → dither
-   grey; `SELECTED` (non-3D) → XOR-invert the whole rect.
+   grey; `SELECTED` → XOR-invert the rect **iff `!(flags & FL3DOBJ) &&
+   !changecol`** (`gemoblib.c:932-943`) — the rule below.
+
+> **Correction (D-104, A85, 2026-09-20): the `SELECTED` decoration is not
+> "(non-3D)"; the gate is `!(flags & FL3DOBJ) && !changecol`.**
+> `just_draw`'s trailing block reads (`gemoblib.c:932-943`):
+>
+> ```c
+> if (state & SELECTED) {
+>     if (!(flags & FL3DOBJ) && !changecol)        /* :936 */
+>         bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, t.g_x, t.g_y, t.g_w, t.g_h);
+> }
+> ```
+>
+> `FL3DOBJ` is bit `0x0200` (`obdefs.h:92`), set by `FL3DIND` (`0x0200`)
+> and `FL3DACT` (`0x0600`) but **not** by `FL3DBAK` (`0x0400`,
+> `obdefs.h:95-97`). `changecol` is computed once in the preamble
+> (`gemoblib.c:504-525`):
+>
+> - `flags & FL3DOBJ`: `changecol = actcolchange` when `(flags & FL3DMASK)
+>   == FL3DACT`, else (`FL3DIND`) `changecol = indcolchange` (`:509-519`);
+>   `movetext` likewise from `acttxtmove`/`indtxtmove`. Defaults from
+>   `init_3d` (`:1327-1343`): `indtxtmove = 0`, **`indcolchange = 1`**,
+>   `acttxtmove = 1`, **`actcolchange = 0`**; all four are the
+>   `objc_sysvar` `LK3DIND`/`LK3DACT` variables (`ob_sysvar`, `:1350-1369`).
+> - otherwise (no 3D flag **or `FL3DBAK`**): `movetext = FALSE`,
+>   `changecol = !xor_is_ok(obtype, flags, spec)` (`:521-524`).
+>   `xor_is_ok` (`:107-148`): TRUE for `G_IBOX`/`G_STRING`/`G_TITLE`
+>   (`:112-113`); FALSE for `G_IMAGE` (and any `FL3DOBJ`, `:115-116`);
+>   TRUE at ≤ 16 colours (`:118-119`); at more colours, for
+>   `G_BOXTEXT`/`G_FBOXTEXT`/`G_TEXT`/`G_FTEXT` (`te_color`) and
+>   `G_BOX`/`G_BOXCHAR` (`LOWORD(obspec)`) TRUE only if the **spec's**
+>   interior colour (bits 0-3) and text colour (bits 8-11) are both ≤
+>   BLACK (`:125-147`); every other type (`G_BUTTON`, `G_USERDEF`,
+>   `G_ICON`, `G_CICON`) hits `default:` → TRUE (`:136-137`).
+>
+> What each class therefore does when `SELECTED`:
+>
+> | flag class | `changecol` (default) | type body | trailing block (`:932-943`) | bevel (`:950-951`) |
+> |---|---|---|---|---|
+> | none / `FL3DBAK`, b/w spec (or ≤ 16 colours), `G_IBOX`/`G_STRING`/`G_TITLE`/`G_BUTTON` | FALSE | drawn as normal (black text, `backgrcol` face for `FL3DBAK`) | **XOR-invert `t`** | none |
+> | none / `FL3DBAK`, coloured box/text spec at > 16 colours | TRUE | interior `IP_HOLLOW → IP_SOLID/BLACK` else `icol = xor_color(icol)` (`:681-690`); text `tmode = MD_TRANS`, `tcol = xor_color(tcol)` (`:699-706`); button label WHITE (`:807-808`) | nothing | none |
+> | `FL3DIND` | `indcolchange` = 1 | the same swaps (`:681-690`, `:699-706`, `:807-808`); no text move | nothing (`FL3DOBJ`) | sunk |
+> | `FL3DACT` | `actcolchange` = 0 | **no** colour swap; text nudged (`c.g_x++`, `:750-756`; button label at the base position instead of `(-1,-1)`, `:833-836`) | nothing (`FL3DOBJ`) | sunk |
+> | `G_IMAGE` (any class) | TRUE (`xor_is_ok` FALSE) or the 3D value | own `bb_fill(MD_XOR)` over `t` + `bi_color = xor_color(...)` (`:766-770`), unconditional on the flags | nothing for non-3D (`changecol` TRUE); for `FL3DOBJ` never | 3D only |
+> | `G_ICON`/`G_CICON` | — | `gr_gicon` swaps fg/bg (mono) or uses `sel_data`/darkens (colour), `gemgraf.c:710-807`; then `state &= ~SELECTED` (`:790`) | skipped | 3D only |
+> | `G_USERDEF` | as its class | `ob_user` returns the state still to be decorated (`:793`) | XOR if the returned state has `SELECTED` and `changecol` is FALSE | 3D only |
+>
+> Two details of the XOR itself:
+>
+> - **Area.** `t` has already been inset by a *positive* `th` (`if (th > 0)
+>   gr_inside(&t, th)`, `:889-890`); a negative `th` leaves the full rect.
+>   `ob_sst` gives a `G_TITLE` `th = 1` (`gemobjop.c:44-46`), so a dropped
+>   menu title's inverted block is `(x+1, y+1, w-2, h-2)`, one pixel of the
+>   title's rect un-inverted on every side — exactly what the `ob_change`
+>   XOR toggle does as well (`gemoblib.c:1301-1302`, `t.g_x+th …
+>   t.g_w-(2*th)` with `th = 1`).
+> - **Colour.** `MD_XOR` complements the *device* pixel: in the planar
+>   drivers the pixel value (pen ↔ complementary pen per the tables at
+>   `gemoblib.c:52-86`; LWHITE 8 ↔ LBLACK 9 in 16 colours), in the 16-bit
+>   VDI `*work = ~temp` (`vdi/vdi_line.c:484-495`) — the RGB complement, so
+>   a `backgrcol` (LWHITE) face XORs to the dark grey `~LWHITE`, **not** to
+>   the LBLACK pen. Text drawn BLACK before the XOR comes out WHITE, a
+>   dither comes out inverted, and an unfilled object (`G_IBOX`, unboxed
+>   `G_TEXT`/`G_FTEXT`, `G_STRING`) inverts whatever lies under it.
+>
+> Item (c) above says a selected `FL3DBAK` button "may still take" the
+> `:683-687` swap: it cannot — `G_BUTTON` is not in `xor_is_ok`'s switch,
+> so `changecol` is FALSE for every button that is not `FL3DOBJ`, and the
+> hollow-white face is XOR-inverted here instead (the same look, by the
+> other mechanism).
+>
+> **NewTOS status (A85 audit, 2026-09-20):** `tos-api/src/aes/object.rs`
+> `just_draw` has no trailing XOR; it sets `changecol = true` for every
+> non-`FL3DOBJ` object and folds the `:681-690`/`:699-706` swaps into the
+> type arms (unconditionally in the text arm). Matching for the b/w
+> hollow cases (`FL3DBAK`/plain `G_BUTTON`, hollow `G_BOX`/`G_BOXTEXT`,
+> `G_STRING` on white) and for `FL3DIND`/`FL3DACT` boxes and buttons;
+> deviating for a `backgrcol` face (LBLACK pen instead of `~LWHITE`), an
+> unboxed `G_TEXT`/`G_FTEXT` (white text, no block), a `G_IBOX` (nothing),
+> a 3D-flagged `G_STRING` (black on black), a `FL3DACT` `G_BOXTEXT`/
+> `G_TEXT` (colour swapped), a `G_TITLE` (full rect, not inset), a
+> patterned box (solid white), and `xor_color` for pens 2-7/10-15 (`pen ^
+> 1` instead of the `vdi16comp` table). Host tests:
+> `tos-api/tests/aes_object_selected_xor.rs`; see `_discrepancies.md`
+> D-104 and `TASK/A85.md`.
 
 ### `objc_find` (43)
 

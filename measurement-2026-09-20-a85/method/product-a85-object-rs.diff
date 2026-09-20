@@ -1,0 +1,426 @@
+diff --git a/tos-api/src/aes/object.rs b/tos-api/src/aes/object.rs
+index 788d57b..67424c0 100644
+--- a/tos-api/src/aes/object.rs
++++ b/tos-api/src/aes/object.rs
+@@ -896,6 +896,22 @@ const WHITE: Pel = 0;
+ const BLACK: Pel = 1;
+ const GRAY_LT: Pel = 8; // EmuTOS LWHITE — the 3D object face
+ const GRAY_DK: Pel = 9; // EmuTOS LBLACK — the 3D shadow edge
++// The remaining GEM pens (`obdefs.h:109-124`), named for the `xor_color`
++// complement tables (`VDI4COMP`/`VDI16COMP`).
++const RED: Pel = 2;
++const GREEN: Pel = 3;
++const BLUE: Pel = 4;
++const CYAN: Pel = 5;
++const YELLOW: Pel = 6;
++const MAGENTA: Pel = 7;
++const LWHITE: Pel = GRAY_LT;
++const LBLACK: Pel = GRAY_DK;
++const LRED: Pel = 10;
++const LGREEN: Pel = 11;
++const LBLUE: Pel = 12;
++const LCYAN: Pel = 13;
++const LYELLOW: Pel = 14;
++const LMAGENTA: Pel = 15;
+ 
+ // Text justification (`te_just`).
+ const TE_LEFT: i16 = 0;
+@@ -2213,14 +2229,87 @@ pub(crate) fn gr_crack(color: u16) -> (Pel, Pel, u16, Pel, bool) {
+     )
+ }
+ 
+-/// Complementary colour for a SELECTED object (EmuTOS `xor_color`, reduced to
+-/// the palette pairs NewTOS actually uses: white↔black, lwhite↔lblack, …).
+-fn xor_color(c: Pel) -> Pel {
+-    match c {
+-        WHITE => BLACK,
+-        BLACK => WHITE,
+-        _ => c ^ 1,
++/// EmuTOS `vdi4comp` (`gemoblib.c:60`): the complementary pen of each of the
++/// four pens of a 2-plane screen — what an XOR of the pen's *pixel value*
++/// yields, expressed as a pen.
++const VDI4COMP: [Pel; 4] = [BLACK, WHITE, GREEN, RED];
++
++/// EmuTOS `vdi16comp` (`gemoblib.c:83-86`): the complementary pen of each of
++/// the sixteen pens of a 4-plane screen (pixel value XOR `1111`, mapped back
++/// to a pen through the VDI's pen ↔ pixel table). LWHITE ↔ LBLACK, RED ↔
++/// LCYAN, GREEN ↔ LMAGENTA, …
++const VDI16COMP: [Pel; 16] = [
++    BLACK, WHITE, LCYAN, LMAGENTA, LYELLOW, LRED, LBLUE, LGREEN, LBLACK, LWHITE, CYAN, MAGENTA, YELLOW, RED, BLUE,
++    GREEN,
++];
++
++/// Complementary colour for a SELECTED object — EmuTOS `xor_color`
++/// (`gemoblib.c:93-102`): WHITE for a pen beyond 15 or beyond the
++/// workstation's colour count (`gl_ws.ws_ncolors`, here
++/// [`RasterBackend::num_colors`]), the [`VDI4COMP`] entry on a ≤ 4-colour
++/// screen, else the [`VDI16COMP`] entry. This is a *table*, not `pen ^ 1`:
++/// `xor_color(RED) = LCYAN`, not GREEN (A85).
++fn xor_color(backend: &dyn RasterBackend, color: Pel) -> Pel {
++    let ncolors = backend.num_colors();
++    if color >= 16 || color as u16 >= ncolors {
++        return WHITE;
++    }
++    if ncolors <= 4 {
++        return VDI4COMP[color as usize];
+     }
++    VDI16COMP[color as usize]
++}
++
++/// EmuTOS `xor_is_ok` (`gemoblib.c:107-148`): TRUE iff toggling `obj`'s
++/// SELECTED state by an XOR of its rectangle gives the right picture, i.e.
++/// the object is drawn in black and white only.
++///
++/// * `G_IBOX`/`G_STRING`/`G_TITLE` → TRUE (`:112-113`, they have no interior
++///   colour of their own);
++/// * `G_IMAGE` or any `FL3DOBJ` object → FALSE (`:115-116`);
++/// * a workstation of ≤ 16 colours → TRUE (`:118-119`, the pen ↔ pixel table
++///   makes an XOR a pen complement there);
++/// * otherwise, for the TEDINFO family the `te_color` word and for
++///   `G_BOX`/`G_BOXCHAR` the low word of `ob_spec` are checked: TRUE only
++///   if both the interior colour (bits 0-3) and the text colour (bits 8-11)
++///   are ≤ BLACK (`:125-147`); every other type (`G_BUTTON`, `G_USERDEF`,
++///   `G_ICON`, `G_CICON`) takes the `default:` → TRUE (`:136-137`).
++///
++/// `just_draw` derives `changecol = !xor_is_ok(…)` from it for every object
++/// that is not `FL3DOBJ` (`:521-524`); `ob_change` uses it to decide between
++/// its XOR toggle and a redraw (`:1295-1304`).
++fn xor_is_ok(t: ObjTree, ob_type: u16, ob_flags: u16, ob_spec: u64, backend: &dyn RasterBackend) -> bool {
++    if ob_type == G_IBOX || ob_type == G_STRING || ob_type == G_TITLE {
++        return true;
++    }
++    if ob_type == G_IMAGE || ob_flags & FL3DOBJ != 0 {
++        return false;
++    }
++    if backend.num_colors() <= 16 {
++        return true;
++    }
++    let colour_word: u16 = match ob_type {
++        G_BOXTEXT | G_FBOXTEXT | G_TEXT | G_FTEXT => {
++            if ob_spec == 0 {
++                // No TEDINFO to read: the text arm draws nothing for this
++                // object either (EmuTOS would dereference the null pointer).
++                return true;
++            }
++            // SAFETY: the ob_spec of a *TEXT object is a TEDINFO packed at the
++            // tree's ABI width (INDIRECT already resolved by `spec`).
++            unsafe { TedInfo::read_abi(ob_spec, t.abi()).te_color as u16 }
++        }
++        G_BOX | G_BOXCHAR => ob_spec as u16,
++        _ => return true, // G_BUTTON, G_USERDEF, G_ICON, G_CICON
++    };
++    // Interior colour, then text colour: both must be WHITE or BLACK.
++    if (colour_word & 0x000f) as Pel > BLACK {
++        return false;
++    }
++    if ((colour_word >> 8) & 0x000f) as Pel > BLACK {
++        return false;
++    }
++    true
+ }
+ 
+ /// Fill `(x,y,w,h)` with the AES inside pattern `ipat` in colour `icol`
+@@ -2446,30 +2535,25 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+         (x, y, ob_width, ob_height)
+     };
+ 
+-    // Black-on-white look. SELECTED inverts fill/text. A 3D object keeps a
+-    // grey face (the pressed state shows via the bevel, drawn after).
+-    let (fill, ink) = if d3 != 0 {
+-        (GRAY_LT, BLACK)
+-    } else if selected {
+-        (BLACK, WHITE)
++    // SELECTED dynamics (EmuTOS `just_draw`, gemoblib.c:504-525, A85 / D-104):
++    // for an FL3DOBJ object `movetext`/`changecol` are the `objc_sysvar`
++    // variables — an activator nudges its text on press (`acttxtmove`) and
++    // keeps its colour (`actcolchange` = 0), an indicator changes colour
++    // (`indcolchange` = 1) and keeps its text still. For every other object
++    // (no 3D flag **or FL3DBAK**) `movetext` is FALSE and `changecol =
++    // !xor_is_ok(obtype, flags, spec)` (`:521-524`): an object drawn in black
++    // and white is not colour-swapped in the type body at all — it is drawn
++    // normally and the trailing block XOR-inverts its rectangle (`:932-943`);
++    // only a coloured box/text spec on a > 16-colour workstation (or a
++    // G_IMAGE) takes the in-body swaps (`:681-690`, `:699-706`, `:807-808`).
++    let (movetext, changecol) = if d3obj {
++        if d3 == FL3DACT {
++            (ACT_TXTMOVE.load(Ordering::Relaxed) != 0, ACT_COLCHANGE.load(Ordering::Relaxed) != 0)
++        } else {
++            (IND_TXTMOVE.load(Ordering::Relaxed) != 0, IND_COLCHANGE.load(Ordering::Relaxed) != 0)
++        }
+     } else {
+-        (WHITE, BLACK)
+-    };
+-
+-    // 3D dynamics on SELECTED (EmuTOS `just_draw` movetext/changecol): an
+-    // activator nudges its text on press (acttxtmove), an indicator changes
+-    // colour (indcolchange). A non-3D object keeps the classic inversion
+-    // (changecol = true, no move).
+-    let (movetext, changecol) = match d3 {
+-        FL3DACT => (
+-            ACT_TXTMOVE.load(Ordering::Relaxed) != 0,
+-            ACT_COLCHANGE.load(Ordering::Relaxed) != 0,
+-        ),
+-        FL3DIND => (
+-            IND_TXTMOVE.load(Ordering::Relaxed) != 0,
+-            IND_COLCHANGE.load(Ordering::Relaxed) != 0,
+-        ),
+-        _ => (false, true),
++        (false, !xor_is_ok(t, ob_type, ob_flags, ob_spec, backend))
+     };
+ 
+     // Border colour + signed thickness captured from the type body for the
+@@ -2550,15 +2634,17 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+                 };
+             }
+             // SELECTED, but only when the object changes colour (EmuTOS
+-            // `changecol`): a hollow box goes solid black, else xor the
+-            // interior. A 3D activator (actcolchange = 0) keeps its face —
+-            // the bevel alone shows the press.
++            // `changecol`, gemoblib.c:681-690): a hollow box goes solid black,
++            // else the interior takes its complement. A 3D activator
++            // (actcolchange = 0) keeps its face — the bevel alone shows the
++            // press; a black-and-white non-FL3DOBJ box (changecol FALSE) is
++            // drawn as normal and XOR-inverted by the trailing block instead.
+             if selected && changecol {
+                 if ipat == IP_HOLLOW {
+                     ipat = IP_SOLID;
+                     icol = BLACK;
+                 } else {
+-                    icol = xor_color(icol);
++                    icol = xor_color(backend, icol);
+                 }
+             }
+             // D-089 signed thickness: `th > 0` draws the border INSIDE the rect
+@@ -2575,8 +2661,10 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+             deco_bcol = bcol;
+             deco_th = th;
+             effect_icol = icol;
+-            // Text colour, xor'd when selected *and* the object changes colour.
+-            let ink = if selected && changecol { xor_color(tcol) } else { tcol };
++            // Text colour, complemented when selected *and* the object changes
++            // colour (EmuTOS gemoblib.c:699-706; the `tmode = MD_TRANS` half
++            // has no counterpart — `gsx_tblt` here always writes transparently).
++            let ink = if selected && changecol { xor_color(backend, tcol) } else { tcol };
+             if ob_type == G_BOXCHAR {
+                 // A G_BOXCHAR is a TEDINFO-family draw: EmuTOS copies `t`,
+                 // insets it by `tmpth`, applies the 3D `movetext` nudge and
+@@ -2604,23 +2692,35 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+                 // the box, no whole-character truncation, plain `n/2` centring
+                 // on the *uninset* rect, and its own `movetext` rule
+                 // (`tmpx--; tmpy--` while raised, gemoblib.c:833-836).
++                //
++                // The label is BLACK (`tcol = BLACK`, :805) — WHITE only for a
++                // SELECTED button that changes colour (`:807-808`, an FL3DIND
++                // one by default); a plain or FL3DBAK button (`xor_is_ok`
++                // `default:` → TRUE, changecol FALSE) keeps the black label on
++                // its hollow-white face and the trailing XOR inverts both.
+                 let s = read_cstr(ob_spec);
+                 let len = s.len() as i16;
++                let label = if selected && changecol { WHITE } else { BLACK };
+                 let mut tmpx = x + (w - len * crate::vdi::font::CELL_W) / 2;
+                 let mut tmpy = y + (h - crate::vdi::font::CELL_H) / 2;
+                 if movetext && !selected {
+                     tmpx -= 1;
+                     tmpy -= 1;
+                 }
+-                gsx_tblt(backend, AesFont::Ibm, tmpx, tmpy, s, ink, clip);
++                gsx_tblt(backend, AesFont::Ibm, tmpx, tmpy, s, label, clip);
+             }
+         }
+         G_STRING => {
+-            // Menu items / plain strings. SELECTED inverts (menu
+-            // highlight); CHECKED draws a check glyph over the leading blank.
+-            if selected {
+-                backend.fill_rect(x, y, w, h, BLACK, clip);
+-            }
++            // Menu items / plain strings: drawn through the shared string
++            // block in BLACK (`tcol = BLACK`, gemoblib.c:805), never filled.
++            // The SELECTED (menu highlight) look is the trailing XOR of the
++            // whole rect (`:932-943`; `xor_is_ok(G_STRING)` is TRUE, `:112`,
++            // so `changecol` is FALSE and, a G_STRING having `th = 0`, no
++            // inset) over whatever the string was drawn on — a black block
++            // with white glyphs on the white drop-down. CHECKED draws a check
++            // glyph over the leading blank, before the XOR as in EmuTOS's
++            // state block (`:903-908` precede `:932`).
++            let ink = BLACK;
+             if ob_state & CHECKED != 0 {
+                 // EmuTOS draws the CHECKED mark at `t.g_x+2, t.g_y` — 2
+                 // *pixels* to the right, no vertical centring — over the
+@@ -2668,23 +2768,35 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+         }
+         G_TITLE => {
+             // EmuTOS draws a G_TITLE through the shared string block at `t.g_x`
+-            // with no indent (gemoblib.c:801-846) and no box; the menu-dropped
+-            // highlight is a whole-rect XOR (gemoblib.c:932-943,
+-            // `xor_is_ok(G_TITLE) == TRUE`). NewTOS toggles a title's SELECTED
+-            // state by *redrawing* it (`object::change`, not an XOR toggle), so
+-            // the un-highlight redraw must clear the prior BLACK highlight —
+-            // hence the state-driven fill here (BLACK highlight when dropped,
+-            // WHITE clear otherwise) is the b/w equivalent of EmuTOS's XOR and
+-            // is load-bearing for `close_box` / `menu_tnormal` in `aes/menu.rs`
+-            // (removing the un-selected fill would leave black-on-black). The
+-            // 1-cell text indent, by contrast, was pure divergence and is
+-            // dropped so titles sit at `ob_x` like EmuTOS.
+-            backend.fill_rect(x, y, w, h, fill, clip);
++            // with no indent (gemoblib.c:801-846), in BLACK (`:805`) and with
++            // no box or fill; the menu-dropped highlight is the trailing XOR
++            // (gemoblib.c:932-943, `xor_is_ok(G_TITLE) == TRUE`, `:112`) of
++            // the rect **inset by one pixel**: `ob_sst` gives a G_TITLE
++            // `th = 1` (gemobjop.c:44-46) and the state block insets `t` by a
++            // positive `th` before the XOR (`:889-890`), so the inverted block
++            // is `(x+1, y+1, w-2, h-2)` — exactly `ob_change`'s XOR toggle
++            // (`:1301-1302`). `deco_th` carries that `th` to the trailing
++            // block (and to SHADOWED, which EmuTOS sizes by the same `th`).
++            deco_th = 1;
++            // NewTOS toggles a title's SELECTED state by *redrawing* it
++            // (`object::change` redraws instead of EmuTOS's `ob_change` XOR
++            // toggle, `:1295-1304` — TASK/A99), so the un-highlight redraw
++            // has to clear the previous inverted block itself: an unselected
++            // title first paints its rect in the bar's face colour. This fill
++            // is NOT in EmuTOS's `just_draw`; it is load-bearing for
++            // `close_box` / `menu_tnormal` in `aes/menu.rs` until A99 lands
++            // (removing it leaves black-on-black), and `redraw_bar_separator`
++            // there repairs the separator row it covers. The SELECTED draw is
++            // EmuTOS's: text, then the XOR over whatever lies under the title.
++            if !selected {
++                let face = if d3 != 0 { GRAY_LT } else { WHITE };
++                backend.fill_rect(x, y, w, h, face, clip);
++            }
+             let s = read_cstr(ob_spec);
+             // Same string block as G_STRING: IBM font, `t.g_x`, vertically
+             // centred on `gl_hchar` (gemoblib.c:817-845).
+             let tmpy = y + (h - crate::vdi::font::CELL_H) / 2;
+-            gsx_tblt(backend, AesFont::Ibm, x, tmpy, s, ink, clip);
++            gsx_tblt(backend, AesFont::Ibm, x, tmpy, s, BLACK, clip);
+         }
+         G_TEXT | G_BOXTEXT | G_FTEXT | G_FBOXTEXT => {
+             // The TEDINFO interior is read at the tree's ABI width, so an ILP32
+@@ -2741,13 +2853,20 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+                         th = 0;
+                     }
+                 }
+-                // SELECTED (EmuTOS `changecol`): xor the interior + text.
+-                if selected {
++                // SELECTED interior swap, only when the object changes colour
++                // (EmuTOS `changecol && (state & SELECTED)`, gemoblib.c:681-690)
++                // and only for a boxed text — the swap sits inside the
++                // `case G_BOXTEXT: case G_FBOXTEXT:` fill (`:669-693`), which
++                // an unpromoted G_TEXT/G_FTEXT never reaches. A black-and-white
++                // non-FL3DOBJ text (changecol FALSE) is drawn as normal and
++                // XOR-inverted by the trailing block; an FL3DACT one
++                // (actcolchange = 0) keeps its `backgrcol` face.
++                if selected && changecol && is_box {
+                     if ipat == IP_HOLLOW {
+                         ipat = IP_SOLID;
+                         icol = BLACK;
+                     } else {
+-                        icol = xor_color(icol);
++                        icol = xor_color(backend, icol);
+                     }
+                 }
+                 // D-089 signed thickness (see the box arm above): positive =
+@@ -2775,8 +2894,13 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+                 } else {
+                     raw
+                 };
+-                // Text colour from te_color, xor'd when SELECTED (EmuTOS).
+-                let ink = if selected { xor_color(tcol) } else { tcol };
++                // Text colour from te_color, complemented when SELECTED *and*
++                // the object changes colour (EmuTOS gemoblib.c:699-706; the
++                // `tmode = MD_TRANS` half has no counterpart, `gsx_tblt` always
++                // writes transparently). Otherwise the text stays `tcol` and,
++                // for a non-FL3DOBJ object, the trailing XOR inverts it with
++                // its ground.
++                let ink = if selected && changecol { xor_color(backend, tcol) } else { tcol };
+                 // EmuTOS: `rc_copy(&t,&c); gr_inside(&c, tmpth);` then the 3D
+                 // `movetext` nudge, then `gr_gtext(te_just, te_font, te_ptext,
+                 // &c)` (gemoblib.c:735-757) — so the text sits inside a
+@@ -2816,11 +2940,15 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+                         mode: WriteMode::Xor,
+                     };
+                     backend.fill_pattern(x, y, w, h, pat, clip);
+-                    xor_color(bi.bi_color as Pel)
++                    xor_color(backend, bi.bi_color as Pel)
+                 } else {
+                     bi.bi_color as Pel
+                 };
+                 blit_image(backend, bi, x, y, col, clip);
++                // The trailing block never XORs a G_IMAGE a second time:
++                // `xor_is_ok(G_IMAGE)` is FALSE (`:115-116`), so `changecol`
++                // is TRUE for a non-FL3DOBJ image, and an FL3DOBJ one is
++                // excluded by the flag test (`:936`).
+             }
+         }
+         G_ICON | G_CICON => {
+@@ -2851,6 +2979,11 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+                 };
+                 draw_icon(backend, &ib, x, y, ob_state, cicon.as_ref(), clip);
+             }
++            // `gr_gicon` has rendered the selection itself (fg/bg swap or
++            // `sel_data`/darkening); EmuTOS clears the bit so the trailing
++            // SELECTED XOR never touches an icon (`state &= ~SELECTED`,
++            // gemoblib.c:790).
++            ob_state &= !SELECTED;
+         }
+         // AUD-P3-002: an application-drawn object. Fill a PARMBLK and call its
+         // `ub_code` (EmuTOS `just_draw` G_USERDEF, gemoblib.c:792-794:
+@@ -2871,8 +3004,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+     // OUTLINED → SHADOWED → CHECKED → CROSSED → DISABLED → SELECTED, then the
+     // 3D bevel last (gemoblib.c:867-952). CHECKED is drawn inline in the
+     // G_STRING arm (the only checked object type NewTOS renders); the trailing
+-    // SELECTED XOR is folded into each type's inline colour inversion (EmuTOS's
+-    // `changecol` path) for the black/white palette.
++    // SELECTED XOR is the last decoration below (A85).
+ 
+     // D3: EmuTOS draws NO extra frame for DEFAULT — `just_draw` never reads
+     // the DEFAULT flag; a default button's heavier look comes entirely from
+@@ -2925,6 +3057,49 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+         backend.fill_pattern(x, y, w, h, pat, clip);
+     }
+ 
++    // SELECTED (A85 / D-104): the last state decoration, EmuTOS
++    // gemoblib.c:932-943 —
++    //
++    //     if (state & SELECTED)
++    //         if (!(flags & FL3DOBJ) && !changecol)
++    //             bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, t.g_x, t.g_y, t.g_w, t.g_h);
++    //
++    // An object that is neither an indicator/activator (FL3DBAK is *not*
++    // FL3DOBJ, obdefs.h:92-97) nor colour-changing (`changecol`, preamble) is
++    // drawn as normal by its type arm and inverted here; a `changecol` object
++    // was swapped in the type body instead, and an FL3DOBJ object shows its
++    // press by the bevel and the text nudge alone. `ob_state` is what the type
++    // arm left: an icon has cleared SELECTED (`:790`), a G_USERDEF's callback
++    // returned the bits it did not handle (`:793`) — so a userdef that hands
++    // SELECTED back is inverted by the AES, as in EmuTOS.
++    //
++    // The rectangle is `t` after the state block's inset by a *positive* `th`
++    // (`if (th > 0) gr_inside(&t, th)`, `:889-890`) — `deco_th` is the type
++    // arm's final `th` (a G_TITLE's 1, gemobjop.c:44-46; a promoted G_TEXT's
++    // 0; a box's spec byte); a negative (outside) border leaves the full rect.
++    // `MD_XOR` with the solid pattern complements every device pixel
++    // (`vdi/vdi_line.c:484-495` `*work = ~temp`; the kernel backend's
++    // `xor_pixel`): a hollow-white box becomes black with white text, an
++    // LWHITE ground becomes its RGB complement (not the LBLACK pen), a dither
++    // its inverse, and an unfilled object (G_IBOX, G_STRING, unboxed text)
++    // inverts whatever lies under it.
++    if ob_state & SELECTED != 0 && !d3obj && !changecol {
++        let (tx, ty, tw, th_) = if deco_th > 0 {
++            (x + deco_th, y + deco_th, w - 2 * deco_th, h - 2 * deco_th)
++        } else {
++            (x, y, w, h)
++        };
++        if tw > 0 && th_ > 0 {
++            let pat = PatternFill {
++                fg: BLACK,
++                bg: WHITE,
++                pattern: &IP_PATTERNS[IP_SOLID as usize],
++                mode: WriteMode::Xor,
++            };
++            backend.fill_pattern(tx, ty, tw, th_, pat, clip);
++        }
++    }
++
+     // 3D bevel LAST (EmuTOS gemoblib.c:950-951 calls add_3d_effect after the
+     // whole state block, gated on `flags & FL3DOBJ`) over the grown rect
+     // (`effect_grect`, :545) with the saved `ob_sst` thickness and the

@@ -1,0 +1,17 @@
+# A85 (kernel desktop, sd-base, no #Z): park bottom-right, dump idle; hover
+# the "File" title (76,8) -> drop-down opens (title SELECTED = XOR inset 1);
+# park bottom-right again (the tracker keeps the box open until a button
+# edge), dump; hover the first item row from the right end of the box so the
+# pointer covers no glyph, dump (item SELECTED = G_STRING XOR); park; click
+# outside -> cancel: box restored, title normal, dump.
+200 parkbr
+1100 mark A_IDLE
+1400 move 76 8
+1800 parkbr
+2400 mark B_FILE_OPEN
+2700 move 200 28
+3200 mark C_ITEM_HOVER
+3500 parkbr
+4000 down
+4003 up
+4600 mark D_CLOSED

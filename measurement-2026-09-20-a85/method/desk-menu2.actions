@@ -1,0 +1,14 @@
+# A85 second desk run: as desk-menu.actions, but the item hover lands on an
+# ENABLED item ("Search...", row 3 of the File box, y=66; the first row "Open"
+# is DISABLED without a selection and never highlights).
+200 parkbr
+1100 mark A_IDLE
+1400 move 76 8
+1800 parkbr
+2400 mark B_FILE_OPEN
+2700 move 200 66
+3200 mark C_ITEM_HOVER
+3500 parkbr
+4000 down
+4003 up
+4600 mark D_CLOSED

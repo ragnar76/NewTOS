@@ -1,0 +1,13 @@
+# A85 (TeraDesk via #Z, sd-tera): the same gesture on TeraDesk's bar -- the
+# h03 run2 geometry ("File" hovered at (72,8)); item row 1 at y=28.
+200 parkbr
+1100 mark A_IDLE
+1400 move 72 8
+1800 parkbr
+2400 mark B_FILE_OPEN
+2700 move 200 28
+3200 mark C_ITEM_HOVER
+3500 parkbr
+4000 down
+4003 up
+4600 mark D_CLOSED

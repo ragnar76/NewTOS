@@ -4382,3 +4382,62 @@ spec-wording imprecision found while extending the spec for TASK/A68–A70,
 corrected against the EmuTOS source directly.
 
 ---
+
+## D-104: `just_draw`'s trailing `SELECTED` XOR is gated on `!(flags & FL3DOBJ) && !changecol`, not on "non-3D" — a `FL3DBAK` object is XOR-inverted, a `FL3DOBJ` object never is, and a `changecol` object is colour-swapped in the type body instead
+
+**Date:** 2026-09-20 (TASK/A85 audit)
+**Phase 00b spec:** `docs/api/aes/object-form.md` (`objc_draw` / `just_draw`
+per-type rendering, item 8 "State decorations")
+
+**Context:** Item 8 summarised the last state decoration as "`SELECTED`
+(non-3D) → XOR-invert the whole rect". "(non-3D)" is the same imprecision
+D-103 removed from item 2: it reads as "any 3D flag leaves this regime",
+which is wrong in both directions — a `FL3DBAK` object *is* XOR-inverted,
+and a non-3D object is *not* when `changecol` is set. NewTOS's `object.rs`
+was written against the loose wording (no trailing XOR at all; a per-type
+inline colour swap with `changecol = true` for every non-`FL3DOBJ` object).
+
+**EmuTOS (confirmed by trace and by host test):** `aes/gemoblib.c:932-943`:
+
+```c
+if (state & SELECTED) {
+    if (!(flags & FL3DOBJ) && !changecol)
+        bb_fill(MD_XOR, FIS_SOLID, IP_SOLID, t.g_x, t.g_y, t.g_w, t.g_h);
+}
+```
+
+`FL3DOBJ` = `0x0200` (`include/obdefs.h:92`) is carried by `FL3DIND`
+(`0x0200`) and `FL3DACT` (`0x0600`), not by `FL3DBAK` (`0x0400`,
+`obdefs.h:95-97`). `changecol` (`gemoblib.c:504-525`): for `FL3DOBJ` it is
+`actcolchange` (`FL3DACT`) or `indcolchange` (`FL3DIND`) — `init_3d`
+(`:1327-1343`) sets `indcolchange = 1`, `actcolchange = 0`, both
+`objc_sysvar`-settable (`ob_sysvar`, `:1350-1369`); otherwise it is
+`!xor_is_ok(obtype, flags, spec)` (`:524`), and `xor_is_ok` (`:107-148`)
+is TRUE for `G_IBOX`/`G_STRING`/`G_TITLE`, FALSE for `G_IMAGE`, TRUE at
+≤ 16 colours, and at more colours TRUE for the box/text families iff the
+spec's interior and text colours are ≤ BLACK; `G_BUTTON`/`G_USERDEF`/icons
+hit `default:` → TRUE. A `changecol` object is swapped *in the type body*
+instead (`:681-690` interior, `:699-706` text colour + `MD_TRANS`, `:807-808`
+button label WHITE); a `FL3DOBJ` object without `changecol` (an activator
+by default) gets neither — only the text nudge (`:750-756`, `:833-836`) and
+the sunk bevel (`:950-951`). The XOR covers `t` after the positive-`th`
+inset at `:889-890` (a `G_TITLE` has `th = 1`, `gemobjop.c:44-46`, so the
+dropped-title block is inset by one pixel, as in `ob_change`'s toggle,
+`:1301-1302`), and in the 16-bit VDI it is the RGB complement of the
+device pixel (`vdi/vdi_line.c:484-495`), not a pen swap.
+
+**Compendium / Profibuch:** describe SELECTED only as "the object is
+displayed inverted"; neither mentions `changecol`, the 3D gate or the
+`th` inset. Not a documentation conflict — an EmuTOS-internal rule the spec
+had compressed into one wrong word.
+
+**Decision:** Item 8's `SELECTED` sentence rewritten to the exact gate with
+a per-class table (flag class × `changecol` → type-body swap / trailing
+XOR / bevel), the XOR area and colour semantics, and a note that item (c)'s
+"a selected `FL3DBAK` button may still take the `:683-687` swap" cannot
+happen (`G_BUTTON` → `xor_is_ok` TRUE). NewTOS's deviations from the rule
+are recorded there and in `TASK/A85.md`; the pinning host tests are
+`tos-api/tests/aes_object_selected_xor.rs` (three cells pass, eleven fail
+against the EmuTOS expectation as of this entry).
+
+---

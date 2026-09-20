@@ -1,0 +1,59 @@
+--- /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/aes_object_selected_xor.rs.lead	2026-09-20 23:38:20
++++ tos-api/tests/aes_object_selected_xor.rs	2026-09-20 23:19:16
+@@ -137,16 +137,22 @@
+     fn pel_to_device16(&self, pel: Pel) -> u16 {
+         self.palette.lock().unwrap()[pel as usize]
+     }
++    /// The kernel's convention (`VdiScreen::device_to_rgb565`): the wire
++    /// word is RGB555-in-565 — green in bits 6-10, bit 5 the overlay bit —
++    /// as `seed_palette` packs it (EmuTOS `set_color16`, `vdi_col.c`).
+     fn device_to_rgb565(&self, argb: u32) -> u16 {
+-        let (r, g, b) = ((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
+-        (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)) as u16
++        let r5 = ((argb >> 19) & 0x1f) as u16;
++        let g5 = ((argb >> 11) & 0x1f) as u16;
++        let b5 = ((argb >> 3) & 0x1f) as u16;
++        (r5 << 11) | (g5 << 6) | b5
+     }
++    /// The kernel's `pal555_to_xrgb`: 5→8-bit gun replication, so WHITE is
++    /// `0xFFFFFF` and BLACK `0x000000` — the XOR of one is the other,
++    /// exactly as on the device (a 6-bit green decode of the 5-bit word
++    /// would leave WHITE at `0xFFFBFF` and no b/w XOR cell could match).
+     fn rgb565_to_device(&self, px: u16) -> u32 {
+-        let (r5, g6, b5) = ((px >> 11) & 0x1F, (px >> 5) & 0x3F, px & 0x1F);
+-        let r = ((r5 << 3) | (r5 >> 2)) as u32;
+-        let g = ((g6 << 2) | (g6 >> 4)) as u32;
+-        let b = ((b5 << 3) | (b5 >> 2)) as u32;
+-        (r << 16) | (g << 8) | b
++        let x = |c5: u16| ((c5 << 3) | (c5 >> 2)) as u32;
++        (x((px >> 11) & 0x1F) << 16) | (x((px >> 6) & 0x1F) << 8) | x(px & 0x1F)
+     }
+     fn read_pixel(&self, x: i16, y: i16) -> Pel {
+         if !Self::inside(x, y) {
+@@ -747,7 +753,14 @@
+     let b = draw(&t);
+     // Interior beyond the glyph cell (grown rect x 218..245, glyph at 219..226).
+     assert_eq!(row(b, 108, 230, 244), "l".repeat(15), "SELECTED FL3DACT G_BOXTEXT face must stay backgrcol");
+-    let glyph: String = (98..118).map(|y| row(b, y, 218, 228)).collect();
++    // The glyph cell: `gr_gtext` centres the 16-row cell in the grown
++    // 20-row rect (`gr_just`, `gemgraf.c:567-589`) → y 100..115; x 218..228
++    // covers the BLACK left bevel line (218), the nudged glyph (219..226)
++    // and face. The bevel's bottom line at y = 117 is *outside* the scan on
++    // purpose: it is WHITE — LWHITE would vanish into the LWHITE face
++    // (`add_3d_effect`, `:270-272`), the same fallback the FL3DACT G_BUTTON
++    // guard above pins — and is not text.
++    let glyph: String = (100..116).map(|y| row(b, y, 218, 228)).collect();
+     assert!(glyph.contains('#'), "the text must be drawn BLACK (changecol = 0): {glyph}");
+     assert!(!glyph.contains('.'), "the text must not be xor'd to WHITE: {glyph}");
+ }
+@@ -838,7 +851,9 @@
+     assert_eq!(row(b, 115, 220, 243), ".".repeat(24), "bottom row of the title rect stays un-inverted:\n{c}");
+     assert_eq!(class(b, 220, 108), '.', "left column stays un-inverted:\n{c}");
+     assert_eq!(class(b, 243, 108), '.', "right column stays un-inverted:\n{c}");
+-    assert_eq!(row(b, 101, 236, 243), "#".repeat(8), "inside the inset the ground is inverted:\n{c}");
++    // `t.g_x + 1 .. t.g_x + t.g_w - 2` = 221..242 is inverted; 243 is the
++    // un-inverted right column again (`gr_inside(&t, 1)`, `:889-890`).
++    assert_eq!(row(b, 101, 236, 243), "#######.", "inside the inset the ground is inverted:\n{c}");
+ }
+ 
+ /// A non-3D `G_IBOX` (`th = -1`), SELECTED, on the LWHITE ground:

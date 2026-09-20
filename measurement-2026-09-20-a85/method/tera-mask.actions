@@ -1,0 +1,13 @@
+# A85 TeraDesk: hover the "View" title (133,8) -> drop-down; move onto the
+# last item "Set mask..." (MSETMASK, row 15 of the 16-row box -> y 259..274), dump; click
+# it -> the SETMASK dialog (tree 9: FTYPE1..4 non-3D G_FTEXT list rows on a
+# FL3DBAK box); park the pointer bottom-right, dump the dialog.
+200 parkbr
+1100 mark A_IDLE
+1400 move 133 8
+1800 move 200 266
+2300 mark B_VIEW_OPEN
+2500 down
+2503 up
+3500 parkbr
+4200 mark C_SETMASK_DIALOG

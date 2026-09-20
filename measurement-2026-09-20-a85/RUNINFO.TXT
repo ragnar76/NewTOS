@@ -1,0 +1,154 @@
+A85 -- just_draw's SELECTED rendering restructured to EmuTOS's model: changecol from
+xor_is_ok / the 3D sysvars, the in-body colour swaps only under changecol, the trailing
+XOR gated on !(flags & FL3DOBJ) && !changecol over the rect inset by a positive th,
+xor_color from the vdi16comp table. Developer self-evidence, 2026-09-20. Branch desk-rebuild,
+base HEAD 25c72a7, changes uncommitted in the tree. Pinned EmuTOS references/emutos @ 1a7484ab:
+aes/gemoblib.c:83-86 (vdi16comp), :93-102 (xor_color), :107-148 (xor_is_ok), :504-525 (changecol/
+movetext), :681-690 (box interior swap), :699-706 (text colour swap + MD_TRANS), :790 (icon clears
+SELECTED), :793 (ob_user returns the state), :805-808 (button label WHITE), :889-890 (inset by th),
+:932-943 (the trailing XOR), :950-951 (bevel), :1295-1304 (ob_change XOR toggle -- A99, not touched);
+aes/gemobjop.c:44-46 (G_TITLE th = 1); vdi/vdi_line.c:484-495 (WM_XOR = complement of the device
+pixel). Spec (Researcher, uncommitted, untouched): docs/api/aes/object-form.md item 8 + the D-104
+blockquote; docs/api/_discrepancies.md D-104.
+
+PRODUCT CODE (uncommitted; method/product-a85-object-rs.diff, 301 lines)
+  tos-api/src/aes/object.rs
+    + pen constants RED..LMAGENTA, LWHITE/LBLACK aliases (obdefs.h:109-124)
+    + VDI4COMP / VDI16COMP tables; xor_color(backend, pen) per :93-102 (>= 16 or >= num_colors ->
+      WHITE; <= 4 colours -> vdi4comp; else vdi16comp) -- was `pen ^ 1`
+    + xor_is_ok(t, type, flags, spec, backend) per :107-148 (TEDINFO te_color read at the tree's ABI;
+      a null spec -> TRUE, the text arm draws nothing for it anyway)
+    just_draw preamble: (movetext, changecol) = FL3DOBJ ? (act/ind sysvars by FL3DACT/FL3DIND)
+      : (false, !xor_is_ok(...)) -- was `_ => (false, true)`; the (fill, ink) tuple is gone
+    box arm: interior swap unchanged in shape (already gated on changecol), xor_color(backend, ..);
+      G_BUTTON label BLACK, WHITE only when selected && changecol (:805-808)
+    G_STRING arm: no SELECTED fill; ink BLACK; CHECKED mark BLACK (the trailing XOR inverts both)
+    G_TITLE arm: no SELECTED fill; deco_th = 1 (gemobjop.c:44-46); text BLACK. The UNSELECTED
+      redraw keeps a face fill (WHITE / GRAY_LT under a 3D flag) as the compensation for
+      object::change redrawing instead of XOR-toggling (A99) -- commented as NOT EmuTOS
+    text arm: interior swap only if selected && changecol && is_box (:669-693); text colour swap
+      only if selected && changecol (:699-706)
+    G_IMAGE arm: xor_color(backend, ..); comment why the trailing block never XORs it twice
+    G_ICON/G_CICON arm: ob_state &= !SELECTED after draw_icon (:790)
+    trailing block, after DISABLED: if ob_state & SELECTED && !d3obj && !changecol ->
+      backend.fill_pattern(t inset by deco_th when > 0, PatternFill { fg BLACK, bg WHITE,
+      IP_SOLID, WriteMode::Xor }) -- the kernel backend's combine/xor_pixel complements the
+      device pixel (kernel/src/vdi_backend.rs:278-301, :324-336)
+    add_3d_effect call unchanged (still `selected` from the top of just_draw)
+  tos-api/tests/aes_object_selected_xor.rs  (the lead's 14 tests; three harness/expectation
+    corrections, method/test-file-changes-vs-lead-version.diff -- see HOST TESTS)
+  docs/STATUS.md              Phase-13 fragment + one Recent Decisions row (2026-09-20)
+  TASK/A85.md ERLEDIGT + Abschluss; TASK/A85-STATUS-DONE.MD
+
+HOST TESTS (host-tests/)
+  aes_object_selected_xor-RED-before-HEAD-object-rs.txt   the final test file against HEAD's
+      object.rs (hand-swapped in, run, swapped back, cmp identical): 3 passed / 11 FAILED --
+      the same 3/11 split as the lead's version.
+  aes_object_selected_xor-GREEN-after.txt   14/14 ok.
+  cargo-test-no-fail-fast-BEFORE.log   cargo test -p tos-api -p tos-types -p xtask --no-fail-fast
+      on the tree as received: 737 passed / 11 failed / 2 ignored (the 11 = A85).
+  cargo-test-no-fail-fast-AFTER.log    748 passed / 0 failed / 2 ignored (= baseline 734 + 14).
+      No existing expectation changed: the menu save-under, cursor-bracket, 3D box/button,
+      cicon, font and nicelines pixel tests all pass unchanged (the b/w hollow cases are
+      pixel-identical, as the ticket required).
+  Test-file corrections (all three make an expectation reachable, none weakens one):
+    (1) BufBackend::device_to_rgb565 / rgb565_to_device decoded the 555-in-565 palette word
+        seed_palette packs (green << 6) as 6-bit green: WHITE came out 0xFFFBFF, so XOR(BLACK) =
+        0xFFFFFF matched no pen and XOR(WHITE) = 0x000400 was not BLACK -- no b/w XOR cell could
+        ever match ('?'). Now the kernel's convention (VdiScreen::device_to_rgb565 / pal555_to_xrgb).
+    (2) a85_selected_g_title_xor_is_inset_by_th_one: the last assertion wanted x = 236..243 all
+        '#', contradicting its own "right column 243 stays un-inverted" line above it; EmuTOS's
+        gr_inside(&t, 1) inverts 221..242 -> "#######.".
+    (3) a85_selected_fl3dact_g_boxtext_keeps_face_and_black_text: the "no WHITE in the glyph
+        area" scan ran y 98..117 and so included the bevel's bottom line at y = 117, which EmuTOS
+        draws WHITE (LWHITE would vanish into the LWHITE face, add_3d_effect :270-272 -- the same
+        fallback the FL3DACT G_BUTTON guard pins); the scan is now the 16-row glyph cell y 100..115.
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log    cargo xtask build --board rpi4: tos-api and kernel recompiled, rustc
+                          tos-api 64 / kernel 94, rc 0 (baseline 64/94, delta 0). Tree kernel8.img
+                          sha256 f727af0a... (dev, rpi4; not used for the dumps). No qemu-virt build
+                          (lead's instruction).
+  clippy-tos-api-host.txt cargo clippy -p tos-api: 80 (baseline 81, measured by hand-swapping HEAD's
+                          object.rs: clippy-tos-api-host-BEFORE-HEAD-object-rs.txt; object.rs 17 -> 16,
+                          one pre-existing collapsible-if in the icon arm is no longer collapsible).
+                          --test aes_object_selected_xor: 0 hits in the test file.
+  scratch-r{1,2,3}-*-build.log  the injector scratch kernels (dev, rpi4): tos-api 67 / kernel 105 =
+                          the H02/A46/A78 injector + trace scaffolding of the scratch copy (as A79/A84);
+                          scratch-r3-fsel-*: + the fsel preview wiring (method/a85_fsel_preview_patch.py).
+  make-sd-image.log       tools/make-sd-image.sh <scratch>/img/sd-base.img 64
+
+QEMU raspi4b (a79/method/run.sh; 640x480, -display none, QMP screendump 0.3 s after each serial
+mark; every run boots a fresh copy of the image; grep -c "EXC\|PANIC\|panic" = 0 in all 16 logs).
+BEFORE = scratch with tos-api/src/aes/object.rs = HEAD 25c72a7; AFTER = the tree. Same scripts,
+same images, so a pixel diff isolates this change. Pointer parked bottom-right for the title dumps.
+
+  r1 desk  (sd-base, method/desk-menu.actions: parkbr; A_IDLE; hover "File" (76,8); parkbr;
+            B_FILE_OPEN; hover row 1 (200,28); C_ITEM_HOVER; parkbr; click -> D_CLOSED)
+     desk-before-*.png / desk-after-*.png
+     A-idle 0 px; B-file-open 86 px, bbox (52,0)-(104,18) = the File title's rect only;
+     C-item-hover 86 px (same title pixels; the hovered "Open" is DISABLED, no highlight);
+     D-closed 0 px (title normal again, separator intact -- the A99 compensation holds).
+     THE 86 PIXELS (title rect x 52..103, y 0..18): row y=0 all 52 px BLACK -> WHITE; rows
+     y=1..17 the two columns x=52 and x=103 BLACK -> WHITE; row y=18 (the bar's separator line)
+     unchanged BLACK -- before, the full-rect fill painted it, now the inset XOR leaves the line.
+     = EmuTOS's (x+1, y+1, w-2, h-2) inset (gemobjop.c:44-46, gemoblib.c:889-890,940).
+  r1 tera  (sd-tera, method/tera-menu.actions: the same gesture on TeraDesk's bar, File at (72,8))
+     tera-before-*.png / tera-after-*.png
+     A-idle 0; B-file-open 82 px, bbox (64,0)-(112,18) = the title (48 + 2*17); C-item-hover 82 px
+     (title only -- the highlighted "Open..." G_STRING row is BYTE-IDENTICAL: black block, white
+     glyphs, both mechanisms); D-closed 0.
+     Reference measurement-2026-09-17-h03/screendumps/run2-shipped-a-file-menu-open.png is the
+     TeraDesk File menu of that day (pointer on the title, same title rect x 64..111, y 0..18):
+     h03 vs BEFORE differ in 36 px (the pointer only), h03 vs AFTER in 118 = 36 + the 82 inset px:
+     row y=0 (48 px) and the columns x=64 / x=111 in rows y=1..17 are now WHITE; row y=18 is the
+     bar's BLACK separator in all three.
+  r2 desk  (method/desk-menu2.actions: hover row 3 "Search..." (200,66), an ENABLED item)
+     desk2-*: A 0; B 86 (title); C-item-hover 86 (title only -> the G_STRING highlight identical);
+     D 0.
+  r2 tera  (method/tera-mask.actions: hover "View" (133,8); onto "Set mask..." (200,266); click ->
+            the SETMASK dialog; parkbr; C_SETMASK_DIALOG)
+     tera2-*: A 0; B-view-open 82 (View title, x 112..159); C-setmask 1422 px = 82 (View title,
+     still SELECTED under the modal dialog, TeraDesk un-hilites after it) + 1340 in the list row
+     (320..415, 209..224 = FTYPE1, TeraDesk tree 9 obj 6, non-3D G_FTEXT 0x1100 on the FL3DBAK box):
+     before (189,189,189) LWHITE ground with 196 white glyph px ("white on grey"); after (66,66,66)
+     = ~LWHITE, the RGB complement (vdi_line.c:494), same 196 white glyph px -- the XOR bar.
+  r3 about (method/desk-about.actions = A68-A70's: hover Desk (22,8); click "Desktop info..."
+            (60,28) -> the form_alert)
+     about-*: A 0; B-desk-menu 86 (Desk title, x 0..51); C-about-alert 86 = the Desk title ONLY,
+     the alert (FL3DACT OK button, FL3DBAK panel) is byte-identical (guard).
+  r3 fsel  (scratch + fsel::preview() before sh_main, marker, halt -- the A63/A64 showcase)
+     fsel-before.png / fsel-after.png: 0 differing pixels (guard: drive C SELECTED FL3DIND =
+     colour change + sunk bevel, the other drives DISABLED, OK/Cancel FL3DACT).
+
+  Not run: QED (a file-open through the file selector is not cheap by injector, and no QED
+  object class changed beyond the general rule). The kernel desktop's "Set file mask..." dialog
+  (an edit field, no selectable list) was not dumped.
+
+OUT OF SCOPE (observed, untouched)
+  (1) object::change redraws instead of EmuTOS's XOR toggle (ob_change :1295-1304, A99). With the
+      trailing XOR this now MATTERS for objects without an opaque fill: an unboxed G_TEXT/G_FTEXT,
+      G_IBOX or G_USERDEF that is SELECTED via objc_change(redraw) shows the correct XOR bar, but a
+      later objc_change(unselected, redraw) redraws its text over the still-inverted block instead
+      of toggling it back -> the bar stays until the parent is redrawn. Before this change the
+      selected state of such objects was (wrongly) white glyphs on the untouched ground, so the
+      redraw-deselect happened to work. TeraDesk's SETMASK list rows are exactly this class; the
+      dialog's initial draw is right (measured), a second click on another row is expected to
+      leave the first bar (not measured -- no injector click was spent on it). G_STRING (menu.rs
+      rehilite paints WHITE first) and G_TITLE (the fill kept in the arm) are compensated as before.
+  (2) add_3d_effect still receives `selected` from the top of just_draw; EmuTOS passes the state
+      the type arm left (an icon's cleared SELECTED, a userdef's returned state, :951). Lead said
+      unchanged.
+  (3) CROSSED/DISABLED decorations use the un-inset rect; EmuTOS insets t once for the whole
+      state block (:889-890). Pre-existing.
+  (4) MD_REPLACE text (TEDINFO tmode) is drawn transparently by gsx_tblt; EmuTOS's
+      `tmode = MD_TRANS` under changecol therefore has no counterpart. Pre-existing.
+  (5) The sibling test harnesses (aes_object_3d_box_border.rs, aes_window_color_words.rs, ...)
+      carry the same 6-bit-green decode of the 555 palette word; harmless there (no XOR), left.
+  (6) tos-api/tests/aes_object_cursor_bracket.rs's backend paints every fill_pattern opaque
+      (mode-blind); its SELECTED hollow G_BOX row reads BLACK by fg = BLACK of the XOR fill, so
+      the test passes for the right picture by a mode-blind path. Left.
+
+OPEN
+  Pi acceptance (Tester/Lead; nothing flashed). A99 (ob_change XOR toggle) is the natural next
+  step and now has xor_is_ok in object.rs to build on.
