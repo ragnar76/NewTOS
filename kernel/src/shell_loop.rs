@@ -349,18 +349,25 @@ fn p_setappdir(cmd: &[u8]) {
 /// [`crate::launch::run_program_with_tail_rc`] at the moment the child gets its
 /// process slot ([`tos_api::aes::register_process`] →
 /// `tos_api::aes::pd::register`), because NewTOS's AES process descriptors are
-/// keyed on that slot rather than on EmuTOS's single permanently-`rlr` AESPD 0,
-/// so the descriptor to rename and clear is only identified there. Both launch
-/// paths go through it: this shell loop's NORMAL/AUTORUN arm and the desktop's
-/// double-click ([`crate::desk`]).
+/// keyed on that slot (A62: one entry per GEMDOS slot plus one for this
+/// kernel-context desktop, `tos_api::aes::pd::DESKTOP`), so the descriptor to
+/// rename and clear is only identified there. Both launch paths go through it:
+/// this shell loop's NORMAL/AUTORUN arm and the desktop's double-click
+/// ([`crate::desk`]).
 ///
-/// What remains a deviation is only the descriptor *identity*: reworking it to
-/// EmuTOS's "one AESPD, renamed sequentially" model is item 10 of the plan's
-/// gap list and belongs to the stage that moves the desktop out of the kernel.
-/// The behaviour EmuTOS gets from that model at this boundary — a program never
-/// starting on the previous occupant's flags or messages — is in place (A28):
-/// the flag reset in `pd::register`, the queue drain in the desktop's own
-/// `appl_exit()` (`deskmain.c:2166`, `crate::desk::main::desktop_relinquish`).
+/// Item 10 of the plan's gap list ("AESPD numbering + `p_nameit`/`p_setappdir`
+/// on `rlr`") is closed as far as the *identity* goes: like EmuTOS's `AESPD`s
+/// (`aes/gempd.c:32-35`), NewTOS's exist per index from boot, `appl_init`
+/// cannot fail, and the descriptor a program is renamed into is the one its
+/// slot has always had. What still differs is the **reported value** — EmuTOS
+/// reports 0 for the whole application chain, NewTOS still slot + 1
+/// (`tos_api::aes::appl::reported_pid`); that is A56, spec § "AES process
+/// identity and pid", contract (b). The behaviour EmuTOS gets from its model at
+/// this boundary — a program never starting on the previous occupant's flags
+/// or messages — is in place (A28): the flag reset in `pd::register`, the queue
+/// drain in the desktop's own `appl_exit()` (`deskmain.c:2166`,
+/// `crate::desk::main::desktop_relinquish`), and since A62 the slot's release
+/// (`pterm::release_slot` → `pd::release`) for every way a process ends.
 fn p_nameit_and_appdir(cmd: &[u8]) {
     p_setappdir(cmd);
 }

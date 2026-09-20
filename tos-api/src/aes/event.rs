@@ -75,9 +75,10 @@ const MN_SELECTED: i16 = 10;
 /// message (AUD-P2-002). Returns `false` when there is no menu, the cursor is
 /// not over the bar, or the drop-down was cancelled (no message).
 ///
-/// `pid` is the current AES process — the menu owner (`gl_mnppd`) at
-/// single-app — used both as the FIFO target and as the `ap_sendmsg` sender
-/// pid `msg[1] = rlr->p_pid` (`gemwmlib.c:855`), replacing the former `0`.
+/// `idx` is the current AES identity — the menu owner (`gl_mnppd`) at
+/// single-app — used as the FIFO target; the `ap_sendmsg` sender pid
+/// `msg[1] = rlr->p_pid` (`gemwmlib.c:855`) is its reported value
+/// (`appl::current_pid`), replacing the former `0`.
 ///
 /// **Entry = the hand-over.** EmuTOS reaches `hctl_rect` only after `mchange`
 /// gave the mouse to the Control Manager, which it does for a pointer in the
@@ -92,7 +93,7 @@ const MN_SELECTED: i16 = 10;
 /// button to come up (`aes/gemctrl.c:100-101`): the message is posted at once,
 /// and [`input::ct_msgup_hold`](super::input::ct_msgup_hold) keeps the
 /// interception and `w_setactive` out of the way until the release.
-fn menu_intercept(pid: i16) -> bool {
+fn menu_intercept(idx: usize) -> bool {
     let tree = super::menu::active();
     if tree.is_null() {
         return false;
@@ -113,13 +114,14 @@ fn menu_intercept(pid: i16) -> bool {
         Some((title, item)) => {
             let mut msg = [0i16; pd::MSG_WORDS];
             msg[0] = MN_SELECTED;
-            msg[1] = pid; // ap_sendmsg: msg[1] = rlr->p_pid (sender pid)
+            // ap_sendmsg: msg[1] = rlr->p_pid (sender pid, the reported value)
+            msg[1] = super::appl::current_pid();
             msg[3] = title; // menu title object
             msg[4] = item; // menu item object
             // SAFETY: single trap path; `post_msg` hands the message to the
             // live slot (EmuTOS `aqueue`/`doq`, `gemqueue.c:85-125`).
             unsafe {
-                pd::post_msg(pid, msg);
+                pd::post_msg(idx, msg);
             }
             // `ct_msgup`: "send message and wait for the mouse button to come
             // up" (`gemctrl.c:81-104`).
@@ -439,7 +441,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
     let hi = pb.intin(15) as u16 as u32;
     let ms = ((hi << 16) | lo) as u64;
     let pbuff = pb.addrin(0);
-    let pid = super::appl::current_pid();
+    let idx = super::appl::current_identity();
 
     let mut fired = 0u16;
     let mut key = 0i16;
@@ -504,7 +506,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                 // solely for MU_MESAG (`gemsuper.c:147`); an app waiting on
                 // MU_BUTTON alone is not woken by a frame click and must not
                 // receive a spurious MU_MESAG (AUD-P2-003).
-                if flags & MU_MESAG != 0 && !menu_intercept(pid) {
+                if flags & MU_MESAG != 0 && !menu_intercept(idx) {
                     super::window::intercept();
                 }
                 // The Control Manager's loop head, `w_setactive()`
@@ -595,8 +597,8 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                 fired |= MU_M2;
             }
             if flags & MU_MESAG != 0 {
-                // SAFETY: single trap path; `by_pid` hands out the live slot.
-                if let Some(src) = unsafe { pd::by_pid(pid) } {
+                // SAFETY: single trap path; `by_index` hands out the live slot.
+                if let Some(src) = unsafe { pd::by_index(idx) } {
                     // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`
                     // →`doq` dequeue, `gemqueue.c:76-81`); a single pending
                     // message is just the 1-element case.
@@ -687,16 +689,17 @@ pub fn evnt_keybd(pb: &Aespb) -> Option<sched::Switch> {
 /// managers (later D-deliverables).
 pub fn evnt_mesag(pb: &Aespb) -> Option<sched::Switch> {
     let dest = pb.addrin(0);
-    let pid = super::appl::current_pid();
+    let idx = super::appl::current_identity();
     if host().is_none() {
         pb.set_ret(1);
         return None;
     }
     loop {
-        // SAFETY: single trap path; `by_pid` hands out the live slot.
-        let Some(src) = (unsafe { pd::by_pid(pid) }) else {
-            // No descriptor (caller never ran appl_init): nothing to
-            // wait on; report the message event and bail.
+        // SAFETY: single trap path; `by_index` hands out the live slot.
+        let Some(src) = (unsafe { pd::by_index(idx) }) else {
+            // No descriptor — only an identity outside the table, which
+            // `current_identity` never produces: nothing to wait on; report
+            // the message event and bail.
             pb.set_ret(1);
             return None;
         };
@@ -716,11 +719,11 @@ pub fn evnt_mesag(pb: &Aespb) -> Option<sched::Switch> {
             pb.set_ret(1);
             return None;
         }
-        // No message yet: block until one is posted to this pid's FIFO
-        // (`pd::post_msg` wakes `WAIT_MESG(pid)`, design §5.2). The pop above
+        // No message yet: block until one is posted to this identity's FIFO
+        // (`pd::post_msg` wakes `WAIT_MESG(idx)`, design §5.2). The pop above
         // runs only when a message is present, so aborting to a peer (S2) and
         // re-executing on resume never double-pops (§4.3).
-        if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_mesg(pid)) {
+        if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_mesg(idx)) {
             return Some(sw);
         }
     }

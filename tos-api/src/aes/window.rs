@@ -350,7 +350,11 @@ struct Window {
     open: bool,
     kind: u16,
     z: i16,     // stacking order (higher = nearer the top)
-    owner: i16, // owning process id (WM_* message target)
+    /// Owning AES identity (`w_owner`, the descriptor index a `WM_*` message
+    /// for this window is posted to), or [`Window::NO_OWNER`] for a free slot
+    /// and for the desktop window until `WF_NEWDESK` re-owns it. `WF_OWNER`
+    /// reports its value through `appl::reported_pid`.
+    owner: i16,
     full: Grect, // maximum extent (WF_FXYWH)
     curr: Grect, // current border rect (WF_CXYWH)
     prev: Grect, // previous border rect (WF_PXYWH)
@@ -418,12 +422,18 @@ struct Window {
 }
 
 impl Window {
+    /// `pwin->w_owner = NULL` (`gemwmlib.c:1482`): no identity owns the
+    /// window. Distinct from every descriptor index (GEMDOS slot 0 is a valid
+    /// identity), and reported by `WF_OWNER` as 0, the value the unowned
+    /// desktop window has always reported.
+    const NO_OWNER: i16 = -1;
+
     const EMPTY: Window = Window {
         in_use: false,
         open: false,
         kind: 0,
         z: 0,
-        owner: 0,
+        owner: Self::NO_OWNER,
         full: Grect { x: 0, y: 0, w: 0, h: 0 },
         curr: Grect { x: 0, y: 0, w: 0, h: 0 },
         prev: Grect { x: 0, y: 0, w: 0, h: 0 },
@@ -1599,11 +1609,15 @@ fn rlist_owns(handle: i16) -> Owns {
     }
 }
 
+/// The identity that owns `handle`, or `None` for no window / no owner.
+fn owner_of(handle: i16) -> Option<usize> {
+    win(handle).and_then(|w| usize::try_from(w.owner).ok())
+}
+
 /// Post a `WM_REDRAW` for `rect` to `handle`'s owner process.
 fn send_redraw(handle: i16, rect: Grect) {
-    let owner = match win(handle) {
-        Some(w) => w.owner,
-        None => return,
+    let Some(owner) = owner_of(handle) else {
+        return;
     };
     let mut msg = [0i16; 8];
     msg[0] = WM_REDRAW;
@@ -2716,7 +2730,7 @@ pub fn wind_create(pb: &Aespb) {
             // `w_setup(rlr, i, kind)` (`gemwmlib.c:1376`, `:205-215`) records
             // the *creating* process as `w_owner`; `wm_open` never touches it.
             // Reported by `WF_OWNER` (`:1580`).
-            w.owner = super::appl::current_pid();
+            w.owner = super::appl::current_identity() as i16;
             // EmuTOS `wm_create` stores the caller's rectangle in WS_FULL only
             // and zeroes the current/previous ones — `w_setsize(WS_CURR, i,
             // &gl_rzero)` / `w_setsize(WS_PREV, i, &gl_rzero)`, then
@@ -2979,8 +2993,9 @@ fn wm_delete(handle: i16) -> bool {
     w.in_use = false;
     w.open = false;
     // `pwin->w_owner = NULL;` (`:1482`) — no process owns a free slot, so no
-    // stale pid can be handed a `WM_REDRAW` for a window that no longer exists.
-    w.owner = 0;
+    // stale identity can be handed a `WM_REDRAW` for a window that no longer
+    // exists.
+    w.owner = Window::NO_OWNER;
     true
 }
 
@@ -3143,6 +3158,10 @@ pub fn wind_get(pb: &Aespb) {
             // our profile is 0x340). poutwds[0..3] → int_out[1..4].
             WF_OWNER => {
                 let (owner, open) = (w.owner, w.open);
+                // `pwin->w_owner->p_pid` (`:1580`): the owner's reported pid;
+                // 0 for an unowned window (the desktop window before
+                // `WF_NEWDESK`), as it has always reported.
+                let owner = usize::try_from(owner).map_or(0, super::appl::reported_pid);
                 pb.set_intout(1, owner);
                 pb.set_intout(2, i16::from(open));
                 // `poutwds[2] = gl_wtop` — the raw variable, so `NIL` when
@@ -3220,7 +3239,7 @@ pub fn wind_set(pb: &Aespb) {
         // the caller (`pwin->w_owner = rlr`, `gemwmlib.c:1684-1687`).
         WF_NEWDESK => {
             if let Some(w) = win(handle) {
-                w.owner = super::appl::current_pid();
+                w.owner = super::appl::current_identity() as i16;
             }
             set_newdesk(pb);
         }
@@ -4214,14 +4233,14 @@ pub fn intercept() {
     };
     // The FIFO target is the window owner (EmuTOS `ct_msgup`'s `owner` =
     // `pwin->w_owner`, `gemctrl.c:314`); at single-app this is the running app.
-    let owner = match win(handle) {
-        Some(w) => w.owner,
-        None => return,
+    let Some(owner) = owner_of(handle) else {
+        return;
     };
 
     let mut msg = [0i16; 8];
     // `ap_sendmsg` sets `msg[1] = rlr->p_pid`, the sender pid (`gemwmlib.c:855`);
-    // for ctlmgr messages that is the control process, at single-app the app.
+    // for ctlmgr messages that is the control process, at single-app the app
+    // (its reported value).
     msg[1] = super::appl::current_pid();
     msg[3] = handle;
 
@@ -4343,7 +4362,7 @@ pub fn intercept() {
 /// the former direct-`pbuff` write so frame messages queue in FIFO order (and
 /// `WM_ARROWED` coalesces) instead of overwriting a message still unread by
 /// the app (AUD-P2-001).
-fn post_to_owner(owner: i16, msg: &[i16; 8]) {
+fn post_to_owner(owner: usize, msg: &[i16; 8]) {
     // SAFETY: single trap path; `post_msg` hands the message to the live slot.
     unsafe {
         super::pd::post_msg(owner, *msg);
@@ -4360,7 +4379,7 @@ fn post_untopped(old_top: i16, new_top: i16) {
     if old_top == new_top || old_top == DESKWH {
         return;
     }
-    if let Some(owner) = win(old_top).map(|w| w.owner) {
+    if let Some(owner) = owner_of(old_top) {
         let mut msg = [0i16; 8];
         msg[0] = WM_UNTOPPED;
         // `ap_sendmsg` sets msg[1] = sender pid (gemwmlib.c:855); at single-app
@@ -4371,32 +4390,43 @@ fn post_untopped(old_top: i16, new_top: i16) {
     }
 }
 
-/// Test hook (not wired to boot): the message at the **front** of process
-/// `pid`'s FIFO queue (without removing it), or `None` if the queue is empty.
-/// Lets the P5 redraw-broadcast selftest observe the `WM_REDRAW` posted on
-/// `wind_close` / `wind_set(WF_TOP)`.
+/// Test hook (not wired to boot): the message at the **front** of the FIFO
+/// queue of the process reporting `pid` (without removing it), or `None` if
+/// the queue is empty. Lets the P5 redraw-broadcast selftest observe the
+/// `WM_REDRAW` posted on `wind_close` / `wind_set(WF_TOP)`.
 pub fn test_pending_msg(pid: i16) -> Option<[i16; 8]> {
     // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
-    unsafe { super::pd::by_pid(pid).and_then(|p| p.queue.front()) }
+    unsafe { test_pd(pid).and_then(|p| p.queue.front()) }
 }
 
-/// Test hook (not wired to boot): number of messages queued for `pid` (0 when
-/// empty). Lets a selftest assert the WM_REDRAW rectangle-union coalesces two
-/// same-window redraws into a single queue entry.
+/// Test hook (not wired to boot): number of messages queued for the process
+/// reporting `pid` (0 when empty). Lets a selftest assert the WM_REDRAW
+/// rectangle-union coalesces two same-window redraws into a single queue entry.
 pub fn test_msg_count(pid: i16) -> usize {
     // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
-    unsafe { super::pd::by_pid(pid).map(|p| p.queue.pending()).unwrap_or(0) }
+    unsafe { test_pd(pid).map(|p| p.queue.pending()).unwrap_or(0) }
 }
 
-/// Test hook (not wired to boot): drop every pending message for `pid`, so the
-/// P5 selftest can isolate the `WM_REDRAW` a subsequent window op posts.
+/// Test hook (not wired to boot): drop every pending message of the process
+/// reporting `pid`, so the P5 selftest can isolate the `WM_REDRAW` a subsequent
+/// window op posts.
 pub fn test_clear_msg(pid: i16) {
     // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
     unsafe {
-        if let Some(p) = super::pd::by_pid(pid) {
+        if let Some(p) = test_pd(pid) {
             p.queue.clear();
         }
     }
+}
+
+/// The descriptor of the process that reports `pid` — the test hooks take
+/// the value `appl_init` handed the caller (`appl::identity_of`).
+///
+/// # Safety
+/// Single trap path.
+unsafe fn test_pd(pid: i16) -> Option<&'static mut super::pd::Aespd> {
+    // SAFETY: forwarded.
+    super::appl::identity_of(pid).and_then(|idx| unsafe { super::pd::by_index(idx) })
 }
 
 /// Test hook (not wired to boot): set the stacking counter [`bump_z`] hands

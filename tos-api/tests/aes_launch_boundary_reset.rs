@@ -3,10 +3,16 @@
 //! The desktop runs in the kernel boot context, so its AES id is 1
 //! (`tos-api/src/aes/appl.rs`, `current_pid` with a null basepage), and the
 //! first program it launches lands in GEMDOS slot 0, whose AES id is
-//! `slot + 1` = 1 (`aes::pid_of_slot`). Desktop and first child therefore share
-//! one AES process descriptor. **That sharing is not the defect** — EmuTOS does
-//! the same thing, renaming the one `rlr` for each successive program
-//! (`references/emutos/aes/gemshlib.c:633-636`).
+//! `slot + 1` = 1 (`aes::pid_of_slot`). Desktop and first child therefore
+//! report the same AES id. Until A62 they also shared one AES process
+//! descriptor; since A62 the descriptor is keyed by the identity (the GEMDOS
+//! slot, or the desktop's own reserved index — `docs/api/aes/application.md`
+//! § "AES process identity and pid", contract (a)). **The sharing was never
+//! the defect** — EmuTOS does the same thing, renaming the one `rlr` for each
+//! successive program (`references/emutos/aes/gemshlib.c:633-636`). This test
+//! runs its "child" in the boot context too (no `RUN`), so phases 1–2 act on
+//! the desktop's descriptor; phase 3's flag reset on a slot-keyed descriptor
+//! is covered by `aes_pd_by_slot.rs` (c).
 //!
 //! The defect is that EmuTOS resets that shared descriptor **twice** on the way
 //! across the boundary and NewTOS did neither:
@@ -343,10 +349,10 @@ fn launcher_register(slot: usize, path: &[u8]) {
 }
 
 /// The launcher's post-run step (`kernel/src/launch.rs`,
-/// `close_client_if_open(pid_of_slot(child.slot))` — EmuTOS
-/// `aes/gemshlib.c:650-657`).
+/// `close_client_if_open(child.slot)` — EmuTOS `aes/gemshlib.c:650-657`),
+/// addressed by the slot the descriptor is keyed by (A62).
 fn launcher_cleanup(slot: usize) {
-    tos_api::aes::close_client_if_open(tos_api::aes::pid_of_slot(slot));
+    tos_api::aes::close_client_if_open(slot);
 }
 
 #[test]

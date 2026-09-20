@@ -1,0 +1,23 @@
+--- /Volumes/Daten/Development/PiRusTOS/tos-api/src/host.rs	2026-09-05 19:08:54
++++ tos-api/src/host.rs	2026-09-19 20:20:59
+@@ -25,6 +25,11 @@
+         }
+     }
+ 
++    /// A41P2-TEMP (scratch copy only): serial-only debug write.
++    fn debug_write(&self, s: &[u8]) {
++        self.console_write_bytes(s)
++    }
++
+     /// Non-blocking read from the console input device. Returns
+     /// `Some(byte)` if a character is available, `None` otherwise.
+     fn console_try_read(&self) -> Option<u8> {
+--- /Volumes/Daten/Development/PiRusTOS/tos-api/src/aes/mod.rs	2026-09-19 10:52:23
++++ tos-api/src/aes/mod.rs	2026-09-19 20:20:59
+@@ -691,3 +691,6 @@
+ pub fn user_mot(x: i16, y: i16) {
+     input::mchange(x, y);
+ }
++
++// A41P2-TEMP (scratch copy only): named by the injector's Step::Arm, unused.
++pub static H02_TRACE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);

@@ -1,0 +1,1802 @@
+diff --git a/TASK/A62-STATUS-UNFINISHED.MD b/TASK/A62-STATUS-UNFINISHED.MD
+index b37d58f..644bab4 100644
+--- a/TASK/A62-STATUS-UNFINISHED.MD
++++ b/TASK/A62-STATUS-UNFINISHED.MD
+@@ -192,3 +192,129 @@ gebrochen (Suche nach den korrigierten Wortlauten in allen vier Dateien
+ bestätigt: nur noch innerhalb der Korrektur-Zitate selbst, keine stehen
+ gebliebene falsche Standalone-Aussage). `shell-loop.md`/`scrap-shell.md`
+ nicht verändert (bereits korrekt, s.o.). Kein Produktcode, kein Commit.
++
++## Umbau Stufe 1 (Developer, 2026-09-20) — Identität über den Slot, `appl_init` nie −1
++
++**Zustand nach dieser Arbeit: Stufe 1 implementiert, Hostbelege + QEMU-Belege
++vorhanden; UNFINISHED bleibt, weil die Abnahme auf echter Pi 4 (Tester/Lead)
++und Stufe 2 (A56, berichtete Werte nach EmuTOS) ausstehen.** Kein Commit, kein
++`git checkout/restore/clean/stash`, keine Hardware-/Outward-Aktion. Basis
++`desk-rebuild` @ `86b871d`, Baum vorher sauber. Artefakte:
++[`measurement-2026-09-20-a62/fix/`](../measurement-2026-09-20-a62/fix/).
++
++### 1. Was gebaut wurde (Spec `docs/api/aes/application.md` § "AES process identity and pid", Vertrag (a))
++
++| Datei | Änderung |
++|---|---|
++| `tos-api/src/aes/pd.rs` | Tabelle `NUM_PDS = MAX_PROCESSES + 1` (17), Index = **Identität**: GEMDOS-Slot 0..15, `DESKTOP = 16` für den Kernel-Desktop (eigener Index, Entscheidung des Leads). `Aespd` ohne `in_use`/`pid`. `open(idx) -> &mut Aespd` **kann nicht scheitern** (EmuTOS `ap_init`, `gemaplib.c:54-63`); `by_index`, `find_by_name -> Option<usize>` (EmuTOS `fpdnm`, `gempd.c:38-57`: Walk ohne Lebendprüfung, ein Name je Slot), `close`/`close_if_open`/`register` per Index; **neu `release(idx)`**: Flags = 0 + Queue leeren (die Vereinigung von `gemshlib.c:636` und `:650-657`/`ap_exit`). `post_msg`/`post_words` per Index, Trace bekommt weiter den berichteten Wert. Unit-Test auf die Slot-Prämisse umgeschrieben (der alte „Tabelle voll"-Fall existiert nicht mehr). |
++| `tos-api/src/aes/appl.rs` | `current_identity()` (Slot bzw. `DESKTOP` bei `RUN == null`), `reported_pid(idx)` (**Stufe 1 = heutige Werte**: Slot + 1, Desktop 1), `identity_of(pid)` (Umkehrung für `appl_write`/`appl_read`/Testhaken; Wert 1 löst vom Aufrufer aus: Desktop → Desktop, Prozess → Slot 0), `current_pid()` = `reported_pid(current_identity())`. `appl_init` ohne −1-Pfad; `appl_find` → `reported_pid` des gefundenen Index. |
++| `tos-api/src/aes/mod.rs` | `close_client_if_open(slot: usize)`; **neu** `release_client(slot)`; `register_process(slot, …)` direkt per Slot; `pid_of_slot` bleibt als Wert-Übersetzung. |
++| `tos-api/src/aes/event.rs` | `evnt_multi`/`evnt_mesag`/`menu_intercept` auf Identität; `msg[1]` weiter `current_pid()` (Wert unverändert). |
++| `tos-api/src/aes/window.rs` | `Window.owner` = Identität, `NO_OWNER = -1` (Slot 0 ist eine gültige Identität; das Desktop-Fenster meldet `WF_OWNER` weiter 0); `owner_of(handle)`, `send_redraw`/`intercept`/`post_untopped`/`post_to_owner` per Identität; `WF_OWNER` → `reported_pid`; `wind_create`/`WF_NEWDESK` speichern `current_identity()`; Testhaken übersetzen den berichteten Wert per `identity_of`. |
++| `tos-api/src/aes/resource.rs` | `RscEntry.owner: usize` (`NO_OWNER = usize::MAX`) statt `pid: i16` (0 = frei kollidierte mit Slot 0); `caller_identity()`; `on_process_exit(slot)`; `selected`/`register`/`load_into_user` per Identität; Unit-Test-Fixture `Proc` nachgezogen. A39 in der Sache unverändert. |
++| `tos-api/src/bdos/process/sched.rs` | `wait_mesg(idx: usize)`. |
++| `tos-api/src/bdos/process/pterm.rs` | `on_process_exit(slot_idx)`; **`release_slot` ruft `aes::release_client(slot_idx)`** — deckt jeden Endepfad (`Pterm`/`Ptermres`/`Pterm0`/Ctrl-C/Fault) und damit den `handle_pexec`-Nebenbefund (§8 des Berichts): ein per EL0-`Pexec` gestartetes Kind, das mit `AP_OPEN` und ungelesener Nachricht stirbt, hinterlässt dem nächsten Mieter des Slots nichts mehr. `exceptions.rs` unverändert (der Reset sitzt im Prozessmodell, nicht im Handler). |
++| `kernel/src/launch.rs` | `close_client_if_open(child.slot)` (bleibt als `sh_ldapp`-Schritt; nach dem Slot-Release strukturell No-op). |
++| `kernel/src/shell_loop.rs` | Lückenlisten-Punkt 10 umformuliert: Identität erledigt (A62), offen bleibt nur der berichtete Wert (A56). |
++| `tos-api/tests/aes_pd_by_slot.rs` | **neu**, vier Tests (a)–(d), s. u. |
++| `tos-api/tests/aes_app_return_descriptor.rs`, `aes_launch_boundary_reset.rs` | nur der Helfer `launcher_cleanup` auf die Slot-Signatur + ein Absatz im Kopfkommentar zur geänderten Prämisse (Spec-Beleg: Vertrag (a)). **Alle Assertions unverändert, beide grün.** Ehrlich benannt: beide Tests lassen ihr „Kind" ohne `RUN` laufen, also auf dem Desktop-Deskriptor; die Slot-keyed Variante ist `aes_pd_by_slot.rs` (c). |
++
++**Nicht geändert (Stufe 2):** kein berichteter Wert. `ap_id`, `appl_find`,
++`WF_OWNER`, `msg[1]`, `appl_write`-Ziel liefern dieselben Zahlen wie vorher
++(Test (d) pinnt sie; NESTTST-Sonde Tiefe 1–16 bestätigt es maschinell).
++
++**Eine Auslegung, die der Lead prüfen sollte:** der Auftrag sagt für Test (a)
++und die NESTTST-Sonde „→ alle 1" bzw. „Tiefe 9 → jetzt `appl_init` = 1". Das
++widerspricht der Regressionsbedingung „kein berichteter Wert ändert sich"
++(Tiefe 2 meldet heute 2, gemessen). Ich habe die Regressionsbedingung
++umgesetzt: Tiefe *k* → *k* (Slot + 1), nie −1. „Alle 1" wäre Stufe 2.
++
++### 2. Tests — rot vor, grün nach
++
++`tos-api/tests/aes_pd_by_slot.rs` gegen den unveränderten Baum
++(`host-tests/red-before-aes_pd_by_slot.txt`; für den Lauf war die eine
++Zeile `close_client_if_open(slot)` von Hand auf die alte Signatur gesetzt
++und danach zurückgeschrieben):
++
++    every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one ... FAILED
++      depth 9: appl_init returned -1
++    nine_programs_in_one_slot_rename_one_descriptor ... ok            (Regressions-Pin)
++    releasing_a_slot_resets_its_descriptor_and_queue ... FAILED
++      left: (1, 2989)  right: (0, 0)   -- der neue Mieter las die Nachricht 0x0BAD des toten
++    reported_values_are_unchanged_by_the_identity_rework ... ok       (Regressions-Pin)
++
++Nach dem Umbau (`host-tests/green-after-aes_pd_by_slot.txt`): 4/4. Die
++verwandten Tests `aes_appl_init` (A25), `aes_app_return_descriptor` (A29),
++`aes_launch_boundary_reset` (A28), `aes_rsrc_per_process` (A39, 5/5),
++`aes_window_content`, `aes_window_move_blit` (7/7), `aes_global_layout`:
++alle grün (`host-tests/green-after-related-*.txt`).
++
++    cargo run -p xtask -- test   vorher 666 / 0 / 1   (selbst nachgemessen)
++                                 nachher 670 / 0 / 1   (+4 = die neue Datei)
++
++### 3. Bauten, Warnungen, Clippy
++
++    xtask build --board qemu-virt   exit 0, Compiling tos-api + kernel, rustc 64 / 94
++    xtask build --board rpi4        exit 0, Compiling tos-api + kernel, rustc 64 / 94
++    clippy --features board-qemu-virt   tos-api 81 / kernel 125
++    clippy --features board-rpi4        tos-api 81 / kernel 125
++    Baseline 64/94, 81/125 — Delta 0. ELF-Hashes je Board verschieden (echte Bauten).
++    Keine Clippy-Meldung zeigt auf pd.rs/appl.rs/event.rs/sched.rs/pterm.rs/launch.rs/
++    shell_loop.rs; die Treffer in window.rs/resource.rs sind die vorbestehenden
++    `Aespb`-Sichtbarkeitswarnungen.
++
++### 4. QEMU raspi4b (Produkt-Kernel `--release --board rpi4`, `41f9f82c…`, KEINE Instrumentierung)
++
++Karten aus `tools/make-sd-image.sh` (Hauptbaum, `5d51048c…`) + INF-Dateien der
++A41/A62-Methoden (Hashes `fix/build/kernel-and-image-hashes.txt`). Alle Läufe:
++`grep -c "EXC\|panic"` = 0.
++
++- **NESTTST-Sonde** (`serial/nest-serial.log`, Karte + Sonde der Auditor-Messung):
++  Tiefe 1–16 → `appl_init` = 1…16, `appl_write(self)` = 1 in **jeder** Tiefe,
++  `WF_OWNER` = Tiefe (1–15), `appl_find(NESTTST)` = 1; Tiefe 16: `wind_create` = −1
++  (Fenstertabelle, eigenes Thema, wie vor dem Fix), 17. `Pexec` → −39; alle 16
++  kehren regulär zurück, `[desk] desktop up (1 drives)`. Vorher: Tiefe 9–16 → −1,
++  `appl_write(self)` = 0.
++- **Smoke, bytegleich** zu `measurement-2026-09-19-a41/part2/screendumps/`:
++  `smoke-desk-up.png` 0 Pixel, `smoke-qed-up.png` 0 Pixel,
++  `smoke-tera-up.png` 0 Pixel gegen `product1-tera-colour-icons-idle.png`.
++- **H05-Sequenz** (Scratch-Kopie mit dem A41/A39-Injektor, `full1.actions` aus
++  `measurement-2026-09-19-a39/method/`, Kernel `92e0947c…`): TeraDesk → HARD DISC
++  C → APPS → QED → QED.NAP doppelklicken (Kind in Slot 1) → QED „Datei / Beenden"
++  → Rückkehr. `serial/full1-serial.log`: `[exec] preparing program (slot 1)`,
++  kein EXC. Screendumps `full1-D-before-start.png` gegen
++  `full1-K-after-return-10s.png`: **134 Pixel Differenz, alle im Rechteck
++  (47,207)–(109,282) = der Mauszeiger**; Infozeile „610370 bytes used in 2 items."
++  und Icons identisch; H (0 s) = I (2 s) = K (10 s) bitgleich (0 Pixel). Das ist
++  der A39-Beleg (TeraDesks Ressourcen überleben QEDs `rsrc_load`/`rsrc_free`)
++  unter der neuen Identitätsschlüsselung. `full1-F-qed-up.png` zeigt QEDs
++  Menüleiste (mit „Datei" hervorgehoben, weil der Screendump 1 s nach der Marke
++  fällt und der Zeiger da schon auf dem Titel steht — Harness-Timing, kein Befund).
++- **quit2-Sequenz** (A41 Teil 2, TeraDesk beenden → Kernel-Desktop kommt zurück,
++  Kernel `2ab40394…`): `quit2-A-idle`, `-B-window-open`, `-D-quit-dialog` je
++  **0 Pixel** gegen `inj4-*`; `quit2-G-desktop-up-after-quit.png` 2606 Pixel im
++  Rechteck (305,89)–(399,420) = ausschließlich die Datum/Uhrzeit-Spalte des
++  Fensters (Karte heute erzeugt: `09-20-26 10:44` statt `09-19-26 20:19`), sonst
++  identisch; `'DESKTOP.NAP' exited with rc=0` → `[desk] desktop up (1 drives)`.
++  Damit ist die Grenze belegt, die durch diesen Umbau **zwei** Identitäten hat
++  (Slot 0 = TeraDesk, 16 = Desktop): der Desktop empfängt nach der Rückkehr und
++  malt sein Fenster.
++
++### 5. Nebenbeobachtungen (nicht angefasst)
++
++- `kernel/src/desk/mod.rs:180-186,646`: Doc-Kommentare nennen noch
++  `pd::open(current_pid())`/`pd::by_pid(1)`; die Funktionen heißen jetzt
++  `open(idx)`/`by_index`. Nur Kommentare, außerhalb des Scopes.
++- `kernel/src/selftest_sleepwake_switch.rs:345`: Kommentar nennt `by_pid`
++  (unverdrahteter Selftest, baut).
++- `docs/STATUS.md` nicht angefasst (Lead-Scope; beim Commit nachziehen).
++- Blank-Namens-Suche (`appl_find` mit acht Leerzeichen) findet jetzt Index 0 →
++  1, wie EmuTOS' blank initialisierte `p_name` (`geminit.c:868`); vorher fand
++  sie den ersten `in_use`-Eintrag ohne Namen = ebenfalls 1 nach dem
++  Desktop-`appl_init`. Kein realer Aufrufer.
++
++### 6. Offen
++
++- Abnahme auf echter Pi 4 (Doppelklick-Pfad, H05 interaktiv) — Tester/Lead.
++- Stufe 2 (A56): `reported_pid` auf EmuTOS' Werte, `msg[1]`-Stempel an den
++  Control-Manager-Postern, `identity_of(0)` → aktueller Klient.
+diff --git a/kernel/src/launch.rs b/kernel/src/launch.rs
+index 0e8d330..a6f41fa 100644
+--- a/kernel/src/launch.rs
++++ b/kernel/src/launch.rs
+@@ -96,9 +96,9 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
+     // `.RSC` beside the executable (lead directive 2026-07-20): QED passes a
+     // bare `qed.rsc`, and its resource is staged next to `QED.NAP`.
+     tos_api::aes::resource::set_app_dir(path);
+-    // Name the launched program's AES process descriptor from its launch path
+-    // (EmuTOS `pstart` → `p_nameit`, `aes/gempd.c:110-131`), so a later
+-    // `appl_find(name)` resolves it. The program's AES id is `slot + 1`.
++    // Name the launched program's AES process descriptor — the slot's entry
++    // (A62) — from its launch path (EmuTOS `pstart` → `p_nameit`,
++    // `aes/gempd.c:110-131`), so a later `appl_find(name)` resolves it.
+     tos_api::aes::register_process(child.slot, path);
+     // Publish the start command + command-tail image as `D.s_cmd`/`ad_stail`
+     // — the one pair `shel_read` answers from and `shel_write(SHW_EXEC)`
+@@ -133,8 +133,10 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
+     // the point EmuTOS runs it — immediately after `dos_exec(PE_LOADGO, …)`
+     // returns. If the program called `appl_init()` without a matching
+     // `appl_exit()` (a crashed or sloppy GEM app), do the important parts for
+-    // it, so the AES descriptor the next program reuses is clean.
+-    tos_api::aes::close_client_if_open(tos_api::aes::pid_of_slot(child.slot));
++    // it, so the AES descriptor the next program reuses is clean. The slot's
++    // release (`pterm::release_slot`) has reset the descriptor already; this
++    // is the `sh_ldapp` step, addressed by the slot the descriptor is keyed by.
++    tos_api::aes::close_client_if_open(child.slot);
+ 
+     tos_types::error::E_OK
+ }
+diff --git a/kernel/src/shell_loop.rs b/kernel/src/shell_loop.rs
+index 59eb552..5e53a68 100644
+--- a/kernel/src/shell_loop.rs
++++ b/kernel/src/shell_loop.rs
+@@ -349,18 +349,25 @@ fn p_setappdir(cmd: &[u8]) {
+ /// [`crate::launch::run_program_with_tail_rc`] at the moment the child gets its
+ /// process slot ([`tos_api::aes::register_process`] →
+ /// `tos_api::aes::pd::register`), because NewTOS's AES process descriptors are
+-/// keyed on that slot rather than on EmuTOS's single permanently-`rlr` AESPD 0,
+-/// so the descriptor to rename and clear is only identified there. Both launch
+-/// paths go through it: this shell loop's NORMAL/AUTORUN arm and the desktop's
+-/// double-click ([`crate::desk`]).
++/// keyed on that slot (A62: one entry per GEMDOS slot plus one for this
++/// kernel-context desktop, `tos_api::aes::pd::DESKTOP`), so the descriptor to
++/// rename and clear is only identified there. Both launch paths go through it:
++/// this shell loop's NORMAL/AUTORUN arm and the desktop's double-click
++/// ([`crate::desk`]).
+ ///
+-/// What remains a deviation is only the descriptor *identity*: reworking it to
+-/// EmuTOS's "one AESPD, renamed sequentially" model is item 10 of the plan's
+-/// gap list and belongs to the stage that moves the desktop out of the kernel.
+-/// The behaviour EmuTOS gets from that model at this boundary — a program never
+-/// starting on the previous occupant's flags or messages — is in place (A28):
+-/// the flag reset in `pd::register`, the queue drain in the desktop's own
+-/// `appl_exit()` (`deskmain.c:2166`, `crate::desk::main::desktop_relinquish`).
++/// Item 10 of the plan's gap list ("AESPD numbering + `p_nameit`/`p_setappdir`
++/// on `rlr`") is closed as far as the *identity* goes: like EmuTOS's `AESPD`s
++/// (`aes/gempd.c:32-35`), NewTOS's exist per index from boot, `appl_init`
++/// cannot fail, and the descriptor a program is renamed into is the one its
++/// slot has always had. What still differs is the **reported value** — EmuTOS
++/// reports 0 for the whole application chain, NewTOS still slot + 1
++/// (`tos_api::aes::appl::reported_pid`); that is A56, spec § "AES process
++/// identity and pid", contract (b). The behaviour EmuTOS gets from its model at
++/// this boundary — a program never starting on the previous occupant's flags
++/// or messages — is in place (A28): the flag reset in `pd::register`, the queue
++/// drain in the desktop's own `appl_exit()` (`deskmain.c:2166`,
++/// `crate::desk::main::desktop_relinquish`), and since A62 the slot's release
++/// (`pterm::release_slot` → `pd::release`) for every way a process ends.
+ fn p_nameit_and_appdir(cmd: &[u8]) {
+     p_setappdir(cmd);
+ }
+diff --git a/tos-api/src/aes/appl.rs b/tos-api/src/aes/appl.rs
+index b7f0abd..491532a 100644
+--- a/tos-api/src/aes/appl.rs
++++ b/tos-api/src/aes/appl.rs
+@@ -1,10 +1,19 @@
+ //! AES Application Manager (`appl_*`, opcodes 10–19). Spec:
+ //! [`docs/api/aes/application.md`].
+ //!
+-//! `appl_init` registers a GEM application (its id = the GEMDOS process
+-//! id), fills the caller's `AESGLOBAL`, and marks it `AP_OPEN`;
+-//! `appl_exit` tears it down; `appl_find` looks one up by name;
+-//! `appl_yield` is the cooperative scheduler hand-off.
++//! `appl_init` opens the caller's AES process descriptor, fills the caller's
++//! `AESGLOBAL`, and marks it `AP_OPEN`; `appl_exit` closes it; `appl_find`
++//! looks one up by name; `appl_yield` is the cooperative scheduler hand-off.
++//!
++//! **Identity and reported value** (spec § "AES process identity and pid").
++//! A client's *identity* — the key of its descriptor, queue, wait-key,
++//! resource list and window ownership — is its GEMDOS process slot, or
++//! [`pd::DESKTOP`] for the kernel-context desktop ([`current_identity`]).
++//! The *value* a program reads back (`ap_id`, `appl_find`, `WF_OWNER`,
++//! `msg[1]`) is computed from the identity by [`reported_pid`] and mapped back
++//! by [`identity_of`] where a program hands a value in (`appl_write`,
++//! `appl_read`). Stage 1 (A62) keeps the reported numbers as they were —
++//! slot + 1, and 1 for the desktop; stage 2 (A56) will make them EmuTOS's.
+ //!
+ //! **What `appl_init` may write, and how far (D-R1-4).** `AESGLOBAL` is
+ //! EmuTOS's `struct aesglobal` (`aes/gemrslib.h:15-27`) — ten fields,
+@@ -159,18 +168,65 @@ impl AesGlobalVals {
+     }
+ }
+ 
+-/// The id of the currently-running process, used as the AES application
+-/// id. From a real EL0 process this is its slot-derived pid; from the
+-/// kernel boot context (no process yet) it defaults to 1 — the single
+-/// boot application.
+-pub(super) fn current_pid() -> i16 {
++/// The AES identity of the current caller — the index of its process
++/// descriptor in [`pd`]'s table: its GEMDOS process slot for an EL0 process
++/// (`RUN`'s slot), [`pd::DESKTOP`] for the kernel boot context (`RUN` null —
++/// the built-in desktop and the boot-time selftests). A non-null `RUN` that
++/// names no slot cannot occur (every basepage the loader installs is a
++/// slot's); it falls to the desktop's entry, as the old `current_pid` fell to
++/// its value 1.
++pub(super) fn current_identity() -> usize {
+     let bp = crate::bdos::process::current();
+     if bp.is_null() {
+-        return 1;
++        return pd::DESKTOP;
++    }
++    crate::bdos::process::slot_for(bp).unwrap_or(pd::DESKTOP)
++}
++
++/// The pid a program sees for identity `idx` — `ap_id`, `appl_find`'s
++/// answer, `WF_OWNER`, `msg[1]`. Stage 1 (A62): the numbers NewTOS reported
++/// before the identity rework, unchanged — GEMDOS slot + 1, and 1 for the
++/// kernel-context desktop (so the desktop and the program in slot 0 report
++/// the same number, as they did while they shared one descriptor). Stage 2
++/// (A56) replaces this with EmuTOS's values (0 for the whole application
++/// chain, 1 as the Screen Manager's sender stamp).
++pub(super) fn reported_pid(idx: usize) -> i16 {
++    if idx == pd::DESKTOP {
++        1
++    } else {
++        idx as i16 + 1
++    }
++}
++
++/// The identity a program addresses with the reported value `pid` — the
++/// inverse of [`reported_pid`] for `appl_write`/`appl_read` targets and the
++/// test hooks. `None` when no client reports that value.
++///
++/// Two identities report **1** in stage 1, the desktop and GEMDOS slot 0;
++/// they never run at the same time (the desktop is blocked in the launcher
++/// while a program runs), so the value resolves from the caller's side: the
++/// desktop's own descriptor when the desktop is the caller, slot 0's for
++/// every process. This is what the one shared descriptor of the old table
++/// gave observably — a message to 1 reached the queue the caller itself
++/// reads, and the launch boundary drains that queue before the other party
++/// runs (A28/A29) — and it is the stage-1 form of the spec's rule that the
++/// chain's value resolves to the currently-scheduled client.
++pub(super) fn identity_of(pid: i16) -> Option<usize> {
++    match pid {
++        1 => Some(if current_identity() == pd::DESKTOP { pd::DESKTOP } else { 0 }),
++        p if p >= 2 && ((p - 1) as usize) < crate::bdos::process::MAX_PROCESSES => {
++            Some((p - 1) as usize)
++        }
++        _ => None,
+     }
+-    crate::bdos::process::slot_for(bp)
+-        .map(|s| s as i16 + 1)
+-        .unwrap_or(1)
++}
++
++/// The reported pid of the current caller ([`reported_pid`] of
++/// [`current_identity`]) — what `appl_init` returns and what the internal
++/// posters stamp into `msg[1]` (`ap_sendmsg`'s `rlr->p_pid`,
++/// `gemwmlib.c:855`).
++pub(super) fn current_pid() -> i16 {
++    reported_pid(current_identity())
+ }
+ 
+ /// Screen bit-plane count (`ap_planes`), the VDI's `INQ_TAB[4] = v_planes`.
+@@ -188,15 +244,17 @@ fn screen_planes() -> i16 {
+         .unwrap_or(4)
+ }
+ 
+-/// Opcode 10 — `appl_init`: register the application, fill `AESGLOBAL`,
+-/// return the application id (`ap_id` = pid) or −1 on failure.
++/// Opcode 10 — `appl_init`: open the caller's process descriptor, fill
++/// `AESGLOBAL`, return the application id (`ap_id`). Never −1: EmuTOS's
++/// `ap_init` (`aes/gemaplib.c:54-63`) has no failure path, and neither has
++/// [`pd::open`] — the descriptor exists per identity from boot (A62).
+ ///
+ /// Fills the caller's `AESGLOBAL` **1:1 with EmuTOS's `APPL_INIT` arm**
+ /// (`gemsuper.c:92-98`), field by field, at the caller's pointer width:
+ ///
+ /// - `ap_version` (`:92`) = [`AES_VERSION`] (`0x0340`);
+ /// - `ap_count` (`:93`) = 1;
+-/// - `ap_id` (`:94`) = the caller pid ([`current_pid`]);
++/// - `ap_id` (`:94`) = the caller's reported pid ([`current_pid`]);
+ /// - `ap_private` (`:95-96`) = `rs_trees[DESKTOP][ROOT].ob_spec` — the ROOT of
+ ///   the AES's **own** built-in `DESKTOP` tree ([`super::init::desktop_tree`],
+ ///   transcribed from `gem_rsc.c:550-570`), i.e. `0x1143` unless the `.INF`
+@@ -216,13 +274,10 @@ fn screen_planes() -> i16 {
+ /// leaves those bytes exactly as the caller had them — and writes nothing
+ /// past word 14 of the 15-WORD `AESGLOBAL` (D-R1-4; see the module ABI note).
+ pub fn appl_init(pb: &Aespb) {
+-    let pid = current_pid();
++    let idx = current_identity();
++    let pid = reported_pid(idx);
+     // SAFETY: single trap path.
+-    let ok = unsafe { pd::open(pid) }.is_some();
+-    if !ok {
+-        pb.set_ret(-1);
+-        return;
+-    }
++    unsafe { pd::open(idx) };
+ 
+     let vals = AesGlobalVals {
+         ap_version: AES_VERSION,                        // gemsuper.c:92
+@@ -255,14 +310,14 @@ pub fn appl_init(pb: &Aespb) {
+ /// here (`xa_appl.c:745-750`); not adopted.
+ /// The `APPL_EXIT` arm's `ret` is the enclosing `TRUE` (`gemsuper.c:85,120-123`).
+ pub fn appl_exit(pb: &Aespb) {
+-    let pid = current_pid();
+     // SAFETY: single trap path.
+-    unsafe { pd::close(pid) };
++    unsafe { pd::close(current_identity()) };
+     pb.set_ret(1);
+ }
+ 
+ /// Opcode 13 — `appl_find`: find an application by its 8-char name in
+-/// `addrin[0]`. Returns the pid, or −1 if not found (or name is NULL).
++/// `addrin[0]`. Returns its reported pid ([`reported_pid`] of the identity
++/// [`pd::find_by_name`] locates), or −1 if not found (or name is NULL).
+ pub fn appl_find(pb: &Aespb) {
+     let name_ptr = pb.addrin(0);
+     if name_ptr == 0 {
+@@ -278,7 +333,7 @@ pub fn appl_find(pb: &Aespb) {
+         }
+     }
+     // SAFETY: single trap path.
+-    let pid = unsafe { pd::find_by_name(&name) };
++    let pid = unsafe { pd::find_by_name(&name) }.map_or(-1, reported_pid);
+     pb.set_ret(pid);
+ }
+ 
+@@ -302,15 +357,14 @@ pub fn appl_yield(pb: &Aespb) {
+ /// `doq`, which memcpys `qpb_cnt` bytes, `gemqueue.c:36,85-125`). The bytes are
+ /// then appended to the target's FIFO whole.
+ pub fn appl_write(pb: &Aespb) {
+-    let target = pb.intin(0);
+     let len_bytes = pb.intin(1).max(0) as usize;
+     let buf = pb.addrin(0);
+-    // SAFETY: single trap path. Existence check drops its borrow immediately so
+-    // the enqueue below can re-borrow the descriptor through `pd::post_words`.
+-    if unsafe { pd::by_pid(target) }.is_none() {
++    // The target arrives as a reported pid; resolve it to an identity (none →
++    // no descriptor → 0).
++    let Some(target) = identity_of(pb.intin(0)) else {
+         pb.set_ret(0);
+         return;
+-    }
++    };
+     if buf == 0 {
+         pb.set_ret(0);
+         return;
+@@ -345,11 +399,11 @@ pub fn appl_write(pb: &Aespb) {
+ /// yet, the bring-up returns the pending message if present and 0
+ /// otherwise (messages are posted synchronously by the menu/window code).
+ pub fn appl_read(pb: &Aespb) {
+-    let id = pb.intin(0);
+     let len_bytes = pb.intin(1).max(0) as usize;
+     let dest = pb.addrin(0);
++    // `intin[0]` is the caller's own reported id; resolve it to an identity.
+     // SAFETY: single trap path.
+-    let Some(src) = (unsafe { pd::by_pid(id) }) else {
++    let Some(src) = identity_of(pb.intin(0)).and_then(|idx| unsafe { pd::by_index(idx) }) else {
+         pb.set_ret(0);
+         return;
+     };
+diff --git a/tos-api/src/aes/event.rs b/tos-api/src/aes/event.rs
+index 364bc36..4093080 100644
+--- a/tos-api/src/aes/event.rs
++++ b/tos-api/src/aes/event.rs
+@@ -75,9 +75,10 @@ const MN_SELECTED: i16 = 10;
+ /// message (AUD-P2-002). Returns `false` when there is no menu, the cursor is
+ /// not over the bar, or the drop-down was cancelled (no message).
+ ///
+-/// `pid` is the current AES process — the menu owner (`gl_mnppd`) at
+-/// single-app — used both as the FIFO target and as the `ap_sendmsg` sender
+-/// pid `msg[1] = rlr->p_pid` (`gemwmlib.c:855`), replacing the former `0`.
++/// `idx` is the current AES identity — the menu owner (`gl_mnppd`) at
++/// single-app — used as the FIFO target; the `ap_sendmsg` sender pid
++/// `msg[1] = rlr->p_pid` (`gemwmlib.c:855`) is its reported value
++/// (`appl::current_pid`), replacing the former `0`.
+ ///
+ /// **Entry = the hand-over.** EmuTOS reaches `hctl_rect` only after `mchange`
+ /// gave the mouse to the Control Manager, which it does for a pointer in the
+@@ -92,7 +93,7 @@ const MN_SELECTED: i16 = 10;
+ /// button to come up (`aes/gemctrl.c:100-101`): the message is posted at once,
+ /// and [`input::ct_msgup_hold`](super::input::ct_msgup_hold) keeps the
+ /// interception and `w_setactive` out of the way until the release.
+-fn menu_intercept(pid: i16) -> bool {
++fn menu_intercept(idx: usize) -> bool {
+     let tree = super::menu::active();
+     if tree.is_null() {
+         return false;
+@@ -113,13 +114,14 @@ fn menu_intercept(pid: i16) -> bool {
+         Some((title, item)) => {
+             let mut msg = [0i16; pd::MSG_WORDS];
+             msg[0] = MN_SELECTED;
+-            msg[1] = pid; // ap_sendmsg: msg[1] = rlr->p_pid (sender pid)
++            // ap_sendmsg: msg[1] = rlr->p_pid (sender pid, the reported value)
++            msg[1] = super::appl::current_pid();
+             msg[3] = title; // menu title object
+             msg[4] = item; // menu item object
+             // SAFETY: single trap path; `post_msg` hands the message to the
+             // live slot (EmuTOS `aqueue`/`doq`, `gemqueue.c:85-125`).
+             unsafe {
+-                pd::post_msg(pid, msg);
++                pd::post_msg(idx, msg);
+             }
+             // `ct_msgup`: "send message and wait for the mouse button to come
+             // up" (`gemctrl.c:81-104`).
+@@ -439,7 +441,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
+     let hi = pb.intin(15) as u16 as u32;
+     let ms = ((hi << 16) | lo) as u64;
+     let pbuff = pb.addrin(0);
+-    let pid = super::appl::current_pid();
++    let idx = super::appl::current_identity();
+ 
+     let mut fired = 0u16;
+     let mut key = 0i16;
+@@ -504,7 +506,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
+                 // solely for MU_MESAG (`gemsuper.c:147`); an app waiting on
+                 // MU_BUTTON alone is not woken by a frame click and must not
+                 // receive a spurious MU_MESAG (AUD-P2-003).
+-                if flags & MU_MESAG != 0 && !menu_intercept(pid) {
++                if flags & MU_MESAG != 0 && !menu_intercept(idx) {
+                     super::window::intercept();
+                 }
+                 // The Control Manager's loop head, `w_setactive()`
+@@ -595,8 +597,8 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
+                 fired |= MU_M2;
+             }
+             if flags & MU_MESAG != 0 {
+-                // SAFETY: single trap path; `by_pid` hands out the live slot.
+-                if let Some(src) = unsafe { pd::by_pid(pid) } {
++                // SAFETY: single trap path; `by_index` hands out the live slot.
++                if let Some(src) = unsafe { pd::by_index(idx) } {
+                     // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`
+                     // →`doq` dequeue, `gemqueue.c:76-81`); a single pending
+                     // message is just the 1-element case.
+@@ -687,16 +689,17 @@ pub fn evnt_keybd(pb: &Aespb) -> Option<sched::Switch> {
+ /// managers (later D-deliverables).
+ pub fn evnt_mesag(pb: &Aespb) -> Option<sched::Switch> {
+     let dest = pb.addrin(0);
+-    let pid = super::appl::current_pid();
++    let idx = super::appl::current_identity();
+     if host().is_none() {
+         pb.set_ret(1);
+         return None;
+     }
+     loop {
+-        // SAFETY: single trap path; `by_pid` hands out the live slot.
+-        let Some(src) = (unsafe { pd::by_pid(pid) }) else {
+-            // No descriptor (caller never ran appl_init): nothing to
+-            // wait on; report the message event and bail.
++        // SAFETY: single trap path; `by_index` hands out the live slot.
++        let Some(src) = (unsafe { pd::by_index(idx) }) else {
++            // No descriptor — only an identity outside the table, which
++            // `current_identity` never produces: nothing to wait on; report
++            // the message event and bail.
+             pb.set_ret(1);
+             return None;
+         };
+@@ -716,11 +719,11 @@ pub fn evnt_mesag(pb: &Aespb) -> Option<sched::Switch> {
+             pb.set_ret(1);
+             return None;
+         }
+-        // No message yet: block until one is posted to this pid's FIFO
+-        // (`pd::post_msg` wakes `WAIT_MESG(pid)`, design §5.2). The pop above
++        // No message yet: block until one is posted to this identity's FIFO
++        // (`pd::post_msg` wakes `WAIT_MESG(idx)`, design §5.2). The pop above
+         // runs only when a message is present, so aborting to a peer (S2) and
+         // re-executing on resume never double-pops (§4.3).
+-        if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_mesg(pid)) {
++        if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_mesg(idx)) {
+             return Some(sw);
+         }
+     }
+diff --git a/tos-api/src/aes/mod.rs b/tos-api/src/aes/mod.rs
+index b2c0271..1e779ad 100644
+--- a/tos-api/src/aes/mod.rs
++++ b/tos-api/src/aes/mod.rs
+@@ -637,25 +637,39 @@ fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
+ }
+ 
+ /// `sh_ldapp`'s `AP_OPEN` cleanup (`aes/gemshlib.c:650-657`) for the program
+-/// that has just terminated — see `pd::close_if_open`. Called from the
+-/// program launcher at the point EmuTOS calls it: immediately after
+-/// `dos_exec(PE_LOADGO, …)` returns.
++/// that has just terminated in GEMDOS slot `slot` — see `pd::close_if_open`.
++/// Called from the program launcher at the point EmuTOS calls it: immediately
++/// after `dos_exec(PE_LOADGO, …)` returns.
+ ///
+ /// It drains the descriptor's message queue and clears `AP_OPEN`; it does
+ /// **not** free the descriptor. EmuTOS cannot free one (its `AESPD`s are fixed
+-/// array entries, `aes/gempd.c:32-35`), and here it must not: the desktop
+-/// shares pid 1 with the first program it launches, so freeing it left the
+-/// desktop unaddressable for the rest of the session (A29).
+-pub fn close_client_if_open(pid: i16) {
++/// array entries, `aes/gempd.c:32-35`), and NewTOS's are fixed entries per
++/// slot likewise (A62). The slot's own release ([`release_client`]) has
++/// already run by the time the launcher gets here, so on that path the
++/// `AP_OPEN` guard finds nothing to do.
++pub fn close_client_if_open(slot: usize) {
+     // SAFETY: single-CPU launcher context; the AES pd table follows the
+     // single-trap-path discipline and the launcher runs on that CPU with no
+     // concurrent GEM trap in flight.
+-    unsafe { pd::close_if_open(pid) };
++    unsafe { pd::close_if_open(slot) };
+ }
+ 
+-/// The AES id (pid) NewTOS gives the program in GEMDOS process-table slot
+-/// `slot` — `slot + 1`, the value that program reports at `appl_init`
+-/// (`appl::current_pid`).
++/// The AES side of a GEMDOS slot's release: the tenant of `slot` is gone, its
++/// descriptor's flags are cleared and its queue drained (`pd::release`) so the
++/// slot's next occupant starts clean — for every way a process ends,
++/// including an EL0 `Pexec` child that died with `appl_init` unmatched
++/// (A62 report §8). Called from `bdos::process::pterm::release_slot`, next to
++/// the slot's other per-process side tables.
++pub fn release_client(slot: usize) {
++    // SAFETY: single-CPU process-release context under the BDOS giant lock;
++    // no GEM trap is in flight for the slot being released.
++    unsafe { pd::release(slot) };
++}
++
++/// The AES pid NewTOS **reports** for the program in GEMDOS process-table slot
++/// `slot` — `slot + 1`, the value that program gets from `appl_init`
++/// (`appl::reported_pid`). A value, not an identity: the descriptor is keyed
++/// by `slot` itself (A62).
+ pub fn pid_of_slot(slot: usize) -> i16 {
+     slot as i16 + 1
+ }
+@@ -663,15 +677,15 @@ pub fn pid_of_slot(slot: usize) -> i16 {
+ /// Name a freshly-launched EL0 program's AES process descriptor from its launch
+ /// `path`, so a later `appl_find(name)` can locate it — the reimplementation of
+ /// EmuTOS naming a process at start (`pstart` → `p_nameit`, `aes/gempd.c:110-131`).
+-/// `slot` is the GEMDOS process-table slot the loader placed the program in; its
+-/// AES id (pid) is [`pid_of_slot`]. Called by the kernel launcher before the
+-/// program enters EL0, alongside [`resource::set_app_dir`].
++/// `slot` is the GEMDOS process-table slot the loader placed the program in —
++/// the identity its descriptor is keyed by; the pid it reports is
++/// [`pid_of_slot`]. Called by the kernel launcher before the program enters
++/// EL0, alongside [`resource::set_app_dir`].
+ pub fn register_process(slot: usize, path: &[u8]) {
+-    let pid = pid_of_slot(slot);
+     // SAFETY: single-CPU launcher context; the AES pd table follows the
+     // single-trap-path discipline and the launcher runs on that CPU with no
+     // concurrent GEM trap in flight.
+-    unsafe { pd::register(pid, path) };
++    unsafe { pd::register(slot, path) };
+ }
+ 
+ /// The AES's `user_but` vector — call it from the VDI mouse interrupt when the
+diff --git a/tos-api/src/aes/pd.rs b/tos-api/src/aes/pd.rs
+index 695a841..65f6167 100644
+--- a/tos-api/src/aes/pd.rs
++++ b/tos-api/src/aes/pd.rs
+@@ -1,10 +1,24 @@
+ //! AES process descriptors (`AESPD`) — per-application AES state.
+ //!
+-//! Spec: [`docs/api/aes/application.md`]. Each GEM application that calls
+-//! `appl_init` gets a descriptor holding its id (= the GEMDOS process
+-//! id), its `p_flags` (`AP_OPEN`/`AP_MESAG`/…), its 8-char name (for
+-//! `appl_find`), and a per-application **FIFO message queue** (the standard
+-//! GEM message pipe used by `evnt_mesag`/`evnt_multi`/`appl_read`).
++//! Spec: [`docs/api/aes/application.md`] § "AES process identity and pid",
++//! contract (a). Every AES client has a descriptor **by construction**: the
++//! table has one entry per GEMDOS process slot plus one for the kernel-context
++//! desktop ([`NUM_PDS`] = `MAX_PROCESSES + 1`), and a client's **identity** is
++//! its index — the GEMDOS slot for an EL0 process, [`DESKTOP`] for the boot
++//! context (`appl::current_identity`). The descriptor holds the client's
++//! `p_flags` (`AP_OPEN`/`AP_MESAG`/…), its 8-char name (for `appl_find`), and
++//! a per-application **FIFO message queue** (the standard GEM message pipe
++//! used by `evnt_mesag`/`evnt_multi`/`appl_read`).
++//!
++//! This is EmuTOS's shape: its `AESPD`s are fixed entries of
++//! `D.g_int[]`/`D.g_acc[]` reached by index (`pd_index`, `aes/gempd.c:32-35`),
++//! initialised once at boot (`geminit.c:851-877`) and never allocated or freed
++//! afterwards — which is why `ap_init` (`aes/gemaplib.c:54-63`) has no failure
++//! path. NewTOS's earlier eight-entry table, searched by pid, could fill up
++//! (measured: `appl_init` = −1 from the ninth nested `Pexec`, A62); indexing
++//! by the slot leaves nothing to fill. The **reported** pid a program sees
++//! (`ap_id`, `appl_find`, `WF_OWNER`, `msg[1]`) is computed from the identity
++//! by `appl::reported_pid` and is not stored here.
+ //!
+ //! The queue mirrors EmuTOS's `p_queue`/`p_qindex`/`p_qaddr` byte queue
+ //! (`aes/struct.h:150-152`, `QUEUE_SIZE = 128` bytes = 8 standard 16-byte
+@@ -24,8 +38,18 @@ pub const AP_OPEN: u16 = 0x0001;
+ /// `p_flags` bit: the application has waited for a message.
+ pub const AP_MESAG: u16 = 0x0002;
+ 
+-/// Maximum concurrently-registered AES applications.
+-pub const MAX_APPS: usize = 8;
++/// Number of AES process descriptors: one per GEMDOS process slot
++/// (`bdos::process::MAX_PROCESSES`) plus one for the kernel-context desktop.
++/// The table is full-size from boot; nothing is allocated into it.
++pub const NUM_PDS: usize = crate::bdos::process::MAX_PROCESSES + 1;
++
++/// Identity of the kernel-context desktop — the one AES client that is not a
++/// GEMDOS process (`desk::run` calls `appl_init` from the boot context, where
++/// `RUN` is null). Its own index keeps it apart from GEMDOS slot 0, which the
++/// program it launches occupies, so the desktop's queue and flags survive
++/// that program untouched, and the later move of the desktop into EL0 (where
++/// it becomes slot 0 itself) needs no special case.
++pub const DESKTOP: usize = crate::bdos::process::MAX_PROCESSES;
+ 
+ /// Length of the standard GEM message (8 WORDs = 16 bytes) — the normal case
+ /// for every internal AES poster (`WM_REDRAW`, menu, keyboard, …).
+@@ -239,11 +263,11 @@ fn rc_union_into(p1: &[i16], p2: &mut [i16]) {
+     p2[7] = th - ty;
+ }
+ 
+-/// One AES application descriptor.
++/// One AES application descriptor — the entry for one identity (its index in
++/// the table). The pid is not stored: the identity *is* the index, and the
++/// reported value is computed from it (`appl::reported_pid`).
+ #[derive(Clone, Copy)]
+ pub struct Aespd {
+-    pub in_use: bool,
+-    pub pid: i16,
+     pub flags: u16,
+     pub name: [u8; 8],
+     /// The application's pending GEM message FIFO (`p_queue`/`p_qindex`).
+@@ -251,26 +275,26 @@ pub struct Aespd {
+ }
+ 
+ impl Aespd {
++    /// The boot state of every entry — EmuTOS's init loop
++    /// (`geminit.c:866-875`): blank `p_name`, empty queue, no flags.
+     const EMPTY: Aespd = Aespd {
+-        in_use: false,
+-        pid: 0,
+         flags: 0,
+         name: [b' '; 8],
+         queue: MsgQueue::EMPTY,
+     };
+ }
+ 
+-struct Table(UnsafeCell<[Aespd; MAX_APPS]>);
++struct Table(UnsafeCell<[Aespd; NUM_PDS]>);
+ // SAFETY: accessed only from the single-CPU, IRQ-off GEM-trap path.
+ unsafe impl Sync for Table {}
+-static TABLE: Table = Table(UnsafeCell::new([Aespd::EMPTY; MAX_APPS]));
++static TABLE: Table = Table(UnsafeCell::new([Aespd::EMPTY; NUM_PDS]));
+ 
+ /// Borrow the descriptor table.
+ ///
+ /// # Safety
+ /// Single trap path (no re-entrancy).
+ #[allow(clippy::mut_from_ref)]
+-unsafe fn table() -> &'static mut [Aespd; MAX_APPS] {
++unsafe fn table() -> &'static mut [Aespd; NUM_PDS] {
+     // SAFETY: see `Table`'s Sync impl.
+     unsafe { &mut *TABLE.0.get() }
+ }
+@@ -285,35 +309,28 @@ pub fn table_addr() -> u64 {
+     TABLE.0.get() as u64
+ }
+ 
+-/// Register an application by `pid`, returning a mutable reference to its
+-/// (possibly reused) descriptor, or `None` if the table is full. Initialises
+-/// a new slot; on an existing one only sets `AP_OPEN`, preserving its queue,
+-/// name and other flags (EmuTOS `ap_init`, `aes/gemaplib.c:54-63`).
++/// Open the descriptor of identity `idx` — EmuTOS `ap_init`
++/// (`aes/gemaplib.c:54-63`): sets `AP_OPEN` and nothing else, preserving the
++/// queue, name and other flags (A25). Cannot fail: the descriptor exists from
++/// boot, as EmuTOS's does, so there is no "table full" to report and
++/// `appl_init` never returns −1 for it (A62). `idx` is an identity
++/// (`appl::current_identity`: a GEMDOS slot `< MAX_PROCESSES` or [`DESKTOP`]),
++/// always inside the table.
+ ///
+ /// The application's loaded resources are not part of this descriptor
+ /// (EmuTOS's `AESPD` has no resource field either, `aes/struct.h:119-155`);
+-/// they are keyed by the same pid in `super::resource` and dropped at the
+-/// process's end (`resource::on_process_exit`), so a reused descriptor never
+-/// carries a previous tenant's resource (A39 R6).
++/// they are keyed by the same identity in `super::resource` and dropped at
++/// the process's end (`resource::on_process_exit`), so a reused descriptor
++/// never carries a previous tenant's resource (A39 R6).
+ ///
+ /// # Safety
+ /// Single trap path.
+-pub unsafe fn open(pid: i16) -> Option<&'static mut Aespd> {
++pub unsafe fn open(idx: usize) -> &'static mut Aespd {
+     // SAFETY: caller upholds the single-trap-path invariant.
+     let t = unsafe { table() };
+-    // Reuse an existing descriptor for this pid, else claim a free slot.
+-    let idx = t
+-        .iter()
+-        .position(|s| s.in_use && s.pid == pid)
+-        .or_else(|| t.iter().position(|s| !s.in_use))?;
+     let slot = &mut t[idx];
+-    if !(slot.in_use && slot.pid == pid) {
+-        *slot = Aespd::EMPTY;
+-        slot.in_use = true;
+-        slot.pid = pid;
+-    }
+     slot.flags |= AP_OPEN;
+-    Some(slot)
++    slot
+ }
+ 
+ #[cfg(test)]
+@@ -321,119 +338,131 @@ mod init_tests {
+     use super::*;
+ 
+     #[test]
+-    fn reopening_preserves_flags_and_queue_even_when_the_table_is_full() {
+-        // This unit-test binary has no other descriptor-table users. Negative
+-        // test ids also keep the fixtures distinct from real process slots.
++    fn every_identity_has_a_descriptor_and_reopening_preserves_flags_and_queue() {
++        // This unit-test binary has no other descriptor-table users.
+         unsafe {
+-            for n in 0..MAX_APPS {
+-                let app = open(-100 - n as i16).expect("fresh slot");
+-                assert_eq!(app.flags, AP_OPEN);
++            for idx in 0..NUM_PDS {
++                let app = open(idx);
++                assert_eq!(app.flags & AP_OPEN, AP_OPEN, "identity {idx}");
+             }
+             let message = [0x4711, 1, 0, 2, 3, 4, 5, 6];
+             {
+-                let app = by_pid(-100).unwrap();
++                let app = by_index(3).unwrap();
+                 app.flags |= AP_MESAG;
+                 app.name = *b"INITTEST";
+                 assert!(app.queue.push(message));
+             }
+-            assert!(open(-200).is_none(), "a full table rejects a new id");
++            assert!(by_index(NUM_PDS).is_none(), "no descriptor beyond the table");
+             {
+-                let app = open(-100).expect("an existing id needs no free slot");
+-                assert_eq!(app.flags, AP_OPEN | AP_MESAG);
++                let app = open(3);
++                assert_eq!(app.flags, AP_OPEN | AP_MESAG, "ap_init only ORs AP_OPEN");
+                 assert_eq!(app.name, *b"INITTEST");
+                 let mut received = [0; MSG_WORDS];
+                 assert_eq!(app.queue.pop_into(&mut received), Some(MSG_WORDS));
+                 assert_eq!(received, message);
+             }
+-            for n in 0..MAX_APPS {
+-                close(-100 - n as i16);
++            // A slot's release returns its entry to the boot state.
++            release(3);
++            let app = by_index(3).unwrap();
++            assert_eq!(app.flags, 0);
++            assert_eq!(app.queue.pending(), 0);
++            for idx in 0..NUM_PDS {
++                close(idx);
+             }
+         }
+     }
+ }
+ 
+-/// Post a 16-byte GEM message into `pid`'s queue — the routing point every
+-/// AES message post goes through (the `ap_rdwr(MU_SDMSG)` → `aqueue` → `doq`
+-/// enqueue path, `aes/gemqueue.c:85-125,31-74`). Returns `false` if `pid`
+-/// has no descriptor or the queue is full (see [`MsgQueue::push`]).
++/// Post a 16-byte GEM message into identity `idx`'s queue — the routing point
++/// every AES message post goes through (the `ap_rdwr(MU_SDMSG)` → `aqueue` →
++/// `doq` enqueue path, `aes/gemqueue.c:85-125,31-74`). Returns `false` if `idx`
++/// is outside the table or the queue is full (see [`MsgQueue::push`]).
+ ///
+ /// # Safety
+ /// Single trap path.
+-pub unsafe fn post_msg(pid: i16, msg: [i16; MSG_WORDS]) -> bool {
++pub unsafe fn post_msg(idx: usize, msg: [i16; MSG_WORDS]) -> bool {
+     // SAFETY: caller upholds the single-trap-path invariant.
+-    let posted = match unsafe { by_pid(pid) } {
++    let posted = match unsafe { by_index(idx) } {
+         Some(p) => p.queue.push(msg),
+         None => false,
+     };
+-    // AES trap tracer: record the enqueue (type, sender, target, and whether
+-    // the FIFO took it). No-op without the `aes-trace` feature.
+-    super::trace::msg_post(pid, &msg, MSG_WORDS, posted);
++    // AES trap tracer: record the enqueue (type, sender, target as the value
++    // a program would see, and whether the FIFO took it). No-op without the
++    // `aes-trace` feature.
++    super::trace::msg_post(super::appl::reported_pid(idx), &msg, MSG_WORDS, posted);
+     if posted {
+-        wake_mesg_waiter(pid);
++        wake_mesg_waiter(idx);
+     }
+     posted
+ }
+ 
+-/// Post a variable-length message into `pid`'s queue — the `appl_write` /
+-/// `ap_rdwr(MU_SDMSG)` path with a caller-supplied byte length (EmuTOS
+-/// `doq` memcpys `qpb_cnt` bytes, `aes/gemqueue.c:31-73`). Enqueues the first
+-/// `words` WORDs of `src` with the standard redraw/arrow coalescing
++/// Post a variable-length message into identity `idx`'s queue — the
++/// `appl_write` / `ap_rdwr(MU_SDMSG)` path with a caller-supplied byte length
++/// (EmuTOS `doq` memcpys `qpb_cnt` bytes, `aes/gemqueue.c:31-73`). Enqueues the
++/// first `words` WORDs of `src` with the standard redraw/arrow coalescing
+ /// ([`MsgQueue::push_words`]) and, on success, wakes an AES client blocked on
+-/// `pid`'s FIFO through the **same** centralized wake as [`post_msg`] — so
+-/// `appl_write` no longer bypasses it (design §5.2). Returns `false` if `pid`
+-/// has no descriptor or the queue is full.
++/// `idx`'s FIFO through the **same** centralized wake as [`post_msg`] — so
++/// `appl_write` no longer bypasses it (design §5.2). Returns `false` if `idx`
++/// is outside the table or the queue is full.
+ ///
+ /// # Safety
+ /// Single trap path.
+-pub unsafe fn post_words(pid: i16, src: &[i16], words: usize) -> bool {
++pub unsafe fn post_words(idx: usize, src: &[i16], words: usize) -> bool {
+     // SAFETY: caller upholds the single-trap-path invariant.
+-    let posted = match unsafe { by_pid(pid) } {
++    let posted = match unsafe { by_index(idx) } {
+         Some(p) => p.queue.push_words(src, words),
+         None => false,
+     };
+     // AES trap tracer, as in `post_msg` (this is the `appl_write` half).
+-    super::trace::msg_post(pid, src, words, posted);
++    super::trace::msg_post(super::appl::reported_pid(idx), src, words, posted);
+     if posted {
+-        wake_mesg_waiter(pid);
++        wake_mesg_waiter(idx);
+     }
+     posted
+ }
+ 
+-/// Wake any AES client blocked in `evnt_mesag`/`evnt_multi` on `pid`'s message
+-/// FIFO (WAITING → READY, sleep/wake substrate §5.2). The single wake point for
+-/// every message poster ([`post_msg`]/[`post_words`]), matching EmuTOS's
+-/// `aqueue`→`azombie`→`signal` (`emutos-cooperative-model.md` §3.3/§4.3). Not
+-/// load-bearing in step 3a (single context: the waiter's own idle re-check
+-/// drains the queue), but wired now so step 4's real peer switch needs no
+-/// `event.rs`/`appl_write` change.
+-fn wake_mesg_waiter(pid: i16) {
+-    crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_mesg(pid));
++/// Wake any AES client blocked in `evnt_mesag`/`evnt_multi` on identity
++/// `idx`'s message FIFO (WAITING → READY, sleep/wake substrate §5.2). The
++/// single wake point for every message poster ([`post_msg`]/[`post_words`]),
++/// matching EmuTOS's `aqueue`→`azombie`→`signal`
++/// (`emutos-cooperative-model.md` §3.3/§4.3). Not load-bearing in step 3a
++/// (single context: the waiter's own idle re-check drains the queue), but
++/// wired now so step 4's real peer switch needs no `event.rs`/`appl_write`
++/// change.
++fn wake_mesg_waiter(idx: usize) {
++    crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_mesg(idx));
+ }
+ 
+-/// Look up an application descriptor by pid.
++/// The descriptor of identity `idx`, or `None` for an index outside the
++/// table — the only way a lookup can miss, since every identity has its entry
++/// from boot (EmuTOS `pd_index`, `aes/gempd.c:32-35`). Callers that hold a
++/// **reported** pid go through `appl::identity_of` first.
+ ///
+ /// # Safety
+ /// Single trap path.
+-pub unsafe fn by_pid(pid: i16) -> Option<&'static mut Aespd> {
++pub unsafe fn by_index(idx: usize) -> Option<&'static mut Aespd> {
+     // SAFETY: single trap path.
+     let t = unsafe { table() };
+-    t.iter_mut().find(|s| s.in_use && s.pid == pid)
++    t.get_mut(idx)
+ }
+ 
+-/// Find an application by its 8-char name, returning its pid or `-1`.
++/// Find the identity whose descriptor carries the 8-char `name` — EmuTOS
++/// `fpdnm(name, …)` (`aes/gempd.c:38-57`): a walk over every entry comparing
++/// `p_name`, with no liveness test. Every entry starts blank
++/// (`geminit.c:868`) and only [`register`] writes a name, so a program's name
++/// is found while — and only while — its slot is the one `register` last
++/// named that way (one name per slot; a later occupant overwrites it in
++/// place, `aes/gemshlib.c:633`). `None` when no entry carries the name.
+ ///
+ /// # Safety
+ /// Single trap path.
+-pub unsafe fn find_by_name(name: &[u8; 8]) -> i16 {
++pub unsafe fn find_by_name(name: &[u8; 8]) -> Option<usize> {
+     // SAFETY: single trap path.
+     let t = unsafe { table() };
+-    t.iter()
+-        .find(|s| s.in_use && &s.name == name)
+-        .map(|s| s.pid)
+-        .unwrap_or(-1)
++    t.iter().position(|s| &s.name == name)
+ }
+ 
+-/// Deregister an application by pid — EmuTOS `ap_exit`
++/// Close the descriptor of identity `idx` — EmuTOS `ap_exit`
+ /// (`aes/gemaplib.c:251-261`):
+ ///
+ /// ```c
+@@ -450,22 +479,20 @@ pub unsafe fn find_by_name(name: &[u8; 8]) -> i16 {
+ /// Two things happen to the descriptor and no more: **the queue is drained**
+ /// (the `ap_rdwr(MU_MESAG, …)` reads every pending message into the scratch
+ /// buffer `D.g_valstr`, i.e. throws it away) and **`AP_OPEN` is cleared**.
+-/// `p_pid`, `p_name` and the remaining flags survive, and the `AESPD` itself
+-/// is never freed — EmuTOS's descriptors are fixed entries of
+-/// `D.g_int[]`/`D.g_acc[]` addressed by index (`pd_index`, `aes/gempd.c:32-35`)
+-/// and `fpdnm` walks that array with no liveness test (`:38-57`), so a message
+-/// addressed to a pid always finds its descriptor, before and after
+-/// `appl_exit`.
++/// `p_name` and the remaining flags survive, and the `AESPD` itself is never
++/// freed — EmuTOS's descriptors are fixed entries of `D.g_int[]`/`D.g_acc[]`
++/// addressed by index (`pd_index`, `aes/gempd.c:32-35`) and `fpdnm` walks
++/// that array with no liveness test (`:38-57`), so a message addressed to a
++/// pid always finds its descriptor, before and after `appl_exit`. NewTOS's
++/// table has the same shape (one entry per identity, from boot), so there is
++/// nothing here to free either.
+ ///
+-/// This matters here and not only in theory: NewTOS's desktop runs in the
+-/// kernel boot context and gets pid 1 (`appl::current_pid`), the first program
+-/// it launches gets GEMDOS slot 0 and therefore pid 1 as well
+-/// ([`super::pid_of_slot`]) — the *same* descriptor, exactly as EmuTOS's
+-/// `sh_ldapp` renames the one `rlr` for each successive program
+-/// (`aes/gemshlib.c:633-636`). Destroying the descriptor here used to take the
+-/// desktop's message pipe with it when a program quit (A29): `pd::by_pid(1)`
+-/// went `None`, and from then on every `WM_REDRAW`/`WM_CLOSED`/`WM_MOVED`/
+-/// `MN_SELECTED` the AES posted to the desktop was silently dropped.
++/// This matters here and not only in theory: the desktop calls `appl_exit`
++/// before every program it launches and `appl_init` when it resumes
++/// (`desk/deskmain.c:2166,1953`, A28). Destroying the descriptor here used to
++/// take the desktop's message pipe with it when a program quit (A29), and
++/// from then on every `WM_REDRAW`/`WM_CLOSED`/`WM_MOVED`/`MN_SELECTED` the AES
++/// posted to the desktop was silently dropped.
+ ///
+ /// `mn_cleanup` (`gemmnlib.c:740-758`) and `wait_for_accs` concern desk
+ /// accessories, which NewTOS has none of; `wm_update`/`all_run` bracket the
+@@ -474,10 +501,9 @@ pub unsafe fn find_by_name(name: &[u8; 8]) -> i16 {
+ ///
+ /// # Safety
+ /// Single trap path.
+-pub unsafe fn close(pid: i16) {
++pub unsafe fn close(idx: usize) {
+     // SAFETY: single trap path.
+-    let t = unsafe { table() };
+-    if let Some(slot) = t.iter_mut().find(|s| s.in_use && s.pid == pid) {
++    if let Some(slot) = unsafe { by_index(idx) } {
+         slot.queue.clear(); // ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, …)
+         slot.flags &= !AP_OPEN; // rlr->p_flags &= ~AP_OPEN
+     }
+@@ -503,26 +529,54 @@ pub unsafe fn close(pid: i16) {
+ /// `AC_CLOSE` to every registered desk accessory and frees the submenu buffer;
+ /// NewTOS has neither.
+ ///
+-/// Like `ap_exit`, this **keeps the descriptor**: `p_pid` and `p_name` stay, so
+-/// the next program to occupy the slot finds the pd to rename
+-/// (`aes/gemshlib.c:633`) and — the case that made this a P1 — the desktop,
+-/// which shares pid 1 with the first program it launches, still has a message
+-/// pipe after that program quits. See [`close`] for the full reasoning.
+-///
++/// Like `ap_exit`, this **keeps the descriptor**: `p_name` stays, so the next
++/// program to occupy the slot finds the pd to rename (`aes/gemshlib.c:633`).
+ /// A descriptor without `AP_OPEN` (the program did call `appl_exit`, or never
+ /// called `appl_init`) is left alone, as EmuTOS's `if` leaves it alone.
+ ///
++/// The kernel launcher calls this at `sh_ldapp`'s point, after the program's
++/// `Pterm` has returned. Since the slot's release already ran [`release`] by
++/// then, the guard finds `AP_OPEN` clear on that path; the call stays as the
++/// `sh_ldapp` step it is, and as the cleanup for any caller that has not
++/// released the slot.
++///
+ /// # Safety
+ /// Single trap path.
+-pub unsafe fn close_if_open(pid: i16) {
++pub unsafe fn close_if_open(idx: usize) {
+     // SAFETY: single trap path.
+-    let t = unsafe { table() };
+-    if let Some(slot) = t
+-        .iter_mut()
+-        .find(|s| s.in_use && s.pid == pid && (s.flags & AP_OPEN) != 0)
+-    {
+-        slot.queue.clear(); // ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, …)
+-        slot.flags &= !AP_OPEN; // rlr->p_flags &= ~AP_OPEN
++    if let Some(slot) = unsafe { by_index(idx) } {
++        if slot.flags & AP_OPEN != 0 {
++            slot.queue.clear(); // ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, …)
++            slot.flags &= !AP_OPEN; // rlr->p_flags &= ~AP_OPEN
++        }
++    }
++}
++
++/// The tenant of GEMDOS slot `idx` is gone — called from the process model's
++/// slot release (`bdos::process::pterm::release_slot`), for every way a
++/// process ends (`Pterm`/`Ptermres`/`Pterm0`, the Ctrl-C terminate, a fault).
++/// Flags are cleared and the queue drained; the name stays, as it stays in
++/// EmuTOS until the next `p_nameit`.
++///
++/// This is the union of the two resets EmuTOS applies to its one `rlr` at the
++/// launch boundary — `rlr->p_flags = 0` before the next program
++/// (`aes/gemshlib.c:636`) and the queue drain after the last one
++/// (`:650-657`, `ap_exit` `gemaplib.c:256-257`) — applied where NewTOS's
++/// process model learns that a tenant is gone. EmuTOS needs no such hook
++/// because a `Pexec` child runs on the parent's `rlr` and the parent sees its
++/// leftovers; in NewTOS the child has its own entry (the slot's), and without
++/// this reset the slot's **next** tenant inherited a dead program's `AP_OPEN`
++/// and unread messages through `appl_init`'s preserve-the-queue rule (A25) —
++/// the `handle_pexec` side finding of the A62 report (§8), which runs neither
++/// `register` nor `close_if_open` for an EL0-`Pexec`ed child.
++///
++/// # Safety
++/// Single trap / process-release path (no re-entrancy).
++pub unsafe fn release(idx: usize) {
++    // SAFETY: caller upholds the single-path invariant.
++    if let Some(slot) = unsafe { by_index(idx) } {
++        slot.queue.clear();
++        slot.flags = 0;
+     }
+ }
+ 
+@@ -561,9 +615,9 @@ fn p_nameit(dst: &mut [u8; AP_NAMELEN], src: &[u8]) {
+     }
+ }
+ 
+-/// Hand the AES process descriptor for `pid` over to the program about to run
+-/// from `path` — EmuTOS `sh_ldapp`'s three lines between finding the program
+-/// and `dos_exec` (`aes/gemshlib.c:633-636`):
++/// Hand the AES process descriptor of identity `idx` over to the program
++/// about to run from `path` — EmuTOS `sh_ldapp`'s three lines between finding
++/// the program and `dos_exec` (`aes/gemshlib.c:633-636`):
+ ///
+ /// ```c
+ /// p_nameit(rlr, fname);
+@@ -579,42 +633,26 @@ fn p_nameit(dst: &mut [u8; AP_NAMELEN], src: &[u8]) {
+ /// (`p_setappdir` is the launcher's own step,
+ /// [`super::resource::set_app_dir`].)
+ ///
+-/// The flag reset is load-bearing because NewTOS crosses this boundary on the
+-/// **same** descriptor EmuTOS does: the desktop runs in the kernel boot context
+-/// with pid 1 (`appl::current_pid`) and the first program it launches gets
+-/// GEMDOS slot 0, hence pid 1 too ([`super::pid_of_slot`]) — exactly as EmuTOS
+-/// renames the one `rlr`. Its one consumer is `sh_ldapp`'s post-`dos_exec`
++/// The flag reset is load-bearing because a GEMDOS slot, like EmuTOS's one
++/// `rlr`, is occupied by one program after another and its descriptor is the
++/// same entry each time. Its one consumer is `sh_ldapp`'s post-`dos_exec`
+ /// cleanup ([`close_if_open`], `aes/gemshlib.c:650-657`), whose whole question
+-/// is "did **this** program call `appl_init` without `appl_exit`?". Without the
+-/// reset it read the *previous* occupant's `AP_OPEN` and drained a queue that
+-/// had nothing to do with the program that just ended (A28).
++/// is "did **this** program call `appl_init` without `appl_exit`?". Without
++/// the reset it read the *previous* occupant's `AP_OPEN` and drained a queue
++/// that had nothing to do with the program that just ended (A28).
+ ///
+ /// `p_flags = 0` does **not** touch the queue — draining it is the other half
+ /// of EmuTOS's boundary, the desktop's own `appl_exit()` in its epilog
+ /// (`desk/deskmain.c:2166` → `ap_exit`, [`close`]).
+ ///
+-/// If no descriptor exists for `pid` yet, a free slot is claimed and
+-/// initialised (`in_use`, `pid`, name; `flags = 0`, empty queue), mirroring
+-/// `getpd` linking a fresh pd for a new process (`aes/gempd.c:59-68`). A full
+-/// table simply leaves the name unregistered.
++/// An index outside the table names nothing.
+ ///
+ /// # Safety
+ /// Single trap / launcher path (no re-entrancy), same discipline as [`open`].
+-pub unsafe fn register(pid: i16, path: &[u8]) {
++pub unsafe fn register(idx: usize, path: &[u8]) {
+     // SAFETY: caller upholds the single-path invariant.
+-    let t = unsafe { table() };
+-    let idx = match t.iter().position(|s| s.in_use && s.pid == pid) {
+-        Some(i) => i,
+-        None => match t.iter().position(|s| !s.in_use) {
+-            Some(i) => {
+-                t[i] = Aespd::EMPTY;
+-                t[i].in_use = true;
+-                t[i].pid = pid;
+-                i
+-            }
+-            None => return, // table full: the name is simply not registered
+-        },
+-    };
+-    p_nameit(&mut t[idx].name, base_name(path)); // p_nameit(rlr, fname)
+-    t[idx].flags = 0; // rlr->p_flags = 0
++    if let Some(slot) = unsafe { by_index(idx) } {
++        p_nameit(&mut slot.name, base_name(path)); // p_nameit(rlr, fname)
++        slot.flags = 0; // rlr->p_flags = 0
++    }
+ }
+diff --git a/tos-api/src/aes/resource.rs b/tos-api/src/aes/resource.rs
+index 7a33ac7..3a1209b 100644
+--- a/tos-api/src/aes/resource.rs
++++ b/tos-api/src/aes/resource.rs
+@@ -128,7 +128,7 @@
+ //! NewTOS cannot read the state out of the application's memory (a blob is
+ //! reached through the kernel alias of the process window and needs the
+ //! ABI's record strides, [`Loaded`]), so it keeps its own descriptor —
+-//! **per AES process**, keyed by the caller's pid, in [`RSC`]: a list of the
++//! **per AES process**, keyed by the caller's identity, in [`RSC`]: a list of the
+ //! process's loaded resources, **and the caller's `AESGLOBAL` says which one
+ //! a call acts on** — `rs_sglobe`'s binding (`:675-679`). `rsrc_load`
+ //! appends the new entry and names it through the caller's words
+@@ -598,23 +598,26 @@ impl Loaded {
+ // `aes/gemrslib.c:673-679`), so each AES process has its own state and may
+ // hold several loaded blobs, of which its array names one. NewTOS keeps the
+ // equivalent here: every entry is one `rsrc_load` of one process, keyed by the
+-// loading process's AES pid (`appl::current_pid`, GEMDOS slot + 1), and the
+-// caller's `ap_rscmem` — matched against the entries' names — says which one
+-// a call acts on. XaAES's per-client `resources` list
+-// (`xaaes/src.km/xa_rsrc.c:895-900`) is the model for the list itself.
++// loading process's AES **identity** (`appl::current_identity`: its GEMDOS
++// slot, or `pd::DESKTOP` for the kernel-context desktop — not the pid it
++// reports, which parent and child may share), and the caller's `ap_rscmem` —
++// matched against the entries' names — says which one a call acts on.
++// XaAES's per-client `resources` list (`xaaes/src.km/xa_rsrc.c:895-900`) is
++// the model for the list itself.
+ 
+ /// One entry of the per-process resource lists.
+ #[derive(Clone, Copy)]
+ struct RscEntry {
+-    /// AES pid of the process that loaded it; 0 = free entry.
+-    pid: i16,
++    /// AES identity of the process that loaded it (descriptor index);
++    /// [`Self::NO_OWNER`] = free entry.
++    owner: usize,
+     /// What the loading process received as `ap_rscmem` for this blob
+     /// ([`published_name`]): the 4-byte blob base, or 0 when
+     /// [`report_load`] could publish nothing (the base or the tree table
+     /// does not fit the field). The caller's selector is matched against
+     /// this — EmuTOS's `rs_hdr = pglobal->ap_rscmem` (`gemrslib.c:677`).
+     name: u32,
+-    /// Among the pid's entries **without** a name, the latest loaded — the
++    /// Among the owner's entries **without** a name, the latest loaded — the
+     /// one a zero selector reaches (module comment, "a blob the four bytes
+     /// cannot name"). Set by the load, gone with the entry, never re-set:
+     /// after its `rsrc_free` the zero selector reaches nothing, the way the
+@@ -636,8 +639,12 @@ struct RscEntry {
+ }
+ 
+ impl RscEntry {
++    /// No identity: the entry is free. Distinct from every descriptor index
++    /// (GEMDOS slot 0 is a valid identity).
++    const NO_OWNER: usize = usize::MAX;
++
+     const FREE: RscEntry = RscEntry {
+-        pid: 0,
++        owner: Self::NO_OWNER,
+         name: 0,
+         latest_unnamed: false,
+         raw: 0,
+@@ -649,10 +656,11 @@ impl RscEntry {
+ /// Capacity of the resource lists, over all processes together. EmuTOS has no
+ /// such bound (each load is a `dos_alloc_anyram`, `gemrslib.c:775`); what it
+ /// has is the failure mode, `rsrc_load` = 0 when the allocation fails
+-/// (`:776`), and that is what a full table reports. Sized for every AES
+-/// process (`pd::MAX_APPS` = 8) holding two blobs at once — TeraDesk's
+-/// `load_icons` needs `desktop.rsc` and `cicons.rsc` together
+-/// (`sdk/apps/teradesk/icon.c:2705-2766`).
++/// (`:776`), and that is what a full table reports. Sized for eight AES
++/// processes holding two blobs at once — TeraDesk's `load_icons` needs
++/// `desktop.rsc` and `cicons.rsc` together
++/// (`sdk/apps/teradesk/icon.c:2705-2766`); a deeper `Pexec` chain of loaders
++/// than that has no real-world instance.
+ const MAX_LOADED: usize = 16;
+ 
+ struct RscTable(UnsafeCell<[RscEntry; MAX_LOADED]>);
+@@ -671,15 +679,17 @@ unsafe fn table() -> &'static mut [RscEntry; MAX_LOADED] {
+     unsafe { &mut *RSC.0.get() }
+ }
+ 
+-/// The AES pid of the process making the current call — the key of its
+-/// resource list. The same id `appl_init` reports (`appl::current_pid`):
+-/// GEMDOS slot + 1 for an EL0 caller, 1 for the kernel boot context, which
+-/// shares the id with the first program launched into slot 0 (A29).
+-fn caller_pid() -> i16 {
+-    super::appl::current_pid()
++/// The AES identity of the process making the current call — the key of its
++/// resource list (`appl::current_identity`): its GEMDOS slot for an EL0
++/// caller, `pd::DESKTOP` for the kernel boot context. The identity, not the
++/// reported pid: the desktop and the program in slot 0 report the same
++/// number but keep separate lists, as do a `Pexec` parent and child (A62,
++/// spec § "AES process identity and pid", consequences for A39).
++fn caller_identity() -> usize {
++    super::appl::current_identity()
+ }
+ 
+-/// Index of the entry `pid`'s resource call acts on — EmuTOS's `rs_sglobe`
++/// Index of the entry `owner`'s resource call acts on — EmuTOS's `rs_sglobe`
+ /// (`gemrslib.c:675-679`):
+ ///
+ /// ```c
+@@ -688,7 +698,7 @@ fn caller_pid() -> i16 {
+ /// ```
+ ///
+ /// The 4-byte `ap_rscmem` (byte 14) is read out of the caller's `AESGLOBAL`
+-/// `global` and matched against the names of *this* pid's entries
++/// `global` and matched against the names of *this* identity's entries
+ /// ([`RscEntry::name`]): the blob the caller's words name, if the AES
+ /// loaded it for this process. `None` is "nothing loaded" (`rs_free` → 0,
+ /// `:685`) — for 0 while every entry is named, a null `global`, another
+@@ -699,7 +709,7 @@ fn caller_pid() -> i16 {
+ /// it must not parse a header it did not load (spec § `rsrc_load`, A39
+ /// callout, item 4). Base comparison, not range: TeraDesk's pre-A60 hybrid
+ /// `0x407000` lay inside `desktop.rsc` and named no blob
+-/// (`TASK/A60-STATUS-DONE.MD` § 3). Among the pid's *unnamed* entries — the
++/// (`TASK/A60-STATUS-DONE.MD` § 3). Among the owner's *unnamed* entries — the
+ /// zero the caller was left with — the latest loaded answers (module
+ /// comment).
+ ///
+@@ -710,7 +720,7 @@ fn caller_pid() -> i16 {
+ /// # Safety
+ /// Single trap path; `global` is null or the caller's `AESGLOBAL`, readable
+ /// for the 30 bytes / 15 WORDs of `gemrslib.h:15-27`.
+-unsafe fn selected(pid: i16, global: *const i16) -> Option<usize> {
++unsafe fn selected(owner: usize, global: *const i16) -> Option<usize> {
+     if global.is_null() {
+         return None;
+     }
+@@ -721,56 +731,56 @@ unsafe fn selected(pid: i16, global: *const i16) -> Option<usize> {
+     // SAFETY: caller upholds the single-trap-path invariant.
+     let t = unsafe { table() };
+     t.iter()
+-        .position(|e| e.pid == pid && e.name == sel && (sel != 0 || e.latest_unnamed))
++        .position(|e| e.owner == owner && e.name == sel && (sel != 0 || e.latest_unnamed))
+ }
+ 
+-/// Enter a completed load into `pid`'s list under the name the caller
++/// Enter a completed load into `owner`'s list under the name the caller
+ /// receives for it ([`published_name`]) — the list half of `rs_readit`'s
+ /// "init global" (`gemrslib.c:786-788`), whose `AESGLOBAL` half is
+ /// [`report_load`]: the new blob is the one the caller's words now name,
+ /// and no earlier load of the process is freed. A load the words cannot
+-/// name becomes the pid's latest unnamed entry. `false` when the table is
++/// name becomes the owner's latest unnamed entry. `false` when the table is
+ /// full (the load must then be undone by the caller; `rsrc_load` reports 0
+ /// as for EmuTOS's failed `dos_alloc_anyram`, `:775-776`).
+ ///
+ /// # Safety
+ /// Single trap path.
+-unsafe fn register(pid: i16, raw: Long, cicon_raw: Long, desc: Loaded) -> bool {
++unsafe fn register(owner: usize, raw: Long, cicon_raw: Long, desc: Loaded) -> bool {
+     // SAFETY: caller upholds the single-trap-path invariant.
+     let t = unsafe { table() };
+-    let Some(idx) = t.iter().position(|e| e.pid == 0) else {
++    let Some(idx) = t.iter().position(|e| e.owner == RscEntry::NO_OWNER) else {
+         return false;
+     };
+     let name = published_name(&desc);
+     if name == 0 {
+         for e in t.iter_mut() {
+-            if e.pid == pid {
++            if e.owner == owner {
+                 e.latest_unnamed = false;
+             }
+         }
+     }
+-    t[idx] = RscEntry { pid, name, latest_unnamed: name == 0, raw, cicon_raw, desc };
++    t[idx] = RscEntry { owner, name, latest_unnamed: name == 0, raw, cicon_raw, desc };
+     true
+ }
+ 
+-/// Drop every entry of the process with AES pid `pid` — the AES side of
+-/// process termination, called from `Pterm` and `Ptermres`
++/// Drop every entry of the process in GEMDOS slot `slot` (its AES identity)
++/// — the AES side of process termination, called from `Pterm` and `Ptermres`
+ /// (`bdos::process::pterm::terminate_inner`). The blobs themselves are the
+ /// process's pool blocks and are reclaimed there by owner (`free_all_owned`,
+ /// EmuTOS `ixterm` → `free_all_owned`, `bdos/proc.c:136`); the process's
+ /// window table is re-seeded for its next tenant (`usermem::seed_tpa`). What
+ /// must go here is the **descriptor**: the next program in the same GEMDOS
+-/// slot gets the same pid, and `appl_init` reuses the same AES descriptor
++/// slot has the same identity, and `appl_init` reuses the same AES descriptor
+ /// (`pd::open`, A29) — without this it would inherit entries whose kernel
+-/// aliases point at freed pool memory. Only `pid`'s entries; every other
++/// aliases point at freed pool memory. Only `slot`'s entries; every other
+ /// process keeps its state. `appl_exit` does not call this (`ap_exit`,
+ /// `aes/gemaplib.c:251-261`).
+-pub fn on_process_exit(pid: i16) {
++pub fn on_process_exit(slot: usize) {
+     // SAFETY: called on the single trap path (`Pterm` under the BDOS giant
+     // lock), no AES call in flight.
+     let t = unsafe { table() };
+     for e in t.iter_mut() {
+-        if e.pid == pid {
++        if e.owner == slot {
+             // A colour-icon buffer of the in-place path is the kernel
+             // heap's, not the process's pool memory, and goes with the
+             // entry; a pool block (`cicon_raw != 0`) is reclaimed by owner
+@@ -1142,7 +1152,7 @@ unsafe fn cicon_tables_are_sound(base: *const u8, h: &NrscHeader, abi: Abi) -> b
+ }
+ 
+ /// Relocate a native `.RSC` blob in place (offsets → absolute pointers)
+-/// and register its trees for the **calling process** ([`caller_pid`]),
++/// and register its trees for the **calling process** ([`caller_identity`]),
+ /// selecting it as that process's resource — the in-kernel branch of
+ /// [`rsrc_load`]. `base` points at the start of the blob, `len` is the
+ /// number of bytes that really exist there — the bytes read from the file,
+@@ -1167,7 +1177,7 @@ pub unsafe fn relocate_and_register(base: *mut u8, len: usize) -> bool {
+         return false;
+     };
+     // SAFETY: single trap path.
+-    if unsafe { register(caller_pid(), 0, 0, desc) } {
++    if unsafe { register(caller_identity(), 0, 0, desc) } {
+         return true;
+     }
+     // SAFETY: the buffer this load's `kernel_cicon_alloc` gave it; the
+@@ -2150,7 +2160,7 @@ pub fn rsrc_load(pb: &Aespb) {
+     // ([`report_load`], below); nothing already loaded — by this process or
+     // any other — is freed, as nothing in `rs_load` frees
+     // (`gemrslib.c:786-788`).
+-    let pid = caller_pid();
++    let owner = caller_identity();
+     // SAFETY: `buf` now holds `len` file bytes; both relocation paths
+     // validate the `NRSC` header against `len` before touching anything.
+     let loaded = if run.is_null() {
+@@ -2167,7 +2177,7 @@ pub fn rsrc_load(pb: &Aespb) {
+             // SAFETY: single trap path; a refused registration frees the
+             // buffer this load allocated, exactly once.
+             unsafe {
+-                if register(pid, 0, 0, desc) {
++                if register(owner, 0, 0, desc) {
+                     true
+                 } else {
+                     kernel_cicon_free(desc.cicon);
+@@ -2178,7 +2188,7 @@ pub fn rsrc_load(pb: &Aespb) {
+     } else {
+         // EL0 app caller: copy into per-process EL0-mapped memory and
+         // relocate to user VAs at the caller's OBJECT width.
+-        unsafe { load_into_user(run, pid, buf, len, abi) }
++        unsafe { load_into_user(run, owner, buf, len, abi) }
+     };
+     // `rs_readit`'s "init global" (`gemrslib.c:786-788`) + `fix_trindex`'s
+     // `ap_ptree` (`:595-597`): report the load back through the caller's
+@@ -2194,7 +2204,7 @@ pub fn rsrc_load(pb: &Aespb) {
+ 
+ /// Place a candidate native `.RSC` blob (`src[..len]`) into the calling
+ /// process's per-process resource window, register it in the list of the
+-/// process with AES id `pid` with **user** VAs — so an EL0 `rsrc_gaddr`
++/// process with AES identity `owner` with **user** VAs — so an EL0 `rsrc_gaddr`
+ /// returns dereferenceable pointers — and select it. Returns the
+ /// descriptor, or `None` — leaving nothing allocated — on a bad header, no
+ /// slot, an exhausted window, `ENSMEM`, a mapping error, or full resource
+@@ -2210,7 +2220,7 @@ pub fn rsrc_load(pb: &Aespb) {
+ /// current process basepage; `src[..len]` is a candidate blob.
+ unsafe fn load_into_user(
+     run: *mut BasePage,
+-    pid: i16,
++    owner: usize,
+     src: &[u8; RSC_CAP],
+     len: usize,
+     abi: Abi,
+@@ -2293,7 +2303,7 @@ unsafe fn load_into_user(
+     // `dos_alloc_anyram` (`gemrslib.c:775-776`), undone the same way as a
+     // refused blob.
+     // SAFETY: single trap path.
+-    let desc = desc.filter(|&d| unsafe { register(pid, raw, cicon_raw, d) });
++    let desc = desc.filter(|&d| unsafe { register(owner, raw, cicon_raw, d) });
+     if desc.is_none() {
+         // Drop the window entries and free the pool blocks.
+         if cicon_raw != 0 {
+@@ -2444,9 +2454,9 @@ unsafe fn report_load(global: *mut i16, desc: &Loaded) {
+ /// nothing, on a double free, and when the pool refused the block (spec
+ /// verification criterion resource-fileselector.md § `rsrc_free`).
+ pub fn rsrc_free(pb: &Aespb) {
+-    let pid = caller_pid();
++    let owner = caller_identity();
+     // SAFETY: single trap path; `global` is the caller's AESGLOBAL.
+-    let Some(idx) = (unsafe { selected(pid, pb.global_ptr()) }) else {
++    let Some(idx) = (unsafe { selected(owner, pb.global_ptr()) }) else {
+         pb.set_ret(0);
+         return;
+     };
+@@ -2712,7 +2722,7 @@ unsafe fn get_addr(d: &Loaded, rtype: i16, index: usize) -> Resolved {
+ unsafe fn resolve(pb: &Aespb, rtype: i16, index: usize) -> (&'static Loaded, Resolved) {
+     // SAFETY: forwarded from this function's contract.
+     let d: &'static Loaded = unsafe {
+-        match selected(caller_pid(), pb.global_ptr()) {
++        match selected(caller_identity(), pb.global_ptr()) {
+             Some(idx) => &table()[idx].desc,
+             None => &Loaded::EMPTY,
+         }
+@@ -3968,8 +3978,8 @@ mod selector_tests {
+         LOCK.lock().unwrap_or_else(|e| e.into_inner())
+     }
+ 
+-    /// A claimed GEMDOS slot with a basepage page of its own; its AES pid is
+-    /// `slot + 1`. Released on drop.
++    /// A claimed GEMDOS slot with a basepage page of its own; its AES identity
++    /// is the slot, the pid it reports `slot + 1`. Released on drop.
+     struct Proc {
+         slot: usize,
+         page: *mut [u8; 4096],
+@@ -3985,6 +3995,7 @@ mod selector_tests {
+             Proc { slot, page }
+         }
+ 
++        /// The pid this process reports (`appl_init`'s value).
+         fn pid(&self) -> i16 {
+             crate::aes::pid_of_slot(self.slot)
+         }
+@@ -3993,7 +4004,8 @@ mod selector_tests {
+             self.page.cast::<BasePage>()
+         }
+ 
+-        /// Make this the running process: every AES call now carries its pid.
++        /// Make this the running process: every AES call now carries its
++        /// identity.
+         fn run(&self) {
+             process::set_current(self.bp());
+         }
+@@ -4001,9 +4013,9 @@ mod selector_tests {
+ 
+     impl Drop for Proc {
+         fn drop(&mut self) {
+-            // Leave no entry of this pid behind for the next test's tenant of
+-            // the slot — what `Pterm` does on the machine.
+-            on_process_exit(self.pid());
++            // Leave no entry of this slot behind for the next test's tenant
++            // of it — what `Pterm` does on the machine.
++            on_process_exit(self.slot);
+             if process::current() == self.bp() {
+                 process::set_current(std::ptr::null_mut());
+             }
+@@ -4059,7 +4071,7 @@ mod selector_tests {
+             // long as this `Named`; single test thread under `LOCK`.
+             let desc = unsafe { relocate_and_register_core(p, FSEL.len(), target, Abi::Lp64, &mut kernel_cicon_alloc) }
+                 .expect("the blob must relocate");
+-            assert!(unsafe { register(caller_pid(), 0, 0, desc) }, "room in the resource lists");
++            assert!(unsafe { register(caller_identity(), 0, 0, desc) }, "room in the resource lists");
+             // SAFETY: a 32-byte caller array.
+             unsafe { report_load(global.as_mut_ptr(), &desc) };
+             Named { words, target }
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index 89055d6..17d0462 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -350,7 +350,11 @@ struct Window {
+     open: bool,
+     kind: u16,
+     z: i16,     // stacking order (higher = nearer the top)
+-    owner: i16, // owning process id (WM_* message target)
++    /// Owning AES identity (`w_owner`, the descriptor index a `WM_*` message
++    /// for this window is posted to), or [`Window::NO_OWNER`] for a free slot
++    /// and for the desktop window until `WF_NEWDESK` re-owns it. `WF_OWNER`
++    /// reports its value through `appl::reported_pid`.
++    owner: i16,
+     full: Grect, // maximum extent (WF_FXYWH)
+     curr: Grect, // current border rect (WF_CXYWH)
+     prev: Grect, // previous border rect (WF_PXYWH)
+@@ -418,12 +422,18 @@ struct Window {
+ }
+ 
+ impl Window {
++    /// `pwin->w_owner = NULL` (`gemwmlib.c:1482`): no identity owns the
++    /// window. Distinct from every descriptor index (GEMDOS slot 0 is a valid
++    /// identity), and reported by `WF_OWNER` as 0, the value the unowned
++    /// desktop window has always reported.
++    const NO_OWNER: i16 = -1;
++
+     const EMPTY: Window = Window {
+         in_use: false,
+         open: false,
+         kind: 0,
+         z: 0,
+-        owner: 0,
++        owner: Self::NO_OWNER,
+         full: Grect { x: 0, y: 0, w: 0, h: 0 },
+         curr: Grect { x: 0, y: 0, w: 0, h: 0 },
+         prev: Grect { x: 0, y: 0, w: 0, h: 0 },
+@@ -1599,11 +1609,15 @@ fn rlist_owns(handle: i16) -> Owns {
+     }
+ }
+ 
++/// The identity that owns `handle`, or `None` for no window / no owner.
++fn owner_of(handle: i16) -> Option<usize> {
++    win(handle).and_then(|w| usize::try_from(w.owner).ok())
++}
++
+ /// Post a `WM_REDRAW` for `rect` to `handle`'s owner process.
+ fn send_redraw(handle: i16, rect: Grect) {
+-    let owner = match win(handle) {
+-        Some(w) => w.owner,
+-        None => return,
++    let Some(owner) = owner_of(handle) else {
++        return;
+     };
+     let mut msg = [0i16; 8];
+     msg[0] = WM_REDRAW;
+@@ -2716,7 +2730,7 @@ pub fn wind_create(pb: &Aespb) {
+             // `w_setup(rlr, i, kind)` (`gemwmlib.c:1376`, `:205-215`) records
+             // the *creating* process as `w_owner`; `wm_open` never touches it.
+             // Reported by `WF_OWNER` (`:1580`).
+-            w.owner = super::appl::current_pid();
++            w.owner = super::appl::current_identity() as i16;
+             // EmuTOS `wm_create` stores the caller's rectangle in WS_FULL only
+             // and zeroes the current/previous ones — `w_setsize(WS_CURR, i,
+             // &gl_rzero)` / `w_setsize(WS_PREV, i, &gl_rzero)`, then
+@@ -2979,8 +2993,9 @@ fn wm_delete(handle: i16) -> bool {
+     w.in_use = false;
+     w.open = false;
+     // `pwin->w_owner = NULL;` (`:1482`) — no process owns a free slot, so no
+-    // stale pid can be handed a `WM_REDRAW` for a window that no longer exists.
+-    w.owner = 0;
++    // stale identity can be handed a `WM_REDRAW` for a window that no longer
++    // exists.
++    w.owner = Window::NO_OWNER;
+     true
+ }
+ 
+@@ -3143,6 +3158,10 @@ pub fn wind_get(pb: &Aespb) {
+             // our profile is 0x340). poutwds[0..3] → int_out[1..4].
+             WF_OWNER => {
+                 let (owner, open) = (w.owner, w.open);
++                // `pwin->w_owner->p_pid` (`:1580`): the owner's reported pid;
++                // 0 for an unowned window (the desktop window before
++                // `WF_NEWDESK`), as it has always reported.
++                let owner = usize::try_from(owner).map_or(0, super::appl::reported_pid);
+                 pb.set_intout(1, owner);
+                 pb.set_intout(2, i16::from(open));
+                 // `poutwds[2] = gl_wtop` — the raw variable, so `NIL` when
+@@ -3220,7 +3239,7 @@ pub fn wind_set(pb: &Aespb) {
+         // the caller (`pwin->w_owner = rlr`, `gemwmlib.c:1684-1687`).
+         WF_NEWDESK => {
+             if let Some(w) = win(handle) {
+-                w.owner = super::appl::current_pid();
++                w.owner = super::appl::current_identity() as i16;
+             }
+             set_newdesk(pb);
+         }
+@@ -4214,14 +4233,14 @@ pub fn intercept() {
+     };
+     // The FIFO target is the window owner (EmuTOS `ct_msgup`'s `owner` =
+     // `pwin->w_owner`, `gemctrl.c:314`); at single-app this is the running app.
+-    let owner = match win(handle) {
+-        Some(w) => w.owner,
+-        None => return,
++    let Some(owner) = owner_of(handle) else {
++        return;
+     };
+ 
+     let mut msg = [0i16; 8];
+     // `ap_sendmsg` sets `msg[1] = rlr->p_pid`, the sender pid (`gemwmlib.c:855`);
+-    // for ctlmgr messages that is the control process, at single-app the app.
++    // for ctlmgr messages that is the control process, at single-app the app
++    // (its reported value).
+     msg[1] = super::appl::current_pid();
+     msg[3] = handle;
+ 
+@@ -4343,7 +4362,7 @@ pub fn intercept() {
+ /// the former direct-`pbuff` write so frame messages queue in FIFO order (and
+ /// `WM_ARROWED` coalesces) instead of overwriting a message still unread by
+ /// the app (AUD-P2-001).
+-fn post_to_owner(owner: i16, msg: &[i16; 8]) {
++fn post_to_owner(owner: usize, msg: &[i16; 8]) {
+     // SAFETY: single trap path; `post_msg` hands the message to the live slot.
+     unsafe {
+         super::pd::post_msg(owner, *msg);
+@@ -4360,7 +4379,7 @@ fn post_untopped(old_top: i16, new_top: i16) {
+     if old_top == new_top || old_top == DESKWH {
+         return;
+     }
+-    if let Some(owner) = win(old_top).map(|w| w.owner) {
++    if let Some(owner) = owner_of(old_top) {
+         let mut msg = [0i16; 8];
+         msg[0] = WM_UNTOPPED;
+         // `ap_sendmsg` sets msg[1] = sender pid (gemwmlib.c:855); at single-app
+@@ -4371,34 +4390,45 @@ fn post_untopped(old_top: i16, new_top: i16) {
+     }
+ }
+ 
+-/// Test hook (not wired to boot): the message at the **front** of process
+-/// `pid`'s FIFO queue (without removing it), or `None` if the queue is empty.
+-/// Lets the P5 redraw-broadcast selftest observe the `WM_REDRAW` posted on
+-/// `wind_close` / `wind_set(WF_TOP)`.
++/// Test hook (not wired to boot): the message at the **front** of the FIFO
++/// queue of the process reporting `pid` (without removing it), or `None` if
++/// the queue is empty. Lets the P5 redraw-broadcast selftest observe the
++/// `WM_REDRAW` posted on `wind_close` / `wind_set(WF_TOP)`.
+ pub fn test_pending_msg(pid: i16) -> Option<[i16; 8]> {
+     // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
+-    unsafe { super::pd::by_pid(pid).and_then(|p| p.queue.front()) }
++    unsafe { test_pd(pid).and_then(|p| p.queue.front()) }
+ }
+ 
+-/// Test hook (not wired to boot): number of messages queued for `pid` (0 when
+-/// empty). Lets a selftest assert the WM_REDRAW rectangle-union coalesces two
+-/// same-window redraws into a single queue entry.
++/// Test hook (not wired to boot): number of messages queued for the process
++/// reporting `pid` (0 when empty). Lets a selftest assert the WM_REDRAW
++/// rectangle-union coalesces two same-window redraws into a single queue entry.
+ pub fn test_msg_count(pid: i16) -> usize {
+     // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
+-    unsafe { super::pd::by_pid(pid).map(|p| p.queue.pending()).unwrap_or(0) }
++    unsafe { test_pd(pid).map(|p| p.queue.pending()).unwrap_or(0) }
+ }
+ 
+-/// Test hook (not wired to boot): drop every pending message for `pid`, so the
+-/// P5 selftest can isolate the `WM_REDRAW` a subsequent window op posts.
++/// Test hook (not wired to boot): drop every pending message of the process
++/// reporting `pid`, so the P5 selftest can isolate the `WM_REDRAW` a subsequent
++/// window op posts.
+ pub fn test_clear_msg(pid: i16) {
+     // SAFETY: single-CPU AES; test scaffolding on the boot trap path.
+     unsafe {
+-        if let Some(p) = super::pd::by_pid(pid) {
++        if let Some(p) = test_pd(pid) {
+             p.queue.clear();
+         }
+     }
+ }
+ 
++/// The descriptor of the process that reports `pid` — the test hooks take
++/// the value `appl_init` handed the caller (`appl::identity_of`).
++///
++/// # Safety
++/// Single trap path.
++unsafe fn test_pd(pid: i16) -> Option<&'static mut super::pd::Aespd> {
++    // SAFETY: forwarded.
++    super::appl::identity_of(pid).and_then(|idx| unsafe { super::pd::by_index(idx) })
++}
++
+ /// Test hook (not wired to boot): set the stacking counter [`bump_z`] hands
+ /// out next, so a host test can drive it to the edge of `i16` (A52) without
+ /// opening 32767 windows. Returns the previous value.
+diff --git a/tos-api/src/bdos/process/pterm.rs b/tos-api/src/bdos/process/pterm.rs
+index 1b81da3..8fa7f9c 100644
+--- a/tos-api/src/bdos/process/pterm.rs
++++ b/tos-api/src/bdos/process/pterm.rs
+@@ -167,15 +167,15 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
+     // needs no such step — its resource state is the three words in the
+     // application's own `AESGLOBAL`, which die with the TPA, and the blob is
+     // one of the owned blocks `free_all_owned` below reclaims (`ixterm`,
+-    // `bdos/proc.c:136`). NewTOS keeps a per-process descriptor in the AES,
+-    // and the next program in this slot gets the same AES pid (`slot + 1`)
+-    // and, at `appl_init`, the same reused AES descriptor — so the entries
+-    // must go here, on both the `Pterm` and the `Ptermres` path, or the next
+-    // tenant would inherit kernel aliases of memory that is no longer its
+-    // resource. Only this pid's entries; the parent's stay. The pool blocks
+-    // are handled by the sweep below (or kept resident by `Ptermres`), and the
+-    // slot's EL0 window table is re-seeded by the next load (`usermem::seed_tpa`).
+-    crate::aes::resource::on_process_exit(crate::aes::pid_of_slot(slot_idx));
++    // `bdos/proc.c:136`). NewTOS keeps a per-slot descriptor in the AES, and
++    // the next program in this slot has the same AES identity (the slot) and,
++    // at `appl_init`, the same AES descriptor — so the entries must go here,
++    // on both the `Pterm` and the `Ptermres` path, or the next tenant would
++    // inherit kernel aliases of memory that is no longer its resource. Only
++    // this slot's entries; the parent's stay. The pool blocks are handled by
++    // the sweep below (or kept resident by `Ptermres`), and the slot's EL0
++    // window table is re-seeded by the next load (`usermem::seed_tpa`).
++    crate::aes::resource::on_process_exit(slot_idx);
+ 
+     // Sweep both BDOS pools for blocks owned by this process: free
+     // them (`Pterm`) or reserve them as resident (`Ptermres`).
+@@ -232,6 +232,12 @@ pub unsafe fn release_slot(slot_idx: usize) {
+     // cheaper clean-only form once no program is drawing into the screen
+     // itself (`super::usermem::uncached_shared_active`).
+     super::usermem::clear_uncached(slot_idx);
++    // The slot's AES process descriptor is keyed by the slot (A62): clear its
++    // flags and drain its queue, so the next tenant does not inherit a dead
++    // program's `AP_OPEN` or unread messages through `appl_init`'s
++    // preserve-the-queue rule. This covers every termination path, including
++    // an EL0 `Pexec` child the launcher's `sh_ldapp` cleanup never sees.
++    crate::aes::release_client(slot_idx);
+     free_slot(slot_idx);
+ }
+ 
+diff --git a/tos-api/src/bdos/process/sched.rs b/tos-api/src/bdos/process/sched.rs
+index fdbdb76..d974cf4 100644
+--- a/tos-api/src/bdos/process/sched.rs
++++ b/tos-api/src/bdos/process/sched.rs
+@@ -45,8 +45,8 @@ const WAIT_ARG_MASK: u64 = (1u64 << WAIT_CLASS_SHIFT) - 1;
+ /// `WAIT_INPUT` class tag: keyboard / button / mouse activity (§4.1). Woken by
+ /// the cooperative idle wake-pass, never the ISR (design §5.2).
+ const CLASS_INPUT: u64 = 1;
+-/// `WAIT_MESG(pid)` class tag: a message in `pid`'s per-app FIFO (§4.1). Woken
+-/// by [`crate::aes::pd::post_msg`] (design §5.2).
++/// `WAIT_MESG(idx)` class tag: a message in AES identity `idx`'s per-app FIFO
++/// (§4.1). Woken by [`crate::aes::pd::post_msg`] (design §5.2).
+ const CLASS_MESG: u64 = 2;
+ /// `WAIT_TIMER(deadline)` class tag: `monotonic_millis >= deadline` (§4.1).
+ /// Woken by the idle wake-pass deadline check (timer-IRQ deferred, design §5.2).
+@@ -59,11 +59,13 @@ pub const fn wait_input() -> u64 {
+     CLASS_INPUT << WAIT_CLASS_SHIFT
+ }
+ 
+-/// The `WAIT_MESG(pid)` wake key for message FIFO `pid` (design §4.1). Used by
+-/// `evnt_mesag`; the poster ([`crate::aes::pd::post_msg`]) wakes on the same key.
++/// The `WAIT_MESG(idx)` wake key for the message FIFO of AES identity `idx`
++/// (the descriptor index: a GEMDOS slot or `pd::DESKTOP`; design §4.1). Used
++/// by `evnt_mesag`; the poster ([`crate::aes::pd::post_msg`]) wakes on the
++/// same key.
+ #[inline]
+-pub const fn wait_mesg(pid: i16) -> u64 {
+-    (CLASS_MESG << WAIT_CLASS_SHIFT) | (pid as u16 as u64)
++pub const fn wait_mesg(idx: usize) -> u64 {
++    (CLASS_MESG << WAIT_CLASS_SHIFT) | (idx as u64 & WAIT_ARG_MASK)
+ }
+ 
+ /// The `WAIT_TIMER(deadline)` wake key for an absolute `monotonic_millis`
+diff --git a/tos-api/tests/aes_app_return_descriptor.rs b/tos-api/tests/aes_app_return_descriptor.rs
+index 346d6cd..fbe4f84 100644
+--- a/tos-api/tests/aes_app_return_descriptor.rs
++++ b/tos-api/tests/aes_app_return_descriptor.rs
+@@ -3,10 +3,16 @@
+ //! The desktop runs in the kernel boot context, so its AES id is 1
+ //! (`tos-api/src/aes/appl.rs`, `current_pid` with a null basepage). The first
+ //! program it launches lands in GEMDOS slot 0, whose AES id is `slot + 1` = 1
+-//! (`aes::pid_of_slot`) — desktop and first child therefore **share one AES
+-//! process descriptor**. That sharing is EmuTOS-faithful: `sh_ldapp` renames
+-//! the very same `rlr` for the program it is about to start
+-//! (`references/emutos/aes/gemshlib.c:633-636`).
++//! (`aes::pid_of_slot`) — desktop and first child therefore **report the same
++//! AES id**. Until A62 they also shared one AES process descriptor; since A62
++//! the descriptor is keyed by the *identity* (the GEMDOS slot, or the
++//! desktop's own reserved index — `docs/api/aes/application.md` § "AES
++//! process identity and pid", contract (a)), and only the reported number is
++//! shared. This test runs its "child" in the boot context too (no `RUN`), so
++//! it exercises the desktop's descriptor across the boundary; the slot-keyed
++//! child is `aes_pd_by_slot.rs`'s business. The sharing of the *number* is
++//! EmuTOS-faithful: `sh_ldapp` renames the very same `rlr` for the program it
++//! is about to start (`references/emutos/aes/gemshlib.c:633-636`).
+ //!
+ //! What EmuTOS does to that shared descriptor when the program ends is the
+ //! point of this file. Both of its end-of-program paths keep the descriptor
+@@ -334,10 +340,10 @@ fn launcher_register(slot: usize, path: &[u8]) {
+ }
+ 
+ /// The launcher's post-run step (`kernel/src/launch.rs`,
+-/// `close_client_if_open(pid_of_slot(child.slot))` — EmuTOS
+-/// `aes/gemshlib.c:650-657`).
++/// `close_client_if_open(child.slot)` — EmuTOS `aes/gemshlib.c:650-657`),
++/// addressed by the slot the descriptor is keyed by (A62).
+ fn launcher_cleanup(slot: usize) {
+-    tos_api::aes::close_client_if_open(tos_api::aes::pid_of_slot(slot));
++    tos_api::aes::close_client_if_open(slot);
+ }
+ 
+ /// One trip through the launch boundary. `polite` selects which of the two
+diff --git a/tos-api/tests/aes_launch_boundary_reset.rs b/tos-api/tests/aes_launch_boundary_reset.rs
+index cb33b17..5fb3210 100644
+--- a/tos-api/tests/aes_launch_boundary_reset.rs
++++ b/tos-api/tests/aes_launch_boundary_reset.rs
+@@ -3,10 +3,16 @@
+ //! The desktop runs in the kernel boot context, so its AES id is 1
+ //! (`tos-api/src/aes/appl.rs`, `current_pid` with a null basepage), and the
+ //! first program it launches lands in GEMDOS slot 0, whose AES id is
+-//! `slot + 1` = 1 (`aes::pid_of_slot`). Desktop and first child therefore share
+-//! one AES process descriptor. **That sharing is not the defect** — EmuTOS does
+-//! the same thing, renaming the one `rlr` for each successive program
+-//! (`references/emutos/aes/gemshlib.c:633-636`).
++//! `slot + 1` = 1 (`aes::pid_of_slot`). Desktop and first child therefore
++//! report the same AES id. Until A62 they also shared one AES process
++//! descriptor; since A62 the descriptor is keyed by the identity (the GEMDOS
++//! slot, or the desktop's own reserved index — `docs/api/aes/application.md`
++//! § "AES process identity and pid", contract (a)). **The sharing was never
++//! the defect** — EmuTOS does the same thing, renaming the one `rlr` for each
++//! successive program (`references/emutos/aes/gemshlib.c:633-636`). This test
++//! runs its "child" in the boot context too (no `RUN`), so phases 1–2 act on
++//! the desktop's descriptor; phase 3's flag reset on a slot-keyed descriptor
++//! is covered by `aes_pd_by_slot.rs` (c).
+ //!
+ //! The defect is that EmuTOS resets that shared descriptor **twice** on the way
+ //! across the boundary and NewTOS did neither:
+@@ -343,10 +349,10 @@ fn launcher_register(slot: usize, path: &[u8]) {
+ }
+ 
+ /// The launcher's post-run step (`kernel/src/launch.rs`,
+-/// `close_client_if_open(pid_of_slot(child.slot))` — EmuTOS
+-/// `aes/gemshlib.c:650-657`).
++/// `close_client_if_open(child.slot)` — EmuTOS `aes/gemshlib.c:650-657`),
++/// addressed by the slot the descriptor is keyed by (A62).
+ fn launcher_cleanup(slot: usize) {
+-    tos_api::aes::close_client_if_open(tos_api::aes::pid_of_slot(slot));
++    tos_api::aes::close_client_if_open(slot);
+ }
+ 
+ #[test]

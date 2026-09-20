@@ -1,0 +1,7 @@
+41f9f82ca75a55a77a9edcafffeba7c4d0e2ae25fb6c9f00a88010ad1719e385  build/kernel8-a62-product-release-rpi4.img
+92e0947ceedaf8c4a4155152e896ede3a9c654b2907456358a9a740d84b6025e  build/kernel8-a62-SCRATCH-injector-full1.img
+2ab40394b33c2ac6a2ee7738b91b70fee738aba9fbc237727fee24e4e7797644  build/kernel8-a62-SCRATCH-injector-quit2.img
+5d51048c25163239111de10ffa4b235eae01bc073ae6a8685d81cdec311b8f81  img/sd-base.img
+3d9e74aa8824d5d62a281733191d1c4b059908c125d665cac63f09bac7cadcd8  img/sd-nest.img
+efb35f1a5b1926f031f3a11b9d1e76702ecf356d4199bd4e8d759c9c2f4f493e  img/sd-qed.img
+48b8441c3db532b7ba6fcf0bf0e5130bb1758b850e58ecc7da0abfd9a28f61ba  img/sd-tera.img

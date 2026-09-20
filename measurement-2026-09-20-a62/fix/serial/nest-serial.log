@@ -1,0 +1,123 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002f0000 (2555904 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-20 10:44:56
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[shell] sh_ldapp: starting C:\NESTTST.NAP, sh_nextapp=2, sh_isgem=1
+[launch] EL0: slot 0 entry 0x1000
+NESTTST depth=1 appl_init=1 wind_create=1 WF_OWNER=1 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 1)
+[exec] launching
+NESTTST depth=2 appl_init=2 wind_create=2 WF_OWNER=2 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 2)
+[exec] launching
+NESTTST depth=3 appl_init=3 wind_create=3 WF_OWNER=3 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 3)
+[exec] launching
+NESTTST depth=4 appl_init=4 wind_create=4 WF_OWNER=4 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 4)
+[exec] launching
+NESTTST depth=5 appl_init=5 wind_create=5 WF_OWNER=5 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 5)
+[exec] launching
+NESTTST depth=6 appl_init=6 wind_create=6 WF_OWNER=6 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 6)
+[exec] launching
+NESTTST depth=7 appl_init=7 wind_create=7 WF_OWNER=7 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 7)
+[exec] launching
+NESTTST depth=8 appl_init=8 wind_create=8 WF_OWNER=8 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 8)
+[exec] launching
+NESTTST depth=9 appl_init=9 wind_create=9 WF_OWNER=9 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 9)
+[exec] launching
+NESTTST depth=10 appl_init=10 wind_create=10 WF_OWNER=10 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 10)
+[exec] launching
+NESTTST depth=11 appl_init=11 wind_create=11 WF_OWNER=11 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 11)
+[exec] launching
+NESTTST depth=12 appl_init=12 wind_create=12 WF_OWNER=12 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 12)
+[exec] launching
+NESTTST depth=13 appl_init=13 wind_create=13 WF_OWNER=13 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 13)
+[exec] launching
+NESTTST depth=14 appl_init=14 wind_create=14 WF_OWNER=14 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 14)
+[exec] launching
+NESTTST depth=15 appl_init=15 wind_create=15 WF_OWNER=15 appl_write(self)=1 appl_find(NESTTST)=1
+[exec] preparing program (slot 15)
+[exec] launching
+NESTTST depth=16 appl_init=16 wind_create=-1 WF_OWNER=-2 appl_write(self)=1 appl_find(NESTTST)=1
+NESTTST depth=16 Pexec(child) returned -39
+NESTTST depth=16 appl_exit=1 -> Pterm
+NESTTST depth=15 Pexec(child) returned 0
+NESTTST depth=15 appl_exit=1 -> Pterm
+NESTTST depth=14 Pexec(child) returned 0
+NESTTST depth=14 appl_exit=1 -> Pterm
+NESTTST depth=13 Pexec(child) returned 0
+NESTTST depth=13 appl_exit=1 -> Pterm
+NESTTST depth=12 Pexec(child) returned 0
+NESTTST depth=12 appl_exit=1 -> Pterm
+NESTTST depth=11 Pexec(child) returned 0
+NESTTST depth=11 appl_exit=1 -> Pterm
+NESTTST depth=10 Pexec(child) returned 0
+NESTTST depth=10 appl_exit=1 -> Pterm
+NESTTST depth=9 Pexec(child) returned 0
+NESTTST depth=9 appl_exit=1 -> Pterm
+NESTTST depth=8 Pexec(child) returned 0
+NESTTST depth=8 appl_exit=1 -> Pterm
+NESTTST depth=7 Pexec(child) returned 0
+NESTTST depth=7 appl_exit=1 -> Pterm
+NESTTST depth=6 Pexec(child) returned 0
+NESTTST depth=6 appl_exit=1 -> Pterm
+NESTTST depth=5 Pexec(child) returned 0
+NESTTST depth=5 appl_exit=1 -> Pterm
+NESTTST depth=4 Pexec(child) returned 0
+NESTTST depth=4 appl_exit=1 -> Pterm
+NESTTST depth=3 Pexec(child) returned 0
+NESTTST depth=3 appl_exit=1 -> Pterm
+NESTTST depth=2 Pexec(child) returned 0
+NESTTST depth=2 appl_exit=1 -> Pterm
+NESTTST depth=1 Pexec(child) returned 0
+NESTTST depth=1 appl_exit=1 -> Pterm
+[launch] returned (program Pterm'd)
+[shell] sh_ldapp: 'C:\NESTTST.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (1 drives)

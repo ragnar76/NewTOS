@@ -3,10 +3,16 @@
 //! The desktop runs in the kernel boot context, so its AES id is 1
 //! (`tos-api/src/aes/appl.rs`, `current_pid` with a null basepage). The first
 //! program it launches lands in GEMDOS slot 0, whose AES id is `slot + 1` = 1
-//! (`aes::pid_of_slot`) — desktop and first child therefore **share one AES
-//! process descriptor**. That sharing is EmuTOS-faithful: `sh_ldapp` renames
-//! the very same `rlr` for the program it is about to start
-//! (`references/emutos/aes/gemshlib.c:633-636`).
+//! (`aes::pid_of_slot`) — desktop and first child therefore **report the same
+//! AES id**. Until A62 they also shared one AES process descriptor; since A62
+//! the descriptor is keyed by the *identity* (the GEMDOS slot, or the
+//! desktop's own reserved index — `docs/api/aes/application.md` § "AES
+//! process identity and pid", contract (a)), and only the reported number is
+//! shared. This test runs its "child" in the boot context too (no `RUN`), so
+//! it exercises the desktop's descriptor across the boundary; the slot-keyed
+//! child is `aes_pd_by_slot.rs`'s business. The sharing of the *number* is
+//! EmuTOS-faithful: `sh_ldapp` renames the very same `rlr` for the program it
+//! is about to start (`references/emutos/aes/gemshlib.c:633-636`).
 //!
 //! What EmuTOS does to that shared descriptor when the program ends is the
 //! point of this file. Both of its end-of-program paths keep the descriptor
@@ -334,10 +340,10 @@ fn launcher_register(slot: usize, path: &[u8]) {
 }
 
 /// The launcher's post-run step (`kernel/src/launch.rs`,
-/// `close_client_if_open(pid_of_slot(child.slot))` — EmuTOS
-/// `aes/gemshlib.c:650-657`).
+/// `close_client_if_open(child.slot)` — EmuTOS `aes/gemshlib.c:650-657`),
+/// addressed by the slot the descriptor is keyed by (A62).
 fn launcher_cleanup(slot: usize) {
-    tos_api::aes::close_client_if_open(tos_api::aes::pid_of_slot(slot));
+    tos_api::aes::close_client_if_open(slot);
 }
 
 /// One trip through the launch boundary. `polite` selects which of the two

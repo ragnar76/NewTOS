@@ -128,7 +128,7 @@
 //! NewTOS cannot read the state out of the application's memory (a blob is
 //! reached through the kernel alias of the process window and needs the
 //! ABI's record strides, [`Loaded`]), so it keeps its own descriptor —
-//! **per AES process**, keyed by the caller's pid, in [`RSC`]: a list of the
+//! **per AES process**, keyed by the caller's identity, in [`RSC`]: a list of the
 //! process's loaded resources, **and the caller's `AESGLOBAL` says which one
 //! a call acts on** — `rs_sglobe`'s binding (`:675-679`). `rsrc_load`
 //! appends the new entry and names it through the caller's words
@@ -598,23 +598,26 @@ impl Loaded {
 // `aes/gemrslib.c:673-679`), so each AES process has its own state and may
 // hold several loaded blobs, of which its array names one. NewTOS keeps the
 // equivalent here: every entry is one `rsrc_load` of one process, keyed by the
-// loading process's AES pid (`appl::current_pid`, GEMDOS slot + 1), and the
-// caller's `ap_rscmem` — matched against the entries' names — says which one
-// a call acts on. XaAES's per-client `resources` list
-// (`xaaes/src.km/xa_rsrc.c:895-900`) is the model for the list itself.
+// loading process's AES **identity** (`appl::current_identity`: its GEMDOS
+// slot, or `pd::DESKTOP` for the kernel-context desktop — not the pid it
+// reports, which parent and child may share), and the caller's `ap_rscmem` —
+// matched against the entries' names — says which one a call acts on.
+// XaAES's per-client `resources` list (`xaaes/src.km/xa_rsrc.c:895-900`) is
+// the model for the list itself.
 
 /// One entry of the per-process resource lists.
 #[derive(Clone, Copy)]
 struct RscEntry {
-    /// AES pid of the process that loaded it; 0 = free entry.
-    pid: i16,
+    /// AES identity of the process that loaded it (descriptor index);
+    /// [`Self::NO_OWNER`] = free entry.
+    owner: usize,
     /// What the loading process received as `ap_rscmem` for this blob
     /// ([`published_name`]): the 4-byte blob base, or 0 when
     /// [`report_load`] could publish nothing (the base or the tree table
     /// does not fit the field). The caller's selector is matched against
     /// this — EmuTOS's `rs_hdr = pglobal->ap_rscmem` (`gemrslib.c:677`).
     name: u32,
-    /// Among the pid's entries **without** a name, the latest loaded — the
+    /// Among the owner's entries **without** a name, the latest loaded — the
     /// one a zero selector reaches (module comment, "a blob the four bytes
     /// cannot name"). Set by the load, gone with the entry, never re-set:
     /// after its `rsrc_free` the zero selector reaches nothing, the way the
@@ -636,8 +639,12 @@ struct RscEntry {
 }
 
 impl RscEntry {
+    /// No identity: the entry is free. Distinct from every descriptor index
+    /// (GEMDOS slot 0 is a valid identity).
+    const NO_OWNER: usize = usize::MAX;
+
     const FREE: RscEntry = RscEntry {
-        pid: 0,
+        owner: Self::NO_OWNER,
         name: 0,
         latest_unnamed: false,
         raw: 0,
@@ -649,10 +656,11 @@ impl RscEntry {
 /// Capacity of the resource lists, over all processes together. EmuTOS has no
 /// such bound (each load is a `dos_alloc_anyram`, `gemrslib.c:775`); what it
 /// has is the failure mode, `rsrc_load` = 0 when the allocation fails
-/// (`:776`), and that is what a full table reports. Sized for every AES
-/// process (`pd::MAX_APPS` = 8) holding two blobs at once — TeraDesk's
-/// `load_icons` needs `desktop.rsc` and `cicons.rsc` together
-/// (`sdk/apps/teradesk/icon.c:2705-2766`).
+/// (`:776`), and that is what a full table reports. Sized for eight AES
+/// processes holding two blobs at once — TeraDesk's `load_icons` needs
+/// `desktop.rsc` and `cicons.rsc` together
+/// (`sdk/apps/teradesk/icon.c:2705-2766`); a deeper `Pexec` chain of loaders
+/// than that has no real-world instance.
 const MAX_LOADED: usize = 16;
 
 struct RscTable(UnsafeCell<[RscEntry; MAX_LOADED]>);
@@ -671,15 +679,17 @@ unsafe fn table() -> &'static mut [RscEntry; MAX_LOADED] {
     unsafe { &mut *RSC.0.get() }
 }
 
-/// The AES pid of the process making the current call — the key of its
-/// resource list. The same id `appl_init` reports (`appl::current_pid`):
-/// GEMDOS slot + 1 for an EL0 caller, 1 for the kernel boot context, which
-/// shares the id with the first program launched into slot 0 (A29).
-fn caller_pid() -> i16 {
-    super::appl::current_pid()
+/// The AES identity of the process making the current call — the key of its
+/// resource list (`appl::current_identity`): its GEMDOS slot for an EL0
+/// caller, `pd::DESKTOP` for the kernel boot context. The identity, not the
+/// reported pid: the desktop and the program in slot 0 report the same
+/// number but keep separate lists, as do a `Pexec` parent and child (A62,
+/// spec § "AES process identity and pid", consequences for A39).
+fn caller_identity() -> usize {
+    super::appl::current_identity()
 }
 
-/// Index of the entry `pid`'s resource call acts on — EmuTOS's `rs_sglobe`
+/// Index of the entry `owner`'s resource call acts on — EmuTOS's `rs_sglobe`
 /// (`gemrslib.c:675-679`):
 ///
 /// ```c
@@ -688,7 +698,7 @@ fn caller_pid() -> i16 {
 /// ```
 ///
 /// The 4-byte `ap_rscmem` (byte 14) is read out of the caller's `AESGLOBAL`
-/// `global` and matched against the names of *this* pid's entries
+/// `global` and matched against the names of *this* identity's entries
 /// ([`RscEntry::name`]): the blob the caller's words name, if the AES
 /// loaded it for this process. `None` is "nothing loaded" (`rs_free` → 0,
 /// `:685`) — for 0 while every entry is named, a null `global`, another
@@ -699,7 +709,7 @@ fn caller_pid() -> i16 {
 /// it must not parse a header it did not load (spec § `rsrc_load`, A39
 /// callout, item 4). Base comparison, not range: TeraDesk's pre-A60 hybrid
 /// `0x407000` lay inside `desktop.rsc` and named no blob
-/// (`TASK/A60-STATUS-DONE.MD` § 3). Among the pid's *unnamed* entries — the
+/// (`TASK/A60-STATUS-DONE.MD` § 3). Among the owner's *unnamed* entries — the
 /// zero the caller was left with — the latest loaded answers (module
 /// comment).
 ///
@@ -710,7 +720,7 @@ fn caller_pid() -> i16 {
 /// # Safety
 /// Single trap path; `global` is null or the caller's `AESGLOBAL`, readable
 /// for the 30 bytes / 15 WORDs of `gemrslib.h:15-27`.
-unsafe fn selected(pid: i16, global: *const i16) -> Option<usize> {
+unsafe fn selected(owner: usize, global: *const i16) -> Option<usize> {
     if global.is_null() {
         return None;
     }
@@ -721,56 +731,56 @@ unsafe fn selected(pid: i16, global: *const i16) -> Option<usize> {
     // SAFETY: caller upholds the single-trap-path invariant.
     let t = unsafe { table() };
     t.iter()
-        .position(|e| e.pid == pid && e.name == sel && (sel != 0 || e.latest_unnamed))
+        .position(|e| e.owner == owner && e.name == sel && (sel != 0 || e.latest_unnamed))
 }
 
-/// Enter a completed load into `pid`'s list under the name the caller
+/// Enter a completed load into `owner`'s list under the name the caller
 /// receives for it ([`published_name`]) — the list half of `rs_readit`'s
 /// "init global" (`gemrslib.c:786-788`), whose `AESGLOBAL` half is
 /// [`report_load`]: the new blob is the one the caller's words now name,
 /// and no earlier load of the process is freed. A load the words cannot
-/// name becomes the pid's latest unnamed entry. `false` when the table is
+/// name becomes the owner's latest unnamed entry. `false` when the table is
 /// full (the load must then be undone by the caller; `rsrc_load` reports 0
 /// as for EmuTOS's failed `dos_alloc_anyram`, `:775-776`).
 ///
 /// # Safety
 /// Single trap path.
-unsafe fn register(pid: i16, raw: Long, cicon_raw: Long, desc: Loaded) -> bool {
+unsafe fn register(owner: usize, raw: Long, cicon_raw: Long, desc: Loaded) -> bool {
     // SAFETY: caller upholds the single-trap-path invariant.
     let t = unsafe { table() };
-    let Some(idx) = t.iter().position(|e| e.pid == 0) else {
+    let Some(idx) = t.iter().position(|e| e.owner == RscEntry::NO_OWNER) else {
         return false;
     };
     let name = published_name(&desc);
     if name == 0 {
         for e in t.iter_mut() {
-            if e.pid == pid {
+            if e.owner == owner {
                 e.latest_unnamed = false;
             }
         }
     }
-    t[idx] = RscEntry { pid, name, latest_unnamed: name == 0, raw, cicon_raw, desc };
+    t[idx] = RscEntry { owner, name, latest_unnamed: name == 0, raw, cicon_raw, desc };
     true
 }
 
-/// Drop every entry of the process with AES pid `pid` — the AES side of
-/// process termination, called from `Pterm` and `Ptermres`
+/// Drop every entry of the process in GEMDOS slot `slot` (its AES identity)
+/// — the AES side of process termination, called from `Pterm` and `Ptermres`
 /// (`bdos::process::pterm::terminate_inner`). The blobs themselves are the
 /// process's pool blocks and are reclaimed there by owner (`free_all_owned`,
 /// EmuTOS `ixterm` → `free_all_owned`, `bdos/proc.c:136`); the process's
 /// window table is re-seeded for its next tenant (`usermem::seed_tpa`). What
 /// must go here is the **descriptor**: the next program in the same GEMDOS
-/// slot gets the same pid, and `appl_init` reuses the same AES descriptor
+/// slot has the same identity, and `appl_init` reuses the same AES descriptor
 /// (`pd::open`, A29) — without this it would inherit entries whose kernel
-/// aliases point at freed pool memory. Only `pid`'s entries; every other
+/// aliases point at freed pool memory. Only `slot`'s entries; every other
 /// process keeps its state. `appl_exit` does not call this (`ap_exit`,
 /// `aes/gemaplib.c:251-261`).
-pub fn on_process_exit(pid: i16) {
+pub fn on_process_exit(slot: usize) {
     // SAFETY: called on the single trap path (`Pterm` under the BDOS giant
     // lock), no AES call in flight.
     let t = unsafe { table() };
     for e in t.iter_mut() {
-        if e.pid == pid {
+        if e.owner == slot {
             // A colour-icon buffer of the in-place path is the kernel
             // heap's, not the process's pool memory, and goes with the
             // entry; a pool block (`cicon_raw != 0`) is reclaimed by owner
@@ -1142,7 +1152,7 @@ unsafe fn cicon_tables_are_sound(base: *const u8, h: &NrscHeader, abi: Abi) -> b
 }
 
 /// Relocate a native `.RSC` blob in place (offsets → absolute pointers)
-/// and register its trees for the **calling process** ([`caller_pid`]),
+/// and register its trees for the **calling process** ([`caller_identity`]),
 /// selecting it as that process's resource — the in-kernel branch of
 /// [`rsrc_load`]. `base` points at the start of the blob, `len` is the
 /// number of bytes that really exist there — the bytes read from the file,
@@ -1167,7 +1177,7 @@ pub unsafe fn relocate_and_register(base: *mut u8, len: usize) -> bool {
         return false;
     };
     // SAFETY: single trap path.
-    if unsafe { register(caller_pid(), 0, 0, desc) } {
+    if unsafe { register(caller_identity(), 0, 0, desc) } {
         return true;
     }
     // SAFETY: the buffer this load's `kernel_cicon_alloc` gave it; the
@@ -2150,7 +2160,7 @@ pub fn rsrc_load(pb: &Aespb) {
     // ([`report_load`], below); nothing already loaded — by this process or
     // any other — is freed, as nothing in `rs_load` frees
     // (`gemrslib.c:786-788`).
-    let pid = caller_pid();
+    let owner = caller_identity();
     // SAFETY: `buf` now holds `len` file bytes; both relocation paths
     // validate the `NRSC` header against `len` before touching anything.
     let loaded = if run.is_null() {
@@ -2167,7 +2177,7 @@ pub fn rsrc_load(pb: &Aespb) {
             // SAFETY: single trap path; a refused registration frees the
             // buffer this load allocated, exactly once.
             unsafe {
-                if register(pid, 0, 0, desc) {
+                if register(owner, 0, 0, desc) {
                     true
                 } else {
                     kernel_cicon_free(desc.cicon);
@@ -2178,7 +2188,7 @@ pub fn rsrc_load(pb: &Aespb) {
     } else {
         // EL0 app caller: copy into per-process EL0-mapped memory and
         // relocate to user VAs at the caller's OBJECT width.
-        unsafe { load_into_user(run, pid, buf, len, abi) }
+        unsafe { load_into_user(run, owner, buf, len, abi) }
     };
     // `rs_readit`'s "init global" (`gemrslib.c:786-788`) + `fix_trindex`'s
     // `ap_ptree` (`:595-597`): report the load back through the caller's
@@ -2194,7 +2204,7 @@ pub fn rsrc_load(pb: &Aespb) {
 
 /// Place a candidate native `.RSC` blob (`src[..len]`) into the calling
 /// process's per-process resource window, register it in the list of the
-/// process with AES id `pid` with **user** VAs — so an EL0 `rsrc_gaddr`
+/// process with AES identity `owner` with **user** VAs — so an EL0 `rsrc_gaddr`
 /// returns dereferenceable pointers — and select it. Returns the
 /// descriptor, or `None` — leaving nothing allocated — on a bad header, no
 /// slot, an exhausted window, `ENSMEM`, a mapping error, or full resource
@@ -2210,7 +2220,7 @@ pub fn rsrc_load(pb: &Aespb) {
 /// current process basepage; `src[..len]` is a candidate blob.
 unsafe fn load_into_user(
     run: *mut BasePage,
-    pid: i16,
+    owner: usize,
     src: &[u8; RSC_CAP],
     len: usize,
     abi: Abi,
@@ -2293,7 +2303,7 @@ unsafe fn load_into_user(
     // `dos_alloc_anyram` (`gemrslib.c:775-776`), undone the same way as a
     // refused blob.
     // SAFETY: single trap path.
-    let desc = desc.filter(|&d| unsafe { register(pid, raw, cicon_raw, d) });
+    let desc = desc.filter(|&d| unsafe { register(owner, raw, cicon_raw, d) });
     if desc.is_none() {
         // Drop the window entries and free the pool blocks.
         if cicon_raw != 0 {
@@ -2444,9 +2454,9 @@ unsafe fn report_load(global: *mut i16, desc: &Loaded) {
 /// nothing, on a double free, and when the pool refused the block (spec
 /// verification criterion resource-fileselector.md § `rsrc_free`).
 pub fn rsrc_free(pb: &Aespb) {
-    let pid = caller_pid();
+    let owner = caller_identity();
     // SAFETY: single trap path; `global` is the caller's AESGLOBAL.
-    let Some(idx) = (unsafe { selected(pid, pb.global_ptr()) }) else {
+    let Some(idx) = (unsafe { selected(owner, pb.global_ptr()) }) else {
         pb.set_ret(0);
         return;
     };
@@ -2712,7 +2722,7 @@ unsafe fn get_addr(d: &Loaded, rtype: i16, index: usize) -> Resolved {
 unsafe fn resolve(pb: &Aespb, rtype: i16, index: usize) -> (&'static Loaded, Resolved) {
     // SAFETY: forwarded from this function's contract.
     let d: &'static Loaded = unsafe {
-        match selected(caller_pid(), pb.global_ptr()) {
+        match selected(caller_identity(), pb.global_ptr()) {
             Some(idx) => &table()[idx].desc,
             None => &Loaded::EMPTY,
         }
@@ -3968,8 +3978,8 @@ mod selector_tests {
         LOCK.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// A claimed GEMDOS slot with a basepage page of its own; its AES pid is
-    /// `slot + 1`. Released on drop.
+    /// A claimed GEMDOS slot with a basepage page of its own; its AES identity
+    /// is the slot, the pid it reports `slot + 1`. Released on drop.
     struct Proc {
         slot: usize,
         page: *mut [u8; 4096],
@@ -3985,6 +3995,7 @@ mod selector_tests {
             Proc { slot, page }
         }
 
+        /// The pid this process reports (`appl_init`'s value).
         fn pid(&self) -> i16 {
             crate::aes::pid_of_slot(self.slot)
         }
@@ -3993,7 +4004,8 @@ mod selector_tests {
             self.page.cast::<BasePage>()
         }
 
-        /// Make this the running process: every AES call now carries its pid.
+        /// Make this the running process: every AES call now carries its
+        /// identity.
         fn run(&self) {
             process::set_current(self.bp());
         }
@@ -4001,9 +4013,9 @@ mod selector_tests {
 
     impl Drop for Proc {
         fn drop(&mut self) {
-            // Leave no entry of this pid behind for the next test's tenant of
-            // the slot — what `Pterm` does on the machine.
-            on_process_exit(self.pid());
+            // Leave no entry of this slot behind for the next test's tenant
+            // of it — what `Pterm` does on the machine.
+            on_process_exit(self.slot);
             if process::current() == self.bp() {
                 process::set_current(std::ptr::null_mut());
             }
@@ -4059,7 +4071,7 @@ mod selector_tests {
             // long as this `Named`; single test thread under `LOCK`.
             let desc = unsafe { relocate_and_register_core(p, FSEL.len(), target, Abi::Lp64, &mut kernel_cicon_alloc) }
                 .expect("the blob must relocate");
-            assert!(unsafe { register(caller_pid(), 0, 0, desc) }, "room in the resource lists");
+            assert!(unsafe { register(caller_identity(), 0, 0, desc) }, "room in the resource lists");
             // SAFETY: a 32-byte caller array.
             unsafe { report_load(global.as_mut_ptr(), &desc) };
             Named { words, target }

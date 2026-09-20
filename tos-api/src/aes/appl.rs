@@ -1,10 +1,19 @@
 //! AES Application Manager (`appl_*`, opcodes 10–19). Spec:
 //! [`docs/api/aes/application.md`].
 //!
-//! `appl_init` registers a GEM application (its id = the GEMDOS process
-//! id), fills the caller's `AESGLOBAL`, and marks it `AP_OPEN`;
-//! `appl_exit` tears it down; `appl_find` looks one up by name;
-//! `appl_yield` is the cooperative scheduler hand-off.
+//! `appl_init` opens the caller's AES process descriptor, fills the caller's
+//! `AESGLOBAL`, and marks it `AP_OPEN`; `appl_exit` closes it; `appl_find`
+//! looks one up by name; `appl_yield` is the cooperative scheduler hand-off.
+//!
+//! **Identity and reported value** (spec § "AES process identity and pid").
+//! A client's *identity* — the key of its descriptor, queue, wait-key,
+//! resource list and window ownership — is its GEMDOS process slot, or
+//! [`pd::DESKTOP`] for the kernel-context desktop ([`current_identity`]).
+//! The *value* a program reads back (`ap_id`, `appl_find`, `WF_OWNER`,
+//! `msg[1]`) is computed from the identity by [`reported_pid`] and mapped back
+//! by [`identity_of`] where a program hands a value in (`appl_write`,
+//! `appl_read`). Stage 1 (A62) keeps the reported numbers as they were —
+//! slot + 1, and 1 for the desktop; stage 2 (A56) will make them EmuTOS's.
 //!
 //! **What `appl_init` may write, and how far (D-R1-4).** `AESGLOBAL` is
 //! EmuTOS's `struct aesglobal` (`aes/gemrslib.h:15-27`) — ten fields,
@@ -159,18 +168,65 @@ impl AesGlobalVals {
     }
 }
 
-/// The id of the currently-running process, used as the AES application
-/// id. From a real EL0 process this is its slot-derived pid; from the
-/// kernel boot context (no process yet) it defaults to 1 — the single
-/// boot application.
-pub(super) fn current_pid() -> i16 {
+/// The AES identity of the current caller — the index of its process
+/// descriptor in [`pd`]'s table: its GEMDOS process slot for an EL0 process
+/// (`RUN`'s slot), [`pd::DESKTOP`] for the kernel boot context (`RUN` null —
+/// the built-in desktop and the boot-time selftests). A non-null `RUN` that
+/// names no slot cannot occur (every basepage the loader installs is a
+/// slot's); it falls to the desktop's entry, as the old `current_pid` fell to
+/// its value 1.
+pub(super) fn current_identity() -> usize {
     let bp = crate::bdos::process::current();
     if bp.is_null() {
-        return 1;
+        return pd::DESKTOP;
     }
-    crate::bdos::process::slot_for(bp)
-        .map(|s| s as i16 + 1)
-        .unwrap_or(1)
+    crate::bdos::process::slot_for(bp).unwrap_or(pd::DESKTOP)
+}
+
+/// The pid a program sees for identity `idx` — `ap_id`, `appl_find`'s
+/// answer, `WF_OWNER`, `msg[1]`. Stage 1 (A62): the numbers NewTOS reported
+/// before the identity rework, unchanged — GEMDOS slot + 1, and 1 for the
+/// kernel-context desktop (so the desktop and the program in slot 0 report
+/// the same number, as they did while they shared one descriptor). Stage 2
+/// (A56) replaces this with EmuTOS's values (0 for the whole application
+/// chain, 1 as the Screen Manager's sender stamp).
+pub(super) fn reported_pid(idx: usize) -> i16 {
+    if idx == pd::DESKTOP {
+        1
+    } else {
+        idx as i16 + 1
+    }
+}
+
+/// The identity a program addresses with the reported value `pid` — the
+/// inverse of [`reported_pid`] for `appl_write`/`appl_read` targets and the
+/// test hooks. `None` when no client reports that value.
+///
+/// Two identities report **1** in stage 1, the desktop and GEMDOS slot 0;
+/// they never run at the same time (the desktop is blocked in the launcher
+/// while a program runs), so the value resolves from the caller's side: the
+/// desktop's own descriptor when the desktop is the caller, slot 0's for
+/// every process. This is what the one shared descriptor of the old table
+/// gave observably — a message to 1 reached the queue the caller itself
+/// reads, and the launch boundary drains that queue before the other party
+/// runs (A28/A29) — and it is the stage-1 form of the spec's rule that the
+/// chain's value resolves to the currently-scheduled client.
+pub(super) fn identity_of(pid: i16) -> Option<usize> {
+    match pid {
+        1 => Some(if current_identity() == pd::DESKTOP { pd::DESKTOP } else { 0 }),
+        p if p >= 2 && ((p - 1) as usize) < crate::bdos::process::MAX_PROCESSES => {
+            Some((p - 1) as usize)
+        }
+        _ => None,
+    }
+}
+
+/// The reported pid of the current caller ([`reported_pid`] of
+/// [`current_identity`]) — what `appl_init` returns and what the internal
+/// posters stamp into `msg[1]` (`ap_sendmsg`'s `rlr->p_pid`,
+/// `gemwmlib.c:855`).
+pub(super) fn current_pid() -> i16 {
+    reported_pid(current_identity())
 }
 
 /// Screen bit-plane count (`ap_planes`), the VDI's `INQ_TAB[4] = v_planes`.
@@ -188,15 +244,17 @@ fn screen_planes() -> i16 {
         .unwrap_or(4)
 }
 
-/// Opcode 10 — `appl_init`: register the application, fill `AESGLOBAL`,
-/// return the application id (`ap_id` = pid) or −1 on failure.
+/// Opcode 10 — `appl_init`: open the caller's process descriptor, fill
+/// `AESGLOBAL`, return the application id (`ap_id`). Never −1: EmuTOS's
+/// `ap_init` (`aes/gemaplib.c:54-63`) has no failure path, and neither has
+/// [`pd::open`] — the descriptor exists per identity from boot (A62).
 ///
 /// Fills the caller's `AESGLOBAL` **1:1 with EmuTOS's `APPL_INIT` arm**
 /// (`gemsuper.c:92-98`), field by field, at the caller's pointer width:
 ///
 /// - `ap_version` (`:92`) = [`AES_VERSION`] (`0x0340`);
 /// - `ap_count` (`:93`) = 1;
-/// - `ap_id` (`:94`) = the caller pid ([`current_pid`]);
+/// - `ap_id` (`:94`) = the caller's reported pid ([`current_pid`]);
 /// - `ap_private` (`:95-96`) = `rs_trees[DESKTOP][ROOT].ob_spec` — the ROOT of
 ///   the AES's **own** built-in `DESKTOP` tree ([`super::init::desktop_tree`],
 ///   transcribed from `gem_rsc.c:550-570`), i.e. `0x1143` unless the `.INF`
@@ -216,13 +274,10 @@ fn screen_planes() -> i16 {
 /// leaves those bytes exactly as the caller had them — and writes nothing
 /// past word 14 of the 15-WORD `AESGLOBAL` (D-R1-4; see the module ABI note).
 pub fn appl_init(pb: &Aespb) {
-    let pid = current_pid();
+    let idx = current_identity();
+    let pid = reported_pid(idx);
     // SAFETY: single trap path.
-    let ok = unsafe { pd::open(pid) }.is_some();
-    if !ok {
-        pb.set_ret(-1);
-        return;
-    }
+    unsafe { pd::open(idx) };
 
     let vals = AesGlobalVals {
         ap_version: AES_VERSION,                        // gemsuper.c:92
@@ -255,14 +310,14 @@ pub fn appl_init(pb: &Aespb) {
 /// here (`xa_appl.c:745-750`); not adopted.
 /// The `APPL_EXIT` arm's `ret` is the enclosing `TRUE` (`gemsuper.c:85,120-123`).
 pub fn appl_exit(pb: &Aespb) {
-    let pid = current_pid();
     // SAFETY: single trap path.
-    unsafe { pd::close(pid) };
+    unsafe { pd::close(current_identity()) };
     pb.set_ret(1);
 }
 
 /// Opcode 13 — `appl_find`: find an application by its 8-char name in
-/// `addrin[0]`. Returns the pid, or −1 if not found (or name is NULL).
+/// `addrin[0]`. Returns its reported pid ([`reported_pid`] of the identity
+/// [`pd::find_by_name`] locates), or −1 if not found (or name is NULL).
 pub fn appl_find(pb: &Aespb) {
     let name_ptr = pb.addrin(0);
     if name_ptr == 0 {
@@ -278,7 +333,7 @@ pub fn appl_find(pb: &Aespb) {
         }
     }
     // SAFETY: single trap path.
-    let pid = unsafe { pd::find_by_name(&name) };
+    let pid = unsafe { pd::find_by_name(&name) }.map_or(-1, reported_pid);
     pb.set_ret(pid);
 }
 
@@ -302,15 +357,14 @@ pub fn appl_yield(pb: &Aespb) {
 /// `doq`, which memcpys `qpb_cnt` bytes, `gemqueue.c:36,85-125`). The bytes are
 /// then appended to the target's FIFO whole.
 pub fn appl_write(pb: &Aespb) {
-    let target = pb.intin(0);
     let len_bytes = pb.intin(1).max(0) as usize;
     let buf = pb.addrin(0);
-    // SAFETY: single trap path. Existence check drops its borrow immediately so
-    // the enqueue below can re-borrow the descriptor through `pd::post_words`.
-    if unsafe { pd::by_pid(target) }.is_none() {
+    // The target arrives as a reported pid; resolve it to an identity (none →
+    // no descriptor → 0).
+    let Some(target) = identity_of(pb.intin(0)) else {
         pb.set_ret(0);
         return;
-    }
+    };
     if buf == 0 {
         pb.set_ret(0);
         return;
@@ -345,11 +399,11 @@ pub fn appl_write(pb: &Aespb) {
 /// yet, the bring-up returns the pending message if present and 0
 /// otherwise (messages are posted synchronously by the menu/window code).
 pub fn appl_read(pb: &Aespb) {
-    let id = pb.intin(0);
     let len_bytes = pb.intin(1).max(0) as usize;
     let dest = pb.addrin(0);
+    // `intin[0]` is the caller's own reported id; resolve it to an identity.
     // SAFETY: single trap path.
-    let Some(src) = (unsafe { pd::by_pid(id) }) else {
+    let Some(src) = identity_of(pb.intin(0)).and_then(|idx| unsafe { pd::by_index(idx) }) else {
         pb.set_ret(0);
         return;
     };

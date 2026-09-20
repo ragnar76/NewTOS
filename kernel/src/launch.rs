@@ -96,9 +96,9 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // `.RSC` beside the executable (lead directive 2026-07-20): QED passes a
     // bare `qed.rsc`, and its resource is staged next to `QED.NAP`.
     tos_api::aes::resource::set_app_dir(path);
-    // Name the launched program's AES process descriptor from its launch path
-    // (EmuTOS `pstart` → `p_nameit`, `aes/gempd.c:110-131`), so a later
-    // `appl_find(name)` resolves it. The program's AES id is `slot + 1`.
+    // Name the launched program's AES process descriptor — the slot's entry
+    // (A62) — from its launch path (EmuTOS `pstart` → `p_nameit`,
+    // `aes/gempd.c:110-131`), so a later `appl_find(name)` resolves it.
     tos_api::aes::register_process(child.slot, path);
     // Publish the start command + command-tail image as `D.s_cmd`/`ad_stail`
     // — the one pair `shel_read` answers from and `shel_write(SHW_EXEC)`
@@ -133,8 +133,10 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // the point EmuTOS runs it — immediately after `dos_exec(PE_LOADGO, …)`
     // returns. If the program called `appl_init()` without a matching
     // `appl_exit()` (a crashed or sloppy GEM app), do the important parts for
-    // it, so the AES descriptor the next program reuses is clean.
-    tos_api::aes::close_client_if_open(tos_api::aes::pid_of_slot(child.slot));
+    // it, so the AES descriptor the next program reuses is clean. The slot's
+    // release (`pterm::release_slot`) has reset the descriptor already; this
+    // is the `sh_ldapp` step, addressed by the slot the descriptor is keyed by.
+    tos_api::aes::close_client_if_open(child.slot);
 
     tos_types::error::E_OK
 }

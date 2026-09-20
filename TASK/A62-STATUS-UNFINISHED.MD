@@ -192,3 +192,129 @@ gebrochen (Suche nach den korrigierten Wortlauten in allen vier Dateien
 bestätigt: nur noch innerhalb der Korrektur-Zitate selbst, keine stehen
 gebliebene falsche Standalone-Aussage). `shell-loop.md`/`scrap-shell.md`
 nicht verändert (bereits korrekt, s.o.). Kein Produktcode, kein Commit.
+
+## Umbau Stufe 1 (Developer, 2026-09-20) — Identität über den Slot, `appl_init` nie −1
+
+**Zustand nach dieser Arbeit: Stufe 1 implementiert, Hostbelege + QEMU-Belege
+vorhanden; UNFINISHED bleibt, weil die Abnahme auf echter Pi 4 (Tester/Lead)
+und Stufe 2 (A56, berichtete Werte nach EmuTOS) ausstehen.** Kein Commit, kein
+`git checkout/restore/clean/stash`, keine Hardware-/Outward-Aktion. Basis
+`desk-rebuild` @ `86b871d`, Baum vorher sauber. Artefakte:
+[`measurement-2026-09-20-a62/fix/`](../measurement-2026-09-20-a62/fix/).
+
+### 1. Was gebaut wurde (Spec `docs/api/aes/application.md` § "AES process identity and pid", Vertrag (a))
+
+| Datei | Änderung |
+|---|---|
+| `tos-api/src/aes/pd.rs` | Tabelle `NUM_PDS = MAX_PROCESSES + 1` (17), Index = **Identität**: GEMDOS-Slot 0..15, `DESKTOP = 16` für den Kernel-Desktop (eigener Index, Entscheidung des Leads). `Aespd` ohne `in_use`/`pid`. `open(idx) -> &mut Aespd` **kann nicht scheitern** (EmuTOS `ap_init`, `gemaplib.c:54-63`); `by_index`, `find_by_name -> Option<usize>` (EmuTOS `fpdnm`, `gempd.c:38-57`: Walk ohne Lebendprüfung, ein Name je Slot), `close`/`close_if_open`/`register` per Index; **neu `release(idx)`**: Flags = 0 + Queue leeren (die Vereinigung von `gemshlib.c:636` und `:650-657`/`ap_exit`). `post_msg`/`post_words` per Index, Trace bekommt weiter den berichteten Wert. Unit-Test auf die Slot-Prämisse umgeschrieben (der alte „Tabelle voll"-Fall existiert nicht mehr). |
+| `tos-api/src/aes/appl.rs` | `current_identity()` (Slot bzw. `DESKTOP` bei `RUN == null`), `reported_pid(idx)` (**Stufe 1 = heutige Werte**: Slot + 1, Desktop 1), `identity_of(pid)` (Umkehrung für `appl_write`/`appl_read`/Testhaken; Wert 1 löst vom Aufrufer aus: Desktop → Desktop, Prozess → Slot 0), `current_pid()` = `reported_pid(current_identity())`. `appl_init` ohne −1-Pfad; `appl_find` → `reported_pid` des gefundenen Index. |
+| `tos-api/src/aes/mod.rs` | `close_client_if_open(slot: usize)`; **neu** `release_client(slot)`; `register_process(slot, …)` direkt per Slot; `pid_of_slot` bleibt als Wert-Übersetzung. |
+| `tos-api/src/aes/event.rs` | `evnt_multi`/`evnt_mesag`/`menu_intercept` auf Identität; `msg[1]` weiter `current_pid()` (Wert unverändert). |
+| `tos-api/src/aes/window.rs` | `Window.owner` = Identität, `NO_OWNER = -1` (Slot 0 ist eine gültige Identität; das Desktop-Fenster meldet `WF_OWNER` weiter 0); `owner_of(handle)`, `send_redraw`/`intercept`/`post_untopped`/`post_to_owner` per Identität; `WF_OWNER` → `reported_pid`; `wind_create`/`WF_NEWDESK` speichern `current_identity()`; Testhaken übersetzen den berichteten Wert per `identity_of`. |
+| `tos-api/src/aes/resource.rs` | `RscEntry.owner: usize` (`NO_OWNER = usize::MAX`) statt `pid: i16` (0 = frei kollidierte mit Slot 0); `caller_identity()`; `on_process_exit(slot)`; `selected`/`register`/`load_into_user` per Identität; Unit-Test-Fixture `Proc` nachgezogen. A39 in der Sache unverändert. |
+| `tos-api/src/bdos/process/sched.rs` | `wait_mesg(idx: usize)`. |
+| `tos-api/src/bdos/process/pterm.rs` | `on_process_exit(slot_idx)`; **`release_slot` ruft `aes::release_client(slot_idx)`** — deckt jeden Endepfad (`Pterm`/`Ptermres`/`Pterm0`/Ctrl-C/Fault) und damit den `handle_pexec`-Nebenbefund (§8 des Berichts): ein per EL0-`Pexec` gestartetes Kind, das mit `AP_OPEN` und ungelesener Nachricht stirbt, hinterlässt dem nächsten Mieter des Slots nichts mehr. `exceptions.rs` unverändert (der Reset sitzt im Prozessmodell, nicht im Handler). |
+| `kernel/src/launch.rs` | `close_client_if_open(child.slot)` (bleibt als `sh_ldapp`-Schritt; nach dem Slot-Release strukturell No-op). |
+| `kernel/src/shell_loop.rs` | Lückenlisten-Punkt 10 umformuliert: Identität erledigt (A62), offen bleibt nur der berichtete Wert (A56). |
+| `tos-api/tests/aes_pd_by_slot.rs` | **neu**, vier Tests (a)–(d), s. u. |
+| `tos-api/tests/aes_app_return_descriptor.rs`, `aes_launch_boundary_reset.rs` | nur der Helfer `launcher_cleanup` auf die Slot-Signatur + ein Absatz im Kopfkommentar zur geänderten Prämisse (Spec-Beleg: Vertrag (a)). **Alle Assertions unverändert, beide grün.** Ehrlich benannt: beide Tests lassen ihr „Kind" ohne `RUN` laufen, also auf dem Desktop-Deskriptor; die Slot-keyed Variante ist `aes_pd_by_slot.rs` (c). |
+
+**Nicht geändert (Stufe 2):** kein berichteter Wert. `ap_id`, `appl_find`,
+`WF_OWNER`, `msg[1]`, `appl_write`-Ziel liefern dieselben Zahlen wie vorher
+(Test (d) pinnt sie; NESTTST-Sonde Tiefe 1–16 bestätigt es maschinell).
+
+**Eine Auslegung, die der Lead prüfen sollte:** der Auftrag sagt für Test (a)
+und die NESTTST-Sonde „→ alle 1" bzw. „Tiefe 9 → jetzt `appl_init` = 1". Das
+widerspricht der Regressionsbedingung „kein berichteter Wert ändert sich"
+(Tiefe 2 meldet heute 2, gemessen). Ich habe die Regressionsbedingung
+umgesetzt: Tiefe *k* → *k* (Slot + 1), nie −1. „Alle 1" wäre Stufe 2.
+
+### 2. Tests — rot vor, grün nach
+
+`tos-api/tests/aes_pd_by_slot.rs` gegen den unveränderten Baum
+(`host-tests/red-before-aes_pd_by_slot.txt`; für den Lauf war die eine
+Zeile `close_client_if_open(slot)` von Hand auf die alte Signatur gesetzt
+und danach zurückgeschrieben):
+
+    every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one ... FAILED
+      depth 9: appl_init returned -1
+    nine_programs_in_one_slot_rename_one_descriptor ... ok            (Regressions-Pin)
+    releasing_a_slot_resets_its_descriptor_and_queue ... FAILED
+      left: (1, 2989)  right: (0, 0)   -- der neue Mieter las die Nachricht 0x0BAD des toten
+    reported_values_are_unchanged_by_the_identity_rework ... ok       (Regressions-Pin)
+
+Nach dem Umbau (`host-tests/green-after-aes_pd_by_slot.txt`): 4/4. Die
+verwandten Tests `aes_appl_init` (A25), `aes_app_return_descriptor` (A29),
+`aes_launch_boundary_reset` (A28), `aes_rsrc_per_process` (A39, 5/5),
+`aes_window_content`, `aes_window_move_blit` (7/7), `aes_global_layout`:
+alle grün (`host-tests/green-after-related-*.txt`).
+
+    cargo run -p xtask -- test   vorher 666 / 0 / 1   (selbst nachgemessen)
+                                 nachher 670 / 0 / 1   (+4 = die neue Datei)
+
+### 3. Bauten, Warnungen, Clippy
+
+    xtask build --board qemu-virt   exit 0, Compiling tos-api + kernel, rustc 64 / 94
+    xtask build --board rpi4        exit 0, Compiling tos-api + kernel, rustc 64 / 94
+    clippy --features board-qemu-virt   tos-api 81 / kernel 125
+    clippy --features board-rpi4        tos-api 81 / kernel 125
+    Baseline 64/94, 81/125 — Delta 0. ELF-Hashes je Board verschieden (echte Bauten).
+    Keine Clippy-Meldung zeigt auf pd.rs/appl.rs/event.rs/sched.rs/pterm.rs/launch.rs/
+    shell_loop.rs; die Treffer in window.rs/resource.rs sind die vorbestehenden
+    `Aespb`-Sichtbarkeitswarnungen.
+
+### 4. QEMU raspi4b (Produkt-Kernel `--release --board rpi4`, `41f9f82c…`, KEINE Instrumentierung)
+
+Karten aus `tools/make-sd-image.sh` (Hauptbaum, `5d51048c…`) + INF-Dateien der
+A41/A62-Methoden (Hashes `fix/build/kernel-and-image-hashes.txt`). Alle Läufe:
+`grep -c "EXC\|panic"` = 0.
+
+- **NESTTST-Sonde** (`serial/nest-serial.log`, Karte + Sonde der Auditor-Messung):
+  Tiefe 1–16 → `appl_init` = 1…16, `appl_write(self)` = 1 in **jeder** Tiefe,
+  `WF_OWNER` = Tiefe (1–15), `appl_find(NESTTST)` = 1; Tiefe 16: `wind_create` = −1
+  (Fenstertabelle, eigenes Thema, wie vor dem Fix), 17. `Pexec` → −39; alle 16
+  kehren regulär zurück, `[desk] desktop up (1 drives)`. Vorher: Tiefe 9–16 → −1,
+  `appl_write(self)` = 0.
+- **Smoke, bytegleich** zu `measurement-2026-09-19-a41/part2/screendumps/`:
+  `smoke-desk-up.png` 0 Pixel, `smoke-qed-up.png` 0 Pixel,
+  `smoke-tera-up.png` 0 Pixel gegen `product1-tera-colour-icons-idle.png`.
+- **H05-Sequenz** (Scratch-Kopie mit dem A41/A39-Injektor, `full1.actions` aus
+  `measurement-2026-09-19-a39/method/`, Kernel `92e0947c…`): TeraDesk → HARD DISC
+  C → APPS → QED → QED.NAP doppelklicken (Kind in Slot 1) → QED „Datei / Beenden"
+  → Rückkehr. `serial/full1-serial.log`: `[exec] preparing program (slot 1)`,
+  kein EXC. Screendumps `full1-D-before-start.png` gegen
+  `full1-K-after-return-10s.png`: **134 Pixel Differenz, alle im Rechteck
+  (47,207)–(109,282) = der Mauszeiger**; Infozeile „610370 bytes used in 2 items."
+  und Icons identisch; H (0 s) = I (2 s) = K (10 s) bitgleich (0 Pixel). Das ist
+  der A39-Beleg (TeraDesks Ressourcen überleben QEDs `rsrc_load`/`rsrc_free`)
+  unter der neuen Identitätsschlüsselung. `full1-F-qed-up.png` zeigt QEDs
+  Menüleiste (mit „Datei" hervorgehoben, weil der Screendump 1 s nach der Marke
+  fällt und der Zeiger da schon auf dem Titel steht — Harness-Timing, kein Befund).
+- **quit2-Sequenz** (A41 Teil 2, TeraDesk beenden → Kernel-Desktop kommt zurück,
+  Kernel `2ab40394…`): `quit2-A-idle`, `-B-window-open`, `-D-quit-dialog` je
+  **0 Pixel** gegen `inj4-*`; `quit2-G-desktop-up-after-quit.png` 2606 Pixel im
+  Rechteck (305,89)–(399,420) = ausschließlich die Datum/Uhrzeit-Spalte des
+  Fensters (Karte heute erzeugt: `09-20-26 10:44` statt `09-19-26 20:19`), sonst
+  identisch; `'DESKTOP.NAP' exited with rc=0` → `[desk] desktop up (1 drives)`.
+  Damit ist die Grenze belegt, die durch diesen Umbau **zwei** Identitäten hat
+  (Slot 0 = TeraDesk, 16 = Desktop): der Desktop empfängt nach der Rückkehr und
+  malt sein Fenster.
+
+### 5. Nebenbeobachtungen (nicht angefasst)
+
+- `kernel/src/desk/mod.rs:180-186,646`: Doc-Kommentare nennen noch
+  `pd::open(current_pid())`/`pd::by_pid(1)`; die Funktionen heißen jetzt
+  `open(idx)`/`by_index`. Nur Kommentare, außerhalb des Scopes.
+- `kernel/src/selftest_sleepwake_switch.rs:345`: Kommentar nennt `by_pid`
+  (unverdrahteter Selftest, baut).
+- `docs/STATUS.md` nicht angefasst (Lead-Scope; beim Commit nachziehen).
+- Blank-Namens-Suche (`appl_find` mit acht Leerzeichen) findet jetzt Index 0 →
+  1, wie EmuTOS' blank initialisierte `p_name` (`geminit.c:868`); vorher fand
+  sie den ersten `in_use`-Eintrag ohne Namen = ebenfalls 1 nach dem
+  Desktop-`appl_init`. Kein realer Aufrufer.
+
+### 6. Offen
+
+- Abnahme auf echter Pi 4 (Doppelklick-Pfad, H05 interaktiv) — Tester/Lead.
+- Stufe 2 (A56): `reported_pid` auf EmuTOS' Werte, `msg[1]`-Stempel an den
+  Control-Manager-Postern, `identity_of(0)` → aktueller Klient.

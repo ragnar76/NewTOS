@@ -45,8 +45,8 @@ const WAIT_ARG_MASK: u64 = (1u64 << WAIT_CLASS_SHIFT) - 1;
 /// `WAIT_INPUT` class tag: keyboard / button / mouse activity (§4.1). Woken by
 /// the cooperative idle wake-pass, never the ISR (design §5.2).
 const CLASS_INPUT: u64 = 1;
-/// `WAIT_MESG(pid)` class tag: a message in `pid`'s per-app FIFO (§4.1). Woken
-/// by [`crate::aes::pd::post_msg`] (design §5.2).
+/// `WAIT_MESG(idx)` class tag: a message in AES identity `idx`'s per-app FIFO
+/// (§4.1). Woken by [`crate::aes::pd::post_msg`] (design §5.2).
 const CLASS_MESG: u64 = 2;
 /// `WAIT_TIMER(deadline)` class tag: `monotonic_millis >= deadline` (§4.1).
 /// Woken by the idle wake-pass deadline check (timer-IRQ deferred, design §5.2).
@@ -59,11 +59,13 @@ pub const fn wait_input() -> u64 {
     CLASS_INPUT << WAIT_CLASS_SHIFT
 }
 
-/// The `WAIT_MESG(pid)` wake key for message FIFO `pid` (design §4.1). Used by
-/// `evnt_mesag`; the poster ([`crate::aes::pd::post_msg`]) wakes on the same key.
+/// The `WAIT_MESG(idx)` wake key for the message FIFO of AES identity `idx`
+/// (the descriptor index: a GEMDOS slot or `pd::DESKTOP`; design §4.1). Used
+/// by `evnt_mesag`; the poster ([`crate::aes::pd::post_msg`]) wakes on the
+/// same key.
 #[inline]
-pub const fn wait_mesg(pid: i16) -> u64 {
-    (CLASS_MESG << WAIT_CLASS_SHIFT) | (pid as u16 as u64)
+pub const fn wait_mesg(idx: usize) -> u64 {
+    (CLASS_MESG << WAIT_CLASS_SHIFT) | (idx as u64 & WAIT_ARG_MASK)
 }
 
 /// The `WAIT_TIMER(deadline)` wake key for an absolute `monotonic_millis`

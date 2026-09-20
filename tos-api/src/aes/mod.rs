@@ -637,25 +637,39 @@ fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
 }
 
 /// `sh_ldapp`'s `AP_OPEN` cleanup (`aes/gemshlib.c:650-657`) for the program
-/// that has just terminated — see `pd::close_if_open`. Called from the
-/// program launcher at the point EmuTOS calls it: immediately after
-/// `dos_exec(PE_LOADGO, …)` returns.
+/// that has just terminated in GEMDOS slot `slot` — see `pd::close_if_open`.
+/// Called from the program launcher at the point EmuTOS calls it: immediately
+/// after `dos_exec(PE_LOADGO, …)` returns.
 ///
 /// It drains the descriptor's message queue and clears `AP_OPEN`; it does
 /// **not** free the descriptor. EmuTOS cannot free one (its `AESPD`s are fixed
-/// array entries, `aes/gempd.c:32-35`), and here it must not: the desktop
-/// shares pid 1 with the first program it launches, so freeing it left the
-/// desktop unaddressable for the rest of the session (A29).
-pub fn close_client_if_open(pid: i16) {
+/// array entries, `aes/gempd.c:32-35`), and NewTOS's are fixed entries per
+/// slot likewise (A62). The slot's own release ([`release_client`]) has
+/// already run by the time the launcher gets here, so on that path the
+/// `AP_OPEN` guard finds nothing to do.
+pub fn close_client_if_open(slot: usize) {
     // SAFETY: single-CPU launcher context; the AES pd table follows the
     // single-trap-path discipline and the launcher runs on that CPU with no
     // concurrent GEM trap in flight.
-    unsafe { pd::close_if_open(pid) };
+    unsafe { pd::close_if_open(slot) };
 }
 
-/// The AES id (pid) NewTOS gives the program in GEMDOS process-table slot
-/// `slot` — `slot + 1`, the value that program reports at `appl_init`
-/// (`appl::current_pid`).
+/// The AES side of a GEMDOS slot's release: the tenant of `slot` is gone, its
+/// descriptor's flags are cleared and its queue drained (`pd::release`) so the
+/// slot's next occupant starts clean — for every way a process ends,
+/// including an EL0 `Pexec` child that died with `appl_init` unmatched
+/// (A62 report §8). Called from `bdos::process::pterm::release_slot`, next to
+/// the slot's other per-process side tables.
+pub fn release_client(slot: usize) {
+    // SAFETY: single-CPU process-release context under the BDOS giant lock;
+    // no GEM trap is in flight for the slot being released.
+    unsafe { pd::release(slot) };
+}
+
+/// The AES pid NewTOS **reports** for the program in GEMDOS process-table slot
+/// `slot` — `slot + 1`, the value that program gets from `appl_init`
+/// (`appl::reported_pid`). A value, not an identity: the descriptor is keyed
+/// by `slot` itself (A62).
 pub fn pid_of_slot(slot: usize) -> i16 {
     slot as i16 + 1
 }
@@ -663,15 +677,15 @@ pub fn pid_of_slot(slot: usize) -> i16 {
 /// Name a freshly-launched EL0 program's AES process descriptor from its launch
 /// `path`, so a later `appl_find(name)` can locate it — the reimplementation of
 /// EmuTOS naming a process at start (`pstart` → `p_nameit`, `aes/gempd.c:110-131`).
-/// `slot` is the GEMDOS process-table slot the loader placed the program in; its
-/// AES id (pid) is [`pid_of_slot`]. Called by the kernel launcher before the
-/// program enters EL0, alongside [`resource::set_app_dir`].
+/// `slot` is the GEMDOS process-table slot the loader placed the program in —
+/// the identity its descriptor is keyed by; the pid it reports is
+/// [`pid_of_slot`]. Called by the kernel launcher before the program enters
+/// EL0, alongside [`resource::set_app_dir`].
 pub fn register_process(slot: usize, path: &[u8]) {
-    let pid = pid_of_slot(slot);
     // SAFETY: single-CPU launcher context; the AES pd table follows the
     // single-trap-path discipline and the launcher runs on that CPU with no
     // concurrent GEM trap in flight.
-    unsafe { pd::register(pid, path) };
+    unsafe { pd::register(slot, path) };
 }
 
 /// The AES's `user_but` vector — call it from the VDI mouse interrupt when the
