@@ -1,0 +1,11 @@
+---- aes::menu::popup_wait_tests::popup_shown_returns_with_the_picking_button_up stdout ----
+
+thread 'aes::menu::popup_wait_tests::popup_shown_returns_with_the_picking_button_up' (3726292) panicked at tos-api/src/aes/menu.rs:1932:9:
+assertion `left == right` failed: popup_shown returned with the picking press still held: mn_popup waits it out (ev_button(1, 0x00ff, 0x0000, rets), aes/gemmnext.c:351) before returning
+  left: 1
+ right: 0
+
+--
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 47 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --lib`

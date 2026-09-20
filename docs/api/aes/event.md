@@ -217,6 +217,45 @@ and the delivered `msg[0] == AC_CLOSE` it also sets `AP_ACCLOSE`.
    > …)` (`geminput.c:463-483`) — i.e. only while the caller *is*
    > `gl_mowner` — or discarded unsatisfied by `acancel` when some other
    > requested event fires first.
+
+   > **The blocking `MU_M1`/`MU_M2` arm is tested once, at arm time, then
+   > only through ownership (A73, 2026-09-20).** `iasync(MU_M1, (LONG)pmo1)` /
+   > `iasync(MU_M2, (LONG)pmo2)` (`:242,244`) both route through `amouse`
+   > (`aes/gemasync.c:157-162` → `aes/geminput.c:568-587`): it checks
+   > `in_mrect` exactly **once**, against the pointer position *at the
+   > instant the wait is armed* (`geminput.c:575-576`) — ownership-blind,
+   > like `abutton`'s level test above. If the rectangle already matches at
+   > that instant the event fires immediately; otherwise the request is
+   > queued on the caller's own `p_cda->c_msleep` list and from then on
+   > satisfied **only** by `post_mouse(gl_mowner, …)`
+   > (`geminput.c:446-456`) — i.e. only while the caller owns the mouse, or
+   > from the moment ownership returns to it. Two sites drive `post_mouse`:
+   > `mchange` (`geminput.c:388-390`), on every raw mouse move, and
+   > `set_mown` (`geminput.c:220-235`), once when the mouse changes hands.
+   > A rectangle the pointer crosses *while the control manager owns the
+   > mouse* (a bar/drop-down track, `gl_mowner == ctl_pd`) therefore never
+   > reaches a parked M1/M2 arm — `post_mouse(ctl_pd, …)` only walks
+   > `ctl_pd`'s own `c_msleep`, never the application's. If some other
+   > requested event (typically the track's own `MN_SELECTED` message)
+   > wakes the caller first, `acancel` discards the unsatisfied M1/M2 arm
+   > without re-testing it (`aes/gemevlib.c:264`; `acancel` itself
+   > `aes/gemasync.c:217-243`) — the rectangle condition is re-tested only
+   > by the *next* call's fresh arm.
+   >
+   > Traced against a bar-title-select track ([`menu.md`](./menu.md) "Mouse
+   > ownership over the track"): **selection on press** — the button is
+   > still down when `ct_msgup` busy-waits (`aes/gemctrl.c:100-101`), so
+   > `w_setactive` (and the `set_mown` inside it) does not run until *after*
+   > the application has already consumed the `MN_SELECTED` message and
+   > returned from `evnt_multi` — the app gets `MU_MESAG` alone, and any
+   > armed `MU_M1`/`MU_M2` only on its *next* call, where the now-live
+   > pointer position satisfies the fresh arm at once. **Selection on
+   > release** — `button == 0` when `mn_do` returns, so `ctlmgr`'s next pass
+   > reaches `w_setactive` (`aes/gemctrl.c:442`) → `set_mown(app)`
+   > (`aes/gemwmlib.c:321-334` → `aes/geminput.c:220-231`) →
+   > `post_mouse(app, xrat, yrat)` against the *live* position, before the
+   > application is dispatched — so that same call returns `MU_MESAG |
+   > MU_M1` (or `M2`) together.
 7. **Fill the return block** with `ev_rets` (mouse x/y/button + shift state,
    `:42-58,268`), then, if the wait actually blocked, collect each fired
    event's result via `apret` — `EV_KRET` for `MU_KEYBD`, `EV_BRET` for

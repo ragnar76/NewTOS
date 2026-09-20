@@ -53,9 +53,15 @@ struct MoBlk {
 }
 
 /// `true` when a `MOBLK`'s condition is satisfied (EmuTOS `in_mrect`:
-/// the event fires when `flags != inside`).
+/// the event fires when `flags != inside`) at the live pointer position.
 fn rect_event(m: &MoBlk) -> bool {
-    let (mx, my) = crate::vdi::mouse_position();
+    rect_event_at(m, crate::vdi::mouse_position())
+}
+
+/// [`rect_event`] against an explicit pointer position `(mx, my)` — the
+/// arm-time position `amouse` tests (`aes/geminput.c:575-576`), or the
+/// `xrat`/`yrat` a `post_mouse` carries (`:446-456`).
+fn rect_event_at(m: &MoBlk, (mx, my): (i16, i16)) -> bool {
     let inside = mx >= m.x && mx < m.x + m.w && my >= m.y && my < m.y + m.h;
     (m.flags != 0) != inside
 }
@@ -484,6 +490,13 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
         // (`aes/gemctrl.c:92`). It equals the raw VDI byte otherwise.
         let arm_own = super::input::own_mouse();
         let arm_mb = super::input::button();
+        // The pointer position **at arm time**, for the same reason: `amouse`
+        // tests a rectangle wait exactly once, against the position at the
+        // instant `ev_multi` arms it (`aes/geminput.c:575-576`), before the
+        // application blocks and before the Control Manager can move the
+        // pointer through the rectangle on its own account. Sampled here,
+        // ahead of the inline interception (A73, point 1).
+        let arm_pos = crate::vdi::mouse_position();
         loop {
             // AES trap tracer: one sample of the button byte per evaluation of
             // the multiplexer predicate, folded into the call record as
@@ -591,14 +604,35 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
             // The rectangle quick checks sit inside the same
             // `if (rlr == gl_mowner)` block as the button one
             // (`aes/gemevlib.c:200-203`), and the blocking path behaves the same
-            // way: `amouse` tests `in_mrect` once, unconditionally
-            // (`aes/geminput.c:566-570`), then sleeps on `c_msleep`, which only
-            // `post_mouse(gl_mowner, …)` walks (`aes/geminput.c:390,446`).
-            let own_m = super::input::own_mouse() || pass == 0;
-            if own_m && flags & MU_M1 != 0 && rect_event(&m1) {
+            // way: `amouse` tests `in_mrect` once, ownership-blind, against the
+            // position **at arm time** (`aes/geminput.c:568-587`), then parks
+            // the wait on `c_msleep`, which only `post_mouse(gl_mowner, …)`
+            // walks (`aes/geminput.c:390,446-456`) — from `mchange` on every
+            // move while the caller owns the mouse, and once from `set_mown`
+            // the moment ownership comes (back) to it (`:220-231`).
+            //
+            // Pass 0 is the arm: the one ownership-blind test uses `arm_pos`,
+            // the position from before the inline Control Manager ran — a
+            // rectangle the drop-down track crossed on its own account never
+            // reaches the application's parked wait (`post_mouse(ctl_pd, …)`
+            // walks `ctl_pd`'s list). If that track handed the mouse back
+            // before the application runs (`w_setactive` → `set_mown(app)` →
+            // `post_mouse(app, xrat, yrat)`, `aes/gemctrl.c:441-442`; a
+            // selection on *release*), the parked wait is completed against
+            // the live position — `own_mouse()` is true again, and the live
+            // test is that `post_mouse`. Every later pass is the parked state:
+            // live position, owner only. An unsatisfied arm that another event
+            // (the track's `MN_SELECTED`) wakes the caller from is simply
+            // dropped, `acancel` (`aes/gemevlib.c:264`) — nothing re-tests it
+            // (A73, point 1; `docs/api/aes/event.md` "tested once, at arm time").
+            let own_m = super::input::own_mouse();
+            let rect_fires = |m: &MoBlk| {
+                (pass == 0 && rect_event_at(m, arm_pos)) || (own_m && rect_event(m))
+            };
+            if flags & MU_M1 != 0 && rect_fires(&m1) {
                 fired |= MU_M1;
             }
-            if own_m && flags & MU_M2 != 0 && rect_event(&m2) {
+            if flags & MU_M2 != 0 && rect_fires(&m2) {
                 fired |= MU_M2;
             }
             if flags & MU_MESAG != 0 {

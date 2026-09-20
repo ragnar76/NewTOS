@@ -34,7 +34,14 @@
 > never delivered to the application as `MU_BUTTON` (see "The drop-down
 > tracking loop" below) — because an application's `evnt_multi` loop is
 > written against that guarantee, even though the `gl_mowner`/`gl_ctmown`
-> ownership bookkeeping that produces it is reimplementable.
+> ownership bookkeeping that produces it is reimplementable; **`menu_popup`'s
+> selecting press is likewise consumed inside the call (A73, 2026-09-20)** —
+> the function does not return until the button that picked (or cancelled)
+> the item is back up (`aes/gemmnext.c:314,351`), so the caller's next
+> `evnt_*` wait for a press sees `button == 0` — because callers written
+> against `menu_popup` rely on this exactly as bar-track callers rely on the
+> guarantee above, even though `handle_popup`'s tracking loop and the
+> `fm_own`-based ownership bracket around it are reimplementable.
 > **Reference (NewTOS reimplements freely):**
 > `do_chg`'s exact signature, `menu_down`/`menu_sr`, the `mn_do`
 > mouse-tracking state machine, `bb_save`/`bb_restore`/`popup_blit` raster
@@ -377,6 +384,34 @@ returns `1`. On no pick, sets `mdata->mn_keystate = 0` and returns `0`
 (`gemmnext.c:351`) and releases the mouse (`wm_update(END_MCTRL)`,
 `gemmnext.c:353`) before returning.
 
+> **Contract addition — the whole call is the application's own mouse
+> ownership, and it consumes the selecting press (A73, 2026-09-20).**
+> `wm_update(BEG_MCTRL)` (`gemmnext.c:312`; `BEG_MCTRL` = `2 + BEG_UPDATE`,
+> `include/aesdefs.h:559-562`) resolves to `fm_own(TRUE)`
+> (`gemwmlib.c:1778-1797`), which clears `gl_mntree`, widens the control
+> rectangle to the whole screen and calls `ct_chgown(rlr, &gl_rscreen)` —
+> i.e. `set_mown(rlr)`, **the calling application itself**
+> (`gemfmlib.c:82-107`, `gemctrl.c:392-397`). No `ct_mouse`/`gl_ctmown`
+> bracket is ever entered — `grep -n 'ct_mouse\|gl_ctmown' aes/gemmnext.c`
+> matches nothing — so the drop-down tracking loop's ownership machinery
+> ("Mouse ownership over the track" below) does not apply here; there is
+> nothing for it to guard against, because no *other* process ever holds
+> the mouse during `mn_popup`.
+>
+> This is also why `mn_popup` must wait out the button itself: the popup is
+> not shown while a button from *opening* it is still down
+> (`ev_button(1, 0x00ff, 0x0000, rets)` before `handle_popup`,
+> `gemmnext.c:314`), and `handle_popup`'s own tracking loop
+> (`ev_multi(MU_M1|MU_BUTTON, …)`, `gemmnext.c:268`) returns on the
+> selecting/cancelling `MU_BUTTON` itself (`:290-291`) — i.e. on the press,
+> button still down. The second `ev_button(1, 0x00ff, 0x0000, rets)`
+> (`gemmnext.c:351`), run after the pick/no-pick branch and before
+> `wm_update(END_MCTRL)` (`:353`), blocks until that press is released.
+> **Contract:** by the time `menu_popup` returns, the button is up — the
+> press that picked (or cancelled) the item, and its release, are both
+> consumed inside the call; the caller's own next `evnt_*` wait for a press
+> is never satisfied by them.
+
 > **Correction / addition (D-086).** The previous spec listed a helper
 > function `submenu_event` that "sets `keystate`". **No such function
 > exists anywhere in EmuTOS** (`grep -rn submenu_event references/emutos/`
@@ -591,7 +626,13 @@ The mouse tracking that turns a click on the bar into an `MN_SELECTED` message
 lives in the **control manager**, not in the `menu_*` dispatch: `hctl_rect`
 (`gemctrl.c:318-371`) calls `mn_do` (`gemmnlib.c:249` extension variant / `:518`
 plain variant), a state machine (`START/INTITLE/INITEM/OUTSIDE/SUBMENU_STATE`)
-that, while the button is held, uses `ob_find` to locate the title/item under
+that hit-tests on every rectangle-enter/leave or button transition — **not
+only while the button is held**, correcting the phrasing here (A73,
+2026-09-20): the bar opens and tracks purely on hover, the instant the
+cursor enters `THEACTIVE` with the button up (`START_STATE`,
+`gemmnlib.c:286-292`; a stray `MU_BUTTON` seen there is simply ignored,
+`:371-372`) — the button only *finalizes* a selection once an item is
+reached (point 3 below). It uses `ob_find` to locate the title/item under
 the cursor, `menu_down`/`menu_sr` to drop the box and save the screen area
 beneath it (`bb_save`/`bb_restore` — into **the one** AES screen buffer
 `gsx_malloc` took, `gl_tmp`, the same the alert uses and `wind_get(WF_SCREEN)`
@@ -660,9 +701,37 @@ message.
    `set_mown` itself is a no-op while a button is held (`if (!button) { … }`,
    `aes/geminput.c:222-235`), so ownership cannot move to the application
    mid-click even if something else tried.
+5. **Leaving the bar *and* the open box does not close the drop-down, and a
+   press outside is also swallowed by the control manager (A73,
+   2026-09-20).** If the cursor leaves both the current title and the open
+   item box without a button event, `mn_do`'s per-iteration hit-test falls
+   through to "no man's land" and sets `menu_state = OUTSIDE_STATE`
+   (`aes/gemmnlib.c:415-443`); the changed-item guard un-hilites the tracked
+   item (`menu_select`/`item_changed`, only-on-change, `:178-186,192-200`,
+   called at `:459`), but the *title* is unchanged, so the same guard
+   leaves it hilited and skips the `menu_sr(FALSE, …)` restore that would
+   drop the box (`:463-464`). The next wait round asks for `MU_BUTTON |
+   MU_M1` (re-enter `THEACTIVE`) `| MU_M2` (re-enter the open box,
+   `cur_menu`) `| MU_M3` (a showing submenu) (`:293-305`). Re-entering the
+   box resumes item tracking exactly as before (`ob_find` against
+   `cur_menu`, `menu_state = INITEM_STATE`, `:415-426`), and a press there
+   selects the item through the same press-or-release rule as point 3
+   above. **A press anywhere else** — outside both the bar and the box —
+   breaks the loop as a cancel: a `MU_BUTTON` in any state other than
+   `START_STATE`/`INTITLE_STATE` breaks the `while (!done)` loop
+   (`:369-374`); the cleanup path un-hilites the title without selecting
+   anything (`:509-510`) and `mn_do` returns `FALSE`, sending no message
+   (`:515`). That cancelling press still falls inside the step 1–2
+   ownership bracket above — `gl_ctmown` was set on entry (`:277`) and is
+   only cleared at cleanup (`:513`) — so `bchange` still refuses to move
+   `gl_mowner` off `ctl_pd` for it (`aes/geminput.c:334-335`), and, since
+   the button never reaches a selecting transition, `set_mown` never runs
+   for it either (`:222-235`): the cancelling press is consumed exactly
+   like a selecting one, just without a message reaching the application.
 
 **Net effect and the contract it produces.** For the whole bracket from step 1
-to the end of step 4, the only process `gl_mowner` ever names is `ctl_pd`, and
+through the end of step 5 above, the only process `gl_mowner` ever names is
+`ctl_pd`, and
 `post_button` delivers to **exactly one** recipient — whichever process
 `gl_mowner` currently names (`aes/geminput.c:463-483`). An application parked
 in `evnt_multi` has its own pending button-wait sitting on **its own**

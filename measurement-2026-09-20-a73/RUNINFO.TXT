@@ -1,0 +1,104 @@
+A73 -- three neighbours of the H02 fix (tos-api/src/aes/menu.rs, event.rs), one package.
+Developer self-evidence, 2026-09-20 (no Tester verdict). Branch desk-rebuild, base HEAD 6ed0bf3, changes
+uncommitted in the tree. Pinned EmuTOS source references/emutos @ 1a7484ab: aes/gemmnlib.c mn_do :249-516
+(OUTSIDE_STATE :293-305,415-443, break on MU_BUTTON :369-374, cleanup :482-513); aes/geminput.c amouse
+:568-587, post_mouse :446-456, set_mown :220-235, mchange :360-391, bchange :328-345; aes/gemevlib.c ev_multi
+:170-290 (acancel :264); aes/gemctrl.c ct_msgup :81-104, ctlmgr :427-486; aes/gemmnext.c mn_popup :304-356
+(ev_button :314 and :351, handle_popup :229-298). Spec (lead-written, uncommitted, left untouched):
+docs/api/aes/menu.md :37-44, :387-413, :629-635, :704-730; docs/api/aes/event.md :221-258.
+
+DEFECTS -> FIX (method/menu-event-a73.diff, the only product change; plus the audit's test file)
+  (2) menu::track_owned returned None (close_box, mouse back to the app) the moment the pointer left bar +
+      box; EmuTOS mn_do enters OUTSIDE_STATE: item un-hilited, title stays hilited, box stays down, waits for
+      MU_BUTTON | M1 (THEACTIVE) | M2 (cur_menu) | M3; re-entry resumes INITEM tracking, a press outside
+      breaks the loop as a cancel and is consumed under gl_ctmown. Now: `outside = cur_title != NIL && t == NIL
+      && !in_box && !in_sub_box` (the bar row only matters in START_STATE); outside: stay; button transition
+      outside: close_box + None; DISABLED title outside (:429-434): close_box + None.
+  (1) evnt_multi tested MU_M1/MU_M2 on pass 0 against the live pointer AFTER the inline control manager, so a
+      bar track in that pass that moved the pointer through the rectangle delivered MU_M1 next to
+      MN_SELECTED. EmuTOS amouse tests once at arm time, then only post_mouse(gl_mowner) (mchange / set_mown).
+      Now: `arm_pos` sampled before the interception; pass 0 = rect_event_at(arm_pos) || (own_mouse() &&
+      rect_event(live)); pass >= 1 unchanged (live, owner only).
+  (3) popup_track returned on the press that picked the item (button still down). EmuTOS mn_popup waits
+      ev_button(1, 0x00ff, 0x0000) a second time after the popup_blit restore (:351), before END_MCTRL (:353).
+      Now: popup_track = wait_button_up (:314) + save + popup_shown (draw, track, restore, wait_button_up
+      :351). Ticket premise "no ct_mouse bracket" corrected: EmuTOS has none for popups (BEG_MCTRL/fm_own,
+      the app's own context); the trailing wait is what consumes the press.
+
+HOST TESTS (host-tests/)
+  aes_a73_event_neighbours-RED-before.txt   1 passed / 3 failed / 1 ignored (tree before the fix):
+    m1_armed_before_press_track_is_not_delivered_with_mn_selected   fired=0x0014 (MU_M1 next to MN_SELECTED)
+    leaving_the_box_keeps_it_open_and_reentry_press_selects        fired=0x0002 bret=1 at (84,47)
+    press_outside_the_open_box_is_consumed_as_cancel               fired=0x0002 bret=1 at (84,200)
+    m1_armed_before_release_track_is_delivered_with_mn_selected    green before and after (guard)
+  aes_a73_event_neighbours-GREEN-after.txt  4 passed / 0 failed / 1 ignored:
+    1a fired=0x0010 msg=[10,1,0,4,12,..]; next call 0x0024 (re-armed M1 fires at arm time + timer)
+    1b fired=0x0014 (select on release: set_mown -> post_mouse completes the parked M1)
+    2a fired=0x0010 msg=[10,1,0,4,12,..]   2b fired=0x0020 (timer only)
+    menu_popup_waits_for_the_selecting_press_to_be_released stays #[ignore] (needs the BDOS pool).
+  popup_wait_tests-RED-without-second-wait.txt  menu::popup_wait_tests::popup_shown_returns_with_the_picking_
+    button_up: `left: 1 right: 0` with the second wait_button_up hand-removed (scratch edit, restored by hand).
+  popup_wait_tests-GREEN-after.txt  1 passed.
+  xtask-test.log   cargo run -p xtask -- test = 693 passed / 0 failed / 2 ignored (baseline 688/0/1 + 4 new
+                   integration cases + 1 unit test; +1 ignored = the popup integration case).
+
+BUILD / CLIPPY (build/)
+  build-rpi4-tree.log       cargo xtask build --board rpi4 (tos-api + kernel recompiled): rustc tos-api 64 /
+                            kernel 94 warnings, exit 0 (baseline 64/94, delta 0). No qemu-virt build (task).
+  clippy-tos-api-tests.log  cargo clippy -p tos-api --tests: hits in menu.rs are the pre-existing
+                            private_interfaces set on `pub fn menu_*(pb: &Aespb)`; none in event.rs, none in
+                            the new code, none in the test file (the audit's unused `evnt_multi_poll` removed).
+  build-scratch-*.log       the injector scratch kernels (see METHOD).
+  hashes: kernel8.img (tree, dev) 4fe700af...; scratch kernels after-outside 519225d9..., after-run3
+          16eee915..., before-outside fb4abe8d...; images (scratch only, not kept) sd-base d460fb4e...,
+          sd-tera-h02 34cc6371... (= sd-base + NEWDESK.INF from measurement-2026-09-17-h02/method/
+          newdesk-teradesk.inf: #Z TeraDesk, TeraDesk defaults -> text-view C:\ window at (165,57), the H02
+          layout rowstat.py measures); DESKTOP.NAP 7c86a1ec... (tree build, unchanged).
+
+METHOD (method/) -- scratch copies only, the shared tree was never patched
+  make_scratch.sh <ws> <scratch> tree|HEAD : rsync of the crates; "before" = HEAD menu.rs + event.rs
+    (diff -rq before/after = menu.rs, event.rs, host_env.rs(script) only); a68_patch.py (debug_write sink,
+    H02_TRACE/h02_log, DESK_UP flag), a73_trace.py (A73-TEMP: serial line per evnt_multi completion
+    `[a73] evnt_multi fired=.. clicks=.. mouse=(x,y) mb=.. pass=..` and per bar track `[a73] track -> ..`),
+    apply_injector.py + a73_scripts*.rs (IKBD injector), a68_patch2.py (dual arming). scratch-injector.diff =
+    the scratch-only patch (host_env.rs, desk/mod.rs, host.rs, aes/mod.rs, event.rs trace lines);
+    menu-event-a73.diff = the product change (git diff of the tree).
+  gen_script.py: new op `parkbl` = six Mv(-127,127) -> (0,479). The H02 park (0,0) is inside the menu bar
+    and the sweep crosses the File title at (65,0); with OUTSIDE_STATE that hover would keep the File box
+    down until a click, so the park must never touch the bar row.
+  a73-outside.actions -> point 2: parkbl; (300,300); double-click HARD DISC C (195,35); click HELLO.TXT
+    (220,340) -> A_SELECTED +2400; arm trace; File (88,8) -> B_FILE_MENU +3200; move (88,300) [the TeraDesk
+    File box spans y 19..245 (H02 run3-B.png), so (88,300) is below it, left of the C:\ window x 165..500,
+    right of the icon column -- NOT the (88,200) of the brief, which is still inside the box] -> C_OUTSIDE
+    +3800; down +4000, up +4005 -> D_AFTER_CLICK +4100 (= +0.5 s), E_THREE_SECONDS +4600.
+  a73-run3.actions -> regression = H02 run3 with parkbl: same start, File (88,8) -> B_MENU_OPEN, Info...
+    (150,43) -> B2_ITEM_HOVER, down +3800 / up +3806 -> C1_RELEASED +3807, D_THREE_SECONDS +4400.
+  QEMU raspi4b 640x480, -display none, -serial file, QMP screendump at the serial markers (run.sh, qmp_multi.py;
+  every run boots a fresh copy of the image). rowstat.py = H02's row statistics (HELLO TXT row x 175..470,
+  y 333..347 black fraction; File title cell; drop-down area).
+
+RUNS (screendumps/, serial/) -- grep -c "EXC\|PANIC\|panic" = 0 in every serial log
+  after-outside (kernel after, point 2):
+    A 0.834 sel  B 0.836 / File 0.761 (box down)  C 0.836 / File 0.779 (box STILL down, pointer (88,300),
+    item un-hilited)  D 0.836 / File 0.221 (box closed, HELLO.TXT STILL selected, info line "32 bytes used in
+    1 selected item.")  E = D (sha 7bf08d5b...).
+    serial: `[a73] track -> None at (88,300) mb=0x01` = the cancel on the press; no `[a73] evnt_multi`
+    completion after it (nothing reached the app; TeraDesk's main wait has no timer).
+  before-outside (kernel before = HEAD menu.rs/event.rs):
+    A/B byte-identical to after (f7e77f96..., 9e9d3c07...)  C 0.836 / File 0.221 (box ALREADY closed;
+    `track -> None at (88,262)` on leaving) -- before-C == after-D byte for byte (7bf08d5b...)
+    D 0.161 / info line changed (HELLO.TXT DESELECTED; `[a73] evnt_multi fired=0x0002 clicks=1 mouse=(88,300)`
+    = the click reached TeraDesk as MU_BUTTON)  E = D (63d6954a...).
+  after-run3 (kernel after, regression, select via the bar):
+    A/B identical to the above; B2 drop-down area 0.496 (Info... hilited); `[a73] track -> Some((4, 20)) at
+    (150,43) mb=0x01`, `[a73] evnt_multi fired=0x0010 clicks=0` (MU_MESAG only -- no MU_BUTTON for the
+    selecting press); C1/D: "File Information" dialog for HELLO.TXT, info line still "32 bytes used in 1
+    selected item." (row 0.000 = the dialog covers the row). The `fired=0x0002 clicks=1 .. mb=0x01 pass=0`
+    burst after it is the dialog's own press-wait re-armed while the selecting press is still held -- the
+    documented ownership-blind arm-time level test (abutton, geminput.c:549; menu.md "The one documented
+    exception"), unchanged by A73 and identical in EmuTOS.
+
+NOT RUN / NOT COVERED: real Pi 4 (Tester/Lead). qemu-virt build (task said no). Point 1 (MU_M1 at arm time)
+has no board evidence -- TeraDesk's main wait arms no MU_M1; host tests only. Point 3 (menu_popup) on the
+board needs an application that calls menu_popup (none of TeraDesk/QED does, cflib falls back to its own
+tracker) -- host unit test only. No commit, no git checkout/stash/reset, nothing flashed, no *.img kept.

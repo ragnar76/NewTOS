@@ -1,0 +1,503 @@
+diff --git a/tos-api/src/aes/event.rs b/tos-api/src/aes/event.rs
+index e4d9a92..142bb72 100644
+--- a/tos-api/src/aes/event.rs
++++ b/tos-api/src/aes/event.rs
+@@ -53,9 +53,15 @@ struct MoBlk {
+ }
+ 
+ /// `true` when a `MOBLK`'s condition is satisfied (EmuTOS `in_mrect`:
+-/// the event fires when `flags != inside`).
++/// the event fires when `flags != inside`) at the live pointer position.
+ fn rect_event(m: &MoBlk) -> bool {
+-    let (mx, my) = crate::vdi::mouse_position();
++    rect_event_at(m, crate::vdi::mouse_position())
++}
++
++/// [`rect_event`] against an explicit pointer position `(mx, my)` — the
++/// arm-time position `amouse` tests (`aes/geminput.c:575-576`), or the
++/// `xrat`/`yrat` a `post_mouse` carries (`:446-456`).
++fn rect_event_at(m: &MoBlk, (mx, my): (i16, i16)) -> bool {
+     let inside = mx >= m.x && mx < m.x + m.w && my >= m.y && my < m.y + m.h;
+     (m.flags != 0) != inside
+ }
+@@ -484,6 +490,13 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
+         // (`aes/gemctrl.c:92`). It equals the raw VDI byte otherwise.
+         let arm_own = super::input::own_mouse();
+         let arm_mb = super::input::button();
++        // The pointer position **at arm time**, for the same reason: `amouse`
++        // tests a rectangle wait exactly once, against the position at the
++        // instant `ev_multi` arms it (`aes/geminput.c:575-576`), before the
++        // application blocks and before the Control Manager can move the
++        // pointer through the rectangle on its own account. Sampled here,
++        // ahead of the inline interception (A73, point 1).
++        let arm_pos = crate::vdi::mouse_position();
+         loop {
+             // AES trap tracer: one sample of the button byte per evaluation of
+             // the multiplexer predicate, folded into the call record as
+@@ -591,14 +604,35 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
+             // The rectangle quick checks sit inside the same
+             // `if (rlr == gl_mowner)` block as the button one
+             // (`aes/gemevlib.c:200-203`), and the blocking path behaves the same
+-            // way: `amouse` tests `in_mrect` once, unconditionally
+-            // (`aes/geminput.c:566-570`), then sleeps on `c_msleep`, which only
+-            // `post_mouse(gl_mowner, …)` walks (`aes/geminput.c:390,446`).
+-            let own_m = super::input::own_mouse() || pass == 0;
+-            if own_m && flags & MU_M1 != 0 && rect_event(&m1) {
++            // way: `amouse` tests `in_mrect` once, ownership-blind, against the
++            // position **at arm time** (`aes/geminput.c:568-587`), then parks
++            // the wait on `c_msleep`, which only `post_mouse(gl_mowner, …)`
++            // walks (`aes/geminput.c:390,446-456`) — from `mchange` on every
++            // move while the caller owns the mouse, and once from `set_mown`
++            // the moment ownership comes (back) to it (`:220-231`).
++            //
++            // Pass 0 is the arm: the one ownership-blind test uses `arm_pos`,
++            // the position from before the inline Control Manager ran — a
++            // rectangle the drop-down track crossed on its own account never
++            // reaches the application's parked wait (`post_mouse(ctl_pd, …)`
++            // walks `ctl_pd`'s list). If that track handed the mouse back
++            // before the application runs (`w_setactive` → `set_mown(app)` →
++            // `post_mouse(app, xrat, yrat)`, `aes/gemctrl.c:441-442`; a
++            // selection on *release*), the parked wait is completed against
++            // the live position — `own_mouse()` is true again, and the live
++            // test is that `post_mouse`. Every later pass is the parked state:
++            // live position, owner only. An unsatisfied arm that another event
++            // (the track's `MN_SELECTED`) wakes the caller from is simply
++            // dropped, `acancel` (`aes/gemevlib.c:264`) — nothing re-tests it
++            // (A73, point 1; `docs/api/aes/event.md` "tested once, at arm time").
++            let own_m = super::input::own_mouse();
++            let rect_fires = |m: &MoBlk| {
++                (pass == 0 && rect_event_at(m, arm_pos)) || (own_m && rect_event(m))
++            };
++            if flags & MU_M1 != 0 && rect_fires(&m1) {
+                 fired |= MU_M1;
+             }
+-            if own_m && flags & MU_M2 != 0 && rect_event(&m2) {
++            if flags & MU_M2 != 0 && rect_fires(&m2) {
+                 fired |= MU_M2;
+             }
+             if flags & MU_MESAG != 0 {
+diff --git a/tos-api/src/aes/menu.rs b/tos-api/src/aes/menu.rs
+index af29a68..09de199 100644
+--- a/tos-api/src/aes/menu.rs
++++ b/tos-api/src/aes/menu.rs
+@@ -200,8 +200,12 @@ pub fn menu_bar(pb: &Aespb) {
+ /// logic. Entered (from `evnt_multi`) as soon as the cursor is over the bar
+ /// with the buttons up. Follows the mouse: the title under the cursor opens
+ /// its drop-down (`menu_sub`), items highlight on hover, a left-button
+-/// **edge** over an item is the selection, and leaving the bar + open box
+-/// closes it. Returns `Some((title, item))` or `None` (cancelled).
++/// **edge** over an item is the selection. Leaving the title *and* the open
++/// box does **not** close it — EmuTOS `mn_do`'s `OUTSIDE_STATE`
++/// (`aes/gemmnlib.c:293-305,415-443`) keeps the box down and the title
++/// hilited until the pointer re-enters (tracking resumes) or a button
++/// transition falls outside (the cancel; A73). Returns `Some((title,
++/// item))` or `None` (cancelled).
+ ///
+ /// **Which edge selects.** EmuTOS `mn_do` derives its button wait in
+ /// `INITEM_STATE` from the live button each time round: `buparm = (button &
+@@ -260,7 +264,8 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
+     // Hover model (GEM): the menu opens as the cursor enters a title; an item
+     // is chosen on a left-button *edge* over it (press if the button was up
+     // on entering the item, release if it was already held — `gemmnlib.c:314`);
+-    // leaving the bar and the open box closes the menu with no selection.
++    // an edge with the pointer outside title, box and submenu cancels
++    // (`OUTSIDE_STATE`, below).
+     let mut was_down = crate::vdi::mouse_buttons() & 0x01 != 0;
+ 
+     loop {
+@@ -339,11 +344,28 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
+             }
+         }
+ 
++        // Where the pointer is, in `mn_do`'s terms (`aes/gemmnlib.c:398-443`):
++        // over a title (`ob_find(tree, THEACTIVE, …)`), in the open box
++        // (`ob_find(tree, cur_menu, …)`), in the open submenu, or — none of
++        // these — in "no man's land", `OUTSIDE_STATE`. `THEBAR` (the bar row)
++        // only matters while no box has been dropped yet (`START_STATE`).
++        let in_bar = my < gl_hbox();
++        let in_box = cur_box != NIL && point_in(tp, cur_box, mx, my);
++        let in_sub_box = sub_tree != 0 && point_in(sub_tree as *const Object, sub_box, mx, my);
++        let outside = cur_title != NIL && t == NIL && !in_box && !in_sub_box;
++
+         // Left-button edge over an item → the selection. `INITEM_STATE` waits
+         // for whichever transition the live button allows (`gemmnlib.c:314`),
+         // so a press with the button up and a release with it held both end
+         // the track here; over a title (`cur_item == NIL`) an edge does
+         // nothing, as `INTITLE_STATE`'s `buparm ^= 1` does nothing visible.
++        // In `OUTSIDE_STATE` the same transition **cancels**: `MU_BUTTON` in
++        // any state but `START`/`INTITLE` breaks the loop (`:369-374`), and
++        // the cleanup pulls the box up and un-hilites the title without a
++        // selection (`cur_item == NIL`, `:482-511`) — `mn_do` returns FALSE.
++        // That press is consumed here, under `gl_ctmown`, exactly like a
++        // selecting one (`docs/api/aes/menu.md` "Mouse ownership over the
++        // track", point 5).
+         if down != was_down {
+             if sub_tree != 0 && sub_item != NIL && sub_tree == tree as u64 {
+                 // Submenu selection in the same tree: the item index is valid
+@@ -377,21 +399,51 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
+                 crate::vdi::cursor_show(backend);
+                 return Some((cur_title, cur_item));
+             }
++            if outside {
++                // `OUTSIDE_STATE` + `MU_BUTTON` → break → cleanup without a
++                // selection (`gemmnlib.c:373-374,482-511`): `menu_sr(FALSE)`,
++                // `do_chg(tree, cur_title, SELECTED, FALSE, …)`, return FALSE.
++                if sub_tree != 0 {
++                    close_submenu(sub_tree, sub_box, sub_item, backend);
++                }
++                close_box(tree, cur_title, cur_box, backend);
++                return None;
++            }
+         }
+ 
+-        // Leaving the bar, the open box, *and* the open submenu closes the
+-        // menu (no selection).
+-        let in_bar = my < gl_hbox();
+-        let in_box = cur_box != NIL && point_in(tp, cur_box, mx, my);
+-        let in_sub_box = sub_tree != 0 && point_in(sub_tree as *const Object, sub_box, mx, my);
+-        if !in_bar && !in_box && !in_sub_box {
+-            if sub_tree != 0 {
+-                close_submenu(sub_tree, sub_box, sub_item, backend);
++        if cur_title == NIL {
++            // `START_STATE`: no box dropped yet. The pointer wandering the bar
++            // row off any title keeps waiting (`MU_M1` enter `THEACTIVE`);
++            // leaving `THEBAR` (`MU_M2`) ends the track — `cur_menu == NIL` →
++            // `cur_title = NIL` → `done` (`gemmnlib.c:286-292,404-411`).
++            if !in_bar {
++                return None;
+             }
+-            if cur_title != NIL {
++        } else if outside {
++            // No man's land with a box down. EmuTOS does **not** pull the box
++            // up: `OUTSIDE_STATE` (`gemmnlib.c:415-443`) keeps the title
++            // hilited and the box on screen — the title is unchanged, so the
++            // `menu_select`/`menu_sr(FALSE)` pair at `:463-464` is skipped —
++            // and only the item under the pointer was un-hilited (the
++            // `item_changed` guard at `:459`, done by the box block above).
++            // The next round waits for `MU_BUTTON | M1` (re-enter `THEACTIVE`)
++            // `| M2` (re-enter `cur_menu`) `| M3` (re-enter the submenu)
++            // (`:293-305`): re-entry resumes the tracking above, a button
++            // transition is the cancel handled in the edge block above.
++            //
++            // The one exception is a DISABLED title (`:429-434`): `cur_title
++            // = NIL; done = TRUE;` — `mn_do` ends with no selection and, since
++            // `menu_down` never dropped a box for it (`do_chg(…, chkdisabled)`
++            // at `:158-160,469`), nothing to restore. NewTOS did drop one
++            // (`open_box` does not gate on DISABLED), so the same no-selection
++            // exit goes through `close_box` to take it back off the screen.
++            if (ObjTree::new(tp).state(cur_title) & DISABLED) != 0 {
++                if sub_tree != 0 {
++                    close_submenu(sub_tree, sub_box, sub_item, backend);
++                }
+                 close_box(tree, cur_title, cur_box, backend);
++                return None;
+             }
+-            return None;
+         }
+ 
+         was_down = down;
+@@ -1024,19 +1076,56 @@ pub fn menu_popup(pb: &Aespb) {
+ /// opening (`popup_blit`, `gemmnext.c:329-333`), not the drop-down's screen
+ /// buffer; no block, no pop-up — `NIL` without a track (D-086,
+ /// `docs/api/aes/menu.md`).
++///
++/// The shape is `mn_popup`'s (`gemmnext.c:304-356`): wait for the button
++/// that opened the pop-up to come up (`ev_button(1, 0x00ff, 0x0000, rets)`,
++/// `:314`), save + show + track + restore ([`popup_shown`]), then wait for
++/// the button that picked or cancelled to come up as well (`:351`) — the
++/// call returns with the button **up**, so the selecting press never reaches
++/// the caller's next `evnt_*` wait (`docs/api/aes/menu.md` "Contract
++/// addition — … it consumes the selecting press", A73 point 3).
+ fn popup_track(tree: *mut Object, box_obj: i16, backend: &dyn RasterBackend) -> i16 {
+     let Some(h) = host() else { return NIL };
+     let tp = tree as *const Object;
+-    // Wait for the button that opened the pop-up to be released.
+-    while crate::vdi::mouse_buttons() & 0x01 != 0 {
+-        h.pump_input();
+-    }
++    // `ev_button(1, 0x00ff, 0x0000, rets); /* wait for button up */`
++    // (`gemmnext.c:314`): the button that opened the pop-up.
++    wait_button_up(h);
+     crate::vdi::cursor_hide(backend);
+     let (bx, by, bw, bh) = sr_rect(tp, box_obj, backend);
+     let Some(saved) = gsxif::popup_blit_save(backend, bx, by, bw, bh) else {
++        // No block, no pop-up (`buf == NULL`, `:330`). The second wait
++        // (`:351`) has nothing left to wait for here: the first one just
++        // saw the button up and nothing was pumped since.
+         crate::vdi::cursor_show(backend);
+         return NIL;
+     };
++    popup_shown(tree, box_obj, backend, h, saved)
++}
++
++/// `ev_button(1, 0x00ff, 0x0000, rets)` — block until the left button is
++/// up, pumping input meanwhile. `mn_popup` runs it twice (`gemmnext.c:314,
++/// 351`); [`popup_track`] and [`popup_shown`] do the same.
++fn wait_button_up(h: &dyn crate::host::Host) {
++    while crate::vdi::mouse_buttons() & 0x01 != 0 {
++        h.pump_input();
++    }
++}
++
++/// The pop-up on screen: draw the box over `saved` (the pixels under it,
++/// already taken with the cursor hidden), track until a button press
++/// (`handle_popup`, `gemmnext.c:229-298`), put the pixels back
++/// (`popup_blit(obj, buf)`, `:333`), then wait for that press to be released
++/// (`ev_button(1, 0x00ff, 0x0000, rets)`, `:351`). Returns the picked item or
++/// `NIL`.
++fn popup_shown(
++    tree: *mut Object,
++    box_obj: i16,
++    backend: &dyn RasterBackend,
++    h: &dyn crate::host::Host,
++    saved: gsxif::Saved,
++) -> i16 {
++    let tp = tree as *const Object;
++    let (bx, by, bw, bh) = saved.rect();
+     object::draw_obj_clip(tp, box_obj, MAX_DEPTH, sr_clip(bx, by, bw, bh), backend);
+     crate::vdi::cursor_show(backend);
+ 
+@@ -1077,6 +1166,12 @@ fn popup_track(tree: *mut Object, box_obj: i16, backend: &dyn RasterBackend) ->
+     // `popup_blit(obj, buf)`: restore and release the block (`:333`).
+     saved.restore(backend);
+     crate::vdi::cursor_show(backend);
++    // `ev_button(1, 0x00ff, 0x0000, rets); /* wait for button up */`
++    // (`gemmnext.c:351`), after the pick/no-pick branch and before
++    // `wm_update(END_MCTRL)` (`:353`): the press that picked or cancelled —
++    // `handle_popup` returns on the press itself (`:290-291`) — and its
++    // release are both consumed inside the call.
++    wait_button_up(h);
+     result
+ }
+ 
+@@ -1620,3 +1715,230 @@ pub fn selftest_menu_sr_residue(backend: &dyn RasterBackend) -> (u32, u32) {
+ 
+     (p1, p2)
+ }
++
++#[cfg(test)]
++mod popup_wait_tests {
++    //! `popup_shown` returns only once the button that picked the item is up
++    //! again — `mn_popup`'s second `ev_button(1, 0x00ff, 0x0000, rets)`
++    //! (`aes/gemmnext.c:351`; A73 point 3, `docs/api/aes/menu.md` "Contract
++    //! addition — … it consumes the selecting press"). The pop-up is driven on
++    //! a raster stand-in that keeps no pixels and a host whose `pump_input`
++    //! plays a scripted button sequence; the pixels under the box come from
++    //! `gsxif::bb_save`'s heap fallback (a host process has neither the
++    //! screen buffer nor the BDOS pool `popup_blit_save` needs — the full
++    //! `menu_popup` call is the `#[ignore]`d case in
++    //! `tests/aes_a73_event_neighbours.rs`), which is enough to hand
++    //! `popup_shown` a `Saved` to put back. Both the host and the raster are
++    //! passed in — nothing is installed process-wide, so the hostless
++    //! assumptions of the other unit tests in this binary stay intact.
++    use super::*;
++    use crate::host::Host;
++    use crate::vdi::backend::{MonoSrc, PatternFill, Rect, WriteMode};
++    use std::collections::VecDeque;
++    use std::sync::atomic::AtomicUsize;
++    use std::sync::Mutex;
++
++    /// A 640×480 raster that keeps nothing: every draw is a no-op, every
++    /// read answers 0. The test observes the button, not the pixels.
++    struct NullRaster;
++
++    impl RasterBackend for NullRaster {
++        fn width(&self) -> u16 {
++            640
++        }
++        fn height(&self) -> u16 {
++            480
++        }
++        fn num_colors(&self) -> u16 {
++            256
++        }
++        fn planes(&self) -> u16 {
++            16
++        }
++        fn set_color(&self, _index: u16, _r: u16, _g: u16, _b: u16) {}
++        fn query_color(&self, _index: u16) -> (u16, u16, u16) {
++            (0, 0, 0)
++        }
++        fn set_active_palette(&self, _palette: &[u16; 256]) {}
++        fn pel_to_device16(&self, _pel: Pel) -> u16 {
++            0
++        }
++        fn device_to_rgb565(&self, _argb: u32) -> u16 {
++            0
++        }
++        fn rgb565_to_device(&self, _px: u16) -> u32 {
++            0
++        }
++        fn read_pixel(&self, _x: i16, _y: i16) -> Pel {
++            0
++        }
++        fn fill_rect(&self, _x: i16, _y: i16, _w: i16, _h: i16, _pel: Pel, _clip: ClipRect) {}
++        #[allow(clippy::too_many_arguments)]
++        fn abline(
++            &self,
++            _x0: i16,
++            _y0: i16,
++            _x1: i16,
++            _y1: i16,
++            _pel: Pel,
++            _mode: WriteMode,
++            _clip: ClipRect,
++            mask: u16,
++            _last: bool,
++        ) -> u16 {
++            mask
++        }
++        fn fill_pattern(&self, _x: i16, _y: i16, _w: i16, _h: i16, _fill: PatternFill, _clip: ClipRect) {}
++        #[allow(clippy::too_many_arguments)]
++        fn draw_glyph_sized(
++            &self,
++            _x: i16,
++            _y: i16,
++            _glyph: &[u8],
++            _cell_w: i16,
++            _cell_h: i16,
++            _fg: Pel,
++            _mode: WriteMode,
++            _clip: ClipRect,
++        ) {
++        }
++        fn blit_mono(&self, _dst: Rect, _src: MonoSrc, _fg: Pel, _bg: Pel, _m: WriteMode, _clip: ClipRect) {}
++        fn copy_rect(&self, _src: Rect, _dx: i16, _dy: i16, _op: u8, _clip: ClipRect) {}
++        fn get_device_pixel(&self, _x: i16, _y: i16) -> u32 {
++            0
++        }
++        fn put_device_pixel(&self, _x: i16, _y: i16, _argb: u32) {}
++        fn flush_rect(&self, _x0: i16, _y0: i16, _x1: i16, _y1: i16) {}
++    }
++
++    static RASTER: NullRaster = NullRaster;
++
++    /// Packets (VDI button byte, no motion) that `pump_input` feeds one per
++    /// call.
++    struct ScriptHost {
++        script: Mutex<VecDeque<u8>>,
++        idle: AtomicUsize,
++    }
++
++    /// Pumps on an exhausted script before the test fails instead of
++    /// spinning forever inside the wait it is supposed to prove.
++    const IDLE_CAP: usize = 1_000;
++
++    impl ScriptHost {
++        fn new() -> ScriptHost {
++            ScriptHost { script: Mutex::new(VecDeque::new()), idle: AtomicUsize::new(0) }
++        }
++        fn arm(&self, packets: &[u8]) {
++            let mut s = self.script.lock().unwrap();
++            s.clear();
++            s.extend(packets.iter().copied());
++            self.idle.store(0, Ordering::Relaxed);
++        }
++        fn left(&self) -> usize {
++            self.script.lock().unwrap().len()
++        }
++    }
++
++    impl Host for ScriptHost {
++        fn console_write_byte(&self, _byte: u8) {}
++        fn raster(&self) -> Option<&dyn RasterBackend> {
++            Some(&RASTER)
++        }
++        fn pump_input(&self) {
++            let next = self.script.lock().unwrap().pop_front();
++            match next {
++                Some(b) => crate::vdi::feed_relative(0, 0, b, &RASTER),
++                None => {
++                    let n = self.idle.fetch_add(1, Ordering::Relaxed) + 1;
++                    assert!(
++                        n < IDLE_CAP,
++                        "still waiting after {n} pumps on an exhausted script (buttons {:#04x})",
++                        crate::vdi::mouse_buttons()
++                    );
++                }
++            }
++        }
++    }
++
++    const G_BOX: u16 = 20;
++    const G_STRING: u16 = 28;
++    const LASTOB: u16 = 0x0020;
++    const ITEM_H: i16 = 19;
++
++    /// A three-item pop-up (`G_BOX` 112×57, `G_STRING` rows at y 0/19/38)
++    /// whose second item sits under the pointer at `(px, py)`.
++    fn popup_tree(px: i16, py: i16) -> *mut Object {
++        static A: &[u8] = b"Alpha\0";
++        static B: &[u8] = b"Beta\0";
++        static C: &[u8] = b"Gamma\0";
++        let s = |p: &[u8], y, next, last| Object {
++            ob_next: next,
++            ob_head: NIL,
++            ob_tail: NIL,
++            ob_type: G_STRING,
++            ob_flags: if last { LASTOB } else { 0 },
++            ob_state: 0,
++            ob_spec: p.as_ptr() as u64,
++            ob_x: 0,
++            ob_y: y,
++            ob_width: 112,
++            ob_height: ITEM_H,
++        };
++        let tree: Box<[Object; 4]> = Box::new([
++            Object {
++                ob_next: NIL,
++                ob_head: 1,
++                ob_tail: 3,
++                ob_type: G_BOX,
++                ob_flags: 0,
++                ob_state: 0,
++                ob_spec: 1 << 16,
++                ob_x: px - 20,
++                ob_y: py - ITEM_H - 9,
++                ob_width: 112,
++                ob_height: 3 * ITEM_H,
++            },
++            s(A, 0, 2, false),
++            s(B, ITEM_H, 3, false),
++            s(C, 2 * ITEM_H, 0, true),
++        ]);
++        Box::leak(tree).as_mut_ptr()
++    }
++
++    /// The pointer rests on the second item, button up; the script presses
++    /// (the pick), holds for three more packets, releases, idles. Before the
++    /// second wait `popup_shown` returned on the press itself — with the
++    /// button still down and the hold packets unconsumed.
++    #[test]
++    fn popup_shown_returns_with_the_picking_button_up() {
++        let host = ScriptHost::new();
++        // Materialise the pointer (parked at the screen centre on first use).
++        host.arm(&[0]);
++        host.pump_input();
++        let (px, py) = crate::vdi::mouse_position();
++        assert_eq!(crate::vdi::mouse_buttons() & 1, 0, "the button starts up");
++
++        let tree = popup_tree(px, py);
++        let tp = tree as *const Object;
++        assert_eq!(object::child_at(tp, 0, px, py), 2, "the pointer must rest on the second item");
++
++        host.arm(&[0, 0, 1, 1, 1, 1, 0, 0, 0]);
++        crate::vdi::cursor_hide(&RASTER);
++        let (bx, by, bw, bh) = sr_rect(tp, 0, &RASTER);
++        let saved = gsxif::bb_save(&RASTER, bx, by, bw, bh).expect("the heap fallback saves the rectangle");
++        let picked = popup_shown(tree, 0, &RASTER, &host, saved);
++
++        assert_eq!(picked, 2, "the item under the pointer at the press");
++        assert_eq!(
++            crate::vdi::mouse_buttons() & 1,
++            0,
++            "popup_shown returned with the picking press still held: mn_popup waits it out \
++             (ev_button(1, 0x00ff, 0x0000, rets), aes/gemmnext.c:351) before returning"
++        );
++        assert!(
++            host.left() <= 3,
++            "the hold and the release must have been consumed inside the call; {} packets left",
++            host.left()
++        );
++    }
++}

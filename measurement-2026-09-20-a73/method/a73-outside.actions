@@ -1,0 +1,29 @@
+# A73 point 2 (TeraDesk via #Z, sd-tera): open the C: window (double-click
+# HARD DISC C (195,35)), select HELLO.TXT (220,340) -> A; hover File (88,8)
+# -> B (drop-down open); leave the box downward to empty desktop (88,300):
+# the TeraDesk File box spans y 19..245 (H02 run3-B.png), so (88,300) is
+# below it, left of the C:\ window (x 165..500) and right of the icon column
+# -> C (expected after the fix: box still down, File inverted; before: box
+# closed); press/release there -> D (+0.5 s; expected after: box closed,
+# HELLO.TXT still selected; before: the click deselected it), E (+3 s).
+# Park = bottom-left corner (never crosses the bar). Ticks are 200 Hz.
+1200 parkbl
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 move 220 340
+2200 arm
+2210 down
+2216 up
+2400 mark A_SELECTED
+2800 move 88 8
+3200 mark B_FILE_MENU
+3400 move 88 300
+3800 mark C_OUTSIDE
+4000 down
+4005 up
+4100 mark D_AFTER_CLICK
+4600 mark E_THREE_SECONDS
