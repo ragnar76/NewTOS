@@ -699,6 +699,56 @@ fn get_bottom() -> i16 {
     best
 }
 
+/// EmuTOS `wm_mktop` (`gemwmlib.c:1605-1613`) — `ob_order(gl_wtree, h, NIL)`,
+/// then `draw_change(h, WS_CURR)` with `WS_PREV` saved around it and restored
+/// afterwards. What happens depends on whether `h` is an **open** window:
+///
+/// * **Open:** the reorder and `draw_change`'s top-request branch — that is
+///   [`top_window`], frames repainted and a `WM_REDRAW` when something was
+///   uncovered.
+/// * **The desktop handle (0):** `ob_order` refuses `ROOT`
+///   (`aes/gemoblib.c:1209-1210`) — no reorder; `draw_change` stores the
+///   geometry — `WS_PREV := WS_CURR`, `WS_CURR := pt` (which *is* `WS_CURR`),
+///   `WS_WORK := wm_calc(WC_WORK, w_kind, pt)` (`:1069-1077`) — and returns
+///   before the tree walk and before any drawing, because the desktop window
+///   is `VF_INUSE` but never `VF_ISOPEN` (`w_setup`, `:205-213,1290`; the test
+///   `:1085-1086`); `wm_mktop` then puts `WS_PREV` back (`:1613`). Net effect:
+///   **no pixel, no message, no z-order change, and the desktop window's work
+///   rect becomes `wm_calc(WC_WORK, NONE, WS_CURR(0))`** — `(1, 1, W−2, H−2)`
+///   for the screen-sized desktop window, every border 1 px for `kind = NONE`
+///   (`:1815-1867`) — instead of the `gl_rfull` `wm_init` stored (`:1294`).
+///   That is what `wind_get(0, WF_WXYWH)` answers from then on, and it is the
+///   clip of the desktop's own rectangle-list walk ([`rlist_owns`], EmuTOS
+///   `w_owns`, `:1558`) and, with nothing open, the Control Manager's ctrl
+///   rect ([`chk_ctrl`], `w_setactive`, `:326-328`). Rebuilt 1:1 (spec
+///   `window-graphics.md` § `wind_set`, "`WF_TOP` on the desktop handle", A80).
+/// * **A created-but-unopened handle ≥ 1:** EmuTOS never gets past
+///   `ob_order`: `get_par` walks `W_TREE[h].ob_next`, which `w_nilit` left at
+///   `NIL`, and reads `tree[-1]` (`aes/gemobjop.c:145-160`) — undefined, no
+///   behaviour to rebuild. NewTOS contract: nothing happens (no repaint, no
+///   message, no `bump_z`, rectangles untouched); `wm_set` still answers TRUE.
+///
+/// Before A80 the two non-open cases went through [`top_window`], which drew
+/// the *still* topmost window's frame deactivated (and, for handle 0, a 1-px
+/// frame around the desktop work area) and burnt a stacking value on a closed
+/// slot — 2775 / 1215 pixels where EmuTOS paints none (A59 T5/T6).
+fn wm_mktop(handle: i16) {
+    let Some(w) = win(handle) else {
+        return; // `wind_set` has already refused an invalid handle
+    };
+    if !w.open {
+        if handle == DESKWH {
+            // `draw_change`'s geometry store (`:1069-1077`) for a window that is
+            // not open: only `WS_WORK` changes observably — `WS_CURR` is stored
+            // onto itself and `WS_PREV` is restored by `wm_mktop` (`:1613`).
+            let curr = w.curr;
+            set_curr(w, curr);
+        }
+        return;
+    }
+    top_window(handle);
+}
+
 /// Raise `handle` to the top of the stack — EmuTOS `wm_mktop`→`draw_change`,
 /// **top-request branch** (`gemwmlib.c:1600-1611,1112-1136`).
 ///
@@ -3182,7 +3232,9 @@ pub fn wind_get(pb: &Aespb) {
             // `WS_WORK`/`WS_CURR`/`WS_PREV`/`WS_FULL` (EmuTOS `wm_get` →
             // `w_getsize`, gemwmlib.c:1528-1541,1596-1597). `WF_WXYWH` is
             // *stored*, not recomputed: for the desktop window `wm_init` puts
-            // `gl_rfull` there, which is not `wm_calc(WC_WORK, NONE, screen)`.
+            // `gl_rfull` there, which is not `wm_calc(WC_WORK, NONE, screen)`
+            // — until a `wind_set(0, WF_TOP)` stores exactly that
+            // ([`wm_mktop`], A80).
             WF_WXYWH => w.work,
             WF_CXYWH => w.curr,
             WF_PXYWH => w.prev,
@@ -3347,21 +3399,22 @@ pub fn wind_set(pb: &Aespb) {
         }
         WF_TOP => {
             // `if (w_handle != gl_wtop) wm_mktop(w_handle)` — EmuTOS `wm_set`
-            // (`gemwmlib.c:1676-1680`). A `WF_TOP` on the window that is
+            // (`gemwmlib.c:1679-1683`). A `WF_TOP` on the window that is
             // *already* on top does nothing whatsoever: no repaint, no message.
             // (Topping it anyway used to run the whole composite over the
             // window's rectangle, which erased its content; TeraDesk answers
             // every `WM_TOPPED` with a `wind_set(WF_TOP)`, so this ran on every
             // click on a window.)
             //
-            // [`top_window`] *is* `wm_mktop`→`draw_change`'s top branch,
-            // including the conditional `w_redraw` — whether a `WM_REDRAW` is
-            // due depends on the `VF_BROKEN` state only that function knows.
-            // No `WM_UNTOPPED` here: EmuTOS sends it solely from the Control
-            // Manager's `perform_untop` on the click (`aes/gemctrl.c:146-153,
-            // 174,344`), which is [`intercept`]'s job.
-            if handle != get_top() {
-                top_window(handle);
+            // The comparison is against the **raw** `gl_wtop` — `NIL` while
+            // nothing is open — not against `w_top()`'s `DESKWH` fold: the
+            // desktop handle is never `gl_wtop`, so `wind_set(0, WF_TOP)`
+            // always reaches `wm_mktop(0)`, with or without an open window
+            // (A80). No `WM_UNTOPPED` here: EmuTOS sends it solely from the
+            // Control Manager's `perform_untop` on the click
+            // (`aes/gemctrl.c:146-153,174,344`), which is [`intercept`]'s job.
+            if handle != gl_wtop() {
+                wm_mktop(handle);
             }
         }
         // Slider positions clamp to 1..1000; sizes clamp to 1..1000 but let −1

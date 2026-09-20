@@ -278,6 +278,9 @@ if all slots are in use (`gemwmlib.c:1384`). The window is created *closed*
 
 Handle **0** (`DESKWH`) is reserved for the **desktop** root window, set up once
 by `wm_init` (`gemwmlib.c:1290`); `wm_create` only ever returns 1..NUM_WIN−1.
+Its `WS_WORK` is `gl_rfull` (`:1294`) — until a `wind_set(0, WF_TOP)` rewrites
+it to `(1, 1, W−2, H−2)` (see `wind_set` § "`WF_TOP` on the desktop handle",
+A80, 2026-09-20).
 
 ---
 
@@ -728,7 +731,7 @@ Helpers: `wm_update(BEG_UPDATE/END_UPDATE)`, `draw_change` (WF_CXYWH),
 | `WF_NAME` (2) | `w_pname = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_NAME` gadget, **all open windows** (`do_cpwalk`, `:1665`) |
 | `WF_INFO` (3) | `w_pinfo = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_INFO` gadget, **all open windows** (`:1673`) |
 | `WF_CXYWH` (5) | move/resize → `draw_change(handle, rect)` | **whole frame + uncovered areas** (`:1677`); a pure move of the top window is **blitted** and the mover gets no `WM_REDRAW` — see the `draw_change` note below |
-| `WF_TOP` (10) | if not already top → `wm_mktop` | full topping redraw (`:1682`) |
+| `WF_TOP` (10) | `if (w_handle != gl_wtop) wm_mktop(w_handle)` (`:1679-1683`) — compared against the **raw** `gl_wtop` (`NIL` while nothing is open), so handle 0 always qualifies; `wm_mktop` = `ob_order(…, NIL)` + `draw_change(h, WS_CURR)` with `WS_PREV` restored afterwards (`:1605-1613`) | full topping redraw for an **open** window (`:1682`); **no pixel and no message** for the desktop handle 0 or for a created-but-unopened handle — see "`WF_TOP` on the desktop handle" below (A80, 2026-09-20) |
 | `WF_NEWDESK` (14) | set desktop-background tree `gl_newdesk`, root `gl_newroot` — root at `pinwds[2]` = `int_in[4]` (EmuTOS packed convention, D-094); NewTOS's native/packed dual mapping is A81, "Edge cases" item 16 | (next desktop redraw) `:1685` |
 | `WF_HSLSIZ` (15) | `w_hslsiz` (clamped 1..1000, or −1) — only if changed | `W_HSLIDE` gadget `:1690` |
 | `WF_VSLSIZ` (16) | `w_vslsiz` (clamped, or −1) — only if changed | `W_VSLIDE` gadget `:1697` |
@@ -750,6 +753,36 @@ Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
 > uncovered area (whole-tree redraw with per-window `WM_REDRAW`). The
 > slider-position/size setters **early-out with no redraw if the value is
 > unchanged** (`if (pwin->w_hslide != pinwds[0])`).
+
+> **`WF_TOP` on the desktop handle and on a created-but-unopened handle
+> (A80, 2026-09-20).** `wm_set` runs `wm_mktop(w_handle)` whenever `w_handle !=
+> gl_wtop` (`gemwmlib.c:1679-1683`), and `gl_wtop` is never 0 (`NIL` or an open
+> window's handle, `:1093,1297`), so **`wind_set(0, WF_TOP)` always reaches
+> `wm_mktop(0)`** (`:1605-1613`). There, `ob_order(gl_wtree, 0, NIL)` refuses
+> `ROOT` (`gemoblib.c:1209-1210`) — the z-order is untouched; `draw_change(0,
+> WS_CURR)` stores the geometry — `WS_PREV := WS_CURR`, `WS_CURR := pt`
+> (unchanged, it *is* `WS_CURR`), `WS_WORK := wm_calc(WC_WORK, w_kind, pt)`
+> (`:1069-1077`) — and returns **before touching the window tree or the screen**
+> because the desktop window carries `VF_INUSE` only, never `VF_ISOPEN`
+> (`w_setup`, `:205-213,1290`; the test `:1085-1086`); `wm_mktop` then restores
+> `WS_PREV` (`:1613`). Net effect: **0 pixels, no message, `gl_wtop` unchanged,
+> and `WS_WORK(0)` becomes `wm_calc(WC_WORK, NONE, WS_CURR(0))`** — with
+> `w_kind = NONE` every border is 1 px (`:1807-1866`), so for the screen-sized
+> desktop window (`WS_CURR(0) = gl_rscreen`, `:1291`) `wind_get(0, WF_WXYWH)`
+> answers `(1, 1, W−2, H−2)` from then on instead of the `gl_rfull` `wm_init`
+> stored (`:1294`) — it now *includes* the menu row and *excludes* a 1-px
+> margin. The same stored rectangle is the clip of the desktop's own
+> `WF_FIRSTXYWH`/`WF_NEXTXYWH` walk (`w_owns`, `:1558`) and, while no window
+> is open, the Control Manager's ctrl rect (`w_setactive`, `:326-328`). The
+> value stays until `wm_init` rewrites the desktop window (`:1294`); `wm_new`
+> skips handle 0 (`:1886`). Derived from the source, not measured (A59 T5).
+>
+> A **created-but-unopened handle ≥ 1** never gets that far in EmuTOS:
+> `ob_order` → `get_par` walks `W_TREE[obj].ob_next`, which `w_nilit` left at
+> `NIL` (`:172-178,1262`), and reads `tree[-1]` (`gemobjop.c:145-160`) —
+> **undefined**, nothing to rebuild. NewTOS contract for that case: `TRUE`,
+> no repaint, no message, no z-order change, the window's rectangles left as
+> they are (host test `aes_window_top_unopened.rs`).
 
 > **`WF_CXYWH` on an open window — `draw_change` branch by branch
 > (`gemwmlib.c:1058-1223`; added 2026-09-20, A78).** `draw_change` first
@@ -1223,6 +1256,13 @@ byte of any buffer the caller passed (TASK/A42).
 - **`wind_get(WF_TOP)` needs no handle:** `wind_get(0, WF_TOP)` returns the top
   window handle (or `DESKWH`=0) even for an invalid non-zero handle
   (`gemwmlib.c:1517,1553`).
+- **`wind_get(0, WF_WXYWH)` is `gl_rfull` until the desktop handle is topped:**
+  `wm_init` stores `gl_rfull` (`gemwmlib.c:1294`); after `wind_set(0, WF_TOP)`
+  it answers `wm_calc(WC_WORK, NONE, gl_rscreen)` = `(1, 1, W−2, H−2)` and
+  the call itself changes no pixel and queues no message (`wm_mktop(0)`,
+  `:1605-1613,1069-1086`; see `wind_set` § "`WF_TOP` on the desktop handle",
+  A80, 2026-09-20). Topping a created-but-unopened handle is undefined in
+  EmuTOS (`gemobjop.c:145-160`); NewTOS: `TRUE`, nothing else happens.
 - **`wind_set(WF_HSLIDE)` clamp + change-guard:** `wind_set(h, WF_HSLIDE, 0)`
   clamps to 1; `2000` clamps to 1000; setting the current value again causes no
   redraw (`gemwmlib.c:1652-1655,1705`).
