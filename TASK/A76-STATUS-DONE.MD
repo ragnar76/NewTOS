@@ -116,3 +116,11 @@ per `#Z` mit `cicons.rsc` (`tools/make-sd-image.sh`).
   freigegebenen Blob (Deskriptorwerte bzw. Kernel-Alias, kein Fault) —
   nicht Teil des Vertrags, unveraendert.
 * Kein Commit, kein `git checkout/stash/reset`, nichts geflasht.
+
+## Nachtrag (2026-09-20, Lead)
+
+Die Nebenbeobachtung „Doppelklick oeffnet an MARK B kein Fenster" ist
+aufgeklaert: kein Produktbefund, sondern der Park-Sweep des Injektors durch
+den Menuetitel *File* — seit A73 bleibt der Kasten im OUTSIDE_STATE offen,
+der erste Druck faellt auf ein DISABLED-Item und wird verbraucht (EmuTOS
+identisch). Details in `measurement-2026-09-20-a76/RUNINFO.TXT`, Nachtrag.

@@ -93,3 +93,20 @@ OBSERVATION (out of scope, unchanged): at MARK B neither run shows an open windo
 OPEN
   Pi acceptance (real Pi 4, TeraDesk with cicons.rsc, quit) -- lead/tester; nothing flashed.
   No commit, no git checkout/stash/reset.
+
+NACHTRAG 2026-09-20 (Lead, nach Bisect + Ursachen-Audit)
+---------------------------------------------------------
+Die Beobachtung "Doppelklick auf HARD DISC C oeffnet an MARK B kein Fenster"
+(vorher = nachher) ist KEIN Produktbefund. Bisect: erster Stand ohne Fenster
+ist 27e4328 (A73). Ursache: das Injektor-`park` (sechs Pakete (-127,-127) ab
+(319,239)) fuehrt den Zeiger ueber (65,0) = Menuetitel "File"; bei Tasten-oben
+faellt der File-Kasten (64,19,176,224) ueber das Icon bei (195,35). Vor A73
+schloss `track_owned` den Kasten beim Verlassen von Leiste+Kasten (falsch);
+seit A73 bleibt er im OUTSIDE_STATE stehen (EmuTOS gemmnlib.c:415-443), der
+erste Druck des Doppelklicks trifft das DISABLED-Item "Info..." und wird als
+Abbruch verbraucht, nur der zweite erreicht TeraDesk (clicks=1 -> itm_select).
+EmuTOS liefert fuer genau diesen Zeigerpfad dasselbe. Gegenprobe: dieselbe
+Kadenz ohne Park-Sweep durch die Leiste -> clicks=2, Fenster oeffnet (HEAD).
+Konsequenz fuer die Methode: `park` darf den Zeiger nicht ueber einen
+Menuetitel fuehren (unten rechts parken, oder erst y dann x). Alle Skripte mit
+diesem Park-Sweep (a41 part2 quit2, hier quit2) sind seit A73 so verfaelscht.
