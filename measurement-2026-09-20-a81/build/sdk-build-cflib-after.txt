@@ -1,0 +1,3 @@
+compiled OK=129  skipped=0  (of 129)
+failures match cflib/expected-failures.txt: 0 today, 0 recorded, 0 new
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/cflib/build/cftest.NCP (146808 bytes)

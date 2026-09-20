@@ -373,12 +373,35 @@ m68k idiom of splitting a 32-bit pointer across two WORDs does not carry an
 8-byte pointer.
 
 **Do**: use the pointer-typed variants `wind_set_str` / `wind_set_ptr` /
-`wind_set_ptr_int` / `wind_set_grect` (`mt_gem.h:2470-2476`); they pack the
-pointer at `int_in[2..5]`, which the kernel reads at the caller's width
-(`tos-api/src/aes/mod.rs:300-330`, `window.rs:2249-2272`). Observation, not
-verified to matter: `a_wind_set_str.c:13-14` stores the pointer at
-`int_in+2` and then an 8-byte `0` at `int_in+4`, overlapping the pointer's
-upper half — harmless only because user VAs are below 4 GiB.
+`wind_set_ptr_int` / `wind_set_grect` (`mt_gem.h:2468,2470,2474-2475`).
+Under A81 these bindings pass the pointer through `addr_in[0]` — the
+*native* NewTOS convention, the same slot every other AES pointer-class
+argument uses (`docs/api/aes/window-graphics.md`, "Pointers in
+`addr_in[]`") — with the extra WORD (`wind_set_ptr_int`'s `W3`, e.g.
+`WF_NEWDESK`'s desktop-root index) in `int_in[2]`, not packed alongside the
+pointer (overlay in `sdk/gemlib/overlay/`; not yet landed as of this note —
+the pristine `gemlib-0.44.0/a_wind_set_*.c` still use the older packed
+form below). If you hand-pack an 8-byte LP64 pointer yourself into
+`int_in[2..5]` instead (the kernel still accepts this — the *packed* form,
+`control[3] == 0`, `tos-api/src/aes/mod.rs::intin_ptr`), the extra/root word
+belongs at `int_in[6]` — the word right *after* the 4-word pointer — not
+`int_in[4]`: `int_in[4]` is the pointer's own upper half (bits 32..47) at
+that width, and writing a real value there corrupts the pointer.
+
+That corruption is not hypothetical: the pristine `a_wind_set_ptr_int.c`
+(`:27-28`) does exactly this — `*(void**)(aes_intin+2) = v; aes_intin[4] =
+W3;` — so any non-zero `W3` (e.g. a non-zero `WF_NEWDESK` root) silently
+overwrites the pointer's own bits 32..47 (`TASK/A81.md` measures a tree at
+`0x0000_0001_0177_E4C0` reassembling as `0x0000_0002_0177_E4C0` for root 2).
+`a_wind_set_ptr.c` (`:26-27`, two single-word `= 0` stores zeroing
+`int_in[4..5]`, the pointer's own upper half) and `a_wind_set_str.c` (`:26`,
+one 8-byte `*(const char**)(aes_intin+4) = 0` store zeroing the wider
+`int_in[4..7]`) overlap the same pointer bytes but with a hardcoded `0`, so
+they are silently harmless — not because the overlap itself is benign, but
+because the value written happens to match what the pointer's upper half
+already is for any EL0 address on the current stage-1 boot tables
+(identity-mapped only in `0..4 GiB`, `kernel/src/arch/aarch64/el0.rs:16-18`).
+All three are fixed by the A81 overlay move to `addr_in[0]` + `int_in[2]`.
 
 ### B11. Bit-fields, `int` alignment, and big-endian word tricks
 

@@ -1032,13 +1032,29 @@ static NEWDESK_ABI: AtomicU8 = AtomicU8::new(Abi::Lp64 as u8);
 /// `gemwmlib.c:1685-1689`): register (non-null tree) or un-register (null tree)
 /// the desktop's background object tree + root object. Never fails.
 ///
-/// The tree pointer + root arrive by the same dual convention as `WF_NAME`
-/// ([`wf_str_ptr`], D-094): the native desktop passes the tree in `addr_in[0]`
-/// (`ain_len == 1`) with the root in `int_in[2]`; a classic AES caller packs the
-/// tree pointer into `int_in[2..3]` with the root in `int_in[4]` (`pinwds[2]`).
+/// The tree pointer arrives by the same dual convention as `WF_NAME`
+/// ([`wf_str_ptr`], D-094), and the **root companion word moves with it**
+/// (`docs/api/aes/window-graphics.md`, "Pointers in `addr_in[]`" / edge case
+/// 16, A81):
+///
+/// * **native** (`AIN_LEN >= 1`): tree in `addr_in[0]`, root in `int_in[2]` —
+///   what the native desktop sends (`kernel/src/desk/mod.rs::wind_set_newdesk`)
+///   and gemlib's overlay bindings after A81;
+/// * **packed** (`AIN_LEN == 0`): tree packed at the caller's own pointer width
+///   from `int_in[2]`, root in the word right after it, `int_in[2 + ptr_words]`
+///   ([`Aespb::ptr_words`]) — `int_in[4]` for a 2-word ILP32 pointer, bit-exact
+///   with EmuTOS's `gl_newroot = pinwds[2]` after `gl_newdesk = *(OBJECT **)
+///   pinwds` (`aes/gemwmlib.c:1685-1689`, `pinwds = &int_in[2]`,
+///   `gemsuper.c:345-346`); `int_in[6]` for a 4-word LP64 pointer, which the
+///   caller must declare (`IN_LEN >= 7`) or the dispatch-local copy reads 0.
+///
+/// Before A81 the packed arm read a fixed `int_in[4]` for every caller width;
+/// for an LP64 caller that is the packed pointer's own bits 32..47, so a
+/// non-zero root there was the pointer's upper half, never the root
+/// (`TASK/A81.md`: tree `0x0000_0001_0177_E4C0`, root 2).
 fn set_newdesk(pb: &Aespb) {
     let tree = wf_str_ptr(pb);
-    let root = if pb.ain_len() >= 1 { pb.intin(2) } else { pb.intin(4) };
+    let root = if pb.ain_len() >= 1 { pb.intin(2) } else { pb.intin(2 + pb.ptr_words()) };
     if tree == 0 {
         NEWDESK_TREE.store(0, Ordering::Release);
     } else {
@@ -4518,5 +4534,152 @@ pub fn gadget_name_at(handle: i16, mx: i16, my: i16) -> &'static str {
             Gadget::HRtPage => "hrtpage",
         },
         None => "no-window",
+    }
+}
+
+#[cfg(test)]
+mod newdesk_root_word_tests {
+    //! `set_newdesk` reads the `WF_NEWDESK` root companion word at the position
+    //! the pointer convention in use dictates (A81, `docs/api/aes/
+    //! window-graphics.md` "Pointers in `addr_in[]`", edge case 16):
+    //!
+    //! * native form (`AIN_LEN >= 1`): tree in `addr_in[0]`, root in `int_in[2]`;
+    //! * packed form (`AIN_LEN == 0`): tree packed at the caller's pointer width
+    //!   from `int_in[2]`, root in the word right after it — `int_in[4]` for a
+    //!   2-word ILP32 pointer (EmuTOS `pinwds[2]`, `aes/gemwmlib.c:1688`),
+    //!   `int_in[6]` for a 4-word LP64 pointer.
+    //!
+    //! The handler never dereferences the tree, so the pointers here are the
+    //! literal values from `TASK/A81.md`; the registered pair is read back from
+    //! [`NEWDESK_TREE`]/[`NEWDESK_ROOT`] directly. The ILP32 case is built as a
+    //! pre-marshalled block (what [`Aespb::from_raw`] produces) because a host
+    //! process has no 32-bit-addressable arrays for the block itself.
+    use super::*;
+    use crate::aes::{AI_SIZE, I_SIZE, O_SIZE};
+    use std::sync::Mutex;
+
+    /// The two statics are process-global; the cases run serially.
+    static SERIAL: Mutex<()> = Mutex::new(());
+
+    const OP_WIND_SET: i16 = 105;
+    const WF_NEWDESK: i16 = 14;
+
+    /// The tree of `TASK/A81.md`'s measured case: an LP64 EL0 address whose
+    /// bits 32..47 are `0x0001` — exactly the word a fixed `int_in[4]` read
+    /// picks up as "the root" from an LP64-packed pointer.
+    const LP64_TREE: u64 = 0x0000_0001_0177_E4C0;
+    /// The same tree as an ILP32 caller carries it (4 bytes, under 4 GiB).
+    const ILP32_TREE: u64 = 0x0177_E4C0;
+
+    struct Block {
+        control: [i16; 5],
+        intin: [i16; I_SIZE],
+        intout: [i16; O_SIZE],
+        addrin: [u64; AI_SIZE],
+        global: [i16; 16],
+    }
+
+    impl Block {
+        fn new(in_len: i16, ain_len: i16) -> Block {
+            Block {
+                control: [OP_WIND_SET, in_len, 1, ain_len, 0],
+                intin: [0; I_SIZE],
+                intout: [0; O_SIZE],
+                addrin: [0; AI_SIZE],
+                global: [0; 16],
+            }
+        }
+
+        /// An [`Aespb`] over this block as [`Aespb::from_raw`] would have
+        /// marshalled it: the local `int_in`/`addr_in` already hold the
+        /// declared words. `abi` is the caller pointer width the packed-form
+        /// read follows.
+        fn pb(&mut self, abi: Abi) -> Aespb {
+            Aespb {
+                control: self.control.as_mut_ptr(),
+                global: self.global.as_mut_ptr(),
+                intin: self.intin.as_mut_ptr(),
+                caller_intin: self.intin.as_ptr(),
+                intout: self.intout.as_mut_ptr(),
+                caller_intout: self.intout.as_mut_ptr(),
+                addrin: self.addrin.as_mut_ptr(),
+                addrout: 0,
+                abi,
+            }
+        }
+    }
+
+    /// Pack `p` little-endian into `words` consecutive `int_in` WORDs at
+    /// `at` — the packed form at the caller's own pointer width (gemlib's
+    /// `*(void**)(aes_intin + 2) = v` on a little-endian LP64/ILP32 target).
+    fn pack(intin: &mut [i16; I_SIZE], at: usize, p: u64, words: usize) {
+        for i in 0..words {
+            intin[at + i] = ((p >> (16 * i)) & 0xFFFF) as u16 as i16;
+        }
+    }
+
+    fn registered() -> (u64, i16) {
+        (NEWDESK_TREE.load(Ordering::Acquire), NEWDESK_ROOT.load(Ordering::Acquire))
+    }
+
+    fn reset() {
+        NEWDESK_TREE.store(0, Ordering::Release);
+        NEWDESK_ROOT.store(0, Ordering::Release);
+    }
+
+    /// LP64 packed form: the 8-byte pointer spans `int_in[2..5]`, the root is
+    /// the word after it, `int_in[6]`. Root 2 with this tree is the measured
+    /// A81 case; a fixed `int_in[4]` read returns the pointer's bits 32..47
+    /// (`0x0001`) as the root instead.
+    #[test]
+    fn lp64_packed_root_is_the_word_after_the_four_pointer_words() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let mut b = Block::new(7, 0);
+        b.intin[0] = 0; // DESKWH
+        b.intin[1] = WF_NEWDESK;
+        pack(&mut b.intin, 2, LP64_TREE, 4);
+        b.intin[6] = 2;
+        set_newdesk(&b.pb(Abi::Lp64));
+        assert_eq!(
+            registered(),
+            (LP64_TREE, 2),
+            "LP64 packed wind_set(WF_NEWDESK): tree int_in[2..5], root int_in[6] \
+             (docs/api/aes/window-graphics.md, edge case 16; TASK/A81.md)"
+        );
+    }
+
+    /// Native form: tree in `addr_in[0]`, root in `int_in[2]` — what the native
+    /// desktop sends (`kernel/src/desk/mod.rs::wind_set_newdesk`).
+    #[test]
+    fn native_form_root_is_int_in_2() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let mut b = Block::new(3, 1);
+        b.intin[0] = 0;
+        b.intin[1] = WF_NEWDESK;
+        b.intin[2] = 1;
+        b.addrin[0] = LP64_TREE;
+        set_newdesk(&b.pb(Abi::Lp64));
+        assert_eq!(registered(), (LP64_TREE, 1), "native wind_set(WF_NEWDESK): addr_in[0] + int_in[2]");
+    }
+
+    /// ILP32 packed form: the 4-byte pointer spans `int_in[2..3]`, the root is
+    /// `int_in[4]` — bit-exact with EmuTOS's `pinwds[2]` (`aes/gemwmlib.c:1688`).
+    /// Regression guard: the LP64 fix must not move the ILP32 root word.
+    #[test]
+    fn ilp32_packed_root_is_int_in_4() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        reset();
+        let mut b = Block::new(6, 0);
+        b.intin[0] = 0;
+        b.intin[1] = WF_NEWDESK;
+        pack(&mut b.intin, 2, ILP32_TREE, 2);
+        b.intin[4] = 1;
+        // Poison the LP64 root slot: an ILP32 caller's `int_in[6]` is never
+        // part of this call and must not be read.
+        b.intin[6] = 0x7FFF;
+        set_newdesk(&b.pb(Abi::Ilp32));
+        assert_eq!(registered(), (ILP32_TREE, 1), "ILP32 packed wind_set(WF_NEWDESK): tree int_in[2..3], root int_in[4]");
     }
 }

@@ -347,6 +347,67 @@ without a load, NULL slot, index past the table, absent table, nothing
 loaded, `rsrc_saddr` on each).
 
 
+**`wind_set`'s `WF_NAME`/`WF_INFO`/`WF_NEWDESK` pointer accepts a native
+`addr_in[0]` form in addition to EmuTOS's packed one; `WF_NEWDESK`'s root
+index travels at a position that scales with the pointer's width, not a
+fixed slot** — sanctioned 2026-09-20 with A81. EmuTOS's `wm_set` knows
+exactly one convention: the tree/string pointer is packed as a raw LONG
+across `int_in[2..3]` (`pinwds = &int_in[2]`, `references/emutos/aes/
+gemwmlib.c:1623`), read back via `*(char **)pinwds`/`*(OBJECT **)pinwds`;
+for `WF_NEWDESK` the desktop root index follows immediately at `pinwds[2]`
+= `int_in[4]` (`gemwmlib.c:1685-1689`). Correct for the 68k ABI, where the
+AESPB's `int_in` array holds 16-bit words and a pointer is always exactly
+two of them.
+
+NewTOS's `int_in` array holds the same 16-bit words for an LP64 caller, so
+an 8-byte pointer does not fit in two words either — it needs four. Two
+conventions coexist, discriminated by `control[3]` (`AIN_LEN`):
+
+1. **Native** (`control[3] >= 1`): the pointer travels in `addr_in[0]`, the
+   same slot every other AES pointer-class argument uses
+   (`tos-api/src/aes/window.rs::wf_str_ptr`); `WF_NEWDESK`'s root travels in
+   `int_in[2]`. This is what the native desktop sends
+   (`kernel/src/desk/mod.rs::wind_set_newdesk`) and what gemlib's
+   pointer-typed bindings (`wind_set_str`/`_ptr`/`_ptr_int`) are being moved
+   to (overlay in `sdk/gemlib/overlay/`, a Developer task, not yet landed as
+   of this note).
+2. **Packed** (`control[3] == 0`): the pointer is packed at the caller's own
+   width starting at `int_in[2]` — `int_in[2..3]` (2 words) for ILP32,
+   `int_in[2..5]` (4 words) for LP64 (`tos-api/src/aes/mod.rs::intin_ptr`).
+   `WF_NEWDESK`'s root sits in the word right after the packed pointer,
+   `int_in[2 + ptr_words]` — `int_in[4]` for ILP32 (bit-exact with EmuTOS's
+   `pinwds[2]`), `int_in[6]` for LP64 (`I_SIZE` is 16, in range).
+
+Before A81, NewTOS's `set_newdesk` read the root at a fixed `int_in[4]` for
+every caller width. For an LP64 caller that slot lies *inside* the packed
+pointer's own bytes — bits 32..47 of the 8-byte value spanning
+`int_in[2..5]` — and gemlib's `a_wind_set_ptr_int.c` writes the root exactly
+there (`*(void**)(aes_intin+2) = v; aes_intin[4] = W3;`,
+`sdk/gemlib/gemlib-0.44.0/a_wind_set_ptr_int.c:27-28`), so a non-zero root
+silently overwrote the pointer's upper half instead of landing at its own
+index. Measured: a tree at `0x0000_0001_0177_E4C0` packed with root 2
+reassembles as `0x0000_0002_0177_E4C0` (`TASK/A81.md`). It went unnoticed
+because every packed-form caller measured so far passes root 0 (TeraDesk,
+`sdk/apps/teradesk/icon.c:2511`), and because EL0 addresses are currently
+identity-mapped only in `0..4 GiB` on the stage-1 boot tables
+(`kernel/src/arch/aarch64/el0.rs:16-18`), so the pointer's own upper half is
+already 0 and a root of 0 leaves it unchanged either way.
+
+Not a deviation from EmuTOS's field semantics: a packed-form caller at its
+own pointer width, with the root at the position generalised above, gets
+exactly the contract D-094 (`docs/api/aes/window-graphics.md`) documents for
+EmuTOS — the ILP32 case is bit-identical to EmuTOS's fixed slot; the LP64
+case has no EmuTOS equivalent to diverge from (68k TOS has no 8-byte
+pointer). The native `addr_in[0]` convention is additive, not a replacement:
+`wf_str_ptr` still accepts the packed form when `control[3] == 0`.
+
+**Status as of this note:** this entry states the decided contract
+(`TASK/A81.md`); the kernel fix (`tos-api/src/aes/window.rs::set_newdesk`
+reading the width-scaled root position instead of a fixed `int_in[4]`) and
+the gemlib overlay move to the native form are Developer work, open at the
+time of writing — see `TASK/A81.md` for the current status.
+
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

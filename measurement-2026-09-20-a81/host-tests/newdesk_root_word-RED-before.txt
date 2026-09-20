@@ -1,0 +1,180 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+running 3 tests
+test aes::window::newdesk_root_word_tests::ilp32_packed_root_is_int_in_4 ... ok
+test aes::window::newdesk_root_word_tests::native_form_root_is_int_in_2 ... ok
+test aes::window::newdesk_root_word_tests::lp64_packed_root_is_the_word_after_the_four_pointer_words ... FAILED
+
+failures:
+
+---- aes::window::newdesk_root_word_tests::lp64_packed_root_is_the_word_after_the_four_pointer_words stdout ----
+
+thread 'aes::window::newdesk_root_word_tests::lp64_packed_root_is_the_word_after_the_four_pointer_words' (3625899) panicked at tos-api/src/aes/window.rs:4628:9:
+assertion `left == right` failed: LP64 packed wind_set(WF_NEWDESK): tree int_in[2..5], root int_in[6] (docs/api/aes/window-graphics.md, edge case 16; TASK/A81.md)
+  left: (4319601856, 1)
+ right: (4319601856, 2)
+
+
+failures:
+    aes::window::newdesk_root_word_tests::lp64_packed_root_is_the_word_after_the_four_pointer_words
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 44 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --lib`
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+running 3 tests
+test lp64_packed_form_takes_the_root_from_the_word_after_the_pointer ... FAILED
+test lp64_packed_form_with_root_0_paints_the_whole_background ... FAILED
+test native_form_takes_the_root_from_int_in_2 ... ok
+
+failures:
+
+---- lp64_packed_form_takes_the_root_from_the_word_after_the_pointer stdout ----
+
+thread 'lp64_packed_form_takes_the_root_from_the_word_after_the_pointer' (3626100) panicked at tos-api/tests/aes_newdesk_root_word.rs:560:5:
+assertion `left == right` failed: LP64 packed wind_set(0, WF_NEWDESK) — tree 0x00000076e552c000 in int_in[2..5], root 1 in int_in[6] (a fixed int_in[4] read yields 118): registered root 1 — its icon box (150, 110, 32, 32) must be painted by the background repaint, but 1024 of its 1024 pixels are untouched (the AES drew from a different root)
+  left: 1024
+ right: 0
+
+---- lp64_packed_form_with_root_0_paints_the_whole_background stdout ----
+
+thread 'lp64_packed_form_with_root_0_paints_the_whole_background' (3626101) panicked at tos-api/tests/aes_newdesk_root_word.rs:667:5:
+assertion `left == right` failed: root 0: everything below the menu row is repainted (295040 px left)
+  left: 295040
+ right: 0
+
+
+failures:
+    lp64_packed_form_takes_the_root_from_the_word_after_the_pointer
+    lp64_packed_form_with_root_0_paints_the_whole_background
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tos-api --test aes_newdesk_root_word`

@@ -1,0 +1,3 @@
+compiled OK=578  skipped=0  (of 578)
+failures match gemlib/expected-failures.txt: 0 today, 0 recorded, 0 new
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/gemlib/build/gemtest.NCP (9016 bytes)

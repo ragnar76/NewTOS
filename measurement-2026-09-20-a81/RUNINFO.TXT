@@ -1,0 +1,80 @@
+A81 -- wind_set(WF_NEWDESK): the root companion word sits after the packed pointer at the
+caller's own width (int_in[6] for LP64, int_in[4] for ILP32) or in int_in[2] for the native
+addr_in[0] form; gemlib's pointer-typed wind_set bindings moved to the native form.
+Developer self-evidence, 2026-09-20. Branch desk-rebuild, base HEAD 26b0772, changes uncommitted
+in the tree. Pinned EmuTOS source references/emutos @ 1a7484ab (aes/gemwmlib.c wm_set WF_NEWDESK
+:1685-1689 `gl_newdesk = *(OBJECT **)pinwds; gl_newroot = pinwds[2];`, pinwds = &int_in[2] via
+aes/gemsuper.c:345-346). Spec: docs/api/aes/window-graphics.md "Pointers in addr_in[]" + edge case
+16; docs/COMPATIBILITY.md A81 entry; docs/sdk/05-abi-pitfalls.md B10 (all lead-written, uncommitted).
+
+PRODUCT CODE (uncommitted; method/kernel-a81.diff)
+  tos-api/src/aes/mod.rs      Aespb::ptr_words() (new): 4 for Lp64, 2 for Ilp32 -- the one place the
+                              packed-pointer word count is decided; intin_ptr() now uses it.
+  tos-api/src/aes/window.rs   set_newdesk: packed arm reads int_in[2 + ptr_words] instead of a fixed
+                              int_in[4]; doc-comment restated to the two-convention contract with the
+                              EmuTOS citation. wf_str_ptr untouched. + #[cfg(test)] mod
+                              newdesk_root_word_tests (3 cases, reads NEWDESK_TREE/NEWDESK_ROOT back).
+  tos-api/tests/aes_newdesk_root_word.rs (new, 3 cases through tos_api::aes::dispatch, pixel-observed)
+  sdk/gemlib/overlay/a_wind_set_ptr_int.c / a_wind_set_ptr.c / a_wind_set_str.c (new overlays):
+                              AES_PARAMS(105,6,1,1,0), aes_addrin[0] = ptr, aes_intin[2] = W3 (ptr_int)
+                              / 0, aes_intin[3..5] = 0. No store over int_in[4..7] any more.
+  sdk/gemlib/tests/wind_set_addrin.c (new host test, evnt_timer_words.c shape)
+
+HOST TESTS (host-tests/)
+  newdesk_root_word-RED-before.txt   HEAD set_newdesk + the new tests (scratch copy of the crates,
+      window.rs = HEAD 26b0772 + the test module appended; never the shared tree):
+      unit: lp64_packed_root_is_the_word_after_the_four_pointer_words FAILED
+            left (0x1_0177_E4C0, 1) right (0x1_0177_E4C0, 2)  -- root read from the pointer's bits 32..47
+            native_form_root_is_int_in_2 ok ; ilp32_packed_root_is_int_in_4 ok
+      integration: lp64_packed_form_takes_the_root_from_the_word_after_the_pointer FAILED
+            (tree 0x0000_0078_6d52_c000 in int_in[2..5], root 1 in int_in[6]; the fixed int_in[4]
+            read yields 120 -> an empty padding leaf, icon box 1024/1024 px untouched)
+            lp64_packed_form_with_root_0_paints_the_whole_background FAILED (same cause, host tree
+            above 4 GiB; on the target this case was never wrong) ; native_form ok
+  newdesk_root_word-GREEN-after.txt  3/3 unit + 3/3 integration.
+  gemlib-wind_set_addrin-GREEN-overlay.txt   cc host build against the overlay bindings: OK, exit 0.
+  gemlib-wind_set_addrin-RED-pristine.txt    same test against the tarball's pristine bindings:
+      17 FAILURE(S), e.g. wind_set_ptr_int(0, WF_NEWDESK, 0x10177e4c0, 2): control[3] 0, intin[4] = 2
+      (W3 over the pointer's bits 32..47), no addrin[0].
+  xtask-test.log   cargo run -p xtask -- test = 680 passed / 0 failed / 1 ignored (baseline 674 + 6).
+  xtask-test-run1-icon-flake.log   first full run aborted at tos-api/tests/aes_icon_unaligned_raster.rs
+      :357 (a_g_icon_with_odd_raster_pointers_draws_like_an_even_one); isolated re-runs 3/3 ok in the
+      tree AND 3/3 ok in the HEAD scratch copy -> a parallel-run flake unrelated to A81, out of scope.
+
+BUILD / CLIPPY (build/)
+  cargo xtask build --board rpi4: rustc tos-api 64 / kernel 94 warnings, exit 0 (baseline 64/94, delta 0).
+  cargo clippy -p tos-api --tests: no hit in the changed regions (set_newdesk, ptr_words, the test module,
+      tests/aes_newdesk_root_word.rs); the window.rs/mod.rs hits are the pre-existing pub-fn visibility
+      ones (clippy-tos-api-tests-after.log).
+  sdk-build-{gemlib,cflib,qed,teradesk}-after.txt: gemlib 578/578 compiled, failures match
+      expected-failures.txt (0/0/0), LINK OK; cflib 129/129, 0/0/0, LINK OK; QED LINK OK, 0 undefined;
+      TeraDesk LINK OK, 0 undefined. Linked DESKTOP.NAP disassembly: mt_wind_set_ptr_int stores W3 at
+      intin[2] (sturh w3,[x29,#-0x1c]) and v at addrin[0] (str x2,[sp,#0xb0]).
+  scratch-build-before-*.log: the before artefacts (see IMAGES).
+
+ARTEFACTS
+  kernel8 after  : /Volumes/Daten/Development/PiRusTOS/kernel8.img          sha256 aafaf4beb56937e1...  (dev profile)
+  kernel8 before : scratch copy of the crates with window.rs + mod.rs = HEAD 26b0772, own target dir,
+                   sha256 22921b8db3ab2a5a...
+  DESKTOP.NAP after  : sdk/apps/teradesk/build/dist (282128 bytes, sha256 7c86a1ec1506109f...)
+  DESKTOP.NAP before : scratch copy of sdk/ + tools/ with the three overlays removed, GEMLIB_REFRESH=1
+                       build-gemlib.sh (pristine bindings re-extracted), build-cflib.sh, build-teradesk.sh
+                       (282112 bytes, sha256 b9be638bc389dd19...)
+
+IMAGES (scratch only, no *.img kept here)
+  tools/make-sd-image.sh <scratch>/img/sd-base.img 64 (sha256 d7e8e47cbc3fa1f9...) -> + NEWDESK.INF
+  (#Z TeraDesk, method/newdesk-user.inf) + Apps\TERADESK\TERADESK.INF (method/teradesk-user.inf) via
+  method/sd-put.sh = sd-after.img (9a8592066723cfc8...); sd-before.img (a85f7a1b1e9a0f4c...) = sd-after +
+  the before DESKTOP.NAP over Apps\TERADESK\DESKTOP.NAP. Both verified by mounting (sizes/hashes above).
+  Every run boots a fresh copy (method/run.sh).
+
+RUNS (method/run.sh; screendumps/, serial/) -- QEMU 11.0.2 raspi4b 640x480, -display none, QMP
+  tera-after  : kernel8 after  + sd-after . marker "[launch] EL0" at 15.1 s (the AUTO program; TeraDesk's
+                own launch follows at serial line 42), dump A at +15 s, dump B at +10 s more.
+  tera-before : kernel8 before + sd-before. same schedule.
+  grep -c "EXC\|PANIC\|panic" = 0 in both serial logs.
+  All four dumps byte-identical: sha256 5148fde2f61b378d... (A == B: settled; before == after: the
+  TeraDesk background -- WF_NEWDESK tree, root 0, solid green dpat=8/dcol=3 from TERADESK.INF -- and the
+  desk icons render unchanged, as expected for root 0).
+
+NOT RUN: real Pi 4 (Tester/Lead). No commit.

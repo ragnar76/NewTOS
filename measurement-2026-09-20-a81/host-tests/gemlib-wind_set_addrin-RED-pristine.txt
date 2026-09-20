@@ -1,0 +1,23 @@
+  wind_set_str(3, WF_NAME, 0x101770001)
+    FAIL control[3]   got 0x0 want 0x1
+    FAIL intin[2]     got 0x1 want 0x0
+    FAIL intin[3]     got 0x177 want 0x0
+    FAIL addrin[0]    got 0x1822e2ba4 want 0x101770001
+  wind_set_ptr(4, WF_INFO, 0x101770001)
+    FAIL control[3]   got 0x0 want 0x1
+    FAIL intin[2]     got 0x1 want 0x0
+    FAIL intin[3]     got 0x177 want 0x0
+    FAIL addrin[0]    got 0x1824e370c want 0x101770001
+  wind_set_ptr_int(0, WF_NEWDESK, 0x10177e4c0, 2)
+    FAIL control[3]   got 0x0 want 0x1
+    FAIL intin[2]     got 0xffffffffffffe4c0 want 0x2
+    FAIL intin[3]     got 0x177 want 0x0
+    FAIL intin[4]     got 0x2 want 0x0
+    FAIL addrin[0]    got 0x1824e370c want 0x10177e4c0
+  wind_set_ptr_int(0, WF_NEWDESK, 0x10177e4c0, 0)
+    FAIL control[3]   got 0x0 want 0x1
+    FAIL intin[2]     got 0xffffffffffffe4c0 want 0x0
+    FAIL intin[3]     got 0x177 want 0x0
+    FAIL addrin[0]    got 0x1824e370c want 0x10177e4c0
+wind_set_addrin: 17 FAILURE(S) -- the pointer-typed wind_set bindings do not use addr_in[0] + int_in[2]
+exit=1

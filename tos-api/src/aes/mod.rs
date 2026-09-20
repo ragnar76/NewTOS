@@ -292,6 +292,20 @@ impl Aespb {
     fn ain_len(&self) -> i16 {
         self.control(C_AIN_LEN)
     }
+    /// How many `int_in` WORDs a pointer packed at the caller's own width
+    /// occupies (the packed form [`Self::intin_ptr`] reads): four for an LP64
+    /// caller (8 bytes), two for an ILP32 one (4 bytes). The one place that
+    /// width is decided — a word that a caller lays *after* such a pointer
+    /// (`wind_set(WF_NEWDESK)`'s root, `int_in[2 + ptr_words]`: `int_in[4]`
+    /// for ILP32, bit-exact with EmuTOS's `pinwds[2]`, `aes/gemwmlib.c:1688`;
+    /// `int_in[6]` for LP64 — A81) is found through this, not a fixed slot.
+    #[inline]
+    fn ptr_words(&self) -> usize {
+        match self.abi {
+            Abi::Lp64 => 4,
+            Abi::Ilp32 => 2,
+        }
+    }
     /// Read a caller-width pointer packed into the `int_in` WORD array
     /// starting at WORD index `word`. This is the classic AES convention
     /// for the `wind_set` `WF_NAME`/`WF_INFO` string pointer: gemlib writes
@@ -311,10 +325,7 @@ impl Aespb {
     /// (`a_wind_set_str.c:21`), which holds the four LP64 words at index 2.
     #[inline]
     fn intin_ptr(&self, word: usize) -> u64 {
-        let words = match self.abi {
-            Abi::Lp64 => 4,
-            Abi::Ilp32 => 2,
-        };
+        let words = self.ptr_words();
         debug_assert!(word + words <= I_SIZE, "packed AES int_in pointer past I_SIZE");
         if word + words > I_SIZE {
             return 0;

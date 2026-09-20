@@ -1,0 +1,6 @@
+  wind_set_str(3, WF_NAME, 0x101770001)
+  wind_set_ptr(4, WF_INFO, 0x101770001)
+  wind_set_ptr_int(0, WF_NEWDESK, 0x10177e4c0, 2)
+  wind_set_ptr_int(0, WF_NEWDESK, 0x10177e4c0, 0)
+wind_set_addrin: OK -- wind_set_str/_ptr/_ptr_int hand the pointer in addr_in[0] (AIN_LEN 1) and the companion word in int_in[2]
+exit=0

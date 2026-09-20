@@ -157,7 +157,12 @@ Gadget **groups** used by the frame builder and `wind_calc` (`gemwmlib.h:16-18`)
 - † `WF_KIND` (1) is **not** handled by `wm_get`/`wm_set` in this source — it
   falls into `default: return FALSE`. See "Fields with no handler" below.
 - ‡ `WF_NEWDESK` (14) is **`wind_set`-only** (sets the desktop-background object
-  tree `gl_newdesk`/`gl_newroot`); `wm_get` has no case for it → `FALSE`.
+  tree `gl_newdesk`/`gl_newroot`); `wm_get` has no case for it → `FALSE`. Where
+  the root index (`gl_newroot`) travels depends on which pointer convention
+  the caller used — EmuTOS always packs (`pinwds[2]` = `int_in[4]`); NewTOS
+  additionally accepts the native `addr_in[0]` + `int_in[2]` form. See the
+  `WF_NEWDESK` row under "`wind_set` (105)" and "Edge cases discovered in
+  source" item 16 (A81) below.
 - ‖ `WF_NAME` (2) and `WF_INFO` (3) are **`wind_set`-only** as well
   (`gemwmlib.c:1660`, `:1668`). `wm_get` has no case for either, so both fall
   into `default: return FALSE` (`:1591-1592`) and the caller's string buffer is
@@ -709,7 +714,10 @@ Helpers: `wm_update(BEG_UPDATE/END_UPDATE)`, `draw_change` (WF_CXYWH),
 > `WF_INFO` do `*(char **)pinwds` and `WF_NEWDESK` does `*(OBJECT **)pinwds`
 > plus `pinwds[2]` for the root index (`gemwmlib.c:1660-1669,1685-1689`) — i.e.
 > the 32-bit pointer is packed directly into `int_in[2]` (high word) and
-> `int_in[3]` (low word), exactly like a rect's x/y occupy two `int_in` words.
+> `int_in[3]` (low word), exactly like a rect's x/y occupy two `int_in` words,
+> and — since `pinwds = &int_in[2]` — the root index `pinwds[2]` is
+> `int_in[4]`, the word right after the packed pointer (see A81 below for how
+> this generalises to an 8-byte LP64 pointer).
 > `WM_IOTITLE` is dead code: grepping the whole EmuTOS tree finds no other
 > reference to it. **Contract impact:** a caller must pack the pointer into
 > `int_in[2..3]`, not populate `addr_in[0]` — the opposite of what the
@@ -721,7 +729,7 @@ Helpers: `wm_update(BEG_UPDATE/END_UPDATE)`, `draw_change` (WF_CXYWH),
 | `WF_INFO` (3) | `w_pinfo = *(char**)pinwds` — pointer packed in `int_in[2..3]`, **not** `addr_in[0]` (D-094) | `W_INFO` gadget, **all open windows** (`:1673`) |
 | `WF_CXYWH` (5) | move/resize → `draw_change(handle, rect)` | **whole frame + uncovered areas** (`:1677`); a pure move of the top window is **blitted** and the mover gets no `WM_REDRAW` — see the `draw_change` note below |
 | `WF_TOP` (10) | if not already top → `wm_mktop` | full topping redraw (`:1682`) |
-| `WF_NEWDESK` (14) | set desktop-background tree `gl_newdesk`, root `gl_newroot` | (next desktop redraw) `:1685` |
+| `WF_NEWDESK` (14) | set desktop-background tree `gl_newdesk`, root `gl_newroot` — root at `pinwds[2]` = `int_in[4]` (EmuTOS packed convention, D-094); NewTOS's native/packed dual mapping is A81, "Edge cases" item 16 | (next desktop redraw) `:1685` |
 | `WF_HSLSIZ` (15) | `w_hslsiz` (clamped 1..1000, or −1) — only if changed | `W_HSLIDE` gadget `:1690` |
 | `WF_VSLSIZ` (16) | `w_vslsiz` (clamped, or −1) — only if changed | `W_VSLIDE` gadget `:1697` |
 | `WF_HSLIDE` (8) | `w_hslide` position (clamped 1..1000) — only if changed | `W_HSLIDE` gadget `:1704` |
@@ -1305,6 +1313,19 @@ byte of any buffer the caller passed (TASK/A42).
     the dispatcher's local word — stack on EmuTOS, 0 on NewTOS
     (`docs/COMPATIBILITY.md`, A27). gemlib copies that `int_out[1]` back over
     the application's gadget variable (`a_wind_get.c:366,372`).
+16. **`WF_NEWDESK`'s root companion word moves with the pointer convention in
+    use, not a fixed `int_in` slot** (A81). EmuTOS's `pinwds[2]` = `int_in[4]`
+    (item 14/D-094) is correct only for its one, 2-word (68k) packed pointer.
+    NewTOS accepts two conventions (see "Pointers in `addr_in[]`" under
+    "NewTOS implementation notes" above for the full rule): the native form
+    (`addr_in[0]` = tree, `control[3] >= 1`) puts the root at `int_in[2]`;
+    the packed form (`control[3] == 0`) puts it at `int_in[2 + ptr_words]` —
+    `int_in[4]` for a 2-word (ILP32) pointer, `int_in[6]` for a 4-word (LP64)
+    one. Before A81 the handler read a fixed `int_in[4]` for every caller
+    width, which for an LP64-packed caller aliases into the pointer's own
+    upper half (`int_in[2..5]`) and silently corrupts it whenever the root is
+    non-zero — measured with a tree at `0x0000_0001_0177_E4C0` and root 2
+    reassembling as `0x0000_0002_0177_E4C0` (`TASK/A81.md`).
 
 ---
 
@@ -1485,24 +1506,81 @@ byte of any buffer the caller passed (TASK/A42).
   apply the same boundary handling as other AES `addr*` reads; struct pointer
   widths follow the caller ABI (native vs m68k, see
   [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md)). **`wind_set`'s
-  `WF_NAME`/`WF_INFO`/`WF_NEWDESK` string/tree pointer is, on NewTOS,
-  `addr_in[0]`** — the same slot as every other AES pointer-class argument;
-  apply the identical boundary validation. This is the *native* mapping, not
-  the 68k one D-094 documents: on EmuTOS/68k TOS, `wm_set(w_handle, w_field,
-  pinwds)` (`gemwmlib.c:1623`) receives the pointer packed as a raw LONG
-  across two `int_in` words (`pinwds = &int_in[2]`, dispatched at
-  `gemsuper.c:345-346`; read back via `*(char **)pinwds`/`*(OBJECT
-  **)pinwds` at `gemwmlib.c:1660-1689`) — correct for the 68k ABI, where the
-  AESPB's `int_in` array holds only 16-bit words. A native 64-bit AArch64
-  pointer does not fit in two `i16` words, so per
+  `WF_NAME`/`WF_INFO`/`WF_NEWDESK` string/tree pointer travels one of *two*
+  ways on NewTOS, discriminated by `control[3]` (`AIN_LEN`) — corrected
+  2026-09-20/A81.** A previous revision of this paragraph said the pointer
+  "is, on NewTOS, `addr_in[0]`" as if that were the only form; that is the
+  form the native desktop and (after A81's gemlib change) the pointer-typed
+  bindings use, but the dispatcher (`wf_str_ptr`, `tos-api/src/aes/
+  window.rs:2706-2712`) has always accepted a second, packed form as well —
+  and for `WF_NEWDESK` the *root* companion word's position differs between
+  the two, which the previous text never stated at all.
+  - **Native form (`control[3] >= 1`):** the pointer is `addr_in[0]` — the
+    same slot as every other AES pointer-class argument; apply the identical
+    boundary validation. For `WF_NEWDESK` the root travels in `int_in[2]`
+    (the generic first value word, otherwise idle once the pointer moves out
+    of `int_in`). This is what the native desktop sends
+    (`kernel/src/desk/mod.rs::wind_set_newdesk`: `addr_in[0]` = tree,
+    `int_in[2]` = root, dispatched with `IN_LEN 3, OUT_LEN 1, AIN_LEN 1`)
+    and is the mapping gemlib's pointer-typed bindings
+    (`wind_set_str`/`_ptr`/`_ptr_int`, `sdk/gemlib/overlay/`) are being moved
+    to under A81 — not yet landed as of this note; the pristine
+    `sdk/gemlib/gemlib-0.44.0/a_wind_set_*.c` still emit the packed form
+    below.
+  - **Packed form (`control[3] == 0`):** the pointer is packed at the
+    caller's own pointer width starting at `int_in[2]` — 2 words (4 bytes)
+    for an ILP32 caller, 4 words (8 bytes) for an LP64 caller
+    (`intin_ptr`, `tos-api/src/aes/mod.rs:313-335`) — read back through
+    `wf_str_ptr`. This generalises the 68k convention below to a 64-bit
+    pointer instead of inventing an unrelated slot. **For `WF_NEWDESK` the
+    root sits in the word right after the packed pointer**,
+    `int_in[2 + ptr_words]`: `int_in[4]` for a 2-word pointer — bit-exact
+    with EmuTOS's `pinwds[2]` (D-094 above) — and `int_in[6]` for a 4-word
+    (LP64) pointer (`I_SIZE` is 16, so `int_in[6]` is in range).
+    **This is the rule A81 established; before it, the handler
+    (`tos-api/src/aes/window.rs::set_newdesk`) read a fixed `int_in[4]`
+    regardless of caller width.** For an LP64 caller that fixed slot lies
+    *inside* the packed pointer's own bytes — bits 32..47 of an 8-byte
+    pointer spanning `int_in[2..5]` — and gemlib's `a_wind_set_ptr_int.c`
+    writes exactly there (`*(void**)(aes_intin+2) = v; aes_intin[4] = W3;`,
+    `sdk/gemlib/gemlib-0.44.0/a_wind_set_ptr_int.c:27-28`), so a non-zero
+    root silently overwrote the pointer's upper half instead of landing in
+    its own slot — the corruption `TASK/A81.md` measured (tree at
+    `0x0000_0001_0177_E4C0`, root 2, reassembled by `intin_ptr` as
+    `0x0000_0002_0177_E4C0`). It went unnoticed for a root of 0 (TeraDesk,
+    `sdk/apps/teradesk/icon.c:2511`; EmuTOS's own desktop passes `DROOT = 1`,
+    `references/emutos/desk/deskmain.c:2049`, `desk/deskwin.h:44`, but never
+    through this packed NewTOS path) because that write is a no-op, and
+    because the pointer's upper half is 0 to begin with for every EL0
+    address on the current stage-1 boot tables, which identity-map only
+    `0..4 GiB` of the low-half VA window
+    (`kernel/src/arch/aarch64/el0.rs:16-18`) — so the corruption is invisible
+    until a non-zero root is packed for an LP64 caller. `a_wind_set_ptr.c`
+    (`sdk/gemlib/gemlib-0.44.0/a_wind_set_ptr.c:26-27`, two single-word
+    stores) zeroes the same `int_in[4..5]` — the pointer's own upper
+    half — with a hardcoded `0` (no `W3`); `a_wind_set_str.c` (`:26`, one
+    8-byte `*(const char**)(aes_intin+4) = 0` store) zeroes the wider
+    `int_in[4..7]`, which for `WF_NAME`/`WF_INFO` carries no root anyway.
+    Both are harmless by the same argument as above (the value written
+    happens to match the pointer's already-zero upper half), not because
+    the overlap itself is benign.
+  This is still not the 68k mapping D-094 documents: on EmuTOS/68k TOS,
+  `wm_set(w_handle, w_field, pinwds)` (`gemwmlib.c:1623`) receives the
+  pointer packed as a raw LONG across two `int_in` words (`pinwds =
+  &int_in[2]`, dispatched at `gemsuper.c:345-346`; read back via `*(char
+  **)pinwds`/`*(OBJECT **)pinwds` at `gemwmlib.c:1660-1689`, root at
+  `pinwds[2]` = `int_in[4]` for `WF_NEWDESK`, `gemwmlib.c:1688`) — correct
+  for the 68k ABI, where the AESPB's `int_in` array holds only 16-bit words
+  and a pointer is always 4 bytes. A native 64-bit AArch64 pointer does not
+  fit in two `i16` words, so per
   [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md#native-vs-m68k-struct-variants)
   (pointer width follows the caller ABI; the API must not branch on caller
-  type) the native ABI collapses this pointer-class argument to `addr_in[0]`
-  instead — exactly what `wind_set` already reads
-  (`tos-api/src/aes/window.rs`), consistent with every other AES pointer
-  argument (`menu.rs`, `object.rs`, `appl.rs`). The `int_in[2..3]` packing
-  described elsewhere in this file for `wind_set`'s pointer field is the 68k
-  form of the ABI, not the NewTOS native contract.
+  type) the native convention above is what a freshly-written LP64 caller
+  should use (`control[3] >= 1`); the packed convention is retained — at the
+  caller's own pointer width — for a classic-ABI caller or any binding that
+  still favours it (`control[3] == 0`). Consistent with every other AES
+  pointer argument (`menu.rs`, `object.rs`, `appl.rs`), which accept only the
+  native form; `wind_set`'s three fields are the one place two forms coexist.
 
 ### Open questions
 
