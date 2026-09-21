@@ -1,0 +1,396 @@
+diff --git a/docs/api/vdi/raster/_raster.md b/docs/api/vdi/raster/_raster.md
+index ef25a10..49c9d8a 100644
+--- a/docs/api/vdi/raster/_raster.md
++++ b/docs/api/vdi/raster/_raster.md
+@@ -560,29 +560,65 @@ EmuTOS' Falcon truecolor VDI (`TRUECOLOR_MODE`: `v_planes > 8`,
+ `vdi/vdi_defs.h:22`, active under `CONF_WITH_VDI_16BIT`) treats **the
+ device pixel** — what `pixelread`/`v_get_pixel`, `vro_cpyfm16`/
+ `vrt_cpyfm16`, and the truecolor draw routines read and write — as a
+-**16-bit screen word**, `RRRRRGGGGG0BBBBB` (green LSB/bit 5 =
+-`OVERLAY_BIT`, always 0 on a drawn pixel, `vdi_fill.c:26`;
+-`vdi/vdi_defs.h:153-158`, `VwkExt.palette[256]`). This is *the* meaning of
+-`fd_nplanes = 16` for both the screen MFDB and a device-form memory MFDB —
+-sixteen bits per pixel, not sixteen bit-planes.
++**16-bit screen word**, `RRRRRGGGGGOBBBBB` (bit 5 = `OVERLAY_BIT`,
++`vdi_fill.c:26`: 0 on every pen-drawn pixel because `set_color16` packs
++`(r<<11)|(g<<6)|b`, `vdi_col.c:601-614`; 1 on every pixel of a
++`v_clrwk`-cleared screen, `memset(v_bas_ad, 0xff, …)`,
++`vdi_control.c:610-618`; `vdi/vdi_defs.h:153-158`, `VwkExt.palette[256]`).
++This is *the* meaning of `fd_nplanes = 16` for both the screen MFDB and a
++device-form memory MFDB — sixteen bits per pixel, not sixteen bit-planes.
+ 
+ NewTOS' physical framebuffer store is a **different, NewTOS-internal**
+-32-bpp XRGB8888 buffer (`kernel/src/hal/framebuffer.rs:16-20` `rgb()`;
+-`vdi_backend.rs:16,21` module doc) — a program never addresses this format
++32-bpp XRGB8888 buffer (`kernel/src/hal/framebuffer.rs` module doc + `rgb()`;
++`vdi_backend.rs` module doc) — a program never addresses this format
+ directly; it exists only because the BCM2711 VideoCore has no native
+-16-bit truecolor mode to allocate against. The two are bridged at exactly
+-two points:
++16-bit truecolor mode to allocate against. **The device-pixel rule
++(V11/V12, 2026-09-21): the 16-bit screen word round-trips exactly through
++the 32-bpp store, overlay bit included.** The store word is a pure bitwise
++expansion of the screen word, one field at a time:
++
++| screen-word field | bits | store field | bits | expansion |
++|---|---|---|---|---|
++| red | 15..11 | R | 23..16 | `(c5 << 3) \| (c5 >> 2)` (VIDEL DAC replication) |
++| green | 10..6 | G | 15..8 | same |
++| `OVERLAY_BIT` | 5 | **X** | 31..24 | replicated into all eight bits: `0xFF` set, `0x00` clear |
++| blue | 4..0 | B | 7..0 | same as red |
++
++(`kernel/src/vdi_backend.rs` `word_to_device`, inverse `device_to_word`:
++the top five bits of each gun and the top bit of X.) The X byte is the
++right place because the display does not show it — `ramfb` is programmed
++with the DRM `XRGB8888` fourcc (X = don't care,
++`kernel/src/drivers/qemu_virt/ramfb.rs`), the VideoCore with depth 32 and
++no alpha-mode tag (`docs/hardware/mailbox-framebuffer.md` §3) — and because
++replicating it like a gun keeps every bitwise operation on the 32-bit store
++equal to the same operation on the 16-bit word: the sixteen `vro_cpyfm`
++logic ops (`raster_op`) and the `~` of `WM_XOR` act on the overlay bit
++exactly as EmuTOS' `vro_cpyfm16`/`swblit_rect_common16` do on a Falcon.
++Consequently the cleared screen is the pixel `0xFF_FFFFFF` and a pen-0 fill
++`0x00_FFFFFF`: identical on the display, `0xFFFF` versus `0xFFDF` to the
++API — as measured on the Falcon truecolor reference
++(`tosdump/reference/EMUTOS14-VDI-all-falcontc.BIN`, cases 54/160/161). Every
++non-VDI writer of the framebuffer packs its colours with
++`hal::framebuffer::rgb()`, i.e. with the bit clear. The two formats are
++bridged at exactly two points:
+ 
+ - **Draw → screen.** Every VDI draw op resolves its PEL through the
+   drawing workstation's pseudo-palette to a 16-bit RGB555-in-565 word, then
+-  expands each 5-bit gun to 8 bits into the 32-bpp store (`pal555_to_xrgb`,
+-  `vdi_backend.rs:174-182`, called from `pel_to_rgb`, `:230-239`).
++  expands it into the 32-bpp store (`word_to_device`, called from
++  `pel_to_rgb`, `vdi_backend.rs`); a pen word never carries the overlay
++  bit, so a drawn pixel has X = `0x00`. `v_clrwk` is the one writer that
++  bypasses the pens: `clear_screen_word(0xFFFF)` →
++  `Framebuffer::clear(word_to_device(0xFFFF))`
++  ([`../workstation/03-v_clrwk.md`](../workstation/03-v_clrwk.md)).
+ - **Screen → 16-bit domain.** Reading the device pixel back (`v_get_pixel`,
+-  `bb_save`, a memory-MFDB copy) converts the raw 32-bit store word to the
+-  16-bit RGB565 word via `device_to_rgb565`/`rgb565_to_device`
+-  (`vdi_backend.rs:397-424`; `tos-api/src/vdi/raster.rs:37-44` module doc).
+-  Because the screen is itself 5-bit-quantised, this round-trip is lossless
+-  (`raster.rs:41-44`).
++  `bb_save`, a memory-MFDB copy, the `v_contourfill` probe) converts the raw
++  32-bit store word to the 16-bit screen word via
++  `device_to_rgb565`/`rgb565_to_device` (`vdi_backend.rs`, the two trait
++  methods over `device_to_word`/`word_to_device`;
++  `tos-api/src/vdi/raster.rs:37-44` module doc). The round-trip is lossless
++  for every 16-bit word (`raster.rs:41-44`). The mouse-cursor save/restore
++  (`tos-api/src/vdi/mouse.rs`) copies raw 32-bit store words and so keeps
++  the bit without converting.
+ 
+ `fd_nplanes = 16` and `ws_ncolors`/`DEV_TAB[13] = 256` are **both**
+ EmuTOS-correct simultaneously, not contradictory: EmuTOS's own formula is
+@@ -634,15 +670,19 @@ written by `set_color16` and read by `vq_color16`
+ Two distinct EmuTOS XOR paths, both reproduced on the 32-bpp physical store:
+ 
+ 1. **`WM_XOR` draw mode** (`wrt_mode = 3`, lines/fills/text/glyphs). EmuTOS'
+-   truecolor driver complements the **stored screen word** and ignores the
+-   pen: `*work++ = ~temp` (`vdi/vdi_line.c:484-495`, `draw_rect_common`,
+-   store at `:494`; the same pattern in the glyph blitter,
+-   `vdi_textblit.c`). NewTOS' `VdiScreen::xor_pixel` (`vdi_backend.rs:
+-   303-336`) reproduces the *observable* contract on the 32-bit physical
+-   pixel: it complements the low 24 RGB bits in place (keeping the opaque
+-   top byte) — self-inverse, matching EmuTOS bit-for-bit on a drawn pixel —
+-   reached via `combine`'s `WriteMode::Xor` arm (`vdi_backend.rs:288-293`)
+-   from every fill/line/glyph draw path.
++   truecolor driver complements the **whole stored screen word** — colour
++   guns and `OVERLAY_BIT` alike — and ignores the pen: `*work = ~temp`
++   (`vdi/vdi_line.c:494,501`, `swblit_rect_common16`), `*addr = ~*addr`
++   (`draw_line16`, `vdi_line.c:1670,1730`), `*q = ~*q` (the glyph blitters,
++   `vdi_textblit.c:806,1120`). NewTOS' `VdiScreen::xor_pixel`
++   (`vdi_backend.rs`) reproduces that on the 32-bit physical pixel by
++   complementing **all 32 bits** in place — the same operation on the
++   16-bit word, since the store is its bitwise expansion (the X byte flips
++   with the overlay bit: `0xFFDF` ↔ `0x0020`, `0xFFFF` ↔ `0x0000`) —
++   self-inverse, matching EmuTOS bit-for-bit, reached via `combine`'s
++   `WriteMode::Xor` arm from every fill/line/glyph draw path. (Until
++   2026-09-21 only the low 24 bits were complemented, the X byte being
++   fixed at `0xFF`; corrected with V11/V12.)
+ 2. **`vro_cpyfm` op 6** (`BM_S_XOR_D`, the 16-entry BitBlt logic-op table,
+    `s ^ d` on the raw pixel word — `vdi_backend.rs:824-852` doc + table,
+    citing `vdi_raster.c:495-544`/`vro_cpyfm16:1008-1220`). **Screen↔Screen**
+@@ -657,10 +697,10 @@ Two distinct EmuTOS XOR paths, both reproduced on the 32-bpp physical store:
+ 
+ The rubber-band idiom (apply the same XOR twice, restores the original)
+ holds for both paths — XOR is self-inverse at any word width.
+-`OVERLAY_BIT` (`0x0020`, `vdi_fill.c:26`) lives only in the 16-bit domain;
+-its interaction with the 24-bit physical XOR is the pre-existing,
+-separately tracked **VDI-OVL-001** gap (`tos-api/src/vdi/inquiry.rs:
+-171-178`), not reopened here.
++`OVERLAY_BIT` (`0x0020`, `vdi_fill.c:26`) takes part in both, through the
++X byte of the store (§ "The VDI device pixel" above); the former
++**VDI-OVL-001** gap (the bit had no place in the 24-bit pixel) is closed
++(V11/V12, 2026-09-21).
+ 
+ - **Screen-to-screen ops use the backend.** `vro_cpyfm` screen→screen maps
+   to `RasterBackend::copy_rect` (replace op 3 / XOR op 6, above),
+@@ -689,7 +729,8 @@ separately tracked **VDI-OVL-001** gap (`tos-api/src/vdi/inquiry.rs:
+ > RGB565 words off the screen.
+ 
+ A memory MFDB (`fd_addr != 0`) in NewTOS is a **16-bit RGB565-chunky
+-truecolor** buffer: **one `UWORD` (`RRRRRGGGGG0BBBBB`, green LSB always 0)
++truecolor** buffer: **one `UWORD` (`RRRRRGGGGGOBBBBB`, bit 5 =
++`OVERLAY_BIT`: 0 on a pen-drawn pixel, 1 on a `v_clrwk`-cleared one)
+ per pixel**, not a 32-bpp `u32`/pixel bitmap and not a planar bitmap
+ (`tos-api/src/vdi/raster.rs:21-35`, module doc). This is the app-visible
+ wireformat EmuTOS' own `vro_cpyfm16`/`vrt_cpyfm16` operate on raw
+@@ -698,8 +739,11 @@ wireformat EmuTOS' own `vro_cpyfm16`/`vrt_cpyfm16` operate on raw
+ XRGB8888; the 16↔32 conversion happens only at the screen boundary, inside
+ `screen_to_mem`/`mem_to_screen` via `RasterBackend::device_to_rgb565`/
+ `rgb565_to_device` (`raster.rs:37-44`). Because the screen is
+-5-bit-quantised, that round-trip is lossless, so `bb_save`/`bb_restore`
+-reproduce the screen pixels bit-for-bit (`raster.rs:550-554`).
++5-bit-quantised and carries the overlay bit in the X byte, that round-trip
++is lossless for every word, so `bb_save`/`bb_restore` reproduce the screen
++pixels bit-for-bit, overlay bit included (`raster.rs:550-554`; a
++`bb_save` over a `v_clrwk`-cleared area stores `0xFFFF` words, as on a
++Falcon).
+ 
+ | MFDB field | NewTOS memory value | Meaning |
+ |-----------|---------------------|---------|
+diff --git a/docs/api/vdi/workstation/03-v_clrwk.md b/docs/api/vdi/workstation/03-v_clrwk.md
+index 20a18be..ea0f3e6 100644
+--- a/docs/api/vdi/workstation/03-v_clrwk.md
++++ b/docs/api/vdi/workstation/03-v_clrwk.md
+@@ -5,10 +5,13 @@
+ > [`../_dispatcher.md`](../_dispatcher.md).
+ >
+ > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
+-> **Contract:** opcode 3; clears the *entire* screen to background; no
+-> inputs/outputs; ignores the clip rectangle. **Reference:** the raw
+-> `memset(v_bas_ad, …)` of the framebuffer and the `0x00`/`0xff` fill byte
+-> — NewTOS clears the `hal::framebuffer` instead.
++> **Contract:** opcode 3; clears the *entire* screen; no inputs/outputs;
++> ignores the clip rectangle; under truecolor every screen word becomes
++> **`0xFFFF`** — observable through `v_get_pixel`, `vro_cpyfm` and
++> `v_contourfill`, so the fill byte is part of the contract (V11/V12,
++> 2026-09-21). **Reference:** the raw `memset(v_bas_ad, …)` of the Shifter/
++> VIDEL framebuffer — NewTOS fills its own 32-bpp store with the device
++> representation of that word instead.
+ 
+ Clears the entire screen surface to the background colour.
+ 
+@@ -46,8 +49,11 @@ No inputs, no outputs, no return value, no error path — always succeeds.
+ 
+ ## Verification criteria
+ 
+-- After `v_clrwk`, every pixel of the framebuffer holds the background
+-  value (colour index 0 in a palette mode).
++- After `v_clrwk`, every pixel of the framebuffer holds the fill word:
++  colour index 0 in a palette mode, the raw word `0xFFFF` under truecolor
++  (`v_get_pixel` answers `INTOUT[0] = 0, INTOUT[1] = 0xFFFF` at every
++  coordinate — measured, `tosdump/reference/EMUTOS14-VDI-all-falcontc.BIN`
++  cases 54/160/161; `tos-api/tests/vdi_reference_overlay_bit.rs`).
+ - The clip rectangle has **no** effect: a workstation with a small clip
+   still clears the whole screen.
+ 
+@@ -71,11 +77,34 @@ No inputs, no outputs, no return value, no error path — always succeeds.
+ 
+ ## NewTOS implementation notes
+ 
+-- Clears the whole `hal::framebuffer` to the background colour via the
+-  `RasterBackend`; ignores the clipping rectangle (matches EmuTOS).
+-- The `0x00`/`0xff` fill-byte distinction is a **reference** detail tied
+-  to EmuTOS's framebuffer format; NewTOS writes background colour index 0
+-  through its own backend regardless.
++- Clears the whole `hal::framebuffer` via the `RasterBackend`; ignores the
++  clipping rectangle (matches EmuTOS).
++- **Correction (V11/V12, 2026-09-21).** This section used to call the
++  `0x00`/`0xff` fill-byte distinction "a reference detail" and claim NewTOS
++  "writes background colour index 0 regardless". Both were wrong: the fill
++  word is **observable**. Under `TRUECOLOR_MODE` EmuTOS fills with `0xff`
++  (`vdi/vdi_control.c:608-618`), so every screen word is `0xFFFF`;
++  `pixelread` returns that word **unmasked** (`vdi/vdi_fill.c:671-681`) and
++  `vdi_v_get_pixel` reports `INTOUT[0] = 0, INTOUT[1] = 0xFFFF`
++  (`vdi_fill.c:1095-1110`). Pen 0 is *not* that word: `set_color16` packs
++  `(31<<11)|(31<<6)|31 = 0xFFDF` (`vdi/vdi_col.c:601-613`), and the two
++  differ by exactly `OVERLAY_BIT` (`0x0020`, `vdi/vdi_fill.c:26`), which the
++  truecolor seed fill masks out of the screen side only
++  (`vdi_fill.c:702-709,726-733,755`). Measured on a Hatari Falcon in VIDEL
++  truecolor: `0xFFFF` after `v_clrwk` (`EMUTOS14-VDI-all-falcontc.BIN`,
++  cases 54/160/161). NewTOS therefore clears **through the word, not
++  through a pen**: `v_clrwk` calls `RasterBackend::clear_screen_word(0xFFFF)`
++  under `planes() > 8` and `fill_rect(…, PEL 0, …)` only in a palette mode
++  (`tos-api/src/vdi/workstation.rs` `v_clrwk`).
++- **The NewTOS device-pixel rule.** The 16-bit screen word round-trips
++  **exactly** through the 32-bpp framebuffer, overlay bit included: each
++  5-bit gun is replicated into its 8-bit byte and `OVERLAY_BIT` is
++  replicated into the X byte (`0xFF` set / `0x00` clear), so `0xFFFF`
++  (cleared) is the pixel `0xFF_FFFFFF` and `0xFFDF` (pen 0) the pixel
++  `0x00_FFFFFF` — the same colour on the display, two different words to
++  `v_get_pixel`, `vro_cpyfm` Screen→Memory and `v_contourfill`
++  (`kernel/src/vdi_backend.rs` `word_to_device`/`device_to_word`;
++  [`../raster/_raster.md`](../raster/_raster.md) § "The VDI device pixel").
+ 
+ ---
+ 
+@@ -84,19 +113,25 @@ No inputs, no outputs, no return value, no error path — always succeeds.
+ > Re-points the *hardware reference* (the raw `memset(v_bas_ad, …)` of the
+ > Shifter framebuffer) at a `RasterBackend` full-screen fill over the
+ > BCM2711 VideoCore buffer. The **contract is unchanged** — clears the
+-> whole screen to background (PEL 0), ignores the clip rect, always
+-> succeeds. Peripheral + driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
+-
+-- **How it clears.** `v_clrwk` fills the full `width × height` device with
+-  PEL 0 (background) via `RasterBackend::fill_rect` over a full clip rect
+-  (`tos-api/src/vdi/workstation.rs:193-196`); geometry is the live
+-  framebuffer size (640×480), so the whole VideoCore buffer is cleared,
+-  clip ignored — matching the contract.
+-- **PEL 0 = white.** The bring-up palette maps index 0 to white
+-  (`kernel/src/vdi_backend.rs:26-31`), so the cleared screen is white
+-  (GEM's default desktop background), not black. The EmuTOS `0x00`/`0xff`
+-  fill-byte choice is irrelevant here — NewTOS writes the resolved RGB of
+-  PEL 0 into the 32 bpp buffer through the backend.
++> whole screen to the fill word (`0xFFFF` under truecolor, PEL 0 in a
++> palette mode), ignores the clip rect, always succeeds. Peripheral +
++> driver: see `docs/HARDWARE-PROFILE.md` §2/§3.1.
++
++- **How it clears (corrected V11/V12, 2026-09-21).** Under the truecolor
++  profile `v_clrwk` hands the raw word `0xFFFF` to
++  `RasterBackend::clear_screen_word` (`tos-api/src/vdi/workstation.rs`
++  `v_clrwk`), which the kernel backend turns into one bulk
++  `Framebuffer::clear(word_to_device(0xFFFF))` over the full
++  `width × height` — the live framebuffer geometry — clip ignored
++  (`kernel/src/vdi_backend.rs` `clear_screen_word`). The earlier text here
++  ("fills … with PEL 0 via `fill_rect`", "the `0x00`/`0xff` fill-byte
++  choice is irrelevant") described a superseded implementation and a wrong
++  reading of the contract; see the implementation notes above.
++- **White on the display, `0xFFFF` to the API.** The cleared pixel is
++  `0xFF_FFFFFF`: white (the display ignores the X byte), and the overlay
++  bit set in the X byte so that `v_get_pixel` reads `0xFFFF` back, as a
++  Falcon does. A later pen-0 fill writes `0x00_FFFFFF` — the same white,
++  read back as `0xFFDF`.
+ - **Cache clean for scan-out.** The backend cleans the filled rectangle to
+   PoC after writing (`vdi_backend.rs:118-125`, `:201`) so the VideoCore
+   display DMA sees the cleared pixels on real hardware (the framebuffer is
+diff --git a/tos-api/tests/vdi_reference/cases_v_series.rs b/tos-api/tests/vdi_reference/cases_v_series.rs
+index 4ef4d0a..9959dd7 100644
+--- a/tos-api/tests/vdi_reference/cases_v_series.rs
++++ b/tos-api/tests/vdi_reference/cases_v_series.rs
+@@ -35,13 +35,13 @@
+ //! | 270, 272 | `INTOUT[0..1]` | `TRUECOLOR_MODE`: `0`, raw word; pen 1 = `palette[255]` = 0 | 15, 1 | 0, 0 | `vdi_fill.c:1104-1114`, `vdi_col.c:737` |
+ //! | 54, 160, 161 | `INTOUT[1]` | after `v_clrwk` (`memset 0xff`): raw word | 0 | **0xFFFF** | `vdi_control.c:610-618`, `vdi_fill.c:671-681` |
+ //!
+-//! NewTOS on QEMU `raspi4b` at 640×480 matches the Falcon truecolor column
+-//! in every cell but the last row, where it answers `0xFFDF` — the V11/V12
+-//! defect (VDI-OVL-001), pinned red in `tos-api/tests/vdi_reference_overlay_bit.rs`.
+-//! The harness double used here keeps six green bits and cannot see that
+-//! defect, so those three cases are green in this binary *by construction of
+-//! the double*, not by the kernel; they are still replayed so the rest of
+-//! their records stays pinned.
++//! NewTOS on QEMU `raspi4b` at 640×480 matched the Falcon truecolor column
++//! in every cell but the last row, where it answered `0xFFDF` — the V11/V12
++//! defect (VDI-OVL-001), pinned in `tos-api/tests/vdi_reference_overlay_bit.rs`
++//! against the kernel's transcribed device-pixel model and fixed there
++//! 2026-09-21 (the overlay bit lives in the X byte of the 32-bpp store). The
++//! harness double used here shares that model since the same day; the three
++//! cases are replayed so the rest of their records stays pinned.
+ //!
+ //! **Cells the harness excludes.** `harness::MACHINE_EXCLUDED` still applies
+ //! (it is keyed on opcode/index, not on the reference): for the excluded
+diff --git a/tos-api/tests/vdi_reference/harness.rs b/tos-api/tests/vdi_reference/harness.rs
+index 2391950..946364d 100644
+--- a/tos-api/tests/vdi_reference/harness.rs
++++ b/tos-api/tests/vdi_reference/harness.rs
+@@ -95,23 +95,25 @@ impl MemBackend {
+     /// back out of the same two trait methods the implementation calls.
+     /// Outside the screen it reads 0, as `read_pixel` does.
+     ///
+-    /// **Note (2026-09-06, VDI-OVL-001):** this double's colour model is a
+-    /// true 6-bit-green RGB565 (`(g >> 2) << 5` here, and the matching
+-    /// expansion in [`RasterBackend::rgb565_to_device`] below), *not* the
+-    /// kernel backend's — and not EmuTOS' either, whose truecolor model is
+-    /// 5-bit guns plus `OVERLAY_BIT` at bit 5 (`vdi_col.c:601-614,802-838`,
+-    /// `vdi_fill.c:26`). The double is internally consistent, so these tests
+-    /// pass; the side effect is that they cannot see the kernel backend's
+-    /// dropped overlay bit. Do **not** "harmonise" this with
+-    /// `kernel/src/vdi_backend.rs` — that would hide the gap rather than
+-    /// close it. See `docs/STATUS.md` (2026-09-06).
++    /// **Colour model (V11/V12, 2026-09-21):** the kernel backend's — five
++    /// bits per gun, replicated to eight in the 32-bpp store, and the
++    /// 16-bit word's `OVERLAY_BIT` (bit 5, `vdi_fill.c:26`) replicated into
++    /// the X byte (`kernel/src/vdi_backend.rs` `word_to_device` /
++    /// `device_to_word`, `kernel/src/hal/framebuffer.rs` module doc). That is
++    /// EmuTOS' truecolor model too: 5-bit guns from `set_color16` /
++    /// `vq_color16` (`vdi_col.c:601-614,802-838`) plus the overlay bit.
++    /// Until 2026-09-21 this double kept six green bits instead and could
++    /// not see the kernel's dropped overlay bit (VDI-OVL-001); the two now
++    /// agree, and `tos-api/tests/vdi_reference_overlay_bit.rs` pins the
++    /// kernel's own expressions.
+     pub fn screen_word(&self, x: i16, y: i16) -> u16 {
+         if !Self::inside(x, y) {
+             return 0;
+         }
+         let v = self.px.lock().unwrap()[Self::idx(x, y)];
+         let (r, g, b) = ((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
+-        (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)) as u16
++        let overlay = if v & 0x8000_0000 != 0 { 0x0020 } else { 0 };
++        (((r >> 3) << 11) | ((g >> 3) << 6) | (b >> 3)) as u16 | overlay
+     }
+ 
+     fn new() -> Self {
+@@ -185,16 +187,22 @@ impl RasterBackend for MemBackend {
+     fn pel_to_device16(&self, pel: Pel) -> u16 {
+         self.palette.lock().unwrap()[pel as usize]
+     }
++    /// The kernel's `device_to_word` (`kernel/src/vdi_backend.rs`): top five
++    /// bits of each gun, top bit of the X byte → `OVERLAY_BIT`.
+     fn device_to_rgb565(&self, argb: u32) -> u16 {
+         let (r, g, b) = ((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
+-        (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)) as u16
++        let overlay = if argb & 0x8000_0000 != 0 { 0x0020 } else { 0 };
++        (((r >> 3) << 11) | ((g >> 3) << 6) | (b >> 3)) as u16 | overlay
+     }
++    /// The kernel's `word_to_device`: 5→8-bit gun replication, and the
++    /// overlay bit replicated into all eight X bits.
+     fn rgb565_to_device(&self, px: u16) -> u32 {
+-        let (r5, g6, b5) = ((px >> 11) & 0x1F, (px >> 5) & 0x3F, px & 0x1F);
++        let (r5, g5, b5) = ((px >> 11) & 0x1F, (px >> 6) & 0x1F, px & 0x1F);
+         let r = ((r5 << 3) | (r5 >> 2)) as u32;
+-        let g = ((g6 << 2) | (g6 >> 4)) as u32;
++        let g = ((g5 << 3) | (g5 >> 2)) as u32;
+         let b = ((b5 << 3) | (b5 >> 2)) as u32;
+-        (r << 16) | (g << 8) | b
++        let x = if px & 0x0020 != 0 { 0xFF00_0000 } else { 0 };
++        x | (r << 16) | (g << 8) | b
+     }
+ 
+     /// The VDI reads pixels back as PELs. This backend stores device words,
+@@ -625,8 +633,10 @@ pub const REF_NUM_COLORS: i16 = 16; // `DEV_TAB` in `EMUTOS14-VDI-r2.LOG`
+ ///   (`vdi_control.c:207`). Sixteen planes → 256; the TT's four → 16.
+ /// * **`v_opnwk`/`v_opnvwk` `INTOUT[39]` — `DEV_TAB[39]`, the DAC's RGB
+ ///   choice count.** `DEV_TAB[39] = get_palette()` (`vdi_control.c:208`).
+-///   On VIDEL, a mode that is neither ST-compatible nor 4bpp returns **0**;
+-///   the TT's shifter path returns 4096 (`bios/screen.c:836-864`).
++///   On VIDEL, a mode that is neither ST-compatible nor 4bpp returns **0**
++///   (`bios/screen.c:840-846`); the TT's shifter path returns 4096
++///   (`:850-866`). NewTOS derives it from the plane count
++///   (`tos-api/src/vdi/workstation.rs` `palette_precision`, V03).
+ /// * **`vq_extnd(1)` `INTOUT[4]` — `INQ_TAB[4]`.** Literally `v_planes`
+ ///   (`vdi_control.c:210`).
+ /// * **`vq_extnd(1)` `INTOUT[5]` — `INQ_TAB[5]`, "video lookup table".**
+@@ -741,13 +751,15 @@ fn substitute(out: &mut Vec<Diff>, case: &Case, intout: &[i16], ptsin: &[i16]) {
+                     256
+                 }
+             }
+-            // DEV_TAB[39] = get_palette(): 0 for a VIDEL truecolor mode,
+-            // 4096 for the VIDEL 4bpp / ST-compatible modes.
++            // DEV_TAB[39] = get_palette() on a VIDEL (`bios/screen.c:840-846`):
++            // 4096 for the 4bpp mode (and the ST-compatible modes, which a
++            // plane count cannot express), 0 for every other depth — 1, 2,
++            // 8 bpp and truecolor (V03).
+             (1 | 100, 39) => {
+-                if PLANES > 8 {
+-                    0
+-                } else {
++                if PLANES == 4 {
+                     4096
++                } else {
++                    0
+                 }
+             }
+             (102, 4) => PLANES,                                       // INQ_TAB[4] = v_planes

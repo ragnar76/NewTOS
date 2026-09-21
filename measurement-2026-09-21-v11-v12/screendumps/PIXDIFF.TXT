@@ -1,0 +1,15 @@
+V11/V12 -- QEMU raspi4b screendumps, 640x480, -display none, QMP screendump (method/run.sh + qmp_multi.py).
+BEFORE = scratch copy of the tree with the seven product files at HEAD 194b057 (git show, no checkout):
+  kernel/src/{vdi_backend.rs,hal/framebuffer.rs,drivers/bcm2711/framebuffer.rs}, tos-api/src/vdi/{backend,contour,inquiry,workstation}.rs
+  -> kernel8-before-release.img sha256 e5a9b75d... = byte-identical to the kernel of measurement-2026-09-21-vdi-qemu RUN B.
+AFTER  = the tree (kernel8-after-release.img sha256 43233fa8...). Fresh image copy per run; 0 EXC/PANIC in all serial logs.
+
+desk-{before,after}-idle.png   product kernel + sd-base, '[desk] desktop up' + 5 s:
+  cmp: byte-identical PNG;  pixdiff: 0 differing pixels
+tera-{before,after}-idle.png   product kernel + sd-tera (#Z TeraDesk), 'slot 0 entry 0x1000' + 10 s:
+  cmp: byte-identical PNG;  pixdiff: 0 differing pixels
+
+Cross-checks against earlier measurements:
+  desk-after-idle.png vs measurement-2026-09-21-a103-a108/screendumps/desk-after-A-idle.png:
+    51 differing pixels, bbox (319,240)-(640,480) = the pointer (parked at (639,479) by the injector there, at the boot position (320,240) here).
+  tera-after-idle.png vs measurement-2026-09-20-a57/screendumps/product-tera-idle.png: 0 differing pixels.

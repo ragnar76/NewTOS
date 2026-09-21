@@ -1,0 +1,120 @@
+NewTOS -- V11/V12 (VDI-OVL-001) + V03 counter-measurement, 2026-09-21
+=======================================================================
+MEASUREMENT ONLY: what was built, what ran, what came back. Verdicts and the
+tickets: TASK/V11.md, V12.md, V03.md (+ *-STATUS-DONE.MD), docs/STATUS.md 2026-09-21.
+
+Datum        : 2026-09-21 (09:05-09:25 CEST)
+Git HEAD     : 194b057 (Branch desk-rebuild). Product change UNCOMMITTED in the
+               tree (method/product-v11-v12-v03.diff = git diff kernel/src tos-api/src;
+               method/spec-and-test-v11-v12-v03.diff = git diff docs tos-api/tests;
+               method/overlay_bit.rs.after = the untracked test module after the sync).
+               Nothing committed, nothing flashed, no physical card.
+EmuTOS-Quelle: references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df.
+Reference    : tosdump/reference/EMUTOS14-VDI-all-falcontc.BIN (Falcon truecolor, measured
+               2026-09-21 in measurement-2026-09-21-vdi-qemu RUN C1), sha256 3cbedf82...;
+               tosdump/reference/EMUTOS14-RASTER.BIN (TT), sha256 67870886...
+
+THE CHANGE (kernel device-pixel model)
+  kernel/src/vdi_backend.rs   word_to_device / device_to_word: the 16-bit screen word is
+      expanded field by field into the 32-bpp store -- 5->8 bits per gun (unchanged) and
+      OVERLAY_BIT (bit 5) replicated into all eight X bits (0xFF set / 0x00 clear).
+      rgb565_to_device / device_to_rgb565 / pel_to_rgb / read_pixel use the pair;
+      xor_pixel complements all 32 bits (EmuTOS ~temp complements the whole word).
+  kernel/src/hal/framebuffer.rs   rgb() packs X = 0x00; module doc = the X-byte contract.
+  kernel/src/drivers/bcm2711/framebuffer.rs   comment only (0xXX_RR_GG_BB).
+  tos-api/src/vdi/workstation.rs  V03: DEV_TAB[39] = palette_precision(planes) (4 -> 4096,
+      else 0; bios/screen.c:840-846) + unit test; backend.rs / inquiry.rs / contour.rs /
+      raster.rs: doc comments that described VDI-OVL-001 as open.
+  Tests: tos-api/tests/vdi_reference/overlay_bit.rs (transcription re-synced to the new
+      kernel functions, line numbers), vdi_reference/harness.rs (MemBackend now the kernel
+      model; DEV_TAB[39] substitute = the VIDEL rule), cases_v_series.rs (header).
+  Spec: docs/api/vdi/workstation/03-v_clrwk.md, docs/api/vdi/raster/_raster.md.
+
+HOST TESTS (host-tests/)
+  overlay-bit-RED-before.txt    cargo test -p tos-api --test vdi_reference_overlay_bit at the
+                                start (tree = HEAD product code): 1 passed / 3 failed (verbatim).
+  overlay-bit-GREEN-after.txt   same binary after the change: 4 passed / 0 failed.
+  xtask-test-after.log          cargo run -p xtask -- test: 841 passed / 0 failed / 1 ignored, rc 0
+                                (= the classification's 837 green + the 3 formerly red + the new
+                                V03 unit test vdi::workstation::tests::dev_tab_39_...).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4-dev-after.log       cargo xtask build --board rpi4 (dev): tos-api 64 / kernel 94, rc 0.
+  xtask-build-rpi4-fresh-final.log     after `cargo clean -p kernel -p tos-api --target aarch64-unknown-none-
+                                       softfloat`, final tree: tos-api 64 / kernel 94; the warning message
+                                       set is line-identical to measurement-2026-09-21-a103-a108/build/
+                                       xtask-build-rpi4.log (sort|uniq -c diff empty).
+  build-rpi4-release-after.log         cargo xtask build --board rpi4 --release (touch lib.rs first):
+                                       tos-api 64 / kernel 94, rc 0 -> kernel8-after-release.img.
+  build-rpi4-release-before.log        the BEFORE scratch (see below): tos-api 64 / kernel 94.
+  clippy-kernel-rpi4-after.log         cargo clippy -p kernel --no-default-features --features board-rpi4:
+                                       tos-api 80 / kernel 125; no message in any touched file.
+  clippy-tosapi-tests-after.log        cargo clippy -p tos-api --tests: the only hits in touched test
+                                       files are harness.rs:814/:875 (cmp_field loops), outside the
+                                       changed hunks, pre-existing.
+  make-sd-image.log                    tools/make-sd-image.sh <scratch>/img/sd-base.img 64.
+  kernels-and-images.sha256            all kernels, ELFs, images, dumpers, tables, references.
+  No qemu-virt build (lead's instruction).
+
+KERNELS
+  AFTER  = the tree, cargo xtask build --board rpi4 --release: kernel8.img sha256 43233fa8...
+  BEFORE = scratch rsync of the crates (never the shared tree) with the seven product files
+           replaced by `git show HEAD:<path>` copies, same build command: kernel8.img sha256
+           e5a9b75d... -- BYTE-IDENTICAL to the kernel of measurement-2026-09-21-vdi-qemu RUN B
+           (HEAD 2567942 + nothing product-wise since), i.e. the build is reproducible and the
+           BEFORE kernel is exactly the one that measured 0xFFDF this morning.
+
+IMAGES (per run a fresh copy; the guest writes into the copy; no *.img in the tree)
+  sd-base.img      tools/make-sd-image.sh, 64 MiB (incl. Apps\TERADESK, Apps\QED).
+  sd-dumpvdi.img   + C:\DUMPVDI.NAP (measurement-2026-09-21-vdi-qemu, build 2567, sha256 f8cc527a...)
+                   + C:\VDI.TSV (= tosdump/cases/vdi-all.tsv, CRC D135ADAF) + NEWDESK.INF
+                   "#Z 01 C:\DUMPVDI.NAP@" (method/newdesk-dumpvdi.inf).
+  sd-dumprast.img  + C:\DUMPRAST.NAP (sha256 3f32327f...) + C:\RASTER.TSV (= vdi-raster.tsv,
+                   CRC 702EEA7D) + NEWDESK.INF "#Z 01 C:\DUMPRAST.NAP@".
+  sd-tera.img      + NEWDESK.INF (#Z TeraDesk, method/newdesk-tera.inf = a57's newdesk-user.inf)
+                   + Apps\TERADESK\TERADESK.INF (method/teradesk-user.inf).
+
+RUNS (qemu-system-aarch64 -M raspi4b -no-reboot -display none -serial file:... -kernel ...
+      -drive file=<copy>,if=sd,format=raw; method/run-dump.sh waits for "[desk] desktop up",
+      method/run.sh + qmp_multi.py take QMP screendumps at serial markers)
+  RUN 1  AFTER + sd-dumpvdi  -> newtos-qemu-raspi4b/VDI.BIN (+ VDI.LOG, BOOT-SERIAL.txt)
+         serial: "[fb] VideoCore display geometry detected: 640x480", "VDI.TSV: 182 cases, CRC
+         D135ADAF", "all 182 cases ran", "VDI.BIN: 182 records, 289776 bytes", rc=0,
+         "[desk] desktop up"; 0 EXC/PANIC. tosdiff --validate: accepted.
+  RUN 2  AFTER + sd-dumprast -> newtos-qemu-raspi4b-raster/RASTER.BIN (+ LOG, serial)
+         serial: "all 59 cases ran", "RASTER.BIN: 59 records, 218096 bytes", rc=0; accepted.
+  RUN 3/4  BEFORE / AFTER + sd-base  -> screendumps/desk-{before,after}-idle.png
+         marker "[desk] desktop up" + 5 s.
+  RUN 5/6  BEFORE / AFTER + sd-tera  -> screendumps/tera-{before,after}-idle.png
+         marker "slot 0 entry 0x1000" + 10 s.
+  No QEMU process left behind.
+
+RESULTS
+  DIFF-emutos-falcontc-vs-newtos-qemu.txt    Falcon-TC ref vs NewTOS AFTER : 0 of 182 cases differ
+                                             (was 3 of 182 this morning: 54/160/161 intout[1]).
+  DIFF-newtos-qemu-before-vs-after.txt       NewTOS RUN B (this morning) vs AFTER: 3 of 182 --
+                                             exactly cases 54/160/161 intout[1] 0xFFDF -> 0xFFFF,
+                                             every other word of every record identical.
+  DIFF-emutos-tt-raster-vs-newtos-qemu.txt   TT raster ref vs NewTOS AFTER: 1 of 59 (case 157,
+                                             D-VDI-25 / R01, unchanged); RASTER.BIN is byte-
+                                             identical (cmp) to measurement-2026-09-21-vdi-qemu/
+                                             newtos-qemu-raspi4b-raster/RASTER.BIN.
+  screendumps/PIXDIFF.TXT                    desk idle BEFORE vs AFTER: PNG byte-identical, 0 px;
+                                             TeraDesk idle BEFORE vs AFTER: PNG byte-identical, 0 px.
+                                             (The X byte is not part of what QEMU scans out.)
+
+NOT DONE / OPEN
+  * Real Pi 4: not flashed (lead/user only). The VideoCore's treatment of the top byte at depth
+    32 is documented in none of the in-tree Track-B sources (docs/hardware/mailbox-framebuffer.md,
+    references/circle); no alpha-mode tag (0x0004_8007) is sent. Today's kernel wrote X = 0xFF on
+    every pixel and displays on the Pi; after the change pen-drawn pixels carry X = 0x00 and
+    cleared/complemented ones X = 0xFF. If the Pi shows anything other than the QEMU picture, the
+    documented remedy is one extra tag in the allocate message: set alpha mode = 2 (ignored).
+  * Consequences (2) vro_cpyfm Screen->Memory over a cleared area and (3) v_contourfill seed mode on
+    the cleared background follow from the same two conversion functions but have no case in
+    vdi-all.tsv / vdi-raster.tsv; not measured on a device (host: raster.rs paths go through
+    device_to_rgb565/rgb565_to_device, overlay_bit.rs pins the pair).
+
+HINWEIS  *.BIN under measurement-*/ are gitignored (root .gitignore "*.bin", core.ignorecase);
+         to keep VDI.BIN / RASTER.BIN: git add -f measurement-2026-09-21-v11-v12/newtos-qemu-raspi4b/VDI.BIN
+         measurement-2026-09-21-v11-v12/newtos-qemu-raspi4b-raster/RASTER.BIN

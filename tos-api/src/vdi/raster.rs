@@ -40,8 +40,11 @@
 //! backend's [`RasterBackend::device_to_rgb565`] /
 //! [`RasterBackend::rgb565_to_device`]. Because the screen is
 //! 5-bit-quantised (every VDI draw resolves through the RGB555-in-565
-//! pseudo-palette), that round-trip is **lossless**, so `bb_save`/
-//! `bb_restore` reproduce the screen bit-for-bit.
+//! pseudo-palette) and the backend keeps the word's `OVERLAY_BIT` in the
+//! device pixel's X byte (V11/V12, 2026-09-21), that round-trip is
+//! **lossless** for every 16-bit word, so `bb_save`/`bb_restore` reproduce
+//! the screen bit-for-bit — a saved `v_clrwk`-cleared area holds `0xFFFF`
+//! words, as on a Falcon.
 //!
 //! The buffer is caller-owned (AES `bb_save` allocates it); the VDI only
 //! reads/writes through `fd_addr`, always bounds-checked against

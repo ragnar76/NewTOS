@@ -10,11 +10,28 @@
 //! The TOS graphics stack (VDI / Line-A, later phases) and a future
 //! on-screen VT52 console sit on top of this; for now it carries a
 //! boot test pattern.
+//!
+//! # Pixel format: `0xXX_RR_GG_BB`
+//!
+//! Bits 0..23 are the colour the display shows (little-endian memory bytes
+//! `[B, G, R, X]`; the VideoCore is told pixel order BGR for exactly that
+//! reason, `drivers/bcm2711/framebuffer.rs`). The top byte **X is not a
+//! colour and the display does not show it** — `ramfb` is programmed with
+//! the DRM `XRGB8888` fourcc, whose X is "don't care", and the VideoCore is
+//! given depth 32 with no alpha-mode tag (`docs/hardware/mailbox-
+//! framebuffer.md` §3). The byte is owned by the VDI backend
+//! (`crate::vdi_backend`), which keeps the one bit of the 16-bit Falcon
+//! screen word that carries no colour there: `OVERLAY_BIT` (bit 5,
+//! EmuTOS `vdi/vdi_fill.c:26`), replicated into all eight X bits — `0xFF`
+//! when the word has the bit set, `0x00` when clear (V11/V12,
+//! 2026-09-21). Everything that writes this framebuffer outside the VDI
+//! packs its colours with [`rgb`], i.e. with the bit clear.
 
-/// Pack an opaque (X=0xFF) RGB colour into XRGB8888.
+/// Pack a plain RGB colour into the framebuffer pixel format: X = 0x00,
+/// the VDI overlay bit clear (see the module doc).
 #[inline]
 pub const fn rgb(r: u8, g: u8, b: u8) -> u32 {
-    0xFF00_0000 | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
+    ((r as u32) << 16) | ((g as u32) << 8) | (b as u32)
 }
 
 /// A linear XRGB8888 framebuffer.

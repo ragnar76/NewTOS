@@ -20,14 +20,29 @@ const MAX_FILL_PATTERN: i16 = 24;
 const MAX_FILL_HATCH: i16 = 12;
 const FIS_PATTERN: i16 = 2; // interior style: dither pattern
 
-/// `DEV_TAB[39]` — the DAC's RGB choice count (`get_palette()`, EmuTOS
-/// `bios/screen.c:831-869`). Under a VIDEL truecolor mode `get_palette()`
-/// returns **0** (a real non-ST-compatible truecolor mode has
-/// `mode & VIDEL_COMPAT == 0` and `bpp == VIDEL_TRUECOLOR != VIDEL_4BPP`,
-/// so it falls through to `return 0`). This is the Falcon030/TOS4 target
-/// value; the previous 4096 was correct only for the earlier 16-colour
-/// VIDEL-4bpp target.
-const PALETTE_PRECISION: i16 = 0;
+/// `DEV_TAB[39]` — the DAC's RGB choice count, EmuTOS `get_palette()`
+/// (`bios/screen.c:831-869`, "we return the same values as Atari TOS 4.04"),
+/// derived from the workstation's plane count the way the Falcon030/TOS4
+/// target profile derives it from the VIDEL mode (`bios/screen.c:840-846`):
+///
+/// - a 4-bit-per-pixel VIDEL mode (`(mode & VIDEL_BPPMASK) == VIDEL_4BPP`,
+///   16 pens) → **4096**;
+/// - any other VIDEL depth — 1, 2 or 8 bpp, and the 16-bit truecolor mode
+///   this backend runs (`PLANES = 16`, `kernel/src/vdi_backend.rs`) → **0**.
+///
+/// The one VIDEL case a plane count cannot tell apart is the ST-compatible
+/// flag (`mode & VIDEL_COMPAT`, `:843`), which returns 4096 for the
+/// ST-High/ST-Medium 1- and 2-plane modes too; NewTOS has no ST-compatible
+/// video mode, so a 1- or 2-plane workstation is a plain VIDEL mode here.
+/// Measured on the Falcon truecolor reference: `DEV_TAB[39] = 0`
+/// (`EMUTOS14-VDI-all-falcontc.BIN` cases 33/274, V03).
+fn palette_precision(planes: u16) -> i16 {
+    if planes == 4 {
+        4096
+    } else {
+        0
+    }
+}
 
 /// `DEV_TAB` template (45 WORDs), EmuTOS `DEV_TAB_rom`. Indices
 /// `[0],[1],[3],[4],[5],[13],[35],[39]` are patched from the live device by
@@ -199,7 +214,7 @@ fn init_wk(vwk: &mut Vwk, pb: &Vdipb, backend: &dyn RasterBackend) {
     dev[5] = font_ring_fold().4; // number of system-font sizes (`text_init`)
     dev[13] = ncol as i16;
     dev[35] = if planes == 1 { 0 } else { 1 }; // colour capable? (v_planes==1)
-    dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette): 0 for truecolor
+    dev[39] = palette_precision(planes); // DAC RGB-choice count (get_palette)
     for (i, &v) in dev.iter().enumerate() {
         pb.set_intout(i, v);
     }
@@ -288,7 +303,7 @@ pub fn vq_extnd(pb: &Vdipb, vwk: &crate::vdi::vwk::Vwk, backend: &dyn RasterBack
         dev[5] = font_ring_fold().4; // number of system-font sizes (`text_init`)
         dev[13] = ncol as i16;
         dev[35] = if planes == 1 { 0 } else { 1 }; // colour capable? (v_planes==1)
-        dev[39] = PALETTE_PRECISION; // DAC RGB-choice count (get_palette): 0 for truecolor
+        dev[39] = palette_precision(planes); // DAC RGB-choice count (get_palette)
         for (i, &v) in dev.iter().enumerate() {
             pb.set_intout(i, v);
         }
@@ -396,4 +411,22 @@ pub fn v_clrwk(backend: &dyn RasterBackend) {
     }
     let (w, h) = (backend.width(), backend.height());
     backend.fill_rect(0, 0, w as i16, h as i16, 0, ClipRect::full(w, h));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::palette_precision;
+
+    /// V03: `DEV_TAB[39]` follows EmuTOS `get_palette()` on a VIDEL
+    /// (`bios/screen.c:840-846`) — 4096 only for the 4-bpp (16-pen) mode,
+    /// 0 for every other depth, the 16-bit truecolor profile included
+    /// (measured 0 on the Falcon truecolor reference, cases 33/274).
+    #[test]
+    fn dev_tab_39_is_4096_for_four_planes_and_0_for_every_other_videl_depth() {
+        assert_eq!(palette_precision(16), 0, "VIDEL_TRUECOLOR: return 0");
+        assert_eq!(palette_precision(8), 0, "VIDEL_8BPP: neither COMPAT nor 4BPP");
+        assert_eq!(palette_precision(4), 4096, "VIDEL_4BPP: return 4096");
+        assert_eq!(palette_precision(2), 0, "VIDEL_2BPP, not ST-compatible");
+        assert_eq!(palette_precision(1), 0, "VIDEL_1BPP, not ST-compatible");
+    }
 }

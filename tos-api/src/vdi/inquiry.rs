@@ -168,14 +168,14 @@ pub fn vq_color(pb: &Vdipb, vwk: &Vwk, ncol: u16, backend: &dyn RasterBackend) {
 ///   `read_pixel`'s nearest-CLUT reverse map — also keeps pixels that are
 ///   *not* a pen (a blitted truecolor bitmap) readable, as on a Falcon.
 ///
-///   **Known gap (2026-09-06, VDI-OVL-001):** it is *not* exact for a pixel
-///   whose `OVERLAY_BIT` (`0x0020`, `vdi_fill.c:26`) is set, i.e. the whole
-///   screen after `v_clrwk` (`memset(v_bas_ad, 0xff, …)`,
-///   `vdi_control.c:600-618`). `pixelread` returns that word unmasked
-///   (`vdi_fill.c:674-681`), so EmuTOS answers `0xFFFF`; NewTOS' 24-bit
-///   device pixel cannot hold the bit and answers `0xFFDF` (measured on
-///   `board-qemu-virt`: the framebuffer word after `v_clrwk` is `0xFFFFFFFF`,
-///   bit-identical to a pen-0 fill). See `docs/STATUS.md` (2026-09-06).
+///   The round trip is exact for the one word no pen produces as well: the
+///   whole screen after `v_clrwk` (`memset(v_bas_ad, 0xff, …)`,
+///   `vdi_control.c:610-618`) has `OVERLAY_BIT` (`0x0020`, `vdi_fill.c:26`)
+///   set, `pixelread` returns it unmasked (`vdi_fill.c:671-681`), and EmuTOS
+///   answers `0xFFFF` (measured, `EMUTOS14-VDI-all-falcontc.BIN` cases
+///   54/160/161). The kernel keeps that bit in the device pixel's X byte,
+///   so NewTOS answers the same (VDI-OVL-001, closed by V11/V12,
+///   2026-09-21; `tos-api/tests/vdi_reference_overlay_bit.rs`).
 /// - **Palette** (`planes <= 8`, a non-truecolor backend): `INTOUT[0] = pel`,
 ///   the raw device pixel value, and `INTOUT[1] = REV_MAP_COL[pel]`, the VDI
 ///   pen (`vdi_fill.c:1113-1114`) — identity under NewTOS' folded `MAP_COL`

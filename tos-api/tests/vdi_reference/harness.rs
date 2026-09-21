@@ -95,23 +95,25 @@ impl MemBackend {
     /// back out of the same two trait methods the implementation calls.
     /// Outside the screen it reads 0, as `read_pixel` does.
     ///
-    /// **Note (2026-09-06, VDI-OVL-001):** this double's colour model is a
-    /// true 6-bit-green RGB565 (`(g >> 2) << 5` here, and the matching
-    /// expansion in [`RasterBackend::rgb565_to_device`] below), *not* the
-    /// kernel backend's — and not EmuTOS' either, whose truecolor model is
-    /// 5-bit guns plus `OVERLAY_BIT` at bit 5 (`vdi_col.c:601-614,802-838`,
-    /// `vdi_fill.c:26`). The double is internally consistent, so these tests
-    /// pass; the side effect is that they cannot see the kernel backend's
-    /// dropped overlay bit. Do **not** "harmonise" this with
-    /// `kernel/src/vdi_backend.rs` — that would hide the gap rather than
-    /// close it. See `docs/STATUS.md` (2026-09-06).
+    /// **Colour model (V11/V12, 2026-09-21):** the kernel backend's — five
+    /// bits per gun, replicated to eight in the 32-bpp store, and the
+    /// 16-bit word's `OVERLAY_BIT` (bit 5, `vdi_fill.c:26`) replicated into
+    /// the X byte (`kernel/src/vdi_backend.rs` `word_to_device` /
+    /// `device_to_word`, `kernel/src/hal/framebuffer.rs` module doc). That is
+    /// EmuTOS' truecolor model too: 5-bit guns from `set_color16` /
+    /// `vq_color16` (`vdi_col.c:601-614,802-838`) plus the overlay bit.
+    /// Until 2026-09-21 this double kept six green bits instead and could
+    /// not see the kernel's dropped overlay bit (VDI-OVL-001); the two now
+    /// agree, and `tos-api/tests/vdi_reference_overlay_bit.rs` pins the
+    /// kernel's own expressions.
     pub fn screen_word(&self, x: i16, y: i16) -> u16 {
         if !Self::inside(x, y) {
             return 0;
         }
         let v = self.px.lock().unwrap()[Self::idx(x, y)];
         let (r, g, b) = ((v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF);
-        (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)) as u16
+        let overlay = if v & 0x8000_0000 != 0 { 0x0020 } else { 0 };
+        (((r >> 3) << 11) | ((g >> 3) << 6) | (b >> 3)) as u16 | overlay
     }
 
     fn new() -> Self {
@@ -185,16 +187,22 @@ impl RasterBackend for MemBackend {
     fn pel_to_device16(&self, pel: Pel) -> u16 {
         self.palette.lock().unwrap()[pel as usize]
     }
+    /// The kernel's `device_to_word` (`kernel/src/vdi_backend.rs`): top five
+    /// bits of each gun, top bit of the X byte → `OVERLAY_BIT`.
     fn device_to_rgb565(&self, argb: u32) -> u16 {
         let (r, g, b) = ((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
-        (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)) as u16
+        let overlay = if argb & 0x8000_0000 != 0 { 0x0020 } else { 0 };
+        (((r >> 3) << 11) | ((g >> 3) << 6) | (b >> 3)) as u16 | overlay
     }
+    /// The kernel's `word_to_device`: 5→8-bit gun replication, and the
+    /// overlay bit replicated into all eight X bits.
     fn rgb565_to_device(&self, px: u16) -> u32 {
-        let (r5, g6, b5) = ((px >> 11) & 0x1F, (px >> 5) & 0x3F, px & 0x1F);
+        let (r5, g5, b5) = ((px >> 11) & 0x1F, (px >> 6) & 0x1F, px & 0x1F);
         let r = ((r5 << 3) | (r5 >> 2)) as u32;
-        let g = ((g6 << 2) | (g6 >> 4)) as u32;
+        let g = ((g5 << 3) | (g5 >> 2)) as u32;
         let b = ((b5 << 3) | (b5 >> 2)) as u32;
-        (r << 16) | (g << 8) | b
+        let x = if px & 0x0020 != 0 { 0xFF00_0000 } else { 0 };
+        x | (r << 16) | (g << 8) | b
     }
 
     /// The VDI reads pixels back as PELs. This backend stores device words,
@@ -625,8 +633,10 @@ pub const REF_NUM_COLORS: i16 = 16; // `DEV_TAB` in `EMUTOS14-VDI-r2.LOG`
 ///   (`vdi_control.c:207`). Sixteen planes → 256; the TT's four → 16.
 /// * **`v_opnwk`/`v_opnvwk` `INTOUT[39]` — `DEV_TAB[39]`, the DAC's RGB
 ///   choice count.** `DEV_TAB[39] = get_palette()` (`vdi_control.c:208`).
-///   On VIDEL, a mode that is neither ST-compatible nor 4bpp returns **0**;
-///   the TT's shifter path returns 4096 (`bios/screen.c:836-864`).
+///   On VIDEL, a mode that is neither ST-compatible nor 4bpp returns **0**
+///   (`bios/screen.c:840-846`); the TT's shifter path returns 4096
+///   (`:850-866`). NewTOS derives it from the plane count
+///   (`tos-api/src/vdi/workstation.rs` `palette_precision`, V03).
 /// * **`vq_extnd(1)` `INTOUT[4]` — `INQ_TAB[4]`.** Literally `v_planes`
 ///   (`vdi_control.c:210`).
 /// * **`vq_extnd(1)` `INTOUT[5]` — `INQ_TAB[5]`, "video lookup table".**
@@ -741,13 +751,15 @@ fn substitute(out: &mut Vec<Diff>, case: &Case, intout: &[i16], ptsin: &[i16]) {
                     256
                 }
             }
-            // DEV_TAB[39] = get_palette(): 0 for a VIDEL truecolor mode,
-            // 4096 for the VIDEL 4bpp / ST-compatible modes.
+            // DEV_TAB[39] = get_palette() on a VIDEL (`bios/screen.c:840-846`):
+            // 4096 for the 4bpp mode (and the ST-compatible modes, which a
+            // plane count cannot express), 0 for every other depth — 1, 2,
+            // 8 bpp and truecolor (V03).
             (1 | 100, 39) => {
-                if PLANES > 8 {
-                    0
-                } else {
+                if PLANES == 4 {
                     4096
+                } else {
+                    0
                 }
             }
             (102, 4) => PLANES,                                       // INQ_TAB[4] = v_planes

@@ -138,41 +138,34 @@ pub trait RasterBackend: Sync {
     fn pel_to_device16(&self, pel: Pel) -> u16;
 
     /// Convert a **raw device pixel word** (as returned by
-    /// [`get_device_pixel`](Self::get_device_pixel)) to the 16-bit RGB565
-    /// memory-MFDB wireformat (`RRRRRGGGGG0BBBBB`, green LSB 0). This is the
-    /// screen→memory half of the 16↔32 boundary a memory-MFDB copy crosses
-    /// (`vro_cpyfm` Screen→Memory / AES `bb_save`): the physical framebuffer
-    /// is 32-bpp XRGB8888 (an internal detail per `docs/COMPATIBILITY.md`)
-    /// while the app-visible memory MFDB is 16-bit RGB565. Because the screen
-    /// is 5-bit-quantised (every VDI draw resolves through the RGB555-in-565
-    /// pseudo-palette), the top 5 bits of each gun recover the exact stored
-    /// value, so [`rgb565_to_device`](Self::rgb565_to_device) inverts this
-    /// losslessly **for any word the VDI's own draw path produced**.
-    ///
-    /// **Known gap (2026-09-06, VDI-OVL-001).** It is *not* lossless for the
-    /// one 16-bit word the VDI writes without going through a pen: the
-    /// `OVERLAY_BIT` (`0x0020`, `vdi_fill.c:26`) that `v_clrwk`'s
-    /// `memset(v_bas_ad, 0xff, …)` sets (`vdi_control.c:600-618`) is a
-    /// *non-colour* bit — `set_color16` writes 5-bit guns as
-    /// `(r<<11)|(g<<6)|b` and `vq_color16` reads green back as `(rgb>>6)&0x1f`
-    /// (`vdi_col.c:601-614,802-838`) — and a 24-bit-colour device pixel has
-    /// nowhere to keep it. Measured on `board-qemu-virt`: after `v_clrwk` the
-    /// framebuffer word is `0xFFFFFFFF`, bit-identical to a pen-0 fill, so
-    /// both come back as `0xFFDF` where a Falcon reports `0xFFFF` for the
-    /// former. Carrying the bit needs a spare bit in the device pixel — see
-    /// `docs/STATUS.md` (2026-09-06) for the options and their blast radius.
+    /// [`get_device_pixel`](Self::get_device_pixel)) to the 16-bit screen
+    /// word, the memory-MFDB wireformat (`RRRRRGGGGGOBBBBB`: 5-bit guns,
+    /// O = `OVERLAY_BIT`). This is the screen→memory half of the 16↔32
+    /// boundary a memory-MFDB copy crosses (`vro_cpyfm` Screen→Memory / AES
+    /// `bb_save`): the physical framebuffer is 32-bpp XRGB8888 (an internal
+    /// detail per `docs/COMPATIBILITY.md`) while the app-visible memory MFDB
+    /// is the 16-bit word. Because the screen is 5-bit-quantised (every VDI
+    /// draw resolves through the RGB555-in-565 pseudo-palette), the top 5
+    /// bits of each gun recover the exact stored colour, and the backend
+    /// keeps the one non-colour bit of the word — `OVERLAY_BIT` (`0x0020`,
+    /// `vdi_fill.c:26`), which `set_color16` never sets
+    /// (`(r<<11)|(g<<6)|b`, `vdi_col.c:601-614`) but `v_clrwk`'s
+    /// `memset(v_bas_ad, 0xff, …)` does (`vdi_control.c:610-618`) — in the
+    /// pixel's X byte, so [`rgb565_to_device`](Self::rgb565_to_device)
+    /// inverts this losslessly for **every** 16-bit word: the cleared screen
+    /// reads back `0xFFFF` and a pen-0 fill `0xFFDF`, the two words a Falcon
+    /// reports (VDI-OVL-001, closed by V11/V12, 2026-09-21;
+    /// `kernel/src/vdi_backend.rs` `device_to_word`).
     fn device_to_rgb565(&self, argb: u32) -> u16;
 
-    /// Convert a 16-bit RGB565 memory-MFDB pixel (`RRRRRGGGGG0BBBBB`) back to
-    /// a raw device pixel word — the memory→screen half of the 16↔32 boundary
+    /// Convert a 16-bit screen word (`RRRRRGGGGGOBBBBB`) back to a raw
+    /// device pixel word — the memory→screen half of the 16↔32 boundary
     /// (`vro_cpyfm` Memory→Screen / AES `bb_restore`). Each 5-bit gun is
     /// bit-replicated to 8 bits (`c8 = (c5<<3)|(c5>>2)`, the VIDEL truecolor
-    /// DAC expansion). Exact inverse of
-    /// [`device_to_rgb565`](Self::device_to_rgb565) on any 5-bit-quantised
-    /// pixel, so a `bb_save`/`bb_restore` round-trip is bit-exact — with the
-    /// `OVERLAY_BIT` exception recorded on
-    /// [`device_to_rgb565`](Self::device_to_rgb565) (VDI-OVL-001): bit 5 of
-    /// `px` is dropped here and cannot come back.
+    /// DAC expansion) and `OVERLAY_BIT` is carried into the X byte. Exact
+    /// inverse of [`device_to_rgb565`](Self::device_to_rgb565) on every
+    /// word, so a `bb_save`/`bb_restore` round-trip is bit-exact, overlay
+    /// bit included (`kernel/src/vdi_backend.rs` `word_to_device`).
     fn rgb565_to_device(&self, px: u16) -> u32;
 
     /// Read the palette index (PEL) at device pixel `(x, y)`, reverse-

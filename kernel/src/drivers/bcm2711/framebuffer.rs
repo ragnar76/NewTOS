@@ -33,11 +33,12 @@ const FALLBACK_WIDTH: u32 = crate::drivers::BOOT_WIDTH;
 const FALLBACK_HEIGHT: u32 = crate::drivers::BOOT_HEIGHT;
 const DEPTH_BPP: u32 = 32;
 /// VC pixel order. `0 = BGR, 1 = RGB` (firmware wiki). Our pixel store is
-/// XRGB8888 packed by [`hal::framebuffer::rgb`] as `0xFF_RR_GG_BB`, i.e.
+/// XRGB8888 packed by [`hal::framebuffer::rgb`] as `0xXX_RR_GG_BB`, i.e.
 /// little-endian memory bytes `[B, G, R, X]` — blue at the lowest
 /// address. The VC's **BGR** order reads the lowest byte as blue, which
 /// matches; selecting RGB here swaps the red/blue channels (verified by
-/// QMP screendump on raspi4b). So BGR is correct for our layout.
+/// QMP screendump on raspi4b). So BGR is correct for our layout. The X
+/// byte is the VDI overlay bit (`hal::framebuffer` module doc), not shown.
 const PIXEL_ORDER_BGR: u32 = 0;
 
 /// Mask turning a VideoCore bus address into an ARM physical address:

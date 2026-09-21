@@ -35,13 +35,13 @@
 //! | 270, 272 | `INTOUT[0..1]` | `TRUECOLOR_MODE`: `0`, raw word; pen 1 = `palette[255]` = 0 | 15, 1 | 0, 0 | `vdi_fill.c:1104-1114`, `vdi_col.c:737` |
 //! | 54, 160, 161 | `INTOUT[1]` | after `v_clrwk` (`memset 0xff`): raw word | 0 | **0xFFFF** | `vdi_control.c:610-618`, `vdi_fill.c:671-681` |
 //!
-//! NewTOS on QEMU `raspi4b` at 640×480 matches the Falcon truecolor column
-//! in every cell but the last row, where it answers `0xFFDF` — the V11/V12
-//! defect (VDI-OVL-001), pinned red in `tos-api/tests/vdi_reference_overlay_bit.rs`.
-//! The harness double used here keeps six green bits and cannot see that
-//! defect, so those three cases are green in this binary *by construction of
-//! the double*, not by the kernel; they are still replayed so the rest of
-//! their records stays pinned.
+//! NewTOS on QEMU `raspi4b` at 640×480 matched the Falcon truecolor column
+//! in every cell but the last row, where it answered `0xFFDF` — the V11/V12
+//! defect (VDI-OVL-001), pinned in `tos-api/tests/vdi_reference_overlay_bit.rs`
+//! against the kernel's transcribed device-pixel model and fixed there
+//! 2026-09-21 (the overlay bit lives in the X byte of the 32-bpp store). The
+//! harness double used here shares that model since the same day; the three
+//! cases are replayed so the rest of their records stays pinned.
 //!
 //! **Cells the harness excludes.** `harness::MACHINE_EXCLUDED` still applies
 //! (it is keyed on opcode/index, not on the reference): for the excluded

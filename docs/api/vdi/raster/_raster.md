@@ -560,29 +560,65 @@ EmuTOS' Falcon truecolor VDI (`TRUECOLOR_MODE`: `v_planes > 8`,
 `vdi/vdi_defs.h:22`, active under `CONF_WITH_VDI_16BIT`) treats **the
 device pixel** — what `pixelread`/`v_get_pixel`, `vro_cpyfm16`/
 `vrt_cpyfm16`, and the truecolor draw routines read and write — as a
-**16-bit screen word**, `RRRRRGGGGG0BBBBB` (green LSB/bit 5 =
-`OVERLAY_BIT`, always 0 on a drawn pixel, `vdi_fill.c:26`;
-`vdi/vdi_defs.h:153-158`, `VwkExt.palette[256]`). This is *the* meaning of
-`fd_nplanes = 16` for both the screen MFDB and a device-form memory MFDB —
-sixteen bits per pixel, not sixteen bit-planes.
+**16-bit screen word**, `RRRRRGGGGGOBBBBB` (bit 5 = `OVERLAY_BIT`,
+`vdi_fill.c:26`: 0 on every pen-drawn pixel because `set_color16` packs
+`(r<<11)|(g<<6)|b`, `vdi_col.c:601-614`; 1 on every pixel of a
+`v_clrwk`-cleared screen, `memset(v_bas_ad, 0xff, …)`,
+`vdi_control.c:610-618`; `vdi/vdi_defs.h:153-158`, `VwkExt.palette[256]`).
+This is *the* meaning of `fd_nplanes = 16` for both the screen MFDB and a
+device-form memory MFDB — sixteen bits per pixel, not sixteen bit-planes.
 
 NewTOS' physical framebuffer store is a **different, NewTOS-internal**
-32-bpp XRGB8888 buffer (`kernel/src/hal/framebuffer.rs:16-20` `rgb()`;
-`vdi_backend.rs:16,21` module doc) — a program never addresses this format
+32-bpp XRGB8888 buffer (`kernel/src/hal/framebuffer.rs` module doc + `rgb()`;
+`vdi_backend.rs` module doc) — a program never addresses this format
 directly; it exists only because the BCM2711 VideoCore has no native
-16-bit truecolor mode to allocate against. The two are bridged at exactly
-two points:
+16-bit truecolor mode to allocate against. **The device-pixel rule
+(V11/V12, 2026-09-21): the 16-bit screen word round-trips exactly through
+the 32-bpp store, overlay bit included.** The store word is a pure bitwise
+expansion of the screen word, one field at a time:
+
+| screen-word field | bits | store field | bits | expansion |
+|---|---|---|---|---|
+| red | 15..11 | R | 23..16 | `(c5 << 3) \| (c5 >> 2)` (VIDEL DAC replication) |
+| green | 10..6 | G | 15..8 | same |
+| `OVERLAY_BIT` | 5 | **X** | 31..24 | replicated into all eight bits: `0xFF` set, `0x00` clear |
+| blue | 4..0 | B | 7..0 | same as red |
+
+(`kernel/src/vdi_backend.rs` `word_to_device`, inverse `device_to_word`:
+the top five bits of each gun and the top bit of X.) The X byte is the
+right place because the display does not show it — `ramfb` is programmed
+with the DRM `XRGB8888` fourcc (X = don't care,
+`kernel/src/drivers/qemu_virt/ramfb.rs`), the VideoCore with depth 32 and
+no alpha-mode tag (`docs/hardware/mailbox-framebuffer.md` §3) — and because
+replicating it like a gun keeps every bitwise operation on the 32-bit store
+equal to the same operation on the 16-bit word: the sixteen `vro_cpyfm`
+logic ops (`raster_op`) and the `~` of `WM_XOR` act on the overlay bit
+exactly as EmuTOS' `vro_cpyfm16`/`swblit_rect_common16` do on a Falcon.
+Consequently the cleared screen is the pixel `0xFF_FFFFFF` and a pen-0 fill
+`0x00_FFFFFF`: identical on the display, `0xFFFF` versus `0xFFDF` to the
+API — as measured on the Falcon truecolor reference
+(`tosdump/reference/EMUTOS14-VDI-all-falcontc.BIN`, cases 54/160/161). Every
+non-VDI writer of the framebuffer packs its colours with
+`hal::framebuffer::rgb()`, i.e. with the bit clear. The two formats are
+bridged at exactly two points:
 
 - **Draw → screen.** Every VDI draw op resolves its PEL through the
   drawing workstation's pseudo-palette to a 16-bit RGB555-in-565 word, then
-  expands each 5-bit gun to 8 bits into the 32-bpp store (`pal555_to_xrgb`,
-  `vdi_backend.rs:174-182`, called from `pel_to_rgb`, `:230-239`).
+  expands it into the 32-bpp store (`word_to_device`, called from
+  `pel_to_rgb`, `vdi_backend.rs`); a pen word never carries the overlay
+  bit, so a drawn pixel has X = `0x00`. `v_clrwk` is the one writer that
+  bypasses the pens: `clear_screen_word(0xFFFF)` →
+  `Framebuffer::clear(word_to_device(0xFFFF))`
+  ([`../workstation/03-v_clrwk.md`](../workstation/03-v_clrwk.md)).
 - **Screen → 16-bit domain.** Reading the device pixel back (`v_get_pixel`,
-  `bb_save`, a memory-MFDB copy) converts the raw 32-bit store word to the
-  16-bit RGB565 word via `device_to_rgb565`/`rgb565_to_device`
-  (`vdi_backend.rs:397-424`; `tos-api/src/vdi/raster.rs:37-44` module doc).
-  Because the screen is itself 5-bit-quantised, this round-trip is lossless
-  (`raster.rs:41-44`).
+  `bb_save`, a memory-MFDB copy, the `v_contourfill` probe) converts the raw
+  32-bit store word to the 16-bit screen word via
+  `device_to_rgb565`/`rgb565_to_device` (`vdi_backend.rs`, the two trait
+  methods over `device_to_word`/`word_to_device`;
+  `tos-api/src/vdi/raster.rs:37-44` module doc). The round-trip is lossless
+  for every 16-bit word (`raster.rs:41-44`). The mouse-cursor save/restore
+  (`tos-api/src/vdi/mouse.rs`) copies raw 32-bit store words and so keeps
+  the bit without converting.
 
 `fd_nplanes = 16` and `ws_ncolors`/`DEV_TAB[13] = 256` are **both**
 EmuTOS-correct simultaneously, not contradictory: EmuTOS's own formula is
@@ -634,15 +670,19 @@ written by `set_color16` and read by `vq_color16`
 Two distinct EmuTOS XOR paths, both reproduced on the 32-bpp physical store:
 
 1. **`WM_XOR` draw mode** (`wrt_mode = 3`, lines/fills/text/glyphs). EmuTOS'
-   truecolor driver complements the **stored screen word** and ignores the
-   pen: `*work++ = ~temp` (`vdi/vdi_line.c:484-495`, `draw_rect_common`,
-   store at `:494`; the same pattern in the glyph blitter,
-   `vdi_textblit.c`). NewTOS' `VdiScreen::xor_pixel` (`vdi_backend.rs:
-   303-336`) reproduces the *observable* contract on the 32-bit physical
-   pixel: it complements the low 24 RGB bits in place (keeping the opaque
-   top byte) — self-inverse, matching EmuTOS bit-for-bit on a drawn pixel —
-   reached via `combine`'s `WriteMode::Xor` arm (`vdi_backend.rs:288-293`)
-   from every fill/line/glyph draw path.
+   truecolor driver complements the **whole stored screen word** — colour
+   guns and `OVERLAY_BIT` alike — and ignores the pen: `*work = ~temp`
+   (`vdi/vdi_line.c:494,501`, `swblit_rect_common16`), `*addr = ~*addr`
+   (`draw_line16`, `vdi_line.c:1670,1730`), `*q = ~*q` (the glyph blitters,
+   `vdi_textblit.c:806,1120`). NewTOS' `VdiScreen::xor_pixel`
+   (`vdi_backend.rs`) reproduces that on the 32-bit physical pixel by
+   complementing **all 32 bits** in place — the same operation on the
+   16-bit word, since the store is its bitwise expansion (the X byte flips
+   with the overlay bit: `0xFFDF` ↔ `0x0020`, `0xFFFF` ↔ `0x0000`) —
+   self-inverse, matching EmuTOS bit-for-bit, reached via `combine`'s
+   `WriteMode::Xor` arm from every fill/line/glyph draw path. (Until
+   2026-09-21 only the low 24 bits were complemented, the X byte being
+   fixed at `0xFF`; corrected with V11/V12.)
 2. **`vro_cpyfm` op 6** (`BM_S_XOR_D`, the 16-entry BitBlt logic-op table,
    `s ^ d` on the raw pixel word — `vdi_backend.rs:824-852` doc + table,
    citing `vdi_raster.c:495-544`/`vro_cpyfm16:1008-1220`). **Screen↔Screen**
@@ -657,10 +697,10 @@ Two distinct EmuTOS XOR paths, both reproduced on the 32-bpp physical store:
 
 The rubber-band idiom (apply the same XOR twice, restores the original)
 holds for both paths — XOR is self-inverse at any word width.
-`OVERLAY_BIT` (`0x0020`, `vdi_fill.c:26`) lives only in the 16-bit domain;
-its interaction with the 24-bit physical XOR is the pre-existing,
-separately tracked **VDI-OVL-001** gap (`tos-api/src/vdi/inquiry.rs:
-171-178`), not reopened here.
+`OVERLAY_BIT` (`0x0020`, `vdi_fill.c:26`) takes part in both, through the
+X byte of the store (§ "The VDI device pixel" above); the former
+**VDI-OVL-001** gap (the bit had no place in the 24-bit pixel) is closed
+(V11/V12, 2026-09-21).
 
 - **Screen-to-screen ops use the backend.** `vro_cpyfm` screen→screen maps
   to `RasterBackend::copy_rect` (replace op 3 / XOR op 6, above),
@@ -689,7 +729,8 @@ separately tracked **VDI-OVL-001** gap (`tos-api/src/vdi/inquiry.rs:
 > RGB565 words off the screen.
 
 A memory MFDB (`fd_addr != 0`) in NewTOS is a **16-bit RGB565-chunky
-truecolor** buffer: **one `UWORD` (`RRRRRGGGGG0BBBBB`, green LSB always 0)
+truecolor** buffer: **one `UWORD` (`RRRRRGGGGGOBBBBB`, bit 5 =
+`OVERLAY_BIT`: 0 on a pen-drawn pixel, 1 on a `v_clrwk`-cleared one)
 per pixel**, not a 32-bpp `u32`/pixel bitmap and not a planar bitmap
 (`tos-api/src/vdi/raster.rs:21-35`, module doc). This is the app-visible
 wireformat EmuTOS' own `vro_cpyfm16`/`vrt_cpyfm16` operate on raw
@@ -698,8 +739,11 @@ wireformat EmuTOS' own `vro_cpyfm16`/`vrt_cpyfm16` operate on raw
 XRGB8888; the 16↔32 conversion happens only at the screen boundary, inside
 `screen_to_mem`/`mem_to_screen` via `RasterBackend::device_to_rgb565`/
 `rgb565_to_device` (`raster.rs:37-44`). Because the screen is
-5-bit-quantised, that round-trip is lossless, so `bb_save`/`bb_restore`
-reproduce the screen pixels bit-for-bit (`raster.rs:550-554`).
+5-bit-quantised and carries the overlay bit in the X byte, that round-trip
+is lossless for every word, so `bb_save`/`bb_restore` reproduce the screen
+pixels bit-for-bit, overlay bit included (`raster.rs:550-554`; a
+`bb_save` over a `v_clrwk`-cleared area stores `0xFFFF` words, as on a
+Falcon).
 
 | MFDB field | NewTOS memory value | Meaning |
 |-----------|---------------------|---------|

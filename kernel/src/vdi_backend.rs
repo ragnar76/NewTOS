@@ -13,7 +13,10 @@
 //! which the VDI dispatcher points at the drawing workstation before every
 //! colour-sensitive op. The pseudo-palette holds one RGB555-in-565 word per
 //! pen (Falcon truecolor, `vdi_col.c:601-614`); the backend expands each gun
-//! 5→8 bits into the 32-bpp XRGB8888 framebuffer (`c8 = (c5<<3)|(c5>>2)`).
+//! 5→8 bits into the 32-bpp XRGB8888 framebuffer (`c8 = (c5<<3)|(c5>>2)`)
+//! and keeps the word's `OVERLAY_BIT` in the X byte, so the whole 16-bit
+//! screen word round-trips through the store ([`word_to_device`] /
+//! [`device_to_word`]).
 //! VDI convention: index 0 = white (background), 1 = black (foreground).
 //! Pens 0..15 default to EmuTOS `videl_palette1`, pens 16..255 to
 //! `videl_palette2`. The advertised colour count (`DEV_TAB[13]`) is 256,
@@ -171,14 +174,47 @@ const fn expand5to8(c5: u16) -> u8 {
     ((c5 << 3) | (c5 >> 2)) as u8
 }
 
-/// Expand one RGB555-in-565 pseudo-palette word to packed XRGB8888 (the
-/// framebuffer pixel format), 5→8-bit per gun.
-fn pal555_to_xrgb(p: u16) -> u32 {
-    rgb(
-        expand5to8((p >> 11) & 0x1f),
-        expand5to8((p >> 6) & 0x1f),
-        expand5to8(p & 0x1f),
+/// `OVERLAY_BIT` of the Falcon 16-bit screen word — bit 5, the one bit
+/// that is not a colour gun (`vdi/vdi_fill.c:26`). The pseudo-palette never
+/// sets it (`set_color16`, `vdi_col.c:601-614`); `v_clrwk`'s
+/// `memset(v_bas_ad, 0xff, …)` does (`vdi_control.c:610-618`), and
+/// `pixelread` hands it back unmasked (`vdi_fill.c:671-681`).
+const OVERLAY_BIT: u16 = 0x0020;
+
+/// Where the device pixel keeps [`OVERLAY_BIT`]: the X byte of XRGB8888,
+/// which the display does not show (`hal::framebuffer` module doc). The bit
+/// is replicated into all eight X bits, exactly as each 5-bit gun is
+/// replicated into its 8-bit byte, so the stored pixel is a pure bitwise
+/// expansion of the 16-bit word and every bitwise operation on the 32-bit
+/// store — the sixteen `vro_cpyfm` logic ops of [`raster_op`], the `~`
+/// of `WM_XOR` — is the same operation on the 16-bit word.
+const OVERLAY_X: u32 = 0xFF00_0000;
+
+/// The NewTOS device pixel: expand a 16-bit Falcon screen word
+/// (`RRRRRGGGGGOBBBBB`, O = [`OVERLAY_BIT`]) to the 32-bpp store word,
+/// 5→8 bits per gun (VIDEL DAC replication) and the overlay bit into the X
+/// byte ([`OVERLAY_X`]). Exact inverse of [`device_to_word`] for every
+/// 16-bit word, so `0xFFFF` (the cleared screen) and `0xFFDF` (pen-0 white)
+/// stay two different pixels, as on a Falcon (V11/V12, 2026-09-21).
+fn word_to_device(word: u16) -> u32 {
+    let x = if word & OVERLAY_BIT != 0 { OVERLAY_X } else { 0 };
+    x | rgb(
+        expand5to8((word >> 11) & 0x1f),
+        expand5to8((word >> 6) & 0x1f),
+        expand5to8(word & 0x1f),
     )
+}
+
+/// The inverse of [`word_to_device`]: take the top 5 bits of each gun and
+/// the top bit of the X byte back into the 16-bit word. Because the store
+/// is 5-bit-quantised per gun and the X byte is one replicated bit, this
+/// recovers every word the VDI wrote exactly — including `OVERLAY_BIT`.
+fn device_to_word(px: u32) -> u16 {
+    let r5 = ((px >> 19) & 0x1f) as u16;
+    let g5 = ((px >> 11) & 0x1f) as u16;
+    let b5 = ((px >> 3) & 0x1f) as u16;
+    let o = ((px >> 26) & OVERLAY_BIT as u32) as u16; // bit 31 → bit 5
+    (r5 << 11) | (g5 << 6) | b5 | o
 }
 
 /// Squared RGB distance between two packed XRGB colours (for the
@@ -234,8 +270,9 @@ impl VdiScreen {
         // Resolve the PEL through the *active* workstation pseudo-palette at
         // the write point (EmuTOS `CUR_WORK->ext->palette`,
         // `vdi_line.c:459-460`), expanding the 5-bit guns to 8 bits. `pel` is
-        // a `u8`, so it always indexes the 256-entry array in bounds.
-        pal555_to_xrgb(ACTIVE_PALETTE[pel as usize].load(Ordering::Relaxed))
+        // a `u8`, so it always indexes the 256-entry array in bounds. A pen
+        // word never has `OVERLAY_BIT` set, so a drawn pixel has X = 0x00.
+        word_to_device(ACTIVE_PALETTE[pel as usize].load(Ordering::Relaxed))
     }
 
     /// Clean the cache lines covering the inclusive pixel rectangle
@@ -300,18 +337,22 @@ impl VdiScreen {
         }
     }
 
-    /// Complement the RGB of one pixel in place (VDI `WM_XOR`).
+    /// Complement one pixel in place (VDI `WM_XOR`).
     ///
     /// **XOR design decision (chunky-framebuffer reimplementation).** Our
     /// device is a chunky 32-bpp XRGB framebuffer with no stored palette
     /// index, so the planar Atari's index-XOR does not apply directly. We
     /// reimplement the *observable contract* of `WM_XOR`: EmuTOS' own
-    /// truecolor VDI driver XORs the **stored colour value** — it writes
-    /// `*work = ~temp` (`vdi_line.c:494`, `draw_rect_common`) and
-    /// `*q = ~*q` (`vdi_textblit.c`, glyph blit), i.e. it complements the
-    /// destination and *ignores the pen*. We do exactly that: invert the
-    /// low 24 RGB bits (keeping the top X/alpha byte so the pixel stays
-    /// opaque).
+    /// truecolor VDI driver XORs the **stored screen word** — it writes
+    /// `*work = ~temp` (`swblit_rect_common16`, `vdi_line.c:494,501`),
+    /// `*addr = ~*addr` (`draw_line16`, `vdi_line.c:1670,1730`) and
+    /// `*q = ~*q` (the glyph blitters, `vdi_textblit.c:806,1120`), i.e. it
+    /// complements the whole 16-bit destination word — colour guns *and*
+    /// `OVERLAY_BIT` — and *ignores the pen*. We do exactly that: complement
+    /// all 32 bits of the stored pixel, which is the same operation on the
+    /// 16-bit word because the store is a bitwise expansion of it
+    /// ([`word_to_device`]): the guns flip, and the X byte flips with the
+    /// overlay bit (`0xFFDF` ↔ `0x0020`, `0xFFFF` ↔ `0x0000`).
     ///
     /// This is chosen over a `dest ^= fg_rgb` scheme deliberately:
     /// (1) it is **self-inverse** — two applications restore the original
@@ -331,7 +372,7 @@ impl VdiScreen {
         unsafe {
             let p = fb.pixels().add(off);
             let v = p.read_volatile();
-            p.write_volatile(v ^ 0x00FF_FFFF);
+            p.write_volatile(!v);
         }
     }
 }
@@ -395,32 +436,24 @@ impl RasterBackend for VdiScreen {
     }
 
     fn device_to_rgb565(&self, argb: u32) -> u16 {
-        // XRGB8888 → RGB555-in-565: keep the top 5 bits of each 8-bit gun.
-        // Five bits per gun is the *EmuTOS* truecolor colour model, not a
-        // reduction of it: `set_color16` packs `(r<<11)|(g<<6)|b` from 5-bit
-        // guns and `vq_color16` reads green back as `(rgb>>6)&0x1f`
+        // XRGB8888 → the 16-bit screen word: the top 5 bits of each 8-bit
+        // gun, plus `OVERLAY_BIT` from the X byte. Five bits per gun is the
+        // *EmuTOS* truecolor colour model, not a reduction of it:
+        // `set_color16` packs `(r<<11)|(g<<6)|b` from 5-bit guns and
+        // `vq_color16` reads green back as `(rgb>>6)&0x1f`
         // (`vdi_col.c:601-614,802-838`). Bit 5 is `OVERLAY_BIT`
-        // (`vdi_fill.c:26`), not a green LSB. The framebuffer is
-        // 5-bit-quantised, so this recovers the exact stored colour.
-        //
-        // **VDI-OVL-001 (2026-09-06).** What it cannot recover is
-        // `OVERLAY_BIT` itself: it carries no colour, so the 24-bit device
-        // pixel has nowhere to keep it, and the only producer of an
-        // overlay-set word — `v_clrwk`'s `memset(…, 0xff, …)`
-        // (`vdi_control.c:600-618`) — lands on the same `0xFFFFFFFF` as a
-        // pen-0 fill (measured, `board-qemu-virt`). Observable consequences
-        // and the fix options are in `docs/STATUS.md` (2026-09-06).
-        let r5 = ((argb >> 19) & 0x1f) as u16;
-        let g5 = ((argb >> 11) & 0x1f) as u16;
-        let b5 = ((argb >> 3) & 0x1f) as u16;
-        (r5 << 11) | (g5 << 6) | b5
+        // (`vdi_fill.c:26`), not a green LSB; the X byte carries it
+        // (`OVERLAY_X`), so `v_clrwk`'s `0xFFFF` and pen-0's `0xFFDF` come
+        // back as the two different words a Falcon reports (VDI-OVL-001,
+        // closed by V11/V12, 2026-09-21).
+        device_to_word(argb)
     }
 
     fn rgb565_to_device(&self, px: u16) -> u32 {
-        // RGB555-in-565 word → XRGB8888, 5→8-bit gun replication — the same
-        // expansion the draw path uses, so a restored pixel equals the drawn
-        // one bit-for-bit.
-        pal555_to_xrgb(px)
+        // 16-bit screen word → XRGB8888, 5→8-bit gun replication plus the
+        // overlay bit into the X byte — the same expansion the draw path
+        // uses, so a restored pixel equals the drawn one bit-for-bit.
+        word_to_device(px)
     }
 
     fn read_pixel(&self, x: i16, y: i16) -> Pel {
@@ -441,7 +474,7 @@ impl RasterBackend for VdiScreen {
         let mut best = 0u8;
         let mut best_d = u32::MAX;
         for (i, entry) in ACTIVE_PALETTE.iter().enumerate() {
-            let d = rgb_dist(packed, pal555_to_xrgb(entry.load(Ordering::Relaxed)) & 0x00FF_FFFF);
+            let d = rgb_dist(packed, word_to_device(entry.load(Ordering::Relaxed)) & 0x00FF_FFFF);
             if d < best_d {
                 best_d = d;
                 best = i as u8;
@@ -468,14 +501,11 @@ impl RasterBackend for VdiScreen {
         // VideoCore line may carry past `width` is left alone, as the default
         // left it; it is never scanned out.
         //
-        // **VDI-OVL-001 (2026-09-06).** Both this override and the default lose
-        // `OVERLAY_BIT`: `0xFFFF` (the cleared screen) and `0xFFDF` (the
-        // pseudo-palette's white) both fold to `0xFFFFFF`, because the bit
-        // carries no colour and the 24-bit device pixel has nowhere to keep it.
-        // A Falcon keeps the two words apart; NewTOS does not. This is a
-        // property of `rgb565_to_device`, not of the bulk fill — see
-        // [`RasterBackend::device_to_rgb565`] and `docs/STATUS.md`
-        // (2026-09-06).
+        // The word arrives with `OVERLAY_BIT` set (`0xFFFF`), and
+        // `rgb565_to_device` keeps it in the X byte: the cleared screen is
+        // `0xFF_FFFFFF`, a pen-0 fill `0x00_FFFFFF` — the same colour on the
+        // display, two different words to `v_get_pixel`, `vro_cpyfm` and
+        // `v_contourfill`, as on a Falcon (V11/V12, 2026-09-21).
         let fb = active_fb();
         fb.clear(self.rgb565_to_device(word));
         // Then the flush the default performs, i.e. this backend's normal
@@ -828,7 +858,10 @@ impl RasterBackend for VdiScreen {
 /// semantics EmuTOS' truecolor `vro_cpyfm16` uses. Note the Atari planar
 /// names invert against a truecolor screen: `ALL_WHITE` (0) writes `0`
 /// (black), `ALL_BLACK` (15) writes `!0` (white) — the op acts on bits,
-/// not palette indices.
+/// not palette indices. Applied to the 32-bit store it is the same op on
+/// the 16-bit screen word, overlay bit included, because the store is a
+/// bitwise expansion of that word ([`word_to_device`]): `ALL_BLACK` yields
+/// `0xFF_FFFFFF` = `0xFFFF`, the cleared-screen word, as on a Falcon.
 #[inline]
 pub fn raster_op(op: u8, s: u32, d: u32) -> u32 {
     match op & 0x0f {

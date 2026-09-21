@@ -1,0 +1,26 @@
+cargo test -p tos-api --test vdi_reference_overlay_bit  --  tree at HEAD 194b057 before the V12 change
+(the auditor's red tests, tos-api/tests/vdi_reference_overlay_bit.rs, 2026-09-21 09:0x; verbatim tail)
+
+thread 'overlay_bit::the_device_pixel_round_trips_the_cleared_word_0xffff' panicked at tos-api/tests/vdi_reference/overlay_bit.rs:471:5:
+assertion `left == right` failed: the cleared-screen word 0xFFFF (OVERLAY_BIT set, vdi_fill.c:26; memset 0xff in v_clrwk, vdi_control.c:610-618) must survive the 16->32->16 round trip; the kernel's XRGB8888 pixel has no place for bit 5 and folds it onto the pen-0 word 0xFFDF
+  left: 65503
+ right: 65535
+
+---- overlay_bit::v_clrwk_then_v_get_pixel_reports_the_falcon_word_0xffff stdout ----
+thread 'overlay_bit::v_clrwk_then_v_get_pixel_reports_the_falcon_word_0xffff' panicked at tos-api/tests/vdi_reference/overlay_bit.rs:495:9:
+assertion `left == right` failed: case 54: v_get_pixel(5,5) after v_clrwk -- EmuTOS Falcon truecolor reference (EMUTOS14-VDI-all-falcontc.BIN) = 0xFFFF, NewTOS = 0xFFDF
+  left: 65503
+ right: 65535
+
+---- overlay_bit::a_cleared_pixel_and_a_pen_0_pixel_differ_by_overlay_bit_alone stdout ----
+thread 'overlay_bit::a_cleared_pixel_and_a_pen_0_pixel_differ_by_overlay_bit_alone' panicked at tos-api/tests/vdi_reference/overlay_bit.rs:520:5:
+assertion `left == right` failed: cleared 0xFFDF and pen-0 0xFFDF must differ by OVERLAY_BIT (0x0020) alone
+  left: 0
+ right: 32
+
+failures:
+    overlay_bit::a_cleared_pixel_and_a_pen_0_pixel_differ_by_overlay_bit_alone
+    overlay_bit::the_device_pixel_round_trips_the_cleared_word_0xffff
+    overlay_bit::v_clrwk_then_v_get_pixel_reports_the_falcon_word_0xffff
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
