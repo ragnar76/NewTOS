@@ -73,21 +73,21 @@ Die neu abgelegten Statusdateien haben Vorrang vor der alten Startempfehlung: M0
 | [A31](A31.md) | Testlücke: Rechteckliste über save/restore_windows | Testlücke | P2 | OFFEN | A14 |
 | [A32](A32.md) | Abnahme der Rechtecklisten-Reparatur auf echter Hardware | Hardwareabnahme | P1 | OFFEN | A13, A14, A15 |
 | [A33](A33.md) | wind_delete setzt die Fensterrechtecke nicht zurück | Belegter Defekt | P2 | OFFEN | A16 |
-| [V01](V01.md) | vq_extnd(0): Bildschirmgrenzen | Geräteunterschied / Test | P2 | OFFEN | — |
-| [V02](V02.md) | vq_extnd(0): Farbanzahl | Geräteunterschied / Test | P2 | OFFEN | — |
+| [V01](V01.md) | vq_extnd(0): Bildschirmgrenzen | Geräteunterschied / Test | P2 | ERLEDIGT | — |
+| [V02](V02.md) | vq_extnd(0): Farbanzahl | Geräteunterschied / Test | P2 | ERLEDIGT | — |
 | [V03](V03.md) | vq_extnd(0): Palettenpräzision | Geräteunterschied / Quellenprüfung | P2 | ERLEDIGT | — |
-| [V04](V04.md) | vq_extnd(1): Planes | Geräteunterschied / Test | P2 | OFFEN | — |
-| [V05](V05.md) | vq_extnd(1): Video-Lookup-Tabelle | Geräteunterschied / Test | P2 | OFFEN | — |
-| [V06](V06.md) | vq_extnd(1): Clip-Rechteck nach Ein/Aus | Geräteunterschied / Test | P1 | OFFEN | — |
-| [V07](V07.md) | vsl_color: Bereichsgrenze aus numcolors | Geräteunterschied / Test | P2 | OFFEN | — |
-| [V08](V08.md) | vsm_color: Bereichsgrenze aus numcolors | Geräteunterschied / Test | P2 | OFFEN | — |
-| [V09](V09.md) | vq_color: Bereichsgrenze aus numcolors | Geräteunterschied / Test | P2 | OFFEN | — |
-| [V10](V10.md) | v_get_pixel: Rückgabeformat Palette gegen Truecolor | Geräteunterschied / Test | P1 | OFFEN | — |
+| [V04](V04.md) | vq_extnd(1): Planes | Geräteunterschied / Test | P2 | ERLEDIGT | — |
+| [V05](V05.md) | vq_extnd(1): Video-Lookup-Tabelle | Geräteunterschied / Test | P2 | ERLEDIGT | — |
+| [V06](V06.md) | vq_extnd(1): Clip-Rechteck nach Ein/Aus | Geräteunterschied / Test | P1 | ERLEDIGT | — |
+| [V07](V07.md) | vsl_color: Bereichsgrenze aus numcolors | Geräteunterschied / Test | P2 | ERLEDIGT | — |
+| [V08](V08.md) | vsm_color: Bereichsgrenze aus numcolors | Geräteunterschied / Test | P2 | ERLEDIGT | — |
+| [V09](V09.md) | vq_color: Bereichsgrenze aus numcolors | Geräteunterschied / Test | P2 | ERLEDIGT | — |
+| [V10](V10.md) | v_get_pixel: Rückgabeformat Palette gegen Truecolor | Geräteunterschied / Test | P1 | ERLEDIGT | — |
 | [V11](V11.md) | v_get_pixel: Weiß und OVERLAY_BIT isolieren | Diagnose eines bekannten Defekts | P1 | ERLEDIGT — HW OFFEN | — |
 | [V12](V12.md) | Weiß-/Overlayfehler lokal korrigieren | Bedingte Implementierung | P1 | ERLEDIGT — HW OFFEN | V11 |
-| [V13](V13.md) | vq_chcells: Textzellen aus Bildschirm und Font | Geräteunterschied / Test | P2 | OFFEN | — |
-| [V14](V14.md) | v_opnvwk: ausgegebene Gerätemetriken | Geräteunterschied / Test | P2 | OFFEN | V01, V02, V03 |
-| [V15](V15.md) | v_opnvwk: Handle-Identität statt Zahlenvergleich | Messauswertung | P2 | OFFEN | — |
+| [V13](V13.md) | vq_chcells: Textzellen aus Bildschirm und Font | Geräteunterschied / Test | P2 | ERLEDIGT | — |
+| [V14](V14.md) | v_opnvwk: ausgegebene Gerätemetriken | Geräteunterschied / Test | P2 | ERLEDIGT | V01, V02, V03 |
+| [V15](V15.md) | v_opnvwk: Handle-Identität statt Zahlenvergleich | Messauswertung | P2 | ERLEDIGT | — |
 | [R01](R01.md) | vro_cpyfm: oversized destination, D-VDI-25 | Zurückgestellte Vertragsabweichung | P3 | ZURÜCKGESTELLT | — |
 | [R02](R02.md) | vro_cpyfm: Screen → Memory messen | Messlücke / Messdesign | P1 | OFFEN | — |
 | [R03](R03.md) | vro_cpyfm: Memory → Screen messen | Messlücke / Messdesign | P1 | OFFEN | — |
