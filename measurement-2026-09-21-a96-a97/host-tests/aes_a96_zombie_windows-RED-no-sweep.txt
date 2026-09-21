@@ -1,0 +1,221 @@
+327 |         tree[idx].ob_state |= SELECTED;
+
+2852 |         top += gl_hbox();
+
+136 | pub fn form_alert(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+542 | pub fn form_do(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+798 | pub fn form_error(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+945 | pub fn form_center(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+1000 | pub fn form_dial(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1067 | pub fn form_button(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1090 | pub fn form_keybd(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+538 | pub fn fsel_input(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+545 | pub fn fsel_exinput(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+224 | pub fn menu_bar(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+887 | pub fn menu_icheck(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+896 | pub fn menu_ienable(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+908 | pub fn menu_tnormal(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+918 | pub fn menu_text(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+979 | pub fn menu_register(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+1134 | pub fn menu_popup(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1426 | pub fn menu_settings(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1697 | pub fn menu_attach(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1735 | pub fn menu_istart(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1166 | pub fn objc_draw(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1367 | pub fn objc_offset(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1391 | pub fn objc_add(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1403 | pub fn objc_delete(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1417 | pub fn objc_order(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1562 | pub fn objc_change(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1610 | pub fn objc_sysvar(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1814 | pub fn objc_edit(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2202 | pub fn objc_find(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2161 | pub fn rsrc_load(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2522 | pub fn rsrc_free(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2847 | pub fn rsrc_gaddr(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2878 | pub fn rsrc_saddr(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+2921 | pub fn rsrc_obfix(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+231 | pub fn scrp_read(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+240 | pub fn scrp_write(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+264 | pub fn scrp_clear(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+359 | pub fn shel_read(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+464 | pub fn shel_write(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+802 | pub fn shel_get(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+819 | pub fn shel_put(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+863 | pub fn shel_find(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+971 | pub fn shel_envrn(pb: &Aespb) {
+ 44 | pub(crate) struct Aespb {
+
+1022 | pub fn shel_rdef(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+1037 | pub fn shel_wdef(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3316 | pub fn wind_create(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3384 | pub fn wind_open(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3484 | pub fn wind_close(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3656 | pub fn wind_delete(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3669 | pub fn wind_get(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+3897 | pub fn wind_set(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+4114 | pub fn wind_find(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+4129 | pub fn wind_update(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+4206 | pub fn wind_calc(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+4223 | pub fn wind_new(pb: &Aespb) {
+  44 | pub(crate) struct Aespb {
+
+556 | pub fn vsc_form(pb: &Vdipb, backend: &dyn RasterBackend) {
+ 81 | pub(crate) struct Vdipb {
+
+599 | pub fn v_show_c(pb: &Vdipb, backend: &dyn RasterBackend) {
+ 81 | pub(crate) struct Vdipb {
+
+682 | pub fn vq_mouse(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+699 | pub fn vex_butv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+703 | pub fn vex_motv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+707 | pub fn vex_curv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+711 | pub fn vex_wheelv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+717 | pub fn vex_timv(pb: &Vdipb) {
+ 81 | pub(crate) struct Vdipb {
+
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.00s
+     Running tests/aes_a96_zombie_windows.rs (target/debug/deps/aes_a96_zombie_windows-c42f6558023d1c14)
+
+running 2 tests
+test a_window_the_program_left_open_is_gone_when_the_desktop_resumes ... FAILED
+test the_programs_background_tree_is_dropped_with_it ... FAILED
+
+failures:
+
+---- a_window_the_program_left_open_is_gone_when_the_desktop_resumes stdout ----
+
+thread 'a_window_the_program_left_open_is_gone_when_the_desktop_resumes' (4900935) panicked at tos-api/tests/aes_a96_zombie_windows.rs:689:5:
+assertion `left == right` failed: the dead program's window must be out of the table (wm_new, gemwmlib.c:1886-1890)
+  left: Some(0)
+ right: None
+
+---- the_programs_background_tree_is_dropped_with_it stdout ----
+
+thread 'the_programs_background_tree_is_dropped_with_it' (4900936) panicked at tos-api/tests/aes_a96_zombie_windows.rs:743:5:
+assertion `left == right` failed: the dead program's WF_NEWDESK tree must be dropped by the sweep
+  left: 4353564480
+ right: 0
+
+
+failures:
+    a_window_the_program_left_open_is_gone_when_the_desktop_resumes
+    the_programs_background_tree_is_dropped_with_it
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tos-api --test aes_a96_zombie_windows`

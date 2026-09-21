@@ -1,0 +1,37 @@
+# A96 exploration 3: ... -> DESKTOP.NAP (226,152) double-click -> TeraDesk;
+# wait, dump; double-click HARD DISC C (195,35) -> window; dump; click the
+# second menu title (70,8) to see the File menu; dump.
+200 parkbr
+1100 mark A_IDLE
+1400 move 178 104
+1600 down
+1603 up
+1608 down
+1611 up
+2000 parkbr
+2600 mark B_APPS
+2900 move 202 128
+3100 down
+3103 up
+3108 down
+3111 up
+3500 parkbr
+4100 mark C_TERADESK
+4400 move 226 152
+4600 down
+4603 up
+4608 down
+4611 up
+5000 parkbr
+7000 mark D_TERA_IDLE
+7300 move 195 35
+7500 down
+7503 up
+7508 down
+7511 up
+8000 parkbr
+8600 mark E_TERA_WINDOW
+8900 move 70 8
+9100 down
+9103 up
+9600 mark F_TERA_MENU

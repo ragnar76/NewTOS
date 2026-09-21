@@ -1,0 +1,1609 @@
+diff --git a/kernel/src/desk/main.rs b/kernel/src/desk/main.rs
+index 33f1c7e..4fb0c1d 100644
+--- a/kernel/src/desk/main.rs
++++ b/kernel/src/desk/main.rs
+@@ -569,6 +569,20 @@ fn desktop_relinquish() {
+ /// The **resume** half of [`run_gem_app`]: rebuild the desktop exactly as it was
+ /// before the launch (EmuTOS `deskmain.c:2124-2171` + `gemshlib.c:606,710-727`).
+ fn desktop_resume() {
++    // The shell loop's sweep after the program — `sh_ldapp`: `unsync
++    // (&wind_spb)` + `wm_new()` (`gemshlib.c:668-669,676-677`), which in
++    // EmuTOS runs between the child's `Pterm` and the desktop's restart. It
++    // is a shell-loop step, not a desktop one (like everything in this
++    // function, gap G1), and the built-in desktop's launch path bypasses the
++    // shell loop, so it has to be taken here or not at all (A96). The
++    // variant keeps the windows this desktop still owns: EmuTOS's `wm_new`
++    // takes those too and the restarted desktop rebuilds them from `cnx_get`
++    // (`deskmain.c:2055`), which this desktop, resuming in place, has no
++    // counterpart of (gap G2, below). Every other window — the program's, or
++    // a `Pexec` descendant's — is closed and deleted, its locks released,
++    // its `WF_NEWDESK` tree dropped; nothing of a program that has ended
++    // stays in the AES table to be composited over the desktop.
++    tos_api::aes::window::wm_new_keep_desktop();
+     // Re-enter the AES — EmuTOS `deskmain.c:1953`, `gl_apid = appl_init();`,
+     // the first statement of the desktop it re-enters after every program
+     // (`sh_main` → `sh_ldapp`'s DESKTOP arm → `deskstart`,
+diff --git a/tos-api/src/aes/object.rs b/tos-api/src/aes/object.rs
+index 90ebbb5..b08b0a6 100644
+--- a/tos-api/src/aes/object.rs
++++ b/tos-api/src/aes/object.rs
+@@ -19,7 +19,7 @@
+ use core::sync::atomic::{AtomicI16, Ordering};
+ 
+ use super::Aespb;
+-use crate::bdos::process::{current_abi, Abi};
++use crate::bdos::process::{current_abi, usermem, Abi};
+ use crate::host::host;
+ use crate::vdi::backend::{ClipRect, MonoBits, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
+ 
+@@ -89,6 +89,12 @@ pub(crate) struct ObjTree {
+     /// from `abi`: a native LP64 app runs at EL0 yet has `abi == Lp64`, so the
+     /// origin must be tracked explicitly (Memory `aes-object-abi-is-tree-abi`).
+     kernel_built: bool,
++    /// The process slot whose address space the tree lives in, when the tree
++    /// is read **outside** that process's trap ([`Self::app_owned`], A97):
++    /// every address the accessor follows is then resolved through that
++    /// slot's mapping ([`Self::ua`]). `None` reads raw — the caller's own
++    /// view, right inside the owner's trap and for a kernel-built tree.
++    owner: Option<usize>,
+ }
+ 
+ impl ObjTree {
+@@ -101,7 +107,7 @@ impl ObjTree {
+     /// `*const Object` + `tree.add(i)` code assumed).
+     #[inline]
+     pub(crate) fn new(base: *const Object) -> Self {
+-        Self { base: base as u64, abi: current_abi(), kernel_built: false }
++        Self { base: base as u64, abi: current_abi(), kernel_built: false, owner: None }
+     }
+ 
+     /// Build an accessor over a **kernel-built** tree at `base`, forcing the
+@@ -120,7 +126,7 @@ impl ObjTree {
+     /// passed to a getter/setter is in range.
+     #[inline]
+     pub(crate) fn lp64(base: *const Object) -> Self {
+-        Self { base: base as u64, abi: Abi::Lp64, kernel_built: true }
++        Self { base: base as u64, abi: Abi::Lp64, kernel_built: true, owner: None }
+     }
+ 
+     /// Build an accessor over an **app-provided** tree at `base`, reading fields
+@@ -145,7 +151,20 @@ impl ObjTree {
+     /// and every index passed to a getter/setter is in range.
+     #[inline]
+     pub(crate) fn app_at(base: *const Object, abi: Abi) -> Self {
+-        Self { base: base as u64, abi, kernel_built: false }
++        Self { base: base as u64, abi, kernel_built: false, owner: None }
++    }
++
++    /// [`Self::app_at`] for a tree read **outside its owner's trap**: every
++    /// address is resolved through process slot `owner`'s mapping (A97) —
++    /// the `WF_NEWDESK` background tree, composited from other processes'
++    /// AES calls and from the kernel desktop. `owner == None` is
++    /// [`Self::app_at`].
++    ///
++    /// # Invariant
++    /// As [`Self::app_at`], in the owner's address space.
++    #[inline]
++    pub(crate) fn app_owned(base: *const Object, abi: Abi, owner: Option<usize>) -> Self {
++        Self { base: base as u64, abi, kernel_built: false, owner }
+     }
+ 
+     /// The tree's ABI — the width at which its `ob_spec`-pointed sub-structs
+@@ -174,10 +193,7 @@ impl ObjTree {
+ 
+     #[inline]
+     fn stride(self) -> u64 {
+-        match self.abi {
+-            Abi::Lp64 => 32,
+-            Abi::Ilp32 => 24,
+-        }
++        record_stride(self.abi)
+     }
+     #[inline]
+     fn spec_off(self) -> u64 {
+@@ -193,30 +209,57 @@ impl ObjTree {
+             Abi::Ilp32 => 16,
+         }
+     }
++    /// The tree VA of field `off` of record `i`.
+     #[inline]
+-    fn ptr(self, i: i16, off: u64) -> *mut u8 {
+-        (self.base + i as u64 * self.stride() + off) as *mut u8
++    fn field_va(self, i: i16, off: u64) -> u64 {
++        self.base + i as u64 * self.stride() + off
++    }
++    /// Where to **read** field `off` of record `i`: the field itself, or —
++    /// for an owned tree ([`Self::owner`]) — its kernel alias in the owner's
++    /// mapping, or the same field of [`NIL_RECORD`] when the owner has no
++    /// mapping there. A field never straddles a page: every offset is even
++    /// and the pointer-wide `ob_spec` sits at a pointer-aligned offset of a
++    /// record whose base the caller aligned for its own accesses.
++    #[inline]
++    fn rd_ptr(self, i: i16, off: u64) -> *const u8 {
++        match self.ua(self.field_va(i, off)) {
++            Some(a) => a as *const u8,
++            None => NIL_RECORD[off as usize..].as_ptr(),
++        }
++    }
++    /// Where to **write** field `off` of record `i`, or `None` when the
++    /// owner's mapping has nothing there (the write is dropped: the
++    /// composite never writes, so this only guards a misuse).
++    #[inline]
++    fn wr_ptr(self, i: i16, off: u64) -> Option<*mut u8> {
++        self.ua(self.field_va(i, off)).map(|a| a as *mut u8)
+     }
+     #[inline]
+     fn rd_i16(self, i: i16, off: u64) -> i16 {
+         // SAFETY: ObjTree invariant — `base` is a valid OBJECT array and `i`
+         // is in range; a WORD field is 2 readable bytes (unaligned-safe).
+-        unsafe { (self.ptr(i, off) as *const i16).read_unaligned() }
++        // For an owned tree the address is the owner's page alias or the
++        // NIL record (`rd_ptr`).
++        unsafe { (self.rd_ptr(i, off) as *const i16).read_unaligned() }
+     }
+     #[inline]
+     fn wr_i16(self, i: i16, off: u64, v: i16) {
+-        // SAFETY: as `rd_i16`; the record is writable (GEM contract).
+-        unsafe { (self.ptr(i, off) as *mut i16).write_unaligned(v) }
++        if let Some(p) = self.wr_ptr(i, off) {
++            // SAFETY: as `rd_i16`; the record is writable (GEM contract).
++            unsafe { (p as *mut i16).write_unaligned(v) }
++        }
+     }
+     #[inline]
+     fn rd_u16(self, i: i16, off: u64) -> u16 {
+         // SAFETY: as `rd_i16`.
+-        unsafe { (self.ptr(i, off) as *const u16).read_unaligned() }
++        unsafe { (self.rd_ptr(i, off) as *const u16).read_unaligned() }
+     }
+     #[inline]
+     fn wr_u16(self, i: i16, off: u64, v: u16) {
+-        // SAFETY: as `wr_i16`.
+-        unsafe { (self.ptr(i, off) as *mut u16).write_unaligned(v) }
++        if let Some(p) = self.wr_ptr(i, off) {
++            // SAFETY: as `wr_i16`.
++            unsafe { (p as *mut u16).write_unaligned(v) }
++        }
+     }
+ 
+     #[inline]
+@@ -308,8 +351,9 @@ impl ObjTree {
+     /// resolves INDIRECT; this raw reader exists only for that resolution.
+     #[inline]
+     fn raw_spec(self, i: i16) -> u64 {
+-        let p = self.ptr(i, self.spec_off());
+-        // SAFETY: ObjTree invariant; ob_spec is 8 (LP64) / 4 (ILP32) bytes.
++        let p = self.rd_ptr(i, self.spec_off());
++        // SAFETY: ObjTree invariant; ob_spec is 8 (LP64) / 4 (ILP32) bytes
++        // (`rd_ptr`: the field, its owner alias, or the NIL record's).
+         unsafe {
+             match self.abi {
+                 Abi::Lp64 => (p as *const u64).read_unaligned(),
+@@ -339,13 +383,19 @@ impl ObjTree {
+         if self.flags(i) & INDIRECT == 0 {
+             return raw;
+         }
+-        // INDIRECT: `raw` is the VA of a cell holding the real spec at tree width.
++        // INDIRECT: `raw` is the VA of a cell holding the real spec at tree
++        // width — read through the owner's mapping for an owned tree; a cell
++        // the owner has no mapping for is the "no spec" sentinel, so the
++        // object is neither dereferenced nor drawn.
++        let Some(cell) = self.ua(raw) else {
++            return self.spec_none();
++        };
+         // SAFETY: GEM contract — an INDIRECT object's ob_spec points at a
+         // readable spec cell, 8 (LP64) / 4 (ILP32) bytes.
+         unsafe {
+             match self.abi {
+-                Abi::Lp64 => (raw as *const u64).read_unaligned(),
+-                Abi::Ilp32 => (raw as *const u32).read_unaligned() as u64,
++                Abi::Lp64 => (cell as *const u64).read_unaligned(),
++                Abi::Ilp32 => (cell as *const u32).read_unaligned() as u64,
+             }
+         }
+     }
+@@ -385,7 +435,7 @@ impl ObjTree {
+                 } else {
+                     // SAFETY: the ob_spec of a *TEXT object is a TEDINFO packed
+                     // at the tree's ABI width (INDIRECT already resolved).
+-                    unsafe { TedInfo::read_abi(spec, self.abi).te_thickness }
++                    unsafe { TedInfo::read_abi(spec, self).te_thickness }
+                 }
+             }
+             G_BOX | G_BOXCHAR | G_IBOX => ((self.spec(obj) >> 16) as u8 as i8) as i16,
+@@ -409,6 +459,106 @@ impl ObjTree {
+     }
+ }
+ 
++// ── Reading an app tree through its owner's mapping (A97) ────────────────
++//
++// Every pointer the object drawer follows — the OBJECT records, an INDIRECT
++// spec cell, the TEDINFO/BITBLK/ICONBLK/CICON/USERBLK sub-structs, the strings
++// and the mask/data rasters they point at — is a **user VA of the process
++// that built the tree**. Inside that process's own trap the raw dereference
++// is right: its `TTBR0` is installed. The desktop-background tree an EL0 app
++// registers with `wind_set(DESKWH, WF_NEWDESK, …)` is the one tree the AES
++// draws **outside** its owner's trap: `w_drawdesk` runs from every other
++// process's `wind_open`/`wind_close`/move (a `Pexec` child compositing over
++// its parent's background) and from the kernel desktop's own repaint. NewTOS
++// gives every process its own `TTBR0` with the TPAs at the same low VAs
++// (`kernel/src/arch/aarch64/el0.rs`, `bdos/process/mmu.rs`), so a raw read
++// there goes through whichever tables happen to be installed.
++//
++// [`ObjTree::owner`] therefore names the slot whose mapping the tree lives
++// in, and every user address the drawer follows goes through [`ObjTree::ua`]
++// / [`ObjTree::ua_span`]: with an owner, the kernel high-half alias of the
++// page the process was handed — `usermem::resolve_kva`, the same authority
++// XBIOS `Setscreen` uses for an address a program passes back
++// (`xbios/screen.rs::caller_base_to_kva`) and `WF_NAME`/`WF_INFO` use for the
++// title pointer (A83, `window.rs::LiveStr`); without one, the address itself
++// (the raw, trap-time view every other accessor has always had). A VA the
++// owner has no mapping for reads as nothing: a NIL record ([`NIL_RECORD`]),
++// a zero field, an empty string, a skipped raster. Nothing is dereferenced
++// through `TTBR0`, nothing is executed in a foreign address space
++// ([`ob_user`] defers the callout when the tree's owner is not the current
++// process). [`crate::aes::window::draw_desk_tree`] builds such an accessor
++// through [`render_tree_app`] with the owner recorded at registration.
++
++impl ObjTree {
++    /// The address to read `va` at: `va` itself for a tree without an
++    /// owner, else the kernel high-half alias of `va` in the owner's mapping
++    /// ([`owner_kva`]); `None` when the owner has no mapping there.
++    #[inline]
++    fn ua(self, va: u64) -> Option<u64> {
++        match self.owner {
++            None => Some(va),
++            Some(slot) => owner_kva(slot, va),
++        }
++    }
++
++    /// The address to read the `len`-byte span at `va` from, or `None` if
++    /// any page of it is unmapped in the owner's table **or** the alias is
++    /// not one contiguous run. Blocks are page-aligned and page-rounded,
++    /// with a physically contiguous alias (`usermem::Block`, `map_pa +
++    /// offset`), so checking the first page and every page boundary the
++    /// span crosses establishes that the whole span is readable at
++    /// `alias(va) + offset`. Without an owner the span is `va` itself.
++    fn ua_span(self, va: u64, len: u64) -> Option<u64> {
++        let Some(slot) = self.owner else {
++            return Some(va);
++        };
++        let base = owner_kva(slot, va)?;
++        let page = usermem::PAGE_SIZE;
++        let end = va.checked_add(len)?;
++        let mut p = (va | (page - 1)).wrapping_add(1); // first page boundary above `va`
++        while p < end {
++            if owner_kva(slot, p)? != base.wrapping_add(p - va) {
++                return None;
++            }
++            p = p.wrapping_add(page);
++        }
++        Some(base)
++    }
++}
++
++/// The kernel high-half alias of user VA `va` in process `slot`'s mapping —
++/// [`crate::aes::window::owner_kva`], the one seam both the frame builder
++/// (A83) and the object drawer resolve through; the host tests substitute a
++/// resolver over host buffers there.
++#[inline]
++fn owner_kva(slot: usize, va: u64) -> Option<u64> {
++    super::window::owner_kva(slot, va)
++}
++
++/// A record every reader of an unresolvable OBJECT address is pointed at: a
++/// leaf (`ob_next`/`ob_head`/`ob_tail` = `NIL`) of type 0, no flags, no
++/// state, `ob_spec` 0, no extent — drawn as nothing, walked as the end of
++/// a sibling chain. 32 bytes cover both record widths.
++static NIL_RECORD: [u8; 32] = {
++    let mut r = [0u8; 32];
++    r[0] = 0xFF; // ob_next = -1
++    r[1] = 0xFF;
++    r[2] = 0xFF; // ob_head = -1
++    r[3] = 0xFF;
++    r[4] = 0xFF; // ob_tail = -1
++    r[5] = 0xFF;
++    r
++};
++
++/// The stride of an OBJECT record at `abi` width.
++#[inline]
++pub(crate) fn record_stride(abi: Abi) -> u64 {
++    match abi {
++        Abi::Lp64 => 32,
++        Abi::Ilp32 => 24,
++    }
++}
++
+ // Graphic types (`obdefs.h`).
+ const G_BOX: u16 = 20;
+ const G_TEXT: u16 = 21;
+@@ -517,15 +667,17 @@ pub struct IconBlk {
+ // per pointer. The native `TedInfo`/`BitBlk`/`IconBlk` structs above are the
+ // LP64 layout, so a plain `&*(spec as *const TedInfo)` misreads an ILP32 blob.
+ //
+-// `*::read_abi(base, abi)` materialises the native struct by reading each field
++// `*::read_abi(base, t)` materialises the native struct by reading each field
+ // at its ABI-correct offset with `read_unaligned`; pointer fields are 8 bytes
+-// LP64 / 4 bytes zero-extended ILP32 (a user VA reachable via the active TTBR0,
+-// exactly like the OBJECT tree and the string/bitmap data they point at). For
+-// an LP64 base the offsets equal the native struct, so the materialised value
+-// is byte-identical to the old direct dereference — LP64 rendering is unchanged.
++// LP64 / 4 bytes zero-extended ILP32 (a user VA — reachable via the active
++// TTBR0 inside the owner's trap, through the owner's mapping for an owned
++// tree, A97 — exactly like the OBJECT tree and the string/bitmap data they
++// point at). For an LP64 base the offsets equal the native struct, so the
++// materialised value is byte-identical to the old direct dereference — LP64
++// rendering is unchanged.
+ //
+-// The `abi` argument is the **tree's** [`ObjTree::abi`], not `current_abi()`:
+-// a kernel-built (`ObjTree::lp64`) tree points at LP64 sub-structs even while an
++// The width is the **tree's** [`ObjTree::abi`], not `current_abi()`: a
++// kernel-built (`ObjTree::lp64`) tree points at LP64 sub-structs even while an
+ // ILP32 app is current, so its readers must use LP64 offsets.
+ 
+ /// Pointer-field width for `abi`: 8 bytes LP64, 4 bytes ILP32. The leading
+@@ -538,33 +690,42 @@ fn abi_ptr_size(abi: Abi) -> u64 {
+     }
+ }
+ 
+-/// Read a sub-struct pointer field at `off` from `base` at the given ABI width,
+-/// zero-extending an ILP32 (4-byte) pointer to a native VA.
++/// Read a sub-struct pointer field at `off` from `base` at the tree's ABI
++/// width, zero-extending an ILP32 (4-byte) pointer to a native VA. For an
++/// owned tree the field is read through the owner's mapping; a field the
++/// owner has no mapping for reads as a NULL pointer (A97).
+ ///
+ /// # Safety
+ /// `base + off` addresses a readable pointer field of the sub-struct (the GEM
+ /// caller's contract for a valid `ob_spec` sub-struct), sized 8 (LP64) / 4
+ /// (ILP32) bytes.
+ #[inline]
+-unsafe fn read_abi_ptr(base: u64, off: u64, abi: Abi) -> u64 {
+-    let p = (base + off) as *const u8;
++unsafe fn read_abi_ptr(t: ObjTree, base: u64, off: u64) -> u64 {
++    let Some(p) = t.ua(base + off) else {
++        return 0;
++    };
++    let p = p as *const u8;
+     // SAFETY: caller's contract — `base + off` is a readable pointer field.
+     unsafe {
+-        match abi {
++        match t.abi() {
+             Abi::Lp64 => (p as *const u64).read_unaligned(),
+             Abi::Ilp32 => (p as *const u32).read_unaligned() as u64,
+         }
+     }
+ }
+ 
+-/// Read a sub-struct WORD field at `off` from `base`.
++/// Read a sub-struct WORD field at `off` from `base` — through the owner's
++/// mapping for an owned tree, 0 for a field it has no mapping for (A97).
+ ///
+ /// # Safety
+ /// `base + off` addresses a readable 2-byte WORD field of the sub-struct.
+ #[inline]
+-unsafe fn read_abi_word(base: u64, off: u64) -> i16 {
++unsafe fn read_abi_word(t: ObjTree, base: u64, off: u64) -> i16 {
++    let Some(p) = t.ua(base + off) else {
++        return 0;
++    };
+     // SAFETY: caller's contract — `base + off` is a readable 2-byte WORD field.
+-    unsafe { ((base + off) as *const i16).read_unaligned() }
++    unsafe { (p as *const i16).read_unaligned() }
+ }
+ 
+ /// Write a pointer field at `off` in `base` at the given ABI width (the inverse
+@@ -604,17 +765,17 @@ impl BitBlk {
+     /// `base` is the valid `ob_spec` of a G_IMAGE object — a BITBLK packed at
+     /// `abi` width.
+     #[inline]
+-    unsafe fn read_abi(base: u64, abi: Abi) -> BitBlk {
+-        let w = abi_ptr_size(abi); // first WORD offset
+-        // SAFETY: `base` is a valid BITBLK packed at `abi` width (caller's contract).
++    unsafe fn read_abi(base: u64, t: ObjTree) -> BitBlk {
++        let w = abi_ptr_size(t.abi()); // first WORD offset
++        // SAFETY: `base` is a valid BITBLK packed at the tree's width (caller's contract).
+         unsafe {
+             BitBlk {
+-                bi_pdata: read_abi_ptr(base, 0, abi),
+-                bi_wb: read_abi_word(base, w),
+-                bi_hl: read_abi_word(base, w + 2),
+-                bi_x: read_abi_word(base, w + 4),
+-                bi_y: read_abi_word(base, w + 6),
+-                bi_color: read_abi_word(base, w + 8),
++                bi_pdata: read_abi_ptr(t, base, 0),
++                bi_wb: read_abi_word(t, base, w),
++                bi_hl: read_abi_word(t, base, w + 2),
++                bi_x: read_abi_word(t, base, w + 4),
++                bi_y: read_abi_word(t, base, w + 6),
++                bi_color: read_abi_word(t, base, w + 8),
+             }
+         }
+     }
+@@ -629,23 +790,23 @@ impl TedInfo {
+     /// `base` is the valid `ob_spec` of a *TEXT object — a TEDINFO packed at
+     /// `abi` width.
+     #[inline]
+-    unsafe fn read_abi(base: u64, abi: Abi) -> TedInfo {
+-        let ps = abi_ptr_size(abi);
++    unsafe fn read_abi(base: u64, t: ObjTree) -> TedInfo {
++        let ps = abi_ptr_size(t.abi());
+         let w = 3 * ps; // first WORD offset
+-        // SAFETY: `base` is a valid TEDINFO packed at `abi` width (caller's contract).
++        // SAFETY: `base` is a valid TEDINFO packed at the tree's width (caller's contract).
+         unsafe {
+             TedInfo {
+-                te_ptext: read_abi_ptr(base, 0, abi),
+-                te_ptmplt: read_abi_ptr(base, ps, abi),
+-                te_pvalid: read_abi_ptr(base, 2 * ps, abi),
+-                te_font: read_abi_word(base, w),
+-                te_junk1: read_abi_word(base, w + 2),
+-                te_just: read_abi_word(base, w + 4),
+-                te_color: read_abi_word(base, w + 6),
+-                te_junk2: read_abi_word(base, w + 8),
+-                te_thickness: read_abi_word(base, w + 10),
+-                te_txtlen: read_abi_word(base, w + 12),
+-                te_tmplen: read_abi_word(base, w + 14),
++                te_ptext: read_abi_ptr(t, base, 0),
++                te_ptmplt: read_abi_ptr(t, base, ps),
++                te_pvalid: read_abi_ptr(t, base, 2 * ps),
++                te_font: read_abi_word(t, base, w),
++                te_junk1: read_abi_word(t, base, w + 2),
++                te_just: read_abi_word(t, base, w + 4),
++                te_color: read_abi_word(t, base, w + 6),
++                te_junk2: read_abi_word(t, base, w + 8),
++                te_thickness: read_abi_word(t, base, w + 10),
++                te_txtlen: read_abi_word(t, base, w + 12),
++                te_tmplen: read_abi_word(t, base, w + 14),
+             }
+         }
+     }
+@@ -660,26 +821,26 @@ impl IconBlk {
+     /// `base` is the valid `ob_spec` of a G_ICON object — an ICONBLK packed at
+     /// `abi` width.
+     #[inline]
+-    unsafe fn read_abi(base: u64, abi: Abi) -> IconBlk {
+-        let ps = abi_ptr_size(abi);
++    unsafe fn read_abi(base: u64, t: ObjTree) -> IconBlk {
++        let ps = abi_ptr_size(t.abi());
+         let w = 3 * ps; // first WORD offset
+-        // SAFETY: `base` is a valid ICONBLK packed at `abi` width (caller's contract).
++        // SAFETY: `base` is a valid ICONBLK packed at the tree's width (caller's contract).
+         unsafe {
+             IconBlk {
+-                ib_pmask: read_abi_ptr(base, 0, abi),
+-                ib_pdata: read_abi_ptr(base, ps, abi),
+-                ib_ptext: read_abi_ptr(base, 2 * ps, abi),
+-                ib_char: read_abi_word(base, w),
+-                ib_xchar: read_abi_word(base, w + 2),
+-                ib_ychar: read_abi_word(base, w + 4),
+-                ib_xicon: read_abi_word(base, w + 6),
+-                ib_yicon: read_abi_word(base, w + 8),
+-                ib_wicon: read_abi_word(base, w + 10),
+-                ib_hicon: read_abi_word(base, w + 12),
+-                ib_xtext: read_abi_word(base, w + 14),
+-                ib_ytext: read_abi_word(base, w + 16),
+-                ib_wtext: read_abi_word(base, w + 18),
+-                ib_htext: read_abi_word(base, w + 20),
++                ib_pmask: read_abi_ptr(t, base, 0),
++                ib_pdata: read_abi_ptr(t, base, ps),
++                ib_ptext: read_abi_ptr(t, base, 2 * ps),
++                ib_char: read_abi_word(t, base, w),
++                ib_xchar: read_abi_word(t, base, w + 2),
++                ib_ychar: read_abi_word(t, base, w + 4),
++                ib_xicon: read_abi_word(t, base, w + 6),
++                ib_yicon: read_abi_word(t, base, w + 8),
++                ib_wicon: read_abi_word(t, base, w + 10),
++                ib_hicon: read_abi_word(t, base, w + 12),
++                ib_xtext: read_abi_word(t, base, w + 14),
++                ib_ytext: read_abi_word(t, base, w + 16),
++                ib_wtext: read_abi_word(t, base, w + 18),
++                ib_htext: read_abi_word(t, base, w + 20),
+             }
+         }
+     }
+@@ -716,17 +877,17 @@ impl Cicon {
+     /// # Safety
+     /// `base` is a valid `CICONBLK.mainlist` — a CICON packed at `abi` width.
+     #[inline]
+-    unsafe fn read_abi(base: u64, abi: Abi) -> Cicon {
+-        let ps = abi_ptr_size(abi);
+-        // SAFETY: `base` is a valid CICON packed at `abi` width (caller's contract).
++    unsafe fn read_abi(base: u64, t: ObjTree) -> Cicon {
++        let ps = abi_ptr_size(t.abi());
++        // SAFETY: `base` is a valid CICON packed at the tree's width (caller's contract).
+         unsafe {
+             Cicon {
+-                num_planes: read_abi_word(base, 0),
+-                col_data: read_abi_ptr(base, ps, abi),
+-                col_mask: read_abi_ptr(base, 2 * ps, abi),
+-                sel_data: read_abi_ptr(base, 3 * ps, abi),
+-                sel_mask: read_abi_ptr(base, 4 * ps, abi),
+-                next_res: read_abi_ptr(base, 5 * ps, abi),
++                num_planes: read_abi_word(t, base, 0),
++                col_data: read_abi_ptr(t, base, ps),
++                col_mask: read_abi_ptr(t, base, 2 * ps),
++                sel_data: read_abi_ptr(t, base, 3 * ps),
++                sel_mask: read_abi_ptr(t, base, 4 * ps),
++                next_res: read_abi_ptr(t, base, 5 * ps),
+             }
+         }
+     }
+@@ -740,14 +901,14 @@ impl Cicon {
+ /// `base` is the valid `ob_spec` of a G_CICON object — a CICONBLK packed at
+ /// `abi` width.
+ #[inline]
+-unsafe fn ciconblk_mainlist(base: u64, abi: Abi) -> u64 {
++unsafe fn ciconblk_mainlist(base: u64, t: ObjTree) -> u64 {
+     // ICONBLK = three pointers + eleven WORDs, padded to the pointer width.
+-    let head = match abi {
++    let head = match t.abi() {
+         Abi::Lp64 => 48,
+         Abi::Ilp32 => 36,
+     };
+     // SAFETY: caller's contract — `base + head` is the `mainlist` field.
+-    unsafe { read_abi_ptr(base, head, abi) }
++    unsafe { read_abi_ptr(t, base, head) }
+ }
+ 
+ /// `USERBLK` (`obdefs.h`) — the descriptor a `G_USERDEF` object's `ob_spec`
+@@ -770,13 +931,13 @@ impl UserBlk {
+     /// `base` is the valid `ob_spec` of a `G_USERDEF` object — a USERBLK packed
+     /// at `abi` width.
+     #[inline]
+-    unsafe fn read_abi(base: u64, abi: Abi) -> UserBlk {
+-        let ps = abi_ptr_size(abi);
+-        // SAFETY: `base` is a valid USERBLK packed at `abi` width (caller's contract).
++    unsafe fn read_abi(base: u64, t: ObjTree) -> UserBlk {
++        let ps = abi_ptr_size(t.abi());
++        // SAFETY: `base` is a valid USERBLK packed at the tree's width (caller's contract).
+         unsafe {
+             UserBlk {
+-                ub_code: read_abi_ptr(base, 0, abi),
+-                ub_parm: read_abi_ptr(base, ps, abi),
++                ub_code: read_abi_ptr(t, base, 0),
++                ub_parm: read_abi_ptr(t, base, ps),
+             }
+         }
+     }
+@@ -1098,8 +1259,15 @@ pub unsafe fn render_tree_lp64(
+ /// ([`ObjTree::new`]): the same privilege guard, but with the ABI recorded at
+ /// registration because the composite runs when the app may not be current.
+ ///
++/// `owner` is the process slot the tree belongs to (`Some` for an EL0
++/// registrant, `None` for a kernel one): every address the drawer follows is
++/// then resolved through that slot's mapping ([`ObjTree::app_owned`], A97)
++/// instead of being dereferenced through whichever `TTBR0` is installed, and
++/// a `G_USERDEF` callout is made only if that slot is the current process.
++///
+ /// # Safety
+-/// `tree` must be a valid `OBJECT` array (at `abi` width) with `start` in range.
++/// `tree` must be a valid `OBJECT` array (at `abi` width) with `start` in range
++/// — in the owner's address space when `owner` is `Some`.
+ #[allow(clippy::too_many_arguments)]
+ pub unsafe fn render_tree_app(
+     tree: *const Object,
+@@ -1110,12 +1278,13 @@ pub unsafe fn render_tree_app(
+     cw: i16,
+     ch: i16,
+     abi: Abi,
++    owner: Option<usize>,
+     backend: &dyn RasterBackend,
+ ) {
+     if tree.is_null() || start < 0 {
+         return;
+     }
+-    render_tree_t(ObjTree::app_at(tree, abi), start, depth, cx, cy, cw, ch, backend);
++    render_tree_t(ObjTree::app_owned(tree, abi, owner), start, depth, cx, cy, cw, ch, backend);
+ }
+ 
+ /// Shared body of [`render_tree`]/[`render_tree_lp64`]: draw the subtree rooted
+@@ -1691,15 +1860,15 @@ pub(crate) fn edit_field_t(t: ObjTree, obj: i16, in_char: i16, mut idx: i16, kin
+     // width; read/write `te_ptext`/`te_ptmplt`/`te_pvalid` at that width so an
+     // ILP32 app's edit fields (cursor/insert/backspace) work like LP64's.
+     // SAFETY: `spec` is the valid TEDINFO base of an EDITABLE field (GEM contract).
+-    let ted = unsafe { TedInfo::read_abi(spec, t.abi()) };
++    let ted = unsafe { TedInfo::read_abi(spec, t) };
+     let ted = &ted;
+     let txtlen = ted.te_txtlen.max(1);
+     let text = ted.te_ptext as *mut u8;
+-    let tmpl = read_cstr(ted.te_ptmplt);
++    let tmpl = read_cstr(t, ted.te_ptmplt);
+ 
+     match kind {
+         ED_INIT => idx = cstr_len_p(text) as i16,
+-        ED_CHAR => edit_char(ted, tmpl, text, txtlen, &mut idx, in_char),
++        ED_CHAR => edit_char(t, ted, tmpl, text, txtlen, &mut idx, in_char),
+         _ => {} // EDSTART / EDEND
+     }
+ 
+@@ -1737,8 +1906,8 @@ const SC_RIGHT: u8 = 0x4D;
+ /// Apply one keystroke to the raw text buffer at the cursor (EmuTOS
+ /// `ob_edit` EDCHAR). Handles backspace / delete / escape / left-right
+ /// arrows and validated printable insertion.
+-fn edit_char(ted: &TedInfo, tmpl: &[u8], text: *mut u8, txtlen: i16, idx: &mut i16, ch: i16) {
+-    let pvalid = read_cstr(ted.te_pvalid);
++fn edit_char(t: ObjTree, ted: &TedInfo, tmpl: &[u8], text: *mut u8, txtlen: i16, idx: &mut i16, ch: i16) {
++    let pvalid = read_cstr(t, ted.te_pvalid);
+     let c = (ch & 0xff) as u8;
+     let scan = ((ch >> 8) & 0xff) as u8;
+     let len = cstr_len_p(text) as i16;
+@@ -2363,7 +2532,7 @@ fn xor_is_ok(t: ObjTree, ob_type: u16, ob_flags: u16, ob_spec: u64, backend: &dy
+             }
+             // SAFETY: the ob_spec of a *TEXT object is a TEDINFO packed at the
+             // tree's ABI width (INDIRECT already resolved by `spec`).
+-            unsafe { TedInfo::read_abi(ob_spec, t.abi()).te_color as u16 }
++            unsafe { TedInfo::read_abi(ob_spec, t).te_color as u16 }
+         }
+         G_BOX | G_BOXCHAR => ob_spec as u16,
+         _ => return true, // G_BUTTON, G_USERDEF, G_ICON, G_CICON
+@@ -2493,7 +2662,7 @@ fn ob_user(
+ ) -> u16 {
+     // SAFETY: `spec` is the ob_spec of a G_USERDEF object — a USERBLK packed at
+     // the tree's ABI width (GEM contract).
+-    let ub = unsafe { UserBlk::read_abi(spec, t.abi()) };
++    let ub = unsafe { UserBlk::read_abi(spec, t) };
+     let pb = ParmBlk {
+         pb_tree: t.tree_ptr(),
+         pb_obj: obj,
+@@ -2534,7 +2703,19 @@ fn ob_user(
+         // "keep the state" behaviour rather than dereferencing a null basepage.
+         use crate::bdos::process::loader::{PARMBLK_SCRATCH_VA, USER_VA_BASE};
+         use crate::bdos::process::{current, slot_for, PROCESS_TABLE};
+-        match slot_for(current()) {
++        // A97: the callback is code in the **tree owner's** address space.
++        // When an owned tree is drawn while its owner is not the current
++        // process (a `Pexec` child compositing its parent's `WF_NEWDESK`
++        // background, the kernel desktop repainting), `ub_code` must not be
++        // run in the current process — the VA names something else there.
++        // The state is kept, as for a kernel caller.
++        let current_slot = slot_for(current());
++        if let Some(owner) = t.owner {
++            if current_slot != Some(owner) {
++                return new_state;
++            }
++        }
++        match current_slot {
+             Some(slot) => {
+                 let bp = PROCESS_TABLE[slot]
+                     .basepage_kva
+@@ -2764,7 +2945,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+                 // one by default); a plain or FL3DBAK button (`xor_is_ok`
+                 // `default:` → TRUE, changecol FALSE) keeps the black label on
+                 // its hollow-white face and the trailing XOR inverts both.
+-                let s = read_cstr(ob_spec);
++                let s = read_cstr(t, ob_spec);
+                 let len = s.len() as i16;
+                 let label = if selected && changecol { WHITE } else { BLACK };
+                 let mut tmpx = x + (w - len * crate::vdi::font::CELL_W) / 2;
+@@ -2794,7 +2975,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+                 // (`gsx_tblt(IBM, t.g_x+2, t.g_y, 1)`, gemoblib.c:903-908).
+                 gsx_tblt(backend, AesFont::Ibm, x + 2, y, &[0x08], ink, clip);
+             }
+-            let s = read_cstr(ob_spec);
++            let s = read_cstr(t, ob_spec);
+             if ob_state & DISABLED != 0 && s.len() > 3 && is_dashes(s) {
+                 // A46 — "nicelines" (EmuTOS `CONF_WITH_NICELINES`, default 1,
+                 // config.h:1312-1314): a DISABLED string of more than three
+@@ -2850,7 +3031,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+             // redraw never has to clear an inverted block itself (the pre-A99
+             // face fill that did so is gone with it, together with the
+             // separator repaint it forced on `aes/menu.rs`).
+-            let s = read_cstr(ob_spec);
++            let s = read_cstr(t, ob_spec);
+             // Same string block as G_STRING: IBM font, `t.g_x`, vertically
+             // centred on `gl_hchar` (gemoblib.c:817-845).
+             let tmpy = y + (h - crate::vdi::font::CELL_H) / 2;
+@@ -2863,7 +3044,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+             if ob_spec != 0 {
+                 // SAFETY: ob_spec of a *TEXT object points at a TEDINFO packed
+                 // at the tree's ABI width.
+-                let ted = unsafe { TedInfo::read_abi(ob_spec, t.abi()) };
++                let ted = unsafe { TedInfo::read_abi(ob_spec, t) };
+                 let ted = &ted;
+                 // Crack the TEDINFO colour word (EmuTOS `gr_crack`): border,
+                 // text, inside pattern, inside colour.
+@@ -2943,10 +3124,10 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+                 // Format the string: the F-variants merge `te_ptext` into the
+                 // `te_ptmplt` template (EmuTOS `ob_format`); the plain variants
+                 // draw `te_ptext` directly.
+-                let raw = read_cstr(ted.te_ptext);
++                let raw = read_cstr(t, ted.te_ptext);
+                 let mut fmtbuf = [0u8; MAX_LEN];
+                 let s: &[u8] = if ob_type == G_FTEXT || ob_type == G_FBOXTEXT {
+-                    let tmpl = read_cstr(ted.te_ptmplt);
++                    let tmpl = read_cstr(t, ted.te_ptmplt);
+                     let n = ob_format(ted.te_just, raw, tmpl, &mut fmtbuf);
+                     &fmtbuf[..n]
+                 } else {
+@@ -2985,7 +3166,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+             if ob_spec != 0 {
+                 // SAFETY: ob_spec of a G_IMAGE points at a BITBLK packed at the
+                 // tree's ABI width.
+-                let bi = unsafe { BitBlk::read_abi(ob_spec, t.abi()) };
++                let bi = unsafe { BitBlk::read_abi(ob_spec, t) };
+                 let bi = &bi;
+                 // SELECTED (EmuTOS just_draw, gemoblib.c:766-770): XOR the image
+                 // background (the blit is transparent, so the inverted ground
+@@ -3002,7 +3183,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+                 } else {
+                     bi.bi_color as Pel
+                 };
+-                blit_image(backend, bi, x, y, col, clip);
++                blit_image(t, backend, bi, x, y, col, clip);
+                 // The trailing block never XORs a G_IMAGE a second time:
+                 // `xor_is_ok(G_IMAGE)` is FALSE (`:115-116`), so `changecol`
+                 // is TRUE for a non-FL3DOBJ image, and an FL3DOBJ one is
+@@ -3024,18 +3205,18 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+             if ob_spec != 0 {
+                 // SAFETY: ob_spec of a G_ICON/G_CICON points at an ICONBLK (the
+                 // CICONBLK head for G_CICON) packed at the tree's ABI width.
+-                let ib = unsafe { IconBlk::read_abi(ob_spec, t.abi()) };
++                let ib = unsafe { IconBlk::read_abi(ob_spec, t) };
+                 let cicon = if ob_type == G_CICON {
+                     // SAFETY: a G_CICON's ob_spec is a whole CICONBLK; its
+                     // `mainlist` is 0 or a CICON, both at the tree's ABI width.
+                     unsafe {
+-                        let list = ciconblk_mainlist(ob_spec, t.abi());
+-                        (list != 0).then(|| Cicon::read_abi(list, t.abi()))
++                        let list = ciconblk_mainlist(ob_spec, t);
++                        (list != 0).then(|| Cicon::read_abi(list, t))
+                     }
+                 } else {
+                     None
+                 };
+-                draw_icon(backend, &ib, x, y, ob_state, cicon.as_ref(), clip);
++                draw_icon(t, backend, &ib, x, y, ob_state, cicon.as_ref(), clip);
+             }
+             // `gr_gicon` has rendered the selection itself (fg/bg swap or
+             // `sel_data`/darkening); EmuTOS clears the bit so the trailing
+@@ -3438,16 +3619,35 @@ fn is_dashes(s: &[u8]) -> bool {
+ 
+ /// Read a NUL-terminated C string from a native pointer in `ob_spec`
+ /// (trusted GEM pointer, like the other AES managers). Capped at 256.
+-fn read_cstr(spec: u64) -> &'static [u8] {
++///
++/// For an owned tree ([`ObjTree::owner`], A97) the string is read through
++/// the owner's mapping, page by page as [`crate::aes::window::LiveStr`]
++/// reads a title: the walk ends at the NUL, at the cap, or at the first
++/// page the owner has no contiguous mapping for; an unmapped start is the
++/// empty string.
++fn read_cstr(t: ObjTree, spec: u64) -> &'static [u8] {
+     if spec == 0 {
+         return &[];
+     }
+-    let p = spec as *const u8;
++    let Some(start) = t.ua(spec) else {
++        return &[];
++    };
++    let p = start as *const u8;
++    let page = usermem::PAGE_SIZE;
+     // SAFETY: GEM contract — `ob_spec` of a string/button is a valid
+-    // pointer to a NUL-terminated string in the caller's memory.
++    // pointer to a NUL-terminated string in the caller's memory; for an
++    // owned tree `p` is the owner's page alias and the walk re-resolves at
++    // every page boundary before reading on.
+     unsafe {
+         let mut n = 0usize;
+-        while n < 256 && *p.add(n) != 0 {
++        while n < 256 {
++            let va = spec.wrapping_add(n as u64);
++            if n != 0 && va & (page - 1) == 0 && t.ua(va) != Some(start.wrapping_add(n as u64)) {
++                break;
++            }
++            if *p.add(n) == 0 {
++                break;
++            }
+             n += 1;
+         }
+         core::slice::from_raw_parts(p, n)
+@@ -3457,9 +3657,10 @@ fn read_cstr(spec: u64) -> &'static [u8] {
+ /// Blit a `G_IMAGE` BITBLK at `(x, y)`: a transparent mono blit in colour
+ /// `col` (set bits drawn, clear bits leave the background). `col` is normally
+ /// `bi_color`, or its complement for a SELECTED image (EmuTOS `just_draw`).
+-fn blit_image(backend: &dyn RasterBackend, bi: &BitBlk, x: i16, y: i16, col: Pel, clip: ClipRect) {
++fn blit_image(t: ObjTree, backend: &dyn RasterBackend, bi: &BitBlk, x: i16, y: i16, col: Pel, clip: ClipRect) {
+     let stride = (bi.bi_wb / 2).max(1) as u16; // bytes → 16-bit words
+     blit_plane(
++        t,
+         backend,
+         bi.bi_pdata,
+         stride,
+@@ -3495,6 +3696,7 @@ fn blit_image(backend: &dyn RasterBackend, bi: &BitBlk, x: i16, y: i16, col: Pel
+ ///    (`dither_mask`, `:680-700`) is blitted in BLACK (`:778-786`);
+ /// 5. the character and label as for mono (`:797-806`).
+ fn draw_icon(
++    t: ObjTree,
+     backend: &dyn RasterBackend,
+     ib: &IconBlk,
+     ox: i16,
+@@ -3519,8 +3721,8 @@ fn draw_icon(
+             if selected {
+                 core::mem::swap(&mut fg, &mut bg);
+             }
+-            blit_plane(backend, ib.ib_pmask, stride, 0, 0, rect, bg, clip);
+-            blit_plane(backend, ib.ib_pdata, stride, 0, 0, rect, fg, clip);
++            blit_plane(t, backend, ib.ib_pmask, stride, 0, 0, rect, bg, clip);
++            blit_plane(t, backend, ib.ib_pdata, stride, 0, 0, rect, fg, clip);
+         }
+         Some(ci) => {
+             let (pdata, pmask) = if selected && ci.sel_data != 0 {
+@@ -3528,9 +3730,9 @@ fn draw_icon(
+             } else {
+                 (ci.col_data, ci.col_mask)
+             };
+-            let label = if ib.ib_ptext != 0 { read_cstr(ib.ib_ptext) } else { &[] };
++            let label = if ib.ib_ptext != 0 { read_cstr(t, ib.ib_ptext) } else { &[] };
+             if !(state & WHITEBAK != 0 && bg == WHITE) {
+-                blit_plane(backend, pmask, stride, 0, 0, rect, bg, clip);
++                blit_plane(t, backend, pmask, stride, 0, 0, rect, bg, clip);
+                 if !label.is_empty() {
+                     gr_rect(
+                         backend,
+@@ -3544,7 +3746,11 @@ fn draw_icon(
+                     );
+                 }
+             }
+-            if pdata != 0 {
++            // The device-form image is `stride * 16` pixels of 2 bytes per
++            // row, `rect.h` rows — resolved as one span through the owner's
++            // mapping for an owned tree (A97), skipped if unmapped.
++            let img_bytes = (stride as u64) * 16 * 2 * rect.h.max(0) as u64;
++            if let Some(pdata) = (pdata != 0).then(|| t.ua_span(pdata, img_bytes)).flatten() {
+                 // SAFETY: GEM contract — the loader's `fix_cicons` left
+                 // `ib_wicon × ib_hicon` device-form pixels behind `col_data`
+                 // / `sel_data` (rows `ib_wicon / 16` words wide).
+@@ -3567,7 +3773,10 @@ fn draw_icon(
+                     // BLACK, transparent.
+                     let rows = rect.h.max(0) as usize;
+                     let words = stride as usize * rows;
+-                    if pmask != 0 && words != 0 {
++                    // The mask span, through the owner's mapping for an owned
++                    // tree (A97); an unmapped mask is not dithered.
++                    let mask = if pmask != 0 && words != 0 { t.ua_span(pmask, words as u64 * 2) } else { None };
++                    if let Some(pmask) = mask {
+                         // SAFETY: GEM contract — `words` mask words behind
+                         // `col_mask` (no alignment required).
+                         let src = unsafe { MonoBits::from_raw(pmask as *const u8, words) };
+@@ -3576,7 +3785,9 @@ fn draw_icon(
+                             let dither = if (i / stride as usize) & 1 != 0 { 0xAAAA } else { 0x5555 };
+                             *w = src.word(i).unwrap_or(0) & dither;
+                         }
+-                        blit_plane(backend, dith.as_ptr() as u64, stride, 0, 0, rect, BLACK, clip);
++                        // `dith` is a kernel buffer, never a tree address:
++                        // blit it as such, through no owner mapping.
++                        blit_plane_kernel(backend, dith.as_ptr() as u64, stride, 0, 0, rect, BLACK, clip);
+                     }
+                 }
+             }
+@@ -3602,7 +3813,7 @@ fn draw_icon(
+         );
+     }
+     if ib.ib_ptext != 0 {
+-        let s = read_cstr(ib.ib_ptext);
++        let s = read_cstr(t, ib.ib_ptext);
+         if !s.is_empty() {
+             // Label background (EmuTOS `gr_gicon`): a solid `bg`-colour
+             // rectangle behind the label so it reads against a patterned
+@@ -3647,7 +3858,36 @@ fn draw_icon(
+ 
+ /// Transparent mono blit of one bit-plane (`addr` → big-endian 16-bit
+ /// words, `stride` words per row) into `dst`, set bits drawn in `fg`.
++/// `addr` is a **tree address** (`ib_pmask`/`ib_pdata`/`bi_pdata`): for an
++/// owned tree it is resolved as one span through the owner's mapping (A97)
++/// and skipped if any page of it is unmapped.
++#[allow(clippy::too_many_arguments)]
+ fn blit_plane(
++    t: ObjTree,
++    backend: &dyn RasterBackend,
++    addr: u64,
++    stride: u16,
++    src_x: i16,
++    src_y: i16,
++    dst: Rect,
++    fg: Pel,
++    clip: ClipRect,
++) {
++    if addr == 0 || dst.w <= 0 || dst.h <= 0 {
++        return;
++    }
++    let rows = src_y.max(0) as u64 + dst.h as u64;
++    let Some(kva) = t.ua_span(addr, stride as u64 * rows * 2) else {
++        return;
++    };
++    blit_plane_kernel(backend, kva, stride, src_x, src_y, dst, fg, clip);
++}
++
++/// [`blit_plane`] for a raster at a **kernel** address (`addr` is readable
++/// as is: a kernel buffer, or a tree raster already resolved by
++/// [`blit_plane`]).
++#[allow(clippy::too_many_arguments)]
++fn blit_plane_kernel(
+     backend: &dyn RasterBackend,
+     addr: u64,
+     stride: u16,
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index 7fa9851..eb330b1 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -27,7 +27,7 @@ use crate::bdos::process::{self, usermem, Abi};
+ use crate::host::{host, Host};
+ use crate::vdi::backend::{ClipRect, PatternFill, Pel, RasterBackend, WriteMode};
+ use core::cell::UnsafeCell;
+-use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU64, AtomicU8, Ordering};
++use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU64, AtomicU8, Ordering};
+ 
+ // ── kind (border widget) bits, aesdefs.h:519-531 ──
+ const NAME: u16 = 0x0001;
+@@ -470,11 +470,13 @@ impl LiveStr {
+ 
+ /// The kernel high-half alias of user VA `va` in process `slot`'s mapping —
+ /// [`usermem::resolve_kva`], the seam [`LiveStr::read`] reads an EL0 owner's
+-/// string through. The host unit tests substitute a resolver over host
+-/// buffers here ([`live_title_tests`]): a host process has no process table
+-/// and cannot dereference a kernel high-half address, so the owner-slot and
++/// string through and the object drawer reads an EL0 owner's `WF_NEWDESK`
++/// tree through (`object.rs`, A97). The host unit tests substitute a
++/// resolver over host buffers here ([`live_title_tests`],
++/// [`newdesk_owner_tests`]): a host process has no process table and cannot
++/// dereference a kernel high-half address, so the owner-slot and
+ /// dangling-pointer cases are modelled at this seam (A83).
+-fn owner_kva(slot: usize, va: u64) -> Option<u64> {
++pub(crate) fn owner_kva(slot: usize, va: u64) -> Option<u64> {
+     #[cfg(test)]
+     if let Some(resolve) = live_title_tests::resolver() {
+         return resolve(slot, va);
+@@ -1231,6 +1233,33 @@ static NEWDESK_APP: AtomicBool = AtomicBool::new(false);
+ /// records `Lp64`. Only consulted when [`NEWDESK_APP`] is `true`.
+ static NEWDESK_ABI: AtomicU8 = AtomicU8::new(Abi::Lp64 as u8);
+ 
++/// The process slot that registered [`NEWDESK_TREE`] — `-1` for a kernel
++/// (EL1) registrant, whose tree is a kernel VA, else the GEMDOS slot of the
++/// EL0 caller (`process::slot_for(process::current())` inside the
++/// `wind_set` trap), captured in [`set_newdesk`] exactly as [`LiveStr::slot`]
++/// is for a title pointer (A83). The composite reads the tree **through this
++/// slot's mapping** ([`draw_desk_tree`] → `render_tree_app(…, owner, …)`,
++/// A97) — the tree's records, sub-structs, strings and rasters are all user
++/// VAs of that process, and the composite runs from other processes' AES
++/// calls and from the kernel desktop, under other `TTBR0`s. A registrant that
++/// has ended is swept with its windows ([`wm_new_keep_desktop`]).
++static NEWDESK_OWNER: AtomicI32 = AtomicI32::new(-1);
++
++/// [`NEWDESK_OWNER`] as an `Option`: `Some(slot)` for an EL0 registrant.
++fn newdesk_owner() -> Option<usize> {
++    usize::try_from(NEWDESK_OWNER.load(Ordering::Acquire)).ok()
++}
++
++/// Forget the registered desktop tree — `gl_newdesk = NULL`
++/// (`gemwmlib.c:1300`): tree, root, origin, ABI and owner.
++fn clear_newdesk() {
++    NEWDESK_TREE.store(0, Ordering::Release);
++    NEWDESK_ROOT.store(0, Ordering::Release);
++    NEWDESK_APP.store(false, Ordering::Release);
++    NEWDESK_ABI.store(Abi::Lp64 as u8, Ordering::Release);
++    NEWDESK_OWNER.store(-1, Ordering::Release);
++}
++
+ /// `wind_set(DESKWH, WF_NEWDESK, …)` handler (EmuTOS `wm_set`,
+ /// `gemwmlib.c:1685-1689`): register (non-null tree) or un-register (null tree)
+ /// the desktop's background object tree + root object. Never fails.
+@@ -1260,17 +1289,22 @@ fn set_newdesk(pb: &Aespb) {
+     let root = if pb.ain_len() >= 1 { pb.intin(2) } else { pb.intin(2 + pb.ptr_words()) };
+     if tree == 0 {
+         NEWDESK_TREE.store(0, Ordering::Release);
++        NEWDESK_OWNER.store(-1, Ordering::Release);
+     } else {
+-        // Capture the tree's origin + ABI at registration time; the background
+-        // composite runs later, when a different (or no) process may be current.
+-        // A running user process (`current()` non-null) means an EL0 GEM app is
+-        // registering its own background tree — its `G_USERDEF` `ub_code` lives
+-        // in EL0 and must not be up-called from EL1; a null `current()` is the
+-        // kernel/desktop registering its native `g_screen`. `current_abi()`
+-        // records the record width now (the app is current at this instant).
++        // Capture the tree's origin + ABI + owner at registration time; the
++        // background composite runs later, when a different (or no) process
++        // may be current. A running user process (`current()` non-null)
++        // means an EL0 GEM app is registering its own background tree — its
++        // `G_USERDEF` `ub_code` lives in EL0 and must not be up-called from
++        // EL1, and its tree is read through its own mapping (the owner slot,
++        // A97); a null `current()` is the kernel/desktop registering its
++        // native `g_screen`. `current_abi()` records the record width now
++        // (the app is current at this instant).
+         let is_app = !crate::bdos::process::current().is_null();
+         NEWDESK_APP.store(is_app, Ordering::Release);
+         NEWDESK_ABI.store(crate::bdos::process::current_abi() as u8, Ordering::Release);
++        let owner = process::slot_for(process::current()).and_then(|s| i32::try_from(s).ok());
++        NEWDESK_OWNER.store(owner.unwrap_or(-1), Ordering::Release);
+         // NEWDESK_ROOT is taken verbatim from caller input (EmuTOS trusts the
+         // desktop's `gl_newroot`/`DROOT` the same way, gemwmlib.c:1685). A
+         // negative index is defused downstream (`render_tree_*` bail on
+@@ -1436,13 +1470,43 @@ fn draw_desk_tree(backend: &dyn RasterBackend, clip: ClipRect) {
+             // the app callback's VA, the WF_NEWDESK crash). The boxes/images of
+             // the tree still draw; the app userdef simply is not invoked (an
+             // EL0-upcall mechanism is out of scope — the goal is: no crash).
++            //
++            // The tree is a user VA of the registrant, and this runs under
++            // whatever `TTBR0` the current caller has: read it **through the
++            // owner's mapping** (A97, the A83 model). The root record must
++            // resolve up front — if the owner has no mapping there any more
++            // (the block freed, the slot re-seeded), the tree counts as not
++            // registered and the AES fallback root is drawn instead; inside
++            // the draw every further address resolves the same way.
+             let abi = Abi::from_u8(NEWDESK_ABI.load(Ordering::Acquire));
+-            // SAFETY: `tree` is the app's registered background-tree base — a
+-            // valid OBJECT array (at `abi` width) kept stable for its lifetime;
+-            // `root` in range (caller contract, see `set_newdesk`).
+-            unsafe {
+-                render_tree_app(tree as *const Object, root, MAX_DEPTH, clip.xmn, clip.ymn, cw, ch, abi, backend);
++            let owner = newdesk_owner();
++            let root_va = tree.wrapping_add(root.max(0) as u64 * super::object::record_stride(abi));
++            let readable = match owner {
++                Some(slot) => owner_kva(slot, root_va).is_some(),
++                None => true,
++            };
++            if readable {
++                // SAFETY: `tree` is the app's registered background-tree base —
++                // a valid OBJECT array (at `abi` width) in the owner's address
++                // space, read through that owner's mapping; `root` in range
++                // (caller contract, see `set_newdesk`).
++                unsafe {
++                    render_tree_app(
++                        tree as *const Object,
++                        root,
++                        MAX_DEPTH,
++                        clip.xmn,
++                        clip.ymn,
++                        cw,
++                        ch,
++                        abi,
++                        owner,
++                        backend,
++                    );
++                }
++                return;
+             }
++            draw_fallback_root(backend, clip, cw, ch);
+         } else {
+             // Kernel/desktop-built native `g_screen` (LP64 records); a
+             // `G_USERDEF` here is a real EL1 callback (`kernel_built = true`).
+@@ -1454,11 +1518,17 @@ fn draw_desk_tree(backend: &dyn RasterBackend, clip: ClipRect) {
+             }
+         }
+     } else {
+-        let fb = fallback_root(backend.width() as i16, backend.height() as i16);
+-        // SAFETY: `fb` is a single valid native OBJECT (root index 0, no children).
+-        unsafe {
+-            render_tree_lp64(&fb as *const Object, 0, 0, clip.xmn, clip.ymn, cw, ch, backend);
+-        }
++        draw_fallback_root(backend, clip, cw, ch);
++    }
++}
++
++/// Draw the AES-internal [`fallback_root`] at depth 0 within `clip` — the
++/// `gl_newdesk == NULL` arm of `w_drawdesk` (`gemwmlib.c:340-359`).
++fn draw_fallback_root(backend: &dyn RasterBackend, clip: ClipRect, cw: i16, ch: i16) {
++    let fb = fallback_root(backend.width() as i16, backend.height() as i16);
++    // SAFETY: `fb` is a single valid native OBJECT (root index 0, no children).
++    unsafe {
++        render_tree_lp64(&fb as *const Object, 0, 0, clip.xmn, clip.ymn, cw, ch, backend);
+     }
+ }
+ 
+@@ -4221,6 +4291,59 @@ pub fn wm_new() {
+     unsafe { *TABLE.next_z.get() = 1 };
+ }
+ 
++/// The `sh_ldapp` window sweep for a program the **desktop** launched and
++/// that has returned (A96): `wm_new` (`gemshlib.c:676-677` → `gemwmlib.c:
++/// 1875-1893`) minus the desktop's own windows.
++///
++/// EmuTOS's `wm_new` deletes **every** window, the desktop's included —
++/// there the desktop is itself a shell program: `shel_write` ends it,
++/// `sh_ldapp` runs the child and sweeps, `sh_main` loops and starts the
++/// desktop afresh (`gemshlib.c:600-612,708-731`), which rebuilds its
++/// windows from its own context save (`cnx_get`, `desk/deskmain.c:2055`).
++/// The NewTOS desktop does not restart: `run_gem_app` runs the child
++/// **nested** in the desktop's event loop (AES gap G1) and `desktop_resume`
++/// repaints the desktop windows it still holds in this table (gap G2 —
++/// no save/restore, no `cnx_get`; `kernel/src/desk/main.rs`). So the sweep
++/// that runs when the desktop regains control keeps the windows the
++/// desktop identity owns (`pd::DESKTOP`, `w_owner`) and takes everything
++/// else, exactly as `wm_new` would: closed if open (`wm_close`, with its
++/// `draw_change` repaint and `WM_REDRAW` fan-out), then deleted
++/// (`wm_delete`). When the desktop is back no EL0 process is alive — the
++/// launched chain has ended, single-tasking — so every non-desktop owner is
++/// a dead program (the launched one, or a `Pexec` descendant of it that left
++/// windows behind and had no sweep of its own).
++///
++/// As `sh_ldapp` before `wm_new`: the `wind_update` locks a dead program
++/// still holds are released (`unsync(&wind_spb)`, `gemshlib.c:668-669`;
++/// `wm_new`'s own drains, `gemwmlib.c:1879-1883`) — the desktop takes no
++/// lock across a launch, so the counters are the program's. And the
++/// desktop-background tree the program registered is dropped: EmuTOS
++/// resets `gl_newdesk` in `wm_init` before the desktop restarts
++/// (`gemwmlib.c:1300`) and the desktop registers its own again
++/// (`deskmain.c:2049`); `desktop_resume` re-registers likewise, and the
++/// program's tree is a VA of an address space that is gone (A97).
++///
++/// Draws what closing those windows draws (see [`wm_new`]); the
++/// whole-screen repaint is the desktop's `redraw_desktop` afterwards.
++pub fn wm_new_keep_desktop() {
++    MCTRL_CNT.store(0, Ordering::Relaxed);
++    UPDATE_LOCK.store(0, Ordering::Relaxed);
++    let desktop = super::pd::DESKTOP as i16;
++    for wh in 1..NUM_WIN as i16 {
++        let Some((owner, open)) = win(wh).map(|w| (w.owner, w.open)) else { continue };
++        if owner == desktop {
++            continue;
++        }
++        if open {
++            close_window(wh);
++        }
++        wm_delete(wh);
++    }
++    if newdesk_owner().is_some() {
++        clear_newdesk();
++    }
++}
++
+ /// `wm_init` (`gemwmlib.c:1247-1310`) — re-initialise the Window Manager
+ /// before each program the shell loop starts (`gemshlib.c:717`). EmuTOS
+ /// rebuilds the whole window-extent/element object arena; the observable
+@@ -4241,9 +4364,7 @@ pub fn wm_init() {
+     // (`gemwmlib.c:1290-1294`).
+     init_desk_window();
+     // `gl_newdesk = NULL;` (gemwmlib.c:1300)
+-    NEWDESK_TREE.store(0, Ordering::Release);
+-    NEWDESK_ROOT.store(0, Ordering::Release);
+-    NEWDESK_APP.store(false, Ordering::Release);
++    clear_newdesk();
+     // Any saved desktop window set belongs to a desktop instance that is
+     // over; `wm_init` leaves no window state behind (`:1263-1268`).
+     // SAFETY: single-CPU AES.
+@@ -5154,6 +5275,21 @@ pub fn test_window_z(handle: i16) -> Option<i16> {
+     win(handle).filter(|w| w.open).map(|w| w.z)
+ }
+ 
++/// Test hook (not wired to boot): the identity that owns the in-use window
++/// `handle` (`w_owner` — a GEMDOS slot, or `MAX_PROCESSES` for the kernel
++/// desktop), or `None` for a free slot / no such handle. Lets a host test
++/// state which windows a sweep took and which it kept (A96).
++pub fn test_window_owner(handle: i16) -> Option<usize> {
++    owner_of(handle)
++}
++
++/// Test hook (not wired to boot): the registered desktop-background tree
++/// (`gl_newdesk`), 0 when none is registered — so a host test can state
++/// that a sweep dropped a dead program's registration (A96/A97).
++pub fn test_newdesk_tree() -> u64 {
++    NEWDESK_TREE.load(Ordering::Acquire)
++}
++
+ /// Test hook: name of the gadget under a point (for the headless logic
+ /// check in the selftest).
+ pub fn gadget_name_at(handle: i16, mx: i16, my: i16) -> &'static str {
+@@ -5200,8 +5336,10 @@ mod newdesk_root_word_tests {
+     use crate::aes::{AI_SIZE, I_SIZE, O_SIZE};
+     use std::sync::Mutex;
+ 
+-    /// The two statics are process-global; the cases run serially.
+-    static SERIAL: Mutex<()> = Mutex::new(());
++    /// The statics are process-global; the cases run serially — and
++    /// [`super::newdesk_owner_tests`], which sets the same statics, takes
++    /// this lock too.
++    pub(super) static SERIAL: Mutex<()> = Mutex::new(());
+ 
+     const OP_WIND_SET: i16 = 105;
+     const WF_NEWDESK: i16 = 14;
+@@ -5361,19 +5499,21 @@ mod live_title_tests {
+ 
+     /// One modelled block: `slot` maps `[va, va + len)` to host memory at
+     /// `host` (page-aligned VA and page-rounded length, as `usermem::Block`).
++    /// Shared with [`super::newdesk_owner_tests`], which models the A97
++    /// tree reads at the same seam.
+     #[derive(Clone, Copy)]
+-    struct Map {
+-        slot: usize,
+-        va: u64,
+-        len: u64,
+-        host: u64,
++    pub(super) struct Map {
++        pub(super) slot: usize,
++        pub(super) va: u64,
++        pub(super) len: u64,
++        pub(super) host: u64,
+     }
+ 
+     static MAPS: Mutex<Vec<Map>> = Mutex::new(Vec::new());
+-    static ASKED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
++    pub(super) static ASKED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+     static ACTIVE: AtomicBool = AtomicBool::new(false);
+     /// The seam is process-global; the cases run serially.
+-    static SERIAL: Mutex<()> = Mutex::new(());
++    pub(super) static SERIAL: Mutex<()> = Mutex::new(());
+ 
+     /// The resolver [`owner_kva`] consults while a case is running.
+     pub(super) fn resolver() -> Option<fn(usize, u64) -> Option<u64>> {
+@@ -5390,7 +5530,7 @@ mod live_title_tests {
+     }
+ 
+     /// Run `f` with `maps` installed at the seam, then take it down.
+-    fn with_maps<R>(maps: &[Map], f: impl FnOnce() -> R) -> R {
++    pub(super) fn with_maps<R>(maps: &[Map], f: impl FnOnce() -> R) -> R {
+         *MAPS.lock().unwrap() = maps.to_vec();
+         ASKED.lock().unwrap().clear();
+         ACTIVE.store(true, Ordering::Release);
+@@ -5402,7 +5542,7 @@ mod live_title_tests {
+ 
+     /// A page-sized host block holding `s` at offset `at` (NUL-terminated
+     /// unless `s` fills the block to its end).
+-    fn page_with(s: &[u8], at: usize) -> Box<[u8]> {
++    pub(super) fn page_with(s: &[u8], at: usize) -> Box<[u8]> {
+         let mut p = vec![0u8; usermem::PAGE_SIZE as usize].into_boxed_slice();
+         p[at..at + s.len()].copy_from_slice(s);
+         p
+@@ -5606,3 +5746,363 @@ mod live_title_tests {
+         assert_eq!(label_walk(-5), 1);
+     }
+ }
++
++#[cfg(test)]
++mod newdesk_owner_tests {
++    //! A97 — the `WF_NEWDESK` tree is **read through its owner's mapping** at
++    //! composite time ([`NEWDESK_OWNER`], `object.rs` `ObjTree::app_owned`).
++    //! The registrant's tree, its sub-structs, strings and rasters are user
++    //! VAs of that process; the composite runs from other processes' AES
++    //! calls and from the kernel desktop, under other `TTBR0`s. Modelled at
++    //! the [`owner_kva`] seam exactly as the A83 title cases
++    //! ([`live_title_tests`]): a resolver over host pages stands in for the
++    //! owner's block table, the registration state is set directly (the
++    //! `wind_set` marshalling is `newdesk_root_word_tests`' business), and
++    //! [`draw_desk_tree`] is called on a raster that records what it is
++    //! asked to paint. `VA` is a low user address that is **not** mapped in
++    //! the host process, so a raw dereference would fault: every case
++    //! finishing is the "no fault" half of the ticket.
++    //!
++    //! * **owner mapping, not the current one** — two slots map the same VA
++    //!   to different trees; the composite draws the owner's and asks the
++    //!   resolver for the owner's slot only;
++    //! * **dangling** — the owner has no mapping for the tree any more: the
++    //!   AES fallback root is drawn, the tree is never touched;
++    //! * **the tree's icon** — ICONBLK, mask/data rasters and label are
++    //!   reached through the same mapping (the sub-struct and span readers);
++    //! * **a raster the owner does not map is skipped**, the rest of the
++    //!   icon still drawn;
++    //! * **a raster spanning two pages** is drawn only if the owner's alias
++    //!   of the second page continues the first (one block), not when the
++    //!   two pages are separate allocations.
++    use super::live_title_tests::{page_with, with_maps, Map, ASKED, SERIAL as SEAM};
++    use super::newdesk_root_word_tests::SERIAL as STATE;
++    use super::*;
++    use crate::vdi::backend::{MonoSrc, Rect};
++    use std::sync::Mutex;
++
++    // ── a raster that records the fills, blits and glyphs it paints ────
++
++    #[derive(Debug, PartialEq, Clone, Copy)]
++    enum Paint {
++        Rect(i16, i16, i16, i16, Pel),
++        Pattern(i16, i16, i16, i16, Pel),
++        Mono(i16, i16, i16, i16, Pel),
++        Glyph(i16, i16),
++    }
++
++    struct PaintLog(Mutex<Vec<Paint>>);
++
++    impl PaintLog {
++        fn new() -> PaintLog {
++            PaintLog(Mutex::new(Vec::new()))
++        }
++        fn take(&self) -> Vec<Paint> {
++            std::mem::take(&mut *self.0.lock().unwrap())
++        }
++    }
++
++    impl RasterBackend for PaintLog {
++        fn width(&self) -> u16 {
++            640
++        }
++        fn height(&self) -> u16 {
++            480
++        }
++        fn num_colors(&self) -> u16 {
++            256
++        }
++        fn planes(&self) -> u16 {
++            16
++        }
++        fn set_color(&self, _index: u16, _r: u16, _g: u16, _b: u16) {}
++        fn query_color(&self, _index: u16) -> (u16, u16, u16) {
++            (0, 0, 0)
++        }
++        fn set_active_palette(&self, _palette: &[u16; 256]) {}
++        fn pel_to_device16(&self, _pel: Pel) -> u16 {
++            0
++        }
++        fn device_to_rgb565(&self, _argb: u32) -> u16 {
++            0
++        }
++        fn rgb565_to_device(&self, _px: u16) -> u32 {
++            0
++        }
++        fn read_pixel(&self, _x: i16, _y: i16) -> Pel {
++            0
++        }
++        fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel, _clip: ClipRect) {
++            self.0.lock().unwrap().push(Paint::Rect(x, y, w, h, pel));
++        }
++        #[allow(clippy::too_many_arguments)]
++        fn abline(
++            &self,
++            _x0: i16,
++            _y0: i16,
++            _x1: i16,
++            _y1: i16,
++            _pel: Pel,
++            _mode: WriteMode,
++            _clip: ClipRect,
++            mask: u16,
++            _last: bool,
++        ) -> u16 {
++            mask
++        }
++        fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, _clip: ClipRect) {
++            self.0.lock().unwrap().push(Paint::Pattern(x, y, w, h, fill.fg));
++        }
++        #[allow(clippy::too_many_arguments)]
++        fn draw_glyph_sized(
++            &self,
++            x: i16,
++            y: i16,
++            _glyph: &[u8],
++            _cell_w: i16,
++            _cell_h: i16,
++            _fg: Pel,
++            _mode: WriteMode,
++            _clip: ClipRect,
++        ) {
++            self.0.lock().unwrap().push(Paint::Glyph(x, y));
++        }
++        fn blit_mono(&self, dst: Rect, _src: MonoSrc, fg: Pel, _bg: Pel, _m: WriteMode, _clip: ClipRect) {
++            self.0.lock().unwrap().push(Paint::Mono(dst.x, dst.y, dst.w, dst.h, fg));
++        }
++        fn copy_rect(&self, _src: Rect, _dx: i16, _dy: i16, _op: u8, _clip: ClipRect) {}
++        fn get_device_pixel(&self, _x: i16, _y: i16) -> u32 {
++            0
++        }
++        fn put_device_pixel(&self, _x: i16, _y: i16, _argb: u32) {}
++        fn flush_rect(&self, _x0: i16, _y0: i16, _x1: i16, _y1: i16) {}
++    }
++
++    // ── the stage ──────────────────────────────────────────────────────
++
++    const PAGE: u64 = usermem::PAGE_SIZE;
++    /// A low user VA, page-aligned, the way the EL0 heap window hands them
++    /// out — and unmapped in the host process.
++    const VA: u64 = 0x0040_0000;
++    const G_BOX: u16 = 20;
++    const G_ICON: u16 = 31;
++    /// `ob_spec` of a solid box in colour `c` (`gr_crack`: pattern 7 =
++    /// IP_SOLID in bits 4..6, interior colour in bits 0..3, thickness 0).
++    const fn solid(c: u16) -> u64 {
++        (0x70 | c) as u64
++    }
++
++    fn object(ty: u16, next: i16, head: i16, tail: i16, spec: u64, r: (i16, i16, i16, i16)) -> Object {
++        Object {
++            ob_next: next,
++            ob_head: head,
++            ob_tail: tail,
++            ob_type: ty,
++            ob_flags: 0,
++            ob_state: 0,
++            ob_spec: spec,
++            ob_x: r.0,
++            ob_y: r.1,
++            ob_width: r.2,
++            ob_height: r.3,
++        }
++    }
++
++    /// Write `objs` as native (LP64, 32-byte) records at `at` in `page`.
++    fn put_objects(page: &mut [u8], at: usize, objs: &[Object]) {
++        for (i, o) in objs.iter().enumerate() {
++            let bytes: [u8; 32] = unsafe { core::mem::transmute(*o) };
++            page[at + i * 32..at + i * 32 + 32].copy_from_slice(&bytes);
++        }
++    }
++
++    /// Write an LP64 ICONBLK at `at`: three pointers, then the eleven WORDs
++    /// `ib_char, xchar, ychar, xicon, yicon, wicon, hicon, xtext, ytext,
++    /// wtext, htext` (`mt_gem.h:2004-2020`).
++    fn put_iconblk(page: &mut [u8], at: usize, pmask: u64, pdata: u64, ptext: u64, words: [i16; 11]) {
++        page[at..at + 8].copy_from_slice(&pmask.to_le_bytes());
++        page[at + 8..at + 16].copy_from_slice(&pdata.to_le_bytes());
++        page[at + 16..at + 24].copy_from_slice(&ptext.to_le_bytes());
++        for (i, w) in words.iter().enumerate() {
++            page[at + 24 + 2 * i..at + 26 + 2 * i].copy_from_slice(&w.to_le_bytes());
++        }
++    }
++
++    /// A 32×32 mono raster (2 words per row, 32 rows = 128 bytes), all set.
++    fn put_raster(page: &mut [u8], at: usize) {
++        for b in &mut page[at..at + 128] {
++            *b = 0xFF;
++        }
++    }
++
++    /// Register `tree` (root `root`) as an EL0 app's background tree owned
++    /// by `owner`, at LP64 width — what `set_newdesk` records for an LP64
++    /// `.NAP` registrant (`NEWDESK_APP`, `NEWDESK_ABI`, `NEWDESK_OWNER`).
++    fn register(tree: u64, root: i16, owner: usize) {
++        NEWDESK_APP.store(true, Ordering::Release);
++        NEWDESK_ABI.store(Abi::Lp64 as u8, Ordering::Release);
++        NEWDESK_OWNER.store(owner as i32, Ordering::Release);
++        NEWDESK_ROOT.store(root, Ordering::Release);
++        NEWDESK_TREE.store(tree, Ordering::Release);
++    }
++
++    /// The composite of the whole screen — what `paint_bg_clip` asks
++    /// [`draw_desk_tree`] for per piece of the desktop's rectangle list.
++    fn composite(log: &PaintLog) -> Vec<Paint> {
++        draw_desk_tree(log, ClipRect::full(640, 480));
++        log.take()
++    }
++
++    /// Both locks: the resolver seam and the `NEWDESK_*` statics.
++    fn locks() -> (std::sync::MutexGuard<'static, ()>, std::sync::MutexGuard<'static, ()>) {
++        (STATE.lock().unwrap_or_else(|e| e.into_inner()), SEAM.lock().unwrap_or_else(|e| e.into_inner()))
++    }
++
++    #[test]
++    fn the_tree_is_read_through_the_owners_mapping_not_the_current_one() {
++        let _g = locks();
++        // Slot 3's page at VA: a root box (10,20,100,50) in colour 1.
++        let mut owner = page_with(b"", 0);
++        put_objects(&mut owner, 0, &[object(G_BOX, -1, -1, -1, solid(1), (10, 20, 100, 50))]);
++        // Slot 5's page at the same VA: a full-screen box in colour 2.
++        let mut other = page_with(b"", 0);
++        put_objects(&mut other, 0, &[object(G_BOX, -1, -1, -1, solid(2), (0, 0, 640, 480))]);
++        let maps = [
++            Map { slot: 3, va: VA, len: PAGE, host: owner.as_ptr() as u64 },
++            Map { slot: 5, va: VA, len: PAGE, host: other.as_ptr() as u64 },
++        ];
++        register(VA, 0, 3);
++        let log = PaintLog::new();
++        let (paint, asked) = with_maps(&maps, || (composite(&log), ASKED.lock().unwrap().clone()));
++        clear_newdesk();
++        assert_eq!(paint, vec![Paint::Rect(10, 20, 100, 50, 1)], "the composite must draw the owner slot's tree");
++        assert!(!asked.is_empty() && asked.iter().all(|&s| s == 3), "resolved through slots {asked:?}, not the owner's 3 only");
++    }
++
++    #[test]
++    fn a_tree_the_owner_no_longer_maps_is_not_composited() {
++        let _g = locks();
++        // Slot 3 maps something else entirely; the registered VA is gone
++        // (the block freed, the slot re-seeded for another program).
++        let owner = page_with(b"", 0);
++        let maps = [Map { slot: 3, va: VA + 8 * PAGE, len: PAGE, host: owner.as_ptr() as u64 }];
++        register(VA, 0, 3);
++        let log = PaintLog::new();
++        let (paint, asked) = with_maps(&maps, || (composite(&log), ASKED.lock().unwrap().clone()));
++        clear_newdesk();
++        // The AES fallback root: one patterned fill of the whole clip in the
++        // built-in DESKTOP root's colour (`fallback_root`), and nothing else.
++        let fb_col = (super::super::init::desktop_root_obspec() & 0x0F) as Pel;
++        assert_eq!(paint, vec![Paint::Pattern(0, 0, 640, 480, fb_col)], "an unresolvable tree counts as not registered: the fallback root is drawn");
++        assert_eq!(asked, vec![3], "one failed lookup of the root record, then no further access");
++    }
++
++    #[test]
++    fn the_trees_icon_is_read_through_the_owners_mapping() {
++        let _g = locks();
++        let mut owner = page_with(b"", 0);
++        // Root box (0,0,640,480) with one G_ICON child at (100,100,64,48)
++        // whose ICONBLK sits at +0x100, mask at +0x200, data at +0x300 and
++        // label at +0x400 — all VAs of slot 3.
++        put_objects(
++            &mut owner,
++            0,
++            &[
++                object(G_BOX, -1, 1, 1, solid(0), (0, 0, 640, 480)),
++                object(G_ICON, 0, -1, -1, VA + 0x100, (100, 100, 64, 48)),
++            ],
++        );
++        put_iconblk(&mut owner, 0x100, VA + 0x200, VA + 0x300, VA + 0x400, [0x1000, 0, 0, 0, 0, 32, 32, 0, 32, 64, 8]);
++        put_raster(&mut owner, 0x200);
++        put_raster(&mut owner, 0x300);
++        owner[0x400..0x405].copy_from_slice(b"ICON\0");
++        let maps = [Map { slot: 3, va: VA, len: PAGE, host: owner.as_ptr() as u64 }];
++        register(VA, 0, 3);
++        let log = PaintLog::new();
++        let (paint, asked) = with_maps(&maps, || (composite(&log), ASKED.lock().unwrap().clone()));
++        clear_newdesk();
++        // `gr_gicon`: the mask in bg (0), the data in fg (1), the label box,
++        // then the four label glyphs.
++        let mono: Vec<Paint> = paint.iter().copied().filter(|p| matches!(p, Paint::Mono(..))).collect();
++        assert_eq!(
++            mono,
++            vec![Paint::Mono(100, 100, 32, 32, 0), Paint::Mono(100, 100, 32, 32, 1)],
++            "mask and data rasters must be blitted from the owner's pages: {paint:?}"
++        );
++        let glyphs = paint.iter().filter(|p| matches!(p, Paint::Glyph(..))).count();
++        assert_eq!(glyphs, 4, "the label ICON must be read from the owner's page: {paint:?}");
++        assert!(asked.iter().all(|&s| s == 3), "resolved through slots {asked:?}");
++    }
++
++    #[test]
++    fn a_raster_the_owner_does_not_map_is_skipped_not_read() {
++        let _g = locks();
++        let mut owner = page_with(b"", 0);
++        put_objects(
++            &mut owner,
++            0,
++            &[
++                object(G_BOX, -1, 1, 1, solid(0), (0, 0, 640, 480)),
++                object(G_ICON, 0, -1, -1, VA + 0x100, (100, 100, 64, 48)),
++            ],
++        );
++        // The data raster points into a page the owner never had.
++        put_iconblk(&mut owner, 0x100, VA + 0x200, VA + 9 * PAGE, VA + 0x400, [0x1000, 0, 0, 0, 0, 32, 32, 0, 32, 64, 8]);
++        put_raster(&mut owner, 0x200);
++        owner[0x400..0x405].copy_from_slice(b"ICON\0");
++        let maps = [Map { slot: 3, va: VA, len: PAGE, host: owner.as_ptr() as u64 }];
++        register(VA, 0, 3);
++        let log = PaintLog::new();
++        let paint = with_maps(&maps, || composite(&log));
++        clear_newdesk();
++        let mono: Vec<Paint> = paint.iter().copied().filter(|p| matches!(p, Paint::Mono(..))).collect();
++        assert_eq!(mono, vec![Paint::Mono(100, 100, 32, 32, 0)], "only the mapped mask is blitted; the unmapped data raster is skipped: {paint:?}");
++        assert_eq!(paint.iter().filter(|p| matches!(p, Paint::Glyph(..))).count(), 4, "the label still draws");
++    }
++
++    #[test]
++    fn a_raster_spanning_two_pages_needs_one_contiguous_alias() {
++        let _g = locks();
++        // Tree + ICONBLK in page A; the 128-byte data raster starts 64
++        // bytes before the end of page B and runs into page C. Mapped once
++        // with C's alias two pages above B's (a hole between: not one block
++        // → skipped), once with C's alias directly following B's (one
++        // block → drawn). One 3-page host buffer serves both, so the
++        // aliases are what the map says and not what the allocator did.
++        let mut a = page_with(b"", 0);
++        put_objects(
++            &mut a,
++            0,
++            &[
++                object(G_BOX, -1, 1, 1, solid(0), (0, 0, 640, 480)),
++                object(G_ICON, 0, -1, -1, VA + 0x100, (100, 100, 64, 48)),
++            ],
++        );
++        let raster_va = VA + 2 * PAGE - 64;
++        put_iconblk(&mut a, 0x100, 0, raster_va, 0, [0x1000, 0, 0, 0, 0, 32, 32, 0, 32, 64, 8]);
++        let buf = vec![0xFFu8; 3 * PAGE as usize].into_boxed_slice();
++        let host = buf.as_ptr() as u64;
++        let split = [
++            Map { slot: 3, va: VA, len: PAGE, host: a.as_ptr() as u64 },
++            Map { slot: 3, va: VA + PAGE, len: PAGE, host },
++            Map { slot: 3, va: VA + 2 * PAGE, len: PAGE, host: host + 2 * PAGE },
++        ];
++        let joined = [
++            Map { slot: 3, va: VA, len: PAGE, host: a.as_ptr() as u64 },
++            Map { slot: 3, va: VA + PAGE, len: 2 * PAGE, host },
++        ];
++        register(VA, 0, 3);
++        let log = PaintLog::new();
++        let split_paint = with_maps(&split, || composite(&log));
++        let joined_paint = with_maps(&joined, || composite(&log));
++        clear_newdesk();
++        assert!(
++            !split_paint.iter().any(|p| matches!(p, Paint::Mono(..))),
++            "an alias with a hole is not one contiguous run: the raster must be skipped: {split_paint:?}"
++        );
++        assert!(
++            joined_paint.iter().any(|p| matches!(p, Paint::Mono(100, 100, 32, 32, 1))),
++            "one block spanning both pages is read whole: {joined_paint:?}"
++        );
++    }
++}

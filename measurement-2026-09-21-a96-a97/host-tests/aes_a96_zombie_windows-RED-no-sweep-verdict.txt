@@ -1,0 +1,10 @@
+test a_window_the_program_left_open_is_gone_when_the_desktop_resumes ... FAILED
+test the_programs_background_tree_is_dropped_with_it ... FAILED
+RED verdict: owner=Some(0) wind_find=2 zombie_px_not_white=34725 desk_owner=Some(16) desk_find=1 desk_px=32966
+thread 'a_window_the_program_left_open_is_gone_when_the_desktop_resumes' (4938630) panicked at tos-api/tests/aes_a96_zombie_windows.rs:710:5:
+  left: 34725
+ right: 0
+thread 'the_programs_background_tree_is_dropped_with_it' (4938631) panicked at tos-api/tests/aes_a96_zombie_windows.rs:759:5:
+  left: 4349885632
+ right: 0
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s

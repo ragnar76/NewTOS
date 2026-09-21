@@ -1,0 +1,17 @@
+# A96 probe (kernel desktop, sd-probe = sd-base + C:\A96ZOMB.NAP, no #Z):
+# park bottom-right, dump the idle desktop (A: 25 items, folders first, then
+# A96ZOMB.NAP as the first file at (94,146)); double-click it -> run_gem_app launches the probe, which
+# opens "A96 ZOMBIE" at (120,80,300,200) and stands 3 s (B, 2 s after the
+# click); then it Pterm's without closing -> desktop_resume (C, 5 s after the
+# click; D, 2 s later). Ticks are 200 Hz after "[desk] desktop up".
+200 parkbr
+1100 mark A_IDLE
+1400 move 94 146
+1600 down
+1603 up
+1608 down
+1611 up
+1800 parkbr
+2000 mark B_PROBE_WINDOW
+2600 mark C_DESK_BACK
+3000 mark D_DESK_BACK_2S

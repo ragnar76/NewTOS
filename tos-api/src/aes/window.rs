@@ -27,7 +27,7 @@ use crate::bdos::process::{self, usermem, Abi};
 use crate::host::{host, Host};
 use crate::vdi::backend::{ClipRect, PatternFill, Pel, RasterBackend, WriteMode};
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU64, AtomicU8, Ordering};
 
 // ── kind (border widget) bits, aesdefs.h:519-531 ──
 const NAME: u16 = 0x0001;
@@ -470,11 +470,13 @@ impl LiveStr {
 
 /// The kernel high-half alias of user VA `va` in process `slot`'s mapping —
 /// [`usermem::resolve_kva`], the seam [`LiveStr::read`] reads an EL0 owner's
-/// string through. The host unit tests substitute a resolver over host
-/// buffers here ([`live_title_tests`]): a host process has no process table
-/// and cannot dereference a kernel high-half address, so the owner-slot and
+/// string through and the object drawer reads an EL0 owner's `WF_NEWDESK`
+/// tree through (`object.rs`, A97). The host unit tests substitute a
+/// resolver over host buffers here ([`live_title_tests`],
+/// [`newdesk_owner_tests`]): a host process has no process table and cannot
+/// dereference a kernel high-half address, so the owner-slot and
 /// dangling-pointer cases are modelled at this seam (A83).
-fn owner_kva(slot: usize, va: u64) -> Option<u64> {
+pub(crate) fn owner_kva(slot: usize, va: u64) -> Option<u64> {
     #[cfg(test)]
     if let Some(resolve) = live_title_tests::resolver() {
         return resolve(slot, va);
@@ -1231,6 +1233,33 @@ static NEWDESK_APP: AtomicBool = AtomicBool::new(false);
 /// records `Lp64`. Only consulted when [`NEWDESK_APP`] is `true`.
 static NEWDESK_ABI: AtomicU8 = AtomicU8::new(Abi::Lp64 as u8);
 
+/// The process slot that registered [`NEWDESK_TREE`] — `-1` for a kernel
+/// (EL1) registrant, whose tree is a kernel VA, else the GEMDOS slot of the
+/// EL0 caller (`process::slot_for(process::current())` inside the
+/// `wind_set` trap), captured in [`set_newdesk`] exactly as [`LiveStr::slot`]
+/// is for a title pointer (A83). The composite reads the tree **through this
+/// slot's mapping** ([`draw_desk_tree`] → `render_tree_app(…, owner, …)`,
+/// A97) — the tree's records, sub-structs, strings and rasters are all user
+/// VAs of that process, and the composite runs from other processes' AES
+/// calls and from the kernel desktop, under other `TTBR0`s. A registrant that
+/// has ended is swept with its windows ([`wm_new_keep_desktop`]).
+static NEWDESK_OWNER: AtomicI32 = AtomicI32::new(-1);
+
+/// [`NEWDESK_OWNER`] as an `Option`: `Some(slot)` for an EL0 registrant.
+fn newdesk_owner() -> Option<usize> {
+    usize::try_from(NEWDESK_OWNER.load(Ordering::Acquire)).ok()
+}
+
+/// Forget the registered desktop tree — `gl_newdesk = NULL`
+/// (`gemwmlib.c:1300`): tree, root, origin, ABI and owner.
+fn clear_newdesk() {
+    NEWDESK_TREE.store(0, Ordering::Release);
+    NEWDESK_ROOT.store(0, Ordering::Release);
+    NEWDESK_APP.store(false, Ordering::Release);
+    NEWDESK_ABI.store(Abi::Lp64 as u8, Ordering::Release);
+    NEWDESK_OWNER.store(-1, Ordering::Release);
+}
+
 /// `wind_set(DESKWH, WF_NEWDESK, …)` handler (EmuTOS `wm_set`,
 /// `gemwmlib.c:1685-1689`): register (non-null tree) or un-register (null tree)
 /// the desktop's background object tree + root object. Never fails.
@@ -1260,17 +1289,22 @@ fn set_newdesk(pb: &Aespb) {
     let root = if pb.ain_len() >= 1 { pb.intin(2) } else { pb.intin(2 + pb.ptr_words()) };
     if tree == 0 {
         NEWDESK_TREE.store(0, Ordering::Release);
+        NEWDESK_OWNER.store(-1, Ordering::Release);
     } else {
-        // Capture the tree's origin + ABI at registration time; the background
-        // composite runs later, when a different (or no) process may be current.
-        // A running user process (`current()` non-null) means an EL0 GEM app is
-        // registering its own background tree — its `G_USERDEF` `ub_code` lives
-        // in EL0 and must not be up-called from EL1; a null `current()` is the
-        // kernel/desktop registering its native `g_screen`. `current_abi()`
-        // records the record width now (the app is current at this instant).
+        // Capture the tree's origin + ABI + owner at registration time; the
+        // background composite runs later, when a different (or no) process
+        // may be current. A running user process (`current()` non-null)
+        // means an EL0 GEM app is registering its own background tree — its
+        // `G_USERDEF` `ub_code` lives in EL0 and must not be up-called from
+        // EL1, and its tree is read through its own mapping (the owner slot,
+        // A97); a null `current()` is the kernel/desktop registering its
+        // native `g_screen`. `current_abi()` records the record width now
+        // (the app is current at this instant).
         let is_app = !crate::bdos::process::current().is_null();
         NEWDESK_APP.store(is_app, Ordering::Release);
         NEWDESK_ABI.store(crate::bdos::process::current_abi() as u8, Ordering::Release);
+        let owner = process::slot_for(process::current()).and_then(|s| i32::try_from(s).ok());
+        NEWDESK_OWNER.store(owner.unwrap_or(-1), Ordering::Release);
         // NEWDESK_ROOT is taken verbatim from caller input (EmuTOS trusts the
         // desktop's `gl_newroot`/`DROOT` the same way, gemwmlib.c:1685). A
         // negative index is defused downstream (`render_tree_*` bail on
@@ -1436,13 +1470,43 @@ fn draw_desk_tree(backend: &dyn RasterBackend, clip: ClipRect) {
             // the app callback's VA, the WF_NEWDESK crash). The boxes/images of
             // the tree still draw; the app userdef simply is not invoked (an
             // EL0-upcall mechanism is out of scope — the goal is: no crash).
+            //
+            // The tree is a user VA of the registrant, and this runs under
+            // whatever `TTBR0` the current caller has: read it **through the
+            // owner's mapping** (A97, the A83 model). The root record must
+            // resolve up front — if the owner has no mapping there any more
+            // (the block freed, the slot re-seeded), the tree counts as not
+            // registered and the AES fallback root is drawn instead; inside
+            // the draw every further address resolves the same way.
             let abi = Abi::from_u8(NEWDESK_ABI.load(Ordering::Acquire));
-            // SAFETY: `tree` is the app's registered background-tree base — a
-            // valid OBJECT array (at `abi` width) kept stable for its lifetime;
-            // `root` in range (caller contract, see `set_newdesk`).
-            unsafe {
-                render_tree_app(tree as *const Object, root, MAX_DEPTH, clip.xmn, clip.ymn, cw, ch, abi, backend);
+            let owner = newdesk_owner();
+            let root_va = tree.wrapping_add(root.max(0) as u64 * super::object::record_stride(abi));
+            let readable = match owner {
+                Some(slot) => owner_kva(slot, root_va).is_some(),
+                None => true,
+            };
+            if readable {
+                // SAFETY: `tree` is the app's registered background-tree base —
+                // a valid OBJECT array (at `abi` width) in the owner's address
+                // space, read through that owner's mapping; `root` in range
+                // (caller contract, see `set_newdesk`).
+                unsafe {
+                    render_tree_app(
+                        tree as *const Object,
+                        root,
+                        MAX_DEPTH,
+                        clip.xmn,
+                        clip.ymn,
+                        cw,
+                        ch,
+                        abi,
+                        owner,
+                        backend,
+                    );
+                }
+                return;
             }
+            draw_fallback_root(backend, clip, cw, ch);
         } else {
             // Kernel/desktop-built native `g_screen` (LP64 records); a
             // `G_USERDEF` here is a real EL1 callback (`kernel_built = true`).
@@ -1454,11 +1518,17 @@ fn draw_desk_tree(backend: &dyn RasterBackend, clip: ClipRect) {
             }
         }
     } else {
-        let fb = fallback_root(backend.width() as i16, backend.height() as i16);
-        // SAFETY: `fb` is a single valid native OBJECT (root index 0, no children).
-        unsafe {
-            render_tree_lp64(&fb as *const Object, 0, 0, clip.xmn, clip.ymn, cw, ch, backend);
-        }
+        draw_fallback_root(backend, clip, cw, ch);
+    }
+}
+
+/// Draw the AES-internal [`fallback_root`] at depth 0 within `clip` — the
+/// `gl_newdesk == NULL` arm of `w_drawdesk` (`gemwmlib.c:340-359`).
+fn draw_fallback_root(backend: &dyn RasterBackend, clip: ClipRect, cw: i16, ch: i16) {
+    let fb = fallback_root(backend.width() as i16, backend.height() as i16);
+    // SAFETY: `fb` is a single valid native OBJECT (root index 0, no children).
+    unsafe {
+        render_tree_lp64(&fb as *const Object, 0, 0, clip.xmn, clip.ymn, cw, ch, backend);
     }
 }
 
@@ -4221,6 +4291,59 @@ pub fn wm_new() {
     unsafe { *TABLE.next_z.get() = 1 };
 }
 
+/// The `sh_ldapp` window sweep for a program the **desktop** launched and
+/// that has returned (A96): `wm_new` (`gemshlib.c:676-677` → `gemwmlib.c:
+/// 1875-1893`) minus the desktop's own windows.
+///
+/// EmuTOS's `wm_new` deletes **every** window, the desktop's included —
+/// there the desktop is itself a shell program: `shel_write` ends it,
+/// `sh_ldapp` runs the child and sweeps, `sh_main` loops and starts the
+/// desktop afresh (`gemshlib.c:600-612,708-731`), which rebuilds its
+/// windows from its own context save (`cnx_get`, `desk/deskmain.c:2055`).
+/// The NewTOS desktop does not restart: `run_gem_app` runs the child
+/// **nested** in the desktop's event loop (AES gap G1) and `desktop_resume`
+/// repaints the desktop windows it still holds in this table (gap G2 —
+/// no save/restore, no `cnx_get`; `kernel/src/desk/main.rs`). So the sweep
+/// that runs when the desktop regains control keeps the windows the
+/// desktop identity owns (`pd::DESKTOP`, `w_owner`) and takes everything
+/// else, exactly as `wm_new` would: closed if open (`wm_close`, with its
+/// `draw_change` repaint and `WM_REDRAW` fan-out), then deleted
+/// (`wm_delete`). When the desktop is back no EL0 process is alive — the
+/// launched chain has ended, single-tasking — so every non-desktop owner is
+/// a dead program (the launched one, or a `Pexec` descendant of it that left
+/// windows behind and had no sweep of its own).
+///
+/// As `sh_ldapp` before `wm_new`: the `wind_update` locks a dead program
+/// still holds are released (`unsync(&wind_spb)`, `gemshlib.c:668-669`;
+/// `wm_new`'s own drains, `gemwmlib.c:1879-1883`) — the desktop takes no
+/// lock across a launch, so the counters are the program's. And the
+/// desktop-background tree the program registered is dropped: EmuTOS
+/// resets `gl_newdesk` in `wm_init` before the desktop restarts
+/// (`gemwmlib.c:1300`) and the desktop registers its own again
+/// (`deskmain.c:2049`); `desktop_resume` re-registers likewise, and the
+/// program's tree is a VA of an address space that is gone (A97).
+///
+/// Draws what closing those windows draws (see [`wm_new`]); the
+/// whole-screen repaint is the desktop's `redraw_desktop` afterwards.
+pub fn wm_new_keep_desktop() {
+    MCTRL_CNT.store(0, Ordering::Relaxed);
+    UPDATE_LOCK.store(0, Ordering::Relaxed);
+    let desktop = super::pd::DESKTOP as i16;
+    for wh in 1..NUM_WIN as i16 {
+        let Some((owner, open)) = win(wh).map(|w| (w.owner, w.open)) else { continue };
+        if owner == desktop {
+            continue;
+        }
+        if open {
+            close_window(wh);
+        }
+        wm_delete(wh);
+    }
+    if newdesk_owner().is_some() {
+        clear_newdesk();
+    }
+}
+
 /// `wm_init` (`gemwmlib.c:1247-1310`) — re-initialise the Window Manager
 /// before each program the shell loop starts (`gemshlib.c:717`). EmuTOS
 /// rebuilds the whole window-extent/element object arena; the observable
@@ -4241,9 +4364,7 @@ pub fn wm_init() {
     // (`gemwmlib.c:1290-1294`).
     init_desk_window();
     // `gl_newdesk = NULL;` (gemwmlib.c:1300)
-    NEWDESK_TREE.store(0, Ordering::Release);
-    NEWDESK_ROOT.store(0, Ordering::Release);
-    NEWDESK_APP.store(false, Ordering::Release);
+    clear_newdesk();
     // Any saved desktop window set belongs to a desktop instance that is
     // over; `wm_init` leaves no window state behind (`:1263-1268`).
     // SAFETY: single-CPU AES.
@@ -5154,6 +5275,21 @@ pub fn test_window_z(handle: i16) -> Option<i16> {
     win(handle).filter(|w| w.open).map(|w| w.z)
 }
 
+/// Test hook (not wired to boot): the identity that owns the in-use window
+/// `handle` (`w_owner` — a GEMDOS slot, or `MAX_PROCESSES` for the kernel
+/// desktop), or `None` for a free slot / no such handle. Lets a host test
+/// state which windows a sweep took and which it kept (A96).
+pub fn test_window_owner(handle: i16) -> Option<usize> {
+    owner_of(handle)
+}
+
+/// Test hook (not wired to boot): the registered desktop-background tree
+/// (`gl_newdesk`), 0 when none is registered — so a host test can state
+/// that a sweep dropped a dead program's registration (A96/A97).
+pub fn test_newdesk_tree() -> u64 {
+    NEWDESK_TREE.load(Ordering::Acquire)
+}
+
 /// Test hook: name of the gadget under a point (for the headless logic
 /// check in the selftest).
 pub fn gadget_name_at(handle: i16, mx: i16, my: i16) -> &'static str {
@@ -5200,8 +5336,10 @@ mod newdesk_root_word_tests {
     use crate::aes::{AI_SIZE, I_SIZE, O_SIZE};
     use std::sync::Mutex;
 
-    /// The two statics are process-global; the cases run serially.
-    static SERIAL: Mutex<()> = Mutex::new(());
+    /// The statics are process-global; the cases run serially — and
+    /// [`super::newdesk_owner_tests`], which sets the same statics, takes
+    /// this lock too.
+    pub(super) static SERIAL: Mutex<()> = Mutex::new(());
 
     const OP_WIND_SET: i16 = 105;
     const WF_NEWDESK: i16 = 14;
@@ -5361,19 +5499,21 @@ mod live_title_tests {
 
     /// One modelled block: `slot` maps `[va, va + len)` to host memory at
     /// `host` (page-aligned VA and page-rounded length, as `usermem::Block`).
+    /// Shared with [`super::newdesk_owner_tests`], which models the A97
+    /// tree reads at the same seam.
     #[derive(Clone, Copy)]
-    struct Map {
-        slot: usize,
-        va: u64,
-        len: u64,
-        host: u64,
+    pub(super) struct Map {
+        pub(super) slot: usize,
+        pub(super) va: u64,
+        pub(super) len: u64,
+        pub(super) host: u64,
     }
 
     static MAPS: Mutex<Vec<Map>> = Mutex::new(Vec::new());
-    static ASKED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+    pub(super) static ASKED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
     static ACTIVE: AtomicBool = AtomicBool::new(false);
     /// The seam is process-global; the cases run serially.
-    static SERIAL: Mutex<()> = Mutex::new(());
+    pub(super) static SERIAL: Mutex<()> = Mutex::new(());
 
     /// The resolver [`owner_kva`] consults while a case is running.
     pub(super) fn resolver() -> Option<fn(usize, u64) -> Option<u64>> {
@@ -5390,7 +5530,7 @@ mod live_title_tests {
     }
 
     /// Run `f` with `maps` installed at the seam, then take it down.
-    fn with_maps<R>(maps: &[Map], f: impl FnOnce() -> R) -> R {
+    pub(super) fn with_maps<R>(maps: &[Map], f: impl FnOnce() -> R) -> R {
         *MAPS.lock().unwrap() = maps.to_vec();
         ASKED.lock().unwrap().clear();
         ACTIVE.store(true, Ordering::Release);
@@ -5402,7 +5542,7 @@ mod live_title_tests {
 
     /// A page-sized host block holding `s` at offset `at` (NUL-terminated
     /// unless `s` fills the block to its end).
-    fn page_with(s: &[u8], at: usize) -> Box<[u8]> {
+    pub(super) fn page_with(s: &[u8], at: usize) -> Box<[u8]> {
         let mut p = vec![0u8; usermem::PAGE_SIZE as usize].into_boxed_slice();
         p[at..at + s.len()].copy_from_slice(s);
         p
@@ -5604,5 +5744,365 @@ mod live_title_tests {
         assert_eq!(label_walk(1850), 232);
         assert_eq!(label_walk(0), 1);
         assert_eq!(label_walk(-5), 1);
+    }
+}
+
+#[cfg(test)]
+mod newdesk_owner_tests {
+    //! A97 — the `WF_NEWDESK` tree is **read through its owner's mapping** at
+    //! composite time ([`NEWDESK_OWNER`], `object.rs` `ObjTree::app_owned`).
+    //! The registrant's tree, its sub-structs, strings and rasters are user
+    //! VAs of that process; the composite runs from other processes' AES
+    //! calls and from the kernel desktop, under other `TTBR0`s. Modelled at
+    //! the [`owner_kva`] seam exactly as the A83 title cases
+    //! ([`live_title_tests`]): a resolver over host pages stands in for the
+    //! owner's block table, the registration state is set directly (the
+    //! `wind_set` marshalling is `newdesk_root_word_tests`' business), and
+    //! [`draw_desk_tree`] is called on a raster that records what it is
+    //! asked to paint. `VA` is a low user address that is **not** mapped in
+    //! the host process, so a raw dereference would fault: every case
+    //! finishing is the "no fault" half of the ticket.
+    //!
+    //! * **owner mapping, not the current one** — two slots map the same VA
+    //!   to different trees; the composite draws the owner's and asks the
+    //!   resolver for the owner's slot only;
+    //! * **dangling** — the owner has no mapping for the tree any more: the
+    //!   AES fallback root is drawn, the tree is never touched;
+    //! * **the tree's icon** — ICONBLK, mask/data rasters and label are
+    //!   reached through the same mapping (the sub-struct and span readers);
+    //! * **a raster the owner does not map is skipped**, the rest of the
+    //!   icon still drawn;
+    //! * **a raster spanning two pages** is drawn only if the owner's alias
+    //!   of the second page continues the first (one block), not when the
+    //!   two pages are separate allocations.
+    use super::live_title_tests::{page_with, with_maps, Map, ASKED, SERIAL as SEAM};
+    use super::newdesk_root_word_tests::SERIAL as STATE;
+    use super::*;
+    use crate::vdi::backend::{MonoSrc, Rect};
+    use std::sync::Mutex;
+
+    // ── a raster that records the fills, blits and glyphs it paints ────
+
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    enum Paint {
+        Rect(i16, i16, i16, i16, Pel),
+        Pattern(i16, i16, i16, i16, Pel),
+        Mono(i16, i16, i16, i16, Pel),
+        Glyph(i16, i16),
+    }
+
+    struct PaintLog(Mutex<Vec<Paint>>);
+
+    impl PaintLog {
+        fn new() -> PaintLog {
+            PaintLog(Mutex::new(Vec::new()))
+        }
+        fn take(&self) -> Vec<Paint> {
+            std::mem::take(&mut *self.0.lock().unwrap())
+        }
+    }
+
+    impl RasterBackend for PaintLog {
+        fn width(&self) -> u16 {
+            640
+        }
+        fn height(&self) -> u16 {
+            480
+        }
+        fn num_colors(&self) -> u16 {
+            256
+        }
+        fn planes(&self) -> u16 {
+            16
+        }
+        fn set_color(&self, _index: u16, _r: u16, _g: u16, _b: u16) {}
+        fn query_color(&self, _index: u16) -> (u16, u16, u16) {
+            (0, 0, 0)
+        }
+        fn set_active_palette(&self, _palette: &[u16; 256]) {}
+        fn pel_to_device16(&self, _pel: Pel) -> u16 {
+            0
+        }
+        fn device_to_rgb565(&self, _argb: u32) -> u16 {
+            0
+        }
+        fn rgb565_to_device(&self, _px: u16) -> u32 {
+            0
+        }
+        fn read_pixel(&self, _x: i16, _y: i16) -> Pel {
+            0
+        }
+        fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel, _clip: ClipRect) {
+            self.0.lock().unwrap().push(Paint::Rect(x, y, w, h, pel));
+        }
+        #[allow(clippy::too_many_arguments)]
+        fn abline(
+            &self,
+            _x0: i16,
+            _y0: i16,
+            _x1: i16,
+            _y1: i16,
+            _pel: Pel,
+            _mode: WriteMode,
+            _clip: ClipRect,
+            mask: u16,
+            _last: bool,
+        ) -> u16 {
+            mask
+        }
+        fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, _clip: ClipRect) {
+            self.0.lock().unwrap().push(Paint::Pattern(x, y, w, h, fill.fg));
+        }
+        #[allow(clippy::too_many_arguments)]
+        fn draw_glyph_sized(
+            &self,
+            x: i16,
+            y: i16,
+            _glyph: &[u8],
+            _cell_w: i16,
+            _cell_h: i16,
+            _fg: Pel,
+            _mode: WriteMode,
+            _clip: ClipRect,
+        ) {
+            self.0.lock().unwrap().push(Paint::Glyph(x, y));
+        }
+        fn blit_mono(&self, dst: Rect, _src: MonoSrc, fg: Pel, _bg: Pel, _m: WriteMode, _clip: ClipRect) {
+            self.0.lock().unwrap().push(Paint::Mono(dst.x, dst.y, dst.w, dst.h, fg));
+        }
+        fn copy_rect(&self, _src: Rect, _dx: i16, _dy: i16, _op: u8, _clip: ClipRect) {}
+        fn get_device_pixel(&self, _x: i16, _y: i16) -> u32 {
+            0
+        }
+        fn put_device_pixel(&self, _x: i16, _y: i16, _argb: u32) {}
+        fn flush_rect(&self, _x0: i16, _y0: i16, _x1: i16, _y1: i16) {}
+    }
+
+    // ── the stage ──────────────────────────────────────────────────────
+
+    const PAGE: u64 = usermem::PAGE_SIZE;
+    /// A low user VA, page-aligned, the way the EL0 heap window hands them
+    /// out — and unmapped in the host process.
+    const VA: u64 = 0x0040_0000;
+    const G_BOX: u16 = 20;
+    const G_ICON: u16 = 31;
+    /// `ob_spec` of a solid box in colour `c` (`gr_crack`: pattern 7 =
+    /// IP_SOLID in bits 4..6, interior colour in bits 0..3, thickness 0).
+    const fn solid(c: u16) -> u64 {
+        (0x70 | c) as u64
+    }
+
+    fn object(ty: u16, next: i16, head: i16, tail: i16, spec: u64, r: (i16, i16, i16, i16)) -> Object {
+        Object {
+            ob_next: next,
+            ob_head: head,
+            ob_tail: tail,
+            ob_type: ty,
+            ob_flags: 0,
+            ob_state: 0,
+            ob_spec: spec,
+            ob_x: r.0,
+            ob_y: r.1,
+            ob_width: r.2,
+            ob_height: r.3,
+        }
+    }
+
+    /// Write `objs` as native (LP64, 32-byte) records at `at` in `page`.
+    fn put_objects(page: &mut [u8], at: usize, objs: &[Object]) {
+        for (i, o) in objs.iter().enumerate() {
+            let bytes: [u8; 32] = unsafe { core::mem::transmute(*o) };
+            page[at + i * 32..at + i * 32 + 32].copy_from_slice(&bytes);
+        }
+    }
+
+    /// Write an LP64 ICONBLK at `at`: three pointers, then the eleven WORDs
+    /// `ib_char, xchar, ychar, xicon, yicon, wicon, hicon, xtext, ytext,
+    /// wtext, htext` (`mt_gem.h:2004-2020`).
+    fn put_iconblk(page: &mut [u8], at: usize, pmask: u64, pdata: u64, ptext: u64, words: [i16; 11]) {
+        page[at..at + 8].copy_from_slice(&pmask.to_le_bytes());
+        page[at + 8..at + 16].copy_from_slice(&pdata.to_le_bytes());
+        page[at + 16..at + 24].copy_from_slice(&ptext.to_le_bytes());
+        for (i, w) in words.iter().enumerate() {
+            page[at + 24 + 2 * i..at + 26 + 2 * i].copy_from_slice(&w.to_le_bytes());
+        }
+    }
+
+    /// A 32×32 mono raster (2 words per row, 32 rows = 128 bytes), all set.
+    fn put_raster(page: &mut [u8], at: usize) {
+        for b in &mut page[at..at + 128] {
+            *b = 0xFF;
+        }
+    }
+
+    /// Register `tree` (root `root`) as an EL0 app's background tree owned
+    /// by `owner`, at LP64 width — what `set_newdesk` records for an LP64
+    /// `.NAP` registrant (`NEWDESK_APP`, `NEWDESK_ABI`, `NEWDESK_OWNER`).
+    fn register(tree: u64, root: i16, owner: usize) {
+        NEWDESK_APP.store(true, Ordering::Release);
+        NEWDESK_ABI.store(Abi::Lp64 as u8, Ordering::Release);
+        NEWDESK_OWNER.store(owner as i32, Ordering::Release);
+        NEWDESK_ROOT.store(root, Ordering::Release);
+        NEWDESK_TREE.store(tree, Ordering::Release);
+    }
+
+    /// The composite of the whole screen — what `paint_bg_clip` asks
+    /// [`draw_desk_tree`] for per piece of the desktop's rectangle list.
+    fn composite(log: &PaintLog) -> Vec<Paint> {
+        draw_desk_tree(log, ClipRect::full(640, 480));
+        log.take()
+    }
+
+    /// Both locks: the resolver seam and the `NEWDESK_*` statics.
+    fn locks() -> (std::sync::MutexGuard<'static, ()>, std::sync::MutexGuard<'static, ()>) {
+        (STATE.lock().unwrap_or_else(|e| e.into_inner()), SEAM.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    #[test]
+    fn the_tree_is_read_through_the_owners_mapping_not_the_current_one() {
+        let _g = locks();
+        // Slot 3's page at VA: a root box (10,20,100,50) in colour 1.
+        let mut owner = page_with(b"", 0);
+        put_objects(&mut owner, 0, &[object(G_BOX, -1, -1, -1, solid(1), (10, 20, 100, 50))]);
+        // Slot 5's page at the same VA: a full-screen box in colour 2.
+        let mut other = page_with(b"", 0);
+        put_objects(&mut other, 0, &[object(G_BOX, -1, -1, -1, solid(2), (0, 0, 640, 480))]);
+        let maps = [
+            Map { slot: 3, va: VA, len: PAGE, host: owner.as_ptr() as u64 },
+            Map { slot: 5, va: VA, len: PAGE, host: other.as_ptr() as u64 },
+        ];
+        register(VA, 0, 3);
+        let log = PaintLog::new();
+        let (paint, asked) = with_maps(&maps, || (composite(&log), ASKED.lock().unwrap().clone()));
+        clear_newdesk();
+        assert_eq!(paint, vec![Paint::Rect(10, 20, 100, 50, 1)], "the composite must draw the owner slot's tree");
+        assert!(!asked.is_empty() && asked.iter().all(|&s| s == 3), "resolved through slots {asked:?}, not the owner's 3 only");
+    }
+
+    #[test]
+    fn a_tree_the_owner_no_longer_maps_is_not_composited() {
+        let _g = locks();
+        // Slot 3 maps something else entirely; the registered VA is gone
+        // (the block freed, the slot re-seeded for another program).
+        let owner = page_with(b"", 0);
+        let maps = [Map { slot: 3, va: VA + 8 * PAGE, len: PAGE, host: owner.as_ptr() as u64 }];
+        register(VA, 0, 3);
+        let log = PaintLog::new();
+        let (paint, asked) = with_maps(&maps, || (composite(&log), ASKED.lock().unwrap().clone()));
+        clear_newdesk();
+        // The AES fallback root: one patterned fill of the whole clip in the
+        // built-in DESKTOP root's colour (`fallback_root`), and nothing else.
+        let fb_col = (super::super::init::desktop_root_obspec() & 0x0F) as Pel;
+        assert_eq!(paint, vec![Paint::Pattern(0, 0, 640, 480, fb_col)], "an unresolvable tree counts as not registered: the fallback root is drawn");
+        assert_eq!(asked, vec![3], "one failed lookup of the root record, then no further access");
+    }
+
+    #[test]
+    fn the_trees_icon_is_read_through_the_owners_mapping() {
+        let _g = locks();
+        let mut owner = page_with(b"", 0);
+        // Root box (0,0,640,480) with one G_ICON child at (100,100,64,48)
+        // whose ICONBLK sits at +0x100, mask at +0x200, data at +0x300 and
+        // label at +0x400 — all VAs of slot 3.
+        put_objects(
+            &mut owner,
+            0,
+            &[
+                object(G_BOX, -1, 1, 1, solid(0), (0, 0, 640, 480)),
+                object(G_ICON, 0, -1, -1, VA + 0x100, (100, 100, 64, 48)),
+            ],
+        );
+        put_iconblk(&mut owner, 0x100, VA + 0x200, VA + 0x300, VA + 0x400, [0x1000, 0, 0, 0, 0, 32, 32, 0, 32, 64, 8]);
+        put_raster(&mut owner, 0x200);
+        put_raster(&mut owner, 0x300);
+        owner[0x400..0x405].copy_from_slice(b"ICON\0");
+        let maps = [Map { slot: 3, va: VA, len: PAGE, host: owner.as_ptr() as u64 }];
+        register(VA, 0, 3);
+        let log = PaintLog::new();
+        let (paint, asked) = with_maps(&maps, || (composite(&log), ASKED.lock().unwrap().clone()));
+        clear_newdesk();
+        // `gr_gicon`: the mask in bg (0), the data in fg (1), the label box,
+        // then the four label glyphs.
+        let mono: Vec<Paint> = paint.iter().copied().filter(|p| matches!(p, Paint::Mono(..))).collect();
+        assert_eq!(
+            mono,
+            vec![Paint::Mono(100, 100, 32, 32, 0), Paint::Mono(100, 100, 32, 32, 1)],
+            "mask and data rasters must be blitted from the owner's pages: {paint:?}"
+        );
+        let glyphs = paint.iter().filter(|p| matches!(p, Paint::Glyph(..))).count();
+        assert_eq!(glyphs, 4, "the label ICON must be read from the owner's page: {paint:?}");
+        assert!(asked.iter().all(|&s| s == 3), "resolved through slots {asked:?}");
+    }
+
+    #[test]
+    fn a_raster_the_owner_does_not_map_is_skipped_not_read() {
+        let _g = locks();
+        let mut owner = page_with(b"", 0);
+        put_objects(
+            &mut owner,
+            0,
+            &[
+                object(G_BOX, -1, 1, 1, solid(0), (0, 0, 640, 480)),
+                object(G_ICON, 0, -1, -1, VA + 0x100, (100, 100, 64, 48)),
+            ],
+        );
+        // The data raster points into a page the owner never had.
+        put_iconblk(&mut owner, 0x100, VA + 0x200, VA + 9 * PAGE, VA + 0x400, [0x1000, 0, 0, 0, 0, 32, 32, 0, 32, 64, 8]);
+        put_raster(&mut owner, 0x200);
+        owner[0x400..0x405].copy_from_slice(b"ICON\0");
+        let maps = [Map { slot: 3, va: VA, len: PAGE, host: owner.as_ptr() as u64 }];
+        register(VA, 0, 3);
+        let log = PaintLog::new();
+        let paint = with_maps(&maps, || composite(&log));
+        clear_newdesk();
+        let mono: Vec<Paint> = paint.iter().copied().filter(|p| matches!(p, Paint::Mono(..))).collect();
+        assert_eq!(mono, vec![Paint::Mono(100, 100, 32, 32, 0)], "only the mapped mask is blitted; the unmapped data raster is skipped: {paint:?}");
+        assert_eq!(paint.iter().filter(|p| matches!(p, Paint::Glyph(..))).count(), 4, "the label still draws");
+    }
+
+    #[test]
+    fn a_raster_spanning_two_pages_needs_one_contiguous_alias() {
+        let _g = locks();
+        // Tree + ICONBLK in page A; the 128-byte data raster starts 64
+        // bytes before the end of page B and runs into page C. Mapped once
+        // with C's alias two pages above B's (a hole between: not one block
+        // → skipped), once with C's alias directly following B's (one
+        // block → drawn). One 3-page host buffer serves both, so the
+        // aliases are what the map says and not what the allocator did.
+        let mut a = page_with(b"", 0);
+        put_objects(
+            &mut a,
+            0,
+            &[
+                object(G_BOX, -1, 1, 1, solid(0), (0, 0, 640, 480)),
+                object(G_ICON, 0, -1, -1, VA + 0x100, (100, 100, 64, 48)),
+            ],
+        );
+        let raster_va = VA + 2 * PAGE - 64;
+        put_iconblk(&mut a, 0x100, 0, raster_va, 0, [0x1000, 0, 0, 0, 0, 32, 32, 0, 32, 64, 8]);
+        let buf = vec![0xFFu8; 3 * PAGE as usize].into_boxed_slice();
+        let host = buf.as_ptr() as u64;
+        let split = [
+            Map { slot: 3, va: VA, len: PAGE, host: a.as_ptr() as u64 },
+            Map { slot: 3, va: VA + PAGE, len: PAGE, host },
+            Map { slot: 3, va: VA + 2 * PAGE, len: PAGE, host: host + 2 * PAGE },
+        ];
+        let joined = [
+            Map { slot: 3, va: VA, len: PAGE, host: a.as_ptr() as u64 },
+            Map { slot: 3, va: VA + PAGE, len: 2 * PAGE, host },
+        ];
+        register(VA, 0, 3);
+        let log = PaintLog::new();
+        let split_paint = with_maps(&split, || composite(&log));
+        let joined_paint = with_maps(&joined, || composite(&log));
+        clear_newdesk();
+        assert!(
+            !split_paint.iter().any(|p| matches!(p, Paint::Mono(..))),
+            "an alias with a hole is not one contiguous run: the raster must be skipped: {split_paint:?}"
+        );
+        assert!(
+            joined_paint.iter().any(|p| matches!(p, Paint::Mono(100, 100, 32, 32, 1))),
+            "one block spanning both pages is read whole: {joined_paint:?}"
+        );
     }
 }

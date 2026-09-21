@@ -1,0 +1,17 @@
+# A96 exploration 2: APPS (178,104) -> TERADESK folder (202,128) -> dump.
+200 parkbr
+1100 mark A_IDLE
+1400 move 178 104
+1600 down
+1603 up
+1608 down
+1611 up
+2000 parkbr
+2600 mark B_APPS
+2900 move 202 128
+3100 down
+3103 up
+3108 down
+3111 up
+3500 parkbr
+4100 mark C_TERADESK

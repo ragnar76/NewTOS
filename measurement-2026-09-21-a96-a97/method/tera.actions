@@ -1,0 +1,54 @@
+# A96/A97 (kernel desktop, sd-tera = sd-base + Apps\TERADESK\TERADESK.INF, no #Z):
+# park bottom-right (never through the menu bar), dump the idle desktop (A);
+# double-click APPS (178,104) in the boot C:\ window (B), TERADESK (202,128)
+# in the C:\APPS\ window (C), DESKTOP.NAP (226,152) in the C:\APPS\TERADESK\
+# window -> the desktop launches TeraDesk through run_gem_app (D, 10 s later);
+# in TeraDesk double-click HARD DISC C (195,35) -> its C:\*.* window (E);
+# File title (70,8) -> menu (F); Quit/Shutdown (130,235) -> the Quit/Shutdown
+# Options dialog (G); Quit (320,313) -> TeraDesk ends, the desktop resumes
+# (H, 4 s after the click; I, 2 s later). Ticks are 200 Hz after
+# "[desk] desktop up" (A46 dual arming).
+200 parkbr
+1100 mark A_IDLE
+1400 move 178 104
+1600 down
+1603 up
+1608 down
+1611 up
+2000 parkbr
+2600 mark B_APPS
+2900 move 202 128
+3100 down
+3103 up
+3108 down
+3111 up
+3500 parkbr
+4100 mark C_TERADESK
+4400 move 226 152
+4600 down
+4603 up
+4608 down
+4611 up
+5000 parkbr
+7000 mark D_TERA_IDLE
+7300 move 195 35
+7500 down
+7503 up
+7508 down
+7511 up
+8000 parkbr
+8600 mark E_TERA_WINDOW
+8900 move 70 8
+9100 down
+9103 up
+9600 mark F_TERA_MENU
+9800 move 130 235
+10000 down
+10003 up
+10600 mark G_QUIT_DIALOG
+10800 move 320 313
+11000 down
+11003 up
+11400 parkbr
+11800 mark H_DESK_BACK
+12200 mark I_DESK_BACK_2S

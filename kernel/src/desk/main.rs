@@ -569,6 +569,20 @@ fn desktop_relinquish() {
 /// The **resume** half of [`run_gem_app`]: rebuild the desktop exactly as it was
 /// before the launch (EmuTOS `deskmain.c:2124-2171` + `gemshlib.c:606,710-727`).
 fn desktop_resume() {
+    // The shell loop's sweep after the program — `sh_ldapp`: `unsync
+    // (&wind_spb)` + `wm_new()` (`gemshlib.c:668-669,676-677`), which in
+    // EmuTOS runs between the child's `Pterm` and the desktop's restart. It
+    // is a shell-loop step, not a desktop one (like everything in this
+    // function, gap G1), and the built-in desktop's launch path bypasses the
+    // shell loop, so it has to be taken here or not at all (A96). The
+    // variant keeps the windows this desktop still owns: EmuTOS's `wm_new`
+    // takes those too and the restarted desktop rebuilds them from `cnx_get`
+    // (`deskmain.c:2055`), which this desktop, resuming in place, has no
+    // counterpart of (gap G2, below). Every other window — the program's, or
+    // a `Pexec` descendant's — is closed and deleted, its locks released,
+    // its `WF_NEWDESK` tree dropped; nothing of a program that has ended
+    // stays in the AES table to be composited over the desktop.
+    tos_api::aes::window::wm_new_keep_desktop();
     // Re-enter the AES — EmuTOS `deskmain.c:1953`, `gl_apid = appl_init();`,
     // the first statement of the desktop it re-enters after every program
     // (`sh_main` → `sh_ldapp`'s DESKTOP arm → `deskstart`,

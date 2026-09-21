@@ -535,7 +535,14 @@ Key points not obvious from a skim:
   would corrupt that next program's state.
 - `wm_new()` (`:677`) only runs `if (gl_shgem)` — a character-mode
   (autorun TTP) app that never touched graphics skips window cleanup
-  entirely, since there is nothing to clean up.
+  entirely, since there is nothing to clean up. **NewTOS (A96,
+  2026-09-21):** `kernel/src/shell_loop.rs` runs this sweep on the shell-loop
+  path; the built-in desktop's double-click launch, which bypasses the shell
+  loop (gap G1), runs the same step as `wm_new_keep_desktop()` at
+  `desktop_resume` — every window but the desktop's own, which this
+  desktop keeps because it resumes in place instead of restarting through
+  `sh_main`/`cnx_get` (gap G2). Rule and rationale:
+  [`window-graphics.md`](window-graphics.md) § `wind_new (109)`.
 - `AUTORUN_APP` skips `sh_find` (line `:629`'s ternary) — the autorun
   entry's path was already validated at INF-parse time (implicitly, by
   virtue of having been written into `EMUDESK.INF` by a previous

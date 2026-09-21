@@ -1,0 +1,12 @@
+# A96 exploration 1 (kernel desktop, sd-base): find the way to DESKTOP.NAP.
+# Park bottom-right, dump idle; double-click the APPS folder icon (178,104)
+# in the boot C:\ window -> C:\APPS\ window opens staggered; park, dump.
+200 parkbr
+1100 mark A_IDLE
+1400 move 178 104
+1600 down
+1603 up
+1608 down
+1611 up
+2000 parkbr
+2600 mark B_APPS

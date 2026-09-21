@@ -870,6 +870,33 @@ Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
 > (`kernel/src/desk/win.rs` `w_name[116]`/`w_info[72]`, as EmuTOS
 > `desk/deskwin.h:73,79`).
 
+> **`WF_NEWDESK` stores a pointer read through the registrant's mapping
+> (NewTOS rule, A97, 2026-09-21).** `wm_set` stores the pointer —
+> `gl_newdesk = *(OBJECT **)pinwds; gl_newroot = pinwds[2]`
+> (`gemwmlib.c:1685-1689`) — and `w_drawdesk` draws that tree at
+> `MAX_DEPTH` on every background repaint (`:340-359`), which the AES runs
+> from **any** process's `wind_open`/`wind_close`/move and from the
+> desktop's own redraw. On EmuTOS's flat machine that is one address space;
+> on NewTOS every EL0 process has its own `TTBR0` with the TPAs at the same
+> low VAs (`kernel/src/arch/aarch64/el0.rs`, `bdos/process/mmu.rs`), so a
+> raw dereference at composite time goes through whichever tables are
+> installed — a `Pexec` child compositing its parent's background, the
+> kernel desktop repainting after a child's `Pterm`. Contract: the tree, its
+> `ob_spec` sub-structs (TEDINFO/ICONBLK/CICONBLK/BITBLK/USERBLK), their
+> strings and rasters are read **through the registering process's
+> mapping** — `wind_set(WF_NEWDESK)` records the caller's process slot next
+> to the pointer (`NEWDESK_OWNER`, as `WF_NAME`/`WF_INFO` do, A83), and the
+> composite resolves every address through `usermem::resolve_kva(slot, va)`
+> (`object.rs` `ObjTree::app_owned`; rasters and strings page by page, a
+> span only through one contiguous alias). A tree whose root record the
+> owner no longer maps counts as **not registered** (the AES fallback root
+> is drawn); an unmapped sub-struct, string or raster inside the tree is
+> drawn as nothing. A `G_USERDEF` in such a tree is called out to only if
+> the owner *is* the current process — its `ub_code` is code in the owner's
+> address space. A kernel (EL1) registrant's tree is a kernel VA and is read
+> directly. Host-tested at the resolver seam (`window.rs`
+> `newdesk_owner_tests`, the A83 method).
+
 > **`WF_TOP` on the desktop handle and on a created-but-unopened handle
 > (A80, 2026-09-20).** `wm_set` runs `wm_mktop(w_handle)` whenever `w_handle !=
 > gl_wtop` (`gemwmlib.c:1679-1683`), and `gl_wtop` is never 0 (`NIL` or an open
@@ -1073,6 +1100,42 @@ Cleanup call: releases **all** outstanding locks (`END_MCTRL` while `ml_ocnt>0`;
 window** 1..NUM_WIN−1 (`gemwmlib.c:1880-1892`). Used to reset the window manager
 to a clean state (e.g. a crashed/exiting app's leftover windows). The desktop
 window (handle 0) is not deleted.
+
+> **After a launched application returns, the window table is swept
+> (NewTOS rule, A96, 2026-09-21).** EmuTOS runs `wm_new()` from the shell
+> loop after *every* program it ran: `sh_ldapp` → `dos_exec(PE_LOADGO, …)`
+> returns → `AP_OPEN` cleanup → `unsync(&wind_spb)` → `if (gl_shgem)
+> wm_new();` (`gemshlib.c:645-677`; [`shell-loop.md`](shell-loop.md) §8).
+> Whatever windows the program left — open or merely created — are closed
+> (`wm_close`, with its `draw_change` repaint and `WM_REDRAW` fan-out) and
+> deleted, and its `wind_update` locks are gone, before anyone runs again.
+> The desktop's windows go too: in EmuTOS the desktop is itself a program
+> the shell loop restarts (`sh_main`, `gemshlib.c:708-731`), and it rebuilds
+> its windows from its own context save (`cnx_get`, `desk/deskmain.c:2055`).
+>
+> NewTOS's shell loop (`kernel/src/shell_loop.rs`) does exactly that. The
+> built-in desktop's double-click launch does **not** pass through the shell
+> loop (`kernel/src/desk/main.rs` `run_gem_app`, AES gap G1): the program runs
+> nested in the desktop's event loop and the desktop **resumes in place**,
+> repainting the windows it still holds in the shared table (gap G2 — no
+> `cnx_get`). So the sweep NewTOS runs when the desktop regains control
+> (`desktop_resume` → `tos_api::aes::window::wm_new_keep_desktop`) is
+> `wm_new` **minus the windows the desktop identity owns** (`w_owner ==
+> pd::DESKTOP`): every other window — the program's, or a `Pexec`
+> descendant's that had no sweep of its own — is closed if open and deleted,
+> both lock counters are reset, and a `WF_NEWDESK` tree the program
+> registered is dropped (EmuTOS resets `gl_newdesk` in `wm_init` before the
+> desktop restarts, `gemwmlib.c:1300`; `desktop_resume` re-registers the
+> desktop's own tree right after, `deskmain.c:2049`). When the desktop is
+> back no EL0 process is alive (single-tasking), so "not the desktop's" is
+> "a dead program's". Observable contract, host-tested
+> (`tos-api/tests/aes_a96_zombie_windows.rs`): after the resume the dead
+> program's handle is free, `wind_find` inside its rectangle answers the
+> desktop, the whole-screen composite paints its rectangle as bare desktop,
+> and the desktop's own windows are untouched. **Open:** an EL0 `Pexec`
+> child that ends while its EL0 parent lives gets no sweep yet (the
+> parent's `Pterm` handler is not a drawing context; `TASK/A96.md`
+> § Abschluss).
 
 ---
 

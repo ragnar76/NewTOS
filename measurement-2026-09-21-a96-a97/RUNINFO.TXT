@@ -1,0 +1,115 @@
+A96 + A97 -- what survives a process: nothing of its windows (A96), and its
+WF_NEWDESK tree is read through its own mapping, never raw (A97).
+Developer self-evidence, 2026-09-21. Branch desk-rebuild, base HEAD 1c4414a, changes
+uncommitted in the tree. Pinned EmuTOS references/emutos @ 1a7484ab:
+  aes/gemshlib.c:645 (dos_exec), :650-657 (AP_OPEN cleanup), :668-669 (unsync), :676-677
+  (if (gl_shgem) wm_new()), :600-612,708-731 (sh_main loop / desktop restart);
+  aes/gemwmlib.c:1875-1893 (wm_new: drain ml_ocnt/sy_tas, wm_close+wm_delete 1..NUM_WIN),
+  :1247-1310 (wm_init; :1300 gl_newdesk = NULL), :1685-1689 (wm_set WF_NEWDESK),
+  :340-359 (w_drawdesk), :1466-1485 (wm_delete); desk/deskmain.c:2049 (WF_NEWDESK
+  registration), :2055 (cnx_get), :2159-2166 (desktop epilog).
+  Spec: docs/api/aes/window-graphics.md (wind_new (109): new NewTOS rule A96; a new
+  WF_NEWDESK block after the A83 block: rule A97), docs/api/aes/shell-loop.md (§8 wm_new
+  bullet: NewTOS sentence).
+
+PRODUCT CODE (uncommitted; method/product-a96-a97.diff; HEAD copies in method/head-1c4414a/)
+  tos-api/src/aes/object.rs  ObjTree gains `owner: Option<usize>` (+ `app_owned`); every user
+    address the drawer follows goes through ObjTree::ua / ua_span (owner -> window::owner_kva =
+    usermem::resolve_kva; no owner -> the address itself): record fields (rd_ptr -> NIL_RECORD
+    sink when unmapped, wr_ptr drops the write), the INDIRECT spec cell, read_abi_ptr/word (all
+    five sub-struct readers + ciconblk_mainlist now take the tree), read_cstr (page by page),
+    blit_plane (span; blit_plane_kernel for the dither buffer), the CICON device-form image and
+    dither mask spans; ob_user skips the EL0 callout when the tree's owner is not the current
+    process; render_tree_app(.., owner, ..); record_stride().
+  tos-api/src/aes/window.rs  NEWDESK_OWNER (+ newdesk_owner, clear_newdesk); set_newdesk records
+    process::slot_for(current()); draw_desk_tree resolves the root record through the owner and
+    draws the fallback root when it does not resolve (draw_fallback_root), else render_tree_app
+    with the owner; wm_new_keep_desktop() = wm_new minus the desktop-owned windows + lock reset +
+    drop of an app-registered NEWDESK tree; owner_kva pub(crate); test hooks test_window_owner,
+    test_newdesk_tree; wm_init uses clear_newdesk.
+  kernel/src/desk/main.rs  desktop_resume: tos_api::aes::window::wm_new_keep_desktop() first.
+  tos-api/tests/aes_a96_zombie_windows.rs  NEW (2 cases; copy in method/); tos-api/src/aes/window.rs
+    newdesk_owner_tests NEW (5 cases, at the A83 owner_kva seam; live_title_tests' Map/with_maps/
+    page_with/SERIAL/ASKED and newdesk_root_word_tests::SERIAL made pub(super)).
+  sdk/examples/a96zombie.c  NEW: the probe .NAP (window open, evnt_timer 3 s, Pterm without close).
+  docs/STATUS.md Phase-13 fragment + one Recent Decisions row (2026-09-21); TASK/A96.md, A97.md
+    ERLEDIGT + Abschluss; TASK/A96-STATUS-DONE.MD, A97-STATUS-DONE.MD.
+
+HOST TESTS (host-tests/)
+  aes_a96_zombie_windows-RED-no-sweep.txt  the new file with the sweep call removed from its
+      desktop_resume model (= HEAD's desktop_resume), on a scratch copy: 0 passed / 2 FAILED
+      (window owner Some(0) after the resume; NEWDESK tree still registered).
+  aes_a96_zombie_windows-RED-no-sweep-verdict.txt  same, with the first two assertions turned
+      into a print so the pixel assertion is reached: owner Some(0), wind_find = 2 (the zombie's
+      handle), 34725 non-white pixels in its rectangle after the composite (0 with the sweep);
+      the desktop's window Some(16), found, 32966 px. (The backend's palette is seeded at
+      construction -- one full-suite run had pens 0/1 collapse to one device value when the
+      VDI had not installed a palette yet, which made the pixel checks vacuous; fixed in the
+      test, 4 consecutive full runs 804/0/1 afterwards.)
+  aes_a96_zombie_windows-GREEN.txt  2/2.
+  newdesk_owner_tests-RED-raw-reads-SIGSEGV.txt  the 5 seam cases on a scratch copy with
+      ObjTree::ua/ua_span = identity and no root check (= HEAD's raw dereference): the lib test
+      binary dies with SIGSEGV on the first case (raw read at the unmapped VA 0x0040_0000 --
+      the fault the ticket names).
+  newdesk_owner_tests-GREEN.txt  5/5 (owner mapping not current; dangling -> fallback root, one
+      lookup; icon ICONBLK/rasters/label through the mapping; unmapped raster skipped, rest
+      drawn; two-page raster only through one contiguous alias).
+  xtask-test-AFTER.log  cargo run -p xtask -- test: 804 passed / 0 failed / 1 ignored, rc 0
+      (baseline 797/0/1 + 2 integration + 5 unit); repeated 4x with the same result.
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4-fresh.log  cargo clean -p kernel -p tos-api --target aarch64-unknown-none-
+      softfloat; cargo xtask build --board rpi4: tos-api 64 / kernel 94, rc 0 (baseline 64/94,
+      delta 0). No qemu-virt build (lead).
+  clippy-rpi4-tree.txt / clippy-rpi4-baseline-HEAD-1c4414a.txt  cargo clippy -p kernel
+      --no-default-features --features board-rpi4: tos-api 80 / kernel 125 on both (baseline
+      measured on a `git archive HEAD` copy, never a checkout); object.rs 16 -> 16, window.rs
+      11 -> 11, desk/main.rs 0 -> 0.
+  clippy-tos-api-lib-tests.txt  cargo clippy -p tos-api --lib --tests: lib-test 82 (80 dup + 2
+      pre-existing); 0 hits in tests/aes_a96_zombie_windows.rs and 0 in window.rs from the
+      newdesk_owner_tests module on.
+  scratch-*-build.log  the injector scratch kernels (tos-api 67 / kernel 106 = H02/A46/A78/A87
+      scaffolding). make-sd-image.log, sd-put-tera.log, sd-put-probe.log, a96zomb-nap-sha256.txt,
+      kernel8-and-images-sha256.txt.
+
+QEMU raspi4b (method/run.sh = A79's; 640x480, -display none, QMP screendump 0.3 s after each
+serial mark; fresh image copy per run; grep -c "EXC\|PANIC\|panic" = 0 in all 4 serial logs).
+AFTER = the tree; BEFORE = scratch with tos-api/src/aes/{object,window}.rs + kernel/src/desk/
+main.rs = HEAD 1c4414a (git show, no checkout). Injector: method/make_scratch.sh (A87 method);
+scripts from *.actions via gen_script.py; no #Z anywhere -- every launch is a desktop double-click.
+  sd-base   tools/make-sd-image.sh 64 MiB (C:\APPS\TERADESK\DESKTOP.NAP staged by the script).
+  sd-tera   sd-base + Apps\TERADESK\TERADESK.INF (a79/method/teradesk-window.inf); NO NEWDESK.INF #Z.
+  sd-probe  sd-base + C:\A96ZOMB.NAP (sdk/build.sh sdk/examples/a96zombie.c, 6056 bytes).
+  tera (sd-tera, method/tera.actions): parkbr; A idle; APPS (178,104) dbl-click; B; TERADESK
+      (202,128) dbl-click; C; DESKTOP.NAP (226,152) dbl-click -> run_gem_app -> TeraDesk; D (10 s);
+      HARD DISC C (195,35) dbl-click; E (TeraDesk's C:\*.* window); File (70,8) click; F (menu);
+      Quit/Shutdown (130,235); G (Quit/Shutdown Options dialog); Quit (320,313) -> TeraDesk
+      Pterm -> desktop_resume; parkbr; H (4 s), I (6 s).
+      Serial: two "[launch] EL0: slot 0" / "[launch] returned (program Pterm'd)" pairs (the
+      first is C:\AUTO\HELLO.NCP at boot, the second TeraDesk: "[launch] EL0" right after the
+      DESKTOP.NAP double-click at +4608, "returned" right after the Quit click at +11003).
+      AFTER vs BEFORE: A, D, E, G, H, I bytegleich (0 px) -- TeraDesk closes its window on
+      Quit, so there is no zombie here; the desktop comes back with its three windows and the
+      selected DESKTOP.NAP icon, green background, no TeraDesk frame or icon (H = I). E is the
+      A97 evidence that the owner-mapping read renders TeraDesk's background tree (its drive/
+      trash icons = ICONBLK/CICON rasters + labels through resolve_kva) pixel-identically to the
+      raw read while the owner is current.
+  probe (sd-probe, method/probe.actions): parkbr; A idle (25 items, A96ZOMB.NAP first file at
+      (94,146)); dbl-click -> run_gem_app -> the probe opens "A96 ZOMBIE" (120,80,300,200);
+      B (2 s); the probe Pterm's after 3 s without wind_close/wind_delete/appl_exit ->
+      desktop_resume; C (5 s), D (7 s).
+      BEFORE C/D: the "A96 ZOMBIE" frame stays composited over the desktop (the zombie; its
+      title still readable through the dead slot's block table -- A83's documented "no fault,
+      old text"). AFTER C/D: no frame; C vs A = 1582 px in (59,129)-(131,169) = the selected
+      A96ZOMB.NAP icon only; C = D; BEFORE C vs AFTER C = 6842 px in (73,45)-(566,282) = the
+      zombie frame. A and B bytegleich BEFORE/AFTER.
+  explore*  the four exploration runs that found the coordinates (explore3-F-tera-menu.png:
+      TeraDesk's File menu; explore4-G-quit-clicked.png: its Quit/Shutdown dialog) are kept as
+      the two dumps; their scripts are method/explore{1..4}.actions.
+
+OUT OF SCOPE, SEEN IN THE DUMPS (not touched)
+  While TeraDesk runs, the kernel desktop's three directory windows are still in the AES table
+  and their frames are composited behind TeraDesk's window and icons (tera-*-E-tera-window.png):
+  the G1/G2 state -- the desktop's own windows are neither torn down (save_windows is gone) nor
+  hidden before the child, because the desktop launch bypasses the shell loop's wm_init +
+  sh_draw. Pre-existing (identical BEFORE/AFTER), not this ticket.
