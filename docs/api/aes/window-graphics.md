@@ -1792,10 +1792,18 @@ byte of any buffer the caller passed (TASK/A42).
   | 17 | `W_HSLIDE` | `G_BOX` | 1 | NONE | **`0x1111`/same** | 1,1,TRANS,`IP_1PATT`,1 |
   | 18 | `W_HELEV` | `G_BOX` | 1 | ACT | `0x1101`/same | 1,1,TRANS,HOLLOW,1 |
 
-  Every `ACT` gadget also gets the unconditional (colour-word-independent) 2px
+  Every `ACT` gadget also gets the unconditional (colour-word-independent)
   bevel from `add_3d_effect` (`WHITE`/`LBLACK`, inverted when `SELECTED`,
   `gemoblib.c:220-277`, fixed colours at `:252,270-272`) — that part of the 3D
-  look is **not** colour-word-driven in EmuTOS and needs no wiring.
+  look is **not** colour-word-driven in EmuTOS and needs no wiring. It is
+  **one pixel wide** (corrected 2026-09-21, A95; "2px" here was NewTOS's old
+  `bevel`, not EmuTOS): two 1-px polylines inside the `th` border, each
+  stopping one pixel short of both ends — `(x, y+h-2) → (x, y) → (x+w-2, y)`
+  in WHITE and `(x+1, y+h-1) → (x+w-1, y+h-1) → (x+w-1, y+1)` in LBLACK
+  (`gemoblib.c:238-276`, after `gr_inside(&r, th)` `:231-237`), drawn last,
+  after the `DISABLED`/`SELECTED` state block (`:949-950`). The `W_NAME`
+  box is `FL3DACT` when the window has a `NAME` (`gemwmlib.c:553`) and gets
+  it too.
 
   **(3) Mapping onto `draw_frame`'s regions** — the gap as found on
   2026-09-20 **before** the fix (line numbers of that revision; ✓ = the then

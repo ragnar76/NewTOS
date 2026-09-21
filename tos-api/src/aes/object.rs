@@ -1418,7 +1418,7 @@ pub fn objc_change(pb: &Aespb) {
 // (`movetext`/`changecol`); a SET restyles the next draw.
 static IND_TXTMOVE: AtomicI16 = AtomicI16::new(0);
 static IND_COLCHANGE: AtomicI16 = AtomicI16::new(1);
-static ACT_TXTMOVE: AtomicI16 = AtomicI16::new(1);
+pub(crate) static ACT_TXTMOVE: AtomicI16 = AtomicI16::new(1);
 static ACT_COLCHANGE: AtomicI16 = AtomicI16::new(0);
 static IND_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
 pub(crate) static ACT_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
@@ -2268,7 +2268,7 @@ fn draw_tree(
 /// Render a single object by type at absolute `(x, y)` (Batch-1 types).
 // The 8 AES "inside patterns" IP_HOLLOW(0)..IP_SOLID(7) as 4-word dithers
 // (EmuTOS `vdi/vdi_fill.c` DITHER; IP_4PATT = 50 %).
-const IP_PATTERNS: [[u16; 4]; 8] = [
+pub(crate) const IP_PATTERNS: [[u16; 4]; 8] = [
     [0x0000, 0x0000, 0x0000, 0x0000], // IP_HOLLOW
     [0x0000, 0x4444, 0x0000, 0x1111],
     [0x0000, 0x5555, 0x0000, 0x5555],
@@ -2279,6 +2279,8 @@ const IP_PATTERNS: [[u16; 4]; 8] = [
     [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF], // IP_SOLID
 ];
 pub(crate) const IP_HOLLOW: u16 = 0;
+/// The 50 % dither `just_draw` lays over a `DISABLED` object (`gemoblib.c:928-929`).
+pub(crate) const IP_4PATT: u16 = 4;
 pub(crate) const IP_SOLID: u16 = 7;
 
 /// Decode a GEM object colour word (EmuTOS `gr_crack`): returns
@@ -3189,7 +3191,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
 /// object's own interior colour `icol`, or lies beyond the workstation's colour
 /// count (`:271-272`). Opaque (`MD_REPLACE`), solid line style (`:226-228`).
 #[allow(clippy::too_many_arguments)]
-fn add_3d_effect(
+pub(crate) fn add_3d_effect(
     backend: &dyn RasterBackend,
     x: i16,
     y: i16,

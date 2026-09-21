@@ -1,0 +1,158 @@
+A95 -- the window frame pixel for pixel against the Hatari-Falcon reference: bevel, glyph placement,
+       arrow cells, DISABLED name                                                       (2026-09-21)
+======================================================================================================
+Base: desk-rebuild @ 06bb448, changes uncommitted (no commit, no flash, no git checkout/stash/reset).
+Reference: measurement-2026-09-20-a79/hatari-falcon-reference/shots/falcon-tc-window-c.png (EmuTOS on a
+Hatari Falcon030, 640x480 truecolor, the topped C:\ window at (16,96,304,192)) and falcon-tc-two-windows.png
+(the untopped back window at (16,64,384,320)). Coordinates below are frame-relative (dx,dy); negative = from
+the right/bottom border pixel.
+
+EMUTOS PATH (references/emutos, pinned)
+  add_3d_effect     aes/gemoblib.c:238-276   after gr_inside(&r, th) (:231-237): polyline (x,y+h-2)->(x,y)->(x+w-2,y)
+                                             WHITE (BLACK when SELECTED, :252), polyline (x+1,y+h-1)->(x+w-1,y+h-1)
+                                             ->(x+w-1,y+1) LBLACK (LWHITE when SELECTED; BLACK/WHITE if equal to
+                                             icol or beyond ws_ncolors, :270-272). 1 px, corners left alone.
+                                             Called last in just_draw (:949-950) for every FL3DOBJ.
+  3D growth         :503-508                 t grown by ADJ3DSTD on every side; movetext = acttxtmove (1, :1332).
+  G_BOXCHAR glyph   :735-757                 c = gr_inside(&t, tmpth); movetext: SELECTED -> c.x++, else c.y--;
+                                             gr_gtext(TE_CNTR, IBM, ch, &c).
+  gr_just           aes/gemgraf.c:567-593    gsx_tcalc (:480-497): w = min(c.w, 8), h = min(c.h, 16), no char when
+                                             the cell is shorter than a glyph; y += (h+1)/2, x += (w+1)/2 -> the
+                                             glyph cell of a 23x23 slot starts at (8,3).
+  DISABLED overlay  aes/gemoblib.c:917-930   bcol = WHITE (FL3DACT); bb_fill(MD_TRANS, FIS_PATTERN, IP_4PATT, t) on
+                                             the rect inside the border (:889), BEFORE add_3d_effect (:949-950).
+  w_bldactive       aes/gemwmlib.c:495-553   istop = (gl_wtop == w_handle); W_NAME.ob_state = istop ? NORMAL :
+                                             DISABLED (:537, also the MOVER-only arm :546); W_NAME FL3DACT iff NAME
+                                             (:553).
+  w_bldvbar         :401-436                 W_VBAR (x, 0, adj_wbox, work_h+2) (:585-610, shares the seam row with
+                                             W_HBAR); UPARROW (ADJ3DSTD, ADJ3DSTD) (:414); y/h -= adj_hbox per arrow;
+                                             DNARROW (ADJ3DSTD, y+h+ADJ3DSTD-1) (:424); VSLIDE (0, y, adj_wbox, h)
+                                             (:429); VELEV (ADJ3DSTD, posn+ADJ3DSTD, gl_wbox, size-2*ADJ3DSTD-1) (:436).
+  w_bldhbar         :441-474                 W_HBAR (0, y, work_w+2, adj_hbox) (:612-616, from the window's left border
+                                             column to the seam column); LFARROW (x+ADJ3DSTD, ADJ3DSTD), x = 0 (:452);
+                                             RTARROW (x+w-1+ADJ3DSTD, ADJ3DSTD) (:459); HSLIDE (x, 0, w, adj_hbox) (:467).
+  ob_find           aes/gemoblib.c:1034-1113 an FL3DOBJ answers for its grown rect (ob_actxywh :313-338); children
+                                             tested from ob_tail backwards -> the slide (added after the arrows,
+                                             :427/:465) owns the border line it shares with an arrow slot.
+
+REFERENCE PIXELS READ (method/dumpwin.py on falcon-tc-window-c.png; all encoded in tests/aes_window_frame_reference.rs)
+  (1) closer LBLACK only column 21 rows 2..21 / row 21 columns 2..21 (screen x=37 / y=117); column 20, row 20 white;
+      (1,21) and (21,1) white. Fuller column -2 / row 21; up arrow column -2 rows 44..63 / row 63; sizer column -2 /
+      row -2; elevator column -2 / row 81.
+  (2) name box: row 1 white x=40..294, column 40 white rows 97..116; row 117 LBLACK x=41..295, column 295 LBLACK rows
+      98..117; (295,97) and (40,117) = the IP_2PATT stipple (untouched corners).
+  (3) ink bounding boxes (black): closer 8..14 / 5..15; fuller -15..-9 / 5..15; up arrow -15..-8 / 48..57; sizer
+      -15..-9 / -18..-8; left arrow 8..15 / -18..-9; down arrow -15..-8 / -40..-31; right arrow -38..-31 / -18..-9.
+      (The ticket's "7..14 vs 6..13" for the closer is off by one on both sides; the delta of one column stands.)
+  (4) row 241 (-47) IP_1PATT track interior; rows 242 (-46), 264 (-24), 265 (-23) black across the bar column.
+  (5) rows -22..-2: columns 22 and 23 black (left arrow border + track border), 21 LBLACK, 20 white; columns -24
+      and -23 black (right arrow border + seam), -25 LBLACK, -26 white, -46 black (track border = arrow border).
+  (6) falcon-tc-two-windows.png: (186,69) black, (187,69) white, (187,70) black (IP_4PATT checkerboard on the
+      glyphs, ink where column and row parity agree); row 85 (+21) solid LBLACK; the closer's glyph solid.
+
+PRODUCT (tree)
+  tos-api/src/aes/window.rs
+    gadget_sel        draw_box_ink(slot) + glyph at boxchar_origin(slot, sel) + object::add_3d_effect(slot, sel, th=1,
+                      ink.ic). bevel() (2 px band) removed; GRAY_DK dropped (dead).
+    boxchar_origin    NEW: gr_inside(slot,1), ACT_TXTMOVE nudge (sel: x+1, else y-1), gsx_tcalc/gr_just rounding.
+    draw_elevator, glyph-less W_SIZER arm: add_3d_effect instead of bevel().
+    draw_frame name arm: after the label, !istop -> fill_pattern(IP_PATTERNS[IP_4PATT], WHITE, Transparent) on
+                      inside_1(name_box) (both NAME and MOVER-only arms, :537/:546); then, NAME only (FL3DACT),
+                      add_3d_effect on the grown name box.
+    vtrack/htrack     laid into vbar_box/hbar_box (EmuTOS W_VBAR/W_HBAR) instead of vbar_rect/hbar_rect: the
+                      vertical track is one row longer (bottom border = the down arrow's grown top border), the
+                      horizontal track one column wider on both sides; the elevator travel = EmuTOS's h - size.
+    varrow_cells/harrow_cells  NEW: the arrow cells per w_bldvbar/w_bldhbar (down: y+h+ADJ3DSTD-1; right:
+                      x+w-1+ADJ3DSTD; left: x = 0 of the band). draw_varrows/draw_harrows use them.
+    gadget_at         arrow cells aligned with ob_find on the grown slots, tail-first: Dn starts one row below its
+                      slot's top border (was that row), Rt one column right of its slot's left border (was that
+                      column), Lf ends on its slot's last column (was one further = the track's border). Up unchanged.
+                      vbar_rect/hbar_rect (the rectangle-list / hit-test column and band) unchanged.
+  tos-api/src/aes/object.rs   visibility only: add_3d_effect, IP_PATTERNS, ACT_TXTMOVE -> pub(crate); new
+                      pub(crate) const IP_4PATT = 4. No behaviour change.
+  docs/api/aes/window-graphics.md   section (2): "2px bevel" corrected to the 1-px polylines with the citation.
+  tos-api/tests/aes_window_frame_reference.rs   NEW, 6 cases (one per delta, expectations = the reference pixels
+                      above). host-tests/aes_window_frame_reference-RED-before-fix.txt (0/6, each failing on its
+                      delta), -GREEN-after-fix.txt (6/6).
+  tos-api/tests/aes_window_color_words.rs   T7 / default_topped / default_untopped followed the reference geometry
+                      (track = W_VBAR minus two arrows; left arrow at the band's x = 0; the name box's bevel ring
+                      sampled, colour claims inside it); FRAME_HASH re-pinned 0xaf7b81ef83fec1a0 -> 0xb3e85614b4ca2900.
+                      Scratch diff of the two renderings of default_frames: 2859 px, every one inside a gadget cell
+                      or name box of h1/h2 (bbox (41,61)-(578,438)) plus h1's bottom-right gadgets as first drawn,
+                      surviving under h2's never-painted work area; transitions K->W 909, LK->W 674, W->LK 505,
+                      W->K 428, K->LK 255, LK->K 88; nothing outside the two frames. Stable alone x2 and under
+                      --shuffle-seed 7/99 --test-threads=1.
+  tos-api/tests/aes_window_open_oldtop.rs   assert_untopped_title: bevel ring asserted, hollow-white claim inside it.
+  host-tests/xtask-test-after-fix.log   cargo run -p xtask -- test = 794 passed / 0 failed / 1 ignored (788 + 6).
+  build/xtask-build-rpi4.log   fresh (cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat)
+                      cargo xtask build --board rpi4: tos-api 64 / kernel 94 warnings, rc 0; the warning set is
+                      identical to A94's log (a transient "GRAY_DK never used" was fixed by dropping the constant).
+                      tree kernel8.img sha256 3c2f5273a20db4ea... (dev; not used for the dumps, not flashed).
+  build/clippy-tos-api-host.txt   cargo clippy -p tos-api: 80 warnings, set identical to A94's.
+  build/clippy-tos-api-tests.txt   the three touched test binaries: 0 hits in the test files.
+  No qemu-virt build (lead's instruction).
+
+SCRATCH KERNEL (method/make_scratch_final.sh <ws> <dir> = A94's: rsync of the crates + a79_patch.py +
+  apply_injector.py final_scripts.rs + a78_patch2.py; scratch window.rs == tree window.rs, checked with diff)
+  kernel8 scratch   sha256 e2dd5aabd91f017b...  build/scratch-build.log (tos-api 67 / kernel 105 = the injector
+                    scaffolding, as in A79/A94, rc 0). method/scratch-host_env.rs.txt = the patched injector file.
+  sd-base.img       tools/make-sd-image.sh <img> 64 (sha256 e80236cce2623f6b...)  build/make-sd-image.log
+  sd-tera.img       sd-base + NEWDESK.INF (#Z C:\APPS\TERADESK\DESKTOP.NAP, method/newdesk-tera.inf) +
+                    Apps\TERADESK\TERADESK.INF (method/teradesk-window.inf) (sha256 9ffebb39a6e0d223...)
+  No *.img kept (manifest-scratch.sha256).
+
+QEMU raspi4b RUNS (method/run.sh, 640x480, -display none, QMP screendump 0.3 s after each serial mark;
+  grep -c "EXC\|PANIC\|panic" = 0 in both serial logs; mouse parked bottom-right (639,479) at every dump)
+  desk  (sd-base, our desktop, method/desk.actions = A79's: parkbr; A_IDLE +1100; double-click the "C Hard disk"
+         icon (35,38) -> second C:\ window staggered (24,24); parkbr; B_TWO_WINDOWS +2600; C_TWO_WINDOWS_2S +3000)
+         screendumps/desk-A-idle.png, desk-B-two.png (back window (48,43,544,400), front (72,65,...)),
+         desk-C-two-2s.png; serial/desk-serial.log
+  tera  (sd-tera, TeraDesk via #Z, method/tera-two.actions = A94's: parkbr; A_IDLE +1100; double-click HARD DISC C
+         (195,35); parkbr; B_ONE_WINDOW +2600; double-click again; parkbr; C_TWO_WINDOWS +4100; D +4500)
+         screendumps/tera-A-idle.png, tera-B-one.png (C:\*.* at (39,62,376,291)), tera-C-two.png, tera-D-two-2s.png;
+         serial/tera-serial.log
+  Pixel diffs (method/pixdiff.py):
+    desk-B-two    vs desk-C-two-2s            0 px (settled)
+    tera-C-two    vs tera-D-two-2s            0 px (settled)
+    tera-A-idle   vs A94 tera-A-idle          0 px (no window yet: nothing else changed)
+    desk-A-idle   vs A94 desk-A-idle       2129 px, bbox (49,44)-(591,442) = inside the C:\ window's frame
+    tera-B-one    vs A94 tera-B-one        1832 px, bbox (40,63)-(414,352) = inside the TeraDesk window's frame
+    desk-B-two    vs A94 desk-B-two        2925 px, bbox (49,44)-(615,466) = inside the two windows' frames
+    tera-C-two    vs A94 tera-C-two        2030 px, bbox (40,63)-(640,352)
+
+THE DEFINITIVE COMPARISON (method/corner_compare.py + corner_residual.py; screendumps/final-compare-ref-vs-newtos-a95.png:
+  top row = falcon-tc-window-c.png C:\ window at (16,96,304,192), bottom row = tera-B-one.png C:\*.* window at
+  (39,62,376,291); crops TL (0,0)+120x48, TR (w-72,0)+72x48, BR (w-72,h-72)+72x72 at 4x — the same crops as A79's
+  final-compare-ref-vs-newtos.png)
+  Raw class diff (black / white / LBLACK / other): TL 1603, TR 424, BR 199 pixels.
+  Of these, NOT the frame (host-tests/corner-residual-topped-tera-vs-ref.txt):
+    name-band stipple phase 1280   the VDI aligns IP_2PATT to absolute screen coordinates (vdi/vdi_fill.c); the
+                                   reference window starts at an even screen column (16), ours at an odd one (39),
+                                   so frame-relative the ink columns swap parity. Every such pixel equals its own
+                                   screen position's expectation in both images (incl. the two untouched bevel
+                                   corners (24,21) and (-25,1)).
+    info-line interior       747   application text (EmuDESK " 514 bytes used in 1 items." vs TeraDesk's line).
+    work area                 48   directory content.
+    vertical track interior  137   IP_1PATT row phase (ref y=96, ours y=62: (96+145) mod 4 = 1 vs (62+244) mod 4 = 2)
+                                   and the elevator length (EmuDESK's WF_VSLSIZE fills the track; TeraDesk's does not).
+    pointer                   14   the reference's sprite on the right border, rows -50..-36.
+  RESIDUAL: 0 pixels in all three corners. Every frame pixel of the three corners — borders, seams, bevels
+  (1 px, corners left alone), the name box's bevel, gadget glyph columns and rows, the down arrow at -46..-24, the
+  right arrow at -46..-24, the left arrow at 0..22, the track borders — is the reference's.
+  Untopped (screendumps/compare-untopped-title-ref-vs-newtos-a95-4x.png: falcon-tc-two-windows.png back window at
+  (16,64,384,320) vs desk-B-two.png back window at (48,43,544,400), title band rows 0..21 of TL/TR; the lower part
+  of our back window lies under the front one): RESIDUAL 0 pixels
+  (host-tests/corner-residual-untopped-desk-vs-ref.txt). Our untopped name "C:\" (ink columns 261..282 of the
+  frame) is the IP_4PATT checkerboard of the reference (dumpwin.py: rows 5..16 alternate #.#. / .#.#, 42 ink
+  pixels left of ~84), row 21 solid LBLACK, the closer solid.
+
+REMAINING DIFFERENCE OUTSIDE THE SIX DELTAS (found by the eye-check of the TL crop; masked above as "info-line
+  interior" because the strings differ; NOT fixed here — scope of the ticket is the six deltas):
+  W_INFO text origin. EmuTOS: gl_ainfo is TE_LEFT with te_thickness 1 (gl_asamp, gemwmlib.c:154-157), FL3DNONE -> no
+  growth and movetext FALSE (gemoblib.c:521-524); gr_gtext gets c = gr_inside(&t, 1) = (1, 24, w-2, 17) (:737-738)
+  and gr_just adds (17-16+1)/2 = 1 to y (gemgraf.c:574-576) -> glyph cell at frame (1, 25), rows 25..40 (reference:
+  first ink row 27 for a digit, 'y' descender rows 39/40). NewTOS draw_frame: draw_label(b.x + 3, top, ...) with
+  cy = y + 1 -> cell at (3, 24), rows 24..39 (tera-B-one.png: first ink row 26). Two columns right, one row up.
+  Suggested follow-up ticket.
+
+OPEN: Pi acceptance (Tester/Lead; nothing flashed). No commit.

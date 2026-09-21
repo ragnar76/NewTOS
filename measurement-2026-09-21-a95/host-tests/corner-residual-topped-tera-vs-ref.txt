@@ -1,0 +1,5 @@
+TL: 0 residual differing pixels
+TR: 0 residual differing pixels
+BR: 0 residual differing pixels
+excluded (not frame / phase): {'name pattern phase': 1280, 'info text': 747, 'work area': 48, 'v-track pattern phase': 137, 'pointer': 14}
+RESIDUAL total 0

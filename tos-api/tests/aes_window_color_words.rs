@@ -738,10 +738,14 @@ fn t7_name_band_turns_red() {
     // The word is `bc=1, tc=1, md=TRANS, ip=IP_SOLID, ic=2` — interior 100 %
     // colour 2 with black glyph ink, 1px black border, no white anywhere.
     // `W_NAME` is `FL3DACT` (`w_bldactive`, `gemwmlib.c:553`), so `just_draw`
-    // paints it on the 3D-grown rect (`gemoblib.c:503-508`).
+    // paints it on the 3D-grown rect (`gemoblib.c:503-508`) and ends with the
+    // 1-px `add_3d_effect` bevel inside the border (`:949-950`; WHITE top/
+    // left, LBLACK bottom/right — `LBLACK != icol`, `:271-272`), A95 (2).
+    // The colour claims hold inside that bevel.
     let box_r = grown(nr);
     assert_ring(host, box_r, BLACK, "T7 name border (bc=1)");
-    let inner = box_r.inset(1);
+    assert_bevel(host, box_r.inset(1), "T7 name (FL3DACT)");
+    let inner = box_r.inset(2);
     let red = count(host, inner, RED);
     let black = count(host, inner, BLACK);
     let white = count(host, inner, WHITE);
@@ -843,7 +847,27 @@ fn dcolor_reaches_new_windows_only() {
 /// → white (the untopped word `0x1101`, hollow). Nothing else moved. Measured
 /// on this binary alone, twice, and under `--shuffle-seed 7` / `99` with
 /// `--test-threads=1` — the same value every time.
-const FRAME_HASH: u64 = 0xaf7b_81ef_83fe_c1a0;
+///
+/// **Re-pinned 2026-09-21 (A95).** The frame now follows `just_draw` pixel
+/// for pixel on the six points of `TASK/A95.md`: the 1-px `add_3d_effect`
+/// polylines (`gemoblib.c:238-276`) instead of a 2-px band, the bevel on the
+/// `FL3DACT` name box (`:949-950`), the `G_BOXCHAR` glyph centred in the
+/// grown cell with `gr_just`'s `(w+1)/2` after the activator's `y-1`
+/// (`:735-757`, `gemgraf.c:567-593`), the arrow cells and tracks laid into
+/// the `W_VBAR`/`W_HBAR` rects (`gemwmlib.c:412-474`, `:606-616`), and the
+/// `DISABLED` overlay on the untopped name (`:537`, `gemoblib.c:917-930`).
+/// Scratch diff of the two renderings against the previous pin: 2859
+/// pixels, every one inside a gadget cell or name box of `h1`/`h2` (bbox
+/// `(41,61)-(578,438)`), plus `h1`'s bottom-right gadgets as first drawn,
+/// which survive under `h2`'s never-painted work area; transitions BLACK→
+/// WHITE 909 (old glyph columns, the stipple row/column under the name's
+/// white bevel), LBLACK→WHITE 674 (the second bevel line), WHITE→LBLACK 505
+/// and BLACK→LBLACK 255 (the name box's bevel, the moved arrow slots),
+/// WHITE→BLACK 428 (new glyph columns, the track's extra row/column),
+/// LBLACK→BLACK 88. Nothing outside the two frames moved. Measured on this
+/// binary alone, twice, and under `--shuffle-seed 7` / `99` with
+/// `--test-threads=1` — the same value every time.
+const FRAME_HASH: u64 = 0xb3e8_5614_b4ca_2900;
 
 /// Two default windows with every gadget, names and info lines: `h1`
 /// untopped (partly covered, repainted untopped by `h2`'s open — A94), `h2`
@@ -895,10 +919,9 @@ fn ip1_is_ink(x: i16, y: i16) -> bool {
 /// colours fixed at `:252,270-272`; reference `falcon-tc-window-c.png`
 /// closer: white at x=17 / y=97, `(140,138,140)` at x=37 / y=117).
 ///
-/// NewTOS's `bevel` paints those edges 2px wide where EmuTOS paints 1px
-/// (A95); the assertion samples the outermost pixel row/column of each edge
-/// — true for both widths — and stays two pixels clear of the corners, whose
-/// owner differs between the two polyline orders.
+/// Samples the outermost pixel row/column of each edge, two pixels clear of
+/// the corners; the exact 1-px width and the corner ownership are pinned by
+/// `aes_window_frame_reference.rs` (A95).
 fn assert_bevel(host: &QuietHost, ci: R, what: &str) {
     assert_all(host, R { x: ci.x + 2, y: ci.y, w: ci.w - 4, h: 1 }, WHITE, &format!("{what} bevel top"));
     assert_all(host, R { x: ci.x, y: ci.y + 2, w: 1, h: ci.h - 4 }, WHITE, &format!("{what} bevel left"));
@@ -997,8 +1020,11 @@ fn default_topped_window_matches_the_gadget_table() {
     assert_eq!(count(host, up.inset(3), LWHITE), 0, "W_UPARROW face is white");
 
     // W_VSLIDE (12): G_BOX 0x1111 → black ring, IP_1PATT in ic=1 inside,
-    // outside the (grown) elevator.
-    let track = R { x: vbar.x, y: vbar.y + ADJ_HBOX, w: vbar.w, h: (vbar.h - 1) - 2 * ADJ_HBOX };
+    // outside the (grown) elevator. `w_bldvbar` gives it what is left of the
+    // `W_VBAR` rect after two `adj_hbox` arrows (`gemwmlib.c:415-429`): its
+    // bottom border is the down arrow's grown top border (`:424`; reference
+    // row 242 = 96 + 192 - 46), A95 (4).
+    let track = R { x: vbar.x, y: vbar.y + ADJ_HBOX, w: vbar.w, h: vbar.h - 2 * ADJ_HBOX };
     assert_ring(host, track, BLACK, "W_VSLIDE border");
     let elev = grown(velev_default(track));
     for (x, y, p) in pixels(host, track.inset(1)) {
@@ -1019,7 +1045,10 @@ fn default_topped_window_matches_the_gadget_table() {
     let hbar = R { x: b.x, y: row_y, w: b.w - (ADJ_WBOX - 1), h: ADJ_HBOX };
     assert_all(host, R { x: hbar.x, y: hbar.y, w: hbar.w, h: 1 }, BLACK, "W_HBAR top border");
     assert_all(host, R { x: hbar.x + hbar.w - 1, y: hbar.y, w: 1, h: hbar.h }, BLACK, "W_HBAR right border");
-    let lf = grown(R { x: hbar.x + 1 + ADJ3DSTD, y: hbar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX });
+    // W_LFARROW (15) at `(x+ADJ3DSTD, ADJ3DSTD)` of the band, `x = 0`
+    // (`w_bldhbar`, `gemwmlib.c:452`): its grown slot starts on the window's
+    // left border column (reference columns 16..38), A95 (5).
+    let lf = grown(R { x: hbar.x + ADJ3DSTD, y: hbar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX });
     assert_ring(host, lf, BLACK, "W_LFARROW border");
     assert_bevel(host, lf.inset(1), "W_LFARROW");
 
@@ -1056,9 +1085,9 @@ fn default_topped_window_matches_the_gadget_table() {
 ///
 /// EmuTOS additionally draws the untopped name `DISABLED` (`w_bldactive`,
 /// `gemwmlib.c:537`; `just_draw` overlays `IP_4PATT` in WHITE, transparent,
-/// `gemoblib.c:917-930`), which thins the glyphs to a dither. NewTOS does not
-/// draw that overlay yet (A95); the assertions below hold for both renderings
-/// — the overlay only ever turns glyph pixels white.
+/// `gemoblib.c:917-930`), which thins the glyphs to a dither — pinned by
+/// `aes_window_frame_reference.rs` (A95 (6)); the assertions below only
+/// require the glyph cells to be black/white.
 #[test]
 fn default_untopped_window_renders_the_untopped_words() {
     let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -1091,15 +1120,19 @@ fn default_untopped_window_renders_the_untopped_words() {
     assert_eq!(count(host, face, BLACK) + count(host, face, WHITE), face.w as usize * face.h as usize);
 
     // W_NAME untopped: `0x1101` = bc=1, tc=1, md=TRANS, IP_HOLLOW, ic=1 →
-    // black ring on the grown rect, white inside, black transparent glyphs,
-    // and **no** stipple: every non-glyph pixel of the interior is white.
+    // black ring on the grown rect, the `FL3DACT` bevel inside it
+    // (`add_3d_effect`, `gemoblib.c:949-950`; reference
+    // `falcon-tc-two-windows.png` row 85 LBLACK), white inside, black
+    // transparent glyphs, and **no** stipple: every non-glyph pixel inside
+    // the bevel is white.
     let nr = name_rect(b1);
     let nbox = grown(nr);
     assert_ring(host, nbox, BLACK, "untopped W_NAME border");
+    assert_bevel(host, nbox.inset(1), "untopped W_NAME");
     let nlen = 3 * 8;
     let nx = nr.x + ((nr.w - nlen) / 2).max(2);
     let cells = R { x: nx, y: nr.y + 1, w: nlen, h: 16 };
-    let inner = nbox.inset(1);
+    let inner = nbox.inset(2);
     for (x, y, p) in pixels(host, inner) {
         if cells.contains(x, y) {
             continue;
@@ -1123,7 +1156,7 @@ fn default_untopped_window_renders_the_untopped_words() {
     let top = top_of(b1, true);
     let row_y = b1.y + b1.h - ADJ_HBOX;
     let vbar = R { x: b1.x + b1.w - ADJ_WBOX, y: top, w: ADJ_WBOX, h: row_y - top + 1 };
-    let track = R { x: vbar.x, y: vbar.y + ADJ_HBOX, w: vbar.w, h: (vbar.h - 1) - 2 * ADJ_HBOX };
+    let track = R { x: vbar.x, y: vbar.y + ADJ_HBOX, w: vbar.w, h: vbar.h - 2 * ADJ_HBOX };
     assert_ring(host, track, BLACK, "untopped W_VSLIDE border");
     let elev = grown(velev_default(track));
     for (x, y, p) in pixels(host, track.inset(1)) {

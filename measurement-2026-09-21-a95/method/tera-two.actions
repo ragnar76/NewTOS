@@ -1,0 +1,22 @@
+# A94 (TeraDesk via #Z, sd-tera): the A79 tera-window script, then a second
+# double-click on HARD DISC C (195,35 -- the icon row stays visible above the
+# first window, whose title starts at y=62) to ask TeraDesk for a second
+# directory window; the old top must come out untopped (white name band).
+# Ticks are 200 Hz after the first AES pump of the first EL0 program.
+200 parkbr
+1100 mark A_IDLE
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 parkbr
+2600 mark B_ONE_WINDOW
+2900 move 195 35
+3100 down
+3103 up
+3108 down
+3111 up
+3500 parkbr
+4100 mark C_TWO_WINDOWS
+4500 mark D_TWO_WINDOWS_2S

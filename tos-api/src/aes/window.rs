@@ -19,12 +19,13 @@
 
 use super::graf::{gl_hbox, gl_hchar, gl_wchar};
 use super::object::{
-    gr_crack, gr_rect, render_tree_app, render_tree_lp64, Object, ACT_BUTCOL, BACKGR_COL, IP_HOLLOW, IP_SOLID,
+    add_3d_effect, gr_crack, gr_rect, render_tree_app, render_tree_lp64, Object, ACT_BUTCOL, ACT_TXTMOVE,
+    BACKGR_COL, IP_4PATT, IP_HOLLOW, IP_PATTERNS, IP_SOLID,
 };
 use super::Aespb;
 use crate::bdos::process::{self, usermem, Abi};
 use crate::host::{host, Host};
-use crate::vdi::backend::{ClipRect, Pel, RasterBackend, WriteMode};
+use crate::vdi::backend::{ClipRect, PatternFill, Pel, RasterBackend, WriteMode};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU64, AtomicU8, Ordering};
 
@@ -203,7 +204,6 @@ fn adj_hbox() -> i16 {
 
 const WHITE: Pel = 0;
 const GRAY_LT: Pel = 8; // 3D face (EmuTOS LWHITE)
-const GRAY_DK: Pel = 9; // 3D shadow (EmuTOS LBLACK)
 
 /// Colour of the window drop shadow.
 ///
@@ -2514,36 +2514,62 @@ fn draw_box_ink(r: Grect, ink: Ink, backend: &dyn RasterBackend, clip: ClipRect)
 }
 
 /// Draw one gadget cell with a centred glyph (closer/fuller/arrows/sizer).
-/// `sel` inverts the bevel (pressed feedback).
+/// `sel` = the object is `SELECTED` (pressed feedback): the bevel sinks and
+/// the glyph nudges.
 ///
 /// `just_draw` on the 3D-grown slot ([`grow_3d`]): border + interior from
 /// the word ([`draw_box_ink`]), the glyph in `tc`/`md` (`gsx_attr(TRUE,
-/// tmode, tcol)` then `gr_gtext`, `aes/gemoblib.c:709,722-733`), and last the
-/// bevel inside the border (`add_3d_effect`, `:949-950`, inset by `th`,
-/// `:230-237`). The glyph keeps its cell-centred position: the cell is
-/// centred in its slot.
+/// tmode, tcol)` then `gr_gtext`, `aes/gemoblib.c:709,722-757`) at
+/// [`boxchar_origin`], and last the bevel inside the border
+/// (`add_3d_effect`, `:949-950`, inset by `th = 1`, `:230-237`) — the two
+/// 1-px polylines of [`add_3d_effect`], not a 2-px band (A95).
 fn gadget_sel(r: Grect, ch: u16, sel: bool, ink: Ink, backend: &dyn RasterBackend, clip: ClipRect) {
-    let gx = r.x + (r.w - 8) / 2;
-    let gy = r.y + (r.h - 16) / 2;
     let slot = grow_3d(r);
     draw_box_ink(slot, ink, backend, clip);
-    backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), ink.tc, ink.text_mode(), clip);
-    bevel(inside_1(slot), !sel, backend, clip);
+    if let Some((gx, gy)) = boxchar_origin(slot, sel) {
+        backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), ink.tc, ink.text_mode(), clip);
+    }
+    add_3d_effect(backend, slot.x, slot.y, slot.w, slot.h, sel, 1, ink.ic, clip);
 }
 
-/// Draw a 2-pixel 3D bevel: `raised` = white top/left + dark-grey
-/// bottom/right; recessed swaps them.
-fn bevel(r: Grect, raised: bool, backend: &dyn RasterBackend, clip: ClipRect) {
-    if r.w < 2 || r.h < 2 {
-        return;
+/// Where `just_draw` puts the one glyph of a `G_BOXCHAR` drawn on the grown
+/// slot `slot` with a 1-px border — the glyph cell's top-left, or `None`
+/// when the cell has no room for a full glyph.
+///
+/// `gr_gtext(TE_CNTR, IBM, ch, &c)` gets `c = gr_inside(&t, tmpth)`, the
+/// rect inside the border (`aes/gemoblib.c:735-738`), nudged for an
+/// activator when `acttxtmove` is set (`:742-755`, default 1, `:1332`):
+/// `c.g_y--` while not `SELECTED`, `c.g_x++` while `SELECTED`. `gr_just`
+/// (`aes/gemgraf.c:567-593`) then measures the text with `gsx_tcalc`
+/// (`:480-497`: width `min(c.w, 8)`, height `min(c.h, 16)`, and **no**
+/// character at all when the cell is shorter than a glyph) and centres it
+/// with `(h + 1) / 2` and `(w + 1) / 2` — rounding *up* on an odd remainder,
+/// which is what puts the closer's glyph at `(8, 3)` of its `23 x 23` slot
+/// and not at `(7, 3)` (reference `falcon-tc-window-c.png`, A95 (3)).
+fn boxchar_origin(slot: Grect, sel: bool) -> Option<(i16, i16)> {
+    let mut c = inside_1(slot);
+    if ACT_TXTMOVE.load(Ordering::Relaxed) != 0 {
+        if sel {
+            c.x += 1;
+        } else {
+            c.y -= 1;
+        }
     }
-    let (tl, br) = if raised { (WHITE, GRAY_DK) } else { (GRAY_DK, WHITE) };
-    for i in 0..2 {
-        backend.fill_rect(r.x + i, r.y + i, r.w - 2 * i, 1, tl, clip);
-        backend.fill_rect(r.x + i, r.y + i, 1, r.h - 2 * i, tl, clip);
-        backend.fill_rect(r.x + i, r.y + r.h - 1 - i, r.w - 2 * i, 1, br, clip);
-        backend.fill_rect(r.x + r.w - 1 - i, r.y + i, 1, r.h - 2 * i, br, clip);
+    let tw = c.w.min(gl_wchar());
+    let th = c.h.min(gl_hchar());
+    if th / gl_hchar() == 0 || tw / gl_wchar() == 0 {
+        return None;
     }
+    let (mut x, mut y) = (c.x, c.y);
+    let dh = c.h - th;
+    if dh > 0 {
+        y += (dh + 1) / 2;
+    }
+    let dw = c.w - tw;
+    if dw > 0 {
+        x += (dw + 1) / 2;
+    }
+    Some((x, y))
 }
 
 fn gadget(r: Grect, ch: u16, ink: Ink, backend: &dyn RasterBackend, clip: ClipRect) {
@@ -2714,6 +2740,30 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
             if kind & NAME != 0 { (ink(W_NAME_IDX), grow_3d(nr)) } else { (ink_of(0, false, true), nr) };
         draw_box_ink(name_box, name_ink, backend, clip);
         draw_label(nx, gy, name_w, name, name_ink.tc, name_ink.text_mode(), backend, clip);
+        // Untopped, `W_NAME.ob_state = DISABLED` (`w_bldactive`, both arms,
+        // `gemwmlib.c:537,546`): `just_draw`'s state block lays `IP_4PATT` in
+        // WHITE, `MD_TRANS`, over the rect inside the border (`gr_inside(&t,
+        // th)` `:889`, `bb_fill` `:917-930`) — every glyph pixel on a
+        // pattern-set position turns white, the rest is untouched. It comes
+        // **before** the 3D effect (`:949-950`), so the bevel below stays
+        // solid (reference `falcon-tc-two-windows.png`, A95 (6)).
+        if !istop {
+            let i = inside_1(name_box);
+            let pat = PatternFill {
+                fg: WHITE,
+                bg: WHITE,
+                pattern: &IP_PATTERNS[IP_4PATT as usize],
+                mode: WriteMode::Transparent,
+            };
+            backend.fill_pattern(i.x, i.y, i.w, i.h, pat, clip);
+        }
+        // The `FL3DACT` name box ends with `add_3d_effect` like every other
+        // activator (`:949-950`; reference `falcon-tc-window-c.png` row 97
+        // white / row 117 LBLACK across the name, A95 (2)). `FL3DNONE`
+        // (`MOVER` alone) gets none.
+        if kind & NAME != 0 {
+            add_3d_effect(backend, name_box.x, name_box.y, name_box.w, name_box.h, false, 1, name_ink.ic, clip);
+        }
         top += ah - 1;
     }
 
@@ -2795,19 +2845,21 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
             // `FL3DACT` `G_BOXCHAR`: grown slot, border, interior, bevel.
             let slot = grow_3d(g);
             draw_box_ink(slot, sizer_ink, backend, clip);
-            bevel(inside_1(slot), true, backend, clip);
+            add_3d_effect(backend, slot.x, slot.y, slot.w, slot.h, false, 1, sizer_ink.ic, clip);
         }
     }
 }
 
-/// EmuTOS's `W_VBAR` object rectangle, for the frame draw only — the
-/// rectangle `w_bldactive` hands `w_bldvbar` (`aes/gemwmlib.c:585-610`): the
-/// work area is one pixel inside the data area, narrowed by `adj_wbox - 1`
-/// when there is a vertical bar or a `SIZER` and shortened by `adj_hbox - 1`
-/// when there is a horizontal bar or a `SIZER`; the bar column then starts at
-/// `work_x + work_w`, `adj_wbox` wide, `work_h + 2` tall — so it **shares its
-/// bottom row with the horizontal band's top row**. [`vbar_rect`] (the
-/// hit-test rect) stops one row short of that; the hit tests keep it.
+/// EmuTOS's `W_VBAR` object rectangle — the rectangle `w_bldactive` hands
+/// `w_bldvbar` (`aes/gemwmlib.c:585-610`): the work area is one pixel inside
+/// the data area, narrowed by `adj_wbox - 1` when there is a vertical bar or
+/// a `SIZER` and shortened by `adj_hbox - 1` when there is a horizontal bar
+/// or a `SIZER`; the bar column then starts at `work_x + work_w`, `adj_wbox`
+/// wide, `work_h + 2` tall — so it **shares its bottom row with the
+/// horizontal band's top row**. The bar's children — the arrow cells and the
+/// `W_VSLIDE` track ([`varrow_cells`], [`vtrack`]) — are laid out inside
+/// this rect exactly as `w_bldvbar` does (A95 (4)). [`vbar_rect`] (the
+/// hit-test column) stops one row short of the seam; the hit tests keep it.
 fn vbar_box(b: Grect, kind: u16) -> Grect {
     let (_, havehbar) = bars(kind);
     let sizer = kind & SIZER != 0;
@@ -2817,12 +2869,14 @@ fn vbar_box(b: Grect, kind: u16) -> Grect {
     Grect { x: b.x + b.w - adj_wbox(), y: top, w: adj_wbox(), h: work_h + 2 }
 }
 
-/// EmuTOS's `W_HBAR` object rectangle, for the frame draw only — what
-/// `w_bldactive` hands `w_bldhbar` (`aes/gemwmlib.c:585-616`): `x = 0` in the
-/// data area (on the window's left border column), `adj_hbox` tall against
-/// the bottom edge, `work_w + 2` wide — so it **shares its right column with
-/// the vertical bar's left column**. [`hbar_rect`] (the hit-test rect) sits
-/// one column inside on both sides; the hit tests keep it.
+/// EmuTOS's `W_HBAR` object rectangle — what `w_bldactive` hands `w_bldhbar`
+/// (`aes/gemwmlib.c:585-616`): `x = 0` in the data area (on the window's left
+/// border column), `adj_hbox` tall against the bottom edge, `work_w + 2` wide
+/// — so it **shares its right column with the vertical bar's left column**.
+/// The band's children — the arrow cells and the `W_HSLIDE` track
+/// ([`harrow_cells`], [`htrack`]) — are laid out inside this rect exactly as
+/// `w_bldhbar` does (A95 (5)). [`hbar_rect`] (the hit-test band) sits one
+/// column inside on both sides; the hit tests keep it.
 fn hbar_box(b: Grect, kind: u16) -> Grect {
     let (havevbar, _) = bars(kind);
     let sizer = kind & SIZER != 0;
@@ -2897,24 +2951,49 @@ fn hbar_rect(b: Grect, kind: u16) -> Option<Grect> {
     (right >= left).then_some(Grect { x: left, y: b.y + b.h - ah, w: right - left + 1, h: ah })
 }
 
-/// The vertical scroll track span `(top, length)` — the region left for the
-/// thumb + paging after the up/down arrows — or `None` if there is no VSLIDE
-/// track. EmuTOS `w_bldvbar` (3D, `gemwmlib.c:401-436`): each arrow consumes a
-/// full `adj_hbox` of the bar, and what remains is the slide box. Shared with
-/// the hit-test / drag ([`gadget_at`]/[`drag_elevator`]) so they agree
-/// pixel-for-pixel with the draw.
+/// The vertical scroll track span `(top, length)` — EmuTOS's `W_VSLIDE`
+/// object, the region left for the thumb + paging after the up/down arrows —
+/// or `None` if there is no VSLIDE track. `w_bldvbar` (3D, `gemwmlib.c:401-
+/// 436`) works on the `W_VBAR` rect ([`vbar_box`], `work_h + 2` tall, down to
+/// the seam row): each arrow consumes a full `adj_hbox` of it (`:415-416`,
+/// `:421`) and what remains is the slide box (`:429`) — so the track's bottom
+/// border row is the down arrow's grown top border (`:424`), one row below
+/// where [`vbar_rect`] ends (A95 (4)). Shared with the hit-test / drag
+/// ([`gadget_at`]/[`drag_elevator`]) so they agree pixel-for-pixel with the
+/// draw, and the elevator's travel is EmuTOS's `h - size` (`:434`).
 fn vtrack(w: &Window) -> Option<(i16, i16)> {
     let kind = w.kind;
     if kind & VSLIDE == 0 {
         return None;
     }
-    let bar = vbar_rect(w.curr, kind)?;
+    vbar_rect(w.curr, kind)?;
+    let bar = vbar_box(w.curr, kind);
     let ah = adj_hbox();
     let top = bar.y + if kind & UPARROW != 0 { ah } else { 0 };
     let len = bar.h
         - if kind & UPARROW != 0 { ah } else { 0 }
         - if kind & DNARROW != 0 { ah } else { 0 };
     (len > 0).then_some((top, len))
+}
+
+/// The up/down arrow cells `(up, down)` — EmuTOS `W_UPARROW`/`W_DNARROW`
+/// as `w_bldvbar` places them in the `W_VBAR` rect ([`vbar_box`]): the up
+/// arrow at `(ADJ3DSTD, ADJ3DSTD)` (`gemwmlib.c:414`), the down arrow at
+/// `(ADJ3DSTD, y+h+ADJ3DSTD-1)` with `y`/`h` the space left after the arrows
+/// (`:415-416`, `:421-424`) — i.e. `gl_hbox + 1` rows above the bar's last
+/// row, so its grown slot ends on the row above the seam (A95 (4)). Each is
+/// the un-grown `gl_wbox` × `gl_hbox` cell; `None` for an absent gadget.
+fn varrow_cells(b: Grect, kind: u16) -> (Option<Grect>, Option<Grect>) {
+    if vbar_rect(b, kind).is_none() {
+        return (None, None);
+    }
+    let bar = vbar_box(b, kind);
+    let ah = adj_hbox();
+    let up = (kind & UPARROW != 0)
+        .then_some(Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() });
+    let dn = (kind & DNARROW != 0)
+        .then_some(Grect { x: bar.x + ADJ3DSTD, y: bar.y + bar.h - ah + ADJ3DSTD - 1, w: GL_WBOX, h: gl_hbox() });
+    (up, dn)
 }
 
 /// Screen rectangle of a scroll-bar elevator (thumb) — EmuTOS `W_VELEV` /
@@ -2948,21 +3027,14 @@ fn draw_vslider(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: Clip
 /// W_DNARROW, …)`, `gemwmlib.c:412-424`), so **not** part of the slider's
 /// subtree redraw.
 fn draw_varrows(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
-    let kind = w.kind;
-    let Some(bar) = vbar_rect(w.curr, kind) else {
-        return;
-    };
-    let ah = adj_hbox();
     let ink = |g: usize| gadget_ink(w, g, istop);
-    // Arrows: a `gl_wbox` × `gl_hbox` cell inset `ADJ3DSTD` into the bar, each
-    // consuming a full `adj_hbox` of it. The down arrow's extra −1 is EmuTOS'
-    // (`y+h+ADJ3DSTD-1`, gemwmlib.c:424).
-    if kind & UPARROW != 0 {
-        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() };
+    // Arrows: the `gl_wbox` × `gl_hbox` cells `w_bldvbar` lays into the
+    // `W_VBAR` rect ([`varrow_cells`]).
+    let (up, dn) = varrow_cells(w.curr, w.kind);
+    if let Some(g) = up {
         gadget(g, G_UP, ink(W_UPARROW_IDX), backend, clip);
     }
-    if kind & DNARROW != 0 {
-        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + bar.h - ah + 1, w: GL_WBOX, h: gl_hbox() };
+    if let Some(g) = dn {
         gadget(g, G_DN, ink(W_DNARROW_IDX), backend, clip);
     }
 }
@@ -2993,12 +3065,13 @@ fn draw_vslide(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipR
 }
 
 /// The scroll-bar elevator (`W_VELEV`/`W_HELEV`, `G_BOX` `0x1101`, `FL3DACT`):
-/// `just_draw` on the 3D-grown rect — border + interior from the word, bevel
-/// inside the border — the same arm as a glyph cell without the glyph.
+/// `just_draw` on the 3D-grown rect — border + interior from the word, the
+/// 1-px bevel inside the border (`add_3d_effect`, `gemoblib.c:238-276`) —
+/// the same arm as a glyph cell without the glyph.
 fn draw_elevator(e: Grect, ink: Ink, backend: &dyn RasterBackend, clip: ClipRect) {
     let slot = grow_3d(e);
     draw_box_ink(slot, ink, backend, clip);
-    bevel(inside_1(slot), true, backend, clip);
+    add_3d_effect(backend, slot.x, slot.y, slot.w, slot.h, false, 1, ink.ic, clip);
 }
 
 /// Redraw just window `handle`'s vertical slider **subtree** — track +
@@ -3027,21 +3100,48 @@ fn redraw_vslider(handle: i16) {
     }
 }
 
-/// The horizontal scroll track span `(left, length)` — the region left for
-/// the thumb + paging after the left/right arrows — or `None` if there is no
-/// HSLIDE track. Mirror of [`vtrack`] with the axes swapped (x↔y, w↔h).
+/// The horizontal scroll track span `(left, length)` — EmuTOS's `W_HSLIDE`
+/// object, the region left for the thumb + paging after the left/right
+/// arrows — or `None` if there is no HSLIDE track. Mirror of [`vtrack`] with
+/// the axes swapped (x↔y, w↔h): `w_bldhbar` (`gemwmlib.c:441-474`) works on
+/// the `W_HBAR` rect ([`hbar_box`], from the window's left border column to
+/// the seam column), each arrow consuming a full `adj_wbox` (`:453-454`,
+/// `:459`), the slide box in between (`:467`) — its right border column is
+/// the right arrow's grown left border (A95 (5)).
 fn htrack(w: &Window) -> Option<(i16, i16)> {
     let kind = w.kind;
     if kind & HSLIDE == 0 {
         return None;
     }
-    let bar = hbar_rect(w.curr, kind)?;
+    hbar_rect(w.curr, kind)?;
+    let bar = hbar_box(w.curr, kind);
     let aw = adj_wbox();
     let left = bar.x + if kind & LFARROW != 0 { aw } else { 0 };
     let len = bar.w
         - if kind & LFARROW != 0 { aw } else { 0 }
         - if kind & RTARROW != 0 { aw } else { 0 };
     (len > 0).then_some((left, len))
+}
+
+/// The left/right arrow cells `(left, right)` — EmuTOS `W_LFARROW`/
+/// `W_RTARROW` as `w_bldhbar` places them in the `W_HBAR` rect
+/// ([`hbar_box`]): the left arrow at `(x+ADJ3DSTD, ADJ3DSTD)` with `x = 0`
+/// (`gemwmlib.c:452`) — its grown slot starts on the window's left border
+/// column — the right arrow at `(x+w-1+ADJ3DSTD, ADJ3DSTD)` (`:459`), i.e.
+/// `gl_wbox + 1` columns before the band's last column, so its grown slot
+/// ends on the column before the seam (A95 (5)). Mirror of
+/// [`varrow_cells`].
+fn harrow_cells(b: Grect, kind: u16) -> (Option<Grect>, Option<Grect>) {
+    if hbar_rect(b, kind).is_none() {
+        return (None, None);
+    }
+    let bar = hbar_box(b, kind);
+    let aw = adj_wbox();
+    let lf = (kind & LFARROW != 0)
+        .then_some(Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() });
+    let rt = (kind & RTARROW != 0)
+        .then_some(Grect { x: bar.x + bar.w - aw + ADJ3DSTD - 1, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() });
+    (lf, rt)
 }
 
 /// Draw the bottom (horizontal) scroll bar's gadgets — left/right arrows, the
@@ -3063,21 +3163,14 @@ fn draw_hslider(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: Clip
 /// `W_HSLIDE` under `W_HBAR` (`gemwmlib.c:450-462`), outside the slider's
 /// subtree redraw. Mirror of [`draw_varrows`].
 fn draw_harrows(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
-    let kind = w.kind;
-    let Some(bar) = hbar_rect(w.curr, kind) else {
-        return;
-    };
-    let aw = adj_wbox();
     let ink = |g: usize| gadget_ink(w, g, istop);
-    // Arrows: mirror of [`draw_varrows`] — a `gl_wbox` × `gl_hbox` cell inset
-    // `ADJ3DSTD` into the band, each consuming a full `adj_wbox`
-    // (gemwmlib.c:448-462).
-    if kind & LFARROW != 0 {
-        let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() };
+    // Arrows: mirror of [`draw_varrows`] — the cells `w_bldhbar` lays into
+    // the `W_HBAR` rect ([`harrow_cells`], gemwmlib.c:448-462).
+    let (lf, rt) = harrow_cells(w.curr, w.kind);
+    if let Some(g) = lf {
         gadget(g, G_LF, ink(W_LFARROW_IDX), backend, clip);
     }
-    if kind & RTARROW != 0 {
-        let g = Grect { x: bar.x + bar.w - aw + 1, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() };
+    if let Some(g) = rt {
         gadget(g, G_RT, ink(W_RTARROW_IDX), backend, clip);
     }
 }
@@ -4258,6 +4351,18 @@ enum Gadget {
 
 /// Hit-test a point against `w`'s frame gadgets (mirrors `draw_frame`'s
 /// layout).
+///
+/// The arrow cells follow EmuTOS's `ob_find` on the `W_ACTIVE` tree
+/// (`hctl_window`, `gemctrl.c:188`; `ob_find`, `gemoblib.c:1034-1113`): an
+/// `FL3DACT` arrow answers for its **grown** slot (`ob_actxywh`,
+/// `:313-338`), and where that slot shares a border line with the slide box
+/// — the down arrow's top row (`w_bldvbar`, `gemwmlib.c:424`), the right
+/// arrow's left column (`:459`) — the line belongs to the slide: `ob_find`
+/// tests a parent's children from `ob_tail` backwards, and `W_VSLIDE`/
+/// `W_HSLIDE` are added after the arrows (`:427`, `:465`). So the down
+/// arrow starts one row below its slot's top border, the right arrow one
+/// column right of its slot's left border, and the left arrow ends on its
+/// slot's last column, the column before the track's border (A95 (4), (5)).
 fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
     let b = w.curr;
     let kind = w.kind;
@@ -4287,10 +4392,11 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
     }
     // Right scroll-bar arrows.
     if let Some(bar) = vbar_rect(b, kind).filter(|_| mx >= b.x + b.w - aw) {
-        if kind & UPARROW != 0 && my < bar.y + ah {
+        let (up, dn) = varrow_cells(b, kind);
+        if up.map(grow_3d).is_some_and(|s| my < s.y + s.h) {
             return Gadget::Up;
         }
-        if kind & DNARROW != 0 && my >= bar.y + bar.h - ah {
+        if dn.map(grow_3d).is_some_and(|s| my > s.y) {
             return Gadget::Dn;
         }
         // Elevator thumb (drag) vs. a page click in the track either side of
@@ -4309,10 +4415,11 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
     }
     // Bottom scroll-bar arrows.
     if let Some(bar) = hbar_rect(b, kind).filter(|_| my >= b.y + b.h - ah) {
-        if kind & LFARROW != 0 && mx < bar.x + aw {
+        let (lf, rt) = harrow_cells(b, kind);
+        if lf.map(grow_3d).is_some_and(|s| mx < s.x + s.w) {
             return Gadget::Lf;
         }
-        if kind & RTARROW != 0 && mx >= bar.x + bar.w - aw {
+        if rt.map(grow_3d).is_some_and(|s| mx > s.x) {
             return Gadget::Rt;
         }
         // Elevator thumb (drag) vs. a page click in the track either side of it

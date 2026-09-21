@@ -1,0 +1,4 @@
+TL: 0 residual differing pixels
+TR: 0 residual differing pixels
+excluded (not frame / phase): {}
+RESIDUAL total 0

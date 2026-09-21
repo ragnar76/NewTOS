@@ -658,10 +658,9 @@ fn ip2_is_ink(x: i16, y: i16) -> bool {
 /// colours fixed at `:252,270-272`; reference `falcon-tc-window-c.png`
 /// closer: white at x=17 / y=97, `(140,138,140)` at x=37 / y=117).
 ///
-/// NewTOS's `bevel` paints those edges 2px wide where EmuTOS paints 1px
-/// (A95); the assertion samples the outermost pixel row/column of each edge
-/// — true for both widths — and stays two pixels clear of the corners, whose
-/// owner differs between the two polyline orders.
+/// Samples the outermost pixel row/column of each edge, two pixels clear of
+/// the corners; the exact 1-px width and the corner ownership are pinned by
+/// `aes_window_frame_reference.rs` (A95).
 fn assert_bevel(host: &QuietHost, ci: R, what: &str) {
     assert_all(host, R { x: ci.x + 2, y: ci.y, w: ci.w - 4, h: 1 }, WHITE, &format!("{what} bevel top"));
     assert_all(host, R { x: ci.x, y: ci.y + 2, w: 1, h: ci.h - 4 }, WHITE, &format!("{what} bevel left"));
@@ -672,8 +671,9 @@ fn assert_bevel(host: &QuietHost, ci: R, what: &str) {
 // ── what an untopped / a topped title band looks like ─────────────────────
 
 /// The glyph cells of a centred `n`-character name in the `W_NAME` rect —
-/// left out of the interior assertions (the `DISABLED` overlay, A95, may
-/// thin them; the space cell is opaque white under `md=REPLACE` when topped).
+/// left out of the interior assertions (the `DISABLED` overlay thins them
+/// when untopped, A95 (6); the space cell is opaque white under `md=REPLACE`
+/// when topped).
 fn name_cells(nr: R, n: i16) -> R {
     let nlen = n * 8;
     let nx = nr.x + ((nr.w - nlen) / 2).max(2);
@@ -706,8 +706,12 @@ fn assert_untopped_title(host: &QuietHost, b: R, name_chars: i16, what: &str) {
     let nr = name_rect(b);
     let nbox = grown(nr);
     assert_ring(host, nbox, BLACK, &format!("{what}: W_NAME border"));
+    // The `FL3DACT` name box carries the bevel (`add_3d_effect`,
+    // `gemoblib.c:949-950`; reference `falcon-tc-two-windows.png` row 85
+    // LBLACK) — the hollow-white claim holds inside it (A95 (2)).
+    assert_bevel(host, nbox.inset(1), &format!("{what}: W_NAME"));
     let cells = name_cells(nr, name_chars);
-    let inner = nbox.inset(1);
+    let inner = nbox.inset(2);
     for (x, y, p) in pixels(host, inner) {
         if cells.contains(x, y) {
             continue;
