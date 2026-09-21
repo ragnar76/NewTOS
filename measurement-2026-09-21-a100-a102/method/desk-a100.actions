@@ -1,0 +1,36 @@
+# A100/A102 kernel desktop (sd-base, no #Z). The C:\ window is open at boot.
+# Ticks are 200 Hz after "[desk] desktop up" armed the injector.
+# A: idle. Select BIG.NCP in the window (single click), park -> B.
+# Pointer to (400,8) = bar row right of "Options" -> C. CR (0x1C/0x9C)
+# while resting there -> D: after = the selection is cleared at once
+# (THEACTIVE = titles' sum, the row right of Options is the desktop's);
+# before = still selected (THEACTIVE screen-wide: the desktop sits in the
+# track until the pointer leaves the row) -> cleared only at E after parkbr.
+# File title (88,8) -> F: the box down (after: outside border, x 67 / y 18
+# .. x 226 / y 304; before: inside, x 68 / y 19 .. x 225 / y 303 and the
+# titles 16 px further left). Hover "Close top window" (entry 6) -> G.
+# Out to the desktop, click = cancel, park -> H.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 95 140
+1900 down
+1903 up
+2400 parkbr
+2900 mark B_ICON_SELECTED
+3200 move 400 8
+3700 mark C_REST_RIGHT_OF_OPTIONS
+4000 key 1C
+4003 key 9C
+4600 mark D_CR_WHILE_RESTING
+4900 parkbr
+5400 mark E_PARKED
+5700 move 88 8
+6200 mark F_FILE_OPEN
+6500 move 88 142
+7000 mark G_FILE_ENTRY_HOVER
+7300 move 400 300
+7600 down
+7603 up
+8100 parkbr
+8600 mark H_CLOSED

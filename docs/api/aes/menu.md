@@ -409,8 +409,10 @@ tracking loop (`handle_popup`), and restores the background. On a pick,
 fills `*mdata`: `mn_tree`/`mn_menu` copied from the input (**no submenus
 from popups — restriction #1 below**), `mn_item` = the chosen object
 number, `mn_scroll` copied, `mn_keystate` = the shift state at selection;
-returns `1`. On no pick, sets `mdata->mn_keystate = 0` and returns `0`
-(`gemmnext.c:336-349`). Either way, it waits for button-up again
+returns `1`. On no pick, sets `mdata->mn_keystate = 0` **and nothing else**
+— the `else` branch is that one statement (`gemmnext.c:345-349`); `mn_tree`,
+`mn_menu`, `mn_item` and `mn_scroll` of the output block keep whatever the
+caller had there (A102, 2026-09-21) — and returns `0` (`gemmnext.c:336-349`). Either way, it waits for button-up again
 (`gemmnext.c:351`) and releases the mouse (`wm_update(END_MCTRL)`,
 `gemmnext.c:353`) before returning.
 
@@ -566,7 +568,11 @@ Reads or writes the global submenu/scroll timing settings. `flag=0` copies the
 current `settings` into `*set`; `flag=1` copies each **non-negative** field from
 `*set` into `settings` (negative values are ignored, matching TOS), clamping
 `height` to `[MIN_HEIGHT_VALUE=5, gl_rfull.g_h / gl_hchar]` (`clamp_height`,
-`gemmnext.c:83-95`; `mn_settings` `:600-615`). **Any other `flag` is a no-op:**
+`gemmnext.c:83-95`; `mn_settings` `:600-615`). `gl_rfull` is the desktop
+area **below the menu bar**, `(0, gl_hbox, gl_width, gl_height - gl_hbox)`
+(`gemgraf.c:424`), so the upper bound is `(gl_height - gl_hbox) / gl_hchar`
+— 28 on a 480-row screen with the 16 px font, not `480 / 16` = 30 (A102,
+2026-09-21). **Any other `flag` is a no-op:**
 `mn_settings` is a `switch(flag)` with the arms `0` and `1` and no `default`
 (`:598-615`), so `flag ∉ {0, 1}` neither reads nor writes either block —
 `*set` and `settings` both stay as they were; `int_out[0]` is still `1`.

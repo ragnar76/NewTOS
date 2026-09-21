@@ -7,7 +7,11 @@
 //! * `case 0` copies the AES's `settings` block into the caller's `MN_SET`;
 //! * `case 1` copies every **non-negative** field of the caller's `MN_SET`
 //!   into `settings`, running `height` through `clamp_height`
-//!   (`:83-95`: at least `MIN_HEIGHT_VALUE` = 5 items);
+//!   (`:83-95`: at least `MIN_HEIGHT_VALUE` = 5 items, at most
+//!   `gl_rfull.g_h / gl_hchar` — the desktop area **below the bar**,
+//!   `gl_rfull = (0, gl_hbox, gl_width, gl_height - gl_hbox)`,
+//!   `aes/gemgraf.c:424` — so 28 rows of 16 px in the 461 px under a 19 px
+//!   bar on the 480-row reference screen, not 30 (A102));
 //! * any other `flag` falls out of the switch — nothing is read, nothing is
 //!   written. The caller's block and the AES's block both stay as they were.
 //!
@@ -75,6 +79,13 @@ const EMUTOS_DEFAULTS: MnSet = MnSet {
 
 /// `MIN_HEIGHT_VALUE` (`gemmnext.c:76`).
 const MIN_HEIGHT_VALUE: i16 = 5;
+
+/// `gl_hbox` = `gl_hchar + 3` (`aes/gemgraf.c:412`) for the 16 px system font.
+const GL_HBOX: i16 = 19;
+
+/// `gl_rfull.g_h / gl_hchar` (`clamp_height`, `gemmnext.c:90`): the rows of
+/// the system font that fit below the bar — `(480 − 19) / 16` = 28.
+const MAX_HEIGHT: i16 = (SCREEN_H as i16 - GL_HBOX) / 16;
 
 /// One `menu_settings(flag, &block)` through the LP64 dispatcher. Returns
 /// `int_out[0]`; the block is passed by address, so a `get` fills it and a
@@ -211,6 +222,46 @@ fn only_flag_zero_reads_and_only_flag_one_writes() {
             "height {low} must clamp to MIN_HEIGHT_VALUE"
         );
     }
+    let mut block = MnSet {
+        display: -1,
+        drag: -1,
+        delay: -1,
+        speed: -1,
+        height: MIN_HEIGHT_VALUE,
+    };
+    assert_eq!(menu_settings(&mut pb, 1, &mut block), 1);
+    assert_eq!(current(&mut pb).height, MIN_HEIGHT_VALUE);
+
+    // ── flag 1 clamps height from above: a pop-up taller than the desktop
+    // area. `max_height = gl_rfull.g_h / gl_hchar` (`gemmnext.c:90`), and
+    // `gl_rfull` is the screen below the bar (`gemgraf.c:424`): 30 rows would
+    // be 480 px, the desktop area is 461 → 28 (A102). The screen height alone
+    // (`480 / 16` = 30) would let the box reach into the bar row.
+    assert_eq!(MAX_HEIGHT, 28, "the reference geometry: (480 - 19) / 16");
+    for high in [MAX_HEIGHT + 1, SCREEN_H as i16 / 16, 100, i16::MAX] {
+        let mut block = MnSet {
+            display: -1,
+            drag: -1,
+            delay: -1,
+            speed: -1,
+            height: high,
+        };
+        assert_eq!(menu_settings(&mut pb, 1, &mut block), 1);
+        assert_eq!(
+            current(&mut pb).height,
+            MAX_HEIGHT,
+            "height {high} must clamp to gl_rfull.g_h / gl_hchar = {MAX_HEIGHT} (gemmnext.c:90, gemgraf.c:424)"
+        );
+    }
+    let mut block = MnSet {
+        display: -1,
+        drag: -1,
+        delay: -1,
+        speed: -1,
+        height: MAX_HEIGHT,
+    };
+    assert_eq!(menu_settings(&mut pb, 1, &mut block), 1);
+    assert_eq!(current(&mut pb).height, MAX_HEIGHT, "the maximum itself is not clamped");
     let mut block = MnSet {
         display: -1,
         drag: -1,

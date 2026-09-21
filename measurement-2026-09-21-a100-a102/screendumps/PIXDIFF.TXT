@@ -1,0 +1,26 @@
+before/after pixel differences per mark (pixdiff: count, bbox)
+desk A-idle: 1084 px bbox (9, 3, 235, 17)
+desk B-icon-selected: 1084 px bbox (9, 3, 235, 17)
+desk C-rest-right-of-options: 1084 px bbox (9, 3, 235, 17)
+desk D-cr-while-resting: 2666 px bbox (9, 3, 235, 169)
+desk E-parked: 1084 px bbox (9, 3, 235, 17)
+desk F-file-open: 7980 px bbox (9, 1, 235, 305)
+desk G-file-entry-hover: 8709 px bbox (9, 1, 235, 305)
+desk H-closed: 1084 px bbox (9, 3, 235, 17)
+tera A-idle: 0 px bbox None
+tera B-file-open: 0 px bbox None
+tera C-entry-hover: 761 px bbox (64, 19, 240, 243)
+tera D-closed: 0 px bbox None
+
+desk box outline samples (K = black, W = white, g = desktop green), File box:
+  before: (52,19,158,285) inside border -> columns 52 and 209, rows 19 and 303
+  after:  (68,19,158,285) outside border -> columns 67 and 226, rows 18 and 304 (row 18 = the bar's separator line)
+  before F-file-open: y=100 x=50..53: WWKW  x=208..211: WKWW  x=100 y=17..20: KKKW  y=302..305: WKWW  hovered row y=142 x=50..55: WWKWWW  x=207..211: WWKWW
+  before G-file-entry-hover: y=100 x=50..53: WWKW  x=208..211: WKWW  x=100 y=17..20: KKKW  y=302..305: WKWW  hovered row y=142 x=50..55: WWKKKK  x=207..211: KKKWW
+  after F-file-open: y=100 x=66..69: WKWW  x=224..227: WWKW  x=100 y=17..20: KKWW  y=302..305: WWKW  hovered row y=142 x=66..71: WKWWWW  x=223..227: WWWKW
+  after G-file-entry-hover: y=100 x=66..69: WKWW  x=224..227: WWKW  x=100 y=17..20: KKWW  y=302..305: WWKW  hovered row y=142 x=66..71: WKKKKK  x=223..227: KKKKW
+
+tera C-entry-hover: the differing pixels lie on the box rectangle's own edges (the old inner frame repaint):
+  by column: [(239, 208), (64, 205), (65, 2), (66, 2)]  by row: [(19, 176), (242, 176), (20, 2), (21, 2)]
+  before: y=100 x=62..66: gKKWW  x=237..241: WWKKg  x=100 y=17..20: KKKW  y=241..245: WKKgg
+  after: y=100 x=62..66: gKWWW  x=237..241: WWWKg  x=100 y=17..20: KKWW  y=241..245: WWKgg

@@ -771,9 +771,15 @@ static UPDATE_LOCK: AtomicI16 = AtomicI16::new(0);
 /// Mouse-control-ownership counter — EmuTOS `ml_ocnt`. `BEG_MCTRL` increments,
 /// `END_MCTRL` decrements. While `> 0` the app has taken over the mouse via
 /// `wind_update(BEG_MCTRL)`, so the AES frame interception ([`intercept`])
-/// switches off. This is the counter P4-011's full `fm_own` (menu-tree hold +
-/// control-region transfer) builds on.
+/// switches off and the control rectangle is the whole screen ([`chk_ctrl`]).
+/// The edge bodies (menu-tree hold, mouse-owner hand-over) are [`mctrl_own`]'s.
 static MCTRL_CNT: AtomicI16 = AtomicI16::new(0);
+
+/// EmuTOS `ml_pmown` (`gemfmlib.c:58`) — the mouse owner `fm_own` found on
+/// the outermost `BEG_MCTRL` (`get_mown(&ml_pmown)`, `:92`), handed the mouse
+/// back on the matching `END_MCTRL` (`ct_chgown(ml_pmown, &ml_ctrl)`, `:102`).
+/// `true` = the application, `false` = `ctl_pd`, as [`input::get_mown`] reports.
+static ML_PMOWN: AtomicBool = AtomicBool::new(true);
 
 /// Global default per-gadget colour words (`WF_DCOLOR`): the topped/untopped
 /// defaults new windows inherit (EmuTOS `gl_wtcolor`/`gl_wbcolor`,
@@ -4126,9 +4132,8 @@ pub fn wind_find(pb: &Aespb) {
 /// the mouse-control-ownership transfer. `fm_own` (gemfmlib.c:82-107) brackets
 /// with BEG/END_UPDATE and keeps the `ml_ocnt` counter. While a `BEG_MCTRL` is
 /// in effect (`ml_ocnt > 0`) the app has taken over the mouse, so the AES frame
-/// interception ([`intercept`]) switches off. This structure is the foundation
-/// P4-011's full `fm_own` (menu-tree hold + control-region transfer via
-/// `ct_chgown`, the `ml_ocnt == 0` edge body) builds on top of.
+/// interception ([`intercept`]) switches off; the `ml_ocnt == 0` edge bodies
+/// (menu-tree hold, control rectangle, `ct_chgown`) are [`mctrl_own`]'s.
 pub fn wind_update(pb: &Aespb) {
     // EmuTOS `wm_update` (gemwmlib.c:1778-1797): mode `< 2` is the window-tree
     // lock (0 = END_UPDATE, any non-zero = BEG_UPDATE); mode `>= 2` is
@@ -4173,32 +4178,47 @@ pub fn fm_own(begin: bool) {
 
 /// `fm_own(begin)` — mouse-control-ownership transfer (EmuTOS gemfmlib.c:82-107).
 /// `begin`: `BEG_UPDATE`, then on the outermost 0 → 1 edge park the menu tree,
-/// then `ml_ocnt++`. `!begin`: `ml_ocnt--`, then on the 1 → 0 edge restore the
-/// menu tree, then `END_UPDATE`. The menu-hold (`gl_mntree = NULL`) is the
-/// observable part of the `ml_ocnt == 0` edge body: a menu-bar click is inert
-/// while the dialog is up. The control-region / mouse-owner handover
-/// (`get_ctrl`/`get_mown`/`ct_chgown`, gemfmlib.c:91-93,102) is the cooperative
-/// multi-process ownership transfer and is a no-op at single-tasking (one AES
-/// process owns everything) — deferred to the cooperative kernel (Phase 2b).
+/// remember the mouse owner and give the mouse to the caller, then `ml_ocnt++`.
+/// `!begin`: `ml_ocnt--`, then on the 1 → 0 edge hand the mouse back to the
+/// remembered owner and restore the menu tree, then `END_UPDATE`.
+///
+/// The `ml_ocnt == 0` edge body (`:89-93`) is `ml_mnhold = gl_mntree;
+/// gl_mntree = NULL; get_ctrl(&ml_ctrl); get_mown(&ml_pmown); ct_chgown(rlr,
+/// &gl_rscreen);` — the menu-hold (a menu-bar click is inert while the dialog
+/// is up), the whole screen as the control rectangle (read live by
+/// [`chk_ctrl`] from `ml_ocnt > 0`, so `ml_ctrl` needs no store), and
+/// `set_mown(rlr)`: the caller owns the mouse for the dialog, unless a button
+/// is held (`set_mown`'s `if (!button)`, `aes/geminput.c:222`) or a menu track
+/// holds it (`ct_chgown`'s `if (!gl_ctmown)`, `aes/gemctrl.c:395`). The 1 → 0
+/// edge (`:101-103`) is `ct_chgown(ml_pmown, &ml_ctrl); gl_mntree =
+/// ml_mnhold;` — the previous owner gets the mouse back under the same two
+/// guards (A102). At single-app `rlr` is the application, so `set_mown(rlr)`
+/// is `ct_chgown(true)` and the remembered owner is [`input::get_mown`]'s flag.
 fn mctrl_own(begin: bool) {
     if begin {
         update_beg(); // fm_own: wm_update(BEG_UPDATE) (gemfmlib.c:86)
         // 0 → 1 edge, evaluated BEFORE the increment (EmuTOS tests `ml_ocnt`
         // while still 0, gemfmlib.c:87): park the active menu tree so the
-        // Control Manager stops tracking the bar for the duration of the dialog.
+        // Control Manager stops tracking the bar for the duration of the
+        // dialog, remember the owner, give the mouse to the caller (`:89-93`).
         if MCTRL_CNT.load(Ordering::Relaxed) == 0 {
             super::menu::hold_menu();
+            ML_PMOWN.store(super::input::get_mown(), Ordering::Relaxed);
+            super::input::ct_chgown(true);
         }
         MCTRL_CNT.fetch_add(1, Ordering::Relaxed);
     } else {
-        // ml_ocnt-- then, on the 1 → 0 edge, restore the parked menu tree
-        // (EmuTOS `ml_ocnt--; if (ml_ocnt == 0) { ...; gl_mntree = ml_mnhold; }`,
-        // gemfmlib.c:99-104), then wm_update(END_UPDATE). `fetch_sub` returns the
-        // PRE-decrement value, so the outermost edge is `prev == 1`. EmuTOS
-        // decrements unconditionally; the `intercept` gate (`> 0`) treats any
+        // ml_ocnt-- then, on the 1 → 0 edge, give the mouse back to the
+        // remembered owner and restore the parked menu tree (EmuTOS
+        // `ml_ocnt--; if (ml_ocnt == 0) { ct_chgown(ml_pmown, &ml_ctrl);
+        // gl_mntree = ml_mnhold; }`, gemfmlib.c:99-104), then
+        // wm_update(END_UPDATE). `fetch_sub` returns the PRE-decrement value,
+        // so the outermost edge is `prev == 1`. EmuTOS decrements
+        // unconditionally; the `intercept` gate (`> 0`) treats any
         // non-positive count as "app does not own the mouse", so an unbalanced
         // END_MCTRL cannot wedge interception off.
         if MCTRL_CNT.fetch_sub(1, Ordering::Relaxed) == 1 {
+            super::input::ct_chgown(ML_PMOWN.load(Ordering::Relaxed));
             super::menu::release_menu();
         }
         update_end();
@@ -4995,7 +5015,7 @@ pub fn intercept() {
     // (`ml_ocnt > 0`), the app has taken over the mouse and the AES frame
     // interception switches off — EmuTOS `fm_own` hands the control region to the
     // app so `ctlmgr` no longer processes frame clicks (gemfmlib.c:82-107). See
-    // [`wind_update`]; this is the hook P4-011's full `fm_own` extends.
+    // [`wind_update`] and [`mctrl_own`].
     if MCTRL_CNT.load(Ordering::Relaxed) > 0 {
         return;
     }

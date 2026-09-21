@@ -1,0 +1,27 @@
+test a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emutos ... FAILED
+test a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched ... FAILED
+test a102_the_bar_row_right_of_options_stays_with_the_application ... ok
+test a102_a_title_inside_theactive_still_starts_the_track ... ok
+test a102_menu_popup_no_pick_writes_only_mn_keystate ... FAILED
+test a102_the_last_column_of_options_starts_the_track_and_the_next_does_not ... ok
+thread 'a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emutos' (4972669) panicked at tos-api/tests/aes_a100_a102_desk_menu_geometry.rs:1054:5:
+assertion `left == right` failed: row 19 inverted with entry 0 (no frame repaint)
+  left: 0
+ right: 16777215
+thread 'a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched' (4972670) panicked at tos-api/tests/aes_a100_a102_desk_menu_geometry.rs:1007:5:
+assertion `left == right` failed: entry 0 is one XOR of its whole rectangle: 2808 inverted, 0 same, 194 other
+  left: (0, 194)
+ right: (0, 0)
+thread 'a102_menu_popup_no_pick_writes_only_mn_keystate' (4972672) panicked at tos-api/tests/aes_a100_a102_desk_menu_geometry.rs:1265:5:
+assertion `left == right` failed: no pick: mn_keystate = 0 and nothing else is written (gemmnext.c:347); out = MenuRec { mn_tree: 4313931024, mn_menu: 0, mn_item: -1, mn_scroll: 7, mn_keystate: 0 }
+  left: MenuRec { mn_tree: 4313931024, mn_menu: 0, mn_item: -1, mn_scroll: 7, mn_keystate: 0 }
+ right: MenuRec { mn_tree: 16045690984503111693, mn_menu: 4369, mn_item: 8738, mn_scroll: 13107, mn_keystate: 0 }
+test result: FAILED. 3 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+error: test failed, to rerun pass `-p tos-api --test aes_a100_a102_desk_menu_geometry`
+test only_flag_zero_reads_and_only_flag_one_writes ... FAILED
+thread 'only_flag_zero_reads_and_only_flag_one_writes' (4972792) panicked at tos-api/tests/aes_menu_settings.rs:250:9:
+assertion `left == right` failed: height 29 must clamp to gl_rfull.g_h / gl_hchar = 28 (gemmnext.c:90, gemgraf.c:424)
+  left: 29
+ right: 28
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p tos-api --test aes_menu_settings`

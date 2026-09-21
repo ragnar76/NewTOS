@@ -1,0 +1,558 @@
+diff --git a/kernel/src/desk/menu.rs b/kernel/src/desk/menu.rs
+index cc3ad4d..927305c 100644
+--- a/kernel/src/desk/menu.rs
++++ b/kernel/src/desk/menu.rs
+@@ -300,7 +300,20 @@ fn label_len(s: &[u8]) -> i16 {
+ 
+ /// The measured pixel geometry of the four titles + their drop-down boxes.
+ struct MenuGeom {
+-    /// Left edge of each title on the bar.
++    /// Left edge of `THEACTIVE` on the bar — the RSC's 2 character cells
++    /// (`desk_rsc.c:255-259`, object 2 `{2, 0, 28, 769}`), which
++    /// `adjust_menu` keeps unless the bar overflows (`deskmain.c:1584-1589`).
++    /// Not 0: "the menu bar cannot start at character offset 0 because, in
++    /// that case, the outline of the Desk dropdown box will not be drawn
++    /// properly" (`deskmain.c:1537-1541`) — the boxes carry an *outside*
++    /// border (see [`build_menu`]), and a box at x = 0 would put it off-screen.
++    active_x: i16,
++    /// Width of `THEACTIVE` = the sum of the title widths, `mbar->ob_width = x`
++    /// (`deskmain.c:1528-1534`) — **not** the screen width. `menu_bar` takes
++    /// this rectangle as the Control Manager's `gl_ctwait` (`gemmnlib.c:717`),
++    /// so the bar row right of the last title stays the application's (A102).
++    active_w: i16,
++    /// Left edge of each title, relative to `THEACTIVE`.
+     title_x: [i16; 4],
+     /// Width of each title cell.
+     title_w: [i16; 4],
+@@ -313,10 +326,12 @@ struct MenuGeom {
+ /// `adjust_menu` (EmuTOS `deskmain.c:1511-1641`) — measure every title and
+ /// drop-down and compute their pixel geometry: title x/width laid left-to-right
+ /// (each `strlen * CHAR_WIDTH + pad`, the documented ST system-font assumption),
+-/// drop-down box width from its widest entry (+ a right margin; the 2-cell
+-/// check column lives in the item strings' leading blanks, not code), and box
+-/// x-positioning under its title, **shifted left
+-/// if it would run off the right screen edge** (the drop-down re-position).
++/// `THEACTIVE` at the RSC's 2-cell origin and as wide as the titles' sum
++/// (`mbar->ob_width = x`, `:1534`), drop-down box width from its widest entry
++/// (+ a right margin; the 2-cell check column lives in the item strings'
++/// leading blanks, not code), and box x-positioning under its title —
++/// `THEACTIVE`'s origin plus the title's offset (`:1617`) — **shifted left if
++/// it would run off the right screen edge** (the drop-down re-position).
+ ///
+ /// EmuTOS additionally shrinks/truncates an over-wide title bar (its
+ /// French-desktop half-character hack); NewTOS's menu text fits ST-High width,
+@@ -325,7 +340,14 @@ struct MenuGeom {
+ /// preserving the measure-then-fit strategy (`deskmain.md`) without the m68k
+ /// sub-pixel packing trick.
+ fn adjust_menu(sw: i16) -> MenuGeom {
+-    let mut g = MenuGeom { title_x: [0; 4], title_w: [0; 4], box_x: [0; 4], box_w: [0; 4] };
++    let mut g = MenuGeom {
++        active_x: 2 * CHAR_W,
++        active_w: 0,
++        title_x: [0; 4],
++        title_w: [0; 4],
++        box_x: [0; 4],
++        box_w: [0; 4],
++    };
+     let mut tx = 0i16;
+     for (ti, def) in MENUS.iter().enumerate() {
+         let tw = label_len(def.label) * CHAR_W + 4;
+@@ -342,6 +364,9 @@ fn adjust_menu(sw: i16) -> MenuGeom {
+         let bw = maxlen * CHAR_W + 6;
+         g.box_w[ti] = bw;
+     }
++    // `mbar->ob_width = x` (`deskmain.c:1534`): THEACTIVE is exactly as wide
++    // as its titles.
++    g.active_w = tx;
+     // Defensive over-wide-bar clamp: keep the last title on-screen.
+     if tx > sw {
+         let overflow = tx - sw;
+@@ -349,9 +374,16 @@ fn adjust_menu(sw: i16) -> MenuGeom {
+             g.title_x[ti] = (g.title_x[ti] - overflow).max(0);
+         }
+     }
+-    // Drop-down x under its title, shifted left to stay on-screen.
++    // "if the menu bar is too far to the right, move it to the left, but only
++    // as far as char posn 1" (`deskmain.c:1584-1589`).
++    if g.active_x + tx > sw {
++        g.active_x = CHAR_W;
++    }
++    // Drop-down x under its title — `dropbox->ob_x = mbar->ob_x + title->ob_x`
++    // (`deskmain.c:1617`, THEACTIVE's origin plus the title's offset in it) —
++    // shifted left to stay on-screen (`:1626-1631`).
+     for ti in 0..4 {
+-        let bx = g.title_x[ti].min(sw - g.box_w[ti]).max(0);
++        let bx = (g.active_x + g.title_x[ti]).min(sw - g.box_w[ti]).max(0);
+         g.box_x[ti] = bx;
+     }
+     g
+@@ -398,7 +430,11 @@ fn build_menu() -> *mut Object {
+         // ROOT / THEBAR / THEACTIVE.
+         o[0] = mk(G_IBOX, 0, 0, 0, 0, sw, sh, -1, 1, themenus as i16);
+         o[1] = mk(G_BOX, 0, 0, 0, 0, sw, MENU_H, themenus as i16, 2, 2);
+-        o[2] = mk(G_IBOX, 0, 0, 0, 0, sw, MENU_H, 1, first_title as i16, (themenus - 1) as i16);
++        // THEACTIVE: the RSC's `{2, 0, 28, 769}` (`desk_rsc.c:255-259`) with
++        // `adjust_menu`'s width — `mbar->ob_width = x`, the titles' sum
++        // (`deskmain.c:1534`). Its rectangle is what `menu_bar` hands the
++        // Control Manager as `gl_ctwait` (`gemmnlib.c:717`).
++        o[2] = mk(G_IBOX, 0, 0, geom.active_x, 0, geom.active_w, MENU_H, 1, first_title as i16, (themenus - 1) as i16);
+ 
+         // Titles, left to right (adjust_menu's measured geometry).
+         for (ti, def) in MENUS.iter().enumerate() {
+@@ -459,14 +495,20 @@ fn build_menu() -> *mut Object {
+                 }
+                 k += 1;
+             }
+-            // The box itself. Colour word 0x1070 = black border + solid white
+-            // interior (else the box would be transparent and the desktop would
+-            // show through the drop-down).
++            // The box itself: `ob_spec = 0xFF1100` as every ADMENU drop-down
++            // box in the RSC (`desk_rsc.c:291-295`, object 8 `16716032L`):
++            // thickness byte 0xFF = `th = -1`, a 1-px border drawn **outside**
++            // the box rectangle; colour word 0x1100 = border BLACK, text BLACK,
++            // IP_HOLLOW interior — which `gr_rect` paints opaque WHITE
++            // (`gemgraf.c:547-559`). The entries fill the box rectangle from
++            // its origin (`desk_rsc.c:297-301`: `{0, 0, 20, 1}` …), so the
++            // item XOR of a hover (`ob_change`, `gemoblib.c:1295-1304`) never
++            // reaches the border (A100).
+             let next_box = if ti == nt - 1 { themenus as i16 } else { k as i16 };
+             o[bi] = mk(
+                 G_BOX,
+                 0,
+-                (1 << 16) | 0x1070,
++                0x00FF_1100,
+                 bx_x,
+                 MENU_H,
+                 iw,
+diff --git a/tos-api/src/aes/input.rs b/tos-api/src/aes/input.rs
+index 36e388e..cd7ec62 100644
+--- a/tos-api/src/aes/input.rs
++++ b/tos-api/src/aes/input.rs
+@@ -196,15 +196,43 @@ pub(super) fn own_mouse() -> bool {
+ 
+ /// The Control Manager's `w_setactive()` (`aes/gemctrl.c:442`): give the mouse
+ /// to the owner of the top window — `ct_chgown(ppd, &d)` → `set_mown`
+-/// (`aes/gemwmlib.c:326-333`, `aes/gemctrl.c:392-397`). `ct_chgown` skips the
+-/// hand-over while the Control Manager holds the mouse for a menu track
+-/// (`if (!gl_ctmown)`, `:395`), and `set_mown` changes nothing while a button
+-/// is held (`if (!button)`, `aes/geminput.c:222`), so a press latched to the
+-/// Control Manager stays with it until the release. At single-app the top
+-/// window's owner is always this application.
++/// (`aes/gemwmlib.c:326-333`, `aes/gemctrl.c:392-397`). At single-app the top
++/// window's owner is always this application; the two guards are
++/// [`ct_chgown`]'s and [`set_mown`]'s, so a press latched to the Control
++/// Manager stays with it until the release.
+ pub(super) fn w_setactive() {
+-    if !GL_CTMOWN.load(Ordering::Relaxed) && BUTTON.load(Ordering::Relaxed) == 0 {
+-        GL_MOWNER_APP.store(true, Ordering::Relaxed);
++    ct_chgown(true);
++}
++
++/// EmuTOS `get_mown(&pmown)` (`aes/geminput.c:209-212`) — the current mouse
++/// owner, as [`own_mouse`] reports it: `true` = the application (`rlr`),
++/// `false` = `ctl_pd`. `fm_own` saves it on entry (`ml_pmown`,
++/// `aes/gemfmlib.c:92`) to hand the mouse back to that owner on exit.
++pub(super) fn get_mown() -> bool {
++    GL_MOWNER_APP.load(Ordering::Relaxed)
++}
++
++/// EmuTOS `ct_chgown(mpd, pr)` (`aes/gemctrl.c:392-397`): `set_ctrl(pr); if
++/// (!gl_ctmown) set_mown(mpd);` — the mouse changes hands only while no menu
++/// track holds it. The control rectangle half is not stored: EmuTOS's `ctrl`
++/// has exactly two sources, and [`window::chk_ctrl`](super::window::chk_ctrl)
++/// reads both live (`ml_ocnt > 0` → the whole screen; else the top window's
++/// work area). `app` names the owner as [`get_mown`] does.
++pub(super) fn ct_chgown(app: bool) {
++    if !GL_CTMOWN.load(Ordering::Relaxed) {
++        set_mown(app);
++    }
++}
++
++/// EmuTOS `set_mown(mp)` (`aes/geminput.c:220-235`): `if (!button) gl_cowner =
++/// gl_mowner = mp;` — "the mouse should only be transferred with the buttons
++/// in an up state" (`:216-217`); with a button held nothing changes. The
++/// `post_mouse`/`post_button` that follow in EmuTOS (`:231-233`) wake the new
++/// owner's parked waits; our Event Manager polls the live position and button
++/// against `own_mouse()` on every pass, so the hand-over itself is the wake.
++fn set_mown(app: bool) {
++    if BUTTON.load(Ordering::Relaxed) == 0 {
++        GL_MOWNER_APP.store(app, Ordering::Relaxed);
+     }
+ }
+ 
+diff --git a/tos-api/src/aes/menu.rs b/tos-api/src/aes/menu.rs
+index 961ff66..a1e87e8 100644
+--- a/tos-api/src/aes/menu.rs
++++ b/tos-api/src/aes/menu.rs
+@@ -398,14 +398,14 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
+                 // stays selected (cur_item is untouched).
+                 let sit = object::child_at(sub_tree as *const Object, sub_box, mx, my);
+                 if sit != sub_item {
+-                    rehilite(sub_tree as *mut Object, sub_box, sub_item, sit, backend);
++                    rehilite(sub_tree as *mut Object, sub_item, sit, backend);
+                     sub_item = sit;
+                 }
+             } else {
+                 // Not over the submenu: drop any submenu-item highlight but
+                 // keep the submenu open while we are still on its parent item.
+                 if sub_item != NIL {
+-                    rehilite(sub_tree as *mut Object, sub_box, sub_item, NIL, backend);
++                    rehilite(sub_tree as *mut Object, sub_item, NIL, backend);
+                     sub_item = NIL;
+                 }
+                 let it = object::child_at(tp, cur_box, mx, my);
+@@ -430,7 +430,7 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
+                         sub_box = NIL;
+                         sub_item = NIL;
+                     }
+-                    rehilite(tree, cur_box, cur_item, it, backend);
++                    rehilite(tree, cur_item, it, backend);
+                     cur_item = it;
+                     if it != NIL {
+                         if let Some((st, sb)) = open_submenu(tree, it, backend) {
+@@ -573,20 +573,25 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
+ }
+ 
+ /// Move the SELECTED highlight within a drop-down / submenu box from `old` to
+-/// `new` (either may be `NIL`), then repaint the box's 1-px frame that the
+-/// full-width item toggles overwrite. The mouse cursor is bracketed hidden/shown
+-/// so it does not smear across the redraw. Shared by the parent-box and the
++/// `new` (either may be `NIL`). The mouse cursor is bracketed hidden/shown so
++/// it does not smear across the redraw. Shared by the parent-box and the
+ /// nested-submenu hover tracking.
+ ///
+ /// Each highlight change is EmuTOS's `menu_select` → `do_chg` → `ob_change`
+ /// (`gemmnlib.c:170`): one XOR of the item rect to select, one to deselect
+ /// (`gemoblib.c:1295-1304`, A99). No white pre-fill — an XOR over a white
+-/// pre-fill would turn the deselected item black.
+-fn rehilite(tree: *mut Object, box_obj: i16, old: i16, new: i16, backend: &dyn RasterBackend) {
++/// pre-fill would turn the deselected item black — and nothing after the
++/// toggles: `mn_do` repaints no frame (`gemmnlib.c:451-475`). A drop-down box
++/// with an *outside* border (`th = -1`, the desktop's `0xFF1100`,
++/// `desk/desk_rsc.c:294`; TeraDesk's `desktop.rsc` likewise) keeps its border
++/// clear of the item rectangles, so the XOR never reaches it; a box with an
++/// inside border gets its frame inverted in the item's rows in EmuTOS too —
++/// the frame repaint that compensated for the kernel desktop's former inside
++/// border is gone (A100).
++fn rehilite(tree: *mut Object, old: i16, new: i16, backend: &dyn RasterBackend) {
+     let tp = tree as *const Object;
+     let t = ObjTree::new(tp);
+     crate::vdi::cursor_hide(backend);
+-    let clip = ClipRect::full(backend.width(), backend.height());
+     // EmuTOS highlights and un-highlights a drop-down item only through
+     // `menu_select` → `do_chg(..., chkdisabled=TRUE)` (`gemmnlib.c:196` calling
+     // the guard at `:159-160`; invoked for the un-hilite at `:459` and the
+@@ -600,16 +605,6 @@ fn rehilite(tree: *mut Object, box_obj: i16, old: i16, new: i16, backend: &dyn R
+     if new != NIL && (t.state(new) & DISABLED) == 0 {
+         object::set_state_bit(tree, new, SELECTED, true);
+     }
+-    // Items span the full box width, so a highlight/clear XOR over an *inside*
+-    // box border (the kernel desktop's `th = +1` drop-down) inverts the frame
+-    // pixels in the item's rows; redraw the frame so the hovered rows keep
+-    // their border. (EmuTOS's desktop boxes have an outside border, `0xFF1100`,
+-    // `desk/desk_rsc.c:294`, which the item XOR never reaches.)
+-    let (bx, by, bw, bh) = object::abs_rect(tp, box_obj);
+-    backend.fill_rect(bx, by, bw, 1, BLACK, clip); // top
+-    backend.fill_rect(bx, by + bh - 1, bw, 1, BLACK, clip); // bottom
+-    backend.fill_rect(bx, by, 1, bh, BLACK, clip); // left
+-    backend.fill_rect(bx + bw - 1, by, 1, bh, BLACK, clip); // right
+     crate::vdi::cursor_show(backend);
+ }
+ 
+@@ -1110,6 +1105,20 @@ impl Menu {
+             ((base + w + 6) as *mut i16).write_unaligned(self.mn_keystate);
+         }
+     }
++
++    /// Write only the `mn_keystate` WORD of the `MENU` at `base` — the last of
++    /// the four WORDs behind the `mn_tree` pointer, at the caller's ABI offset
++    /// (`@14` LP64 / `@10` ILP32). The other four fields are not touched.
++    ///
++    /// # Safety
++    /// `base` addresses a valid, writable `MENU` packed at `abi` width.
++    #[inline]
++    unsafe fn write_keystate_abi(base: u64, abi: Abi, keystate: i16) {
++        let w = menu_ptr_size(abi);
++        // SAFETY: `base` is a valid writable MENU packed at `abi` width (caller's
++        // contract); the slot is only 2-byte aligned, so write unaligned.
++        unsafe { ((base + w + 6) as *mut i16).write_unaligned(keystate) };
++    }
+ }
+ 
+ /// `menu_popup` (36) — display the pop-up menu described by `addr_in[0]`
+@@ -1158,22 +1167,27 @@ pub fn menu_popup(pb: &Aespb) {
+     }
+     let (sel, keystate) = mn_popup(tree, box_obj, start_item, xpos, ypos, backend, h);
+     if mdata != 0 {
+-        // A pick (`:338-343`): `mn_tree`/`mn_menu` as input (no submenus
+-        // from a pop-up), `mn_item` the choice, `mn_scroll` copied from the
+-        // input, `mn_keystate` the shift state at the press. No pick:
+-        // `mn_keystate = 0` (`:347`) — EmuTOS writes nothing else on that
+-        // branch; NewTOS (pre-existing) also writes the other four fields
+-        // (tree/menu/scroll as input, item NIL) — observable only to a caller
+-        // that reads them after an `rc` of 0.
+-        let out = Menu {
+-            mn_tree: tree as u64,
+-            mn_menu: box_obj,
+-            mn_item: sel,
+-            mn_scroll: m.mn_scroll,
+-            mn_keystate: if sel >= 0 { keystate } else { 0 },
+-        };
+-        // SAFETY: valid MENU out (GEM contract), packed at the caller ABI width.
+-        unsafe { out.write_abi(mdata, pb.abi) };
++        if sel >= 0 {
++            // A pick (`:338-343`): `mn_tree`/`mn_menu` as input (no submenus
++            // from a pop-up), `mn_item` the choice, `mn_scroll` copied from
++            // the input, `mn_keystate` the shift state at the press.
++            let out = Menu {
++                mn_tree: tree as u64,
++                mn_menu: box_obj,
++                mn_item: sel,
++                mn_scroll: m.mn_scroll,
++                mn_keystate: keystate,
++            };
++            // SAFETY: valid MENU out (GEM contract), packed at the caller ABI width.
++            unsafe { out.write_abi(mdata, pb.abi) };
++        } else {
++            // No pick: `mdata->mn_keystate = 0; /* TOS always sets mn_keystate */`
++            // (`:347`) — the one field written on that branch; `mn_tree`,
++            // `mn_menu`, `mn_item` and `mn_scroll` keep whatever the caller
++            // had there (A102).
++            // SAFETY: valid MENU out (GEM contract), packed at the caller ABI width.
++            unsafe { Menu::write_keystate_abi(mdata, pb.abi, 0) };
++        }
+     }
+     pb.set_ret(if sel >= 0 { 1 } else { 0 });
+ }
+@@ -1317,20 +1331,16 @@ fn popup_shown(
+         let it = object::child_at(tp, box_obj, mx, my);
+         if it != cur_item {
+             crate::vdi::cursor_hide(backend);
+-            let clip = ClipRect::full(backend.width(), backend.height());
+             // `ob_change`'s XOR toggle each way (`gemoblib.c:1295-1304`, A99):
+-            // no white pre-fill before the un-hilite.
++            // no white pre-fill before the un-hilite, and no frame repaint
++            // after it — `handle_popup` only toggles through `do_chg`
++            // (`gemmnext.c:278-287`); see [`rehilite`] (A100).
+             if cur_item != NIL {
+                 object::set_state_bit(tree, cur_item, SELECTED, false);
+             }
+             if it != NIL {
+                 object::set_state_bit(tree, it, SELECTED, true);
+             }
+-            let (rx, ry, rw, rh) = object::abs_rect(tp, box_obj);
+-            backend.fill_rect(rx, ry, rw, 1, BLACK, clip);
+-            backend.fill_rect(rx, ry + rh - 1, rw, 1, BLACK, clip);
+-            backend.fill_rect(rx, ry, 1, rh, BLACK, clip);
+-            backend.fill_rect(rx + rw - 1, ry, 1, rh, BLACK, clip);
+             crate::vdi::cursor_show(backend);
+             cur_item = it;
+         }
+@@ -1378,17 +1388,19 @@ const MIN_HEIGHT_VALUE: i16 = 5;
+ /// Clamp `menu_settings`'s `height` field to EmuTOS's
+ /// `[MIN_HEIGHT_VALUE, gl_rfull.g_h / gl_hchar]` range (`clamp_height`,
+ /// `gemmnext.c:83-95`): at least 5 items, at most as many system-font rows as
+-/// fit on the full screen. `gl_hchar` maps to the 16-pixel system-font cell
+-/// height ([`crate::vdi::font::CELL_H`]); `gl_rfull.g_h` to the raster
+-/// backend's full-screen height. When no raster is up (workstation not yet
+-/// initialised) only the lower bound is enforceable — the upper clamp is
++/// fit in the desktop area **below the menu bar** — `gl_rfull = (0, gl_hbox,
++/// gl_width, gl_height - gl_hbox)` (`gemgraf.c:424`), so `gl_rfull.g_h` is the
++/// screen height less the bar row (A102). `gl_hchar` is the system-font cell
++/// height ([`super::graf::gl_hchar`]). When no raster is up (workstation not
++/// yet initialised) only the lower bound is enforceable — the upper clamp is
+ /// skipped rather than guessed.
+ fn clamp_height(height: i16) -> i16 {
+     if height < MIN_HEIGHT_VALUE {
+         return MIN_HEIGHT_VALUE;
+     }
+     if let Some(backend) = host().and_then(|h| h.raster()) {
+-        let max_height = backend.height() as i16 / crate::vdi::font::CELL_H;
++        let rfull_h = backend.height() as i16 - gl_hbox();
++        let max_height = rfull_h / super::graf::gl_hchar();
+         if height > max_height {
+             return max_height;
+         }
+@@ -2400,4 +2412,77 @@ mod popup_wait_tests {
+         remove_bar();
+         assert!(super::active().is_null());
+     }
++
++    // ── A102 point 2: fm_own gives the caller the mouse, and gives it back ──
++
++    /// **`set_mown` on both edges of the bracket.** `fm_own(TRUE)`'s
++    /// `ml_ocnt == 0` body ends in `get_mown(&ml_pmown); ct_chgown(rlr,
++    /// &gl_rscreen);` (`aes/gemfmlib.c:92-93`) — `set_mown(rlr)`: with the
++    /// buttons up the caller owns the mouse from here (`aes/geminput.c:222,
++    /// 225`); `fm_own(FALSE)`'s 1 → 0 body is `ct_chgown(ml_pmown, &ml_ctrl)`
++    /// (`:102`) — the owner found on entry gets it back. Observable only when
++    /// that owner is `ctl_pd`: a bar is installed and the pointer has entered
++    /// `THEACTIVE` with the buttons up, `mchange`'s hand-over
++    /// (`aes/geminput.c:388-389`). Then `BEG_MCTRL` → the application owns
++    /// the mouse; `END_MCTRL` → `ctl_pd` again. With a button held on entry
++    /// `set_mown` changes nothing either way (`if (!button)`, `:222`). NewTOS's
++    /// bracket parked the menu tree and counted, and left `gl_mowner` alone.
++    #[test]
++    fn fm_own_gives_the_caller_the_mouse_and_hands_it_back_to_the_previous_owner() {
++        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++        let host = ScriptHost::new();
++        let bar = bar_tree();
++        install_bar(bar);
++        let own = super::super::input::own_mouse;
++        let fm_own = super::super::window::fm_own;
++
++        // Buttons up on the desktop: the application owns the mouse (the
++        // Control Manager's w_setactive, aes/gemctrl.c:442, in the state a
++        // previous case may have left).
++        park_at(&host, 30, 200);
++        super::super::input::w_setactive();
++        assert!(own(), "the application owns the mouse on the desktop");
++
++        // Into THEACTIVE with the buttons up: mchange hands the mouse to ctl_pd.
++        park_at(&host, 30, 8);
++        assert!(!own(), "in THEACTIVE with the buttons up: gl_mowner = ctl_pd (mchange, aes/geminput.c:388-389)");
++
++        fm_own(true);
++        assert!(own(), "BEG_MCTRL: ct_chgown(rlr, &gl_rscreen) → set_mown(rlr), the caller owns the mouse (aes/gemfmlib.c:93)");
++        fm_own(false);
++        assert!(!own(), "END_MCTRL: ct_chgown(ml_pmown, &ml_ctrl) → the previous owner, ctl_pd, again (aes/gemfmlib.c:102)");
++
++        // Nested brackets: only the outermost edges move the mouse.
++        fm_own(true);
++        assert!(own());
++        fm_own(true);
++        fm_own(false);
++        assert!(own(), "an inner END_MCTRL (ml_ocnt 2 → 1) hands nothing back");
++        fm_own(false);
++        assert!(!own(), "the outermost END_MCTRL hands the mouse back to ctl_pd");
++
++        // A button held on entry: set_mown does nothing (aes/geminput.c:222).
++        host.arm(&[1]);
++        host.pump_input();
++        assert!(!own(), "the press in the bar row is ctl_pd's (chk_ctrl, aes/geminput.c:96-97)");
++        fm_own(true);
++        assert!(!own(), "BEG_MCTRL with a button held: set_mown's if (!button) — no change");
++        host.arm(&[0]);
++        host.pump_input();
++        fm_own(false);
++        assert!(!own(), "END_MCTRL: ml_pmown was ctl_pd");
++
++        // The application owning on entry keeps the mouse throughout.
++        park_at(&host, 30, 200);
++        super::super::input::w_setactive();
++        assert!(own());
++        fm_own(true);
++        assert!(own());
++        fm_own(false);
++        assert!(own(), "END_MCTRL: ml_pmown was the application");
++
++        remove_bar();
++        super::super::input::w_setactive();
++        assert!(own(), "left as found: the application owns the mouse, no bar");
++    }
+ }
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index eb330b1..f5bdeb2 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -771,10 +771,16 @@ static UPDATE_LOCK: AtomicI16 = AtomicI16::new(0);
+ /// Mouse-control-ownership counter — EmuTOS `ml_ocnt`. `BEG_MCTRL` increments,
+ /// `END_MCTRL` decrements. While `> 0` the app has taken over the mouse via
+ /// `wind_update(BEG_MCTRL)`, so the AES frame interception ([`intercept`])
+-/// switches off. This is the counter P4-011's full `fm_own` (menu-tree hold +
+-/// control-region transfer) builds on.
++/// switches off and the control rectangle is the whole screen ([`chk_ctrl`]).
++/// The edge bodies (menu-tree hold, mouse-owner hand-over) are [`mctrl_own`]'s.
+ static MCTRL_CNT: AtomicI16 = AtomicI16::new(0);
+ 
++/// EmuTOS `ml_pmown` (`gemfmlib.c:58`) — the mouse owner `fm_own` found on
++/// the outermost `BEG_MCTRL` (`get_mown(&ml_pmown)`, `:92`), handed the mouse
++/// back on the matching `END_MCTRL` (`ct_chgown(ml_pmown, &ml_ctrl)`, `:102`).
++/// `true` = the application, `false` = `ctl_pd`, as [`input::get_mown`] reports.
++static ML_PMOWN: AtomicBool = AtomicBool::new(true);
++
+ /// Global default per-gadget colour words (`WF_DCOLOR`): the topped/untopped
+ /// defaults new windows inherit (EmuTOS `gl_wtcolor`/`gl_wbcolor`,
+ /// gemwmlib.c:138-139). Mutable so `wind_set(WF_DCOLOR)` can change them; single
+@@ -4126,9 +4132,8 @@ pub fn wind_find(pb: &Aespb) {
+ /// the mouse-control-ownership transfer. `fm_own` (gemfmlib.c:82-107) brackets
+ /// with BEG/END_UPDATE and keeps the `ml_ocnt` counter. While a `BEG_MCTRL` is
+ /// in effect (`ml_ocnt > 0`) the app has taken over the mouse, so the AES frame
+-/// interception ([`intercept`]) switches off. This structure is the foundation
+-/// P4-011's full `fm_own` (menu-tree hold + control-region transfer via
+-/// `ct_chgown`, the `ml_ocnt == 0` edge body) builds on top of.
++/// interception ([`intercept`]) switches off; the `ml_ocnt == 0` edge bodies
++/// (menu-tree hold, control rectangle, `ct_chgown`) are [`mctrl_own`]'s.
+ pub fn wind_update(pb: &Aespb) {
+     // EmuTOS `wm_update` (gemwmlib.c:1778-1797): mode `< 2` is the window-tree
+     // lock (0 = END_UPDATE, any non-zero = BEG_UPDATE); mode `>= 2` is
+@@ -4173,32 +4178,47 @@ pub fn fm_own(begin: bool) {
+ 
+ /// `fm_own(begin)` — mouse-control-ownership transfer (EmuTOS gemfmlib.c:82-107).
+ /// `begin`: `BEG_UPDATE`, then on the outermost 0 → 1 edge park the menu tree,
+-/// then `ml_ocnt++`. `!begin`: `ml_ocnt--`, then on the 1 → 0 edge restore the
+-/// menu tree, then `END_UPDATE`. The menu-hold (`gl_mntree = NULL`) is the
+-/// observable part of the `ml_ocnt == 0` edge body: a menu-bar click is inert
+-/// while the dialog is up. The control-region / mouse-owner handover
+-/// (`get_ctrl`/`get_mown`/`ct_chgown`, gemfmlib.c:91-93,102) is the cooperative
+-/// multi-process ownership transfer and is a no-op at single-tasking (one AES
+-/// process owns everything) — deferred to the cooperative kernel (Phase 2b).
++/// remember the mouse owner and give the mouse to the caller, then `ml_ocnt++`.
++/// `!begin`: `ml_ocnt--`, then on the 1 → 0 edge hand the mouse back to the
++/// remembered owner and restore the menu tree, then `END_UPDATE`.
++///
++/// The `ml_ocnt == 0` edge body (`:89-93`) is `ml_mnhold = gl_mntree;
++/// gl_mntree = NULL; get_ctrl(&ml_ctrl); get_mown(&ml_pmown); ct_chgown(rlr,
++/// &gl_rscreen);` — the menu-hold (a menu-bar click is inert while the dialog
++/// is up), the whole screen as the control rectangle (read live by
++/// [`chk_ctrl`] from `ml_ocnt > 0`, so `ml_ctrl` needs no store), and
++/// `set_mown(rlr)`: the caller owns the mouse for the dialog, unless a button
++/// is held (`set_mown`'s `if (!button)`, `aes/geminput.c:222`) or a menu track
++/// holds it (`ct_chgown`'s `if (!gl_ctmown)`, `aes/gemctrl.c:395`). The 1 → 0
++/// edge (`:101-103`) is `ct_chgown(ml_pmown, &ml_ctrl); gl_mntree =
++/// ml_mnhold;` — the previous owner gets the mouse back under the same two
++/// guards (A102). At single-app `rlr` is the application, so `set_mown(rlr)`
++/// is `ct_chgown(true)` and the remembered owner is [`input::get_mown`]'s flag.
+ fn mctrl_own(begin: bool) {
+     if begin {
+         update_beg(); // fm_own: wm_update(BEG_UPDATE) (gemfmlib.c:86)
+         // 0 → 1 edge, evaluated BEFORE the increment (EmuTOS tests `ml_ocnt`
+         // while still 0, gemfmlib.c:87): park the active menu tree so the
+-        // Control Manager stops tracking the bar for the duration of the dialog.
++        // Control Manager stops tracking the bar for the duration of the
++        // dialog, remember the owner, give the mouse to the caller (`:89-93`).
+         if MCTRL_CNT.load(Ordering::Relaxed) == 0 {
+             super::menu::hold_menu();
++            ML_PMOWN.store(super::input::get_mown(), Ordering::Relaxed);
++            super::input::ct_chgown(true);
+         }
+         MCTRL_CNT.fetch_add(1, Ordering::Relaxed);
+     } else {
+-        // ml_ocnt-- then, on the 1 → 0 edge, restore the parked menu tree
+-        // (EmuTOS `ml_ocnt--; if (ml_ocnt == 0) { ...; gl_mntree = ml_mnhold; }`,
+-        // gemfmlib.c:99-104), then wm_update(END_UPDATE). `fetch_sub` returns the
+-        // PRE-decrement value, so the outermost edge is `prev == 1`. EmuTOS
+-        // decrements unconditionally; the `intercept` gate (`> 0`) treats any
++        // ml_ocnt-- then, on the 1 → 0 edge, give the mouse back to the
++        // remembered owner and restore the parked menu tree (EmuTOS
++        // `ml_ocnt--; if (ml_ocnt == 0) { ct_chgown(ml_pmown, &ml_ctrl);
++        // gl_mntree = ml_mnhold; }`, gemfmlib.c:99-104), then
++        // wm_update(END_UPDATE). `fetch_sub` returns the PRE-decrement value,
++        // so the outermost edge is `prev == 1`. EmuTOS decrements
++        // unconditionally; the `intercept` gate (`> 0`) treats any
+         // non-positive count as "app does not own the mouse", so an unbalanced
+         // END_MCTRL cannot wedge interception off.
+         if MCTRL_CNT.fetch_sub(1, Ordering::Relaxed) == 1 {
++            super::input::ct_chgown(ML_PMOWN.load(Ordering::Relaxed));
+             super::menu::release_menu();
+         }
+         update_end();
+@@ -4995,7 +5015,7 @@ pub fn intercept() {
+     // (`ml_ocnt > 0`), the app has taken over the mouse and the AES frame
+     // interception switches off — EmuTOS `fm_own` hands the control region to the
+     // app so `ctlmgr` no longer processes frame clicks (gemfmlib.c:82-107). See
+-    // [`wind_update`]; this is the hook P4-011's full `fm_own` extends.
++    // [`wind_update`] and [`mctrl_own`].
+     if MCTRL_CNT.load(Ordering::Relaxed) > 0 {
+         return;
+     }

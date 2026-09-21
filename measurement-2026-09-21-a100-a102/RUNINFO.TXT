@@ -1,0 +1,107 @@
+A100 + A102 -- kernel-desktop drop-down boxes with EmuTOS's outside border (0xFF1100), THEACTIVE =
+the titles' sum at the RSC's 2-cell origin, no frame repaint after a hover toggle (A100);
+fm_own with set_mown on both edges, menu_popup's no-pick branch writes mn_keystate alone,
+clamp_height against gl_rfull = the screen below the bar (A102).
+Developer self-evidence, 2026-09-21. Branch desk-rebuild, base HEAD 022d6d0, changes
+uncommitted in the tree, nothing flashed. Pinned EmuTOS references/emutos @ 1a7484ab:
+  desk/desk_rsc.c:243-301 (ADMENU: THEACTIVE {2,0,28,769}; box 8 G_BOX 16716032L = 0xFF1100
+  {2,0,20,8}; entries {0,row,20,1}), desk/deskmain.c:1511-1641 (adjust_menu: :1534
+  mbar->ob_width = x, :1537-1541 "cannot start at character offset 0", :1584-1589 overflow ->
+  ob_x = 1, :1617 dropbox->ob_x = mbar->ob_x + title->ob_x, :1626-1631 right-edge shift),
+  aes/gemoblib.c:1295-1304 (ob_change XOR of the item rect), aes/gemmnlib.c:451-475 (mn_do:
+  menu_select only, no frame), aes/gemmnext.c:278-287 (handle_popup: do_chg only), :345-349
+  (no pick: mn_keystate = 0 alone), :83-95 (clamp_height), aes/gemgraf.c:424 (gl_rfull),
+  :547-559 (gr_rect IP_HOLLOW = white), aes/gemfmlib.c:82-107 (fm_own: :92 get_mown, :93
+  ct_chgown(rlr,&gl_rscreen), :102 ct_chgown(ml_pmown,&ml_ctrl)), aes/gemctrl.c:392-397
+  (ct_chgown), aes/geminput.c:209-212 (get_mown), :220-235 (set_mown, if (!button)).
+  Spec touched: docs/api/desktop/deskmain.md (adjust_menu: THEACTIVE + box word),
+  docs/api/aes/menu.md (menu_popup no pick "and nothing else"; menu_settings gl_rfull),
+  docs/api/aes/window-graphics.md (wind_update: fm_own's edge bodies).
+
+PRODUCT CODE (uncommitted; method/product-a100-a102.diff; HEAD copies in method/head-022d6d0/)
+  kernel/src/desk/menu.rs   MenuGeom.active_x/active_w; adjust_menu: THEACTIVE at 2*CHAR_W (CHAR_W on
+    overflow), active_w = sum of title widths, box_x = active_x + title_x (clamped on screen);
+    build_menu: o[2] = (active_x, 0, active_w, MENU_H); box ob_spec 0x00FF_1100 (was (1<<16)|0x1070).
+  tos-api/src/aes/menu.rs   rehilite(tree, old, new, backend): no box parameter, no frame repaint;
+    popup_shown: no frame repaint; Menu::write_keystate_abi; menu_popup no pick -> keystate only;
+    clamp_height: (height - gl_hbox) / gl_hchar.
+  tos-api/src/aes/input.rs  get_mown, ct_chgown(app) (if !gl_ctmown), set_mown(app) (if button == 0);
+    w_setactive = ct_chgown(true).
+  tos-api/src/aes/window.rs ML_PMOWN; mctrl_own 0->1: hold_menu, ML_PMOWN = get_mown, ct_chgown(true);
+    1->0: ct_chgown(ML_PMOWN), release_menu.
+  tos-api/tests/aes_a100_a102_desk_menu_geometry.rs  NEW (6 cases; A87 harness + per-pump screen
+    snapshots and keys, mode-aware fill_pattern, cursor off; replica of the kernel desktop's ADMENU).
+  tos-api/tests/aes_menu_settings.rs  + upper clamp (28 on the 480-row reference).
+  tos-api/src/aes/menu.rs popup_wait_tests  + fm_own_gives_the_caller_the_mouse_and_hands_it_back_...
+  docs/STATUS.md Phase-13 fragment + one Recent Decisions row (2026-09-21); TASK/A100.md, A102.md
+    ERLEDIGT + Abschluss; TASK/A100-STATUS-DONE.MD, A102-STATUS-DONE.MD.
+
+HOST TESTS (host-tests/)
+  xtask-test-BASELINE-HEAD-022d6d0.log  cargo run -p xtask -- test at HEAD: 804 passed / 0 failed / 1 ignored.
+  aes_a100_a102-and-menu_settings-RED-before-HEAD-022d6d0.txt  the new/extended tests against HEAD's four
+      product files (scratch copy): 3 passed / 3 FAILED (a100 hover: 194 pixels outside entry 0 changed
+      = the frame repaint on row 303 / columns 68, 225; a100 inside-border: row 19 black (0) instead of
+      inverted (0xFFFFFF); a102 no pick: mn_tree/mn_menu/mn_item/mn_scroll overwritten);
+      aes_menu_settings: FAILED (height 29 must clamp to 28: left 29). The three A102-point-1 cases
+      pass on both sides: they run on the replica tree (the kernel crate is forced-target aarch64 and
+      has no host tests) -- the kernel geometry's evidence is the serial dump below.
+  menu-popup_wait_tests-fm_own-RED-before-HEAD-022d6d0.txt  tree's menu.rs over HEAD's window.rs +
+      input.rs: 4 passed / 1 FAILED ("BEG_MCTRL: ... the caller owns the mouse").
+  aes_a100_a102-and-menu_settings-GREEN-after.txt  6/6 + 1/1.
+  menu-popup_wait_tests-GREEN-after.txt  5/5.
+  xtask-test-AFTER.log  811 passed / 0 failed / 1 ignored, rc 0 (804 + 6 integration + 1 unit).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log  cargo xtask build --board rpi4 (tos-api + kernel recompiled): tos-api 64 /
+      kernel 94, rc 0 (baseline A96/A97: 64/94, delta 0); tree kernel8.img sha256 in
+      kernel8-tree-rpi4-dev.sha256. No qemu-virt build (lead).
+  clippy-tos-api-AFTER.log  cargo clippy -p tos-api: 80 (baseline 80, delta 0); menu.rs 10 / window.rs 11
+      pre-existing Aespb-visibility + "top never read" notes, input.rs 0; the new/changed test targets 0.
+  scratch-{after,before}-build.log  the injector scratch kernels (tos-api 67 / kernel 106 = H02/A46/A78/
+      A87 scaffolding + the A100 tree dump).
+  make-sd-image.log, sd-put-tera.log  tools/make-sd-image.sh <scratch>/img/sd-base.img 64; sd-tera.img =
+      + NEWDESK.INF (#Z TeraDesk) + TERADESK.INF (a79/method). scratch-kernels-and-images.sha256.
+
+QEMU raspi4b (a79/method/run.sh; 640x480, -display none, QMP screendump 0.3 s after each serial mark;
+fresh image copy per run; grep -c "EXC\|PANIC\|panic" = 0 in all 4 serial logs).
+BEFORE = scratch with tos-api/src/aes/{input,menu,window}.rs + kernel/src/desk/menu.rs = HEAD 022d6d0
+(git show, no checkout); AFTER = the tree. Injector: method/make_scratch_a100.sh = A87 method +
+tree_dump_patch.py (A100-TEMP: install_menu_bar prints THEACTIVE, the File box's spec/rect, entry 0).
+Scripts method/a100_scripts.rs from desk-a100.actions / tera-a100.actions via gen_script.py.
+  c5c2ad150c384d0f1a216e80e0c3275c4bbf8ca604fdec914bff821bdcfaa111  scr-after/kernel8.img
+  bb2c7acc1faa96be0d35a75a4a3fa774966866b7166b1e99720d2d364ccccac1  scr-before/kernel8.img
+  ad5dd3a00422cafcedaf8056bfd1d0b9b819addef6b25f2106a06da074583c3a  img/sd-base.img
+  a43ea5b314abb5efd4f245d75699af6e78b3f5714e60372b95cf48b5d735763f  img/sd-tera.img
+  desk (sd-base, the C:\ window open at boot): parkbr; arm; A; click BIG.NCP (95,140) = select; parkbr;
+      B; move (400,8) = bar row right of "Options"; C; CR key 0x1C/0x9C; D; parkbr; E; File title (88,8);
+      F; hover "Close top window" (88,142); G; out (400,300) + click = cancel; parkbr; H.
+      Serial: BEFORE "[a100] THEACTIVE=(0,0,640,19) FILEBOX#11=(52,19,158,285) spec=0x11070"
+              AFTER  "[a100] THEACTIVE=(16,0,232,19) FILEBOX#11=(68,19,158,285) spec=0xff1100
+                      ENTRY0=(0,0,158,19) titles=(0,52),(52,52),(104,52),(156,76)"
+      AFTER:  CR at +4000 -> "[aes] op 25 ... out=(1,400,8,0,0,7181,0)" at once (MU_KEYBD 0x1C0D,
+              pointer at (400,8)); D shows the selection cleared.
+      BEFORE: nothing until the parkbr after D -> "op 25 ... out=(1,527,135,0,0,7181,0)": the desktop sat
+              in the control manager's track (THEACTIVE screen-wide); D still shows BIG.NCP selected.
+      Pixel diffs before/after (screendumps/PIXDIFF.TXT): A/B/C/E/H 1084 px = the titles 16 px further
+      right; D 2666 px (titles + the selection); F 7980 / G 8709 px = the box moved 16 px + its outline.
+      Box outline: BEFORE inside, columns 52 and 209, rows 19 and 303; AFTER outside, columns 67 and
+      226, rows 18 and 304 (row 18 = the bar's separator line, as EmuTOS/TeraDesk). Hovered row y=142:
+      BEFORE WWKKKK from x=50 (column 52 = the frame the repaint kept, inversion from 53);
+      AFTER WKKKKK from x=66 (column 67 = the frame, inversion from the box's own column 68).
+  tera (sd-tera, #Z): parkbr; arm; A; File title (88,8); B; hover "Select all" (120,155); C; out + click;
+      parkbr; D. A/B/D 0 px. C 761 px = columns 64 (205) / 239 (208) + rows 19 (176) / 242 (176): the
+      old repaint's second, inner frame along the box rectangle's edges inside TeraDesk's outer one
+      (desktop.rsc tree 0 object 9, ob_spec 0xFF1100) -- gone.
+
+OUT OF SCOPE (observed, untouched)
+  (1) kernel adjust_menu: title width strlen*8+4 and box width maxlen*8+6 (EmuTOS strlen*8, (maxlen+1)*8,
+      MIN_DESKMENU_WIDTH 20 for the Desk menu, deskmain.c:1519-1522,1605-1636).
+  (2) THEBAR 19 px (MENU_H); the RSC's {0,0,80,513} is 1 cell + 2 px = 18 (desk_rsc.c:249-253).
+  (3) After the CR deselection "Open" stays enabled in the File menu (dump G, before = after): men_update /
+      count_selected after desk_clear_all (desk/).
+  (4) w_setactive runs inline on every evnt_multi pass and hands the mouse back to the app with the
+      buttons up, so EmuTOS's set_mown(ctl_pd) at the end of an fm_own entered with the press held is
+      visible only until the next pass (pre-existing H02/A73 model).
+
+OPEN
+  Pi acceptance for A100/A102 (Tester/Lead; nothing flashed).

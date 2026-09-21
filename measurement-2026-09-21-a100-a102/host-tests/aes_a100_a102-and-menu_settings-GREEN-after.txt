@@ -1,0 +1,9 @@
+test a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emutos ... ok
+test a102_a_title_inside_theactive_still_starts_the_track ... ok
+test a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched ... ok
+test a102_the_bar_row_right_of_options_stays_with_the_application ... ok
+test a102_menu_popup_no_pick_writes_only_mn_keystate ... ok
+test a102_the_last_column_of_options_starts_the_track_and_the_next_does_not ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+test only_flag_zero_reads_and_only_flag_one_writes ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

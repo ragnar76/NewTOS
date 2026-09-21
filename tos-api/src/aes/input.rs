@@ -196,15 +196,43 @@ pub(super) fn own_mouse() -> bool {
 
 /// The Control Manager's `w_setactive()` (`aes/gemctrl.c:442`): give the mouse
 /// to the owner of the top window — `ct_chgown(ppd, &d)` → `set_mown`
-/// (`aes/gemwmlib.c:326-333`, `aes/gemctrl.c:392-397`). `ct_chgown` skips the
-/// hand-over while the Control Manager holds the mouse for a menu track
-/// (`if (!gl_ctmown)`, `:395`), and `set_mown` changes nothing while a button
-/// is held (`if (!button)`, `aes/geminput.c:222`), so a press latched to the
-/// Control Manager stays with it until the release. At single-app the top
-/// window's owner is always this application.
+/// (`aes/gemwmlib.c:326-333`, `aes/gemctrl.c:392-397`). At single-app the top
+/// window's owner is always this application; the two guards are
+/// [`ct_chgown`]'s and [`set_mown`]'s, so a press latched to the Control
+/// Manager stays with it until the release.
 pub(super) fn w_setactive() {
-    if !GL_CTMOWN.load(Ordering::Relaxed) && BUTTON.load(Ordering::Relaxed) == 0 {
-        GL_MOWNER_APP.store(true, Ordering::Relaxed);
+    ct_chgown(true);
+}
+
+/// EmuTOS `get_mown(&pmown)` (`aes/geminput.c:209-212`) — the current mouse
+/// owner, as [`own_mouse`] reports it: `true` = the application (`rlr`),
+/// `false` = `ctl_pd`. `fm_own` saves it on entry (`ml_pmown`,
+/// `aes/gemfmlib.c:92`) to hand the mouse back to that owner on exit.
+pub(super) fn get_mown() -> bool {
+    GL_MOWNER_APP.load(Ordering::Relaxed)
+}
+
+/// EmuTOS `ct_chgown(mpd, pr)` (`aes/gemctrl.c:392-397`): `set_ctrl(pr); if
+/// (!gl_ctmown) set_mown(mpd);` — the mouse changes hands only while no menu
+/// track holds it. The control rectangle half is not stored: EmuTOS's `ctrl`
+/// has exactly two sources, and [`window::chk_ctrl`](super::window::chk_ctrl)
+/// reads both live (`ml_ocnt > 0` → the whole screen; else the top window's
+/// work area). `app` names the owner as [`get_mown`] does.
+pub(super) fn ct_chgown(app: bool) {
+    if !GL_CTMOWN.load(Ordering::Relaxed) {
+        set_mown(app);
+    }
+}
+
+/// EmuTOS `set_mown(mp)` (`aes/geminput.c:220-235`): `if (!button) gl_cowner =
+/// gl_mowner = mp;` — "the mouse should only be transferred with the buttons
+/// in an up state" (`:216-217`); with a button held nothing changes. The
+/// `post_mouse`/`post_button` that follow in EmuTOS (`:231-233`) wake the new
+/// owner's parked waits; our Event Manager polls the live position and button
+/// against `own_mouse()` on every pass, so the hand-over itself is the wake.
+fn set_mown(app: bool) {
+    if BUTTON.load(Ordering::Relaxed) == 0 {
+        GL_MOWNER_APP.store(app, Ordering::Relaxed);
     }
 }
 

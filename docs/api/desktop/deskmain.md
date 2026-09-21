@@ -435,6 +435,21 @@ version-string + about-box insertion, `adjust_menu(desk_rs_trees[ADMENU])`
   **`MIN_DESKMENU_WIDTH=20`** chars is the *minimum* Desk-menu width,
   "compatible with Atari TOS" (comment, `:80-81` — i.e. a deliberate
   historical-compatibility floor unrelated to content).
+  **`THEACTIVE` (A100/A102, 2026-09-21):** the title loop ends with
+  `mbar->ob_width = x` (`:1534`) — `THEACTIVE` is exactly the titles' sum,
+  not the screen width (it is the rectangle `menu_bar` hands the Control
+  Manager as `gl_ctwait`, `aes/gemmnlib.c:717`) — and its `ob_x` stays the
+  RSC's 2 character cells (`desk_rsc.c:255-259`, `{2, 0, 28, 769}`) unless
+  the bar overflows (`:1584-1589`, then 1): "the menu bar cannot start at
+  character offset 0 because, in that case, the outline of the Desk dropdown
+  box will not be drawn properly" (`:1537-1541`). Every ADMENU drop-down box
+  carries `ob_spec = 0xFF1100` (`desk_rsc.c:294,348,450,528`): thickness
+  byte `0xFF` = `th = -1`, a 1-px border drawn **outside** the box
+  rectangle, border/text BLACK, `IP_HOLLOW` interior (painted white by
+  `gr_rect`); the entries sit at `(0, row)` spanning the box's width
+  (`desk_rsc.c:297-341`), so a hover's item XOR (`ob_change`,
+  `gemoblib.c:1295-1304`) never reaches the border and nothing repaints it.
+  Each box's `ob_x` is `THEACTIVE.ob_x + title.ob_x` (`:1617`).
 - **`install_shortcuts()`** (`:1825-1858`, called from `app_start()` after
   `menu_shortcuts[]` may have been customized): for each of the
   `NUM_SHORTCUTS=33` shortcut slots, if `shortcut_mapping[i]` is `0` (item

@@ -1016,6 +1016,22 @@ same lock). `BEG_MCTRL`/`END_MCTRL` let the app take over the mouse (e.g. to run
 its own rubber-band) so the control manager stops interpreting clicks as
 window-gadget hits.
 
+> **`fm_own`'s edge bodies (A102, 2026-09-21).** `fm_own(TRUE)`
+> (`gemfmlib.c:82-96`) takes `BEG_UPDATE` and, on the outermost `ml_ocnt == 0`
+> → 1 transition only, parks the menu tree (`ml_mnhold = gl_mntree; gl_mntree
+> = NULL`), remembers the control rectangle and the mouse owner
+> (`get_ctrl(&ml_ctrl); get_mown(&ml_pmown)`, `:91-92`) and gives both to the
+> caller: `ct_chgown(rlr, &gl_rscreen)` (`:93`) = `set_ctrl(&gl_rscreen); if
+> (!gl_ctmown) set_mown(rlr);` (`gemctrl.c:392-397`), where `set_mown` moves
+> `gl_mowner` only with the buttons up (`if (!button)`, `geminput.c:222`).
+> `fm_own(FALSE)` (`:98-106`) decrements and, on the 1 → 0 transition only,
+> restores in the same order reversed: `ct_chgown(ml_pmown, &ml_ctrl)`
+> (`:102`) — the owner found on entry gets the mouse back under the same two
+> guards — then `gl_mntree = ml_mnhold`, then `END_UPDATE`. Observable only
+> when that owner was `ctl_pd` (the pointer had entered `gl_ctwait` with the
+> buttons up): `BEG_MCTRL` makes the application the owner, `END_MCTRL` makes
+> `ctl_pd` the owner again.
+
 > **Reference vs. contract.** The lock *semantics* a program observes — "while I
 > hold BEG_UPDATE the window layout is frozen and my rectangle list stays
 > valid" — are contract; the `tak_flag`/`ev_block`/`sy_tas` cooperative-mutex

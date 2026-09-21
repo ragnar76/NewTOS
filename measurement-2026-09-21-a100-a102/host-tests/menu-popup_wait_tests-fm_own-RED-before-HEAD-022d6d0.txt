@@ -1,0 +1,8 @@
+test aes::menu::popup_wait_tests::clamp_ypos_moves_the_box_in_hchar_steps_off_the_bar_and_onto_the_screen ... ok
+test aes::menu::popup_wait_tests::popup_shown_reports_the_shift_state_at_the_press ... ok
+test aes::menu::popup_wait_tests::popup_shown_returns_with_the_picking_button_up ... ok
+test aes::menu::popup_wait_tests::mn_popup_parks_the_menu_tree_and_keeps_the_mouse_for_its_whole_call ... ok
+test aes::menu::popup_wait_tests::fm_own_gives_the_caller_the_mouse_and_hands_it_back_to_the_previous_owner ... FAILED
+thread 'aes::menu::popup_wait_tests::fm_own_gives_the_caller_the_mouse_and_hands_it_back_to_the_previous_owner' (4973274) panicked at tos-api/src/aes/menu.rs:2451:9:
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 66 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p tos-api --lib`

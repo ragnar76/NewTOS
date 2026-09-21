@@ -300,7 +300,20 @@ fn label_len(s: &[u8]) -> i16 {
 
 /// The measured pixel geometry of the four titles + their drop-down boxes.
 struct MenuGeom {
-    /// Left edge of each title on the bar.
+    /// Left edge of `THEACTIVE` on the bar — the RSC's 2 character cells
+    /// (`desk_rsc.c:255-259`, object 2 `{2, 0, 28, 769}`), which
+    /// `adjust_menu` keeps unless the bar overflows (`deskmain.c:1584-1589`).
+    /// Not 0: "the menu bar cannot start at character offset 0 because, in
+    /// that case, the outline of the Desk dropdown box will not be drawn
+    /// properly" (`deskmain.c:1537-1541`) — the boxes carry an *outside*
+    /// border (see [`build_menu`]), and a box at x = 0 would put it off-screen.
+    active_x: i16,
+    /// Width of `THEACTIVE` = the sum of the title widths, `mbar->ob_width = x`
+    /// (`deskmain.c:1528-1534`) — **not** the screen width. `menu_bar` takes
+    /// this rectangle as the Control Manager's `gl_ctwait` (`gemmnlib.c:717`),
+    /// so the bar row right of the last title stays the application's (A102).
+    active_w: i16,
+    /// Left edge of each title, relative to `THEACTIVE`.
     title_x: [i16; 4],
     /// Width of each title cell.
     title_w: [i16; 4],
@@ -313,10 +326,12 @@ struct MenuGeom {
 /// `adjust_menu` (EmuTOS `deskmain.c:1511-1641`) — measure every title and
 /// drop-down and compute their pixel geometry: title x/width laid left-to-right
 /// (each `strlen * CHAR_WIDTH + pad`, the documented ST system-font assumption),
-/// drop-down box width from its widest entry (+ a right margin; the 2-cell
-/// check column lives in the item strings' leading blanks, not code), and box
-/// x-positioning under its title, **shifted left
-/// if it would run off the right screen edge** (the drop-down re-position).
+/// `THEACTIVE` at the RSC's 2-cell origin and as wide as the titles' sum
+/// (`mbar->ob_width = x`, `:1534`), drop-down box width from its widest entry
+/// (+ a right margin; the 2-cell check column lives in the item strings'
+/// leading blanks, not code), and box x-positioning under its title —
+/// `THEACTIVE`'s origin plus the title's offset (`:1617`) — **shifted left if
+/// it would run off the right screen edge** (the drop-down re-position).
 ///
 /// EmuTOS additionally shrinks/truncates an over-wide title bar (its
 /// French-desktop half-character hack); NewTOS's menu text fits ST-High width,
@@ -325,7 +340,14 @@ struct MenuGeom {
 /// preserving the measure-then-fit strategy (`deskmain.md`) without the m68k
 /// sub-pixel packing trick.
 fn adjust_menu(sw: i16) -> MenuGeom {
-    let mut g = MenuGeom { title_x: [0; 4], title_w: [0; 4], box_x: [0; 4], box_w: [0; 4] };
+    let mut g = MenuGeom {
+        active_x: 2 * CHAR_W,
+        active_w: 0,
+        title_x: [0; 4],
+        title_w: [0; 4],
+        box_x: [0; 4],
+        box_w: [0; 4],
+    };
     let mut tx = 0i16;
     for (ti, def) in MENUS.iter().enumerate() {
         let tw = label_len(def.label) * CHAR_W + 4;
@@ -342,6 +364,9 @@ fn adjust_menu(sw: i16) -> MenuGeom {
         let bw = maxlen * CHAR_W + 6;
         g.box_w[ti] = bw;
     }
+    // `mbar->ob_width = x` (`deskmain.c:1534`): THEACTIVE is exactly as wide
+    // as its titles.
+    g.active_w = tx;
     // Defensive over-wide-bar clamp: keep the last title on-screen.
     if tx > sw {
         let overflow = tx - sw;
@@ -349,9 +374,16 @@ fn adjust_menu(sw: i16) -> MenuGeom {
             g.title_x[ti] = (g.title_x[ti] - overflow).max(0);
         }
     }
-    // Drop-down x under its title, shifted left to stay on-screen.
+    // "if the menu bar is too far to the right, move it to the left, but only
+    // as far as char posn 1" (`deskmain.c:1584-1589`).
+    if g.active_x + tx > sw {
+        g.active_x = CHAR_W;
+    }
+    // Drop-down x under its title — `dropbox->ob_x = mbar->ob_x + title->ob_x`
+    // (`deskmain.c:1617`, THEACTIVE's origin plus the title's offset in it) —
+    // shifted left to stay on-screen (`:1626-1631`).
     for ti in 0..4 {
-        let bx = g.title_x[ti].min(sw - g.box_w[ti]).max(0);
+        let bx = (g.active_x + g.title_x[ti]).min(sw - g.box_w[ti]).max(0);
         g.box_x[ti] = bx;
     }
     g
@@ -398,7 +430,11 @@ fn build_menu() -> *mut Object {
         // ROOT / THEBAR / THEACTIVE.
         o[0] = mk(G_IBOX, 0, 0, 0, 0, sw, sh, -1, 1, themenus as i16);
         o[1] = mk(G_BOX, 0, 0, 0, 0, sw, MENU_H, themenus as i16, 2, 2);
-        o[2] = mk(G_IBOX, 0, 0, 0, 0, sw, MENU_H, 1, first_title as i16, (themenus - 1) as i16);
+        // THEACTIVE: the RSC's `{2, 0, 28, 769}` (`desk_rsc.c:255-259`) with
+        // `adjust_menu`'s width — `mbar->ob_width = x`, the titles' sum
+        // (`deskmain.c:1534`). Its rectangle is what `menu_bar` hands the
+        // Control Manager as `gl_ctwait` (`gemmnlib.c:717`).
+        o[2] = mk(G_IBOX, 0, 0, geom.active_x, 0, geom.active_w, MENU_H, 1, first_title as i16, (themenus - 1) as i16);
 
         // Titles, left to right (adjust_menu's measured geometry).
         for (ti, def) in MENUS.iter().enumerate() {
@@ -459,14 +495,20 @@ fn build_menu() -> *mut Object {
                 }
                 k += 1;
             }
-            // The box itself. Colour word 0x1070 = black border + solid white
-            // interior (else the box would be transparent and the desktop would
-            // show through the drop-down).
+            // The box itself: `ob_spec = 0xFF1100` as every ADMENU drop-down
+            // box in the RSC (`desk_rsc.c:291-295`, object 8 `16716032L`):
+            // thickness byte 0xFF = `th = -1`, a 1-px border drawn **outside**
+            // the box rectangle; colour word 0x1100 = border BLACK, text BLACK,
+            // IP_HOLLOW interior — which `gr_rect` paints opaque WHITE
+            // (`gemgraf.c:547-559`). The entries fill the box rectangle from
+            // its origin (`desk_rsc.c:297-301`: `{0, 0, 20, 1}` …), so the
+            // item XOR of a hover (`ob_change`, `gemoblib.c:1295-1304`) never
+            // reaches the border (A100).
             let next_box = if ti == nt - 1 { themenus as i16 } else { k as i16 };
             o[bi] = mk(
                 G_BOX,
                 0,
-                (1 << 16) | 0x1070,
+                0x00FF_1100,
                 bx_x,
                 MENU_H,
                 iw,
