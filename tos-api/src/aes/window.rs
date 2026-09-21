@@ -3224,6 +3224,9 @@ pub fn wind_create(pb: &Aespb) {
 pub fn wind_open(pb: &Aespb) {
     let handle = pb.intin(0);
     let r = Grect { x: pb.intin(1), y: pb.intin(2), w: pb.intin(3), h: pb.intin(4) };
+    // `oldtop = gl_wtop` (`gemwmlib.c:1090`) — read before this window joins
+    // the tree; `DESKWH` stands for `NIL` (nothing open).
+    let old_top = get_top();
     if let Some(w) = win(handle) {
         // Re-opening an already-open window is a no-op returning FALSE — no
         // re-top, no re-draw (EmuTOS wm_open, gemwmlib.c:1418-1419:
@@ -3238,11 +3241,53 @@ pub fn wind_open(pb: &Aespb) {
         // `wm_open` overwrites PREV with `pt` as well (`:1427`), so an opened
         // window answers `WF_PXYWH` with the rect the *open* was given, not the
         // one `wind_create` stored (measured: `aes-r2-wind.tsv` case 253).
-        w.prev = w.curr;
+        let old_curr = w.curr;
+        w.prev = old_curr;
         set_curr(w, r);
         w.open = true;
         w.prev = r;
         w.z = bump_z();
+        // "if it was an open, then draw the old top guy covered" —
+        // `draw_change`'s open/close block (`gemwmlib.c:1194-1209`), reached
+        // because the previous top is no longer `W_TREE[ROOT].ob_tail`
+        // (`:1194`) and this window now is (`:1091`):
+        //
+        // ```c
+        // if ((oldtop != NIL) && (oldtop != w_handle)) {
+        //     w_getsize(WS_PREV, gl_wtop, &pprev);      /* the old WS_CURR  */
+        //     if (rc_equal(&pprev, &gl_rzero))          /* :1204-1206       */
+        //         w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE);  /* :1207            */
+        // }
+        // ```
+        //
+        // `w_cpwalk(…, TRUE)` rebuilds the old top's element tree with `istop
+        // = (gl_wtop == w_handle)` now false (`w_bldactive`, `:495`: name
+        // `DISABLED`, `:537`, untopped colour words, `:382-397`) and draws it
+        // through the old top's **own** rectangle list clipped to its
+        // `WS_TRUE` (`:363-379` → `do_walk`, `:286-312`) — every visible piece
+        // of that frame, not only the part inside the new window's damage
+        // rectangle, and nothing where the new window covers it. That is
+        // [`draw_frame_pieces`] with `istop = false` and no damage clip. The
+        // `WS_PREV` test is "old `WS_CURR` was the zero rectangle": what a
+        // created (`wm_create`, `:1377`) or closed (`wm_close` →
+        // `draw_change(…, &gl_rzero)`, `:1449,1073`) window carries into its
+        // open. No overlap test is involved — a window opened beside the old
+        // top repaints it untopped all the same.
+        //
+        // Before A94 only `redraw_clip` below ran, so the old top kept its
+        // topped stipple and bevels outside the new window's rectangle
+        // (`measurement-2026-09-20-a79/screendumps/final-desk-B-two.png`
+        // against the Hatari reference `falcon-tc-two-windows.png`).
+        if old_top != DESKWH && old_top != handle && old_curr == Grect::default() {
+            if let Some(backend) = host().and_then(|h| h.raster()) {
+                // Cursor bracket as in [`top_window`]'s `w_cpwalk(oldtop, …)`:
+                // the cursor is a save-under sprite, painting under it would
+                // leave its backing store stale.
+                crate::vdi::cursor_hide(backend);
+                draw_frame_pieces(old_top, false, backend, None);
+                crate::vdi::cursor_show(backend);
+            }
+        }
         // The new window is topmost and covers exactly its own rect `r` **plus
         // its drop shadow**; nothing outside that changes. Repaint only that
         // (background + frames, this window on top) rather than the whole

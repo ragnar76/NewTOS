@@ -828,15 +828,26 @@ fn dcolor_reaches_new_windows_only() {
 // ── frame hash guard ──────────────────────────────────────────────────────
 
 /// Whole-screen FNV-1a hash of [`default_frames`] under the literal look —
-/// the one look there is since the user's decision of 2026-09-20. Measured
-/// 2026-09-20 on the tree with the `FrameLook` switch removed: this binary
-/// alone, twice, and under `--shuffle-seed 7` / `99` with
-/// `--test-threads=1` — the same value every time. Re-pin it only with an
-/// EmuTOS-backed reason for the pixel change (and say which pixels).
-const FRAME_HASH: u64 = 0x259e_dc0b_844d_91a0;
+/// the one look there is since the user's decision of 2026-09-20. First
+/// measured 2026-09-20 on the tree with the `FrameLook` switch removed
+/// (`0x259e_dc0b_844d_91a0`). Re-pin it only with an EmuTOS-backed reason
+/// for the pixel change (and say which pixels).
+///
+/// **Re-pinned 2026-09-21 (A94).** `wind_open` of `h2` now repaints the old
+/// top `h1` untopped through its own rectangle list — EmuTOS `draw_change`'s
+/// `w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE)` on an open (`gemwmlib.c:1203-1207`),
+/// `w_bldactive` with `istop` false (`:495,537`). The pixel change against
+/// the previous pin, measured by a scratch diff of the two renderings: 1236
+/// pixels, all inside `h1`'s name band (x 65..375, y 61..81), all on odd rows
+/// at odd columns — the `IP_2PATT` ink of the topped word `0x11a1` — black
+/// → white (the untopped word `0x1101`, hollow). Nothing else moved. Measured
+/// on this binary alone, twice, and under `--shuffle-seed 7` / `99` with
+/// `--test-threads=1` — the same value every time.
+const FRAME_HASH: u64 = 0xaf7b_81ef_83fe_c1a0;
 
 /// Two default windows with every gadget, names and info lines: `h1`
-/// untopped (partly covered), `h2` topped.
+/// untopped (partly covered, repainted untopped by `h2`'s open — A94), `h2`
+/// topped.
 fn default_frames(pb: &mut Aespb) {
     let h1 = open_window(pb, KIND_ALL, (40, 60, 360, 260));
     set_string(pb, h1, WF_NAME, b"Untopped window\0");

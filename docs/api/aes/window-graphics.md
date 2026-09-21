@@ -323,6 +323,32 @@ that repaint — the owner receives the **first `WM_REDRAW`** for the newly
 exposed work area (via `w_update`→`w_redraw`, `gemwmlib.c:887-907`). The window
 becomes the top (active) window.
 
+**The previous top is repainted deactivated, in full (A94, 2026-09-21).**
+`draw_change`'s open/close block (`gemwmlib.c:1194-1209`): the opened window is
+now `W_TREE[ROOT].ob_tail` and the old top no longer is (`:1194`); when the
+old top is neither `NIL` nor the opened window (`:1203`) and the opened
+window's `WS_PREV` — the `WS_CURR` it had before the open, `gl_rzero` for a
+created (`wm_create`, `:1377`) or closed (`wm_close` → `draw_change(…,
+&gl_rzero)`, `:1449,1073`) window — equals `gl_rzero` (`:1204-1206`),
+`w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE)` runs (`:1207`). That rebuilds the old
+top's element tree with `istop = (gl_wtop == w_handle)` now false
+(`w_bldactive`, `:495`: name `DISABLED` `:537`, the `w_bcolor` words
+`:382-397`) and draws it through the old top's **own** rectangle list (rebuilt
+at `:1088` with the new order) clipped to its `WS_TRUE` (`:363-379`,
+`do_walk` `:286-312`). Contract: after `wind_open` of a second window,
+**every** visible piece of the old top's frame shows the untopped decorations
+— the pieces outside the new window's rectangle too, and also when the two
+windows do not overlap at all (no overlap test is involved); where the new
+window covers the old top nothing of it is drawn (an empty list when it is
+fully covered). The `w_update(w_handle, &c, DESKWH, FALSE)` that follows
+(`:1222`) visits the new window alone (`bottom == top`, `:1014-1043`): its
+frame (`:1029`) and its `WM_REDRAW`; the new window's work area is left to
+that message. Reference: `measurement-2026-09-20-a79/hatari-falcon-reference/
+shots/falcon-tc-two-windows.png` (the first window's band white after the
+second opened at boot); NewTOS host test
+`tos-api/tests/aes_window_open_oldtop.rs`, QEMU dumps
+`measurement-2026-09-21-a94/screendumps/`.
+
 ---
 
 ## `wind_close` (102)
@@ -1653,8 +1679,10 @@ byte of any buffer the caller passed (TASK/A42).
   NewTOS's rendering next to it: `measurement-2026-09-20-a79/screendumps/
   final-compare-ref-vs-newtos.png`, remaining pixel differences (bevel width,
   name-box bevel, glyph centring, one-row/one-column bar geometry, the
-  `DISABLED` overlay, the old top's repaint on `wind_open`) listed in
-  `measurement-2026-09-20-a79/RUNINFO.TXT` § FINAL → A95. The one fixed
+  `DISABLED` overlay) listed in
+  `measurement-2026-09-20-a79/RUNINFO.TXT` § FINAL → A95; item (6) there, the
+  old top's repaint on `wind_open`, is fixed by A94 (see the `wind_open`
+  entry). The one fixed
   colour left in the frame is the drop shadow (`DROP_SHADOW_COLOR`, a separate
   documented look decision, see the table in (3)).
 

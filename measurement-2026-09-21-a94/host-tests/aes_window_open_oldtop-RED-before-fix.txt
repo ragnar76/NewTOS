@@ -1,0 +1,233 @@
+warning: value assigned to `tree` is never read
+327 |         tree[idx].ob_state |= SELECTED;
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `top` is never read
+    --> tos-api/src/aes/window.rs:2735:9
+2735 |         top += gl_hbox();
+     = help: maybe it is overwritten before being read?
+
+ 44 | pub(crate) struct Aespb {
+    = note: `#[warn(private_interfaces)]` on by default
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/form.rs:1000:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/form.rs:1067:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/form.rs:1090:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/menu.rs:1134:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/menu.rs:1426:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/menu.rs:1697:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/menu.rs:1735:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/object.rs:1005:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/object.rs:1198:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/object.rs:1222:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/object.rs:1234:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/object.rs:1248:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/object.rs:1393:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/object.rs:1441:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/object.rs:1645:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/object.rs:2033:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/resource.rs:2161:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/resource.rs:2522:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/resource.rs:2847:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/resource.rs:2878:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/resource.rs:2921:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+ 44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/window.rs:3156:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/window.rs:3224:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/window.rs:3279:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/window.rs:3451:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/window.rs:3464:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/window.rs:3692:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/window.rs:3909:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/window.rs:3924:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/window.rs:4001:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+    --> tos-api/src/aes/window.rs:4018:1
+    --> tos-api/src/aes/mod.rs:44:1
+  44 | pub(crate) struct Aespb {
+
+
+
+
+
+
+
+
+
+warning: `tos-api` (lib) generated 64 warnings
+warning: function `vtrack_0fef` is never used
+618 | fn vtrack_0fef(b: R) -> R {
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `velev_default` is never used
+628 | fn velev_default(track: R) -> R {
+
+warning: function `ip1_is_ink` is never used
+678 | fn ip1_is_ink(x: i16, y: i16) -> bool {
+
+warning: `tos-api` (test "aes_window_open_oldtop") generated 3 warnings
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.00s
+     Running tests/aes_window_open_oldtop.rs (target/debug/deps/aes_window_open_oldtop-7bbbdfc8d7535800)
+
+running 3 tests
+test fully_covered_old_top_paints_nothing_outside ... ok
+test non_overlapping_second_open_still_repaints_the_old_top_untopped ... FAILED
+test second_open_repaints_the_old_top_untopped_outside_the_new_window ... FAILED
+
+failures:
+
+---- non_overlapping_second_open_still_repaints_the_old_top_untopped stdout ----
+
+thread 'non_overlapping_second_open_still_repaints_the_old_top_untopped' (4723782) panicked at tos-api/tests/aes_window_open_oldtop.rs:746:9:
+assertion `left == right` failed: h1 after h2 opened beside it: untopped W_NAME is hollow white outside the glyphs, at (35,41)
+  left: 1
+ right: 0
+
+---- second_open_repaints_the_old_top_untopped_outside_the_new_window stdout ----
+
+thread 'second_open_repaints_the_old_top_untopped_outside_the_new_window' (4723783) panicked at tos-api/tests/aes_window_open_oldtop.rs:746:9:
+assertion `left == right` failed: h1 after h2 opened: untopped W_NAME is hollow white outside the glyphs, at (65,61)
+  left: 1
+ right: 0
+
+
+failures:
+    non_overlapping_second_open_still_repaints_the_old_top_untopped
+    second_open_repaints_the_old_top_untopped_outside_the_new_window
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p tos-api --test aes_window_open_oldtop`

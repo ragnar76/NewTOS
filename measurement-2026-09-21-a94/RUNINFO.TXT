@@ -1,0 +1,97 @@
+A94 -- old top keeps its topped stipple after wind_open of a second window   (2026-09-21)
+======================================================================================================
+Base: desk-rebuild @ f1b916f, changes uncommitted (no commit, no flash, no git checkout/stash/reset).
+
+EMUTOS PATH (references/emutos/aes/gemwmlib.c)
+  wm_open :1410-1432    VF_ISOPEN, w_obadd(W_TREE, ROOT, w_handle) -> new window is ob_tail; draw_change(w_handle,&t) :1426;
+                        w_setsize(WS_PREV, w_handle, pt) :1427 afterwards.
+  draw_change :1058-1223
+    :1069-1070   c = old WS_CURR (gl_rzero for a created window, wm_create :1377; also after wm_close :1449,1073),
+                 WS_PREV := c
+    :1088        everyobj(... newrect ...)  -- rectangle lists rebuilt with the new order
+    :1090-1091   oldtop = gl_wtop; gl_wtop = W_TREE[ROOT].ob_tail (= the opened window)
+    :1094        w_setactive()
+    :1156-1167   "a grow that is a superset or an open": c zero -> rc_copy(pt,&c); start stays w_handle
+    :1194-1209   "update gl_wtop after close, or open": oldtop != ob_tail -> union c with gl_wtop's WS_CURR (no-op);
+                 if (oldtop != NIL && oldtop != w_handle) { WS_PREV of gl_wtop == gl_rzero ? -> w_cpwalk(oldtop,0,MAX_DEPTH,TRUE) :1207 }
+                 -> no overlap test; the old top is redrawn "covered" on every open of a second window.
+    :1213-1215   c += DROP_SHADOW_SIZE
+    :1217-1219   start != DESKWH -> no w_drawdesk
+    :1222        w_update(w_handle, &c, DESKWH, FALSE): bottom == top == w_handle -> only the new window's frame
+                 (w_cpwalk(top,0,MAX_DEPTH,FALSE) :1029) + its WM_REDRAW (w_redraw :1030). The new window's work
+                 area is left to that message (old pixels survive there until then).
+  w_cpwalk :363-379   usetrue -> clip = WS_TRUE(oldtop); w_bldactive(oldtop); do_walk(oldtop, gl_awind, 0, MAX_DEPTH, &c)
+  w_bldactive :479-…  istop = (gl_wtop == w_handle) :495 -> false for the old top; W_NAME DISABLED :537; w_setcolor picks
+                      w_bcolor :382-397
+  do_walk :286-312    every rectangle of the old top's OWN w_rlist, intersected with the clip -> gsx_sclip + ob_draw.
+                      -> every visible piece of the old top's frame, also outside the new window's rect; nothing where
+                      the new window covers it (empty list when fully covered).
+  The A79 receipt's ":1202-1209" is the same block (:1194-1209 in the pinned source); the call is :1207.
+
+PRODUCT (tree)
+  tos-api/src/aes/window.rs  wind_open: reads old_top = get_top() before the window joins the tree and old_curr
+      before the geometry store; after w.z = bump_z() and before redraw_clip: if old_top != DESKWH && old_top != handle
+      && old_curr == gl_rzero -> cursor_hide; draw_frame_pieces(old_top, false, backend, None); cursor_show
+      (= w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE): istop false, own rectangle list, WS_TRUE clip). Nothing else changed.
+  tos-api/tests/aes_window_open_oldtop.rs (new, 3 cases; harness copied from aes_window_color_words.rs):
+      second_open_repaints_the_old_top_untopped_outside_the_new_window   (partial overlap)      RED -> GREEN
+      non_overlapping_second_open_still_repaints_the_old_top_untopped    (no overlap)           RED -> GREEN
+      fully_covered_old_top_paints_nothing_outside                       (guard)                GREEN before and after
+      host-tests/aes_window_open_oldtop-RED-before-fix.txt, -GREEN-after-fix.txt
+  tos-api/tests/aes_window_color_words.rs  FRAME_HASH re-pinned 0x259edc0b844d91a0 -> 0xaf7b81ef83fec1a0: scratch
+      diff of the two renderings of default_frames = 1236 px, all in h1's name band (x 65..375, y 61..81), all odd
+      row/odd column (the IP_2PATT ink of the topped word 0x11a1), black -> white; nothing else. Stable alone x2 and
+      under --shuffle-seed 7/99 --test-threads=1.
+  docs/api/aes/window-graphics.md  wind_open entry: the old-top repaint sentence with the citations above; the
+      A79 remaining-differences list no longer names the wind_open repaint.
+  host-tests/xtask-test-after-fix.log   cargo run -p xtask -- test = 788 passed / 0 failed / 1 ignored (785 + 3 new).
+  build/xtask-build-rpi4.log   fresh (cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat)
+      cargo xtask build --board rpi4: tos-api 64 / kernel 94 warnings, rc 0 (delta 0 vs A79 receipt).
+      tree kernel8.img sha256 44b1ec5965e99e87... (dev; not used for the dumps, not flashed)
+  build/clippy-tos-api-host.txt   cargo clippy -p tos-api: 80 warnings (A79 receipt: 81); in the touched region only
+      the pre-existing "Aespb more private than wind_open" hint. build/clippy-tos-api-tests.txt: the two test
+      binaries 0 hits.
+  No qemu-virt build (lead's instruction).
+
+SCRATCH KERNEL (method/make_scratch_final.sh <ws> <dir> = A79's: rsync of the crates + a79_patch.py +
+  apply_injector.py final_scripts.rs + a78_patch2.py; scratch window.rs == tree window.rs, checked with diff)
+  kernel8 scratch   sha256 b8920deae51dd297...  build/scratch-build.log (tos-api 67 / kernel 105 = the injector
+                    scaffolding, as in A79, rc 0). method/scratch-host_env.rs.txt = the patched injector file.
+  sd-base.img       tools/make-sd-image.sh <img> 64 (sha256 9a308b790c652d9a...)  build/make-sd-image.log
+  sd-tera.img       sd-base + NEWDESK.INF (#Z C:\APPS\TERADESK\DESKTOP.NAP, method/newdesk-tera.inf) +
+                    Apps\TERADESK\TERADESK.INF (method/teradesk-window.inf) (sha256 26e6fb682c605d7c...)
+  No *.img kept (manifest-scratch.sha256).
+
+QEMU raspi4b RUNS (method/run.sh, 640x480, -display none, QMP screendump 0.3 s after each serial mark;
+  grep -c "EXC\|PANIC\|panic" = 0 in both serial logs; mouse parked bottom-right (639,479) at every dump)
+  desk  (sd-base, our desktop, method/desk.actions = A79's: parkbr; A_IDLE +1100; double-click the "C Hard disk"
+         icon (35,38) -> second C:\ window staggered (24,24); parkbr; B_TWO_WINDOWS +2600; C_TWO_WINDOWS_2S +3000)
+         screendumps/desk-A-idle.png, desk-B-two.png, desk-C-two-2s.png; serial/desk-serial.log
+  tera  (sd-tera, TeraDesk via #Z, method/tera-two.actions: parkbr; A_IDLE +1100; double-click HARD DISC C (195,35);
+         parkbr; B_ONE_WINDOW +2600; double-click HARD DISC C again; parkbr; C_TWO_WINDOWS +4100; D +4500)
+         -> TeraDesk opens a SECOND C:\*.* window (its 2nd INF `pos`, at x=497, partly off-screen); the injector
+         can open two windows this way.
+         screendumps/tera-A-idle.png, tera-B-one.png, tera-C-two.png, tera-D-two-2s.png; serial/tera-serial.log
+  Pixel diffs (method/pixdiff.py):
+    desk-B-two        vs desk-C-two-2s                              0 px (settled)
+    tera-C-two        vs tera-D-two-2s                              0 px (settled)
+    desk-A-idle       vs A79 final-desk-A-idle                      0 px (same base rendering)
+    tera-B-one        vs A79 final-tera-B-window                    0 px (same base rendering)
+    A79 final-desk-B-two (before) vs desk-B-two (after)          2384 px, bbox (73,45)-(567,63) = the back window's
+                                                                  name band; all black->white, all odd row & odd col
+                                                                  = the IP_2PATT stipple removed; nothing else.
+  Counts: kernel desktop old-top name band interior black px 2202 (before) -> 84 (after; = the name glyphs).
+          TeraDesk old-top band odd/odd black px 1313 (one window, topped) -> 47 (after the 2nd window; glyph ink);
+          the new TeraDesk window's band: 522 odd/odd black px (topped stipple).
+
+COMPARISON AGAINST THE EMUTOS REFERENCE (hatari-falcon-reference/shots/falcon-tc-two-windows.png, back
+  window's title corner at (16,64); crops 200x24 at 4x):
+  screendumps/compare-oldtop-title-ref-before-after-4x.png   ref | NewTOS before (A79 final-desk-B-two @ (48,43)) |
+                                                             NewTOS after (desk-B-two @ (48,43))
+  screendumps/compare-tera-oldtop-title-ref-one-two-4x.png   ref | TeraDesk one window (topped) | after the 2nd window
+  SAME as the reference now: the old top's name band is hollow white, black ring, no stipple; closer with border,
+  bevel and white face; info band unchanged.
+  REMAINING (A95, not this ticket): the DISABLED overlay on the untopped name (ref: dithered glyphs, ours solid
+  black; A95 (7)), bevel width / name-box bevel / glyph centring (A95 (1)-(3)).
+
+OPEN: Pi acceptance (Tester/Lead; nothing flashed).
