@@ -1555,9 +1555,10 @@ source. Substantive corrections (all map to real window-redraw behaviour):
 - **`WM_*` message word layouts** (`gemctrl.c:81-315`, `gemwmlib.c:851-904`):
   `WM_SIZED` (27)/`WM_MOVED` (28) carry the **proposed new border rect** in
   `msg[4..7]`; `WM_HSLID` (25)/`WM_VSLID` (26) carry the **new 0..1000 slider
-  position** in `msg[4]`; `WM_ARROWED` (24) carries a **`WA_*` sub-action** in
+  position** in `msg[4]` and the window's `WS_CURR` `y, w, h` in `msg[5..7]`
+  (`:196-197`, `:305`, `:314`; A93, 2026-09-21); `WM_ARROWED` (24) carries a **`WA_*` sub-action** in
   `msg[4]`; `WM_REDRAW` (20) carries the **dirty rect** in `msg[4..7]`;
-  `WM_TOPPED`/`CLOSED`/`FULLED`/`UNTOPPED` carry only `msg[3]=wh`. `WA_*` =
+  `WM_TOPPED`/`UNTOPPED` carry only `msg[3]=wh`; `WM_CLOSED`/`FULLED` carry `msg[3]=wh` and the window's `WS_CURR` in `msg[4..7]` (`:196-197`, `:314`; A77, 2026-09-20). `WA_*` =
   `UPPAGE 0, DNPAGE 1, UPLINE 2, DNLINE 3, LFPAGE 4, RTPAGE 5, LFLINE 6,
   RTLINE 7` (`aesdefs.h:245-253`).
 - **`graf_watchbox` returns the `out` flag, not a literal "1 = released

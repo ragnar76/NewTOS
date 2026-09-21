@@ -1,0 +1,28 @@
+# A93/A98 regression = the H02 run3 opening of the C: window (double-click
+# HARD DISC C (195,35)) with the A87 park (bottom-right, crosses no menu
+# title), then an elevator drag on the window's vertical scroll bar: pointer
+# onto the elevator (491,200) -> B, press, drag down in three held steps to
+# (491,290) (more than the remaining travel, so the list ends scrolled to the
+# bottom whatever the grip offset), release -> C, park -> D (+1.5 s).
+# Expected: WM_VSLID to TeraDesk, the list scrolled; before/after byte-equal.
+# Ticks are 200 Hz.
+1200 parkbr
+1206 move 300 300
+1400 move 195 35
+1600 down
+1603 up
+1608 down
+1611 up
+2000 parkbr
+2200 arm
+2400 mark A_WINDOW_OPEN
+2600 move 491 200
+2800 mark B_ON_ELEVATOR
+3000 down
+3006 drag 491 230
+3012 drag 491 260
+3018 drag 491 290
+3024 up
+3030 mark C_RELEASED
+3400 parkbr
+3700 mark D_SCROLLED_PARKED

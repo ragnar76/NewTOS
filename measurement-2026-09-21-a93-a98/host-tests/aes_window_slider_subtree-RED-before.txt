@@ -1,0 +1,39 @@
+running 4 tests
+test hslide_redraw_is_the_hslide_subtree ... FAILED
+test hslsiz_redraw_is_the_hslide_subtree ... FAILED
+test vslide_redraw_is_the_vslide_subtree ... FAILED
+test vslsiz_redraw_is_the_vslide_subtree ... FAILED
+
+failures:
+
+---- hslide_redraw_is_the_hslide_subtree stdout ----
+
+thread 'hslide_redraw_is_the_hslide_subtree' (4691053) panicked at tos-api/tests/aes_window_slider_subtree.rs:641:5:
+A98: WF_HSLIDE 500 wrote 1035 of 1081 ["lf", "rt"] pixels, EmuTOS's `w_cpwalk(w_handle, W_?SLIDE, …)` walks the slider subtree alone (gemoblib.c:959-977; arrows are siblings, gemwmlib.c:415-436,448-474); first Some((31, 257)); 46 draw ops: Some("fill_rect x=31 y=257 w=23 h=1 pel=1")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- hslsiz_redraw_is_the_hslide_subtree stdout ----
+
+thread 'hslsiz_redraw_is_the_hslide_subtree' (4691054) panicked at tos-api/tests/aes_window_slider_subtree.rs:641:5:
+A98: WF_HSLSIZ 250 wrote 1035 of 1081 ["lf", "rt"] pixels, EmuTOS's `w_cpwalk(w_handle, W_?SLIDE, …)` walks the slider subtree alone (gemoblib.c:959-977; arrows are siblings, gemwmlib.c:415-436,448-474); first Some((31, 257)); 46 draw ops: Some("fill_rect x=31 y=257 w=23 h=1 pel=1")
+
+---- vslide_redraw_is_the_vslide_subtree stdout ----
+
+thread 'vslide_redraw_is_the_vslide_subtree' (4691055) panicked at tos-api/tests/aes_window_slider_subtree.rs:641:5:
+A98: WF_VSLIDE 500 wrote 1035 of 1058 ["up", "dn"] pixels, EmuTOS's `w_cpwalk(w_handle, W_?SLIDE, …)` walks the slider subtree alone (gemoblib.c:959-977; arrows are siblings, gemwmlib.c:415-436,448-474); first Some((327, 63)); 46 draw ops: Some("fill_rect x=327 y=63 w=23 h=1 pel=1")
+
+---- vslsiz_redraw_is_the_vslide_subtree stdout ----
+
+thread 'vslsiz_redraw_is_the_vslide_subtree' (4691056) panicked at tos-api/tests/aes_window_slider_subtree.rs:641:5:
+A98: WF_VSLSIZ 250 wrote 1035 of 1058 ["up", "dn"] pixels, EmuTOS's `w_cpwalk(w_handle, W_?SLIDE, …)` walks the slider subtree alone (gemoblib.c:959-977; arrows are siblings, gemwmlib.c:415-436,448-474); first Some((327, 63)); 46 draw ops: Some("fill_rect x=327 y=63 w=23 h=1 pel=1")
+
+
+failures:
+    hslide_redraw_is_the_hslide_subtree
+    hslsiz_redraw_is_the_hslide_subtree
+    vslide_redraw_is_the_vslide_subtree
+    vslsiz_redraw_is_the_vslide_subtree
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p tos-api --test aes_window_slider_subtree`

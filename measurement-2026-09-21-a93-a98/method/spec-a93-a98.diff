@@ -1,0 +1,69 @@
+diff --git a/docs/api/_discrepancies.md b/docs/api/_discrepancies.md
+index acfa3e1..342f807 100644
+--- a/docs/api/_discrepancies.md
++++ b/docs/api/_discrepancies.md
+@@ -1555,7 +1555,8 @@ source. Substantive corrections (all map to real window-redraw behaviour):
+ - **`WM_*` message word layouts** (`gemctrl.c:81-315`, `gemwmlib.c:851-904`):
+   `WM_SIZED` (27)/`WM_MOVED` (28) carry the **proposed new border rect** in
+   `msg[4..7]`; `WM_HSLID` (25)/`WM_VSLID` (26) carry the **new 0..1000 slider
+-  position** in `msg[4]`; `WM_ARROWED` (24) carries a **`WA_*` sub-action** in
++  position** in `msg[4]` and the window's `WS_CURR` `y, w, h` in `msg[5..7]`
++  (`:196-197`, `:305`, `:314`; A93, 2026-09-21); `WM_ARROWED` (24) carries a **`WA_*` sub-action** in
+   `msg[4]`; `WM_REDRAW` (20) carries the **dirty rect** in `msg[4..7]`;
+   `WM_TOPPED`/`CLOSED`/`FULLED`/`UNTOPPED` carry only `msg[3]=wh`. `WA_*` =
+   `UPPAGE 0, DNPAGE 1, UPLINE 2, DNLINE 3, LFPAGE 4, RTPAGE 5, LFLINE 6,
+diff --git a/docs/api/aes/window-graphics.md b/docs/api/aes/window-graphics.md
+index 2ece606..29459a8 100644
+--- a/docs/api/aes/window-graphics.md
++++ b/docs/api/aes/window-graphics.md
+@@ -794,9 +794,11 @@ Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
+ > repaints **multiple** windows — the frame **and** every uncovered area
+ > (whole-tree redraw with per-window `WM_REDRAW`). The slider-position/size
+ > setters **early-out with no redraw if the value is unchanged**
+-> (`if (pwin->w_hslide != pinwds[0])`) — NewTOS currently reproduces neither
+-> that guard nor the arrow exclusion (A84, `TASK/A84.md`; unobservable in
+-> pixels, only in draw-call count — see edge case 5 below).
++> (`if (pwin->w_hslide != pinwds[0])`) — NewTOS reproduces that guard
++> (A84, `TASK/A84.md`, 2026-09-20) and the arrow exclusion (A98,
++> `TASK/A98.md`, 2026-09-21: `redraw_?slider` draws the `W_?SLIDE` subtree
++> alone; unobservable in pixels, only in the per-pixel write mask — see
++> edge case 5 below).
+ 
+ > **`WF_NAME`/`WF_INFO` store a pointer, not a copy; no length limit
+ > (contract, A83, 2026-09-20).** EmuTOS's `wm_set` stores exactly the
+@@ -1204,8 +1206,8 @@ sets `msg[1] = rlr->p_pid` (sender), `msg[2] = 0` (extra bytes):
+ | `WM_CLOSED`  | 22 | wh | **`WS_CURR` x** | **`WS_CURR` y** | **`WS_CURR` w** | **`WS_CURR` h** | CLOSER released inside (`gemctrl.c:220`); with `HOTCLOSE` **on the press** (`:210-213`). Rect = the window's current border rect, fetched once before the gadget switch (`w_getsize(WS_CURR, w_handle, &t); r_get(&t, &x, &y, &w, &h)`, `:196-197`) and passed unchanged to `ct_msgup(message, owner, wh, x, y, w, h)` (`:314`) — corrected from 0 (A77, 2026-09-20) |
+ | `WM_FULLED`  | 23 | wh | **`WS_CURR` x** | **`WS_CURR` y** | **`WS_CURR` w** | **`WS_CURR` h** | FULLER released inside (`gemctrl.c:220`); rect as for `WM_CLOSED` (`:196-197`, `:314`) — corrected from 0 (A77, 2026-09-20) |
+ | `WM_ARROWED` | 24 | wh | **`WA_*` action** | 0 | 0 | 0 | scroll arrow/page click (`gemctrl.c:125`) |
+-| `WM_HSLID`   | 25 | wh | **0..1000 pos** | 0 | 0 | 0 | h-elevator drag (`gemctrl.c:300-305`) |
+-| `WM_VSLID`   | 26 | wh | **0..1000 pos** | 0 | 0 | 0 | v-elevator drag (`gemctrl.c:300-305`) |
++| `WM_HSLID`   | 25 | wh | **0..1000 pos** | **`WS_CURR` y** | **`WS_CURR` w** | **`WS_CURR` h** | h-elevator drag (`gemctrl.c:300-305`). The elevator arm overwrites **`x` alone** — `x = gr_slidebox(gl_awind, cpt-1, cpt, (cpt == W_VELEV))` (`:305`) — so `ct_msgup(message, owner, wh, x, y, w, h)` (`:314`) sends the `WS_CURR` `y, w, h` fetched once before the gadget switch (`:196-197`) in `msg[5..7]` — corrected from 0 (A93, 2026-09-21) |
++| `WM_VSLID`   | 26 | wh | **0..1000 pos** | **`WS_CURR` y** | **`WS_CURR` w** | **`WS_CURR` h** | v-elevator drag (`gemctrl.c:300-305`); words as for `WM_HSLID` (`:196-197`, `:305`, `:314`) — corrected from 0 (A93, 2026-09-21) |
+ | `WM_SIZED`   | 27 | wh | new x | new y | new w | new h | SIZER rubber-resize (`gemctrl.c:259`) |
+ | `WM_MOVED`   | 28 | wh | new x | new y | new w | new h | MOVER/name drag (`gemctrl.c:238`) |
+ | `WM_UNTOPPED`| 30 | wh | 0 | 0 | 0 | 0 | previous top is being deactivated (`gemctrl.c:151`) |
+@@ -1229,8 +1231,9 @@ sets `msg[1] = rlr->p_pid` (sender), `msg[2] = 0` (extra bytes):
+ > **`WM_SIZED`/`WM_MOVED` carry the *proposed new border rect* in `msg[4..7]`**
+ > (x,y,w,h) — the app is expected to `wind_set(WF_CURRXYWH, …)` it (possibly
+ > after clamping). For `WM_HSLID`/`WM_VSLID`, `msg[4]` is the **new slider
+-> position 0..1000** the app should `wind_set(WF_HSLIDE/VSLIDE)`. For
+-> `WM_ARROWED`, `msg[4]` is the sub-action below.
++> position 0..1000** the app should `wind_set(WF_HSLIDE/VSLIDE)`; `msg[5..7]`
++> are the window's `WS_CURR` `y, w, h` (A93). For `WM_ARROWED`, `msg[4]` is
++> the sub-action below.
+ 
+ ### `WA_*` arrowed sub-actions (`aesdefs.h:245-253`, `gemctrl.c:63-74`)
+ 
+@@ -1408,8 +1411,10 @@ byte of any buffer the caller passed (TASK/A42).
+    redraw **only on the topped window** (`gemwmlib.c:1747`). With 3D objects
+    (default) they always redraw. The redraw itself is scoped to the
+    `W_HSLIDE`/`W_VSLIDE` subtree (slider + elevator), not the arrow gadgets —
+-   see "Redraw scope" under `wind_set` (105) above. NewTOS reproduces
+-   neither the change-guard nor the arrow exclusion (A84, `TASK/A84.md`).
++   see "Redraw scope" under `wind_set` (105) above. NewTOS reproduces the
++   change-guard (A84, `TASK/A84.md`, 2026-09-20) and the subtree scope
++   (A98, `TASK/A98.md`, 2026-09-21; pinned by `tests/aes_window_slider_guard.rs`
++   and `tests/aes_window_slider_subtree.rs`).
+ 6. **`WM_NEWTOP` (29) and `WM_ONTOP` (31) are declared but never emitted** by
+    EmuTOS's window/desktop code — TOS4 messages this build does not generate.
+ 7. **`WM_ARROWED` repeats while the button is held** (`handle_arrow_msg`); the

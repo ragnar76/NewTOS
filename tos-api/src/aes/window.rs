@@ -2932,11 +2932,22 @@ fn elev_rect(bar: Grect, track: (i16, i16), off: i16, len: i16, vert: bool) -> G
     }
 }
 
-/// Draw the right (vertical) scroll bar — up/down arrows, the track, and a
-/// thumb positioned + sized from `w.vslide` / `w.vslsize` (both per-mille).
-/// Shared by `draw_frame` and `wind_set(WF_VSLIDE/WF_VSLSIZ)`; drawing only
-/// the slider column leaves the work area (content) untouched.
+/// Draw the right (vertical) scroll bar's gadgets — up/down arrows, the
+/// track, and a thumb positioned + sized from `w.vslide` / `w.vslsize` (both
+/// per-mille) — in `W_VBAR`'s child order (`w_bldvbar`, `gemwmlib.c:403-438`).
+/// For `draw_frame` (the whole-tree walk) and the drag feedback; drawing only
+/// the slider column leaves the work area (content) untouched. The
+/// `wind_set(WF_VSLIDE/WF_VSLSIZ)` path draws [`draw_vslide`] alone (A98).
 fn draw_vslider(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
+    draw_varrows(w, istop, backend, clip);
+    draw_vslide(w, istop, backend, clip);
+}
+
+/// The up/down arrow cells — `W_UPARROW`/`W_DNARROW`, siblings of `W_VSLIDE`
+/// under `W_VBAR` (`w_adjust(W_VBAR, W_UPARROW, …)`/`w_adjust(W_VBAR,
+/// W_DNARROW, …)`, `gemwmlib.c:412-424`), so **not** part of the slider's
+/// subtree redraw.
+fn draw_varrows(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
     let kind = w.kind;
     let Some(bar) = vbar_rect(w.curr, kind) else {
         return;
@@ -2954,6 +2965,19 @@ fn draw_vslider(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: Clip
         let g = Grect { x: bar.x + ADJ3DSTD, y: bar.y + bar.h - ah + 1, w: GL_WBOX, h: gl_hbox() };
         gadget(g, G_DN, ink(W_DNARROW_IDX), backend, clip);
     }
+}
+
+/// The `W_VSLIDE` subtree — the track plus its one child, the `W_VELEV`
+/// elevator (`w_adjust(W_VBAR, W_VSLIDE, …)`, `w_adjust(W_VSLIDE, W_VELEV, …)`,
+/// `gemwmlib.c:427-436`). Exactly what `w_cpwalk(w_handle, W_VSLIDE,
+/// MAX_DEPTH, TRUE)` paints: `ob_draw` walks `obj`'s own subtree and stops at
+/// `tree[obj].ob_next` (`gemoblib.c:959-977`), so the arrow siblings stay
+/// untouched (A98).
+fn draw_vslide(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
+    let Some(bar) = vbar_rect(w.curr, w.kind) else {
+        return;
+    };
+    let ink = |g: usize| gadget_ink(w, g, istop);
     if let Some((track_y, track_h)) = vtrack(w) {
         let track = Grect { x: bar.x, y: track_y, w: bar.w, h: track_h };
         // `W_VSLIDE` is a `G_BOX` whose default word `0x1111` is `IP_1PATT` in
@@ -2977,11 +3001,14 @@ fn draw_elevator(e: Grect, ink: Ink, backend: &dyn RasterBackend, clip: ClipRect
     bevel(inside_1(slot), true, backend, clip);
 }
 
-/// Redraw just window `handle`'s vertical slider (no work-area clear), for
-/// `wind_set(WF_VSLIDE/WF_VSLSIZ)` — EmuTOS `wm_set`'s
+/// Redraw just window `handle`'s vertical slider **subtree** — track +
+/// elevator, not the arrows ([`draw_vslide`]) — for
+/// `wind_set(WF_VSLIDE/WF_VSLSIZ)`: EmuTOS `wm_set`'s
 /// `w_cpwalk(w_handle, W_VSLIDE, MAX_DEPTH, TRUE)`
-/// (`gemwmlib.c:1704-1717,1739-1754`), so `do_walk` clips it to the window's
-/// own owner rectangle list rather than letting it draw over a window on top.
+/// (`gemwmlib.c:1697-1717,1739-1755`), so `do_walk` clips it to the window's
+/// own owner rectangle list rather than letting it draw over a window on top,
+/// and `ob_draw` confines it to the `W_VSLIDE` object (`gemoblib.c:959-977`;
+/// A98).
 fn redraw_vslider(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
@@ -2993,21 +3020,13 @@ fn redraw_vslider(handle: i16) {
             crate::vdi::cursor_hide(backend);
             let istop = handle == get_top();
             for r in pieces.iter().take(n) {
-                draw_vslider(w, istop, backend, rect_clip(r.x, r.y, r.w, r.h));
+                draw_vslide(w, istop, backend, rect_clip(r.x, r.y, r.w, r.h));
             }
             crate::vdi::cursor_show(backend);
         }
     }
 }
 
-/// Draw the bottom (horizontal) scroll bar — left/right arrows, the track, and
-/// a thumb positioned + sized from `w.hslide` / `w.hslsize` (both per-mille).
-/// The mirror image of [`draw_vslider`] with the axes swapped (x↔y, w↔h): the
-/// track runs along the bottom row instead of the right column, offset only by
-/// the left border and the vertical scroll bar / sizer column on the right (no
-/// title/info bands consume the horizontal axis). Shared by `draw_frame` and
-/// `wind_set(WF_HSLIDE/WF_HSLSIZ)`; drawing only the slider row leaves the work
-/// area (content) untouched. The bottom-band fill is done by the caller.
 /// The horizontal scroll track span `(left, length)` — the region left for
 /// the thumb + paging after the left/right arrows — or `None` if there is no
 /// HSLIDE track. Mirror of [`vtrack`] with the axes swapped (x↔y, w↔h).
@@ -3025,14 +3044,32 @@ fn htrack(w: &Window) -> Option<(i16, i16)> {
     (len > 0).then_some((left, len))
 }
 
+/// Draw the bottom (horizontal) scroll bar's gadgets — left/right arrows, the
+/// track, and a thumb positioned + sized from `w.hslide` / `w.hslsize` (both
+/// per-mille) — in `W_HBAR`'s child order (`w_bldhbar`, `gemwmlib.c:441-476`).
+/// The mirror image of [`draw_vslider`] with the axes swapped (x↔y, w↔h): the
+/// track runs along the bottom row instead of the right column, offset only by
+/// the left border and the vertical scroll bar / sizer column on the right (no
+/// title/info bands consume the horizontal axis). For `draw_frame` and the
+/// drag feedback; drawing only the slider row leaves the work area (content)
+/// untouched. The bottom-band fill is done by the caller. The
+/// `wind_set(WF_HSLIDE/WF_HSLSIZ)` path draws [`draw_hslide`] alone (A98).
 fn draw_hslider(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
+    draw_harrows(w, istop, backend, clip);
+    draw_hslide(w, istop, backend, clip);
+}
+
+/// The left/right arrow cells — `W_LFARROW`/`W_RTARROW`, siblings of
+/// `W_HSLIDE` under `W_HBAR` (`gemwmlib.c:450-462`), outside the slider's
+/// subtree redraw. Mirror of [`draw_varrows`].
+fn draw_harrows(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
     let kind = w.kind;
     let Some(bar) = hbar_rect(w.curr, kind) else {
         return;
     };
     let aw = adj_wbox();
     let ink = |g: usize| gadget_ink(w, g, istop);
-    // Arrows: mirror of [`draw_vslider`] — a `gl_wbox` × `gl_hbox` cell inset
+    // Arrows: mirror of [`draw_varrows`] — a `gl_wbox` × `gl_hbox` cell inset
     // `ADJ3DSTD` into the band, each consuming a full `adj_wbox`
     // (gemwmlib.c:448-462).
     if kind & LFARROW != 0 {
@@ -3043,6 +3080,17 @@ fn draw_hslider(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: Clip
         let g = Grect { x: bar.x + bar.w - aw + 1, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: gl_hbox() };
         gadget(g, G_RT, ink(W_RTARROW_IDX), backend, clip);
     }
+}
+
+/// The `W_HSLIDE` subtree — the track plus its `W_HELEV` child
+/// (`gemwmlib.c:465-474`); what `w_cpwalk(w_handle, W_HSLIDE, MAX_DEPTH,
+/// TRUE)` paints (`ob_draw`, `gemoblib.c:959-977`). Mirror of
+/// [`draw_vslide`] (A98).
+fn draw_hslide(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRect) {
+    let Some(bar) = hbar_rect(w.curr, w.kind) else {
+        return;
+    };
+    let ink = |g: usize| gadget_ink(w, g, istop);
     if let Some((track_x, track_w)) = htrack(w) {
         let track = Grect { x: track_x, y: bar.y, w: track_w, h: bar.h };
         // `W_HSLIDE` — the same `G_BOX` `0x1111` word as the vertical track.
@@ -3055,10 +3103,11 @@ fn draw_hslider(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: Clip
     }
 }
 
-/// Redraw just window `handle`'s horizontal slider (no work-area clear), for
-/// `wind_set(WF_HSLIDE/WF_HSLSIZ)` — EmuTOS `wm_set`'s
+/// Redraw just window `handle`'s horizontal slider **subtree** — track +
+/// elevator, not the arrows ([`draw_hslide`]) — for
+/// `wind_set(WF_HSLIDE/WF_HSLSIZ)`: EmuTOS `wm_set`'s
 /// `w_cpwalk(w_handle, W_HSLIDE, MAX_DEPTH, TRUE)`
-/// (`gemwmlib.c:1704-1717,1739-1754`); see [`redraw_vslider`].
+/// (`gemwmlib.c:1690-1695,1704-1709,1739-1755`); see [`redraw_vslider`] (A98).
 fn redraw_hslider(handle: i16) {
     if let (Some(backend), Some(w)) = (host().and_then(|h| h.raster()), win(handle)) {
         if w.open {
@@ -3069,7 +3118,7 @@ fn redraw_hslider(handle: i16) {
             crate::vdi::cursor_hide(backend);
             let istop = handle == get_top();
             for r in pieces.iter().take(n) {
-                draw_hslider(w, istop, backend, rect_clip(r.x, r.y, r.w, r.h));
+                draw_hslide(w, istop, backend, rect_clip(r.x, r.y, r.w, r.h));
             }
             crate::vdi::cursor_show(backend);
         }
@@ -4749,7 +4798,9 @@ pub fn intercept() {
     // &w, &h)` (`aes/gemctrl.c:196-197`) — and `ct_msgup(message, owner, wh,
     // x, y, w, h)` (`:314`) sends whatever the arm left in those four. The
     // closer and fuller arms do not touch them (`:208-221`), so `WM_CLOSED`
-    // (both forms) and `WM_FULLED` carry `WS_CURR` in `msg[4..7]` (A77).
+    // (both forms) and `WM_FULLED` carry `WS_CURR` in `msg[4..7]` (A77); the
+    // elevator arms overwrite `x` alone (`:305`), so `WM_HSLID`/`WM_VSLID`
+    // carry the `WS_CURR` `y, w, h` in `msg[5..7]` (A93).
     let ws_curr = w.curr;
     match gadget_at(w, mx, my) {
         Gadget::Closer => {
@@ -4826,13 +4877,20 @@ pub fn intercept() {
             wait_release();
         }
         // Elevator-thumb drag → post the final 0..1000 position as WM_VSLID /
-        // WM_HSLID (EmuTOS `hctl_window` W_?ELEV, gemctrl.c:295-306).
+        // WM_HSLID (EmuTOS `hctl_window` W_?ELEV, `aes/gemctrl.c:295-306`).
+        // The arm overwrites **only `x`** — `x = gr_slidebox(gl_awind, cpt-1,
+        // cpt, (cpt == W_VELEV))` (`:305`) — so `ct_msgup(…, x, y, w, h)`
+        // (`:314`) still carries the `WS_CURR` `y, w, h` read before the
+        // switch (`:196-197`) in `msg[5..7]` (A93; the same shape as
+        // `WM_CLOSED`/`WM_FULLED` above, A77).
         Gadget::VElev => {
             msg[0] = WM_VSLID;
+            put_rect(&mut msg, ws_curr);
             msg[4] = drag_elevator(w, true, backend);
         }
         Gadget::HElev => {
             msg[0] = WM_HSLID;
+            put_rect(&mut msg, ws_curr);
             msg[4] = drag_elevator(w, false, backend);
         }
         Gadget::None => return,

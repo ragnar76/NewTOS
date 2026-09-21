@@ -1,0 +1,81 @@
+A93 + A98 -- WM_HSLID/WM_VSLID carry WS_CURR y/w/h in msg[5..7] (A93); the slider repaint of
+wind_set(WF_?SLIDE/WF_?SLSIZ) is limited to the W_?SLIDE subtree, track + elevator (A98).
+Developer self-evidence, 2026-09-21 (no Tester verdict). Branch desk-rebuild, base HEAD 2ac0f9a,
+changes uncommitted in the tree. Pinned EmuTOS references/emutos @ 1a7484ab:
+  aes/gemctrl.c:196-197 (w_getsize(WS_CURR) + r_get once before the gadget switch), :300 (message =
+    WM_HSLID/WM_VSLID), :305 (x = gr_slidebox(...) -- x alone), :314 (ct_msgup(message, owner, wh, x, y, w, h));
+  aes/gemwmlib.c:403-438 (w_bldvbar: :412-424 W_UPARROW/W_DNARROW under W_VBAR, :427-430 W_VSLIDE under
+    W_VBAR, :436 W_VELEV under W_VSLIDE), :441-476 (w_bldhbar: :450-462 arrows, :465-474 W_HSLIDE/W_HELEV),
+    :1690-1716 (the four slider arms set gadget = W_?SLIDE), :1754-1755 (w_cpwalk(w_handle, gadget, MAX_DEPTH, TRUE));
+  aes/gemoblib.c:959-977 (ob_draw: last = tree[obj].ob_next; everyobj over obj's own subtree).
+Spec: docs/api/aes/window-graphics.md (WM_HSLID/WM_VSLID table rows corrected from 0 with the citation,
+"(A93, 2026-09-21)"; the blockquote under the table; "Redraw scope" closing sentence; edge case 5:
+guard yes (A84), subtree yes (A98)); docs/api/_discrepancies.md (the WM_* word-layout copy, HSLID/VSLID).
+
+PRODUCT CODE (uncommitted; method/product-a93-a98.diff; HEAD copy in method/head-2ac0f9a/window.rs)
+  tos-api/src/aes/window.rs
+    A93  intercept: Gadget::VElev / Gadget::HElev -> put_rect(&mut msg, ws_curr) then msg[4] = drag_elevator(..).
+    A98  draw_vslider = draw_varrows + draw_vslide; draw_hslider = draw_harrows + draw_hslide (new fns, the
+         draw logic itself unchanged, only split); redraw_vslider / redraw_hslider (the wind_set path) call
+         draw_vslide / draw_hslide only. draw_frame and the drag feedback still draw the whole bar.
+  tos-api/tests/aes_window_slid_rect.rs        NEW (2 cases; A77 harness) -- method/ has a copy
+  tos-api/tests/aes_window_slider_subtree.rs   NEW (4 cases; A84 harness + per-pixel touched mask) -- copy in method/
+  docs/STATUS.md Phase-13 fragment + one Recent Decisions row (2026-09-21); TASK/A93.md, A98.md ERLEDIGT +
+    Abschluss; TASK/A93-STATUS-DONE.MD, A98-STATUS-DONE.MD (copies in method/).
+
+HOST TESTS (host-tests/)
+  aes_window_slid_rect-RED-before.txt      0 passed / 2 FAILED on the unchanged intercept:
+      vertical:   msg = [26, 1, 0, 1, 421, 0, 0, 0], WS_CURR = (176, 118, 296, 206) -> left (0,0,0)
+      horizontal: msg = [25, 1, 0, 1, 193, 0, 0, 0] -> left (0,0,0)
+  aes_window_slid_rect-GREEN-after.txt     2/2.
+  aes_window_slider_subtree-RED-before.txt 0 passed / 4 FAILED on the unchanged redraw_?slider:
+      WF_VSLIDE 500 / WF_VSLSIZ 250: wrote 1035 of 1058 ["up","dn"] pixels, first (327,63), 46 draw ops
+      WF_HSLIDE 500 / WF_HSLSIZ 250: wrote 1035 of 1081 ["lf","rt"] pixels, first (31,257), 46 draw ops
+      (1081: the "lf" hit-test cell includes the window's left border column -- pre-existing hit-test quirk)
+  aes_window_slider_subtree-GREEN-after.txt 4/4 (whole track + elevator written, no arrow pixel written,
+      every arrow pixel value unchanged).
+  xtask-test-AFTER.log  cargo run -p xtask -- test: 785 passed / 0 failed / 1 ignored, rc 0
+      (baseline 779/0/1 + 2 A93 + 4 A98).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log  cargo xtask build --board rpi4 (tos-api + kernel recompiled): tos-api 64 / kernel 94,
+      rc 0 (baseline 64/94, delta 0); tree kernel8.img sha256 in kernel8-tree-rpi4-dev.sha256. No qemu-virt build (lead).
+  clippy-tos-api-host.txt   cargo clippy -p tos-api: 80 (baseline 80, delta 0); window.rs 11 notes, all
+      pre-existing (10x Aespb private_interfaces, 1x `top` never read at :2735 -- present in the A87/A89 logs).
+  clippy-tos-api-tests.txt  cargo clippy -p tos-api --tests: no hit in the two new test files.
+  scratch-{after,before}-build.log  the injector scratch kernels (tos-api 66 / kernel 105 = the H02/A46/A73
+      scaffolding), sha256 in scratch-kernels.sha256.
+  make-sd-image.log, sd-put-tera.log, sd-images.sha256  tools/make-sd-image.sh <scratch>/img/sd-base.img 64;
+      sd-tera-a93.img = + NEWDESK.INF (#Z TeraDesk, method/newdesk-teradesk.inf = the A89 one). No *.img kept.
+
+QEMU raspi4b (method/run.sh; 640x480, -display none, QMP screendump 0.5 s after each serial mark; fresh
+image copy per run; grep -c "EXC\|PANIC\|panic" = 0 in both serial logs).
+BEFORE = scratch with tos-api/src/aes/window.rs = HEAD 2ac0f9a (git show, no checkout); AFTER = the tree.
+Injector: method/make_scratch_a93.sh = A89 method (a68_patch.py, a73_trace.py, apply_injector.py,
+a68_patch2.py); script method/a93_scripts.rs from a93-drag.actions via gen_script.py (`drag` = Dm packets,
+button held).
+  parkbr; (300,300); double-click HARD DISC C (195,35); parkbr; arm -> A (window open, 24 items, 14 visible,
+  elevator y ~122..232 of a track to ~330); move (491,200) -> B (pointer on the elevator); down; drag
+  (491,230), (491,260), (491,290); up -> C; parkbr -> D (+1.5 s).
+  after == before byte for byte, all four dumps:
+    A 300e96db7fe5feb1..  B ea9e33232d1feec4..  C 7d077fd1fec7f29c..  D a62f774e8a660921..
+  serial (both): `[a73] evnt_multi fired=0x0010 clicks=0 mouse=(491,290) mb=0x00` right after the release
+  (the WM_VSLID delivered to TeraDesk); C/D show the list scrolled to the end (DTACHILD .. VDI.TSV) with the
+  elevator at the bottom of the track.
+  A93 is unobservable in pixels (TeraDesk/QED read msg[4] only); A98 is unobservable in pixels by
+  construction (the arrows were repainted with identical pixels) -- both are host-test evidence, the QEMU
+  run is the no-regression check of the scroll path.
+
+OUT OF SCOPE (observed, untouched)
+  (1) docs/api/_discrepancies.md:1557 still says WM_TOPPED/CLOSED/FULLED/UNTOPPED "carry only msg[3]=wh"
+      -- stale since A77 for CLOSED/FULLED (the window-graphics.md table is corrected); only the HSLID/VSLID
+      clause was touched here.
+  (2) gadget_at: the "lf" hit-test cell includes the window's left border column (mx == b.x passes
+      `inside(b)` and `mx < bar.x + aw`), 24 columns instead of 23; no draw effect.
+  (3) drag_elevator's thumb-follow feedback repaints the whole bar (arrows included) per frame; EmuTOS drags
+      an XOR outline (gr_slidebox) and never repaints the arrows in the elevator flow -- the documented,
+      separately tracked feedback deviation; not part of A98 (redraw_?slider only).
+  (4) The window-graphics.md WM_* table's "msg[1] is 1" blockquote and the WM_ARROWED row were not re-checked.
+
+OPEN
+  Pi acceptance (Tester/Lead; nothing flashed). No commit, no git checkout/stash/reset, no *.img kept.

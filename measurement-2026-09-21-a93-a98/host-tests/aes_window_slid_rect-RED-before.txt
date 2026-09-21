@@ -1,0 +1,29 @@
+running 2 tests
+test horizontal_elevator_drag_wm_hslid_carries_ws_curr_ywh ... FAILED
+test vertical_elevator_drag_wm_vslid_carries_ws_curr_ywh ... FAILED
+
+failures:
+
+---- horizontal_elevator_drag_wm_hslid_carries_ws_curr_ywh stdout ----
+
+thread 'horizontal_elevator_drag_wm_hslid_carries_ws_curr_ywh' (4689317) panicked at tos-api/tests/aes_window_slid_rect.rs:728:5:
+assertion `left == right` failed: WM_HSLID must carry the window's WS_CURR y, w, h in msg[5..7] (aes/gemctrl.c:196-197, :305, :314); msg = [25, 1, 0, 1, 193, 0, 0, 0], WS_CURR = (176, 118, 296, 206)
+  left: (0, 0, 0)
+ right: (118, 296, 206)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- vertical_elevator_drag_wm_vslid_carries_ws_curr_ywh stdout ----
+
+thread 'vertical_elevator_drag_wm_vslid_carries_ws_curr_ywh' (4689318) panicked at tos-api/tests/aes_window_slid_rect.rs:697:5:
+assertion `left == right` failed: WM_VSLID must carry the window's WS_CURR y, w, h in msg[5..7] (aes/gemctrl.c:196-197 r_get(WS_CURR), :305 overwrites x alone, :314 ct_msgup(…, x, y, w, h)); msg = [26, 1, 0, 1, 421, 0, 0, 0], WS_CURR = (176, 118, 296, 206)
+  left: (0, 0, 0)
+ right: (118, 296, 206)
+
+
+failures:
+    horizontal_elevator_drag_wm_hslid_carries_ws_curr_ywh
+    vertical_elevator_drag_wm_vslid_carries_ws_curr_ywh
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tos-api --test aes_window_slid_rect`
