@@ -1,0 +1,123 @@
+NewTOS -- VDI raster with the SCREEN as an operand (TASK/R02..R05), 2026-09-21
+==============================================================================
+MEASUREMENT ONLY: this directory states what ran and what came back.
+Classification and verdicts: docs/analysis/raster-screen-r02-r05-2026-09-21.md
+
+Datum        : 2026-09-21
+Git HEAD     : c1f42ff (Branch desk-rebuild), Arbeitsbaum zu Beginn sauber.
+               Nichts committet, nichts geflasht, keine physische Karte.
+               Das Runner-Delta (tosdump/core: !screen, S, Preludes, Readback)
+               und die neue Tabelle sind UNCOMMITTED Bestandteile dieser Messung.
+EmuTOS-Quelle: references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+               (VERSION_1_4-71-g1a7484ab).
+
+Falltabelle  : tosdump/cases/vdi-raster-screen.tsv, 62 Faelle, 41 Preludes,
+               CRC 9780EC39 (NEU; sha256
+               1cf591e37362bdda3bbb7e12bc1f24331c1a56e2d67e6759ba6eecc38e85e365)
+               tosdump/cases/vdi-raster.tsv, 59 Faelle, CRC 702EEA7D (unveraendert,
+               nur zur Runner-Validierung; sha256 4b81d3cc...)
+
+Dumper       : DUMPRAST mit dem Runner-Delta (core/cases.c, core/runner_rast.c,
+               core/dumprast.c; Host-Suite `make -C tosdump/host test` gruen).
+               Build-ID c1f4.
+  DUMPRAST.PRG (m68k, cross-mint) sha256
+    a4fe21ac80ae9a1bc8d5bf3b51323ad2f261150e19d402da88a0606dcf6bfa98
+  DUMPRAST.NAP (AArch64, tosdump/build-dumprast-newtos.sh) sha256
+    5c48715c4d76c1ee9384e0f532b45be0141e07fa43a160fdcea74e84e3b160ab
+
+------------------------------------------------------------------------------
+RUN 0 -- Runner-Validierung: ALTE Tabelle auf Hatari Falcon030 Truecolor
+------------------------------------------------------------------------------
+  Hatari 2.6.1, ROM etos512de.img (Release 1.4, sha256 5805c0a4...),
+  method/run-falcon-tc-rast.sh, EMUDESK.INF "#E 1A E0 00 1C 60", --auto
+  C:\DUMPRAST.PRG, --gemdos-drive C, RASTER.TSV = vdi-raster.tsv.
+  Hatari "info videl": $FF8266.w = 0100 (Truecolor). DEV_TAB[13] = 256.
+  Ergebnis emutos-falcon-tc-hatari-old-table/RASTER.BIN (+LOG, hatari.log)
+  DIFF-oldtable-tt-ref-vs-falcontc.txt : TT-Referenz (EMUTOS14-RASTER.BIN)
+      vs Falcon-TC, neuer Dumper           : 0 von 59  (bitgleich)
+  DIFF-oldtable-falcontc-vs-newtos-qemu-2567942.txt : Falcon-TC vs der
+      NewTOS-QEMU-Rasterdump vom Vormittag : 1 von 59  (Fall 157, D-VDI-25/R01,
+      wie bekannt)
+  Damit ist der Dumper mit dem Runner-Delta fuer die alte Tabelle unveraendert
+  und Hatari Falcon-TC als Raster-Orakel belegt.
+
+------------------------------------------------------------------------------
+RUN A -- NEUE Tabelle auf Hatari Falcon030 Truecolor, zwei ROMs
+------------------------------------------------------------------------------
+  A1  etos512de.img (Release 1.4)             -> emutos-falcon-tc-hatari/release-1.4-rom/
+  A2  references/emutos/etos512us.img (gepinnte Quelle, sha256 be9b3c16...)
+                                              -> emutos-falcon-tc-hatari/pinned-source-rom/
+  Beide: RASTER.LOG "table declares screen 640x480 at 16 planes; workstation
+  reports 640x480 at 16 planes", "all 62 cases ran", 229184 Bytes; info videl
+  $FF8266.w = 0100 in beiden Laeufen (hatari.log).
+  DIFF-falcontc-rel-vs-src.txt : 0 von 62.
+  Referenzkopie: tosdump/reference/EMUTOS14-RASTER-screen-falcontc.BIN/.LOG (= A1,
+  sha256 70fbf432678d65e0d7a1c4ed01d41c43d9788c4ec2243bccba0dfc60ec0be406).
+
+  Unabhaengige Modellpruefung (method/oracle.py: die EmuTOS-Regeln aus
+  vdi_raster.c / vdi_fill.c / vdi_col.c / vdi_control.c in Python, ohne Blick
+  auf eine Implementierung): ORACLE-model-vs-falcontc-rel.txt -> 0 von 62
+  Faellen weichen vom Modell ab, einschliesslich Array-Hygiene (INTOUT/PTSOUT
+  poisoned, INTIN/PTSIN Echo, Screen-MFDB acht Nullen). Die Tabelle enthaelt
+  damit keinen Tabellenfehler.
+
+------------------------------------------------------------------------------
+RUN B -- NewTOS auf QEMU raspi4b, headless, 640x480, 16 Planes
+------------------------------------------------------------------------------
+  Kernel  touch kernel/src/lib.rs tos-api/src/lib.rs;
+          cargo run -p xtask -- build --board rpi4 --release   @ c1f42ff
+    ELF  target/aarch64-unknown-none-softfloat/release/kernel sha256
+         e18bfbf8009a27f9da8c7e22254fd15f65ea3409f8181a43b9f0ab4b591a3064
+    kernel8.img sha256
+         ed17af65ee4a6eb47b2fd79724059a66ac92fd690706696f0fbcd134edd3f8de
+  Karte   tools/make-sd-image.sh <scratch>/sd-screen.img 64; per hdiutil:
+          C:\DUMPRAST.NAP, C:\RASTER.TSV (= vdi-raster-screen.tsv),
+          C:\NEWDESK.INF = method/NEWDESK-autorun.INF ("#Z 01 C:\DUMPRAST.NAP@").
+  Befehl  qemu-system-aarch64 -M raspi4b -no-reboot -display none
+            -serial file:BOOT-SERIAL.txt -kernel kernel8.img
+            -drive file=sd-screen.img,if=sd,format=raw   (45 s, dann kill)
+  Log     "[fb] VideoCore display geometry detected: 640x480",
+          "RASTER.TSV: 62 cases, CRC 9780EC39", "table declares screen 640x480
+          at 16 planes; workstation reports 640x480 at 16 planes",
+          "all 62 cases ran", rc=0, "[desk] desktop up", kein PANIC, kein [EXC].
+  Ergebnis newtos-qemu-raspi4b/RASTER.BIN + RASTER.LOG + BOOT-SERIAL.txt
+  tosdiff --validate: akzeptiert (CRC stimmt). Kein QEMU-Prozess blieb zurueck.
+
+------------------------------------------------------------------------------
+DIFFS (tosdiff ueber vdi-raster-screen.tsv, CRC 9780EC39)
+------------------------------------------------------------------------------
+  DIFF-falcontc-rel-vs-newtos-qemu.txt   Falcon-TC A1 vs NewTOS QEMU : 1 von 62
+  DIFF-falcontc-src-vs-newtos-qemu.txt   Falcon-TC A2 vs NewTOS QEMU : 1 von 62
+      -- nur Fall 215 (H12: vrt_cpyfm, INTIN[0] = 0x11 = PAT_FLAG|MD_REPLACE,
+         16-Bit-Pfad): EmuTOS zeichnet nichts (512 x 0xFFFF), NewTOS zeichnet
+         die REPLACE-Expansion (0x0000/0xFFDF). VOR dem Lauf als Unterschied
+         vorhergesagt (Kopf der Tabelle).
+  ORACLE-model-vs-newtos-qemu.txt         Modell vs NewTOS QEMU        : 1 von 62
+      -- derselbe Fall 215.
+
+  Alle uebrigen 61 Faelle (R02 Screen->Memory 15, R03 Memory->Screen 15,
+  R04 Screen->Screen ueberlappend 15, R05 vrt_cpyfm 16) sind Wort fuer Wort
+  gleich: 512 Woerter je Puffer, beide Puffer, beide MFDBs, alle Arrays.
+
+------------------------------------------------------------------------------
+HOSTTESTS
+------------------------------------------------------------------------------
+  tos-api/tests/vdi_reference_raster_screen.rs (neues Binaer, generiert aus
+  der Falcon-Referenz durch tosdump/host/mkrusttests):
+    cargo test -p tos-api --test vdi_reference_raster_screen
+    -> 61 gruen, 1 rot: case_0215_op121_h12_... (der Defekt).
+  tos-api gesamt (--no-fail-fast): 885 gruen, 1 rot (nur dieser).
+  tosdump/host: make test gruen (inkl. neuer Loader-/Runner-Tests fuer
+  !screen, S, Preludes, Readback).
+
+------------------------------------------------------------------------------
+HINWEISE
+------------------------------------------------------------------------------
+  * *.BIN unter measurement-*/ sind durch das Wurzel-.gitignore ("*.bin" bei
+    core.ignorecase=true) IGNORIERT -- zum Versionieren `git add -f`.
+    tosdump/reference/*.BIN hat eine Negation und ist davon nicht betroffen.
+  * Scratch lag ausschliesslich im Session-Scratchpad; das SD-Image ist nicht
+    Teil dieses Ordners (Hash des Kernels und der Dumper stehen oben).
+  * Die Mausposition spielt keine Rolle: der Reset loescht mit v_clrwk den
+    ganzen Schirm, und headless bewegt sich nichts; alle Rechtecke liegen bei
+    (100,60) bzw. (0,0), weit vom Bildmittelpunkt.

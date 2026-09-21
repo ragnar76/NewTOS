@@ -203,6 +203,106 @@ int main(int argc, char **argv)
 		TD_CHECK_EQ(raster, 2);
 	}
 
+	/* --- the screen: preludes and the readback (cases.h, THE SCREEN) -- */
+	/* A table that lays a pattern on the screen through two preludes,
+	 * copies screen to screen, and reads a 4 x 3 rectangle back into
+	 * buffer B.  The stub answers v_get_pixel with intout[1] = the handle
+	 * (its default arm), and logs every call with its ptsin, so the test
+	 * can see the readback's coordinates and where its words landed. */
+	printf("the screen: preludes run before the call, the readback after\n");
+	{
+		static const char *screen_text =
+			"!screen\t640,480,16\n"
+			"+25\t2\t-\t-\t-\t-\tpen 2\n"
+			"+109\t3\t0,0,31,15,100,60,131,75\t0,32,16,2,0,16\tS\t-\tpattern\n"
+			"109\t6\t100,60,115,67,108,64,123,71\tS\tS\t7,8,100,60,4,3\ts to s\n";
+		static struct td_rast_case_table st;
+		static uint8_t srec[TD_RAST_RECORD_SIZE];
+		int first_raster = -1, measured = -1, n105 = 0, pen = -1, k;
+		int16_t planes;
+
+		memset(&err, 0, sizeof err);
+		rc = td_rast_cases_parse(&st, screen_text, strlen(screen_text), &err);
+		TD_CHECK_EQ(rc, 0);
+		TD_CHECK_EQ(st.count, 1);
+		TD_CHECK_EQ(st.cases[0].prelude_count, 2);
+
+		td_stub_reset();
+		planes = td_rast_planes(&wk);
+		TD_CHECK_EQ(td_stub_ncalls, 1);
+		TD_CHECK_EQ(td_stub_calls[0].opcode, 102);       /* vq_extnd */
+		TD_CHECK_EQ(td_stub_calls[0].intin[0], 1);
+		TD_CHECK_EQ(planes, 0);        /* the stub leaves INQ_TAB[4] at 0 */
+
+		td_stub_reset();
+		TD_CHECK_EQ(td_run_raster(&st, &wk, srec, sizeof srec), 0);
+		r0 = srec;
+		TD_CHECK_EQ(td_load_be16(r0 + TD_RAST_OFF_CASEID), 4);
+		TD_CHECK_EQ(td_load_be16(r0 + TD_RAST_OFF_OPCODE), 109);
+
+		/* order: reset (opens with v_clrwk, ends with vs_clip 129), the
+		 * two preludes, the measured call, then 12 v_get_pixel calls */
+		for (k = 0; k < td_stub_ncalls; k++) {
+			int16_t op = td_stub_calls[k].opcode;
+
+			/* the reset issues its own vsf_color (pen 1); the prelude's
+			 * is the last 25 before the first raster call */
+			if (op == 25 && first_raster < 0)
+				pen = k;
+			if (op == 109 && first_raster < 0)
+				first_raster = k;
+			else if (op == 109)
+				measured = k;
+			if (op == 105)
+				n105++;
+		}
+		TD_CHECK_EQ(td_stub_calls[0].opcode, 3);          /* v_clrwk */
+		TD_CHECK(pen > 0);
+		TD_CHECK(first_raster > pen);
+		TD_CHECK(measured > first_raster);
+		TD_CHECK_EQ(td_stub_calls[pen].intin[0], 2);      /* vsf_color 2 */
+		TD_CHECK_EQ(td_stub_calls[first_raster].intin[0], 3);
+		TD_CHECK_EQ(td_stub_calls[measured].intin[0], 6);
+		TD_CHECK_EQ(n105, 4 * 3);
+		TD_CHECK_EQ(td_stub_calls[measured + 1].opcode, 105);
+		TD_CHECK_EQ(td_stub_calls[measured + 1].ptsin[0], 100);
+		TD_CHECK_EQ(td_stub_calls[measured + 1].ptsin[1], 60);
+		TD_CHECK_EQ(td_stub_calls[measured + 4].ptsin[0], 103);
+		TD_CHECK_EQ(td_stub_calls[measured + 5].ptsin[0], 100);
+		TD_CHECK_EQ(td_stub_calls[measured + 5].ptsin[1], 61);
+		TD_CHECK_EQ(td_stub_calls[measured + 12].ptsin[0], 103);
+		TD_CHECK_EQ(td_stub_calls[measured + 12].ptsin[1], 62);
+		TD_CHECK_EQ(td_stub_ncalls, measured + 13);
+
+		/* the readback landed in buffer B as a 32-wide form: the 4 x 3
+		 * words hold what v_get_pixel answered, the rest keeps seed 8 */
+		TD_CHECK_EQ(rec_word(r0, TD_RAST_OFF_BUF_B, 0), TD_STUB_VWK_HANDLE);
+		TD_CHECK_EQ(rec_word(r0, TD_RAST_OFF_BUF_B, 3), TD_STUB_VWK_HANDLE);
+		TD_CHECK_EQ(rec_word(r0, TD_RAST_OFF_BUF_B, 2 * 32 + 3),
+		            TD_STUB_VWK_HANDLE);
+		TD_CHECK_EQ((uint16_t)rec_word(r0, TD_RAST_OFF_BUF_B, 4),
+		            td_rast_fill_word(8, 4));
+		TD_CHECK_EQ((uint16_t)rec_word(r0, TD_RAST_OFF_BUF_B, 3 * 32),
+		            td_rast_fill_word(8, 3 * 32));
+		/* buffer A was laid with seed 7 and is untouched */
+		TD_CHECK_EQ((uint16_t)rec_word(r0, TD_RAST_OFF_BUF_A, 0),
+		            td_rast_fill_word(7, 0));
+
+		/* the recorded arrays are the measured call's, not the readback's:
+		 * intout stays poisoned, ptsin[2..7] are the case's corners */
+		TD_CHECK_EQ((uint16_t)rec_word(r0, TD_RAST_OFF_INTOUT, 1),
+		            (uint16_t)TD_POISON16);
+		TD_CHECK_EQ(rec_word(r0, TD_RAST_OFF_PTSIN, 4), 108);
+		TD_CHECK_EQ(rec_word(r0, TD_RAST_OFF_PTSIN, 7), 71);
+
+		/* a screen MFDB is handed over as all zeros and recorded so */
+		for (k = 0; k < TD_RAST_MFDB_N; k++) {
+			TD_CHECK_EQ(rec_word(r0, TD_RAST_OFF_SRC_MFDB, k), 0);
+			TD_CHECK_EQ(rec_word(r0, TD_RAST_OFF_DST_MFDB, k), 0);
+		}
+		r0 = records;
+	}
+
 	/* --- a well formed dump file ------------------------------------- */
 	rc = td_dump_write(out, TD_AREA_RASTER, table.count,
 	                   "test", table.crc, records,

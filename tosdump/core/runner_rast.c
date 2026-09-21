@@ -54,6 +54,12 @@ static void fill_mfdb(struct td_mfdb *m, const struct td_rast_mfdb *spec,
                       struct td_raster_arrays *a)
 {
 	memset(m, 0, sizeof *m);
+	/* The screen: fd_addr NULL and every other field 0, the classic
+	 * screen MFDB.  EmuTOS' setup_info reads none of the fields then
+	 * (vdi_raster.c:915-950); the declared extent the table carries is
+	 * the loader's guard, not the VDI's parameter. */
+	if (spec->buffer == TD_RAST_BUF_SCREEN)
+		return;
 	m->fd_addr    = (spec->buffer == TD_RAST_BUF_B) ? (void *)a->buf_b
 	                                                : (void *)a->buf_a;
 	m->fd_w       = spec->w;
@@ -63,6 +69,87 @@ static void fill_mfdb(struct td_mfdb *m, const struct td_rast_mfdb *spec,
 	m->fd_nplanes = spec->nplanes;
 	/* fd_r1..fd_r3 stay 0: they are reserved, and a case that found them
 	 * changed afterwards would have found a real defect. */
+}
+
+/*
+ * The preludes' and the readback's own arrays.  Neither may touch the
+ * recorded arrays: a prelude is not recorded, and the readback runs AFTER
+ * the measured call, whose arrays the record captures as they stand.
+ * Fifteen CONTRL words here too, for the raster preludes' MFDB pointers.
+ */
+static int16_t       pre_contrl[TD_RAST_CONTRL_N];
+static int16_t       pre_intin[TD_RAST_INTIN_N];
+static int16_t       pre_ptsin[TD_RAST_PTSIN_N];
+static int16_t       pre_intout[TD_RAST_INTOUT_N];
+static int16_t       pre_ptsout[TD_RAST_PTSOUT_N];
+static struct td_mfdb pre_src;
+static struct td_mfdb pre_dst;
+
+static void run_prelude(const struct td_rast_prelude *p, const struct td_wk *wk,
+                        struct td_raster_arrays *a)
+{
+	int j;
+
+	memset(pre_contrl, 0, sizeof pre_contrl);
+	for (j = 0; j < (int)p->n_intin; j++)
+		pre_intin[j] = p->intin[j];
+	for (j = 0; j < (int)p->n_ptsin; j++)
+		pre_ptsin[j] = p->ptsin[j];
+	pre_contrl[0] = p->opcode;
+	pre_contrl[1] = (int16_t)(p->n_ptsin / 2);
+	pre_contrl[3] = (int16_t)p->n_intin;
+	pre_contrl[5] = 0;
+	pre_contrl[6] = wk->handle;
+	if (p->opcode == 109 || p->opcode == 121) {
+		fill_mfdb(&pre_src, &p->src, a);
+		fill_mfdb(&pre_dst, &p->dst, a);
+		set_mfdb_ptr(pre_contrl, 0, &pre_src);
+		set_mfdb_ptr(pre_contrl, 1, &pre_dst);
+	}
+	td_abi_vdi(pre_contrl, pre_intin, pre_ptsin, pre_intout, pre_ptsout);
+}
+
+/*
+ * The readback (cases.h, THE SCREEN): v_get_pixel over the rectangle, one
+ * call per pixel, INTOUT[1] into buffer B at row * 32 + col.  On a
+ * truecolor screen INTOUT[1] is the 16-bit screen word itself and
+ * INTOUT[0] is 0 (vdi_fill.c:1095-1110); the table's plane guard is what
+ * makes that the reading on both machines.
+ */
+static void run_readback(const struct td_rast_case *c, const struct td_wk *wk,
+                         struct td_raster_arrays *a)
+{
+	int16_t r, col;
+
+	for (r = 0; r < c->rh; r++) {
+		for (col = 0; col < c->rw; col++) {
+			memset(pre_contrl, 0, sizeof pre_contrl);
+			pre_contrl[0] = 105;                      /* v_get_pixel */
+			pre_contrl[1] = 1;
+			pre_contrl[3] = 0;
+			pre_contrl[6] = wk->handle;
+			pre_ptsin[0] = (int16_t)(c->rx + col);
+			pre_ptsin[1] = (int16_t)(c->ry + r);
+			pre_intout[0] = TD_POISON16;
+			pre_intout[1] = TD_POISON16;
+			td_abi_vdi(pre_contrl, pre_intin, pre_ptsin, pre_intout,
+			           pre_ptsout);
+			a->buf_b[r * TD_RAST_READ_W + col] = pre_intout[1];
+		}
+	}
+}
+
+int16_t td_rast_planes(const struct td_wk *wk)
+{
+	memset(pre_contrl, 0, sizeof pre_contrl);
+	memset(pre_intout, 0, sizeof pre_intout);
+	pre_contrl[0] = 102;                              /* vq_extnd */
+	pre_contrl[1] = 0;
+	pre_contrl[3] = 1;
+	pre_contrl[6] = wk->handle;
+	pre_intin[0] = 1;                                 /* INQ_TAB */
+	td_abi_vdi(pre_contrl, pre_intin, pre_ptsin, pre_intout, pre_ptsout);
+	return pre_intout[4];                             /* planes */
 }
 
 /* The eight WORDs after fd_addr, read back out of an MFDB after the call --
@@ -107,6 +194,13 @@ int td_run_raster(const struct td_rast_case_table *ct, const struct td_wk *wk,
 		fill_mfdb(&rast_src, &c->src, &rast_arrays);
 		fill_mfdb(&rast_dst, &c->dst, &rast_arrays);
 
+		/* 3b. the case's preludes: after the reset and the buffer fill --
+		 *     a raster prelude may copy a laid buffer to the screen --
+		 *     through their own arrays, and never recorded. */
+		for (j = 0; j < (int)c->prelude_count; j++)
+			run_prelude(&ct->preludes[c->prelude_first + (uint16_t)j], wk,
+			            &rast_arrays);
+
 		/* 4. poison every parameter array (spec section 4) */
 		td_poison_raster(&rast_arrays);
 
@@ -135,6 +229,11 @@ int td_run_raster(const struct td_rast_case_table *ct, const struct td_wk *wk,
 		ret = td_abi_vdi(rast_arrays.contrl, rast_arrays.intin,
 		                 rast_arrays.ptsin, rast_arrays.intout,
 		                 rast_arrays.ptsout);
+
+		/* 8b. the readback, if the case asked for one: the screen
+		 *     rectangle into buffer B, through the preludes' arrays. */
+		if (c->has_read)
+			run_readback(c, wk, &rast_arrays);
 
 		/* 9. the record.  Input arrays and both MFDBs go in as they stand
 		 *    AFTER the call: a raster op may modify neither, and dumping

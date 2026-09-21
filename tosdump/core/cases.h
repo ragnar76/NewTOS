@@ -574,24 +574,103 @@ int td_aes_table_columns(const char *buf, size_t len);
  *
  * As in the AES table there is no override.  A case that cannot pass is a
  * case that is wrong.
+ *
+ * ------------------------------------------------------------------
+ * THE SCREEN (cases/vdi-raster-screen.tsv, 2026-09-21)
+ * ------------------------------------------------------------------
+ *
+ * Everything above was written when the two machines' screens differed in
+ * size and depth.  Since the Falcon030 truecolor reference (Hatari, VIDEL
+ * 640x480 at 16 planes) that is no longer so: EmuTOS there and NewTOS in
+ * QEMU raspi4b run the same device model, and a screen operand is
+ * comparable.  A table may therefore, IN ADDITION to the rules above:
+ *
+ *   * declare the screen it is written for, once, before the first case:
+ *
+ *       !screen <TAB> w,h,planes
+ *
+ *     The runner refuses the whole run unless the workstation it opened
+ *     reports at least w x h (DEV_TAB[0..1], vdi_control.c:203-204) and
+ *     exactly `planes` (INQ_TAB[4], vdi_control.c:210).  Without the
+ *     directive no line may name the screen.
+ *   * name the screen in an MFDB column with the single letter `S`.  The
+ *     runner hands the VDI an MFDB whose fd_addr is NULL and whose other
+ *     fields are 0 -- the classic screen MFDB -- and EmuTOS' setup_info
+ *     then reads v_bas_ad / v_planes / v_lin_wr instead of the struct
+ *     (vdi_raster.c:915-950).  The rectangle guard checks a screen rect
+ *     against the declared w x h.  vr_trnfm (110) may not name the screen:
+ *     it dereferences fd_addr without a NULL check (vdi_raster.c:295-297).
+ *   * carry PRELUDES, `+` lines in the seven column form, issued after the
+ *     reset and before the measured call and never recorded -- exactly the
+ *     VDI table's rule.  They are what puts a known picture on the screen.
+ *     Allowed: 109 and 121 (the same MFDB and rectangle guard as a case;
+ *     the fill column must be `-`, the buffers are laid once per case from
+ *     the case's own seeds), 25 vsf_color (one intin), 114 vr_recfl (four
+ *     ptsin inside the screen) and 129 vs_clip (one intin, four ptsin
+ *     inside the screen).  Nothing else: the whitelist is the guard.
+ *   * ask for a READBACK: a fill column of six values,
+ *
+ *       seed_a,seed_b,rx,ry,rw,rh
+ *
+ *     After the measured call the runner reads the screen rectangle
+ *     (rx,ry)-(rx+rw-1,ry+rh-1) pixel by pixel with v_get_pixel (through
+ *     its own arrays, so the record's are untouched) and stores INTOUT[1]
+ *     -- on a truecolor screen the 16-bit word itself, vdi_fill.c:1105-
+ *     1110 -- into buffer B at row * 32 + col, the layout of a 32x16
+ *     device form.  A readback is therefore compared exactly like a memory
+ *     destination, and lands in the record where buffer B always is.  rw
+ *     is at most 32 and rh at most 16, the rectangle must lie inside the
+ *     declared screen, the case must name the screen, and it may not name
+ *     buffer B (the readback would overwrite an operand or the result).
+ *
+ * A table without a `!screen` line, without `S`, without `+` lines and
+ * with two-value fill columns -- cases/vdi-raster.tsv -- parses and runs
+ * exactly as before; its CRC-bound dumps stay comparable.
  */
 #define TD_RAST_CASE_COLUMNS 7
 
-/* Which of the two buffers an MFDB addresses. */
-#define TD_RAST_BUF_A 0
-#define TD_RAST_BUF_B 1
+/* Which of the two buffers an MFDB addresses -- or the screen. */
+#define TD_RAST_BUF_A      0
+#define TD_RAST_BUF_B      1
+#define TD_RAST_BUF_SCREEN 2
+
+/* The readback lands in buffer B laid out as a 32 x 16 device form. */
+#define TD_RAST_READ_W  32
+#define TD_RAST_READ_H  16
 
 struct td_rast_mfdb {
-	int16_t buffer;                    /* TD_RAST_BUF_A / _B              */
-	int16_t w;                         /* fd_w                            */
-	int16_t h;                         /* fd_h                            */
-	int16_t wdwidth;                   /* fd_wdwidth                      */
-	int16_t stand;                     /* fd_stand                        */
-	int16_t nplanes;                   /* fd_nplanes                      */
+	int16_t buffer;                    /* TD_RAST_BUF_A / _B / _SCREEN    */
+	int16_t w;                         /* fd_w   (screen: declared w)     */
+	int16_t h;                         /* fd_h   (screen: declared h)     */
+	int16_t wdwidth;                   /* fd_wdwidth (screen: 0)          */
+	int16_t stand;                     /* fd_stand   (screen: 0)          */
+	int16_t nplanes;                   /* fd_nplanes (screen: declared)   */
+};
+
+/* The screen a table declares with `!screen`. */
+struct td_rast_screen {
+	int16_t declared;                  /* 1 once the directive was seen   */
+	int16_t w;
+	int16_t h;
+	int16_t planes;
+};
+
+/* A prelude of the raster table: one call, issued before the measured
+ * one, never recorded.  Raster preludes (109/121) carry two MFDBs. */
+struct td_rast_prelude {
+	int16_t  opcode;
+	uint16_t n_intin;
+	uint16_t n_ptsin;
+	int16_t  intin[TD_PRELUDE_VALUES];
+	int16_t  ptsin[TD_PRELUDE_VALUES];
+	struct td_rast_mfdb src;
+	struct td_rast_mfdb dst;
 };
 
 struct td_rast_case {
 	uint16_t line;                     /* physical line number = case id  */
+	uint16_t prelude_first;            /* index into the table's pool     */
+	uint16_t prelude_count;            /* calls issued before this case   */
 	int16_t  opcode;                   /* contrl[0]: 109, 110 or 121      */
 	uint16_t n_intin;                  /* values, becomes contrl[3]       */
 	uint16_t n_ptsin;                  /* values; contrl[1] = n_ptsin / 2 */
@@ -601,13 +680,18 @@ struct td_rast_case {
 	struct td_rast_mfdb dst;
 	uint16_t seed_a;                   /* buffer A fill seed              */
 	uint16_t seed_b;                   /* buffer B fill seed              */
+	int16_t  has_read;                 /* six-value fill column           */
+	int16_t  rx, ry, rw, rh;           /* the readback rectangle          */
 	char     comment[TD_COMMENT_LEN];
 };
 
 struct td_rast_case_table {
-	uint32_t            crc;           /* CRC32 over the raw file bytes   */
-	uint16_t            count;
-	struct td_rast_case cases[TD_RAST_MAX_CASES];
+	uint32_t               crc;        /* CRC32 over the raw file bytes   */
+	uint16_t               count;
+	uint16_t               prelude_count;
+	struct td_rast_screen  screen;
+	struct td_rast_case    cases[TD_RAST_MAX_CASES];
+	struct td_rast_prelude preludes[TD_MAX_PRELUDES];
 };
 
 int td_rast_cases_parse(struct td_rast_case_table *t, const char *buf,

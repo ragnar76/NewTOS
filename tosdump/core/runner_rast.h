@@ -29,4 +29,9 @@
 int td_run_raster(const struct td_rast_case_table *ct, const struct td_wk *wk,
                   uint8_t *out, size_t out_bytes);
 
+/* INQ_TAB[4] of the open workstation (vq_extnd(1), vdi_control.c:210): the
+ * plane count a table's `!screen` line is checked against before any case
+ * that names the screen may run. */
+int16_t td_rast_planes(const struct td_wk *wk);
+
 #endif /* TOSDUMP_RUNNER_RAST_H */

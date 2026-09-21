@@ -19,9 +19,13 @@
 //! name the same buffer (the in-place `vr_trnfm` cases). `seed_a`/`seed_b`
 //! lay the two pixel buffers before the call; the operand of a raster call
 //! is memory, so it has to be laid rather than poisoned
-//! (`tosdump/core/runner_rast.c`).
+//! (`tosdump/core/runner_rast.c`). A form with `buffer: 2` is the SCREEN
+//! (`fd_addr` NULL); `preludes` run after the reset and before the call and
+//! are not recorded; `read` is the screen rectangle read back into buffer B
+//! after the call (`tosdump/core/cases.h`, THE SCREEN).
 
-use crate::harness::{check, Case, Form};
+#[allow(unused_imports)]
+use crate::harness::{check, Case, Form, Prelude, Read};
 
 static DUMP: &[u8] = include_bytes!("../../../tosdump/reference/EMUTOS14-RASTER.BIN");
 
@@ -37,6 +41,8 @@ fn case_0073_op110_vr_trnfm_standard_to_device_4_planes() {
         dst: Form { buffer: 1, w: 16, h: 16, wdwidth: 1, stand: 0, nplanes: 4 },
         seed_a: 1,
         seed_b: 2,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm standard to device, 4 planes",
     });
 }
@@ -53,6 +59,8 @@ fn case_0074_op110_vr_trnfm_device_to_standard_4_planes() {
         dst: Form { buffer: 1, w: 16, h: 16, wdwidth: 1, stand: 1, nplanes: 4 },
         seed_a: 3,
         seed_b: 4,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm device to standard, 4 planes",
     });
 }
@@ -69,6 +77,8 @@ fn case_0075_op110_vr_trnfm_standard_to_device_2_planes() {
         dst: Form { buffer: 1, w: 16, h: 16, wdwidth: 1, stand: 0, nplanes: 2 },
         seed_a: 5,
         seed_b: 6,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm standard to device, 2 planes",
     });
 }
@@ -85,6 +95,8 @@ fn case_0076_op110_vr_trnfm_device_to_standard_2_planes() {
         dst: Form { buffer: 1, w: 16, h: 16, wdwidth: 1, stand: 1, nplanes: 2 },
         seed_a: 7,
         seed_b: 8,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm device to standard, 2 planes",
     });
 }
@@ -101,6 +113,8 @@ fn case_0077_op110_vr_trnfm_standard_to_device_8_planes() {
         dst: Form { buffer: 1, w: 16, h: 16, wdwidth: 1, stand: 0, nplanes: 8 },
         seed_a: 9,
         seed_b: 10,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm standard to device, 8 planes",
     });
 }
@@ -117,6 +131,8 @@ fn case_0078_op110_vr_trnfm_device_to_standard_8_planes() {
         dst: Form { buffer: 1, w: 16, h: 16, wdwidth: 1, stand: 1, nplanes: 8 },
         seed_a: 11,
         seed_b: 12,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm device to standard, 8 planes",
     });
 }
@@ -133,6 +149,8 @@ fn case_0081_op110_vr_trnfm_standard_to_device_1_plane() {
         dst: Form { buffer: 1, w: 16, h: 16, wdwidth: 1, stand: 0, nplanes: 1 },
         seed_a: 13,
         seed_b: 14,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm standard to device, 1 plane",
     });
 }
@@ -149,6 +167,8 @@ fn case_0082_op110_vr_trnfm_device_to_standard_1_plane() {
         dst: Form { buffer: 1, w: 16, h: 16, wdwidth: 1, stand: 1, nplanes: 1 },
         seed_a: 15,
         seed_b: 16,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm device to standard, 1 plane",
     });
 }
@@ -165,6 +185,8 @@ fn case_0084_op110_vr_trnfm_32x16_standard_to_device() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 17,
         seed_b: 18,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm 32x16 standard to device",
     });
 }
@@ -181,6 +203,8 @@ fn case_0085_op110_vr_trnfm_32x16_device_to_standard() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 1, nplanes: 4 },
         seed_a: 19,
         seed_b: 20,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm 32x16 device to standard",
     });
 }
@@ -197,6 +221,8 @@ fn case_0088_op110_vr_trnfm_dest_already_says_standard() {
         dst: Form { buffer: 1, w: 16, h: 16, wdwidth: 1, stand: 1, nplanes: 4 },
         seed_a: 21,
         seed_b: 22,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm dest already says standard",
     });
 }
@@ -213,6 +239,8 @@ fn case_0089_op110_vr_trnfm_dest_already_says_device() {
         dst: Form { buffer: 1, w: 16, h: 16, wdwidth: 1, stand: 0, nplanes: 4 },
         seed_a: 23,
         seed_b: 24,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm dest already says device",
     });
 }
@@ -229,6 +257,8 @@ fn case_0091_op110_vr_trnfm_in_place_4_planes_std_to_dev() {
         dst: Form { buffer: 0, w: 16, h: 16, wdwidth: 1, stand: 0, nplanes: 4 },
         seed_a: 25,
         seed_b: 26,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm in place, 4 planes, std to dev",
     });
 }
@@ -245,6 +275,8 @@ fn case_0092_op110_vr_trnfm_in_place_4_planes_dev_to_std() {
         dst: Form { buffer: 0, w: 16, h: 16, wdwidth: 1, stand: 1, nplanes: 4 },
         seed_a: 27,
         seed_b: 28,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm in place, 4 planes, dev to std",
     });
 }
@@ -261,6 +293,8 @@ fn case_0093_op110_vr_trnfm_in_place_2_planes() {
         dst: Form { buffer: 0, w: 16, h: 16, wdwidth: 1, stand: 0, nplanes: 2 },
         seed_a: 29,
         seed_b: 30,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm in place, 2 planes",
     });
 }
@@ -277,6 +311,8 @@ fn case_0096_op110_vr_trnfm_in_place_1_plane_early_return() {
         dst: Form { buffer: 0, w: 16, h: 16, wdwidth: 1, stand: 0, nplanes: 1 },
         seed_a: 31,
         seed_b: 32,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm in place, 1 plane, early return",
     });
 }
@@ -293,6 +329,8 @@ fn case_0098_op110_vr_trnfm_in_place_one_row_dev_to_std() {
         dst: Form { buffer: 0, w: 16, h: 1, wdwidth: 1, stand: 1, nplanes: 4 },
         seed_a: 33,
         seed_b: 34,
+        preludes: &[],
+        read: None,
         comment: "vr_trnfm in place, one row, dev to std",
     });
 }
@@ -309,6 +347,8 @@ fn case_0106_op109_mode_above_bit_5_is_invalid_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 40,
         seed_b: 41,
+        preludes: &[],
+        read: None,
         comment: "mode above bit 5 is invalid, no-op",
     });
 }
@@ -325,6 +365,8 @@ fn case_0107_op109_mode_0x7fff_invalid_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 42,
         seed_b: 43,
+        preludes: &[],
+        read: None,
         comment: "mode 0x7FFF invalid, no-op",
     });
 }
@@ -341,6 +383,8 @@ fn case_0108_op109_no_intin_at_all_intin_0_is_the_poison() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 44,
         seed_b: 45,
+        preludes: &[],
+        read: None,
         comment: "no intin at all: INTIN[0] is the poison",
     });
 }
@@ -357,6 +401,8 @@ fn case_0109_op109_op_5_d_only_writes_the_destination_back() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 46,
         seed_b: 47,
+        preludes: &[],
+        read: None,
         comment: "op 5 D_ONLY writes the destination back",
     });
 }
@@ -373,6 +419,8 @@ fn case_0110_op109_pat_flag_5_0x15_stripped_still_d_only() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 48,
         seed_b: 49,
+        preludes: &[],
+        read: None,
         comment: "PAT_FLAG|5 (0x15): stripped, still D_ONLY",
     });
 }
@@ -389,6 +437,8 @@ fn case_0111_op109_plane_mismatch_4_to_2_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 2 },
         seed_a: 50,
         seed_b: 51,
+        preludes: &[],
+        read: None,
         comment: "plane mismatch 4 to 2, no-op",
     });
 }
@@ -405,6 +455,8 @@ fn case_0112_op109_plane_mismatch_4_to_1_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 1 },
         seed_a: 52,
         seed_b: 53,
+        preludes: &[],
+        read: None,
         comment: "plane mismatch 4 to 1, no-op",
     });
 }
@@ -421,6 +473,8 @@ fn case_0113_op109_plane_mismatch_1_to_4_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 54,
         seed_b: 55,
+        preludes: &[],
+        read: None,
         comment: "plane mismatch 1 to 4, no-op",
     });
 }
@@ -437,6 +491,8 @@ fn case_0124_op109_op_0_all_white_d_0() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 60,
         seed_b: 61,
+        preludes: &[],
+        read: None,
         comment: "op 0 ALL_WHITE D=0",
     });
 }
@@ -453,6 +509,8 @@ fn case_0125_op109_op_1_s_and_d() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 62,
         seed_b: 63,
+        preludes: &[],
+        read: None,
         comment: "op 1 S_AND_D",
     });
 }
@@ -469,6 +527,8 @@ fn case_0126_op109_op_2_s_and_notd() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 64,
         seed_b: 65,
+        preludes: &[],
+        read: None,
         comment: "op 2 S_AND_NOTD",
     });
 }
@@ -485,6 +545,8 @@ fn case_0127_op109_op_3_s_only_replace() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 66,
         seed_b: 67,
+        preludes: &[],
+        read: None,
         comment: "op 3 S_ONLY replace",
     });
 }
@@ -501,6 +563,8 @@ fn case_0128_op109_op_4_nots_and_d() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 68,
         seed_b: 69,
+        preludes: &[],
+        read: None,
         comment: "op 4 NOTS_AND_D",
     });
 }
@@ -517,6 +581,8 @@ fn case_0129_op109_op_5_d_only() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 70,
         seed_b: 71,
+        preludes: &[],
+        read: None,
         comment: "op 5 D_ONLY",
     });
 }
@@ -533,6 +599,8 @@ fn case_0130_op109_op_6_s_xor_d() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 72,
         seed_b: 73,
+        preludes: &[],
+        read: None,
         comment: "op 6 S_XOR_D",
     });
 }
@@ -549,6 +617,8 @@ fn case_0131_op109_op_7_s_or_d() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 74,
         seed_b: 75,
+        preludes: &[],
+        read: None,
         comment: "op 7 S_OR_D",
     });
 }
@@ -565,6 +635,8 @@ fn case_0132_op109_op_8_not_sord() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 76,
         seed_b: 77,
+        preludes: &[],
+        read: None,
         comment: "op 8 NOT_SORD",
     });
 }
@@ -581,6 +653,8 @@ fn case_0133_op109_op_9_not_sxord() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 78,
         seed_b: 79,
+        preludes: &[],
+        read: None,
         comment: "op 9 NOT_SXORD",
     });
 }
@@ -597,6 +671,8 @@ fn case_0134_op109_op_10_not_d() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 80,
         seed_b: 81,
+        preludes: &[],
+        read: None,
         comment: "op 10 NOT_D",
     });
 }
@@ -613,6 +689,8 @@ fn case_0135_op109_op_11_s_or_notd() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 82,
         seed_b: 83,
+        preludes: &[],
+        read: None,
         comment: "op 11 S_OR_NOTD",
     });
 }
@@ -629,6 +707,8 @@ fn case_0136_op109_op_12_not_s() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 84,
         seed_b: 85,
+        preludes: &[],
+        read: None,
         comment: "op 12 NOT_S",
     });
 }
@@ -645,6 +725,8 @@ fn case_0137_op109_op_13_nots_or_d() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 86,
         seed_b: 87,
+        preludes: &[],
+        read: None,
         comment: "op 13 NOTS_OR_D",
     });
 }
@@ -661,6 +743,8 @@ fn case_0138_op109_op_14_not_sandd() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 88,
         seed_b: 89,
+        preludes: &[],
+        read: None,
         comment: "op 14 NOT_SANDD",
     });
 }
@@ -677,6 +761,8 @@ fn case_0139_op109_op_15_all_black_d_1() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 90,
         seed_b: 91,
+        preludes: &[],
+        read: None,
         comment: "op 15 ALL_BLACK D=1",
     });
 }
@@ -693,6 +779,8 @@ fn case_0144_op109_pat_flag_3_on_the_16_bit_path() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 92,
         seed_b: 93,
+        preludes: &[],
+        read: None,
         comment: "PAT_FLAG|3 on the 16-bit path",
     });
 }
@@ -709,6 +797,8 @@ fn case_0146_op109_one_pixel_a_degenerate_rectangle() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 94,
         seed_b: 95,
+        preludes: &[],
+        read: None,
         comment: "one pixel, a degenerate rectangle",
     });
 }
@@ -725,6 +815,8 @@ fn case_0147_op109_reversed_source_corners_arb_corner_sorts() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 96,
         seed_b: 97,
+        preludes: &[],
+        read: None,
         comment: "reversed source corners: arb_corner sorts",
     });
 }
@@ -741,6 +833,8 @@ fn case_0148_op109_reversed_destination_corners() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 98,
         seed_b: 99,
+        preludes: &[],
+        read: None,
         comment: "reversed destination corners",
     });
 }
@@ -757,6 +851,8 @@ fn case_0149_op109_a_rectangle_at_the_far_corner_of_the_form() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 100,
         seed_b: 101,
+        preludes: &[],
+        read: None,
         comment: "a rectangle at the far corner of the form",
     });
 }
@@ -773,6 +869,8 @@ fn case_0150_op109_the_whole_form() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 102,
         seed_b: 103,
+        preludes: &[],
+        read: None,
         comment: "the whole form",
     });
 }
@@ -789,6 +887,8 @@ fn case_0157_op109_ptsin_6_7_too_big_the_extent_is_the_source_s() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 104,
         seed_b: 105,
+        preludes: &[],
+        read: None,
         comment: "PTSIN[6..7] too big: the extent is the source's",
     });
 }
@@ -805,6 +905,8 @@ fn case_0164_op109_overlap_destination_down_and_right() {
         dst: Form { buffer: 0, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 106,
         seed_b: 107,
+        preludes: &[],
+        read: None,
         comment: "overlap, destination down and right",
     });
 }
@@ -821,6 +923,8 @@ fn case_0165_op109_overlap_destination_up_and_left() {
         dst: Form { buffer: 0, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 108,
         seed_b: 109,
+        preludes: &[],
+        read: None,
         comment: "overlap, destination up and left",
     });
 }
@@ -837,6 +941,8 @@ fn case_0166_op109_xor_inside_one_buffer_no_overlap() {
         dst: Form { buffer: 0, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 16 },
         seed_a: 110,
         seed_b: 111,
+        preludes: &[],
+        read: None,
         comment: "XOR inside one buffer, no overlap",
     });
 }
@@ -853,6 +959,8 @@ fn case_0174_op121_mode_above_bit_5_is_invalid_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 120,
         seed_b: 121,
+        preludes: &[],
+        read: None,
         comment: "mode above bit 5 is invalid, no-op",
     });
 }
@@ -869,6 +977,8 @@ fn case_0175_op121_mode_0_is_not_an_md_code_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 122,
         seed_b: 123,
+        preludes: &[],
+        read: None,
         comment: "mode 0 is not an MD_ code, no-op",
     });
 }
@@ -885,6 +995,8 @@ fn case_0176_op121_mode_5_is_not_an_md_code_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 124,
         seed_b: 125,
+        preludes: &[],
+        read: None,
         comment: "mode 5 is not an MD_ code, no-op",
     });
 }
@@ -901,6 +1013,8 @@ fn case_0177_op121_no_intin_at_all_intin_0_is_the_poison() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 126,
         seed_b: 127,
+        preludes: &[],
+        read: None,
         comment: "no intin at all: INTIN[0] is the poison",
     });
 }
@@ -917,6 +1031,8 @@ fn case_0178_op121_pat_flag_5_0x15_stripped_still_no_md_code() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 128,
         seed_b: 129,
+        preludes: &[],
+        read: None,
         comment: "PAT_FLAG|5 (0x15): stripped, still no MD_ code",
     });
 }
@@ -933,6 +1049,8 @@ fn case_0179_op121_source_is_4_planes_not_mono_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 130,
         seed_b: 131,
+        preludes: &[],
+        read: None,
         comment: "source is 4 planes, not mono: no-op",
     });
 }
@@ -949,6 +1067,8 @@ fn case_0180_op121_source_is_2_planes_not_mono_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 132,
         seed_b: 133,
+        preludes: &[],
+        read: None,
         comment: "source is 2 planes, not mono: no-op",
     });
 }
@@ -965,6 +1085,8 @@ fn case_0181_op121_source_is_8_planes_not_mono_no_op() {
         dst: Form { buffer: 1, w: 32, h: 16, wdwidth: 2, stand: 0, nplanes: 4 },
         seed_a: 134,
         seed_b: 135,
+        preludes: &[],
+        read: None,
         comment: "source is 8 planes, not mono: no-op",
     });
 }

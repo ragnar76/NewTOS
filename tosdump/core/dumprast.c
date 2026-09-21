@@ -110,6 +110,28 @@ int main(int argc, char **argv)
 	for (i = 0; i < TD_WORK_PTS_N; i++)
 		td_log("%d%s", wk.work_pts[i], i + 1 < TD_WORK_PTS_N ? "," : "\n");
 
+	/* A table that names the screen declared the screen it is written
+	 * for (cases.h, THE SCREEN).  Refuse the whole run -- nothing measured
+	 * -- unless this workstation is at least that big and exactly that
+	 * deep: a rectangle past the end of video memory would scribble over
+	 * the machine, and a readback at another depth would not be the word
+	 * the table expects. */
+	if (table.screen.declared) {
+		int16_t planes = td_rast_planes(&wk);
+
+		td_log("table declares screen %dx%d at %d planes; workstation "
+		       "reports %dx%d at %d planes\n", table.screen.w,
+		       table.screen.h, table.screen.planes, wk.work_out[0] + 1,
+		       wk.work_out[1] + 1, planes);
+		if (wk.work_out[0] + 1 < table.screen.w ||
+		    wk.work_out[1] + 1 < table.screen.h ||
+		    planes != table.screen.planes) {
+			td_log("screen mismatch: refusing to run the table\n");
+			td_gem_close(&wk);
+			return finish(1);
+		}
+	}
+
 	/* Written before the first case: a run that hangs still leaves this. */
 	td_log("running %u cases\n", table.count);
 	td_log_write(log_path);

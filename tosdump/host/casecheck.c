@@ -175,6 +175,11 @@ static int check_aes(const char *path, long ap_version)
 
 static void print_mfdb(const char *name, const struct td_rast_mfdb *m)
 {
+	if (m->buffer == TD_RAST_BUF_SCREEN) {
+		printf("      %s the screen (fd_addr NULL), declared %dx%d at %d "
+		       "planes\n", name, m->w, m->h, m->nplanes);
+		return;
+	}
 	printf("      %s buffer %c  fd_w %d fd_h %d fd_wdwidth %d fd_stand %d "
 	       "fd_nplanes %d\n",
 	       name, m->buffer == TD_RAST_BUF_B ? 'B' : 'A',
@@ -196,9 +201,26 @@ static int check_raster(const char *path)
 
 	printf("%s: %u cases, CRC %08X\n", path, rast_table.count,
 	       rast_table.crc);
+	if (rast_table.screen.declared)
+		printf("  !screen %dx%d at %d planes, %u preludes\n",
+		       rast_table.screen.w, rast_table.screen.h,
+		       rast_table.screen.planes, rast_table.prelude_count);
 	for (i = 0; i < rast_table.count; i++) {
 		const struct td_rast_case *c = &rast_table.cases[i];
+		uint16_t j;
 
+		for (j = 0; j < c->prelude_count; j++) {
+			const struct td_rast_prelude *p =
+				&rast_table.preludes[c->prelude_first + j];
+
+			printf("  prelude opcode %d\n", p->opcode);
+			print_list("intin", p->intin, p->n_intin);
+			print_list("ptsin", p->ptsin, p->n_ptsin);
+			if (p->opcode == 109 || p->opcode == 121) {
+				print_mfdb("src", &p->src);
+				print_mfdb("dst", &p->dst);
+			}
+		}
 		printf("  case %u  opcode %d  contrl[1]=%u contrl[3]=%u  %s\n",
 		       c->line, c->opcode, c->n_ptsin / 2, c->n_intin, c->comment);
 		print_list("intin", c->intin, c->n_intin);
@@ -206,6 +228,9 @@ static int check_raster(const char *path)
 		print_mfdb("src", &c->src);
 		print_mfdb("dst", &c->dst);
 		printf("      fill  A seed %u, B seed %u\n", c->seed_a, c->seed_b);
+		if (c->has_read)
+			printf("      readback (%d,%d) %dx%d into buffer B\n",
+			       c->rx, c->ry, c->rw, c->rh);
 	}
 	return 0;
 }

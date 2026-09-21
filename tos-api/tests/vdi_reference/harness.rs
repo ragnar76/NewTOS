@@ -87,6 +87,76 @@ const VIDEL_PALETTE1: [(u16, u16, u16); 16] = [
     (0, 0, 667),        (0, 667, 667),   (667, 667, 0),   (667, 0, 667),
 ];
 
+/// EmuTOS' `videl_palette2` (`vdi/vdi_col.c:137-199`), the Falcon default
+/// for pens 16..255, transcribed from the pinned source so that the double
+/// seeds every pen the kernel's backend seeds (`kernel/src/vdi_backend.rs`,
+/// `VIDEL_PALETTE2`). Until 2026-09-21 pens 16..255 read (0,0,0) here, and
+/// the screen raster table's case H10 (pens 255/16) showed it as a harness
+/// difference the QEMU run did not have.
+#[rustfmt::skip]
+const VIDEL_PALETTE2: [(u16, u16, u16); 240] = [
+    (1000, 1000, 1000), (933, 933, 933), (867, 867, 867), (800, 800, 800),
+    (733, 733, 733), (667, 667, 667), (600, 600, 600), (533, 533, 533),
+    (467, 467, 467), (400, 400, 400), (333, 333, 333), (267, 267, 267),
+    (200, 200, 200), (133, 133, 133), (67, 67, 67), (0, 0, 0),
+    (1000, 0, 0), (1000, 0, 67), (1000, 0, 133), (1000, 0, 200),
+    (1000, 0, 267), (1000, 0, 333), (1000, 0, 400), (1000, 0, 467),
+    (1000, 0, 533), (1000, 0, 600), (1000, 0, 667), (1000, 0, 733),
+    (1000, 0, 800), (1000, 0, 867), (1000, 0, 933), (1000, 0, 1000),
+    (933, 0, 1000), (867, 0, 1000), (800, 0, 1000), (733, 0, 1000),
+    (667, 0, 1000), (600, 0, 1000), (533, 0, 1000), (467, 0, 1000),
+    (400, 0, 1000), (333, 0, 1000), (267, 0, 1000), (200, 0, 1000),
+    (133, 0, 1000), (67, 0, 1000), (0, 0, 1000), (0, 67, 1000),
+    (0, 133, 1000), (0, 200, 1000), (0, 267, 1000), (0, 333, 1000),
+    (0, 400, 1000), (0, 467, 1000), (0, 533, 1000), (0, 600, 1000),
+    (0, 667, 1000), (0, 733, 1000), (0, 800, 1000), (0, 867, 1000),
+    (0, 933, 1000), (0, 1000, 1000), (0, 1000, 933), (0, 1000, 867),
+    (0, 1000, 800), (0, 1000, 733), (0, 1000, 667), (0, 1000, 600),
+    (0, 1000, 533), (0, 1000, 467), (0, 1000, 400), (0, 1000, 333),
+    (0, 1000, 267), (0, 1000, 200), (0, 1000, 133), (0, 1000, 67),
+    (0, 1000, 0), (67, 1000, 0), (133, 1000, 0), (200, 1000, 0),
+    (267, 1000, 0), (333, 1000, 0), (400, 1000, 0), (467, 1000, 0),
+    (533, 1000, 0), (600, 1000, 0), (667, 1000, 0), (733, 1000, 0),
+    (800, 1000, 0), (867, 1000, 0), (933, 1000, 0), (1000, 1000, 0),
+    (1000, 933, 0), (1000, 867, 0), (1000, 800, 0), (1000, 733, 0),
+    (1000, 667, 0), (1000, 600, 0), (1000, 533, 0), (1000, 467, 0),
+    (1000, 400, 0), (1000, 333, 0), (1000, 267, 0), (1000, 200, 0),
+    (1000, 133, 0), (1000, 67, 0), (733, 0, 0), (733, 0, 67),
+    (733, 0, 133), (733, 0, 200), (733, 0, 267), (733, 0, 333),
+    (733, 0, 400), (733, 0, 467), (733, 0, 533), (733, 0, 600),
+    (733, 0, 667), (733, 0, 733), (667, 0, 733), (600, 0, 733),
+    (533, 0, 733), (467, 0, 733), (400, 0, 733), (333, 0, 733),
+    (267, 0, 733), (200, 0, 733), (133, 0, 733), (67, 0, 733),
+    (0, 0, 733), (0, 67, 733), (0, 133, 733), (0, 200, 733),
+    (0, 267, 733), (0, 333, 733), (0, 400, 733), (0, 467, 733),
+    (0, 533, 733), (0, 600, 733), (0, 667, 733), (0, 733, 733),
+    (0, 733, 667), (0, 733, 600), (0, 733, 533), (0, 733, 467),
+    (0, 733, 400), (0, 733, 333), (0, 733, 267), (0, 733, 200),
+    (0, 733, 133), (0, 733, 67), (0, 733, 0), (67, 733, 0),
+    (133, 733, 0), (200, 733, 0), (267, 733, 0), (333, 733, 0),
+    (400, 733, 0), (467, 733, 0), (533, 733, 0), (600, 733, 0),
+    (667, 733, 0), (733, 733, 0), (733, 667, 0), (733, 600, 0),
+    (733, 533, 0), (733, 467, 0), (733, 400, 0), (733, 333, 0),
+    (733, 267, 0), (733, 200, 0), (733, 133, 0), (733, 67, 0),
+    (467, 0, 0), (467, 0, 67), (467, 0, 133), (467, 0, 200),
+    (467, 0, 267), (467, 0, 333), (467, 0, 400), (467, 0, 467),
+    (400, 0, 467), (333, 0, 467), (267, 0, 467), (200, 0, 467),
+    (133, 0, 467), (67, 0, 467), (0, 0, 467), (0, 67, 467),
+    (0, 133, 467), (0, 200, 467), (0, 267, 467), (0, 333, 467),
+    (0, 400, 467), (0, 467, 467), (0, 467, 400), (0, 467, 333),
+    (0, 467, 267), (0, 467, 200), (0, 467, 133), (0, 467, 67),
+    (0, 467, 0), (67, 467, 0), (133, 467, 0), (200, 467, 0),
+    (267, 467, 0), (333, 467, 0), (400, 467, 0), (467, 467, 0),
+    (467, 400, 0), (467, 333, 0), (467, 267, 0), (467, 200, 0),
+    (467, 133, 0), (467, 67, 0), (267, 0, 0), (267, 0, 67),
+    (267, 0, 133), (267, 0, 200), (267, 0, 267), (200, 0, 267),
+    (133, 0, 267), (67, 0, 267), (0, 0, 267), (0, 67, 267),
+    (0, 133, 267), (0, 200, 267), (0, 267, 267), (0, 267, 200),
+    (0, 267, 133), (0, 267, 67), (0, 267, 0), (67, 267, 0),
+    (133, 267, 0), (200, 267, 0), (267, 267, 0), (267, 200, 0),
+    (267, 133, 0), (267, 67, 0), (1000, 1000, 1000), (0, 0, 0),
+];
+
 impl MemBackend {
     /// The 16-bit screen word at `(x, y)`, read straight out of the pixel
     /// vector and converted here rather than through
@@ -119,6 +189,7 @@ impl MemBackend {
     fn new() -> Self {
         let mut req = [(0u16, 0u16, 0u16); 256];
         req[..16].copy_from_slice(&VIDEL_PALETTE1);
+        req[16..].copy_from_slice(&VIDEL_PALETTE2);
         MemBackend {
             px: Mutex::new(vec![0; SCREEN_W as usize * SCREEN_H as usize]),
             palette: Mutex::new([0; 256]),
@@ -305,7 +376,15 @@ impl RasterBackend for MemBackend {
         }
     }
 
-    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, _m: WriteMode, clip: ClipRect) {
+    /// The four `MD_*` write modes as the kernel's `combine` applies them
+    /// (`kernel/src/vdi_backend.rs`): `Replace` fg on set bits and bg on
+    /// clear bits, `Transparent` fg on set bits only, `Xor` complements the
+    /// whole stored word on set bits (`xor_pixel`, `!v`), `RevTransparent`
+    /// (`MD_ERASE`) bg on clear bits only. Until 2026-09-21 this double
+    /// painted every mode as `Replace` and could not see a mode defect;
+    /// the screen raster table (`vdi-raster-screen.tsv`, section H) is what
+    /// made the modes measurable.
+    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, mode: WriteMode, clip: ClipRect) {
         let f = self.rgb565_to_device(self.pel_to_device16(fg));
         let b = self.rgb565_to_device(self.pel_to_device16(bg));
         for row in 0..dst.h {
@@ -314,13 +393,43 @@ impl RasterBackend for MemBackend {
                 let sy = src.y + row;
                 let wi = (sy as usize) * src.stride_words as usize + (sx as usize) / 16;
                 let w = src.bits.word(wi).unwrap_or(0);
-                let bit = w & (0x8000u16 >> (sx.rem_euclid(16)) as u16);
-                self.put(dst.x + col, dst.y + row, if bit != 0 { f } else { b }, clip);
+                let set = w & (0x8000u16 >> (sx.rem_euclid(16)) as u16) != 0;
+                let (x, y) = (dst.x + col, dst.y + row);
+                match mode {
+                    WriteMode::Replace => self.put(x, y, if set { f } else { b }, clip),
+                    WriteMode::Transparent => {
+                        if set {
+                            self.put(x, y, f, clip);
+                        }
+                    }
+                    WriteMode::Xor => {
+                        if set {
+                            let v = self.get_device_pixel(x, y);
+                            self.put(x, y, !v, clip);
+                        }
+                    }
+                    WriteMode::RevTransparent => {
+                        if !set {
+                            self.put(x, y, b, clip);
+                        }
+                    }
+                }
             }
         }
     }
 
-    fn copy_rect(&self, src: Rect, dx: i16, dy: i16, _op: u8, clip: ClipRect) {
+    /// Screen→screen copy with the logic op applied on the stored word
+    /// (EmuTOS `vro_cpyfm16` acts on the `UWORD` pixel; the kernel's
+    /// `copy_rect` applies the same table to the 32-bit expansion, which
+    /// is the same operation because the expansion is bitwise). The source
+    /// is snapshotted first: for the direction EmuTOS chooses, every source
+    /// pixel is read before the copy overwrites it, so a snapshot and the
+    /// in-place walk produce the same picture — the screen raster table's
+    /// section G measured that on the Falcon. `D_ONLY` touches nothing.
+    fn copy_rect(&self, src: Rect, dx: i16, dy: i16, op: u8, clip: ClipRect) {
+        if op & 0x0f == 5 {
+            return;
+        }
         let mut tmp = Vec::with_capacity((src.w as usize) * (src.h as usize));
         {
             let px = self.px.lock().unwrap();
@@ -333,8 +442,11 @@ impl RasterBackend for MemBackend {
         }
         for row in 0..src.h {
             for col in 0..src.w {
-                let v = tmp[(row as usize) * (src.w as usize) + col as usize];
-                self.put(dx + col, dy + row, v, clip);
+                let (x, y) = (dx + col, dy + row);
+                let s = self.device_to_rgb565(tmp[(row as usize) * (src.w as usize) + col as usize]);
+                let d = self.device_to_rgb565(self.get_device_pixel(x, y));
+                let v = self.rgb565_to_device(raster_op16(op, s, d));
+                self.put(x, y, v, clip);
             }
         }
     }
@@ -352,6 +464,30 @@ impl RasterBackend for MemBackend {
         }
     }
     fn flush_rect(&self, _x0: i16, _y0: i16, _x1: i16, _y1: i16) {}
+}
+
+/// The 16-entry BitBlt table on 16-bit words, `D' = op(S, D)`, as EmuTOS
+/// `vro_cpyfm16` applies it (`vdi_raster.c:1008-1220`). Stated here in the
+/// double rather than imported from the code under test.
+pub fn raster_op16(op: u8, s: u16, d: u16) -> u16 {
+    match op & 0x0f {
+        0 => 0,
+        1 => s & d,
+        2 => s & !d,
+        3 => s,
+        4 => !s & d,
+        5 => d,
+        6 => s ^ d,
+        7 => s | d,
+        8 => !(s | d),
+        9 => !(s ^ d),
+        10 => !d,
+        11 => s | !d,
+        12 => !s,
+        13 => !s | d,
+        14 => !(s & d),
+        _ => !0,
+    }
 }
 
 // ── the host ─────────────────────────────────────────────────────────────

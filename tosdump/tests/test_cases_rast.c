@@ -193,19 +193,24 @@ static void test_misc_guard(void)
 	/* six columns */
 	TD_CHECK_EQ(parse("110\t-\t-\t" FORM_A "\t" FORM_B "\t1,2\n", &err),
 	            TD_CASE_ERR_COLUMNS);
-	/* the fill column is two seeds */
+	/* the fill column is two seeds -- or two seeds and a readback
+	 * rectangle, six values; anything else is refused */
 	REJECT(TD_CASE_ERR_COLUMNS, "110", "-", "-", FORM_A, FORM_B, "1");
+	REJECT(TD_CASE_ERR_COLUMNS, "110", "-", "-", FORM_A, FORM_B, "1,2,3");
 	REJECT(TD_CASE_ERR_TOO_MANY_VALUES, "110", "-", "-", FORM_A, FORM_B,
-	       "1,2,3");
+	       "1,2,3,4,5,6,7");
 	/* "-" is an empty list, which is not two seeds */
 	REJECT(TD_CASE_ERR_COLUMNS, "110", "-", "-", FORM_A, FORM_B, "-");
 
-	/* a prelude is refused rather than mis-parsed: host/casefile.c skips
-	 * such a line and the runner would not, and the two must agree on
-	 * which physical line carries which case id */
+	/* a vr_trnfm prelude is refused: only the whitelist of cases.h (THE
+	 * SCREEN) may precede a case, and 110 is not on it */
 	TD_CHECK_EQ(parse("+110\t-\t-\t" FORM_A "\t" FORM_B "\t1,2\tp\n"
 	                  "110\t-\t-\t" FORM_A "\t" FORM_B "\t1,2\tc\n", &err),
 	            TD_CASE_ERR_UNSAFE_OPCODE);
+	TD_CHECK_EQ(err.line, 1);
+	/* and the screen, S, cannot be named without a !screen line */
+	TD_CHECK_EQ(parse("109\t3\t0,0,7,7,0,0,7,7\tS\t" FORM_B "\t1,2\tc\n",
+	                  &err), TD_CASE_ERR_GEOMETRY);
 	TD_CHECK_EQ(err.line, 1);
 
 	/* hex spellings reach the arrays as the same bits */
@@ -217,6 +222,164 @@ static void test_misc_guard(void)
 	 * vr_trnfm cases are stated */
 	ACCEPT("110", "-", "-", FORM_A, "0,32,16,2,0,4", "1,2");
 	TD_CHECK_EQ(t.cases[0].src.buffer, t.cases[0].dst.buffer);
+}
+
+/*
+ * The screen (cases.h, THE SCREEN): the !screen directive, S as an MFDB,
+ * the prelude whitelist and the readback -- and the guard on each.
+ */
+#define SCREEN "!screen\t640,480,16\n"
+#define MEM16  "0,32,16,2,0,16"
+#define MONO   "0,32,16,2,0,1"
+
+static int parse2(const char *head, const char *line, struct td_case_error *e)
+{
+	char buf[1024];
+
+	snprintf(buf, sizeof buf, "%s%s", head, line);
+	return parse(buf, e);
+}
+
+static void test_screen_rules(void)
+{
+	struct td_case_error err;
+
+	printf("the screen: directive, S, preludes, readback\n");
+
+	/* a well formed screen table: screen -> memory, memory -> screen with
+	 * a readback, a pattern prelude and a screen -> screen copy */
+	TD_CHECK_EQ(parse2(SCREEN,
+		"109\t3\t0,0,31,15,0,0,31,15\tS\t1,32,16,2,0,16\t1,2\ts to m\n"
+		"109\t3\t0,0,31,15,100,60,131,75\t" MEM16 "\tS\t3,4,100,60,32,16\tm to s\n"
+		"+25\t2\t-\t-\t-\t-\tpen 2\n"
+		"+114\t-\t100,60,131,75\t-\t-\t-\tfill\n"
+		"+129\t1\t0,0,639,479\t-\t-\t-\tclip\n"
+		"+109\t3\t0,0,31,15,100,60,131,75\t" MEM16 "\tS\t-\tpattern\n"
+		"+121\t1,1,0\t0,0,31,15,100,60,131,75\t" MONO "\tS\t-\tmono\n"
+		"109\t3\t100,60,115,67,108,64,123,71\tS\tS\t5,6,100,60,32,16\ts to s\n",
+		&err), 0);
+	TD_CHECK_EQ(t.count, 3);
+	TD_CHECK_EQ(t.screen.declared, 1);
+	TD_CHECK_EQ(t.screen.w, 640);
+	TD_CHECK_EQ(t.screen.h, 480);
+	TD_CHECK_EQ(t.screen.planes, 16);
+	/* case ids: the directive consumes line 1 */
+	TD_CHECK_EQ(t.cases[0].line, 2);
+	TD_CHECK_EQ(t.cases[1].line, 3);
+	TD_CHECK_EQ(t.cases[2].line, 9);
+	TD_CHECK_EQ(t.cases[0].src.buffer, TD_RAST_BUF_SCREEN);
+	TD_CHECK_EQ(t.cases[0].src.w, 640);
+	TD_CHECK_EQ(t.cases[0].src.h, 480);
+	TD_CHECK_EQ(t.cases[0].src.nplanes, 16);
+	TD_CHECK_EQ(t.cases[0].has_read, 0);
+	TD_CHECK_EQ(t.cases[1].has_read, 1);
+	TD_CHECK_EQ(t.cases[1].rx, 100);
+	TD_CHECK_EQ(t.cases[1].ry, 60);
+	TD_CHECK_EQ(t.cases[1].rw, 32);
+	TD_CHECK_EQ(t.cases[1].rh, 16);
+	TD_CHECK_EQ(t.cases[1].seed_a, 3);
+	TD_CHECK_EQ(t.cases[1].seed_b, 4);
+	TD_CHECK_EQ(t.cases[1].prelude_count, 0);
+	TD_CHECK_EQ(t.cases[2].prelude_first, 0);
+	TD_CHECK_EQ(t.cases[2].prelude_count, 5);
+	TD_CHECK_EQ(t.prelude_count, 5);
+	TD_CHECK_EQ(t.preludes[0].opcode, 25);
+	TD_CHECK_EQ(t.preludes[0].intin[0], 2);
+	TD_CHECK_EQ(t.preludes[1].opcode, 114);
+	TD_CHECK_EQ(t.preludes[1].n_ptsin, 4);
+	TD_CHECK_EQ(t.preludes[2].opcode, 129);
+	TD_CHECK_EQ(t.preludes[3].opcode, 109);
+	TD_CHECK_EQ(t.preludes[3].src.buffer, TD_RAST_BUF_A);
+	TD_CHECK_EQ(t.preludes[3].dst.buffer, TD_RAST_BUF_SCREEN);
+	TD_CHECK_EQ(t.preludes[4].opcode, 121);
+	TD_CHECK_EQ(t.preludes[4].n_intin, 3);
+	TD_CHECK(strcmp(t.cases[2].comment, "s to s") == 0);
+
+	/* the directive: once, before the first case, three sane values */
+	TD_CHECK_EQ(parse(SCREEN SCREEN, &err), TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(err.line, 2);
+	TD_CHECK_EQ(parse2("110\t-\t-\t" FORM_A "\t" FORM_B "\t1,2\tc\n",
+	                   SCREEN, &err), TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(err.line, 2);
+	TD_CHECK_EQ(parse("!screen\t640,480\n", &err), TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(parse("!screen\t640,480,17\n", &err), TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(parse("!screen\t0,480,16\n", &err), TD_CASE_ERR_DIRECTIVE);
+	TD_CHECK_EQ(parse("!other\t1\n", &err), TD_CASE_ERR_DIRECTIVE);
+	/* the old table's contract: no directive, no screen, nothing changes */
+	TD_CHECK_EQ(parse("110\t-\t-\t" FORM_A "\t" FORM_B "\t1,2\tc\n", &err), 0);
+	TD_CHECK_EQ(t.screen.declared, 0);
+
+	/* S: the rectangle guard uses the declared extent */
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t0,0,31,15,620,470,651,485\t" MEM16
+	                   "\tS\t1,2\tc\n", &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t0,0,31,15,608,464,639,479\t" MEM16
+	                   "\tS\t1,2\tc\n", &err), 0);
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t620,470,651,485,0,0,31,15\tS\t"
+	                   "1,32,16,2,0,16\t1,2\tc\n", &err), TD_CASE_ERR_GEOMETRY);
+	/* vr_trnfm may not name the screen */
+	TD_CHECK_EQ(parse2(SCREEN, "110\t-\t-\tS\t" FORM_B "\t1,2\tc\n", &err),
+	            TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "110\t-\t-\t" FORM_A "\tS\t1,2\tc\n", &err),
+	            TD_CASE_ERR_GEOMETRY);
+	/* the buffer field 2 is not a spelling of the screen */
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t0,0,7,7,0,0,7,7\t2,640,480,40,0,16\t"
+	                   FORM_B "\t1,2\tc\n", &err), TD_CASE_ERR_GEOMETRY);
+
+	/* preludes: the whitelist, the shapes, the rectangles */
+	TD_CHECK_EQ(parse2(SCREEN, "+3\t-\t-\t-\t-\t-\tclrwk\n"
+	                   "109\t3\t0,0,7,7,0,0,7,7\tS\t" FORM_B "\t1,2\tc\n",
+	                   &err), TD_CASE_ERR_UNSAFE_OPCODE);
+	TD_CHECK_EQ(err.line, 2);
+	TD_CHECK_EQ(parse2(SCREEN, "+25\t2\t-\t-\t-\t1,2\tfill given\n"
+	                   "109\t3\t0,0,7,7,0,0,7,7\tS\t" FORM_B "\t1,2\tc\n",
+	                   &err), TD_CASE_ERR_COLUMNS);
+	TD_CHECK_EQ(parse2(SCREEN, "+25\t2\t-\t" MEM16 "\t-\t-\tmfdb given\n"
+	                   "109\t3\t0,0,7,7,0,0,7,7\tS\t" FORM_B "\t1,2\tc\n",
+	                   &err), TD_CASE_ERR_COLUMNS);
+	TD_CHECK_EQ(parse2(SCREEN, "+25\t2,3\t-\t-\t-\t-\ttwo intin\n"
+	                   "109\t3\t0,0,7,7,0,0,7,7\tS\t" FORM_B "\t1,2\tc\n",
+	                   &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "+114\t-\t600,400,700,500\t-\t-\t-\toff\n"
+	                   "109\t3\t0,0,7,7,0,0,7,7\tS\t" FORM_B "\t1,2\tc\n",
+	                   &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "+129\t2\t0,0,10,10\t-\t-\t-\tflag 2\n"
+	                   "109\t3\t0,0,7,7,0,0,7,7\tS\t" FORM_B "\t1,2\tc\n",
+	                   &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "+109\t3\t0,0,31,15,620,470,651,485\t" MEM16
+	                   "\tS\t-\toff screen\n"
+	                   "109\t3\t0,0,7,7,0,0,7,7\tS\t" FORM_B "\t1,2\tc\n",
+	                   &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "+114\t-\t0,0,10,10\t-\t-\t-\tdangling\n",
+	                   &err), TD_CASE_ERR_DANGLING);
+	TD_CHECK_EQ(err.line, 2);
+	/* without !screen, vr_recfl has no extent to be checked against */
+	TD_CHECK_EQ(parse("+114\t-\t0,0,10,10\t-\t-\t-\tno screen\n"
+	                  "110\t-\t-\t" FORM_A "\t" FORM_B "\t1,2\tc\n", &err),
+	            TD_CASE_ERR_GEOMETRY);
+
+	/* the readback: needs the screen in the case, keeps B free, fits */
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t0,0,7,7,0,0,7,7\t" FORM_A "\t"
+	                   FORM_B "\t1,2,0,0,8,8\tno screen operand\n", &err),
+	            TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t0,0,7,7,0,0,7,7\tS\t"
+	                   FORM_B "\t1,2,0,0,8,8\tB named\n", &err),
+	            TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t0,0,7,7,0,0,7,7\t" FORM_A "\tS\t"
+	                   "1,2,0,0,33,8\ttoo wide\n", &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t0,0,7,7,0,0,7,7\t" FORM_A "\tS\t"
+	                   "1,2,0,0,8,17\ttoo high\n", &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t0,0,7,7,0,0,7,7\t" FORM_A "\tS\t"
+	                   "1,2,620,470,32,16\toff screen\n", &err),
+	            TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t0,0,7,7,0,0,7,7\t" FORM_A "\tS\t"
+	                   "1,2,0,0,0,8\tempty\n", &err), TD_CASE_ERR_GEOMETRY);
+	TD_CHECK_EQ(parse2(SCREEN, "109\t3\t0,0,7,7,0,0,7,7\t" FORM_A "\tS\t"
+	                   "1,2,608,464,32,16\tlast pixel\n", &err), 0);
+	TD_CHECK_EQ(t.cases[0].has_read, 1);
+	/* a readback without a directive has no screen to read */
+	TD_CHECK_EQ(parse("109\t3\t0,0,7,7,0,0,7,7\t" FORM_A "\t" FORM_B
+	                  "\t1,2,0,0,8,8\tno directive\n", &err),
+	            TD_CASE_ERR_GEOMETRY);
 }
 
 /*
@@ -266,6 +429,7 @@ int main(void)
 	test_mfdb_guard();
 	test_rect_guard();
 	test_misc_guard();
+	test_screen_rules();
 	test_shipped_table();
 	return TD_TEST_RESULT();
 }

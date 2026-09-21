@@ -28,13 +28,31 @@
 //! nine planes is not comparable — the TT interleaves planes, NewTOS stores
 //! one RGB565 word per pixel — so no case in the table asks for it.
 //!
-//! **The screen is never an operand.** Both MFDBs of every case name one of
-//! the two 512-WORD buffers this harness owns. Nothing here reads or writes
-//! the workstation's screen, so the backend's geometry is not load-bearing;
-//! it only has to exist, because `v_opnvwk` and the per-case reset go through
-//! it. That is why this file reuses the `vdi_reference` harness's backend,
-//! host, workstation and reset verbatim rather than keeping a second copy of
-//! them that could drift.
+//! **The screen as an operand (2026-09-21).** `tosdump/cases/vdi-raster.tsv`
+//! never names the screen, so for it the backend's geometry is not
+//! load-bearing. `tosdump/cases/vdi-raster-screen.tsv` does — its reference
+//! is EmuTOS 1.4 on a Falcon030 in VIDEL truecolor (Hatari, 640×480, 16
+//! planes, `tosdump/reference/EMUTOS14-RASTER-screen-falcontc.BIN`), the
+//! device model the `vdi_reference` backend double reproduces: 640×480, 16
+//! planes, the Falcon 16-bit word with `OVERLAY_BIT` round-tripping through
+//! the store. A form with `buffer == 2` is the screen (an MFDB whose
+//! `fd_addr` is NULL and whose other fields are 0); `preludes` are issued
+//! after the reset, before the measured call and never compared (they put a
+//! known picture on the screen); `read` is a screen rectangle read back with
+//! `v_get_pixel` after the call into buffer B at `row * 32 + col`, exactly as
+//! `tosdump/core/runner_rast.c` does it, so the record compares it like a
+//! memory destination. This file reuses the `vdi_reference` harness's
+//! backend, host, workstation and reset verbatim rather than keeping a
+//! second copy of them that could drift.
+//!
+//! What a screen case proves on the host, and what it cannot: `vro_cpyfm`
+//! screen↔memory and `vrt_cpyfm` into memory run in `tos_api::vdi::raster`
+//! and are exercised for real; screen→screen and mono→screen end in the
+//! backend's `copy_rect` / `blit_mono`, which here is the double's (op and
+//! mode honoured, `vdi_reference/harness.rs`), not the kernel's
+//! (`kernel/src/vdi_backend.rs`). For those two arms the QEMU measurement
+//! against the same reference is the evidence
+//! (`measurement-2026-09-21-raster-screen/`).
 //!
 //! **Serialisation.** The VDI keeps device-global state (handle table, `Vwk`
 //! slots, palette), and cargo runs tests on parallel threads, so every case
@@ -234,7 +252,7 @@ fn be16(b: &[u8], off: usize) -> i16 {
 /// in-place `vr_trnfm` cases are stated — and an address could not be equal
 /// on two machines anyway.
 pub struct Form {
-    /// 0 = buffer A, 1 = buffer B.
+    /// 0 = buffer A, 1 = buffer B, 2 = the screen (`fd_addr` NULL).
     pub buffer: i16,
     pub w: i16,
     pub h: i16,
@@ -251,9 +269,36 @@ impl Form {
     }
 }
 
-/// One case, as `tosdump/host/mkrusttests` emits it. There is no `sub` and no
-/// prelude: none of the three raster opcodes is an escape, and the raster
-/// loader refuses a `+` line outright (`tosdump/core/cases.h`).
+/// The screen form: `fd_addr` NULL, every other field 0 — what
+/// `tosdump/core/runner_rast.c` hands over for `S`.
+pub const SCREEN: i16 = 2;
+
+/// A prelude of a screen case (`tosdump/core/cases.h`, THE SCREEN): one
+/// call issued after the reset and before the measured call, never
+/// compared. 109/121 carry two forms; 25 `vsf_color`, 114 `vr_recfl` and
+/// 129 `vs_clip` carry none.
+pub struct Prelude {
+    pub opcode: i16,
+    pub intin: &'static [i16],
+    pub ptsin: &'static [i16],
+    pub src: Option<Form>,
+    pub dst: Option<Form>,
+}
+
+/// The readback rectangle of a screen case: read with `v_get_pixel` after
+/// the call, `INTOUT[1]` into buffer B at `row * 32 + col`.
+pub struct Read {
+    pub x: i16,
+    pub y: i16,
+    pub w: i16,
+    pub h: i16,
+}
+
+/// Width of the readback layout in buffer B (`TD_RAST_READ_W`).
+pub const READ_W: usize = 32;
+
+/// One case, as `tosdump/host/mkrusttests` emits it. There is no `sub`:
+/// none of the three raster opcodes is an escape.
 pub struct Case {
     pub id: u16,
     pub rec: usize,
@@ -264,6 +309,8 @@ pub struct Case {
     pub dst: Form,
     pub seed_a: u16,
     pub seed_b: u16,
+    pub preludes: &'static [Prelude],
+    pub read: Option<Read>,
     pub comment: &'static str,
 }
 
@@ -516,6 +563,46 @@ fn cmp_field(
     }
 }
 
+/// The MFDB a form describes: over buffer A or B, or the screen (`fd_addr`
+/// NULL, every other field 0 — `runner_rast.c`, `fill_mfdb`).
+fn mfdb_of(f: &Form, a_addr: u64, b_addr: u64) -> Mfdb {
+    if f.buffer == SCREEN {
+        return Mfdb::default();
+    }
+    Mfdb {
+        addr: if f.buffer == 1 { b_addr } else { a_addr },
+        w: f.w,
+        h: f.h,
+        wdwidth: f.wdwidth,
+        stand: f.stand,
+        nplanes: f.nplanes,
+        ..Mfdb::default()
+    }
+}
+
+/// Issue one prelude through its own parameter block (`runner_rast.c`,
+/// `run_prelude`): the whitelist of `tosdump/core/cases.h` is the loader's
+/// guard, so nothing is re-checked here.
+fn run_prelude(p: &Prelude, a_addr: u64, b_addr: u64, wk: &Workstation) {
+    let mut pb = Rpb::new();
+    pb.contrl.fill(0);
+    pb.intin[..p.intin.len()].copy_from_slice(p.intin);
+    pb.ptsin[..p.ptsin.len()].copy_from_slice(p.ptsin);
+    pb.contrl[0] = p.opcode;
+    pb.contrl[1] = (p.ptsin.len() / 2) as i16;
+    pb.contrl[3] = p.intin.len() as i16;
+    pb.contrl[5] = 0;
+    pb.contrl[6] = wk.handle;
+    if let (Some(s), Some(d)) = (&p.src, &p.dst) {
+        *pb.src = mfdb_of(s, a_addr, b_addr);
+        *pb.dst = mfdb_of(d, a_addr, b_addr);
+        let (src_ptr, dst_ptr) = (&*pb.src as *const Mfdb as u64, &*pb.dst as *const Mfdb as u64);
+        pb.set_mfdb_ptr(0, src_ptr);
+        pb.set_mfdb_ptr(1, dst_ptr);
+    }
+    pb.call();
+}
+
 /// Replay one case and compare every array, both MFDBs and both pixel buffers
 /// against the reference.
 ///
@@ -539,27 +626,17 @@ pub fn check(dump: &[u8], case: &Case) {
     fill_buffer(&mut pb.bufs.a, case.seed_a);
     fill_buffer(&mut pb.bufs.b, case.seed_b);
 
-    // 3. the two MFDBs, over the buffers the case named.
+    // 3. the two MFDBs, over the buffers the case named (or the screen).
     let (a_addr, b_addr) = (pb.bufs.a.as_ptr() as u64, pb.bufs.b.as_ptr() as u64);
-    let addr_of = |f: &Form| if f.buffer == 1 { b_addr } else { a_addr };
-    *pb.src = Mfdb {
-        addr: addr_of(&case.src),
-        w: case.src.w,
-        h: case.src.h,
-        wdwidth: case.src.wdwidth,
-        stand: case.src.stand,
-        nplanes: case.src.nplanes,
-        ..Mfdb::default()
-    };
-    *pb.dst = Mfdb {
-        addr: addr_of(&case.dst),
-        w: case.dst.w,
-        h: case.dst.h,
-        wdwidth: case.dst.wdwidth,
-        stand: case.dst.stand,
-        nplanes: case.dst.nplanes,
-        ..Mfdb::default()
-    };
+    *pb.src = mfdb_of(&case.src, a_addr, b_addr);
+    *pb.dst = mfdb_of(&case.dst, a_addr, b_addr);
+
+    // 3b. the case's preludes, after the reset and the buffer fill — a
+    //     raster prelude may copy a laid buffer to the screen — through
+    //     their own parameter block, exactly as `runner_rast.c` step 3b.
+    for p in case.preludes {
+        run_prelude(p, a_addr, b_addr, wk);
+    }
 
     // 4. poison every parameter array; 5. lay the case values over it.
     pb.poison();
@@ -601,6 +678,27 @@ pub fn check(dump: &[u8], case: &Case) {
 
     // 8. the call under measurement.
     let flip_y = pb.call();
+
+    // 8b. the readback: the screen rectangle into buffer B through
+    //     `v_get_pixel`, one call per pixel, on a separate parameter block
+    //     so the recorded arrays stay the measured call's.
+    if let Some(r) = &case.read {
+        let mut rd = Rpb::new();
+        for row in 0..r.h {
+            for col in 0..r.w {
+                rd.poison();
+                rd.contrl[0] = 105;
+                rd.contrl[1] = 1;
+                rd.contrl[3] = 0;
+                rd.contrl[5] = 0;
+                rd.contrl[6] = wk.handle;
+                rd.ptsin[0] = r.x + col;
+                rd.ptsin[1] = r.y + row;
+                rd.call();
+                pb.bufs.b[row as usize * READ_W + col as usize] = rd.intout[1];
+            }
+        }
+    }
 
     let mut diffs = Vec::new();
     // The trap's `d0` = `flip_y` (`vdi/vdi_asm.S:124-125`), compared as the

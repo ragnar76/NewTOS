@@ -381,10 +381,29 @@ static int emit_aes(FILE *f, const struct td_header *h, const char *cases_path,
  * MFDBs name the SAME one, which is how the in-place vr_trnfm cases are
  * stated, and an address could not be the same on two machines anyway.
  *
- * There is no sub-opcode and no prelude column: none of the three raster
- * opcodes is an escape, and the loader refuses a '+' line outright
- * (core/cases.h), so `Call` is never imported here.
+ * There is no sub-opcode: none of the three raster opcodes is an escape.
+ * A table written for the SCREEN (core/cases.h, THE SCREEN) may carry
+ * preludes, name the screen as a form (buffer 2) and ask for a readback;
+ * all three are emitted as the table states them, and a table without
+ * them emits an empty prelude list and no readback.
  */
+static void emit_rast_prelude(FILE *f, const struct td_rast_prelude *p)
+{
+	fprintf(f, "            Prelude { opcode: %d, intin: ", p->opcode);
+	emit_list(f, p->intin, p->n_intin);
+	fprintf(f, ", ptsin: ");
+	emit_list(f, p->ptsin, p->n_ptsin);
+	if (p->opcode == 109 || p->opcode == 121) {
+		fprintf(f, ", src: Some(");
+		emit_form(f, &p->src);
+		fprintf(f, "), dst: Some(");
+		emit_form(f, &p->dst);
+		fprintf(f, ") }");
+	} else {
+		fprintf(f, ", src: None, dst: None }");
+	}
+}
+
 static int emit_raster(FILE *f, const struct td_header *h, const char *cases_path,
                        const char *dump_path, const char *include_path,
                        const char *out_path)
@@ -413,9 +432,13 @@ static int emit_raster(FILE *f, const struct td_header *h, const char *cases_pat
 "//! name the same buffer (the in-place `vr_trnfm` cases). `seed_a`/`seed_b`\n"
 "//! lay the two pixel buffers before the call; the operand of a raster call\n"
 "//! is memory, so it has to be laid rather than poisoned\n"
-"//! (`tosdump/core/runner_rast.c`).\n"
+"//! (`tosdump/core/runner_rast.c`). A form with `buffer: 2` is the SCREEN\n"
+"//! (`fd_addr` NULL); `preludes` run after the reset and before the call and\n"
+"//! are not recorded; `read` is the screen rectangle read back into buffer B\n"
+"//! after the call (`tosdump/core/cases.h`, THE SCREEN).\n"
 "\n"
-"use crate::harness::{check, Case, Form};\n"
+"#[allow(unused_imports)]\n"
+"use crate::harness::{check, Case, Form, Prelude, Read};\n"
 "\n"
 "static DUMP: &[u8] = include_bytes!(\"%s\");\n",
 	        cases_path, dump_path, h->build_id, h->case_crc, h->record_count,
@@ -443,6 +466,24 @@ static int emit_raster(FILE *f, const struct td_header *h, const char *cases_pat
 		emit_form(f, &c->dst);
 		fprintf(f, ",\n        seed_a: %u,\n        seed_b: %u,\n",
 		        c->seed_a, c->seed_b);
+		if (c->prelude_count == 0) {
+			fprintf(f, "        preludes: &[],\n");
+		} else {
+			uint16_t j;
+
+			fprintf(f, "        preludes: &[\n");
+			for (j = 0; j < c->prelude_count; j++) {
+				emit_rast_prelude(f,
+					&rast_table.preludes[c->prelude_first + j]);
+				fprintf(f, ",\n");
+			}
+			fprintf(f, "        ],\n");
+		}
+		if (c->has_read)
+			fprintf(f, "        read: Some(Read { x: %d, y: %d, w: %d, "
+			           "h: %d }),\n", c->rx, c->ry, c->rw, c->rh);
+		else
+			fprintf(f, "        read: None,\n");
 		fprintf(f, "        comment: \"%s\",\n    });\n}\n", cmt);
 	}
 	return (int)rast_table.count;

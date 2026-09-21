@@ -1,0 +1,69 @@
+case  69 ok  A:  0 B:  0   E1 cleared screen to memory: 512 x 0xFFFF
+case  70 ok  A:  0 B:  0   E2 cleared screen at the origin to memory
+case  72 ok  A:  0 B:  0   E3 XOR: B = ~fill
+case  73 ok  A:  0 B:  0   E4 AND: B unchanged
+case  74 ok  A:  0 B:  0   E5 NOTS_AND_D: B = 0
+case  75 ok  A:  0 B:  0   E7 NOT_D: B = ~fill
+case  80 ok  A:  0 B:  0   E8 pen 2 fill to memory: 512 x 0xF800
+case  83 ok  A:  0 B:  0   E9 partial pen 3 fill: rows 4-11 cols 8-23 0x07C0, rest 0xFF
+case  87 ok  A:  0 B:  0   E10 pen 0 fill to memory: 512 x 0xFFDF, not 0xFFFF
+case  92 ok  A:  0 B:  0   E11 16x8 pen 4 block to memory (8,4): 0x001F there, fill els
+case  98 ok  A:  0 B:  0   E12 pens 8 and 9: cols 0-15 0xBDD7, cols 16-31 0x8C51
+case 100 ok  A:  0 B:  0   E13 destination 4 planes: s_nxwd 32 != d_nxwd 8, no-op (:136
+case 101 ok  A:  0 B:  0   E14 PAT_FLAG|3 on the 16-bit path: nothing copied (:980, D-V
+case 104 ok  A:  0 B:  0   E15 reversed source corners: sorted copy, PTSIN unchanged (D
+case 107 ok  A:  0 B:  0   E18 XOR a red screen into the fill: B = fill ^ 0xF800
+case 118 ok  A:  0 B:  0   F1 the whole form to the screen: readback = fill(31)
+case 119 ok  A:  0 B:  0   F2 16x8 from (8,4) to (101,61): rows 1-8 cols 1-16, 0xFFFF b
+case 120 ok  A:  0 B:  0   F3 XOR onto the cleared screen: ~fill
+case 121 ok  A:  0 B:  0   F4 AND onto 0xFFFF: fill
+case 122 ok  A:  0 B:  0   F5 NOTS_AND_D onto 0xFFFF: ~fill
+case 123 ok  A:  0 B:  0   F7 NOT_D: 0x0000
+case 124 ok  A:  0 B:  0   F9 ALL_BLACK: 0xFFFF, indistinguishable from the cleared scr
+case 125 ok  A:  0 B:  0   F11 PAT_FLAG|3 on the 16-bit path: nothing drawn, 0xFFFF
+case 126 ok  A:  0 B:  0   F12 source 8 planes: s_nxwd 16 != 32, no-op, 0xFFFF
+case 130 ok  A:  0 B:  0   F13 clipped to (104,62)-(127,73): fill inside, 0xFFFF outsid
+case 132 ok  A:  0 B:  0   F14 clip ends at (115,67): cols 0-15 rows 0-7 only
+case 133 ok  A:  0 B:  0   F15 reversed destination corners: lands at (100,60) (arb_cor
+case 136 ok  A:  0 B:  0   F17 XOR onto red: fill ^ 0xF800
+case 139 ok  A:  0 B:  0   F18 D_ONLY onto green: 0x07C0 untouched
+case 140 ok  A:  0 B:  0   F20 source at (5,3), not word aligned: fill[(3+r)*32+5+c]
+case 158 ok  A:  0 B:  0   G1 down and right by (8,4): backwards path
+case 160 ok  A:  0 B:  0   G2 up and left by (8,4): forwards path
+case 162 ok  A:  0 B:  0   G3 right by 8, same rows: backwards, column order decides
+case 164 ok  A:  0 B:  0   G4 left by 8, same rows: forwards
+case 166 ok  A:  0 B:  0   G5 down by 4, same columns: backwards, row order decides
+case 168 ok  A:  0 B:  0   G6 up by 4, same columns: forwards
+case 170 ok  A:  0 B:  0   G7 down and left: backwards rows, EmuTOS also backwards colu
+case 172 ok  A:  0 B:  0   G8 up and right: forwards rows, EmuTOS also forwards columns
+case 176 ok  A:  0 B:  0   G9 XOR down and right
+case 178 ok  A:  0 B:  0   G10 XOR up and left
+case 180 ok  A:  0 B:  0   G11 onto itself: src == dst, forwards, unchanged
+case 182 ok  A:  0 B:  0   G12 XOR onto itself: 0x0000 over the block
+case 185 ok  A:  0 B:  0   G14 down and right, clipped to (104,62)-(127,73)
+case 187 ok  A:  0 B:  0   G16 PAT_FLAG|3 screen to screen: nothing copied
+case 189 ok  A:  0 B:  0   G17 to the origin, far apart: the block at (0,0), 0xFFFF bor
+case 201 ok  A:  0 B:  0   H1 MD_REPLACE pens 1/0: set 0x0000, clear 0xFFDF
+case 202 ok  A:  0 B:  0   H2 MD_TRANS pen 1: set 0x0000, clear stays 0xFFFF
+case 203 ok  A:  0 B:  0   H3 MD_XOR on the cleared screen: set ~0xFFFF = 0x0000
+case 204 ok  A:  0 B:  0   H4 MD_ERASE bg pen 0: clear 0xFFDF, set stays 0xFFFF
+case 205 ok  A:  0 B:  0   H5 MD_REPLACE red/blue: set 0xF800, clear 0x001F
+case 206 ok  A:  0 B:  0   H6 MD_TRANS green: set 0x07C0
+case 207 ok  A:  0 B:  0   H7 MD_ERASE bg yellow: clear 0xFFC0, set stays 0xFFFF
+case 210 ok  A:  0 B:  0   H8 MD_XOR on red: set ~0xF800 = 0x07FF, clear 0xF800
+case 211 ok  A:  0 B:  0   H9 pens out of range: validate_color_index -> 1, all 0x0000
+case 212 ok  A:  0 B:  0   H10 pens 255/16 (videl_palette2): set 0x0000, clear 0xFFDF
+case 213 ok  A:  0 B:  0   H11 source at (5,3), not word aligned: bits (3+r, 5+c), bord
+case 215 MISMATCH  A:  0 B:512   H12 PAT_FLAG|MD_REPLACE on the 16-bit path: EmuTOS draws not
+      B[  0] (r 0 c 0) dump=0000 model=FFFF
+      B[  1] (r 0 c 1) dump=0000 model=FFFF
+      B[  2] (r 0 c 2) dump=FFDF model=FFFF
+      B[  3] (r 0 c 3) dump=FFDF model=FFFF
+      B[  4] (r 0 c 4) dump=FFDF model=FFFF
+      B[  5] (r 0 c 5) dump=0000 model=FFFF
+case 216 ok  A:  0 B:  0   H13 the screen as a mono source: s_nxwd 32 != 2, no-op
+case 218 ok  A:  0 B:  0   H14 MD_REPLACE clipped to (104,62)-(127,73)
+case 219 ok  A:  0 B:  0   H15 MD_REPLACE at the origin
+case 222 ok  A:  0 B:  0   H17 MD_REPLACE into memory: set 0xF800, clear 0x001F
+case 223 ok  A:  0 B:  0   H18 MD_XOR into memory: set ~fill(124), clear fill(124)
+1 of 62 cases mismatch the model
