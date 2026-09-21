@@ -1,0 +1,15 @@
+# A103/A105/A108 kernel desktop (sd-base, no #Z). The C:\ window is open at boot.
+# Ticks are 200 Hz after "[desk] desktop up" armed the injector.
+# A: idle (bar row + the C:\ window's frame incl. its info line).
+# File title (88,8) -> F: the File box down. Out to the desktop, click =
+# cancel, park -> H.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 88 8
+1900 mark F_FILE_OPEN
+2200 move 400 300
+2500 down
+2503 up
+3000 parkbr
+3500 mark H_CLOSED

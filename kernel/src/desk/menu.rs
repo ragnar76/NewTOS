@@ -28,7 +28,7 @@
 //! [`build_menu`], which is exactly where EmuTOS writes the bit by hand too
 //! (`deskmain.c:475-486`).
 
-use tos_api::vdi::font::CELL_W;
+use tos_api::vdi::font::{CELL_H, CELL_W};
 
 use super::global::{self, DISABLED, G_BOX, G_IBOX, G_STRING, G_TITLE, LASTOB, MENU_H, NIL};
 use super::model::{Sort, View};
@@ -40,6 +40,23 @@ use tos_api::aes::object::Object;
 /// Fixed system-font character width in pixels (NewTOS 8×16 font, EmuTOS
 /// `deskmain.h` `CHAR_WIDTH` assumption).
 const CHAR_W: i16 = CELL_W;
+
+/// Minimum width of the *Desk* drop-down in characters — EmuTOS
+/// `MIN_DESKMENU_WIDTH` (`deskmain.c:80`, "compatible with Atari TOS"):
+/// `adjust_menu` seeds the first box's width search with
+/// `MIN_DESKMENU_WIDTH - 1` (`:1602`) so that after its `m++` (`:1620`) the
+/// Desk box is at least 20 cells wide whatever its entries measure.
+const MIN_DESKMENU_WIDTH: i16 = 20;
+
+/// Height of `THEBAR`, the white `G_BOX` behind the titles — the RSC's
+/// `{0, 0, 80, 513}` (`desk_rsc.c:249-253`): `ob_height = 0x0201` = one
+/// character cell plus 2 pixels, which `rsrc_obfix` turns into `gl_hchar + 2`
+/// (`aes/gemrslib.c:76-82`) = 18 on the 8×16 font. One row short of
+/// `gl_hbox` (`MENU_H`): `mn_bar` draws the box and then the separator on
+/// row `gl_hbox - 1` (`aes/gemmnlib.c:718-722`), the row `THEBAR` ends above.
+/// `THEACTIVE` and the titles stay `gl_hbox` tall (`769` = `gl_hchar + 3`,
+/// `desk_rsc.c:255-283`).
+const BAR_BOX_H: i16 = CELL_H + 2;
 
 /// A top-level menu (the four ADMENU titles).
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -324,14 +341,21 @@ struct MenuGeom {
 }
 
 /// `adjust_menu` (EmuTOS `deskmain.c:1511-1641`) — measure every title and
-/// drop-down and compute their pixel geometry: title x/width laid left-to-right
-/// (each `strlen * CHAR_WIDTH + pad`, the documented ST system-font assumption),
+/// drop-down and compute their pixel geometry, in character cells as EmuTOS
+/// does (it runs before `rsrc_obfix`, `:1895-1900`, so a unit is
+/// `CHAR_WIDTH` = 8 px, `:1509`): each title is exactly `strlen` cells wide
+/// and laid left-to-right (`title->ob_x = x; title->ob_width = n; x += n`,
+/// `:1528-1533` — no padding: the blank in `" Desk "` is the gap),
 /// `THEACTIVE` at the RSC's 2-cell origin and as wide as the titles' sum
-/// (`mbar->ob_width = x`, `:1534`), drop-down box width from its widest entry
-/// (+ a right margin; the 2-cell check column lives in the item strings'
-/// leading blanks, not code), and box x-positioning under its title —
-/// `THEACTIVE`'s origin plus the title's offset (`:1617`) — **shifted left if
-/// it would run off the right screen edge** (the drop-down re-position).
+/// (`mbar->ob_width = x`, `:1534`), each drop-down box `maxlen + 1` cells
+/// wide — the widest entry (`:1608-1614`) plus the `m++` of the separator
+/// loop (`:1620`) — with the Desk box seeded at `MIN_DESKMENU_WIDTH - 1`
+/// (`:1602`, i.e. never under 20 cells; the 2-cell check column lives in
+/// the item strings' leading blanks, not code), and every box under its
+/// title — `THEACTIVE`'s origin plus the title's offset (`:1617`) —
+/// **shifted left if it would run off the right screen edge** (`:1626-1631`,
+/// the box then loses one pixel of width so its outside border lands on the
+/// last column).
 ///
 /// EmuTOS additionally shrinks/truncates an over-wide title bar (its
 /// French-desktop half-character hack); NewTOS's menu text fits ST-High width,
@@ -350,19 +374,23 @@ fn adjust_menu(sw: i16) -> MenuGeom {
     };
     let mut tx = 0i16;
     for (ti, def) in MENUS.iter().enumerate() {
-        let tw = label_len(def.label) * CHAR_W + 4;
+        // `title->ob_width = n` = `strlen(ob_spec)` cells (`deskmain.c:1531`).
+        let tw = label_len(def.label) * CHAR_W;
         g.title_x[ti] = tx;
         g.title_w[ti] = tw;
         tx += tw;
 
-        // Drop-down width: widest entry + a right margin. The 2-cell check
-        // column is no longer added by code — it lives in the two leading
-        // spaces every item label carries (EmuTOS menu-string convention, e.g.
+        // Drop-down width: `m` = the widest entry, the Desk menu's search
+        // seeded at `MIN_DESKMENU_WIDTH - 1` (`:1602-1603`, `m = 0` for the
+        // others), then `m++` (`:1620`) — `(maxlen + 1)` cells, `ob_width`
+        // of the box and of every entry (`:1633-1635`). The 2-cell check
+        // column is not added by code — it lives in the two leading spaces
+        // every item label carries (EmuTOS menu-string convention, e.g.
         // "  Open"), so the object renderer draws the text at `ob_x` and the
         // check mark sits over the leading blank (see `object::just_draw` D1).
-        let maxlen = def.entries.iter().map(|e| label_len(entry_label(e))).max().unwrap_or(8);
-        let bw = maxlen * CHAR_W + 6;
-        g.box_w[ti] = bw;
+        let seed = if ti == 0 { MIN_DESKMENU_WIDTH - 1 } else { 0 };
+        let m = def.entries.iter().map(|e| label_len(entry_label(e))).fold(seed, i16::max) + 1;
+        g.box_w[ti] = m * CHAR_W;
     }
     // `mbar->ob_width = x` (`deskmain.c:1534`): THEACTIVE is exactly as wide
     // as its titles.
@@ -380,10 +408,18 @@ fn adjust_menu(sw: i16) -> MenuGeom {
         g.active_x = CHAR_W;
     }
     // Drop-down x under its title — `dropbox->ob_x = mbar->ob_x + title->ob_x`
-    // (`deskmain.c:1617`, THEACTIVE's origin plus the title's offset in it) —
-    // shifted left to stay on-screen (`:1626-1631`).
+    // (`deskmain.c:1617`, THEACTIVE's origin plus the title's offset in it).
+    // "make sure the menu is not too far on the right of the screen"
+    // (`:1626-1631`): a box that would reach the screen's right edge
+    // (`ob_x + m >= width`, in cells) is moved to `width - m` and made
+    // `(m - 1) | ((CHAR_WIDTH - 1) << 8)` wide — `m` cells less one pixel,
+    // so its outside border (`th = -1`) lands on the last screen column.
     for ti in 0..4 {
-        let bx = (g.active_x + g.title_x[ti]).min(sw - g.box_w[ti]).max(0);
+        let mut bx = g.active_x + g.title_x[ti];
+        if bx + g.box_w[ti] >= sw {
+            bx = (sw - g.box_w[ti]).max(0);
+            g.box_w[ti] -= 1;
+        }
         g.box_x[ti] = bx;
     }
     g
@@ -427,9 +463,11 @@ fn build_menu() -> *mut Object {
         let first_title = 3usize;
         let themenus = first_title + nt; // index of the THEMENUS box container
 
-        // ROOT / THEBAR / THEACTIVE.
+        // ROOT / THEBAR / THEACTIVE. `THEBAR` is [`BAR_BOX_H`] (18) tall —
+        // the RSC's `{0, 0, 80, 513}` (`desk_rsc.c:249-253`) — one row above
+        // the separator `mn_bar` draws on `gl_hbox - 1` (`gemmnlib.c:722`).
         o[0] = mk(G_IBOX, 0, 0, 0, 0, sw, sh, -1, 1, themenus as i16);
-        o[1] = mk(G_BOX, 0, 0, 0, 0, sw, MENU_H, themenus as i16, 2, 2);
+        o[1] = mk(G_BOX, 0, 0, 0, 0, sw, BAR_BOX_H, themenus as i16, 2, 2);
         // THEACTIVE: the RSC's `{2, 0, 28, 769}` (`desk_rsc.c:255-259`) with
         // `adjust_menu`'s width — `mbar->ob_width = x`, the titles' sum
         // (`deskmain.c:1534`). Its rectangle is what `menu_bar` hands the

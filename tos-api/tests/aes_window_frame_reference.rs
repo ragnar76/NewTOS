@@ -649,10 +649,16 @@ fn name_rect(b: R) -> R {
     R { x: b.x + ADJ_WBOX + ADJ3DSTD, y: b.y + ADJ3DSTD, w: b.w - 2 * ADJ_WBOX - 2 * ADJ3DSTD, h: GL_HBOX }
 }
 
-/// The glyph cells of the centred `n`-character name in the `W_NAME` rect.
+/// The glyph cells of the centred `n`-character name in the `W_NAME` rect —
+/// `gr_just` on `gr_inside(grown, 1)` after the activator's `y-1`
+/// (`gemoblib.c:735-757`, `gemgraf.c:567-589`; A105 (2)): `x = c.x +
+/// (c.w - n·8 + 1) / 2` with `c = (nr.x - 1, nr.y - 2, nr.w + 2, 21)`,
+/// `y = c.y + (21 - 16 + 1) / 2 = nr.y + 1`.
 fn name_cells(nr: R, n: i16) -> R {
     let nlen = n * 8;
-    let nx = nr.x + ((nr.w - nlen) / 2).max(2);
+    let (cx, cw) = (nr.x - 1, nr.w + 2);
+    let slack = cw - nlen;
+    let nx = if slack > 0 { cx + (slack + 1) / 2 } else { cx };
     R { x: nx, y: nr.y + 1, w: nlen, h: 16 }
 }
 

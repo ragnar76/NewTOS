@@ -791,6 +791,27 @@ message.
    else (`:375`); leaving it into no man's land ends `mn_do` without a
    selection (`cur_menu == NIL` → `cur_title = NIL` → `done`, `:406-411`, or
    the explicit DISABLED exit, `:429-434`).
+8. **The submenu box's own area picks `smroot`; a DISABLED item opens no
+   submenu (A103, 2026-09-21).** `cur_submenu = ob_find(smtree, smroot, 1,
+   x, y)` (`aes/gemmnlib.c:417`) answers the box **itself** for a point
+   inside it that no child covers — `ob_find` returns the last object found
+   (`aes/gemoblib.c:1034-1113`) — and `mn_do` treats that like any submenu
+   item: `SUBMENU_STATE` (`:418-422`), `menu_select(smtree, cur_submenu,
+   last_submenu, TRUE)` hilites it (`:474-475` → `do_chg` → `ob_change`, the
+   box interior's XOR for a black-and-white `G_BOX`, `gemoblib.c:1295-1304`),
+   leaving it un-hilites it (`:446-448`), and a press there breaks the loop
+   (`:373-374`); the cleanup clears it without a draw (`:488`), undisplays
+   the submenu, restores the box and — the **parent** item enabled, its
+   SELECTED bit cleared by the same `do_chg` (`:493`) — returns `*ptitle =
+   cur_title`, `*pitem = cur_submenu` = `smroot`, `*ptree = smtree`
+   (`:494-496`). NewTOS delivers this for a submenu living in the bar's own
+   tree (the index round-trips as `MN_SELECTED`'s `msg[4]`); a submenu in a
+   separate tree still needs the `msg[5..7]` tree-pointer path (deferred,
+   `menu::track`). `display_submenu` runs only inside `if
+   (menu_select(tree, cur_item, last_item, TRUE))` (`:470-475`), and
+   `menu_select` → `do_chg(…, chkdisabled = TRUE)` refuses a DISABLED object
+   (`:158-160`): a DISABLED item with a submenu attached is neither hilited
+   nor given its submenu, and a press on it is the cancel (`:493`).
 
 **Net effect and the contract it produces.** For the whole bracket from step 1
 through the end of step 5 above, the only process `gl_mowner` ever names is

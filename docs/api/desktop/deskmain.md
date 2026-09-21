@@ -450,6 +450,29 @@ version-string + about-box insertion, `adjust_menu(desk_rs_trees[ADMENU])`
   (`desk_rsc.c:297-341`), so a hover's item XOR (`ob_change`,
   `gemoblib.c:1295-1304`) never reaches the border and nothing repaints it.
   Each box's `ob_x` is `THEACTIVE.ob_x + title.ob_x` (`:1617`).
+  **Widths and the bar box (A108, 2026-09-21):** `adjust_menu` runs before
+  `rsrc_obfix` (`:1895-1900`), so its units are character cells of
+  `CHAR_WIDTH` = 8 px (`:1509`). Each title is exactly `strlen(ob_spec)`
+  cells wide and laid left to right (`title->ob_x = x; title->ob_width =
+  n; x += n`, `:1528-1533`) — no padding, the blanks in `" Desk "` are the
+  gaps; on the English tree the titles are 6/6/6/9 cells (48/48/48/72 px)
+  at 0/48/96/144 and `THEACTIVE` is 216 px wide at x = 16. Each drop-down
+  is `m + 1` cells wide where `m` is the widest entry (`:1608-1614`) and
+  the `+ 1` is the `m++` of the separator loop (`:1620`); the Desk box's
+  search is seeded at `MIN_DESKMENU_WIDTH - 1` (`:1602`), so it is never
+  under 20 cells (160 px). Every entry of a box gets the box's width
+  (`item->ob_width = m`, `:1633-1635`); a box that would reach the right
+  screen edge (`ob_x + m >= width`) is moved to `width - m` and made
+  `(m - 1) | ((CHAR_WIDTH - 1) << 8)` = `m · 8 - 1` px wide so its outside
+  border lands on the last column (`:1626-1631`). `THEBAR` is the RSC's
+  `{0, 0, 80, 513}` (`desk_rsc.c:249-253`): `ob_height = 0x0201` = one cell
+  + 2 px = `gl_hchar + 2` = 18 after `rsrc_obfix` (`aes/gemrslib.c:76-82`),
+  one row above the separator `mn_bar` draws on `gl_hbox - 1` = 18
+  (`aes/gemmnlib.c:718-722`); `THEACTIVE`, the titles and `THEMENUS`'s `y`
+  are `769` = `gl_hchar + 3` = `gl_hbox` = 19 (`desk_rsc.c:255-289`). The
+  drop-down entries are one cell (`gl_hchar` = 16 px) tall in the RSC
+  (`{0, row, 20, 1}`, `desk_rsc.c:297-341`) — NewTOS's `build_menu` still
+  lays them 19 px tall (open, see A108's receipt).
 - **`install_shortcuts()`** (`:1825-1858`, called from `app_start()` after
   `menu_shortcuts[]` may have been customized): for each of the
   `NUM_SHORTCUTS=33` shortcut slots, if `shortcut_mapping[i]` is `0` (item

@@ -1,0 +1,56 @@
+     Running tests/aes_a100_a102_desk_menu_geometry.rs (target/debug/deps/aes_a100_a102_desk_menu_geometry-f965e37c0f56cdcb)
+test a108_titles_and_boxes_measure_as_adjust_menu_computes ... ok
+test a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emutos ... ok
+test a102_a_title_inside_theactive_still_starts_the_track ... ok
+test a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched ... ok
+test a102_the_last_column_of_options_starts_the_track_and_the_next_does_not ... ok
+test a102_menu_popup_no_pick_writes_only_mn_keystate ... ok
+test a108_bar_row_glyphs_sit_where_the_falcon_reference_has_them ... ok
+test a102_the_bar_row_right_of_options_stays_with_the_application ... ok
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+     Running tests/aes_a105_frame_remnants.rs (target/debug/deps/aes_a105_frame_remnants-6e366df8cb54fa9a)
+test a105_1_info_text_starts_one_column_inside_the_border_on_the_third_row ... FAILED
+test a105_2_odd_width_name_is_centred_with_gr_justs_rounding ... FAILED
+test a105_2_overlong_name_is_left_aligned_and_cut_to_whole_glyphs ... FAILED
+test a105_4_pressed_closer_keeps_its_colours_without_actcolchange ... ok
+test a105_4_pressed_closer_takes_the_complement_colours_with_actcolchange ... FAILED
+thread 'a105_1_info_text_starts_one_column_inside_the_border_on_the_third_row' (5049399) panicked at tos-api/tests/aes_a105_frame_remnants.rs:938:5:
+  left: Some((28, 32, 122, 133))
+ right: Some((26, 31, 123, 134))
+thread 'a105_2_odd_width_name_is_centred_with_gr_justs_rounding' (5049400) panicked at tos-api/tests/aes_a105_frame_remnants.rs:979:5:
+  left: Some((179, 200, 45, 56))
+ right: Some((180, 201, 45, 56))
+thread 'a105_2_overlong_name_is_left_aligned_and_cut_to_whole_glyphs' (5049401) panicked at tos-api/tests/aes_a105_frame_remnants.rs:1002:5:
+  left: Some((58, 319, 45, 56))
+ right: Some((55, 324, 45, 56))
+thread 'a105_4_pressed_closer_takes_the_complement_colours_with_actcolchange' (5049403) panicked at tos-api/tests/aes_a105_frame_remnants.rs:1075:13:
+  left: 16776191
+ right: 0
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+error: test failed, to rerun pass `-p tos-api --test aes_a105_frame_remnants`
+     Running tests/aes_a89_a92_menu_event_neighbours.rs (target/debug/deps/aes_a89_a92_menu_event_neighbours-2799bdd0b74150a0)
+test a_press_queued_before_the_call_counts_for_the_arm_time_level ... ok
+test a103_a_disabled_item_with_a_submenu_attached_opens_nothing ... FAILED
+test a_move_queued_before_the_call_counts_for_the_arm_time_position ... ok
+test a103_press_on_the_submenu_boxs_own_area_picks_smroot ... FAILED
+test evnt_mouse_rectangle_crossed_while_the_selecting_press_is_held_is_delivered_at_the_release ... ok
+test evnt_mouse_satisfied_at_arm_time_returns_at_once_regardless_of_ownership ... ok
+test hovering_a_disabled_title_drops_no_box_and_hilites_nothing ... ok
+test leaving_the_submenu_and_returning_to_the_parent_item_a_press_selects_the_parent ... ok
+test leaving_the_submenu_into_no_mans_land_keeps_the_parent_and_a_press_selects_it ... ok
+test press_on_the_parent_item_with_its_submenu_showing_selects_the_parent ... ok
+thread 'a103_a_disabled_item_with_a_submenu_attached_opens_nothing' (5049407) panicked at tos-api/tests/aes_a89_a92_menu_event_neighbours.rs:1337:5:
+  left: 0
+ right: 3
+thread 'a103_press_on_the_submenu_boxs_own_area_picks_smroot' (5049408) panicked at tos-api/tests/aes_a89_a92_menu_event_neighbours.rs:447:17:
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+error: test failed, to rerun pass `-p tos-api --test aes_a89_a92_menu_event_neighbours`
+     Running tests/aes_window_frame_reference.rs (target/debug/deps/aes_window_frame_reference-8fed1ec1006e57c7)
+test bevel_is_one_pixel_on_every_fl3dact_gadget ... ok
+test gadget_glyphs_are_centred_in_the_grown_cell ... ok
+test down_arrow_slot_ends_on_the_row_above_the_seam ... ok
+test horizontal_arrow_slots_sit_on_the_band_edges ... ok
+test topped_name_box_carries_the_fl3dact_bevel ... ok
+test untopped_name_is_drawn_disabled ... ok
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+error: 2 targets failed:

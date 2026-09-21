@@ -867,7 +867,21 @@ fn dcolor_reaches_new_windows_only() {
 /// LBLACK→BLACK 88. Nothing outside the two frames moved. Measured on this
 /// binary alone, twice, and under `--shuffle-seed 7` / `99` with
 /// `--test-threads=1` — the same value every time.
-const FRAME_HASH: u64 = 0xb3e8_5614_b4ca_2900;
+///
+/// **Re-pinned 2026-09-21 (A105).** The info line's text now sits where
+/// `just_draw` puts a `G_BOXTEXT`'s: `gr_gtext(TE_LEFT, IBM, …,
+/// gr_inside(&t, 1))` with `gr_just`'s `(17 - 16 + 1) / 2` row
+/// (`gemoblib.c:735-738`, `gemgraf.c:574-576`; `gl_ainfo` `TE_LEFT`,
+/// `te_thickness 1`, `gemwmlib.c:154-157`) — glyph cells at `(1, 2)` of the
+/// info box instead of `(3, 1)`. Scratch diff of the two renderings against
+/// the previous pin: 2160 pixels, bbox `(43,86)-(385,200)`, every one inside
+/// the two info lines (`h1` rows 86..98, `h2` rows 186..200), exactly 1080
+/// BLACK→WHITE and 1080 WHITE→BLACK — the same glyph ink two columns left
+/// and one row down. Nothing else moved (the name text's `gr_just` centring
+/// coincides with the old formula for these even-width windows). Measured on
+/// this binary alone, twice, and under `--shuffle-seed 7` / `99` with
+/// `--test-threads=1` — the same value every time.
+const FRAME_HASH: u64 = 0xfb9c_ac5d_6a24_ab40;
 
 /// Two default windows with every gadget, names and info lines: `h1`
 /// untopped (partly covered, repainted untopped by `h2`'s open — A94), `h2`

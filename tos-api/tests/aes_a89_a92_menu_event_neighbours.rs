@@ -38,6 +38,18 @@
 //!   `xrat`/`yrat` are current as of the call. `ev_mouse` has no such drain
 //!   (`:123-128`): its arm-time position is the one the previous dispatch
 //!   left (`super()` → `dsptch()`, `gemsuper.c:452-464`).
+//! * **A103.1 — a press on the submenu box's own area (border/gap) picks
+//!   `smroot`** (`gemmnlib.c:417,494-496`): `cur_submenu = ob_find(smtree,
+//!   smroot, 1, x, y)` answers the box itself for a point inside it that no
+//!   child covers (`ob_find` returns the last object found,
+//!   `gemoblib.c:1034-1113`); `mn_do` treats it as any submenu item —
+//!   `SUBMENU_STATE`, `menu_select(smtree, cur_submenu, …)` hilites it
+//!   (`:474-475`, the box interior's XOR, `ob_change`), and the cleanup
+//!   returns `*pitem = cur_submenu`, `*ptree = smtree` (`:494-496`).
+//! * **A103.2 — a DISABLED item with a submenu attached opens nothing**
+//!   (`gemmnlib.c:470-475`): `display_submenu` runs only inside `if
+//!   (menu_select(tree, cur_item, last_item, TRUE))`, and `menu_select` →
+//!   `do_chg(…, chkdisabled = TRUE)` refuses a DISABLED object (`:158-160`).
 //!
 //! Harness (raster stand-in + scripted host + parameter block) copied from
 //! `aes_a73_event_neighbours.rs`; the pointer advances only in
@@ -195,14 +207,35 @@ impl RasterBackend for BufBackend {
         }
         m
     }
+    /// Mode-aware (as the A99/A100 harnesses): `Xor` complements the device
+    /// pixel where the pattern is set — the one way a hilited box interior
+    /// (`ob_change`'s `bb_fill(MD_XOR, …)`) is visible to a probe (A103.1).
     fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, clip: ClipRect) {
         let fg = self.rgb565_to_device(self.pel_to_device16(fill.fg));
         let bg = self.rgb565_to_device(self.pel_to_device16(fill.bg));
         for yy in y..y.saturating_add(h) {
             let row = fill.pattern[(yy.rem_euclid(16)) as usize % fill.pattern.len()];
             for xx in x..x.saturating_add(w) {
-                let bit = row & (0x8000u16 >> (xx.rem_euclid(16) as u16));
-                self.put(xx, yy, if bit != 0 { fg } else { bg }, clip);
+                let set = row & (0x8000u16 >> (xx.rem_euclid(16) as u16)) != 0;
+                match fill.mode {
+                    WriteMode::Replace => self.put(xx, yy, if set { fg } else { bg }, clip),
+                    WriteMode::Transparent => {
+                        if set {
+                            self.put(xx, yy, fg, clip)
+                        }
+                    }
+                    WriteMode::Xor => {
+                        if set {
+                            let v = self.get_device_pixel(xx, yy);
+                            self.put(xx, yy, v ^ 0x00FF_FFFF, clip);
+                        }
+                    }
+                    WriteMode::RevTransparent => {
+                        if !set {
+                            self.put(xx, yy, fg, clip)
+                        }
+                    }
+                }
             }
         }
     }
@@ -302,6 +335,11 @@ struct Sample {
     state_b: u16,
     pen_a: Pel,
     pen_b: Pel,
+    /// The same two points as **device** pixels: an XOR'd white is the
+    /// device complement, which no palette entry names (`read_pixel` maps
+    /// it to pen 0), so an inverted box interior is only visible here.
+    dev_a: u32,
+    dev_b: u32,
     at: (i16, i16),
 }
 
@@ -373,6 +411,8 @@ impl ScriptHost {
             state_b: state(ob),
             pen_a: self.raster.read_pixel(pa.0, pa.1),
             pen_b: self.raster.read_pixel(pb.0, pb.1),
+            dev_a: self.raster.get_device_pixel(pa.0, pa.1),
+            dev_b: self.raster.get_device_pixel(pb.0, pb.1),
             at: tos_api::vdi::mouse_position(),
         };
         self.samples.lock().unwrap().push(s);
@@ -609,6 +649,45 @@ fn submenu_tree() -> *mut Obj {
     Box::leak(tree).as_mut_ptr()
 }
 
+/// The bar tree of [`menu_tree`] with a submenu box **in the same tree**:
+/// object 17, a fourth child of `themenus` (after the *Edit* box), whose
+/// three items (18..=20) sit **2 px inside** the box on both sides, so the
+/// box's first and last two columns are the box's own area — the "border"
+/// `ob_find(smtree, smroot, 1, …)` answers with `smroot` itself
+/// (`gemoblib.c:1034-1113`). A same-tree submenu's pick round-trips as
+/// `MN_SELECTED`'s `msg[4]` (`menu::track`), which is what A103.1 reads.
+const SUB_ROOT: i16 = 17;
+const SUB_BETA_SAME: i16 = 19;
+const SUB_INSET: i16 = 2;
+
+fn menu_tree_with_same_tree_submenu() -> *mut Obj {
+    let base = menu_tree(0);
+    let s = |p: &str, y, next, last| Obj {
+        next,
+        head: -1,
+        tail: -1,
+        otype: G_STRING,
+        flags: if last { LASTOB } else { 0 },
+        state: 0,
+        spec: text(p),
+        x: SUB_INSET,
+        y,
+        w: SUB_W - 2 * SUB_INSET,
+        h: ITEM_H,
+    };
+    let mut v: Vec<Obj> = (0..17).map(|i| unsafe { *base.offset(i) }).collect();
+    // Hang the submenu box after the Edit box (14): 14 → 17 → back to 6.
+    v[14].next = SUB_ROOT;
+    v[6].tail = SUB_ROOT;
+    // The Edit box's *Copy* was the tree's LASTOB; the last submenu item is now.
+    v[16].flags &= !LASTOB;
+    v.push(Obj { next: 6, head: 18, tail: 20, otype: G_BOX, flags: 0, state: 0, spec: 1 << 16, x: 0, y: 0, w: SUB_W, h: 3 * ITEM_H });
+    v.push(s("Alpha", 0, 19, false));
+    v.push(s("Beta", ITEM_H, 20, false));
+    v.push(s("Gamma", 2 * ITEM_H, SUB_ROOT, true));
+    Box::leak(v.into_boxed_slice()).as_mut_ptr()
+}
+
 /// The `MENU` struct at the LP64 layout (`mn_tree` @0, four WORDs @8).
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
@@ -677,6 +756,56 @@ fn fresh_with(edit_state: u16) -> (&'static ScriptHost, Aespb, *mut Obj) {
 
 fn fresh() -> (&'static ScriptHost, Aespb, *mut Obj) {
     fresh_with(0)
+}
+
+/// Like [`fresh`], but the bar is [`menu_tree_with_same_tree_submenu`] and
+/// the submenu (object 17 of that tree) is attached to *Open*.
+fn fresh_same_tree_submenu() -> (&'static ScriptHost, Aespb, *mut Obj) {
+    let host = rig();
+    host.clear();
+    host.raster.px.lock().unwrap().fill(0);
+    let mut pb = Aespb::new();
+    pb.call(10, 0, 1, 0); // appl_init
+    pb.intin.fill(0);
+    pb.call(109, 0, 1, 0); // wind_new
+
+    let tree = menu_tree_with_same_tree_submenu();
+    pb.intin.fill(0);
+    pb.intin[0] = 1; // show
+    pb.addrin[0] = tree as u64;
+    pb.call(30, 1, 1, 1); // menu_bar
+    pb.addrin[0] = 0;
+    assert_eq!(pb.intout[0], 1, "menu_bar must install the tree");
+
+    pb.intin.fill(0);
+    pb.intin[0] = 257; // graf_mouse(M_ON)
+    pb.call(78, 1, 1, 0);
+
+    move_to(host, &mut pb, 320, 300, 0);
+    drain_messages(&mut pb);
+
+    let mut rec = Box::new(MenuRec { mn_tree: tree as u64, mn_menu: SUB_ROOT, mn_item: SUB_ROOT + 1, mn_scroll: 0, mn_keystate: 0 });
+    pb.intin.fill(0);
+    pb.intin[0] = 1; // ME_ATTACH
+    pb.intin[1] = ITEM_OPEN;
+    pb.addrin[0] = tree as u64;
+    pb.addrin[1] = &mut *rec as *mut MenuRec as u64;
+    pb.call(37, 2, 1, 2);
+    pb.addrin[0] = 0;
+    pb.addrin[1] = 0;
+    assert_eq!(pb.intout[0], 1, "menu_attach must accept the same-tree submenu");
+    (host, pb, tree)
+}
+
+/// `menu_ienable(tree, item, enable)` (32).
+fn menu_ienable(pb: &mut Aespb, tree: *mut Obj, item: i16, enable: bool) {
+    pb.intin.fill(0);
+    pb.intin[0] = item;
+    pb.intin[1] = enable as i16;
+    pb.addrin[0] = tree as u64;
+    pb.call(32, 2, 1, 1);
+    pb.addrin[0] = 0;
+    assert_eq!(pb.intout[0], 1, "menu_ienable({item}, {enable})");
 }
 
 /// Attach the submenu to *Open* through `menu_attach(ME_ATTACH)` (37).
@@ -1089,6 +1218,133 @@ fn hovering_a_disabled_title_drops_no_box_and_hilites_nothing() {
     let edit_state = unsafe { (*tree.offset(TITLE_EDIT as isize)).state };
     assert_eq!(edit_state, DISABLED, "the title's state is untouched after the track");
     assert_eq!(host.raster.read_pixel(EDIT_BOX_PX.0, EDIT_BOX_PX.1), DESK, "the box area still shows the desktop");
+}
+
+// ── A103: submenu remnants ─────────────────────────────────────────────────
+
+/// **A103.1 — a press on the submenu box's own area picks `smroot`.** The
+/// same-tree submenu's items sit 2 px inside the box, so its first column
+/// is box-only. Hover *File*, onto *Open* (the submenu opens beside it),
+/// glide into the submenu onto that column on the *Beta* row. EmuTOS:
+/// `cur_submenu = ob_find(smtree, smroot, 1, x, y)` = `smroot`
+/// (`gemmnlib.c:417`; `ob_find` returns the last object found,
+/// `gemoblib.c:1034-1113`) → `SUBMENU_STATE` (`:418-422`), and
+/// `menu_select(smtree, cur_submenu, last_submenu, TRUE)` hilites the box
+/// (`:474-475`) — `do_chg` → `ob_change`, `xor_is_ok` for a black-and-white
+/// `G_BOX`, one XOR of the interior (`gemoblib.c:1295-1304`). The probe
+/// packet records that: `smroot` SELECTED, no item SELECTED, the gap pixel
+/// the device complement of white. A press there breaks the loop
+/// (`:373-374`) and the cleanup, `menu_state == SUBMENU_STATE`, returns
+/// `*pitem = cur_submenu = smroot` (`:494-496`): `MN_SELECTED (File, 17)`.
+#[test]
+fn a103_press_on_the_submenu_boxs_own_area_picks_smroot() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb, tree) = fresh_same_tree_submenu();
+    let (sbx, sby, _, _) = submenu_box();
+    // The box's first column (box-only: the items start at `SUB_INSET`), on
+    // the *Beta* row; inside the 1-px border, so inside the XOR'd interior.
+    let gap = (sbx + 1, sby + ITEM_H + 9);
+    // The probe pixel: the same column on the *Alpha* row — inside the
+    // XOR'd interior too, and clear of the 16×16 cursor sprite whose hot
+    // spot sits at `gap`.
+    let probe_px = (sbx + 1, sby + 6);
+    let white = host.raster.rgb565_to_device(host.raster.pel_to_device16(WHITE));
+    set_probe(tree, SUB_ROOT, SUB_BETA_SAME, probe_px, probe_px);
+
+    move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
+    arm_gap(host);
+    glide(host, 0, ON_OPEN.1 - ON_FILE.1, 0); // down onto *Open* → submenu opens
+    host.push(pkt(0, 0, 0));
+    glide(host, gap.0 - ON_OPEN.0, gap.1 - ON_OPEN.1, 0); // into the submenu's gap column
+    host.push(pkt(0, 0, 0));
+    host.push(PROBE); // the state while the pointer rests on the box's own area
+    host.push(pkt(0, 0, 0));
+    click(host); // press there
+
+    let (fired, bret, _mb, msg) = evnt_multi_teradesk(&mut pb);
+    let (mx, my) = tos_api::vdi::mouse_position();
+    let samples = host.samples();
+    eprintln!("a103.1: fired={fired:#06x} bret={bret} at=({mx},{my}) msg={msg:?} samples={samples:?} gap={gap:?}");
+    assert_eq!(samples.len(), 1, "the probe must have been consumed inside the track; samples = {samples:?}");
+    let s = samples[0];
+    assert_eq!(s.at, gap, "the probe ran with the pointer on the box's own column");
+    assert_eq!(
+        s.state_a & SELECTED,
+        SELECTED,
+        "on the submenu box's own area the box itself is cur_submenu and hilited \
+         (ob_find answers smroot, aes/gemmnlib.c:417; menu_select :474-475); smroot.ob_state = {:#06x}",
+        s.state_a
+    );
+    assert_eq!(s.state_b & SELECTED, 0, "no submenu item is hilited on the box's own area; Beta.ob_state = {:#06x}", s.state_b);
+    assert_eq!(
+        s.dev_a,
+        white ^ 0x00FF_FFFF,
+        "the box interior is XOR'd for the hilite (ob_change, aes/gemoblib.c:1295-1304); pixel {probe_px:?} = {:#08x}",
+        s.dev_a
+    );
+    assert_eq!(fired & MU_BUTTON, 0, "the press leaked as MU_BUTTON; fired = {fired:#06x}");
+    assert_eq!(
+        fired & MU_MESAG,
+        MU_MESAG,
+        "a press on the submenu box's own area selects smroot in EmuTOS \
+         (*pitem = cur_submenu, aes/gemmnlib.c:494-496) — NewTOS delivered nothing; fired = {fired:#06x}"
+    );
+    assert_eq!((msg[0], msg[3], msg[4]), (MN_SELECTED, TITLE_FILE, SUB_ROOT), "msg = {msg:?}");
+    // SAFETY: `tree` is the leaked, live menu tree.
+    let state = |i: i16| unsafe { (*tree.offset(i as isize)).state };
+    assert_eq!(state(SUB_ROOT) & SELECTED, 0, "the cleanup clears smroot's SELECTED (do_chg, :488)");
+    assert_eq!(state(ITEM_OPEN) & SELECTED, 0, "the parent item is un-hilited by the cleanup (:493)");
+}
+
+/// **A103.2 — a DISABLED item with a submenu attached opens nothing.**
+/// *Open* carries the submenu (attached, then `menu_ienable(Open, 0)`).
+/// Hover *File*, onto *Open*, rest: the probe finds *Open* not SELECTED
+/// and the submenu's probe pixel still the desktop — `display_submenu` runs
+/// only inside `if (menu_select(tree, cur_item, last_item, TRUE))`
+/// (`gemmnlib.c:470-475`) and `menu_select` → `do_chg(…, chkdisabled)`
+/// refuses the DISABLED item (`:158-160`). A press there cancels: the
+/// return is gated on `do_chg(tree, cur_item, SELECTED, FALSE, FALSE,
+/// TRUE)` (`:493`), which refuses it too — no `MN_SELECTED`.
+#[test]
+fn a103_a_disabled_item_with_a_submenu_attached_opens_nothing() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb, tree) = fresh();
+    let sub = attach_submenu(&mut pb, tree);
+    menu_ienable(&mut pb, tree, ITEM_OPEN, false);
+    let (ppx, ppy) = submenu_probe_px();
+    set_probe(tree, ITEM_OPEN, ITEM_OPEN, (ppx, ppy), (ppx, ppy));
+    assert_eq!(host.raster.read_pixel(ppx, ppy), DESK, "the probe point shows the desktop dither before the track");
+    // SAFETY: `sub` is the leaked, live submenu tree.
+    let sub_state = |i: i16| unsafe { (*sub.offset(i as isize)).state };
+
+    move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
+    arm_gap(host);
+    glide(host, 0, ON_OPEN.1 - ON_FILE.1, 0); // down onto the DISABLED *Open*
+    host.push(pkt(0, 0, 0));
+    host.push(PROBE); // resting on it
+    host.push(pkt(0, 0, 0));
+    click(host); // press on the disabled item: the cancel
+
+    let (fired, bret, msg) = evnt_multi_timed(&mut pb, 200);
+    let (mx, my) = tos_api::vdi::mouse_position();
+    let samples = host.samples();
+    eprintln!("a103.2: fired={fired:#06x} bret={bret} at=({mx},{my}) msg={msg:?} samples={samples:?}");
+    assert_eq!(samples.len(), 1, "the probe must have been consumed inside the track; samples = {samples:?}");
+    let s = samples[0];
+    assert_eq!(s.at, ON_OPEN, "the probe ran on the item");
+    assert_eq!(s.state_a & DISABLED, DISABLED, "Open is DISABLED for this case");
+    assert_eq!(s.state_a & SELECTED, 0, "a DISABLED item is never hilited (do_chg chkdisabled, :158-160)");
+    assert_eq!(
+        s.pen_a,
+        DESK,
+        "no submenu may open under a DISABLED item (display_submenu only after menu_select succeeds, \
+         aes/gemmnlib.c:470-475); pen at ({ppx},{ppy}) = {}",
+        s.pen_a
+    );
+    assert_eq!(fired & MU_MESAG, 0, "no selection from a DISABLED item (:493); fired = {fired:#06x}, msg = {msg:?}");
+    assert_eq!(fired & MU_BUTTON, 0, "the cancelling press leaked as MU_BUTTON; fired = {fired:#06x}");
+    assert_eq!(sub_state(0) & SELECTED, 0, "nothing of the submenu tree was touched");
+    assert_eq!(host.raster.read_pixel(ppx, ppy), DESK, "the submenu area still shows the desktop after the track");
 }
 
 // ── A90: evnt_mouse through amouse ─────────────────────────────────────────

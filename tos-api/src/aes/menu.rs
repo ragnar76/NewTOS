@@ -395,8 +395,17 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
             let in_sub = sub_tree != 0 && point_in(sub_tree as *const Object, sub_box, mx, my);
             if in_sub {
                 // Track the highlight *inside* the submenu; the parent item
-                // stays selected (cur_item is untouched).
-                let sit = object::child_at(sub_tree as *const Object, sub_box, mx, my);
+                // stays selected (cur_item is untouched). `cur_submenu =
+                // ob_find(smtree, smroot, 1, x, y)` (`gemmnlib.c:417`) answers
+                // the box **itself** for a point inside it that no child
+                // covers — its border/gap (`ob_find` returns the last object
+                // found, `gemoblib.c:1034-1113`) — and `mn_do` then treats
+                // `smroot` like any submenu item: `SUBMENU_STATE` (`:418-422`),
+                // hilited by `menu_select(smtree, cur_submenu, …)` (`:474-475`,
+                // the box's interior XOR, `ob_change`) and, on a press,
+                // returned as `*pitem` (`:494-496`; A103 (1)).
+                let hit = object::child_at(sub_tree as *const Object, sub_box, mx, my);
+                let sit = if hit == NIL { sub_box } else { hit };
                 if sit != sub_item {
                     rehilite(sub_tree as *mut Object, sub_item, sit, backend);
                     sub_item = sit;
@@ -432,7 +441,12 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
                     }
                     rehilite(tree, cur_item, it, backend);
                     cur_item = it;
-                    if it != NIL {
+                    // `display_submenu` runs only inside `if (menu_select(tree,
+                    // cur_item, last_item, TRUE))` (`gemmnlib.c:470-475`), and
+                    // `menu_select` → `do_chg(…, chkdisabled = TRUE)` refuses a
+                    // DISABLED item (`:158-160`): a disabled item with a
+                    // submenu attached neither hilites nor opens it (A103 (2)).
+                    if it != NIL && (ObjTree::new(tp).state(it) & DISABLED) == 0 {
                         if let Some((st, sb)) = open_submenu(tree, it, backend) {
                             sub_tree = st;
                             sub_box = sb;
@@ -470,10 +484,21 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
                 if sub_tree == tree as u64 {
                     // Submenu selection in the same tree: the item index is valid
                     // in the caller's tree (round-trips as MN_SELECTED msg[4]).
+                    // `sub_item` is the submenu's root box when the press lands
+                    // on its border/gap — `*pitem = cur_submenu` with
+                    // `cur_submenu == smroot` (`gemmnlib.c:417,494-496`; the
+                    // return is gated on the *parent* item being enabled,
+                    // `:493`, which it is: a DISABLED parent never opened it).
                     crate::vdi::cursor_hide(backend);
                     object::set_state_bit(sub_tree as *mut Object, sub_item, SELECTED, false);
                     close_submenu(sub_tree, sub_box, NIL, backend);
                     erase_box_inner(tree, cur_box, backend);
+                    // The parent item's SELECTED bit is cleared by the same
+                    // `do_chg(tree, cur_item, SELECTED, FALSE, FALSE, TRUE)`
+                    // that gates the return (`gemmnlib.c:493`) — no draw, the
+                    // box's pixels are already back (A103 (1)).
+                    let st = ObjTree::new(tp).state(cur_item);
+                    object::change(tree, cur_item, st & !SELECTED, false);
                     crate::vdi::cursor_show(backend);
                     return Some((cur_title, sub_item));
                 }
@@ -637,6 +662,11 @@ pub fn close(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBack
 /// into the submenu) is real-Pi4 only per project memory.
 pub fn open_submenu_static(tree: *mut Object, title: i16, item: i16, backend: &dyn RasterBackend) -> i16 {
     open_box(tree, title, backend);
+    // As the track: a DISABLED item is neither hilited nor given its submenu
+    // (`menu_select` → `do_chg(…, chkdisabled)`, `gemmnlib.c:158-160,470-475`).
+    if (ObjTree::new(tree as *const Object).state(item) & DISABLED) != 0 {
+        return NIL;
+    }
     object::set_state_bit(tree, item, SELECTED, true);
     match open_submenu(tree, item, backend) {
         Some((_, box_obj)) => box_obj,

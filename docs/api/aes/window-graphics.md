@@ -1884,6 +1884,37 @@ byte of any buffer the caller passed (TASK/A42).
   box is `FL3DACT` when the window has a `NAME` (`gemwmlib.c:553`) and gets
   it too.
 
+  **Text placement in `W_NAME`/`W_INFO`, the pressed `ACT` gadget (A105,
+  2026-09-21).** Both are `G_BOXTEXT` (`gl_watype`, `gemwmlib.c:61-81`)
+  with `te_thickness = 1`; `gl_aname` is `TE_CNTR` (`:503`), `gl_ainfo`
+  `TE_LEFT` (`gl_asamp`, `:154-157`). `just_draw` hands `gr_gtext` the rect
+  **inside the border of the drawn object** — `c = gr_inside(&t, tmpth)`
+  (`gemoblib.c:735-738`), `t` being the 3D-grown rect for the `FL3DACT` name
+  (`:503-508`) and the plain rect for the `FL3DNONE` info line — and, for an
+  `FL3DACT` object with `acttxtmove` set (default 1, `:1332`), first moves
+  it: `c.g_y--` unselected, `c.g_x++` selected (`:742-755`). `gr_just`
+  (`gemgraf.c:567-589`) then centres vertically by `(c.h - 16 + 1) / 2` and
+  horizontally by `(c.w - textw + 1) / 2` (`TE_CNTR`) — each only when there
+  is slack — after `gsx_tcalc` (`:480-497`) clamped `textw` to the cell and
+  cut the string to the whole glyphs that fit (`numchs = min(n, textw /
+  gl_wchar)`; a cell shorter than a glyph draws nothing). Hence: the info
+  glyph cells start at `(1, 2)` of the info box (`(17 - 16 + 1) / 2 = 1`
+  row of slack split), the name's at `x = name_x - 1 + (name_w + 2 - textw +
+  1) / 2`, `y = name_y + 1`; a name wider than `name_w + 2` starts at
+  `name_x - 1` (left-aligned, no slack) and shows `(name_w + 2) / 8` glyphs.
+  `gl_aname.te_ptext` is the window's name only with a `NAME` in `kind`,
+  else `""` (`gemwmlib.c:501`). The horizontal bar's default/minimum elevator
+  is `gl_wbox`, the vertical one's `gl_hbox` (`:431-434`, `:469-471`). A
+  pressed (`SELECTED`) `FL3DACT` gadget takes `changecol = actcolchange`
+  (`gemoblib.c:509-513`; default 0): when set, a hollow interior goes solid
+  black, any other takes `xor_color` (`:681-690`), the glyph is drawn in its
+  complement in `MD_TRANS` (`:699-706`), and `add_3d_effect` judges its lower
+  line against the changed interior colour (`:950`); with it clear the press
+  is the sunk bevel and the moved glyph alone. The frame gadgets' default
+  word `0x1101` is `IP_HOLLOW` with `ic = BLACK`, so the 3D face
+  substitution (`:619-636`, hollow **and** white) does not apply to them —
+  their face is `gr_rect`'s hollow white.
+
   **(3) Mapping onto `draw_frame`'s regions** — the gap as found on
   2026-09-20 **before** the fix (line numbers of that revision; ✓ = the then
   hardcoded pixel already equalled `gr_crack(default word)`; ✗ = it did not).

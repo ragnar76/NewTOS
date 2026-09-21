@@ -1,0 +1,19 @@
+# A100 TeraDesk via #Z (sd-tera): the AES-side change alone (no frame repaint
+# after a hover toggle) on a box that already has the outside border
+# (desktop.rsc tree 0 object 9, ob_spec 0xFF1100). A: idle. File title
+# (88,8) -> B: box down. Hover "Select all" (120,155) -> C: after = the item
+# inverted, frame untouched; before = rehilite painted a second frame along
+# the box rectangle's own edges inside the outer one. Out, click = cancel,
+# park -> D.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 88 8
+1900 mark B_FILE_OPEN
+2200 move 120 155
+2700 mark C_ENTRY_HOVER
+3000 move 400 300
+3300 down
+3303 up
+3800 parkbr
+4300 mark D_CLOSED

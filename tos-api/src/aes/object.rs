@@ -1588,7 +1588,7 @@ pub fn objc_change(pb: &Aespb) {
 static IND_TXTMOVE: AtomicI16 = AtomicI16::new(0);
 static IND_COLCHANGE: AtomicI16 = AtomicI16::new(1);
 pub(crate) static ACT_TXTMOVE: AtomicI16 = AtomicI16::new(1);
-static ACT_COLCHANGE: AtomicI16 = AtomicI16::new(0);
+pub(crate) static ACT_COLCHANGE: AtomicI16 = AtomicI16::new(0);
 static IND_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
 pub(crate) static ACT_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
 pub(crate) static BACKGR_COL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
@@ -2484,7 +2484,7 @@ const VDI16COMP: [Pel; 16] = [
 /// [`RasterBackend::num_colors`]), the [`VDI4COMP`] entry on a ≤ 4-colour
 /// screen, else the [`VDI16COMP`] entry. This is a *table*, not `pen ^ 1`:
 /// `xor_color(RED) = LCYAN`, not GREEN (A85).
-fn xor_color(backend: &dyn RasterBackend, color: Pel) -> Pel {
+pub(crate) fn xor_color(backend: &dyn RasterBackend, color: Pel) -> Pel {
     let ncolors = backend.num_colors();
     if color >= 16 || color as u16 >= ncolors {
         return WHITE;

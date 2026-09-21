@@ -1,0 +1,46 @@
+A103/A105/A108 — QEMU raspi4b screendumps, 640x480, kernel desktop (sd-base, no #Z),
+pointer parked bottom-right (639,479) at A and H, on the File title (88,8) at F.
+BEFORE = scratch kernel with tos-api/src/aes/{menu,window,object}.rs + kernel/src/desk/menu.rs
+= HEAD a570123 (git show, no checkout); AFTER = the tree. Both with the A100 injector +
+tree_dump_patch (A108 variant). 0 EXC/PANIC in both serial logs (serial/).
+
+Serial (kernel-registered ADMENU geometry, [a108] lines):
+  BEFORE THEBAR=(0,0,640,19) THEACTIVE=(16,0,232,19) titles=(0,52),(52,52),(104,52),(156,76)
+         BOX0#8=(16,19,150,38) BOX1#11=(68,19,158,285) BOX2#27=(120,19,134,190) BOX3#38=(172,19,214,228)
+  AFTER  THEBAR=(0,0,640,18) THEACTIVE=(16,0,216,19) titles=(0,48),(48,48),(96,48),(144,72)
+         BOX0#8=(16,19,160,38) BOX1#11=(64,19,160,285) BOX2#27=(112,19,136,190) BOX3#38=(160,19,216,228)
+         (all boxes spec=0xff1100, ENTRY0=(0,0,box_w,19))
+  = adjust_menu's numbers (title strlen*8, box (maxlen+1)*8, Desk >= 20 cells, THEBAR gl_hchar+2).
+
+Bar row (rows 0..18) vs hatari-falcon-reference/shots/falcon-tc-desktop.png (class map K/W/other):
+  BEFORE 840 px differ, bbox (73,3)-(234,16): File/View/Options 4/8/12 columns further right
+         (ink cols File 77..106, View 129..158, Options 181..231 + 232..234).
+  AFTER  0 px differ. Ink per title (cols, rows, count): Desk 25..54 / 3..14 / 173,
+         File 73..102 / 3..14 / 135, View 121..150 / 3..14 / 155, Options 169..222 / 3..16 / 273,
+         nothing right of 232, row 17 white, row 18 the separator — identical to the reference.
+
+C:\ window (48,43,544,400), A-idle, vs falcon-tc-window-c.png (16,96,304,192), A95 corner_residual.py
+(TL/TR/BR crops; work area, info-line interior, pointer, pattern phase, elevator length excluded):
+  BEFORE residual 0 / 0 / 0 (info-line interior excluded: 609 differing px)
+  AFTER  residual 0 / 0 / 0 (info-line interior excluded: 464 differing px)
+Info-line text placement (frame-relative; the strings differ: EmuDESK " 514 bytes used in 1 items."
+vs ours " 24 items   373645 bytes used", so only the placement is comparable):
+  REF    ink rows 27..40, first ink column 10 (cell 1), first glyph's cell-relative bbox (1,6,2,13)
+  BEFORE ink rows 26..39, first ink column 12,           first glyph's cell-relative bbox (3,7,1,12)
+  AFTER  ink rows 27..40, first ink column 10 (cell 1), first glyph's cell-relative bbox (1,6,2,13)
+  = glyph cells at (1,25) of the frame as EmuTOS (gr_inside(&t,1) + gr_just's (17-16+1)/2 row).
+
+F (File box down): BEFORE box rect (68,19,158,285), outline columns 67/226, rows 18/304;
+  AFTER (64,19,160,285), outline columns 63/224, rows 18/304. The hilited title is the XOR of
+  gr_inside(title,1) (G_TITLE th = 1, gemobjop.c:44-46): columns 65..110, rows 1..17 (after).
+
+Before/after pixel diffs: A 2084 px bbox (58,3)-(281,83); F 6963 px bbox (58,1)-(281,304);
+  H 2084 px bbox (58,3)-(281,83). A/H = the bar-row titles File/View/Options (rows 3..16, moved
+  4/8/12 px left) plus the C:\ window's info-line text (screen rows 66..83 = frame rows 23..40,
+  x from 58 = the first glyph, moved 2 columns left / 1 row down); F additionally the File box
+  and the hilited title (moved 4 px left, box 2 px wider).
+
+Residuals (named, not fixed here):
+  * Drop-down entries are 19 px tall (MENU_H) — the RSC's entries are one cell = 16 px
+    ({0,row,20,1}, desk_rsc.c:297-341): the File box is 285 tall here, 240 in EmuTOS. desk/, own task.
+  * The desktop's info-line string differs from EmuDESK's format (desk/ content, not the frame).

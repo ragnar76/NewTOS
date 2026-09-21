@@ -8,14 +8,18 @@
 //!
 //! **The tree here is a replica of the kernel desktop's ADMENU as
 //! `kernel/src/desk/menu.rs` `build_menu` lays it out** — same labels, same
-//! `adjust_menu` arithmetic (title `strlen · 8 + 4`, box `maxlen · 8 + 6`,
-//! `THEACTIVE` at the RSC's 2-cell origin and as wide as the titles, boxes at
-//! `THEACTIVE.x + title.x` below the 19 px bar, entries at `(0, row · 19)`
-//! spanning the box). The kernel crate is `forced-target` AArch64 and has no
-//! host tests, so the geometry `build_menu` really builds is checked on the
-//! board (the serial dump of the registered tree in
-//! `measurement-2026-09-21-a100-a102/`); what these cases pin is the AES's
-//! behaviour on that geometry.
+//! `adjust_menu` arithmetic (EmuTOS `desk/deskmain.c:1511-1641`, A108: title
+//! `strlen · 8`, box `(maxlen + 1) · 8` with the Desk box at least
+//! `MIN_DESKMENU_WIDTH` = 20 cells, `THEACTIVE` at the RSC's 2-cell origin
+//! and as wide as the titles, boxes at `THEACTIVE.x + title.x` below the
+//! 19 px bar row, `THEBAR` 18 = `gl_hchar + 2` tall (`desk_rsc.c:249-253`),
+//! entries at `(0, row · 19)` spanning the box). The kernel crate is
+//! `forced-target` AArch64 and has no host tests, so the geometry
+//! `build_menu` really builds is checked on the board (the serial dump of the
+//! registered tree in `measurement-2026-09-21-a103-a108/`, before that
+//! `…-a100-a102/`); what these cases pin is the AES's behaviour on that
+//! geometry — and, for A108, the bar row it draws from it against the
+//! Falcon reference `falcon-tc-desktop.png`.
 //!
 //! EmuTOS: a hover moves the highlight through `menu_select` → `do_chg` →
 //! `ob_change` (`aes/gemmnlib.c:170`), one `bb_fill(MD_XOR, …)` of the item's
@@ -515,6 +519,13 @@ const DISABLED: u16 = 0x0008;
 /// `kernel/src/desk/menu.rs` `MENU_H` / `CHAR_W`.
 const BAR_H: i16 = 19;
 const CHAR_W: i16 = 8;
+/// `kernel/src/desk/menu.rs` `BAR_BOX_H` — `THEBAR`'s height, the RSC's
+/// `{0, 0, 80, 513}` = `gl_hchar + 2` (`desk/desk_rsc.c:249-253`,
+/// `aes/gemrslib.c:76-82`); one row above the separator `mn_bar` draws on
+/// `gl_hbox - 1` (`aes/gemmnlib.c:722`).
+const BAR_BOX_H: i16 = 16 + 2;
+/// `deskmain.c:80` — the Desk box's minimum width in cells.
+const MIN_DESKMENU_WIDTH: i16 = 20;
 
 /// The RSC's drop-down box word (`desk/desk_rsc.c:294`, `16716032L`): `th =
 /// -1` (outside border), border BLACK, text BLACK, IP_HOLLOW interior.
@@ -598,10 +609,14 @@ fn entry_label(e: &Entry) -> &'static [u8] {
     }
 }
 
-/// `adjust_menu` as `kernel/src/desk/menu.rs` computes it: `THEACTIVE` at
-/// `2 · CHAR_W` (`desk_rsc.c:255-259`) and `Σ title_w` wide (`deskmain.c:1534`),
-/// titles left to right at `strlen · 8 + 4`, boxes `maxlen · 8 + 6` wide at
-/// `THEACTIVE.x + title.x` (`:1617`), shifted left to stay on screen.
+/// `adjust_menu` as `kernel/src/desk/menu.rs` computes it (EmuTOS
+/// `deskmain.c:1511-1641`, in cells of `CHAR_WIDTH` = 8): `THEACTIVE` at
+/// `2 · CHAR_W` (`desk_rsc.c:255-259`) and `Σ title_w` wide (`:1534`), titles
+/// left to right each `strlen` cells wide (`:1528-1533`), boxes `maxlen + 1`
+/// cells wide (`:1608-1620`, the Desk box's search seeded at
+/// `MIN_DESKMENU_WIDTH - 1`, `:1602`) at `THEACTIVE.x + title.x` (`:1617`),
+/// moved left and one pixel narrower if they would reach the right edge
+/// (`:1626-1631`).
 struct Geom {
     active_x: i16,
     active_w: i16,
@@ -615,16 +630,22 @@ fn adjust_menu(sw: i16) -> Geom {
     let mut g = Geom { active_x: 2 * CHAR_W, active_w: 0, title_x: [0; 4], title_w: [0; 4], box_x: [0; 4], box_w: [0; 4] };
     let mut tx = 0i16;
     for (ti, (label, entries)) in MENUS.iter().enumerate() {
-        let tw = label_len(label) * CHAR_W + 4;
+        let tw = label_len(label) * CHAR_W;
         g.title_x[ti] = tx;
         g.title_w[ti] = tw;
         tx += tw;
-        let maxlen = entries.iter().map(|e| label_len(entry_label(e))).max().unwrap_or(8);
-        g.box_w[ti] = maxlen * CHAR_W + 6;
+        let seed = if ti == 0 { MIN_DESKMENU_WIDTH - 1 } else { 0 };
+        let m = entries.iter().map(|e| label_len(entry_label(e))).fold(seed, i16::max) + 1;
+        g.box_w[ti] = m * CHAR_W;
     }
     g.active_w = tx;
     for ti in 0..4 {
-        g.box_x[ti] = (g.active_x + g.title_x[ti]).min(sw - g.box_w[ti]).max(0);
+        let mut bx = g.active_x + g.title_x[ti];
+        if bx + g.box_w[ti] >= sw {
+            bx = (sw - g.box_w[ti]).max(0);
+            g.box_w[ti] -= 1;
+        }
+        g.box_x[ti] = bx;
     }
     g
 }
@@ -636,13 +657,13 @@ const TITLE_FILE: i16 = 4;
 const TITLE_OPTIONS: i16 = 6;
 
 /// The `THEACTIVE` rectangle the replica registers — what `menu_bar` takes as
-/// `gl_ctwait` (`aes/gemmnlib.c:717`): `(16, 0, 232, 19)` for these labels.
+/// `gl_ctwait` (`aes/gemmnlib.c:717`): `(16, 0, 216, 19)` for these labels.
 fn active_rect() -> (i16, i16, i16, i16) {
     let g = adjust_menu(SCREEN_W as i16);
     (g.active_x, 0, g.active_w, BAR_H)
 }
 
-/// The *File* drop-down box's absolute rectangle: `(68, 19, 158, 285)`.
+/// The *File* drop-down box's absolute rectangle: `(64, 19, 160, 285)`.
 fn file_box_rect() -> (i16, i16, i16, i16) {
     let g = adjust_menu(SCREEN_W as i16);
     (g.box_x[1], BAR_H, g.box_w[1], MENUS[1].1.len() as i16 * BAR_H)
@@ -663,7 +684,7 @@ fn desk_menu_tree(box_spec: u64) -> *mut Obj {
     let n_obj = themenus + 1 + MENUS.iter().map(|(_, e)| 1 + e.len()).sum::<usize>();
     let mut o = vec![mk(0, 0, 0, 0, 0, 0, 0, -1, -1, -1); n_obj];
     o[0] = mk(G_IBOX, 0, 0, 0, 0, sw, sh, -1, 1, themenus as i16);
-    o[1] = mk(G_BOX, 0, 0, 0, 0, sw, BAR_H, themenus as i16, 2, 2);
+    o[1] = mk(G_BOX, 0, 0, 0, 0, sw, BAR_BOX_H, themenus as i16, 2, 2);
     o[2] = mk(G_IBOX, 0, 0, g.active_x, 0, g.active_w, BAR_H, 1, first_title as i16, (themenus - 1) as i16);
     for (ti, (label, _)) in MENUS.iter().enumerate() {
         let last = ti == nt - 1;
@@ -965,13 +986,14 @@ fn hover_two_entries(host: &'static ScriptHost, pb: &mut Aespb) -> [Vec<u32>; 3]
 // ── A100 ───────────────────────────────────────────────────────────────────
 
 /// **The desktop's box: outside border, hover touches no frame pixel, and
-/// nothing repaints one.** With `0xFF1100` the *File* box `(68,19,158,285)`
-/// is framed by the ring one pixel outside it — columns 67 and 226, rows 18
-/// and 304 — black in every snapshot. Hovering *Open* inverts the entry's
-/// rows 19..37 across the box width and changes no other pixel of the box;
-/// moving on to *Info/Rename…* puts rows 19..37 back exactly (the XOR round
-/// trip) and inverts rows 38..56. The old `rehilite` painted black lines
-/// along the box rectangle's own edges — row 19, row 303, columns 68 and 225
+/// nothing repaints one.** With `0xFF1100` the *File* box `(64,19,160,285)`
+/// (A108 geometry; `(68,19,158,285)` when this case was written) is framed
+/// by the ring one pixel outside it — columns 63 and 224, rows 18 and 304 —
+/// black in every snapshot. Hovering *Open* inverts the entry's rows 19..37
+/// across the box width and changes no other pixel of the box; moving on to
+/// *Info/Rename…* puts rows 19..37 back exactly (the XOR round trip) and
+/// inverts rows 38..56. The old `rehilite` painted black lines along the box
+/// rectangle's own edges — row 19, row 303, the box's first and last columns
 /// — *inside* the frame after every toggle: a second, inner frame, plainly
 /// visible on the white interior.
 #[test]
@@ -979,7 +1001,7 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let (host, mut pb) = fresh(SPEC_OUTSIDE);
     let (bx, by, bw, bh) = file_box_rect();
-    assert_eq!((bx, by, bw, bh), (68, 19, 158, 285), "the File box as build_menu lays it out");
+    assert_eq!((bx, by, bw, bh), (64, 19, 160, 285), "the File box as build_menu lays it out (A108)");
     let [s0, s1, s2] = hover_two_entries(host, &mut pb);
 
     // The frame is the ring outside the box, black throughout.
@@ -993,8 +1015,8 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
     let white = white(host);
     assert_eq!(at(&s0, bx + 4, by), white, "row 19 belongs to the interior, not the frame");
     assert_eq!(at(&s0, bx + 4, by + bh - 1), white, "row 303 belongs to the interior");
-    assert_eq!(at(&s0, bx, by + 40), white, "column 68 belongs to the interior");
-    assert_eq!(at(&s0, bx + bw - 1, by + 40), white, "column 225 belongs to the interior");
+    assert_eq!(at(&s0, bx, by + 40), white, "the box's first column belongs to the interior");
+    assert_eq!(at(&s0, bx + bw - 1, by + 40), white, "the box's last column belongs to the interior");
 
     // Snapshot 1: entry 0 inverted across the box, everything else as opened.
     for (name, sn) in [("s0", &s0), ("s1", &s1), ("s2", &s2)] {
@@ -1010,10 +1032,10 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
         (inv, other),
         (0, 0),
         "no pixel outside entry 0 changes on the hover: {inv} inverted, {other} other, {same} same — \
-         the old frame repaint blackened row 303 and columns 68/225 (mn_do repaints nothing, gemmnlib.c:451-475)"
+         the old frame repaint blackened row 303 and the box's edge columns (mn_do repaints nothing, gemmnlib.c:451-475)"
     );
     assert_eq!(at(&s1, bx + 4, by + bh - 1), white, "row 303 stays white while Open is hovered");
-    assert_eq!(at(&s1, bx, by + 40), white, "column 68 stays white while Open is hovered");
+    assert_eq!(at(&s1, bx, by + 40), white, "the box's first column stays white while Open is hovered");
 
     // Snapshot 2: entry 0 back exactly, entry 1 inverted, the rest as opened.
     let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by, by + BAR_H);
@@ -1027,7 +1049,7 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
 /// **A box with an inside border gets its frame inverted by the item XOR —
 /// in EmuTOS too — and nothing repaints it.** The same tree with the word
 /// `build_menu` used before A100 (`(1<<16)|0x1070`, `th = +1`): the frame is
-/// row 19, row 303, columns 68 and 225, black when the box opens. Entry 0's
+/// row 19, row 303, the box's first and last columns, black when the box opens. Entry 0's
 /// rectangle covers row 19 and, in rows 19..37, the two columns; `ob_change`
 /// XORs that rectangle whole (`gemoblib.c:1295-1304`: the inset is the
 /// *item's* `ob_sst` thickness, 0 for a `G_STRING`), so those frame pixels
@@ -1044,17 +1066,17 @@ fn a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emuto
     // Snapshot 0: the frame is on the box rectangle's own edges.
     assert_eq!(at(&s0, bx + 4, by), BLACK, "row 19 is the inside frame");
     assert_eq!(at(&s0, bx + 4, by + bh - 1), BLACK, "row 303 is the inside frame");
-    assert_eq!(at(&s0, bx, by + 40), BLACK, "column 68 is the inside frame");
-    assert_eq!(at(&s0, bx + bw - 1, by + 40), BLACK, "column 225 is the inside frame");
+    assert_eq!(at(&s0, bx, by + 40), BLACK, "the box's first column is the inside frame");
+    assert_eq!(at(&s0, bx + bw - 1, by + 40), BLACK, "the box's last column is the inside frame");
     let white = white(host);
     assert_eq!(at(&s0, bx - 1, by + 40), white, "nothing outside the box");
 
     // Snapshot 1: entry 0's XOR took the frame pixels inside its rectangle
     // with it; the frame below entry 0 is untouched.
     assert_eq!(at(&s1, bx + 4, by), inv(BLACK), "row 19 inverted with entry 0 (no frame repaint)");
-    assert_eq!(at(&s1, bx, by + 9), inv(BLACK), "column 68 inverted in entry 0's rows");
+    assert_eq!(at(&s1, bx, by + 9), inv(BLACK), "the box's first column inverted in entry 0's rows");
     assert_eq!(at(&s1, bx + bw - 1, by + 9), inv(BLACK), "column 225 inverted in entry 0's rows");
-    assert_eq!(at(&s1, bx, by + 40), BLACK, "column 68 below entry 0 still the frame");
+    assert_eq!(at(&s1, bx, by + 40), BLACK, "the box's first column below entry 0 still the frame");
     assert_eq!(at(&s1, bx + 4, by + bh - 1), BLACK, "row 303 still the frame");
     let (same, _, other) = compare_rows(&s0, &s1, bx, bx + bw, by, by + BAR_H);
     assert_eq!((same, other), (0, 0), "entry 0 is one XOR of its whole rectangle, frame pixels included");
@@ -1073,8 +1095,8 @@ fn a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emuto
 const RIGHT_OF_OPTIONS: (i16, i16) = (400, 8);
 
 /// **The bar row right of *Options* is the application's: timer and keys
-/// flow, no track starts.** `THEACTIVE` is `(16, 0, 232, 19)` — the titles'
-/// sum at the RSC's 2-cell origin — so `gl_ctwait` ends at x = 248 and the
+/// flow, no track starts.** `THEACTIVE` is `(16, 0, 216, 19)` — the titles'
+/// sum at the RSC's 2-cell origin — so `gl_ctwait` ends at x = 232 and the
 /// pointer at (400, 8) never hands the mouse to `ctl_pd` (`mchange`,
 /// `aes/geminput.c:388-389`). The desktop's wait with a 100 ms timer sees the
 /// timer on time while the pointer rests there; a HELP key (`0x62`) struck
@@ -1087,7 +1109,7 @@ fn a102_the_bar_row_right_of_options_stays_with_the_application() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let (host, mut pb) = fresh(SPEC_OUTSIDE);
     let (ax, _, aw, _) = active_rect();
-    assert_eq!((ax, aw), (16, 232), "THEACTIVE = 2 cells in, Σ titles wide (desk_rsc.c:255-259, deskmain.c:1534)");
+    assert_eq!((ax, aw), (16, 216), "THEACTIVE = 2 cells in, Σ titles wide (desk_rsc.c:255-259, deskmain.c:1534)");
     assert!(RIGHT_OF_OPTIONS.0 >= ax + aw, "the rest position is right of THEACTIVE");
 
     move_to(host, &mut pb, RIGHT_OF_OPTIONS.0, RIGHT_OF_OPTIONS.1, 0);
@@ -1119,26 +1141,27 @@ fn a102_the_bar_row_right_of_options_stays_with_the_application() {
 }
 
 /// **`THEACTIVE`'s right edge is the boundary.** Resting on the last pixel
-/// column of *Options* (x = 247) starts the track — the *Options* box comes
+/// column of *Options* (x = 231) starts the track — the *Options* box comes
 /// down and a press outside cancels it, consumed, timer late; one column
-/// further (x = 248) the same rest is the application's: timer on time,
+/// further (x = 232) the same rest is the application's: timer on time,
 /// nothing drawn.
 #[test]
 fn a102_the_last_column_of_options_starts_the_track_and_the_next_does_not() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let (host, mut pb) = fresh(SPEC_OUTSIDE);
     let (ax, _, aw, _) = active_rect();
-    let edge = ax + aw; // 248: first column right of THEACTIVE
+    let edge = ax + aw; // 232: first column right of THEACTIVE
 
-    // The Options box `(172, 19, 214, 228)`; its outside border is column 171.
+    // The Options box `(160, 19, 216, 228)` (A108 geometry); its outside
+    // border is column 159.
     let g = adjust_menu(SCREEN_W as i16);
     let (ox, ow) = (g.box_x[3], g.box_w[3]);
-    assert_eq!((ox, ow), (172, 214));
+    assert_eq!((ox, ow), (160, 216));
 
     move_to(host, &mut pb, edge, 8, 0);
     let before = bar_and_boxes_pixels(host);
     dwell(host, 50);
-    host.push(snap(0)); // mid-rest: what is on screen while the pointer rests at x = 248
+    host.push(snap(0)); // mid-rest: what is on screen while the pointer rests at x = 232
     dwell(host, 250);
     glide_y(host, 100 - 8, 0);
     let (fired, _, _, msg, elapsed) = evnt_multi_timed_elapsed(host, &mut pb, 100);
@@ -1268,4 +1291,94 @@ fn a102_menu_popup_no_pick_writes_only_mn_keystate() {
         "no pick: mn_keystate = 0 and nothing else is written (gemmnext.c:347); out = {mout:?}"
     );
     drain(host, &mut pb);
+}
+
+// ── A108 ───────────────────────────────────────────────────────────────────
+
+/// **The English desktop tree measures as `adjust_menu` computes it.** Title
+/// widths are `strlen` cells — `" Desk "` 6, `" File "` 6, `" View "` 6,
+/// `" Options "` 9 (`deskmain.c:1528-1533`) — so the titles sit at 0/48/96/
+/// 144 px, 48/48/48/72 wide, and `THEACTIVE` is `(16, 0, 216, 19)`
+/// (`:1534`, `desk_rsc.c:255-259`). Box widths are `maxlen + 1` cells
+/// (`:1608-1620`): Desk `max(19, 18) + 1 = 20` cells = 160 px
+/// (`MIN_DESKMENU_WIDTH`, `:80,1602`), File `19 + 1 = 20` = 160, View
+/// `16 + 1 = 17` = 136, Options `26 + 1 = 27` = 216; each box at
+/// `THEACTIVE.x + title.x` (`:1617`): 16/64/112/160, none near the right
+/// edge on 640. `THEBAR` is `gl_hchar + 2` = 18 tall (`desk_rsc.c:249-253`,
+/// `{0, 0, 80, 513}`), the titles and `THEACTIVE` 19 (`769`). Before A108
+/// the titles were `strlen · 8 + 4` (52/52/52/76, `THEACTIVE` 232 wide) and
+/// the boxes `maxlen · 8 + 6` (150/158/134/214), `THEBAR` 19.
+#[test]
+fn a108_titles_and_boxes_measure_as_adjust_menu_computes() {
+    let g = adjust_menu(SCREEN_W as i16);
+    assert_eq!(g.title_x, [0, 48, 96, 144], "title x = Σ strlen · 8 before it (deskmain.c:1528-1533)");
+    assert_eq!(g.title_w, [48, 48, 48, 72], "title width = strlen · 8 (deskmain.c:1531)");
+    assert_eq!((g.active_x, g.active_w), (16, 216), "THEACTIVE (desk_rsc.c:255-259; deskmain.c:1534)");
+    assert_eq!(g.box_w, [160, 160, 136, 216], "box width = (maxlen + 1) · 8, Desk ≥ MIN_DESKMENU_WIDTH (deskmain.c:1602-1635)");
+    assert_eq!(g.box_x, [16, 64, 112, 160], "box x = THEACTIVE.x + title.x (deskmain.c:1617)");
+    // The registered tree carries exactly that, plus THEBAR's 18 rows.
+    let tree = desk_menu_tree(SPEC_OUTSIDE);
+    // SAFETY: `tree` is the leaked, live replica.
+    let o = |i: usize| unsafe { *tree.add(i) };
+    assert_eq!((o(1).x, o(1).y, o(1).w, o(1).h), (0, 0, 640, BAR_BOX_H), "THEBAR {{0,0,80,513}} = gl_hchar + 2 tall (desk_rsc.c:249-253)");
+    assert_eq!(BAR_BOX_H, 18);
+    assert_eq!((o(2).x, o(2).y, o(2).w, o(2).h), (16, 0, 216, BAR_H), "THEACTIVE {{2,0,·,769}}");
+    for (ti, i) in (3..7).enumerate() {
+        assert_eq!((o(i).x, o(i).w, o(i).h), (g.title_x[ti], g.title_w[ti], BAR_H), "title {ti} {{x,0,strlen,769}}");
+    }
+    // Every entry spans its box's width (`item->ob_width = m`, :1633-1634).
+    let mut k = 8usize;
+    for (ti, (_, entries)) in MENUS.iter().enumerate() {
+        assert_eq!((o(k).x, o(k).w), (g.box_x[ti], g.box_w[ti]), "box {ti}");
+        for e in 0..entries.len() {
+            assert_eq!(o(k + 1 + e).w, g.box_w[ti], "entry {e} of box {ti} is box-wide");
+        }
+        k += 1 + entries.len();
+    }
+}
+
+/// **The bar row as the AES draws it from that tree is the Falcon
+/// reference's.** `falcon-tc-desktop.png` (EmuTOS on a Hatari Falcon030,
+/// 640x480 truecolor, the desktop idle): the black pixels of the bar rows
+/// 0..17 lie in four groups — *Desk* columns 25..54 (173 px), *File*
+/// 73..102 (135), *View* 121..150 (155), *Options* 169..222 (273), all on
+/// rows 3..14 (*Options* 3..16, the `p`'s descender); row 17 has none, row
+/// 18 is the separator across the screen (`gsx_cline(0, gl_hbox - 1, …)`,
+/// `aes/gemmnlib.c:722`), and nothing is inked right of *Options*. Each
+/// group starts one column after its title's second cell (`" Desk "` at
+/// x = 16: the `D` cell at 24, ink from 25). Before A108 *File*/*View*/
+/// *Options* stood 4/8/12 columns further right (the `+ 4` per title).
+#[test]
+fn a108_bar_row_glyphs_sit_where_the_falcon_reference_has_them() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, _pb) = fresh(SPEC_OUTSIDE);
+    let px = host.raster.px.lock().unwrap().clone();
+    let black = |x: i16, y: i16| px[y as usize * SCREEN_W as usize + x as usize] == BLACK;
+    let group = |x0: i16, x1: i16| -> Option<(i16, i16, i16, i16, usize)> {
+        let pts: Vec<(i16, i16)> = (0..18).flat_map(|y| (x0..x1).filter(move |&x| black(x, y)).map(move |x| (x, y))).collect();
+        if pts.is_empty() {
+            return None;
+        }
+        Some((
+            pts.iter().map(|p| p.0).min().unwrap(),
+            pts.iter().map(|p| p.0).max().unwrap(),
+            pts.iter().map(|p| p.1).min().unwrap(),
+            pts.iter().map(|p| p.1).max().unwrap(),
+            pts.len(),
+        ))
+    };
+    // (title cell columns, reference ink bbox + count)
+    let want = [
+        ("Desk", 16, 64, (25, 54, 3, 14, 173)),
+        ("File", 64, 112, (73, 102, 3, 14, 135)),
+        ("View", 112, 160, (121, 150, 3, 14, 155)),
+        ("Options", 160, 232, (169, 222, 3, 16, 273)),
+    ];
+    for (name, x0, x1, bbox) in want {
+        assert_eq!(group(x0, x1), Some(bbox), "{name}: ink (x0,x1,y0,y1,count) in the bar rows 0..17 vs falcon-tc-desktop.png");
+    }
+    assert_eq!(group(232, SCREEN_W as i16), None, "nothing inked right of Options (ref)");
+    assert_eq!(group(0, 16), None, "nothing inked left of THEACTIVE (ref)");
+    assert!((0..SCREEN_W as i16).all(|x| black(x, 18)), "row 18 is the separator (gemmnlib.c:722; ref row 18)");
+    assert!((0..SCREEN_W as i16).all(|x| !black(x, 17)), "row 17 is bar white (ref)");
 }

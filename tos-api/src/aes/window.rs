@@ -19,8 +19,8 @@
 
 use super::graf::{gl_hbox, gl_hchar, gl_wchar};
 use super::object::{
-    add_3d_effect, gr_crack, gr_rect, render_tree_app, render_tree_lp64, Object, ACT_BUTCOL, ACT_TXTMOVE,
-    BACKGR_COL, IP_4PATT, IP_HOLLOW, IP_PATTERNS, IP_SOLID,
+    add_3d_effect, gr_crack, gr_rect, render_tree_app, render_tree_lp64, xor_color, Object, ACT_BUTCOL,
+    ACT_COLCHANGE, ACT_TXTMOVE, BACKGR_COL, IP_4PATT, IP_HOLLOW, IP_PATTERNS, IP_SOLID,
 };
 use super::Aespb;
 use crate::bdos::process::{self, usermem, Abi};
@@ -203,6 +203,8 @@ fn adj_hbox() -> i16 {
 }
 
 const WHITE: Pel = 0;
+/// VDI pen 1 (`obdefs.h`, EmuTOS `BLACK`).
+const BLACK: Pel = 1;
 const GRAY_LT: Pel = 8; // 3D face (EmuTOS LWHITE)
 
 /// Colour of the window drop shadow.
@@ -2599,8 +2601,32 @@ fn draw_box_ink(r: Grect, ink: Ink, backend: &dyn RasterBackend, clip: ClipRect)
 /// [`boxchar_origin`], and last the bevel inside the border
 /// (`add_3d_effect`, `:949-950`, inset by `th = 1`, `:230-237`) — the two
 /// 1-px polylines of [`add_3d_effect`], not a 2-px band (A95).
+///
+/// **`changecol` (A105 (4)).** Every frame gadget drawn here is `FL3DACT`
+/// (`gl_3dflags`, `gemwmlib.c:110-129`), so `just_draw` takes `changecol =
+/// actcolchange` (`aes/gemoblib.c:509-513`; default 0, `init_3d`, `:1332`,
+/// settable by `objc_sysvar(LK3DACT)`). With it set, a `SELECTED` gadget
+/// changes colour: a hollow interior becomes solid black, any other takes
+/// its complement (`:681-690`, `xor_color`), the glyph colour takes its
+/// complement and the text mode drops to `MD_TRANS` (`:699-706`), and the
+/// bevel is judged against the *changed* interior colour (`:950`). With it
+/// clear (the default) the press shows only as the sunk bevel and the moved
+/// glyph — the interior keeps its colour (the hollow white of the default
+/// `0x1101` word, `wm_start`, `gemwmlib.c:1346-1349`; `ic = BLACK` there,
+/// so the 3D face substitution of [`ink_of`] does not apply either).
 fn gadget_sel(r: Grect, ch: u16, sel: bool, ink: Ink, backend: &dyn RasterBackend, clip: ClipRect) {
     let slot = grow_3d(r);
+    let mut ink = ink;
+    if sel && ACT_COLCHANGE.load(Ordering::Relaxed) != 0 {
+        if ink.ip == IP_HOLLOW {
+            ink.ip = IP_SOLID;
+            ink.ic = BLACK;
+        } else {
+            ink.ic = xor_color(backend, ink.ic);
+        }
+        ink.tc = xor_color(backend, ink.tc);
+        ink.replace = false;
+    }
     draw_box_ink(slot, ink, backend, clip);
     if let Some((gx, gy)) = boxchar_origin(slot, sel) {
         backend.draw_glyph(gx, gy, crate::vdi::font::glyph(ch), ink.tc, ink.text_mode(), clip);
@@ -2703,29 +2729,59 @@ fn draw_shadow(b: Grect, backend: &dyn RasterBackend, clip: ClipRect) {
     );
 }
 
-/// Draw text left-aligned within a band, one 8×16 glyph per byte, in the
+/// `TEDINFO.te_just` values (`obdefs.h`): `gl_aname` is centred
+/// (`gl_aname.te_just = TE_CNTR`, `gemwmlib.c:503`), `gl_ainfo` left-aligned
+/// (`gl_asamp`, `:154-157`).
+const TE_LEFT: i16 = 0;
+const TE_CNTR: i16 = 2;
+
+/// Where `gr_gtext(just, IBM, text, &c)` puts an `n`-character system-font
+/// string in the cell `c`, and how many of its characters it draws —
+/// `(x, y, numchs)`, or `None` when nothing is drawn.
+///
+/// `gsx_tcalc` (`aes/gemgraf.c:480-497`): the text's extent is clamped to
+/// the cell (`textw = min(c.w, n·gl_wchar)`, `texth = min(c.h, gl_hchar)`)
+/// and then **whole characters that do not fit are dropped** (`numchs =
+/// min(n, textw / gl_wchar)`); a cell shorter than one glyph draws nothing
+/// (`texth / gl_hchar == 0` → `numchs = 0`). `gr_just` (`:567-589`) then
+/// centres vertically and justifies horizontally, each axis only when there
+/// is slack and rounding the half-margin **up** (`(slack + 1) / 2`); text
+/// wider than the cell has no slack and stays at the cell's origin —
+/// **left-aligned** whatever `te_just` says. The same rule
+/// [`boxchar_origin`] applies to the one glyph of a `G_BOXCHAR`
+/// (`object::gr_gtext` to the object drawer's TEDINFO family).
+fn gr_just_text(just: i16, c: Grect, n: usize) -> Option<(i16, i16, usize)> {
+    let (cw, ch) = (gl_wchar(), gl_hchar());
+    let n = n.min(i16::MAX as usize) as i16;
+    let textw = c.w.min(n.saturating_mul(cw));
+    let texth = c.h.min(ch);
+    let numchs = if texth / ch != 0 { n.min(textw / cw) } else { 0 };
+    if numchs <= 0 {
+        return None;
+    }
+    let mut y = c.y;
+    let slack_h = c.h - texth;
+    if slack_h > 0 {
+        y += (slack_h + 1) / 2;
+    }
+    let mut x = c.x;
+    let slack_w = c.w - textw;
+    if slack_w > 0 && just == TE_CNTR {
+        x += (slack_w + 1) / 2;
+    }
+    Some((x, y, numchs as usize))
+}
+
+/// `gsx_tblt(IBM, x, y, numchs)` (`aes/gemgraf.c:500-527`) for the frame:
+/// `s` one 8×16 glyph per byte with the cell top at `(x, y)`, in the
 /// gadget's text colour and writing mode (`gsx_attr(TRUE, tmode, tcol)`,
-/// `aes/gemoblib.c:709`): `Replace` paints every glyph cell's background white
-/// (the VDI's replace-mode text), `Transparent` inks only the set bits.
-#[allow(clippy::too_many_arguments)]
-fn draw_label(
-    x: i16,
-    y: i16,
-    max_w: i16,
-    s: &[u8],
-    fg: Pel,
-    mode: WriteMode,
-    backend: &dyn RasterBackend,
-    clip: ClipRect,
-) {
-    let cy = y + 1;
+/// `aes/gemoblib.c:709`): `Replace` paints every glyph cell's background
+/// white (the VDI's replace-mode text), `Transparent` inks only the set bits.
+fn draw_label(x: i16, y: i16, s: &[u8], fg: Pel, mode: WriteMode, backend: &dyn RasterBackend, clip: ClipRect) {
     let mut cx = x;
     for &b in s {
-        if b == 0 || cx + 8 > x + max_w {
-            break;
-        }
-        backend.draw_glyph(cx, cy, crate::vdi::font::glyph(b as u16), fg, mode, clip);
-        cx += 8;
+        backend.draw_glyph(cx, y, crate::vdi::font::glyph(b as u16), fg, mode, clip);
+        cx += gl_wchar();
     }
 }
 
@@ -2800,12 +2856,6 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         name_x += ADJ3DSTD;
         name_w -= 2 * ADJ3DSTD;
         let nr = Grect { x: name_x, y: gy, w: name_w, h: gl_hbox() };
-        // `gl_aname.te_ptext = pw->w_pname` on every build (`gemwmlib.c:501`):
-        // the caller's buffer as it reads *now*, bounded by the area.
-        let mut nbuf = [0u8; LIVE_STR_MAX];
-        let name = w.name.read(&mut nbuf, label_walk(name_w));
-        let nlen = name.len() as i16 * 8;
-        let nx = name_x + ((name_w - nlen) / 2).max(2);
         // A `MOVER` without a `NAME` still gets the name box, but
         // `w_bldactive` never calls `w_setcolor` for it and sets
         // `gl_aname.te_color = 0` instead (`gemwmlib.c:540-550`): the stored
@@ -2815,7 +2865,27 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         let (name_ink, name_box) =
             if kind & NAME != 0 { (ink(W_NAME_IDX), grow_3d(nr)) } else { (ink_of(0, false, true), nr) };
         draw_box_ink(name_box, name_ink, backend, clip);
-        draw_label(nx, gy, name_w, name, name_ink.tc, name_ink.text_mode(), backend, clip);
+        // The name text as `just_draw` places a `G_BOXTEXT`'s (A105 (2)):
+        // `gr_gtext(TE_CNTR, IBM, te_ptext, &c)` with `c = gr_inside(&t,
+        // tmpth)` — the rect inside the border of the *drawn* (3D-grown)
+        // box, `te_thickness = 1` (`aes/gemoblib.c:735-738`,
+        // `gemwmlib.c:154-157`) — nudged one row up for an unselected
+        // activator when `acttxtmove` is set (`:742-755`; the name is
+        // `FL3DACT` only with a `NAME`, `gemwmlib.c:553`), then justified by
+        // [`gr_just_text`]: centred with `(slack + 1) / 2`, left-aligned and
+        // cut to whole glyphs once wider than the cell. `gl_aname.te_ptext`
+        // is `pw->w_pname` only with a `NAME`, else `""` (`:501`): the
+        // caller's buffer as it reads *now*, walked as far as the cell can
+        // show (the extra glyph tells a longer string from a fitting one).
+        let mut c = inside_1(name_box);
+        if kind & NAME != 0 && ACT_TXTMOVE.load(Ordering::Relaxed) != 0 {
+            c.y -= 1;
+        }
+        let mut nbuf = [0u8; LIVE_STR_MAX];
+        let name = if kind & NAME != 0 { w.name.read(&mut nbuf, label_walk(c.w)) } else { &nbuf[..0] };
+        if let Some((tx, ty, n)) = gr_just_text(TE_CNTR, c, name.len()) {
+            draw_label(tx, ty, &name[..n], name_ink.tc, name_ink.text_mode(), backend, clip);
+        }
         // Untopped, `W_NAME.ob_state = DISABLED` (`w_bldactive`, both arms,
         // `gemwmlib.c:537,546`): `just_draw`'s state block lays `IP_4PATT` in
         // WHITE, `MD_TRANS`, over the rect inside the border (`gr_inside(&t,
@@ -2853,11 +2923,24 @@ fn draw_frame(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipRe
         // starts on the row after it (`tb += gl_hbox`, `:1811-1812`) — hollow
         // inside, then the text in `tc`/`md`. `FL3DNONE` — no growth, no bevel.
         let i = ink(W_INFO_IDX);
-        draw_box_ink(Grect { x: b.x, y: top, w: b.w, h: gl_hbox() }, i, backend, clip);
-        // `gl_ainfo.te_ptext = pw->w_pinfo` (`gemwmlib.c:502`) — live, as above.
+        let info_box = Grect { x: b.x, y: top, w: b.w, h: gl_hbox() };
+        draw_box_ink(info_box, i, backend, clip);
+        // `gl_ainfo.te_ptext = pw->w_pinfo` (`gemwmlib.c:502`) — live, as
+        // above — drawn as `just_draw` places a `G_BOXTEXT`'s text (A105 (1)):
+        // `gr_gtext(TE_LEFT, IBM, …, gr_inside(&t, 1))` (`gl_asamp`
+        // `TE_LEFT`, `te_thickness = 1`, `gemwmlib.c:154-157`;
+        // `aes/gemoblib.c:735-738`), no 3D growth and no `movetext` for the
+        // `FL3DNONE` gadget (`:521-524`), so the cell is `(1, 1, w - 2,
+        // gl_hbox - 2)` of the box and `gr_just` adds `(17 - 16 + 1) / 2 = 1`
+        // row (`gemgraf.c:574-576`): glyph cells at `(1, 2)` of the box —
+        // reference `falcon-tc-window-c.png`, first ink row of the `5` on
+        // frame row 27 for a window whose info band starts on row 23.
+        let c = inside_1(info_box);
         let mut ibuf = [0u8; LIVE_STR_MAX];
-        let info = w.info.read(&mut ibuf, label_walk(b.w - 4));
-        draw_label(b.x + 3, top, b.w - 4, info, i.tc, i.text_mode(), backend, clip);
+        let info = w.info.read(&mut ibuf, label_walk(c.w));
+        if let Some((tx, ty, n)) = gr_just_text(TE_LEFT, c, info.len()) {
+            draw_label(tx, ty, &info[..n], i.tc, i.text_mode(), backend, clip);
+        }
         top += gl_hbox();
     }
 
@@ -2964,13 +3047,18 @@ fn hbar_box(b: Grect, kind: u16) -> Grect {
 /// returns `(offset, len)` — the thumb starts `offset` px into the track and
 /// spans `len` px. `slsize` = `WF_?SLSIZ` (per-mille of the track, or **−1** =
 /// "use default size" = one gadget cell), `slpos` = `WF_?SLIDE` (per-mille of
-/// the remaining travel). The single source of truth for the thumb, shared by
-/// the slider draw ([`draw_vslider`]/[`draw_hslider`]) and the frame hit-test /
-/// drag ([`gadget_at`]/[`drag_elevator`]) so the clicked thumb is exactly the
-/// drawn one. Matches EmuTOS `w_bldvbar`/`w_bldhbar` (`gemwmlib.c:634-708`):
-/// `size = gl_hbox` when `w_vslsiz == -1`, else per-mille of the track.
-fn thumb_geom(track_len: i16, slsize: i16, slpos: i16) -> (i16, i16) {
-    let min_thumb = gl_hbox().min(track_len);
+/// the remaining travel), `min_size` = that one gadget cell along the
+/// track's axis: **`gl_hbox` for the vertical bar, `gl_wbox` for the
+/// horizontal one** — `w_bldvbar` `size = gl_hbox … max(gl_hbox, mul_div(h,
+/// w_vslsiz, 1000))` (`gemwmlib.c:431-434`), `w_bldhbar` `size = gl_wbox …
+/// max(gl_wbox, mul_div(w, w_hslsiz, 1000))` (`:469-471`); the two differ
+/// on a non-square-pixel screen (`gl_wbox = gl_hbox · aspect`,
+/// `gemgraf.c:413-415`). The single source of truth for the thumb, shared
+/// by the slider draw ([`draw_vslider`]/[`draw_hslider`]) and the frame
+/// hit-test / drag ([`gadget_at`]/[`drag_elevator`]) so the clicked thumb is
+/// exactly the drawn one.
+fn thumb_geom(track_len: i16, slsize: i16, slpos: i16, min_size: i16) -> (i16, i16) {
+    let min_thumb = min_size.min(track_len);
     let len = if slsize == -1 {
         min_thumb
     } else {
@@ -3134,7 +3222,7 @@ fn draw_vslide(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipR
         // Thumb geometry shared with `gadget_at`/`drag_elevator` (see
         // [`thumb_geom`]): a stored −1 size renders as one gadget cell, never a
         // zero/negative-height elevator; the stored/returned value stays −1.
-        let (off, thumb_h) = thumb_geom(track_h, w.vslsize, w.vslide);
+        let (off, thumb_h) = thumb_geom(track_h, w.vslsize, w.vslide, gl_hbox());
         let e = elev_rect(bar, (track_y, track_h), off, thumb_h, true);
         draw_elevator(e, ink(W_VELEV_IDX), backend, clip);
     }
@@ -3266,7 +3354,7 @@ fn draw_hslide(w: &Window, istop: bool, backend: &dyn RasterBackend, clip: ClipR
         draw_box_ink(track, ink(W_HSLIDE_IDX), backend, clip);
         // Thumb geometry shared with `gadget_at`/`drag_elevator` (see
         // [`thumb_geom`]): a stored −1 size renders as one gadget cell.
-        let (off, thumb_w) = thumb_geom(track_w, w.hslsize, w.hslide);
+        let (off, thumb_w) = thumb_geom(track_w, w.hslsize, w.hslide, GL_WBOX);
         let e = elev_rect(bar, (track_x, track_w), off, thumb_w, false);
         draw_elevator(e, ink(W_HELEV_IDX), backend, clip);
     }
@@ -4545,7 +4633,7 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
         // `my < elev_y` → up-page, else down-page).
         if let Some((track_y, track_h)) = vtrack(w) {
             if my >= track_y && my < track_y + track_h {
-                let (off, len) = thumb_geom(track_h, w.vslsize, w.vslide);
+                let (off, len) = thumb_geom(track_h, w.vslsize, w.vslide, gl_hbox());
                 let e = elev_rect(bar, (track_y, track_h), off, len, true);
                 if my >= e.y && my < e.y + e.h {
                     return Gadget::VElev;
@@ -4567,7 +4655,7 @@ fn gadget_at(w: &Window, mx: i16, my: i16) -> Gadget {
         // (EmuTOS W_HELEV vs W_HSLIDE split, `mx < elev_x` → left-page).
         if let Some((track_x, track_w)) = htrack(w) {
             if mx >= track_x && mx < track_x + track_w {
-                let (off, len) = thumb_geom(track_w, w.hslsize, w.hslide);
+                let (off, len) = thumb_geom(track_w, w.hslsize, w.hslide, GL_WBOX);
                 let e = elev_rect(bar, (track_x, track_w), off, len, false);
                 if mx >= e.x && mx < e.x + e.w {
                     return Gadget::HElev;
@@ -4877,7 +4965,7 @@ fn drag_elevator(w: &mut Window, vert: bool, backend: &dyn RasterBackend) -> i16
     let Some((track_start, track_len)) = (if vert { vtrack(w) } else { htrack(w) }) else {
         return slpos;
     };
-    let (thumb_off, thumb_len) = thumb_geom(track_len, slsize, slpos);
+    let (thumb_off, thumb_len) = thumb_geom(track_len, slsize, slpos, if vert { gl_hbox() } else { GL_WBOX });
     let travel = track_len - thumb_len;
     // Grip: how far the cursor sits from the thumb's leading edge at grab, held
     // constant so the thumb does not snap its edge to the cursor (EmuTOS
@@ -5764,6 +5852,28 @@ mod live_title_tests {
         assert_eq!(label_walk(1850), 232);
         assert_eq!(label_walk(0), 1);
         assert_eq!(label_walk(-5), 1);
+    }
+
+    /// A105 (3): the default / minimum elevator is the gadget cell along the
+    /// track's axis — `gl_hbox` vertically (`w_bldvbar`, `gemwmlib.c:431-434`),
+    /// `gl_wbox` horizontally (`w_bldhbar`, `:469-471`). The two are equal
+    /// on this profile (19/19), so the helper is pinned with a pair that
+    /// differs, as on a screen with non-square pixels (`gl_wbox = gl_hbox ·
+    /// aspect`, `gemgraf.c:413-415`).
+    #[test]
+    fn thumb_geom_takes_the_axis_minimum() {
+        // `-1` = "default size" = exactly the axis minimum, at the track start.
+        assert_eq!(thumb_geom(200, -1, 0, 19), (0, 19));
+        assert_eq!(thumb_geom(200, -1, 0, 23), (0, 23));
+        // A per-mille size under the minimum is raised to it — and the travel
+        // (`h - size`, `:435`) shrinks by the same amount.
+        assert_eq!(thumb_geom(200, 50, 1000, 19), (181, 19));
+        assert_eq!(thumb_geom(200, 50, 1000, 23), (177, 23));
+        // A size above the minimum is untouched by it.
+        assert_eq!(thumb_geom(200, 500, 500, 19), (50, 100));
+        assert_eq!(thumb_geom(200, 500, 500, 23), (50, 100));
+        // A track shorter than the minimum caps the elevator at the track.
+        assert_eq!(thumb_geom(10, -1, 0, 23), (0, 10));
     }
 }
 

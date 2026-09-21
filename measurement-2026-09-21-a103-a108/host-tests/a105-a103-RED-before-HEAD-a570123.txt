@@ -1,0 +1,41 @@
+     Running tests/aes_a105_frame_remnants.rs (target/debug/deps/aes_a105_frame_remnants-6e366df8cb54fa9a)
+test a105_4_pressed_closer_keeps_its_colours_without_actcolchange ... ok
+test a105_1_info_text_starts_one_column_inside_the_border_on_the_third_row ... FAILED
+test a105_2_overlong_name_is_left_aligned_and_cut_to_whole_glyphs ... FAILED
+test a105_2_odd_width_name_is_centred_with_gr_justs_rounding ... FAILED
+test a105_4_pressed_closer_takes_the_complement_colours_with_actcolchange ... FAILED
+thread 'a105_1_info_text_starts_one_column_inside_the_border_on_the_third_row' (5067933) panicked at tos-api/tests/aes_a105_frame_remnants.rs:938:5:
+assertion `left == right` failed: the `5` of the info line: reference ink columns 10..15, rows 27..38 (cell at frame (9,25))
+  left: Some((28, 32, 122, 133))
+ right: Some((26, 31, 123, 134))
+thread 'a105_2_overlong_name_is_left_aligned_and_cut_to_whole_glyphs' (5067935) panicked at tos-api/tests/aes_a105_frame_remnants.rs:1002:5:
+assertion `left == right` failed: the first 34 glyphs, left-aligned at column 24
+  left: Some((58, 319, 45, 56))
+ right: Some((55, 324, 45, 56))
+thread 'a105_2_odd_width_name_is_centred_with_gr_justs_rounding' (5067934) panicked at tos-api/tests/aes_a105_frame_remnants.rs:979:5:
+assertion `left == right` failed: the name's ink at cells from (179,43)
+  left: Some((179, 200, 45, 56))
+ right: Some((180, 201, 45, 56))
+thread 'a105_4_pressed_closer_takes_the_complement_colours_with_actcolchange' (5067937) panicked at tos-api/tests/aes_a105_frame_remnants.rs:1075:13:
+assertion `left == right` failed: actcolchange 1: interior/glyph at (32,42) (ink false)
+  left: 16776191
+ right: 0
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/aes_a89_a92_menu_event_neighbours.rs (target/debug/deps/aes_a89_a92_menu_event_neighbours-2799bdd0b74150a0)
+test evnt_mouse_rectangle_crossed_while_the_selecting_press_is_held_is_delivered_at_the_release ... ok
+test leaving_the_submenu_and_returning_to_the_parent_item_a_press_selects_the_parent ... ok
+test a_move_queued_before_the_call_counts_for_the_arm_time_position ... ok
+test leaving_the_submenu_into_no_mans_land_keeps_the_parent_and_a_press_selects_it ... ok
+test press_on_the_parent_item_with_its_submenu_showing_selects_the_parent ... ok
+test a103_press_on_the_submenu_boxs_own_area_picks_smroot ... FAILED
+test evnt_mouse_satisfied_at_arm_time_returns_at_once_regardless_of_ownership ... ok
+test a_press_queued_before_the_call_counts_for_the_arm_time_level ... ok
+test a103_a_disabled_item_with_a_submenu_attached_opens_nothing ... FAILED
+test hovering_a_disabled_title_drops_no_box_and_hilites_nothing ... ok
+thread 'a103_press_on_the_submenu_boxs_own_area_picks_smroot' (5067940) panicked at tos-api/tests/aes_a89_a92_menu_event_neighbours.rs:447:17:
+the AES is still waiting after 20000 pumps on an exhausted mouse script: the event it waits for never came (pointer (161, 66), buttons 0x00)
+thread 'a103_a_disabled_item_with_a_submenu_attached_opens_nothing' (5067939) panicked at tos-api/tests/aes_a89_a92_menu_event_neighbours.rs:1337:5:
+assertion `left == right` failed: no submenu may open under a DISABLED item (display_submenu only after menu_select succeeds, aes/gemmnlib.c:470-475); pen at (255,85) = 0
+  left: 0
+ right: 3
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s

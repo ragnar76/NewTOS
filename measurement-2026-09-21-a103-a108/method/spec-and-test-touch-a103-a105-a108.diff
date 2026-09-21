@@ -1,0 +1,827 @@
+diff --git a/docs/api/aes/menu.md b/docs/api/aes/menu.md
+index 3c490df..db8c4d9 100644
+--- a/docs/api/aes/menu.md
++++ b/docs/api/aes/menu.md
+@@ -791,6 +791,27 @@ message.
+    else (`:375`); leaving it into no man's land ends `mn_do` without a
+    selection (`cur_menu == NIL` → `cur_title = NIL` → `done`, `:406-411`, or
+    the explicit DISABLED exit, `:429-434`).
++8. **The submenu box's own area picks `smroot`; a DISABLED item opens no
++   submenu (A103, 2026-09-21).** `cur_submenu = ob_find(smtree, smroot, 1,
++   x, y)` (`aes/gemmnlib.c:417`) answers the box **itself** for a point
++   inside it that no child covers — `ob_find` returns the last object found
++   (`aes/gemoblib.c:1034-1113`) — and `mn_do` treats that like any submenu
++   item: `SUBMENU_STATE` (`:418-422`), `menu_select(smtree, cur_submenu,
++   last_submenu, TRUE)` hilites it (`:474-475` → `do_chg` → `ob_change`, the
++   box interior's XOR for a black-and-white `G_BOX`, `gemoblib.c:1295-1304`),
++   leaving it un-hilites it (`:446-448`), and a press there breaks the loop
++   (`:373-374`); the cleanup clears it without a draw (`:488`), undisplays
++   the submenu, restores the box and — the **parent** item enabled, its
++   SELECTED bit cleared by the same `do_chg` (`:493`) — returns `*ptitle =
++   cur_title`, `*pitem = cur_submenu` = `smroot`, `*ptree = smtree`
++   (`:494-496`). NewTOS delivers this for a submenu living in the bar's own
++   tree (the index round-trips as `MN_SELECTED`'s `msg[4]`); a submenu in a
++   separate tree still needs the `msg[5..7]` tree-pointer path (deferred,
++   `menu::track`). `display_submenu` runs only inside `if
++   (menu_select(tree, cur_item, last_item, TRUE))` (`:470-475`), and
++   `menu_select` → `do_chg(…, chkdisabled = TRUE)` refuses a DISABLED object
++   (`:158-160`): a DISABLED item with a submenu attached is neither hilited
++   nor given its submenu, and a press on it is the cancel (`:493`).
+ 
+ **Net effect and the contract it produces.** For the whole bracket from step 1
+ through the end of step 5 above, the only process `gl_mowner` ever names is
+diff --git a/docs/api/aes/window-graphics.md b/docs/api/aes/window-graphics.md
+index 1638875..503c134 100644
+--- a/docs/api/aes/window-graphics.md
++++ b/docs/api/aes/window-graphics.md
+@@ -1884,6 +1884,37 @@ byte of any buffer the caller passed (TASK/A42).
+   box is `FL3DACT` when the window has a `NAME` (`gemwmlib.c:553`) and gets
+   it too.
+ 
++  **Text placement in `W_NAME`/`W_INFO`, the pressed `ACT` gadget (A105,
++  2026-09-21).** Both are `G_BOXTEXT` (`gl_watype`, `gemwmlib.c:61-81`)
++  with `te_thickness = 1`; `gl_aname` is `TE_CNTR` (`:503`), `gl_ainfo`
++  `TE_LEFT` (`gl_asamp`, `:154-157`). `just_draw` hands `gr_gtext` the rect
++  **inside the border of the drawn object** — `c = gr_inside(&t, tmpth)`
++  (`gemoblib.c:735-738`), `t` being the 3D-grown rect for the `FL3DACT` name
++  (`:503-508`) and the plain rect for the `FL3DNONE` info line — and, for an
++  `FL3DACT` object with `acttxtmove` set (default 1, `:1332`), first moves
++  it: `c.g_y--` unselected, `c.g_x++` selected (`:742-755`). `gr_just`
++  (`gemgraf.c:567-589`) then centres vertically by `(c.h - 16 + 1) / 2` and
++  horizontally by `(c.w - textw + 1) / 2` (`TE_CNTR`) — each only when there
++  is slack — after `gsx_tcalc` (`:480-497`) clamped `textw` to the cell and
++  cut the string to the whole glyphs that fit (`numchs = min(n, textw /
++  gl_wchar)`; a cell shorter than a glyph draws nothing). Hence: the info
++  glyph cells start at `(1, 2)` of the info box (`(17 - 16 + 1) / 2 = 1`
++  row of slack split), the name's at `x = name_x - 1 + (name_w + 2 - textw +
++  1) / 2`, `y = name_y + 1`; a name wider than `name_w + 2` starts at
++  `name_x - 1` (left-aligned, no slack) and shows `(name_w + 2) / 8` glyphs.
++  `gl_aname.te_ptext` is the window's name only with a `NAME` in `kind`,
++  else `""` (`gemwmlib.c:501`). The horizontal bar's default/minimum elevator
++  is `gl_wbox`, the vertical one's `gl_hbox` (`:431-434`, `:469-471`). A
++  pressed (`SELECTED`) `FL3DACT` gadget takes `changecol = actcolchange`
++  (`gemoblib.c:509-513`; default 0): when set, a hollow interior goes solid
++  black, any other takes `xor_color` (`:681-690`), the glyph is drawn in its
++  complement in `MD_TRANS` (`:699-706`), and `add_3d_effect` judges its lower
++  line against the changed interior colour (`:950`); with it clear the press
++  is the sunk bevel and the moved glyph alone. The frame gadgets' default
++  word `0x1101` is `IP_HOLLOW` with `ic = BLACK`, so the 3D face
++  substitution (`:619-636`, hollow **and** white) does not apply to them —
++  their face is `gr_rect`'s hollow white.
++
+   **(3) Mapping onto `draw_frame`'s regions** — the gap as found on
+   2026-09-20 **before** the fix (line numbers of that revision; ✓ = the then
+   hardcoded pixel already equalled `gr_crack(default word)`; ✗ = it did not).
+diff --git a/docs/api/desktop/deskmain.md b/docs/api/desktop/deskmain.md
+index e7526c9..024460b 100644
+--- a/docs/api/desktop/deskmain.md
++++ b/docs/api/desktop/deskmain.md
+@@ -450,6 +450,29 @@ version-string + about-box insertion, `adjust_menu(desk_rs_trees[ADMENU])`
+   (`desk_rsc.c:297-341`), so a hover's item XOR (`ob_change`,
+   `gemoblib.c:1295-1304`) never reaches the border and nothing repaints it.
+   Each box's `ob_x` is `THEACTIVE.ob_x + title.ob_x` (`:1617`).
++  **Widths and the bar box (A108, 2026-09-21):** `adjust_menu` runs before
++  `rsrc_obfix` (`:1895-1900`), so its units are character cells of
++  `CHAR_WIDTH` = 8 px (`:1509`). Each title is exactly `strlen(ob_spec)`
++  cells wide and laid left to right (`title->ob_x = x; title->ob_width =
++  n; x += n`, `:1528-1533`) — no padding, the blanks in `" Desk "` are the
++  gaps; on the English tree the titles are 6/6/6/9 cells (48/48/48/72 px)
++  at 0/48/96/144 and `THEACTIVE` is 216 px wide at x = 16. Each drop-down
++  is `m + 1` cells wide where `m` is the widest entry (`:1608-1614`) and
++  the `+ 1` is the `m++` of the separator loop (`:1620`); the Desk box's
++  search is seeded at `MIN_DESKMENU_WIDTH - 1` (`:1602`), so it is never
++  under 20 cells (160 px). Every entry of a box gets the box's width
++  (`item->ob_width = m`, `:1633-1635`); a box that would reach the right
++  screen edge (`ob_x + m >= width`) is moved to `width - m` and made
++  `(m - 1) | ((CHAR_WIDTH - 1) << 8)` = `m · 8 - 1` px wide so its outside
++  border lands on the last column (`:1626-1631`). `THEBAR` is the RSC's
++  `{0, 0, 80, 513}` (`desk_rsc.c:249-253`): `ob_height = 0x0201` = one cell
++  + 2 px = `gl_hchar + 2` = 18 after `rsrc_obfix` (`aes/gemrslib.c:76-82`),
++  one row above the separator `mn_bar` draws on `gl_hbox - 1` = 18
++  (`aes/gemmnlib.c:718-722`); `THEACTIVE`, the titles and `THEMENUS`'s `y`
++  are `769` = `gl_hchar + 3` = `gl_hbox` = 19 (`desk_rsc.c:255-289`). The
++  drop-down entries are one cell (`gl_hchar` = 16 px) tall in the RSC
++  (`{0, row, 20, 1}`, `desk_rsc.c:297-341`) — NewTOS's `build_menu` still
++  lays them 19 px tall (open, see A108's receipt).
+ - **`install_shortcuts()`** (`:1825-1858`, called from `app_start()` after
+   `menu_shortcuts[]` may have been customized): for each of the
+   `NUM_SHORTCUTS=33` shortcut slots, if `shortcut_mapping[i]` is `0` (item
+diff --git a/tos-api/tests/aes_a100_a102_desk_menu_geometry.rs b/tos-api/tests/aes_a100_a102_desk_menu_geometry.rs
+index 13bef92..9e9288d 100644
+--- a/tos-api/tests/aes_a100_a102_desk_menu_geometry.rs
++++ b/tos-api/tests/aes_a100_a102_desk_menu_geometry.rs
+@@ -8,14 +8,18 @@
+ //!
+ //! **The tree here is a replica of the kernel desktop's ADMENU as
+ //! `kernel/src/desk/menu.rs` `build_menu` lays it out** — same labels, same
+-//! `adjust_menu` arithmetic (title `strlen · 8 + 4`, box `maxlen · 8 + 6`,
+-//! `THEACTIVE` at the RSC's 2-cell origin and as wide as the titles, boxes at
+-//! `THEACTIVE.x + title.x` below the 19 px bar, entries at `(0, row · 19)`
+-//! spanning the box). The kernel crate is `forced-target` AArch64 and has no
+-//! host tests, so the geometry `build_menu` really builds is checked on the
+-//! board (the serial dump of the registered tree in
+-//! `measurement-2026-09-21-a100-a102/`); what these cases pin is the AES's
+-//! behaviour on that geometry.
++//! `adjust_menu` arithmetic (EmuTOS `desk/deskmain.c:1511-1641`, A108: title
++//! `strlen · 8`, box `(maxlen + 1) · 8` with the Desk box at least
++//! `MIN_DESKMENU_WIDTH` = 20 cells, `THEACTIVE` at the RSC's 2-cell origin
++//! and as wide as the titles, boxes at `THEACTIVE.x + title.x` below the
++//! 19 px bar row, `THEBAR` 18 = `gl_hchar + 2` tall (`desk_rsc.c:249-253`),
++//! entries at `(0, row · 19)` spanning the box). The kernel crate is
++//! `forced-target` AArch64 and has no host tests, so the geometry
++//! `build_menu` really builds is checked on the board (the serial dump of the
++//! registered tree in `measurement-2026-09-21-a103-a108/`, before that
++//! `…-a100-a102/`); what these cases pin is the AES's behaviour on that
++//! geometry — and, for A108, the bar row it draws from it against the
++//! Falcon reference `falcon-tc-desktop.png`.
+ //!
+ //! EmuTOS: a hover moves the highlight through `menu_select` → `do_chg` →
+ //! `ob_change` (`aes/gemmnlib.c:170`), one `bb_fill(MD_XOR, …)` of the item's
+@@ -515,6 +519,13 @@ const DISABLED: u16 = 0x0008;
+ /// `kernel/src/desk/menu.rs` `MENU_H` / `CHAR_W`.
+ const BAR_H: i16 = 19;
+ const CHAR_W: i16 = 8;
++/// `kernel/src/desk/menu.rs` `BAR_BOX_H` — `THEBAR`'s height, the RSC's
++/// `{0, 0, 80, 513}` = `gl_hchar + 2` (`desk/desk_rsc.c:249-253`,
++/// `aes/gemrslib.c:76-82`); one row above the separator `mn_bar` draws on
++/// `gl_hbox - 1` (`aes/gemmnlib.c:722`).
++const BAR_BOX_H: i16 = 16 + 2;
++/// `deskmain.c:80` — the Desk box's minimum width in cells.
++const MIN_DESKMENU_WIDTH: i16 = 20;
+ 
+ /// The RSC's drop-down box word (`desk/desk_rsc.c:294`, `16716032L`): `th =
+ /// -1` (outside border), border BLACK, text BLACK, IP_HOLLOW interior.
+@@ -598,10 +609,14 @@ fn entry_label(e: &Entry) -> &'static [u8] {
+     }
+ }
+ 
+-/// `adjust_menu` as `kernel/src/desk/menu.rs` computes it: `THEACTIVE` at
+-/// `2 · CHAR_W` (`desk_rsc.c:255-259`) and `Σ title_w` wide (`deskmain.c:1534`),
+-/// titles left to right at `strlen · 8 + 4`, boxes `maxlen · 8 + 6` wide at
+-/// `THEACTIVE.x + title.x` (`:1617`), shifted left to stay on screen.
++/// `adjust_menu` as `kernel/src/desk/menu.rs` computes it (EmuTOS
++/// `deskmain.c:1511-1641`, in cells of `CHAR_WIDTH` = 8): `THEACTIVE` at
++/// `2 · CHAR_W` (`desk_rsc.c:255-259`) and `Σ title_w` wide (`:1534`), titles
++/// left to right each `strlen` cells wide (`:1528-1533`), boxes `maxlen + 1`
++/// cells wide (`:1608-1620`, the Desk box's search seeded at
++/// `MIN_DESKMENU_WIDTH - 1`, `:1602`) at `THEACTIVE.x + title.x` (`:1617`),
++/// moved left and one pixel narrower if they would reach the right edge
++/// (`:1626-1631`).
+ struct Geom {
+     active_x: i16,
+     active_w: i16,
+@@ -615,16 +630,22 @@ fn adjust_menu(sw: i16) -> Geom {
+     let mut g = Geom { active_x: 2 * CHAR_W, active_w: 0, title_x: [0; 4], title_w: [0; 4], box_x: [0; 4], box_w: [0; 4] };
+     let mut tx = 0i16;
+     for (ti, (label, entries)) in MENUS.iter().enumerate() {
+-        let tw = label_len(label) * CHAR_W + 4;
++        let tw = label_len(label) * CHAR_W;
+         g.title_x[ti] = tx;
+         g.title_w[ti] = tw;
+         tx += tw;
+-        let maxlen = entries.iter().map(|e| label_len(entry_label(e))).max().unwrap_or(8);
+-        g.box_w[ti] = maxlen * CHAR_W + 6;
++        let seed = if ti == 0 { MIN_DESKMENU_WIDTH - 1 } else { 0 };
++        let m = entries.iter().map(|e| label_len(entry_label(e))).fold(seed, i16::max) + 1;
++        g.box_w[ti] = m * CHAR_W;
+     }
+     g.active_w = tx;
+     for ti in 0..4 {
+-        g.box_x[ti] = (g.active_x + g.title_x[ti]).min(sw - g.box_w[ti]).max(0);
++        let mut bx = g.active_x + g.title_x[ti];
++        if bx + g.box_w[ti] >= sw {
++            bx = (sw - g.box_w[ti]).max(0);
++            g.box_w[ti] -= 1;
++        }
++        g.box_x[ti] = bx;
+     }
+     g
+ }
+@@ -636,13 +657,13 @@ const TITLE_FILE: i16 = 4;
+ const TITLE_OPTIONS: i16 = 6;
+ 
+ /// The `THEACTIVE` rectangle the replica registers — what `menu_bar` takes as
+-/// `gl_ctwait` (`aes/gemmnlib.c:717`): `(16, 0, 232, 19)` for these labels.
++/// `gl_ctwait` (`aes/gemmnlib.c:717`): `(16, 0, 216, 19)` for these labels.
+ fn active_rect() -> (i16, i16, i16, i16) {
+     let g = adjust_menu(SCREEN_W as i16);
+     (g.active_x, 0, g.active_w, BAR_H)
+ }
+ 
+-/// The *File* drop-down box's absolute rectangle: `(68, 19, 158, 285)`.
++/// The *File* drop-down box's absolute rectangle: `(64, 19, 160, 285)`.
+ fn file_box_rect() -> (i16, i16, i16, i16) {
+     let g = adjust_menu(SCREEN_W as i16);
+     (g.box_x[1], BAR_H, g.box_w[1], MENUS[1].1.len() as i16 * BAR_H)
+@@ -663,7 +684,7 @@ fn desk_menu_tree(box_spec: u64) -> *mut Obj {
+     let n_obj = themenus + 1 + MENUS.iter().map(|(_, e)| 1 + e.len()).sum::<usize>();
+     let mut o = vec![mk(0, 0, 0, 0, 0, 0, 0, -1, -1, -1); n_obj];
+     o[0] = mk(G_IBOX, 0, 0, 0, 0, sw, sh, -1, 1, themenus as i16);
+-    o[1] = mk(G_BOX, 0, 0, 0, 0, sw, BAR_H, themenus as i16, 2, 2);
++    o[1] = mk(G_BOX, 0, 0, 0, 0, sw, BAR_BOX_H, themenus as i16, 2, 2);
+     o[2] = mk(G_IBOX, 0, 0, g.active_x, 0, g.active_w, BAR_H, 1, first_title as i16, (themenus - 1) as i16);
+     for (ti, (label, _)) in MENUS.iter().enumerate() {
+         let last = ti == nt - 1;
+@@ -965,13 +986,14 @@ fn hover_two_entries(host: &'static ScriptHost, pb: &mut Aespb) -> [Vec<u32>; 3]
+ // ── A100 ───────────────────────────────────────────────────────────────────
+ 
+ /// **The desktop's box: outside border, hover touches no frame pixel, and
+-/// nothing repaints one.** With `0xFF1100` the *File* box `(68,19,158,285)`
+-/// is framed by the ring one pixel outside it — columns 67 and 226, rows 18
+-/// and 304 — black in every snapshot. Hovering *Open* inverts the entry's
+-/// rows 19..37 across the box width and changes no other pixel of the box;
+-/// moving on to *Info/Rename…* puts rows 19..37 back exactly (the XOR round
+-/// trip) and inverts rows 38..56. The old `rehilite` painted black lines
+-/// along the box rectangle's own edges — row 19, row 303, columns 68 and 225
++/// nothing repaints one.** With `0xFF1100` the *File* box `(64,19,160,285)`
++/// (A108 geometry; `(68,19,158,285)` when this case was written) is framed
++/// by the ring one pixel outside it — columns 63 and 224, rows 18 and 304 —
++/// black in every snapshot. Hovering *Open* inverts the entry's rows 19..37
++/// across the box width and changes no other pixel of the box; moving on to
++/// *Info/Rename…* puts rows 19..37 back exactly (the XOR round trip) and
++/// inverts rows 38..56. The old `rehilite` painted black lines along the box
++/// rectangle's own edges — row 19, row 303, the box's first and last columns
+ /// — *inside* the frame after every toggle: a second, inner frame, plainly
+ /// visible on the white interior.
+ #[test]
+@@ -979,7 +1001,7 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
+     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+     let (host, mut pb) = fresh(SPEC_OUTSIDE);
+     let (bx, by, bw, bh) = file_box_rect();
+-    assert_eq!((bx, by, bw, bh), (68, 19, 158, 285), "the File box as build_menu lays it out");
++    assert_eq!((bx, by, bw, bh), (64, 19, 160, 285), "the File box as build_menu lays it out (A108)");
+     let [s0, s1, s2] = hover_two_entries(host, &mut pb);
+ 
+     // The frame is the ring outside the box, black throughout.
+@@ -993,8 +1015,8 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
+     let white = white(host);
+     assert_eq!(at(&s0, bx + 4, by), white, "row 19 belongs to the interior, not the frame");
+     assert_eq!(at(&s0, bx + 4, by + bh - 1), white, "row 303 belongs to the interior");
+-    assert_eq!(at(&s0, bx, by + 40), white, "column 68 belongs to the interior");
+-    assert_eq!(at(&s0, bx + bw - 1, by + 40), white, "column 225 belongs to the interior");
++    assert_eq!(at(&s0, bx, by + 40), white, "the box's first column belongs to the interior");
++    assert_eq!(at(&s0, bx + bw - 1, by + 40), white, "the box's last column belongs to the interior");
+ 
+     // Snapshot 1: entry 0 inverted across the box, everything else as opened.
+     for (name, sn) in [("s0", &s0), ("s1", &s1), ("s2", &s2)] {
+@@ -1010,10 +1032,10 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
+         (inv, other),
+         (0, 0),
+         "no pixel outside entry 0 changes on the hover: {inv} inverted, {other} other, {same} same — \
+-         the old frame repaint blackened row 303 and columns 68/225 (mn_do repaints nothing, gemmnlib.c:451-475)"
++         the old frame repaint blackened row 303 and the box's edge columns (mn_do repaints nothing, gemmnlib.c:451-475)"
+     );
+     assert_eq!(at(&s1, bx + 4, by + bh - 1), white, "row 303 stays white while Open is hovered");
+-    assert_eq!(at(&s1, bx, by + 40), white, "column 68 stays white while Open is hovered");
++    assert_eq!(at(&s1, bx, by + 40), white, "the box's first column stays white while Open is hovered");
+ 
+     // Snapshot 2: entry 0 back exactly, entry 1 inverted, the rest as opened.
+     let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by, by + BAR_H);
+@@ -1027,7 +1049,7 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
+ /// **A box with an inside border gets its frame inverted by the item XOR —
+ /// in EmuTOS too — and nothing repaints it.** The same tree with the word
+ /// `build_menu` used before A100 (`(1<<16)|0x1070`, `th = +1`): the frame is
+-/// row 19, row 303, columns 68 and 225, black when the box opens. Entry 0's
++/// row 19, row 303, the box's first and last columns, black when the box opens. Entry 0's
+ /// rectangle covers row 19 and, in rows 19..37, the two columns; `ob_change`
+ /// XORs that rectangle whole (`gemoblib.c:1295-1304`: the inset is the
+ /// *item's* `ob_sst` thickness, 0 for a `G_STRING`), so those frame pixels
+@@ -1044,17 +1066,17 @@ fn a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emuto
+     // Snapshot 0: the frame is on the box rectangle's own edges.
+     assert_eq!(at(&s0, bx + 4, by), BLACK, "row 19 is the inside frame");
+     assert_eq!(at(&s0, bx + 4, by + bh - 1), BLACK, "row 303 is the inside frame");
+-    assert_eq!(at(&s0, bx, by + 40), BLACK, "column 68 is the inside frame");
+-    assert_eq!(at(&s0, bx + bw - 1, by + 40), BLACK, "column 225 is the inside frame");
++    assert_eq!(at(&s0, bx, by + 40), BLACK, "the box's first column is the inside frame");
++    assert_eq!(at(&s0, bx + bw - 1, by + 40), BLACK, "the box's last column is the inside frame");
+     let white = white(host);
+     assert_eq!(at(&s0, bx - 1, by + 40), white, "nothing outside the box");
+ 
+     // Snapshot 1: entry 0's XOR took the frame pixels inside its rectangle
+     // with it; the frame below entry 0 is untouched.
+     assert_eq!(at(&s1, bx + 4, by), inv(BLACK), "row 19 inverted with entry 0 (no frame repaint)");
+-    assert_eq!(at(&s1, bx, by + 9), inv(BLACK), "column 68 inverted in entry 0's rows");
++    assert_eq!(at(&s1, bx, by + 9), inv(BLACK), "the box's first column inverted in entry 0's rows");
+     assert_eq!(at(&s1, bx + bw - 1, by + 9), inv(BLACK), "column 225 inverted in entry 0's rows");
+-    assert_eq!(at(&s1, bx, by + 40), BLACK, "column 68 below entry 0 still the frame");
++    assert_eq!(at(&s1, bx, by + 40), BLACK, "the box's first column below entry 0 still the frame");
+     assert_eq!(at(&s1, bx + 4, by + bh - 1), BLACK, "row 303 still the frame");
+     let (same, _, other) = compare_rows(&s0, &s1, bx, bx + bw, by, by + BAR_H);
+     assert_eq!((same, other), (0, 0), "entry 0 is one XOR of its whole rectangle, frame pixels included");
+@@ -1073,8 +1095,8 @@ fn a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emuto
+ const RIGHT_OF_OPTIONS: (i16, i16) = (400, 8);
+ 
+ /// **The bar row right of *Options* is the application's: timer and keys
+-/// flow, no track starts.** `THEACTIVE` is `(16, 0, 232, 19)` — the titles'
+-/// sum at the RSC's 2-cell origin — so `gl_ctwait` ends at x = 248 and the
++/// flow, no track starts.** `THEACTIVE` is `(16, 0, 216, 19)` — the titles'
++/// sum at the RSC's 2-cell origin — so `gl_ctwait` ends at x = 232 and the
+ /// pointer at (400, 8) never hands the mouse to `ctl_pd` (`mchange`,
+ /// `aes/geminput.c:388-389`). The desktop's wait with a 100 ms timer sees the
+ /// timer on time while the pointer rests there; a HELP key (`0x62`) struck
+@@ -1087,7 +1109,7 @@ fn a102_the_bar_row_right_of_options_stays_with_the_application() {
+     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+     let (host, mut pb) = fresh(SPEC_OUTSIDE);
+     let (ax, _, aw, _) = active_rect();
+-    assert_eq!((ax, aw), (16, 232), "THEACTIVE = 2 cells in, Σ titles wide (desk_rsc.c:255-259, deskmain.c:1534)");
++    assert_eq!((ax, aw), (16, 216), "THEACTIVE = 2 cells in, Σ titles wide (desk_rsc.c:255-259, deskmain.c:1534)");
+     assert!(RIGHT_OF_OPTIONS.0 >= ax + aw, "the rest position is right of THEACTIVE");
+ 
+     move_to(host, &mut pb, RIGHT_OF_OPTIONS.0, RIGHT_OF_OPTIONS.1, 0);
+@@ -1119,26 +1141,27 @@ fn a102_the_bar_row_right_of_options_stays_with_the_application() {
+ }
+ 
+ /// **`THEACTIVE`'s right edge is the boundary.** Resting on the last pixel
+-/// column of *Options* (x = 247) starts the track — the *Options* box comes
++/// column of *Options* (x = 231) starts the track — the *Options* box comes
+ /// down and a press outside cancels it, consumed, timer late; one column
+-/// further (x = 248) the same rest is the application's: timer on time,
++/// further (x = 232) the same rest is the application's: timer on time,
+ /// nothing drawn.
+ #[test]
+ fn a102_the_last_column_of_options_starts_the_track_and_the_next_does_not() {
+     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+     let (host, mut pb) = fresh(SPEC_OUTSIDE);
+     let (ax, _, aw, _) = active_rect();
+-    let edge = ax + aw; // 248: first column right of THEACTIVE
++    let edge = ax + aw; // 232: first column right of THEACTIVE
+ 
+-    // The Options box `(172, 19, 214, 228)`; its outside border is column 171.
++    // The Options box `(160, 19, 216, 228)` (A108 geometry); its outside
++    // border is column 159.
+     let g = adjust_menu(SCREEN_W as i16);
+     let (ox, ow) = (g.box_x[3], g.box_w[3]);
+-    assert_eq!((ox, ow), (172, 214));
++    assert_eq!((ox, ow), (160, 216));
+ 
+     move_to(host, &mut pb, edge, 8, 0);
+     let before = bar_and_boxes_pixels(host);
+     dwell(host, 50);
+-    host.push(snap(0)); // mid-rest: what is on screen while the pointer rests at x = 248
++    host.push(snap(0)); // mid-rest: what is on screen while the pointer rests at x = 232
+     dwell(host, 250);
+     glide_y(host, 100 - 8, 0);
+     let (fired, _, _, msg, elapsed) = evnt_multi_timed_elapsed(host, &mut pb, 100);
+@@ -1269,3 +1292,93 @@ fn a102_menu_popup_no_pick_writes_only_mn_keystate() {
+     );
+     drain(host, &mut pb);
+ }
++
++// ── A108 ───────────────────────────────────────────────────────────────────
++
++/// **The English desktop tree measures as `adjust_menu` computes it.** Title
++/// widths are `strlen` cells — `" Desk "` 6, `" File "` 6, `" View "` 6,
++/// `" Options "` 9 (`deskmain.c:1528-1533`) — so the titles sit at 0/48/96/
++/// 144 px, 48/48/48/72 wide, and `THEACTIVE` is `(16, 0, 216, 19)`
++/// (`:1534`, `desk_rsc.c:255-259`). Box widths are `maxlen + 1` cells
++/// (`:1608-1620`): Desk `max(19, 18) + 1 = 20` cells = 160 px
++/// (`MIN_DESKMENU_WIDTH`, `:80,1602`), File `19 + 1 = 20` = 160, View
++/// `16 + 1 = 17` = 136, Options `26 + 1 = 27` = 216; each box at
++/// `THEACTIVE.x + title.x` (`:1617`): 16/64/112/160, none near the right
++/// edge on 640. `THEBAR` is `gl_hchar + 2` = 18 tall (`desk_rsc.c:249-253`,
++/// `{0, 0, 80, 513}`), the titles and `THEACTIVE` 19 (`769`). Before A108
++/// the titles were `strlen · 8 + 4` (52/52/52/76, `THEACTIVE` 232 wide) and
++/// the boxes `maxlen · 8 + 6` (150/158/134/214), `THEBAR` 19.
++#[test]
++fn a108_titles_and_boxes_measure_as_adjust_menu_computes() {
++    let g = adjust_menu(SCREEN_W as i16);
++    assert_eq!(g.title_x, [0, 48, 96, 144], "title x = Σ strlen · 8 before it (deskmain.c:1528-1533)");
++    assert_eq!(g.title_w, [48, 48, 48, 72], "title width = strlen · 8 (deskmain.c:1531)");
++    assert_eq!((g.active_x, g.active_w), (16, 216), "THEACTIVE (desk_rsc.c:255-259; deskmain.c:1534)");
++    assert_eq!(g.box_w, [160, 160, 136, 216], "box width = (maxlen + 1) · 8, Desk ≥ MIN_DESKMENU_WIDTH (deskmain.c:1602-1635)");
++    assert_eq!(g.box_x, [16, 64, 112, 160], "box x = THEACTIVE.x + title.x (deskmain.c:1617)");
++    // The registered tree carries exactly that, plus THEBAR's 18 rows.
++    let tree = desk_menu_tree(SPEC_OUTSIDE);
++    // SAFETY: `tree` is the leaked, live replica.
++    let o = |i: usize| unsafe { *tree.add(i) };
++    assert_eq!((o(1).x, o(1).y, o(1).w, o(1).h), (0, 0, 640, BAR_BOX_H), "THEBAR {{0,0,80,513}} = gl_hchar + 2 tall (desk_rsc.c:249-253)");
++    assert_eq!(BAR_BOX_H, 18);
++    assert_eq!((o(2).x, o(2).y, o(2).w, o(2).h), (16, 0, 216, BAR_H), "THEACTIVE {{2,0,·,769}}");
++    for (ti, i) in (3..7).enumerate() {
++        assert_eq!((o(i).x, o(i).w, o(i).h), (g.title_x[ti], g.title_w[ti], BAR_H), "title {ti} {{x,0,strlen,769}}");
++    }
++    // Every entry spans its box's width (`item->ob_width = m`, :1633-1634).
++    let mut k = 8usize;
++    for (ti, (_, entries)) in MENUS.iter().enumerate() {
++        assert_eq!((o(k).x, o(k).w), (g.box_x[ti], g.box_w[ti]), "box {ti}");
++        for e in 0..entries.len() {
++            assert_eq!(o(k + 1 + e).w, g.box_w[ti], "entry {e} of box {ti} is box-wide");
++        }
++        k += 1 + entries.len();
++    }
++}
++
++/// **The bar row as the AES draws it from that tree is the Falcon
++/// reference's.** `falcon-tc-desktop.png` (EmuTOS on a Hatari Falcon030,
++/// 640x480 truecolor, the desktop idle): the black pixels of the bar rows
++/// 0..17 lie in four groups — *Desk* columns 25..54 (173 px), *File*
++/// 73..102 (135), *View* 121..150 (155), *Options* 169..222 (273), all on
++/// rows 3..14 (*Options* 3..16, the `p`'s descender); row 17 has none, row
++/// 18 is the separator across the screen (`gsx_cline(0, gl_hbox - 1, …)`,
++/// `aes/gemmnlib.c:722`), and nothing is inked right of *Options*. Each
++/// group starts one column after its title's second cell (`" Desk "` at
++/// x = 16: the `D` cell at 24, ink from 25). Before A108 *File*/*View*/
++/// *Options* stood 4/8/12 columns further right (the `+ 4` per title).
++#[test]
++fn a108_bar_row_glyphs_sit_where_the_falcon_reference_has_them() {
++    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, _pb) = fresh(SPEC_OUTSIDE);
++    let px = host.raster.px.lock().unwrap().clone();
++    let black = |x: i16, y: i16| px[y as usize * SCREEN_W as usize + x as usize] == BLACK;
++    let group = |x0: i16, x1: i16| -> Option<(i16, i16, i16, i16, usize)> {
++        let pts: Vec<(i16, i16)> = (0..18).flat_map(|y| (x0..x1).filter(move |&x| black(x, y)).map(move |x| (x, y))).collect();
++        if pts.is_empty() {
++            return None;
++        }
++        Some((
++            pts.iter().map(|p| p.0).min().unwrap(),
++            pts.iter().map(|p| p.0).max().unwrap(),
++            pts.iter().map(|p| p.1).min().unwrap(),
++            pts.iter().map(|p| p.1).max().unwrap(),
++            pts.len(),
++        ))
++    };
++    // (title cell columns, reference ink bbox + count)
++    let want = [
++        ("Desk", 16, 64, (25, 54, 3, 14, 173)),
++        ("File", 64, 112, (73, 102, 3, 14, 135)),
++        ("View", 112, 160, (121, 150, 3, 14, 155)),
++        ("Options", 160, 232, (169, 222, 3, 16, 273)),
++    ];
++    for (name, x0, x1, bbox) in want {
++        assert_eq!(group(x0, x1), Some(bbox), "{name}: ink (x0,x1,y0,y1,count) in the bar rows 0..17 vs falcon-tc-desktop.png");
++    }
++    assert_eq!(group(232, SCREEN_W as i16), None, "nothing inked right of Options (ref)");
++    assert_eq!(group(0, 16), None, "nothing inked left of THEACTIVE (ref)");
++    assert!((0..SCREEN_W as i16).all(|x| black(x, 18)), "row 18 is the separator (gemmnlib.c:722; ref row 18)");
++    assert!((0..SCREEN_W as i16).all(|x| !black(x, 17)), "row 17 is bar white (ref)");
++}
+diff --git a/tos-api/tests/aes_a89_a92_menu_event_neighbours.rs b/tos-api/tests/aes_a89_a92_menu_event_neighbours.rs
+index 5a45792..de87689 100644
+--- a/tos-api/tests/aes_a89_a92_menu_event_neighbours.rs
++++ b/tos-api/tests/aes_a89_a92_menu_event_neighbours.rs
+@@ -38,6 +38,18 @@
+ //!   `xrat`/`yrat` are current as of the call. `ev_mouse` has no such drain
+ //!   (`:123-128`): its arm-time position is the one the previous dispatch
+ //!   left (`super()` → `dsptch()`, `gemsuper.c:452-464`).
++//! * **A103.1 — a press on the submenu box's own area (border/gap) picks
++//!   `smroot`** (`gemmnlib.c:417,494-496`): `cur_submenu = ob_find(smtree,
++//!   smroot, 1, x, y)` answers the box itself for a point inside it that no
++//!   child covers (`ob_find` returns the last object found,
++//!   `gemoblib.c:1034-1113`); `mn_do` treats it as any submenu item —
++//!   `SUBMENU_STATE`, `menu_select(smtree, cur_submenu, …)` hilites it
++//!   (`:474-475`, the box interior's XOR, `ob_change`), and the cleanup
++//!   returns `*pitem = cur_submenu`, `*ptree = smtree` (`:494-496`).
++//! * **A103.2 — a DISABLED item with a submenu attached opens nothing**
++//!   (`gemmnlib.c:470-475`): `display_submenu` runs only inside `if
++//!   (menu_select(tree, cur_item, last_item, TRUE))`, and `menu_select` →
++//!   `do_chg(…, chkdisabled = TRUE)` refuses a DISABLED object (`:158-160`).
+ //!
+ //! Harness (raster stand-in + scripted host + parameter block) copied from
+ //! `aes_a73_event_neighbours.rs`; the pointer advances only in
+@@ -195,14 +207,35 @@ impl RasterBackend for BufBackend {
+         }
+         m
+     }
++    /// Mode-aware (as the A99/A100 harnesses): `Xor` complements the device
++    /// pixel where the pattern is set — the one way a hilited box interior
++    /// (`ob_change`'s `bb_fill(MD_XOR, …)`) is visible to a probe (A103.1).
+     fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, clip: ClipRect) {
+         let fg = self.rgb565_to_device(self.pel_to_device16(fill.fg));
+         let bg = self.rgb565_to_device(self.pel_to_device16(fill.bg));
+         for yy in y..y.saturating_add(h) {
+             let row = fill.pattern[(yy.rem_euclid(16)) as usize % fill.pattern.len()];
+             for xx in x..x.saturating_add(w) {
+-                let bit = row & (0x8000u16 >> (xx.rem_euclid(16) as u16));
+-                self.put(xx, yy, if bit != 0 { fg } else { bg }, clip);
++                let set = row & (0x8000u16 >> (xx.rem_euclid(16) as u16)) != 0;
++                match fill.mode {
++                    WriteMode::Replace => self.put(xx, yy, if set { fg } else { bg }, clip),
++                    WriteMode::Transparent => {
++                        if set {
++                            self.put(xx, yy, fg, clip)
++                        }
++                    }
++                    WriteMode::Xor => {
++                        if set {
++                            let v = self.get_device_pixel(xx, yy);
++                            self.put(xx, yy, v ^ 0x00FF_FFFF, clip);
++                        }
++                    }
++                    WriteMode::RevTransparent => {
++                        if !set {
++                            self.put(xx, yy, fg, clip)
++                        }
++                    }
++                }
+             }
+         }
+     }
+@@ -302,6 +335,11 @@ struct Sample {
+     state_b: u16,
+     pen_a: Pel,
+     pen_b: Pel,
++    /// The same two points as **device** pixels: an XOR'd white is the
++    /// device complement, which no palette entry names (`read_pixel` maps
++    /// it to pen 0), so an inverted box interior is only visible here.
++    dev_a: u32,
++    dev_b: u32,
+     at: (i16, i16),
+ }
+ 
+@@ -373,6 +411,8 @@ impl ScriptHost {
+             state_b: state(ob),
+             pen_a: self.raster.read_pixel(pa.0, pa.1),
+             pen_b: self.raster.read_pixel(pb.0, pb.1),
++            dev_a: self.raster.get_device_pixel(pa.0, pa.1),
++            dev_b: self.raster.get_device_pixel(pb.0, pb.1),
+             at: tos_api::vdi::mouse_position(),
+         };
+         self.samples.lock().unwrap().push(s);
+@@ -609,6 +649,45 @@ fn submenu_tree() -> *mut Obj {
+     Box::leak(tree).as_mut_ptr()
+ }
+ 
++/// The bar tree of [`menu_tree`] with a submenu box **in the same tree**:
++/// object 17, a fourth child of `themenus` (after the *Edit* box), whose
++/// three items (18..=20) sit **2 px inside** the box on both sides, so the
++/// box's first and last two columns are the box's own area — the "border"
++/// `ob_find(smtree, smroot, 1, …)` answers with `smroot` itself
++/// (`gemoblib.c:1034-1113`). A same-tree submenu's pick round-trips as
++/// `MN_SELECTED`'s `msg[4]` (`menu::track`), which is what A103.1 reads.
++const SUB_ROOT: i16 = 17;
++const SUB_BETA_SAME: i16 = 19;
++const SUB_INSET: i16 = 2;
++
++fn menu_tree_with_same_tree_submenu() -> *mut Obj {
++    let base = menu_tree(0);
++    let s = |p: &str, y, next, last| Obj {
++        next,
++        head: -1,
++        tail: -1,
++        otype: G_STRING,
++        flags: if last { LASTOB } else { 0 },
++        state: 0,
++        spec: text(p),
++        x: SUB_INSET,
++        y,
++        w: SUB_W - 2 * SUB_INSET,
++        h: ITEM_H,
++    };
++    let mut v: Vec<Obj> = (0..17).map(|i| unsafe { *base.offset(i) }).collect();
++    // Hang the submenu box after the Edit box (14): 14 → 17 → back to 6.
++    v[14].next = SUB_ROOT;
++    v[6].tail = SUB_ROOT;
++    // The Edit box's *Copy* was the tree's LASTOB; the last submenu item is now.
++    v[16].flags &= !LASTOB;
++    v.push(Obj { next: 6, head: 18, tail: 20, otype: G_BOX, flags: 0, state: 0, spec: 1 << 16, x: 0, y: 0, w: SUB_W, h: 3 * ITEM_H });
++    v.push(s("Alpha", 0, 19, false));
++    v.push(s("Beta", ITEM_H, 20, false));
++    v.push(s("Gamma", 2 * ITEM_H, SUB_ROOT, true));
++    Box::leak(v.into_boxed_slice()).as_mut_ptr()
++}
++
+ /// The `MENU` struct at the LP64 layout (`mn_tree` @0, four WORDs @8).
+ #[repr(C)]
+ #[derive(Copy, Clone, Debug)]
+@@ -679,6 +758,56 @@ fn fresh() -> (&'static ScriptHost, Aespb, *mut Obj) {
+     fresh_with(0)
+ }
+ 
++/// Like [`fresh`], but the bar is [`menu_tree_with_same_tree_submenu`] and
++/// the submenu (object 17 of that tree) is attached to *Open*.
++fn fresh_same_tree_submenu() -> (&'static ScriptHost, Aespb, *mut Obj) {
++    let host = rig();
++    host.clear();
++    host.raster.px.lock().unwrap().fill(0);
++    let mut pb = Aespb::new();
++    pb.call(10, 0, 1, 0); // appl_init
++    pb.intin.fill(0);
++    pb.call(109, 0, 1, 0); // wind_new
++
++    let tree = menu_tree_with_same_tree_submenu();
++    pb.intin.fill(0);
++    pb.intin[0] = 1; // show
++    pb.addrin[0] = tree as u64;
++    pb.call(30, 1, 1, 1); // menu_bar
++    pb.addrin[0] = 0;
++    assert_eq!(pb.intout[0], 1, "menu_bar must install the tree");
++
++    pb.intin.fill(0);
++    pb.intin[0] = 257; // graf_mouse(M_ON)
++    pb.call(78, 1, 1, 0);
++
++    move_to(host, &mut pb, 320, 300, 0);
++    drain_messages(&mut pb);
++
++    let mut rec = Box::new(MenuRec { mn_tree: tree as u64, mn_menu: SUB_ROOT, mn_item: SUB_ROOT + 1, mn_scroll: 0, mn_keystate: 0 });
++    pb.intin.fill(0);
++    pb.intin[0] = 1; // ME_ATTACH
++    pb.intin[1] = ITEM_OPEN;
++    pb.addrin[0] = tree as u64;
++    pb.addrin[1] = &mut *rec as *mut MenuRec as u64;
++    pb.call(37, 2, 1, 2);
++    pb.addrin[0] = 0;
++    pb.addrin[1] = 0;
++    assert_eq!(pb.intout[0], 1, "menu_attach must accept the same-tree submenu");
++    (host, pb, tree)
++}
++
++/// `menu_ienable(tree, item, enable)` (32).
++fn menu_ienable(pb: &mut Aespb, tree: *mut Obj, item: i16, enable: bool) {
++    pb.intin.fill(0);
++    pb.intin[0] = item;
++    pb.intin[1] = enable as i16;
++    pb.addrin[0] = tree as u64;
++    pb.call(32, 2, 1, 1);
++    pb.addrin[0] = 0;
++    assert_eq!(pb.intout[0], 1, "menu_ienable({item}, {enable})");
++}
++
+ /// Attach the submenu to *Open* through `menu_attach(ME_ATTACH)` (37).
+ fn attach_submenu(pb: &mut Aespb, tree: *mut Obj) -> *mut Obj {
+     let sub = submenu_tree();
+@@ -1091,6 +1220,133 @@ fn hovering_a_disabled_title_drops_no_box_and_hilites_nothing() {
+     assert_eq!(host.raster.read_pixel(EDIT_BOX_PX.0, EDIT_BOX_PX.1), DESK, "the box area still shows the desktop");
+ }
+ 
++// ── A103: submenu remnants ─────────────────────────────────────────────────
++
++/// **A103.1 — a press on the submenu box's own area picks `smroot`.** The
++/// same-tree submenu's items sit 2 px inside the box, so its first column
++/// is box-only. Hover *File*, onto *Open* (the submenu opens beside it),
++/// glide into the submenu onto that column on the *Beta* row. EmuTOS:
++/// `cur_submenu = ob_find(smtree, smroot, 1, x, y)` = `smroot`
++/// (`gemmnlib.c:417`; `ob_find` returns the last object found,
++/// `gemoblib.c:1034-1113`) → `SUBMENU_STATE` (`:418-422`), and
++/// `menu_select(smtree, cur_submenu, last_submenu, TRUE)` hilites the box
++/// (`:474-475`) — `do_chg` → `ob_change`, `xor_is_ok` for a black-and-white
++/// `G_BOX`, one XOR of the interior (`gemoblib.c:1295-1304`). The probe
++/// packet records that: `smroot` SELECTED, no item SELECTED, the gap pixel
++/// the device complement of white. A press there breaks the loop
++/// (`:373-374`) and the cleanup, `menu_state == SUBMENU_STATE`, returns
++/// `*pitem = cur_submenu = smroot` (`:494-496`): `MN_SELECTED (File, 17)`.
++#[test]
++fn a103_press_on_the_submenu_boxs_own_area_picks_smroot() {
++    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb, tree) = fresh_same_tree_submenu();
++    let (sbx, sby, _, _) = submenu_box();
++    // The box's first column (box-only: the items start at `SUB_INSET`), on
++    // the *Beta* row; inside the 1-px border, so inside the XOR'd interior.
++    let gap = (sbx + 1, sby + ITEM_H + 9);
++    // The probe pixel: the same column on the *Alpha* row — inside the
++    // XOR'd interior too, and clear of the 16×16 cursor sprite whose hot
++    // spot sits at `gap`.
++    let probe_px = (sbx + 1, sby + 6);
++    let white = host.raster.rgb565_to_device(host.raster.pel_to_device16(WHITE));
++    set_probe(tree, SUB_ROOT, SUB_BETA_SAME, probe_px, probe_px);
++
++    move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
++    arm_gap(host);
++    glide(host, 0, ON_OPEN.1 - ON_FILE.1, 0); // down onto *Open* → submenu opens
++    host.push(pkt(0, 0, 0));
++    glide(host, gap.0 - ON_OPEN.0, gap.1 - ON_OPEN.1, 0); // into the submenu's gap column
++    host.push(pkt(0, 0, 0));
++    host.push(PROBE); // the state while the pointer rests on the box's own area
++    host.push(pkt(0, 0, 0));
++    click(host); // press there
++
++    let (fired, bret, _mb, msg) = evnt_multi_teradesk(&mut pb);
++    let (mx, my) = tos_api::vdi::mouse_position();
++    let samples = host.samples();
++    eprintln!("a103.1: fired={fired:#06x} bret={bret} at=({mx},{my}) msg={msg:?} samples={samples:?} gap={gap:?}");
++    assert_eq!(samples.len(), 1, "the probe must have been consumed inside the track; samples = {samples:?}");
++    let s = samples[0];
++    assert_eq!(s.at, gap, "the probe ran with the pointer on the box's own column");
++    assert_eq!(
++        s.state_a & SELECTED,
++        SELECTED,
++        "on the submenu box's own area the box itself is cur_submenu and hilited \
++         (ob_find answers smroot, aes/gemmnlib.c:417; menu_select :474-475); smroot.ob_state = {:#06x}",
++        s.state_a
++    );
++    assert_eq!(s.state_b & SELECTED, 0, "no submenu item is hilited on the box's own area; Beta.ob_state = {:#06x}", s.state_b);
++    assert_eq!(
++        s.dev_a,
++        white ^ 0x00FF_FFFF,
++        "the box interior is XOR'd for the hilite (ob_change, aes/gemoblib.c:1295-1304); pixel {probe_px:?} = {:#08x}",
++        s.dev_a
++    );
++    assert_eq!(fired & MU_BUTTON, 0, "the press leaked as MU_BUTTON; fired = {fired:#06x}");
++    assert_eq!(
++        fired & MU_MESAG,
++        MU_MESAG,
++        "a press on the submenu box's own area selects smroot in EmuTOS \
++         (*pitem = cur_submenu, aes/gemmnlib.c:494-496) — NewTOS delivered nothing; fired = {fired:#06x}"
++    );
++    assert_eq!((msg[0], msg[3], msg[4]), (MN_SELECTED, TITLE_FILE, SUB_ROOT), "msg = {msg:?}");
++    // SAFETY: `tree` is the leaked, live menu tree.
++    let state = |i: i16| unsafe { (*tree.offset(i as isize)).state };
++    assert_eq!(state(SUB_ROOT) & SELECTED, 0, "the cleanup clears smroot's SELECTED (do_chg, :488)");
++    assert_eq!(state(ITEM_OPEN) & SELECTED, 0, "the parent item is un-hilited by the cleanup (:493)");
++}
++
++/// **A103.2 — a DISABLED item with a submenu attached opens nothing.**
++/// *Open* carries the submenu (attached, then `menu_ienable(Open, 0)`).
++/// Hover *File*, onto *Open*, rest: the probe finds *Open* not SELECTED
++/// and the submenu's probe pixel still the desktop — `display_submenu` runs
++/// only inside `if (menu_select(tree, cur_item, last_item, TRUE))`
++/// (`gemmnlib.c:470-475`) and `menu_select` → `do_chg(…, chkdisabled)`
++/// refuses the DISABLED item (`:158-160`). A press there cancels: the
++/// return is gated on `do_chg(tree, cur_item, SELECTED, FALSE, FALSE,
++/// TRUE)` (`:493`), which refuses it too — no `MN_SELECTED`.
++#[test]
++fn a103_a_disabled_item_with_a_submenu_attached_opens_nothing() {
++    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb, tree) = fresh();
++    let sub = attach_submenu(&mut pb, tree);
++    menu_ienable(&mut pb, tree, ITEM_OPEN, false);
++    let (ppx, ppy) = submenu_probe_px();
++    set_probe(tree, ITEM_OPEN, ITEM_OPEN, (ppx, ppy), (ppx, ppy));
++    assert_eq!(host.raster.read_pixel(ppx, ppy), DESK, "the probe point shows the desktop dither before the track");
++    // SAFETY: `sub` is the leaked, live submenu tree.
++    let sub_state = |i: i16| unsafe { (*sub.offset(i as isize)).state };
++
++    move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
++    arm_gap(host);
++    glide(host, 0, ON_OPEN.1 - ON_FILE.1, 0); // down onto the DISABLED *Open*
++    host.push(pkt(0, 0, 0));
++    host.push(PROBE); // resting on it
++    host.push(pkt(0, 0, 0));
++    click(host); // press on the disabled item: the cancel
++
++    let (fired, bret, msg) = evnt_multi_timed(&mut pb, 200);
++    let (mx, my) = tos_api::vdi::mouse_position();
++    let samples = host.samples();
++    eprintln!("a103.2: fired={fired:#06x} bret={bret} at=({mx},{my}) msg={msg:?} samples={samples:?}");
++    assert_eq!(samples.len(), 1, "the probe must have been consumed inside the track; samples = {samples:?}");
++    let s = samples[0];
++    assert_eq!(s.at, ON_OPEN, "the probe ran on the item");
++    assert_eq!(s.state_a & DISABLED, DISABLED, "Open is DISABLED for this case");
++    assert_eq!(s.state_a & SELECTED, 0, "a DISABLED item is never hilited (do_chg chkdisabled, :158-160)");
++    assert_eq!(
++        s.pen_a,
++        DESK,
++        "no submenu may open under a DISABLED item (display_submenu only after menu_select succeeds, \
++         aes/gemmnlib.c:470-475); pen at ({ppx},{ppy}) = {}",
++        s.pen_a
++    );
++    assert_eq!(fired & MU_MESAG, 0, "no selection from a DISABLED item (:493); fired = {fired:#06x}, msg = {msg:?}");
++    assert_eq!(fired & MU_BUTTON, 0, "the cancelling press leaked as MU_BUTTON; fired = {fired:#06x}");
++    assert_eq!(sub_state(0) & SELECTED, 0, "nothing of the submenu tree was touched");
++    assert_eq!(host.raster.read_pixel(ppx, ppy), DESK, "the submenu area still shows the desktop after the track");
++}
++
+ // ── A90: evnt_mouse through amouse ─────────────────────────────────────────
+ 
+ /// **A90a — a rectangle crossed while the Control Manager still holds the
+diff --git a/tos-api/tests/aes_window_color_words.rs b/tos-api/tests/aes_window_color_words.rs
+index 4cd82da..d978060 100644
+--- a/tos-api/tests/aes_window_color_words.rs
++++ b/tos-api/tests/aes_window_color_words.rs
+@@ -867,7 +867,21 @@ fn dcolor_reaches_new_windows_only() {
+ /// LBLACK→BLACK 88. Nothing outside the two frames moved. Measured on this
+ /// binary alone, twice, and under `--shuffle-seed 7` / `99` with
+ /// `--test-threads=1` — the same value every time.
+-const FRAME_HASH: u64 = 0xb3e8_5614_b4ca_2900;
++///
++/// **Re-pinned 2026-09-21 (A105).** The info line's text now sits where
++/// `just_draw` puts a `G_BOXTEXT`'s: `gr_gtext(TE_LEFT, IBM, …,
++/// gr_inside(&t, 1))` with `gr_just`'s `(17 - 16 + 1) / 2` row
++/// (`gemoblib.c:735-738`, `gemgraf.c:574-576`; `gl_ainfo` `TE_LEFT`,
++/// `te_thickness 1`, `gemwmlib.c:154-157`) — glyph cells at `(1, 2)` of the
++/// info box instead of `(3, 1)`. Scratch diff of the two renderings against
++/// the previous pin: 2160 pixels, bbox `(43,86)-(385,200)`, every one inside
++/// the two info lines (`h1` rows 86..98, `h2` rows 186..200), exactly 1080
++/// BLACK→WHITE and 1080 WHITE→BLACK — the same glyph ink two columns left
++/// and one row down. Nothing else moved (the name text's `gr_just` centring
++/// coincides with the old formula for these even-width windows). Measured on
++/// this binary alone, twice, and under `--shuffle-seed 7` / `99` with
++/// `--test-threads=1` — the same value every time.
++const FRAME_HASH: u64 = 0xfb9c_ac5d_6a24_ab40;
+ 
+ /// Two default windows with every gadget, names and info lines: `h1`
+ /// untopped (partly covered, repainted untopped by `h2`'s open — A94), `h2`
+diff --git a/tos-api/tests/aes_window_frame_reference.rs b/tos-api/tests/aes_window_frame_reference.rs
+index 1048233..ff2c75e 100644
+--- a/tos-api/tests/aes_window_frame_reference.rs
++++ b/tos-api/tests/aes_window_frame_reference.rs
+@@ -649,10 +649,16 @@ fn name_rect(b: R) -> R {
+     R { x: b.x + ADJ_WBOX + ADJ3DSTD, y: b.y + ADJ3DSTD, w: b.w - 2 * ADJ_WBOX - 2 * ADJ3DSTD, h: GL_HBOX }
+ }
+ 
+-/// The glyph cells of the centred `n`-character name in the `W_NAME` rect.
++/// The glyph cells of the centred `n`-character name in the `W_NAME` rect —
++/// `gr_just` on `gr_inside(grown, 1)` after the activator's `y-1`
++/// (`gemoblib.c:735-757`, `gemgraf.c:567-589`; A105 (2)): `x = c.x +
++/// (c.w - n·8 + 1) / 2` with `c = (nr.x - 1, nr.y - 2, nr.w + 2, 21)`,
++/// `y = c.y + (21 - 16 + 1) / 2 = nr.y + 1`.
+ fn name_cells(nr: R, n: i16) -> R {
+     let nlen = n * 8;
+-    let nx = nr.x + ((nr.w - nlen) / 2).max(2);
++    let (cx, cw) = (nr.x - 1, nr.w + 2);
++    let slack = cw - nlen;
++    let nx = if slack > 0 { cx + (slack + 1) / 2 } else { cx };
+     R { x: nx, y: nr.y + 1, w: nlen, h: 16 }
+ }
+ 

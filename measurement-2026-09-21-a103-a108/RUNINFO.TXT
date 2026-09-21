@@ -1,0 +1,120 @@
+A103 + A105 + A108 -- one package of small conformance items.
+  A103 (tos-api/src/aes/menu.rs): a press on a submenu box's own area (border/gap) picks smroot
+       (gemmnlib.c:417,494-496); a DISABLED item with a submenu attached opens nothing (:470-475).
+  A105 (tos-api/src/aes/window.rs, object.rs): W_INFO text at gr_inside(&t,1) + gr_just (cells at
+       (1,2) of the info box); W_NAME text by gr_just on gr_inside(grown,1) after the y-1 nudge
+       (one column for odd slack, left-aligned + cut to whole glyphs when over-long, "" without
+       NAME); thumb_geom takes the axis minimum (gl_wbox horizontally); changecol (actcolchange)
+       modelled for the pressed FL3DACT frame gadgets.
+  A108 (kernel/src/desk/menu.rs): adjust_menu's title width strlen*8, box width (maxlen+1)*8 with
+       the Desk box >= MIN_DESKMENU_WIDTH (20 cells), right-edge shift with the 1-px shrink; THEBAR
+       gl_hchar+2 = 18 (desk_rsc.c:249-253).
+Developer self-evidence, 2026-09-21. Branch desk-rebuild, base HEAD a570123, changes uncommitted in
+the tree, nothing flashed. Pinned EmuTOS references/emutos @ 1a7484ab:
+  desk/deskmain.c:80 (MIN_DESKMENU_WIDTH), :1509 (CHAR_WIDTH assumption), :1511-1641 (adjust_menu:
+  :1528-1534 titles + mbar->ob_width, :1602-1603 Desk seed, :1608-1614 widest item, :1617 box x,
+  :1620 m++, :1626-1631 right-edge shift, :1633-1635 item widths), :1895-1900 (before rsrc_obfix);
+  desk/desk_rsc.c:249-253 (THEBAR {0,0,80,513}), :255-289 (THEACTIVE/titles/THEMENUS 769),
+  :291-341 (boxes and entries {0,row,20,1}); aes/gemrslib.c:53-99 (fix_chpos/rs_obfix);
+  aes/gemmnlib.c:700-731 (mn_bar: ob_draw THEBAR, separator at gl_hbox-1), :158-160 (do_chg
+  chkdisabled), :196-204 (menu_select), :417-422 (cur_submenu = ob_find(smtree, smroot,...)),
+  :446-448, :470-475 (display_submenu only after menu_select), :482-500 (cleanup, :488, :493,
+  :494-496); aes/gemoblib.c:1034-1113 (ob_find returns the last object found), :1295-1304
+  (ob_change XOR), :503-524 (3D growth, movetext/changecol), :619-636 (3D face substitution),
+  :681-690 (changecol interior), :699-706 (text colour/mode), :735-757 (G_BOXTEXT/G_BOXCHAR text
+  cell + movetext), :950 (add_3d_effect with the changed icol), :1332 (init_3d defaults), :83-102
+  (vdi16comp/xor_color); aes/gemgraf.c:412-415 (gl_hbox/gl_wbox), :480-497 (gsx_tcalc), :567-589
+  (gr_just); aes/gemwmlib.c:110-129 (gl_3dflags), :154-157 (gl_asamp TE_LEFT th 1), :431-434 /
+  :469-471 (elevator sizes), :501-503 (te_ptext, te_just), :515-567 (title/info layout),
+  :1346-1349 (default words 0x1101); aes/gemobjop.c:44-46 (G_TITLE th = 1).
+  Spec touched: docs/api/desktop/deskmain.md (adjust_menu widths, THEBAR, entry height note),
+  docs/api/aes/window-graphics.md (text placement, thumb axis, changecol), docs/api/aes/menu.md
+  (point 8: smroot pick, DISABLED item with submenu).
+
+PRODUCT CODE (uncommitted; method/product-a103-a105-a108.diff; HEAD copies in method/head-a570123/)
+  kernel/src/desk/menu.rs    MIN_DESKMENU_WIDTH, BAR_BOX_H (CELL_H+2); adjust_menu: title strlen*8,
+      box (max(seed,maxlen)+1)*8, right-edge shift (bx = sw - bw, bw -= 1); build_menu: THEBAR BAR_BOX_H.
+  tos-api/src/aes/window.rs  TE_LEFT/TE_CNTR, gr_just_text (gsx_tcalc + gr_just), draw_label at the cell
+      top (no +1); name text: c = inside_1(name_box), y-1 for FL3DACT, "" without NAME; info text:
+      c = inside_1(info_box), TE_LEFT; thumb_geom(.., min_size) with gl_hbox / GL_WBOX per axis (5 call
+      sites); gadget_sel: ACT_COLCHANGE && sel -> hollow->solid BLACK / xor_color(ic), tc = xor_color(tc),
+      MD_TRANS; BLACK const; unit test thumb_geom_takes_the_axis_minimum.
+  tos-api/src/aes/object.rs  ACT_COLCHANGE and xor_color pub(crate) (visibility only).
+  tos-api/src/aes/menu.rs    track_owned: in the submenu box, child_at == NIL -> sit = sub_box (smroot);
+      open_submenu gated on !DISABLED; same-tree submenu pick clears the parent's SELECTED without a
+      draw (do_chg :493); open_submenu_static gated on !DISABLED.
+  tos-api/tests/aes_a105_frame_remnants.rs  NEW (5 cases: info origin vs the reference pixels, odd-width
+      name centring, over-long name, pressed closer with/without actcolchange).
+  tos-api/tests/aes_a89_a92_menu_event_neighbours.rs  +2 cases (A103.1 same-tree submenu on the box's own
+      area -> MN_SELECTED (File, smroot); A103.2 DISABLED item opens nothing); Sample +dev_a/dev_b,
+      mode-aware fill_pattern (XOR), menu_tree_with_same_tree_submenu, fresh_same_tree_submenu,
+      menu_ienable.
+  tos-api/tests/aes_a100_a102_desk_menu_geometry.rs  replica arithmetic -> A108 formulas + BAR_BOX_H;
+      literals (68,19,158,285)->(64,19,160,285), THEACTIVE 232->216, Options box (172,214)->(160,216);
+      +2 cases (a108 geometry numbers; bar-row glyph bboxes/counts vs falcon-tc-desktop.png).
+  tos-api/tests/aes_window_frame_reference.rs  name_cells helper -> the gr_just formula (no behaviour
+      change for the even-width reference window).
+  tos-api/tests/aes_window_color_words.rs  FRAME_HASH re-pinned 0xb3e8_5614_b4ca_2900 ->
+      0xfb9c_ac5d_6a24_ab40 (scratch diff 2160 px, all in the two info lines, 1080 K->W + 1080 W->K;
+      method/dump_frames_patch.py; stable twice + shuffle seeds 7/99).
+  docs/STATUS.md Phase-13 entry + one Recent Decisions row (2026-09-21); TASK/A103.md, A105.md, A108.md
+      ERLEDIGT + Abschluss; TASK/A103-STATUS-DONE.MD, A105-STATUS-DONE.MD, A108-STATUS-DONE.MD.
+
+HOST TESTS (host-tests/)
+  xtask-test-BASELINE-HEAD-a570123.log   cargo run -p xtask -- test at HEAD: 811 passed / 0 failed / 1 ignored.
+  new-tests-RED-before-HEAD-a570123.txt  the new/changed test binaries against HEAD's four product files
+      (scratch copy): aes_a105_frame_remnants 1/5 (the four fixes red: the info `5` inked at columns
+      28..32 / rows 122..133 vs the reference's 26..31 / 123..134 (two right, one up); the odd-width name
+      inked at 179..200 vs 180..201 (one column left); the over-long name at 58..319 vs 55..324 (indented,
+      cut one glyph early); the pressed closer with actcolchange = 1 white instead of black at (32,42));
+      aes_a89_a92 8/10 (A103.1: the AES waits forever on the press = nothing delivered; A103.2: the
+      submenu opened under the DISABLED item, pen 0 at the probe); aes_a100_a102 8/8 and
+      aes_window_frame_reference 6/6 pass on both sides — the A108 tree is a host *replica* (the kernel
+      crate is forced-target aarch64, no host tests); the kernel's own geometry is the serial dump below.
+  a105-a103-RED-before-HEAD-a570123.txt  the assertion messages of the six red cases.
+  a103-a105-a108-GREEN-after.txt         8/8 + 5/5 + 10/10 + 6/6 + 6/6 + 1/1 on the tree.
+  xtask-test-AFTER.log                   821 passed / 0 failed / 1 ignored, rc 0 (811 + 5 + 2 + 2 + 1).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log   cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat; cargo xtask
+      build --board rpi4: tos-api 64 / kernel 94, rc 0; warning message set identical to
+      measurement-2026-09-21-a100-a102/build/xtask-build-rpi4.log (diff empty). No qemu-virt build (lead).
+  clippy-tos-api-{BEFORE,AFTER}.log   cargo clippy -p tos-api: 80 -> 80, message set identical
+      (menu.rs 10 / window.rs 11 / object.rs 16 pre-existing). clippy-tos-api-tests-AFTER.log: the new and
+      the changed test targets 0 hits (three doc-list notes in the new file reflowed).
+  scratch-{after,before}-build.log   the injector scratch kernels (tos-api 67 / kernel 106 = H02/A46/A78/A87
+      scaffolding + the A108 tree dump). make-sd-image.log: tools/make-sd-image.sh <scratch>/img/sd-base.img 64.
+  scratch-kernels-and-images.sha256   tree kernel8.img (rpi4 dev), the two scratch kernels, the image.
+
+QEMU raspi4b (method/run.sh = a79's; 640x480, -display none, QMP screendump 0.3 s after each serial mark;
+fresh image copy per run; grep -c "EXC\|PANIC\|panic" = 0 in both serial logs; screendumps/PIXDIFF.TXT).
+  BEFORE = scratch with tos-api/src/aes/{menu,window,object}.rs + kernel/src/desk/menu.rs = HEAD a570123
+  (git show, no checkout); AFTER = the tree. method/make_scratch_a108.sh = A100 method + tree_dump_patch.py
+  (A108-TEMP: install_menu_bar prints THEBAR, THEACTIVE, titles, every box + entry 0). Script
+  method/a108_scripts.rs from desk-a108.actions via gen_script.py: parkbr; arm; A; File title (88,8); F;
+  out (400,300) + click = cancel; parkbr; H.
+  Serial: BEFORE "[a108] THEBAR=(0,0,640,19) THEACTIVE=(16,0,232,19) titles=(0,52),(52,52),(104,52),(156,76)
+                  BOX1#11=(68,19,158,285) ..."; AFTER "THEBAR=(0,0,640,18) THEACTIVE=(16,0,216,19)
+                  titles=(0,48),(48,48),(96,48),(144,72) BOX0=(16,19,160,38) BOX1=(64,19,160,285)
+                  BOX2=(112,19,136,190) BOX3=(160,19,216,228)".
+  Bar row vs falcon-tc-desktop.png: BEFORE 840 px, AFTER 0 px (per-title ink bboxes and counts identical).
+  C:\ window TL/TR/BR vs falcon-tc-window-c.png (corner_residual.py): 0/0/0 before and after; the info
+  line's text placement now the reference's (ink rows 27..40, first column 10, cell (1,25)) — before
+  26..39 / 12.
+
+RESIDUALS (named, untouched)
+  (1) Drop-down entries 19 px tall (MENU_H) vs the RSC's one cell = 16 px (desk_rsc.c:297-341): the File
+      box 285 vs 240 tall. kernel/src/desk/menu.rs build_menu; own task.
+  (2) The desktop's info-line string format differs from EmuDESK's ("24 items   373645 bytes used" vs
+      " 514 bytes used in 1 items."): desk/ content, not the frame.
+  (3) The scroll arrows get no pressed feedback in NewTOS (EmuTOS ob_change(gadget, selected) around
+      handle_arrow_msg, gemctrl.c:272-284); only closer/fuller (gr_watchbox) do. Pre-existing, own task.
+  (4) A submenu in a separate tree still delivers no selection (msg[5..7] tree-pointer path deferred,
+      menu::track doc) — A103.1 is delivered for a same-tree submenu only.
+  (5) `child_at` walks children head-first; EmuTOS ob_find walks from ob_tail (gemoblib.c:1034-1113) —
+      differs only for overlapping siblings; pre-existing.
+  (6) `menu::track`'s in_bar test uses gl_hbox, not THEBAR's rect (EmuTOS rect_change(THEBAR) for MU_M2 in
+      START_STATE, gemmnlib.c:286-292): the 18-row THEBAR of the desktop tree is unobservable there.
+
+OPEN
+  Pi acceptance for A108 (bar row) and A105.1 (info text) — visible on hardware (Tester/Lead; nothing flashed).
