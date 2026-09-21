@@ -337,6 +337,24 @@ direction (`ev_block(MU_M1, &MOBLK)`), then fills the mouse position/state.
 `ev_mouse` overwrites `rets[2]` with the **current** `button` after the wait,
 so the reported button is always live (`gemevlib.c:127`).
 
+> **The wait is `amouse`'s, and there is no pre-drain (A90/A92,
+> 2026-09-21).** `ev_block(MU_M1, pmo)` is `mwait(iasync(MU_M1, pmo))`
+> (`gemevlib.c:64-69`) → `amouse` (`aes/gemasync.c:157-162` →
+> `aes/geminput.c:568-587`): the rectangle is tested **once, at arm time**,
+> ownership-blind (`in_mrect` → `azombie`, `:575-576`), and otherwise parked on
+> the caller's `c_msleep`, which only `post_mouse(gl_mowner, …)` walks
+> (`:446-456`) — the same rule as `evnt_multi`'s `MU_M1`/`MU_M2` arm (point 6
+> note above). Unlike `ev_multi`, `ev_mouse` runs **no** `chkkbd(); forker();`
+> before arming (`:123-128` vs `:169-170`): its arm-time position is the one
+> the previous dispatch left (`super()` → `dsptch()`, `gemsuper.c:452-464`);
+> a packet queued since is processed inside the wait (`mwait` → `dsptch` →
+> `forker`) and delivered under ownership. So a rectangle crossed while the
+> Control Manager holds the mouse — e.g. during `ct_msgup`'s wait for the
+> selecting press to be released (`aes/gemctrl.c:100-101`) — is delivered only
+> once ownership returns (`w_setactive` → `set_mown(app)` → `post_mouse(app,
+> xrat, yrat)`, `:441-442`, `aes/geminput.c:225-231`), against the position
+> at that moment.
+
 ### `evnt_mesag` (23)
 
 **Source:** `gemsuper.c:135-141` → `ev_mesag((WORD *)ME_PBUFF)`

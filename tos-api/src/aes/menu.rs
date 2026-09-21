@@ -311,7 +311,11 @@ pub fn menu_bar(pb: &Aespb) {
 /// when the highlighted item has an attached submenu ([`SubmenuTable`]), it
 /// opens as a nested box beside the parent item (right, or left if it would
 /// run off-screen), saved under [`SUBMENU_SAVE`]. Hovering into the submenu keeps
-/// the parent item highlighted; a press over a submenu item selects it. A
+/// the parent item highlighted; a press over a submenu item selects it; a
+/// press on the parent item itself, submenu showing, selects the *parent*
+/// (`mn_do` cleanup, `gemmnlib.c:482-500`). Leaving the submenu into no
+/// man's land keeps the parent selected and the submenu up (`:437-438`,
+/// `OUTSIDE_STATE`), and a press there selects the retained parent too. A
 /// submenu that lives in the **same** OBJECT tree as the bar returns its item
 /// through the existing `(title, item)` result (the item index is valid in the
 /// caller's tree, so it round-trips as `MN_SELECTED`'s `msg[4]`); a submenu in
@@ -345,6 +349,11 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
     // an edge with the pointer outside title, box and submenu cancels
     // (`OUTSIDE_STATE`, below).
     let mut was_down = crate::vdi::mouse_buttons() & 0x01 != 0;
+    // Where the previous pass left `mn_do`'s state machine: in the submenu box
+    // (`SUBMENU_STATE`) or in no man's land (`OUTSIDE_STATE`). Both are what
+    // the `:437-438` retention keys on (below).
+    let mut was_in_sub = false;
+    let mut was_outside = false;
 
     loop {
         let (mx, my) = crate::vdi::mouse_position();
@@ -400,7 +409,19 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
                     sub_item = NIL;
                 }
                 let it = object::child_at(tp, cur_box, mx, my);
-                if it != cur_item {
+                // Out of the *submenu* into no man's land — no title, no item
+                // — `mn_do` keeps the parent: `if (menu_state == SUBMENU_STATE)
+                // cur_item = last_item;` (`gemmnlib.c:437-438`), so
+                // `item_changed` is false and neither `undisplay_submenu` nor
+                // the parent's un-hilite runs (`:452-459`); only the submenu
+                // item was un-hilited above (`:446-448`). The state is then
+                // `OUTSIDE_STATE`, which no event leaves until re-entry or a
+                // button (`:293-305`) — so the retention holds for as long as
+                // the pointer stays outside. Out of the parent *item* into no
+                // man's land (`INITEM_STATE` → outside) is the plain change
+                // below: `cur_item = NIL`, submenu closed, parent un-hilited.
+                let keeps_parent = it == NIL && t == NIL && sub_tree != 0 && (was_in_sub || was_outside);
+                if it != cur_item && !keeps_parent {
                     // Item changed: close the old item's submenu, move the
                     // parent highlight, then open the new item's submenu.
                     if sub_tree != 0 {
@@ -445,39 +466,58 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
         // selecting one (`docs/api/aes/menu.md` "Mouse ownership over the
         // track", point 5).
         if down != was_down {
-            if sub_tree != 0 && sub_item != NIL && sub_tree == tree as u64 {
-                // Submenu selection in the same tree: the item index is valid
-                // in the caller's tree (round-trips as MN_SELECTED msg[4]).
-                crate::vdi::cursor_hide(backend);
-                object::set_state_bit(sub_tree as *mut Object, sub_item, SELECTED, false);
-                close_submenu(sub_tree, sub_box, NIL, backend);
-                erase_box_inner(tree, cur_box, backend);
-                crate::vdi::cursor_show(backend);
-                return Some((cur_title, sub_item));
-            }
-            if sub_tree == 0 && cur_item != NIL {
-                // A DISABLED item is never delivered as a selection. EmuTOS `mn_do`
-                // (gemmnlib.c:493) gates the return on
-                // `do_chg(tree, cur_item, SELECTED, FALSE, FALSE, TRUE)`, which
-                // returns FALSE for a DISABLED item (chkdisabled, gemmnlib.c:159-160),
-                // so `done` stays FALSE and mn_do returns 0 — the menu ABORTS. On
-                // that abort it also un-hilites the title (:510) and pulls the box
-                // up (:492), i.e. exactly the existing no-selection cancel path.
+            if sub_tree != 0 && sub_item != NIL {
+                if sub_tree == tree as u64 {
+                    // Submenu selection in the same tree: the item index is valid
+                    // in the caller's tree (round-trips as MN_SELECTED msg[4]).
+                    crate::vdi::cursor_hide(backend);
+                    object::set_state_bit(sub_tree as *mut Object, sub_item, SELECTED, false);
+                    close_submenu(sub_tree, sub_box, NIL, backend);
+                    erase_box_inner(tree, cur_box, backend);
+                    crate::vdi::cursor_show(backend);
+                    return Some((cur_title, sub_item));
+                }
+                // A submenu in a separate tree: its selection needs the
+                // `msg[5..7]` tree-pointer return path (deferred, see the doc
+                // of [`track`]); the press is not acted on.
+            } else if cur_item != NIL && !in_sub_box {
+                // `INITEM_STATE` — on the item, its submenu showing or not —
+                // or `OUTSIDE_STATE` reached from the submenu with the parent
+                // retained (`gemmnlib.c:437-438`): `MU_BUTTON` breaks the loop
+                // (`:373-374`) and the cleanup undisplays the submenu
+                // (`:486-490`), restores the box (`:491`) and, the item
+                // enabled and `menu_state != SUBMENU_STATE`, returns
+                // `(cur_title, cur_item)` (`:492-500`) — the parent item when
+                // a submenu was showing.
+                //
+                // A DISABLED item is never delivered as a selection: the return
+                // is gated on `do_chg(tree, cur_item, SELECTED, FALSE, FALSE,
+                // TRUE)` (`:493`), which refuses a DISABLED object
+                // (`:159-160`), so `done` stays FALSE and mn_do returns 0 — the
+                // menu ABORTS, un-hiliting the title (`:510`) after pulling the
+                // box up (`:491`): the no-selection cancel path.
                 if (ObjTree::new(tp).state(cur_item) & DISABLED) != 0 {
+                    if sub_tree != 0 {
+                        close_submenu(sub_tree, sub_box, sub_item, backend);
+                    }
                     close_box(tree, cur_title, cur_box, backend);
                     return None;
                 }
-                // Clear the item's highlight bit and restore the screen under
-                // the box, cursor hidden so neither smears. The title stays
-                // highlighted: the app un-highlights it via menu_tnormal after
-                // acting on MN_SELECTED.
+                // Undisplay the submenu first (its save holds the box's pixels
+                // in the overlap, the box's save the desktop), then clear the
+                // item's highlight bit and restore the screen under the box,
+                // cursor hidden so nothing smears. The title stays highlighted:
+                // the app un-highlights it via menu_tnormal after acting on
+                // MN_SELECTED.
                 crate::vdi::cursor_hide(backend);
+                if sub_tree != 0 {
+                    close_submenu(sub_tree, sub_box, NIL, backend);
+                }
                 object::set_state_bit(tree, cur_item, SELECTED, false);
                 erase_box_inner(tree, cur_box, backend);
                 crate::vdi::cursor_show(backend);
                 return Some((cur_title, cur_item));
-            }
-            if outside {
+            } else if outside {
                 // `OUTSIDE_STATE` + `MU_BUTTON` → break → cleanup without a
                 // selection (`gemmnlib.c:373-374,482-511`): `menu_sr(FALSE)`,
                 // `do_chg(tree, cur_title, SELECTED, FALSE, …)`, return FALSE.
@@ -512,9 +552,10 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
             // The one exception is a DISABLED title (`:429-434`): `cur_title
             // = NIL; done = TRUE;` — `mn_do` ends with no selection and, since
             // `menu_down` never dropped a box for it (`do_chg(…, chkdisabled)`
-            // at `:158-160,469`), nothing to restore. NewTOS did drop one
-            // (`open_box` does not gate on DISABLED), so the same no-selection
-            // exit goes through `close_box` to take it back off the screen.
+            // at `:158-160,469`; [`open_box`] answers `NIL` for it, A89),
+            // there is nothing to restore — `close_box` with `cur_box == NIL`
+            // only brackets the cursor. (With `cur_menu == NIL` EmuTOS ends
+            // even earlier, `:406-411`; same outcome.)
             if (ObjTree::new(tp).state(cur_title) & DISABLED) != 0 {
                 if sub_tree != 0 {
                     close_submenu(sub_tree, sub_box, sub_item, backend);
@@ -525,6 +566,8 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
         }
 
         was_down = down;
+        was_in_sub = in_sub_box;
+        was_outside = outside;
         h.pump_input();
     }
 }
@@ -781,7 +824,17 @@ fn sr_clip(x: i16, y: i16, w: i16, h: i16) -> ClipRect {
 /// Highlight `title` and draw its drop-down box; returns the box index. The
 /// cursor is hidden across the draw so it stays on top and the save-under
 /// snapshot is clean.
+///
+/// A **DISABLED** title gets neither: `menu_down` (`gemmnlib.c:229-244`)
+/// saves and draws the box only if `do_chg(tree, ititle, SELECTED, TRUE,
+/// TRUE, TRUE)` succeeds, and `do_chg` refuses a DISABLED object
+/// (`:158-160`) — `mn_do` does not even call it for one (`menu_select` at
+/// `:466-467` is the same `do_chg`). Answers `NIL`: no box on screen,
+/// nothing to restore (A89).
 fn open_box(tree: *mut Object, title: i16, backend: &dyn RasterBackend) -> i16 {
+    if (ObjTree::new(tree as *const Object).state(title) & DISABLED) != 0 {
+        return NIL;
+    }
     crate::vdi::cursor_hide(backend);
     object::set_state_bit(tree, title, SELECTED, true); // redraws the title highlighted
     let imenu = menu_sub(tree as *const Object, title);

@@ -970,6 +970,13 @@ fn the_mover_drag_repaints_only_desktop_it_uncovered() {
     b.paint(work_b, MARK);
     let before = b.snapshot();
 
+    // The press is already in (observed above); the drag movement arrives
+    // *after* the application has armed its wait. `ev_multi` drains the fork
+    // ring first (`chkkbd(); forker();`, `aes/gemevlib.c:169-170` — one
+    // `pump_input` at the head of `evnt_multi`, A92), so one idle packet
+    // stands in for that drain and the DRAG packet is the first thing the
+    // wait itself sees, with the pointer still on the mover.
+    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
     host.push(Packet { dx: DRAG, dy: 0, buttons: 1 });
     host.push(Packet { dx: 0, dy: 0, buttons: 0 }); // release
     for _ in 0..8 {

@@ -1,0 +1,16 @@
+327 |         tree[idx].ob_state |= SELECTED;
+347 | pub fn shel_read(pb: &Aespb) {
+3107 | pub fn wind_create(pb: &Aespb) {
+3175 | pub fn wind_open(pb: &Aespb) {
+3230 | pub fn wind_close(pb: &Aespb) {
+3402 | pub fn wind_delete(pb: &Aespb) {
+3415 | pub fn wind_get(pb: &Aespb) {
+3643 | pub fn wind_set(pb: &Aespb) {
+3860 | pub fn wind_find(pb: &Aespb) {
+3875 | pub fn wind_update(pb: &Aespb) {
+3952 | pub fn wind_calc(pb: &Aespb) {
+3969 | pub fn wind_new(pb: &Aespb) {
+3: menu_popup rc=1 out=MenuRec { mn_tree: 4375670768, mn_menu: 0, mn_item: 2, mn_scroll: 0, mn_keystate: 0 } buttons after=0x00 at=(320,319)
+3 next call: fired=0x0020 bret=0 msg=[0, 0, 0, 0, 0, 0, 0, 0]
+test menu_popup_waits_for_the_selecting_press_to_be_released ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s

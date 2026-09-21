@@ -369,6 +369,32 @@ pub(super) fn count_form_clicks(h: &dyn crate::host::Host) -> i16 {
 ///
 /// MOBLK: `int_in[0]` = flags, `int_in[1..4]` = x, y, w, h. The event
 /// fires when `flags != inside` (EmuTOS `in_mrect`).
+///
+/// **The wait is `amouse`'s, as `evnt_multi`'s `MU_M1`/`MU_M2` are (A90).**
+/// `ev_mouse` is `ev_block(MU_M1, pmo)` → `iasync` → `amouse`
+/// (`aes/gemevlib.c:123-128`, `aes/gemasync.c:157-162`,
+/// `aes/geminput.c:568-587`): `in_mrect` is tested **once, at arm time**,
+/// ownership-blind, against the position the previous dispatch left —
+/// `ev_mouse` has no `chkkbd(); forker();` of its own, unlike `ev_multi`
+/// (`gemevlib.c:169-170`), so nothing is pumped before the arm. If the
+/// rectangle does not match at that instant, the wait parks on the caller's
+/// `c_msleep`, which only `post_mouse(gl_mowner, …)` walks
+/// (`geminput.c:446-456`): from `mchange` on every move *while the caller
+/// owns the mouse*, and once from `set_mown` the moment ownership comes
+/// (back) to it (`:220-231`). Pass 0 below is the arm, every later pass the
+/// parked state — live position, owner only.
+///
+/// Ownership comes back through the Control Manager's loop head,
+/// `w_setactive` (`aes/gemctrl.c:442`), which runs here as it does in
+/// [`evnt_multi`] — a no-op while a button is held or a menu track holds
+/// the mouse, and not at all while `ct_msgup` still waits for the press that
+/// selected a menu item to be released (`:100-101`). A rectangle the pointer
+/// crosses during that hold is therefore not delivered; the release lets
+/// `w_setactive` → `set_mown(app)` → `post_mouse(app, xrat, yrat)` complete
+/// the parked wait against the live position (`gemctrl.c:441-442`,
+/// `geminput.c:225-231`). The bar/frame interception itself stays with
+/// `evnt_multi` (the inline Control Manager runs for a message wait only,
+/// AUD-P2-003); `evnt_mouse` only lets the mouse come back.
 pub fn evnt_mouse(pb: &Aespb) -> Option<sched::Switch> {
     let m = MoBlk {
         flags: pb.intin(0),
@@ -378,10 +404,23 @@ pub fn evnt_mouse(pb: &Aespb) -> Option<sched::Switch> {
         h: pb.intin(4),
     };
     if host().is_some() {
-        while !rect_event(&m) {
+        // The position at arm time — `amouse`'s one ownership-blind test
+        // (`aes/geminput.c:575-576`), taken before anything is pumped.
+        let arm_pos = crate::vdi::mouse_position();
+        let mut pass = 0u32;
+        loop {
+            if !super::input::ct_msgup_busy() {
+                super::input::w_setactive();
+            }
+            let fired = (pass == 0 && rect_event_at(&m, arm_pos))
+                || (super::input::own_mouse() && rect_event(&m));
+            if fired {
+                break;
+            }
             if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
                 return Some(sw); // yield to a peer (S2); re-checks on resume
             }
+            pass = pass.saturating_add(1);
         }
     }
     fill_rets(pb);
@@ -461,6 +500,19 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
     let mut clicks = 0i16;
 
     if let Some(h) = host() {
+        // `ev_multi` opens with `chkkbd(); forker();` (`aes/gemevlib.c:169-170`):
+        // the fork ring — every mouse/keyboard packet the interrupt side queued
+        // since the last dispatch — is drained *before* the quick checks run
+        // and before `abutton`/`amouse` arm, so the `button` level and the
+        // `xrat`/`yrat` position they test are current as of the call, not as
+        // of the previous trap's `dsptch()`. One `pump_input` is that drain
+        // here — the same call `dsptch()` and the wait loop below make — and
+        // the arm-time state (`arm_own`/`arm_mb`/`arm_pos`) is sampled after
+        // it (A92). The key `chkkbd` would fork is read where it lands
+        // (`console_try_read_key`, in the loop). Harmless on an S2 restart:
+        // the whole call re-executes and pumps once more, as the wait loop
+        // would have.
+        h.pump_input();
         // Persist the timer deadline per-slot for S2-restart idempotency
         // (design §4.3 OPEN): the first entry stores `now + ms`, an S2 restart
         // (this whole loop re-executes from the top on resume) reuses it, and

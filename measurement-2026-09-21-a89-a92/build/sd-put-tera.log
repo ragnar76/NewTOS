@@ -1,0 +1,4 @@
+hdiutil: WARNING: 'hdiutil attach ...' is deprecated. Please use 'diskutil image attach ...' instead.
+mounted /dev/disk4s1 at /Volumes/NEWTOS
+  put /Volumes/Daten/Development/PiRusTOS/measurement-2026-09-21-a89-a92/method/newdesk-teradesk.inf -> NEWDESK.INF
+detached

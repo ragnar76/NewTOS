@@ -1,0 +1,118 @@
+A89 + A90 + A92 -- menu track neighbours of A73 (submenu into no man's land, DISABLED title),
+evnt_mouse through amouse, evnt_multi arm-time state after the head drain.
+Developer self-evidence, 2026-09-21 (no Tester verdict). Branch desk-rebuild, base HEAD 85c591e,
+changes uncommitted in the tree. Pinned EmuTOS references/emutos @ 1a7484ab:
+  aes/gemmnlib.c do_chg :140-171 (chkdisabled :158-160), menu_down :229-244, mn_do :249-516
+    (START :286-292, OUTSIDE :293-305, M3 :298-302, INTITLE buparm^=1 :375, break :373-374,
+    hit-test :398-443 incl. DISABLED exit :429-434 and submenu retention :437-438, hilite
+    bookkeeping :446-475, cleanup :482-513);
+  aes/gemevlib.c ev_block :64-69, ev_button :84-94, ev_mouse :123-128, ev_multi :151-294
+    (chkkbd(); forker(); :169-170);
+  aes/gemasync.c mwait :117-126, iasync :129-175 (amouse :157-162);
+  aes/geminput.c set_mown :220-235, bchange :328-345, mchange :360-391, post_mouse :446-456,
+    abutton :545-565, amouse :568-587;
+  aes/gemctrl.c ct_msgup :81-104, w_setactive :442; aes/gemdisp.c forker :101-155, disp :219-252;
+  aes/gemsuper.c super :452-464 (xif then dsptch); aes/gemmnext.c display_submenu :625-678.
+Spec: docs/api/aes/menu.md "Mouse ownership over the track" points 6 + 7 (new),
+docs/api/aes/event.md evnt_mouse (22) note (new).
+
+PRODUCT CODE (uncommitted; method/product-a89-a90-a92.diff; HEAD copies in method/head-85c591e/)
+  tos-api/src/aes/menu.rs   track_owned: was_in_sub/was_outside, keeps_parent (:437-438), edge block
+    (submenu item / parent item incl. close_submenu before the box restore / cancel), DISABLED-title
+    comment; open_box: NIL for a DISABLED title (menu_down :229-244 via do_chg :158-160); track doc.
+  tos-api/src/aes/event.rs  evnt_multi: one pump_input at the head before arm_own/arm_mb/arm_pos
+    (forker(), gemevlib.c:169-170). evnt_mouse: arm_pos before any pump, loop = ct_msgup_busy gate +
+    w_setactive, fired = (pass 0 && rect_event_at(arm_pos)) || (own_mouse() && rect_event(live)).
+  tos-api/src/aes/gsxif.rs  popup_blit_save: with no BDOS pool at all (host tests only) a heap copy,
+    as bb_save without a screen buffer. Board-unreachable (bring_up_bdos_pools precedes AUTO/desktop).
+    Outside the lead's file list; needed for the submenu to open in a host test at all.
+  tos-api/tests/aes_a89_a92_menu_event_neighbours.rs  NEW (8 cases; A73 harness + probe packets)
+  tos-api/tests/aes_a73_event_neighbours.rs  arm_gap in 1a/1b/2a/2b; menu_popup case un-ignored (green
+    with the heap save; the old ignore reason no longer holds).
+  tos-api/tests/{aes_a87_a88_menu_ctwait_popup, aes_menu_click_ownership, aes_menu_bar_height,
+    aes_desk_background, aes_window_drag, aes_window_content, aes_window_hotclose}.rs  arm gap for
+    input modelled as post-arm; hotclose pump count (2, 2); a88 clamp case gets a cancel click.
+  docs/STATUS.md Phase-13 fragment + one Recent Decisions row (2026-09-21); TASK/A89.md, A90.md,
+    A92.md ERLEDIGT + Abschluss; TASK/A89-STATUS-DONE.MD, A90-STATUS-DONE.MD, A92-STATUS-DONE.MD.
+
+TICKET NOTES
+  A92 "same for evnt_mouse/evnt_button if they sample": not in EmuTOS -- ev_mouse (:123-128) and
+    ev_button (:84-94) arm without a drain; only ev_multi has chkkbd(); forker(). evnt_mouse keeps
+    its arm_pos before any pump (A90), pinned by the a90a case.
+  A89 point 1 "a press on the parent item selects the parent": also a press in no man's land after
+    leaving the submenu selects the parent (cleanup :482-500 with the retained cur_item) -- tested.
+
+HOST TESTS (host-tests/)
+  aes_a89_a92_menu_event_neighbours-RED-before-fix.txt  1 passed / 7 FAILED against the unchanged
+    product code (gsxif heap save already in): a89.1a/b/c hang at the IDLE cap (press ignored /
+    cancelled), a89.2 Edit.ob_state 0x0009 + box painted, a90a EV_MB=0x01 at (94,47),
+    a92a fired=0x0020 at (320,300), a92b fired=0x0020 mb=0.
+  aes_a89_a92_menu_event_neighbours-GREEN-after.txt / -GREEN-values.txt  8/8:
+    a89.1a fired=0x0010 msg=[10,1,0,4,12,..]; a89.1b probe state_a=1 pen_a=0 at (300,66),
+    fired=0x0010 msg=[10,1,0,4,12,..]; a89.1c fired=0x0010 at (84,47); a89.2 probes state 8 / pen 3
+    (desktop dither), fired=0x0020; a90a rc=1 at=(114,47) EV_MB=0x00; a90b at=(84,47) EV_MB=0x01
+    queued 2 -> 1; a92a fired=0x0024 at=(340,300); a92b fired=0x0022 mb=1 bret=1.
+  aes_a73_menu_popup-formerly-ignored-now-green.txt  rc=1 mn_item=2 buttons after=0x00, next call
+    fired=0x0020.
+  xtask-test-BASELINE-HEAD-85c591e.log  770 passed / 0 failed / 2 ignored.
+  xtask-test-AFTER-run1-a73-1b-pre-arm-press.log  the head pump turns A73 1b's first packet (a press)
+    into pre-arm input -> fired=0x0002 (EmuTOS: abutton level test, geminput.c:549-551) -> arm_gap.
+  xtask-test-AFTER-run2-a87-a88.log  same for the two A87 click cases; a88 clamp case hung (the pop-up
+    now tracks on the host) -> cancel click per call.
+  xtask-test-AFTER.log  cargo run -p xtask -- test: 779 passed / 0 failed / 1 ignored, rc 0
+    (baseline 770/0/2 + 8 new + the A73 popup case out of `ignored`).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log  cargo xtask build --board rpi4 (tos-api + kernel recompiled): tos-api 64 /
+    kernel 94, rc 0 (baseline 64/94, delta 0); tree kernel8.img sha256 in kernel8-tree-rpi4-dev.sha256.
+    No qemu-virt build (lead).
+  clippy-tos-api-host.txt  cargo clippy -p tos-api: 80 (baseline 80, delta 0); menu.rs 10 (all the
+    pre-existing Aespb private_interfaces notes), event.rs / gsxif.rs 0.
+  clippy-tos-api-tests.txt  cargo clippy -p tos-api --tests: no hit in the new test file nor in the
+    nine touched test files.
+  scratch-{after,before}-build.log  the injector scratch kernels (tos-api 66 / kernel 105 = the
+    H02/A46/A73 scaffolding), sha256 in scratch-kernels-and-images.sha256.
+  make-sd-image.log, sd-put-tera.log  tools/make-sd-image.sh <scratch>/img/sd-base.img 64;
+    sd-tera.img = + NEWDESK.INF (#Z TeraDesk, method/newdesk-teradesk.inf = the H02/A73 one).
+
+QEMU raspi4b (method/run.sh; 640x480, -display none, QMP screendump after each serial mark; fresh
+image copy per run; grep -c "EXC\|PANIC\|panic" = 0 in both serial logs).
+BEFORE = scratch with tos-api/src/aes/{input,event,menu,gsxif}.rs = HEAD 85c591e (git show, no
+checkout); AFTER = the tree. Injector: method/make_scratch_a89.sh = A73 method (a68_patch.py,
+a73_trace.py, apply_injector.py, a68_patch2.py); script method/a89_scripts_run3.rs from
+a89-run3.actions via gen_script.py (A87's, `parkbr`).
+  (c) H02 run3, park bottom-right: parkbr; (300,300); double-click HARD DISC C (195,35); click
+      HELLO.TXT (220,340) -> A; arm; File (88,8) -> B; Info... (150,43) -> B2; down +3800 / up +3806
+      -> C1 (+0.5 s settle); D (+3 s).
+      after == before byte for byte, all five dumps (sha256 in the receipt table below):
+        A 01256b33.. HELLO row 0.839 (selected), File title 0.221
+        B 246633a2.. File title 0.761 (box down)
+        B2 9002b658.. File 0.779, drop-down area 0.496 (Info... hilited)
+        C1 = D dbde33da.. HELLO row 0.000 (the "File Information" dialog for HELLO.TXT covers it),
+             info line "32 bytes used in 1 selected item."
+      serial (both): `[a73] track -> Some((4, 20)) at (150,43) mb=0x01`, `[a73] evnt_multi
+      fired=0x0010 clicks=0` (MU_MESAG only), then the dialog's press-wait burst `fired=0x0002 ..
+      pass=0` while the selecting press is still held (the documented ownership-blind arm-time level
+      test, unchanged by this package; 44 lines after vs 68 before in the same 30 ms window = two
+      pumps per call now, timing only).
+  (a) DISABLED title / (b) submenu: TeraDesk has neither -- desktop.rsc tree 0 titles 3..7 ob_state 0
+      and no menu_ienable on a title in the source; no menu_attach anywhere. Host tests only.
+
+OUT OF SCOPE (observed, untouched)
+  (1) EmuTOS keeps a stale cur_menu after a DISABLED title (menu_down not called, cur_menu unchanged):
+      ob_find then hit-tests an undisplayed box (:427) and do_chg hilites an invisible item. Not
+      replicated (no app effect).
+  (2) A press on the submenu box border (inside smroot, no child): EmuTOS returns *pitem = smroot,
+      *ptree = smtree (:494-496). Ours: nothing (pre-existing).
+  (3) A DISABLED item with an attached submenu opens it here (open_submenu has no DISABLED gate);
+      EmuTOS reaches display_submenu only through menu_select -> do_chg (:470-475).
+  (4) The inline Control Manager runs only inside evnt_multi with MU_MESAG; during evnt_mouse /
+      evnt_button / evnt_keybd / evnt_timer no bar/frame interception happens (EmuTOS: ctlmgr is a
+      process). evnt_mouse now runs w_setactive only.
+  (5) The interception reads the live pointer, not the press-time snapshot (pr_xrat/pr_yrat,
+      ev_rets gemevlib.c:42-58): a press + move both queued before a trap hit the moved position.
+  (6) tos-api lib unit tests share process-wide statics; a test that ends inside a track (panic)
+      can poison the next case's state (harness property, seen in the RED run only).
+
+OPEN
+  Pi acceptance (Tester/Lead; nothing flashed). No commit, no git checkout/stash/reset, no *.img kept.

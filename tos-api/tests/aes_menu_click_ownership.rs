@@ -719,6 +719,15 @@ fn menu_item_release_after_drag_delivers_only_mn_selected() {
 
     move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
 
+    // The press arrives *after* the application has armed its wait. `ev_multi`
+    // drains the fork ring first (`chkkbd(); forker();`, `aes/gemevlib.c:169-170`
+    // — one `pump_input` at the head of `evnt_multi`, A92), so one idle packet
+    // stands in for that drain; a press queued *before* the call would be a
+    // level already down at arm time, which `abutton` answers with an
+    // immediate, ownership-blind `MU_BUTTON` in EmuTOS too
+    // (`aes/geminput.c:549-551`; `docs/api/aes/menu.md` "The one documented
+    // exception").
+    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
     host.push(Packet { dx: 0, dy: 0, buttons: 1 }); // press on the title
     host.push(Packet { dx: 0, dy: 0, buttons: 1 });
     let steps = (ON_OPEN.1 - ON_FILE.1) / 10;

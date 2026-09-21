@@ -1,0 +1,6 @@
+marker 'A_SELECTED' found at 27.2s -> after-run3-A-selected.png {"return": {}}
+marker 'B_MENU_OPEN' found at 30.2s -> after-run3-B-menu-open.png {"return": {}}
+marker 'B2_ITEM_HOVER' found at 33.2s -> after-run3-B2-item-hover.png {"return": {}}
+marker 'C1_RELEASED' found at 34.3s -> after-run3-C1-released.png {"return": {}}
+marker 'D_THREE_SECONDS' found at 37.2s -> after-run3-D-three-seconds.png {"return": {}}
+run after-run3: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurement-2026-09-21-a89-a92/screendumps/after-run3-serial.log

@@ -616,11 +616,14 @@ fn on_closer(host: &'static ScriptHost, pb: &mut Aespb, kind: i16) -> i16 {
 /// by four more packets (three held, one release) that stay *queued*; the very
 /// next `evnt_multi` must already answer `WM_CLOSED` for the window without
 /// waiting on any of them, i.e. before the release (`gemctrl.c:208-214`:
-/// `message = WM_CLOSED; break;`, no `gr_watchbox`). Every AES call ends with
-/// one `dsptch()` → one `pump_input` (`aes/gemsuper.c:452-464`,
+/// `message = WM_CLOSED; break;`, no `gr_watchbox`). `ev_multi` opens with
+/// `chkkbd(); forker();` (`aes/gemevlib.c:169-170`) — one `pump_input` at
+/// the head of `evnt_multi` (A92) — and every AES call ends with one
+/// `dsptch()` → one `pump_input` (`aes/gemsuper.c:452-464`,
 /// `tos-api/src/aes/mod.rs` `dsptch`), so a call that fired on its entry pass
-/// consumes exactly **one** packet — three of the four remain. A wait for the
-/// release would have pumped through all four.
+/// consumes exactly **two** packets (both held ones) — two of the four
+/// remain, the release among them. A wait for the release would have pumped
+/// through all four.
 #[test]
 fn hotclose_press_delivers_wm_closed_before_the_release() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -649,12 +652,12 @@ fn hotclose_press_delivers_wm_closed_before_the_release() {
     let left = host.script.lock().unwrap().len();
     assert_eq!(
         (pumps, left),
-        (1, 3),
-        "HOTCLOSE fires on the press: the call must pump once (its closing \
-         dsptch) and leave three of the four packets queued after the press \
-         (three held, one release) untouched — pumped {pumps}, {left} remain: the \
-         Control Manager waited for the release (gr_watchbox) instead of \
-         answering on the press (aes/gemctrl.c:208-214)"
+        (2, 2),
+        "HOTCLOSE fires on the press: the call must pump twice (the head forker(), \
+         aes/gemevlib.c:169-170, and its closing dsptch) and leave two of the four \
+         packets queued after the press (one held, the release) untouched — pumped \
+         {pumps}, {left} remain: the Control Manager waited for the release \
+         (gr_watchbox) instead of answering on the press (aes/gemctrl.c:208-214)"
     );
 
     // Tidy: let the queued release through.

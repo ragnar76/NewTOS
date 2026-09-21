@@ -1,0 +1,10 @@
+test a_move_queued_before_the_call_counts_for_the_arm_time_position ... a92a: fired=0x0024 at=(340,300)
+test a_press_queued_before_the_call_counts_for_the_arm_time_level ... a92b: fired=0x0022 mb=1 bret=1
+test evnt_mouse_rectangle_crossed_while_the_selecting_press_is_held_is_delivered_at_the_release ... a90a setup: fired=0x0010 mb=1 msg=[10, 1, 0, 4, 12, 0, 0, 0] queued=0
+a90a: rc=1 at=(114,47) EV_MB=0x00 queued=2
+test evnt_mouse_satisfied_at_arm_time_returns_at_once_regardless_of_ownership ... a90b: rc=1 at=(84,47) EV_MB=0x01 queued 2 -> 1
+test hovering_a_disabled_title_drops_no_box_and_hilites_nothing ... a89.2: fired=0x0020 bret=0 at=(140,100) msg=[0, 0, 0, 0, 0, 0, 0, 0] samples=[Sample { state_a: 8, state_b: 8, pen_a: 3, pen_b: 3, at: (140, 8) }, Sample { state_a: 8, state_b: 8, pen_a: 3, pen_b: 3, at: (140, 8) }]
+test leaving_the_submenu_and_returning_to_the_parent_item_a_press_selects_the_parent ... a89.1c: fired=0x0010 bret=0 at=(84,47) msg=[10, 1, 0, 4, 12, 0, 0, 0]
+test leaving_the_submenu_into_no_mans_land_keeps_the_parent_and_a_press_selects_it ... a89.1b: fired=0x0010 bret=0 at=(300,66) msg=[10, 1, 0, 4, 12, 0, 0, 0] samples=[Sample { state_a: 1, state_b: 1, pen_a: 0, pen_b: 0, at: (300, 66) }]
+test press_on_the_parent_item_with_its_submenu_showing_selects_the_parent ... a89.1a: fired=0x0010 bret=0 at=(84,47) msg=[10, 1, 0, 4, 12, 0, 0, 0]
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s

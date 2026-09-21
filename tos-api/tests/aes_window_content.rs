@@ -806,6 +806,11 @@ fn clicking_a_window_never_erases_its_content() {
     // A point inside A's work area that B does not cover.
     let (cx, cy) = (work_a.0 + 20, work_a.1 + 20);
     move_to(rig.host, &mut rig.pb, cx, cy, 1);
+    // The press is in; the release arrives *after* the application has armed
+    // its wait. `ev_multi` drains the fork ring first (`chkkbd(); forker();`,
+    // `aes/gemevlib.c:169-170` — one `pump_input` at the head of `evnt_multi`,
+    // A92), so one held packet stands in for that drain.
+    rig.host.push(Packet { dx: 0, dy: 0, buttons: 1 });
     rig.host.push(Packet { dx: 0, dy: 0, buttons: 0 }); // the release
     let before = b.snapshot();
 

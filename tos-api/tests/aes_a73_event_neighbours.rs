@@ -680,6 +680,20 @@ fn click(host: &ScriptHost) {
     }
 }
 
+/// `ev_multi` opens with `chkkbd(); forker();` (`aes/gemevlib.c:169-170`):
+/// whatever is queued when the application calls is drained *before* the
+/// quick checks and the `abutton`/`amouse` arms — NewTOS pumps once at the
+/// head of `evnt_multi` (A92). The cases below model input that arrives
+/// **after** the arm (the pointer rests on the title, buttons up, when the
+/// app arms), so they queue one idle packet for that drain to consume;
+/// without it the first scripted packet would be pre-arm input — for 1b a
+/// press already down at arm time, which `abutton`'s ownership-blind level
+/// test answers with an immediate `MU_BUTTON` (`aes/geminput.c:549-551`;
+/// `docs/api/aes/menu.md` "The one documented exception").
+fn arm_gap(host: &ScriptHost) {
+    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
+}
+
 // ── Point 1: MU_M1 on the entry pass ───────────────────────────────────────
 
 /// **Point 1a — select on press, track in the entry pass.** The app arms
@@ -705,6 +719,7 @@ fn m1_armed_before_press_track_is_not_delivered_with_mn_selected() {
     move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
     assert!(ON_FILE.1 < BAR_H, "arm-time position must be in the bar row");
 
+    arm_gap(host);
     glide_y(host, ON_OPEN.1 - ON_FILE.1, 0);
     click(host);
 
@@ -753,6 +768,7 @@ fn m1_armed_before_release_track_is_delivered_with_mn_selected() {
 
     move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
 
+    arm_gap(host);
     host.push(Packet { dx: 0, dy: 0, buttons: 1 }); // press on the title
     host.push(Packet { dx: 0, dy: 0, buttons: 1 });
     glide_y(host, ON_OPEN.1 - ON_FILE.1, 1); // drag down, held
@@ -794,6 +810,7 @@ fn leaving_the_box_keeps_it_open_and_reentry_press_selects() {
 
     move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
 
+    arm_gap(host);
     glide_y(host, BELOW_FILE_BOX.1 - ON_FILE.1, 0); // down through the box, out
     for _ in 0..3 {
         host.push(Packet { dx: 0, dy: 0, buttons: 0 }); // dwell outside
@@ -831,6 +848,7 @@ fn press_outside_the_open_box_is_consumed_as_cancel() {
 
     move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
 
+    arm_gap(host);
     glide_y(host, BELOW_FILE_BOX.1 - ON_FILE.1, 0); // down through the box, out
     for _ in 0..3 {
         host.push(Packet { dx: 0, dy: 0, buttons: 0 });
@@ -901,22 +919,19 @@ struct MenuRec {
 /// selecting press is consumed inside `menu_popup`. Not `gl_ctmown`: the
 /// whole call is the app's own context under `wm_update(BEG_MCTRL)`.
 ///
-/// **Host limitation.** `mn_popup_owned` saves the screen under the box through
-/// `gsxif::popup_blit_save` → `bdos::mem::traps::mxalloc` (`menu.rs`,
-/// `gsxif.rs:316-335`); the pool is not initialised in a host test
-/// (`mem::init::is_initialised()` is false), so the save returns `None` and
-/// `mn_popup_owned` answers `NIL` *without tracking* (the D-086 out-of-ST-RAM
-/// path) — `rc = 0`, nothing pumped. The pool cannot be installed on the host
-/// either: `mxalloc` hands out 32-bit `Long` pool addresses that the AES
-/// re-derives as `raw + 0xFFFF_0000_0000_0000` (the kernel high-half alias),
-/// which no host process maps. The tracked path therefore needs the board
-/// (QEMU `raspi4b` + the H03 IKBD injector) and an application that calls
-/// `menu_popup` — none of TeraDesk/QED does (cflib's `cf_menu_popup` falls
-/// back to its own tracker because `appl_getinfo` (130) is absent); the
-/// sequence is in the A73 audit report. The assertions below are what that
-/// run must show; they are kept for a future pool fixture.
+/// **Host note.** `mn_popup_owned` saves the screen under the box through
+/// `gsxif::popup_blit_save` — on the board a pool block from
+/// `bdos::mem::traps::mxalloc`, which no host process can map (the AES
+/// re-derives the `Long` pool key through the kernel high-half alias). Until
+/// A89 the host had no pool and the save returned `None`, so this case could
+/// not run here (`rc = 0` without a track, the D-086 path) and was ignored;
+/// since A89 (2026-09-21) `popup_blit_save` keeps the pixels on the heap when
+/// there is no pool at all (as `bb_save` does without a screen buffer), so the
+/// pop-up is tracked on the host and the case runs. No shipped application
+/// calls `menu_popup` (cflib's `cf_menu_popup` falls back to its own tracker
+/// because `appl_getinfo` (130) is absent), so this is the only proof of the
+/// bracket besides the `menu::popup_wait_tests` unit cases.
 #[test]
-#[ignore = "mn_popup_owned needs the BDOS pool (mxalloc + kernel high-half alias): not host-mappable; drive on the board, see A73 report"]
 fn menu_popup_waits_for_the_selecting_press_to_be_released() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let (host, mut pb) = fresh();

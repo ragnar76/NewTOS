@@ -761,6 +761,12 @@ fn sizer_drag_draws_only_the_rubber_band() {
         dump_ppm(&format!("{d}/01-armed.ppm"), &before);
     }
 
+    // The press is in (observed above); the drag arrives *after* the
+    // application has armed its wait. `ev_multi` drains the fork ring first
+    // (`chkkbd(); forker();`, `aes/gemevlib.c:169-170` — one `pump_input` at
+    // the head of `evnt_multi`, A92), so one held packet stands in for that
+    // drain and the first movement is what the wait itself sees.
+    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
     for _ in 0..6 {
         host.push(Packet { dx: 10, dy: 8, buttons: 1 });
     }
@@ -958,6 +964,12 @@ fn mover_drag_draws_only_the_rubber_band() {
     let offy = (start_my - curr.1).max(0);
     let bounds = mover_bounds(curr.2);
 
+    // The press is in (observed above); the drag arrives *after* the
+    // application has armed its wait. `ev_multi` drains the fork ring first
+    // (`chkkbd(); forker();`, `aes/gemevlib.c:169-170` — one `pump_input` at
+    // the head of `evnt_multi`, A92), so one held packet stands in for that
+    // drain and the first movement is what the wait itself sees.
+    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
     for _ in 0..6 {
         host.push(Packet { dx: 12, dy: 10, buttons: 1 });
     }
@@ -1080,6 +1092,12 @@ fn mover_drag_across_another_window_never_writes_it() {
     let bounds = mover_bounds(curr.2);
 
     // Straight down, deep into the lower window and back up a little.
+    // The press is in (observed above); the drag arrives *after* the
+    // application has armed its wait. `ev_multi` drains the fork ring first
+    // (`chkkbd(); forker();`, `aes/gemevlib.c:169-170` — one `pump_input` at
+    // the head of `evnt_multi`, A92), so one held packet stands in for that
+    // drain and the first movement is what the wait itself sees.
+    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
     for _ in 0..8 {
         host.push(Packet { dx: 4, dy: 20, buttons: 1 });
     }

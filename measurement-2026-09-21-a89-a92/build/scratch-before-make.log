@@ -1,0 +1,8 @@
+input.rs + event.rs + menu.rs + gsxif.rs <- /Volumes/Daten/Development/PiRusTOS/measurement-2026-09-21-a89-a92/method/head-85c591e
+patched /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/before/tos-api/src/host.rs
+patched /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/before/tos-api/src/aes/mod.rs
+patched /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/before/kernel/src/desk/mod.rs
+patched /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/before/tos-api/src/aes/event.rs
+patched /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/before/kernel/src/host_env.rs
+patched /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/before/kernel/src/host_env.rs
+scratch ready: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/before

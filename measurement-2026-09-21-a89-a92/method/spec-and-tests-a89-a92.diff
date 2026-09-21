@@ -1,0 +1,394 @@
+diff --git a/docs/api/aes/event.md b/docs/api/aes/event.md
+index 82ff53b..f404be3 100644
+--- a/docs/api/aes/event.md
++++ b/docs/api/aes/event.md
+@@ -337,6 +337,24 @@ direction (`ev_block(MU_M1, &MOBLK)`), then fills the mouse position/state.
+ `ev_mouse` overwrites `rets[2]` with the **current** `button` after the wait,
+ so the reported button is always live (`gemevlib.c:127`).
+ 
++> **The wait is `amouse`'s, and there is no pre-drain (A90/A92,
++> 2026-09-21).** `ev_block(MU_M1, pmo)` is `mwait(iasync(MU_M1, pmo))`
++> (`gemevlib.c:64-69`) → `amouse` (`aes/gemasync.c:157-162` →
++> `aes/geminput.c:568-587`): the rectangle is tested **once, at arm time**,
++> ownership-blind (`in_mrect` → `azombie`, `:575-576`), and otherwise parked on
++> the caller's `c_msleep`, which only `post_mouse(gl_mowner, …)` walks
++> (`:446-456`) — the same rule as `evnt_multi`'s `MU_M1`/`MU_M2` arm (point 6
++> note above). Unlike `ev_multi`, `ev_mouse` runs **no** `chkkbd(); forker();`
++> before arming (`:123-128` vs `:169-170`): its arm-time position is the one
++> the previous dispatch left (`super()` → `dsptch()`, `gemsuper.c:452-464`);
++> a packet queued since is processed inside the wait (`mwait` → `dsptch` →
++> `forker`) and delivered under ownership. So a rectangle crossed while the
++> Control Manager holds the mouse — e.g. during `ct_msgup`'s wait for the
++> selecting press to be released (`aes/gemctrl.c:100-101`) — is delivered only
++> once ownership returns (`w_setactive` → `set_mown(app)` → `post_mouse(app,
++> xrat, yrat)`, `:441-442`, `aes/geminput.c:225-231`), against the position
++> at that moment.
++
+ ### `evnt_mesag` (23)
+ 
+ **Source:** `gemsuper.c:135-141` → `ev_mesag((WORD *)ME_PBUFF)`
+diff --git a/docs/api/aes/menu.md b/docs/api/aes/menu.md
+index fe5d800..c9af297 100644
+--- a/docs/api/aes/menu.md
++++ b/docs/api/aes/menu.md
+@@ -758,6 +758,33 @@ message.
+    the button never reaches a selecting transition, `set_mown` never runs
+    for it either (`:222-235`): the cancelling press is consumed exactly
+    like a selecting one, just without a message reaching the application.
++6. **Out of a submenu into no man's land, the parent item stays; a press
++   selects it (A89, 2026-09-21).** When the hit-test falls through with
++   `menu_state == SUBMENU_STATE`, `mn_do` keeps `cur_item = last_item`
++   before switching to `OUTSIDE_STATE` (`aes/gemmnlib.c:437-438`): the
++   parent item stays hilited and the submenu stays displayed (`item_changed`
++   is false, `:452-459`; only the submenu item is un-hilited, `:446-448`).
++   The next wait adds `MU_M3` (re-enter the submenu, `:298-302`). A press
++   there breaks the loop like any `OUTSIDE_STATE` press (`:373-374`), but the
++   cleanup now finds `cur_item != NIL`: it undisplays the submenu
++   (`:486-490`), restores the box (`:491`) and, the item enabled and
++   `menu_state != SUBMENU_STATE`, returns `(cur_title, cur_item)` — the
++   **parent** item (`:492-500`) → one `MN_SELECTED` for it. The same cleanup
++   makes a press on the parent item itself while its submenu shows
++   (`INITEM_STATE`, `cur_submenu == NIL`) a selection of the parent. Out of
++   the parent *item* into no man's land (`INITEM_STATE` → `OUTSIDE_STATE`)
++   is the ordinary change: `cur_item = NIL`, submenu undisplayed, parent
++   un-hilited (`:452-459`), and a press there cancels (point 5).
++7. **A DISABLED title never gets a box (A89, 2026-09-21).** `menu_down`
++   (`aes/gemmnlib.c:229-244`) saves and draws the drop-down only if
++   `do_chg(tree, ititle, SELECTED, TRUE, TRUE, TRUE)` succeeds, and `do_chg`
++   refuses a DISABLED object (`:158-160`); `mn_do` reaches `menu_down` only
++   through the same `do_chg` (`menu_select`, `:466-467`). Hovering a
++   DISABLED title therefore hilites nothing and drops nothing
++   (`INTITLE_STATE` with no box); a press there is `buparm ^= 1` and nothing
++   else (`:375`); leaving it into no man's land ends `mn_do` without a
++   selection (`cur_menu == NIL` → `cur_title = NIL` → `done`, `:406-411`, or
++   the explicit DISABLED exit, `:429-434`).
+ 
+ **Net effect and the contract it produces.** For the whole bracket from step 1
+ through the end of step 5 above, the only process `gl_mowner` ever names is
+diff --git a/tos-api/tests/aes_a73_event_neighbours.rs b/tos-api/tests/aes_a73_event_neighbours.rs
+index 68c7380..ce22ea5 100644
+--- a/tos-api/tests/aes_a73_event_neighbours.rs
++++ b/tos-api/tests/aes_a73_event_neighbours.rs
+@@ -680,6 +680,20 @@ fn click(host: &ScriptHost) {
+     }
+ }
+ 
++/// `ev_multi` opens with `chkkbd(); forker();` (`aes/gemevlib.c:169-170`):
++/// whatever is queued when the application calls is drained *before* the
++/// quick checks and the `abutton`/`amouse` arms — NewTOS pumps once at the
++/// head of `evnt_multi` (A92). The cases below model input that arrives
++/// **after** the arm (the pointer rests on the title, buttons up, when the
++/// app arms), so they queue one idle packet for that drain to consume;
++/// without it the first scripted packet would be pre-arm input — for 1b a
++/// press already down at arm time, which `abutton`'s ownership-blind level
++/// test answers with an immediate `MU_BUTTON` (`aes/geminput.c:549-551`;
++/// `docs/api/aes/menu.md` "The one documented exception").
++fn arm_gap(host: &ScriptHost) {
++    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
++}
++
+ // ── Point 1: MU_M1 on the entry pass ───────────────────────────────────────
+ 
+ /// **Point 1a — select on press, track in the entry pass.** The app arms
+@@ -705,6 +719,7 @@ fn m1_armed_before_press_track_is_not_delivered_with_mn_selected() {
+     move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
+     assert!(ON_FILE.1 < BAR_H, "arm-time position must be in the bar row");
+ 
++    arm_gap(host);
+     glide_y(host, ON_OPEN.1 - ON_FILE.1, 0);
+     click(host);
+ 
+@@ -753,6 +768,7 @@ fn m1_armed_before_release_track_is_delivered_with_mn_selected() {
+ 
+     move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
+ 
++    arm_gap(host);
+     host.push(Packet { dx: 0, dy: 0, buttons: 1 }); // press on the title
+     host.push(Packet { dx: 0, dy: 0, buttons: 1 });
+     glide_y(host, ON_OPEN.1 - ON_FILE.1, 1); // drag down, held
+@@ -794,6 +810,7 @@ fn leaving_the_box_keeps_it_open_and_reentry_press_selects() {
+ 
+     move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
+ 
++    arm_gap(host);
+     glide_y(host, BELOW_FILE_BOX.1 - ON_FILE.1, 0); // down through the box, out
+     for _ in 0..3 {
+         host.push(Packet { dx: 0, dy: 0, buttons: 0 }); // dwell outside
+@@ -831,6 +848,7 @@ fn press_outside_the_open_box_is_consumed_as_cancel() {
+ 
+     move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
+ 
++    arm_gap(host);
+     glide_y(host, BELOW_FILE_BOX.1 - ON_FILE.1, 0); // down through the box, out
+     for _ in 0..3 {
+         host.push(Packet { dx: 0, dy: 0, buttons: 0 });
+@@ -901,22 +919,19 @@ struct MenuRec {
+ /// selecting press is consumed inside `menu_popup`. Not `gl_ctmown`: the
+ /// whole call is the app's own context under `wm_update(BEG_MCTRL)`.
+ ///
+-/// **Host limitation.** `mn_popup_owned` saves the screen under the box through
+-/// `gsxif::popup_blit_save` → `bdos::mem::traps::mxalloc` (`menu.rs`,
+-/// `gsxif.rs:316-335`); the pool is not initialised in a host test
+-/// (`mem::init::is_initialised()` is false), so the save returns `None` and
+-/// `mn_popup_owned` answers `NIL` *without tracking* (the D-086 out-of-ST-RAM
+-/// path) — `rc = 0`, nothing pumped. The pool cannot be installed on the host
+-/// either: `mxalloc` hands out 32-bit `Long` pool addresses that the AES
+-/// re-derives as `raw + 0xFFFF_0000_0000_0000` (the kernel high-half alias),
+-/// which no host process maps. The tracked path therefore needs the board
+-/// (QEMU `raspi4b` + the H03 IKBD injector) and an application that calls
+-/// `menu_popup` — none of TeraDesk/QED does (cflib's `cf_menu_popup` falls
+-/// back to its own tracker because `appl_getinfo` (130) is absent); the
+-/// sequence is in the A73 audit report. The assertions below are what that
+-/// run must show; they are kept for a future pool fixture.
++/// **Host note.** `mn_popup_owned` saves the screen under the box through
++/// `gsxif::popup_blit_save` — on the board a pool block from
++/// `bdos::mem::traps::mxalloc`, which no host process can map (the AES
++/// re-derives the `Long` pool key through the kernel high-half alias). Until
++/// A89 the host had no pool and the save returned `None`, so this case could
++/// not run here (`rc = 0` without a track, the D-086 path) and was ignored;
++/// since A89 (2026-09-21) `popup_blit_save` keeps the pixels on the heap when
++/// there is no pool at all (as `bb_save` does without a screen buffer), so the
++/// pop-up is tracked on the host and the case runs. No shipped application
++/// calls `menu_popup` (cflib's `cf_menu_popup` falls back to its own tracker
++/// because `appl_getinfo` (130) is absent), so this is the only proof of the
++/// bracket besides the `menu::popup_wait_tests` unit cases.
+ #[test]
+-#[ignore = "mn_popup_owned needs the BDOS pool (mxalloc + kernel high-half alias): not host-mappable; drive on the board, see A73 report"]
+ fn menu_popup_waits_for_the_selecting_press_to_be_released() {
+     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+     let (host, mut pb) = fresh();
+diff --git a/tos-api/tests/aes_a87_a88_menu_ctwait_popup.rs b/tos-api/tests/aes_a87_a88_menu_ctwait_popup.rs
+index dab75f1..63ac5e3 100644
+--- a/tos-api/tests/aes_a87_a88_menu_ctwait_popup.rs
++++ b/tos-api/tests/aes_a87_a88_menu_ctwait_popup.rs
+@@ -702,6 +702,20 @@ fn click(host: &ScriptHost) {
+     }
+ }
+ 
++/// `ev_multi` opens with `chkkbd(); forker();` (`aes/gemevlib.c:169-170`):
++/// whatever is queued when the application calls is drained *before* the
++/// quick checks and the `abutton`/`amouse` arms — NewTOS pumps once at the
++/// head of `evnt_multi` (A92). The click cases below model a press that
++/// arrives **after** the arm (the pointer rests in the row, buttons up,
++/// when the app arms), so they queue one idle packet for that drain;
++/// without it the press would be pre-arm input — a level already down at
++/// arm time, which `abutton`'s ownership-blind test answers with an
++/// immediate `MU_BUTTON` in EmuTOS too (`aes/geminput.c:549-551`;
++/// `docs/api/aes/menu.md` "The one documented exception").
++fn arm_gap(host: &ScriptHost) {
++    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
++}
++
+ // ── A87 cases ──────────────────────────────────────────────────────────────
+ 
+ /// Bar row, right of `THEACTIVE`: x well past the three titles, y inside the
+@@ -818,6 +832,7 @@ fn a87_a_click_right_of_theactive_is_the_control_managers_and_blocks_nothing() {
+     move_to(host, &mut pb, RIGHT_OF_TITLES.0, RIGHT_OF_TITLES.1, 0);
+     let before = bar_and_boxes_pixels(host);
+ 
++    arm_gap(host);
+     click(host);
+     dwell(host, 300);
+     glide_y(host, 100 - RIGHT_OF_TITLES.1, 0);
+@@ -927,6 +942,7 @@ fn a87_with_no_bar_no_move_hands_the_mouse_over() {
+ 
+     // A click and a rest there: swallowed (gl_rmenu → ctl_pd), timer on time.
+     drain(host, &mut pb);
++    arm_gap(host);
+     click(host);
+     dwell(host, 300);
+     glide_y(host, 100 - ON_FILE.1, 0);
+@@ -1003,10 +1019,13 @@ fn menu_popup(pb: &mut Aespb, tree: *mut Obj, item: i16, x: i16, y: i16) -> (i16
+ 
+ /// **`clamp_ypos` through the call, and `mn_keystate` on no pick.** The
+ /// buttons are up, so `mn_popup`'s first wait returns at once; the box is
+-/// positioned and clamped (`gemmnext.c:320-324`) *before* `popup_blit`,
+-/// which has no pool on the host (`buf == NULL`) — the D-086 branch: no
+-/// track, `rc = 0`, `mn_keystate = 0` (`:345-349`). The box's `ob_y` in the
+-/// caller's tree shows the clamp:
++/// positioned and clamped (`gemmnext.c:320-324`) *before* `popup_blit`. The
++/// host has no pool, but since A89 `popup_blit_save` keeps the pixels on the
++/// heap there (as `bb_save` does without a screen buffer), so the pop-up
++/// **is** tracked: each call gets a click with the pointer parked outside
++/// the box — `handle_popup` returns on the press with nothing under it
++/// (`:290-291`), the no-pick branch: `rc = 0`, `mn_keystate = 0`
++/// (`:345-349`). The box's `ob_y` in the caller's tree shows the clamp:
+ ///
+ /// * start item 2 (*Beta*, ob_y 19) requested at y = 0 → box −19 → pushed
+ ///   below the bar row in `gl_hchar` steps: −3, 13, **29**;
+@@ -1022,13 +1041,18 @@ fn a88_menu_popup_clamps_the_box_below_the_bar_and_onto_the_screen() {
+     let box_y = |t: *mut Obj| unsafe { (*t).y };
+     let box_x = |t: *mut Obj| unsafe { (*t).x };
+ 
++    // The pointer rests at (320,300), outside both boxes below: a click there
++    // cancels each pop-up (consumed inside the call, gemmnext.c:290-291,351).
++    click(host);
+     let (rc, out) = menu_popup(&mut pb, tree, 2, 600, 0);
+     eprintln!("a88 y=0: rc={rc} box=({},{}) out={out:?}", box_x(tree), box_y(tree));
+-    assert_eq!(rc, 0, "no pool on the host → the D-086 no-pick branch");
++    assert_eq!(rc, 0, "a press outside the box → the no-pick branch");
+     assert_eq!(out.mn_keystate, 0, "TOS always sets mn_keystate — 0 on no pick (gemmnext.c:347); out = {out:?}");
+     assert_eq!(box_y(tree), 29, "start item 2 at y = 0: box −19 → −3 → 13 → 29 (clamp_ypos, gemmnext.c:124-126)");
+     assert_eq!(box_x(tree), 600, "x is not clamped (ob_x = xpos, gemmnext.c:322)");
+ 
++    drain(host, &mut pb);
++    click(host);
+     let (rc, out) = menu_popup(&mut pb, tree, 2, 100, SCREEN_H as i16 - 1);
+     eprintln!("a88 y=bottom: rc={rc} box=({},{}) out={out:?}", box_x(tree), box_y(tree));
+     assert_eq!(rc, 0);
+diff --git a/tos-api/tests/aes_desk_background.rs b/tos-api/tests/aes_desk_background.rs
+index 29e444f..c776b35 100644
+--- a/tos-api/tests/aes_desk_background.rs
++++ b/tos-api/tests/aes_desk_background.rs
+@@ -970,6 +970,13 @@ fn the_mover_drag_repaints_only_desktop_it_uncovered() {
+     b.paint(work_b, MARK);
+     let before = b.snapshot();
+ 
++    // The press is already in (observed above); the drag movement arrives
++    // *after* the application has armed its wait. `ev_multi` drains the fork
++    // ring first (`chkkbd(); forker();`, `aes/gemevlib.c:169-170` — one
++    // `pump_input` at the head of `evnt_multi`, A92), so one idle packet
++    // stands in for that drain and the DRAG packet is the first thing the
++    // wait itself sees, with the pointer still on the mover.
++    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
+     host.push(Packet { dx: DRAG, dy: 0, buttons: 1 });
+     host.push(Packet { dx: 0, dy: 0, buttons: 0 }); // release
+     for _ in 0..8 {
+diff --git a/tos-api/tests/aes_menu_bar_height.rs b/tos-api/tests/aes_menu_bar_height.rs
+index 027aa04..6fc5d2d 100644
+--- a/tos-api/tests/aes_menu_bar_height.rs
++++ b/tos-api/tests/aes_menu_bar_height.rs
+@@ -517,6 +517,12 @@ fn press_at(pb: &mut Aespb, x: i16, y: i16) -> (i16, [i16; 8]) {
+ /// *Open*: slide down `dy` rows, press, release. Returns `(fired, msg)`.
+ fn press_open_from(pb: &mut Aespb, x: i16, y: i16, dy: i16) -> (i16, [i16; 8]) {
+     move_to(pb, x, y, 0);
++    // The gesture starts *after* the application has armed its wait with the
++    // pointer parked at `(x, y)`. `ev_multi` drains the fork ring first
++    // (`chkkbd(); forker();`, `aes/gemevlib.c:169-170` — one `pump_input` at
++    // the head of `evnt_multi`, A92), so one idle packet stands in for that
++    // drain and the slide is the first thing the wait itself sees.
++    HOST.push(Packet { dx: 0, dy: 0, buttons: 0 });
+     let steps = dy / 10;
+     for _ in 0..steps {
+         HOST.push(Packet { dx: 0, dy: 10, buttons: 0 });
+diff --git a/tos-api/tests/aes_menu_click_ownership.rs b/tos-api/tests/aes_menu_click_ownership.rs
+index f25a93d..ba32b80 100644
+--- a/tos-api/tests/aes_menu_click_ownership.rs
++++ b/tos-api/tests/aes_menu_click_ownership.rs
+@@ -719,6 +719,15 @@ fn menu_item_release_after_drag_delivers_only_mn_selected() {
+ 
+     move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
+ 
++    // The press arrives *after* the application has armed its wait. `ev_multi`
++    // drains the fork ring first (`chkkbd(); forker();`, `aes/gemevlib.c:169-170`
++    // — one `pump_input` at the head of `evnt_multi`, A92), so one idle packet
++    // stands in for that drain; a press queued *before* the call would be a
++    // level already down at arm time, which `abutton` answers with an
++    // immediate, ownership-blind `MU_BUTTON` in EmuTOS too
++    // (`aes/geminput.c:549-551`; `docs/api/aes/menu.md` "The one documented
++    // exception").
++    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
+     host.push(Packet { dx: 0, dy: 0, buttons: 1 }); // press on the title
+     host.push(Packet { dx: 0, dy: 0, buttons: 1 });
+     let steps = (ON_OPEN.1 - ON_FILE.1) / 10;
+diff --git a/tos-api/tests/aes_window_content.rs b/tos-api/tests/aes_window_content.rs
+index 9294765..bf1b90c 100644
+--- a/tos-api/tests/aes_window_content.rs
++++ b/tos-api/tests/aes_window_content.rs
+@@ -806,6 +806,11 @@ fn clicking_a_window_never_erases_its_content() {
+     // A point inside A's work area that B does not cover.
+     let (cx, cy) = (work_a.0 + 20, work_a.1 + 20);
+     move_to(rig.host, &mut rig.pb, cx, cy, 1);
++    // The press is in; the release arrives *after* the application has armed
++    // its wait. `ev_multi` drains the fork ring first (`chkkbd(); forker();`,
++    // `aes/gemevlib.c:169-170` — one `pump_input` at the head of `evnt_multi`,
++    // A92), so one held packet stands in for that drain.
++    rig.host.push(Packet { dx: 0, dy: 0, buttons: 1 });
+     rig.host.push(Packet { dx: 0, dy: 0, buttons: 0 }); // the release
+     let before = b.snapshot();
+ 
+diff --git a/tos-api/tests/aes_window_drag.rs b/tos-api/tests/aes_window_drag.rs
+index 4812f8d..1029415 100644
+--- a/tos-api/tests/aes_window_drag.rs
++++ b/tos-api/tests/aes_window_drag.rs
+@@ -761,6 +761,12 @@ fn sizer_drag_draws_only_the_rubber_band() {
+         dump_ppm(&format!("{d}/01-armed.ppm"), &before);
+     }
+ 
++    // The press is in (observed above); the drag arrives *after* the
++    // application has armed its wait. `ev_multi` drains the fork ring first
++    // (`chkkbd(); forker();`, `aes/gemevlib.c:169-170` — one `pump_input` at
++    // the head of `evnt_multi`, A92), so one held packet stands in for that
++    // drain and the first movement is what the wait itself sees.
++    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
+     for _ in 0..6 {
+         host.push(Packet { dx: 10, dy: 8, buttons: 1 });
+     }
+@@ -958,6 +964,12 @@ fn mover_drag_draws_only_the_rubber_band() {
+     let offy = (start_my - curr.1).max(0);
+     let bounds = mover_bounds(curr.2);
+ 
++    // The press is in (observed above); the drag arrives *after* the
++    // application has armed its wait. `ev_multi` drains the fork ring first
++    // (`chkkbd(); forker();`, `aes/gemevlib.c:169-170` — one `pump_input` at
++    // the head of `evnt_multi`, A92), so one held packet stands in for that
++    // drain and the first movement is what the wait itself sees.
++    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
+     for _ in 0..6 {
+         host.push(Packet { dx: 12, dy: 10, buttons: 1 });
+     }
+@@ -1080,6 +1092,12 @@ fn mover_drag_across_another_window_never_writes_it() {
+     let bounds = mover_bounds(curr.2);
+ 
+     // Straight down, deep into the lower window and back up a little.
++    // The press is in (observed above); the drag arrives *after* the
++    // application has armed its wait. `ev_multi` drains the fork ring first
++    // (`chkkbd(); forker();`, `aes/gemevlib.c:169-170` — one `pump_input` at
++    // the head of `evnt_multi`, A92), so one held packet stands in for that
++    // drain and the first movement is what the wait itself sees.
++    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
+     for _ in 0..8 {
+         host.push(Packet { dx: 4, dy: 20, buttons: 1 });
+     }
+diff --git a/tos-api/tests/aes_window_hotclose.rs b/tos-api/tests/aes_window_hotclose.rs
+index 968aaad..7148820 100644
+--- a/tos-api/tests/aes_window_hotclose.rs
++++ b/tos-api/tests/aes_window_hotclose.rs
+@@ -616,11 +616,14 @@ fn on_closer(host: &'static ScriptHost, pb: &mut Aespb, kind: i16) -> i16 {
+ /// by four more packets (three held, one release) that stay *queued*; the very
+ /// next `evnt_multi` must already answer `WM_CLOSED` for the window without
+ /// waiting on any of them, i.e. before the release (`gemctrl.c:208-214`:
+-/// `message = WM_CLOSED; break;`, no `gr_watchbox`). Every AES call ends with
+-/// one `dsptch()` → one `pump_input` (`aes/gemsuper.c:452-464`,
++/// `message = WM_CLOSED; break;`, no `gr_watchbox`). `ev_multi` opens with
++/// `chkkbd(); forker();` (`aes/gemevlib.c:169-170`) — one `pump_input` at
++/// the head of `evnt_multi` (A92) — and every AES call ends with one
++/// `dsptch()` → one `pump_input` (`aes/gemsuper.c:452-464`,
+ /// `tos-api/src/aes/mod.rs` `dsptch`), so a call that fired on its entry pass
+-/// consumes exactly **one** packet — three of the four remain. A wait for the
+-/// release would have pumped through all four.
++/// consumes exactly **two** packets (both held ones) — two of the four
++/// remain, the release among them. A wait for the release would have pumped
++/// through all four.
+ #[test]
+ fn hotclose_press_delivers_wm_closed_before_the_release() {
+     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+@@ -649,12 +652,12 @@ fn hotclose_press_delivers_wm_closed_before_the_release() {
+     let left = host.script.lock().unwrap().len();
+     assert_eq!(
+         (pumps, left),
+-        (1, 3),
+-        "HOTCLOSE fires on the press: the call must pump once (its closing \
+-         dsptch) and leave three of the four packets queued after the press \
+-         (three held, one release) untouched — pumped {pumps}, {left} remain: the \
+-         Control Manager waited for the release (gr_watchbox) instead of \
+-         answering on the press (aes/gemctrl.c:208-214)"
++        (2, 2),
++        "HOTCLOSE fires on the press: the call must pump twice (the head forker(), \
++         aes/gemevlib.c:169-170, and its closing dsptch) and leave two of the four \
++         packets queued after the press (one held, the release) untouched — pumped \
++         {pumps}, {left} remain: the Control Manager waited for the release \
++         (gr_watchbox) instead of answering on the press (aes/gemctrl.c:208-214)"
+     );
+ 
+     // Tidy: let the queued release through.

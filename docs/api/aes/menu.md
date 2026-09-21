@@ -758,6 +758,33 @@ message.
    the button never reaches a selecting transition, `set_mown` never runs
    for it either (`:222-235`): the cancelling press is consumed exactly
    like a selecting one, just without a message reaching the application.
+6. **Out of a submenu into no man's land, the parent item stays; a press
+   selects it (A89, 2026-09-21).** When the hit-test falls through with
+   `menu_state == SUBMENU_STATE`, `mn_do` keeps `cur_item = last_item`
+   before switching to `OUTSIDE_STATE` (`aes/gemmnlib.c:437-438`): the
+   parent item stays hilited and the submenu stays displayed (`item_changed`
+   is false, `:452-459`; only the submenu item is un-hilited, `:446-448`).
+   The next wait adds `MU_M3` (re-enter the submenu, `:298-302`). A press
+   there breaks the loop like any `OUTSIDE_STATE` press (`:373-374`), but the
+   cleanup now finds `cur_item != NIL`: it undisplays the submenu
+   (`:486-490`), restores the box (`:491`) and, the item enabled and
+   `menu_state != SUBMENU_STATE`, returns `(cur_title, cur_item)` — the
+   **parent** item (`:492-500`) → one `MN_SELECTED` for it. The same cleanup
+   makes a press on the parent item itself while its submenu shows
+   (`INITEM_STATE`, `cur_submenu == NIL`) a selection of the parent. Out of
+   the parent *item* into no man's land (`INITEM_STATE` → `OUTSIDE_STATE`)
+   is the ordinary change: `cur_item = NIL`, submenu undisplayed, parent
+   un-hilited (`:452-459`), and a press there cancels (point 5).
+7. **A DISABLED title never gets a box (A89, 2026-09-21).** `menu_down`
+   (`aes/gemmnlib.c:229-244`) saves and draws the drop-down only if
+   `do_chg(tree, ititle, SELECTED, TRUE, TRUE, TRUE)` succeeds, and `do_chg`
+   refuses a DISABLED object (`:158-160`); `mn_do` reaches `menu_down` only
+   through the same `do_chg` (`menu_select`, `:466-467`). Hovering a
+   DISABLED title therefore hilites nothing and drops nothing
+   (`INTITLE_STATE` with no box); a press there is `buparm ^= 1` and nothing
+   else (`:375`); leaving it into no man's land ends `mn_do` without a
+   selection (`cur_menu == NIL` → `cur_title = NIL` → `done`, `:406-411`, or
+   the explicit DISABLED exit, `:429-434`).
 
 **Net effect and the contract it produces.** For the whole bracket from step 1
 through the end of step 5 above, the only process `gl_mowner` ever names is

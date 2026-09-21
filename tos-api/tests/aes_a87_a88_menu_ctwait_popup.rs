@@ -702,6 +702,20 @@ fn click(host: &ScriptHost) {
     }
 }
 
+/// `ev_multi` opens with `chkkbd(); forker();` (`aes/gemevlib.c:169-170`):
+/// whatever is queued when the application calls is drained *before* the
+/// quick checks and the `abutton`/`amouse` arms — NewTOS pumps once at the
+/// head of `evnt_multi` (A92). The click cases below model a press that
+/// arrives **after** the arm (the pointer rests in the row, buttons up,
+/// when the app arms), so they queue one idle packet for that drain;
+/// without it the press would be pre-arm input — a level already down at
+/// arm time, which `abutton`'s ownership-blind test answers with an
+/// immediate `MU_BUTTON` in EmuTOS too (`aes/geminput.c:549-551`;
+/// `docs/api/aes/menu.md` "The one documented exception").
+fn arm_gap(host: &ScriptHost) {
+    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
+}
+
 // ── A87 cases ──────────────────────────────────────────────────────────────
 
 /// Bar row, right of `THEACTIVE`: x well past the three titles, y inside the
@@ -818,6 +832,7 @@ fn a87_a_click_right_of_theactive_is_the_control_managers_and_blocks_nothing() {
     move_to(host, &mut pb, RIGHT_OF_TITLES.0, RIGHT_OF_TITLES.1, 0);
     let before = bar_and_boxes_pixels(host);
 
+    arm_gap(host);
     click(host);
     dwell(host, 300);
     glide_y(host, 100 - RIGHT_OF_TITLES.1, 0);
@@ -927,6 +942,7 @@ fn a87_with_no_bar_no_move_hands_the_mouse_over() {
 
     // A click and a rest there: swallowed (gl_rmenu → ctl_pd), timer on time.
     drain(host, &mut pb);
+    arm_gap(host);
     click(host);
     dwell(host, 300);
     glide_y(host, 100 - ON_FILE.1, 0);
@@ -1003,10 +1019,13 @@ fn menu_popup(pb: &mut Aespb, tree: *mut Obj, item: i16, x: i16, y: i16) -> (i16
 
 /// **`clamp_ypos` through the call, and `mn_keystate` on no pick.** The
 /// buttons are up, so `mn_popup`'s first wait returns at once; the box is
-/// positioned and clamped (`gemmnext.c:320-324`) *before* `popup_blit`,
-/// which has no pool on the host (`buf == NULL`) — the D-086 branch: no
-/// track, `rc = 0`, `mn_keystate = 0` (`:345-349`). The box's `ob_y` in the
-/// caller's tree shows the clamp:
+/// positioned and clamped (`gemmnext.c:320-324`) *before* `popup_blit`. The
+/// host has no pool, but since A89 `popup_blit_save` keeps the pixels on the
+/// heap there (as `bb_save` does without a screen buffer), so the pop-up
+/// **is** tracked: each call gets a click with the pointer parked outside
+/// the box — `handle_popup` returns on the press with nothing under it
+/// (`:290-291`), the no-pick branch: `rc = 0`, `mn_keystate = 0`
+/// (`:345-349`). The box's `ob_y` in the caller's tree shows the clamp:
 ///
 /// * start item 2 (*Beta*, ob_y 19) requested at y = 0 → box −19 → pushed
 ///   below the bar row in `gl_hchar` steps: −3, 13, **29**;
@@ -1022,13 +1041,18 @@ fn a88_menu_popup_clamps_the_box_below_the_bar_and_onto_the_screen() {
     let box_y = |t: *mut Obj| unsafe { (*t).y };
     let box_x = |t: *mut Obj| unsafe { (*t).x };
 
+    // The pointer rests at (320,300), outside both boxes below: a click there
+    // cancels each pop-up (consumed inside the call, gemmnext.c:290-291,351).
+    click(host);
     let (rc, out) = menu_popup(&mut pb, tree, 2, 600, 0);
     eprintln!("a88 y=0: rc={rc} box=({},{}) out={out:?}", box_x(tree), box_y(tree));
-    assert_eq!(rc, 0, "no pool on the host → the D-086 no-pick branch");
+    assert_eq!(rc, 0, "a press outside the box → the no-pick branch");
     assert_eq!(out.mn_keystate, 0, "TOS always sets mn_keystate — 0 on no pick (gemmnext.c:347); out = {out:?}");
     assert_eq!(box_y(tree), 29, "start item 2 at y = 0: box −19 → −3 → 13 → 29 (clamp_ypos, gemmnext.c:124-126)");
     assert_eq!(box_x(tree), 600, "x is not clamped (ob_x = xpos, gemmnext.c:322)");
 
+    drain(host, &mut pb);
+    click(host);
     let (rc, out) = menu_popup(&mut pb, tree, 2, 100, SCREEN_H as i16 - 1);
     eprintln!("a88 y=bottom: rc={rc} box=({},{}) out={out:?}", box_x(tree), box_y(tree));
     assert_eq!(rc, 0);

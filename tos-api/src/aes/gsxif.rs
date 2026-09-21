@@ -313,9 +313,26 @@ pub fn bb_save(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16) -> O
 /// (`buf == NULL`): the pop-up is then not shown at all (`mn_popup`,
 /// `:329-334`, D-086 in `docs/api/aes/menu.md`), the submenu not displayed
 /// (`display_submenu`, `:668-671`).
+///
+/// With **no pool at all** — a host test binary; on the board the BDOS pools
+/// are up before the first AES call (`kernel/src/lib.rs` `bring_up_bdos_pools`
+/// precedes the AUTO folder and the desktop) — the pixels go to a kernel-heap
+/// copy, exactly as [`bb_save`] does without a screen buffer (`Backing::Heap`,
+/// module docs). That keeps the D-086 "pool short → no pop-up/submenu"
+/// contract intact where a pool exists, and lets the drop-down tracker's
+/// submenu states (`mn_do` `SUBMENU_STATE`/`OUTSIDE_STATE`, A89) run in a
+/// host test. A host `Vec` cannot stand in for a pool block: `mxalloc` hands
+/// out `Long` pool keys the AES re-derives through the kernel high-half alias.
 pub fn popup_blit_save(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i16) -> Option<Saved> {
-    if w <= 0 || h <= 0 || !crate::bdos::mem::init::is_initialised() {
+    if w <= 0 || h <= 0 {
         return None;
+    }
+    if !crate::bdos::mem::init::is_initialised() {
+        let words = crate::vdi::bb_save_words(w, h);
+        let mut v = alloc::vec![0u32; words];
+        // SAFETY: `v` holds `bb_save_words(w, h)` `u32` words.
+        unsafe { crate::vdi::bb_save(backend, v.as_mut_ptr(), x, y, w, h) };
+        return Some(Saved { x, y, w, h, backing: Backing::Heap(v) });
     }
     let bytes = crate::vdi::bb_save_words(w, h) * 4;
     if bytes == 0 || bytes > Long::MAX as usize {

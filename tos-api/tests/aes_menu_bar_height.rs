@@ -517,6 +517,12 @@ fn press_at(pb: &mut Aespb, x: i16, y: i16) -> (i16, [i16; 8]) {
 /// *Open*: slide down `dy` rows, press, release. Returns `(fired, msg)`.
 fn press_open_from(pb: &mut Aespb, x: i16, y: i16, dy: i16) -> (i16, [i16; 8]) {
     move_to(pb, x, y, 0);
+    // The gesture starts *after* the application has armed its wait with the
+    // pointer parked at `(x, y)`. `ev_multi` drains the fork ring first
+    // (`chkkbd(); forker();`, `aes/gemevlib.c:169-170` — one `pump_input` at
+    // the head of `evnt_multi`, A92), so one idle packet stands in for that
+    // drain and the slide is the first thing the wait itself sees.
+    HOST.push(Packet { dx: 0, dy: 0, buttons: 0 });
     let steps = dy / 10;
     for _ in 0..steps {
         HOST.push(Packet { dx: 0, dy: 10, buttons: 0 });
