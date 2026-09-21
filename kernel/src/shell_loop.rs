@@ -66,9 +66,20 @@ fn is_bios_error(n: i32) -> bool {
 /// if (gl_shgem) sh_toalpha();
 /// ```
 ///
-/// `gl_changerez` is permanently FALSE on RPi4/AArch64 (no `Setscreen`
-/// resolution family to change to — D-101), so the loop's exit condition
-/// reduces to `sh_doexec != SHW_SHUTDOWN`.
+/// **Exit condition, NewTOS deviation (A48 Tier 1 / A106 Tier 2):** the
+/// `!gl_changerez` term is deliberately absent. `gl_changerez` has two
+/// producers in EmuTOS. `process_inf1`'s boot-time `#E` parse
+/// (`geminit.c:343-392`) goes through `check_moderez`, which reports no
+/// change on a board with exactly one fixed mode (ADR-017 rev 2, D-101) —
+/// that producer is legitimately FALSE here. `sh_write`'s `SHW_RESCHNG` arm
+/// (`gemshlib.c:187-191`) is pure AES software state set unconditionally by
+/// `shel_write(SHW_RESCHNG, …)`; NewTOS records it
+/// (`tos_api::aes::shell::gl_changerez`/`gl_nextrez`, A48) but this loop
+/// ignores it until A106 builds the re-enterable wrapper around `sh_main`
+/// (EmuTOS `gem_main` + `gemstart.S:86-124` `aes_restart`). Adding the term
+/// here first would make `sh_main` return into `kmain`'s `halt()` on the
+/// first such request. Until A106 the exit test is `sh_doexec ==
+/// SHW_SHUTDOWN` alone.
 pub fn sh_main(isauto: bool, isgem: bool) {
     // `gemshlib.c:698-706` — seed the SHELL and, without an autorun entry,
     // make the built-in desktop the first program.

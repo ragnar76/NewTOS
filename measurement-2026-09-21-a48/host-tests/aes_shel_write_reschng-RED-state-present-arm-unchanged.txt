@@ -1,0 +1,40 @@
+# Intermediate red (this session, tree with the new State fields + accessors
+# gl_changerez()/gl_nextrez() added, but the SHW_RESCHNG arm still HEAD's
+# buffer-clear only). Verbatim `cargo test -p tos-api --test aes_shel_write_reschng`:
+
+running 3 tests
+test shel_write_reschng_records_the_falcon_family_request_unvalidated ... FAILED
+test shel_write_shutdown_records_nothing_and_leaves_the_rez_request_alone ... FAILED
+test shel_write_reschng_records_the_st_tt_family_request ... FAILED
+
+failures:
+
+---- shel_write_reschng_records_the_falcon_family_request_unvalidated stdout ----
+
+thread 'shel_write_reschng_records_the_falcon_family_request_unvalidated' (4836696) panicked at tos-api/tests/aes_shel_write_reschng.rs:120:5:
+assertion `left == right` failed: gl_changerez = 1 + isover with isover = 1 (gemshlib.c:188)
+  left: 0
+ right: 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- shel_write_shutdown_records_nothing_and_leaves_the_rez_request_alone stdout ----
+
+thread 'shel_write_shutdown_records_nothing_and_leaves_the_rez_request_alone' (4836698) panicked at tos-api/tests/aes_shel_write_reschng.rs:146:5:
+assertion `left == right` failed
+  left: (0, 0)
+ right: (1, 6)
+
+---- shel_write_reschng_records_the_st_tt_family_request stdout ----
+
+thread 'shel_write_reschng_records_the_st_tt_family_request' (4836697) panicked at tos-api/tests/aes_shel_write_reschng.rs:94:5:
+assertion `left == right` failed: gl_changerez = 1 + isover with isover = 0 (gemshlib.c:188)
+  left: 0
+ right: 1
+
+
+failures:
+    shel_write_reschng_records_the_falcon_family_request_unvalidated
+    shel_write_reschng_records_the_st_tt_family_request
+    shel_write_shutdown_records_nothing_and_leaves_the_rez_request_alone
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

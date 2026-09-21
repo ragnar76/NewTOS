@@ -418,6 +418,26 @@ here; GEMDOS-level errors like `EFILNF` from a failed `sh_find` are shown).
 `sh_main`, not inside its loop) is separate and out of `sh_main`'s scope —
 it blocks until all desk accessories have done their first `appl_init`.
 
+**NewTOS deviation in the exit condition, precisely stated (A48/A-5).**
+`kernel/src/shell_loop.rs:72-106` implements this loop but its exit test
+checks only `sh_doexec() == SHW_SHUTDOWN`, omitting the `!gl_changerez`
+term, with the comment "`gl_changerez` is permanently FALSE on RPi4/AArch64
+… so the loop's exit condition reduces to `sh_doexec != SHW_SHUTDOWN`". That
+is correct for `process_inf1`'s producer of `gl_changerez` (§2 above — there
+is genuinely no alternate mode `check_moderez` could report, ADR-017 rev 2)
+but **not** for `sh_write`'s own `SHW_RESCHNG` arm, which sets
+`gl_changerez`/`gl_nextrez` unconditionally as pure AES software state
+(`gemshlib.c:187-191`), independent of what real hardware can do. Since
+A48 tier 1 (2026-09-21) NewTOS's `shel_write(SHW_RESCHNG)` records that
+state faithfully (`tos-api/src/aes/shell.rs` `gl_changerez()`/
+`gl_nextrez()`); the loop condition still ignores it until the
+`aes_restart` wrapper exists (`TASK/A106.md`). Worked out in
+[`docs/analysis/a48-shw-reschng-design-2026-09-21.md`](../../analysis/a48-shw-reschng-design-2026-09-21.md):
+recording the flag faithfully is safe in isolation, but wiring it into this
+loop's exit condition requires an outer restart wrapper around `sh_main`
+that does not exist yet (`kernel/src/lib.rs:408-412` calls `sh_main` exactly
+once and halts the machine when it returns) — not built by this note.
+
 ---
 
 ## 8. `sh_ldapp` dispatch — all four logical arms

@@ -1,0 +1,129 @@
+diff --git a/kernel/src/shell_loop.rs b/kernel/src/shell_loop.rs
+index 5e9b3b3..e0f4570 100644
+--- a/kernel/src/shell_loop.rs
++++ b/kernel/src/shell_loop.rs
+@@ -66,9 +66,20 @@ fn is_bios_error(n: i32) -> bool {
+ /// if (gl_shgem) sh_toalpha();
+ /// ```
+ ///
+-/// `gl_changerez` is permanently FALSE on RPi4/AArch64 (no `Setscreen`
+-/// resolution family to change to — D-101), so the loop's exit condition
+-/// reduces to `sh_doexec != SHW_SHUTDOWN`.
++/// **Exit condition, NewTOS deviation (A48 Tier 1 / A106 Tier 2):** the
++/// `!gl_changerez` term is deliberately absent. `gl_changerez` has two
++/// producers in EmuTOS. `process_inf1`'s boot-time `#E` parse
++/// (`geminit.c:343-392`) goes through `check_moderez`, which reports no
++/// change on a board with exactly one fixed mode (ADR-017 rev 2, D-101) —
++/// that producer is legitimately FALSE here. `sh_write`'s `SHW_RESCHNG` arm
++/// (`gemshlib.c:187-191`) is pure AES software state set unconditionally by
++/// `shel_write(SHW_RESCHNG, …)`; NewTOS records it
++/// (`tos_api::aes::shell::gl_changerez`/`gl_nextrez`, A48) but this loop
++/// ignores it until A106 builds the re-enterable wrapper around `sh_main`
++/// (EmuTOS `gem_main` + `gemstart.S:86-124` `aes_restart`). Adding the term
++/// here first would make `sh_main` return into `kmain`'s `halt()` on the
++/// first such request. Until A106 the exit test is `sh_doexec ==
++/// SHW_SHUTDOWN` alone.
+ pub fn sh_main(isauto: bool, isgem: bool) {
+     // `gemshlib.c:698-706` — seed the SHELL and, without an autorun entry,
+     // make the built-in desktop the first program.
+diff --git a/tos-api/src/aes/shell.rs b/tos-api/src/aes/shell.rs
+index 3352e6b..d9d8294 100644
+--- a/tos-api/src/aes/shell.rs
++++ b/tos-api/src/aes/shell.rs
+@@ -47,7 +47,7 @@ pub const SHW_EXEC: i16 = 1;
+ /// `SHW_SHUTDOWN` — shut the system down. Ends the shell loop
+ /// (`gemshlib.c:730`, `while (psh->sh_doexec != SHW_SHUTDOWN)`).
+ pub const SHW_SHUTDOWN: i16 = 4;
+-const SHW_RESCHNG: i16 = 5; // change screen resolution (honest-unsupported)
++const SHW_RESCHNG: i16 = 5; // change screen resolution (request recorded; restart = A106)
+ 
+ // ── `sh_nextapp` — the kind of program the shell runs next ────────────────
+ //
+@@ -148,6 +148,16 @@ struct State {
+     sh_apdir: UnsafeCell<[u8; PATHBUF]>, // gemshlib.c:86-87
+     buf: UnsafeCell<[u8; SHELLBUF]>,     // shel_get/shel_put settings blob
+     env: UnsafeCell<[u8; PATHBUF]>,      // environment (empty = default)
++    // ── the pending resolution-change request (gemshlib.c:92-99) ─────────
++    // `gl_changerez`: 0 = no change, 1 = ST/TT family, 2 = Falcon family;
++    // `gl_nextrez`: the mode word for `Setscreen` (with the caller's `+2`
++    // ST/TT offset, D-101). Written by `shel_write(SHW_RESCHNG)` exactly as
++    // `sh_write` does (`:187-191`, A48 Tier 1). Not yet consumed: `sh_main`'s
++    // `!gl_changerez` exit term and the `gem_main` restart around it are
++    // A106 (Tier 2) — until then a request is recorded and readable
++    // ([`gl_changerez`]/[`gl_nextrez`]) but the shell loop ignores it.
++    gl_changerez: UnsafeCell<i16>,
++    gl_nextrez: UnsafeCell<i16>,
+ }
+ // SAFETY: single boot CPU only touches the AES.
+ unsafe impl Sync for State {}
+@@ -165,6 +175,8 @@ static S: State = State {
+     sh_apdir: UnsafeCell::new([0; PATHBUF]),
+     buf: UnsafeCell::new([0; SHELLBUF]),
+     env: UnsafeCell::new([0; PATHBUF]),
++    gl_changerez: UnsafeCell::new(0),
++    gl_nextrez: UnsafeCell::new(0),
+ };
+ 
+ // ── small string helpers ─────────────────────────────────────────────────
+@@ -438,9 +450,15 @@ fn store_str(dst: &mut [u8], src: &[u8]) {
+ ///   (D-101) either, so the request is recorded nowhere and `sh_doexec`
+ ///   keeps its old value — the shell loop keeps running, exactly as on a
+ ///   real Falcon.
+-/// * `SHW_RESCHNG` (5) — clears `D.s_cmd`/`ad_stail` (`gemshlib.c:190-191`).
+-///   `gl_changerez`/`gl_nextrez` stay honest-unsupported on RPi4 (no mode
+-///   switch), so only the buffer clear is reproduced.
++/// * `SHW_RESCHNG` (5) — records the restart request **unconditionally**:
++///   `gl_changerez = 1 + isover`, `gl_nextrez = isgem` (`gemshlib.c:188-189`;
++///   no `check_moderez`, no comparison with the current mode — the
++///   "no change" filter is the caller's, `desk/deskrez.c:213-215`) and clears
++///   `D.s_cmd`/`ad_stail` (`:190-191`). The `SHELL` members are not touched.
++///   Readable through [`gl_changerez`]/[`gl_nextrez`]; the shell loop's
++///   `!gl_changerez` exit term and the AES restart it triggers are A106
++///   (Tier 2) — until then the request is recorded but has no effect
++///   (`docs/analysis/a48-shw-reschng-design-2026-09-21.md` §5).
+ /// * any other `doex` — silently ignored, still returns `1` (spec edge-case
+ ///   9; EmuTOS's `switch` has no `default`).
+ pub fn shel_write(pb: &Aespb) {
+@@ -481,8 +499,14 @@ pub fn shel_write(pb: &Aespb) {
+                 }
+             }
+             SHW_RESCHNG => {
+-                // `D.s_cmd[0] = '\0'; ad_stail[0] = '\0';`
+-                // (gemshlib.c:190-191). No resolution change on RPi4.
++                // `gl_changerez = 1 + isover; gl_nextrez = isgem;`
++                // (gemshlib.c:188-189) — unconditionally: `sh_write` neither
++                // validates the mode nor compares it with the current one
++                // (that is the caller's job, desk/deskrez.c:213-215). The
++                // request is recorded here and consumed by A106.
++                *S.gl_changerez.get() = 1i16.wrapping_add(isover);
++                *S.gl_nextrez.get() = isgem;
++                // `D.s_cmd[0] = '\0'; ad_stail[0] = '\0';` (:190-191).
+                 (*S.s_cmd.get())[0] = 0;
+                 (*S.s_tail.get())[0] = 0;
+             }
+@@ -557,6 +581,25 @@ pub fn sh_doexec() -> i16 {
+     unsafe { *S.sh_doexec.get() }
+ }
+ 
++/// `gl_changerez` (`gemshlib.c:95,98`) — the pending resolution-change
++/// request: `0` = none, `1` = ST/TT family, `2` = Falcon family, as
++/// `shel_write(SHW_RESCHNG, …, isover)` last recorded it (`1 + isover`,
++/// `:188`). Readable state only until A106 wires it into the shell loop's
++/// exit test (`:727`) and the restart around `sh_main`.
++pub fn gl_changerez() -> i16 {
++    // SAFETY: single-CPU AES.
++    unsafe { *S.gl_changerez.get() }
++}
++
++/// `gl_nextrez` (`gemshlib.c:96,99`) — the mode word `shel_write(SHW_RESCHNG,
++/// isgem, …)` last recorded (`gl_nextrez = isgem`, `:189`), verbatim: for the
++/// ST/TT family it carries the caller's `+2` offset (D-101). Readable state
++/// only until A106 consumes it.
++pub fn gl_nextrez() -> i16 {
++    // SAFETY: single-CPU AES.
++    unsafe { *S.gl_nextrez.get() }
++}
++
+ /// Copy `D.s_cmd` — the fully-qualified command of the program to run next —
+ /// into `out` as a NUL-terminated string; returns its length.
+ pub fn s_cmd(out: &mut [u8]) -> usize {

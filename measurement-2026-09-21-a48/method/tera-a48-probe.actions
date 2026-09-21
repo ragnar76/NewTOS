@@ -1,0 +1,23 @@
+# A48 probe 2 (TeraDesk via #Z, 640x480): locate the ARESCH alert before
+# scripting the full sequence. Probe 1 showed the VOPTIONS root at (164,113)
+# (form_center out=(161,110,318,278) incl. xd_border 3 px): ST-Low (obj 4)
+# = (196..299,177..192), OK (obj 20) = (316..379,353..368). Only ST-Low and
+# ST-Medium are enabled: TeraDesk's `static long vdo` stays 0 without a _VDO
+# cookie -> vdohi = ST_VIDEO -> vd_enable_rez(VSTMED) (video.c:60,494-507).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 260 8
+1900 mark B_OPTIONS_OPEN
+2200 move 300 170
+2500 down
+2503 up
+3100 mark C_VIDEO_DIALOG
+3400 move 247 185
+3700 down
+3703 up
+4100 mark D_STLOW_PICKED
+4400 move 347 361
+4700 down
+4703 up
+5300 mark E_ALERT

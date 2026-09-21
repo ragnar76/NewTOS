@@ -1,0 +1,123 @@
+A48 Tier 1 -- shel_write(SHW_RESCHNG, isgem, isover, ...) records gl_changerez/gl_nextrez
+exactly as EmuTOS sh_write does; nothing consumes them yet (Tier 2 = TASK/A106.md).
+Developer self-evidence, 2026-09-21. Branch desk-rebuild, base HEAD bd9cd19, changes
+uncommitted in the tree. Pinned EmuTOS references/emutos @ 1a7484ab:
+  aes/gemshlib.c:92-99 (gl_changerez/gl_nextrez: "0=no change, 1=change ST resolution,
+  2=change Falcon resolution" / "stores the resolution for Setscreen()"), :187-192 (the
+  SHW_RESCHNG arm: gl_changerez = 1 + isover; gl_nextrez = isgem; D.s_cmd[0] = '\0';
+  ad_stail[0] = '\0'; -- unconditional, touches no SHELL member), :195 (return TRUE),
+  :727 (sh_main's `while (... && !gl_changerez)` -- NOT wired, A106), :178-186 +
+  bios/bios.c:754-770 (SHW_SHUTDOWN records nothing: can_shutdown() FALSE on the Falcon
+  profile), aes/geminit.c:343-392 (process_inf1: the only producer that validates, via
+  check_moderez), :806 (gem_main clears gl_changerez -- A106), desk/deskrez.c:213-215
+  (the "no change" filter is the CALLER's). Design: docs/analysis/a48-shw-reschng-
+  design-2026-09-21.md (Tier 1 = this run). Spec: docs/api/aes/scrap-shell.md
+  (SHW_RESCHNG bullets), docs/api/aes/shell-loop.md section 7.
+
+PRODUCT CODE (uncommitted; method/product-a48.diff; HEAD copies in method/head-bd9cd19/)
+  tos-api/src/aes/shell.rs  State gains gl_changerez/gl_nextrez (i16, init 0) next to the
+    A61 sh_isover cell; shel_write's SHW_RESCHNG arm sets `gl_changerez = 1 + isover`
+    (i16 wrapping, = the C WORD truncation) and `gl_nextrez = isgem` unconditionally, then
+    clears s_cmd[0]/s_tail[0] as before; new accessors gl_changerez()/gl_nextrez()
+    (named after the EmuTOS globals like the existing gl_shgem()); doc comment + the
+    SHW_RESCHNG const comment updated. No setter/clear (geminit.c:806 is A106's).
+  kernel/src/shell_loop.rs  comment only: the exit-condition note now states both
+    producers precisely (process_inf1 = legitimately FALSE here; sh_write = recorded,
+    ignored by this loop until A106's re-enterable wrapper; adding the term first would
+    return into kmain's halt()). Code unchanged.
+  tos-api/tests/aes_shel_write_reschng.rs  NEW (3 cases; A61/H05 harness).
+
+HOST TESTS (host-tests/)
+  aes_shel_write_reschng-RED-vs-HEAD-bd9cd19-shell.rs.txt  the new file against HEAD's
+      shell.rs (scratch-before): E0432 unresolved gl_changerez/gl_nextrez (no such state).
+  aes_shel_write_reschng-RED-state-present-arm-unchanged.txt  intermediate: State +
+      accessors present, arm still HEAD's -> 0 passed / 3 FAILED (gl_changerez 0, expected
+      1 / 2; (0,0) expected (1,6)).
+  aes_shel_write_reschng-GREEN-after.txt  3/3:
+      st_tt_family: shel_write(5, 6, 0) -> 1; gl_changerez 1, gl_nextrez 6; s_cmd "" and
+        an empty tail image; sh_doexec/sh_nextapp/sh_isgem untouched (SHW_EXEC seed kept).
+      falcon_family_unvalidated: (5, 3, 1) -> 2/3; (5, 0x7ABC, 1) -> 2/0x7ABC stored
+        verbatim (no validation, design section 1); (5, 2, 0) -> 1/2.
+      shutdown guard: (4, 0, 2) -> 1, leaves (1,6) and sh_doexec = SHW_EXEC alone.
+  aes_shel_siblings-GREEN-after.txt  aes_shel_write_iscr 3/3 + aes_shel_roundtrip 2/2.
+  xtask-test-AFTER.log  cargo run -p xtask -- test: 797 passed / 0 failed / 1 ignored, rc 0
+      (baseline 794/0/1 + 3).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4-first.log / xtask-build-rpi4.log  cargo xtask build --board rpi4:
+      tos-api 64 / kernel 94, rc 0 (baseline 64/94, delta 0); kernel8-tree-rpi4-dev.sha256.
+      No qemu-virt build (lead).
+  clippy-kernel-rpi4.txt  cargo clippy --package kernel --no-default-features --features
+      board-rpi4: tos-api 80 / kernel 125; shell.rs 15 hits, all on pre-existing lines
+      (Aespb-visibility notes + the 4 loop-index notes), shell_loop.rs 0.
+  clippy-tos-api-host.txt  cargo clippy -p tos-api: 80 (baseline A87 80, delta 0);
+      shell.rs 15 -> 15 (clippy-tos-api-host-BEFORE-scratch-HEAD-shell.rs.txt: the HEAD
+      copy in the before-scratch, 15 hits; its 83 total = 80 + 3 injector scaffolding).
+  scratch-{after,before}-build.log  the injector scratch kernels (tos-api 67 / kernel 105
+      = H02/A46/A78 scaffolding + the A48 after-only trace line).
+  make-sd-image.log, sd-put-tera.log  tools/make-sd-image.sh <scratch>/img/sd-base.img 64;
+      sd-tera.img = + NEWDESK.INF (#Z TeraDesk) + TERADESK.INF (a79/method, dial=0x0001 =
+      centred dialogs). images-and-scratch-kernels.sha256.
+
+QEMU raspi4b (method/run.sh = a79/method/run.sh; 640x480, -display none, QMP screendump
+after each serial mark; fresh image copy per run; grep -c "EXC\|PANIC\|panic" = 0 in all
+four serial logs).
+BEFORE = scratch with tos-api/src/aes/shell.rs + kernel/src/shell_loop.rs = HEAD bd9cd19
+(git show, no checkout); AFTER = the tree (+ method/a48_trace_patch.py, after-only: one
+serial line with gl_changerez()/gl_nextrez() after every op 121 -- the before kernel has
+no such accessors). Injector: method/make_scratch_a48.sh = A99/A87 method without the Key
+step; scripts method/a48_scripts.rs from tera-a48.actions (+ desk-a48.actions =
+desk-a87.actions as the required SCRIPT_DESK placeholder -- never armed in these runs,
+TeraDesk armed the injector via #Z).
+  kernel8 after 94b73e4ff2ba9c8d...  before 451097758ca55219...
+  sd-base 199c2f70166ce5a1...  sd-tera 5137fb082fbae497...
+  Sequence (tera-a48.actions, coordinates from desktop.rsc via method/rscdump.py + the
+  two probe runs, screendumps/probe/ + serial/tera-probe{1,2}-serial.log): parkbr; arm;
+  A_IDLE; hover Options (260,8); click "Video options..." (300,170); C (VOPTIONS dialog,
+  root (164,113)); click ST-Low (247,185) [probe 1 at (247,175) hit obj 3 = the box,
+  objc_find out=3 -> corrected]; D (ST-Low selected); click OK (347,361); E (ARESCH alert
+  "[1][A change of video mode|will terminate all|running applications.][ OK |Cancel]");
+  click " OK " (280,276); F (+0.5 s); parkbr; G (+4.5 s); H (+8 s).
+  Serial, both kernels (lines 118-132 after / 118-131 before):
+      [aes] pid=0 op 121 in=(5,2,0,0,0,0) out=(1,0,0,0,0,0,0)
+          = shel_write(SHW_RESCHNG, wisgr = ST_LOWRES + 2 = 2, wiscr = 0) -> 1
+            (video.c:363-365,378-379: the ST/TT arm, D-101 offset carried by the caller)
+      AFTER ONLY: [a48] after shel_write: gl_changerez=1 gl_nextrez=2 sh_doexec=1
+      [aes] op 25 in=(48,...) out=(32,...)   = wait_to_quit's evnt_multi(MU_MESAG|MU_TIMER,
+                                               2000 ms) returning MU_TIMER (no AP_TERM)
+      [aes] op 24 in=(500,...)               = wait(500)
+      [aes] op 19                            = appl_exit (main.c:2124)
+      [launch] returned (program Pterm'd)
+      [shell] sh_ldapp: 'C:\APPS\TERADESK\DESKTOP.NAP' exited with rc=0
+      [shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+      [desk] desktop up (1 drives)           (before G at +6900 = 4.5 s after the click)
+  Screendumps before/after: A, C, D, E, F, G, H all 0 px different; G == H = the kernel
+  desktop back (its own menu bar Desk/File/View/Options, C:\ window). F = TeraDesk's own
+  teardown (menu_bar off, rsrc_free) while it waits in wait_to_quit. Serial diff
+  before/after over the [aes]/[a48]/[shell]/[launch]/[desk] lines: exactly the one
+  after-only [a48] line. Tier 1 is state-only: same observable outcome, as designed.
+  The loop's exit condition is unchanged: the recorded request is ignored, the shell runs
+  the next program (the desktop) as before; nothing hangs, nothing halts.
+
+TICKET / DESIGN PREMISES CHECKED AT THE SOURCE
+  (1) The lead's brief wrote "shel_write(SHW_RESCHNG, 3, 1) -> changerez() == 1"; per
+      gemshlib.c:188 isover = 1 gives gl_changerez = 2 (Falcon family); the tests assert
+      1 for isover = 0 and 2 for isover = 1, as the design's section 9 lists.
+  (2) Design section 3 says voptions() "shows every ST/TT resolution radio button enabled"
+      (default: case). Not so: TeraDesk's `static long vdo` (video.c:60) stays 0 when
+      find_cookie(C__VDO) fails, so vdohi = ST_VIDEO and only ST-Low/ST-Medium are enabled
+      (vd_enable_rez(VSTMED), video.c:494-507); the probe screendump shows it. ST-Low is
+      enabled, so the run is unaffected; the design's "0xffffffff without cookie" quotes
+      TeraDesk's own stale comment, not its initialiser.
+  (3) The while-condition is gemshlib.c:727 in the pinned tree (the design/spec cite :730).
+
+OUT OF SCOPE (observed, untouched)
+  (1) A106: the re-enterable sh_main wrapper + `!gl_changerez` in the loop + the clear
+      (geminit.c:806) -- deliberately not built (lead: Tier 2).
+  (2) docs/api/aes/scrap-shell.md + shell-loop.md still say "not yet implemented" /
+      "does not record that state at all" for Tier 1 -- spec text is the Researcher's
+      (uncommitted edits already in the tree from the design session); not touched here.
+  (3) Design section 3's "all radio buttons enabled" premise, see above.
+
+OPEN
+  Pi acceptance (Tester/Lead; nothing flashed).

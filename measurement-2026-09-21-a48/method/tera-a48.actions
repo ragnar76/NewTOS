@@ -1,0 +1,39 @@
+# A48 Tier 1 (TeraDesk via #Z, sd-tera.img, 640x480; before = HEAD bd9cd19's
+# shell.rs + shell_loop.rs, after = the tree). Sequence: park bottom-right;
+# hover the Options title (260,8) -> drop-down; click "Video options..."
+# (MVOPTS, x 224..439 y 163..178) at (300,170); the VOPTIONS dialog opens
+# with its root at (164,113) (form_center (161,110,318,278) incl. the 3 px
+# xd_border); click the ST-Low radio (obj 4, (196..299,177..192)) at
+# (247,185) -- ST-Low/ST-Medium are the only enabled buttons: TeraDesk's
+# `static long vdo` stays 0 without a _VDO cookie -> vdohi = ST_VIDEO ->
+# vd_enable_rez(VSTMED) (video.c:60,494-507); click OK (obj 20,
+# (316..379,353..368)) at (347,361) -> ARESCH alert; click its " OK "
+# (frame (243..317,262..291)) at (280,276) -> voptions() returns 1 -> chrez
+# -> quit -> get_set_video(2): shel_write(SHW_RESCHNG, ST_LOWRES+2 = 2,
+# 0) (video.c:363-365,378-379) -> wait_to_quit 2000 ms + wait(500) ->
+# appl_exit (main.c:2025,2050,2062,2124) -> the kernel desktop comes back
+# (AUTORUN_APP -> DESKTOP_APP, shell_loop). Marks G/H fire once the
+# desktop is up ("[desk] desktop up" arms DESK_UP).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 260 8
+2200 move 300 170
+2500 down
+2503 up
+3100 mark C_VIDEO_DIALOG
+3400 move 247 185
+3700 down
+3703 up
+4100 mark D_STLOW_PICKED
+4400 move 347 361
+4700 down
+4703 up
+5300 mark E_ALERT
+5600 move 280 276
+5900 down
+5903 up
+6000 mark F_CONFIRMED
+6100 parkbr
+6900 mark G_AFTER_4S
+7600 mark H_DESKTOP_BACK
