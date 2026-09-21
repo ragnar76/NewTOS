@@ -1,0 +1,14 @@
+records: {'TT': 182, 'FALCON-TC': 182, 'NEWTOS-QEMU': 182}
+
+per-dump: distinct (contrl_before[6], contrl[6]) pairs and how many records carry each
+  TT: {(2, 2): 181, (2, 3): 1}
+  FALCON-TC: {(2, 2): 181, (2, 3): 1}
+  NEWTOS-QEMU: {(2, 2): 181, (2, 3): 1}
+
+records where contrl[6] != contrl_before[6] (the call rewrote the handle word):
+  TT: case 274 opcode 100 sub 0: before=2 after=3
+  FALCON-TC: case 274 opcode 100 sub 0: before=2 after=3
+  NEWTOS-QEMU: case 274 opcode 100 sub 0: before=2 after=3
+
+cross-dump: records whose (before, after) pair differs from the first dump:
+done

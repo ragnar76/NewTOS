@@ -1,0 +1,110 @@
+NewTOS -- VDI V-series (TASK/V01..V15) measurement, 2026-09-21
+================================================================
+MEASUREMENT ONLY: this directory states what ran and what came back.
+Classification and verdicts: docs/analysis/vdi-v-series-classification-2026-09-21.md
+
+Datum        : 2026-09-21
+Git HEAD     : 2567942 (Branch desk-rebuild), Arbeitsbaum zu Beginn sauber.
+               Nichts committet, nichts geflasht, keine physische Karte.
+EmuTOS-Quelle: references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+               (Tag VERSION_1_4 = 978e37569bff95841e42675d11fcc6799aad8483).
+
+Falltabelle  : tosdump/cases/vdi-all.tsv, 182 Faelle, CRC D135ADAF (unveraendert;
+               sha256 7ca7de7ce52af54e82bfe0dca8dff310b32f75359177068060172a841a764ada)
+               tosdump/cases/vdi-raster.tsv, 59 Faelle, CRC 702EEA7D (unveraendert;
+               sha256 4b81d3cc17c0c171217a848696cbf2c1d9e4b856f19559028bd44ecb98a64082)
+
+------------------------------------------------------------------------------
+RUN A -- EmuTOS 1.4 auf Hatari TT, 640x480 TT-Medium (4 Planes)  [Validierung]
+------------------------------------------------------------------------------
+  Hatari 2.6.1 (~/Downloads/hatari-2.6.1_macos), ROM etos512de.img
+    sha256 5805c0a4834f8935c427454785d32c59e796b11ad6802101052b84fb1eb7a745
+  Dumper  tosdump/deploy-tt/DUMPVDI.PRG (m68k, build 19b7)
+    sha256 e5a96a5cfe2a8bae111069cb9d187e93d76d0e8a5a1dfd0ac304347dc60d1e19
+  Befehl  SDL_VIDEODRIVER=dummy Hatari --machine tt --tos etos512de.img
+            --tos-res ttmed --monitor vga --sound off --fast-forward on
+            --run-vbls 8000 --conout 2 -d <hd> --gemdos-drive C
+            --auto 'C:\DUMPVDI.PRG'
+  Ergebnis emutos-tt-hatari/VDI.BIN + VDI.LOG
+    VDI.BIN sha256 119e2bf1361ad37f35e4236191170ebf3d13e3659c33834e8dc8ad38a9e7c8ce
+    == tosdump/reference/EMUTOS14-VDI-all.BIN  (cmp: BIT-IDENTISCH, LOG ebenfalls)
+  Damit ist Hatari fuer diese Tabelle als Ersatz der echten TT belegt.
+
+------------------------------------------------------------------------------
+RUN B -- NewTOS auf QEMU raspi4b, headless, 640x480, 16 Planes / 256 Stifte
+------------------------------------------------------------------------------
+  Kernel  cargo run -p xtask -- build --board rpi4 --release
+          (vorher touch kernel/src/lib.rs tos-api/src/lib.rs)
+    ELF  target/aarch64-unknown-none-softfloat/release/kernel
+         sha256 6510c421a837bc9aa0f2415bc55684bf23df027503422b34a252d3f9ddeb2a2c
+    kernel8.img sha256 e5a9b75d5ba0f6bbb788251a7b305fce0765dca5fccfc6f7cf2121467673eec4
+         (885944 Bytes; *.img ist gitignored, deshalb nur der Hash)
+  Dumper  tosdump/build-dumpvdi-newtos.sh -> DUMPVDI.NAP (build 2567)
+    sha256 f8cc527adcaae97979a2e57cc114a898a381c9d125b683e01d0fd23a64027299
+          tosdump/build-dumprast-newtos.sh -> DUMPRAST.NAP (build 2567)
+    sha256 3f32327f0b5265f568465eb2356b69cc19327ad300c0ac12b8c99da3bf5ba3bb
+  Karte   tools/make-sd-image.sh <scratch>/sd.img 64, danach per hdiutil:
+          C:\DUMPVDI.NAP + C:\VDI.TSV (= vdi-all.tsv) + NEWDESK.INF
+          "#Z 01 C:\DUMPVDI.NAP@"  (Raster-Lauf: DUMPRAST.NAP/RASTER.TSV analog,
+          eigene Kopie des Images). Kein *.img im Baum.
+  Befehl  qemu-system-aarch64 -M raspi4b -no-reboot -display none
+            -serial file:BOOT-SERIAL.txt -kernel kernel8.img
+            -drive file=sd.img,if=sd,format=raw
+  Log     "[fb] VideoCore display geometry detected: 640x480",
+          "VDI.TSV: 182 cases, CRC D135ADAF", "all 182 cases ran",
+          "VDI.BIN: 182 records, 289776 bytes", rc=0, "[desk] desktop up",
+          kein PANIC, kein [EXC]. Raster: "all 59 cases ran", rc=0.
+          DEV_TAB 639,479,0,278,278,3,7,0,6,8,1,24,12,256,...,0,2,1,1,1,2
+  Ergebnis newtos-qemu-raspi4b/VDI.BIN + VDI.LOG + BOOT-SERIAL.txt
+           newtos-qemu-raspi4b-raster/RASTER.BIN + RASTER.LOG + BOOT-SERIAL.txt
+  tosdiff --validate: beide akzeptiert (CRC stimmt).
+  Kein QEMU-Prozess blieb zurueck (pgrep nach jedem Lauf leer).
+
+------------------------------------------------------------------------------
+RUN C -- EmuTOS auf Hatari Falcon030, 640x480 VIDEL TRUECOLOR (16 Planes)
+------------------------------------------------------------------------------
+  Das eigentliche Orakel fuer NewTOS' Profil (ADR-024). Zwei ROMs, ein Ergebnis:
+    C1  etos512de.img (Release 1.4, dasselbe Abbild wie RUN A)
+    C2  references/emutos/etos512us.img (gepinnte Quelle, 1.4.0+ 20260829)
+        sha256 be9b3c169431b4cdf0184b055cf81bb1f3469cb0731c64b99bcb7fbce7b28e13
+  Dumper  wie RUN A (DUMPVDI.PRG build 19b7, VDI.TSV = vdi-all.tsv)
+  Modus   method/EMUDESK-falcon-truecolor.INF, Zeile "#E 1A E0 00 1C 60":
+          0x001C = VIDEL_VGA|VIDEL_80COL|VIDEL_TRUECOLOR (include/biosdefs.h),
+          gelesen von process_inf1 (aes/geminit.c). Hatari "info videl":
+          $FF8266.w Falcon shift mode = 0100 (SPS_HICOLOR) -- in beiden Laeufen.
+          VDI.LOG: DEV_TAB[13] = 256, DEV_TAB[39] = 0  -> Truecolor bestaetigt.
+  Befehl  method/run-falcon-tc.sh <hd> <tos> <tag>  (Hatari --machine falcon
+          --monitor vga ... --auto 'C:\DUMPVDI.PRG' --cmd-fifo, 14 s, dann
+          "hatari-debug info videl" ueber die FIFO mit dem Hintergrund-Echo-Trick,
+          kill -9; kein timeout-Kommando auf macOS)
+  Ergebnis emutos-falcon-tc-hatari/release-1.4-rom/VDI.BIN (+LOG, hatari.log)
+           emutos-falcon-tc-hatari/pinned-source-rom/VDI.BIN (+LOG, hatari.log)
+  C1 vs C2: DIFF-falcontc-rel-vs-src.txt -> 0 von 182 Faellen anders.
+  Referenzkopie fuer den Dauertest: tosdump/reference/EMUTOS14-VDI-all-falcontc.BIN/.LOG
+    (= C1, neue Datei, nichts ueberschrieben).
+
+------------------------------------------------------------------------------
+DIFFS (tosdiff, alle ueber vdi-all.tsv, CRC D135ADAF)
+------------------------------------------------------------------------------
+  DIFF-emutos-tt-vs-newtos-qemu.txt        TT-Ref (RUN A)  vs NewTOS QEMU : 13 von 182
+  DIFF-emutos-tt-vs-emutos-falcontc.txt    TT-Ref (RUN A)  vs Falcon-TC C1: 13 von 182
+                                           -- dieselben 13 Faelle, dieselben Zellen
+  DIFF-emutos-falcontc-rel-vs-newtos-qemu.txt  Falcon-TC C1 vs NewTOS QEMU:  3 von 182
+                                           -- nur 54/160/161 intout[1] 0xFFFF vs 0xFFDF
+  DIFF-falcontc-rel-vs-src.txt             Falcon-TC C1 vs C2            :  0 von 182
+  DIFF-emutos-tt-raster-vs-newtos-qemu.txt TT-Raster-Ref vs NewTOS QEMU  :  1 von 59
+                                           -- Fall 157 (D-VDI-25 / R01, zurueckgestellt)
+  cells.txt          alle von V01..V15 benannten Zellen, drei Dumps nebeneinander
+  handles-vdi.txt    V15: contrl_before[6]/contrl[6] aller 182 Records, drei Dumps
+  handles-raster.txt V15: dito fuer die 59 Raster-Records (TT-Ref vs NewTOS QEMU)
+
+------------------------------------------------------------------------------
+HINWEISE
+------------------------------------------------------------------------------
+  * *.BIN unter measurement-*/ sind durch das Wurzel-.gitignore ("*.bin" bei
+    core.ignorecase=true) IGNORIERT -- git status zeigt sie als "!!". Das gilt
+    auch fuer alle frueheren measurement-*-Verzeichnisse. Wer die Rohdumps
+    versionieren will, braucht `git add -f`. tosdump/reference/ hat eine
+    Negation und ist davon nicht betroffen.
+  * Scratch lag ausschliesslich im Session-Scratchpad; das Images-Verzeichnis
+    ist nicht Teil dieses Ordners.

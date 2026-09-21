@@ -1,0 +1,95 @@
+INFO : Hatari v2.6.1, compiled on:  Aug 15 2025, 14:15:19
+INFO : IPF : capsimage library version release=5 revision=1
+INFO : GEMDOS HDD emulation, C: <-> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/v-series/hatari-falcon/hd-src.
+ERROR: Microphone: SDL_OpenAudioDevice failed.
+WARN : Bus Error reading at address $20fffff, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $fffffc21, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $400000, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $6c4710, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $5d1234, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $6d3148, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $400000, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $d003c3, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+INFO : Strange screen size 16x480 -> aspect corrected by 32x1!
+INFO : OS clock ticks / second: 100
+
+
+
+
+
+                                                         
+                                                         
+                                                         
+                                                         
+                                                         
+                    ________________________________________
+
+                    EmuTOS Version:     20260829 
+                    CPU type:           M68030 
+                    Machine:            Atari Falcon 
+                    ST-RAM:             4 MB 
+                    Alt-RAM:            16 MB 
+                    GEMDOS drives:      ABC 
+                    Boot time:          2026/09/21 08:31:08 
+                    ________________________________________
+
+                    Hold <Control> to skip AUTO/ACC
+                    Hold <Alternate> to skip HDD boot
+                    Press key 'X' to boot from X:
+                    Press <Esc> to run an early console
+
+                       Hold <Shift> to pause this screen    
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/v-series/hatari-falcon/hd-src/AUTO'
+
+
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/v-series/hatari-falcon/hd-src/etc'
+DUMPVDI build 19b7, record format 2
+VDI.TSV: 182 cases, CRC D135ADAF
+appl_init id 0, graf_handle 1, v_opnvwk handle 2
+work_in 1,1,1,1,1,1,1,1,1,1,2
+DEV_TAB 639,479,0,278,278,3,7,0,6,8,1,24,12,256,10,1,2,3,4,5,6,7,8,9,10,3,0,3,3,3,0,3,0,3,2,1,1,1,0,0,2,1,1,1,2
+SIZ_TAB 5,4,7,13,1,0,40,0,15,11,120,88
+running 182 cases
+         ABCall 182 cases ran
+VDI.BIN: 182 records, 289776 bytes
+VDI.LOG: 370 bytes
+> info videl
+$FF8006.b : monitor type                     : 96
+$FF8201.b : Video Base Hi                    : 36
+$FF8203.b : Video Base Mi                    : 9f
+$FF8205.b : Video Count Hi                   : 00
+$FF8207.b : Video Count Mi                   : 00
+$FF8209.b : Video Count Lo                   : 00
+$FF820A.b : Sync mode                        : 02
+$FF820D.b : Video Base Lo                    : 00
+$FF820E.w : offset to next line              : 0000
+$FF8210.w : VWRAP - line width               : 0280
+$FF8260.b : ST shift mode                    : 00
+$FF8264.w : Horizontal scroll register       : 0000
+$FF8266.w : Falcon shift mode                : 0100
+
+$FF8280.w : HHC - Horizontal Hold Counter    : 0000
+$FF8282.w : HHT - Horizontal Hold Timer      : 018e
+$FF8284.w : HBB - Horizontal Border Begin    : 011d
+$FF8286.w : HBE - Horizontal Border End      : 002d
+$FF8288.w : HDB - Horizontal Display Begin   : 0000
+$FF828A.w : HDE - Horizontal Display End     : 0119
+$FF828C.w : HSS - Horizontal SS              : 012e
+$FF828E.w : HFS - Horizontal FS              : 0000
+$FF8290.w : HEE - Horizontal EE              : 0000
+
+$FF82A0.w : VFC - Vertical Frequency Counter : 0000
+$FF82A2.w : VFT - Vertical Frequency Timer   : 0419
+$FF82A4.w : VBB - Vertical Border Begin      : 03ff
+$FF82A6.w : VBE - Vertical Border End        : 003f
+$FF82A8.w : VDB - Vertical Display Begin     : 003f
+$FF82AA.w : VDE - Vertical Display End       : 03ff
+$FF82AC.w : VSS - Vertical SS                : 0415
+
+$FF82C0.w : VCO - Video control              : 0186
+$FF82C2.w : VMD - Video mode                 : 0008
+
+-------------------------
+Video base  : 00369f00
+Video count : 00000000
+Palette type: Falcon ($FF9800)

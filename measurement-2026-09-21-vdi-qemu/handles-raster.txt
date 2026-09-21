@@ -1,0 +1,4 @@
+records: {'TT': 59, 'NEWTOS-QEMU': 59}
+  TT: pairs (before, after) = {(2, 2): 59}
+  NEWTOS-QEMU: pairs (before, after) = {(2, 2): 59}
+  NEWTOS-QEMU vs TT: 0 records with a different handle pair
