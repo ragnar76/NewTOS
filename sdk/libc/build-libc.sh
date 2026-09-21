@@ -24,6 +24,9 @@
 #   - Arch shims in sdk/libc/newtos-arch/ replace m68k-only assembly:
 #       memops.c  -> memcpy/memmove/memset/bcopy/bzero (were bcopy.S/memset.S)
 #       proc.S    -> _exit/_Exit/__libc_exit via the Pterm trap (was libc_exit.S)
+#       setjmp.S  -> sigsetjmp/setjmp/siglongjmp/longjmp per AAPCS64 (was the
+#                    m68k mintlib/setjmp.S); jmp_buf grows to long[22] in the
+#                    overlay include/setjmp.h (TASK/T07)
 #       heap_init.c -> points mintlib's malloc arena at the free TPA region.
 #       getcookie.c -> Getcookie() via the Ssystem trap (was m68k getcookie.S,
 #                      which scans the _p_cookies sysvar / trap #1). Pulled by
@@ -34,6 +37,7 @@
 #       stdio/vfprintf.c         LP64 is_longlong assignment fix (SET_IS_LONGLONG)
 #       include/mint/{osbind,mintbind,falcon,metados}.h  trap-macro retarget
 #       include/{features,linker}.h  generated config headers
+#       include/setjmp.h         jmp_buf = long[22] on AArch64 (setjmp.S layout)
 #   - sdk/libc/crt0.S: libc-aware crt0 (sets SP from p_hitpa, calls
 #     __libc_init_heap, then main) -- distinct from sdk/crt0.S used by the
 #     libc-less examples.
@@ -191,6 +195,12 @@ lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
     -c "$LIBC/newtos-arch/heap_init.c" -o "$OBJ/arch__heapinit.o" || exit 1
 "$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
     -c "$LIBC/newtos-arch/proc.S"      -o "$OBJ/arch__proc.o"     || exit 1
+# setjmp/longjmp -- the AArch64 retarget of mintlib/setjmp.S (m68k, never
+# assembled here). Reads mintlib's own _sigmask (signal/initsig.c) and __mint
+# (mintlib/globals.c), so both archive members resolve it; jmp_buf is the
+# overlay include/setjmp.h's long[22]. Host-checked by tests/setjmp-host.sh.
+"$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
+    -c "$LIBC/newtos-arch/setjmp.S"    -o "$OBJ/arch__setjmp.o"   || exit 1
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/do_fstat.c"  -o "$OBJ/arch__do_fstat.o" || exit 1
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \

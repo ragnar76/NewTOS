@@ -73,6 +73,7 @@ archive → link a test client.
 | `sdk/libc/build-libc.sh` | the directories in `DIRS` (`:109`), minus `EXCLUDE` (`:135`) and the test/skeleton names (`:151`) | `-O2 -D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -D__NO_LONG_DOUBLE_MATH` (`:101-104`); `-DVERSION="0.60.1"` for `ident.c` (`:157-161`) | `sdk/libc/libc.a` (`:221`) | `sdk/libc/tests/libtest.c` → `build/libtest.NCP` |
 | `sdk/gemlib/build-gemlib.sh` | gemlib's `SRCFILES` `COBJS`, expanded with `make` (`:129-135`) | `-O2 -D__NEWTOS__` (`:115-117`); `mt_gem.h` generated from `mt_gem.h.in` with `@MAJOR@=0 @MINOR@=44` (`:91-95`) | `sdk/gemlib/gemlib.a` (`:168`) | `sdk/gemlib/tests/gemtest.c` → `build/gemtest.NCP` |
 | `sdk/cflib/build-cflib.sh` | cflib's `SRCFILES` `COBJS` (`:119-125`) | `-O2 -D__NEWTOS__` (`:106-108`) | `sdk/cflib/cflib.a` (`:158`) | `sdk/cflib/tests/cftest.c` → `build/cftest.NCP` |
+| `sdk/libm/build-libm.sh` (T07) | OpenLibm's `src/`, `aarch64/`, `bsdsrc/` `Make.files`, expanded with `make` without the long-double block | `-O2 -std=c99 -fno-strict-aliasing -D__BSD_VISIBLE`; tarball SHA-256 verified before extraction | `sdk/libm/libm.a` | `sdk/examples/mathtst.c` → `build/mathtst.NCP` (linked with `libc.a`) |
 
 The `newtos-arch/` shims are compiled and archived into `libc.a` after the
 mintlib objects (`build-libc.sh:183-217`): `memops.c` (memcpy/memmove/memset/
@@ -81,7 +82,9 @@ bcopy/bzero), `proc.S` (`_exit` via `Pterm`), `heap_init.c`, the lean
 `EXCLUDE`d mintlib files), `getcookie.c` (`Getcookie` over `Ssystem`),
 `getsysvar.c` (a plain 32-bit load — the sysvar area is in the process's own
 address space), `softfloat.c` (`__extenddftf2`, the one compiler-rt builtin
-`strtold` needs).
+`strtold` needs), and since T07 `setjmp.S` (the AArch64 `sigsetjmp`/`setjmp`/
+`siglongjmp`/`longjmp`, replacing the m68k `mintlib/setjmp.S`; `jmp_buf` is
+`long[22]` via the overlay `include/setjmp.h`).
 
 **Failure accounting (T02).** Each script prints the list of files that did
 not compile and compares it with `expected-failures.txt`; an unrecorded
@@ -103,7 +106,13 @@ inputs of every library below it (`lib-stale.sh:128-185`):
 libc.a    ← sdk/libc/overlay/  sdk/libc/newtos-arch/  sdk/include/  sdk/libc/build-libc.sh
 gemlib.a  ← sdk/gemlib/overlay/ sdk/gemlib/build-gemlib.sh          + all of libc's
 cflib.a   ← sdk/cflib/overlay/  sdk/cflib/build-cflib.sh            + all of gemlib's
+libm.a    ← sdk/libm/overlay/   sdk/libm/build-libm.sh              + all of libc's   (T07; a second branch off libc)
 ```
+
+Since T07 the app scripts also run `lib_ensure libm` and link `libm.a`
+between the GEM libraries and `libc.a` (`build-qed.sh`, `build-teradesk.sh`),
+with `-I sdk/libm/include -I sdk/libm/openlibm-0.8.8/include` after mintlib's
+include directory so that `<math.h>` resolves; see [07 §4](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all).
 
 The extracted vendor trees and the tarballs are deliberately **not** watched
 (`lib-stale.sh:40-47`). Consequence for a porter: after editing an overlay
@@ -128,8 +137,8 @@ before trusting them after an overlay change.
    `src/<name>.c` (`:113-118`). Two overlays exist today: `memory.c` and
    `set.c`. **Any** failure stops the build (`:130-139`).
 6. Assemble `sdk/libc/crt0.S` (`:143-144`).
-7. Link `crt0.o` + all objects + `--start-group cflib.a gemlib.a libc.a
-   --end-group` through `sdk/newtos.ld` → `sdk/apps/qed/build/QED.NAP`
+7. Link `crt0.o` + all objects + `--start-group cflib.a gemlib.a libm.a
+   libc.a --end-group` through `sdk/newtos.ld` → `sdk/apps/qed/build/QED.NAP`
    (`:149-153`); report undefined symbols (goal 0, `:159-167`).
 
 **Resource file — a manual step the script does not perform.**
@@ -171,8 +180,8 @@ artifact; `en/qed_en.rsc` converts to 40309 bytes.
    (libc provides `malloc`) (`:127-134`).
 5. Compile all from the shadow tree; any failure stops the build with the
    asm-vs-toolchain rule quoted above (`:136-161`).
-6. Link `crt0.o` + all objects + `--start-group gemlib.a libc.a --end-group`
-   → `build/DESKTOP.NAP` (`:164-187`).
+6. Link `crt0.o` + all objects + `--start-group gemlib.a libm.a libc.a
+   --end-group` → `build/DESKTOP.NAP` (`:164-187`).
 7. **Dist staging** (`:189-205`): `build/dist/` receives `DESKTOP.NAP`,
    `desktop.rsc` and `cicons.rsc` converted with `tools/mkrsc.py convert`
    (NRSC v13/LP64, loaded by the **kernel's** `rsrc_load`; `cicons.rsc` are

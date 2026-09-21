@@ -1,0 +1,7 @@
+reference	extracted	symbol
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/build/crt0.o	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(arch__heapinit.o)	__libc_init_heap
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/build/client.o	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(arch__setjmp.o)	sigsetjmp
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(arch__heapinit.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__globals.o)	_split_mem
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(arch__heapinit.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__heapbase.o)	_heapbase
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(arch__heapinit.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__stksiz.o)	_stksize
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/build/client.o	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(signal__initsig.o)	_sigmask

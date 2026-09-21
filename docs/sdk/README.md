@@ -20,7 +20,7 @@ Repository revision the documentation was written against:
 | [04-porting-anatomy.md](04-porting-anatomy.md) | The overlay rule ("the app source stays pristine"), how libc/gemlib/cflib are built, how QED, TeraDesk and CoreMark are built, resource files |
 | [05-abi-pitfalls.md](05-abi-pitfalls.md) | The trap ABI, and every LP64 / address-space / semantic trap that has bitten a port so far — with symptom and countermeasure |
 | [06-image-and-testing.md](06-image-and-testing.md) | Getting a binary onto the SD image, `AUTO`, `NEWDESK.INF` `#Z`, running in QEMU and on a real Pi 4, screendumps, serial log |
-| [07-mintlib-limits.md](07-mintlib-limits.md) | What the ported mintlib does not provide, derived from `sdk/libc/expected-failures.txt` and the test programs |
+| [07-mintlib-limits.md](07-mintlib-limits.md) | What the ported mintlib does not provide, derived from `sdk/libc/expected-failures.txt` and the test programs; `setjmp` and the libm (OpenLibm) since T07 |
 | [08-porting-checklist.md](08-porting-checklist.md) | The short, tickable list for porting an application |
 
 ## Thirty-second version
@@ -33,6 +33,7 @@ sdk/build.sh sdk/examples/hello.c /path/to/HELLO2.NCP
 sdk/libc/build-libc.sh   [client.c] [out.NCP]     # builds libc.a, links client
 sdk/gemlib/build-gemlib.sh [client.c] [out.NCP]   # builds gemlib.a, links client
 sdk/cflib/build-cflib.sh   [client.c] [out.NCP]   # builds cflib.a, links client
+sdk/libm/build-libm.sh     [client.c] [out.NCP]   # builds libm.a (OpenLibm), links client + libc
 sdk/apps/build-qed.sh                              # QED.NAP
 sdk/apps/build-teradesk.sh                         # DESKTOP.NAP + dist/
 sdk/apps/build-coremark.sh                         # CORE.NCP, COREVAL.NCP
@@ -44,8 +45,8 @@ cargo xtask run --board rpi4 --sd /tmp/sd.img       # add --window to see the sc
 
 The one rule that governs every port: **the application source is not
 edited**. Every change lives in `sdk/overlays/<app>/` (or in the library
-overlays `sdk/{libc,gemlib,cflib}/overlay/`) and is layered over the pristine
-tree at build time. The only exception is genuine m68k assembly, which must be
+overlays `sdk/{libc,gemlib,cflib,libm}/overlay/`) and is layered over the
+pristine tree at build time. The only exception is genuine m68k assembly, which must be
 retargeted. See [04-porting-anatomy.md](04-porting-anatomy.md).
 
 ## Where the scripts and sources live
@@ -60,6 +61,7 @@ sdk/
 ├── libc/                 mintlib-0.60.1 port (tarball + overlay/ + newtos-arch/)
 ├── gemlib/               gemlib-0.44.0 port (tarball + overlay/)
 ├── cflib/                cflib-21 port (tarball + overlay/)
+├── libm/                 OpenLibm 0.8.8 port (tarball + overlay/ + include/ math.h adapters), T07
 ├── overlays/{qed,teradesk,coremark}/   per-application overlays
 ├── apps/                 build scripts + vendored app trees (untracked)
 └── examples/             freestanding example programs

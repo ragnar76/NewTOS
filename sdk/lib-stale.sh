@@ -1,6 +1,6 @@
 # lib-stale.sh -- dependency declaration, staleness test and failure
-# bookkeeping shared by the ported libraries (libc = mintlib, gemlib, cflib)
-# and by every script that links against them.
+# bookkeeping shared by the ported libraries (libc = mintlib, gemlib, cflib,
+# libm = OpenLibm) and by every script that links against them.
 #
 # WHY THIS FILE EXISTS
 #
@@ -45,6 +45,10 @@
 #             sdk/libc/build-libc.sh
 #   gemlib.a  sdk/gemlib/overlay/, sdk/gemlib/build-gemlib.sh   + all of libc's
 #   cflib.a   sdk/cflib/overlay/,  sdk/cflib/build-cflib.sh     + all of gemlib's
+#   libm.a    sdk/libm/overlay/,   sdk/libm/build-libm.sh       + all of libc's
+#             (OpenLibm, TASK/T07: compiled against mintlib's headers, linked
+#             with libc.a; gemlib and cflib do not depend on it, so it is a
+#             second branch off libc, not a link in the gemlib/cflib chain)
 #
 # NOT watched, deliberately:
 #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
@@ -110,6 +114,7 @@ lib_archive() {
     libc)   printf '%s\n' "$LIB_SDK/libc/libc.a" ;;
     gemlib) printf '%s\n' "$LIB_SDK/gemlib/gemlib.a" ;;
     cflib)  printf '%s\n' "$LIB_SDK/cflib/cflib.a" ;;
+    libm)   printf '%s\n' "$LIB_SDK/libm/libm.a" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -119,6 +124,7 @@ lib_builder() {
     libc)   printf '%s\n' "$LIB_SDK/libc/build-libc.sh" ;;
     gemlib) printf '%s\n' "$LIB_SDK/gemlib/build-gemlib.sh" ;;
     cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
+    libm)   printf '%s\n' "$LIB_SDK/libm/build-libm.sh" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -130,6 +136,7 @@ lib_chain() {
     libc)   printf 'libc\n' ;;
     gemlib) printf 'libc\ngemlib\n' ;;
     cflib)  printf 'libc\ngemlib\ncflib\n' ;;
+    libm)   printf 'libc\nlibm\n' ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -155,6 +162,10 @@ lib_inputs() {
     cflib)
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/cflib/overlay"
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/cflib/build-cflib.sh"
+      ;;
+    libm)
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libm/overlay"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libm/build-libm.sh"
       ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac

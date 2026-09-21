@@ -1,0 +1,16 @@
+__addtf3
+__assert_fail
+__divtf3
+__extenddftf2
+__extendsftf2
+__gttf2
+__muldc3
+__mulsc3
+__multf3
+__netf2
+__subtf3
+__trunctfdf2
+__trunctfsf2
+_ctype
+memset
+scalbnl

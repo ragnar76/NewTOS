@@ -20,16 +20,18 @@ freestanding examples):
 | `C:\HELLO.NCP`, `C:\AUTO\HELLO.NCP` | `tools/mk-hello-ncp.py` (hand-crafted ELF) | the script | `:70-71` |
 | `C:\HELLO2.NCP`, `BIG.NCP`, `PHYSBASE.NCP`, `SCRFLIP.NCP`, `DTACHILD.NCP` | `sdk/examples/*.c` | `sdk/build.sh`, run **by the script** | `:78-136` |
 | `C:\LIBTEST.NCP`, `C:\CLOCKTST.NCP` | `sdk/libc/build/{libtest,clocktest}.NCP` | you: `sdk/libc/build-libc.sh [sdk/libc/tests/clocktest.c]` | `:143-166` |
+| `C:\SETJMPT.NCP`, `C:\MATHTST.NCP` (T07) | `sdk/libc/build/setjmptst.NCP`, `sdk/libm/build/mathtst.NCP` | you: `sdk/libc/build-libc.sh sdk/examples/setjmptst.c sdk/libc/build/setjmptst.NCP`, `sdk/libm/build-libm.sh` | `:169-200` |
 | `C:\COREMARK\{CORE,COREVAL}.NCP` | `sdk/apps/coremark/build/` | you: `sdk/apps/build-coremark.sh` | `:189-201` |
 | `C:\DUMPVDI.NAP`, `C:\VDI.TSV`, `C:\VDIDRAW.NAP` | `tosdump/build/` | you: `make -C tosdump all` | `:224-242` |
 | `C:\Apps\QED\{QED.NAP,qed.rsc}` | `sdk/apps/qed/build/` | you: `sdk/apps/build-qed.sh` **and** the manual `mkrsc.py convert` ([04](04-porting-anatomy.md)) | `:259-267` |
 | `C:\Apps\TERADESK\{DESKTOP.NAP,desktop.rsc,icons.rsc}` | `sdk/apps/teradesk/build/dist/` | you: `sdk/apps/build-teradesk.sh` | `:277-286` |
 | `C:\NEWDESK.INF` | the literal text `newdesk placeholder` | — | `:54` |
 
-Missing inputs are skipped with a `note:` line, not an error. Three
+Missing inputs are skipped with a `note:` line, not an error. Five
 environment switches also copy a program into `\AUTO\`:
-`SD_SCRFLIP_AUTO=1`, `SD_CLOCKTEST_AUTO=1`, `SD_COREMARK_AUTO=1`
-(`:117-120`, `:161-164`, `:195-199`).
+`SD_SCRFLIP_AUTO=1`, `SD_CLOCKTEST_AUTO=1`, `SD_SETJMPTST_AUTO=1`,
+`SD_MATHTST_AUTO=1`, `SD_COREMARK_AUTO=1` (`:117-120`, `:161-164`,
+`:179-182`, `:196-199`, `:230-233`).
 
 **Adding your own program.** The project rule is that the script is the
 single source of truth for the base image — add an install block to it

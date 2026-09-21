@@ -1,0 +1,10 @@
+TASK/T07-STATUS-DONE.MD
+measurement-2026-09-21-t07/
+sdk/examples/mathtst.c
+sdk/examples/setjmptst.c
+sdk/libc/newtos-arch/setjmp.S
+sdk/libc/overlay/include/setjmp.h
+sdk/libc/tests/setjmp-cases.h
+sdk/libc/tests/setjmp-host.c
+sdk/libc/tests/setjmp-host.sh
+sdk/libm/

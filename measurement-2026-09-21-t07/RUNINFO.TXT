@@ -1,0 +1,62 @@
+T07 -- setjmp/longjmp for AArch64 in libc.a (retarget of mintlib's m68k setjmp.S) and a libm for the SDK
+(OpenLibm 0.8.8 as sdk/libm/, lead decision 2026-09-21).
+Developer self-evidence, 2026-09-21. Branch desk-rebuild, base HEAD 53f588d, changes uncommitted in the
+tree, nothing flashed, NO kernel change (kernel8.img built for the QEMU run only; tos-api 64 / kernel 94
+warnings = baseline).
+
+PRODUCT (uncommitted; method/product-t07.diff + method/new-files.txt)
+  sdk/libc/newtos-arch/setjmp.S           sigsetjmp/setjmp/siglongjmp/longjmp, AAPCS64; mirror of mintlib/setjmp.S
+                                          (m68k): mask slot = savemask, then _sigmask|1 (Psigblock(0)|1 if __mint),
+                                          longjmp: Psigreturn if __mint, restore _sigmask (bit 0 cleared, Psigsetmask
+                                          if __mint), return val or 1. __mint == 0 on NewTOS. Assembles for macOS too.
+  sdk/libc/overlay/include/setjmp.h       jmp_buf = long[22] (176 B) on __aarch64__: x19-x28, x29, x30, sp, d8-d15, sigmask
+  sdk/libc/build-libc.sh                  arch__setjmp.o added to the shim list
+  sdk/libc/tests/setjmp-cases.h,-host.c,-host.sh   13 shared checks; host harness + runner (exit = failures)
+  sdk/examples/setjmptst.c                the 13 checks as a .NCP through mintlib's <setjmp.h>, Cconws verdicts
+  sdk/libm/openlibm-0.8.8.tar.gz          pinned (sha256 721bab18ff37160fd9e903eb211ff26fdee38c3d0041d556b07d76089c435d17,
+                                          tag commit 5fe399749f9276eaa0b8403e507470da05cbbb3f)
+  sdk/libm/openlibm-sources.sha256        provenance + license record;  sdk/libm/LICENSE.openlibm.md verbatim copy
+  sdk/libm/build-libm.sh                  sha256 check, extract + overlay, manifest from OpenLibm's Make.files via make
+                                          (src + aarch64 + bsdsrc, no long-double block, no ld128), expected-failures
+                                          gate (empty), libm.a, dangling-reference measurement, client link libm+libc
+  sdk/libm/include/{math,complex,fenv}.h  standard names -> openlibm_*.h; mintlib feature macros -> __BSD_VISIBLE/__XSI_VISIBLE
+  sdk/examples/mathtst.c                  23 checks with tolerances, own fixed-point printer, Cconws
+  sdk/lib-stale.sh                        libm: archive/builder/chain (libc -> libm)/inputs
+  sdk/apps/build-qed.sh, build-teradesk.sh   lib_ensure libm, -I libm/include -I openlibm/include, libm.a before libc.a
+  tools/make-sd-image.sh                  C:\SETJMPT.NCP, C:\MATHTST.NCP; SD_SETJMPTST_AUTO=1 / SD_MATHTST_AUTO=1 -> \AUTO\
+  sdk/.gitignore                          /libm/openlibm-0.8.8/, /libm/build/, /libm/libm.a
+  docs/sdk/07-mintlib-limits.md (§3,§4,§6,§7), 08-porting-checklist.md, 04-porting-anatomy.md, 05-abi-pitfalls.md B12,
+  06-image-and-testing.md, README.md;  docs/STATUS.md (Phase 15 row + Recent Decisions 2026-09-21);
+  TASK/T07.md ERLEDIGT + Abschluss, TASK/T07-STATUS-DONE.MD
+
+HOST TESTS (host-tests/)
+  setjmp-host.txt      sdk/libc/tests/setjmp-host.sh: 13 PASS, "0 check(s) failed", rc 0 (clang -O2 -fno-builtin, arm64).
+                       Sabotage (scratch copies of setjmp.S, not archived): drop `ldp d8, d9` or `ldp d14, d15` -> only
+                       "8 double values in d8-d15 ..." FAILs; drop `ldp x27, x28` or `ldp x19, x20` -> only "10 long
+                       values in x19-x28 ..." FAILs; drop `ldp x29, x30` -> crash. The register check has teeth.
+  xtask-test.log       cargo run -p xtask -- test: 906 passed / 0 failed / 1 ignored (unchanged; no kernel change).
+
+QEMU raspi4b (serial/qemu-raspi4b-auto-setjmptst-mathtst.log; method/run.sh)
+  [auto] running C:\AUTO\SETJMPT.NCP ... setjmptst: ALL PASS (13 checks) ... [launch] returned (program Pterm'd)
+  [auto] running C:\AUTO\MATHTST.NCP  ... mathtst: ALL PASS (23 checks)  ... [launch] returned (program Pterm'd)
+  [auto] 3 AUTO program(s) run ... [desk] desktop up (1 drives).  No EXC, no PANIC.
+
+BUILD CHAIN (build/)
+  build-libc-setjmptst.log   compiled OK=613 skipped=11 (of 624); failures match expected-failures.txt: 11/11/0;
+                             archived libc.a; LINK OK setjmptst.NCP (11504 bytes), 0 undefined (setjmptst-why.txt).
+  build-libm-mathtst.log     compiled OK=175 skipped=0 (of 175); failures match: 0/0/0; libm.a 335790 bytes;
+                             defined symbols 279, dangling 16; LINK OK mathtst.NCP (32968 bytes), 0 undefined
+                             (mathtst-why.txt: 28 libm members pulled).
+  build-qed.log              LINK OK QED.NAP, 0 undefined.   build-teradesk.log   LINK OK DESKTOP.NAP, 0 undefined.
+  xtask-build-rpi4.log       tos-api 64 / kernel 94 warnings (baseline, no kernel change).
+  make-sd-image.log          scratch image (job scratchpad, not archived, no *.img here).
+  artifacts.sha256           libc.a, libm.a, setjmptst.NCP, mathtst.NCP, QED.NAP, DESKTOP.NAP, tarball, kernel8.img.
+
+DANGLING REFERENCES (llvm-nm, 07-mintlib-limits.md §6 method)
+  libc-dangling-before-53f588d.txt = libc-dangling-after.txt: 33, identical list. setjmp.S's _sigmask/__mint resolve
+  inside the archive (signal/initsig.c, mintlib/globals.c).
+  libm-dangling.txt: 16 = __assert_fail _ctype memset (libc.a) + __addtf3 __subtf3 __multf3 __divtf3 __gttf2 __netf2
+  __extendsftf2 __extenddftf2 __trunctfsf2 __trunctfdf2 (binary128 compiler-rt: e_powf nan_mix, e_remainder(f),
+  s_fdim, s_nexttowardf) + __muldc3 __mulsc3 (casin/casinh/cacosh/catanh + f) + scalbnl (s_scalbln).
+  => powf, remainder(f), fdim(f), scalbln(f), nexttowardf, casin/casinh/cacosh/catanh(+f) unlinkable until the
+     soft-float helpers exist (separate item per the ticket). Nothing on the mathtst/QED/TeraDesk paths.

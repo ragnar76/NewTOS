@@ -1,0 +1,10 @@
+# expected-failures.txt -- OpenLibm files that are KNOWN not to compile for
+# NewTOS/AArch64, with the reason. Same format and same rule as
+# sdk/libc/expected-failures.txt: build-libm.sh compares the actual failure
+# set against this list on every run (sdk/lib-stale.sh, lib_check_failures);
+# an unrecorded failure stops the build before libm.a is written.
+#
+# Empty: every file of the manifest build-libm.sh selects (OpenLibm's src/,
+# bsdsrc/ and aarch64/ Make.files without the long-double block) compiles.
+# The long-double sources are not in the manifest at all (see build-libm.sh),
+# so they are not "failures" and are not listed here.

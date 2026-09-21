@@ -42,8 +42,10 @@ OVL="$SDK/overlays/qed" # our LP64 drop-in replacements for individual src/*.c f
 CF="$SDK/cflib"
 GEM="$SDK/gemlib"
 LIBC="$SDK/libc"
+LIBM="$SDK/libm"
 CFTOP="$CF/cflib-21"
 GEMTOP="$GEM/gemlib-0.44.0"
+LIBMTOP="$LIBM/openlibm-0.8.8"
 BUILD="$QED/build"
 OBJ="$BUILD/obj"
 OUT="$BUILD/QED.NAP"
@@ -57,13 +59,18 @@ mkdir -p "$OBJ"
 # chain and each library's real input set now live once in sdk/lib-stale.sh;
 # `lib_ensure cflib` walks libc -> gemlib -> cflib in that order, and does NOT
 # swallow what the library builds report (TASK/T02).
+# libm (OpenLibm, TASK/T07) is a second branch off libc -- gemlib/cflib do not
+# depend on it -- so it is ensured separately; it is linked so that a port
+# using <math.h> resolves without touching this script.
 . "$SDK/lib-stale.sh"
 lib_ensure cflib || exit 1
+lib_ensure libm  || exit 1
 MINT="$LIBC/mintlib/include"
-[ -d "$MINT" ]   || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
-[ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
-[ -d "$CFTOP" ]  || { echo "error: cflib headers missing ($CFTOP); run build-cflib.sh" >&2; exit 1; }
-[ -d "$QSRC" ]   || { echo "error: QED source missing ($QSRC)" >&2; exit 1; }
+[ -d "$MINT" ]    || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
+[ -d "$GEMTOP" ]  || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
+[ -d "$CFTOP" ]   || { echo "error: cflib headers missing ($CFTOP); run build-cflib.sh" >&2; exit 1; }
+[ -d "$LIBMTOP" ] || { echo "error: OpenLibm headers missing ($LIBMTOP); run build-libm.sh" >&2; exit 1; }
+[ -d "$QSRC" ]    || { echo "error: QED source missing ($QSRC)" >&2; exit 1; }
 
 # --- toolchain ---------------------------------------------------------------
 CLANG="${CLANG:-clang}"
@@ -87,8 +94,10 @@ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
         -fno-pic -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__
         -Wno-macro-redefined)
 # Include order: QED src, then cflib top (cflib.h), gemlib top (gem.h/macros.h),
-# mintlib include (stdio.h/mintbind.h), clang freestanding headers last.
-INCS=(-I"$QSRC" -I"$CFTOP" -I"$GEMTOP" -I"$MINT" -isystem "$RES")
+# mintlib include (stdio.h/mintbind.h), the libm adapters (math.h -> OpenLibm's
+# openlibm_math.h), clang freestanding headers last.
+INCS=(-I"$QSRC" -I"$CFTOP" -I"$GEMTOP" -I"$MINT"
+      -I"$LIBM/include" -I"$LIBMTOP/include" -isystem "$RES")
 
 echo "clang : $($CLANG --version | head -1)"
 echo "ar    : $AR"
@@ -143,14 +152,15 @@ fi
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" \
     -c "$LIBC/crt0.S" -o "$BUILD/crt0.o" || exit 1
 
-# --- link (crt0 + all QED objects + cflib.a + gemlib.a + libc.a) -------------
-# cflib -> gemlib -> libc dependency order; wrap in a group so any residual
-# back-reference between the three archives still resolves.
+# --- link (crt0 + all QED objects + cflib.a + gemlib.a + libm.a + libc.a) ----
+# cflib -> gemlib -> libc dependency order, libm.a before libc.a (it needs
+# libc's memset/_ctype/__assert_fail); wrap in a group so any residual
+# back-reference between the archives still resolves.
 rm -f "$OUT"
 "$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$OBJ"/*.o \
-    --start-group "$CF/cflib.a" "$GEM/gemlib.a" "$LIBC/libc.a" --end-group \
+    --start-group "$CF/cflib.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
     -o "$OUT" 2>"$BUILD/link.err"
 lr=$?
 

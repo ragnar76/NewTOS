@@ -1,6 +1,6 @@
 # NewTOS native C toolchain — tracking policy.
 #
-# Each ported library (libc = mintlib, gemlib, cflib) vendors its PRISTINE source
+# Each ported library (libc = mintlib, gemlib, cflib, libm = OpenLibm) vendors its PRISTINE source
 # as a tarball; build-*.sh extracts it and overlays our edits (overlay/). The
 # extracted tree, object files, and archive are build artifacts and are NOT
 # tracked — the tarball + overlay/ + build script + tests ARE. A clone builds
@@ -22,6 +22,9 @@
 /cflib/cflib-21/
 /cflib/build/
 /cflib/cflib.a
+/libm/openlibm-0.8.8/
+/libm/build/
+/libm/libm.a
 **/*.o
 *.NCP
 *.NAP

@@ -431,7 +431,10 @@ route through hardware `double` (`%Lf` is handled as double)
 (`sdk/libc/build-libc.sh:19-25`); the one builtin `strtold` still needs,
 `__extenddftf2`, is provided in `sdk/libc/newtos-arch/softfloat.c`. Avoid
 `long double` arithmetic in application code; anything else quad-precision is
-an undefined symbol.
+an undefined symbol. The same cut shapes the libm (T07): OpenLibm's `long
+double` functions and `ld128/` are not built, and the few `double`/`float`
+members that touch `long double` internally (`powf`, `remainder`, `fdim`,
+`scalbln`, `nexttowardf`) are unlinkable — [07 §4/§6](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all).
 
 ### B13. clang drops cross-translation-unit `alias` attributes
 

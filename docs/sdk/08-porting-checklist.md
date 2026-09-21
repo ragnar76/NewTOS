@@ -5,13 +5,17 @@ Tick each line; every line points at the section that explains it.
 ## Before touching anything
 
 - [ ] The app is C (plus at most inline m68k asm) and needs only mintlib /
-      gemlib / cflib — not sockets, threads, `setjmp`, or a libm
+      gemlib / cflib / libm — not sockets, threads, `long double` math or the
+      handful of libm members that need compiler-rt (`powf`, `remainder`,
+      `fdim`, `scalbln`, `nexttowardf`, `casin`/`casinh`/`cacosh`/`catanh`);
+      `setjmp`/`longjmp` and the C99 double/float libm are available since T07
       → [07 §3–4](07-mintlib-limits.md#3-mintlib-assembly-that-is-never-assembled)
 - [ ] Toolchain present: `clang`, the pinned Rust nightly with
       `llvm-tools-preview` (`rust-lld`, `llvm-ar`, …), `make`, `python3`
       → [02](02-prerequisites.md)
 - [ ] `sdk/libc/build-libc.sh`, `sdk/gemlib/build-gemlib.sh`,
-      `sdk/cflib/build-cflib.sh` run clean: `failures match expected-failures.txt`
+      `sdk/cflib/build-cflib.sh`, `sdk/libm/build-libm.sh` run clean:
+      `failures match expected-failures.txt`
       → [04 §library chain](04-porting-anatomy.md#the-library-chain-and-its-staleness-test)
 
 ## Setting the port up

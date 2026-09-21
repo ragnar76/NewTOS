@@ -166,6 +166,41 @@ else
   echo "note: sdk/libc/build/clocktest.NCP not built; C:\\CLOCKTST.NCP skipped"
 fi
 
+# setjmp/longjmp proof (TASK/T07): SETJMPT.NCP runs the checks in
+# sdk/libc/tests/setjmp-cases.h against the archive's AArch64 setjmp.S through
+# mintlib's <setjmp.h> and prints one PASS/FAIL line per check over Cconws --
+# see sdk/examples/setjmptst.c. Copied in if already built
+# (`sdk/libc/build-libc.sh sdk/examples/setjmptst.c sdk/libc/build/setjmptst.NCP`).
+# Set SD_SETJMPTST_AUTO=1 to also drop it into \AUTO\ for a serial-verifiable run.
+SETJMPT_NCP="$SCRIPT_DIR/../sdk/libc/build/setjmptst.NCP"
+if [ -f "$SETJMPT_NCP" ]; then
+  cp "$SETJMPT_NCP" "$V/SETJMPT.NCP"
+  echo "installed C:\\SETJMPT.NCP (setjmp/longjmp proof)"
+  if [ "${SD_SETJMPTST_AUTO:-0}" = "1" ]; then
+    cp "$SETJMPT_NCP" "$V/AUTO/SETJMPT.NCP"
+    echo "  + \\AUTO\\SETJMPT.NCP (runs at boot)"
+  fi
+else
+  echo "note: sdk/libc/build/setjmptst.NCP not built; C:\\SETJMPT.NCP skipped"
+fi
+
+# libm proof (TASK/T07): MATHTST.NCP checks sqrt/sin/pow/floor/frexp/atan2/...
+# from libm.a (OpenLibm, sdk/libm/) against closed-form values and prints one
+# PASS/FAIL line per check over Cconws -- see sdk/examples/mathtst.c. Copied in
+# if already built (`sdk/libm/build-libm.sh`). Set SD_MATHTST_AUTO=1 to also
+# drop it into \AUTO\.
+MATHTST_NCP="$SCRIPT_DIR/../sdk/libm/build/mathtst.NCP"
+if [ -f "$MATHTST_NCP" ]; then
+  cp "$MATHTST_NCP" "$V/MATHTST.NCP"
+  echo "installed C:\\MATHTST.NCP (libm proof)"
+  if [ "${SD_MATHTST_AUTO:-0}" = "1" ]; then
+    cp "$MATHTST_NCP" "$V/AUTO/MATHTST.NCP"
+    echo "  + \\AUTO\\MATHTST.NCP (runs at boot)"
+  fi
+else
+  echo "note: sdk/libm/build/mathtst.NCP not built; C:\\MATHTST.NCP skipped"
+fi
+
 # CoreMark 1.0 (EEMBC) — the CPU benchmark, built UNMODIFIED apart from its own
 # porting layer (sdk/overlays/coremark/newtos/), which is what CoreMark's run
 # rules put under the porter's control. Two executables, because NewTOS has no

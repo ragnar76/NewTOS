@@ -1,0 +1,15 @@
+PASS  sigsetjmp returns 0 first, then 7 after siglongjmp(env, 7)
+PASS  siglongjmp(env, 0) makes sigsetjmp return 1
+PASS  raw setjmp/longjmp pair: 0, then 42
+PASS  sigsetjmp(env, 1) stores _sigmask with bit 0 set (0x51)
+PASS  siglongjmp restores _sigmask (0x50) when the mask was saved
+PASS  sigsetjmp(env, 0) leaves the mask slot 0
+PASS  siglongjmp leaves _sigmask alone when the mask was not saved
+PASS  raw setjmp() leaves the mask slot 0
+PASS  raw longjmp() leaves _sigmask alone
+PASS  10 long values in x19-x28 survive a longjmp out of a register-clobbering callee
+PASS  8 double values in d8-d15 survive the same longjmp
+PASS  nested setjmp: inner jump returns to the inner frame, outer jump leaves it
+PASS  the frame is intact after unwinding four frames
+setjmp-host: 0 check(s) failed
+rc=0

@@ -48,6 +48,8 @@ OVL="$SDK/overlays/teradesk" # our asm-retarget/ABI drop-in replacements for
                              # individual .c/.h files (outside the vendored tree)
 GEM="$SDK/gemlib"
 LIBC="$SDK/libc"
+LIBM="$SDK/libm"
+LIBMTOP="$LIBM/openlibm-0.8.8"
 GEMTOP="$GEM/gemlib-0.44.0"
 BUILD="$TERA/build"
 TREE="$BUILD/tree"           # shadow tree: vendored files + overlays, symlinked
@@ -59,11 +61,16 @@ mkdir -p "$OBJ"
 # TeraDesk links gemlib -> libc. The chain and each library's real input set
 # live once in sdk/lib-stale.sh (TASK/T03); `lib_ensure gemlib` walks
 # libc -> gemlib in that order and does not swallow what they report (TASK/T02).
+# libm (OpenLibm, TASK/T07) is a second branch off libc -- gemlib does not
+# depend on it -- so it is ensured separately; it is linked so that a port
+# using <math.h> resolves without touching this script.
 . "$SDK/lib-stale.sh"
 lib_ensure gemlib || exit 1
+lib_ensure libm   || exit 1
 MINT="$LIBC/mintlib/include"
-[ -d "$MINT" ]   || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
-[ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
+[ -d "$MINT" ]    || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
+[ -d "$GEMTOP" ]  || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
+[ -d "$LIBMTOP" ] || { echo "error: OpenLibm headers missing ($LIBMTOP); run build-libm.sh" >&2; exit 1; }
 [ -d "$TERA" ]   || { echo "error: TeraDesk source missing ($TERA)" >&2; exit 1; }
 
 # --- toolchain ---------------------------------------------------------------
@@ -93,9 +100,10 @@ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -Os
         -fomit-frame-pointer -fno-pic -fno-builtin -nostdinc -funsigned-char
         -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined)
 # Include order: shadow tree root, its xdialog + utility libs, gemlib top
-# (gem.h/portaes.h/portvdi.h/tos.h), mintlib include, clang headers last.
+# (gem.h/portaes.h/portvdi.h/tos.h), mintlib include, the libm adapters
+# (math.h -> OpenLibm's openlibm_math.h), clang headers last.
 INCS=(-I"$TREE" -I"$TREE/library/xdialog" -I"$TREE/library/utility"
-      -I"$GEMTOP" -I"$MINT" -isystem "$RES")
+      -I"$GEMTOP" -I"$MINT" -I"$LIBM/include" -I"$LIBMTOP/include" -isystem "$RES")
 
 echo "clang: $($CLANG --version | head -1)"
 echo "abi  : LP64 (8-byte long/pointer, ELF64 AArch64)"
@@ -165,13 +173,14 @@ fi
     -c "$LIBC/crt0.S" -o "$BUILD/crt0.o" || exit 1
 
 # --- link (crt0 + all TeraDesk objects + gemlib.a + libc.a) ------------------
-# gemlib -> libc dependency order; wrap in a group so any residual
-# back-reference between the two archives still resolves.
+# gemlib -> libc dependency order, libm.a before libc.a (it needs libc's
+# memset/_ctype/__assert_fail); wrap in a group so any residual
+# back-reference between the archives still resolves.
 rm -f "$OUT"
 "$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$OBJ"/*.o \
-    --start-group "$GEM/gemlib.a" "$LIBC/libc.a" --end-group \
+    --start-group "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
     -o "$OUT" 2>"$BUILD/link.err"
 lr=$?
 
