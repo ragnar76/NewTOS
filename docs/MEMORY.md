@@ -1846,6 +1846,204 @@ Code: `kernel/src/hal/framebuffer.rs` (`mem_base`/`pages`/`set_draw_base`/
 
 ---
 
+## ADR-024: VDI truecolor workstation — Falcon 16-bit RGB565 device pixel over a 32-bpp XRGB8888 physical framebuffer
+
+**Date:** 2026-07-22 (lands, `09c9ddc`; block complete 2026-07-23, `11ca57e`).
+**Documented retroactively 2026-09-21 (A101)** — the decision shipped without
+a contemporaneous ADR; this entry records it after the fact from the landed
+code and the design doc that preceded it.
+**Status:** Accepted (implemented and shipped).
+**Phase:** cross-cutting (VDI workstation/attributes/raster backend, AES
+`appl_init` `ap_planes`).
+
+### Context
+
+NewTOS's committed EmuTOS reference build profile is **Falcon030/TOS4**
+(`make 512`, the full `CONF_WITH_*` set — `docs/MEMORY.md`
+[[emutos-target-profile-falcon-tos4]]), confirmed statically in
+`docs/analysis/aes-audit/emutos-config-profile.md`: `CONF_WITH_VDI_16BIT`
+defaults to `1` in that profile (config.h:1628-1630) and **requires**
+`CONF_WITH_VIDEL=1` — EmuTOS hard-errors the build otherwise
+(`include/config.h:2199-2200`,
+`docs/analysis/aes-audit/emutos-config-profile.md:80,150`). The profile's
+own canonical on/off list states the consequence plainly: "`CONF_WITH_VIDEL`
++ `CONF_WITH_VDI_16BIT` | 1 / 1 | VDI-16-Bit-Truecolor-Modi MÜSSEN real sein"
+(`emutos-config-profile.md:314`).
+
+Before this decision NewTOS's VDI backend was a bring-up **16-colour**
+palette model: a fixed 16-entry GEM palette
+(`kernel/src/vdi_backend.rs`, pre-`09c9ddc`, `DEFAULT_PALETTE: [(u8,u8,u8);
+16]`, `NUM_COLORS = 16`) — a legitimate EmuTOS mode (ST/STe 4-plane), but not
+the profile NewTOS had committed to.
+
+EmuTOS's truecolor VDI is gated purely on `v_planes > 8`
+(`TRUECOLOR_MODE`, `vdi/vdi_defs.h:22`), and the only concrete truecolor
+value any real EmuTOS target reports is **16**: `get_videl_bpp`
+(`bios/videl.c:320-341`, `SPS_HICOLOR → bits_per_pixel = 16`, reached from
+`videl_get_current_mode_info`, `:969-974`). There is **no 24-/32-bit VDI
+path in EmuTOS at all** — the truecolor branch is everywhere bound to
+`v_planes > 8`, and 16 is the only value it is ever fed
+(`docs/analysis/vdi-audit/truecolor-conversion-plan.md` §0/§1.1, Researcher,
+2026-07-22 — the design doc this ADR retroactively records the decision
+for).
+
+Trigger: a user decision, recorded in session memory as
+[[vdi-truecolor-workstation]] — "convert VDI from 16-color palette to
+Falcon truecolor (EmuTOS `CONF_WITH_VDI_16BIT` = 16-bit RGB565; backend
+maps to 32-bpp)".
+
+### Decision
+
+NewTOS's VDI presents a **Falcon truecolor workstation**, matching EmuTOS's
+`CONF_WITH_VDI_16BIT` semantics exactly:
+
+1. **Device pixel** (the VDI-visible colour unit — what a program's
+   memory-MFDB, `v_get_pixel`, and the pen model address) is EmuTOS's 16-bit
+   RGB565-like word, `RRRRRGGGGG0BBBBB` (green LSB is `OVERLAY_BIT`,
+   `vdi/vdi_defs.h:153-158`), reached through **256 logical pens**
+   (`NUM_COLORS = 256`, `kernel/src/vdi_backend.rs:33`) and **16 planes**
+   (`PLANES = 16` = `v_planes`, `:40`) — both figures satisfy EmuTOS's own
+   formula simultaneously (`DEV_TAB[13] = (v_planes<8)?(1<<v_planes):256`,
+   `vdi_control.c:206`; `INQ_TAB[4] = v_planes`, `:210`).
+2. **Pens 0..15 keep the classic GEM-16 palette values**
+   (`DEFAULT_PALETTE`/`VIDEL_PALETTE1`) so existing desktop/AES rendering
+   does not regress; **pens 16..255 seed from EmuTOS's own
+   `videl_palette2[240]`** default (`vdi/vdi_col.c:137-199`), copied
+   verbatim.
+3. **The physical Pi framebuffer stays a 32-bpp XRGB8888 store** — a
+   NewTOS-internal implementation detail, not part of the VDI contract
+   (`docs/COMPATIBILITY.md`), because the BCM2711 VideoCore mailbox
+   interface has no native 16-bit-truecolor allocation mode to target
+   directly. Two conversion points bridge the two: `pal555_to_xrgb`
+   (draw → screen) and `device_to_rgb565`/`rgb565_to_device` (screen →
+   16-bit domain — lossless, because the screen is itself 5-bit-quantised)
+   (`kernel/src/vdi_backend.rs:174-182,397-424`).
+4. **The app-visible memory-MFDB wire format** (`fd_stand=0`,
+   `fd_nplanes=16`) is real packed **16 bits/pixel**, not the prior 32-bpp
+   chunky model — this is **contract**, not internal: a Falcon-truecolor
+   program that builds its own MFDB and pokes RGB565 pixels directly (image
+   viewer, sprite editor) observes exactly this byte layout, because
+   `vro_cpyfm16`/`vrt_cpyfm16` operate raw on `UWORD*`
+   (`vdi/vdi_raster.c:975-1221,1226-1326`).
+5. **`ap_planes`** (AES globals) follows `planes()` (= 16), not
+   `log2(num_colors())`, matching EmuTOS `gemsuper.c:97` /
+   `gemgraf.c:395` / `gemgsxif.c:497`.
+
+### Rationale
+
+- **Matches the committed reference profile, not an arbitrary richer
+  palette.** `CONF_WITH_VIDEL` + `CONF_WITH_VDI_16BIT` = 1/1 in NewTOS's
+  Falcon030/TOS4 reference build (`emutos-config-profile.md:150,314`);
+  EmuTOS itself refuses to build `VDI_16BIT` without `VIDEL`
+  (`config.h:2199-2200`), so this is one package, not two independent
+  choices.
+- **EmuTOS has exactly one truecolor VDI shape** (16-bit, `v_planes > 8`);
+  there is no design freedom in the device-pixel format once "truecolor" is
+  chosen (`vdi_defs.h:22`, `bios/videl.c:320-341`). A 24-/32-bit VDI device
+  pixel would be inventing an EmuTOS mode that does not exist — CLAUDE.md
+  Rule 1 forbids writing spec/code from memory of "what a modern truecolor
+  VDI could do" instead of the source.
+- **The contract/internals split is already established practice**
+  (`docs/COMPATIBILITY.md`): the BCM2711 VideoCore has no 16-bit truecolor
+  allocation mode, and forcing the physical store to 16-bit would trade a
+  clean internal detail for no observable benefit — the two conversion
+  points are the entire cost of keeping the 32-bpp physical store.
+- **3D rendering quality is itself colour-count-gated in EmuTOS**: `init_3d`
+  (`aes/gemoblib.c:1327-1343`) selects `LWHITE` (= 8, `obdefs.h:117`) over
+  plain `WHITE` when `gl_ws.ws_ncolors > LWHITE` (`gemoblib.c:1336`), i.e.
+  AES's own 3D look already assumes headroom above a small fixed palette.
+  **Inferred, not directly EmuTOS-cited:** at exactly 16 pens this specific
+  branch was already satisfied (16 > 8), so this branch alone was not
+  literally broken under the old 16-colour model — the practical argument
+  for 256 pens is headroom **beyond** the fixed GEM-16 (colour icons, any
+  future extended 3D/desktop colour use), not this one branch; see
+  Alternatives considered for the honest version of this point.
+
+### Consequences
+
+- **Positive:** `DEV_TAB[13] = 256`, `INQ_TAB[4] = 16`
+  (`tos-api/src/vdi/workstation.rs`) match D-VDI-7
+  (`docs/api/vdi/_discrepancies.md`, resolved 2026-09-04) exactly — no
+  further VDI-side change needed for that discrepancy.
+- **Positive:** pens 16..255 give 240 free pens above the fixed GEM-16 for
+  colour icons (`CONF_WITH_COLOUR_ICONS`, default on in the reference
+  profile) and any future extended 3D/desktop colour use, without evicting
+  or reinterpreting the 16 pens desktop/AES already draw with.
+- **Negative:** the app-visible memory-MFDB wire format changed from 32-bpp
+  chunky to packed 16-bit RGB565 (TC3b, `3d4ab71`) — a structural,
+  **contract-level** change, invalidating any prior assumption of a 32-bpp
+  memory-MFDB.
+- **Negative:** the palette moved from one backend-global array to a
+  per-`Vwk` structure (`VwkExt.req_col`/pseudo-palette, TC2, `abb2280`) —
+  more state per open workstation, matching EmuTOS's own per-workstation
+  palette (`vdi_col.c:601-614`).
+- **Neutral:** the physical Pi framebuffer format (32-bpp XRGB8888) is
+  unchanged; only the VDI-visible device-pixel model changed.
+
+### Alternatives considered
+
+- **Keep the 16-colour/4-plane bring-up model.** Rejected: does not match
+  the committed Falcon030/TOS4 reference profile (`CONF_WITH_VDI_16BIT=1`),
+  and pens 0..15 alone leave no headroom for colour icons or any
+  per-application extended palette without contending with the desktop's
+  own fixed GEM-16 assignments — that headroom argument is the concrete
+  cost, not a broken `init_3d` branch (see Rationale's inferred caveat).
+  **Not independently re-verified for this ADR:** whether TeraDesk's actual
+  `cicons.rsc` icons — each measured as a single 4-plane/16-colour on-disk
+  variant (`docs/api/aes/resource-fileselector.md:905-909`) — would
+  visibly clash with the desktop's own colours under the old 16-pen model;
+  flagged as the assumption behind this alternative's rejection, not a
+  measured regression.
+- **A 24-/32-bit VDI device pixel** (bypass EmuTOS's 16-bit model, expose
+  the physical 32-bpp store directly to programs). Rejected: EmuTOS has no
+  such mode (`vdi_defs.h:22`); this would be inventing TOS API behaviour
+  from memory of "what a modern truecolor VDI could do", which CLAUDE.md
+  Rule 1 forbids — the EmuTOS source is the specification, and it defines
+  exactly one truecolor shape.
+- **Ship geometry independence and truecolor together** (as one combined
+  ADR-017 change). Rejected at the time (ADR-017 "Alternatives considered":
+  "Ship geometry independence and real truecolor together: rejected —
+  bundling maximizes scope/risk for one change"): truecolor landed six days
+  after geometry independence (`09c9ddc`, 2026-07-22, vs. `c95ad37`,
+  2026-07-16) as its own, separately-verified change.
+
+### References
+
+- EmuTOS: `vdi/vdi_defs.h:22` (`TRUECOLOR_MODE`), `:153-158`
+  (`VwkExt.palette[256]`, device-pixel bit layout), `vdi/vdi_control.c:
+  206,210` (`DEV_TAB[13]`/`INQ_TAB[4]` formulae), `vdi/vdi_col.c:137-199,
+  601-614` (`videl_palette2`, `set_color16`), `vdi/vdi_raster.c:975-1221,
+  1226-1326` (`vro_cpyfm16`/`vrt_cpyfm16`, raw `UWORD*`), `bios/videl.c:
+  320-341` (`get_videl_bpp`), `aes/gemoblib.c:1327-1343` (`init_3d`),
+  `include/config.h:1628-1630,2198-2201` (`CONF_WITH_VDI_16BIT` default +
+  `CONF_WITH_VIDEL` hard-error).
+- NewTOS landing commits (all 2026-07-22/23): `09c9ddc` (TC1, foundation —
+  `planes()`/256-palette/`DEV_TAB`/`INQ_TAB`), `abb2280` (TC2, per-`Vwk`
+  palette + `vs`/`vq_color16`), `2f5cda2`/`3d4ab71` (TC3a/b, 5-bit draw path
+  + 16-bit memory-MFDB format), `516dc9a` (TC4, `vr_trnfm16`), `c7fcff2`
+  (TC5, cursor save-under via device pixels), `11ca57e` (TC1-TC5 complete +
+  V1 re-green). Code: `kernel/src/vdi_backend.rs:29-90` (`NUM_COLORS`,
+  `PLANES`, `VIDEL_PALETTE1`/`2`), `tos-api/src/vdi/workstation.rs:24-90,
+  141-245`.
+- Design doc: `docs/analysis/vdi-audit/truecolor-conversion-plan.md`
+  (Researcher, 2026-07-22).
+- Profile: `docs/analysis/aes-audit/emutos-config-profile.md:80,150,314`.
+- Resolved discrepancy: `docs/api/vdi/_discrepancies.md` D-VDI-7
+  (2026-09-04).
+- Spec sections corrected to cite this ADR (A101, 2026-09-21):
+  `docs/api/vdi/workstation/102-vq_extnd.md` (placeholder
+  `[ADR-0xx truecolor VDI]` replaced), `docs/api/vdi/raster/_raster.md`
+  §"Pi/BCM2711 binding" (A86, 2026-09-21, pointed at the then-missing ADR),
+  `docs/HARDWARE-PROFILE.md` §3.1/§4.
+- ADR-017 (geometry independence — the sibling, deliberately separate
+  decision; its "Colour truecolor is deliberately not bundled with this
+  change" / "Deferred: real truecolor VDI remains a documented future step"
+  is what this ADR fulfils).
+- Notes: [[vdi-truecolor-workstation]] (the triggering user decision),
+  [[vdi-draw-asm-optimization-later]] (a later, unaffected step).
+
+---
+
 ## Quirks Discovered
 
 Format: `QUIRK-NNN`, dated, with severity (low / medium / high / critical).

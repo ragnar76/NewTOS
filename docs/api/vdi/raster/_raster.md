@@ -527,12 +527,14 @@ NewTOS (`reference/NEWTOS-RASTER.BIN`).
 > `BOOT_WIDTH`/`BOOT_HEIGHT`; RPi4 falls back to it if the mailbox query
 > comes up empty, `bcm2711/framebuffer.rs:29-33`; QEMU uses it unconditionally,
 > `qemu_virt/ramfb.rs:80-81`). The table below reflects both corrections.
-> The rewrite below also could **not** find a dedicated `docs/MEMORY.md` ADR
-> for the truecolor VDI pivot to cite — the code itself only points at a
-> placeholder, `[ADR-0xx truecolor VDI]`
-> (`docs/api/vdi/workstation/102-vq_extnd.md:198`) — so this section cites
-> the code and the already-resolved
-> [D-VDI-7](../_discrepancies.md) discrepancy instead; flagged, not guessed.
+> The rewrite below could **not**, at the time of this correction, find a
+> dedicated `docs/MEMORY.md` ADR for the truecolor VDI pivot to cite — the
+> code itself only pointed at a placeholder, `[ADR-0xx truecolor VDI]`
+> (`docs/api/vdi/workstation/102-vq_extnd.md:198`) — so this section cited
+> the code and the already-resolved [D-VDI-7](../_discrepancies.md)
+> discrepancy instead; flagged, not guessed. **Resolved (A101, 2026-09-21,
+> same day):** `docs/MEMORY.md` **ADR-024** now records that decision; the
+> placeholder is replaced.
 
 When a program passes `fd_addr == 0` (NULL MFDB), the source/destination is
 the physical screen (`tos-api/src/vdi/raster.rs:39-42,59-61`). NewTOS

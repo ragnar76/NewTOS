@@ -396,23 +396,22 @@ patched values:
 |-----|-----------|--------------|--------|
 | 0 | x res − 1 | `width()-1` (**1919** at today's default) | `xres-1` (`workstation.rs:142,195`) |
 | 1 | y res − 1 | `height()-1` (**1079** at today's default) | `yres-1` (`workstation.rs:143,196`) |
-| 3 | pixel width (µm) | `get_std_pixel_size(xres,yres)` (live-resolution-derived) | `workstation.rs:193,197`; see mismatch note 2 below (still ROM-default in an earlier revision of this claim — re-verify, not re-checked in A86) |
-| 4 | pixel height (µm) | `get_std_pixel_size(xres,yres)` (live-resolution-derived) | `workstation.rs:193,198`; ditto |
+| 3 | pixel width (µm) | `get_std_pixel_size(xres,yres)` (live-resolution-derived) — **278** at the 1920×1080 default | `workstation.rs:193,197`; confirmed patched, mismatch note 2 below resolved (A101, 2026-09-21) |
+| 4 | pixel height (µm) | `get_std_pixel_size(xres,yres)` (live-resolution-derived) — **278** at the 1920×1080 default | `workstation.rs:193,198`; ditto |
 | 13 | # simultaneous colours | **256** | `ncol` (`workstation.rs:144,200`); EmuTOS `(v_planes<8)?(1<<v_planes):256` (`vdi_control.c:206`) — 256 for `v_planes=16` |
 | 14 | # GDPs | 10 | ROM (`workstation.rs:27`) |
 | 35 | colour capable (0=mono) | **1** | `planes==1 → 0, else 1` (`workstation.rs:145,201`) |
 | 39 | palette size | **0** (`PALETTE_PRECISION`) | `workstation.rs:30,202`; EmuTOS `get_palette()` "no discrete palette" for a Videl truecolor mode without `VIDEL_COMPAT` (`bios/screen.c:846`) — **not** `ncol`, see mismatch note 4 below (now resolved, not just flagged) |
 | 44 | workstation type | 2 (in/out) | ROM |
 
-Beyond `[3]`/`[4]`'s pixel-size-in-µm question (mismatch note 2, unrelated
-to the colour model and **not re-verified in this pass**), NewTOS'
-`DEV_TAB[3,4]` are also reported by `docs/api/vdi/_discrepancies.md` D-VDI-7
-as "278/278 via `get_std_pixel_size`" — i.e. **patched**, contradicting
-mismatch note 2's "left at the ROM default, never patched" below. This
-inconsistency between two spec locations was found while re-validating this
-section for A86; it concerns pixel geometry in microns, not the colour
-model this ticket scopes, so it is flagged here and left unresolved (see
-the report's out-of-scope observations).
+`[3]`/`[4]`'s pixel-size-in-µm question is **resolved (A101, 2026-09-21)**:
+the inconsistency A86 found and flagged unresolved — mismatch note 2 below
+claiming "left at the ROM default, never patched" vs.
+`docs/api/vdi/_discrepancies.md` D-VDI-7 claiming "278/278 via
+`get_std_pixel_size`", i.e. patched — is settled in D-VDI-7's favour. The
+code patches `dev[3]`/`dev[4]` (`workstation.rs:193,197-198`); mismatch
+note 2's "never patched" claim was the stale one. See mismatch note 2 below
+for the full citation.
 
 `SIZ_TAB` (`workstation.rs:35-39`) is fixed: min/max char `0..7`, min
 line width `1` / max `40`, marker widths `15/120`, heights `11/88`. Note
@@ -441,14 +440,22 @@ entries — they come straight from the template.
    cases 3, § Configuration) states the cap is `NUM_VDI_HANDLES = 64/128`.
    NewTOS pins it at **16** (`vwk.rs:20`). Not a contract violation (the
    VDI cap is build-config), but the spec text should read 16 for NewTOS.
-2. **Pixel size `[3]/[4]` left at ROM `372`.** `init_wk` never patches
-   `DEV_TAB[3]/[4]` (`workstation.rs:101-106` patches only `[0],[1],[13],
-   [35],[39]`), so both report the Atari ROM default `372` (≈ 0.372 mm ≈
-   the ST's pixel pitch), **not** the true Pi/HDMI pixel size. The profile
-   §3.1 said "report truthfully or leave at ROM default"; NewTOS leaves it
-   at ROM. Acceptable for bring-up (few programs read pixel size); a
-   truthful value needs the physical display dimensions, which the mailbox
-   can report but NewTOS does not yet query.
+2. **Pixel size `[3]/[4]` left at ROM `372` — RESOLVED (A101, 2026-09-21),
+   was stale.** This item claimed `init_wk` never patches `DEV_TAB[3]/[4]`.
+   The **current** code does patch them: `let (pw, ph) =
+   get_std_pixel_size(xres, yres); dev[3] = pw; dev[4] = ph;`
+   (`tos-api/src/vdi/workstation.rs:193,197-198`), live-resolution-derived
+   (`get_std_pixel_size`, `workstation.rs:86-90`: `278` for `xres>=640`/
+   `yres>=400`, else `556`) — **278/278** at today's 1920×1080 default, not
+   the ROM `372`. This matches `docs/api/vdi/_discrepancies.md` D-VDI-7
+   ("`DEV_TAB[3,4]` are reported truthfully as 278/278 via
+   `get_std_pixel_size`, not left at the ROM `372`"), which was already
+   correct — this mismatch item's "never patched" claim was the stale one,
+   not D-VDI-7. Also corrects the "Resolved `DEV_TAB`/`SIZ_TAB` values"
+   table above (idx 3/4) and the paragraph beneath it, both of which
+   deferred to this item as "not re-verified". Superseded; left in place
+   (not deleted) as an audit trail per the ticket's "note the correction"
+   convention (matches how Mismatch #4 was resolved, A86, 2026-09-21).
 3. **`text_init` char metrics not applied.** EmuTOS's `text_init` fills
    `SIZ_TAB[0..3]`; NewTOS uses the template `0/7/0/7` directly. Values
    happen to match the common case; flagged for completeness.

@@ -70,28 +70,61 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
 > separate step). See `docs/MEMORY.md` ADR-017 for the full decision,
 > source analysis, and the open points flagged below.
 
-- **Geometry (current implementation, to be changed):** 640 × 480, **32 bpp
-  truecolor** physical framebuffer (`framebuffer.rs` `WIDTH=640, HEIGHT=480,
-  DEPTH_BPP=32`, compile-time constants). `virt:` same via `ramfb`. This is
-  the value **before** the ADR-017 geometry-independence work lands — per
-  the ADR's staging rule, it must **not** be raised until VDI/AES/desktop
-  render correctly at a live resolution ≠ 640×480 (verified by screendump).
-- **Geometry (target, ADR-017):** **1920×1080×32bpp (default)**, switchable
-  at runtime to **1280×800×32bpp**, both over the existing VideoCore mailbox
-  path — the RPi4 boot firmware already forces a 1920×1080@60 Hz HDMI signal
-  (`boot/rpi4/config.txt:12-18`, "DMT 1080p60"), so both target modes ride
-  the same physical wire timing (1280×800 is expected to be scaled/
-  letterboxed by VideoCore onto it — **empirical verification pending**, not
-  yet confirmed against real firmware behaviour). The VDI/AES/desktop stack
-  is largely already geometry-independent (reads live `RasterBackend`/
-  `Host::screen()` geometry per call, not a cached constant); the concrete
-  gaps that still block this (arena sizing, two desktop-side caches) are
+> **Correction (A101, 2026-09-21).** Both halves of the note above are now
+> stale. **Geometry independence landed 2026-07-16** (`c95ad37` "boot
+> natively at 1920x1080", `5ffaab0` "auto-detect the display geometry from
+> firmware", ADR-017 rev 2): the staging gate this section still describes
+> as pending is satisfied, and the compile-time `framebuffer.rs`
+> `WIDTH=640/HEIGHT=480` constants it cites no longer exist. **"Keeping the
+> existing 16-colour VDI palette model" is also superseded** — the VDI
+> backend converted to a Falcon truecolor workstation six days later
+> (`09c9ddc`..`11ca57e`, 2026-07-22/23, "TC1-TC5 truecolor conversion"):
+> `NUM_COLORS = 256`, `PLANES = 16` (`kernel/src/vdi_backend.rs:33,40`).
+> That decision had no `docs/MEMORY.md` ADR at the time it landed; **ADR-024**
+> records it retroactively. The bullets below are corrected against the live
+> code; see also `docs/api/vdi/raster/_raster.md` §"Pi/BCM2711 binding"
+> (A86, 2026-09-21) for the full device-pixel/palette citation trail this
+> section now points at instead of repeating.
+
+- **Geometry (current, live since 2026-07-16 — supersedes the
+  "640×480/to-be-changed" text this bullet used to carry):** the physical
+  framebuffer geometry is negotiated at boot, not compile-time-fixed.
+  Default **1920 × 1080**, **32 bpp** truecolor physical store
+  (`kernel/src/drivers/mod.rs:31-33`, `BOOT_WIDTH`/`BOOT_HEIGHT` — the
+  shared fallback/default for both boards). `board-rpi4`: the VideoCore
+  mailbox driver queries the firmware's actual physical (display) size at
+  boot (get-physical tag `0x00040003`) and renders natively at whatever
+  `config.txt` (`hdmi_group`/`hdmi_mode`) configured, falling back to
+  1920×1080 only if the query returns 0/none (`bcm2711/framebuffer.rs:
+  22-33`). `board-qemu-virt` (`ramfb`): no firmware display to query, so it
+  always uses the 1920×1080 default (`qemu_virt/ramfb.rs:80-81`).
+- **Geometry (1280×800 runtime switch, ADR-017 point 1):** a second,
+  runtime-switchable **1280×800×32bpp** mode over the same fixed
+  1920×1080@60 Hz HDMI wire signal (`boot/rpi4/config.txt:12-18`), expected
+  to be scaled/letterboxed by VideoCore onto it. **Not re-verified in this
+  pass** — A101 corrects the default-geometry and colour-model claims only,
+  not the switch mechanism; ADR-017 points 5/6 (switch-UI, `Getrez`/
+  `Setscreen` classic-rez mapping) remain open Lead decisions, unchanged by
+  this correction.
+- **Geometry independence (the engineering rule, unaffected by this
+  correction):** the VDI/AES/desktop stack is largely already
+  geometry-independent (reads live `RasterBackend`/`Host::screen()`
+  geometry per call, not a cached constant); the concrete gaps that still
+  block full compliance (arena sizing, two desktop-side caches) are
   enumerated in ADR-017's Consequences.
-- **Colour model (unchanged by ADR-017 for this round):** the VDI presents a
-  **16-colour, 4-plane** raster over the truecolor buffer (`RasterBackend`
-  maps 16 PEL indices → RGB), regardless of which of the two live
-  resolutions is active. A real truecolor VDI mode is a documented, later,
-  separate decision — not part of this geometry change.
+- **Colour model (superseded — was "unchanged by ADR-017 for this round",
+  now truecolor; landed 2026-07-22/23, ADR-024):** the VDI presents a
+  **Falcon truecolor workstation** over the 32bpp physical buffer — **256
+  logical pens** (`DEV_TAB[13]`/`ws_ncolors`, `NUM_COLORS = 256`) and **16
+  planes** (`DEV_TAB[35]`/`INQ_TAB[4]`, `PLANES = 16`,
+  `kernel/src/vdi_backend.rs:33,40`; both figures satisfy EmuTOS'
+  `vdi_control.c:206,210` formulae simultaneously — see
+  `docs/api/vdi/raster/_raster.md` §"Pi/BCM2711 binding" for the full
+  derivation), regardless of which of the two live resolutions is active.
+  The bullet this replaces described "a real truecolor VDI mode" as a "later,
+  separate decision — not part of this geometry change"; that later decision
+  has since been made and implemented (ADR-024), independently of the
+  geometry work.
 - **Screen base:** the mailbox-allocated framebuffer, CPU-visible high-half VA
   of the pixel store (the bus address is masked to an ARM physical address and
   offset into the high half; `framebuffer.rs:178-179`,
@@ -111,26 +144,41 @@ differ only in the peripheral drivers (`kernel/src/drivers/bcm2711/*` vs.
   one vs. a NewTOS-native query call) is deliberately **not** decided here;
   see `docs/api/xbios/04-getrez.md` / `05-setscreen.md` for the sketched
   options and D-078 in `docs/api/_discrepancies.md`.
-- **Palette / colour:** 16 CLUT entries emulated over 32bpp
-  (`vdi_backend.rs:21,26-43`; index 0 = white/background, 1 = black/
-  foreground). `vs_color` sets the PEL→RGB map in the standard 0..1000-per-gun
-  range (`vdi_backend.rs:142-151`). **Caveat (Step-2):** XBIOS
-  `Setpalette`/`Setcolor` write a *separate* ST-format shadow in
-  `xbios/screen.rs` that is **not** wired to the VDI CLUT, so they do not yet
-  change displayed colours — see the palette-spec bindings.
-- **VDI `DEV_TAB`/`INQ_TAB` answers (resolved from `tos-api/src/vdi/`):**
-  `DEV_TAB[0,1]` = live-framebuffer `width-1, height-1` (already patched from
-  `RasterBackend` at `v_opnvwk`/`vq_extnd` time, `workstation.rs:101-106` —
-  today `639, 479` for the still-640×480 implementation; this patch already
-  works for any width/height the framebuffer reports, no VDI-side change
-  needed for the ADR-017 geometry move); `DEV_TAB[13]` = **16** (colours);
-  `DEV_TAB[35]` = **1** (>1 plane); `DEV_TAB[39]` = **16** (palette size);
-  `INQ_TAB[4]` = **4** (planes, `log2(16)`); `INQ_TAB[5]` = **1** (colour
-  LUT). Pixel size in microns (`DEV_TAB[3,4]`) is **left at the ROM default
-  `372`** — not patched from the HDMI mode (`workstation.rs:101-106` patches
-  only `[0],[1],[13],[35],[39]`); truthful values need the mailbox
-  physical-display-size query, still deferred (independent of ADR-017).
-  Source: `tos-api/src/vdi/workstation.rs:24-56,100-117,155-160`.
+- **Palette / colour (correction, A101 — pen count only; the rest
+  unverified in this pass):** **256** pens emulated over 32bpp
+  (`vdi_backend.rs:33`, `NUM_COLORS`; supersedes the earlier "16 CLUT
+  entries" text, which cited a since-renumbered `vdi_backend.rs:21,26-43`);
+  index 0 = white/background, 1 = black/foreground. `vs_color` sets the
+  PEL→RGB map in the standard 0..1000-per-gun range. **Caveat (Step-2, not
+  re-verified in this pass):** XBIOS `Setpalette`/`Setcolor` write a
+  *separate* ST-format shadow in `xbios/screen.rs` that is **not** wired to
+  the VDI palette, so they do not yet change displayed colours — see the
+  palette-spec bindings.
+- **VDI `DEV_TAB`/`INQ_TAB` answers (correction, A101, 2026-09-21 — this
+  bullet described the pre-truecolor 16-colour/4-plane device and, for the
+  pixel-size fields, the same stale "left at the ROM default, never
+  patched" claim `100-v_opnvwk.md` Mismatch #2 carried before this ticket
+  resolved it against `_discrepancies.md` D-VDI-7):** `DEV_TAB[0,1]` =
+  live-framebuffer `width-1, height-1` (patched from `RasterBackend` at
+  `v_opnvwk`/`vq_extnd` time, `workstation.rs:142-143,195-196` — **1919,
+  1079** at today's 1920×1080 default; the patch works for any width/height
+  the framebuffer reports); `DEV_TAB[13]` = **256** (colours, `ncol`,
+  `workstation.rs:144,200`; EmuTOS `(v_planes<8)?(1<<v_planes):256`,
+  `vdi_control.c:206`); `DEV_TAB[35]` = **1** (>1 plane); `DEV_TAB[39]` =
+  **0** (`PALETTE_PRECISION`, `workstation.rs:30,202` — EmuTOS
+  `get_palette()`'s "no discrete palette" case for a Videl truecolor mode,
+  `bios/screen.c:846`; **not** the colour count); `INQ_TAB[4]` = **16**
+  (planes, `PLANES`, `kernel/src/vdi_backend.rs:40`); `INQ_TAB[5]` = **0**
+  (video lookup table; `v_planes==16` case, `vdi_control.c:211-213`).
+  **Pixel size in microns (`DEV_TAB[3,4]`) IS patched, contrary to an
+  earlier revision of this bullet:** `get_std_pixel_size(xres, yres)`
+  computes it from the live geometry and is written to `dev[3]`/`dev[4]`
+  (`tos-api/src/vdi/workstation.rs:193,197-198`) — **278, 278** at the
+  1920×1080 default (`>= 640`/`>= 400` branch, `workstation.rs:87-88`), not
+  the ROM `372`. This matches `_discrepancies.md` D-VDI-7 ("278/278 via
+  `get_std_pixel_size`"), which was already correct; this bullet's earlier
+  "left at the ROM default `372`" text was not. Source:
+  `tos-api/src/vdi/workstation.rs:24-90,141-245`.
 - **`NUM_VDI_HANDLES` / `MAX_VERTICES`:** the **small NewTOS profile** —
   `NUM_VDI_HANDLES` = **16** (`HANDLE_COUNT`, `tos-api/src/vdi/vwk.rs:20`;
   handle 1 = physical, 2..=16 virtual, a static slot table not `Mxalloc`);
@@ -413,7 +461,7 @@ three are Step-2 items (Y1/Y2/Y5).
 | WD1772 FDC / floppy | absent → floppy XBIOS = `EUNDEV`; FAT12 out of scope |
 | MIDI ACIA | absent → `Midiws`/MIDI iorec no-op |
 | Centronics printer | absent → `Cprnout`/printer XBIOS = no-op / busy (**exception:** `Setprt` (0x21) is a pure software config word with no HW dependency — honoured, not stubbed; `docs/api/xbios/21-setprt.md`, D-060) |
-| Shifter video modes | replaced by the single 640×480×16 framebuffer mode |
+| Shifter video modes | replaced by the negotiated (default 1920×1080), 256-colour/16-plane truecolor framebuffer mode (correction, A101, 2026-09-21 — was "the single 640×480×16 framebuffer mode", stale per §3.1) |
 | MFP interrupts | replaced by GIC-400 + the software vector shadow (`Setexc`) |
 
 ---
@@ -430,7 +478,7 @@ NewTOS-Pi profile — the "is this present?" answer per switch:
 | `CONF_WITH_COLOUR_ICONS` | (TBV) | G_CICON — 16-colour icons possible |
 | `CONF_WITH_MENU_EXTENSION` | (TBV) | popups/submenus — bring-up-order |
 | `CONF_WITH_GDOS` | **off** | no external fonts at bring-up |
-| `CONF_WITH_VDI_16BIT` / Videl | **off** | 16-colour path only (though fb is 32bpp) |
+| `CONF_WITH_VDI_16BIT` / Videl | **on** (correction, A101, 2026-09-21 — was "off … 16-colour path only", stale since the 2026-07-22/23 truecolor landing, ADR-024) | Falcon truecolor VDI: 256 pens / 16 planes over the 32bpp physical fb (§3.1); matches the reference profile's gating (`docs/analysis/aes-audit/emutos-config-profile.md:150,314`) |
 | `CONF_WITH_SHUTDOWN` | **on (halt-only)** | Desktop *File → Shutdown* exits the loop → `arch::aarch64::halt()` (a `wfe` spin, `lib.rs:311-313`, `desktop.rs:822,1124-1126`). A **real Pi-4 power-off** (VideoCore mailbox power / PSCI `SYSTEM_OFF`) is deferred — **decision: keep halt-only** until a power-down path is needed; a true `Ssystem(S_SHUTDOWN)` is Step-2 (Y10) |
 | `CONF_WITH_EXTENDED_MOUSE` | (TBV) | USB wheel/extra buttons available |
 | PSG / Blitter / FDC / MIDI / printer | **off** | no hardware (§3.9) |

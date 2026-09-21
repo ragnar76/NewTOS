@@ -201,7 +201,8 @@ dispatcher before `vq_extnd` runs.)
 `v_planes` in `update_rez_dependent` (`vdi/vdi_control.c:210-213`), so the
 NewTOS answer is whatever that formula gives on the NewTOS workstation.
 NewTOS' screen is a **Falcon truecolor workstation** — 16 planes, 256
-colours (`kernel/src/vdi_backend.rs`, [`ADR-0xx truecolor VDI`]) — not the
+colours (`kernel/src/vdi_backend.rs`, **ADR-024** — `docs/MEMORY.md`,
+recorded A101 2026-09-21, resolves this placeholder) — not the
 640×480×16-colour bring-up screen an earlier revision of this section
 assumed:
 
