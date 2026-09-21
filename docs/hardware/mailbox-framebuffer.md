@@ -152,20 +152,35 @@ Tag IDs and exact value-buffer layouts:
 | `0x0004_8004` | set virtual (buffer) w/h | `u32 width, u32 height` (8 B) | same (8 B) |
 | `0x0004_8005` | set depth | `u32 bpp` (4 B) | `u32 bpp` (4 B) |
 | `0x0004_8006` | set pixel order | `u32 state` (4 B) | `u32 state` (4 B) |
+| `0x0004_8007` | set alpha mode | `u32 state` (4 B) | `u32 state` (4 B) — *"may not be the same as the request so it must be checked"* |
+| `0x0004_0007` | get alpha mode | (none, 0 B) | `u32 state` (4 B) |
 | `0x0004_0001` | allocate framebuffer | `u32 alignment` (4 B) | `u32 base, u32 size` (8 B) |
 | `0x0004_0008` | get pitch | (none, 0 B) | `u32 bytes_per_line` (4 B) |
 
 Pixel order `state`: **`0x0 = BGR`, `0x1 = RGB`**.
 
-A standard allocation sends all six tags in one message (the VC
-processes them in order, so the geometry/depth/order are set before
-`allocate` runs):
+Alpha mode `state` (source #4, *"Get alpha mode"*, verbatim):
+
+> * 0x0: Alpha channel enabled (0 = fully opaque)
+> * 0x1: Alpha channel reversed (0 = fully transparent)
+> * 0x2: Alpha channel ignored
+
+(Both ids corroborated by the firmware's own header carried in-tree,
+`references/circle/addon/linux/raspberrypi-firmware.h:81,102` —
+`RPI_FIRMWARE_FRAMEBUFFER_GET_ALPHA_MODE = 0x00040007`,
+`RPI_FIRMWARE_FRAMEBUFFER_SET_ALPHA_MODE = 0x00048007`.) Why NewTOS
+sends it: §3c.
+
+A standard allocation sends all seven tags in one message (the VC
+processes them in order, so the geometry/depth/order/alpha mode are set
+before `allocate` runs):
 
 ```
 set physical  W x H
 set virtual   W x H        (= physical for a non-scrolled FB)
 set depth     32           (bpp; 32-bit XRGB for bring-up)
 set pixel order 0x0        (BGR — see note)
+set alpha mode 0x2         (ignored — see §3c)
 allocate      alignment=16 -> base, size
 get pitch                  -> bytes_per_line
 ```
@@ -244,6 +259,53 @@ an XBIOS `Setscreen` from an EL0 program.
 `0x0004_800E` (wait for vsync) is **documented here but not yet used**:
 NewTOS' `Vsync` (XBIOS 0x25) paces on the ARM generic timer instead, see
 `docs/api/xbios/25-vsync.md`.
+
+---
+
+## 3c. Alpha mode — why NewTOS sets "ignored" (2026-09-21)
+
+The framebuffer is 32 bits per pixel, but only 24 of them are colour. The
+top byte of every pixel (`0xXX_RR_GG_BB`, memory bytes `[B, G, R, X]`)
+belongs to the VDI: it holds the Falcon screen word's `OVERLAY_BIT`
+(EmuTOS `vdi/vdi_fill.c:26`), replicated into all eight bits — `0x00` on a
+pen-drawn pixel, `0xFF` on a cleared or complemented one (the contract in
+`kernel/src/hal/framebuffer.rs`, module doc; V11/V12, 2026-09-21). The
+display must show the same colour for both values.
+
+None of the Track-B sources say what the VideoCore does with that byte at
+depth 32 when no alpha mode has been set — Circle, for one, writes `0xFF`
+there as "alpha" when it packs a palette entry
+(`references/circle/lib/bcmframebuffer.cpp:137`), which is consistent with a
+firmware that *may* read it. Before 2026-09-21 the kernel happened to write
+`0xFF` on every pixel and the real Pi 4 displayed it; after the overlay-bit
+change both values occur on one screen, and with mode `0x0` ("enabled,
+0 = fully opaque") the byte would read as opacity. Rather than assume a
+default, the driver sends the documented **set alpha mode = `0x2` (alpha
+channel ignored)** in the allocate message (`build_request`, between set
+pixel order and allocate), reads the tag's echoed state (the wiki: *"the
+response may not be the same as the request so it must be checked"*), then
+asks **get alpha mode** (`0x0004_0007`) and logs one line at boot:
+
+```
+[fb] alpha mode = 2
+```
+
+A firmware that does not implement the tag leaves the tag's response bit
+clear (§3a: *"Unknown tags are ignored (the response bit will not be
+set)"*) — the allocation still succeeds, and the line says so
+(`... (set tag unanswered)` / `= not reported (get tag unanswered; ...)`)
+instead of printing a number the firmware never wrote. An echoed state
+other than `2` is printed as `(set tag echoed N, asked 2)`.
+
+**Observed on QEMU `raspi4b`** (QEMU 11, 2026-09-21): the emulated
+VideoCore answers both tags — `0x0004_8007` comes back with its response
+bit set and the state `2` echoed, `0x0004_0007` reports `2` — so the boot
+log reads `[fb] alpha mode = 2`, and the allocation is unchanged
+(`640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB`).
+The desktop screendump is byte-identical to the one taken without the tag
+(`measurement-2026-09-21-v11-v12/screendumps/desk-after-idle.png`), as it
+must be: QEMU never scanned the X byte out. The real-Pi acceptance is
+item 30 of `docs/api/desktop/_hw-test-2026-09-17.md`.
 
 ---
 

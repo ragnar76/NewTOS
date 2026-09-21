@@ -4,9 +4,9 @@
 //! Reference: [`docs/hardware/mailbox-framebuffer.md`]. Unlike QEMU
 //! `ramfb` (where the guest allocates the pixel store and points the
 //! device at it), here the **VideoCore allocates** the framebuffer: we
-//! send one property message setting the geometry/depth/order and an
-//! allocate tag, and the VC returns the buffer's bus address, size and
-//! pitch.
+//! send one property message setting the geometry/depth/order/alpha mode
+//! and an allocate tag, and the VC returns the buffer's bus address, size
+//! and pitch.
 //!
 //! This is the RPi4 counterpart of `qemu_virt::ramfb`, behind the
 //! `board-rpi4` feature, implementing the same [`Framebuffer`] trait.
@@ -40,14 +40,32 @@ const DEPTH_BPP: u32 = 32;
 /// QMP screendump on raspi4b). So BGR is correct for our layout. The X
 /// byte is the VDI overlay bit (`hal::framebuffer` module doc), not shown.
 const PIXEL_ORDER_BGR: u32 = 0;
+/// VC alpha mode, property tag `0x0004_8007` **set alpha mode** (`u32 state`,
+/// 4 bytes, echoed in the response). The firmware wiki (*Mailbox property
+/// interface*, doc source #4) defines the states:
+///
+/// > `0x0`: Alpha channel enabled (0 = fully opaque)
+/// > `0x1`: Alpha channel reversed (0 = fully transparent)
+/// > `0x2`: Alpha channel ignored
+///
+/// NewTOS asks for **ignored**: at depth 32 the top byte of every pixel is
+/// the VDI overlay bit (`hal::framebuffer` module doc) — `0x00` on drawn
+/// pixels, `0xFF` on cleared/complemented ones — and the display must show
+/// the same colour either way. A firmware that treated the byte as alpha
+/// would blend or blank one of the two. What the VideoCore does with the
+/// byte *without* this tag is documented nowhere in the Track-B sources;
+/// sending the documented mode removes the question instead of guessing it
+/// (`docs/hardware/mailbox-framebuffer.md` §3c). `0` is the same value the
+/// wiki lists for "enabled" — hence a named constant.
+const ALPHA_MODE_IGNORED: u32 = 2;
 
 /// Mask turning a VideoCore bus address into an ARM physical address:
 /// the top 2 bits select the cache alias (hardware ref §4).
 const BUS_TO_PHYS: u32 = 0x3FFF_FFFF;
 
 /// Property message buffer, 16-byte aligned (mailbox requirement). Sized
-/// generously (36 words) to hold the six-tag allocate sequence plus the
-/// end tag and 16-byte padding.
+/// generously (36 words) to hold the seven-tag allocate sequence (34 words
+/// incl. the end tag) plus 16-byte padding.
 #[repr(C, align(16))]
 struct MboxBuf {
     words: [u32; 36],
@@ -59,9 +77,11 @@ static mut MBOX_BUF: MboxBuf = MboxBuf { words: [0; 36] };
 const I_PHYS_W: usize = 5; // set-physical width (echoed/adjusted)
 const I_PHYS_H: usize = 6; // set-physical height
 const I_VIRT_H: usize = 11; // set-virtual height (echoed — may be clamped)
-const I_FB_BASE: usize = 23; // allocate → base (bus address)
-const I_FB_SIZE: usize = 24; // allocate → size
-const I_PITCH: usize = 28; // get-pitch → bytes per line
+const I_ALPHA_CODE: usize = 22; // set-alpha-mode → tag response code (b31 = answered)
+const I_ALPHA: usize = 23; // set-alpha-mode → state (echoed — may differ)
+const I_FB_BASE: usize = 27; // allocate → base (bus address)
+const I_FB_SIZE: usize = 28; // allocate → size
+const I_PITCH: usize = 32; // get-pitch → bytes per line
 
 /// Indices into [`MBOX_BUF`] for the standalone get-physical query message
 /// (see [`query_physical_size`]): the get-physical tag and the width/height
@@ -222,22 +242,33 @@ unsafe fn build_request(w: u32, h: u32, pages: u32) {
     b[18] = 0;
     b[19] = PIXEL_ORDER_BGR;
 
+    // set alpha mode — tag 0x00048007, value 4B (`u32 state`, echoed). Sent
+    // before `allocate` like the other mode tags so the buffer is created
+    // with it. A firmware that does not know the tag ignores it and leaves
+    // the tag's response bit clear (wiki: "Unknown tags are ignored (the
+    // response bit will not be set)"); the allocation is not affected —
+    // `init` reports what came back and carries on.
+    b[20] = 0x0004_8007;
+    b[21] = 4;
+    b[22] = 0;
+    b[23] = ALPHA_MODE_IGNORED;
+
     // allocate buffer — tag 0x00040001, value 8B (req: alignment; resp:
     // base + size).
-    b[20] = 0x0004_0001;
-    b[21] = 8;
-    b[22] = 0;
-    b[23] = 16; // requested alignment in bytes
-    b[24] = 0;
-
-    // get pitch — tag 0x00040008, value 4B (resp: bytes per line).
-    b[25] = 0x0004_0008;
-    b[26] = 4;
-    b[27] = 0;
+    b[24] = 0x0004_0001;
+    b[25] = 8;
+    b[26] = 0;
+    b[27] = 16; // requested alignment in bytes
     b[28] = 0;
 
+    // get pitch — tag 0x00040008, value 4B (resp: bytes per line).
+    b[29] = 0x0004_0008;
+    b[30] = 4;
+    b[31] = 0;
+    b[32] = 0;
+
     // end tag.
-    b[29] = 0x0000_0000;
+    b[33] = 0x0000_0000;
 
     // Total size = whole buffer (incl. padding to a 16-byte multiple).
     b[0] = (b.len() * 4) as u32;
@@ -302,6 +333,59 @@ unsafe fn query_physical_size() -> Option<(u32, u32)> {
         } else {
             None
         }
+    }
+}
+
+/// Indices into [`MBOX_BUF`] for the standalone get-alpha-mode query
+/// (see [`query_alpha_mode`]).
+const A_TAG: usize = 2; // get-alpha-mode tag id
+const A_CODE: usize = 4; // tag request/response code
+const A_STATE: usize = 5; // response: alpha mode state
+
+/// Ask the VideoCore which alpha mode the framebuffer now has — property tag
+/// `0x0004_0007` **get alpha mode**, request length 0, response `u32 state`
+/// (4 bytes), the GET counterpart of the `0x0004_8007` set tag sent in
+/// [`build_request`]. States as in [`ALPHA_MODE_IGNORED`]'s doc (firmware
+/// wiki, *Mailbox property interface*, doc source #4; corroborated by
+/// `references/circle/addon/linux/raspberrypi-firmware.h:81`
+/// `RPI_FIRMWARE_FRAMEBUFFER_GET_ALPHA_MODE = 0x00040007`).
+///
+/// Returns `None` when the transaction fails or the firmware leaves the tag
+/// unanswered (response bit clear — how a mailbox that does not implement
+/// the tag presents itself, `docs/hardware/mailbox-framebuffer.md` §3a).
+/// The boot log then says so instead of printing a number that was never
+/// written.
+///
+/// # Safety
+/// Boot CPU, single-threaded; exclusive use of the static buffer. Runs after
+/// the allocate message has been consumed (its results copied out).
+#[allow(clippy::deref_addrof)]
+unsafe fn query_alpha_mode() -> Option<u32> {
+    // SAFETY: single-CPU boot; exclusive use of the static buffer.
+    unsafe {
+        {
+            let b = &mut (*(&raw mut MBOX_BUF)).words;
+            b[1] = 0x0000_0000; // request
+            b[A_TAG] = 0x0004_0007; // get alpha mode
+            b[A_TAG + 1] = 4; // value buffer size = max(req 0, resp 4)
+            b[A_CODE] = 0; // request code (request length 0)
+            b[A_STATE] = 0;
+            b[6] = 0x0000_0000; // end tag
+            b[7] = 0; // pad to a 16-byte multiple
+            b[0] = 8 * 4; // total message size in bytes
+        }
+
+        let buf_va = (&raw const MBOX_BUF) as usize;
+        let buf_pa = va_to_pa(buf_va as u64) as u32;
+        if !mailbox::call_property(buf_va, buf_pa, core::mem::size_of::<MboxBuf>()) {
+            return None;
+        }
+
+        let b = &(*(&raw const MBOX_BUF)).words;
+        if b[A_CODE] & mailbox::TAG_RESPONSE == 0 {
+            return None;
+        }
+        Some(b[A_STATE])
     }
 }
 
@@ -405,7 +489,7 @@ pub unsafe fn init() -> bool {
         // single screen. A booting display beats a flippable one that isn't
         // there.
         let mut wanted = WANTED_PAGES;
-        let (fb_bus, fb_size, pitch, w, h, virt_h) = loop {
+        let (fb_bus, fb_size, pitch, w, h, virt_h, alpha_code, alpha_echo) = loop {
             build_request(w, h, wanted);
 
             let buf_va = (&raw const MBOX_BUF) as usize;
@@ -414,7 +498,16 @@ pub unsafe fn init() -> bool {
 
             let ok = mailbox::call_property(buf_va, buf_pa, len);
             let b = &(*(&raw const MBOX_BUF)).words;
-            let got = (b[I_FB_BASE], b[I_FB_SIZE], b[I_PITCH], b[I_PHYS_W], b[I_PHYS_H], b[I_VIRT_H]);
+            let got = (
+                b[I_FB_BASE],
+                b[I_FB_SIZE],
+                b[I_PITCH],
+                b[I_PHYS_W],
+                b[I_PHYS_H],
+                b[I_VIRT_H],
+                b[I_ALPHA_CODE],
+                b[I_ALPHA],
+            );
             // A zero base / pitch means the VC did not allocate (e.g. the
             // emulated path is incomplete) — bail out cleanly.
             if ok && got.0 != 0 && got.1 != 0 && got.2 != 0 {
@@ -436,6 +529,34 @@ pub unsafe fn init() -> bool {
         let pages = (virt_h / h.max(1))
             .min((fb_size as u64 / page_bytes.max(1)) as u32)
             .max(1);
+
+        // Alpha mode: what the set tag echoed (the wiki says the response
+        // "may not be the same as the request so it must be checked"), and
+        // what the VideoCore reports the framebuffer has now. One line; the
+        // qualifiers appear only when something deviates from the request.
+        let set_answered = alpha_code & mailbox::TAG_RESPONSE != 0;
+        match query_alpha_mode() {
+            Some(mode) if set_answered && alpha_echo == ALPHA_MODE_IGNORED => {
+                crate::kprintln!("[fb] alpha mode = {}", mode);
+            }
+            Some(mode) if set_answered => {
+                crate::kprintln!(
+                    "[fb] alpha mode = {} (set tag echoed {}, asked {})",
+                    mode,
+                    alpha_echo,
+                    ALPHA_MODE_IGNORED,
+                );
+            }
+            Some(mode) => {
+                crate::kprintln!("[fb] alpha mode = {} (set tag unanswered)", mode);
+            }
+            None => {
+                crate::kprintln!(
+                    "[fb] alpha mode = not reported (get tag unanswered; set tag {})",
+                    if set_answered { "answered" } else { "unanswered" },
+                );
+            }
+        }
 
         let fb_phys = (fb_bus & BUS_TO_PHYS) as u64;
         let fb_va = fb_phys + VA_OFFSET; // draw through the high half

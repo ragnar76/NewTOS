@@ -589,7 +589,9 @@ the top five bits of each gun and the top bit of X.) The X byte is the
 right place because the display does not show it — `ramfb` is programmed
 with the DRM `XRGB8888` fourcc (X = don't care,
 `kernel/src/drivers/qemu_virt/ramfb.rs`), the VideoCore with depth 32 and
-no alpha-mode tag (`docs/hardware/mailbox-framebuffer.md` §3) — and because
+alpha mode "ignored" (set-alpha-mode tag `0x0004_8007` = 2 in the allocate
+message since 2026-09-21, `docs/hardware/mailbox-framebuffer.md` §3c) — and
+because
 replicating it like a gun keeps every bitwise operation on the 32-bit store
 equal to the same operation on the 16-bit word: the sixteen `vro_cpyfm`
 logic ops (`raster_op`) and the `~` of `WM_XOR` act on the overlay bit

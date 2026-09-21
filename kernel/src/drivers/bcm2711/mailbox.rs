@@ -239,7 +239,7 @@ const M_END: usize = M_VC_VAL + 2; // end tag
 const MEMORY_BUF_WORDS: usize = (M_END + 1 + 3) & !3;
 
 /// Bit 31 of a tag's code word: set in a response, clear in a request.
-const TAG_RESPONSE: u32 = 0x8000_0000;
+pub(crate) const TAG_RESPONSE: u32 = 0x8000_0000;
 
 /// 16-byte-aligned property buffer for the memory query (the mailbox
 /// write OR's the channel into the low 4 bits, so the address must be

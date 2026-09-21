@@ -79,3 +79,16 @@ des VideoCore zum obersten Byte bei Tiefe 32 steht in keiner Track-B-Quelle
 komplementierte `0xFF`. Sollte die Pi Alpha auswerten, ist das dokumentierte
 Mittel ein zusätzliches Tag im Allokations-Telegramm: set alpha mode
 `0x0004_8007` = 2 („ignored") — nicht gesendet, weil nicht belegt.
+
+**Nachtrag 2026-09-21 (später am Tag): das Alpha-Tag ist gelandet.** Belegt
+über die Firmware-Wiki *Mailbox property interface* (Quelle 4 in
+`docs/hardware/mailbox-framebuffer.md`, neuer § 3c; Tag-IDs zusätzlich in
+`references/circle/addon/linux/raspberrypi-firmware.h:81,102`).
+`drivers/bcm2711/framebuffer.rs::build_request` sendet set alpha mode
+`0x0004_8007` = 2 vor `allocate`, prüft das Echo und fragt get alpha mode
+`0x0004_0007` zurück → Bootzeile `[fb] alpha mode = N`. QEMU raspi4b:
+`[fb] alpha mode = 2`, Allokation unverändert, Desktop-Idle-Screendump
+byteidentisch zu `screendumps/desk-after-idle.png` dieser Messung. Das
+Restrisiko oben ist damit auf der Pi nicht mehr eine Frage des
+undokumentierten Defaults, sondern der dokumentierte Modus; Pi-Prüfung =
+HW-Checkliste Punkt 30 (`docs/api/desktop/_hw-test-2026-09-17.md`).

@@ -18,8 +18,11 @@
 //! reason, `drivers/bcm2711/framebuffer.rs`). The top byte **X is not a
 //! colour and the display does not show it** — `ramfb` is programmed with
 //! the DRM `XRGB8888` fourcc, whose X is "don't care", and the VideoCore is
-//! given depth 32 with no alpha-mode tag (`docs/hardware/mailbox-
-//! framebuffer.md` §3). The byte is owned by the VDI backend
+//! given depth 32 **and alpha mode "ignored"** (set-alpha-mode tag
+//! `0x0004_8007` = 2 in the allocate message, `docs/hardware/mailbox-
+//! framebuffer.md` §3c; since 2026-09-21 — before that no alpha-mode tag was
+//! sent and the byte's treatment rested on an undocumented default). The
+//! byte is owned by the VDI backend
 //! (`crate::vdi_backend`), which keeps the one bit of the 16-bit Falcon
 //! screen word that carries no colour there: `OVERLAY_BIT` (bit 5,
 //! EmuTOS `vdi/vdi_fill.c:26`), replicated into all eight X bits — `0xFF`
