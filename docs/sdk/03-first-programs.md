@@ -39,7 +39,7 @@ lld   : rust-lld -flavor gnu
 + clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fno-pic -fno-builtin -Wall -Wextra -I…/sdk/include -c sdk/examples/hello.c -o app.o
 + rust-lld -flavor gnu -T …/sdk/newtos.ld -no-pie -z max-page-size=0x1000 --build-id=none crt0.o app.o -o …/HELLO2.NCP
 
-wrote …/HELLO2.NCP (4920 bytes)
+wrote …/HELLO2.NCP (5064 bytes)
 ```
 
 What came out (`llvm-readobj --file-headers --program-headers`):
@@ -47,12 +47,18 @@ What came out (`llvm-readobj --file-headers --program-headers`):
 ```
 Class: 64-bit (0x2)   DataEncoding: LittleEndian   Type: Executable (0x2)
 Machine: EM_AARCH64 (0xB7)   Entry: 0x1000   ProgramHeaderEntrySize: 56
-PT_LOAD  VirtualAddress: 0x1000  FileSize: 95  MemSize: 95  Flags: 0x7 (RWX)
+PT_LOAD  VirtualAddress: 0x1000  FileSize: 96  MemSize: 96  Flags: 0x5 (R-X)
 ```
 
-That is precisely the shape `tos-api/src/bdos/process/elf.rs:15-41` and
-`loader.rs:1317-1340` accept: one RWX `PT_LOAD` at `0x1000` (the linker script
-puts `.text.boot`, i.e. `_start`, first: `sdk/newtos.ld:55-58`).
+That is the shape `tos-api/src/bdos/process/elf.rs:15-41` and
+`loader.rs` (`validate_segment`) accept: a `PT_LOAD` at `0x1000` (the linker
+script puts `.text.boot`, i.e. `_start`, first: `sdk/newtos.ld`). Since
+TASK/T05 the script emits **two** segments — `text` (R-X: `.text` +
+`.rodata`) and `data` (RW-: `.data` with `.bss` as its memsz-only tail) — so
+the loader can fill all six basepage segment fields; this data-less program
+has no `data` segment at all (lld drops the empty one), a libc-linked one
+always has (crt0's `argv` lives in `.data`). The loader still maps every TPA
+page RWX; the flags feed the basepage only.
 
 What `crt0.S` does before `main` (`sdk/crt0.S:34-53`): read `p_hitpa` from the
 basepage at VA 0 (`ldr w9, [x1, #4]`), set `SP` to it, `bl main`, then
@@ -105,10 +111,10 @@ $ ls -l HELLOLIB.NCP ; llvm-nm -u HELLOLIB.NCP | grep -c .
 ```
 
 Note the **libc crt0** (`sdk/libc/crt0.S`, not `sdk/crt0.S`): it additionally
-calls `__libc_init_heap(p_hitpa)` so mintlib's `malloc` draws from the free
-TPA between `_end` and the stack reserve (`sdk/libc/newtos-arch/heap_init.c:
-58-74`), and it hands `main` `argc = 1, argv = {"", NULL}`
-(`sdk/libc/crt0.S:56-59`).
+calls `__libc_init_heap(basepage, p_hitpa)`, which sets mintlib's `_base` and
+points `malloc` at the free TPA between `_end` and the stack reserve
+(`sdk/libc/newtos-arch/heap_init.c`), and it hands `main` `argc = 1,
+argv = {"", NULL}` (`sdk/libc/crt0.S`).
 
 Run: the program was copied to `C:\AUTO\HELLOLIB.NCP` on a scratch image and
 booted headless in QEMU. Serial log (`[auto]`/`[launch]` lines are the

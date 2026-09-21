@@ -1,0 +1,85 @@
+T05 -- Basepage p_dbase/p_dlen/p_bbase/p_blen (were 0) + mintlib _base; T06 -- toolchain housekeeping.
+Developer self-evidence, 2026-09-21. Branch desk-rebuild, base HEAD 75b2cc3, changes uncommitted in the
+tree, nothing flashed. Pinned EmuTOS references/emutos @ 1a7484ab: bdos/kpgmld.c:123-145 (pi_tbase = p+1,
+pi_dbase = pi_tbase + pi_tlen (:132), pi_bbase = pi_tbase + tlen + dlen (:131), memcpy of the six longs
+(:145)); docs/api/structures/basepage.md, docs/api/gemdos/process/4b-pexec.md (PD byte layout).
+mintlib readers of _base: startup/crt0.S:69, mintlib/crtinit.c:167, unix/getpid.c:21, unix/getppid.c:22,
+mintlib/gmon.c:201,237.
+
+LEAD DECISION AS IMPLEMENTED (T05)
+  Two PT_LOADs in sdk/newtos.ld: `text` FLAGS(5) R-X = .text + .rodata; `data` FLAGS(6) RW- = .init_array/
+  .fini_array + .data with .bss as the NOLOAD (memsz-only) tail. Loader UNCHANGED: populate_basepage
+  classifies by PF_X / PF_W as before and now finds both. Mapping checked: populate_and_map maps every TPA
+  page UserRwExec -- the RWX window stays, the flags feed only the basepage. Segments back to back (no page
+  padding, file size unchanged); ALIGN(16) inside the last section of each segment so p_dbase = p_tbase +
+  p_tlen, p_bbase = p_dbase + p_dlen, p_bbase + p_blen = _end hold to the byte. Side finding fixed: an
+  orphan .init_array (mintlib init_clock, never run by crt0) was placed by lld AFTER .bss, turning the whole
+  BSS into file-backed zeros (TeraDesk memsz == filesz == 209992); it is now placed before .data.
+  _base: sdk/libc/crt0.S passes x1 (the basepage register it reads p_hitpa through) as arg 0 of
+  __libc_init_heap(basepage, p_hitpa); heap_init.c sets _base = (BASEPAGE *) basepage (build-libc.sh now
+  compiles heap_init.c with the full mintlib include set for <mint/basepage.h>).
+
+PRODUCT (method/product-t05-t06.diff, method/new-files.txt)
+  sdk/newtos.ld, sdk/libc/crt0.S, sdk/libc/newtos-arch/heap_init.c, sdk/libc/build-libc.sh, sdk/crt0.S,
+  sdk/build.sh, sdk/README.md, sdk/apps/apitest/apitest.c (T32), tos-api/src/bdos/process/loader.rs
+  (#[cfg(test)] basepage_segment_tests only), docs/api/structures/basepage.md (NewTOS notes),
+  docs/sdk/03,04,05,06,07, docs/ARCHITECTURE.md, kernel/src/launch.rs (doc), kernel/src/selftest_emmc.rs
+  (hard asserts), kernel/src/lib.rs (one cfg(feature = "selftest-emmc") call), kernel/Cargo.toml (feature),
+  sdk/apps/build-qed.sh (overlay comment + qed.rsc), tools/make-sd-image.sh (comment + messages),
+  sdk/apps/gemtest/build-gemtest.sh + sdk/apps/chaintest/build-chaintest.sh (lib_ensure),
+  sdk/gemlib/tests/obspec_bits.c + gemtest_verify.c (headers), sdk/run-host-tests.sh (NEW),
+  docs/api/gemdos/file/43-fattrib.md, docs/STATUS.md, TASK/T05.md, TASK/T06.md, TASK/T0{5,6}-STATUS-DONE.MD.
+
+HOST TESTS (host-tests/)
+  xtask-test-AFTER.log      cargo run -p xtask -- test: 909 passed / 0 failed / 1 ignored (906 + 3 loader tests
+      basepage_segment_tests: two_segments_fill_all_six_fields, single_rwx_segment_yields_text_only,
+      data_without_bss_has_zero_blen).
+  run-host-tests.log        sdk/run-host-tests.sh: obspec_bits, evnt_timer_words, wind_set_addrin,
+      intin_long_words (ASan), ptr_word_count, aesglobal_fields, setjmp-host -- 7 passed, 0 failed, 0 skipped.
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log / xtask-build-qemu-virt.log / xtask-build-rpi4-selftest-emmc.log /
+      xtask-build-rpi4-final.log: tos-api 64 / kernel 94 on all (baseline 64/94, delta 0). Tree kernel8.img =
+      the rpi4 ELF (bcm2711 4, qemu_virt 0), sha256 in kernel8-rpi4.sha256.
+  clippy-tos-api-lib.log 80 (baseline 80); clippy-tos-api-lib-tests.log lib-test 82 (baseline 82, 0 hits in
+      loader.rs); clippy-kernel-rpi4.log 125 and clippy-kernel-rpi4-selftest-emmc.log 125 (baseline 125, 0 hits
+      in selftest_emmc.rs / launch.rs).
+  build-teradesk-BEFORE/AFTER.log 48/48, 0 undef.; build-qed-BEFORE/AFTER.log 37/37, 0 undef. (AFTER: the
+      lib chain rebuilt itself -- gemlib.a/cflib.a/libm.a out of date [libc/newtos-arch/heap_init.c] -- and
+      `resource -> build/qed.rsc (41378 bytes)`); build-apitest-BEFORE.log.
+  after-program-headers.txt   QED.NAP text 0x1000+391312 -> data 0x60890 (+6768 file / 74240 mem) -> _end
+      0x72A90; DESKTOP.NAP 0x1000+191056 -> 0x2FA50 (+3360/18928) -> 0x34440; APITEST.NCP 0x1000+74656 ->
+      0x133A0 (+112/7856) -> 0x15250. after-bin-sha256.txt, before-bin/sha256.txt (HEAD builds, kept in
+      before-bin/ for the BEFORE runs). qed.rsc: converter output byte-identical (cmp) to the previously
+      hand-made build/qed.rsc, 41378 B sha256 30ac6bf2...; the ticket's 41322 B / 5a2cefa2... is the pre-9acfb94
+      (A41 part 2) state, documented in docs/sdk/04-porting-anatomy.md.
+  make-sd-image.log         base image; `! tosdump/build/VDIDRAW.NAP not built ...; skipping VDIDRAW` with
+      DUMPVDI installed (the old blanket message is gone).
+
+QEMU raspi4b (method/run.sh + qmp_multi.py = the T04 driver; 640x480, -display none, QMP screendump after a
+serial marker + settle; product kernel8 rpi4 dev profile; fresh card per run from the make-sd-image.sh base
+via method/prep-card.sh; grep -c "EXC\]\|PANIC" = 0 in every serial log).
+  apitest      C:\AUTO\APITEST.NCP + APITEST.CFG=BATCH, no #Z. serial/apitest-serial.log:
+      T32   p_tbase=0x00001000 p_tlen=0x000123A0 p_dbase=0x000133A0 p_dlen=0x00000070
+      T32   p_bbase=0x00013410 p_blen=0x00001E40 _end=0x00015250 _base=0x00000000
+      T32.1 p_tbase < p_dbase [OK]  T32.2 p_dbase <= p_bbase [OK]  T32.3 p_bbase + p_blen == _end 0x15250 [OK]
+      T32.4 p_dbase == p_tbase + p_tlen 0x133A0 [OK]  T32.5 p_bbase == p_dbase + p_dlen 0x13410 [OK]
+      T32.6 lengths nonzero [OK]  T32.7 _base == p_lowtpa [OK]   SUMMARY TOTAL 106 / 0 / 5.
+  tera-before / tera-after   #Z C:\Apps\TERADESK\DESKTOP.NAP, DESKTOP.NAP from before-bin/ resp. the rebuilt
+      dist/. Dumps A (+5 s after sh_ldapp) and B (+10 s): before vs after 0 px, sha256 identical
+      (screendumps/SHA256.txt).
+  tera-*-t04inf  the same with the T04 run's NEWDESK.INF + TERADESK.INF: before vs after 0 px; after vs
+      measurement-2026-09-21-t04/screendumps/tera-after-A-idle.png = 98 px, bbox (319,239)-(640,480) = the
+      mouse cursor only (T04's injector parked it at (639,479); here it sits at the screen centre).
+  qed-before / qed-after     #Z C:\Apps\QED\QED.NAP: before vs after 0 px, sha256 identical.
+  selftest-emmc  kernel built with --features selftest-emmc on a fresh base card: the whole selftest_emmc
+      chain runs after the mount; `[emmc] Fattrib get=0x0 set(0x21)=0x21 get=0x21 ; set(SUBDIR)=-36`,
+      `dir GET("C:\CLIPBRD\")=0x10 dir GET("C:\CLIPBRD")=0x10 ; file GET=0x0 ; dir SET=-36 ; missing GET=-33`,
+      no [PANIC] (the asserts are hard now), then `[auto] 1 AUTO program(s) run`, `[desk] desktop up`.
+
+OPEN
+  Data-less single-segment programs (tools/mk-hello-ncp.py HELLO.NCP, plain-crt0 programs without .data/.bss)
+  still get p_dbase/p_bbase = 0 (lld drops the empty data PHDR); the TOS form would be a 4-line loader
+  fallback (p_dbase = p_bbase = p_tbase + p_tlen, lengths 0) -- not done, lead decision. The other
+  selftest_emmc blocks still print stale Phase-09-image expectations instead of asserting (own item).
+  .init_array constructors are not run by crt0 (observation). No Pi run needed for T05/T06.

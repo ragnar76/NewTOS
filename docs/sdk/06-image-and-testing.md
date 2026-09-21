@@ -210,6 +210,35 @@ typing, closing a window), 1920×1080 geometry, and the cache/DMA behaviour of
 the framebuffer (`docs/HW-TEST-LOG.md:122`). Serial output is available on
 the Pi's UART at 115200 8N1 (`HW-TEST-LOG.md:29-36`).
 
+## Host tests: `sdk/run-host-tests.sh`
+
+Not everything needs a kernel. The gemlib bindings and the libc arch shims
+have **host tests** in `sdk/gemlib/tests/` and `sdk/libc/tests/`: small C
+programs the host `cc` compiles together with the overlaid gemlib source
+(or `newtos-arch/setjmp.S`), which call the binding, capture the parameter
+block it built and check the words — no trap, no QEMU. They run on any LP64
+little-endian host (macOS/arm64 here) and refuse to certify from one whose
+word width or byte order differs from the AArch64 target.
+
+`sdk/run-host-tests.sh` builds and runs all of them in one pass and exits
+with the number of failures:
+
+| Test | What it pins | Ticket |
+|------|--------------|--------|
+| `obspec_bits` | the `BFOBSPEC` bit-field overlay matches the GEM `ob_spec` layout | — |
+| `evnt_timer_words` | `mt_evnt_timer` hands `int_in[0]` = low, `int_in[1]` = high | H03 |
+| `wind_set_addrin` | `wind_set_str/_ptr/_ptr_int` pass the pointer in `addr_in[0]`, AIN_LEN 1 | A81 |
+| `intin_long_words` | `*_intin_long`/`*_intout_long` are 32-bit `[lo, hi]` in place; `wind_get_ptr(WF_SCREEN)` reads the LONG (under AddressSanitizer) | T04 |
+| `ptr_word_count` | the six pointer-in-`intin` bindings declare `N_PTRINTS` WORDs | T04 |
+| `aesglobal_fields` | TeraDesk's `library.h` + overlay address `ap_ptree`/`ap_rscmem` as 4-byte fields at byte 10/14 (skipped without the vendored TeraDesk source) | A60 |
+| `setjmp-host` (`sdk/libc/tests/setjmp-host.sh`) | `newtos-arch/setjmp.S` round-trips on an AArch64 host (skipped elsewhere) | T07 |
+
+Each test's own header carries its build line, so a single one can still be
+run by hand. `sdk/gemlib/tests/gemtest_verify.c` is not in the runner: it is a
+historical ILP32 *target* program without a builder (see its header), not a
+host test. Neither is this runner a substitute for `cargo run -p xtask -- test`
+(the kernel/tos-api host tests) or for the QEMU runs above.
+
 ## Reading the serial log
 
 Lines a port will look for:

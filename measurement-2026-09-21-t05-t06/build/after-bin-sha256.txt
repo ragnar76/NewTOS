@@ -1,0 +1,4 @@
+806db8a4a61a274e3667e6af3634a9407f09316fab65a68dd054d61330375239  sdk/apps/qed/build/QED.NAP
+5d0cdf2a254377d63c75fe86261cce28620001117cc84f5c9c29fc2791e86e45  sdk/apps/teradesk/build/dist/DESKTOP.NAP
+f44ea0443fb55a6f117773e03822f6283d769604cae2768bc4fa02fc95ff6cc1  sdk/apps/apitest/APITEST.NCP
+30ac6bf24a28ce2c95fab6a7c663bf29f40de9ad9ee1dd6b80ec36c146264a79  sdk/apps/qed/build/qed.rsc

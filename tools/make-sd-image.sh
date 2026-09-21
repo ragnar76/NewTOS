@@ -239,12 +239,15 @@ fi
 # QED (Atari GEM editor) — the first ported GEM application, compiled UNMODIFIED
 # for NewTOS/AArch64 as **native LP64** (the app-ABI pivot: apps match the
 # kernel's native 64-bit ABI, so the app<->kernel width mismatch vanishes). Its
-# one 32-bit-assuming file (the private pool allocator memory.c) is replaced by
-# sdk/apps/qed/overlay/memory.c at build time — QED's src/ stays pristine.
-# Installed into its own app dir C:\Apps\QED\ (classic GEM apps expect their .RSC
-# beside the .NAP): QED.NAP is the GEM program, qed.rsc its native NRSC (LP64)
-# resource (`tools/mkrsc.py convert`, a manual step — docs/sdk/04-porting-anatomy.md). Launched by double-clicking QED.NAP on the desktop — NEVER from \AUTO\
-# (console-only, ADR-018). Copied in if the LP64 build exists (sdk/apps/build-qed.sh).
+# two 32-bit-assuming files (the private pool allocator memory.c and the bit-set
+# module set.c) are replaced by sdk/overlays/qed/{memory.c,set.c} at build time
+# — QED's src/ stays pristine. Installed into its own app dir C:\Apps\QED\
+# (classic GEM apps expect their .RSC beside the .NAP): QED.NAP is the GEM
+# program, qed.rsc its native NRSC (LP64) resource, both produced by
+# sdk/apps/build-qed.sh (the .rsc via `tools/mkrsc.py convert`, staged into
+# build/ after the link — docs/sdk/04-porting-anatomy.md). Launched by
+# double-clicking QED.NAP on the desktop — NEVER from \AUTO\ (console-only,
+# ADR-018). Copied in if the LP64 build exists.
 # ── TOSDUMP: the VDI reference dumper (docs/TOS-REFERENCE-DUMPER.md) ─────────
 # DUMPVDI.NAP measures what this machine's VDI does, case by case, so it can be
 # compared against the same measurement taken on an Atari TT (the dumps live in
@@ -264,6 +267,8 @@ if [ -f "$TOSDUMP_DIR/build/DUMPVDI.NAP" ] && [ -f "$TOSDUMP_DIR/cases/vdi-r2.ts
   # the identity the dump carries, so the CRC must stay A0706A6D.
   cp "$TOSDUMP_DIR/cases/vdi-r2.tsv" "$V/VDI.TSV"
   echo "  + C:\\DUMPVDI.NAP + C:\\VDI.TSV (VDI reference dumper, round 2)"
+else
+  echo "  ! tosdump/build/DUMPVDI.NAP (or cases/vdi-r2.tsv) not built (run 'make -C tosdump all'); skipping DUMPVDI"
 fi
 # VDIDRAW draws every output primitive into a numbered, captioned cell. The
 # dumper cannot see those: the drawing opcodes leave the parameter block
@@ -273,7 +278,7 @@ if [ -f "$TOSDUMP_DIR/build/VDIDRAW.NAP" ]; then
   cp "$TOSDUMP_DIR/build/VDIDRAW.NAP" "$V/VDIDRAW.NAP"
   echo "  + C:\\VDIDRAW.NAP (visual VDI primitive sheet)"
 else
-  echo "  ! tosdump not built (run 'make -C tosdump all'); skipping DUMPVDI"
+  echo "  ! tosdump/build/VDIDRAW.NAP not built (run 'make -C tosdump all'); skipping VDIDRAW"
 fi
 
 # ── The bouncing-ball demo is no longer built from this tree ───────────────

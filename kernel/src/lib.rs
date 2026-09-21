@@ -312,6 +312,15 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
         // (no battery RTC yet). Must run after `mount()` so `C:` is readable
         // and before `initinfo::run()` so the boot screen shows the date.
         seed_clock_from_kernel_file();
+
+        // Self-test build only (`--features selftest-emmc`): the Phase-09
+        // microSD/FAT/GEMDOS-file checks, with hard assertions on the
+        // Fattrib contract (`fmeta_test`). Runs here, after the normal
+        // bring-up, because `emmc::init` and `bios::mount` are idempotent
+        // and the test re-enters both; the boot then continues. It writes
+        // to C:, so it is a test-image feature only (see `Cargo.toml`).
+        #[cfg(feature = "selftest-emmc")]
+        selftest_emmc::run();
     }
 
     // AES boot initialisation (EmuTOS `gem_main`/`run_accs_and_desktop`

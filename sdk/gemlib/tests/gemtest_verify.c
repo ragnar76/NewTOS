@@ -17,7 +17,9 @@
  * docs/MEMORY.md), so build-gemlib-ilp32.sh no longer exists and this file has
  * no builder. Kept as the Stage-3 evidence it is; it is NOT an LP64 test -- its
  * output strings assert an ILP32 result. Retarget or delete it together with
- * the runtime ABI switch (Abi::Ilp32), not before.
+ * the runtime ABI switch (Abi::Ilp32), not before. It is a TARGET program (it
+ * traps into the AES), not a host test, so sdk/run-host-tests.sh does not
+ * run it either -- by design, not by omission (TASK/T06).
  */
 #include "gem.h"
 #include <stdio.h>

@@ -22,12 +22,15 @@
  * the AArch64 target), and it also refuses to pass on a host whose endianness
  * differs from the target it is meant to certify.
  *
- * Build & run:
- *   cc -I sdk/gemlib/gemlib-0.44.0 -o obspec_bits sdk/gemlib/tests/obspec_bits.c
+ * Build & run (from the repository root; mt_gem.h pulls <compiler.h> from
+ * mintlib's include dir, so that path is required too):
+ *   cc -I sdk/gemlib/gemlib-0.44.0 -I sdk/libc/mintlib/include \
+ *      -o obspec_bits sdk/gemlib/tests/obspec_bits.c
  *   ./obspec_bits            # exit 0 = layout matches GEM
  *
  * (sdk/gemlib/gemlib-0.44.0/mt_gem.h is generated from mt_gem.h.in by
- * sdk/gemlib/build-gemlib.sh, which applies the overlay first.)
+ * sdk/gemlib/build-gemlib.sh, which applies the overlay first. All the host
+ * tests in this directory run together via sdk/run-host-tests.sh.)
  */
 
 #include <stdio.h>

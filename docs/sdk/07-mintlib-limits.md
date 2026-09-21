@@ -133,7 +133,7 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
 |------|-----------|--------|
 | `argc`/`argv` | always `1` / `{"", NULL}` | `sdk/libc/crt0.S:40-59` |
 | `environ`, `getenv` | `environ` is a zero global; `getenv` finds nothing | `mintlib/globals.c`, crtinit excluded |
-| `_base` (`BASEPAGE *`) | **stays NULL** (crtinit would set it) — dereferencing it works only because the basepage *is* at VA 0 | `mintlib/globals.c:33`, `loader.rs:170-177`; TeraDesk's `environm.c` relies on this |
+| `_base` (`BASEPAGE *`) | set by `__libc_init_heap` from the basepage address crt0 hands it (TASK/T05; until then it stayed NULL and dereferencing it worked only because the basepage *is* at VA 0 — the value is still 0 today, `USER_VA_BASE`) | `newtos-arch/heap_init.c`, `sdk/libc/crt0.S`; readers: `unix/getppid.c`, `gmon.c`, TeraDesk's `environm.c` |
 | `malloc`/`free`/`realloc` | mintlib's allocator over the in-TPA arena `[_end, p_hitpa − 64 KiB)`; `ENOMEM` when exhausted, **no** `Malloc` fall-back | `newtos-arch/heap_init.c`, `unix/sbrk.c:54-71` |
 | `exit`/`_exit` | `Pterm(rc)` | `newtos-arch/proc.S` |
 | `clock()` | reads `_hz_200` at `$4BA` through `get_sysvar` — a live 200 Hz tick (verified by `sdk/libc/tests/clocktest.c`) | `newtos-arch/getsysvar.c`, `time/clock.c` |

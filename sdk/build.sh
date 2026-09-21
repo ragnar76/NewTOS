@@ -11,9 +11,11 @@
 # The output ELF is the .NCP itself (the loader parses ELF directly; no
 # flat-binary objcopy step, unlike the kernel image).
 #
-# The linked ELF is a single RWX PT_LOAD that may now span many pages; the
-# multi-page-TPA loader copies it, zeroes the BSS tail, and maps the whole
-# per-process TPA. No image-size cap beyond `TPA_SIZE - stack reserve`.
+# The linked ELF carries a text (R-X) and, when the program has .data/.bss, a
+# data (RW-) PT_LOAD, each of which may span many pages; the multi-page-TPA
+# loader copies them, zeroes the BSS tail, fills the basepage segment fields
+# from them, and maps the whole per-process TPA. No image-size cap beyond
+# `TPA_SIZE - stack reserve`.
 #
 # Usage:
 #   sdk/build.sh [source.c] [output.NCP]

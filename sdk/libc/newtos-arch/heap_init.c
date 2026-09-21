@@ -13,10 +13,13 @@
  *   otherwise                             -> GEMDOS Malloc() (trap).
  *
  * On NewTOS the program loader (tos-api/src/bdos/process/loader.rs) hands each
- * process a Transient Program Area [0, USER_TPA_TOP=0x400000):
+ * process a Transient Program Area [0, USER_TPA_TOP=0x400000); the image is
+ * linked at RESERVED_LOW_END = 0x1000 (sdk/newtos.ld), above the basepage and
+ * the classic low-memory system area the loader materialises in page 0:
  *
  *     [0x000, 0x100)      BasePage
- *     [0x100, _end)       image + BSS (zeroed by the loader)
+ *     [0x400, 0x670)      sysvars + OSHEADER + cookie jar (loader, B1)
+ *     [0x1000, _end)      image + BSS (zeroed by the loader)
  *     [_end, p_hitpa)     free TPA -- heap grows up, stack grows down
  *
  * so we run malloc entirely from that free region: no GEMDOS Malloc dependency
@@ -26,26 +29,40 @@
  * HeapAlloc then guards every request against the live stack pointer, so the
  * reserve is only a soft upper bound.
  *
- * crt0 (sdk/libc/crt0.S) calls this once, before main, passing p_hitpa (the
- * mapped TPA top = initial SP) that it already read from the BasePage.
+ * crt0 (sdk/libc/crt0.S) calls this once, before main, passing the BasePage
+ * address (the base register it read p_hitpa through) and p_hitpa (the
+ * mapped TPA top = initial SP).
+ *
+ * `_base` (mintlib/globals.c:33, `BASEPAGE *_base`) is what mintlib's own
+ * m68k crt0 stores first thing at program start (startup/crt0.S:69,
+ * `movel %a0, _base`) and what its readers dereference: crtinit.c:167
+ * (`bp = _base`, the p_tlen/p_dlen/p_blen sum and p_hitpa for the Mshrink
+ * idiom), unix/getpid.c:21 (`(long)_base >> 8` when Pgetpid is absent),
+ * unix/getppid.c:22 (`_base->p_parent`), gmon.c:201,237 (`_base->p_tbase`).
+ * None of those files runs mintlib's startup here (docs/sdk/07-mintlib-limits.md
+ * §5: crtinit.c is not built), so `_base` stayed NULL and TeraDesk's
+ * `_BasPag->p_env` (environm.c) only worked because the basepage IS at VA 0.
+ * Setting it here from the value crt0 hands us makes the pointer true
+ * independent of where the loader puts the basepage (TASK/T05).
  *
  * loader facts confirmed from tos-api/src/bdos/process/loader.rs:
  *   - USER_TPA_TOP = USER_VA_BASE(0) + TPA_SIZE(4 MiB) = 0x400000
- *   - bp.p_hitpa = USER_TPA_TOP           (loader.rs:453)
+ *   - bp.p_hitpa = USER_TPA_TOP           (populate_basepage)
  *   - "heap lives between the BSS end (p_bbase+p_blen) and the downward-
- *      growing stack" (loader.rs:394-396)
+ *      growing stack" (populate_basepage doc comment)
  *   - USER_STACK_MIN = 0x1_0000 (64 KiB) top-of-TPA stack reserve
- *      (loader.rs:169, validate_segment loader.rs:626)
+ *      (loader.rs, validate_segment)
  */
 
 #include <stddef.h>
+#include <mint/basepage.h>
 
 /* Provided by the NewTOS linker script (sdk/newtos.ld): first free TPA byte,
-   just above the zeroed BSS. */
+   just above the zeroed BSS (== the basepage's p_bbase + p_blen). */
 extern char _end[];
 
 /* Defined in mintlib: heapbase.c (_heapbase), stksiz.c (_stksize),
-   globals.c (_split_mem). We only initialise them here. */
+   globals.c (_split_mem, _base). We only initialise them here. */
 extern void *_heapbase;
 extern long _stksize;
 extern short _split_mem;
@@ -56,10 +73,13 @@ extern short _split_mem;
 #define NEWTOS_STACK_RESERVE (64UL * 1024UL)
 
 void
-__libc_init_heap (unsigned long p_hitpa)
+__libc_init_heap (unsigned long basepage, unsigned long p_hitpa)
 {
 	unsigned long base = (unsigned long) _end;
 	unsigned long avail;
+
+	/* The BASEPAGE pointer mintlib's readers expect (see the header). */
+	_base = (BASEPAGE *) basepage;
 
 	/* Run malloc from the in-TPA arena, never from GEMDOS Malloc. */
 	_split_mem = 0;

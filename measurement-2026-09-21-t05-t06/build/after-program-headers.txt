@@ -1,0 +1,12 @@
+== sdk/apps/qed/build/QED.NAP
+    VirtualAddress: 0x1000	    FileSize: 391312	    MemSize: 391312	    Flags [ (0x5)
+    VirtualAddress: 0x60890	    FileSize: 6768	    MemSize: 74240	    Flags [ (0x6)
+0000000000072a90 B _end
+== sdk/apps/teradesk/build/dist/DESKTOP.NAP
+    VirtualAddress: 0x1000	    FileSize: 191056	    MemSize: 191056	    Flags [ (0x5)
+    VirtualAddress: 0x2FA50	    FileSize: 3360	    MemSize: 18928	    Flags [ (0x6)
+0000000000034440 B _end
+== sdk/apps/apitest/APITEST.NCP
+    VirtualAddress: 0x1000	    FileSize: 74656	    MemSize: 74656	    Flags [ (0x5)
+    VirtualAddress: 0x133A0	    FileSize: 112	    MemSize: 7856	    Flags [ (0x6)
+0000000000015250 B _end

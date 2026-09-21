@@ -461,6 +461,10 @@ fn subdir_test() {
 /// Fattrib / Frename / Fdatime over a freshly created file.
 fn fmeta_test() {
     let f = c"c:/META.TXT";
+    // A previous run that stopped between SET(0x21) and the clear below
+    // leaves a read-only META.TXT that Fcreate cannot replace; clear it so the
+    // test is re-runnable on the same card (EFILNF when absent, harmless).
+    gemdos_fattrib(f.as_ptr() as u64, 1, 0x00);
     let hc = gemdos_fcreate(f.as_ptr() as u64, 0);
     if hc >= 6 {
         gemdos_fwrite(hc as u16, 5, c"meta\n".as_ptr() as u64);
@@ -477,6 +481,13 @@ fn fmeta_test() {
         "[emmc] Fattrib get={:#x} set(0x21)={:#x} get={:#x} ; set(SUBDIR)={} (exp -36)",
         g0, s1, g1, bad,
     );
+    // Hard checks (docs/api/gemdos/file/43-fattrib.md "Return value"): a
+    // set returns the attribute byte it stored, a following get reads it
+    // back, and a set with a bit outside FA_NORM is EACCDN (-36).
+    assert_eq!(g0, 0, "[emmc] fmeta Fattrib GET on a freshly created file");
+    assert_eq!(s1, 0x21, "[emmc] fmeta Fattrib SET(0x21) returns the stored byte");
+    assert_eq!(g1, 0x21, "[emmc] fmeta Fattrib GET after SET(0x21)");
+    assert_eq!(bad, -36, "[emmc] fmeta Fattrib SET(FA_SUBDIR) must be EACCDN");
     // Clear read-only again so we can rename/delete it.
     gemdos_fattrib(f.as_ptr() as u64, 1, 0x00);
 
@@ -497,15 +508,29 @@ fn fmeta_test() {
          ; file GET={:#x} (&0x10==0) ; dir SET={} (exp -36) ; missing GET={} (exp -33)",
         dir_bs, dir_ns, file_get, dir_set, miss,
     );
-    kprintln!(
-        "[emmc] Fattrib dir-GET asserts: (a) {} (b) {} (c) {} (d) {}",
-        dir_bs >= 0 && (dir_bs & 0x10) != 0 && dir_ns >= 0 && (dir_ns & 0x10) != 0,
-        file_get >= 0 && (file_get & 0x10) == 0,
-        dir_set == -36,
-        miss == -33,
-    );
+    // Hard checks, one per case, so a regression stops the run with the
+    // case name instead of printing `false` (TASK/T06; the Q07 defect was
+    // exactly (a): the trailing-separator spelling). Clean up first so a
+    // failing assertion does not leave the folder behind on the card.
     let _ = dc;
-    gemdos_ddelete(cdir.as_ptr() as u64); // clean up
+    gemdos_ddelete(cdir.as_ptr() as u64);
+    assert!(
+        dir_bs >= 0 && (dir_bs & 0x10) != 0,
+        "[emmc] fmeta (a) Fattrib GET on \"C:\\CLIPBRD\\\" (trailing '\\') must return the folder attribute with FA_SUBDIR, got {}",
+        dir_bs,
+    );
+    assert!(
+        dir_ns >= 0 && (dir_ns & 0x10) != 0,
+        "[emmc] fmeta (a) Fattrib GET on \"C:\\CLIPBRD\" (plain) must return the folder attribute with FA_SUBDIR, got {}",
+        dir_ns,
+    );
+    assert!(
+        file_get >= 0 && (file_get & 0x10) == 0,
+        "[emmc] fmeta (b) Fattrib GET on a normal file must be >= 0 without FA_SUBDIR, got {}",
+        file_get,
+    );
+    assert_eq!(dir_set, -36, "[emmc] fmeta (c) Fattrib SET on a folder must be EACCDN");
+    assert_eq!(miss, -33, "[emmc] fmeta (d) Fattrib GET on a missing name must be EFILNF");
 
     // Fdatime: set a known stamp on the open file, close, reopen, get.
     let h = gemdos_fopen(f.as_ptr() as u64, 0);

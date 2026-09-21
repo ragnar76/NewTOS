@@ -300,9 +300,10 @@ folder with `Fattrib(path, 0, 0) >= 0 && (attr & FA_DIR)`; without this QED's
 NOSCRAP alert. Reference: FreeMiNT `sys_f_attrib` (`references/freemint/sys/
 dosdir.c:946-1002`), EmuTOS `xchmod` + TOS4 note (`bdos/fsdir.c:382-436`,
 `391-400`). Selftest: `kernel/src/selftest_emmc.rs` `fmeta_test` (dir-GET
-assertions a-d) — note that this module is **not wired into any boot path**, so
-those assertions do not run in a normal boot and, as written, print `true`/
-`false` instead of failing (recorded in `TASK/T06.md`).
+assertions a-d) — since TASK/T06 hard `assert!`s that name the case, wired
+into the boot behind the kernel feature `selftest-emmc` (`cargo xtask build
+--board rpi4 --features selftest-emmc`, QEMU raspi4b; a failure is a `[PANIC]`
+line). It is not part of a normal boot, which has no `selftest_*` call.
 
 2026-09-12 (Q07 — the trailing-separator spelling): the 2026-07-21 entry above
 claimed that `"C:\\CLIPBRD"` and `"C:\\CLIPBRD\\"` "resolve to the same

@@ -64,13 +64,19 @@ of the classic TOS structures can hold a NewTOS pointer
 (`sdk/gemlib/overlay/gem.h:62-64`, `basepage.h:19`).
 
 The basepage the loader writes is the classic 256-byte layout with 4-byte
-fields (`loader.rs:625-691`; kernel struct `tos-types/src/basepage.rs`):
-`p_hitpa = 0x400000`, `p_tbase`/`p_tlen` = the first executable `PT_LOAD`,
-`p_dbase`/`p_dlen`/`p_bbase`/`p_blen` = the first writable non-executable
-one (with our single RWX segment that leaves the data fields **zero** —
-`loader.rs:639-650` classifies by `PF_X`/`PF_W`, and `newtos.ld` emits one
-`FLAGS(7)` segment), `p_xdta` = `&p_cmdlin`, `p_env` = 0 unless a `Pexec`
-caller supplied one, `p_cmdlin` = the tail verbatim (length byte first).
+fields (`loader.rs` `populate_basepage`; kernel struct
+`tos-types/src/basepage.rs`): `p_hitpa = 0x400000`, `p_tbase`/`p_tlen` = the
+first executable `PT_LOAD`, `p_dbase`/`p_dlen`/`p_bbase`/`p_blen` = the first
+writable non-executable one (file part / BSS tail). Since TASK/T05
+`newtos.ld` emits exactly those two segments (`text` R-X, `data` RW- with
+`.bss` as its memsz-only tail), so all six fields are filled and satisfy the
+EmuTOS relations `p_dbase = p_tbase + p_tlen`, `p_bbase = p_dbase + p_dlen`,
+`p_bbase + p_blen = _end` (`bdos/kpgmld.c:131-132`; APITEST T32 checks them
+on the machine). Before T05 the single `FLAGS(7)` segment left the four
+data/BSS fields **zero** — a program without `.data`/`.bss` (the hand-crafted
+`tools/mk-hello-ncp.py` HELLO.NCP) still gets that. `p_xdta` = `&p_cmdlin`,
+`p_env` = 0 unless a `Pexec` caller supplied one, `p_cmdlin` = the tail
+verbatim (length byte first).
 
 ### A3. What a program gets, and from where
 

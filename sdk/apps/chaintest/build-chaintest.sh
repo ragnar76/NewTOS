@@ -33,15 +33,15 @@ mkdir -p "$BUILD"
 
 [ -f "$SRC" ] || { echo "error: $SRC missing" >&2; exit 1; }
 
-# --- ensure the two ported libraries are present ------------------------------
-if [ ! -f "$LIBC/libc.a" ]; then
-  echo "libc.a absent -- running build-libc.sh first…"
-  "$LIBC/build-libc.sh" >/dev/null 2>&1 || { echo "error: build-libc.sh failed" >&2; exit 1; }
-fi
-if [ ! -f "$GEM/gemlib.a" ]; then
-  echo "gemlib.a absent -- running build-gemlib.sh first…"
-  "$GEM/build-gemlib.sh" >/dev/null 2>&1 || { echo "error: build-gemlib.sh failed" >&2; exit 1; }
-fi
+# --- ensure the two ported libraries are current ------------------------------
+# gemlib -> libc, the same chain build-teradesk.sh links. The chain and each
+# library's real input set live once in sdk/lib-stale.sh (TASK/T03);
+# `lib_ensure gemlib` walks libc -> gemlib in that order and does not swallow
+# what the library builds report (TASK/T02). Before TASK/T06 this script only
+# built a library whose ARCHIVE was absent, so a stale one was reused in
+# silence -- the pre-T03 pattern lib-stale.sh's header describes.
+. "$SDK/lib-stale.sh"
+lib_ensure gemlib || exit 1
 MINT="$LIBC/mintlib/include"
 [ -d "$MINT" ]   || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
 [ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }

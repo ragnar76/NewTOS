@@ -3,16 +3,20 @@
  *
  * The NewTOS program loader (tos-api/src/bdos/process/{loader,mmu,arena}.rs)
  * maps a multi-page Transient Program Area (TPA_SIZE, 4 MiB today) for the
- * process, at low-half VA 0x0:
+ * process, at low-half VA 0x0. The image is linked at RESERVED_LOW_END =
+ * 0x1000 (sdk/newtos.ld), above the basepage and the classic low-memory
+ * system area the loader materialises in page 0 (B1 / Option 1):
  *
  *     [0x000, 0x100)          BasePage (populated by the loader)
- *     [0x100, image_end)      PT_LOAD image (.text/.rodata/.data, multi-page)
- *     [image_end, __bss_end)  .bss (zeroed by the loader)
- *     [__bss_end, p_hitpa)    free TPA: heap grows up, stack grows down
+ *     [0x400, 0x670)          sysvars + OSHEADER + cookie jar (loader)
+ *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata) = p_tbase/p_tlen
+ *     [p_dbase, p_bbase)      PT_LOAD data (.data)         = p_dbase/p_dlen
+ *     [p_bbase, _end)         .bss (zeroed by the loader)  = p_bbase/p_blen
+ *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
  *
  * Every TPA page is mapped user-read/write/execute. On entry the loader has:
  *
- *   - eret'd to EL0 at e_entry (this `_start`, linked at 0x100);
+ *   - eret'd to EL0 at e_entry (this `_start`, linked at 0x1000);
  *   - set SP_EL0 to the mapped TPA top (= the basepage's p_hitpa);
  *   - put the BasePage VA (0x0) in x0 on the SVC-Pexec launch path.
  *

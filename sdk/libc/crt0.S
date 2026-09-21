@@ -2,19 +2,24 @@
  * crt0.S -- NewTOS C runtime startup for libc-linked programs (`.NCP`).
  *
  * This is the libc variant of sdk/crt0.S: identical TPA/SP setup, plus one
- * extra step -- it calls __libc_init_heap(p_hitpa) before main so mintlib's
- * malloc arena is pointed at the free TPA region (see
- * sdk/libc/newtos-arch/heap_init.c). Programs that do not link libc keep
- * using the plain sdk/crt0.S, which has no such dependency.
+ * extra step -- it calls __libc_init_heap(basepage, p_hitpa) before main,
+ * which sets mintlib's `_base` (the BASEPAGE pointer mintlib's own crt0
+ * stores at start, startup/crt0.S:69) and points the malloc arena at the
+ * free TPA region (see sdk/libc/newtos-arch/heap_init.c). Programs that do
+ * not link libc keep using the plain sdk/crt0.S, which has no such dependency.
  *
- * TPA layout (tos-api/src/bdos/process/loader.rs), low-half VA 0x0:
+ * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld), low-half
+ * VA 0x0 -- the image starts at RESERVED_LOW_END = 0x1000, above the classic
+ * low-memory system area the loader materialises in page 0 (B1 / Option 1):
  *
  *     [0x000, 0x100)          BasePage (populated by the loader)
- *     [0x100, image_end)      PT_LOAD image (.text/.rodata/.data)
- *     [image_end, __bss_end)  .bss (zeroed by the loader)
- *     [__bss_end, p_hitpa)    free TPA: heap grows up, stack grows down
+ *     [0x400, 0x670)          sysvars + OSHEADER + cookie jar (loader)
+ *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata) = p_tbase/p_tlen
+ *     [p_dbase, p_bbase)      PT_LOAD data (.data)         = p_dbase/p_dlen
+ *     [p_bbase, _end)         .bss (zeroed by the loader)  = p_bbase/p_blen
+ *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
  *
- * On entry the loader has eret'd to EL0 at _start (linked at 0x100) and set
+ * On entry the loader has eret'd to EL0 at _start (linked at 0x1000) and set
  * SP_EL0 to the TPA top. We re-establish SP from the BasePage's p_hitpa
  * (32-bit LONG at basepage offset 0x04, read through a zero base register)
  * so we do not depend on the entry SP or x0.
@@ -32,9 +37,11 @@ _start:
     ldr     w9, [x1, #4]        /* w9 = p_hitpa (zero-extended into x9) */
     mov     sp, x9
 
-    /* Initialise the libc heap arena: __libc_init_heap(p_hitpa). p_hitpa is
-       in x9; pass it in x0. The call needs a valid SP (set above). */
-    mov     x0, x9
+    /* __libc_init_heap(basepage, p_hitpa): x1 still holds the basepage VA
+       (0, the base register p_hitpa was read through) and x9 p_hitpa. The
+       call needs a valid SP (set above). */
+    mov     x0, x1
+    mov     x1, x9
     bl      __libc_init_heap
 
     /* Set up argc/argv for main(int argc, char **argv).

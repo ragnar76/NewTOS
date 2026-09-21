@@ -36,6 +36,17 @@ initinfo-diag = []
 # by default; build with `--features gemdos-trace` to instrument the GEMDOS
 # trap path (what an application actually asks the file system for).
 gemdos-trace = ["tos-api/gemdos-trace"]
+# microSD / FAT / GEMDOS-file self-test build (board-rpi4 / QEMU raspi4b):
+# runs `selftest_emmc::run()` right after the card is mounted at boot -- the
+# Phase-09 block-device, FAT, Fopen/Fsfirst/Dsetpath, Fattrib/Frename/Fdatime
+# and Fwrite checks -- and then continues the boot. Its Fattrib checks are
+# hard assertions (a failure is a `[PANIC]` line naming the case, TASK/T06).
+# It WRITES to C: (creates and removes META.TXT / RENAMED.TXT / CLIPBRD / a
+# write-test file), so build it only for a test image, never for a user's
+# card. Off by default; `cargo xtask build --board rpi4 --features selftest-emmc`.
+# This is the one boot-path gate the `selftest_*` modules have: without it
+# they are compiled but never called (docs/sdk/06-image-and-testing.md).
+selftest-emmc = []
 # USB enumeration diagnostic build: tees every `kprint!` line into a RAM
 # buffer and writes it to `C:\\USBDIAG.LOG` once the card is mounted, so a
 # machine with no serial line still yields the whole boot log as a file. It

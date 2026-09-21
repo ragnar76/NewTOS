@@ -188,10 +188,13 @@ pub fn set_bootflags_from_shiftbits(shiftbits: u8) {
 /// first act in `autoexec` (`bios/bios.c:702-704`, "check if the user does not
 /// want to run AUTO programs"); see [`set_bootflags_from_shiftbits`].
 ///
-/// Runs **only** the native NewTOS extensions `.NAP` / `.NCP` (ADR-018). Classic
+/// Runs **only** native NewTOS *console* programs, `.NCP` (ADR-018). A GEM
+/// application (`.NAP`) needs the AES, which is not up yet at this point of
+/// the boot — it launches from the desktop (double-click, or the `#Z`
+/// NEWDESK.INF autorun) instead, see the `classify` match below. Classic
 /// Atari `.PRG` / `.TOS` are m68k and cannot load without the (unavailable)
 /// emulator — attempting one at boot only produced a failed load and an alert,
-/// so they are now skipped here (the desktop still reports them as m68k when a
+/// so they are skipped here (the desktop still reports them as m68k when a
 /// user explicitly opens one). `.NTP` is also excluded: it takes a command tail
 /// there is no dialog for at boot.
 pub fn run_auto_folder() {

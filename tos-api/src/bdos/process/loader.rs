@@ -1466,3 +1466,147 @@ mod cookie_mirror_tests {
         drop(unsafe { Box::from_raw(page_ptr) });
     }
 }
+
+#[cfg(test)]
+mod basepage_segment_tests {
+    //! The six basepage segment fields (`p_tbase/p_tlen/p_dbase/p_dlen/
+    //! p_bbase/p_blen`, `docs/api/structures/basepage.md`) as
+    //! [`populate_basepage`] derives them from the `PT_LOAD` table
+    //! (TASK/T05). EmuTOS fills them from the PRG header
+    //! (`bdos/kpgmld.c:123-145`): `p_dbase = p_tbase + p_tlen`,
+    //! `p_bbase = p_dbase + p_dlen`, `p_blen` = the BSS size. Here the
+    //! text is the first executable segment and data/BSS the first
+    //! writable non-executable one, which is the two-`PT_LOAD` shape
+    //! `sdk/newtos.ld` emits (text R-X, data RW- with `.bss` as its
+    //! memsz-only tail).
+    //!
+    //! No process slot, pool or page table is touched: `populate_basepage`
+    //! writes into a plain byte buffer, so these run as ordinary host tests.
+
+    use super::*;
+    use crate::bdos::process::elf::{PF_R, PF_W, PF_X};
+
+    const ET_EXEC: u16 = 2;
+    const EM_AARCH64: u16 = 0xb7;
+    const PT_LOAD: u32 = 1;
+    const EHDR: usize = 64;
+    const PHDR: usize = 56;
+
+    fn put16(b: &mut [u8], off: usize, v: u16) {
+        b[off..off + 2].copy_from_slice(&v.to_le_bytes());
+    }
+    fn put32(b: &mut [u8], off: usize, v: u32) {
+        b[off..off + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    fn put64(b: &mut [u8], off: usize, v: u64) {
+        b[off..off + 8].copy_from_slice(&v.to_le_bytes());
+    }
+
+    /// `(flags, vaddr, filesz, memsz)` per `PT_LOAD`.
+    type Seg = (u32, u64, u64, u64);
+
+    /// A well-formed ELF64 AArch64 executable whose `PT_LOAD` table is
+    /// exactly `segs`; every segment's file bytes are placed after the
+    /// headers (contents irrelevant here — only the table is read).
+    fn elf_with(segs: &[Seg]) -> Vec<u8> {
+        let hdr_len = EHDR + PHDR * segs.len();
+        let payload: u64 = segs.iter().map(|s| s.2).sum();
+        let mut b = vec![0u8; hdr_len + payload as usize];
+        b[0..4].copy_from_slice(b"\x7fELF");
+        b[4] = 2; // ELFCLASS64
+        b[5] = 1; // ELFDATA2LSB
+        b[6] = 1; // EV_CURRENT
+        put16(&mut b, 16, ET_EXEC);
+        put16(&mut b, 18, EM_AARCH64);
+        put32(&mut b, 20, 1);
+        put64(&mut b, 24, RESERVED_LOW_END); // e_entry = first text byte
+        put64(&mut b, 32, EHDR as u64); // e_phoff
+        put16(&mut b, 54, PHDR as u16); // e_phentsize
+        put16(&mut b, 56, segs.len() as u16); // e_phnum
+
+        let mut off = hdr_len as u64;
+        for (i, &(flags, vaddr, filesz, memsz)) in segs.iter().enumerate() {
+            let p = EHDR + i * PHDR;
+            put32(&mut b, p, PT_LOAD);
+            put32(&mut b, p + 4, flags);
+            put64(&mut b, p + 8, off);
+            put64(&mut b, p + 16, vaddr);
+            put64(&mut b, p + 32, filesz);
+            put64(&mut b, p + 40, memsz);
+            off += filesz;
+        }
+        b
+    }
+
+    /// Parse `segs` into an image, write its basepage into a scratch
+    /// window and hand the six fields back as
+    /// `(tbase, tlen, dbase, dlen, bbase, blen)`.
+    fn fields_of(segs: &[Seg]) -> (u64, u64, u64, u64, u64, u64) {
+        let blob = elf_with(segs);
+        let img = elf::parse(&blob, blob.len() as u64).expect("well-formed ELF64");
+        assert_eq!(img.segments().len(), segs.len(), "every PT_LOAD must be seen");
+        let mut tpa = vec![0u8; RESERVED_LOW_END as usize];
+        populate_basepage(&mut tpa, &img, &[], None);
+        let rd = |off: usize| u32::from_le_bytes(tpa[off..off + 4].try_into().unwrap()) as u64;
+        (rd(0x08), rd(0x0C), rd(0x10), rd(0x14), rd(0x18), rd(0x1C))
+    }
+
+    /// The `sdk/newtos.ld` shape: text R-X at 0x1000, data RW- right
+    /// behind it with a BSS tail. All six fields are filled and satisfy
+    /// the EmuTOS relations (`kpgmld.c:131-132`): `p_dbase = p_tbase +
+    /// p_tlen`, `p_bbase = p_dbase + p_dlen`, and `p_bbase + p_blen` is
+    /// the end of the image (the linker's `_end`).
+    #[test]
+    fn two_segments_fill_all_six_fields() {
+        const TEXT_LEN: u64 = 0x1230;
+        const DATA_LEN: u64 = 0x70;
+        const BSS_LEN: u64 = 0x1e40;
+        let text_base = RESERVED_LOW_END;
+        let data_base = text_base + TEXT_LEN;
+        let end = data_base + DATA_LEN + BSS_LEN;
+
+        let (tbase, tlen, dbase, dlen, bbase, blen) = fields_of(&[
+            (PF_R | PF_X, text_base, TEXT_LEN, TEXT_LEN),
+            (PF_R | PF_W, data_base, DATA_LEN, DATA_LEN + BSS_LEN),
+        ]);
+
+        assert_eq!((tbase, tlen), (text_base, TEXT_LEN), "p_tbase/p_tlen = the R-X segment");
+        assert_eq!((dbase, dlen), (data_base, DATA_LEN), "p_dbase/p_dlen = the RW- file part");
+        assert_eq!((bbase, blen), (data_base + DATA_LEN, BSS_LEN), "p_bbase/p_blen = its BSS tail");
+
+        assert!(tbase < dbase && dbase <= bbase, "p_tbase < p_dbase <= p_bbase");
+        assert_eq!(dbase, tbase + tlen, "p_dbase = p_tbase + p_tlen (kpgmld.c:132)");
+        assert_eq!(bbase, dbase + dlen, "p_bbase = p_dbase + p_dlen (kpgmld.c:131)");
+        assert_eq!(bbase + blen, end, "p_bbase + p_blen = _end");
+    }
+
+    /// Regression: the pre-T05 single RWX segment (the shape
+    /// `tools/mk-hello-ncp.py` still emits) classifies as text only —
+    /// `p_tbase/p_tlen` = the whole segment's file part, the four
+    /// data/BSS fields zero. Unchanged by T05: the loader was not
+    /// touched, the linker script was.
+    #[test]
+    fn single_rwx_segment_yields_text_only() {
+        const LEN: u64 = 0x800;
+        const BSS: u64 = 0x100;
+        let (tbase, tlen, dbase, dlen, bbase, blen) =
+            fields_of(&[(PF_R | PF_W | PF_X, RESERVED_LOW_END, LEN, LEN + BSS)]);
+
+        assert_eq!((tbase, tlen), (RESERVED_LOW_END, LEN));
+        assert_eq!((dbase, dlen, bbase, blen), (0, 0, 0, 0), "an RWX segment carries no data fields");
+    }
+
+    /// A data segment with no BSS (`memsz == filesz`) gives `p_blen = 0`
+    /// with `p_bbase` still the end of the data — the shape a program
+    /// without uninitialised data has, and what the pre-T05 orphan
+    /// `.init_array` placement accidentally produced for every program.
+    #[test]
+    fn data_without_bss_has_zero_blen() {
+        let (tbase, tlen, dbase, dlen, bbase, blen) = fields_of(&[
+            (PF_R | PF_X, RESERVED_LOW_END, 0x400, 0x400),
+            (PF_R | PF_W, RESERVED_LOW_END + 0x400, 0x80, 0x80),
+        ]);
+        assert_eq!(dbase, tbase + tlen);
+        assert_eq!((bbase, blen), (dbase + dlen, 0));
+    }
+}

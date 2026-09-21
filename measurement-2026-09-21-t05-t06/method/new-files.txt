@@ -1,0 +1,3 @@
+?? TASK/T05-STATUS-DONE.MD
+?? TASK/T06-STATUS-DONE.MD
+?? sdk/run-host-tests.sh

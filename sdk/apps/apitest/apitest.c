@@ -56,6 +56,11 @@
  */
 
 #include <mint/osbind.h>
+#include <mint/basepage.h>   /* BASEPAGE (32-bit fields, NewTOS overlay) + _base */
+
+/* Linker symbol (sdk/newtos.ld): first free TPA byte above the zeroed BSS.
+   T32 checks it against the basepage's p_bbase + p_blen. */
+extern char _end[];
 
 /* ------------------------------------------------------------------ *
  *  raw volatile reads (the classic direct-pointer TOS idiom)          *
@@ -1530,6 +1535,63 @@ int main(void)
 		b_nl();
 		b_emit();
 		ck_bool(G_AES, "T31.2 menu_bar(tree,1) returns 1", r1 == 1);
+	}
+
+	/* ---- T32: the six basepage segment fields (TASK/T05). EmuTOS fills
+	 *      them from the PRG header in bdos/kpgmld.c:123-145: p_tbase = the
+	 *      first byte after the PD, p_dbase = p_tbase + p_tlen (:132),
+	 *      p_bbase = p_tbase + tlen + dlen (:131), p_blen = the BSS size;
+	 *      the free TPA starts at p_bbase + p_blen (crtinit.c's Mshrink
+	 *      idiom sums exactly these). On NewTOS the loader takes them from
+	 *      the two PT_LOAD segments sdk/newtos.ld emits (text R-X, data RW-
+	 *      with .bss as its memsz-only tail), so p_bbase + p_blen must be
+	 *      the linker's _end. `_base` is what mintlib's readers dereference
+	 *      (getppid.c, gmon.c, crtinit.c); sdk/libc/newtos-arch/heap_init.c
+	 *      sets it from the basepage crt0 hands it. ---- */
+	before("T32 BasePage p_tbase/p_tlen/p_dbase/p_dlen/p_bbase/p_blen vs _end");
+	{
+		unsigned long tbase = RD_U32(0x08UL);
+		unsigned long tlen  = RD_U32(0x0CUL);
+		unsigned long dbase = RD_U32(0x10UL);
+		unsigned long dlen  = RD_U32(0x14UL);
+		unsigned long bbase = RD_U32(0x18UL);
+		unsigned long blen  = RD_U32(0x1CUL);
+		unsigned long end   = (unsigned long) _end;
+
+		b_reset();
+		b_str("T32   p_tbase=");
+		b_hex(tbase, 8);
+		b_str(" p_tlen=");
+		b_hex(tlen, 8);
+		b_str(" p_dbase=");
+		b_hex(dbase, 8);
+		b_str(" p_dlen=");
+		b_hex(dlen, 8);
+		b_nl();
+		b_emit();
+		b_reset();
+		b_str("T32   p_bbase=");
+		b_hex(bbase, 8);
+		b_str(" p_blen=");
+		b_hex(blen, 8);
+		b_str(" _end=");
+		b_hex(end, 8);
+		b_str(" _base=");
+		b_hex((unsigned long) _base, 8);
+		b_nl();
+		b_emit();
+
+		ck_bool(G_GEMDOS, "T32.1 p_tbase < p_dbase", tbase < dbase);
+		ck_bool(G_GEMDOS, "T32.2 p_dbase <= p_bbase", dbase <= bbase);
+		ck_hex(G_GEMDOS, "T32.3 p_bbase + p_blen == _end", bbase + blen, end);
+		ck_hex(G_GEMDOS, "T32.4 p_dbase == p_tbase + p_tlen (kpgmld.c:132)",
+		       dbase, tbase + tlen);
+		ck_hex(G_GEMDOS, "T32.5 p_bbase == p_dbase + p_dlen (kpgmld.c:131)",
+		       bbase, dbase + dlen);
+		ck_bool(G_GEMDOS, "T32.6 p_tlen, p_dlen, p_blen all nonzero",
+			tlen != 0 && dlen != 0 && blen != 0);
+		ck_hex(G_GEMDOS, "T32.7 _base == p_lowtpa (mintlib BASEPAGE *)",
+		       (unsigned long) _base, (unsigned long) RD_U32(0x00UL));
 	}
 
 	/* ================================================================ *

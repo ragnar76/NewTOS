@@ -221,4 +221,17 @@ emulator (Phase 10+).
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00.)
+- The loader (`tos-api/src/bdos/process/loader.rs`, `populate_basepage`)
+  reads an ELF, not a PRG header. The six segment fields come from the
+  `PT_LOAD` table: `p_tbase`/`p_tlen` = the first executable segment
+  (file part), `p_dbase`/`p_dlen` = the first writable non-executable
+  segment's file part, `p_bbase`/`p_blen` = that segment's `memsz - filesz`
+  tail. `sdk/newtos.ld` emits exactly those two segments back to back, so the
+  EmuTOS relations hold to the byte: `p_dbase = p_tbase + p_tlen`,
+  `p_bbase = p_dbase + p_dlen` (`bdos/kpgmld.c:131-132`), and
+  `p_bbase + p_blen` is the linker's `_end` (TASK/T05; loader host tests
+  `basepage_segment_tests`, APITEST T32). `p_tbase` is `0x1000`, not
+  `basepage + 0x100`: page 0 also carries the classic low-memory system area
+  (B1 / Option 1). An image with a single RWX segment (no data) leaves the
+  four data/BSS fields zero.
+- `p_lowtpa` = 0 (`USER_VA_BASE`): the basepage is at VA 0 of every process.

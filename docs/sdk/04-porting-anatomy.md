@@ -141,24 +141,22 @@ before trusting them after an overlay change.
    libc.a --end-group` through `sdk/newtos.ld` → `sdk/apps/qed/build/QED.NAP`
    (`:149-153`); report undefined symbols (goal 0, `:159-167`).
 
-**Resource file — a manual step the script does not perform.**
-`tools/make-sd-image.sh:259-266` installs `build/QED.NAP` **and
-`build/qed.rsc`**, but `build-qed.sh` never produces `qed.rsc`. Reproduced
-while writing this page: `python3 tools/mkrsc.py convert
-sdk/apps/qed/src/qed.rsc <out>` yields 41322 bytes, SHA-256 `5a2cefa2…` —
-byte-identical to the `sdk/apps/qed/build/qed.rsc` on this host (dated
-2026-09-14; since A40, 2026-09-19, the tool emits char-grid coordinates —
-NRSC v9 then, SHA-256 `3383dd39…`, same size — and since A41 part 2 the
-same day NRSC v13 with the 40-byte `RSHDR` preamble and the 84-byte header:
-41378 bytes, SHA-256 `30ac6bf2…`). So the step is
+**Resource file.** `tools/make-sd-image.sh` installs `build/QED.NAP` **and
+`build/qed.rsc`**. Since TASK/T06 `build-qed.sh` produces the latter itself,
+after a successful link:
 
 ```sh
 python3 tools/mkrsc.py convert sdk/apps/qed/src/qed.rsc sdk/apps/qed/build/qed.rsc
 ```
 
-and it has to be run by hand (or added to the script — a finding, not done
-here). The German `src/qed.rsc` is the one that matches the existing
-artifact; `en/qed_en.rsc` converts to 40309 bytes.
+— the way `build-teradesk.sh` stages TeraDesk's resources. The German
+`src/qed.rsc` is the one that matches the shipped artifact (`en/qed_en.rsc`
+converts to 40309 bytes). History of the artifact: 41322 bytes, SHA-256
+`5a2cefa2…` up to 2026-09-14; since A40 (2026-09-19) the tool emits char-grid
+coordinates — NRSC v9, SHA-256 `3383dd39…`, same size — and since A41 part 2
+the same day NRSC v13 with the 40-byte `RSHDR` preamble and the 84-byte
+header: **41378 bytes, SHA-256 `30ac6bf2…`**, which is what the script now
+writes (verified byte-identical to the previously hand-made file, TASK/T06).
 
 ## TeraDesk, step by step (`sdk/apps/build-teradesk.sh`)
 

@@ -188,10 +188,11 @@ lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
 # memcpy/memmove/memset/... (were bcopy.S/memset.S), _exit (was libc_exit.S),
 # the malloc-arena/heap init, and the lean stat/tty/ioctl glue replacing the
 # excluded mintlib files. The stat/tty/ioctl shims need the full mintlib
-# include path (struct stat, lib.h), so use $INCS for them.
+# include path (struct stat, lib.h), so use $INCS for them; heap_init.c too,
+# since it sets `_base` through <mint/basepage.h> (TASK/T05).
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$TOP/include" -isystem "$RES" \
     -c "$LIBC/newtos-arch/memops.c"    -o "$OBJ/arch__memops.o"   || exit 1
-"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$TOP/include" -isystem "$RES" \
+"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/heap_init.c" -o "$OBJ/arch__heapinit.o" || exit 1
 "$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
     -c "$LIBC/newtos-arch/proc.S"      -o "$OBJ/arch__proc.o"     || exit 1

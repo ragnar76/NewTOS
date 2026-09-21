@@ -50,8 +50,15 @@
 ### Native AArch64 callers
 
 - AAPCS64 standard: x0–x7 for parameters, x0 for return
-- Function ID in **x8**
-- `svc #N` where N = 1 (GEMDOS), 13 (BIOS), 14 (XBIOS)
+  (sign-extended `i64`; `tos-api/src/trap.rs`)
+- `svc #N`, N = the m68k trap number: 1 (GEMDOS), 2 (GEM: VDI + AES),
+  13 (BIOS), 14 (XBIOS) — `TrapClass::from_imm`, `tos-api/src/trap.rs`
+- GEMDOS / BIOS / XBIOS: function ID in **x8** (low 16 bits), arguments
+  in x0–x7 in their TOS order
+- GEM (`svc #2`): **x0 = selector** (115 = VDI, 200 = AES), **x1 = the
+  parameter block** (VDIPB / AESPB of the caller's pointer width, ADR-020);
+  the VDI returns `flip_y` in x0, the AES returns 0 — its result is
+  `int_out[0]` (`kernel/src/arch/aarch64/exceptions.rs`, GEM arm)
 
 ### m68k callers (via emulator)
 
@@ -90,10 +97,19 @@ both worlds.
 ### User space (TTBR0_EL1, per process)
 
 - Low virtual addresses (`0x0000_0000_xxxx_xxxx`)
-- Process TPA (Transient Program Area) per TOS convention
-- Basepage at TPA start (256 bytes per Compendium)
-- Text, data, BSS following basepage
-- User stack at top of TPA, growing down
+- Process TPA (Transient Program Area) per TOS convention, 4 MiB today
+  (`tos-api/src/bdos/process/{loader,arena}.rs`)
+- Basepage at TPA start, VA 0 (256 bytes per Compendium)
+- Page 0 also carries the classic low-memory system area — sysvars,
+  OSHEADER, cookie jar at `[0x400, 0x670)` — materialised per process
+  (`populate_sysvars`, B1 / Option 1)
+- The image starts at `RESERVED_LOW_END` = 0x1000: text (R-X `PT_LOAD`,
+  `p_tbase/p_tlen`), then data (RW- `PT_LOAD`, `p_dbase/p_dlen`) with the
+  BSS as its tail (`p_bbase/p_blen`); `sdk/newtos.ld`
+- Free TPA above the BSS (`_end`): heap grows up, user stack at the top of
+  the TPA (`p_hitpa`) grows down; the top 64 KiB are reserved for the stack
+- GEMDOS `Malloc`/`Mxalloc` blocks and published kernel structures are
+  mapped into the per-process window above the TPA (ADR-021 / ADR-023)
 
 ## Process Model
 

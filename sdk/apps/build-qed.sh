@@ -14,11 +14,19 @@
 # under sdk/overlays/qed/ replaces the same-named src/*.c at compile time,
 # leaving QED's src/ 100% pristine (upstream drop-in). The overlay lives OUTSIDE
 # the vendored QED tree (which is an embedded git repo) so it is tracked by the
-# NewTOS repo. Currently one overlay exists -- memory.c -- an LP64-correct
-# rewrite of QED's private pool
-# sub-allocator (upstream hardcodes sizeof(pointer)==4; see the file header).
-# The col_*/textring/REALLOC region is byte-identical to src/memory.c; only
-# MALLOC/FREE are re-backed with the LP64-correct libc malloc/free.
+# NewTOS repo. Two overlays exist today (each file's header says why):
+#   memory.c -- an LP64-correct rewrite of QED's private pool sub-allocator
+#               (upstream hardcodes sizeof(pointer)==4). The col_*/textring/
+#               REALLOC region is byte-identical to src/memory.c; only
+#               MALLOC/FREE are re-backed with the LP64-correct libc malloc/free.
+#   set.c    -- a word-width- and endianness-neutral SET module (upstream
+#               addresses the bit set as 32-bit big-endian longs).
+#
+# RESOURCE: QED loads qed.rsc beside QED.NAP (rsrc_load, through the kernel's
+# loader, which reads the native NRSC/LP64 format). The script converts the
+# classic src/qed.rsc with tools/mkrsc.py into build/qed.rsc after a successful
+# link, the way build-teradesk.sh stages desktop.rsc/cicons.rsc, so
+# tools/make-sd-image.sh finds both files in build/ (TASK/T06).
 #
 # QED's own build (sdk/apps/qed/{Makefile,CONFIGVARS,RULES,src/Makefile.objs})
 # uses, for a cross build:
@@ -175,6 +183,14 @@ if [ $lr -eq 0 ]; then
     NM="$BIN/llvm-nm"
     u=$("$NM" -u "$OUT" 2>/dev/null | grep -c . || true)
     echo "undefined symbols in the final image (goal 0): $u"
+
+    # --- resource: build/qed.rsc from the classic (German) src/qed.rsc ------
+    # NRSC v13/LP64 via `mkrsc.py convert` -- the format the kernel's rsrc_load
+    # reads (docs/sdk/04-porting-anatomy.md, "Resource file"). src/qed.rsc is
+    # the one that matches the shipped artifact; en/qed_en.rsc is not used.
+    MKRSC="$SDK/../tools/mkrsc.py"
+    python3 "$MKRSC" convert "$QSRC/qed.rsc" "$BUILD/qed.rsc" || exit 1
+    echo "resource -> $BUILD/qed.rsc ($(wc -c < "$BUILD/qed.rsc" | tr -d ' ') bytes)"
 else
     echo
     echo "LINK FAILED -- residual undefined symbols (blockers):"
