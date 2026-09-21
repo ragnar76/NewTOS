@@ -140,31 +140,46 @@ bit above bit 5 set (`mode & ~0x1f`) is invalid → silent no-op**
 
 > **On the truecolor path (`plane_ct > 8`, `CONF_WITH_VDI_16BIT`)
 > `PAT_FLAG` is not benign — it silently kills the whole copy
-> (measured, `D-VDI-23`).** `cpy_raster` strips bit 5 into its *own local*
-> `mode` (`vdi_raster.c:1347`) and then dispatches to the truecolor
-> routine **without passing it** (`:1363-1368`, `:1432-1437`). Both
-> truecolor routines re-read the raw, **unstripped** `INTIN[0]`
-> (`vro_cpyfm16:980`, `vrt_cpyfm16:1236`), so a mode of `0x10..0x1F`
-> matches no arm: `vro_cpyfm16`'s 16-entry switch has no `default:`
-> (`:1008-1219`) and falls straight out, `vrt_cpyfm16`'s has an explicit
-> `default: return` (`:1325-1326`). Either way the destination is left
-> untouched. This is the same class of gap as D-082 (a stripped value
-> computed and then not used) but a **different, stronger** observable:
-> not "the flag does nothing", but "the call does nothing".
+> (measured for both opcodes, `D-VDI-23`).** `cpy_raster` strips bit 5
+> into its *own local* `mode` (`vdi_raster.c:1347`) and then dispatches
+> to the truecolor routine **without passing it** (`:1367-1372` opaque,
+> `:1432-1437` transparent). Both truecolor routines re-read the raw,
+> **unstripped** `INTIN[0]` (`vro_cpyfm16:981`, `vrt_cpyfm16:1232`), so a
+> mode of `0x10..0x1F` matches no arm: `vro_cpyfm16`'s 16-entry switch
+> has no `default:` (`:1008-1220`) and falls straight out, `vrt_cpyfm16`'s
+> has an explicit `default: return` (`:1323-1324`). Either way the
+> destination is left untouched. This is the same class of gap as D-082
+> (a stripped value computed and then not used) but a **different,
+> stronger** observable: not "the flag does nothing", but "the call does
+> nothing".
 >
-> **Measured** on a real Atari TT running EmuTOS 1.4 whose build has
-> `CONF_WITH_VDI_16BIT` enabled (`tosdump/reference/EMUTOS14-RASTER.BIN`,
-> 2026-09-06): case 144 (`INTIN[0] = 0x13`, 16-plane memory forms) leaves
-> the destination buffer bit-identical to its fill, while case 127
-> (`INTIN[0] = 3`, identical geometry) copies 64 words. Since a NewTOS
-> workstation is *always* truecolor (`v_planes = 16`, memory MFDBs stamped
-> 16 planes), the truecolor rule is the one NewTOS reproduces
-> (`tos-api/src/vdi/raster.rs::vro_cpyfm`). **Unmeasured twin:**
-> `vrt_cpyfm16` cannot be measured on the user's TT at all — it
-> dereferences `CUR_WORK->ext->palette` (`:1233`), and `vwk->ext` is NULL
-> outside a truecolor mode (`vdi_control.c:450-452`), so a 4-plane TT
-> would fault. NewTOS' `vrt_cpyfm` therefore still follows the
-> strip-only rule; **open**, see `D-VDI-23`.
+> **Measured, `vro_cpyfm`** on a real Atari TT running EmuTOS 1.4 whose
+> build has `CONF_WITH_VDI_16BIT` enabled
+> (`tosdump/reference/EMUTOS14-RASTER.BIN`, 2026-09-06): case 144
+> (`INTIN[0] = 0x13`, 16-plane memory forms) leaves the destination buffer
+> bit-identical to its fill, while case 127 (`INTIN[0] = 3`, identical
+> geometry) copies 64 words. Since a NewTOS workstation is *always*
+> truecolor (`v_planes = 16`, memory MFDBs stamped 16 planes), the
+> truecolor rule is the one NewTOS reproduces
+> (`tos-api/src/vdi/raster.rs::vro_cpyfm`).
+>
+> **Measured, `vrt_cpyfm` (R05, 2026-09-21).** The TT cannot run
+> `vrt_cpyfm16` at all — it dereferences `CUR_WORK->ext->palette`
+> (`:1234`), and `vwk->ext` is NULL outside a truecolor mode
+> (`vdi_control.c:450-452`) — so the twin was measured on EmuTOS 1.4
+> (release ROM and the pinned source, 0 differences) on Hatari Falcon030
+> in VIDEL truecolor (640×480, 16 planes):
+> `tosdump/cases/vdi-raster-screen.tsv` (CRC `9780EC39`) case 215
+> (`INTIN = 0x11,1,0` = `PAT_FLAG | MD_REPLACE`, 32×16 mono form → screen
+> at (100,60), read back with `v_get_pixel`) leaves all 512 words at the
+> cleared-screen value `0xFFFF`, while case 201 (`INTIN[0] = 1`, same
+> geometry) expands the form to `0x0000`/`0xFFDF`
+> (`tosdump/reference/EMUTOS14-RASTER-screen-falcontc.BIN`). The rule is
+> therefore the same for both opcodes: **on a `> 8`-plane destination any
+> `INTIN[0]` with bit 5 set draws nothing.** NewTOS' `vrt_cpyfm` now takes
+> the same early return as `vro_cpyfm`
+> (`tos-api/src/vdi/raster.rs::vrt_cpyfm`); host test
+> `tos-api/tests/vdi_raster_reference/cases_screen.rs::case_0215_…`.
 
 ## Source / destination rectangle — `PTSIN` layout
 
@@ -185,18 +200,18 @@ The blit copies a source rectangle of size `(x2−x1+1)×(y2−y1+1)`; the
 
 > **But `PTSIN[6..7]` is not ignored — it anchors the reverse-direction
 > copy (measured, `D-VDI-25`).** `dont_clip` copies `PTSIN[6]`/`PTSIN[7]`
-> into `info->d_xmax`/`d_ymax` **literally** (`:897-898`), and the
+> into `info->d_xmax`/`d_ymax` **literally** (`:898-899`), and the
 > overlap-safe backwards path starts there:
-> `vro_cpyfm16` uses both (`:995-999`), the palette `bit_blt` recomputes
+> `vro_cpyfm16` uses both (`:995-1001`), the palette `bit_blt` recomputes
 > `d_xmax` from `d_xmin + b_wd − 1` (`:607`) but still takes `d_ymax` from
-> `PTSIN[7]` (`:672-674`). A caller whose destination lower-right is
+> `PTSIN[7]` (`:674-675`). A caller whose destination lower-right is
 > **consistent** with the source size (`d_xmax = d_xmin + b_wd − 1`,
 > `d_ymax = d_ymin + b_ht − 1`) sees no difference between the forward and
 > backward path — that is every well-formed caller. A caller that passes an
 > **oversized** `PTSIN[6..7]` lands the block at the *lower-right* anchor
 > when the backward path is taken. Which path is taken is decided by
 > comparing the two computed **start addresses** (`src < dst`,
-> `vdi_raster.c:993`; `s_addr < d_addr`, `:668-669`), i.e. by where the two
+> `vdi_raster.c:995`; `s_addr < d_addr`, `:668-669`), i.e. by where the two
 > forms happen to sit in memory — so for two *distinct* forms the outcome
 > is address-layout-dependent and not portable. Measured: `tosdump` case
 > 157 (src rect `(0,0)-(7,7)`, dest `(0,0)-(31,15)`, 16-plane forms, form A
@@ -384,14 +399,17 @@ No `INTOUT`/`PTSOUT`.
    fields at all. See **D-082** (global discrepancy log).
 10. **On the truecolor path `PAT_FLAG` makes the whole call a no-op**
    (`plane_ct > 8` + `CONF_WITH_VDI_16BIT`): `vro_cpyfm16`/`vrt_cpyfm16`
-   re-read the unstripped `INTIN[0]` (`:980`, `:1236`) and `0x10..0x1F`
-   matches no switch arm. Measured on a real TT (case 144). `D-VDI-23`.
+   re-read the unstripped `INTIN[0]` (`:981`, `:1232`) and `0x10..0x1F`
+   matches no switch arm (`:1008-1220` no `default:`; `:1323-1324`
+   `default: return`). Measured for `vro_cpyfm` on a real TT (case 144,
+   `vdi-raster.tsv`) and for `vrt_cpyfm` on Hatari Falcon030 truecolor
+   (case 215, `vdi-raster-screen.tsv`, R05, 2026-09-21). `D-VDI-23`.
 11. **The caller's `PTSIN` is never modified.** `arb_corner` sorts the
    VDI's *local* copy (`vdi_asm.S:79-81`), so reversed corners come back
    reversed. Measured (cases 147/148). `D-VDI-24`.
 12. **`PTSIN[6..7]` anchors the backwards copy.** The *size* is always the
    source's, but the reverse-direction start corner is taken literally
-   from `PTSIN[6..7]` (`dont_clip:897-898`, used at `:995-999`); a
+   from `PTSIN[6..7]` (`dont_clip:898-899`, used at `:995-1001`); a
    well-formed caller cannot observe it, an oversized destination
    rectangle can. Measured (case 157). `D-VDI-25`.
 
@@ -442,7 +460,11 @@ First-ever measured run of this group: `tosdump/cases/vdi-raster.tsv`
 NewTOS (`reference/NEWTOS-RASTER.BIN`).
 
 - **D-VDI-23** — `PAT_FLAG` on the truecolor path aborts the copy
-  (case 144). Spec corrected, NewTOS `vro_cpyfm` fixed.
+  (case 144). Spec corrected, NewTOS `vro_cpyfm` fixed. The `vrt_cpyfm`
+  half was closed by the screen-raster measurement (R05, 2026-09-21,
+  `vdi-raster-screen.tsv` case 215 on Hatari Falcon030 truecolor,
+  `reference/EMUTOS14-RASTER-screen-falcontc.BIN`): same rule, NewTOS
+  `vrt_cpyfm` fixed.
 - **D-VDI-24** — `arb_corner` does **not** write the sorted rectangle back
   into the caller's `PTSIN`; the trap glue works on a local copy
   (cases 147/148). Spec corrected; NewTOS was already right.
@@ -484,13 +506,14 @@ NewTOS (`reference/NEWTOS-RASTER.BIN`).
   support into `vro_cpyfm`/`vrt_cpyfm`. (Pattern-fill for *fill* opcodes,
   e.g. `v_fillarea`/`vr_recfl`, is unrelated and out of this doc's scope.)
 - **…but on the truecolor path `PAT_FLAG` must abort the call**
-  (`D-VDI-23`, measured case 144). A NewTOS workstation is always
-  truecolor (`v_planes = 16`; memory MFDBs stamped 16 planes), so
-  `vro_cpyfm` gates on the *destination* plane count exactly as
-  `cpy_raster` does: `plane_ct > 8` **and** bit 4 set ⇒ return without
-  touching the destination; `plane_ct <= 8` keeps the strip-only rule.
-  Implemented in `tos-api/src/vdi/raster.rs::vro_cpyfm`
-  (`PALETTE_PLANES_MAX`).
+  (`D-VDI-23`, measured: `vro_cpyfm` case 144 on the TT, `vrt_cpyfm`
+  case 215 on Hatari Falcon030 truecolor). A NewTOS workstation is always
+  truecolor (`v_planes = 16`; memory MFDBs stamped 16 planes), so both
+  `vro_cpyfm` and `vrt_cpyfm` gate on the *destination* plane count
+  exactly as `cpy_raster` does: `plane_ct > 8` **and** bit 4 set ⇒ return
+  without touching the destination; `plane_ct <= 8` keeps the strip-only
+  rule. Implemented in `tos-api/src/vdi/raster.rs::vro_cpyfm` and
+  `::vrt_cpyfm` (`PALETTE_PLANES_MAX`).
 - `vr_trnfm` matters for unpacking icon/image data authored in standard
   form; keep both directions and the source-driven `fd_stand` toggle.
 - The MFDB is a **fixed ABI** parsed by ported programs — match the field

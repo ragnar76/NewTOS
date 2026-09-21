@@ -1,0 +1,90 @@
+NewTOS -- R05 counter-measurement: vrt_cpyfm PAT_FLAG fix, screen raster table
+==============================================================================
+MEASUREMENT ONLY: this directory states what ran and what came back.
+Design, classification and the defect: docs/analysis/raster-screen-r02-r05-2026-09-21.md
+Receipt: TASK/R02-R05-STATUS-DONE.MD
+
+Datum        : 2026-09-21
+Git HEAD     : 048de53 (Branch desk-rebuild) PLUS der UNCOMMITTED Fix in
+               tos-api/src/vdi/raster.rs::vrt_cpyfm (Fruehausstieg bei
+               Ziel-Planes > 8 und INTIN[0] Bit 4 gesetzt, wie vro_cpyfm).
+               Nichts committet, nichts geflasht, keine physische Karte.
+EmuTOS-Quelle: references/emutos @ 1a7484aba1bfba23e2c0899e243b6d8177fe41df
+
+Falltabelle  : tosdump/cases/vdi-raster-screen.tsv, 62 Faelle, 41 Preludes,
+               CRC 9780EC39 (unveraendert gegenueber
+               measurement-2026-09-21-raster-screen/; sha256
+               1cf591e37362bdda3bbb7e12bc1f24331c1a56e2d67e6759ba6eecc38e85e365)
+Referenz     : tosdump/reference/EMUTOS14-RASTER-screen-falcontc.BIN (EmuTOS 1.4
+               Release-ROM, Hatari Falcon030 VIDEL Truecolor 640x480/16 Planes;
+               sha256 70fbf432678d65e0d7a1c4ed01d41c43d9788c4ec2243bccba0dfc60ec0be406)
+
+Dumper       : tosdump/build/DUMPRAST.NAP, unveraendert (dieselbe Datei wie in
+               measurement-2026-09-21-raster-screen/, Build-ID c1f4) sha256
+               5c48715c4d76c1ee9384e0f532b45be0141e07fa43a160fdcea74e84e3b160ab
+               Kopie: newtos-qemu-raspi4b/DUMPRAST.NAP
+
+------------------------------------------------------------------------------
+RUN -- NewTOS auf QEMU raspi4b, headless, 640x480, 16 Planes
+------------------------------------------------------------------------------
+  Kernel  touch kernel/src/lib.rs tos-api/src/lib.rs;
+          cargo run -p xtask -- build --board rpi4 --release
+          (tos-api 64 Warnungen, kernel 94 -- wie vor dem Fix)
+    ELF  target/aarch64-unknown-none-softfloat/release/kernel sha256
+         c5d3a4055b8388fb39027ac11efa0ead544b2c03265b51ce21f3641ffb5da130
+    kernel8.img sha256
+         3e4fac8d3ae9bd3750c9be30580d6dfb3f1f8bcaaff1994618a7a492b109b2cb
+  Karte   tools/make-sd-image.sh <scratch>/sd-screen.img 64; per hdiutil:
+          C:\DUMPRAST.NAP, C:\RASTER.TSV (= vdi-raster-screen.tsv),
+          C:\NEWDESK.INF = measurement-2026-09-21-raster-screen/method/
+          NEWDESK-autorun.INF ("#Z 01 C:\DUMPRAST.NAP@").
+          Das *.img liegt NICHT in diesem Ordner (Scratch).
+  Befehl  qemu-system-aarch64 (11.0.2) -M raspi4b -no-reboot -display none
+            -serial file:BOOT-SERIAL.txt -kernel kernel8.img
+            -drive file=sd-screen.img,if=sd,format=raw   (45 s, dann kill)
+  Log     "[fb] VideoCore display geometry detected: 640x480",
+          "RASTER.TSV: 62 cases, CRC 9780EC39", "table declares screen 640x480
+          at 16 planes; workstation reports 640x480 at 16 planes",
+          "all 62 cases ran", rc=0, "[desk] desktop up", kein PANIC, kein [EXC].
+  Ergebnis newtos-qemu-raspi4b/RASTER.BIN (sha256
+           00ac0308b476a373279a96da6f7c28894f707b7871838b341822625fe65bca13)
+           + RASTER.LOG + BOOT-SERIAL.txt
+  tosdiff --validate: "matches vdi-raster-screen.tsv (62 cases)", accepted.
+  Kein QEMU-Prozess blieb zurueck.
+
+------------------------------------------------------------------------------
+DIFFS (tosdiff ueber vdi-raster-screen.tsv, CRC 9780EC39)
+------------------------------------------------------------------------------
+  DIFF-falcontc-rel-vs-newtos-qemu.txt   Falcon-TC Release-ROM vs NewTOS : 0 von 62
+  DIFF-falcontc-src-vs-newtos-qemu.txt   Falcon-TC gepinnte Quelle vs NewTOS : 0 von 62
+  DIFF-newtos-qemu-c1f42ff-vs-fixed.txt  NewTOS @ c1f42ff (vor dem Fix) vs
+                                         dieser Lauf : 1 von 62 -- genau Fall 215
+                                         (H12, vrt_cpyfm INTIN[0]=0x11): vorher
+                                         REPLACE-Expansion 0x0000/0xFFDF, jetzt
+                                         512 x 0xFFFF wie EmuTOS.
+  ORACLE-model-vs-newtos-qemu.txt        method/oracle.py (Modell der EmuTOS-
+                                         Regeln aus measurement-2026-09-21-
+                                         raster-screen/) vs NewTOS : 0 von 62
+
+  Vorher (measurement-2026-09-21-raster-screen/, Kernel @ c1f42ff): 1 von 62.
+  Nachher: 0 von 62. Alle vier Screen-Pfade (R02 Screen->Memory, R03
+  Memory->Screen, R04 Screen->Screen ueberlappend, R05 vrt_cpyfm Mono->Screen)
+  liefern Wort fuer Wort dasselbe wie EmuTOS auf dem Falcon.
+
+------------------------------------------------------------------------------
+HOSTTESTS (nach dem Fix)
+------------------------------------------------------------------------------
+  cargo test -p tos-api --test vdi_reference_raster_screen -> 62 gruen, 0 rot
+    (vorher 61/1: case_0215_op121_h12_pat_flag_md_replace_on_the_16_bit_path_
+    emutos_draws_nothin war rot).
+  cargo run -p xtask -- test -> 85 Binaere, 903 gruen, 0 rot, 1 ignored.
+
+------------------------------------------------------------------------------
+HINWEISE
+------------------------------------------------------------------------------
+  * newtos-qemu-raspi4b/RASTER.BIN ist durch das Wurzel-.gitignore ("*.bin",
+    core.ignorecase) IGNORIERT -- zum Versionieren `git add -f`.
+  * Offen: derselbe Lauf auf der echten Pi 4 (1920x1080 besteht den
+    !screen-Guard: >= 640x480, genau 16 Planes); Erwartung byte-identisch
+    zu diesem Dump (HW-Checkliste Punkt 31,
+    docs/api/desktop/_hw-test-2026-09-17.md).

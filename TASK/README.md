@@ -89,10 +89,10 @@ Die neu abgelegten Statusdateien haben Vorrang vor der alten Startempfehlung: M0
 | [V14](V14.md) | v_opnvwk: ausgegebene Gerätemetriken | Geräteunterschied / Test | P2 | ERLEDIGT | V01, V02, V03 |
 | [V15](V15.md) | v_opnvwk: Handle-Identität statt Zahlenvergleich | Messauswertung | P2 | ERLEDIGT | — |
 | [R01](R01.md) | vro_cpyfm: oversized destination, D-VDI-25 | Zurückgestellte Vertragsabweichung | P3 | ZURÜCKGESTELLT | — |
-| [R02](R02.md) | vro_cpyfm: Screen → Memory messen | Messlücke / Messdesign | P1 | OFFEN | — |
-| [R03](R03.md) | vro_cpyfm: Memory → Screen messen | Messlücke / Messdesign | P1 | OFFEN | — |
-| [R04](R04.md) | vro_cpyfm: überlappende Screen-Kopie messen | Messlücke / Messdesign | P1 | OFFEN | — |
-| [R05](R05.md) | vrt_cpyfm: monochrome Expansion auf Screen messen | Messlücke / Messdesign | P1 | OFFEN | — |
+| [R02](R02.md) | vro_cpyfm: Screen → Memory messen | Messlücke / Messdesign | P1 | ERLEDIGT — HW OFFEN | — |
+| [R03](R03.md) | vro_cpyfm: Memory → Screen messen | Messlücke / Messdesign | P1 | ERLEDIGT — HW OFFEN | — |
+| [R04](R04.md) | vro_cpyfm: überlappende Screen-Kopie messen | Messlücke / Messdesign | P1 | ERLEDIGT — HW OFFEN | — |
+| [R05](R05.md) | vrt_cpyfm: monochrome Expansion auf Screen messen | Messlücke / Messdesign | P1 | ERLEDIGT — HW OFFEN | — |
 | [Q01](Q01.md) | v_gtext: sichtbares einzelnes a messen | Pixel-Messlücke | P1 | OFFEN | — |
 | [Q02](Q02.md) | vs_clip: Text am Clip-Rand messen | Pixel-Messlücke | P1 | OFFEN | Q01 |
 | [Q03](Q03.md) | vr_recfl: XOR-Cursor zweimal zeichnen | Pixel-Messlücke | P1 | OFFEN | Q01 |

@@ -278,20 +278,35 @@ pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) 
     }
     // `setup_info`: the destination plane count must be ≤ 16
     // (`vdi_raster.c:963`), else there is nothing to do.
-    if effective_planes(&dst, backend) > CHUNKY_PLANES {
+    let dp = effective_planes(&dst, backend);
+    if dp > CHUNKY_PLANES {
         return;
     }
 
     // `INTIN[0]` is the `MD_*` write mode (EmuTOS `vdi_defs.h:77-80`,
     // `cpy_raster:1397-1430`): MD_REPLACE=1, MD_TRANS=2, MD_XOR=3,
-    // MD_ERASE=4. Strip `PAT_FLAG` (bit 4) and reject anything above the
-    // low 5 bits before the switch, exactly like `vro_cpyfm` and EmuTOS
-    // `cpy_raster:1341,1347` (AUD-V5-001): a legal `MD_x|PAT_FLAG` must
-    // still copy, and a bit-5+ value is invalid. Any other value (0 or ≥5)
-    // is a silent no-op — EmuTOS' `default: return`.
+    // MD_ERASE=4. Reject anything above the low 5 bits before the switch,
+    // like `vro_cpyfm` and EmuTOS `cpy_raster:1341-1342`. Any other value
+    // (0 or ≥5) is a silent no-op — EmuTOS' `default: return`.
     let raw = pb.intin(0);
     if raw & !0x1F != 0 {
         return; // bits above PAT_FLAG set → invalid, no-op
+    }
+    // `PAT_FLAG` (bit 4) on the **truecolor** path kills the call, exactly
+    // as in `vro_cpyfm` (D-VDI-23): `cpy_raster` strips it into its own
+    // local `mode` (`vdi_raster.c:1347`) and switches on that to validate
+    // the `MD_*` code (`:1397-1430`), but then calls `vrt_cpyfm16(info)`
+    // without it (`:1432-1437`); `vrt_cpyfm16` re-reads the *unstripped*
+    // `INTIN[0]` (`:1232`), `0x11..0x14` matches none of its four arms and
+    // `default: return` (`:1323-1324`) leaves the destination untouched.
+    // Only the palette path (`plane_ct <= 8`) sees the stripped mode
+    // (D-082's strip-only contract). Measured (R05, 2026-09-21) on EmuTOS
+    // 1.4 / Hatari Falcon030 VIDEL truecolor: `tosdump` case 215
+    // (`vdi-raster-screen.tsv`, `INTIN = 0x11,1,0`, 32×16 mono → screen)
+    // reads back 512 × `0xFFFF` (nothing drawn), while case 201
+    // (`INTIN[0] = 1`, same geometry) expands the form.
+    if dp > PALETTE_PLANES_MAX && raw & 0x10 != 0 {
+        return; // PAT_FLAG on the truecolor path → nothing is drawn
     }
     let mode = match raw & !0x10 {
         1 => WriteMode::Replace,        // fg on 1-bits, bg on 0-bits
@@ -428,9 +443,9 @@ pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
     // it kills the copy. `cpy_raster` strips it into its own local `mode`
     // (`vdi_raster.c:1347`) but then hands the truecolor branch nothing:
     // `vro_cpyfm16` re-reads the *unstripped* `INTIN[0]`
-    // (`vdi_raster.c:980`), so a mode with bit 4 set (0x10..0x1F) matches
+    // (`vdi_raster.c:981`), so a mode with bit 4 set (0x10..0x1F) matches
     // no arm of its 16-entry switch — which has no `default:`
-    // (`vdi_raster.c:1008-1219`) — and the destination is left untouched.
+    // (`vdi_raster.c:1008-1220`) — and the destination is left untouched.
     // Only the palette path (`plane_ct <= 8`, `bit_blt`) sees the stripped
     // mode, which is D-082's strip-only contract. Measured on a real Atari
     // TT running EmuTOS 1.4 with `CONF_WITH_VDI_16BIT`: `tosdump` case 144
