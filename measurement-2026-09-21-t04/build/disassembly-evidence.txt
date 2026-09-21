@@ -1,0 +1,389 @@
+Target disassembly evidence (clang -target aarch64-unknown-none-elf -O2, the exact build-gemlib.sh flags), T04 2026-09-21.
+Every *_long accessor is now a 32-bit access at &array[n]; control[0] keeps its opcode.
+
+===== sdk/gemlib/build/obj/n_vst_arbpt32.o
+
+
+
+0000000000000000 <vst_arbpt32>:
+       0:      	sub	sp, sp, #0x90
+       4:      	stp	x29, x30, [sp, #0x60]
+       8:      	add	x29, sp, #0x60
+       c:      	sub	x8, x29, #0x28
+      10:      	sub	x9, x29, #0x8
+      14:      	sturh	w0, [x29, #-0x1c]
+      18:      	stp	x8, x9, [sp]
+      1c:      	sub	x8, x29, #0x2c
+      20:      	mov	x0, sp
+      24:      	stp	xzr, x8, [sp, #0x10]
+      28:      	add	x8, sp, #0x2c
+      2c:      	str	x8, [sp, #0x20]
+      30:      	mov	w8, #0xf6               // =246
+      34:      	stp	wzr, w8, [x29, #-0x2c]
+      38:      	mov	w8, #0x2                // =2
+      3c:      	stp	x22, x21, [sp, #0x70]
+      40:      	mov	x21, x3
+      44:      	mov	x22, x2
+      48:      	stp	x20, x19, [sp, #0x80]
+      4c:      	mov	x19, x5
+      50:      	mov	x20, x4
+      54:      	stur	x1, [x29, #-0x8]
+      58:      	sturh	w8, [x29, #-0x22]
+      5c:      	sturh	wzr, [x29, #-0x1e]
+      60:      	bl	0x60 <vst_arbpt32+0x60>
+      64:      	cbz	x22, 0x70 <vst_arbpt32+0x70>
+      68:      	ldrh	w8, [sp, #0x2c]
+      6c:      	strh	w8, [x22]
+      70:      	cbz	x21, 0x7c <vst_arbpt32+0x7c>
+      74:      	ldrh	w8, [sp, #0x2e]
+      78:      	strh	w8, [x21]
+      7c:      	cbz	x20, 0x88 <vst_arbpt32+0x88>
+      80:      	ldrh	w8, [sp, #0x30]
+      84:      	strh	w8, [x20]
+      88:      	cbz	x19, 0x94 <vst_arbpt32+0x94>
+      8c:      	ldrh	w8, [sp, #0x32]
+      90:      	strh	w8, [x19]
+      94:      	ldursh	w8, [x29, #-0x20]
+      98:      	ldursw	x9, [x29, #-0x2c]
+      9c:      	ldp	x20, x19, [sp, #0x80]
+      a0:      	ldp	x22, x21, [sp, #0x70]
+      a4:      	cmp	w8, #0x1
+      a8:      	ldp	x29, x30, [sp, #0x60]
+      ac:      	csel	x0, x9, xzr, gt
+      b0:      	add	sp, sp, #0x90
+      b4:      	ret
+
+===== sdk/gemlib/build/obj/n_v_create_ctab.o
+
+
+
+0000000000000000 <v_create_ctab>:
+       0:      	sub	sp, sp, #0x70
+       4:      	stp	x29, x30, [sp, #0x60]
+       8:      	add	x29, sp, #0x60
+       c:      	sub	x8, x29, #0x20
+      10:      	sub	x9, x29, #0x28
+      14:      	sturh	w0, [x29, #-0x14]
+      18:      	stp	x8, x9, [sp, #0x8]
+      1c:      	add	x8, sp, #0x30
+      20:      	add	x0, sp, #0x8
+      24:      	stp	xzr, x8, [sp, #0x18]
+      28:      	adrp	x8, 0x0 <v_create_ctab>
+      2c:      	add	x8, x8, #0x0
+      30:      	str	x8, [sp, #0x28]
+      34:      	mov	w8, #0xce               // =206
+      38:      	stur	w8, [x29, #-0x20]
+      3c:      	mov	w8, #0x4                // =4
+      40:      	sturh	w8, [x29, #-0x1a]
+      44:      	mov	w8, #0x8                // =8
+      48:      	stp	w1, w2, [x29, #-0x28]
+      4c:      	sturh	w8, [x29, #-0x16]
+      50:      	bl	0x50 <v_create_ctab+0x50>
+      54:      	ldp	x29, x30, [sp, #0x60]
+      58:      	ldr	x0, [sp, #0x30]
+      5c:      	add	sp, sp, #0x70
+      60:      	ret
+
+===== sdk/gemlib/build/obj/n_vst_track_offset.o
+
+
+
+0000000000000000 <vst_track_offset>:
+       0:      	sub	sp, sp, #0x80
+       4:      	stp	x29, x30, [sp, #0x60]
+       8:      	add	x29, sp, #0x60
+       c:      	sub	x8, x29, #0x20
+      10:      	sub	x9, x29, #0x28
+      14:      	sturh	w0, [x29, #-0x14]
+      18:      	stp	x8, x9, [sp, #0x8]
+      1c:      	sub	x8, x29, #0x2c
+      20:      	add	x0, sp, #0x8
+      24:      	stp	xzr, x8, [sp, #0x18]
+      28:      	adrp	x8, 0x0 <vst_track_offset>
+      2c:      	add	x8, x8, #0x0
+      30:      	str	x8, [sp, #0x28]
+      34:      	mov	w8, #0xff               // =255
+      38:      	sturh	w8, [x29, #-0x28]
+      3c:      	mov	w8, #0xed               // =237
+      40:      	stp	w1, w8, [x29, #-0x24]
+      44:      	mov	w8, #0x4                // =4
+      48:      	stp	x20, x19, [sp, #0x70]
+      4c:      	mov	x19, x4
+      50:      	mov	x20, x3
+      54:      	sturh	w2, [x29, #-0x26]
+      58:      	sturh	w8, [x29, #-0x1a]
+      5c:      	sturh	wzr, [x29, #-0x16]
+      60:      	bl	0x60 <vst_track_offset+0x60>
+      64:      	cbz	x20, 0x70 <vst_track_offset+0x70>
+      68:      	ldurh	w8, [x29, #-0x2c]
+      6c:      	strh	w8, [x20]
+      70:      	cbz	x19, 0x7c <vst_track_offset+0x7c>
+      74:      	ldurh	w8, [x29, #-0x2a]
+      78:      	strh	w8, [x19]
+      7c:      	ldp	x20, x19, [sp, #0x70]
+      80:      	ldp	x29, x30, [sp, #0x60]
+      84:      	add	sp, sp, #0x80
+      88:      	ret
+
+===== sdk/gemlib/build/obj/n_v_value2color.o
+
+
+
+0000000000000000 <v_value2color>:
+       0:      	sub	sp, sp, #0x80
+       4:      	stp	x29, x30, [sp, #0x60]
+       8:      	add	x29, sp, #0x60
+       c:      	sub	x8, x29, #0x20
+      10:      	add	x9, x29, #0x1c
+      14:      	sturh	w0, [x29, #-0x14]
+      18:      	stp	x8, x9, [sp, #0x8]
+      1c:      	sub	x8, x29, #0x2c
+      20:      	add	x0, sp, #0x8
+      24:      	stp	xzr, x8, [sp, #0x18]
+      28:      	adrp	x8, 0x0 <v_value2color>
+      2c:      	add	x8, x8, #0x0
+      30:      	str	x8, [sp, #0x28]
+      34:      	mov	w8, #0xcc               // =204
+      38:      	stur	w8, [x29, #-0x20]
+      3c:      	mov	w8, #0x2                // =2
+      40:      	sturh	w8, [x29, #-0x1a]
+      44:      	mov	w8, #0x1                // =1
+      48:      	str	x19, [sp, #0x70]
+      4c:      	mov	x19, x2
+      50:      	str	w1, [x29, #0x1c]
+      54:      	sturh	w8, [x29, #-0x16]
+      58:      	bl	0x58 <v_value2color+0x58>
+      5c:      	cbz	x19, 0x68 <v_value2color+0x68>
+      60:      	ldur	x8, [x29, #-0x28]
+      64:      	str	x8, [x19]
+      68:      	ldursw	x0, [x29, #-0x2c]
+      6c:      	ldp	x29, x30, [sp, #0x60]
+      70:      	ldr	x19, [sp, #0x70]
+      74:      	add	sp, sp, #0x80
+      78:      	ret
+
+===== sdk/gemlib/build/obj/a_wind_get_ptr.o
+
+
+
+0000000000000000 <mt_wind_get_ptr>:
+       0:      	sub	sp, sp, #0x1b0
+       4:      	stp	x29, x30, [sp, #0x180]
+       8:      	add	x29, sp, #0x180
+       c:      	add	x9, sp, #0x30
+      10:      	sub	x8, x29, #0x10
+      14:      	stp	x20, x19, [sp, #0x1a0]
+      18:      	sub	x20, x29, #0x50
+      1c:      	stp	x8, x3, [sp]
+      20:      	sub	x8, x29, #0x30
+      24:      	mov	x19, x2
+      28:      	stp	x8, x20, [sp, #0x10]
+      2c:      	add	x8, sp, #0xb0
+      30:      	stp	x8, x9, [sp, #0x20]
+      34:      	adrp	x8, 0x0 <mt_wind_get_ptr>
+      38:      	ldr	d0, [x8]
+      3c:      	sturh	w0, [x29, #-0x30]
+      40:      	mov	x0, sp
+      44:      	stp	x28, x21, [sp, #0x190]
+      48:      	and	w21, w1, #0xffff
+      4c:      	sturh	w1, [x29, #-0x2e]
+      50:      	stur	d0, [x29, #-0x10]
+      54:      	sturh	wzr, [x29, #-0x8]
+      58:      	stur	wzr, [x20, #0x6]
+      5c:      	bl	0x5c <mt_wind_get_ptr+0x5c>
+      60:      	cmp	w21, #0x11
+      64:      	b.ne	0x70 <mt_wind_get_ptr+0x70>
+      68:      	ldur	w8, [x20, #0x2]
+      6c:      	b	0x74 <mt_wind_get_ptr+0x74>
+      70:      	ldur	x8, [x20, #0x2]
+      74:      	ldurh	w0, [x29, #-0x50]
+      78:      	str	x8, [x19]
+      7c:      	ldp	x20, x19, [sp, #0x1a0]
+      80:      	ldp	x28, x21, [sp, #0x190]
+      84:      	ldp	x29, x30, [sp, #0x180]
+      88:      	add	sp, sp, #0x1b0
+      8c:      	ret
+
+===== sdk/gemlib/build/obj/x_malloc.o
+
+
+
+0000000000000000 <mt_x_malloc>:
+       0:      	sub	sp, sp, #0x190
+       4:      	stp	x29, x30, [sp, #0x170]
+       8:      	add	x29, sp, #0x170
+       c:      	adrp	x8, 0x0 <mt_x_malloc>
+      10:      	add	x8, x8, #0x0
+      14:      	sub	x9, x29, #0x40
+      18:      	str	x0, [sp, #0xb0]
+      1c:      	stp	x8, x2, [sp]
+      20:      	sub	x8, x29, #0x20
+      24:      	mov	x0, sp
+      28:      	stp	x8, x9, [sp, #0x10]
+      2c:      	add	x8, sp, #0xb0
+      30:      	add	x9, sp, #0x30
+      34:      	str	x28, [sp, #0x180]
+      38:      	stp	x8, x9, [sp, #0x20]
+      3c:      	stur	w1, [x29, #-0x20]
+      40:      	bl	0x40 <mt_x_malloc+0x40>
+      44:      	ldp	x29, x30, [sp, #0x170]
+      48:      	ldr	x28, [sp, #0x180]
+      4c:      	add	sp, sp, #0x190
+      50:      	ret
+
+===== sdk/gemlib/build/obj/n_vq_ctab_id.o
+
+
+
+0000000000000000 <vq_ctab_id>:
+       0:      	sub	sp, sp, #0x60
+       4:      	stp	x29, x30, [sp, #0x50]
+       8:      	add	x29, sp, #0x50
+       c:      	sub	x8, x29, #0x20
+      10:      	sturh	w0, [x29, #-0x14]
+      14:      	mov	x0, sp
+      18:      	stp	x8, xzr, [sp]
+      1c:      	sub	x8, x29, #0x24
+      20:      	stp	xzr, x8, [sp, #0x10]
+      24:      	adrp	x8, 0x0 <vq_ctab_id>
+      28:      	add	x8, x8, #0x0
+      2c:      	str	x8, [sp, #0x20]
+      30:      	mov	w8, #0xce               // =206
+      34:      	stur	w8, [x29, #-0x20]
+      38:      	mov	w8, #0x2                // =2
+      3c:      	sturh	wzr, [x29, #-0x1a]
+      40:      	sturh	w8, [x29, #-0x16]
+      44:      	bl	0x44 <vq_ctab_id+0x44>
+      48:      	ldursw	x0, [x29, #-0x24]
+      4c:      	ldp	x29, x30, [sp, #0x50]
+      50:      	add	sp, sp, #0x60
+      54:      	ret
+
+===== linked TeraDesk (sdk/apps/teradesk/build/dist/DESKTOP.NAP): mt_wind_get -- the ONE changed member TeraDesk links (why.txt)
+
+
+
+0000000000029ee4 <mt_wind_get>:
+   29ee4:      	sub	sp, sp, #0x1c0
+   29ee8:      	stp	x29, x30, [sp, #0x180]
+   29eec:      	add	x29, sp, #0x180
+   29ef0:      	add	x10, sp, #0x30
+   29ef4:      	sub	x8, x29, #0xc
+   29ef8:      	sub	x9, x29, #0x2c
+   29efc:      	stp	x28, x23, [sp, #0x190]
+   29f00:      	stp	x8, x6, [sp]
+   29f04:      	sub	x8, x29, #0x4c
+   29f08:      	and	w23, w1, #0xffff
+   29f0c:      	stp	x9, x8, [sp, #0x10]
+   29f10:      	add	x9, sp, #0xb0
+   29f14:      	stp	x9, x10, [sp, #0x20]
+   29f18:      	sub	w9, w23, #0x2
+   29f1c:      	mov	w10, #0x68              // =104
+   29f20:      	stp	x22, x21, [sp, #0x1a0]
+   29f24:      	mov	x21, x3
+   29f28:      	mov	x22, x2
+   29f2c:      	stp	x20, x19, [sp, #0x1b0]
+   29f30:      	mov	x19, x5
+   29f34:      	mov	x20, x4
+   29f38:      	cmp	w9, #0x2
+   29f3c:      	sturh	w0, [x29, #-0x2c]
+   29f40:      	sturh	w1, [x29, #-0x2a]
+   29f44:      	sturh	w10, [x29, #-0xc]
+   29f48:      	b.lo	0x29f68 <mt_wind_get+0x84>
+   29f4c:      	sub	w9, w23, #0x12
+   29f50:      	cmp	w9, #0x1
+   29f54:      	b.hi	0x29f74 <mt_wind_get+0x90>
+   29f58:      	ldrh	w9, [x22]
+   29f5c:      	sturh	w9, [x29, #-0x28]
+   29f60:      	mov	w9, #0x3                // =3
+   29f64:      	b	0x29f78 <mt_wind_get+0x94>
+   29f68:      	mov	w9, #0x6                // =6
+   29f6c:      	stur	x22, [x8, #0x24]
+   29f70:      	b	0x29f78 <mt_wind_get+0x94>
+   29f74:      	mov	w9, #0x2                // =2
+   29f78:      	sturh	w9, [x29, #-0xa]
+   29f7c:      	mov	w9, #0x5                // =5
+   29f80:      	mov	x0, sp
+   29f84:      	stur	w9, [x29, #-0x8]
+   29f88:      	sturh	wzr, [x29, #-0x4]
+   29f8c:      	stur	wzr, [x8, #0x6]
+   29f90:      	bl	0x28a70 <aes>
+   29f94:      	and	w8, w23, #0xfffe
+   29f98:      	cmp	w8, #0x2
+   29f9c:      	b.eq	0x29fd0 <mt_wind_get+0xec>
+   29fa0:      	cbz	x22, 0x29fac <mt_wind_get+0xc8>
+   29fa4:      	ldurh	w8, [x29, #-0x4a]
+   29fa8:      	strh	w8, [x22]
+   29fac:      	cbz	x21, 0x29fb8 <mt_wind_get+0xd4>
+   29fb0:      	ldurh	w8, [x29, #-0x48]
+   29fb4:      	strh	w8, [x21]
+   29fb8:      	cbz	x20, 0x29fc4 <mt_wind_get+0xe0>
+   29fbc:      	ldurh	w8, [x29, #-0x46]
+   29fc0:      	strh	w8, [x20]
+   29fc4:      	cbz	x19, 0x29fd0 <mt_wind_get+0xec>
+   29fc8:      	ldurh	w8, [x29, #-0x44]
+   29fcc:      	strh	w8, [x19]
+   29fd0:      	ldurh	w0, [x29, #-0x4c]
+   29fd4:      	ldp	x20, x19, [sp, #0x1b0]
+   29fd8:      	ldp	x22, x21, [sp, #0x1a0]
+   29fdc:      	ldp	x28, x23, [sp, #0x190]
+   29fe0:      	ldp	x29, x30, [sp, #0x180]
+   29fe4:      	add	sp, sp, #0x1c0
+   29fe8:      	ret
+
+===== linked QED (sdk/apps/qed/build/QED.NAP): mt_fnts_do -- aes_intin_long(1/3/5) = stur w, aes_intout_long(2/4/6) = ldursw
+
+
+
+000000000003d714 <mt_fnts_do>:
+   3d714:      	sub	sp, sp, #0x1a0
+   3d718:      	stp	x29, x30, [sp, #0x170]
+   3d71c:      	add	x29, sp, #0x170
+   3d720:      	nop
+   3d724:      	adr	x9, 0x61b90 <mt_fnts_do.aes_control>
+   3d728:      	ldr	x8, [x29, #0x38]
+   3d72c:      	add	x10, sp, #0x30
+   3d730:      	str	x0, [sp, #0xb0]
+   3d734:      	mov	x0, sp
+   3d738:      	stp	x9, x8, [sp]
+   3d73c:      	sub	x9, x29, #0x20
+   3d740:      	sub	x8, x29, #0x40
+   3d744:      	stp	x9, x8, [sp, #0x10]
+   3d748:      	add	x8, sp, #0xb0
+   3d74c:      	stp	x28, x21, [sp, #0x180]
+   3d750:      	mov	x21, x5
+   3d754:      	stp	x20, x19, [sp, #0x190]
+   3d758:      	mov	x19, x7
+   3d75c:      	mov	x20, x6
+   3d760:      	stp	x8, x10, [sp, #0x20]
+   3d764:      	sturh	w1, [x29, #-0x20]
+   3d768:      	stur	w2, [x9, #0x2]
+   3d76c:      	stur	w3, [x9, #0x6]
+   3d770:      	stur	w4, [x9, #0xa]
+   3d774:      	sturh	wzr, [x29, #-0x40]
+   3d778:      	bl	0x3a0c4 <aes>
+   3d77c:      	cbz	x21, 0x3d788 <mt_fnts_do+0x74>
+   3d780:      	ldurh	w8, [x29, #-0x3e]
+   3d784:      	strh	w8, [x21]
+   3d788:      	ldr	x8, [x29, #0x30]
+   3d78c:      	cbz	x20, 0x3d798 <mt_fnts_do+0x84>
+   3d790:      	ldursw	x9, [x29, #-0x3c]
+   3d794:      	str	x9, [x20]
+   3d798:      	cbz	x19, 0x3d7a4 <mt_fnts_do+0x90>
+   3d79c:      	ldursw	x9, [x29, #-0x38]
+   3d7a0:      	str	x9, [x19]
+   3d7a4:      	cbz	x8, 0x3d7b0 <mt_fnts_do+0x9c>
+   3d7a8:      	ldursw	x9, [x29, #-0x34]
+   3d7ac:      	str	x9, [x8]
+   3d7b0:      	ldurh	w0, [x29, #-0x40]
+   3d7b4:      	ldp	x20, x19, [sp, #0x190]
+   3d7b8:      	ldp	x28, x21, [sp, #0x180]
+   3d7bc:      	ldp	x29, x30, [sp, #0x170]
+   3d7c0:      	add	sp, sp, #0x1a0
+   3d7c4:      	ret
+
+===== mt_wind_get_ptr is NOT linked into TeraDesk or QED (no caller in the SDK); its gemlib.a member is the a_wind_get_ptr.o listing above: cmp w21,#0x11 (WF_SCREEN) -> ldur w8,[x20,#0x2] (32-bit at &int_out[1]) else ldur x8 (caller width).
+
+===== disassembly diff, reconstituted pre-T04 DESKTOP.NAP (HEAD overlay headers + pristine a_wind_get.c, same objects/libc) vs the T04 DESKTOP.NAP:
+<    29f68:      	mov	w9, #0x4                // =4
+>    29f68:      	mov	w9, #0x6                // =6

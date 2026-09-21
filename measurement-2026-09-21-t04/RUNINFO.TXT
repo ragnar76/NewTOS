@@ -1,0 +1,86 @@
+T04 -- LONGs and pointers inside the AES/VDI WORD arrays: the contract written, gemlib's *_long
+accessors made 32-bit, the six pointer-count overlays, wind_get_ptr(WF_SCREEN) reading the LONG.
+Developer self-evidence, 2026-09-21. Branch desk-rebuild, base HEAD b104beb (the auditor's step 1 +
+tos-api/tests/aes_t04_intin_long_contract.rs are committed there), changes uncommitted in the tree,
+nothing flashed. Pinned EmuTOS references/emutos @ 1a7484ab: aes/gemsuper.c:143,150 (MAKE_ULONG of
+int_in[1], int_in[0]), :346 (wm_set(&WM_IX)), :435-437 (xif copies IN_LEN words); include/aesdefs.h:
+190-191,220-221 (T_LOCOUNT = int_in[0]), :504 (WM_IX = int_in[2]); include/portab.h:119,123 (LONG 32
+bits), :139 (MAKE_ULONG); aes/gemwmlib.c:1564 (gsx_mret((LONG *)poutwds, ...)), :1591 (default FALSE),
+:1661,1687 (*(char **)pinwds); aes/gemgsxif.c:125-129; aes/gsx2.h:32-34 (i_ptr contrl+7); vdi/vdi_mouse.c:
+372-373 (vex_* two 32-bit slots -> TASK/T08).
+Lead decisions implemented: the rule is the contract (A81 pointer width, WF_SCREEN stays LONG/A57);
+vex_* -> TASK/T08.md (P4); TeraDesk resource.c union -> Pi observation only, no app overlay.
+
+PRODUCT / DOCS (uncommitted; method/product-t04.diff, method/spec-and-test-touch-t04.diff)
+  docs/COMPATIBILITY.md            new contract entry after the A81 entry (rule, EmuTOS citations, the two
+                                   LP64 consequences, what it does not decide: vex_* T08, TeraDesk union).
+  docs/api/aes/_dispatcher.md §4   one paragraph, cross-referenced;  docs/api/vdi/_dispatcher.md  ditto.
+  docs/sdk/05-abi-pitfalls.md B16  "unresolved" -> resolved (rule, header fix, three consequences).
+  tos-api/src/aes/mod.rs           set_intout_long doc comment: the cflib "get the value back" claim
+                                   corrected (8-byte read on LP64 = addr | len << 32; purec.c is __PUREC__-only).
+  sdk/gemlib/overlay/gem_aesP.h, gem_vdiP.h   under __NEWTOS__: gem_wire_long = int aligned(2) may_alias,
+                                   _Static_assert(sizeof == 4); *_intin_long/*_intout_long/*_ptsin_long/
+                                   *_ptsout_long are 32-bit lvalue accesses; *_ptr accessors unchanged
+                                   (caller width); N_PTRINTS also in gem_aesP.h.
+  sdk/gemlib/overlay/n_v_delete_ctab.c, n_v_delete_itab.c, n_vqt_fontheader.c, u_vqt_fontheader.c  (NEW)
+                                   nintin = N_PTRINTS (was 2).
+  sdk/gemlib/overlay/a_wind_get.c, a_wind_sget.c  (NEW)   IN_LEN = 2 + N_PTRINTS for WF_NAME/WF_INFO (was 4).
+  sdk/gemlib/overlay/a_wind_get_ptr.c  (NEW)   WF_SCREEN read as the 32-bit LONG at int_out[1] (zero-extended);
+                                   every other field keeps the caller-width read.
+  sdk/gemlib/tests/intin_long_words.c, ptr_word_count.c  (NEW)  host tests, build lines in the headers.
+  TASK/T08.md (NEW), TASK/T04.md ERLEDIGT + Abschluss, TASK/T04-STATUS-DONE.MD, docs/STATUS.md (Phase-13
+  fragment + one Recent Decisions row 2026-09-21).
+  NOT built, with evidence: a cflib overlay of purec.c -- the file is #if __PUREC__-gated, preprocesses to
+  nothing under the NewTOS flags (purec.o 720 bytes, no symbols; cflib.a has no wind_get; cflib's wind_get
+  is gemlib's mt_wind_get).
+
+HOST TESTS (host-tests/)
+  gemlib-host-tests-GREEN-overlay.txt   intin_long_words (ASan, -O1): OK rc 0; ptr_word_count: OK rc 0;
+      evnt_timer_words (H03) OK; wind_set_addrin (A81) OK -- all with the changed overlay headers.
+  gemlib-host-tests-RED-pristine.txt    the same tests against the pristine tarball gem_{aes,vdi}P.h (first on
+      the include path, -D__NO_INLINE__) + pristine .c: intin_long_words aborts on ASan stack-buffer-overflow
+      WRITE of size 8 in vst_arbpt32 (rc 134); with -fsanitize-recover: WRITE+READ 8 in vst_arbpt32
+      (vdi_intout[2]), WRITE 8 in v_value2color (vdi_intin[2]), FAIL return(-2) 0xfffffffe, v_value2color
+      0x64000000010002, WF_SCREEN *v 0xa00001000218 / 0x3f4800000fff0 (rc 1); ptr_word_count 7 FAIL
+      (control[3] 2 vs 4 x4, control[1] 4 vs 6 x3, rc 1).
+  xtask-test-AFTER.log                  cargo run -p xtask -- test: 906 passed / 0 failed / 1 ignored, rc 0
+      (903 + the 3 contract tests of b104beb; aes_t04_intin_long_contract 3/3).
+
+BUILD CHAIN / CLIPPY (build/)
+  build-gemlib.log     compiled OK=578 skipped=0 (of 578); failures match expected-failures.txt: 0/0/0; LINK OK.
+  build-cflib.log      129/129, 0/0/0, LINK OK.   build-qed.log  37/37, LINK OK, 0 undefined.
+  build-teradesk.log   48/48, LINK OK, 0 undefined.
+  xtask-build-rpi4.log       tos-api 64 / kernel 94 (baseline 64/94, delta 0); the tree kernel8.img is the rpi4
+      ELF (bcm2711 paths, no qemu_virt).  xtask-build-qemu-virt.log  kernel 94 (tos-api 64 cached).
+  clippy-tos-api-AFTER.log   80 (baseline 80, delta 0).
+  disassembly-evidence.txt   target objects (-O2, build-gemlib.sh flags): vst_arbpt32 stp wzr,w8 + ldursw;
+      v_create_ctab stp w1,w2 with control[0]=206 intact; vst_track_offset sturh/sturh/stp w1,w8 (LONG + 237);
+      v_value2color str w1 inside the frame; mt_x_malloc stur w1; mt_wind_get_ptr cmp #0x11 -> ldur w8 else
+      ldur x8; linked QED mt_fnts_do stur w2/w3/w4 + ldursw; linked TeraDesk mt_wind_get mov w9,#6 +
+      stur x22 (the ONE changed member TeraDesk links, why.txt); disassembly diff reconstituted pre-T04
+      DESKTOP.NAP vs T04 DESKTOP.NAP = one instruction (mov w9,#4 -> #6).
+  artifacts.sha256     tree kernel8.img, scratch kernel8.img, gemlib.a, cflib.a, QED.NAP, DESKTOP.NAP (after),
+      DESKTOP.NAP (before, reconstituted), the three images (not kept).
+  scratch-build.log    injector scratch kernel: tos-api 67 / kernel 105 (H02/A46/A78 scaffolding).
+  make-sd-image.log, sd-put-tera-{after,before}.log
+
+QEMU raspi4b (method/run.sh = a79's; 640x480, -display none, QMP screendump 0.3 s after each serial mark;
+fresh image copy per run; grep -c "EXC\|PANIC\|panic" = 0 in both serial logs; screendumps/PIXDIFF.TXT).
+  ONE scratch kernel (method/make_scratch_t04.sh: rsync of the crates + a79_patch + injector + a78_patch2; no
+  product file replaced -- T04 changes no kernel code). AFTER image = make-sd-image.sh (T04 DESKTOP.NAP) +
+  #Z NEWDESK.INF + TERADESK.INF; BEFORE image = the same + DESKTOP.NAP reconstituted by
+  method/reconstitute-before.sh (TeraDesk's objects linked against a gemlib.a copy whose a_wind_get.o is the
+  pristine tarball source compiled with HEAD's overlay headers via git show).
+  Script method/t04_scripts.rs from tera-t04.actions (+ a one-mark desk-t04.actions for the arming switch):
+  parkbr; arm; A idle; File title (88,8) B; slide to View (135,8) C; slide to Options (260,8) D;
+  out (400,300) + click = cancel; parkbr; E.
+  before vs after: A/B/C/D/E 0 px each. A/B vs measurement-2026-09-21-a100-a102 tera-after-*: 0 px.
+  TeraDesk resource.c:307-315: all 13 conditionally deleted entries (SEP1-9, MDELETE, MFCOPY, MSHSIZ, MREVS)
+  present in B/C/D -> `mnsize >= buffer.size` was false. Reading of the union: words.high <- int_out[3]
+  (bits 0..15), words.low <- int_out[4] (bits 16..31) -> the low 32 bits of `long size` are the true length;
+  the upper 32 bits of the 8-byte long are uninitialised stack. 0 or positive upper half -> no deletion
+  (one-screen buffer >> a menu box); negative upper half -> 13 deletions. T04 does not change any of it
+  (mt_wind_get copies the same four words before and after).
+
+OPEN
+  Pi observation of the TeraDesk union (menus complete?) -- Tester/Lead; nothing flashed.  TASK/T08.md (vex_*).

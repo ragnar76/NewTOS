@@ -352,14 +352,27 @@ impl Aespb {
     /// store at a WORD-aligned address. This is that store, native to
     /// AArch64: little-endian, so `int_out[word]` holds bits 0–15 and
     /// `int_out[word + 1]` bits 16–31, and unaligned because `&int_out[word]`
-    /// is only 2-byte aligned. Stored natively, read natively — TeraDesk's
+    /// is only 2-byte aligned. The width is fixed at 32 bits regardless of
+    /// the caller's ABI because EmuTOS writes 32 bits and the values (a user
+    /// VA under 32 MiB, a length under 4 GiB) fit — the T04 contract
+    /// (`docs/COMPATIBILITY.md`, "A `LONG` in `int_in`/`int_out`/`ptsin`/
+    /// `ptsout`"): a LONG is 32 bits over two WORDs at every caller width,
+    /// `WF_SCREEN` stays LONG-class (A57), it is not widened to a pointer.
+    ///
+    /// What a reader gets back therefore depends on the reader's width, not
+    /// on the store: gemlib's `mt_wind_get` copies the four WORDs and
+    /// TeraDesk reassembles the length from `int_out[3..4]` through its
     /// `union { long size; struct { _WORD high, low; } words; }`
-    /// (`sdk/apps/teradesk/resource.c:233-241`) and cflib's
-    /// `*((long *)&aes_intout[3])` (`sdk/cflib/cflib-21/purec.c:169-171`)
-    /// get the value back. The width is fixed at 32 bits regardless of the
-    /// caller's ABI because EmuTOS writes 32 bits and the values (a user VA
-    /// under 32 MiB, a length under 4 GiB) fit; the wider-pointer question
-    /// is `TASK/T04.md`'s.
+    /// (`sdk/apps/teradesk/resource.c:233-241`) — low 32 bits right, the
+    /// upper 32 bits of its 8-byte `long` are its own uninitialised stack.
+    /// An **8-byte** read of one of these slots on LP64 is wrong: cflib's
+    /// `*((void **)&aes_intout[1])` / `*((long *)&aes_intout[3])`
+    /// (`sdk/cflib/cflib-21/purec.c:166,171`, ILP32-correct, `__PUREC__`-only
+    /// and not compiled on NewTOS) and gemlib's pristine
+    /// `aes_intout_ptr(1, void *)` (`a_wind_get_ptr.c:51`) would take the
+    /// length as the address's upper half, `addr | len << 32` — pinned by
+    /// `tos-api/tests/aes_t04_intin_long_contract.rs`; the gemlib overlay
+    /// `sdk/gemlib/overlay/a_wind_get_ptr.c` reads 32 bits there.
     ///
     /// Like [`Self::set_intout`], a store that would run off the local
     /// `int_out[O_SIZE]` is dropped rather than made.

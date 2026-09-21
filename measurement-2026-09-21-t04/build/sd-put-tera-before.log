@@ -1,0 +1,6 @@
+hdiutil: WARNING: 'hdiutil attach ...' is deprecated. Please use 'diskutil image attach ...' instead.
+mounted /dev/disk4s1 at /Volumes/NEWTOS
+  put measurement-2026-09-21-t04/method/newdesk-tera.inf -> NEWDESK.INF
+  put measurement-2026-09-21-t04/method/teradesk-window.inf -> APPS/TERADESK/TERADESK.INF
+  put /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/before/DESKTOP.NAP -> APPS/TERADESK/DESKTOP.NAP
+detached

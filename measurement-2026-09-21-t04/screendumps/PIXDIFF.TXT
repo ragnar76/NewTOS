@@ -1,0 +1,9 @@
+A-idle           before vs after: 0 differing pixels, bbox None
+B-file-open      before vs after: 0 differing pixels, bbox None
+C-view-open      before vs after: 0 differing pixels, bbox None
+D-options-open   before vs after: 0 differing pixels, bbox None
+E-closed         before vs after: 0 differing pixels, bbox None
+
+reference (a100-a102, HEAD 022d6d0 kernel, pre-T04 gemlib) vs T04 after:
+A-idle           0 differing pixels, bbox None
+B-file-open      0 differing pixels, bbox None

@@ -419,6 +419,85 @@ the gemlib overlay move to the native form are Developer work, open at the
 time of writing — see `TASK/A81.md` for the current status.
 
 
+**A `LONG` in `int_in`/`int_out`/`ptsin`/`ptsout` is 32 bits over two
+WORDs, low word first — natively in place on a little-endian machine; a
+pointer packed into one of those WORD arrays occupies the caller's own
+pointer width (T04, 2026-09-21).** Not a deviation, a contract point with
+no prior entry: one rule, not two, for every value wider than a WORD that
+travels inside the AES/VDI WORD arrays. It is what EmuTOS does and what
+NewTOS's readers and writers do (audit `docs/analysis/t04-lp64-intin-long-
+contract-2026-09-21.md`; pinned by `tos-api/tests/aes_t04_intin_long_contract.rs`).
+
+*The rule.* A value whose EmuTOS type at the access site is `LONG`/`ULONG`
+(32 bits, `references/emutos/include/portab.h:119,123`) occupies **two** WORDs,
+`int_x[n]` = bits 0..15, `int_x[n+1]` = bits 16..31, at every caller width.
+EmuTOS spells that in two ways that coincide on its big-endian 68k and
+coincide again, for the *other* reason, on little-endian AArch64: the
+explicit form `MAKE_ULONG(int_in[1], int_in[0])` — `int_in[0]` is the
+**low** word (`evnt_timer`, `aes/gemsuper.c:143`, `T_LOCOUNT`/`T_HICOUNT`
+in `include/aesdefs.h:190-191`, `MAKE_ULONG(hi, lo)` itself `include/portab.h:139`;
+`evnt_multi`, `:150`, `:220-221`) — and
+the native form `*(LONG *)poutwds` at `&int_out[1]` and `&int_out[3]`
+(`wind_get(WF_SCREEN)`, `aes/gemwmlib.c:1564`, `gemgsxif.c:125-129`). On a
+little-endian machine a native 32-bit store at `&int_x[n]` leaves exactly
+`[low, high]`, so the two forms are one contract: NewTOS reads
+`evnt_timer`/`evnt_multi` as `int_in[n] | int_in[n+1] << 16`
+(`tos-api/src/aes/event.rs`) and writes `WF_SCREEN` with one unaligned
+32-bit store per LONG (`tos-api/src/aes/mod.rs::set_intout_long`, A57).
+`WF_SCREEN` **stays LONG-class** — EmuTOS types it `LONG *`, the buffer's
+user VA is under 4 GiB — it is not widened to a pointer for an LP64 caller
+(that would move the length out of `int_out[3..4]` and break every
+`mt_wind_get` reader, TeraDesk among them). The VDI has no LONG in
+`intin`/`intout` today (EmuTOS neither); the rule covers `ptsin`/`ptsout`
+for the NVDI extensions gemlib binds.
+
+A value whose EmuTOS type at the access site is a **pointer** (`char **`,
+`OBJECT **`: `wind_set`'s packed `WF_NAME`/`WF_INFO`/`WF_NEWDESK` form at
+`int_in[2]` — `wm_set(…, &WM_IX)` with `WM_IX = int_in[2]`, `aes/gemsuper.c:346`,
+`include/aesdefs.h:504`, read as `*(char **)pinwds`/`*(OBJECT **)pinwds`,
+`aes/gemwmlib.c:1661,1687`; the MFDB pointers in
+`CONTRL[7..]`, `gsx2.h:32-34`) occupies the caller's own pointer width —
+`N_PTRINTS = sizeof(void *) / sizeof(short)` WORDs, four for LP64, two for
+ILP32 and the 68k — and the declared count (`IN_LEN`, `N_INTIN`) counts
+those WORDs (A81 above; `tos-api/src/aes/mod.rs::intin_ptr`/`ptr_words`,
+`tos-api/src/vdi/mod.rs::contrl_ptr`). Where the opcode has no EmuTOS source
+(NVDI 200-series, `x_*`/`fnts_*`/`pdlg_*` AES extensions), the type
+criterion is gemlib's own accessor kind: `*_long` → LONG, `*_ptr` → pointer.
+
+*Two consequences for the LP64 binding side.* (1) A binding's LONG accessor
+**must be a 32-bit access**: gemlib's pristine `*(long *)(array + n)` is an
+8-byte access on LP64 — its store spills the upper half over the two WORDs
+after the LONG (past the end of an exactly sized local array in
+`v_create_ctab`, `vst_track_offset`, `v_value2color`, `vst_arbpt32`, where
+at `-O2` it overwrote the binding's own `control[0]` — the VDI received
+opcode 0 — or the caller's frame), and its load takes the two WORDs after
+the LONG as the upper half. `sdk/gemlib/overlay/gem_aesP.h`/`gem_vdiP.h`
+define the accessors on a 32-bit, 2-byte-aligned, `may_alias` type
+(`gem_wire_long`): one `str w`/`ldr w` at `&array[n]`, sign-extended on the
+way out like a 68k `long`. (2) A native **8-byte read of a 32-bit store is
+wrong**: at `&int_out[1]` after `wind_get(WF_SCREEN)` it yields
+`address | length << 32`, not the address (measured, `aes_t04_intin_long_
+contract.rs`). `sdk/gemlib/overlay/a_wind_get_ptr.c` reads `WF_SCREEN` as
+the LONG it is; the pristine `mt_wind_get` (four WORD copies) was never
+affected. cflib's `purec.c` reader of the same shape (`purec.c:166,171`) is
+`__PUREC__`-only and not compiled into NewTOS's `cflib.a` (`purec.o` has no
+symbols; cflib's `wind_get` *is* gemlib's `mt_wind_get`). Host guards:
+`sdk/gemlib/tests/intin_long_words.c` (the four bindings, the `WF_SCREEN`
+read, AddressSanitizer for the array bounds; pristine headers fail),
+`sdk/gemlib/tests/ptr_word_count.c` (the six pointer-count overlays).
+
+What this entry does **not** decide: the `vex_*` vector exchange in
+`CONTRL[7..]`/`[9..]` (`tos-api/src/vdi/mouse.rs`, fixed 8 bytes at a fixed
+index; EmuTOS two 32-bit slots, `vdi/vdi_mouse.c:372-373`) lies outside the
+`intin`/`intout` arrays and has its own ticket, `TASK/T08.md`. TeraDesk's
+`union { long size; struct { _WORD high, low; } words; }` around
+`wind_get(0, WF_SCREEN, …, &buffer.words.high, &buffer.words.low)`
+(`sdk/apps/teradesk/resource.c:233-241,307,315`) receives the correct low
+32 bits under this contract; the upper 32 bits of its 8-byte `long` are the
+application's own uninitialised stack, an app-side LP64 matter noted for
+Pi observation in `TASK/T04-STATUS-DONE.MD`, not an overlay.
+
+
 **`appl_write` on a full application-message queue returns 0; EmuTOS blocks
 the sender and never returns 0** — sanctioned 2026-09-20 with A75 (following
 the AUD-P1-006 finding of 2026-07-22,

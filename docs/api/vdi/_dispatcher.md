@@ -394,6 +394,24 @@ and in `_discrepancies.md` D-VDI-3.)
   origin top-left — matches the framebuffer directly. `work_in[10]`
   (`xfm_mode`) NDC scaling is a later refinement (see
   [`workstation/100-v_opnvwk.md`](workstation/100-v_opnvwk.md)).
+- **Values wider than a WORD inside `INTIN`/`INTOUT`/`PTSIN`/`PTSOUT`**
+  (T04, 2026-09-21): the same rule as the AES's
+  ([`../aes/_dispatcher.md`](../aes/_dispatcher.md) §4, "Values wider than a
+  WORD"; contract entry [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md)
+  "A `LONG` in `int_in`/`int_out`/`ptsin`/`ptsout`"). A `LONG` is **32 bits
+  over two WORDs, low word first**, in place at `&array[n]` at every caller
+  width; a **pointer** packed into a WORD array occupies the **caller's
+  pointer width** (`N_PTRINTS` WORDs — the MFDB pointers in `CONTRL[7..]`,
+  `gsx2.h:32-34`, are read that way by `tos-api/src/vdi/mod.rs::contrl_ptr`)
+  and `N_INTIN` counts those WORDs. EmuTOS's screen driver has no LONG in
+  `INTIN`/`INTOUT` (opcodes 1..39, 100..134 read WORDs only) and NewTOS
+  none either; the rule binds the NVDI-extension opcodes gemlib binds
+  (`vst_arbpt32`, `v_create_ctab`, `vs_*_color`, `vqt_advance32`'s
+  `ptsout`, …), whose type criterion — no EmuTOS source — is gemlib's own
+  accessor kind (`*_long` → LONG, `*_ptr` → pointer). The one 8-byte
+  fixed-index reader outside these arrays, the `vex_*` vector exchange in
+  `CONTRL[7..]`/`[9..]` (`tos-api/src/vdi/mouse.rs`; EmuTOS two 32-bit
+  slots, `vdi_mouse.c:372-373`), is `TASK/T08.md`.
 - **`MAX_VERTICES`.** Resolved 2026-09-04: **1024**, the default profile
   value (see the `PTSIN` vertex clamp above). **`NUM_VDI_HANDLES`** is
   still open (`_discrepancies.md` D-VDI-3); the handle-range checks must

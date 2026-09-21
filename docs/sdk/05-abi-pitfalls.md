@@ -492,12 +492,50 @@ Bindings that use arithmetic (`interval`, `interval >> 16`,
 **Do**: fix the binding in `sdk/gemlib/overlay/` with the arithmetic form
 (`sdk/gemlib/overlay/a_evnt_timer.c` is the model) and guard it with a host
 test that captures the parameter block through a fake `aes()`/`vdi()`
-(`sdk/gemlib/tests/evnt_timer_words.c`, built with `-D__NEWTOS__`). Four more
-bindings of the same shape (`n_vq_ctab.c`, `n_vq_dflt_ctab.c`,
-`n_vst_setsize32.c`, `n_vst_arbpt32.c`), five that cast a pointer the same way,
-and the `*_intin_long`/`*_intout_long` accessors (8-byte in-place writes on
-LP64) are catalogued in `TASK/T04.md` — **unresolved**; the kernel-side
-contract for `long`s and pointers inside `int_in` is not written down yet.
+(`sdk/gemlib/tests/evnt_timer_words.c`, built with `-D__NEWTOS__`).
+
+**Resolved 2026-09-21 (T04) — the contract and the header fix.** The rule
+(`docs/COMPATIBILITY.md`, "A `LONG` in `int_in`/`int_out`/`ptsin`/
+`ptsout`"): a `long` inside a VDI/AES WORD array is **32 bits over two
+WORDs, low word first, natively in place** — `int_x[n]` bits 0..15,
+`int_x[n+1]` bits 16..31, what EmuTOS's `MAKE_ULONG(int_in[1], int_in[0])`
+and `*(LONG *)&int_out[1]` both leave on a little-endian machine — and a
+**pointer** packed into such an array occupies the **caller's pointer
+width** (`N_PTRINTS` WORDs, A81). Three consequences for an LP64 binding:
+
+* Punning a `long` argument as the intin array (`(short *)&point`,
+  `n_vq_ctab.c`, `n_vq_dflt_ctab.c`, `n_vst_setsize32.c`, `n_vst_arbpt32.c`)
+  is **correct** on LP64/LE — the bytes at `&point` start with the low word.
+  Only the explicit swap of `a_evnt_timer.c` (`i[1]`, `i[0]`) was wrong.
+* The `*_intin_long`/`*_intout_long`/`*_ptsin_long`/`*_ptsout_long`
+  accessors must be **32-bit** accesses. The pristine `*(long *)(array + n)`
+  is an 8-byte access on LP64: its store spilled over the two WORDs after the
+  LONG (past exactly sized local arrays in `v_create_ctab`,
+  `vst_track_offset`, `v_value2color`, `vst_arbpt32` — at `-O2` the binding's
+  own `control[0]` was overwritten and the VDI received opcode 0), its load
+  took the two WORDs after the LONG as the upper half. The overlay headers
+  `sdk/gemlib/overlay/gem_aesP.h`/`gem_vdiP.h` now define them on
+  `gem_wire_long` (`int`, `aligned(2)`, `may_alias`): one `str w`/`ldr w` at
+  `&array[n]`, sign-extended on the way out. All 33 + 36 sites are fixed by
+  the header; no per-file overlay.
+* A pointer packed into intin must be **declared at its width**: overlays
+  `n_v_delete_ctab.c`, `n_v_delete_itab.c`, `n_vqt_fontheader.c`,
+  `u_vqt_fontheader.c` (`N_PTRINTS`), `a_wind_get.c`, `a_wind_sget.c`
+  (`2 + N_PTRINTS`). And a LONG must not be read at pointer width:
+  `a_wind_get_ptr.c` reads `WF_SCREEN` (two 32-bit LONGs: address, length)
+  as a LONG — the pristine 8-byte read returned `address | length << 32`.
+
+Host guards: `sdk/gemlib/tests/intin_long_words.c` (the four bindings + the
+`WF_SCREEN` read, under AddressSanitizer; the pristine headers fail) and
+`sdk/gemlib/tests/ptr_word_count.c` (the six count overlays). Still open,
+own ticket: the `vex_*` vector exchange in `CONTRL[7..]`/`[9..]`
+(`TASK/T08.md`). Note for app authors: cflib's `purec.c` (an `aes_intout`
+reader of the same 8-byte shape) is `__PUREC__`-only and not compiled on
+NewTOS — cflib's `wind_get` is gemlib's `mt_wind_get`; a `union { long
+size; struct { _WORD high, low; } words; }` around `wind_get(0, WF_SCREEN,
+…)` (TeraDesk `resource.c:233-241`) gets the right low 32 bits and leaves
+the upper 32 bits of the 8-byte `long` uninitialised — compare through a
+32-bit type.
 
 ### B17. Small contract differences a port may notice
 

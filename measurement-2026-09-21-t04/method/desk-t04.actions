@@ -1,0 +1,5 @@
+# Kernel desktop (sd-base, no #Z) -- not measured in T04; the arming-source
+# switch of a78_patch2.py needs a SCRIPT_DESK. One idle mark, nothing else.
+200 parkbr
+1000 arm
+1100 mark A_IDLE

@@ -1,0 +1,10 @@
+c19d626f34b102477ac1b32f451f6953adec011a771dc48f53e1d7dcade2bafb  kernel8.img
+a74b793935f1498f0142046beda29b4bac822d215c7a4f38eeacbd4b23df84f5  <scratch>/scr/kernel8.img
+23a49338c9a6d7803e57b4f19335a02035efdee6bfa9b4720feb0601c650b62b  sdk/gemlib/gemlib.a
+079bf3066ea3feb7a98a66129e0da29e29b30f7facbc4051e8579c3a6d4a79b8  sdk/cflib/cflib.a
+2c50ae42b933439640eebeca5c6a4c4acb6489d847c9bcda5055a05c7e400891  sdk/apps/qed/build/QED.NAP
+7739a2dbabb0f15b151059796f40a59274a6ae2b7fe8c37a1f7e8049b39f26e3  sdk/apps/teradesk/build/dist/DESKTOP.NAP
+586191d8ded7088e6b62761458ec032b29123e59d5cebabd6a1a9ddaf0ccd65a  <scratch>/before/DESKTOP.NAP
+d687b8dbfbac67f03f4eb90852fb65dcdfc07e77b753a0d9ad9dad1c473914dc  <scratch>/img/sd-base.img
+c195910b5e5aa997c6e000a8544d029835b5044ead3e022704d115413cffb0b8  <scratch>/img/sd-tera-after.img
+52fa027c815fa2b9963790da52399965eaf199a505eca82968714d66889a7e9a  <scratch>/img/sd-tera-before.img

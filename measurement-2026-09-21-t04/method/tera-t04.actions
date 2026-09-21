@@ -1,0 +1,24 @@
+# T04 TeraDesk via #Z (sd-tera): the rebuilt DESKTOP.NAP (gemlib.a with the
+# 32-bit *_long accessors + the six pointer-count overlays; the linked
+# TeraDesk differs from the pre-T04 binary in ONE instruction, mt_wind_get's
+# IN_LEN for WF_NAME/WF_INFO = 6, a path TeraDesk never takes). What the run
+# observes is TeraDesk's resource.c:307-315 menu trimming: with
+# `mnsize >= buffer.size` TeraDesk deletes 13 entries (SEP1-9, MDELETE,
+# MFCOPY, MSHSIZ, MREVS) from the File / View / Options boxes.
+# A: idle. File title (88,8) -> B: File box. Slide to View (135,8) -> C: View
+# box. Slide to Options (260,8) -> D: Options box. Out (400,300) + click =
+# cancel, park -> E.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 88 8
+1900 mark B_FILE_OPEN
+2200 move 135 8
+2700 mark C_VIEW_OPEN
+3000 move 260 8
+3500 mark D_OPTIONS_OPEN
+3800 move 400 300
+4100 down
+4103 up
+4600 parkbr
+5100 mark E_CLOSED

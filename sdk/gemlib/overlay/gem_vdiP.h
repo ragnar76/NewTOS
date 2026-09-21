@@ -176,7 +176,51 @@ __regsused("d0/d1/a0/a1") void _vdi_trap_00(
 
 #define N_PTRINTS (sizeof(void *) / sizeof(short))
 
-#ifdef __GNUC__
+#if defined(__NEWTOS__)
+
+/*
+ * NewTOS/AArch64 (TASK/T04): a LONG inside a VDI/AES WORD array is 32 bits
+ * over two WORDs, low word first, stored and loaded in place at &array[n]
+ * (docs/COMPATIBILITY.md, "A LONG in int_in/int_out/ptsin/ptsout is 32 bits
+ * over two WORDs"). That is the 68k access EmuTOS performs: `*(LONG *)
+ * &int_out[1]` (aes/gemwmlib.c:1564) and `MAKE_ULONG(int_in[1], int_in[0])`
+ * (aes/gemsuper.c:143, include/aesdefs.h:190-191, include/portab.h:139; LONG
+ * is 32 bits, include/portab.h:123) leave the same two WORDs on a
+ * little-endian machine.
+ *
+ * The pristine accessor dereferences a `long *`. On LP64 that is an EIGHT-
+ * byte access at a two-byte-aligned slot: a store spills the upper half over
+ * the two WORDs after the LONG -- or past the end of an exactly sized local
+ * array, where it hit the binding's own control[0] (v_create_ctab,
+ * vst_track_offset, vst_arbpt32 reached the VDI with opcode 0) or the
+ * caller's frame (v_value2color) -- and a load takes the two WORDs after the
+ * LONG as its upper half (every *_intout_long reader, ten of them off the
+ * end of the array). A 32-bit type with the slot's own alignment (2) and
+ * `may_alias` (the slot is declared `short`) makes every accessor exactly
+ * the 68k access: one 32-bit `str w`/`ldr w` at &array[n], sign-extended on
+ * the way out like a 68k `long` widened to LP64.
+ *
+ * The pointer accessors below are NOT changed: a pointer in a WORD array
+ * occupies the caller's own pointer width, N_PTRINTS WORDs (A81; the kernel's
+ * `Aespb::intin_ptr` / `Vdipb::contrl_ptr` read it at that width).
+ */
+#ifndef _GEM_WIRE_LONG_T_
+#define _GEM_WIRE_LONG_T_
+typedef int __attribute__((aligned(2), may_alias)) gem_wire_long;
+_Static_assert(sizeof(gem_wire_long) == 4, "gem_wire_long must be the 32-bit 68k LONG");
+#endif
+
+static __inline gem_wire_long *__vdi_array_long(short n, short *array)
+{
+	return ((gem_wire_long *)(array   +n));
+}
+
+static __inline void **__vdi_array_ptr(short n, short *array)
+{
+	return ((void**)(array + n));
+}
+
+#elif defined(__GNUC__)
 
 /* to avoid "dereferencing type-punned pointer" */
 static __inline long *__vdi_array_long(short n, short *array)

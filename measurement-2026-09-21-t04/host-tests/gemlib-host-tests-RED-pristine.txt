@@ -1,0 +1,66 @@
+== intin_long_words against the PRISTINE gem_aesP.h/gem_vdiP.h + pristine a_wind_get_ptr.c (-D__NO_INLINE__, ASan default halt_on_error=1) ==
+==35207==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x00016d7368a0 at pc 0x0001026ca684 bp 0x00016d736810 sp 0x00016d736808
+WRITE of size 8 at 0x00016d7368a0 thread T0
+    [32, 40) 'point.addr'
+    [64, 94) 'vdi_control'
+    [128, 132) 'vdi_intout' <== Memory access at offset 128 partially overflows this variable
+    [144, 152) 'vdi_ptsout'
+    [176, 216) 'vdi_params'
+SUMMARY: AddressSanitizer: stack-buffer-overflow (intin_long_words_pristine:arm64+0x100002680) in vst_arbpt32+0x35c
+  vst_arbpt32(3, 0x00123456)
+rc=
+
+== same, -fsanitize-recover=address ASAN_OPTIONS=halt_on_error=0 (every overflow + every functional failure) ==
+==35211==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x00016f6a6840 at pc 0x00010075a508 bp 0x00016f6a67b0 sp 0x00016f6a67a8
+WRITE of size 8 at 0x00016f6a6840 thread T0
+    #0 0x00010075a504 in vst_arbpt32+0x19c (intin_long_words_pristine_rec:arm64+0x100002504)
+    #0 0x00010075a374 in vst_arbpt32+0xc (intin_long_words_pristine_rec:arm64+0x100002374)
+    [128, 132) 'vdi_intout' <== Memory access at offset 128 partially overflows this variable
+==35211==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x00016f6a6840 at pc 0x00010075a5b4 bp 0x00016f6a67b0 sp 0x00016f6a67a8
+READ of size 8 at 0x00016f6a6840 thread T0
+    #0 0x00010075a5b0 in vst_arbpt32+0x248 (intin_long_words_pristine_rec:arm64+0x1000025b0)
+    #0 0x00010075a374 in vst_arbpt32+0xc (intin_long_words_pristine_rec:arm64+0x100002374)
+    [128, 132) 'vdi_intout' <== Memory access at offset 128 partially overflows this variable
+==35211==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x00016f6a6880 at pc 0x00010075ad88 bp 0x00016f6a67f0 sp 0x00016f6a67e8
+WRITE of size 8 at 0x00016f6a6880 thread T0
+    #0 0x00010075ad84 in v_value2color+0x170 (intin_long_words_pristine_rec:arm64+0x100002d84)
+    #0 0x00010075ac20 in v_value2color+0xc (intin_long_words_pristine_rec:arm64+0x100002c20)
+    [128, 132) 'vdi_intin' <== Memory access at offset 128 partially overflows this variable
+  vst_arbpt32(3, 0x00123456)
+  vst_arbpt32(3, 0x00123456) -> -2
+    FAIL return(-2)     got 0xfffffffe want 0xfffffffffffffffe
+  v_create_ctab(4, 0x00010002, 0x00030004)
+  vst_track_offset(5, 0x00123456, 1)
+  v_value2color(6, 0x89ABCDEF)
+    FAIL return         got 0x64000000010002 want 0x10002
+  wind_get_ptr(0, WF_SCREEN) -> 0x1000218 / 40960
+    FAIL *v             got 0xa00001000218 want 0x1000218
+  wind_get_ptr(0, WF_SCREEN) -> 0xfff0 / 259200
+    FAIL *v             got 0x3f4800000fff0 want 0xfff0
+  wind_get_ptr(0, WF_NEWDESK) -> 0x10177e4c0
+intin_long_words: 4 FAILURE(S) -- the *_long accessors / the WF_SCREEN read do not exchange 32-bit LONGs as [lo, hi] WORD pairs
+rc=
+
+== ptr_word_count against the PRISTINE six .c files ==
+  v_delete_ctab(3, 0x101770001)
+    FAIL control[3]   got 0x2 want 0x4
+  v_delete_itab(3, 0x10177e4c0)
+    FAIL control[3]   got 0x2 want 0x4
+  vqt_fontheader(3, 0x101234560)
+    FAIL control[3]   got 0x2 want 0x4
+  udef_vqt_fontheader(3, 0x101234560)
+    FAIL control[3]   got 0x2 want 0x4
+  wind_get(4, WF_NAME, 0x16bc5aade)
+    FAIL control[1]   got 0x4 want 0x6
+  wind_get(4, WF_INFO, 0x101234560)
+    FAIL control[1]   got 0x4 want 0x6
+  wind_get(4, WF_WORKXYWH)
+  wind_sget(5, WF_NAME, 0x101234560)
+    FAIL control[1]   got 0x4 want 0x6
+ptr_word_count: 7 FAILURE(S) -- a packed pointer is not declared at N_PTRINTS WORDs
+rc=1
+exit code intin_long_words_pristine (halt_on_error=1): 134
+exit code intin_long_words_pristine_rec (recover): 1
+exit code ptr_word_count_pristine: 1
+exit code intin_long_words (overlay, ASan): 0
+exit code ptr_word_count (overlay): 0

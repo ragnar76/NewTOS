@@ -1,0 +1,42 @@
+== intin_long_words (overlay headers + overlay a_wind_get_ptr.c, -fsanitize=address -O1) ==
+  vst_arbpt32(3, 0x00123456)
+  vst_arbpt32(3, 0x00123456) -> -2
+  v_create_ctab(4, 0x00010002, 0x00030004)
+  vst_track_offset(5, 0x00123456, 1)
+  v_value2color(6, 0x89ABCDEF)
+  wind_get_ptr(0, WF_SCREEN) -> 0x1000218 / 40960
+  wind_get_ptr(0, WF_SCREEN) -> 0xfff0 / 259200
+  wind_get_ptr(0, WF_NEWDESK) -> 0x10177e4c0
+intin_long_words: OK -- *_intin_long/*_intout_long are 32-bit [lo, hi] in place, control[0] keeps the opcode, wind_get_ptr(WF_SCREEN) returns the address LONG
+rc=0
+
+== ptr_word_count (six overlays) ==
+  v_delete_ctab(3, 0x101770001)
+  v_delete_itab(3, 0x10177e4c0)
+  vqt_fontheader(3, 0x101234560)
+  udef_vqt_fontheader(3, 0x101234560)
+  wind_get(4, WF_NAME, 0x16f232afe)
+  wind_get(4, WF_INFO, 0x101234560)
+  wind_get(4, WF_WORKXYWH)
+  wind_sget(5, WF_NAME, 0x101234560)
+ptr_word_count: OK -- v_delete_ctab/_itab, vqt_fontheader (+udef) declare N_PTRINTS intin WORDs; wind_get(WF_NAME/WF_INFO) and wind_sget declare 2 + N_PTRINTS
+rc=0
+
+== evnt_timer_words (H03 guard, changed headers) ==
+sizeof(unsigned long)=8 sizeof(short)=2
+  evnt_timer(150 = 0x96)
+  evnt_timer(0 = 0x0)
+  evnt_timer(65536 = 0x10000)
+  evnt_timer(305419896 = 0x12345678)
+  evnt_timer(4294967295 = 0xffffffff)
+  evnt_timer(4294967303 = 0x100000007)
+evnt_timer_words: OK -- mt_evnt_timer hands int_in[0]=low, int_in[1]=high
+rc=0
+
+== wind_set_addrin (A81 guard, changed headers) ==
+  wind_set_str(3, WF_NAME, 0x101770001)
+  wind_set_ptr(4, WF_INFO, 0x101770001)
+  wind_set_ptr_int(0, WF_NEWDESK, 0x10177e4c0, 2)
+  wind_set_ptr_int(0, WF_NEWDESK, 0x10177e4c0, 0)
+wind_set_addrin: OK -- wind_set_str/_ptr/_ptr_int hand the pointer in addr_in[0] (AIN_LEN 1) and the companion word in int_in[2]
+rc=0

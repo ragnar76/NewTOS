@@ -1,0 +1,836 @@
+diff --git a/docs/COMPATIBILITY.md b/docs/COMPATIBILITY.md
+index 117bc13..ec3bd1c 100644
+--- a/docs/COMPATIBILITY.md
++++ b/docs/COMPATIBILITY.md
+@@ -419,6 +419,85 @@ the gemlib overlay move to the native form are Developer work, open at the
+ time of writing — see `TASK/A81.md` for the current status.
+ 
+ 
++**A `LONG` in `int_in`/`int_out`/`ptsin`/`ptsout` is 32 bits over two
++WORDs, low word first — natively in place on a little-endian machine; a
++pointer packed into one of those WORD arrays occupies the caller's own
++pointer width (T04, 2026-09-21).** Not a deviation, a contract point with
++no prior entry: one rule, not two, for every value wider than a WORD that
++travels inside the AES/VDI WORD arrays. It is what EmuTOS does and what
++NewTOS's readers and writers do (audit `docs/analysis/t04-lp64-intin-long-
++contract-2026-09-21.md`; pinned by `tos-api/tests/aes_t04_intin_long_contract.rs`).
++
++*The rule.* A value whose EmuTOS type at the access site is `LONG`/`ULONG`
++(32 bits, `references/emutos/include/portab.h:119,123`) occupies **two** WORDs,
++`int_x[n]` = bits 0..15, `int_x[n+1]` = bits 16..31, at every caller width.
++EmuTOS spells that in two ways that coincide on its big-endian 68k and
++coincide again, for the *other* reason, on little-endian AArch64: the
++explicit form `MAKE_ULONG(int_in[1], int_in[0])` — `int_in[0]` is the
++**low** word (`evnt_timer`, `aes/gemsuper.c:143`, `T_LOCOUNT`/`T_HICOUNT`
++in `include/aesdefs.h:190-191`, `MAKE_ULONG(hi, lo)` itself `include/portab.h:139`;
++`evnt_multi`, `:150`, `:220-221`) — and
++the native form `*(LONG *)poutwds` at `&int_out[1]` and `&int_out[3]`
++(`wind_get(WF_SCREEN)`, `aes/gemwmlib.c:1564`, `gemgsxif.c:125-129`). On a
++little-endian machine a native 32-bit store at `&int_x[n]` leaves exactly
++`[low, high]`, so the two forms are one contract: NewTOS reads
++`evnt_timer`/`evnt_multi` as `int_in[n] | int_in[n+1] << 16`
++(`tos-api/src/aes/event.rs`) and writes `WF_SCREEN` with one unaligned
++32-bit store per LONG (`tos-api/src/aes/mod.rs::set_intout_long`, A57).
++`WF_SCREEN` **stays LONG-class** — EmuTOS types it `LONG *`, the buffer's
++user VA is under 4 GiB — it is not widened to a pointer for an LP64 caller
++(that would move the length out of `int_out[3..4]` and break every
++`mt_wind_get` reader, TeraDesk among them). The VDI has no LONG in
++`intin`/`intout` today (EmuTOS neither); the rule covers `ptsin`/`ptsout`
++for the NVDI extensions gemlib binds.
++
++A value whose EmuTOS type at the access site is a **pointer** (`char **`,
++`OBJECT **`: `wind_set`'s packed `WF_NAME`/`WF_INFO`/`WF_NEWDESK` form at
++`int_in[2]` — `wm_set(…, &WM_IX)` with `WM_IX = int_in[2]`, `aes/gemsuper.c:346`,
++`include/aesdefs.h:504`, read as `*(char **)pinwds`/`*(OBJECT **)pinwds`,
++`aes/gemwmlib.c:1661,1687`; the MFDB pointers in
++`CONTRL[7..]`, `gsx2.h:32-34`) occupies the caller's own pointer width —
++`N_PTRINTS = sizeof(void *) / sizeof(short)` WORDs, four for LP64, two for
++ILP32 and the 68k — and the declared count (`IN_LEN`, `N_INTIN`) counts
++those WORDs (A81 above; `tos-api/src/aes/mod.rs::intin_ptr`/`ptr_words`,
++`tos-api/src/vdi/mod.rs::contrl_ptr`). Where the opcode has no EmuTOS source
++(NVDI 200-series, `x_*`/`fnts_*`/`pdlg_*` AES extensions), the type
++criterion is gemlib's own accessor kind: `*_long` → LONG, `*_ptr` → pointer.
++
++*Two consequences for the LP64 binding side.* (1) A binding's LONG accessor
++**must be a 32-bit access**: gemlib's pristine `*(long *)(array + n)` is an
++8-byte access on LP64 — its store spills the upper half over the two WORDs
++after the LONG (past the end of an exactly sized local array in
++`v_create_ctab`, `vst_track_offset`, `v_value2color`, `vst_arbpt32`, where
++at `-O2` it overwrote the binding's own `control[0]` — the VDI received
++opcode 0 — or the caller's frame), and its load takes the two WORDs after
++the LONG as the upper half. `sdk/gemlib/overlay/gem_aesP.h`/`gem_vdiP.h`
++define the accessors on a 32-bit, 2-byte-aligned, `may_alias` type
++(`gem_wire_long`): one `str w`/`ldr w` at `&array[n]`, sign-extended on the
++way out like a 68k `long`. (2) A native **8-byte read of a 32-bit store is
++wrong**: at `&int_out[1]` after `wind_get(WF_SCREEN)` it yields
++`address | length << 32`, not the address (measured, `aes_t04_intin_long_
++contract.rs`). `sdk/gemlib/overlay/a_wind_get_ptr.c` reads `WF_SCREEN` as
++the LONG it is; the pristine `mt_wind_get` (four WORD copies) was never
++affected. cflib's `purec.c` reader of the same shape (`purec.c:166,171`) is
++`__PUREC__`-only and not compiled into NewTOS's `cflib.a` (`purec.o` has no
++symbols; cflib's `wind_get` *is* gemlib's `mt_wind_get`). Host guards:
++`sdk/gemlib/tests/intin_long_words.c` (the four bindings, the `WF_SCREEN`
++read, AddressSanitizer for the array bounds; pristine headers fail),
++`sdk/gemlib/tests/ptr_word_count.c` (the six pointer-count overlays).
++
++What this entry does **not** decide: the `vex_*` vector exchange in
++`CONTRL[7..]`/`[9..]` (`tos-api/src/vdi/mouse.rs`, fixed 8 bytes at a fixed
++index; EmuTOS two 32-bit slots, `vdi/vdi_mouse.c:372-373`) lies outside the
++`intin`/`intout` arrays and has its own ticket, `TASK/T08.md`. TeraDesk's
++`union { long size; struct { _WORD high, low; } words; }` around
++`wind_get(0, WF_SCREEN, …, &buffer.words.high, &buffer.words.low)`
++(`sdk/apps/teradesk/resource.c:233-241,307,315`) receives the correct low
++32 bits under this contract; the upper 32 bits of its 8-byte `long` are the
++application's own uninitialised stack, an app-side LP64 matter noted for
++Pi observation in `TASK/T04-STATUS-DONE.MD`, not an overlay.
++
++
+ **`appl_write` on a full application-message queue returns 0; EmuTOS blocks
+ the sender and never returns 0** — sanctioned 2026-09-20 with A75 (following
+ the AUD-P1-006 finding of 2026-07-22,
+diff --git a/docs/api/aes/_dispatcher.md b/docs/api/aes/_dispatcher.md
+index d4caf32..8acb2a1 100644
+--- a/docs/api/aes/_dispatcher.md
++++ b/docs/api/aes/_dispatcher.md
+@@ -250,6 +250,26 @@ caveat (not previously stated). Logged as D-084.
+   (kernel-stack leak across the EL0 boundary otherwise), A27 —
+   [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md); regression test
+   `tos-api/tests/aes_intout_underwrite.rs`.
++- **Values wider than a WORD inside `int_in`/`int_out`** (T04, 2026-09-21):
++  a `LONG` — EmuTOS's type at the access site, `evnt_timer`'s
++  `MAKE_ULONG(T_HICOUNT, T_LOCOUNT)` with `T_LOCOUNT = int_in[0]`
++  (`gemsuper.c:143`, `aesdefs.h:190-191`), `evnt_multi`'s `int_in[14..15]`
++  (`:150`, `:220-221`), `wind_get(WF_SCREEN)`'s `*(LONG *)&int_out[1]` /
++  `&int_out[3]` (`gemwmlib.c:1564`) — is **32 bits over two WORDs, low word
++  first**, at every caller width; NewTOS reads `int_in[n] | int_in[n+1] <<
++  16` (`tos-api/src/aes/event.rs`) and writes one unaligned 32-bit store per
++  LONG (`tos-api/src/aes/mod.rs::set_intout_long`). A **pointer** packed into
++  `int_in` (`wind_set`'s `WM_IX = int_in[2]` form, `gemsuper.c:346`,
++  `aesdefs.h:504`) occupies the **caller's pointer width** — `IN_LEN` counts
++  those WORDs (`Aespb::intin_ptr`/`ptr_words`, A81). An LP64 binding must
++  therefore access a LONG slot with a 32-bit accessor (gemlib's pristine
++  `*(long *)(int_in + n)` is an 8-byte access there) and must not read a
++  LONG with a pointer-width read (`&int_out[1]` after `WF_SCREEN` gives
++  `address | length << 32`). The contract entry with the full derivation is
++  [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md) "A `LONG` in
++  `int_in`/`int_out`/`ptsin`/`ptsout`"; the VDI side is the same rule
++  ([`../vdi/_dispatcher.md`](../vdi/_dispatcher.md), "Values wider than a
++  WORD"); regression test `tos-api/tests/aes_t04_intin_long_contract.rs`.
+ - **Selector 201** (bare reschedule, no block) is an undocumented feature; a
+   faithful NewTOS may treat it as a cooperative yield or a no-op — flagged as an
+   open question, low priority.
+diff --git a/docs/api/vdi/_dispatcher.md b/docs/api/vdi/_dispatcher.md
+index b7f3538..befd396 100644
+--- a/docs/api/vdi/_dispatcher.md
++++ b/docs/api/vdi/_dispatcher.md
+@@ -394,6 +394,24 @@ and in `_discrepancies.md` D-VDI-3.)
+   origin top-left — matches the framebuffer directly. `work_in[10]`
+   (`xfm_mode`) NDC scaling is a later refinement (see
+   [`workstation/100-v_opnvwk.md`](workstation/100-v_opnvwk.md)).
++- **Values wider than a WORD inside `INTIN`/`INTOUT`/`PTSIN`/`PTSOUT`**
++  (T04, 2026-09-21): the same rule as the AES's
++  ([`../aes/_dispatcher.md`](../aes/_dispatcher.md) §4, "Values wider than a
++  WORD"; contract entry [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md)
++  "A `LONG` in `int_in`/`int_out`/`ptsin`/`ptsout`"). A `LONG` is **32 bits
++  over two WORDs, low word first**, in place at `&array[n]` at every caller
++  width; a **pointer** packed into a WORD array occupies the **caller's
++  pointer width** (`N_PTRINTS` WORDs — the MFDB pointers in `CONTRL[7..]`,
++  `gsx2.h:32-34`, are read that way by `tos-api/src/vdi/mod.rs::contrl_ptr`)
++  and `N_INTIN` counts those WORDs. EmuTOS's screen driver has no LONG in
++  `INTIN`/`INTOUT` (opcodes 1..39, 100..134 read WORDs only) and NewTOS
++  none either; the rule binds the NVDI-extension opcodes gemlib binds
++  (`vst_arbpt32`, `v_create_ctab`, `vs_*_color`, `vqt_advance32`'s
++  `ptsout`, …), whose type criterion — no EmuTOS source — is gemlib's own
++  accessor kind (`*_long` → LONG, `*_ptr` → pointer). The one 8-byte
++  fixed-index reader outside these arrays, the `vex_*` vector exchange in
++  `CONTRL[7..]`/`[9..]` (`tos-api/src/vdi/mouse.rs`; EmuTOS two 32-bit
++  slots, `vdi_mouse.c:372-373`), is `TASK/T08.md`.
+ - **`MAX_VERTICES`.** Resolved 2026-09-04: **1024**, the default profile
+   value (see the `PTSIN` vertex clamp above). **`NUM_VDI_HANDLES`** is
+   still open (`_discrepancies.md` D-VDI-3); the handle-range checks must
+diff --git a/docs/sdk/05-abi-pitfalls.md b/docs/sdk/05-abi-pitfalls.md
+index b4213e9..c36c054 100644
+--- a/docs/sdk/05-abi-pitfalls.md
++++ b/docs/sdk/05-abi-pitfalls.md
+@@ -492,12 +492,50 @@ Bindings that use arithmetic (`interval`, `interval >> 16`,
+ **Do**: fix the binding in `sdk/gemlib/overlay/` with the arithmetic form
+ (`sdk/gemlib/overlay/a_evnt_timer.c` is the model) and guard it with a host
+ test that captures the parameter block through a fake `aes()`/`vdi()`
+-(`sdk/gemlib/tests/evnt_timer_words.c`, built with `-D__NEWTOS__`). Four more
+-bindings of the same shape (`n_vq_ctab.c`, `n_vq_dflt_ctab.c`,
+-`n_vst_setsize32.c`, `n_vst_arbpt32.c`), five that cast a pointer the same way,
+-and the `*_intin_long`/`*_intout_long` accessors (8-byte in-place writes on
+-LP64) are catalogued in `TASK/T04.md` — **unresolved**; the kernel-side
+-contract for `long`s and pointers inside `int_in` is not written down yet.
++(`sdk/gemlib/tests/evnt_timer_words.c`, built with `-D__NEWTOS__`).
++
++**Resolved 2026-09-21 (T04) — the contract and the header fix.** The rule
++(`docs/COMPATIBILITY.md`, "A `LONG` in `int_in`/`int_out`/`ptsin`/
++`ptsout`"): a `long` inside a VDI/AES WORD array is **32 bits over two
++WORDs, low word first, natively in place** — `int_x[n]` bits 0..15,
++`int_x[n+1]` bits 16..31, what EmuTOS's `MAKE_ULONG(int_in[1], int_in[0])`
++and `*(LONG *)&int_out[1]` both leave on a little-endian machine — and a
++**pointer** packed into such an array occupies the **caller's pointer
++width** (`N_PTRINTS` WORDs, A81). Three consequences for an LP64 binding:
++
++* Punning a `long` argument as the intin array (`(short *)&point`,
++  `n_vq_ctab.c`, `n_vq_dflt_ctab.c`, `n_vst_setsize32.c`, `n_vst_arbpt32.c`)
++  is **correct** on LP64/LE — the bytes at `&point` start with the low word.
++  Only the explicit swap of `a_evnt_timer.c` (`i[1]`, `i[0]`) was wrong.
++* The `*_intin_long`/`*_intout_long`/`*_ptsin_long`/`*_ptsout_long`
++  accessors must be **32-bit** accesses. The pristine `*(long *)(array + n)`
++  is an 8-byte access on LP64: its store spilled over the two WORDs after the
++  LONG (past exactly sized local arrays in `v_create_ctab`,
++  `vst_track_offset`, `v_value2color`, `vst_arbpt32` — at `-O2` the binding's
++  own `control[0]` was overwritten and the VDI received opcode 0), its load
++  took the two WORDs after the LONG as the upper half. The overlay headers
++  `sdk/gemlib/overlay/gem_aesP.h`/`gem_vdiP.h` now define them on
++  `gem_wire_long` (`int`, `aligned(2)`, `may_alias`): one `str w`/`ldr w` at
++  `&array[n]`, sign-extended on the way out. All 33 + 36 sites are fixed by
++  the header; no per-file overlay.
++* A pointer packed into intin must be **declared at its width**: overlays
++  `n_v_delete_ctab.c`, `n_v_delete_itab.c`, `n_vqt_fontheader.c`,
++  `u_vqt_fontheader.c` (`N_PTRINTS`), `a_wind_get.c`, `a_wind_sget.c`
++  (`2 + N_PTRINTS`). And a LONG must not be read at pointer width:
++  `a_wind_get_ptr.c` reads `WF_SCREEN` (two 32-bit LONGs: address, length)
++  as a LONG — the pristine 8-byte read returned `address | length << 32`.
++
++Host guards: `sdk/gemlib/tests/intin_long_words.c` (the four bindings + the
++`WF_SCREEN` read, under AddressSanitizer; the pristine headers fail) and
++`sdk/gemlib/tests/ptr_word_count.c` (the six count overlays). Still open,
++own ticket: the `vex_*` vector exchange in `CONTRL[7..]`/`[9..]`
++(`TASK/T08.md`). Note for app authors: cflib's `purec.c` (an `aes_intout`
++reader of the same 8-byte shape) is `__PUREC__`-only and not compiled on
++NewTOS — cflib's `wind_get` is gemlib's `mt_wind_get`; a `union { long
++size; struct { _WORD high, low; } words; }` around `wind_get(0, WF_SCREEN,
++…)` (TeraDesk `resource.c:233-241`) gets the right low 32 bits and leaves
++the upper 32 bits of the 8-byte `long` uninitialised — compare through a
++32-bit type.
+ 
+ ### B17. Small contract differences a port may notice
+ 
+diff --git a/sdk/gemlib/tests/intin_long_words.c b/sdk/gemlib/tests/intin_long_words.c
+new file mode 100644
+index 0000000..434e631
+--- /dev/null
++++ b/sdk/gemlib/tests/intin_long_words.c
+@@ -0,0 +1,339 @@
++/*
++ * intin_long_words.c -- pin the WORDs the *_intin_long / *_intout_long
++ * accessors (and the WF_SCREEN read of mt_wind_get_ptr) exchange with the
++ * VDI and the AES.
++ *
++ * The contract (docs/COMPATIBILITY.md, T04; docs/api/aes/_dispatcher.md,
++ * docs/api/vdi/_dispatcher.md): a LONG inside int_in/int_out/ptsin/ptsout
++ * is 32 bits over two WORDs, low word first, stored and loaded natively in
++ * place at &array[n] -- EmuTOS's `*(LONG *)&int_out[1]` (aes/gemwmlib.c:
++ * 1564) and `MAKE_ULONG(int_in[1], int_in[0])` (aes/gemsuper.c:143,
++ * include/aesdefs.h:190-191) on a little-endian machine. A pointer packed
++ * into a WORD array occupies the caller's own pointer width (A81).
++ *
++ * Pristine gemlib (gem_vdiP.h:182-185, gem_aesP.h:89-99) implements the
++ * accessors as `*(long *)(array + n)`: on AArch64 LP64 an EIGHT-byte access
++ * at a two-byte-aligned slot. A store spills the upper half over the next
++ * two WORDs -- past the end of an exactly sized local array in
++ * v_create_ctab (short vdi_intin[4], vdi_intin_long(2)), vst_track_offset
++ * (same), v_value2color (short vdi_intin[2], vdi_intin_long(0)) and
++ * vst_arbpt32 (short vdi_intout[2], vdi_intout_long(0) = 0), where at -O2
++ * it overwrote the binding's own control[0] (the VDI received opcode 0) or
++ * the caller's frame -- and a load takes the two WORDs after the LONG as its
++ * upper half (every *_intout_long reader). mt_wind_get_ptr read WF_SCREEN,
++ * two 32-bit LONGs (address, length), as one 8-byte pointer: address |
++ * length << 32. sdk/gemlib/overlay/gem_vdiP.h and gem_aesP.h make the
++ * accessors 32-bit (gem_wire_long); sdk/gemlib/overlay/a_wind_get_ptr.c
++ * reads WF_SCREEN as the LONG it is.
++ *
++ * This test is the regression guard for those overlays, in the shape of
++ * evnt_timer_words.c: a HOST program that defines vdi() and aes() itself,
++ * captures the parameter block the binding built, checks the slots the
++ * binding DECLARES (control[0] = the opcode, control[3] = nintin, the
++ * [lo, hi] words) and answers through the same block the way the NewTOS
++ * kernel does (32-bit stores, two WORDs each). The bindings' local arrays
++ * are exactly sized, so "no bytes beyond the declared arrays" is checked by
++ * AddressSanitizer: build with -fsanitize=address and the pristine headers
++ * report stack-buffer-overflow in the four bindings, the overlay headers
++ * report nothing. The host shares the target's LP64 `long` and little-endian
++ * byte order, which is what the punning depended on; the test refuses to
++ * certify from any other host.
++ *
++ * Build & run (from the repository root, after build-gemlib.sh has applied
++ * the overlay to the extracted tree):
++ *   cc -D__NEWTOS__ -fsanitize=address -O1 \
++ *      -I sdk/gemlib/gemlib-0.44.0 -I sdk/libc/mintlib/include \
++ *      -o intin_long_words sdk/gemlib/tests/intin_long_words.c \
++ *      sdk/gemlib/gemlib-0.44.0/n_vst_arbpt32.c \
++ *      sdk/gemlib/gemlib-0.44.0/n_v_create_ctab.c \
++ *      sdk/gemlib/gemlib-0.44.0/n_vst_track_offset.c \
++ *      sdk/gemlib/gemlib-0.44.0/n_v_value2color.c \
++ *      sdk/gemlib/gemlib-0.44.0/a_wind_get_ptr.c \
++ *      sdk/gemlib/gemlib-0.44.0/vdi_dummy.c
++ *   ./intin_long_words       # exit 0 = words match the contract, ASan silent
++ *
++ * Negative control -- the PRISTINE accessors and the pristine
++ * a_wind_get_ptr.c from the tarball (their C-call trap branch is selected by
++ * -D__NO_INLINE__ instead of -D__NEWTOS__; mt_gem.h stays the tree's):
++ *   tar xf sdk/gemlib/gemlib-0.44.0.tar.xz -C /tmp/pristine
++ *   mkdir /tmp/pristine/hdr && cp /tmp/pristine/gemlib-0.44.0/gem_{aes,vdi}P.h /tmp/pristine/hdr/
++ *   cc -D__NO_INLINE__ -fsanitize=address -O1 \
++ *      -I /tmp/pristine/hdr -I sdk/gemlib/gemlib-0.44.0 -I sdk/libc/mintlib/include \
++ *      -o intin_long_words_pristine sdk/gemlib/tests/intin_long_words.c \
++ *      sdk/gemlib/gemlib-0.44.0/n_vst_arbpt32.c ... (same list, with
++ *      /tmp/pristine/gemlib-0.44.0/a_wind_get_ptr.c instead of the tree's)
++ *   ./intin_long_words_pristine
++ * aborts in the first binding with an ASan stack-buffer-overflow (WRITE of
++ * size 8 in vst_arbpt32); with ASAN_OPTIONS=halt_on_error=0 it runs on and
++ * fails the WF_SCREEN case (address | length << 32) and the vst_arbpt32
++ * return (upper half taken from the two WORDs after the LONG).
++ */
++
++#include <stdio.h>
++#include <string.h>
++#include <mt_gem.h>
++#include <mt_gemx.h>
++
++/* ---------------------------------------------------------------- VDI --- */
++
++/* What the fake VDI trap saw on the last call. Only the declared counts are
++ * copied out of the caller's arrays: contrl[0..6], nintin (contrl[3]) intin
++ * words, nptsin (contrl[1]) vertices. */
++static short seen_control[7];
++static short seen_intin[8];
++static short seen_nintin;
++static int   vdi_calls;
++
++/* The VDI trap primitive the binding links to under __NEWTOS__
++ * (sdk/gemlib/overlay/_gc_vdi.c on the target) and under __NO_INLINE__
++ * (pristine gem_vdiP.h, "go the old way"). Here: capture and answer the
++ * way the NewTOS VDI would -- 32-bit LONGs as two WORDs, low word first. */
++void vdi(VDIPB *pb)
++{
++	int i;
++	short op  = pb->control[0];
++	short sub = pb->control[5];
++
++	vdi_calls++;
++	for (i = 0; i < 7; i++)
++		seen_control[i] = pb->control[i];
++	seen_nintin = pb->control[3];
++	memset(seen_intin, 0, sizeof seen_intin);
++	for (i = 0; i < seen_nintin && i < 8; i++)
++		seen_intin[i] = pb->intin[i];
++
++	if (op == 246) {					/* vst_arbpt32: 2 intout, 4 ptsout */
++		static int neg;
++		pb->control[2] = 2;
++		pb->control[4] = 2;
++		pb->ptsout[0] = 8; pb->ptsout[1] = 16; pb->ptsout[2] = 9; pb->ptsout[3] = 17;
++		if (!neg++) {					/* 0x56789ABC */
++			pb->intout[0] = (short)0x9ABC;
++			pb->intout[1] = (short)0x5678;
++		} else {						/* -2: 0xFFFFFFFE */
++			pb->intout[0] = (short)0xFFFE;
++			pb->intout[1] = (short)0xFFFF;
++		}
++	} else if (op == 206 && sub == 8) {	/* v_create_ctab: a pointer back */
++		void *p = (void *)0x0000000101234560UL;
++		pb->control[2] = 0;
++		pb->control[4] = (short)(sizeof(void *) / sizeof(short));
++		memcpy(&pb->intout[0], &p, sizeof p);
++	} else if (op == 237) {				/* vst_track_offset: 2 intout */
++		pb->control[2] = 0;
++		pb->control[4] = 2;
++		pb->intout[0] = 7;
++		pb->intout[1] = 9;
++	} else if (op == 204 && sub == 1) {	/* v_value2color: LONG + COLOR_ENTRY */
++		pb->control[2] = 0;
++		pb->control[4] = 6;
++		pb->intout[0] = (short)0x0002;	/* 0x00010002 */
++		pb->intout[1] = (short)0x0001;
++		pb->intout[2] = 0;				/* reserved */
++		pb->intout[3] = 100;			/* red */
++		pb->intout[4] = 200;			/* green */
++		pb->intout[5] = 300;			/* blue */
++	}
++}
++
++/* ---------------------------------------------------------------- AES --- */
++
++static short seen_aes_control[5];
++static short seen_aes_intin[2];
++static int   aes_calls;
++
++/* The AES trap primitive the binding links to (sdk/gemlib/overlay/_gc_aes.c
++ * on the target; pristine gem_aesP.h under __NO_INLINE__). Here: answer
++ * wind_get(0, WF_SCREEN) exactly as the NewTOS AES does
++ * (tos-api/src/aes/mod.rs Aespb::set_intout_long, A57): TRUE, the buffer
++ * address as one 32-bit LONG in int_out[1..2], its length as one 32-bit
++ * LONG in int_out[3..4], nothing past OUT_LEN 5. The WF_NEWDESK case
++ * answers a pointer at the caller's width (the branch the overlay leaves
++ * as it was). */
++static unsigned long screen_addr, screen_len;
++static void *newdesk_tree;
++
++void aes(AESPB *pb)
++{
++	int i;
++	aes_calls++;
++	for (i = 0; i < 5; i++)
++		seen_aes_control[i] = pb->control[i];
++	seen_aes_intin[0] = pb->intin[0];
++	seen_aes_intin[1] = pb->intin[1];
++
++	if (pb->control[0] == 104 && pb->intin[1] == WF_SCREEN) {
++		unsigned int a = (unsigned int)screen_addr;
++		unsigned int l = (unsigned int)screen_len;
++		pb->intout[0] = 1;
++		memcpy(&pb->intout[1], &a, 4);	/* one native 32-bit store */
++		memcpy(&pb->intout[3], &l, 4);	/* one native 32-bit store */
++	} else if (pb->control[0] == 104 && pb->intin[1] == WF_NEWDESK) {
++		pb->intout[0] = 1;
++		memcpy(&pb->intout[1], &newdesk_tree, sizeof newdesk_tree);
++	} else {
++		pb->intout[0] = 0;
++	}
++}
++
++/* ------------------------------------------------------------- checks --- */
++
++static int failures;
++
++static void check(const char *what, long got, long want)
++{
++	if (got != want) {
++		printf("    FAIL %-14s got 0x%lx want 0x%lx\n", what, got, want);
++		failures++;
++	}
++}
++
++static void check_w(const char *what, short got, unsigned short want)
++{
++	check(what, (unsigned short)got, want);
++}
++
++int main(void)
++{
++#if !defined(__BYTE_ORDER__) || (__BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__)
++	printf("intin_long_words: host is not little-endian; this test certifies the "
++	       "AArch64 (little-endian, LP64) build and cannot run here\n");
++	return 2;
++#endif
++	if (sizeof(long) != 8 || sizeof(void *) != 8 || sizeof(short) != 2) {
++		printf("intin_long_words: host is not LP64; this test certifies the LP64 "
++		       "build and cannot run here\n");
++		return 2;
++	}
++
++	/* --- vst_arbpt32: (short *)&point as intin (T04 class 1), and the
++	 *     vdi_intout_long(0) pre-zero + read-back (class 3) on an exactly
++	 *     sized short vdi_intout[2]. --- */
++	{
++		short wc = 0, hc = 0, wcell = 0, hcell = 0;
++		long r;
++		printf("  vst_arbpt32(3, 0x00123456)\n");
++		vdi_calls = 0;
++		r = vst_arbpt32(3, 0x00123456L, &wc, &hc, &wcell, &hcell);
++		check("calls",      vdi_calls,       1);
++		check("control[0]", seen_control[0], 246);		/* not 0: the pre-zero stayed in intout */
++		check("control[1]", seen_control[1], 0);
++		check("control[3]", seen_control[3], 2);
++		check("control[6]", seen_control[6], 3);
++		check_w("intin[0]", seen_intin[0],   0x3456);	/* low word first */
++		check_w("intin[1]", seen_intin[1],   0x0012);
++		check("wchar/hchar", (wc << 8) | hc, (8 << 8) | 16);
++		check("wcell/hcell", (wcell << 8) | hcell, (9 << 8) | 17);
++		check("return",     r,               0x56789ABCL);	/* 32 bits, not intout[2..3] */
++
++		printf("  vst_arbpt32(3, 0x00123456) -> -2\n");
++		r = vst_arbpt32(3, 0x00123456L, &wc, &hc, &wcell, &hcell);
++		check("return(-2)", r,               -2L);		/* sign-extended 68k long */
++	}
++
++	/* --- v_create_ctab: two LONGs through vdi_intin_long(0) and (2) on an
++	 *     exactly sized short vdi_intin[4]; a pointer back at caller width. --- */
++	{
++		COLOR_TAB *t;
++		printf("  v_create_ctab(4, 0x00010002, 0x00030004)\n");
++		vdi_calls = 0;
++		t = v_create_ctab(4, 0x00010002L, 0x00030004UL);
++		check("calls",      vdi_calls,       1);
++		check("control[0]", seen_control[0], 206);		/* not 0 */
++		check("control[3]", seen_control[3], 4);
++		check("control[5]", seen_control[5], 8);
++		check("control[6]", seen_control[6], 4);
++		check_w("intin[0]", seen_intin[0],   0x0002);	/* color_space lo */
++		check_w("intin[1]", seen_intin[1],   0x0001);	/* color_space hi */
++		check_w("intin[2]", seen_intin[2],   0x0004);	/* px_format lo -- not the spill of color_space */
++		check_w("intin[3]", seen_intin[3],   0x0003);	/* px_format hi */
++		check("return",     (long)t,         0x0000000101234560L);
++	}
++
++	/* --- vst_track_offset: two WORDs then a LONG at vdi_intin_long(2) on an
++	 *     exactly sized short vdi_intin[4]. --- */
++	{
++		short tracks = 0, pairs = 0;
++		printf("  vst_track_offset(5, 0x00123456, 1)\n");
++		vdi_calls = 0;
++		vst_track_offset(5, 0x00123456L, 1, &tracks, &pairs);
++		check("calls",      vdi_calls,       1);
++		check("control[0]", seen_control[0], 237);		/* not 0 */
++		check("control[3]", seen_control[3], 4);
++		check("control[6]", seen_control[6], 5);
++		check_w("intin[0]", seen_intin[0],   255);		/* the two WORD stores survived */
++		check_w("intin[1]", seen_intin[1],   1);
++		check_w("intin[2]", seen_intin[2],   0x3456);
++		check_w("intin[3]", seen_intin[3],   0x0012);
++		check("tracks/pairs", (tracks << 8) | pairs, (7 << 8) | 9);
++	}
++
++	/* --- v_value2color: one LONG at vdi_intin_long(0) on an exactly sized
++	 *     short vdi_intin[2] (the pristine 8-byte store ran into the caller's
++	 *     frame); the LONG answer read as 32 bits. --- */
++	{
++		COLOR_ENTRY c;
++		long r;
++		memset(&c, 0, sizeof c);
++		printf("  v_value2color(6, 0x89ABCDEF)\n");
++		vdi_calls = 0;
++		r = v_value2color(6, 0x89ABCDEFUL, &c);
++		check("calls",      vdi_calls,       1);
++		check("control[0]", seen_control[0], 204);
++		check("control[3]", seen_control[3], 2);
++		check("control[5]", seen_control[5], 1);
++		check_w("intin[0]", seen_intin[0],   0xCDEF);
++		check_w("intin[1]", seen_intin[1],   0x89AB);
++		check("return",     r,               0x00010002L);
++		check("color.rgb",  (c.rgb.red * 1000L + c.rgb.green) * 1000L + c.rgb.blue, (100L * 1000 + 200) * 1000 + 300);
++	}
++
++	/* --- mt_wind_get_ptr(0, WF_SCREEN): the AES writes two 32-bit LONGs;
++	 *     the binding must return the FIRST one (the address), not the eight
++	 *     bytes at &int_out[1] (address | length << 32). --- */
++	{
++		short global_aes[15] = { 0 };
++		void *v = (void *)-1;
++		short ret;
++
++		screen_addr = 0x01000218UL;		/* the reference TT's answer */
++		screen_len  = 40960UL;
++		printf("  wind_get_ptr(0, WF_SCREEN) -> 0x%lx / %lu\n", screen_addr, screen_len);
++		aes_calls = 0;
++		ret = mt_wind_get_ptr(0, WF_SCREEN, &v, global_aes);
++		check("calls",      aes_calls,           1);
++		check("control[0]", seen_aes_control[0], 104);
++		check("control[1]", seen_aes_control[1], 2);
++		check("control[2]", seen_aes_control[2], 5);
++		check("intin[1]",   seen_aes_intin[1],   WF_SCREEN);
++		check("return",     ret,                 1);
++		check("*v",         (long)v,             (long)screen_addr);
++
++		/* A length with a non-zero high word: the 8-byte read would put it
++		 * into bits 32..47 of the "pointer". */
++		screen_addr = 0x0000FFF0UL;
++		screen_len  = 0x0003F480UL;		/* 259 200 */
++		printf("  wind_get_ptr(0, WF_SCREEN) -> 0x%lx / %lu\n", screen_addr, screen_len);
++		v = (void *)-1;
++		ret = mt_wind_get_ptr(0, WF_SCREEN, &v, global_aes);
++		check("return",     ret,                 1);
++		check("*v",         (long)v,             (long)screen_addr);	/* not 0x0003F4800000FFF0 */
++
++		/* The pointer-class branch is untouched: WF_NEWDESK at caller width. */
++		newdesk_tree = (void *)0x000000010177E4C0UL;
++		printf("  wind_get_ptr(0, WF_NEWDESK) -> %p\n", newdesk_tree);
++		v = (void *)-1;
++		ret = mt_wind_get_ptr(0, WF_NEWDESK, &v, global_aes);
++		check("return",     ret,                 1);
++		check("*v",         (long)v,             (long)newdesk_tree);
++	}
++
++	if (failures) {
++		printf("intin_long_words: %d FAILURE(S) -- the *_long accessors / the WF_SCREEN "
++		       "read do not exchange 32-bit LONGs as [lo, hi] WORD pairs\n", failures);
++		return 1;
++	}
++	printf("intin_long_words: OK -- *_intin_long/*_intout_long are 32-bit [lo, hi] in place, "
++	       "control[0] keeps the opcode, wind_get_ptr(WF_SCREEN) returns the address LONG\n");
++	return 0;
++}
+diff --git a/sdk/gemlib/tests/ptr_word_count.c b/sdk/gemlib/tests/ptr_word_count.c
+new file mode 100644
+index 0000000..a14af66
+--- /dev/null
++++ b/sdk/gemlib/tests/ptr_word_count.c
+@@ -0,0 +1,197 @@
++/*
++ * ptr_word_count.c -- pin the WORD count the bindings that pack a pointer
++ * into intin/int_in declare for it.
++ *
++ * The contract (docs/COMPATIBILITY.md, T04/A81): a pointer packed into a
++ * VDI/AES WORD array occupies the caller's own pointer width -- N_PTRINTS =
++ * sizeof(void *) / sizeof(short) WORDs (4 on LP64, 2 on the m68k) -- and the
++ * declared count (contrl[3] N_INTIN, control[1] IN_LEN) counts those WORDs:
++ * the AES copies exactly IN_LEN words into its local buffer (EmuTOS
++ * aes/gemsuper.c:436-437; tos-api/src/aes/mod.rs from_raw, A19).
++ *
++ * Pristine gemlib hands the pointer over byte-correct (`(short *)&ptr` as
++ * the array, or aes_intin_ptr) but declares the m68k count of 2:
++ * n_v_delete_ctab.c:25 / n_v_delete_itab.c:25 / n_vqt_fontheader.c:54 /
++ * u_vqt_fontheader.c:14 (`0,2`), a_wind_get.c:345 (`= 4` for WF_NAME/
++ * WF_INFO), a_wind_sget.c:21 (`AES_PARAMS(104,4,...)`). The overlays in
++ * sdk/gemlib/overlay/ declare N_PTRINTS resp. 2 + N_PTRINTS.
++ *
++ * This test is the regression guard for those six overlays, in the shape of
++ * evnt_timer_words.c: a HOST program that defines vdi() and aes() itself,
++ * captures the parameter block the binding built and checks the declared
++ * count and the pointer bytes inside it. The host shares the target's LP64
++ * pointer width; the test refuses to certify from any other host.
++ *
++ * Build & run (from the repository root, after build-gemlib.sh has applied
++ * the overlay to the extracted tree):
++ *   cc -D__NEWTOS__ -I sdk/gemlib/gemlib-0.44.0 -I sdk/libc/mintlib/include \
++ *      -o ptr_word_count sdk/gemlib/tests/ptr_word_count.c \
++ *      sdk/gemlib/gemlib-0.44.0/n_v_delete_ctab.c \
++ *      sdk/gemlib/gemlib-0.44.0/n_v_delete_itab.c \
++ *      sdk/gemlib/gemlib-0.44.0/n_vqt_fontheader.c \
++ *      sdk/gemlib/gemlib-0.44.0/u_vqt_fontheader.c \
++ *      sdk/gemlib/gemlib-0.44.0/a_wind_get.c \
++ *      sdk/gemlib/gemlib-0.44.0/a_wind_sget.c \
++ *      sdk/gemlib/gemlib-0.44.0/vdi_array2str.c \
++ *      sdk/gemlib/gemlib-0.44.0/vdi_userdef.c \
++ *      sdk/gemlib/gemlib-0.44.0/vdi_dummy.c
++ *   ./ptr_word_count         # exit 0 = counts match the contract
++ *
++ * Compiled against the PRISTINE six .c files from the tarball instead (with
++ * -D__NO_INLINE__ in place of -D__NEWTOS__ and the pristine gem_{aes,vdi}P.h
++ * first on the include path), it fails every count case (2 resp. 4).
++ */
++
++#include <stdio.h>
++#include <string.h>
++#include <mt_gem.h>
++#include <mt_gemx.h>
++
++#define PTR_WORDS ((short)(sizeof(void *) / sizeof(short)))
++
++/* What the fake VDI trap saw on the last call. */
++static short seen_control[7];
++static void *seen_intin_ptr;	/* the sizeof(void *) bytes at &intin[0] */
++static int   vdi_calls;
++
++void vdi(VDIPB *pb)
++{
++	int i;
++	vdi_calls++;
++	for (i = 0; i < 7; i++)
++		seen_control[i] = pb->control[i];
++	memcpy(&seen_intin_ptr, pb->intin, sizeof seen_intin_ptr);
++	pb->control[2] = 0;
++	pb->control[4] = 1;
++	pb->intout[0] = 1;
++	if (pb->control[0] == 232) {		/* vqt_fontheader: a path name back */
++		pb->control[4] = 3;
++		pb->intout[0] = 'a'; pb->intout[1] = 'b'; pb->intout[2] = 'c';
++	}
++}
++
++/* What the fake AES trap saw on the last call. */
++static short seen_aes_control[5];
++static short seen_aes_intin[2];
++static void *seen_aes_intin_ptr;	/* the sizeof(void *) bytes at &int_in[2] */
++static int   aes_calls;
++
++void aes(AESPB *pb)
++{
++	int i;
++	aes_calls++;
++	for (i = 0; i < 5; i++)
++		seen_aes_control[i] = pb->control[i];
++	seen_aes_intin[0] = pb->intin[0];
++	seen_aes_intin[1] = pb->intin[1];
++	memcpy(&seen_aes_intin_ptr, &pb->intin[2], sizeof seen_aes_intin_ptr);
++	pb->intout[0] = 1;
++}
++
++static int failures;
++
++static void check(const char *what, long got, long want)
++{
++	if (got != want) {
++		printf("    FAIL %-12s got 0x%lx want 0x%lx\n", what, got, want);
++		failures++;
++	}
++}
++
++static void check_vdi(short op, short sub, const void *p, short ret)
++{
++	check("calls",      vdi_calls,       1);
++	check("control[0]", seen_control[0], op);
++	check("control[1]", seen_control[1], 0);
++	check("control[3]", seen_control[3], PTR_WORDS);	/* N_PTRINTS, not 2 */
++	check("control[5]", seen_control[5], sub);
++	check("intin ptr",  (long)seen_intin_ptr, (long)p);
++	check("return",     ret,             1);
++}
++
++int main(void)
++{
++	/* Stand-ins with a non-zero upper half, so a count that stops at two
++	 * WORDs is visibly short of the pointer. */
++	COLOR_TAB *ctab = (COLOR_TAB *)0x0000000101770001UL;
++	ITAB_REF   itab = (ITAB_REF)0x000000010177E4C0UL;
++	char *buffer = (char *)0x0000000101234560UL;
++	char pathname[8];
++	short global_aes[15] = { 0 };
++	short w1 = 0, w2 = 0, w3 = 0, w4 = 0;
++	short ret;
++
++	if (sizeof(void *) != 8) {
++		printf("ptr_word_count: host pointer is not 8 bytes; this test certifies "
++		       "the LP64 build and cannot run here\n");
++		return 2;
++	}
++
++	printf("  v_delete_ctab(3, %p)\n", (void *)ctab);
++	vdi_calls = 0;
++	ret = v_delete_ctab(3, ctab);
++	check_vdi(206, 9, ctab, ret);
++
++	printf("  v_delete_itab(3, %p)\n", (void *)itab);
++	vdi_calls = 0;
++	ret = v_delete_itab(3, itab);
++	check_vdi(208, 1, itab, ret);
++
++	printf("  vqt_fontheader(3, %p)\n", (void *)buffer);
++	vdi_calls = 0;
++	memset(pathname, 0, sizeof pathname);
++	vqt_fontheader(3, buffer, pathname);
++	check_vdi(232, 0, buffer, 1);
++	check("pathname", strcmp(pathname, "abc"), 0);
++
++	printf("  udef_vqt_fontheader(3, %p)\n", (void *)buffer);
++	vdi_calls = 0;
++	memset(pathname, 0, sizeof pathname);
++	udef_vqt_fontheader(3, buffer, pathname);
++	check_vdi(232, 0, buffer, 1);
++	check("pathname", strcmp(pathname, "abc"), 0);
++
++	printf("  wind_get(4, WF_NAME, %p)\n", (void *)buffer);
++	aes_calls = 0;
++	ret = mt_wind_get(4, WF_NAME, (short *)buffer, &w2, &w3, &w4, global_aes);
++	check("calls",      aes_calls,           1);
++	check("control[0]", seen_aes_control[0], 104);
++	check("control[1]", seen_aes_control[1], 2 + PTR_WORDS);	/* 6, not 4 */
++	check("control[2]", seen_aes_control[2], 5);
++	check("intin[0]",   seen_aes_intin[0],   4);
++	check("intin[1]",   seen_aes_intin[1],   WF_NAME);
++	check("intin ptr",  (long)seen_aes_intin_ptr, (long)buffer);
++	check("return",     ret,                 1);
++	check("W2..W4",     w2 | w3 | w4,        0);		/* WF_NAME leaves them alone */
++
++	printf("  wind_get(4, WF_INFO, %p)\n", (void *)buffer);
++	aes_calls = 0;
++	ret = mt_wind_get(4, WF_INFO, (short *)buffer, &w2, &w3, &w4, global_aes);
++	check("control[1]", seen_aes_control[1], 2 + PTR_WORDS);
++	check("intin ptr",  (long)seen_aes_intin_ptr, (long)buffer);
++
++	printf("  wind_get(4, WF_WORKXYWH)\n");
++	aes_calls = 0;
++	ret = mt_wind_get(4, WF_WORKXYWH, &w1, &w2, &w3, &w4, global_aes);
++	check("control[1]", seen_aes_control[1], 2);		/* no pointer: unchanged */
++
++	printf("  wind_sget(5, WF_NAME, %p)\n", (void *)buffer);
++	aes_calls = 0;
++	ret = mt_wind_sget(5, WF_NAME, buffer, global_aes);
++	check("calls",      aes_calls,           1);
++	check("control[0]", seen_aes_control[0], 104);
++	check("control[1]", seen_aes_control[1], 2 + PTR_WORDS);	/* 6, not 4 */
++	check("control[2]", seen_aes_control[2], 1);
++	check("intin[0]",   seen_aes_intin[0],   5);
++	check("intin ptr",  (long)seen_aes_intin_ptr, (long)buffer);
++	check("return",     ret,                 1);
++
++	if (failures) {
++		printf("ptr_word_count: %d FAILURE(S) -- a packed pointer is not declared "
++		       "at N_PTRINTS WORDs\n", failures);
++		return 1;
++	}
++	printf("ptr_word_count: OK -- v_delete_ctab/_itab, vqt_fontheader (+udef) declare "
++	       "N_PTRINTS intin WORDs; wind_get(WF_NAME/WF_INFO) and wind_sget declare 2 + N_PTRINTS\n");
++	return 0;
++}
+diff --git a/TASK/T08.md b/TASK/T08.md
+new file mode 100644
+index 0000000..7b5b9c5
+--- /dev/null
++++ b/TASK/T08.md
+@@ -0,0 +1,71 @@
++# T08 — VDI `vex_*`: Vektortausch in `CONTRL[7..]`/`[9..]` fest 8 Byte an festem Index
++
++Status: **OFFEN** · Prioritaet: **P4** · Typ: Belegter Vertragsverstoss (Zeigerbreite), praktisch unerreichbar
++
++Abhaengigkeiten: [T04](T04.md) (erledigt — Vertrag: ein Zeiger in einem
++WORD-Array hat die Zeigerbreite des Aufrufers, `docs/COMPATIBILITY.md`
++„A `LONG` in `int_in`/`int_out`/`ptsin`/`ptsout`")
++
++## Herkunft
++
++Befund 7 (§6) des T04-Audits
++(`docs/analysis/t04-lp64-intin-long-contract-2026-09-21.md`), vom Lead
++2026-09-21 aus T04 ausgegliedert: liegt ausserhalb der
++`intin`/`intout`-Arrays, verstoesst aber gegen dieselbe Zeigerregel.
++
++## Der Sachverhalt
++
++EmuTOS tauscht in `vex_butv`/`vex_motv`/`vex_curv`/`vex_timv`/`vex_wheelv`
++(Opcodes 125/126/127/118/134) den Vektor ueber zwei **32-Bit**-Slots:
++neuer Vektor aus `CONTRL[7..8]`, alter Vektor nach `CONTRL[9..10]`
++(`references/emutos/vdi/vdi_mouse.c:372-373`,
++`ULONG_AT(&CONTRL[9]) = (ULONG) user_but; user_but = (PFVOID) ULONG_AT(&CONTRL[7])`).
++
++gemlib legt den neuen Vektor bei `7 + 0·N_PTRINTS` ab und liest den alten
++bei `7 + 1·N_PTRINTS` (`sdk/gemlib/gemlib-0.44.0/vex_butv.c:24,29`,
++`vdi_control_ptr(n, t)` = `control + 7 + n·N_PTRINTS`,
++`overlay/gem_vdiP.h`): LP64 → neu `CONTRL[7..10]`, alt **`CONTRL[11..14]`**;
++ILP32 → neu `[7..8]`, alt `[9..10]`. Das ist die Zeigerregel (Aufruferbreite,
++Index skaliert) — dieselbe, die der Kern fuer die MFDB-Zeiger der Rasterops
++schon einhaelt (`tos-api/src/vdi/mod.rs::contrl_ptr`).
++
++Der Kern liest in `swap_vector` (`tos-api/src/vdi/mouse.rs:692-696`) den
++neuen Vektor **fest 8 Byte** an `CONTRL[7]` (`contrl_u64(7)`,
++`vdi/mod.rs:136-139`, Kommentar „only reachable from LP64 callers") und
++schreibt den alten **fest 8 Byte an `CONTRL[9]`** (`set_contrl_u64(9)`,
++`vdi/mod.rs:181`):
++
++| Aufrufer | neu (Kern liest) | alt (Kern schreibt) | alt (gemlib liest) | Folge |
++|---|---|---|---|---|
++| LP64 | `[7..10]` — richtig | `[9..12]` | `[11..14]` | gemlib sieht obere Haelfte des alten Zeigers in `[11..12]` + Aufruferstapel in `[13..14]` |
++| ILP32 | 8 Byte ueber `[7..10]` — obere Haelfte aus dem uninitialisierten `[9..10]` | `[9..12]` — 4 Byte zu viel | `[9..10]` — richtig | neuer Vektor korrupt, `[11..12]` ueberschrieben |
++
++**Heute folgenlos** (PLAUSIBLE, nicht getrieben): kein Port im SDK ruft ein
++`vex_*` (Quellsweep T04 §5), und ein EL0-Vektor waere vom Kern ohnehin nicht
++aufrufbar — die Kernseite installiert den Wert nur in einem `AtomicU64`.
++
++## Arbeit
++
++1. `swap_vector` auf die Zeigerregel: neuen Vektor mit `contrl_ptr(0)`
++   lesen (Aufruferbreite, Index 7), alten mit einem `set_contrl_ptr(1, v)`
++   in Aufruferbreite an `7 + 1·N_PTRINTS` schreiben (ILP32: `[9..10]`,
++   4 Byte, bit-exakt EmuTOS; LP64: `[11..14]`, 8 Byte, wie gemlib liest).
++   `contrl_u64`/`set_contrl_u64` haben danach keinen Nutzer mehr — pruefen,
++   entfernen oder begruenden.
++2. Spec `docs/api/vdi/` (Eintrag der `vex_*`-Familie) um die Slotregel
++   ergaenzen; Querverweis auf den T04-Vertrag.
++3. Dispatcher-Test (`tos-api/tests/`), beide ABIs: `vex_butv` mit
++   vorgegiftetem CONTRL — neuer Vektor landet im Slot, alter steht an
++   `7 + N_PTRINTS`, kein Byte ausserhalb; Hosttest gemlib nicht noetig
++   (`vex_butv.c` ist unveraendert richtig).
++
++## Abnahme
++
++Test rot-vor/gruen-nach fuer beide ABIs; `xtask test` unveraendert gruen;
++Build beider Boards; keine neuen Clippy-Treffer. Keine Hardwareabnahme
++noetig (kein lebendiger Aufrufer), Pi-Lauf nur als Regressionsschutz.
++
++## Arbeitsregel
++
++[Gemeinsame Regeln](README.md) gelten. Kern-Fix in `tos-api/src/vdi/`,
++gemlib bleibt unangetastet.

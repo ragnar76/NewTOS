@@ -250,6 +250,26 @@ caveat (not previously stated). Logged as D-084.
   (kernel-stack leak across the EL0 boundary otherwise), A27 —
   [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md); regression test
   `tos-api/tests/aes_intout_underwrite.rs`.
+- **Values wider than a WORD inside `int_in`/`int_out`** (T04, 2026-09-21):
+  a `LONG` — EmuTOS's type at the access site, `evnt_timer`'s
+  `MAKE_ULONG(T_HICOUNT, T_LOCOUNT)` with `T_LOCOUNT = int_in[0]`
+  (`gemsuper.c:143`, `aesdefs.h:190-191`), `evnt_multi`'s `int_in[14..15]`
+  (`:150`, `:220-221`), `wind_get(WF_SCREEN)`'s `*(LONG *)&int_out[1]` /
+  `&int_out[3]` (`gemwmlib.c:1564`) — is **32 bits over two WORDs, low word
+  first**, at every caller width; NewTOS reads `int_in[n] | int_in[n+1] <<
+  16` (`tos-api/src/aes/event.rs`) and writes one unaligned 32-bit store per
+  LONG (`tos-api/src/aes/mod.rs::set_intout_long`). A **pointer** packed into
+  `int_in` (`wind_set`'s `WM_IX = int_in[2]` form, `gemsuper.c:346`,
+  `aesdefs.h:504`) occupies the **caller's pointer width** — `IN_LEN` counts
+  those WORDs (`Aespb::intin_ptr`/`ptr_words`, A81). An LP64 binding must
+  therefore access a LONG slot with a 32-bit accessor (gemlib's pristine
+  `*(long *)(int_in + n)` is an 8-byte access there) and must not read a
+  LONG with a pointer-width read (`&int_out[1]` after `WF_SCREEN` gives
+  `address | length << 32`). The contract entry with the full derivation is
+  [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md) "A `LONG` in
+  `int_in`/`int_out`/`ptsin`/`ptsout`"; the VDI side is the same rule
+  ([`../vdi/_dispatcher.md`](../vdi/_dispatcher.md), "Values wider than a
+  WORD"); regression test `tos-api/tests/aes_t04_intin_long_contract.rs`.
 - **Selector 201** (bare reschedule, no block) is an undocumented feature; a
   faithful NewTOS may treat it as a cooperative yield or a no-op — flagged as an
   open question, low priority.
