@@ -308,6 +308,30 @@ unsafe fn table() -> &'static mut [Aespd; NUM_PDS] {
     unsafe { &mut *TABLE.0.get() }
 }
 
+/// Put every descriptor back to its power-up state — the process-table half
+/// of an AES restart (A106, [`super::reinit`]).
+///
+/// EmuTOS's equivalent is two steps of `gem_main`: `aes_restart` re-zeroes
+/// the whole `theglo` area the `AESPD`s and their message queues live in
+/// (`gemstart.S:101-110`, `aes/gemlib.h:118`), and the init loop then walks
+/// every descriptor blanking `p_name`, `p_qindex`, `p_stat` and `p_msg`
+/// (`geminit.c:846-880`). [`Aespd::EMPTY`] is exactly that state: no flags,
+/// a blank name, an empty queue.
+///
+/// Every EL0 process is gone by the time this runs — `sh_main` returns only
+/// after the program it started has terminated — so no live client loses a
+/// descriptor here; what goes is the residue of the session that ended.
+///
+/// # Safety
+/// Single trap / restart path (no AES call in flight).
+pub unsafe fn reinit() {
+    // SAFETY: caller upholds the single-path invariant.
+    let t = unsafe { table() };
+    for slot in t.iter_mut() {
+        *slot = Aespd::EMPTY;
+    }
+}
+
 /// Address of the AES process-descriptor table — NewTOS's nearest equivalent
 /// of EmuTOS's AES global data area `THEGLO D` (`aes/gemlib.h:116-144`, whose
 /// `g_int[]` holds the `AESPD` process descriptors; a single unified `D` struct

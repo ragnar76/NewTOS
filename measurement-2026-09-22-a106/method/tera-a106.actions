@@ -1,0 +1,65 @@
+# A106 (TeraDesk via #Z, sd-tera.img, 640x480). The A48 sequence, run TWICE
+# with the AES restart in between:
+#
+#   round 1  hover Options (260,8) -> click "Video options..." (300,170) ->
+#            VOPTIONS dialog -> ST-Low radio (247,185) -> OK (347,361) ->
+#            ARESCH alert -> its " OK " (280,276) -> voptions() returns 1 ->
+#            chrez -> get_set_video(2): shel_write(SHW_RESCHNG, ST_LOWRES+2,
+#            0) (video.c:363-365,378-379) -> wait_to_quit 2000 ms + wait(500)
+#            -> appl_exit -> TeraDesk Pterm's.
+#   restart  sh_main returns ShExit::RezChange instead of launching the next
+#            program; the kernel's session loop runs aes::reinit() + desk::
+#            reset() and re-enters sh_main, whose process_inf2 finds the same
+#            `#Z` line -> TeraDesk starts again (EmuTOS gemstart.S:86-124).
+#   round 2  the identical sequence a second time, to show the restart is
+#            repeatable and the second session behaves like the first.
+#
+# Coordinates: A48's, unchanged (measurement-2026-09-21-a48/method/
+# tera-a48.actions; from desktop.rsc via rscdump.py + two probe runs).
+# Ticks are hz_200: 200 = 1 s. The injector only advances while an EL0
+# program is the running process, so the steps scheduled during the restart
+# gap fire as soon as the new TeraDesk is up.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 260 8
+2200 move 300 170
+2500 down
+2503 up
+3100 mark C_VIDEO_DIALOG
+3400 move 247 185
+3700 down
+3703 up
+4100 mark D_STLOW_PICKED
+4400 move 347 361
+4700 down
+4703 up
+5300 mark E_ALERT
+5600 move 280 276
+5900 down
+5903 up
+6000 mark F_CONFIRMED
+6100 parkbr
+# --- the AES restart happens here; TeraDesk comes back on the new session ---
+8200 parkbr
+9000 mark I_RESTARTED
+9300 move 260 8
+10100 move 300 170
+10400 down
+10403 up
+11000 mark J_VIDEO_DIALOG_2
+11300 move 247 185
+11600 down
+11603 up
+12000 move 347 361
+12300 down
+12303 up
+12900 mark K_ALERT_2
+13200 move 280 276
+13500 down
+13503 up
+13600 mark L_CONFIRMED_2
+13700 parkbr
+# --- the second AES restart ---
+15800 parkbr
+16600 mark M_RESTARTED_2

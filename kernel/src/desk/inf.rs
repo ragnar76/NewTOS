@@ -671,6 +671,14 @@ fn state_to_env(view: View, sort: Sort, size_to_fit: bool, base_e1: u8, base_e5:
 /// Must run **after** `app_start` (so `g_icw`/`g_ich` exist for the grid
 /// rounding) and **before** `win_view`/`app_blddesk` (so the view and icon
 /// positions take effect). Returns whether a file was actually loaded.
+/// Forget the parsed `.INF` of the session that has ended — the `inf` half of
+/// [`super::reset`] (A106). [`load_and_apply`] fills it again at the next
+/// desktop start; dropping it here means a file that has since disappeared
+/// cannot be re-saved from a stale in-memory copy.
+pub(super) fn reset() {
+    *SESSION.lock() = None;
+}
+
 pub(super) fn load_and_apply() -> bool {
     let Some(bytes) = read_inf_file() else {
         return false;

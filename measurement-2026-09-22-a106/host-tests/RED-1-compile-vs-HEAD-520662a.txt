@@ -1,0 +1,64 @@
+# RED 1 -- the A106 host test does not compile against HEAD 520662a.
+# Scratch worktree (git worktree add --detach <scratch> HEAD); the shared repo tree was not touched.
+$ cargo test -p tos-api --test aes_a106_restart   # only the errors, pre-existing warnings elided
+
+error[E0432]: unresolved imports `tos_api::aes::shell::sh_main_continue`, `tos_api::aes::shell::sh_main_exit`, `tos_api::aes::shell::ShExit`
+  --> tos-api/tests/aes_a106_restart.rs:42:42
+   |
+42 |     gl_changerez, gl_nextrez, sh_doexec, sh_main_continue, sh_main_exit, ShExit, SHW_EXEC,
+   |                                          ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^ no `ShExit` in `aes::shell`
+   |                                          |                 |
+   |                                          |                 no `sh_main_exit` in `aes::shell`
+   |                                          no `sh_main_continue` in `aes::shell`
+   |
+help: a similar name exists in the module
+   |
+42 -     gl_changerez, gl_nextrez, sh_doexec, sh_main_continue, sh_main_exit, ShExit, SHW_EXEC,
+42 +     gl_changerez, gl_nextrez, sh_doexec, sh_main_continue, sh_main_init, ShExit, SHW_EXEC,
+   |
+
+error[E0425]: cannot find function `reinit` in module `tos_api::aes`
+   --> tos-api/tests/aes_a106_restart.rs:219:19
+    |
+219 |     tos_api::aes::reinit();
+    |                   ^^^^^^ not found in `tos_api::aes`
+
+error[E0425]: cannot find function `reinit` in module `tos_api::aes`
+   --> tos-api/tests/aes_a106_restart.rs:237:19
+    |
+237 |     tos_api::aes::reinit();
+    |                   ^^^^^^ not found in `tos_api::aes`
+
+error[E0425]: cannot find function `reinit` in module `tos_api::aes`
+   --> tos-api/tests/aes_a106_restart.rs:256:19
+    |
+256 |     tos_api::aes::reinit();
+    |                   ^^^^^^ not found in `tos_api::aes`
+
+error[E0425]: cannot find function `reinit` in module `tos_api::aes`
+   --> tos-api/tests/aes_a106_restart.rs:272:19
+    |
+272 |     tos_api::aes::reinit();
+    |                   ^^^^^^ not found in `tos_api::aes`
+
+error[E0425]: cannot find function `reinit` in module `tos_api::aes`
+   --> tos-api/tests/aes_a106_restart.rs:290:19
+    |
+290 |     tos_api::aes::reinit();
+    |                   ^^^^^^ not found in `tos_api::aes`
+
+error[E0425]: cannot find function `reinit` in module `tos_api::aes`
+   --> tos-api/tests/aes_a106_restart.rs:350:19
+    |
+350 |     tos_api::aes::reinit();
+    |                   ^^^^^^ not found in `tos_api::aes`
+
+error[E0425]: cannot find function `reinit` in module `tos_api::aes`
+   --> tos-api/tests/aes_a106_restart.rs:414:19
+    |
+414 |     tos_api::aes::reinit();
+    |                   ^^^^^^ not found in `tos_api::aes`
+
+Some errors have detailed explanations: E0425, E0432.
+For more information about an error, try `rustc --explain E0425`.
+error: could not compile `tos-api` (test "aes_a106_restart") due to 8 previous errors

@@ -1,0 +1,6 @@
+A-idle-teradesk        vs I-restarted-teradesk   : 0 differing pixels, bbox None
+A-idle-teradesk        vs M-restarted-2          : 0 differing pixels, bbox None
+I-restarted-teradesk   vs M-restarted-2          : 0 differing pixels, bbox None
+C-video-dialog         vs J-video-dialog-2       : 0 differing pixels, bbox None
+E-alert                vs K-alert-2              : 0 differing pixels, bbox None
+F-confirmed            vs L-confirmed-2          : 0 differing pixels, bbox None

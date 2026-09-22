@@ -31,7 +31,7 @@
 //! `docs/COMPATIBILITY.md`; everything else follows `gemshlib.c` literally.
 
 use tos_api::aes::shell::{
-    self, AUTORUN_APP, CONSOLE_APP, DESKTOP_APP, NORMAL_APP, SHW_SHUTDOWN,
+    self, ShExit, AUTORUN_APP, CONSOLE_APP, DESKTOP_APP, NORMAL_APP,
 };
 
 use crate::kprintln;
@@ -66,21 +66,22 @@ fn is_bios_error(n: i32) -> bool {
 /// if (gl_shgem) sh_toalpha();
 /// ```
 ///
-/// **Exit condition, NewTOS deviation (A48 Tier 1 / A106 Tier 2):** the
-/// `!gl_changerez` term is deliberately absent. `gl_changerez` has two
-/// producers in EmuTOS. `process_inf1`'s boot-time `#E` parse
-/// (`geminit.c:343-392`) goes through `check_moderez`, which reports no
-/// change on a board with exactly one fixed mode (ADR-017 rev 2, D-101) —
-/// that producer is legitimately FALSE here. `sh_write`'s `SHW_RESCHNG` arm
-/// (`gemshlib.c:187-191`) is pure AES software state set unconditionally by
-/// `shel_write(SHW_RESCHNG, …)`; NewTOS records it
-/// (`tos_api::aes::shell::gl_changerez`/`gl_nextrez`, A48) but this loop
-/// ignores it until A106 builds the re-enterable wrapper around `sh_main`
-/// (EmuTOS `gem_main` + `gemstart.S:86-124` `aes_restart`). Adding the term
-/// here first would make `sh_main` return into `kmain`'s `halt()` on the
-/// first such request. Until A106 the exit test is `sh_doexec ==
-/// SHW_SHUTDOWN` alone.
-pub fn sh_main(isauto: bool, isgem: bool) {
+/// **Exit condition — both terms (A106).** `gl_changerez` has two producers
+/// in EmuTOS. `process_inf1`'s boot-time `#E` parse (`geminit.c:343-392`)
+/// goes through `check_moderez`, which reports no change on a board with
+/// exactly one fixed mode (ADR-017 rev 2, D-101) — that producer is
+/// legitimately FALSE here. `sh_write`'s `SHW_RESCHNG` arm
+/// (`gemshlib.c:187-191`) is pure AES software state, set unconditionally by
+/// `shel_write(SHW_RESCHNG, …)` (A48), and *that* is what ends this loop:
+/// when the running program terminates with the request pending, the next
+/// program is not started ([`tos_api::aes::shell::sh_main_continue`],
+/// `gemshlib.c:727`) and the caller gets [`ShExit::RezChange`].
+///
+/// Returning instead of halting is the caller's job: the kernel's session
+/// loop (`kernel/src/lib.rs`) is NewTOS's `gemstart.S:86-124` `aes_restart`
+/// — it re-initialises the AES ([`tos_api::aes::reinit`]) and enters
+/// `sh_main` again, and only [`ShExit::Shutdown`] falls through to `halt()`.
+pub fn sh_main(isauto: bool, isgem: bool) -> ShExit {
     // `gemshlib.c:698-706` — seed the SHELL and, without an autorun entry,
     // make the built-in desktop the first program.
     shell::sh_main_init(isauto, isgem);
@@ -106,14 +107,26 @@ pub fn sh_main(isauto: bool, isgem: bool) {
 
         rc = sh_ldapp(); // :725
 
-        if shell::sh_doexec() == SHW_SHUTDOWN {
-            break; // :730
+        // `while ((psh->sh_doexec != SHW_SHUTDOWN) && !gl_changerez)` (:727)
+        if !shell::sh_main_continue() {
+            break;
         }
     }
 
     if shell::gl_shgem() {
         sh_toalpha(); // :733
     }
+
+    let exit = shell::sh_main_exit();
+    kprintln!(
+        "[shell] sh_main: session over — {}",
+        match exit {
+            ShExit::Shutdown => "shutdown",
+            ShExit::RezChange =>
+                "shel_write(SHW_RESCHNG) pending, restarting the AES",
+        }
+    );
+    exit
 }
 
 /// `sh_chgrf` (`gemshlib.c:513-523`) — switch the screen between graphics

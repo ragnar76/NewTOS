@@ -418,25 +418,44 @@ here; GEMDOS-level errors like `EFILNF` from a failed `sh_find` are shown).
 `sh_main`, not inside its loop) is separate and out of `sh_main`'s scope —
 it blocks until all desk accessories have done their first `appl_init`.
 
-**NewTOS deviation in the exit condition, precisely stated (A48/A-5).**
-`kernel/src/shell_loop.rs:72-106` implements this loop but its exit test
-checks only `sh_doexec() == SHW_SHUTDOWN`, omitting the `!gl_changerez`
-term, with the comment "`gl_changerez` is permanently FALSE on RPi4/AArch64
-… so the loop's exit condition reduces to `sh_doexec != SHW_SHUTDOWN`". That
-is correct for `process_inf1`'s producer of `gl_changerez` (§2 above — there
-is genuinely no alternate mode `check_moderez` could report, ADR-017 rev 2)
-but **not** for `sh_write`'s own `SHW_RESCHNG` arm, which sets
-`gl_changerez`/`gl_nextrez` unconditionally as pure AES software state
-(`gemshlib.c:187-191`), independent of what real hardware can do. Since
-A48 tier 1 (2026-09-21) NewTOS's `shel_write(SHW_RESCHNG)` records that
-state faithfully (`tos-api/src/aes/shell.rs` `gl_changerez()`/
-`gl_nextrez()`); the loop condition still ignores it until the
-`aes_restart` wrapper exists (`TASK/A106.md`). Worked out in
-[`docs/analysis/a48-shw-reschng-design-2026-09-21.md`](../../analysis/a48-shw-reschng-design-2026-09-21.md):
-recording the flag faithfully is safe in isolation, but wiring it into this
-loop's exit condition requires an outer restart wrapper around `sh_main`
-that does not exist yet (`kernel/src/lib.rs:408-412` calls `sh_main` exactly
-once and halts the machine when it returns) — not built by this note.
+**The exit condition on NewTOS — both terms, and the restart around them
+(A48 tier 1 + A106, 2026-09-22).** `kernel/src/shell_loop.rs`'s `sh_main`
+implements this loop with **both** terms of `:727`, through
+`tos_api::aes::shell::sh_main_continue()` (`sh_doexec != SHW_SHUTDOWN &&
+gl_changerez == 0`), and reports which one failed as a `ShExit`
+(`Shutdown` / `RezChange`) — the value `gemstart.S:122-124` re-reads from
+`gl_changerez` after `gem_main` returns.
+
+`gl_changerez` has two producers and only one of them is hardware-gated
+here. `process_inf1`'s boot-time `#E` parse (§2 above) goes through
+`check_moderez`, which genuinely reports no change on a board with exactly
+one fixed mode (ADR-017 rev 2, D-101). `sh_write`'s `SHW_RESCHNG` arm
+(`gemshlib.c:187-191`) is pure AES software state, set unconditionally,
+independent of what real hardware can do — recorded since A48 tier 1
+(`tos-api/src/aes/shell.rs` `gl_changerez()`/`gl_nextrez()`) and **consumed
+here** since A106.
+
+The outer loop is `kernel/src/lib.rs`'s session loop, NewTOS's
+`gemstart.S:86-124` `aes_restart`: one pass is one AES session — the tail
+of `run_accs_and_desktop` (`sh_tographic` → `process_inf2` → `sh_main`) —
+and a `ShExit::RezChange` runs `tos_api::aes::reinit()` (the `theglo`
+re-zero plus `gem_main`'s and `run_accs_and_desktop`'s init, module by
+module), `kernel::desk::reset()` (the desktop is a program that restarts,
+`deskmain`) and `dos_sdrv(bootdev)` (`geminit.c:796-803`), then enters
+`sh_main` again. `ShExit::Shutdown` falls through to `halt()` and is
+unreachable on this profile for the same reason it is on a Falcon
+(`can_shutdown()` FALSE, `bios/bios.c:754-770`).
+
+The one step of `gem_main` that stays absent is the physical mode switch
+(`Setscreen`/`Vsetmode`, `geminit.c:778-793`): the framebuffer is
+negotiated once at boot (ADR-017 rev 2, D-101), so `gl_nextrez` is
+recorded, reported and never handed to a mode switch. `gsx_wsclear()`
+(`:795`) and `dos_conws("\033f\033E")` (`:763`) need no separate step —
+`sh_main`'s own closing `sh_toalpha()` (`:733`) clears the screen and homes
+the cursor. Designed in
+[`docs/analysis/a48-shw-reschng-design-2026-09-21.md`](../../analysis/a48-shw-reschng-design-2026-09-21.md)
+§5; host tests `tos-api/tests/aes_a106_restart.rs`, QEMU evidence in
+`measurement-2026-09-22-a106/`.
 
 ---
 

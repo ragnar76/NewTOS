@@ -193,6 +193,49 @@ pub(super) fn release_bar_of(slot: usize) {
     remove_bar();
 }
 
+/// The Menu Manager's share of an AES restart (A106, [`super::reinit`]) —
+/// the three EmuTOS calls that bring the menu state up for a session, in
+/// `gem_main`/`run_accs_and_desktop` order:
+///
+/// 1. **`mn_init()`** (`geminit.c:808` → `gemmnlib.c:821-832`): the desk
+///    accessory registry (`desk_ppd[]`, `D.g_acctitle[]`, `D.g_accreg`) goes
+///    empty — here [`ACCS`], whose `title` pointers are the strings a
+///    `menu_register` caller supplied and whose address space is gone.
+/// 2. **`mn_cleanup()`**'s submenu half (`gemmnlib.c:751-756`): `gl_submenu`
+///    is freed and nulled — here [`SUBMENU_TAB`], back to all-[`Smib::EMPTY`],
+///    dropping the `parent_tree`/`sub_tree` pointers with it.
+/// 3. **`mnext_init()`** (`geminit.c:672`): the `menu_settings` block
+///    ([`mnext_init`]).
+///
+/// Plus the bar and track state, which EmuTOS reaches on the same path by
+/// other routes: `gl_mntree`/`gl_mnppd`/`gl_ctwait` are re-established by the
+/// Control Manager's own start-up (`ctlmgr`'s `gl_ctwait = gl_rmenu`,
+/// `gemctrl.c:438`, after `iprocess("SCRENMGR", ctlmgr)`, `geminit.c:888`) —
+/// [`remove_bar`] is exactly that state — and `ml_mnhold` (`gemfmlib.c:56`)
+/// belongs to a modal dialog of the session that ended.
+///
+/// The two [`gsxif::Saved`] slots are taken and dropped, which releases the
+/// transient pool block a `popup_blit` save holds (`gemmnext.c:212`) if a
+/// drop-down or submenu was still open when the session ended. Nothing is
+/// drawn: the screen belongs to the next session.
+pub(super) fn reinit() {
+    // `mn_init()` (gemmnlib.c:821-832).
+    // SAFETY: single-CPU restart path, no AES call in flight.
+    unsafe {
+        (*ACCS.title.get()).fill(0);
+        (*ACCS.pid.get()).fill(0);
+        // `mn_cleanup`'s `dos_free(gl_submenu); gl_submenu = NULL;`
+        // (gemmnlib.c:751-756).
+        *SUBMENU_TAB.0.get() = [Smib::EMPTY; NUM_SMIBS];
+    }
+    mnext_init(); // geminit.c:672
+    MNHOLD.store(0, Ordering::Relaxed);
+    remove_bar();
+    // Release a drop-down / submenu save the dead session never restored.
+    drop(MENU_SAVE.take());
+    drop(SUBMENU_SAVE.take());
+}
+
 /// Parked menu tree during a modal dialog (`ml_mnhold`, EmuTOS gemfmlib.c:56).
 /// A single slot suffices because `fm_own` only saves on the outermost
 /// `ml_ocnt == 0` → 1 transition and restores on 1 → 0 (nested dialogs do not
@@ -1514,13 +1557,30 @@ unsafe impl Sync for Settings {}
 /// menu bar — a screen of under ~275 rows at the 16-pixel font — which no
 /// NewTOS profile has, so 16 is what `clamp_height(16)` returns on every one
 /// of them.
-static SETTINGS: Settings = Settings(UnsafeCell::new(MnSet {
+const MNSET_INIT: MnSet = MnSet {
     display: 200,
     drag: 10000,
     delay: 250,
     speed: 0,
     height: 16,
-}));
+};
+
+static SETTINGS: Settings = Settings(UnsafeCell::new(MNSET_INIT));
+
+/// `mnext_init` (`gemmnext.c:103-110`) — put the `settings` block back to the
+/// `INIT_*_VALUE` constants. Called once per AES session
+/// (`run_accs_and_desktop`, `geminit.c:671-672`), so a restart (A106) undoes
+/// whatever the previous session's `menu_settings(1, …)` left behind. Unlike
+/// the static initialiser this can run `height` through [`clamp_height`], as
+/// EmuTOS does.
+fn mnext_init() {
+    // SAFETY: single-CPU restart path, no AES call in flight.
+    unsafe {
+        let s = &mut *SETTINGS.0.get();
+        *s = MNSET_INIT;
+        s.height = clamp_height(MNSET_INIT.height);
+    }
+}
 
 /// `menu_settings` (39) — get (`int_in[0]`=0) or set (1) the menu-behaviour
 /// block at `addr_in[0]` (`MN_SET`). Negative fields are left unchanged on

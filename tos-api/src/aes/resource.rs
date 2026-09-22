@@ -859,6 +859,49 @@ pub fn on_process_exit(slot: usize) {
     }
 }
 
+/// The Resource Manager's share of an AES restart (A106, [`super::reinit`]):
+/// drop every loaded resource and the recorded application directory.
+///
+/// EmuTOS has no such sweep, and does not need one: every resource a program
+/// loads is `dos_alloc_anyram`ed into that program's own memory
+/// (`gemrslib.c:775`) and reclaimed by `ixterm`'s `free_all_owned`
+/// (`bdos/proc.c:136`) when it ends; `rlr->p_appdir` is part of the `theglo`
+/// area `aes_restart` re-zeroes (`gemstart.S:101-110`, `aes/struct.h:153`).
+/// NewTOS's lists are a kernel-side table keyed by AES identity, so the
+/// entries have to be dropped explicitly — through the very same path a
+/// process's own end takes, [`on_process_exit`], so the pool/kernel-heap
+/// ownership rules are those that path already establishes (a pool blob is
+/// the process's and reclaimed with it; an in-place colour-icon buffer is the
+/// kernel heap's and freed here).
+///
+/// By the time this runs every EL0 process of the session that ended is gone
+/// — `sh_main` returns only after the program it started has terminated — so
+/// the only identity that could still hold an entry is the in-kernel desktop
+/// ([`super::pd::DESKTOP`]), which never calls `rsrc_load`: `kernel/src/desk/`
+/// draws from its own built-in trees. The loop covers it regardless.
+pub(super) fn reinit() {
+    // SAFETY: single-CPU restart path, no AES call in flight.
+    let owners: [usize; MAX_LOADED] = {
+        let t = unsafe { table() };
+        let mut o = [RscEntry::NO_OWNER; MAX_LOADED];
+        for (slot, e) in t.iter().enumerate() {
+            o[slot] = e.owner;
+        }
+        o
+    };
+    for owner in owners {
+        if owner != RscEntry::NO_OWNER {
+            on_process_exit(owner);
+        }
+    }
+    // `rlr->p_appdir[0] = '\0'` (`geminit.c:871`, and `p_setappdir`'s own
+    // reset, `gempd.c:95-97`): the next session's first program has not been
+    // located yet, so `sh_find` step 1 has nothing to search.
+    // SAFETY: as above — exclusive writer on the restart path.
+    unsafe { (*APP_DIR.buf.get()).fill(0) };
+    APP_DIR.len.store(0, Ordering::Release);
+}
+
 /// ILP32 OBJECT record stride (4-byte `ob_spec` @ +12; see `mt_gem.h`
 /// `sizeof(OBJECT) == 24`). The LP64 stride is [`OBJECT_SIZE`] (32).
 const OBJECT_SIZE_ILP32: usize = 24;

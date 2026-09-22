@@ -29,6 +29,23 @@ pub fn current_drive() -> u16 {
     CUR_DRIVE.load(Ordering::Relaxed)
 }
 
+/// `dos_sdrv(bootdev)` (`aes/geminit.c:796-803`) — put the current drive
+/// back to the boot device, which is what a resolution change does on TOS 3
+/// and EmuTOS ("resolution change always resets the default drive to the boot
+/// device"). Called from the kernel's AES session loop on a restart (A106).
+///
+/// NewTOS has no boot-device BIOS variable; the boot drive is the first hard
+/// disk in the BIOS drive map, which is the derivation the process loader
+/// already writes into `bootdev` (`$446`) for every TPA
+/// (`bdos/process/loader.rs`). With no drives mounted at all the current
+/// drive is left alone — there is nothing to switch to.
+pub fn set_boot_drive() {
+    let drvbits = bios_drive::drvbits();
+    if drvbits != 0 {
+        CUR_DRIVE.store(drvbits.trailing_zeros() as u16, Ordering::Relaxed);
+    }
+}
+
 /// `Dgetdrv` (0x19) — return the current drive (0 = A:).
 pub fn dgetdrv(_args: &TrapArgs) -> Long {
     CUR_DRIVE.load(Ordering::Relaxed) as Long

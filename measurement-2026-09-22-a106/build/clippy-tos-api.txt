@@ -1,0 +1,3 @@
+$ cargo clippy -p tos-api
+warning: `tos-api` (lib) generated 80 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.77s

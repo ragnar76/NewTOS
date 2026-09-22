@@ -4531,6 +4531,59 @@ pub fn wm_init() {
     unsafe { *SAVE.active.get() = false };
 }
 
+/// The Window Manager's share of an AES restart (A106, [`super::reinit`]) —
+/// the `theglo` re-zero of `D.w_win[]` (`gemstart.S:101-110`,
+/// `aes/gemlib.h:136`) plus `wm_start()` (`geminit.c:723` →
+/// `gemwmlib.c:1320-1360`).
+///
+/// **Deliberately not [`wm_init`], and that is the faithful choice.** `wm_init`
+/// is the *per-program* reset the shell loop runs inside a session
+/// (`gemshlib.c:717`): its `wm_new` walks the table closing each window, which
+/// **draws** (`draw_change` → `w_drawdesk` + a `WM_REDRAW` fan-out,
+/// `gemwmlib.c:1216-1222,1453`) and **posts into other processes' queues**. At
+/// a session boundary EmuTOS does neither: the assembly wrapper blanks the
+/// whole global area before `gem_main` runs again, so every `WINDOW` is simply
+/// gone — no close, no repaint, no message — and `wm_start` then builds the
+/// table up from nothing. Reproducing the sweep here would repaint a screen
+/// that is about to be redrawn anyway and, worse, refill the message queues
+/// [`super::pd::reinit`] has just emptied.
+///
+/// So: blank both window tables, rebuild the desktop window
+/// (`w_setup`/`w_setsize`, `gemwmlib.c:1290-1294`), and put back the state
+/// that lives outside them —
+///
+/// * `gl_newdesk`/`gl_newroot` (`gemwmlib.c:55,1300`): the tree a program
+///   registered with `wind_set(WF_NEWDESK)` is a VA of an address space that
+///   is gone (A97).
+/// * `ml_ocnt` (`geminit.c:805`) and `wind_spb.sy_tas` (`:837-839`) — the
+///   `wind_update` counters, which `gem_main` resets explicitly.
+/// * `gl_wtcolor`/`gl_wbcolor` — the per-gadget default colour words new
+///   windows inherit (`wm_start`, `gemwmlib.c:1346-1357`), which
+///   `wind_set(WF_DCOLOR)` may have changed for the session that ended.
+/// * `ml_pmown` (`gemfmlib.c:58`) — the mouse owner parked by the outermost
+///   `BEG_MCTRL`; `true` (the application) is its power-up value.
+/// * the save/restore snapshot of [`save_windows`], slots included, so no dead
+///   session's window record (its title pointer with it) survives at all.
+pub(super) fn reinit() {
+    // `bzero(&D, size_theglo())` over `D.w_win[]` (`gemstart.S:101-110`).
+    // SAFETY: single-CPU restart path, no AES call in flight.
+    unsafe {
+        *TABLE.slots.get() = [Window::EMPTY; NUM_WIN];
+        *TABLE.next_z.get() = 1;
+        *SAVE.slots.get() = [Window::EMPTY; NUM_WIN];
+        *SAVE.next_z.get() = 1;
+        *SAVE.active.get() = false;
+    }
+    // `wm_start()`: the desktop window and the global defaults.
+    init_desk_window();
+    clear_newdesk();
+    MCTRL_CNT.store(0, Ordering::Relaxed);
+    UPDATE_LOCK.store(0, Ordering::Relaxed);
+    *gl_wtcolor() = GL_WTCOLOR_DEFAULT;
+    *gl_wbcolor() = GL_WBCOLOR_DEFAULT;
+    ML_PMOWN.store(true, Ordering::Relaxed);
+}
+
 fn inside(r: Grect, x: i16, y: i16) -> bool {
     x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h
 }

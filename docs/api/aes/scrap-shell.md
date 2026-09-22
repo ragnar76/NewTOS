@@ -702,28 +702,34 @@ AES done, the GEMDOS / BIOS / XBIOS / VDI / AES specification extraction (Phase
   contract**, not internal — a real GEM application computing `isgem` per
   the documented Getrez()/Setscreen() convention expects it honoured
   symmetrically by whatever consumes `gl_nextrez`.
-- **`SHW_RESCHNG`'s *protocol* half is not out of scope, and today's
-  implementation under-delivers it (A48/A-5).** `sh_write`'s `SHW_RESCHNG`
-  arm (`gemshlib.c:187-191`) sets `gl_changerez`/`gl_nextrez`
-  **unconditionally** — it does *not* call `check_moderez` (that validation
-  belongs only to the boot-time `.INF`-parse producer, `process_inf1`,
-  `geminit.c:343-392`; the "avoid a no-op restart" filter for the
-  interactive case lives in the *caller*, EmuTOS's own resolution dialog,
-  `desk/deskrez.c:213-215`, not in `sh_write`). The consumer side
-  (`sh_main`'s loop, `gemshlib.c:730`, plus `gem_main`/`gemstart.S`'s
-  restart, `geminit.c:753-899`, `gemstart.S:86-124`) closes the whole AES
-  session — every running program, not just the video mode — and restarts
-  it fresh. **NewTOS (A48 tier 1, 2026-09-21):** `shel_write(SHW_RESCHNG,
-  isgem, isover)` records the request exactly as `sh_write` does —
-  `gl_changerez = 1 + isover`, `gl_nextrez = isgem`, unconditionally, then
-  clears `s_cmd`/`s_tail` and returns 1 (`tos-api/src/aes/shell.rs`,
-  accessors `gl_changerez()`/`gl_nextrez()`). The shell loop's exit
-  condition still omits the `!gl_changerez` term
-  (`kernel/src/shell_loop.rs:69-71`): the boot sequence has no re-entry
-  path around `sh_main`, so adding the term without the `aes_restart`
-  wrapper would turn the request into a machine halt. The wrapper + the
-  AES re-initialisation is `TASK/A106.md`; design in
-  [`docs/analysis/a48-shw-reschng-design-2026-09-21.md`](../../analysis/a48-shw-reschng-design-2026-09-21.md).
+- **`SHW_RESCHNG`'s *protocol* half is in scope and implemented (A48/A-5 +
+  A106).** `sh_write`'s `SHW_RESCHNG` arm (`gemshlib.c:187-191`) sets
+  `gl_changerez`/`gl_nextrez` **unconditionally** — it does *not* call
+  `check_moderez` (that validation belongs only to the boot-time
+  `.INF`-parse producer, `process_inf1`, `geminit.c:343-392`; the "avoid a
+  no-op restart" filter for the interactive case lives in the *caller*,
+  EmuTOS's own resolution dialog, `desk/deskrez.c:213-215`, not in
+  `sh_write`). The consumer side (`sh_main`'s loop, `gemshlib.c:727`, plus
+  `gem_main`/`gemstart.S`'s restart, `geminit.c:753-899`,
+  `gemstart.S:86-124`) closes the whole AES session — every running
+  program, not just the video mode — and restarts it fresh.
+  **NewTOS:** `shel_write(SHW_RESCHNG, isgem, isover)` records the request
+  exactly as `sh_write` does — `gl_changerez = 1 + isover`, `gl_nextrez =
+  isgem`, unconditionally, then clears `s_cmd`/`s_tail` and returns 1
+  (`tos-api/src/aes/shell.rs`, accessors `gl_changerez()`/`gl_nextrez()`;
+  A48 tier 1, 2026-09-21). Since A106 (2026-09-22) the shell loop carries
+  the `!gl_changerez` term (`tos_api::aes::shell::sh_main_continue`), so a
+  program that terminates with the request pending ends the session instead
+  of handing over to the next program, and the kernel's session loop
+  (`kernel/src/lib.rs`, NewTOS's `aes_restart`) re-initialises the whole
+  AES (`tos_api::aes::reinit`, `kernel::desk::reset`, `dos_sdrv(bootdev)`)
+  and runs `process_inf2` + `sh_main` again — so the `.INF`'s `#Z` program
+  or the built-in desktop starts afresh, exactly as after a cold boot.
+  The **physical** mode switch stays out of scope (`Setscreen`/`Vsetmode`,
+  `geminit.c:778-793`; one fixed mode, ADR-017 rev 2, D-101): the request
+  is recorded and reported, never honoured as a geometry change. Design in
+  [`docs/analysis/a48-shw-reschng-design-2026-09-21.md`](../../analysis/a48-shw-reschng-design-2026-09-21.md);
+  see [`shell-loop.md`](./shell-loop.md) §7 for the loop and the restart.
 - Pointers in `addr_in[]` (paths, buffers, the environment search string, the
   `char **` for `shel_envrn`) are **user (application) pointers** — apply the
   [`_dispatcher.md`](./_dispatcher.md) user/kernel boundary handling; the

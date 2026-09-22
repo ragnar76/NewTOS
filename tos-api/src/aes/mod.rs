@@ -98,6 +98,90 @@ pub fn test_sweep_pending(slot: usize) -> bool {
     PENDING_SWEEP.load(Ordering::Acquire) & (1u32 << slot) != 0
 }
 
+/// **Start a new AES session** — everything `gem_main` and
+/// `run_accs_and_desktop` do between one `sh_main` returning and the next one
+/// being entered (A106; EmuTOS `aes/geminit.c:753-899` under the
+/// `gemstart.S:86-124` `aes_restart` loop).
+///
+/// The shell loop ends a session when a program terminated while a
+/// `shel_write(SHW_RESCHNG, …)` was pending (`gemshlib.c:727`). EmuTOS then
+/// unwinds to assembly, re-zeroes the whole `theglo` global area
+/// (`gemstart.S:101-110`) and re-enters `gem_main`, which rebuilds every AES
+/// structure from scratch and re-runs the accessories + desktop. NewTOS's AES
+/// state is a set of module statics rather than one `D` struct, so "re-zero
+/// `theglo`" becomes this function: each module puts its own share back to
+/// the state it holds at power-up, in EmuTOS's order.
+///
+/// Called from exactly one place, the kernel's session loop around `sh_main`
+/// (`kernel/src/lib.rs`), which is NewTOS's `aes_restart`.
+///
+/// **The resolution switch itself is deliberately not here.** `gem_main`'s
+/// `Setscreen`/`Vsetmode` dispatch (`geminit.c:778-793`) is the only
+/// hardware-gated step of the sequence, and the board has exactly one mode,
+/// negotiated once at boot (ADR-017 rev 2, D-101): the request is recorded
+/// (`gl_changerez`/`gl_nextrez`), reported, and never handed to a mode
+/// switch. `gsx_wsclear()` (`:795`) has already happened by the time we get
+/// here — `sh_main`'s own tail runs `sh_toalpha()` (`gemshlib.c:733`), which
+/// clears the screen and homes the cursor, EmuTOS's `\033f\033E`
+/// (`geminit.c:763`).
+///
+/// What is **not** reset, and why:
+///
+/// * [`gsxif`]'s screen buffer (`gl_tmp`/`gl_mlen`) — a kernel-owned pool
+///   block taken once and never freed (module docs, `docs/COMPATIBILITY.md`,
+///   A54/A57). EmuTOS frees it in `sh_toalpha` and takes a fresh one in the
+///   next `sh_tographic` (`gemshlib.c:236,258`); NewTOS has no `gsx_mfree`,
+///   so re-allocating would leak one screen-sized block per restart. The
+///   address is stable and kernel-owned, so nothing can dangle: the next
+///   session's `sh_tographic` finds the same buffer and `WF_SCREEN` keeps
+///   reporting it. `clipped_saves()` counts for the whole boot and is
+///   diagnostics, not session state.
+/// * [`window`]'s `WM_READY` — a lazy-init latch for the desktop window, not
+///   session state; what it guards ([`window::wm_init`]'s `init_desk_window`)
+///   runs unconditionally below.
+/// * [`thread`]'s fiber context — idle by construction at this point (the
+///   session ends with the running program terminated and `sh_main` returning
+///   on the boot stack), and not AES session state.
+/// * [`trace`]'s ring buffer — a diagnostic instrument (feature-gated) whose
+///   value is that it spans the boot.
+/// * `fsel`'s relocated `GEM.RSC` copy — EmuTOS re-runs `gem_rsc_init`/
+///   `fs_start` per session on a fresh ROM copy (`geminit.c:658,724`); ours
+///   is a kernel-BSS blob relocated once and cached, with no pointer outside
+///   the kernel. Its per-dialog scratch (path, selection, listing) is
+///   rewritten by every `fsel_input`.
+pub fn reinit() {
+    // `gem_main`: re-read the `.INF` file and rebuild the AES's own resource
+    // (`geminit.c:766-773`, `gem_rsc_init`/`gem_rsc_fixit`), skipping
+    // `process_inf1` as `:775` does on this path. Also clears `gl_changerez`
+    // (`:806`) via `shell::reinit` below.
+    init::reinit();
+    // `mn_init()` (`:808`) + `mn_cleanup`'s submenu free + `mnext_init()`
+    // (`:672`).
+    menu::reinit();
+    // The Window Manager: the `theglo` blank of `D.w_win[]` plus `wm_start()`
+    // (`:723`). Before the process table, because neither draws or posts here
+    // — but the order that would matter if it ever did is this one: no window
+    // may be left that could post into a queue the next step empties.
+    window::reinit();
+    // The process table and its message queues (`:846-880`).
+    // SAFETY: single-CPU restart path, no AES call in flight and no EL0
+    // process alive (see the `pd::reinit` docs).
+    unsafe { pd::reinit() };
+    // The button variables (`:661-664`) and the mouse owner (`:888`).
+    input::reinit();
+    // `init_3d()` (`:675`).
+    object::init_3d();
+    // `ev_dclick(3, TRUE)` (`:701`) — the power-up click rate, before
+    // `process_inf2` re-applies the `.INF` `#E` line (`:734`).
+    event::ev_dclick(3, true);
+    // Per-process resource lists and the application directory.
+    resource::reinit();
+    // The Shell Manager, `gl_changerez = FALSE` included (`:806`).
+    shell::reinit();
+    // No dead client is left to sweep: every window is gone (A107).
+    PENDING_SWEEP.store(0, Ordering::Release);
+}
+
 /// The AES parameter block: six pointers (four to WORD arrays, two to
 /// LONG arrays). The block pointers — and the `addrin`/`addrout` LONG
 /// elements — are the caller's pointer width: 8-byte for an LP64 caller,

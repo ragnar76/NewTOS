@@ -395,28 +395,68 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // invalid/empty .PRG fails the load gracefully (no fault).
     launch::run_auto_folder();
 
-    // `sh_tographic()` (EmuTOS `run_accs_and_desktop`, `geminit.c:700`) — go
-    // into graphic mode now that the character-screen part of the boot (the
-    // initinfo screen and the \AUTO\ programs) is done, and before the shell
-    // loop starts anything. On a board without a raster backend this is a
-    // no-op and the loop's first `sh_chgrf` falls back to alpha mode.
-    shell_loop::go_graphic();
+    // ── The AES session loop — EmuTOS `gemstart.S:86-124` `aes_restart` ──
+    //
+    // One pass through this body is one whole AES session: the tail of
+    // `run_accs_and_desktop` (`geminit.c:693-731`) with `sh_main` at the end
+    // of it. EmuTOS leaves the session by returning out of `gem_main` into
+    // assembly, which re-zeroes the global AES area and jumps back to
+    // `gem_main` when `gl_changerez` is still set (`:122-124`); here the same
+    // decision is `sh_main`'s return value, and the re-zeroing is
+    // `tos_api::aes::reinit()` + `desk::reset()` (A106, ticket `TASK/A106.md`,
+    // design `docs/analysis/a48-shw-reschng-design-2026-09-21.md` §5 tier 2).
+    //
+    // Only `ShExit::Shutdown` leaves the loop. On a board whose `can_shutdown()`
+    // equivalent is FALSE — every NewTOS profile, as on the Falcon this build
+    // targets (`bios/bios.c:754-770`) — nothing can set `sh_doexec` to
+    // `SHW_SHUTDOWN`, so the `halt()` below is as unreachable as EmuTOS'
+    // `Pterm0` after `ui_start`, and just as deliberately present.
+    loop {
+        // `sh_tographic()` (EmuTOS `run_accs_and_desktop`, `geminit.c:700`) —
+        // go into graphic mode now that the character-screen part of the boot
+        // (the initinfo screen and the \AUTO\ programs) is done, and before
+        // the shell loop starts anything. On a board without a raster backend
+        // this is a no-op and the loop's first `sh_chgrf` falls back to alpha
+        // mode. On a restart it is the way back out of the alpha screen
+        // `sh_main`'s closing `sh_toalpha` left behind (`gemshlib.c:733`).
+        shell_loop::go_graphic();
 
-    // `process_inf2` (EmuTOS `geminit.c:734`) — the second `.INF` pass, run
-    // after the AES's own init and immediately before the shell loop: it sets
-    // the double-click speed from the `#E` line and reads the `#Z` autorun
-    // line into the SHELL's `sh_desk`/`sh_cdir` pair, telling us whether a
-    // program is configured to run instead of the built-in desktop.
-    let (isauto, isgem) = tos_api::aes::init::process_inf2();
+        // `process_inf2` (EmuTOS `geminit.c:734`) — the second `.INF` pass,
+        // run after the AES's own init and immediately before the shell loop:
+        // it sets the double-click speed from the `#E` line and reads the `#Z`
+        // autorun line into the SHELL's `sh_desk`/`sh_cdir` pair, telling us
+        // whether a program is configured to run instead of the built-in
+        // desktop. Re-run per session, as EmuTOS runs it, so a restarted
+        // session starts the same program a cold boot would.
+        let (isauto, isgem) = tos_api::aes::init::process_inf2();
 
-    // The AES shell loop (EmuTOS `sh_main`, `geminit.c:739`): it decides which
-    // program runs — the `#Z` program, the built-in desktop, or the console —
-    // starts it, and starts the next one when it terminates. This is what
-    // replaced the hardcoded `desk::run()` call: the desktop is now a
-    // configuration choice, not a compiled-in one.
-    shell_loop::sh_main(isauto, isgem);
+        // The AES shell loop (EmuTOS `sh_main`, `geminit.c:739`): it decides
+        // which program runs — the `#Z` program, the built-in desktop, or the
+        // console — starts it, and starts the next one when it terminates.
+        // This is what replaced the hardcoded `desk::run()` call: the desktop
+        // is now a configuration choice, not a compiled-in one.
+        if shell_loop::sh_main(isauto, isgem) == tos_api::aes::shell::ShExit::Shutdown {
+            break;
+        }
 
-    // `sh_main` returns only on `shel_write(SHW_SHUTDOWN, …)`.
+        // A `shel_write(SHW_RESCHNG, …)` was pending when the running program
+        // ended: close this AES session and open a fresh one. The physical
+        // mode switch `gem_main` would do here (`geminit.c:778-793`) is the
+        // one hardware-gated step and stays absent on a single-mode board
+        // (ADR-017 rev 2, D-101); everything else — every AES structure, the
+        // desktop's own state — is rebuilt from scratch.
+        kprintln!("[shell] AES restart (resolution change requested)");
+        tos_api::aes::reinit();
+        desk::reset();
+        // `dos_sdrv(bootdev)` (`geminit.c:796-803`): "resolution change always
+        // resets the default drive to the boot device". NewTOS has no boot
+        // device variable; the boot drive is the first hard disk in the drive
+        // map, the same derivation the loader writes into `bootdev` ($446)
+        // for every process (`bdos/process/loader.rs`).
+        tos_api::bdos::fs::drive::set_boot_drive();
+    }
+
+    // Reached only through `shel_write(SHW_SHUTDOWN, …)` — see the loop note.
     kprintln!("[shell] shutdown — halting");
     arch::aarch64::halt();
 }

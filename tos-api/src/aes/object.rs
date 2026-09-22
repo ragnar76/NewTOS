@@ -1593,6 +1593,40 @@ static IND_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
 pub(crate) static ACT_BUTCOL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
 pub(crate) static BACKGR_COL: AtomicI16 = AtomicI16::new(GRAY_LT as i16);
 
+/// `init_3d()` (`aes/gemoblib.c:1325-1343`, `#if CONF_WITH_3D_OBJECTS`) — the
+/// once-per-AES-session reset of the seven 3-D look variables, called from
+/// `run_accs_and_desktop` (`geminit.c:674-675`).
+///
+/// ```c
+/// indtxtmove = 0; indcolchange = 1;
+/// acttxtmove = 1; actcolchange = 0;
+/// if (gl_ws.ws_ncolors <= LWHITE)
+///     actbutcol = indbutcol = backgrcol = WHITE;
+/// else
+///     actbutcol = indbutcol = backgrcol = LWHITE;
+/// ```
+///
+/// The statics above carry the `else` arm's values, which is what every
+/// NewTOS profile computes (`ws_ncolors` is the workstation's colour count,
+/// 256 on the RPi4 raster backend — `> LWHITE` = 8), so a cold boot and a
+/// restarted session agree. The palette branch is reproduced anyway: it is
+/// the function's contract, and `objc_sysvar(SET)` can have moved all three
+/// colours in between.
+pub(super) fn init_3d() {
+    IND_TXTMOVE.store(0, Ordering::Relaxed);
+    IND_COLCHANGE.store(1, Ordering::Relaxed);
+    ACT_TXTMOVE.store(1, Ordering::Relaxed);
+    ACT_COLCHANGE.store(0, Ordering::Relaxed);
+    let ncolors = host()
+        .and_then(|h| h.raster())
+        .map(|r| r.num_colors() as i16)
+        .unwrap_or(16);
+    let col = if ncolors <= LWHITE as i16 { WHITE } else { LWHITE } as i16;
+    IND_BUTCOL.store(col, Ordering::Relaxed);
+    ACT_BUTCOL.store(col, Ordering::Relaxed);
+    BACKGR_COL.store(col, Ordering::Relaxed);
+}
+
 // objc_sysvar `which` selectors (obdefs.h).
 const LK3DIND: i16 = 1;
 const LK3DACT: i16 = 2;

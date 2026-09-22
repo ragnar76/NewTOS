@@ -731,3 +731,16 @@ pub fn run() {
     main::event_loop();
     appl_exit();
 }
+
+/// Take the desktop down for an AES restart (A106) — the counterpart of
+/// EmuTOS's desktop simply *ending* with the session that requested the
+/// resolution change (`aes/gemshlib.c:727`, `desk/deskmain.c`'s epilog) and
+/// being started afresh by the next `sh_main`.
+///
+/// Must run **after** [`tos_api::aes::reinit`], which clears the AES's
+/// `gl_newdesk` registration ([`wind_set_newdesk`]) — that pointer addresses
+/// the object arena this call frees.
+pub fn reset() {
+    global::reset();
+    inf::reset();
+}

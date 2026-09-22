@@ -1,0 +1,101 @@
+A106 Tier 2 -- the AES session ends on a pending shel_write(SHW_RESCHNG) and starts
+again from a clean AES. Developer self-evidence, 2026-09-22 (the host clock rolled to
+the 23rd during the QEMU run; the lead's dated names are kept). Branch desk-rebuild,
+base HEAD 520662a, changes uncommitted in the tree, nothing flashed.
+
+Pinned EmuTOS references/emutos:
+  aes/gemshlib.c:187-191 (sh_write's SHW_RESCHNG arm, unconditional -- A48 tier 1),
+    :727 (while ((psh->sh_doexec != SHW_SHUTDOWN) && !gl_changerez)),
+    :733 (if (gl_shgem) sh_toalpha() -- clears the screen, homes the cursor)
+  aes/geminit.c:693-731 (run_accs_and_desktop's tail = one session: sh_tographic :700
+    -> process_inf2 :734 -> sh_main :739), :753-899 (gem_main: .INF re-read :766-773,
+    process_inf1 only when NOT a rez change :775, Setscreen :778-793, gsx_wsclear :795,
+    dos_sdrv(bootdev) :803, gl_changerez = FALSE :806, mn_init :808, process table
+    :846-880, gl_mowner :888), :655-739 (gem_rsc_init :658, button vars :661-664,
+    mnext_init :672, init_3d :675, ev_dclick(3) :701, gem_rsc_fixit :704, ob_height
+    :707-709, set_aes_background :712-721, wm_start :723)
+  aes/gemstart.S:101-110 (re-zero theglo), :122-124 (tst gl_changerez; jne aes_restart)
+  aes/gem_rsc.c:624-627 (ROM->RAM memcpy before gem_rsc_fixit -- rs_obfix is NOT
+    idempotent), aes/gemmnlib.c:751-756,821-832, aes/gemmnext.c:103-110,
+    aes/gemoblib.c:1325-1343, aes/gemwmlib.c:1247-1310,1320-1360,
+    bios/bios.c:754-770 (can_shutdown() FALSE -> the Shutdown arm is unreachable here)
+Design: docs/analysis/a48-shw-reschng-design-2026-09-21.md section 5 tier 2, section 9.
+Spec updated: docs/api/aes/shell-loop.md section 7, docs/api/aes/scrap-shell.md.
+
+PRODUCT CODE (uncommitted; method/product-a106.diff)
+  tos-api/src/aes/shell.rs    ShExit, sh_main_continue(), sh_main_exit(), reinit()
+  tos-api/src/aes/mod.rs      pub fn reinit() -- the single entry the wrapper uses
+  tos-api/src/aes/init.rs     DESKTOP_ROM (ROM master) + BG (bg/bgfound) + read_infbuf/
+                              process_inf1/gem_rsc split; init() = cold boot, reinit()
+                              = every later session (no process_inf1, geminit.c:775)
+  tos-api/src/aes/{menu,pd,window,input,resource}.rs   one reinit() each.
+      window::reinit() BLANKS the table (gemstart.S:101-110) + wm_start's globals --
+      deliberately NOT wm_init/wm_new: that is the per-program reset inside a session
+      (gemshlib.c:717) and it DRAWS (draw_change -> w_drawdesk + a WM_REDRAW fan-out,
+      gemwmlib.c:1216-1222,1453) and posts into queues pd::reinit has just emptied.
+  tos-api/src/aes/object.rs   init_3d() (new, gemoblib.c:1325-1343)
+  tos-api/src/bdos/fs/drive.rs  set_boot_drive() (dos_sdrv(bootdev), geminit.c:796-803)
+  kernel/src/shell_loop.rs    sh_main(..) -> ShExit; condition = sh_main_continue()
+  kernel/src/lib.rs           the session loop (NewTOS' aes_restart)
+  kernel/src/desk/{mod,global,inf}.rs   desk::reset() -- the desktop is a program that
+                              restarts (EmuTOS deskstart), so its state is dropped
+  tos-api/tests/aes_a106_restart.rs  NEW (3 cases)
+
+HOST TESTS (host-tests/)
+  RED-1-compile-vs-HEAD-520662a.txt   the new test against HEAD: E0432 + 7x E0425
+  RED-2-behaviour-vs-HEAD-520662a.txt HEAD's own API: head_loop_ends = false (the
+      second term of :727 is missing) and the session's window is still in use
+      afterwards (Some(16)) -- there is no session reset.
+      Scratch test kept beside it: a106_red_behaviour-scratch.rs (NOT in the repo).
+      Both red runs ran in a DETACHED scratch worktree (git worktree add --detach
+      <scratch> HEAD, then git worktree remove); the shared tree was never touched.
+  GREEN-a106-after.txt   3/3
+  xtask-test-AFTER.log   cargo run -p xtask -- test: 919 / 0 / 1, rc 0.
+      Baseline: the same run in the HEAD worktree gives 911/5, and those five failures
+      are worktree artefacts (references/emutos/aes/gem.rsc is not checked out there)
+      -> 916 + 3 new = 919; the delta is exactly the new test file.
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log / xtask-build-qemu-virt.log  both rc 0, tos-api 64 / kernel 94
+      (baseline 64/94, delta 0); tree kernel8.img 8b19cd1e...
+  clippy-tos-api.txt   80 (baseline 80, delta 0)
+  clippy-kernel.txt    both boards: tos-api 80 / kernel 125 (baseline 125)
+      No clippy hit on a new line; the only hit in a touched kernel file is
+      kernel/src/lib.rs:9 (the crate-wide #![warn(missing_docs)] attribute).
+  scratch-a106-build.log  the injector scratch kernel: tos-api 67 / kernel 105
+      (= 64/94 + the injector scaffolding), rc 0
+  make-sd-image.log, images-and-kernels.sha256
+
+QEMU raspi4b (method/run.sh, 640x480, -display none, QMP screendump per serial mark)
+  Scratch kernel = the tree + the A79 serial trace + the H02 IKBD injector
+  (method/make_scratch_a106.sh = A48's script). Image: tools/make-sd-image.sh 64 MiB
+  + NEWDESK.INF with `#Z` TeraDesk + TERADESK.INF (centred dialogs), both from
+  measurement-2026-09-20-a79/method. Script method/tera-a106.actions = A48's sequence
+  run TWICE with the restart in between; coordinates unchanged from A48.
+  serial/a106-serial.log: 0 matches for EXC|PANIC|panic. Two restarts, lines 131-134
+  and 377-380:
+      [shell] sh_ldapp: 'C:\APPS\TERADESK\DESKTOP.NAP' exited with rc=0
+      [shell] sh_main: session over -- shel_write(SHW_RESCHNG) pending, restarting the AES
+      [shell] AES restart (resolution change requested)
+      [shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP, sh_nextapp=2, sh_isgem=1
+  `[aes] gsx_malloc: ...` appears ONCE (line 41) across both restarts -- the AES screen
+  buffer is kept on purpose (no gsx_mfree exists; re-taking it would leak one
+  screen-sized pool block per restart).
+  screendumps/pixdiff.txt: A(cold boot) vs I(after restart 1) vs M(after restart 2)
+  all 0 px; C vs J, E vs K, F vs L all 0 px.
+  serial/qemu-virt-smoke.log: the qemu-virt board still boots to the EmuCON console,
+  0 EXC/PANIC (no raster -> go_graphic() in the loop stays a no-op).
+
+OUT OF SCOPE (observed, untouched -- one line each)
+  (1) geminit.c:671-672 seeds D.g_scrap with C:\CLIPBRD per session; NewTOS' boot does
+      not -- the restart restores the power-up (empty) value, the gap itself is untouched.
+  (2) geminit.c:685 seeds the shell buffer with CP_SHELL_INIT per session; NewTOS' boot
+      does not.
+  (3) vdi/mouse.rs:92-96: a vex_* vector an EL0 program installed survives its death --
+      inert, NewTOS never invokes those vectors (AUD-V6-002); not restart-specific.
+  (4) aes/init.rs' init() doc claimed idempotence, which was false for the rs_obfix
+      part; true now that the ROM copy is there.
+
+OPEN
+  Pi acceptance (Tester/Lead; nothing flashed), HW checklist item 33
+  (docs/api/desktop/_hw-test-2026-09-17.md).

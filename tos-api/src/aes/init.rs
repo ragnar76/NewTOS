@@ -84,11 +84,17 @@ struct DesktopTree(UnsafeCell<[Object; 3]>);
 // [`set_aes_background`]; readers are `appl_init` and the drawing path.
 unsafe impl Sync for DesktopTree {}
 
-/// `rs_trees[DESKTOP]` — the AES's own built-in `DESKTOP` tree, three objects,
-/// transcribed from `aes/gem_rsc.c:550-570`. Coordinates are still in the
-/// resource's packed char-grid form until [`init`] runs `fix_chpos` over them,
-/// exactly as EmuTOS leaves them until `gem_rsc_fixit` (`gem_rsc.c:636-641`).
-static DESKTOP: DesktopTree = DesktopTree(UnsafeCell::new([
+/// `rs_obj_rom`'s `DESKTOP` entries (`aes/gem_rsc.c:550-570`) — the **ROM
+/// master** of the AES's own built-in `DESKTOP` tree, three objects, in the
+/// resource's packed char-grid form.
+///
+/// EmuTOS keeps this copy because `gem_rsc_fixit`'s coordinate conversion
+/// (`rs_obfix`, char cells → pixels) is **not** idempotent: every AES session
+/// starts with `gem_rsc_init`'s `memcpy(rs_obj, rs_obj_rom, …)`
+/// (`gem_rsc.c:624-627`) so the conversion always runs on unconverted data.
+/// [`gem_rsc`] does the same, which is what makes an AES restart (A106) land
+/// on the same geometry a cold boot does instead of scaling the tree twice.
+const DESKTOP_ROM: [Object; 3] = [
     // [0] ROOT: { -1, 1, 2, G_BOX, NONE, NORMAL, 4419L, 0,0,80,25 }
     Object {
         ob_next: -1,
@@ -133,10 +139,16 @@ static DESKTOP: DesktopTree = DesktopTree(UnsafeCell::new([
         ob_width: 80,
         ob_height: 769,
     },
-]));
+];
+
+/// `rs_trees[DESKTOP]` — the live (RAM) copy of the tree above, the one
+/// `gem_rsc_fixit`, `set_aes_background` and the `ob_height` fixup mutate
+/// (`gem_rsc.c:573-578`, `rs_trees[]` pointing into `rs_obj`). Re-seeded from
+/// [`DESKTOP_ROM`] at the start of every AES session by [`gem_rsc`].
+static DESKTOP: DesktopTree = DesktopTree(UnsafeCell::new(DESKTOP_ROM));
 
 /// `infbuf` (`geminit.c:110`) — the first [`INF_SIZE`] bytes of the `.INF`
-/// file, read **once** in `gem_main` (`:766-773`) and used by both
+/// file, read once per AES session in `gem_main` (`:766-773`) and used by both
 /// [`process_inf1_q`] (`:776`) and [`process_inf2`] (`:734`).
 struct InfBuf(UnsafeCell<[u8; INF_SIZE + 1]>);
 // SAFETY: as [`DesktopTree`] — single boot CPU, cooperative trap path.
@@ -161,6 +173,21 @@ static DTNAME_TED: DtNameTed = DtNameTed(UnsafeCell::new(TedInfo {
     te_txtlen: 2,
     te_tmplen: 1,
 }));
+
+/// `bg[]` + `bgfound` (`geminit.c:112-113`) — the three desktop background
+/// bytes of the `.INF` `#Q` line, `None` while no `#Q` line has been seen
+/// (`bgfound == FALSE`).
+///
+/// Both are plain AES globals, **outside** the `theglo` area `aes_restart`
+/// re-zeroes (`gemstart.S:101-110`), and `gem_main` re-runs `process_inf1`
+/// only when the restart is *not* a resolution change (`geminit.c:775`). So
+/// across an A106 restart the previous session's `#Q` result is what
+/// `run_accs_and_desktop` re-applies (`:719-728`) — kept here for the same
+/// reason.
+struct BgCell(UnsafeCell<Option<[i16; 3]>>);
+// SAFETY: as [`DesktopTree`] — single boot CPU, cooperative trap path.
+unsafe impl Sync for BgCell {}
+static BG: BgCell = BgCell(UnsafeCell::new(None));
 
 /// Base pointer of the built-in `DESKTOP` tree — EmuTOS `rs_trees[DESKTOP]`.
 #[inline]
@@ -253,34 +280,62 @@ fn process_inf1_q(buf: &[u8]) -> Option<[i16; 3]> {
     found
 }
 
-/// AES boot initialisation. Runs once, before any process can call
-/// `appl_init`, and performs the three `geminit.c` steps this module
-/// documents. Idempotent in effect except for the background byte, which is
-/// re-derived from the `.INF` file each time.
-pub fn init() {
-    // ── 1. `process_inf1` — read the first INF_SIZE bytes and look for `#Q`.
-    //    A missing/unreadable file is EmuTOS's `n < 0 → n = 0` case
-    //    (`geminit.c:771-773`): no `#Q`, so `bgfound` stays FALSE. The buffer
-    //    is the shared `infbuf` static (`geminit.c:110`), read **once** —
-    //    `process_inf2` reads the same bytes later in the boot.
-    // SAFETY: single-CPU boot path; exclusive access to the static here.
+/// `gem_main`'s `.INF` read (`geminit.c:766-773`) — fill [`INFBUF`] with the
+/// first [`INF_SIZE`] bytes of the file and NUL-terminate it. A
+/// missing/unreadable file is EmuTOS's `n < 0 → n = 0` case (`:771-772`): an
+/// empty buffer, so neither `#Q` nor `#Z` is found. Runs at the head of
+/// **every** AES session, cold boot and restart alike; [`process_inf2`] reads
+/// the same bytes later in the same session.
+fn read_infbuf() {
+    // SAFETY: single-CPU boot/restart path; exclusive access to the static.
     let infbuf = unsafe { &mut *INFBUF.0.get() };
     infbuf.fill(0);
     let n = crate::bdos::fs::read_file(INF_PATH, &mut infbuf[..INF_SIZE]).unwrap_or(0);
     infbuf[n] = 0; // `infbuf[n] = '\0'` (geminit.c:773)
-    let bg = process_inf1_q(&infbuf[..=n]);
+}
 
-    // ── 2. `gem_rsc_fixit` (`gem_rsc.c:636-641`) + the DTNAME TEDINFO link.
-    //    The tree's coordinates are still packed char-grid words; convert all
-    //    four of every object with `rs_obfix` (`gemrslib.c:89-99`), the live
-    //    `gl_wchar`/`gl_hchar`/`gl_width` included — `gem_rsc_fixit` is
-    //    `for (i = 0; i < RS_NOBS; i++) rs_obfix(rs_obj, i);`.
-    // SAFETY: single-CPU boot path; the statics are initialised and in scope
-    // for the whole program (see [`DesktopTree`]).
+/// `process_inf1()` (`geminit.c:343-392`, called from `:776`), reduced to its
+/// `#Q` arm: record the desktop background bytes in [`BG`] (`bg`/`bgfound`).
+///
+/// `gem_main` guards the call with `if (!gl_changerez)` (`:775`) — "can't be
+/// here because of rez change, so see if .inf says we need to change rez" —
+/// so on an A106 restart it does **not** run and [`BG`] keeps the value the
+/// previous session parsed. The `#E` resolution arm (`:363-380`) has no
+/// NewTOS counterpart: `check_moderez` reports no change on a board with one
+/// fixed mode (ADR-017 rev 2, D-101).
+fn process_inf1() {
+    // SAFETY: single-CPU boot path; the buffer was filled by `read_infbuf`.
+    let buf = unsafe { &*INFBUF.0.get() };
+    // SAFETY: as above — exclusive access to the cell on this path.
+    unsafe { *BG.0.get() = process_inf1_q(buf) };
+}
+
+/// The per-session bring-up of the AES's own built-in resource:
+/// `gem_rsc_init` (`gem_rsc.c:624-630`), `gem_rsc_fixit` (`:636-641`,
+/// `geminit.c:704`), the full-screen `ob_height` (`geminit.c:707-709`) and
+/// `set_aes_background` (`:719-728` → `:635-641`).
+///
+/// It starts from [`DESKTOP_ROM`] because `rs_obfix` converts char cells to
+/// pixels in place and would compound on a second pass — EmuTOS avoids that
+/// with `gem_rsc_init`'s ROM→RAM `memcpy`, and so does this.
+fn gem_rsc() {
+    // SAFETY: single-CPU boot/restart path; the statics are initialised and
+    // in scope for the whole program (see [`DesktopTree`]).
     unsafe {
+        // `memcpy(rs_obj, rs_obj_rom, …)` + `bzero(rs_te_text, …)` and the
+        // ROM `TEDINFO` copy (`gem_rsc.c:626-630`): `te_ptext` goes back to
+        // the `0L` of `rs_tedinfo[12]`, dropping the program name a previous
+        // session's `sh_draw` pointed it at (`gemshlib.c:284-285`).
+        *DESKTOP.0.get() = DESKTOP_ROM;
         let ted = DTNAME_TED.0.get();
+        (*ted).te_ptext = 0;
         (*ted).te_ptmplt = DTNAME_TEXT.as_ptr() as u64;
         (*ted).te_pvalid = DTNAME_TEXT.as_ptr() as u64;
+
+        // `gem_rsc_fixit` (`gem_rsc.c:636-641`): the tree's coordinates are
+        // packed char-grid words; convert all four of every object with
+        // `rs_obfix` (`gemrslib.c:89-99`), the live `gl_wchar`/`gl_hchar`/
+        // `gl_width` included.
         let tree = desktop_tree();
         let t = ObjTree::lp64(tree);
         for i in 0..3 {
@@ -295,10 +350,11 @@ pub fn init() {
         }
     }
 
-    // ── 3. `set_aes_background` (`geminit.c:719-728`), only if `#Q` was found.
-    //    `n = (gl_nplanes > 2) ? 2 : gl_nplanes - 1` picks the pair for this
-    //    screen depth; `gl_nplanes` is the VDI workstation's plane count.
-    if let Some(bg) = bg {
+    // `set_aes_background` (`geminit.c:719-728`), only if `#Q` was found.
+    // `n = (gl_nplanes > 2) ? 2 : gl_nplanes - 1` picks the pair for this
+    // screen depth; `gl_nplanes` is the VDI workstation's plane count.
+    // SAFETY: single-CPU boot/restart path.
+    if let Some(bg) = unsafe { *BG.0.get() } {
         let planes = crate::host::host()
             .and_then(|h| h.raster())
             .map(|r| r.planes() as i16)
@@ -306,6 +362,29 @@ pub fn init() {
         let idx = if planes > 2 { 2 } else { (planes - 1).max(0) } as usize;
         set_aes_background((bg[idx] & 0xff) as u8);
     }
+}
+
+/// AES boot initialisation — the cold-boot form of the session bring-up:
+/// read the `.INF` file (`geminit.c:766-773`), parse its `#Q` line
+/// (`process_inf1`, `:776`) and set the built-in `DESKTOP` resource up for
+/// the open workstation ([`gem_rsc`]). Runs before any process can call
+/// `appl_init`.
+pub fn init() {
+    read_infbuf();
+    process_inf1();
+    gem_rsc();
+}
+
+/// The same bring-up for the **second and later** AES sessions of a boot —
+/// `gem_main`'s body on the restart path (A106, `gemstart.S:86-124` →
+/// `geminit.c:766-776`): the `.INF` file is re-read, but `process_inf1` is
+/// skipped because the restart *is* the resolution change it would look for
+/// (`:775`), so the `#Q` background bytes of [`BG`] carry over unchanged.
+///
+/// Called only from [`super::reinit`].
+pub(super) fn reinit() {
+    read_infbuf();
+    gem_rsc();
 }
 
 /// `process_inf2` (`geminit.c:407-464`) — the **second** `.INF` pass, run

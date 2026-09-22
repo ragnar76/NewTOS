@@ -584,8 +584,8 @@ pub fn sh_doexec() -> i16 {
 /// `gl_changerez` (`gemshlib.c:95,98`) — the pending resolution-change
 /// request: `0` = none, `1` = ST/TT family, `2` = Falcon family, as
 /// `shel_write(SHW_RESCHNG, …, isover)` last recorded it (`1 + isover`,
-/// `:188`). Readable state only until A106 wires it into the shell loop's
-/// exit test (`:727`) and the restart around `sh_main`.
+/// `:188`). Consumed by the shell loop's exit test ([`sh_main_continue`],
+/// `:727`) and cleared by the AES restart ([`super::reinit`], `geminit.c:806`).
 pub fn gl_changerez() -> i16 {
     // SAFETY: single-CPU AES.
     unsafe { *S.gl_changerez.get() }
@@ -593,11 +593,49 @@ pub fn gl_changerez() -> i16 {
 
 /// `gl_nextrez` (`gemshlib.c:96,99`) — the mode word `shel_write(SHW_RESCHNG,
 /// isgem, …)` last recorded (`gl_nextrez = isgem`, `:189`), verbatim: for the
-/// ST/TT family it carries the caller's `+2` offset (D-101). Readable state
-/// only until A106 consumes it.
+/// ST/TT family it carries the caller's `+2` offset (D-101). The value
+/// `gem_main`'s `Setscreen` dispatch would use (`geminit.c:778-793`), which on
+/// a fixed-mode board is a no-op (ADR-017 rev 2, D-101) — so it is recorded,
+/// reported, and never handed to a mode switch.
 pub fn gl_nextrez() -> i16 {
     // SAFETY: single-CPU AES.
     unsafe { *S.gl_nextrez.get() }
+}
+
+/// Why `sh_main` left its loop — the two terms of
+/// `while ((psh->sh_doexec != SHW_SHUTDOWN) && !gl_changerez)`
+/// (`gemshlib.c:727`), told apart for the caller.
+///
+/// EmuTOS does not return this: `gem_main` returns `void` and `gemstart.S`
+/// re-reads `gl_changerez` after the call (`:122-124`) to decide between
+/// `aes_restart` and falling through to `Pterm0`. Making it the return value
+/// is the same decision at the same point, in a form the kernel's wrapper —
+/// and a host test — can read without a second global fetch.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ShExit {
+    /// `psh->sh_doexec == SHW_SHUTDOWN` — the session ended for good.
+    /// `gemstart.S:122-124` finds `gl_changerez` clear and falls through.
+    Shutdown,
+    /// `gl_changerez != 0` — a `shel_write(SHW_RESCHNG, …)` is pending and
+    /// the whole AES session is to be restarted (`gemstart.S:124`,
+    /// `jne aes_restart`).
+    RezChange,
+}
+
+/// `(psh->sh_doexec != SHW_SHUTDOWN) && !gl_changerez` (`gemshlib.c:727`) —
+/// the shell loop's continuation test, both terms.
+pub fn sh_main_continue() -> bool {
+    sh_doexec() != SHW_SHUTDOWN && gl_changerez() == 0
+}
+
+/// Which term of [`sh_main_continue`] failed. `gl_changerez` wins when both
+/// do, because that is the one `gemstart.S:122-124` acts on.
+pub fn sh_main_exit() -> ShExit {
+    if gl_changerez() != 0 {
+        ShExit::RezChange
+    } else {
+        ShExit::Shutdown
+    }
 }
 
 /// Copy `D.s_cmd` — the fully-qualified command of the program to run next —
@@ -722,6 +760,55 @@ pub fn sh_main_init(isauto: bool, isgem: bool) {
         // (:705-706)
         set_default_desktop();
     }
+}
+
+/// Put every piece of shell state back to what it holds at power-up — the
+/// Shell Manager's share of an AES restart (A106, [`super::reinit`]).
+///
+/// EmuTOS gets most of this for free: `D.s_cmd`, `ad_stail`, `D.g_scrap`,
+/// `D.g_shelbuf` and `D.s_cdir` all live in the `theglo` area `aes_restart`
+/// re-zeroes before it calls `gem_main` again (`gemstart.S:101-110`), and
+/// `ad_envrn` is restored from `save_ad_envrn` in the same prologue (`:90-96`).
+/// The `SHELL` members and `gl_shgem` are then re-seeded by [`sh_main_init`]
+/// (`gemshlib.c:698-706`) and `sh_apdir`/`sh_desk`/`sh_cdir` by
+/// `set_default_desktop`, exactly as at cold boot.
+///
+/// Two values are set here rather than left to that re-seed:
+///
+/// * `gl_changerez = FALSE` (`geminit.c:806`) — the request has now been
+///   acted on; leaving it standing would end the next session immediately.
+///   `gl_nextrez` is cleared with it: EmuTOS's lives in BSS and keeps its
+///   value, but nothing reads it once `gl_changerez` is clear
+///   (`:778-793` is the only reader), so zero is the honest resting value.
+/// * `D.g_scrap` back to empty — NewTOS's power-up value. (EmuTOS seeds it
+///   with `SCRAP_DIR_NAME` per session, `geminit.c:671-672`; NewTOS's boot
+///   does not, and matching the *boot* state is what makes a restarted
+///   session identical to a cold-booted one. The seeding gap itself is
+///   pre-existing and untouched here.)
+pub(super) fn reinit() {
+    // SAFETY: single-CPU restart path, no AES call in flight.
+    unsafe {
+        (*S.scrap.get()).fill(0);
+        *S.sh_doexec.get() = SHW_EXEC;
+        *S.sh_nextapp.get() = DESKTOP_APP;
+        *S.sh_isgem.get() = 1;
+        *S.sh_isover.get() = 0;
+        (*S.sh_desk.get()).fill(0);
+        (*S.sh_cdir.get()).fill(0);
+        (*S.s_cmd.get()).fill(0);
+        (*S.s_tail.get()).fill(0);
+        (*S.sh_apdir.get()).fill(0);
+        (*S.buf.get()).fill(0);
+        (*S.env.get()).fill(0);
+        // `gl_changerez = FALSE` (geminit.c:806).
+        *S.gl_changerez.get() = 0;
+        *S.gl_nextrez.get() = 0;
+        // The name `sh_draw` parks in `DTNAME`'s `te_ptext`; the TEDINFO
+        // itself is reset by `gem_rsc_init` (`super::init::gem_rsc`).
+        (*SHOW_NAME.0.get()).fill(0);
+    }
+    // `gl_shgem` is FALSE at power-up and `sh_main_init` raises it (`:703`).
+    set_gl_shgem(false);
 }
 
 /// `set_drvdir` (`gemshlib.c:526-534`) — `dos_sdrv(drive)` for an explicit

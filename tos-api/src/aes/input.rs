@@ -98,6 +98,34 @@ static CT_MSGUP: AtomicBool = AtomicBool::new(false);
 /// [`b_delay`] clearing it.
 static GL_BDELY: AtomicBool = AtomicBool::new(false);
 
+/// The input layer's share of an AES restart (A106, [`super::reinit`]).
+///
+/// Two EmuTOS steps, in `gem_main`/`run_accs_and_desktop` order:
+///
+/// * **the button variables** (`geminit.c:661-664`): `gl_btrue = gl_bdesired
+///   = gl_bdely = gl_bclick = 0` — here [`BUTTON`] and [`GL_BDELY`], plus
+///   [`XRAT`]/[`YRAT`], the last reported pointer position `mchange`
+///   measures against (`geminput.c:362`), which is part of the same
+///   power-up-zero set (`theglo`-adjacent BSS, `gemstart.S:101-110`).
+/// * **the mouse owner** (`geminit.c:888`): `gl_mowner = ctl_pd =
+///   iprocess("SCRENMGR", ctlmgr)`, whose first Control-Manager pass hands
+///   the mouse to the application before anything can observe it
+///   (`gemctrl.c:441`) — which is why [`GL_MOWNER_APP`]'s power-up value is
+///   `true`, and why that is what a restart puts back.
+///
+/// [`GL_CTMOWN`] and [`CT_MSGUP`] are the Control Manager's two track locks
+/// (`gemctrl.c:50`, `:100-101`); a session that ended mid-track must not
+/// leave either standing for the next one.
+pub(super) fn reinit() {
+    BUTTON.store(0, Ordering::Relaxed);
+    GL_BDELY.store(false, Ordering::Relaxed);
+    XRAT.store(0, Ordering::Relaxed);
+    YRAT.store(0, Ordering::Relaxed);
+    GL_MOWNER_APP.store(true, Ordering::Relaxed);
+    GL_CTMOWN.store(false, Ordering::Relaxed);
+    CT_MSGUP.store(false, Ordering::Relaxed);
+}
+
 // ── the two VDI mouse-interrupt vectors ────────────────────────────────────
 
 /// `user_but` — the AES's button-change handler, EmuTOS `b_click`

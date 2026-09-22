@@ -1,0 +1,29 @@
+# RED 2 -- the two behavioural facts, stated with HEAD 520662a's own API.
+# Scratch test (a106_red_behaviour-scratch.rs, kept beside this log, NOT in the repo).
+# (1) head_loop_ends = false: with gl_changerez recorded, HEAD's only exit
+#     test (sh_doexec == SHW_SHUTDOWN, kernel/src/shell_loop.rs:109) is still
+#     false -- gemshlib.c:727's second term is missing, the session runs on.
+# (2) the window a session opened is still in use afterwards (owner Some(16)
+#     = the desktop identity): there is no session reset to take it down.
+
+running 1 test
+test head_has_no_loop_term_and_no_session_reset ... FAILED
+
+failures:
+
+---- head_has_no_loop_term_and_no_session_reset stdout ----
+RED 1 observed: head_loop_ends = false
+
+thread 'head_has_no_loop_term_and_no_session_reset' (7293308) panicked at tos-api/tests/a106_red_behaviour.rs:76:5:
+assertion `left == right` failed: RED 2: window still in use
+  left: Some(16)
+ right: None
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    head_has_no_loop_term_and_no_session_reset
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test a106_red_behaviour`

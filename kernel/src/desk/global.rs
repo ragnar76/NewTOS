@@ -533,6 +533,28 @@ pub fn init(g_desk: Grect) {
     }
 }
 
+/// Drop the desktop state so the next [`init`] builds it from scratch — the
+/// desktop's share of an AES restart (A106, [`super::reset`]).
+///
+/// On EmuTOS the desktop is an ordinary shell program: a resolution change
+/// ends it with everything else (`gemshlib.c:727`), its memory goes back to
+/// the pool, and the restarted AES runs `deskstart` again, which re-runs
+/// `app_start`/`win_start`/`cnx_get` on a zeroed `G` (`desk/deskmain.c`).
+/// NewTOS's desktop is an in-kernel call whose state is this one
+/// lazily-initialised singleton and whose [`init`] is a no-op once built —
+/// so without this the restarted desktop would keep the previous session's
+/// window list and object arena while the AES's own window table has just
+/// been emptied ([`tos_api::aes::reinit`]), i.e. it would believe in windows
+/// that no longer exist.
+///
+/// Dropping the state frees the object arena and the cached `.INF` vectors
+/// (all `alloc` allocations). Nothing else holds a pointer into them by then:
+/// the AES's `gl_newdesk` registration, which does, is cleared by `wm_init`
+/// inside `tos_api::aes::reinit`, which the caller runs **first**.
+pub fn reset() {
+    *DESK.lock() = None;
+}
+
 /// Run `f` against the desktop state under the lock. Returns `None` if the
 /// state has not been [`init`]ialised yet. The consumer of the arena/window
 /// APIs from later tasks (view build, event dispatch) goes through here.

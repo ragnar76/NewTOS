@@ -1,0 +1,3 @@
+warning: `tos-api` (lib) generated 64 warnings
+warning: `kernel` (lib) generated 94 warnings
+xtask: objcopy → /Volumes/Daten/Development/PiRusTOS/kernel8.img
