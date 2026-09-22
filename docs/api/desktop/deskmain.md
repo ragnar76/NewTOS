@@ -469,10 +469,17 @@ version-string + about-box insertion, `adjust_menu(desk_rs_trees[ADMENU])`
   + 2 px = `gl_hchar + 2` = 18 after `rsrc_obfix` (`aes/gemrslib.c:76-82`),
   one row above the separator `mn_bar` draws on `gl_hbox - 1` = 18
   (`aes/gemmnlib.c:718-722`); `THEACTIVE`, the titles and `THEMENUS`'s `y`
-  are `769` = `gl_hchar + 3` = `gl_hbox` = 19 (`desk_rsc.c:255-289`). The
-  drop-down entries are one cell (`gl_hchar` = 16 px) tall in the RSC
-  (`{0, row, 20, 1}`, `desk_rsc.c:297-341`) — NewTOS's `build_menu` still
-  lays them 19 px tall (open, see A108's receipt).
+  are `769` = `gl_hchar + 3` = `gl_hbox` = 19 (`desk_rsc.c:255-289`).
+  **Entry height (A109, 2026-09-22):** a drop-down entry is `{0, row, 20, 1}`
+  (`desk_rsc.c:297-341`) and its box `{x, 0, w, n}` (`:291-295,345-349`) —
+  character cells, which `rsrc_obfix` multiplies by `gl_hchar`
+  (`fix_chpos` offsets 1 and 3, `aes/gemrslib.c:53-99`) = **16 px** on the
+  8×16 font, not the 19 px of the bar row (`gl_hbox` = `gl_hchar + 3`,
+  `aes/gemgraf.c:412-415`). `adjust_menu` rewrites widths only
+  (`:1608-1635`), so every entry sits at `row · 16` and every box is
+  `n · 16` tall: on the English tree Desk 32, File 240, View 160, Options
+  192 (measured on the board, `measurement-2026-09-22-a107-a109`). NewTOS's
+  `build_menu` used `MENU_H` = 19 until A109, which made the File box 285.
 - **`install_shortcuts()`** (`:1825-1858`, called from `app_start()` after
   `menu_shortcuts[]` may have been customized): for each of the
   `NUM_SHORTCUTS=33` shortcut slots, if `shortcut_mapping[i]` is `0` (item

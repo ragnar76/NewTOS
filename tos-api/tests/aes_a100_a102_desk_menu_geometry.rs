@@ -524,6 +524,13 @@ const CHAR_W: i16 = 8;
 /// `aes/gemrslib.c:76-82`); one row above the separator `mn_bar` draws on
 /// `gl_hbox - 1` (`aes/gemmnlib.c:722`).
 const BAR_BOX_H: i16 = 16 + 2;
+/// `kernel/src/desk/menu.rs` `ENTRY_H` — one drop-down entry, the RSC's
+/// `{0, row, 20, 1}` (`desk/desk_rsc.c:297-341`) after `rsrc_obfix`
+/// multiplies the char cell by `gl_hchar` (`aes/gemrslib.c:53-99`) = 16 px on
+/// the 8×16 font, **not** the 19 px bar row (`gl_hbox`). Before A109
+/// `build_menu` laid the entries `MENU_H` = 19 tall, which made the 15-entry
+/// *File* box 285 px instead of 240.
+const ENTRY_H: i16 = 16;
 /// `deskmain.c:80` — the Desk box's minimum width in cells.
 const MIN_DESKMENU_WIDTH: i16 = 20;
 
@@ -663,10 +670,11 @@ fn active_rect() -> (i16, i16, i16, i16) {
     (g.active_x, 0, g.active_w, BAR_H)
 }
 
-/// The *File* drop-down box's absolute rectangle: `(64, 19, 160, 285)`.
+/// The *File* drop-down box's absolute rectangle: `(64, 19, 160, 240)` —
+/// 15 entries of [`ENTRY_H`], dropped at the bar row's bottom edge.
 fn file_box_rect() -> (i16, i16, i16, i16) {
     let g = adjust_menu(SCREEN_W as i16);
-    (g.box_x[1], BAR_H, g.box_w[1], MENUS[1].1.len() as i16 * BAR_H)
+    (g.box_x[1], BAR_H, g.box_w[1], MENUS[1].1.len() as i16 * ENTRY_H)
 }
 
 /// Build the desktop's ADMENU as `build_menu` does, with `box_spec` on every
@@ -719,9 +727,9 @@ fn desk_menu_tree(box_spec: u64) -> *mut Obj {
                 if last_overall { LASTOB } else { 0 },
                 entry_label(entry).as_ptr() as u64,
                 0,
-                ii as i16 * BAR_H,
+                ii as i16 * ENTRY_H,
                 iw,
-                BAR_H,
+                ENTRY_H,
                 if last_item { bi as i16 } else { (k + 1) as i16 },
                 -1,
                 -1,
@@ -732,7 +740,7 @@ fn desk_menu_tree(box_spec: u64) -> *mut Obj {
             k += 1;
         }
         let next_box = if ti == nt - 1 { themenus as i16 } else { k as i16 };
-        o[bi] = mk(G_BOX, 0, box_spec, g.box_x[ti], BAR_H, iw, n_items as i16 * BAR_H, next_box, first_item as i16, (k - 1) as i16);
+        o[bi] = mk(G_BOX, 0, box_spec, g.box_x[ti], BAR_H, iw, n_items as i16 * ENTRY_H, next_box, first_item as i16, (k - 1) as i16);
     }
     o[themenus] = mk(G_IBOX, 0, 0, 0, 0, sw, sh, 0, first_box as i16, last_box as i16);
     Box::leak(o.into_boxed_slice()).as_mut_ptr()
@@ -904,7 +912,7 @@ fn arm_gap(host: &ScriptHost) {
 /// The bar row plus the tallest drop-down, for "nothing drawn" comparisons.
 fn bar_and_boxes_pixels(host: &ScriptHost) -> Vec<u32> {
     let px = host.raster.px.lock().unwrap();
-    px[..(SCREEN_W as usize) * (BAR_H as usize + 15 * BAR_H as usize)].to_vec()
+    px[..(SCREEN_W as usize) * (BAR_H as usize + 15 * ENTRY_H as usize)].to_vec()
 }
 
 /// Device black; device white is the palette's pen 0 (`seed_palette`),
@@ -968,9 +976,9 @@ fn hover_two_entries(host: &'static ScriptHost, pb: &mut Aespb) -> [Vec<u32>; 3]
     move_to(host, pb, on_file.0, on_file.1, 0);
     arm_gap(host); // the head drain
     host.push(snap(0)); // the track's first pump: box down, no item
-    host.push(pkt(0, BAR_H + 9 - on_file.1, 0)); // onto entry 0 (y = 28)
+    host.push(pkt(0, BAR_H + 8 - on_file.1, 0)); // onto entry 0 (y = 27)
     host.push(snap(1));
-    host.push(pkt(0, BAR_H, 0)); // onto entry 1 (y = 47)
+    host.push(pkt(0, ENTRY_H, 0)); // onto entry 1 (y = 43)
     host.push(snap(2));
     // Out of the box to the right, then a press there cancels the track.
     host.push(pkt(bw + 40, 0, 0));
@@ -987,13 +995,13 @@ fn hover_two_entries(host: &'static ScriptHost, pb: &mut Aespb) -> [Vec<u32>; 3]
 
 /// **The desktop's box: outside border, hover touches no frame pixel, and
 /// nothing repaints one.** With `0xFF1100` the *File* box `(64,19,160,285)`
-/// (A108 geometry; `(68,19,158,285)` when this case was written) is framed
-/// by the ring one pixel outside it — columns 63 and 224, rows 18 and 304 —
-/// black in every snapshot. Hovering *Open* inverts the entry's rows 19..37
+/// (A108/A109 geometry; `(68,19,158,285)` when this case was written) is framed
+/// by the ring one pixel outside it — columns 63 and 224, rows 18 and 259 —
+/// black in every snapshot. Hovering *Open* inverts the entry's rows 19..34
 /// across the box width and changes no other pixel of the box; moving on to
-/// *Info/Rename…* puts rows 19..37 back exactly (the XOR round trip) and
+/// *Info/Rename…* puts rows 19..34 back exactly (the XOR round trip) and
 /// inverts rows 38..56. The old `rehilite` painted black lines along the box
-/// rectangle's own edges — row 19, row 303, the box's first and last columns
+/// rectangle's own edges — row 19, row 258, the box's first and last columns
 /// — *inside* the frame after every toggle: a second, inner frame, plainly
 /// visible on the white interior.
 #[test]
@@ -1001,7 +1009,7 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let (host, mut pb) = fresh(SPEC_OUTSIDE);
     let (bx, by, bw, bh) = file_box_rect();
-    assert_eq!((bx, by, bw, bh), (64, 19, 160, 285), "the File box as build_menu lays it out (A108)");
+    assert_eq!((bx, by, bw, bh), (64, 19, 160, 240), "the File box as build_menu lays it out (A108 width, A109 height)");
     let [s0, s1, s2] = hover_two_entries(host, &mut pb);
 
     // The frame is the ring outside the box, black throughout.
@@ -1014,7 +1022,7 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
     // sits — the frame is not on them.
     let white = white(host);
     assert_eq!(at(&s0, bx + 4, by), white, "row 19 belongs to the interior, not the frame");
-    assert_eq!(at(&s0, bx + 4, by + bh - 1), white, "row 303 belongs to the interior");
+    assert_eq!(at(&s0, bx + 4, by + bh - 1), white, "the box's last row belongs to the interior");
     assert_eq!(at(&s0, bx, by + 40), white, "the box's first column belongs to the interior");
     assert_eq!(at(&s0, bx + bw - 1, by + 40), white, "the box's last column belongs to the interior");
 
@@ -1025,32 +1033,32 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
             eprintln!("{name} y={y}: {row}");
         }
     }
-    let (same, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by, by + BAR_H);
+    let (same, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by, by + ENTRY_H);
     assert_eq!((same, other), (0, 0), "entry 0 is one XOR of its whole rectangle: {inv} inverted, {same} same, {other} other");
-    let (same, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by + BAR_H, by + bh);
+    let (same, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by + ENTRY_H, by + bh);
     assert_eq!(
         (inv, other),
         (0, 0),
         "no pixel outside entry 0 changes on the hover: {inv} inverted, {other} other, {same} same — \
-         the old frame repaint blackened row 303 and the box's edge columns (mn_do repaints nothing, gemmnlib.c:451-475)"
+         the old frame repaint blackened the box's last row and its edge columns (mn_do repaints nothing, gemmnlib.c:451-475)"
     );
-    assert_eq!(at(&s1, bx + 4, by + bh - 1), white, "row 303 stays white while Open is hovered");
+    assert_eq!(at(&s1, bx + 4, by + bh - 1), white, "the box's last row stays white while Open is hovered");
     assert_eq!(at(&s1, bx, by + 40), white, "the box's first column stays white while Open is hovered");
 
     // Snapshot 2: entry 0 back exactly, entry 1 inverted, the rest as opened.
-    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by, by + BAR_H);
+    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by, by + ENTRY_H);
     assert_eq!((inv, other), (0, 0), "entry 0 is restored pixel-exact by the second XOR");
-    let (same, _, other) = compare_rows(&s0, &s2, bx, bx + bw, by + BAR_H, by + 2 * BAR_H);
+    let (same, _, other) = compare_rows(&s0, &s2, bx, bx + bw, by + ENTRY_H, by + 2 * ENTRY_H);
     assert_eq!((same, other), (0, 0), "entry 1 is inverted");
-    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by + 2 * BAR_H, by + bh);
+    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by + 2 * ENTRY_H, by + bh);
     assert_eq!((inv, other), (0, 0), "rows below entry 1 are untouched");
 }
 
 /// **A box with an inside border gets its frame inverted by the item XOR —
 /// in EmuTOS too — and nothing repaints it.** The same tree with the word
 /// `build_menu` used before A100 (`(1<<16)|0x1070`, `th = +1`): the frame is
-/// row 19, row 303, the box's first and last columns, black when the box opens. Entry 0's
-/// rectangle covers row 19 and, in rows 19..37, the two columns; `ob_change`
+/// row 19, the box's last row and its first and last columns, black when the box
+/// opens. Entry 0's rectangle covers row 19 and, in rows 19..34, the two columns; `ob_change`
 /// XORs that rectangle whole (`gemoblib.c:1295-1304`: the inset is the
 /// *item's* `ob_sst` thickness, 0 for a `G_STRING`), so those frame pixels
 /// turn white while *Open* is hovered, and the rest of the frame stays. This
@@ -1065,7 +1073,7 @@ fn a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emuto
 
     // Snapshot 0: the frame is on the box rectangle's own edges.
     assert_eq!(at(&s0, bx + 4, by), BLACK, "row 19 is the inside frame");
-    assert_eq!(at(&s0, bx + 4, by + bh - 1), BLACK, "row 303 is the inside frame");
+    assert_eq!(at(&s0, bx + 4, by + bh - 1), BLACK, "the box's last row is the inside frame");
     assert_eq!(at(&s0, bx, by + 40), BLACK, "the box's first column is the inside frame");
     assert_eq!(at(&s0, bx + bw - 1, by + 40), BLACK, "the box's last column is the inside frame");
     let white = white(host);
@@ -1077,15 +1085,15 @@ fn a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emuto
     assert_eq!(at(&s1, bx, by + 9), inv(BLACK), "the box's first column inverted in entry 0's rows");
     assert_eq!(at(&s1, bx + bw - 1, by + 9), inv(BLACK), "column 225 inverted in entry 0's rows");
     assert_eq!(at(&s1, bx, by + 40), BLACK, "the box's first column below entry 0 still the frame");
-    assert_eq!(at(&s1, bx + 4, by + bh - 1), BLACK, "row 303 still the frame");
-    let (same, _, other) = compare_rows(&s0, &s1, bx, bx + bw, by, by + BAR_H);
+    assert_eq!(at(&s1, bx + 4, by + bh - 1), BLACK, "the box's last row still the frame");
+    let (same, _, other) = compare_rows(&s0, &s1, bx, bx + bw, by, by + ENTRY_H);
     assert_eq!((same, other), (0, 0), "entry 0 is one XOR of its whole rectangle, frame pixels included");
-    let (_, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by + BAR_H, by + bh);
+    let (_, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by + ENTRY_H, by + bh);
     assert_eq!((inv, other), (0, 0), "nothing below entry 0 changes");
 
     // Snapshot 2: the second XOR restores entry 0 — frame pixels included.
     assert_eq!(at(&s2, bx + 4, by), BLACK, "row 19 restored by the un-hilite XOR");
-    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by, by + BAR_H);
+    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by, by + ENTRY_H);
     assert_eq!((inv, other), (0, 0), "entry 0 restored pixel-exact");
 }
 
@@ -1152,7 +1160,7 @@ fn a102_the_last_column_of_options_starts_the_track_and_the_next_does_not() {
     let (ax, _, aw, _) = active_rect();
     let edge = ax + aw; // 232: first column right of THEACTIVE
 
-    // The Options box `(160, 19, 216, 228)` (A108 geometry); its outside
+    // The Options box `(160, 19, 216, 192)` (A108 width, A109 height); its outside
     // border is column 159.
     let g = adjust_menu(SCREEN_W as i16);
     let (ox, ow) = (g.box_x[3], g.box_w[3]);
@@ -1381,4 +1389,88 @@ fn a108_bar_row_glyphs_sit_where_the_falcon_reference_has_them() {
     assert_eq!(group(0, 16), None, "nothing inked left of THEACTIVE (ref)");
     assert!((0..SCREEN_W as i16).all(|x| black(x, 18)), "row 18 is the separator (gemmnlib.c:722; ref row 18)");
     assert!((0..SCREEN_W as i16).all(|x| !black(x, 17)), "row 17 is bar white (ref)");
+}
+
+// ── A109 ───────────────────────────────────────────────────────────────────
+
+/// **A drop-down entry is one character cell tall, and so the box is `n`
+/// cells tall.** The RSC gives every ADMENU item `{0, row, 20, 1}` and every
+/// box `{x, 0, w, n}` (`desk/desk_rsc.c:291-349`) — char cells, which
+/// `rsrc_obfix` turns into pixels with `gl_hchar` (`fix_chpos` offsets 1 and
+/// 3, `aes/gemrslib.c:53-99`) = 16 on the 8×16 font. `adjust_menu` rewrites
+/// the *widths* only (`deskmain.c:1608-1635`). So the *File* box is
+/// `15 · 16 = 240` px tall, not the 285 that `MENU_H` (`gl_hbox` = 19, the
+/// **bar** row, `aes/gemgraf.c:412-415`) produced before A109 — and every
+/// entry sits at `row · 16`, spanning the box's width (`:1633-1635`).
+#[test]
+fn a109_dropdown_entries_are_one_character_cell_tall_as_the_rsc_has_them() {
+    let g = adjust_menu(SCREEN_W as i16);
+    let tree = desk_menu_tree(SPEC_OUTSIDE);
+    // SAFETY: `tree` is the leaked, live replica.
+    let o = |i: usize| unsafe { *tree.add(i) };
+    let mut k = 8usize;
+    for (ti, (_, entries)) in MENUS.iter().enumerate() {
+        let n = entries.len() as i16;
+        assert_eq!(
+            (o(k).x, o(k).y, o(k).w, o(k).h),
+            (g.box_x[ti], BAR_H, g.box_w[ti], n * ENTRY_H),
+            "box {ti}: {n} entries of one char cell, dropped at the bar row's bottom edge"
+        );
+        for e in 0..entries.len() {
+            assert_eq!(
+                (o(k + 1 + e).x, o(k + 1 + e).y, o(k + 1 + e).h),
+                (0, e as i16 * ENTRY_H, ENTRY_H),
+                "entry {e} of box {ti} = {{0, {e}, ·, 1}} char cells (desk_rsc.c:297-341)"
+            );
+        }
+        k += 1 + entries.len();
+    }
+    assert_eq!(file_box_rect(), (64, 19, 160, 240), "the File box (15 entries)");
+    assert_eq!((o(8).h, o(8 + 3 + 16).h), (2 * ENTRY_H, 10 * ENTRY_H), "the Desk and View boxes");
+}
+
+/// **Hovering row `n` hilites row `n` — the hit test runs on the object
+/// rectangles, not on a row pitch of its own.** With 16-px entries the
+/// pointer 8 px into row 5 of the *File* box (screen y = 19 + 5·16 + 8 =
+/// 107) must invert exactly the rows of entry 5 (99..114) and nothing else:
+/// `mn_do` finds the item with `ob_find(tree, cur_menu, …)`
+/// (`aes/gemmnlib.c:412`) and `menu_select` → `do_chg` → `ob_change` XORs
+/// **that object's** rectangle (`gemoblib.c:1295-1304`). On the pre-A109
+/// 19-px pitch the same point was inside entry 4 (`(107 - 19) / 19 = 4`), so
+/// this case is the row-for-row contract of the new geometry.
+#[test]
+fn a109_hovering_row_n_hilites_exactly_row_n() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh(SPEC_OUTSIDE);
+    let (bx, by, bw, bh) = file_box_rect();
+    const ROW: i16 = 5;
+    let on_file = (bx + 20, 8);
+    move_to(host, &mut pb, on_file.0, on_file.1, 0);
+    arm_gap(host);
+    host.push(snap(0)); // box down, no item hovered
+    host.push(pkt(0, BAR_H + ROW * ENTRY_H, 0)); // 8 px into row 5 (y = 107)
+    host.push(snap(1));
+    host.push(pkt(bw + 40, 0, 0)); // out of the box, then cancel
+    dwell(host, 3);
+    click(host);
+    let (fired, _, _, msg, _) = evnt_multi_timed_elapsed(host, &mut pb, 200);
+    assert_eq!(fired, MU_TIMER, "the cancel is consumed; fired = {fired:#06x}, msg = {msg:?}");
+    let s0 = host.snapshot(0).expect("the opened-box snapshot");
+    let s1 = host.snapshot(1).expect("the hovered snapshot");
+    let (_, my) = tos_api::vdi::mouse_position();
+    drain(host, &mut pb);
+
+    let top = by + ROW * ENTRY_H;
+    let (same, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, top, top + ENTRY_H);
+    assert_eq!(
+        (same, other),
+        (0, 0),
+        "row {ROW} ({top}..{}) is one XOR of its whole rectangle: {inv} inverted, {same} same, {other} other",
+        top + ENTRY_H
+    );
+    let (_, inv_above, other_above) = compare_rows(&s0, &s1, bx, bx + bw, by, top);
+    assert_eq!((inv_above, other_above), (0, 0), "no row above row {ROW} changes");
+    let (_, inv_below, other_below) = compare_rows(&s0, &s1, bx, bx + bw, top + ENTRY_H, by + bh);
+    assert_eq!((inv_below, other_below), (0, 0), "no row below row {ROW} changes");
+    assert_eq!(my, 107, "the pointer rested 8 px into row {ROW}");
 }

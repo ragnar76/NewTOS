@@ -421,6 +421,18 @@ full per protocol):
   `sprintf`s into `pwin->w_info` (72-byte buffer, sized per the header
   comment for the longest known translated resource string) and
   `wind_set(..., WF_INFO, ...)`.
+  **The two strings, verbatim** (`desk/desk_rsc.c:2468-2469`,
+  `desk_rs_fstr[0..1]`): `STINFOST` = `" %ld bytes used in %d items."`,
+  `STINFST2` = `" %ld bytes used in %d selected items."` — leading blank,
+  **size first**, count second, trailing full stop, and the argument order
+  of the `sprintf(pwin->w_info, alert, select_size, select_count)` at
+  `:905`. **NewTOS (A109, 2026-09-22):** `kernel/src/desk/main.rs`
+  `fmt_info` writes the `STINFOST` form; it had its own wording and the
+  numbers the other way round (`" N items   M bytes used"`). The
+  `STINFST2` branch has **no caller** here — `set_window_strings` runs only
+  when a window's directory is (re)read, always with the whole directory's
+  count/size, and nothing re-runs it on a selection change as EmuTOS does
+  (`deskmain.c:982-983`). A missing caller, named in `TASK/A109.md`.
 
 ---
 

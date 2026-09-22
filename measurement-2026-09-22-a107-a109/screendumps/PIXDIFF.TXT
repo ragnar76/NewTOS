@@ -1,0 +1,15 @@
+A-idle             /Volumes/Daten/Development/PiRusTOS/measurement-2026-09-22-a107-a109/method/pixdiff.py:10: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  n = sum(1 for p in d.getdata() if p != (0, 0, 0))
+970 differing pixels, bbox (58, 70, 294, 84)
+F-file-open        /Volumes/Daten/Development/PiRusTOS/measurement-2026-09-22-a107-a109/method/pixdiff.py:10: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  n = sum(1 for p in d.getdata() if p != (0, 0, 0))
+6986 differing pixels, bbox (58, 21, 294, 305)
+H-menu-closed      /Volumes/Daten/Development/PiRusTOS/measurement-2026-09-22-a107-a109/method/pixdiff.py:10: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  n = sum(1 for p in d.getdata() if p != (0, 0, 0))
+970 differing pixels, bbox (58, 70, 294, 84)
+G-arrow-held       /Volumes/Daten/Development/PiRusTOS/measurement-2026-09-22-a107-a109/method/pixdiff.py:10: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  n = sum(1 for p in d.getdata() if p != (0, 0, 0))
+1092 differing pixels, bbox (58, 70, 591, 107)
+I-arrow-released   /Volumes/Daten/Development/PiRusTOS/measurement-2026-09-22-a107-a109/method/pixdiff.py:10: DeprecationWarning: Image.Image.getdata is deprecated and will be removed in Pillow 14 (2027-10-15). Use get_flattened_data instead.
+  n = sum(1 for p in d.getdata() if p != (0, 0, 0))
+970 differing pixels, bbox (58, 70, 294, 84)

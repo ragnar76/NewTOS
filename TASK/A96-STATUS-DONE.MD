@@ -122,7 +122,9 @@ QMP-Screendump 0,3 s nach jeder Serial-Marke; keine `*.img` abgelegt. VORHER
   naechsten AES-Dispatch des Eltern `wm_new`-artig fuer diesen Slot
   ausfuehren. `wm_new_keep_desktop` ist auf „alles ausser Desktop“
   geschnitten; fuer den Kindpfad braeuchte es die Variante „alles dieses
-  Slots“.
+  Slots“. **Erledigt 2026-09-22 als [A107](A107.md)** — genau dieser
+  Vorschlag: `window::wm_new_for_slot`, markiert in `aes::release_client`,
+  ausgefuehrt am Anfang von `aes::dispatch` (`TASK/A107-STATUS-DONE.MD`).
 * **Nebenbefund, unberuehrt:** waehrend das gestartete Programm laeuft,
   stehen die Desktop-Fenster weiter in der Tabelle und werden hinter ihm
   komposiert (`tera-*-E-tera-window.png`: die drei Verzeichnisfenster

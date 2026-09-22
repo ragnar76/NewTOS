@@ -58,6 +58,21 @@ const MIN_DESKMENU_WIDTH: i16 = 20;
 /// `desk_rsc.c:255-283`).
 const BAR_BOX_H: i16 = CELL_H + 2;
 
+/// Height of one drop-down entry — the RSC's `{0, row, 20, 1}`
+/// (`desk_rsc.c:297-341`, and every other ADMENU box's items): `ob_y = row`,
+/// `ob_height = 1`, both **character cells**, which `rsrc_obfix` multiplies
+/// by `gl_hchar` (`fix_chpos` offsets 1 and 3, `aes/gemrslib.c:53-99`) =
+/// `CELL_H` = 16 px on the 8×16 font. The drop-down box itself is as many
+/// cells tall as it has entries (`{8, 0, 19, 16}` for the 16-entry *File*
+/// box, `desk_rsc.c:345-349`), i.e. `n · ENTRY_H`.
+///
+/// This is **not** `gl_hbox` (`MENU_H` = `gl_hchar + 3` = 19): the bar row is
+/// 19 px because `gl_hbox` is the gadget box height (`aes/gemgraf.c:412-415`),
+/// the drop-down rows are plain text cells. `adjust_menu` recomputes the
+/// *widths* (`deskmain.c:1608-1635`) and never touches a height, so the
+/// entries keep the RSC's.
+const ENTRY_H: i16 = CELL_H;
+
 /// A top-level menu (the four ADMENU titles).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Title {
@@ -500,7 +515,10 @@ fn build_menu() -> *mut Object {
             let bx_x = geom.box_x[ti];
             let iw = geom.box_w[ti];
             let n_items = def.entries.len();
-            let bh = n_items as i16 * MENU_H;
+            // The box is `n` character cells tall — the RSC's `{…, 0, 19, 16}`
+            // for the 16-entry File box (`desk_rsc.c:345-349`), one
+            // [`ENTRY_H`] per entry.
+            let bh = n_items as i16 * ENTRY_H;
             let bi = k;
             last_box = bi;
             k += 1;
@@ -512,14 +530,17 @@ fn build_menu() -> *mut Object {
                 if last_overall {
                     flags |= LASTOB;
                 }
+                // `{0, row, 20, 1}` (`desk_rsc.c:297-341`) after `rsrc_obfix`:
+                // the entry spans the box's width at `row · gl_hchar`, one
+                // character cell tall ([`ENTRY_H`]).
                 o[k] = mk(
                     G_STRING,
                     flags,
                     entry_label(entry).as_ptr() as u64,
                     0,
-                    ii as i16 * MENU_H,
+                    ii as i16 * ENTRY_H,
                     iw,
-                    MENU_H,
+                    ENTRY_H,
                     if last_item { bi as i16 } else { (k + 1) as i16 },
                     -1,
                     -1,

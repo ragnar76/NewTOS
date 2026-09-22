@@ -1,0 +1,14 @@
+# A109 TeraDesk via #Z (sd-tera) — the unchanged-third-party control: the AES
+# arrow feedback and the desktop's own menu geometry must not move TeraDesk's
+# picture. A: idle. File title (88,8) -> B: box down. Out, click = cancel,
+# park -> D.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 88 8
+1900 mark B_FILE_OPEN
+3000 move 400 300
+3300 down
+3303 up
+3800 parkbr
+4300 mark D_CLOSED

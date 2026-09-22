@@ -251,6 +251,33 @@ console queue so it re-reads the wait rectangle (`gemmnlib.c:730`).
 > `mn_bar` ignores `tree` when `show=0` (`gemmnlib.c:723-726`) — the tree used
 > for erase is the one recorded in `gl_mntree` from the matching `show=1`.
 
+### A dead client's menu bar (NewTOS rule, A107, 2026-09-22)
+
+`mn_bar(tree, TRUE)` records **both** the tree and its owner: `p = fpdnm(NULL,
+rlr->p_pid); … gl_mnppd = p; gl_mntree = tree;` (`gemmnlib.c:707,712-713`).
+EmuTOS never clears either on a program's exit — `gl_mntree` is written in
+exactly two places, `mn_bar` (`:713,726`) and `fm_own`'s dialog park/restore
+(`gemfmlib.c:89-90,103`); `mn_cleanup` (`:740-760`, called from `ap_exit`
+`gemaplib.c:254` and from `sh_ldapp`'s `AP_OPEN` cleanup `gemshlib.c:652`)
+only sends `AC_CLOSE` to the accessories and frees the submenu array, and
+neither `wm_new` (`gemwmlib.c:1875-1893`) nor `wm_init` (`:1247-1310`) touches
+it. A program that ends with its bar installed leaves the pointer standing
+until the next program's `menu_bar(tree, 1)` overwrites it (the desktop's own,
+`desk/deskmain.c:1904`).
+
+On EmuTOS that dangling pointer is inert — no MMU, the dead TPA is still
+readable memory. On NewTOS it is a fault: the tree is an EL0 VA of an address
+space that is gone, and the Control Manager dereferences it at EL1 under the
+*next* caller's `TTBR0` (`menu::track` → `ObjTree::new`) — the same class of
+defect A97 closed for `WF_NEWDESK`. **NewTOS therefore drops the bar with the
+client that installed it:** the per-slot sweep
+([`window-graphics.md`](window-graphics.md) § `wind_new (109)`, A107) clears
+`gl_mntree` (and any tree `fm_own` parked) when `gl_mnppd` is the dead slot,
+and only then — another client's bar is untouched. State only: nothing is
+drawn, exactly as `mn_bar(…, FALSE)`'s state half (`gemmnlib.c:726-727`); the
+bar row belongs to whoever paints next (TeraDesk's `regen_desktop`,
+`sdk/apps/teradesk/icon.c:2509-2518`).
+
 ---
 
 ## `menu_icheck` (31)

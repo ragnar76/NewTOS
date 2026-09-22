@@ -50,6 +50,21 @@ const MAX_DEPTH: i16 = 16;
 /// `unsafe`; only the single boot CPU touches it.
 static MNTREE: AtomicUsize = AtomicUsize::new(0);
 
+/// The client that installed [`MNTREE`] — EmuTOS `gl_mnppd`
+/// (`aes/gemmnlib.h:17`), set beside `gl_mntree` in `mn_bar`: `p =
+/// fpdnm(NULL, rlr->p_pid); … gl_mnppd = p; gl_mntree = tree;`
+/// (`aes/gemmnlib.c:707,712-713`). The AES identity of the caller
+/// (`appl::current_identity`: a GEMDOS slot, or `pd::DESKTOP` for the
+/// in-kernel desktop), `usize::MAX` when no bar is installed.
+///
+/// EmuTOS uses it as the message target for a menu selection
+/// (`ct_msgup(MN_SELECTED, gl_mnppd, …)`, `aes/gemctrl.c:353-367`); NewTOS
+/// delivers to the current identity at single-app
+/// ([`event::menu_intercept`](super::event)) and keeps this for the one thing
+/// that identity cannot answer: **whose** tree the pointer in `gl_mntree` is
+/// ([`release_bar_of`]).
+static MNPPD: AtomicUsize = AtomicUsize::new(usize::MAX);
+
 /// The currently installed menu tree, or null if none.
 pub fn active() -> *mut Object {
     MNTREE.load(Ordering::Relaxed) as *mut Object
@@ -118,6 +133,8 @@ fn ctwait_bar_rect() -> Option<(i16, i16, i16, i16)> {
 /// `ob_actxywh`'s `FL3DOBJ` growth (`gemoblib.c:322-335`) does not apply and
 /// [`object::abs_rect`] is the whole of it. No drawing here: [`menu_bar`] draws.
 fn install_bar(tree: *mut Object) {
+    // `gl_mnppd = p` (`gemmnlib.c:712`), `p` = the calling client.
+    MNPPD.store(super::appl::current_identity(), Ordering::Relaxed);
     MNTREE.store(tree as usize, Ordering::Relaxed);
     CTWAIT_RECT.store(pack_rect(object::abs_rect(tree as *const Object, THEACTIVE)), Ordering::Relaxed);
     CTWAIT_BAR.store(true, Ordering::Relaxed);
@@ -129,6 +146,51 @@ fn install_bar(tree: *mut Object) {
 fn remove_bar() {
     MNTREE.store(0, Ordering::Relaxed);
     CTWAIT_BAR.store(false, Ordering::Relaxed);
+    // EmuTOS leaves `gl_mnppd` standing on the hide path (`gemmnlib.c:726-727`
+    // writes `gl_mntree` and `gl_ctwait` only) — it is only ever read while a
+    // tree is installed (`gemctrl.c:353`). Dropped here as well so
+    // [`release_bar_of`] cannot match a slot against a bar that is gone.
+    MNPPD.store(usize::MAX, Ordering::Relaxed);
+}
+
+/// Drop the installed menu bar if the client that installed it is `slot` —
+/// the Menu-Manager half of the per-slot sweep [`window::wm_new_for_slot`]
+/// runs when an EL0 `Pexec` child has ended (A107).
+///
+/// **EmuTOS does not do this, and the reason it need not is structural.**
+/// `gl_mntree` is written in exactly two places: `mn_bar`
+/// (`aes/gemmnlib.c:713,726`) and `fm_own`'s dialog park/restore
+/// (`aes/gemfmlib.c:89-90,103`). Neither `wm_new` (`gemwmlib.c:1875-1893`),
+/// nor `wm_init` (`:1247-1310`), nor `sh_ldapp`'s `AP_OPEN` cleanup →
+/// `mn_cleanup` (`gemshlib.c:650-657`, `gemmnlib.c:740-760`: AC_CLOSE to the
+/// accessories and the submenu array, nothing else), nor `ap_exit`
+/// (`gemaplib.c:251-261`, which calls the same `mn_cleanup`) clears it. A
+/// program that ends with its bar installed leaves the pointer standing, and
+/// the next program's `menu_bar(tree, 1)` overwrites it — the desktop does
+/// exactly that when the shell loop restarts it (`desk/deskmain.c:1904`).
+///
+/// On EmuTOS that dangling pointer is inert: there is no MMU, the dead TPA is
+/// still readable memory, and the Control Manager would at worst track
+/// garbage. Here it is a **fault**: the tree is an EL0 VA of an address space
+/// that is gone, and the Control Manager reads it at EL1 under whichever
+/// `TTBR0` the next caller has ([`track`] → `ObjTree::new`) — the A97 class of
+/// defect. So the NewTOS rule is: a bar dies with the client that installed
+/// it. Named deviation, `docs/api/aes/menu.md` § "A dead client's menu bar".
+///
+/// Nothing is drawn: this is the state half of `mn_bar(…, FALSE)`
+/// (`gemmnlib.c:726-727`), not the erase — the pixels in the bar row belong
+/// to whatever paints next (the parent's own `menu_bar(tree, 1)`, TeraDesk
+/// `regen_desktop`, `sdk/apps/teradesk/icon.c:2509-2518`).
+pub(super) fn release_bar_of(slot: usize) {
+    // `MNPPD` is `usize::MAX` once the bar has been taken down, so a match
+    // here means this slot's tree is either installed or parked.
+    if MNPPD.load(Ordering::Relaxed) != slot {
+        return;
+    }
+    // A tree parked by `fm_own` (`gemfmlib.c:89-90`) would be handed back by
+    // the matching `END_MCTRL` (`:103`); the dead client's must not be.
+    MNHOLD.store(0, Ordering::Relaxed);
+    remove_bar();
 }
 
 /// Parked menu tree during a modal dialog (`ml_mnhold`, EmuTOS gemfmlib.c:56).

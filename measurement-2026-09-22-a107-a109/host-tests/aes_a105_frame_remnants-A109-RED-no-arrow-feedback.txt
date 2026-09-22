@@ -1,0 +1,35 @@
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `tos-api` (lib) generated 64 warnings
+   Compiling tos-api v0.1.0 (/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/red/tos-api)
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.47s
+     Running tests/aes_a105_frame_remnants.rs (target/debug/deps/aes_a105_frame_remnants-6e366df8cb54fa9a)
+
+running 7 tests
+test a105_1_info_text_starts_one_column_inside_the_border_on_the_third_row ... ok
+test a105_2_odd_width_name_is_centred_with_gr_justs_rounding ... ok
+test a105_2_overlong_name_is_left_aligned_and_cut_to_whole_glyphs ... ok
+test a109_a_held_scroll_arrow_is_drawn_selected_and_restored_on_release ... FAILED
+test a109_a_page_click_in_the_track_draws_no_feedback ... ok
+test a105_4_pressed_closer_keeps_its_colours_without_actcolchange ... ok
+test a105_4_pressed_closer_takes_the_complement_colours_with_actcolchange ... ok
+
+failures:
+
+---- a109_a_held_scroll_arrow_is_drawn_selected_and_restored_on_release stdout ----
+
+thread 'a109_a_held_scroll_arrow_is_drawn_selected_and_restored_on_release' (7205283) panicked at tos-api/tests/aes_a105_frame_remnants.rs:1216:5:
+assertion `left == right` failed: held: the bevel sinks, left line BLACK
+  left: 16776191
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a109_a_held_scroll_arrow_is_drawn_selected_and_restored_on_release
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `-p tos-api --test aes_a105_frame_remnants`

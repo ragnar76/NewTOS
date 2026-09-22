@@ -1115,3 +1115,170 @@ fn a105_4_pressed_closer_takes_the_complement_colours_with_actcolchange() {
     let slot = grown(R { x: B.x + ADJ3DSTD, y: B.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX });
     assert_eq!(ink_bbox(host, slot.inset(2)), text_bbox(38, 43, &[G_CLOSE]), "the glyph back at (38,43) in black");
 }
+
+// ── A109 (2): the pressed scroll arrow ────────────────────────────────────
+
+/// `WM_ARROWED` (24) and the two `WA_*` sub-actions these cases see
+/// (`aesdefs.h:245-253`, `gemctrl.c:63-74`).
+const WM_ARROWED: i16 = 24;
+const WA_DNPAGE: i16 = 1;
+const WA_UPLINE: i16 = 2;
+
+/// `G_UP` — the up-arrow glyph of the system font (`obdefs.h` `G_UP`,
+/// `aes/gemwmlib.c:61-81` `gl_watype`).
+const G_UP: u8 = 0x01;
+
+/// The vertical scroll bar's box for the `KIND_ALL` window at `B` —
+/// `w_bldactive`'s `W_VBAR` (`gemwmlib.c:585-610`): `adj_wbox` wide against
+/// the window's right edge, from the first work row (title band + info line)
+/// down to the top of the horizontal band.
+fn vbar_box(b: R) -> R {
+    let top = b.y + 1 + (ADJ_HBOX - 1) + GL_HBOX; // TGADGETS + INFO
+    let data_h = b.y + b.h - top;
+    let work_h = data_h - 2 - (ADJ_HBOX - 1); // HGADGETS / SIZER take the bottom band
+    R { x: b.x + b.w - ADJ_WBOX, y: top, w: ADJ_WBOX, h: work_h + 2 }
+}
+
+/// The up-arrow cell — `w_adjust(W_VBAR, W_UPARROW, ADJ3DSTD, ADJ3DSTD,
+/// gl_wbox, gl_hbox)` (`gemwmlib.c:412-414`).
+fn up_arrow_cell(b: R) -> R {
+    let bar = vbar_box(b);
+    R { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX }
+}
+
+/// Bounding box of the BLACK pixels of `r` **in a snapshot**.
+fn snap_ink_bbox(host: &ScriptHost, snap: &[u32], r: R) -> Option<(i16, i16, i16, i16)> {
+    let black = dev(host, BLACK);
+    let mut v = Vec::new();
+    for y in r.y..r.y + r.h {
+        for x in r.x..r.x + r.w {
+            if at(snap, x, y) == black {
+                v.push((x, y));
+            }
+        }
+    }
+    bbox(v.into_iter())
+}
+
+/// Press `(x, y)` on the frame of the `KIND_ALL` window at `B` and return
+/// `(before, held, fired, msg)`: the screen just before the press, the screen
+/// while the button is still down, and what the wait delivered.
+fn press_frame(host: &'static ScriptHost, pb: &mut Aespb, x: i16, y: i16) -> (Vec<u32>, Vec<u32>, i16, [i16; 8]) {
+    move_to(host, pb, x, y, 0);
+    drain_messages(pb);
+    arm_gap(host);
+    host.push(snap(0)); // before the press
+    host.push(pkt(0, 0, 1)); // press
+    host.push(snap_held(1)); // while it is held
+    host.push(pkt(0, 0, 1));
+    host.push(pkt(0, 0, 0)); // release
+    for _ in 0..8 {
+        host.push(pkt(0, 0, 0));
+    }
+    let (fired, _bret, msg) = evnt_multi_timed(pb, 300);
+    let before = host.snapshot(0).expect("the pre-press snapshot");
+    let held = host.snapshot(1).expect("the held snapshot");
+    (before, held, fired, msg)
+}
+
+/// **A held scroll arrow is drawn `SELECTED`, and normal again on release.**
+/// `hctl_window` brackets `handle_arrow_msg` with `ob_change(gl_awind,
+/// gadget, selected, TRUE)` / `(…, normal, TRUE)` (`aes/gemctrl.c:272-284`),
+/// `selected = normal | SELECTED` (`:189-194`). With the default
+/// `actcolchange = 0` that press shows as `add_3d_effect`'s **sunk** bevel —
+/// top/left BLACK instead of WHITE, bottom/right LWHITE instead of LBLACK
+/// (`gemoblib.c:238-276`) — and the glyph moved by `acttxtmove`'s `c.g_x++`
+/// (`:742-755`), which with the unselected `c.g_y--` puts it one pixel right
+/// **and** one down. NewTOS drew no feedback at all (the residual finding of A105).
+/// The `WM_ARROWED` cadence is unchanged: one message, `WA_UPLINE`.
+#[test]
+fn a109_a_held_scroll_arrow_is_drawn_selected_and_restored_on_release() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh();
+    open_window(&mut pb, KIND_ALL, (B.x, B.y, B.w, B.h));
+    drain_messages(&mut pb);
+
+    let cell = up_arrow_cell(B);
+    assert_eq!((cell.x, cell.y, cell.w, cell.h), (329, 84, 19, 19), "the up-arrow cell (gemwmlib.c:412-414)");
+    let slot = grown(cell); // (327, 82, 23, 23)
+    let bevel = slot.inset(1);
+    let probe_y = bevel.y + 8;
+
+    let (before, held, fired, msg) = press_frame(host, &mut pb, cell.x + 9, cell.y + 9);
+
+    // The bevel: raised before the press, sunk while it is held.
+    assert_eq!(at(&before, bevel.x, probe_y), dev(host, WHITE), "raised bevel: left line WHITE");
+    assert_eq!(
+        at(&before, bevel.x + bevel.w - 1, probe_y),
+        dev(host, LBLACK),
+        "raised bevel: right line LBLACK"
+    );
+    assert_eq!(at(&held, bevel.x, probe_y), dev(host, BLACK), "held: the bevel sinks, left line BLACK");
+    assert_eq!(
+        at(&held, bevel.x + bevel.w - 1, probe_y),
+        dev(host, LWHITE),
+        "held: the bevel sinks, right line LWHITE"
+    );
+
+    // The glyph moves one pixel right and one down while it is held.
+    let inner = slot.inset(2);
+    let normal_cell = (335, 85);
+    assert_eq!(
+        snap_ink_bbox(host, &before, inner),
+        text_bbox(normal_cell.0, normal_cell.1, &[G_UP]),
+        "the unpressed arrow glyph"
+    );
+    assert_eq!(
+        snap_ink_bbox(host, &held, inner),
+        text_bbox(normal_cell.0 + 1, normal_cell.1 + 1, &[G_UP]),
+        "the held arrow glyph, moved by acttxtmove (gemoblib.c:748-753)"
+    );
+
+    // Released: every pixel of the gadget slot is back where it was.
+    for y in slot.y..slot.y + slot.h {
+        for x in slot.x..slot.x + slot.w {
+            assert_eq!(
+                host.raster.get_device_pixel(x, y),
+                at(&before, x, y),
+                "after the release the arrow is normal again, pixel ({x},{y})"
+            );
+        }
+    }
+
+    assert_eq!(fired & MU_MESAG, MU_MESAG, "the press delivers WM_ARROWED; fired = {fired:#06x}");
+    assert_eq!((msg[0], msg[4]), (WM_ARROWED, WA_UPLINE), "one WM_ARROWED/WA_UPLINE, msg = {msg:?}");
+    drain(host, &mut pb);
+}
+
+/// **A page click in the track gets no feedback.** EmuTOS guards both
+/// `ob_change`s with `if ((gadget != W_HSLIDE) && (gadget != W_VSLIDE))`
+/// (`aes/gemctrl.c:271,281`): for a click in the track `gadget` — `ob_find`'s
+/// answer — *is* the slide box, while `cpt` was moved on to the elevator
+/// (`:262-270`), so nothing is redrawn. The message is still sent
+/// (`WA_DNPAGE` for a point below the thumb).
+#[test]
+fn a109_a_page_click_in_the_track_draws_no_feedback() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh();
+    open_window(&mut pb, KIND_ALL, (B.x, B.y, B.w, B.h));
+    drain_messages(&mut pb);
+
+    let bar = vbar_box(B);
+    // Below the thumb: with no `WF_VSLSIZ`/`WF_VSLIDE` set the elevator is one
+    // gadget cell at the top of the track (`gemwmlib.c:431-434`).
+    let (px, py) = (bar.x + ADJ3DSTD + GL_WBOX / 2, bar.y + bar.h - ADJ_HBOX - 20);
+    let (before, held, fired, msg) = press_frame(host, &mut pb, px, py);
+
+    for y in bar.y..bar.y + bar.h {
+        for x in bar.x..bar.x + bar.w {
+            assert_eq!(
+                at(&held, x, y),
+                at(&before, x, y),
+                "a page click must redraw nothing in the bar, pixel ({x},{y})"
+            );
+        }
+    }
+    assert_eq!(fired & MU_MESAG, MU_MESAG, "the page click delivers WM_ARROWED; fired = {fired:#06x}");
+    assert_eq!((msg[0], msg[4]), (WM_ARROWED, WA_DNPAGE), "one WM_ARROWED/WA_DNPAGE, msg = {msg:?}");
+    drain(host, &mut pb);
+}

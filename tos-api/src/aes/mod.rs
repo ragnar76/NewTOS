@@ -32,7 +32,71 @@ mod pd;
 
 pub use graf::hbox_of;
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
 use crate::bdos::process::Abi;
+
+/// GEMDOS slots whose tenant has ended and whose Window-Manager property has
+/// **not** been swept yet — one bit per slot (`MAX_PROCESSES` = 16, so a
+/// `u32` covers it with room to spare). Set by [`release_client`] on the
+/// `Pterm` path, drained by [`sweep_dead_clients`] at the next AES dispatch
+/// (A107).
+static PENDING_SWEEP: AtomicU32 = AtomicU32::new(0);
+
+/// Mark `slot`'s Window-Manager property for the next dispatch's sweep.
+fn mark_for_sweep(slot: usize) {
+    if slot < crate::bdos::process::MAX_PROCESSES {
+        PENDING_SWEEP.fetch_or(1u32 << slot, Ordering::AcqRel);
+    }
+}
+
+/// Run [`window::wm_new_for_slot`] for every slot [`release_client`] marked
+/// — EmuTOS's `if (gl_shgem) wm_new();` after a program ends
+/// (`aes/gemshlib.c:676-677`), for the one program EmuTOS never has: an EL0
+/// `Pexec` child of a **living** GEM parent (A107).
+///
+/// **Why here and not at the `Pterm`.** The sweep draws: `wm_close` runs
+/// `draw_change` (`gemwmlib.c:1453`), which repaints the background over the
+/// vacated rectangle and posts `WM_REDRAW` to every window underneath
+/// (`:1216-1222`). The only hook on the child's death is
+/// `aes::release_client(slot)` from `bdos::process::pterm::release_slot`,
+/// which the kernel calls from the `Pterm` SVC handler
+/// (`kernel/src/arch/aarch64/exceptions.rs`) — on the **exception stack**,
+/// with the dying process's mapping still installed and the parent's AES
+/// fiber possibly parked mid-call (`aes::thread`). Neither the raster nor the
+/// parent's message queue may be touched from there.
+///
+/// This function runs at the entry of [`dispatch`], **before** the opcode:
+/// the same context as the opcode itself and as the inline Control Manager
+/// (`menu::track`, `window::intercept`, reached from `evnt_multi` on this
+/// very path), i.e. the context in which every other AES draw happens — an
+/// EL0 caller's dispatch is on the AES fiber (`thread::call`), an in-kernel
+/// caller's on the boot stack, and in both the fiber is idle at entry (a
+/// parked `G_USERDEF` stall resumes through `thread::resume`, never through
+/// `dispatch`). `RUN` is already the parent at that point (`xterm`'s `run =
+/// run->p_parent`, `bdos/proc.c:609`; our `pterm::terminate`), so the sweep's
+/// repaint and its `WM_REDRAW` fan-out reach the living client, which is
+/// exactly what `sh_ldapp`'s sweep does for the shell loop's next program.
+///
+/// The mark can only be consumed by the **first** AES call after the child
+/// died, and a program that takes the freed slot next cannot own an AES
+/// window before its own first AES call — so a recycled slot is never swept
+/// out from under its new tenant.
+fn sweep_dead_clients() {
+    let mut pending = PENDING_SWEEP.swap(0, Ordering::AcqRel);
+    while pending != 0 {
+        let slot = pending.trailing_zeros() as usize;
+        pending &= !(1u32 << slot);
+        window::wm_new_for_slot(slot);
+    }
+}
+
+/// Test hook (not wired to boot): is `slot` still waiting for its post-`Pterm`
+/// sweep? Lets a host test state that the mark is set at `release_slot` and
+/// cleared by the parent's next AES call (A107).
+pub fn test_sweep_pending(slot: usize) -> bool {
+    PENDING_SWEEP.load(Ordering::Acquire) & (1u32 << slot) != 0
+}
 
 /// The AES parameter block: six pointers (four to WORD arrays, two to
 /// LONG arrays). The block pointers — and the `addrin`/`addrout` LONG
@@ -436,6 +500,12 @@ pub unsafe fn dispatch(
     aespb_ptr: u64,
     abi: Abi,
 ) -> Option<crate::bdos::process::sched::Switch> {
+    // An EL0 `Pexec` child that ended while this caller was alive left its
+    // windows / background tree / menu bar in the AES; sweep them before the
+    // opcode, so this call already sees the table `sh_ldapp`'s `wm_new()`
+    // would have left it (`aes/gemshlib.c:676-677`; A107). Drawing context:
+    // see [`sweep_dead_clients`].
+    sweep_dead_clients();
     // `xif`'s four stack arrays (`gemsuper.c:430-433`). EmuTOS leaves all of
     // them uninitialised — indeterminate C auto storage, i.e. no value to
     // reproduce; zeroed here so that neither an under-writing handler can leak
@@ -723,6 +793,11 @@ pub fn release_client(slot: usize) {
     // SAFETY: single-CPU process-release context under the BDOS giant lock;
     // no GEM trap is in flight for the slot being released.
     unsafe { pd::release(slot) };
+    // The Window-Manager half of the same release — `sh_ldapp`'s `wm_new()`
+    // (`aes/gemshlib.c:676-677`) for a client the shell loop never ran. Only
+    // *marked* here: this runs on the `Pterm` exception stack and the sweep
+    // draws (A107). [`sweep_dead_clients`] executes it at the next dispatch.
+    mark_for_sweep(slot);
 }
 
 /// The AES pid NewTOS **reports** for the program in GEMDOS process-table slot

@@ -85,7 +85,10 @@ Idle-Dumps 2084 px = Leistentitel (A108) + Infozeile (x ab 58, Zeilen 66..83).
 * Die Scroll-Pfeile haben in NewTOS kein Druck-Feedback (EmuTOS
   `ob_change(gadget, selected)` um `handle_arrow_msg`, `gemctrl.c:272-284`);
   `changecol` gilt damit praktisch fuer Closer/Fuller (`gr_watchbox`). Eigener Task.
+  **Erledigt 2026-09-22 als [A109](A109.md)** (2) — `arrow_change` klammert
+  `wait_release`, Seitenklicks bleiben ohne Feedback (EmuTOS' Wache).
 * Das Infozeilen-Format des Kernel-Desktops weicht von EmuDESK ab (desk/-Inhalt).
+  **Erledigt 2026-09-22 als [A109](A109.md)** (3) — `STINFOST`.
 
 ## Offen
 

@@ -1,0 +1,4 @@
+hdiutil: WARNING: 'hdiutil attach ...' is deprecated. Please use 'diskutil image attach ...' instead.
+mounted /dev/disk4s1 at /Volumes/NEWTOS
+  put /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/newdesk-z.inf -> NEWDESK.INF
+detached

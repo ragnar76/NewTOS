@@ -1,0 +1,934 @@
+diff --git a/docs/api/aes/menu.md b/docs/api/aes/menu.md
+index db8c4d9..e3e0cde 100644
+--- a/docs/api/aes/menu.md
++++ b/docs/api/aes/menu.md
+@@ -251,6 +251,33 @@ console queue so it re-reads the wait rectangle (`gemmnlib.c:730`).
+ > `mn_bar` ignores `tree` when `show=0` (`gemmnlib.c:723-726`) — the tree used
+ > for erase is the one recorded in `gl_mntree` from the matching `show=1`.
+ 
++### A dead client's menu bar (NewTOS rule, A107, 2026-09-22)
++
++`mn_bar(tree, TRUE)` records **both** the tree and its owner: `p = fpdnm(NULL,
++rlr->p_pid); … gl_mnppd = p; gl_mntree = tree;` (`gemmnlib.c:707,712-713`).
++EmuTOS never clears either on a program's exit — `gl_mntree` is written in
++exactly two places, `mn_bar` (`:713,726`) and `fm_own`'s dialog park/restore
++(`gemfmlib.c:89-90,103`); `mn_cleanup` (`:740-760`, called from `ap_exit`
++`gemaplib.c:254` and from `sh_ldapp`'s `AP_OPEN` cleanup `gemshlib.c:652`)
++only sends `AC_CLOSE` to the accessories and frees the submenu array, and
++neither `wm_new` (`gemwmlib.c:1875-1893`) nor `wm_init` (`:1247-1310`) touches
++it. A program that ends with its bar installed leaves the pointer standing
++until the next program's `menu_bar(tree, 1)` overwrites it (the desktop's own,
++`desk/deskmain.c:1904`).
++
++On EmuTOS that dangling pointer is inert — no MMU, the dead TPA is still
++readable memory. On NewTOS it is a fault: the tree is an EL0 VA of an address
++space that is gone, and the Control Manager dereferences it at EL1 under the
++*next* caller's `TTBR0` (`menu::track` → `ObjTree::new`) — the same class of
++defect A97 closed for `WF_NEWDESK`. **NewTOS therefore drops the bar with the
++client that installed it:** the per-slot sweep
++([`window-graphics.md`](window-graphics.md) § `wind_new (109)`, A107) clears
++`gl_mntree` (and any tree `fm_own` parked) when `gl_mnppd` is the dead slot,
++and only then — another client's bar is untouched. State only: nothing is
++drawn, exactly as `mn_bar(…, FALSE)`'s state half (`gemmnlib.c:726-727`); the
++bar row belongs to whoever paints next (TeraDesk's `regen_desktop`,
++`sdk/apps/teradesk/icon.c:2509-2518`).
++
+ ---
+ 
+ ## `menu_icheck` (31)
+diff --git a/docs/api/aes/shell-loop.md b/docs/api/aes/shell-loop.md
+index 4eb5179..2181974 100644
+--- a/docs/api/aes/shell-loop.md
++++ b/docs/api/aes/shell-loop.md
+@@ -541,7 +541,10 @@ Key points not obvious from a skim:
+   loop (gap G1), runs the same step as `wm_new_keep_desktop()` at
+   `desktop_resume` — every window but the desktop's own, which this
+   desktop keeps because it resumes in place instead of restarting through
+-  `sh_main`/`cnx_get` (gap G2). Rule and rationale:
++  `sh_main`/`cnx_get` (gap G2). **A107 (2026-09-22):** a GEM program that
++  `Pexec`s another one *without* going through this loop (TeraDesk → QED)
++  gets the same step for the child's slot alone, at the parent's next AES
++  dispatch — `wm_new_for_slot()`. Rule and rationale:
+   [`window-graphics.md`](window-graphics.md) § `wind_new (109)`.
+ - `AUTORUN_APP` skips `sh_find` (line `:629`'s ternary) — the autorun
+   entry's path was already validated at INF-parse time (implicitly, by
+diff --git a/docs/api/aes/window-graphics.md b/docs/api/aes/window-graphics.md
+index 503c134..5e7e6a6 100644
+--- a/docs/api/aes/window-graphics.md
++++ b/docs/api/aes/window-graphics.md
+@@ -1148,10 +1148,34 @@ window (handle 0) is not deleted.
+ > (`tos-api/tests/aes_a96_zombie_windows.rs`): after the resume the dead
+ > program's handle is free, `wind_find` inside its rectangle answers the
+ > desktop, the whole-screen composite paints its rectangle as bare desktop,
+-> and the desktop's own windows are untouched. **Open:** an EL0 `Pexec`
+-> child that ends while its EL0 parent lives gets no sweep yet (the
+-> parent's `Pterm` handler is not a drawing context; `TASK/A96.md`
+-> § Abschluss).
++> and the desktop's own windows are untouched.
++>
++> **A `Pexec` child of a living GEM parent is swept at the parent's next AES
++> call (NewTOS rule, A107, 2026-09-22).** EmuTOS has no such child: a GEM
++> program that starts another one does it through the shell — `shel_write`
++> ends the parent, `sh_ldapp` runs the child and sweeps, `sh_main` starts the
++> parent again (`gemshlib.c:600-612,708-731`). NewTOS runs an EL0 `Pexec`
++> child **nested** inside its living parent (TeraDesk → QED,
++> `sdk/apps/teradesk/startprg.c:259,309`), so neither the shell loop nor
++> `desktop_resume` sees it. The child's death is marked on its GEMDOS slot
++> (`aes::release_client`, called from `bdos::process::pterm::release_slot`)
++> and the sweep runs at the **next AES dispatch** (`aes::dispatch` →
++> `sweep_dead_clients` → `window::wm_new_for_slot`), before that call's
++> opcode: `release_slot` runs on the `Pterm` exception stack with the dying
++> process's mapping installed and the AES fiber possibly parked, and the
++> sweep draws (`wm_close` → `draw_change`, `gemwmlib.c:1453,1216-1222`),
++> so it must not run there; the dispatch entry is the context every other
++> AES draw uses. For that slot — and only that slot — its windows are closed
++> and deleted, its `WF_NEWDESK` tree is dropped if it registered the current
++> one, and its menu bar is dropped if it installed the current one
++> ([`menu.md`](menu.md) § "A dead client's menu bar"). The two
++> `wind_update` counters are **not** reset: the living parent may hold its
++> own, and EmuTOS releases the screen lock only when the dying process owns
++> it (`if (wind_spb.sy_owner == rlr) unsync(&wind_spb)`,
++> `gemshlib.c:668-669`), which NewTOS's owner-less counters cannot decide
++> (`TASK/A107.md`). Host-tested in `tos-api/tests/aes_a96_zombie_windows.rs`
++> (three `a107_*` cases: the window, the background tree and the menu bar of
++> the child go, the parent's stay).
+ 
+ ---
+ 
+@@ -1358,6 +1382,22 @@ sets `msg[1] = rlr->p_pid` (sender), `msg[2] = 0` (extra bytes):
+ `WM_ARROWED` repeats continuously while the button stays down
+ (`handle_arrow_msg`, `gemctrl.c:111-139`).
+ 
++**The held arrow is drawn `SELECTED` (A109, 2026-09-22).** `hctl_window`
++brackets the call with `ob_change(gl_awind, gadget, selected, TRUE)` …
++`handle_arrow_msg(w_handle, cpt)` … `ob_change(gl_awind, gadget, normal,
++TRUE)` (`gemctrl.c:271-284`), where `normal = gl_awind[gadget].ob_state &
++~SELECTED` and `selected = normal | SELECTED` (`:189-194`) — the only bit that
++moves is `SELECTED`. Both `ob_change`s are guarded by `if ((gadget !=
++W_HSLIDE) && (gadget != W_VSLIDE))`: a **page** click in the track gets no
++feedback, because there `gadget` (what `ob_find` answered, `:188`) is the
++slide box while `cpt` was moved on to the elevator (`:262-270`). With the
++default `actcolchange = 0` a pressed frame gadget shows as `add_3d_effect`'s
++sunk bevel plus the `acttxtmove` glyph nudge (see § "Text placement …, the
++pressed `ACT` gadget", A105); the arrow keeps that state for as long as the
++button is held — unlike a closer/fuller, which `gr_watchbox` un-selects when
++the pointer leaves it (`gemgrlib.c:337-355`). NewTOS drew no arrow feedback at
++all before A109; the `WM_ARROWED` cadence is unchanged by it.
++
+ > **`WM_NEWTOP` (29) and `WM_ONTOP` (31) are defined but NOT generated by this
+ > build.** `aesdefs.h:238,240` declares them (they are TOS4/MultiTOS window
+ > messages), but no code in `aes/` or `desk/` posts them (confirmed by grep of
+diff --git a/docs/api/desktop/deskmain.md b/docs/api/desktop/deskmain.md
+index 024460b..9b0d47c 100644
+--- a/docs/api/desktop/deskmain.md
++++ b/docs/api/desktop/deskmain.md
+@@ -469,10 +469,17 @@ version-string + about-box insertion, `adjust_menu(desk_rs_trees[ADMENU])`
+   + 2 px = `gl_hchar + 2` = 18 after `rsrc_obfix` (`aes/gemrslib.c:76-82`),
+   one row above the separator `mn_bar` draws on `gl_hbox - 1` = 18
+   (`aes/gemmnlib.c:718-722`); `THEACTIVE`, the titles and `THEMENUS`'s `y`
+-  are `769` = `gl_hchar + 3` = `gl_hbox` = 19 (`desk_rsc.c:255-289`). The
+-  drop-down entries are one cell (`gl_hchar` = 16 px) tall in the RSC
+-  (`{0, row, 20, 1}`, `desk_rsc.c:297-341`) — NewTOS's `build_menu` still
+-  lays them 19 px tall (open, see A108's receipt).
++  are `769` = `gl_hchar + 3` = `gl_hbox` = 19 (`desk_rsc.c:255-289`).
++  **Entry height (A109, 2026-09-22):** a drop-down entry is `{0, row, 20, 1}`
++  (`desk_rsc.c:297-341`) and its box `{x, 0, w, n}` (`:291-295,345-349`) —
++  character cells, which `rsrc_obfix` multiplies by `gl_hchar`
++  (`fix_chpos` offsets 1 and 3, `aes/gemrslib.c:53-99`) = **16 px** on the
++  8×16 font, not the 19 px of the bar row (`gl_hbox` = `gl_hchar + 3`,
++  `aes/gemgraf.c:412-415`). `adjust_menu` rewrites widths only
++  (`:1608-1635`), so every entry sits at `row · 16` and every box is
++  `n · 16` tall: on the English tree Desk 32, File 240, View 160, Options
++  192 (measured on the board, `measurement-2026-09-22-a107-a109`). NewTOS's
++  `build_menu` used `MENU_H` = 19 until A109, which made the File box 285.
+ - **`install_shortcuts()`** (`:1825-1858`, called from `app_start()` after
+   `menu_shortcuts[]` may have been customized): for each of the
+   `NUM_SHORTCUTS=33` shortcut slots, if `shortcut_mapping[i]` is `0` (item
+diff --git a/docs/api/desktop/deskwin.md b/docs/api/desktop/deskwin.md
+index f5dfd18..c0a7ac9 100644
+--- a/docs/api/desktop/deskwin.md
++++ b/docs/api/desktop/deskwin.md
+@@ -421,6 +421,18 @@ full per protocol):
+   `sprintf`s into `pwin->w_info` (72-byte buffer, sized per the header
+   comment for the longest known translated resource string) and
+   `wind_set(..., WF_INFO, ...)`.
++  **The two strings, verbatim** (`desk/desk_rsc.c:2468-2469`,
++  `desk_rs_fstr[0..1]`): `STINFOST` = `" %ld bytes used in %d items."`,
++  `STINFST2` = `" %ld bytes used in %d selected items."` — leading blank,
++  **size first**, count second, trailing full stop, and the argument order
++  of the `sprintf(pwin->w_info, alert, select_size, select_count)` at
++  `:905`. **NewTOS (A109, 2026-09-22):** `kernel/src/desk/main.rs`
++  `fmt_info` writes the `STINFOST` form; it had its own wording and the
++  numbers the other way round (`" N items   M bytes used"`). The
++  `STINFST2` branch has **no caller** here — `set_window_strings` runs only
++  when a window's directory is (re)read, always with the whole directory's
++  count/size, and nothing re-runs it on a selection change as EmuTOS does
++  (`deskmain.c:982-983`). A missing caller, named in `TASK/A109.md`.
+ 
+ ---
+ 
+diff --git a/tos-api/tests/aes_a100_a102_desk_menu_geometry.rs b/tos-api/tests/aes_a100_a102_desk_menu_geometry.rs
+index 9e9288d..2c3f9ce 100644
+--- a/tos-api/tests/aes_a100_a102_desk_menu_geometry.rs
++++ b/tos-api/tests/aes_a100_a102_desk_menu_geometry.rs
+@@ -524,6 +524,13 @@ const CHAR_W: i16 = 8;
+ /// `aes/gemrslib.c:76-82`); one row above the separator `mn_bar` draws on
+ /// `gl_hbox - 1` (`aes/gemmnlib.c:722`).
+ const BAR_BOX_H: i16 = 16 + 2;
++/// `kernel/src/desk/menu.rs` `ENTRY_H` — one drop-down entry, the RSC's
++/// `{0, row, 20, 1}` (`desk/desk_rsc.c:297-341`) after `rsrc_obfix`
++/// multiplies the char cell by `gl_hchar` (`aes/gemrslib.c:53-99`) = 16 px on
++/// the 8×16 font, **not** the 19 px bar row (`gl_hbox`). Before A109
++/// `build_menu` laid the entries `MENU_H` = 19 tall, which made the 15-entry
++/// *File* box 285 px instead of 240.
++const ENTRY_H: i16 = 16;
+ /// `deskmain.c:80` — the Desk box's minimum width in cells.
+ const MIN_DESKMENU_WIDTH: i16 = 20;
+ 
+@@ -663,10 +670,11 @@ fn active_rect() -> (i16, i16, i16, i16) {
+     (g.active_x, 0, g.active_w, BAR_H)
+ }
+ 
+-/// The *File* drop-down box's absolute rectangle: `(64, 19, 160, 285)`.
++/// The *File* drop-down box's absolute rectangle: `(64, 19, 160, 240)` —
++/// 15 entries of [`ENTRY_H`], dropped at the bar row's bottom edge.
+ fn file_box_rect() -> (i16, i16, i16, i16) {
+     let g = adjust_menu(SCREEN_W as i16);
+-    (g.box_x[1], BAR_H, g.box_w[1], MENUS[1].1.len() as i16 * BAR_H)
++    (g.box_x[1], BAR_H, g.box_w[1], MENUS[1].1.len() as i16 * ENTRY_H)
+ }
+ 
+ /// Build the desktop's ADMENU as `build_menu` does, with `box_spec` on every
+@@ -719,9 +727,9 @@ fn desk_menu_tree(box_spec: u64) -> *mut Obj {
+                 if last_overall { LASTOB } else { 0 },
+                 entry_label(entry).as_ptr() as u64,
+                 0,
+-                ii as i16 * BAR_H,
++                ii as i16 * ENTRY_H,
+                 iw,
+-                BAR_H,
++                ENTRY_H,
+                 if last_item { bi as i16 } else { (k + 1) as i16 },
+                 -1,
+                 -1,
+@@ -732,7 +740,7 @@ fn desk_menu_tree(box_spec: u64) -> *mut Obj {
+             k += 1;
+         }
+         let next_box = if ti == nt - 1 { themenus as i16 } else { k as i16 };
+-        o[bi] = mk(G_BOX, 0, box_spec, g.box_x[ti], BAR_H, iw, n_items as i16 * BAR_H, next_box, first_item as i16, (k - 1) as i16);
++        o[bi] = mk(G_BOX, 0, box_spec, g.box_x[ti], BAR_H, iw, n_items as i16 * ENTRY_H, next_box, first_item as i16, (k - 1) as i16);
+     }
+     o[themenus] = mk(G_IBOX, 0, 0, 0, 0, sw, sh, 0, first_box as i16, last_box as i16);
+     Box::leak(o.into_boxed_slice()).as_mut_ptr()
+@@ -904,7 +912,7 @@ fn arm_gap(host: &ScriptHost) {
+ /// The bar row plus the tallest drop-down, for "nothing drawn" comparisons.
+ fn bar_and_boxes_pixels(host: &ScriptHost) -> Vec<u32> {
+     let px = host.raster.px.lock().unwrap();
+-    px[..(SCREEN_W as usize) * (BAR_H as usize + 15 * BAR_H as usize)].to_vec()
++    px[..(SCREEN_W as usize) * (BAR_H as usize + 15 * ENTRY_H as usize)].to_vec()
+ }
+ 
+ /// Device black; device white is the palette's pen 0 (`seed_palette`),
+@@ -968,9 +976,9 @@ fn hover_two_entries(host: &'static ScriptHost, pb: &mut Aespb) -> [Vec<u32>; 3]
+     move_to(host, pb, on_file.0, on_file.1, 0);
+     arm_gap(host); // the head drain
+     host.push(snap(0)); // the track's first pump: box down, no item
+-    host.push(pkt(0, BAR_H + 9 - on_file.1, 0)); // onto entry 0 (y = 28)
++    host.push(pkt(0, BAR_H + 8 - on_file.1, 0)); // onto entry 0 (y = 27)
+     host.push(snap(1));
+-    host.push(pkt(0, BAR_H, 0)); // onto entry 1 (y = 47)
++    host.push(pkt(0, ENTRY_H, 0)); // onto entry 1 (y = 43)
+     host.push(snap(2));
+     // Out of the box to the right, then a press there cancels the track.
+     host.push(pkt(bw + 40, 0, 0));
+@@ -987,13 +995,13 @@ fn hover_two_entries(host: &'static ScriptHost, pb: &mut Aespb) -> [Vec<u32>; 3]
+ 
+ /// **The desktop's box: outside border, hover touches no frame pixel, and
+ /// nothing repaints one.** With `0xFF1100` the *File* box `(64,19,160,285)`
+-/// (A108 geometry; `(68,19,158,285)` when this case was written) is framed
+-/// by the ring one pixel outside it — columns 63 and 224, rows 18 and 304 —
+-/// black in every snapshot. Hovering *Open* inverts the entry's rows 19..37
++/// (A108/A109 geometry; `(68,19,158,285)` when this case was written) is framed
++/// by the ring one pixel outside it — columns 63 and 224, rows 18 and 259 —
++/// black in every snapshot. Hovering *Open* inverts the entry's rows 19..34
+ /// across the box width and changes no other pixel of the box; moving on to
+-/// *Info/Rename…* puts rows 19..37 back exactly (the XOR round trip) and
++/// *Info/Rename…* puts rows 19..34 back exactly (the XOR round trip) and
+ /// inverts rows 38..56. The old `rehilite` painted black lines along the box
+-/// rectangle's own edges — row 19, row 303, the box's first and last columns
++/// rectangle's own edges — row 19, row 258, the box's first and last columns
+ /// — *inside* the frame after every toggle: a second, inner frame, plainly
+ /// visible on the white interior.
+ #[test]
+@@ -1001,7 +1009,7 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
+     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+     let (host, mut pb) = fresh(SPEC_OUTSIDE);
+     let (bx, by, bw, bh) = file_box_rect();
+-    assert_eq!((bx, by, bw, bh), (64, 19, 160, 285), "the File box as build_menu lays it out (A108)");
++    assert_eq!((bx, by, bw, bh), (64, 19, 160, 240), "the File box as build_menu lays it out (A108 width, A109 height)");
+     let [s0, s1, s2] = hover_two_entries(host, &mut pb);
+ 
+     // The frame is the ring outside the box, black throughout.
+@@ -1014,7 +1022,7 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
+     // sits — the frame is not on them.
+     let white = white(host);
+     assert_eq!(at(&s0, bx + 4, by), white, "row 19 belongs to the interior, not the frame");
+-    assert_eq!(at(&s0, bx + 4, by + bh - 1), white, "row 303 belongs to the interior");
++    assert_eq!(at(&s0, bx + 4, by + bh - 1), white, "the box's last row belongs to the interior");
+     assert_eq!(at(&s0, bx, by + 40), white, "the box's first column belongs to the interior");
+     assert_eq!(at(&s0, bx + bw - 1, by + 40), white, "the box's last column belongs to the interior");
+ 
+@@ -1025,32 +1033,32 @@ fn a100_hovering_an_entry_leaves_the_outside_border_and_the_other_rows_untouched
+             eprintln!("{name} y={y}: {row}");
+         }
+     }
+-    let (same, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by, by + BAR_H);
++    let (same, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by, by + ENTRY_H);
+     assert_eq!((same, other), (0, 0), "entry 0 is one XOR of its whole rectangle: {inv} inverted, {same} same, {other} other");
+-    let (same, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by + BAR_H, by + bh);
++    let (same, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by + ENTRY_H, by + bh);
+     assert_eq!(
+         (inv, other),
+         (0, 0),
+         "no pixel outside entry 0 changes on the hover: {inv} inverted, {other} other, {same} same — \
+-         the old frame repaint blackened row 303 and the box's edge columns (mn_do repaints nothing, gemmnlib.c:451-475)"
++         the old frame repaint blackened the box's last row and its edge columns (mn_do repaints nothing, gemmnlib.c:451-475)"
+     );
+-    assert_eq!(at(&s1, bx + 4, by + bh - 1), white, "row 303 stays white while Open is hovered");
++    assert_eq!(at(&s1, bx + 4, by + bh - 1), white, "the box's last row stays white while Open is hovered");
+     assert_eq!(at(&s1, bx, by + 40), white, "the box's first column stays white while Open is hovered");
+ 
+     // Snapshot 2: entry 0 back exactly, entry 1 inverted, the rest as opened.
+-    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by, by + BAR_H);
++    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by, by + ENTRY_H);
+     assert_eq!((inv, other), (0, 0), "entry 0 is restored pixel-exact by the second XOR");
+-    let (same, _, other) = compare_rows(&s0, &s2, bx, bx + bw, by + BAR_H, by + 2 * BAR_H);
++    let (same, _, other) = compare_rows(&s0, &s2, bx, bx + bw, by + ENTRY_H, by + 2 * ENTRY_H);
+     assert_eq!((same, other), (0, 0), "entry 1 is inverted");
+-    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by + 2 * BAR_H, by + bh);
++    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by + 2 * ENTRY_H, by + bh);
+     assert_eq!((inv, other), (0, 0), "rows below entry 1 are untouched");
+ }
+ 
+ /// **A box with an inside border gets its frame inverted by the item XOR —
+ /// in EmuTOS too — and nothing repaints it.** The same tree with the word
+ /// `build_menu` used before A100 (`(1<<16)|0x1070`, `th = +1`): the frame is
+-/// row 19, row 303, the box's first and last columns, black when the box opens. Entry 0's
+-/// rectangle covers row 19 and, in rows 19..37, the two columns; `ob_change`
++/// row 19, the box's last row and its first and last columns, black when the box
++/// opens. Entry 0's rectangle covers row 19 and, in rows 19..34, the two columns; `ob_change`
+ /// XORs that rectangle whole (`gemoblib.c:1295-1304`: the inset is the
+ /// *item's* `ob_sst` thickness, 0 for a `G_STRING`), so those frame pixels
+ /// turn white while *Open* is hovered, and the rest of the frame stays. This
+@@ -1065,7 +1073,7 @@ fn a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emuto
+ 
+     // Snapshot 0: the frame is on the box rectangle's own edges.
+     assert_eq!(at(&s0, bx + 4, by), BLACK, "row 19 is the inside frame");
+-    assert_eq!(at(&s0, bx + 4, by + bh - 1), BLACK, "row 303 is the inside frame");
++    assert_eq!(at(&s0, bx + 4, by + bh - 1), BLACK, "the box's last row is the inside frame");
+     assert_eq!(at(&s0, bx, by + 40), BLACK, "the box's first column is the inside frame");
+     assert_eq!(at(&s0, bx + bw - 1, by + 40), BLACK, "the box's last column is the inside frame");
+     let white = white(host);
+@@ -1077,15 +1085,15 @@ fn a100_an_inside_border_box_gets_its_frame_inverted_by_the_item_xor_as_in_emuto
+     assert_eq!(at(&s1, bx, by + 9), inv(BLACK), "the box's first column inverted in entry 0's rows");
+     assert_eq!(at(&s1, bx + bw - 1, by + 9), inv(BLACK), "column 225 inverted in entry 0's rows");
+     assert_eq!(at(&s1, bx, by + 40), BLACK, "the box's first column below entry 0 still the frame");
+-    assert_eq!(at(&s1, bx + 4, by + bh - 1), BLACK, "row 303 still the frame");
+-    let (same, _, other) = compare_rows(&s0, &s1, bx, bx + bw, by, by + BAR_H);
++    assert_eq!(at(&s1, bx + 4, by + bh - 1), BLACK, "the box's last row still the frame");
++    let (same, _, other) = compare_rows(&s0, &s1, bx, bx + bw, by, by + ENTRY_H);
+     assert_eq!((same, other), (0, 0), "entry 0 is one XOR of its whole rectangle, frame pixels included");
+-    let (_, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by + BAR_H, by + bh);
++    let (_, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, by + ENTRY_H, by + bh);
+     assert_eq!((inv, other), (0, 0), "nothing below entry 0 changes");
+ 
+     // Snapshot 2: the second XOR restores entry 0 — frame pixels included.
+     assert_eq!(at(&s2, bx + 4, by), BLACK, "row 19 restored by the un-hilite XOR");
+-    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by, by + BAR_H);
++    let (_, inv, other) = compare_rows(&s0, &s2, bx, bx + bw, by, by + ENTRY_H);
+     assert_eq!((inv, other), (0, 0), "entry 0 restored pixel-exact");
+ }
+ 
+@@ -1152,7 +1160,7 @@ fn a102_the_last_column_of_options_starts_the_track_and_the_next_does_not() {
+     let (ax, _, aw, _) = active_rect();
+     let edge = ax + aw; // 232: first column right of THEACTIVE
+ 
+-    // The Options box `(160, 19, 216, 228)` (A108 geometry); its outside
++    // The Options box `(160, 19, 216, 192)` (A108 width, A109 height); its outside
+     // border is column 159.
+     let g = adjust_menu(SCREEN_W as i16);
+     let (ox, ow) = (g.box_x[3], g.box_w[3]);
+@@ -1382,3 +1390,87 @@ fn a108_bar_row_glyphs_sit_where_the_falcon_reference_has_them() {
+     assert!((0..SCREEN_W as i16).all(|x| black(x, 18)), "row 18 is the separator (gemmnlib.c:722; ref row 18)");
+     assert!((0..SCREEN_W as i16).all(|x| !black(x, 17)), "row 17 is bar white (ref)");
+ }
++
++// ── A109 ───────────────────────────────────────────────────────────────────
++
++/// **A drop-down entry is one character cell tall, and so the box is `n`
++/// cells tall.** The RSC gives every ADMENU item `{0, row, 20, 1}` and every
++/// box `{x, 0, w, n}` (`desk/desk_rsc.c:291-349`) — char cells, which
++/// `rsrc_obfix` turns into pixels with `gl_hchar` (`fix_chpos` offsets 1 and
++/// 3, `aes/gemrslib.c:53-99`) = 16 on the 8×16 font. `adjust_menu` rewrites
++/// the *widths* only (`deskmain.c:1608-1635`). So the *File* box is
++/// `15 · 16 = 240` px tall, not the 285 that `MENU_H` (`gl_hbox` = 19, the
++/// **bar** row, `aes/gemgraf.c:412-415`) produced before A109 — and every
++/// entry sits at `row · 16`, spanning the box's width (`:1633-1635`).
++#[test]
++fn a109_dropdown_entries_are_one_character_cell_tall_as_the_rsc_has_them() {
++    let g = adjust_menu(SCREEN_W as i16);
++    let tree = desk_menu_tree(SPEC_OUTSIDE);
++    // SAFETY: `tree` is the leaked, live replica.
++    let o = |i: usize| unsafe { *tree.add(i) };
++    let mut k = 8usize;
++    for (ti, (_, entries)) in MENUS.iter().enumerate() {
++        let n = entries.len() as i16;
++        assert_eq!(
++            (o(k).x, o(k).y, o(k).w, o(k).h),
++            (g.box_x[ti], BAR_H, g.box_w[ti], n * ENTRY_H),
++            "box {ti}: {n} entries of one char cell, dropped at the bar row's bottom edge"
++        );
++        for e in 0..entries.len() {
++            assert_eq!(
++                (o(k + 1 + e).x, o(k + 1 + e).y, o(k + 1 + e).h),
++                (0, e as i16 * ENTRY_H, ENTRY_H),
++                "entry {e} of box {ti} = {{0, {e}, ·, 1}} char cells (desk_rsc.c:297-341)"
++            );
++        }
++        k += 1 + entries.len();
++    }
++    assert_eq!(file_box_rect(), (64, 19, 160, 240), "the File box (15 entries)");
++    assert_eq!((o(8).h, o(8 + 3 + 16).h), (2 * ENTRY_H, 10 * ENTRY_H), "the Desk and View boxes");
++}
++
++/// **Hovering row `n` hilites row `n` — the hit test runs on the object
++/// rectangles, not on a row pitch of its own.** With 16-px entries the
++/// pointer 8 px into row 5 of the *File* box (screen y = 19 + 5·16 + 8 =
++/// 107) must invert exactly the rows of entry 5 (99..114) and nothing else:
++/// `mn_do` finds the item with `ob_find(tree, cur_menu, …)`
++/// (`aes/gemmnlib.c:412`) and `menu_select` → `do_chg` → `ob_change` XORs
++/// **that object's** rectangle (`gemoblib.c:1295-1304`). On the pre-A109
++/// 19-px pitch the same point was inside entry 4 (`(107 - 19) / 19 = 4`), so
++/// this case is the row-for-row contract of the new geometry.
++#[test]
++fn a109_hovering_row_n_hilites_exactly_row_n() {
++    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb) = fresh(SPEC_OUTSIDE);
++    let (bx, by, bw, bh) = file_box_rect();
++    const ROW: i16 = 5;
++    let on_file = (bx + 20, 8);
++    move_to(host, &mut pb, on_file.0, on_file.1, 0);
++    arm_gap(host);
++    host.push(snap(0)); // box down, no item hovered
++    host.push(pkt(0, BAR_H + ROW * ENTRY_H, 0)); // 8 px into row 5 (y = 107)
++    host.push(snap(1));
++    host.push(pkt(bw + 40, 0, 0)); // out of the box, then cancel
++    dwell(host, 3);
++    click(host);
++    let (fired, _, _, msg, _) = evnt_multi_timed_elapsed(host, &mut pb, 200);
++    assert_eq!(fired, MU_TIMER, "the cancel is consumed; fired = {fired:#06x}, msg = {msg:?}");
++    let s0 = host.snapshot(0).expect("the opened-box snapshot");
++    let s1 = host.snapshot(1).expect("the hovered snapshot");
++    let (_, my) = tos_api::vdi::mouse_position();
++    drain(host, &mut pb);
++
++    let top = by + ROW * ENTRY_H;
++    let (same, inv, other) = compare_rows(&s0, &s1, bx, bx + bw, top, top + ENTRY_H);
++    assert_eq!(
++        (same, other),
++        (0, 0),
++        "row {ROW} ({top}..{}) is one XOR of its whole rectangle: {inv} inverted, {same} same, {other} other",
++        top + ENTRY_H
++    );
++    let (_, inv_above, other_above) = compare_rows(&s0, &s1, bx, bx + bw, by, top);
++    assert_eq!((inv_above, other_above), (0, 0), "no row above row {ROW} changes");
++    let (_, inv_below, other_below) = compare_rows(&s0, &s1, bx, bx + bw, top + ENTRY_H, by + bh);
++    assert_eq!((inv_below, other_below), (0, 0), "no row below row {ROW} changes");
++    assert_eq!(my, 107, "the pointer rested 8 px into row {ROW}");
++}
+diff --git a/tos-api/tests/aes_a105_frame_remnants.rs b/tos-api/tests/aes_a105_frame_remnants.rs
+index a5ad706..8ddb837 100644
+--- a/tos-api/tests/aes_a105_frame_remnants.rs
++++ b/tos-api/tests/aes_a105_frame_remnants.rs
+@@ -1115,3 +1115,170 @@ fn a105_4_pressed_closer_takes_the_complement_colours_with_actcolchange() {
+     let slot = grown(R { x: B.x + ADJ3DSTD, y: B.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX });
+     assert_eq!(ink_bbox(host, slot.inset(2)), text_bbox(38, 43, &[G_CLOSE]), "the glyph back at (38,43) in black");
+ }
++
++// ── A109 (2): the pressed scroll arrow ────────────────────────────────────
++
++/// `WM_ARROWED` (24) and the two `WA_*` sub-actions these cases see
++/// (`aesdefs.h:245-253`, `gemctrl.c:63-74`).
++const WM_ARROWED: i16 = 24;
++const WA_DNPAGE: i16 = 1;
++const WA_UPLINE: i16 = 2;
++
++/// `G_UP` — the up-arrow glyph of the system font (`obdefs.h` `G_UP`,
++/// `aes/gemwmlib.c:61-81` `gl_watype`).
++const G_UP: u8 = 0x01;
++
++/// The vertical scroll bar's box for the `KIND_ALL` window at `B` —
++/// `w_bldactive`'s `W_VBAR` (`gemwmlib.c:585-610`): `adj_wbox` wide against
++/// the window's right edge, from the first work row (title band + info line)
++/// down to the top of the horizontal band.
++fn vbar_box(b: R) -> R {
++    let top = b.y + 1 + (ADJ_HBOX - 1) + GL_HBOX; // TGADGETS + INFO
++    let data_h = b.y + b.h - top;
++    let work_h = data_h - 2 - (ADJ_HBOX - 1); // HGADGETS / SIZER take the bottom band
++    R { x: b.x + b.w - ADJ_WBOX, y: top, w: ADJ_WBOX, h: work_h + 2 }
++}
++
++/// The up-arrow cell — `w_adjust(W_VBAR, W_UPARROW, ADJ3DSTD, ADJ3DSTD,
++/// gl_wbox, gl_hbox)` (`gemwmlib.c:412-414`).
++fn up_arrow_cell(b: R) -> R {
++    let bar = vbar_box(b);
++    R { x: bar.x + ADJ3DSTD, y: bar.y + ADJ3DSTD, w: GL_WBOX, h: GL_HBOX }
++}
++
++/// Bounding box of the BLACK pixels of `r` **in a snapshot**.
++fn snap_ink_bbox(host: &ScriptHost, snap: &[u32], r: R) -> Option<(i16, i16, i16, i16)> {
++    let black = dev(host, BLACK);
++    let mut v = Vec::new();
++    for y in r.y..r.y + r.h {
++        for x in r.x..r.x + r.w {
++            if at(snap, x, y) == black {
++                v.push((x, y));
++            }
++        }
++    }
++    bbox(v.into_iter())
++}
++
++/// Press `(x, y)` on the frame of the `KIND_ALL` window at `B` and return
++/// `(before, held, fired, msg)`: the screen just before the press, the screen
++/// while the button is still down, and what the wait delivered.
++fn press_frame(host: &'static ScriptHost, pb: &mut Aespb, x: i16, y: i16) -> (Vec<u32>, Vec<u32>, i16, [i16; 8]) {
++    move_to(host, pb, x, y, 0);
++    drain_messages(pb);
++    arm_gap(host);
++    host.push(snap(0)); // before the press
++    host.push(pkt(0, 0, 1)); // press
++    host.push(snap_held(1)); // while it is held
++    host.push(pkt(0, 0, 1));
++    host.push(pkt(0, 0, 0)); // release
++    for _ in 0..8 {
++        host.push(pkt(0, 0, 0));
++    }
++    let (fired, _bret, msg) = evnt_multi_timed(pb, 300);
++    let before = host.snapshot(0).expect("the pre-press snapshot");
++    let held = host.snapshot(1).expect("the held snapshot");
++    (before, held, fired, msg)
++}
++
++/// **A held scroll arrow is drawn `SELECTED`, and normal again on release.**
++/// `hctl_window` brackets `handle_arrow_msg` with `ob_change(gl_awind,
++/// gadget, selected, TRUE)` / `(…, normal, TRUE)` (`aes/gemctrl.c:272-284`),
++/// `selected = normal | SELECTED` (`:189-194`). With the default
++/// `actcolchange = 0` that press shows as `add_3d_effect`'s **sunk** bevel —
++/// top/left BLACK instead of WHITE, bottom/right LWHITE instead of LBLACK
++/// (`gemoblib.c:238-276`) — and the glyph moved by `acttxtmove`'s `c.g_x++`
++/// (`:742-755`), which with the unselected `c.g_y--` puts it one pixel right
++/// **and** one down. NewTOS drew no feedback at all (the residual finding of A105).
++/// The `WM_ARROWED` cadence is unchanged: one message, `WA_UPLINE`.
++#[test]
++fn a109_a_held_scroll_arrow_is_drawn_selected_and_restored_on_release() {
++    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb) = fresh();
++    open_window(&mut pb, KIND_ALL, (B.x, B.y, B.w, B.h));
++    drain_messages(&mut pb);
++
++    let cell = up_arrow_cell(B);
++    assert_eq!((cell.x, cell.y, cell.w, cell.h), (329, 84, 19, 19), "the up-arrow cell (gemwmlib.c:412-414)");
++    let slot = grown(cell); // (327, 82, 23, 23)
++    let bevel = slot.inset(1);
++    let probe_y = bevel.y + 8;
++
++    let (before, held, fired, msg) = press_frame(host, &mut pb, cell.x + 9, cell.y + 9);
++
++    // The bevel: raised before the press, sunk while it is held.
++    assert_eq!(at(&before, bevel.x, probe_y), dev(host, WHITE), "raised bevel: left line WHITE");
++    assert_eq!(
++        at(&before, bevel.x + bevel.w - 1, probe_y),
++        dev(host, LBLACK),
++        "raised bevel: right line LBLACK"
++    );
++    assert_eq!(at(&held, bevel.x, probe_y), dev(host, BLACK), "held: the bevel sinks, left line BLACK");
++    assert_eq!(
++        at(&held, bevel.x + bevel.w - 1, probe_y),
++        dev(host, LWHITE),
++        "held: the bevel sinks, right line LWHITE"
++    );
++
++    // The glyph moves one pixel right and one down while it is held.
++    let inner = slot.inset(2);
++    let normal_cell = (335, 85);
++    assert_eq!(
++        snap_ink_bbox(host, &before, inner),
++        text_bbox(normal_cell.0, normal_cell.1, &[G_UP]),
++        "the unpressed arrow glyph"
++    );
++    assert_eq!(
++        snap_ink_bbox(host, &held, inner),
++        text_bbox(normal_cell.0 + 1, normal_cell.1 + 1, &[G_UP]),
++        "the held arrow glyph, moved by acttxtmove (gemoblib.c:748-753)"
++    );
++
++    // Released: every pixel of the gadget slot is back where it was.
++    for y in slot.y..slot.y + slot.h {
++        for x in slot.x..slot.x + slot.w {
++            assert_eq!(
++                host.raster.get_device_pixel(x, y),
++                at(&before, x, y),
++                "after the release the arrow is normal again, pixel ({x},{y})"
++            );
++        }
++    }
++
++    assert_eq!(fired & MU_MESAG, MU_MESAG, "the press delivers WM_ARROWED; fired = {fired:#06x}");
++    assert_eq!((msg[0], msg[4]), (WM_ARROWED, WA_UPLINE), "one WM_ARROWED/WA_UPLINE, msg = {msg:?}");
++    drain(host, &mut pb);
++}
++
++/// **A page click in the track gets no feedback.** EmuTOS guards both
++/// `ob_change`s with `if ((gadget != W_HSLIDE) && (gadget != W_VSLIDE))`
++/// (`aes/gemctrl.c:271,281`): for a click in the track `gadget` — `ob_find`'s
++/// answer — *is* the slide box, while `cpt` was moved on to the elevator
++/// (`:262-270`), so nothing is redrawn. The message is still sent
++/// (`WA_DNPAGE` for a point below the thumb).
++#[test]
++fn a109_a_page_click_in_the_track_draws_no_feedback() {
++    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb) = fresh();
++    open_window(&mut pb, KIND_ALL, (B.x, B.y, B.w, B.h));
++    drain_messages(&mut pb);
++
++    let bar = vbar_box(B);
++    // Below the thumb: with no `WF_VSLSIZ`/`WF_VSLIDE` set the elevator is one
++    // gadget cell at the top of the track (`gemwmlib.c:431-434`).
++    let (px, py) = (bar.x + ADJ3DSTD + GL_WBOX / 2, bar.y + bar.h - ADJ_HBOX - 20);
++    let (before, held, fired, msg) = press_frame(host, &mut pb, px, py);
++
++    for y in bar.y..bar.y + bar.h {
++        for x in bar.x..bar.x + bar.w {
++            assert_eq!(
++                at(&held, x, y),
++                at(&before, x, y),
++                "a page click must redraw nothing in the bar, pixel ({x},{y})"
++            );
++        }
++    }
++    assert_eq!(fired & MU_MESAG, MU_MESAG, "the page click delivers WM_ARROWED; fired = {fired:#06x}");
++    assert_eq!((msg[0], msg[4]), (WM_ARROWED, WA_DNPAGE), "one WM_ARROWED/WA_DNPAGE, msg = {msg:?}");
++    drain(host, &mut pb);
++}
+diff --git a/tos-api/tests/aes_a96_zombie_windows.rs b/tos-api/tests/aes_a96_zombie_windows.rs
+index 9c2d169..2560a0c 100644
+--- a/tos-api/tests/aes_a96_zombie_windows.rs
++++ b/tos-api/tests/aes_a96_zombie_windows.rs
+@@ -416,6 +416,11 @@ const WIND_DELETE: i16 = 103;
+ const WIND_SET: i16 = 105;
+ const WIND_FIND: i16 = 106;
+ const WIND_UPDATE: i16 = 107;
++const MENU_BAR: i16 = 30;
++const EVNT_MULTI: i16 = 25;
++
++/// `evnt_multi` event-flag bits (`aesdefs.h`).
++const MU_TIMER: i16 = 0x0020;
+ 
+ /// Window kinds (`aesdefs.h`).
+ const NAME: i16 = 0x0001;
+@@ -443,6 +448,12 @@ const WHITE_SOLID: u64 = 0x70;
+ const DESK_WIN: (i16, i16, i16, i16) = (330, 260, 240, 160);
+ const PROG_WIN: (i16, i16, i16, i16) = (40, 60, 240, 160);
+ 
++/// A107: the living EL0 parent's window and its `Pexec` child's — disjoint,
++/// both clear of the menu row, and far enough apart that neither the border
++/// nor the drop shadow of one reaches the other.
++const A107_PARENT_WIN: (i16, i16, i16, i16) = (40, 60, 240, 160);
++const A107_CHILD_WIN: (i16, i16, i16, i16) = (330, 260, 240, 160);
++
+ fn centre(r: (i16, i16, i16, i16)) -> (i16, i16) {
+     (r.0 + r.2 / 2, r.1 + r.3 / 2)
+ }
+@@ -464,6 +475,30 @@ fn appl_exit(pb: &mut Aespb) -> i16 {
+     pb.call(APPL_EXIT, 0, 1, 0)
+ }
+ 
++/// `evnt_multi(MU_TIMER, …, ms)` — the wait a GEM parent returns to after its
++/// `Pexec` child ended. One AES dispatch, so the pending per-slot sweep runs
++/// before the opcode does (A107). Returns the fired event mask.
++fn evnt_multi_timer(pb: &mut Aespb, ms: i16) -> i16 {
++    let mut buf = Box::new([0i16; 8]);
++    pb.intin.fill(0);
++    pb.intin[0] = MU_TIMER;
++    pb.intin[14] = ms;
++    pb.intin[15] = 0;
++    pb.addrin[0] = buf.as_mut_ptr() as u64;
++    let fired = pb.call(EVNT_MULTI, 16, 7, 1);
++    pb.addrin[0] = 0;
++    fired
++}
++
++/// `menu_bar(tree, show)`.
++fn menu_bar(pb: &mut Aespb, tree: u64, show: i16) {
++    pb.intin.fill(0);
++    pb.intin[0] = show;
++    pb.addrin[0] = tree;
++    pb.call(MENU_BAR, 1, 1, 1);
++    pb.addrin[0] = 0;
++}
++
+ fn wind_create(pb: &mut Aespb) -> i16 {
+     pb.intin.fill(0);
+     pb.intin[0] = NAME | CLOSER | MOVER;
+@@ -595,6 +630,22 @@ fn pterm(p: &Proc) {
+     unsafe { process::pterm::release_slot(p.slot) };
+ }
+ 
++/// `Pterm` of an EL0 **child** whose parent is still alive: `parent_slot` is
++/// the parent's, so `terminate` makes the parent the running process again —
++/// EmuTOS `xterm`'s `run = run->p_parent` (`bdos/proc.c:609`) — exactly as
++/// the kernel's `Pterm` handler leaves it before it `eret`s into the parent's
++/// saved frame (A107).
++fn pterm_child_of(child: &Proc, parent: &Proc) {
++    PROCESS_TABLE[child.slot].parent_frame.elr().store(1, Ordering::Release);
++    PROCESS_TABLE[child.slot].parent_slot.store(parent.slot as u32, Ordering::Release);
++    // SAFETY: single-threaded under `LOCK`; `RUN` is the child's basepage.
++    let resume = unsafe { process::pterm::terminate(0) }.expect("Pterm of the running child");
++    assert_eq!(resume.parent_frame_slot, child.slot);
++    // SAFETY: the frame snapshot is not needed on the host.
++    unsafe { process::pterm::release_slot(child.slot) };
++    assert_eq!(process::current(), parent.bp(), "the parent is the running process again");
++}
++
+ // ── the launch boundary, as the kernel drives it ──────────────────────────
+ 
+ /// The desktop's own background tree: one white `G_BOX` over the screen, so
+@@ -764,3 +815,227 @@ fn the_programs_background_tree_is_dropped_with_it() {
+ 
+     assert_eq!(after_sweep, 0, "the dead program's WF_NEWDESK tree must be dropped by the sweep");
+ }
++
++// ── A107: the nested EL0 `Pexec` child of a living GEM parent ──────────────
++//
++// TeraDesk starts QED: `shel_write(SHW_EXEC, …)` then `x_exec` = `Pexec`
++// (`sdk/apps/teradesk/startprg.c:259,309`), and TeraDesk stays alive around
++// it. EmuTOS never has this shape — there a GEM program that starts another
++// one *ends* and the shell loop runs the child, sweeping after it with
++// `wm_new()` (`aes/gemshlib.c:676-677`). Our child dies with its parent
++// parked in its own `Pexec`, so the only hook is
++// `aes::release_client(slot)` from `pterm::release_slot` — the `Pterm`
++// exception stack, where `close_window`'s repaint and `WM_REDRAW` fan-out
++// must not run. The slot is therefore *marked* there and swept at the
++// parent's next AES dispatch (`aes::dispatch` → `sweep_dead_clients`).
++
++/// The parent has a window open and `Pexec`s a child that opens one and
++/// `Pterm`s without `wind_close`. **At the `Pterm` nothing has been swept
++/// yet** (the exception stack is not a drawing context) — the slot carries
++/// the mark. The parent's next `evnt_multi` must find the child's window out
++/// of the table, `wind_find` in its rectangle answering the desktop, its
++/// rectangle painted as bare desktop, and its own window untouched.
++#[test]
++fn a107_a_window_the_pexec_child_left_open_is_gone_at_the_parents_next_aes_call() {
++    let _g = lock();
++    let mut pb = Aespb::new();
++    let tree = desktop_tree();
++    tos_api::aes::window::wm_new();
++
++    // The desktop is in the AES with its background registered; it is not
++    // part of this case — the launch chain is parent → child, both EL0.
++    desktop_context();
++    appl_init(&mut pb);
++    wind_set_newdesk(&mut pb, &*tree as *const Object as u64, 0);
++    appl_exit(&mut pb);
++
++    let parent = Proc::new();
++    parent.run();
++    appl_init(&mut pb);
++    let pwin = wind_create(&mut pb);
++    wind_open(&mut pb, pwin, A107_PARENT_WIN);
++
++    // `Pexec`: the child takes its own slot and runs nested in the parent.
++    let child = Proc::new();
++    child.run();
++    appl_init(&mut pb);
++    let cwin = wind_create(&mut pb);
++    wind_open(&mut pb, cwin, A107_CHILD_WIN);
++    assert_eq!(tos_api::aes::window::test_window_owner(cwin), Some(child.slot));
++    assert_eq!(wind_find(&mut pb, centre(A107_CHILD_WIN).0, centre(A107_CHILD_WIN).1), cwin);
++
++    // The child ends without closing anything.
++    pterm_child_of(&child, &parent);
++    let at_pterm = (
++        tos_api::aes::window::test_window_owner(cwin),
++        tos_api::aes::test_sweep_pending(child.slot),
++    );
++
++    // The parent's next AES call.
++    let fired = evnt_multi_timer(&mut pb, 2);
++
++    let white = host().raster.device(0);
++    let (cx, cy) = centre(A107_CHILD_WIN);
++    let (px, py) = centre(A107_PARENT_WIN);
++    let verdict = (
++        tos_api::aes::window::test_window_owner(cwin),
++        wind_find(&mut pb, cx, cy),
++        host().raster.count_not(A107_CHILD_WIN, white),
++        tos_api::aes::window::test_window_owner(pwin),
++        wind_find(&mut pb, px, py),
++        host().raster.count_not(inset(A107_PARENT_WIN, 1), white),
++        tos_api::aes::test_sweep_pending(child.slot),
++    );
++    cleanup(&mut pb, pwin);
++
++    assert_eq!(fired & MU_TIMER, MU_TIMER, "the parent's wait must end on its timer, fired = {fired:#06x}");
++    assert_eq!(
++        at_pterm,
++        (Some(child.slot), true),
++        "at the `Pterm` itself the child's window is still in the table and the slot is marked \
++         (release_slot runs on the exception stack; the sweep draws)"
++    );
++    assert_eq!(
++        verdict.0, None,
++        "the dead child's window must be out of the table at the parent's next AES call \
++         (wm_new, gemwmlib.c:1886-1890 via gemshlib.c:676-677)"
++    );
++    assert_eq!(verdict.1, DESKWH, "wind_find inside the dead child's window must answer the desktop");
++    assert_eq!(
++        verdict.2, 0,
++        "closing the child's window must repaint its rectangle as bare desktop (draw_change, \
++         gemwmlib.c:1216-1222): {} pixels are not",
++        verdict.2
++    );
++    assert_eq!(verdict.3, Some(parent.slot), "the living parent's window must survive the sweep");
++    assert_eq!(verdict.4, pwin, "wind_find inside the parent's window must still answer it");
++    assert!(verdict.5 > 0, "the parent's window must still be painted");
++    assert!(!verdict.6, "the mark must be consumed by the dispatch that swept");
++}
++
++/// The child registered its own `WF_NEWDESK` background tree (a desktop
++/// replacement launched from TeraDesk). It is a VA of an address space that
++/// is gone, so the sweep drops it — EmuTOS resets `gl_newdesk` before the
++/// next program runs (`wm_init`, `gemwmlib.c:1300`). A tree the **parent**
++/// registered is not touched when a child dies.
++#[test]
++fn a107_the_pexec_childs_background_tree_goes_with_it_and_the_parents_stays() {
++    let _g = lock();
++    let mut pb = Aespb::new();
++    let parent_tree = desktop_tree();
++    let child_tree = desktop_tree();
++    tos_api::aes::window::wm_new();
++
++    let parent = Proc::new();
++    parent.run();
++    appl_init(&mut pb);
++    wind_set_newdesk(&mut pb, &*parent_tree as *const Object as u64, 0);
++
++    // (a) A child that registers nothing leaves the parent's registration be.
++    let quiet = Proc::new();
++    quiet.run();
++    appl_init(&mut pb);
++    pterm_child_of(&quiet, &parent);
++    evnt_multi_timer(&mut pb, 2);
++    let after_quiet = tos_api::aes::window::test_newdesk_tree();
++
++    // (b) A child that registers its own takes it with it.
++    let child = Proc::new();
++    child.run();
++    appl_init(&mut pb);
++    wind_set_newdesk(&mut pb, &*child_tree as *const Object as u64, 0);
++    let registered = tos_api::aes::window::test_newdesk_tree();
++    pterm_child_of(&child, &parent);
++    evnt_multi_timer(&mut pb, 2);
++    let after_child = tos_api::aes::window::test_newdesk_tree();
++
++    wind_set_newdesk(&mut pb, 0, 0);
++    appl_exit(&mut pb);
++    desktop_context();
++    tos_api::aes::window::wm_new();
++
++    assert_eq!(
++        after_quiet,
++        &*parent_tree as *const Object as u64,
++        "the living parent's WF_NEWDESK tree must survive a child's death"
++    );
++    assert_eq!(registered, &*child_tree as *const Object as u64, "the child registered its own tree");
++    assert_eq!(after_child, 0, "the dead child's WF_NEWDESK tree must be dropped by the sweep");
++}
++
++/// The child installed a menu bar and died with it installed. EmuTOS clears
++/// `gl_mntree` nowhere on the exit path — `mn_cleanup` (`gemmnlib.c:740-760`,
++/// called from `ap_exit` `gemaplib.c:254` and `sh_ldapp` `gemshlib.c:652`)
++/// only sends `AC_CLOSE` and frees the submenu array, and `wm_new`/`wm_init`
++/// do not touch it either; the next program's `menu_bar(tree, 1)` overwrites
++/// it. Here the pointer is an EL0 VA the Control Manager would dereference at
++/// EL1 under the parent's `TTBR0` (the A97 class of fault), so the NewTOS
++/// rule is that a bar dies with the client that installed it — and only with
++/// **that** client: the parent's bar is untouched by a child's death.
++#[test]
++fn a107_the_pexec_childs_menu_bar_goes_with_it_and_the_parents_stays() {
++    let _g = lock();
++    let mut pb = Aespb::new();
++    tos_api::aes::window::wm_new();
++    let parent_menu = menu_tree();
++    let child_menu = menu_tree();
++
++    let parent = Proc::new();
++    parent.run();
++    appl_init(&mut pb);
++    menu_bar(&mut pb, parent_menu.as_ptr() as u64, 1);
++    assert_eq!(tos_api::aes::menu::active() as u64, parent_menu.as_ptr() as u64);
++
++    // (a) A child that installs no bar leaves the parent's alone.
++    let quiet = Proc::new();
++    quiet.run();
++    appl_init(&mut pb);
++    pterm_child_of(&quiet, &parent);
++    evnt_multi_timer(&mut pb, 2);
++    let after_quiet = tos_api::aes::menu::active() as u64;
++
++    // (b) A child that installs its own takes it with it.
++    let child = Proc::new();
++    child.run();
++    appl_init(&mut pb);
++    menu_bar(&mut pb, child_menu.as_ptr() as u64, 1);
++    let registered = tos_api::aes::menu::active() as u64;
++    pterm_child_of(&child, &parent);
++    evnt_multi_timer(&mut pb, 2);
++    let after_child = tos_api::aes::menu::active() as u64;
++
++    menu_bar(&mut pb, 0, 0);
++    appl_exit(&mut pb);
++    desktop_context();
++    tos_api::aes::window::wm_new();
++
++    assert_eq!(after_quiet, parent_menu.as_ptr() as u64, "the living parent's menu bar must survive a child's death");
++    assert_eq!(registered, child_menu.as_ptr() as u64, "the child installed its own bar");
++    assert_eq!(after_child, 0, "the dead child's menu tree must be dropped by the sweep");
++}
++
++/// A three-object menu tree: ROOT, `THEBAR` (the white strip `menu_bar`
++/// draws and stretches to the screen) and `THEACTIVE` (the title box whose
++/// extent becomes `gl_ctwait`, `gemmnlib.c:717`). No titles — nothing here
++/// tracks the bar.
++fn menu_tree() -> Box<[Object; 3]> {
++    let mk = |otype: u16, next: i16, head: i16, tail: i16, x: i16, w: i16| Object {
++        ob_next: next,
++        ob_head: head,
++        ob_tail: tail,
++        ob_type: otype,
++        ob_flags: 0,
++        ob_state: 0,
++        ob_spec: WHITE_SOLID,
++        ob_x: x,
++        ob_y: 0,
++        ob_width: w,
++        ob_height: 19,
++    };
++    const G_IBOX: u16 = 25;
++    Box::new([
++        mk(G_IBOX, -1, 1, 1, 0, SCREEN_W as i16),
++        mk(G_BOX, 0, 2, 2, 0, SCREEN_W as i16),
++        mk(G_IBOX, 1, -1, -1, 16, 216),
++    ])
++}

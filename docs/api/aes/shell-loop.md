@@ -541,7 +541,10 @@ Key points not obvious from a skim:
   loop (gap G1), runs the same step as `wm_new_keep_desktop()` at
   `desktop_resume` — every window but the desktop's own, which this
   desktop keeps because it resumes in place instead of restarting through
-  `sh_main`/`cnx_get` (gap G2). Rule and rationale:
+  `sh_main`/`cnx_get` (gap G2). **A107 (2026-09-22):** a GEM program that
+  `Pexec`s another one *without* going through this loop (TeraDesk → QED)
+  gets the same step for the child's slot alone, at the parent's next AES
+  dispatch — `wm_new_for_slot()`. Rule and rationale:
   [`window-graphics.md`](window-graphics.md) § `wind_new (109)`.
 - `AUTORUN_APP` skips `sh_find` (line `:629`'s ternary) — the autorun
   entry's path was already validated at INF-parse time (implicitly, by

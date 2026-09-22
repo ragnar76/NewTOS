@@ -74,7 +74,7 @@ Zeiger unten rechts bei A/H; 0 EXC/PANIC).
 * **Dropdown-Eintraege 19 px hoch** (`MENU_H`) statt der RSC-Zelle
   `gl_hchar` = 16 px (`desk_rsc.c:297-341` `{0,row,20,1}`); die File-Box ist
   285 statt 240 px hoch. `build_menu`, eigener Task (kein Referenzbild mit
-  offenem Menue im Hatari-Satz).
+  offenem Menue im Hatari-Satz). **Erledigt 2026-09-22 als [A109](A109.md)** (1) — `ENTRY_H`, Serial-Dump 240/16.
 * `menu::track` prueft `THEBAR` ueber `gl_hbox`, nicht ueber das Objekt
   (EmuTOS `rect_change(THEBAR)` fuer `MU_M2` im `START_STATE`,
   `gemmnlib.c:286-292`) — die 18-Zeilen-Hoehe ist dort unbeobachtbar.

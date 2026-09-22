@@ -1859,8 +1859,25 @@ fn child_spec(parent_spec: &str, name: &str) -> (String, String) {
     (d, title)
 }
 
-/// Build a directory-window info line ` N items   M bytes used` into `out`
-/// (NUL-terminated, truncated to fit) — the node's `w_info` buffer.
+/// Build a directory-window info line into `out` (NUL-terminated, truncated
+/// to fit) — the node's `w_info` buffer, EmuTOS `win_sinfo`'s
+/// `sprintf(pwin->w_info, alert, select_size, select_count)`
+/// (`desk/deskwin.c:905`).
+///
+/// The format string is the resource item `STINFOST`, `" %ld bytes used in
+/// %d items."` (`desk/desk_rsc.c:2468`, index 0 of `desk_rs_fstr`): leading
+/// blank, **size first**, count second, trailing full stop. NewTOS wrote
+/// `" N items   M bytes used"` — its own wording and the two numbers the
+/// other way round (A109).
+///
+/// EmuTOS picks the second string `STINFST2`, `" %ld bytes used in %d
+/// selected items."` (`desk_rsc.c:2469`), when `win_sinfo(pwin, TRUE)` counted
+/// selected `FNODE`s (`deskwin.c:876-902`). That branch has **no call site
+/// here**: this desktop sets the info line only when a window's directory is
+/// (re)read — [`set_window_strings`], three call sites, all with the whole
+/// directory's `p_count`/`p_size` — and never re-runs it on a selection
+/// change (EmuTOS does, `deskmain.c:982-983`). Missing caller, not a missing
+/// string: named in `TASK/A109.md`, not stubbed in here.
 fn fmt_info(out: &mut [u8], count: usize, size: u64) {
     let mut p = 0usize;
     let mut num = [0u8; 20];
@@ -1873,10 +1890,10 @@ fn fmt_info(out: &mut [u8], count: usize, size: u64) {
         }
     };
     push(out, &mut p, b" ");
-    push(out, &mut p, fmt_u64(count as u64, &mut num));
-    push(out, &mut p, b" items   ");
     push(out, &mut p, fmt_u64(size, &mut num));
-    push(out, &mut p, b" bytes used");
+    push(out, &mut p, b" bytes used in ");
+    push(out, &mut p, fmt_u64(count as u64, &mut num));
+    push(out, &mut p, b" items.");
     out[p] = 0;
 }
 

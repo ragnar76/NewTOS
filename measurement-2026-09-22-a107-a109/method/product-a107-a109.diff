@@ -1,0 +1,442 @@
+diff --git a/kernel/src/desk/main.rs b/kernel/src/desk/main.rs
+index 4fb0c1d..4600914 100644
+--- a/kernel/src/desk/main.rs
++++ b/kernel/src/desk/main.rs
+@@ -1859,8 +1859,25 @@ fn child_spec(parent_spec: &str, name: &str) -> (String, String) {
+     (d, title)
+ }
+ 
+-/// Build a directory-window info line ` N items   M bytes used` into `out`
+-/// (NUL-terminated, truncated to fit) — the node's `w_info` buffer.
++/// Build a directory-window info line into `out` (NUL-terminated, truncated
++/// to fit) — the node's `w_info` buffer, EmuTOS `win_sinfo`'s
++/// `sprintf(pwin->w_info, alert, select_size, select_count)`
++/// (`desk/deskwin.c:905`).
++///
++/// The format string is the resource item `STINFOST`, `" %ld bytes used in
++/// %d items."` (`desk/desk_rsc.c:2468`, index 0 of `desk_rs_fstr`): leading
++/// blank, **size first**, count second, trailing full stop. NewTOS wrote
++/// `" N items   M bytes used"` — its own wording and the two numbers the
++/// other way round (A109).
++///
++/// EmuTOS picks the second string `STINFST2`, `" %ld bytes used in %d
++/// selected items."` (`desk_rsc.c:2469`), when `win_sinfo(pwin, TRUE)` counted
++/// selected `FNODE`s (`deskwin.c:876-902`). That branch has **no call site
++/// here**: this desktop sets the info line only when a window's directory is
++/// (re)read — [`set_window_strings`], three call sites, all with the whole
++/// directory's `p_count`/`p_size` — and never re-runs it on a selection
++/// change (EmuTOS does, `deskmain.c:982-983`). Missing caller, not a missing
++/// string: named in `TASK/A109.md`, not stubbed in here.
+ fn fmt_info(out: &mut [u8], count: usize, size: u64) {
+     let mut p = 0usize;
+     let mut num = [0u8; 20];
+@@ -1873,10 +1890,10 @@ fn fmt_info(out: &mut [u8], count: usize, size: u64) {
+         }
+     };
+     push(out, &mut p, b" ");
+-    push(out, &mut p, fmt_u64(count as u64, &mut num));
+-    push(out, &mut p, b" items   ");
+     push(out, &mut p, fmt_u64(size, &mut num));
+-    push(out, &mut p, b" bytes used");
++    push(out, &mut p, b" bytes used in ");
++    push(out, &mut p, fmt_u64(count as u64, &mut num));
++    push(out, &mut p, b" items.");
+     out[p] = 0;
+ }
+ 
+diff --git a/kernel/src/desk/menu.rs b/kernel/src/desk/menu.rs
+index afc20fe..3af4aba 100644
+--- a/kernel/src/desk/menu.rs
++++ b/kernel/src/desk/menu.rs
+@@ -58,6 +58,21 @@ const MIN_DESKMENU_WIDTH: i16 = 20;
+ /// `desk_rsc.c:255-283`).
+ const BAR_BOX_H: i16 = CELL_H + 2;
+ 
++/// Height of one drop-down entry — the RSC's `{0, row, 20, 1}`
++/// (`desk_rsc.c:297-341`, and every other ADMENU box's items): `ob_y = row`,
++/// `ob_height = 1`, both **character cells**, which `rsrc_obfix` multiplies
++/// by `gl_hchar` (`fix_chpos` offsets 1 and 3, `aes/gemrslib.c:53-99`) =
++/// `CELL_H` = 16 px on the 8×16 font. The drop-down box itself is as many
++/// cells tall as it has entries (`{8, 0, 19, 16}` for the 16-entry *File*
++/// box, `desk_rsc.c:345-349`), i.e. `n · ENTRY_H`.
++///
++/// This is **not** `gl_hbox` (`MENU_H` = `gl_hchar + 3` = 19): the bar row is
++/// 19 px because `gl_hbox` is the gadget box height (`aes/gemgraf.c:412-415`),
++/// the drop-down rows are plain text cells. `adjust_menu` recomputes the
++/// *widths* (`deskmain.c:1608-1635`) and never touches a height, so the
++/// entries keep the RSC's.
++const ENTRY_H: i16 = CELL_H;
++
+ /// A top-level menu (the four ADMENU titles).
+ #[derive(Clone, Copy, PartialEq, Eq)]
+ pub enum Title {
+@@ -500,7 +515,10 @@ fn build_menu() -> *mut Object {
+             let bx_x = geom.box_x[ti];
+             let iw = geom.box_w[ti];
+             let n_items = def.entries.len();
+-            let bh = n_items as i16 * MENU_H;
++            // The box is `n` character cells tall — the RSC's `{…, 0, 19, 16}`
++            // for the 16-entry File box (`desk_rsc.c:345-349`), one
++            // [`ENTRY_H`] per entry.
++            let bh = n_items as i16 * ENTRY_H;
+             let bi = k;
+             last_box = bi;
+             k += 1;
+@@ -512,14 +530,17 @@ fn build_menu() -> *mut Object {
+                 if last_overall {
+                     flags |= LASTOB;
+                 }
++                // `{0, row, 20, 1}` (`desk_rsc.c:297-341`) after `rsrc_obfix`:
++                // the entry spans the box's width at `row · gl_hchar`, one
++                // character cell tall ([`ENTRY_H`]).
+                 o[k] = mk(
+                     G_STRING,
+                     flags,
+                     entry_label(entry).as_ptr() as u64,
+                     0,
+-                    ii as i16 * MENU_H,
++                    ii as i16 * ENTRY_H,
+                     iw,
+-                    MENU_H,
++                    ENTRY_H,
+                     if last_item { bi as i16 } else { (k + 1) as i16 },
+                     -1,
+                     -1,
+diff --git a/tos-api/src/aes/menu.rs b/tos-api/src/aes/menu.rs
+index b40dfe3..a1867c3 100644
+--- a/tos-api/src/aes/menu.rs
++++ b/tos-api/src/aes/menu.rs
+@@ -50,6 +50,21 @@ const MAX_DEPTH: i16 = 16;
+ /// `unsafe`; only the single boot CPU touches it.
+ static MNTREE: AtomicUsize = AtomicUsize::new(0);
+ 
++/// The client that installed [`MNTREE`] — EmuTOS `gl_mnppd`
++/// (`aes/gemmnlib.h:17`), set beside `gl_mntree` in `mn_bar`: `p =
++/// fpdnm(NULL, rlr->p_pid); … gl_mnppd = p; gl_mntree = tree;`
++/// (`aes/gemmnlib.c:707,712-713`). The AES identity of the caller
++/// (`appl::current_identity`: a GEMDOS slot, or `pd::DESKTOP` for the
++/// in-kernel desktop), `usize::MAX` when no bar is installed.
++///
++/// EmuTOS uses it as the message target for a menu selection
++/// (`ct_msgup(MN_SELECTED, gl_mnppd, …)`, `aes/gemctrl.c:353-367`); NewTOS
++/// delivers to the current identity at single-app
++/// ([`event::menu_intercept`](super::event)) and keeps this for the one thing
++/// that identity cannot answer: **whose** tree the pointer in `gl_mntree` is
++/// ([`release_bar_of`]).
++static MNPPD: AtomicUsize = AtomicUsize::new(usize::MAX);
++
+ /// The currently installed menu tree, or null if none.
+ pub fn active() -> *mut Object {
+     MNTREE.load(Ordering::Relaxed) as *mut Object
+@@ -118,6 +133,8 @@ fn ctwait_bar_rect() -> Option<(i16, i16, i16, i16)> {
+ /// `ob_actxywh`'s `FL3DOBJ` growth (`gemoblib.c:322-335`) does not apply and
+ /// [`object::abs_rect`] is the whole of it. No drawing here: [`menu_bar`] draws.
+ fn install_bar(tree: *mut Object) {
++    // `gl_mnppd = p` (`gemmnlib.c:712`), `p` = the calling client.
++    MNPPD.store(super::appl::current_identity(), Ordering::Relaxed);
+     MNTREE.store(tree as usize, Ordering::Relaxed);
+     CTWAIT_RECT.store(pack_rect(object::abs_rect(tree as *const Object, THEACTIVE)), Ordering::Relaxed);
+     CTWAIT_BAR.store(true, Ordering::Relaxed);
+@@ -129,6 +146,51 @@ fn install_bar(tree: *mut Object) {
+ fn remove_bar() {
+     MNTREE.store(0, Ordering::Relaxed);
+     CTWAIT_BAR.store(false, Ordering::Relaxed);
++    // EmuTOS leaves `gl_mnppd` standing on the hide path (`gemmnlib.c:726-727`
++    // writes `gl_mntree` and `gl_ctwait` only) — it is only ever read while a
++    // tree is installed (`gemctrl.c:353`). Dropped here as well so
++    // [`release_bar_of`] cannot match a slot against a bar that is gone.
++    MNPPD.store(usize::MAX, Ordering::Relaxed);
++}
++
++/// Drop the installed menu bar if the client that installed it is `slot` —
++/// the Menu-Manager half of the per-slot sweep [`window::wm_new_for_slot`]
++/// runs when an EL0 `Pexec` child has ended (A107).
++///
++/// **EmuTOS does not do this, and the reason it need not is structural.**
++/// `gl_mntree` is written in exactly two places: `mn_bar`
++/// (`aes/gemmnlib.c:713,726`) and `fm_own`'s dialog park/restore
++/// (`aes/gemfmlib.c:89-90,103`). Neither `wm_new` (`gemwmlib.c:1875-1893`),
++/// nor `wm_init` (`:1247-1310`), nor `sh_ldapp`'s `AP_OPEN` cleanup →
++/// `mn_cleanup` (`gemshlib.c:650-657`, `gemmnlib.c:740-760`: AC_CLOSE to the
++/// accessories and the submenu array, nothing else), nor `ap_exit`
++/// (`gemaplib.c:251-261`, which calls the same `mn_cleanup`) clears it. A
++/// program that ends with its bar installed leaves the pointer standing, and
++/// the next program's `menu_bar(tree, 1)` overwrites it — the desktop does
++/// exactly that when the shell loop restarts it (`desk/deskmain.c:1904`).
++///
++/// On EmuTOS that dangling pointer is inert: there is no MMU, the dead TPA is
++/// still readable memory, and the Control Manager would at worst track
++/// garbage. Here it is a **fault**: the tree is an EL0 VA of an address space
++/// that is gone, and the Control Manager reads it at EL1 under whichever
++/// `TTBR0` the next caller has ([`track`] → `ObjTree::new`) — the A97 class of
++/// defect. So the NewTOS rule is: a bar dies with the client that installed
++/// it. Named deviation, `docs/api/aes/menu.md` § "A dead client's menu bar".
++///
++/// Nothing is drawn: this is the state half of `mn_bar(…, FALSE)`
++/// (`gemmnlib.c:726-727`), not the erase — the pixels in the bar row belong
++/// to whatever paints next (the parent's own `menu_bar(tree, 1)`, TeraDesk
++/// `regen_desktop`, `sdk/apps/teradesk/icon.c:2509-2518`).
++pub(super) fn release_bar_of(slot: usize) {
++    // `MNPPD` is `usize::MAX` once the bar has been taken down, so a match
++    // here means this slot's tree is either installed or parked.
++    if MNPPD.load(Ordering::Relaxed) != slot {
++        return;
++    }
++    // A tree parked by `fm_own` (`gemfmlib.c:89-90`) would be handed back by
++    // the matching `END_MCTRL` (`:103`); the dead client's must not be.
++    MNHOLD.store(0, Ordering::Relaxed);
++    remove_bar();
+ }
+ 
+ /// Parked menu tree during a modal dialog (`ml_mnhold`, EmuTOS gemfmlib.c:56).
+diff --git a/tos-api/src/aes/mod.rs b/tos-api/src/aes/mod.rs
+index 13de9df..cc14348 100644
+--- a/tos-api/src/aes/mod.rs
++++ b/tos-api/src/aes/mod.rs
+@@ -32,8 +32,72 @@ mod pd;
+ 
+ pub use graf::hbox_of;
+ 
++use core::sync::atomic::{AtomicU32, Ordering};
++
+ use crate::bdos::process::Abi;
+ 
++/// GEMDOS slots whose tenant has ended and whose Window-Manager property has
++/// **not** been swept yet — one bit per slot (`MAX_PROCESSES` = 16, so a
++/// `u32` covers it with room to spare). Set by [`release_client`] on the
++/// `Pterm` path, drained by [`sweep_dead_clients`] at the next AES dispatch
++/// (A107).
++static PENDING_SWEEP: AtomicU32 = AtomicU32::new(0);
++
++/// Mark `slot`'s Window-Manager property for the next dispatch's sweep.
++fn mark_for_sweep(slot: usize) {
++    if slot < crate::bdos::process::MAX_PROCESSES {
++        PENDING_SWEEP.fetch_or(1u32 << slot, Ordering::AcqRel);
++    }
++}
++
++/// Run [`window::wm_new_for_slot`] for every slot [`release_client`] marked
++/// — EmuTOS's `if (gl_shgem) wm_new();` after a program ends
++/// (`aes/gemshlib.c:676-677`), for the one program EmuTOS never has: an EL0
++/// `Pexec` child of a **living** GEM parent (A107).
++///
++/// **Why here and not at the `Pterm`.** The sweep draws: `wm_close` runs
++/// `draw_change` (`gemwmlib.c:1453`), which repaints the background over the
++/// vacated rectangle and posts `WM_REDRAW` to every window underneath
++/// (`:1216-1222`). The only hook on the child's death is
++/// `aes::release_client(slot)` from `bdos::process::pterm::release_slot`,
++/// which the kernel calls from the `Pterm` SVC handler
++/// (`kernel/src/arch/aarch64/exceptions.rs`) — on the **exception stack**,
++/// with the dying process's mapping still installed and the parent's AES
++/// fiber possibly parked mid-call (`aes::thread`). Neither the raster nor the
++/// parent's message queue may be touched from there.
++///
++/// This function runs at the entry of [`dispatch`], **before** the opcode:
++/// the same context as the opcode itself and as the inline Control Manager
++/// (`menu::track`, `window::intercept`, reached from `evnt_multi` on this
++/// very path), i.e. the context in which every other AES draw happens — an
++/// EL0 caller's dispatch is on the AES fiber (`thread::call`), an in-kernel
++/// caller's on the boot stack, and in both the fiber is idle at entry (a
++/// parked `G_USERDEF` stall resumes through `thread::resume`, never through
++/// `dispatch`). `RUN` is already the parent at that point (`xterm`'s `run =
++/// run->p_parent`, `bdos/proc.c:609`; our `pterm::terminate`), so the sweep's
++/// repaint and its `WM_REDRAW` fan-out reach the living client, which is
++/// exactly what `sh_ldapp`'s sweep does for the shell loop's next program.
++///
++/// The mark can only be consumed by the **first** AES call after the child
++/// died, and a program that takes the freed slot next cannot own an AES
++/// window before its own first AES call — so a recycled slot is never swept
++/// out from under its new tenant.
++fn sweep_dead_clients() {
++    let mut pending = PENDING_SWEEP.swap(0, Ordering::AcqRel);
++    while pending != 0 {
++        let slot = pending.trailing_zeros() as usize;
++        pending &= !(1u32 << slot);
++        window::wm_new_for_slot(slot);
++    }
++}
++
++/// Test hook (not wired to boot): is `slot` still waiting for its post-`Pterm`
++/// sweep? Lets a host test state that the mark is set at `release_slot` and
++/// cleared by the parent's next AES call (A107).
++pub fn test_sweep_pending(slot: usize) -> bool {
++    PENDING_SWEEP.load(Ordering::Acquire) & (1u32 << slot) != 0
++}
++
+ /// The AES parameter block: six pointers (four to WORD arrays, two to
+ /// LONG arrays). The block pointers — and the `addrin`/`addrout` LONG
+ /// elements — are the caller's pointer width: 8-byte for an LP64 caller,
+@@ -436,6 +500,12 @@ pub unsafe fn dispatch(
+     aespb_ptr: u64,
+     abi: Abi,
+ ) -> Option<crate::bdos::process::sched::Switch> {
++    // An EL0 `Pexec` child that ended while this caller was alive left its
++    // windows / background tree / menu bar in the AES; sweep them before the
++    // opcode, so this call already sees the table `sh_ldapp`'s `wm_new()`
++    // would have left it (`aes/gemshlib.c:676-677`; A107). Drawing context:
++    // see [`sweep_dead_clients`].
++    sweep_dead_clients();
+     // `xif`'s four stack arrays (`gemsuper.c:430-433`). EmuTOS leaves all of
+     // them uninitialised — indeterminate C auto storage, i.e. no value to
+     // reproduce; zeroed here so that neither an under-writing handler can leak
+@@ -723,6 +793,11 @@ pub fn release_client(slot: usize) {
+     // SAFETY: single-CPU process-release context under the BDOS giant lock;
+     // no GEM trap is in flight for the slot being released.
+     unsafe { pd::release(slot) };
++    // The Window-Manager half of the same release — `sh_ldapp`'s `wm_new()`
++    // (`aes/gemshlib.c:676-677`) for a client the shell loop never ran. Only
++    // *marked* here: this runs on the `Pterm` exception stack and the sweep
++    // draws (A107). [`sweep_dead_clients`] executes it at the next dispatch.
++    mark_for_sweep(slot);
+ }
+ 
+ /// The AES pid NewTOS **reports** for the program in GEMDOS process-table slot
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index 5b9cd40..b7effe9 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -4452,6 +4452,58 @@ pub fn wm_new_keep_desktop() {
+     }
+ }
+ 
++/// The `sh_ldapp` window sweep narrowed to **one dead client**: the GEMDOS
++/// slot `slot` has ended, take what it left in the Window Manager and leave
++/// every other client's state alone (A107).
++///
++/// This is the nested-`Pexec` case A96 could not cover. EmuTOS never has it:
++/// there *every* program is started by the shell loop, so the `wm_new()` at
++/// `gemshlib.c:676-677` runs after each of them, and a GEM program that
++/// starts another one does it through `shel_write` — the parent ends, the
++/// shell loop runs the child, sweeps, and starts the parent again
++/// (`gemshlib.c:600-612,708-731`). NewTOS runs an EL0 `Pexec` child **nested**
++/// inside its living parent (TeraDesk → QED): the parent never left, so no
++/// shell-loop sweep happens for the child. What this does for that child is
++/// what `wm_new` does for a program the shell loop ran, restricted to the
++/// dead slot's own property:
++///
++/// * every window whose `w_owner` is `slot`: closed if open (`wm_close`, with
++///   its `draw_change` repaint and the `WM_REDRAW` fan-out to whatever the
++///   vanished window uncovered — the parent's windows) and deleted
++///   (`gemwmlib.c:1886-1890`);
++/// * the `WF_NEWDESK` background tree, if **this** slot registered it: the
++///   pointer is a VA of an address space that is gone (A97), and EmuTOS drops
++///   `gl_newdesk` before the next program runs (`wm_init`, `gemwmlib.c:1300`);
++/// * the menu bar, if **this** slot installed it ([`super::menu::release_bar_of`]).
++///
++/// **Not** the two `wind_update` counters. `wm_new` drains both
++/// (`gemwmlib.c:1879-1883`), and so does [`wm_new_keep_desktop`], because at
++/// those points no other client is alive to hold one. Here the parent *is*
++/// alive and may legitimately hold its own: EmuTOS releases the screen lock
++/// only when the dying process owns it — `if (wind_spb.sy_owner == rlr)
++/// unsync(&wind_spb)` (`gemshlib.c:668-669`) — and our counters carry no
++/// owner (see [`UPDATE_LOCK`]), so releasing them here could unlock the
++/// parent's screen mid-redraw. A child that dies holding `BEG_UPDATE` /
++/// `BEG_MCTRL` therefore leaves the count standing; named as a limit in
++/// `TASK/A107.md`, not silently fixed by a blanket reset.
++pub fn wm_new_for_slot(slot: usize) {
++    let Ok(owner) = i16::try_from(slot) else { return };
++    for wh in 1..NUM_WIN as i16 {
++        let Some((w_owner, open)) = win(wh).map(|w| (w.owner, w.open)) else { continue };
++        if w_owner != owner {
++            continue;
++        }
++        if open {
++            close_window(wh);
++        }
++        wm_delete(wh);
++    }
++    if newdesk_owner() == Some(slot) {
++        clear_newdesk();
++    }
++    super::menu::release_bar_of(slot);
++}
++
+ /// `wm_init` (`gemwmlib.c:1247-1310`) — re-initialise the Window Manager
+ /// before each program the shell loop starts (`gemshlib.c:717`). EmuTOS
+ /// rebuilds the whole window-extent/element object arena; the observable
+@@ -4682,6 +4734,44 @@ fn gad_rect(w: &Window, g: Gadget) -> Grect {
+     }
+ }
+ 
++/// The scroll-arrow cell of `g` with the glyph and the `gl_wa*color` index
++/// that go with it — `(rect, G_*, W_*ARROW_IDX)`, `None` for anything that is
++/// not one of the four arrows (a page click in the track, or an absent
++/// gadget). The rectangles are [`varrow_cells`]/[`harrow_cells`], i.e. the
++/// un-grown `gl_wbox` × `gl_hbox` cells `w_bldvbar`/`w_bldhbar` lay out
++/// (`aes/gemwmlib.c:412-424,450-462`) — the same ones [`draw_varrows`] /
++/// [`draw_harrows`] paint, so the pressed cell is exactly the drawn one.
++fn arrow_cell(w: &Window, g: Gadget) -> Option<(Grect, u16, usize)> {
++    match g {
++        Gadget::Up => varrow_cells(w.curr, w.kind).0.map(|r| (r, G_UP, W_UPARROW_IDX)),
++        Gadget::Dn => varrow_cells(w.curr, w.kind).1.map(|r| (r, G_DN, W_DNARROW_IDX)),
++        Gadget::Lf => harrow_cells(w.curr, w.kind).0.map(|r| (r, G_LF, W_LFARROW_IDX)),
++        Gadget::Rt => harrow_cells(w.curr, w.kind).1.map(|r| (r, G_RT, W_RTARROW_IDX)),
++        _ => None,
++    }
++}
++
++/// `ob_change(gl_awind, gadget, selected|normal, TRUE)` for a scroll arrow
++/// (`aes/gemctrl.c:272-284`): redraw the cell with its `SELECTED` bit set or
++/// clear. Only the four arrows have a cell ([`arrow_cell`]); everything else
++/// is a no-op, which is the `W_HSLIDE`/`W_VSLIDE` guard of those lines.
++///
++/// `ob_change` brackets its draw with `gsx_moff()`/`gsx_mon()`
++/// (`aes/gemoblib.c:1275,1305`) — the cursor's save-under would otherwise
++/// restore the pre-draw pixels over the cell (A65) — and so does this; the
++/// *wait* in between runs with the cursor up, as EmuTOS's `handle_arrow_msg`
++/// does. The window is the top one (checked by [`intercept`] before the
++/// gadget switch), so the topped colour word applies.
++fn arrow_change(w: &Window, g: Gadget, sel: bool, backend: &dyn RasterBackend) {
++    let Some((r, ch, idx)) = arrow_cell(w, g) else {
++        return;
++    };
++    let clip = ClipRect::full(backend.width(), backend.height());
++    crate::vdi::cursor_hide(backend);
++    gadget_sel(r, ch, sel, gadget_ink(w, idx, true), backend, clip);
++    crate::vdi::cursor_show(backend);
++}
++
+ /// Track the button over a closer/fuller gadget: invert it while the mouse
+ /// is inside, restore on leave; return whether it was released inside
+ /// (EmuTOS `gr_watchbox`).
+@@ -5183,7 +5273,8 @@ pub fn intercept() {
+     // elevator arms overwrite `x` alone (`:305`), so `WM_HSLID`/`WM_VSLID`
+     // carry the `WS_CURR` `y, w, h` in `msg[5..7]` (A93).
+     let ws_curr = w.curr;
+-    match gadget_at(w, mx, my) {
++    let gad = gadget_at(w, mx, my);
++    match gad {
+         Gadget::Closer => {
+             // `HOTCLOSE`: `message = WM_CLOSED; break;` — no `gr_watchbox`, the
+             // press itself is the click (`aes/gemctrl.c:208-214`). The 3D
+@@ -5245,7 +5336,7 @@ pub fn intercept() {
+         | Gadget::HLfPage
+         | Gadget::HRtPage => {
+             msg[0] = WM_ARROWED;
+-            msg[4] = match gadget_at(w, mx, my) {
++            msg[4] = match gad {
+                 Gadget::Up => WA_UPLINE,
+                 Gadget::Dn => WA_DNLINE,
+                 Gadget::Lf => WA_LFLINE,
+@@ -5255,7 +5346,21 @@ pub fn intercept() {
+                 Gadget::HLfPage => WA_LFPAGE,
+                 _ => WA_RTPAGE,
+             };
++            // `hctl_window` brackets `handle_arrow_msg` with the gadget's
++            // pressed state: `ob_change(gl_awind, gadget, selected, TRUE)` …
++            // `handle_arrow_msg(w_handle, cpt)` … `ob_change(gl_awind, gadget,
++            // normal, TRUE)` (`aes/gemctrl.c:272-284`) — an **arrow** only: the
++            // guard `if ((gadget != W_HSLIDE) && (gadget != W_VSLIDE))` leaves
++            // a page click in the track without feedback, because there
++            // `gadget` is the slide box the point fell in while `cpt` was
++            // moved on to the elevator (`:262-270`). `selected = normal |
++            // SELECTED` with `normal = ob_state & ~SELECTED` (`:189-194`), so
++            // the only bit that moves is `SELECTED` — [`gadget_sel`]'s `sel`.
++            // The message cadence is untouched: one `WM_ARROWED`, posted after
++            // the release as before (A109).
++            arrow_change(w, gad, true, backend);
+             wait_release();
++            arrow_change(w, gad, false, backend);
+         }
+         // Elevator-thumb drag → post the final 0..1000 position as WM_VSLID /
+         // WM_HSLID (EmuTOS `hctl_window` W_?ELEV, `aes/gemctrl.c:295-306`).

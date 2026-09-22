@@ -4452,6 +4452,58 @@ pub fn wm_new_keep_desktop() {
     }
 }
 
+/// The `sh_ldapp` window sweep narrowed to **one dead client**: the GEMDOS
+/// slot `slot` has ended, take what it left in the Window Manager and leave
+/// every other client's state alone (A107).
+///
+/// This is the nested-`Pexec` case A96 could not cover. EmuTOS never has it:
+/// there *every* program is started by the shell loop, so the `wm_new()` at
+/// `gemshlib.c:676-677` runs after each of them, and a GEM program that
+/// starts another one does it through `shel_write` — the parent ends, the
+/// shell loop runs the child, sweeps, and starts the parent again
+/// (`gemshlib.c:600-612,708-731`). NewTOS runs an EL0 `Pexec` child **nested**
+/// inside its living parent (TeraDesk → QED): the parent never left, so no
+/// shell-loop sweep happens for the child. What this does for that child is
+/// what `wm_new` does for a program the shell loop ran, restricted to the
+/// dead slot's own property:
+///
+/// * every window whose `w_owner` is `slot`: closed if open (`wm_close`, with
+///   its `draw_change` repaint and the `WM_REDRAW` fan-out to whatever the
+///   vanished window uncovered — the parent's windows) and deleted
+///   (`gemwmlib.c:1886-1890`);
+/// * the `WF_NEWDESK` background tree, if **this** slot registered it: the
+///   pointer is a VA of an address space that is gone (A97), and EmuTOS drops
+///   `gl_newdesk` before the next program runs (`wm_init`, `gemwmlib.c:1300`);
+/// * the menu bar, if **this** slot installed it ([`super::menu::release_bar_of`]).
+///
+/// **Not** the two `wind_update` counters. `wm_new` drains both
+/// (`gemwmlib.c:1879-1883`), and so does [`wm_new_keep_desktop`], because at
+/// those points no other client is alive to hold one. Here the parent *is*
+/// alive and may legitimately hold its own: EmuTOS releases the screen lock
+/// only when the dying process owns it — `if (wind_spb.sy_owner == rlr)
+/// unsync(&wind_spb)` (`gemshlib.c:668-669`) — and our counters carry no
+/// owner (see [`UPDATE_LOCK`]), so releasing them here could unlock the
+/// parent's screen mid-redraw. A child that dies holding `BEG_UPDATE` /
+/// `BEG_MCTRL` therefore leaves the count standing; named as a limit in
+/// `TASK/A107.md`, not silently fixed by a blanket reset.
+pub fn wm_new_for_slot(slot: usize) {
+    let Ok(owner) = i16::try_from(slot) else { return };
+    for wh in 1..NUM_WIN as i16 {
+        let Some((w_owner, open)) = win(wh).map(|w| (w.owner, w.open)) else { continue };
+        if w_owner != owner {
+            continue;
+        }
+        if open {
+            close_window(wh);
+        }
+        wm_delete(wh);
+    }
+    if newdesk_owner() == Some(slot) {
+        clear_newdesk();
+    }
+    super::menu::release_bar_of(slot);
+}
+
 /// `wm_init` (`gemwmlib.c:1247-1310`) — re-initialise the Window Manager
 /// before each program the shell loop starts (`gemshlib.c:717`). EmuTOS
 /// rebuilds the whole window-extent/element object arena; the observable
@@ -4680,6 +4732,44 @@ fn gad_rect(w: &Window, g: Gadget) -> Grect {
         }
         _ => Grect::default(),
     }
+}
+
+/// The scroll-arrow cell of `g` with the glyph and the `gl_wa*color` index
+/// that go with it — `(rect, G_*, W_*ARROW_IDX)`, `None` for anything that is
+/// not one of the four arrows (a page click in the track, or an absent
+/// gadget). The rectangles are [`varrow_cells`]/[`harrow_cells`], i.e. the
+/// un-grown `gl_wbox` × `gl_hbox` cells `w_bldvbar`/`w_bldhbar` lay out
+/// (`aes/gemwmlib.c:412-424,450-462`) — the same ones [`draw_varrows`] /
+/// [`draw_harrows`] paint, so the pressed cell is exactly the drawn one.
+fn arrow_cell(w: &Window, g: Gadget) -> Option<(Grect, u16, usize)> {
+    match g {
+        Gadget::Up => varrow_cells(w.curr, w.kind).0.map(|r| (r, G_UP, W_UPARROW_IDX)),
+        Gadget::Dn => varrow_cells(w.curr, w.kind).1.map(|r| (r, G_DN, W_DNARROW_IDX)),
+        Gadget::Lf => harrow_cells(w.curr, w.kind).0.map(|r| (r, G_LF, W_LFARROW_IDX)),
+        Gadget::Rt => harrow_cells(w.curr, w.kind).1.map(|r| (r, G_RT, W_RTARROW_IDX)),
+        _ => None,
+    }
+}
+
+/// `ob_change(gl_awind, gadget, selected|normal, TRUE)` for a scroll arrow
+/// (`aes/gemctrl.c:272-284`): redraw the cell with its `SELECTED` bit set or
+/// clear. Only the four arrows have a cell ([`arrow_cell`]); everything else
+/// is a no-op, which is the `W_HSLIDE`/`W_VSLIDE` guard of those lines.
+///
+/// `ob_change` brackets its draw with `gsx_moff()`/`gsx_mon()`
+/// (`aes/gemoblib.c:1275,1305`) — the cursor's save-under would otherwise
+/// restore the pre-draw pixels over the cell (A65) — and so does this; the
+/// *wait* in between runs with the cursor up, as EmuTOS's `handle_arrow_msg`
+/// does. The window is the top one (checked by [`intercept`] before the
+/// gadget switch), so the topped colour word applies.
+fn arrow_change(w: &Window, g: Gadget, sel: bool, backend: &dyn RasterBackend) {
+    let Some((r, ch, idx)) = arrow_cell(w, g) else {
+        return;
+    };
+    let clip = ClipRect::full(backend.width(), backend.height());
+    crate::vdi::cursor_hide(backend);
+    gadget_sel(r, ch, sel, gadget_ink(w, idx, true), backend, clip);
+    crate::vdi::cursor_show(backend);
 }
 
 /// Track the button over a closer/fuller gadget: invert it while the mouse
@@ -5183,7 +5273,8 @@ pub fn intercept() {
     // elevator arms overwrite `x` alone (`:305`), so `WM_HSLID`/`WM_VSLID`
     // carry the `WS_CURR` `y, w, h` in `msg[5..7]` (A93).
     let ws_curr = w.curr;
-    match gadget_at(w, mx, my) {
+    let gad = gadget_at(w, mx, my);
+    match gad {
         Gadget::Closer => {
             // `HOTCLOSE`: `message = WM_CLOSED; break;` — no `gr_watchbox`, the
             // press itself is the click (`aes/gemctrl.c:208-214`). The 3D
@@ -5245,7 +5336,7 @@ pub fn intercept() {
         | Gadget::HLfPage
         | Gadget::HRtPage => {
             msg[0] = WM_ARROWED;
-            msg[4] = match gadget_at(w, mx, my) {
+            msg[4] = match gad {
                 Gadget::Up => WA_UPLINE,
                 Gadget::Dn => WA_DNLINE,
                 Gadget::Lf => WA_LFLINE,
@@ -5255,7 +5346,21 @@ pub fn intercept() {
                 Gadget::HLfPage => WA_LFPAGE,
                 _ => WA_RTPAGE,
             };
+            // `hctl_window` brackets `handle_arrow_msg` with the gadget's
+            // pressed state: `ob_change(gl_awind, gadget, selected, TRUE)` …
+            // `handle_arrow_msg(w_handle, cpt)` … `ob_change(gl_awind, gadget,
+            // normal, TRUE)` (`aes/gemctrl.c:272-284`) — an **arrow** only: the
+            // guard `if ((gadget != W_HSLIDE) && (gadget != W_VSLIDE))` leaves
+            // a page click in the track without feedback, because there
+            // `gadget` is the slide box the point fell in while `cpt` was
+            // moved on to the elevator (`:262-270`). `selected = normal |
+            // SELECTED` with `normal = ob_state & ~SELECTED` (`:189-194`), so
+            // the only bit that moves is `SELECTED` — [`gadget_sel`]'s `sel`.
+            // The message cadence is untouched: one `WM_ARROWED`, posted after
+            // the release as before (A109).
+            arrow_change(w, gad, true, backend);
             wait_release();
+            arrow_change(w, gad, false, backend);
         }
         // Elevator-thumb drag → post the final 0..1000 position as WM_VSLID /
         // WM_HSLID (EmuTOS `hctl_window` W_?ELEV, `aes/gemctrl.c:295-306`).

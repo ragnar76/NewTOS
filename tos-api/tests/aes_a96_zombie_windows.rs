@@ -416,6 +416,11 @@ const WIND_DELETE: i16 = 103;
 const WIND_SET: i16 = 105;
 const WIND_FIND: i16 = 106;
 const WIND_UPDATE: i16 = 107;
+const MENU_BAR: i16 = 30;
+const EVNT_MULTI: i16 = 25;
+
+/// `evnt_multi` event-flag bits (`aesdefs.h`).
+const MU_TIMER: i16 = 0x0020;
 
 /// Window kinds (`aesdefs.h`).
 const NAME: i16 = 0x0001;
@@ -443,6 +448,12 @@ const WHITE_SOLID: u64 = 0x70;
 const DESK_WIN: (i16, i16, i16, i16) = (330, 260, 240, 160);
 const PROG_WIN: (i16, i16, i16, i16) = (40, 60, 240, 160);
 
+/// A107: the living EL0 parent's window and its `Pexec` child's — disjoint,
+/// both clear of the menu row, and far enough apart that neither the border
+/// nor the drop shadow of one reaches the other.
+const A107_PARENT_WIN: (i16, i16, i16, i16) = (40, 60, 240, 160);
+const A107_CHILD_WIN: (i16, i16, i16, i16) = (330, 260, 240, 160);
+
 fn centre(r: (i16, i16, i16, i16)) -> (i16, i16) {
     (r.0 + r.2 / 2, r.1 + r.3 / 2)
 }
@@ -462,6 +473,30 @@ fn appl_init(pb: &mut Aespb) -> i16 {
 fn appl_exit(pb: &mut Aespb) -> i16 {
     pb.intin.fill(0);
     pb.call(APPL_EXIT, 0, 1, 0)
+}
+
+/// `evnt_multi(MU_TIMER, …, ms)` — the wait a GEM parent returns to after its
+/// `Pexec` child ended. One AES dispatch, so the pending per-slot sweep runs
+/// before the opcode does (A107). Returns the fired event mask.
+fn evnt_multi_timer(pb: &mut Aespb, ms: i16) -> i16 {
+    let mut buf = Box::new([0i16; 8]);
+    pb.intin.fill(0);
+    pb.intin[0] = MU_TIMER;
+    pb.intin[14] = ms;
+    pb.intin[15] = 0;
+    pb.addrin[0] = buf.as_mut_ptr() as u64;
+    let fired = pb.call(EVNT_MULTI, 16, 7, 1);
+    pb.addrin[0] = 0;
+    fired
+}
+
+/// `menu_bar(tree, show)`.
+fn menu_bar(pb: &mut Aespb, tree: u64, show: i16) {
+    pb.intin.fill(0);
+    pb.intin[0] = show;
+    pb.addrin[0] = tree;
+    pb.call(MENU_BAR, 1, 1, 1);
+    pb.addrin[0] = 0;
 }
 
 fn wind_create(pb: &mut Aespb) -> i16 {
@@ -593,6 +628,22 @@ fn pterm(p: &Proc) {
     assert_eq!(resume.parent_frame_slot, p.slot);
     // SAFETY: the frame snapshot is not needed on the host.
     unsafe { process::pterm::release_slot(p.slot) };
+}
+
+/// `Pterm` of an EL0 **child** whose parent is still alive: `parent_slot` is
+/// the parent's, so `terminate` makes the parent the running process again —
+/// EmuTOS `xterm`'s `run = run->p_parent` (`bdos/proc.c:609`) — exactly as
+/// the kernel's `Pterm` handler leaves it before it `eret`s into the parent's
+/// saved frame (A107).
+fn pterm_child_of(child: &Proc, parent: &Proc) {
+    PROCESS_TABLE[child.slot].parent_frame.elr().store(1, Ordering::Release);
+    PROCESS_TABLE[child.slot].parent_slot.store(parent.slot as u32, Ordering::Release);
+    // SAFETY: single-threaded under `LOCK`; `RUN` is the child's basepage.
+    let resume = unsafe { process::pterm::terminate(0) }.expect("Pterm of the running child");
+    assert_eq!(resume.parent_frame_slot, child.slot);
+    // SAFETY: the frame snapshot is not needed on the host.
+    unsafe { process::pterm::release_slot(child.slot) };
+    assert_eq!(process::current(), parent.bp(), "the parent is the running process again");
 }
 
 // ── the launch boundary, as the kernel drives it ──────────────────────────
@@ -763,4 +814,228 @@ fn the_programs_background_tree_is_dropped_with_it() {
     cleanup(&mut pb, desk_win);
 
     assert_eq!(after_sweep, 0, "the dead program's WF_NEWDESK tree must be dropped by the sweep");
+}
+
+// ── A107: the nested EL0 `Pexec` child of a living GEM parent ──────────────
+//
+// TeraDesk starts QED: `shel_write(SHW_EXEC, …)` then `x_exec` = `Pexec`
+// (`sdk/apps/teradesk/startprg.c:259,309`), and TeraDesk stays alive around
+// it. EmuTOS never has this shape — there a GEM program that starts another
+// one *ends* and the shell loop runs the child, sweeping after it with
+// `wm_new()` (`aes/gemshlib.c:676-677`). Our child dies with its parent
+// parked in its own `Pexec`, so the only hook is
+// `aes::release_client(slot)` from `pterm::release_slot` — the `Pterm`
+// exception stack, where `close_window`'s repaint and `WM_REDRAW` fan-out
+// must not run. The slot is therefore *marked* there and swept at the
+// parent's next AES dispatch (`aes::dispatch` → `sweep_dead_clients`).
+
+/// The parent has a window open and `Pexec`s a child that opens one and
+/// `Pterm`s without `wind_close`. **At the `Pterm` nothing has been swept
+/// yet** (the exception stack is not a drawing context) — the slot carries
+/// the mark. The parent's next `evnt_multi` must find the child's window out
+/// of the table, `wind_find` in its rectangle answering the desktop, its
+/// rectangle painted as bare desktop, and its own window untouched.
+#[test]
+fn a107_a_window_the_pexec_child_left_open_is_gone_at_the_parents_next_aes_call() {
+    let _g = lock();
+    let mut pb = Aespb::new();
+    let tree = desktop_tree();
+    tos_api::aes::window::wm_new();
+
+    // The desktop is in the AES with its background registered; it is not
+    // part of this case — the launch chain is parent → child, both EL0.
+    desktop_context();
+    appl_init(&mut pb);
+    wind_set_newdesk(&mut pb, &*tree as *const Object as u64, 0);
+    appl_exit(&mut pb);
+
+    let parent = Proc::new();
+    parent.run();
+    appl_init(&mut pb);
+    let pwin = wind_create(&mut pb);
+    wind_open(&mut pb, pwin, A107_PARENT_WIN);
+
+    // `Pexec`: the child takes its own slot and runs nested in the parent.
+    let child = Proc::new();
+    child.run();
+    appl_init(&mut pb);
+    let cwin = wind_create(&mut pb);
+    wind_open(&mut pb, cwin, A107_CHILD_WIN);
+    assert_eq!(tos_api::aes::window::test_window_owner(cwin), Some(child.slot));
+    assert_eq!(wind_find(&mut pb, centre(A107_CHILD_WIN).0, centre(A107_CHILD_WIN).1), cwin);
+
+    // The child ends without closing anything.
+    pterm_child_of(&child, &parent);
+    let at_pterm = (
+        tos_api::aes::window::test_window_owner(cwin),
+        tos_api::aes::test_sweep_pending(child.slot),
+    );
+
+    // The parent's next AES call.
+    let fired = evnt_multi_timer(&mut pb, 2);
+
+    let white = host().raster.device(0);
+    let (cx, cy) = centre(A107_CHILD_WIN);
+    let (px, py) = centre(A107_PARENT_WIN);
+    let verdict = (
+        tos_api::aes::window::test_window_owner(cwin),
+        wind_find(&mut pb, cx, cy),
+        host().raster.count_not(A107_CHILD_WIN, white),
+        tos_api::aes::window::test_window_owner(pwin),
+        wind_find(&mut pb, px, py),
+        host().raster.count_not(inset(A107_PARENT_WIN, 1), white),
+        tos_api::aes::test_sweep_pending(child.slot),
+    );
+    cleanup(&mut pb, pwin);
+
+    assert_eq!(fired & MU_TIMER, MU_TIMER, "the parent's wait must end on its timer, fired = {fired:#06x}");
+    assert_eq!(
+        at_pterm,
+        (Some(child.slot), true),
+        "at the `Pterm` itself the child's window is still in the table and the slot is marked \
+         (release_slot runs on the exception stack; the sweep draws)"
+    );
+    assert_eq!(
+        verdict.0, None,
+        "the dead child's window must be out of the table at the parent's next AES call \
+         (wm_new, gemwmlib.c:1886-1890 via gemshlib.c:676-677)"
+    );
+    assert_eq!(verdict.1, DESKWH, "wind_find inside the dead child's window must answer the desktop");
+    assert_eq!(
+        verdict.2, 0,
+        "closing the child's window must repaint its rectangle as bare desktop (draw_change, \
+         gemwmlib.c:1216-1222): {} pixels are not",
+        verdict.2
+    );
+    assert_eq!(verdict.3, Some(parent.slot), "the living parent's window must survive the sweep");
+    assert_eq!(verdict.4, pwin, "wind_find inside the parent's window must still answer it");
+    assert!(verdict.5 > 0, "the parent's window must still be painted");
+    assert!(!verdict.6, "the mark must be consumed by the dispatch that swept");
+}
+
+/// The child registered its own `WF_NEWDESK` background tree (a desktop
+/// replacement launched from TeraDesk). It is a VA of an address space that
+/// is gone, so the sweep drops it — EmuTOS resets `gl_newdesk` before the
+/// next program runs (`wm_init`, `gemwmlib.c:1300`). A tree the **parent**
+/// registered is not touched when a child dies.
+#[test]
+fn a107_the_pexec_childs_background_tree_goes_with_it_and_the_parents_stays() {
+    let _g = lock();
+    let mut pb = Aespb::new();
+    let parent_tree = desktop_tree();
+    let child_tree = desktop_tree();
+    tos_api::aes::window::wm_new();
+
+    let parent = Proc::new();
+    parent.run();
+    appl_init(&mut pb);
+    wind_set_newdesk(&mut pb, &*parent_tree as *const Object as u64, 0);
+
+    // (a) A child that registers nothing leaves the parent's registration be.
+    let quiet = Proc::new();
+    quiet.run();
+    appl_init(&mut pb);
+    pterm_child_of(&quiet, &parent);
+    evnt_multi_timer(&mut pb, 2);
+    let after_quiet = tos_api::aes::window::test_newdesk_tree();
+
+    // (b) A child that registers its own takes it with it.
+    let child = Proc::new();
+    child.run();
+    appl_init(&mut pb);
+    wind_set_newdesk(&mut pb, &*child_tree as *const Object as u64, 0);
+    let registered = tos_api::aes::window::test_newdesk_tree();
+    pterm_child_of(&child, &parent);
+    evnt_multi_timer(&mut pb, 2);
+    let after_child = tos_api::aes::window::test_newdesk_tree();
+
+    wind_set_newdesk(&mut pb, 0, 0);
+    appl_exit(&mut pb);
+    desktop_context();
+    tos_api::aes::window::wm_new();
+
+    assert_eq!(
+        after_quiet,
+        &*parent_tree as *const Object as u64,
+        "the living parent's WF_NEWDESK tree must survive a child's death"
+    );
+    assert_eq!(registered, &*child_tree as *const Object as u64, "the child registered its own tree");
+    assert_eq!(after_child, 0, "the dead child's WF_NEWDESK tree must be dropped by the sweep");
+}
+
+/// The child installed a menu bar and died with it installed. EmuTOS clears
+/// `gl_mntree` nowhere on the exit path — `mn_cleanup` (`gemmnlib.c:740-760`,
+/// called from `ap_exit` `gemaplib.c:254` and `sh_ldapp` `gemshlib.c:652`)
+/// only sends `AC_CLOSE` and frees the submenu array, and `wm_new`/`wm_init`
+/// do not touch it either; the next program's `menu_bar(tree, 1)` overwrites
+/// it. Here the pointer is an EL0 VA the Control Manager would dereference at
+/// EL1 under the parent's `TTBR0` (the A97 class of fault), so the NewTOS
+/// rule is that a bar dies with the client that installed it — and only with
+/// **that** client: the parent's bar is untouched by a child's death.
+#[test]
+fn a107_the_pexec_childs_menu_bar_goes_with_it_and_the_parents_stays() {
+    let _g = lock();
+    let mut pb = Aespb::new();
+    tos_api::aes::window::wm_new();
+    let parent_menu = menu_tree();
+    let child_menu = menu_tree();
+
+    let parent = Proc::new();
+    parent.run();
+    appl_init(&mut pb);
+    menu_bar(&mut pb, parent_menu.as_ptr() as u64, 1);
+    assert_eq!(tos_api::aes::menu::active() as u64, parent_menu.as_ptr() as u64);
+
+    // (a) A child that installs no bar leaves the parent's alone.
+    let quiet = Proc::new();
+    quiet.run();
+    appl_init(&mut pb);
+    pterm_child_of(&quiet, &parent);
+    evnt_multi_timer(&mut pb, 2);
+    let after_quiet = tos_api::aes::menu::active() as u64;
+
+    // (b) A child that installs its own takes it with it.
+    let child = Proc::new();
+    child.run();
+    appl_init(&mut pb);
+    menu_bar(&mut pb, child_menu.as_ptr() as u64, 1);
+    let registered = tos_api::aes::menu::active() as u64;
+    pterm_child_of(&child, &parent);
+    evnt_multi_timer(&mut pb, 2);
+    let after_child = tos_api::aes::menu::active() as u64;
+
+    menu_bar(&mut pb, 0, 0);
+    appl_exit(&mut pb);
+    desktop_context();
+    tos_api::aes::window::wm_new();
+
+    assert_eq!(after_quiet, parent_menu.as_ptr() as u64, "the living parent's menu bar must survive a child's death");
+    assert_eq!(registered, child_menu.as_ptr() as u64, "the child installed its own bar");
+    assert_eq!(after_child, 0, "the dead child's menu tree must be dropped by the sweep");
+}
+
+/// A three-object menu tree: ROOT, `THEBAR` (the white strip `menu_bar`
+/// draws and stretches to the screen) and `THEACTIVE` (the title box whose
+/// extent becomes `gl_ctwait`, `gemmnlib.c:717`). No titles — nothing here
+/// tracks the bar.
+fn menu_tree() -> Box<[Object; 3]> {
+    let mk = |otype: u16, next: i16, head: i16, tail: i16, x: i16, w: i16| Object {
+        ob_next: next,
+        ob_head: head,
+        ob_tail: tail,
+        ob_type: otype,
+        ob_flags: 0,
+        ob_state: 0,
+        ob_spec: WHITE_SOLID,
+        ob_x: x,
+        ob_y: 0,
+        ob_width: w,
+        ob_height: 19,
+    };
+    const G_IBOX: u16 = 25;
+    Box::new([
+        mk(G_IBOX, -1, 1, 1, 0, SCREEN_W as i16),
+        mk(G_BOX, 0, 2, 2, 0, SCREEN_W as i16),
+        mk(G_IBOX, 1, -1, -1, 16, 216),
+    ])
 }
