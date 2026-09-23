@@ -82,9 +82,13 @@ pub fn event_loop() {
 /// Dispatches on the message type (`msg[0]`) with `msg[3]` the window handle
 /// (or, for `MN_SELECTED`, the menu title). Returns `true` to end the loop.
 /// Every message except `WM_REDRAW` re-runs `men_update`.
-fn hndl_msg(msg: &[i16; 8]) -> bool {
+///
+/// `pub(super)` because EmuTOS' `end_dialog` drains the redraw messages a
+/// closing dialog queued through this very function (`deskinf.c:379-388`).
+pub(super) fn hndl_msg(msg: &[i16; 8]) -> bool {
     let handle = msg[3];
     let mut done = false;
+    let mut change = false;
     match msg[0] {
         MN_SELECTED => {
             // Re-sync the current window to whichever last held a selection,
@@ -106,15 +110,21 @@ fn hndl_msg(msg: &[i16; 8]) -> bool {
             }
             return done; // WM_REDRAW suppresses the trailing men_update
         }
-        WM_TOPPED => top_msg(handle),
+        WM_TOPPED => change = top_msg(handle),
         WM_CLOSED => do_close_folder(), // == File → Close (EmuTOS CLOSITEM)
-        WM_FULLED => full_msg(handle),
+        WM_FULLED => change = full_msg(handle),
         WM_ARROWED => arrow_msg(handle, msg[4]),
         WM_VSLID => slid_msg(handle, false, msg[4]),
         WM_HSLID => slid_msg(handle, true, msg[4]),
-        WM_MOVED => moved_msg(handle, msg),
-        WM_SIZED => sized_msg(handle, msg),
+        WM_MOVED => change = moved_msg(handle, msg),
+        WM_SIZED => change = sized_msg(handle, msg),
         _ => {}
+    }
+    // `if (change) cnx_put();` (`deskmain.c:1352-1353`) — a window that was
+    // topped, fulled, moved or sized has a new saved context. This is the only
+    // externally visible effect the window messages have beyond the screen.
+    if change {
+        cnx_put();
     }
     menu::men_update();
     done
@@ -548,6 +558,19 @@ fn run_gem_app(path: &[u8], tail: &[u8]) -> bool {
 /// TRUE)`, `gemshlib.c:719`) before it loads the child. Both of those live in
 /// `crate::shell_loop::sh_main` already; the desktop has no business doing them.
 fn desktop_relinquish() {
+    // `cnx_put()` — the first statement of the EmuTOS epilog
+    // (`deskmain.c:2154`), so the window layout the desktop is about to give up
+    // is in `G.g_cnxsave`. Its `app_save(FALSE)` companion, which parks the
+    // whole INF image in the AES shell buffer, has no counterpart yet: NewTOS's
+    // `NEWDESK.INF` goes to and from the file directly, with no
+    // `shel_get`/`shel_put` memory image in between.
+    //
+    // The matching `cnx_get()` in the prolog is **deliberately not** run in
+    // [`desktop_resume`]: this desktop resumes in place with its windows still
+    // registered (`wm_new_keep_desktop`), so re-opening them from the context
+    // would duplicate every one. Closing them here and rebuilding them there is
+    // the launch-path half of gaps G1/G2 and belongs to that rebuild.
+    cnx_put();
     // Remove the desktop menu bar (EmuTOS `menu_bar(NULL,0)`). Our AES
     // `menu_bar(tree, 0)` needs the real (non-null) tree to erase the strip.
     super::menu_bar(menu::tree_ptr(), 0);
@@ -860,10 +883,10 @@ fn do_filemenu(item: Item) -> bool {
 fn do_optnmenu(item: Item) {
     match item {
         Item::SetBackground => {
-            // Self-drawn dialog (no AES save/restore): restore the whole desktop it
-            // covered (Module-2 restore path — see `redraw::redraw_desktop`).
+            // `end_dialog`'s `form_dial(FMD_FINISH)` repaints exactly the
+            // dialog's rectangle and re-asks the windows it covered — no
+            // whole-desktop composite (G7).
             super::inf::set_background();
-            redraw::redraw_desktop();
         }
         Item::InstallApp => do_install_app(),
         Item::ReadInf => do_read_inf(),
@@ -903,7 +926,8 @@ fn do_install_app() {
         }
         Outcome::Cancel => {}
     }
-    redraw::redraw_desktop(); // self-drawn dialog: restore the whole desktop it covered
+    // The dialog took its own rectangle down (`end_dialog`); nothing else on
+    // screen changed.
 }
 
 /// The default Install-Application flavour for a native program, from its
@@ -961,6 +985,10 @@ fn do_read_inf() {
     if !super::inf::load_and_apply() {
         return;
     }
+    // The re-read `#E` bytes land in `G.g_cnxsave`; push their preference half
+    // into the live desktop (see [`cnx_get_prefs`] for why not the whole
+    // `cnx_get`).
+    cnx_get_prefs();
     global::with(|g| {
         g.win_view();
         g.app_blddesk();
@@ -972,9 +1000,11 @@ fn do_read_inf() {
     redraw::redraw_desktop();
 }
 
-/// Options → Save desktop: serialise the current desktop state to
-/// `NEWDESK.INF`. Reports failure through an alert.
+/// Options → Save desktop: snapshot the session context, then serialise it to
+/// `NEWDESK.INF` — EmuTOS `SAVEITEM`: `desk_busy_on(); cnx_put(); app_save(TRUE);
+/// desk_busy_off();` (`deskmain.c:888-893`). Reports failure through an alert.
 fn do_save_desktop() {
+    cnx_put();
     if !super::inf::save_desktop() {
         dir::fun_alert(1, b"Could not save the desktop file.");
         // AES `form_alert` (fun_alert) bb_save/restores the screen — no repaint.
@@ -991,8 +1021,7 @@ fn do_new_folder() {
         return;
     }
     let Some(name) = super::dlg::edit_name(b"Name of new folder:\0", "") else {
-        redraw::redraw_desktop(); // dialog cancelled — restore the screen
-        return;
+        return; // cancelled — `end_dialog` already restored the screen
     };
     let created = global::with(|g| {
         g.win_slot(cwin).and_then(|s| {
@@ -1010,7 +1039,6 @@ fn do_new_folder() {
         }
         dir::fun_alert(1, b"Could not create the folder.");
     }
-    redraw::redraw_desktop();
 }
 
 /// File → Info/Rename (EmuTOS `do_filemenu` `SHOWITEM` → `inf_file_folder`,
@@ -1037,8 +1065,7 @@ fn do_info_rename() {
     };
     let renamed = super::inf::inf_file_folder(&old, size, date, time, attr);
     let Some(new) = renamed else {
-        redraw::redraw_desktop(); // dialog cancelled / no change — restore the screen
-        return;
+        return; // cancelled / no change — `end_dialog` restored the screen
     };
     let new = new.trim();
     if !new.is_empty() && new != old {
@@ -1052,7 +1079,6 @@ fn do_info_rename() {
         }
         dir::fun_alert(1, b"Could not rename the item.");
     }
-    redraw::redraw_desktop();
 }
 
 /// `fun_mask` (EmuTOS `deskfun.c:639`, `CONF_WITH_FILEMASK`) — File → Set file
@@ -1076,8 +1102,7 @@ fn do_set_mask() {
     .unwrap_or_else(|| String::from("*.*"));
 
     let Some(entered) = super::dlg::edit_name(b"Show only files matching:\0", &cur) else {
-        redraw::redraw_desktop(); // cancelled — restore the screen under the dialog
-        return;
+        return; // cancelled — `end_dialog` restored the screen under the dialog
     };
     set_window_mask(cwin, &entered);
 }
@@ -1255,8 +1280,7 @@ fn do_search() {
         return;
     }
     let Some(name) = super::dlg::edit_name(b"Search for file:\0", "") else {
-        redraw::redraw_desktop(); // cancelled — restore the screen under the dialog
-        return;
+        return; // cancelled — `end_dialog` restored the screen under the dialog
     };
     search_current_window(cwin, &name);
 }
@@ -1537,15 +1561,16 @@ fn do_cycle() {
 /// covered is not re-laid here (only triggerable with two or more overlapping
 /// windows, i.e. real-HW interaction / File→Cycle). Flagged, not masked with a
 /// desktop-side composite.
-fn top_msg(handle: i16) {
+fn top_msg(handle: i16) -> bool {
     desk_clear(global::with(|g| g.g_cwin).unwrap_or(DESKWH));
     if global::with(|g| g.win_find(handle).is_some()).unwrap_or(false) {
         super::wind_set_int(handle, WF_TOP, 0); // AES: top + repaint bg/frames
         global::with(|g| g.win_top(handle));
         let work = wind_get_work(handle);
         global::with(|g| g.desk_verify(handle, work, false));
-        // change = TRUE → cnx_put() (session save) — not implemented (future module).
+        return true; // `change = TRUE` → the caller's `cnx_put()`
     }
+    false
 }
 
 /// `WM_FULLED` (EmuTOS `deskmain.c:1296-1305`) — toggle the window between its
@@ -1557,7 +1582,7 @@ fn top_msg(handle: i16) {
 /// The window content repaint comes from the AES `send_redraw` that
 /// [`do_wfull`]'s `wind_set(WF_CXYWH)` queues — drained by the loop into
 /// [`redraw::do_wredraw`], after `desk_verify` has re-flowed the grid.
-fn full_msg(handle: i16) {
+fn full_msg(handle: i16) -> bool {
     if global::with(|g| g.win_find(handle).is_some()).unwrap_or(false) {
         global::with(|g| g.win_top(handle)); // fuller implies top
         do_wfull(handle);
@@ -1565,7 +1590,9 @@ fn full_msg(handle: i16) {
         if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
             set_sliders(handle, sliders);
         }
+        return true; // `change = TRUE` → the caller's `cnx_put()`
     }
+    false
 }
 
 /// `do_wfull(handle)` (EmuTOS `desksupp.c` `do_wfull`) — toggle a window between
@@ -1610,9 +1637,9 @@ fn do_xyfix(r: &mut Grect) {
 /// and so does the repaint of every *other* window the move uncovered — the AES
 /// draws nothing during the drag itself, which is only the `gr_dragbox` XOR
 /// outline. `change = TRUE → cnx_put()` (session save) is a future module.
-fn moved_msg(handle: i16, msg: &[i16; 8]) {
+fn moved_msg(handle: i16, msg: &[i16; 8]) -> bool {
     let Some(slot) = global::with(|g| g.win_slot(handle)).flatten() else {
-        return;
+        return false;
     };
     let mut gr = Grect { x: msg[4], y: msg[5], w: msg[6], h: msg[7] };
     do_xyfix(&mut gr);
@@ -1625,6 +1652,7 @@ fn moved_msg(handle: i16, msg: &[i16; 8]) {
         g.g_screen[root].ob_width = work.w;
         g.g_screen[root].ob_height = work.h;
     });
+    true // `change = TRUE` → the caller's `cnx_put()`
 }
 
 /// `WM_SIZED` (EmuTOS `deskmain.c:1317-1338`, shared move/size path) — confirm
@@ -1642,7 +1670,7 @@ fn moved_msg(handle: i16, msg: &[i16; 8]) {
 /// loop drains that message — the shrink-specific fixup is subsumed and omitted
 /// (the observable contract, content re-flowing into fewer columns on shrink, is
 /// met). `send_redraw` fires after `desk_verify` has rebuilt the grid.
-fn sized_msg(handle: i16, msg: &[i16; 8]) {
+fn sized_msg(handle: i16, msg: &[i16; 8]) -> bool {
     if global::with(|g| g.win_find(handle).is_some()).unwrap_or(false) {
         let mut gr = Grect { x: msg[4], y: msg[5], w: msg[6], h: msg[7] };
         do_xyfix(&mut gr);
@@ -1651,7 +1679,9 @@ fn sized_msg(handle: i16, msg: &[i16; 8]) {
         if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
             set_sliders(handle, sliders);
         }
+        return true; // `change = TRUE` → the caller's `cnx_put()`
     }
+    false
 }
 
 /// `WM_ARROWED` — an arrow-gadget scroll of `handle`.
@@ -1679,6 +1709,201 @@ fn slid_msg(handle: i16, horizontal: bool, value: i16) {
     }
 }
 
+// ── Session context (`cnx_put` / `cnx_get`, `deskmain.c:1365-1501`) ────────
+
+/// `cnx_put` (EmuTOS `deskmain.c:1371-1427`) — the **in-memory** save of the
+/// desktop's preferences and window layout into `G.g_cnxsave`.
+///
+/// Slot assignment, verbatim from the source: count the unused slots first and
+/// blank them from the **end** of the array backwards, then walk the window
+/// chain — which is front-to-back, most-recently-topped first — filling
+/// downwards from where that first loop stopped. The topmost window therefore
+/// lands in the highest used slot and **slot 0 holds the bottom-most window**
+/// (`:1367-1369`), which is the order `cnx_get` needs to rebuild the z-order by
+/// opening slot 0 first.
+///
+/// Every field is read live: the frame rectangle through `wind_get(WF_CXYWH)`
+/// (then `do_xyfix`'d, `:1420-1421`), the scroll position from `w_cvcol`/
+/// `w_cvrow`, the directory from `w_pnode.p_spec`.
+pub(super) fn cnx_put() {
+    // View/sort/size-to-fit — the preferences this desktop has live state for
+    // (see `global::CSave` for the ones it does not).
+    global::with(|g| {
+        g.g_cnxsave.cs_view = g.view;
+        g.g_cnxsave.cs_sort = g.sort;
+        g.g_cnxsave.cs_sizefit = g.size_to_fit;
+    });
+
+    // The open windows, front-to-back, with their desktop slot and handle.
+    let open: alloc::vec::Vec<(usize, i16)> = global::with(|g| {
+        g.windows
+            .zorder
+            .iter()
+            .filter(|&&slot| g.windows.slots[slot].w_id != 0)
+            .map(|&slot| (slot, g.windows.slots[slot].w_id))
+            .collect()
+    })
+    .unwrap_or_default();
+
+    // The AES geometry query runs with the desktop lock released.
+    let mut saved: alloc::vec::Vec<global::WSave> = alloc::vec::Vec::new();
+    for &(slot, handle) in &open {
+        let mut gr = wind_get_grect(handle, WF_CXYWH);
+        do_xyfix(&mut gr);
+        let (cvcol, cvrow, spec) = global::with(|g| {
+            let w = &g.windows.slots[slot];
+            (w.w_cvcol, w.w_cvrow, w.w_pnode.p_spec.clone())
+        })
+        .unwrap_or((0, 0, String::new()));
+        saved.push(global::WSave {
+            x_save: gr.x,
+            y_save: gr.y,
+            w_save: gr.w,
+            h_save: gr.h,
+            hsl_save: cvcol,
+            vsl_save: cvrow,
+            pth_save: spec,
+        });
+    }
+
+    global::with(|g| {
+        // "first, count the unused slots & initialise them" — the trailing
+        // slots keep their rectangle (it is the default geometry `win_alloc`
+        // hands the next window) and lose only their path.
+        let used = saved.len().min(NUM_WNODES);
+        for ws in g.g_cnxsave.cs_wnode[used..].iter_mut() {
+            ws.pth_save.clear();
+        }
+        // "next, save the info for the open windows": front-to-back into
+        // descending slots, so slot 0 ends up holding the bottom-most window.
+        for (i, ws) in saved.into_iter().take(NUM_WNODES).enumerate() {
+            g.g_cnxsave.cs_wnode[used - 1 - i] = ws;
+        }
+    });
+}
+
+/// `cnx_get` (EmuTOS `deskmain.c:1430-1501`) — apply `G.g_cnxsave` to the live
+/// desktop: the saved preferences, then the saved windows.
+///
+/// The preferences go through `do_viewmenu` exactly as EmuTOS does
+/// (`do_viewmenu(ICONITEM + cs_view)` / `do_viewmenu(NAMEITEM + cs_sort)`,
+/// `:1437-1438`) — the menu dispatcher is reused so the view/sort machinery and
+/// the menu state stay in one place; `cs_sizefit` is assigned directly, as there
+/// its menu item is a toggle.
+///
+/// Every saved rectangle is then **validated against the current desktop**
+/// (`:1466-1483`): an off-screen origin is pulled back to the middle, a
+/// non-positive or oversized extent becomes the full desktop. That is what makes
+/// a layout saved at one resolution survive being read at another. Slots are
+/// walked `0..NUM_WNODES`, i.e. bottom-most first, so the z-order comes back the
+/// way it was saved. A slot with an empty path is not a window.
+///
+/// Returns how many windows were opened.
+pub(super) fn cnx_get() -> usize {
+    cnx_get_prefs();
+
+    let desk = g_desk();
+    let mut opened = 0usize;
+    for nw in 0..NUM_WNODES {
+        let Some(mut ws) = global::with(|g| g.g_cnxsave.cs_wnode[nw].clone()) else {
+            break;
+        };
+
+        // "Check for valid position" / "Check for valid width + height".
+        if ws.x_save >= desk.w {
+            ws.x_save = desk.w / 2;
+        }
+        if ws.y_save >= desk.h {
+            ws.y_save = desk.h / 2;
+        }
+        if ws.w_save <= 0 || ws.w_save > desk.w {
+            ws.w_save = desk.w;
+        }
+        if ws.h_save <= 0 || ws.h_save > desk.h {
+            ws.h_save = desk.h;
+        }
+        let mut gr = Grect { x: ws.x_save, y: ws.y_save, w: ws.w_save, h: ws.h_save };
+        do_xyfix(&mut gr);
+        ws.x_save = gr.x;
+        ws.y_save = gr.y;
+        // EmuTOS validates in place, so the corrected values are what a later
+        // `app_save` writes out even if the window never opens.
+        let path = ws.pth_save.clone();
+        let (cvcol, cvrow) = (ws.hsl_save, ws.vsl_save);
+        global::with(|g| g.g_cnxsave.cs_wnode[nw] = ws);
+
+        if path.is_empty() {
+            continue;
+        }
+        // `do_diropen(pw, TRUE, obid, pws->pth_save, (GRECT *)pws, TRUE)`.
+        let (spec, title) = spec_and_title(&path);
+        open_dir_window_at(&spec, &title, Some(gr), cvcol, cvrow);
+        opened += 1;
+    }
+    opened
+}
+
+/// The preference half of [`cnx_get`] (`deskmain.c:1437-1461`), on its own
+/// because NewTOS's Options → Read .INF re-applies a re-read file **in place**
+/// where EmuTOS restarts the whole desktop (`READITEM`, `deskmain.c:919-924`):
+/// there the context's windows are already on screen and must not be opened a
+/// second time.
+fn cnx_get_prefs() {
+    let (view, sort, sizefit) = global::with(|g| {
+        (g.g_cnxsave.cs_view, g.g_cnxsave.cs_sort, g.g_cnxsave.cs_sizefit)
+    })
+    .unwrap_or((super::model::View::Icon, super::model::Sort::Name, true));
+
+    do_viewmenu(view_item(view));
+    do_viewmenu(sort_item(sort));
+    global::with(|g| {
+        g.size_to_fit = sizefit;
+        g.win_view();
+    });
+}
+
+/// Split a saved `#W` path into the scanner spec and the window title.
+///
+/// EmuTOS saves `w_pnode.p_spec`, which always carries a mask
+/// (`C:\SUB\*.*`), and rebuilds the title from it in `win_sname`
+/// (`deskwin.c:847-858`). A path written by hand without a mask gets the
+/// all-files one; the title is the directory, with the mask appended only when
+/// it is a real filter — the same rule [`set_window_mask`] uses.
+fn spec_and_title(path: &str) -> (String, String) {
+    let mut spec = String::from(path);
+    if spec.is_empty() || spec.ends_with('\\') {
+        spec.push_str("*.*");
+    }
+    let cut = spec.rfind('\\').map(|i| i + 1).unwrap_or(0);
+    let (dir, mask) = spec.split_at(cut);
+    let mut title = String::from(dir);
+    if !mask.is_empty() && mask != "*.*" {
+        title.push_str(mask);
+    }
+    (spec, title)
+}
+
+/// The View-menu item for a saved view mode — EmuTOS `ICONITEM + cs_view`
+/// (`deskmain.c:1437`).
+fn view_item(view: super::model::View) -> Item {
+    match view {
+        super::model::View::Icon => Item::ShowIcons,
+        super::model::View::Text => Item::ShowText,
+    }
+}
+
+/// The View-menu item for a saved sort key — EmuTOS `NAMEITEM + cs_sort`
+/// (`deskmain.c:1438`).
+fn sort_item(sort: super::model::Sort) -> Item {
+    match sort {
+        super::model::Sort::Name => Item::SortName,
+        super::model::Sort::Type => Item::SortType,
+        super::model::Sort::Size => Item::SortSize,
+        super::model::Sort::Date => Item::SortDate,
+        super::model::Sort::NoSort => Item::NoSort,
+    }
+}
+
 // ── Window open / close / navigate ─────────────────────────────────────────
 
 /// Open a directory window on drive `letter`'s root (`X:\`).
@@ -1696,6 +1921,16 @@ pub fn open_root_window(letter: u8) {
 /// scan + sort its contents, build the view, and paint it (EmuTOS `do_diropen`
 /// + `win_bldview`). A no-op if all window slots are in use.
 fn open_dir_window(spec: &str, title: &str) {
+    open_dir_window_at(spec, title, None, 0, 0);
+}
+
+/// [`open_dir_window`] with an explicitly supplied frame rectangle and scroll
+/// position — the shape EmuTOS's `do_diropen(pw, TRUE, obid, path, pt, TRUE)`
+/// has, where `pt` is the caller's rectangle (`deskmain.c:1497`, `cnx_get`
+/// passing `(GRECT *)pws`). With `rect == None` the window takes its slot's
+/// [`super::inf::window_rect`] (EmuTOS `win_alloc`'s
+/// `cs_wnode[G.g_wcnt]` default, `deskwin.c:165`), or a staggered fallback.
+fn open_dir_window_at(spec: &str, title: &str, rect: Option<Grect>, cvcol: i16, cvrow: i16) {
     let Some(desk) = global::with(|g| g.g_desk) else {
         return;
     };
@@ -1712,6 +1947,11 @@ fn open_dir_window(spec: &str, title: &str) {
             pn.pn_active(true);
             pn.pn_sort(sort);
         }
+        // `pw->w_cvcol = pws->hsl_save; pw->w_cvrow = pws->vsl_save;`
+        // (`cnx_get`, `deskmain.c:1493-1494`) — the saved scroll position, set
+        // before the view is built so `win_bldview` lays out at that offset.
+        g.windows.slots[slot].w_cvcol = cvcol;
+        g.windows.slots[slot].w_cvrow = cvrow;
         let pn = &g.windows.slots[slot].w_pnode;
         Some((slot, pn.p_count, pn.p_size))
     })
@@ -1732,7 +1972,9 @@ fn open_dir_window(spec: &str, title: &str) {
     let rw = (desk.w - 96).min(560);
     let rh = (desk.h - 56).min(400);
     let default_r = Grect { x: desk.x + 48 + step, y: desk.y + 24 + step, w: rw, h: rh };
-    let r = super::inf::window_rect(slot).unwrap_or(default_r);
+    let r = rect
+        .or_else(|| super::inf::window_rect(slot))
+        .unwrap_or(default_r);
     super::wind_open(handle, r);
 
     // Build the view for the actual work rect + push the scrollbar geometry,

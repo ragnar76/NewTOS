@@ -468,8 +468,68 @@ specific behaviour identified (EmuDesk-specific file).
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00. Filled in when the corresponding implementation
-phase begins.)
+### The dialog chain — `start_dialog` / `end_dialog` / `inf_show` (DESK08, 2026-09-23)
+
+`kernel/src/desk/inf.rs` carries the three shared dialog primitives, at
+the same place in the tree as `deskinf.c` carries them, and every
+desktop dialog goes through them:
+
+| EmuTOS | NewTOS | AES opcodes it issues |
+|---|---|---|
+| `start_dialog(tree)` (`:349-357`) | `inf::start_dialog(tree) -> Grect` | 54 `form_center`, 51 `form_dial(FMD_START)`, 42 `objc_draw` |
+| `end_dialog(tree)` (`:363-390`) | `inf::end_dialog(tree)` | 54 `form_center`, 51 `form_dial(FMD_FINISH)`, 25 `evnt_multi` drain |
+| `inf_show(tree, start)` (`:396-402`) | `inf::inf_show(tree, start) -> i16` | the two above + 50 `form_do` |
+| `draw_dial(tree)` (`deskdir.c:79-85`) | `dir::draw_dial(tree)` | 54 `form_center`, 42 `objc_draw` |
+
+Call sites, one for one with the source:
+
+| dialog | EmuTOS | NewTOS |
+|---|---|---|
+| New folder / Set file mask / Search name box | `fun_mkdir` `start_dialog`+`form_do`+`end_dialog` (`deskfun.c:697,734`), `fun_mask` `inf_show` (`:655`) | `dlg::edit_name` → `inf_show(tree, ROOT)` |
+| Show Info / rename | `inf_file_folder` → `inf_show` (`deskinf.c:574`) | `inf::inf_file_folder` → `inf_show(tree, ROOT)` |
+| Set background | `inf_backgrounds` `start_dialog`/`draw_fld`-loop/`end_dialog` (`deskinf.c:862-896`) | `inf::set_background` → `start_dialog` / loop with `dir::draw_dial` / `end_dialog` |
+| Install application | `ins_app_dialog` `start_dialog`/`draw_dial`-retry/`end_dialog` (`deskins.c:504,527,597`) | `insapp::ins_app_dialog`, same shape |
+
+Three consequences, all of them the point of the change:
+
+1. **The trees are built at the origin.** A NewTOS desktop dialog is a
+   stack-built `OBJECT` array whose ROOT carries `ob_x = ob_y = 0`, the
+   way a resource-file dialog does; `form_center` writes the centred
+   position into the ROOT (`ob_center`, `aes/gemobed.c:81-82`). The
+   four dialog builders used to compute `((sw-dw)/2, (sh-dh)/2)`
+   themselves, which is **9 px too high** at `gl_hbox = 19`: EmuTOS
+   centres in the screen *below the menu bar*,
+   `yd = gl_hbox + (gl_height - gl_hbox - hd) / 2`.
+2. **`objc_draw` is clipped to the dialog's own rectangle**, not to the
+   whole screen.
+3. **The undraw is `form_dial(FMD_FINISH)` over that rectangle**, and
+   the desktop no longer repaints itself afterwards. Every
+   `redraw::redraw_desktop()` that stood after a dialog in
+   `desk::main` is gone: `set_background`, `ins_app_dialog`,
+   `do_new_folder`, `do_info_rename`, `do_set_mask`, `do_search`.
+
+**FMD_START does not photograph the screen**, in EmuTOS or here:
+`fm_dial`'s `FMD_START` arm is a bare `break` with the comment "grab
+screen sync or some other mutual exclusion method"
+(`aes/gemfmlib.c:365-369`). The restore is the FMD_FINISH *repaint* —
+`w_drawdesk(pt)` plus `w_update(DESKWH, pt, DESKWH, FALSE)`
+(`:375-379`) — which is exactly why `end_dialog` has to drain the
+message pipe itself: the desktop answers its own messages directly, so
+an undrained `WM_REDRAW` would arrive out of sequence and show as a
+partial refresh (EmuTOS says so at `deskinf.c:371-378`). NewTOS's drain
+is the same loop over `evnt_multi(MU_TIMER|MU_MESAG, …)` +
+`main::hndl_msg`.
+
+**One named deviation:** EmuTOS's `inf_backgrounds` redraws only the
+changed sample field between two `form_do` turns (`draw_fld(tree,
+BGSAMPLE)`, `deskdir.c:127`); NewTOS redraws the whole dialog with
+`draw_dial`, the way `ins_app_dialog`'s retry path does
+(`deskins.c:527`). There is no per-field draw helper yet (it needs
+`objc_offset`, opcode 44, which the desktop does not bind).
+
+Covered by `tos-api/tests/aes_desk_dialog_chain.rs` (placement, the
+untouched surroundings, and the scope of the restore, all through the
+real trap dispatcher into a pixel buffer).
 
 ---
 ---

@@ -9,6 +9,7 @@
 //!
 //! [`GLOBES G`]: https://github.com/emutos/emutos/blob/master/desk/deskbind.h
 
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU8, Ordering};
 
@@ -204,6 +205,73 @@ pub fn patcol_all() -> [u8; 6] {
     out
 }
 
+/// EmuTOS `WSAVE` (`deskapp.h:120-131`) — one window's saved context: its frame
+/// rectangle in **pixels**, its scroll position and the directory it shows.
+///
+/// A slot with an empty [`Self::pth_save`] is unused, exactly as EmuTOS's
+/// `pth_save[0] == 0` marks one (`cnx_put`, `deskmain.c:1405-1409`).
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct WSave {
+    /// Window frame x (`x_save`).
+    pub x_save: i16,
+    /// Window frame y (`y_save`).
+    pub y_save: i16,
+    /// Window frame width (`w_save`).
+    pub w_save: i16,
+    /// Window frame height (`h_save`).
+    pub h_save: i16,
+    /// Horizontal scroll position — the window's `w_cvcol` (`hsl_save`).
+    pub hsl_save: i16,
+    /// Vertical scroll position — the window's `w_cvrow` (`vsl_save`).
+    pub vsl_save: i16,
+    /// The directory the window shows (`pth_save`, EmuTOS `w_pnode.p_spec`).
+    pub pth_save: String,
+}
+
+/// EmuTOS `CSAVE` (`deskapp.h:148-156`), `G.g_cnxsave` — the desktop's **own**
+/// context save area: the preferences and the window layout, held between the
+/// `NEWDESK.INF` image and the live desktop.
+///
+/// It is written by `app_start` (from the file) and by `cnx_put` (from the live
+/// desktop), and read by `cnx_get` (to the live desktop) and by `app_save` (to
+/// the file). The AES window table is deliberately **not** the place for this:
+/// it is wiped on every shell pass, which is precisely why EmuTOS's desktop
+/// keeps its own copy (gap G2 of `docs/analysis/desk-aes-gaps-2026-09-14.md`).
+///
+/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries
+/// `cs_confcpy`/`cs_confdel`/`cs_confovwr`/`cs_dblclick`/`cs_timefmt`/
+/// `cs_datefmt`/`cs_blitter`/`cs_cache`/`cs_appdir`/`cs_fullpath`. Those mirror
+/// `GLOBES` fields that exist only because `inf_pref`/`inf_conf` (the
+/// Preferences and Configuration dialogs) can edit them; NewTOS has no live
+/// state for any of them yet, so there is nothing for `cnx_put` to read or for
+/// `cnx_get` to apply. Their bits still survive a load/save round trip — the
+/// `#E` bytes they live in are preserved verbatim by [`super::inf`]'s session
+/// copy — they are simply not routed through this structure until the dialogs
+/// that own them exist.
+#[derive(Clone)]
+pub struct CSave {
+    /// Saved view mode (`cs_view`).
+    pub cs_view: View,
+    /// Saved sort key (`cs_sort`).
+    pub cs_sort: Sort,
+    /// Saved "size windows to fit" preference (`cs_sizefit`).
+    pub cs_sizefit: bool,
+    /// One [`WSave`] per window slot (`cs_wnode[NUM_WNODES]`); slot 0 is the
+    /// **bottom-most** window (`cnx_put`'s comment, `deskmain.c:1367-1369`).
+    pub cs_wnode: [WSave; NUM_WNODES],
+}
+
+impl Default for CSave {
+    fn default() -> Self {
+        Self {
+            cs_view: View::Icon,
+            cs_sort: Sort::Name,
+            cs_sizefit: true,
+            cs_wnode: Default::default(),
+        }
+    }
+}
+
 /// The desktop's process-lifetime global state (EmuTOS `GLOBES G`).
 pub struct DeskState {
     /// Current view mode (`g_iview`).
@@ -279,10 +347,13 @@ pub struct DeskState {
     /// Consulted by [`DeskState::inf_desk_pos`] during `app_blddesk`. Empty when
     /// no INF file was loaded (icons then take their built-in default spots).
     pub inf_desk_icons: alloc::vec::Vec<(u8, u8, u8, u8)>,
-    /// Parsed `NEWDESK.INF` window rectangles (`#W` lines, in file order,
-    /// converted to pixels), indexed by window slot. Consulted when a directory
-    /// window opens.
-    pub inf_windows: alloc::vec::Vec<Grect>,
+    /// `G.g_cnxsave` — the desktop's context save area ([`CSave`]): the saved
+    /// view/sort/size-to-fit and the per-slot window layout. Filled from the
+    /// `#E`/`#W` lines by [`super::inf::load_and_apply`] (`app_start`) and from
+    /// the live desktop by [`super::main::cnx_put`]; read back by
+    /// [`super::main::cnx_get`] and by [`super::inf::save_desktop`]
+    /// (`app_save`).
+    pub g_cnxsave: CSave,
 }
 
 impl DeskState {
@@ -316,7 +387,7 @@ impl DeskState {
             g_screenfree: NIL,
             windows: WindowList::default(),
             inf_desk_icons: Vec::new(),
-            inf_windows: Vec::new(),
+            g_cnxsave: CSave::default(),
         }
     }
 

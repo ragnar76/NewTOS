@@ -1160,5 +1160,90 @@ this menu item" calls) before or during `kernel/src/desk/` implementation.
 
 ## NewTOS implementation notes
 
-(Empty — Phase 00 extraction only. Filled in during the `kernel/src/desk/`
-rebuild, per ADR-016.)
+### The context save area — `CSAVE` / `cnx_put` / `cnx_get` (DESK09, 2026-09-23)
+
+`G.g_cnxsave` is `DeskState::g_cnxsave` (`kernel/src/desk/global.rs`),
+a `CSave { cs_view, cs_sort, cs_sizefit, cs_wnode: [WSave; NUM_WNODES] }`
+with `WSave { x_save, y_save, w_save, h_save, hsl_save, vsl_save,
+pth_save }` — the whole `WSAVE` field set (`deskapp.h:120-131`), and the
+subset of `CSAVE`'s preference fields the desktop has live state for.
+The rest of `CSAVE` (`cs_confcpy`/`cs_confdel`/`cs_confovwr`/
+`cs_dblclick`/`cs_timefmt`/`cs_datefmt`/`cs_blitter`/`cs_cache`/
+`cs_appdir`/`cs_fullpath`) mirrors `GLOBES` fields that exist only
+because `inf_pref`/`inf_conf` can edit them; those dialogs are not
+implemented, so there is nothing for `cnx_put` to read or `cnx_get` to
+apply. Their bits still survive a load/save round trip — `desk::inf`
+keeps the parsed `#E` bytes of the session and re-emits every bit it
+does not own — they are simply not routed through the structure yet.
+
+| EmuTOS | NewTOS |
+|---|---|
+| `app_start`'s `#E`/`#W` arms (`deskapp.c:889-948`) | `inf::apply` — `#E` → `cs_view`/`cs_sort`/`cs_sizefit`, `#W` → `cs_wnode[]` (cells × `gl_wchar`/`gl_hchar` → pixels) |
+| `cnx_put()` (`:1371-1427`) | `main::cnx_put()` |
+| `cnx_get()` (`:1430-1501`) | `main::cnx_get() -> usize` (how many windows it opened) |
+| `app_save(TRUE)` (`deskapp.c:1106-1290`) | `inf::save_desktop()` — `#E` and all `NUM_WNODES` `#W` lines out of `cs_wnode[]` |
+| `win_alloc`'s default rect `cs_wnode[g_wcnt]` (`deskwin.c:165`) | `inf::window_rect(slot)` |
+
+**Slot order is the source's, verbatim.** `cnx_put` counts the unused
+slots, blanks their `pth_save` from the *end* of the array backwards,
+then fills downwards from where that stopped with the window chain
+front-to-back — so the topmost window lands in the highest used slot and
+**slot 0 holds the bottom-most window** (`:1367-1369`). `cnx_get` walks
+`0..NUM_WNODES`, i.e. bottom-most first, and the z-order comes back the
+way it was saved.
+
+**Call sites:**
+
+* `cnx_get()` — in `desk::run()`, after `app_blddesk` and the
+  `wind_set(DESKWH, WF_NEWDESK, …)`, bracketed by
+  `wind_update(BEG_UPDATE)` / `END_UPDATE`, exactly at `:2053-2057`.
+* `cnx_put()` — `Options → Save desktop` (`main::do_save_desktop`,
+  before `app_save`, `:889-893`); the tail of `main::hndl_msg` when a
+  message changed a window (`WM_TOPPED`/`WM_FULLED`/`WM_MOVED`/
+  `WM_SIZED` set `change`, `:1352-1353`); and the desktop epilog
+  (`main::desktop_relinquish`, `:2154`).
+* `inf::set_background` also runs `cnx_put()` before its `save_desktop()`
+  — NewTOS persists a background change immediately where EmuTOS leaves
+  it to the next Save desktop, and the invariant "`app_save` is always
+  preceded by `cnx_put`" (`:891`, `:2154`) is kept.
+
+**Named deviations, four:**
+
+1. **The desktop epilog's `app_save(FALSE)` has no counterpart.** EmuTOS
+   parks the whole INF image in the AES shell buffer (`shel_get`/
+   `shel_put`) so a restarted desktop finds it without touching the
+   disk; NewTOS's `NEWDESK.INF` goes to and from the file directly.
+   Consequence: a window layout survives a **cold boot** after Save
+   desktop, but not the A106 AES restart on its own.
+2. **`cnx_get()` is not run in the desktop *prolog*
+   (`main::desktop_resume`).** That desktop resumes in place with its
+   windows still registered (`wm_new_keep_desktop`), so re-opening them
+   from the context would duplicate every one. Closing them in the
+   epilog and rebuilding them in the prolog is the launch-path half of
+   gaps G1/G2 and belongs to that rebuild.
+3. **`obj_get_obid(pth_save[0])`** — EmuTOS resolves the saved path's
+   drive letter back to a desktop object id and hands it to `win_alloc`
+   as `w_obid`. NewTOS's window open path does not carry a source object
+   (`win_alloc(handle, 0)` everywhere), and EmuTOS's own `win_free` on a
+   failed `do_diropen` has no counterpart either, because the NewTOS
+   open path has no failure signal: an unreachable saved path yields an
+   empty window, exactly as any other unreachable path does.
+4. **An unused slot supplies no default rectangle.** EmuTOS's
+   `win_alloc` takes `cs_wnode[g_wcnt]` unconditionally, which works
+   because its built-in `EMUDESK.INF` always carries four default `#W`
+   lines with empty paths (`desk_inf_data1`, `deskapp.c:177-180`).
+   NewTOS ships none, and `cnx_get`'s validation turns an all-zero slot
+   into the **whole desktop** (`w_save <= 0` → `g_desk.g_w`,
+   `:1476-1483`), so taking it would open every fresh window
+   full-screen. `inf::window_rect` therefore answers only for a slot
+   that holds a saved window; the staggered fallback stands otherwise.
+   Adopting `desk_inf_data1`'s `#W` defaults would remove the deviation
+   and change the boot picture (304×192 at (16,96) instead of 544×400 at
+   (48,43)) — a decision of its own.
+
+**Read .INF** (`Options → Read .INF file`, a NewTOS menu item) re-applies
+in place where EmuTOS restarts the desktop (`READITEM` sets
+`restart_desktop` and ends the loop, `:919-924`). It therefore takes only
+the preference half of `cnx_get` (`main::cnx_get_prefs`,
+`:1437-1461`): the context's windows are already on screen and must not
+be opened a second time.

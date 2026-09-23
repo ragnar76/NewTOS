@@ -1,0 +1,27 @@
+# DESK09 -- cnx_put through `Options -> Save desktop`, on the kernel desktop
+# (sd-base, no #Z). At boot the C:\ window stands at the staggered default
+# (48,43,544,400); ticks are 200 Hz after "[desk] desktop up" armed the
+# injector.
+# A: idle.
+# Drag the title bar from (300,52) to (400,150): the frame moves by (+100,+98),
+#    `do_xyfix` aligns x to 16 -> (144,141,544,400). -> B
+# Hover the Options title (x 160..232, A100/A102: titles start at 16) -> C, the
+#    box open, so the item row can be read off the picture.
+# Click "Save desktop..." -- entry 11 of the Options box, 16 px per row below
+#    the 19 px bar: y = 19 + 11*16 = 195..211, centre 203. -> D
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 300 52
+1600 down
+1650 drag 400 150
+1800 up
+2000 parkbr
+2400 mark B_MOVED
+2700 move 196 8
+3100 mark C_OPTIONS_OPEN
+3400 move 200 203
+3600 down
+3603 up
+3900 parkbr
+4300 mark D_SAVED

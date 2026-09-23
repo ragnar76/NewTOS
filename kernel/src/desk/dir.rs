@@ -699,6 +699,16 @@ pub fn fun_selectall() -> bool {
     true
 }
 
+/// `draw_dial` (EmuTOS `deskdir.c:79-85`) — redraw an already-started dialog in
+/// place: re-centre it (`form_center`, which reports the same rectangle
+/// `start_dialog` used) and `objc_draw` the whole tree into that rectangle. This
+/// is the in-loop repaint a multi-step dialog does between two `form_do` turns;
+/// it does **not** re-reserve or release the area, so the dialog stays up.
+pub(super) fn draw_dial(tree: u64) {
+    let t = super::form_center(tree);
+    super::objc_draw_dialog(tree, t);
+}
+
 /// `fun_alert` — a one-line alert with a single OK button (EmuTOS
 /// `deskfun.c:75`). `default` is the default button (1). Returns the clicked
 /// button.

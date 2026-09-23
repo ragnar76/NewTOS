@@ -33,7 +33,7 @@ use tos_api::vdi::font::{CELL_H, CELL_W};
 
 use crate::sync::SpinMutex;
 
-use super::global::{self, Grect, DROOT, NIL};
+use super::global::{self, Grect, WSave, DROOT, NIL, NUM_WNODES};
 use super::model::{AType, Sort, View};
 
 // ── GEMDOS file access ──────────────────────────────────────────────────────
@@ -689,9 +689,16 @@ pub(super) fn load_and_apply() -> bool {
     true
 }
 
-/// Apply a parsed [`InfData`] to the live desktop state.
+/// Apply a parsed [`InfData`] — EmuTOS `app_start`'s dispatch loop
+/// (`deskapp.c:845-976`).
+///
+/// EmuTOS splits this deliberately: the `#M`/`#T`/`#O` icon spots and the `#Q`
+/// pattern/colours go straight into `GLOBES` (they belong to the desktop's own
+/// object tree), while the `#E` preferences and the `#W` window geometries go
+/// into the **context save area** `G.g_cnxsave` and reach the live desktop only
+/// later, through `cnx_get` (`deskmain.c:2055`). The same split is kept here.
 fn apply(data: &InfData) {
-    // #E → view / sort / size-to-fit.
+    // #E → cnxsave->cs_view / cs_sort / cs_sizefit (`deskapp.c:994-1013`).
     let (view, sort, size_to_fit) = env_to_state(data.e1, data.e5);
 
     // #M/#T/#O → cached desktop-icon grid positions (grid units on disk).
@@ -706,24 +713,25 @@ fn apply(data: &InfData) {
         desk_icons.push((code, a.letter, a.xspot, a.yspot));
     }
 
-    // #W → cached window rectangles (character cells → pixels).
-    let windows: Vec<Grect> = data
-        .windows
-        .iter()
-        .map(|w| Grect {
-            x: w.xc as i16 * CELL_W,
-            y: w.yc as i16 * CELL_H,
-            w: w.wc as i16 * CELL_W,
-            h: w.hc as i16 * CELL_H,
-        })
-        .collect();
-
+    // #W → cnxsave->cs_wnode[] (character cells → pixels, `deskapp.c:889-913`:
+    // `pws->x_save *= gl_wchar` and so on for each of the four).
     global::with(|g| {
-        g.view = view;
-        g.sort = sort;
-        g.size_to_fit = size_to_fit;
+        g.g_cnxsave.cs_view = view;
+        g.g_cnxsave.cs_sort = sort;
+        g.g_cnxsave.cs_sizefit = size_to_fit;
+        g.g_cnxsave.cs_wnode = Default::default();
+        for (slot, w) in data.windows.iter().take(NUM_WNODES).enumerate() {
+            g.g_cnxsave.cs_wnode[slot] = WSave {
+                x_save: w.xc as i16 * CELL_W,
+                y_save: w.yc as i16 * CELL_H,
+                w_save: w.wc as i16 * CELL_W,
+                h_save: w.hc as i16 * CELL_H,
+                hsl_save: w.hsl as i16,
+                vsl_save: w.vsl as i16,
+                pth_save: w.path.clone(),
+            };
+        }
         g.inf_desk_icons = desk_icons;
-        g.inf_windows = windows;
     });
 
     // #Q → g_patcol (the >2-plane bucket drives the live desktop background).
@@ -738,24 +746,44 @@ fn apply(data: &InfData) {
     global::set_patcol_all(patcol);
 }
 
-/// The pixel rectangle to open the window in slot `slot` at, from a saved `#W`
-/// line, or [`None`] when there is no (usable) saved geometry for that slot.
+/// The pixel rectangle to open the window in slot `slot` at, taken from that
+/// slot's [`WSave`] — EmuTOS `win_alloc`, which reads the new window's default
+/// geometry straight out of `G.g_cnxsave->cs_wnode[G.g_wcnt]`
+/// (`deskwin.c:165-177`). [`None`] when the slot holds no saved window, and the
+/// caller then uses its own staggered fallback.
+///
+/// **Named deviation.** EmuTOS takes that rectangle *unconditionally*, because
+/// its built-in `EMUDESK.INF` always supplies four sensible default `#W` lines
+/// (`desk_inf_data1`, `deskapp.c:177-180`: `02 06 26 0C`, `02 08 26 0C`, …)
+/// with empty paths — geometry without a window. NewTOS ships no such defaults,
+/// and `cnx_get`'s validation turns an all-zero slot into the **whole desktop**
+/// (`w_save <= 0` → `g_desk.g_w`, `deskmain.c:1476-1483`), so taking it
+/// unconditionally would open every fresh window full-screen. Until the built-in
+/// `#W` defaults are adopted — a visible change to the boot picture, and a
+/// decision of its own — an unused slot supplies no rectangle.
 pub(super) fn window_rect(slot: usize) -> Option<Grect> {
-    global::with(|g| g.inf_windows.get(slot).copied())
-        .flatten()
-        .filter(|r| r.w > 0 && r.h > 0)
+    global::with(|g| {
+        let ws = g.g_cnxsave.cs_wnode.get(slot)?;
+        (!ws.pth_save.is_empty() && ws.w_save > 0 && ws.h_save > 0)
+            .then_some(Grect { x: ws.x_save, y: ws.y_save, w: ws.w_save, h: ws.h_save })
+    })
+    .flatten()
 }
 
-// ── Save (`cnx_put` + `app_save(TRUE)`) ─────────────────────────────────────
+// ── Save (`app_save`, `deskapp.c:1106-1290`) ────────────────────────────────
 
-/// Build an [`InfData`] snapshot of the current desktop state: env from the
-/// live view/sort/size-to-fit (other prefs preserved from [`SESSION`]),
-/// `g_patcol`, the live desktop-icon positions read back from the object tree,
-/// the currently-open windows' geometry, and the preserved file-type `ANODE`s.
+/// Build an [`InfData`] snapshot — EmuTOS `app_save`.
+///
+/// `app_save` reads the **context save area**, not the live desktop: the
+/// `#E` preference bits come from `cnxsave->cs_view`/`cs_sort`/`cs_sizefit`
+/// (`deskapp.c:1136-1170`) and every `#W` line from `cnxsave->cs_wnode[]`
+/// (`:1193-1203`). `G.g_cnxsave` is brought up to date by the `cnx_put()` its
+/// callers run first (`deskmain.c:891,2154`). The desktop-icon spots and
+/// `g_patcol` are read from the live `GLOBES`, exactly as EmuTOS does.
 fn build_from_state() -> InfData {
     let session = SESSION.lock().clone();
 
-    // Env + desktop-icon anodes read from the live object tree, under one lock.
+    // Env + desktop-icon anodes, under one lock.
     let (view, sort, size_to_fit, desk_anodes) = global::with(|g| {
         let mut anodes = Vec::new();
         let icw = g.g_icw.max(1);
@@ -792,7 +820,7 @@ fn build_from_state() -> InfData {
             }
             child = g.g_screen[child as usize].ob_next;
         }
-        (g.view, g.sort, g.size_to_fit, anodes)
+        (g.g_cnxsave.cs_view, g.g_cnxsave.cs_sort, g.g_cnxsave.cs_sizefit, anodes)
     })
     .unwrap_or((View::Icon, Sort::Name, true, Vec::new()));
 
@@ -830,38 +858,34 @@ fn label_of(label: &[u8]) -> String {
     String::from_utf8_lossy(&label[..end]).into_owned()
 }
 
-/// Snapshot the currently-open windows' frame geometry into `#W` lines
-/// (character-cell units). Slots are gathered under the desktop lock; the AES
-/// geometry query runs with the lock released.
+/// The `#W` lines of `app_save` (`deskapp.c:1192-1203`): **every** slot of the
+/// context save area, in slot order, converted from pixels to character cells.
+/// EmuTOS writes all `NUM_WNODES` lines unconditionally — an unused slot is a
+/// line with an empty path — because the rectangles of the unused slots are the
+/// default geometry `win_alloc` hands the next window that opens.
 fn collect_open_windows() -> Vec<InfWindow> {
-    // (slot, handle, title) for every open window, in slot order.
-    let mut open: Vec<(usize, i16, String)> = Vec::new();
     global::with(|g| {
-        for (slot, w) in g.windows.slots.iter().enumerate() {
-            if w.w_id != super::win::DESKWH {
-                open.push((slot, w.w_id, w.w_pnode.p_spec.clone()));
-            }
-        }
-    });
-
-    let mut out = Vec::new();
-    for (_slot, handle, path) in open {
-        let r = super::wind_get_grect(handle, super::WF_CXYWH);
-        out.push(InfWindow {
-            hsl: 0,
-            vsl: 0,
-            xc: (r.x / CELL_W).clamp(0, 255) as u8,
-            yc: (r.y / CELL_H).clamp(0, 255) as u8,
-            wc: (r.w / CELL_W).clamp(0, 255) as u8,
-            hc: (r.h / CELL_H).clamp(0, 255) as u8,
-            path,
-        });
-    }
-    out
+        g.g_cnxsave
+            .cs_wnode
+            .iter()
+            .map(|ws| InfWindow {
+                hsl: ws.hsl_save.clamp(0, 255) as u8,
+                vsl: ws.vsl_save.clamp(0, 255) as u8,
+                xc: (ws.x_save / CELL_W).clamp(0, 255) as u8,
+                yc: (ws.y_save / CELL_H).clamp(0, 255) as u8,
+                wc: (ws.w_save / CELL_W).clamp(0, 255) as u8,
+                hc: (ws.h_save / CELL_H).clamp(0, 255) as u8,
+                path: ws.pth_save.clone(),
+            })
+            .collect()
+    })
+    .unwrap_or_default()
 }
 
-/// Options → Save desktop: serialise the current state and write
-/// `NEWDESK.INF`. Returns whether the write succeeded.
+/// Options → Save desktop: serialise the context save area + the live icon
+/// positions and write `NEWDESK.INF` — EmuTOS `app_save(TRUE)`. The caller runs
+/// `cnx_put()` first (`deskmain.c:889-893`, `SAVEITEM`). Returns whether the
+/// write succeeded.
 pub(super) fn save_desktop() -> bool {
     let data = build_from_state();
     let bytes = data.serialize();
@@ -1075,6 +1099,75 @@ pub(super) fn lookup_association(name: &[u8]) -> Option<Association> {
     None
 }
 
+// ── Shared dialog open/close plumbing (`deskinf.c:345-402`) ─────────────────
+//
+// Every desktop dialog goes through the same three AES calls, and they are the
+// reason a dialog neither lands under the menu bar nor has to repaint the whole
+// screen when it goes away:
+//
+//   form_center(tree, &x,&y,&w,&h);            centre the ROOT, report the
+//                                              outer rect (outline + shadow)
+//   form_dial(FMD_START, 0,0,0,0, x,y,w,h);    reserve that rect
+//   objc_draw(tree, ROOT, MAX_DEPTH, x,y,w,h); paint the dialog into it
+//   ... form_do(tree, start) ...
+//   form_dial(FMD_FINISH, 0,0,0,0, x,y,w,h);   release + repaint that rect
+//   drain the redraw messages FMD_FINISH queued
+//
+// EmuTOS' `fm_dial` does **not** photograph the screen on FMD_START
+// (`aes/gemfmlib.c:365-369` is a bare `break`): the restore is the FMD_FINISH
+// repaint — `w_drawdesk(pt)` plus a `WM_REDRAW` to every window the rectangle
+// touches (`:375-379`). Those messages are why `end_dialog` has to drain the
+// pipe here instead of leaving them for the next `evnt_multi`: the desktop
+// answers its own messages directly, so an undrained redraw would arrive out of
+// sequence and show up as a partial refresh (`deskinf.c:371-378`, verbatim).
+
+/// `start_dialog` (EmuTOS `deskinf.c:349-357`) — centre `tree`, constrain it to
+/// the desktop rectangle (`rc_intersect(&gl_rfull, &t)`), reserve that area with
+/// `form_dial(FMD_START)` and paint the tree into it. Returns the rectangle, to
+/// be handed back to [`end_dialog`]-equivalent callers that keep it.
+pub(super) fn start_dialog(tree: u64) -> Grect {
+    let mut t = super::form_center(tree);
+    // `rc_intersect(&gl_rfull, &t)` — `gl_rfull` is the screen minus the menu
+    // row, i.e. exactly `G.g_desk` (`aes/gemgraf.c:423-424`, `deskmain.c:1959`).
+    if let Some(clipped) = super::redraw::rc_intersect(super::g_desk(), t) {
+        t = clipped;
+    }
+    super::form_dial_start(t);
+    super::objc_draw_dialog(tree, t);
+    t
+}
+
+/// `end_dialog` (EmuTOS `deskinf.c:363-390`) — release the dialog's rectangle
+/// with `form_dial(FMD_FINISH)` (which repaints the desktop under it and fans a
+/// `WM_REDRAW` out to every window it covered), then drain the messages that
+/// just queued through the desktop's own `hndl_msg`, exactly as EmuTOS does and
+/// for the reason its comment gives.
+pub(super) fn end_dialog(tree: u64) {
+    let t = super::form_center(tree);
+    super::form_dial_finish(t);
+
+    // `while (evnt_multi(MU_TIMER|MU_MESAG, …) & MU_MESAG) hndl_msg();`
+    // The MU_TIMER with a zero timer is EmuTOS' "quick out": the call returns
+    // immediately once no message is left.
+    let mut msg = [0i16; 8];
+    loop {
+        let ev = super::evnt_multi(super::MU_TIMER | super::MU_MESAG, &mut msg);
+        if ev.which & super::MU_MESAG == 0 {
+            break;
+        }
+        super::main::hndl_msg(&msg);
+    }
+}
+
+/// `inf_show` (EmuTOS `deskinf.c:396-402`) — put a dialog up, run it, take it
+/// down. Returns `form_do`'s exit object.
+pub(super) fn inf_show(tree: u64, start: i16) -> i16 {
+    start_dialog(tree);
+    let exitobj = super::form_do(tree, start);
+    end_dialog(tree);
+    exitobj
+}
+
 // ── Show-Info dialog (`inf_file_folder`, `deskinf.c:493-639`) ───────────────
 
 // obdefs.h object graphic types.
@@ -1099,6 +1192,10 @@ const BOX_SPEC: u64 = (1 << 16) | 0x1070;
 /// The longest edited name (a 12-char 8.3 name plus one slack byte).
 const NAME_MAX: usize = 13;
 
+/// `ROOT` (`obdefs.h`) — the tree's first object; also `form_do`'s "no editable
+/// field preselected" start value (EmuTOS passes `ROOT` for these dialogs).
+const ROOT: i16 = 0;
+
 /// Build one dialog `OBJECT`.
 #[allow(clippy::too_many_arguments)]
 fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, head: i16, tail: i16) -> Object {
@@ -1115,12 +1212,6 @@ fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, he
         ob_width: w,
         ob_height: h,
     }
-}
-
-/// The current screen dimensions.
-fn screen_dims() -> (i16, i16) {
-    let r = super::screen_rect();
-    (r.w, r.h)
 }
 
 /// Append a decimal rendering of `v` to `buf` at `*p` (bounded by `buf.len()`).
@@ -1176,13 +1267,13 @@ const FA_ARCHIVE: u8 = 0x20;
 /// The Show-Info / rename dialog for a single selected item (`inf_file_folder`,
 /// `deskinf.c:493-639`): show size / date / time / attributes and offer an
 /// editable name. Returns the new name on OK when it changed (an empty name is
-/// rejected), otherwise [`None`]. The caller repaints the screen underneath.
+/// rejected), otherwise [`None`]. The screen underneath is restored by
+/// `end_dialog`'s `form_dial(FMD_FINISH)` inside [`inf_show`].
 ///
 /// `size`/`date`/`time`/`attr` are the selected [`super::model::FNode`]'s own
 /// fields (DOS-packed date/time, FAT attribute byte). The date/time text layout
 /// is a display choice, not TOS contract (`deskinf.md`: "no program reads this").
 pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr: u8) -> Option<String> {
-    let (sw, sh) = screen_dims();
     let is_dir = attr & FA_SUBDIR != 0;
 
     // Editable name buffer — `form_do` edits this in place through the TEDINFO.
@@ -1272,13 +1363,13 @@ pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr:
         attrbuf[p.min(attrbuf.len() - 1)] = 0;
     }
 
+    // Built at the origin; `form_center` inside `inf_show` writes the centred
+    // `ob_x`/`ob_y` into the ROOT.
     let (dw, dh) = (320i16, 200i16);
-    let bx = ((sw - dw) / 2).max(0);
-    let by = ((sh - dh) / 2).max(0);
     let ob_ok = 7i16;
 
     let tree = [
-        mk(G_BOX, 0, BOX_SPEC, bx, by, dw, dh, -1, 1, 8),
+        mk(G_BOX, 0, BOX_SPEC, 0, 0, dw, dh, -1, 1, 8),
         mk(G_STRING, 0, TITLE.as_ptr() as u64, 24, 14, dw - 48, 16, 2, -1, -1),
         mk(G_STRING, 0, NAME_LBL.as_ptr() as u64, 24, 44, 48, 16, 3, -1, -1),
         mk(G_BOXTEXT, EDITABLE, &ted as *const _ as u64, 80, 40, 200, 22, 4, -1, -1),
@@ -1289,9 +1380,8 @@ pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr:
         mk(G_BUTTON, SELECTABLE | EXIT | LASTOB, CANCEL.as_ptr() as u64, 190, 156, 90, 28, 0, -1, -1),
     ];
 
-    let clip = Grect { x: 0, y: 0, w: sw, h: sh };
-    super::objc_draw_dialog(tree.as_ptr() as u64, clip);
-    let clicked = super::form_do(tree.as_ptr() as u64);
+    // `inf_show(tree, ROOT)` (`deskinf.c:396-402`).
+    let clicked = inf_show(tree.as_ptr() as u64, ROOT);
     if clicked != ob_ok {
         return None;
     }
@@ -1311,9 +1401,9 @@ pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr:
 /// Options → Set background (`inf_backgrounds`): step the desktop background
 /// pattern (0-7) and colour (0-15); on OK apply to `g_patcol`, repaint the
 /// desktop, and persist to `NEWDESK.INF`. Returns whether the background
-/// changed. The caller repaints the screen the dialog covered.
+/// changed. The screen the dialog covered is restored by `end_dialog`'s
+/// `form_dial(FMD_FINISH)`.
 pub(super) fn set_background() -> bool {
-    let (sw, sh) = screen_dims();
     let cur = global::patcol_desktop();
     let mut pat = (cur >> 4) & 0x07;
     let mut col = cur & 0x0F;
@@ -1330,9 +1420,9 @@ pub(super) fn set_background() -> bool {
     let mut patnum = [0u8; 8];
     let mut colnum = [0u8; 8];
 
+    // Built at the origin; `start_dialog`'s `form_center` writes the centred
+    // `ob_x`/`ob_y` into the ROOT.
     let (dw, dh) = (300i16, 180i16);
-    let bx = ((sw - dw) / 2).max(0);
-    let by = ((sh - dh) / 2).max(0);
 
     // Object indices.
     const PAT_DN: i16 = 4;
@@ -1342,7 +1432,7 @@ pub(super) fn set_background() -> bool {
     const OK_OBJ: i16 = 10;
 
     let mut tree = [
-        mk(G_BOX, 0, BOX_SPEC, bx, by, dw, dh, -1, 1, 11),
+        mk(G_BOX, 0, BOX_SPEC, 0, 0, dw, dh, -1, 1, 11),
         mk(G_STRING, 0, TITLE.as_ptr() as u64, 24, 14, dw - 48, 16, 2, -1, -1),
         mk(G_STRING, 0, PAT_LBL.as_ptr() as u64, 24, 48, 72, 16, 3, -1, -1),
         mk(G_STRING, 0, patnum.as_ptr() as u64, 104, 48, 40, 16, 4, -1, -1),
@@ -1355,19 +1445,26 @@ pub(super) fn set_background() -> bool {
         mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT, OK.as_ptr() as u64, 30, 138, 90, 28, 11, -1, -1),
         mk(G_BUTTON, SELECTABLE | EXIT | LASTOB, CANCEL.as_ptr() as u64, 178, 138, 90, 28, 0, -1, -1),
     ];
-    let clip = Grect { x: 0, y: 0, w: sw, h: sh };
-
-    let committed = loop {
-        // Refresh the two number fields, then repaint + run the modal loop once.
+    // The two number fields, refreshed whenever a step button was pressed.
+    let set_numbers = |pat: u8, col: u8, patnum: &mut [u8; 8], colnum: &mut [u8; 8]| {
         let mut p = 0usize;
-        push_dec(&mut patnum, &mut p, pat as u64);
+        push_dec(patnum, &mut p, pat as u64);
         patnum[p.min(patnum.len() - 1)] = 0;
         let mut q = 0usize;
-        push_dec(&mut colnum, &mut q, col as u64);
+        push_dec(colnum, &mut q, col as u64);
         colnum[q.min(colnum.len() - 1)] = 0;
+    };
+    set_numbers(pat, col, &mut patnum, &mut colnum);
 
-        super::objc_draw_dialog(tree.as_ptr() as u64, clip);
-        let clicked = super::form_do(tree.as_ptr() as u64);
+    // `start_dialog(tree)` … loop of `form_do` … `end_dialog(tree)` — EmuTOS
+    // `inf_backgrounds` (`deskinf.c:862-896`). EmuTOS redraws only the changed
+    // sample field inside the loop (`draw_fld(tree, BGSAMPLE)`); with no
+    // per-field draw helper here the whole dialog is redrawn between turns, the
+    // way `ins_app_dialog` does on its retry path (`deskins.c:527`).
+    let tree_ptr = tree.as_ptr() as u64;
+    start_dialog(tree_ptr);
+    let committed = loop {
+        let clicked = super::form_do(tree_ptr, ROOT);
         // Clear the pressed button's SELECTED bit so it does not stay inverted.
         if let Some(o) = tree.get_mut(clicked as usize) {
             o.ob_state &= !OB_SELECTED;
@@ -1380,7 +1477,10 @@ pub(super) fn set_background() -> bool {
             OK_OBJ => break true,
             _ => break false, // Cancel / default
         }
+        set_numbers(pat, col, &mut patnum, &mut colnum);
+        super::dir::draw_dial(tree_ptr);
     };
+    end_dialog(tree_ptr);
 
     if !committed {
         return false;
@@ -1395,6 +1495,12 @@ pub(super) fn set_background() -> bool {
     global::with(|g| g.sync_desk_background());
     let desk = global::with(|g| g.g_desk).unwrap_or_default();
     super::redraw::do_wredraw(super::win::DESKWH, desk);
+    // NewTOS persists the new background straight away; EmuTOS leaves that to
+    // the user's next Save desktop (`inf_backgrounds` ends at
+    // `deskinf.c:919`). Keep the invariant every EmuTOS `app_save` call has
+    // anyway — `cnx_put()` first (`deskmain.c:891,2154`) — so the `#W` lines
+    // written here describe the windows that are actually on screen.
+    super::main::cnx_put();
     save_desktop();
     true
 }

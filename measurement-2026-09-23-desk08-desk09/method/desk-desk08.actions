@@ -1,0 +1,25 @@
+# DESK08 -- the dialog chain on the running kernel desktop (sd-base, no #Z).
+# Ticks are 200 Hz after "[desk] desktop up" armed the injector.
+# A: idle, the boot picture.
+# Hover the Options title (x 160..232) -> B, the box open.
+# Click "Set background..." -- entry 0, y = 19..35, centre 27 -> C, the dialog.
+#    `form_center` must put the 300x180 box at ((640-300)/2, 19+(480-19-180)/2)
+#    = (170,159); the desk's old `(480-180)/2` would have been y = 150.
+# Click its Cancel button -- object 11 at (178,138,90,28) inside the box, i.e.
+#    (348,297,90,28) on screen -> click (393,311). `end_dialog` takes the box
+#    down again; D must be pixel-identical to A.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 196 8
+1800 mark B_OPTIONS
+2100 move 200 27
+2300 down
+2303 up
+2600 parkbr
+3000 mark C_DIALOG
+3300 move 393 311
+3500 down
+3503 up
+3800 parkbr
+4200 mark D_CLOSED

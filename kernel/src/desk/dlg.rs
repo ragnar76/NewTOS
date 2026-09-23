@@ -9,16 +9,16 @@
 //! `form_do`, returning the typed string (or `None` on Cancel).
 //!
 //! It builds its own `OBJECT`/`TEDINFO` tree on the stack (not the desktop
-//! arena), paints it with `objc_draw`, runs `form_do`, and reads the result
-//! back — the same pattern EmuTOS uses for these boxes, minus the resource
-//! file. It is interactive-only (needs a live keyboard), so it is exercised on
-//! real hardware (see `docs/api/desktop/_hw-test-checklist.md`).
+//! arena) and hands it to [`super::inf::inf_show`], i.e. the same
+//! `form_center` → `form_dial(FMD_START)` → `objc_draw` → `form_do` →
+//! `form_dial(FMD_FINISH)` chain EmuTOS runs for these boxes, minus the
+//! resource file. It is interactive-only (needs a live keyboard), so it is
+//! exercised on real hardware (see
+//! `docs/api/desktop/_hw-test-checklist.md`).
 
 use alloc::string::String;
 
 use tos_api::aes::object::{Object, TedInfo};
-
-use super::global::Grect;
 
 // OBJECT graphic types (`obdefs.h`).
 const G_BOX: u16 = 20;
@@ -35,6 +35,10 @@ const LASTOB: u16 = 0x0020;
 
 /// Object index of the OK button (its `form_do` return value).
 const OB_OK: i16 = 3;
+
+/// `ROOT` (`obdefs.h`) — the tree's first object, and `form_do`'s "no editable
+/// field preselected" start value.
+const ROOT: i16 = 0;
 
 /// The maximum edited name length (an 8.3 name is 12 chars; one slack byte).
 const NAME_MAX: usize = 13;
@@ -59,11 +63,11 @@ fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, he
 
 /// Show a centred name-input dialog titled `prompt` (a NUL-terminated string),
 /// pre-filled with `initial`. Returns the entered name on OK (empty rejected),
-/// or `None` on Cancel / no change. The caller repaints the screen underneath
-/// afterwards (the dialog painted over it).
+/// or `None` on Cancel / no change.
+///
+/// The screen underneath is restored by the `form_dial(FMD_FINISH)` inside
+/// [`super::inf::inf_show`]; the caller does **not** repaint the desktop.
 pub fn edit_name(prompt: &[u8], initial: &str) -> Option<String> {
-    let (sw, sh) = screen_dims();
-
     // The editable buffer — `form_do` edits this in place through the TEDINFO.
     let mut textbuf = [0u8; NAME_MAX + 2];
     let n = initial.len().min(NAME_MAX);
@@ -87,26 +91,26 @@ pub fn edit_name(prompt: &[u8], initial: &str) -> Option<String> {
         te_tmplen: 0,
     };
 
-    // Centre a 290x150 dialog.
+    // A 290x150 dialog built at the origin: `form_center` (inside `inf_show`)
+    // writes the centred `ob_x`/`ob_y` into the ROOT, exactly as EmuTOS builds
+    // its dialogs from a resource file whose ROOT carries no screen position.
     let (dw, dh) = (290i16, 150i16);
-    let bx = ((sw - dw) / 2).max(0);
-    let by = ((sh - dh) / 2).max(0);
 
     // Colour word `(1<<16)|0x1070` = black border + solid-white interior, so the
     // dialog is opaque over the desktop (matches the menu-drop-down box).
     let box_spec: u64 = (1 << 16) | 0x1070;
 
     let tree = [
-        mk(G_BOX, 0, box_spec, bx, by, dw, dh, -1, 1, 4),
+        mk(G_BOX, 0, box_spec, 0, 0, dw, dh, -1, 1, 4),
         mk(G_STRING, 0, prompt.as_ptr() as u64, 24, 18, dw - 48, 16, 2, -1, -1),
         mk(G_BOXTEXT, EDITABLE, &ted as *const _ as u64, 24, 46, 200, 24, 3, -1, -1),
         mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT, OK.as_ptr() as u64, 28, 104, 90, 28, 4, -1, -1),
         mk(G_BUTTON, SELECTABLE | EXIT | LASTOB, CANCEL.as_ptr() as u64, 172, 104, 90, 28, 0, -1, -1),
     ];
 
-    let clip = Grect { x: 0, y: 0, w: sw, h: sh };
-    super::objc_draw_dialog(tree.as_ptr() as u64, clip);
-    let clicked = super::form_do(tree.as_ptr() as u64);
+    // `inf_show(tree, ROOT)` (`deskinf.c:396-402`): start_dialog → form_do →
+    // end_dialog, i.e. the whole centre/reserve/draw/run/release/drain chain.
+    let clicked = super::inf::inf_show(tree.as_ptr() as u64, ROOT);
 
     if clicked != OB_OK {
         return None;
@@ -116,10 +120,4 @@ pub fn edit_name(prompt: &[u8], initial: &str) -> Option<String> {
         return None; // empty name rejected
     }
     core::str::from_utf8(&textbuf[..m]).ok().map(String::from)
-}
-
-/// The current screen dimensions.
-fn screen_dims() -> (i16, i16) {
-    let r = super::screen_rect();
-    (r.w, r.h)
 }

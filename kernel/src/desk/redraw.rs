@@ -227,7 +227,7 @@ pub fn redraw_desktop() {
 /// or `None` when they are disjoint. Pure rectangle math (desktop-internal, not
 /// an AES call); the width/height are exclusive-bound differences, so a shared
 /// edge alone (`x1 == x0`) yields no rectangle.
-fn rc_intersect(a: Grect, b: Grect) -> Option<Grect> {
+pub(super) fn rc_intersect(a: Grect, b: Grect) -> Option<Grect> {
     let x0 = a.x.max(b.x);
     let y0 = a.y.max(b.y);
     let x1 = (a.x + a.w).min(b.x + b.w);

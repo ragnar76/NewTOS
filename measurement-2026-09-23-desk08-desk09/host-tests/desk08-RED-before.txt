@@ -1,0 +1,811 @@
+warning: value assigned to `tree` is never read
+   --> tos-api/src/aes/form.rs:327:9
+    |
+327 |         tree[idx].ob_state |= SELECTED;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `top` is never read
+    --> tos-api/src/aes/window.rs:2986:9
+     |
+2986 |         top += gl_hbox();
+     |         ^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: type `Aespb` is more private than the item `form_alert`
+   --> tos-api/src/aes/form.rs:136:1
+    |
+136 | pub fn form_alert(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_alert` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `Aespb` is more private than the item `form_do`
+   --> tos-api/src/aes/form.rs:542:1
+    |
+542 | pub fn form_do(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_do` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_error`
+   --> tos-api/src/aes/form.rs:798:1
+    |
+798 | pub fn form_error(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_error` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_center`
+   --> tos-api/src/aes/form.rs:945:1
+    |
+945 | pub fn form_center(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_center` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_dial`
+    --> tos-api/src/aes/form.rs:1000:1
+     |
+1000 | pub fn form_dial(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_dial` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_button`
+    --> tos-api/src/aes/form.rs:1067:1
+     |
+1067 | pub fn form_button(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_button` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_keybd`
+    --> tos-api/src/aes/form.rs:1090:1
+     |
+1090 | pub fn form_keybd(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_keybd` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `fsel_input`
+   --> tos-api/src/aes/fsel.rs:538:1
+    |
+538 | pub fn fsel_input(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `fsel_input` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `fsel_exinput`
+   --> tos-api/src/aes/fsel.rs:545:1
+    |
+545 | pub fn fsel_exinput(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `fsel_exinput` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_bar`
+   --> tos-api/src/aes/menu.rs:329:1
+    |
+329 | pub fn menu_bar(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_bar` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_icheck`
+    --> tos-api/src/aes/menu.rs:1017:1
+     |
+1017 | pub fn menu_icheck(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_icheck` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_ienable`
+    --> tos-api/src/aes/menu.rs:1026:1
+     |
+1026 | pub fn menu_ienable(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_ienable` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_tnormal`
+    --> tos-api/src/aes/menu.rs:1038:1
+     |
+1038 | pub fn menu_tnormal(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_tnormal` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_text`
+    --> tos-api/src/aes/menu.rs:1048:1
+     |
+1048 | pub fn menu_text(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_text` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_register`
+    --> tos-api/src/aes/menu.rs:1109:1
+     |
+1109 | pub fn menu_register(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_register` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_popup`
+    --> tos-api/src/aes/menu.rs:1278:1
+     |
+1278 | pub fn menu_popup(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_popup` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_settings`
+    --> tos-api/src/aes/menu.rs:1590:1
+     |
+1590 | pub fn menu_settings(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_settings` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_attach`
+    --> tos-api/src/aes/menu.rs:1861:1
+     |
+1861 | pub fn menu_attach(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_attach` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_istart`
+    --> tos-api/src/aes/menu.rs:1899:1
+     |
+1899 | pub fn menu_istart(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_istart` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_draw`
+    --> tos-api/src/aes/object.rs:1166:1
+     |
+1166 | pub fn objc_draw(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_draw` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_offset`
+    --> tos-api/src/aes/object.rs:1367:1
+     |
+1367 | pub fn objc_offset(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_offset` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_add`
+    --> tos-api/src/aes/object.rs:1391:1
+     |
+1391 | pub fn objc_add(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_add` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_delete`
+    --> tos-api/src/aes/object.rs:1403:1
+     |
+1403 | pub fn objc_delete(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_delete` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_order`
+    --> tos-api/src/aes/object.rs:1417:1
+     |
+1417 | pub fn objc_order(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_order` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_change`
+    --> tos-api/src/aes/object.rs:1562:1
+     |
+1562 | pub fn objc_change(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_change` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_sysvar`
+    --> tos-api/src/aes/object.rs:1644:1
+     |
+1644 | pub fn objc_sysvar(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_sysvar` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_edit`
+    --> tos-api/src/aes/object.rs:1848:1
+     |
+1848 | pub fn objc_edit(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_edit` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_find`
+    --> tos-api/src/aes/object.rs:2236:1
+     |
+2236 | pub fn objc_find(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_find` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_load`
+    --> tos-api/src/aes/resource.rs:2204:1
+     |
+2204 | pub fn rsrc_load(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_load` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_free`
+    --> tos-api/src/aes/resource.rs:2565:1
+     |
+2565 | pub fn rsrc_free(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_free` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_gaddr`
+    --> tos-api/src/aes/resource.rs:2890:1
+     |
+2890 | pub fn rsrc_gaddr(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_gaddr` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_saddr`
+    --> tos-api/src/aes/resource.rs:2921:1
+     |
+2921 | pub fn rsrc_saddr(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_saddr` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_obfix`
+    --> tos-api/src/aes/resource.rs:2964:1
+     |
+2964 | pub fn rsrc_obfix(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_obfix` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `scrp_read`
+   --> tos-api/src/aes/shell.rs:231:1
+    |
+231 | pub fn scrp_read(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `scrp_read` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `scrp_write`
+   --> tos-api/src/aes/shell.rs:240:1
+    |
+240 | pub fn scrp_write(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `scrp_write` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `scrp_clear`
+   --> tos-api/src/aes/shell.rs:264:1
+    |
+264 | pub fn scrp_clear(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `scrp_clear` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_read`
+   --> tos-api/src/aes/shell.rs:359:1
+    |
+359 | pub fn shel_read(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_read` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_write`
+   --> tos-api/src/aes/shell.rs:464:1
+    |
+464 | pub fn shel_write(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_write` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_get`
+   --> tos-api/src/aes/shell.rs:889:1
+    |
+889 | pub fn shel_get(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_get` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_put`
+   --> tos-api/src/aes/shell.rs:906:1
+    |
+906 | pub fn shel_put(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_put` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_find`
+   --> tos-api/src/aes/shell.rs:950:1
+    |
+950 | pub fn shel_find(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_find` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:192:1
+    |
+192 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_envrn`
+    --> tos-api/src/aes/shell.rs:1058:1
+     |
+1058 | pub fn shel_envrn(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_envrn` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_rdef`
+    --> tos-api/src/aes/shell.rs:1109:1
+     |
+1109 | pub fn shel_rdef(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_rdef` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_wdef`
+    --> tos-api/src/aes/shell.rs:1124:1
+     |
+1124 | pub fn shel_wdef(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_wdef` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_create`
+    --> tos-api/src/aes/window.rs:3455:1
+     |
+3455 | pub fn wind_create(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_create` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_open`
+    --> tos-api/src/aes/window.rs:3523:1
+     |
+3523 | pub fn wind_open(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_open` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_close`
+    --> tos-api/src/aes/window.rs:3648:1
+     |
+3648 | pub fn wind_close(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_close` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_delete`
+    --> tos-api/src/aes/window.rs:3820:1
+     |
+3820 | pub fn wind_delete(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_delete` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_get`
+    --> tos-api/src/aes/window.rs:3833:1
+     |
+3833 | pub fn wind_get(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_get` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_set`
+    --> tos-api/src/aes/window.rs:4061:1
+     |
+4061 | pub fn wind_set(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_set` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_find`
+    --> tos-api/src/aes/window.rs:4278:1
+     |
+4278 | pub fn wind_find(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_find` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_update`
+    --> tos-api/src/aes/window.rs:4292:1
+     |
+4292 | pub fn wind_update(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_update` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_calc`
+    --> tos-api/src/aes/window.rs:4417:1
+     |
+4417 | pub fn wind_calc(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_calc` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_new`
+    --> tos-api/src/aes/window.rs:4434:1
+     |
+4434 | pub fn wind_new(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_new` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:192:1
+     |
+ 192 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vsc_form`
+   --> tos-api/src/vdi/mouse.rs:556:1
+    |
+556 | pub fn vsc_form(pb: &Vdipb, backend: &dyn RasterBackend) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vsc_form` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `v_show_c`
+   --> tos-api/src/vdi/mouse.rs:599:1
+    |
+599 | pub fn v_show_c(pb: &Vdipb, backend: &dyn RasterBackend) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `v_show_c` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vq_mouse`
+   --> tos-api/src/vdi/mouse.rs:682:1
+    |
+682 | pub fn vq_mouse(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vq_mouse` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_butv`
+   --> tos-api/src/vdi/mouse.rs:699:1
+    |
+699 | pub fn vex_butv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_butv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_motv`
+   --> tos-api/src/vdi/mouse.rs:703:1
+    |
+703 | pub fn vex_motv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_motv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_curv`
+   --> tos-api/src/vdi/mouse.rs:707:1
+    |
+707 | pub fn vex_curv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_curv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_wheelv`
+   --> tos-api/src/vdi/mouse.rs:711:1
+    |
+711 | pub fn vex_wheelv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_wheelv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_timv`
+   --> tos-api/src/vdi/mouse.rs:717:1
+    |
+717 | pub fn vex_timv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_timv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:81:1
+    |
+ 81 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `tos-api` (lib) generated 64 warnings
+warning: constant `FMD_START` is never used
+   --> tos-api/tests/zz_desk08_red_scratch.rs:495:7
+    |
+495 | const FMD_START: i16 = 0;
+    |       ^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `form_center` is never used
+   --> tos-api/tests/zz_desk08_red_scratch.rs:591:4
+    |
+591 | fn form_center(pb: &mut Aespb, tree: *const Object) -> (i16, i16, i16, i16) {
+    |    ^^^^^^^^^^^
+
+warning: `tos-api` (test "zz_desk08_red_scratch") generated 2 warnings
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.01s
+     Running tests/zz_desk08_red_scratch.rs (target/debug/deps/zz_desk08_red_scratch-5e67cb2c9cbb145a)
+
+running 3 tests
+test fmd_finish_restores_only_the_dialog_rectangle ... ok
+test form_center_places_the_desktop_dialog_below_the_menu_bar ... FAILED
+test the_dialog_restore_draws_only_inside_its_own_rectangle ... FAILED
+
+failures:
+
+---- form_center_places_the_desktop_dialog_below_the_menu_bar stdout ----
+
+thread 'form_center_places_the_desktop_dialog_below_the_menu_bar' (7785903) panicked at tos-api/tests/zz_desk08_red_scratch.rs:680:5:
+assertion `left == right` failed
+  left: (175, 165)
+ right: (175, 174)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- the_dialog_restore_draws_only_inside_its_own_rectangle stdout ----
+
+thread 'the_dialog_restore_draws_only_inside_its_own_rectangle' (7785904) panicked at tos-api/tests/zz_desk08_red_scratch.rs:811:5:
+assertion `left == right` failed: the whole dialog chain must draw inside its rectangle only; 251540 px outside (175, 165, 290, 150) were drawn on
+  left: 251540
+ right: 0
+
+
+failures:
+    form_center_places_the_desktop_dialog_below_the_menu_bar
+    the_dialog_restore_draws_only_inside_its_own_rectangle
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p tos-api --test zz_desk08_red_scratch`

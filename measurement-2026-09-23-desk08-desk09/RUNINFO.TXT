@@ -1,0 +1,199 @@
+DESK08 + DESK09 -- one package: the two structural gaps every later desktop dialog
+depends on (G7 and G2 of docs/analysis/desk-aes-gaps-2026-09-14.md).
+
+  DESK08 (kernel/src/desk/{mod,inf,dir,dlg,insapp,main,redraw}.rs): kernel/src/desk/
+    showed its dialogs without `form_center` and without `form_dial`. The three shared
+    primitives now sit where EmuTOS has them -- `inf::start_dialog` / `end_dialog` /
+    `inf_show` (desk/deskinf.c:349-402) and `dir::draw_dial` (deskdir.c:79-85) -- and all
+    four dialog builders go through them: the tree is built at the ORIGIN, `form_center`
+    (54) writes the ROOT's position, `form_dial(FMD_START)` (51) reserves, `objc_draw`
+    (42) paints INTO THAT RECTANGLE, `form_dial(FMD_FINISH)` (51) gives it back, and
+    `end_dialog` drains the messages that queued -- through `main::hndl_msg`, for the
+    reason EmuTOS gives verbatim (deskinf.c:371-378). Six `redraw_desktop()` calls behind
+    dialogs are gone.
+  DESK09 (kernel/src/desk/{global,main,inf,mod}.rs): `G.g_cnxsave` exists as
+    `global::CSave` / `WSave` (the full WSAVE field set); `main::cnx_put` / `cnx_get` are
+    built 1:1 from deskmain.c:1371-1501, slot order (slot 0 = bottom-most window) and the
+    validation against the current `G.g_desk` included. `cnx_get` hangs in the start path
+    between `wind_update(BEG_UPDATE)` / `END_UPDATE` (:2053-2057); `cnx_put` at
+    `Save desktop` (:891), at the tail of `hndl_msg` on `change` (:1352) and in the
+    desktop epilog (:2154).
+
+Developer self-evidence, 2026-09-23. Branch desk-rebuild, base HEAD 326ef4c, changes
+uncommitted in the tree, nothing flashed, no `git checkout/restore/stash/reset` anywhere.
+
+CORRECTION TO THE TICKET TEXT
+  DESK08 says FMD_START/FMD_FINISH "save/restore the background". EmuTOS does not save
+  anything: `fm_dial`'s FMD_START arm is a bare `break` with the comment "grab screen sync
+  or some other mutual exclusion method" (aes/gemfmlib.c:365-369). The restore is the
+  FMD_FINISH REPAINT -- `w_drawdesk(pt)` + `w_update(DESKWH, pt, DESKWH, FALSE)` (:375-379)
+  -- which is exactly why `end_dialog` has to drain the message pipe itself. The A57 screen
+  buffer is neither needed nor used here.
+
+Pinned EmuTOS references/emutos:
+  desk/deskinf.c:349-357 (start_dialog), :363-390 (end_dialog, :371-378 the drain comment),
+    :396-402 (inf_show), :574,:691,:781 (inf_show callers), :862-896 (inf_backgrounds:
+    start_dialog / draw_fld loop / end_dialog), :1158,:1245 (inf_conf);
+  desk/deskdir.c:79-85 (draw_dial), :100-118 (do_namecon), :127 (draw_fld), :956,:1079;
+  desk/deskfun.c:655 (fun_mask -> inf_show), :697,:734 (fun_mkdir);
+  desk/deskins.c:504,:527,:597 (ins_app_dialog), :894,:951,:975, :1131,:1219;
+  desk/desksupp.c:262-272 (do_xyfix), :635,:659, :786-787, :795,:826, :1637,:1646;
+  aes/gemfmlib.c:362-381 (fm_dial; :365-369 FMD_START, :375-379 FMD_FINISH);
+  aes/gemobed.c:67-106 (ob_center: xd = (gl_width-wd)/2, yd = gl_hbox + (gl_height-gl_hbox-hd)/2);
+  aes/gemwmlib.c:294-298 (do_walk clips to gl_rfull first), :340-359 (w_drawdesk),
+    :1269-1271 (the built-in DESKTOP ob_spec);
+  desk/gembind.c:460 (form_dial 9/1/0), :497 (form_center 0/5/1);
+  desk/deskapp.h:120-131 (WSAVE), :148-156 (CSAVE); desk/deskconf.h:30 (NUM_WNODES = 7);
+  desk/deskmain.c:1371-1427 (cnx_put; :1367-1369 the slot-order comment),
+    :1430-1501 (cnx_get; :1437-1461 the preferences, :1466-1483 the validation,
+    :1489-1499 the open), :889-893 (SAVEITEM), :1250-1360 (hndl_msg; :1352-1353 change),
+    :2053-2057 (cnx_get bracketed by wind_update), :2154 (the epilog),
+    :919-924 (READITEM restarts the desktop);
+  desk/deskapp.c:171-189 (desk_inf_data1/2, the built-in INF), :698-752 (build_inf),
+    :889-948 (app_start's #W and #E arms), :1106-1290 (app_save; :1136-1170 #E,
+    :1192-1203 the #W lines);
+  desk/deskwin.c:165-177 (win_alloc takes cs_wnode[g_wcnt] as the new window's rect).
+
+PRODUCT CODE (uncommitted; method/product-desk08-desk09.diff)
+  kernel/src/desk/mod.rs
+    aesbind: form_center(tree) -> Grect (54, AES_CTRL_CODE(FORM_CENTER, 0, 5, 1)),
+      form_dial_start(r) / form_dial_finish(r) over a shared form_dial(fmd, r) (51),
+      wind_update(mode) (107), FMD_START constant, form_do gained the `start` argument
+      the EmuTOS binding has.
+    run(): wind_update(BEG_UPDATE); main::cnx_get(); wind_update(END_UPDATE); at EmuTOS'
+      place, with the pre-existing `open_root_window(b'C')` kept as a fallback for
+      "the context reopened nothing" (a NewTOS deviation that predates this ticket --
+      EmuTOS starts with a bare desktop there).
+  kernel/src/desk/inf.rs
+    start_dialog / end_dialog / inf_show; inf_file_folder and set_background go through
+      them, trees built at the origin; apply() puts #E/#W into the CSAVE instead of the
+      live desktop (EmuTOS' own split); build_from_state/collect_open_windows read the
+      CSAVE (= app_save); window_rect(slot) reads cs_wnode[slot]; set_background runs
+      cnx_put() before its save_desktop().
+  kernel/src/desk/dir.rs      draw_dial(tree).
+  kernel/src/desk/dlg.rs      edit_name -> inf_show(tree, ROOT), tree at the origin.
+  kernel/src/desk/insapp.rs   ins_app_dialog -> start_dialog / draw_dial / end_dialog,
+                              form_do(tree, O_DOCTYPE), tree at the origin.
+  kernel/src/desk/redraw.rs   rc_intersect is pub(super) (start_dialog needs it).
+  kernel/src/desk/global.rs   WSave / CSave, DeskState::g_cnxsave.
+  kernel/src/desk/main.rs     hndl_msg is pub(super) and carries `change`; top/full/
+                              moved/sized report it; cnx_put / cnx_get / cnx_get_prefs;
+                              open_dir_window_at(spec, title, rect, cvcol, cvrow);
+                              do_save_desktop = cnx_put + app_save; desktop_relinquish
+                              opens with cnx_put; the six post-dialog redraw_desktop()
+                              calls removed.
+
+TESTS / SPEC (method/spec-and-status-desk08-desk09.diff + host-tests/)
+  tos-api/tests/aes_desk_dialog_chain.rs  NEW, 3 cases (harness from aes_dialog_undraw.rs).
+  docs/api/desktop/deskinf.md   "NewTOS implementation notes" -> the dialog chain, the
+                                call-site table, the FMD_START correction, one named
+                                deviation (draw_dial instead of draw_fld).
+  docs/api/desktop/deskmain.md  "NewTOS implementation notes" -> CSAVE / cnx_put / cnx_get,
+                                the field subset, the call sites, four named deviations,
+                                the Read-.INF note.
+  docs/api/desktop/_hw-test-2026-09-17.md  new checklist item 35 (parts A and B).
+  docs/STATUS.md                Phase-14 row + one Recent Decisions row (2026-09-23).
+  TASK/DESK08.md, DESK09.md     ERLEDIGT + "## Abschluss";
+  TASK/DESK08-STATUS-DONE.MD, DESK09-STATUS-DONE.MD  the receipts.
+
+HOST TESTS (host-tests/)
+  desk08-RED-before.txt   1 passed / 2 FAILED against the dialog handling desk/ had before:
+      "assertion `left == right` failed  left: (175, 165)  right: (175, 174)" -- the 9 px
+      the menu-bar offset is worth -- and "251540 px outside (175,165,290,150) were drawn
+      on" -- the whole-screen restore. Produced by host-tests/desk08_red_before-scratch.rs,
+      a copy of the permanent test with the old placement + the full-screen objc_draw clip
+      + the whole-screen form_dial(FMD_FINISH); NOT in the build.
+      The third case (before/after identity) passes on BOTH sides: on a plain background a
+      whole-screen FMD_FINISH repaints the same picture. That is why the third case exists
+      at all -- it measures the SCOPE of the restore with a sentinel value, not the picture.
+  desk08-GREEN-after.txt  3/3.
+  xtask-test-after.log    cargo run -p xtask -- test: 929 passed / 0 failed / 1 ignored,
+      rc 0 (baseline 926/0/1 + 3).
+  aes_desk_dialog_chain.rs  a copy of the landed test.
+
+  DESK09 HAS NO HOST TEST, AND THAT IS A FINDING, NOT AN OMISSION. Its logic lives entirely
+  in kernel/, which carries forced-target = "aarch64-unknown-none-softfloat"; `cargo run -p
+  xtask -- test` runs tos-api, tos-types and xtask only (tools/xtask/src/main.rs:582). An
+  .INF round trip as a host test needs the text codec to move out of kernel/src/desk/inf.rs
+  -- a job of its own, not a side effect of this ticket. The proof below is QEMU-only.
+
+BUILD / CLIPPY (build/)
+  xtask-build-qemu-virt.log / xtask-build-rpi4.log  `cargo clean -p kernel -p tos-api
+      --target aarch64-unknown-none-softfloat` before each: tos-api 64 / kernel 94 on BOTH
+      boards, rc 0 (baseline 64/94, delta 0). rpi4 was built last, so the tree's kernel8.img
+      is the rpi4 one.
+  clippy-tos-api.txt        cargo clippy -p tos-api --target aarch64-unknown-none-softfloat:
+      80 (baseline 80).
+  clippy-kernel-rpi4.txt / clippy-kernel-qemu-virt.txt  125 on both boards (baseline 125);
+      ZERO hits in kernel/src/desk/ on either.
+  make-sd-image.log         tools/make-sd-image.sh (the single source of truth for the card
+      image) into the job scratch dir, 64 MiB, MBR + FAT16.
+  scratch-desk09-build.log  the scratch (injector) kernel.
+  kernels-and-images.sha256
+
+QEMU raspi4b (method/run.sh = A104/A110's; 640x480, -display none, QMP screendump after the
+serial mark; fresh image copy per run; all four runs 0 [EXC] / 0 [PANIC]).
+
+  1. control (sd-base, stock placeholder NEWDESK.INF, PRODUCT kernel)
+     control-desktop.png vs measurement-2026-09-23-a104-a110/screendumps/desk-after-A-idle.png:
+     50 px, bbox (319,240)-(640,480) -- the mouse pointer alone (the reference run had parked
+     it bottom-right). No regression to the boot picture.
+
+     THE FIRST ATTEMPT AT THIS RUN FAILED, AND IT FOUND SOMETHING. With `window_rect(slot)`
+     taken from cs_wnode[slot] unconditionally (EmuTOS' win_alloc, deskwin.c:165), the boot
+     window opened at (0,19,640,461) -- the WHOLE desktop. Cause: cnx_get's validation writes
+     back into every slot, and an all-zero slot becomes `g_desk.g_w` x `g_desk.g_h`
+     (deskmain.c:1476-1483). EmuTOS never sees this because its built-in EMUDESK.INF always
+     carries four #W default lines with empty paths (desk_inf_data1, deskapp.c:177-180).
+     NewTOS ships none. Resolution (named deviation, in deskmain.md): an unused slot supplies
+     no rectangle; the staggered fallback stands. Adopting desk_inf_data1's #W defaults would
+     remove the deviation AND change the boot picture (304x192 at (16,96) instead of 544x400
+     at (48,43)) -- a decision for the lead, not taken here.
+
+  2. seeded (method/NEWDESK.INF.seeded, PRODUCT kernel) -- cnx_get end to end:
+     `#E 9A E0 00 00 60` (VIEWTEXT) + two #W lines, `C:\SUB\*.*` at 04/05/1E/0A cells and
+     `C:\*.*` at 18/0F/28/0C.
+     seeded-desktop.png: BOTH windows are back, frames measured at exactly (32,80,240,160)
+     and (192,240,320,192); the one opened last (C:\, slot 1) is on top, i.e. the saved
+     z-order; and BOTH are in TEXT view -- the #E view travelled through cnx_get into
+     do_viewmenu. The desktop icons are at their built-in spots (no #M/#T/#O in the file).
+
+  3. save (sd-base, SCRATCH kernel with the H02 injector, method/desk-desk09.actions) --
+     cnx_put + app_save through the real UI:
+     A_IDLE -> drag the C:\ title bar from (300,52) to (400,150): save-B-moved.png shows the
+     window at (144,141) (do_xyfix aligned x to 16) -> hover Options: save-C-options.png ->
+     click "Save desktop..." (entry 11, y 195..211): save-D-saved.png.
+     The image was then mounted and read (method/NEWDESK.INF.after-save):
+       #E 1A E0 00 00 60
+       #W 00 00 12 08 44 19 00 C:\*.*@          = 18/8/68/25 cells = (144,128,544,400) px
+       #W 00 00 00 01 50 1C 00 @      (x6)      = cnx_get's validation, written back
+                                                  (x 0, y 16 <- do_xyfix lifted 0 to
+                                                  g_desk.y = 19, w 640, h 448 <- 461)
+     All seven #W lines are written, as EmuTOS writes them.
+
+  4. restart (THE SAME image, PRODUCT kernel, cold boot):
+     restart-desktop.png -- the window is back at (144,128), size unchanged. The 13 px
+     against (144,141) are the character-cell storage of the #W line (app_save:
+     y_save/gl_hchar, app_start: * gl_hchar) -- TOS-faithful, not a defect.
+
+  5. dlg (sd-base, SCRATCH kernel, method/desk-desk08.actions) -- the dialog chain on the
+     running desktop: hover Options -> click "Set background..." -> click Cancel.
+     dlg-C-dialog.png: the box measured at (170,159,300,180) = form_center's value
+     ((640-300)/2 = 170; 19 + (480-19-180)/2 = 159). The desk's old formula would have put
+     it at y = 150.
+     dlg-D-closed.png vs dlg-A-idle.png: 0 DIFFERING PIXELS. The dialog came down without a
+     trace and without a whole-desktop repaint.
+
+  The QEMU dumps were taken with the kernel of the same sources as the final fresh build;
+  re-running the `control` boot with the tree's final kernel8.img (the hash above) gives
+  0 differing pixels against control-desktop.png.
+
+NOT COVERED HERE (for the Tester / the lead)
+  * Real Pi 4: HW checklist item 35, parts A and B. Everything above is QEMU raspi4b at
+    640x480; the hardware profile is 1920x1080, where form_center's vertical offset is the
+    same 19 px but the centred position and the staggered window are different numbers.
+  * The `cnx_put` at the tail of hndl_msg is exercised by run 3 only indirectly (Save desktop
+    calls cnx_put itself). A run that moves a window, launches a program and comes back would
+    separate the two -- it needs the launch path, which deviation 2 explicitly does not touch.
+  * The four named deviations in TASK/DESK09-STATUS-DONE.MD, in particular number 4
+    (the built-in #W defaults), need a lead decision.

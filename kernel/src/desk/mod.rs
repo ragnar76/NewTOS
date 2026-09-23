@@ -62,6 +62,7 @@ const OP_OBJC_FIND: i16 = 43;
 const OP_FORM_DO: i16 = 50;
 const OP_FORM_DIAL: i16 = 51;
 const OP_FORM_ALERT: i16 = 52;
+const OP_FORM_CENTER: i16 = 54;
 const OP_GRAF_RUBBERBOX: i16 = 70;
 const OP_GRAF_DRAGBOX: i16 = 71;
 const OP_GRAF_MOUSE: i16 = 78;
@@ -73,6 +74,7 @@ const OP_WIND_DELETE: i16 = 103;
 const OP_WIND_GET: i16 = 104;
 const OP_WIND_SET: i16 = 105;
 const OP_WIND_FIND: i16 = 106;
+const OP_WIND_UPDATE: i16 = 107;
 const OP_WIND_CALC: i16 = 108;
 
 // wind_get/set `WF_*` fields and wind_calc `WC_*` types.
@@ -92,9 +94,18 @@ pub(super) const WF_HSLSIZ: i16 = 15;
 pub(super) const WF_VSLSIZ: i16 = 16;
 const WC_WORK: i16 = 1;
 
+/// `form_dial` type `FMD_START` (`aesdefs.h:339`) — reserve the dialog screen
+/// area before the first `objc_draw`.
+const FMD_START: i16 = 0;
 /// `form_dial` type `FMD_FINISH` (`aesdefs.h:342`) — release the dialog screen
 /// area and restore what was under it.
 const FMD_FINISH: i16 = 3;
+
+/// `wind_update` mode `END_UPDATE` (`aesdefs.h`) — release the window-tree lock.
+const END_UPDATE: i16 = 0;
+/// `wind_update` mode `BEG_UPDATE` (`aesdefs.h`) — take the window-tree lock, so
+/// the AES holds its redraws back while the caller rearranges windows.
+const BEG_UPDATE: i16 = 1;
 
 // graf_mouse cursor-control numbers (`aesdefs.h`): hide / show around a paint.
 pub(super) const M_OFF: i16 = 256;
@@ -532,15 +543,46 @@ pub(super) fn form_alert(default: i16, text: *const u8) -> i16 {
 
 /// `form_do(tree, start)` (50) — run a modal dialog on `tree` until an
 /// `EXIT`/`TOUCHEXIT` object (or Enter on the default button) is chosen; returns
-/// the object index that ended it. Editable `TEDINFO` fields are edited in place
+/// the object index that ended it. `start` is the editable field the cursor
+/// opens in (EmuTOS passes `ROOT` for most dialogs, a named field for
+/// `ins_app_dialog`'s `APARGS`). Editable `TEDINFO` fields are edited in place
 /// (the desktop's New-folder / Rename name boxes). `tree` must stay valid across
 /// the call.
-pub(super) fn form_do(tree: u64) -> i16 {
+pub(super) fn form_do(tree: u64, start: i16) -> i16 {
     let mut a = Aes::new();
     a.addrin[0] = tree as i64;
-    a.intin[0] = 0; // editable-field focus start
+    a.intin[0] = start;
     a.call(OP_FORM_DO, 1, 1, 1);
     a.intout[0]
+}
+
+/// `form_center(tree, &x, &y, &w, &h)` (54) — centre `tree`'s ROOT on screen
+/// (the AES writes the new `ob_x`/`ob_y` straight into the ROOT record) and
+/// return the tree's **outer** rectangle, i.e. the ROOT box grown by any
+/// `OUTLINED` ring and `SHADOWED` drop shadow (EmuTOS `ob_center`,
+/// `gemobed.c:67-106`). That rectangle is what `form_dial`'s `FMD_START` /
+/// `FMD_FINISH` and the dialog's `objc_draw` are given.
+///
+/// The vertical centring is EmuTOS's: `gl_hbox + (gl_height - gl_hbox - hd)/2`,
+/// so a centred dialog never lands under the menu bar.
+pub(super) fn form_center(tree: u64) -> Grect {
+    let mut a = Aes::new();
+    a.addrin[0] = tree as i64;
+    a.call(OP_FORM_CENTER, 0, 5, 1);
+    Grect { x: a.intout[1], y: a.intout[2], w: a.intout[3], h: a.intout[4] }
+}
+
+/// `form_dial(FMD_START, 0,0,0,0, x,y,w,h)` (51) — reserve the screen area
+/// `(x, y, w, h)` for a dialog, immediately before its first `objc_draw`
+/// (EmuTOS `start_dialog`, `deskinf.c:349-357`).
+///
+/// EmuTOS's `fm_dial` does **not** save the pixels under `pt` for `FMD_START`
+/// (`gemfmlib.c:365-369` is a bare `break` with the comment "grab screen sync
+/// or some other mutual exclusion method"); the restore is a *repaint* driven
+/// by [`form_dial_finish`]. The call is still made — it is the Form Manager's
+/// documented ownership handshake and the AES is free to give it meaning.
+pub(super) fn form_dial_start(r: Grect) {
+    form_dial(FMD_START, r);
 }
 
 /// `form_dial(FMD_FINISH, 0,0,0,0, x,y,w,h)` (51) — release the screen area
@@ -551,12 +593,18 @@ pub(super) fn form_do(tree: u64) -> i16 {
 /// This is EmuTOS's whole-screen restore idiom after something has taken the
 /// screen over — `desksupp.c:826` uses exactly
 /// `form_dial(FMD_FINISH, 0,0,0,0, 0,0,scr_width,scr_height)` when the
-/// file viewer hands the screen back. The small (`int_in[1..4]`) rectangle is
-/// unused by `FMD_FINISH`; EmuTOS passes zeros, so we do too.
+/// file viewer hands the screen back — and, with the dialog's own rectangle,
+/// the second half of `end_dialog` (`deskinf.c:363-369`).
 pub(super) fn form_dial_finish(r: Grect) {
+    form_dial(FMD_FINISH, r);
+}
+
+/// The shared `form_dial` (51) call. The small (`int_in[1..4]`) rectangle is
+/// unused by `FMD_START`/`FMD_FINISH`; EmuTOS passes zeros, so we do too.
+fn form_dial(fmd: i16, r: Grect) {
     let mut a = Aes::new();
-    a.intin[0] = FMD_FINISH;
-    // int_in[1..4]: the "little" rect — ignored by FMD_FINISH (EmuTOS passes 0).
+    a.intin[0] = fmd;
+    // int_in[1..4]: the "little" rect — ignored by FMD_START/FMD_FINISH.
     a.intin[5] = r.x;
     a.intin[6] = r.y;
     a.intin[7] = r.w;
@@ -564,8 +612,18 @@ pub(super) fn form_dial_finish(r: Grect) {
     a.call(OP_FORM_DIAL, 9, 1, 0);
 }
 
+/// `wind_update(mode)` (107) — take ([`BEG_UPDATE`]) or release
+/// ([`END_UPDATE`]) the AES window-tree lock, so a batch of window changes is
+/// applied without the AES redrawing between them. EmuTOS brackets `cnx_get`
+/// with it (`deskmain.c:2053-2057`).
+pub(super) fn wind_update(mode: i16) {
+    let mut a = Aes::new();
+    a.intin[0] = mode;
+    a.call(OP_WIND_UPDATE, 1, 1, 0);
+}
+
 /// `objc_draw` (42) the whole tree `tree` from `ROOT` (0) — used to paint a
-/// self-built dialog before [`form_do`] runs it.
+/// self-built dialog, clipped to the rectangle `form_center` reported.
 pub(super) fn objc_draw_dialog(tree: u64, clip: Grect) {
     objc_draw_tree(tree, 0, clip);
 }
@@ -693,12 +751,29 @@ pub fn run() {
     }
     menu::install_menu_bar();
 
-    // Open the C:\ directory window and build its view, set the menu state to
-    // reflect it (men_update — the D6 machinery), then paint everything (desktop
-    // bg + icons + frames via the AES compositor, each window's content
-    // occlusion-clipped via `do_wredraw`). Boot is a genuine first full paint —
-    // `redraw_desktop` (whole-screen recovery), not a per-event shortcut.
-    main::open_root_window(b'C');
+    // `cnx_get()` (EmuTOS `deskmain.c:2053-2057`, between `wind_update
+    // (BEG_UPDATE)` and `END_UPDATE`) — establish the desktop's state from what
+    // `app_start` put in `G.g_cnxsave`: the saved view/sort/size-to-fit, then
+    // the saved windows, bottom-most first so the z-order comes back.
+    wind_update(BEG_UPDATE);
+    let reopened = main::cnx_get();
+    wind_update(END_UPDATE);
+
+    // **Deviation from EmuTOS, pre-dating this wiring.** EmuTOS opens whatever
+    // the context says and nothing more — its built-in `EMUDESK.INF`
+    // (`deskapp.c:171-180`) carries four `#W` lines with *empty* paths, so a
+    // machine with no saved session starts with a bare desktop. NewTOS opens
+    // the boot drive's root instead of showing nothing. Kept: the fallback only
+    // fires when the context reopened no window at all.
+    if reopened == 0 {
+        main::open_root_window(b'C');
+    }
+
+    // Set the menu state to reflect the current window (men_update — the D6
+    // machinery), then paint everything (desktop bg + icons + frames via the
+    // AES compositor, each window's content occlusion-clipped via
+    // `do_wredraw`). Boot is a genuine first full paint — `redraw_desktop`
+    // (whole-screen recovery), not a per-event shortcut.
     menu::men_update();
     redraw::redraw_desktop();
 

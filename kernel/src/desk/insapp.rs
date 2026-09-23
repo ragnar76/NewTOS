@@ -4,8 +4,9 @@
 //! Associates the currently-selected program with a document type so that
 //! double-clicking a matching document later launches the program with the
 //! document as its command tail. This module is the **dialog** half: it builds
-//! the `OBJECT`/`TEDINFO` tree on the stack, paints it with `objc_draw`, runs it
-//! through `form_do`, and returns the user's choice; the caller
+//! the `OBJECT`/`TEDINFO` tree on the stack and runs it through the EmuTOS
+//! dialog chain (`start_dialog` → `form_do` → `end_dialog`, `deskins.c:504,
+//! 597`), returning the user's choice; the caller
 //! ([`super::main::do_install_app`]) resolves the selected program and commits
 //! the result into the [`super::inf`] `NEWDESK.INF` association model.
 //!
@@ -29,7 +30,6 @@ use alloc::string::String;
 
 use tos_api::aes::object::{Object, TedInfo};
 
-use super::global::Grect;
 use super::inf::AppFlavor;
 
 // OBJECT graphic types (`obdefs.h`).
@@ -66,6 +66,9 @@ const O_FILE: i16 = 13;
 const O_INSTALL: i16 = 14;
 const O_REMOVE: i16 = 15;
 const O_LAST: usize = 16;
+/// The editable document-type field — `form_do`'s start object, as EmuTOS
+/// passes `APARGS` (`deskins.c:507`).
+const O_DOCTYPE: i16 = 5;
 
 /// What the user chose in the Install-Application dialog.
 pub(super) enum Outcome {
@@ -102,12 +105,6 @@ fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, he
     }
 }
 
-/// The current screen dimensions.
-fn screen_dims() -> (i16, i16) {
-    let r = super::screen_rect();
-    (r.w, r.h)
-}
-
 /// Set the four flavour radio buttons so only `flavor`'s is `SELECTED`.
 fn set_flavor_radio(tree: &mut [Object], flavor: AppFlavor) {
     let sel = match flavor {
@@ -136,7 +133,7 @@ fn set_param_radio(tree: &mut [Object], full_path: bool) {
 /// name, shown for reference). `initial_*` pre-fill the fields (for editing an
 /// already-installed application); `installed` enables the Remove button.
 /// EmuTOS `ins_app_dialog` (`deskins.c:455-600`). Returns the user's [`Outcome`].
-/// The caller repaints the screen underneath afterwards.
+/// The screen underneath is restored by `end_dialog`'s `form_dial(FMD_FINISH)`.
 pub(super) fn ins_app_dialog(
     app_name: &str,
     initial_ext: &str,
@@ -144,8 +141,6 @@ pub(super) fn ins_app_dialog(
     initial_full: bool,
     installed: bool,
 ) -> Outcome {
-    let (sw, sh) = screen_dims();
-
     // Editable extension buffer — `form_do` edits this in place via the TEDINFO.
     let mut extbuf = [0u8; EXT_MAX + 2];
     let n = initial_ext.len().min(EXT_MAX);
@@ -187,13 +182,13 @@ pub(super) fn ins_app_dialog(
         te_tmplen: 0,
     };
 
+    // Built at the origin; `start_dialog`'s `form_center` writes the centred
+    // `ob_x`/`ob_y` into the ROOT.
     let (dw, dh) = (360i16, 240i16);
-    let bx = ((sw - dw) / 2).max(0);
-    let by = ((sh - dh) / 2).max(0);
 
     let mut tree = [
         // 0: root box.
-        mk(G_BOX, 0, BOX_SPEC, bx, by, dw, dh, -1, 1, O_LAST as i16),
+        mk(G_BOX, 0, BOX_SPEC, 0, 0, dw, dh, -1, 1, O_LAST as i16),
         // 1: title.
         mk(G_STRING, 0, TITLE.as_ptr() as u64, 24, 14, dw - 48, 16, 2, -1, -1),
         // 2: application label, 3: application name value.
@@ -229,10 +224,13 @@ pub(super) fn ins_app_dialog(
     set_flavor_radio(&mut tree, flavor);
     set_param_radio(&mut tree, full_path);
 
-    let clip = Grect { x: 0, y: 0, w: sw, h: sh };
+    // `start_dialog(tree)` … `do { form_do(tree, APARGS) } while(retry)` …
+    // `end_dialog(tree)` — EmuTOS `ins_app_dialog` (`deskins.c:504-597`), with
+    // `draw_dial(tree)` between turns exactly as its retry path does (`:527`).
+    let tree_ptr = tree.as_ptr() as u64;
+    super::inf::start_dialog(tree_ptr);
     let outcome = loop {
-        super::objc_draw_dialog(tree.as_ptr() as u64, clip);
-        let clicked = super::form_do(tree.as_ptr() as u64);
+        let clicked = super::form_do(tree_ptr, O_DOCTYPE);
         match clicked {
             O_GEM => flavor = AppFlavor::Gem,
             O_TOS => flavor = AppFlavor::Tos,
@@ -257,7 +255,9 @@ pub(super) fn ins_app_dialog(
         // A radio button was clicked: re-assert the group selection and redraw.
         set_flavor_radio(&mut tree, flavor);
         set_param_radio(&mut tree, full_path);
+        super::dir::draw_dial(tree_ptr);
     };
+    super::inf::end_dialog(tree_ptr);
 
     outcome
 }
