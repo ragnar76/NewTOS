@@ -1,0 +1,14 @@
+# DESK21 "after": the View menu now ends with a separator and
+# `Set background...`; the Options menu now starts with `Install icon...`.
+# Same two hover points as the "before" run -- the titles did not move.
+#   View title hover    (136,9)
+#   Options title hover (196,9)
+100 parkbr
+300 move 600 240
+1500 mark A_IDLE
+2600 move 136 240
+2700 move 136 9
+3400 mark B_VIEW
+4500 move 196 9
+5200 mark C_OPTIONS
+6400 pause

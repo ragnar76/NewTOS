@@ -1,0 +1,16 @@
+# Geometry probe: boot, park bottom-right, open the C: window with a
+# double-click on the drive icon.  `probe_dump` (menu rects + DISABLED bits)
+# runs from `men_update`, `probe_icons` after the desktop is up and after every
+# window repaint, so the serial log carries every click point this ticket set
+# needs.  The C:-icon point (38,35) is the one the DESK03/DESK15 dumps printed;
+# it is re-confirmed by this run's own desktop-up dump.
+100 parkbr
+300 move 600 460
+1500 mark P_IDLE
+1800 move 38 35
+2100 down
+2103 up
+2108 down
+2111 up
+2600 move 600 460
+3400 mark P_WIN

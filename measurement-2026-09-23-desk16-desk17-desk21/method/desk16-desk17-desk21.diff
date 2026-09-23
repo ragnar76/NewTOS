@@ -1,0 +1,485 @@
+diff --git a/kernel/src/desk/app.rs b/kernel/src/desk/app.rs
+index 7fe80ad..49e76ec 100644
+--- a/kernel/src/desk/app.rs
++++ b/kernel/src/desk/app.rs
+@@ -130,10 +130,16 @@ impl DeskState {
+             let pa = &self.g_ahead[i];
+             let (x, y, atype, letter, aicon) = (pa.a_xspot, pa.a_yspot, pa.a_type, pa.a_letter, pa.a_aicon);
+             // "choose appropriate icon" (`deskapp.c:1371-1375`): a desktop icon
+-            // has no data icon, so it is always `a_aicon`. An icon number NewTOS
+-            // has no raster for (`IG_REMOV`, or a corrupt byte) falls back to
+-            // the one its type defaults to rather than drawing nothing.
+-            let kind = icon_kind(aicon).unwrap_or_else(|| default_icon_kind(atype, letter));
++            // has no data icon, so it is always `a_aicon`. EmuTOS indexes
++            // `G.g_iblist[icon]` straight away, because `app_parse` has already
++            // made the number usable — out of range becomes `IG_APPL`
++            // (`deskapp.c:359-361`), which [`super::inf`]'s parser reproduces.
++            // The one value that still names no picture is `-1` (`FF` on an
++            // `#M`/`#T`/`#O` line, which only a hand-written file can carry:
++            // `build_inf` puts the icon number there, `deskapp.c:723`); EmuTOS
++            // would read `g_iblist[-1]`, so NewTOS takes `app_parse`'s own
++            // answer for an unusable `a_aicon` instead.
++            let kind = icon_kind(aicon).unwrap_or(IconKind::App);
+             let label = {
+                 let mut buf = [0u8; LEN_LABEL];
+                 let src = pa.a_pappl.as_bytes();
+@@ -191,8 +197,9 @@ impl DeskState {
+         // node take any picture, and the drive letter is read back out of
+         // `ib_char` by every desktop-icon consumer (`super::dir`'s drop
+         // handlers, `super::inf`'s `#M` writer). `build_iconblk` already ORs it
+-        // in for the two disk rasters, which have a char position; for any
+-        // other picture this is what keeps the letter from being lost.
++        // in for the three drive rasters, which have a char position (hard,
++        // floppy, removable); for any other picture this is what keeps the
++        // letter from being lost.
+         info.block.ib_char |= letter as i16;
+         let spec = &info.block as *const IconBlk as u64;
+ 
+@@ -202,21 +209,3 @@ impl DeskState {
+         Some(obid)
+     }
+ }
+-
+-/// The icon an `ANODE` of this type falls back to when its `a_aicon` names a
+-/// picture NewTOS has no raster for — the same choice `install_drive`
+-/// (`deskins.c:248`) and `build_inf` (`deskapp.c:719`) make for a fresh node:
+-/// `A:`/`B:` are floppies, every other drive is a hard disk.
+-pub fn default_icon_kind(atype: AType, letter: u8) -> IconKind {
+-    match atype {
+-        AType::Trash => IconKind::Trash,
+-        AType::Printer => IconKind::Printer,
+-        _ => {
+-            if matches!(letter, b'A' | b'B') {
+-                IconKind::Floppy
+-            } else {
+-                IconKind::Hard
+-            }
+-        }
+-    }
+-}
+diff --git a/kernel/src/desk/icons.rs b/kernel/src/desk/icons.rs
+index 6badb5a..37fbf62 100644
+--- a/kernel/src/desk/icons.rs
++++ b/kernel/src/desk/icons.rs
+@@ -72,6 +72,11 @@ pub enum IconKind {
+     Trash,
+     /// Printer.
+     Printer,
++    /// Removable disk (`icon.rsc` ICONBLK[5]) — the hard-disk silhouette with
++    /// an eject slot instead of the front-panel detail, and the same drive
++    /// letter overlay. Shares `rs_iconmask0` with [`IconKind::Hard`], exactly
++    /// as the resource does (`icons.c`'s `icon_rs_iconblk[5]`).
++    Removable,
+     /// Generic document / data file (the `win_bldview` default for a file
+     /// with no matching installed application).
+     Doc,
+@@ -101,36 +106,38 @@ pub const IG_FOLDER: i16 = 2;
+ pub const IG_TRASH: i16 = 3;
+ /// `IG_PRINT` (`deskapp.h:58`) — printer.
+ pub const IG_PRINT: i16 = 4;
+-/// `IG_REMOV` (`deskapp.h:59`) — removable disk. **NewTOS has no raster for
+-/// this one** (`crate::desktop_icons`, from which this module's bitmaps come,
+-/// never carried it), so it is a hole in [`BUILTIN_ICONS`]: it is never
+-/// offered by the Install-icon stepper, and a `NEWDESK.INF` that names it
+-/// falls back to the icon its `ANODE` type defaults to
+-/// ([`super::ins::install_desktop_icon`]). Reported rather than substituted
+-/// silently.
++/// `IG_REMOV` (`deskapp.h:59`) — removable disk.
+ pub const IG_REMOV: i16 = 5;
+ /// `IG_APPL` (`deskapp.h:60`) — generic application icon.
+ pub const IG_APPL: i16 = 6;
+ /// `IG_DOCU` (`deskapp.h:61`) — generic document icon.
+ pub const IG_DOCU: i16 = 7;
+ 
+-/// Every icon NewTOS has a raster for, in EmuTOS's `IG_*` order. This is our
+-/// `G.g_iblist[]` (`deskapp.c` `app_rdicon`) with `IG_REMOV` missing — seven
+-/// entries, so the stepper's `G.g_numiblks` equivalent is `BUILTIN_ICONS.len()`
+-/// and **not** `NUM_GEM_IBLKS` (8).
+-pub const BUILTIN_ICONS: [(i16, IconKind); 7] = [
++/// `NUM_GEM_IBLKS` (`deskapp.h:62`) — the number of built-in icons, which is
++/// what `app_parse` clamps `a_aicon`/`a_dicon` against (`deskapp.c:359-365`,
++/// where it reads it out of the live `G.g_numiblks`; this desktop loads no
++/// user icon resource, so the two are the same number).
++pub const NUM_GEM_IBLKS: i16 = IG_DOCU + 1;
++
++/// Every built-in icon, in EmuTOS's `IG_*` order — our `G.g_iblist[]`
++/// (`deskapp.c` `app_rdicon`). All eight of `icon.rsc`'s enabled `ICONBLK`s,
++/// so the Install-icon stepper's `G.g_numiblks` equivalent is
++/// `BUILTIN_ICONS.len()` = [`NUM_GEM_IBLKS`].
++pub const BUILTIN_ICONS: [(i16, IconKind); NUM_GEM_IBLKS as usize] = [
+     (IG_HARD, IconKind::Hard),
+     (IG_FLOPPY, IconKind::Floppy),
+     (IG_FOLDER, IconKind::Folder),
+     (IG_TRASH, IconKind::Trash),
+     (IG_PRINT, IconKind::Printer),
++    (IG_REMOV, IconKind::Removable),
+     (IG_APPL, IconKind::App),
+     (IG_DOCU, IconKind::Doc),
+ ];
+ 
+-/// The [`IconKind`] for an EmuTOS `IG_*` number, or [`None`] when NewTOS has
+-/// no raster for it (today only [`IG_REMOV`], and any out-of-range value —
+-/// EmuTOS clamps those in `app_parse`, `deskapp.c:360-365`).
++/// The [`IconKind`] for an EmuTOS `IG_*` number, or [`None`] for a number that
++/// names no picture — `-1` (`NIL`, the `FF` an `ANODE` line writes for "no
++/// icon") and anything `>= NUM_GEM_IBLKS`, which `app_parse` clamps away on
++/// the way in (`deskapp.c:359-365`).
+ pub fn icon_kind(ig: i16) -> Option<IconKind> {
+     BUILTIN_ICONS.iter().find(|&&(n, _)| n == ig).map(|&(_, k)| k)
+ }
+@@ -267,6 +274,20 @@ static APP_MASK: [u16; 64] = [
+     0x3fff, 0xfffe, 0x1fff, 0xfffc,
+ ];
+ 
++// Removable-disk icon (32×32 1-bpp, `desk/icon.rsc` ICONBLK[5]): the same
++// drive body as the hard disk, with a wide eject slot where the hard disk has
++// its front-panel detail. The resource gives it **no mask of its own** — it
++// points at `rs_iconmask0`, the hard disk's (`icons.c`'s `icon_rs_iconblk[5]`)
++// — so [`rasters`] hands out `HARD_MASK` for it, as the resource does.
++static REMOV_DATA: [u16; 64] = [
++    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
++    0x3fff, 0xfff8, 0x4000, 0x0004, 0x4000, 0x0006, 0x4000, 0x0006, 0x4000, 0x0006, 0x4000, 0x0006,
++    0x4000, 0x0006, 0x4000, 0x0006, 0x4000, 0x0006, 0x4000, 0x0006, 0x4000, 0x0006, 0x5c7f, 0xffc6,
++    0x5c7f, 0xffc6, 0x4000, 0x0006, 0x4199, 0x9986, 0x4333, 0x3306, 0x4000, 0x0006, 0x3fff, 0xfffe,
++    0x1fff, 0xfffc, 0x0000, 0x0000,
++];
++
+ /// The (data, mask) raster pair for an [`IconKind`].
+ fn rasters(kind: IconKind) -> (&'static [u16; 64], &'static [u16; 64]) {
+     match kind {
+@@ -275,6 +296,7 @@ fn rasters(kind: IconKind) -> (&'static [u16; 64], &'static [u16; 64]) {
+         IconKind::Folder => (&FOLDER_DATA, &FOLDER_MASK),
+         IconKind::Trash => (&TRASH_DATA, &TRASH_MASK),
+         IconKind::Printer => (&PRINTER_DATA, &PRINTER_MASK),
++        IconKind::Removable => (&REMOV_DATA, &HARD_MASK),
+         IconKind::Doc => (&DOC_DATA, &DOC_MASK),
+         IconKind::App => (&APP_DATA, &APP_MASK),
+     }
+@@ -285,7 +307,10 @@ fn rasters(kind: IconKind) -> (&'static [u16; 64], &'static [u16; 64]) {
+ /// that carry no letter.
+ fn char_spot(kind: IconKind) -> Option<(i16, i16)> {
+     match kind {
+-        IconKind::Hard => Some((13, 16)),
++        // `icon_rs_iconblk[0]` and `[5]` carry the same `ib_xchar`/`ib_ychar`
++        // (13, 16), `[1]` carries (13, 22) — `icons.c`, generated from
++        // `icon.rsc` by `ird`.
++        IconKind::Hard | IconKind::Removable => Some((13, 16)),
+         IconKind::Floppy => Some((13, 22)),
+         _ => None,
+     }
+diff --git a/kernel/src/desk/inf.rs b/kernel/src/desk/inf.rs
+index 1a7e69a..9795deb 100644
+--- a/kernel/src/desk/inf.rs
++++ b/kernel/src/desk/inf.rs
+@@ -341,6 +341,18 @@ fn scan_icon(c: &mut Cursor) -> i16 {
+     }
+ }
+ 
++/// `app_parse`'s out-of-range guard (`deskapp.c:359-365`): an icon number that
++/// names no built-in picture becomes `dflt` — `IG_APPL` for `a_aicon`,
++/// `IG_DOCU` for `a_dicon`. Values below the bound (including `-1` = "none")
++/// pass through.
++fn clamp_icon(v: i16, dflt: i16) -> i16 {
++    if v >= icons::NUM_GEM_IBLKS {
++        dflt
++    } else {
++        v
++    }
++}
++
+ /// `scan_str` — an `@`-terminated string: skip leading spaces, copy until `@`
+ /// (consumed) or `\r`/`\n`/NUL (left in place, so the caller can detect the
+ /// line end), `deskapp.c:258-289`.
+@@ -443,8 +455,12 @@ fn parse_anode(c: &mut Cursor, tag: u8) -> InfAnode {
+     let has_extra = matches!(tag, b'G' | b'Y' | b'F' | b'P' | b'I' | b'N');
+ 
+     let (xspot, yspot) = if is_desk { (scan_2(c), scan_2(c)) } else { (0, 0) };
+-    let aicon = scan_icon(c);
+-    let dicon = scan_icon(c);
++    // `if (pa->a_aicon >= G.g_numiblks) pa->a_aicon = IG_APPL;` and the same
++    // for `a_dicon` with `IG_DOCU` (`deskapp.c:359-365`). `scan_2` has already
++    // turned `FF` into `-1`, which is *below* the bound and stays: `-1` is
++    // "this node has no icon of that kind", not an out-of-range index.
++    let aicon = clamp_icon(scan_icon(c), IG_APPL);
++    let dicon = clamp_icon(scan_icon(c), IG_DOCU);
+ 
+     // The `<L>` field is a single literal character (space = no letter): consume
+     // exactly one separator space, then one char — do NOT skip a run of spaces,
+diff --git a/kernel/src/desk/ins.rs b/kernel/src/desk/ins.rs
+index 552dd32..dbfadbd 100644
+--- a/kernel/src/desk/ins.rs
++++ b/kernel/src/desk/ins.rs
+@@ -262,10 +262,9 @@ pub(super) fn ins_devices() -> bool {
+ /// The icons `ID_UP`/`ID_DOWN` cycle through, as `(IG_* number, kind)` pairs.
+ ///
+ /// EmuTOS steps over `0 .. G.g_numiblks-1`, its whole loaded icon resource
+-/// (`deskins.c:902-906`). NewTOS's equivalent is [`BUILTIN_ICONS`], which is
+-/// EmuTOS's built-in set **minus `IG_REMOV`** — there is no removable-disk
+-/// raster in the bitmaps this desktop inherited, so offering index 5 would step
+-/// onto a picture that does not exist. Seven entries, not eight.
++/// (`deskins.c:902-906`). NewTOS's equivalent is [`BUILTIN_ICONS`], EmuTOS's
++/// whole built-in set — eight entries, `NUM_GEM_IBLKS` (DESK16 closed the
++/// `IG_REMOV` hole).
+ ///
+ /// The floppy is offered only when it can be used: `IG_FLOPPY` stays out unless
+ /// the drive map actually reports `A:` or `B:` — the machine this desktop runs
+diff --git a/kernel/src/desk/main.rs b/kernel/src/desk/main.rs
+index c1e53a7..952feb7 100644
+--- a/kernel/src/desk/main.rs
++++ b/kernel/src/desk/main.rs
+@@ -1052,12 +1052,6 @@ fn do_execcli() -> bool {
+ /// ADR-017 rev 2).
+ fn do_optnmenu(item: Item) {
+     match item {
+-        Item::SetBackground => {
+-            // `end_dialog`'s `form_dial(FMD_FINISH)` repaints exactly the
+-            // dialog's rectangle and re-asks the windows it covered — no
+-            // whole-desktop composite (G7).
+-            super::inf::set_background();
+-        }
+         Item::InstallApp => do_install_app(),
+         // `case PREFITEM: if (inf_pref()) desk_all(FALSE);` (`deskmain.c:885-
+         // 887`). **Named deviation in the argument**: EmuTOS passes `FALSE`
+@@ -1663,7 +1657,7 @@ fn search_wildcard(name: &str) -> String {
+ /// size-to-fit toggles.
+ fn do_viewmenu(item: Item) -> u16 {
+     use super::model::{Sort, View};
+-    global::with(|g| match item {
++    let bits = global::with(|g| match item {
+         Item::ShowIcons => {
+             if g.view == View::Icon {
+                 0
+@@ -1698,7 +1692,32 @@ fn do_viewmenu(item: Item) -> u16 {
+         }
+         _ => 0,
+     })
+-    .unwrap_or(0)
++    .unwrap_or(0);
++    // `case BACKGRND: if (inf_backgrounds()) rc = BACKGROUND_HAS_CHANGED;`
++    // (`deskmain.c:823-828`) — `BACKGRND` (46) is a *View* item, so its arm
++    // belongs in this function (DESK21). It runs outside the `global::with`
++    // above because the dialog issues AES traps and cannot hold the desktop
++    // lock.
++    //
++    // **Named deviation in the predicate, not in the placement.** EmuTOS's
++    // `inf_backgrounds` returns TRUE only when the **window** background
++    // changed (`deskinf.c:910-916`); a *desktop* background change it applies
++    // and repaints itself with `do_wredraw(DESKWH, &G.g_desk)` and then
++    // returns FALSE (`:900-908`). NewTOS's stand-in offers only the desktop
++    // half — the `#Q` window bucket is round-tripped but has no consumer — and
++    // its `true` means exactly that desktop change, which
++    // [`super::inf::set_background`] has already repainted the same way. So
++    // the EmuTOS-equivalent `rc` for every outcome this dialog can produce is
++    // `0`, and `BACKGROUND_HAS_CHANGED` has no NewTOS counterpart to set: a
++    // `desk_all` here would repaint every window for a change that touched
++    // none of them.
++    if item == Item::SetBackground {
++        // `end_dialog`'s `form_dial(FMD_FINISH)` repaints exactly the
++        // dialog's rectangle and re-asks the windows it covered — no
++        // whole-desktop composite (G7).
++        super::inf::set_background();
++    }
++    bits
+ }
+ 
+ /// Switch the sort key, returning `SORT_CHANGED` (or `0` if unchanged).
+diff --git a/kernel/src/desk/menu.rs b/kernel/src/desk/menu.rs
+index e46351d..4eb77ab 100644
+--- a/kernel/src/desk/menu.rs
++++ b/kernel/src/desk/menu.rs
+@@ -213,9 +213,10 @@ pub enum Item {
+     NoSort,
+     /// Size windows to fit their content.
+     SizeToFit,
+-    // Options.
+-    /// Set the background pattern (Task #9).
++    /// Set the background pattern — `BACKGRND` (46), the **last** entry of
++    /// *View* (`desk_rsc.h:35-48`, DESK21).
+     SetBackground,
++    // Options.
+     /// Install icon (Task #9).
+     InstallIcon,
+     /// Install application (Task #9).
+@@ -326,23 +327,31 @@ const MENUS: [Def; 4] = [
+         title: Title::View,
+         label: b" View \0",
+         entries: &[
+-            Act(Item::ShowIcons, b"  Show as icons \0"),
+-            Act(Item::ShowText, b"  Show as text  \0"),
+-            Sep(b"----------------\0"),
+-            Act(Item::SortName, b"  Sort by name  \0"),
+-            Act(Item::SortType, b"  Sort by type  \0"),
+-            Act(Item::SortSize, b"  Sort by size  \0"),
+-            Act(Item::SortDate, b"  Sort by date  \0"),
+-            Act(Item::NoSort, b"  No sort       \0"),
+-            Sep(b"----------------\0"),
+-            Act(Item::SizeToFit, b"  Size to fit   \0"),
++            Act(Item::ShowIcons, b"  Show as icons    \0"),
++            Act(Item::ShowText, b"  Show as text     \0"),
++            Sep(b"-------------------\0"),
++            Act(Item::SortName, b"  Sort by name     \0"),
++            Act(Item::SortType, b"  Sort by type     \0"),
++            Act(Item::SortSize, b"  Sort by size     \0"),
++            Act(Item::SortDate, b"  Sort by date     \0"),
++            Act(Item::NoSort, b"  No sort          \0"),
++            Sep(b"-------------------\0"),
++            Act(Item::SizeToFit, b"  Size to fit      \0"),
++            // `SEP_VW2` (45) + `BACKGRND` (46) close the View box: object 46 is
++            // the **last child** of the View drop-down (`desk_rsc.c:446,
++            // :473-483`), and the Options box does not start until `IICNITEM`
++            // (48) — `desk_rsc.h:35-48`. DESK21 moved the entry here from the
++            // head of Options; `shortcut_mapping[]` never had to move, it has
++            // carried `BACKGRND` in the View group all along
++            // (`deskmain.c:211-217`).
++            Sep(b"-------------------\0"),
++            Act(Item::SetBackground, b"  Set background...\0"),
+         ],
+     },
+     Def {
+         title: Title::Options,
+         label: b" Options \0",
+         entries: &[
+-            Act(Item::SetBackground, b"  Set background...       \0"),
+             Act(Item::InstallIcon, b"  Install icon...         \0"),
+             Act(Item::InstallApp, b"  Install application...  \0"),
+             Act(Item::InstallDevices, b"  Install devices         \0"),
+@@ -819,7 +828,8 @@ pub fn item_title(item: Item) -> Title {
+         | Item::SortSize
+         | Item::SortDate
+         | Item::NoSort
+-        | Item::SizeToFit => Title::View,
++        | Item::SizeToFit
++        | Item::SetBackground => Title::View,
+         _ => Title::Options,
+     }
+ }
+@@ -1019,7 +1029,7 @@ pub fn lookup_ascii_shortcut(ascii: u8) -> Option<Item> {
+ /// is dead-clickable and the shortcut lookup skips them (see the report for the
+ /// exact disabled set).
+ pub fn men_update() {
+-    let (nsel, nwin, napp, ndesk, view, sort, fit) = global::with(|g| {
++    let (nsel, nwin, napp, (ndesk, ntrash), view, sort, fit) = global::with(|g| {
+         (
+             g.count_selected(g.g_croot),
+             g.win_count(),
+@@ -1030,10 +1040,10 @@ pub fn men_update() {
+             g.size_to_fit,
+         )
+     })
+-    .unwrap_or((0, 0, 0, 0, View::Icon, Sort::Name, true));
++    .unwrap_or((0, 0, 0, (0, 0), View::Icon, Sort::Name, true));
+ 
+     for &item in &ALL_ITEMS {
+-        set_disabled(item, !item_enabled(item, nsel, nwin, napp, ndesk));
++        set_disabled(item, !item_enabled(item, nsel, nwin, napp, ndesk, ntrash));
+     }
+ 
+     // View / sort / size-to-fit check marks.
+@@ -1047,10 +1057,11 @@ pub fn men_update() {
+     set_checked(Item::SizeToFit, fit);
+ }
+ 
+-/// Whether `item` is enabled for the current `nsel`/`nwin`/`napp`/`ndesk`
+-/// (`napp` = the number of selected native programs, `ndesk` = the number of
+-/// selected desktop icons — EmuTOS `men_update`'s two icon counts).
+-fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize) -> bool {
++/// Whether `item` is enabled for the current `nsel`/`nwin`/`napp`/`ndesk`/
++/// `ntrash` — EmuTOS `men_update`'s four counts (`deskmain.c:496-530`):
++/// `napp` selected native programs, `ndesk` selected desktop icons, `ntrash`
++/// of those that are a trash can or a printer.
++fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize, ntrash: usize) -> bool {
+     match item {
+         // Always available.
+         Item::About
+@@ -1070,7 +1081,12 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize)
+         // Task-#9 file ops: Delete needs a selection; Info/Rename a single
+         // item; New folder / Select all / Set mask an open window (EmuTOS
+         // `ILL_NOSEL`/`ILL_NOWIN` — `MASKITEM` is in `ILL_NOWIN`).
+-        Item::Delete => nsel >= 1,
++        //
++        // `DELTITEM` carries a second gate on top of `ILL_NOSEL`: "disable
++        // 'Delete' iff either trash or printer is selected"
++        // (`deskmain.c:533-535`). Neither can be thrown away, and EmuTOS says
++        // so by greying the entry rather than by refusing later.
++        Item::Delete => nsel >= 1 && ntrash == 0,
+         Item::InfoRename => nsel == 1,
+         Item::NewFolder | Item::SelectAll | Item::SetMask => nwin >= 1,
+         // Search (`CONF_WITH_SEARCH`): EmuTOS disables it only when there is
+@@ -1079,6 +1095,9 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize)
+         Item::Search => nwin >= 1,
+         // Task-#14 deskinf/NEWDESK.INF ops: always available (EmuTOS
+         // `CONF_WITH_BACKGROUNDS`/`CONF_WITH_READ_INF` + the always-live Save).
++        // `BACKGRND` sits in the *View* menu since DESK21; its gating did not
++        // move with it, because EmuTOS names it in no `ILL_*` table and in no
++        // `menu_ienable` call either.
+         // `PREFITEM` likewise: EmuTOS lists it in none of `ILL_NOSEL` /
+         // `ILL_MULTSEL` / `ILL_NOWIN` (`deskmain.c:143-160`), so Set
+         // preferences is enabled whatever is selected (DESK02).
+diff --git a/kernel/src/desk/win.rs b/kernel/src/desk/win.rs
+index c138379..c741cf0 100644
+--- a/kernel/src/desk/win.rs
++++ b/kernel/src/desk/win.rs
+@@ -519,8 +519,9 @@ impl DeskState {
+                 // `i_index = (pstart->f_isap) ? anode->a_aicon : anode->a_dicon;`
+                 // (`deskwin.c:465-467`) — the icon a per-name window icon, an
+                 // installed application or a generic file-type `ANODE` assigns
+-                // to this name. `icon_kind` also rejects a number NewTOS has no
+-                // raster for (`IG_REMOV`, DESK16), which falls through below.
++                // to this name. `icon_kind` rejects the `-1` an `ANODE` line
++                // writes as `FF` for "no icon of that kind", which falls
++                // through to the rule below.
+                 let assigned = anode
+                     .map(|a| if a.isapp { a.aicon } else { a.dicon })
+                     .and_then(super::icons::icon_kind);
+@@ -737,26 +738,37 @@ impl DeskState {
+         0
+     }
+ 
+-    /// `men_update`'s `ndesk` (`deskmain.c:504-521`) — the number of selected
+-    /// **desktop** icons, i.e. `AT_ISDISK`/`AT_ISTRSH`/`AT_ISPRNT` children of
+-    /// [`DROOT`]. Zero unless the desktop is the current window, exactly as
+-    /// EmuTOS counts it (`:497`, the `G.g_cwin == DESKWH` arm).
+-    pub fn count_selected_desk_icons(&self) -> usize {
++    /// `men_update`'s `ndesk` **and** `ntrash` (`deskmain.c:504-521`), counted
++    /// in the one walk over the selection EmuTOS uses for both.
++    ///
++    /// * `ndesk` — selected **desktop** icons: `AT_ISDISK`/`AT_ISTRSH`/
++    ///   `AT_ISPRNT` children of [`DROOT`]. The `case AT_ISPRNT:`/`AT_ISTRSH:`
++    ///   arm falls through into `case AT_ISDISK:` (`:508-517`), so all three
++    ///   types count.
++    /// * `ntrash` — of those, the ones that are a trash can or a printer
++    ///   (`:510-514`). `men_update` disables *Delete* while one of them is in
++    ///   the selection (`:533-535`) — you cannot throw the waste basket away.
++    ///
++    /// Both are zero unless the desktop is the current window, exactly as
++    /// EmuTOS counts them (`:497`, the `G.g_cwin == DESKWH` arm).
++    pub fn count_selected_desk_icons(&self) -> (usize, usize) {
+         if self.g_cwin != DESKWH {
+-            return 0;
++            return (0, 0);
+         }
+-        let mut n = 0;
++        let (mut ndesk, mut ntrash) = (0, 0);
+         let mut curr = self.win_isel(super::global::DROOT, 0);
+         while curr != 0 {
+-            if matches!(
+-                self.g_screeninfo[curr as usize].atype,
+-                super::model::AType::Disk | super::model::AType::Trash | super::model::AType::Printer
+-            ) {
+-                n += 1;
++            match self.g_screeninfo[curr as usize].atype {
++                super::model::AType::Trash | super::model::AType::Printer => {
++                    ntrash += 1;
++                    ndesk += 1;
++                }
++                super::model::AType::Disk => ndesk += 1,
++                _ => {}
+             }
+             curr = self.win_isel(super::global::DROOT, curr);
+         }
+-        n
++        (ndesk, ntrash)
+     }
+ 
+     /// Number of currently-selected items under `root` (children carrying

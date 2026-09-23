@@ -1,0 +1,28 @@
+# DESK17(2) "after": unchanged behaviour, proved again on this build.  Select
+# the C: drive icon, open `Options -> Install icon...`, screendump the box with
+# the *Options* title still inverted, Cancel, screendump the bar again.
+#   C: icon click            (38,35)   probe run desktop dump
+#   Options title hover      (196,9)   a1 run menu dump
+#   "Install icon..." click  (280,27)  a1 run menu dump (entry 3.0 -- it moved
+#                                      up one row with DESK21)
+#   ID_CNCL click            (415,369) b3 run's [probe] ADINSDSK dump
+100 parkbr
+300 move 600 240
+1500 mark A_IDLE
+2600 move 38 35
+2900 down
+2903 up
+3200 move 600 240
+4000 move 196 240
+4100 move 196 9
+4800 move 280 27
+5100 down
+5103 up
+5400 move 600 240
+6500 mark B_DIALOG
+7600 move 415 369
+7900 down
+7903 up
+8200 move 600 240
+9300 mark C_CLOSED
+10500 pause

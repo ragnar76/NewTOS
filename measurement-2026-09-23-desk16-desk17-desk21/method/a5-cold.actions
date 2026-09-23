@@ -1,0 +1,6 @@
+# DESK16 "after", cold start on the card a4 wrote: C: must still carry the
+# removable-disk picture, read back out of NEWDESK.INF's `#M` line.
+100 parkbr
+300 move 600 240
+2000 mark A_COLD
+3200 pause

@@ -1,0 +1,200 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x000000000032c000 (2801664 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-23 22:17:50
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[aes] gsx_malloc: screen buffer pa=0x01000000 len=614400 (kernel-owned, WF_SCREEN)
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[probe] active (16,0) 216x19
+[probe] title 0 abs (16,0) 48x19 hover (40,9) st=0
+[probe] title 1 abs (64,0) 48x19 hover (88,9) st=0
+[probe] title 2 abs (112,0) 48x19 hover (136,9) st=0
+[probe] title 3 abs (160,0) 72x19 hover (196,9) st=0
+[probe] box 0 abs (16,19) 176x32
+[probe]   0.0 obj 9 '  Desktop info...    ' abs (16,19) 176x16 click (104,27) dis=0
+[probe]   0.1 obj 10 '----------------------' abs (16,35) 176x16 click (104,43) dis=1
+[probe] box 1 abs (64,19) 184x240
+[probe]   1.0 obj 12 '  Open              ^O' abs (64,19) 184x16 click (156,27) dis=1
+[probe]   1.1 obj 13 '  Info/Rename...    ^I' abs (64,35) 184x16 click (156,43) dis=1
+[probe]   1.2 obj 14 '  Search...           ' abs (64,51) 184x16 click (156,59) dis=1
+[probe]   1.3 obj 15 '-----------------------' abs (64,67) 184x16 click (156,75) dis=1
+[probe]   1.4 obj 16 '  New folder...     ^N' abs (64,83) 184x16 click (156,91) dis=1
+[probe]   1.5 obj 17 '  Close folder      ^H' abs (64,99) 184x16 click (156,107) dis=1
+[probe]   1.6 obj 18 '  Close top window  ^U' abs (64,115) 184x16 click (156,123) dis=1
+[probe]   1.7 obj 19 '  Cycle windows     ^W' abs (64,131) 184x16 click (156,139) dis=1
+[probe]   1.8 obj 20 '  Select all items  ^A' abs (64,147) 184x16 click (156,155) dis=1
+[probe]   1.9 obj 21 '  Set file mask...    ' abs (64,163) 184x16 click (156,171) dis=1
+[probe]   1.10 obj 22 '-----------------------' abs (64,179) 184x16 click (156,187) dis=1
+[probe]   1.11 obj 23 '  Delete...         ^D' abs (64,195) 184x16 click (156,203) dis=1
+[probe]   1.12 obj 24 '-----------------------' abs (64,211) 184x16 click (156,219) dis=1
+[probe]   1.13 obj 25 '  Execute EmuCON    ^Z' abs (64,227) 184x16 click (156,235) dis=0
+[probe]   1.14 obj 26 '  Shutdown            ' abs (64,243) 184x16 click (156,251) dis=1
+[probe] box 2 abs (112,19) 160x160
+[probe]   2.0 obj 28 '  Show as icons    ' abs (112,19) 160x16 click (192,27) dis=0
+[probe]   2.1 obj 29 '  Show as text     ' abs (112,35) 160x16 click (192,43) dis=0
+[probe]   2.2 obj 30 '--------------------' abs (112,51) 160x16 click (192,59) dis=1
+[probe]   2.3 obj 31 '  Sort by name     ' abs (112,67) 160x16 click (192,75) dis=0
+[probe]   2.4 obj 32 '  Sort by type     ' abs (112,83) 160x16 click (192,91) dis=0
+[probe]   2.5 obj 33 '  Sort by size     ' abs (112,99) 160x16 click (192,107) dis=0
+[probe]   2.6 obj 34 '  Sort by date     ' abs (112,115) 160x16 click (192,123) dis=0
+[probe]   2.7 obj 35 '  No sort          ' abs (112,131) 160x16 click (192,139) dis=0
+[probe]   2.8 obj 36 '--------------------' abs (112,147) 160x16 click (192,155) dis=1
+[probe]   2.9 obj 37 '  Size to fit      ' abs (112,163) 160x16 click (192,171) dis=0
+[probe] box 3 abs (160,19) 240x192
+[probe]   3.0 obj 39 '  Set background...          ' abs (160,19) 240x16 click (280,27) dis=0
+[probe]   3.1 obj 40 '  Install icon...            ' abs (160,35) 240x16 click (280,43) dis=0
+[probe]   3.2 obj 41 '  Install application...     ' abs (160,51) 240x16 click (280,59) dis=1
+[probe]   3.3 obj 42 '  Install devices            ' abs (160,67) 240x16 click (280,75) dis=0
+[probe]   3.4 obj 43 '  Remove desktop icon        ' abs (160,83) 240x16 click (280,91) dis=1
+[probe]   3.5 obj 44 '------------------------------' abs (160,99) 240x16 click (280,107) dis=1
+[probe]   3.6 obj 45 '  Set preferences...         ' abs (160,115) 240x16 click (280,123) dis=0
+[probe]   3.7 obj 46 '  Desktop configuration...   ' abs (160,131) 240x16 click (280,139) dis=0
+[probe]   3.8 obj 47 '  Change resolution...     ^R' abs (160,147) 240x16 click (280,155) dis=1
+[probe]   3.9 obj 48 '------------------------------' abs (160,163) 240x16 click (280,171) dis=1
+[probe]   3.10 obj 49 '  Read .INF file...          ' abs (160,179) 240x16 click (280,187) dis=0
+[probe]   3.11 obj 50 '  Save desktop...          ^S' abs (160,195) 240x16 click (280,203) dis=0
+[h02] injector armed
+[probe] top=0
+[probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)
+[probe] desk obj 10 idx 3 box (0,433) 76x40 -> click (38,449)
+[probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)
+[desk] desktop up (1 drives, 0 window(s) from the context)
+[h02] step 0 at +100 -> mouse (446,366) mb=0
+[h02] step 1 at +101 -> mouse (573,479) mb=0
+[h02] step 2 at +102 -> mouse (639,479) mb=0
+[h02] step 3 at +103 -> mouse (639,479) mb=0
+[h02] step 4 at +104 -> mouse (639,479) mb=0
+[h02] step 5 at +105 -> mouse (639,479) mb=0
+[h02] step 6 at +300 -> mouse (600,352) mb=0
+[h02] step 7 at +301 -> mouse (600,240) mb=0
+[h02] MARK A_IDLE step 8 at +1500 mouse (600,240) mb=0
+[h02] step 9 at +2600 -> mouse (473,113) mb=0
+[h02] step 10 at +2601 -> mouse (346,35) mb=0
+[h02] step 11 at +2602 -> mouse (219,35) mb=0
+[h02] step 12 at +2603 -> mouse (92,35) mb=0
+[h02] step 13 at +2604 -> mouse (38,35) mb=0
+[h02] step 14 at +2900 -> mouse (38,35) mb=1
+[h02] step 15 at +2903 -> mouse (38,35) mb=0
+[probe] top=0
+[probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)
+[probe] desk obj 10 idx 3 box (0,433) 76x40 -> click (38,449)
+[probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)
+[probe] active (16,0) 216x19
+[probe] title 0 abs (16,0) 48x19 hover (40,9) st=0
+[probe] title 1 abs (64,0) 48x19 hover (88,9) st=0
+[probe] title 2 abs (112,0) 48x19 hover (136,9) st=0
+[probe] title 3 abs (160,0) 72x19 hover (196,9) st=0
+[probe] box 0 abs (16,19) 176x32
+[probe]   0.0 obj 9 '  Desktop info...    ' abs (16,19) 176x16 click (104,27) dis=0
+[probe]   0.1 obj 10 '----------------------' abs (16,35) 176x16 click (104,43) dis=1
+[probe] box 1 abs (64,19) 184x240
+[probe]   1.0 obj 12 '  Open              ^O' abs (64,19) 184x16 click (156,27) dis=0
+[probe]   1.1 obj 13 '  Info/Rename...    ^I' abs (64,35) 184x16 click (156,43) dis=0
+[probe]   1.2 obj 14 '  Search...           ' abs (64,51) 184x16 click (156,59) dis=1
+[probe]   1.3 obj 15 '-----------------------' abs (64,67) 184x16 click (156,75) dis=1
+[probe]   1.4 obj 16 '  New folder...     ^N' abs (64,83) 184x16 click (156,91) dis=1
+[probe]   1.5 obj 17 '  Close folder      ^H' abs (64,99) 184x16 click (156,107) dis=1
+[probe]   1.6 obj 18 '  Close top window  ^U' abs (64,115) 184x16 click (156,123) dis=1
+[probe]   1.7 obj 19 '  Cycle windows     ^W' abs (64,131) 184x16 click (156,139) dis=1
+[probe]   1.8 obj 20 '  Select all items  ^A' abs (64,147) 184x16 click (156,155) dis=1
+[probe]   1.9 obj 21 '  Set file mask...    ' abs (64,163) 184x16 click (156,171) dis=1
+[probe]   1.10 obj 22 '-----------------------' abs (64,179) 184x16 click (156,187) dis=1
+[probe]   1.11 obj 23 '  Delete...         ^D' abs (64,195) 184x16 click (156,203) dis=0
+[probe]   1.12 obj 24 '-----------------------' abs (64,211) 184x16 click (156,219) dis=1
+[probe]   1.13 obj 25 '  Execute EmuCON    ^Z' abs (64,227) 184x16 click (156,235) dis=0
+[probe]   1.14 obj 26 '  Shutdown            ' abs (64,243) 184x16 click (156,251) dis=1
+[probe] box 2 abs (112,19) 160x160
+[probe]   2.0 obj 28 '  Show as icons    ' abs (112,19) 160x16 click (192,27) dis=0
+[probe]   2.1 obj 29 '  Show as text     ' abs (112,35) 160x16 click (192,43) dis=0
+[probe]   2.2 obj 30 '--------------------' abs (112,51) 160x16 click (192,59) dis=1
+[probe]   2.3 obj 31 '  Sort by name     ' abs (112,67) 160x16 click (192,75) dis=0
+[probe]   2.4 obj 32 '  Sort by type     ' abs (112,83) 160x16 click (192,91) dis=0
+[probe]   2.5 obj 33 '  Sort by size     ' abs (112,99) 160x16 click (192,107) dis=0
+[probe]   2.6 obj 34 '  Sort by date     ' abs (112,115) 160x16 click (192,123) dis=0
+[probe]   2.7 obj 35 '  No sort          ' abs (112,131) 160x16 click (192,139) dis=0
+[probe]   2.8 obj 36 '--------------------' abs (112,147) 160x16 click (192,155) dis=1
+[probe]   2.9 obj 37 '  Size to fit      ' abs (112,163) 160x16 click (192,171) dis=0
+[probe] box 3 abs (160,19) 240x192
+[probe]   3.0 obj 39 '  Set background...          ' abs (160,19) 240x16 click (280,27) dis=0
+[probe]   3.1 obj 40 '  Install icon...            ' abs (160,35) 240x16 click (280,43) dis=0
+[probe]   3.2 obj 41 '  Install application...     ' abs (160,51) 240x16 click (280,59) dis=1
+[probe]   3.3 obj 42 '  Install devices            ' abs (160,67) 240x16 click (280,75) dis=0
+[probe]   3.4 obj 43 '  Remove desktop icon        ' abs (160,83) 240x16 click (280,91) dis=0
+[probe]   3.5 obj 44 '------------------------------' abs (160,99) 240x16 click (280,107) dis=1
+[probe]   3.6 obj 45 '  Set preferences...         ' abs (160,115) 240x16 click (280,123) dis=0
+[probe]   3.7 obj 46 '  Desktop configuration...   ' abs (160,131) 240x16 click (280,139) dis=0
+[probe]   3.8 obj 47 '  Change resolution...     ^R' abs (160,147) 240x16 click (280,155) dis=1
+[probe]   3.9 obj 48 '------------------------------' abs (160,163) 240x16 click (280,171) dis=1
+[probe]   3.10 obj 49 '  Read .INF file...          ' abs (160,179) 240x16 click (280,187) dis=0
+[probe]   3.11 obj 50 '  Save desktop...          ^S' abs (160,195) 240x16 click (280,203) dis=0
+[h02] step 16 at +3200 -> mouse (165,162) mb=0
+[h02] step 17 at +3201 -> mouse (292,240) mb=0
+[h02] step 18 at +3202 -> mouse (419,240) mb=0
+[h02] step 19 at +3203 -> mouse (546,240) mb=0
+[h02] step 20 at +3204 -> mouse (600,240) mb=0
+[h02] step 21 at +4000 -> mouse (473,240) mb=0
+[h02] step 22 at +4001 -> mouse (346,240) mb=0
+[h02] step 23 at +4002 -> mouse (219,240) mb=0
+[h02] step 24 at +4003 -> mouse (196,240) mb=0
+[h02] step 25 at +4100 -> mouse (196,113) mb=0
+[h02] step 26 at +4101 -> mouse (196,9) mb=0
+[h02] step 27 at +4800 -> mouse (280,43) mb=0
+[h02] step 28 at +5100 -> mouse (280,43) mb=1
+[probe] ADINSDSK ROOT (156,91) 328x316 curr_icon=0 of 6 ig=0
+[probe] ID_ID abs (180,143) 128x24 -> click (244,155) st=0
+[probe] ID_LABEL abs (180,175) 168x24 -> click (264,187) st=0
+[probe] ID_DRIVE abs (180,237) 88x22 -> click (224,248) st=1
+[probe] ID_TRASH abs (276,237) 88x22 -> click (320,248) st=0
+[probe] ID_PRINT abs (372,237) 88x22 -> click (416,248) st=0
+[probe] ID_UP abs (320,280) 28x20 -> click (334,290) st=0
+[probe] ID_DOWN abs (320,310) 28x20 -> click (334,320) st=0
+[probe] ID_OK abs (180,355) 90x28 -> click (225,369) st=0
+[probe] ID_SKIP abs (275,355) 90x28 -> click (320,369) st=0
+[probe] ID_CNCL abs (370,355) 90x28 -> click (415,369) st=0
+[h02] step 29 at +5103 -> mouse (280,43) mb=0
+[h02] step 30 at +5400 -> mouse (407,170) mb=0
+[h02] step 31 at +5401 -> mouse (534,240) mb=0
+[h02] step 32 at +5402 -> mouse (600,240) mb=0
+[h02] MARK B_DIALOG step 33 at +6500 mouse (600,240) mb=0
+[h02] step 34 at +7600 -> mouse (473,367) mb=0
+[h02] step 35 at +7601 -> mouse (429,369) mb=0
+[h02] step 36 at +7900 -> mouse (429,369) mb=1
+[h02] step 37 at +7903 -> mouse (429,369) mb=0
+[h02] step 38 at +8200 -> mouse (556,242) mb=0
+[h02] step 39 at +8201 -> mouse (600,240) mb=0
+[h02] MARK C_CLOSED step 40 at +9300 mouse (600,240) mb=0

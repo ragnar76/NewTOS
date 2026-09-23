@@ -1,0 +1,16 @@
+# DESK17(1) "before": the Trash icon is selected and `File -> Delete...` is
+# still BLACK -- `men_update` has no `ntrash`.
+#   Trash icon click (38,449)  from the probe run's desktop dump
+#   File title hover (88,9)    from the probe run's menu dump
+100 parkbr
+300 move 600 240
+1500 mark A_IDLE
+2600 move 38 449
+2900 down
+2903 up
+3200 move 600 240
+4000 mark B_TRASHSEL
+5100 move 88 240
+5200 move 88 9
+5900 mark C_FILE
+7100 pause

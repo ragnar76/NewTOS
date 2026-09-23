@@ -1,0 +1,19 @@
+# DESK21 "before": the View and the Options drop-down as they stand at HEAD
+# a8d4b42 -- `Set background...` is the FIRST entry of Options and the View
+# menu ends at `Size to fit`.
+#   View title hover    (136,9)   from the probe run's menu dump
+#   Options title hover (196,9)   from the same dump
+# The pointer approaches the bar from straight below its own title so it
+# crosses no other title on the way (MEMORY: injector park must not cross the
+# menu bar); the View -> Options slide stays inside the bar row.
+# Every mark is followed by >= 1000 ticks (5 s) of quiet so the QMP screendump
+# cannot race the next step.
+100 parkbr
+300 move 600 240
+1500 mark A_IDLE
+2600 move 136 240
+2700 move 136 9
+3400 mark B_VIEW
+4500 move 196 9
+5200 mark C_OPTIONS
+6400 pause

@@ -1,0 +1,5 @@
+preview after-l-step4.png vs rs_icondata5: 654 mask pixels compared, 0 mismatching
+preview before-i-step4.png vs rs_icondata6: 1006 mask pixels compared, 0 mismatching
+deskicon after-o-cold.png vs rs_icondata5: 618 mask pixels compared, 0 mismatching
+deskicon after-m-installed.png vs rs_icondata5: 618 mask pixels compared, 0 mismatching
+deskicon before-a-idle.png vs rs_icondata0: 618 mask pixels compared, 0 mismatching

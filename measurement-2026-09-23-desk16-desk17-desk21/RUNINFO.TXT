@@ -1,0 +1,224 @@
+measurement-2026-09-23-desk16-desk17-desk21
+  DESK16 (IG_REMOV has no raster)
+  DESK17 (men_update: ntrash; menu title while a dialog is open)
+  DESK21 (Set background... is in the wrong menu)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD a8d4b42. The three tickets' changes are
+UNCOMMITTED in the shared tree. Nothing flashed, nothing ejected, no real Pi
+run, nothing committed; no `git checkout/restore/clean/stash/reset` was run on
+the shared tree.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (`method/run.sh` + `method/qmp_multi.py`). Card image: a fresh
+`tools/make-sd-image.sh` per run (64 MiB, MBR + FAT16) -- rebuilt, never a
+reused copy, because the tool changed with DESK18. Interactive runs use the
+scratch-copy IKBD injector (memory `desktop-interactive-verification-real-hw`):
+`method/make_scratch.sh` rsyncs the crates into the job scratch and patches
+the copy -- never the shared tree.
+
+`method/*.actions` are the nine action lists, `method/*.rs` the generated
+injector tables (`gen_script.py ... SCRIPT_DESK`, plus an empty `SCRIPT_TERA`).
+`method/desk16-desk17-desk21.diff` is the full source diff.
+No `*.img` in this directory (the ticket's rule).
+
+POINTER PARK: (600,240). The pointer always approaches the menu bar from
+straight below its own title, so it crosses no other title on the way
+(memory `injector-park-must-not-cross-menu-bar`); the only in-bar move is the
+View -> Options slide in the two menu runs, which is the gesture under test.
+
+EVERY click point comes from a serial dump, none is guessed
+(`method/probe_patch.py`):
+  * `probe_dump()` prints, from the end of `men_update`, the absolute
+    rectangle of every menu title / drop-down box / drop-down entry with its
+    click point and its DISABLED bit -- so the greying is in the serial log as
+    well as in the picture.
+  * `probe_icons()` prints the desktop icons and the window items with the
+    centre of their icon glyph.
+  * an `ADINSDSK` block prints the Install-desktop-icon dialog's rectangles
+    plus `curr_icon` and the length of the offered icon list.
+
+
+0. What each ticket asked, and what the source said
+---------------------------------------------------
+
+DESK16 -- confirmed and built. `icon.rsc` really does carry eight enabled
+  `ICONBLK`s; `icons.c` (the C EmuTOS generates from it with `ird`) shows
+  `icon_rs_iconblk[5]` = `rs_icondata5` over **`rs_iconmask0`** -- the
+  removable disk has no mask of its own, it shares the hard disk's. The seven
+  rasters NewTOS already had were re-verified byte-for-byte against the same
+  file before the eighth was added.
+
+DESK17(1) -- confirmed and built. `men_update` counts `ntrash` beside `ndesk`
+  and disables *Delete* while a trash or printer icon is selected
+  (`deskmain.c:496-535`).
+
+DESK17(2) -- REFUTED by the source, no change. The ticket expected EmuTOS to
+  release the menu title *before* the dialog runs. It does not:
+  `hndl_menu` calls `menu_tnormal(desk_rs_trees[ADMENU], title, 1)` **after**
+  the `do_*menu` handler has returned (`deskmain.c:1012-1038`) -- so in EmuTOS
+  too the title stays inverted for as long as the dialog is up, and that is
+  the classic GEM contract (the AES leaves the title highlighted; the
+  application un-highlights it when it is done acting on the selection).
+  NewTOS's `desk/main.rs:912-933` already does exactly this, at exactly that
+  place. `screendumps/ico-B-dialog.png` in
+  measurement-2026-09-24-desk03-desk04, which the ticket cited as the defect,
+  shows conformant behaviour. Both halves are re-measured here anyway
+  (before *and* after, dialog open *and* closed) so the finding is on record.
+
+DESK21 -- confirmed and built. `BACKGRND` is object 46 and the **last child**
+  of the View drop-down box (object 34, `ob_head` 35 / `ob_tail` 46,
+  `desk_rsc.c:446,473-483`); the Options box is object 47 and starts at
+  `IICNITEM` (48) -- `desk_rsc.h:35-48`. `SEP_VW2` (45) is the separator in
+  front of it. `shortcut_mapping[]` needed no change: it has carried
+  `BACKGRND` as the last *View* slot all along (`deskmain.c:211-217`), which
+  is what the ticket meant by "semantic, not positional".
+
+
+1. The runs
+-----------
+
+probe   geometry probe (before build) -- menu rects, desktop icon click
+        points, window item click points.
+        screendumps/probe-a-idle.png, probe-b-win.png
+
+b1      DESK21 before: View drop-down, then Options drop-down.
+        before-a-idle.png, before-b-view.png, before-c-options.png
+b2      DESK17(1) before: Trash selected -> File drop-down.
+        before-d-trashsel.png, before-e-file-trash.png
+b3      DESK17(2) before: C: selected -> Options -> Install icon... (title
+        inverted), Cancel (title normal).  Also prints the ADINSDSK
+        rectangles every later run's click points are taken from.
+        before-f-dialog-title.png, before-g-title-after.png
+b4      DESK16 before: four clicks on the DOWN arrow.
+        before-h-dialog.png, before-i-step4.png
+
+a1      DESK21 after: View drop-down, then Options drop-down.
+        after-a-idle.png, after-b-view.png, after-c-options.png
+a2      DESK17(1) after, case A: Trash selected -> File drop-down.
+        after-g-trashsel.png, after-h-file-trash.png
+a2b     DESK17(1) after, case B: C: selected -> File drop-down.
+        after-e-drivesel.png, after-f-file-drive.png
+a3      DESK17(2) after: same gesture as b3.
+        after-i-dialog-title.png, after-j-title-after.png
+a4      DESK16 after: four DOWN clicks, OK, Save desktop...
+        after-k-dialog.png, after-l-step4.png, after-m-installed.png,
+        after-n-saved.png
+a5      DESK16 after, COLD START on the card a4 wrote.
+        after-o-cold.png
+
+
+2. DESK16 -- the result
+-----------------------
+
+The offered list, printed by the dialog itself:
+
+    before   [probe] ADINSDSK ROOT (156,91) 328x316 curr_icon=0 of 6 ig=0
+    after    [probe] ADINSDSK ROOT (156,91) 328x316 curr_icon=0 of 7 ig=0
+
+Eight built-in pictures minus the floppy, which `offered_icons` drops while
+the drive map reports no A:/B: -- so six before, seven after, and the eighth
+entry of `BUILTIN_ICONS` is the one that appeared.
+
+Four clicks on the DOWN arrow from the hard disk:
+
+    before   before-i-step4.png   the APPLICATION picture (index 4 of 6)
+    after    after-l-step4.png    the REMOVABLE DISK      (index 4 of 7)
+
+`screendumps/crop-before-step4.png` / `crop-after-step4.png` are the two
+previews at 8x.
+
+Not an impression -- `method/pixcheck.py` reads the rasters out of
+`references/emutos/desk/icons.c` and compares every mask-set pixel with the
+screendump (`serial/pixcheck.txt`):
+
+    preview  after-l-step4.png    vs rs_icondata5:  654 px,  0 mismatching
+    preview  before-i-step4.png   vs rs_icondata6: 1006 px,  0 mismatching
+    deskicon after-m-installed.png vs rs_icondata5: 618 px,  0 mismatching
+    deskicon after-o-cold.png     vs rs_icondata5:  618 px,  0 mismatching
+    deskicon before-a-idle.png    vs rs_icondata0:  618 px,  0 mismatching
+
+(the `deskicon` runs skip the 6x6 drive-letter cell at `ib_xchar`/`ib_ychar`
+= (13,16), which `gr_gicon` draws over the bitmap.)
+
+`OK` puts the picture on the desktop `C:` icon, drive letter intact
+(after-m-installed.png); `Save desktop...` writes it, and the line on the card
+is the file-format point the ticket makes (`method/NEWDESK.INF.after-save`):
+
+    #M 00 00 05 FF C DISK C@ @
+
+`05` = `IG_REMOV`. after-o-cold.png is the cold start: the icon comes back.
+
+
+3. DESK17 -- the result
+-----------------------
+
+(1) *Delete*, with the trash can selected:
+
+    before   before-e-file-trash.png   BLACK   (the defect)
+    after    after-h-file-trash.png    GREY
+
+and with a drive selected, where `ndesk` is 1 but `ntrash` is 0:
+
+    after    after-f-file-drive.png    BLACK
+
+The same three states are in the serial logs as `dis=` on the `Delete...`
+line, e.g.
+
+    before  [probe]   1.11 obj 23 '  Delete...         ^D' ... dis=0
+    after   [probe]   1.11 obj 23 '  Delete...         ^D' ... dis=1
+
+*Open* and *Info/Rename...* stay black in both after-pictures, so the new gate
+is `DELTITEM`'s alone and did not leak into `ILL_NOSEL`.
+
+(2) The menu title while a dialog is open -- unchanged, as section 0 explains:
+
+    before-f-dialog-title.png   Options inverted, ADINSDSK up
+    before-g-title-after.png    Options normal after Cancel
+    after-i-dialog-title.png    identical
+    after-j-title-after.png     identical
+
+
+4. DESK21 -- the result
+-----------------------
+
+    before-b-view.png     View ends at `Size to fit`
+    after-b-view.png      ... + a separator + `Set background...`
+    before-c-options.png  Options starts with `Set background...`
+    after-c-options.png   Options starts with `Install icon...`
+
+The View drop-down box grew from 160 px to 184 px, i.e. from 20 to **23**
+character cells -- which is exactly what EmuTOS computes for the same item
+set: `copy_menu_items` pads to `max_strlen + 1 + SHORTCUT_SIZE` = 19+1+3 = 23
+and `adjust_menu` takes `strlen` (22) + 1 (`deskmain.c:1755-1813`, `:1608-
+1620`). Both boxes' entry geometry is in the serial log:
+
+    before  [probe] box 2 abs (112,19) 160x160   (10 entries)
+    after   [probe] box 2 abs (112,19) 184x192   (12 entries)
+    before  [probe] box 3 abs (160,19) 240x192   (12 entries)
+    after   [probe] box 3 abs (160,19) 240x176   (11 entries)
+
+
+5. Hygiene
+----------
+
+`[EXC]` / `[PANIC]`: 0 in all eleven raspi4b serial logs, in the qemu-virt
+boot log (`serial/qemu-virt-boot.log`) and in the smoke boot of the **shared
+tree's own, unpatched** rpi4 build (`serial/final-rpi4-boot.log` +
+`screendumps/final-rpi4-desktop.png`). All three reach `[desk] desktop up`.
+
+`fsck_msdos -n` on the FAT16 partition of every card image written in this
+measurement: Phase 1 / 2 / 3, no errors (`serial/fsck.txt`, eleven images).
+
+Build, on the shared tree, fresh per board:
+
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat
+    cargo xtask build --board rpi4        tos-api 64 / kernel 94   (base 64/94)
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat
+    cargo xtask build --board qemu-virt   tos-api 64 / kernel 94   (base 64/94)
+
+    cargo clippy --features board-rpi4       tos-api 80 / kernel 125 (base 80/125)
+    cargo clippy --features board-qemu-virt  tos-api 80 / kernel 125 (base 80/125)
+    hits in kernel/src/desk/: 0
+
+    cargo run -p xtask -- test   938 passed / 0 failed / 1 ignored
