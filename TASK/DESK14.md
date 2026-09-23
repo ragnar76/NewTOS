@@ -28,13 +28,27 @@ Abhaengigkeiten: [DESK03](DESK03.md) (erledigt), [DESK09](DESK09.md) (erledigt)
    sie im laufenden Desktop an (`load_and_apply` + `cnx_get_prefs` +
    Neuaufbau), was einen zweiten, EmuTOS unbekannten Anwendungspfad ist.
 
+## Lead-Entscheidung zu Punkt 4 (2026-09-23): zurueckgestellt
+
+Der Neustartpfad wird **jetzt nicht** gebaut. Er ist kein Detail dieses
+Tickets, sondern der Umbau des Desktops von einem Kernelaufruf zu einem
+Prozess, den `sh_main` starten und neu eintreten kann: `global::init` ist
+idempotent, es gibt kein `win_start()` beim Wiedereintritt, `wm_init()`
+wuerde die AES-Fenstertabelle leeren, und die Bruecke `cnx_put();
+app_save(FALSE)` → `shel_get` (`deskmain.c:2152-2153`) fehlt. DESK06 hat
+denselben Punkt getroffen und faehrt den Konsolenlauf deshalb verschachtelt
+(`shell_loop::sh_run_pending_console`), benannt als Abweichung.
+
+Der Umbau gehoert zum Umzug des Desktops in den Benutzerbereich (Notiz
+`desktop-must-run-in-user-scope`) und ist vor dem Vorfuehrtermin zu riskant.
+Bis dahin gilt: Nachziehen im laufenden Desktop, als Abweichung
+dokumentiert — an **einer** Stelle, nicht in jedem betroffenen Ticket.
+
 ## Arbeit
 
-Erst 2 und 3 (kleine, belegte Schritte), dann 1. Punkt 4 zuerst entscheiden
-und im Ticket festhalten: der Desktop-Wiedereintritt haengt an
-`sh_ldapp`/`shel_get`-Zustand, den NewTOS nicht in derselben Form hat — ob
-der Neustartpfad nachgebaut oder das Nachziehen als benannte Abweichung
-dokumentiert wird, ist eine Lead-Entscheidung, keine Entwicklerentscheidung.
+Punkte 2 und 3 (Signaturpruefung `#R`/`#E`, `STFILENF`/`STINVINF`-Alerts),
+dann Punkt 1 (`fsel_exinput`). Punkt 4 bleibt nach der Entscheidung oben
+liegen; der bestehende Pfad bekommt den Verweis darauf im Quelltext.
 
 ## Arbeitsregel
 
