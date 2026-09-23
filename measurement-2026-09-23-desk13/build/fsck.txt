@@ -1,0 +1,21 @@
+fsck_msdos -n on every card image written by a run (the images themselves are
+not in this directory — the ticket forbids *.img).
+
+run-a.img  Phase 1/2/3 clean — Warning: 57 files, 63718 KiB free (31859 clusters)
+run-b.img  Phase 1/2/3 clean — Warning: 57 files, 63718 KiB free (31859 clusters)
+run-c.img  Phase 1/2/3 clean — Warning: 58 files, 63716 KiB free (31858 clusters)
+run-d.img  Phase 1/2/3 clean — Warning: 57 files, 63718 KiB free (31859 clusters)
+run-e.img  Phase 1/2/3 clean — Warning: 57 files, 63718 KiB free (31859 clusters)
+run-p.img  Phase 1/2/3 clean — Warning: 57 files, 63718 KiB free (31859 clusters)
+run-f.img  Phase 1/2/3 clean — Warning: 56 files, 63720 KiB free (31860 clusters)
+
+The "Warning:" line is fsck_msdos's informational summary, not an error; the
+58 in run-c is the copied C:\ONE.TXT.
+
+Content checks with method/lsimg.py (read-only FAT16 lister, mounts nothing):
+
+  run-c.img  C:\ONE.TXT   present, 5 bytes           (after the OK; absent after the Cancel)
+  run-d.img  C:\SAME.TXT  51 bytes, b'BRAVO from the subfolder \xe2\x80\x94 the overwriting copy\r\n'
+             (21 bytes, "ALPHA…" after the Skip)
+  run-f.img  C:\DESKT13\TWO.TXT  absent after the OK (present after the Cancel);
+             the 56 in the fsck line is that one file fewer

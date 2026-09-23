@@ -1,0 +1,32 @@
+# DESK13 run E -- the date separator in the *Show info* box, the second reader
+# of `fmt_date` (`inf_file_folder`, EmuTOS `inf_dttm`, `deskinf.c:460-468`).
+# The text view is run A's picture; this is the other call site, which DESK02's
+# contradiction showed up between.
+# Alt+C, into DESKT13, select ONE.TXT (118,130), then File -> Info/Rename...
+# (File title x 64..112; entry 1 at y = 19 + 1*16 = 35..51, centre 43).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 key 38
+1450 key 2e
+1500 key ae
+1550 key b8
+2400 mark B_ALTC
+2700 move 431 105
+2900 down
+2903 up
+2910 down
+2913 up
+3600 parkbr
+4300 mark C_SUBDIR
+4600 move 118 130
+5200 down
+5400 up
+6000 parkbr
+6600 mark D_SELECTED
+7000 move 88 8
+7600 move 92 43
+8200 down
+8400 up
+9000 parkbr
+9800 mark E_SHOWINFO

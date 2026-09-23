@@ -1,0 +1,199 @@
+measurement-2026-09-23-desk13 — DESK13 (Kopier-/Ueberschreibruecksprache,
+                                 `_IDT` ueber `Ssystem`, Datumstrenner,
+                                 `Alt`+Buchstabe)
+=============================================================================
+
+Base: branch desk-rebuild, HEAD f4b8ff5. This ticket's changes are
+UNCOMMITTED in the shared tree. Nothing flashed, nothing ejected, no real Pi
+run, nothing committed. No `git checkout/restore/clean/stash/reset` was run on
+the shared tree.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (`measurement-2026-09-23-desk08-desk09/method/run.sh` +
+`qmp_multi.py`). Card image: `tools/make-sd-image.sh` (64 MiB, MBR + FAT16)
+plus four seeded files (see §0), a fresh copy per run. Interactive runs use
+the scratch-copy IKBD injector (memory `desktop-interactive-verification-
+real-hw`): `method/make_scratch_desk13.sh` rsyncs the crates into the job
+scratch — never the shared tree.
+
+`method/*.actions` are the seven action lists, `method/*.rs` the generated
+injector tables (`gen_script.py … SCRIPT_DESK`, plus an empty `SCRIPT_TERA`).
+`method/desk13_patch.py` is the DESK13-only scaffolding (see §0).
+`method/lsimg.py` is a read-only FAT16 lister used to check what each run
+actually wrote. `method/desk13.diff` is the full source diff of this ticket
+(`kernel/src/desk/` + the two new `tos-api/tests/`). No `*.img` (the ticket's
+rule).
+
+POINTER PARK: (639, 479) — `parkbr`, which crosses no menu title (A79).
+
+
+0. The card, and the one piece of scaffolding
+---------------------------------------------
+Seeded on top of the standard image, so a copy has something to collide with:
+
+    C:\SAME.TXT            21 bytes, "ALPHA from the root"
+    C:\DESKT13\SAME.TXT    51 bytes, "BRAVO from the subfolder …"
+    C:\DESKT13\ONE.TXT      5 bytes
+    C:\DESKT13\TWO.TXT      5 bytes
+
+`method/desk13_patch.py` adds four serial dumps to the scratch copy, all
+through the a79 serial-only sink (`tos_api::aes::h02_log`), so nothing reaches
+the framebuffer and the pictures stay clean:
+
+  (1) the absolute rectangles of `ADCPYDEL`'s two exit buttons when the box
+      goes up, plus the `confirm` decision and the three preferences behind it;
+  (2) the same for `ADCPALER`'s three exit buttons, the two names it was
+      pre-filled with, and the button that came back;
+  (3) `ADSETPRE`'s box size and its OK/Cancel rectangle (the dialog is put up
+      inside the blocking `inf_show`, so its position is derived from
+      `form_center`'s rule and checked against the picture);
+  (4) the `_IDT` word the desktop read at start.
+
+Click points are computed from those rectangles plus `form_center`'s rule
+(`x = (640-w)/2`, `y = 19 + (480-19-h)/2`) and confirmed against the dumps.
+
+
+1. `_IDT` comes through `Ssystem`, not `Supexec`      (serial/a-serial.log)
+---------------------------------------------------------------------------
+    [desk13] _IDT = 0x112f via Ssystem(S_GETCOOKIE)
+
+`0x112F` = `IDT_24H | IDT_BIT_DM | '/'` (`biosdefs.h:161-173`): 24-hour, day
+before month, slash separator. That is the word both `Default` buttons of
+*Set preferences* resolve against. XBIOS `Supexec` (0x26) is **not**
+implemented and is not needed — see `TASK/DESK13-STATUS-DONE.MD` §2.
+
+Also pinned on the host, through the real GEMDOS dispatcher:
+`tos-api/tests/gemdos_ssystem_idt_cookie.rs`.
+
+
+2. `Alt`+`C` opens `C:\`                              (screendumps/b-altc.png)
+---------------------------------------------------------------------------
+  method/desk13-a.actions, IKBD bytes `38 2e ae b8` (Alt make, C make,
+  C break, Alt break).
+
+The root window of `C:` opens. The note in `check_alt_letter_key` — and its
+copy in `TASK/DESK11-STATUS-DONE.MD` — claimed this path was inert on the
+current keyboard layer. It is not: `keymap::to_ascii` zeroes an alphabetic
+result whenever the Alt modifier is set, so the key arrives as
+`scancode << 8 | 0`, which is exactly the shape the check wants.
+
+
+3. The date separator, at both readers    (c-text.png, e-showinfo.png)
+---------------------------------------------------------------------------
+  method/desk13-a.actions (`View → Show as text`), method/desk13-e.actions
+  (`File → Info/Rename...`).
+
+    text view   23/09/26  18:55
+    Show info   Date: 23/09/2026  18:55
+
+Both read `fmt_date` and now agree. Before DESK13 the text view printed
+`09-23-26` (MDY, dash) and Show info `09/23/2026` (MDY, slash) — one rule,
+two answers, which is the contradiction DESK02 reported. The order and the
+separator now come from `DateFmt::rendered(idt)` alone.
+
+
+4. `Set preferences` has all six groups               (screendumps/b-prefs.png)
+---------------------------------------------------------------------------
+  method/desk13-b.actions.
+
+    [desk13] ADSETPRE box=(408,308) SPOK=(104,256,90,28) SPCNCL=(214,256)
+             pre: cdel=true ccpy=true covwr=true dclick=2 tf=Idt df=Idt
+
+*Confirm deletes*, *Confirm copies*, *Confirm overwrites*, *Double-click
+speed*, *Time format*, *Date format* — `ADSETPRE`'s order, and `Default` is
+pre-selected in both format groups because `INF_E2_DEFAULT` carries both `IDT`
+bits (`deskapp.c:103`). `Cancel` takes the box down residue-free
+(`b-closed.png`).
+
+
+5. The copy confirmation, both answers                 (c-*.png + the image)
+---------------------------------------------------------------------------
+  method/desk13-c.actions. `ONE.TXT` is dragged from the `C:\DESKT13\` window
+  onto the `C:` desktop icon — `fun_file2desk`'s AT_ISDISK arm, i.e. a copy
+  into `C:\`.
+
+    [desk13] CPYDEL root=(160,159,320,180) CDOK=(184,287) CDCNCL=(366,287)
+             files=1 dirs=0 confirm=true (cdel=true ccpy=true covwr=true)
+
+  * `c-copybox.png` — `COPY FILE(S)`, `Number of folders: 0`,
+    `Number of files: 1`, OK / Cancel.
+  * **Cancel** (`c-cancelled.png`): the box is gone residue-free and
+    `output_fname` was never reached — the serial log has no call for this
+    attempt, and `C:\ONE.TXT` does not exist.
+  * **OK** (`c-copybox2.png`, `c-copied.png`):
+    `[desk13] output_fname("C:\DESKT13\ONE.TXT") -> Ok, dst now "C:\ONE.TXT"`,
+    and `method/lsimg.py` finds `C:\ONE.TXT` (5 bytes) in the card image
+    afterwards. `fsck_msdos -n`: clean, 58 files (one more than the other
+    runs).
+
+
+6. The overwrite confirmation, both answers            (d-*.png + the image)
+---------------------------------------------------------------------------
+  method/desk13-d.actions. `SAME.TXT` is dragged the same way; `C:\SAME.TXT`
+  already exists (21 bytes) and the source is 51 bytes, so `output_fname`
+  finds a destination that exists and the names differ.
+
+    [desk13] CPALER root=(160,159,320,180) CAOK=(184,287) CASKIP=(280,287)
+             CASTOP=(376,287) curr="SAME    TXT" copy="SAME    TXT"
+
+  * `d-conflict.png` — `NAME CONFLICT DURING COPY`, `Current name:` (read
+    only) and an **editable** `Copy's name:`, both in the 8+3 fixed-field form
+    `fmt_str` produces, merged through the `________.___` template. OK / Skip
+    / Stop.
+  * **Skip** (`d-skipped.png`): `CPALER answer ob=5` →
+    `output_fname(...) -> Skip`; `C:\SAME.TXT` is still 21 bytes, "ALPHA…".
+  * **OK** (`d-conflict2.png`, `d-overwritten.png`): `CPALER answer ob=4` →
+    `-> Ok`; `C:\SAME.TXT` is now 51 bytes, "BRAVO from the subfolder …".
+    `fsck_msdos -n`: clean, 57 files (overwritten in place, no new entry).
+
+The copy box stays up underneath while the conflict box is open
+(`ml_havebox` → `draw_dial`), and is repainted when the conflict box goes
+away — EmuTOS's own sequence (`deskdir.c:99-118`).
+
+
+6b. The delete path, both answers                      (f-*.png + the image)
+---------------------------------------------------------------------------
+  method/desk13-f.actions. `File → Delete...` on `C:\DESKT13\TWO.TXT`.
+
+Worth driving because `dir_op` now owns this question too: the NewTOS
+stand-in alert `fun_del` used to raise is gone, and the confirmation is the
+same `ADCPYDEL` box with the title `DELETE FILE(S)`.
+
+  * `f-delbox.png` — the box, `Number of files: 1`.
+  * **Cancel** (`f-cancelled.png`): `TWO.TXT` is still there.
+  * **OK** (`f-delbox2.png`, `f-deleted.png`): the file is gone from the window
+    **and** from the card image. `fsck_msdos -n`: clean, 56 files.
+
+Note on the script: after any delete attempt — cancelled or not — EmuTOS
+rebuilds the window (`fun_del` → `fun_rebld`, `deskfun.c:1421-1422`), which
+re-scans and clears `f_selected`. The first cut of this script did not
+re-select before the second attempt and `File → Delete...` correctly did
+nothing; NewTOS behaves the same way, so the script selects again.
+
+
+7. A defect found by looking at the pixels
+-------------------------------------------
+The **first** cut of `ADCPALER` put its three buttons at 24, 91 and 158 in a
+272-px box at 90 px each — they overlapped by 23 px. The first d-run's
+picture showed it. EmuTOS uses three 10-character buttons in columns 2, 14 and
+26 of a 38-character box (`desk_rsc.c:1263-1279`); the box width now comes
+from the button row, not from the fields, and run d was repeated. The
+screendumps in this directory are from the repeated run.
+
+
+8. Timing note (the first c-run failed here)
+---------------------------------------------
+The injector steps once per `pump_input`, i.e. once per idle pass of the AES
+event loop. A `down` immediately followed by the drag packets is answered by
+`evnt_multi` only after both have been fed, so the desktop saw the press at
+the *drop* point and read it as a click on the desktop icon
+(`wind_find(32,42)` in the AES trace, no `CPYDEL` line). The scripts therefore
+dwell ~3 s on the press and walk the drag in three hops.
+
+
+9. Hygiene
+-----------
+  * `fsck_msdos -n` on all seven card images: clean.
+  * `grep -c '\[EXC\]\|\[PANIC\]'` on all seven serial logs: 0.
+  * Host suite 938 / 0 / 1; both boards `tos-api 64 / kernel 94` (delta 0);
+    clippy `80 / 125` on both boards (delta 0), 0 hits in `kernel/src/desk/`.

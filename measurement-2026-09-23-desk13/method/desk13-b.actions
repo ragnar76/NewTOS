@@ -1,0 +1,19 @@
+# DESK13 run B -- Options -> Set preferences..., all six ADSETPRE groups.
+# Options title x 160..232; SetPrefs is entry 6 (five items + one separator),
+# y = 19 + 6*16 = 115..131, centre 123.
+# The box is 408x308, so `form_center` puts it at ((640-408)/2, 19+(480-19-308)/2)
+# = (116,95); Cancel sits at (259,270) inside it -> (375,365) on screen.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 196 8
+1800 move 200 123
+2000 down
+2003 up
+2300 parkbr
+3000 mark B_PREFS
+3300 move 375 365
+3500 down
+3503 up
+3800 parkbr
+4400 mark C_CLOSED

@@ -1,0 +1,17 @@
+# DESK13 probe -- Alt+C, then into C:\DESKT13\ (double-click the folder icon,
+# 5th of row 1, centre ~ (431,105)), so the three file icons can be measured.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 key 38
+1450 key 2e
+1500 key ae
+1550 key b8
+2400 mark B_ALTC
+2700 move 431 105
+2900 down
+2903 up
+2910 down
+2913 up
+3600 parkbr
+4300 mark C_SUBDIR

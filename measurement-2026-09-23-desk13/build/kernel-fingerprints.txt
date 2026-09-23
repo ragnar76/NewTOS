@@ -1,0 +1,11 @@
+product build (shared tree, after the fix), board rpi4:
+  kernel8.img  md5=345105729eb892e33ee38f1f519a355c  size=1079130
+
+scratch builds (injector + DESK13 scaffolding) — not the product:
+  scratch-a/kernel8.img  md5=e2ff45ebf8540a1fc7e348630861004a  size=1087418
+  scratch-b/kernel8.img  md5=48de3ad4fd30bc921f2f4d523a5d9b31  size=1087418
+  scratch-c/kernel8.img  md5=711476d5c26551ede6cdea315ba4b5c6  size=1087418
+  scratch-d/kernel8.img  md5=838dee0240ab9ce8914d187a85dfb87f  size=1087418
+  scratch-e/kernel8.img  md5=59d132d168f5e287692701a4680bda8f  size=1087418
+  scratch-p/kernel8.img  md5=3b53c06e5156dd381995237178cd7ee1  size=1087418
+  scratch-f/kernel8.img  md5=e5beb557f37e190fea2b4c187f5440ec  size=1087418

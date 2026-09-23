@@ -1,0 +1,58 @@
+# DESK13 run C -- the copy confirmation (`ADCPYDEL`), both answers.
+#
+# Alt+C opens C:\; double-clicking DESKT13 (431,105) opens C:\DESKT13\ in a
+# second window (staggered at 72,67). ONE.TXT is the first icon of that
+# window, centre (118,130); the C: desktop icon is visible left of both
+# windows at (32,42) -- dropping a window selection there is `fun_file2desk`'s
+# AT_ISDISK arm, i.e. a copy into C:\.
+#
+# TIMING (first attempt failed here): the injector steps once per `pump_input`,
+# i.e. once per idle pass of the AES event loop. A `down` immediately followed
+# by the drag packets is answered by `evnt_multi` only after both have been
+# fed, so the desktop saw the press at the *drop* point. The press therefore
+# dwells ~3 s at the source and the drag is walked in three hops.
+#
+# The box is 320x180, so `form_center` puts it at ((640-320)/2,
+# 19+(480-19-180)/2) = (160,159); OK (24,128,90,28) -> (229,301),
+# Cancel (206,128) -> (411,301).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 key 38
+1450 key 2e
+1500 key ae
+1550 key b8
+2400 mark B_ALTC
+2700 move 431 105
+2900 down
+2903 up
+2910 down
+2913 up
+3600 parkbr
+4300 mark C_SUBDIR
+4600 move 118 130
+5200 down
+6000 drag 100 100
+6600 drag 60 70
+7200 drag 32 42
+8000 up
+8600 parkbr
+9400 mark D_COPYBOX
+9800 move 411 301
+10400 down
+10600 up
+11200 parkbr
+12000 mark E_CANCELLED
+12400 move 118 130
+13000 down
+13800 drag 100 100
+14400 drag 60 70
+15000 drag 32 42
+15800 up
+16400 parkbr
+17200 mark F_COPYBOX2
+17600 move 229 301
+18200 down
+18400 up
+19000 parkbr
+19800 mark G_COPIED

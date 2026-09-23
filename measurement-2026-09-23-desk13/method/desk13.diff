@@ -1,0 +1,2526 @@
+diff --git a/kernel/src/desk/dir.rs b/kernel/src/desk/dir.rs
+index f6829a8..99a475a 100644
+--- a/kernel/src/desk/dir.rs
++++ b/kernel/src/desk/dir.rs
+@@ -18,20 +18,34 @@
+ //!   (`add_path`/`sub_path`/`add_fname`); NewTOS uses per-level owned [`String`]s
+ //!   — the recursion-depth and path-length limits stay observably the same
+ //!   ([`MAX_LEVEL`]).
+-//! * EmuTOS's per-item skip/retry/abort and per-file overwrite dialogs
+-//!   (`d_dofdel`'s alert loop, `output_fname`) are replaced by the NewTOS
+-//!   default: overwrite existing files (GEMDOS `Fcreate` truncates), merge into
+-//!   an existing destination folder, and best-effort skip on a per-item error
+-//!   (surfaced to the caller as `false`, which shows one summary [`fun_alert`]).
+-//!   The *whole-disk-delete* and *delete/copy confirmation* prompts are
+-//!   preserved at the action layer ([`fun_del`]/[`fun_drag`]).
++//! * EmuTOS's per-item **skip/retry/abort on an I/O error**
++//!   (`d_dofdel`/`d_dofcopy`'s alert loops, `deskdir.c:237-268,396-414`) is
++//!   replaced by the NewTOS default: best-effort skip, and one summary
++//!   [`fun_alert`] at the end.
++//! * EmuTOS asks for a **new destination folder name** when a folder of that
++//!   name already exists (`output_path`/`get_new_name`, `deskdir.c:700-779`);
++//!   NewTOS merges into it. The *file* case — `output_fname`, the one this
++//!   module implements — is the one that can destroy data.
+ //!
+-//! The pure engine ([`d_doop`]/[`dir_op`]) issues **no dialogs**, so it is
+-//! directly driveable for the Task-#9 backend verification ([`selftest`]).
++//! The two prompts that *are* EmuTOS's, and that DESK13 supplied, are the ones
++//! the user can switch off in *Set preferences*:
++//!
++//! * the **copy/move/delete confirmation** with its file and folder counts
++//!   ([`dir_op`]'s `ADCPYDEL` box, `deskdir.c:939,951-965`), gated on
++//!   `g_ccopypref`/`g_cdelepref`; and
++//! * the **name-conflict dialog** before a copy overwrites an existing file
++//!   ([`output_fname`]'s `ADCPALER` box, `deskdir.c:299-397`), gated on
++//!   `g_covwrpref`.
++//!
++//! Because the confirmation lives in [`dir_op`], as it does in EmuTOS, the
++//! engine is no longer dialog-free: [`selftest`] drives the box too and needs
++//! the AES up (it always needed [`fun_alert`] one level higher, in [`fun_op`]).
+ 
+ use alloc::string::String;
+ use alloc::vec::Vec;
+ 
++use tos_api::aes::object::{Object, TedInfo};
++use tos_api::vdi::font::{CELL_H, CELL_W};
+ use tos_types::error::E_OK;
+ 
+ use super::dosbind::{
+@@ -39,9 +53,32 @@ use super::dosbind::{
+     dos_sdta, dos_setdt, dos_sfirst, dos_snext, dos_write,
+ };
+ use super::global::{self, DeskState, DROOT, NIL};
++use super::inf::{
++    end_dialog, inf_gindex, mk, mk_root, start_dialog, BOX_SPEC, FL3DACT, FL3DBAK, TED_COLOR,
++};
+ use super::model::{AType, FNode, FA_SUBDIR};
+ use super::win::{DESKWH, OB_SELECTED};
+ 
++// ── `OBJECT` graphic types / flags (`obdefs.h`), as in the sibling dialogs ──
++
++const G_BUTTON: u16 = 26;
++const G_STRING: u16 = 28;
++const G_FBOXTEXT: u16 = 30;
++
++const SELECTABLE: u16 = 0x0001;
++const DEFAULT: u16 = 0x0002;
++const EXIT: u16 = 0x0004;
++const EDITABLE: u16 = 0x0008;
++const LASTOB: u16 = 0x0020;
++
++/// `TE_RIGHT` (`obdefs.h`) — the `te_just` of both count fields
++/// (`desk_rs_tedinfo[20,21]`, `desk_rsc.c:135-143`).
++const TE_RIGHT: i16 = 1;
++
++/// `LEN_ZFNAME` (`include/sysconf.h:52`) — the longest file name including its
++/// separator; the width of every `ml_f*` buffer in `deskdir.c`.
++const LEN_ZFNAME: usize = 13;
++
+ /// Attribute mask for the recursive scan (EmuTOS `ALLFILES` =
+ /// `FA_SUBDIR|FA_SYSTEM|FA_HIDDEN`): a subtree operation must see hidden and
+ /// system files too, unlike the display scan's `DISPATTR`.
+@@ -212,6 +249,506 @@ fn source_is_parent(src: &str, dst: &str) -> bool {
+     dst.len() == src.len() || dst.as_bytes()[src.len()] == b'\\'
+ }
+ 
++// ── The operation's two dialogs (`ADCPYDEL` / `ADCPALER`) ──────────────────
++//
++// EmuTOS keeps `ml_havebox` and the running counts in file-scope statics
++// (`deskdir.c:58-61`); NewTOS threads one [`OpCtx`] through the recursion
++// instead, so the engine carries no hidden state.
++
++/// EmuTOS's `more` tri-state, the value every `d_do*` routine returns and
++/// every caller tests with `if (!more) break;` (`deskdir.c:232-236,296-298`).
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++enum More {
++    /// `1` — the item was processed.
++    Ok,
++    /// `-1` — the item was deliberately **not** processed (the user pressed
++    /// *Skip*, or a copy onto itself was declined); the operation continues and
++    /// this is not an error.
++    Skip,
++    /// `0` — stop the whole operation (the user pressed *Stop*).
++    Stop,
++    /// A NewTOS distinction inside EmuTOS's `-1`: the item failed for an I/O
++    /// reason. EmuTOS asks skip/retry/abort at this point
++    /// (`deskdir.c:396-414`); NewTOS continues and reports one summary alert at
++    /// the end (this module's header), so control flow matches `-1` while the
++    /// failure still reaches the user.
++    Failed,
++}
++
++/// The live state one file operation carries through the recursion.
++struct OpCtx {
++    /// The `ADCPYDEL` tree while it is on screen, or `0` — EmuTOS's
++    /// `tree`/`NULL` (`deskdir.c:911-918`), which is what its every `if (tree)`
++    /// tests. `0` for `OP_COUNT`, and for a direct [`d_dofcopy`] call.
++    tree: u64,
++    /// `ml_havebox` (`deskdir.c:60`) — a dialog box is currently displayed, so
++    /// the next one redraws in place instead of reserving its own area.
++    havebox: bool,
++    /// `G.g_covwrpref`, read once at [`dir_op`] entry: the box is modal, so it
++    /// cannot change while the operation runs.
++    covwr: bool,
++    /// Files still to go, shown in `CDFILES` and counted down as the walk
++    /// proceeds (`deskdir.c:676,1053`).
++    files: u32,
++    /// Folders still to go, shown in `CDFOLDS` (`deskdir.c:592`).
++    dirs: u32,
++    /// Set once the user pressed *Stop*; every loop checks it, which is what
++    /// EmuTOS's `more == 0` propagation does.
++    stop: bool,
++}
++
++impl OpCtx {
++    /// The dialog-free context a direct engine call uses ([`selftest`]).
++    fn quiet() -> Self {
++        OpCtx { tree: 0, havebox: false, covwr: false, files: 0, dirs: 0, stop: false }
++    }
++
++    /// One file processed: count it down in `CDFILES` and repaint that field
++    /// (`deskdir.c:674-678`, `:1051-1056`). A no-op without a box.
++    fn file_done(&mut self) {
++        if self.tree == 0 {
++            return;
++        }
++        self.files = self.files.saturating_sub(1);
++        inf_numset(self.tree, CDFILES, self.files);
++        draw_fld(self.tree, CDFILES);
++    }
++
++    /// One folder finished: the same for `CDFOLDS` (`deskdir.c:590-594`).
++    fn dir_done(&mut self) {
++        if self.tree == 0 {
++            return;
++        }
++        self.dirs = self.dirs.saturating_sub(1);
++        inf_numset(self.tree, CDFOLDS, self.dirs);
++        draw_fld(self.tree, CDFOLDS);
++    }
++}
++
++// `ADCPYDEL` object indices (`desk_rsc.h:136-141`). Object 1 is `CDTITLE`, the
++// `COPY`/`MOVE`/`DELETE FILE(S)` heading; it is written when the tree is built
++// rather than patched afterwards as EmuTOS does (`deskdir.c:907,940,944`), so
++// it needs no name here.
++/// `CDFOLDS` — the remaining-folder count field.
++const CDFOLDS: i16 = 2;
++/// `CDFILES` — the remaining-file count field.
++const CDFILES: i16 = 3;
++/// `CDOK` — the confirmation button; `CDCNCL` follows it.
++const CDOK: i16 = 4;
++
++// `ADCPALER` object indices (`desk_rsc.h:143-149`).
++/// `CACURRNA` — the (read-only) source name.
++const CACURRNA: i16 = 2;
++/// `CACOPYNA` — the editable destination name.
++const CACOPYNA: i16 = 3;
++/// `CAOK` — the first of the three exit buttons.
++const CAOK: i16 = 4;
++/// `CASKIP` — skip this one file (`deskdir.c:348`).
++const CASKIP: i16 = 5;
++/// `CASTOP` — stop the whole operation (`deskdir.c:346`).
++const CASTOP: i16 = 6;
++
++/// `inf_numset` (`deskinf.c:406-420`) — `sprintf(ted->te_ptext, "%*lu",
++/// ted->te_txtlen - 1, value)`: the number right-justified, space-padded, in
++/// the field's own width, so the template's underscores are all consumed.
++///
++/// # Safety
++/// `tree` must point at a live object array and `obj` must be a `G_FBOXTEXT`
++/// (or other TEDINFO) object of it whose `te_ptext` buffer is at least
++/// `te_txtlen` bytes. Both hold for the trees built in this module.
++fn inf_numset(tree: u64, obj: i16, value: u32) {
++    // SAFETY: see the contract above — every call site passes one of this
++    // module's own stack trees and one of its own object indices.
++    let (ptext, len) = unsafe {
++        let o = &*(tree as *const Object).add(obj as usize);
++        let ted = &*(o.ob_spec as *const TedInfo);
++        (ted.te_ptext as *mut u8, (ted.te_txtlen - 1).max(0) as usize)
++    };
++    // SAFETY: as above — `te_ptext` points at a `te_txtlen`-byte buffer.
++    let buf = unsafe { core::slice::from_raw_parts_mut(ptext, len + 1) };
++
++    let mut digits = [0u8; 10];
++    let mut n = 0usize;
++    let mut v = value;
++    loop {
++        digits[n] = b'0' + (v % 10) as u8;
++        n += 1;
++        v /= 10;
++        if v == 0 || n == digits.len() {
++            break;
++        }
++    }
++    buf.fill(b' ');
++    for (k, &d) in digits[..n].iter().enumerate() {
++        if len > k {
++            buf[len - 1 - k] = d;
++        }
++    }
++    buf[len] = 0;
++}
++
++/// `fmt_str` (`util/optimize.c:43-70`) — `SAMPLE.PRG` → the fixed 8+3 field
++/// form `SAMPLE  PRG`, NUL-terminated, which is what the `________.___`
++/// template of `CACURRNA`/`CACOPYNA` merges character by character.
++fn fmt_str(instr: &str) -> [u8; LEN_ZFNAME] {
++    let mut out = [0u8; LEN_ZFNAME];
++    let src = instr.as_bytes();
++    let mut q = 0usize;
++    let mut p = 0usize;
++    // "copy up to 8 bytes before the (first) dot (we eat excess bytes)"
++    while p < src.len() {
++        let c = src[p];
++        p += 1;
++        if c == b'.' {
++            break;
++        }
++        if q < 8 {
++            out[q] = c;
++            q += 1;
++        }
++    }
++    // "if any extension present, fill out with spaces, then copy extension"
++    if p < src.len() {
++        while q < 8 {
++            out[q] = b' ';
++            q += 1;
++        }
++        while q < 11 && p < src.len() {
++            out[q] = src[p];
++            q += 1;
++            p += 1;
++        }
++    }
++    out[q] = 0;
++    out
++}
++
++/// `unfmt_str` (`util/optimize.c:77-96`) — the reverse of [`fmt_str`]:
++/// `SAMPLE  PRG` → `SAMPLE.PRG`.
++fn unfmt_str(instr: &[u8]) -> String {
++    let end = instr.iter().position(|&c| c == 0).unwrap_or(instr.len());
++    let s = &instr[..end];
++    let mut out = String::new();
++    let mut p = 0usize;
++    while p < s.len() && p < 8 {
++        let c = s[p];
++        p += 1;
++        if c != b' ' {
++            out.push(c as char);
++        }
++    }
++    if p < s.len() {
++        out.push('.');
++        while p < s.len() {
++            out.push(s[p] as char);
++            p += 1;
++        }
++    }
++    out
++}
++
++/// `filename_start` (`util/optimize.c`) — everything after the last `\`.
++fn filename_start(path: &str) -> &str {
++    match path.rfind('\\') {
++        Some(i) => &path[i + 1..],
++        None => path,
++    }
++}
++
++/// The directory half of a leaf path, **including** the trailing `\` — the
++/// prefix `del_fname` leaves behind (`deskdir.c:214-217`).
++fn dir_part(path: &str) -> &str {
++    match path.rfind('\\') {
++        Some(i) => &path[..=i],
++        None => "",
++    }
++}
++
++/// `item_exists` (`deskdir.c:186-208`) — does this file exist?
++///
++/// EmuTOS saves the caller's DTA around the probe because its walker has a live
++/// `Fsfirst`/`Fsnext` search running; NewTOS's [`scan_folder`] collects a whole
++/// directory and **drains** the search before returning, so there is never a
++/// live search to disturb (that module note is why every scan re-issues
++/// `dos_sdta`). The folder form of the probe is not needed here — the folder
++/// conflict is resolved by merging (this module's header).
++fn item_exists(path: &str) -> bool {
++    let mut dta = [0u8; 44];
++    dos_sdta(dta.as_mut_ptr());
++    dos_sfirst(path, ALLFILES) == E_OK
++}
++
++/// `do_namecon` (`deskdir.c:93-130`) — put the `ADCPALER` name-conflict dialog
++/// up over whatever is already on screen, run it, take it down again and
++/// repaint the copy box underneath. Returns the object index of the button that
++/// was pressed ([`CAOK`] / [`CASKIP`] / [`CASTOP`]).
++///
++/// `dst` is edited in place: it is both the pre-filled suggestion and the name
++/// the user may have changed.
++fn do_namecon(src: &[u8; LEN_ZFNAME], dst: &mut [u8; LEN_ZFNAME], ctx: &mut OpCtx) -> i16 {
++    static TITLE: &[u8] = b"NAME CONFLICT DURING COPY\0";
++    static CURR_TMPL: &[u8] = b"Current name: ________.___\0";
++    static COPY_TMPL: &[u8] = b"Copy's name: ________.___\0";
++    /// `te_pvalid` `"f"` — file-name characters (`desk_rs_tedinfo[22,23]`).
++    static VALID: &[u8] = b"f\0";
++    static OK: &[u8] = b" OK \0";
++    static SKIP: &[u8] = b" Skip \0";
++    static STOP: &[u8] = b" Stop \0";
++
++    let ted = |text: *mut u8, tmpl: &[u8], tmplen: i16| TedInfo {
++        te_ptext: text as u64,
++        te_ptmplt: tmpl.as_ptr() as u64,
++        te_pvalid: VALID.as_ptr() as u64,
++        te_font: 3,
++        te_junk1: 0,
++        te_just: 0,
++        te_color: TED_COLOR,
++        te_junk2: 0,
++        te_thickness: 1,
++        te_txtlen: LEN_ZFNAME as i16 - 1,
++        te_tmplen: tmplen,
++    };
++    let mut src_copy = *src;
++    let mut curr_ted = ted(src_copy.as_mut_ptr(), CURR_TMPL, 27);
++    let mut copy_ted = ted(dst.as_mut_ptr(), COPY_TMPL, 26);
++
++    // `ADCPALER` is 38 characters wide with its fields at column 2 and its
++    // **three** buttons on the bottom row (`desk_rsc.c:1239-1279`): 10
++    // characters each at columns 2, 14 and 26, i.e. 80 px wide with a 16 px
++    // gap. The box is therefore sized by the button row, not by the fields —
++    // the first cut of this dialog took the two-button box's 90 px width and
++    // centred the middle button, which made all three overlap by 23 px.
++    const MARGIN: i16 = 24;
++    const GAP: i16 = 8;
++    const FLD_H: i16 = 24;
++    /// `desk_rsc.c:1267` — `CAOK` is 10 characters wide.
++    const BTN_W: i16 = 10 * CELL_W;
++    /// The 2-character gap `desk_rsc.c:1263-1279`'s columns leave between them.
++    const BTN_GAP: i16 = 2 * CELL_W;
++    const BTN_ROW_W: i16 = 3 * BTN_W + 2 * BTN_GAP;
++    let fld_w = 27 * CELL_W + 8;
++    let dw = MARGIN + if fld_w > BTN_ROW_W { fld_w } else { BTN_ROW_W } + MARGIN;
++    let y_title = MARGIN;
++    let y_curr = y_title + CELL_H + 12;
++    let y_copy = y_curr + FLD_H + GAP;
++    let y_btn = y_copy + FLD_H + 20;
++    let dh = y_btn + 28 + MARGIN;
++    let btn_w = BTN_W;
++    // `align_title` (`deskmain.c:1731-1750`) centres object 1 in the root.
++    let title_w = (TITLE.len() as i16 - 1) * CELL_W;
++
++    #[rustfmt::skip]
++    let mut tree = [
++        mk_root(BOX_SPEC, dw, dh, CASTOP),
++        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - title_w) / 2, y_title, title_w, CELL_H, CACURRNA, -1, -1),
++        // `CACURRNA` is **not** EDITABLE (`desk_rsc.c:1251-1255`).
++        mk(G_FBOXTEXT, FL3DBAK, &mut curr_ted as *mut _ as u64, MARGIN, y_curr, fld_w, FLD_H, CACOPYNA, -1, -1),
++        mk(G_FBOXTEXT, EDITABLE | FL3DBAK, &mut copy_ted as *mut _ as u64, MARGIN, y_copy, fld_w, FLD_H, CAOK, -1, -1),
++        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, MARGIN, y_btn, btn_w, 28, CASKIP, -1, -1),
++        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, SKIP.as_ptr() as u64, MARGIN + btn_w + BTN_GAP, y_btn, btn_w, 28, CASTOP, -1, -1),
++        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, STOP.as_ptr() as u64, MARGIN + 2 * (btn_w + BTN_GAP), y_btn, btn_w, 28, 0, -1, -1),
++    ];
++    let tree_ptr = tree.as_mut_ptr() as u64;
++
++    // `if (ml_havebox) draw_dial(tree); else { start_dialog(tree); … }`
++    // (`deskdir.c:99-105`): the copy box is already up and has already reserved
++    // its area, so this dialog paints straight over it.
++    if ctx.havebox {
++        draw_dial(tree_ptr);
++    } else {
++        start_dialog(tree_ptr);
++        ctx.havebox = true;
++    }
++    super::form_do(tree_ptr, 0);
++
++    // "trigger a redraw for the copy alert dialog so that a redraw message is
++    // issued for the copy alert area" (`deskdir.c:108-116`), then repaint the
++    // copy/delete box that was underneath (`:118`).
++    let t = super::form_center(tree_ptr);
++    super::form_dial_finish(t);
++    if ctx.tree != 0 {
++        draw_dial(ctx.tree);
++    }
++
++    // `ob = inf_gindex(tree, CAOK, 3) + CAOK; (tree+ob)->ob_state = NORMAL;`
++    // (`deskdir.c:121-122`). EmuTOS deselects the button because `ADCPALER` is
++    // a resource tree it reuses on the next conflict; this one is built fresh
++    // per call and dropped on return, so the reset has nothing to reset — the
++    // rebuild already guarantees no button is pre-selected next time.
++    inf_gindex(&tree, CAOK as usize, 3) + CAOK
++}
++
++/// `output_fname` (`deskdir.c:290-397`) — settle the destination name of one
++/// file copy, asking the user when the copy would overwrite something.
++///
++/// Returns [`More::Ok`] when the copy may proceed (`pdst_file` then holds the
++/// possibly-renamed destination), [`More::Skip`] for "leave this one alone" and
++/// [`More::Stop`] for "abandon the whole operation".
++///
++/// The dialog is skipped entirely — as in EmuTOS — when the names differ and
++/// either *Confirm overwrites* is off or the destination does not exist yet;
++/// `Fcreate`'s truncation then does what it always did.
++fn output_fname(psrc_file: &str, pdst_file: &mut String, ctx: &mut OpCtx) -> More {
++    let mut ob = 0i16;
++    loop {
++        // "set flag if user is trying to overwrite a file with itself"
++        let samefile = psrc_file == pdst_file.as_str();
++        if !samefile {
++            if ob == CAOK {
++                break;
++            }
++            if !ctx.covwr {
++                break;
++            }
++            if !item_exists(pdst_file) {
++                break;
++            }
++        }
++
++        let ml_fsrc = fmt_str(filename_start(psrc_file));
++        let mut ml_fdst = fmt_str(filename_start(pdst_file));
++        let old_dst = ml_fdst; // "remember old destination"
++
++        ob = do_namecon(&ml_fsrc, &mut ml_fdst, ctx);
++        if ob == CASTOP {
++            return More::Stop;
++        }
++        if ob == CASKIP {
++            return More::Skip;
++        }
++
++        // "user says ok, so update destination filename"
++        let ml_fstr = unfmt_str(&ml_fdst);
++        if !ml_fstr.is_empty() {
++            let dir = String::from(dir_part(pdst_file));
++            *pdst_file = join_leaf(&dir, &ml_fstr);
++        }
++
++        // "if destination has changed, pretend there was no OK, so the next
++        // iteration of this loop can check everything again"
++        if ml_fdst != old_dst {
++            ob = 0;
++            continue;
++        }
++
++        // "if the user was trying to overwrite a file with itself, treat it as
++        // a skip"
++        if samefile {
++            return More::Skip;
++        }
++    }
++    More::Ok
++}
++
++/// The `ADCPYDEL` confirmation / progress box (`deskdir.c:911-965`) while an
++/// operation runs. Holds the two count fields' text buffers and TEDINFOs
++/// alongside the object array, so all of it lives in one [`dir_op`] frame.
++struct CpyDelBox {
++    tree: [Object; 6],
++    /// `CDFOLDS`/`CDFILES` text buffers — `te_txtlen` is 6
++    /// (`desk_rs_tedinfo[20,21]`: five digits plus the NUL).
++    folds_buf: [u8; 6],
++    files_buf: [u8; 6],
++    folds_ted: TedInfo,
++    files_ted: TedInfo,
++}
++
++/// `STCOPY` / `STMOVE` / `STDELETE` (`desk_rsc.c:2472-2474`) — the heading
++/// `dir_op` writes into `CDTITLE` (`deskdir.c:907,940,944`).
++const STCOPY: &[u8] = b"COPY FILE(S)\0";
++const STMOVE: &[u8] = b"MOVE FILE(S)\0";
++const STDELETE: &[u8] = b"DELETE FILE(S)\0";
++
++impl CpyDelBox {
++    /// Build the box for `op` with `count`'s totals already in its two fields.
++    fn new(op: Op, count: &DirCount) -> alloc::boxed::Box<CpyDelBox> {
++        static FOLDS_TMPL: &[u8] = b"Number of folders:         _____\0";
++        static FILES_TMPL: &[u8] = b"Number of files:         _____\0";
++        static EMPTY: &[u8] = b"\0";
++        static OK: &[u8] = b" OK \0";
++        static CANCEL: &[u8] = b" Cancel \0";
++
++        const MARGIN: i16 = 24;
++        const GAP: i16 = 8;
++        const FLD_H: i16 = 24;
++        let fld_w = 33 * CELL_W + 8; // the longer of the two templates
++        let dw = MARGIN + fld_w + MARGIN;
++        let y_title = MARGIN;
++        let y_folds = y_title + CELL_H + 12;
++        let y_files = y_folds + FLD_H + GAP;
++        let y_btn = y_files + FLD_H + 20;
++        let dh = y_btn + 28 + MARGIN;
++        let btn_w = 90i16;
++
++        let title: &[u8] = match op {
++            Op::Delete => STDELETE,
++            Op::Copy => STCOPY,
++            // "if (op != OP_COPY) … obj->ob_spec = STMOVE" (`deskdir.c:941-945`)
++            _ => STMOVE,
++        };
++        let title_w = (title.len() as i16 - 1) * CELL_W;
++
++        // `Box`ed before the TEDINFOs are pointed at the buffers: the object
++        // array holds the TEDINFO addresses and the TEDINFOs hold the buffer
++        // addresses, so nothing may move afterwards.
++        let mut b = alloc::boxed::Box::new(CpyDelBox {
++            tree: [mk_root(BOX_SPEC, dw, dh, CDOK + 1); 6],
++            folds_buf: [0; 6],
++            files_buf: [0; 6],
++            folds_ted: TedInfo {
++                te_ptext: 0,
++                te_ptmplt: FOLDS_TMPL.as_ptr() as u64,
++                te_pvalid: EMPTY.as_ptr() as u64,
++                te_font: 3,
++                te_junk1: 0,
++                te_just: TE_RIGHT,
++                te_color: TED_COLOR,
++                te_junk2: 0,
++                te_thickness: 1,
++                te_txtlen: 6,
++                te_tmplen: 33,
++            },
++            files_ted: TedInfo {
++                te_ptext: 0,
++                te_ptmplt: FILES_TMPL.as_ptr() as u64,
++                te_pvalid: EMPTY.as_ptr() as u64,
++                te_font: 3,
++                te_junk1: 0,
++                te_just: TE_RIGHT,
++                te_color: TED_COLOR,
++                te_junk2: 0,
++                te_thickness: 1,
++                te_txtlen: 6,
++                te_tmplen: 31,
++            },
++        });
++        b.folds_ted.te_ptext = b.folds_buf.as_ptr() as u64;
++        b.files_ted.te_ptext = b.files_buf.as_ptr() as u64;
++        let folds_ted = &b.folds_ted as *const TedInfo as u64;
++        let files_ted = &b.files_ted as *const TedInfo as u64;
++
++        b.tree = [
++            mk_root(BOX_SPEC, dw, dh, CDOK + 1),
++            // `align_title` centres the heading (`deskmain.c:1744-1747`).
++            mk(G_STRING, 0, title.as_ptr() as u64, (dw - title_w) / 2, y_title, title_w, CELL_H, CDFOLDS, -1, -1),
++            mk(G_FBOXTEXT, FL3DBAK, folds_ted, MARGIN, y_folds, fld_w, FLD_H, CDFILES, -1, -1),
++            mk(G_FBOXTEXT, FL3DBAK, files_ted, MARGIN, y_files, fld_w, FLD_H, CDOK, -1, -1),
++            mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, MARGIN, y_btn, btn_w, 28, CDOK + 1, -1, -1),
++            mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, dw - MARGIN - btn_w, y_btn, btn_w, 28, 0, -1, -1),
++        ];
++
++        let ptr = b.tree.as_ptr() as u64;
++        inf_numset(ptr, CDFILES, count.files);
++        inf_numset(ptr, CDFOLDS, count.dirs);
++        b
++    }
++
++    /// The object array's address, as every `tree`-taking helper wants it.
++    fn ptr(&self) -> u64 {
++        self.tree.as_ptr() as u64
++    }
++}
++
+ // ── per-item engine primitives ──────────────────────────────────────────────
+ 
+ /// `d_dofdel` — delete one file (EmuTOS `deskdir.c:237`). `true` on success.
+@@ -230,21 +767,45 @@ fn d_dofileren(old: &str, new: &str) -> bool {
+     dos_rename(old, new) == E_OK
+ }
+ 
+-/// `d_dofcopy` — copy one file (EmuTOS `deskdir.c:394`): open source, create
+-/// destination (truncating any existing file — the NewTOS "always overwrite"
+-/// default), stream through `buf`, then stamp the destination's date/time from
+-/// the source. `true` on a complete copy.
+-fn d_dofcopy(src: &str, dst: &str, time: u16, date: u16, attr: u16, buf: &mut [u8]) -> bool {
++/// `d_dofcopy` — copy one file (EmuTOS `deskdir.c:389-519`): open the source,
++/// settle the destination name with [`output_fname`] (which is where the
++/// overwrite question lives), create the destination, stream through `buf`,
++/// then stamp it with the source's date/time.
++///
++/// `dst` is `&mut` because `output_fname` may rename it: the user can type a
++/// different name into the name-conflict dialog, exactly as EmuTOS edits
++/// `pdst_file` in place (`deskdir.c:354-360`).
++fn d_dofcopy(
++    src: &str,
++    dst: &mut String,
++    time: u16,
++    date: u16,
++    attr: u16,
++    buf: &mut [u8],
++    ctx: &mut OpCtx,
++) -> More {
+     let srcfh = dos_open(src, 0);
+     if srcfh < 0 {
+-        return false;
++        return More::Failed;
+     }
+     let srcfh = srcfh as i16;
++
++    // `rc = output_fname(psrc_file, pdst_file);` (`deskdir.c:417-424`) — after
++    // the source is open and before the destination is created, so a Stop or
++    // Skip leaves nothing behind.
++    match output_fname(src, dst, ctx) {
++        More::Ok => {}
++        other => {
++            dos_close(srcfh);
++            return other;
++        }
++    }
++
+     // Mask off the sub-directory bit — a file copy never carries FA_SUBDIR.
+     let dstfh = dos_create(dst, attr & !(FA_SUBDIR as u16));
+     if dstfh < 0 {
+         dos_close(srcfh);
+-        return false;
++        return More::Failed;
+     }
+     let dstfh = dstfh as i16;
+ 
+@@ -270,8 +831,9 @@ fn d_dofcopy(src: &str, dst: &str, time: u16, date: u16, attr: u16, buf: &mut [u
+     dos_close(dstfh);
+     if !ok {
+         dos_delete(dst); // remove the partial destination (deskdir.c:497)
++        return More::Failed;
+     }
+-    ok
++    More::Ok
+ }
+ 
+ // ── the recursive subtree walker ────────────────────────────────────────────
+@@ -284,7 +846,15 @@ fn d_dofcopy(src: &str, dst: &str, time: u16, date: u16, attr: u16, buf: &mut [u
+ /// already exists); files are copied. For `Delete`/`Move` the folder is removed
+ /// once emptied (post-order, like EmuTOS). `Count` tallies files pre-order and
+ /// folders post-order (one `dirs++` per folder visited).
+-fn d_doop(level: i16, op: Op, src_dir: &str, dst_dir: &str, count: &mut DirCount, buf: &mut [u8]) -> bool {
++fn d_doop(
++    level: i16,
++    op: Op,
++    src_dir: &str,
++    dst_dir: &str,
++    count: &mut DirCount,
++    buf: &mut [u8],
++    ctx: &mut OpCtx,
++) -> bool {
+     if level > MAX_LEVEL {
+         return false; // STFO8DEE guard (deskdir.c:537)
+     }
+@@ -293,6 +863,9 @@ fn d_doop(level: i16, op: Op, src_dir: &str, dst_dir: &str, count: &mut DirCount
+     let mut ok = true;
+ 
+     for e in &entries {
++        if ctx.stop {
++            break; // `for (… ; pf && more ; …)` — the user pressed Stop
++        }
+         let name = e.name_str();
+         if e.is_dir() {
+             let src_sub = join_leaf(src_dir, name);
+@@ -304,35 +877,42 @@ fn d_doop(level: i16, op: Op, src_dir: &str, dst_dir: &str, count: &mut DirCount
+             } else {
+                 String::new()
+             };
+-            if !d_doop(level + 1, op, &src_sub_dir, &dst_sub_dir, count, buf) {
++            if !d_doop(level + 1, op, &src_sub_dir, &dst_sub_dir, count, buf, ctx) {
+                 ok = false;
+             }
+-        } else {
+-            let src_file = join_leaf(src_dir, name);
+-            match op {
+-                Op::Count => {
+-                    count.files += 1;
+-                    count.size += e.size as u64;
+-                }
+-                Op::Delete => {
+-                    if !d_dofdel(&src_file) {
+-                        ok = false;
+-                    }
++            continue; // the folder branch does not count a *file* down
++        }
++        let src_file = join_leaf(src_dir, name);
++        match op {
++            Op::Count => {
++                count.files += 1;
++                count.size += e.size as u64;
++            }
++            Op::Delete => {
++                if !d_dofdel(&src_file) {
++                    ok = false;
+                 }
+-                Op::Copy | Op::Move => {
+-                    let dst_file = join_leaf(dst_dir, name);
+-                    let copied = d_dofcopy(&src_file, &dst_file, e.time, e.date, e.attr as u16, buf);
+-                    if op == Op::Move && copied {
+-                        if !d_dofdel(&src_file) {
++            }
++            Op::Copy | Op::Move => {
++                let mut dst_file = join_leaf(dst_dir, name);
++                match d_dofcopy(&src_file, &mut dst_file, e.time, e.date, e.attr as u16, buf, ctx) {
++                    // "if moving, delete original only if copy was ok"
++                    // (`deskdir.c:667-669`).
++                    More::Ok => {
++                        if op == Op::Move && !d_dofdel(&src_file) {
+                             ok = false;
+                         }
+-                    } else if !copied {
+-                        ok = false;
+                     }
++                    More::Skip => {}
++                    More::Failed => ok = false,
++                    More::Stop => ctx.stop = true,
+                 }
+-                Op::Rename => {} // rename never recurses (handled at dir_op level)
+             }
++            Op::Rename => {} // rename never recurses (handled at dir_op level)
+         }
++        // `inf_numset(tree, CDFILES, --(count->files)); draw_fld(…)`
++        // (`deskdir.c:674-678`) — one file down, box updated.
++        ctx.file_done();
+     }
+ 
+     // End-of-folder handling (EmuTOS `deskdir.c:559-585`).
+@@ -343,18 +923,39 @@ fn d_doop(level: i16, op: Op, src_dir: &str, dst_dir: &str, count: &mut DirCount
+         Op::Delete | Op::Move => ok &= d_dofoldel(strip_dir(src_dir)),
+         _ => {}
+     }
++    // `inf_numset(tree, CDFOLDS, --(count->dirs))` at end-of-folder
++    // (`deskdir.c:590-594`), for every `op` that has a box.
++    ctx.dir_done();
+     ok
+ }
+ 
+ // ── the top-level dispatch over the selected items ──────────────────────────
+ 
+ /// `dir_op` — perform `op` on the [`SelEntry`] set selected in `src_dir`
+-/// (EmuTOS `deskdir.c:871`). `src_dir`/`dst_dir` end with `\`. `dst_dir` is
+-/// `None` for `Delete`/`Count`. Returns `true` if every item completed.
++/// (EmuTOS `deskdir.c:871-1084`). `src_dir`/`dst_dir` end with `\`. `dst_dir`
++/// is `None` for `Delete`/`Count`. Returns `true` if every item completed.
+ ///
+ /// The move→rename optimisation (`deskdir.c:885`): a `Move` whose source and
+ /// destination are on the **same drive letter** is silently a `Rename`
+ /// (`Frename`), never a copy+delete.
++///
++/// ## The confirmation box
++///
++/// Every operation but `Count` puts the `ADCPYDEL` box up (`deskdir.c:911-918`
++/// decides that by `op != OP_COUNT`, which is exactly what its later
++/// `if (tree)` tests mean), pre-filled with the file and folder counts of the
++/// preceding `Count` pass. Whether it then **waits** for OK is the user's
++/// preference (`:906,939-945`):
++///
++/// | operation      | `confirm` is                        |
++/// |----------------|-------------------------------------|
++/// | `Delete`       | `g_cdelepref`                       |
++/// | `Copy`         | `g_ccopypref`                       |
++/// | `Move`/`Rename`| `g_ccopypref \| g_cdelepref`        |
++///
++/// With the preference off the box still appears — as a progress display,
++/// counting the two numbers down as the walk proceeds — and the operation
++/// starts immediately. Cancel ends it before a single file is touched.
+ pub fn dir_op(
+     op: Op,
+     src_dir: &str,
+@@ -375,19 +976,46 @@ pub fn dir_op(
+         *count = DirCount::default();
+     }
+ 
++    // `confirm` and the box (`deskdir.c:899-965`).
++    let (confdel, confcpy, covwr) =
++        global::with(|g| (g.g_cdelepref, g.g_ccopypref, g.g_covwrpref)).unwrap_or((true, true, true));
++    let confirm = match op {
++        Op::Count => false,
++        Op::Delete => confdel,
++        Op::Copy => confcpy,
++        // "if (op != OP_COPY) confirm |= G.g_cdelepref;" (`:941-943`)
++        Op::Move | Op::Rename => confcpy || confdel,
++    };
++
++    let mut ctx = OpCtx { covwr, files: count.files, dirs: count.dirs, ..OpCtx::quiet() };
++    let mut dialog = (op != Op::Count).then(|| CpyDelBox::new(op, count));
++    if let Some(b) = dialog.as_mut() {
++        ctx.tree = b.ptr();
++        start_dialog(ctx.tree);
++        ctx.havebox = true;
++        if confirm {
++            super::form_do(ctx.tree, 0);
++            // `more = (tree[CDOK].ob_state & SELECTED) ? TRUE : FALSE;` (`:963`)
++            ctx.stop = b.tree[CDOK as usize].ob_state & OB_SELECTED == 0;
++        }
++    }
++
+     let mut ok = true;
+     for e in entries {
++        if ctx.stop {
++            break;
++        }
+         let name = e.name_str();
+         if e.is_dir {
+             let src_sub = join_leaf(src_dir, name); // C:\SUB\CHILD
+             match op {
+                 Op::Count => {
+-                    if !d_doop(0, Op::Count, &as_dir(&src_sub), "", count, buf) {
++                    if !d_doop(0, Op::Count, &as_dir(&src_sub), "", count, buf, &mut ctx) {
+                         ok = false;
+                     }
+                 }
+                 Op::Delete => {
+-                    if !d_doop(0, Op::Delete, &as_dir(&src_sub), "", count, buf) {
++                    if !d_doop(0, Op::Delete, &as_dir(&src_sub), "", count, buf, &mut ctx) {
+                         ok = false;
+                     }
+                 }
+@@ -405,45 +1033,58 @@ pub fn dir_op(
+                         d_dofileren(&src_sub, &dst_sub)
+                     } else {
+                         let _ = dos_mkdir(&dst_sub); // output_path (create/merge)
+-                        d_doop(0, op, &as_dir(&src_sub), &as_dir(&dst_sub), count, buf)
++                        d_doop(0, op, &as_dir(&src_sub), &as_dir(&dst_sub), count, buf, &mut ctx)
+                     };
+                     if !more {
+                         ok = false;
+                     }
+                 }
+             }
+-        } else {
+-            let src_file = join_leaf(src_dir, name);
+-            match op {
+-                Op::Count => {
+-                    count.files += 1;
+-                    count.size += e.size as u64;
++            // A folder never counts a *file* down: EmuTOS's folder branch
++            // `continue`s before the `CDFILES` update (`deskdir.c:1019`).
++            continue;
++        }
++        let src_file = join_leaf(src_dir, name);
++        match op {
++            Op::Count => {
++                count.files += 1;
++                count.size += e.size as u64;
++            }
++            Op::Delete => {
++                if !d_dofdel(&src_file) {
++                    ok = false;
+                 }
+-                Op::Delete => {
+-                    if !d_dofdel(&src_file) {
++            }
++            Op::Copy | Op::Move | Op::Rename => {
++                let dst = dst_dir.unwrap_or("");
++                let mut dst_file = join_leaf(dst, name);
++                if op == Op::Rename {
++                    if !d_dofileren(&src_file, &dst_file) {
+                         ok = false;
+                     }
+-                }
+-                Op::Copy | Op::Move | Op::Rename => {
+-                    let dst = dst_dir.unwrap_or("");
+-                    let dst_file = join_leaf(dst, name);
+-                    let more = if op == Op::Rename {
+-                        d_dofileren(&src_file, &dst_file)
+-                    } else {
+-                        let copied =
+-                            d_dofcopy(&src_file, &dst_file, e.time, e.date, e.attr(), buf);
+-                        if op == Op::Move && copied {
+-                            d_dofdel(&src_file)
+-                        } else {
+-                            copied
++                } else {
++                    match d_dofcopy(&src_file, &mut dst_file, e.time, e.date, e.attr(), buf, &mut ctx) {
++                        More::Ok => {
++                            if op == Op::Move && !d_dofdel(&src_file) {
++                                ok = false;
++                            }
+                         }
+-                    };
+-                    if !more {
+-                        ok = false;
++                        More::Skip => {}
++                        More::Failed => ok = false,
++                        More::Stop => ctx.stop = true,
+                     }
+                 }
+             }
+         }
++        ctx.file_done();
++    }
++
++    // `tree[CDOK].ob_state = NORMAL; tree[CDCNCL].ob_state = NORMAL;
++    //  end_dialog(tree);` (`deskdir.c:1075-1080`).
++    if let Some(b) = dialog.as_mut() {
++        b.tree[CDOK as usize].ob_state = 0;
++        b.tree[CDOK as usize + 1].ob_state = 0;
++        end_dialog(b.ptr());
+     }
+     ok
+ }
+@@ -506,11 +1147,11 @@ pub fn fun_del() -> bool {
+     if entries.is_empty() {
+         return false;
+     }
+-    // Confirm, unless the user turned *Confirm deletes* off in Preferences
+-    // (`deskdir.c:906`).
+-    if confirm_deletes() && !fun_confirm(b"Delete the selected item(s)?") {
+-        return false;
+-    }
++    // No question here: EmuTOS's window-case `fun_del` goes straight into
++    // `fun_op` (`deskfun.c:1419-1423`) and the confirmation is `dir_op`'s
++    // `ADCPYDEL` box, gated on *Confirm deletes* (`deskdir.c:906`). DESK13
++    // moved the question there; the stand-in alert that used to sit here is
++    // gone, so a delete is confirmed exactly once.
+     let done = fun_op(Op::Delete, &src_dir, &entries, None);
+     if done {
+         rebuild_window(cwin);
+@@ -648,16 +1289,6 @@ pub fn fun_alert(default: i16, msg: &[u8]) -> i16 {
+     super::form_alert(default, text.as_ptr())
+ }
+ 
+-/// `G.g_cdelepref` — the Preferences dialog's *Confirm deletes* switch
+-/// (`deskinf.c:735,786`). EmuTOS reads it in `d_doop`, where it turns the
+-/// per-item delete dialog on or off (`deskdir.c:906`, `confirm =
+-/// G.g_cdelepref;`); NewTOS's delete engine is dialog-free and asks once up
+-/// front instead (see this module's header), so the same switch gates that one
+-/// question. `false` means delete without asking.
+-fn confirm_deletes() -> bool {
+-    global::with(|g| g.g_cdelepref).unwrap_or(true)
+-}
+-
+ /// A yes/no confirmation alert; `true` if the user chose the affirmative
+ /// (second) button.
+ fn fun_confirm(msg: &[u8]) -> bool {
+@@ -772,11 +1403,9 @@ fn fun_file2desk(dobj: i16, src_dir: &str, entries: &[SelEntry], keystate: u16)
+         AType::Trash => {
+             // The source here is a *window* selection, so EmuTOS skips
+             // `wants_to_delete_files` (that guard is for a dragged desktop
+-            // icon, `deskfun.c:1049-1051`) and the only question is `d_doop`'s,
+-            // gated on *Confirm deletes* (`deskdir.c:906`).
+-            if confirm_deletes() && !fun_confirm(b"Delete the selected item(s)?") {
+-                return false;
+-            }
++            // icon, `deskfun.c:1049-1051`) and the only question is the
++            // `ADCPYDEL` box `dir_op` now puts up, gated on *Confirm deletes*
++            // (`deskdir.c:906`).
+             fun_op(Op::Delete, src_dir, entries, None)
+         }
+         // File/Folder shortcuts and the printer are Task #14 (deskins/print).
+@@ -1085,8 +1714,10 @@ pub fn selftest() {
+ 
+     // 3. Copy (d_dofcopy) — B.TXT is a byte copy of A.TXT.
+     let mut buf: Vec<u8> = alloc::vec![0u8; COPY_BUF];
+-    let copied = d_dofcopy(base_join("A.TXT").as_str(), base_join("B.TXT").as_str(), 0x2000, 0x5461, 0, &mut buf);
+-    check("Copy A.TXT -> B.TXT", copied);
++    let mut ctx = OpCtx::quiet();
++    let mut dst = base_join("B.TXT");
++    let copied = d_dofcopy(base_join("A.TXT").as_str(), &mut dst, 0x2000, 0x5461, 0, &mut buf, &mut ctx);
++    check("Copy A.TXT -> B.TXT", copied == More::Ok);
+     check(
+         "  rescan sees B.TXT same size",
+         scan_folder(base).iter().any(|e| e.name_str() == "B.TXT" && e.size == body.len() as u32),
+diff --git a/kernel/src/desk/dosbind.rs b/kernel/src/desk/dosbind.rs
+index 4b662ef..2535ce2 100644
+--- a/kernel/src/desk/dosbind.rs
++++ b/kernel/src/desk/dosbind.rs
+@@ -11,7 +11,10 @@
+ //! `include/bdosbind.h`'s `trap1()` (`util/miscasm.S`).
+ //!
+ //! Naming follows EmuTOS's `gemdos.h`: [`dos_open`], [`dos_read`],
+-//! [`dos_sfirst`], … .
++//! [`dos_sfirst`], … . [`dos_getcookie`] has no EmuTOS counterpart in
++//! `gemdos.h`: it is the NewTOS route to the one piece of system state EmuTOS's
++//! desktop reads with an XBIOS call, the `_IDT` cookie — see its own comment
++//! for why that is a GEMDOS call here and not `Supexec`.
+ //!
+ //! The desktop uses **no BIOS and no XBIOS function**, so there is neither an
+ //! `svc #13` nor an `svc #14` binding here. EmuTOS's desktop includes
+@@ -19,9 +22,11 @@
+ //! desktop itself never uses, because it reads the drive map as
+ //! `dos_sdrv(dos_gdrv())` (`deskapp.c:714`, `deskins.c:297`,
+ //! `desksupp.c:1575,1819`) — and `Dosound()` for the About-box Easter egg
+-//! (`CONF_WITH_EASTER_EGG`), which NewTOS does not have. `xbiosbind.h` is only
+-//! reached from `deskrez.c`'s resolution change, which NewTOS does not have
+-//! either (the screen mode is fixed by the firmware).
++//! (`CONF_WITH_EASTER_EGG`), which NewTOS does not have. From `xbiosbind.h` it
++//! takes `deskrez.c`'s resolution change, which NewTOS does not have either
++//! (the screen mode is fixed by the firmware), and `Supexec` in `do_wredraw`
++//! (`desksupp.c:219`) — that one it *does* need, and [`dos_getcookie`] is where
++//! it goes instead.
+ //!
+ //! ## ABI
+ //!
+@@ -78,6 +83,12 @@ const FDATIME: u16 = 0x57;
+ /// `Mxalloc` (`bdosbind.h:56`) — used only through [`dos_avail_stram`] /
+ /// [`dos_avail_altram`], EmuTOS's `util/gemdos.c:101-112`.
+ const MXALLOC: u16 = 0x44;
++/// `Ssystem` (GEMDOS 0x154, a FreeMiNT extension NewTOS implements —
++/// `docs/api/gemdos/154-ssystem.md`). Used only by [`dos_getcookie`].
++const SSYSTEM: u16 = 0x154;
++
++/// `S_GETCOOKIE` (FreeMiNT `sys/mint/ssystem.h`) — `Ssystem` subfunction 8.
++const S_GETCOOKIE: i16 = 8;
+ 
+ // ── `Mxalloc` modes (`include/bdosdefs.h:18-19`) ────────────────────────────
+ /// `MX_STRAM` — allocate/measure ST-RAM only.
+@@ -287,3 +298,37 @@ pub(super) fn dos_avail_stram() -> Long {
+ pub(super) fn dos_avail_altram() -> Long {
+     dos_trap(MXALLOC, sx(-1), sx(MX_TTRAM as i64), 0)
+ }
++
++/// Read one cookie **by value** — `Ssystem(S_GETCOOKIE, tag, 0)`
++/// (`docs/api/gemdos/154-ssystem.md`, `tos-api/src/gemdos/ssystem.rs:42-77`).
++/// [`None`] if the tag is not in the jar (the call returns `ERROR`).
++///
++/// ## Why this and not `Supexec`
++///
++/// EmuTOS's desktop reads `_IDT` with `Supexec((LONG)get_idt_cookie)`
++/// (`desksupp.c:219`) — not because the *cookie* needs privilege, but because
++/// on m68k the jar is reached through the pointer at `$5A0`, in supervisor-only
++/// low memory. That is an m68k mechanism, and `docs/COMPATIBILITY.md` puts
++/// mechanisms on the free side of the line.
++///
++/// On NewTOS there is nothing to elevate for and nothing to elevate *with*:
++/// XBIOS `Supexec` (0x26) is an open ADR (`docs/api/xbios/26-supexec.md`,
++/// "NewTOS status: decision deferred") and the cookie-jar spec already names
++/// this call as its replacement — "There is no `Supexec` in the kernel … the
++/// low-memory area an app wants is already in its own address space"
++/// (`docs/api/bios/_cookie-jar.md` §Status 2026-09-14). `Ssystem` is a GEMDOS
++/// function, so the desktop reaches it through the same `svc #1` it uses for
++/// every other system service (DESK10) — the third argument is 0, so the value
++/// comes back in `x0` and no pointer crosses the trap.
++///
++/// **The value form cannot express a cookie whose value has bit 31 set** — it
++/// would be indistinguishable from the negative error return. That is
++/// `Ssystem`'s own shape, and the alternative (`arg2` = a pointer to write into)
++/// is closed to the desktop: `s_getcookie` stores through an *unprivileged*
++/// `sttr` (`ssystem.rs:110-121`), which faults on a kernel address. The one
++/// cookie read here, `_IDT`, is a 16-bit word (`0x112F`), so the limitation is
++/// nominal; a future caller reading a pointer-valued cookie must not use this.
++pub(super) fn dos_getcookie(tag: u32) -> Option<u32> {
++    let rc = dos_trap(SSYSTEM, sx(S_GETCOOKIE as i64), sx(tag as i32 as i64), 0);
++    (rc >= 0).then_some(rc as u32)
++}
+diff --git a/kernel/src/desk/global.rs b/kernel/src/desk/global.rs
+index b1b43a0..2d835bc 100644
+--- a/kernel/src/desk/global.rs
++++ b/kernel/src/desk/global.rs
+@@ -238,17 +238,11 @@ pub struct WSave {
+ /// it is wiped on every shell pass, which is precisely why EmuTOS's desktop
+ /// keeps its own copy (gap G2 of `docs/analysis/desk-aes-gaps-2026-09-14.md`).
+ ///
+-/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries `cs_confcpy`,
+-/// `cs_confovwr`, `cs_blitter`, `cs_cache`, `cs_appdir` and `cs_fullpath`.
+-/// Those mirror `GLOBES` fields that exist only because `inf_pref`/`inf_conf`
+-/// (the Preferences and Configuration dialogs) can edit them, and NewTOS has no
+-/// live state behind any of them:
++/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries `cs_blitter`,
++/// `cs_cache`, `cs_appdir` and `cs_fullpath`. Those mirror `GLOBES` fields that
++/// exist only because `inf_pref`/`inf_conf` (the Preferences and Configuration
++/// dialogs) can edit them, and NewTOS has no live state behind any of them:
+ ///
+-/// * `cs_confcpy` / `cs_confovwr` — the desktop's copy engine asks no
+-///   per-item copy question and no overwrite question at all
+-///   (`super::dir`'s module header records that deviation); a preference
+-///   gating a dialog that is never shown would be a dead control, so the
+-///   Preferences dialog does not offer them either (DESK02).
+ /// * `cs_blitter` / `cs_cache` — m68k hardware (`Blitmode`, the 68030 cache),
+ ///   the hardware-layer carve-out of `docs/COMPATIBILITY.md`.
+ /// * `cs_appdir` / `cs_fullpath` — `inf_conf`'s launch-directory policy, which
+@@ -259,10 +253,10 @@ pub struct WSave {
+ /// in are preserved verbatim by [`super::inf`]'s session copy — they are simply
+ /// not routed through this structure.
+ ///
+-/// `cs_confdel`, `cs_dblclick`, `cs_timefmt` and `cs_datefmt` **are** carried
+-/// (DESK02): each has a live consumer — the delete confirmation in
+-/// `super::dir`, the AES's `evnt_dclick` rate, and the text view's
+-/// `fmt_date`/`fmt_time`.
++/// `cs_confcpy` and `cs_confovwr` **were** in that list until DESK13, on the
++/// grounds that NewTOS's copy engine asked neither question. It asks both now
++/// (`super::dir`'s `dir_op` confirmation box and `output_fname`'s name-conflict
++/// dialog), so they are carried like the other four.
+ #[derive(Clone)]
+ pub struct CSave {
+     /// Saved view mode (`cs_view`).
+@@ -273,6 +267,12 @@ pub struct CSave {
+     pub cs_sizefit: bool,
+     /// Saved "confirm deletes" preference (`cs_confdel`).
+     pub cs_confdel: bool,
++    /// Saved "confirm copies" preference (`cs_confcpy`).
++    pub cs_confcpy: bool,
++    /// Saved "confirm overwrites" preference (`cs_confovwr`). Note the `#E`
++    /// bit it serialises to is **inverted** (`INF_E2_ALLOWOVW`, "yes, it's
++    /// backwards" — `deskapp.c:98`).
++    pub cs_confovwr: bool,
+     /// Saved double-click speed index 0..4 (`cs_dblclick`); 0 is the slowest
+     /// (EmuTOS `gl_dcrates`, our `tos-api/src/aes/event.rs` `DCRATES`).
+     pub cs_dblclick: u8,
+@@ -292,6 +292,8 @@ impl Default for CSave {
+             cs_sort: Sort::Name,
+             cs_sizefit: true,
+             cs_confdel: true,
++            cs_confcpy: true,
++            cs_confovwr: true,
+             cs_dblclick: DEF_DCLICK,
+             cs_timefmt: TimeFmt::H24,
+             cs_datefmt: DateFmt::Mdy,
+@@ -362,6 +364,16 @@ pub struct DeskState {
+     /// `confirm = G.g_cdelepref`). Edited by `inf_pref`, persisted through
+     /// [`CSave::cs_confdel`].
+     pub g_cdelepref: bool,
++    /// "Confirm copies" preference (`g_ccopypref`, `deskinf.c:740`): gate for
++    /// the copy/move confirmation box in [`super::dir::dir_op`]
++    /// (`deskdir.c:939`, `confirm = G.g_ccopypref`; a move or rename ORs
++    /// [`Self::g_cdelepref`] in, `:943`).
++    pub g_ccopypref: bool,
++    /// "Confirm overwrites" preference (`g_covwrpref`, `deskinf.c:745`): gate
++    /// for the per-file name-conflict dialog in `output_fname`
++    /// (`deskdir.c:325`, `if (!G.g_covwrpref) break;`). `false` means a copy
++    /// replaces an existing file without asking.
++    pub g_covwrpref: bool,
+     /// Double-click speed index 0..4 (`g_cdclkpref`, `deskinf.c:751`). The
+     /// desktop does not consume it: it is the AES's rate, queried and set with
+     /// `evnt_dclick` (`deskmain.c:1460`), and held here only so `cnx_put`/
+@@ -373,6 +385,18 @@ pub struct DeskState {
+     /// Date order for the text view and Show Info (`g_cdateform`,
+     /// `deskinf.c:138`).
+     pub g_cdateform: DateFmt,
++    /// The current `_IDT` cookie word (`g_idt`, `deskbind.h:183`) — the machine
++    /// separator / field order / clock that [`TimeFmt::Idt`] and [`DateFmt::Idt`]
++    /// defer to (see [`super::model`]'s `_IDT` block for the bit layout and for
++    /// why this is a GEMDOS `Ssystem` read and not `Supexec`).
++    ///
++    /// Refreshed where EmuTOS refreshes it — in `do_wredraw`
++    /// (`desksupp.c:219`) — and additionally once at desktop start, because
++    /// NewTOS formats a text-view line when the **view** is built
++    /// (`super::win`'s `build_item`) rather than at draw time as EmuTOS's
++    /// `dr_fnode` does (`deskinf.c:320`), so the value has to be valid before
++    /// the first redraw rather than during it.
++    pub g_idt: u32,
+ 
+     /// One item's own horizontal extent (`g_iwext`) — set by `win_view()`
+     /// (Task #6).
+@@ -471,9 +495,12 @@ impl DeskState {
+             sort: Sort::Name,
+             size_to_fit: true,
+             g_cdelepref: true,
++            g_ccopypref: true,
++            g_covwrpref: true,
+             g_cdclkpref: DEF_DCLICK,
+             g_ctimeform: TimeFmt::H24,
+             g_cdateform: DateFmt::Mdy,
++            g_idt: 0,
+             g_iwext: 0,
+             g_ihext: 0,
+             g_iwint: 0,
+diff --git a/kernel/src/desk/inf.rs b/kernel/src/desk/inf.rs
+index acb595a..0bb430b 100644
+--- a/kernel/src/desk/inf.rs
++++ b/kernel/src/desk/inf.rs
+@@ -34,7 +34,7 @@ use crate::sync::SpinMutex;
+ use super::dosbind::{dos_close, dos_create, dos_gdrv, dos_open, dos_read, dos_sdrv, dos_write};
+ use super::global::{self, Anode, Grect, WSave, NIL, NUM_WNODES};
+ use super::icons;
+-use super::model::{AType, DateFmt, Sort, TimeFmt, View};
++use super::model::{AType, DateFmt, DateOrder, Sort, TimeFmt, View};
+ 
+ // ── GEMDOS file access (through the trap, [`super::dosbind`]) ────────────
+ 
+@@ -101,6 +101,12 @@ const INF_E1_SORTMASK: u8 = 0x60;
+ const INF_E1_SORTSHIFT: u8 = 5;
+ /// `INF_E1_CONFDEL` (`deskapp.c:89`) — 1 ⇒ confirm deletes.
+ const INF_E1_CONFDEL: u8 = 0x10;
++/// `INF_E1_CONFCPY` (`deskapp.c:90`) — 1 ⇒ confirm copies.
++const INF_E1_CONFCPY: u8 = 0x08;
++/// `INF_E2_ALLOWOVW` (`deskapp.c:98`) — 1 ⇒ **allow** overwrites, i.e. do
++/// **not** confirm them. "yes, it's backwards", says the EmuTOS comment; the
++/// decode is `cs_confovwr = ((envr & INF_E2_ALLOWOVW) == 0)` (`:925`).
++const INF_E2_ALLOWOVW: u8 = 0x10;
+ /// `INF_E1_DCMASK` (`deskapp.c:91`) — double-click speed index, 0..4 valid.
+ const INF_E1_DCMASK: u8 = 0x07;
+ /// `INF_E2_IDTDATE` (`deskapp.c:96`) — 1 ⇒ take the date format from the `_IDT`
+@@ -664,21 +670,23 @@ fn state_to_env(view: View, sort: Sort, size_to_fit: bool, base_e1: u8, base_e5:
+ ///
+ /// ```c
+ /// cnxsave->cs_confdel  = ((envr & INF_E1_CONFDEL) != 0);
++/// cnxsave->cs_confcpy  = ((envr & INF_E1_CONFCPY) != 0);
+ /// cnxsave->cs_dblclick =  (envr & INF_E1_DCMASK);
+ /// …
++/// cnxsave->cs_confovwr = ((envr & INF_E2_ALLOWOVW) == 0);
+ /// cnxsave->cs_datefmt = (envr & INF_E2_IDTDATE) ? DATEFORM_IDT
+ ///                     : (envr & INF_E2_DAYMONTH) ? DATEFORM_DMY : DATEFORM_MDY;
+ /// cnxsave->cs_timefmt = (envr & INF_E2_IDTTIME) ? TIMEFORM_IDT
+ ///                     : (envr & INF_E2_24HCLOCK) ? TIMEFORM_24H : TIMEFORM_12H;
+ /// ```
+ ///
+-/// Returns `(confirm_deletes, dclick_index, time_format, date_format)`. The
+-/// `IDT` values are decoded faithfully even though the desktop cannot render
+-/// them ([`TimeFmt::Idt`] explains why) — they are what a `NEWDESK.INF` written
+-/// by EmuTOS carries, and losing them on read would silently rewrite the user's
+-/// file on the next save.
+-fn env_to_prefs(e1: u8, e2: u8) -> (bool, u8, TimeFmt, DateFmt) {
++/// Returns `(confirm_deletes, confirm_copies, confirm_overwrites,
++/// dclick_index, time_format, date_format)`.
++#[allow(clippy::type_complexity)]
++fn env_to_prefs(e1: u8, e2: u8) -> (bool, bool, bool, u8, TimeFmt, DateFmt) {
+     let confdel = e1 & INF_E1_CONFDEL != 0;
++    let confcpy = e1 & INF_E1_CONFCPY != 0;
++    let confovwr = e2 & INF_E2_ALLOWOVW == 0;
+     let dclick = e1 & INF_E1_DCMASK;
+     let timefmt = if e2 & INF_E2_IDTTIME != 0 {
+         TimeFmt::Idt
+@@ -694,28 +702,39 @@ fn env_to_prefs(e1: u8, e2: u8) -> (bool, u8, TimeFmt, DateFmt) {
+     } else {
+         DateFmt::Mdy
+     };
+-    (confdel, dclick, timefmt, datefmt)
++    (confdel, confcpy, confovwr, dclick, timefmt, datefmt)
+ }
+ 
+ /// The inverse of [`env_to_prefs`] — EmuTOS `app_save`'s env assembly
+ /// (`deskapp.c:1138-1160`). Every bit outside this dialog's own is taken from
+-/// `base_e1`/`base_e2` unchanged, so the confirm-copy / blitter / cache bits
+-/// NewTOS does not edit survive a load/save round trip.
++/// `base_e1`/`base_e2` unchanged, so the blitter / cache bits NewTOS does not
++/// edit survive a load/save round trip.
++#[allow(clippy::too_many_arguments)]
+ fn prefs_to_env(
+     confdel: bool,
++    confcpy: bool,
++    confovwr: bool,
+     dclick: u8,
+     timefmt: TimeFmt,
+     datefmt: DateFmt,
+     base_e1: u8,
+     base_e2: u8,
+ ) -> (u8, u8) {
+-    let mut e1 = base_e1 & !(INF_E1_CONFDEL | INF_E1_DCMASK);
++    let mut e1 = base_e1 & !(INF_E1_CONFDEL | INF_E1_CONFCPY | INF_E1_DCMASK);
+     if confdel {
+         e1 |= INF_E1_CONFDEL;
+     }
++    if confcpy {
++        e1 |= INF_E1_CONFCPY;
++    }
+     e1 |= dclick & INF_E1_DCMASK;
+ 
+-    let mut e2 = base_e2 & !(INF_E2_IDTDATE | INF_E2_IDTTIME | INF_E2_DAYMONTH | INF_E2_24HCLOCK);
++    let mut e2 =
++        base_e2 & !(INF_E2_IDTDATE | INF_E2_IDTTIME | INF_E2_ALLOWOVW | INF_E2_DAYMONTH | INF_E2_24HCLOCK);
++    // `env2 |= (cnxsave->cs_confovwr) ? 0x00 : INF_E2_ALLOWOVW;` (`:1142`).
++    if !confovwr {
++        e2 |= INF_E2_ALLOWOVW;
++    }
+     match timefmt {
+         TimeFmt::Idt => e2 |= INF_E2_IDTTIME,
+         TimeFmt::H24 => e2 |= INF_E2_24HCLOCK,
+@@ -799,7 +818,7 @@ fn apply(data: &InfData) {
+     // #E → cnxsave->cs_view / cs_sort / cs_sizefit (`deskapp.c:994-1013`) and
+     // the Preferences half (`deskapp.c:917-934`).
+     let (view, sort, size_to_fit) = env_to_state(data.e1, data.e5);
+-    let (confdel, dclick, timefmt, datefmt) = env_to_prefs(data.e1, data.e2);
++    let (confdel, confcpy, confovwr, dclick, timefmt, datefmt) = env_to_prefs(data.e1, data.e2);
+ 
+     // #M/#T/#O → `G.g_ahead` (`app_parse`'s tag switch, `deskapp.c:300-346`).
+     // The spot is still in grid units here; `app_start` scales it and snaps it
+@@ -814,6 +833,8 @@ fn apply(data: &InfData) {
+         g.g_cnxsave.cs_sort = sort;
+         g.g_cnxsave.cs_sizefit = size_to_fit;
+         g.g_cnxsave.cs_confdel = confdel;
++        g.g_cnxsave.cs_confcpy = confcpy;
++        g.g_cnxsave.cs_confovwr = confovwr;
+         g.g_cnxsave.cs_dblclick = dclick;
+         g.g_cnxsave.cs_timefmt = timefmt;
+         g.g_cnxsave.cs_datefmt = datefmt;
+@@ -1027,7 +1048,8 @@ fn build_from_state() -> InfData {
+ 
+     // Env + desktop-icon anodes, under one lock.
+     #[allow(clippy::type_complexity)]
+-    let (view, sort, size_to_fit, prefs, desk_anodes): (View, Sort, bool, (bool, u8, TimeFmt, DateFmt), Vec<InfAnode>) = global::with(|g| {
++    type Prefs = (bool, bool, bool, u8, TimeFmt, DateFmt);
++    let (view, sort, size_to_fit, prefs, desk_anodes): (View, Sort, bool, Prefs, Vec<InfAnode>) = global::with(|g| {
+         // The `ANODE` half of `app_save` (`deskapp.c:1216-1262`), for the
+         // `AF_ISDESK` nodes: one line per entry of `G.g_ahead`, in list order,
+         // with the spot converted back to grid units
+@@ -1068,6 +1090,8 @@ fn build_from_state() -> InfData {
+             g.g_cnxsave.cs_sizefit,
+             (
+                 g.g_cnxsave.cs_confdel,
++                g.g_cnxsave.cs_confcpy,
++                g.g_cnxsave.cs_confovwr,
+                 g.g_cnxsave.cs_dblclick,
+                 g.g_cnxsave.cs_timefmt,
+                 g.g_cnxsave.cs_datefmt,
+@@ -1079,7 +1103,7 @@ fn build_from_state() -> InfData {
+         View::Icon,
+         Sort::Name,
+         true,
+-        (true, global::DEF_DCLICK, TimeFmt::H24, DateFmt::Mdy),
++        (true, true, true, global::DEF_DCLICK, TimeFmt::H24, DateFmt::Mdy),
+         Vec::new(),
+     ));
+ 
+@@ -1090,8 +1114,8 @@ fn build_from_state() -> InfData {
+     // The Preferences bits go into the *same* `e1` byte, in a disjoint bit
+     // range (`CONFDEL|DCMASK` vs `VIEWTEXT|SORTMASK`), so they are folded in on
+     // top of the result rather than from `base.e1` again.
+-    let (confdel, dclick, timefmt, datefmt) = prefs;
+-    let (e1, e2) = prefs_to_env(confdel, dclick, timefmt, datefmt, e1, base.e2);
++    let (confdel, confcpy, confovwr, dclick, timefmt, datefmt) = prefs;
++    let (e1, e2) = prefs_to_env(confdel, confcpy, confovwr, dclick, timefmt, datefmt, e1, base.e2);
+ 
+     let mut anodes = desk_anodes;
+     let type_anodes: Vec<InfAnode> = if base.anodes.iter().any(|a| !a.is_desk) {
+@@ -1542,7 +1566,7 @@ const ROOT: i16 = 0;
+ 
+ /// Build one dialog `OBJECT`.
+ #[allow(clippy::too_many_arguments)]
+-fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, head: i16, tail: i16) -> Object {
++pub(super) fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, head: i16, tail: i16) -> Object {
+     Object {
+         ob_next: next,
+         ob_head: head,
+@@ -1854,35 +1878,38 @@ fn push_dec2(buf: &mut [u8], p: &mut usize, v: u32) {
+     }
+ }
+ 
++/// Append `v` with C's `%02d` semantics — zero-padded to **at least** two
++/// digits, but never truncated. `fmt_date` formats all three of its fields with
++/// `%02d` (`deskinf.c:177`), which is why a four-digit year prints in full even
++/// though the field is nominally two wide.
++fn push_dec02(buf: &mut [u8], p: &mut usize, v: u64) {
++    if v < 10 {
++        push_str(buf, p, b"0");
++    }
++    push_dec(buf, p, v);
++}
++
+ // ── Date / time formatting (`fmt_date`/`fmt_time`, `deskinf.c:74-180`) ──────
+ //
+ // Both readers of the date/time preference live here, as they do in EmuTOS:
+ // the text-view line builder (`format_fnode`, `deskinf.c:220-307`, ours in
+ // `super::win`) and the Show-Info box (`inf_dttm`, `deskinf.c:460-468`).
+-// Neither takes the desktop lock — the caller passes the format in, because
+-// `format_fnode` already runs inside `global::with`.
+-
+-/// `DATEFORM_SEP` (`deskbind.h:64`) — the separator EmuTOS uses when the format
+-/// does not come from the `_IDT` cookie.
+-const DATEFORM_SEP: u8 = b'/';
++// Neither takes the desktop lock — the caller passes the format *and* the
++// current `_IDT` word in, because `format_fnode` already runs inside
++// `global::with`.
++//
++// The separator is **not** a parameter (it was, until DESK13): EmuTOS starts
++// from `DATEFORM_SEP` ('/') and only the `DATEFORM_IDT` arm overrides it, from
++// the cookie (`deskinf.c:129,141-143`). NewTOS's text view printed `MM-DD-YY`
++// with a dash while the Show-Info box printed `MM/DD/YYYY` — one rule, two
++// answers. `DateFmt::rendered` is now that rule's single home.
+ 
+ /// `fmt_date` (`deskinf.c:124-180`) — a DOS-packed date word written into `out`
+-/// as `xx<sep>xx<sep>xx`, with a four-digit year when `fourdigit`. The field
+-/// order is `datefmt`'s: month first for [`DateFmt::Mdy`], day first for
+-/// [`DateFmt::Dmy`]. Returns the number of bytes written.
+-///
+-/// [`DateFmt::Idt`] renders as [`DateFmt::Mdy`]: the `_IDT` cookie it names is
+-/// out of the desktop's reach (see [`DateFmt`]), and MDY is what the text view
+-/// printed before the preference existed, so an unreachable value changes
+-/// nothing on screen.
+-///
+-/// **`sep` is a parameter, and that is a divergence, not a design.** EmuTOS
+-/// passes `DATEFORM_SEP` ('/') from both call sites; NewTOS's text view has
+-/// printed `MM-DD-YY` with a dash since it was written (`super::win`'s
+-/// `format_fnode`). DESK02 binds the *order* to the preference and leaves the
+-/// separator exactly as each call site had it, so no screen changes that this
+-/// ticket did not ask to change; the dash is reported as its own finding.
+-pub(super) fn fmt_date(date: u16, fourdigit: bool, sep: u8, datefmt: DateFmt, out: &mut [u8]) -> usize {
++/// as `xx<sep>xx<sep>xx`, with a four-digit year when `fourdigit`. Field order
++/// and separator both come from [`DateFmt::rendered`], resolved against the
++/// current `_IDT` word `idt` ([`super::global::DeskState::g_idt`]). Returns the
++/// number of bytes written.
++pub(super) fn fmt_date(date: u16, fourdigit: bool, datefmt: DateFmt, idt: u32, out: &mut [u8]) -> usize {
+     let mut year = 1980u32 + ((date >> 9) & 0x7F) as u32;
+     if !fourdigit {
+         year %= 100;
+@@ -1890,23 +1917,24 @@ pub(super) fn fmt_date(date: u16, fourdigit: bool, sep: u8, datefmt: DateFmt, ou
+     let month = ((date >> 5) & 0x0F) as u32;
+     let day = (date & 0x1F) as u32;
+ 
+-    let (v1, v2) = match datefmt.rendered() {
+-        DateFmt::Dmy => (day, month),
+-        // `default:` — MDY, which is also where `rendered()` sends the
+-        // unreachable IDT value.
+-        _ => (month, day),
++    let (order, sep) = datefmt.rendered(idt);
++    // `switch(format)` (`deskinf.c:154-176`) — which of the three fields goes
++    // where. The year is a whole field, so a year-first order prints it first.
++    let (v1, v2, v3) = match order {
++        DateOrder::Mdy => (month, day, year),
++        DateOrder::Ymd => (year, month, day),
++        DateOrder::Ydm => (year, day, month),
++        DateOrder::Dmy => (day, month, year),
+     };
+ 
++    // `sprintf(pdate, "%02d%c%02d%c%02d", var1, separator, var2, separator,
++    //  var3)` (`:177`).
+     let mut p = 0usize;
+-    push_dec2(out, &mut p, v1);
++    push_dec02(out, &mut p, v1 as u64);
+     push_str(out, &mut p, &[sep]);
+-    push_dec2(out, &mut p, v2);
++    push_dec02(out, &mut p, v2 as u64);
+     push_str(out, &mut p, &[sep]);
+-    if fourdigit {
+-        push_dec(out, &mut p, year as u64);
+-    } else {
+-        push_dec2(out, &mut p, year);
+-    }
++    push_dec02(out, &mut p, v3 as u64);
+     p
+ }
+ 
+@@ -1917,12 +1945,11 @@ pub(super) fn fmt_date(date: u16, fourdigit: bool, sep: u8, datefmt: DateFmt, ou
+ /// format is chosen, which is why EmuTOS can lay the text view out in fixed
+ /// columns. Returns the number of bytes written (always 7).
+ ///
+-/// [`TimeFmt::Idt`] renders as [`TimeFmt::H24`] — same reasoning as
+-/// [`fmt_date`]'s `Idt` arm.
+-pub(super) fn fmt_time(time: u16, timefmt: TimeFmt, out: &mut [u8]) -> usize {
++/// [`TimeFmt::Idt`] is resolved against `idt` by [`TimeFmt::rendered`].
++pub(super) fn fmt_time(time: u16, timefmt: TimeFmt, idt: u32, out: &mut [u8]) -> usize {
+     let mut hh = ((time >> 11) & 0x1F) as u32;
+     let mm = ((time >> 5) & 0x3F) as u32;
+-    let suffix: &[u8] = match timefmt.rendered() {
++    let suffix: &[u8] = match timefmt.rendered(idt) {
+         TimeFmt::H12 => {
+             let pm = hh >= 12;
+             if pm {
+@@ -2009,15 +2036,15 @@ pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr:
+     // 468`), which formats the date with a four-digit year always (`:464`) and
+     // the time through the same `fmt_time` the text view uses (`:467`). Both
+     // take their order/clock from the Preferences dialog's values.
+-    let (datefmt, timefmt) =
+-        global::with(|g| (g.g_cdateform, g.g_ctimeform)).unwrap_or((DateFmt::Mdy, TimeFmt::H24));
++    let (datefmt, timefmt, idt) = global::with(|g| (g.g_cdateform, g.g_ctimeform, g.g_idt))
++        .unwrap_or((DateFmt::Mdy, TimeFmt::H24, 0));
+     let mut datebuf = [0u8; 40];
+     {
+         let mut p = 0usize;
+         push_str(&mut datebuf, &mut p, b"Date: ");
+-        p += fmt_date(date, true, DATEFORM_SEP, datefmt, &mut datebuf[p..]);
++        p += fmt_date(date, true, datefmt, idt, &mut datebuf[p..]);
+         push_str(&mut datebuf, &mut p, b"  ");
+-        p += fmt_time(time, timefmt, &mut datebuf[p..]);
++        p += fmt_time(time, timefmt, idt, &mut datebuf[p..]);
+         // Trim `fmt_time`'s two-blank 24-hour suffix off the end of the line.
+         while p > 0 && datebuf[p - 1] == b' ' {
+             p -= 1;
+@@ -2113,7 +2140,7 @@ fn inf_which(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
+ /// `inf_gindex` (`util/optimize.c:134-147`) — the index, **counted from the
+ /// start**, of the first `SELECTED` object in `tree[baseobj .. baseobj+numobj]`,
+ /// or `-1` when none is selected. The reverse of [`inf_which`].
+-fn inf_gindex(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
++pub(super) fn inf_gindex(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
+     for (n, obj) in tree.iter().skip(baseobj).take(numobj).enumerate() {
+         if obj.ob_state & OB_SELECTED != 0 {
+             return n as i16;
+@@ -2143,53 +2170,46 @@ fn inf_what(tree: &mut [Object], ok: usize) -> i16 {
+ /// date format actually changed (`deskinf.c:807-814`) — nothing else in this
+ /// dialog alters anything already on screen.
+ ///
+-/// ## The field set, and what is missing from it
++/// ## The field set
+ ///
+-/// `ADSETPRE` (`desk/desk_rsc.c:1369-1560`) offers six groups in this order:
+-/// confirm deletes, confirm copies, confirm overwrites, double-click speed,
+-/// time format, date format. NewTOS shows **three** of them, in EmuTOS's order,
+-/// and the three it leaves out are left out rather than shown-and-ignored:
++/// All six groups of `ADSETPRE` (`desk/desk_rsc.c:1369-1567`), in its order and
++/// under its object numbers (`desk_rsc.h:164-184`): confirm deletes, confirm
++/// copies, confirm overwrites, double-click speed, time format, date format.
+ ///
+-/// * **Confirm copies** (`SPCCYES`/`SPCCNO`) — EmuTOS's switch turns on the
+-///   per-item copy dialog inside `d_doop` (`deskdir.c:939`). NewTOS's copy
+-///   engine has no per-item dialog at all ([`super::dir`]'s module header
+-///   records that as a deliberate deviation), so there is nothing for the
+-///   switch to turn on.
+-/// * **Confirm overwrites** (`SPCOWYES`/`SPCOWNO`) — same reason, one level
+-///   deeper: EmuTOS asks before replacing an existing file (`deskdir.c:325`,
+-///   `if (!G.g_covwrpref)`), NewTOS's copy always overwrites (GEMDOS `Fcreate`
+-///   truncates).
+-/// * **The `Default` button of each format group** (`SPTF_DEF`/`SPDF_DEF`) —
+-///   "default" means "take the format from the `_IDT` cookie", which EmuTOS
+-///   reads with `Supexec(get_idt_cookie)` (`desksupp.c:219`). XBIOS `Supexec`
+-///   (0x26) is not implemented (`tos-api/src/xbios/mod.rs:129`) and the desktop
+-///   may not reach kernel state except through a trap (DESK10), so the value
+-///   cannot be honoured. It is still *decoded* from the `#E` line and written
+-///   back unchanged ([`env_to_prefs`]), so a file carrying it survives; it just
+-///   has no button. A value of `Idt` pre-selects the NewTOS fallback
+-///   (`24H` / `MDY`), which is what it renders as.
++/// DESK02 shipped three of them, because the other three had nothing behind
++/// them: NewTOS's copy engine asked neither a copy nor an overwrite question,
++/// and `Default` means "take the format from the `_IDT` cookie", which was out
++/// of the desktop's reach. DESK13 supplied all three — [`super::dir::dir_op`]'s
++/// confirmation box, `output_fname`'s name-conflict dialog, and the cookie read
++/// through GEMDOS `Ssystem` ([`super::dosbind::dos_getcookie`]) — so the fields
++/// are back, and no control in this box is dead.
+ ///
+-/// Each of the three fields that is shown has a live consumer: *Confirm
+-/// deletes* gates [`super::dir`]'s delete question, the speed is the AES's own
+-/// `evnt_dclick` rate, and the two formats drive `format_fnode` and the
+-/// Show-Info box through [`fmt_date`]/[`fmt_time`].
++/// Note what is **not** needed any more: DESK02 had to pre-select through
++/// `TimeFmt::rendered` / `DateFmt::rendered`, because a stored `Idt` had no
++/// button and the box would otherwise have claimed a format the text view did
++/// not print. With `Default` on screen the raw value is shown and stored, which
++/// is EmuTOS's own code (`deskinf.c:754-778`, `:797-805`).
+ pub(super) fn inf_pref() -> bool {
+     // ── current values ──────────────────────────────────────────────────
+-    let (confdel, timefmt, datefmt, view) =
+-        global::with(|g| (g.g_cdelepref, g.g_ctimeform, g.g_cdateform, g.view))
+-            .unwrap_or((true, TimeFmt::H24, DateFmt::Mdy, View::Icon));
++    let (confdel, confcpy, confovwr, timefmt, datefmt, view) = global::with(|g| {
++        (g.g_cdelepref, g.g_ccopypref, g.g_covwrpref, g.g_ctimeform, g.g_cdateform, g.view)
++    })
++    .unwrap_or((true, true, true, TimeFmt::H24, DateFmt::Mdy, View::Icon));
+     // `G.g_cdclkpref = evnt_dclick(0, FALSE);` (`deskinf.c:751`) — the rate is
+     // the AES's, so it is asked for rather than remembered.
+     let dclick = super::evnt_dclick(0, false).clamp(0, 4);
+ 
+     static TITLE: &[u8] = b" SET PREFERENCES \0";
+     static CONFDEL_LBL: &[u8] = b"Confirm deletes:\0";
++    static CONFCPY_LBL: &[u8] = b"Confirm copies:\0";
++    static CONFOVW_LBL: &[u8] = b"Confirm overwrites:\0";
+     static DCLICK_LBL: &[u8] = b"Double-click speed:\0";
+     static TIME_LBL: &[u8] = b"Time format:\0";
+     static DATE_LBL: &[u8] = b"Date format:\0";
+     static YES: &[u8] = b" Yes \0";
+     static NO: &[u8] = b" No \0";
+     static DC: [&[u8]; 5] = [b"1\0", b"2\0", b"3\0", b"4\0", b"5\0"];
++    static DEFAULT_LBL: &[u8] = b" Default \0";
+     static H12: &[u8] = b" 12H \0";
+     static H24: &[u8] = b" 24H \0";
+     static MDY: &[u8] = b" MDY \0";
+@@ -2206,8 +2226,15 @@ pub(super) fn inf_pref() -> bool {
+     // in each direction than its `ob_*` rectangle says. `ADSETPRE` spaces its
+     // rows two character rows apart (`desk_rsc.c:1386,1406,1426,1450` — char
+     // rows 3, 5, 7, 9 → 32 px) and its speed buttons 23 px apart for a 15 px
+-    // button (`:1462-1493`, an 8 px gap). With the previous 26 px pitch and
+-    // 6 px gap the grown borders of neighbouring buttons would have met.
++    // button (`:1462-1493`, an 8 px gap).
++    //
++    // `ADSETPRE` puts the two format groups on a row of their **own**, below
++    // their label and spanning the whole box (`:1503,1533`: an `IBOX` at char
++    // column 1, 38 wide, one row under the `G_STRING`); NewTOS keeps every
++    // group on its label's row, which is the layout the other four rows already
++    // had and which `docs/api/desktop/deskinf.md` marks as free (the visual
++    // layout is fidelity, not contract). The box therefore grows sideways to
++    // fit the widest group instead of downwards.
+     const MARGIN: i16 = 24;
+     /// `ADSETPRE`'s two-character row pitch (`desk_rsc.c:1386` ff.).
+     const ROW_H: i16 = 2 * CELL_H;
+@@ -2215,16 +2242,24 @@ pub(super) fn inf_pref() -> bool {
+     const YESNO_W: i16 = 52;
+     const DC_W: i16 = 30;
+     const FMT_W: i16 = 56;
++    /// " Default " — the widest label in either format group.
++    const DEF_W: i16 = 9 * CELL_W;
+     /// `ADSETPRE`'s inter-button gap (`desk_rsc.c:1462-1493`: pitch 23 px,
+     /// width 15 px).
+     const GAP: i16 = 8;
+-    const LBL_W: i16 = 20 * CELL_W; // "Double-click speed:" + a blank
+-    const GROUP_W: i16 = 5 * DC_W + 4 * GAP; // the widest group (five speeds)
++    const LBL_W: i16 = 20 * CELL_W; // "Confirm overwrites:" + a blank
++    /// The five speed buttons.
++    const SPEED_W: i16 = 5 * DC_W + 4 * GAP;
++    /// `Default` + two format buttons — the widest group.
++    const FMTGRP_W: i16 = DEF_W + GAP + 2 * (FMT_W + GAP) - GAP;
++    const GROUP_W: i16 = if SPEED_W > FMTGRP_W { SPEED_W } else { FMTGRP_W };
+     let dw = MARGIN + LBL_W + GROUP_W + MARGIN;
+     let gx = MARGIN + LBL_W;
+ 
+     let y_del = MARGIN + ROW_H;
+-    let y_dc = y_del + ROW_H;
++    let y_ccpy = y_del + ROW_H;
++    let y_covw = y_ccpy + ROW_H;
++    let y_dc = y_covw + ROW_H;
+     let y_tf = y_dc + ROW_H;
+     let y_df = y_tf + ROW_H;
+     let y_btn = y_df + ROW_H + GAP;
+@@ -2232,18 +2267,23 @@ pub(super) fn inf_pref() -> bool {
+     // Vertical offset of a `BTN_H` button inside its `CELL_H` label row.
+     let boff = (CELL_H - BTN_H) / 2;
+ 
+-    // ── object indices (`desk_rsc.h:164-184`, minus the omitted groups) ──
++    // ── object indices — `desk_rsc.h:164-184`, unchanged ────────────────
+     /// `SPCDYES` — the *Confirm deletes* `Yes` button; `SPCDNO` follows it.
+     const SPCDYES: usize = 4;
+-    /// `SPDC1` — the first of the five double-click speed buttons.
+-    const SPDC1: usize = 8;
+-    /// `SPTF12HR` — the first *shown* time-format button (EmuTOS's `SPTF_DEF`
+-    /// precedes it and has no NewTOS counterpart).
+-    const SPTF12HR: usize = 15;
+-    /// `SPDFMMDD` — the first *shown* date-format button.
+-    const SPDFMMDD: usize = 19;
++    /// `SPCCYES` — the *Confirm copies* `Yes` button (`:168`).
++    const SPCCYES: usize = 8;
++    /// `SPCOWYES` — the *Confirm overwrites* `Yes` button (`:170`).
++    const SPCOWYES: usize = 12;
++    /// `SPDC1` — the first of the five double-click speed buttons (`:172`).
++    const SPDC1: usize = 16;
++    /// `SPTF_DEF` — the first time-format button (`:177`); `SPTF12HR` and
++    /// `SPTF24HR` follow, in that left-to-right order.
++    const SPTF_DEF: usize = 23;
++    /// `SPDF_DEF` — the first date-format button (`:180`); `SPDFMMDD` and
++    /// `SPDFDDMM` follow.
++    const SPDF_DEF: usize = 28;
+     /// `SPOK` — the OK button; `SPCNCL` follows it, as [`inf_what`] requires.
+-    const SPOK: usize = 21;
++    const SPOK: usize = 31;
+ 
+     // Every `RBUTTON` of `ADSETPRE` is `SELECTABLE | RBUTTON | FL3DIND`
+     // (`desk_rsc.c:1396` ff.) — the 3D indicator role: grown, beveled, and it
+@@ -2251,6 +2291,9 @@ pub(super) fn inf_pref() -> bool {
+     let rb = |spec: &'static [u8], x: i16, w: i16, next: i16| {
+         mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, spec.as_ptr() as u64, x, 0, w, BTN_H, next, -1, -1)
+     };
++    let yesno = |y: i16, next: i16, head: i16| {
++        mk(G_IBOX, 0, 0, gx, y + boff, 2 * YESNO_W + GAP, BTN_H, next, head, head + 1)
++    };
+ 
+     // Each radio group hangs under its own `G_IBOX`, because that is what makes
+     // the AES deselect the siblings of the button that was hit (see [`G_IBOX`]).
+@@ -2263,28 +2306,40 @@ pub(super) fn inf_pref() -> bool {
+         mk(G_STRING, 0, TITLE.as_ptr() as u64, MARGIN, MARGIN, dw - 2 * MARGIN, CELL_H, 2, -1, -1),
+         // 2 "Confirm deletes:"          3 its G_IBOX      4/5 Yes/No
+         mk(G_STRING, 0, CONFDEL_LBL.as_ptr() as u64, MARGIN, y_del, LBL_W, CELL_H, 3, -1, -1),
+-        mk(G_IBOX, 0, 0, gx, y_del + boff, 2 * YESNO_W + GAP, BTN_H, 6, 4, 5),
+-        rb(YES, 0, YESNO_W, 5),
++        yesno(y_del, 6, SPCDYES as i16),
++        rb(YES, 0, YESNO_W, SPCDYES as i16 + 1),
+         rb(NO, YESNO_W + GAP, YESNO_W, 3),
+-        // 6 "Double-click speed:"       7 its G_IBOX      8..12 the five speeds
+-        mk(G_STRING, 0, DCLICK_LBL.as_ptr() as u64, MARGIN, y_dc, LBL_W, CELL_H, 7, -1, -1),
+-        mk(G_IBOX, 0, 0, gx, y_dc + boff, GROUP_W, BTN_H, 13, 8, 12),
+-        rb(DC[0], 0, DC_W, 9),
+-        rb(DC[1], DC_W + GAP, DC_W, 10),
+-        rb(DC[2], 2 * (DC_W + GAP), DC_W, 11),
+-        rb(DC[3], 3 * (DC_W + GAP), DC_W, 12),
+-        rb(DC[4], 4 * (DC_W + GAP), DC_W, 7),
+-        // 13 "Time format:"             14 its G_IBOX     15/16 12H/24H
+-        mk(G_STRING, 0, TIME_LBL.as_ptr() as u64, MARGIN, y_tf, LBL_W, CELL_H, 14, -1, -1),
+-        mk(G_IBOX, 0, 0, gx, y_tf + boff, 2 * FMT_W + GAP, BTN_H, 17, 15, 16),
+-        rb(H12, 0, FMT_W, 16),
+-        rb(H24, FMT_W + GAP, FMT_W, 14),
+-        // 17 "Date format:"             18 its G_IBOX     19/20 MDY/DMY
+-        mk(G_STRING, 0, DATE_LBL.as_ptr() as u64, MARGIN, y_df, LBL_W, CELL_H, 18, -1, -1),
+-        mk(G_IBOX, 0, 0, gx, y_df + boff, 2 * FMT_W + GAP, BTN_H, 21, 19, 20),
+-        rb(MDY, 0, FMT_W, 20),
+-        rb(DMY, FMT_W + GAP, FMT_W, 18),
+-        // 21 OK                         22 Cancel  (`SPOK`/`SPCNCL`: FL3DACT)
++        // 6 "Confirm copies:"           7 its G_IBOX      8/9 Yes/No
++        mk(G_STRING, 0, CONFCPY_LBL.as_ptr() as u64, MARGIN, y_ccpy, LBL_W, CELL_H, 7, -1, -1),
++        yesno(y_ccpy, 10, SPCCYES as i16),
++        rb(YES, 0, YESNO_W, SPCCYES as i16 + 1),
++        rb(NO, YESNO_W + GAP, YESNO_W, 7),
++        // 10 "Confirm overwrites:"      11 its G_IBOX     12/13 Yes/No
++        mk(G_STRING, 0, CONFOVW_LBL.as_ptr() as u64, MARGIN, y_covw, LBL_W, CELL_H, 11, -1, -1),
++        yesno(y_covw, 14, SPCOWYES as i16),
++        rb(YES, 0, YESNO_W, SPCOWYES as i16 + 1),
++        rb(NO, YESNO_W + GAP, YESNO_W, 11),
++        // 14 "Double-click speed:"      15 its G_IBOX     16..20 the five speeds
++        mk(G_STRING, 0, DCLICK_LBL.as_ptr() as u64, MARGIN, y_dc, LBL_W, CELL_H, 15, -1, -1),
++        mk(G_IBOX, 0, 0, gx, y_dc + boff, SPEED_W, BTN_H, 21, SPDC1 as i16, SPDC1 as i16 + 4),
++        rb(DC[0], 0, DC_W, SPDC1 as i16 + 1),
++        rb(DC[1], DC_W + GAP, DC_W, SPDC1 as i16 + 2),
++        rb(DC[2], 2 * (DC_W + GAP), DC_W, SPDC1 as i16 + 3),
++        rb(DC[3], 3 * (DC_W + GAP), DC_W, SPDC1 as i16 + 4),
++        rb(DC[4], 4 * (DC_W + GAP), DC_W, 15),
++        // 21 "Time format:"             22 its G_IBOX     23/24/25 Default/12H/24H
++        mk(G_STRING, 0, TIME_LBL.as_ptr() as u64, MARGIN, y_tf, LBL_W, CELL_H, 22, -1, -1),
++        mk(G_IBOX, 0, 0, gx, y_tf + boff, FMTGRP_W, BTN_H, 26, SPTF_DEF as i16, SPTF_DEF as i16 + 2),
++        rb(DEFAULT_LBL, 0, DEF_W, SPTF_DEF as i16 + 1),
++        rb(H12, DEF_W + GAP, FMT_W, SPTF_DEF as i16 + 2),
++        rb(H24, DEF_W + GAP + FMT_W + GAP, FMT_W, 22),
++        // 26 "Date format:"             27 its G_IBOX     28/29/30 Default/MDY/DMY
++        mk(G_STRING, 0, DATE_LBL.as_ptr() as u64, MARGIN, y_df, LBL_W, CELL_H, 27, -1, -1),
++        mk(G_IBOX, 0, 0, gx, y_df + boff, FMTGRP_W, BTN_H, SPOK as i16, SPDF_DEF as i16, SPDF_DEF as i16 + 2),
++        rb(DEFAULT_LBL, 0, DEF_W, SPDF_DEF as i16 + 1),
++        rb(MDY, DEF_W + GAP, FMT_W, SPDF_DEF as i16 + 2),
++        rb(DMY, DEF_W + GAP + FMT_W + GAP, FMT_W, 27),
++        // 31 OK                         32 Cancel  (`SPOK`/`SPCNCL`: FL3DACT)
+         mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, dw / 2 - 100, y_btn, 90, 28, SPOK as i16 + 1, -1, -1),
+         mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, dw / 2 + 10, y_btn, 90, 28, 0, -1, -1),
+     ];
+@@ -2292,15 +2347,23 @@ pub(super) fn inf_pref() -> bool {
+     // ── pre-select the current state (`deskinf.c:731-777`) ──────────────
+     // `deselect_all(tree1)` is implicit: `mk` leaves every `ob_state` at 0.
+     tree[SPCDYES + usize::from(!confdel)].ob_state |= OB_SELECTED;
++    tree[SPCCYES + usize::from(!confcpy)].ob_state |= OB_SELECTED;
++    tree[SPCOWYES + usize::from(!confovwr)].ob_state |= OB_SELECTED;
+     tree[SPDC1 + dclick as usize].ob_state |= OB_SELECTED;
+-    // `.rendered()`, not the raw value: a `#E` line whose `INF_E2_IDT*` bits are
+-    // set (EmuTOS's `INF_E2_DEFAULT`, and therefore every file NewTOS has ever
+-    // written before DESK02) decodes to `Idt`, which this dialog has no button
+-    // for. Pre-selecting the button the **renderer** actually uses is what keeps
+-    // the box honest — with the raw value the fallbacks disagreed, and the
+-    // measured run showed `DMY` selected while `format_fnode` printed MDY.
+-    tree[SPTF12HR + usize::from(timefmt.rendered() != TimeFmt::H12)].ob_state |= OB_SELECTED;
+-    tree[SPDFMMDD + usize::from(datefmt.rendered() != DateFmt::Mdy)].ob_state |= OB_SELECTED;
++    // `switch(G.g_ctimeform)` / `switch(G.g_cdateform)` (`:754-778`), with the
++    // `default:` arm — the `Idt` value — landing on the `Default` button.
++    tree[match timefmt {
++        TimeFmt::H12 => SPTF_DEF + 1,
++        TimeFmt::H24 => SPTF_DEF + 2,
++        TimeFmt::Idt => SPTF_DEF,
++    }]
++    .ob_state |= OB_SELECTED;
++    tree[match datefmt {
++        DateFmt::Mdy => SPDF_DEF + 1,
++        DateFmt::Dmy => SPDF_DEF + 2,
++        DateFmt::Idt => SPDF_DEF,
++    }]
++    .ob_state |= OB_SELECTED;
+ 
+     // ── run it ──────────────────────────────────────────────────────────
+     inf_show(tree.as_mut_ptr() as u64, ROOT);
+@@ -2310,19 +2373,33 @@ pub(super) fn inf_pref() -> bool {
+ 
+     // ── commit (`deskinf.c:784-814`) ────────────────────────────────────
+     let new_confdel = inf_which(&tree, SPCDYES, 2) == 1;
++    let new_confcpy = inf_which(&tree, SPCCYES, 2) == 1;
++    let new_confovwr = inf_which(&tree, SPCOWYES, 2) == 1;
+     // `G.g_cdclkpref = evnt_dclick(inf_gindex(tree1, SPDC1, 5), TRUE);`
+     let picked = inf_gindex(&tree, SPDC1, 5).max(0);
+     let new_dclick = super::evnt_dclick(picked, true).clamp(0, 4) as u8;
+-    // The two format groups keep EmuTOS's "read the index off the button order"
+-    // trick, minus its `Default` button: with `12H` then `24H` on screen,
+-    // `inf_which` yields 1 for the first and 0 for the second, which is exactly
+-    // `TIMEFORM_12H` / `TIMEFORM_24H` (`deskbind.h:68-69`). Same for `MDY`/`DMY`
+-    // against `DATEFORM_MDY` / `DATEFORM_DMY` (`:65-66`).
+-    let new_timefmt = if inf_which(&tree, SPTF12HR, 2) == 1 { TimeFmt::H12 } else { TimeFmt::H24 };
+-    let new_datefmt = if inf_which(&tree, SPDFMMDD, 2) == 1 { DateFmt::Mdy } else { DateFmt::Dmy };
++    // "the following assumes that the buttons are in the left-to-right order:
++    // default, 12hour, 24hour" (`:793-796`) — `inf_which` counts from the end,
++    // so the three buttons yield 2/1/0, which *is* `TIMEFORM_IDT` (2),
++    // `TIMEFORM_12H` (1), `TIMEFORM_24H` (0) (`deskbind.h:68-70`). Same for
++    // default/MDY/DMY against `DATEFORM_IDT`/`_MDY`/`_DMY` (`:65-67`).
++    let new_timefmt = match inf_which(&tree, SPTF_DEF, 3) {
++        2 => TimeFmt::Idt,
++        1 => TimeFmt::H12,
++        // 0, and `inf_which`'s "nothing selected" -1, which cannot happen: a
++        // radio group always has exactly one member selected.
++        _ => TimeFmt::H24,
++    };
++    let new_datefmt = match inf_which(&tree, SPDF_DEF, 3) {
++        2 => DateFmt::Idt,
++        1 => DateFmt::Mdy,
++        _ => DateFmt::Dmy,
++    };
+ 
+     global::with(|g| {
+         g.g_cdelepref = new_confdel;
++        g.g_ccopypref = new_confcpy;
++        g.g_covwrpref = new_confovwr;
+         g.g_cdclkpref = new_dclick;
+         g.g_ctimeform = new_timefmt;
+         g.g_cdateform = new_datefmt;
+@@ -2330,11 +2407,8 @@ pub(super) fn inf_pref() -> bool {
+ 
+     // "if the current view is as text, and the date or time format has changed,
+     // we need to tell the caller so he can rebuild the windows if necessary"
+-    // (`deskinf.c:807-814`).
+-    // Compared against the **rendered** old value, for the same reason the
+-    // pre-selection uses it: leaving `Idt` for the `H24` the screen already
+-    // showed changes no pixel and must not order a rebuild.
+-    view == View::Text && (new_timefmt != timefmt.rendered() || new_datefmt != datefmt.rendered())
++    // (`deskinf.c:807-814`) — the raw values, as EmuTOS compares them.
++    view == View::Text && (new_timefmt != timefmt || new_datefmt != datefmt)
+ }
+ 
+ // ── Set-background dialog (`inf_backgrounds`, `deskinf.c:825-921`) ───────────
+@@ -2953,9 +3027,10 @@ pub fn selftest() {
+     let mut original = InfData::default();
+     let (e1, e5) = state_to_env(View::Text, Sort::Size, false, original.e1, original.e5);
+     // …and a non-default value for every Preferences field, so the `#E` bytes
+-    // the dialog writes are exercised too (DESK02): confirm-deletes off,
+-    // double-click 4, 12-hour clock, day-before-month.
+-    let (e1, e2) = prefs_to_env(false, 4, TimeFmt::H12, DateFmt::Dmy, e1, original.e2);
++    // the dialog writes are exercised too (DESK02/DESK13): confirm-deletes off,
++    // confirm-copies on, confirm-overwrites off (i.e. `INF_E2_ALLOWOVW` set —
++    // the one inverted bit), double-click 4, 12-hour clock, day-before-month.
++    let (e1, e2) = prefs_to_env(false, true, false, 4, TimeFmt::H12, DateFmt::Dmy, e1, original.e2);
+     original.e1 = e1;
+     original.e2 = e2;
+     original.e5 = e5;
+@@ -2999,7 +3074,7 @@ pub fn selftest() {
+     check("in-memory: #E view/sort", env_to_state(mem.e1, mem.e5) == env_to_state(original.e1, original.e5));
+     check(
+         "in-memory: #E preferences",
+-        env_to_prefs(mem.e1, mem.e2) == (false, 4, TimeFmt::H12, DateFmt::Dmy),
++        env_to_prefs(mem.e1, mem.e2) == (false, true, false, 4, TimeFmt::H12, DateFmt::Dmy),
+     );
+     check("in-memory: #Q background", mem.patcol == original.patcol);
+     check("in-memory: #W geometry", mem.windows == original.windows);
+@@ -3015,7 +3090,7 @@ pub fn selftest() {
+             check("disk: #E view/sort", env_to_state(disk.e1, disk.e5) == env_to_state(original.e1, original.e5));
+             check(
+                 "disk: #E preferences",
+-                env_to_prefs(disk.e1, disk.e2) == (false, 4, TimeFmt::H12, DateFmt::Dmy),
++                env_to_prefs(disk.e1, disk.e2) == (false, true, false, 4, TimeFmt::H12, DateFmt::Dmy),
+             );
+             check("disk: #Q background", disk.patcol == original.patcol);
+             check("disk: #W geometry", disk.windows == original.windows);
+diff --git a/kernel/src/desk/main.rs b/kernel/src/desk/main.rs
+index 56be841..33d8241 100644
+--- a/kernel/src/desk/main.rs
++++ b/kernel/src/desk/main.rs
+@@ -703,7 +703,7 @@ fn hndl_kbd(key: i16) -> bool {
+         menu::men_update();
+         return done;
+     }
+-    // 5. Alt+letter — open that drive (inert on the current keymap, see below).
++    // 5. Alt+letter — open that drive.
+     if check_alt_letter_key(key) {
+         menu::men_update();
+         return false;
+@@ -790,11 +790,21 @@ fn funkey_number(key: i16) -> Option<u16> {
+ /// scancode), reading the shifted character for the scancode to infer the
+ /// letter (EmuTOS reads `KEYTAB.shift[]`; there is no dedicated Alt table).
+ ///
+-/// **Inert on the current NewTOS keymap:** the IKBD/keymap folds Alt into AltGr
+-/// and never yields ASCII `0` for a letter key, so a letter never arrives with
+-/// the bare-scancode shape this path requires — the drive never opens. Faithful
+-/// check, left in place; a keyboard-layer limitation flagged to the lead, not a
+-/// desktop stub. Returns `true` only if it actually opened a drive.
++/// **This path is live** (re-established DESK13). An older note here, and the
++/// one DESK11 copied into its report, called it inert on the grounds that the
++/// keyboard layer "folds Alt into AltGr and never yields ASCII 0 for a letter
++/// key". That is not what the layer does: `crate::keymap::to_ascii` zeroes an
++/// alphabetic result whenever the Alt modifier is set
++/// (`kernel/src/keymap.rs`, the `if ascii.is_ascii_alphabetic()` arm of the
++/// `alt` branch), `ikbd::to_ascii` turns that `0` into `None`, and
++/// `ikbd::decode_key` queues the word as `scancode << 8 | 0` — exactly the
++/// bare-scancode shape this check wants. Both key sources set the Alt bit: the
++/// native IKBD stream (`SC_ALT` = `0x38`) and the USB-HID report, whose
++/// `modifiers()` maps LAlt **and** RAlt to `0x38`. The AES hands the whole word
++/// through as `EV_KRET` (`tos-api/src/aes/event.rs:598`), so nothing between
++/// the key and here re-interprets it.
++///
++/// Returns `true` only if it actually opened a drive.
+ fn check_alt_letter_key(key: i16) -> bool {
+     if (key & 0xFF) != 0 {
+         return false;
+@@ -1892,6 +1902,8 @@ pub(super) fn cnx_put() {
+         g.g_cnxsave.cs_sort = g.sort;
+         g.g_cnxsave.cs_sizefit = g.size_to_fit;
+         g.g_cnxsave.cs_confdel = g.g_cdelepref;
++        g.g_cnxsave.cs_confcpy = g.g_ccopypref;
++        g.g_cnxsave.cs_confovwr = g.g_covwrpref;
+         g.g_cnxsave.cs_dblclick = g.g_cdclkpref;
+         g.g_cnxsave.cs_timefmt = g.g_ctimeform;
+         g.g_cnxsave.cs_datefmt = g.g_cdateform;
+@@ -2023,6 +2035,8 @@ fn cnx_get_prefs() {
+     let dclick = global::with(|g| {
+         g.size_to_fit = sizefit;
+         g.g_cdelepref = g.g_cnxsave.cs_confdel;
++        g.g_ccopypref = g.g_cnxsave.cs_confcpy;
++        g.g_covwrpref = g.g_cnxsave.cs_confovwr;
+         g.g_cdclkpref = g.g_cnxsave.cs_dblclick;
+         g.g_ctimeform = g.g_cnxsave.cs_timefmt;
+         g.g_cdateform = g.g_cnxsave.cs_datefmt;
+diff --git a/kernel/src/desk/mod.rs b/kernel/src/desk/mod.rs
+index b0c3869..5e9c3bf 100644
+--- a/kernel/src/desk/mod.rs
++++ b/kernel/src/desk/mod.rs
+@@ -803,6 +803,13 @@ pub fn run() {
+     // One-time setup: DeskState (view/sort defaults, window list, object arena).
+     global::init(desk);
+ 
++    // Seed `G.g_idt` before anything formats a date. EmuTOS gets away with
++    // refreshing it only inside `do_wredraw` (`desksupp.c:219`) because it
++    // formats a text-view line at *draw* time (`dr_fnode`, `deskinf.c:320`);
++    // NewTOS builds the line when the view is built, which happens earlier.
++    // `do_wredraw` refreshes it after this, exactly as EmuTOS does.
++    redraw::refresh_idt();
++
+     // Grid metrics: app_start (icon cell + desktop pitch) → win_view (window
+     // pitch; needs the full-window work width from the AES) → app_blddesk
+     // (desktop drive/trash/printer icon tree).
+diff --git a/kernel/src/desk/model.rs b/kernel/src/desk/model.rs
+index 8377766..aae91e1 100644
+--- a/kernel/src/desk/model.rs
++++ b/kernel/src/desk/model.rs
+@@ -61,71 +61,145 @@ pub enum Sort {
+     NoSort,
+ }
+ 
++// ── The `_IDT` cookie, and the one rule that resolves it ────────────────────
++//
++// `_IDT` carries the machine's date/time *display* preference: a separator
++// character in the low byte, a field-order pair of bits, and a 12/24-hour bit
++// (`include/biosdefs.h:161-173`). It is the value `DATEFORM_IDT`/`TIMEFORM_IDT`
++// — the `Default` button of each format group in *Set preferences* — defer to.
++//
++// EmuTOS fetches it with `Supexec(get_idt_cookie)` (`desksupp.c:219`) because
++// on m68k the cookie jar pointer lives at `$5A0`, in supervisor-only low
++// memory. NewTOS has no such need and no `Supexec` (`docs/api/xbios/
++// 26-supexec.md`, "decision deferred"; `docs/api/bios/_cookie-jar.md` §Status
++// 2026-09-14, "There is no `Supexec` in the kernel"): the desktop reads the
++// cookie **by value** through the GEMDOS trap, `Ssystem(S_GETCOOKIE, '_IDT',
++// 0)` (`super::dosbind::dos_getcookie`), and keeps it in `G.g_idt`
++// ([`super::global::DeskState::g_idt`]) exactly as EmuTOS does.
++//
++// The resolution rule below is the **only** copy of "what does IDT mean here":
++// both readers — `desk::inf::fmt_date` and `desk::inf::fmt_time` — go through
++// it. DESK02 had the rule written twice with contradicting answers (the dialog
++// pre-selected one format, the text view printed another); it is written once
++// now, and the Preferences dialog no longer needs it at all, because it offers
++// EmuTOS's `Default` button and stores the raw value.
++
++/// `IDT_TMASK` (`biosdefs.h:163`) — the clock bit of the `_IDT` cookie.
++pub const IDT_TMASK: u32 = 0x1000;
++/// `IDT_24H` (`biosdefs.h:162`) — [`IDT_TMASK`] set means a 24-hour clock.
++pub const IDT_24H: u32 = 0x1000;
++/// `IDT_BIT_DM` (`biosdefs.h:166`) — day before month.
++pub const IDT_BIT_DM: u32 = 0x100;
++/// `IDT_BIT_YM` (`biosdefs.h:167`) — year before month.
++pub const IDT_BIT_YM: u32 = 0x200;
++/// `IDT_DMASK` (`biosdefs.h:172`) — the two field-order bits.
++pub const IDT_DMASK: u32 = IDT_BIT_YM | IDT_BIT_DM;
++/// `IDT_SMASK` (`biosdefs.h:173`) — the separator character, low byte.
++pub const IDT_SMASK: u32 = 0xFF;
++
++/// `DATEFORM_SEP` (`deskbind.h:64`) — the separator EmuTOS uses whenever the
++/// format does **not** come from `_IDT`. Both call sites of `fmt_date` pass it
++/// (`deskinf.c:129`), which is why the text view and the Show-Info box print
++/// the same character.
++pub const DATEFORM_SEP: u8 = b'/';
++
++/// One of the four field orders an `_IDT` date format can name
++/// (`biosdefs.h:168-171`), i.e. the result of `fmt_date`'s second `switch`
++/// (`deskinf.c:154-176`). Not a preference — [`DateFmt`] is the preference;
++/// this is what it resolves to.
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum DateOrder {
++    /// `IDT_MMDDYY` — month, day, year.
++    Mdy,
++    /// `IDT_DDMMYY` — day, month, year (EmuTOS's `default:` arm).
++    Dmy,
++    /// `IDT_YYMMDD` — year, month, day.
++    Ymd,
++    /// `IDT_YYDDMM` — year, day, month ("does anyone ever use this?",
++    /// `deskinf.c:166`).
++    Ydm,
++}
++
++impl DateOrder {
++    /// `switch(format)` (`deskinf.c:154-176`) over the two [`IDT_DMASK`] bits.
++    fn from_idt(dmask: u32) -> DateOrder {
++        match dmask {
++            0 => DateOrder::Mdy,               // IDT_MMDDYY
++            IDT_BIT_YM => DateOrder::Ymd,      // IDT_YYMMDD
++            IDT_DMASK => DateOrder::Ydm,       // IDT_YYDDMM
++            _ => DateOrder::Dmy,               // default: DDMMYY
++        }
++    }
++}
++
+ /// The clock format the text view and the Show-Info box print times in
+ /// (EmuTOS `TIMEFORM_*`, `deskbind.h:68-70`, held in `G.g_ctimeform`).
+-///
+-/// EmuTOS has a third value, `TIMEFORM_IDT`, meaning "take the format from the
+-/// `_IDT` cookie". NewTOS cannot reach that cookie from the desktop: EmuTOS
+-/// reads it with `Supexec(get_idt_cookie)` (`desksupp.c:219`), XBIOS `Supexec`
+-/// (0x26) is not implemented (`tos-api/src/xbios/mod.rs:129`), and the desktop
+-/// may not read kernel state other than through a trap (DESK10). The value is
+-/// still **represented**, because it is what the `#E` byte-2 bits
+-/// `INF_E2_IDTTIME`/`INF_E2_IDTDATE` encode and a `NEWDESK.INF` written
+-/// elsewhere may carry it; it simply cannot be *selected* (the Preferences
+-/// dialog offers no `Default` button) and renders as [`TimeFmt::H24`].
+ #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+ pub enum TimeFmt {
+-    /// `TIMEFORM_24H` — `hh:mm`, 24-hour. NewTOS's default, and what the text
+-    /// view printed before the preference existed.
++    /// `TIMEFORM_24H` (0) — `hh:mm`, 24-hour.
+     #[default]
+     H24,
+-    /// `TIMEFORM_12H` — `hh:mm` with an `am`/`pm` suffix.
++    /// `TIMEFORM_12H` (1) — `hh:mm` with an `am`/`pm` suffix.
+     H12,
+-    /// `TIMEFORM_IDT` — "from the `_IDT` cookie"; unreachable here, see above.
++    /// `TIMEFORM_IDT` (2) — take the clock from the `_IDT` cookie; the
++    /// `Default` button of the *Time format* group. EmuTOS's own no-`.INF`
++    /// default (`INF_E2_DEFAULT` carries `INF_E2_IDTTIME`, `deskapp.c:103`).
+     Idt,
+ }
+ 
+ impl TimeFmt {
+-    /// The format that is actually **rendered**, i.e. with the unreachable
+-    /// [`TimeFmt::Idt`] resolved to its NewTOS fallback.
+-    ///
+-    /// One rule, two readers: `desk::inf::fmt_time` formats through it and
+-    /// `desk::inf::inf_pref` pre-selects its radio button through it, so the
+-    /// Preferences dialog cannot show a clock the text view does not use.
+-    /// The fallback is [`TimeFmt::H24`] because that is what the text view
+-    /// printed before the preference existed.
+-    pub fn rendered(self) -> TimeFmt {
++    /// The clock that is actually **rendered**, with [`TimeFmt::Idt`] resolved
++    /// against the `_IDT` word `idt` — `fmt_time`'s `switch`
++    /// (`deskinf.c:82-101`): `TIMEFORM_IDT` is 24-hour if `(idt & IDT_TMASK) ==
++    /// IDT_24H`, and falls through to the 12-hour arm otherwise.
++    pub fn rendered(self, idt: u32) -> TimeFmt {
+         match self {
+-            TimeFmt::Idt => TimeFmt::H24,
++            TimeFmt::Idt => {
++                if idt & IDT_TMASK == IDT_24H {
++                    TimeFmt::H24
++                } else {
++                    TimeFmt::H12
++                }
++            }
+             other => other,
+         }
+     }
+ }
+ 
+ /// The date order the text view and the Show-Info box print dates in (EmuTOS
+-/// `DATEFORM_*`, `deskbind.h:65-67`, held in `G.g_cdateform`). The
+-/// `DATEFORM_IDT` caveat is [`TimeFmt`]'s, verbatim; it renders as
+-/// [`DateFmt::Mdy`].
++/// `DATEFORM_*`, `deskbind.h:65-67`, held in `G.g_cdateform`).
+ #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+ pub enum DateFmt {
+-    /// `DATEFORM_MDY` — month before day. NewTOS's default, and what the text
+-    /// view printed before the preference existed.
++    /// `DATEFORM_DMY` (0) — day before month.
++    Dmy,
++    /// `DATEFORM_MDY` (1) — month before day.
+     #[default]
+     Mdy,
+-    /// `DATEFORM_DMY` — day before month.
+-    Dmy,
+-    /// `DATEFORM_IDT` — "from the `_IDT` cookie"; unreachable here, see above.
++    /// `DATEFORM_IDT` (2) — take the order *and the separator* from the `_IDT`
++    /// cookie; the `Default` button of the *Date format* group, and EmuTOS's
++    /// own no-`.INF` default (`INF_E2_DEFAULT`, `deskapp.c:103`).
+     Idt,
+ }
+ 
+ impl DateFmt {
+-    /// The order that is actually **rendered** — [`TimeFmt::rendered`]'s rule,
+-    /// with [`DateFmt::Mdy`] as the fallback for the unreachable
+-    /// [`DateFmt::Idt`].
+-    pub fn rendered(self) -> DateFmt {
++    /// The `(order, separator)` pair that is actually **rendered** —
++    /// `fmt_date`'s first `switch` (`deskinf.c:138-152`) plus the `separator =
++    /// DATEFORM_SEP` it starts from (`:129`).
++    ///
++    /// `DATEFORM_IDT` takes both from the cookie, and only overrides the
++    /// separator when the cookie's low byte is non-zero (`:141-143`); every
++    /// other value keeps [`DATEFORM_SEP`].
++    pub fn rendered(self, idt: u32) -> (DateOrder, u8) {
+         match self {
+-            DateFmt::Idt => DateFmt::Mdy,
+-            other => other,
++            DateFmt::Idt => {
++                let sep = (idt & IDT_SMASK) as u8;
++                (
++                    DateOrder::from_idt(idt & IDT_DMASK),
++                    if sep != 0 { sep } else { DATEFORM_SEP },
++                )
++            }
++            DateFmt::Dmy => (DateOrder::Dmy, DATEFORM_SEP),
++            DateFmt::Mdy => (DateOrder::Mdy, DATEFORM_SEP),
+         }
+     }
+ }
+diff --git a/kernel/src/desk/redraw.rs b/kernel/src/desk/redraw.rs
+index b0d8e50..be7ffac 100644
+--- a/kernel/src/desk/redraw.rs
++++ b/kernel/src/desk/redraw.rs
+@@ -39,6 +39,7 @@
+ //! every open window. The AES rectangle list is used as-is
+ //! (`tos_api::aes::window::compute_rlist`); this module builds no list of its own.
+ 
++use super::dosbind::dos_getcookie;
+ use super::global::{self, Grect, DROOT};
+ use super::win::DESKWH;
+ use super::{
+@@ -120,11 +121,34 @@ pub fn do_wredraw(handle: i16, clip: Grect) {
+     if wredraw_root(handle).is_none() {
+         return;
+     }
++    // `G.g_idt = Supexec((LONG)get_idt_cookie);` (`desksupp.c:219`) — between
++    // the root resolution and the cursor bracket, exactly where EmuTOS has it.
++    // NewTOS's route to the cookie is a GEMDOS trap, not `Supexec`; see
++    // `super::dosbind::dos_getcookie`.
++    refresh_idt();
+     graf_mouse(M_OFF);
+     do_wredraw_nocursor(handle, clip);
+     graf_mouse(M_ON);
+ }
+ 
++/// `_IDT` cookie tag — `'_IDT'` big-endian, the same four bytes
++/// `tos_api::cookie::IDT` registers (`include/cookie.h`, `COOKIE_IDT`).
++const COOKIE_IDT: u32 = u32::from_be_bytes(*b"_IDT");
++
++/// `G.g_idt = Supexec((LONG)get_idt_cookie);` (`desksupp.c:219`) — refresh the
++/// desktop's copy of the `_IDT` cookie from the kernel jar.
++///
++/// EmuTOS's `get_idt_cookie` falls back to `DEFAULT_IDT` if the cookie is
++/// missing ("can't happen", `util/cookie.c:90`); NewTOS leaves the previous
++/// value in place instead, because its fallback would have to name a locale
++/// the kernel has not chosen — and `seed_defaults` always installs the tag
++/// (`tos-api/src/cookie.rs:193-198`), so the arm is unreachable here too.
++pub(super) fn refresh_idt() {
++    if let Some(idt) = dos_getcookie(COOKIE_IDT) {
++        global::with(|g| g.g_idt = idt);
++    }
++}
++
+ /// `win_shwall` (EmuTOS `deskwin.c:805`) — repaint every open window's content,
+ /// each occlusion-clipped, by routing it through [`do_wredraw`] with the
+ /// window's current work-area rectangle. EmuTOS queues one `WM_REDRAW` per window
+diff --git a/kernel/src/desk/win.rs b/kernel/src/desk/win.rs
+index 9bd7f1e..fe30d48 100644
+--- a/kernel/src/desk/win.rs
++++ b/kernel/src/desk/win.rs
+@@ -469,7 +469,7 @@ impl DeskState {
+         let f = self.windows.slots[slot].w_pnode.p_flist[pidx].clone();
+         // The text view's date/time preference, read here because the
+         // `g_screeninfo` borrow below holds `self` mutably.
+-        let (datefmt, timefmt) = (self.g_cdateform, self.g_ctimeform);
++        let (datefmt, timefmt, idt) = (self.g_cdateform, self.g_ctimeform, self.g_idt);
+         // Restore the selection highlight from the file's `f_selected`
+         // (EmuTOS `win_bldview`, deskwin.c:446-448) — `obj_ialloc` cleared
+         // `ob_state`, so a rebuilt view (scroll / sort / view-switch / a
+@@ -508,7 +508,7 @@ impl DeskState {
+                 o.ob_spec = spec;
+             }
+             View::Text => {
+-                format_fnode(&f, datefmt, timefmt, &mut info.label);
++                format_fnode(&f, datefmt, timefmt, idt, &mut info.label);
+                 let spec = info.label.as_ptr() as u64;
+                 let o = &mut self.g_screen[obid as usize];
+                 o.ob_type = G_STRING;
+@@ -924,7 +924,7 @@ fn fmt_u32(mut v: u32, buf: &mut [u8; 12]) -> &[u8] {
+ /// column widths are a NewTOS choice (the visual layout is fidelity, not
+ /// contract); the **field order and semantics** match EmuTOS. Returns the
+ /// NUL-terminated line length.
+-fn format_fnode(f: &FNode, datefmt: DateFmt, timefmt: TimeFmt, out: &mut [u8; LEN_LABEL]) -> usize {
++fn format_fnode(f: &FNode, datefmt: DateFmt, timefmt: TimeFmt, idt: u32, out: &mut [u8; LEN_LABEL]) -> usize {
+     /// `FA_RO` (read-only) attribute bit.
+     const FA_RO: u8 = 0x01;
+     *out = [b' '; LEN_LABEL];
+@@ -955,15 +955,16 @@ fn format_fnode(f: &FNode, datefmt: DateFmt, timefmt: TimeFmt, out: &mut [u8; LE
+     }
+ 
+     // 4. Date + time, in the Preferences dialog's order/clock — EmuTOS
+-    // `format_fnode` calls the same two formatters (`deskinf.c:289,293`).
+-    // `fmt_date` keeps NewTOS's dash separator here (see `inf::fmt_date`);
+-    // `fmt_time` writes a fixed 7-character field, the trailing two characters
+-    // being `am`/`pm` or, in 24-hour mode, the two blanks the trim below drops.
++    // `format_fnode` calls the same two formatters (`deskinf.c:289,293`), and
++    // passes neither a separator nor a format of its own: both come out of
++    // `fmt_date`'s own `DATEFORM_SEP`/`_IDT` rule. `fmt_time` writes a fixed
++    // 7-character field, the trailing two characters being `am`/`pm` or, in
++    // 24-hour mode, the two blanks the trim below drops.
+     let mut dbuf = [b' '; 11];
+-    let dn = super::inf::fmt_date(f.f_date, false, b'-', datefmt, &mut dbuf);
++    let dn = super::inf::fmt_date(f.f_date, false, datefmt, idt, &mut dbuf);
+     put(out, 27, &dbuf[..dn]);
+     let mut tbuf = [b' '; 8];
+-    let tn = super::inf::fmt_time(f.f_time, timefmt, &mut tbuf);
++    let tn = super::inf::fmt_time(f.f_time, timefmt, idt, &mut tbuf);
+     put(out, 37, &tbuf[..tn]);
+ 
+     // NUL-terminate after the last used column, trimming trailing spaces.
+
+=== new file: tos-api/tests/gemdos_ssystem_idt_cookie.rs ===
+diff --git a/tos-api/tests/gemdos_ssystem_idt_cookie.rs b/tos-api/tests/gemdos_ssystem_idt_cookie.rs
+new file mode 100644
+index 0000000..e93ff25
+--- /dev/null
++++ b/tos-api/tests/gemdos_ssystem_idt_cookie.rs
+@@ -0,0 +1,129 @@
++//! **DESK13** — the route the desktop takes to the `_IDT` cookie, pinned at
++//! the GEMDOS trap boundary.
++//!
++//! EmuTOS's desktop reads `_IDT` with `Supexec((LONG)get_idt_cookie)`
++//! (`references/emutos/desk/desksupp.c:219`), because on m68k the jar is only
++//! reachable through the pointer at `$5A0`, in supervisor-only low memory. That
++//! is an m68k *mechanism*, and `docs/COMPATIBILITY.md` puts mechanisms on the
++//! free side of the line. NewTOS has neither the need nor the call: XBIOS
++//! `Supexec` (0x26) is an open ADR (`docs/api/xbios/26-supexec.md`, "NewTOS
++//! status: decision deferred"), and the cookie-jar spec already names the
++//! replacement — "There is no `Supexec` in the kernel … the low-memory area an
++//! app wants is already in its own address space"
++//! (`docs/api/bios/_cookie-jar.md` §Status 2026-09-14).
++//!
++//! So `kernel/src/desk/dosbind.rs::dos_getcookie` issues
++//! `Ssystem(S_GETCOOKIE, tag, 0)` over `svc #1` — the same trap the desktop
++//! uses for every other system service (DESK10). This test drives exactly that
++//! call through `tos_api::gemdos::dispatch`, and asserts the two things the
++//! desktop's date/time formatting now rests on:
++//!
++//! 1. the call answers with the cookie **value in `x0`** when `arg2` is 0
++//!    (the desktop cannot use the pointer form: `s_getcookie` stores through an
++//!    unprivileged `sttr`, which faults on a kernel address); and
++//! 2. the seeded `_IDT` is `0x0000112F` — `docs/api/bios/_cookie-jar.md:137`,
++//!    `tos-api/src/cookie.rs` `seed_defaults` — i.e. **24-hour, day-before-
++//!    month, `/` separator**.
++//!
++//! Point 2 is the ground truth behind DESK13's date decision: `_IDT` says DMY
++//! and `/`, and the desktop's text view used to print MDY with a dash. The
++//! resolution rule now lives in exactly one place
++//! (`kernel/src/desk/model.rs`'s `DateFmt::rendered`/`TimeFmt::rendered`), and
++//! it reads the word this test pins.
++
++use std::sync::{Mutex, Once};
++
++use tos_api::host::Host;
++use tos_api::trap::{TrapArgs, TrapClass};
++
++/// The cookie jar is a process-wide static; keep the cases in this binary from
++/// racing each other on it.
++static JAR: Mutex<()> = Mutex::new(());
++
++/// The GEMDOS dispatcher refuses every call with `EUNDEV` until a host is
++/// installed (`tos-api/src/gemdos/mod.rs:137-141`). `Ssystem`'s cookie
++/// subfunctions touch nothing else of it, so the smallest possible one will do:
++/// `console_write_byte` is the trait's only required method.
++struct NullHost;
++
++impl Host for NullHost {
++    fn console_write_byte(&self, _byte: u8) {}
++}
++
++static HOST: Once = Once::new();
++
++/// Install [`NullHost`] once and seed the boot cookie set, as
++/// `kernel/src/lib.rs` does.
++fn rig() {
++    HOST.call_once(|| {
++        let slot: &'static &'static dyn Host = Box::leak(Box::new(&NullHost as &'static dyn Host));
++        tos_api::host::install_host(slot);
++    });
++    tos_api::cookie::seed_defaults(0x0000_0100);
++}
++
++/// `Ssystem` — GEMDOS 0x154 (`docs/api/gemdos/154-ssystem.md`).
++const SSYSTEM: u16 = 0x154;
++/// `S_GETCOOKIE` — `Ssystem` subfunction 8 (FreeMiNT `sys/mint/ssystem.h`).
++const S_GETCOOKIE: u64 = 8;
++
++/// `'_IDT'` big-endian, as `tos_api::cookie::IDT` registers it.
++const IDT_TAG: u32 = u32::from_be_bytes(*b"_IDT");
++/// A tag that is deliberately not in the jar.
++const ABSENT_TAG: u32 = u32::from_be_bytes(*b"ZZZZ");
++
++/// FreeMiNT `EERROR` — `S_GETCOOKIE`'s answer for a tag that is not present
++/// (`sys/cookie.c:508-509`, `tos-api/src/gemdos/ssystem.rs`).
++const ERROR: i32 = -1;
++
++// `_IDT` bit layout (`references/emutos/include/biosdefs.h:161-173`).
++const IDT_24H: u32 = 0x1000;
++const IDT_TMASK: u32 = 0x1000;
++const IDT_BIT_DM: u32 = 0x100;
++const IDT_DMASK: u32 = 0x300;
++const IDT_SMASK: u32 = 0xFF;
++
++/// Issue a GEMDOS call the way `desk::dosbind::dos_trap` does: function id
++/// separate, arguments in `x0..`.
++fn gemdos(func: u16, a0: u64, a1: u64, a2: u64) -> i32 {
++    let args = TrapArgs {
++        regs: [a0, a1, a2, 0, 0, 0, 0, 0],
++        func: func as u64,
++        svc_imm: TrapClass::Gemdos as u16,
++    };
++    tos_api::gemdos::dispatch(&args)
++}
++
++/// `dos_getcookie(tag)` — the desktop's own wrapper, reproduced here so the
++/// test exercises the shape the kernel really sends.
++fn dos_getcookie(tag: u32) -> Option<u32> {
++    let rc = gemdos(SSYSTEM, S_GETCOOKIE, tag as i32 as i64 as u64, 0);
++    (rc >= 0).then_some(rc as u32)
++}
++
++#[test]
++fn the_desktop_reads_idt_through_ssystem_and_gets_the_seeded_word() {
++    let _lock = JAR.lock().unwrap_or_else(|e| e.into_inner());
++    rig();
++
++    let idt = dos_getcookie(IDT_TAG).expect("_IDT is seeded at boot");
++    assert_eq!(idt, 0x0000_112F, "docs/api/bios/_cookie-jar.md:137");
++
++    // The three fields the desktop's `Default` buttons defer to.
++    assert_eq!(idt & IDT_TMASK, IDT_24H, "_IDT says 24-hour");
++    assert_eq!(idt & IDT_DMASK, IDT_BIT_DM, "_IDT says day before month (DDMMYY)");
++    assert_eq!((idt & IDT_SMASK) as u8, b'/', "_IDT's separator is '/'");
++}
++
++#[test]
++fn a_tag_that_is_not_in_the_jar_answers_error_not_a_value() {
++    let _lock = JAR.lock().unwrap_or_else(|e| e.into_inner());
++    rig();
++
++    assert_eq!(
++        gemdos(SSYSTEM, S_GETCOOKIE, ABSENT_TAG as i32 as i64 as u64, 0),
++        ERROR,
++        "a missing tag is EERROR, which `dos_getcookie` turns into None"
++    );
++    assert_eq!(dos_getcookie(ABSENT_TAG), None);
++}
+=== new file: tos-api/tests/aes_desk_dialog_exit_buttons.rs ===
+diff --git a/tos-api/tests/aes_desk_dialog_exit_buttons.rs b/tos-api/tests/aes_desk_dialog_exit_buttons.rs
+new file mode 100644
+index 0000000..6e008b0
+--- /dev/null
++++ b/tos-api/tests/aes_desk_dialog_exit_buttons.rs
+@@ -0,0 +1,187 @@
++//! **DESK13** — the AES property the two new file-operation dialogs read their
++//! answer from: after `form_do` ends, **exactly the pressed `EXIT` button
++//! carries `SELECTED`**.
++//!
++//! Neither of EmuTOS's two `deskdir.c` dialogs uses `form_do`'s return value:
++//!
++//! * `dir_op` asks `more = (tree[CDOK].ob_state & SELECTED) ? TRUE : FALSE;`
++//!   (`references/emutos/desk/deskdir.c:963`) — "did the user press OK, or
++//!   Cancel?";
++//! * `do_namecon` asks `ob = inf_gindex(tree, CAOK, 3) + CAOK;`
++//!   (`deskdir.c:121`) — "which of OK / Skip / Stop?", by scanning the three
++//!   exit buttons for the selected one.
++//!
++//! That is a stronger requirement than "`form_do` returned the object": it
++//! means the AES must leave the state of a three-button exit run unambiguous.
++//! If two were selected, `inf_gindex` would return the first — and a *Skip*
++//! read as an *OK* overwrites a file the user asked to keep. If none were,
++//! `inf_gindex` returns `-1` and `CAOK - 1` is the editable name field.
++//!
++//! `kernel/src/desk/dir.rs` reproduces both reads, so both shapes are pinned
++//! here, driven through the real dispatcher with `form_button` (AES 56) — the
++//! same entry `form_do`'s inner loop uses for a click.
++//!
++//! The sibling test `aes_desk_prefs_radio.rs` covers the *radio* groups of
++//! `ADSETPRE`; this one covers the *exit* runs of `ADCPYDEL`/`ADCPALER`, which
++//! are plain `SELECTABLE | EXIT` buttons with no `RBUTTON` and therefore no
++//! sibling-deselect machinery behind them at all.
++
++#![allow(dead_code)]
++
++#[path = "aes_reference/harness.rs"]
++mod harness;
++
++use harness::{context, host_only, Pb, AES_LOCK};
++use tos_api::aes::object::Object;
++use tos_api::host::Host;
++
++const OP_FORM_BUTTON: i16 = 56;
++
++// obdefs.h
++const G_BOX: u16 = 20;
++const G_BUTTON: u16 = 26;
++const SELECTABLE: u16 = 0x0001;
++const DEFAULT: u16 = 0x0002;
++const EXIT: u16 = 0x0004;
++const LASTOB: u16 = 0x0020;
++const SELECTED: u16 = 0x0001;
++
++const NIL: i16 = -1;
++
++/// Opaque dialog-box colour word, as `kernel/src/desk/inf.rs` uses.
++const BOX_SPEC: u64 = (1 << 16) | 0x1100;
++
++static LBL: &[u8] = b" x \0";
++
++fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, head: i16, tail: i16) -> Object {
++    Object {
++        ob_next: next,
++        ob_head: head,
++        ob_tail: tail,
++        ob_type: ty,
++        ob_flags: fl,
++        ob_state: 0,
++        ob_spec: spec,
++        ob_x: x,
++        ob_y: y,
++        ob_width: w,
++        ob_height: h,
++    }
++}
++
++fn exit_btn(x: i16, next: i16, first: bool, last: bool) -> Object {
++    let fl = SELECTABLE | EXIT | if first { DEFAULT } else { 0 } | if last { LASTOB } else { 0 };
++    mk(G_BUTTON, fl, LBL.as_ptr() as u64, x, 60, 90, 28, next, NIL, NIL)
++}
++
++/// `ADCPYDEL`'s shape, reduced to what the read needs: a root with `CDOK` and
++/// `CDCNCL` under it (`desk_rsc.c:1224-1234`).
++const CDOK: usize = 1;
++
++fn cpydel() -> Vec<Object> {
++    vec![
++        mk(G_BOX, 0, BOX_SPEC, 0, 0, 300, 120, NIL, 1, 2),
++        exit_btn(20, 2, true, false),
++        exit_btn(190, 0, false, true),
++    ]
++}
++
++/// `ADCPALER`'s shape: `CAOK`, `CASKIP`, `CASTOP` (`desk_rsc.c:1263-1279`).
++const CAOK: usize = 1;
++
++fn cpaler() -> Vec<Object> {
++    vec![
++        mk(G_BOX, 0, BOX_SPEC, 0, 0, 340, 120, NIL, 1, 3),
++        exit_btn(20, 2, true, false),
++        exit_btn(125, 3, false, false),
++        exit_btn(230, 0, false, true),
++    ]
++}
++
++/// Park the VDI mouse pointer, button **up**, at `(x, y)`.
++///
++/// An `EXIT` button is not an `RBUTTON`, so `fm_button` sends it through
++/// `graf::watchbox` (`tos-api/src/aes/graf.rs:400-419`), which answers "was the
++/// release inside the object?". With the pointer parked inside and no button
++/// held, the watch loop breaks on its first pass and answers `true` — a
++/// completed click. That is the release edge `form_do` reacts to, and without
++/// it `watchbox` reports a release *outside* the button and the dialog stays up
++/// (which is correct behaviour, and is why this parking is not a fudge).
++fn park(x: i16, y: i16) {
++    let backend = Host::raster(host_only()).expect("the harness host has a raster backend");
++    // Relative feed: walk hard into the top-left clamp first, then out to the
++    // wanted position.
++    tos_api::vdi::feed_relative(-4000, -4000, 0, backend);
++    tos_api::vdi::feed_relative(x, y, 0, backend);
++}
++
++/// `form_button(tree, obj, clks)` — `int_out[0]` is "keep the dialog running",
++/// `int_out[1]` the next object. The pointer is parked over `obj` first, as a
++/// real click has it.
++fn form_button(pb: &mut Pb, tree: &mut [Object], obj: usize) -> (i16, i16) {
++    let o = &tree[obj];
++    park(o.ob_x + o.ob_width / 2, o.ob_y + o.ob_height / 2);
++    pb.intin.fill(0);
++    pb.addrin[0] = tree.as_mut_ptr() as u64;
++    pb.intin[0] = obj as i16;
++    pb.intin[1] = 1; // one click
++    pb.call(OP_FORM_BUTTON, 2, 2, 1, 0);
++    (pb.intout[0], pb.intout[1])
++}
++
++/// `inf_gindex` (`util/optimize.c:134-147`) — the index, counted from the
++/// start, of the first `SELECTED` object in `tree[base .. base+n]`, or `-1`.
++/// Reproduced from `kernel/src/desk/inf.rs`.
++fn inf_gindex(tree: &[Object], base: usize, n: usize) -> i16 {
++    for (k, obj) in tree.iter().skip(base).take(n).enumerate() {
++        if obj.ob_state & SELECTED != 0 {
++            return k as i16;
++        }
++    }
++    -1
++}
++
++#[test]
++fn the_copy_delete_box_can_tell_ok_from_cancel_by_state_alone() {
++    let _lock = AES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
++    let _ctx = context();
++    let mut pb = Pb::new();
++
++    // Cancel: `tree[CDOK].ob_state & SELECTED` must be clear, which is what
++    // `dir_op` turns into "stop before touching a single file".
++    let mut tree = cpydel();
++    let (cont, _next) = form_button(&mut pb, &mut tree, CDOK + 1);
++    assert_eq!(cont, 0, "an EXIT button ends the dialog");
++    assert_eq!(tree[CDOK].ob_state & SELECTED, 0, "OK must not be selected by a Cancel click");
++    assert_ne!(tree[CDOK + 1].ob_state & SELECTED, 0, "Cancel is");
++
++    // OK: the same read, the other way round.
++    let mut tree = cpydel();
++    let (cont, _next) = form_button(&mut pb, &mut tree, CDOK);
++    assert_eq!(cont, 0);
++    assert_ne!(tree[CDOK].ob_state & SELECTED, 0, "`deskdir.c:963` reads exactly this bit");
++    assert_eq!(tree[CDOK + 1].ob_state & SELECTED, 0);
++}
++
++#[test]
++fn the_name_conflict_box_identifies_one_of_its_three_buttons() {
++    let _lock = AES_LOCK.lock().unwrap_or_else(|e| e.into_inner());
++    let _ctx = context();
++    let mut pb = Pb::new();
++
++    // OK (0), Skip (1), Stop (2) — `do_namecon` adds `CAOK` to the index and
++    // compares the result against `CASTOP` / `CASKIP` (`deskdir.c:121,346-349`).
++    for pressed in 0..3usize {
++        let mut tree = cpaler();
++        let (cont, _next) = form_button(&mut pb, &mut tree, CAOK + pressed);
++        assert_eq!(cont, 0, "every one of the three is an EXIT button");
++        assert_eq!(
++            inf_gindex(&tree, CAOK, 3),
++            pressed as i16,
++            "the pressed button, and only it, is left SELECTED — a Skip read as \
++             an OK would overwrite a file the user asked to keep"
++        );
++        let selected: Vec<usize> = (0..3).filter(|&k| tree[CAOK + k].ob_state & SELECTED != 0).collect();
++        assert_eq!(selected, vec![pressed], "exactly one");
++    }
++}
