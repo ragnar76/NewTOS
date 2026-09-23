@@ -17,8 +17,18 @@ hiermit zurueckgenommen.
    Pixelwerte um den 8×16-Font (`y += 18/22/24/26`, `:219-321`), der Rahmen
    spannt dagegen den ganzen Schirm (`rect(16, 12, sw-17, sh-13)`, `:195-197`).
    Bei 640×480 fuellt das; bei 1920×1080 bleiben zwei Drittel leer.
-   Zu entscheiden: Block vertikal zentrieren **oder** Text auf hohen
-   Aufloesungen doppelt skalieren (EmuTOS behaelt 8×16, faehrt aber 640×480).
+
+   **Entscheid des Anwenders (2026-09-23): eine zentrierte Box.** Statt den
+   Rahmen ueber den ganzen Schirm zu spannen, umschliesst ein Kasten genau
+   den Inhalt — Logo, Untertitel, Infoblock, Geraeteliste, Hinweise, Fussnote —
+   und dieser Kasten steht waagerecht **und** senkrecht mittig auf dem Schirm.
+   Die Kastenbreite richtet sich nach der laengsten Zeile plus Rand, die
+   Hoehe nach dem Inhalt; die Trennlinien laufen dann von Kastenrand zu
+   Kastenrand statt von Schirmrand zu Schirmrand. Damit sieht das Bild auf
+   640×480 und auf 1920×1080 gleich aufgeraeumt aus, ohne den Text zu
+   skalieren. Ob der Schirm ausserhalb des Kastens weiss bleibt oder das
+   Desktop-Muster traegt, entscheidet der Anwender am Bild (Vorschlag: weiss
+   lassen, wie EmuTOS' Startschirm).
 2. **Der USB-Block ist linksbuendig** (`tx = fx0 + 40`, `:259`), alles andere
    zentriert auf `cx = sw / 2` (`:192`).
 3. **Alle vier USB-Geraete melden „Port 1"** (`:277`, `d.port`). Bei einem Hub
@@ -32,8 +42,13 @@ hiermit zurueckgenommen.
 
 ## Abnahme
 
-Screendump in QEMU (640×480) **und** auf der Pi (1920×1080): Block sinnvoll
-platziert, alle Zeilen gleich ausgerichtet, Portnummern belegt, Text fehlerfrei.
+Screendump in QEMU (640×480) **und** auf der Pi (1920×1080): der Kasten
+steht in beiden Faellen mittig und umschliesst den Inhalt buendig, alle
+Zeilen gleich ausgerichtet, Portnummern belegt, Text fehlerfrei. Die
+Geraeteliste waechst mit der Zahl der Geraete — Kastenhoehe muss mitwachsen,
+ohne den Schirm zu verlassen (Grenzfall: viele USB-Geraete bei 640×480,
+dann Liste kuerzen oder Kasten am Schirm klemmen; im Ticketabschluss
+benennen, was gewaehlt wurde).
 
 ## Arbeitsregel
 
