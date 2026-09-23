@@ -822,16 +822,16 @@ whether anything changed. `install_drive` takes the first free grid cell
 (`ins_posdisk(0, 0)` *before* the node is appended, `:231`) and
 `a_aicon = (drive > 1) ? IG_HARD : IG_FLOPPY` (`:249`).
 
-The labels are the one place this diverges, and it predates the ticket:
-EmuTOS writes `"DISK C"` / `"TRASH"` / `"PRINTER"`
-(`desk_rsc.c:2481-2483`), NewTOS's desktop has printed
-`"Hard disk"` / `"Floppy disk"` / `"Trash"` / `"Printer"` since its icon tree
-was first built, and every screendump the desktop work has been measured
-against carries those. The four strings now live in one place
-(`desk::inf::DISK_LABEL` and friends) and `install_drive` reads the same two
-constants `build_inf` does, so an icon added by *Install devices* is labelled
-exactly like one the desktop built at boot. Adopting EmuTOS's wording is a
-four-line edit and a decision of its own.
+The labels follow EmuTOS: `desktop_str_addr(STDISK)` plus the drive letter for
+a drive icon of either kind, `STTRASH`, `STPRINT` (`desk_rsc.c:2481-2483`),
+i.e. `"DISK C"` / `"TRASH"` / `"PRINTER"`. NewTOS printed `"Hard disk"` /
+`"Floppy disk"` / `"Trash"` / `"Printer"` from its first icon tree until the
+wording was adopted; that changes the boot picture and invalidates the label
+text on every earlier desktop screendump. `install_drive`
+(`deskins.c:247`) and `build_inf` (`deskapp.c:723`) build the same string, so
+an icon added by *Install devices* is labelled exactly like one the desktop
+built at boot; the picture (`IG_HARD` vs `IG_FLOPPY`) is what distinguishes a
+floppy from a hard disk, not the text.
 
 #### `ins_icon` / `rmv_icon` and the menu state
 

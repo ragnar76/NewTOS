@@ -113,3 +113,15 @@ und Belegpaket. Die fuer DESK04 einschlaegigen Stellen:
 Reihenanordnung mehrerer Laufwerke und das „mehrere fehlende in einem Zug"
 sind damit am Emulator nicht abschliessend zu sehen. Der `selftest()` prueft
 die Logik dahinter unabhaengig von der Laufwerkszahl, aber er zeichnet nicht.
+
+---
+
+## Nachtrag des Leads (gleiche Arbeitseinheit)
+
+Die Symbolbeschriftungen sind nach diesem Bericht auf EmuTOS' Wortlaut
+umgestellt worden: `desktop_str_addr(STDISK)` + Laufwerksbuchstabe fuer beide
+Laufwerksarten, `TRASH`, `PRINTER` (`desk_rsc.c:2481-2483`, gebaut in
+`build_inf` `deskapp.c:723` und `install_drive` `deskins.c:247`). Die oben
+protokollierten Laeufe und Screendumps zeigen daher noch `Hard disk` /
+`Floppy disk` / `Trash` / `Printer`; die `#M`-Zeile lautet jetzt
+`#M 00 00 00 FF C DISK C@ @`. Alles uebrige des Berichts ist unberuehrt.

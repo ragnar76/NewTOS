@@ -889,13 +889,12 @@ fn build_desk_icons() {
             drive_y = icon_index / xcnt;
             let letter = b'A' + drive as u8;
             // `icon_type = (i > 1) ? IG_HARD : IG_FLOPPY;` (`deskapp.c:721`).
-            let (aicon, label) =
-                if drive > 1 { (icons::IG_HARD, DISK_LABEL) } else { (icons::IG_FLOPPY, FLOPPY_LABEL) };
+            let aicon = if drive > 1 { icons::IG_HARD } else { icons::IG_FLOPPY };
             g.g_ahead.push(Anode {
                 a_type: AType::Disk,
                 a_letter: letter,
                 a_aicon: aicon,
-                a_pappl: String::from(label),
+                a_pappl: disk_label(letter),
                 a_xspot: drive_x * icw,
                 a_yspot: drive_y * ich,
                 a_obid: NIL,
@@ -933,28 +932,31 @@ fn build_desk_icons() {
     });
 }
 
-// ── The built-in desktop-icon labels ────────────────────────────────────────
+// ── The built-in desktop-icon labels ────────────────────────────
 //
-// **Named deviation, and it predates this module's icon table.** EmuTOS labels
-// these `"DISK C"` / `"TRASH"` / `"PRINTER"` (`desk_rsc.c:2481-2483`
-// `STDISK`/`STTRASH`/`STPRINT`, used by `build_inf`, `deskapp.c:723,739,748`,
-// and by `install_drive`, `deskins.c:247`). NewTOS's desktop has printed
-// `"Hard disk"` / `"Floppy disk"` / `"Trash"` / `"Printer"` since its icon tree
-// was first built, and those four strings are on every screendump the desktop
-// work has been measured against. Changing them is a visible change to the boot
-// picture that this ticket was not asked to make; the strings live here, in one
-// place, so that a later decision to adopt EmuTOS's wording is a four-line edit.
-// `install_drive` reads the same two constants, so an icon added by
-// *Install devices* is labelled exactly like one the desktop built at boot.
+// EmuTOS's wording, `desk_rsc.c:2481-2483` (`STDISK`/`STTRASH`/`STPRINT`). Both
+// a hard disk and a floppy get `STDISK` plus the drive letter — `build_inf`
+// prints `"%s %c"` (`deskapp.c:723`) and `install_drive` builds the same string
+// (`deskins.c:247`), so an icon added by *Install devices* is labelled exactly
+// like one the desktop built at boot. The icon *picture* is what distinguishes
+// the two (`IG_HARD` vs `IG_FLOPPY`), not the text.
 
-/// Label of a hard-disk icon (EmuTOS: `"DISK <letter>"`).
-pub(super) const DISK_LABEL: &str = "Hard disk";
-/// Label of a floppy-disk icon (EmuTOS: `"DISK <letter>"`).
-pub(super) const FLOPPY_LABEL: &str = "Floppy disk";
-/// Label of the Trash icon (EmuTOS: `"TRASH"`).
-pub(super) const TRASH_LABEL: &str = "Trash";
-/// Label of the Printer icon (EmuTOS: `"PRINTER"`).
-pub(super) const PRINTER_LABEL: &str = "Printer";
+/// `STDISK` — the word a drive icon's label starts with; [`disk_label`] appends
+/// the drive letter.
+pub(super) const DISK_LABEL: &str = "DISK";
+/// Label of the Trash icon, `STTRASH`.
+pub(super) const TRASH_LABEL: &str = "TRASH";
+/// Label of the Printer icon, `STPRINT`.
+pub(super) const PRINTER_LABEL: &str = "PRINTER";
+
+/// `sprintf(G.g_work, "%s %c", desktop_str_addr(STDISK), pa->a_letter)`
+/// (`deskins.c:247`, and the same text from `build_inf`, `deskapp.c:723`).
+pub(super) fn disk_label(letter: u8) -> String {
+    let mut s = String::from(DISK_LABEL);
+    s.push(' ');
+    s.push(letter as char);
+    s
+}
 
 /// The pixel rectangle to open the window in slot `slot` at, taken from that
 /// slot's [`WSave`] — EmuTOS `win_alloc`, which reads the new window's default

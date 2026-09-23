@@ -39,8 +39,7 @@ use super::dosbind::{dos_gdrv, dos_sdrv};
 use super::global::{self, Anode, DROOT, NIL};
 use super::icons::{build_iconblk, icon_kind, ig_of, IconKind, BUILTIN_ICONS, IG_HARD};
 use super::inf::{
-    end_dialog, mk_root, start_dialog, BOX_SPEC, DISK_LABEL, FL3DACT, FL3DBAK, FL3DIND,
-    FLOPPY_LABEL, TED_COLOR,
+    disk_label, end_dialog, mk_root, start_dialog, BOX_SPEC, FL3DACT, FL3DBAK, FL3DIND, TED_COLOR,
 };
 use super::model::AType;
 
@@ -153,17 +152,14 @@ fn install_drive(g: &mut global::DeskState, drive: u32) -> bool {
     let (x, y) = ins_posdisk(g, 0, 0);
     let letter = b'A' + drive as u8;
     // `pa->a_aicon = (drive > 1) ? IG_HARD : IG_FLOPPY;` (`deskins.c:249`).
-    let (a_aicon, label) = if drive > 1 {
-        (super::icons::IG_HARD, DISK_LABEL)
-    } else {
-        (super::icons::IG_FLOPPY, FLOPPY_LABEL)
-    };
+    let a_aicon =
+        if drive > 1 { super::icons::IG_HARD } else { super::icons::IG_FLOPPY };
     let (a_xspot, a_yspot) = g.snap_icon(x, y);
     g.g_ahead.push(Anode {
         a_type: AType::Disk,
         a_letter: letter,
         a_aicon,
-        a_pappl: String::from(label),
+        a_pappl: disk_label(letter),
         a_xspot,
         a_yspot,
         a_obid: NIL,
@@ -756,7 +752,7 @@ pub fn selftest() {
             a_type: AType::Disk,
             a_letter: b'Z',
             a_aicon: super::icons::IG_HARD,
-            a_pappl: String::from(DISK_LABEL),
+            a_pappl: disk_label(b'Z'),
             a_xspot: 0,
             a_yspot: 0,
             a_obid: NIL,

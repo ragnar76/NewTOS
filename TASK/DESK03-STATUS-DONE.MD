@@ -313,3 +313,15 @@ kernel 94 auf beiden** (Basis 64/94, Delta 0). Clippy: tos-api **80**, kernel
   `PRINTER`) statt der heutigen.
 * **Gemeldete Luecke:** Fenstersymbole (`ADINSWIN`) und
   Desktop-Verknuepfungen — brauchen erst einen Leser im `win_bldview`.
+
+---
+
+## Nachtrag des Leads (gleiche Arbeitseinheit)
+
+Die Symbolbeschriftungen sind nach diesem Bericht auf EmuTOS' Wortlaut
+umgestellt worden: `desktop_str_addr(STDISK)` + Laufwerksbuchstabe fuer beide
+Laufwerksarten, `TRASH`, `PRINTER` (`desk_rsc.c:2481-2483`, gebaut in
+`build_inf` `deskapp.c:723` und `install_drive` `deskins.c:247`). Die oben
+protokollierten Laeufe und Screendumps zeigen daher noch `Hard disk` /
+`Floppy disk` / `Trash` / `Printer`; die `#M`-Zeile lautet jetzt
+`#M 00 00 00 FF C DISK C@ @`. Alles uebrige des Berichts ist unberuehrt.
