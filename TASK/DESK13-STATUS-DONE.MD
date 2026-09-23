@@ -150,7 +150,7 @@ Nachgemessen: `CAOK=(184,287) CASKIP=(280,287) CASTOP=(376,287)`.
 | `docs/api/desktop/deskdir.md` | NewTOS-Notizen: beide Kaesten, `More`, benannte Abweichungen |
 | `docs/api/desktop/deskinf.md` | NewTOS-Notizen: die drei Felder, `Ssystem` statt `Supexec`, der Trenner |
 | `docs/api/desktop/gembind.md` | `dos_getcookie` in der Bindungstabelle + warum GEMDOS und nicht XBIOS |
-| `docs/api/desktop/_hw-test-2026-09-17.md` | HW-Punkt 38; der falsche Alt-Vermerk richtiggestellt |
+| `docs/api/desktop/_hw-test-2026-09-17.md` | HW-Punkt 42; der falsche Alt-Vermerk richtiggestellt |
 | `docs/api/desktop/_hw-test-checklist.md` | B12 mit dem QEMU-Beleg |
 | `docs/STATUS.md` | Phase-14-Zeile + datierter Eintrag in *Recent Decisions* |
 | `TASK/DESK11-STATUS-DONE.MD` | Berichtigungskasten zum widerlegten Alt-Vermerk |
@@ -194,7 +194,7 @@ Belege: `measurement-2026-09-23-desk13/` (`RUNINFO.TXT`, `method/`,
 
 ## Was offen bleibt
 
-* **Pi-Sichtabnahme**: HW-Punkt 38 in
+* **Pi-Sichtabnahme**: HW-Punkt 42 in
   `docs/api/desktop/_hw-test-2026-09-17.md` — 1920x1080-Optik beider Kaesten,
   ein zweites Laufwerk als Kopierziel, eine Mehrfachauswahl fuer `Stop`, ein
   getippter neuer Zielname, und `Alt`+Buchstabe auf echter Tastatur.

@@ -74,6 +74,7 @@ const OP_GRAF_RUBBERBOX: i16 = 70;
 const OP_GRAF_DRAGBOX: i16 = 71;
 const OP_GRAF_MOUSE: i16 = 78;
 const OP_GRAF_MKSTATE: i16 = 79;
+const OP_FSEL_EXINPUT: i16 = 91;
 const OP_WIND_CREATE: i16 = 100;
 const OP_WIND_OPEN: i16 = 101;
 const OP_WIND_CLOSE: i16 = 102;
@@ -748,6 +749,33 @@ pub(super) fn evnt_multi(flags: u16, msg: &mut [i16; 8]) -> EvntOut {
         kret: a.intout[5],
         bret: a.intout[6],
     }
+}
+
+// ── aesbind wrappers (file selector) ───────────────────────────────────────
+
+/// `fsel_exinput(pipath, pisel, &button, title)` (91) — the modal file
+/// selector with a caller-supplied caption (EmuTOS `desk/gembind.c:702-712`,
+/// `AES_CTRL_CODE(FSEL_EXINPUT, 0, 2, 3)`: no int-ins, two int-outs,
+/// **three** addr-ins).
+///
+/// `path` carries the initial directory-plus-wildcard in and the (possibly
+/// navigated-to) one out; `sel` the initial file name in and the chosen one
+/// out; `title` is the dialog caption (`FS_TITLE`). Returns
+/// `(rc, button)` — EmuTOS's `RET_CODE` and `FS_BUTTON`: `rc == 0` means the
+/// selector never ran, `button` is 1 for OK and 0 for Cancel.
+///
+/// Both buffers are written back by the AES and must be large enough for what
+/// it returns: up to 96 path bytes plus the NUL and up to 16 name bytes plus
+/// the NUL (`tos-api/src/aes/fsel.rs:135-136`, the `dir`/`sel` cells the
+/// selector edits in). [`inf::FSEL_PATH_LEN`]/[`inf::FSEL_NAME_LEN`] are sized
+/// from that.
+pub(super) fn fsel_exinput(path: &mut [u8], sel: &mut [u8], title: &[u8]) -> (i16, i16) {
+    let mut a = Aes::new();
+    a.addrin[0] = path.as_mut_ptr() as i64;
+    a.addrin[1] = sel.as_mut_ptr() as i64;
+    a.addrin[2] = title.as_ptr() as i64;
+    a.call(OP_FSEL_EXINPUT, 0, 2, 3);
+    (a.intout[0], a.intout[1])
 }
 
 // ── Screen geometry, from the AES only ─────────────────────────────────────

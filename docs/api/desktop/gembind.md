@@ -369,3 +369,27 @@ return value is the whole point.
 boot screendumps are byte-identical (md5 `a53b0a3f…`), and the SD images compare
 equal. QEMU shows **one** drive; the four-drive case (`C:`–`F:`) is the real
 Pi-4's, HW checklist item 37.
+
+## NewTOS implementation notes — `fsel_exinput` reaches the desktop (DESK14, 2026-09-23)
+
+The cross-reference above lists `fsel_exinput` among the AES bindings
+`kernel/src/desk/mod.rs` **did not yet cover**. DESK14 adds it, because
+`app_read_inf` is its only caller in a NewTOS build (the other EmuTOS caller,
+`desksupp.c`'s `CONF_WITH_DESKTOP_SHORTCUTS`, is a separate feature):
+
+| aesbind fn | Opcode | `AES_CTRL_CODE` | EmuTOS | NewTOS |
+|---|---|---|---|---|
+| `fsel_exinput(pipath, pisel, &button, title)` | 91 | `(FSEL_EXINPUT, 0, 2, 3)` | `desk/gembind.c:702-712` | `desk/mod.rs::fsel_exinput` → `tos-api/src/aes/fsel.rs::fsel_exinput` |
+
+Zero int-ins, two int-outs (`RET_CODE`, `FS_BUTTON`), three addr-ins
+(`FS_IPATH`, `FS_ISEL`, `FS_TITLE`) — EmuTOS's own counts, and they are not
+decoration: the dispatcher copies exactly `control[2]` result words
+(`aes/gemsuper.c:443-444`), so an under-declared `nintout` would lose the
+button.
+
+**Buffer sizes are NewTOS's, not EmuTOS's.** EmuTOS passes `char
+path[MAXPATHLEN]` (81) and `char fname[LEN_ZFNAME]` (13). Our AES writes its
+own `FSDIRECT`/`FSSELECT` text cells back (`tos-api/src/aes/fsel.rs:135-136`:
+96 and 16 bytes plus the NUL), so `inf.rs` sizes its buffers from *that*
+(`FSEL_PATH_LEN` 128, `FSEL_NAME_LEN` 32). Nothing observable changes; the
+numbers are an internal safety margin, not a contract.

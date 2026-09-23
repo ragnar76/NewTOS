@@ -1144,7 +1144,7 @@ one is already on record** (`docs/api/desktop.md`,
 | `CONF_WITH_SIZE_TO_FIT` | `FITITEM`, `g_ifit`/`g_icols`, horizontal slider messages | **Open question** — current `kernel/src/desktop.rs` has a `size_to_fit()` (vertical only, `:1619-1637`); full EmuTOS semantics (horizontal too) not confirmed decided |
 | `CONF_WITH_BACKGROUNDS` | `BACKGRND` item, `g_patcol` | **On** — `docs/api/desktop.md:71-72`; NewTOS's `desktop.rs` `G_PATCOL`/`set_background` already implements this |
 | `CONF_WITH_DESKTOP_CONFIG` | `CONFITEM` | **On** — `docs/api/desktop.md:69` |
-| `CONF_WITH_READ_INF` | `READITEM`, desktop-restart path | **Open question** |
+| `CONF_WITH_READ_INF` | `READITEM`, desktop-restart path | **On, minus the restart** — the `app_read_inf()` worker (selector, `#R`/`#E` signature, `STFILENF`/`STINVINF`) is implemented (DESK14, 2026-09-23); the `restart_desktop` half is deferred to the desktop's move into user scope (`TASK/DESK14.md`) and replaced by an in-place re-apply |
 | `CONF_WITH_BLITTER` | `BLITITEM` | **Excluded** — STE/TT/Falcon blitter chip, no AArch64 equivalent (`docs/api/desktop.md:73-78`) |
 | `CONF_WITH_CACHE_CONTROL` | `CACHITEM` | **Excluded** — 68030+ CPU-cache control (`docs/api/desktop.md:73-78`) |
 | `CONF_WITH_EASTER_EGG` | About-box Easter egg | **Open question** (low priority) |
@@ -1268,12 +1268,17 @@ way it was saved.
    and change the boot picture (304×192 at (16,96) instead of 544×400 at
    (48,43)) — a decision of its own.
 
-**Read .INF** (`Options → Read .INF file`, a NewTOS menu item) re-applies
+**Read .INF** (`Options → Read .INF file`, EmuTOS's `READITEM`) re-applies
 in place where EmuTOS restarts the desktop (`READITEM` sets
 `restart_desktop` and ends the loop, `:919-924`). It therefore takes only
 the preference half of `cnx_get` (`main::cnx_get_prefs`,
 `:1437-1461`): the context's windows are already on screen and must not
-be opened a second time.
+be opened a second time. The restart path itself is **deferred**, not
+missing — lead decision of 2026-09-23 (`TASK/DESK14.md`), because it is the
+move of the desktop into user scope, not a detail of this menu item. The
+worker side of `READITEM` — `fsel_exinput` prompt, `#R`/`#E` signature,
+`STFILENF`/`STINVINF` alerts — is EmuTOS's as of DESK14; see
+`deskapp.md`'s `app_read_inf()` notes for the full comparison.
 
 ---
 

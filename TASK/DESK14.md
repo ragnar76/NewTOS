@@ -1,6 +1,7 @@
 # DESK14 — `Read .INF file` ist nicht `app_read_inf`
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Konformitaet — Nebenbefund DESK03/DESK04
+Status: **ERLEDIGT** (Punkte 1-3; Punkt 4 zurueckgestellt, siehe unten) ·
+Prioritaet: **P3** · Typ: Konformitaet — Nebenbefund DESK03/DESK04
 
 Abhaengigkeiten: [DESK03](DESK03.md) (erledigt), [DESK09](DESK09.md) (erledigt)
 
@@ -53,3 +54,62 @@ liegen; der bestehende Pfad bekommt den Verweis darauf im Quelltext.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+---
+
+## Abschluss
+
+**2026-09-23.** Punkte 1-3 gebaut, Punkt 4 unangetastet nach der
+Lead-Entscheidung oben.
+
+1. **Dateiauswahl.** `inf::app_read_inf` fragt mit `fsel_exinput(path, fname,
+   &button, STRDINF)` (`deskapp.c:1500-1508`), Vorgabe `INF_FILE_WILD` =
+   `C:\*.INF` und `INF_FILE_NAME+3` = `NEWDESK.INF`, Ueberschrift
+   `Select .INF file` (`desk_rsc.c:2488`); der gewaehlte Name wird mit
+   `strcpy(filename_start(path), fname)` (`:1509`) angehaengt, und
+   `rc == 0 || button == 0` bricht ab. Die AES-Bindung dafuer fehlte im
+   Desktop und ist neu: `desk/mod.rs::fsel_exinput`, Opcode 91,
+   `AES_CTRL_CODE(FSEL_EXINPUT, 0, 2, 3)` wie `desk/gembind.c:702-712`.
+2. **Signaturpruefung.** `is_inf_signature` verlangt `#R` **oder** `#E`
+   (`deskapp.c:1523-1525`). Der Bootpfad in `inf::load_and_apply` behaelt
+   bewusst die schwaechere Regel (`deskapp.c:833`, nur `'#'`) — beide sind
+   EmuTOS', und sie sind nicht austauschbar: beim Start steht dort, was
+   `shel_get` geliefert hat, beim Lesen eine gerade ausgesuchte Datei. Die
+   Stelle sagt das jetzt selbst.
+3. **Rueckmeldung.** `EFILNF` → `STFILENF` = `[1][%s not found.][  OK  ]`
+   (`desk_rsc.c:2548`) mit eingesetztem Namen (`fun_alert_merge`,
+   `deskfun.c:88`); alles andere — anderer Fehler, leere Datei, falsche
+   Signatur — → `STINVINF` = `[1][Illegal .INF file format.][  OK  ]`
+   (`desk_rsc.c:2560`). Beide ueber `dir::fun_alert`.
+4. **Nicht gebaut, wie entschieden.** Der Neustartpfad bleibt liegen. Der
+   bestehende Pfad traegt den Verweis darauf im Quelltext
+   (`main::do_read_inf`, mit `deskmain.c:919-925` und `:2136-2148`) und in
+   `docs/api/desktop/deskapp.md` und `deskmain.md`. Es wurde **nichts** um
+   sein Fehlen herumgebaut.
+
+**Benannte Abweichungen** (jeweils mit Quelle im Code):
+* `main::do_read_inf` — kein Desktop-Neustart, stattdessen Nachziehen im
+  laufenden Desktop (`deskmain.c:919-925`, `:2136-2148`). Lead-Entscheidung.
+* `inf::INF_FILE_WILD` — Laufwerksbuchstabe fest `C:` statt `*path +=
+  G.g_stdrv` (`deskapp.c:1502`), weil NewTOS' `INF_PATH` ebenso fest ist; die
+  EmuTOS-Invariante „Auswaehler-Laufwerk = INF-Laufwerk" bleibt.
+* `inf::FSEL_PATH_LEN`/`FSEL_NAME_LEN` — 128/32 statt `MAXPATHLEN`/
+  `LEN_ZFNAME` (81/13), weil unser AES eigene 96- und 16-Byte-Felder
+  zurueckschreibt (`tos-api/src/aes/fsel.rs:135-136`). Nichts Beobachtbares.
+* `inf::read_file` liest bis `MAX_INF_BYTES` (64 KiB) statt bis
+  `SIZE_SHELBUF-CPDATA_LEN-1` (`sysconf.h:74`) — EmuTOS' Grenze ist die des
+  Shell-Puffers, in den es die Datei legt; ohne Punkt 4 gibt es den hier
+  nicht. Folge einer Mechanik, nicht des Vertrags.
+
+**Pruefung:** Hostsuite **938 / 0 / 1** (Basislinie, Delta 0), beide Boards
+frisch gebaut (`cargo clean -p kernel -p tos-api` vor jedem) `tos-api 64 /
+kernel 94` (Delta 0), Clippy `80 / 125` auf beiden Boards (Delta 0), null
+Treffer in `kernel/src/desk/`. Vier QEMU-raspi4b-Laeufe (640x480,
+`-display none`, QMP, Injektor), 22 Screendumps, `fsck_msdos -n` auf allen
+vier Kartenabbildern sauber, 0 `[EXC]`/`[PANIC]`.
+Belege: `measurement-2026-09-23-desk14/`.
+
+**Offen:** Pi-Sichtabnahme (HW-Punkt 41 in
+`docs/api/desktop/_hw-test-2026-09-17.md`) — 1920x1080-Optik, die vier
+Laufwerke `C:`–`F:` im Laufwerksraster, ein getippter Name auf echter
+Tastatur, `Cancel`.

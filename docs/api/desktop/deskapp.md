@@ -550,3 +550,69 @@ table), a substantially-progressed rebuild already wired into
 checked** this pass — out of scope for a docs-only validation task; flagged
 for the lead to confirm against the current `kernel/src/desk/app.rs` before
 treating this spec as implemented.
+
+---
+
+## NewTOS implementation notes — `app_read_inf()` (DESK14, 2026-09-23)
+
+`Options → Read .INF file` is EmuTOS's `app_read_inf()`
+(`deskapp.c:1491-1546`, `CONF_WITH_READ_INF`). NewTOS's counterpart is
+`kernel/src/desk/inf.rs::app_read_inf`, called from
+`kernel/src/desk/main.rs::do_read_inf` (the `READITEM` arm of the Options
+menu). Before DESK14 that path read a fixed `C:\NEWDESK.INF`, accepted any
+buffer whose first byte was `#`, and returned silently on every failure.
+
+### What now matches EmuTOS
+
+1. **The file selector** (`:1499-1508`). The prompt is
+   `fsel_exinput(path, fname, &button, desktop_str_addr(STRDINF))` with
+   `path` = `INF_FILE_WILD` and `fname` = `INF_FILE_NAME+3`, and the
+   chosen name is merged back with `strcpy(filename_start(path), fname)`
+   (`:1509`). NewTOS: `INF_FILE_WILD` = `"C:\\*.INF"`, `STRDINF` =
+   `"Select .INF file"` (`desk_rsc.c:2488`), default selection
+   `"NEWDESK.INF"`. `rc == 0 || button == 0` cancels, as in EmuTOS.
+2. **The signature** (`:1523-1525`). `is_inf_signature` requires `#R`
+   **or** `#E`, not the bare `#`. This is deliberately *stricter* than
+   `app_start`'s boot-time test (`deskapp.c:833`, `inf_data[0] != '#'`),
+   which NewTOS keeps as it stands in `inf::load_and_apply`: at boot the
+   buffer is whatever `shel_get` handed over, while Read .INF validates a
+   file the user just picked.
+3. **The two alerts** (`:1536-1542`). A failed open with `EFILNF` →
+   `STFILENF` = `[1][%s not found.][  OK  ]` (`desk_rsc.c:2548`) with the
+   chosen name merged in (EmuTOS `fun_alert_merge`, `deskfun.c:88`); every
+   other failure, an empty file and a wrong signature → `STINVINF` =
+   `[1][Illegal .INF file format.][  OK  ]` (`desk_rsc.c:2560`). Both go
+   through `dir::fun_alert`, i.e. the AES `form_alert`.
+
+The AES side was already complete (`tos-api/src/aes/fsel.rs`); what DESK14
+added is the desktop-side binding `desk/mod.rs::fsel_exinput` (opcode 91,
+`AES_CTRL_CODE(FSEL_EXINPUT, 0, 2, 3)`, EmuTOS `desk/gembind.c:702-712`).
+
+One read-size difference is worth naming: EmuTOS loads at most
+`SIZE_SHELBUF-CPDATA_LEN-1` bytes (`sysconf.h:74`, 4192 minus the copy-data
+header) because it stages the file into the *shell buffer*. With the restart
+path deferred there is no such buffer here, so the read is the desktop's own
+`MAX_INF_BYTES` (64 KiB). The truncation is a property of EmuTOS's mechanism,
+not of the contract; a `.INF` that long would leave EmuTOS with a half-parsed
+file and NewTOS with a whole one.
+
+### The one named deviation: no desktop restart
+
+EmuTOS answers a successful read by merging the bytes into the shell buffer
+(`shel_get`/`shel_put`, `:1532-1533`) and **leaving** the desktop: `READITEM`
+sets `restart_desktop = TRUE; done = TRUE;` (`deskmain.c:919-925`),
+`deskmain` frees its allocations (`:2136-2148`) and `_deskstart` re-enters it,
+so the new file is read exactly the way the boot path reads one.
+
+NewTOS parses and applies the bytes **in the running desktop** —
+`inf::apply_inf_bytes` (the same tail `load_and_apply` runs at boot) followed
+by `main::do_read_inf`'s `cnx_get_prefs` + `install_shortcuts` + `win_view` +
+`app_blddesk` + `win_srtall` + `redraw_desktop`. The restart path is not a
+detail of this function but the move of the desktop from a kernel call to a
+process `sh_main` can re-enter (`global::init` is idempotent, there is no
+`win_start()` on re-entry, `wm_init()` would clear the AES window table, and
+the `cnx_put(); app_save(FALSE)` → `shel_get` bridge, `deskmain.c:2152-2153`,
+does not exist). Deferred with the move of the desktop into user scope —
+lead decision of 2026-09-23, recorded in `TASK/DESK14.md`, and carried in the
+source as a comment on `do_read_inf`. Everything *before* that point — prompt,
+load, validation, alerts, return value — is EmuTOS's.

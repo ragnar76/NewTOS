@@ -82,7 +82,7 @@ gebaut `tos-api 64 / kernel 94` (Delta 0), Clippy `80 / 125` auf beiden Boards
 allen sieben Kartenabbildern sauber, 0 `[EXC]`/`[PANIC]`.
 Belege: `measurement-2026-09-23-desk13/`.
 
-**Offen:** Pi-Sichtabnahme (HW-Punkt 38 in
+**Offen:** Pi-Sichtabnahme (HW-Punkt 42 in
 `docs/api/desktop/_hw-test-2026-09-17.md`).
 
 **Als eigene Tickets gemeldet:** die Ordner-Namenskonfliktfrage

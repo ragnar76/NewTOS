@@ -1137,11 +1137,24 @@ fn selected_native_program() -> Option<(String, String, ftype::Flavor)> {
     .flatten()
 }
 
-/// Options → Read .INF file: re-read `NEWDESK.INF`, re-apply it (view/sort,
-/// background, desktop-icon positions), rebuild the desktop icon tree and every
-/// open window's view, and repaint. A missing file is a silent no-op.
+/// `READITEM` (`deskmain.c:919-925`) — *Options → Read .INF file*: run
+/// [`super::inf::app_read_inf`] (prompt, load, validate, alert on failure) and,
+/// if it read a file, put the new settings into effect.
+///
+/// **Deviation — no desktop restart** (`TASK/DESK14.md`, lead decision
+/// 2026-09-23, point 4). EmuTOS answers a successful read with
+/// `restart_desktop = TRUE; done = TRUE;`: `deskmain` tears its allocations
+/// down (`:2136-2148`) and `_deskstart` immediately re-enters it, so the new
+/// file is read exactly the way the boot path reads one. NewTOS's desktop is
+/// still a kernel call, not a process `sh_main` can re-enter — `global::init`
+/// is idempotent, there is no `win_start()` on re-entry, and the
+/// `cnx_put(); app_save(FALSE)` → `shel_get` bridge (`deskmain.c:2152-2153`)
+/// does not exist — so the settings are pulled into the *running* desktop
+/// instead: the block below is what the restart would otherwise have done.
+/// The restart path belongs to the move of the desktop into user scope and is
+/// deferred; do not work around its absence here.
 fn do_read_inf() {
-    if !super::inf::load_and_apply() {
+    if !super::inf::app_read_inf() {
         return;
     }
     // The re-read `#E` bytes land in `G.g_cnxsave`; push their preference half
@@ -1149,10 +1162,10 @@ fn do_read_inf() {
     // `cnx_get`).
     cnx_get_prefs();
     // The re-read `#K` line landed in `menu_shortcuts[]`; render it into the
-    // menu strings. EmuTOS gets this for free — `app_read_inf` sets
-    // `restart_desktop` and the whole desktop is rebuilt from `deskmain`,
-    // `install_shortcuts()` included (`deskmain.c:920-926`, `:2023`) — whereas
-    // NewTOS's Read .INF re-applies in place, so it has to say so.
+    // menu strings. EmuTOS gets this for free — the restart rebuilds the whole
+    // desktop from `deskmain`, `install_shortcuts()` included
+    // (`deskmain.c:920-926`, `:2023`) — whereas NewTOS re-applies in place (see
+    // the deviation above), so it has to say so.
     menu::install_shortcuts();
     global::with(|g| {
         g.win_view();

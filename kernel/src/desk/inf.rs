@@ -28,6 +28,8 @@ use alloc::vec::Vec;
 
 use tos_api::aes::object::{Object, TedInfo};
 use tos_api::vdi::font::{CELL_H, CELL_W};
+use tos_types::error::EFILNF;
+use tos_types::Long;
 
 use crate::sync::SpinMutex;
 
@@ -50,9 +52,18 @@ const MAX_INF_BYTES: usize = 64 * 1024;
 /// Read the whole `NEWDESK.INF` into a heap buffer, or [`None`] if it cannot be
 /// opened (a missing file is **not** an error — the caller keeps defaults).
 fn read_inf_file() -> Option<Vec<u8>> {
-    let rc = dos_open(INF_PATH, 0);
+    read_file(INF_PATH).ok()
+}
+
+/// `dos_load_file` (`util/gemdos.c:148-162`) for an arbitrary path: `Fopen`,
+/// read to EOF, `Fclose`. On a failed open the GEMDOS error is handed back
+/// unchanged, because that is the one thing [`app_read_inf`] has to tell apart
+/// — `EFILNF` is its "file not found" alert, every other failure its "illegal
+/// .INF file" one (`deskapp.c:1536-1542`).
+fn read_file(path: &str) -> Result<Vec<u8>, Long> {
+    let rc = dos_open(path, 0);
     if rc < 0 {
-        return None;
+        return Err(rc);
     }
     let handle = rc as i16;
     let mut buf: Vec<u8> = Vec::new();
@@ -69,7 +80,7 @@ fn read_inf_file() -> Option<Vec<u8>> {
         }
     }
     dos_close(handle);
-    Some(buf)
+    Ok(buf)
 }
 
 /// Create/truncate `NEWDESK.INF` and write `bytes`. Returns whether the full
@@ -781,12 +792,153 @@ pub(super) fn load_and_apply() -> bool {
     // that does not start with `#` is not an INF. Our test image ships a
     // 21-byte `newdesk placeholder\r\n` for exactly that case, so the check is
     // not theoretical: without it the desktop comes up with no icons at all.
+    //
+    // This is deliberately the **weaker** of EmuTOS's two signature rules: the
+    // boot path tests `'#'` alone (`:833`), while *Read .INF file* demands `#R`
+    // or `#E` ([`is_inf_signature`], `deskapp.c:1523-1525`). Both are EmuTOS's,
+    // and they are not interchangeable — at boot the buffer may be a `shel_put`
+    // image whose first line is any tag, whereas the Read path is validating a
+    // file the user just picked out of a selector.
     if bytes.first() != Some(&b'#') {
         return false;
     }
-    let data = parse_inf(&bytes);
+    apply_inf_bytes(&bytes);
+    true
+}
+
+/// Parse an INF image, apply it to the live desktop and stash it in [`SESSION`]
+/// — the tail both [`load_and_apply`] (boot) and [`app_read_inf`] (the
+/// *Options* menu) run once they have accepted the bytes as INF data.
+fn apply_inf_bytes(bytes: &[u8]) {
+    let data = parse_inf(bytes);
     apply(&data);
     *SESSION.lock() = Some(data);
+}
+
+/// `*p == '#' && (*(p+1) == 'R' || *(p+1) == 'E')` (`deskapp.c:1523-1525`) —
+/// the signature *Read .INF file* requires: the first line must be the revision
+/// level or the environment, which is what `app_save` always writes first
+/// (`deskapp.c:1215-1230`). Anything else is "not an .INF file" and gets the
+/// [`STINVINF`] alert; see [`load_and_apply`] for why the boot path is allowed
+/// to be laxer.
+fn is_inf_signature(bytes: &[u8]) -> bool {
+    bytes.first() == Some(&b'#') && matches!(bytes.get(1), Some(b'R') | Some(b'E'))
+}
+
+// ── `Options → Read .INF file` (`app_read_inf`, `deskapp.c:1491-1546`) ──────
+
+/// `STRDINF` (`desk_rsc.c:2488`) — the file selector's caption.
+const STRDINF: &[u8] = b"Select .INF file\0";
+
+/// `INF_FILE_WILD` (`include/sysconf.h:45` = `"A:\\*.INF"`) — the path the
+/// Read-.INF selector opens with.
+///
+/// EmuTOS patches the drive letter in at run time (`*path += G.g_stdrv`,
+/// `deskapp.c:1502`) because its `INF_FILE_NAME` is patched the same way
+/// (`:686`, `:1050`); the invariant is "the selector opens on the drive the
+/// desktop keeps its INF file on". NewTOS pins that file to the boot drive in
+/// [`INF_PATH`], so the wildcard is pinned to the same drive and the invariant
+/// holds without a `g_stdrv`.
+const INF_FILE_WILD: &str = "C:\\*.INF";
+
+/// Size of the `pipath` buffer handed to `fsel_exinput`. EmuTOS uses
+/// `MAXPATHLEN` (81, `sysconf.h:55`); ours has to cover what *our* AES writes
+/// back, which is its own 96-byte `FSDIRECT` text plus the NUL
+/// (`tos-api/src/aes/fsel.rs:135`). Rounded up to 128.
+const FSEL_PATH_LEN: usize = 128;
+
+/// Size of the `pisel` buffer. EmuTOS uses `LEN_ZFNAME` (13); the AES writes
+/// back its 16-byte `FSSELECT` text plus the NUL
+/// (`tos-api/src/aes/fsel.rs:136`). Rounded up to 32.
+const FSEL_NAME_LEN: usize = 32;
+
+/// The NUL-terminated text of a file-selector buffer.
+fn cbuf_str(buf: &[u8]) -> &str {
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    core::str::from_utf8(&buf[..end]).unwrap_or("")
+}
+
+/// `strcpy(buf, s)` into a fixed buffer, NUL-terminated and NUL-padded.
+fn set_cbuf(buf: &mut [u8], s: &str) {
+    let n = s.len().min(buf.len() - 1);
+    buf[..n].copy_from_slice(&s.as_bytes()[..n]);
+    buf[n..].fill(0);
+}
+
+/// `filename_start` (`util/optimize.c`) — everything after the last `\`.
+fn filename_start(path: &str) -> &str {
+    match path.rfind('\\') {
+        Some(i) => &path[i + 1..],
+        None => path,
+    }
+}
+
+/// `app_read_inf` (`deskapp.c:1491-1546`) — the *Options → Read .INF file*
+/// worker: prompt for a file with [`fsel_exinput`](super::fsel_exinput), load
+/// it, validate its signature, and report the two failures by alert. Returns
+/// `TRUE` iff a file was read (EmuTOS's own contract).
+///
+/// **Deviation — where the file goes** (`TASK/DESK14.md`, lead decision
+/// 2026-09-23). EmuTOS merges the bytes into the shell buffer (`shel_get` /
+/// `shel_put`, `:1532-1533`) and leaves the desktop, which re-enters and reads
+/// them through `app_start` (`deskmain.c:919-922`, `:2136-2148`). NewTOS has no
+/// desktop-restart path yet, so the bytes are parsed and applied in place here
+/// — [`apply_inf_bytes`], the identical tail the boot path runs — and the
+/// caller ([`super::main::do_read_inf`]) rebuilds the live views. Everything
+/// observable before that point is EmuTOS's.
+pub(super) fn app_read_inf() -> bool {
+    // "prompt for filename" (`deskapp.c:1499-1508`): the wildcard on the INF
+    // drive as the path, the desktop's own INF file name as the selection.
+    let mut path = [0u8; FSEL_PATH_LEN];
+    let mut fname = [0u8; FSEL_NAME_LEN];
+    set_cbuf(&mut path, INF_FILE_WILD);
+    set_cbuf(&mut fname, filename_start(INF_PATH));
+    let (rc, button) = super::fsel_exinput(&mut path, &mut fname, STRDINF);
+    if rc == 0 || button == 0 {
+        return false;
+    }
+
+    // `strcpy(filename_start(path), fname)` (`:1509`) — the directory the
+    // selector ended in, plus the name the user chose.
+    let chosen = cbuf_str(&path);
+    let leaf = String::from(cbuf_str(&fname));
+    let mut full = match chosen.rfind('\\') {
+        Some(i) => String::from(&chosen[..=i]),
+        None => String::new(),
+    };
+    full.push_str(&leaf);
+
+    // "load in file & validate contents" (`:1517-1526`). EmuTOS reads at most
+    // `SIZE_SHELBUF-CPDATA_LEN-1` bytes (4192 minus the copy-data header,
+    // `sysconf.h:74`) because it is staging into the **shell buffer**; with the
+    // restart path deferred there is no such buffer here, so the read is the
+    // desktop's own `MAX_INF_BYTES`. A truncating read is a property of the
+    // mechanism, not of the contract (`docs/COMPATIBILITY.md`) — a `.INF` that
+    // long would give EmuTOS a half-parsed file and us a whole one.
+    let loaded = match read_file(&full) {
+        Ok(bytes) if is_inf_signature(&bytes) => Some(bytes),
+        // A file that opened but is not an INF is EmuTOS's `rc = 0L`, which
+        // falls through to the STINVINF arm below — as does an empty file.
+        Ok(_) => None,
+        Err(EFILNF) => {
+            // "issue alert for file not found" (`:1536-1538`), `STFILENF` =
+            // `[1][%s not found.][  OK  ]` (`desk_rsc.c:2548`) with the name
+            // the user picked merged in (`fun_alert_merge`, `deskfun.c:88`).
+            let mut msg = leaf;
+            msg.push_str(" not found.");
+            super::dir::fun_alert(1, msg.as_bytes());
+            return false;
+        }
+        Err(_) => None,
+    };
+    let Some(bytes) = loaded else {
+        // "issue alert for invalid inf file" (`:1540-1542`), `STINVINF` =
+        // `[1][Illegal .INF file format.][  OK  ]` (`desk_rsc.c:2560`).
+        super::dir::fun_alert(1, b"Illegal .INF file format.");
+        return false;
+    };
+
+    apply_inf_bytes(&bytes);
     true
 }
 
