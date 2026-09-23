@@ -1160,6 +1160,16 @@ this menu item" calls) before or during `kernel/src/desk/` implementation.
 
 ## NewTOS implementation notes
 
+> **No window at boot without a saved one (2026-09-23).** NewTOS used to
+> open the boot drive's root whenever the context restored no window — a
+> crutch from the days when the mouse did not work and a window was the
+> only way to see anything. With the context save in place (DESK09) it is
+> gone: the desktop starts bare unless `NEWDESK.INF` names a window, which
+> is what EmuTOS does (`desk/deskapp.c:171-180`, its built-in INF carries
+> four `#W` lines with empty paths). `kernel/src/desk/mod.rs`, after
+> `cnx_get`.
+
+
 ### The context save area — `CSAVE` / `cnx_put` / `cnx_get` (DESK09, 2026-09-23)
 
 `G.g_cnxsave` is `DeskState::g_cnxsave` (`kernel/src/desk/global.rs`),

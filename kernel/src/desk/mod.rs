@@ -759,15 +759,13 @@ pub fn run() {
     let reopened = main::cnx_get();
     wind_update(END_UPDATE);
 
-    // **Deviation from EmuTOS, pre-dating this wiring.** EmuTOS opens whatever
-    // the context says and nothing more — its built-in `EMUDESK.INF`
-    // (`deskapp.c:171-180`) carries four `#W` lines with *empty* paths, so a
-    // machine with no saved session starts with a bare desktop. NewTOS opens
-    // the boot drive's root instead of showing nothing. Kept: the fallback only
-    // fires when the context reopened no window at all.
-    if reopened == 0 {
-        main::open_root_window(b'C');
-    }
+    // EmuTOS opens whatever the context says and nothing more — its built-in
+    // `EMUDESK.INF` (`deskapp.c:171-180`) carries four `#W` lines with *empty*
+    // paths, so a machine with no saved session starts with a bare desktop.
+    // NewTOS used to open the boot drive's root when nothing was restored;
+    // that crutch pre-dated the context save (DESK09) and is gone (user
+    // decision 2026-09-23): a window at boot comes from `NEWDESK.INF` or not
+    // at all.
 
     // Set the menu state to reflect the current window (men_update — the D6
     // machinery), then paint everything (desktop bg + icons + frames via the
@@ -795,8 +793,9 @@ pub fn run() {
     graf_mouse(ARROW);
 
     kprintln!(
-        "[desk] desktop up ({} drives)",
-        tos_api::bios::drive::drvbits().count_ones()
+        "[desk] desktop up ({} drives, {} window(s) from the context)",
+        tos_api::bios::drive::drvbits().count_ones(),
+        reopened
     );
 
     // Hand off to the interaction loop; it returns only when a handler requests
