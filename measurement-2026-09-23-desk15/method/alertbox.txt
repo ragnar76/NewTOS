@@ -1,0 +1,9 @@
+STICNTYP alert button boxes, measured off screendumps/c1-c-alert.png with PIL
+(the long black horizontal runs are the button frames):
+
+  y 253..284
+  Desktop  x 191..272   -> click (231,268)
+  Window   x 280..359   -> click (319,268)
+  Cancel   x 368..447   -> click (407,268)
+
+Run C2's action list clicks (319,268) = *Window*.

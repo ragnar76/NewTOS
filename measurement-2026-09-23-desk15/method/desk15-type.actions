@@ -1,0 +1,15 @@
+# DESK15 run C1 -- Options -> "Install icon..." with NOTHING selected: EmuTOS
+# asks `STICNTYP` ("Please select icon type." / Desktop | Window | Cancel,
+# desk_rsc.c:2534) before it builds anything.  This run only photographs the
+# alert; run C2 clicks its *Window* button.
+#   Options title centre (196,8); "Install icon..." = drop-down entry 1 (200,43)
+100 parkbr
+300 move 600 460
+1500 mark A_IDLE
+1800 move 196 8
+2500 mark B_OPTIONS
+2800 move 200 43
+3100 down
+3103 up
+3400 move 600 460
+4500 mark C_ALERT

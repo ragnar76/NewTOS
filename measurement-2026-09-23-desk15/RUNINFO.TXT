@@ -1,0 +1,206 @@
+DESK15 — Fenstersymbole (`ADINSWIN`) + der Leser in `win_bldview`
+=================================================================
+Datum:   2026-09-23
+Branch:  desk-rebuild (HEAD f206a2a vor dieser Arbeit)
+Ticket:  TASK/DESK15.md
+Spec:    docs/api/desktop/deskins.md (§ install_window_icon, § ins_icon),
+         docs/api/desktop/deskwin.md (§ win_icalc)
+
+
+0. Was gebaut wurde
+--------------------
+1. **Der Leser.** `DeskState::win_icalc` (kernel/src/desk/win.rs) fragt fuer
+   jedes Fensterobjekt die `ANODE`-Liste (`inf::app_afind_by_name`,
+   `deskapp.c:1437-1466`) und `build_item` nimmt
+   `f_isap ? a_aicon : a_dicon` (`deskwin.c:462-474`). Die Endungsregel
+   (`ftype::classify`) bleibt als Rueckfall.
+2. **Die Liste.** `inf::app_afind_by_name` / `allocate_window_anode` /
+   `set_anode_data` / `set_icon` / `app_free` in kernel/src/desk/inf.rs;
+   `default_type_anodes()` steht jetzt in EmuTOS' *Live*-Reihenfolge und hat
+   drei eigene Zeilen `#G *.NAP`, `#F *.NCP`, `#P *.NTP` (ADR-018).
+   `build_inf()` legt das synthetisierte Modell in die Session, wie
+   `app_start` seinen `infbuf` in `G.g_ahead` parst.
+3. **Der Dialog.** `ins::install_window_icon` (`ADINSWIN`), `ins::is_executable`
+   und die drei Zweige von `ins::ins_icon` (`STICNTYP`, Desktop-Symbole,
+   Fenster-Auswahl) in kernel/src/desk/ins.rs; der `rebld < 0`-Arm von
+   `IICNITEM` (`win_bdall(); win_shwall();`) in kernel/src/desk/main.rs.
+
+Nicht gebaut, als Folgeticket gemeldet: `CONF_WITH_DESKTOP_SHORTCUTS`
+(TASK/DESK30.md) — eine andere Liste (`G.g_ahead` braucht eine
+`AT_ISFILE`/`AT_ISFOLD`-Variante) plus `fun_win2win`s Ablegen-auf-Programm.
+
+
+1. Methode
+-----------
+QEMU `raspi4b`, 640x480, `-display none`, QMP-Screendump, scratch-Kopie mit
+dem H02-IKBD-Injektor (wie measurement-2026-09-23-desk18/method).
+
+    method/make_scratch_desk15.sh <ws> <scratch> <script.rs>
+      = rsync der Crates  (nie der geteilte Baum)
+      + a79_patch_desk10.py  (H02-Trace + DESK_UP-Flagge)
+      + apply_injector.py    (der Injektor mit dem gegebenen SCRIPT)
+      + a78_patch2.py        (duale Armierung)
+      + key_step_patch.py    (Step::Key)
+      + desk15_patch.py      (DESK15-Geruest, s. u.)
+
+    method/run.sh KERNEL8 IMG OUTDIR TAG TIMEOUT MARKER:PNG[:SETTLE] ...
+
+`desk15_patch.py` fuegt drei Dinge ein, alle nur auf der seriellen Leitung:
+  * `desk15_dump()` — je eine Zeile pro Desktop-Symbol und pro sichtbarem
+    Fensterobjekt mit dem absoluten Mittelpunkt seiner Bildflaeche. **Jeder**
+    Klickpunkt in den Aktionslisten kommt daher, keiner ist geraten.
+  * denselben Aufruf nach jedem `do_wredraw` (dort ist die Desktop-Sperre
+    frei; am Injektor selbst haengt sie und `global::with` wuerde klemmen).
+  * die absoluten Rechtecke von `ADINSWIN` und den aufgeloesten `ANODE`,
+    sobald der Kasten steht.
+
+Die Klickpunkte der `STICNTYP`-Warnung sind aus screendumps/c1-c-alert.png
+gemessen (method/alertbox.txt), nicht geschaetzt.
+
+Karte: mit `tools/make-sd-image.sh` **neu** gebaut (sie hat sich mit DESK18
+geaendert: `C:\SUB\CURDIR.NCP`, zwei `PROOF.TXT`). Pro Lauf eine eigene Kopie.
+
+
+2. Laeufe
+----------
+p   Sonde: Start, Doppelklick auf das Laufwerkssymbol, Fensterinhalt dumpen.
+q   Dialogsonde: `README.TXT` auswaehlen, `Options → Install icon...`,
+    die `ADINSWIN`-Rechtecke dumpen.
+a   **Der Beweis.** Fenster `C:\`, `README.TXT` auswaehlen,
+    `Options → Install icon...`, dreimal Pfeil hoch (Dokument → Papierkorb),
+    `Install`, dann `Options → Save desktop...`.
+b   **Kaltstart** auf der von a geschriebenen Karte.
+c1  `Options → Install icon...` mit **nichts** ausgewaehlt: die `STICNTYP`-
+    Rueckfrage.
+c2  dieselbe Rueckfrage, Antwort *Window*: der Kasten in seiner
+    "kein FNODE"-Form, dann `Cancel`.
+d   **Remove** auf der Karte von a: das Bild faellt auf das Dokument zurueck.
+
+Nachtrag zur Ehrlichkeit: nach den Laeufen p/q/c1/c2/d wurde der Name, unter
+dem `win_icalc` und `install_window_icon` nachschlagen, noch einmal angefasst
+— beide weiten die Bytes jetzt einzeln (`b as char`) wie `inf::scan_str` und
+`dir::unfmt_str`, statt ueber `from_utf8`/`from_utf8_lossy`, damit ein Name
+ausserhalb von ASCII in allen drei Wegen denselben Schluessel ergibt. Fuer
+reines ASCII — und das sind alle Namen auf der Karte — liefern beide Formen
+Byte fuer Byte dasselbe. Die **beiden tragenden** Laeufe a und b sind
+trotzdem gegen den Endstand neu gefahren; p/q/c1/c2/d stammen vom Stand davor.
+
+
+3. Was zu sehen ist
+--------------------
+screendumps/
+
+  p-win.png        Das `C:\`-Fenster. `.NCP`/`.NAP` tragen das
+                   **Programm**bild, `.TXT`/`.BIN` das Dokumentbild, Ordner
+                   das Ordnerbild — alles ueber die `ANODE`-Liste, nicht mehr
+                   ueber die Endung. Pixelvergleich: icons-cmp.png
+                   (HELLO.NCP | HELLO.TXT | DUMPVDI.NAP, 4x vergroessert) —
+                   das erste und dritte Bild sind das Programmfenster-Glyph,
+                   das mittlere die Seite mit dem Eselsohr.
+
+  q-dialog.png     `ADINSWIN` mit einem `FNODE`: Titel `INSTALL WINDOW ICON`,
+                   Namensfeld `README  .TXT` (8+3-Form, nicht beschreibbar),
+                   *Folder* grau und *File* vorgewaehlt (beide DISABLED),
+                   Dokumentvorschau mit den beiden Pfeilen,
+                   Install/Remove/Skip/Cancel.
+                   serial/q-serial.log:
+                     ADINSWIN ROOT (184,89) 272x320 pa=Some((9,false,-1,7))
+                     curr_icon=5
+                   = der generische `#N FF 07 @ *.*@` (Index 9), ueber
+                   `a_pdata` getroffen, also `isapp=false` → `a_dicon=7`
+                   (IG_DOCU), und 5 ist dessen Platz in `offered_icons`.
+
+  a-f-stepped.png  Nach drei Pfeilklicks steht der **Papierkorb** in der
+                   Vorschau.
+  a-g-installed.png Nach `Install`: im Fenster traegt **nur** `README.TXT`
+                   den Papierkorb (ausgewaehlt, also invertiert). Das ist der
+                   `rebld < 0`-Arm: `win_bdall(); win_shwall();`.
+  a-i-saved.png    Nach `Save desktop...`.
+
+  b-a-cold.png     **Kaltstart.** Das `#W`-Feld oeffnet `C:\` von selbst,
+                   und `README.TXT` traegt den Papierkorb wieder. Alles
+                   andere hat sein normales Bild.
+
+  c1-c-alert.png   `Please select icon type.` mit `Desktop | Window | Cancel`
+                   — `STICNTYP`, desk_rsc.c:2534, woertlich.
+  c2-d-dialog.png  Die *Window*-Antwort: **leeres, beschreibbares**
+                   Namensfeld (`________.___`), **beide** Knoepfe aktiv,
+                   Vorschau auf Index 0.
+                   serial/c2-serial.log: `pa=None curr_icon=0`
+                   (`deskins.c:1115-1117`).
+  d-d-dialog.png   Derselbe Kasten auf der Karte von a.
+                   serial/d-serial.log: `pa=Some((3,false,-1,3)) curr_icon=2`
+                   = der geschriebene `#N FF 03 @ README.TXT@` (Index 3),
+                   `a_dicon=3` = IG_TRASH, Platz 2 in `offered_icons`.
+  d-e-removed.png  Nach `Remove`: `README.TXT` traegt wieder das Dokument
+                   (remove-cmp.png, 4x: der Umriss ist die Seite mit dem
+                   Eselsohr).
+
+method/a-NEWDESK.INF.after-save — die von Lauf a geschriebene Datei:
+
+    #N FF 03 @ README.TXT@
+    #G 06 FF *.NAP@ @
+    #F 06 FF *.NCP@ @
+    #P 06 FF *.NTP@ @
+    #F 06 FF *.TOS@ @
+    #P 06 FF *.TTP@ @
+    #G 06 FF *.PRG@ @
+    #G 06 FF *.APP@ @
+    #Y 06 FF *.GTP@ @
+    #D FF 02 @ *.*@
+    #N FF 07 @ *.*@
+    #F FF 07 @ *.*@
+
+Der `AF_WINDOW`-Knoten steht vorn (app_alloc haengt vorn an), die
+generischen Zeilen in EmuTOS' Live-Reihenfolge — die spezifischen Endungen
+vor den `*.*`-Faengern. Genannte Abweichung: EmuTOS' *Datei* listet die
+`*.*`-Zeilen zuerst und dreht die Liste beim Lesen/Schreiben um
+(`app_revit`, deskapp.c:1213/1285); NewTOS hat keine kopfverkettete Liste
+zum Umdrehen und schreibt sie in Suchreihenfolge.
+
+
+4. Kein Absturz
+----------------
+`[EXC]` / `[PANIC]`: 0 in allen sieben raspi4b-Logs (p, q, a, b, c1, c2, d)
+und im qemu-virt-Bootlog.
+
+`fsck_msdos -n` auf der FAT16-Partition **jeder** geschriebenen Karte
+(sd-probe, sd-dlgprobe, sd-a, sd-b, sd-c1, sd-c2, sd-d): Phase 1 / Phase 2 /
+Phase 3, keine Fehler — build/fsck.txt. (Die Karte selbst faengt mit dem MBR
+an, `fsck_msdos` muss daher auf `…s1` zeigen; method/fsck.sh macht das.)
+
+Die von `fsck_msdos` gemeldete Dateizahl schwankt zwischen den Abbildern
+(46/50) — das ist **macOS**, nicht NewTOS: jedes Einhaengen legt
+`.Spotlight-V100`/`.fseventsd` an bzw. raeumt sie weg. Die Dateiliste von
+`sd-a.img` und `sd-b.img` ist Zeile fuer Zeile identisch (geprueft).
+
+Die Kartenabbilder liegen **nicht** in diesem Verzeichnis (`*.img` bleibt
+draussen).
+
+
+5. Was QEMU nicht abgedeckt hat
+--------------------------------
+Nur auf der echten Pi 4 (HW-Punkt 44, docs/api/desktop/_hw-test-2026-09-17.md):
+die Optik von `ADINSWIN` in 1920x1080, die echte Maus in seinen Knoepfen, die
+**Tastatur** im Namensfeld (der `pf == None`-Weg braucht sie, QEMU raspi4b hat
+keine) und eine Zuordnung **ueber Laufwerke hinweg** — sie haengt am Namen,
+nicht am Pfad, und mit einem einzigen `C:` ist das nicht zu zeigen.
+
+
+6. Bau
+-------
+`cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat`
+vor **jedem** Board.
+
+    cargo xtask build --board rpi4       tos-api 64 / kernel 94   (Basis 64/94)
+    cargo xtask build --board qemu-virt  tos-api 64 / kernel 94   (Basis 64/94)
+
+    cargo clippy --features board-rpi4        tos-api 80 / kernel 125 (Basis 80/125)
+    cargo clippy --features board-qemu-virt   tos-api 80 / kernel 125 (Basis 80/125)
+    Treffer in kernel/src/desk/: 0
+
+    cargo run -p xtask -- test   938 bestanden / 0 fehlgeschlagen / 1 ignoriert
+                                 (Basis 938/0/1)
+
+build/build-rpi4.txt, build/build-qemu-virt.txt, build/clippy-rpi4.txt,
+build/clippy-qemu.txt, build/test.txt, build/test-summary.txt, build/fsck.txt

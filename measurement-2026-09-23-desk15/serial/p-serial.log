@@ -1,0 +1,107 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x000000000032c000 (2801664 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-23 21:21:44
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[aes] gsx_malloc: screen buffer pa=0x01000000 len=614400 (kernel-owned, WF_SCREEN)
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[h02] injector armed
+[desk15] top=0
+[desk15] desk obj 9 box (0,19) 76x40 -> click (38,35)
+[desk15] desk obj 10 box (0,433) 76x40 -> click (38,449)
+[desk15] desk obj 11 box (546,433) 76x40 -> click (584,449)
+[desk] desktop up (1 drives, 0 window(s) from the context)
+[h02] step 0 at +100 -> mouse (446,366) mb=0
+[h02] step 1 at +101 -> mouse (573,479) mb=0
+[h02] step 2 at +102 -> mouse (639,479) mb=0
+[h02] step 3 at +103 -> mouse (639,479) mb=0
+[h02] step 4 at +104 -> mouse (639,479) mb=0
+[h02] step 5 at +105 -> mouse (639,479) mb=0
+[h02] step 6 at +300 -> mouse (600,460) mb=0
+[h02] MARK P_IDLE step 7 at +1500 mouse (600,460) mb=0
+[h02] step 8 at +1800 -> mouse (473,333) mb=0
+[h02] step 9 at +1801 -> mouse (346,206) mb=0
+[h02] step 10 at +1802 -> mouse (219,79) mb=0
+[h02] step 11 at +1803 -> mouse (92,35) mb=0
+[h02] step 12 at +1804 -> mouse (38,35) mb=0
+[h02] step 13 at +2100 -> mouse (38,35) mb=1
+[h02] step 14 at +2103 -> mouse (38,35) mb=0
+[h02] step 15 at +2108 -> mouse (38,35) mb=1
+[desk15] top=0
+[desk15] desk obj 9 box (0,19) 76x40 -> click (38,35)
+[desk15] desk obj 10 box (0,433) 76x40 -> click (38,449)
+[desk15] desk obj 11 box (546,433) 76x40 -> click (584,449)
+[h02] step 16 at +2111 -> mouse (38,35) mb=0
+[desk15] top=1
+[desk15] desk obj 9 box (0,19) 76x40 -> click (38,35)
+[desk15] desk obj 10 box (0,433) 76x40 -> click (38,449)
+[desk15] desk obj 11 box (546,433) 76x40 -> click (584,449)
+[desk15] win slot 0 handle 1 spec C:\*.*
+[desk15]   obj 12 'ACC' box (57,87) 76x40 -> click (95,103)
+[desk15]   obj 13 'APPS' box (141,87) 76x40 -> click (179,103)
+[desk15]   obj 14 'AUTO' box (225,87) 76x40 -> click (263,103)
+[desk15]   obj 15 'COREMARK' box (309,87) 76x40 -> click (347,103)
+[desk15]   obj 16 'GEMSYS' box (393,87) 76x40 -> click (431,103)
+[desk15]   obj 17 'SUB' box (477,87) 76x40 -> click (515,103)
+[desk15]   obj 18 'BIG.NCP' box (57,129) 76x40 -> click (95,145)
+[desk15]   obj 19 'CLOCKTST.NCP' box (141,129) 76x40 -> click (179,145)
+[desk15]   obj 20 'CONFIG.TXT' box (225,129) 76x40 -> click (263,145)
+[desk15]   obj 21 'DATA.BIN' box (309,129) 76x40 -> click (347,145)
+[desk15]   obj 22 'DTACHILD.NCP' box (393,129) 76x40 -> click (431,145)
+[desk15]   obj 23 'DUMPVDI.NAP' box (477,129) 76x40 -> click (515,145)
+[desk15]   obj 24 'HELLO.NCP' box (57,171) 76x40 -> click (95,187)
+[desk15]   obj 25 'HELLO.TXT' box (141,171) 76x40 -> click (179,187)
+[desk15]   obj 26 'HELLO2.NCP' box (225,171) 76x40 -> click (263,187)
+[desk15]   obj 27 'KERNEL8.IMG' box (309,171) 76x40 -> click (347,187)
+[desk15]   obj 28 'KEYBOARD.KBD' box (393,171) 76x40 -> click (431,187)
+[desk15]   obj 29 'LIBTEST.NCP' box (477,171) 76x40 -> click (515,187)
+[desk15]   obj 30 'LYNXBOOT.IMG' box (57,213) 76x40 -> click (95,229)
+[desk15]   obj 31 'MATHTST.NCP' box (141,213) 76x40 -> click (179,229)
+[desk15]   obj 32 'NEWDESK.INF' box (225,213) 76x40 -> click (263,229)
+[desk15]   obj 33 'PHYSBASE.NCP' box (309,213) 76x40 -> click (347,229)
+[desk15]   obj 34 'PROOF.TXT' box (393,213) 76x40 -> click (431,229)
+[desk15]   obj 35 'README.TXT' box (477,213) 76x40 -> click (515,229)
+[desk15]   obj 36 'SCRFLIP.NCP' box (57,255) 76x40 -> click (95,271)
+[desk15]   obj 37 'SETJMPT.NCP' box (141,255) 76x40 -> click (179,271)
+[desk15]   obj 38 'VDI.TSV' box (225,255) 76x40 -> click (263,271)
+[h02] step 17 at +2600 -> mouse (165,162) mb=0
+[h02] step 18 at +2601 -> mouse (292,289) mb=0
+[h02] step 19 at +2602 -> mouse (419,416) mb=0
+[h02] step 20 at +2603 -> mouse (546,460) mb=0
+[h02] step 21 at +2604 -> mouse (600,460) mb=0
+[h02] MARK P_WIN step 22 at +3400 mouse (600,460) mb=0

@@ -1,0 +1,6 @@
+# DESK15 run B -- cold start on the card run A wrote: the `#W` line reopens
+# C:\ by itself, and `#N FF 03 @ README.TXT@` must put the trash icon back on
+# that one file.
+100 parkbr
+300 move 600 460
+2500 mark A_COLD

@@ -1,0 +1,15 @@
+# DESK15 probe: boot, park the pointer bottom-right, open the C: window with a
+# double-click on the drive icon.  `desk15_dump` runs after every window
+# repaint (method/desk15_patch.py), so the serial log carries the item click
+# points of the open window.
+#   Drive-C icon click point (38,35) from the desktop-up dump.
+100 parkbr
+300 move 600 460
+1500 mark P_IDLE
+1800 move 38 35
+2100 down
+2103 up
+2108 down
+2111 up
+2600 move 600 460
+3400 mark P_WIN

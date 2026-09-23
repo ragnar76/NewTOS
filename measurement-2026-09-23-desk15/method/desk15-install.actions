@@ -1,0 +1,57 @@
+# DESK15 run A -- assign a window icon to a NAME and persist it.
+#   Open C:\, select README.TXT, Options -> "Install icon...", step the icon
+#   preview up three times (document 5 -> trash 2 in `offered_icons`), Install,
+#   then Options -> "Save desktop...".
+#
+#   Drive-C icon         (38,35)    desktop-up dump
+#   README.TXT           (515,229)  window dump
+#   Options title centre (196,8)    DESK05; drop-down box x=160, entry n at
+#                                   y = 27 + 16n -> "Install icon..." = entry 1
+#                                   (200,43), "Save desktop..." = entry 11 (200,203)
+#   ADINSWIN points from the dialog-probe dump (method/desk15_patch.py):
+#     ADINSWIN ROOT (184,89) 272x320
+#     IW_UP   abs (348,246) 28x20 -> click (362,256)
+#     IW_INST abs (208,321) 100x28 -> click (258,335)
+100 parkbr
+300 move 600 460
+1500 mark A_IDLE
+1800 move 38 35
+2100 down
+2103 up
+2108 down
+2111 up
+2600 move 600 460
+3400 mark B_WIN
+3700 move 515 229
+4000 down
+4003 up
+4300 move 600 460
+5000 mark C_SEL
+5300 move 196 8
+6000 mark D_OPTIONS
+6300 move 200 43
+6600 down
+6603 up
+6900 move 600 460
+8000 mark E_DIALOG
+8300 move 362 256
+8600 down
+8603 up
+8900 down
+8903 up
+9200 down
+9203 up
+9500 move 600 460
+10200 mark F_STEPPED
+10500 move 258 335
+10800 down
+10803 up
+11100 move 600 460
+12200 mark G_INSTALLED
+12500 move 196 8
+13200 mark H_OPTIONS2
+13500 move 200 203
+13800 down
+13803 up
+14100 move 600 460
+15500 mark I_SAVED

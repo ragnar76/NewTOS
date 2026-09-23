@@ -1,0 +1,28 @@
+# DESK15 dialog probe: open C:\, select README.TXT, Options -> "Install icon...",
+# and let method/desk15_patch.py dump ADINSWIN's absolute rectangles.
+#   Drive-C icon         (38,35)    desktop-up dump
+#   README.TXT           (515,229)  window dump ("obj 35 'README.TXT' ... -> click (515,229)")
+#   Options title centre (196,8)    DESK05; drop-down box x=160, entry n at y = 27 + 16n
+#   "Install icon..."    entry 1 -> (200,43)
+100 parkbr
+300 move 600 460
+1500 mark P_IDLE
+1800 move 38 35
+2100 down
+2103 up
+2108 down
+2111 up
+2600 move 600 460
+3400 mark P_WIN
+3700 move 515 229
+4000 down
+4003 up
+4300 move 600 460
+5000 mark P_SEL
+5300 move 196 8
+6000 mark P_OPTIONS
+6300 move 200 43
+6600 down
+6603 up
+6900 move 600 460
+8000 mark P_DIALOG

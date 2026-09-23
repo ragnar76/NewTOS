@@ -1,0 +1,27 @@
+# DESK15 run D -- *Remove* on the card run A wrote.  README.TXT carries the
+# trash icon; selecting it, opening `ADINSWIN` and pressing Remove must
+# `app_free` the `#N ... README.TXT@` node, after which the file falls back to
+# the generic `#F FF 07 @ *.*@` document icon.
+#   README.TXT (515,218) from run B's window dump (the reopened `#W` geometry).
+#   Options title (196,8); "Install icon..." = entry 1 (200,43).
+#   IW_REMV click (366,335) from the dialog-probe dump.
+100 parkbr
+300 move 600 460
+2500 mark A_IDLE
+2800 move 515 218
+3100 down
+3103 up
+3400 move 600 460
+4200 mark B_SEL
+4500 move 196 8
+5200 mark C_OPTIONS
+5500 move 200 43
+5800 down
+5803 up
+6100 move 600 460
+7200 mark D_DIALOG
+7500 move 366 335
+7800 down
+7803 up
+8100 move 600 460
+9300 mark E_REMOVED

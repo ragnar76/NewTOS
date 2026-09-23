@@ -1,0 +1,29 @@
+# DESK15 run C2 -- the `STICNTYP` *Window* answer: with nothing selected the
+# alert's second button opens `ADINSWIN` in its "no FNODE" shape -- the name
+# field is EDITABLE and empty, and the Folder/File radios are enabled
+# (deskins.c:1105-1112).  Cancel closes it without touching the list.
+#   Options title (196,8); "Install icon..." = entry 1 (200,43).
+#   Alert buttons measured off run C1's screendump (method/alertbox.txt):
+#     Desktop (191..272), Window (280..359), Cancel (368..447), y 253..284
+#     -> *Window* centre (319,268)
+#   IW_CNCL click (366,371) from the dialog-probe dump.
+100 parkbr
+300 move 600 460
+1500 mark A_IDLE
+1800 move 196 8
+2500 mark B_OPTIONS
+2800 move 200 43
+3100 down
+3103 up
+3400 move 600 460
+4500 mark C_ALERT
+4800 move 319 268
+5100 down
+5103 up
+5400 move 600 460
+6500 mark D_DIALOG
+6800 move 366 371
+7100 down
+7103 up
+7400 move 600 460
+8500 mark E_BACK
