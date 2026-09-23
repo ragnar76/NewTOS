@@ -1,6 +1,6 @@
 # DESK07 — File → Shutdown: Zustand pruefen
 
-Status: **OFFEN** · Prioritaet: **P4** · Typ: Pruefung / ggf. gegenstandslos
+Status: **ERLEDIGT (2026-09-23)** · Prioritaet: **P4** · Typ: Pruefung / ggf. gegenstandslos
 
 Abhaengigkeiten: —
 
@@ -22,3 +22,29 @@ die Pi wirklich herunterfaehrt.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss
+
+**ERLEDIGT (2026-09-23) — gegenstandslos, das Verhalten war schon richtig.**
+
+EmuTOS zeigt den Punkt immer und schaltet ihn ueber
+`menu_ienable(tree, QUITITEM, can_shutdown())` (`desk/deskmain.c:582`);
+`can_shutdown()` ist `TRUE` nur auf FireBee, Amiga, Apple Lisa und bei
+vorhandenen Native Features (`bios/bios.c:754-770`) und damit auf dem
+Falcon030/TOS4-Profil dieses Projekts **FALSE**. Ein dauerhaft graues
+`Shutdown` **ist** EmuTOS' Verhalten fuer unsere Maschine — `QUITITEM`s
+Rumpf (`deskmain.c:773-778`) wird dort nie erreicht.
+
+NewTOS zeigt den Punkt (`menu.rs` `Item::Shutdown`) und laesst ihn grau; das
+lief bis jetzt ueber den Sammelzweig `_ => false`, also ohne Begruendung an
+der Stelle. Geaendert wurde nur das: ein eigener `Item::Shutdown`-Zweig mit
+der Quellenangabe, damit die Regel dort steht, wo das Verhalten entsteht.
+Kein Verhaltensunterschied, keine Messung noetig — `Execute EmuCON` hat
+dabei seinen eigenen Satz bekommen, weil es aus einem **anderen** Grund grau
+ist (EmuTOS schaltet `CLIITEM` nie ab; uns fehlt der Handler, [DESK06](DESK06.md)).
+
+**Lead-Entscheidung zum echten Herunterfahren:** zurueckgestellt. Die Pi 4
+koennte ueber PM_RSTC/Watchdog wirklich abschalten, aber das waere eine
+eigene Erweiterung ohne EmuTOS-Vorbild und ist vor dem Meilenstein 2b
+(sauberer EmuTOS-Stand) nicht dran. Wenn sie kommt, kommt sie als eigenes
+Ticket mit BCM2711-Datenblattbeleg.

@@ -833,8 +833,19 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize)
         // the whole of EmuTOS's answer to "what happens with no selection" —
         // `rmv_icon` is never reached, and there is no alert.
         Item::RemoveIcon => ndesk >= 1,
+        // Shutdown: `menu_ienable(tree, QUITITEM, can_shutdown())`
+        // (`deskmain.c:582`), and `can_shutdown()` is `FALSE` on everything
+        // that is not a FireBee, an Amiga, a Lisa or a native-features host
+        // (`bios/bios.c:754-770`) — so on our Falcon030/TOS4 profile EmuTOS
+        // shows the entry permanently greyed, which is exactly this arm. A real
+        // Pi 4 could power down (PM_RSTC/watchdog), but that would be an own
+        // extension, not EmuTOS conformance (DESK07).
+        Item::Shutdown => false,
         // The remaining Options items stay disabled (deskrez is
         // config.txt-driven, ADR-017 rev 2; Desktop configuration is DESK05).
+        // `Execute EmuCON` is never disabled in EmuTOS (`CLIITEM` appears in no
+        // `ILL_*` table and in no `menu_ienable` call) — it is greyed here
+        // only because NewTOS has no handler for it yet (DESK06).
         _ => false,
     }
 }
