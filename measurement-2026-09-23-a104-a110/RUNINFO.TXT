@@ -1,0 +1,160 @@
+A104 + A110 + A91 -- one package: the last three AES items.
+  A104 (tos-api/src/aes/window.rs): `wind_open` of a window that already had a rectangle from
+       `wind_set(WF_CXYWH)` enters `draw_change` with a NON-ZERO old `WS_CURR`. The host test
+       walked all five branches of `aes/gemwmlib.c:1104-1191`; ONE of them is a real picture
+       difference (the top-request branch repaints the old top untopped, `:1118-1123` -- the
+       same call A94 wired, behind the other gate) and it is fixed; the rest is documented as a
+       modelled subset with two named deviations (no `w_move` blit on an open; the open always
+       posts its `WM_REDRAW`).
+  A110 (tos-api/src/aes/window.rs, kernel/src/desk/{main,dir}.rs):
+       (1) both `wind_update` counters carry their owner -- `wind_spb.sy_owner` is EmuTOS's own
+           field (`aes/gemflag.c:77-82`), the one on `ml_ocnt` is a named NewTOS addition -- and
+           A107's per-slot sweep releases only the dead slot's holds, `ml_ocnt` first and through
+           `END_MCTRL` so `fm_own`'s 1 -> 0 edge body runs;
+       (2) the kernel desktop's info line re-runs `win_sinfo` on every selection change and takes
+           `STINFST2` for it; all five EmuTOS call sites are occupied.
+  A91  (docs only): the inline Control Manager keeps the application from running while a
+       drop-down is open. Written up as a named NewTOS deviation in docs/api/aes/event.md and
+       docs/COMPATIBILITY.md, with ACC03 as the place where it disappears. No product code.
+Developer self-evidence, 2026-09-23. Branch desk-rebuild, base HEAD 671b362, changes uncommitted
+in the tree, nothing flashed, no `git checkout/restore/stash/reset` anywhere.
+
+Pinned EmuTOS references/emutos @ 1a7484ab:
+  aes/gemwmlib.c:1058-1223 (draw_change; :1069-1086 the geometry store + the VF_ISOPEN shortcut,
+    :1104-1191 the branch tree, :1110-1136 top request, :1118-1123 the old-top repaint,
+    :1129-1135 the clrold/wasclr return, :1138-1154 size request, :1160-1167 grow/open,
+    :1173-1177 w_move, :1184-1190 the shrink union, :1194-1211 the open/close block,
+    :1213-1222 the tail), :1410-1432 (wm_open), :938-996 (w_move), :363-379 + :286-312
+    (w_cpwalk/do_walk), :1676-1678 (wm_set WF_CXYWH), :1778-1797 (wm_update),
+    :1875-1893 (wm_new, :1879-1883 the two drain loops);
+  aes/gemflag.c:68-86 (tak_flag, :77-82 sy_owner), :100-129 (unsync, :125-129 the 1->0 edge);
+  aes/gemfmlib.c:51 (ml_ocnt has no owner), :58 (ml_pmown), :82-107 (fm_own, :86 BEG_UPDATE,
+    :89-93 the 0->1 body, :99-105 the 1->0 body);
+  aes/gemshlib.c:668-669 (sh_ldapp: the ownership-guarded unsync), :676-677 (wm_new);
+  aes/geminit.c:138,837-839 (wind_spb), :888 (ctl_pd = iprocess("SCRENMGR", ctlmgr)),
+    :654-745 (run_accs_and_desktop, the accessory AESPDs);
+  aes/gemctrl.c:427-486 (ctlmgr's own loop); aes/gemmnlib.c:530-690 (mn_do),
+    :415-443,559-585 (OUTSIDE_STATE);
+  desk/deskwin.c:867-906 (win_sinfo, :905 the sprintf), :202-203 (win_find(DESKWH));
+  desk/desk_rsc.c:2468-2469 (desk_rs_fstr[0..1] = STINFOST / STINFST2);
+  desk/deskmain.c:982-983 (the selection-change call), desk/desksupp.c:121-153 (desk_clear),
+    :160-169 (desk_clear_all), :450 (do_diropen); desk/deskfun.c:141 (rebuild_window),
+    :380-382 (mark_matching_fnodes), :627-631 (fun_selall).
+
+PRODUCT CODE (uncommitted; method/product-a104-a110.diff)
+  tos-api/src/aes/window.rs
+    A104: wind_open's old-top repaint gets its second gate. `let top_request = r !=
+      Grect::default() && r == old_curr;` and the condition becomes `old_top != DESKWH &&
+      old_top != handle && (old_curr == Grect::default() || top_request)`. The normal path
+      (old_curr == gl_rzero) is untouched -- the new term cannot fire there.
+    A110.1: UPDATE_OWNER / MCTRL_OWNER (AtomicUsize, NO_OWNER = usize::MAX = sy_owner NULL);
+      update_beg is tak_flag's ownership rule, update_end is unsync's 1->0 clear; mctrl_own sets
+      and clears MCTRL_OWNER on fm_own's own edges; release_locks_of(slot), called from
+      wm_new_for_slot, is wm_new's two drain loops gated on the owner; the three blanket resets
+      (wm_new, wm_new_keep_desktop, reinit) clear the owner fields too; test hooks
+      test_update_lock / test_mctrl_count.
+  kernel/src/desk/main.rs
+    A110.2: fmt_info(out, count, size, selected) -- `selected` picks STINFST2; new
+      win_sinfo(handle, check_selected) = deskwin.c:867-906; new desk_clear(wh) wrapper =
+      desksupp.c:121-153 (the state half plus win_sinfo(.., TRUE) for anything but the desktop);
+      call sites wired in hndl_button, kbd_arrow, top_msg, act_bdown's drag tail, desk_clear_all
+      and search_current_window.
+  kernel/src/desk/dir.rs
+    A110.2: fun_selectall gets win_sinfo(cwin, TRUE) (deskfun.c:627-631); fun_win2win's source
+      clear goes through the new desk_clear wrapper (deskfun.c:990).
+
+TESTS / SPEC (method/spec-and-test-a104-a110.diff)
+  tos-api/tests/aes_window_open_oldtop.rs  +3 helpers (create_window / set_cxywh / open_at), a
+      header section with the branch table, +4 cases (a104_*).
+  tos-api/tests/aes_a96_zombie_windows.rs  +3 cases (a110_*) on the A107 process fixture.
+  docs/api/aes/window-graphics.md  new `wind_open` section "A preset WS_CURR"; new
+      `wind_update` section "Each counter carries its owner"; the A107 block in `wind_new`
+      updated (the counters are no longer exempt).
+  docs/api/aes/event.md  new `evnt_multi` section "NewTOS deviation -- the application does not
+      run while a drop-down is open (A91)".
+  docs/COMPATIBILITY.md  one more entry under "Sanctioned deviations, one by one" (A91).
+  docs/api/desktop/deskwin.md  win_sinfo: the A109 "no caller" paragraph replaced by the A110
+      state plus an EmuTOS-site -> NewTOS-site table.  docs/api/desktop/deskmain.md  step 5:
+      the :982-983 call is implemented.
+  docs/api/desktop/_hw-test-2026-09-17.md  new checklist item 34 (the info line).
+  docs/STATUS.md  Phase-13 entry + one Recent Decisions row (2026-09-23).
+  TASK/A104.md, A110.md, A91.md  ERLEDIGT + "## Abschluss"; TASK/A104-STATUS-DONE.MD,
+      A110-STATUS-DONE.MD, A91-STATUS-DONE.MD.
+
+HOST TESTS (host-tests/)
+  a104-RED-before-fix.txt   6 passed / 1 FAILED -- "h1 after h2 opened at its preset rect:
+      untopped W_NAME is hollow white outside the glyphs, at (35,43): left 1 right 0"; the three
+      other a104_* cases and the three A94 cases pass on both sides (they pin the guards).
+  a104-GREEN-after-fix.txt  7/7.
+  a110-RED-no-lock-release.txt  6 passed / 2 FAILED against the tree with `release_locks_of(slot)`
+      commented out (a scratch mutation in the file, reverted from a byte copy -- no git):
+      (2, Some(1)) and (1, Some(1)) where (0, None) is required. The "living parent keeps its
+      lock" case passes on both sides.
+  a110-GREEN-after.txt      8/8.
+  xtask-test-after.log      cargo run -p xtask -- test: 926 passed / 0 failed / 1 ignored, rc 0
+      (baseline 919/0/1 + 4 A104 + 3 A110).
+  A104's fixed branch has no QEMU counterpart: nothing in the desktop, TeraDesk or QED calls
+  `wind_set(WF_CXYWH)` on an unopened window. The host test renders through the same drawing
+  chain into a pixel buffer; the QEMU runs below are the no-regression half.
+  A110.1 is host-only by nature (two GEMDOS slots, a Pterm, the next AES dispatch).
+
+BUILD / CLIPPY (build/)
+  xtask-build-rpi4.log / xtask-build-qemu-virt.log  `cargo clean -p kernel -p tos-api --target
+      aarch64-unknown-none-softfloat` before each: tos-api 64 / kernel 94 on BOTH boards, rc 0
+      (baseline 64/94, delta 0). The rpi4 build was run last, so the tree's kernel8.img is the
+      rpi4 one (sha256 in kernels-and-images.sha256).
+  clippy-tos-api.txt        cargo clippy -p tos-api --target aarch64-unknown-none-softfloat: 80
+      (baseline 80, A107/A109 receipt); window.rs 11 hits -> 11.
+  clippy-kernel-rpi4.txt    cargo clippy -p kernel --features board-rpi4 --target
+      aarch64-unknown-none-softfloat: tos-api 80 / kernel 125 (baseline 80/125);
+      desk/main.rs 0 -> 0, desk/dir.rs 0 -> 0.
+  kernels-and-images.sha256  the four scratch kernels that produced the dumps, the three SD
+      images, and the tree's kernel8.img.
+
+QEMU raspi4b (method/run.sh = A79's/A107's; 640x480, -display none, QMP screendump 0.3 s after
+each serial mark; fresh image copy per run; `parkbr` before every dump; all four scratch kernels
+built with the default dev profile, like the A107/A109 reference).
+  The scratch method is method/make_scratch_a109.sh (rsync of the crates -- NEVER the shared
+  tree -- + a79_patch.py + the H02 injector + a78_patch2.py + key_step_patch.py +
+  tree_dump_patch.py). BEFORE = the same scratch with the FOUR new `win_sinfo(.., true)` call
+  sites removed (patched in the scratch copy only).
+
+  desk (sd-base, no #Z; method/desk-a110.actions) -- the kernel desktop, 4 marks, 0 EXC/PANIC:
+    A (idle)                                  " 418693 bytes used in 26 items."        0 px
+    B (one icon clicked -- ACC, a folder)     " 0 bytes used in 1 selected items."  1011 px
+    C (rubber band over SETJMPT.NCP+VDI.TSV)  " 18140 bytes used in 2 selected items." 1189 px
+    D (click on empty space -> deselect)      " 418693 bytes used in 26 items."        0 px
+    On every mark the WHOLE-SCREEN diff equals the diff inside the info-line rectangle
+    (58,66,500,20), bbox (58,70)-(317,83) resp. (58,70)-(349,83): outside the line not one pixel
+    changes. The selection inversion of the icons was already correct before -- only the line was
+    missing. The 0 for a folder is EmuTOS-faithful (a directory FNODE's f_size is 0, and
+    win_sinfo sums it unconditionally).
+    A109's geometry is unchanged: "[a108] BOX1#11=(64,19,160,240) ENTRY0=(0,0,160,16)" in both
+    logs, identical to measurement-2026-09-22-a107-a109/serial/desk-after-serial.log.
+  probe (a107-sd-probe.img; method/probe-a107.actions) -- the A107 regression control, 5 marks,
+    0 EXC/PANIC, compared against measurement-2026-09-22-a107-a109/screendumps/probe-after-*.png:
+    B, C, D, E: 0 px each -- the sweep, the repaint and the re-topped parent are untouched.
+    A: 6779 px, bbox (120,80)-(617,319). NOT a behaviour difference: at +150 ticks this run had
+       not yet reached the child's `wind_open`, the reference run had (there A and B were
+       bit-identical, ref A vs ref B = 0 px). My A is the picture the actions file describes for
+       A ("the parent's window alone") and is pixel-identical to C/D (after the sweep).
+  tera (a109-sd-tera.img; method/tera-a109.actions) -- the third-party control, 3 marks,
+    0 EXC/PANIC: A / B (File box down) / D (cancelled) all 0 px against the A107/A109 reference.
+
+  screendumps/PIXDIFF.TXT carries every number above, produced by method/pixdiff.py and
+  method/regiondiff.py.
+
+RESIDUALS (named, untouched)
+  (1) A104's two named deviations stay: no `w_move` blit on an open (EmuTOS would carry screen
+      content the window never stood on, gemwmlib.c:1173-1177), and the open always posts its
+      WM_REDRAW (EmuTOS returns before w_update at :1133-1135 when neither window is VF_BROKEN).
+      Both are in docs/api/aes/window-graphics.md with their receipts.
+  (2) `tak_flag`'s refusal (a second client parked on sy_wait, gemwmlib.c:1785-1786) is still not
+      reproduced -- there is no AES scheduler to park anyone on. Named in `update_beg`'s doc and
+      in the spec.
+  (3) `wind_set(WF_INFO)` repaints the WHOLE window frame here (redraw_open), EmuTOS only the
+      W_INFO cell (w_cpwalk(w_handle, W_INFO, ...), gemwmlib.c:1666-1672,1747). Pre-existing;
+      A110.2 only triggers it more often. Not touched.
+
+NO *.img IN THIS DIRECTORY (the images live in the job scratch; their sha256 is recorded).
+Pi acceptance is open for A110.2 -- HW checklist item 34, docs/api/desktop/_hw-test-2026-09-17.md.

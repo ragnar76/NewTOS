@@ -1039,3 +1039,155 @@ fn menu_tree() -> Box<[Object; 3]> {
         mk(G_IBOX, 1, -1, -1, 16, 216),
     ])
 }
+
+// ── A110 — the two `wind_update` counters carry their owner ────────────────
+//
+// EmuTOS's screen lock has one: `wind_spb.sy_owner`, written by `tak_flag`
+// (`aes/gemflag.c:77-82`), cleared by `unsync` on the 1 → 0 edge (`:125-129`),
+// and read in exactly one place — `sh_ldapp` takes the lock off a program that
+// has ended only `if (wind_spb.sy_owner == rlr)` (`aes/gemshlib.c:668-669`).
+// `ml_ocnt` has none (`aes/gemfmlib.c:51`): the only force-drain of it is
+// `wm_new`'s (`aes/gemwmlib.c:1879-1883`), which runs when no other client is
+// alive. Our per-slot sweep (A107) runs while the parent *is* alive, so both
+// counters carry the slot that took them and the sweep drains only that slot's.
+
+/// The parent holds the screen lock; a child is started, takes nothing and
+/// dies. `sh_ldapp`'s owner test (`gemshlib.c:668-669`) fails for the child,
+/// so the parent's `BEG_UPDATE` must still be in force after the sweep — a
+/// blanket drain would unlock the parent's screen in the middle of its own
+/// redraw.
+#[test]
+fn a110_a_living_clients_screen_lock_survives_a_childs_death() {
+    let _g = lock();
+    let mut pb = Aespb::new();
+    tos_api::aes::window::wm_new();
+
+    let parent = Proc::new();
+    parent.run();
+    appl_init(&mut pb);
+    wind_update(&mut pb, BEG_UPDATE);
+    wind_update(&mut pb, BEG_UPDATE); // nested, as a redraw inside a redraw
+    let held = tos_api::aes::window::test_update_lock();
+
+    let child = Proc::new();
+    child.run();
+    appl_init(&mut pb);
+    pterm_child_of(&child, &parent);
+    evnt_multi_timer(&mut pb, 2); // the parent's next AES call: the sweep
+    let after = tos_api::aes::window::test_update_lock();
+
+    appl_exit(&mut pb);
+    desktop_context();
+    tos_api::aes::window::wm_new();
+
+    assert_eq!(held, (2, Some(parent.slot)), "the parent's two BEG_UPDATEs, owner recorded");
+    assert_eq!(
+        after,
+        (2, Some(parent.slot)),
+        "a child's death must not touch a lock the living parent owns \
+         (gemshlib.c:668-669 releases only `sy_owner == rlr`)"
+    );
+}
+
+/// The **child** holds the screen lock and dies without an `END_UPDATE`.
+/// `sh_ldapp`'s owner test matches, so the lock goes — count and owner —
+/// and the parent can take it again from zero.
+#[test]
+fn a110_a_dead_clients_screen_lock_is_released() {
+    let _g = lock();
+    let mut pb = Aespb::new();
+    tos_api::aes::window::wm_new();
+
+    let parent = Proc::new();
+    parent.run();
+    appl_init(&mut pb);
+
+    let child = Proc::new();
+    child.run();
+    appl_init(&mut pb);
+    wind_update(&mut pb, BEG_UPDATE);
+    wind_update(&mut pb, BEG_UPDATE);
+    let held = tos_api::aes::window::test_update_lock();
+
+    pterm_child_of(&child, &parent);
+    let at_pterm = tos_api::aes::window::test_update_lock();
+    evnt_multi_timer(&mut pb, 2); // the parent's next AES call: the sweep
+    let after = tos_api::aes::window::test_update_lock();
+
+    // The screen is usable again: the parent's own take starts a fresh count
+    // and puts the parent in the owner field.
+    wind_update(&mut pb, BEG_UPDATE);
+    let retaken = tos_api::aes::window::test_update_lock();
+
+    appl_exit(&mut pb);
+    desktop_context();
+    tos_api::aes::window::wm_new();
+
+    assert_eq!(held, (2, Some(child.slot)), "the child's two BEG_UPDATEs, owner recorded");
+    assert_eq!(
+        at_pterm,
+        (2, Some(child.slot)),
+        "the `Pterm` itself releases nothing — `release_slot` runs on the exception stack (A107)"
+    );
+    assert_eq!(
+        after,
+        (0, None),
+        "the dead child's screen lock must be drained at the parent's next AES call \
+         (gemshlib.c:668-669 + gemwmlib.c:1882-1883)"
+    );
+    assert_eq!(retaken, (1, Some(parent.slot)), "and the parent can take the lock again");
+}
+
+/// The child dies holding `BEG_MCTRL`. `wm_new` drains `ml_ocnt` **through**
+/// `wm_update(END_MCTRL)` (`gemwmlib.c:1880-1881`), so `fm_own`'s 1 → 0 edge
+/// body runs: `gl_mntree = ml_mnhold` (`gemfmlib.c:103`) puts the parent's
+/// menu bar back. Zeroing the counter instead would leave the bar parked for
+/// the rest of the parent's life — the observable "the screen is usable
+/// again". The `BEG_UPDATE` `fm_own` took with it (`:86`) comes off too.
+#[test]
+fn a110_a_dead_clients_mouse_control_hold_is_released_and_unparks_the_menu() {
+    let _g = lock();
+    let mut pb = Aespb::new();
+    tos_api::aes::window::wm_new();
+    let parent_menu = menu_tree();
+
+    let parent = Proc::new();
+    parent.run();
+    appl_init(&mut pb);
+    menu_bar(&mut pb, parent_menu.as_ptr() as u64, 1);
+
+    let child = Proc::new();
+    child.run();
+    appl_init(&mut pb);
+    wind_update(&mut pb, BEG_MCTRL);
+    let held = (
+        tos_api::aes::window::test_mctrl_count(),
+        tos_api::aes::window::test_update_lock(),
+        tos_api::aes::menu::active() as u64,
+    );
+
+    pterm_child_of(&child, &parent);
+    evnt_multi_timer(&mut pb, 2); // the parent's next AES call: the sweep
+    let after = (
+        tos_api::aes::window::test_mctrl_count(),
+        tos_api::aes::window::test_update_lock(),
+        tos_api::aes::menu::active() as u64,
+    );
+
+    menu_bar(&mut pb, 0, 0);
+    appl_exit(&mut pb);
+    desktop_context();
+    tos_api::aes::window::wm_new();
+
+    assert_eq!(held.0, (1, Some(child.slot)), "the child's BEG_MCTRL, owner recorded");
+    assert_eq!(held.1, (1, Some(child.slot)), "fm_own's own BEG_UPDATE (gemfmlib.c:86)");
+    assert_eq!(held.2, 0, "while the child owns the mouse the menu tree is parked (gemfmlib.c:89-90)");
+    assert_eq!(after.0, (0, None), "the dead child's mouse-control hold must be drained");
+    assert_eq!(after.1, (0, None), "and the BEG_UPDATE fm_own took with it");
+    assert_eq!(
+        after.2,
+        parent_menu.as_ptr() as u64,
+        "the drain must run fm_own's 1 -> 0 edge, which puts the parent's menu bar back \
+         (gemfmlib.c:103)"
+    );
+}

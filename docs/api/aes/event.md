@@ -265,6 +265,48 @@ and the delivered `msg[0] == AC_CLOSE` it also sets `AP_ACCLOSE`.
 when a button transition is pending (`mtrans > 1`), otherwise the live
 `xrat`/`yrat`/`button`; `EV_KS` is always the live `kstate` (`gemevlib.c:42-58`).
 
+### NewTOS deviation — the application does not run while a drop-down is open (A91, 2026-09-23)
+
+**EmuTOS.** The Control Manager is a *process*:
+`gl_mowner = ctl_pd = iprocess("SCRENMGR", ctlmgr)` (`aes/geminit.c:888`), and
+`ctlmgr` is an endless `w_setactive(); ev_multi(…); wm_update(BEG_UPDATE); …`
+loop of its own (`aes/gemctrl.c:427-486`). A menu track therefore runs in
+`ctl_pd`'s context — `mn_do`'s state machine (`aes/gemmnlib.c:530-690`) blocks
+`ctl_pd`, not the application. The application stays on the AES's ready/delay
+lists throughout: a `MU_TIMER` it asked for is posted by `tchange`
+(`aes/gemflag.c:33-64`) and dispatched to it while the drop-down is on the
+screen, and so is anything else that is not gated on mouse ownership.
+
+**NewTOS.** There is no AES scheduler and no `ctl_pd` process. The Control
+Manager runs **inline**, inside the application's own `evnt_multi` trap:
+`menu_intercept` / `window::intercept` at the head of the wait loop
+(`tos-api/src/aes/event.rs`), and `menu::track` (`tos-api/src/aes/menu.rs`)
+drives the whole `mn_do` state machine there and returns only with the
+selection or the cancel. While it runs, the application's `evnt_multi` has not
+returned: **its `MU_TIMER` does not fire, and no other arm of that call is
+evaluated.** Since A73 the track also stays open in `OUTSIDE_STATE` — the
+pointer between the bar and the drop-down box, which no event leaves until it
+re-enters or a button transition cancels (`gemmnlib.c:415-443,559-585`) — so
+"while it runs" can be arbitrarily long: a drop-down left open holds the
+application for as long as the user leaves the pointer there.
+
+This is a property of the inline model, not of A73; A73 only made the window
+long enough to notice. Nothing else is affected: the messages, their word
+contents and the order they arrive in are unchanged, and no application that
+does not rely on timer ticks *during* a menu track can observe it. What can:
+a clock accessory, a progress animation, anything driven from `MU_TIMER`
+alone — it stalls while a menu is open and resumes afterwards.
+
+**Where it disappears.** The cooperative kernel (milestone 2b,
+`docs/analysis/aes-audit/00-MASTER.md`) gives the AES real processes; the
+Screen Manager becomes one, the track moves into it, and the application keeps
+being dispatched during a track exactly as in EmuTOS. The deviation ends there
+by construction — there is no separate fix to make. `TASK/ACC03.md` is where it
+is decided: an accessory is a second `AESPD` parked in `evnt_multi`
+(`aes/geminit.c:654-745`), the ticket lists A91 as a dependency, and its third
+work item is exactly "must the inline Control Manager go for this, or can
+accessories live without events during a track".
+
 ---
 
 ## The single-event waits (opcodes 20–24, 26)

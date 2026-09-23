@@ -428,11 +428,28 @@ full per protocol):
   of the `sprintf(pwin->w_info, alert, select_size, select_count)` at
   `:905`. **NewTOS (A109, 2026-09-22):** `kernel/src/desk/main.rs`
   `fmt_info` writes the `STINFOST` form; it had its own wording and the
-  numbers the other way round (`" N items   M bytes used"`). The
-  `STINFST2` branch has **no caller** here — `set_window_strings` runs only
-  when a window's directory is (re)read, always with the whole directory's
-  count/size, and nothing re-runs it on a selection change as EmuTOS does
-  (`deskmain.c:982-983`). A missing caller, named in `TASK/A109.md`.
+  numbers the other way round (`" N items   M bytes used"`).
+  **NewTOS (A110, 2026-09-23):** `fmt_info` takes the `selected` flag and
+  writes the `STINFST2` form for it, and `kernel/src/desk/main.rs`
+  `win_sinfo(handle, check_selected)` is the function above — count the
+  selected `FNODE`s, fall back to the directory totals when none is selected
+  (which is what makes a *deselect* put the byte count back), `wind_set(…,
+  WF_INFO, …)` by address. The desktop handle is passed through as in EmuTOS:
+  `win_find(DESKWH)` answers `&G.g_wdesktop` (`:202-203`), whose file list is
+  empty, and the `wind_set` lands on a window that is `VF_INUSE` but never
+  `VF_ISOPEN`, so it stores a pointer and draws nothing.
+
+  **Call sites, all five of EmuTOS's.** `win_sinfo(pw, FALSE)` — the whole
+  directory — stays where it was, in `set_window_strings`
+  (`do_diropen`/`rebuild_window`, `desksupp.c:450`, `deskfun.c:141`).
+  `win_sinfo(pw, TRUE)` now runs from:
+
+  | EmuTOS | NewTOS |
+  |---|---|
+  | `deskmain.c:982-983` (single click, after `act_bsclick`/`act_bdown`) | `main.rs` `hndl_button` |
+  | `desksupp.c:150-153` (`desk_clear`, and through it `desk_clear_all`) | `main.rs` `desk_clear`, the wrapper around the state half |
+  | `deskfun.c:380-382` (`mark_matching_fnodes`) | `main.rs` `search_current_window` |
+  | `deskfun.c:627-631` (`fun_selall`) | `dir.rs` `fun_selectall` |
 
 ---
 

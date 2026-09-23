@@ -349,6 +349,59 @@ second opened at boot); NewTOS host test
 `tos-api/tests/aes_window_open_oldtop.rs`, QEMU dumps
 `measurement-2026-09-21-a94/screendumps/`.
 
+### A preset `WS_CURR` — which branches of `draw_change` an open can take (A104, 2026-09-23)
+
+The paragraph above is the branch an open reaches when the window's old
+`WS_CURR` is `gl_rzero`, which is what `wm_create` (`:1377`) and `wm_close`
+(`:1449,1073`) leave. One call puts a **non-zero** rectangle there without
+opening the window: `wind_set(WF_CXYWH, r1)` on a created-but-unopened window
+stores `WS_PREV := WS_CURR`, `WS_CURR := r1`, `WS_WORK := wm_calc(…)` and then
+returns at the `VF_ISOPEN` test without drawing (`gemwmlib.c:1069-1086`). A
+`wind_open(r2)` after that enters `draw_change` with `c = r1 != gl_rzero`, and
+the branch tree at `:1104-1191` splits by how `r2` relates to `r1`:
+
+| `r2` vs. `r1` | branch | EmuTOS |
+|---|---|---|
+| equal | top request, `:1110-1136` | `w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE)` (`:1118-1123`); when neither window is `VF_BROKEN`, `w_cpwalk(gl_wtop, …)` and `return` (`:1129-1135`) |
+| same origin, other size | size request, `:1138-1154` | damage = union of both sizes + shadow; on a shrink `stop = w_handle`, `moved`, `start = DESKWH` |
+| superset, other origin | grow/open, `:1160-1167` | `c = pt` |
+| same size, other origin | move of top guy, `:1173-1177` | `w_move` **blits** the screen rectangle at `r1` to `r2`; `start = DESKWH`, `moved` |
+| anything else | `:1184-1190` | damage = union of `r1` and `r2`, `start = DESKWH` |
+
+**What NewTOS models.** The top-request branch's `w_cpwalk(oldtop, …)` is
+implemented: it is the same full deactivated repaint of the previous top as
+above, reached by the other gate, and the contract is identical (every visible
+piece of the old top's frame, overlap or not). The grow/open branch is the one
+already described — note that `:1203-1206`'s `WS_PREV == gl_rzero` test fails
+for a preset rectangle, so in that branch the old top is **not** repainted in
+full, in EmuTOS and here alike.
+
+**What it does not model, and why that is observable only as extent.** The
+damage rectangle stays the opened rectangle plus its drop shadow in the size,
+shrink and move branches, where EmuTOS takes the union with `r1`. The union is
+larger, but the extra ground is the rectangle the window was *assigned* and
+never shown at, so repainting it writes back the pixels that are already
+there: the resulting screen is identical. Host receipt:
+`tos-api/tests/aes_window_open_oldtop.rs`
+`a104_a_preset_the_window_never_showed_at_repaints_to_the_same_pixels`.
+
+**Two named deviations in that same corner.**
+
+1. *No `w_move` blit on an open.* In the same-size branch EmuTOS carries
+   `WS_PREV + shadow` to the new place with a screen blit (`w_move`,
+   `gemwmlib.c:946-970`) and then leaves the window out of both the frame
+   repaint and the `WM_REDRAW` fan-out (`moved`, `:1025`). For a *move* those
+   are the window's own pixels; for an **open** they are whatever stood where
+   the window never was. NewTOS paints the window. Receipt:
+   `a104_open_at_a_same_size_move_of_the_preset_paints_the_window_not_a_blit`.
+2. *The open always posts its `WM_REDRAW`.* The top-request branch returns at
+   `:1133-1135` when neither window is `VF_BROKEN`, i.e. without `w_update`, so
+   an EmuTOS window opened this way is framed but never asked to draw its
+   content. NewTOS posts the `WM_REDRAW` as in every other open.
+
+Both deviations are confined to `wind_open` after `wind_set(WF_CXYWH)` on an
+unopened window; no caller in the desktop, TeraDesk or QED uses that sequence.
+
 ---
 
 ## `wind_close` (102)
@@ -1037,6 +1090,38 @@ window-gadget hits.
 > valid" — are contract; the `tak_flag`/`ev_block`/`sy_tas` cooperative-mutex
 > mechanics are EmuTOS internals NewTOS reimplements over its own process locks.
 
+### Each counter carries its owner (A110, 2026-09-23)
+
+`wind_spb` is an `SPB`, and `tak_flag` writes the taking process into
+`sy_owner` (`aes/gemflag.c:77-82`) while `unsync` clears it on the 1 → 0 edge
+(`:125-129`). The field names exactly one process: a second one asking for a
+held lock is refused and parked on `sy_wait` (`wm_update`'s
+`ev_block(MU_MUTEX, (LONG)&wind_spb)`, `gemwmlib.c:1785-1786`), so the count is
+the one owner's nesting depth. It is read in a single place — `sh_ldapp` takes
+the screen lock off a program that has ended **only** when that program held
+it: `if (wind_spb.sy_owner == rlr) unsync(&wind_spb)` (`aes/gemshlib.c:668-669`).
+
+`ml_ocnt` has no owner field (`aes/gemfmlib.c:51`). It does not need one in
+EmuTOS: the only force-drain is `wm_new`'s (`while (ml_ocnt > 0)
+wm_update(END_MCTRL)`, `gemwmlib.c:1879-1881`), which runs from the shell loop
+after the swept program was the only client (`gemshlib.c:676-677`).
+
+NewTOS keeps an owner on **both** counters. The screen lock's is EmuTOS's own
+field; the mouse-control counter's is a named NewTOS addition, forced by the
+`Pexec`-child sweep (`wind_new (109)` below, A107): that sweep runs while the
+parent client is alive, so it must drain the dead slot's holds and no others.
+Draining the count blindly would hand the parent's mouse back and un-park its
+menu tree in the middle of its own modal dialog. The sweep drains `ml_ocnt`
+first and through `END_MCTRL`, as `wm_new` does, so `fm_own`'s 1 → 0 edge body
+runs (`gemfmlib.c:99-104`) and the `BEG_UPDATE` it took comes off with it; then
+the screen lock, under `sh_ldapp`'s owner test. Receipts:
+`tos-api/tests/aes_a96_zombie_windows.rs` `a110_*`.
+
+**The one thing that is not reproduced** is `tak_flag`'s refusal: there is no
+AES scheduler to park a second taker on, so a second client's `BEG_UPDATE`
+raises the count instead of blocking and the first owner keeps the lock. The
+rest of the AES never withholds the screen from anyone, so nothing observes it.
+
 ---
 
 ## `wind_calc` (108) — the border↔work conversion (the geometry contract)
@@ -1168,14 +1253,17 @@ window (handle 0) is not deleted.
 > AES draw uses. For that slot — and only that slot — its windows are closed
 > and deleted, its `WF_NEWDESK` tree is dropped if it registered the current
 > one, and its menu bar is dropped if it installed the current one
-> ([`menu.md`](menu.md) § "A dead client's menu bar"). The two
-> `wind_update` counters are **not** reset: the living parent may hold its
-> own, and EmuTOS releases the screen lock only when the dying process owns
-> it (`if (wind_spb.sy_owner == rlr) unsync(&wind_spb)`,
-> `gemshlib.c:668-669`), which NewTOS's owner-less counters cannot decide
-> (`TASK/A107.md`). Host-tested in `tos-api/tests/aes_a96_zombie_windows.rs`
-> (three `a107_*` cases: the window, the background tree and the menu bar of
-> the child go, the parent's stay).
+> ([`menu.md`](menu.md) § "A dead client's menu bar"). Since A110 the two
+> `wind_update` counters go the same way: each carries the slot that took it
+> (see `wind_update (107)` § "Each counter carries its owner"), the sweep
+> drains `ml_ocnt` through `END_MCTRL` and then the screen lock, both only
+> while the owner is the dead slot — `wm_new`'s drain loops
+> (`gemwmlib.c:1879-1883`) under `sh_ldapp`'s owner test (`if
+> (wind_spb.sy_owner == rlr) unsync(&wind_spb)`, `gemshlib.c:668-669`). A
+> hold of the **living** parent is left standing, which is the whole point of
+> the test. Host-tested in `tos-api/tests/aes_a96_zombie_windows.rs` (three
+> `a107_*` cases: the window, the background tree and the menu bar of the
+> child go, the parent's stay; three `a110_*` cases for the counters).
 
 ---
 

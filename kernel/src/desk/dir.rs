@@ -692,6 +692,9 @@ pub fn fun_selectall() -> bool {
         return false;
     }
     global::with(|g| g.select_all(cwin));
+    // `win_sinfo(pw, TRUE)` before the redraw (`deskfun.c:627-631`): the info
+    // line now counts the whole selection.
+    super::main::win_sinfo(cwin, true);
     super::redraw::redraw_desktop();
     true
 }
@@ -770,7 +773,7 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) {
     let op = drag_op(keystate);
     if fun_op(op, &src_dir, &entries, Some(&dst_dir)) {
         if src_wh != dst_wh {
-            global::with(|g| g.desk_clear(src_wh));
+            super::main::desk_clear(src_wh);
         }
         if op == Op::Move {
             rebuild_window(src_wh);

@@ -544,6 +544,35 @@ comment) behaves identically on both machines. Revisit once NewTOS has
 genuinely concurrent, independently-scheduled AES clients and a matching
 "queue gained room" wake key.
 
+**An application does not run while a drop-down menu is open** — sanctioned
+2026-09-23 with A91 (found as a side observation of A73). EmuTOS's Control
+Manager is a *process*: `gl_mowner = ctl_pd = iprocess("SCRENMGR", ctlmgr)`
+(`references/emutos/aes/geminit.c:888`), and `ctlmgr` runs its own endless
+`w_setactive(); ev_multi(…); wm_update(BEG_UPDATE); …` loop
+(`aes/gemctrl.c:427-486`), so the menu track (`mn_do`'s state machine,
+`aes/gemmnlib.c:530-690`) blocks `ctl_pd` and **not** the application: an
+application waiting in `evnt_multi` keeps being dispatched while the drop-down
+is on the screen and its `MU_TIMER` keeps firing (`tchange`,
+`aes/gemflag.c:33-64`). NewTOS has no AES scheduler and no `ctl_pd` process;
+the Control Manager runs **inline** in the application's own `evnt_multi` trap
+(`tos-api/src/aes/event.rs` `menu_intercept` / `window::intercept` →
+`tos-api/src/aes/menu.rs` `track`), so that call does not return until the
+track ends — no `MU_TIMER`, no other arm. Since A73 the track also persists in
+`OUTSIDE_STATE` (pointer between bar and box, `gemmnlib.c:415-443,559-585`),
+which makes the stall arbitrarily long rather than momentary. Nothing about
+the messages, their contents or their order changes; what an application can
+observe is a timer-driven animation or clock standing still while a menu is
+open. **Resolution path:** the cooperative kernel (milestone 2b,
+`docs/analysis/aes-audit/00-MASTER.md`) turns the Screen Manager into a real
+AES process, and the deviation ends by construction, with no separate fix.
+`TASK/ACC03.md` — accessory process model, which already names A91 as a
+dependency — is the ticket that reaches the decision first: an accessory is a
+second `AESPD` parked in `evnt_multi` (`aes/geminit.c:654-745`), so ACC03 has
+to settle whether the inline Control Manager can stay at all. Recorded in full
+in `docs/api/aes/event.md` § "NewTOS deviation — the application does not run
+while a drop-down is open".
+
+
 **Not sanctioned, still open:** `appl_read` on an empty queue returns 0
 instead of blocking (`tos-api/src/aes/appl.rs:434-469`; AUD-P1-007). Unlike
 the write case above, EmuTOS's read-blocks-on-empty is not itself a hang

@@ -1,0 +1,27 @@
+# A110.2 kernel desktop info line (sd-base, no #Z). The C:\ window is open at
+# boot; its info line shows the whole directory (STINFOST). Ticks are 200 Hz
+# after "[desk] desktop up" armed the injector. The pointer is parked at the
+# bottom-right corner before every dump so the cursor never sits on the line.
+# A: idle                 -> " <bytes> bytes used in <n> items."
+# B: one icon clicked     -> STINFST2 with 1 selected item
+# C: rubber band over the last row's two icons -> STINFST2 with 2
+# D: click on empty space -> desk_clear -> back to STINFOST
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 95 105
+1600 down
+1603 up
+1800 parkbr
+2200 mark B_ONE_SELECTED
+2500 move 70 340
+2700 down
+2750 drag 220 255
+2900 up
+3100 parkbr
+3500 mark C_BAND_TWO
+3800 move 400 340
+4000 down
+4003 up
+4200 parkbr
+4600 mark D_DESELECTED

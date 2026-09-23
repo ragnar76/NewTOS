@@ -1,0 +1,26 @@
+running 7 tests
+test a104_a_preset_the_window_never_showed_at_repaints_to_the_same_pixels ... ok
+test a104_open_at_a_same_size_move_of_the_preset_paints_the_window_not_a_blit ... ok
+test a104_open_at_a_superset_of_the_preset_rect_leaves_the_old_top_alone ... ok
+test a104_open_at_the_preset_rect_repaints_the_old_top_untopped ... FAILED
+test fully_covered_old_top_paints_nothing_outside ... ok
+test non_overlapping_second_open_still_repaints_the_old_top_untopped ... ok
+test second_open_repaints_the_old_top_untopped_outside_the_new_window ... ok
+
+failures:
+
+---- a104_open_at_the_preset_rect_repaints_the_old_top_untopped stdout ----
+
+thread 'a104_open_at_the_preset_rect_repaints_the_old_top_untopped' (7669582) panicked at tos-api/tests/aes_window_open_oldtop.rs:764:9:
+assertion `left == right` failed: h1 after h2 opened at its preset rect: untopped W_NAME is hollow white outside the glyphs, at (35,43)
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a104_open_at_the_preset_rect_repaints_the_old_top_untopped
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `-p tos-api --test aes_window_open_oldtop`

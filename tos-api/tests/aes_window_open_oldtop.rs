@@ -394,6 +394,7 @@ const KIND_ALL: i16 =
     NAME | CLOSER | FULLER | MOVER | INFO | SIZER | UPARROW | DNARROW | VSLIDE | LFARROW | RTARROW | HSLIDE;
 
 const WF_NAME: i16 = 2;
+const WF_CXYWH: i16 = 5;
 const WF_INFO: i16 = 3;
 const WF_NEWDESK: i16 = 14;
 const WF_DCOLOR: i16 = 19;
@@ -540,6 +541,50 @@ fn open_window(pb: &mut Aespb, kind: i16, r: (i16, i16, i16, i16)) -> i16 {
     pb.call(101, 5, 1, 0); // wind_open
     assert_eq!(pb.intout[0], 1, "wind_open({h})");
     h
+}
+
+/// `wind_create(kind)` alone — a created but **unopened** window, whose
+/// `WS_CURR` is `gl_rzero` (`wm_create`, `gemwmlib.c:1377`).
+fn create_window(pb: &mut Aespb, kind: i16) -> i16 {
+    pb.intin.fill(0);
+    pb.intin[0] = kind;
+    pb.intin[1] = 0;
+    pb.intin[2] = 0;
+    pb.intin[3] = SCREEN_W as i16;
+    pb.intin[4] = SCREEN_H as i16;
+    pb.call(100, 5, 1, 0); // wind_create
+    let h = pb.intout[0];
+    assert!(h > 0, "wind_create must give a handle, got {h}");
+    h
+}
+
+/// `wind_set(h, WF_CXYWH, r)` — on an unopened window this is `draw_change`
+/// storing `WS_PREV := WS_CURR`, `WS_CURR := r`, `WS_WORK` and returning at
+/// the `VF_ISOPEN` test without drawing (`gemwmlib.c:1069-1086`). It is the
+/// only way a window arrives at `wind_open` with a **non-zero** old
+/// `WS_CURR` (A104).
+fn set_cxywh(pb: &mut Aespb, handle: i16, r: (i16, i16, i16, i16)) {
+    pb.intin.fill(0);
+    pb.intin[0] = handle;
+    pb.intin[1] = WF_CXYWH;
+    pb.intin[2] = r.0;
+    pb.intin[3] = r.1;
+    pb.intin[4] = r.2;
+    pb.intin[5] = r.3;
+    pb.call(105, 6, 1, 0); // wind_set
+    assert_eq!(pb.intout[0], 1, "wind_set({handle}, WF_CXYWH)");
+}
+
+/// `wind_open(h, r)` on an already-created window.
+fn open_at(pb: &mut Aespb, handle: i16, r: (i16, i16, i16, i16)) {
+    pb.intin.fill(0);
+    pb.intin[0] = handle;
+    pb.intin[1] = r.0;
+    pb.intin[2] = r.1;
+    pb.intin[3] = r.2;
+    pb.intin[4] = r.3;
+    pb.call(101, 5, 1, 0); // wind_open
+    assert_eq!(pb.intout[0], 1, "wind_open({handle})");
 }
 
 /// `wind_set(h, WF_NAME | WF_INFO, string)` in the native (`addr_in[0]`) form.
@@ -869,4 +914,178 @@ fn fully_covered_old_top_paints_nothing_outside() {
     // as `h2` painted it.
     assert_all(host, R { x: b1.x, y: b1.y, w: b1.w + 2, h: 1 }, WHITE, "h2's info band over h1's top border");
     assert_topped_name(host, b2, 1, "h2");
+}
+
+// ── A104 — `wind_open` of a window whose old `WS_CURR` is not zero ─────────
+//
+// `wind_set(WF_CXYWH, r1)` on a created-but-unopened window leaves `WS_CURR =
+// r1` (`draw_change` stores it and returns at the `VF_ISOPEN` test,
+// `gemwmlib.c:1069-1086`). The `wind_open(r2)` that follows therefore enters
+// `draw_change` with a **non-zero** `c`, and EmuTOS's branch tree
+// (`:1104-1191`) splits by how `r2` relates to `r1`:
+//
+// | `r2` vs. `r1` | branch | what `draw_change` does |
+// |---|---|---|
+// | equal | "top request" `:1110-1136` | `w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE)` — the old top untopped, in full (`:1118-1123`) — and, when neither window is `VF_BROKEN`, `w_cpwalk(gl_wtop, …)` + `return` (`:1129-1135`) |
+// | same origin, other size | "size request" `:1138-1154` | damage = union of the two sizes + shadow; `start = DESKWH` on a shrink |
+// | superset, other origin | "grow or open" `:1160-1167` | `c = pt` — identical to the plain-open branch |
+// | same size, other origin | "move of top guy" `:1173-1177` | `w_move` **blits** the screen rectangle at `r1` to `r2` |
+// | anything else | "other moves and shrinks" `:1184-1190` | damage = union of `r1` and `r2`, `start = DESKWH` |
+//
+// Only the first branch differs from ours in **pixels**, and it is the same
+// defect A94 fixed one gate further on: `:1203-1206`'s `WS_PREV == gl_rzero`
+// test keeps the old-top repaint from firing here, but `:1118-1123` runs it
+// unconditionally. That gate is what the first case pins. The size/move/shrink
+// branches only widen the damage rectangle over ground the window never
+// occupied, so they repaint pixels that are already correct — the second and
+// third cases measure exactly that. The `w_move` blit is the one place where
+// EmuTOS would put *other* pixels on the screen; that one is a named
+// deviation, see `docs/api/aes/window-graphics.md` § `wind_open`.
+
+/// `h2` is created, given `b2` with `wind_set(WF_CXYWH)` and then **opened at
+/// the same rectangle**. `pt == c` with `c != gl_rzero` is `draw_change`'s
+/// top-request branch, and it is not the early `return` of `:1113-1116`: the
+/// window just became `W_TREE[ROOT].ob_tail` (`w_obadd`, `:1425`) and was not
+/// `oldtop`, because it was not open. So `w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE)`
+/// at `:1120` repaints `h1` deactivated through its own rectangle list — the
+/// same call A94 wired for the plain-open branch, reached by a different gate.
+#[test]
+fn a104_open_at_the_preset_rect_repaints_the_old_top_untopped() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh();
+    let b1 = R { x: 10, y: 40, w: 300, h: 200 };
+    let b2 = R { x: 330, y: 40, w: 300, h: 200 };
+    let h1 = open_window(&mut pb, KIND_ALL, (b1.x, b1.y, b1.w, b1.h));
+    set_string(&mut pb, h1, WF_NAME, b"A A\0");
+    set_string(&mut pb, h1, WF_INFO, b"i\0");
+    assert_topped_name(host, b1, 3, "h1 alone");
+
+    let h2 = create_window(&mut pb, KIND_ALL);
+    set_cxywh(&mut pb, h2, (b2.x, b2.y, b2.w, b2.h));
+    open_at(&mut pb, h2, (b2.x, b2.y, b2.w, b2.h));
+    set_string(&mut pb, h2, WF_NAME, b"B\0");
+    set_string(&mut pb, h2, WF_INFO, b"j\0");
+
+    assert_untopped_title(host, b1, 3, "h1 after h2 opened at its preset rect");
+    assert_topped_name(host, b2, 1, "h2");
+}
+
+/// The counter-case, and the reason the gate cannot simply be dropped: when
+/// the open rectangle is a **superset at another origin**, `draw_change` takes
+/// the "grow that is a superset or an open" branch (`:1160-1167`) and reaches
+/// `:1203-1206`, whose `w_getsize(WS_PREV, gl_wtop, &pprev)` is the preset
+/// rectangle — not `gl_rzero` — so `w_cpwalk(oldtop, …)` is **skipped**. `h1`
+/// keeps the topped decorations it was painted with, outside the damage
+/// rectangle, exactly as in EmuTOS.
+#[test]
+fn a104_open_at_a_superset_of_the_preset_rect_leaves_the_old_top_alone() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh();
+    let b1 = R { x: 10, y: 40, w: 300, h: 200 };
+    let preset = (350, 60, 200, 120);
+    let b2 = R { x: 330, y: 40, w: 300, h: 200 };
+    let h1 = open_window(&mut pb, KIND_ALL, (b1.x, b1.y, b1.w, b1.h));
+    set_string(&mut pb, h1, WF_NAME, b"A A\0");
+    set_string(&mut pb, h1, WF_INFO, b"i\0");
+    assert_topped_name(host, b1, 3, "h1 alone");
+
+    let h2 = create_window(&mut pb, KIND_ALL);
+    set_cxywh(&mut pb, h2, preset);
+    open_at(&mut pb, h2, (b2.x, b2.y, b2.w, b2.h));
+    set_string(&mut pb, h2, WF_NAME, b"B\0");
+    set_string(&mut pb, h2, WF_INFO, b"j\0");
+
+    assert_topped_name(host, b1, 3, "h1 after a grow-branch open (:1204-1206 skips the repaint)");
+    assert_topped_name(host, b2, 1, "h2");
+}
+
+/// The size/shrink/move branches take a **larger** damage rectangle than the
+/// bare `pt` we repaint — the union of the preset and the open rectangle plus
+/// the drop shadow (`:1152-1154`, `:1184-1190`) — and on a shrink they start
+/// the walk at the desktop so `w_drawdesk` repaints the background over it
+/// (`:1217-1219`). The extra ground is the rectangle the window was *assigned*
+/// but never shown at, so repainting it puts back what is already there: the
+/// screen after `create + wind_set(WF_CXYWH) + wind_open` must be pixel-
+/// identical to the screen after a plain `create + wind_open` at the same
+/// rectangle.
+///
+/// Both presets are checked with no other window open, so the old-top repaint
+/// (the case above) plays no part: what is compared is the damage extent alone.
+#[test]
+fn a104_a_preset_the_window_never_showed_at_repaints_to_the_same_pixels() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let b = R { x: 120, y: 80, w: 360, h: 260 };
+
+    let (host, mut pb) = fresh();
+    let h = open_window(&mut pb, KIND_ALL, (b.x, b.y, b.w, b.h));
+    set_string(&mut pb, h, WF_NAME, b"B\0");
+    set_string(&mut pb, h, WF_INFO, b"j\0");
+    let plain = host.raster.snapshot();
+
+    // `:1138-1154` (same origin, other size — a shrink in both axes) and
+    // `:1184-1190` (a diagonal move to another size).
+    for (what, preset) in [
+        ("same-origin shrink (size request, :1138-1154)", (b.x, b.y, b.w + 120, b.h + 80)),
+        ("diagonal move to another size (:1184-1190)", (40, 300, 240, 150)),
+    ] {
+        let (host, mut pb) = fresh();
+        let h = create_window(&mut pb, KIND_ALL);
+        set_cxywh(&mut pb, h, preset);
+        open_at(&mut pb, h, (b.x, b.y, b.w, b.h));
+        set_string(&mut pb, h, WF_NAME, b"B\0");
+        set_string(&mut pb, h, WF_INFO, b"j\0");
+        let preset_run = host.raster.snapshot();
+
+        let differ: Vec<usize> =
+            (0..plain.len()).filter(|&i| plain[i] != preset_run[i]).take(8).collect();
+        assert!(
+            differ.is_empty(),
+            "{what}: a preset rectangle must not change one pixel of the opened window's screen; \
+             {} of the first 8 differing indices: {:?}",
+            differ.len(),
+            differ
+        );
+    }
+}
+
+/// The one branch whose pixels EmuTOS would genuinely put somewhere else:
+/// when the open rectangle has the **same size at another origin**,
+/// `draw_change` calls `w_move` (`:1173-1177`), which blits `WS_PREV + shadow`
+/// — the preset rectangle — to the new place (`gemwmlib.c:946-970`), leaves
+/// the window out of the frame repaint (`moved`, `:1025`) and out of the
+/// `WM_REDRAW` fan-out. For a *move* that is right: the pixels being carried
+/// are the window's own. For an **open** they are whatever happened to be on
+/// the screen where the window never was — the desktop, or another window.
+///
+/// NewTOS paints the window instead; this case states that, and is the
+/// receipt for the deviation recorded in
+/// `docs/api/aes/window-graphics.md` § `wind_open`.
+#[test]
+fn a104_open_at_a_same_size_move_of_the_preset_paints_the_window_not_a_blit() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let b = R { x: 120, y: 80, w: 360, h: 260 };
+
+    let (host, mut pb) = fresh();
+    let h = open_window(&mut pb, KIND_ALL, (b.x, b.y, b.w, b.h));
+    set_string(&mut pb, h, WF_NAME, b"B\0");
+    set_string(&mut pb, h, WF_INFO, b"j\0");
+    let plain = host.raster.snapshot();
+
+    let (host, mut pb) = fresh();
+    let h = create_window(&mut pb, KIND_ALL);
+    set_cxywh(&mut pb, h, (40, 300, b.w, b.h)); // same size, other origin
+    open_at(&mut pb, h, (b.x, b.y, b.w, b.h));
+    set_string(&mut pb, h, WF_NAME, b"B\0");
+    set_string(&mut pb, h, WF_INFO, b"j\0");
+    let moved = host.raster.snapshot();
+
+    let differ: Vec<usize> = (0..plain.len()).filter(|&i| plain[i] != moved[i]).take(8).collect();
+    assert!(
+        differ.is_empty(),
+        "the window must be painted at its open rectangle, not blitted from ground it never \
+         occupied; {} of the first 8 differing indices: {:?}",
+        differ.len(),
+        differ
+    );
+    assert_topped_name(host, b, 1, "the window opened after a same-size preset");
 }

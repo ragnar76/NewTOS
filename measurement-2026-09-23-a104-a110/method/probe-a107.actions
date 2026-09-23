@@ -1,0 +1,19 @@
+# A107 probe (sd-probe = sd-base + C:\A107PAR.NAP + C:\A96ZOMB.NAP + a #Z
+# autorun line for the parent). No mouse input is needed: the parent is the
+# autorun program, so the injector arms on it (ARMED_BY_EL0 = 1 -> SCRIPT_TERA)
+# and only parks the pointer out of the way and prints the marks.
+# Ticks are 200 Hz from the parent's first AES pump.
+#  A: the parent's own window alone (the child has not started yet).
+#  B: the child's window over it (both alive).
+#  C: after the child's `Pterm` and the parent's next AES call -- the dump the
+#     ticket is about: with the sweep the child's frame is gone and the
+#     parent's window is untouched; without it the frame stands.
+#  D: the same, later in the parent's wait (nothing comes back).
+#  E: the parent has ended too and the kernel desktop is back.
+50 parkbr
+150 mark A_PARENT_WINDOW
+500 mark B_CHILD_WINDOW
+900 mark C_AFTER_SWEEP
+1150 mark D_LATER
+1700 parkbr
+1800 mark E_DESK_BACK

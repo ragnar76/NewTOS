@@ -1,0 +1,520 @@
+diff --git a/kernel/src/desk/dir.rs b/kernel/src/desk/dir.rs
+index de4c435..e31782a 100644
+--- a/kernel/src/desk/dir.rs
++++ b/kernel/src/desk/dir.rs
+@@ -692,6 +692,9 @@ pub fn fun_selectall() -> bool {
+         return false;
+     }
+     global::with(|g| g.select_all(cwin));
++    // `win_sinfo(pw, TRUE)` before the redraw (`deskfun.c:627-631`): the info
++    // line now counts the whole selection.
++    super::main::win_sinfo(cwin, true);
+     super::redraw::redraw_desktop();
+     true
+ }
+@@ -770,7 +773,7 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) {
+     let op = drag_op(keystate);
+     if fun_op(op, &src_dir, &entries, Some(&dst_dir)) {
+         if src_wh != dst_wh {
+-            global::with(|g| g.desk_clear(src_wh));
++            super::main::desk_clear(src_wh);
+         }
+         if op == Op::Move {
+             rebuild_window(src_wh);
+diff --git a/kernel/src/desk/main.rs b/kernel/src/desk/main.rs
+index 4600914..f0b3acb 100644
+--- a/kernel/src/desk/main.rs
++++ b/kernel/src/desk/main.rs
+@@ -164,6 +164,10 @@ fn hndl_button(clicks: i16, mx: i16, my: i16) -> bool {
+         if st.buttons & 0x01 != 0 {
+             done = act_bdown(handle, root, mx, my);
+         }
++        // `pw = win_find(wh); win_sinfo(pw, TRUE);` (`deskmain.c:982-983`) —
++        // the click changed the selection (or cleared it), so the info line
++        // switches between the selection count and the directory totals.
++        win_sinfo(handle, true);
+     } else {
+         // Double-click: select just the hit item, then open it.
+         let obid = gr_obfind(root, mx, my);
+@@ -262,7 +266,7 @@ fn act_bdown(handle: i16, root: i16, mx: i16, my: i16) -> bool {
+ 
+     // Otherwise dispatch the drag through the deskfun dispatch tree.
+     let done = dir::fun_drag(handle, dst_wh, dobj, drop_keystate);
+-    global::with(|g| g.desk_clear(handle));
++    desk_clear(handle);
+     done
+ }
+ 
+@@ -726,7 +730,7 @@ fn kbd_arrow(action: i16) {
+     let Some(slot) = global::with(|g| g.win_slot(handle)).flatten() else {
+         return;
+     };
+-    global::with(|g| g.desk_clear(handle));
++    desk_clear(handle);
+     let work = wind_get_work(handle);
+     if let Some(sliders) = global::with(|g| g.win_arrow(slot, work, action)).flatten() {
+         set_sliders(handle, sliders);
+@@ -1150,7 +1154,8 @@ fn set_window_strings(handle: i16, slot: usize, title: &str, count: usize, size:
+     let ptrs = global::with(|g| {
+         let node = &mut g.windows.slots[slot];
+         node.set_name(title);
+-        fmt_info(&mut node.w_info, count, size);
++        // `win_sinfo(pw, FALSE)` — the whole directory, `STINFOST`.
++        fmt_info(&mut node.w_info, count, size, false);
+         (node.name_ptr(), node.info_ptr())
+     });
+     if let Some((name, info)) = ptrs {
+@@ -1159,6 +1164,80 @@ fn set_window_strings(handle: i16, slot: usize, title: &str, count: usize, size:
+     }
+ }
+ 
++/// `win_sinfo` (EmuTOS `desk/deskwin.c:867-906`) — rebuild window `handle`'s
++/// info line from its file list and hand it back to the AES.
++///
++/// ```c
++/// if (check_selected)
++///     for (i = 0, fn = pn->p_fbase; i < pn->p_count; i++, fn++)
++///         if (fn->f_selected) { select_count++; select_size += fn->f_size; }
++/// if (select_count)
++///     alert = desktop_str_addr(STINFST2);
++/// else {
++///     alert = desktop_str_addr(STINFOST);
++///     select_count = pn->p_count;  select_size = pn->p_size;
++/// }
++/// sprintf(pwin->w_info, alert, select_size, select_count);
++/// wind_set(pwin->w_id, WF_INFO, pwin->w_info, 0, 0);
++/// ```
++///
++/// `check_selected == false` is the whole-directory line
++/// ([`set_window_strings`], the `do_diropen`/`rebuild_window` path,
++/// `desksupp.c:450`, `deskfun.c:141`); `true` is the selection line, which is
++/// what every selection change runs — a selection of *nothing* falls back to
++/// the directory totals through the same `select_count == 0` test, so
++/// deselecting restores the byte count by itself.
++///
++/// The desktop is passed straight through, as in EmuTOS: `win_find(DESKWH)`
++/// answers `&G.g_wdesktop` (`deskwin.c:202-203`), whose file list is empty, so
++/// the count falls back to its zero totals and the `wind_set` lands on the
++/// desktop window — which is `VF_INUSE` but never `VF_ISOPEN`, so it stores a
++/// pointer and draws nothing (`wm_set`'s `if (pwin->w_flags & VF_ISOPEN)`,
++/// `gemwmlib.c:1666-1672`). `desk_clear` guards the call anyway
++/// (`desksupp.c:150-153`), `hndl_button` does not (`deskmain.c:982-983`).
++pub(super) fn win_sinfo(handle: i16, check_selected: bool) {
++    let info = global::with(|g| {
++        let node = g.win_find(handle)?;
++        let mut select_count = 0usize;
++        let mut select_size = 0u64;
++        if check_selected {
++            for f in node.w_pnode.p_flist.iter().filter(|f| f.f_selected) {
++                select_count += 1;
++                select_size += u64::from(f.f_size);
++            }
++        }
++        let selected = select_count != 0;
++        if !selected {
++            select_count = node.w_pnode.p_count;
++            select_size = node.w_pnode.p_size;
++        }
++        fmt_info(&mut node.w_info, select_count, select_size, selected);
++        Some((node.w_id, node.info_ptr()))
++    })
++    .flatten();
++    if let Some((w_id, ptr)) = info {
++        super::wind_set_ptr(w_id, WF_INFO, ptr);
++    }
++}
++
++/// `desk_clear` (EmuTOS `desk/desksupp.c:121-153`) — deselect everything in
++/// window `wh` and refresh its info line.
++///
++/// The state half is [`DeskState::desk_clear`] (the `act_allchg(…, FALSE)`
++/// call, `:147`); the second half is `win_sinfo(pw, TRUE)` for anything but
++/// the desktop (`:150-153`), which is how a deselect puts the directory's byte
++/// count back in place of a selection count. Returns whether anything changed,
++/// for the caller's repaint decision.
++///
++/// [`DeskState::desk_clear`]: super::global::DeskState::desk_clear
++pub(super) fn desk_clear(wh: i16) -> bool {
++    let changed = global::with(|g| g.desk_clear(wh)).unwrap_or(false);
++    if wh != DESKWH {
++        win_sinfo(wh, true);
++    }
++    changed
++}
++
+ /// `fun_search` (EmuTOS `deskfun.c:560`, `CONF_WITH_SEARCH`) — File → Search:
+ /// prompt for a name, convert it to a TOS wildcard, and search the current
+ /// window. The name entry is [`super::dlg::edit_name`] (real keyboard only);
+@@ -1221,6 +1300,9 @@ fn search_current_window(handle: i16, name: &str) -> usize {
+ 
+     let (count, sliders) = result;
+     if let Some(sliders) = sliders {
++        // `win_sinfo(pw, TRUE); win_dispfile(pw, first_match);`
++        // (`deskfun.c:380-382`) — the matches are now the selection.
++        win_sinfo(handle, true);
+         set_sliders(handle, sliders);
+         redraw::redraw_desktop();
+     } else {
+@@ -1456,10 +1538,7 @@ fn do_cycle() {
+ /// windows, i.e. real-HW interaction / File→Cycle). Flagged, not masked with a
+ /// desktop-side composite.
+ fn top_msg(handle: i16) {
+-    global::with(|g| {
+-        let prev = g.g_cwin;
+-        g.desk_clear(prev);
+-    });
++    desk_clear(global::with(|g| g.g_cwin).unwrap_or(DESKWH));
+     if global::with(|g| g.win_find(handle).is_some()).unwrap_or(false) {
+         super::wind_set_int(handle, WF_TOP, 0); // AES: top + repaint bg/frames
+         global::with(|g| g.win_top(handle));
+@@ -1780,11 +1859,11 @@ fn desk_clear_all() {
+     let (handles, n) = open_handles();
+     let mut any_win = false;
+     for &handle in &handles[..n] {
+-        if global::with(|g| g.desk_clear(handle)).unwrap_or(false) {
++        if desk_clear(handle) {
+             any_win = true;
+         }
+     }
+-    let any_desk = global::with(|g| g.desk_clear(DESKWH)).unwrap_or(false);
++    let any_desk = desk_clear(DESKWH);
+     if any_win {
+         redraw::win_shwall();
+     }
+@@ -1870,15 +1949,12 @@ fn child_spec(parent_spec: &str, name: &str) -> (String, String) {
+ /// `" N items   M bytes used"` — its own wording and the two numbers the
+ /// other way round (A109).
+ ///
+-/// EmuTOS picks the second string `STINFST2`, `" %ld bytes used in %d
+-/// selected items."` (`desk_rsc.c:2469`), when `win_sinfo(pwin, TRUE)` counted
+-/// selected `FNODE`s (`deskwin.c:876-902`). That branch has **no call site
+-/// here**: this desktop sets the info line only when a window's directory is
+-/// (re)read — [`set_window_strings`], three call sites, all with the whole
+-/// directory's `p_count`/`p_size` — and never re-runs it on a selection
+-/// change (EmuTOS does, `deskmain.c:982-983`). Missing caller, not a missing
+-/// string: named in `TASK/A109.md`, not stubbed in here.
+-fn fmt_info(out: &mut [u8], count: usize, size: u64) {
++/// `selected` picks the second resource string, `STINFST2` — `" %ld bytes used
++/// in %d selected items."` (`desk_rsc.c:2469`, index 1) — which `win_sinfo`
++/// uses when it counted selected `FNODE`s (`deskwin.c:891-902`). Both strings
++/// take the same two arguments in the same order; only the noun phrase differs
++/// (A110).
++fn fmt_info(out: &mut [u8], count: usize, size: u64, selected: bool) {
+     let mut p = 0usize;
+     let mut num = [0u8; 20];
+     let push = |out: &mut [u8], p: &mut usize, s: &[u8]| {
+@@ -1893,7 +1969,7 @@ fn fmt_info(out: &mut [u8], count: usize, size: u64) {
+     push(out, &mut p, fmt_u64(size, &mut num));
+     push(out, &mut p, b" bytes used in ");
+     push(out, &mut p, fmt_u64(count as u64, &mut num));
+-    push(out, &mut p, b" items.");
++    push(out, &mut p, if selected { b" selected items." as &[u8] } else { b" items." });
+     out[p] = 0;
+ }
+ 
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index b9b7150..98d3e1a 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -27,7 +27,7 @@ use crate::bdos::process::{self, usermem, Abi};
+ use crate::host::{host, Host};
+ use crate::vdi::backend::{ClipRect, PatternFill, Pel, RasterBackend, WriteMode};
+ use core::cell::UnsafeCell;
+-use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU64, AtomicU8, Ordering};
++use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+ 
+ // ── kind (border widget) bits, aesdefs.h:519-531 ──
+ const NAME: u16 = 0x0001;
+@@ -768,15 +768,57 @@ fn renumber_z() -> i16 {
+ /// (`tak_flag`), `END_UPDATE` releases it (`unsync`, clamped at 0). Single-
+ /// tasking has no contended waiter, so the take always succeeds; the count is
+ /// tracked so nested BEG/END pairs and [`wind_new`]'s release stay balanced.
++/// Who holds it is [`UPDATE_OWNER`].
+ static UPDATE_LOCK: AtomicI16 = AtomicI16::new(0);
+ 
++/// Owner of the window-tree lock — EmuTOS `wind_spb.sy_owner`
++/// (`aes/geminit.c:138,837-839`). `tak_flag` writes the taking process into it
++/// (`aes/gemflag.c:77-82`) and `unsync` clears it on the 1 → 0 edge (`:125-129`),
++/// so the field names *one* process: in EmuTOS a second one cannot get the lock
++/// while the first holds it, it blocks on `wind_spb.sy_wait`
++/// (`wm_update`'s `ev_block(MU_MUTEX, …)`, `gemwmlib.c:1785-1786`), and the
++/// count is that one owner's nesting depth.
++///
++/// The field exists for exactly one reader: `sh_ldapp` releases the screen lock
++/// of a program that has ended **only when that program held it** —
++/// `if (wind_spb.sy_owner == rlr) unsync(&wind_spb)` (`aes/gemshlib.c:668-669`).
++/// Our per-slot sweep ([`wm_new_for_slot`]) needs the same test, because unlike
++/// EmuTOS's shell loop it runs while another client is still alive (A110).
++///
++/// A GEMDOS slot index or [`super::pd::DESKTOP`]; [`NO_OWNER`] = free
++/// (`sy_owner = NULL`).
++static UPDATE_OWNER: AtomicUsize = AtomicUsize::new(NO_OWNER);
++
+ /// Mouse-control-ownership counter — EmuTOS `ml_ocnt`. `BEG_MCTRL` increments,
+ /// `END_MCTRL` decrements. While `> 0` the app has taken over the mouse via
+ /// `wind_update(BEG_MCTRL)`, so the AES frame interception ([`intercept`])
+ /// switches off and the control rectangle is the whole screen ([`chk_ctrl`]).
+ /// The edge bodies (menu-tree hold, mouse-owner hand-over) are [`mctrl_own`]'s.
++/// Who holds it is [`MCTRL_OWNER`].
+ static MCTRL_CNT: AtomicI16 = AtomicI16::new(0);
+ 
++/// Owner of the mouse-control counter — **a NewTOS addition, and a necessary
++/// one.** `ml_ocnt` is a bare `WORD` in EmuTOS (`aes/gemfmlib.c:51`); the only
++/// process `fm_own` remembers is [`ML_PMOWN`], the *mouse* owner it hands the
++/// mouse back to, not the holder of the count. EmuTOS gets away with that
++/// because the only place the count is force-drained is `wm_new`
++/// (`while (ml_ocnt > 0) wm_update(END_MCTRL)`, `gemwmlib.c:1879-1881`), and
++/// `wm_new` runs from the shell loop after the program it swept was the **only**
++/// client (`gemshlib.c:676-677`) or at a session boundary.
++///
++/// [`wm_new_for_slot`] runs while the parent client is alive, so an
++/// owner-blind drain would hand the parent's mouse back and un-hold its menu
++/// tree in the middle of the parent's own modal dialog. The counter therefore
++/// carries the slot of the client that took it to `1`, on the same 0 → 1 /
++/// 1 → 0 edges as `fm_own`'s own state (`gemfmlib.c:87-93,99-104`), and the
++/// per-slot sweep only drains its own (A110).
++static MCTRL_OWNER: AtomicUsize = AtomicUsize::new(NO_OWNER);
++
++/// "No process holds this counter" — EmuTOS's `sy_owner = NULL`
++/// (`aes/gemflag.c:128`, `geminit.c:838`). Not a valid identity: identities are
++/// GEMDOS slots `< MAX_PROCESSES` plus [`super::pd::DESKTOP`].
++const NO_OWNER: usize = usize::MAX;
++
+ /// EmuTOS `ml_pmown` (`gemfmlib.c:58`) — the mouse owner `fm_own` found on
+ /// the outermost `BEG_MCTRL` (`get_mown(&ml_pmown)`, `:92`), handed the mouse
+ /// back on the matching `END_MCTRL` (`ct_chgown(ml_pmown, &ml_ctrl)`, `:102`).
+@@ -3535,7 +3577,32 @@ pub fn wind_open(pb: &Aespb) {
+         // topped stipple and bevels outside the new window's rectangle
+         // (`measurement-2026-09-20-a79/screendumps/final-desk-B-two.png`
+         // against the Hatari reference `falcon-tc-two-windows.png`).
+-        if old_top != DESKWH && old_top != handle && old_curr == Grect::default() {
++        //
++        // **The second gate to the same call (A104).** A window that got its
++        // rectangle from `wind_set(WF_CXYWH)` while it was created but not
++        // open carries a non-zero old `WS_CURR`, so the test above fails for
++        // it. Opening such a window *at that very rectangle* is
++        // `draw_change`'s **top request** instead — `pt` non-zero, same
++        // origin, same size (`:1108-1112`) — and that branch is not the early
++        // `return` of `:1113-1116`, because `w_obadd` has just made this
++        // window `W_TREE[ROOT].ob_tail` (`wm_open`, `:1425`) and it cannot be
++        // `oldtop`, not having been open. What it does first is the identical
++        // call, gated on `oldtop != NIL` alone:
++        //
++        // ```c
++        // if (oldtop != NIL) {                          /* :1118 */
++        //     w_cpwalk(oldtop, 0, MAX_DEPTH, TRUE);      /* :1120 */
++        //     clrold = !(D.w_win[oldtop].w_flags & VF_BROKEN);
++        // }
++        // ```
++        //
++        // The remaining branches of that tree (size request, `w_move`'s blit,
++        // the shrink union) change the *damage rectangle*, not this call; what
++        // of them is modelled, and what is not, is in the spec
++        // (`docs/api/aes/window-graphics.md` § `wind_open`, "A preset
++        // `WS_CURR`").
++        let top_request = r != Grect::default() && r == old_curr;
++        if old_top != DESKWH && old_top != handle && (old_curr == Grect::default() || top_request) {
+             if let Some(backend) = host().and_then(|h| h.raster()) {
+                 // Cursor bracket as in [`top_window`]'s `w_cpwalk(oldtop, …)`:
+                 // the cursor is a save-under sprite, painting under it would
+@@ -4238,20 +4305,48 @@ pub fn wind_update(pb: &Aespb) {
+     pb.set_ret(1);
+ }
+ 
+-/// `tak_flag(&wind_spb)` — take the counting window-tree lock. In single-tasking
+-/// the take always succeeds (one AES process, so `sy_owner == rlr`), so this is
+-/// a plain increment of `sy_tas` (EmuTOS gemflag.c:71-86).
++/// `tak_flag(&wind_spb)` — take the counting window-tree lock and record who
++/// holds it (EmuTOS `aes/gemflag.c:68-86`):
++///
++/// ```c
++/// sy->sy_tas++;
++/// if ((sy->sy_owner != rlr) && (sy->sy_tas != 1))
++///     sy->sy_tas--;           /* refused: wm_update blocks on sy_wait */
++/// else
++///     sy->sy_owner = rlr;     /* free, or we already had it */
++/// ```
++///
++/// So ownership moves to the caller on the 0 → 1 edge and stays with it while
++/// it nests; a *different* process asking for a held lock is refused and
++/// `wm_update` parks it on `wind_spb.sy_wait` (`ev_block(MU_MUTEX, …)`,
++/// `gemwmlib.c:1785-1786`).
++///
++/// **The refusal is the one thing that is not reproduced**, and it never was:
++/// there is no AES scheduler to park a caller on, so the count keeps rising
++/// and the first owner keeps the lock — which is the behaviour the rest of the
++/// AES already assumes (the screen is never actually withheld from anyone).
++/// What the owner field buys us is [`wm_new_for_slot`]'s `sh_ldapp` test: a
++/// dead client's holds are released, a living one's are not (A110).
+ fn update_beg() {
+-    UPDATE_LOCK.fetch_add(1, Ordering::Relaxed);
++    let rlr = super::appl::current_identity();
++    let tas = UPDATE_LOCK.fetch_add(1, Ordering::Relaxed) + 1;
++    if tas == 1 || UPDATE_OWNER.load(Ordering::Relaxed) == rlr {
++        UPDATE_OWNER.store(rlr, Ordering::Relaxed);
++    }
+ }
+ 
+ /// `unsync(&wind_spb)` — release the counting window-tree lock: decrement, but
+ /// never below zero (EmuTOS gemflag.c:105-115: a stray `END_UPDATE` with the
+-/// count already 0 is ignored).
++/// count already 0 is ignored), and give up ownership when it reaches zero
++/// (`sy->sy_owner = NULL`, `:128`; the wait-list hand-over at `:120-126` has no
++/// counterpart — nobody is ever parked, see [`update_beg`]).
+ fn update_end() {
+     let v = UPDATE_LOCK.load(Ordering::Relaxed);
+     if v > 0 {
+         UPDATE_LOCK.store(v - 1, Ordering::Relaxed);
++        if v == 1 {
++            UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
++        }
+     }
+ }
+ 
+@@ -4293,6 +4388,10 @@ fn mctrl_own(begin: bool) {
+             super::menu::hold_menu();
+             ML_PMOWN.store(super::input::get_mown(), Ordering::Relaxed);
+             super::input::ct_chgown(true);
++            // The holder of the count, on the same edge as the rest of the
++            // 0 → 1 state — see [`MCTRL_OWNER`] for why the counter needs one
++            // although `ml_ocnt` has none.
++            MCTRL_OWNER.store(super::appl::current_identity(), Ordering::Relaxed);
+         }
+         MCTRL_CNT.fetch_add(1, Ordering::Relaxed);
+     } else {
+@@ -4308,6 +4407,7 @@ fn mctrl_own(begin: bool) {
+         if MCTRL_CNT.fetch_sub(1, Ordering::Relaxed) == 1 {
+             super::input::ct_chgown(ML_PMOWN.load(Ordering::Relaxed));
+             super::menu::release_menu();
++            MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
+         }
+         update_end();
+     }
+@@ -4377,9 +4477,12 @@ pub fn wind_new(pb: &Aespb) {
+ /// a separate thing and belongs to the `wind_new` *opcode*, which an
+ /// application calls expecting its screen back.
+ pub fn wm_new() {
+-    // Release all update / mouse-control locks (`:1879-1883`).
++    // Release all update / mouse-control locks (`:1879-1883`) — count and
++    // owner (`unsync`'s `sy_owner = NULL`, `gemflag.c:128`).
+     MCTRL_CNT.store(0, Ordering::Relaxed);
++    MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
+     UPDATE_LOCK.store(0, Ordering::Relaxed);
++    UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
+     // `for (wh = 1; wh < NUM_WIN; wh++)` (`:1886`) — handle 0, the desktop
+     // window, is not one of the windows `wm_new` deletes.
+     for wh in 1..NUM_WIN as i16 {
+@@ -4434,8 +4537,12 @@ pub fn wm_new() {
+ /// Draws what closing those windows draws (see [`wm_new`]); the
+ /// whole-screen repaint is the desktop's `redraw_desktop` afterwards.
+ pub fn wm_new_keep_desktop() {
++    // `wm_new`'s drain loops (`gemwmlib.c:1879-1883`), owner fields with them —
++    // no other client is alive at this point, the launched chain has ended.
+     MCTRL_CNT.store(0, Ordering::Relaxed);
++    MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
+     UPDATE_LOCK.store(0, Ordering::Relaxed);
++    UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
+     let desktop = super::pd::DESKTOP as i16;
+     for wh in 1..NUM_WIN as i16 {
+         let Some((owner, open)) = win(wh).map(|w| (w.owner, w.open)) else { continue };
+@@ -4476,16 +4583,13 @@ pub fn wm_new_keep_desktop() {
+ ///   `gl_newdesk` before the next program runs (`wm_init`, `gemwmlib.c:1300`);
+ /// * the menu bar, if **this** slot installed it ([`super::menu::release_bar_of`]).
+ ///
+-/// **Not** the two `wind_update` counters. `wm_new` drains both
+-/// (`gemwmlib.c:1879-1883`), and so does [`wm_new_keep_desktop`], because at
+-/// those points no other client is alive to hold one. Here the parent *is*
+-/// alive and may legitimately hold its own: EmuTOS releases the screen lock
+-/// only when the dying process owns it — `if (wind_spb.sy_owner == rlr)
+-/// unsync(&wind_spb)` (`gemshlib.c:668-669`) — and our counters carry no
+-/// owner (see [`UPDATE_LOCK`]), so releasing them here could unlock the
+-/// parent's screen mid-redraw. A child that dies holding `BEG_UPDATE` /
+-/// `BEG_MCTRL` therefore leaves the count standing; named as a limit in
+-/// `TASK/A107.md`, not silently fixed by a blanket reset.
++/// * the two `wind_update` counters, **but only the dead slot's own holds** —
++///   [`release_locks_of`]. `wm_new` drains both unconditionally
++///   (`gemwmlib.c:1879-1883`) and so does [`wm_new_keep_desktop`], because at
++///   those points no other client is alive to hold one. Here the parent *is*
++///   alive and may legitimately hold its own, which is precisely the case
++///   EmuTOS's owner test covers: `if (wind_spb.sy_owner == rlr)
++///   unsync(&wind_spb)` (`gemshlib.c:668-669`) (A110).
+ pub fn wm_new_for_slot(slot: usize) {
+     let Ok(owner) = i16::try_from(slot) else { return };
+     for wh in 1..NUM_WIN as i16 {
+@@ -4502,6 +4606,43 @@ pub fn wm_new_for_slot(slot: usize) {
+         clear_newdesk();
+     }
+     super::menu::release_bar_of(slot);
++    release_locks_of(slot);
++}
++
++/// The `wind_update` half of [`wm_new_for_slot`]: hand back the screen lock
++/// and the mouse-control count that the dead client `slot` still holds, and
++/// **nothing else's**.
++///
++/// EmuTOS does this in two steps, one of them owner-aware:
++///
++/// ```c
++/// if (wind_spb.sy_owner == rlr)      /* sh_ldapp, gemshlib.c:668-669 */
++///     unsync(&wind_spb);
++/// if (gl_shgem)
++///     wm_new();                      /* :676-677 */
++/// /* wm_new, gemwmlib.c:1879-1883 */
++/// while (ml_ocnt > 0) wm_update(END_MCTRL);
++/// while (wind_spb.sy_tas > 0) wm_update(END_UPDATE);
++/// ```
++///
++/// The owner test is `sh_ldapp`'s; `wm_new`'s drain loops need none, because
++/// the program they run for was the only client. Our sweep has to carry the
++/// test *into* the drain: the parent is alive. So each loop is `wm_new`'s,
++/// gated on the counter's owner being the dead slot.
++///
++/// **Order and route matter.** `ml_ocnt` first, `sy_tas` second, as in
++/// `wm_new`; and the mouse-control count is drained through [`mctrl_own`], not
++/// stored to zero, so every turn runs `fm_own`'s 1 → 0 edge body — the mouse
++/// goes back to [`ML_PMOWN`] and the parked menu tree is restored
++/// (`gemfmlib.c:99-104`) — and its own `END_UPDATE` (`:105`), which is what
++/// makes the `sy_tas` the child's `BEG_MCTRL` took come off again.
++fn release_locks_of(slot: usize) {
++    while MCTRL_OWNER.load(Ordering::Relaxed) == slot && MCTRL_CNT.load(Ordering::Relaxed) > 0 {
++        mctrl_own(false);
++    }
++    while UPDATE_OWNER.load(Ordering::Relaxed) == slot && UPDATE_LOCK.load(Ordering::Relaxed) > 0 {
++        update_end();
++    }
+ }
+ 
+ /// `wm_init` (`gemwmlib.c:1247-1310`) — re-initialise the Window Manager
+@@ -4578,7 +4719,9 @@ pub(super) fn reinit() {
+     init_desk_window();
+     clear_newdesk();
+     MCTRL_CNT.store(0, Ordering::Relaxed);
++    MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
+     UPDATE_LOCK.store(0, Ordering::Relaxed);
++    UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
+     *gl_wtcolor() = GL_WTCOLOR_DEFAULT;
+     *gl_wbcolor() = GL_WBCOLOR_DEFAULT;
+     ML_PMOWN.store(true, Ordering::Relaxed);
+@@ -5549,6 +5692,22 @@ pub fn test_window_owner(handle: i16) -> Option<usize> {
+     owner_of(handle)
+ }
+ 
++/// Test hook (not wired to boot): the counting window-tree lock as
++/// `(sy_tas, sy_owner)` — the count and the identity holding it, `None` for
++/// free. Lets a host test state that a dead client's `BEG_UPDATE` is released
++/// and a living one's is not (A110).
++pub fn test_update_lock() -> (i16, Option<usize>) {
++    let owner = UPDATE_OWNER.load(Ordering::Relaxed);
++    (UPDATE_LOCK.load(Ordering::Relaxed), (owner != NO_OWNER).then_some(owner))
++}
++
++/// Test hook (not wired to boot): the mouse-control-ownership counter as
++/// `(ml_ocnt, owner)` — see [`test_update_lock`].
++pub fn test_mctrl_count() -> (i16, Option<usize>) {
++    let owner = MCTRL_OWNER.load(Ordering::Relaxed);
++    (MCTRL_CNT.load(Ordering::Relaxed), (owner != NO_OWNER).then_some(owner))
++}
++
+ /// Test hook (not wired to boot): the registered desktop-background tree
+ /// (`gl_newdesk`), 0 when none is registered — so a host test can state
+ /// that a sweep dropped a dead program's registration (A96/A97).

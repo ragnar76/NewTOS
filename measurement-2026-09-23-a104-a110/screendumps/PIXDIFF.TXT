@@ -1,0 +1,24 @@
+desk  A-idle   (before vs after)  0 differing pixels, bbox None
+desk  B-one    (before vs after)  1011 differing pixels, bbox (58, 70, 318, 84)
+desk  C-two    (before vs after)  1189 differing pixels, bbox (58, 70, 350, 84)
+desk  D-none   (before vs after)  0 differing pixels, bbox None
+desk  A-idle   info line (58,66,500,20)  0 differing pixels in (58,66,500,20)
+desk  B-one    info line (58,66,500,20)  1011 differing pixels in (58,66,500,20), bbox (58,70)-(317,83)
+desk  C-two    info line (58,66,500,20)  1189 differing pixels in (58,66,500,20), bbox (58,70)-(349,83)
+desk  D-none   info line (58,66,500,20)  0 differing pixels in (58,66,500,20)
+probe A-parent-window    (vs a107-a109 probe-after)  6779 differing pixels, bbox (120, 80, 618, 320)
+probe B-child-window     (vs a107-a109 probe-after)  0 differing pixels, bbox None
+probe C-after-sweep      (vs a107-a109 probe-after)  0 differing pixels, bbox None
+probe D-later            (vs a107-a109 probe-after)  0 differing pixels, bbox None
+probe E-desk-back        (vs a107-a109 probe-after)  0 differing pixels, bbox None
+probe A vs probe B (mine)  6779 differing pixels, bbox (120, 80, 618, 320)
+probe refA vs refB         0 differing pixels, bbox None
+tera  A-idle       (vs a107-a109 tera-after)  0 differing pixels, bbox None
+tera  B-file-open  (vs a107-a109 tera-after)  0 differing pixels, bbox None
+tera  D-closed     (vs a107-a109 tera-after)  0 differing pixels, bbox None
+
+EXC/PANIC per serial log:
+  desk-after-serial.log        0
+  desk-before-serial.log       0
+  probe-serial.log             0
+  tera-serial.log              0

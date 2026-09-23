@@ -1,0 +1,35 @@
+running 8 tests
+test a_window_the_program_left_open_is_gone_when_the_desktop_resumes ... ok
+test the_programs_background_tree_is_dropped_with_it ... ok
+test a110_a_living_clients_screen_lock_survives_a_childs_death ... ok
+test a110_a_dead_clients_screen_lock_is_released ... FAILED
+test a107_a_window_the_pexec_child_left_open_is_gone_at_the_parents_next_aes_call ... ok
+test a107_the_pexec_childs_menu_bar_goes_with_it_and_the_parents_stays ... ok
+test a110_a_dead_clients_mouse_control_hold_is_released_and_unparks_the_menu ... FAILED
+test a107_the_pexec_childs_background_tree_goes_with_it_and_the_parents_stays ... ok
+
+failures:
+
+---- a110_a_dead_clients_screen_lock_is_released stdout ----
+
+thread 'a110_a_dead_clients_screen_lock_is_released' (7663519) panicked at tos-api/tests/aes_a96_zombie_windows.rs:1132:5:
+assertion `left == right` failed: the dead child's screen lock must be drained at the parent's next AES call (gemshlib.c:668-669 + gemwmlib.c:1882-1883)
+  left: (2, Some(1))
+ right: (0, None)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a110_a_dead_clients_mouse_control_hold_is_released_and_unparks_the_menu stdout ----
+
+thread 'a110_a_dead_clients_mouse_control_hold_is_released_and_unparks_the_menu' (7663518) panicked at tos-api/tests/aes_a96_zombie_windows.rs:1185:5:
+assertion `left == right` failed: the dead child's mouse-control hold must be drained
+  left: (1, Some(1))
+ right: (0, None)
+
+
+failures:
+    a110_a_dead_clients_mouse_control_hold_is_released_and_unparks_the_menu
+    a110_a_dead_clients_screen_lock_is_released
+
+test result: FAILED. 6 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+error: test failed, to rerun pass `-p tos-api --test aes_a96_zombie_windows`

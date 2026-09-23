@@ -708,7 +708,10 @@ Step by step, precisely as the source has it:
    - **Always** (drag or not): `pw = win_find(wh); win_sinfo(pw, TRUE)`
      (`:982-983`) — refreshes that window's info line (selected-count/size
      or whole-directory count/size, `deskwin.c:867-906`) since a click may
-     have changed the selection.
+     have changed the selection. **NewTOS (A110, 2026-09-23):** implemented
+     at the same place in `kernel/src/desk/main.rs` `hndl_button`, together
+     with the `STINFST2` format string and the other three selection-change
+     call sites — see `deskwin.md` § `win_sinfo`.
 6. **Double click (`clicks==2`, `:985-1004`):** `act_bsclick(...,TRUE)`
    (`:987`, `dclick=TRUE` changes rule 3 above — see the cited comment:
    with `dclick` true, even an **already-selected** object is

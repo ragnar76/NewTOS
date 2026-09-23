@@ -1,0 +1,27 @@
+# A109 kernel desktop (sd-base, no #Z). The C:\ window is open at boot.
+# Ticks are 200 Hz after "[desk] desktop up" armed the injector.
+# A: idle — the C:\ window's info line (A109.3) and its frame.
+# File title (88,8) -> F: the File box down (A109.1: 15 entries of 16 px =
+# 240 tall, not 285). Out to the desktop, click = cancel, park -> H.
+# Then the C:\ window's up arrow (580,96): press, drag the pointer away with
+# the button still held (EmuTOS keeps the gadget SELECTED for the whole of
+# `handle_arrow_msg`, gemctrl.c:272-284 — no leave tracking, unlike
+# gr_watchbox), so the dump G shows the pressed cell without the cursor on
+# it; release, park -> I.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 88 8
+1900 mark F_FILE_OPEN
+2200 move 400 300
+2500 down
+2503 up
+2800 parkbr
+3200 mark H_MENU_CLOSED
+3500 move 580 96
+3700 down
+3750 drag 300 320
+3900 mark G_ARROW_HELD
+4000 up
+4200 parkbr
+4600 mark I_ARROW_RELEASED

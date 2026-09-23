@@ -164,6 +164,10 @@ fn hndl_button(clicks: i16, mx: i16, my: i16) -> bool {
         if st.buttons & 0x01 != 0 {
             done = act_bdown(handle, root, mx, my);
         }
+        // `pw = win_find(wh); win_sinfo(pw, TRUE);` (`deskmain.c:982-983`) —
+        // the click changed the selection (or cleared it), so the info line
+        // switches between the selection count and the directory totals.
+        win_sinfo(handle, true);
     } else {
         // Double-click: select just the hit item, then open it.
         let obid = gr_obfind(root, mx, my);
@@ -262,7 +266,7 @@ fn act_bdown(handle: i16, root: i16, mx: i16, my: i16) -> bool {
 
     // Otherwise dispatch the drag through the deskfun dispatch tree.
     let done = dir::fun_drag(handle, dst_wh, dobj, drop_keystate);
-    global::with(|g| g.desk_clear(handle));
+    desk_clear(handle);
     done
 }
 
@@ -726,7 +730,7 @@ fn kbd_arrow(action: i16) {
     let Some(slot) = global::with(|g| g.win_slot(handle)).flatten() else {
         return;
     };
-    global::with(|g| g.desk_clear(handle));
+    desk_clear(handle);
     let work = wind_get_work(handle);
     if let Some(sliders) = global::with(|g| g.win_arrow(slot, work, action)).flatten() {
         set_sliders(handle, sliders);
@@ -1150,13 +1154,88 @@ fn set_window_strings(handle: i16, slot: usize, title: &str, count: usize, size:
     let ptrs = global::with(|g| {
         let node = &mut g.windows.slots[slot];
         node.set_name(title);
-        fmt_info(&mut node.w_info, count, size);
+        // `win_sinfo(pw, FALSE)` — the whole directory, `STINFOST`.
+        fmt_info(&mut node.w_info, count, size, false);
         (node.name_ptr(), node.info_ptr())
     });
     if let Some((name, info)) = ptrs {
         super::wind_set_ptr(handle, WF_NAME, name);
         super::wind_set_ptr(handle, WF_INFO, info);
     }
+}
+
+/// `win_sinfo` (EmuTOS `desk/deskwin.c:867-906`) — rebuild window `handle`'s
+/// info line from its file list and hand it back to the AES.
+///
+/// ```c
+/// if (check_selected)
+///     for (i = 0, fn = pn->p_fbase; i < pn->p_count; i++, fn++)
+///         if (fn->f_selected) { select_count++; select_size += fn->f_size; }
+/// if (select_count)
+///     alert = desktop_str_addr(STINFST2);
+/// else {
+///     alert = desktop_str_addr(STINFOST);
+///     select_count = pn->p_count;  select_size = pn->p_size;
+/// }
+/// sprintf(pwin->w_info, alert, select_size, select_count);
+/// wind_set(pwin->w_id, WF_INFO, pwin->w_info, 0, 0);
+/// ```
+///
+/// `check_selected == false` is the whole-directory line
+/// ([`set_window_strings`], the `do_diropen`/`rebuild_window` path,
+/// `desksupp.c:450`, `deskfun.c:141`); `true` is the selection line, which is
+/// what every selection change runs — a selection of *nothing* falls back to
+/// the directory totals through the same `select_count == 0` test, so
+/// deselecting restores the byte count by itself.
+///
+/// The desktop is passed straight through, as in EmuTOS: `win_find(DESKWH)`
+/// answers `&G.g_wdesktop` (`deskwin.c:202-203`), whose file list is empty, so
+/// the count falls back to its zero totals and the `wind_set` lands on the
+/// desktop window — which is `VF_INUSE` but never `VF_ISOPEN`, so it stores a
+/// pointer and draws nothing (`wm_set`'s `if (pwin->w_flags & VF_ISOPEN)`,
+/// `gemwmlib.c:1666-1672`). `desk_clear` guards the call anyway
+/// (`desksupp.c:150-153`), `hndl_button` does not (`deskmain.c:982-983`).
+pub(super) fn win_sinfo(handle: i16, check_selected: bool) {
+    let info = global::with(|g| {
+        let node = g.win_find(handle)?;
+        let mut select_count = 0usize;
+        let mut select_size = 0u64;
+        if check_selected {
+            for f in node.w_pnode.p_flist.iter().filter(|f| f.f_selected) {
+                select_count += 1;
+                select_size += u64::from(f.f_size);
+            }
+        }
+        let selected = select_count != 0;
+        if !selected {
+            select_count = node.w_pnode.p_count;
+            select_size = node.w_pnode.p_size;
+        }
+        fmt_info(&mut node.w_info, select_count, select_size, selected);
+        Some((node.w_id, node.info_ptr()))
+    })
+    .flatten();
+    if let Some((w_id, ptr)) = info {
+        super::wind_set_ptr(w_id, WF_INFO, ptr);
+    }
+}
+
+/// `desk_clear` (EmuTOS `desk/desksupp.c:121-153`) — deselect everything in
+/// window `wh` and refresh its info line.
+///
+/// The state half is [`DeskState::desk_clear`] (the `act_allchg(…, FALSE)`
+/// call, `:147`); the second half is `win_sinfo(pw, TRUE)` for anything but
+/// the desktop (`:150-153`), which is how a deselect puts the directory's byte
+/// count back in place of a selection count. Returns whether anything changed,
+/// for the caller's repaint decision.
+///
+/// [`DeskState::desk_clear`]: super::global::DeskState::desk_clear
+pub(super) fn desk_clear(wh: i16) -> bool {
+    let changed = global::with(|g| g.desk_clear(wh)).unwrap_or(false);
+    if wh != DESKWH {
+        win_sinfo(wh, true);
+    }
+    changed
 }
 
 /// `fun_search` (EmuTOS `deskfun.c:560`, `CONF_WITH_SEARCH`) — File → Search:
@@ -1221,6 +1300,9 @@ fn search_current_window(handle: i16, name: &str) -> usize {
 
     let (count, sliders) = result;
     if let Some(sliders) = sliders {
+        // `win_sinfo(pw, TRUE); win_dispfile(pw, first_match);`
+        // (`deskfun.c:380-382`) — the matches are now the selection.
+        win_sinfo(handle, true);
         set_sliders(handle, sliders);
         redraw::redraw_desktop();
     } else {
@@ -1456,10 +1538,7 @@ fn do_cycle() {
 /// windows, i.e. real-HW interaction / File→Cycle). Flagged, not masked with a
 /// desktop-side composite.
 fn top_msg(handle: i16) {
-    global::with(|g| {
-        let prev = g.g_cwin;
-        g.desk_clear(prev);
-    });
+    desk_clear(global::with(|g| g.g_cwin).unwrap_or(DESKWH));
     if global::with(|g| g.win_find(handle).is_some()).unwrap_or(false) {
         super::wind_set_int(handle, WF_TOP, 0); // AES: top + repaint bg/frames
         global::with(|g| g.win_top(handle));
@@ -1780,11 +1859,11 @@ fn desk_clear_all() {
     let (handles, n) = open_handles();
     let mut any_win = false;
     for &handle in &handles[..n] {
-        if global::with(|g| g.desk_clear(handle)).unwrap_or(false) {
+        if desk_clear(handle) {
             any_win = true;
         }
     }
-    let any_desk = global::with(|g| g.desk_clear(DESKWH)).unwrap_or(false);
+    let any_desk = desk_clear(DESKWH);
     if any_win {
         redraw::win_shwall();
     }
@@ -1870,15 +1949,12 @@ fn child_spec(parent_spec: &str, name: &str) -> (String, String) {
 /// `" N items   M bytes used"` — its own wording and the two numbers the
 /// other way round (A109).
 ///
-/// EmuTOS picks the second string `STINFST2`, `" %ld bytes used in %d
-/// selected items."` (`desk_rsc.c:2469`), when `win_sinfo(pwin, TRUE)` counted
-/// selected `FNODE`s (`deskwin.c:876-902`). That branch has **no call site
-/// here**: this desktop sets the info line only when a window's directory is
-/// (re)read — [`set_window_strings`], three call sites, all with the whole
-/// directory's `p_count`/`p_size` — and never re-runs it on a selection
-/// change (EmuTOS does, `deskmain.c:982-983`). Missing caller, not a missing
-/// string: named in `TASK/A109.md`, not stubbed in here.
-fn fmt_info(out: &mut [u8], count: usize, size: u64) {
+/// `selected` picks the second resource string, `STINFST2` — `" %ld bytes used
+/// in %d selected items."` (`desk_rsc.c:2469`, index 1) — which `win_sinfo`
+/// uses when it counted selected `FNODE`s (`deskwin.c:891-902`). Both strings
+/// take the same two arguments in the same order; only the noun phrase differs
+/// (A110).
+fn fmt_info(out: &mut [u8], count: usize, size: u64, selected: bool) {
     let mut p = 0usize;
     let mut num = [0u8; 20];
     let push = |out: &mut [u8], p: &mut usize, s: &[u8]| {
@@ -1893,7 +1969,7 @@ fn fmt_info(out: &mut [u8], count: usize, size: u64) {
     push(out, &mut p, fmt_u64(size, &mut num));
     push(out, &mut p, b" bytes used in ");
     push(out, &mut p, fmt_u64(count as u64, &mut num));
-    push(out, &mut p, b" items.");
+    push(out, &mut p, if selected { b" selected items." as &[u8] } else { b" items." });
     out[p] = 0;
 }
 
