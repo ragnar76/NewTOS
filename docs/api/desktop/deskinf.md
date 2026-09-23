@@ -1442,10 +1442,12 @@ Consequences worth naming:
 * **Nothing here writes the file.** `inf_conf` ends at `end_dialog`; the new
   shortcuts reach `NEWDESK.INF` through *Save desktop*, exactly as in EmuTOS.
 
-### *Default dir* is back (DESK18); *Parameter* is still absent
+### *Default dir* is back (DESK18), *Parameter* is back (DESK19)
 
 Same rule as DESK02: a control whose effect is not implemented is left out
-rather than shown and ignored — and it comes back when the effect lands.
+rather than shown and ignored — and it comes back when the effect lands. Both
+have now landed, so `ADDESKCF` is complete: every one of its 28 objects is in
+the tree and the numbering is the resource's own (`desk_rsc.h:191-211`).
 
 * **Default dir** (`DCDEFAPP`/`DCDEFWIN` → `G.g_appdir`) picks the current
   directory a *non-installed* program is launched with: `do_aopen` chooses the
@@ -1457,50 +1459,63 @@ rather than shown and ignored — and it comes back when the effect lands.
   again, as `ADDESKCF` objects 2..5 verbatim.
 * **Parameter** (`DCPMFULL`/`DCPMFILE` → `G.g_fullpath`) picks whether a file
   dropped on a program icon is passed as a full path or a bare name
-  (`build_selected_path`, `deskfun.c:903-931`), reached from `fun_win2win`'s
-  drop-on-an-application branch (`deskfun.c:960-970`). NewTOS's `fun_win2win`
-  has no such branch — a drop on a program is a copy — so this one stays out.
-  Its `#E` byte-5 bit (`INF_E5_ISFULL`, `deskapp.c:111`) keeps round-tripping
-  untouched meanwhile, so a file that carries it survives.
+  (`build_selected_path`, `deskfun.c:903-928`), reached from `fun_win2win`'s
+  drop-on-an-application branch (`deskfun.c:958-970`). DESK05 left it out
+  because NewTOS's `fun_win2win` had no such branch — a drop on a program was
+  a copy. **DESK19 built that branch** (see `deskfun.md` §*Dropping a
+  selection on a program*), so this group is back too, as `ADDESKCF` objects
+  6..9 verbatim.
 
-**NewTOS notes (DESK18).**
+**NewTOS notes (DESK18, DESK19).**
 
-* **Object numbers.** `ADDESKCF` minus the four objects of the omitted
-  *Parameter* row (`desk_rsc.c:1660-1685`): objects 0..5 are the resource's own
-  (ROOT, title, *Default dir:*, its `G_IBOX`, `DCDEFAPP`, `DCDEFWIN`), and
-  everything from the *Function keys* label on is four lower than
-  `desk_rsc.h:191-211`. The **names** are EmuTOS's, as in `inf_pref`.
-* **Geometry.** The box is `39 x 20` cells = **312 x 288 + 32 = 312 x 320**
-  (DESK05's 288 plus the two character rows *Default dir* takes back);
-  `form_center` puts the ROOT at (164, 89) on a 640x480 screen. *Default dir*
-  keeps `ADDESKCF`'s row 3; the rows below it move up `2 * CELL_H` instead of
-  DESK05's `4 * CELL_H`. The group's inner spacing is the resource's own
-  (*Application* 12 cells at column 0, *Window* 9 cells at column 13): the one
-  blank cell between them is 8 px, of which the 3D growth (`ADJ3DSTD` 2 px per
-  side plus the 1 px border) eats 6.
-* **The group has its own `G_IBOX`** (`ADDESKCF` object 3, `ob_spec = 4352` =
-  `0x1100`, no 3D flag), because that is what makes the AES deselect the
-  sibling of the button that was hit. A `G_IBOX` draws nothing — its thickness
-  byte is 0 and `objc_draw` skips the interior — so carrying the resource's
-  colour word costs nothing and keeps the tree faithful.
-* **Pre-select and commit are EmuTOS's** (`deskinf.c:1105-1112`, `:1226`):
+* **Object numbers.** `ADDESKCF`'s own, 0..27 (`desk_rsc.h:191-211`), with
+  EmuTOS's names, as in `inf_pref`. DESK05's four-lower shift and DESK18's
+  two-lower shift are both gone.
+* **Geometry.** The box is `ADDESKCF`'s full `39 x 22` cells = **312 x 352**;
+  `form_center` puts the ROOT at (164, 73) on a 640x480 screen, measured. No
+  row is displaced any more, which also restores the blank character row the
+  resource leaves between *Parameter* and *Function keys*. That spacing
+  matters: every 3D gadget here is grown by `ADJ3DSTD` (2 px per side) and
+  then laid out one pixel of border wider still (`aes/gemoblib.c:504`,
+  `sst_th` `G_BUTTON` → `-1`), so the 8 px a blank cell is worth is nearly
+  eaten by the growth. The two groups' inner spacing is the resource's own
+  (*Application* 12 cells at column 0, *Window* 9 at column 13; *Full path*
+  11 cells at column 0, *File name* 10 at column 12).
+* **Each group has its own `G_IBOX`** (`ADDESKCF` objects 3 and 7,
+  `ob_spec = 4352` = `0x1100`, no 3D flag), because that is what makes the AES
+  deselect the sibling of the button that was hit — and only the siblings
+  *under the same parent* (`tos-api/tests/aes_desk_prefs_radio.rs`). Two
+  groups under one box would clear each other. A `G_IBOX` draws nothing — its
+  thickness byte is 0 and `objc_draw` skips the interior — so carrying the
+  resource's colour word costs nothing and keeps the tree faithful.
+* **Pre-select and commit are EmuTOS's** (`deskinf.c:1105-1116`, `:1226-1227`):
   `deselect_all` is implicit (every `ob_state` starts at 0), `G.g_appdir`
-  selects `DCDEFAPP` or `DCDEFWIN`, and `OK` reads it back with
-  `inf_which(tree, DCDEFAPP, 2)` — 1 = *Application*, 0 = *Window*. Any other
-  exit leaves `G.g_appdir` alone.
+  selects `DCDEFAPP` or `DCDEFWIN` and `G.g_fullpath` selects
+  `DCPMFULL`/`DCPMFILE`, and `OK` reads both back with `inf_which(tree, …, 2)`
+  — 1 = the first of the pair. Any other exit leaves both alone.
+* **Persistence.** `G.g_fullpath` rides `CSave::cs_fullpath` through
+  `cnx_put`/`cnx_get` (`deskmain.c:1392`, `:1454`) into the `#E` line's byte 5
+  as `INF_E5_ISFULL` (`deskapp.c:111`, `:943`, `:1165`) — the bit that used to
+  round-trip untouched now has both a writer and a reader.
 
-### The function-key panel is a viewer
+### The function-key panel is a viewer, and it has something to view (DESK20)
 
 `get_all_funkeys` (`deskinf.c:928-948`) collects the `ANODE`s whose `a_funkey`
 is in `FIRST_FUNKEY..LAST_FUNKEY`; `DCFUNPRV`/`DCFUNNXT` walk them and
 `DCFUNLT`/`DCFUNRT` scroll the path inside the fixed-width field
 (`scroll_conf_funkeys`, `:952-991`). **Nothing in this dialog assigns a function
-key** — EmuTOS assigns them in `ins_app_dialog` (`deskins.c`, `APFUNKEY`), which
-NewTOS's Install-Application dialog does not offer. The panel is therefore empty
-until a `NEWDESK.INF` supplies one, which is exactly what EmuTOS shows on a
-fresh `EMUDESK.INF`. EmuTOS walks `G.g_ahead`, the one list that holds both
-desktop icons and associations; NewTOS splits those two, so the walk is over
+key** — EmuTOS assigns them in `ins_app_dialog` (`deskins.c`, `APFUNKEY`), and
+the display is read-only there too. Until DESK20 NewTOS's Install-Application
+dialog had no such field, so the panel was *always* empty; it now shows what
+that dialog assigned (see `deskins.md` §`ins_app`). With nothing bound it still
+shows its template, which is exactly what EmuTOS shows on a fresh
+`EMUDESK.INF`. EmuTOS walks `G.g_ahead`, the one list that holds both desktop
+icons and associations; NewTOS splits those two, so the walk is over
 `desk::inf`'s `SESSION` model, which is the half that carries `a_funkey`.
+
+Measured 2026-09-23 (`measurement-2026-09-23-desk19-desk20/`): after installing
+`C:\CMDLINE.NCP` with key 7, the panel reads `F7  C:\CMDLINE.NCP______`
+(`screendumps/d20-funkey-d-conf.png`).
 
 ### Free RAM
 

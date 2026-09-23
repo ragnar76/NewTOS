@@ -1541,13 +1541,17 @@ fn fun_confirm(msg: &[u8]) -> bool {
 /// `wh` = source window handle ([`DESKWH`] for the desktop), `dest_wh` =
 /// destination window handle (`0`/[`DESKWH`] if dropped on the desktop),
 /// `dobj` = destination object index, `keystate` = modifiers at drop.
-/// Returns `exit_desktop` (always `false` in Task #9 — launching a dropped
-/// program is Task #14).
+///
+/// Returns `exit_desktop`. EmuTOS sets it when a dropped file launched a
+/// program so that `deskmain` leaves and the AES shell loads the child;
+/// NewTOS launches **nested** (AES gap G1, `super::main::launch_native`), so
+/// the window-to-window branch — the one that can launch (DESK19) — hands back
+/// `false` after the child has already run and the desktop is back.
 pub fn fun_drag(wh: i16, dest_wh: i16, dobj: i16, keystate: u16) -> bool {
     if wh != DESKWH {
         // Dragging FROM a window.
         if dest_wh != DESKWH && dest_wh != NIL {
-            fun_win2win(wh, dest_wh, dobj, keystate);
+            return fun_win2win(wh, dest_wh, dobj, keystate);
         } else if dobj == DROOT {
             // Drop onto empty desktop: making a desktop shortcut is Task #14.
             fun_alert(1, b"Can't drop items here.");
@@ -1574,15 +1578,106 @@ fn drag_op(keystate: u16) -> Op {
     }
 }
 
-/// `fun_win2win` — copy/move between two windows (EmuTOS `deskfun.c:942`).
-fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) {
+/// `build_selected_path` (EmuTOS `deskfun.c:903-928`) — "builds the path
+/// corresponding to the **first** selected file in the specified `PNODE`. the
+/// path will be the filename only, or the full pathname, depending on the
+/// desktop configuration settings."
+///
+/// ```c
+/// for (fn = pn->p_flist; fn; fn = fn->f_next)
+///     if (fnode_is_selected(fn)) break;
+/// if (!fn) return FALSE;
+/// if (G.g_fullpath) { strcpy(pathname, pn->p_spec); add_fname(pathname, fn->f_name); }
+/// else              { strcpy(pathname, fn->f_name); }
+/// ```
+///
+/// `entries` is the source window's selection in `p_flist` order
+/// ([`window_selected`]), so its first element **is** EmuTOS's `fn`; `src_dir`
+/// is `p_spec` with its mask already cut off ([`window_dir`]), which is what
+/// `strcpy` + `add_fname` leave behind. [`None`] is EmuTOS's `FALSE` — "no file
+/// is selected (probable program bug)".
+///
+/// Note what this does *not* do: only the first selection reaches the command
+/// line, however many files were dragged. That is EmuTOS's own loop, and the
+/// reason is the single `char destpath[MAXPATHLEN]` its caller passes.
+fn build_selected_path(src_dir: &str, entries: &[SelEntry], fullpath: bool) -> Option<String> {
+    let fn_name = entries.first()?.name_str();
+    if fullpath {
+        let mut s = String::from(src_dir);
+        s.push_str(fn_name);
+        Some(s)
+    } else {
+        Some(String::from(fn_name))
+    }
+}
+
+/// `i_find(wh, item, &pf, NULL)`'s window arm (EmuTOS `desksupp.c:1753-1770`)
+/// for the destination of a drop: the item's file name and the `ANODE` that
+/// governs it, resolved by type and name through
+/// [`super::inf::app_afind_by_name`] exactly as `win_icalc` resolves the
+/// icon. [`None`] where EmuTOS's `pf`/`pa` would be `NULL` — a non-item
+/// object, or a name no `ANODE` claims.
+fn i_find_win(dst_wh: i16, dobj: i16) -> Option<(String, super::inf::Afind)> {
+    if dobj < 0 {
+        return None;
+    }
+    let (name, atype, spec) = global::with(|g| {
+        let slot = g.win_slot(dst_wh)?;
+        let fnode = g.g_screeninfo.get(dobj as usize)?.fnode;
+        if fnode < 0 {
+            return None;
+        }
+        let f = g.windows.slots[slot].w_pnode.p_flist.get(fnode as usize)?;
+        // `(pf->f_attr&FA_SUBDIR) ? AT_ISFOLD : AT_ISFILE` (`desksupp.c:1766`).
+        let atype = if f.is_dir() { AType::Folder } else { AType::File };
+        // The same byte-by-byte widening `win_icalc` uses, so a high-bit name
+        // produces the same key here as it does there.
+        let name: String = f.name_bytes().iter().map(|&b| b as char).collect();
+        Some((name, atype, g.windows.slots[slot].w_pnode.p_spec.clone()))
+    })
+    .flatten()?;
+    let pa = super::inf::app_afind_by_name(atype, &spec, &name)?;
+    Some((name, pa))
+}
+
+/// `fun_win2win` — copy/move between two windows, **or** launch the program
+/// the selection was dropped on (EmuTOS `deskfun.c:942-1001`). Returns
+/// `exit_desktop`.
+fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) -> bool {
     let Some(src_dir) = window_dir(src_wh) else {
-        return;
+        return false;
     };
     let entries = window_selected(src_wh);
     if entries.is_empty() {
-        return;
+        return false;
     }
+
+    // `pda = i_find(dst_wh, dst_ob, &pdf, NULL);` (`deskfun.c:958`) and, when
+    // it resolves, `if (pda->a_aicon >= 0)` — "dropping file on to an
+    // application" (`:962`). The test is the icon number, not the file's
+    // extension: whatever `ANODE` gives this name the **application** picture
+    // is what makes the drop a launch. It is the same number `win_icalc` hands
+    // the view, so the branch taken always matches the icon on screen.
+    if let Some((dst_name, pda)) = i_find_win(dst_wh, dst_obj) {
+        if pda.aicon >= 0 {
+            let fullpath = global::with(|g| g.g_fullpath).unwrap_or(true);
+            if let Some(destpath) = build_selected_path(&src_dir, &entries, fullpath) {
+                // `exit_desktop = do_aopen(pda, TRUE, dst_ob,
+                //  pdw->w_pnode.p_spec, pdf->f_name, destpath); return;`
+                // (`:967-968`) — and nothing is copied or moved.
+                let dst_dir = window_dir(dst_wh).unwrap_or_default();
+                return super::main::do_aopen_drop(
+                    pda.is_installed(),
+                    &pda.pappl,
+                    pda.appdir,
+                    &dst_dir,
+                    &dst_name,
+                    &destpath,
+                );
+            }
+        }
+    }
+
     // Destination: into the dropped-on folder if it is one, else the window dir.
     let dst_dir = dest_folder_dir(dst_wh, dst_obj).unwrap_or_else(|| window_dir(dst_wh).unwrap_or_default());
     let op = drag_op(keystate);
@@ -1597,6 +1692,7 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) {
         rebuild_window(dst_wh);
         super::redraw::redraw_desktop();
     }
+    false
 }
 
 /// `fun_win2desk` — drop a window selection onto a desktop icon (EmuTOS

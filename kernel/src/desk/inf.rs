@@ -136,6 +136,11 @@ const INF_E5_NOSORT: u8 = 0x80;
 /// top window's. The *Default dir* group of `inf_conf` edits it and
 /// `do_aopen` reads it (`desksupp.c:901`).
 const INF_E5_APPDIR: u8 = 0x40;
+/// `INF_E5_ISFULL` (`deskapp.c:111`) — 1 ⇒ pass the **full path** of a file
+/// dropped on a program icon as its argument, 0 ⇒ only the file name. The
+/// *Parameter* group of `inf_conf` edits it and `build_selected_path` reads it
+/// (`deskfun.c:916`).
+const INF_E5_ISFULL: u8 = 0x20;
 const INF_E5_NOSIZE: u8 = 0x10;
 
 /// `INF_E1_DEFAULT` = `CONFDEL|CONFCPY|dclick(2)` (`deskapp.c` `desk_inf_data1`).
@@ -687,8 +692,8 @@ impl InfData {
 
 // ── Sort ↔ `#E`-bit mapping ─────────────────────────────────────────────────
 
-/// Decode the `#E` env bytes to `(view, sort, size_to_fit, appdir)`.
-fn env_to_state(e1: u8, e5: u8) -> (View, Sort, bool, bool) {
+/// Decode the `#E` env bytes to `(view, sort, size_to_fit, appdir, fullpath)`.
+fn env_to_state(e1: u8, e5: u8) -> (View, Sort, bool, bool, bool) {
     let view = if e1 & INF_E1_VIEWTEXT != 0 { View::Text } else { View::Icon };
     let sort = if e5 & INF_E5_NOSORT != 0 {
         Sort::NoSort
@@ -703,17 +708,20 @@ fn env_to_state(e1: u8, e5: u8) -> (View, Sort, bool, bool) {
     let size_to_fit = e5 & INF_E5_NOSIZE == 0;
     // `cnxsave->cs_appdir = ((envr & INF_E5_APPDIR) != 0);` (`deskapp.c:942`).
     let appdir = e5 & INF_E5_APPDIR != 0;
-    (view, sort, size_to_fit, appdir)
+    // `cnxsave->cs_fullpath = ((envr & INF_E5_ISFULL) != 0);` (`deskapp.c:943`).
+    let fullpath = e5 & INF_E5_ISFULL != 0;
+    (view, sort, size_to_fit, appdir, fullpath)
 }
 
-/// Fold `(view, sort, size_to_fit, appdir)` into the `#E` `e1`/`e5` bytes,
-/// keeping every other bit of the base bytes (confirm/dclick/format prefs)
-/// unchanged.
+/// Fold `(view, sort, size_to_fit, appdir, fullpath)` into the `#E` `e1`/`e5`
+/// bytes, keeping every other bit of the base bytes (confirm/dclick/format
+/// prefs) unchanged.
 fn state_to_env(
     view: View,
     sort: Sort,
     size_to_fit: bool,
     appdir: bool,
+    fullpath: bool,
     base_e1: u8,
     base_e5: u8,
 ) -> (u8, u8) {
@@ -721,7 +729,7 @@ fn state_to_env(
     if view == View::Text {
         e1 |= INF_E1_VIEWTEXT;
     }
-    let mut e5 = base_e5 & !(INF_E5_NOSORT | INF_E5_NOSIZE | INF_E5_APPDIR);
+    let mut e5 = base_e5 & !(INF_E5_NOSORT | INF_E5_NOSIZE | INF_E5_APPDIR | INF_E5_ISFULL);
     match sort {
         Sort::Name => {}
         Sort::Type => e1 |= 1 << INF_E1_SORTSHIFT,
@@ -735,6 +743,10 @@ fn state_to_env(
     // `env5 |= cnxsave->cs_appdir ? INF_E5_APPDIR : 0;` (`deskapp.c:1164`).
     if appdir {
         e5 |= INF_E5_APPDIR;
+    }
+    // `env5 |= cnxsave->cs_fullpath ? INF_E5_ISFULL : 0;` (`deskapp.c:1165`).
+    if fullpath {
+        e5 |= INF_E5_ISFULL;
     }
     (e1, e5)
 }
@@ -1042,7 +1054,7 @@ pub(super) fn build_inf() {
 fn apply(data: &InfData) {
     // #E → cnxsave->cs_view / cs_sort / cs_sizefit (`deskapp.c:994-1013`) and
     // the Preferences half (`deskapp.c:917-934`).
-    let (view, sort, size_to_fit, appdir) = env_to_state(data.e1, data.e5);
+    let (view, sort, size_to_fit, appdir, fullpath) = env_to_state(data.e1, data.e5);
     let (confdel, confcpy, confovwr, dclick, timefmt, datefmt) = env_to_prefs(data.e1, data.e2);
 
     // #M/#T/#O → `G.g_ahead` (`app_parse`'s tag switch, `deskapp.c:300-346`).
@@ -1064,6 +1076,7 @@ fn apply(data: &InfData) {
         g.g_cnxsave.cs_timefmt = timefmt;
         g.g_cnxsave.cs_datefmt = datefmt;
         g.g_cnxsave.cs_appdir = appdir;
+        g.g_cnxsave.cs_fullpath = fullpath;
         g.g_cnxsave.cs_wnode = Default::default();
         for (slot, w) in data.windows.iter().take(NUM_WNODES).enumerate() {
             g.g_cnxsave.cs_wnode[slot] = WSave {
@@ -1276,7 +1289,7 @@ fn build_from_state() -> InfData {
     #[allow(clippy::type_complexity)]
     type Prefs = (bool, bool, bool, u8, TimeFmt, DateFmt);
     #[allow(clippy::type_complexity)]
-    let (view, sort, size_to_fit, appdir, prefs, desk_anodes): (View, Sort, bool, bool, Prefs, Vec<InfAnode>) = global::with(|g| {
+    let (view, sort, size_to_fit, appdir, fullpath, prefs, desk_anodes): (View, Sort, bool, bool, bool, Prefs, Vec<InfAnode>) = global::with(|g| {
         // The `ANODE` half of `app_save` (`deskapp.c:1216-1262`), for the
         // `AF_ISDESK` nodes: one line per entry of `G.g_ahead`, in list order,
         // with the spot converted back to grid units
@@ -1316,6 +1329,7 @@ fn build_from_state() -> InfData {
             g.g_cnxsave.cs_sort,
             g.g_cnxsave.cs_sizefit,
             g.g_cnxsave.cs_appdir,
+            g.g_cnxsave.cs_fullpath,
             (
                 g.g_cnxsave.cs_confdel,
                 g.g_cnxsave.cs_confcpy,
@@ -1332,6 +1346,7 @@ fn build_from_state() -> InfData {
         Sort::Name,
         true,
         true,
+        true,
         (true, true, true, global::DEF_DCLICK, TimeFmt::H24, DateFmt::Mdy),
         Vec::new(),
     ));
@@ -1339,7 +1354,7 @@ fn build_from_state() -> InfData {
     // Base env / patcol / file-type anodes: preserved from the session, or the
     // built-in defaults on a first-ever save.
     let base = session.unwrap_or_default();
-    let (e1, e5) = state_to_env(view, sort, size_to_fit, appdir, base.e1, base.e5);
+    let (e1, e5) = state_to_env(view, sort, size_to_fit, appdir, fullpath, base.e1, base.e5);
     // The Preferences bits go into the *same* `e1` byte, in a disjoint bit
     // range (`CONFDEL|DCMASK` vs `VIEWTEXT|SORTMASK`), so they are folded in on
     // top of the result rather than from `base.e1` again.
@@ -1490,10 +1505,24 @@ fn doc_mask_from_ext(ext: &str) -> String {
     }
 }
 
-/// The document-type extension currently associated with `app_path` (the
-/// `a_pdata` wildcard minus its `*.` prefix), for pre-filling the dialog when an
-/// application is already installed. [`None`] if it is not installed.
-pub(super) fn installed_doctype(app_path: &str) -> Option<(String, AppFlavor, bool)> {
+/// The fields of an installed application's `ANODE` the Install-Application
+/// dialog pre-fills itself from — EmuTOS reads them straight off the `ANODE *`
+/// it already holds (`deskins.c:470-503`).
+pub(super) struct Installed {
+    /// `a_pdata` minus its `*.` prefix — the document-type field.
+    pub doc_ext: String,
+    /// The `#`-line tag, i.e. the GEM/TOS/GTP/TTP flavour radio.
+    pub flavor: AppFlavor,
+    /// `AF_ISFULL` ([`INF_AT_ISFULL`]) — the *Parameter* radio.
+    pub full_path: bool,
+    /// `a_funkey` — the function-key field (0 = none).
+    pub funkey: u8,
+}
+
+/// The association record currently held for `app_path`, for pre-filling the
+/// dialog when an application is already installed. [`None`] if it is not
+/// installed.
+pub(super) fn installed_doctype(app_path: &str) -> Option<Installed> {
     let guard = SESSION.lock();
     let data = guard.as_ref()?;
     let a = data
@@ -1501,7 +1530,59 @@ pub(super) fn installed_doctype(app_path: &str) -> Option<(String, AppFlavor, bo
         .iter()
         .find(|a| !a.is_desk && is_real_path(&a.pappl) && a.pappl.eq_ignore_ascii_case(app_path))?;
     let ext = a.pdata.strip_prefix("*.").unwrap_or(&a.pdata);
-    Some((String::from(ext), AppFlavor::from_tag(a.tag), a.flags & INF_AT_ISFULL != 0))
+    Some(Installed {
+        doc_ext: String::from(ext),
+        flavor: AppFlavor::from_tag(a.tag),
+        full_path: a.flags & INF_AT_ISFULL != 0,
+        funkey: a.funkey,
+    })
+}
+
+/// `get_funkey`'s duplicate check (`deskins.c:414-427`), in two halves because
+/// the question the user is asked sits between them and a trap must not run
+/// under the [`SESSION`] lock:
+///
+/// ```c
+/// for (an = G.g_ahead; an; an = an->a_next) {
+///     if (an == pa) continue;
+///     if (an->a_funkey == funkey) {
+///         if (fun_alert(1,STDUPKEY) != 1) return -1;
+///         an->a_funkey = 0;
+///         break;
+///     }
+/// }
+/// ```
+///
+/// This is the `if` — does an application **other** than `except_app` hold
+/// `funkey`? `except_app` is EmuTOS's `if (an == pa) continue;`: for a
+/// re-install it is the node being edited, and for a first install it names no
+/// node at all (EmuTOS's `pa` is freshly allocated with `a_funkey == 0`, so its
+/// own node can never be the hit either way).
+pub(super) fn funkey_owner(funkey: u8, except_app: &str) -> bool {
+    let guard = SESSION.lock();
+    let Some(data) = guard.as_ref() else {
+        return false;
+    };
+    data.anodes
+        .iter()
+        .any(|a| !a.is_desk && a.funkey == funkey && !a.pappl.eq_ignore_ascii_case(except_app))
+}
+
+/// The `an->a_funkey = 0; break;` of that walk (`deskins.c:424-425`) — take the
+/// key away from the **first** other application that holds it, once the user
+/// has confirmed. Returns whether one was found.
+pub(super) fn release_funkey(funkey: u8, except_app: &str) -> bool {
+    let mut guard = SESSION.lock();
+    let Some(data) = guard.as_mut() else {
+        return false;
+    };
+    for a in data.anodes.iter_mut() {
+        if !a.is_desk && a.funkey == funkey && !a.pappl.eq_ignore_ascii_case(except_app) {
+            a.funkey = 0;
+            return true;
+        }
+    }
+    false
 }
 
 /// Whether `pappl` is a concrete file path rather than a wildcard/empty
@@ -1525,16 +1606,20 @@ fn session_with_type_defaults(guard: &mut Option<InfData>) -> &mut InfData {
 /// model — EmuTOS `ins_app_dialog`'s `APINSTAL` branch (`deskins.c:511-582`).
 /// `app_path` is the application's full `C:` path, `doc_ext` the document-type
 /// extension the user entered, `flavor` the GEM/TOS/(G)TP flavour, `full_path`
-/// the `AF_ISFULL` choice, `appdir` the `AF_APPDIR` choice, and `args` the fixed
-/// argument prefix. Re-installing the same application updates its existing
-/// record in place (one association record per application, as EmuTOS
-/// `app_afind_by_name` resolves). The change is persisted by Save Desktop.
+/// the `AF_ISFULL` choice, `appdir` the `AF_APPDIR` choice, `funkey` the
+/// validated function key (`pa->a_funkey = funkey;`, `deskins.c:531`; 0 = none)
+/// and `args` the fixed argument prefix. Re-installing the same application
+/// updates its existing record in place (one association record per
+/// application, as EmuTOS `app_afind_by_name` resolves). The change is
+/// persisted by Save Desktop.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn install_application(
     app_path: &str,
     doc_ext: &str,
     flavor: AppFlavor,
     full_path: bool,
     appdir: bool,
+    funkey: u8,
     args: &str,
 ) {
     let mut guard = SESSION.lock();
@@ -1555,6 +1640,7 @@ pub(super) fn install_application(
         a.dicon = IG_DOCU;
         a.pdata = pdata;
         a.flags = flags;
+        a.funkey = funkey;
         a.pargs = String::from(args);
     } else {
         // New application: insert ahead of the generic type defaults so a
@@ -1574,7 +1660,7 @@ pub(super) fn install_application(
                 pappl: String::from(app_path),
                 pdata,
                 flags,
-                funkey: 0,
+                funkey,
                 pargs: String::from(args),
             },
         );
@@ -1656,6 +1742,22 @@ pub(super) struct Afind {
     /// `a_pdata`, for `install_window_icon`'s `identical` test
     /// (`deskins.c:1162`).
     pub pdata: String,
+    /// `a_pappl` — the application path, for `is_installed(pa)`
+    /// (`deskins.c:71-80`) and for `do_aopen`'s directory choice
+    /// (`desksupp.c:886-890`), both of which `fun_win2win`'s
+    /// drop-on-an-application branch reaches.
+    pub pappl: String,
+    /// `pa->a_flags & AF_APPDIR` ([`INF_AT_APPDIR`]) — the same `do_aopen`
+    /// step, for the case the node **is** an installed application.
+    pub appdir: bool,
+}
+
+impl Afind {
+    /// `is_installed(pa)` (`deskins.c:71-80`) — the node names a concrete
+    /// application path rather than a wildcard placeholder or nothing at all.
+    pub fn is_installed(&self) -> bool {
+        is_real_path(&self.pappl)
+    }
 }
 
 /// The `a_type` an `ANODE` line tag stands for (`app_parse`'s switch,
@@ -1705,7 +1807,15 @@ pub(super) fn app_afind_by_name(atype: AType, pspec: &str, pname: &str) -> Optio
             continue;
         }
         let hit = |isapp: bool| {
-            Some(Afind { idx, isapp, aicon: a.aicon, dicon: a.dicon, pdata: a.pdata.clone() })
+            Some(Afind {
+                idx,
+                isapp,
+                aicon: a.aicon,
+                dicon: a.dicon,
+                pdata: a.pdata.clone(),
+                pappl: a.pappl.clone(),
+                appdir: a.flags & INF_AT_APPDIR != 0,
+            })
         };
         if super::model::wildcmp(a.pdata.as_bytes(), pname.as_bytes()) {
             return hit(false);
@@ -3011,8 +3121,8 @@ fn get_all_funkeys() -> [Option<FunKey>; NUM_FUNKEYS] {
 /// `include/config.h:1774-1776`, and therefore on for our Falcon030/TOS4
 /// profile).
 ///
-/// A radio group, two independent "step through a list" panels and a free-RAM
-/// read-out, in `ADDESKCF`'s order:
+/// Two radio groups, two independent "step through a list" panels and a
+/// free-RAM read-out, in `ADDESKCF`'s order:
 ///
 /// * **Default dir** — out in DESK05 for want of a consumer, back since
 ///   DESK18. `DCDEFAPP`/`DCDEFWIN` select the current directory a
@@ -3022,6 +3132,14 @@ fn get_all_funkeys() -> [Option<FunKey>; NUM_FUNKEYS] {
 ///   `do_aopen`'s own step (`desksupp.c:893-916`). An *installed* application
 ///   ignores it and uses its own `INF_AT_APPDIR` flag, which is why the switch
 ///   says nothing about those.
+/// * **Parameter** — out in DESK05 for want of a consumer, back since DESK19.
+///   `DCPMFULL`/`DCPMFILE` select what a file dropped on a program icon is
+///   passed as, through `G.g_fullpath`
+///   ([`global::DeskState::g_fullpath`]); the consumer is [`super::dir`]'s
+///   `build_selected_path` (`deskfun.c:903-928`), reached from `fun_win2win`'s
+///   drop-on-an-application branch (`:958-970`). A **document** launch answers
+///   the same question from the installed application's own `INF_AT_ISFULL`
+///   flag instead, so the switch says nothing about those either.
 /// * **Function keys** — a *viewer*. `DCFUNPRV`/`DCFUNNXT` walk the installed
 ///   applications that have a function key bound; `DCFUNLT`/`DCFUNRT` scroll
 ///   the path sideways inside the fixed-width field (`scroll_conf_funkeys`,
@@ -3043,32 +3161,12 @@ fn get_all_funkeys() -> [Option<FunKey>; NUM_FUNKEYS] {
 /// writes `NEWDESK.INF` — the new shortcuts reach the file through
 /// *Save desktop*, which now emits the `#K` line.
 ///
-/// ## What this dialog does **not** offer, and why
-///
-/// `ADDESKCF` (`desk_rsc.c:1603-1772`) has one further radio group, which
-/// NewTOS leaves out rather than showing inert:
-///
-/// * **Parameter** (`DCPMFULL`/`DCPMFILE` → `G.g_fullpath`) selects whether a
-///   file dropped on a program icon is passed as a full path or a bare name
-///   (`build_selected_path`, `deskfun.c:903-931`), reached from
-///   `fun_win2win`'s drop-on-an-application branch (`deskfun.c:960-970`).
-///   NewTOS's `fun_win2win` has no such branch — a drop on a program is a
-///   copy — so there is nothing behind the switch.
-///
-/// It is missing a *consumer* in another function, not a piece of this one;
-/// its `#E` byte-5 bit (`INF_E5_ISFULL`) keeps round-tripping untouched
-/// meanwhile. Same rule as the three groups [`inf_pref`] left out in DESK02 —
-/// and, like them and like *Default dir* now, it comes back when the
-/// consumer does.
+/// With *Parameter* back, every object of `ADDESKCF` (`desk_rsc.c:1603-1772`)
+/// is in the tree and the numbering below is the resource's own.
 pub(super) fn inf_conf() {
     use super::menu;
 
-    // ── object indices (`desk_rsc.h:191-211`, minus the omitted group) ────
-    //
-    // Objects 0..5 are `ADDESKCF`'s own numbers; from the *Function keys* label
-    // on, everything is four lower, because the four objects of the omitted
-    // *Parameter* row (`desk_rsc.c:1660-1685`, its label, its `G_IBOX` and the
-    // two buttons) are not in the tree.
+    // ── object indices (`desk_rsc.h:191-211`) ─────────────────────────────
     /// `DCDEFDIR` — the unnamed `G_IBOX` (`ADDESKCF` object 3) the two
     /// *Default dir* radio buttons hang under; the AES deselects the siblings
     /// of the button that was hit through **this** object (see [`G_IBOX`]).
@@ -3077,40 +3175,49 @@ pub(super) fn inf_conf() {
     /// first of the pair, so `inf_which(tree, DCDEFAPP, 2)` yields 1 for it and
     /// 0 for its neighbour — which is `G.g_appdir` (`deskinf.c:1226`).
     const DCDEFAPP: usize = 4;
+    /// `DCPARM` — the unnamed `G_IBOX` (`ADDESKCF` object 7) of the *Parameter*
+    /// pair. Its **own** `G_IBOX`, not `DCDEFDIR`'s: `RBUTTON` deselection is
+    /// per parent (`tos-api/tests/aes_desk_prefs_radio.rs`), so two groups
+    /// under one box would clear each other.
+    const DCPARM: i16 = 7;
+    /// `DCPMFULL` — *Full path*: the dropped file's whole path. First of the
+    /// pair, so `inf_which(tree, DCPMFULL, 2)` is `G.g_fullpath`
+    /// (`deskinf.c:1227`).
+    const DCPMFULL: usize = 8;
     /// `DCFUNBOX` — the panel holding the function-key number, path and the two
     /// scroll arrows; the field `draw_fld` refreshes after a step (`:1163`).
-    const DCFUNBOX: i16 = 7;
+    const DCFUNBOX: i16 = 11;
     /// `DCFUNNUM` — the `F__` number field.
-    const DCFUNNUM: i16 = 8;
+    const DCFUNNUM: i16 = 12;
     /// `DCFUNLT` — scroll the path text left.
-    const DCFUNLT: i16 = 9;
+    const DCFUNLT: i16 = 13;
     /// `DCFUNPTH` — the scrollable path field.
-    const DCFUNPTH: i16 = 10;
+    const DCFUNPTH: i16 = 14;
     /// `DCFUNRT` — scroll the path text right.
-    const DCFUNRT: i16 = 11;
+    const DCFUNRT: i16 = 15;
     /// `DCFUNPRV` — previous bound function key.
-    const DCFUNPRV: i16 = 12;
+    const DCFUNPRV: i16 = 16;
     /// `DCFUNNXT` — next bound function key.
-    const DCFUNNXT: i16 = 13;
+    const DCFUNNXT: i16 = 17;
     /// `DCMNUBOX` — the panel holding the menu-item text, its key and *Clear
     /// all*.
-    const DCMNUBOX: i16 = 15;
+    const DCMNUBOX: i16 = 19;
     /// `DCMNUKEY` — the editable `Key: ^_` field.
-    const DCMNUKEY: i16 = 16;
+    const DCMNUKEY: i16 = 20;
     /// `DCMNUCLR` — clear every shortcut.
-    const DCMNUCLR: i16 = 17;
+    const DCMNUCLR: i16 = 21;
     /// `DCMNUTXT` — the menu item the current slot names.
-    const DCMNUTXT: i16 = 18;
+    const DCMNUTXT: i16 = 22;
     /// `DCMNUPRV` — previous shortcut slot.
-    const DCMNUPRV: i16 = 19;
+    const DCMNUPRV: i16 = 23;
     /// `DCMNUNXT` — next shortcut slot.
-    const DCMNUNXT: i16 = 20;
+    const DCMNUNXT: i16 = 24;
     /// `DCFREMEM` — the free-RAM read-out.
-    const DCFREMEM: i16 = 21;
+    const DCFREMEM: i16 = 25;
     /// `DCOK` — the OK button; `DC_CNCL` follows it.
-    const DCOK: i16 = 22;
+    const DCOK: i16 = 26;
     /// `DC_CNCL` — Cancel.
-    const DC_CNCL: i16 = 23;
+    const DC_CNCL: i16 = 27;
 
     // ── geometry ────────────────────────────────────────────────────────
     //
@@ -3118,27 +3225,23 @@ pub(super) fn inf_conf() {
     // 1772`, `rsrc_obfix`-resolved at 8x16): a 39x22-cell box whose rows are
     // title 1, *Default dir* 3, *Parameter* 5, *Function keys* 7, the function
     // panel 8+6px, *Menu shortcut keys* 11+8px, the shortcut panel 12+14px,
-    // free RAM 17+8px, the buttons 20. Dropping the one omitted radio row
-    // takes two character rows out of the middle (its own row 5 and the blank
-    // row 6 that separated it from *Function keys*), so everything from
-    // *Function keys* down moves up by `2 * CELL_H` and the box loses the same
-    // 2 cells of height — *Default dir* keeps `ADDESKCF`'s row 3 and the
-    // spacing between the rows that remain is untouched, which matters because
-    // every 3D gadget here is grown by `ADJ3DSTD` (2 px per side) and then laid
-    // out one pixel of border wider still (`aes/gemoblib.c:504`, `sst_th`
-    // `G_BUTTON` → `-1`): the one blank character cell `ADDESKCF` leaves
-    // between *Application* and *Window* is 8 px, of which the growth eats 6.
-    /// The two character rows the omitted *Parameter* group occupied.
-    const DROPPED: i16 = 2 * CELL_H;
+    // free RAM 17+8px, the buttons 20. With DESK19 every one of those rows is
+    // in the tree, so the box is `ADDESKCF`'s full 39x22 and no row is shifted
+    // — which also restores the blank character row the resource leaves
+    // between *Parameter* and *Function keys*. That spacing matters: every 3D
+    // gadget here is grown by `ADJ3DSTD` (2 px per side) and then laid out one
+    // pixel of border wider still (`aes/gemoblib.c:504`, `sst_th` `G_BUTTON`
+    // → `-1`), so the 8 px a blank cell is worth is nearly eaten by the growth.
     let dw = 39 * CELL_W; // 312
-    let dh = 22 * CELL_H - DROPPED; // 320
-    let y_defdir = 3 * CELL_H; // 48 — `ADDESKCF`'s own row, not shifted
-    let y_fun_lbl = 7 * CELL_H - DROPPED; // 80
-    let y_fun_box = 8 * CELL_H + 6 - DROPPED; // 102
-    let y_mnu_lbl = 11 * CELL_H + 8 - DROPPED; // 152
-    let y_mnu_box = 12 * CELL_H + 14 - DROPPED; // 174
-    let y_freemem = 17 * CELL_H + 8 - DROPPED; // 248
-    let y_btn = 20 * CELL_H - DROPPED; // 288
+    let dh = 22 * CELL_H; // 352
+    let y_defdir = 3 * CELL_H; // 48
+    let y_parm = 5 * CELL_H; // 80
+    let y_fun_lbl = 7 * CELL_H; // 112
+    let y_fun_box = 8 * CELL_H + 6; // 134
+    let y_mnu_lbl = 11 * CELL_H + 8; // 184
+    let y_mnu_box = 12 * CELL_H + 14; // 206
+    let y_freemem = 17 * CELL_H + 8; // 280
+    let y_btn = 20 * CELL_H; // 320
     // `adjust_3d_positions` (`deskmain.c:1647-1656`): "avoid button overlap" —
     // the two `PRV` gadgets sit flush against their `NXT` neighbour in the
     // resource, so a 3D build moves them left by `3 * ADJ3DSTD`.
@@ -3153,6 +3256,9 @@ pub(super) fn inf_conf() {
     static DEFDIR_LBL: &[u8] = b"Default dir:\0";
     static DEFAPP: &[u8] = b"Application\0";
     static DEFWIN: &[u8] = b"Window\0";
+    static PARM_LBL: &[u8] = b"Parameter:\0";
+    static PMFULL: &[u8] = b"Full path\0";
+    static PMFILE: &[u8] = b"File name\0";
     static FUN_LBL: &[u8] = b"Function keys:\0";
     static MNU_LBL: &[u8] = b"Menu shortcut keys:\0";
     static CLEAR_ALL: &[u8] = b"Clear all\0";
@@ -3245,30 +3351,41 @@ pub(super) fn inf_conf() {
         mk(G_IBOX, 0, TED_COLOR as u64, 16 * CELL_W, y_defdir, 22 * CELL_W, CELL_H, 6, DCDEFAPP as i16, DCDEFAPP as i16 + 1),
         mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, DEFAPP.as_ptr() as u64, 0, 0, 12 * CELL_W, CELL_H, DCDEFAPP as i16 + 1, -1, -1),
         mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, DEFWIN.as_ptr() as u64, 13 * CELL_W, 0, 9 * CELL_W, CELL_H, DCDEFDIR, -1, -1),
-        // 6 "Function keys:"
+        // 6 "Parameter:"        7 DCPARM (its own `G_IBOX`)  8/9 the buttons
+        //
+        // `ADDESKCF` objects 6-9 verbatim (`desk_rsc.c:1641-1663`): the label
+        // at char (1,5) 13x1, the `G_IBOX` at (16,5) 22x1 with `ob_spec`
+        // `4352L` = `0x1100` and no 3D flag, and inside it *Full path* at
+        // (0,0) 11x1 and *File name* at (12,0) 10x1, both `SELECTABLE |
+        // RBUTTON | FL3DIND`.
+        mk(G_STRING, 0, PARM_LBL.as_ptr() as u64, CELL_W, y_parm, 13 * CELL_W, CELL_H, DCPARM, -1, -1),
+        mk(G_IBOX, 0, TED_COLOR as u64, 16 * CELL_W, y_parm, 22 * CELL_W, CELL_H, 10, DCPMFULL as i16, DCPMFULL as i16 + 1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, PMFULL.as_ptr() as u64, 0, 0, 11 * CELL_W, CELL_H, DCPMFULL as i16 + 1, -1, -1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, PMFILE.as_ptr() as u64, 12 * CELL_W, 0, 10 * CELL_W, CELL_H, DCPARM, -1, -1),
+        // 10 "Function keys:"
         mk(G_STRING, 0, FUN_LBL.as_ptr() as u64, CELL_W, y_fun_lbl, 14 * CELL_W, CELL_H, DCFUNBOX, -1, -1),
-        // 7 DCFUNBOX            8..11 its children
+        // 11 DCFUNBOX           12..15 its children
         mk(G_BOX, FL3DBAK, PANEL_SPEC, CELL_W, y_fun_box, 37 * CELL_W, CELL_H + 8, DCFUNPRV, DCFUNNUM, DCFUNRT),
         mk(G_FTEXT, FL3DBAK, &mut ted_funnum as *mut _ as u64, 4, 4, 3 * CELL_W, CELL_H, DCFUNLT, -1, -1),
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, LEFT.as_ptr() as u64, 5 * CELL_W + 4, 4, 3 * CELL_W + 4, CELL_H, DCFUNPTH, -1, -1),
         mk(G_FBOXTEXT, FL3DBAK, &mut ted_funpth as *mut _ as u64, 10 * CELL_W, 4, 22 * CELL_W, CELL_H, DCFUNRT, -1, -1),
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, RIGHT.as_ptr() as u64, 33 * CELL_W, 4, 3 * CELL_W + 4, CELL_H, DCFUNBOX, -1, -1),
-        // 12/13 DCFUNPRV / DCFUNNXT
+        // 16/17 DCFUNPRV / DCFUNNXT
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_fun_lbl, 4 * CELL_W, CELL_H, DCFUNNXT, -1, -1),
-        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_fun_lbl, 4 * CELL_W, CELL_H, 14, -1, -1),
-        // 14 "Menu shortcut keys:"
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_fun_lbl, 4 * CELL_W, CELL_H, 18, -1, -1),
+        // 18 "Menu shortcut keys:"
         mk(G_STRING, 0, MNU_LBL.as_ptr() as u64, CELL_W, y_mnu_lbl, 19 * CELL_W, CELL_H, DCMNUBOX, -1, -1),
-        // 15 DCMNUBOX           16..18 its children
+        // 19 DCMNUBOX           20..22 its children
         mk(G_BOX, FL3DBAK, PANEL_SPEC, CELL_W, y_mnu_box, 37 * CELL_W, 3 * CELL_H + 4, DCMNUPRV, DCMNUKEY, DCMNUTXT),
         mk(G_FTEXT, EDITABLE | FL3DBAK, &mut ted_mnukey as *mut _ as u64, 4, 2 * CELL_H, 15 * CELL_W, CELL_H, DCMNUCLR, -1, -1),
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, CLEAR_ALL.as_ptr() as u64, 17 * CELL_W + 4, 2 * CELL_H, 19 * CELL_W, CELL_H, DCMNUTXT, -1, -1),
         mk(G_FBOXTEXT, 0, &mut ted_mnutxt as *mut _ as u64, 4, 4, 36 * CELL_W, CELL_H, DCMNUBOX, -1, -1),
-        // 19/20 DCMNUPRV / DCMNUNXT
+        // 23/24 DCMNUPRV / DCMNUNXT
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_mnu_lbl, 4 * CELL_W, CELL_H, DCMNUNXT, -1, -1),
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_mnu_lbl, 4 * CELL_W, CELL_H, DCFREMEM, -1, -1),
-        // 21 DCFREMEM
+        // 25 DCFREMEM
         mk(G_FTEXT, FL3DBAK, &mut ted_fremem as *mut _ as u64, CELL_W, y_freemem, 36 * CELL_W, CELL_H, DCOK, -1, -1),
-        // 22/23 OK / Cancel (`DCOK` is `SELECTABLE|DEFAULT|EXIT|FL3DACT`,
+        // 26/27 OK / Cancel (`DCOK` is `SELECTABLE|DEFAULT|EXIT|FL3DACT`,
         // `DC_CNCL` the same without `DEFAULT`, `desk_rsc.c:1759-1771`).
         mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * CELL_W, y_btn, 9 * CELL_W, CELL_H, DC_CNCL, -1, -1),
         mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 23 * CELL_W, y_btn, 9 * CELL_W, CELL_H, 0, -1, -1),
@@ -3282,9 +3399,11 @@ pub(super) fn inf_conf() {
     //
     // `deselect_all(tree)` is implicit: `mk` leaves every `ob_state` at 0 (the
     // two `OUTLINED` panels above are not `SELECTED`). Then
-    // `if (G.g_appdir) tree[DCDEFAPP] |= SELECTED; else tree[DCDEFWIN] |= …`.
-    let appdir = global::with(|g| g.g_appdir).unwrap_or(true);
+    // `if (G.g_appdir) tree[DCDEFAPP] |= SELECTED; else tree[DCDEFWIN] |= …`
+    // and the same pair for `G.g_fullpath` (`deskinf.c:1113-1116`).
+    let (appdir, fullpath) = global::with(|g| (g.g_appdir, g.g_fullpath)).unwrap_or((true, true));
     tree[DCDEFAPP + usize::from(!appdir)].ob_state |= OB_SELECTED;
+    tree[DCPMFULL + usize::from(!fullpath)].ob_state |= OB_SELECTED;
 
     // ── free-RAM line (`deskinf.c:1118-1125`) ───────────────────────────
     // `sprintf("%ld KB", dos_avail_stram()/1024)`, plus `" + %ld KB"` of
@@ -3440,7 +3559,13 @@ pub(super) fn inf_conf() {
                 // `G.g_appdir = inf_which(tree, DCDEFAPP, 2);` (`:1226`) —
                 // 1 = *Application* (the first of the pair), 0 = *Window*.
                 let chosen = inf_which(&tree, DCDEFAPP, 2) == 1;
-                global::with(|g| g.g_appdir = chosen);
+                // `G.g_fullpath = inf_which(tree, DCPMFULL, 2);` (`:1227`) —
+                // 1 = *Full path*, 0 = *File name*.
+                let full = inf_which(&tree, DCPMFULL, 2) == 1;
+                global::with(|g| {
+                    g.g_appdir = chosen;
+                    g.g_fullpath = full;
+                });
                 done = true;
             }
             DC_CNCL => done = true,
@@ -3496,10 +3621,11 @@ pub fn selftest() {
     // A representative state: text view, sort by size, custom background, two
     // desktop-icon positions, one window, and the default file-type anodes.
     let mut original = InfData::default();
-    // `appdir = false` is the non-default *Default dir* setting (the `.INF`
-    // default `INF_E5_DEFAULT` has `INF_E5_APPDIR` set), so the round trip
-    // exercises the bit in its cleared state too (DESK18).
-    let (e1, e5) = state_to_env(View::Text, Sort::Size, false, false, original.e1, original.e5);
+    // `appdir = false` is the non-default *Default dir* setting and
+    // `fullpath = false` the non-default *Parameter* one (the `.INF` default
+    // `INF_E5_DEFAULT` has both `INF_E5_APPDIR` and `INF_E5_ISFULL` set), so
+    // the round trip exercises both bits in their cleared state (DESK18/DESK19).
+    let (e1, e5) = state_to_env(View::Text, Sort::Size, false, false, false, original.e1, original.e5);
     // …and a non-default value for every Preferences field, so the `#E` bytes
     // the dialog writes are exercised too (DESK02/DESK13): confirm-deletes off,
     // confirm-copies on, confirm-overwrites off (i.e. `INF_E2_ALLOWOVW` set —
@@ -3545,7 +3671,7 @@ pub fn selftest() {
     // (1) In-memory round-trip: serialize → parse → compare.
     let bytes = original.serialize();
     let mem = parse_inf(&bytes);
-    check("in-memory: #E view/sort/appdir", env_to_state(mem.e1, mem.e5) == env_to_state(original.e1, original.e5));
+    check("in-memory: #E view/sort/appdir/fullpath", env_to_state(mem.e1, mem.e5) == env_to_state(original.e1, original.e5));
     check(
         "in-memory: #E preferences",
         env_to_prefs(mem.e1, mem.e2) == (false, true, false, 4, TimeFmt::H12, DateFmt::Dmy),
@@ -3561,7 +3687,7 @@ pub fn selftest() {
     match read_inf_file() {
         Some(back) => {
             let disk = parse_inf(&back);
-            check("disk: #E view/sort/appdir", env_to_state(disk.e1, disk.e5) == env_to_state(original.e1, original.e5));
+            check("disk: #E view/sort/appdir/fullpath", env_to_state(disk.e1, disk.e5) == env_to_state(original.e1, original.e5));
             check(
                 "disk: #E preferences",
                 env_to_prefs(disk.e1, disk.e2) == (false, true, false, 4, TimeFmt::H12, DateFmt::Dmy),
@@ -3602,15 +3728,21 @@ pub fn selftest_install() {
     // Start from a clean model, then install HELLO.NCP (a real native console
     // program on the test image) as the handler for *.TXT documents, passing the
     // document's full path (AF_ISFULL) so the persisted line carries the extra
-    // flags block. A .NCP is a TOS-console flavour → the #F tag.
+    // flags block, and giving it function key 7 (DESK20). A .NCP is a
+    // TOS-console flavour → the #F tag.
     *SESSION.lock() = None;
-    install_application("C:\\HELLO.NCP", "TXT", AppFlavor::Tos, true, false, "");
+    install_application("C:\\HELLO.NCP", "TXT", AppFlavor::Tos, true, false, 7, "");
 
     // The in-memory model resolves the association immediately.
     let mem = lookup_association(b"README.TXT");
     check("mem: README.TXT resolves", mem.as_ref().map(|a| a.app_path.as_str()) == Some("C:\\HELLO.NCP"));
     check("mem: full-path flag set", mem.as_ref().map(|a| a.full_path) == Some(true));
     check("mem: HELLO.BIN has no association", lookup_association(b"HELLO.BIN").is_none());
+    check("mem: funkey 7 stored", installed_doctype("C:\\HELLO.NCP").map(|a| a.funkey) == Some(7));
+    // `get_funkey`'s duplicate walk: another application asking for 7 sees it
+    // taken, the owner itself does not.
+    check("mem: funkey 7 is taken by another app", funkey_owner(7, "C:\\OTHER.NCP"));
+    check("mem: funkey 7 is not taken by its owner", !funkey_owner(7, "C:\\HELLO.NCP"));
 
     // Persist to disk, then dump the written NEWDESK.INF so the #F line is visible.
     let wrote = save_desktop();
@@ -3633,7 +3765,8 @@ pub fn selftest_install() {
         let disk = lookup_association(b"README.TXT");
         check("disk: README.TXT resolves to HELLO.NCP", disk.as_ref().map(|a| a.app_path.as_str()) == Some("C:\\HELLO.NCP"));
         check("disk: full-path flag survived", disk.as_ref().map(|a| a.full_path) == Some(true));
-        check("disk: contains the #F HELLO.NCP line", contains_subslice(&bytes, b"#F 06 07 C:\\HELLO.NCP@ *.TXT@ 200 @"));
+        check("disk: contains the #F HELLO.NCP line", contains_subslice(&bytes, b"#F 06 07 C:\\HELLO.NCP@ *.TXT@ 207 @"));
+        check("disk: funkey 7 survived", installed_doctype("C:\\HELLO.NCP").map(|a| a.funkey) == Some(7));
         check("disk: INSIDE.TXT (any dir) resolves", lookup_association(b"INSIDE.TXT").is_some());
         check("disk: HELLO.NCP is not its own document", lookup_association(b"HELLO.NCP").is_none());
 

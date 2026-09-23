@@ -17,14 +17,15 @@
 //! application-directory-vs-top-window radio, and the GEM/TOS/GTP/TTP flavour
 //! radio. NewTOS implements the fields that change the *launch contract* — the
 //! document-type mask, the GEM/TOS/GTP/TTP flavour (which selects the persisted
-//! `#G`/`#Y`/`#P`/`#F` tag), and the full-path-vs-file-name tail choice
-//! (`AF_ISFULL`). The function-key/autorun/app-dir fields are **not** offered
-//! here (function keys and autorun are separate desktop features that are not
-//! yet wired; app-dir defaults to "top window", `AF_APPDIR` clear); the model
-//! and file format carry them, so they round-trip untouched when present. Text
-//! entry needs a real keyboard, so the dialog is driven interactively on
-//! hardware; the association model + launch path are covered by a headless
-//! selftest (see `super::inf`/`super::main`).
+//! `#G`/`#Y`/`#P`/`#F` tag), the full-path-vs-file-name tail choice
+//! (`AF_ISFULL`) — and, since DESK20, the **function key** (`APFUNKEY`,
+//! `desk_rsc.h:119`), with `get_funkey`'s validation and its two alerts.
+//! The autorun/app-dir/arguments fields are **not** offered here (autorun is a
+//! separate desktop feature that is not yet wired; app-dir defaults to "top
+//! window", `AF_APPDIR` clear); the model and file format carry them, so they
+//! round-trip untouched when present. Text entry needs a real keyboard, so the
+//! dialog is driven interactively on hardware; the association model + launch
+//! path are covered by a headless selftest (see `super::inf`/`super::main`).
 
 use alloc::string::String;
 
@@ -53,19 +54,40 @@ const OB_SELECTED: u16 = 0x0001;
 /// slack bytes allow a `*` all-files entry too).
 const EXT_MAX: usize = 4;
 
+/// The number of digits the function-key field takes. `desk_rs_tedinfo[19]`'s
+/// `te_txtlen` is 3 (`desk_rsc.c:130-133`) and a `te_txtlen` counts the NUL,
+/// so the field holds **two** digits — which is what F1…F20 needs. The
+/// `te_txtlen` below is therefore `FKEY_MAX + 1`, exactly as the neighbouring
+/// document-type field's `EXT_MAX` (3 characters) is given as 4.
+const FKEY_MAX: usize = 2;
+
+/// `FIRST_FUNKEY` / `LAST_FUNKEY` (`deskins.h:16-17`) — the range `get_funkey`
+/// accepts; anything else raises [`STINVKEY`].
+const FIRST_FUNKEY: u8 = 1;
+const LAST_FUNKEY: u8 = 20;
+
 // Object indices in the dialog tree.
-const O_GEM: i16 = 7;
-const O_TOS: i16 = 8;
-const O_GTP: i16 = 9;
-const O_TTP: i16 = 10;
-const O_FULL: i16 = 12;
-const O_FILE: i16 = 13;
-const O_INSTALL: i16 = 14;
-const O_REMOVE: i16 = 15;
-const O_LAST: usize = 16;
+const O_GEM: i16 = 9;
+const O_TOS: i16 = 10;
+const O_GTP: i16 = 11;
+const O_TTP: i16 = 12;
+const O_FULL: i16 = 14;
+const O_FILE: i16 = 15;
+const O_INSTALL: i16 = 16;
+const O_REMOVE: i16 = 17;
+const O_LAST: usize = 18;
 /// The editable document-type field — `form_do`'s start object, as EmuTOS
 /// passes `APARGS` (`deskins.c:507`).
 const O_DOCTYPE: i16 = 5;
+/// The editable function-key field (`APFUNKEY`, `desk_rsc.h:119`).
+const O_FUNKEY: i16 = 7;
+
+/// `STINVKEY` (`desk_rsc.c:2525`) — verbatim, buttons included, because
+/// `fun_alert` hands the whole resource string to `form_alert`.
+static STINVKEY: &[u8] = b"[1][Invalid function key value.][  OK  ]\0";
+/// `STDUPKEY` (`desk_rsc.c:2526-2527`) — two buttons, default 1 (`OK`).
+static STDUPKEY: &[u8] =
+    b"[2][Function key already assigned.|Do you want to reassign it?][  OK  |Cancel]\0";
 
 /// What the user chose in the Install-Application dialog.
 pub(super) enum Outcome {
@@ -77,11 +99,71 @@ pub(super) enum Outcome {
         flavor: AppFlavor,
         /// `AF_ISFULL`: pass the document's full path in the tail (else name).
         full_path: bool,
+        /// The validated function key (`pa->a_funkey`, `deskins.c:531`);
+        /// `0` = none.
+        funkey: u8,
     },
     /// Remove an existing association for the selected application.
     Remove,
     /// Cancel — leave the model unchanged.
     Cancel,
+}
+
+/// `atow` (`deskins.c:380-393`) — leading decimal digits of `s` as a number;
+/// stops at the first non-digit, so a leading blank or letter yields 0.
+fn atow(s: &[u8]) -> u16 {
+    let mut n: u16 = 0;
+    for &c in s {
+        if c.is_ascii_digit() {
+            n = n.saturating_mul(10).saturating_add((c - b'0') as u16);
+        } else {
+            break;
+        }
+    }
+    n
+}
+
+/// `get_funkey(tree, pa, installed)` (`deskins.c:404-444`) — "checks for
+/// invalid or duplicate function key and issues appropriate alert".
+///
+/// `fkey` is the raw text of `APFUNKEY`, `app_path` the application being
+/// installed (EmuTOS's `pa`, which its walk skips by pointer identity) and
+/// `current` its stored `a_funkey` — only meaningful when `installed`.
+/// Returns the key to store, or [`None`] for EmuTOS's `-1` (the caller then
+/// clears the field and asks the user to try again).
+fn get_funkey(fkey: &[u8], app_path: &str, current: u8, installed: bool) -> Option<u8> {
+    // `if (fkey[0] == '\0') return 0;` — an empty field means "no key".
+    if fkey.first().copied().unwrap_or(0) == 0 {
+        return Some(0);
+    }
+
+    let funkey = atow(fkey);
+    // `if (installed && (funkey == pa->a_funkey)) return funkey;` — unchanged,
+    // so it is not re-validated. That is deliberate in EmuTOS: a key a
+    // hand-written `.INF` put outside the range survives an edit of the other
+    // fields.
+    if installed && funkey == current as u16 {
+        return Some(current);
+    }
+
+    // `if ((funkey < FIRST_FUNKEY) || (funkey > LAST_FUNKEY)) { … STINVKEY … }`
+    if funkey < FIRST_FUNKEY as u16 || funkey > LAST_FUNKEY as u16 {
+        super::form_alert(1, STINVKEY.as_ptr());
+        return None;
+    }
+    let funkey = funkey as u8;
+
+    // The walk over the other `ANODE`s (`:430-441`), split around the question
+    // so the session lock is not held across the trap (see
+    // [`super::inf::funkey_owner`]).
+    if super::inf::funkey_owner(funkey, app_path) {
+        if super::form_alert(1, STDUPKEY.as_ptr()) != 1 {
+            return None;
+        }
+        super::inf::release_funkey(funkey, app_path);
+    }
+
+    Some(funkey)
 }
 
 /// Build one dialog `OBJECT`.
@@ -133,15 +215,38 @@ fn set_param_radio(tree: &mut [Object], full_path: bool) {
 /// The screen underneath is restored by `end_dialog`'s `form_dial(FMD_FINISH)`.
 pub(super) fn ins_app_dialog(
     app_name: &str,
+    app_path: &str,
     initial_ext: &str,
     initial_flavor: AppFlavor,
     initial_full: bool,
+    initial_funkey: u8,
     installed: bool,
 ) -> Outcome {
     // Editable extension buffer — `form_do` edits this in place via the TEDINFO.
     let mut extbuf = [0u8; EXT_MAX + 2];
     let n = initial_ext.len().min(EXT_MAX);
     extbuf[..n].copy_from_slice(&initial_ext.as_bytes()[..n]);
+
+    // Editable function-key buffer, pre-filled exactly as `ins_app_dialog`
+    // does (`deskins.c:474-477`): `sprintf(name, "%u ", pa->a_funkey)` when the
+    // node has a key, empty otherwise, and empty for an application that is not
+    // installed at all. `inf_sset` truncates to the field width, which for 20
+    // drops the trailing blank.
+    let mut fkeybuf = [0u8; FKEY_MAX + 2];
+    if installed && initial_funkey != 0 {
+        let mut tmp = [0u8; 4];
+        let mut k = 0usize;
+        if initial_funkey >= 10 {
+            tmp[k] = b'0' + initial_funkey / 10;
+            k += 1;
+        }
+        tmp[k] = b'0' + initial_funkey % 10;
+        k += 1;
+        tmp[k] = b' ';
+        k += 1;
+        let m = k.min(FKEY_MAX);
+        fkeybuf[..m].copy_from_slice(&tmp[..m]);
+    }
 
     // The application-name value string (shown, not editable). Copied into an
     // owned NUL-terminated buffer so it outlives the borrow.
@@ -153,6 +258,11 @@ pub(super) fn ins_app_dialog(
     static TITLE: &[u8] = b" Install Application \0";
     static APP_LBL: &[u8] = b"Application:\0";
     static DOC_LBL: &[u8] = b"Document type:   *.\0";
+    /// `desk_rs_tedinfo[19]`'s template without its two `_` placeholders —
+    /// the `G_BOXTEXT` field below is the placeholder (`desk_rsc.c:131`).
+    static FKEY_LBL: &[u8] = b"Install as:       F\0";
+    /// `te_pvalid` of `APFUNKEY` — digits only (`desk_rsc.c:132`).
+    static V_DIGIT: &[u8] = b"9\0";
     static TYPE_LBL: &[u8] = b"Program type:\0";
     static GEM: &[u8] = b" GEM \0";
     static TOS: &[u8] = b" TOS \0";
@@ -178,10 +288,23 @@ pub(super) fn ins_app_dialog(
         te_txtlen: EXT_MAX as i16,
         te_tmplen: 0,
     };
+    let ted_fkey = TedInfo {
+        te_ptext: fkeybuf.as_mut_ptr() as u64,
+        te_ptmplt: EMPTY.as_ptr() as u64,
+        te_pvalid: V_DIGIT.as_ptr() as u64,
+        te_font: 3,
+        te_junk1: 0,
+        te_just: 0,
+        te_color: TED_COLOR,
+        te_junk2: 0,
+        te_thickness: 1,
+        te_txtlen: (FKEY_MAX + 1) as i16,
+        te_tmplen: 0,
+    };
 
     // Built at the origin; `start_dialog`'s `form_center` writes the centred
     // `ob_x`/`ob_y` into the ROOT.
-    let (dw, dh) = (360i16, 240i16);
+    let (dw, dh) = (360i16, 272i16);
 
     // The 3D roles are `ADINSAPP`'s, object by object (`desk_rsc.c:1027-1195`):
     // `FL3DBAK` + `OUTLINED` ROOT; `APDOCTYP` is an `EDITABLE | FL3DBAK` field;
@@ -215,20 +338,25 @@ pub(super) fn ins_app_dialog(
         // 4: document-type label ("Document type:  *."), 5: editable extension.
         mk(G_STRING, 0, DOC_LBL.as_ptr() as u64, 24, 72, 160, 16, 5, -1, -1),
         mk(G_BOXTEXT, EDITABLE | FL3DBAK, &ted as *const _ as u64, 200, 68, 56, 22, 6, -1, -1),
-        // 6: program-type label, 7-10: flavour radio buttons.
-        mk(G_STRING, 0, TYPE_LBL.as_ptr() as u64, 24, 104, 104, 16, 7, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, GEM.as_ptr() as u64, 144, 100, 44, 22, 8, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, TOS.as_ptr() as u64, 198, 100, 44, 22, 9, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, GTP.as_ptr() as u64, 252, 100, 44, 22, 10, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, TTP.as_ptr() as u64, 306, 100, 44, 22, 11, -1, -1),
-        // 11: argument label, 12-13: full-path/file-name radio.
-        mk(G_STRING, 0, PARM_LBL.as_ptr() as u64, 24, 136, 104, 16, 12, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, FULL.as_ptr() as u64, 144, 132, 88, 22, 13, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, FILE.as_ptr() as u64, 244, 132, 88, 22, 14, -1, -1),
-        // 14: Install (default), 15: Remove, 16: Cancel (last).
-        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, INSTALL.as_ptr() as u64, 24, 190, 90, 30, 15, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, REMOVE.as_ptr() as u64, 136, 190, 90, 30, 16, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 248, 190, 90, 30, 0, -1, -1),
+        // 6: function-key label ("Install as:       F"), 7: editable number
+        // (`APFUNKEY`, `desk_rsc.c:1059-1063` — an `EDITABLE | FL3DBAK`
+        // field, one row under `APDOCTYP`, as it is there).
+        mk(G_STRING, 0, FKEY_LBL.as_ptr() as u64, 24, 104, 160, 16, O_FUNKEY, -1, -1),
+        mk(G_BOXTEXT, EDITABLE | FL3DBAK, &ted_fkey as *const _ as u64, 200, 100, 40, 22, 8, -1, -1),
+        // 8: program-type label, 9-12: flavour radio buttons.
+        mk(G_STRING, 0, TYPE_LBL.as_ptr() as u64, 24, 136, 104, 16, 9, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, GEM.as_ptr() as u64, 144, 132, 44, 22, 10, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, TOS.as_ptr() as u64, 198, 132, 44, 22, 11, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, GTP.as_ptr() as u64, 252, 132, 44, 22, 12, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, TTP.as_ptr() as u64, 306, 132, 44, 22, 13, -1, -1),
+        // 13: argument label, 14-15: full-path/file-name radio.
+        mk(G_STRING, 0, PARM_LBL.as_ptr() as u64, 24, 168, 104, 16, 14, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, FULL.as_ptr() as u64, 144, 164, 88, 22, 15, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, FILE.as_ptr() as u64, 244, 164, 88, 22, 16, -1, -1),
+        // 16: Install (default), 17: Remove, 18: Cancel (last).
+        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, INSTALL.as_ptr() as u64, 24, 222, 90, 30, 17, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, REMOVE.as_ptr() as u64, 136, 222, 90, 30, 18, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 248, 222, 90, 30, 0, -1, -1),
     ];
 
     // A not-installed application cannot be removed (EmuTOS `deskins.c:585-586`).
@@ -257,6 +385,16 @@ pub(super) fn ins_app_dialog(
             O_FULL => full_path = true,
             O_FILE => full_path = false,
             O_INSTALL => {
+                // `funkey = get_funkey(tree,pa,installed); if (funkey < 0) {
+                //  inf_sset(tree, APFUNKEY, ""); tree[APINSTAL].ob_state &=
+                //  ~SELECTED; … draw_dial(tree); exitobj = -1; break; }`
+                // (`deskins.c:520-530`) — the *only* retry the dialog has.
+                let Some(key) = get_funkey(&fkeybuf, app_path, initial_funkey, installed) else {
+                    fkeybuf.fill(0);
+                    tree[O_INSTALL as usize].ob_state &= !OB_SELECTED;
+                    super::dir::draw_dial(tree_ptr);
+                    continue;
+                };
                 // Read the document-type field and finish (the dialog is torn
                 // down and the screen repainted, so no need to clear SELECTED).
                 let m = extbuf.iter().position(|&b| b == 0).unwrap_or(extbuf.len());
@@ -265,6 +403,7 @@ pub(super) fn ins_app_dialog(
                     doc_ext: String::from(ext),
                     flavor,
                     full_path,
+                    funkey: key,
                 };
             }
             O_REMOVE if installed => break Outcome::Remove,

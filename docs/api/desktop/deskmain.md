@@ -1200,10 +1200,12 @@ next reader does not re-derive them:
   *Default dir* radios are back in `inf_conf` (`deskinf.md`, DESK18).
   `cnx_put`/`cnx_get` move it exactly where EmuTOS does
   (`deskmain.c:1391`, `:1453`).
-* `cs_fullpath` is still not: its consumer is `build_selected_path` in
-  `fun_win2win`'s drop-on-an-application branch, which NewTOS does not
-  have, so the *Parameter* radios stay out of `inf_conf`
-  (`deskinf.md`, DESK05).
+* `cs_fullpath` **is** carried since DESK19: its consumer
+  (`build_selected_path` in `fun_win2win`'s drop-on-an-application branch)
+  now exists as `desk::dir::build_selected_path` + `main::do_aopen_drop`,
+  and the *Parameter* radios are back in `inf_conf` (`deskinf.md`, DESK19).
+  `cnx_put`/`cnx_get` move it exactly where EmuTOS does
+  (`deskmain.c:1392`, `:1454`), into `INF_E5_ISFULL` of the `#E` line.
 
 The bits of all of these survive a load/save round trip — `desk::inf`
 keeps the parsed `#E` bytes of the session and re-emits every bit it

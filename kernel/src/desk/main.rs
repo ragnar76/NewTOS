@@ -424,6 +424,82 @@ fn open_document(name: &str, full_path: &str) {
     launch_native(&app_path, &app_name, flavor, &tailbuf[..taillen]);
 }
 
+/// `do_aopen(pa, TRUE, curr, pathname, pname, tail)` (`desksupp.c:843-1031`)
+/// for the single case `fun_win2win`'s drop-on-an-application branch reaches
+/// (`deskfun.c:967`): `isapp` is `TRUE` and `tail` is **not** `NULL`, so
+/// neither the `installed_datafile` arm (`:924`, `isapp` rules it out) nor
+/// `opn_appl`'s `.TTP` parameter prompt (`:978-985`, the `tail` branch takes
+/// precedence) runs. What is left is three steps:
+///
+/// * the current directory, set exactly as `do_aopen` sets it (`:873-890`):
+///   from the node's own `AF_APPDIR` + `a_pappl` when it is an **installed**
+///   application, otherwise from the desktop-wide `G.g_appdir` and the
+///   **destination window's** `p_spec` — that is [`set_launch_dir`], shared
+///   with the double-click and document paths;
+/// * `app_path = pathname` with its file-name part replaced by `pname`
+///   (`:958-960`) — here `dst_dir` (which already ends in `\`) plus
+///   `prog_name`;
+/// * `strcpy(ptail, tail)` and `pro_run` (`:969-975`, `:986`).
+///
+/// `installed`/`pappl`/`node_appdir` are the three fields of the destination
+/// `ANODE` those steps read; `tail` is the command line
+/// [`dir::build_selected_path`] built.
+///
+/// Returns EmuTOS's `exit_desktop`. NewTOS launches **nested** instead of
+/// leaving the desktop process (AES gap G1, see [`launch_native`]), so the
+/// answer is always `false` — there is no desktop to exit, and the desktop is
+/// back on screen by the time this returns.
+pub(super) fn do_aopen_drop(
+    installed: bool,
+    pappl: &str,
+    node_appdir: bool,
+    dst_dir: &str,
+    prog_name: &str,
+    tail: &str,
+) -> bool {
+    // `if (is_installed(pa)) { … AF_APPDIR … pa->a_pappl } else { … G.g_appdir
+    //  … pathname }` (`desksupp.c:884-905`).
+    let (app_dir, own_path) = if installed {
+        (node_appdir, String::from(pappl))
+    } else {
+        (global::with(|g| g.g_appdir).unwrap_or(true), String::from(dst_dir))
+    };
+    if !set_launch_dir(app_dir, &own_path) {
+        return false;
+    }
+
+    // `strcpy(app_path, pathname); p = filename_start(app_path); strcpy(p, pname);`
+    let mut app_path = String::from(dst_dir);
+    app_path.push_str(prog_name);
+
+    // EmuTOS hands `app_path` to `pro_run` whatever it is and lets the loader
+    // fail; NewTOS's loader takes native AArch64 ELF only (ADR-018), so the
+    // two non-native answers are reported here, in the wording the
+    // double-click path already uses for them.
+    match ftype::classify(prog_name.as_bytes()) {
+        ftype::FileType::Native(flavor) => {
+            let mut tailbuf = [0u8; 128];
+            let taillen = build_cmd_tail(&mut tailbuf, tail);
+            app_path.push('\0'); // the loader reads up to the first NUL
+            launch_native(&app_path, prog_name, flavor, &tailbuf[..taillen]);
+        }
+        ftype::FileType::M68k => {
+            let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
+            super::form_alert(1, text.as_ptr());
+        }
+        // Reachable, and an EmuTOS quirk rather than an accident: an installed
+        // application's `ANODE` carries `a_aicon = IG_APPL` **and** its
+        // document wildcard, and `app_afind_by_name` tests `a_pdata` first
+        // (`deskapp.c:1450-1454`), so a document of that type answers
+        // `a_aicon >= 0` too and EmuTOS tries to run the document itself.
+        ftype::FileType::Doc => {
+            let text = b"[1][ This file is not a native | NewTOS program. ][ OK ]\0";
+            super::form_alert(1, text.as_ptr());
+        }
+    }
+    false
+}
+
 /// Build the classic Atari command-tail image into `buf` and return its length:
 /// `buf[0]` = argument length, `buf[1..]` = the argument characters, then a NUL
 /// and a trailing `\r` (EmuTOS `pro_run`, `deskpro.c:56-57`; the loader appends
@@ -841,16 +917,21 @@ fn kbd_arrow(action: i16) {
 }
 
 /// `check_function_key` (EmuTOS `deskmain.c:1117`) — F1-F20 launch the
-/// installed application bound to that function key. The application list
-/// (ANODE chain) is built by Install-Application (deskins, **Task #9**); with
-/// none installed, no function key resolves to a launch target, so the key is
-/// unhandled and falls through (EmuTOS `process_funkey` → `do_aopen` only on a
-/// matching `a_funkey`). Returns `None` (unhandled) for both a non-function key
-/// and a function key with no bound application — a genuine no-op over an empty
-/// list, not a stub.
+/// installed application bound to that function key.
+///
+/// **Named gap, and it is now a real one.** Until DESK20 no application could
+/// carry a key at all, so falling through was the only possible answer. DESK20
+/// built the assignment (`APFUNKEY` in [`super::insapp`], `a_funkey` in the
+/// `NEWDESK.INF` model), so a bound key can exist — what is still missing is
+/// `process_funkey` (`deskmain.c:1087-1106`): find the `ANODE` with that
+/// `a_funkey` and `do_aopen(pa, TRUE, -1, pathname, pfname, NULL)`. That is a
+/// separate work item, not part of DESK20's "make the key assignable".
+///
+/// Returns `None` (unhandled) for both a non-function key and a function key
+/// whose launch is that missing step.
 fn check_function_key(key: i16) -> Option<bool> {
     funkey_number(key)?; // must be F1-F20, else fall through
-    None // no installed application bound yet (Task #9)
+    None // `process_funkey` is not built yet — see the note above
 }
 
 /// The function-key number 1..20 for `key`, or `None` if it is not a function
@@ -1151,15 +1232,23 @@ fn do_install_app() {
     // Pre-fill the dialog from an existing association for this program, if any.
     let existing = super::inf::installed_doctype(&app_path);
     let installed = existing.is_some();
-    let (init_ext, init_flavor, init_full) = match existing {
-        Some((ext, fl, full)) => (ext, fl, full),
-        None => (String::new(), default_flavor(flavor), false),
+    let (init_ext, init_flavor, init_full, init_funkey) = match existing {
+        Some(a) => (a.doc_ext, a.flavor, a.full_path, a.funkey),
+        None => (String::new(), default_flavor(flavor), false, 0),
     };
 
-    let outcome = super::insapp::ins_app_dialog(&app_name, &init_ext, init_flavor, init_full, installed);
+    let outcome = super::insapp::ins_app_dialog(
+        &app_name,
+        &app_path,
+        &init_ext,
+        init_flavor,
+        init_full,
+        init_funkey,
+        installed,
+    );
     match outcome {
-        Outcome::Install { doc_ext, flavor: fl, full_path } => {
-            super::inf::install_application(&app_path, &doc_ext, fl, full_path, false, "");
+        Outcome::Install { doc_ext, flavor: fl, full_path, funkey } => {
+            super::inf::install_application(&app_path, &doc_ext, fl, full_path, false, funkey, "");
         }
         Outcome::Remove => {
             super::inf::remove_application(&app_path);
@@ -2028,6 +2117,8 @@ pub(super) fn cnx_put() {
         g.g_cnxsave.cs_datefmt = g.g_cdateform;
         // `cnxsave->cs_appdir = G.g_appdir;` (`deskmain.c:1391`).
         g.g_cnxsave.cs_appdir = g.g_appdir;
+        // `cnxsave->cs_fullpath = G.g_fullpath;` (`deskmain.c:1392`).
+        g.g_cnxsave.cs_fullpath = g.g_fullpath;
     });
 
     // The open windows, front-to-back, with their desktop slot and handle.
@@ -2163,6 +2254,8 @@ fn cnx_get_prefs() {
         g.g_cdateform = g.g_cnxsave.cs_datefmt;
         // `G.g_appdir = cnxsave->cs_appdir;` (`deskmain.c:1453`).
         g.g_appdir = g.g_cnxsave.cs_appdir;
+        // `G.g_fullpath = cnxsave->cs_fullpath;` (`deskmain.c:1454`).
+        g.g_fullpath = g.g_cnxsave.cs_fullpath;
         g.win_view();
         g.g_cdclkpref
     })

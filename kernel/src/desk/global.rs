@@ -238,24 +238,22 @@ pub struct WSave {
 /// it is wiped on every shell pass, which is precisely why EmuTOS's desktop
 /// keeps its own copy (gap G2 of `docs/analysis/desk-aes-gaps-2026-09-14.md`).
 ///
-/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries `cs_blitter`,
-/// `cs_cache` and `cs_fullpath`. Those mirror `GLOBES` fields that exist only
-/// because `inf_pref`/`inf_conf` (the Preferences and Configuration dialogs)
-/// can edit them, and NewTOS has no live state behind any of them:
-///
-/// * `cs_blitter` / `cs_cache` — m68k hardware (`Blitmode`, the 68030 cache),
-///   the hardware-layer carve-out of `docs/COMPATIBILITY.md`.
-/// * `cs_fullpath` — the *Parameter* switch, whose consumer is
-///   `build_selected_path` (`deskfun.c:903-931`) out of `fun_win2win`'s
-///   drop-on-an-application branch (`:958-970`); NewTOS's `fun_win2win` has no
-///   such branch. The per-**association** twin of the same choice
-///   (`INF_AT_ISFULL`) does exist and is kept in the `NEWDESK.INF` `ANODE`
-///   extra block, which is why a document launch can honour it and a drop
-///   cannot.
+/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries `cs_blitter`
+/// and `cs_cache`. Those mirror `GLOBES` fields that exist only because
+/// `inf_pref`/`inf_conf` (the Preferences and Configuration dialogs) can edit
+/// them, and NewTOS has no live state behind either: they are m68k hardware
+/// (`Blitmode`, the 68030 cache), the hardware-layer carve-out of
+/// `docs/COMPATIBILITY.md`.
 ///
 /// Their bits still survive a load/save round trip — the `#E` bytes they live
 /// in are preserved verbatim by [`super::inf`]'s session copy — they are simply
 /// not routed through this structure.
+///
+/// `cs_fullpath` **was** in that list until DESK19, on the grounds that its
+/// consumer — `build_selected_path` (`deskfun.c:903-928`) out of
+/// `fun_win2win`'s drop-on-an-application branch (`:958-970`) — did not exist
+/// here. It does now ([`super::dir`]'s `build_selected_path`), so the field is
+/// carried like the others.
 ///
 /// `cs_appdir` **was** in that list until DESK18, on the grounds that NewTOS's
 /// launch path set no current directory at all. It does now
@@ -292,6 +290,9 @@ pub struct CSave {
     /// Saved *Default dir* switch (`cs_appdir`, `deskapp.h:153`) — see
     /// [`DeskState::g_appdir`]. Serialises to `INF_E5_APPDIR`.
     pub cs_appdir: bool,
+    /// Saved *Parameter* switch (`cs_fullpath`, `deskapp.h:154`) — see
+    /// [`DeskState::g_fullpath`]. Serialises to `INF_E5_ISFULL`.
+    pub cs_fullpath: bool,
     /// One [`WSave`] per window slot (`cs_wnode[NUM_WNODES]`); slot 0 is the
     /// **bottom-most** window (`cnx_put`'s comment, `deskmain.c:1367-1369`).
     pub cs_wnode: [WSave; NUM_WNODES],
@@ -310,6 +311,7 @@ impl Default for CSave {
             cs_timefmt: TimeFmt::H24,
             cs_datefmt: DateFmt::Mdy,
             cs_appdir: true,
+            cs_fullpath: true,
             cs_wnode: Default::default(),
         }
     }
@@ -407,6 +409,17 @@ pub struct DeskState {
     /// from its own `INF_AT_APPDIR` flag instead, so this global does not
     /// apply to it. Persisted through [`CSave::cs_appdir`].
     pub g_appdir: bool,
+    /// "Pass the full path as the argument" (`g_fullpath`, `deskbind.h:181`):
+    /// the *Parameter* switch of `inf_conf`, read by exactly one function —
+    /// `build_selected_path` (`deskfun.c:903-928`), which turns the first
+    /// selected file of the **source** window into the command tail when that
+    /// selection is dropped on a program icon (`fun_win2win`, `:958-970`;
+    /// NewTOS's [`super::dir`] `fun_win2win`). `true` ⇒ the file's full path,
+    /// `false` ⇒ its bare name. An *installed* application answers the same
+    /// question for a **document** launch from its own `INF_AT_ISFULL` flag
+    /// instead, so this global does not apply there. Persisted through
+    /// [`CSave::cs_fullpath`].
+    pub g_fullpath: bool,
     /// The current `_IDT` cookie word (`g_idt`, `deskbind.h:183`) — the machine
     /// separator / field order / clock that [`TimeFmt::Idt`] and [`DateFmt::Idt`]
     /// defer to (see [`super::model`]'s `_IDT` block for the bit layout and for
@@ -522,9 +535,11 @@ impl DeskState {
             g_cdclkpref: DEF_DCLICK,
             g_ctimeform: TimeFmt::H24,
             g_cdateform: DateFmt::Mdy,
-            // `INF_E5_DEFAULT` carries `INF_E5_APPDIR` (`deskapp.c:114`), so
-            // the no-`.INF` default is the application's own directory.
+            // `INF_E5_DEFAULT` carries `INF_E5_APPDIR|INF_E5_ISFULL`
+            // (`deskapp.c:115`), so the no-`.INF` defaults are the
+            // application's own directory and the full path as the argument.
             g_appdir: true,
+            g_fullpath: true,
             g_idt: 0,
             g_iwext: 0,
             g_ihext: 0,

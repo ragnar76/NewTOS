@@ -139,6 +139,20 @@ else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\SUB\\CURDIR.NCP skipped"
 fi
 
+# CMDLINE.NCP is the command-line proof (DESK19): it prints its own
+# `p_cmdlin` out of the BasePage the loader maps at VA 0, plus the current
+# drive + directory. Dropping a file on its icon is a LAUNCH WITH ARGUMENTS in
+# EmuTOS (`fun_win2win`, deskfun.c:958-970), not a copy, and the argument is
+# either the full path or the bare file name depending on the desktop
+# configuration's *Parameter* setting (`build_selected_path`, :903-928). Put in
+# the root so the drag is one gesture inside the C:\ window; never in \AUTO\,
+# where it would get an empty tail and say nothing.
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/cmdline.c" "$V/CMDLINE.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\CMDLINE.NCP (command-line proof)"
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\CMDLINE.NCP skipped"
+fi
+
 # DTACHILD.NCP is the per-process-DTA proof (S1c): a console program that moves
 # its OWN DTA (Fsetdta(0x2000)) and exits. A parent runs it between its own
 # Fsetdta(buf) and Fgetdta() -- if Fgetdta still returns buf, the DTA really

@@ -579,6 +579,52 @@ commit half in `desk::main::do_install_app`; the association itself is a
 `NEWDESK.INF` `#G`/`#Y`/`#P`/`#F` line held by `desk::inf`. See that
 module's header for the field subset it offers and why.
 
+#### The function-key field (DESK20, 2026-09-23)
+
+`ADINSAPP` object 5 is `APFUNKEY` (`desk_rsc.h:119`, `desk_rsc.c:1059-1063`):
+an `EDITABLE | FL3DBAK` `G_FBOXTEXT` over `desk_rs_tedinfo[19]`, template
+`"Install as: F__"`, `te_pvalid` `"9"`, `te_txtlen` **3**. A `te_txtlen`
+counts the NUL, so the field takes **two** digits — which is what
+`FIRST_FUNKEY..LAST_FUNKEY` = 1..20 (`deskins.h:16-17`) needs. NewTOS's
+dialog had no such field at all, so `a_funkey` was carried, saved and
+displayed in *Desktop configuration* but could never be assigned; the panel
+there was always empty.
+
+Now built, in EmuTOS's three places:
+
+* **pre-fill** (`deskins.c:474-477`) — `sprintf(name, "%u ", pa->a_funkey)`
+  when the node has a key, empty otherwise, and empty for an application that
+  is not installed. `inf_sset` truncates to the field width, which for a
+  two-digit key drops the trailing blank.
+* **validate** (`get_funkey`, `:404-444`) — `atow` (`:380-393`) over the raw
+  field; an empty field is 0 ("no key"); `installed && funkey == a_funkey`
+  returns unchanged **without** re-validating, which is deliberate in EmuTOS
+  (a hand-written `.INF` value outside the range survives an edit of the other
+  fields); out of range raises `STINVKEY` (`desk_rsc.c:2525`); a key another
+  `ANODE` holds raises `STDUPKEY` (`:2526-2527`) and, on OK, clears it there.
+* **store** (`:520-531`) — a negative answer clears the field, deselects
+  `APINSTAL`, redraws and asks for a retry; otherwise `pa->a_funkey = funkey`.
+
+**NewTOS shape.** EmuTOS asks its duplicate question *inside* its own walk
+over `G.g_ahead`; NewTOS must not hold the `desk::inf` `SESSION` mutex across
+a trap, so the walk is split into `funkey_owner` (the test) and
+`release_funkey` (the `an->a_funkey = 0`), with the alert between them. The
+desktop is single-CPU and the dialog modal, so the answer cannot change in
+between. The two alert strings are written verbatim as resource text
+(`[  OK  ]`, `[  OK  |Cancel]`) rather than through `dir::fun_alert`, whose
+wrapper writes `[ OK ]` — a pre-existing difference in that wrapper that is
+not carried into these two.
+
+**Still missing, and now a real gap.** Pressing the key launches nothing:
+`process_funkey` (`deskmain.c:1087-1106`) has no counterpart, so
+`desk::main::check_function_key` still falls through. Until DESK20 that was
+unobservable (no key could exist); it is a genuine hole now.
+
+Measured 2026-09-23 (`measurement-2026-09-23-desk19-desk20/`): `7` assigned
+and shown in *Desktop configuration*; `99` rejected with `STINVKEY` and the
+field cleared for a retry; a second application asking for `7` answered with
+`STDUPKEY` and, on OK, taking the key over.
+
 ---
 
 ### `ins_devices` / `ins_icon` / `rmv_icon` (DESK03 + DESK04, 2026-09-24)

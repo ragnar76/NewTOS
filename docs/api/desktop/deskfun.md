@@ -112,6 +112,8 @@ from `deskact.c`'s drag-release handler (see [`deskact.md`](deskact.md)).
   read directly for disk-icon drive letters, `deskfun.c:1043,1157`)
 - `G.g_fullpath` (`CONF_WITH_DESKTOP_CONFIG`) — whether
   `build_selected_path` returns a bare filename or a full path
+  (NewTOS: `DeskState::g_fullpath`, edited by `inf_conf`'s *Parameter*
+  group since DESK19)
 
 **System variables / globals written:**
 - `exit_desktop` (`deskfun.c:61`, file-`static`) — set `TRUE` by
@@ -534,6 +536,44 @@ in `fun_file2desk` stellt `wants_to_delete_files()` voran, *wenn*
 weiterhin den eigenen `fun_confirm`-Vorbau in `fun_desk2desk`; die Zahl der
 Rueckfragen stimmt damit (Vorbau + `ADCPYDEL` + `STDELDIS`), der Wortlaut und
 der *Remove*-Zweig nicht.
+
+### Ablegen auf ein Programm ist ein Start (DESK19, 2026-09-23)
+
+`fun_win2win` hatte EmuTOS' ersten Zweig nicht: `i_find` auf das Zielobjekt,
+und `if (pda->a_aicon >= 0)` — „dropping file on to an application"
+(`deskfun.c:958-970`) — baut die Befehlszeile mit `build_selected_path`
+(`:903-928`) und ruft `do_aopen(pda, TRUE, dst_ob, pdw->w_pnode.p_spec,
+pdf->f_name, destpath)`, dann **return**: es wird nichts kopiert. Beide
+`CONF_WITH_*`, die daran haengen, stehen im 512K-Profil auf 1
+(`include/config.h:1774-1784`): `CONF_WITH_DESKTOP_CONFIG` fuer die
+`G.g_fullpath`-Abfrage in `build_selected_path`, `CONF_WITH_DESKTOP_SHORTCUTS`
+fuer den `if (tail)`-Zweig, ueber den der gebaute Pfad in `do_aopen` ankommt
+(`desksupp.c:968-977`).
+
+Nachgebaut in `dir.rs`: `i_find_win` (der Fensterarm von `i_find`,
+`desksupp.c:1753-1770`, ueber `inf::app_afind_by_name` — dieselbe Aufloesung,
+die `win_icalc` dem Fenster gibt), `build_selected_path`, und der Zweig selbst;
+`fun_win2win` gibt jetzt `exit_desktop` zurueck und `fun_drag` reicht es durch.
+Die Startseite ist `main::do_aopen_drop` (`desksupp.c:884-986`, der
+`isapp`-Arm mit nicht-`NULL`-`tail`).
+
+Entschieden wird ueber die **Symbolnummer** `a_aicon`, nicht ueber die
+Dateiendung — EmuTOS' eigener Test, und dieselbe Zahl, die `win_icalc` dem
+Fenster gibt, also stimmt der Zweig immer mit dem Bild auf dem Schirm ueberein.
+`build_selected_path` nimmt nur die **erste** gewaehlte Datei, egal wie viele
+gezogen wurden; auch das ist EmuTOS' eigene Schleife (ein `char destpath[]`).
+
+Benannte Abweichungen: EmuTOS verlaesst ueber `exit_desktop` den
+Desktop-Prozess, NewTOS startet geschachtelt (AES-Luecke G1) und gibt `false`
+zurueck; und weil NewTOS' Lader nur native AArch64-ELF nimmt (ADR-018), hat
+`do_aopen_drop` zwei Antworten, die `do_aopen` nicht hat (m68k-Ziel, nicht
+natives Ziel). Der zweite Fall ist genau EmuTOS' Eigenheit, dass eine
+installierte Anwendung `a_aicon = IG_APPL` **und** ihre Dokumentmaske traegt
+und `app_afind_by_name` `a_pdata` zuerst prueft (`deskapp.c:1450-1454`).
+
+Messung: `measurement-2026-09-23-desk19-desk20/` — dieselbe Karte, dieselbe
+Geste, ein Radioknopf Unterschied:
+`arg "C:\README.TXT"` gegen `arg "README.TXT"`.
 
 ### `rebuild_window` setzt die Infozeile (DESK26, 2026-09-23)
 

@@ -25,8 +25,9 @@
 //! arms of `install_desktop_icon`): a file or folder icon parked on the desktop
 //! surface itself. That needs an `AT_ISFILE`/`AT_ISFOLD` variant of the
 //! *desktop* icon list `G.g_ahead` ([`Anode`]'s doc-comment), which NewTOS does
-//! not have, plus `fun_win2win`'s drop-on-a-program branch — a separate
-//! work item (DESK30), not the missing reader this module used to report.
+//! not have — a separate work item (DESK30), not the missing reader this
+//! module used to report. (`fun_win2win`'s drop-on-a-program branch was the
+//! other half of that report; it exists since DESK19.)
 //! `CONF_WITH_DESKTOP_SHORTCUTS` is 1 in our Falcon030/TOS4 `make 512` profile
 //! (`include/config.h:1782-1784`; the `0` at `:325-327` is inside
 //! `#ifdef TARGET_192`), so it is a real gap, not a feature that is off in the
