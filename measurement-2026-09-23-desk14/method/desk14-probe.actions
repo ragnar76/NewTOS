@@ -1,0 +1,30 @@
+# DESK14 probe -- open Options -> "Read .INF file..." and stop with the file
+# selector up, so its FSOK/FSCANCEL/F1..F9 rectangles reach the serial line
+# (method/desk14_patch.py). Click points for the real runs come from that dump.
+#
+#   Options title centre ~ (196, 8)  (" Desk " 16..64, " File " 64..112,
+#   " View " 112..160, " Options " 160..216).
+#   Options drop-down: box at x=160, entries 16 px tall from y=19:
+#     0 Set background...        19..35
+#     1 Install icon...          35..51
+#     2 Install application...   51..67
+#     3 Install devices          67..83
+#     4 Remove desktop icon      83..99
+#     5 ----                     99..115
+#     6 Set preferences...      115..131
+#     7 Desktop configuration...131..147   (DESK05 confirmed: centre 139)
+#     8 Change resolution...    147..163
+#     9 ----                    163..179
+#    10 Read .INF file...       179..195   -> centre (200, 187)
+#    11 Save desktop...         195..211
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 196 8
+2200 mark B_OPTIONS
+2500 move 200 187
+2700 down
+2703 up
+2900 move 600 240
+4000 mark C_FSEL

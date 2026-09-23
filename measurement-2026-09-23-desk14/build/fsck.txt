@@ -1,0 +1,19 @@
+fsck_msdos -n on every card image a run wrote (the images themselves are
+not in this directory -- the ticket forbids *.img).
+
+fsck_msdos reads the FAT16 *partition*, not the MBR, so the partition
+(LBA 63, 130977 sectors) is dd'd out first; on the whole image it only
+answers "Invalid BS_jmpBoot in boot block", which is the MBR, not a fault.
+
+  run-p.img  Phase 1/2/3 clean (3 phases) -- Warning: 43 files, 63756 KiB free (31878 clusters)
+  run-a.img  Phase 1/2/3 clean (3 phases) -- Warning: 48 files, 63746 KiB free (31873 clusters)
+  run-b.img  Phase 1/2/3 clean (3 phases) -- Warning: 48 files, 63746 KiB free (31873 clusters)
+  run-c.img  Phase 1/2/3 clean (3 phases) -- Warning: 46 files, 63750 KiB free (31875 clusters)
+
+The "Warning:" line is fsck_msdos's informational summary, not an error.
+run-p (43 files) is the untouched base image. run-a/-b/-c were attached once
+with hdiutil to seed or delete a file, which leaves macOS's own .fseventsd
+folder behind; its four files are the +4 entries in the count. The file
+selector and the desktop skip dot-names (EmuTOS gemfslib.c:298), and the
+listings in the screendumps confirm they never show up. run-a and run-b are base plus one
+seeded .INF, run-c is base minus NEWDESK.INF.

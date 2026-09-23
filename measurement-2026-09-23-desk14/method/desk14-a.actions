@@ -1,0 +1,36 @@
+# DESK14 run A -- the success path: Options -> "Read .INF file...", pick
+# C:\DESKT14.INF out of the selector, OK.  DESKT14.INF differs from the
+# built-in defaults in two places that show in the picture:
+#   #Q ... 72 40  -> the >2-plane desktop background becomes solid red (IP_SOLID
+#                    + VDI colour 2) instead of pattern 4 / green
+#   #M 00 00 / #T 02 00 / #O 04 00 -> all three desktop icons in the top row
+# Its first two bytes are "#R", so it passes the EmuTOS signature check
+# (deskapp.c:1523-1525).
+#
+#   Options title centre (196, 8); "Read .INF file..." = entry 10 -> (200, 187).
+#   Selector geometry from the probe run (method/desk14_patch.py dump):
+#     FSOK       abs (184,393) 72x16 -> centre (220, 401)
+#     FSCANCEL   abs (291,393) 72x16 -> centre (327, 401)
+#     F7NAME     abs (200,310) 120x16 -> centre (260, 318)  = DESKT14.INF
+#     (six folders sort first, then the files alphabetically)
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 196 8
+2200 mark B_OPTIONS
+2500 move 200 187
+2700 down
+2703 up
+2900 move 600 240
+4000 mark C_FSEL
+4300 move 260 318
+4500 down
+4503 up
+4700 move 600 240
+5300 mark D_PICKED
+5600 move 220 401
+5800 down
+5803 up
+6000 move 600 240
+7200 mark E_APPLIED

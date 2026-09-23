@@ -1,0 +1,165 @@
+measurement-2026-09-23-desk14 — DESK14 (`Options → Read .INF file` ist
+                                 `app_read_inf`: Dateiauswahl, `#R`/`#E`,
+                                 `STFILENF`/`STINVINF`)
+=============================================================================
+
+Base: branch desk-rebuild, HEAD ce30fa2. This ticket's changes are
+UNCOMMITTED in the shared tree. Nothing flashed, nothing ejected, no real Pi
+run, nothing committed. No `git checkout/restore/clean/stash/reset` was run on
+the shared tree.
+
+Scope: points 1-3 of TASK/DESK14.md. Point 4 (the desktop restart) is the
+lead's deferred decision and was NOT built; the existing in-place path got
+the source-comment pointer the ticket asks for and nothing else.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (`measurement-2026-09-23-desk08-desk09/method/run.sh` +
+`qmp_multi.py`, copied unchanged). Card image: `tools/make-sd-image.sh`
+(64 MiB, MBR + FAT16), a fresh copy per run, edited with `method/sd-edit.sh`
+(= the established `sd-put.sh` plus a delete, plus `dot_clean`). Interactive
+runs use the scratch-copy IKBD injector (memory `desktop-interactive-
+verification-real-hw`): `method/make_scratch_desk14.sh` rsyncs the crates into
+the job scratch — never the shared tree.
+
+`method/*.actions` are the four action lists, `method/*.rs` the generated
+injector tables (`gen_script.py … SCRIPT_DESK`, plus an empty `SCRIPT_TERA`).
+`method/desk14_patch.py` is the DESK14-only scaffolding (see §0).
+`method/desk14.diff` is the full product diff of this ticket
+(`kernel/src/desk/` only). `method/DESKT14.INF` and `method/BADSIG.INF` are
+the two seeded files. No `*.img` (the ticket's rule).
+
+POINTER PARK: (639, 479) — `parkbr`, which crosses no menu title (A79).
+
+
+0. The one piece of scaffolding
+--------------------------------
+`method/desk14_patch.py` makes `tos-api`'s private `abs_offset` visible and
+dumps, right after the file selector's first `objc_draw`, the absolute
+rectangles of `FSOK`, `FSCANCEL` and `F1NAME..F9NAME` plus the name each slot
+carries. It writes through the a79 serial-only sink
+(`tos_api::aes::h02_log`), so nothing reaches the framebuffer and the pictures
+stay clean. Every click point below is taken from that dump, not guessed:
+
+    [desk14] FSOK      obj 51 abs (184,393) 72x16   -> centre (220, 401)
+    [desk14] FSCANCEL  obj 52 abs (291,393) 72x16   -> centre (327, 401)
+    [desk14] F7NAME    obj 48 abs (200,310) 120x16  -> centre (260, 318)
+    [desk14] F8NAME    obj 49 abs (200,326) 120x16  -> centre (260, 326+8)
+
+Menu geometry is the one DESK05 established: Options title centre (196, 8),
+drop-down box at x=160, entries 16 px from y=19; `Read .INF file...` is entry
+10 -> (200, 187). The probe run (§1) exists to establish the selector
+geometry and nothing else.
+
+
+1. The selector comes up, with EmuTOS's caption and defaults
+-------------------------------------------------------------
+    screendumps/p-c-fsel.png, a-c-fsel.png, b-c-fsel.png, c-c-fsel.png
+    serial/p-serial.log:64-74
+
+`Options → Read .INF file...` now runs `fsel_exinput` (EmuTOS
+`deskapp.c:1500-1508`) instead of reading a fixed path:
+
+  * caption  `Select .INF file`     = `STRDINF`, `desk_rsc.c:2488`
+  * Directory `C:\*.INF`            = `INF_FILE_WILD`, `sysconf.h:45`
+  * Selection `NEWDESK .INF`        = `INF_FILE_NAME+3`, `deskapp.c:1503`
+
+The list obeys the `*.INF` mask: six folders, then the `.INF` files. macOS's
+`.fseventsd` (§ build/fsck.txt) never appears — dot-names are skipped
+(gemfslib.c:298).
+
+
+2. A valid `.INF` is read and applied              (run A, run-a.img)
+----------------------------------------------------------------------
+    screendumps/a-b-options.png  the Options drop-down
+    screendumps/a-c-fsel.png     the selector, DESKT14.INF in the list
+    screendumps/a-d-picked.png   DESKT14.INF selected, Selection field updated
+    screendumps/a-e-applied.png  the result
+    serial/a-serial.log:72       F7NAME = 'DESKT14 INF'
+
+`method/DESKT14.INF` begins `#R 02`, so it passes the signature check, and
+differs from the running desktop in two places that show:
+
+  * `#Q 41 40 43 40 72 40` — the >2-plane desktop byte becomes `0x72`
+    (IP_SOLID + VDI colour 2), instead of the default `0x43` (pattern 4,
+    green);
+  * `#M 00 00` / `#T 02 00` / `#O 04 00` — all three desktop icons in the top
+    row, instead of the built-in default layout.
+
+`a-e-applied.png` shows exactly that: solid red background, `Hard disk`,
+`Trash` and `Printer` side by side in the top row, the selector gone, the
+`Options` title back to normal, no alert. The card's own `NEWDESK.INF` is
+untouched (the read file is applied, not copied).
+
+NOTE — this is the deviation, not a finding: EmuTOS would have restarted the
+desktop here (`deskmain.c:919-925`, `:2136-2148`). NewTOS re-applies in the
+running desktop. Lead decision of 2026-09-23, TASK/DESK14.md.
+
+
+3. `#` alone is no longer enough                   (run B pass 1, run-b.img)
+------------------------------------------------------------------------------
+    screendumps/b-c-fsel.png            BADSIG.INF in the list
+    screendumps/b-d-picked.png          BADSIG.INF selected
+    screendumps/b-e-alert-badsig.png    [1][Illegal .INF file format.][ OK ]
+    screendumps/b-f-dismissed.png       desktop unchanged afterwards
+
+`method/BADSIG.INF` is
+
+    #Z 00 C:\AUTO\HELLO.NCP@
+    #E 1A E0 00 00 60
+
+i.e. it **does** start with `#`, so the pre-DESK14 check accepted it. EmuTOS
+requires `#R` or `#E` as the first two characters (`deskapp.c:1523-1525`), and
+the new `is_inf_signature` does the same: `STINVINF` (`desk_rsc.c:2560`).
+This is the direct evidence for point 2 — a file the old rule would have
+swallowed.
+
+`b-f-dismissed.png` (Return = the DEFAULT button) shows the desktop
+untouched: background, icon positions and the menu bar are exactly the
+pre-alert picture. A rejected file changes nothing.
+
+
+4. The 21-byte placeholder finally says so         (run B pass 2, run-b.img)
+------------------------------------------------------------------------------
+    screendumps/b-h-fsel2.png              second prompt
+    screendumps/b-i-picked2.png            NEWDESK.INF selected
+    screendumps/b-j-alert-placeholder.png  [1][Illegal .INF file format.][ OK ]
+    screendumps/b-k-dismissed2.png         desktop unchanged afterwards
+
+The standard card ships `C:\NEWDESK.INF` = `newdesk placeholder\r\n`
+(`tools/make-sd-image.sh:54`). Before DESK14, `Read .INF file` on that card
+was a **silent no-op** — the control run DESK06 lost. It now answers
+`STINVINF`. Same card, same run, second pass, so the two passes also prove the
+menu item is re-usable and the screen restores between them.
+
+
+5. A name that does not exist                      (run C, run-c.img)
+-----------------------------------------------------------------------
+    screendumps/c-c-fsel.png            selector, empty file list
+    screendumps/c-d-alert-notfound.png  [1][NEWDESK.INF not found.][ OK ]
+    screendumps/c-e-dismissed.png       desktop unchanged afterwards
+
+`run-c.img` is the base card with `C:\NEWDESK.INF` deleted. The selector
+therefore lists folders only, while the Selection field still carries the
+`INF_FILE_NAME+3` default `NEWDESK .INF` — `OK` hands that name to `Fopen`,
+which answers `EFILNF`, which is EmuTOS's one special-cased error
+(`deskapp.c:1536-1538`): `STFILENF` = `[1][%s not found.][  OK  ]`
+(`desk_rsc.c:2548`) with the name merged in.
+
+Typing a name that does not exist would be the more natural way to reach this
+arm; the injector does not type into fields, so the run reaches it through
+the pre-filled default instead. Typing it is HW checklist item 41.4.
+
+
+6. No exception, no panic
+--------------------------
+    serial/*-serial.log
+
+`[EXC]` / `[PANIC]` count: 0 in all four logs (p, a, b, c).
+
+
+7. What QEMU did not cover
+---------------------------
+Real-Pi-4 only (HW checklist item 41, `docs/api/desktop/_hw-test-2026-09-17.md`):
+1920x1080 optics of the selector; the four drives `C:`–`F:` in its drive
+grid (QEMU shows `C:` only); typing a non-existent name on a real keyboard;
+`Cancel`.

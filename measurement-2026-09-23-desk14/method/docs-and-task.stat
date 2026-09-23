@@ -1,0 +1,7 @@
+ TASK/DESK14.md                          | 62 ++++++++++++++++++++++++++++++-
+ docs/STATUS.md                          |  3 +-
+ docs/api/desktop/_hw-test-2026-09-17.md | 41 ++++++++++++++++++++
+ docs/api/desktop/deskapp.md             | 66 +++++++++++++++++++++++++++++++++
+ docs/api/desktop/deskmain.md            | 11 ++++--
+ docs/api/desktop/gembind.md             | 24 ++++++++++++
+ 6 files changed, 202 insertions(+), 5 deletions(-)

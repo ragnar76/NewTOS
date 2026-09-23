@@ -1,0 +1,53 @@
+# DESK14 run B -- the "not an .INF file" path, twice.
+#   pass 1: C:\BADSIG.INF starts with "#Z", i.e. it IS a '#' file but not
+#           "#R"/"#E".  The pre-DESK14 check (the bare '#') accepted it; the
+#           EmuTOS one (deskapp.c:1523-1525) does not -> STINVINF.
+#   pass 2: C:\NEWDESK.INF, the 21-byte "newdesk placeholder" the standard card
+#           image ships (tools/make-sd-image.sh:54) -> STINVINF as well.  This
+#           is the DESK06 control run that was lost to a silent no-op.
+# Both alerts are dismissed with Return (the DEFAULT button, EmuTOS fm_keybd).
+#   F7NAME (200,310) = BADSIG.INF, F8NAME (200,326) = NEWDESK.INF.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 196 8
+2200 mark B_OPTIONS
+2500 move 200 187
+2700 down
+2703 up
+2900 move 600 240
+4000 mark C_FSEL
+4300 move 260 318
+4500 down
+4503 up
+4700 move 600 240
+5300 mark D_PICKED_BADSIG
+5600 move 220 401
+5800 down
+5803 up
+6000 move 600 240
+6900 mark E_ALERT_BADSIG
+7200 key 1c
+7250 key 9c
+8000 mark F_DISMISSED
+8300 move 196 8
+9000 mark G_OPTIONS2
+9300 move 200 187
+9500 down
+9503 up
+9700 move 600 240
+10800 mark H_FSEL2
+11100 move 260 326
+11300 down
+11303 up
+11500 move 600 240
+12100 mark I_PICKED_PLACEHOLDER
+12400 move 220 401
+12600 down
+12603 up
+12800 move 600 240
+13700 mark J_ALERT_PLACEHOLDER
+14000 key 1c
+14050 key 9c
+14800 mark K_DISMISSED2

@@ -1,0 +1,10 @@
+kernel fingerprints — DESK14
+
+product build (shared tree, after the change), board rpi4:
+  kernel8.img  md5=379c9874693b7196647e4709bf915e77  size=1083226
+
+scratch builds (injector + DESK14 selector-geometry dump) — not the product:
+  scratch-p/kernel8.img  md5=9be71e666916c9377e6c4cac08ab05a1  size=1083778
+  scratch-a/kernel8.img  md5=479249529b9f5bc4c745d31a8c94f0bd  size=1087874
+  scratch-b/kernel8.img  md5=ff180ac549921fa673f263c51b2d0e10  size=1087874
+  scratch-c/kernel8.img  md5=758ff6b0e039e466389b50ed53845208  size=1087874
