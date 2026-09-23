@@ -1,0 +1,26 @@
+# DESK03 run C -- select the C: icon, Remove desktop icon, Save desktop.
+#   Proves the removal survives: the saved file then has no `#M` line, and the
+#   `build_inf` fallback must NOT resurrect the icon on the next cold boot.
+#   Options entry 4 = "Remove desktop icon" -> centre y 91
+#           entry 11 = "Save desktop..."    -> centre y 203
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 38 39
+1700 down
+1703 up
+1900 move 600 240
+2300 mark B_SELECTED
+2600 move 196 8
+3000 move 200 91
+3200 down
+3203 up
+3400 move 600 240
+3900 mark C_REMOVED
+4200 move 196 8
+4600 move 200 203
+4800 down
+4803 up
+5000 move 600 240
+5800 mark D_SAVED

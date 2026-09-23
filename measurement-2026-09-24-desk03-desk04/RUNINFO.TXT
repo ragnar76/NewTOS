@@ -1,0 +1,230 @@
+measurement-2026-09-24-desk03-desk04 — DESK03 (Install icon / Remove icon)
+                                       + DESK04 (Install devices)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD edbb5cc. This ticket's changes are
+UNCOMMITTED in the shared tree. Nothing flashed. No
+`git checkout/restore/clean/stash/reset` was run on the shared tree.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (`measurement-2026-09-23-desk08-desk09/method/run.sh` +
+`qmp_multi.py`). Card image: `tools/make-sd-image.sh` (64 MiB, MBR + FAT16),
+a fresh copy per run. Interactive runs use the scratch-copy IKBD injector
+(memory `desktop-interactive-verification-real-hw`):
+`../measurement-2026-09-24-desk01-desk02/method/make_scratch_desk0102.sh`
+rsyncs the crates into the job scratch — never the shared tree.
+
+`method/*.actions` are the four action lists, `method/*.rs` the generated
+injector tables (`gen_script.py … SCRIPT_DESK`, plus an empty `SCRIPT_TERA`).
+`method/desk03-desk04.diff` is the full source diff; `method/ins.rs.new` the
+new module. No `*.img` (the ticket's rule).
+
+POINTER PARK: (600, 240), not the `parkbr` corner the earlier desk runs use.
+The desktop's default layout now puts the **Printer** icon in the
+bottom-right cell (see §0), so the corner is no longer empty.
+
+
+0. The default desktop layout changed — read this first
+--------------------------------------------------------
+Making `Install devices` / `Remove icon` mean anything required the desktop
+icon list to become *state* (`G.g_ahead`) instead of being re-derived from
+`Drvmap` on every `app_blddesk`. The list therefore has to be **seeded**, and
+the seed is EmuTOS's `build_inf` (`deskapp.c:696-752`), which lays the icons
+out differently from the invented rule NewTOS used before:
+
+  before (screendumps of DESK01b, `about-A-idle.png`):
+      drives down column 0; Trash at (cols-1, 0), Printer at (cols-1, 1)
+      -> Trash and Printer in the TOP-RIGHT corner
+  now  (`screendumps/boot-desktop.png`):
+      drives fill rows left-to-right (`icon_index % xcnt`, `deskapp.c:719`);
+      Trash at (0, ycnt-1) — bottom-LEFT — moved to (xcnt-1, ycnt-1) only if
+      the drives already reached that row (`:738-744`); the Printer takes the
+      bottom-right only when the Trash did not (`:747-754`).
+
+At 640x480 with one drive: C: at (0,0), Trash at (0,9) = (0,433), Printer at
+(6,9) = (546,433). The old layout had no source citation; this one is
+`build_inf` line for line. Flagged to the lead as a visible change.
+
+
+1. Boot, product kernel, base image      (boot-desktop.png, serial/boot-…)
+---------------------------------------------------------------------------
+  The base image ships a 21-byte `newdesk placeholder\r\n` as NEWDESK.INF.
+  EmuTOS decides "is there INF data?" on the signature — `if (inf_data[0] !=
+  '#') build_inf(…)` (`deskapp.c:833-834`) — NOT on whether a file exists.
+  The first cut of this ticket tested file existence and the desktop came up
+  with **no icons at all**; the signature check is in the code because that
+  run found the defect (the empty-desktop dump is not kept — it was a
+  pre-fix state, not a result).
+
+  boot-desktop.png: `Hard disk` (C) top-left, `Trash` bottom-left,
+  `Printer` bottom-right. 0 [EXC]/[PANIC].
+
+
+2. Menu state — `men_update`'s `ndesk`   (men-*.png, serial/men-serial.log)
+---------------------------------------------------------------------------
+  method/desk03-menu.actions. Click the C: icon, open Options, dismiss,
+  deselect, open Options again.
+
+  men-C-sel.png   (one desktop icon selected):
+      Install icon...     black (enabled)
+      Install devices     black (enabled)
+      Remove desktop icon BLACK (enabled)
+  men-E-nosel.png (nothing selected):
+      Install icon...     black (enabled)
+      Install devices     black (enabled)
+      Remove desktop icon GREY  (disabled)
+
+  That is EmuTOS exactly: "disable 'Remove desktop icon' iff no desktop icons
+  are selected" (`deskmain.c:540-542`), and neither `IDSKITEM` nor `IICNITEM`
+  appears in any `ILL_*` table (`:143-160`) or is disabled by hand. A greyed
+  menu entry is the *whole* of EmuTOS's answer to "Remove with nothing
+  selected" — there is no alert.
+
+  Note for the next author: the first click after a drop-down is open is
+  eaten by the AES menu tracker (it dismisses the menu). The action list
+  selects the icon *before* touching the bar for that reason; an earlier
+  ordering produced a dump with the icon unselected.
+
+
+3. Remove desktop icon + Install devices (rmv-*.png, serial/rmv-serial.log)
+---------------------------------------------------------------------------
+  method/desk03-remove.actions.
+
+  rmv-A-idle.png        the boot desktop
+  rmv-B-selected.png    the C: icon inverted after one click
+  rmv-C-removed.png     Options -> Remove desktop icon: the C: icon is gone,
+                        Trash and Printer untouched, no residue
+  rmv-D-reinstalled.png Options -> Install devices: C: is back at (0,0)
+
+  rmv-D-reinstalled.png vs rmv-A-idle.png: pixdiff **0 differing pixels**
+  (bbox None) — remove + reinstall restores the desktop exactly.
+  rmv-A-idle.png vs ico-A-idle.png: pixdiff 0 (same start state).
+  0 [EXC]/[PANIC].
+
+
+4. Install icon, new icon               (ico-*.png, serial/ico-serial.log)
+---------------------------------------------------------------------------
+  method/desk03-icon.actions. Options -> Install icon... with nothing
+  selected -> `ins_icon(0)` -> `install_desktop_icon(NULL)`.
+
+  ico-B-dialog.png    the ADINSDSK tree: title "INSTALL DESKTOP ICON", the
+                      `Identifier: _:` field (formatted, not EDITABLE — see
+                      the spec), the `Label: ____________` field, the three
+                      item-type radios with **Drive** pre-selected, the icon
+                      preview (hard disk) between the two stepper arrows,
+                      OK / Skip / Cancel.
+                      Geometry: 328 x 316 at ROOT (156, 91) = form_center's
+                      value ((640-328)/2 = 156; 19 + (480-19-316)/2 = 91).
+  ico-C-step1.png     one click on the down arrow -> folder
+  ico-D-step2.png     a second click -> trash
+  ico-E-trashtype.png the `Trash can` radio clicked: it is selected and
+                      `Drive` is cleared (the G_IBOX radio group works)
+  ico-F-installed.png OK -> a new Trash-type icon with the trash picture at
+                      grid (1,0), the first free cell `ins_posdisk` found,
+                      with an empty label (none was typed)
+  ico-G-saved.png     Options -> Save desktop
+
+  The stepper offered Hard -> Folder -> Trash, i.e. NOT Floppy: the drive map
+  has no A:/B:, so `IG_FLOPPY` is left out of the offered set (see the spec).
+  0 [EXC]/[PANIC].
+
+
+5. The written file                     (inf/NEWDESK.INF.after-install)
+---------------------------------------------------------------------------
+  Read out of the run's image afterwards:
+
+    #R 02
+    #E 1A E0 00 00 60
+    #Q 41 40 43 40 43 40
+    #W 00 00 00 01 50 1C 00 @     (x7)
+    #M 00 00 00 FF C Hard disk@ @
+    #T 00 09 03 FF   Trash@ @
+    #O 06 09 04 FF   Printer@ @
+    #T 01 00 03 FF   @ @
+    #F FF 07 @ *.*@   …the eight file-type defaults…
+
+  `#M 00 00 00 FF C` = grid (0,0), a_aicon 00 = IG_HARD, a_dicon FF = NIL,
+  letter C. `#T 00 09 03 FF` = grid (0,9), IG_TRASH. `#O 06 09 04 FF` =
+  grid (6,9), IG_PRINT. The fourth line is the icon just installed: grid
+  (1,0), IG_TRASH, no letter, empty label.
+
+  Two things worth naming. (a) The icon number is now real — before this
+  ticket every `#M`/`#T`/`#O` line was written with `FF FF`, because there
+  was no per-icon state to write. (b) The `#E`/`#Q` bytes are unchanged from
+  `build_inf`'s defaults, so the file a first-ever Save writes is still
+  EmuTOS's.
+
+
+6. Cold boot from that image, product kernel   (cold-desktop.png)
+---------------------------------------------------------------------------
+  All four icons come back, the installed one included, each at its saved
+  grid cell. 0 [EXC]/[PANIC].
+
+
+7. The removal has to survive too       (rms-*.png, cold2-desktop.png)
+---------------------------------------------------------------------------
+  method/desk03-rmsave.actions: select C:, Remove desktop icon, Save desktop.
+
+  inf/NEWDESK.INF.after-remove carries only
+
+    #T 00 09 03 FF   Trash@ @
+    #O 06 09 04 FF   Printer@ @
+
+  — no `#M` line. cold2-desktop.png (product kernel, that image): Trash and
+  Printer, **no C: icon**. This is the asymmetry the signature check in §1
+  buys: a file that *is* INF data and happens to carry no icon line describes
+  a desktop with no icons and is honoured; only a missing or unsignatured
+  file gets `build_inf`. 0 [EXC]/[PANIC].
+
+
+8. Headless model self-test             (serial/st-serial.log)
+---------------------------------------------------------------------------
+  `desk::ins::selftest()` called once from a scratch copy (it hangs in no
+  boot path, like the other `selftest_*` — memory
+  `unwired-selftests-rot-silently`). It restores the icon list it found
+  before returning.
+
+    [desk-ins] Install-devices / Remove-icon self-test
+      PASS ins_devices on a complete desktop reports no change
+      PASS every drive had an icon to remove
+      PASS ins_devices reports a change after the icons were removed
+      PASS one icon per drive in the map
+      PASS every installed icon names a drive that exists
+      PASS a hard disk gets IG_HARD, a floppy IG_FLOPPY
+      PASS no two icons share a grid cell
+      PASS ins_devices reports a change for a vanished drive
+      PASS the icon of the vanished drive is gone
+      PASS Trash and Printer survive Install devices
+      PASS rmv_icon removed one icon
+      PASS the list is one shorter
+      PASS the stepper offers no icon NewTOS has no raster for
+      PASS the floppy icon is offered exactly when a floppy drive exists
+    [desk-ins] install/remove self-test: 14 passed, 0 failed
+
+  The "vanished drive" case is the half of `ins_devices` QEMU cannot stage on
+  its own (its drive map never changes): the test installs a `Z:` node the
+  map cannot contain and watches the reconciliation drop it.
+
+
+9. Filesystem
+---------------------------------------------------------------------------
+  `fsck_msdos -n` on the FAT16 partition (dd from LBA 63, 130977 sectors) of
+  the Install-icon, the Remove+Save and the cold-boot images: Phase 1 / 2 / 3
+  with no errors on all three.
+
+
+10. Build
+---------------------------------------------------------------------------
+  `cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat`
+  before **each** board.
+
+    cargo xtask build --board rpi4       tos-api 64 / kernel 94   (base 64/94)
+    cargo xtask build --board qemu-virt  tos-api 64 / kernel 94   (base 64/94)
+    cargo clippy --features board-rpi4       tos-api 80 / kernel 125 (base 80/125)
+    cargo clippy --features board-qemu-virt  tos-api 80 / kernel 125 (base 80/125)
+    grep -c "desk/" on both clippy runs:  0
+    cargo run -p xtask -- test           932 passed / 0 failed / 1 ignored
+                                         (base 932/0/1 — no host test added,
+                                          see the receipt for why)
+
+  Logs in `build/`.

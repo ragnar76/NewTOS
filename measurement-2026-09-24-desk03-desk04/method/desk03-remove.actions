@@ -1,0 +1,28 @@
+# DESK03/DESK04 run A -- select the C: icon, Remove desktop icon, Install devices.
+#   Desktop icon grid at 640x480: g_icw = 91, g_ich = 46, DROOT origin y = 19.
+#   C: icon cell (0,0) -> rect (0,19,76,40), centre (38,39).
+#   Options title 160..232; drop-down entry n at y = 19 + n*16.
+#     entry 3 = "Install devices"       -> 67..83,  centre 75
+#     entry 4 = "Remove desktop icon"   -> 83..99,  centre 91
+#   Park mid-right (600,240): the bottom-right corner now holds the Printer icon.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 38 39
+1700 down
+1703 up
+1900 move 600 240
+2300 mark B_SELECTED
+2600 move 196 8
+3000 move 200 91
+3200 down
+3203 up
+3400 move 600 240
+3900 mark C_REMOVED
+4200 move 196 8
+4600 move 200 75
+4800 down
+4803 up
+5000 move 600 240
+5600 mark D_REINSTALLED
