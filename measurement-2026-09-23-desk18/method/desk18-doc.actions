@@ -1,0 +1,21 @@
+# DESK18 -- launch through a DOCUMENT ASSOCIATION: double-click C:\HELLO.TXT in
+# the right-hand C:\ window, which is already the top one (probe run), so a
+# plain double-click suffices.
+#
+# The seeded `#G` line installs C:\SUB\CURDIR.NCP as the handler for `*.TXT`;
+# its INF_AT_APPDIR bit is what `do_aopen`'s `is_installed` arm reads
+# (`desksupp.c:896-902`). The application's directory (C:\SUB\) and the top
+# window's (C:\) differ here, so the two settings of that bit give two
+# different answers.
+#
+# Click point (435, 260) = HELLO.TXT's icon-glyph centre from the probe dump
+# (`[desk18]   obj 28 'HELLO.TXT' box (397,244) 76x40 -> click (435,260)`).
+100 parkbr
+300 move 600 460
+1000 arm
+1200 mark A_IDLE
+1500 move 435 260
+1800 down
+1803 up
+1808 down
+1811 up

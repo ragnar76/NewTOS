@@ -1,0 +1,8 @@
+# DESK18 probe run: no interaction at all. Park the pointer bottom-right
+# (parkbr, A79 -- it crosses no menu title) and take one picture of the two
+# windows the seeded NEWDESK.INF opened. The real evidence of this run is the
+# serial `[desk18]` dump (method/desk18_patch.py): the window specs and the
+# click point of every visible item.
+100 parkbr
+300 move 600 460
+1500 mark P_IDLE

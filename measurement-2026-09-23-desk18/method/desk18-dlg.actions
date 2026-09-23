@@ -1,0 +1,38 @@
+# DESK18 run D -- the *Default dir* radio group end to end.
+#   Options title centre (196, 8); drop-down box at x=160, entry n at
+#   y = 27 + 16n (DESK05). "Desktop configuration..." is entry 7 -> (200,139),
+#   "Save desktop..." entry 11 -> (200,203).
+#   Dialog click points from the conf-probe dump (method/desk18_patch.py):
+#     ADDESKCF ROOT (164,89) 312x320
+#     DCDEFAPP abs (292,137) 96x16 -> click (340,145)
+#     DCDEFWIN abs (396,137) 72x16 -> click (432,145)
+#     DCOK     abs (220,377) 72x16 -> click (256,385)
+# The card is method/DESK18A.INF, i.e. `#E` byte 5 = 60 -> *Application*.
+100 parkbr
+300 move 600 460
+1000 arm
+1200 mark A_IDLE
+1500 move 196 8
+2200 mark B_OPTIONS
+2500 move 200 139
+2700 down
+2703 up
+2900 move 600 460
+4200 mark C_CONF_APP
+4500 move 432 145
+4700 down
+4703 up
+4900 move 600 460
+5600 mark D_CONF_WIN
+5900 move 256 385
+6100 down
+6103 up
+6300 move 600 460
+7200 mark E_BACK
+7500 move 196 8
+8200 mark F_OPTIONS2
+8500 move 200 203
+8700 down
+8703 up
+8900 move 600 460
+10000 mark G_SAVED

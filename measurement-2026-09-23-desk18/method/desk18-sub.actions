@@ -1,0 +1,22 @@
+# DESK18 -- launch C:\SUB\CURDIR.NCP from the LEFT window.
+#
+# Three clicks, not two: the AES gives a click on a window that is not the top
+# one to the owner as WM_TOPPED and swallows it (EmuTOS `hctl_window`,
+# `aes/gemctrl.c:172-179`; our AES does the same -- run a's first attempt,
+# `[aes] ... op 25 ... out=(16,...)` = MU_MESAG). So the first click tops
+# C:\SUB\, and the double-click that follows opens the program.
+#
+# Click point (47, 92) = CURDIR.NCP's icon-glyph centre from the probe dump
+# (`[desk18]   obj 12 'CURDIR.NCP' box (9,76) 76x40 -> click (47,92)`).
+100 parkbr
+300 move 600 460
+1000 arm
+1200 mark A_IDLE
+1500 move 47 92
+1800 down
+1803 up
+2400 mark B_TOPPED
+2700 down
+2703 up
+2708 down
+2711 up

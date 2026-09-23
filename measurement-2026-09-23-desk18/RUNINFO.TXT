@@ -1,0 +1,264 @@
+measurement-2026-09-23-desk18 — DESK18 (kein Arbeitsverzeichnis beim
+                                 Programmstart: `do_aopen`s Pfadwahl +
+                                 `set_default_path`, danach die Radiogruppe
+                                 *Default dir* in `inf_conf`)
+=============================================================================
+
+Base: branch desk-rebuild, HEAD e2437af. This ticket's changes are
+UNCOMMITTED in the shared tree. Nothing flashed, nothing ejected, no real Pi
+run, nothing committed. No `git checkout/restore/clean/stash/reset` was run on
+the shared tree.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (`method/run.sh` + `method/qmp_multi.py`, copied unchanged from
+measurement-2026-09-23-desk08-desk09). Card image: `tools/make-sd-image.sh`
+(64 MiB, MBR + FAT16), a fresh copy per run, seeded with `method/sd-edit.sh`.
+Interactive runs use the scratch-copy IKBD injector (memory `desktop-
+interactive-verification-real-hw`): `method/make_scratch_desk18.sh` rsyncs the
+crates into the job scratch — never the shared tree.
+
+`method/*.actions` are the action lists, `method/*.rs` the generated injector
+tables (`gen_script.py … SCRIPT_DESK`, plus an empty `SCRIPT_TERA`).
+`method/desk18_patch.py` is the DESK18-only scaffolding (see §0),
+`method/desk18_before_patch.py` the CONTROL build of §2.
+`method/desk18-desk.diff` is the product diff in `kernel/src/desk/`,
+`method/desk18-sdk-card.diff` the new SDK example + the card-image lines.
+`method/DESK18*.INF` are the five seeded `NEWDESK.INF` files,
+`method/d-NEWDESK.INF.after-save` the file run D wrote back.
+No `*.img` (the ticket's rule).
+
+POINTER PARK: (600, 460) — below every window and clear of the menu bar; the
+sweep there is `parkbr` (639,479), which crosses no menu title (A79).
+
+
+0. The scaffolding, and why no click point is guessed
+------------------------------------------------------
+`method/desk18_patch.py` adds two serial-only dumps (`kprintln!` goes to the
+UART, not to `fbcon`, so the pictures stay clean):
+
+  * at desktop-up: the AES top window, the GEMDOS current drive, `G.g_appdir`,
+    and for every open window its `w_pnode.p_spec` plus, per visible item, the
+    absolute centre of its icon glyph — the point `act_chkobj` accepts as a hit
+    (`kernel/src/desk/act.rs:62-67`);
+  * right after `inf_conf`'s `start_dialog`: the `ADDESKCF` ROOT rectangle and
+    the absolute rectangles of `DCDEFAPP`, `DCDEFWIN`, `DCOK`, `DC_CNCL`, each
+    with its `SELECTED` bit.
+
+Every click point below comes from those two dumps:
+
+    [desk18] top=2 drive=C g_appdir=true
+    [desk18] win slot 0 handle 1 spec C:\SUB\*.*
+    [desk18]   obj 12 'CURDIR.NCP' box (9,76) 76x40 -> click (47,92)
+    [desk18] win slot 1 handle 2 spec C:\*.*
+    [desk18]   obj 28 'HELLO.TXT'  box (397,244) 76x40 -> click (435,260)
+    [desk18] ADDESKCF ROOT (164,89) 312x320
+    [desk18] DCDEFAPP abs (292,137) 96x16 -> click (340,145) sel=1
+    [desk18] DCDEFWIN abs (396,137) 72x16 -> click (432,145) sel=0
+    [desk18] DCOK     abs (220,377) 72x16 -> click (256,385) sel=0
+
+Menu geometry is DESK05's: Options title centre (196, 8), drop-down box at
+x=160, entry n at y = 27 + 16n → *Desktop configuration...* (entry 7) at
+(200, 139), *Save desktop...* (entry 11) at (200, 203).
+
+The seeded cards all open TWO windows (`#W` slot 0 = `C:\SUB\*.*`, slot 1 =
+`C:\*.*`). `cnx_get` opens slot 0 first, so `C:\` ends on top — that is what
+makes the *application's* directory and the *top window's* differ at all
+(`screendumps/p-a-idle.png`).
+
+The acceptance program is new: `sdk/examples/curdir.c`, installed by
+`tools/make-sd-image.sh` as `C:\SUB\CURDIR.NCP`. It prints the current drive
+and `Dgetpath`, then opens `PROOF.TXT` by a **bare relative name** and prints
+what it read. The card carries two files of that name:
+
+    C:\PROOF.TXT      -> "PROOF: C:\ (root)"
+    C:\SUB\PROOF.TXT  -> "PROOF: C:\SUB"
+
+so the printed line names the directory the program actually ran in. No
+existing test program did this; this is the smallest one that does.
+
+
+1. The two windows the runs start from                    (run P, run Q)
+--------------------------------------------------------------------------
+    screendumps/p-a-idle.png   the two windows, C:\ on top (hatched title)
+    screendumps/q-c-conf.png   the Desktop-configuration dialog
+    serial/p-serial.log:44-77, serial/q-serial.log
+
+Run P is the item-geometry probe, run Q the dialog-geometry probe; both are
+scaffolding runs and produce the numbers of §0. `q-c-conf.png` is also the
+first picture of the rebuilt dialog: *Default dir:* with *Application*
+selected, everything below it two character rows higher than in `ADDESKCF`
+(the omitted *Parameter* row).
+
+
+2. THE DEFECT, before and after                 (run B0 CONTROL vs run A)
+----------------------------------------------------------------------------
+    screendumps/b0-c-console.png   before
+    screendumps/a-c-console.png    after
+    serial/b0-serial.log, serial/a-serial.log
+
+Same card (`method/DESK18A.INF`), same action list (`method/desk18-sub.actions`),
+same three clicks on `C:\SUB\CURDIR.NCP`; the only difference is the kernel.
+`method/desk18_before_patch.py` takes the new `set_launch_dir` call back out of
+the non-installed launch arm and changes nothing else — that is the tree as it
+stood before this ticket.
+
+    CONTROL (before)   CURDIR: drive C:
+                       CURDIR: read "PROOF: C:\ (root)"
+
+    product (after)    CURDIR: drive C:\SUB
+                       CURDIR: read "PROOF: C:\SUB"
+
+A program launched out of `C:\SUB\` used to open the root's file. It now opens
+its own. That is the whole ticket.
+
+Three clicks, not two: the AES hands a click on a window that is not the top
+one to the owner as `WM_TOPPED` and swallows it (EmuTOS `hctl_window`,
+`aes/gemctrl.c:172-179`; ours does the same — the first attempt's
+`[aes] … op 25 … out=(16,…)` = MU_MESAG). So click 1 tops `C:\SUB\`
+(`screendumps/a-b-topped.png`) and the double-click that follows opens the
+program.
+
+
+3. The path CHOICE, both ways                            (run I1 vs run I0)
+------------------------------------------------------------------------------
+    screendumps/i1-c-console.png, i0-c-console.png
+    serial/i1-serial.log, serial/i0-serial.log
+
+`do_aopen` does not always use the program's own directory: with the switch
+clear and a window on top it uses **the top window's**
+(`desksupp.c:896-912`). Both cards install `C:\SUB\CURDIR.NCP` as the handler
+for `*.TXT`; the double-click is on `C:\HELLO.TXT` in the `C:\` window, which
+is already the top one. Application directory and top-window directory
+therefore differ, and only the flag differs between the two cards:
+
+    #G 06 03 C:\SUB\CURDIR.NCP@ *.TXT@ 1 00 @   INF_AT_APPDIR set
+        -> CURDIR: drive C:\SUB      CURDIR: read "PROOF: C:\SUB"
+
+    #G 06 03 C:\SUB\CURDIR.NCP@ *.TXT@ 0 00 @   INF_AT_APPDIR clear
+        -> CURDIR: drive C:          CURDIR: read "PROOF: C:\ (root)"
+
+That is `set_launch_dir`'s `if !app_dir && pw != DESKWH` branch measured from
+both sides. It is reached here through the *installed application* arm
+(`is_installed(pa)`), which reads the association's own `AF_APPDIR`; the
+*Default dir* group feeds the identical branch for non-installed programs
+(§5 for why that half cannot be told apart on today's desktop).
+
+
+4. The radio group: pre-select, switch, commit, save, cold start
+------------------------------------------------------------------ (run D, C)
+    screendumps/d-b-options.png    the Options drop-down
+    screendumps/d-c-conf-app.png   *Application* selected (card `#E` … 60)
+    screendumps/d-d-conf-win.png   *Window* selected after one click
+    screendumps/d-e-back.png       the desktop after OK
+    screendumps/d-g-saved.png      the desktop after *Save desktop...*
+    screendumps/c-c-conf.png       COLD START from that card: *Window*
+    method/d-NEWDESK.INF.after-save
+    serial/d-serial.log, serial/c-serial.log
+
+  * pre-select — the card says `#E 1A E0 00 00 60`, i.e. `INF_E5_APPDIR` set,
+    and `[desk18] … g_appdir=true` / `DCDEFAPP … sel=1` confirm the decode
+    chain `#E` → `cs_appdir` → `cnx_get` → `G.g_appdir` → `inf_conf`;
+  * switch — one click on *Window* deselects *Application*
+    (`d-d-conf-win.png`): the group's own `G_IBOX` parent
+    (`ADDESKCF` object 3) is what makes the AES do that;
+  * commit + save — `OK` runs `G.g_appdir = inf_which(tree, DCDEFAPP, 2)`
+    (`deskinf.c:1226`), and *Save desktop...* writes
+
+        #E 1A E0 00 00 20
+
+    byte 5 `0x60` → `0x20`: `INF_E5_APPDIR` cleared, `INF_E5_ISFULL`
+    untouched — `env5 |= cnxsave->cs_appdir ? INF_E5_APPDIR : 0`
+    (`deskapp.c:1164`);
+  * cold start — run C boots that very card: `[desk18] … g_appdir=false` and
+    the dialog comes up with `DCDEFWIN … sel=1` (`c-c-conf.png`).
+
+
+5. What the *Default dir* switch does NOT show today, and why
+---------------------------------------------------------------- (run A vs W)
+    screendumps/a-c-console.png, w-c-console.png
+    serial/a-serial.log:44, serial/w-serial.log:44
+
+Run W repeats run A with `#E 1A E0 00 00 20` (*Window*). The serial shows the
+switch arriving correctly — `g_appdir=true` in A, `g_appdir=false` in W — and
+**both runs print `C:\SUB`**.
+
+That is not a defect and not a NewTOS deviation: it is what EmuTOS does too.
+A double-click on a program that is *not* an installed application always
+happens in the window that the click just topped (§2), so `win_ontop()` and
+the program's directory are the same directory and the two settings pick the
+same answer. EmuTOS gets them apart only on paths NewTOS does not have:
+
+  * a desktop shortcut (`CONF_WITH_DESKTOP_SHORTCUTS`, `desksupp.c:854-872`),
+    where `pathname` is the shortcut's stored path and the top window is
+    something else;
+  * a file dropped on a program icon (`fun_win2win`, `deskfun.c:958-970` →
+    `do_aopen`), which NewTOS's `fun_win2win` does not have (DESK05 §1).
+
+The switch is therefore *wired*, not inert: `set_launch_dir` reads it on every
+non-installed launch, and §3 measures the same branch from both sides through
+the installed-application arm. When one of the two missing paths lands, the
+group starts telling the two settings apart with no further change here.
+
+
+6. The `STDEFDIR` alert on a path that cannot be set          (run E)
+-----------------------------------------------------------------------
+    screendumps/e-b-alert.png
+    serial/e-serial.log
+
+Card `method/DESK18BD.INF` points the `*.TXT` handler at
+`D:\NOSUCH\APP.NCP` with `INF_AT_APPDIR` set. `set_default_path("D:\NOSUCH\")`
+reaches `Dsetpath`, which cannot mount `D:` and answers `EPTHNF`
+(`docs/api/gemdos/directory/3b-dsetpath.md`). The picture shows
+
+    [1][Failed to set default|directory.][ OK ]
+
+EmuTOS's `STDEFDIR` (`desk_rsc.c:2558-2559`) through `dir::fun_alert`, and the
+program is **not** launched — no `[launch]` line follows in the log. Note the
+order this run also proves: `do_aopen` sets the directory *before* the
+`file_exists(pa->a_pappl)` check (`desksupp.c:911-935`), so a handler on a
+missing drive gives "failed to set default directory" and not "file not found".
+
+
+7. No exception, no panic
+--------------------------
+    serial/*-serial.log
+
+`[EXC]` / `[PANIC]` count: 0 in all ten logs (p, q, a, w, b0, i1, i0, d, c, e).
+
+`fsck_msdos -n` on the FAT16 partition of every card image written by a run
+(run-p, run-q, run-a, run-w, run-b0, run-i1, run-i0, run-d, run-c, run-e):
+Phase 1 / Phase 2 / Phase 3, no errors. The file list of the card run D wrote
+back is byte-identical to the base card's apart from `NEWDESK.INF`.
+
+
+8. What QEMU did not cover
+---------------------------
+Real-Pi-4 only (HW checklist item 43,
+`docs/api/desktop/_hw-test-2026-09-17.md`): the 1920x1080 optics of the
+enlarged `ADDESKCF` box (312x320 instead of 312x288), the *Default dir* group
+with a real mouse, and the four drives `C:`–`F:` — on a multi-drive card
+`set_default_path` also changes the current *drive*, which QEMU's single `C:`
+cannot show.
+
+
+9. Build
+---------
+`cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat`
+before **each** board.
+
+    cargo xtask build --board rpi4       tos-api 64 / kernel 94   (base 64/94)
+    cargo xtask build --board qemu-virt  tos-api 64 / kernel 94   (base 64/94)
+    cargo clippy --features board-rpi4        tos-api 80 / kernel 125 (base 80/125)
+    cargo clippy --features board-qemu-virt   tos-api 80 / kernel 125 (base 80/125)
+    grep -c "desk/" on both clippy runs:      0
+    cargo run -p xtask -- test   938 passed / 0 failed / 1 ignored (base 938/0/1)
+
+Logs in `build/`.
+
+**No new host test.** The whole change lives in `kernel/src/desk/` (`no_std`,
+aarch64) and is unreachable from the host test run; `tos-api` has no piece of
+it. The `#E` byte-5 round trip did get the new bit: `inf.rs`'s
+`selftest_inf_roundtrip` now round-trips `appdir = false` (the non-default
+value) alongside view/sort — that selftest is a board selftest, not a host
+test, and is not wired into the boot path (memory `unwired-selftests-rot-
+silently`).

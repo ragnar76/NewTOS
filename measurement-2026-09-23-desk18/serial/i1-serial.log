@@ -1,0 +1,108 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x0000000000329000 (2789376 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-23 20:28:48
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[aes] gsx_malloc: screen buffer pa=0x01000000 len=614400 (kernel-owned, WF_SCREEN)
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[h02] injector armed
+[desk18] top=2 drive=C g_appdir=true
+[desk18] win slot 0 handle 1 spec C:\SUB\*.*
+[desk18]   obj 12 'CURDIR.NCP' box (9,76) 76x40 -> click (47,92)
+[desk18]   obj 13 'INSIDE.TXT' box (93,76) 76x40 -> click (131,92)
+[desk18]   obj 14 'PROOF.TXT' box (177,76) 76x40 -> click (215,92)
+[desk18] win slot 1 handle 2 spec C:\*.*
+[desk18]   obj 15 'ACC' box (313,76) 76x40 -> click (351,92)
+[desk18]   obj 16 'APPS' box (397,76) 76x40 -> click (435,92)
+[desk18]   obj 17 'AUTO' box (481,76) 76x40 -> click (519,92)
+[desk18]   obj 18 'COREMARK' box (313,118) 76x40 -> click (351,134)
+[desk18]   obj 19 'GEMSYS' box (397,118) 76x40 -> click (435,134)
+[desk18]   obj 20 'SUB' box (481,118) 76x40 -> click (519,134)
+[desk18]   obj 21 'BIG.NCP' box (313,160) 76x40 -> click (351,176)
+[desk18]   obj 22 'CLOCKTST.NCP' box (397,160) 76x40 -> click (435,176)
+[desk18]   obj 23 'CONFIG.TXT' box (481,160) 76x40 -> click (519,176)
+[desk18]   obj 24 'DATA.BIN' box (313,202) 76x40 -> click (351,218)
+[desk18]   obj 25 'DTACHILD.NCP' box (397,202) 76x40 -> click (435,218)
+[desk18]   obj 26 'DUMPVDI.NAP' box (481,202) 76x40 -> click (519,218)
+[desk18]   obj 27 'HELLO.NCP' box (313,244) 76x40 -> click (351,260)
+[desk18]   obj 28 'HELLO.TXT' box (397,244) 76x40 -> click (435,260)
+[desk18]   obj 29 'HELLO2.NCP' box (481,244) 76x40 -> click (519,260)
+[desk18]   obj 30 'KERNEL8.IMG' box (313,286) 76x40 -> click (351,302)
+[desk18]   obj 31 'KEYBOARD.KBD' box (397,286) 76x40 -> click (435,302)
+[desk18]   obj 32 'LIBTEST.NCP' box (481,286) 76x40 -> click (519,302)
+[desk18]   obj 33 'LYNXBOOT.IMG' box (313,328) 76x40 -> click (351,344)
+[desk18]   obj 34 'MATHTST.NCP' box (397,328) 76x40 -> click (435,344)
+[desk18]   obj 35 'NEWDESK.INF' box (481,328) 76x40 -> click (519,344)
+[desk18]   obj 36 'PHYSBASE.NCP' box (313,370) 76x40 -> click (351,386)
+[desk18]   obj 37 'PROOF.TXT' box (397,370) 76x40 -> click (435,386)
+[desk18]   obj 38 'README.TXT' box (481,370) 76x40 -> click (519,386)
+[desk18]   obj 39 'SCRFLIP.NCP' box (313,412) 76x40 -> click (351,428)
+[desk18]   obj 40 'SETJMPT.NCP' box (397,412) 76x40 -> click (435,428)
+[desk18]   obj 41 'VDI.TSV' box (481,412) 76x40 -> click (519,428)
+[desk] desktop up (1 drives, 2 window(s) from the context)
+[h02] step 0 at +100 -> mouse (446,366) mb=0
+[h02] step 1 at +101 -> mouse (573,479) mb=0
+[h02] step 2 at +102 -> mouse (639,479) mb=0
+[h02] step 3 at +103 -> mouse (639,479) mb=0
+[h02] step 4 at +104 -> mouse (639,479) mb=0
+[h02] step 5 at +105 -> mouse (639,479) mb=0
+[h02] step 6 at +300 -> mouse (600,460) mb=0
+[h02] step 7 at +1000 -> mouse (600,460) mb=0
+[h02] MARK A_IDLE step 8 at +1200 mouse (600,460) mb=0
+[h02] step 9 at +1500 -> mouse (473,333) mb=0
+[h02] step 10 at +1501 -> mouse (435,260) mb=0
+[h02] step 11 at +1800 -> mouse (435,260) mb=1
+[h02] step 12 at +1803 -> mouse (435,260) mb=0
+[h02] step 13 at +1808 -> mouse (435,260) mb=1
+[aes] pid=0 op 25 in=(19,2,1,1,0,0) out=(2,435,260,1,0,0,2) yield=false
+[aes] pid=0 op 106 in=(435,260,0,0,0,0) out=(2,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(2,4,0,0,0,0) out=(1,305,74,312,351,0,0) yield=false
+[aes] pid=0 op 43 in=(3,8,435,260,0,0) out=(28,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(2,4,0,0,0,0) out=(1,305,74,312,351,0,0) yield=false
+[aes] pid=0 op 78 in=(256,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(2,11,0,0,0,0) out=(1,305,74,312,351,0,0) yield=false
+[aes] pid=0 op 42 in=(3,8,305,74,312,351) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(2,12,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(257,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,10,0,0,0,0) out=(1,2,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(2,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(0,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[launch] EL0: slot 0 entry 0x1000
+CURDIR: drive C:\SUB
+CURDIR: read "PROOF: C:\SUB"
+[launch] returned (program Pterm'd)
