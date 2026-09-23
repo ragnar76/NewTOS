@@ -177,9 +177,15 @@ impl DeskState {
 
     /// `move_drvicon` — reposition every selected **desktop** icon by the drag
     /// delta `(dx, dy)` and snap each to the desktop grid (EmuTOS
-    /// `deskact.c:126`; the direct-from-`act_bdown` path that bypasses
-    /// `fun_drag`). Positions are session-only (persisting them to `NEWDESK.INF`
-    /// is Task #14). Returns whether any icon moved.
+    /// `deskact.c:126-163`; the direct-from-`act_bdown` path that bypasses
+    /// `fun_drag`). Returns whether any icon moved.
+    ///
+    /// The new spot is written back into the icon's [`Anode`]
+    /// (`an_disk->a_xspot = tree[obj].ob_x;`, `deskact.c:146-151`) — the object
+    /// tree is rebuilt from the list by every `app_blddesk`, so without the
+    /// write-back a dragged icon would jump home the moment *Install devices*
+    /// or *Remove icon* rebuilt the desktop, and `app_save` would persist the
+    /// old spot.
     pub fn move_drvicon(&mut self, dx: i16, dy: i16) -> bool {
         let (icw, ich) = (self.g_icw.max(1), self.g_ich.max(1));
         let cols = (self.g_desk.w / icw).max(1);
@@ -198,6 +204,13 @@ impl DeskState {
                 if nx != self.g_screen[child as usize].ob_x || ny != self.g_screen[child as usize].ob_y {
                     self.g_screen[child as usize].ob_x = nx;
                     self.g_screen[child as usize].ob_y = ny;
+                    // `an_disk = app_afind_by_id(obj); an_disk->a_xspot = …`
+                    // (`deskact.c:146-151`, guarded there by the same "must be
+                    // true, but just in case" comment).
+                    if let Some(i) = self.app_afind_by_id(child) {
+                        self.g_ahead[i].a_xspot = nx;
+                        self.g_ahead[i].a_yspot = ny;
+                    }
                     moved = true;
                 }
             }

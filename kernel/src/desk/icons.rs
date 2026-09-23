@@ -55,8 +55,10 @@ pub const IB_WTEXT: i16 = MAX_ICONTEXT_WIDTH * SMALL_CELL_W;
 /// stock icon resources carry.
 pub const IB_HTEXT: i16 = SMALL_CELL_H + ICON_LABEL_SLACK;
 
-/// Which built-in icon a displayed object uses. NewTOS owns its own index
-/// set (the EmuTOS `IG_*` numbering is internal and not observable).
+/// Which built-in icon a displayed object uses. The variant set is NewTOS's;
+/// the **numbering** that reaches `NEWDESK.INF` is EmuTOS's `IG_*`
+/// ([`ig_of`]/[`icon_kind`]), because the `a_aicon`/`a_dicon` byte of an
+/// `ANODE` line is file-format, not internal.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum IconKind {
     /// Hard-disk drive (`C:`..`Z:`) — also `g_iblist[0]`, whose `ib_hicon`
@@ -77,6 +79,66 @@ pub enum IconKind {
     /// native NewTOS program (`.NAP`/`.NCP`/`.NTP`, see [`super::ftype`]). The
     /// EmuTOS "generic app" icon (`icon.rsc` ICONBLK[6]).
     App,
+}
+
+// ── EmuTOS's built-in icon numbering (`deskapp.h:54-62`) ────────────────────
+//
+// These eight numbers are **file format**, not an internal detail: they are the
+// `a_aicon`/`a_dicon` byte of every `ANODE` line in `NEWDESK.INF`/`EMUDESK.INF`
+// (`app_parse`, `deskapp.c:359-365`; `app_save`, `:1258`), and the built-in
+// default INF `EmuTOS` synthesises writes them literally
+// (`desk_inf_data2`, `deskapp.c:181-189`: `07` = document, `02` = folder,
+// `06` = application). A file written by EmuTOS and read by NewTOS — or the
+// other way round — has to agree on them, so NewTOS uses EmuTOS's values.
+
+/// `IG_HARD` (`deskapp.h:54`) — hard drive.
+pub const IG_HARD: i16 = 0;
+/// `IG_FLOPPY` (`deskapp.h:55`) — floppy drive.
+pub const IG_FLOPPY: i16 = 1;
+/// `IG_FOLDER` (`deskapp.h:56`) — folder.
+pub const IG_FOLDER: i16 = 2;
+/// `IG_TRASH` (`deskapp.h:57`) — trash can.
+pub const IG_TRASH: i16 = 3;
+/// `IG_PRINT` (`deskapp.h:58`) — printer.
+pub const IG_PRINT: i16 = 4;
+/// `IG_REMOV` (`deskapp.h:59`) — removable disk. **NewTOS has no raster for
+/// this one** (`crate::desktop_icons`, from which this module's bitmaps come,
+/// never carried it), so it is a hole in [`BUILTIN_ICONS`]: it is never
+/// offered by the Install-icon stepper, and a `NEWDESK.INF` that names it
+/// falls back to the icon its `ANODE` type defaults to
+/// ([`super::ins::install_desktop_icon`]). Reported rather than substituted
+/// silently.
+pub const IG_REMOV: i16 = 5;
+/// `IG_APPL` (`deskapp.h:60`) — generic application icon.
+pub const IG_APPL: i16 = 6;
+/// `IG_DOCU` (`deskapp.h:61`) — generic document icon.
+pub const IG_DOCU: i16 = 7;
+
+/// Every icon NewTOS has a raster for, in EmuTOS's `IG_*` order. This is our
+/// `G.g_iblist[]` (`deskapp.c` `app_rdicon`) with `IG_REMOV` missing — seven
+/// entries, so the stepper's `G.g_numiblks` equivalent is `BUILTIN_ICONS.len()`
+/// and **not** `NUM_GEM_IBLKS` (8).
+pub const BUILTIN_ICONS: [(i16, IconKind); 7] = [
+    (IG_HARD, IconKind::Hard),
+    (IG_FLOPPY, IconKind::Floppy),
+    (IG_FOLDER, IconKind::Folder),
+    (IG_TRASH, IconKind::Trash),
+    (IG_PRINT, IconKind::Printer),
+    (IG_APPL, IconKind::App),
+    (IG_DOCU, IconKind::Doc),
+];
+
+/// The [`IconKind`] for an EmuTOS `IG_*` number, or [`None`] when NewTOS has
+/// no raster for it (today only [`IG_REMOV`], and any out-of-range value —
+/// EmuTOS clamps those in `app_parse`, `deskapp.c:360-365`).
+pub fn icon_kind(ig: i16) -> Option<IconKind> {
+    BUILTIN_ICONS.iter().find(|&&(n, _)| n == ig).map(|&(_, k)| k)
+}
+
+/// The EmuTOS `IG_*` number of an [`IconKind`] — what [`super::inf`] writes
+/// into the `ANODE` line's `a_aicon` field.
+pub fn ig_of(kind: IconKind) -> i16 {
+    BUILTIN_ICONS.iter().find(|&&(_, k)| k == kind).map(|&(n, _)| n).unwrap_or(IG_HARD)
 }
 
 // ── 32×32 1-bpp rasters (2 words/row, big-endian, MSB = leftmost pixel),

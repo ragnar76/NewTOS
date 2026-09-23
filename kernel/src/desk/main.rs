@@ -915,10 +915,58 @@ fn do_optnmenu(item: Item) {
                 desk_all(VIEW_CHANGED);
             }
         }
+        // `case IDSKITEM: rebld = ins_devices(); if (rebld) app_blddesk();`
+        // (`deskmain.c:847-852`).
+        Item::InstallDevices => {
+            let rebld = super::ins::ins_devices();
+            if rebld {
+                rebuild_desktop_icons();
+            }
+        }
+        // `case IICNITEM: rebld = ins_icon(curr); if (rebld > 0) app_blddesk();`
+        // (`deskmain.c:862-874`). `curr` is the first selected item of the
+        // current root, taken at the top of `do_optnmenu` (`:842`).
+        Item::InstallIcon => {
+            let rebld = super::ins::ins_icon(first_selected());
+            if rebld > 0 {
+                rebuild_desktop_icons();
+            }
+        }
+        // `case RICNITEM: if (curr) rebld = rmv_icon(curr); if (rebld)
+        //  app_blddesk();` (`deskmain.c:875-881`).
+        Item::RemoveIcon => {
+            let curr = first_selected();
+            if curr != 0 && super::ins::rmv_icon(curr) != 0 {
+                rebuild_desktop_icons();
+            }
+        }
         Item::ReadInf => do_read_inf(),
         Item::SaveDesktop => do_save_desktop(),
         _ => {} // remaining Options items stay disabled
     }
+}
+
+/// `curr = win_isel(G.g_screen, G.g_croot, 0);` — the first selected item of the
+/// current window's root, the value `do_optnmenu` computes before its switch
+/// (`deskmain.c:842`). `0` when nothing is selected.
+fn first_selected() -> i16 {
+    global::with(|g| g.win_isel(g.g_croot, 0)).unwrap_or(0)
+}
+
+/// `app_blddesk()` plus the repaint EmuTOS folds into it (`deskapp.c:1402`,
+/// `do_wredraw(DESKWH, &G.g_desk)`) — rebuild the desktop icon tree from
+/// `G.g_ahead` and repaint the work area, which is what an icon that appeared,
+/// moved or vanished needs.
+fn rebuild_desktop_icons() {
+    let desk = global::with(|g| {
+        g.app_blddesk();
+        g.g_desk
+    })
+    .unwrap_or_default();
+    redraw::do_wredraw(DESKWH, desk);
+    // The selection is gone with the objects that carried it, so the Remove /
+    // Open gating has to be recomputed (`men_update`, the D6 machinery).
+    menu::men_update();
 }
 
 /// `ins_app` (EmuTOS `deskins.c:721-756`) — Options → Install Application.

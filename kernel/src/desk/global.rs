@@ -17,7 +17,7 @@ use tos_api::aes::object::Object;
 
 use crate::sync::SpinMutex;
 
-use super::model::{DateFmt, ScreenInfo, Sort, TimeFmt, View};
+use super::model::{AType, DateFmt, ScreenInfo, Sort, TimeFmt, View};
 use super::win::WindowList;
 
 // ── Object-tree layout constants (`deskconf.h`, our own choice of indices
@@ -305,6 +305,49 @@ impl Default for CSave {
 /// `INF_E1_CONFDEL|INF_E1_CONFCPY|2`).
 pub const DEF_DCLICK: u8 = 2;
 
+/// EmuTOS `ANODE` (`deskapp.h:83-99`) — one entry of the desktop's application
+/// list `G.g_ahead`, in the **`AF_ISDESK` shape**: an icon that sits on the
+/// desktop itself.
+///
+/// **Deliberate subset, and where the rest lives.** EmuTOS keeps *one* list for
+/// two different things: the desktop icons (`AF_ISDESK`: disk / trash /
+/// printer, plus the file and folder shortcuts of
+/// `CONF_WITH_DESKTOP_SHORTCUTS`) and the file-type / installed-application
+/// associations (`#D`/`#G`/`#Y`/`#F`/`#P`/`#I`/`#N`). NewTOS splits them: the
+/// association half has lived in [`super::inf`]'s session `NEWDESK.INF` model
+/// since the Install-Application work, and this list carries the desktop-icon
+/// half. Both halves serialise into the same file, in the same `ANODE` line
+/// grammar — the split is internal.
+///
+/// NewTOS has no desktop **shortcuts** (a file or folder icon parked on the
+/// desktop): there is no `AT_ISFILE`/`AT_ISFOLD` variant here, so `a_pdata`
+/// and `a_pargs` have no reader and are not carried. `a_pappl` is therefore
+/// always the icon's label (`deskapp.h:88-90`, usage (1)).
+#[derive(Clone)]
+pub struct Anode {
+    /// `a_type` — `AT_ISDISK` / `AT_ISTRSH` / `AT_ISPRNT`.
+    pub a_type: AType,
+    /// `a_letter` — the drive letter drawn into the bitmap, `0` for none.
+    pub a_letter: u8,
+    /// `a_aicon` — the icon number, in EmuTOS's `IG_*` numbering
+    /// ([`super::icons::ig_of`]). A desktop icon has no separate data icon, so
+    /// `a_dicon` is always `NIL` and is not carried.
+    pub a_aicon: i16,
+    /// `a_pappl` — the icon's label (≤ `MAX_ICONTEXT_WIDTH` characters).
+    pub a_pappl: String,
+    /// `a_xspot` — desired spot on the desktop, in **pixels relative to
+    /// [`DROOT`]**. EmuTOS's is screen-absolute because its `app_blddesk` sizes
+    /// `DROOT` to the whole screen (`deskapp.c:1344`); ours sizes it to the work
+    /// area (`app_blddesk`), so every item coordinate under it is work-area
+    /// relative and `snap_icon` already produces that form.
+    pub a_xspot: i16,
+    /// `a_yspot` — see [`Anode::a_xspot`].
+    pub a_yspot: i16,
+    /// `a_obid` — the `g_screen[]` index `app_blddesk` gave this icon, or
+    /// [`NIL`] before the first build (`deskapp.c:1369`).
+    pub a_obid: i16,
+}
+
 /// The desktop's process-lifetime global state (EmuTOS `GLOBES G`).
 pub struct DeskState {
     /// Current view mode (`g_iview`).
@@ -392,11 +435,22 @@ pub struct DeskState {
     /// The window list (`g_wdesktop`/`g_wlist`/`g_wfirst`/`g_wcnt`).
     pub windows: WindowList,
 
-    /// Parsed `NEWDESK.INF` desktop-icon grid positions, one per `#M`/`#T`/`#O`
-    /// line: `(a_type code, drive letter, a_xspot, a_yspot)` in **grid units**.
-    /// Consulted by [`DeskState::inf_desk_pos`] during `app_blddesk`. Empty when
-    /// no INF file was loaded (icons then take their built-in default spots).
-    pub inf_desk_icons: alloc::vec::Vec<(u8, u8, u8, u8)>,
+    /// `G.g_ahead` — the desktop-icon list ([`Anode`]), the single source of
+    /// truth for what `app_blddesk` puts on the desktop. Filled from the
+    /// `#M`/`#T`/`#O` lines by [`super::inf::load_and_apply`] (`app_start`,
+    /// `deskapp.c:851-987`) or, when the file supplies none, from the drive map
+    /// ([`super::inf::build_desk_icons`] = `build_inf`, `deskapp.c:696-752`);
+    /// edited by [`super::ins`] (`ins_devices` / `ins_icon` / `rmv_icon`) and by
+    /// `move_drvicon`; written back by [`super::inf::save_desktop`]
+    /// (`app_save`).
+    ///
+    /// **Order.** EmuTOS's `app_alloc` *prepends* (`deskapp.c:215-216`), so
+    /// `G.g_ahead` runs newest-first and both `app_blddesk` and `app_save`
+    /// bracket their walk with `app_revit()` to get creation order back
+    /// (`:1352`, `:1211`). A [`Vec`] that `push`es is already in creation order,
+    /// so there is no `app_revit` here and both walks are plain forward loops —
+    /// the same visit order, without the list surgery.
+    pub g_ahead: Vec<Anode>,
     /// `G.g_cnxsave` — the desktop's context save area ([`CSave`]): the saved
     /// view/sort/size-to-fit and the per-slot window layout. Filled from the
     /// `#E`/`#W` lines by [`super::inf::load_and_apply`] (`app_start`) and from
@@ -440,7 +494,7 @@ impl DeskState {
             g_screeninfo: Vec::new(),
             g_screenfree: NIL,
             windows: WindowList::default(),
-            inf_desk_icons: Vec::new(),
+            g_ahead: Vec::new(),
             g_cnxsave: CSave::default(),
         }
     }

@@ -621,6 +621,22 @@ pub(super) fn draw_dial(tree: u64) {
     super::objc_draw_dialog(tree, t);
 }
 
+/// `draw_fld` (EmuTOS `deskdir.c:131-139`) — redraw **one field** of a dialog
+/// that is already up: take the object's own rectangle, move it to absolute
+/// screen coordinates with `objc_offset`, and `objc_draw` that subtree into it.
+///
+/// The cheap counterpart of [`draw_dial`]: the Install-icon dialog steps its
+/// preview with it (`deskins.c:962`, `draw_fld(tree, ID_IBOX)`) so a click on an
+/// arrow repaints the icon box and nothing else.
+pub(super) fn draw_fld(tree: u64, obj: i16) {
+    let (x, y) = super::objc_offset(tree, obj);
+    // SAFETY: the caller owns `tree` for the duration of the dialog and `obj` is
+    // one of its objects (a compile-time constant at every call site).
+    let o = unsafe { &*(tree as *const tos_api::aes::object::Object).add(obj as usize) };
+    let t = global::Grect { x, y, w: o.ob_width, h: o.ob_height };
+    super::objc_draw_tree(tree, obj, t);
+}
+
 /// `fun_alert` — a one-line alert with a single OK button (EmuTOS
 /// `deskfun.c:75`). `default` is the default button (1). Returns the clicked
 /// button.

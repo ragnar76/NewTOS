@@ -681,6 +681,43 @@ impl DeskState {
     }
 
 
+    /// `win_isel` (`deskwin.c:825-840`) — the next `SELECTED` child of `root`
+    /// after `curr` (`curr == 0` starts the walk at `root`'s head), or `0` when
+    /// there is none. The iterator every "for each selected item" loop in
+    /// `deskins.c`/`deskmain.c` is written on.
+    pub fn win_isel(&self, root: i16, curr: i16) -> i16 {
+        let mut curr = if curr == 0 { self.g_screen[root as usize].ob_head } else { self.g_screen[curr as usize].ob_next };
+        while curr > root {
+            if self.g_screen[curr as usize].ob_state & OB_SELECTED != 0 {
+                return curr;
+            }
+            curr = self.g_screen[curr as usize].ob_next;
+        }
+        0
+    }
+
+    /// `men_update`'s `ndesk` (`deskmain.c:504-521`) — the number of selected
+    /// **desktop** icons, i.e. `AT_ISDISK`/`AT_ISTRSH`/`AT_ISPRNT` children of
+    /// [`DROOT`]. Zero unless the desktop is the current window, exactly as
+    /// EmuTOS counts it (`:497`, the `G.g_cwin == DESKWH` arm).
+    pub fn count_selected_desk_icons(&self) -> usize {
+        if self.g_cwin != DESKWH {
+            return 0;
+        }
+        let mut n = 0;
+        let mut curr = self.win_isel(super::global::DROOT, 0);
+        while curr != 0 {
+            if matches!(
+                self.g_screeninfo[curr as usize].atype,
+                super::model::AType::Disk | super::model::AType::Trash | super::model::AType::Printer
+            ) {
+                n += 1;
+            }
+            curr = self.win_isel(super::global::DROOT, curr);
+        }
+        n
+    }
+
     /// Number of currently-selected items under `root` (children carrying
     /// [`OB_SELECTED`]) — `men_update`'s `nsel`.
     pub fn count_selected(&self, root: i16) -> usize {

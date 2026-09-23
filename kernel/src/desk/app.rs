@@ -18,12 +18,11 @@
 use tos_api::aes::object::IconBlk;
 use tos_api::vdi::font::{SMALL_CELL_H, SMALL_CELL_W};
 
-use super::dosbind::{dos_gdrv, dos_sdrv};
-use super::global::{min_wint, DeskState, G_ICON, MIN_HINT, DROOT, NIL};
+use super::global::{min_wint, DeskState, DROOT, G_ICON, MIN_HINT, NIL};
 use super::icons::{
-    build_iconblk, IconKind, IB_HICON, IB_WTEXT, ICON_LABEL_SLACK, MAX_ICONTEXT_WIDTH,
+    build_iconblk, icon_kind, IconKind, IB_HICON, IB_WTEXT, ICON_LABEL_SLACK, MAX_ICONTEXT_WIDTH,
 };
-use super::model::LEN_LABEL;
+use super::model::{AType, LEN_LABEL};
 
 impl DeskState {
     /// `app_start` (icon-metric portion, `deskapp.c:810-817`). Requires
@@ -83,31 +82,41 @@ impl DeskState {
         (col, row)
     }
 
-    /// The desktop grid cell for the icon of `a_type` `code` (and, for a disk,
-    /// drive `letter`) from the parsed `NEWDESK.INF`, or [`None`] when no INF
-    /// entry matches. The parsed grid-unit spot is scaled to pixels
-    /// (`a_xspot * g_icw`, `a_yspot * g_ich`) and passed through
-    /// [`DeskState::snap_icon_grid`], exactly as `app_start:983-985` does.
-    fn inf_desk_pos(&self, code: u8, letter: u8) -> Option<(i16, i16)> {
-        let (xspot, yspot) = self
-            .inf_desk_icons
-            .iter()
-            .find(|&&(a, l, _, _)| a == code && (code != super::inf::AT_ISDISK || l == letter))
-            .map(|&(_, _, xs, ys)| (xs, ys))?;
-        Some(self.snap_icon_grid(xspot as i16 * self.g_icw, yspot as i16 * self.g_ich))
+    /// `snap_icon` (`deskins.c:146-184`) in its own units: pixels in, pixels
+    /// out, [`DROOT`]-relative. [`DeskState::snap_icon_grid`] does the rounding;
+    /// this multiplies the cell back out and adds EmuTOS's spare-pixel term
+    /// (`(g_desk.g_w - columns*icw) / columns`, `:159`), which spreads the
+    /// remainder of the column fit evenly. EmuTOS additionally adds
+    /// `G.g_desk.g_y` to the result (`:183`) because its item coordinates are
+    /// screen-absolute; ours are relative to `DROOT`, which *is* the work area,
+    /// so that term is already in the parent.
+    pub fn snap_icon(&self, x: i16, y: i16) -> (i16, i16) {
+        let icw = self.g_icw.max(1);
+        let ich = self.g_ich.max(1);
+        let cols = (self.g_desk.w / icw).max(1);
+        let rows = (self.g_desk.h / ich).max(1);
+        let (col, row) = self.snap_icon_grid(x, y);
+        (col * icw + (self.g_desk.w - cols * icw) / cols, row * ich + (self.g_desk.h - rows * ich) / rows)
     }
 
     /// `app_blddesk` (`deskapp.c:1337-1404`) — build the desktop pseudo-window
-    /// icon tree under `DROOT`: one `G_ICON` per present drive, plus the Trash
-    /// and Printer fixtures, placed on the desktop grid (`g_icw`/`g_ich`).
+    /// icon tree under `DROOT`: one `G_ICON` per [`Anode`] of `G.g_ahead`,
+    /// at that node's own `a_xspot`/`a_yspot`.
     ///
-    /// Each icon takes its `NEWDESK.INF` grid position ([`DeskState::inf_desk_pos`],
-    /// grid-rounded via `snap_icon` with **no** collision check) when the loaded
-    /// file supplies one; otherwise a built-in default spot (drives down column
-    /// 0, Trash/Printer in the rightmost column). Each icon's object box equals
-    /// the icon cell (`g_wicon`×`g_hicon`) and its bitmap is recentred live
-    /// against `g_wicon` (the `deskapp.c:1391` `ib_xicon` recentre, done inside
-    /// [`build_iconblk`]).
+    /// The list is the source of truth, exactly as in EmuTOS: this function
+    /// invents nothing. What the list *contains* is decided once, at
+    /// `app_start` time, by [`super::inf::load_and_apply`] (the `#M`/`#T`/`#O`
+    /// lines) or [`super::inf::build_desk_icons`] (the drive map, when the file
+    /// has none) — and afterwards by `Install devices` / `Install icon` /
+    /// `Remove icon` ([`super::ins`]). That is what makes those three menu
+    /// entries mean anything: before, this function re-derived the drive icons
+    /// from `Drvmap` on every call, so a removed icon came straight back.
+    ///
+    /// Each icon's object box equals the icon cell (`g_wicon`×`g_hicon`) and its
+    /// bitmap is recentred live against `g_wicon` (the `deskapp.c:1391`
+    /// `ib_xicon` recentre, done inside [`build_iconblk`]). The node's
+    /// `a_obid` is written back (`deskapp.c:1369`) so
+    /// [`DeskState::app_afind_by_id`] can map a clicked object to its node.
     pub fn app_blddesk(&mut self) {
         // Reset DROOT's item tree and reposition it to the desktop work rect.
         let d = self.g_desk;
@@ -117,52 +126,53 @@ impl DeskState {
         // background, so a NEWDESK.INF `#Q` change picks up here.
         self.sync_desk_background();
 
-        let cols = (d.w / self.g_icw).max(1);
-        // `drivemask = dos_sdrv(dos_gdrv());` (`deskapp.c:714`) — the drive
-        // bitmap is the *return value* of setting the current drive to itself.
-        let drivemask = dos_sdrv(dos_gdrv());
-
-        // Drives down column 0 by default (A/B are floppies, C+ hard disks —
-        // deskapp.c:721), or at their saved INF grid position.
-        let mut row = 0i16;
-        for drv in 0..26u32 {
-            if drivemask & (1 << drv) != 0 {
-                let letter = b'A' + drv as u8;
-                let (kind, label): (IconKind, &[u8]) = if drv > 1 {
-                    (IconKind::Hard, b"Hard disk")
-                } else {
-                    (IconKind::Floppy, b"Floppy disk")
-                };
-                let (col, r) = self.inf_desk_pos(super::inf::AT_ISDISK, letter).unwrap_or((0, row));
-                if self.place_desk_icon(col, r, kind, letter, label).is_none() {
-                    return; // arena exhausted — stop placing (EmuTOS parity)
+        for i in 0..self.g_ahead.len() {
+            let pa = &self.g_ahead[i];
+            let (x, y, atype, letter, aicon) = (pa.a_xspot, pa.a_yspot, pa.a_type, pa.a_letter, pa.a_aicon);
+            // "choose appropriate icon" (`deskapp.c:1371-1375`): a desktop icon
+            // has no data icon, so it is always `a_aicon`. An icon number NewTOS
+            // has no raster for (`IG_REMOV`, or a corrupt byte) falls back to
+            // the one its type defaults to rather than drawing nothing.
+            let kind = icon_kind(aicon).unwrap_or_else(|| default_icon_kind(atype, letter));
+            let label = {
+                let mut buf = [0u8; LEN_LABEL];
+                let src = pa.a_pappl.as_bytes();
+                let n = src.len().min(LEN_LABEL - 1);
+                buf[..n].copy_from_slice(&src[..n]);
+                buf
+            };
+            match self.place_desk_icon(x, y, kind, atype, letter, &label) {
+                Some(obid) => self.g_ahead[i].a_obid = obid,
+                // "can't allocate item object" (`deskapp.c:1364-1368`): stop.
+                None => {
+                    self.g_ahead[i].a_obid = NIL;
+                    break;
                 }
-                row += 1;
             }
         }
-
-        // Trash + Printer fixtures in the rightmost column by default, or at
-        // their saved INF grid position.
-        let rc = cols - 1;
-        let (tc, tr) = self.inf_desk_pos(super::inf::AT_ISTRSH, 0).unwrap_or((rc, 0));
-        self.place_desk_icon(tc, tr, IconKind::Trash, 0, b"Trash");
-        let (pc, pr) = self.inf_desk_pos(super::inf::AT_ISPRNT, 0).unwrap_or((rc, 1));
-        self.place_desk_icon(pc, pr, IconKind::Printer, 0, b"Printer");
     }
 
-    /// Allocate and populate one desktop `G_ICON` at grid cell `(col, row)`
-    /// (pixel origin relative to `DROOT`). Returns its `g_screen[]` index or
-    /// [`None`] if the object arena is exhausted.
+    /// `app_afind_by_id` (`deskapp.c:1408-1419`) — the index in `G.g_ahead` of
+    /// the node whose `a_obid` is `obid`, or [`None`].
+    pub fn app_afind_by_id(&self, obid: i16) -> Option<usize> {
+        if obid == NIL {
+            return None;
+        }
+        self.g_ahead.iter().position(|pa| pa.a_obid == obid)
+    }
+
+    /// Allocate and populate one desktop `G_ICON` at pixel `(x, y)` relative to
+    /// `DROOT`. Returns its `g_screen[]` index or [`None`] if the object arena
+    /// is exhausted.
     fn place_desk_icon(
         &mut self,
-        col: i16,
-        row: i16,
+        x: i16,
+        y: i16,
         kind: IconKind,
+        atype: AType,
         letter: u8,
-        label: &[u8],
+        label: &[u8; LEN_LABEL],
     ) -> Option<i16> {
-        let x = col * self.g_icw;
-        let y = row * self.g_ich;
         let g_wicon = self.g_wicon;
         let g_hicon = self.g_hicon;
         let obid = self.obj_ialloc(DROOT, x, y, g_wicon, g_hicon)?;
@@ -171,22 +181,42 @@ impl DeskState {
         // ScreenInfo slot, then point the object at them.
         let info = &mut self.g_screeninfo[obid as usize];
         info.fnode = NIL; // ANODE-backed desktop icon — no FNode
-        info.atype = match kind {
-            IconKind::Hard | IconKind::Floppy => super::model::AType::Disk,
-            IconKind::Trash => super::model::AType::Trash,
-            IconKind::Printer => super::model::AType::Printer,
-            _ => super::model::AType::None,
-        };
-        let n = label.len().min(LEN_LABEL - 1);
-        info.label = [0; LEN_LABEL];
-        info.label[..n].copy_from_slice(&label[..n]);
+        info.atype = atype;
+        info.index = super::icons::ig_of(kind) as u16;
+        info.label = *label;
         let ptext = info.label.as_ptr() as u64;
         info.block = build_iconblk(kind, ptext, letter, g_wicon);
+        // `pic->ib_char |= pa->a_letter;` (`deskapp.c:1399`) — **unconditional**
+        // in the source, and it has to be: the Install-icon dialog lets a drive
+        // node take any picture, and the drive letter is read back out of
+        // `ib_char` by every desktop-icon consumer (`super::dir`'s drop
+        // handlers, `super::inf`'s `#M` writer). `build_iconblk` already ORs it
+        // in for the two disk rasters, which have a char position; for any
+        // other picture this is what keeps the letter from being lost.
+        info.block.ib_char |= letter as i16;
         let spec = &info.block as *const IconBlk as u64;
 
         let o = &mut self.g_screen[obid as usize];
         o.ob_type = G_ICON;
         o.ob_spec = spec;
         Some(obid)
+    }
+}
+
+/// The icon an `ANODE` of this type falls back to when its `a_aicon` names a
+/// picture NewTOS has no raster for — the same choice `install_drive`
+/// (`deskins.c:248`) and `build_inf` (`deskapp.c:719`) make for a fresh node:
+/// `A:`/`B:` are floppies, every other drive is a hard disk.
+pub fn default_icon_kind(atype: AType, letter: u8) -> IconKind {
+    match atype {
+        AType::Trash => IconKind::Trash,
+        AType::Printer => IconKind::Printer,
+        _ => {
+            if matches!(letter, b'A' | b'B') {
+                IconKind::Floppy
+            } else {
+                IconKind::Hard
+            }
+        }
     }
 }

@@ -31,8 +31,9 @@ use tos_api::vdi::font::{CELL_H, CELL_W};
 
 use crate::sync::SpinMutex;
 
-use super::dosbind::{dos_close, dos_create, dos_open, dos_read, dos_write};
-use super::global::{self, Grect, WSave, DROOT, NIL, NUM_WNODES};
+use super::dosbind::{dos_close, dos_create, dos_gdrv, dos_open, dos_read, dos_sdrv, dos_write};
+use super::global::{self, Anode, Grect, WSave, NIL, NUM_WNODES};
+use super::icons;
 use super::model::{AType, DateFmt, Sort, TimeFmt, View};
 
 // ── GEMDOS file access (through the trap, [`super::dosbind`]) ────────────
@@ -128,15 +129,6 @@ const INF_E5_DEFAULT: u8 = 0x60;
 /// `CONF_WITH_DESKTOP_CONFIG` were off).
 const NUM_SHORTCUTS: usize = 33;
 
-// ── `ANODE`-tag `a_type` codes (`deskapp.h:43-49`), shared with `app_blddesk`
-//    for the desktop-icon-position lookup. ─────────────────────────────────
-/// `AT_ISDISK` — disk/media icon (`#M`).
-pub(super) const AT_ISDISK: u8 = 2;
-/// `AT_ISTRSH` — trash icon (`#T`).
-pub(super) const AT_ISTRSH: u8 = 3;
-/// `AT_ISPRNT` — printer icon (`#O`).
-pub(super) const AT_ISPRNT: u8 = 4;
-
 // ── Installed-application extra-block bits + icon indices ────────────────────
 /// `INF_AT_APPDIR` (`deskapp.c:126`) — 1 ⇒ set the current directory to the
 /// application's directory (else to the top window's).
@@ -144,10 +136,8 @@ const INF_AT_APPDIR: u8 = 0x01;
 /// `INF_AT_ISFULL` (`deskapp.c:127`) — 1 ⇒ pass the document's full path in the
 /// command tail (else just the file name).
 const INF_AT_ISFULL: u8 = 0x02;
-/// `IG_APPL` (`deskapp.h:60`) — the generic application icon index.
-const IG_APPL: i16 = 6;
-/// `IG_DOCU` (`deskapp.h:61`) — the generic document icon index.
-const IG_DOCU: i16 = 7;
+
+use super::icons::{IG_APPL, IG_DOCU};
 
 // ── The serializable INF model ──────────────────────────────────────────────
 
@@ -743,10 +733,35 @@ pub(super) fn load_and_apply() -> bool {
     let Some(bytes) = read_inf_file() else {
         return false;
     };
+    // `if (inf_data[0] != '#') build_inf(inf_data, …);` (`deskapp.c:833-834`).
+    // EmuTOS decides "is there INF data?" on the **signature**, not on whether
+    // a file exists — `shel_get` hands it a buffer either way, and a buffer
+    // that does not start with `#` is not an INF. Our test image ships a
+    // 21-byte `newdesk placeholder\r\n` for exactly that case, so the check is
+    // not theoretical: without it the desktop comes up with no icons at all.
+    if bytes.first() != Some(&b'#') {
+        return false;
+    }
     let data = parse_inf(&bytes);
     apply(&data);
     *SESSION.lock() = Some(data);
     true
+}
+
+/// `build_inf` (`deskapp.c:696-752`) — synthesise the default `EMUDESK.INF`
+/// and apply it, for the case [`load_and_apply`] found no INF data.
+///
+/// EmuTOS assembles three pieces of *text* and lets its own parser read them
+/// back: `desk_inf_data1`'s `#R`/`#E`/`#Q`/`#W` lines (`deskapp.c:171-180`),
+/// the drive map's `#M` lines, and `desk_inf_data2`'s file-type lines, then the
+/// `#T` (and `#O`) fixtures. Here the first piece **is** [`InfData::default`]
+/// — the same `#E 1A E0 00 00 60` and `#Q 41 40 43 40 43 40` byte for byte —
+/// and the third is [`InfData::default_type_anodes`], already reached by
+/// `build_from_state` on a first-ever save; only the icon half has to be built,
+/// which [`build_desk_icons`] does.
+pub(super) fn build_inf() {
+    apply(&InfData::default());
+    build_desk_icons();
 }
 
 /// Apply a parsed [`InfData`] — EmuTOS `app_start`'s dispatch loop
@@ -763,17 +778,11 @@ fn apply(data: &InfData) {
     let (view, sort, size_to_fit) = env_to_state(data.e1, data.e5);
     let (confdel, dclick, timefmt, datefmt) = env_to_prefs(data.e1, data.e2);
 
-    // #M/#T/#O → cached desktop-icon grid positions (grid units on disk).
-    let mut desk_icons: Vec<(u8, u8, u8, u8)> = Vec::new();
-    for a in &data.anodes {
-        let code = match a.tag {
-            b'M' => AT_ISDISK,
-            b'T' => AT_ISTRSH,
-            b'O' => AT_ISPRNT,
-            _ => continue,
-        };
-        desk_icons.push((code, a.letter, a.xspot, a.yspot));
-    }
+    // #M/#T/#O → `G.g_ahead` (`app_parse`'s tag switch, `deskapp.c:300-346`).
+    // The spot is still in grid units here; `app_start` scales it and snaps it
+    // once the whole file is parsed (`:979-987`), which is what the closure
+    // below does — it is the first point at which `g_icw`/`g_ich` are in hand.
+    let parsed: Vec<InfAnode> = data.anodes.iter().filter(|a| a.is_desk).cloned().collect();
 
     // #W → cnxsave->cs_wnode[] (character cells → pixels, `deskapp.c:889-913`:
     // `pws->x_save *= gl_wchar` and so on for each of the four).
@@ -797,9 +806,30 @@ fn apply(data: &InfData) {
                 pth_save: w.path.clone(),
             };
         }
-        g.inf_desk_icons = desk_icons;
+        g.g_ahead = parsed
+            .iter()
+            .map(|a| {
+                let a_type = match a.tag {
+                    b'T' => AType::Trash,
+                    b'O' => AType::Printer,
+                    _ => AType::Disk,
+                };
+                // `x = pa->a_xspot * G.g_icw; y = pa->a_yspot * G.g_ich + …;
+                //  snap_icon(x, y, &pa->a_xspot, &pa->a_yspot, 0, 0);`
+                // (`deskapp.c:981-984`) — grid units on disk, pixels in memory.
+                let (x, y) = g.snap_icon(a.xspot as i16 * g.g_icw, a.yspot as i16 * g.g_ich);
+                Anode {
+                    a_type,
+                    a_letter: a.letter,
+                    a_aicon: a.aicon,
+                    a_pappl: a.pappl.clone(),
+                    a_xspot: x,
+                    a_yspot: y,
+                    a_obid: NIL,
+                }
+            })
+            .collect();
     });
-
     // #Q → g_patcol (the >2-plane bucket drives the live desktop background).
     let patcol = [
         data.patcol[0].0,
@@ -811,6 +841,120 @@ fn apply(data: &InfData) {
     ];
     global::set_patcol_all(patcol);
 }
+
+/// The desktop-icon half of `build_inf` (`deskapp.c:696-752`) — synthesise
+/// `G.g_ahead` from the live drive map plus the Trash and Printer fixtures.
+///
+/// EmuTOS reaches this when neither `shel_get` nor the disk produced an
+/// `EMUDESK.INF`: it *writes the `#M`/`#T`/`#O` text* into a buffer and lets its
+/// own parser read it back. NewTOS goes straight to the nodes — the text
+/// detour exists only because EmuTOS has one parser and wants one code path,
+/// and a round trip through a string buffer is not observable. The **layout
+/// rules are its**: drives fill the grid left-to-right, `icon_index % xcnt`
+/// columns and `icon_index / xcnt` rows (`:719-721`); the Trash goes to the
+/// bottom-left, moved to the bottom-**right** if the last drive icon reached
+/// that row (`:738-744`); the Printer takes the bottom-right only if the Trash
+/// did not (`:747-754`).
+///
+/// A no-op when `G.g_ahead` is already populated, so the two callers — the
+/// tail of [`apply`] and the no-file arm of [`load_and_apply`] — are the same
+/// call.
+fn build_desk_icons() {
+    if global::with(|g| !g.g_ahead.is_empty()).unwrap_or(true) {
+        return;
+    }
+    // `drivemask = dos_sdrv(dos_gdrv());` (`deskapp.c:714`). Read outside the
+    // state lock: it is a GEMDOS trap, not desktop state.
+    let drivemask = dos_sdrv(dos_gdrv());
+
+    global::with(|g| {
+        let icw = g.g_icw.max(1);
+        let ich = g.g_ich.max(1);
+        // `build_inf`'s grid counts are `app_start`'s locals, derived from the
+        // cell size and the inter-icon gap — **not** from `g_icw`/`g_ich`
+        // (`deskapp.c:813-817`, `xcnt = G.g_desk.g_w / (G.g_wicon+MIN_WINT)`).
+        // The two agree whenever the division is exact and can differ by one
+        // column when it is not, so the source formula is the one used here.
+        let screen_h = g.g_desk.y + g.g_desk.h;
+        let xcnt = (g.g_desk.w / (g.g_wicon + global::min_wint(screen_h))).max(1);
+        let ycnt = (g.g_desk.h / (g.g_hicon + global::MIN_HINT)).max(1);
+
+        let mut icon_index = 0i16;
+        let mut drive_y = 0i16;
+        for drive in 0..26u32 {
+            if drivemask & (1 << drive) == 0 {
+                continue;
+            }
+            let drive_x = icon_index % xcnt;
+            drive_y = icon_index / xcnt;
+            let letter = b'A' + drive as u8;
+            // `icon_type = (i > 1) ? IG_HARD : IG_FLOPPY;` (`deskapp.c:721`).
+            let (aicon, label) =
+                if drive > 1 { (icons::IG_HARD, DISK_LABEL) } else { (icons::IG_FLOPPY, FLOPPY_LABEL) };
+            g.g_ahead.push(Anode {
+                a_type: AType::Disk,
+                a_letter: letter,
+                a_aicon: aicon,
+                a_pappl: String::from(label),
+                a_xspot: drive_x * icw,
+                a_yspot: drive_y * ich,
+                a_obid: NIL,
+            });
+            icon_index += 1;
+        }
+
+        // Trash: bottom-left, or bottom-right when the drives already reached
+        // the bottom row (`deskapp.c:738-744`).
+        let icon_y = ycnt - 1;
+        let trash_x = if drive_y >= icon_y { xcnt - 1 } else { 0 };
+        g.g_ahead.push(Anode {
+            a_type: AType::Trash,
+            a_letter: 0,
+            a_aicon: icons::IG_TRASH,
+            a_pappl: String::from(TRASH_LABEL),
+            a_xspot: trash_x * icw,
+            a_yspot: icon_y * ich,
+            a_obid: NIL,
+        });
+
+        // Printer: only "if room", i.e. only when the Trash stayed on the left
+        // (`deskapp.c:747-754`, `CONF_WITH_PRINTER_ICON`).
+        if trash_x == 0 {
+            g.g_ahead.push(Anode {
+                a_type: AType::Printer,
+                a_letter: 0,
+                a_aicon: icons::IG_PRINT,
+                a_pappl: String::from(PRINTER_LABEL),
+                a_xspot: (xcnt - 1) * icw,
+                a_yspot: icon_y * ich,
+                a_obid: NIL,
+            });
+        }
+    });
+}
+
+// ── The built-in desktop-icon labels ────────────────────────────────────────
+//
+// **Named deviation, and it predates this module's icon table.** EmuTOS labels
+// these `"DISK C"` / `"TRASH"` / `"PRINTER"` (`desk_rsc.c:2481-2483`
+// `STDISK`/`STTRASH`/`STPRINT`, used by `build_inf`, `deskapp.c:723,739,748`,
+// and by `install_drive`, `deskins.c:247`). NewTOS's desktop has printed
+// `"Hard disk"` / `"Floppy disk"` / `"Trash"` / `"Printer"` since its icon tree
+// was first built, and those four strings are on every screendump the desktop
+// work has been measured against. Changing them is a visible change to the boot
+// picture that this ticket was not asked to make; the strings live here, in one
+// place, so that a later decision to adopt EmuTOS's wording is a four-line edit.
+// `install_drive` reads the same two constants, so an icon added by
+// *Install devices* is labelled exactly like one the desktop built at boot.
+
+/// Label of a hard-disk icon (EmuTOS: `"DISK <letter>"`).
+pub(super) const DISK_LABEL: &str = "Hard disk";
+/// Label of a floppy-disk icon (EmuTOS: `"DISK <letter>"`).
+pub(super) const FLOPPY_LABEL: &str = "Floppy disk";
+/// Label of the Trash icon (EmuTOS: `"TRASH"`).
+pub(super) const TRASH_LABEL: &str = "Trash";
+/// Label of the Printer icon (EmuTOS: `"PRINTER"`).
+pub(super) const PRINTER_LABEL: &str = "Printer";
 
 /// The pixel rectangle to open the window in slot `slot` at, taken from that
 /// slot's [`WSave`] — EmuTOS `win_alloc`, which reads the new window's default
@@ -852,41 +996,40 @@ fn build_from_state() -> InfData {
     // Env + desktop-icon anodes, under one lock.
     #[allow(clippy::type_complexity)]
     let (view, sort, size_to_fit, prefs, desk_anodes): (View, Sort, bool, (bool, u8, TimeFmt, DateFmt), Vec<InfAnode>) = global::with(|g| {
-        let mut anodes = Vec::new();
+        // The `ANODE` half of `app_save` (`deskapp.c:1216-1262`), for the
+        // `AF_ISDESK` nodes: one line per entry of `G.g_ahead`, in list order,
+        // with the spot converted back to grid units
+        // (`pa->a_xspot/G.g_icw`, `:1258-1259`). Reading the **list** and not
+        // the object tree is what EmuTOS does, and it is why a node whose icon
+        // could not be allocated (`a_obid == NIL`) still survives a save.
         let icw = g.g_icw.max(1);
         let ich = g.g_ich.max(1);
-        let mut child = g.g_screen[DROOT as usize].ob_head;
-        while child != NIL && child != DROOT {
-            let si = &g.g_screeninfo[child as usize];
-            let tag = match si.atype {
-                AType::Disk => Some(b'M'),
-                AType::Trash => Some(b'T'),
-                AType::Printer => Some(b'O'),
-                _ => None,
-            };
-            if let Some(tag) = tag {
-                let letter = (si.block.ib_char & 0xFF) as u8;
-                let letter = if letter.is_ascii_uppercase() { letter } else { 0 };
-                let xs = (g.g_screen[child as usize].ob_x / icw).clamp(0, 255) as u8;
-                let ys = (g.g_screen[child as usize].ob_y / ich).clamp(0, 255) as u8;
-                anodes.push(InfAnode {
-                    tag,
-                    is_desk: true,
-                    has_extra: false,
-                    xspot: xs,
-                    yspot: ys,
-                    aicon: -1,
-                    dicon: -1,
-                    letter,
-                    pappl: label_of(&si.label),
-                    pdata: String::new(),
-                    flags: 0,
-                    funkey: 0,
-                    pargs: String::new(),
-                });
-            }
-            child = g.g_screen[child as usize].ob_next;
-        }
+        let anodes: Vec<InfAnode> = g
+            .g_ahead
+            .iter()
+            .map(|pa| InfAnode {
+                tag: match pa.a_type {
+                    AType::Trash => b'T',
+                    AType::Printer => b'O',
+                    _ => b'M',
+                },
+                is_desk: true,
+                has_extra: false,
+                xspot: (pa.a_xspot / icw).clamp(0, 255) as u8,
+                yspot: (pa.a_yspot / ich).clamp(0, 255) as u8,
+                aicon: pa.a_aicon,
+                // A desktop icon has no data icon: EmuTOS's `install_drive`
+                // and `install_desktop_icon` both set `a_dicon = NIL`
+                // (`deskins.c:250`, `:854`), which `app_save` writes as `FF`.
+                dicon: -1,
+                letter: pa.a_letter,
+                pappl: pa.a_pappl.clone(),
+                pdata: String::new(),
+                flags: 0,
+                funkey: 0,
+                pargs: String::new(),
+            })
+            .collect();
         (
             g.g_cnxsave.cs_view,
             g.g_cnxsave.cs_sort,
@@ -939,12 +1082,6 @@ fn build_from_state() -> InfData {
         windows: collect_open_windows(),
         anodes,
     }
-}
-
-/// The label text of a `ScreenInfo::label` buffer as an owned string.
-fn label_of(label: &[u8]) -> String {
-    let end = label.iter().position(|&b| b == 0).unwrap_or(label.len());
-    String::from_utf8_lossy(&label[..end]).into_owned()
 }
 
 /// The `#W` lines of `app_save` (`deskapp.c:1192-1203`): **every** slot of the

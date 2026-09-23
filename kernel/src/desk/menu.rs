@@ -754,13 +754,21 @@ pub fn lookup_ascii_shortcut(ascii: u8) -> Option<Item> {
 /// is dead-clickable and the shortcut lookup skips them (see the report for the
 /// exact disabled set).
 pub fn men_update() {
-    let (nsel, nwin, napp, view, sort, fit) = global::with(|g| {
-        (g.count_selected(g.g_croot), g.win_count(), g.count_selected_apps(), g.view, g.sort, g.size_to_fit)
+    let (nsel, nwin, napp, ndesk, view, sort, fit) = global::with(|g| {
+        (
+            g.count_selected(g.g_croot),
+            g.win_count(),
+            g.count_selected_apps(),
+            g.count_selected_desk_icons(),
+            g.view,
+            g.sort,
+            g.size_to_fit,
+        )
     })
-    .unwrap_or((0, 0, 0, View::Icon, Sort::Name, true));
+    .unwrap_or((0, 0, 0, 0, View::Icon, Sort::Name, true));
 
     for &item in &ALL_ITEMS {
-        set_disabled(item, !item_enabled(item, nsel, nwin, napp));
+        set_disabled(item, !item_enabled(item, nsel, nwin, napp, ndesk));
     }
 
     // View / sort / size-to-fit check marks.
@@ -774,9 +782,10 @@ pub fn men_update() {
     set_checked(Item::SizeToFit, fit);
 }
 
-/// Whether `item` is enabled for the current `nsel`/`nwin`/`napp` (`napp` = the
-/// number of selected native programs, EmuTOS `men_update`'s app count).
-fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize) -> bool {
+/// Whether `item` is enabled for the current `nsel`/`nwin`/`napp`/`ndesk`
+/// (`napp` = the number of selected native programs, `ndesk` = the number of
+/// selected desktop icons — EmuTOS `men_update`'s two icon counts).
+fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize) -> bool {
     match item {
         // Always available.
         Item::About
@@ -813,8 +822,19 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize) -> bool {
         // selected (EmuTOS disables `IAPPITEM` when `napp == 0`,
         // `deskmain.c:536-538`).
         Item::InstallApp => napp >= 1,
-        // The remaining install/prefs/resolution Options items stay disabled
-        // (deskins Install-Devices/Icon follow-ons; deskrez is config.txt-driven).
+        // Install devices / Install icon (DESK03/DESK04): EmuTOS's `men_update`
+        // names neither `IDSKITEM` nor `IICNITEM` in any `ILL_*` table and
+        // disables neither by hand (`deskmain.c:143-160`, `:530-545`), so both
+        // are always available — *Install icon* with nothing selected is how a
+        // brand-new icon is made (`ins_icon(0)`, `deskins.c:1240-1267`).
+        Item::InstallDevices | Item::InstallIcon => true,
+        // Remove desktop icon: "disable 'Remove desktop icon' iff no desktop
+        // icons are selected" (`deskmain.c:540-542`). A disabled menu entry is
+        // the whole of EmuTOS's answer to "what happens with no selection" —
+        // `rmv_icon` is never reached, and there is no alert.
+        Item::RemoveIcon => ndesk >= 1,
+        // The remaining Options items stay disabled (deskrez is
+        // config.txt-driven, ADR-017 rev 2; Desktop configuration is DESK05).
         _ => false,
     }
 }

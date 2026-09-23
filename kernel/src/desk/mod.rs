@@ -31,6 +31,7 @@ pub mod ftype;
 pub mod global;
 pub mod icons;
 pub mod inf;
+pub mod ins;
 pub mod insapp;
 pub mod main;
 pub mod menu;
@@ -63,6 +64,7 @@ const OP_MENU_TNORMAL: i16 = 33;
 const OP_OBJC_ADD: i16 = 40;
 const OP_OBJC_DRAW: i16 = 42;
 const OP_OBJC_FIND: i16 = 43;
+const OP_OBJC_OFFSET: i16 = 44;
 const OP_FORM_DO: i16 = 50;
 const OP_FORM_DIAL: i16 = 51;
 const OP_FORM_ALERT: i16 = 52;
@@ -261,6 +263,18 @@ pub(super) fn objc_find(tree: u64, start: i16, depth: i16, mx: i16, my: i16) -> 
     a.intin[3] = my;
     a.call(OP_OBJC_FIND, 4, 1, 1);
     a.intout[0]
+}
+
+/// `objc_offset` (44) — the absolute screen position of `obj` in `tree` (the
+/// sum of its ancestors' `ob_x`/`ob_y`). EmuTOS `draw_fld` uses it to turn an
+/// object's own rectangle into the clip rectangle `objc_draw` wants
+/// (`deskdir.c:137`).
+pub(super) fn objc_offset(tree: u64, obj: i16) -> (i16, i16) {
+    let mut a = Aes::new();
+    a.addrin[0] = tree as i64;
+    a.intin[0] = obj;
+    a.call(OP_OBJC_OFFSET, 1, 3, 1);
+    (a.intout[1], a.intout[2])
 }
 
 /// `wind_find` (106) — handle of the window under screen point `(mx, my)`;
@@ -757,7 +771,15 @@ pub fn run() {
     // (`g_icw`/`g_ich`) exists for the icon-position rounding, before `win_view`/
     // `app_blddesk` so the view and positions take effect. A missing file is not
     // an error (the desktop keeps its built-in defaults).
-    inf::load_and_apply();
+    if !inf::load_and_apply() {
+        // "If there's still no EMUDESK.INF data, build one now"
+        // (`deskapp.c:833-834`) — the default environment plus the desktop
+        // icons the drive map implies. A file that *is* INF data but carries no
+        // `#M`/`#T`/`#O` line is **not** this case: it describes a desktop with
+        // no icons, which is what *Remove desktop icon* + *Save desktop*
+        // writes, and it is honoured.
+        inf::build_inf();
+    }
 
     global::with(|g| {
         g.win_view();

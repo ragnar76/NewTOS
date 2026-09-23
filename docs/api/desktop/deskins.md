@@ -572,5 +572,310 @@ disassembly, out of scope).
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00. Filled in when the corresponding implementation
-phase begins.)
+### `ins_app` — Install Application (deskins #20)
+
+The dialog half lives in `kernel/src/desk/insapp.rs`, the resolution and
+commit half in `desk::main::do_install_app`; the association itself is a
+`NEWDESK.INF` `#G`/`#Y`/`#P`/`#F` line held by `desk::inf`. See that
+module's header for the field subset it offers and why.
+
+---
+
+### `ins_devices` / `ins_icon` / `rmv_icon` (DESK03 + DESK04, 2026-09-24)
+
+`kernel/src/desk/ins.rs` is the `deskins.c` module: `grid_free`,
+`ins_posdisk`, `install_drive`, `remove_drive`, `ins_devices`,
+`install_desktop_icon` (the `ADINSDSK` dialog), `ins_icon` and `rmv_icon`.
+`snap_icon` itself sits with the other grid metrics in `desk::app`
+(`DeskState::snap_icon` / `snap_icon_grid`), which is where NewTOS keeps the
+`app_start` geometry.
+
+#### The desktop icon list became state — this is the load-bearing change
+
+Before this ticket `app_blddesk` **derived** the desktop icons on every call:
+one `G_ICON` per bit of `dos_sdrv(dos_gdrv())`, plus a Trash and a Printer
+fixture, with the `NEWDESK.INF` `#M`/`#T`/`#O` lines contributing nothing but
+a grid position. Three consequences made DESK03/DESK04 impossible:
+
+* *Install devices* was a no-op by construction — every drive in the map
+  always had an icon.
+* *Remove icon* could not remove anything — the next `app_blddesk` put it
+  straight back.
+* *Install icon* had nowhere to write a new icon to.
+
+So `GLOBES` gained EmuTOS's `G.g_ahead`: `DeskState::g_ahead: Vec<Anode>`
+(`desk::global::Anode`), and `app_blddesk` now walks it and invents nothing —
+`deskapp.c:1356-1400`, line for line, including the `pa->a_obid = obid`
+write-back that lets `app_afind_by_id` map a clicked object to its node.
+
+| field | EmuTOS | NewTOS |
+|---|---|---|
+| `a_type` | `AT_ISDISK`/`AT_ISTRSH`/`AT_ISPRNT` | `model::AType::Disk/Trash/Printer` |
+| `a_letter` | `char`, `'\0'` = none | `u8`, `0` = none |
+| `a_aicon` | icon number | same numbering (`IG_*`, see below) |
+| `a_dicon` | icon number | **not carried** — always `NIL` for a desktop icon (`deskins.c:250`, `:854`), written as `FF` |
+| `a_pappl` | label (usage (1), `deskapp.h:88-90`) | `String` |
+| `a_xspot`/`a_yspot` | pixels, screen-absolute | pixels, **relative to `DROOT`** |
+| `a_obid` | object index | same |
+| `a_pdata`/`a_pargs`/`a_funkey`/`a_flags` | shared with the file-type nodes | **not carried** — see below |
+
+Two deliberate narrowings, both named:
+
+1. **The list holds desktop icons only.** EmuTOS keeps one `ANODE` chain for
+   the desktop icons *and* the file-type / installed-application
+   associations. NewTOS split those when Install Application was built: the
+   association half lives in `desk::inf`'s session `NEWDESK.INF` model. Both
+   halves serialise into the same file in the same line grammar, so the split
+   is internal.
+2. **No desktop shortcuts and no window icons.** `CONF_WITH_DESKTOP_SHORTCUTS`
+   (`AT_ISFILE`/`AT_ISFOLD` icons parked on the desktop, `ins_shortcut`) and
+   `CONF_WITH_WINDOW_ICONS` (`install_window_icon`, the `ADINSWIN` tree) both
+   attach an `ANODE` to a *file or folder name*, and NewTOS has no reader for
+   one: a window item takes its icon from its extension
+   (`desk::ftype::classify`, in `win_bldview`), never from a per-name
+   association. `ins.rs` therefore has the shape of a
+   `CONF_WITH_WINDOW_ICONS = 0` build — `ins_icon(0)` goes straight to
+   `install_desktop_icon(NULL)` (`deskins.c:1262-1263`, the `#else` arm)
+   instead of asking `STICNTYP` which kind of icon to make, and returns only
+   `0` or `1`, never the `-1` "rebuild the windows" of the window-icon
+   branch. **Gap, reported rather than faked.**
+
+`app_revit()` has no counterpart. EmuTOS reverses the chain before
+`app_blddesk` and before `app_save` (`deskapp.c:1352`, `:1211`) purely because
+`app_alloc` *prepends* (`:215-216`), so its list runs newest-first. A `Vec`
+that `push`es is already in creation order; both walks are plain forward
+loops, visiting the same nodes in the same order without the list surgery.
+
+`move_drvicon` writes the snapped spot back into the node
+(`deskact.c:146-151`), which it did not have to before: with the object tree
+rebuilt from the list on every `app_blddesk`, a dragged icon would otherwise
+jump home the moment *Install devices* or *Remove icon* ran, and `app_save`
+would persist the old spot.
+
+#### Where the list comes from at boot — and the signature check
+
+`app_start`'s order is reproduced in `desk::run`: `app_start()` (grid
+metrics) → `inf::load_and_apply()` → `inf::build_inf()` when that found no INF
+data → `win_view()` → `app_blddesk()`.
+
+The guard is EmuTOS's and it is **a content test, not a file-existence
+test**: `read_inf_file(inf_data); if (inf_data[0] != '#') build_inf(…)`
+(`deskapp.c:829-834`). `shel_get` hands EmuTOS a buffer either way, so the
+only thing that can distinguish "there is an INF" from "there is not" is the
+`#` signature. NewTOS's test image ships a 21-byte `newdesk placeholder\r\n`
+as `C:\NEWDESK.INF`, so this is not a theoretical case: the first cut of this
+ticket tested file existence and the desktop booted with **no icons at all**.
+
+The asymmetry matters in the other direction too. A file that *is* INF data
+and carries no `#M`/`#T`/`#O` line describes a desktop with **no icons**, and
+that is honoured — it is exactly what *Remove desktop icon* followed by
+*Save desktop* writes, and `build_inf` must not resurrect what the user
+removed.
+
+`inf::build_inf()` = `apply(&InfData::default())` + `build_desk_icons()`.
+EmuTOS assembles three pieces of text and re-parses them; here the first piece
+**is** `InfData::default()` (the same `#E 1A E0 00 00 60` /
+`#Q 41 40 43 40 43 40` bytes as `desk_inf_data1`), the third is
+`InfData::default_type_anodes()` (`desk_inf_data2`), already reached by
+`build_from_state` on a first-ever save, and only the icon half has to be
+built. The text detour is not observable.
+
+**`build_inf`'s layout is now the desktop's default, and it differs from what
+NewTOS drew before.** Drives fill the grid left-to-right
+(`icon_index % xcnt` / `icon_index / xcnt`, `deskapp.c:719-721`); the Trash
+goes to the bottom-**left**, moved to the bottom-right only when the last
+drive icon reached that row (`:738-744`); the Printer takes the bottom-right
+only when the Trash did not (`:747-754`). The previous NewTOS rule — drives
+down column 0, Trash and Printer in the rightmost column, rows 0 and 1 —
+carried no source citation. At 640x480 with one drive the difference is that
+Trash and Printer move from the top-right corner to the bottom row.
+
+The grid counts are `app_start`'s, `xcnt = G.g_desk.g_w / (G.g_wicon +
+MIN_WINT)` and `ycnt = G.g_desk.g_h / (G.g_hicon + MIN_HINT)`
+(`deskapp.c:813-817`) — **not** `g_desk.g_w / g_icw`, which can differ by a
+column when the division is not exact.
+
+#### The icon set: EmuTOS's numbering, one picture short
+
+The `a_aicon` byte of an `ANODE` line is **file format**, not an internal
+index: `app_parse` reads it (`deskapp.c:359-365`), `app_save` writes it
+(`:1258`), and `desk_inf_data2` spells `07`/`02`/`06` literally. NewTOS
+therefore uses EmuTOS's numbers (`desk::icons`):
+
+| `IG_*` | picture | NewTOS raster |
+|---|---|---|
+| 0 `IG_HARD` | hard drive | yes |
+| 1 `IG_FLOPPY` | floppy drive | yes |
+| 2 `IG_FOLDER` | folder | yes |
+| 3 `IG_TRASH` | trash can | yes |
+| 4 `IG_PRINT` | printer | yes |
+| 5 `IG_REMOV` | removable disk | **no** |
+| 6 `IG_APPL` | generic application | yes |
+| 7 `IG_DOCU` | generic document | yes |
+
+`IG_REMOV` has no raster — the bitmaps this desktop inherited (originally
+extracted from `desk/icon.rsc`) never carried one. It is therefore a hole in
+`icons::BUILTIN_ICONS`, and the two places that could trip over it say so:
+
+* the `ID_UP`/`ID_DOWN` stepper cycles `BUILTIN_ICONS` (seven entries), not
+  `0 .. G.g_numiblks-1` (eight), so it never lands on a picture that does not
+  exist;
+* an `a_aicon` NewTOS cannot resolve — `IG_REMOV`, or a corrupt byte — falls
+  back in `app_blddesk` to the icon the node's *type* defaults to
+  (`app::default_icon_kind`: Trash → trash, Printer → printer, a drive
+  `A:`/`B:` → floppy, any other drive → hard disk). EmuTOS clamps only an
+  out-of-range number, to `IG_APPL` (`deskapp.c:360-365`); the type-shaped
+  fallback is the honest equivalent for an in-range hole.
+
+**The floppy is offered only when it can be used.** `IG_FLOPPY` is dropped
+from the stepper's list unless the drive map actually reports `A:` or `B:`.
+The machine this desktop runs on has no floppy controller — the menu already
+drops *Format* for the same reason — so a floppy picture would be a choice no
+drive could ever carry. The one exception: a node that *already* carries
+`IG_FLOPPY` (a `NEWDESK.INF` written where a floppy existed) keeps it in the
+list, so the dialog can always step away from the picture it is showing
+rather than silently rewriting it.
+
+#### `install_desktop_icon` — the `ADINSDSK` tree
+
+`desk_rsc.c:922-1020`. Seventeen objects, and the NewTOS tree uses the same
+indices `desk_rsc.h:100-112` gives them, so a reader can hold the two side by
+side:
+
+| # | name | type / flags | content |
+|---|---|---|---|
+| 0 | ROOT | `G_BOX`, `FL3DBAK`, state `OUTLINED`, `ob_spec = (1<<16)\|0x1100` | the panel |
+| 1 | — | `G_STRING` | `INSTALL DESKTOP ICON` |
+| 2 | `ID_ID` | `G_FBOXTEXT`, `FL3DBAK` — **no `EDITABLE`** | `Identifier: _:`, validation `A`, 1 char |
+| 3 | `ID_LABEL` | `G_FBOXTEXT`, `EDITABLE\|FL3DBAK` | `Label: ____________`, validation `X`, 12 chars |
+| 4 | — | `G_STRING`, `FL3DBAK` | `Item type:` |
+| 5 | — | `G_IBOX` | the radio group's parent |
+| 6-8 | `ID_DRIVE`/`ID_TRASH`/`ID_PRINT` | `G_BUTTON`, `SELECTABLE\|RBUTTON\|FL3DIND` | `Drive` / `Trash can` / `Printer` |
+| 9 | `ID_IBOX` | `G_BOX`, `FL3DBAK`, `ob_spec = 0x1100` | the preview panel |
+| 10 | `ID_ICON` | `G_ICON` (`insert_icon` swaps the type in) | the `ICONBLK`, `ib_ptext = ""` |
+| 11-12 | `ID_UP`/`ID_DOWN` | `G_BUTTON`, `SELECTABLE\|TOUCHEXIT\|FL3DACT` | font characters `\001` / `\002` = the arrows |
+| 13 | — | `G_STRING`, `FL3DBAK` | `Icon:` |
+| 14-16 | `ID_OK`/`ID_SKIP`/`ID_CNCL` | `G_BUTTON`, `…EXIT\|FL3DACT`, `LASTOB` on the last | `OK` / `Skip` / `Cancel` |
+
+The 3D roles are `desk_rsc.c`'s, read off the table in `deskinf.md`
+(DESK01b): `FL3DBAK` on the ROOT and the two framed text fields, `FL3DIND` on
+the radio buttons, `FL3DACT` (= `FL3DBAK|FL3DIND`) on the exit buttons **and**
+on the two stepper gadgets — `ADINSDSK`'s `ID_UP`/`ID_DOWN` are precisely the
+pair DESK01b cited as "a stepper gadget is an activator"
+(`desk_rsc.c:990,996`).
+
+Two box values are worth naming, for the same reason DESK01b had to name
+`ADDINFO`'s: the AES substitutes the 3D face colour only for a box that is
+`IP_HOLLOW` **and** white (`gemoblib.c:619-636`). The ROOT is `69888L` =
+`(1<<16)|0x1100` — one pixel of border over that colour word. `ID_IBOX` is
+`4352L` = `0x1100`, the same colour word with the thickness word **zero**: it
+takes the face and draws **no** frame of its own. The first cut of this tree
+gave `ID_IBOX` the ROOT's value and produced a black rectangle EmuTOS does not
+have.
+
+**`ID_ID` is not `EDITABLE`, and that is the source, not an omission.**
+`desk_rsc.c:936-940` gives it `FL3DBAK | 0x4000`, the second being the
+desktop-private `RIGHT_ALIGNED` alignment hint (`deskmain.c:106`, stripped
+again by `align_objects`), and no `EDITABLE` bit — yet
+`install_desktop_icon` passes `start_fld = ID_ID` to `form_do` and reads the
+field back with `inf_sget`. It works because `fm_inifld` hands `start_fld`
+through untouched (`aes/gemfmlib.c:153-160`) and `ob_edit` never looks at the
+flag, so the caret *starts* in the identifier field and the user can type
+there. What they cannot do is come back: `fm_button` gates the click on
+`EDITABLE`, and the arrow-key walk visits only genuinely editable fields, so
+once the caret has moved to `ID_LABEL` the identifier is out of reach for that
+turn of the dialog. NewTOS reproduces flag and start field verbatim. (Should
+this ever be decided to be an EmuTOS bug rather than a quirk, the fix is one
+`EDITABLE` bit — but it is a change to EmuTOS's behaviour and needs its own
+ticket.)
+
+EmuTOS nudges `ID_DOWN` by `ADJ3DSTD` before the dialog and back afterwards
+(`deskins.c:826-831`, `:966-971`) because its resource was laid out for flat
+buttons and a 3D indicator grows two pixels per side before its border is
+drawn. The NewTOS tree is built fresh on every call with the grown rectangles
+already accounted for (the `ADSETPRE` spacing rules DESK01b derived), so there
+is nothing to nudge and no restore to forget.
+
+The commit path is `deskins.c:909-943`: the type comes from
+`inf_gindex(tree, ID_DRIVE, 3)`; a **Drive** must end up with a non-blank
+identifier or the dialog re-displays itself behind `STDRIVID`
+(`"[1][No drive identifier.][ Retry ]"`, `desk_rsc.c:2542` — the button reads
+*Retry*, so the string goes to `form_alert` verbatim rather than through
+`dir::fun_alert`'s one-OK-button wrapper); the label is written back only when
+it changed; `ID_SKIP`/`ID_CNCL` on a *newly created* node free it again
+(`:941-943`), so a cancelled "create new" leaves nothing behind.
+
+`draw_fld(tree, ID_IBOX)` (`deskins.c:962`) now exists as
+`desk::dir::draw_fld`, next to `draw_dial` — which is exactly where EmuTOS
+keeps it (`deskdir.c:131-139`): `objc_offset` the object, then `objc_draw`
+that subtree into its own rectangle. It needed a new `objc_offset` (44)
+binding in the desktop's aesbind block. A stepper click therefore repaints the
+preview panel and nothing else, where `inf_backgrounds` still redraws its
+whole tree.
+
+#### `ins_devices`
+
+`deskins.c:290-333`, unchanged in shape: build the installed bitmask from the
+`AT_ISDISK` nodes' letters, remove the icons of `installed & ~current`, then
+install one for each of `current & ~installed`, in that order, and report
+whether anything changed. `install_drive` takes the first free grid cell
+(`ins_posdisk(0, 0)` *before* the node is appended, `:231`) and
+`a_aicon = (drive > 1) ? IG_HARD : IG_FLOPPY` (`:249`).
+
+The labels are the one place this diverges, and it predates the ticket:
+EmuTOS writes `"DISK C"` / `"TRASH"` / `"PRINTER"`
+(`desk_rsc.c:2481-2483`), NewTOS's desktop has printed
+`"Hard disk"` / `"Floppy disk"` / `"Trash"` / `"Printer"` since its icon tree
+was first built, and every screendump the desktop work has been measured
+against carries those. The four strings now live in one place
+(`desk::inf::DISK_LABEL` and friends) and `install_drive` reads the same two
+constants `build_inf` does, so an icon added by *Install devices* is labelled
+exactly like one the desktop built at boot. Adopting EmuTOS's wording is a
+four-line edit and a decision of its own.
+
+#### `ins_icon` / `rmv_icon` and the menu state
+
+`ins_icon(sobj)` (`deskins.c:1234-1311`): with `sobj == 0` a brand-new icon is
+created; otherwise every selected desktop icon is edited in turn, one dialog
+each, stopping early on cancel. The selection walk passes the **literal
+`DROOT`**, not `G.g_croot` — the precision note earlier in this document,
+reproduced. `rmv_icon(sobj)` (`:1317-1335`) frees the node of every selected
+desktop object and returns how many. Its `if (pa->a_flags & AF_ISDESK)` guard
+has no counterpart because `G.g_ahead` holds desktop icons only; an object
+that resolves to no node is skipped, as there.
+
+`do_optnmenu` gets the three cases `deskmain.c:847-881` has, `curr =
+win_isel(G.g_screen, G.g_croot, 0)` included (`:842`), and each rebuild is
+`app_blddesk()` plus the `do_wredraw(DESKWH, &G.g_desk)` EmuTOS folds into the
+end of `app_blddesk` (`deskapp.c:1402`), plus a `men_update()` — the selection
+died with the objects that carried it.
+
+`men_update` gains EmuTOS's `ndesk` count (`deskmain.c:504-521`, the
+`G.g_cwin == DESKWH` arm): *Remove desktop icon* is disabled iff no desktop
+icon is selected (`:540-542`). *Install icon* and *Install devices* appear in
+no `ILL_*` table and are disabled nowhere, so both are always available —
+*Install icon* with nothing selected **is** how a new icon is made. A greyed
+menu entry is the whole of EmuTOS's answer to "Remove with nothing
+selected"; there is no alert.
+
+#### `a_letter` reaches the bitmap unconditionally
+
+`app_blddesk` ends with `pic->ib_char |= pa->a_letter;` (`deskapp.c:1399`),
+with no test on the icon picture, and NewTOS now does the same. It has to:
+the Install-icon dialog lets a drive node take any picture, and every desktop
+-icon consumer reads the drive letter back out of `ib_char` (`desk::dir`'s
+drop handlers, `desk::inf`'s `#M` writer). For the two disk rasters
+`build_iconblk` already ORs it in at their own `ib_xchar`/`ib_ychar` spot; for
+any other picture the letter lands at the bitmap's origin, because NewTOS's
+rasters carry a character position only where EmuTOS's resource does.
+
+#### Verification
+
+`measurement-2026-09-24-desk03-desk04/`. QEMU raspi4b at 640x480 with the
+scratch-copy IKBD injector: the Options drop-down in both selection states,
+select → *Remove desktop icon* → *Install devices* (pixel-identical to the
+start), *Install icon* with the stepper and the type radios, *Save desktop*,
+the written `NEWDESK.INF`, a cold boot that restores the installed icon, and a
+second cold boot that keeps a removed one removed. Plus
+`desk::ins::selftest()` — 14 cases, including the vanished-drive
+reconciliation QEMU cannot stage on its own — run once from a scratch copy.
