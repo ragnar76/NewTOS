@@ -73,6 +73,82 @@ const BAR_BOX_H: i16 = CELL_H + 2;
 /// entries keep the RSC's.
 const ENTRY_H: i16 = CELL_H;
 
+/// `SHORTCUT_SIZE` (`deskmain.h:17`) — the characters every drop-down entry
+/// reserves at its right edge for `' ^X'`. `copy_menu_items` adds
+/// `1 + SHORTCUT_SIZE` to the widest entry of a menu (`deskmain.c:1781`) and
+/// [`install_shortcuts`] writes `'^'` and the key into the last two of them.
+const SHORTCUT_SIZE: i16 = 3;
+
+/// `NUM_SHORTCUTS` (`deskmain.h:18`) — the length of the `menu_shortcuts[]`
+/// array and of the `NEWDESK.INF` `#K` line.
+pub(super) const NUM_SHORTCUTS: usize = 33;
+
+/// Capacity of one RAM drop-down label: the widest entry text of any menu
+/// (*Options*' `"  Desktop configuration..."`, 26 characters) plus
+/// [`SHORTCUT_SIZE`], a NUL, and head room.
+const LABEL_CAP: usize = 40;
+
+/// `shortcut_mapping[]` (`deskmain.c:169-260`) — which menu item each of the
+/// 33 `#K` slots names, in EmuTOS's fixed *File* / *View* / *Options* order.
+/// `None` is EmuTOS's `0`: "this menu item does not exist in this binary; any
+/// shortcut in the corresponding entry of `menu_shortcuts[]` will be ignored"
+/// (`:171-173`). The slot **order is part of the `NEWDESK.INF` contract** —
+/// a `#K` line written by EmuTOS has to land on the same items here — so the
+/// three items NewTOS does not build (`FORMITEM`, `BLITITEM`, `CACHITEM`,
+/// all m68k-hardware or floppy features) keep their slots as `None` rather
+/// than being squeezed out.
+const SHORTCUT_MAPPING: [Option<Item>; NUM_SHORTCUTS] = [
+    // 'File' menu.
+    Some(Item::Open),          // OPENITEM
+    Some(Item::InfoRename),    // SHOWITEM
+    Some(Item::Search),        // SRCHITEM
+    Some(Item::NewFolder),     // NFOLITEM
+    Some(Item::CloseFolder),   // CLOSITEM
+    Some(Item::CloseWindow),   // CLSWITEM
+    Some(Item::Cycle),         // BTOPITEM
+    Some(Item::SelectAll),     // SLCTITEM
+    Some(Item::SetMask),       // MASKITEM
+    Some(Item::Delete),        // DELTITEM
+    None,                      // FORMITEM — no floppy format (CONF_WITH_FORMAT off)
+    Some(Item::ExecEmuCon),    // CLIITEM
+    Some(Item::Shutdown),      // QUITITEM
+    // 'View' menu.
+    Some(Item::ShowIcons),     // ICONITEM
+    Some(Item::ShowText),      // TEXTITEM
+    Some(Item::SortName),      // NAMEITEM
+    Some(Item::SortType),      // TYPEITEM
+    Some(Item::SortSize),      // SIZEITEM
+    Some(Item::SortDate),      // DATEITEM
+    Some(Item::NoSort),        // NSRTITEM
+    Some(Item::SizeToFit),     // FITITEM
+    Some(Item::SetBackground), // BACKGRND
+    // 'Options' menu.
+    Some(Item::InstallIcon),    // IICNITEM
+    Some(Item::InstallApp),     // IAPPITEM
+    Some(Item::InstallDevices), // IDSKITEM
+    Some(Item::RemoveIcon),     // RICNITEM
+    Some(Item::SetPrefs),       // PREFITEM
+    Some(Item::DeskConfig),     // CONFITEM
+    Some(Item::ChangeRez),      // RESITEM
+    Some(Item::ReadInf),        // READITEM
+    Some(Item::SaveDesktop),    // SAVEITEM
+    None,                       // BLITITEM — m68k blitter
+    None,                       // CACHITEM — 68030 cache
+];
+
+/// `default_shortcuts[]` (`deskmain.c:269-307`) — the shortcut letters a
+/// desktop starts with when `NEWDESK.INF` carries no `#K` line. Entries are the
+/// **uppercase letter as displayed**; the key that fires is the corresponding
+/// control character.
+pub(super) const DEFAULT_SHORTCUTS: [u8; NUM_SHORTCUTS] = [
+    // 'File' menu.
+    b'O', b'I', 0, b'N', b'H', b'U', b'W', b'A', 0, b'D', 0, b'Z', 0,
+    // 'View' menu.
+    0, 0, 0, 0, 0, 0, 0, 0, 0,
+    // 'Options' menu.
+    0, 0, 0, 0, 0, 0, b'R', 0, b'S', 0, 0,
+];
+
 /// A top-level menu (the four ADMENU titles).
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Title {
@@ -307,21 +383,33 @@ const EMPTY_OBJ: Object = Object {
 struct MenuTree {
     /// The `OBJECT` array handed to `menu_bar`.
     obj: UnsafeCell<[Object; MENU_CAP]>,
+    /// The drop-down entry strings, **in RAM** — EmuTOS `copy_menu_items`
+    /// (`deskmain.c:1755-1813`) moves them out of ROM for exactly one reason:
+    /// [`install_shortcuts`] writes `'^'` + the shortcut key into the padding
+    /// at their right edge. One NUL-terminated string per object index.
+    labels: UnsafeCell<[[u8; LABEL_CAP]; MENU_CAP]>,
     /// Object index of each [`Title`] (`Title` order).
     title_obj: UnsafeCell<[i16; 4]>,
     /// Object index of each [`Item`] (`Item` discriminant order).
     item_obj: UnsafeCell<[i16; N_ITEMS]>,
     /// Object index → [`Item`] discriminant (`-1` = not a selectable item).
     obj_item: UnsafeCell<[i16; MENU_CAP]>,
+    /// `menu_shortcuts[]` (`deskmain.c:119`) — the shortcut letter of each of
+    /// the [`NUM_SHORTCUTS`] slots, `0` for none. Seeded from
+    /// [`DEFAULT_SHORTCUTS`], overwritten by the `#K` line
+    /// ([`super::inf`]), edited by the Desktop-configuration dialog.
+    shortcuts: UnsafeCell<[u8; NUM_SHORTCUTS]>,
     built: UnsafeCell<bool>,
 }
 // SAFETY: only touched from the single-threaded desktop on the boot CPU.
 unsafe impl Sync for MenuTree {}
 static MENU: MenuTree = MenuTree {
     obj: UnsafeCell::new([EMPTY_OBJ; MENU_CAP]),
+    labels: UnsafeCell::new([[0; LABEL_CAP]; MENU_CAP]),
     title_obj: UnsafeCell::new([0; 4]),
     item_obj: UnsafeCell::new([0; N_ITEMS]),
     obj_item: UnsafeCell::new([-1; MENU_CAP]),
+    shortcuts: UnsafeCell::new(DEFAULT_SHORTCUTS),
     built: UnsafeCell::new(false),
 };
 
@@ -403,8 +491,26 @@ fn adjust_menu(sw: i16) -> MenuGeom {
         // every item label carries (EmuTOS menu-string convention, e.g.
         // "  Open"), so the object renderer draws the text at `ob_x` and the
         // check mark sits over the leading blank (see `object::just_draw` D1).
+        //
+        // Two details of the source that the measurement depends on. (1) The
+        // strings `adjust_menu` measures are the **RAM** ones
+        // `copy_menu_items` has already padded to `widest + 1 + SHORTCUT_SIZE`
+        // minus the NUL (`deskmain.c:1781,1799-1805`), so the shortcut reserve
+        // is part of `maxlen` — reproduced by the `+ SHORTCUT_SIZE` below.
+        // (2) A **separator** is not in that measurement: `copy_menu_items`
+        // skips it (`:1773`, `if (*q != '-')`), so its `ob_spec` still points
+        // at the resource's one-character `"-"` when `adjust_menu` runs and it
+        // can never be the widest entry. [`build_menu`] then fills the
+        // separator with `m` dashes, which is EmuTOS's
+        // `separator+MAXLEN_SEPARATOR-m` (`:1623`).
         let seed = if ti == 0 { MIN_DESKMENU_WIDTH - 1 } else { 0 };
-        let m = def.entries.iter().map(|e| label_len(entry_label(e))).fold(seed, i16::max) + 1;
+        let widest = def
+            .entries
+            .iter()
+            .filter(|e| matches!(e, Act(_, _)))
+            .map(|e| label_len(entry_label(e)))
+            .fold(0, i16::max);
+        let m = seed.max(widest + SHORTCUT_SIZE) + 1;
         g.box_w[ti] = m * CHAR_W;
     }
     // `mbar->ob_width = x` (`deskmain.c:1534`): THEACTIVE is exactly as wide
@@ -471,6 +577,7 @@ fn build_menu() -> *mut Object {
         let title_obj = &mut *MENU.title_obj.get();
         let item_obj = &mut *MENU.item_obj.get();
         let obj_item = &mut *MENU.obj_item.get();
+        let labels = &mut *MENU.labels.get();
 
         let (sw, sh) = screen_dims();
         let geom = adjust_menu(sw);
@@ -523,6 +630,11 @@ fn build_menu() -> *mut Object {
             last_box = bi;
             k += 1;
             let first_item = k;
+            // `copy_menu_items` (`deskmain.c:1755-1813`) works in the box's
+            // width in **character cells**, which is what `ob_width` carries
+            // here in pixels — recovered with the same ceiling division
+            // `install_shortcuts` uses (`:1845`).
+            let cells = ((iw + CHAR_W - 1) / CHAR_W).clamp(1, LABEL_CAP as i16 - 1) as usize;
             for (ii, entry) in def.entries.iter().enumerate() {
                 let last_item = ii == n_items - 1;
                 let last_overall = (ti == nt - 1) && last_item;
@@ -530,13 +642,34 @@ fn build_menu() -> *mut Object {
                 if last_overall {
                     flags |= LASTOB;
                 }
+                // The entry's string, in RAM. An action entry is the label
+                // padded with blanks to `cells - 1` characters — EmuTOS's
+                // "copy string, pad with spaces" up to `p+width-1`, then the
+                // NUL (`:1799-1805`) — which leaves [`SHORTCUT_SIZE`]
+                // characters of blank at the right edge for
+                // [`install_shortcuts`]. A separator is `cells` dashes, which
+                // is `separator + MAXLEN_SEPARATOR - m` (`:1623`).
+                let dst = &mut labels[k];
+                let src = entry_label(entry);
+                match entry {
+                    Sep(_) => {
+                        dst[..cells].fill(b'-');
+                        dst[cells] = 0;
+                    }
+                    Act(_, _) => {
+                        let n = (label_len(src) as usize).min(cells - 1);
+                        dst[..n].copy_from_slice(&src[..n]);
+                        dst[n..cells - 1].fill(b' ');
+                        dst[cells - 1] = 0;
+                    }
+                }
                 // `{0, row, 20, 1}` (`desk_rsc.c:297-341`) after `rsrc_obfix`:
                 // the entry spans the box's width at `row · gl_hchar`, one
                 // character cell tall ([`ENTRY_H`]).
                 o[k] = mk(
                     G_STRING,
                     flags,
-                    entry_label(entry).as_ptr() as u64,
+                    labels[k].as_ptr() as u64,
                     0,
                     ii as i16 * ENTRY_H,
                     iw,
@@ -612,8 +745,18 @@ fn screen_dims() -> (i16, i16) {
 
 /// Install the desktop menu bar (`menu_bar`, show = 1). Builds the tree on the
 /// first call.
+///
+/// [`install_shortcuts`] runs here for the same reason EmuTOS's `deskmain`
+/// runs it at `:2023`: the shortcut letters have to reach the item strings
+/// after `app_start` has read the `NEWDESK.INF` `#K` line into
+/// `menu_shortcuts[]` and after `copy_menu_items` has put those strings in RAM.
+/// The desktop's boot path calls this once the INF is applied
+/// (`super::run`), so both are true here; the call is idempotent, so the
+/// whole-screen-recovery caller ([`super::redraw`]) re-asserting it costs
+/// nothing.
 pub fn install_menu_bar() {
     let tree = build_menu();
+    install_shortcuts();
     super::menu_bar(tree as u64, 1);
 }
 
@@ -703,41 +846,163 @@ fn set_checked(item: Item, checked: bool) {
     super::menu_icheck(tree_ptr(), item_obj(item), checked);
 }
 
-/// The control-character keyboard shortcut for `item` (EmuTOS
-/// `default_shortcuts[]`, `deskmain.c:269-307`) — the displayed uppercase
-/// letter, or `0` for none. Only the Task-#8-enabled File items are actually
-/// reachable; the rest map to items `men_update` keeps disabled.
-fn shortcut_letter(item: Item) -> u8 {
-    match item {
-        Item::Open => b'O',
-        Item::InfoRename => b'I',
-        Item::NewFolder => b'N',
-        Item::CloseFolder => b'H',
-        Item::CloseWindow => b'U',
-        Item::Cycle => b'W',
-        Item::SelectAll => b'A',
-        Item::Delete => b'D',
-        Item::ExecEmuCon => b'Z',
-        Item::ChangeRez => b'R',
-        Item::SaveDesktop => b'S',
-        _ => 0,
+// ── `menu_shortcuts[]`: the editable shortcut array (`deskmain.c`) ──────────
+//
+// EmuTOS keeps the shortcut letters in a 33-byte array, *not* in the menu
+// strings: the strings only ever carry a rendering of it. Four functions move
+// the data between the two, and the Desktop-configuration dialog (DESK05,
+// `deskinf.c` `inf_conf`) edits the array between them:
+//
+//   deskmain:2013  memcpy(menu_shortcuts, default_shortcuts, NUM_SHORTCUTS)
+//   app_start      the `#K` line overwrites all 33 (`deskapp.c:967-974`)
+//   deskmain:2023  install_shortcuts()   array → strings
+//   inf_conf       save_shortcut()/DCMNUCLR edit the array
+//       on OK      install_shortcuts()   array → strings
+//       otherwise  recover_shortcuts()   strings → array (undo)
+//
+// The array is the only thing `lookup_ascii_shortcut` reads, so an edit takes
+// effect on the keyboard whether or not the menu has been redrawn.
+
+/// The shortcut letter of slot `n`, `0` for none (`menu_shortcuts[n]`).
+pub(super) fn shortcut_key(n: usize) -> u8 {
+    // SAFETY: single-CPU desktop.
+    unsafe { (*MENU.shortcuts.get()).get(n).copied().unwrap_or(0) }
+}
+
+/// Write the shortcut letter of slot `n` (`menu_shortcuts[n] = key`).
+pub(super) fn set_shortcut_key(n: usize, key: u8) {
+    // SAFETY: single-CPU desktop.
+    unsafe {
+        if let Some(slot) = (*MENU.shortcuts.get()).get_mut(n) {
+            *slot = key;
+        }
+    }
+}
+
+/// The whole array — read by `app_save` for the `#K` line.
+pub(super) fn shortcuts() -> [u8; NUM_SHORTCUTS] {
+    // SAFETY: single-CPU desktop.
+    unsafe { *MENU.shortcuts.get() }
+}
+
+/// Replace the whole array — `app_start`'s `case 'K'` (`deskapp.c:967-974`)
+/// and `DCMNUCLR`'s `memset(menu_shortcuts, 0x00, NUM_SHORTCUTS)`
+/// (`deskinf.c:1220`).
+pub(super) fn set_shortcuts(v: [u8; NUM_SHORTCUTS]) {
+    // SAFETY: single-CPU desktop.
+    unsafe { *MENU.shortcuts.get() = v };
+}
+
+/// The [`Item`] shortcut slot `n` belongs to, `None` for a slot whose menu item
+/// this build does not have (`shortcut_mapping[n] == 0`).
+pub(super) fn shortcut_item(n: usize) -> Option<Item> {
+    SHORTCUT_MAPPING.get(n).copied().flatten()
+}
+
+/// The menu item text of shortcut slot `n`, blank-padded into `dst`: the live
+/// drop-down string **minus its two leading blanks and minus the `' ^X'`
+/// reserve at its right edge**. EmuTOS `init_conf_shortcuts`' middle three
+/// lines (`deskinf.c:1013-1016`): `strcpy(G.g_work, obj->ob_spec+2)` then
+/// `memset(G.g_work+strlen(G.g_work)-SHORTCUT_SIZE, ' ', 40)` — "insert menu
+/// item text, without shortcut & with enough spaces to fill text field".
+/// A slot with no menu item leaves `dst` blank.
+pub(super) fn shortcut_item_text(n: usize, dst: &mut [u8]) {
+    dst.fill(b' ');
+    let Some(item) = shortcut_item(n) else {
+        return;
+    };
+    let obj = item_obj(item) as usize;
+    // SAFETY: single-CPU; `item_obj` built the tree and returns a valid index.
+    let s = unsafe { &(*MENU.labels.get())[obj] };
+    let len = s.iter().position(|&b| b == 0).unwrap_or(0);
+    let keep = len.saturating_sub(2 + SHORTCUT_SIZE as usize).min(dst.len());
+    dst[..keep].copy_from_slice(&s[2..2 + keep]);
+}
+
+/// The index of the `'^'` byte inside a drop-down string of `cells` characters
+/// — EmuTOS's `(ob_width + CHAR_WIDTH - 1) / CHAR_WIDTH - SHORTCUT_SIZE`
+/// (`deskmain.c:1845`, `deskinf.c:1084`), with `ob_width` already in pixels.
+fn shortcut_offset(obj: usize) -> Option<usize> {
+    // SAFETY: single-CPU; the tree is built by every caller's `item_obj`.
+    let w = unsafe { (*MENU.obj.get())[obj].ob_width };
+    let cells = (w + CHAR_W - 1) / CHAR_W;
+    let off = cells - SHORTCUT_SIZE;
+    // The string is `cells - 1` characters long, so `off` and `off + 1` are its
+    // last two; a menu whose box was widened past its strings (the
+    // `MIN_DESKMENU_WIDTH` seed) has no room and is skipped rather than
+    // overrun.
+    (off >= 0 && (off as usize) + 1 < LABEL_CAP).then_some(off as usize)
+}
+
+/// `install_shortcuts` (`deskmain.c:1825-1858`) — render `menu_shortcuts[]`
+/// into the drop-down strings: `'^'` + the letter in the reserve at the right
+/// edge, or two blanks where there is no shortcut. A slot whose menu item this
+/// build does not have is **cleared in the array** on the way past, "to ensure
+/// that the shortcut array matches the displayed menu items" (`:1833-1839`) —
+/// which is also what keeps a foreign `#K` line from re-saving a shortcut for
+/// an item that is not there.
+pub(super) fn install_shortcuts() {
+    build_menu();
+    for n in 0..NUM_SHORTCUTS {
+        let Some(item) = shortcut_item(n) else {
+            set_shortcut_key(n, 0);
+            continue;
+        };
+        let obj = item_obj(item) as usize;
+        let Some(off) = shortcut_offset(obj) else {
+            continue;
+        };
+        let c = shortcut_key(n);
+        // SAFETY: single-CPU; `off + 1 < LABEL_CAP` checked above.
+        let s = unsafe { &mut (*MENU.labels.get())[obj] };
+        if c != 0 {
+            s[off] = b'^';
+            s[off + 1] = c;
+        } else {
+            s[off] = b' ';
+            s[off + 1] = b' ';
+        }
+    }
+}
+
+/// `recover_shortcuts` (`deskinf.c:1062-1090`) — the inverse: rebuild
+/// `menu_shortcuts[]` from the strings as they currently stand. The
+/// Desktop-configuration dialog calls it on every exit that is not OK, which is
+/// how it undoes edits the user made and then cancelled.
+pub(super) fn recover_shortcuts() {
+    build_menu();
+    for n in 0..NUM_SHORTCUTS {
+        let mut c = 0u8;
+        if let Some(item) = shortcut_item(n) {
+            let obj = item_obj(item) as usize;
+            if let Some(off) = shortcut_offset(obj) {
+                // SAFETY: single-CPU; `off + 1 < LABEL_CAP` checked above.
+                let s = unsafe { &(*MENU.labels.get())[obj] };
+                if s[off] == b'^' {
+                    c = s[off + 1];
+                }
+            }
+        }
+        set_shortcut_key(n, c);
     }
 }
 
 /// `lookup_ascii_shortcut` (EmuTOS `deskmain.c:1169-1198`) — resolve a
-/// **control** character (`ascii < 0x20`) to the `(title, item)` its
+/// **control** character (`ascii < 0x20`) to the menu item its
 /// `menu_shortcuts[]` entry names. `ascii | 0x40` is the displayed uppercase
-/// letter matched against [`shortcut_letter`]. A currently **disabled** item is
-/// treated as no match (its shortcut is inert). Returns `None` for a
-/// non-control character or no/disabled match.
+/// letter, matched against the array in slot order. A currently **disabled**
+/// item is treated as no match and stops the scan (EmuTOS `break`, `:1187`).
+/// Returns `None` for a non-control character or no/disabled match.
 pub fn lookup_ascii_shortcut(ascii: u8) -> Option<Item> {
     if ascii >= 0x20 {
         return None;
     }
     let letter = ascii | 0x40;
-    for &item in &ALL_ITEMS {
-        if shortcut_letter(item) == letter {
-            // A matching but disabled item stops the scan (EmuTOS `break`).
+    for n in 0..NUM_SHORTCUTS {
+        let Some(item) = shortcut_item(n) else {
+            continue; // `if (!n) continue;` (`:1181-1182`)
+        };
+        if shortcut_key(n) == letter {
             return (!item_disabled(item)).then_some(item);
         }
     }
@@ -817,7 +1082,13 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize)
         // `PREFITEM` likewise: EmuTOS lists it in none of `ILL_NOSEL` /
         // `ILL_MULTSEL` / `ILL_NOWIN` (`deskmain.c:143-160`), so Set
         // preferences is enabled whatever is selected (DESK02).
-        Item::SetBackground | Item::ReadInf | Item::SaveDesktop | Item::SetPrefs => true,
+        //
+        // `CONFITEM` is in the same position (DESK05): it appears in no `ILL_*`
+        // table and in no `menu_ienable` call, and `CONF_WITH_DESKTOP_CONFIG`
+        // defaults to 1 (`include/config.h:1774-1776`) on our
+        // Falcon030/TOS4 profile, so *Desktop configuration…* is always
+        // available — its dialog edits globals, not a selection.
+        Item::SetBackground | Item::ReadInf | Item::SaveDesktop | Item::SetPrefs | Item::DeskConfig => true,
         // Install Application (deskins #20): enabled iff a native program is
         // selected (EmuTOS disables `IAPPITEM` when `napp == 0`,
         // `deskmain.c:536-538`).
@@ -842,7 +1113,7 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize)
         // extension, not EmuTOS conformance (DESK07).
         Item::Shutdown => false,
         // The remaining Options items stay disabled (deskrez is
-        // config.txt-driven, ADR-017 rev 2; Desktop configuration is DESK05).
+        // config.txt-driven, ADR-017 rev 2).
         // `Execute EmuCON` is never disabled in EmuTOS (`CLIITEM` appears in no
         // `ILL_*` table and in no `menu_ienable` call) — it is greyed here
         // only because NewTOS has no handler for it yet (DESK06).

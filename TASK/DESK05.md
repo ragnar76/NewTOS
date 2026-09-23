@@ -1,6 +1,6 @@
 # DESK05 — Options → Desktop configuration (`.INF`-Einstellungen)
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Funktionsluecke desk/
+Status: **ERLEDIGT (2026-09-23)** · Prioritaet: **P3** · Typ: Funktionsluecke desk/
 
 Abhaengigkeiten: [DESK09](DESK09.md)
 
@@ -20,3 +20,22 @@ DESK02), dann bauen.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+---
+
+## Abschluss
+
+**Erledigt 2026-09-23.** Quittung: [DESK05-STATUS-DONE.MD](DESK05-STATUS-DONE.MD).
+Messung: `measurement-2026-09-23-desk05/`.
+
+Umfang aus der Quelle: `inf_conf` (`deskinf.c:1096-1246`) hinter
+`CONF_WITH_DESKTOP_CONFIG` (Vorgabe **1**, `include/config.h:1774-1776`),
+`CONFITEM` in keiner `ILL_*`-Tabelle, also immer schwarz. Gebaut sind der
+Kuerzel-Editor samt der fehlenden `deskmain.c`-Maschinerie
+(`menu_shortcuts[]`, `shortcut_mapping[]`, `default_shortcuts[]`,
+`copy_menu_items`, `install_shortcuts`/`recover_shortcuts`, feldgetriebenes
+`lookup_ascii_shortcut`, `#K` lesen und schreiben), der Funktionstasten-
+Anzeiger und die Speicherzeile. Weggelassen mit Fundstelle: *Default dir*
+und *Parameter*, deren Verbraucher in `do_aopen` bzw. `fun_win2win` liegen
+und die NewTOS nicht hat. Abgrenzung zu DESK02: keine — `ADSETPRE` und
+`ADDESKCF` teilen kein Feld.

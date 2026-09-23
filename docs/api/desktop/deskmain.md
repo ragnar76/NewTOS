@@ -1182,14 +1182,26 @@ a `CSave { cs_view, cs_sort, cs_sizefit, cs_wnode: [WSave; NUM_WNODES] }`
 with `WSave { x_save, y_save, w_save, h_save, hsl_save, vsl_save,
 pth_save }` — the whole `WSAVE` field set (`deskapp.h:120-131`), and the
 subset of `CSAVE`'s preference fields the desktop has live state for.
-The rest of `CSAVE` (`cs_confcpy`/`cs_confdel`/`cs_confovwr`/
-`cs_dblclick`/`cs_timefmt`/`cs_datefmt`/`cs_blitter`/`cs_cache`/
-`cs_appdir`/`cs_fullpath`) mirrors `GLOBES` fields that exist only
-because `inf_pref`/`inf_conf` can edit them; those dialogs are not
-implemented, so there is nothing for `cnx_put` to read or `cnx_get` to
-apply. Their bits still survive a load/save round trip — `desk::inf`
+The rest of `CSAVE` mirrors `GLOBES` fields that exist only because
+`inf_pref`/`inf_conf` can edit them, and both dialogs now exist (DESK02,
+DESK05) — but the three *reasons* differ and are recorded here so the
+next reader does not re-derive them:
+
+* `cs_confdel`/`cs_dblclick`/`cs_timefmt`/`cs_datefmt` **are** carried
+  (DESK02): each has a live consumer (`desk::dir`'s delete question, the
+  AES `evnt_dclick` rate, `fmt_date`/`fmt_time`).
+* `cs_confcpy`/`cs_confovwr` are not: NewTOS's copy engine asks no
+  per-item and no overwrite question, so the switches are absent from
+  `inf_pref` too (`deskinf.md`, DESK02).
+* `cs_blitter`/`cs_cache` are m68k hardware; `cs_appdir`/`cs_fullpath`
+  are `inf_conf`'s launch-directory policy, whose consumers
+  (`set_default_path` in `do_aopen`, `build_selected_path` in
+  `fun_win2win`) NewTOS does not have, so the two radios are absent from
+  `inf_conf` too (`deskinf.md`, DESK05).
+
+The bits of all of these survive a load/save round trip — `desk::inf`
 keeps the parsed `#E` bytes of the session and re-emits every bit it
-does not own — they are simply not routed through the structure yet.
+does not own — they are simply not routed through this structure.
 
 | EmuTOS | NewTOS |
 |---|---|
@@ -1333,3 +1345,49 @@ QEMU raspi4b, 640×480, `measurement-2026-09-24-desk01-desk02/`: the box lands a
 (`(640-384)/2 = 128`, `19 + (480-19-276)/2 = 111`), and after `OK` the screen is
 **byte-identical** to the one before it opened (same PNG md5, 0 differing
 pixels).
+
+---
+
+## NewTOS implementation notes — the menu shortcut machinery (DESK05)
+
+`deskmain.c` owns four of the six pieces the Desktop-configuration dialog
+edits; the dialog itself is in [`deskinf.md`](deskinf.md#newtos-implementation-notes--inf_conf-desk05),
+which also carries the measurement. All four now exist in
+`kernel/src/desk/menu.rs`.
+
+| EmuTOS | NewTOS |
+|---|---|
+| `menu_shortcuts[NUM_SHORTCUTS]` (`:119`) | `MENU.shortcuts` (33 bytes) + the `shortcut_key`/`set_shortcut_key`/`shortcuts`/`set_shortcuts` accessors |
+| `shortcut_mapping[NUM_SHORTCUTS]` (`:169-260`) | `SHORTCUT_MAPPING: [Option<Item>; 33]` |
+| `default_shortcuts[NUM_SHORTCUTS]` (`:269-307`) | `DEFAULT_SHORTCUTS` |
+| `copy_menu_items()` (`:1755-1813`) | `MENU.labels`, filled by `build_menu` |
+| `install_shortcuts()` (`:1825-1858`) | `install_shortcuts()`, called by `install_menu_bar` |
+| `lookup_ascii_shortcut()` (`:1169-1198`) | `lookup_ascii_shortcut()`, array-driven |
+
+Three points the source forces:
+
+1. **The strings must be in RAM, and three characters longer.**
+   `copy_menu_items` exists for exactly one reason: `install_shortcuts` writes
+   into the item text. It sizes each menu at `widest + 1 + SHORTCUT_SIZE`
+   (`:1781`) and pads every entry to `width - 1` characters (`:1799-1805`);
+   `adjust_menu` then measures those padded strings, so the drop-down box is
+   `widest + 4` cells and the last two characters are the `^X` slot
+   (`:1845`). NewTOS's labels were `&'static` ROM literals with no reserve and
+   the menu displayed **no shortcuts at all** before DESK05.
+2. **A separator is not part of that measurement.** `copy_menu_items` skips it
+   (`:1773`, `if (*q != '-')`), so its `ob_spec` is still the resource's
+   one-character `"-"` when `adjust_menu` runs, and `adjust_menu` re-points it
+   at `m` dashes (`:1623`). `build_menu` does the same, which is why the
+   hand-written dash-run literals are gone.
+3. **`shortcut_mapping`'s slot order is `NEWDESK.INF` contract.** The `#K` line
+   is positional, so the three items NewTOS does not build (`FORMITEM`,
+   `BLITITEM`, `CACHITEM`) keep their slots as `None` instead of being squeezed
+   out — EmuTOS's own `0` convention (`:171-173`), and `install_shortcuts`
+   clears such a slot in the array so a foreign `#K` cannot re-save a shortcut
+   for an item that is not there (`:1833-1839`).
+
+`lookup_ascii_shortcut` is the one behavioural rewrite: it used to match a
+hard-coded `Item → letter` table, and now walks `menu_shortcuts[]` through
+`shortcut_mapping[]`, skipping absent items (`:1181-1182`) and stopping on a
+matching-but-`DISABLED` one (`:1185-1188`). Measured in
+`measurement-2026-09-23-desk05/` (`Ctrl-S` still runs *Save desktop*).

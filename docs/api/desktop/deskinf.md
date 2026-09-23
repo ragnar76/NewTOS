@@ -1250,3 +1250,172 @@ QEMU raspi4b, 640 × 480, the DESK08/09/10 scratch-copy IKBD injector.
 Not driven here (they need typing or a multi-step selection, and the Tester's
 harness covers them): `inf_file_folder`'s Show-Info box and `ins_app_dialog`.
 Real-Pi4-only: the 1920 × 1080 look of all of these.
+
+---
+
+## NewTOS implementation notes — `inf_conf` (DESK05)
+
+`Options → Desktop configuration…` had no handler (`Item::DeskConfig` fell
+through `do_optnmenu`'s `_ => {}` and `men_update`'s catch-all kept it greyed).
+DESK05 implements it as `kernel/src/desk/inf.rs::inf_conf`, run through DESK08's
+`start_dialog` / `form_do` / `end_dialog` chain and dispatched from
+`main::do_optnmenu` as the bare `inf_conf();` of `deskmain.c:895-898`.
+
+`CONF_WITH_DESKTOP_CONFIG` defaults to **1** (`include/config.h:1774-1776`); the
+`0` at `:349-351` is the non-Atari/minimal-ROM block, not our Falcon030/TOS4
+profile. `CONFITEM` appears in no `ILL_*` table and in no `menu_ienable` call
+(`deskmain.c:143-160`, `:464-609`), so the item is **always enabled** — that is
+the `men_update` arm, beside `PREFITEM`.
+
+### The scope line against DESK02
+
+None: `ADSETPRE` (`inf_pref`, DESK02) and `ADDESKCF` (`inf_conf`) are two
+different resource trees behind two different menu items, with no field in
+common. `inf_pref` owns the `G.g_c*pref` preferences; `inf_conf` owns
+`G.g_appdir`/`G.g_fullpath`, the `menu_shortcuts[]` array and two read-outs.
+
+### The tree
+
+`ADDESKCF` (`desk_rsc.c:1603-1772`) is an `OUTLINED` 39 × 22-cell root with a
+title, two radio groups, two framed panels each holding a "step through a list"
+mini-UI, a free-RAM line and OK/Cancel. NewTOS builds it at 8 × 16 from
+`ADDESKCF`'s own character grid, **minus the two radio rows** (see below), so
+everything from *Function keys* down moves up by four character rows and the
+root loses the same four cells: 312 × 288 px, `form_center` → ROOT (164, 105),
+reported rect (161, 102, 318, 294).
+
+| # | Object | EmuTOS name |
+|---|---|---|
+| 0 | `G_BOX` root `FL3DBAK` + `OUTLINED`, 312 × 288 | |
+| 1 | `G_STRING` `DESKTOP CONFIGURATION` (centred by `align_title`) | |
+| 2 | `G_STRING` `Function keys:` | |
+| 3 | `G_BOX` `FL3DBAK` + `OUTLINED`, `ob_spec` `0xFF1100` | `DCFUNBOX` |
+| 4 | `G_FTEXT` `F__` / `"9"` / `TE_CNTR` / `4480` / th −1 / txtlen 3 | `DCFUNNUM` |
+| 5 | `G_BUTTON` `TOUCHEXIT\|FL3DACT` `"\004"` | `DCFUNLT` |
+| 6 | `G_FBOXTEXT` 22 `_` / `"X"` / `4352` / th 0 / txtlen 23 | `DCFUNPTH` |
+| 7 | `G_BUTTON` `TOUCHEXIT\|FL3DACT` `"\003"` | `DCFUNRT` |
+| 8, 9 | `G_BUTTON` `TOUCHEXIT\|FL3DACT` `"\001"` / `"\002"` | `DCFUNPRV`, `DCFUNNXT` |
+| 10 | `G_STRING` `Menu shortcut keys:` | |
+| 11 | `G_BOX` `FL3DBAK` + `OUTLINED`, `0xFF1100` | `DCMNUBOX` |
+| 12 | `G_FTEXT` `EDITABLE\|FL3DBAK` `Key: ^_` / `"a"` / `4480` / th −1 / txtlen 2 | `DCMNUKEY` |
+| 13 | `G_BUTTON` `TOUCHEXIT\|FL3DACT` `Clear all` | `DCMNUCLR` |
+| 14 | `G_FBOXTEXT` **no 3D flag** (the resource's `NONE`), 32 `_` / `4352` / th −1 / txtlen 33 | `DCMNUTXT` |
+| 15, 16 | `G_BUTTON` `TOUCHEXIT\|FL3DACT` `"\001"` / `"\002"` | `DCMNUPRV`, `DCMNUNXT` |
+| 17 | `G_FTEXT` `Free RAM: ` + 21 `_` / `4480` / th 0 / txtlen 22 | `DCFREMEM` |
+| 18, 19 | ` OK ` (`DEFAULT\|EXIT`), ` Cancel ` (`EXIT\|LASTOB`), both `FL3DACT` | `DCOK`, `DC_CNCL` |
+
+Three details of the resource that a reimplementation has to take rather than
+invent:
+
+* **Two colour words, not one.** `4480` (`0x1180`) is REPLACE-mode text — bit 7
+  set, `gr_crack` — used for the three fields that sit directly on the panel
+  face (`DCFUNNUM`, `DCMNUKEY`, `DCFREMEM`); `4352` (`0x1100`) is the
+  TRANSPARENT one used for the two scrollable fields. `te_thickness` likewise
+  varies per field (−1 frames it, 0 does not).
+* **`DCMNUTXT` carries no 3D flag** while every other field in the tree carries
+  `FL3DBAK`, so it stays a white box on the grey panel.
+* **`adjust_3d_positions`** (`deskmain.c:1647-1656`) moves `DCFUNPRV` and
+  `DCMNUPRV` left by `3 * ADJ3DSTD` = 6 px "to avoid button overlap", because
+  the resource puts them flush against their `NXT` neighbour and a 3D activator
+  grows 2 px per side plus its `th = −1` border. Reproduced literally.
+
+### `menu_shortcuts[]`: the machinery the dialog edits
+
+The shortcut letters live in a 33-byte array, not in the menu strings; the
+strings only ever carry a rendering of it. The chain, and where each piece now
+lives in NewTOS (`kernel/src/desk/menu.rs` unless noted):
+
+| EmuTOS | NewTOS |
+|---|---|
+| `menu_shortcuts[NUM_SHORTCUTS]` (`deskmain.c:119`) | `MENU.shortcuts`, reached through `shortcut_key` / `set_shortcut_key` / `shortcuts` / `set_shortcuts` |
+| `shortcut_mapping[]` (`:169-260`) | `SHORTCUT_MAPPING: [Option<Item>; 33]` |
+| `default_shortcuts[]` (`:269-307`) | `DEFAULT_SHORTCUTS` |
+| `copy_menu_items` (`:1755-1813`) | the RAM label buffer `MENU.labels`, filled in `build_menu` |
+| `install_shortcuts` (`:1825-1858`) | `install_shortcuts`, called from `install_menu_bar` |
+| `recover_shortcuts` (`deskinf.c:1062-1090`) | `recover_shortcuts` |
+| `lookup_ascii_shortcut` (`deskmain.c:1169-1198`) | `lookup_ascii_shortcut`, now array-driven |
+| `case 'K'` / `#K` (`deskapp.c:961-975`, `:1183-1193`) | `InfData::shortcuts` in `kernel/src/desk/inf.rs` |
+
+Consequences worth naming:
+
+* **The drop-downs are three characters wider and now show `^X`.** EmuTOS's
+  `copy_menu_items` adds `1 + SHORTCUT_SIZE` to the widest entry of each menu
+  (`:1781`) and pads every entry to `width - 1` characters; `adjust_menu` then
+  measures those padded strings, so the box is `widest + 4` cells.
+  `install_shortcuts` writes `'^'` and the letter at
+  `(ob_width + CHAR_WIDTH - 1) / CHAR_WIDTH - SHORTCUT_SIZE` (`:1845`). NewTOS
+  showed no shortcuts at all before DESK05; it now shows EmuTOS's defaults
+  (`^O ^I ^N ^H ^U ^W ^A ^D ^Z` in *File*, `^R ^S` in *Options*). Measured box
+  widths: Desk 22 cells, File 23, View 20, Options 30.
+* **Separators are generated, not literal.** `copy_menu_items` skips them
+  (`:1773`), so they still point at the resource's one-character `"-"` when
+  `adjust_menu` measures, and `adjust_menu` then re-points each at `m` dashes
+  (`:1623`). NewTOS's `build_menu` fills the RAM label with `cells` dashes for
+  the same reason; the hand-written dash-run literals are gone.
+* **The `#K` line is now written**, between `#Q` and the `#W` lines, in
+  `app_save`'s order (`deskapp.c:1176-1193`). EmuTOS lets every build *read* it
+  and only a `CONF_WITH_DESKTOP_CONFIG` build write it (`:961-965`); ours has
+  the dialog, so it does both. A slot whose menu item this build does not have
+  is cleared by `install_shortcuts` (`:1833-1839`), which is what keeps a
+  foreign `#K` from re-saving a shortcut for an absent item.
+* **Nothing here writes the file.** `inf_conf` ends at `end_dialog`; the new
+  shortcuts reach `NEWDESK.INF` through *Save desktop*, exactly as in EmuTOS.
+
+### Two groups of `ADDESKCF` are absent, and why
+
+Same rule as DESK02: a control whose effect is not implemented is left out
+rather than shown and ignored. Both of these are missing **consumers in other
+functions**, not missing pieces of this dialog.
+
+* **Default dir** (`DCDEFAPP`/`DCDEFWIN` → `G.g_appdir`) picks the current
+  directory a *non-installed* program is launched with: `do_aopen` chooses the
+  top window's path or the program's own and calls `set_default_path()`
+  (`desksupp.c:896-912`). NewTOS's launch path (`desk::main::launch_native` →
+  `crate::launch::run_program`) never sets a current directory at all — there is
+  no `Dsetpath` on it — so the switch would steer nothing.
+* **Parameter** (`DCPMFULL`/`DCPMFILE` → `G.g_fullpath`) picks whether a file
+  dropped on a program icon is passed as a full path or a bare name
+  (`build_selected_path`, `deskfun.c:903-931`), reached from `fun_win2win`'s
+  drop-on-an-application branch (`deskfun.c:960-970`). NewTOS's `fun_win2win`
+  has no such branch — a drop on a program is a copy.
+
+Their `#E` byte-5 bits (`INF_E5_APPDIR` / `INF_E5_ISFULL`, `deskapp.c:110-111`)
+keep round-tripping untouched meanwhile, so a file that carries them survives.
+
+### The function-key panel is a viewer
+
+`get_all_funkeys` (`deskinf.c:928-948`) collects the `ANODE`s whose `a_funkey`
+is in `FIRST_FUNKEY..LAST_FUNKEY`; `DCFUNPRV`/`DCFUNNXT` walk them and
+`DCFUNLT`/`DCFUNRT` scroll the path inside the fixed-width field
+(`scroll_conf_funkeys`, `:952-991`). **Nothing in this dialog assigns a function
+key** — EmuTOS assigns them in `ins_app_dialog` (`deskins.c`, `APFUNKEY`), which
+NewTOS's Install-Application dialog does not offer. The panel is therefore empty
+until a `NEWDESK.INF` supplies one, which is exactly what EmuTOS shows on a
+fresh `EMUDESK.INF`. EmuTOS walks `G.g_ahead`, the one list that holds both
+desktop icons and associations; NewTOS splits those two, so the walk is over
+`desk::inf`'s `SESSION` model, which is the half that carries `a_funkey`.
+
+### Free RAM
+
+`dos_avail_stram()` / `dos_avail_altram()` = `Mxalloc(-1, MX_STRAM|MX_TTRAM)`
+(`util/gemdos.c:100-113`), new bindings in `kernel/src/desk/dosbind.rs`. EmuTOS
+gates the second term on `has_alt_ram`; NewTOS gates it on a non-zero return,
+which is the same condition one step later (`pmdalt` null ⇒ 0).
+
+### Measured (2026-09-23, QEMU raspi4b, 640 × 480, IKBD injector)
+
+`measurement-2026-09-23-desk05/`. ROOT (164, 105, 312, 288), `form_center` rect
+(161, 102, 318, 294). Stepping `DCMNUNXT` walks Open (`^O`) → Info/Rename…
+(`^I`) → Search… (no key). *Clear all* + *Cancel* leaves the File drop-down
+**byte-identical** to before (`recover_shortcuts`); Cancel and OK-with-no-change
+both leave the desktop byte-identical. Backspace + `x` + OK turns Open's
+shortcut into `^X` in the drop-down and into `#K` slot 0 = `58` on disk, and a
+cold boot from that image brings it back. `Ctrl-S` still runs *Save desktop*
+through the rewritten array-driven lookup. 0 `[EXC]`/`[PANIC]` in all six
+serial logs.
+
+Note for a future reader: the key field shows a **blank** when the slot has no
+shortcut (`init_conf_shortcuts` writes `' '`, `deskinf.c:1006-1010`) but an
+**underscore** right after *Clear all* (`inf_sset(tree, DCMNUKEY, "")`,
+`:1221`, so the template shows through). That asymmetry is the source's, not a
+defect.

@@ -940,6 +940,12 @@ fn do_optnmenu(item: Item) {
                 rebuild_desktop_icons();
             }
         }
+        // `#if CONF_WITH_DESKTOP_CONFIG case CONFITEM: inf_conf(); break;`
+        // (`deskmain.c:895-898`) — no rebuild signal and no repaint: the dialog
+        // edits `menu_shortcuts[]` and the menu strings, neither of which is on
+        // screen while a drop-down is closed, and `end_dialog`'s
+        // `form_dial(FMD_FINISH)` restores what the dialog covered (DESK05).
+        Item::DeskConfig => super::inf::inf_conf(),
         Item::ReadInf => do_read_inf(),
         Item::SaveDesktop => do_save_desktop(),
         _ => {} // remaining Options items stay disabled
@@ -1063,6 +1069,12 @@ fn do_read_inf() {
     // into the live desktop (see [`cnx_get_prefs`] for why not the whole
     // `cnx_get`).
     cnx_get_prefs();
+    // The re-read `#K` line landed in `menu_shortcuts[]`; render it into the
+    // menu strings. EmuTOS gets this for free — `app_read_inf` sets
+    // `restart_desktop` and the whole desktop is rebuilt from `deskmain`,
+    // `install_shortcuts()` included (`deskmain.c:920-926`, `:2023`) — whereas
+    // NewTOS's Read .INF re-applies in place, so it has to say so.
+    menu::install_shortcuts();
     global::with(|g| {
         g.win_view();
         g.app_blddesk();

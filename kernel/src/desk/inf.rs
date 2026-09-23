@@ -123,11 +123,11 @@ const INF_E2_DEFAULT: u8 = 0xE0;
 /// `INF_E5_DEFAULT` = `APPDIR|ISFULL` (size-to-fit enabled, sorting on).
 const INF_E5_DEFAULT: u8 = 0x60;
 
-/// Number of `#K` menu-shortcut bytes to skip on read (`NUM_SHORTCUTS`,
-/// `deskmain.h:18`). NewTOS's shortcuts are fixed ([`super::menu`]), so the
-/// `#K` line is parsed-and-ignored and never written (as if
-/// `CONF_WITH_DESKTOP_CONFIG` were off).
-const NUM_SHORTCUTS: usize = 33;
+/// Number of `#K` menu-shortcut bytes (`NUM_SHORTCUTS`, `deskmain.h:18`).
+/// The array itself lives in [`super::menu`], which owns the menu strings the
+/// letters are rendered into; this module only moves it in and out of the file
+/// (`deskapp.c:964-975` / `:1184-1192`).
+use super::menu::NUM_SHORTCUTS;
 
 // ── Installed-application extra-block bits + icon indices ────────────────────
 /// `INF_AT_APPDIR` (`deskapp.c:126`) — 1 ⇒ set the current directory to the
@@ -205,6 +205,11 @@ struct InfData {
     /// `#Q` background pattern/colour: three `(desktop, window)` pairs, one per
     /// plane-count bucket.
     patcol: [(u8, u8); 3],
+    /// `#K` menu-shortcut letters, one per [`NUM_SHORTCUTS`] slot (`0` = none).
+    /// EmuTOS lets **every** build read the line and only
+    /// `CONF_WITH_DESKTOP_CONFIG` builds write it (`deskapp.c:961-965`,
+    /// `:1183-1193`); ours has the dialog, so it does both.
+    shortcuts: [u8; NUM_SHORTCUTS],
     /// `#Z` autorun program path (empty = none).
     autorun: String,
     /// `#Z` flag byte — EmuTOS writes `pa->a_flags & AF_ISCRYS`
@@ -226,6 +231,10 @@ impl Default for InfData {
             e2: INF_E2_DEFAULT,
             e5: INF_E5_DEFAULT,
             patcol: [(0x41, 0x40), (0x43, 0x40), (0x43, 0x40)],
+            // `memcpy(menu_shortcuts, default_shortcuts, NUM_SHORTCUTS)`
+            // before `app_start` (`deskmain.c:2013`): a file with no `#K` line
+            // leaves the built-in letters in place.
+            shortcuts: super::menu::DEFAULT_SHORTCUTS,
             autorun: String::new(),
             autorun_gem: 0,
             windows: Vec::new(),
@@ -370,9 +379,12 @@ fn parse_inf(bytes: &[u8]) -> InfData {
                     pair.1 = scan_2(&mut c);
                 }
             }
+            // `case 'K'` (`deskapp.c:961-975`) — all 33 slots, overwriting the
+            // defaults. EmuTOS notes that *reading* the line is unconditional
+            // even in a build that cannot save it (`:962-965`).
             b'K' => {
-                for _ in 0..NUM_SHORTCUTS {
-                    let _ = scan_2(&mut c);
+                for slot in d.shortcuts.iter_mut() {
+                    *slot = scan_2(&mut c);
                 }
             }
             b'W' => {
@@ -504,6 +516,17 @@ impl InfData {
             push_hex2(&mut out, pair.0);
             out.push(b' ');
             push_hex2(&mut out, pair.1);
+        }
+        out.extend_from_slice(b"\r\n");
+
+        // #K — the menu-shortcut letters, one two-digit byte per slot, written
+        // between `#Q` and the `#W` lines exactly as `app_save` orders them
+        // (`deskapp.c:1176-1193`). The whole array is always written, including
+        // the `00` slots, because the reader takes it positionally.
+        out.extend_from_slice(b"#K");
+        for k in self.shortcuts {
+            out.push(b' ');
+            push_hex2(&mut out, k);
         }
         out.extend_from_slice(b"\r\n");
 
@@ -830,6 +853,13 @@ fn apply(data: &InfData) {
             })
             .collect();
     });
+    // #K → `menu_shortcuts[]` (`deskapp.c:967-974`). The array is the desktop's
+    // live shortcut table; the *rendering* of it into the menu strings happens
+    // later, in `install_shortcuts` — EmuTOS runs that once `app_start` has
+    // returned (`deskmain.c:2023`), which for NewTOS is
+    // `super::menu::install_menu_bar`.
+    super::menu::set_shortcuts(data.shortcuts);
+
     // #Q → g_patcol (the >2-plane bucket drives the live desktop background).
     let patcol = [
         data.patcol[0].0,
@@ -1079,6 +1109,10 @@ fn build_from_state() -> InfData {
             let p = global::patcol_all();
             [(p[0], p[1]), (p[2], p[3]), (p[4], p[5])]
         },
+        // The live array, not the session copy: the Desktop-configuration
+        // dialog edits it in place, and `app_save` writes `menu_shortcuts[]`
+        // (`deskapp.c:1188-1189`).
+        shortcuts: super::menu::shortcuts(),
         autorun: base.autorun,
         autorun_gem: base.autorun_gem,
         windows: collect_open_windows(),
@@ -1410,12 +1444,21 @@ const G_BOXTEXT: u16 = 22;
 const G_IBOX: u16 = 25;
 const G_BUTTON: u16 = 26;
 const G_STRING: u16 = 28;
+/// `G_FTEXT` (`obdefs.h`) — formatted text: a `TEDINFO` drawn through its
+/// template, **without** a box around it.
+const G_FTEXT: u16 = 29;
+/// `G_FBOXTEXT` (`obdefs.h`) — the same, boxed.
+const G_FBOXTEXT: u16 = 30;
 
 // obdefs.h ob_flags bits.
 const SELECTABLE: u16 = 0x0001;
 const DEFAULT: u16 = 0x0002;
 const EXIT: u16 = 0x0004;
 const EDITABLE: u16 = 0x0008;
+/// `TOUCHEXIT` (`obdefs.h`) — the object ends `form_do` on the button *down*,
+/// without being selected. Every stepper and repeat gadget of `desk_rsc.c` is
+/// one.
+const TOUCHEXIT: u16 = 0x0040;
 /// `RBUTTON` (`obdefs.h`) — radio button: selecting it deselects every other
 /// `RBUTTON` child of the same parent.
 const RBUTTON: u16 = 0x0010;
@@ -2402,6 +2445,477 @@ pub(super) fn set_background() -> bool {
     super::main::cnx_put();
     save_desktop();
     true
+}
+
+// ── Desktop-configuration dialog (`inf_conf`, `deskinf.c:925-1246`) ─────────
+
+/// `FIRST_FUNKEY` (`deskins.h:16`) — `a_funkey` numbering starts at 1.
+const FIRST_FUNKEY: u8 = 1;
+/// `NUM_FUNKEYS` (`deskins.h:18`) — F1…F20.
+const NUM_FUNKEYS: usize = 20;
+
+/// `inf_sset` (`util/optimize.c:103-112`) — `strlcpy(ted->te_ptext, pstr,
+/// ted->te_txtlen)`: copy `src` into a `TEDINFO` text buffer, truncating to the
+/// field's capacity and always NUL-terminating.
+fn inf_sset(buf: &mut [u8], src: &[u8]) {
+    let n = src.len().min(buf.len() - 1);
+    buf[..n].copy_from_slice(&src[..n]);
+    buf[n..].fill(0);
+}
+
+/// One function key the desktop knows about: its number (1…20) and the
+/// application path bound to it — EmuTOS's `pa[]` array of `ANODE` pointers
+/// (`get_all_funkeys`, `deskinf.c:928-948`).
+struct FunKey {
+    num: u8,
+    path: String,
+}
+
+/// `get_all_funkeys` (`deskinf.c:928-948`) — the installed applications that
+/// carry a function key, indexed by `a_funkey - FIRST_FUNKEY`.
+///
+/// EmuTOS walks `G.g_ahead`, the one list that holds both desktop icons and
+/// installed-application associations. NewTOS splits those two ([`Anode`]'s
+/// doc-comment): the association half — the half that can carry `a_funkey` at
+/// all — is this module's [`SESSION`] model, so that is what is walked here.
+/// The `NEWDESK.INF` extra block round-trips the number ([`InfAnode::funkey`]),
+/// so a file written by EmuTOS, or by a NewTOS that later learns to assign
+/// them, shows up in this dialog.
+fn get_all_funkeys() -> [Option<FunKey>; NUM_FUNKEYS] {
+    const NONE: Option<FunKey> = None;
+    let mut out = [NONE; NUM_FUNKEYS];
+    let guard = SESSION.lock();
+    let Some(data) = guard.as_ref() else {
+        return out;
+    };
+    for a in &data.anodes {
+        if a.is_desk {
+            continue;
+        }
+        let i = a.funkey.wrapping_sub(FIRST_FUNKEY) as usize;
+        if a.funkey >= FIRST_FUNKEY && i < NUM_FUNKEYS {
+            out[i] = Some(FunKey { num: a.funkey, path: a.pappl.clone() });
+        }
+    }
+    out
+}
+
+/// Options → Desktop configuration (`inf_conf`, `deskinf.c:1096-1246`,
+/// `CONF_WITH_DESKTOP_CONFIG` — on by default,
+/// `include/config.h:1774-1776`, and therefore on for our Falcon030/TOS4
+/// profile).
+///
+/// Two independent "step through a list" panels in one dialog, plus a free-RAM
+/// read-out:
+///
+/// * **Function keys** — a *viewer*. `DCFUNPRV`/`DCFUNNXT` walk the installed
+///   applications that have a function key bound; `DCFUNLT`/`DCFUNRT` scroll
+///   the path sideways inside the fixed-width field (`scroll_conf_funkeys`,
+///   `:952-969`). Nothing here assigns a key — EmuTOS assigns them in the
+///   Install-Application dialog (`deskins.c` `APFUNKEY`), and the display is
+///   read-only there too. With no key bound the panel shows its empty template,
+///   which is exactly what EmuTOS shows on a fresh `EMUDESK.INF`.
+/// * **Menu shortcut keys** — the editor. `DCMNUPRV`/`DCMNUNXT` step through
+///   the [`super::menu::NUM_SHORTCUTS`] shortcut slots, showing the menu item's
+///   text and its current key; the key is typed into `DCMNUKEY` and committed
+///   by `save_shortcut` when the slot is left or the dialog OK'd, with the
+///   duplicate-key question of `:1027-1057`. `DCMNUCLR` clears all 33 at once,
+///   with no confirmation (`:1218-1222`).
+/// * **Free RAM** — `Mxalloc(-1)` per pool (`:1119-1124`).
+///
+/// On OK the shortcut array is rendered into the menu strings
+/// (`install_shortcuts`); on any other exit it is rebuilt *from* them
+/// (`recover_shortcuts`), which undoes the edits. Like EmuTOS, nothing here
+/// writes `NEWDESK.INF` — the new shortcuts reach the file through
+/// *Save desktop*, which now emits the `#K` line.
+///
+/// ## What this dialog does **not** offer, and why
+///
+/// `ADDESKCF` (`desk_rsc.c:1603-1772`) starts with two further radio groups,
+/// both of which NewTOS leaves out rather than showing inert:
+///
+/// * **Default dir** (`DCDEFAPP`/`DCDEFWIN` → `G.g_appdir`) selects the current
+///   directory a *non-installed* program is launched with:
+///   `do_aopen` picks the top window's path or the program's own and calls
+///   `set_default_path()` (`desksupp.c:896-912`). NewTOS's launch path
+///   ([`super::main`]'s `launch_native` → [`crate::launch::run_program`]) never
+///   sets a current directory at all, so there is nothing for the switch to
+///   steer.
+/// * **Parameter** (`DCPMFULL`/`DCPMFILE` → `G.g_fullpath`) selects whether a
+///   file dropped on a program icon is passed as a full path or a bare name
+///   (`build_selected_path`, `deskfun.c:903-931`), reached from
+///   `fun_win2win`'s drop-on-an-application branch (`deskfun.c:960-970`).
+///   NewTOS's `fun_win2win` has no such branch — a drop on a program is a
+///   copy — so again there is nothing behind the switch.
+///
+/// Both are missing *consumers* in other functions, not missing pieces of this
+/// one; their `#E` byte-5 bits (`INF_E5_APPDIR`/`INF_E5_ISFULL`) keep
+/// round-tripping untouched meanwhile. Same rule as the three groups
+/// [`inf_pref`] leaves out (DESK02).
+pub(super) fn inf_conf() {
+    use super::menu;
+
+    // ── object indices (`desk_rsc.h:191-211`, minus the two omitted groups) ──
+    /// `DCFUNBOX` — the panel holding the function-key number, path and the two
+    /// scroll arrows; the field `draw_fld` refreshes after a step (`:1163`).
+    const DCFUNBOX: i16 = 3;
+    /// `DCFUNNUM` — the `F__` number field.
+    const DCFUNNUM: i16 = 4;
+    /// `DCFUNLT` — scroll the path text left.
+    const DCFUNLT: i16 = 5;
+    /// `DCFUNPTH` — the scrollable path field.
+    const DCFUNPTH: i16 = 6;
+    /// `DCFUNRT` — scroll the path text right.
+    const DCFUNRT: i16 = 7;
+    /// `DCFUNPRV` — previous bound function key.
+    const DCFUNPRV: i16 = 8;
+    /// `DCFUNNXT` — next bound function key.
+    const DCFUNNXT: i16 = 9;
+    /// `DCMNUBOX` — the panel holding the menu-item text, its key and *Clear
+    /// all*.
+    const DCMNUBOX: i16 = 11;
+    /// `DCMNUKEY` — the editable `Key: ^_` field.
+    const DCMNUKEY: i16 = 12;
+    /// `DCMNUCLR` — clear every shortcut.
+    const DCMNUCLR: i16 = 13;
+    /// `DCMNUTXT` — the menu item the current slot names.
+    const DCMNUTXT: i16 = 14;
+    /// `DCMNUPRV` — previous shortcut slot.
+    const DCMNUPRV: i16 = 15;
+    /// `DCMNUNXT` — next shortcut slot.
+    const DCMNUNXT: i16 = 16;
+    /// `DCFREMEM` — the free-RAM read-out.
+    const DCFREMEM: i16 = 17;
+    /// `DCOK` — the OK button; `DC_CNCL` follows it.
+    const DCOK: i16 = 18;
+    /// `DC_CNCL` — Cancel.
+    const DC_CNCL: i16 = 19;
+
+    // ── geometry ────────────────────────────────────────────────────────
+    //
+    // `ADDESKCF`'s own, character cell for character cell (`desk_rsc.c:1603-
+    // 1772`, `rsrc_obfix`-resolved at 8x16): a 39x22-cell box whose rows are
+    // title 1, *Default dir* 3, *Parameter* 5, *Function keys* 7, the function
+    // panel 8+6px, *Menu shortcut keys* 11+8px, the shortcut panel 12+14px,
+    // free RAM 17+8px, the buttons 20. Dropping the two omitted radio rows
+    // takes four character rows out of the middle, so everything from
+    // *Function keys* down moves up by `4 * CELL_H` and the box loses the same
+    // 4 cells of height — the spacing between the rows that remain is
+    // untouched, which matters because every `FL3DACT` gadget here is grown by
+    // `ADJ3DSTD` (2 px per side) and then laid out one pixel of border wider
+    // still (`aes/gemoblib.c:504`, `sst_th` `G_BUTTON` → `-1`).
+    /// The four character rows the omitted *Default dir* / *Parameter* groups
+    /// occupied.
+    const DROPPED: i16 = 4 * CELL_H;
+    let dw = 39 * CELL_W; // 312
+    let dh = 22 * CELL_H - DROPPED; // 288
+    let y_fun_lbl = 7 * CELL_H - DROPPED; // 48
+    let y_fun_box = 8 * CELL_H + 6 - DROPPED; // 70
+    let y_mnu_lbl = 11 * CELL_H + 8 - DROPPED; // 120
+    let y_mnu_box = 12 * CELL_H + 14 - DROPPED; // 142
+    let y_freemem = 17 * CELL_H + 8 - DROPPED; // 216
+    let y_btn = 20 * CELL_H - DROPPED; // 256
+    // `adjust_3d_positions` (`deskmain.c:1647-1656`): "avoid button overlap" —
+    // the two `PRV` gadgets sit flush against their `NXT` neighbour in the
+    // resource, so a 3D build moves them left by `3 * ADJ3DSTD`.
+    const ADJ3DSTD: i16 = 2;
+    let x_prv = 30 * CELL_W - 3 * ADJ3DSTD; // 234
+    let x_nxt = 34 * CELL_W; // 272
+
+    // ── strings ─────────────────────────────────────────────────────────
+    static TITLE: &[u8] = b"DESKTOP CONFIGURATION\0";
+    static FUN_LBL: &[u8] = b"Function keys:\0";
+    static MNU_LBL: &[u8] = b"Menu shortcut keys:\0";
+    static CLEAR_ALL: &[u8] = b"Clear all\0";
+    // Characters 1-4 of the system font are the up / down / right / left
+    // arrows — `ADDESKCF` labels its gadgets `"\001"`, `"\002"`, `"\003"`,
+    // `"\004"` (`desk_rsc.c:1682,1697,1704,1710`).
+    static UP: &[u8] = b"\x01\0";
+    static DOWN: &[u8] = b"\x02\0";
+    static RIGHT: &[u8] = b"\x03\0";
+    static LEFT: &[u8] = b"\x04\0";
+    static OK: &[u8] = b" OK \0";
+    static CANCEL: &[u8] = b" Cancel \0";
+    /// `STDUPCUT` (`desk_rsc.c:2563-2564`) — the duplicate-shortcut question.
+    /// Two buttons, so it goes to `form_alert` verbatim rather than through
+    /// `dir::fun_alert`'s one-OK-button wrapper.
+    static STDUPCUT: &[u8] =
+        b"[2][Last key is already assigned.|Do you want to reassign it?][  OK  |Cancel]\0";
+
+    // ── TEDINFO templates + buffers (`desk_rs_tedinfo[28..32]`) ─────────
+    static T_FUNNUM: &[u8] = b"F__\0";
+    static T_FUNPTH: &[u8] = b"______________________\0";
+    static T_MNUKEY: &[u8] = b"Key: ^_\0";
+    static T_MNUTXT: &[u8] = b"________________________________\0";
+    static T_FREMEM: &[u8] = b"Free RAM: _____________________\0";
+    static V_DIGIT: &[u8] = b"9\0";
+    static V_ANY: &[u8] = b"X\0";
+    static V_ALPHA: &[u8] = b"a\0";
+
+    /// `te_txtlen` of `DCFUNNUM` (`desk_rs_tedinfo[28]`).
+    const FUNNUM_LEN: usize = 3;
+    /// `te_txtlen` of `DCFUNPTH` (`[29]`) — the scroll window's width + NUL.
+    const FUNPTH_LEN: usize = 23;
+    /// `te_txtlen` of `DCMNUKEY` (`[30]`) — one character + NUL.
+    const MNUKEY_LEN: usize = 2;
+    /// `te_txtlen` of `DCMNUTXT` (`[31]`).
+    const MNUTXT_LEN: usize = 33;
+    /// `te_txtlen` of `DCFREMEM` (`[32]`).
+    const FREMEM_LEN: usize = 22;
+
+    let mut b_funnum = [0u8; FUNNUM_LEN];
+    let mut b_funpth = [0u8; FUNPTH_LEN];
+    let mut b_mnukey = [0u8; MNUKEY_LEN];
+    let mut b_mnutxt = [0u8; MNUTXT_LEN];
+    let mut b_fremem = [0u8; FREMEM_LEN];
+
+    // `te_color` and `te_thickness` are the resource's own, per field: `4480`
+    // (`0x1180`) is REPLACE-mode text on the panel face, `4352` (`0x1100`) the
+    // TRANSPARENT one ([`TED_COLOR`]); a `te_thickness` of `-1` frames the
+    // field, `0` leaves it unframed (`gr_crack` / `sst_th`).
+    const TED_OPAQUE: i16 = 0x1180;
+    let ted = |text: &mut [u8], tmpl: &[u8], valid: &[u8], just: i16, color: i16, th: i16| TedInfo {
+        te_ptext: text.as_mut_ptr() as u64,
+        te_ptmplt: tmpl.as_ptr() as u64,
+        te_pvalid: valid.as_ptr() as u64,
+        te_font: 3, // IBM (`obdefs.h:62`)
+        te_junk1: 0,
+        te_just: just,
+        te_color: color,
+        te_junk2: 0,
+        te_thickness: th,
+        te_txtlen: text.len() as i16,
+        te_tmplen: tmpl.len() as i16,
+    };
+    let mut ted_funnum = ted(&mut b_funnum, T_FUNNUM, V_DIGIT, 2 /* TE_CNTR */, TED_OPAQUE, -1);
+    let mut ted_funpth = ted(&mut b_funpth, T_FUNPTH, V_ANY, 0, TED_COLOR, 0);
+    let mut ted_mnukey = ted(&mut b_mnukey, T_MNUKEY, V_ALPHA, 0, TED_OPAQUE, -1);
+    let mut ted_mnutxt = ted(&mut b_mnutxt, T_MNUTXT, V_ANY, 0, TED_COLOR, -1);
+    let mut ted_fremem = ted(&mut b_fremem, T_FREMEM, V_ANY, 0, TED_OPAQUE, 0);
+
+    // `DCFUNBOX`/`DCMNUBOX` `ob_spec` = `16716032L` = `0xFF1100`
+    // (`desk_rsc.c:1673,1721`): thickness byte `0xFF` = `th = -1`, a one-pixel
+    // border **outside** the rectangle, over the hollow-white colour word that
+    // lets [`FL3DBAK`] substitute the panel face (DESK01b).
+    const PANEL_SPEC: u64 = 0x00FF_1100;
+
+    #[rustfmt::skip]
+    let mut tree = [
+        // 0 ROOT
+        mk_root(BOX_SPEC, dw, dh, DC_CNCL),
+        // 1 title — `align_title` centres it on the box (`deskmain.c:1739-1747`).
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - 21 * CELL_W) / 2, CELL_H, 21 * CELL_W, CELL_H, 2, -1, -1),
+        // 2 "Function keys:"
+        mk(G_STRING, 0, FUN_LBL.as_ptr() as u64, CELL_W, y_fun_lbl, 14 * CELL_W, CELL_H, DCFUNBOX, -1, -1),
+        // 3 DCFUNBOX            4..7 its children
+        mk(G_BOX, FL3DBAK, PANEL_SPEC, CELL_W, y_fun_box, 37 * CELL_W, CELL_H + 8, DCFUNPRV, DCFUNNUM, DCFUNRT),
+        mk(G_FTEXT, FL3DBAK, &mut ted_funnum as *mut _ as u64, 4, 4, 3 * CELL_W, CELL_H, DCFUNLT, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, LEFT.as_ptr() as u64, 5 * CELL_W + 4, 4, 3 * CELL_W + 4, CELL_H, DCFUNPTH, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_funpth as *mut _ as u64, 10 * CELL_W, 4, 22 * CELL_W, CELL_H, DCFUNRT, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, RIGHT.as_ptr() as u64, 33 * CELL_W, 4, 3 * CELL_W + 4, CELL_H, DCFUNBOX, -1, -1),
+        // 8/9 DCFUNPRV / DCFUNNXT
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_fun_lbl, 4 * CELL_W, CELL_H, DCFUNNXT, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_fun_lbl, 4 * CELL_W, CELL_H, 10, -1, -1),
+        // 10 "Menu shortcut keys:"
+        mk(G_STRING, 0, MNU_LBL.as_ptr() as u64, CELL_W, y_mnu_lbl, 19 * CELL_W, CELL_H, DCMNUBOX, -1, -1),
+        // 11 DCMNUBOX           12..14 its children
+        mk(G_BOX, FL3DBAK, PANEL_SPEC, CELL_W, y_mnu_box, 37 * CELL_W, 3 * CELL_H + 4, DCMNUPRV, DCMNUKEY, DCMNUTXT),
+        mk(G_FTEXT, EDITABLE | FL3DBAK, &mut ted_mnukey as *mut _ as u64, 4, 2 * CELL_H, 15 * CELL_W, CELL_H, DCMNUCLR, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, CLEAR_ALL.as_ptr() as u64, 17 * CELL_W + 4, 2 * CELL_H, 19 * CELL_W, CELL_H, DCMNUTXT, -1, -1),
+        mk(G_FBOXTEXT, 0, &mut ted_mnutxt as *mut _ as u64, 4, 4, 36 * CELL_W, CELL_H, DCMNUBOX, -1, -1),
+        // 15/16 DCMNUPRV / DCMNUNXT
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_mnu_lbl, 4 * CELL_W, CELL_H, DCMNUNXT, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_mnu_lbl, 4 * CELL_W, CELL_H, DCFREMEM, -1, -1),
+        // 17 DCFREMEM
+        mk(G_FTEXT, FL3DBAK, &mut ted_fremem as *mut _ as u64, CELL_W, y_freemem, 36 * CELL_W, CELL_H, DCOK, -1, -1),
+        // 18/19 OK / Cancel (`DCOK` is `SELECTABLE|DEFAULT|EXIT|FL3DACT`,
+        // `DC_CNCL` the same without `DEFAULT`, `desk_rsc.c:1759-1771`).
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * CELL_W, y_btn, 9 * CELL_W, CELL_H, DC_CNCL, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 23 * CELL_W, y_btn, 9 * CELL_W, CELL_H, 0, -1, -1),
+    ];
+    // `DCFUNBOX`/`DCMNUBOX` carry `OUTLINED` like the ROOT (`desk_rsc.c:1672,
+    // 1720`), which on an `FL3DBAK` panel is EmuTOS's `draw_3d_outline`.
+    tree[DCFUNBOX as usize].ob_state = OUTLINED;
+    tree[DCMNUBOX as usize].ob_state = OUTLINED;
+
+    // ── free-RAM line (`deskinf.c:1118-1125`) ───────────────────────────
+    // `sprintf("%ld KB", dos_avail_stram()/1024)`, plus `" + %ld KB"` of
+    // alt-RAM when the machine has any (`has_alt_ram`; here: a non-zero
+    // `Mxalloc(-1, MX_TTRAM)`). The trailing blanks are EmuTOS's
+    // `memset(G.g_work+n, ' ', 40)` — enough to fill the object's text field.
+    {
+        let mut work = [b' '; FREMEM_LEN - 1];
+        let mut p = 0usize;
+        push_dec(&mut work, &mut p, (super::dosbind::dos_avail_stram() / 1024) as u64);
+        push_str(&mut work, &mut p, b" KB");
+        let alt = super::dosbind::dos_avail_altram();
+        if alt > 0 {
+            push_str(&mut work, &mut p, b" + ");
+            push_dec(&mut work, &mut p, (alt / 1024) as u64);
+            push_str(&mut work, &mut p, b" KB");
+        }
+        work[p..].fill(b' ');
+        inf_sset(&mut b_fremem, &work);
+    }
+
+    // ── function-key setup (`deskinf.c:1127-1143`) ──────────────────────
+    let funkeys = get_all_funkeys();
+    // `textpos`/`maxpos`, EmuTOS's two file-scope scroll variables (`:950`).
+    let mut textpos: i16 = 0;
+    let mut maxpos: i16 = 0;
+    // `init_conf_funkeys` (`:974-991`): the number into `DCFUNNUM`, the path
+    // into `DCFUNPTH` at scroll position 0.
+    let init_funkeys = |fk: &FunKey, b_num: &mut [u8], b_pth: &mut [u8], textpos: &mut i16, maxpos: &mut i16| {
+        let mut num = [b' '; FUNNUM_LEN - 1];
+        let mut p = 0usize;
+        push_dec(&mut num, &mut p, fk.num as u64);
+        inf_sset(b_num, &num);
+        *maxpos = (fk.path.len() as i16 - FUNPTH_LEN as i16 + 1).max(0);
+        *textpos = 0;
+        inf_sset(b_pth, fk.path.as_bytes());
+    };
+    // `scroll_conf_funkeys` (`:957-969`) — returns whether the text moved.
+    let scroll_funkeys = |fk: &FunKey, b_pth: &mut [u8], textpos: &mut i16, maxpos: i16, amount: i16| -> bool {
+        let newpos = *textpos + amount;
+        if newpos < 0 || newpos > maxpos {
+            return false;
+        }
+        *textpos = newpos;
+        inf_sset(b_pth, &fk.path.as_bytes()[newpos as usize..]);
+        true
+    };
+
+    // "find lowest function key" (`:1136-1142`).
+    let mut current_funkey = funkeys.iter().position(Option::is_some).unwrap_or(usize::MAX);
+    if let Some(fk) = funkeys.get(current_funkey).and_then(Option::as_ref) {
+        init_funkeys(fk, &mut b_funnum, &mut b_funpth, &mut textpos, &mut maxpos);
+    } else {
+        current_funkey = 0; // "ensure legal value for array index" (`:1143`)
+    }
+
+    // ── menu-shortcut setup (`deskinf.c:1145-1154`) ─────────────────────
+    // `init_conf_shortcuts` (`:997-1018`): the slot's key into `DCMNUKEY`, and
+    // the menu item's text — minus its two leading blanks and minus the
+    // `SHORTCUT_SIZE` reserve at its right edge — into `DCMNUTXT`.
+    let init_shortcuts = |n: usize, b_key: &mut [u8], b_txt: &mut [u8]| {
+        let key = menu::shortcut_key(n);
+        inf_sset(b_key, &[if key == 0 { b' ' } else { key }]);
+        let mut work = [b' '; MNUTXT_LEN - 1];
+        menu::shortcut_item_text(n, &mut work);
+        inf_sset(b_txt, &work);
+    };
+    // `save_shortcut` (`:1027-1057`): commit the edited key into the array,
+    // asking before stealing it from another item.
+    let save_shortcut = |n: usize, b_key: &[u8]| {
+        let mut key = b_key[0];
+        key.make_ascii_uppercase();
+        if key.is_ascii_uppercase() {
+            for i in 0..menu::NUM_SHORTCUTS {
+                if i == n {
+                    continue; // "ignore ourselves"
+                }
+                if menu::shortcut_key(i) == key {
+                    if super::form_alert(1, STDUPCUT.as_ptr()) != 1 {
+                        return; // user cancelled — leave both slots alone
+                    }
+                    menu::set_shortcut_key(i, 0);
+                    break;
+                }
+            }
+        } else {
+            key = 0;
+        }
+        menu::set_shortcut_key(n, key);
+    };
+
+    // "find lowest available menu item" (`:1147-1154`).
+    let mut current_shortcut = (0..menu::NUM_SHORTCUTS)
+        .find(|&i| menu::shortcut_item(i).is_some())
+        .unwrap_or(0);
+    init_shortcuts(current_shortcut, &mut b_mnukey, &mut b_mnutxt);
+
+    // ── interact (`deskinf.c:1156-1240`) ────────────────────────────────
+    let tree_ptr = tree.as_mut_ptr() as u64;
+    start_dialog(tree_ptr);
+    let mut exitobj;
+    loop {
+        let mut redraw: i16 = -1; // "by default, no redraw"
+        exitobj = super::form_do(tree_ptr, ROOT) & 0x7fff;
+        let mut done = false;
+        match exitobj {
+            // "look for next lower" / "next higher" (`:1160-1186`).
+            DCFUNPRV | DCFUNNXT => {
+                let found = if exitobj == DCFUNPRV {
+                    (0..current_funkey).rev().find_map(|i| funkeys[i].as_ref().map(|fk| (i, fk)))
+                } else {
+                    (current_funkey + 1..NUM_FUNKEYS).find_map(|i| funkeys[i].as_ref().map(|fk| (i, fk)))
+                };
+                if let Some((i, fk)) = found {
+                    current_funkey = i;
+                    init_funkeys(fk, &mut b_funnum, &mut b_funpth, &mut textpos, &mut maxpos);
+                    redraw = DCFUNBOX;
+                }
+            }
+            DCFUNLT | DCFUNRT => {
+                let amount = if exitobj == DCFUNLT { -1 } else { 1 };
+                if let Some(fk) = funkeys[current_funkey].as_ref() {
+                    if scroll_funkeys(fk, &mut b_funpth, &mut textpos, maxpos, amount) {
+                        redraw = DCFUNPTH;
+                    }
+                }
+            }
+            DCMNUPRV => {
+                save_shortcut(current_shortcut, &b_mnukey);
+                if let Some(i) = (0..current_shortcut).rev().find(|&i| menu::shortcut_item(i).is_some()) {
+                    current_shortcut = i;
+                    init_shortcuts(i, &mut b_mnukey, &mut b_mnutxt);
+                    redraw = DCMNUBOX;
+                }
+            }
+            DCMNUNXT => {
+                save_shortcut(current_shortcut, &b_mnukey);
+                if let Some(i) =
+                    (current_shortcut + 1..menu::NUM_SHORTCUTS).find(|&i| menu::shortcut_item(i).is_some())
+                {
+                    current_shortcut = i;
+                    init_shortcuts(i, &mut b_mnukey, &mut b_mnutxt);
+                    redraw = DCMNUBOX;
+                }
+            }
+            DCMNUCLR => {
+                menu::set_shortcuts([0; menu::NUM_SHORTCUTS]);
+                inf_sset(&mut b_mnukey, b"");
+                redraw = DCMNUBOX;
+            }
+            DCOK => {
+                save_shortcut(current_shortcut, &b_mnukey);
+                done = true;
+            }
+            DC_CNCL => done = true,
+            _ => {}
+        }
+        // `tree[exitobj].ob_state &= ~SELECTED;` (`:1232`).
+        if let Some(o) = tree.get_mut(exitobj as usize) {
+            o.ob_state &= !OB_SELECTED;
+        }
+        if done {
+            break;
+        }
+        if redraw >= 0 {
+            super::dir::draw_fld(tree_ptr, redraw);
+        }
+    }
+
+    // `if (exitobj == DCOK) install_shortcuts(); else recover_shortcuts();`
+    // (`:1236-1241`) — commit the array into the menu strings, or rebuild it
+    // from them and so discard every edit made in this dialog.
+    if exitobj == DCOK {
+        menu::install_shortcuts();
+    } else {
+        menu::recover_shortcuts();
+    }
+
+    end_dialog(tree_ptr);
 }
 
 // ── Round-trip self-test (verification (b); not run at boot) ─────────────────

@@ -75,6 +75,15 @@ const FSFIRST: u16 = 0x4E;
 const FSNEXT: u16 = 0x4F;
 const FRENAME: u16 = 0x56;
 const FDATIME: u16 = 0x57;
+/// `Mxalloc` (`bdosbind.h:56`) — used only through [`dos_avail_stram`] /
+/// [`dos_avail_altram`], EmuTOS's `util/gemdos.c:101-112`.
+const MXALLOC: u16 = 0x44;
+
+// ── `Mxalloc` modes (`include/bdosdefs.h:18-19`) ────────────────────────────
+/// `MX_STRAM` — allocate/measure ST-RAM only.
+const MX_STRAM: i16 = 0;
+/// `MX_TTRAM` — allocate/measure alternate (TT) RAM only.
+const MX_TTRAM: i16 = 1;
 
 /// Issue the GEMDOS trap (`svc #1`): function id in `x8`, arguments in
 /// `x0..x2`. EmuTOS's `trap1()` (`util/miscasm.S`).
@@ -257,4 +266,24 @@ pub(super) fn dos_gdrv() -> i16 {
 /// current-drive state.
 pub(super) fn dos_sdrv(newdrv: i16) -> Long {
     dos_trap(DSETDRV, sx(newdrv as i64), 0, 0)
+}
+
+/// `dos_avail_stram` — `Mxalloc(-1L, MX_STRAM)` (`util/gemdos.c:100-104`): the
+/// **largest free block** in ST-RAM, in bytes. `amount == -1` is `Mxalloc`'s
+/// probe form — it measures and allocates nothing
+/// (`docs/api/gemdos/memory/44-mxalloc.md`).
+pub(super) fn dos_avail_stram() -> Long {
+    dos_trap(MXALLOC, sx(-1), sx(MX_STRAM as i64), 0)
+}
+
+/// `dos_avail_altram` — `Mxalloc(-1L, MX_TTRAM)` (`util/gemdos.c:106-113`,
+/// `CONF_WITH_ALT_RAM`, which defaults to 1, `include/config.h:882-884`): the
+/// largest free block in alternate RAM, `0` when the board has none.
+///
+/// EmuTOS gates the *display* of this figure on `has_alt_ram`
+/// (`deskinf.c:1120-1123`); NewTOS gates it on the same thing one step later —
+/// a zero return means the TT-RAM pool is empty or absent
+/// (`tos-api/src/bdos/mem/traps.rs:274-281`, `pmdalt` null ⇒ `0`).
+pub(super) fn dos_avail_altram() -> Long {
+    dos_trap(MXALLOC, sx(-1), sx(MX_TTRAM as i64), 0)
 }
