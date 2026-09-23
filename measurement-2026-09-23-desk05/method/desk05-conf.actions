@@ -1,0 +1,54 @@
+# DESK05 run A -- Options -> Desktop configuration..., step the shortcut list,
+# Clear all, then Cancel; the File drop-down before and after proves
+# `recover_shortcuts` put the array back.
+#
+#   Options drop-down: box at x=160, entries 16 px tall from y=19.
+#     entry 0 "Set background..."       19..35
+#     entry 7 "Desktop configuration..." 131..147  centre 139
+#   File title centre ~ (88, 8); Options title centre ~ (196, 8)
+#   (" Desk " spans 16..64, " File " 64..112).
+#
+#   ADDESKCF (NewTOS build): ROOT 312x288, form_center -> (164,105).
+#     DCMNUCLR  rel(8+140, 142+32) -> abs (312,279) 152x16  centre (388,287)
+#     DCMNUNXT  rel(272,120)       -> abs (436,225)  32x16  centre (452,233)
+#     DC_CNCL   rel(184,256)       -> abs (348,361)  72x16  centre (384,369)
+#     DCOK      rel( 56,256)       -> abs (220,361)  72x16  centre (256,369)
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 88 8
+2200 mark B_FILEMENU
+2500 move 400 300
+2700 down
+2703 up
+2900 move 600 240
+3200 move 196 8
+3900 mark C_OPTIONS
+4200 move 200 139
+4400 down
+4403 up
+4600 move 600 240
+5200 mark D_DIALOG
+5500 move 452 233
+5700 down
+5703 up
+5900 move 600 240
+6400 mark E_NEXT1
+6700 move 452 233
+6900 down
+6903 up
+7100 move 600 240
+7600 mark F_NEXT2
+7900 move 388 287
+8100 down
+8103 up
+8300 move 600 240
+8800 mark G_CLEARED
+9100 move 384 369
+9300 down
+9303 up
+9500 move 600 240
+10200 mark H_CANCELLED
+10500 move 88 8
+11200 mark I_FILEMENU_AFTER

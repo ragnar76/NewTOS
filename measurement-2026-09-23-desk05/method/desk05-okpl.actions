@@ -1,0 +1,20 @@
+# DESK05 run C -- open the dialog and leave it with OK having changed nothing.
+# The desktop underneath must come back byte-identical (form_dial(FMD_FINISH)),
+# and the menu strings must be unchanged (install_shortcuts is idempotent).
+100 parkbr
+300 move 600 240
+1000 arm
+1500 mark A_IDLE
+1800 move 196 8
+2200 move 200 139
+2400 down
+2403 up
+2600 move 600 240
+3200 mark B_DIALOG
+3500 move 256 369
+3700 down
+3703 up
+3900 move 600 240
+4700 mark C_AFTER_OK
+5000 move 88 8
+5700 mark D_FILEMENU

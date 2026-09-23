@@ -1,0 +1,210 @@
+measurement-2026-09-23-desk05 — DESK05 (Options → Desktop configuration…)
+==========================================================================
+
+Base: branch desk-rebuild, HEAD 5761465. This ticket's changes are
+UNCOMMITTED in the shared tree. Nothing flashed, nothing ejected, no real Pi
+run, nothing committed. No `git checkout/restore/clean/stash/reset` was run on
+the shared tree.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (`measurement-2026-09-23-desk08-desk09/method/run.sh` +
+`qmp_multi.py`). Card image: `tools/make-sd-image.sh` (64 MiB, MBR + FAT16), a
+fresh copy per run except where a run deliberately continues from the previous
+image (§5). Interactive runs use the scratch-copy IKBD injector (memory
+`desktop-interactive-verification-real-hw`): `method/make_scratch_desk05.sh`
+rsyncs the crates into the job scratch — never the shared tree.
+
+`method/*.actions` are the five action lists, `method/*.rs` the generated
+injector tables (`gen_script.py … SCRIPT_DESK`, plus an empty `SCRIPT_TERA`).
+`method/desk05_patch.py` is the DESK05-only serial dump (drop-down geometry +
+`menu_shortcuts[]` + the dialog rectangle). `method/desk05.diff` is the full
+source diff of `kernel/src/desk/`. No `*.img` (the ticket's rule).
+
+POINTER PARK: (600, 240) — outside the dialog (164..476 x 105..393) and clear
+of the desktop icons, like the DESK03/DESK04 runs.
+
+MENU BAR COORDINATES (they moved): the drop-down boxes are three characters
+wider than before this ticket (see §0), but the *titles* did not move —
+" Desk " spans x 16..64, " File " 64..112, " View " 112..160, " Options "
+160..232. The first draft of `desk05-conf.actions` clicked File at x=60 and
+opened **Desk**; the two runs kept here use x=88.
+
+
+0. What changed visually, and why — read this first
+----------------------------------------------------
+The drop-down menus now show keyboard shortcuts (`^O`, `^I`, `^S`, …) and are
+three character cells wider.
+
+That is not cosmetics added for this ticket; it is `copy_menu_items`
+(`deskmain.c:1755-1813`). EmuTOS's menu strings live in RAM precisely so
+`install_shortcuts` (`:1825-1858`) can write `'^'` + the letter into a reserve
+of `1 + SHORTCUT_SIZE` characters at their right edge, and `deskmain` installs
+`default_shortcuts[]` at startup (`:2013`, `:2023`). NewTOS's labels were
+`&'static` ROM literals with no reserve, so it showed **none**. The shortcut
+editor this ticket is about edits the array those strings render, so the
+machinery had to come with it.
+
+Measured box widths (serial `[desk05] BOX…`): Desk 22 cells, File 23, View 20,
+Options 30. Separators are now generated at the box width (`adjust_menu`,
+`:1623`) instead of being hand-written dash-run literals — `copy_menu_items`
+leaves a separator out of the width measurement (`:1773`), which is why it
+cannot widen the box.
+
+
+1. Boot, product kernel, base image      (boot-desktop.png, serial/boot-…)
+---------------------------------------------------------------------------
+  Unchanged desktop: `DISK C` top-left, `TRASH` bottom-left, `PRINTER`
+  bottom-right. 0 [EXC]/[PANIC].
+
+
+2. The menu, and the dialog               (conf-*.png, serial/conf-serial.log)
+---------------------------------------------------------------------------
+  method/desk05-conf.actions.
+
+  conf-B-filemenu.png   the File drop-down with `^O ^I ^N ^H ^U ^W ^A ^D ^Z`
+                        (every item greyed — no window, no selection, which is
+                        `men_update`, not this ticket).
+  conf-C-options.png    `Desktop configuration...` BLACK (enabled), `^R` on
+                        `Change resolution...` (greyed) and `^S` on
+                        `Save desktop...`.
+  conf-D-dialog.png     the ADDESKCF tree: title `DESKTOP CONFIGURATION`,
+                        `Function keys:` with its two steppers and the
+                        `F__` / arrows / empty-path panel, `Menu shortcut
+                        keys:` with its two steppers, the item-text field
+                        (`Open`), `Key: ^O` and `Clear all`,
+                        `Free RAM: 10240 KB + 964004 KB`, OK / Cancel.
+                        Geometry from the serial line:
+                          [desk05] ADDESKCF form_center rect=(161,102,318,294)
+                                            ROOT=(164,105,312,288)
+                        = `form_center`'s value ((640-312)/2 = 164;
+                        19 + (480-19-288)/2 = 105; +3 px per side for OUTLINED).
+  conf-E-next1.png      one `DCMNUNXT` -> `Info/Rename...`, `Key: ^I`
+  conf-F-next2.png      a second -> `Search...`, `Key: ^ ` (no shortcut)
+  conf-G-cleared.png    `Clear all` -> `Key: ^_`
+  conf-H-cancelled.png  Cancel -> pixdiff vs conf-A-idle.png: **0 differing
+                        pixels** (bbox None)
+  conf-I-filemenu-after.png
+                        the File drop-down again -> pixdiff vs
+                        conf-B-filemenu.png: **0 differing pixels**.
+                        That is `recover_shortcuts` (`deskinf.c:1062-1090`):
+                        Cancel rebuilds `menu_shortcuts[]` FROM the menu
+                        strings, so the Clear-all is undone.
+
+  Note on the key field: it shows a BLANK when the slot has no shortcut
+  (`init_conf_shortcuts` writes `' '`, `deskinf.c:1006-1010`) but an
+  UNDERSCORE right after Clear all (`inf_sset(tree, DCMNUKEY, "")`, `:1221`,
+  so the template shows through). That asymmetry is the source's.
+
+  The function-key panel is empty and stays empty. It is a VIEWER; EmuTOS
+  assigns function keys in `ins_app_dialog` (`deskins.c`, `APFUNKEY`), which
+  NewTOS does not offer. A fresh `EMUDESK.INF` shows the same empty panel on
+  EmuTOS.
+
+  0 [EXC]/[PANIC].
+
+
+3. Editing a key, with the keyboard       (edit-*.png, serial/edit-serial.log)
+---------------------------------------------------------------------------
+  method/desk05-edit.actions. IKBD raw scancodes through `Step::Key`:
+  BACKSPACE 0E/8E, X 2D/AD.
+
+  edit-C-dialog.png     slot 0 = `Open`, `Key: ^O`
+  edit-D-erased.png     BACKSPACE -> `Key: ^_`
+  edit-E-typed.png      `x` -> `Key: ^x` (lower case; `save_shortcut` does
+                        `toupper`, `deskinf.c:1034`)
+  edit-F-after-ok.png   OK -> the desktop back
+  edit-G-filemenu-after.png
+                        the File drop-down: `Open` now reads `^X`.
+                        screendumps/crop-open-before-edit.png and
+                        crop-open-after-edit.png are the same 184x16 strip at
+                        4x, before and after — `^O` vs `^X`.
+  edit-H-saved.png      `Options -> Save desktop...`
+
+  0 [EXC]/[PANIC].
+
+
+4. The written file                       (inf/NEWDESK.INF.after-edit)
+---------------------------------------------------------------------------
+    #R 02
+    #E 1A E0 00 00 60
+    #Q 41 40 43 40 43 40
+    #K 58 49 00 4E 48 55 57 41 00 44 00 5A 00 00 00 00 00 00 00 00 00 00 …
+       … 00 00 00 00 00 00 52 00 53 00 00
+    #W … (x7)
+    #M 00 00 00 FF C DISK C@ @
+    …
+
+  Slot 0 = `58` = 'X' (was 'O'), everything else unchanged: I, -, N, H, U, W,
+  A, -, D, -, Z, then thirteen zero View slots, then R at slot 28 and S at
+  slot 30. The line sits between `#Q` and the `#W` lines, which is
+  `app_save`'s order (`deskapp.c:1176-1193`).
+
+  inf/NEWDESK.INF.after-ctrl-s is the same file from run E, with slot 0 back
+  at `4F` = 'O' (that run edited nothing).
+
+
+5. Cold boot from that image              (cold-*.png, serial/cold-serial.log)
+---------------------------------------------------------------------------
+  method/desk05-cold.actions, run against the image run 3 wrote.
+
+    [desk05] menu_shortcuts=[88, 73, 0, 78, 72, 85, 87, 65, 0, 68, 0, 90, …]
+
+  88 = 'X'. cold-B-filemenu.png vs edit-G-filemenu-after.png: **0 differing
+  pixels**. The `#K` line round-trips and `install_shortcuts` renders it at
+  boot. 0 [EXC]/[PANIC].
+
+
+6. OK without a change is a no-op         (okpl-*.png, serial/okpl-serial.log)
+---------------------------------------------------------------------------
+  method/desk05-okpl.actions. Open the dialog, click OK, change nothing.
+
+  okpl-C-after-ok.png vs okpl-A-idle.png: **0 differing pixels** (bbox None).
+  okpl-D-filemenu.png vs edit-B-filemenu.png: **0 differing pixels** —
+  `install_shortcuts` is idempotent.
+  0 [EXC]/[PANIC].
+
+
+7. The rewired shortcut lookup still fires (key-*.png, serial/key-serial.log)
+---------------------------------------------------------------------------
+  method/desk05-key.actions. `lookup_ascii_shortcut` used to match a
+  hard-coded `Item -> letter` table; it now walks `menu_shortcuts[]` through
+  `shortcut_mapping[]` (`deskmain.c:1169-1198`). Ctrl-S on the bare desktop
+  (IKBD 1D 1F 9F 9D) wrote `NEWDESK.INF` — `Save desktop` ran without the menu
+  being touched. 0 [EXC]/[PANIC].
+
+
+8. Filesystem
+---------------------------------------------------------------------------
+  `fsck_msdos -n` on the FAT16 partition (dd from LBA 63, 130977 sectors) of
+  the edit, key, cold and conf images: Phase 1 / 2 / 3 with no errors on all
+  four.
+
+
+9. Build
+---------------------------------------------------------------------------
+  `cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat`
+  before **each** board.
+
+    cargo xtask build --board rpi4       tos-api 64 / kernel 94   (base 64/94)
+    cargo xtask build --board qemu-virt  tos-api 64 / kernel 94   (base 64/94)
+    cargo clippy --features board-rpi4       tos-api 80 / kernel 125 (base 80/125)
+    cargo clippy --features board-qemu-virt  tos-api 80 / kernel 125 (base 80/125)
+    grep -c "desk/" on both clippy runs:  0
+    cargo run -p xtask -- test           932 passed / 0 failed / 1 ignored
+                                         (base 932/0/1 — no host test added;
+                                          the whole shortcut path is in the
+                                          `no_std` aarch64 `kernel` crate and
+                                          the host suite cannot reach it, see
+                                          the receipt §6)
+
+  Logs in `build/`.
+
+
+10. Not driven here
+---------------------------------------------------------------------------
+  * The duplicate-shortcut question `STDUPCUT` ("Last key is already
+    assigned. Do you want to reassign it?", `desk_rsc.c:2563-2564`,
+    `save_shortcut` `deskinf.c:1034-1050`) — it needs two separate key entries
+    in two different slots inside one dialog session. Real Pi 4 / Tester.
+  * The function-key panel with an actual entry — nothing can assign one yet.
+  * The 1920x1080 look of the widened drop-downs and of the dialog.

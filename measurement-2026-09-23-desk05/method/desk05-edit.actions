@@ -1,0 +1,45 @@
+# DESK05 run B -- edit a shortcut key and commit it with OK, then Save desktop.
+#   File title centre ~ (88, 8)  (" Desk " is 16..64, " File " 64..112).
+#   Options entry 7  "Desktop configuration..." centre y = 139
+#   Options entry 11 "Save desktop..."          centre y = 203
+#   ADDESKCF ROOT (164,105) 312x288:  DCOK centre (256,369)
+#   IKBD raw scancodes: BACKSPACE make 0E / break 8E, X make 2D / break AD.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 88 8
+2200 mark B_FILEMENU
+2500 move 400 300
+2700 down
+2703 up
+2900 move 600 240
+3200 move 196 8
+3600 move 200 139
+3800 down
+3803 up
+4000 move 600 240
+4600 mark C_DIALOG
+4900 key 0e
+4930 key 8e
+5300 mark D_ERASED
+5600 key 2d
+5630 key ad
+6000 mark E_TYPED
+6300 move 256 369
+6500 down
+6503 up
+6700 move 600 240
+7400 mark F_AFTER_OK
+7700 move 88 8
+8400 mark G_FILEMENU_AFTER
+8700 move 400 300
+8900 down
+8903 up
+9100 move 600 240
+9400 move 196 8
+9800 move 200 203
+10000 down
+10003 up
+10200 move 600 240
+11000 mark H_SAVED

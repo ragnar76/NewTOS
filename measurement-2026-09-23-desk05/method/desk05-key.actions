@@ -1,0 +1,14 @@
+# DESK05 run E -- the rewired `lookup_ascii_shortcut` still fires.
+# Ctrl-S = `Save desktop...` (slot 30 of menu_shortcuts, default 'S'); the
+# lookup now walks the array through `shortcut_mapping[]` instead of a
+# hard-coded match, so this is the regression check for that rewrite.
+# IKBD: CTRL make 1D, S make 1F, S break 9F, CTRL break 9D.
+100 parkbr
+300 move 600 240
+1000 arm
+1400 mark A_IDLE
+1700 key 1d
+1730 key 1f
+1760 key 9f
+1790 key 9d
+3000 mark B_AFTER_CTRL_S
