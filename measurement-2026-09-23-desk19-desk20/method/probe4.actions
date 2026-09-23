@@ -1,0 +1,29 @@
+# Probe 4: the Install-Application dialog (ADINSAPP). Selects C:\CMDLINE.NCP in
+# the C:\ window (which is what enables the menu entry, `men_update`), opens
+# Options -> Install application... and lets `probe_tree` dump every object's
+# absolute rectangle -- where DESK20's function-key click point comes from.
+#   C:\ window CMDLINE.NCP (347,145)                            [probe run 1]
+#   Options title hover (196,9), `Install application...` (280,43)  [probe 1]
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_WIN
+3100 move 347 145
+3400 down
+3403 up
+3800 parkbr
+4600 mark C_SEL
+4900 move 196 240
+5300 move 196 9
+5900 mark D_MENU
+6100 move 280 43
+6500 down
+6503 up
+7100 parkbr
+8000 mark E_INSAPP
+9600 pause

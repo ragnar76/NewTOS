@@ -1,0 +1,83 @@
+# DESK20 duplicate check: a SECOND application asks for a key that is already
+# taken -> `STDUPKEY` (deskins.c:434-440, desk_rsc.c:2526-2527), and on OK the
+# first application loses it (`an->a_funkey = 0`).
+# C:\CMDLINE.NCP is installed with F7 first, then C:\HELLO2.NCP asks for F7.
+#   C:\ window CMDLINE.NCP (347,145), HELLO2.NCP (431,187)          [probe 1]
+#   ADINSAPP: APFUNKEY (360,224), Install (209,350)                 [probe 4]
+#   STDUPKEY alert box (164,202) 312x94 -> OK (280,269), Cancel (360,269)
+#                                                       [this run, 1st pass]
+#   Options: `Desktop configuration...` (280,123)                   [probe 1]
+#   scancodes: 7=08 (make), 88 (break)
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_WIN
+3100 move 347 145
+3400 down
+3403 up
+3800 parkbr
+4600 mark C_SEL1
+4900 move 196 240
+5300 move 196 9
+5900 mark D_MENU1
+6100 move 280 43
+6500 down
+6503 up
+7100 parkbr
+8000 mark E_INSAPP1
+8200 move 360 224
+8600 down
+8603 up
+9200 key 08
+9240 key 88
+9800 parkbr
+10700 mark F_TYPED1
+10900 move 209 350
+11300 down
+11303 up
+11900 parkbr
+12800 mark G_INSTALLED1
+13100 move 431 187
+13400 down
+13403 up
+13800 parkbr
+14600 mark H_SEL2
+14900 move 196 240
+15300 move 196 9
+15900 mark I_MENU2
+16100 move 280 43
+16500 down
+16503 up
+17100 parkbr
+18000 mark J_INSAPP2
+18200 move 360 224
+18600 down
+18603 up
+19200 key 08
+19240 key 88
+19800 parkbr
+20700 mark K_TYPED2
+20900 move 209 350
+21300 down
+21303 up
+21900 parkbr
+22800 mark L_DUPALERT
+23000 move 280 269
+23400 down
+23403 up
+24000 parkbr
+24900 mark M_REASSIGNED
+25200 move 196 240
+25600 move 196 9
+26200 mark N_MENU3
+26400 move 280 123
+26800 down
+26803 up
+27400 parkbr
+28300 mark O_CONF
+29900 pause

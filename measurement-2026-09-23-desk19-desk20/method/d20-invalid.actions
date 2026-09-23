@@ -1,0 +1,49 @@
+# DESK20 validation: an OUT-OF-RANGE function key raises `STINVKEY`
+# (deskins.c:421-425, desk_rsc.c:2525) and the dialog asks for a retry with the
+# field cleared (:522-529). `99` is typed into APFUNKEY instead of `7`.
+#   C:\ window CMDLINE.NCP (347,145)                                [probe 1]
+#   ADINSAPP: APFUNKEY (360,224), Install (209,350)                 [probe 4]
+#   STINVKEY alert box (176,202) 288x94 -> OK (320,269)   [this run, 1st pass]
+#   scancodes: 9=0a (make), 8a (break)
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_WIN
+3100 move 347 145
+3400 down
+3403 up
+3800 parkbr
+4600 mark C_SEL
+4900 move 196 240
+5300 move 196 9
+5900 mark D_MENU
+6100 move 280 43
+6500 down
+6503 up
+7100 parkbr
+8000 mark E_INSAPP
+8200 move 360 224
+8600 down
+8603 up
+9200 key 0a
+9240 key 8a
+9300 key 0a
+9340 key 8a
+9900 parkbr
+10800 mark F_TYPED99
+11000 move 209 350
+11400 down
+11403 up
+12000 parkbr
+12900 mark G_ALERT
+13100 move 320 269
+13500 down
+13503 up
+14100 parkbr
+15000 mark H_RETRY
+16600 pause

@@ -1,0 +1,38 @@
+# DESK19 side-effect: *Default dir* becomes OBSERVABLE (DESK18 could not show
+# it). Two windows, C:\DESKT19\ on TOP as the source, C:\ below holding the
+# program: `do_aopen` then picks the directory from `G.g_appdir`
+# (desksupp.c:896-905) -- `Application` uses `pathname`, i.e. the DESTINATION
+# window's spec, `Window` uses `win_ontop()`, i.e. the SOURCE window's.
+# This run keeps the default `Application`; expected cwd C:\.
+#   window arrangement + DROPME.TXT (127,358), CMDLINE.NCP (347,145) [probe 3]
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_CWIN
+3100 move 431 103
+3400 down
+3403 up
+3410 down
+3413 up
+4100 parkbr
+5000 mark C_SUBWIN
+5300 move 300 77
+5900 down
+6700 drag 300 200
+7500 drag 300 308
+8300 up
+8900 parkbr
+9800 mark D_MOVED
+10100 move 127 358
+10700 down
+11500 drag 250 250
+12100 drag 347 145
+12900 up
+13500 parkbr
+14400 mark E_DROPPED
+16000 pause

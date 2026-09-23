@@ -1,0 +1,41 @@
+# DESK19 "after", *Parameter* = File name: the same drag, after switching the
+# new radio group in Options -> Desktop configuration. EmuTOS's
+# `build_selected_path` then copies only `fn->f_name` (deskfun.c:924).
+#   Options title hover (196,9), `Desktop configuration...` (280,123)  [probe 1]
+#   ADDESKCF: DCPMFILE (428,161), DCOK (256,401)                      [probe 2]
+#   C:\ window README.TXT (179,271), CMDLINE.NCP (347,145)            [probe 1]
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 196 240
+1900 move 196 9
+2500 mark B_MENU
+2700 move 280 123
+3100 down
+3103 up
+3700 parkbr
+4600 mark C_CONF
+4800 move 428 161
+5200 down
+5203 up
+5600 parkbr
+6400 mark D_FILENAME
+6600 move 256 401
+7000 down
+7003 up
+7400 parkbr
+8200 mark E_OK
+8500 key 38
+8550 key 2e
+8600 key ae
+8650 key b8
+9800 mark F_WIN
+10100 move 179 271
+10700 down
+11500 drag 250 220
+12100 drag 347 145
+12900 up
+13500 parkbr
+14400 mark G_DROPPED
+16000 pause

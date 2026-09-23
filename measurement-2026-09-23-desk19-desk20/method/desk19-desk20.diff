@@ -1,0 +1,1450 @@
+diff --git a/kernel/src/desk/dir.rs b/kernel/src/desk/dir.rs
+index c9ef8d5..119b4e4 100644
+--- a/kernel/src/desk/dir.rs
++++ b/kernel/src/desk/dir.rs
+@@ -1541,13 +1541,17 @@ fn fun_confirm(msg: &[u8]) -> bool {
+ /// `wh` = source window handle ([`DESKWH`] for the desktop), `dest_wh` =
+ /// destination window handle (`0`/[`DESKWH`] if dropped on the desktop),
+ /// `dobj` = destination object index, `keystate` = modifiers at drop.
+-/// Returns `exit_desktop` (always `false` in Task #9 — launching a dropped
+-/// program is Task #14).
++///
++/// Returns `exit_desktop`. EmuTOS sets it when a dropped file launched a
++/// program so that `deskmain` leaves and the AES shell loads the child;
++/// NewTOS launches **nested** (AES gap G1, `super::main::launch_native`), so
++/// the window-to-window branch — the one that can launch (DESK19) — hands back
++/// `false` after the child has already run and the desktop is back.
+ pub fn fun_drag(wh: i16, dest_wh: i16, dobj: i16, keystate: u16) -> bool {
+     if wh != DESKWH {
+         // Dragging FROM a window.
+         if dest_wh != DESKWH && dest_wh != NIL {
+-            fun_win2win(wh, dest_wh, dobj, keystate);
++            return fun_win2win(wh, dest_wh, dobj, keystate);
+         } else if dobj == DROOT {
+             // Drop onto empty desktop: making a desktop shortcut is Task #14.
+             fun_alert(1, b"Can't drop items here.");
+@@ -1574,15 +1578,106 @@ fn drag_op(keystate: u16) -> Op {
+     }
+ }
+ 
+-/// `fun_win2win` — copy/move between two windows (EmuTOS `deskfun.c:942`).
+-fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) {
++/// `build_selected_path` (EmuTOS `deskfun.c:903-928`) — "builds the path
++/// corresponding to the **first** selected file in the specified `PNODE`. the
++/// path will be the filename only, or the full pathname, depending on the
++/// desktop configuration settings."
++///
++/// ```c
++/// for (fn = pn->p_flist; fn; fn = fn->f_next)
++///     if (fnode_is_selected(fn)) break;
++/// if (!fn) return FALSE;
++/// if (G.g_fullpath) { strcpy(pathname, pn->p_spec); add_fname(pathname, fn->f_name); }
++/// else              { strcpy(pathname, fn->f_name); }
++/// ```
++///
++/// `entries` is the source window's selection in `p_flist` order
++/// ([`window_selected`]), so its first element **is** EmuTOS's `fn`; `src_dir`
++/// is `p_spec` with its mask already cut off ([`window_dir`]), which is what
++/// `strcpy` + `add_fname` leave behind. [`None`] is EmuTOS's `FALSE` — "no file
++/// is selected (probable program bug)".
++///
++/// Note what this does *not* do: only the first selection reaches the command
++/// line, however many files were dragged. That is EmuTOS's own loop, and the
++/// reason is the single `char destpath[MAXPATHLEN]` its caller passes.
++fn build_selected_path(src_dir: &str, entries: &[SelEntry], fullpath: bool) -> Option<String> {
++    let fn_name = entries.first()?.name_str();
++    if fullpath {
++        let mut s = String::from(src_dir);
++        s.push_str(fn_name);
++        Some(s)
++    } else {
++        Some(String::from(fn_name))
++    }
++}
++
++/// `i_find(wh, item, &pf, NULL)`'s window arm (EmuTOS `desksupp.c:1753-1770`)
++/// for the destination of a drop: the item's file name and the `ANODE` that
++/// governs it, resolved by type and name through
++/// [`super::inf::app_afind_by_name`] exactly as `win_icalc` resolves the
++/// icon. [`None`] where EmuTOS's `pf`/`pa` would be `NULL` — a non-item
++/// object, or a name no `ANODE` claims.
++fn i_find_win(dst_wh: i16, dobj: i16) -> Option<(String, super::inf::Afind)> {
++    if dobj < 0 {
++        return None;
++    }
++    let (name, atype, spec) = global::with(|g| {
++        let slot = g.win_slot(dst_wh)?;
++        let fnode = g.g_screeninfo.get(dobj as usize)?.fnode;
++        if fnode < 0 {
++            return None;
++        }
++        let f = g.windows.slots[slot].w_pnode.p_flist.get(fnode as usize)?;
++        // `(pf->f_attr&FA_SUBDIR) ? AT_ISFOLD : AT_ISFILE` (`desksupp.c:1766`).
++        let atype = if f.is_dir() { AType::Folder } else { AType::File };
++        // The same byte-by-byte widening `win_icalc` uses, so a high-bit name
++        // produces the same key here as it does there.
++        let name: String = f.name_bytes().iter().map(|&b| b as char).collect();
++        Some((name, atype, g.windows.slots[slot].w_pnode.p_spec.clone()))
++    })
++    .flatten()?;
++    let pa = super::inf::app_afind_by_name(atype, &spec, &name)?;
++    Some((name, pa))
++}
++
++/// `fun_win2win` — copy/move between two windows, **or** launch the program
++/// the selection was dropped on (EmuTOS `deskfun.c:942-1001`). Returns
++/// `exit_desktop`.
++fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) -> bool {
+     let Some(src_dir) = window_dir(src_wh) else {
+-        return;
++        return false;
+     };
+     let entries = window_selected(src_wh);
+     if entries.is_empty() {
+-        return;
++        return false;
+     }
++
++    // `pda = i_find(dst_wh, dst_ob, &pdf, NULL);` (`deskfun.c:958`) and, when
++    // it resolves, `if (pda->a_aicon >= 0)` — "dropping file on to an
++    // application" (`:962`). The test is the icon number, not the file's
++    // extension: whatever `ANODE` gives this name the **application** picture
++    // is what makes the drop a launch. It is the same number `win_icalc` hands
++    // the view, so the branch taken always matches the icon on screen.
++    if let Some((dst_name, pda)) = i_find_win(dst_wh, dst_obj) {
++        if pda.aicon >= 0 {
++            let fullpath = global::with(|g| g.g_fullpath).unwrap_or(true);
++            if let Some(destpath) = build_selected_path(&src_dir, &entries, fullpath) {
++                // `exit_desktop = do_aopen(pda, TRUE, dst_ob,
++                //  pdw->w_pnode.p_spec, pdf->f_name, destpath); return;`
++                // (`:967-968`) — and nothing is copied or moved.
++                let dst_dir = window_dir(dst_wh).unwrap_or_default();
++                return super::main::do_aopen_drop(
++                    pda.is_installed(),
++                    &pda.pappl,
++                    pda.appdir,
++                    &dst_dir,
++                    &dst_name,
++                    &destpath,
++                );
++            }
++        }
++    }
++
+     // Destination: into the dropped-on folder if it is one, else the window dir.
+     let dst_dir = dest_folder_dir(dst_wh, dst_obj).unwrap_or_else(|| window_dir(dst_wh).unwrap_or_default());
+     let op = drag_op(keystate);
+@@ -1597,6 +1692,7 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) {
+         rebuild_window(dst_wh);
+         super::redraw::redraw_desktop();
+     }
++    false
+ }
+ 
+ /// `fun_win2desk` — drop a window selection onto a desktop icon (EmuTOS
+diff --git a/kernel/src/desk/global.rs b/kernel/src/desk/global.rs
+index c153860..5b39b25 100644
+--- a/kernel/src/desk/global.rs
++++ b/kernel/src/desk/global.rs
+@@ -238,25 +238,23 @@ pub struct WSave {
+ /// it is wiped on every shell pass, which is precisely why EmuTOS's desktop
+ /// keeps its own copy (gap G2 of `docs/analysis/desk-aes-gaps-2026-09-14.md`).
+ ///
+-/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries `cs_blitter`,
+-/// `cs_cache` and `cs_fullpath`. Those mirror `GLOBES` fields that exist only
+-/// because `inf_pref`/`inf_conf` (the Preferences and Configuration dialogs)
+-/// can edit them, and NewTOS has no live state behind any of them:
+-///
+-/// * `cs_blitter` / `cs_cache` — m68k hardware (`Blitmode`, the 68030 cache),
+-///   the hardware-layer carve-out of `docs/COMPATIBILITY.md`.
+-/// * `cs_fullpath` — the *Parameter* switch, whose consumer is
+-///   `build_selected_path` (`deskfun.c:903-931`) out of `fun_win2win`'s
+-///   drop-on-an-application branch (`:958-970`); NewTOS's `fun_win2win` has no
+-///   such branch. The per-**association** twin of the same choice
+-///   (`INF_AT_ISFULL`) does exist and is kept in the `NEWDESK.INF` `ANODE`
+-///   extra block, which is why a document launch can honour it and a drop
+-///   cannot.
++/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries `cs_blitter`
++/// and `cs_cache`. Those mirror `GLOBES` fields that exist only because
++/// `inf_pref`/`inf_conf` (the Preferences and Configuration dialogs) can edit
++/// them, and NewTOS has no live state behind either: they are m68k hardware
++/// (`Blitmode`, the 68030 cache), the hardware-layer carve-out of
++/// `docs/COMPATIBILITY.md`.
+ ///
+ /// Their bits still survive a load/save round trip — the `#E` bytes they live
+ /// in are preserved verbatim by [`super::inf`]'s session copy — they are simply
+ /// not routed through this structure.
+ ///
++/// `cs_fullpath` **was** in that list until DESK19, on the grounds that its
++/// consumer — `build_selected_path` (`deskfun.c:903-928`) out of
++/// `fun_win2win`'s drop-on-an-application branch (`:958-970`) — did not exist
++/// here. It does now ([`super::dir`]'s `build_selected_path`), so the field is
++/// carried like the others.
++///
+ /// `cs_appdir` **was** in that list until DESK18, on the grounds that NewTOS's
+ /// launch path set no current directory at all. It does now
+ /// ([`super::main`]'s `set_launch_dir` → `set_default_path`), so the field is
+@@ -292,6 +290,9 @@ pub struct CSave {
+     /// Saved *Default dir* switch (`cs_appdir`, `deskapp.h:153`) — see
+     /// [`DeskState::g_appdir`]. Serialises to `INF_E5_APPDIR`.
+     pub cs_appdir: bool,
++    /// Saved *Parameter* switch (`cs_fullpath`, `deskapp.h:154`) — see
++    /// [`DeskState::g_fullpath`]. Serialises to `INF_E5_ISFULL`.
++    pub cs_fullpath: bool,
+     /// One [`WSave`] per window slot (`cs_wnode[NUM_WNODES]`); slot 0 is the
+     /// **bottom-most** window (`cnx_put`'s comment, `deskmain.c:1367-1369`).
+     pub cs_wnode: [WSave; NUM_WNODES],
+@@ -310,6 +311,7 @@ impl Default for CSave {
+             cs_timefmt: TimeFmt::H24,
+             cs_datefmt: DateFmt::Mdy,
+             cs_appdir: true,
++            cs_fullpath: true,
+             cs_wnode: Default::default(),
+         }
+     }
+@@ -407,6 +409,17 @@ pub struct DeskState {
+     /// from its own `INF_AT_APPDIR` flag instead, so this global does not
+     /// apply to it. Persisted through [`CSave::cs_appdir`].
+     pub g_appdir: bool,
++    /// "Pass the full path as the argument" (`g_fullpath`, `deskbind.h:181`):
++    /// the *Parameter* switch of `inf_conf`, read by exactly one function —
++    /// `build_selected_path` (`deskfun.c:903-928`), which turns the first
++    /// selected file of the **source** window into the command tail when that
++    /// selection is dropped on a program icon (`fun_win2win`, `:958-970`;
++    /// NewTOS's [`super::dir`] `fun_win2win`). `true` ⇒ the file's full path,
++    /// `false` ⇒ its bare name. An *installed* application answers the same
++    /// question for a **document** launch from its own `INF_AT_ISFULL` flag
++    /// instead, so this global does not apply there. Persisted through
++    /// [`CSave::cs_fullpath`].
++    pub g_fullpath: bool,
+     /// The current `_IDT` cookie word (`g_idt`, `deskbind.h:183`) — the machine
+     /// separator / field order / clock that [`TimeFmt::Idt`] and [`DateFmt::Idt`]
+     /// defer to (see [`super::model`]'s `_IDT` block for the bit layout and for
+@@ -522,9 +535,11 @@ impl DeskState {
+             g_cdclkpref: DEF_DCLICK,
+             g_ctimeform: TimeFmt::H24,
+             g_cdateform: DateFmt::Mdy,
+-            // `INF_E5_DEFAULT` carries `INF_E5_APPDIR` (`deskapp.c:114`), so
+-            // the no-`.INF` default is the application's own directory.
++            // `INF_E5_DEFAULT` carries `INF_E5_APPDIR|INF_E5_ISFULL`
++            // (`deskapp.c:115`), so the no-`.INF` defaults are the
++            // application's own directory and the full path as the argument.
+             g_appdir: true,
++            g_fullpath: true,
+             g_idt: 0,
+             g_iwext: 0,
+             g_ihext: 0,
+diff --git a/kernel/src/desk/inf.rs b/kernel/src/desk/inf.rs
+index 9795deb..42531dd 100644
+--- a/kernel/src/desk/inf.rs
++++ b/kernel/src/desk/inf.rs
+@@ -136,6 +136,11 @@ const INF_E5_NOSORT: u8 = 0x80;
+ /// top window's. The *Default dir* group of `inf_conf` edits it and
+ /// `do_aopen` reads it (`desksupp.c:901`).
+ const INF_E5_APPDIR: u8 = 0x40;
++/// `INF_E5_ISFULL` (`deskapp.c:111`) — 1 ⇒ pass the **full path** of a file
++/// dropped on a program icon as its argument, 0 ⇒ only the file name. The
++/// *Parameter* group of `inf_conf` edits it and `build_selected_path` reads it
++/// (`deskfun.c:916`).
++const INF_E5_ISFULL: u8 = 0x20;
+ const INF_E5_NOSIZE: u8 = 0x10;
+ 
+ /// `INF_E1_DEFAULT` = `CONFDEL|CONFCPY|dclick(2)` (`deskapp.c` `desk_inf_data1`).
+@@ -687,8 +692,8 @@ impl InfData {
+ 
+ // ── Sort ↔ `#E`-bit mapping ─────────────────────────────────────────────────
+ 
+-/// Decode the `#E` env bytes to `(view, sort, size_to_fit, appdir)`.
+-fn env_to_state(e1: u8, e5: u8) -> (View, Sort, bool, bool) {
++/// Decode the `#E` env bytes to `(view, sort, size_to_fit, appdir, fullpath)`.
++fn env_to_state(e1: u8, e5: u8) -> (View, Sort, bool, bool, bool) {
+     let view = if e1 & INF_E1_VIEWTEXT != 0 { View::Text } else { View::Icon };
+     let sort = if e5 & INF_E5_NOSORT != 0 {
+         Sort::NoSort
+@@ -703,17 +708,20 @@ fn env_to_state(e1: u8, e5: u8) -> (View, Sort, bool, bool) {
+     let size_to_fit = e5 & INF_E5_NOSIZE == 0;
+     // `cnxsave->cs_appdir = ((envr & INF_E5_APPDIR) != 0);` (`deskapp.c:942`).
+     let appdir = e5 & INF_E5_APPDIR != 0;
+-    (view, sort, size_to_fit, appdir)
++    // `cnxsave->cs_fullpath = ((envr & INF_E5_ISFULL) != 0);` (`deskapp.c:943`).
++    let fullpath = e5 & INF_E5_ISFULL != 0;
++    (view, sort, size_to_fit, appdir, fullpath)
+ }
+ 
+-/// Fold `(view, sort, size_to_fit, appdir)` into the `#E` `e1`/`e5` bytes,
+-/// keeping every other bit of the base bytes (confirm/dclick/format prefs)
+-/// unchanged.
++/// Fold `(view, sort, size_to_fit, appdir, fullpath)` into the `#E` `e1`/`e5`
++/// bytes, keeping every other bit of the base bytes (confirm/dclick/format
++/// prefs) unchanged.
+ fn state_to_env(
+     view: View,
+     sort: Sort,
+     size_to_fit: bool,
+     appdir: bool,
++    fullpath: bool,
+     base_e1: u8,
+     base_e5: u8,
+ ) -> (u8, u8) {
+@@ -721,7 +729,7 @@ fn state_to_env(
+     if view == View::Text {
+         e1 |= INF_E1_VIEWTEXT;
+     }
+-    let mut e5 = base_e5 & !(INF_E5_NOSORT | INF_E5_NOSIZE | INF_E5_APPDIR);
++    let mut e5 = base_e5 & !(INF_E5_NOSORT | INF_E5_NOSIZE | INF_E5_APPDIR | INF_E5_ISFULL);
+     match sort {
+         Sort::Name => {}
+         Sort::Type => e1 |= 1 << INF_E1_SORTSHIFT,
+@@ -736,6 +744,10 @@ fn state_to_env(
+     if appdir {
+         e5 |= INF_E5_APPDIR;
+     }
++    // `env5 |= cnxsave->cs_fullpath ? INF_E5_ISFULL : 0;` (`deskapp.c:1165`).
++    if fullpath {
++        e5 |= INF_E5_ISFULL;
++    }
+     (e1, e5)
+ }
+ 
+@@ -1042,7 +1054,7 @@ pub(super) fn build_inf() {
+ fn apply(data: &InfData) {
+     // #E → cnxsave->cs_view / cs_sort / cs_sizefit (`deskapp.c:994-1013`) and
+     // the Preferences half (`deskapp.c:917-934`).
+-    let (view, sort, size_to_fit, appdir) = env_to_state(data.e1, data.e5);
++    let (view, sort, size_to_fit, appdir, fullpath) = env_to_state(data.e1, data.e5);
+     let (confdel, confcpy, confovwr, dclick, timefmt, datefmt) = env_to_prefs(data.e1, data.e2);
+ 
+     // #M/#T/#O → `G.g_ahead` (`app_parse`'s tag switch, `deskapp.c:300-346`).
+@@ -1064,6 +1076,7 @@ fn apply(data: &InfData) {
+         g.g_cnxsave.cs_timefmt = timefmt;
+         g.g_cnxsave.cs_datefmt = datefmt;
+         g.g_cnxsave.cs_appdir = appdir;
++        g.g_cnxsave.cs_fullpath = fullpath;
+         g.g_cnxsave.cs_wnode = Default::default();
+         for (slot, w) in data.windows.iter().take(NUM_WNODES).enumerate() {
+             g.g_cnxsave.cs_wnode[slot] = WSave {
+@@ -1276,7 +1289,7 @@ fn build_from_state() -> InfData {
+     #[allow(clippy::type_complexity)]
+     type Prefs = (bool, bool, bool, u8, TimeFmt, DateFmt);
+     #[allow(clippy::type_complexity)]
+-    let (view, sort, size_to_fit, appdir, prefs, desk_anodes): (View, Sort, bool, bool, Prefs, Vec<InfAnode>) = global::with(|g| {
++    let (view, sort, size_to_fit, appdir, fullpath, prefs, desk_anodes): (View, Sort, bool, bool, bool, Prefs, Vec<InfAnode>) = global::with(|g| {
+         // The `ANODE` half of `app_save` (`deskapp.c:1216-1262`), for the
+         // `AF_ISDESK` nodes: one line per entry of `G.g_ahead`, in list order,
+         // with the spot converted back to grid units
+@@ -1316,6 +1329,7 @@ fn build_from_state() -> InfData {
+             g.g_cnxsave.cs_sort,
+             g.g_cnxsave.cs_sizefit,
+             g.g_cnxsave.cs_appdir,
++            g.g_cnxsave.cs_fullpath,
+             (
+                 g.g_cnxsave.cs_confdel,
+                 g.g_cnxsave.cs_confcpy,
+@@ -1332,6 +1346,7 @@ fn build_from_state() -> InfData {
+         Sort::Name,
+         true,
+         true,
++        true,
+         (true, true, true, global::DEF_DCLICK, TimeFmt::H24, DateFmt::Mdy),
+         Vec::new(),
+     ));
+@@ -1339,7 +1354,7 @@ fn build_from_state() -> InfData {
+     // Base env / patcol / file-type anodes: preserved from the session, or the
+     // built-in defaults on a first-ever save.
+     let base = session.unwrap_or_default();
+-    let (e1, e5) = state_to_env(view, sort, size_to_fit, appdir, base.e1, base.e5);
++    let (e1, e5) = state_to_env(view, sort, size_to_fit, appdir, fullpath, base.e1, base.e5);
+     // The Preferences bits go into the *same* `e1` byte, in a disjoint bit
+     // range (`CONFDEL|DCMASK` vs `VIEWTEXT|SORTMASK`), so they are folded in on
+     // top of the result rather than from `base.e1` again.
+@@ -1490,10 +1505,24 @@ fn doc_mask_from_ext(ext: &str) -> String {
+     }
+ }
+ 
+-/// The document-type extension currently associated with `app_path` (the
+-/// `a_pdata` wildcard minus its `*.` prefix), for pre-filling the dialog when an
+-/// application is already installed. [`None`] if it is not installed.
+-pub(super) fn installed_doctype(app_path: &str) -> Option<(String, AppFlavor, bool)> {
++/// The fields of an installed application's `ANODE` the Install-Application
++/// dialog pre-fills itself from — EmuTOS reads them straight off the `ANODE *`
++/// it already holds (`deskins.c:470-503`).
++pub(super) struct Installed {
++    /// `a_pdata` minus its `*.` prefix — the document-type field.
++    pub doc_ext: String,
++    /// The `#`-line tag, i.e. the GEM/TOS/GTP/TTP flavour radio.
++    pub flavor: AppFlavor,
++    /// `AF_ISFULL` ([`INF_AT_ISFULL`]) — the *Parameter* radio.
++    pub full_path: bool,
++    /// `a_funkey` — the function-key field (0 = none).
++    pub funkey: u8,
++}
++
++/// The association record currently held for `app_path`, for pre-filling the
++/// dialog when an application is already installed. [`None`] if it is not
++/// installed.
++pub(super) fn installed_doctype(app_path: &str) -> Option<Installed> {
+     let guard = SESSION.lock();
+     let data = guard.as_ref()?;
+     let a = data
+@@ -1501,7 +1530,59 @@ pub(super) fn installed_doctype(app_path: &str) -> Option<(String, AppFlavor, bo
+         .iter()
+         .find(|a| !a.is_desk && is_real_path(&a.pappl) && a.pappl.eq_ignore_ascii_case(app_path))?;
+     let ext = a.pdata.strip_prefix("*.").unwrap_or(&a.pdata);
+-    Some((String::from(ext), AppFlavor::from_tag(a.tag), a.flags & INF_AT_ISFULL != 0))
++    Some(Installed {
++        doc_ext: String::from(ext),
++        flavor: AppFlavor::from_tag(a.tag),
++        full_path: a.flags & INF_AT_ISFULL != 0,
++        funkey: a.funkey,
++    })
++}
++
++/// `get_funkey`'s duplicate check (`deskins.c:414-427`), in two halves because
++/// the question the user is asked sits between them and a trap must not run
++/// under the [`SESSION`] lock:
++///
++/// ```c
++/// for (an = G.g_ahead; an; an = an->a_next) {
++///     if (an == pa) continue;
++///     if (an->a_funkey == funkey) {
++///         if (fun_alert(1,STDUPKEY) != 1) return -1;
++///         an->a_funkey = 0;
++///         break;
++///     }
++/// }
++/// ```
++///
++/// This is the `if` — does an application **other** than `except_app` hold
++/// `funkey`? `except_app` is EmuTOS's `if (an == pa) continue;`: for a
++/// re-install it is the node being edited, and for a first install it names no
++/// node at all (EmuTOS's `pa` is freshly allocated with `a_funkey == 0`, so its
++/// own node can never be the hit either way).
++pub(super) fn funkey_owner(funkey: u8, except_app: &str) -> bool {
++    let guard = SESSION.lock();
++    let Some(data) = guard.as_ref() else {
++        return false;
++    };
++    data.anodes
++        .iter()
++        .any(|a| !a.is_desk && a.funkey == funkey && !a.pappl.eq_ignore_ascii_case(except_app))
++}
++
++/// The `an->a_funkey = 0; break;` of that walk (`deskins.c:424-425`) — take the
++/// key away from the **first** other application that holds it, once the user
++/// has confirmed. Returns whether one was found.
++pub(super) fn release_funkey(funkey: u8, except_app: &str) -> bool {
++    let mut guard = SESSION.lock();
++    let Some(data) = guard.as_mut() else {
++        return false;
++    };
++    for a in data.anodes.iter_mut() {
++        if !a.is_desk && a.funkey == funkey && !a.pappl.eq_ignore_ascii_case(except_app) {
++            a.funkey = 0;
++            return true;
++        }
++    }
++    false
+ }
+ 
+ /// Whether `pappl` is a concrete file path rather than a wildcard/empty
+@@ -1525,16 +1606,20 @@ fn session_with_type_defaults(guard: &mut Option<InfData>) -> &mut InfData {
+ /// model — EmuTOS `ins_app_dialog`'s `APINSTAL` branch (`deskins.c:511-582`).
+ /// `app_path` is the application's full `C:` path, `doc_ext` the document-type
+ /// extension the user entered, `flavor` the GEM/TOS/(G)TP flavour, `full_path`
+-/// the `AF_ISFULL` choice, `appdir` the `AF_APPDIR` choice, and `args` the fixed
+-/// argument prefix. Re-installing the same application updates its existing
+-/// record in place (one association record per application, as EmuTOS
+-/// `app_afind_by_name` resolves). The change is persisted by Save Desktop.
++/// the `AF_ISFULL` choice, `appdir` the `AF_APPDIR` choice, `funkey` the
++/// validated function key (`pa->a_funkey = funkey;`, `deskins.c:531`; 0 = none)
++/// and `args` the fixed argument prefix. Re-installing the same application
++/// updates its existing record in place (one association record per
++/// application, as EmuTOS `app_afind_by_name` resolves). The change is
++/// persisted by Save Desktop.
++#[allow(clippy::too_many_arguments)]
+ pub(super) fn install_application(
+     app_path: &str,
+     doc_ext: &str,
+     flavor: AppFlavor,
+     full_path: bool,
+     appdir: bool,
++    funkey: u8,
+     args: &str,
+ ) {
+     let mut guard = SESSION.lock();
+@@ -1555,6 +1640,7 @@ pub(super) fn install_application(
+         a.dicon = IG_DOCU;
+         a.pdata = pdata;
+         a.flags = flags;
++        a.funkey = funkey;
+         a.pargs = String::from(args);
+     } else {
+         // New application: insert ahead of the generic type defaults so a
+@@ -1574,7 +1660,7 @@ pub(super) fn install_application(
+                 pappl: String::from(app_path),
+                 pdata,
+                 flags,
+-                funkey: 0,
++                funkey,
+                 pargs: String::from(args),
+             },
+         );
+@@ -1656,6 +1742,22 @@ pub(super) struct Afind {
+     /// `a_pdata`, for `install_window_icon`'s `identical` test
+     /// (`deskins.c:1162`).
+     pub pdata: String,
++    /// `a_pappl` — the application path, for `is_installed(pa)`
++    /// (`deskins.c:71-80`) and for `do_aopen`'s directory choice
++    /// (`desksupp.c:886-890`), both of which `fun_win2win`'s
++    /// drop-on-an-application branch reaches.
++    pub pappl: String,
++    /// `pa->a_flags & AF_APPDIR` ([`INF_AT_APPDIR`]) — the same `do_aopen`
++    /// step, for the case the node **is** an installed application.
++    pub appdir: bool,
++}
++
++impl Afind {
++    /// `is_installed(pa)` (`deskins.c:71-80`) — the node names a concrete
++    /// application path rather than a wildcard placeholder or nothing at all.
++    pub fn is_installed(&self) -> bool {
++        is_real_path(&self.pappl)
++    }
+ }
+ 
+ /// The `a_type` an `ANODE` line tag stands for (`app_parse`'s switch,
+@@ -1705,7 +1807,15 @@ pub(super) fn app_afind_by_name(atype: AType, pspec: &str, pname: &str) -> Optio
+             continue;
+         }
+         let hit = |isapp: bool| {
+-            Some(Afind { idx, isapp, aicon: a.aicon, dicon: a.dicon, pdata: a.pdata.clone() })
++            Some(Afind {
++                idx,
++                isapp,
++                aicon: a.aicon,
++                dicon: a.dicon,
++                pdata: a.pdata.clone(),
++                pappl: a.pappl.clone(),
++                appdir: a.flags & INF_AT_APPDIR != 0,
++            })
+         };
+         if super::model::wildcmp(a.pdata.as_bytes(), pname.as_bytes()) {
+             return hit(false);
+@@ -3011,8 +3121,8 @@ fn get_all_funkeys() -> [Option<FunKey>; NUM_FUNKEYS] {
+ /// `include/config.h:1774-1776`, and therefore on for our Falcon030/TOS4
+ /// profile).
+ ///
+-/// A radio group, two independent "step through a list" panels and a free-RAM
+-/// read-out, in `ADDESKCF`'s order:
++/// Two radio groups, two independent "step through a list" panels and a
++/// free-RAM read-out, in `ADDESKCF`'s order:
+ ///
+ /// * **Default dir** — out in DESK05 for want of a consumer, back since
+ ///   DESK18. `DCDEFAPP`/`DCDEFWIN` select the current directory a
+@@ -3022,6 +3132,14 @@ fn get_all_funkeys() -> [Option<FunKey>; NUM_FUNKEYS] {
+ ///   `do_aopen`'s own step (`desksupp.c:893-916`). An *installed* application
+ ///   ignores it and uses its own `INF_AT_APPDIR` flag, which is why the switch
+ ///   says nothing about those.
++/// * **Parameter** — out in DESK05 for want of a consumer, back since DESK19.
++///   `DCPMFULL`/`DCPMFILE` select what a file dropped on a program icon is
++///   passed as, through `G.g_fullpath`
++///   ([`global::DeskState::g_fullpath`]); the consumer is [`super::dir`]'s
++///   `build_selected_path` (`deskfun.c:903-928`), reached from `fun_win2win`'s
++///   drop-on-an-application branch (`:958-970`). A **document** launch answers
++///   the same question from the installed application's own `INF_AT_ISFULL`
++///   flag instead, so the switch says nothing about those either.
+ /// * **Function keys** — a *viewer*. `DCFUNPRV`/`DCFUNNXT` walk the installed
+ ///   applications that have a function key bound; `DCFUNLT`/`DCFUNRT` scroll
+ ///   the path sideways inside the fixed-width field (`scroll_conf_funkeys`,
+@@ -3043,32 +3161,12 @@ fn get_all_funkeys() -> [Option<FunKey>; NUM_FUNKEYS] {
+ /// writes `NEWDESK.INF` — the new shortcuts reach the file through
+ /// *Save desktop*, which now emits the `#K` line.
+ ///
+-/// ## What this dialog does **not** offer, and why
+-///
+-/// `ADDESKCF` (`desk_rsc.c:1603-1772`) has one further radio group, which
+-/// NewTOS leaves out rather than showing inert:
+-///
+-/// * **Parameter** (`DCPMFULL`/`DCPMFILE` → `G.g_fullpath`) selects whether a
+-///   file dropped on a program icon is passed as a full path or a bare name
+-///   (`build_selected_path`, `deskfun.c:903-931`), reached from
+-///   `fun_win2win`'s drop-on-an-application branch (`deskfun.c:960-970`).
+-///   NewTOS's `fun_win2win` has no such branch — a drop on a program is a
+-///   copy — so there is nothing behind the switch.
+-///
+-/// It is missing a *consumer* in another function, not a piece of this one;
+-/// its `#E` byte-5 bit (`INF_E5_ISFULL`) keeps round-tripping untouched
+-/// meanwhile. Same rule as the three groups [`inf_pref`] left out in DESK02 —
+-/// and, like them and like *Default dir* now, it comes back when the
+-/// consumer does.
++/// With *Parameter* back, every object of `ADDESKCF` (`desk_rsc.c:1603-1772`)
++/// is in the tree and the numbering below is the resource's own.
+ pub(super) fn inf_conf() {
+     use super::menu;
+ 
+-    // ── object indices (`desk_rsc.h:191-211`, minus the omitted group) ────
+-    //
+-    // Objects 0..5 are `ADDESKCF`'s own numbers; from the *Function keys* label
+-    // on, everything is four lower, because the four objects of the omitted
+-    // *Parameter* row (`desk_rsc.c:1660-1685`, its label, its `G_IBOX` and the
+-    // two buttons) are not in the tree.
++    // ── object indices (`desk_rsc.h:191-211`) ─────────────────────────────
+     /// `DCDEFDIR` — the unnamed `G_IBOX` (`ADDESKCF` object 3) the two
+     /// *Default dir* radio buttons hang under; the AES deselects the siblings
+     /// of the button that was hit through **this** object (see [`G_IBOX`]).
+@@ -3077,40 +3175,49 @@ pub(super) fn inf_conf() {
+     /// first of the pair, so `inf_which(tree, DCDEFAPP, 2)` yields 1 for it and
+     /// 0 for its neighbour — which is `G.g_appdir` (`deskinf.c:1226`).
+     const DCDEFAPP: usize = 4;
++    /// `DCPARM` — the unnamed `G_IBOX` (`ADDESKCF` object 7) of the *Parameter*
++    /// pair. Its **own** `G_IBOX`, not `DCDEFDIR`'s: `RBUTTON` deselection is
++    /// per parent (`tos-api/tests/aes_desk_prefs_radio.rs`), so two groups
++    /// under one box would clear each other.
++    const DCPARM: i16 = 7;
++    /// `DCPMFULL` — *Full path*: the dropped file's whole path. First of the
++    /// pair, so `inf_which(tree, DCPMFULL, 2)` is `G.g_fullpath`
++    /// (`deskinf.c:1227`).
++    const DCPMFULL: usize = 8;
+     /// `DCFUNBOX` — the panel holding the function-key number, path and the two
+     /// scroll arrows; the field `draw_fld` refreshes after a step (`:1163`).
+-    const DCFUNBOX: i16 = 7;
++    const DCFUNBOX: i16 = 11;
+     /// `DCFUNNUM` — the `F__` number field.
+-    const DCFUNNUM: i16 = 8;
++    const DCFUNNUM: i16 = 12;
+     /// `DCFUNLT` — scroll the path text left.
+-    const DCFUNLT: i16 = 9;
++    const DCFUNLT: i16 = 13;
+     /// `DCFUNPTH` — the scrollable path field.
+-    const DCFUNPTH: i16 = 10;
++    const DCFUNPTH: i16 = 14;
+     /// `DCFUNRT` — scroll the path text right.
+-    const DCFUNRT: i16 = 11;
++    const DCFUNRT: i16 = 15;
+     /// `DCFUNPRV` — previous bound function key.
+-    const DCFUNPRV: i16 = 12;
++    const DCFUNPRV: i16 = 16;
+     /// `DCFUNNXT` — next bound function key.
+-    const DCFUNNXT: i16 = 13;
++    const DCFUNNXT: i16 = 17;
+     /// `DCMNUBOX` — the panel holding the menu-item text, its key and *Clear
+     /// all*.
+-    const DCMNUBOX: i16 = 15;
++    const DCMNUBOX: i16 = 19;
+     /// `DCMNUKEY` — the editable `Key: ^_` field.
+-    const DCMNUKEY: i16 = 16;
++    const DCMNUKEY: i16 = 20;
+     /// `DCMNUCLR` — clear every shortcut.
+-    const DCMNUCLR: i16 = 17;
++    const DCMNUCLR: i16 = 21;
+     /// `DCMNUTXT` — the menu item the current slot names.
+-    const DCMNUTXT: i16 = 18;
++    const DCMNUTXT: i16 = 22;
+     /// `DCMNUPRV` — previous shortcut slot.
+-    const DCMNUPRV: i16 = 19;
++    const DCMNUPRV: i16 = 23;
+     /// `DCMNUNXT` — next shortcut slot.
+-    const DCMNUNXT: i16 = 20;
++    const DCMNUNXT: i16 = 24;
+     /// `DCFREMEM` — the free-RAM read-out.
+-    const DCFREMEM: i16 = 21;
++    const DCFREMEM: i16 = 25;
+     /// `DCOK` — the OK button; `DC_CNCL` follows it.
+-    const DCOK: i16 = 22;
++    const DCOK: i16 = 26;
+     /// `DC_CNCL` — Cancel.
+-    const DC_CNCL: i16 = 23;
++    const DC_CNCL: i16 = 27;
+ 
+     // ── geometry ────────────────────────────────────────────────────────
+     //
+@@ -3118,27 +3225,23 @@ pub(super) fn inf_conf() {
+     // 1772`, `rsrc_obfix`-resolved at 8x16): a 39x22-cell box whose rows are
+     // title 1, *Default dir* 3, *Parameter* 5, *Function keys* 7, the function
+     // panel 8+6px, *Menu shortcut keys* 11+8px, the shortcut panel 12+14px,
+-    // free RAM 17+8px, the buttons 20. Dropping the one omitted radio row
+-    // takes two character rows out of the middle (its own row 5 and the blank
+-    // row 6 that separated it from *Function keys*), so everything from
+-    // *Function keys* down moves up by `2 * CELL_H` and the box loses the same
+-    // 2 cells of height — *Default dir* keeps `ADDESKCF`'s row 3 and the
+-    // spacing between the rows that remain is untouched, which matters because
+-    // every 3D gadget here is grown by `ADJ3DSTD` (2 px per side) and then laid
+-    // out one pixel of border wider still (`aes/gemoblib.c:504`, `sst_th`
+-    // `G_BUTTON` → `-1`): the one blank character cell `ADDESKCF` leaves
+-    // between *Application* and *Window* is 8 px, of which the growth eats 6.
+-    /// The two character rows the omitted *Parameter* group occupied.
+-    const DROPPED: i16 = 2 * CELL_H;
++    // free RAM 17+8px, the buttons 20. With DESK19 every one of those rows is
++    // in the tree, so the box is `ADDESKCF`'s full 39x22 and no row is shifted
++    // — which also restores the blank character row the resource leaves
++    // between *Parameter* and *Function keys*. That spacing matters: every 3D
++    // gadget here is grown by `ADJ3DSTD` (2 px per side) and then laid out one
++    // pixel of border wider still (`aes/gemoblib.c:504`, `sst_th` `G_BUTTON`
++    // → `-1`), so the 8 px a blank cell is worth is nearly eaten by the growth.
+     let dw = 39 * CELL_W; // 312
+-    let dh = 22 * CELL_H - DROPPED; // 320
+-    let y_defdir = 3 * CELL_H; // 48 — `ADDESKCF`'s own row, not shifted
+-    let y_fun_lbl = 7 * CELL_H - DROPPED; // 80
+-    let y_fun_box = 8 * CELL_H + 6 - DROPPED; // 102
+-    let y_mnu_lbl = 11 * CELL_H + 8 - DROPPED; // 152
+-    let y_mnu_box = 12 * CELL_H + 14 - DROPPED; // 174
+-    let y_freemem = 17 * CELL_H + 8 - DROPPED; // 248
+-    let y_btn = 20 * CELL_H - DROPPED; // 288
++    let dh = 22 * CELL_H; // 352
++    let y_defdir = 3 * CELL_H; // 48
++    let y_parm = 5 * CELL_H; // 80
++    let y_fun_lbl = 7 * CELL_H; // 112
++    let y_fun_box = 8 * CELL_H + 6; // 134
++    let y_mnu_lbl = 11 * CELL_H + 8; // 184
++    let y_mnu_box = 12 * CELL_H + 14; // 206
++    let y_freemem = 17 * CELL_H + 8; // 280
++    let y_btn = 20 * CELL_H; // 320
+     // `adjust_3d_positions` (`deskmain.c:1647-1656`): "avoid button overlap" —
+     // the two `PRV` gadgets sit flush against their `NXT` neighbour in the
+     // resource, so a 3D build moves them left by `3 * ADJ3DSTD`.
+@@ -3153,6 +3256,9 @@ pub(super) fn inf_conf() {
+     static DEFDIR_LBL: &[u8] = b"Default dir:\0";
+     static DEFAPP: &[u8] = b"Application\0";
+     static DEFWIN: &[u8] = b"Window\0";
++    static PARM_LBL: &[u8] = b"Parameter:\0";
++    static PMFULL: &[u8] = b"Full path\0";
++    static PMFILE: &[u8] = b"File name\0";
+     static FUN_LBL: &[u8] = b"Function keys:\0";
+     static MNU_LBL: &[u8] = b"Menu shortcut keys:\0";
+     static CLEAR_ALL: &[u8] = b"Clear all\0";
+@@ -3245,30 +3351,41 @@ pub(super) fn inf_conf() {
+         mk(G_IBOX, 0, TED_COLOR as u64, 16 * CELL_W, y_defdir, 22 * CELL_W, CELL_H, 6, DCDEFAPP as i16, DCDEFAPP as i16 + 1),
+         mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, DEFAPP.as_ptr() as u64, 0, 0, 12 * CELL_W, CELL_H, DCDEFAPP as i16 + 1, -1, -1),
+         mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, DEFWIN.as_ptr() as u64, 13 * CELL_W, 0, 9 * CELL_W, CELL_H, DCDEFDIR, -1, -1),
+-        // 6 "Function keys:"
++        // 6 "Parameter:"        7 DCPARM (its own `G_IBOX`)  8/9 the buttons
++        //
++        // `ADDESKCF` objects 6-9 verbatim (`desk_rsc.c:1641-1663`): the label
++        // at char (1,5) 13x1, the `G_IBOX` at (16,5) 22x1 with `ob_spec`
++        // `4352L` = `0x1100` and no 3D flag, and inside it *Full path* at
++        // (0,0) 11x1 and *File name* at (12,0) 10x1, both `SELECTABLE |
++        // RBUTTON | FL3DIND`.
++        mk(G_STRING, 0, PARM_LBL.as_ptr() as u64, CELL_W, y_parm, 13 * CELL_W, CELL_H, DCPARM, -1, -1),
++        mk(G_IBOX, 0, TED_COLOR as u64, 16 * CELL_W, y_parm, 22 * CELL_W, CELL_H, 10, DCPMFULL as i16, DCPMFULL as i16 + 1),
++        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, PMFULL.as_ptr() as u64, 0, 0, 11 * CELL_W, CELL_H, DCPMFULL as i16 + 1, -1, -1),
++        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, PMFILE.as_ptr() as u64, 12 * CELL_W, 0, 10 * CELL_W, CELL_H, DCPARM, -1, -1),
++        // 10 "Function keys:"
+         mk(G_STRING, 0, FUN_LBL.as_ptr() as u64, CELL_W, y_fun_lbl, 14 * CELL_W, CELL_H, DCFUNBOX, -1, -1),
+-        // 7 DCFUNBOX            8..11 its children
++        // 11 DCFUNBOX           12..15 its children
+         mk(G_BOX, FL3DBAK, PANEL_SPEC, CELL_W, y_fun_box, 37 * CELL_W, CELL_H + 8, DCFUNPRV, DCFUNNUM, DCFUNRT),
+         mk(G_FTEXT, FL3DBAK, &mut ted_funnum as *mut _ as u64, 4, 4, 3 * CELL_W, CELL_H, DCFUNLT, -1, -1),
+         mk(G_BUTTON, TOUCHEXIT | FL3DACT, LEFT.as_ptr() as u64, 5 * CELL_W + 4, 4, 3 * CELL_W + 4, CELL_H, DCFUNPTH, -1, -1),
+         mk(G_FBOXTEXT, FL3DBAK, &mut ted_funpth as *mut _ as u64, 10 * CELL_W, 4, 22 * CELL_W, CELL_H, DCFUNRT, -1, -1),
+         mk(G_BUTTON, TOUCHEXIT | FL3DACT, RIGHT.as_ptr() as u64, 33 * CELL_W, 4, 3 * CELL_W + 4, CELL_H, DCFUNBOX, -1, -1),
+-        // 12/13 DCFUNPRV / DCFUNNXT
++        // 16/17 DCFUNPRV / DCFUNNXT
+         mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_fun_lbl, 4 * CELL_W, CELL_H, DCFUNNXT, -1, -1),
+-        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_fun_lbl, 4 * CELL_W, CELL_H, 14, -1, -1),
+-        // 14 "Menu shortcut keys:"
++        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_fun_lbl, 4 * CELL_W, CELL_H, 18, -1, -1),
++        // 18 "Menu shortcut keys:"
+         mk(G_STRING, 0, MNU_LBL.as_ptr() as u64, CELL_W, y_mnu_lbl, 19 * CELL_W, CELL_H, DCMNUBOX, -1, -1),
+-        // 15 DCMNUBOX           16..18 its children
++        // 19 DCMNUBOX           20..22 its children
+         mk(G_BOX, FL3DBAK, PANEL_SPEC, CELL_W, y_mnu_box, 37 * CELL_W, 3 * CELL_H + 4, DCMNUPRV, DCMNUKEY, DCMNUTXT),
+         mk(G_FTEXT, EDITABLE | FL3DBAK, &mut ted_mnukey as *mut _ as u64, 4, 2 * CELL_H, 15 * CELL_W, CELL_H, DCMNUCLR, -1, -1),
+         mk(G_BUTTON, TOUCHEXIT | FL3DACT, CLEAR_ALL.as_ptr() as u64, 17 * CELL_W + 4, 2 * CELL_H, 19 * CELL_W, CELL_H, DCMNUTXT, -1, -1),
+         mk(G_FBOXTEXT, 0, &mut ted_mnutxt as *mut _ as u64, 4, 4, 36 * CELL_W, CELL_H, DCMNUBOX, -1, -1),
+-        // 19/20 DCMNUPRV / DCMNUNXT
++        // 23/24 DCMNUPRV / DCMNUNXT
+         mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_mnu_lbl, 4 * CELL_W, CELL_H, DCMNUNXT, -1, -1),
+         mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_mnu_lbl, 4 * CELL_W, CELL_H, DCFREMEM, -1, -1),
+-        // 21 DCFREMEM
++        // 25 DCFREMEM
+         mk(G_FTEXT, FL3DBAK, &mut ted_fremem as *mut _ as u64, CELL_W, y_freemem, 36 * CELL_W, CELL_H, DCOK, -1, -1),
+-        // 22/23 OK / Cancel (`DCOK` is `SELECTABLE|DEFAULT|EXIT|FL3DACT`,
++        // 26/27 OK / Cancel (`DCOK` is `SELECTABLE|DEFAULT|EXIT|FL3DACT`,
+         // `DC_CNCL` the same without `DEFAULT`, `desk_rsc.c:1759-1771`).
+         mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * CELL_W, y_btn, 9 * CELL_W, CELL_H, DC_CNCL, -1, -1),
+         mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 23 * CELL_W, y_btn, 9 * CELL_W, CELL_H, 0, -1, -1),
+@@ -3282,9 +3399,11 @@ pub(super) fn inf_conf() {
+     //
+     // `deselect_all(tree)` is implicit: `mk` leaves every `ob_state` at 0 (the
+     // two `OUTLINED` panels above are not `SELECTED`). Then
+-    // `if (G.g_appdir) tree[DCDEFAPP] |= SELECTED; else tree[DCDEFWIN] |= …`.
+-    let appdir = global::with(|g| g.g_appdir).unwrap_or(true);
++    // `if (G.g_appdir) tree[DCDEFAPP] |= SELECTED; else tree[DCDEFWIN] |= …`
++    // and the same pair for `G.g_fullpath` (`deskinf.c:1113-1116`).
++    let (appdir, fullpath) = global::with(|g| (g.g_appdir, g.g_fullpath)).unwrap_or((true, true));
+     tree[DCDEFAPP + usize::from(!appdir)].ob_state |= OB_SELECTED;
++    tree[DCPMFULL + usize::from(!fullpath)].ob_state |= OB_SELECTED;
+ 
+     // ── free-RAM line (`deskinf.c:1118-1125`) ───────────────────────────
+     // `sprintf("%ld KB", dos_avail_stram()/1024)`, plus `" + %ld KB"` of
+@@ -3440,7 +3559,13 @@ pub(super) fn inf_conf() {
+                 // `G.g_appdir = inf_which(tree, DCDEFAPP, 2);` (`:1226`) —
+                 // 1 = *Application* (the first of the pair), 0 = *Window*.
+                 let chosen = inf_which(&tree, DCDEFAPP, 2) == 1;
+-                global::with(|g| g.g_appdir = chosen);
++                // `G.g_fullpath = inf_which(tree, DCPMFULL, 2);` (`:1227`) —
++                // 1 = *Full path*, 0 = *File name*.
++                let full = inf_which(&tree, DCPMFULL, 2) == 1;
++                global::with(|g| {
++                    g.g_appdir = chosen;
++                    g.g_fullpath = full;
++                });
+                 done = true;
+             }
+             DC_CNCL => done = true,
+@@ -3496,10 +3621,11 @@ pub fn selftest() {
+     // A representative state: text view, sort by size, custom background, two
+     // desktop-icon positions, one window, and the default file-type anodes.
+     let mut original = InfData::default();
+-    // `appdir = false` is the non-default *Default dir* setting (the `.INF`
+-    // default `INF_E5_DEFAULT` has `INF_E5_APPDIR` set), so the round trip
+-    // exercises the bit in its cleared state too (DESK18).
+-    let (e1, e5) = state_to_env(View::Text, Sort::Size, false, false, original.e1, original.e5);
++    // `appdir = false` is the non-default *Default dir* setting and
++    // `fullpath = false` the non-default *Parameter* one (the `.INF` default
++    // `INF_E5_DEFAULT` has both `INF_E5_APPDIR` and `INF_E5_ISFULL` set), so
++    // the round trip exercises both bits in their cleared state (DESK18/DESK19).
++    let (e1, e5) = state_to_env(View::Text, Sort::Size, false, false, false, original.e1, original.e5);
+     // …and a non-default value for every Preferences field, so the `#E` bytes
+     // the dialog writes are exercised too (DESK02/DESK13): confirm-deletes off,
+     // confirm-copies on, confirm-overwrites off (i.e. `INF_E2_ALLOWOVW` set —
+@@ -3545,7 +3671,7 @@ pub fn selftest() {
+     // (1) In-memory round-trip: serialize → parse → compare.
+     let bytes = original.serialize();
+     let mem = parse_inf(&bytes);
+-    check("in-memory: #E view/sort/appdir", env_to_state(mem.e1, mem.e5) == env_to_state(original.e1, original.e5));
++    check("in-memory: #E view/sort/appdir/fullpath", env_to_state(mem.e1, mem.e5) == env_to_state(original.e1, original.e5));
+     check(
+         "in-memory: #E preferences",
+         env_to_prefs(mem.e1, mem.e2) == (false, true, false, 4, TimeFmt::H12, DateFmt::Dmy),
+@@ -3561,7 +3687,7 @@ pub fn selftest() {
+     match read_inf_file() {
+         Some(back) => {
+             let disk = parse_inf(&back);
+-            check("disk: #E view/sort/appdir", env_to_state(disk.e1, disk.e5) == env_to_state(original.e1, original.e5));
++            check("disk: #E view/sort/appdir/fullpath", env_to_state(disk.e1, disk.e5) == env_to_state(original.e1, original.e5));
+             check(
+                 "disk: #E preferences",
+                 env_to_prefs(disk.e1, disk.e2) == (false, true, false, 4, TimeFmt::H12, DateFmt::Dmy),
+@@ -3602,15 +3728,21 @@ pub fn selftest_install() {
+     // Start from a clean model, then install HELLO.NCP (a real native console
+     // program on the test image) as the handler for *.TXT documents, passing the
+     // document's full path (AF_ISFULL) so the persisted line carries the extra
+-    // flags block. A .NCP is a TOS-console flavour → the #F tag.
++    // flags block, and giving it function key 7 (DESK20). A .NCP is a
++    // TOS-console flavour → the #F tag.
+     *SESSION.lock() = None;
+-    install_application("C:\\HELLO.NCP", "TXT", AppFlavor::Tos, true, false, "");
++    install_application("C:\\HELLO.NCP", "TXT", AppFlavor::Tos, true, false, 7, "");
+ 
+     // The in-memory model resolves the association immediately.
+     let mem = lookup_association(b"README.TXT");
+     check("mem: README.TXT resolves", mem.as_ref().map(|a| a.app_path.as_str()) == Some("C:\\HELLO.NCP"));
+     check("mem: full-path flag set", mem.as_ref().map(|a| a.full_path) == Some(true));
+     check("mem: HELLO.BIN has no association", lookup_association(b"HELLO.BIN").is_none());
++    check("mem: funkey 7 stored", installed_doctype("C:\\HELLO.NCP").map(|a| a.funkey) == Some(7));
++    // `get_funkey`'s duplicate walk: another application asking for 7 sees it
++    // taken, the owner itself does not.
++    check("mem: funkey 7 is taken by another app", funkey_owner(7, "C:\\OTHER.NCP"));
++    check("mem: funkey 7 is not taken by its owner", !funkey_owner(7, "C:\\HELLO.NCP"));
+ 
+     // Persist to disk, then dump the written NEWDESK.INF so the #F line is visible.
+     let wrote = save_desktop();
+@@ -3633,7 +3765,8 @@ pub fn selftest_install() {
+         let disk = lookup_association(b"README.TXT");
+         check("disk: README.TXT resolves to HELLO.NCP", disk.as_ref().map(|a| a.app_path.as_str()) == Some("C:\\HELLO.NCP"));
+         check("disk: full-path flag survived", disk.as_ref().map(|a| a.full_path) == Some(true));
+-        check("disk: contains the #F HELLO.NCP line", contains_subslice(&bytes, b"#F 06 07 C:\\HELLO.NCP@ *.TXT@ 200 @"));
++        check("disk: contains the #F HELLO.NCP line", contains_subslice(&bytes, b"#F 06 07 C:\\HELLO.NCP@ *.TXT@ 207 @"));
++        check("disk: funkey 7 survived", installed_doctype("C:\\HELLO.NCP").map(|a| a.funkey) == Some(7));
+         check("disk: INSIDE.TXT (any dir) resolves", lookup_association(b"INSIDE.TXT").is_some());
+         check("disk: HELLO.NCP is not its own document", lookup_association(b"HELLO.NCP").is_none());
+ 
+diff --git a/kernel/src/desk/ins.rs b/kernel/src/desk/ins.rs
+index dbfadbd..7f7b2c7 100644
+--- a/kernel/src/desk/ins.rs
++++ b/kernel/src/desk/ins.rs
+@@ -25,8 +25,9 @@
+ //! arms of `install_desktop_icon`): a file or folder icon parked on the desktop
+ //! surface itself. That needs an `AT_ISFILE`/`AT_ISFOLD` variant of the
+ //! *desktop* icon list `G.g_ahead` ([`Anode`]'s doc-comment), which NewTOS does
+-//! not have, plus `fun_win2win`'s drop-on-a-program branch — a separate
+-//! work item (DESK30), not the missing reader this module used to report.
++//! not have — a separate work item (DESK30), not the missing reader this
++//! module used to report. (`fun_win2win`'s drop-on-a-program branch was the
++//! other half of that report; it exists since DESK19.)
+ //! `CONF_WITH_DESKTOP_SHORTCUTS` is 1 in our Falcon030/TOS4 `make 512` profile
+ //! (`include/config.h:1782-1784`; the `0` at `:325-327` is inside
+ //! `#ifdef TARGET_192`), so it is a real gap, not a feature that is off in the
+diff --git a/kernel/src/desk/insapp.rs b/kernel/src/desk/insapp.rs
+index 1d9a999..b8d6c31 100644
+--- a/kernel/src/desk/insapp.rs
++++ b/kernel/src/desk/insapp.rs
+@@ -17,14 +17,15 @@
+ //! application-directory-vs-top-window radio, and the GEM/TOS/GTP/TTP flavour
+ //! radio. NewTOS implements the fields that change the *launch contract* — the
+ //! document-type mask, the GEM/TOS/GTP/TTP flavour (which selects the persisted
+-//! `#G`/`#Y`/`#P`/`#F` tag), and the full-path-vs-file-name tail choice
+-//! (`AF_ISFULL`). The function-key/autorun/app-dir fields are **not** offered
+-//! here (function keys and autorun are separate desktop features that are not
+-//! yet wired; app-dir defaults to "top window", `AF_APPDIR` clear); the model
+-//! and file format carry them, so they round-trip untouched when present. Text
+-//! entry needs a real keyboard, so the dialog is driven interactively on
+-//! hardware; the association model + launch path are covered by a headless
+-//! selftest (see `super::inf`/`super::main`).
++//! `#G`/`#Y`/`#P`/`#F` tag), the full-path-vs-file-name tail choice
++//! (`AF_ISFULL`) — and, since DESK20, the **function key** (`APFUNKEY`,
++//! `desk_rsc.h:119`), with `get_funkey`'s validation and its two alerts.
++//! The autorun/app-dir/arguments fields are **not** offered here (autorun is a
++//! separate desktop feature that is not yet wired; app-dir defaults to "top
++//! window", `AF_APPDIR` clear); the model and file format carry them, so they
++//! round-trip untouched when present. Text entry needs a real keyboard, so the
++//! dialog is driven interactively on hardware; the association model + launch
++//! path are covered by a headless selftest (see `super::inf`/`super::main`).
+ 
+ use alloc::string::String;
+ 
+@@ -53,19 +54,40 @@ const OB_SELECTED: u16 = 0x0001;
+ /// slack bytes allow a `*` all-files entry too).
+ const EXT_MAX: usize = 4;
+ 
++/// The number of digits the function-key field takes. `desk_rs_tedinfo[19]`'s
++/// `te_txtlen` is 3 (`desk_rsc.c:130-133`) and a `te_txtlen` counts the NUL,
++/// so the field holds **two** digits — which is what F1…F20 needs. The
++/// `te_txtlen` below is therefore `FKEY_MAX + 1`, exactly as the neighbouring
++/// document-type field's `EXT_MAX` (3 characters) is given as 4.
++const FKEY_MAX: usize = 2;
++
++/// `FIRST_FUNKEY` / `LAST_FUNKEY` (`deskins.h:16-17`) — the range `get_funkey`
++/// accepts; anything else raises [`STINVKEY`].
++const FIRST_FUNKEY: u8 = 1;
++const LAST_FUNKEY: u8 = 20;
++
+ // Object indices in the dialog tree.
+-const O_GEM: i16 = 7;
+-const O_TOS: i16 = 8;
+-const O_GTP: i16 = 9;
+-const O_TTP: i16 = 10;
+-const O_FULL: i16 = 12;
+-const O_FILE: i16 = 13;
+-const O_INSTALL: i16 = 14;
+-const O_REMOVE: i16 = 15;
+-const O_LAST: usize = 16;
++const O_GEM: i16 = 9;
++const O_TOS: i16 = 10;
++const O_GTP: i16 = 11;
++const O_TTP: i16 = 12;
++const O_FULL: i16 = 14;
++const O_FILE: i16 = 15;
++const O_INSTALL: i16 = 16;
++const O_REMOVE: i16 = 17;
++const O_LAST: usize = 18;
+ /// The editable document-type field — `form_do`'s start object, as EmuTOS
+ /// passes `APARGS` (`deskins.c:507`).
+ const O_DOCTYPE: i16 = 5;
++/// The editable function-key field (`APFUNKEY`, `desk_rsc.h:119`).
++const O_FUNKEY: i16 = 7;
++
++/// `STINVKEY` (`desk_rsc.c:2525`) — verbatim, buttons included, because
++/// `fun_alert` hands the whole resource string to `form_alert`.
++static STINVKEY: &[u8] = b"[1][Invalid function key value.][  OK  ]\0";
++/// `STDUPKEY` (`desk_rsc.c:2526-2527`) — two buttons, default 1 (`OK`).
++static STDUPKEY: &[u8] =
++    b"[2][Function key already assigned.|Do you want to reassign it?][  OK  |Cancel]\0";
+ 
+ /// What the user chose in the Install-Application dialog.
+ pub(super) enum Outcome {
+@@ -77,6 +99,9 @@ pub(super) enum Outcome {
+         flavor: AppFlavor,
+         /// `AF_ISFULL`: pass the document's full path in the tail (else name).
+         full_path: bool,
++        /// The validated function key (`pa->a_funkey`, `deskins.c:531`);
++        /// `0` = none.
++        funkey: u8,
+     },
+     /// Remove an existing association for the selected application.
+     Remove,
+@@ -84,6 +109,63 @@ pub(super) enum Outcome {
+     Cancel,
+ }
+ 
++/// `atow` (`deskins.c:380-393`) — leading decimal digits of `s` as a number;
++/// stops at the first non-digit, so a leading blank or letter yields 0.
++fn atow(s: &[u8]) -> u16 {
++    let mut n: u16 = 0;
++    for &c in s {
++        if c.is_ascii_digit() {
++            n = n.saturating_mul(10).saturating_add((c - b'0') as u16);
++        } else {
++            break;
++        }
++    }
++    n
++}
++
++/// `get_funkey(tree, pa, installed)` (`deskins.c:404-444`) — "checks for
++/// invalid or duplicate function key and issues appropriate alert".
++///
++/// `fkey` is the raw text of `APFUNKEY`, `app_path` the application being
++/// installed (EmuTOS's `pa`, which its walk skips by pointer identity) and
++/// `current` its stored `a_funkey` — only meaningful when `installed`.
++/// Returns the key to store, or [`None`] for EmuTOS's `-1` (the caller then
++/// clears the field and asks the user to try again).
++fn get_funkey(fkey: &[u8], app_path: &str, current: u8, installed: bool) -> Option<u8> {
++    // `if (fkey[0] == '\0') return 0;` — an empty field means "no key".
++    if fkey.first().copied().unwrap_or(0) == 0 {
++        return Some(0);
++    }
++
++    let funkey = atow(fkey);
++    // `if (installed && (funkey == pa->a_funkey)) return funkey;` — unchanged,
++    // so it is not re-validated. That is deliberate in EmuTOS: a key a
++    // hand-written `.INF` put outside the range survives an edit of the other
++    // fields.
++    if installed && funkey == current as u16 {
++        return Some(current);
++    }
++
++    // `if ((funkey < FIRST_FUNKEY) || (funkey > LAST_FUNKEY)) { … STINVKEY … }`
++    if funkey < FIRST_FUNKEY as u16 || funkey > LAST_FUNKEY as u16 {
++        super::form_alert(1, STINVKEY.as_ptr());
++        return None;
++    }
++    let funkey = funkey as u8;
++
++    // The walk over the other `ANODE`s (`:430-441`), split around the question
++    // so the session lock is not held across the trap (see
++    // [`super::inf::funkey_owner`]).
++    if super::inf::funkey_owner(funkey, app_path) {
++        if super::form_alert(1, STDUPKEY.as_ptr()) != 1 {
++            return None;
++        }
++        super::inf::release_funkey(funkey, app_path);
++    }
++
++    Some(funkey)
++}
++
+ /// Build one dialog `OBJECT`.
+ #[allow(clippy::too_many_arguments)]
+ fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, head: i16, tail: i16) -> Object {
+@@ -133,9 +215,11 @@ fn set_param_radio(tree: &mut [Object], full_path: bool) {
+ /// The screen underneath is restored by `end_dialog`'s `form_dial(FMD_FINISH)`.
+ pub(super) fn ins_app_dialog(
+     app_name: &str,
++    app_path: &str,
+     initial_ext: &str,
+     initial_flavor: AppFlavor,
+     initial_full: bool,
++    initial_funkey: u8,
+     installed: bool,
+ ) -> Outcome {
+     // Editable extension buffer — `form_do` edits this in place via the TEDINFO.
+@@ -143,6 +227,27 @@ pub(super) fn ins_app_dialog(
+     let n = initial_ext.len().min(EXT_MAX);
+     extbuf[..n].copy_from_slice(&initial_ext.as_bytes()[..n]);
+ 
++    // Editable function-key buffer, pre-filled exactly as `ins_app_dialog`
++    // does (`deskins.c:474-477`): `sprintf(name, "%u ", pa->a_funkey)` when the
++    // node has a key, empty otherwise, and empty for an application that is not
++    // installed at all. `inf_sset` truncates to the field width, which for 20
++    // drops the trailing blank.
++    let mut fkeybuf = [0u8; FKEY_MAX + 2];
++    if installed && initial_funkey != 0 {
++        let mut tmp = [0u8; 4];
++        let mut k = 0usize;
++        if initial_funkey >= 10 {
++            tmp[k] = b'0' + initial_funkey / 10;
++            k += 1;
++        }
++        tmp[k] = b'0' + initial_funkey % 10;
++        k += 1;
++        tmp[k] = b' ';
++        k += 1;
++        let m = k.min(FKEY_MAX);
++        fkeybuf[..m].copy_from_slice(&tmp[..m]);
++    }
++
+     // The application-name value string (shown, not editable). Copied into an
+     // owned NUL-terminated buffer so it outlives the borrow.
+     let mut namebuf = [0u8; 16];
+@@ -153,6 +258,11 @@ pub(super) fn ins_app_dialog(
+     static TITLE: &[u8] = b" Install Application \0";
+     static APP_LBL: &[u8] = b"Application:\0";
+     static DOC_LBL: &[u8] = b"Document type:   *.\0";
++    /// `desk_rs_tedinfo[19]`'s template without its two `_` placeholders —
++    /// the `G_BOXTEXT` field below is the placeholder (`desk_rsc.c:131`).
++    static FKEY_LBL: &[u8] = b"Install as:       F\0";
++    /// `te_pvalid` of `APFUNKEY` — digits only (`desk_rsc.c:132`).
++    static V_DIGIT: &[u8] = b"9\0";
+     static TYPE_LBL: &[u8] = b"Program type:\0";
+     static GEM: &[u8] = b" GEM \0";
+     static TOS: &[u8] = b" TOS \0";
+@@ -178,10 +288,23 @@ pub(super) fn ins_app_dialog(
+         te_txtlen: EXT_MAX as i16,
+         te_tmplen: 0,
+     };
++    let ted_fkey = TedInfo {
++        te_ptext: fkeybuf.as_mut_ptr() as u64,
++        te_ptmplt: EMPTY.as_ptr() as u64,
++        te_pvalid: V_DIGIT.as_ptr() as u64,
++        te_font: 3,
++        te_junk1: 0,
++        te_just: 0,
++        te_color: TED_COLOR,
++        te_junk2: 0,
++        te_thickness: 1,
++        te_txtlen: (FKEY_MAX + 1) as i16,
++        te_tmplen: 0,
++    };
+ 
+     // Built at the origin; `start_dialog`'s `form_center` writes the centred
+     // `ob_x`/`ob_y` into the ROOT.
+-    let (dw, dh) = (360i16, 240i16);
++    let (dw, dh) = (360i16, 272i16);
+ 
+     // The 3D roles are `ADINSAPP`'s, object by object (`desk_rsc.c:1027-1195`):
+     // `FL3DBAK` + `OUTLINED` ROOT; `APDOCTYP` is an `EDITABLE | FL3DBAK` field;
+@@ -215,20 +338,25 @@ pub(super) fn ins_app_dialog(
+         // 4: document-type label ("Document type:  *."), 5: editable extension.
+         mk(G_STRING, 0, DOC_LBL.as_ptr() as u64, 24, 72, 160, 16, 5, -1, -1),
+         mk(G_BOXTEXT, EDITABLE | FL3DBAK, &ted as *const _ as u64, 200, 68, 56, 22, 6, -1, -1),
+-        // 6: program-type label, 7-10: flavour radio buttons.
+-        mk(G_STRING, 0, TYPE_LBL.as_ptr() as u64, 24, 104, 104, 16, 7, -1, -1),
+-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, GEM.as_ptr() as u64, 144, 100, 44, 22, 8, -1, -1),
+-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, TOS.as_ptr() as u64, 198, 100, 44, 22, 9, -1, -1),
+-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, GTP.as_ptr() as u64, 252, 100, 44, 22, 10, -1, -1),
+-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, TTP.as_ptr() as u64, 306, 100, 44, 22, 11, -1, -1),
+-        // 11: argument label, 12-13: full-path/file-name radio.
+-        mk(G_STRING, 0, PARM_LBL.as_ptr() as u64, 24, 136, 104, 16, 12, -1, -1),
+-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, FULL.as_ptr() as u64, 144, 132, 88, 22, 13, -1, -1),
+-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, FILE.as_ptr() as u64, 244, 132, 88, 22, 14, -1, -1),
+-        // 14: Install (default), 15: Remove, 16: Cancel (last).
+-        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, INSTALL.as_ptr() as u64, 24, 190, 90, 30, 15, -1, -1),
+-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, REMOVE.as_ptr() as u64, 136, 190, 90, 30, 16, -1, -1),
+-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 248, 190, 90, 30, 0, -1, -1),
++        // 6: function-key label ("Install as:       F"), 7: editable number
++        // (`APFUNKEY`, `desk_rsc.c:1059-1063` — an `EDITABLE | FL3DBAK`
++        // field, one row under `APDOCTYP`, as it is there).
++        mk(G_STRING, 0, FKEY_LBL.as_ptr() as u64, 24, 104, 160, 16, O_FUNKEY, -1, -1),
++        mk(G_BOXTEXT, EDITABLE | FL3DBAK, &ted_fkey as *const _ as u64, 200, 100, 40, 22, 8, -1, -1),
++        // 8: program-type label, 9-12: flavour radio buttons.
++        mk(G_STRING, 0, TYPE_LBL.as_ptr() as u64, 24, 136, 104, 16, 9, -1, -1),
++        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, GEM.as_ptr() as u64, 144, 132, 44, 22, 10, -1, -1),
++        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, TOS.as_ptr() as u64, 198, 132, 44, 22, 11, -1, -1),
++        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, GTP.as_ptr() as u64, 252, 132, 44, 22, 12, -1, -1),
++        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, TTP.as_ptr() as u64, 306, 132, 44, 22, 13, -1, -1),
++        // 13: argument label, 14-15: full-path/file-name radio.
++        mk(G_STRING, 0, PARM_LBL.as_ptr() as u64, 24, 168, 104, 16, 14, -1, -1),
++        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, FULL.as_ptr() as u64, 144, 164, 88, 22, 15, -1, -1),
++        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, FILE.as_ptr() as u64, 244, 164, 88, 22, 16, -1, -1),
++        // 16: Install (default), 17: Remove, 18: Cancel (last).
++        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, INSTALL.as_ptr() as u64, 24, 222, 90, 30, 17, -1, -1),
++        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, REMOVE.as_ptr() as u64, 136, 222, 90, 30, 18, -1, -1),
++        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 248, 222, 90, 30, 0, -1, -1),
+     ];
+ 
+     // A not-installed application cannot be removed (EmuTOS `deskins.c:585-586`).
+@@ -257,6 +385,16 @@ pub(super) fn ins_app_dialog(
+             O_FULL => full_path = true,
+             O_FILE => full_path = false,
+             O_INSTALL => {
++                // `funkey = get_funkey(tree,pa,installed); if (funkey < 0) {
++                //  inf_sset(tree, APFUNKEY, ""); tree[APINSTAL].ob_state &=
++                //  ~SELECTED; … draw_dial(tree); exitobj = -1; break; }`
++                // (`deskins.c:520-530`) — the *only* retry the dialog has.
++                let Some(key) = get_funkey(&fkeybuf, app_path, initial_funkey, installed) else {
++                    fkeybuf.fill(0);
++                    tree[O_INSTALL as usize].ob_state &= !OB_SELECTED;
++                    super::dir::draw_dial(tree_ptr);
++                    continue;
++                };
+                 // Read the document-type field and finish (the dialog is torn
+                 // down and the screen repainted, so no need to clear SELECTED).
+                 let m = extbuf.iter().position(|&b| b == 0).unwrap_or(extbuf.len());
+@@ -265,6 +403,7 @@ pub(super) fn ins_app_dialog(
+                     doc_ext: String::from(ext),
+                     flavor,
+                     full_path,
++                    funkey: key,
+                 };
+             }
+             O_REMOVE if installed => break Outcome::Remove,
+diff --git a/kernel/src/desk/main.rs b/kernel/src/desk/main.rs
+index 952feb7..02f31ca 100644
+--- a/kernel/src/desk/main.rs
++++ b/kernel/src/desk/main.rs
+@@ -424,6 +424,82 @@ fn open_document(name: &str, full_path: &str) {
+     launch_native(&app_path, &app_name, flavor, &tailbuf[..taillen]);
+ }
+ 
++/// `do_aopen(pa, TRUE, curr, pathname, pname, tail)` (`desksupp.c:843-1031`)
++/// for the single case `fun_win2win`'s drop-on-an-application branch reaches
++/// (`deskfun.c:967`): `isapp` is `TRUE` and `tail` is **not** `NULL`, so
++/// neither the `installed_datafile` arm (`:924`, `isapp` rules it out) nor
++/// `opn_appl`'s `.TTP` parameter prompt (`:978-985`, the `tail` branch takes
++/// precedence) runs. What is left is three steps:
++///
++/// * the current directory, set exactly as `do_aopen` sets it (`:873-890`):
++///   from the node's own `AF_APPDIR` + `a_pappl` when it is an **installed**
++///   application, otherwise from the desktop-wide `G.g_appdir` and the
++///   **destination window's** `p_spec` — that is [`set_launch_dir`], shared
++///   with the double-click and document paths;
++/// * `app_path = pathname` with its file-name part replaced by `pname`
++///   (`:958-960`) — here `dst_dir` (which already ends in `\`) plus
++///   `prog_name`;
++/// * `strcpy(ptail, tail)` and `pro_run` (`:969-975`, `:986`).
++///
++/// `installed`/`pappl`/`node_appdir` are the three fields of the destination
++/// `ANODE` those steps read; `tail` is the command line
++/// [`dir::build_selected_path`] built.
++///
++/// Returns EmuTOS's `exit_desktop`. NewTOS launches **nested** instead of
++/// leaving the desktop process (AES gap G1, see [`launch_native`]), so the
++/// answer is always `false` — there is no desktop to exit, and the desktop is
++/// back on screen by the time this returns.
++pub(super) fn do_aopen_drop(
++    installed: bool,
++    pappl: &str,
++    node_appdir: bool,
++    dst_dir: &str,
++    prog_name: &str,
++    tail: &str,
++) -> bool {
++    // `if (is_installed(pa)) { … AF_APPDIR … pa->a_pappl } else { … G.g_appdir
++    //  … pathname }` (`desksupp.c:884-905`).
++    let (app_dir, own_path) = if installed {
++        (node_appdir, String::from(pappl))
++    } else {
++        (global::with(|g| g.g_appdir).unwrap_or(true), String::from(dst_dir))
++    };
++    if !set_launch_dir(app_dir, &own_path) {
++        return false;
++    }
++
++    // `strcpy(app_path, pathname); p = filename_start(app_path); strcpy(p, pname);`
++    let mut app_path = String::from(dst_dir);
++    app_path.push_str(prog_name);
++
++    // EmuTOS hands `app_path` to `pro_run` whatever it is and lets the loader
++    // fail; NewTOS's loader takes native AArch64 ELF only (ADR-018), so the
++    // two non-native answers are reported here, in the wording the
++    // double-click path already uses for them.
++    match ftype::classify(prog_name.as_bytes()) {
++        ftype::FileType::Native(flavor) => {
++            let mut tailbuf = [0u8; 128];
++            let taillen = build_cmd_tail(&mut tailbuf, tail);
++            app_path.push('\0'); // the loader reads up to the first NUL
++            launch_native(&app_path, prog_name, flavor, &tailbuf[..taillen]);
++        }
++        ftype::FileType::M68k => {
++            let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
++            super::form_alert(1, text.as_ptr());
++        }
++        // Reachable, and an EmuTOS quirk rather than an accident: an installed
++        // application's `ANODE` carries `a_aicon = IG_APPL` **and** its
++        // document wildcard, and `app_afind_by_name` tests `a_pdata` first
++        // (`deskapp.c:1450-1454`), so a document of that type answers
++        // `a_aicon >= 0` too and EmuTOS tries to run the document itself.
++        ftype::FileType::Doc => {
++            let text = b"[1][ This file is not a native | NewTOS program. ][ OK ]\0";
++            super::form_alert(1, text.as_ptr());
++        }
++    }
++    false
++}
++
+ /// Build the classic Atari command-tail image into `buf` and return its length:
+ /// `buf[0]` = argument length, `buf[1..]` = the argument characters, then a NUL
+ /// and a trailing `\r` (EmuTOS `pro_run`, `deskpro.c:56-57`; the loader appends
+@@ -841,16 +917,21 @@ fn kbd_arrow(action: i16) {
+ }
+ 
+ /// `check_function_key` (EmuTOS `deskmain.c:1117`) — F1-F20 launch the
+-/// installed application bound to that function key. The application list
+-/// (ANODE chain) is built by Install-Application (deskins, **Task #9**); with
+-/// none installed, no function key resolves to a launch target, so the key is
+-/// unhandled and falls through (EmuTOS `process_funkey` → `do_aopen` only on a
+-/// matching `a_funkey`). Returns `None` (unhandled) for both a non-function key
+-/// and a function key with no bound application — a genuine no-op over an empty
+-/// list, not a stub.
++/// installed application bound to that function key.
++///
++/// **Named gap, and it is now a real one.** Until DESK20 no application could
++/// carry a key at all, so falling through was the only possible answer. DESK20
++/// built the assignment (`APFUNKEY` in [`super::insapp`], `a_funkey` in the
++/// `NEWDESK.INF` model), so a bound key can exist — what is still missing is
++/// `process_funkey` (`deskmain.c:1087-1106`): find the `ANODE` with that
++/// `a_funkey` and `do_aopen(pa, TRUE, -1, pathname, pfname, NULL)`. That is a
++/// separate work item, not part of DESK20's "make the key assignable".
++///
++/// Returns `None` (unhandled) for both a non-function key and a function key
++/// whose launch is that missing step.
+ fn check_function_key(key: i16) -> Option<bool> {
+     funkey_number(key)?; // must be F1-F20, else fall through
+-    None // no installed application bound yet (Task #9)
++    None // `process_funkey` is not built yet — see the note above
+ }
+ 
+ /// The function-key number 1..20 for `key`, or `None` if it is not a function
+@@ -1151,15 +1232,23 @@ fn do_install_app() {
+     // Pre-fill the dialog from an existing association for this program, if any.
+     let existing = super::inf::installed_doctype(&app_path);
+     let installed = existing.is_some();
+-    let (init_ext, init_flavor, init_full) = match existing {
+-        Some((ext, fl, full)) => (ext, fl, full),
+-        None => (String::new(), default_flavor(flavor), false),
++    let (init_ext, init_flavor, init_full, init_funkey) = match existing {
++        Some(a) => (a.doc_ext, a.flavor, a.full_path, a.funkey),
++        None => (String::new(), default_flavor(flavor), false, 0),
+     };
+ 
+-    let outcome = super::insapp::ins_app_dialog(&app_name, &init_ext, init_flavor, init_full, installed);
++    let outcome = super::insapp::ins_app_dialog(
++        &app_name,
++        &app_path,
++        &init_ext,
++        init_flavor,
++        init_full,
++        init_funkey,
++        installed,
++    );
+     match outcome {
+-        Outcome::Install { doc_ext, flavor: fl, full_path } => {
+-            super::inf::install_application(&app_path, &doc_ext, fl, full_path, false, "");
++        Outcome::Install { doc_ext, flavor: fl, full_path, funkey } => {
++            super::inf::install_application(&app_path, &doc_ext, fl, full_path, false, funkey, "");
+         }
+         Outcome::Remove => {
+             super::inf::remove_application(&app_path);
+@@ -2028,6 +2117,8 @@ pub(super) fn cnx_put() {
+         g.g_cnxsave.cs_datefmt = g.g_cdateform;
+         // `cnxsave->cs_appdir = G.g_appdir;` (`deskmain.c:1391`).
+         g.g_cnxsave.cs_appdir = g.g_appdir;
++        // `cnxsave->cs_fullpath = G.g_fullpath;` (`deskmain.c:1392`).
++        g.g_cnxsave.cs_fullpath = g.g_fullpath;
+     });
+ 
+     // The open windows, front-to-back, with their desktop slot and handle.
+@@ -2163,6 +2254,8 @@ fn cnx_get_prefs() {
+         g.g_cdateform = g.g_cnxsave.cs_datefmt;
+         // `G.g_appdir = cnxsave->cs_appdir;` (`deskmain.c:1453`).
+         g.g_appdir = g.g_cnxsave.cs_appdir;
++        // `G.g_fullpath = cnxsave->cs_fullpath;` (`deskmain.c:1454`).
++        g.g_fullpath = g.g_cnxsave.cs_fullpath;
+         g.win_view();
+         g.g_cdclkpref
+     })
+diff --git a/tools/make-sd-image.sh b/tools/make-sd-image.sh
+index 6eea667..a0a4972 100755
+--- a/tools/make-sd-image.sh
++++ b/tools/make-sd-image.sh
+@@ -139,6 +139,20 @@ else
+   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\SUB\\CURDIR.NCP skipped"
+ fi
+ 
++# CMDLINE.NCP is the command-line proof (DESK19): it prints its own
++# `p_cmdlin` out of the BasePage the loader maps at VA 0, plus the current
++# drive + directory. Dropping a file on its icon is a LAUNCH WITH ARGUMENTS in
++# EmuTOS (`fun_win2win`, deskfun.c:958-970), not a copy, and the argument is
++# either the full path or the bare file name depending on the desktop
++# configuration's *Parameter* setting (`build_selected_path`, :903-928). Put in
++# the root so the drag is one gesture inside the C:\ window; never in \AUTO\,
++# where it would get an empty tail and say nothing.
++if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/cmdline.c" "$V/CMDLINE.NCP" >/dev/null 2>&1; then
++  echo "built + installed C:\\CMDLINE.NCP (command-line proof)"
++else
++  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\CMDLINE.NCP skipped"
++fi
++
+ # DTACHILD.NCP is the per-process-DTA proof (S1c): a console program that moves
+ # its OWN DTA (Fsetdta(0x2000)) and exits. A parent runs it between its own
+ # Fsetdta(buf) and Fgetdta() -- if Fgetdta still returns buf, the DTA really
+diff --git a/sdk/examples/cmdline.c b/sdk/examples/cmdline.c
+new file mode 100644
+index 0000000..0834e89
+--- /dev/null
++++ b/sdk/examples/cmdline.c
+@@ -0,0 +1,83 @@
++/*
++ * cmdline.c -- print the command line the launcher handed this program.
++ *
++ * A native NewTOS console program (`.NCP`, ADR-018). It reads its own
++ * BasePage -- which the loader maps at VA 0 (sdk/crt0.S) -- and prints the
++ * command tail out of `p_cmdlin` (offset 0x80, docs/api/gemdos/_basepage.md /
++ * tos-types/src/basepage.rs): a length byte followed by that many characters.
++ *
++ * It is the acceptance program for DESK19 (dropping a selection on a program
++ * icon is a launch with arguments, not a copy, EmuTOS deskfun.c:958-970): drop
++ * a file on it and the line it prints is what `build_selected_path`
++ * (deskfun.c:903-928) built -- a bare file name or a full path, depending on
++ * the desktop configuration's *Parameter* setting.
++ *
++ * It also prints the current drive + directory, so the same run shows which
++ * directory `do_aopen` (desksupp.c:884-905) chose -- the *Default dir* switch
++ * DESK18 could not make observable on its own.
++ *
++ * Calls used, all against docs/api/:
++ *   Dgetdrv  GEMDOS 0x19  docs/api/gemdos/drive/19-dgetdrv.md
++ *   Dgetpath GEMDOS 0x47  docs/api/gemdos/directory/47-dgetpath.md
++ *   Cconws   GEMDOS 0x09  docs/api/gemdos/console/09-cconws.md
++ */
++#include <newtos.h>
++
++static NLONG Dgetdrv(void)              { return gemdos0(0x19); }
++static NLONG Dgetpath(char *b, NLONG d) { return gemdos2(0x47, (NLONG)b, d); }
++
++/* Offset of `p_cmdlin` in the BasePage (tos-types/src/basepage.rs). */
++#define P_CMDLIN 0x80
++
++/* Append a NUL-terminated string to `dst`, returning the new end index. */
++static int puts_at(char *dst, int j, const char *s)
++{
++    while (*s)
++        dst[j++] = *s++;
++    dst[j] = '\0';
++    return j;
++}
++
++int main(void)
++{
++    /* The BasePage is at VA 0; the command tail starts at 0x80. */
++    const unsigned char *bp = (const unsigned char *)0;
++    const unsigned char *tail = bp + P_CMDLIN;
++    unsigned int len = tail[0];
++
++    char line[256];
++    char path[128];
++    NLONG drv;
++    unsigned int i;
++    int j;
++
++    /* "current drive + directory" -- which directory the launcher chose. */
++    drv = Dgetdrv();
++    path[0] = '\0';
++    Dgetpath(path, 0);
++
++    j = puts_at(line, 0, "CMDLINE: cwd ");
++    line[j++] = (char)('A' + (int)drv);
++    line[j++] = ':';
++    line[j] = '\0';
++    j = puts_at(line, j, path[0] ? path : "\\");
++    j = puts_at(line, j, "\r\n");
++    Cconws(line);
++
++    /* The command tail itself: length byte, then that many characters. */
++    j = puts_at(line, 0, "CMDLINE: len ");
++    if (len >= 100)
++        line[j++] = (char)('0' + (len / 100) % 10);
++    if (len >= 10)
++        line[j++] = (char)('0' + (len / 10) % 10);
++    line[j++] = (char)('0' + len % 10);
++    line[j] = '\0';
++    j = puts_at(line, j, " arg \"");
++    for (i = 0; i < len && j < 240; i++)
++        line[j++] = (char)tail[1 + i];
++    line[j] = '\0';
++    j = puts_at(line, j, "\"\r\n");
++    Cconws(line);
++
++    return 0;
++}

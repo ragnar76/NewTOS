@@ -1,0 +1,59 @@
+# DESK20: assign a function key in the Install-Application dialog and see it
+# in Desktop configuration. C:\CMDLINE.NCP is selected (which enables the menu
+# entry), the document type `TXT` is typed into APDOCTYP, `7` into the new
+# APFUNKEY field (desk_rsc.h:119), Install is pressed, and Options -> Desktop
+# configuration then shows `F7` + the path in the Function keys panel.
+#   C:\ window CMDLINE.NCP (347,145)                                [probe 1]
+#   Options: `Install application...` (280,43), `Desktop conf...` (280,123)
+#   ADINSAPP: APDOCTYP (368,192), APFUNKEY (360,224), Install (209,350) [probe 4]
+#   scancodes: T=14 X=2d 7=08 (make), +0x80 = break
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_WIN
+3100 move 347 145
+3400 down
+3403 up
+3800 parkbr
+4600 mark C_SEL
+4900 move 196 240
+5300 move 196 9
+5900 mark D_MENU
+6100 move 280 43
+6500 down
+6503 up
+7100 parkbr
+8000 mark E_INSAPP
+8200 key 14
+8240 key 94
+8300 key 2d
+8340 key ad
+8400 key 14
+8440 key 94
+9000 mark F_DOCTYPE
+9200 move 360 224
+9600 down
+9603 up
+10200 key 08
+10240 key 88
+10800 parkbr
+11600 mark G_FUNKEY
+11800 move 209 350
+12200 down
+12203 up
+12800 parkbr
+13700 mark H_INSTALLED
+14000 move 196 240
+14400 move 196 9
+15000 mark I_MENU2
+15200 move 280 123
+15600 down
+15603 up
+16200 parkbr
+17100 mark J_CONF
+18600 pause

@@ -1,0 +1,319 @@
+measurement-2026-09-23-desk19-desk20
+  DESK19 (dropping a selection on a program is a launch with arguments)
+  DESK20 (Install application assigns a function key)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD 9a85fd8. Both tickets' change is UNCOMMITTED
+in the shared tree (six source files + tools/make-sd-image.sh + the new
+sdk/examples/cmdline.c). Nothing flashed, nothing ejected, no real Pi run,
+nothing committed; no `git checkout/restore/clean/stash/reset` was run on the
+shared tree. The only git commands used were the read-only
+`git show HEAD:kernel/src/desk/*.rs` (how the "before" kernel is built,
+method/make_scratch.sh) and `git diff` (method/desk19-desk20.diff).
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (`method/run.sh` + `method/qmp_multi.py`). Card image: a fresh
+`tools/make-sd-image.sh` per measurement (64 MiB, MBR + FAT16) plus the
+fixture in §0 (`method/seed.sh`) -- rebuilt, never a reused copy, because the
+tool changed with DESK19 (it now installs C:\CMDLINE.NCP); each run gets its
+own copy of it. Interactive runs use the scratch-copy IKBD injector (memory
+`desktop-interactive-verification-real-hw`): `method/make_scratch.sh` rsyncs
+the crates into the job scratch and patches the copy -- never the shared tree.
+
+`method/*.actions` are the eleven action lists, `method/*.rs` the generated
+injector tables (`mkscript.sh` -> `gen_script.py ... SCRIPT_DESK`, plus an
+empty `SCRIPT_TERA`). `method/desk19_patch.py` is the DESK19/DESK20-only
+serial scaffolding (see §0). `method/lsimg.py` is the read-only FAT16 lister,
+`method/fsck.sh` the `fsck_msdos -n` wrapper.
+`method/desk19-desk20.diff` is the full source diff.
+No `*.img` in this directory (the ticket's rule).
+
+All nine "after" runs and the four repeats come from ONE source state -- the
+final one, including the `te_txtlen` fix §7 found. The runs made before that
+fix were discarded and re-driven.
+
+POINTER PARK: (639,479) -- `parkbr`, which crosses no menu title (A79). The
+one approach to the menu bar goes (639,479) -> (196,240) -> (196,9), i.e.
+straight up into *Options*' own title, crossing no other title (memory
+`injector-park-must-not-cross-menu-bar`).
+
+EVERY click point comes from a serial dump, none is guessed:
+  * `method/probe_patch.py` (the DESK24/25/26 copy) prints the menu geometry
+    with every entry's DISABLED bit, the desktop icons and the window items
+    with their click points.
+  * `method/desk19_patch.py`'s `probe_tree()` walks a whole dialog tree and
+    prints every object's ABSOLUTE rectangle -- that is where the `ADDESKCF`
+    and `ADINSAPP` points come from. It walks `ob_next`/`LASTOB` and assumes
+    no numbering, so it works on the "before" tree as well.
+  * the `[alert]` dump (same script) prints every `form_alert` box + button,
+    which is where DESK20's `STINVKEY`/`STDUPKEY` points come from.
+
+Measured, and used unchanged by every later run:
+  desktop C: icon (38,35), Trash (38,449)
+  C:\ window:  CMDLINE.NCP (347,145)  README.TXT (179,271)
+               HELLO2.NCP (431,187)   DESKT19 (431,103)
+  Options title hover (196,9)
+    `Install application...` (280,43)   `Desktop configuration...` (280,123)
+  ADDESKCF root (164,73) 312x352:
+    DCDEFAPP (340,129)  DCDEFWIN (432,129)
+    DCPMFULL (336,161)  DCPMFILE (428,161)
+    DCOK     (256,401)  DC_CNCL  (384,401)
+  ADINSAPP root (140,113) 360x272:
+    APDOCTYP (368,192)  APFUNKEY (360,224)
+    Install  (209,350)  Remove (321,350)  Cancel (433,350)
+  STINVKEY alert box (176,202) 288x94 -> OK (320,269)
+  STDUPKEY alert box (164,202) 312x94 -> OK (280,269), Cancel (360,269)
+  after the window move: C:\DESKT19\ DROPME.TXT (127,358)
+
+
+0. The card, and the scaffolding
+---------------------------------
+`tools/make-sd-image.sh` now builds and installs `C:\CMDLINE.NCP` from the new
+`sdk/examples/cmdline.c`: a native `.NCP` console program that prints its OWN
+command line out of `p_cmdlin` (BasePage offset 0x80, which the loader maps at
+VA 0) plus the current drive + directory. It is the acceptance program for
+DESK19 -- it says what it was handed, it does not assert it.
+
+Seeded on top of that image (`method/seed.sh`):
+
+    C:\DESKT19\DROPME.TXT   21 bytes   (the dragged file, two-window run)
+    C:\DESKT19\PROOF.TXT    19 bytes
+
+All dumps go through `tos_api::aes::h02_log` (the a79 serial-only sink) or
+`kprintln!`; nothing reaches the framebuffer, so the pictures stay clean. The
+ONE exception is CMDLINE.NCP's own `Cconws` output, which by contract goes to
+both the VT52 screen and the UART (`kernel/src/host_env.rs:58-61`) -- which is
+why the same two lines appear in the pictures and in the logs.
+
+
+1. The runs
+-----------
+
+probe   menu + desktop-icon geometry, and the C:\ window's items.
+        screendumps/probe-{a-idle,b-win,c-csel}.png
+probe2  the `ADDESKCF` tree (Options -> Desktop configuration).
+        screendumps/probe2-{a-idle,b-menu,c-conf}.png
+probe3  the two-window arrangement: Alt+C, open DESKT19, move that window down
+        with a title-bar drag so both are visible.
+        screendumps/probe3-{a-idle,b-subwin,c-moved}.png
+probe4  the `ADINSAPP` tree (Options -> Install application).
+        screendumps/probe4-{a-sel,b-menu,c-insapp}.png
+
+d19-full    DESK19 after, *Parameter* = Full path (the `.INF` default):
+            C:\README.TXT dropped on C:\CMDLINE.NCP.
+            d19-full-{a-idle,b-win,c-cmdline}.png
+d19-file    the same after switching *Parameter* to File name in the dialog.
+            d19-file-{a-idle,b-conf,c-filename,d-win,e-cmdline}.png
+d19-before  DESK19 before (HEAD desk/*.rs): the same gesture.
+            d19-before-{a-idle,b-win,c-dropped}.png
+d19-defdir-app  two windows, *Default dir* = Application (the default).
+            d19-defdir-app-{a-moved,b-cmdline}.png
+d19-defdir-win  the same with *Default dir* = Window.
+            d19-defdir-win-{a-window,b-moved,c-cmdline}.png
+
+d20-funkey  DESK20: `7` typed into the new `APFUNKEY` field, Install, then
+            Desktop configuration shows it.
+            d20-funkey-{a-insapp,b-typed,c-installed,d-conf}.png
+d20-invalid `99` typed instead -> `STINVKEY`, OK, field cleared, retry.
+            d20-invalid-{a-typed,b-alert,c-retry}.png
+d20-dup     a SECOND application asks for the same key -> `STDUPKEY`, OK, the
+            key moves over.
+            d20-dup-{a-installed1,a-alert,b-alert,c-conf}.png
+
+d19-full-repeat1..4   the d19-full run driven four more times (see §7).
+final-rpi4  smoke boot of the SHARED tree's own, unpatched rpi4 build.
+            screendumps/final-rpi4-desktop.png
+
+
+2. DESK19 -- confirmed and built
+--------------------------------
+The premise checks out line for line. `fun_win2win` (`deskfun.c:942-1001`)
+resolves the drop target with `i_find` and, `if (pda->a_aicon >= 0)`
+(`:962`) -- "dropping file on to an application" -- builds the command line
+with `build_selected_path` (`:903-928`) and calls
+`do_aopen(pda, TRUE, dst_ob, pdw->w_pnode.p_spec, pdf->f_name, destpath)`
+(`:967`), then **returns**: nothing is copied. `build_selected_path` takes the
+FIRST selected file and copies either `pn->p_spec`+name or the bare name,
+`#if CONF_WITH_DESKTOP_CONFIG if (G.g_fullpath)` (`:915-925`).
+`CONF_WITH_DESKTOP_CONFIG` and `CONF_WITH_DESKTOP_SHORTCUTS` (which gates
+`do_aopen`'s `if (tail)` arm, `desksupp.c:968-977`) both default to 1
+(`include/config.h:1774-1784`), i.e. both are on in our Falcon030/TOS4 profile.
+
+Before (serial/d19-before-serial.log) the drag produces a COPY:
+
+    [aes] pid=0 op 43 in=(2,8,347,145,0,0) out=(21,0,0,0,0,0,0)
+    ... `COPY FILE(S)`, "Number of files: 1"
+
+-- screendumps/d19-before-c-dropped.png. Nothing is launched.
+
+After, the same gesture takes the branch:
+
+  *Parameter* = Full path (serial/d19-full-serial.log)
+    [d19] fun_win2win i_find -> "CMDLINE.NCP" aicon=6 installed=false
+                                pappl="*.NCP" appdir=false
+    [d19] build_selected_path(src="C:\", first="README.TXT", fullpath=true)
+                                -> "C:\README.TXT"
+    [d19] do_aopen_drop installed=false ... dst_dir="C:\" prog="CMDLINE.NCP"
+                                tail="C:\README.TXT"
+    CMDLINE: cwd C:\
+    CMDLINE: len 13 arg "C:\README.TXT"          d19-full-c-cmdline.png
+
+  *Parameter* = File name (serial/d19-file-serial.log)
+    [d19] build_selected_path(src="C:\", first="README.TXT", fullpath=false)
+                                -> "README.TXT"
+    CMDLINE: len 10 arg "README.TXT"             d19-file-e-cmdline.png
+
+The `aicon=6` is the generic `#F 06 FF *.NCP@ @` node of
+`InfData::default_type_anodes` -- the same number `win_icalc` hands the view,
+so the branch taken always matches the icon on screen (EmuTOS's own test is
+the icon number, not the extension).
+
+d19-file-c-filename.png is the *Parameter* group actually switching: *Full
+path* clears when *File name* is picked, which is what says the group has its
+own `G_IBOX` parent and is not sharing *Default dir*'s.
+
+
+3. DESK19 -- and *Default dir* is observable now
+-------------------------------------------------
+DESK18 measured that both settings of *Default dir* chose the same directory,
+because EmuTOS only tells them apart through desktop shortcuts (DESK30) and
+through exactly this branch. With the branch built, the two differ:
+`do_aopen` takes `pathname` (the DESTINATION window's `p_spec`) when
+`G.g_appdir`, and `win_ontop()`'s (the SOURCE window, which the drag topped)
+when not (`desksupp.c:896-905`).
+
+Two windows, C:\DESKT19\ on top as the source, C:\ below holding the program
+(probe3 arranges them, screendumps/probe3-c-moved.png):
+
+  *Default dir* = Application   CMDLINE: cwd C:\
+                                serial/d19-defdir-app-serial.log
+  *Default dir* = Window        CMDLINE: cwd C:\DESKT19
+                                serial/d19-defdir-win-serial.log
+
+Same card, same gesture, one radio button apart. The command line is
+`"C:\DESKT19\DROPME.TXT"` in both, as it must be -- that is the *Parameter*
+switch, not this one.
+
+
+4. DESK20 -- confirmed and built
+--------------------------------
+The premise checks out: `ADINSAPP` object 5 is `APFUNKEY`
+(`desk_rsc.h:119`, `desk_rsc.c:1059-1063`), an `EDITABLE | FL3DBAK`
+`G_FBOXTEXT` over `desk_rs_tedinfo[19]` (template "Install as: F__", valid
+"9", `te_txtlen` 3). `ins_app_dialog` pre-fills it (`deskins.c:474-477`),
+`get_funkey` reads and validates it (`:404-444`) and `APINSTAL` stores the
+result (`:520-531`). NewTOS's dialog had no such field.
+
+d20-funkey (serial/d20-funkey-serial.log):
+
+    [d20] get_funkey(fkey="7", app="C:\CMDLINE.NCP", current=0,
+                     installed=false) -> Some(7)
+    [d20] install_application(app="C:\CMDLINE.NCP", ext="txt",
+                              full_path=false, funkey=7)
+
+  * d20-funkey-a-insapp.png -- the dialog with the new `Install as:  F [__]`
+    row between *Document type* and *Program type*, as `ADINSAPP` has it.
+  * d20-funkey-b-typed.png -- `txt` and `7` typed in.
+  * d20-funkey-d-conf.png  -- Desktop configuration's *Function keys* panel,
+    which was ALWAYS empty before, now reads `F7  C:\CMDLINE.NCP______`.
+
+d20-invalid: `99` -> out of `FIRST_FUNKEY..LAST_FUNKEY` (1..20):
+
+    [d20] get_funkey(fkey="99", ...) -> None
+
+  * d20-invalid-b-alert.png -- `STINVKEY`, "Invalid function key value.",
+    one OK button (`desk_rsc.c:2525`).
+  * d20-invalid-c-retry.png -- after OK the field is cleared and the dialog is
+    back for another try, which is `deskins.c:522-529`.
+
+d20-dup: CMDLINE.NCP takes F7, then HELLO2.NCP asks for F7 as well:
+
+  * d20-dup-b-alert.png -- `STDUPKEY`, "Function key already assigned.|Do you
+    want to reassign it?", OK/Cancel (`desk_rsc.c:2526-2527`).
+  * d20-dup-c-conf.png  -- after OK the panel reads `F7 C:\HELLO2.NCP`, i.e.
+    the first application lost the key (`an->a_funkey = 0`, `deskins.c:438`).
+    The Prev/Next arrows find no second entry.
+
+What DESK20 does NOT build: pressing F7 still launches nothing.
+`process_funkey` (`deskmain.c:1087-1106`) has no counterpart; the note in
+`main.rs::check_function_key` now says so instead of claiming no application
+can carry a key. Reported as a follow-up, not done here.
+
+
+5. Hygiene
+-----------
+`[EXC]` / `[PANIC]`: 0 in twelve of the thirteen raspi4b serial logs, in the
+qemu-virt boot log (serial/qemu-virt-boot.log, which reaches `[desk] desktop
+up`) and in the smoke boot of the shared tree's own, unpatched rpi4 build
+(serial/final-rpi4-serial.log + screendumps/final-rpi4-desktop.png). The
+thirteenth is §7.
+
+Build, on the shared tree, fresh per board:
+
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat
+    cargo xtask build --board rpi4        tos-api 64 / kernel 94   (base 64/94)
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat
+    cargo xtask build --board qemu-virt   tos-api 64 / kernel 94   (base 64/94)
+
+    cargo clippy --features board-rpi4       tos-api 80 / kernel 125 (base 80/125)
+    cargo clippy --features board-qemu-virt  tos-api 80 / kernel 125 (base 80/125)
+    hits in kernel/src/desk/: 0
+
+    cargo run -p xtask -- test   938 passed / 0 failed / 1 ignored
+
+`fsck_msdos -n` (serial/fsck.txt): Phase 1/2/3 clean, rc=0, on all fourteen
+images (base + thirteen run copies). None of these runs writes to the card --
+a drop-on-a-program launches and copies nothing, and *Install application*
+only edits the in-memory `NEWDESK.INF` model until *Save desktop* -- so all
+fourteen are byte-identical to base.img and the DESK25 LFN-orphan finding
+cannot apply here.
+
+
+6. The one shape that is ours, not EmuTOS's
+--------------------------------------------
+`fun_win2win`'s branch ends in `exit_desktop = do_aopen(...)`, i.e. EmuTOS
+leaves the desktop process and the AES shell loads the child. NewTOS launches
+NESTED (AES gap G1, `main::launch_native`), so `do_aopen_drop` returns `false`
+and the desktop is already back when it does. That is the same deviation the
+double-click and document-open paths carry, not a new one.
+
+Two answers `do_aopen` does not have, because NewTOS's loader takes native
+AArch64 ELF only (ADR-018): a `.PRG`-family target gets the existing "m68k
+emulator is not available yet" alert, and a target whose name no native
+extension claims gets "This file is not a native NewTOS program". The second
+is reachable exactly the way EmuTOS's own quirk is: an installed
+application's `ANODE` carries `a_aicon = IG_APPL` **and** its document
+wildcard, and `app_afind_by_name` tests `a_pdata` first (`deskapp.c:1450-
+1454`), so a document of that type answers `a_aicon >= 0` too -- EmuTOS would
+`pro_run` the document. Not driven interactively.
+
+
+7. One `[EXC]` in 7 runs of the SAME launch -- pre-existing, not DESK19
+------------------------------------------------------------------------
+The first of the re-driven d19-full runs faulted right after the launch:
+
+    [launch] EL0: slot 0 entry 0x1000
+    [EXC] synchronous (non-SVC) exception (Instruction Abort (lower EL)):
+          ESR=0x000000008200000e ELR=0xffff0000000c6988 SPSR=0x0000000000000000
+    [EXC] FAR=0xffff0000000c6988
+
+Six further runs of the identical script on an identical card copy
+(serial/d19-full-serial.log + d19-full-repeat1..4-serial.log, plus the two
+earlier passes) are clean, so it is intermittent at roughly 1 in 7.
+
+`ELR`/`FAR` symbolise to
+`kernel::arch::aarch64::user_entry::enter_el0_with_resume_capture + 0x6c`,
+i.e. the instruction right after the `eret` inside its asm block. EL0 was
+executing a KERNEL VA -- which is what happens when an IRQ lands between
+`msr elr_el1, {entry}` and `eret` (`kernel/src/arch/aarch64/user_entry.rs:
+209-216`): the IRQ entry overwrites `ELR_EL1`/`SPSR_EL1` with the interrupted
+EL1 state, and the following `eret` therefore drops to EL0 at that kernel PC,
+which faults with a level-2 permission fault (ESR IFSC = 0x0e). Neither
+`enter_el0_with_resume_capture` nor its caller `kernel/src/launch.rs:122`
+masks IRQs across that window.
+
+That window belongs to EVERY caller of the helper -- the double-click launch,
+the AUTO launch, `Pexec`, and eight selftests -- and predates DESK19, which
+only adds one more call site. Not fixed here (out of scope, and an arch file);
+reported as a new ticket. The screendumps and logs in this directory are from
+runs that did not hit it.
