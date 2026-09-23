@@ -608,17 +608,45 @@ impl InfData {
     /// The built-in file-type default `ANODE`s (`desk_inf_data2`,
     /// `deskapp.c:181-189`) — generic per-extension entries. Used when no file
     /// has been read, so a fresh Save still writes a complete, valid file.
+    ///
+    /// **Order: EmuTOS's live list, not its file.** `desk_inf_data2` lists the
+    /// three `*.*` catch-alls *first* and the per-extension program entries
+    /// after them, but `app_alloc` links every parsed `ANODE` at the **head**
+    /// (`deskapp.c:204-219`), so by the time `app_afind_by_name` walks
+    /// `G.g_ahead` the order is reversed: `*.TOS` … `*.GTP` first, the three
+    /// `*.*` entries last. `app_save` restores the file order with a pair of
+    /// `app_revit` calls around the write (`deskapp.c:1213`, `:1285`). NewTOS
+    /// has no head-linked list to reverse — [`InfData::anodes`] *is* the live
+    /// list and is serialised in that order — so the table below is written in
+    /// the **search** order, which is what makes a `FOO.PRG` resolve to
+    /// `#G 06 FF *.PRG@ @` (application icon) instead of being swallowed by
+    /// `#F FF 07 @ *.*@` (document icon). The on-disk line order of the eight
+    /// generic lines is therefore the reverse of EmuTOS's; every other property
+    /// of the file, and the resolution result, is identical.
+    ///
+    /// **The three `*.N?P` entries are NewTOS's (ADR-018).** `desk_inf_data2`
+    /// is exactly where EmuTOS declares which extensions name a *program*, and
+    /// NewTOS's native AArch64 family is `.NAP`/`.NCP`/`.NTP`
+    /// ([`super::ftype`]) rather than `.APP`/`.PRG`/`.TOS`/`.TTP`/`.GTP`. The
+    /// classic five stay in the table unchanged — they are still the m68k
+    /// family's names — and the native three are added with the same
+    /// `a_aicon = IG_APPL` the classic ones carry, so a native program gets the
+    /// application icon through the `ANODE` list rather than only through
+    /// `win_bldview`'s extension fall-back.
     fn default_type_anodes() -> Vec<InfAnode> {
         // (tag, aicon, dicon, pappl, pdata)
-        let table: [(u8, i16, i16, &str, &str); 8] = [
-            (b'F', -1, 0x07, "", "*.*"),
-            (b'N', -1, 0x07, "", "*.*"),
-            (b'D', -1, 0x02, "", "*.*"),
-            (b'Y', 0x06, -1, "*.GTP", ""),
-            (b'G', 0x06, -1, "*.APP", ""),
-            (b'G', 0x06, -1, "*.PRG", ""),
-            (b'P', 0x06, -1, "*.TTP", ""),
+        let table: [(u8, i16, i16, &str, &str); 11] = [
+            (b'G', 0x06, -1, "*.NAP", ""),
+            (b'F', 0x06, -1, "*.NCP", ""),
+            (b'P', 0x06, -1, "*.NTP", ""),
             (b'F', 0x06, -1, "*.TOS", ""),
+            (b'P', 0x06, -1, "*.TTP", ""),
+            (b'G', 0x06, -1, "*.PRG", ""),
+            (b'G', 0x06, -1, "*.APP", ""),
+            (b'Y', 0x06, -1, "*.GTP", ""),
+            (b'D', -1, 0x02, "", "*.*"),
+            (b'N', -1, 0x07, "", "*.*"),
+            (b'F', -1, 0x07, "", "*.*"),
         ];
         table
             .iter()
@@ -969,11 +997,21 @@ pub(super) fn app_read_inf() -> bool {
 /// the drive map's `#M` lines, and `desk_inf_data2`'s file-type lines, then the
 /// `#T` (and `#O`) fixtures. Here the first piece **is** [`InfData::default`]
 /// — the same `#E 1A E0 00 00 60` and `#Q 41 40 43 40 43 40` byte for byte —
-/// and the third is [`InfData::default_type_anodes`], already reached by
-/// `build_from_state` on a first-ever save; only the icon half has to be built,
-/// which [`build_desk_icons`] does.
+/// the third is [`InfData::default_type_anodes`], and only the icon half has to
+/// be built, which [`build_desk_icons`] does.
+///
+/// The synthesised file becomes the [`SESSION`] model, exactly as EmuTOS's
+/// `app_start` *parses* its `infbuf` into the live `G.g_ahead`
+/// (`deskapp.c:745-752`, `:838-841`) rather than leaving the list empty. That
+/// matters beyond a later Save: `app_afind_by_name` is what gives a window item
+/// its icon (`win_icalc`) and what `install_window_icon` resolves a name
+/// against, and both would see an empty list on a machine whose `NEWDESK.INF`
+/// is missing or unreadable — EmuTOS's "can't happen" null-`ANODE` case
+/// (`deskins.c:1157-1161`).
 pub(super) fn build_inf() {
-    apply(&InfData::default());
+    let data = InfData { anodes: InfData::default_type_anodes(), ..InfData::default() };
+    apply(&data);
+    *SESSION.lock() = Some(data);
     build_desk_icons();
 }
 
@@ -1563,6 +1601,197 @@ pub(super) fn lookup_association(name: &[u8]) -> Option<Association> {
         }
     }
     None
+}
+
+// ── Window icons: the `ANODE`-by-name layer (`CONF_WITH_WINDOW_ICONS`) ──────
+//
+// EmuTOS keeps *one* `ANODE` list for the desktop icons, the installed
+// applications, the generic file types **and** the per-name window icons
+// (`#I`/`#N`/`#D` lines whose `a_pdata` is a literal file name). NewTOS splits
+// the list in two — the desktop half is `DeskState::g_ahead`, this module's
+// [`SESSION`] model is everything else — so the four primitives EmuTOS's
+// `install_window_icon` calls on that list live here, next to the store they
+// edit: [`app_afind_by_name`] (`deskapp.c:1437-1466`),
+// [`allocate_window_anode`] (`deskins.c:1028-1052`), [`set_anode_data`]
+// (`scan_str(new_name, &pa->a_pdata)`, `deskins.c:1175`) and [`set_icon`]
+// (`deskins.c:1012-1022`), plus [`app_free`] (`deskapp.c:227-247`).
+//
+// `CONF_WITH_WINDOW_ICONS` defaults to 1 (`include/config.h:1866-1868`) and is
+// forced off only inside `#ifdef TARGET_192` (`:210-336`), which our
+// Falcon030/TOS4 `make 512` profile does not define — so the feature is part of
+// the reference build, not an optional extra.
+
+/// One hit from [`app_afind_by_name`] — EmuTOS returns the `ANODE *` and writes
+/// the match kind through `pisapp`; this carries the same two answers plus the
+/// fields the two callers read off the node.
+pub(super) struct Afind {
+    /// Index of the node in the session list, for [`set_icon`]/[`app_free`].
+    /// Valid only until the list is next mutated; both callers are modal
+    /// dialogs that hold it across nothing but their own edits, exactly as
+    /// EmuTOS holds the raw `ANODE *`.
+    pub idx: usize,
+    /// `*pisapp`: `true` when the name matched `a_pappl` (application name),
+    /// `false` when it matched the `a_pdata` wildcard (data name).
+    pub isapp: bool,
+    /// `a_aicon` — the icon shown when [`Afind::isapp`].
+    pub aicon: i16,
+    /// `a_dicon` — the icon shown otherwise.
+    pub dicon: i16,
+    /// `a_pdata`, for `install_window_icon`'s `identical` test
+    /// (`deskins.c:1162`).
+    pub pdata: String,
+}
+
+/// The `a_type` an `ANODE` line tag stands for (`app_parse`'s switch,
+/// `deskapp.c:300-346`). The session list never holds `AF_ISDESK` nodes, but
+/// the tag mapping is the full one so it stays correct if it ever does.
+fn anode_type(tag: u8) -> AType {
+    match tag {
+        b'T' => AType::Trash,
+        b'M' => AType::Disk,
+        b'O' => AType::Printer,
+        b'D' | b'V' => AType::Folder,
+        _ => AType::File, // G, Y, F, P, I, N, X
+    }
+}
+
+/// `app_afind_by_name` (`deskapp.c:1437-1466`) — the first `ANODE` of type
+/// `atype` whose name matches `pname`, searching the session list in EmuTOS's
+/// live-list order (see [`InfData::default_type_anodes`]).
+///
+/// `pspec` is the window's `p_spec`; EmuTOS builds `pathname` from it by
+/// replacing the file-name part with `pname`, because an *installed*
+/// application is matched on its fully-qualified `a_pappl` and not on a
+/// wildcard. Pass `""` for the "no particular directory" query
+/// `install_window_icon` makes when it has no `FNODE` (`deskins.c:1153`).
+///
+/// **`ignore`.** EmuTOS's callers pass `AF_ISDESK|AF_VIEWER` (`deskwin.c:382`)
+/// or `AF_ISDESK` (`deskins.c:1153`). NewTOS's desktop half is a different list
+/// entirely, so `AF_ISDESK` is the [`InfAnode::is_desk`] skip below; `AF_VIEWER`
+/// is `CONF_WITH_VIEWER_SUPPORT`, which this desktop does not implement, so no
+/// node can carry it and the two `ignore` masks coincide.
+///
+/// The `a_pappl` compare is EmuTOS's `strcmp`, i.e. case-**sensitive**, not the
+/// case-blind compare [`installed_doctype`] uses on a path the user typed.
+pub(super) fn app_afind_by_name(atype: AType, pspec: &str, pname: &str) -> Option<Afind> {
+    // `strcpy(pathname,pspec); strcpy(filename_start(pathname),pname);`
+    let dir_len = pspec.len() - filename_start(pspec).len();
+    let mut pathname = String::from(&pspec[..dir_len]);
+    pathname.push_str(pname);
+
+    let guard = SESSION.lock();
+    let data = guard.as_ref()?;
+    for (idx, a) in data.anodes.iter().enumerate() {
+        if a.is_desk {
+            continue; // `if (pa->a_flags & ignore) continue;`
+        }
+        if anode_type(a.tag) != atype {
+            continue;
+        }
+        let hit = |isapp: bool| {
+            Some(Afind { idx, isapp, aicon: a.aicon, dicon: a.dicon, pdata: a.pdata.clone() })
+        };
+        if super::model::wildcmp(a.pdata.as_bytes(), pname.as_bytes()) {
+            return hit(false);
+        }
+        let matched = match a.pappl.as_bytes().first() {
+            Some(b'*') | Some(b'?') => super::model::wildcmp(a.pappl.as_bytes(), pname.as_bytes()),
+            _ => a.pappl == pathname,
+        };
+        if matched {
+            return hit(true);
+        }
+    }
+    None
+}
+
+/// `allocate_window_anode` (`deskins.c:1028-1052`) — a fresh `AF_WINDOW` node
+/// for a file or folder name, linked at the head of the list so a per-name
+/// icon is found before the generic `*.*` entries (EmuTOS's `app_alloc` links
+/// at the head, `deskapp.c:204-219`). Returns its index.
+///
+/// **No allocation failure.** EmuTOS's pool is the fixed `NUM_ANODES` (64)
+/// array `G.g_alist` and `app_alloc` returns `NULL` when it is full, which is
+/// what `install_window_icon`'s `if (!pa) { change = -1; … }` arm
+/// (`deskins.c:1170-1174`) exists for. NewTOS's list is a `Vec` with no fixed
+/// pool — a ROM-scarcity constraint whose absence is unobservable except as
+/// "the alert never appears" — so that arm has no counterpart.
+pub(super) fn allocate_window_anode(atype: AType) -> usize {
+    let mut guard = SESSION.lock();
+    let data = session_with_type_defaults(&mut guard);
+    // `pa->a_dicon = (type==AT_ISFOLD) ? IG_FOLDER : IG_DOCU;` (`:1049`), and
+    // the save tag `app_save` gives that node before `set_icon` runs
+    // (`deskapp.c:1223-1244`): a folder is `#D`, a not-yet-executable file `#N`.
+    let (tag, dicon) = match atype {
+        AType::Folder => (b'D', icons::IG_FOLDER),
+        _ => (b'N', IG_DOCU),
+    };
+    data.anodes.insert(
+        0,
+        InfAnode {
+            tag,
+            is_desk: false,
+            has_extra: tag != b'D',
+            xspot: 0,
+            yspot: 0,
+            aicon: NIL,
+            dicon,
+            letter: 0,
+            pappl: String::new(),
+            pdata: String::new(),
+            flags: 0,
+            funkey: 0,
+            pargs: String::new(),
+        },
+    );
+    0
+}
+
+/// `scan_str(new_name, &pa->a_pdata)` (`deskins.c:1175`) — give the node at
+/// `idx` its data name.
+pub(super) fn set_anode_data(idx: usize, name: &str) {
+    let mut guard = SESSION.lock();
+    if let Some(a) = guard.as_mut().and_then(|d| d.anodes.get_mut(idx)) {
+        a.pdata.clear();
+        a.pdata.push_str(name);
+    }
+}
+
+/// `set_icon` (`deskins.c:1012-1022`) — put the chosen icon number into the
+/// node at `idx`: `a_dicon` always, and `a_aicon` too when the data name is an
+/// executable, "this marks it as an executable file".
+///
+/// EmuTOS records that in the `AF_ISEXEC` flag and lets `app_save` turn it into
+/// the `#I` (executable) or `#N` (non-executable) tag (`deskapp.c:1230-1231`);
+/// [`InfAnode`] carries no flag word, so the tag *is* the flag and is set here.
+/// A folder node keeps its `#D` tag, which is what `app_save` writes for any
+/// `AT_ISFOLD` node that is not a desktop shortcut (`:1238-1244`).
+pub(super) fn set_icon(idx: usize, icon: i16) {
+    let mut guard = SESSION.lock();
+    let Some(a) = guard.as_mut().and_then(|d| d.anodes.get_mut(idx)) else {
+        return;
+    };
+    a.aicon = NIL;
+    a.dicon = icon;
+    if anode_type(a.tag) == AType::File {
+        a.tag = if super::ins::is_executable(a.pdata.as_bytes()) {
+            a.aicon = icon;
+            b'I'
+        } else {
+            b'N'
+        };
+        a.has_extra = true;
+    }
+}
+
+/// `app_free` (`deskapp.c:227-247`) — unlink the node at `idx`.
+pub(super) fn app_free(idx: usize) {
+    let mut guard = SESSION.lock();
+    if let Some(data) = guard.as_mut() {
+        if idx < data.anodes.len() {
+            data.anodes.remove(idx);
+        }
+    }
 }
 
 // ── Shared dialog open/close plumbing (`deskinf.c:345-402`) ─────────────────

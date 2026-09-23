@@ -390,7 +390,7 @@ fn inf_numset(tree: u64, obj: i16, value: u32) {
 /// `fmt_str` (`util/optimize.c:43-70`) — `SAMPLE.PRG` → the fixed 8+3 field
 /// form `SAMPLE  PRG`, NUL-terminated, which is what the `________.___`
 /// template of `CACURRNA`/`CACOPYNA` merges character by character.
-fn fmt_str(instr: &str) -> [u8; LEN_ZFNAME] {
+pub(super) fn fmt_str(instr: &str) -> [u8; LEN_ZFNAME] {
     let mut out = [0u8; LEN_ZFNAME];
     let src = instr.as_bytes();
     let mut q = 0usize;
@@ -425,7 +425,7 @@ fn fmt_str(instr: &str) -> [u8; LEN_ZFNAME] {
 
 /// `unfmt_str` (`util/optimize.c:77-96`) — the reverse of [`fmt_str`]:
 /// `SAMPLE  PRG` → `SAMPLE.PRG`.
-fn unfmt_str(instr: &[u8]) -> String {
+pub(super) fn unfmt_str(instr: &[u8]) -> String {
     let end = instr.iter().position(|&c| c == 0).unwrap_or(instr.len());
     let s = &instr[..end];
     let mut out = String::new();

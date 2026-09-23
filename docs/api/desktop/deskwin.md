@@ -517,4 +517,30 @@ full per protocol):
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00 / this extraction task.)
+### `win_icalc` — a window item's icon comes from the `ANODE` list (DESK15, 2026-09-23)
+
+`win_bldview` used to pick the icon from the file-name extension alone
+(`desk::ftype::classify`). It now does what `deskwin.c:377-384` + `:462-474`
+do: `DeskState::win_icalc` resolves the item by type and name against the
+desktop's `ANODE` list (`inf::app_afind_by_name`, with `p_spec` for the
+fully-qualified `a_pappl` compare), and the icon branch takes
+`i_index = f_isap ? a_aicon : a_dicon`.
+
+Two named differences:
+
+* **No `f_pa`/`f_isap` in the `FNODE`.** EmuTOS caches the resolved `ANODE *`
+  there for `do_aopen` (`desksupp.c:857-875`); NewTOS's `do_aopen` resolves the
+  association itself via `inf::lookup_association`, so `win_icalc` returns the
+  answer rather than storing it. The query still runs in **both** view branches
+  (`:455`, `:462`), as it does there.
+* **The extension rule is the fall-back.** EmuTOS's is `IG_FOLDER` /
+  `f_isap ? IG_APPL : IG_DOCU` (`:469-473`), reachable only with an empty list,
+  which its `app_start` never leaves. NewTOS keeps `ftype::classify` in that
+  slot; it also catches an icon number NewTOS has no raster for (`IG_REMOV`,
+  DESK16).
+
+The list itself, the `#I`/`#N`/`#D` `AF_WINDOW` nodes the *Install icon* →
+*Window* dialog writes into it, and the order it is searched in are documented
+in [`deskins.md`](deskins.md) (§ `install_window_icon`).
+
+Verification: `measurement-2026-09-23-desk15/`.

@@ -460,10 +460,37 @@ impl DeskState {
         }
     }
 
+    /// `win_icalc` (EmuTOS `deskwin.c:377-384`) — resolve the `ANODE` that
+    /// governs file `pidx` of window `slot`, by type and name, against the
+    /// desktop's `ANODE` list.
+    ///
+    /// EmuTOS stores the answer back into the `FNODE` (`f_pa` + `f_isap`);
+    /// NewTOS's [`FNode`] carries neither, because the second consumer of that
+    /// cache — `do_aopen`'s installed-application launch (`desksupp.c:857-875`)
+    /// — resolves the association independently through
+    /// [`super::inf::lookup_association`]. What the cache is *for* in
+    /// `win_bldview` is the icon number, so that is what this returns.
+    ///
+    /// The name is widened byte-by-byte, which is how the rest of the desktop
+    /// turns a TOS file name into a `String` (`inf`'s `scan_str`, `dir`'s
+    /// `unfmt_str`): a high-bit character must produce the *same* key here as
+    /// it does when the `ADINSWIN` dialog stores it, or a name outside ASCII
+    /// would silently never match.
+    fn win_icalc(&self, slot: usize, pidx: usize) -> Option<super::inf::Afind> {
+        let pn = &self.windows.slots[slot].w_pnode;
+        let f = &pn.p_flist[pidx];
+        let atype = if f.is_dir() { super::model::AType::Folder } else { super::model::AType::File };
+        let name: alloc::string::String = f.name_bytes().iter().map(|&b| b as char).collect();
+        super::inf::app_afind_by_name(atype, &pn.p_spec, &name)
+    }
+
     /// Build one item `OBJECT` (icon or text line) at `obid` for file `pidx`
     /// of window `slot` — the per-item half of the placement loop, shared by
     /// both views so they use one grid/scroll model (D5).
     fn build_item(&mut self, slot: usize, pidx: usize, obid: i16, view: View, g_wicon: i16) {
+        // `win_icalc(pstart, pwin)` — EmuTOS runs it in **both** view branches
+        // (`deskwin.c:455`, `:462`), so it runs here before the view switch too.
+        let anode = self.win_icalc(slot, pidx);
         // Copy the fields out first so the file-list borrow ends before the
         // g_screen/g_screeninfo borrows.
         let f = self.windows.slots[slot].w_pnode.p_flist[pidx].clone();
@@ -489,14 +516,28 @@ impl DeskState {
         match view {
             View::Icon => {
                 let name = f.name_bytes();
-                // Folder, else an application icon for a native NewTOS program
-                // (`.NAP`/`.NCP`/`.NTP`, ADR-018), else the generic document.
-                let kind = if f.is_dir() {
-                    IconKind::Folder
-                } else if matches!(super::ftype::classify(name), super::ftype::FileType::Native(_)) {
-                    IconKind::App
-                } else {
-                    IconKind::Doc
+                // `i_index = (pstart->f_isap) ? anode->a_aicon : anode->a_dicon;`
+                // (`deskwin.c:465-467`) — the icon a per-name window icon, an
+                // installed application or a generic file-type `ANODE` assigns
+                // to this name. `icon_kind` also rejects a number NewTOS has no
+                // raster for (`IG_REMOV`, DESK16), which falls through below.
+                let assigned = anode
+                    .map(|a| if a.isapp { a.aicon } else { a.dicon })
+                    .and_then(super::icons::icon_kind);
+                // Fall-back when no `ANODE` claims the name — EmuTOS's is
+                // `IG_FOLDER` / `f_isap ? IG_APPL : IG_DOCU` (`:469-473`), with
+                // "is this a program?" answered by the generic per-extension
+                // `ANODE`s it always has. NewTOS may have no `NEWDESK.INF` at
+                // all (a fresh card), so the same question is answered by the
+                // extension itself: a native NewTOS program
+                // (`.NAP`/`.NCP`/`.NTP`, ADR-018) gets the application icon.
+                let kind = match assigned {
+                    Some(k) => k,
+                    None if f.is_dir() => IconKind::Folder,
+                    None if matches!(super::ftype::classify(name), super::ftype::FileType::Native(_)) => {
+                        IconKind::App
+                    }
+                    None => IconKind::Doc,
                 };
                 let end = name.len().min(LEN_LABEL - 1);
                 info.label[..end].copy_from_slice(&name[..end]);

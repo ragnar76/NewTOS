@@ -627,18 +627,19 @@ Two deliberate narrowings, both named:
    association half lives in `desk::inf`'s session `NEWDESK.INF` model. Both
    halves serialise into the same file in the same line grammar, so the split
    is internal.
-2. **No desktop shortcuts and no window icons.** `CONF_WITH_DESKTOP_SHORTCUTS`
-   (`AT_ISFILE`/`AT_ISFOLD` icons parked on the desktop, `ins_shortcut`) and
-   `CONF_WITH_WINDOW_ICONS` (`install_window_icon`, the `ADINSWIN` tree) both
-   attach an `ANODE` to a *file or folder name*, and NewTOS has no reader for
-   one: a window item takes its icon from its extension
-   (`desk::ftype::classify`, in `win_bldview`), never from a per-name
-   association. `ins.rs` therefore has the shape of a
-   `CONF_WITH_WINDOW_ICONS = 0` build — `ins_icon(0)` goes straight to
-   `install_desktop_icon(NULL)` (`deskins.c:1262-1263`, the `#else` arm)
-   instead of asking `STICNTYP` which kind of icon to make, and returns only
-   `0` or `1`, never the `-1` "rebuild the windows" of the window-icon
-   branch. **Gap, reported rather than faked.**
+2. **Window icons live in the *other* half; desktop shortcuts are still a
+   gap.** Both `CONF_WITH_WINDOW_ICONS` (`install_window_icon`, the
+   `ADINSWIN` tree) and `CONF_WITH_DESKTOP_SHORTCUTS` (`AT_ISFILE`/`AT_ISFOLD`
+   icons parked on the desktop, `ins_shortcut`) attach an `ANODE` to a *file or
+   folder name*. Since **DESK15** the window-icon half is implemented, and it
+   is implemented in the association half of the split: an `AF_WINDOW` node is
+   an `#I`/`#N`/`#D` line of the `desk::inf` session model, resolved by
+   `inf::app_afind_by_name`. The desktop-shortcut half would need an
+   `AT_ISFILE`/`AT_ISFOLD` variant of *this* list plus `fun_win2win`'s
+   drop-on-a-program branch, and is **still a gap** (DESK30) — reported, not
+   faked. Both are 1 in our Falcon030/TOS4 `make 512` profile
+   (`include/config.h:1782-1784`, `:1866-1868`; the `0` defaults at `:322-327`
+   are inside `#ifdef TARGET_192`, which `make 512` does not define).
 
 `app_revit()` has no counterpart. EmuTOS reverses the chain before
 `app_blddesk` and before `app_save` (`deskapp.c:1352`, `:1211`) purely because
@@ -672,13 +673,24 @@ that is honoured — it is exactly what *Remove desktop icon* followed by
 *Save desktop* writes, and `build_inf` must not resurrect what the user
 removed.
 
-`inf::build_inf()` = `apply(&InfData::default())` + `build_desk_icons()`.
+`inf::build_inf()` = `apply(…)` + `SESSION = Some(…)` + `build_desk_icons()`.
 EmuTOS assembles three pieces of text and re-parses them; here the first piece
 **is** `InfData::default()` (the same `#E 1A E0 00 00 60` /
 `#Q 41 40 43 40 43 40` bytes as `desk_inf_data1`), the third is
-`InfData::default_type_anodes()` (`desk_inf_data2`), already reached by
-`build_from_state` on a first-ever save, and only the icon half has to be
-built. The text detour is not observable.
+`InfData::default_type_anodes()` (`desk_inf_data2`), and only the icon half
+has to be built. The text detour is not observable.
+
+**The synthesised file becomes the session model (DESK15).** It used to be
+applied and dropped, on the grounds that `build_from_state` reaches
+`default_type_anodes()` again on a first-ever save. That was enough while
+nothing *read* the generic nodes; it stopped being enough when `win_icalc`
+started asking them for a window item's icon and `install_window_icon` started
+resolving a name against them. EmuTOS **parses** its `infbuf` into the live
+`G.g_ahead` (`deskapp.c:745-752`, `:838-841`), so `app_afind_by_name` always
+has the eight generic nodes to answer from and `install_window_icon`'s
+`if (!pa) … "can't happen"` (`deskins.c:1157-1161`) really cannot happen.
+Leaving the model empty made it happen on any machine whose `NEWDESK.INF` is
+missing or unreadable — which is every fresh card.
 
 **`build_inf`'s layout is now the desktop's default, and it differs from what
 NewTOS drew before.** Drives fill the grid left-to-right
@@ -879,3 +891,142 @@ the written `NEWDESK.INF`, a cold boot that restores the installed icon, and a
 second cold boot that keeps a removed one removed. Plus
 `desk::ins::selftest()` — 14 cases, including the vanished-drive
 reconciliation QEMU cannot stage on its own — run once from a scratch copy.
+
+### `install_window_icon` / `ins_icon`'s `STICNTYP` branch (DESK15, 2026-09-23)
+
+`CONF_WITH_WINDOW_ICONS` is **1** in our Falcon030/TOS4 `make 512` profile
+(`include/config.h:1866-1868`; the `0` at `:322-324` is inside
+`#ifdef TARGET_192`, and `make 512` defines `TARGET_512`, `Makefile:560-562`).
+The feature is therefore part of the reference build, and since DESK15 it is
+implemented.
+
+#### The reader came first: `win_icalc`
+
+`win_bldview` used to pick a window item's icon from its file-name extension
+alone (`desk::ftype::classify`: folder → `IG_FOLDER`, `.NAP`/`.NCP`/`.NTP` →
+`IG_APPL`, anything else → `IG_DOCU`). EmuTOS picks it from the `ANODE` list:
+`win_icalc` resolves `app_afind_by_name(type, AF_ISDESK|AF_VIEWER,
+pw->w_pnode.p_spec, pf->f_name, &pf->f_isap)` and `win_bldview` then takes
+`i_index = f_isap ? anode->a_aicon : anode->a_dicon`
+(`deskwin.c:377-384`, `:462-474`).
+
+NewTOS now does the same. `DeskState::win_icalc` (`desk::win`) runs the query
+in **both** view branches, as `deskwin.c:455`/`:462` do, and the icon branch
+maps the resulting number through `icons::icon_kind`. Two named differences:
+
+* **No `f_pa`/`f_isap` cache in the `FNODE`.** EmuTOS stores the resolved
+  `ANODE *` back into the node because its second consumer, `do_aopen`'s
+  installed-application launch (`desksupp.c:857-875`), reads it from there.
+  NewTOS's `do_aopen` resolves the association independently through
+  `inf::lookup_association`, so `win_icalc` returns the answer instead of
+  caching it, and `install_window_icon` re-runs the identical query.
+* **The extension rule survives as the fall-back.** EmuTOS's is `IG_FOLDER` /
+  `f_isap ? IG_APPL : IG_DOCU` (`deskwin.c:469-473`) and can only be reached
+  when the list is empty, which its `app_start` never leaves it. NewTOS keeps
+  `ftype::classify` in that position — it also catches an `a_aicon` NewTOS has
+  no raster for (`IG_REMOV`, DESK16).
+
+`inf::app_afind_by_name` is the EmuTOS walk, line for line: skip the `ignore`
+nodes, require `a_type == atype`, try `wildcmp(a_pdata, pname)` first
+(`*pisapp = FALSE`), then `a_pappl` — `wildcmp` when it starts with `*`/`?`,
+otherwise `strcmp` against `pspec`'s directory + `pname`. The `ignore` mask is
+`AF_ISDESK` alone: `AF_VIEWER` is `CONF_WITH_VIEWER_SUPPORT`, which this
+desktop does not implement, so no node can carry it.
+
+#### `desk_inf_data2` is stored in EmuTOS's *live* order, and gains three lines
+
+The generic type `ANODE`s decide which extensions get the application icon, so
+the order they are searched in is now observable. `desk_inf_data2` lists the
+three `*.*` catch-alls first (`deskapp.c:181-189`), but `app_alloc` links every
+parsed node at the **head** (`:204-219`), so `G.g_ahead` runs the other way
+round — `*.TOS` … `*.GTP` first, the catch-alls last — and `app_save` restores
+the file order with the `app_revit` pair around the write (`:1213`, `:1285`).
+NewTOS has no head-linked list to reverse: `InfData::anodes` *is* the live list
+and is serialised in that order. `default_type_anodes()` is therefore written
+in the **search** order, and the on-disk order of those lines is the reverse of
+EmuTOS's. Named deviation; the resolution result is identical, and without it
+`FOO.PRG` would be swallowed by `#F FF 07 @ *.*@`.
+
+Three lines are NewTOS's own, on the same footing as ADR-018's file names:
+
+    #G 06 FF *.NAP@ @      native GEM application
+    #F 06 FF *.NCP@ @      native console program
+    #P 06 FF *.NTP@ @      native program with a command tail
+
+`desk_inf_data2` is exactly where EmuTOS declares which extensions name a
+program; the classic five stay (they are still the m68k family's names) and
+the native three join them. `is_executable` follows: EmuTOS's
+`exec_ext[] = {"TOS","TTP","PRG","APP","GTP"}` (`deskins.c:984`) is NewTOS's
+`FileType::M68k`, so the question becomes "not a `FileType::Doc`".
+
+A `NEWDESK.INF` written by a pre-DESK15 NewTOS carries only the eight EmuTOS
+lines, so on such a card a `.NAP`/`.NCP`/`.NTP` matches `#F FF 07 @ *.*@` and
+gets the document icon until the file is saved again. EmuTOS has the identical
+behaviour for an `EMUDESK.INF` older than one of its own `desk_inf_data2`
+changes and does nothing about it; neither do we.
+
+#### `install_window_icon` — the `ADINSWIN` tree
+
+Built on the stack like the sibling dialogs, with `ADINSWIN`'s own object
+numbers (`desk_rsc.h:225-237`) and its row structure (`desk_rsc.c:2038-2135`):
+title, the `Name: ________.___` field (`fmt_str`/`unfmt_str` 8.3 form, the
+`desk_rs_tedinfo[33]` template and its `"F"` validation), *Item type:* with the
+Folder/File radio pair, the icon preview with its two steppers beside `Icon:`,
+then Install / Remove on one row and Skip / Cancel on the next.
+
+* With an `FNODE`: the name is fixed and not `EDITABLE`, `edit_start = 0`, and
+  both radios are pre-set **and** `DISABLED` (`deskins.c:1093-1104`).
+* Without one: the name is `EDITABLE` and empty, `edit_start = IW_NAME`, *File*
+  is pre-selected and both radios are enabled (`:1105-1112`).
+* `curr_icon = pa ? pa->a_dicon : 0`, clamped (`:1115-1120`), stepped over
+  `offered_icons` — the DESK03 set (EmuTOS's `BUILTIN_ICONS` minus the
+  raster-less `IG_REMOV`, floppy only when a floppy drive exists).
+* `IW_INST`/`IW_REMV` both resolve the node first, compare `a_pdata` against
+  the (possibly edited) name (`identical`, `:1164`), and then: Install reuses
+  the node when the names are identical, else `allocate_window_anode` +
+  `scan_str` + `set_icon`; Remove refuses a non-identical name with `STNOMTCH`
+  and otherwise `app_free`s (`:1166-1192`).
+* The loop breaks **before** clearing `SELECTED` and only deselects for
+  `IW_UP`/`IW_DOWN` (`:1196-1201`) — the opposite of `install_desktop_icon`
+  (`:943-945`), and reproduced as such.
+
+Two named differences from the resource. (1) The `ADJ3DSTD` nudge of `IW_DOWN`
+(`:1117-1123`, `:1210-1216`) has no counterpart: the tree is built fresh with
+the grown rectangles already accounted for, exactly as `ADINSDSK` is. (2)
+EmuTOS's `app_alloc` can fail when the 64-entry `NUM_ANODES` pool is full and
+`install_window_icon` answers `change = -1` (`:1170-1174`); NewTOS's list is a
+`Vec` with no fixed pool, so that arm has no counterpart.
+
+`set_icon` (`:1012-1022`) sets `a_dicon` always and `a_aicon` too when the data
+name is executable. EmuTOS records that in `AF_ISEXEC` and lets `app_save` turn
+it into the `#I`/`#N` tag (`deskapp.c:1230-1231`); `InfAnode` carries no flag
+word, so the **tag is the flag** and is set there. A folder node keeps `#D`,
+which is what `app_save` writes for any non-shortcut `AT_ISFOLD` node.
+
+#### `ins_icon`'s three branches
+
+`sobj == 0` now asks `STICNTYP` ("Please select icon type." / Desktop | Window
+| Cancel, `desk_rsc.c:2534`) and answers `1` / `-1` / `0`. A selection that
+resolves to a desktop `ANODE` takes the existing per-icon loop. Anything else
+is taken to be inside the current window: every selected `FNODE` of
+`win_find(G.g_cwin)` gets one `ADINSWIN` dialog, and the sign is **inverted**
+(`rebuild--`, `:1298`), which is what makes `deskmain`'s `IICNITEM` arm run
+`win_bdall(); win_shwall();` instead of `app_blddesk()` (`deskmain.c:868-875`).
+That arm is now in `main::do_optnmenu` too.
+
+One named difference: EmuTOS walks the live `p_flist` across the dialogs;
+NewTOS snapshots the selected entries first, because the dialog issues AES
+traps and cannot run while the desktop lock is held. Nothing the dialog does
+touches the file list, so the two walks see the same entries.
+
+#### Verification
+
+`measurement-2026-09-23-desk15/`. QEMU raspi4b at 640x480 with the scratch-copy
+IKBD injector: the reader (a `.NCP`/`.NAP` shows the application icon, a `.TXT`
+the document one — pixel-compared, `screendumps/icons-cmp.png`), select
+`README.TXT` → *Install icon* → `ADINSWIN` → three steps up to the trash
+picture → *Install* → that file alone changes in the window, *Save desktop*
+writes `#N FF 03 @ README.TXT@`, and a cold boot brings the trash icon back.
+Then the `STICNTYP` alert with nothing selected, its *Window* answer opening
+the editable-name shape of the dialog, and *Remove* on the installed name
+putting the document icon back.

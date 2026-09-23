@@ -1082,13 +1082,20 @@ fn do_optnmenu(item: Item) {
                 rebuild_desktop_icons();
             }
         }
-        // `case IICNITEM: rebld = ins_icon(curr); if (rebld > 0) app_blddesk();`
-        // (`deskmain.c:862-874`). `curr` is the first selected item of the
-        // current root, taken at the top of `do_optnmenu` (`:842`).
+        // `case IICNITEM: rebld = ins_icon(curr); if (rebld > 0) app_blddesk();
+        //  else if (rebld < 0) { win_bdall(); win_shwall(); }`
+        // (`deskmain.c:863-876`). `curr` is the first selected item of the
+        // current root, taken at the top of `do_optnmenu` (`:842`). The
+        // negative arm is the `CONF_WITH_WINDOW_ICONS` one: a window icon was
+        // (re)assigned, so every open window's view has to be rebuilt to pick
+        // the new `ANODE` up through `win_icalc` (DESK15).
         Item::InstallIcon => {
             let rebld = super::ins::ins_icon(first_selected());
             if rebld > 0 {
                 rebuild_desktop_icons();
+            } else if rebld < 0 {
+                win_bdall();
+                redraw::win_shwall();
             }
         }
         // `case RICNITEM: if (curr) rebld = rmv_icon(curr); if (rebld)
