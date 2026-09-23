@@ -617,13 +617,8 @@ Fehler in die Zusammenfassung gehoert.
 
 ### Benannte Abweichungen
 
-* **Ordner-Namenskonflikt.** `output_path`/`get_new_name`
-  (`deskdir.c:700-779`) fragen auch nach einem neuen **Ordner**namen;
-  NewTOS mischt weiter in einen bestehenden Ordner hinein. Die
-  Datei-Variante ist die, die Daten zerstoeren kann, und die ist gebaut.
-* **`STDELDIS`.** Die Zusatzfrage beim Loeschen einer ganzen Platte
-  (`deskdir.c:971-975`) haengt an `icontype == AT_ISDISK`, das `dir_op` bei
-  uns nicht bekommt. Unveraendert offen, eigener Befund.
+* **Ordner-Namenskonflikt** — mit DESK24 erledigt, siehe unten.
+* **`STDELDIS`** — mit DESK25 erledigt, siehe unten.
 * **Knopfreihe des `ADCPALER`.** EmuTOS setzt drei 10 Zeichen breite Knoepfe
   in den Spalten 2, 14 und 26 eines 38 Zeichen breiten Kastens
   (`desk_rsc.c:1263-1279`). Der erste Wurf hatte die 90 px des
@@ -635,3 +630,59 @@ Fehler in die Zusammenfassung gehoert.
   Maschine (`d_doop`/`dir_op`) stelle keine Dialoge und sei darum direkt
   fahrbar. Seit der Kasten dort steht, wo EmuTOS ihn hat, stimmt das nicht
   mehr; `selftest` faehrt ihn mit.
+
+### Die beiden uebrigen Rueckfragen (DESK24 / DESK25, 2026-09-23)
+
+**3. Der Ordner-Namenskonflikt steht in `output_path`/`get_new_name`**
+(`deskdir.c:700-779`), aufgerufen aus `dir_op`s Ordnerzweig (`:1002`) — nicht
+aus `d_doop`: nur der **oberste** Ordner eines Kopier-/Verschiebeauftrags wird
+erfragt, tiefer liegende Namensgleichheiten mischt auch EmuTOS wortlos
+(`:626-632`). `kernel/src/desk/dir.rs` hat beide Funktionen; sie nutzen
+denselben `ADCPALER`-Baum wie der Dateikonflikt, weil EmuTOS
+`desk_rs_trees[ADCPALER]` fuer beide wiederverwendet. Ein Unterschied im
+Inhalt: beim Ordner stehen in **beiden** Feldern die Ziel-Namen
+(`:705-709`), beim Dateikonflikt steht in `CACURRNA` der Quellname
+(`:304-307`).
+
+Die beiden Zweige der Schleife sind der ganze Witz:
+
+| Fall | Abbruchbedingung |
+|---|---|
+| Kopieren/Verschieben ueber Laufwerksgrenze | `dos_mkdir` gelingt → fertig; sonst existiert der Ordner: `OK` auf unveraendertem Namen (`ret == 1`) heisst **hineinmischen** und bricht die Schleife ab |
+| Verschieben per `Frename` (`Op::Rename`) | das Ziel darf **nicht** existieren; ein unveraenderter Name bricht darum *nicht* ab, es wird erneut gefragt |
+
+`Stop`/`Skip` kommen als `More::Stop`/`More::Skip` zurueck und bedeuten in
+`dir_op` genau EmuTOS' `0`/`-1`. Ein `dos_mkdir`, das fehlschlaegt, *ohne*
+dass etwas im Weg steht (voller Wurzelordner, unzulaessiger Name), ist
+`illegal_op_msg` (`STILLOP`, `desk_rsc.c:2497`) und beendet die Operation.
+
+Die Reihenfolge ist EmuTOS': erst `source_is_parent`, dann `output_path`, dann
+der Selbst-Vergleich (`:999-1013`). Ein Ordner, der auf seinen eigenen
+Elternordner gezogen wird, wird also **erst gefragt** und danach als
+`strcmp(srcpth,dstpth)==0` stillschweigend verworfen.
+
+`item_exists` hat dafuer EmuTOS' zweite Form bekommen (`:186-208`): mit
+`is_folder` wird `\*.*` angehaengt, und genau das macht die Probe
+ordner-exklusiv — ein `Fsfirst` auf `C:\FOO` findet auch eine *Datei* `FOO`,
+`C:\FOO\*.*` nur ein Verzeichnis (ueber dessen `.`-Eintrag, den `Dcreate`
+anlegt).
+
+**4. `STDELDIS` steht in `dir_op`** (`:967-976`), hinter dem
+`ADCPYDEL`-Kasten und vor der Schleife. Sie haengt an EmuTOS' zweitem
+Parameter `icontype`, der bei uns `Option<AType>` ist: `None` ist EmuTOS'
+`-1` („Quelle ist ein Fenster"), `Some(AType::Disk)` sein `AT_ISDISK`. Die
+Durchreichung folgt EmuTOS Aufrufstelle fuer Aufrufstelle:
+
+| EmuTOS | NewTOS | `icontype` |
+|---|---|---|
+| `deskfun.c:1421` `fun_del` (Fensterfall) | `dir.rs` `fun_del` | `None` |
+| `deskfun.c:1380,1365` `fun_del`→`delete_ffd(path, pa->a_type)` | `dir.rs` `fun_del_desktop` | `Some(Disk)` |
+| `deskfun.c:985` `fun_win2win` | `dir.rs` `fun_win2win` | `None` |
+| `deskfun.c:1130` `fun_win2desk`→`fun_file2desk(…, -1, …)` | `dir.rs` `fun_win2desk` | `None` |
+| `deskfun.c:1179-1180` `fun_file2any`→`fun_file2desk(…, an_src->a_type, …)` | `dir.rs` `fun_desk2desk` | `Some(Disk)` |
+| `deskfun.c:1113` `fun_file2win` | `dir.rs` `fun_desk2win` | `None` (auch bei Schreibtisch-Quelle — EmuTOS' eigene Wahl) |
+
+Die Frage ist **nicht** an `g_cdelepref` gebunden: *Confirm deletes* aus
+nimmt den zaehlenden Kasten weg, nicht diese Frage. Gemessen in
+`measurement-2026-09-23-desk24-desk25-desk26` §3 — `Nein` laesst die Karte
+unveraendert, `Ja` leert sie.

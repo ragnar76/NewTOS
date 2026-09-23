@@ -1,6 +1,6 @@
 # DESK25 — `STDELDIS`: die Zusatzfrage beim Loeschen eines Laufwerks fehlt
 
-Status: **OFFEN** · Prioritaet: **P4** · Typ: Funktionsluecke — Nebenbefund DESK13
+Status: **ERLEDIGT** (2026-09-23) · Prioritaet: **P4** · Typ: Funktionsluecke — Nebenbefund DESK13
 
 Abhaengigkeiten: [DESK13](DESK13.md) (erledigt)
 
@@ -22,3 +22,28 @@ an EmuTOS' Stelle stellen.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss
+
+Bestaetigt und gebaut. `dir_op` und `fun_op` in `kernel/src/desk/dir.rs`
+haben EmuTOS' zweiten Parameter bekommen (`icontype: Option<AType>`; `None`
+ist sein `-1`, `Some(AType::Disk)` sein `AT_ISDISK`), ebenso
+`fun_file2desk` (`icontype_src`). Die Werte folgen EmuTOS Aufrufstelle fuer
+Aufrufstelle — die Tabelle steht in `docs/api/desktop/deskdir.md`.
+
+Die Frage selbst steht an EmuTOS' Stelle (`deskdir.c:967-976`): hinter dem
+`ADCPYDEL`-Kasten, vor der Schleife, **nicht** an `g_cdelepref` gebunden.
+`delete_disk_alert(letter)` baut `STDELDIS` mit dem Laufwerksbuchstaben
+(`desk_rsc.c:2499-2500`, `fun_alert_merge(2, …)`), Voreinstellung `No`,
+`== 1` heisst `Yes`.
+
+Messung: [`measurement-2026-09-23-desk24-desk25-desk26/`](../measurement-2026-09-23-desk24-desk25-desk26/)
+§3. `Nein` laesst die Karte unveraendert (57 Dateien wie das Ausgangsabbild),
+`Ja` leert sie bis auf die Datentraegerkennung. Vorher (HEAD) wird ohne
+zweite Frage geloescht.
+
+**Nicht angefasst, eigener Befund:** der `AT_ISTRSH`-Zweig in
+`fun_file2desk` stellt bei EmuTOS `wants_to_delete_files()` voran, wenn
+`icontype_src >= 0` (`deskfun.c:1049-1051`); NewTOS haelt dort weiter den
+eigenen `fun_confirm`-Vorbau in `fun_desk2desk`. Die Zahl der Rueckfragen
+stimmt, der Wortlaut und der *Remove*-Zweig nicht.

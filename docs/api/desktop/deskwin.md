@@ -439,10 +439,8 @@ full per protocol):
   empty, and the `wind_set` lands on a window that is `VF_INUSE` but never
   `VF_ISOPEN`, so it stores a pointer and draws nothing.
 
-  **Call sites, all five of EmuTOS's.** `win_sinfo(pw, FALSE)` — the whole
-  directory — stays where it was, in `set_window_strings`
-  (`do_diropen`/`rebuild_window`, `desksupp.c:450`, `deskfun.c:141`).
-  `win_sinfo(pw, TRUE)` now runs from:
+  **Call sites — EmuTOS has six, and A110 built five of them.**
+  `win_sinfo(pw, TRUE)` runs from:
 
   | EmuTOS | NewTOS |
   |---|---|
@@ -450,6 +448,24 @@ full per protocol):
   | `desksupp.c:150-153` (`desk_clear`, and through it `desk_clear_all`) | `main.rs` `desk_clear`, the wrapper around the state half |
   | `deskfun.c:380-382` (`mark_matching_fnodes`) | `main.rs` `search_current_window` |
   | `deskfun.c:627-631` (`fun_selall`) | `dir.rs` `fun_selectall` |
+
+  `win_sinfo(pw, FALSE)` — the whole directory — runs from two:
+
+  | EmuTOS | NewTOS |
+  |---|---|
+  | `desksupp.c:450` (`do_diropen`) | `main.rs` `set_window_strings` |
+  | `deskfun.c:141` (`rebuild_window`, reached from `fun_rebld` `:173` and `fun_rebld_marked` `:150`) | `dir.rs` `rebuild_window` |
+
+  **NewTOS (DESK26, 2026-09-23):** the second `FALSE` site was missing. The
+  A110 note above claimed both of them sat in `set_window_strings`
+  ("`do_diropen`/`rebuild_window`"), but `set_window_strings` has no caller in
+  `rebuild_window` — that path only re-scanned, rebuilt the view and
+  repainted. The re-scan throws the old `FNODE`s away, so after a delete the
+  selection was gone while the info line still read `… in 1 selected items.`
+  (`measurement-2026-09-23-desk13/screendumps/f-deleted.png`). `rebuild_window`
+  now calls `win_sinfo(handle, false)` after the re-scan and before the
+  redraw, at EmuTOS's place. Before/after in
+  `measurement-2026-09-23-desk24-desk25-desk26` §4.
 
 ---
 

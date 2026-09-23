@@ -517,5 +517,28 @@ See [Build configuration](#emutos-source) above for the five
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00. Filled in when the corresponding implementation
-phase begins.)
+### `icontype` reicht bis `dir_op` durch (DESK25, 2026-09-23)
+
+`fun_op` hatte EmuTOS' zweiten Parameter nicht. Er ist jetzt
+`icontype: Option<AType>` — `None` fuer EmuTOS' `-1` („die Quelle ist ein
+Fenster"), `Some(AType::Disk)` fuer `AT_ISDISK` — und wird an **beide**
+`dir_op`-Durchlaeufe weitergereicht (`deskfun.c:793,798`), genau wie in
+EmuTOS. Sein einziger Zweck ist die `STDELDIS`-Frage in `dir_op`
+(`deskdir.c:971-975`), siehe [`deskdir.md`](deskdir.md). Die Aufrufstellen
+und ihre Werte stehen in derselben Tabelle dort; `fun_file2desk` hat dafuer
+ebenfalls EmuTOS' `icontype_src`-Parameter bekommen.
+
+Offen geblieben (eigener Befund, kein DESK25-Thema): EmuTOS' `AT_ISTRSH`-Zweig
+in `fun_file2desk` stellt `wants_to_delete_files()` voran, *wenn*
+`icontype_src >= 0` (`deskfun.c:1049-1051`). NewTOS haelt an dieser Stelle
+weiterhin den eigenen `fun_confirm`-Vorbau in `fun_desk2desk`; die Zahl der
+Rueckfragen stimmt damit (Vorbau + `ADCPYDEL` + `STDELDIS`), der Wortlaut und
+der *Remove*-Zweig nicht.
+
+### `rebuild_window` setzt die Infozeile (DESK26, 2026-09-23)
+
+EmuTOS' `rebuild_window` ist vier Schritte lang: `pn_active`, `desk_verify`,
+`win_sinfo(pwin, FALSE)`, `fun_msg(WM_REDRAW, …)` (`deskfun.c:135-142`). Der
+dritte fehlte. `dir.rs` `rebuild_window` ruft ihn jetzt nach dem Neueinlesen
+und vor dem Neuzeichnen — Einzelheiten und die Messung in
+[`deskwin.md`](deskwin.md#win_srtallwin_bdallwin_shwallwin_iselwin_snamewin_sinfo--deskwinc768-906).
