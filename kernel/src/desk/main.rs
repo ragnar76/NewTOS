@@ -703,7 +703,7 @@ fn hndl_kbd(key: i16) -> bool {
         menu::men_update();
         return done;
     }
-    // 5. Alt+letter — open that drive (inert on the current keymap, see below).
+    // 5. Alt+letter — open that drive.
     if check_alt_letter_key(key) {
         menu::men_update();
         return false;
@@ -790,11 +790,21 @@ fn funkey_number(key: i16) -> Option<u16> {
 /// scancode), reading the shifted character for the scancode to infer the
 /// letter (EmuTOS reads `KEYTAB.shift[]`; there is no dedicated Alt table).
 ///
-/// **Inert on the current NewTOS keymap:** the IKBD/keymap folds Alt into AltGr
-/// and never yields ASCII `0` for a letter key, so a letter never arrives with
-/// the bare-scancode shape this path requires — the drive never opens. Faithful
-/// check, left in place; a keyboard-layer limitation flagged to the lead, not a
-/// desktop stub. Returns `true` only if it actually opened a drive.
+/// **This path is live** (re-established DESK13). An older note here, and the
+/// one DESK11 copied into its report, called it inert on the grounds that the
+/// keyboard layer "folds Alt into AltGr and never yields ASCII 0 for a letter
+/// key". That is not what the layer does: `crate::keymap::to_ascii` zeroes an
+/// alphabetic result whenever the Alt modifier is set
+/// (`kernel/src/keymap.rs`, the `if ascii.is_ascii_alphabetic()` arm of the
+/// `alt` branch), `ikbd::to_ascii` turns that `0` into `None`, and
+/// `ikbd::decode_key` queues the word as `scancode << 8 | 0` — exactly the
+/// bare-scancode shape this check wants. Both key sources set the Alt bit: the
+/// native IKBD stream (`SC_ALT` = `0x38`) and the USB-HID report, whose
+/// `modifiers()` maps LAlt **and** RAlt to `0x38`. The AES hands the whole word
+/// through as `EV_KRET` (`tos-api/src/aes/event.rs:598`), so nothing between
+/// the key and here re-interprets it.
+///
+/// Returns `true` only if it actually opened a drive.
 fn check_alt_letter_key(key: i16) -> bool {
     if (key & 0xFF) != 0 {
         return false;
@@ -1892,6 +1902,8 @@ pub(super) fn cnx_put() {
         g.g_cnxsave.cs_sort = g.sort;
         g.g_cnxsave.cs_sizefit = g.size_to_fit;
         g.g_cnxsave.cs_confdel = g.g_cdelepref;
+        g.g_cnxsave.cs_confcpy = g.g_ccopypref;
+        g.g_cnxsave.cs_confovwr = g.g_covwrpref;
         g.g_cnxsave.cs_dblclick = g.g_cdclkpref;
         g.g_cnxsave.cs_timefmt = g.g_ctimeform;
         g.g_cnxsave.cs_datefmt = g.g_cdateform;
@@ -2023,6 +2035,8 @@ fn cnx_get_prefs() {
     let dclick = global::with(|g| {
         g.size_to_fit = sizefit;
         g.g_cdelepref = g.g_cnxsave.cs_confdel;
+        g.g_ccopypref = g.g_cnxsave.cs_confcpy;
+        g.g_covwrpref = g.g_cnxsave.cs_confovwr;
         g.g_cdclkpref = g.g_cnxsave.cs_dblclick;
         g.g_ctimeform = g.g_cnxsave.cs_timefmt;
         g.g_cdateform = g.g_cnxsave.cs_datefmt;

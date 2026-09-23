@@ -34,7 +34,7 @@ use crate::sync::SpinMutex;
 use super::dosbind::{dos_close, dos_create, dos_gdrv, dos_open, dos_read, dos_sdrv, dos_write};
 use super::global::{self, Anode, Grect, WSave, NIL, NUM_WNODES};
 use super::icons;
-use super::model::{AType, DateFmt, Sort, TimeFmt, View};
+use super::model::{AType, DateFmt, DateOrder, Sort, TimeFmt, View};
 
 // ── GEMDOS file access (through the trap, [`super::dosbind`]) ────────────
 
@@ -101,6 +101,12 @@ const INF_E1_SORTMASK: u8 = 0x60;
 const INF_E1_SORTSHIFT: u8 = 5;
 /// `INF_E1_CONFDEL` (`deskapp.c:89`) — 1 ⇒ confirm deletes.
 const INF_E1_CONFDEL: u8 = 0x10;
+/// `INF_E1_CONFCPY` (`deskapp.c:90`) — 1 ⇒ confirm copies.
+const INF_E1_CONFCPY: u8 = 0x08;
+/// `INF_E2_ALLOWOVW` (`deskapp.c:98`) — 1 ⇒ **allow** overwrites, i.e. do
+/// **not** confirm them. "yes, it's backwards", says the EmuTOS comment; the
+/// decode is `cs_confovwr = ((envr & INF_E2_ALLOWOVW) == 0)` (`:925`).
+const INF_E2_ALLOWOVW: u8 = 0x10;
 /// `INF_E1_DCMASK` (`deskapp.c:91`) — double-click speed index, 0..4 valid.
 const INF_E1_DCMASK: u8 = 0x07;
 /// `INF_E2_IDTDATE` (`deskapp.c:96`) — 1 ⇒ take the date format from the `_IDT`
@@ -664,21 +670,23 @@ fn state_to_env(view: View, sort: Sort, size_to_fit: bool, base_e1: u8, base_e5:
 ///
 /// ```c
 /// cnxsave->cs_confdel  = ((envr & INF_E1_CONFDEL) != 0);
+/// cnxsave->cs_confcpy  = ((envr & INF_E1_CONFCPY) != 0);
 /// cnxsave->cs_dblclick =  (envr & INF_E1_DCMASK);
 /// …
+/// cnxsave->cs_confovwr = ((envr & INF_E2_ALLOWOVW) == 0);
 /// cnxsave->cs_datefmt = (envr & INF_E2_IDTDATE) ? DATEFORM_IDT
 ///                     : (envr & INF_E2_DAYMONTH) ? DATEFORM_DMY : DATEFORM_MDY;
 /// cnxsave->cs_timefmt = (envr & INF_E2_IDTTIME) ? TIMEFORM_IDT
 ///                     : (envr & INF_E2_24HCLOCK) ? TIMEFORM_24H : TIMEFORM_12H;
 /// ```
 ///
-/// Returns `(confirm_deletes, dclick_index, time_format, date_format)`. The
-/// `IDT` values are decoded faithfully even though the desktop cannot render
-/// them ([`TimeFmt::Idt`] explains why) — they are what a `NEWDESK.INF` written
-/// by EmuTOS carries, and losing them on read would silently rewrite the user's
-/// file on the next save.
-fn env_to_prefs(e1: u8, e2: u8) -> (bool, u8, TimeFmt, DateFmt) {
+/// Returns `(confirm_deletes, confirm_copies, confirm_overwrites,
+/// dclick_index, time_format, date_format)`.
+#[allow(clippy::type_complexity)]
+fn env_to_prefs(e1: u8, e2: u8) -> (bool, bool, bool, u8, TimeFmt, DateFmt) {
     let confdel = e1 & INF_E1_CONFDEL != 0;
+    let confcpy = e1 & INF_E1_CONFCPY != 0;
+    let confovwr = e2 & INF_E2_ALLOWOVW == 0;
     let dclick = e1 & INF_E1_DCMASK;
     let timefmt = if e2 & INF_E2_IDTTIME != 0 {
         TimeFmt::Idt
@@ -694,28 +702,39 @@ fn env_to_prefs(e1: u8, e2: u8) -> (bool, u8, TimeFmt, DateFmt) {
     } else {
         DateFmt::Mdy
     };
-    (confdel, dclick, timefmt, datefmt)
+    (confdel, confcpy, confovwr, dclick, timefmt, datefmt)
 }
 
 /// The inverse of [`env_to_prefs`] — EmuTOS `app_save`'s env assembly
 /// (`deskapp.c:1138-1160`). Every bit outside this dialog's own is taken from
-/// `base_e1`/`base_e2` unchanged, so the confirm-copy / blitter / cache bits
-/// NewTOS does not edit survive a load/save round trip.
+/// `base_e1`/`base_e2` unchanged, so the blitter / cache bits NewTOS does not
+/// edit survive a load/save round trip.
+#[allow(clippy::too_many_arguments)]
 fn prefs_to_env(
     confdel: bool,
+    confcpy: bool,
+    confovwr: bool,
     dclick: u8,
     timefmt: TimeFmt,
     datefmt: DateFmt,
     base_e1: u8,
     base_e2: u8,
 ) -> (u8, u8) {
-    let mut e1 = base_e1 & !(INF_E1_CONFDEL | INF_E1_DCMASK);
+    let mut e1 = base_e1 & !(INF_E1_CONFDEL | INF_E1_CONFCPY | INF_E1_DCMASK);
     if confdel {
         e1 |= INF_E1_CONFDEL;
     }
+    if confcpy {
+        e1 |= INF_E1_CONFCPY;
+    }
     e1 |= dclick & INF_E1_DCMASK;
 
-    let mut e2 = base_e2 & !(INF_E2_IDTDATE | INF_E2_IDTTIME | INF_E2_DAYMONTH | INF_E2_24HCLOCK);
+    let mut e2 =
+        base_e2 & !(INF_E2_IDTDATE | INF_E2_IDTTIME | INF_E2_ALLOWOVW | INF_E2_DAYMONTH | INF_E2_24HCLOCK);
+    // `env2 |= (cnxsave->cs_confovwr) ? 0x00 : INF_E2_ALLOWOVW;` (`:1142`).
+    if !confovwr {
+        e2 |= INF_E2_ALLOWOVW;
+    }
     match timefmt {
         TimeFmt::Idt => e2 |= INF_E2_IDTTIME,
         TimeFmt::H24 => e2 |= INF_E2_24HCLOCK,
@@ -799,7 +818,7 @@ fn apply(data: &InfData) {
     // #E → cnxsave->cs_view / cs_sort / cs_sizefit (`deskapp.c:994-1013`) and
     // the Preferences half (`deskapp.c:917-934`).
     let (view, sort, size_to_fit) = env_to_state(data.e1, data.e5);
-    let (confdel, dclick, timefmt, datefmt) = env_to_prefs(data.e1, data.e2);
+    let (confdel, confcpy, confovwr, dclick, timefmt, datefmt) = env_to_prefs(data.e1, data.e2);
 
     // #M/#T/#O → `G.g_ahead` (`app_parse`'s tag switch, `deskapp.c:300-346`).
     // The spot is still in grid units here; `app_start` scales it and snaps it
@@ -814,6 +833,8 @@ fn apply(data: &InfData) {
         g.g_cnxsave.cs_sort = sort;
         g.g_cnxsave.cs_sizefit = size_to_fit;
         g.g_cnxsave.cs_confdel = confdel;
+        g.g_cnxsave.cs_confcpy = confcpy;
+        g.g_cnxsave.cs_confovwr = confovwr;
         g.g_cnxsave.cs_dblclick = dclick;
         g.g_cnxsave.cs_timefmt = timefmt;
         g.g_cnxsave.cs_datefmt = datefmt;
@@ -1027,7 +1048,8 @@ fn build_from_state() -> InfData {
 
     // Env + desktop-icon anodes, under one lock.
     #[allow(clippy::type_complexity)]
-    let (view, sort, size_to_fit, prefs, desk_anodes): (View, Sort, bool, (bool, u8, TimeFmt, DateFmt), Vec<InfAnode>) = global::with(|g| {
+    type Prefs = (bool, bool, bool, u8, TimeFmt, DateFmt);
+    let (view, sort, size_to_fit, prefs, desk_anodes): (View, Sort, bool, Prefs, Vec<InfAnode>) = global::with(|g| {
         // The `ANODE` half of `app_save` (`deskapp.c:1216-1262`), for the
         // `AF_ISDESK` nodes: one line per entry of `G.g_ahead`, in list order,
         // with the spot converted back to grid units
@@ -1068,6 +1090,8 @@ fn build_from_state() -> InfData {
             g.g_cnxsave.cs_sizefit,
             (
                 g.g_cnxsave.cs_confdel,
+                g.g_cnxsave.cs_confcpy,
+                g.g_cnxsave.cs_confovwr,
                 g.g_cnxsave.cs_dblclick,
                 g.g_cnxsave.cs_timefmt,
                 g.g_cnxsave.cs_datefmt,
@@ -1079,7 +1103,7 @@ fn build_from_state() -> InfData {
         View::Icon,
         Sort::Name,
         true,
-        (true, global::DEF_DCLICK, TimeFmt::H24, DateFmt::Mdy),
+        (true, true, true, global::DEF_DCLICK, TimeFmt::H24, DateFmt::Mdy),
         Vec::new(),
     ));
 
@@ -1090,8 +1114,8 @@ fn build_from_state() -> InfData {
     // The Preferences bits go into the *same* `e1` byte, in a disjoint bit
     // range (`CONFDEL|DCMASK` vs `VIEWTEXT|SORTMASK`), so they are folded in on
     // top of the result rather than from `base.e1` again.
-    let (confdel, dclick, timefmt, datefmt) = prefs;
-    let (e1, e2) = prefs_to_env(confdel, dclick, timefmt, datefmt, e1, base.e2);
+    let (confdel, confcpy, confovwr, dclick, timefmt, datefmt) = prefs;
+    let (e1, e2) = prefs_to_env(confdel, confcpy, confovwr, dclick, timefmt, datefmt, e1, base.e2);
 
     let mut anodes = desk_anodes;
     let type_anodes: Vec<InfAnode> = if base.anodes.iter().any(|a| !a.is_desk) {
@@ -1542,7 +1566,7 @@ const ROOT: i16 = 0;
 
 /// Build one dialog `OBJECT`.
 #[allow(clippy::too_many_arguments)]
-fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, head: i16, tail: i16) -> Object {
+pub(super) fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, head: i16, tail: i16) -> Object {
     Object {
         ob_next: next,
         ob_head: head,
@@ -1854,35 +1878,38 @@ fn push_dec2(buf: &mut [u8], p: &mut usize, v: u32) {
     }
 }
 
+/// Append `v` with C's `%02d` semantics — zero-padded to **at least** two
+/// digits, but never truncated. `fmt_date` formats all three of its fields with
+/// `%02d` (`deskinf.c:177`), which is why a four-digit year prints in full even
+/// though the field is nominally two wide.
+fn push_dec02(buf: &mut [u8], p: &mut usize, v: u64) {
+    if v < 10 {
+        push_str(buf, p, b"0");
+    }
+    push_dec(buf, p, v);
+}
+
 // ── Date / time formatting (`fmt_date`/`fmt_time`, `deskinf.c:74-180`) ──────
 //
 // Both readers of the date/time preference live here, as they do in EmuTOS:
 // the text-view line builder (`format_fnode`, `deskinf.c:220-307`, ours in
 // `super::win`) and the Show-Info box (`inf_dttm`, `deskinf.c:460-468`).
-// Neither takes the desktop lock — the caller passes the format in, because
-// `format_fnode` already runs inside `global::with`.
-
-/// `DATEFORM_SEP` (`deskbind.h:64`) — the separator EmuTOS uses when the format
-/// does not come from the `_IDT` cookie.
-const DATEFORM_SEP: u8 = b'/';
+// Neither takes the desktop lock — the caller passes the format *and* the
+// current `_IDT` word in, because `format_fnode` already runs inside
+// `global::with`.
+//
+// The separator is **not** a parameter (it was, until DESK13): EmuTOS starts
+// from `DATEFORM_SEP` ('/') and only the `DATEFORM_IDT` arm overrides it, from
+// the cookie (`deskinf.c:129,141-143`). NewTOS's text view printed `MM-DD-YY`
+// with a dash while the Show-Info box printed `MM/DD/YYYY` — one rule, two
+// answers. `DateFmt::rendered` is now that rule's single home.
 
 /// `fmt_date` (`deskinf.c:124-180`) — a DOS-packed date word written into `out`
-/// as `xx<sep>xx<sep>xx`, with a four-digit year when `fourdigit`. The field
-/// order is `datefmt`'s: month first for [`DateFmt::Mdy`], day first for
-/// [`DateFmt::Dmy`]. Returns the number of bytes written.
-///
-/// [`DateFmt::Idt`] renders as [`DateFmt::Mdy`]: the `_IDT` cookie it names is
-/// out of the desktop's reach (see [`DateFmt`]), and MDY is what the text view
-/// printed before the preference existed, so an unreachable value changes
-/// nothing on screen.
-///
-/// **`sep` is a parameter, and that is a divergence, not a design.** EmuTOS
-/// passes `DATEFORM_SEP` ('/') from both call sites; NewTOS's text view has
-/// printed `MM-DD-YY` with a dash since it was written (`super::win`'s
-/// `format_fnode`). DESK02 binds the *order* to the preference and leaves the
-/// separator exactly as each call site had it, so no screen changes that this
-/// ticket did not ask to change; the dash is reported as its own finding.
-pub(super) fn fmt_date(date: u16, fourdigit: bool, sep: u8, datefmt: DateFmt, out: &mut [u8]) -> usize {
+/// as `xx<sep>xx<sep>xx`, with a four-digit year when `fourdigit`. Field order
+/// and separator both come from [`DateFmt::rendered`], resolved against the
+/// current `_IDT` word `idt` ([`super::global::DeskState::g_idt`]). Returns the
+/// number of bytes written.
+pub(super) fn fmt_date(date: u16, fourdigit: bool, datefmt: DateFmt, idt: u32, out: &mut [u8]) -> usize {
     let mut year = 1980u32 + ((date >> 9) & 0x7F) as u32;
     if !fourdigit {
         year %= 100;
@@ -1890,23 +1917,24 @@ pub(super) fn fmt_date(date: u16, fourdigit: bool, sep: u8, datefmt: DateFmt, ou
     let month = ((date >> 5) & 0x0F) as u32;
     let day = (date & 0x1F) as u32;
 
-    let (v1, v2) = match datefmt.rendered() {
-        DateFmt::Dmy => (day, month),
-        // `default:` — MDY, which is also where `rendered()` sends the
-        // unreachable IDT value.
-        _ => (month, day),
+    let (order, sep) = datefmt.rendered(idt);
+    // `switch(format)` (`deskinf.c:154-176`) — which of the three fields goes
+    // where. The year is a whole field, so a year-first order prints it first.
+    let (v1, v2, v3) = match order {
+        DateOrder::Mdy => (month, day, year),
+        DateOrder::Ymd => (year, month, day),
+        DateOrder::Ydm => (year, day, month),
+        DateOrder::Dmy => (day, month, year),
     };
 
+    // `sprintf(pdate, "%02d%c%02d%c%02d", var1, separator, var2, separator,
+    //  var3)` (`:177`).
     let mut p = 0usize;
-    push_dec2(out, &mut p, v1);
+    push_dec02(out, &mut p, v1 as u64);
     push_str(out, &mut p, &[sep]);
-    push_dec2(out, &mut p, v2);
+    push_dec02(out, &mut p, v2 as u64);
     push_str(out, &mut p, &[sep]);
-    if fourdigit {
-        push_dec(out, &mut p, year as u64);
-    } else {
-        push_dec2(out, &mut p, year);
-    }
+    push_dec02(out, &mut p, v3 as u64);
     p
 }
 
@@ -1917,12 +1945,11 @@ pub(super) fn fmt_date(date: u16, fourdigit: bool, sep: u8, datefmt: DateFmt, ou
 /// format is chosen, which is why EmuTOS can lay the text view out in fixed
 /// columns. Returns the number of bytes written (always 7).
 ///
-/// [`TimeFmt::Idt`] renders as [`TimeFmt::H24`] — same reasoning as
-/// [`fmt_date`]'s `Idt` arm.
-pub(super) fn fmt_time(time: u16, timefmt: TimeFmt, out: &mut [u8]) -> usize {
+/// [`TimeFmt::Idt`] is resolved against `idt` by [`TimeFmt::rendered`].
+pub(super) fn fmt_time(time: u16, timefmt: TimeFmt, idt: u32, out: &mut [u8]) -> usize {
     let mut hh = ((time >> 11) & 0x1F) as u32;
     let mm = ((time >> 5) & 0x3F) as u32;
-    let suffix: &[u8] = match timefmt.rendered() {
+    let suffix: &[u8] = match timefmt.rendered(idt) {
         TimeFmt::H12 => {
             let pm = hh >= 12;
             if pm {
@@ -2009,15 +2036,15 @@ pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr:
     // 468`), which formats the date with a four-digit year always (`:464`) and
     // the time through the same `fmt_time` the text view uses (`:467`). Both
     // take their order/clock from the Preferences dialog's values.
-    let (datefmt, timefmt) =
-        global::with(|g| (g.g_cdateform, g.g_ctimeform)).unwrap_or((DateFmt::Mdy, TimeFmt::H24));
+    let (datefmt, timefmt, idt) = global::with(|g| (g.g_cdateform, g.g_ctimeform, g.g_idt))
+        .unwrap_or((DateFmt::Mdy, TimeFmt::H24, 0));
     let mut datebuf = [0u8; 40];
     {
         let mut p = 0usize;
         push_str(&mut datebuf, &mut p, b"Date: ");
-        p += fmt_date(date, true, DATEFORM_SEP, datefmt, &mut datebuf[p..]);
+        p += fmt_date(date, true, datefmt, idt, &mut datebuf[p..]);
         push_str(&mut datebuf, &mut p, b"  ");
-        p += fmt_time(time, timefmt, &mut datebuf[p..]);
+        p += fmt_time(time, timefmt, idt, &mut datebuf[p..]);
         // Trim `fmt_time`'s two-blank 24-hour suffix off the end of the line.
         while p > 0 && datebuf[p - 1] == b' ' {
             p -= 1;
@@ -2113,7 +2140,7 @@ fn inf_which(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
 /// `inf_gindex` (`util/optimize.c:134-147`) — the index, **counted from the
 /// start**, of the first `SELECTED` object in `tree[baseobj .. baseobj+numobj]`,
 /// or `-1` when none is selected. The reverse of [`inf_which`].
-fn inf_gindex(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
+pub(super) fn inf_gindex(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
     for (n, obj) in tree.iter().skip(baseobj).take(numobj).enumerate() {
         if obj.ob_state & OB_SELECTED != 0 {
             return n as i16;
@@ -2143,53 +2170,46 @@ fn inf_what(tree: &mut [Object], ok: usize) -> i16 {
 /// date format actually changed (`deskinf.c:807-814`) — nothing else in this
 /// dialog alters anything already on screen.
 ///
-/// ## The field set, and what is missing from it
+/// ## The field set
 ///
-/// `ADSETPRE` (`desk/desk_rsc.c:1369-1560`) offers six groups in this order:
-/// confirm deletes, confirm copies, confirm overwrites, double-click speed,
-/// time format, date format. NewTOS shows **three** of them, in EmuTOS's order,
-/// and the three it leaves out are left out rather than shown-and-ignored:
+/// All six groups of `ADSETPRE` (`desk/desk_rsc.c:1369-1567`), in its order and
+/// under its object numbers (`desk_rsc.h:164-184`): confirm deletes, confirm
+/// copies, confirm overwrites, double-click speed, time format, date format.
 ///
-/// * **Confirm copies** (`SPCCYES`/`SPCCNO`) — EmuTOS's switch turns on the
-///   per-item copy dialog inside `d_doop` (`deskdir.c:939`). NewTOS's copy
-///   engine has no per-item dialog at all ([`super::dir`]'s module header
-///   records that as a deliberate deviation), so there is nothing for the
-///   switch to turn on.
-/// * **Confirm overwrites** (`SPCOWYES`/`SPCOWNO`) — same reason, one level
-///   deeper: EmuTOS asks before replacing an existing file (`deskdir.c:325`,
-///   `if (!G.g_covwrpref)`), NewTOS's copy always overwrites (GEMDOS `Fcreate`
-///   truncates).
-/// * **The `Default` button of each format group** (`SPTF_DEF`/`SPDF_DEF`) —
-///   "default" means "take the format from the `_IDT` cookie", which EmuTOS
-///   reads with `Supexec(get_idt_cookie)` (`desksupp.c:219`). XBIOS `Supexec`
-///   (0x26) is not implemented (`tos-api/src/xbios/mod.rs:129`) and the desktop
-///   may not reach kernel state except through a trap (DESK10), so the value
-///   cannot be honoured. It is still *decoded* from the `#E` line and written
-///   back unchanged ([`env_to_prefs`]), so a file carrying it survives; it just
-///   has no button. A value of `Idt` pre-selects the NewTOS fallback
-///   (`24H` / `MDY`), which is what it renders as.
+/// DESK02 shipped three of them, because the other three had nothing behind
+/// them: NewTOS's copy engine asked neither a copy nor an overwrite question,
+/// and `Default` means "take the format from the `_IDT` cookie", which was out
+/// of the desktop's reach. DESK13 supplied all three — [`super::dir::dir_op`]'s
+/// confirmation box, `output_fname`'s name-conflict dialog, and the cookie read
+/// through GEMDOS `Ssystem` ([`super::dosbind::dos_getcookie`]) — so the fields
+/// are back, and no control in this box is dead.
 ///
-/// Each of the three fields that is shown has a live consumer: *Confirm
-/// deletes* gates [`super::dir`]'s delete question, the speed is the AES's own
-/// `evnt_dclick` rate, and the two formats drive `format_fnode` and the
-/// Show-Info box through [`fmt_date`]/[`fmt_time`].
+/// Note what is **not** needed any more: DESK02 had to pre-select through
+/// `TimeFmt::rendered` / `DateFmt::rendered`, because a stored `Idt` had no
+/// button and the box would otherwise have claimed a format the text view did
+/// not print. With `Default` on screen the raw value is shown and stored, which
+/// is EmuTOS's own code (`deskinf.c:754-778`, `:797-805`).
 pub(super) fn inf_pref() -> bool {
     // ── current values ──────────────────────────────────────────────────
-    let (confdel, timefmt, datefmt, view) =
-        global::with(|g| (g.g_cdelepref, g.g_ctimeform, g.g_cdateform, g.view))
-            .unwrap_or((true, TimeFmt::H24, DateFmt::Mdy, View::Icon));
+    let (confdel, confcpy, confovwr, timefmt, datefmt, view) = global::with(|g| {
+        (g.g_cdelepref, g.g_ccopypref, g.g_covwrpref, g.g_ctimeform, g.g_cdateform, g.view)
+    })
+    .unwrap_or((true, true, true, TimeFmt::H24, DateFmt::Mdy, View::Icon));
     // `G.g_cdclkpref = evnt_dclick(0, FALSE);` (`deskinf.c:751`) — the rate is
     // the AES's, so it is asked for rather than remembered.
     let dclick = super::evnt_dclick(0, false).clamp(0, 4);
 
     static TITLE: &[u8] = b" SET PREFERENCES \0";
     static CONFDEL_LBL: &[u8] = b"Confirm deletes:\0";
+    static CONFCPY_LBL: &[u8] = b"Confirm copies:\0";
+    static CONFOVW_LBL: &[u8] = b"Confirm overwrites:\0";
     static DCLICK_LBL: &[u8] = b"Double-click speed:\0";
     static TIME_LBL: &[u8] = b"Time format:\0";
     static DATE_LBL: &[u8] = b"Date format:\0";
     static YES: &[u8] = b" Yes \0";
     static NO: &[u8] = b" No \0";
     static DC: [&[u8]; 5] = [b"1\0", b"2\0", b"3\0", b"4\0", b"5\0"];
+    static DEFAULT_LBL: &[u8] = b" Default \0";
     static H12: &[u8] = b" 12H \0";
     static H24: &[u8] = b" 24H \0";
     static MDY: &[u8] = b" MDY \0";
@@ -2206,8 +2226,15 @@ pub(super) fn inf_pref() -> bool {
     // in each direction than its `ob_*` rectangle says. `ADSETPRE` spaces its
     // rows two character rows apart (`desk_rsc.c:1386,1406,1426,1450` — char
     // rows 3, 5, 7, 9 → 32 px) and its speed buttons 23 px apart for a 15 px
-    // button (`:1462-1493`, an 8 px gap). With the previous 26 px pitch and
-    // 6 px gap the grown borders of neighbouring buttons would have met.
+    // button (`:1462-1493`, an 8 px gap).
+    //
+    // `ADSETPRE` puts the two format groups on a row of their **own**, below
+    // their label and spanning the whole box (`:1503,1533`: an `IBOX` at char
+    // column 1, 38 wide, one row under the `G_STRING`); NewTOS keeps every
+    // group on its label's row, which is the layout the other four rows already
+    // had and which `docs/api/desktop/deskinf.md` marks as free (the visual
+    // layout is fidelity, not contract). The box therefore grows sideways to
+    // fit the widest group instead of downwards.
     const MARGIN: i16 = 24;
     /// `ADSETPRE`'s two-character row pitch (`desk_rsc.c:1386` ff.).
     const ROW_H: i16 = 2 * CELL_H;
@@ -2215,16 +2242,24 @@ pub(super) fn inf_pref() -> bool {
     const YESNO_W: i16 = 52;
     const DC_W: i16 = 30;
     const FMT_W: i16 = 56;
+    /// " Default " — the widest label in either format group.
+    const DEF_W: i16 = 9 * CELL_W;
     /// `ADSETPRE`'s inter-button gap (`desk_rsc.c:1462-1493`: pitch 23 px,
     /// width 15 px).
     const GAP: i16 = 8;
-    const LBL_W: i16 = 20 * CELL_W; // "Double-click speed:" + a blank
-    const GROUP_W: i16 = 5 * DC_W + 4 * GAP; // the widest group (five speeds)
+    const LBL_W: i16 = 20 * CELL_W; // "Confirm overwrites:" + a blank
+    /// The five speed buttons.
+    const SPEED_W: i16 = 5 * DC_W + 4 * GAP;
+    /// `Default` + two format buttons — the widest group.
+    const FMTGRP_W: i16 = DEF_W + GAP + 2 * (FMT_W + GAP) - GAP;
+    const GROUP_W: i16 = if SPEED_W > FMTGRP_W { SPEED_W } else { FMTGRP_W };
     let dw = MARGIN + LBL_W + GROUP_W + MARGIN;
     let gx = MARGIN + LBL_W;
 
     let y_del = MARGIN + ROW_H;
-    let y_dc = y_del + ROW_H;
+    let y_ccpy = y_del + ROW_H;
+    let y_covw = y_ccpy + ROW_H;
+    let y_dc = y_covw + ROW_H;
     let y_tf = y_dc + ROW_H;
     let y_df = y_tf + ROW_H;
     let y_btn = y_df + ROW_H + GAP;
@@ -2232,24 +2267,32 @@ pub(super) fn inf_pref() -> bool {
     // Vertical offset of a `BTN_H` button inside its `CELL_H` label row.
     let boff = (CELL_H - BTN_H) / 2;
 
-    // ── object indices (`desk_rsc.h:164-184`, minus the omitted groups) ──
+    // ── object indices — `desk_rsc.h:164-184`, unchanged ────────────────
     /// `SPCDYES` — the *Confirm deletes* `Yes` button; `SPCDNO` follows it.
     const SPCDYES: usize = 4;
-    /// `SPDC1` — the first of the five double-click speed buttons.
-    const SPDC1: usize = 8;
-    /// `SPTF12HR` — the first *shown* time-format button (EmuTOS's `SPTF_DEF`
-    /// precedes it and has no NewTOS counterpart).
-    const SPTF12HR: usize = 15;
-    /// `SPDFMMDD` — the first *shown* date-format button.
-    const SPDFMMDD: usize = 19;
+    /// `SPCCYES` — the *Confirm copies* `Yes` button (`:168`).
+    const SPCCYES: usize = 8;
+    /// `SPCOWYES` — the *Confirm overwrites* `Yes` button (`:170`).
+    const SPCOWYES: usize = 12;
+    /// `SPDC1` — the first of the five double-click speed buttons (`:172`).
+    const SPDC1: usize = 16;
+    /// `SPTF_DEF` — the first time-format button (`:177`); `SPTF12HR` and
+    /// `SPTF24HR` follow, in that left-to-right order.
+    const SPTF_DEF: usize = 23;
+    /// `SPDF_DEF` — the first date-format button (`:180`); `SPDFMMDD` and
+    /// `SPDFDDMM` follow.
+    const SPDF_DEF: usize = 28;
     /// `SPOK` — the OK button; `SPCNCL` follows it, as [`inf_what`] requires.
-    const SPOK: usize = 21;
+    const SPOK: usize = 31;
 
     // Every `RBUTTON` of `ADSETPRE` is `SELECTABLE | RBUTTON | FL3DIND`
     // (`desk_rsc.c:1396` ff.) — the 3D indicator role: grown, beveled, and it
     // changes colour when selected.
     let rb = |spec: &'static [u8], x: i16, w: i16, next: i16| {
         mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, spec.as_ptr() as u64, x, 0, w, BTN_H, next, -1, -1)
+    };
+    let yesno = |y: i16, next: i16, head: i16| {
+        mk(G_IBOX, 0, 0, gx, y + boff, 2 * YESNO_W + GAP, BTN_H, next, head, head + 1)
     };
 
     // Each radio group hangs under its own `G_IBOX`, because that is what makes
@@ -2263,28 +2306,40 @@ pub(super) fn inf_pref() -> bool {
         mk(G_STRING, 0, TITLE.as_ptr() as u64, MARGIN, MARGIN, dw - 2 * MARGIN, CELL_H, 2, -1, -1),
         // 2 "Confirm deletes:"          3 its G_IBOX      4/5 Yes/No
         mk(G_STRING, 0, CONFDEL_LBL.as_ptr() as u64, MARGIN, y_del, LBL_W, CELL_H, 3, -1, -1),
-        mk(G_IBOX, 0, 0, gx, y_del + boff, 2 * YESNO_W + GAP, BTN_H, 6, 4, 5),
-        rb(YES, 0, YESNO_W, 5),
+        yesno(y_del, 6, SPCDYES as i16),
+        rb(YES, 0, YESNO_W, SPCDYES as i16 + 1),
         rb(NO, YESNO_W + GAP, YESNO_W, 3),
-        // 6 "Double-click speed:"       7 its G_IBOX      8..12 the five speeds
-        mk(G_STRING, 0, DCLICK_LBL.as_ptr() as u64, MARGIN, y_dc, LBL_W, CELL_H, 7, -1, -1),
-        mk(G_IBOX, 0, 0, gx, y_dc + boff, GROUP_W, BTN_H, 13, 8, 12),
-        rb(DC[0], 0, DC_W, 9),
-        rb(DC[1], DC_W + GAP, DC_W, 10),
-        rb(DC[2], 2 * (DC_W + GAP), DC_W, 11),
-        rb(DC[3], 3 * (DC_W + GAP), DC_W, 12),
-        rb(DC[4], 4 * (DC_W + GAP), DC_W, 7),
-        // 13 "Time format:"             14 its G_IBOX     15/16 12H/24H
-        mk(G_STRING, 0, TIME_LBL.as_ptr() as u64, MARGIN, y_tf, LBL_W, CELL_H, 14, -1, -1),
-        mk(G_IBOX, 0, 0, gx, y_tf + boff, 2 * FMT_W + GAP, BTN_H, 17, 15, 16),
-        rb(H12, 0, FMT_W, 16),
-        rb(H24, FMT_W + GAP, FMT_W, 14),
-        // 17 "Date format:"             18 its G_IBOX     19/20 MDY/DMY
-        mk(G_STRING, 0, DATE_LBL.as_ptr() as u64, MARGIN, y_df, LBL_W, CELL_H, 18, -1, -1),
-        mk(G_IBOX, 0, 0, gx, y_df + boff, 2 * FMT_W + GAP, BTN_H, 21, 19, 20),
-        rb(MDY, 0, FMT_W, 20),
-        rb(DMY, FMT_W + GAP, FMT_W, 18),
-        // 21 OK                         22 Cancel  (`SPOK`/`SPCNCL`: FL3DACT)
+        // 6 "Confirm copies:"           7 its G_IBOX      8/9 Yes/No
+        mk(G_STRING, 0, CONFCPY_LBL.as_ptr() as u64, MARGIN, y_ccpy, LBL_W, CELL_H, 7, -1, -1),
+        yesno(y_ccpy, 10, SPCCYES as i16),
+        rb(YES, 0, YESNO_W, SPCCYES as i16 + 1),
+        rb(NO, YESNO_W + GAP, YESNO_W, 7),
+        // 10 "Confirm overwrites:"      11 its G_IBOX     12/13 Yes/No
+        mk(G_STRING, 0, CONFOVW_LBL.as_ptr() as u64, MARGIN, y_covw, LBL_W, CELL_H, 11, -1, -1),
+        yesno(y_covw, 14, SPCOWYES as i16),
+        rb(YES, 0, YESNO_W, SPCOWYES as i16 + 1),
+        rb(NO, YESNO_W + GAP, YESNO_W, 11),
+        // 14 "Double-click speed:"      15 its G_IBOX     16..20 the five speeds
+        mk(G_STRING, 0, DCLICK_LBL.as_ptr() as u64, MARGIN, y_dc, LBL_W, CELL_H, 15, -1, -1),
+        mk(G_IBOX, 0, 0, gx, y_dc + boff, SPEED_W, BTN_H, 21, SPDC1 as i16, SPDC1 as i16 + 4),
+        rb(DC[0], 0, DC_W, SPDC1 as i16 + 1),
+        rb(DC[1], DC_W + GAP, DC_W, SPDC1 as i16 + 2),
+        rb(DC[2], 2 * (DC_W + GAP), DC_W, SPDC1 as i16 + 3),
+        rb(DC[3], 3 * (DC_W + GAP), DC_W, SPDC1 as i16 + 4),
+        rb(DC[4], 4 * (DC_W + GAP), DC_W, 15),
+        // 21 "Time format:"             22 its G_IBOX     23/24/25 Default/12H/24H
+        mk(G_STRING, 0, TIME_LBL.as_ptr() as u64, MARGIN, y_tf, LBL_W, CELL_H, 22, -1, -1),
+        mk(G_IBOX, 0, 0, gx, y_tf + boff, FMTGRP_W, BTN_H, 26, SPTF_DEF as i16, SPTF_DEF as i16 + 2),
+        rb(DEFAULT_LBL, 0, DEF_W, SPTF_DEF as i16 + 1),
+        rb(H12, DEF_W + GAP, FMT_W, SPTF_DEF as i16 + 2),
+        rb(H24, DEF_W + GAP + FMT_W + GAP, FMT_W, 22),
+        // 26 "Date format:"             27 its G_IBOX     28/29/30 Default/MDY/DMY
+        mk(G_STRING, 0, DATE_LBL.as_ptr() as u64, MARGIN, y_df, LBL_W, CELL_H, 27, -1, -1),
+        mk(G_IBOX, 0, 0, gx, y_df + boff, FMTGRP_W, BTN_H, SPOK as i16, SPDF_DEF as i16, SPDF_DEF as i16 + 2),
+        rb(DEFAULT_LBL, 0, DEF_W, SPDF_DEF as i16 + 1),
+        rb(MDY, DEF_W + GAP, FMT_W, SPDF_DEF as i16 + 2),
+        rb(DMY, DEF_W + GAP + FMT_W + GAP, FMT_W, 27),
+        // 31 OK                         32 Cancel  (`SPOK`/`SPCNCL`: FL3DACT)
         mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, dw / 2 - 100, y_btn, 90, 28, SPOK as i16 + 1, -1, -1),
         mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, dw / 2 + 10, y_btn, 90, 28, 0, -1, -1),
     ];
@@ -2292,15 +2347,23 @@ pub(super) fn inf_pref() -> bool {
     // ── pre-select the current state (`deskinf.c:731-777`) ──────────────
     // `deselect_all(tree1)` is implicit: `mk` leaves every `ob_state` at 0.
     tree[SPCDYES + usize::from(!confdel)].ob_state |= OB_SELECTED;
+    tree[SPCCYES + usize::from(!confcpy)].ob_state |= OB_SELECTED;
+    tree[SPCOWYES + usize::from(!confovwr)].ob_state |= OB_SELECTED;
     tree[SPDC1 + dclick as usize].ob_state |= OB_SELECTED;
-    // `.rendered()`, not the raw value: a `#E` line whose `INF_E2_IDT*` bits are
-    // set (EmuTOS's `INF_E2_DEFAULT`, and therefore every file NewTOS has ever
-    // written before DESK02) decodes to `Idt`, which this dialog has no button
-    // for. Pre-selecting the button the **renderer** actually uses is what keeps
-    // the box honest — with the raw value the fallbacks disagreed, and the
-    // measured run showed `DMY` selected while `format_fnode` printed MDY.
-    tree[SPTF12HR + usize::from(timefmt.rendered() != TimeFmt::H12)].ob_state |= OB_SELECTED;
-    tree[SPDFMMDD + usize::from(datefmt.rendered() != DateFmt::Mdy)].ob_state |= OB_SELECTED;
+    // `switch(G.g_ctimeform)` / `switch(G.g_cdateform)` (`:754-778`), with the
+    // `default:` arm — the `Idt` value — landing on the `Default` button.
+    tree[match timefmt {
+        TimeFmt::H12 => SPTF_DEF + 1,
+        TimeFmt::H24 => SPTF_DEF + 2,
+        TimeFmt::Idt => SPTF_DEF,
+    }]
+    .ob_state |= OB_SELECTED;
+    tree[match datefmt {
+        DateFmt::Mdy => SPDF_DEF + 1,
+        DateFmt::Dmy => SPDF_DEF + 2,
+        DateFmt::Idt => SPDF_DEF,
+    }]
+    .ob_state |= OB_SELECTED;
 
     // ── run it ──────────────────────────────────────────────────────────
     inf_show(tree.as_mut_ptr() as u64, ROOT);
@@ -2310,19 +2373,33 @@ pub(super) fn inf_pref() -> bool {
 
     // ── commit (`deskinf.c:784-814`) ────────────────────────────────────
     let new_confdel = inf_which(&tree, SPCDYES, 2) == 1;
+    let new_confcpy = inf_which(&tree, SPCCYES, 2) == 1;
+    let new_confovwr = inf_which(&tree, SPCOWYES, 2) == 1;
     // `G.g_cdclkpref = evnt_dclick(inf_gindex(tree1, SPDC1, 5), TRUE);`
     let picked = inf_gindex(&tree, SPDC1, 5).max(0);
     let new_dclick = super::evnt_dclick(picked, true).clamp(0, 4) as u8;
-    // The two format groups keep EmuTOS's "read the index off the button order"
-    // trick, minus its `Default` button: with `12H` then `24H` on screen,
-    // `inf_which` yields 1 for the first and 0 for the second, which is exactly
-    // `TIMEFORM_12H` / `TIMEFORM_24H` (`deskbind.h:68-69`). Same for `MDY`/`DMY`
-    // against `DATEFORM_MDY` / `DATEFORM_DMY` (`:65-66`).
-    let new_timefmt = if inf_which(&tree, SPTF12HR, 2) == 1 { TimeFmt::H12 } else { TimeFmt::H24 };
-    let new_datefmt = if inf_which(&tree, SPDFMMDD, 2) == 1 { DateFmt::Mdy } else { DateFmt::Dmy };
+    // "the following assumes that the buttons are in the left-to-right order:
+    // default, 12hour, 24hour" (`:793-796`) — `inf_which` counts from the end,
+    // so the three buttons yield 2/1/0, which *is* `TIMEFORM_IDT` (2),
+    // `TIMEFORM_12H` (1), `TIMEFORM_24H` (0) (`deskbind.h:68-70`). Same for
+    // default/MDY/DMY against `DATEFORM_IDT`/`_MDY`/`_DMY` (`:65-67`).
+    let new_timefmt = match inf_which(&tree, SPTF_DEF, 3) {
+        2 => TimeFmt::Idt,
+        1 => TimeFmt::H12,
+        // 0, and `inf_which`'s "nothing selected" -1, which cannot happen: a
+        // radio group always has exactly one member selected.
+        _ => TimeFmt::H24,
+    };
+    let new_datefmt = match inf_which(&tree, SPDF_DEF, 3) {
+        2 => DateFmt::Idt,
+        1 => DateFmt::Mdy,
+        _ => DateFmt::Dmy,
+    };
 
     global::with(|g| {
         g.g_cdelepref = new_confdel;
+        g.g_ccopypref = new_confcpy;
+        g.g_covwrpref = new_confovwr;
         g.g_cdclkpref = new_dclick;
         g.g_ctimeform = new_timefmt;
         g.g_cdateform = new_datefmt;
@@ -2330,11 +2407,8 @@ pub(super) fn inf_pref() -> bool {
 
     // "if the current view is as text, and the date or time format has changed,
     // we need to tell the caller so he can rebuild the windows if necessary"
-    // (`deskinf.c:807-814`).
-    // Compared against the **rendered** old value, for the same reason the
-    // pre-selection uses it: leaving `Idt` for the `H24` the screen already
-    // showed changes no pixel and must not order a rebuild.
-    view == View::Text && (new_timefmt != timefmt.rendered() || new_datefmt != datefmt.rendered())
+    // (`deskinf.c:807-814`) — the raw values, as EmuTOS compares them.
+    view == View::Text && (new_timefmt != timefmt || new_datefmt != datefmt)
 }
 
 // ── Set-background dialog (`inf_backgrounds`, `deskinf.c:825-921`) ───────────
@@ -2953,9 +3027,10 @@ pub fn selftest() {
     let mut original = InfData::default();
     let (e1, e5) = state_to_env(View::Text, Sort::Size, false, original.e1, original.e5);
     // …and a non-default value for every Preferences field, so the `#E` bytes
-    // the dialog writes are exercised too (DESK02): confirm-deletes off,
-    // double-click 4, 12-hour clock, day-before-month.
-    let (e1, e2) = prefs_to_env(false, 4, TimeFmt::H12, DateFmt::Dmy, e1, original.e2);
+    // the dialog writes are exercised too (DESK02/DESK13): confirm-deletes off,
+    // confirm-copies on, confirm-overwrites off (i.e. `INF_E2_ALLOWOVW` set —
+    // the one inverted bit), double-click 4, 12-hour clock, day-before-month.
+    let (e1, e2) = prefs_to_env(false, true, false, 4, TimeFmt::H12, DateFmt::Dmy, e1, original.e2);
     original.e1 = e1;
     original.e2 = e2;
     original.e5 = e5;
@@ -2999,7 +3074,7 @@ pub fn selftest() {
     check("in-memory: #E view/sort", env_to_state(mem.e1, mem.e5) == env_to_state(original.e1, original.e5));
     check(
         "in-memory: #E preferences",
-        env_to_prefs(mem.e1, mem.e2) == (false, 4, TimeFmt::H12, DateFmt::Dmy),
+        env_to_prefs(mem.e1, mem.e2) == (false, true, false, 4, TimeFmt::H12, DateFmt::Dmy),
     );
     check("in-memory: #Q background", mem.patcol == original.patcol);
     check("in-memory: #W geometry", mem.windows == original.windows);
@@ -3015,7 +3090,7 @@ pub fn selftest() {
             check("disk: #E view/sort", env_to_state(disk.e1, disk.e5) == env_to_state(original.e1, original.e5));
             check(
                 "disk: #E preferences",
-                env_to_prefs(disk.e1, disk.e2) == (false, 4, TimeFmt::H12, DateFmt::Dmy),
+                env_to_prefs(disk.e1, disk.e2) == (false, true, false, 4, TimeFmt::H12, DateFmt::Dmy),
             );
             check("disk: #Q background", disk.patcol == original.patcol);
             check("disk: #W geometry", disk.windows == original.windows);

@@ -1073,6 +1073,87 @@ that image the dialog re-opens with `DMY` pre-selected, and the text view prints
 
 ---
 
+## NewTOS implementation notes — die drei nachgereichten Felder und der `_IDT`-Keks (DESK13, 2026-09-23)
+
+DESK02 liess drei Felder von `ADSETPRE` weg, weil nichts dahinter stand. DESK13
+hat die drei Hintergruende gebaut, also stehen die Felder jetzt drin — `inf_pref`
+zeigt alle **sechs** Gruppen in EmuTOS' Reihenfolge unter EmuTOS'
+Objektnummern (`desk_rsc.h:164-184`: `SPCDYES` 4, `SPCCYES` 8, `SPCOWYES` 12,
+`SPDC1` 16, `SPTF_DEF` 23, `SPDF_DEF` 28, `SPOK` 31).
+
+* *Confirm copies* / *Confirm overwrites* schalten jetzt wirklich etwas:
+  den `ADCPYDEL`-Kasten in `dir_op` und den `ADCPALER`-Kasten in
+  `output_fname` (siehe `deskdir.md`, Abschnitt DESK13).
+* Der **`Default`-Knopf** beider Formatgruppen meint `DATEFORM_IDT` /
+  `TIMEFORM_IDT`, also den `_IDT`-Keks. Der ist erreichbar — siehe unten.
+
+Damit faellt auch DESK02s Behelf weg: die Vorbelegung liest wieder den **rohen**
+Wert (`deskinf.c:754-778`, mit `default:` auf dem `Default`-Knopf), und die
+Rueckgabe vergleicht rohe Werte (`:807-814`). `inf_which(tree, SPTF_DEF, 3)`
+liefert 2/1/0 fuer `Default`/`12H`/`24H` — genau `TIMEFORM_IDT`/`_12H`/`_24H`
+(`deskbind.h:68-70`), und ebenso `DATEFORM_IDT`/`_MDY`/`_DMY` (`:65-67`).
+
+### Der `_IDT`-Keks: nicht `Supexec`, sondern `Ssystem`
+
+EmuTOS liest ihn mit `Supexec((LONG)get_idt_cookie)` (`desksupp.c:219`) — nicht
+weil der *Keks* Privileg braucht, sondern weil die Dose auf m68k nur ueber den
+Zeiger bei `$5A0` im Supervisor-Speicher erreichbar ist. Das ist ein
+m68k-Mechanismus, und `docs/COMPATIBILITY.md` stellt Mechanismen frei.
+
+Auf NewTOS gibt es dafuer weder Bedarf noch Mittel: XBIOS `Supexec` (0x26) ist
+eine offene ADR (`docs/api/xbios/26-supexec.md`, "NewTOS status: decision
+deferred"), und die Keksdosen-Spezifikation benennt den Ersatz selbst — "There
+is no `Supexec` in the kernel … the low-memory area an app wants is already in
+its own address space" (`docs/api/bios/_cookie-jar.md` §Status 2026-09-14).
+Der Desktop liest den Keks also **als Wert** ueber den GEMDOS-Trap:
+`Ssystem(S_GETCOOKIE, '_IDT', 0)` (`docs/api/gemdos/154-ssystem.md`), gebunden
+als `desk::dosbind::dos_getcookie`. Das dritte Argument ist 0, damit der Wert in
+`x0` zurueckkommt und kein Zeiger durch den Trap geht — die Zeigerform schreibt
+mit einem unprivilegierten `sttr` und faellt auf einer Kernadresse.
+Gemessen und festgenagelt: `tos-api/tests/gemdos_ssystem_idt_cookie.rs`
+(`_IDT = 0x0000112F`), und auf dem Brett
+`[desk13] _IDT = 0x112f via Ssystem(S_GETCOOKIE)`.
+
+`G.g_idt` (`deskbind.h:183`) wird aufgefrischt, wo EmuTOS es auffrischt — in
+`do_wredraw` (`desksupp.c:219`) — und zusaetzlich einmal beim Desktopstart,
+weil NewTOS die Textzeile beim **Bau der Ansicht** formatiert, EmuTOS dagegen
+beim **Zeichnen** (`dr_fnode`, `deskinf.c:320`).
+
+### Datumstrenner: eine Regel, ein Ort
+
+Der `sep`-Parameter von `fmt_date` ist weg. EmuTOS faengt bei `DATEFORM_SEP`
+(`'/'`, `deskbind.h:64`) an und ueberschreibt ihn nur im `DATEFORM_IDT`-Zweig
+aus dem Keks (`deskinf.c:129,141-143`); beide Aufrufstellen uebergeben nichts.
+NewTOS hatte den Trenner je Aufrufstelle festgeschrieben — die Textansicht
+druckte `MM-DD-YY`, der Show-Info-Kasten `MM/DD/YYYY`. Eine Regel, zwei
+Antworten; genau der Fehler, den DESK02 eine Ebene hoeher schon einmal gefunden
+hatte.
+
+Die Regel steht jetzt einmal, in `model::DateFmt::rendered(idt) -> (DateOrder,
+u8)` und `model::TimeFmt::rendered(idt) -> TimeFmt`. `DateOrder` ist EmuTOS'
+zweites `switch` (`deskinf.c:154-176`) mit allen vier `_IDT`-Reihenfolgen
+(`MMDDYY`/`DDMMYY`/`YYMMDD`/`YYDDMM`, `biosdefs.h:168-171`); vorher konnte
+NewTOS nur zwei davon ausdruecken. `fmt_date` formatiert die drei Felder mit
+`%02d`-Semantik (`push_dec02`), weil EmuTOS' `sprintf(…"%02d%c%02d%c%02d"…)`
+eine vierstellige Jahreszahl nicht abschneidet.
+
+Mit `_IDT = 0x112F` (24H, DMY, `/`) und EmuTOS' eigener Voreinstellung ohne
+`.INF` (`INF_E2_DEFAULT` traegt beide `IDT`-Bits, `deskapp.c:103`) druckt die
+Textansicht `23/09/26 18:55` und der Show-Info-Kasten `23/09/2026 18:55` —
+gemessen, `measurement-2026-09-23-desk13/screendumps/c-text.png` und
+`e-showinfo.png`. Vorher waren es `09-23-26` und `09/23/2026`, also zwei
+verschiedene Antworten auf dieselbe Frage.
+
+### Nachtrag zur DESK02-Tabelle oben
+
+Die Zeile *Confirm deletes* nennt `dir::confirm_deletes()`; die Funktion gibt es
+nicht mehr. Der Leser ist `dir_op`s `confirm`-Schalter
+(`kernel/src/desk/dir.rs`), und `CSave` traegt jetzt auch `cs_confcpy` und
+`cs_confovwr` (`INF_E1_CONFCPY`, `INF_E2_ALLOWOVW` — letzteres **invertiert**,
+`deskapp.c:98`: gesetzt heisst *nicht* nachfragen).
+
+---
+
 ## NewTOS implementation notes — the 3D flag set and the About content (DESK01b)
 
 Follow-up to DESK01 and DESK02 after the dialogs were seen on screen. Two

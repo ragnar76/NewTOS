@@ -803,6 +803,13 @@ pub fn run() {
     // One-time setup: DeskState (view/sort defaults, window list, object arena).
     global::init(desk);
 
+    // Seed `G.g_idt` before anything formats a date. EmuTOS gets away with
+    // refreshing it only inside `do_wredraw` (`desksupp.c:219`) because it
+    // formats a text-view line at *draw* time (`dr_fnode`, `deskinf.c:320`);
+    // NewTOS builds the line when the view is built, which happens earlier.
+    // `do_wredraw` refreshes it after this, exactly as EmuTOS does.
+    redraw::refresh_idt();
+
     // Grid metrics: app_start (icon cell + desktop pitch) → win_view (window
     // pitch; needs the full-window work width from the AES) → app_blddesk
     // (desktop drive/trash/printer icon tree).

@@ -61,71 +61,145 @@ pub enum Sort {
     NoSort,
 }
 
+// ── The `_IDT` cookie, and the one rule that resolves it ────────────────────
+//
+// `_IDT` carries the machine's date/time *display* preference: a separator
+// character in the low byte, a field-order pair of bits, and a 12/24-hour bit
+// (`include/biosdefs.h:161-173`). It is the value `DATEFORM_IDT`/`TIMEFORM_IDT`
+// — the `Default` button of each format group in *Set preferences* — defer to.
+//
+// EmuTOS fetches it with `Supexec(get_idt_cookie)` (`desksupp.c:219`) because
+// on m68k the cookie jar pointer lives at `$5A0`, in supervisor-only low
+// memory. NewTOS has no such need and no `Supexec` (`docs/api/xbios/
+// 26-supexec.md`, "decision deferred"; `docs/api/bios/_cookie-jar.md` §Status
+// 2026-09-14, "There is no `Supexec` in the kernel"): the desktop reads the
+// cookie **by value** through the GEMDOS trap, `Ssystem(S_GETCOOKIE, '_IDT',
+// 0)` (`super::dosbind::dos_getcookie`), and keeps it in `G.g_idt`
+// ([`super::global::DeskState::g_idt`]) exactly as EmuTOS does.
+//
+// The resolution rule below is the **only** copy of "what does IDT mean here":
+// both readers — `desk::inf::fmt_date` and `desk::inf::fmt_time` — go through
+// it. DESK02 had the rule written twice with contradicting answers (the dialog
+// pre-selected one format, the text view printed another); it is written once
+// now, and the Preferences dialog no longer needs it at all, because it offers
+// EmuTOS's `Default` button and stores the raw value.
+
+/// `IDT_TMASK` (`biosdefs.h:163`) — the clock bit of the `_IDT` cookie.
+pub const IDT_TMASK: u32 = 0x1000;
+/// `IDT_24H` (`biosdefs.h:162`) — [`IDT_TMASK`] set means a 24-hour clock.
+pub const IDT_24H: u32 = 0x1000;
+/// `IDT_BIT_DM` (`biosdefs.h:166`) — day before month.
+pub const IDT_BIT_DM: u32 = 0x100;
+/// `IDT_BIT_YM` (`biosdefs.h:167`) — year before month.
+pub const IDT_BIT_YM: u32 = 0x200;
+/// `IDT_DMASK` (`biosdefs.h:172`) — the two field-order bits.
+pub const IDT_DMASK: u32 = IDT_BIT_YM | IDT_BIT_DM;
+/// `IDT_SMASK` (`biosdefs.h:173`) — the separator character, low byte.
+pub const IDT_SMASK: u32 = 0xFF;
+
+/// `DATEFORM_SEP` (`deskbind.h:64`) — the separator EmuTOS uses whenever the
+/// format does **not** come from `_IDT`. Both call sites of `fmt_date` pass it
+/// (`deskinf.c:129`), which is why the text view and the Show-Info box print
+/// the same character.
+pub const DATEFORM_SEP: u8 = b'/';
+
+/// One of the four field orders an `_IDT` date format can name
+/// (`biosdefs.h:168-171`), i.e. the result of `fmt_date`'s second `switch`
+/// (`deskinf.c:154-176`). Not a preference — [`DateFmt`] is the preference;
+/// this is what it resolves to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum DateOrder {
+    /// `IDT_MMDDYY` — month, day, year.
+    Mdy,
+    /// `IDT_DDMMYY` — day, month, year (EmuTOS's `default:` arm).
+    Dmy,
+    /// `IDT_YYMMDD` — year, month, day.
+    Ymd,
+    /// `IDT_YYDDMM` — year, day, month ("does anyone ever use this?",
+    /// `deskinf.c:166`).
+    Ydm,
+}
+
+impl DateOrder {
+    /// `switch(format)` (`deskinf.c:154-176`) over the two [`IDT_DMASK`] bits.
+    fn from_idt(dmask: u32) -> DateOrder {
+        match dmask {
+            0 => DateOrder::Mdy,               // IDT_MMDDYY
+            IDT_BIT_YM => DateOrder::Ymd,      // IDT_YYMMDD
+            IDT_DMASK => DateOrder::Ydm,       // IDT_YYDDMM
+            _ => DateOrder::Dmy,               // default: DDMMYY
+        }
+    }
+}
+
 /// The clock format the text view and the Show-Info box print times in
 /// (EmuTOS `TIMEFORM_*`, `deskbind.h:68-70`, held in `G.g_ctimeform`).
-///
-/// EmuTOS has a third value, `TIMEFORM_IDT`, meaning "take the format from the
-/// `_IDT` cookie". NewTOS cannot reach that cookie from the desktop: EmuTOS
-/// reads it with `Supexec(get_idt_cookie)` (`desksupp.c:219`), XBIOS `Supexec`
-/// (0x26) is not implemented (`tos-api/src/xbios/mod.rs:129`), and the desktop
-/// may not read kernel state other than through a trap (DESK10). The value is
-/// still **represented**, because it is what the `#E` byte-2 bits
-/// `INF_E2_IDTTIME`/`INF_E2_IDTDATE` encode and a `NEWDESK.INF` written
-/// elsewhere may carry it; it simply cannot be *selected* (the Preferences
-/// dialog offers no `Default` button) and renders as [`TimeFmt::H24`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum TimeFmt {
-    /// `TIMEFORM_24H` — `hh:mm`, 24-hour. NewTOS's default, and what the text
-    /// view printed before the preference existed.
+    /// `TIMEFORM_24H` (0) — `hh:mm`, 24-hour.
     #[default]
     H24,
-    /// `TIMEFORM_12H` — `hh:mm` with an `am`/`pm` suffix.
+    /// `TIMEFORM_12H` (1) — `hh:mm` with an `am`/`pm` suffix.
     H12,
-    /// `TIMEFORM_IDT` — "from the `_IDT` cookie"; unreachable here, see above.
+    /// `TIMEFORM_IDT` (2) — take the clock from the `_IDT` cookie; the
+    /// `Default` button of the *Time format* group. EmuTOS's own no-`.INF`
+    /// default (`INF_E2_DEFAULT` carries `INF_E2_IDTTIME`, `deskapp.c:103`).
     Idt,
 }
 
 impl TimeFmt {
-    /// The format that is actually **rendered**, i.e. with the unreachable
-    /// [`TimeFmt::Idt`] resolved to its NewTOS fallback.
-    ///
-    /// One rule, two readers: `desk::inf::fmt_time` formats through it and
-    /// `desk::inf::inf_pref` pre-selects its radio button through it, so the
-    /// Preferences dialog cannot show a clock the text view does not use.
-    /// The fallback is [`TimeFmt::H24`] because that is what the text view
-    /// printed before the preference existed.
-    pub fn rendered(self) -> TimeFmt {
+    /// The clock that is actually **rendered**, with [`TimeFmt::Idt`] resolved
+    /// against the `_IDT` word `idt` — `fmt_time`'s `switch`
+    /// (`deskinf.c:82-101`): `TIMEFORM_IDT` is 24-hour if `(idt & IDT_TMASK) ==
+    /// IDT_24H`, and falls through to the 12-hour arm otherwise.
+    pub fn rendered(self, idt: u32) -> TimeFmt {
         match self {
-            TimeFmt::Idt => TimeFmt::H24,
+            TimeFmt::Idt => {
+                if idt & IDT_TMASK == IDT_24H {
+                    TimeFmt::H24
+                } else {
+                    TimeFmt::H12
+                }
+            }
             other => other,
         }
     }
 }
 
 /// The date order the text view and the Show-Info box print dates in (EmuTOS
-/// `DATEFORM_*`, `deskbind.h:65-67`, held in `G.g_cdateform`). The
-/// `DATEFORM_IDT` caveat is [`TimeFmt`]'s, verbatim; it renders as
-/// [`DateFmt::Mdy`].
+/// `DATEFORM_*`, `deskbind.h:65-67`, held in `G.g_cdateform`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum DateFmt {
-    /// `DATEFORM_MDY` — month before day. NewTOS's default, and what the text
-    /// view printed before the preference existed.
+    /// `DATEFORM_DMY` (0) — day before month.
+    Dmy,
+    /// `DATEFORM_MDY` (1) — month before day.
     #[default]
     Mdy,
-    /// `DATEFORM_DMY` — day before month.
-    Dmy,
-    /// `DATEFORM_IDT` — "from the `_IDT` cookie"; unreachable here, see above.
+    /// `DATEFORM_IDT` (2) — take the order *and the separator* from the `_IDT`
+    /// cookie; the `Default` button of the *Date format* group, and EmuTOS's
+    /// own no-`.INF` default (`INF_E2_DEFAULT`, `deskapp.c:103`).
     Idt,
 }
 
 impl DateFmt {
-    /// The order that is actually **rendered** — [`TimeFmt::rendered`]'s rule,
-    /// with [`DateFmt::Mdy`] as the fallback for the unreachable
-    /// [`DateFmt::Idt`].
-    pub fn rendered(self) -> DateFmt {
+    /// The `(order, separator)` pair that is actually **rendered** —
+    /// `fmt_date`'s first `switch` (`deskinf.c:138-152`) plus the `separator =
+    /// DATEFORM_SEP` it starts from (`:129`).
+    ///
+    /// `DATEFORM_IDT` takes both from the cookie, and only overrides the
+    /// separator when the cookie's low byte is non-zero (`:141-143`); every
+    /// other value keeps [`DATEFORM_SEP`].
+    pub fn rendered(self, idt: u32) -> (DateOrder, u8) {
         match self {
-            DateFmt::Idt => DateFmt::Mdy,
-            other => other,
+            DateFmt::Idt => {
+                let sep = (idt & IDT_SMASK) as u8;
+                (
+                    DateOrder::from_idt(idt & IDT_DMASK),
+                    if sep != 0 { sep } else { DATEFORM_SEP },
+                )
+            }
+            DateFmt::Dmy => (DateOrder::Dmy, DATEFORM_SEP),
+            DateFmt::Mdy => (DateOrder::Mdy, DATEFORM_SEP),
         }
     }
 }

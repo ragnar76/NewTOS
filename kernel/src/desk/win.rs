@@ -469,7 +469,7 @@ impl DeskState {
         let f = self.windows.slots[slot].w_pnode.p_flist[pidx].clone();
         // The text view's date/time preference, read here because the
         // `g_screeninfo` borrow below holds `self` mutably.
-        let (datefmt, timefmt) = (self.g_cdateform, self.g_ctimeform);
+        let (datefmt, timefmt, idt) = (self.g_cdateform, self.g_ctimeform, self.g_idt);
         // Restore the selection highlight from the file's `f_selected`
         // (EmuTOS `win_bldview`, deskwin.c:446-448) — `obj_ialloc` cleared
         // `ob_state`, so a rebuilt view (scroll / sort / view-switch / a
@@ -508,7 +508,7 @@ impl DeskState {
                 o.ob_spec = spec;
             }
             View::Text => {
-                format_fnode(&f, datefmt, timefmt, &mut info.label);
+                format_fnode(&f, datefmt, timefmt, idt, &mut info.label);
                 let spec = info.label.as_ptr() as u64;
                 let o = &mut self.g_screen[obid as usize];
                 o.ob_type = G_STRING;
@@ -924,7 +924,7 @@ fn fmt_u32(mut v: u32, buf: &mut [u8; 12]) -> &[u8] {
 /// column widths are a NewTOS choice (the visual layout is fidelity, not
 /// contract); the **field order and semantics** match EmuTOS. Returns the
 /// NUL-terminated line length.
-fn format_fnode(f: &FNode, datefmt: DateFmt, timefmt: TimeFmt, out: &mut [u8; LEN_LABEL]) -> usize {
+fn format_fnode(f: &FNode, datefmt: DateFmt, timefmt: TimeFmt, idt: u32, out: &mut [u8; LEN_LABEL]) -> usize {
     /// `FA_RO` (read-only) attribute bit.
     const FA_RO: u8 = 0x01;
     *out = [b' '; LEN_LABEL];
@@ -955,15 +955,16 @@ fn format_fnode(f: &FNode, datefmt: DateFmt, timefmt: TimeFmt, out: &mut [u8; LE
     }
 
     // 4. Date + time, in the Preferences dialog's order/clock — EmuTOS
-    // `format_fnode` calls the same two formatters (`deskinf.c:289,293`).
-    // `fmt_date` keeps NewTOS's dash separator here (see `inf::fmt_date`);
-    // `fmt_time` writes a fixed 7-character field, the trailing two characters
-    // being `am`/`pm` or, in 24-hour mode, the two blanks the trim below drops.
+    // `format_fnode` calls the same two formatters (`deskinf.c:289,293`), and
+    // passes neither a separator nor a format of its own: both come out of
+    // `fmt_date`'s own `DATEFORM_SEP`/`_IDT` rule. `fmt_time` writes a fixed
+    // 7-character field, the trailing two characters being `am`/`pm` or, in
+    // 24-hour mode, the two blanks the trim below drops.
     let mut dbuf = [b' '; 11];
-    let dn = super::inf::fmt_date(f.f_date, false, b'-', datefmt, &mut dbuf);
+    let dn = super::inf::fmt_date(f.f_date, false, datefmt, idt, &mut dbuf);
     put(out, 27, &dbuf[..dn]);
     let mut tbuf = [b' '; 8];
-    let tn = super::inf::fmt_time(f.f_time, timefmt, &mut tbuf);
+    let tn = super::inf::fmt_time(f.f_time, timefmt, idt, &mut tbuf);
     put(out, 37, &tbuf[..tn]);
 
     // NUL-terminate after the last used column, trimming trailing spaces.

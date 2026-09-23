@@ -238,17 +238,11 @@ pub struct WSave {
 /// it is wiped on every shell pass, which is precisely why EmuTOS's desktop
 /// keeps its own copy (gap G2 of `docs/analysis/desk-aes-gaps-2026-09-14.md`).
 ///
-/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries `cs_confcpy`,
-/// `cs_confovwr`, `cs_blitter`, `cs_cache`, `cs_appdir` and `cs_fullpath`.
-/// Those mirror `GLOBES` fields that exist only because `inf_pref`/`inf_conf`
-/// (the Preferences and Configuration dialogs) can edit them, and NewTOS has no
-/// live state behind any of them:
+/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries `cs_blitter`,
+/// `cs_cache`, `cs_appdir` and `cs_fullpath`. Those mirror `GLOBES` fields that
+/// exist only because `inf_pref`/`inf_conf` (the Preferences and Configuration
+/// dialogs) can edit them, and NewTOS has no live state behind any of them:
 ///
-/// * `cs_confcpy` / `cs_confovwr` — the desktop's copy engine asks no
-///   per-item copy question and no overwrite question at all
-///   (`super::dir`'s module header records that deviation); a preference
-///   gating a dialog that is never shown would be a dead control, so the
-///   Preferences dialog does not offer them either (DESK02).
 /// * `cs_blitter` / `cs_cache` — m68k hardware (`Blitmode`, the 68030 cache),
 ///   the hardware-layer carve-out of `docs/COMPATIBILITY.md`.
 /// * `cs_appdir` / `cs_fullpath` — `inf_conf`'s launch-directory policy, which
@@ -259,10 +253,10 @@ pub struct WSave {
 /// in are preserved verbatim by [`super::inf`]'s session copy — they are simply
 /// not routed through this structure.
 ///
-/// `cs_confdel`, `cs_dblclick`, `cs_timefmt` and `cs_datefmt` **are** carried
-/// (DESK02): each has a live consumer — the delete confirmation in
-/// `super::dir`, the AES's `evnt_dclick` rate, and the text view's
-/// `fmt_date`/`fmt_time`.
+/// `cs_confcpy` and `cs_confovwr` **were** in that list until DESK13, on the
+/// grounds that NewTOS's copy engine asked neither question. It asks both now
+/// (`super::dir`'s `dir_op` confirmation box and `output_fname`'s name-conflict
+/// dialog), so they are carried like the other four.
 #[derive(Clone)]
 pub struct CSave {
     /// Saved view mode (`cs_view`).
@@ -273,6 +267,12 @@ pub struct CSave {
     pub cs_sizefit: bool,
     /// Saved "confirm deletes" preference (`cs_confdel`).
     pub cs_confdel: bool,
+    /// Saved "confirm copies" preference (`cs_confcpy`).
+    pub cs_confcpy: bool,
+    /// Saved "confirm overwrites" preference (`cs_confovwr`). Note the `#E`
+    /// bit it serialises to is **inverted** (`INF_E2_ALLOWOVW`, "yes, it's
+    /// backwards" — `deskapp.c:98`).
+    pub cs_confovwr: bool,
     /// Saved double-click speed index 0..4 (`cs_dblclick`); 0 is the slowest
     /// (EmuTOS `gl_dcrates`, our `tos-api/src/aes/event.rs` `DCRATES`).
     pub cs_dblclick: u8,
@@ -292,6 +292,8 @@ impl Default for CSave {
             cs_sort: Sort::Name,
             cs_sizefit: true,
             cs_confdel: true,
+            cs_confcpy: true,
+            cs_confovwr: true,
             cs_dblclick: DEF_DCLICK,
             cs_timefmt: TimeFmt::H24,
             cs_datefmt: DateFmt::Mdy,
@@ -362,6 +364,16 @@ pub struct DeskState {
     /// `confirm = G.g_cdelepref`). Edited by `inf_pref`, persisted through
     /// [`CSave::cs_confdel`].
     pub g_cdelepref: bool,
+    /// "Confirm copies" preference (`g_ccopypref`, `deskinf.c:740`): gate for
+    /// the copy/move confirmation box in [`super::dir::dir_op`]
+    /// (`deskdir.c:939`, `confirm = G.g_ccopypref`; a move or rename ORs
+    /// [`Self::g_cdelepref`] in, `:943`).
+    pub g_ccopypref: bool,
+    /// "Confirm overwrites" preference (`g_covwrpref`, `deskinf.c:745`): gate
+    /// for the per-file name-conflict dialog in `output_fname`
+    /// (`deskdir.c:325`, `if (!G.g_covwrpref) break;`). `false` means a copy
+    /// replaces an existing file without asking.
+    pub g_covwrpref: bool,
     /// Double-click speed index 0..4 (`g_cdclkpref`, `deskinf.c:751`). The
     /// desktop does not consume it: it is the AES's rate, queried and set with
     /// `evnt_dclick` (`deskmain.c:1460`), and held here only so `cnx_put`/
@@ -373,6 +385,18 @@ pub struct DeskState {
     /// Date order for the text view and Show Info (`g_cdateform`,
     /// `deskinf.c:138`).
     pub g_cdateform: DateFmt,
+    /// The current `_IDT` cookie word (`g_idt`, `deskbind.h:183`) — the machine
+    /// separator / field order / clock that [`TimeFmt::Idt`] and [`DateFmt::Idt`]
+    /// defer to (see [`super::model`]'s `_IDT` block for the bit layout and for
+    /// why this is a GEMDOS `Ssystem` read and not `Supexec`).
+    ///
+    /// Refreshed where EmuTOS refreshes it — in `do_wredraw`
+    /// (`desksupp.c:219`) — and additionally once at desktop start, because
+    /// NewTOS formats a text-view line when the **view** is built
+    /// (`super::win`'s `build_item`) rather than at draw time as EmuTOS's
+    /// `dr_fnode` does (`deskinf.c:320`), so the value has to be valid before
+    /// the first redraw rather than during it.
+    pub g_idt: u32,
 
     /// One item's own horizontal extent (`g_iwext`) — set by `win_view()`
     /// (Task #6).
@@ -471,9 +495,12 @@ impl DeskState {
             sort: Sort::Name,
             size_to_fit: true,
             g_cdelepref: true,
+            g_ccopypref: true,
+            g_covwrpref: true,
             g_cdclkpref: DEF_DCLICK,
             g_ctimeform: TimeFmt::H24,
             g_cdateform: DateFmt::Mdy,
+            g_idt: 0,
             g_iwext: 0,
             g_ihext: 0,
             g_iwint: 0,

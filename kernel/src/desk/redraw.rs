@@ -39,6 +39,7 @@
 //! every open window. The AES rectangle list is used as-is
 //! (`tos_api::aes::window::compute_rlist`); this module builds no list of its own.
 
+use super::dosbind::dos_getcookie;
 use super::global::{self, Grect, DROOT};
 use super::win::DESKWH;
 use super::{
@@ -120,9 +121,32 @@ pub fn do_wredraw(handle: i16, clip: Grect) {
     if wredraw_root(handle).is_none() {
         return;
     }
+    // `G.g_idt = Supexec((LONG)get_idt_cookie);` (`desksupp.c:219`) — between
+    // the root resolution and the cursor bracket, exactly where EmuTOS has it.
+    // NewTOS's route to the cookie is a GEMDOS trap, not `Supexec`; see
+    // `super::dosbind::dos_getcookie`.
+    refresh_idt();
     graf_mouse(M_OFF);
     do_wredraw_nocursor(handle, clip);
     graf_mouse(M_ON);
+}
+
+/// `_IDT` cookie tag — `'_IDT'` big-endian, the same four bytes
+/// `tos_api::cookie::IDT` registers (`include/cookie.h`, `COOKIE_IDT`).
+const COOKIE_IDT: u32 = u32::from_be_bytes(*b"_IDT");
+
+/// `G.g_idt = Supexec((LONG)get_idt_cookie);` (`desksupp.c:219`) — refresh the
+/// desktop's copy of the `_IDT` cookie from the kernel jar.
+///
+/// EmuTOS's `get_idt_cookie` falls back to `DEFAULT_IDT` if the cookie is
+/// missing ("can't happen", `util/cookie.c:90`); NewTOS leaves the previous
+/// value in place instead, because its fallback would have to name a locale
+/// the kernel has not chosen — and `seed_defaults` always installs the tag
+/// (`tos-api/src/cookie.rs:193-198`), so the arm is unreachable here too.
+pub(super) fn refresh_idt() {
+    if let Some(idt) = dos_getcookie(COOKIE_IDT) {
+        global::with(|g| g.g_idt = idt);
+    }
 }
 
 /// `win_shwall` (EmuTOS `deskwin.c:805`) — repaint every open window's content,

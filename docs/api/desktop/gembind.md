@@ -274,12 +274,48 @@ Every GEMDOS/BIOS call the desktop makes, with the EmuTOS name it carries:
 | `dos_setdt(h, time, date)` | `svc #1` | 0x57 | `x0` = 2-word buf, `x1` = handle, `x2` = 1 | `Fdatime`, `util/gemdos.c:49` | `dir::d_dofcopy` |
 | `dos_gdrv()` | `svc #1` | 0x19 | — | `Dgetdrv`, `gemdos.h:45` | only as `dos_sdrv(dos_gdrv())`, below |
 | `dos_sdrv(drv)` | `svc #1` | 0x0E | `x0` = drive (0-based) | `Dsetdrv`, `gemdos.h:105` | `app::app_blddesk`, `main::check_alt_letter_key`, `mod::run` |
+| `dos_getcookie(tag)` | `svc #1` | 0x154 | `x0` = 8 (`S_GETCOOKIE`), `x1` = tag, `x2` = 0 | **no EmuTOS counterpart** — see below | `redraw::refresh_idt` |
 
 The desktop calls **no BIOS and no XBIOS function**, so there is neither an
 `svc #13` nor an `svc #14` binding. EmuTOS's desktop includes `biosbind.h`,
 but the two calls it takes from it are `Drvmap()` — which the desktop itself
 never uses (see below) — and `Dosound()` for the About-box Easter egg
 (`CONF_WITH_EASTER_EGG`), which NewTOS does not have.
+
+### The one call EmuTOS takes from `xbiosbind.h`, and where it goes here (DESK13)
+
+`dos_getcookie` is the only binding in this table with **no** `gemdos.h`
+counterpart, and it is here because EmuTOS's desktop *does* make one XBIOS
+call: `G.g_idt = Supexec((LONG)get_idt_cookie);` in `do_wredraw`
+(`desksupp.c:219`), which fetches the `_IDT` cookie the `Default` buttons of
+*Set preferences* defer to. (The other `xbiosbind.h` user is `deskrez.c`'s
+resolution change, which NewTOS does not have.)
+
+`Supexec` is there because on m68k the cookie jar is reached through the
+pointer at `$5A0`, in supervisor-only low memory — an m68k *mechanism*, which
+`docs/COMPATIBILITY.md` puts on the free side of the line. NewTOS has neither
+the need nor the call:
+
+* XBIOS `Supexec` (0x26) is an open ADR — `docs/api/xbios/26-supexec.md`,
+  "NewTOS status: decision deferred (needs ADR-Supexec)". Implementing it for
+  this would mean deciding the whole EL0/EL1 callback question for one cookie
+  read.
+* The cookie-jar spec already names the replacement: "There is no `Supexec` in
+  the kernel … the low-memory area an app wants is already in its own address
+  space" (`docs/api/bios/_cookie-jar.md` §Status 2026-09-14), and ADR-012 makes
+  FreeMiNT `Ssystem` the access ABI (`docs/api/gemdos/154-ssystem.md`).
+
+So the desktop reads the cookie **by value** through the same `svc #1` it uses
+for everything else, which is exactly what DESK10 requires of it. `arg2` is 0
+so the value comes back in `x0`: the pointer form stores through an
+unprivileged `sttr` (`tos-api/src/gemdos/ssystem.rs`), which faults on a kernel
+address, and is therefore closed to a kernel-context caller. The consequence is
+that a cookie whose value has bit 31 set cannot be told from the error return —
+nominal for `_IDT` (`0x0000112F`), and stated at the binding.
+
+Pinned by `tos-api/tests/gemdos_ssystem_idt_cookie.rs`; measured on the board as
+`[desk13] _IDT = 0x112f via Ssystem(S_GETCOOKIE)`
+(`measurement-2026-09-23-desk13/serial/`).
 
 ### Two properties that had to be established before the rewiring
 

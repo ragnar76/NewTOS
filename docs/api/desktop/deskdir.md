@@ -558,5 +558,80 @@ algorithm are free.
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00. Filled in when the corresponding implementation
-phase begins.)
+### Die beiden Rueckfragen des Dateiwerks (DESK13, 2026-09-23)
+
+`kernel/src/desk/dir.rs` hatte bis DESK13 **keine** der beiden Rueckfragen,
+die EmuTOS beim Kopieren stellt: es kopierte los und ueberschrieb
+bedingungslos (`Fcreate` kuerzt). DESK13 baut beide, an EmuTOS' eigenen
+Stellen.
+
+**1. Der Bestaetigungskasten `ADCPYDEL` steht in `dir_op`**, nicht im
+Aktionsband darueber (`deskdir.c:911-918,951-965,1051-1056,1075-1080`). Er
+geht fuer **jede** Operation ausser `OP_COUNT` hoch — das ist es, was EmuTOS'
+`tree = NULL` fuer `OP_COUNT` und die vielen `if (tree)` danach bedeuten —
+und zeigt die Zahlen des vorangegangenen Zaehldurchlaufs. Ob er auf `OK`
+*wartet*, entscheidet die Voreinstellung (`:906,939-945`):
+
+| Operation        | `confirm`                      |
+|------------------|--------------------------------|
+| `Delete`         | `g_cdelepref`                  |
+| `Copy`           | `g_ccopypref`                  |
+| `Move`/`Rename`  | `g_ccopypref \| g_cdelepref`   |
+
+Steht die Voreinstellung auf *Nein*, bleibt der Kasten als Fortschrittsanzeige
+stehen und zaehlt `CDFILES`/`CDFOLDS` mit dem Lauf herunter (`:592,676,1053`
+— `inf_numset` + `draw_fld`); `Cancel` beendet, bevor eine einzige Datei
+angefasst wird. Titel: `COPY`/`MOVE`/`DELETE FILE(S)`
+(`desk_rsc.c:2472-2474`).
+
+Damit **entfaellt** die NewTOS-Ersatzfrage, die bis dahin eine Ebene hoeher
+stand: `fun_del` und `fun_file2desk` stellten je einen eigenen
+`form_alert`, weil `dir_op` nicht fragte. Beide zitierten `deskdir.c:906` —
+die Stelle, die jetzt wirklich implementiert ist —, also sind sie weg. Eine
+Loeschung wird genau einmal bestaetigt, wie in EmuTOS. Der
+`wants_to_delete_files`-Vorbau des Schreibtisch-Symbols (`STRMVDEL`,
+`deskfun.c:1433`) ist eine **andere** Frage und bleibt.
+
+**2. Die Namenskonflikt-Rueckfrage `ADCPALER` steht in `output_fname`**,
+aufgerufen aus `d_dofcopy` nach dem Oeffnen der Quelle und vor dem Anlegen
+des Ziels (`deskdir.c:290-397,417-424`). Sie erscheint, wenn Quelle und Ziel
+denselben Pfad haben, **oder** wenn `g_covwrpref` an ist und das Ziel schon
+existiert. `Stop` bricht die ganze Operation ab, `Skip` ueberspringt diese
+eine Datei, `OK` kopiert — und der Zielname ist **aenderbar**: wurde er
+geaendert, faengt die Schleife von vorn an und prueft alles neu (`:362-370`).
+Ein `OK` auf einen unveraenderten Namen bei gleicher Quelle und Ziel gilt als
+`Skip` (`:389-390`).
+
+Dass `d_dofcopy` sein Ziel jetzt aendern kann, ist der Grund fuer die
+`&mut String`-Signatur; EmuTOS aendert `pdst_file` genauso an Ort und Stelle.
+
+### `More` — EmuTOS' `more` als Aufzaehlung
+
+`1`/`-1`/`0` aus `deskdir.c:232-236,296-298` heissen bei uns `More::Ok`,
+`More::Skip`, `More::Stop`. Eine vierte Auspraegung `More::Failed` steckt in
+EmuTOS' `-1` mit drin: EmuTOS fragt bei einem E/A-Fehler
+`Skip/Retry/Abort` (`:396-414`), NewTOS ueberspringt und meldet **eine**
+Zusammenfassung am Ende (der Modulkopf haelt diese Abweichung seit Task #9
+fest). Der Ablauf ist derselbe wie bei `-1`; unterschieden wird nur, ob der
+Fehler in die Zusammenfassung gehoert.
+
+### Benannte Abweichungen
+
+* **Ordner-Namenskonflikt.** `output_path`/`get_new_name`
+  (`deskdir.c:700-779`) fragen auch nach einem neuen **Ordner**namen;
+  NewTOS mischt weiter in einen bestehenden Ordner hinein. Die
+  Datei-Variante ist die, die Daten zerstoeren kann, und die ist gebaut.
+* **`STDELDIS`.** Die Zusatzfrage beim Loeschen einer ganzen Platte
+  (`deskdir.c:971-975`) haengt an `icontype == AT_ISDISK`, das `dir_op` bei
+  uns nicht bekommt. Unveraendert offen, eigener Befund.
+* **Knopfreihe des `ADCPALER`.** EmuTOS setzt drei 10 Zeichen breite Knoepfe
+  in den Spalten 2, 14 und 26 eines 38 Zeichen breiten Kastens
+  (`desk_rsc.c:1263-1279`). Der erste Wurf hatte die 90 px des
+  Zwei-Knopf-Kastens uebernommen und den mittleren zentriert — die drei
+  ueberlappten sich um 23 px (im Messlauf gesehen, `screendumps/` von
+  `measurement-2026-09-23-desk13`). Die Kastenbreite kommt jetzt aus der
+  Knopfreihe, nicht aus den Feldern.
+* **Die Maschine ist nicht mehr dialogfrei.** Der Modulkopf behauptete, die
+  Maschine (`d_doop`/`dir_op`) stelle keine Dialoge und sei darum direkt
+  fahrbar. Seit der Kasten dort steht, wo EmuTOS ihn hat, stimmt das nicht
+  mehr; `selftest` faehrt ihn mit.

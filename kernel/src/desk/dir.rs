@@ -18,20 +18,34 @@
 //!   (`add_path`/`sub_path`/`add_fname`); NewTOS uses per-level owned [`String`]s
 //!   — the recursion-depth and path-length limits stay observably the same
 //!   ([`MAX_LEVEL`]).
-//! * EmuTOS's per-item skip/retry/abort and per-file overwrite dialogs
-//!   (`d_dofdel`'s alert loop, `output_fname`) are replaced by the NewTOS
-//!   default: overwrite existing files (GEMDOS `Fcreate` truncates), merge into
-//!   an existing destination folder, and best-effort skip on a per-item error
-//!   (surfaced to the caller as `false`, which shows one summary [`fun_alert`]).
-//!   The *whole-disk-delete* and *delete/copy confirmation* prompts are
-//!   preserved at the action layer ([`fun_del`]/[`fun_drag`]).
+//! * EmuTOS's per-item **skip/retry/abort on an I/O error**
+//!   (`d_dofdel`/`d_dofcopy`'s alert loops, `deskdir.c:237-268,396-414`) is
+//!   replaced by the NewTOS default: best-effort skip, and one summary
+//!   [`fun_alert`] at the end.
+//! * EmuTOS asks for a **new destination folder name** when a folder of that
+//!   name already exists (`output_path`/`get_new_name`, `deskdir.c:700-779`);
+//!   NewTOS merges into it. The *file* case — `output_fname`, the one this
+//!   module implements — is the one that can destroy data.
 //!
-//! The pure engine ([`d_doop`]/[`dir_op`]) issues **no dialogs**, so it is
-//! directly driveable for the Task-#9 backend verification ([`selftest`]).
+//! The two prompts that *are* EmuTOS's, and that DESK13 supplied, are the ones
+//! the user can switch off in *Set preferences*:
+//!
+//! * the **copy/move/delete confirmation** with its file and folder counts
+//!   ([`dir_op`]'s `ADCPYDEL` box, `deskdir.c:939,951-965`), gated on
+//!   `g_ccopypref`/`g_cdelepref`; and
+//! * the **name-conflict dialog** before a copy overwrites an existing file
+//!   ([`output_fname`]'s `ADCPALER` box, `deskdir.c:299-397`), gated on
+//!   `g_covwrpref`.
+//!
+//! Because the confirmation lives in [`dir_op`], as it does in EmuTOS, the
+//! engine is no longer dialog-free: [`selftest`] drives the box too and needs
+//! the AES up (it always needed [`fun_alert`] one level higher, in [`fun_op`]).
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use tos_api::aes::object::{Object, TedInfo};
+use tos_api::vdi::font::{CELL_H, CELL_W};
 use tos_types::error::E_OK;
 
 use super::dosbind::{
@@ -39,8 +53,31 @@ use super::dosbind::{
     dos_sdta, dos_setdt, dos_sfirst, dos_snext, dos_write,
 };
 use super::global::{self, DeskState, DROOT, NIL};
+use super::inf::{
+    end_dialog, inf_gindex, mk, mk_root, start_dialog, BOX_SPEC, FL3DACT, FL3DBAK, TED_COLOR,
+};
 use super::model::{AType, FNode, FA_SUBDIR};
 use super::win::{DESKWH, OB_SELECTED};
+
+// ── `OBJECT` graphic types / flags (`obdefs.h`), as in the sibling dialogs ──
+
+const G_BUTTON: u16 = 26;
+const G_STRING: u16 = 28;
+const G_FBOXTEXT: u16 = 30;
+
+const SELECTABLE: u16 = 0x0001;
+const DEFAULT: u16 = 0x0002;
+const EXIT: u16 = 0x0004;
+const EDITABLE: u16 = 0x0008;
+const LASTOB: u16 = 0x0020;
+
+/// `TE_RIGHT` (`obdefs.h`) — the `te_just` of both count fields
+/// (`desk_rs_tedinfo[20,21]`, `desk_rsc.c:135-143`).
+const TE_RIGHT: i16 = 1;
+
+/// `LEN_ZFNAME` (`include/sysconf.h:52`) — the longest file name including its
+/// separator; the width of every `ml_f*` buffer in `deskdir.c`.
+const LEN_ZFNAME: usize = 13;
 
 /// Attribute mask for the recursive scan (EmuTOS `ALLFILES` =
 /// `FA_SUBDIR|FA_SYSTEM|FA_HIDDEN`): a subtree operation must see hidden and
@@ -212,6 +249,506 @@ fn source_is_parent(src: &str, dst: &str) -> bool {
     dst.len() == src.len() || dst.as_bytes()[src.len()] == b'\\'
 }
 
+// ── The operation's two dialogs (`ADCPYDEL` / `ADCPALER`) ──────────────────
+//
+// EmuTOS keeps `ml_havebox` and the running counts in file-scope statics
+// (`deskdir.c:58-61`); NewTOS threads one [`OpCtx`] through the recursion
+// instead, so the engine carries no hidden state.
+
+/// EmuTOS's `more` tri-state, the value every `d_do*` routine returns and
+/// every caller tests with `if (!more) break;` (`deskdir.c:232-236,296-298`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum More {
+    /// `1` — the item was processed.
+    Ok,
+    /// `-1` — the item was deliberately **not** processed (the user pressed
+    /// *Skip*, or a copy onto itself was declined); the operation continues and
+    /// this is not an error.
+    Skip,
+    /// `0` — stop the whole operation (the user pressed *Stop*).
+    Stop,
+    /// A NewTOS distinction inside EmuTOS's `-1`: the item failed for an I/O
+    /// reason. EmuTOS asks skip/retry/abort at this point
+    /// (`deskdir.c:396-414`); NewTOS continues and reports one summary alert at
+    /// the end (this module's header), so control flow matches `-1` while the
+    /// failure still reaches the user.
+    Failed,
+}
+
+/// The live state one file operation carries through the recursion.
+struct OpCtx {
+    /// The `ADCPYDEL` tree while it is on screen, or `0` — EmuTOS's
+    /// `tree`/`NULL` (`deskdir.c:911-918`), which is what its every `if (tree)`
+    /// tests. `0` for `OP_COUNT`, and for a direct [`d_dofcopy`] call.
+    tree: u64,
+    /// `ml_havebox` (`deskdir.c:60`) — a dialog box is currently displayed, so
+    /// the next one redraws in place instead of reserving its own area.
+    havebox: bool,
+    /// `G.g_covwrpref`, read once at [`dir_op`] entry: the box is modal, so it
+    /// cannot change while the operation runs.
+    covwr: bool,
+    /// Files still to go, shown in `CDFILES` and counted down as the walk
+    /// proceeds (`deskdir.c:676,1053`).
+    files: u32,
+    /// Folders still to go, shown in `CDFOLDS` (`deskdir.c:592`).
+    dirs: u32,
+    /// Set once the user pressed *Stop*; every loop checks it, which is what
+    /// EmuTOS's `more == 0` propagation does.
+    stop: bool,
+}
+
+impl OpCtx {
+    /// The dialog-free context a direct engine call uses ([`selftest`]).
+    fn quiet() -> Self {
+        OpCtx { tree: 0, havebox: false, covwr: false, files: 0, dirs: 0, stop: false }
+    }
+
+    /// One file processed: count it down in `CDFILES` and repaint that field
+    /// (`deskdir.c:674-678`, `:1051-1056`). A no-op without a box.
+    fn file_done(&mut self) {
+        if self.tree == 0 {
+            return;
+        }
+        self.files = self.files.saturating_sub(1);
+        inf_numset(self.tree, CDFILES, self.files);
+        draw_fld(self.tree, CDFILES);
+    }
+
+    /// One folder finished: the same for `CDFOLDS` (`deskdir.c:590-594`).
+    fn dir_done(&mut self) {
+        if self.tree == 0 {
+            return;
+        }
+        self.dirs = self.dirs.saturating_sub(1);
+        inf_numset(self.tree, CDFOLDS, self.dirs);
+        draw_fld(self.tree, CDFOLDS);
+    }
+}
+
+// `ADCPYDEL` object indices (`desk_rsc.h:136-141`). Object 1 is `CDTITLE`, the
+// `COPY`/`MOVE`/`DELETE FILE(S)` heading; it is written when the tree is built
+// rather than patched afterwards as EmuTOS does (`deskdir.c:907,940,944`), so
+// it needs no name here.
+/// `CDFOLDS` — the remaining-folder count field.
+const CDFOLDS: i16 = 2;
+/// `CDFILES` — the remaining-file count field.
+const CDFILES: i16 = 3;
+/// `CDOK` — the confirmation button; `CDCNCL` follows it.
+const CDOK: i16 = 4;
+
+// `ADCPALER` object indices (`desk_rsc.h:143-149`).
+/// `CACURRNA` — the (read-only) source name.
+const CACURRNA: i16 = 2;
+/// `CACOPYNA` — the editable destination name.
+const CACOPYNA: i16 = 3;
+/// `CAOK` — the first of the three exit buttons.
+const CAOK: i16 = 4;
+/// `CASKIP` — skip this one file (`deskdir.c:348`).
+const CASKIP: i16 = 5;
+/// `CASTOP` — stop the whole operation (`deskdir.c:346`).
+const CASTOP: i16 = 6;
+
+/// `inf_numset` (`deskinf.c:406-420`) — `sprintf(ted->te_ptext, "%*lu",
+/// ted->te_txtlen - 1, value)`: the number right-justified, space-padded, in
+/// the field's own width, so the template's underscores are all consumed.
+///
+/// # Safety
+/// `tree` must point at a live object array and `obj` must be a `G_FBOXTEXT`
+/// (or other TEDINFO) object of it whose `te_ptext` buffer is at least
+/// `te_txtlen` bytes. Both hold for the trees built in this module.
+fn inf_numset(tree: u64, obj: i16, value: u32) {
+    // SAFETY: see the contract above — every call site passes one of this
+    // module's own stack trees and one of its own object indices.
+    let (ptext, len) = unsafe {
+        let o = &*(tree as *const Object).add(obj as usize);
+        let ted = &*(o.ob_spec as *const TedInfo);
+        (ted.te_ptext as *mut u8, (ted.te_txtlen - 1).max(0) as usize)
+    };
+    // SAFETY: as above — `te_ptext` points at a `te_txtlen`-byte buffer.
+    let buf = unsafe { core::slice::from_raw_parts_mut(ptext, len + 1) };
+
+    let mut digits = [0u8; 10];
+    let mut n = 0usize;
+    let mut v = value;
+    loop {
+        digits[n] = b'0' + (v % 10) as u8;
+        n += 1;
+        v /= 10;
+        if v == 0 || n == digits.len() {
+            break;
+        }
+    }
+    buf.fill(b' ');
+    for (k, &d) in digits[..n].iter().enumerate() {
+        if len > k {
+            buf[len - 1 - k] = d;
+        }
+    }
+    buf[len] = 0;
+}
+
+/// `fmt_str` (`util/optimize.c:43-70`) — `SAMPLE.PRG` → the fixed 8+3 field
+/// form `SAMPLE  PRG`, NUL-terminated, which is what the `________.___`
+/// template of `CACURRNA`/`CACOPYNA` merges character by character.
+fn fmt_str(instr: &str) -> [u8; LEN_ZFNAME] {
+    let mut out = [0u8; LEN_ZFNAME];
+    let src = instr.as_bytes();
+    let mut q = 0usize;
+    let mut p = 0usize;
+    // "copy up to 8 bytes before the (first) dot (we eat excess bytes)"
+    while p < src.len() {
+        let c = src[p];
+        p += 1;
+        if c == b'.' {
+            break;
+        }
+        if q < 8 {
+            out[q] = c;
+            q += 1;
+        }
+    }
+    // "if any extension present, fill out with spaces, then copy extension"
+    if p < src.len() {
+        while q < 8 {
+            out[q] = b' ';
+            q += 1;
+        }
+        while q < 11 && p < src.len() {
+            out[q] = src[p];
+            q += 1;
+            p += 1;
+        }
+    }
+    out[q] = 0;
+    out
+}
+
+/// `unfmt_str` (`util/optimize.c:77-96`) — the reverse of [`fmt_str`]:
+/// `SAMPLE  PRG` → `SAMPLE.PRG`.
+fn unfmt_str(instr: &[u8]) -> String {
+    let end = instr.iter().position(|&c| c == 0).unwrap_or(instr.len());
+    let s = &instr[..end];
+    let mut out = String::new();
+    let mut p = 0usize;
+    while p < s.len() && p < 8 {
+        let c = s[p];
+        p += 1;
+        if c != b' ' {
+            out.push(c as char);
+        }
+    }
+    if p < s.len() {
+        out.push('.');
+        while p < s.len() {
+            out.push(s[p] as char);
+            p += 1;
+        }
+    }
+    out
+}
+
+/// `filename_start` (`util/optimize.c`) — everything after the last `\`.
+fn filename_start(path: &str) -> &str {
+    match path.rfind('\\') {
+        Some(i) => &path[i + 1..],
+        None => path,
+    }
+}
+
+/// The directory half of a leaf path, **including** the trailing `\` — the
+/// prefix `del_fname` leaves behind (`deskdir.c:214-217`).
+fn dir_part(path: &str) -> &str {
+    match path.rfind('\\') {
+        Some(i) => &path[..=i],
+        None => "",
+    }
+}
+
+/// `item_exists` (`deskdir.c:186-208`) — does this file exist?
+///
+/// EmuTOS saves the caller's DTA around the probe because its walker has a live
+/// `Fsfirst`/`Fsnext` search running; NewTOS's [`scan_folder`] collects a whole
+/// directory and **drains** the search before returning, so there is never a
+/// live search to disturb (that module note is why every scan re-issues
+/// `dos_sdta`). The folder form of the probe is not needed here — the folder
+/// conflict is resolved by merging (this module's header).
+fn item_exists(path: &str) -> bool {
+    let mut dta = [0u8; 44];
+    dos_sdta(dta.as_mut_ptr());
+    dos_sfirst(path, ALLFILES) == E_OK
+}
+
+/// `do_namecon` (`deskdir.c:93-130`) — put the `ADCPALER` name-conflict dialog
+/// up over whatever is already on screen, run it, take it down again and
+/// repaint the copy box underneath. Returns the object index of the button that
+/// was pressed ([`CAOK`] / [`CASKIP`] / [`CASTOP`]).
+///
+/// `dst` is edited in place: it is both the pre-filled suggestion and the name
+/// the user may have changed.
+fn do_namecon(src: &[u8; LEN_ZFNAME], dst: &mut [u8; LEN_ZFNAME], ctx: &mut OpCtx) -> i16 {
+    static TITLE: &[u8] = b"NAME CONFLICT DURING COPY\0";
+    static CURR_TMPL: &[u8] = b"Current name: ________.___\0";
+    static COPY_TMPL: &[u8] = b"Copy's name: ________.___\0";
+    /// `te_pvalid` `"f"` — file-name characters (`desk_rs_tedinfo[22,23]`).
+    static VALID: &[u8] = b"f\0";
+    static OK: &[u8] = b" OK \0";
+    static SKIP: &[u8] = b" Skip \0";
+    static STOP: &[u8] = b" Stop \0";
+
+    let ted = |text: *mut u8, tmpl: &[u8], tmplen: i16| TedInfo {
+        te_ptext: text as u64,
+        te_ptmplt: tmpl.as_ptr() as u64,
+        te_pvalid: VALID.as_ptr() as u64,
+        te_font: 3,
+        te_junk1: 0,
+        te_just: 0,
+        te_color: TED_COLOR,
+        te_junk2: 0,
+        te_thickness: 1,
+        te_txtlen: LEN_ZFNAME as i16 - 1,
+        te_tmplen: tmplen,
+    };
+    let mut src_copy = *src;
+    let mut curr_ted = ted(src_copy.as_mut_ptr(), CURR_TMPL, 27);
+    let mut copy_ted = ted(dst.as_mut_ptr(), COPY_TMPL, 26);
+
+    // `ADCPALER` is 38 characters wide with its fields at column 2 and its
+    // **three** buttons on the bottom row (`desk_rsc.c:1239-1279`): 10
+    // characters each at columns 2, 14 and 26, i.e. 80 px wide with a 16 px
+    // gap. The box is therefore sized by the button row, not by the fields —
+    // the first cut of this dialog took the two-button box's 90 px width and
+    // centred the middle button, which made all three overlap by 23 px.
+    const MARGIN: i16 = 24;
+    const GAP: i16 = 8;
+    const FLD_H: i16 = 24;
+    /// `desk_rsc.c:1267` — `CAOK` is 10 characters wide.
+    const BTN_W: i16 = 10 * CELL_W;
+    /// The 2-character gap `desk_rsc.c:1263-1279`'s columns leave between them.
+    const BTN_GAP: i16 = 2 * CELL_W;
+    const BTN_ROW_W: i16 = 3 * BTN_W + 2 * BTN_GAP;
+    let fld_w = 27 * CELL_W + 8;
+    let dw = MARGIN + if fld_w > BTN_ROW_W { fld_w } else { BTN_ROW_W } + MARGIN;
+    let y_title = MARGIN;
+    let y_curr = y_title + CELL_H + 12;
+    let y_copy = y_curr + FLD_H + GAP;
+    let y_btn = y_copy + FLD_H + 20;
+    let dh = y_btn + 28 + MARGIN;
+    let btn_w = BTN_W;
+    // `align_title` (`deskmain.c:1731-1750`) centres object 1 in the root.
+    let title_w = (TITLE.len() as i16 - 1) * CELL_W;
+
+    #[rustfmt::skip]
+    let mut tree = [
+        mk_root(BOX_SPEC, dw, dh, CASTOP),
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - title_w) / 2, y_title, title_w, CELL_H, CACURRNA, -1, -1),
+        // `CACURRNA` is **not** EDITABLE (`desk_rsc.c:1251-1255`).
+        mk(G_FBOXTEXT, FL3DBAK, &mut curr_ted as *mut _ as u64, MARGIN, y_curr, fld_w, FLD_H, CACOPYNA, -1, -1),
+        mk(G_FBOXTEXT, EDITABLE | FL3DBAK, &mut copy_ted as *mut _ as u64, MARGIN, y_copy, fld_w, FLD_H, CAOK, -1, -1),
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, MARGIN, y_btn, btn_w, 28, CASKIP, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, SKIP.as_ptr() as u64, MARGIN + btn_w + BTN_GAP, y_btn, btn_w, 28, CASTOP, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, STOP.as_ptr() as u64, MARGIN + 2 * (btn_w + BTN_GAP), y_btn, btn_w, 28, 0, -1, -1),
+    ];
+    let tree_ptr = tree.as_mut_ptr() as u64;
+
+    // `if (ml_havebox) draw_dial(tree); else { start_dialog(tree); … }`
+    // (`deskdir.c:99-105`): the copy box is already up and has already reserved
+    // its area, so this dialog paints straight over it.
+    if ctx.havebox {
+        draw_dial(tree_ptr);
+    } else {
+        start_dialog(tree_ptr);
+        ctx.havebox = true;
+    }
+    super::form_do(tree_ptr, 0);
+
+    // "trigger a redraw for the copy alert dialog so that a redraw message is
+    // issued for the copy alert area" (`deskdir.c:108-116`), then repaint the
+    // copy/delete box that was underneath (`:118`).
+    let t = super::form_center(tree_ptr);
+    super::form_dial_finish(t);
+    if ctx.tree != 0 {
+        draw_dial(ctx.tree);
+    }
+
+    // `ob = inf_gindex(tree, CAOK, 3) + CAOK; (tree+ob)->ob_state = NORMAL;`
+    // (`deskdir.c:121-122`). EmuTOS deselects the button because `ADCPALER` is
+    // a resource tree it reuses on the next conflict; this one is built fresh
+    // per call and dropped on return, so the reset has nothing to reset — the
+    // rebuild already guarantees no button is pre-selected next time.
+    inf_gindex(&tree, CAOK as usize, 3) + CAOK
+}
+
+/// `output_fname` (`deskdir.c:290-397`) — settle the destination name of one
+/// file copy, asking the user when the copy would overwrite something.
+///
+/// Returns [`More::Ok`] when the copy may proceed (`pdst_file` then holds the
+/// possibly-renamed destination), [`More::Skip`] for "leave this one alone" and
+/// [`More::Stop`] for "abandon the whole operation".
+///
+/// The dialog is skipped entirely — as in EmuTOS — when the names differ and
+/// either *Confirm overwrites* is off or the destination does not exist yet;
+/// `Fcreate`'s truncation then does what it always did.
+fn output_fname(psrc_file: &str, pdst_file: &mut String, ctx: &mut OpCtx) -> More {
+    let mut ob = 0i16;
+    loop {
+        // "set flag if user is trying to overwrite a file with itself"
+        let samefile = psrc_file == pdst_file.as_str();
+        if !samefile {
+            if ob == CAOK {
+                break;
+            }
+            if !ctx.covwr {
+                break;
+            }
+            if !item_exists(pdst_file) {
+                break;
+            }
+        }
+
+        let ml_fsrc = fmt_str(filename_start(psrc_file));
+        let mut ml_fdst = fmt_str(filename_start(pdst_file));
+        let old_dst = ml_fdst; // "remember old destination"
+
+        ob = do_namecon(&ml_fsrc, &mut ml_fdst, ctx);
+        if ob == CASTOP {
+            return More::Stop;
+        }
+        if ob == CASKIP {
+            return More::Skip;
+        }
+
+        // "user says ok, so update destination filename"
+        let ml_fstr = unfmt_str(&ml_fdst);
+        if !ml_fstr.is_empty() {
+            let dir = String::from(dir_part(pdst_file));
+            *pdst_file = join_leaf(&dir, &ml_fstr);
+        }
+
+        // "if destination has changed, pretend there was no OK, so the next
+        // iteration of this loop can check everything again"
+        if ml_fdst != old_dst {
+            ob = 0;
+            continue;
+        }
+
+        // "if the user was trying to overwrite a file with itself, treat it as
+        // a skip"
+        if samefile {
+            return More::Skip;
+        }
+    }
+    More::Ok
+}
+
+/// The `ADCPYDEL` confirmation / progress box (`deskdir.c:911-965`) while an
+/// operation runs. Holds the two count fields' text buffers and TEDINFOs
+/// alongside the object array, so all of it lives in one [`dir_op`] frame.
+struct CpyDelBox {
+    tree: [Object; 6],
+    /// `CDFOLDS`/`CDFILES` text buffers — `te_txtlen` is 6
+    /// (`desk_rs_tedinfo[20,21]`: five digits plus the NUL).
+    folds_buf: [u8; 6],
+    files_buf: [u8; 6],
+    folds_ted: TedInfo,
+    files_ted: TedInfo,
+}
+
+/// `STCOPY` / `STMOVE` / `STDELETE` (`desk_rsc.c:2472-2474`) — the heading
+/// `dir_op` writes into `CDTITLE` (`deskdir.c:907,940,944`).
+const STCOPY: &[u8] = b"COPY FILE(S)\0";
+const STMOVE: &[u8] = b"MOVE FILE(S)\0";
+const STDELETE: &[u8] = b"DELETE FILE(S)\0";
+
+impl CpyDelBox {
+    /// Build the box for `op` with `count`'s totals already in its two fields.
+    fn new(op: Op, count: &DirCount) -> alloc::boxed::Box<CpyDelBox> {
+        static FOLDS_TMPL: &[u8] = b"Number of folders:         _____\0";
+        static FILES_TMPL: &[u8] = b"Number of files:         _____\0";
+        static EMPTY: &[u8] = b"\0";
+        static OK: &[u8] = b" OK \0";
+        static CANCEL: &[u8] = b" Cancel \0";
+
+        const MARGIN: i16 = 24;
+        const GAP: i16 = 8;
+        const FLD_H: i16 = 24;
+        let fld_w = 33 * CELL_W + 8; // the longer of the two templates
+        let dw = MARGIN + fld_w + MARGIN;
+        let y_title = MARGIN;
+        let y_folds = y_title + CELL_H + 12;
+        let y_files = y_folds + FLD_H + GAP;
+        let y_btn = y_files + FLD_H + 20;
+        let dh = y_btn + 28 + MARGIN;
+        let btn_w = 90i16;
+
+        let title: &[u8] = match op {
+            Op::Delete => STDELETE,
+            Op::Copy => STCOPY,
+            // "if (op != OP_COPY) … obj->ob_spec = STMOVE" (`deskdir.c:941-945`)
+            _ => STMOVE,
+        };
+        let title_w = (title.len() as i16 - 1) * CELL_W;
+
+        // `Box`ed before the TEDINFOs are pointed at the buffers: the object
+        // array holds the TEDINFO addresses and the TEDINFOs hold the buffer
+        // addresses, so nothing may move afterwards.
+        let mut b = alloc::boxed::Box::new(CpyDelBox {
+            tree: [mk_root(BOX_SPEC, dw, dh, CDOK + 1); 6],
+            folds_buf: [0; 6],
+            files_buf: [0; 6],
+            folds_ted: TedInfo {
+                te_ptext: 0,
+                te_ptmplt: FOLDS_TMPL.as_ptr() as u64,
+                te_pvalid: EMPTY.as_ptr() as u64,
+                te_font: 3,
+                te_junk1: 0,
+                te_just: TE_RIGHT,
+                te_color: TED_COLOR,
+                te_junk2: 0,
+                te_thickness: 1,
+                te_txtlen: 6,
+                te_tmplen: 33,
+            },
+            files_ted: TedInfo {
+                te_ptext: 0,
+                te_ptmplt: FILES_TMPL.as_ptr() as u64,
+                te_pvalid: EMPTY.as_ptr() as u64,
+                te_font: 3,
+                te_junk1: 0,
+                te_just: TE_RIGHT,
+                te_color: TED_COLOR,
+                te_junk2: 0,
+                te_thickness: 1,
+                te_txtlen: 6,
+                te_tmplen: 31,
+            },
+        });
+        b.folds_ted.te_ptext = b.folds_buf.as_ptr() as u64;
+        b.files_ted.te_ptext = b.files_buf.as_ptr() as u64;
+        let folds_ted = &b.folds_ted as *const TedInfo as u64;
+        let files_ted = &b.files_ted as *const TedInfo as u64;
+
+        b.tree = [
+            mk_root(BOX_SPEC, dw, dh, CDOK + 1),
+            // `align_title` centres the heading (`deskmain.c:1744-1747`).
+            mk(G_STRING, 0, title.as_ptr() as u64, (dw - title_w) / 2, y_title, title_w, CELL_H, CDFOLDS, -1, -1),
+            mk(G_FBOXTEXT, FL3DBAK, folds_ted, MARGIN, y_folds, fld_w, FLD_H, CDFILES, -1, -1),
+            mk(G_FBOXTEXT, FL3DBAK, files_ted, MARGIN, y_files, fld_w, FLD_H, CDOK, -1, -1),
+            mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, MARGIN, y_btn, btn_w, 28, CDOK + 1, -1, -1),
+            mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, dw - MARGIN - btn_w, y_btn, btn_w, 28, 0, -1, -1),
+        ];
+
+        let ptr = b.tree.as_ptr() as u64;
+        inf_numset(ptr, CDFILES, count.files);
+        inf_numset(ptr, CDFOLDS, count.dirs);
+        b
+    }
+
+    /// The object array's address, as every `tree`-taking helper wants it.
+    fn ptr(&self) -> u64 {
+        self.tree.as_ptr() as u64
+    }
+}
+
 // ── per-item engine primitives ──────────────────────────────────────────────
 
 /// `d_dofdel` — delete one file (EmuTOS `deskdir.c:237`). `true` on success.
@@ -230,21 +767,45 @@ fn d_dofileren(old: &str, new: &str) -> bool {
     dos_rename(old, new) == E_OK
 }
 
-/// `d_dofcopy` — copy one file (EmuTOS `deskdir.c:394`): open source, create
-/// destination (truncating any existing file — the NewTOS "always overwrite"
-/// default), stream through `buf`, then stamp the destination's date/time from
-/// the source. `true` on a complete copy.
-fn d_dofcopy(src: &str, dst: &str, time: u16, date: u16, attr: u16, buf: &mut [u8]) -> bool {
+/// `d_dofcopy` — copy one file (EmuTOS `deskdir.c:389-519`): open the source,
+/// settle the destination name with [`output_fname`] (which is where the
+/// overwrite question lives), create the destination, stream through `buf`,
+/// then stamp it with the source's date/time.
+///
+/// `dst` is `&mut` because `output_fname` may rename it: the user can type a
+/// different name into the name-conflict dialog, exactly as EmuTOS edits
+/// `pdst_file` in place (`deskdir.c:354-360`).
+fn d_dofcopy(
+    src: &str,
+    dst: &mut String,
+    time: u16,
+    date: u16,
+    attr: u16,
+    buf: &mut [u8],
+    ctx: &mut OpCtx,
+) -> More {
     let srcfh = dos_open(src, 0);
     if srcfh < 0 {
-        return false;
+        return More::Failed;
     }
     let srcfh = srcfh as i16;
+
+    // `rc = output_fname(psrc_file, pdst_file);` (`deskdir.c:417-424`) — after
+    // the source is open and before the destination is created, so a Stop or
+    // Skip leaves nothing behind.
+    match output_fname(src, dst, ctx) {
+        More::Ok => {}
+        other => {
+            dos_close(srcfh);
+            return other;
+        }
+    }
+
     // Mask off the sub-directory bit — a file copy never carries FA_SUBDIR.
     let dstfh = dos_create(dst, attr & !(FA_SUBDIR as u16));
     if dstfh < 0 {
         dos_close(srcfh);
-        return false;
+        return More::Failed;
     }
     let dstfh = dstfh as i16;
 
@@ -270,8 +831,9 @@ fn d_dofcopy(src: &str, dst: &str, time: u16, date: u16, attr: u16, buf: &mut [u
     dos_close(dstfh);
     if !ok {
         dos_delete(dst); // remove the partial destination (deskdir.c:497)
+        return More::Failed;
     }
-    ok
+    More::Ok
 }
 
 // ── the recursive subtree walker ────────────────────────────────────────────
@@ -284,7 +846,15 @@ fn d_dofcopy(src: &str, dst: &str, time: u16, date: u16, attr: u16, buf: &mut [u
 /// already exists); files are copied. For `Delete`/`Move` the folder is removed
 /// once emptied (post-order, like EmuTOS). `Count` tallies files pre-order and
 /// folders post-order (one `dirs++` per folder visited).
-fn d_doop(level: i16, op: Op, src_dir: &str, dst_dir: &str, count: &mut DirCount, buf: &mut [u8]) -> bool {
+fn d_doop(
+    level: i16,
+    op: Op,
+    src_dir: &str,
+    dst_dir: &str,
+    count: &mut DirCount,
+    buf: &mut [u8],
+    ctx: &mut OpCtx,
+) -> bool {
     if level > MAX_LEVEL {
         return false; // STFO8DEE guard (deskdir.c:537)
     }
@@ -293,6 +863,9 @@ fn d_doop(level: i16, op: Op, src_dir: &str, dst_dir: &str, count: &mut DirCount
     let mut ok = true;
 
     for e in &entries {
+        if ctx.stop {
+            break; // `for (… ; pf && more ; …)` — the user pressed Stop
+        }
         let name = e.name_str();
         if e.is_dir() {
             let src_sub = join_leaf(src_dir, name);
@@ -304,35 +877,42 @@ fn d_doop(level: i16, op: Op, src_dir: &str, dst_dir: &str, count: &mut DirCount
             } else {
                 String::new()
             };
-            if !d_doop(level + 1, op, &src_sub_dir, &dst_sub_dir, count, buf) {
+            if !d_doop(level + 1, op, &src_sub_dir, &dst_sub_dir, count, buf, ctx) {
                 ok = false;
             }
-        } else {
-            let src_file = join_leaf(src_dir, name);
-            match op {
-                Op::Count => {
-                    count.files += 1;
-                    count.size += e.size as u64;
+            continue; // the folder branch does not count a *file* down
+        }
+        let src_file = join_leaf(src_dir, name);
+        match op {
+            Op::Count => {
+                count.files += 1;
+                count.size += e.size as u64;
+            }
+            Op::Delete => {
+                if !d_dofdel(&src_file) {
+                    ok = false;
                 }
-                Op::Delete => {
-                    if !d_dofdel(&src_file) {
-                        ok = false;
-                    }
-                }
-                Op::Copy | Op::Move => {
-                    let dst_file = join_leaf(dst_dir, name);
-                    let copied = d_dofcopy(&src_file, &dst_file, e.time, e.date, e.attr as u16, buf);
-                    if op == Op::Move && copied {
-                        if !d_dofdel(&src_file) {
+            }
+            Op::Copy | Op::Move => {
+                let mut dst_file = join_leaf(dst_dir, name);
+                match d_dofcopy(&src_file, &mut dst_file, e.time, e.date, e.attr as u16, buf, ctx) {
+                    // "if moving, delete original only if copy was ok"
+                    // (`deskdir.c:667-669`).
+                    More::Ok => {
+                        if op == Op::Move && !d_dofdel(&src_file) {
                             ok = false;
                         }
-                    } else if !copied {
-                        ok = false;
                     }
+                    More::Skip => {}
+                    More::Failed => ok = false,
+                    More::Stop => ctx.stop = true,
                 }
-                Op::Rename => {} // rename never recurses (handled at dir_op level)
             }
+            Op::Rename => {} // rename never recurses (handled at dir_op level)
         }
+        // `inf_numset(tree, CDFILES, --(count->files)); draw_fld(…)`
+        // (`deskdir.c:674-678`) — one file down, box updated.
+        ctx.file_done();
     }
 
     // End-of-folder handling (EmuTOS `deskdir.c:559-585`).
@@ -343,18 +923,39 @@ fn d_doop(level: i16, op: Op, src_dir: &str, dst_dir: &str, count: &mut DirCount
         Op::Delete | Op::Move => ok &= d_dofoldel(strip_dir(src_dir)),
         _ => {}
     }
+    // `inf_numset(tree, CDFOLDS, --(count->dirs))` at end-of-folder
+    // (`deskdir.c:590-594`), for every `op` that has a box.
+    ctx.dir_done();
     ok
 }
 
 // ── the top-level dispatch over the selected items ──────────────────────────
 
 /// `dir_op` — perform `op` on the [`SelEntry`] set selected in `src_dir`
-/// (EmuTOS `deskdir.c:871`). `src_dir`/`dst_dir` end with `\`. `dst_dir` is
-/// `None` for `Delete`/`Count`. Returns `true` if every item completed.
+/// (EmuTOS `deskdir.c:871-1084`). `src_dir`/`dst_dir` end with `\`. `dst_dir`
+/// is `None` for `Delete`/`Count`. Returns `true` if every item completed.
 ///
 /// The move→rename optimisation (`deskdir.c:885`): a `Move` whose source and
 /// destination are on the **same drive letter** is silently a `Rename`
 /// (`Frename`), never a copy+delete.
+///
+/// ## The confirmation box
+///
+/// Every operation but `Count` puts the `ADCPYDEL` box up (`deskdir.c:911-918`
+/// decides that by `op != OP_COUNT`, which is exactly what its later
+/// `if (tree)` tests mean), pre-filled with the file and folder counts of the
+/// preceding `Count` pass. Whether it then **waits** for OK is the user's
+/// preference (`:906,939-945`):
+///
+/// | operation      | `confirm` is                        |
+/// |----------------|-------------------------------------|
+/// | `Delete`       | `g_cdelepref`                       |
+/// | `Copy`         | `g_ccopypref`                       |
+/// | `Move`/`Rename`| `g_ccopypref \| g_cdelepref`        |
+///
+/// With the preference off the box still appears — as a progress display,
+/// counting the two numbers down as the walk proceeds — and the operation
+/// starts immediately. Cancel ends it before a single file is touched.
 pub fn dir_op(
     op: Op,
     src_dir: &str,
@@ -375,19 +976,46 @@ pub fn dir_op(
         *count = DirCount::default();
     }
 
+    // `confirm` and the box (`deskdir.c:899-965`).
+    let (confdel, confcpy, covwr) =
+        global::with(|g| (g.g_cdelepref, g.g_ccopypref, g.g_covwrpref)).unwrap_or((true, true, true));
+    let confirm = match op {
+        Op::Count => false,
+        Op::Delete => confdel,
+        Op::Copy => confcpy,
+        // "if (op != OP_COPY) confirm |= G.g_cdelepref;" (`:941-943`)
+        Op::Move | Op::Rename => confcpy || confdel,
+    };
+
+    let mut ctx = OpCtx { covwr, files: count.files, dirs: count.dirs, ..OpCtx::quiet() };
+    let mut dialog = (op != Op::Count).then(|| CpyDelBox::new(op, count));
+    if let Some(b) = dialog.as_mut() {
+        ctx.tree = b.ptr();
+        start_dialog(ctx.tree);
+        ctx.havebox = true;
+        if confirm {
+            super::form_do(ctx.tree, 0);
+            // `more = (tree[CDOK].ob_state & SELECTED) ? TRUE : FALSE;` (`:963`)
+            ctx.stop = b.tree[CDOK as usize].ob_state & OB_SELECTED == 0;
+        }
+    }
+
     let mut ok = true;
     for e in entries {
+        if ctx.stop {
+            break;
+        }
         let name = e.name_str();
         if e.is_dir {
             let src_sub = join_leaf(src_dir, name); // C:\SUB\CHILD
             match op {
                 Op::Count => {
-                    if !d_doop(0, Op::Count, &as_dir(&src_sub), "", count, buf) {
+                    if !d_doop(0, Op::Count, &as_dir(&src_sub), "", count, buf, &mut ctx) {
                         ok = false;
                     }
                 }
                 Op::Delete => {
-                    if !d_doop(0, Op::Delete, &as_dir(&src_sub), "", count, buf) {
+                    if !d_doop(0, Op::Delete, &as_dir(&src_sub), "", count, buf, &mut ctx) {
                         ok = false;
                     }
                 }
@@ -405,45 +1033,58 @@ pub fn dir_op(
                         d_dofileren(&src_sub, &dst_sub)
                     } else {
                         let _ = dos_mkdir(&dst_sub); // output_path (create/merge)
-                        d_doop(0, op, &as_dir(&src_sub), &as_dir(&dst_sub), count, buf)
+                        d_doop(0, op, &as_dir(&src_sub), &as_dir(&dst_sub), count, buf, &mut ctx)
                     };
                     if !more {
                         ok = false;
                     }
                 }
             }
-        } else {
-            let src_file = join_leaf(src_dir, name);
-            match op {
-                Op::Count => {
-                    count.files += 1;
-                    count.size += e.size as u64;
+            // A folder never counts a *file* down: EmuTOS's folder branch
+            // `continue`s before the `CDFILES` update (`deskdir.c:1019`).
+            continue;
+        }
+        let src_file = join_leaf(src_dir, name);
+        match op {
+            Op::Count => {
+                count.files += 1;
+                count.size += e.size as u64;
+            }
+            Op::Delete => {
+                if !d_dofdel(&src_file) {
+                    ok = false;
                 }
-                Op::Delete => {
-                    if !d_dofdel(&src_file) {
+            }
+            Op::Copy | Op::Move | Op::Rename => {
+                let dst = dst_dir.unwrap_or("");
+                let mut dst_file = join_leaf(dst, name);
+                if op == Op::Rename {
+                    if !d_dofileren(&src_file, &dst_file) {
                         ok = false;
                     }
-                }
-                Op::Copy | Op::Move | Op::Rename => {
-                    let dst = dst_dir.unwrap_or("");
-                    let dst_file = join_leaf(dst, name);
-                    let more = if op == Op::Rename {
-                        d_dofileren(&src_file, &dst_file)
-                    } else {
-                        let copied =
-                            d_dofcopy(&src_file, &dst_file, e.time, e.date, e.attr(), buf);
-                        if op == Op::Move && copied {
-                            d_dofdel(&src_file)
-                        } else {
-                            copied
+                } else {
+                    match d_dofcopy(&src_file, &mut dst_file, e.time, e.date, e.attr(), buf, &mut ctx) {
+                        More::Ok => {
+                            if op == Op::Move && !d_dofdel(&src_file) {
+                                ok = false;
+                            }
                         }
-                    };
-                    if !more {
-                        ok = false;
+                        More::Skip => {}
+                        More::Failed => ok = false,
+                        More::Stop => ctx.stop = true,
                     }
                 }
             }
         }
+        ctx.file_done();
+    }
+
+    // `tree[CDOK].ob_state = NORMAL; tree[CDCNCL].ob_state = NORMAL;
+    //  end_dialog(tree);` (`deskdir.c:1075-1080`).
+    if let Some(b) = dialog.as_mut() {
+        b.tree[CDOK as usize].ob_state = 0;
+        b.tree[CDOK as usize + 1].ob_state = 0;
+        end_dialog(b.ptr());
     }
     ok
 }
@@ -506,11 +1147,11 @@ pub fn fun_del() -> bool {
     if entries.is_empty() {
         return false;
     }
-    // Confirm, unless the user turned *Confirm deletes* off in Preferences
-    // (`deskdir.c:906`).
-    if confirm_deletes() && !fun_confirm(b"Delete the selected item(s)?") {
-        return false;
-    }
+    // No question here: EmuTOS's window-case `fun_del` goes straight into
+    // `fun_op` (`deskfun.c:1419-1423`) and the confirmation is `dir_op`'s
+    // `ADCPYDEL` box, gated on *Confirm deletes* (`deskdir.c:906`). DESK13
+    // moved the question there; the stand-in alert that used to sit here is
+    // gone, so a delete is confirmed exactly once.
     let done = fun_op(Op::Delete, &src_dir, &entries, None);
     if done {
         rebuild_window(cwin);
@@ -648,16 +1289,6 @@ pub fn fun_alert(default: i16, msg: &[u8]) -> i16 {
     super::form_alert(default, text.as_ptr())
 }
 
-/// `G.g_cdelepref` — the Preferences dialog's *Confirm deletes* switch
-/// (`deskinf.c:735,786`). EmuTOS reads it in `d_doop`, where it turns the
-/// per-item delete dialog on or off (`deskdir.c:906`, `confirm =
-/// G.g_cdelepref;`); NewTOS's delete engine is dialog-free and asks once up
-/// front instead (see this module's header), so the same switch gates that one
-/// question. `false` means delete without asking.
-fn confirm_deletes() -> bool {
-    global::with(|g| g.g_cdelepref).unwrap_or(true)
-}
-
 /// A yes/no confirmation alert; `true` if the user chose the affirmative
 /// (second) button.
 fn fun_confirm(msg: &[u8]) -> bool {
@@ -772,11 +1403,9 @@ fn fun_file2desk(dobj: i16, src_dir: &str, entries: &[SelEntry], keystate: u16) 
         AType::Trash => {
             // The source here is a *window* selection, so EmuTOS skips
             // `wants_to_delete_files` (that guard is for a dragged desktop
-            // icon, `deskfun.c:1049-1051`) and the only question is `d_doop`'s,
-            // gated on *Confirm deletes* (`deskdir.c:906`).
-            if confirm_deletes() && !fun_confirm(b"Delete the selected item(s)?") {
-                return false;
-            }
+            // icon, `deskfun.c:1049-1051`) and the only question is the
+            // `ADCPYDEL` box `dir_op` now puts up, gated on *Confirm deletes*
+            // (`deskdir.c:906`).
             fun_op(Op::Delete, src_dir, entries, None)
         }
         // File/Folder shortcuts and the printer are Task #14 (deskins/print).
@@ -1085,8 +1714,10 @@ pub fn selftest() {
 
     // 3. Copy (d_dofcopy) — B.TXT is a byte copy of A.TXT.
     let mut buf: Vec<u8> = alloc::vec![0u8; COPY_BUF];
-    let copied = d_dofcopy(base_join("A.TXT").as_str(), base_join("B.TXT").as_str(), 0x2000, 0x5461, 0, &mut buf);
-    check("Copy A.TXT -> B.TXT", copied);
+    let mut ctx = OpCtx::quiet();
+    let mut dst = base_join("B.TXT");
+    let copied = d_dofcopy(base_join("A.TXT").as_str(), &mut dst, 0x2000, 0x5461, 0, &mut buf, &mut ctx);
+    check("Copy A.TXT -> B.TXT", copied == More::Ok);
     check(
         "  rescan sees B.TXT same size",
         scan_folder(base).iter().any(|e| e.name_str() == "B.TXT" && e.size == body.len() as u32),

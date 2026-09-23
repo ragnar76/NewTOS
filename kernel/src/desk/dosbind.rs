@@ -11,7 +11,10 @@
 //! `include/bdosbind.h`'s `trap1()` (`util/miscasm.S`).
 //!
 //! Naming follows EmuTOS's `gemdos.h`: [`dos_open`], [`dos_read`],
-//! [`dos_sfirst`], … .
+//! [`dos_sfirst`], … . [`dos_getcookie`] has no EmuTOS counterpart in
+//! `gemdos.h`: it is the NewTOS route to the one piece of system state EmuTOS's
+//! desktop reads with an XBIOS call, the `_IDT` cookie — see its own comment
+//! for why that is a GEMDOS call here and not `Supexec`.
 //!
 //! The desktop uses **no BIOS and no XBIOS function**, so there is neither an
 //! `svc #13` nor an `svc #14` binding here. EmuTOS's desktop includes
@@ -19,9 +22,11 @@
 //! desktop itself never uses, because it reads the drive map as
 //! `dos_sdrv(dos_gdrv())` (`deskapp.c:714`, `deskins.c:297`,
 //! `desksupp.c:1575,1819`) — and `Dosound()` for the About-box Easter egg
-//! (`CONF_WITH_EASTER_EGG`), which NewTOS does not have. `xbiosbind.h` is only
-//! reached from `deskrez.c`'s resolution change, which NewTOS does not have
-//! either (the screen mode is fixed by the firmware).
+//! (`CONF_WITH_EASTER_EGG`), which NewTOS does not have. From `xbiosbind.h` it
+//! takes `deskrez.c`'s resolution change, which NewTOS does not have either
+//! (the screen mode is fixed by the firmware), and `Supexec` in `do_wredraw`
+//! (`desksupp.c:219`) — that one it *does* need, and [`dos_getcookie`] is where
+//! it goes instead.
 //!
 //! ## ABI
 //!
@@ -78,6 +83,12 @@ const FDATIME: u16 = 0x57;
 /// `Mxalloc` (`bdosbind.h:56`) — used only through [`dos_avail_stram`] /
 /// [`dos_avail_altram`], EmuTOS's `util/gemdos.c:101-112`.
 const MXALLOC: u16 = 0x44;
+/// `Ssystem` (GEMDOS 0x154, a FreeMiNT extension NewTOS implements —
+/// `docs/api/gemdos/154-ssystem.md`). Used only by [`dos_getcookie`].
+const SSYSTEM: u16 = 0x154;
+
+/// `S_GETCOOKIE` (FreeMiNT `sys/mint/ssystem.h`) — `Ssystem` subfunction 8.
+const S_GETCOOKIE: i16 = 8;
 
 // ── `Mxalloc` modes (`include/bdosdefs.h:18-19`) ────────────────────────────
 /// `MX_STRAM` — allocate/measure ST-RAM only.
@@ -286,4 +297,38 @@ pub(super) fn dos_avail_stram() -> Long {
 /// (`tos-api/src/bdos/mem/traps.rs:274-281`, `pmdalt` null ⇒ `0`).
 pub(super) fn dos_avail_altram() -> Long {
     dos_trap(MXALLOC, sx(-1), sx(MX_TTRAM as i64), 0)
+}
+
+/// Read one cookie **by value** — `Ssystem(S_GETCOOKIE, tag, 0)`
+/// (`docs/api/gemdos/154-ssystem.md`, `tos-api/src/gemdos/ssystem.rs:42-77`).
+/// [`None`] if the tag is not in the jar (the call returns `ERROR`).
+///
+/// ## Why this and not `Supexec`
+///
+/// EmuTOS's desktop reads `_IDT` with `Supexec((LONG)get_idt_cookie)`
+/// (`desksupp.c:219`) — not because the *cookie* needs privilege, but because
+/// on m68k the jar is reached through the pointer at `$5A0`, in supervisor-only
+/// low memory. That is an m68k mechanism, and `docs/COMPATIBILITY.md` puts
+/// mechanisms on the free side of the line.
+///
+/// On NewTOS there is nothing to elevate for and nothing to elevate *with*:
+/// XBIOS `Supexec` (0x26) is an open ADR (`docs/api/xbios/26-supexec.md`,
+/// "NewTOS status: decision deferred") and the cookie-jar spec already names
+/// this call as its replacement — "There is no `Supexec` in the kernel … the
+/// low-memory area an app wants is already in its own address space"
+/// (`docs/api/bios/_cookie-jar.md` §Status 2026-09-14). `Ssystem` is a GEMDOS
+/// function, so the desktop reaches it through the same `svc #1` it uses for
+/// every other system service (DESK10) — the third argument is 0, so the value
+/// comes back in `x0` and no pointer crosses the trap.
+///
+/// **The value form cannot express a cookie whose value has bit 31 set** — it
+/// would be indistinguishable from the negative error return. That is
+/// `Ssystem`'s own shape, and the alternative (`arg2` = a pointer to write into)
+/// is closed to the desktop: `s_getcookie` stores through an *unprivileged*
+/// `sttr` (`ssystem.rs:110-121`), which faults on a kernel address. The one
+/// cookie read here, `_IDT`, is a 16-bit word (`0x112F`), so the limitation is
+/// nominal; a future caller reading a pointer-valued cookie must not use this.
+pub(super) fn dos_getcookie(tag: u32) -> Option<u32> {
+    let rc = dos_trap(SSYSTEM, sx(S_GETCOOKIE as i64), sx(tag as i32 as i64), 0);
+    (rc >= 0).then_some(rc as u32)
 }

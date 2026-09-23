@@ -117,3 +117,17 @@ Tastaturschicht **wirkungslos** (die IKBD/Keymap faltet Alt in AltGr und
 liefert nie ASCII `0` fuer eine Buchstabentaste). Das ist ein seit Task #8
 vermerkter Befund der Tastaturschicht, kein DESK11-Befund; die Abfrage selbst
 ist nachgezogen.
+
+> **Berichtigung 2026-09-23 (DESK13).** Der Absatz darueber ist **falsch**,
+> und er ist es, weil er einen alten Vermerk im Quelltext abgeschrieben hat,
+> ohne ihn nachzufahren. `kernel/src/keymap.rs` `to_ascii` nullt ein
+> alphabetisches Ergebnis, **sobald** das Alt-Bit gesetzt ist; `ikbd::to_ascii`
+> macht daraus `None` und `ikbd::decode_key` legt das Wort als
+> `scancode << 8 | 0` in die Schlange — genau die Form, die
+> `check_alt_letter_key` braucht. Beide Tastaturquellen setzen das Bit (IKBD
+> `SC_ALT = 0x38`; der USB-HID-Bericht bildet LAlt **und** RAlt darauf ab), und
+> der AES reicht das Wort unveraendert als `EV_KRET` durch. `Alt`+`C` oeffnet
+> `C:\` — in QEMU raspi4b gefahren,
+> `measurement-2026-09-23-desk13/screendumps/b-altc.png`. Der Vermerk im
+> Quelltext und der in `docs/api/desktop/_hw-test-2026-09-17.md` sind
+> ebenfalls richtiggestellt.
