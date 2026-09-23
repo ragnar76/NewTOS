@@ -375,6 +375,64 @@ fn run_console_arm() -> i32 {
     0
 }
 
+/// Run the console a `shel_write(SHW_EXEC, 0, 1, DEF_CONSOLE, …)` has made
+/// pending, **nested** in the caller, and come back with the screen in
+/// graphics mode again. Returns `false` — without doing anything — when the
+/// pending program is not the console.
+///
+/// This is one pass of `sh_main`'s body (`gemshlib.c:710-727`) for the
+/// [`CONSOLE_APP`] case:
+///
+/// ```c
+/// sh_chdef(psh);          /* :712 — CONSOLE_APP: set_drvdir(psh->sh_cdir) */
+/// sh_chgrf(psh);          /* :713 — sh_isgem == 0 → sh_toalpha()          */
+/// rc = sh_ldapp(psh);     /* :725 — the CONSOLE_APP arm, :614-622         */
+/// /* next pass */
+/// sh_chdef(psh);          /* :712 — DESKTOP_APP after set_default_desktop */
+/// sh_chgrf(psh);          /* :713 — sh_isgem == 1 → sh_tographic()        */
+/// ```
+///
+/// **Why it exists (AES gap G1).** In EmuTOS the desktop does not need this:
+/// `do_filemenu(CLIITEM)` returns TRUE (`deskmain.c:753`), `deskmain`'s loop
+/// ends, the desktop **process terminates**, and the loop above runs in
+/// `sh_main` where it belongs. NewTOS's built-in desktop is an in-kernel call
+/// ([`crate::desk::run`], `sh_ldapp`'s DESKTOP arm) that cannot terminate and
+/// be started again: its state singleton is built once
+/// ([`crate::desk::global::init`] is idempotent) and its window list has no
+/// `win_start()` re-entry, so returning here would hand the restarted desktop
+/// a window list full of handles the intervening `wm_init()` had already
+/// deleted. Until that restart path exists (`TASK/DESK14.md` §4, the same
+/// decision the `Read .INF file` item waits on), the desktop calls this
+/// instead of returning, and its event loop resumes afterwards.
+///
+/// **The two steps of the pass that are deliberately left out**, and why:
+/// `wm_init()` and `sh_draw(D.s_cmd, TRUE)` (`:717-719`). Both prepare the
+/// screen and the AES window table for a desktop that is about to be built
+/// from scratch — `wm_init` deletes every window, and the restarted
+/// `deskmain` reopens them from `cnx_get` (`deskmain.c:2055`). The desktop
+/// that called this one is still standing with its windows registered, so
+/// taking either would destroy exactly the state it is about to draw. That is
+/// gap G2, named the same way on the GEM-app launch path
+/// (`crate::desk::main::desktop_resume`). `ratinit()` (`:718`) is not skipped:
+/// it is inside `sh_tographic`, which does run.
+pub fn sh_run_pending_console() -> bool {
+    if shell::sh_nextapp() != CONSOLE_APP {
+        return false;
+    }
+
+    shell::sh_chdef(); // :712 — the directory `shel_wdef` named
+    sh_chgrf(); // :713 — into alpha mode
+
+    run_console_arm(); // :725 → sh_ldapp's CONSOLE_APP arm (:614-622)
+
+    // The next pass's first two statements: `set_default_desktop` (run by the
+    // arm above, `:619`) has put DESKTOP_APP/`sh_isgem = TRUE` back, so these
+    // restore the AES's start directory and the graphics screen.
+    shell::sh_chdef(); // :712
+    sh_chgrf(); // :713 — back into graphics mode
+    true
+}
+
 /// `p_setappdir(rlr, D.s_cmd)` (`gempd.c:90-107`) — record the directory the
 /// program was started from, which `sh_find` step (1) searches first.
 fn p_setappdir(cmd: &[u8]) {

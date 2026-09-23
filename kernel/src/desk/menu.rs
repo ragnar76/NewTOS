@@ -1112,11 +1112,16 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize)
         // Pi 4 could power down (PM_RSTC/watchdog), but that would be an own
         // extension, not EmuTOS conformance (DESK07).
         Item::Shutdown => false,
+        // Execute EmuCON: EmuTOS never disables `CLIITEM` — it appears in no
+        // `ILL_*` table (`deskmain.c:143-160`) and in no `menu_ienable` call,
+        // and `WITH_CLI` is on in the Falcon030/TOS4 profile. It needs neither
+        // a selection nor a window: `do_filemenu`'s arm runs `pro_run(FALSE,
+        // DEF_CONSOLE, …)` unconditionally and only the optional `shel_wdef`
+        // step looks at the top window (`deskmain.c:750-770`). Live since
+        // DESK06 (`main::do_execcli`).
+        Item::ExecEmuCon => true,
         // The remaining Options items stay disabled (deskrez is
         // config.txt-driven, ADR-017 rev 2).
-        // `Execute EmuCON` is never disabled in EmuTOS (`CLIITEM` appears in no
-        // `ILL_*` table and in no `menu_ienable` call) — it is greyed here
-        // only because NewTOS has no handler for it yet (DESK06).
         _ => false,
     }
 }

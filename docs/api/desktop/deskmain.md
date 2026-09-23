@@ -1139,7 +1139,7 @@ one is already on record** (`docs/api/desktop.md`,
 | `CONF_WITH_FILEMASK` | `MASKITEM` (File→Set mask) | **Open question** |
 | `CONF_WITH_FORMAT` | `FORMITEM` (File→Format) | **Open question** — no floppy hardware on RPi4; likely off, but not decided |
 | `CONF_WITH_EJECT` | `EJCTITEM` | **Excluded** — Apple-Lisa-only auto-eject, no Atari/AArch64 equivalent (`docs/api/desktop.md` reconciliation) |
-| `WITH_CLI` | `CLIITEM` (File→Execute EmuCON) | **On** — NewTOS ships a shell (`crate::shell::run_console`, `kernel/src/desktop.rs:826`) |
+| `WITH_CLI` | `CLIITEM` (File→Execute EmuCON) | **On** — NewTOS ships a shell (`crate::shell::run_console`); wired to the menu 2026-09-23, DESK06 (see the notes below) |
 | `CONF_WITH_SHUTDOWN` | `QUITITEM` | **On (halt-only)** — `docs/HARDWARE-PROFILE.md:406` |
 | `CONF_WITH_SIZE_TO_FIT` | `FITITEM`, `g_ifit`/`g_icols`, horizontal slider messages | **Open question** — current `kernel/src/desktop.rs` has a `size_to_fit()` (vertical only, `:1619-1637`); full EmuTOS semantics (horizontal too) not confirmed decided |
 | `CONF_WITH_BACKGROUNDS` | `BACKGRND` item, `g_patcol` | **On** — `docs/api/desktop.md:71-72`; NewTOS's `desktop.rs` `G_PATCOL`/`set_background` already implements this |
@@ -1391,3 +1391,96 @@ hard-coded `Item → letter` table, and now walks `menu_shortcuts[]` through
 `shortcut_mapping[]`, skipping absent items (`:1181-1182`) and stopping on a
 matching-but-`DISABLED` one (`:1185-1188`). Measured in
 `measurement-2026-09-23-desk05/` (`Ctrl-S` still runs *Save desktop*).
+
+---
+
+## NewTOS implementation notes — `do_filemenu`'s `CLIITEM` (DESK06)
+
+`Item::ExecEmuCon` had no handler and was greyed for that reason alone.
+EmuTOS never disables `CLIITEM`: it appears in no `ILL_*` table
+(`deskmain.c:143-160`) and in no `menu_ienable` call, and it needs neither a
+selection nor a window. `menu.rs`'s `item_enabled` now says so
+(`Item::ExecEmuCon => true`); the catch-all `_ => false` arm that greyed it,
+and the comment explaining the greying, are gone.
+
+The handler is `main::do_execcli`, EmuTOS's arm line for line
+(`deskmain.c:750-770`):
+
+```c
+G.g_work[1] = '\0';
+done = pro_run(FALSE, DEF_CONSOLE, G.g_work, -1, -1);
+if (done && pw) { /* CONF_WITH_PCGEM */
+    strcpy(G.g_work, pw->w_pnode.p_spec);
+    *filename_start(G.g_work) = '\0';
+    shel_wdef("", G.g_work);
+}
+```
+
+`pro_run` is [`deskpro.md`](deskpro.md#newtos-implementation-notes);
+`shel_wdef` is a new aesbind wrapper (opcode 127,
+`AES_CTRL_CODE(SHEL_WDEF, 0, 1, 2)`, `desk/gembind.c:963-968`). `pw` comes
+from `wind_get(DESKWH, WF_TOP)`, the `win_ontop()` stand-in this file
+already uses everywhere else. Both traps are in the board trace, in EmuTOS's
+order: `op 121` then `op 127`
+(`measurement-2026-09-23-desk06/serial/wdef-serial.log:202,204`); with no
+window open only `op 121` appears, which is `if (done && pw)`.
+
+### Which of the two possible screen routes, and why
+
+**The `sh_toalpha`/`sh_tographic` mode switch, not a text window inside the
+graphics screen.** That is not a choice — EmuTOS has no text-window concept
+at all. `isgraf = FALSE` in the `pro_run` call becomes `sh_isgem = 0`
+(`gemshlib.c:173`); `sh_chgrf` (`:513-523`) sees the mismatch and runs
+`sh_toalpha` (`:246-260`: arrow shape, `ratexit`, close the workstation),
+and the matching `sh_tographic` (`:223-239`) brings the graphics screen back
+when the console ends. The memory rule "a launched TOS app owns the whole
+screen over the desktop" applies to the console **more** strongly than to an
+application: EmuCON does not draw over the desktop, the desktop *process*
+ends and EmuCON has the machine. Both halves are visible in the run
+(`screendumps/cli-C-console.png`: whole screen, no desktop, no pointer).
+
+### The one named deviation: where the console is actually run
+
+`do_execcli` returns `done = TRUE`, the event loop ends — and then NewTOS
+diverges. In EmuTOS the desktop process **terminates** and `sh_main`
+(`gemshlib.c:708-731`) runs the pending program and starts the desktop again
+from the top. NewTOS's desktop is an in-kernel call that cannot be restarted:
+`desk::global::init` is idempotent and there is no `win_start()` on re-entry,
+so a restarted desktop would inherit a window list of handles the
+intervening `wm_init()` had already deleted. That is the same restart path
+[`DESK14`](../../../TASK/DESK14.md) §4 holds for a lead decision.
+
+So `desk::run` now loops: `event_loop()` → if a program is pending, run it
+**nested** through the shell loop's own code
+(`crate::shell_loop::sh_run_pending_console`) → repaint → `event_loop()`
+again. That function is one pass of `sh_main`'s body for the `CONSOLE_APP`
+case — `sh_chdef`, `sh_chgrf`, `sh_ldapp`'s console arm, then the next
+pass's `sh_chdef`/`sh_chgrf` — with `wm_init()` and `sh_draw(…, TRUE)`
+(`:717-719`) deliberately left out: both prepare the screen and the AES
+window table for a desktop about to be built from scratch, and would destroy
+exactly the state the still-standing desktop is about to draw (AES gap G2,
+named the same way on the GEM-app launch path, `main::desktop_resume`).
+What the restarted `deskmain` would do for the screen — `men_update`,
+the full repaint, `desk_busy_off` (`deskmain.c:2064-2071`) — the loop does
+after the nested call.
+
+### What the board run showed
+
+`measurement-2026-09-23-desk06/`, QEMU raspi4b, 640×480, scripted IKBD:
+
+- `Execute EmuCON` is the **only** black entry of the File drop-down on a
+  bare desktop (`screendumps/cli-B-filemenu.png`); the serial dump of the
+  object states confirms `state=0x8` on every other entry and `0x0` on
+  entry 13.
+- The console takes the whole screen, `ver` and `dir` were typed into it and
+  answered (`cli-D-ver.png`, `cli-E-dir.png`: 26 items in `C:\`).
+- `exit` brings the desktop back **pixel-identically**: `cli-F-back.png` vs
+  `cli-A-idle.png` = 0 differing pixels.
+- With a window open, the restored screen differs from the pre-console one
+  in exactly **two** pixels, (593,43) and (48,444) — the top-right and
+  bottom-left corners of the window's outer frame, green before and white
+  after. They are **not** this ticket's: the control run drove the
+  pre-existing `.NCP` launch path (`main::launch_native` → the same
+  `redraw::redraw_desktop`) with no console involved and flipped the same
+  two pixels. It is a difference between `wind_open`'s incremental frame
+  draw and the whole-screen repaint, and it needs its own ticket.

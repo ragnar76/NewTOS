@@ -36,6 +36,7 @@ pub mod insapp;
 pub mod main;
 pub mod menu;
 pub mod model;
+pub mod pro;
 pub mod redraw;
 pub mod win;
 
@@ -82,6 +83,8 @@ const OP_WIND_SET: i16 = 105;
 const OP_WIND_FIND: i16 = 106;
 const OP_WIND_UPDATE: i16 = 107;
 const OP_WIND_CALC: i16 = 108;
+const OP_SHEL_WRITE: i16 = 121;
+const OP_SHEL_WDEF: i16 = 127;
 
 // wind_get/set `WF_*` fields and wind_calc `WC_*` types.
 pub(super) const WF_NAME: i16 = 2;
@@ -119,6 +122,10 @@ pub(super) const M_ON: i16 = 257;
 /// `graf_mouse` shape number (`aesdefs.h`): the plain arrow, which
 /// `desk_busy_off` restores (`desk/desksupp.c:1849-1852`).
 pub(super) const ARROW: i16 = 0;
+/// `graf_mouse` shape number `HGLASS` (`desk/deskbind.h:33`, = `HOURGLASS`,
+/// `aesdefs.h:426`): the busy indicator `desk_busy_on` sets
+/// (`desk/desksupp.c:1840-1843`).
+pub(super) const HGLASS: i16 = 2;
 
 // evnt_multi event-class bits (`aesdefs.h`).
 pub(super) const MU_KEYBD: u16 = 0x0001;
@@ -506,6 +513,45 @@ pub(super) fn graf_mouse(number: i16) {
     a.call(OP_GRAF_MOUSE, 1, 1, 0);
 }
 
+// ── aesbind wrappers (shell manager) ───────────────────────────────────────
+
+/// `shel_write(doex, isgr, iscr, pcmd, ptail)` (121) — tell the AES shell which
+/// program is to run after this one (`desk/gembind.c:907-915`,
+/// `AES_CTRL_CODE(SHEL_WRITE, 3, 1, 2)`). The desktop's only launch primitive:
+/// `pro_exec` calls it and the shell loop (`gemshlib.c` `sh_main`/`sh_ldapp`)
+/// acts on the state it leaves behind. `pcmd` and `ptail` are NUL-terminated /
+/// length-prefixed byte strings the AES copies out of the caller's memory.
+///
+/// # Safety
+///
+/// `pcmd` and `ptail` must stay readable for the duration of the trap.
+pub(super) fn shel_write(doex: i16, isgr: i16, iscr: i16, pcmd: *const u8, ptail: *const u8) -> i16 {
+    let mut a = Aes::new();
+    a.intin[0] = doex;
+    a.intin[1] = isgr;
+    a.intin[2] = iscr;
+    a.addrin[0] = pcmd as i64;
+    a.addrin[1] = ptail as i64;
+    a.call(OP_SHEL_WRITE, 3, 1, 2);
+    a.intout[0]
+}
+
+/// `shel_wdef(lpcmd, lpdir)` (127) — set the shell's default startup
+/// (program, directory) pair (`desk/gembind.c:963-968`,
+/// `AES_CTRL_CODE(SHEL_WDEF, 0, 1, 2)`). `#if CONF_WITH_PCGEM` in EmuTOS; the
+/// desktop uses it after `shel_write(SHW_EXEC, …, DEF_CONSOLE, …)` to tell
+/// `sh_chdef` which directory EmuCON is to start in (`deskmain.c:756-767`).
+///
+/// # Safety
+///
+/// `lpcmd` and `lpdir` must stay readable for the duration of the trap.
+pub(super) fn shel_wdef(lpcmd: *const u8, lpdir: *const u8) {
+    let mut a = Aes::new();
+    a.addrin[0] = lpcmd as i64;
+    a.addrin[1] = lpdir as i64;
+    a.call(OP_SHEL_WDEF, 0, 1, 2);
+}
+
 /// `wind_calc(WC_WORK, WINDOW_STYLE, desk)` — the work-area width of a
 /// maximum-size window, feeding `win_view`'s `g_icols`.
 pub(super) fn wind_calc_work_width(desk: Grect) -> i16 {
@@ -836,7 +882,7 @@ pub fn run() {
     // switched into graphics mode (`sh_tographic`'s
     // `set_mouse_to_hourglass()`, `aes/gemshlib.c:237`); the desktop drops it
     // once it is ready for input.
-    graf_mouse(ARROW);
+    pro::desk_busy_off();
 
     kprintln!(
         "[desk] desktop up ({} drives, {} window(s) from the context)",
@@ -844,11 +890,39 @@ pub fn run() {
         reopened
     );
 
-    // Hand off to the interaction loop; it returns only when a handler requests
-    // shutdown (Task #9 — the desktop otherwise runs forever, which is correct).
-    // On the way out, deregister from the AES — the symmetric counterpart to the
-    // boot `appl_init` (EmuTOS `deskmain.c:2166`, `appl_exit();`).
-    main::event_loop();
+    // Hand off to the interaction loop. It returns when a handler set `done`
+    // — today only File → Execute EmuCON (`deskmain.c:750-753`), which asked
+    // the AES shell for the console with `shel_write(SHW_EXEC, …)` on its way
+    // out.
+    //
+    // **This loop is EmuTOS's `sh_main`, standing in for it (AES gap G1).**
+    // There, `deskmain` returning *is* the handover: the desktop process ends
+    // and `sh_main` (`gemshlib.c:708-731`) runs whatever `shel_write` made
+    // pending, then starts the desktop again from the top. NewTOS's built-in
+    // desktop is an in-kernel call that cannot be restarted — [`global::init`]
+    // is idempotent and there is no `win_start()` on re-entry, so a restarted
+    // desktop would inherit a window list of handles the intervening
+    // `wm_init()` had deleted (`TASK/DESK14.md` §4 is the same decision, for
+    // the `Read .INF file` item). So the pending program is run here, nested,
+    // by the shell loop's own code
+    // ([`crate::shell_loop::sh_run_pending_console`]), and the desktop picks
+    // its event loop up again instead of being rebuilt.
+    loop {
+        main::event_loop();
+        if !crate::shell_loop::sh_run_pending_console() {
+            break;
+        }
+        // What EmuTOS gets from restarting `deskmain` (`gemshlib.c:717-719` +
+        // `deskmain.c:2064-2071`): the screen back, the menu state re-derived,
+        // the arrow back. `redraw_desktop` is whole-screen recovery, which is
+        // right — the console cleared the screen and wrote text over it.
+        menu::men_update();
+        redraw::redraw_desktop();
+        pro::desk_busy_off();
+    }
+
+    // On the way out, deregister from the AES — the symmetric counterpart to
+    // the boot `appl_init` (EmuTOS `deskmain.c:2166`, `appl_exit();`).
     appl_exit();
 }
 

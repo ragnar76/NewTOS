@@ -260,5 +260,42 @@ original Atari TOS `Pexec`/`Shel_write` behaviour).
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00. Filled in when the corresponding implementation
-phase begins.)
+**Implemented 2026-09-23 (DESK06)** as
+[`kernel/src/desk/pro.rs`](../../../kernel/src/desk/pro.rs) — `pro_exec`,
+`pro_run`, plus `desk_busy_on`/`desk_busy_off` (`desksupp.c:1840-1852`),
+which had no home in the tree before and whose first caller is `pro_exec`.
+The one AES call is a real trap: `desk/mod.rs`'s new `shel_write` aesbind
+wrapper (`svc #2`, opcode 121, `AES_CTRL_CODE(SHEL_WRITE, 3, 1, 2)` —
+`desk/gembind.c:907-915`), like every other AES call the desktop makes.
+The board run's AES trace shows it as
+`[aes] pid=0 op 121 in=(1,0,1,0,0,0) out=(1,…)` =
+`shel_write(SHW_EXEC, isgem=0, isover=1, "EMUCON", tail)`
+(`measurement-2026-09-23-desk06/serial/cli-serial.log:98`).
+
+The argument preparation this document calls out as the compatibility-
+relevant part is reproduced literally: `tail[0] = strlen(tail+1)`,
+`tail[len+2] = 0x0D` "just like Atari TOS" (`deskpro.c:56-57`), and the
+busy cursor is turned **off only on failure** (`:41-43`) — on success the
+hourglass stays up until the desktop is ready for input again.
+
+Two named differences, both from the `tail` buffer this doc's
+"Related data structures" note asks about:
+
+- **The tail buffer is a `[u8; CMDTAILSIZE]` local, not `G.g_work`.**
+  `CMDTAILSIZE` (128, `aes/gemlib.h:97`) is what `shel_write` copies into
+  `ad_stail`, so the buffer the AES reads is exactly as big as the image it
+  takes. The length is **clamped** to `CMDTAILSIZE - 3` so the length byte,
+  the text, its NUL and the CR all fit; EmuTOS has no such bound (`G.g_work`
+  is the same 128 bytes and `tail[len+2]` writes past on a maximal tail).
+  For every tail that fits — which is every tail a caller can legally pass —
+  the two are identical. This closes the "needs deeper analysis" flag above:
+  the bound is in the reimplementation, not inherited.
+- **`pro_run` does not carry `(wh, curr)`.** EmuTOS's second half is
+  `do_wopen(FALSE, wh, curr, &G.g_desk)` (`:59-60`), the un-zoom of the icon
+  a double-click opened. NewTOS's double-click does not go through `pro_run`
+  yet (it calls the loader directly — `main::launch_native`, AES gap G1) and
+  `do_wopen` has no counterpart in the tree, so the only caller is `CLIITEM`,
+  which passes `wh = -1` and skips the step (`deskmain.c:753`). Carrying two
+  dead parameters and an unreachable branch would be worse than naming the
+  gap; they come back with `do_wopen` when the double-click path is routed
+  through here.

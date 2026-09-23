@@ -16,7 +16,7 @@ use super::dosbind::{dos_gdrv, dos_sdrv};
 use super::global::{self, Grect, DROOT, MAX_DEPTH, NIL, NUM_WNODES, WINDOW_STYLE};
 use super::menu::{self, Item, Title};
 use super::win::{DESKWH, SliderSet, WA_DNLINE, WA_DNPAGE, WA_LFLINE, WA_RTLINE, WA_UPLINE, WA_UPPAGE};
-use super::{dir, ftype, redraw};
+use super::{dir, ftype, pro, redraw};
 use super::{
     wind_get_grect, wind_get_top, wind_get_work, MU_BUTTON, MU_KEYBD, MU_MESAG, MU_TIMER, WF_CXYWH,
     WF_FXYWH, WF_HSLIDE, WF_HSLSIZ, WF_INFO, WF_NAME, WF_PXYWH, WF_TOP, WF_VSLIDE, WF_VSLSIZ,
@@ -864,8 +864,10 @@ fn do_deskmenu(item: Item) {
 
 /// `do_filemenu` (EmuTOS `deskmain.c:654`) — the File menu. Task-#8 items:
 /// Open, Close folder, Close top window, Cycle windows. The rest are Task-#9
-/// ops kept disabled by `men_update`. Returns the loop-exit flag (never, here).
+/// ops kept disabled by `men_update`. Returns the loop-exit flag — `CLIITEM`
+/// is the one item that sets it (`deskmain.c:753`).
 fn do_filemenu(item: Item) -> bool {
+    let mut done = false;
     match item {
         Item::Open => do_open_selected(),
         Item::CloseFolder => do_close_folder(),
@@ -881,9 +883,76 @@ fn do_filemenu(item: Item) -> bool {
         Item::Search => do_search(),
         Item::NewFolder => do_new_folder(),
         Item::InfoRename => do_info_rename(),
+        Item::ExecEmuCon => done = do_execcli(),
         _ => {} // remaining File items have no live handler yet
     }
-    false
+    done
+}
+
+/// `#if WITH_CLI case CLIITEM:` (EmuTOS `deskmain.c:750-770`) — File → Execute
+/// EmuCON, "Start EmuCON":
+///
+/// ```c
+/// G.g_work[1] = '\0';
+/// done = pro_run(FALSE, DEF_CONSOLE, G.g_work, -1, -1);
+/// if (done && pw)
+/// {
+/// #if CONF_WITH_PCGEM
+///     char *p;
+///     strcpy(G.g_work, pw->w_pnode.p_spec);
+///     p = filename_start(G.g_work);
+///     *p = '\0';
+///     shel_wdef("", G.g_work);
+/// #endif
+/// }
+/// ```
+///
+/// `isgraf = FALSE` is what makes the AES switch the screen to **alpha** mode
+/// for the console (`sh_write` records it as `sh_isgem = 0`,
+/// `gemshlib.c:173`; `sh_chgrf` acts on it, `:513-523`): the console owns the
+/// whole screen, exactly like a launched application, and no text window is
+/// opened inside the GEM screen — EmuTOS has no such thing.
+///
+/// `pw` is the top window (`win_ontop()`, `deskmain.c:661`); ours comes from
+/// `wind_get(DESKWH, WF_TOP)` as everywhere else in this file. Its search spec
+/// (`C:\FOO\*.*`) minus the filename part is the directory EmuCON is to start
+/// in; `sh_chdef`'s `CONSOLE_APP` arm is what applies it
+/// (`gemshlib.c:545-549`).
+///
+/// Returns `done` for the caller, and — because NewTOS's desktop cannot
+/// terminate on it — that flag is consumed by [`super::run`]'s loop rather
+/// than by the AES shell loop. See
+/// [`crate::shell_loop::sh_run_pending_console`] for the gap and its reason.
+fn do_execcli() -> bool {
+    // `G.g_work[1] = '\0';` — an empty command tail. Byte 0 is the length
+    // byte `pro_run` fills in, byte 1 the first text byte.
+    let mut tail = [0u8; pro::CMDTAILSIZE];
+    let done = pro::pro_run(false, pro::DEF_CONSOLE, &mut tail);
+
+    if done {
+        // `if (done && pw)` — `#if CONF_WITH_PCGEM`, which the Falcon030/TOS4
+        // profile builds (`include/config.h`), so the step is ours too.
+        let pw = wind_get_top();
+        if pw != DESKWH {
+            if let Some(spec) =
+                global::with(|g| g.win_slot(pw).map(|s| g.windows.slots[s].w_pnode.p_spec.clone()))
+                    .flatten()
+            {
+                // `filename_start(G.g_work); *p = '\0';` — cut after the last
+                // path separator, keeping it (`C:\FOO\*.*` → `C:\FOO\`); a
+                // spec with no separator at all becomes empty, as in EmuTOS.
+                let cut = spec.rfind('\\').map_or(0, |i| i + 1);
+                let mut dir = String::from(&spec[..cut]);
+                dir.push('\0');
+                // `shel_wdef("", G.g_work)` — the empty program name clears
+                // `sh_desk`; `set_default_desktop` puts the built-in desktop
+                // back into it when the console ends (`gemshlib.c:583-589`).
+                let empty = [0u8; 1];
+                super::shel_wdef(empty.as_ptr(), dir.as_ptr());
+            }
+        }
+    }
+    done
 }
 
 /// `do_optnmenu` (EmuTOS `deskmain.c:786`) — the Options menu. Live items: Set
