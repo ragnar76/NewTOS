@@ -1,6 +1,6 @@
 # DESK27 — `docs/api/xbios/26-supexec.md` widerspricht sich
 
-Status: **OFFEN** · Prioritaet: **P4** · Typ: Dokumentationsfehler — Nebenbefund DESK13
+Status: **ERLEDIGT (2026-09-23)** · Prioritaet: **P4** · Typ: Dokumentationsfehler — Nebenbefund DESK13
 
 Abhaengigkeiten: —
 
@@ -23,3 +23,26 @@ Dispatcher wirklich zeigt, und die andere Stelle richtigstellen.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss
+
+**ERLEDIGT (2026-09-23).** Der Kopf hatte recht, der Abschnitt *Pi / BCM2711
+binding* war falsch.
+
+Belegt am Quelltext: `xbios::dispatch` endet auf `other => other as i64`
+(`tos-api/src/xbios/mod.rs`, Sammelzweig) — ein nicht belegter Steckplatz
+liefert die **Funktionsnummer**, zero-extended, nicht `EINVFN`. `Supexec`
+(0x26) hat keinen Steckplatz, ein Aufruf bekommt also `38`, und ein Aufrufer,
+der auf `result < 0` prueft, sieht „kein Fehler". Das ist dieselbe Form wie
+beim BIOS-Trampolin und das dokumentierte Atari-TOS-Verhalten
+(`docs/api/xbios/_dispatcher.md` §3, D-008).
+
+Die drei Stellen im Abschnitt, die `EINVFN` behaupteten, sind
+richtiggestellt; der zurueckgenommene Wortlaut steht als Zitat dabei, damit
+die Korrektur im Text steht und nicht nur in der Versionsgeschichte. Dazu ein
+Satz, was das fuer einen Aufrufer **praktisch** heisst (der Rueckruf laeuft
+nicht, und die Rueckgabe sagt es nicht) und wohin der eine Anwendungsfall
+gegangen ist, den der Desktop wirklich brauchte: `Ssystem(S_GETCOOKIE)` fuer
+den `_IDT`-Keks (DESK13).
+
+Keine Codeaenderung, keine Messung — reine Dokumentationskorrektur.

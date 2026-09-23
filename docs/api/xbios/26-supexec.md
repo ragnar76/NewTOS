@@ -205,8 +205,7 @@ cheap privilege flip. The TOS `Supexec` semantics must resolve to one of:
    foreign callbacks fault gracefully.
 
 ADR to be filed in `docs/MEMORY.md` once PHASE-06 prototyping picks an
-approach. Until then `Supexec` is deferred; it is **not** silently stubbed to
-`EINVFN`.
+approach. Until then `Supexec` is deferred; it is **not** silently stubbed.
 
 ---
 
@@ -221,17 +220,26 @@ approach. Until then `Supexec` is deferred; it is **not** silently stubbed to
 
 ### `Supexec` is deferred — not in the dispatcher today
 
-`Supexec` (XBIOS 0x26) has **no entry** in the NewTOS XBIOS dispatcher
-(`tos-api/src/xbios/mod.rs:33-55` — the `match` covers 0x02-0x07, 0x11, 0x15,
-0x16, 0x17, 0x22, 0x25 only), so a call falls through to the `_ => EINVFN`
-catch-all (`mod.rs:53`).
+`Supexec` (XBIOS 0x26) has **no entry** in the NewTOS XBIOS dispatcher, so a
+call falls through to its catch-all, which returns **the function number
+itself**, zero-extended — `other => other as i64` in `xbios::dispatch`. A
+caller therefore gets `38` (`0x26`), and a caller testing `result < 0` sees
+"not an error".
 
-> **Correction to the spec's own note.** This XBIOS dispatcher's catch-all is
-> `EINVFN` (`xbios/mod.rs:53`), *not* "the function number" — that fall-through
-> shape belongs to the **GEMDOS** table, not XBIOS. So on NewTOS **today**
-> `Supexec` **does** return `EINVFN` (the catch-all), because unlike EmuTOS it
-> has no table slot yet. This is the deferred-not-stubbed state: it is `EINVFN`
-> by *absence*, pending the ADR, not a silent stub pretending to succeed.
+> **This section used to claim `EINVFN`** and contradicted the head of this
+> file, which had it right (DESK27, 2026-09-23). The XBIOS dispatcher's
+> catch-all has never been `EINVFN`: returning the function number is the
+> documented Atari-TOS behaviour for both the `xbios_unimpl` padded slot and
+> the trampoline's range check (`docs/api/xbios/_dispatcher.md` §3, D-008), and
+> the BIOS trampoline does the same. `Supexec` is deferred **by absence** from
+> the table, pending the ADR — not stubbed, and not an error return either.
+
+**What this means for a caller that needs the callback to run:** it does not
+run, and the return value does not say so. That is the honest state of a
+deferred slot. Where the desktop needed one of `Supexec`'s EmuTOS uses — the
+`_IDT` cookie behind `$5A0` — it reads the cookie through
+`Ssystem(S_GETCOOKIE)` instead (DESK13), which needs no supervisor mode
+because the low-memory area is already in the process's address space.
 
 ### Why the m68k mechanism does not port
 
@@ -256,12 +264,14 @@ consumers on the Pi:
 - generic hardware-poke callbacks (palette flips, benchmarks) — the pseudo-
   supervise map covers the common cases; foreign callbacks fault gracefully.
 
-File the ADR before wiring `0x26`; until then keep it `EINVFN` (deferred).
+File the ADR before wiring `0x26`; until then it stays out of the table
+(deferred), which means the dispatcher answers with the function number.
 
 ### Gaps vs. the contract (Step-2 candidates)
 
 - **Supexec callback-ABI unresolved (ADR-Supexec).** The whole call is deferred;
   no callback runs today. This blocks any m68k `Supexec` idiom (including the
   classic cookie-jar scan, though NewTOS provides `Ssystem` instead).
-- **`EINVFN` by catch-all** — once the ADR lands, `0x26` gets a real slot; the
-  catch-all `EINVFN` is a placeholder, not the intended contract answer.
+- **Function number by catch-all** — once the ADR lands, `0x26` gets a real
+  slot; the catch-all's function-number answer is what an absent slot yields,
+  not the intended contract answer.
