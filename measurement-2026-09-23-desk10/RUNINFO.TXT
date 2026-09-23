@@ -1,0 +1,229 @@
+DESK10 -- the desktop reaches the system only through traps (G6 of
+docs/analysis/desk-aes-gaps-2026-09-14.md).
+
+  kernel/src/desk/ called the GEMDOS leaf functions in tos_api::bdos::fs as plain Rust
+  functions with a hand-built TrapArgs, and read the drive bitmap straight out of
+  tos_api::bios::drive::drvbits(). Mechanically that is a normal function call that
+  happens to carry trap-shaped arguments -- the desktop ran PAST the ABI every
+  application uses, so a defect in the dispatcher stayed invisible from the desktop
+  (memory `desktop-bypasses-app-abi-path`).
+
+  New: kernel/src/desk/dosbind.rs, the GEMDOS/BIOS counterpart of the aesbind block in
+  desk/mod.rs. `svc #1` for GEMDOS and `svc #13` for the BIOS, function id in x8,
+  arguments in x0..x7 in TOS order (docs/ARCHITECTURE.md, "Native AArch64 callers").
+  One binding per call, named as EmuTOS names them in include/gemdos.h (dos_open,
+  dos_read, dos_sfirst, ...); the BIOS call is `drvmap` (EmuTOS `Drvmap`, lowercased per
+  CLAUDE.md "Naming Conventions"). The desktop calls no XBIOS function, so there is no
+  `svc #14` binding.
+
+Developer self-evidence, 2026-09-23. Branch desk-rebuild, base HEAD 8e855d2, changes
+uncommitted in the tree, nothing flashed, no `git checkout/restore/stash/reset` anywhere
+in the shared tree. The "before" kernel comes from a DETACHED WORKTREE at 8e855d2 in the
+job scratch dir (`git worktree add --detach`), removed again after the runs -- the shared
+working tree was never checked out.
+
+THE COMPLETE SWEEP, BEFORE AND AFTER
+  /usr/bin/grep -rn "tos_api::bdos\|tos_api::gemdos\|tos_api::bios\|tos_api::xbios" \
+      kernel/src/desk/
+
+  BEFORE (HEAD 8e855d2) -- 11 lines, 8 of them real calls:
+    dir.rs:8    (comment)
+    dir.rs:35   use tos_api::bdos::fs::dirops::{dcreate, ddelete};
+    dir.rs:36   use tos_api::bdos::fs::file::{fclose, fcreate, fdatime, fdelete, fopen,
+                                              fread, frename, fwrite};
+    dir.rs:37   use tos_api::bdos::fs::find;
+    mod.rs:797  tos_api::bios::drive::drvbits().count_ones(),
+    main.rs:15  use tos_api::bios::drive::drvbits;
+    inf.rs:30   use tos_api::bdos::fs::file::{fclose, fcreate, fopen, fread, fwrite};
+    app.rs:19   use tos_api::bios::drive::drvbits;
+    model.rs:17 (comment)
+    model.rs:24 use tos_api::bdos::fs::find;
+    model.rs:276,356 (comments)
+
+  AFTER -- 4 lines, ALL COMMENTS, no call:
+    dosbind.rs:34  "Before this module the desktop called the `tos_api::bdos::fs` leaf"
+    dosbind.rs:43  "`tos_api::bdos::process::current()` is the null basepage, and"
+    model.rs:260   "in `tos_api::bdos::fs::find`, matching EmuTOS's `p_xdta` model."
+    model.rs:334   "little-endian, matching how `tos_api::bdos::fs::find::makbuf` writes"
+
+  The rest of `tos_api::` in desk/ after the change is type/constant imports
+  (aes::object::{Object,IconBlk,TedInfo}, vdi::font metrics) plus two direct calls that
+  are NOT GEMDOS/BIOS/XBIOS and therefore outside this ticket:
+    main.rs:611  tos_api::aes::window::wm_new_keep_desktop()  -- an AES-internal helper
+                 with NO AES opcode (EmuTOS reaches it from the SHELL, gemshlib.c:668-677,
+                 not from desk/); it cannot become a trap without a new opcode.
+    main.rs:654  tos_api::host::host().console_read_key_blocking() -- the EmuCON console
+                 input source, not a TOS API call.
+
+THE TWO QUESTIONS THE TICKET ASKED TO SETTLE FIRST -- BOTH ANSWERED, NOTHING HAD TO MOVE
+
+  (a) THE DTA. Fsetdta/Fsfirst/Fsnext keep the current DTA in the RUNNING PROCESS'S
+      basepage (p_xdta, EmuTOS bdos/fsmain.c:396-405). During desk::run,
+      tos_api::bdos::process::current() is NULL -- the desktop runs in the kernel boot
+      context (the same fact desk/mod.rs already documents for appl_init: "the desktop's
+      kernel-boot context (null basepage)"). tos-api/src/bdos/fs/find.rs:52-105 routes
+      exactly that caller to its KERNEL_DTA cell:
+
+        pub(crate) fn cur_dta() -> u64 {
+            let bp = crate::bdos::process::current();
+            if bp.is_null() { return KERNEL_DTA.load(Ordering::Relaxed); }
+            ...
+
+      The DIRECT call entered find::fsetdta at the identical point, so the trap uses the
+      SAME cell and therefore the SAME 44-byte buffer on the desktop's own stack. No
+      change, no buffer moved, no path special-cased. (Had the desktop had a basepage,
+      set_cur_dta would have truncated the kernel VA to 32 bits -- find.rs:97-105 says so
+      in as many words. It does not, so it does not.)
+
+  (b) POINTER ARGUMENTS. A trap from EL0 carries a user VA; the desktop carries a kernel
+      high-half VA. The GEMDOS file surface reads its pointers RAW and translates
+      nothing: tos-api/src/bdos/fs/mod.rs:23-33 (`cstr`: `let p = ptr as *const u8`),
+      bdos/fs/file.rs:297,373 (`ubuf as *const u8`). A83's usermem::resolve_kva is reached
+      ONLY from tos-api/src/aes/window.rs:393,474-486 (the window-title reader),
+      aes/object.rs:480 and xbios/screen.rs:175-185 -- none of them on this path
+      (`/usr/bin/grep -rn resolve_kva tos-api/src kernel/src`, 8 hits, all listed). A
+      kernel VA arrives and is dereferenced unchanged.
+
+  Two further properties were checked because the trap path is not only "the same
+  function with more steps":
+    * IRQs. An exception masks PSTATE.DAIF, so the GEMDOS work now runs with interrupts
+      masked. The EMMC driver POLLS -- kernel/src/drivers/bcm2711/emmc.rs:210
+      (`wr(IRPT_EN, 0); // poll, don't signal`) -- and every EL0 application already does
+      its file I/O this way. No deadlock, no new exposure.
+    * The exception stack. An EL1 exception with SPSel=0 runs the handler on SP_EL1, the
+      16 KiB emergency stack (link-rpi4.ld:100-102). Only ONE GEMDOS frame is on it at a
+      time; the desktop's own recursion (dir_op) stays on the 64 KiB kernel stack. Same
+      depth an EL0 app already produces.
+
+PRODUCT CODE (uncommitted; method/product-desk10.diff + method/dosbind.rs.new)
+  kernel/src/desk/dosbind.rs  NEW. dos_trap (svc #1) / bios_trap0 (svc #13), cpath, sx, and
+      the 14 bindings: dos_sdta, dos_sfirst, dos_snext, dos_open, dos_create, dos_close,
+      dos_read, dos_write, dos_delete, dos_rename, dos_mkdir, dos_rmdir, dos_setdt,
+      drvmap. x3..x6 are zeroed at every trap so the dispatcher's tracer
+      (gemdos/trace.rs:743 logs x0..x6) sees the same frame the hand-built TrapArgs
+      produced -- the old code set regs[3..8] = 0 and the trace must not start carrying
+      leftovers. For the same reason `sx()` sign-extends the signed WORD/LONG arguments
+      (handle, count) into their register slot: the callee reads them back at the declared
+      width (TrapArgs::arg_i16/arg_i32) and cannot tell the difference, but the tracer logs
+      the raw register, and the hand-built TrapArgs sign-extended them.
+  kernel/src/desk/dir.rs      the local gargs/cpath/dos_* block (lines 125-200) deleted;
+      the ten wrappers now come from dosbind with identical signatures, so NOT ONE CALL
+      SITE CHANGED. scan_folder: find::fsetdta/fsfirst/fsnext -> dos_sdta/dos_sfirst/
+      dos_snext.
+  kernel/src/desk/inf.rs      gargs/cpath deleted; read_inf_file/write_inf_file go through
+      dos_open/dos_read/dos_close/dos_create/dos_write.
+  kernel/src/desk/model.rs    gemdos_args + the three opcode constants deleted; scan_dir
+      goes through dos_sdta/dos_sfirst/dos_snext (dos_sfirst builds the NUL-terminated
+      path, so the local cpath array is gone too).
+  kernel/src/desk/app.rs, main.rs, mod.rs   drvbits() -> dosbind::drvmap().
+
+SPEC / TICKET (method/spec-desk10.diff)
+  docs/api/desktop/gembind.md  new section "NewTOS implementation notes -- the desktop
+      reaches the system only through traps (DESK10)": the two-layer table, the full
+      binding table (14 rows: fn, trap, id, TOS argument order, EmuTOS citation, call
+      sites), the DTA and pointer findings, and one named deviation (below).
+  docs/api/desktop/_hw-test-2026-09-17.md  new checklist item 36 (seven steps).
+  docs/STATUS.md               Phase-14 row + one Recent Decisions row (2026-09-23).
+  TASK/DESK10.md, TASK/DESK10-STATUS-DONE.MD.
+
+ONE NAMED DEVIATION, NOT INTRODUCED HERE AND NOT REMOVED HERE
+  EmuTOS's desktop does not read the drive bitmap with BIOS Drvmap at all: it uses
+  dos_sdrv(dos_gdrv()) -- Dsetdrv(Dgetdrv()), whose return value IS the bitmap
+  (deskapp.c:714). NewTOS reads Drvmap (BIOS 0x0A), which returns the same bitmap from
+  the same table (tos-api/src/bios/mod.rs:223-224 -> bios/drive.rs:145). This ticket's
+  contract was "behaviour must not change", so the call was rewired onto the trap without
+  changing WHICH call it is. Aligning it with deskapp.c:714 is a separate one-line change
+  and needs its own ticket.
+
+BUILD / CLIPPY / TESTS (build/)
+  `cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat` before EACH
+  board build.
+  build-qemu-virt.log  tos-api 64 / kernel 94, rc 0   (baseline 64 / 94, delta 0)
+  build-rpi4.log       tos-api 64 / kernel 94, rc 0   (baseline 64 / 94, delta 0)
+                       rpi4 was built last, so the tree's kernel8.img is the rpi4 one.
+  clippy-kernel-rpi4.txt / clippy-kernel-qemu-virt.txt  125 on both boards (baseline 125);
+                       ZERO hits in kernel/src/desk/ on either.
+  clippy-tos-api.txt   80 (baseline 80).
+  xtask-test.log       `cargo run -p xtask -- test`: 929 passed / 0 failed / 1 ignored
+                       (baseline 929/0/1, delta 0). No host test is POSSIBLE for this
+                       change: it lives entirely in kernel/, which carries
+                       forced-target = "aarch64-unknown-none-softfloat", and
+                       `xtask test` runs tos-api, tos-types and xtask only
+                       (tools/xtask/src/main.rs:582) -- the same finding DESK09's receipt
+                       records. The proof below is QEMU-only.
+  kernels-and-images.sha256
+
+QEMU raspi4b (method/make_scratch_desk10.sh + the DESK08/09 run.sh/qmp_multi.py; 640x480,
+-display none, QMP screendump after a serial mark; fresh image copy per run; every run
+0 [EXC] / 0 [PANIC]).
+
+  THE REFERENCE HAD TO BE RE-TAKEN, AND THAT IS ITSELF A FINDING. The ticket asked to
+  compare against measurement-2026-09-23-desk08-desk09/. Those dumps predate commit
+  8e855d2 ("no window at boot unless the context saved one"): the old control picture
+  still carries the staggered boot window at (48,43,544,400), and comparing the new
+  control run against it yields 118314 differing pixels in bbox (48,43,594,445) -- exactly
+  that window, nothing to do with DESK10. The before/after pairs below are therefore both
+  taken at HEAD 8e855d2, the "before" side from the detached worktree.
+
+  1. control (sd-base, stock placeholder NEWDESK.INF)
+     screendumps/control-before.png vs control-desktop.png: IDENTICAL FILES
+       (md5 a53b0a3f076d7040d0a0f92f9152e611 both; pixdiff 0 differing pixels).
+     serial/control-before-serial.log vs control-serial.log: `diff` EMPTY, including
+       "[desk] desktop up (1 drives, 0 window(s) from the context)" -- that line is the
+       Drvmap trap.
+     Covers: read_inf_file (Fopen/Fread/Fclose via the trap) and drvmap (svc #13).
+
+  2. seeded (method/NEWDESK.INF.seeded: #E 9A (VIEWTEXT) + two #W lines) -- cnx_get opens
+     BOTH windows, and each one is a full Fsfirst/Fsnext scan through the trap.
+     screendumps/seeded-before.png vs seeded-after.png: IDENTICAL FILES
+       (md5 c9ee3ca5c1e7aa95961815d8a4a8f591 both; pixdiff 0).
+     The picture is not empty: C:\ lists "418936 bytes used in 26 items." with names,
+     sizes and dates, C:\SUB\ lists "20 bytes used in 1 items." -- so the scan really ran.
+     serial diff EMPTY; "[desk] desktop up (1 drives, 2 window(s) from the context)".
+
+  3. save (SCRATCH kernel with the DESK08/09 H02 IKBD injector, seeded image,
+     method/desk-desk10.actions) -- `Options -> Save desktop` through the real UI:
+     A_IDLE -> hover Options (196,8) -> click "Save desktop..." (entry 11, y 195..211)
+     -> D_SAVED. Both scratch kernels are the same tree with only the product files
+     differing (make_scratch_desk10.sh rsyncs the crates; the shared tree is never
+     patched).
+     All three screendumps IDENTICAL before/after:
+       save-A-idle-*.png    51fd1c282d6580ddb02f0f53656dc627
+       save-C-options-*.png 14e7e2210341cba831cd57fdf77cc416
+       save-D-saved-*.png   51fd1c282d6580ddb02f0f53656dc627
+     The image was then mounted and the file read out (method/sd-get.sh):
+       inf/NEWDESK.INF.after-save-BEFORE
+       inf/NEWDESK.INF.after-save-AFTER
+       `cmp` -> BYTE-IDENTICAL, SHA-256
+       3671808d5eae8f590faa9b240e6323772fee37b1479b03dd622dcc6e13036376 both.
+       The file carries the two seeded #W lines, the five empty ones cnx_get's validation
+       writes back, and the #M/#T/#O desk icons.
+     Covers: Fcreate/Fwrite/Fclose through the trap, end to end, through the UI.
+
+  4. fileops (SCRATCH kernel + method/dirselftest_patch.py, sd-base) -- the MUTATING file
+     operations. desk::dir::selftest() exists at kernel/src/desk/dir.rs:1010 and is wired
+     into NO boot path (memory `unwired-selftests-rot-silently`); the patch calls it once
+     before the event loop, in the SCRATCH copy only. It drives Dcreate (New folder),
+     Fcreate+Fwrite, a copy (which stamps the target with Fdatime), Frename (Rename),
+     a recursive delete (Ddelete + Fdelete) and the Count pre-pass, each confirmed by a
+     fresh Fsfirst/Fsnext rescan.
+       serial/fileops-before-serial.log  12 passed, 0 failed
+       serial/fileops-after-serial.log   12 passed, 0 failed
+       `diff` of the two [desk-dir] blocks: EMPTY.
+     AND the two written SD images are BYTE-IDENTICAL to each other (`cmp` on the whole
+     64 MiB) -- the entire sequence of FAT writes produced the same bytes on both sides.
+     `fsck_msdos -n` on the images written by runs 3 and 4: Phase 1/2/3 clean, no
+     complaint ("43 files, 63756 KiB free" resp. "44 files, 63752 KiB free").
+
+NOT COVERED HERE (for the Tester / the lead)
+  * Real Pi 4: HW checklist item 36. Everything above is QEMU raspi4b at 640x480 with ONE
+    drive; the hardware profile is 1920x1080 with FOUR (C:-F:), and the drive-letter step
+    of item 36 is exactly the part QEMU cannot show.
+  * `File -> Set file mask...` is not in any run above. It issues no new GEMDOS call --
+    it only re-runs model::scan_dir, which runs 2 covers -- but the DIALOG path (text
+    entry) was not driven.
+  * `File -> Show info... -> Rename` and `File -> New folder...` are covered at the
+    ENGINE level by run 4 (dir::rename / dir::mkdir are one line over d_dofileren /
+    dos_mkdir), not through their dialogs.
+  * The scratch injector runs are self-evidence. The authoritative behavioural verdict is
+    the Tester's independent harness run.

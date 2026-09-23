@@ -18,12 +18,15 @@
 //! This module root hosts the shared **aesbind** surface — the thin GEM-trap
 //! wrappers the desktop calls the AES through, exactly as EmuTOS `desk/` goes
 //! over `aesbind` — plus the desktop-background painter hook and the boot
-//! entry point [`run`].
+//! entry point [`run`]. Its GEMDOS/BIOS counterpart is [`dosbind`]: the
+//! desktop reaches the system **only** through traps, never by calling a
+//! `tos_api` function directly.
 
 pub mod act;
 pub mod app;
 pub mod dir;
 pub mod dlg;
+pub mod dosbind;
 pub mod ftype;
 pub mod global;
 pub mod icons;
@@ -794,7 +797,7 @@ pub fn run() {
 
     kprintln!(
         "[desk] desktop up ({} drives, {} window(s) from the context)",
-        tos_api::bios::drive::drvbits().count_ones(),
+        dosbind::drvmap().count_ones(),
         reopened
     );
 

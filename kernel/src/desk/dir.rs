@@ -5,7 +5,7 @@
 //!
 //! Reimplements EmuTOS `deskdir.c` (the recursive copy/move/delete/rename
 //! subtree walker) and the `deskfun.c` action layer in idiomatic `#![no_std]`
-//! Rust on top of the `tos_api::bdos::fs` GEMDOS calls.
+//! Rust on top of the GEMDOS trap ([`super::dosbind`]).
 //!
 //! ## What is contract, what is free (`docs/COMPATIBILITY.md`)
 //!
@@ -32,31 +32,15 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use tos_api::bdos::fs::dirops::{dcreate, ddelete};
-use tos_api::bdos::fs::file::{fclose, fcreate, fdatime, fdelete, fopen, fread, frename, fwrite};
-use tos_api::bdos::fs::find;
-use tos_api::trap::TrapArgs;
 use tos_types::error::E_OK;
 
+use super::dosbind::{
+    dos_close, dos_create, dos_delete, dos_mkdir, dos_open, dos_read, dos_rename, dos_rmdir,
+    dos_sdta, dos_setdt, dos_sfirst, dos_snext, dos_write,
+};
 use super::global::{self, DeskState, DROOT, NIL};
 use super::model::{AType, FNode, FA_SUBDIR};
 use super::win::{DESKWH, OB_SELECTED};
-
-// ── GEMDOS function ids ─────────────────────────────────────────────────────
-const TRAP_GEMDOS: u16 = 1;
-const FSETDTA: u16 = 0x1A;
-const DCREATE: u16 = 0x39;
-const DDELETE: u16 = 0x3A;
-const FCREATE: u16 = 0x3C;
-const FOPEN: u16 = 0x3D;
-const FCLOSE: u16 = 0x3E;
-const FREAD: u16 = 0x3F;
-const FWRITE: u16 = 0x40;
-const FDELETE: u16 = 0x41;
-const FSFIRST: u16 = 0x4E;
-const FSNEXT: u16 = 0x4F;
-const FRENAME: u16 = 0x56;
-const FDATIME: u16 = 0x57;
 
 /// Attribute mask for the recursive scan (EmuTOS `ALLFILES` =
 /// `FA_SUBDIR|FA_SYSTEM|FA_HIDDEN`): a subtree operation must see hidden and
@@ -138,83 +122,6 @@ impl SelEntry {
     }
 }
 
-// ── GEMDOS wrappers ─────────────────────────────────────────────────────────
-
-/// Build a native GEMDOS [`TrapArgs`].
-fn gargs(func: u16, regs: [u64; 8]) -> TrapArgs {
-    TrapArgs { regs, func: func as u64, svc_imm: TRAP_GEMDOS }
-}
-
-/// A NUL-terminated path buffer (`LEN_ZPATH`+ sized) built from `s`.
-fn cpath(s: &str) -> [u8; 130] {
-    let mut b = [0u8; 130];
-    let src = s.as_bytes();
-    let n = src.len().min(b.len() - 1);
-    b[..n].copy_from_slice(&src[..n]);
-    b
-}
-
-/// `Fdelete` — delete a file. Returns the GEMDOS result (0 = ok).
-fn dos_delete(path: &str) -> i32 {
-    let p = cpath(path);
-    fdelete(&gargs(FDELETE, [p.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0]))
-}
-
-/// `Ddelete` — remove an (empty) directory.
-fn dos_rmdir(path: &str) -> i32 {
-    let p = cpath(path);
-    ddelete(&gargs(DDELETE, [p.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0]))
-}
-
-/// `Dcreate` — create a directory.
-fn dos_mkdir(path: &str) -> i32 {
-    let p = cpath(path);
-    dcreate(&gargs(DCREATE, [p.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0]))
-}
-
-/// `Frename` — rename/move on the same drive. `x0` is the historical unused
-/// word, `x1` = source, `x2` = destination.
-fn dos_rename(old: &str, new: &str) -> i32 {
-    let o = cpath(old);
-    let n = cpath(new);
-    frename(&gargs(FRENAME, [0, o.as_ptr() as u64, n.as_ptr() as u64, 0, 0, 0, 0, 0]))
-}
-
-/// `Fopen` — open a file for reading (`mode` 0 = read).
-fn dos_open(path: &str, mode: u16) -> i32 {
-    let p = cpath(path);
-    fopen(&gargs(FOPEN, [p.as_ptr() as u64, mode as u64, 0, 0, 0, 0, 0, 0]))
-}
-
-/// `Fcreate` — create/truncate a file with attribute `attr`.
-fn dos_create(path: &str, attr: u16) -> i32 {
-    let p = cpath(path);
-    fcreate(&gargs(FCREATE, [p.as_ptr() as u64, attr as u64, 0, 0, 0, 0, 0, 0]))
-}
-
-/// `Fread` — read up to `len` bytes into `buf`.
-fn dos_read(handle: i16, len: i32, buf: *mut u8) -> i32 {
-    fread(&gargs(FREAD, [handle as u64, len as u64, buf as u64, 0, 0, 0, 0, 0]))
-}
-
-/// `Fwrite` — write `len` bytes from `buf`.
-fn dos_write(handle: i16, len: i32, buf: *const u8) -> i32 {
-    fwrite(&gargs(FWRITE, [handle as u64, len as u64, buf as u64, 0, 0, 0, 0, 0]))
-}
-
-/// `Fclose` — close a handle.
-fn dos_close(handle: i16) -> i32 {
-    fclose(&gargs(FCLOSE, [handle as u64, 0, 0, 0, 0, 0, 0, 0]))
-}
-
-/// `Fdatime` (set) — stamp an open handle's time/date from the source entry.
-fn dos_setdt(handle: i16, time: u16, date: u16) -> i32 {
-    let t = time.to_le_bytes();
-    let d = date.to_le_bytes();
-    let buf = [t[0], t[1], d[0], d[1]];
-    fdatime(&gargs(FDATIME, [buf.as_ptr() as u64, handle as u64, 1, 0, 0, 0, 0, 0]))
-}
-
 // ── path helpers (owned strings, no fixed-buffer mutation) ──────────────────
 
 /// One raw directory entry from the recursive scan.
@@ -266,12 +173,16 @@ fn scan_folder(dir: &str) -> Vec<RawEntry> {
     let mut spec = String::from(dir);
     spec.push_str("*.*");
 
+    // The DTA the search writes into. It is a kernel-stack buffer, and the
+    // trap keeps it in the process-less caller's DTA cell (`dosbind`'s module
+    // documentation, "What the trap changes"); `dos_sdta` must therefore be
+    // re-issued for every scan, exactly as EmuTOS re-points `G.g_wdta`
+    // (`deskdir.c:195-196`).
     let mut dta = [0u8; 44];
-    find::fsetdta(&gargs(FSETDTA, [dta.as_mut_ptr() as u64, 0, 0, 0, 0, 0, 0, 0]));
+    dos_sdta(dta.as_mut_ptr());
 
-    let cp = cpath(&spec);
     let mut out = Vec::new();
-    let mut rc = find::fsfirst(&gargs(FSFIRST, [cp.as_ptr() as u64, ALLFILES as u64, 0, 0, 0, 0, 0, 0]));
+    let mut rc = dos_sfirst(&spec, ALLFILES);
     while rc == E_OK {
         let mut name = [0u8; 14];
         name.copy_from_slice(&dta[30..44]);
@@ -285,7 +196,7 @@ fn scan_folder(dir: &str) -> Vec<RawEntry> {
                 size: u32::from_le_bytes([dta[26], dta[27], dta[28], dta[29]]),
             });
         }
-        rc = find::fsnext(&gargs(FSNEXT, [0; 8]));
+        rc = dos_snext();
     }
     out
 }

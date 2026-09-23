@@ -1,0 +1,17 @@
+# DESK10 -- `Options -> Save desktop` on the SEEDED image (two directory
+# windows open from cnx_get), so the written NEWDESK.INF carries real #W
+# state. No drag: this run measures the FILE PATH (dos_create/dos_write/
+# dos_close through the trap), not the window machine.
+# Ticks are 200 Hz after "[desk] desktop up" armed the injector.
+# Hover the Options title (x 160..232) -> the box opens.
+# "Save desktop..." is entry 11 of the Options box, 16 px per row below the
+# 19 px bar: y = 19 + 11*16 = 195..211, centre 203.
+200 parkbr
+1100 mark A_IDLE
+2700 move 196 8
+3100 mark C_OPTIONS_OPEN
+3400 move 200 203
+3600 down
+3603 up
+3900 parkbr
+4300 mark D_SAVED

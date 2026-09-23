@@ -232,3 +232,77 @@ function-for-function correspondence between `gembind.c`'s catalogue and
 side; the open question is 100% about the desktop-side client wiring
 (`kernel/src/desk/*.rs`), which is a code-completeness question, not a spec
 gap.
+
+## NewTOS implementation notes — the desktop reaches the system only through traps (DESK10, 2026-09-23)
+
+The carve-out flagged above ("whether they are already wired there was **not
+checked**") is now closed for the **GEMDOS/BIOS half** of the call surface.
+`kernel/src/desk/` has two client-side binding layers and no third path:
+
+| Layer | NewTOS file | Mechanism | EmuTOS counterpart |
+|---|---|---|---|
+| aesbind | `kernel/src/desk/mod.rs` | `svc #2`, selector 200 in `x0`, AESPB in `x1` | `desk/gembind.c` (`trap #2`, `d0 = 200`) |
+| dosbind | `kernel/src/desk/dosbind.rs` | `svc #1` (GEMDOS) / `svc #13` (BIOS), function id in `x8`, arguments in `x0..x7` in TOS order | `include/gemdos.h` → `include/bdosbind.h` `trap1()` / `include/biosbind.h` `bios_l_v()` |
+
+Before DESK10 the desktop called the `tos_api::bdos::fs` **leaf functions**
+directly with a hand-built `TrapArgs` — mechanically a plain Rust call that
+happened to carry trap-shaped arguments. It therefore ran past the very ABI
+every application uses, so a defect in the dispatcher was invisible from the
+desktop (`docs/analysis/desk-aes-gaps-2026-09-14.md` §G6, memory
+`desktop-bypasses-app-abi-path`). That is gone: the sweep
+`/usr/bin/grep -rn "tos_api::bdos\|tos_api::gemdos\|tos_api::bios\|tos_api::xbios" kernel/src/desk/`
+returns **comments only**.
+
+### The binding table
+
+Every GEMDOS/BIOS call the desktop makes, with the EmuTOS name it carries:
+
+| `dosbind` fn | Trap | id | TOS argument order | EmuTOS | NewTOS call sites |
+|---|---|---|---|---|---|
+| `dos_sdta(dta)` | `svc #1` | 0x1A | `x0` = buf | `Fsetdta`, `gemdos.h:50` | `dir::scan_folder`, `model::scan_dir` |
+| `dos_sfirst(spec, attr)` | `svc #1` | 0x4E | `x0` = spec, `x1` = attr | `Fsfirst`, `gemdos.h:60` | `dir::scan_folder`, `model::scan_dir` |
+| `dos_snext()` | `svc #1` | 0x4F | — | `Fsnext`, `gemdos.h:65` | `dir::scan_folder`, `model::scan_dir` |
+| `dos_open(path, access)` | `svc #1` | 0x3D | `x0` = name, `x1` = mode | `Fopen`, `gemdos.h:70` | `dir::d_dofcopy`, `inf::read_inf_file` |
+| `dos_create(path, attr)` | `svc #1` | 0x3C | `x0` = name, `x1` = attr | `Fcreate`, `gemdos.h:110` | `dir::d_dofcopy`, `inf::write_inf_file` |
+| `dos_close(handle)` | `svc #1` | 0x3E | `x0` = handle | `Fclose`, `gemdos.h:75` | `dir`, `inf` |
+| `dos_read(h, cnt, buf)` | `svc #1` | 0x3F | `x0` = handle, `x1` = count, `x2` = buf | `Fread`, `gemdos.h:80` | `dir::d_dofcopy`, `inf::read_inf_file` |
+| `dos_write(h, cnt, buf)` | `svc #1` | 0x40 | `x0` = handle, `x1` = count, `x2` = buf | `Fwrite`, `gemdos.h:85` | `dir::d_dofcopy`, `inf::write_inf_file` |
+| `dos_delete(path)` | `svc #1` | 0x41 | `x0` = name | `Fdelete`, `gemdos.h:125` | `dir::d_dofdel`, `dir::d_dofcopy` (partial-destination cleanup) |
+| `dos_rename(old, new)` | `svc #1` | 0x56 | `x0` = 0 (dead word), `x1` = old, `x2` = new | `Frename`, `gemdos.h:130` / `bdosbind.h:53` | `dir::d_dofileren`, `dir::rename` (Show info → Rename) |
+| `dos_mkdir(path)` | `svc #1` | 0x39 | `x0` = path | `Dcreate`, `gemdos.h:115` | `dir::d_doop`, `dir::mkdir` (File → New folder) |
+| `dos_rmdir(path)` | `svc #1` | 0x3A | `x0` = path | `Ddelete`, `gemdos.h:135` | `dir::d_dofoldel` |
+| `dos_setdt(h, time, date)` | `svc #1` | 0x57 | `x0` = 2-word buf, `x1` = handle, `x2` = 1 | `Fdatime`, `util/gemdos.c:49` | `dir::d_dofcopy` |
+| `drvmap()` | `svc #13` | 0x0A | — | `Drvmap`, `biosbind.h:29` | `app::app_blddesk`, `main::check_alt_letter_key`, `mod::run` |
+
+The desktop calls **no XBIOS function**, so there is no `svc #14` binding.
+
+### Two properties that had to be established before the rewiring
+
+* **The DTA.** `Fsetdta`/`Fsfirst`/`Fsnext` keep the current DTA in the
+  *running process's* basepage (`p_xdta`, EmuTOS `bdos/fsmain.c:396-405`).
+  The desktop runs in the kernel's boot context, where
+  `tos_api::bdos::process::current()` is null;
+  `tos-api/src/bdos/fs/find.rs:52-105` routes exactly that caller to its
+  `KERNEL_DTA` cell. The direct call entered `find::fsetdta` at the same
+  point, so the trap uses the **same cell and the same 44-byte stack
+  buffer** — no change, and nothing had to move. (When the desktop moves to
+  EL0 — `docs/analysis/desktop-userspace-plan.md` stage S8 — it gains a real
+  `p_xdta` and this cell disappears; the binding above does not change.)
+* **Pointer arguments.** A trap from EL0 carries a *user* VA; the desktop
+  carries a kernel high-half VA. The GEMDOS file surface reads its pointers
+  raw (`tos-api/src/bdos/fs/mod.rs:23-33`, `bdos/fs/file.rs:297,373`) and
+  does **no** address translation — `usermem::resolve_kva` is reached only
+  from the AES string reader and XBIOS `Setscreen`, neither of which is on
+  this path. A kernel VA arrives and is dereferenced unchanged; no buffer
+  had to move and no path had to be special-cased.
+
+### One named deviation, unchanged by DESK10
+
+EmuTOS's desktop does **not** read the drive bitmap with BIOS `Drvmap`: it
+uses `dos_sdrv(dos_gdrv())` — `Dsetdrv(Dgetdrv())`, whose return value is the
+drive bitmap (`deskapp.c:714`). NewTOS reads `Drvmap` (BIOS 0x0A), which
+returns the same bitmap from the same table
+(`tos-api/src/bios/mod.rs:223-224` → `bios/drive.rs:145`). DESK10 rewired the
+call onto the trap **without** changing which call it is, because the ticket's
+contract was "behaviour must not change". Aligning it with `deskapp.c:714` is
+a separate, one-line change and needs its own ticket.

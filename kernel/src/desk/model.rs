@@ -13,18 +13,17 @@
 //!   EmuTOS 23-byte `FNODE`/`DTA` `memcpy` overlap trick (`deskfpd.c:271`) is
 //!   deliberately dropped, per `_rebuild-plan.md` §3.
 //!
-//! The directory scan itself goes through GEMDOS `Fsfirst`/`Fsnext`
-//! (`tos_api::bdos::fs::find`) exactly like EmuTOS `pn_active()` drives
+//! The directory scan itself goes through the GEMDOS trap
+//! ([`super::dosbind`]) exactly like EmuTOS `pn_active()` drives
 //! `dos_sfirst`/`dos_snext`.
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
 use tos_api::aes::object::IconBlk;
-use tos_api::bdos::fs::find;
-use tos_api::trap::TrapArgs;
 use tos_types::error::E_OK;
 
+use super::dosbind::{dos_sdta, dos_sfirst, dos_snext};
 use super::global::NIL;
 
 /// FAT attribute bit marking a sub-directory (`bdosdefs.h` `FA_SUBDIR`).
@@ -33,12 +32,6 @@ pub const FA_SUBDIR: u8 = 0x10;
 /// The attribute mask the desktop passes to `Fsfirst` (`deskbind.h`
 /// `DISPATTR`): request sub-directories too (plain files always match).
 pub const DISPATTR: u8 = FA_SUBDIR;
-
-// GEMDOS function ids used by the directory scan.
-const FSETDTA: u16 = 0x1A;
-const FSFIRST: u16 = 0x4E;
-const FSNEXT: u16 = 0x4F;
-const TRAP_GEMDOS: u16 = 1;
 
 /// The directory-view mode (`deskfpd.h` `V_ICON`/`V_TEXT`). Global to the
 /// whole desktop, not per-window (`_data-model.md` `g_iview`).
@@ -248,15 +241,6 @@ impl Default for ScreenInfo {
     }
 }
 
-/// Build a native GEMDOS [`TrapArgs`] with up to two argument registers.
-fn gemdos_args(func: u16, a0: u64, a1: u64) -> TrapArgs {
-    TrapArgs {
-        regs: [a0, a1, 0, 0, 0, 0, 0, 0],
-        func: func as u64,
-        svc_imm: TRAP_GEMDOS,
-    }
-}
-
 /// Scan `spec` (e.g. `C:\*.*`) through GEMDOS `Fsfirst`/`Fsnext`, returning
 /// the matched [`FNode`]s and the summed file size. This is the faithful
 /// `pn_active()` loop: point the current DTA at a local buffer, walk the
@@ -272,25 +256,19 @@ fn scan_dir(spec: &str, attr: u8, include_folders: bool, mask: &str) -> (Vec<FNo
     let apply_mask = !mask.is_empty() && mask != "*.*";
     let mask_b = mask.as_bytes();
     // A 44-byte DTA buffer (`docs/api/structures/dta.md`). Kept alive for the
-    // whole scan; the current-DTA pointer is a single-foreground-caller global
+    // whole scan; the current-DTA pointer is a single-foreground-caller cell
     // in `tos_api::bdos::fs::find`, matching EmuTOS's `p_xdta` model.
     // Mutable: the GEMDOS trap writes the found entry back through this
     // pointer (mutable provenance), even though this binding never reads it
     // via `&mut`.
     let mut dta = [0u8; 44];
-    find::fsetdta(&gemdos_args(FSETDTA, dta.as_mut_ptr() as u64, 0));
-
-    // `Fsfirst` reads a NUL-terminated path; build one from the spec.
-    let mut cpath = [0u8; 130];
-    let sb = spec.as_bytes();
-    let n = sb.len().min(cpath.len() - 1);
-    cpath[..n].copy_from_slice(&sb[..n]);
+    dos_sdta(dta.as_mut_ptr());
 
     let mut list: Vec<FNode> = Vec::new();
     let mut total: u64 = 0;
     let mut seq: u16 = 0;
 
-    let mut rc = find::fsfirst(&gemdos_args(FSFIRST, cpath.as_ptr() as u64, attr as u64));
+    let mut rc = dos_sfirst(spec, attr);
     while rc == E_OK {
         if let Some(f) = fnode_from_dta(&dta, seq, include_folders) {
             let is_file = f.f_attr & FA_SUBDIR == 0;
@@ -303,7 +281,7 @@ fn scan_dir(spec: &str, attr: u8, include_folders: bool, mask: &str) -> (Vec<FNo
                 seq = seq.wrapping_add(1);
             }
         }
-        rc = find::fsnext(&gemdos_args(FSNEXT, 0, 0));
+        rc = dos_snext();
     }
     (list, total)
 }

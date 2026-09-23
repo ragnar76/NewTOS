@@ -27,23 +27,15 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use tos_api::aes::object::{Object, TedInfo};
-use tos_api::bdos::fs::file::{fclose, fcreate, fopen, fread, fwrite};
-use tos_api::trap::TrapArgs;
 use tos_api::vdi::font::{CELL_H, CELL_W};
 
 use crate::sync::SpinMutex;
 
+use super::dosbind::{dos_close, dos_create, dos_open, dos_read, dos_write};
 use super::global::{self, Grect, WSave, DROOT, NIL, NUM_WNODES};
 use super::model::{AType, Sort, View};
 
-// ── GEMDOS file access ──────────────────────────────────────────────────────
-
-const TRAP_GEMDOS: u16 = 1;
-const FCREATE: u16 = 0x3C;
-const FOPEN: u16 = 0x3D;
-const FCLOSE: u16 = 0x3E;
-const FREAD: u16 = 0x3F;
-const FWRITE: u16 = 0x40;
+// ── GEMDOS file access (through the trap, [`super::dosbind`]) ────────────
 
 /// The desktop configuration file, on the boot drive's root (EmuTOS keeps its
 /// own `EMUDESK.INF` here; NewTOS uses the Atari-classic `NEWDESK.INF` name the
@@ -54,25 +46,10 @@ const INF_PATH: &str = "C:\\NEWDESK.INF";
 /// a few KiB; this guards a runaway read).
 const MAX_INF_BYTES: usize = 64 * 1024;
 
-/// Build a native GEMDOS [`TrapArgs`].
-fn gargs(func: u16, regs: [u64; 8]) -> TrapArgs {
-    TrapArgs { regs, func: func as u64, svc_imm: TRAP_GEMDOS }
-}
-
-/// A NUL-terminated path buffer built from `s`.
-fn cpath(s: &str) -> [u8; 130] {
-    let mut b = [0u8; 130];
-    let src = s.as_bytes();
-    let n = src.len().min(b.len() - 1);
-    b[..n].copy_from_slice(&src[..n]);
-    b
-}
-
 /// Read the whole `NEWDESK.INF` into a heap buffer, or [`None`] if it cannot be
 /// opened (a missing file is **not** an error — the caller keeps defaults).
 fn read_inf_file() -> Option<Vec<u8>> {
-    let p = cpath(INF_PATH);
-    let rc = fopen(&gargs(FOPEN, [p.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0]));
+    let rc = dos_open(INF_PATH, 0);
     if rc < 0 {
         return None;
     }
@@ -80,7 +57,7 @@ fn read_inf_file() -> Option<Vec<u8>> {
     let mut buf: Vec<u8> = Vec::new();
     let mut chunk = [0u8; 512];
     loop {
-        let n = fread(&gargs(FREAD, [handle as u64, chunk.len() as u64, chunk.as_mut_ptr() as u64, 0, 0, 0, 0, 0]));
+        let n = dos_read(handle, chunk.len() as i32, chunk.as_mut_ptr());
         if n <= 0 {
             break;
         }
@@ -90,15 +67,14 @@ fn read_inf_file() -> Option<Vec<u8>> {
             break;
         }
     }
-    fclose(&gargs(FCLOSE, [handle as u64, 0, 0, 0, 0, 0, 0, 0]));
+    dos_close(handle);
     Some(buf)
 }
 
 /// Create/truncate `NEWDESK.INF` and write `bytes`. Returns whether the full
 /// buffer was written.
 fn write_inf_file(bytes: &[u8]) -> bool {
-    let p = cpath(INF_PATH);
-    let rc = fcreate(&gargs(FCREATE, [p.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0]));
+    let rc = dos_create(INF_PATH, 0);
     if rc < 0 {
         return false;
     }
@@ -106,14 +82,14 @@ fn write_inf_file(bytes: &[u8]) -> bool {
     let mut off = 0usize;
     let mut ok = true;
     while off < bytes.len() {
-        let n = fwrite(&gargs(FWRITE, [handle as u64, (bytes.len() - off) as u64, bytes[off..].as_ptr() as u64, 0, 0, 0, 0, 0]));
+        let n = dos_write(handle, (bytes.len() - off) as i32, bytes[off..].as_ptr());
         if n <= 0 {
             ok = false;
             break;
         }
         off += n as usize;
     }
-    fclose(&gargs(FCLOSE, [handle as u64, 0, 0, 0, 0, 0, 0, 0]));
+    dos_close(handle);
     ok
 }
 

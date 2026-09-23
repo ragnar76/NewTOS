@@ -12,8 +12,7 @@
 
 use alloc::string::String;
 
-use tos_api::bios::drive::drvbits;
-
+use super::dosbind::drvmap;
 use super::global::{self, Grect, DROOT, MAX_DEPTH, NIL, NUM_WNODES, WINDOW_STYLE};
 use super::menu::{self, Item, Title};
 use super::win::{DESKWH, SliderSet, WA_DNLINE, WA_DNPAGE, WA_LFLINE, WA_RTLINE, WA_UPLINE, WA_UPPAGE};
@@ -804,7 +803,7 @@ fn check_alt_letter_key(key: i16) -> bool {
     let letter = crate::keymap::to_ascii(sc, true, false, false);
     if letter.is_ascii_uppercase() {
         let drive = letter - b'A';
-        if drvbits() & (1u32 << drive) != 0 {
+        if drvmap() & (1u32 << drive) != 0 {
             open_root_window(letter);
             return true;
         }
