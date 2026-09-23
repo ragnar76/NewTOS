@@ -1495,3 +1495,108 @@ after the nested call.
   `redraw::redraw_desktop`) with no console involved and flipped the same
   two pixels. It is a difference between `wind_open`'s incremental frame
   draw and the whole-screen repaint, and it needs its own ticket.
+
+---
+
+## NewTOS implementation notes — `men_update`'s `ntrash` and the menu title (DESK17, 2026-09-23)
+
+### `ntrash` — *Delete* is grey while the trash or the printer is selected
+
+`men_update` counts four things in one walk over the selection
+(`deskmain.c:496-521`), and the `AT_ISPRNT`/`AT_ISTRSH` arm falls **through**
+into `AT_ISDISK`: a trash can and a printer raise `ntrash` *and* `ndesk`, a
+drive raises `ndesk` alone. `ntrash` then gates one item and only one:
+`if (ntrash) menu_ienable(tree, DELTITEM, FALSE);` (`:533-535`).
+
+NewTOS had `ndesk` since DESK03 but not `ntrash`, so *Delete* stayed black with
+the waste basket selected. `desk::win::count_selected_desk_icons` now returns
+`(ndesk, ntrash)` from the same walk, and `desk::menu`'s `item_enabled` gates
+`Item::Delete` on `nsel >= 1 && ntrash == 0` — the `ILL_NOSEL` membership plus
+the extra guard, in that order.
+
+Measured (`measurement-2026-09-23-desk16-desk17-desk21/`): with the Trash
+selected the entry is grey after and was black before; with a drive selected —
+`ndesk` 1, `ntrash` 0 — it stays black. *Open* and *Info/Rename...* are black in
+both after-pictures, so the new gate did not leak into `ILL_NOSEL`.
+
+### The menu title while a dialog is open — no change, and why
+
+DESK17 reported the desktop leaving the menu title inverted for as long as a
+dialog is up, and expected EmuTOS to release it before the dialog runs. **It
+does not.** `hndl_menu` calls the handler first and releases afterwards:
+
+```c
+static WORD hndl_menu(WORD title, WORD item)
+{
+    ...
+    case OPTNMENU:
+        done = do_optnmenu(item);       /* the dialog runs in here */
+        break;
+    }
+    menu_tnormal(desk_rs_trees[ADMENU], title, 1);   /* deskmain.c:1036 */
+    return done;
+}
+```
+
+That is the classic GEM contract, not an accident: the AES leaves the title
+highlighted when it sends `MN_SELECTED` and the application un-highlights it
+once it has finished acting on the selection — which is why the desktop is
+allowed to run a modal dialog in between. The keyboard-shortcut path does the
+mirror image, highlighting the title first (`menu_tnormal(..., title, 0)`,
+`:1240`) and then calling the same `hndl_menu`.
+
+`desk::main::hndl_menu` already does exactly this, at exactly that place
+(`super::menu_tnormal(menu::tree_ptr(), title_obj, true)` after the `do_*menu`
+call), and `desk::main::hndl_kbd` highlights first on the shortcut path. The
+screendump the ticket cited as the defect
+(`measurement-2026-09-24-desk03-desk04/screendumps/ico-B-dialog.png`) therefore
+shows conformant behaviour. Re-measured before *and* after anyway, with the
+dialog open and after it closes: the four pictures are identical in the pair
+that matters. No code changed.
+
+---
+
+## NewTOS implementation notes — `BACKGRND` belongs to *View* (DESK21, 2026-09-23)
+
+`BACKGRND` is object **46** and the **last child** of the View drop-down box:
+object 34 is that box with `ob_head` 35 and `ob_tail` 46 (`desk_rsc.c:446`),
+`SEP_VW2` (45) is the separator in front of it (`:473-478`), and the Options box
+is object **47**, whose first item is `IICNITEM` (48) — `desk_rsc.h:35-48`.
+NewTOS showed *Set background...* as the first entry of *Options*.
+
+Moved, with its separator. Three things came along, and one deliberately did
+not:
+
+* **`shortcut_mapping[]` did not have to move.** It is semantic, not
+  positional, and it has carried `BACKGRND` as the last *View* slot all along
+  (`deskmain.c:211-217`, `CONF_WITH_BACKGROUNDS`) — which is the DESK05 point
+  about the `#K` line being a fixed slot contract.
+* **`men_update` did not have to move either.** EmuTOS names `BACKGRND` in no
+  `ILL_*` table and in no `menu_ienable` call, so it is enabled whatever is
+  selected — unchanged by the move.
+* **The dispatch did move.** `hndl_menu` routes by title, and EmuTOS handles
+  `BACKGRND` in `do_viewmenu` (`:823-828`), so NewTOS's arm moved from
+  `do_optnmenu` to `do_viewmenu`.
+* **The drop-down got wider, and correctly so.** `copy_menu_items` pads every
+  entry of a menu to `max_strlen + 1 + SHORTCUT_SIZE` (`:1781`) and
+  `adjust_menu` takes the padded `strlen` and adds one (`:1608-1620`). With
+  `"  Set background..."` (19) in it, the View box is 19+1+3 = 23 cells wide;
+  it was 20. The board run measures exactly that: `box 2 abs (112,19) 160x160`
+  before, `184x192` after.
+
+**One named deviation, in the predicate rather than the placement.** EmuTOS's
+arm is `case BACKGRND: if (inf_backgrounds()) rc = BACKGROUND_HAS_CHANGED;`,
+and `inf_backgrounds` returns TRUE only when the **window** background changed
+(`deskinf.c:910-916`); a *desktop* background change it applies and repaints
+itself with `do_wredraw(DESKWH, &G.g_desk)`, then returns FALSE (`:900-908`).
+NewTOS's `ADBKGND` stand-in offers only the desktop half — the `#Q` window
+bucket is round-tripped through the file but has no consumer — and its `true`
+means exactly that desktop change, which `inf::set_background` has already
+repainted the same way. So the EmuTOS-equivalent `rc` for every outcome this
+dialog can produce is `0`; `BACKGROUND_HAS_CHANGED` has no NewTOS counterpart
+to set, and a `desk_all` here would repaint every window for a change that
+touched none of them. The window-background half of `ADBKGND` remains a gap,
+unchanged by DESK21.
+
+Measured: `measurement-2026-09-23-desk16-desk17-desk21/`, both drop-downs
+before and after.

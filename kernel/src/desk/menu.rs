@@ -213,9 +213,10 @@ pub enum Item {
     NoSort,
     /// Size windows to fit their content.
     SizeToFit,
-    // Options.
-    /// Set the background pattern (Task #9).
+    /// Set the background pattern — `BACKGRND` (46), the **last** entry of
+    /// *View* (`desk_rsc.h:35-48`, DESK21).
     SetBackground,
+    // Options.
     /// Install icon (Task #9).
     InstallIcon,
     /// Install application (Task #9).
@@ -326,23 +327,31 @@ const MENUS: [Def; 4] = [
         title: Title::View,
         label: b" View \0",
         entries: &[
-            Act(Item::ShowIcons, b"  Show as icons \0"),
-            Act(Item::ShowText, b"  Show as text  \0"),
-            Sep(b"----------------\0"),
-            Act(Item::SortName, b"  Sort by name  \0"),
-            Act(Item::SortType, b"  Sort by type  \0"),
-            Act(Item::SortSize, b"  Sort by size  \0"),
-            Act(Item::SortDate, b"  Sort by date  \0"),
-            Act(Item::NoSort, b"  No sort       \0"),
-            Sep(b"----------------\0"),
-            Act(Item::SizeToFit, b"  Size to fit   \0"),
+            Act(Item::ShowIcons, b"  Show as icons    \0"),
+            Act(Item::ShowText, b"  Show as text     \0"),
+            Sep(b"-------------------\0"),
+            Act(Item::SortName, b"  Sort by name     \0"),
+            Act(Item::SortType, b"  Sort by type     \0"),
+            Act(Item::SortSize, b"  Sort by size     \0"),
+            Act(Item::SortDate, b"  Sort by date     \0"),
+            Act(Item::NoSort, b"  No sort          \0"),
+            Sep(b"-------------------\0"),
+            Act(Item::SizeToFit, b"  Size to fit      \0"),
+            // `SEP_VW2` (45) + `BACKGRND` (46) close the View box: object 46 is
+            // the **last child** of the View drop-down (`desk_rsc.c:446,
+            // :473-483`), and the Options box does not start until `IICNITEM`
+            // (48) — `desk_rsc.h:35-48`. DESK21 moved the entry here from the
+            // head of Options; `shortcut_mapping[]` never had to move, it has
+            // carried `BACKGRND` in the View group all along
+            // (`deskmain.c:211-217`).
+            Sep(b"-------------------\0"),
+            Act(Item::SetBackground, b"  Set background...\0"),
         ],
     },
     Def {
         title: Title::Options,
         label: b" Options \0",
         entries: &[
-            Act(Item::SetBackground, b"  Set background...       \0"),
             Act(Item::InstallIcon, b"  Install icon...         \0"),
             Act(Item::InstallApp, b"  Install application...  \0"),
             Act(Item::InstallDevices, b"  Install devices         \0"),
@@ -819,7 +828,8 @@ pub fn item_title(item: Item) -> Title {
         | Item::SortSize
         | Item::SortDate
         | Item::NoSort
-        | Item::SizeToFit => Title::View,
+        | Item::SizeToFit
+        | Item::SetBackground => Title::View,
         _ => Title::Options,
     }
 }
@@ -1019,7 +1029,7 @@ pub fn lookup_ascii_shortcut(ascii: u8) -> Option<Item> {
 /// is dead-clickable and the shortcut lookup skips them (see the report for the
 /// exact disabled set).
 pub fn men_update() {
-    let (nsel, nwin, napp, ndesk, view, sort, fit) = global::with(|g| {
+    let (nsel, nwin, napp, (ndesk, ntrash), view, sort, fit) = global::with(|g| {
         (
             g.count_selected(g.g_croot),
             g.win_count(),
@@ -1030,10 +1040,10 @@ pub fn men_update() {
             g.size_to_fit,
         )
     })
-    .unwrap_or((0, 0, 0, 0, View::Icon, Sort::Name, true));
+    .unwrap_or((0, 0, 0, (0, 0), View::Icon, Sort::Name, true));
 
     for &item in &ALL_ITEMS {
-        set_disabled(item, !item_enabled(item, nsel, nwin, napp, ndesk));
+        set_disabled(item, !item_enabled(item, nsel, nwin, napp, ndesk, ntrash));
     }
 
     // View / sort / size-to-fit check marks.
@@ -1047,10 +1057,11 @@ pub fn men_update() {
     set_checked(Item::SizeToFit, fit);
 }
 
-/// Whether `item` is enabled for the current `nsel`/`nwin`/`napp`/`ndesk`
-/// (`napp` = the number of selected native programs, `ndesk` = the number of
-/// selected desktop icons — EmuTOS `men_update`'s two icon counts).
-fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize) -> bool {
+/// Whether `item` is enabled for the current `nsel`/`nwin`/`napp`/`ndesk`/
+/// `ntrash` — EmuTOS `men_update`'s four counts (`deskmain.c:496-530`):
+/// `napp` selected native programs, `ndesk` selected desktop icons, `ntrash`
+/// of those that are a trash can or a printer.
+fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize, ntrash: usize) -> bool {
     match item {
         // Always available.
         Item::About
@@ -1070,7 +1081,12 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize)
         // Task-#9 file ops: Delete needs a selection; Info/Rename a single
         // item; New folder / Select all / Set mask an open window (EmuTOS
         // `ILL_NOSEL`/`ILL_NOWIN` — `MASKITEM` is in `ILL_NOWIN`).
-        Item::Delete => nsel >= 1,
+        //
+        // `DELTITEM` carries a second gate on top of `ILL_NOSEL`: "disable
+        // 'Delete' iff either trash or printer is selected"
+        // (`deskmain.c:533-535`). Neither can be thrown away, and EmuTOS says
+        // so by greying the entry rather than by refusing later.
+        Item::Delete => nsel >= 1 && ntrash == 0,
         Item::InfoRename => nsel == 1,
         Item::NewFolder | Item::SelectAll | Item::SetMask => nwin >= 1,
         // Search (`CONF_WITH_SEARCH`): EmuTOS disables it only when there is
@@ -1079,6 +1095,9 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize, ndesk: usize)
         Item::Search => nwin >= 1,
         // Task-#14 deskinf/NEWDESK.INF ops: always available (EmuTOS
         // `CONF_WITH_BACKGROUNDS`/`CONF_WITH_READ_INF` + the always-live Save).
+        // `BACKGRND` sits in the *View* menu since DESK21; its gating did not
+        // move with it, because EmuTOS names it in no `ILL_*` table and in no
+        // `menu_ienable` call either.
         // `PREFITEM` likewise: EmuTOS lists it in none of `ILL_NOSEL` /
         // `ILL_MULTSEL` / `ILL_NOWIN` (`deskmain.c:143-160`), so Set
         // preferences is enabled whatever is selected (DESK02).

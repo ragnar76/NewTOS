@@ -519,8 +519,9 @@ impl DeskState {
                 // `i_index = (pstart->f_isap) ? anode->a_aicon : anode->a_dicon;`
                 // (`deskwin.c:465-467`) — the icon a per-name window icon, an
                 // installed application or a generic file-type `ANODE` assigns
-                // to this name. `icon_kind` also rejects a number NewTOS has no
-                // raster for (`IG_REMOV`, DESK16), which falls through below.
+                // to this name. `icon_kind` rejects the `-1` an `ANODE` line
+                // writes as `FF` for "no icon of that kind", which falls
+                // through to the rule below.
                 let assigned = anode
                     .map(|a| if a.isapp { a.aicon } else { a.dicon })
                     .and_then(super::icons::icon_kind);
@@ -737,26 +738,37 @@ impl DeskState {
         0
     }
 
-    /// `men_update`'s `ndesk` (`deskmain.c:504-521`) — the number of selected
-    /// **desktop** icons, i.e. `AT_ISDISK`/`AT_ISTRSH`/`AT_ISPRNT` children of
-    /// [`DROOT`]. Zero unless the desktop is the current window, exactly as
-    /// EmuTOS counts it (`:497`, the `G.g_cwin == DESKWH` arm).
-    pub fn count_selected_desk_icons(&self) -> usize {
+    /// `men_update`'s `ndesk` **and** `ntrash` (`deskmain.c:504-521`), counted
+    /// in the one walk over the selection EmuTOS uses for both.
+    ///
+    /// * `ndesk` — selected **desktop** icons: `AT_ISDISK`/`AT_ISTRSH`/
+    ///   `AT_ISPRNT` children of [`DROOT`]. The `case AT_ISPRNT:`/`AT_ISTRSH:`
+    ///   arm falls through into `case AT_ISDISK:` (`:508-517`), so all three
+    ///   types count.
+    /// * `ntrash` — of those, the ones that are a trash can or a printer
+    ///   (`:510-514`). `men_update` disables *Delete* while one of them is in
+    ///   the selection (`:533-535`) — you cannot throw the waste basket away.
+    ///
+    /// Both are zero unless the desktop is the current window, exactly as
+    /// EmuTOS counts them (`:497`, the `G.g_cwin == DESKWH` arm).
+    pub fn count_selected_desk_icons(&self) -> (usize, usize) {
         if self.g_cwin != DESKWH {
-            return 0;
+            return (0, 0);
         }
-        let mut n = 0;
+        let (mut ndesk, mut ntrash) = (0, 0);
         let mut curr = self.win_isel(super::global::DROOT, 0);
         while curr != 0 {
-            if matches!(
-                self.g_screeninfo[curr as usize].atype,
-                super::model::AType::Disk | super::model::AType::Trash | super::model::AType::Printer
-            ) {
-                n += 1;
+            match self.g_screeninfo[curr as usize].atype {
+                super::model::AType::Trash | super::model::AType::Printer => {
+                    ntrash += 1;
+                    ndesk += 1;
+                }
+                super::model::AType::Disk => ndesk += 1,
+                _ => {}
             }
             curr = self.win_isel(super::global::DROOT, curr);
         }
-        n
+        (ndesk, ntrash)
     }
 
     /// Number of currently-selected items under `root` (children carrying

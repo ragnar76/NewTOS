@@ -72,6 +72,11 @@ pub enum IconKind {
     Trash,
     /// Printer.
     Printer,
+    /// Removable disk (`icon.rsc` ICONBLK[5]) — the hard-disk silhouette with
+    /// an eject slot instead of the front-panel detail, and the same drive
+    /// letter overlay. Shares `rs_iconmask0` with [`IconKind::Hard`], exactly
+    /// as the resource does (`icons.c`'s `icon_rs_iconblk[5]`).
+    Removable,
     /// Generic document / data file (the `win_bldview` default for a file
     /// with no matching installed application).
     Doc,
@@ -101,36 +106,38 @@ pub const IG_FOLDER: i16 = 2;
 pub const IG_TRASH: i16 = 3;
 /// `IG_PRINT` (`deskapp.h:58`) — printer.
 pub const IG_PRINT: i16 = 4;
-/// `IG_REMOV` (`deskapp.h:59`) — removable disk. **NewTOS has no raster for
-/// this one** (`crate::desktop_icons`, from which this module's bitmaps come,
-/// never carried it), so it is a hole in [`BUILTIN_ICONS`]: it is never
-/// offered by the Install-icon stepper, and a `NEWDESK.INF` that names it
-/// falls back to the icon its `ANODE` type defaults to
-/// ([`super::ins::install_desktop_icon`]). Reported rather than substituted
-/// silently.
+/// `IG_REMOV` (`deskapp.h:59`) — removable disk.
 pub const IG_REMOV: i16 = 5;
 /// `IG_APPL` (`deskapp.h:60`) — generic application icon.
 pub const IG_APPL: i16 = 6;
 /// `IG_DOCU` (`deskapp.h:61`) — generic document icon.
 pub const IG_DOCU: i16 = 7;
 
-/// Every icon NewTOS has a raster for, in EmuTOS's `IG_*` order. This is our
-/// `G.g_iblist[]` (`deskapp.c` `app_rdicon`) with `IG_REMOV` missing — seven
-/// entries, so the stepper's `G.g_numiblks` equivalent is `BUILTIN_ICONS.len()`
-/// and **not** `NUM_GEM_IBLKS` (8).
-pub const BUILTIN_ICONS: [(i16, IconKind); 7] = [
+/// `NUM_GEM_IBLKS` (`deskapp.h:62`) — the number of built-in icons, which is
+/// what `app_parse` clamps `a_aicon`/`a_dicon` against (`deskapp.c:359-365`,
+/// where it reads it out of the live `G.g_numiblks`; this desktop loads no
+/// user icon resource, so the two are the same number).
+pub const NUM_GEM_IBLKS: i16 = IG_DOCU + 1;
+
+/// Every built-in icon, in EmuTOS's `IG_*` order — our `G.g_iblist[]`
+/// (`deskapp.c` `app_rdicon`). All eight of `icon.rsc`'s enabled `ICONBLK`s,
+/// so the Install-icon stepper's `G.g_numiblks` equivalent is
+/// `BUILTIN_ICONS.len()` = [`NUM_GEM_IBLKS`].
+pub const BUILTIN_ICONS: [(i16, IconKind); NUM_GEM_IBLKS as usize] = [
     (IG_HARD, IconKind::Hard),
     (IG_FLOPPY, IconKind::Floppy),
     (IG_FOLDER, IconKind::Folder),
     (IG_TRASH, IconKind::Trash),
     (IG_PRINT, IconKind::Printer),
+    (IG_REMOV, IconKind::Removable),
     (IG_APPL, IconKind::App),
     (IG_DOCU, IconKind::Doc),
 ];
 
-/// The [`IconKind`] for an EmuTOS `IG_*` number, or [`None`] when NewTOS has
-/// no raster for it (today only [`IG_REMOV`], and any out-of-range value —
-/// EmuTOS clamps those in `app_parse`, `deskapp.c:360-365`).
+/// The [`IconKind`] for an EmuTOS `IG_*` number, or [`None`] for a number that
+/// names no picture — `-1` (`NIL`, the `FF` an `ANODE` line writes for "no
+/// icon") and anything `>= NUM_GEM_IBLKS`, which `app_parse` clamps away on
+/// the way in (`deskapp.c:359-365`).
 pub fn icon_kind(ig: i16) -> Option<IconKind> {
     BUILTIN_ICONS.iter().find(|&&(n, _)| n == ig).map(|&(_, k)| k)
 }
@@ -267,6 +274,20 @@ static APP_MASK: [u16; 64] = [
     0x3fff, 0xfffe, 0x1fff, 0xfffc,
 ];
 
+// Removable-disk icon (32×32 1-bpp, `desk/icon.rsc` ICONBLK[5]): the same
+// drive body as the hard disk, with a wide eject slot where the hard disk has
+// its front-panel detail. The resource gives it **no mask of its own** — it
+// points at `rs_iconmask0`, the hard disk's (`icons.c`'s `icon_rs_iconblk[5]`)
+// — so [`rasters`] hands out `HARD_MASK` for it, as the resource does.
+static REMOV_DATA: [u16; 64] = [
+    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000,
+    0x3fff, 0xfff8, 0x4000, 0x0004, 0x4000, 0x0006, 0x4000, 0x0006, 0x4000, 0x0006, 0x4000, 0x0006,
+    0x4000, 0x0006, 0x4000, 0x0006, 0x4000, 0x0006, 0x4000, 0x0006, 0x4000, 0x0006, 0x5c7f, 0xffc6,
+    0x5c7f, 0xffc6, 0x4000, 0x0006, 0x4199, 0x9986, 0x4333, 0x3306, 0x4000, 0x0006, 0x3fff, 0xfffe,
+    0x1fff, 0xfffc, 0x0000, 0x0000,
+];
+
 /// The (data, mask) raster pair for an [`IconKind`].
 fn rasters(kind: IconKind) -> (&'static [u16; 64], &'static [u16; 64]) {
     match kind {
@@ -275,6 +296,7 @@ fn rasters(kind: IconKind) -> (&'static [u16; 64], &'static [u16; 64]) {
         IconKind::Folder => (&FOLDER_DATA, &FOLDER_MASK),
         IconKind::Trash => (&TRASH_DATA, &TRASH_MASK),
         IconKind::Printer => (&PRINTER_DATA, &PRINTER_MASK),
+        IconKind::Removable => (&REMOV_DATA, &HARD_MASK),
         IconKind::Doc => (&DOC_DATA, &DOC_MASK),
         IconKind::App => (&APP_DATA, &APP_MASK),
     }
@@ -285,7 +307,10 @@ fn rasters(kind: IconKind) -> (&'static [u16; 64], &'static [u16; 64]) {
 /// that carry no letter.
 fn char_spot(kind: IconKind) -> Option<(i16, i16)> {
     match kind {
-        IconKind::Hard => Some((13, 16)),
+        // `icon_rs_iconblk[0]` and `[5]` carry the same `ib_xchar`/`ib_ychar`
+        // (13, 16), `[1]` carries (13, 22) — `icons.c`, generated from
+        // `icon.rsc` by `ird`.
+        IconKind::Hard | IconKind::Removable => Some((13, 16)),
         IconKind::Floppy => Some((13, 22)),
         _ => None,
     }

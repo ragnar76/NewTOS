@@ -707,7 +707,7 @@ MIN_WINT)` and `ycnt = G.g_desk.g_h / (G.g_hicon + MIN_HINT)`
 (`deskapp.c:813-817`) — **not** `g_desk.g_w / g_icw`, which can differ by a
 column when the division is not exact.
 
-#### The icon set: EmuTOS's numbering, one picture short
+#### The icon set: EmuTOS's numbering, all eight pictures
 
 The `a_aicon` byte of an `ANODE` line is **file format**, not an internal
 index: `app_parse` reads it (`deskapp.c:359-365`), `app_save` writes it
@@ -721,23 +721,38 @@ therefore uses EmuTOS's numbers (`desk::icons`):
 | 2 `IG_FOLDER` | folder | yes |
 | 3 `IG_TRASH` | trash can | yes |
 | 4 `IG_PRINT` | printer | yes |
-| 5 `IG_REMOV` | removable disk | **no** |
+| 5 `IG_REMOV` | removable disk | yes (DESK16) |
 | 6 `IG_APPL` | generic application | yes |
 | 7 `IG_DOCU` | generic document | yes |
 
-`IG_REMOV` has no raster — the bitmaps this desktop inherited (originally
-extracted from `desk/icon.rsc`) never carried one. It is therefore a hole in
-`icons::BUILTIN_ICONS`, and the two places that could trip over it say so:
+**DESK16 closed the `IG_REMOV` hole.** Until then `icons::BUILTIN_ICONS` had
+seven entries, the stepper walked seven instead of `0 .. G.g_numiblks-1`, and
+an `a_aicon` that named the missing picture fell back to a type-shaped default.
+The raster came the same way the other seven did: out of
+`references/emutos/desk/icons.c`, the C the EmuTOS build generates from
+`desk/icon.rsc` with `ird`. `icon_rs_iconblk[5]` is `rs_icondata5` over
+**`rs_iconmask0`** — the removable disk carries *no mask of its own*, it shares
+the hard disk's, and `icons::rasters` hands out `HARD_MASK` for it for that
+reason. Its `ib_xchar`/`ib_ychar` are the hard disk's too, `(13,16)`, so a
+removable drive shows its drive letter in the same place.
 
-* the `ID_UP`/`ID_DOWN` stepper cycles `BUILTIN_ICONS` (seven entries), not
-  `0 .. G.g_numiblks-1` (eight), so it never lands on a picture that does not
-  exist;
-* an `a_aicon` NewTOS cannot resolve — `IG_REMOV`, or a corrupt byte — falls
-  back in `app_blddesk` to the icon the node's *type* defaults to
-  (`app::default_icon_kind`: Trash → trash, Printer → printer, a drive
-  `A:`/`B:` → floppy, any other drive → hard disk). EmuTOS clamps only an
-  out-of-range number, to `IG_APPL` (`deskapp.c:360-365`); the type-shaped
-  fallback is the honest equivalent for an in-range hole.
+`BUILTIN_ICONS` is therefore eight entries = `icons::NUM_GEM_IBLKS`
+(`deskapp.h:62`), and the two consequences of the hole are gone:
+
+* the `ID_UP`/`ID_DOWN` stepper cycles all eight, i.e.
+  `0 .. G.g_numiblks-1` as `deskins.c:902-906` does (minus the floppy — see
+  below, which is a different and still-live NewTOS rule);
+* `app_blddesk` resolves `a_aicon` without a fallback, because
+  `desk::inf`'s parser now applies `app_parse`'s own out-of-range guard
+  (`deskapp.c:359-365`): `a_aicon >= NUM_GEM_IBLKS` becomes `IG_APPL`,
+  `a_dicon >= NUM_GEM_IBLKS` becomes `IG_DOCU`. `app::default_icon_kind` is
+  gone with the hole it served.
+
+  One named deviation remains, on a value EmuTOS reads out of bounds: an
+  `a_aicon` of `-1` (an `#M`/`#T`/`#O` line that spells the icon field `FF`,
+  which only a hand-written file can carry — `build_inf` always writes the
+  number, `deskapp.c:723`). EmuTOS would index `G.g_iblist[-1]`; NewTOS takes
+  `app_parse`'s own answer for an unusable `a_aicon`, `IG_APPL`.
 
 **The floppy is offered only when it can be used.** `IG_FLOPPY` is dropped
 from the stepper's list unless the drive map actually reports `A:` or `B:`.
@@ -923,8 +938,8 @@ maps the resulting number through `icons::icon_kind`. Two named differences:
 * **The extension rule survives as the fall-back.** EmuTOS's is `IG_FOLDER` /
   `f_isap ? IG_APPL : IG_DOCU` (`deskwin.c:469-473`) and can only be reached
   when the list is empty, which its `app_start` never leaves it. NewTOS keeps
-  `ftype::classify` in that position — it also catches an `a_aicon` NewTOS has
-  no raster for (`IG_REMOV`, DESK16).
+  `ftype::classify` in that position — it also catches the `-1` an `ANODE`
+  line spells `FF` for “no icon of that kind”.
 
 `inf::app_afind_by_name` is the EmuTOS walk, line for line: skip the `ignore`
 nodes, require `a_type == atype`, try `wildcmp(a_pdata, pname)` first
@@ -979,8 +994,8 @@ then Install / Remove on one row and Skip / Cancel on the next.
 * Without one: the name is `EDITABLE` and empty, `edit_start = IW_NAME`, *File*
   is pre-selected and both radios are enabled (`:1105-1112`).
 * `curr_icon = pa ? pa->a_dicon : 0`, clamped (`:1115-1120`), stepped over
-  `offered_icons` — the DESK03 set (EmuTOS's `BUILTIN_ICONS` minus the
-  raster-less `IG_REMOV`, floppy only when a floppy drive exists).
+  `offered_icons` — all eight of EmuTOS's `BUILTIN_ICONS` since DESK16, the
+  floppy only when a floppy drive exists.
 * `IW_INST`/`IW_REMV` both resolve the node first, compare `a_pdata` against
   the (possibly edited) name (`identical`, `:1164`), and then: Install reuses
   the node when the names are identical, else `allocate_window_anode` +

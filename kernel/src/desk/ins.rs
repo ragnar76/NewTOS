@@ -262,10 +262,9 @@ pub(super) fn ins_devices() -> bool {
 /// The icons `ID_UP`/`ID_DOWN` cycle through, as `(IG_* number, kind)` pairs.
 ///
 /// EmuTOS steps over `0 .. G.g_numiblks-1`, its whole loaded icon resource
-/// (`deskins.c:902-906`). NewTOS's equivalent is [`BUILTIN_ICONS`], which is
-/// EmuTOS's built-in set **minus `IG_REMOV`** — there is no removable-disk
-/// raster in the bitmaps this desktop inherited, so offering index 5 would step
-/// onto a picture that does not exist. Seven entries, not eight.
+/// (`deskins.c:902-906`). NewTOS's equivalent is [`BUILTIN_ICONS`], EmuTOS's
+/// whole built-in set — eight entries, `NUM_GEM_IBLKS` (DESK16 closed the
+/// `IG_REMOV` hole).
 ///
 /// The floppy is offered only when it can be used: `IG_FLOPPY` stays out unless
 /// the drive map actually reports `A:` or `B:` — the machine this desktop runs

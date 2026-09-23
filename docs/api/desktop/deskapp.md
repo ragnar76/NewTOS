@@ -616,3 +616,48 @@ does not exist). Deferred with the move of the desktop into user scope —
 lead decision of 2026-09-23, recorded in `TASK/DESK14.md`, and carried in the
 source as a comment on `do_read_inf`. Everything *before* that point — prompt,
 load, validation, alerts, return value — is EmuTOS's.
+
+---
+
+## NewTOS implementation notes — the built-in icon set and `app_parse`'s icon clamp (DESK16, 2026-09-23)
+
+`app_blddesk`'s "choose appropriate icon" (`deskapp.c:1371-1375`) indexes
+`G.g_iblist[icon]` unconditionally. It can, because `app_parse` has already
+made the number usable: `a_aicon >= G.g_numiblks` becomes `IG_APPL`,
+`a_dicon >= G.g_numiblks` becomes `IG_DOCU` (`:359-365`), and `scan_2` has
+turned the file's `FF` into `-1` before that (`util/optimize.c:202-217`), which
+is *below* the bound and therefore left alone — `-1` means "this node has no
+icon of that kind", not an out-of-range index.
+
+NewTOS's `desk::inf::parse_anode` reproduces that clamp (`clamp_icon`), and
+`desk::app::app_blddesk` therefore resolves through `icons::icon_kind` with no
+type-shaped fallback. `app::default_icon_kind`, which stood in for the clamp
+while `IG_REMOV` had no raster, is gone.
+
+**The raster.** `desk/icon.rsc` carries eight enabled `ICONBLK`s (six more are
+`#if 0`). NewTOS had seven; `IG_REMOV` (5) was missing, which is what made a
+fallback necessary in the first place. It was taken the same way the other
+seven were: out of `references/emutos/desk/icons.c`, the C the EmuTOS build
+generates from `icon.rsc` with `ird`. All seven pre-existing rasters were
+re-verified byte-for-byte against that file at the same time.
+
+One property of `icon_rs_iconblk[5]` is worth naming because it is easy to get
+wrong: the removable disk has **no mask of its own**. The resource points it at
+`rs_iconmask0`, the hard disk's, so `icons::rasters` returns `HARD_MASK` for it
+— and its `ib_xchar`/`ib_ychar` are the hard disk's as well, `(13,16)`, so a
+removable drive carries its drive letter in the same place.
+
+**One named deviation**, on a value EmuTOS reads out of bounds: an `a_aicon` of
+`-1` on a desktop line. Only a hand-written `NEWDESK.INF` can produce it —
+`build_inf` always writes the number (`deskapp.c:723`) — and EmuTOS would index
+`G.g_iblist[-1]`. NewTOS takes `app_parse`'s own answer for an unusable
+`a_aicon`, `IG_APPL`.
+
+Measured: `measurement-2026-09-23-desk16-desk17-desk21/`. The dialog's own
+serial line goes from `curr_icon=0 of 6` to `of 7` (the floppy is filtered out
+on a machine with no floppy drive — a separate, still-live NewTOS rule
+documented in `deskins.md`), four clicks on the stepper's DOWN arrow land on the
+new picture, `Save desktop` writes `#M 00 00 05 FF C DISK C@ @`, and a cold
+start reads it back. `method/pixcheck.py` compares every mask-set pixel of the
+preview and of the desktop icon against `icons.c`: 654 and 618 pixels, zero
+mismatching.

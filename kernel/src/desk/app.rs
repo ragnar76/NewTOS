@@ -130,10 +130,16 @@ impl DeskState {
             let pa = &self.g_ahead[i];
             let (x, y, atype, letter, aicon) = (pa.a_xspot, pa.a_yspot, pa.a_type, pa.a_letter, pa.a_aicon);
             // "choose appropriate icon" (`deskapp.c:1371-1375`): a desktop icon
-            // has no data icon, so it is always `a_aicon`. An icon number NewTOS
-            // has no raster for (`IG_REMOV`, or a corrupt byte) falls back to
-            // the one its type defaults to rather than drawing nothing.
-            let kind = icon_kind(aicon).unwrap_or_else(|| default_icon_kind(atype, letter));
+            // has no data icon, so it is always `a_aicon`. EmuTOS indexes
+            // `G.g_iblist[icon]` straight away, because `app_parse` has already
+            // made the number usable — out of range becomes `IG_APPL`
+            // (`deskapp.c:359-361`), which [`super::inf`]'s parser reproduces.
+            // The one value that still names no picture is `-1` (`FF` on an
+            // `#M`/`#T`/`#O` line, which only a hand-written file can carry:
+            // `build_inf` puts the icon number there, `deskapp.c:723`); EmuTOS
+            // would read `g_iblist[-1]`, so NewTOS takes `app_parse`'s own
+            // answer for an unusable `a_aicon` instead.
+            let kind = icon_kind(aicon).unwrap_or(IconKind::App);
             let label = {
                 let mut buf = [0u8; LEN_LABEL];
                 let src = pa.a_pappl.as_bytes();
@@ -191,8 +197,9 @@ impl DeskState {
         // node take any picture, and the drive letter is read back out of
         // `ib_char` by every desktop-icon consumer (`super::dir`'s drop
         // handlers, `super::inf`'s `#M` writer). `build_iconblk` already ORs it
-        // in for the two disk rasters, which have a char position; for any
-        // other picture this is what keeps the letter from being lost.
+        // in for the three drive rasters, which have a char position (hard,
+        // floppy, removable); for any other picture this is what keeps the
+        // letter from being lost.
         info.block.ib_char |= letter as i16;
         let spec = &info.block as *const IconBlk as u64;
 
@@ -200,23 +207,5 @@ impl DeskState {
         o.ob_type = G_ICON;
         o.ob_spec = spec;
         Some(obid)
-    }
-}
-
-/// The icon an `ANODE` of this type falls back to when its `a_aicon` names a
-/// picture NewTOS has no raster for — the same choice `install_drive`
-/// (`deskins.c:248`) and `build_inf` (`deskapp.c:719`) make for a fresh node:
-/// `A:`/`B:` are floppies, every other drive is a hard disk.
-pub fn default_icon_kind(atype: AType, letter: u8) -> IconKind {
-    match atype {
-        AType::Trash => IconKind::Trash,
-        AType::Printer => IconKind::Printer,
-        _ => {
-            if matches!(letter, b'A' | b'B') {
-                IconKind::Floppy
-            } else {
-                IconKind::Hard
-            }
-        }
     }
 }

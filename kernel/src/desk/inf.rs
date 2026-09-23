@@ -341,6 +341,18 @@ fn scan_icon(c: &mut Cursor) -> i16 {
     }
 }
 
+/// `app_parse`'s out-of-range guard (`deskapp.c:359-365`): an icon number that
+/// names no built-in picture becomes `dflt` — `IG_APPL` for `a_aicon`,
+/// `IG_DOCU` for `a_dicon`. Values below the bound (including `-1` = "none")
+/// pass through.
+fn clamp_icon(v: i16, dflt: i16) -> i16 {
+    if v >= icons::NUM_GEM_IBLKS {
+        dflt
+    } else {
+        v
+    }
+}
+
 /// `scan_str` — an `@`-terminated string: skip leading spaces, copy until `@`
 /// (consumed) or `\r`/`\n`/NUL (left in place, so the caller can detect the
 /// line end), `deskapp.c:258-289`.
@@ -443,8 +455,12 @@ fn parse_anode(c: &mut Cursor, tag: u8) -> InfAnode {
     let has_extra = matches!(tag, b'G' | b'Y' | b'F' | b'P' | b'I' | b'N');
 
     let (xspot, yspot) = if is_desk { (scan_2(c), scan_2(c)) } else { (0, 0) };
-    let aicon = scan_icon(c);
-    let dicon = scan_icon(c);
+    // `if (pa->a_aicon >= G.g_numiblks) pa->a_aicon = IG_APPL;` and the same
+    // for `a_dicon` with `IG_DOCU` (`deskapp.c:359-365`). `scan_2` has already
+    // turned `FF` into `-1`, which is *below* the bound and stays: `-1` is
+    // "this node has no icon of that kind", not an out-of-range index.
+    let aicon = clamp_icon(scan_icon(c), IG_APPL);
+    let dicon = clamp_icon(scan_icon(c), IG_DOCU);
 
     // The `<L>` field is a single literal character (space = no letter): consume
     // exactly one separator space, then one char — do NOT skip a run of spaces,

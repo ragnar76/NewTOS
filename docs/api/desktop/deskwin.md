@@ -536,8 +536,8 @@ Two named differences:
 * **The extension rule is the fall-back.** EmuTOS's is `IG_FOLDER` /
   `f_isap ? IG_APPL : IG_DOCU` (`:469-473`), reachable only with an empty list,
   which its `app_start` never leaves. NewTOS keeps `ftype::classify` in that
-  slot; it also catches an icon number NewTOS has no raster for (`IG_REMOV`,
-  DESK16).
+  slot; it also catches the `-1` an `ANODE` line spells `FF` for “no icon of
+  that kind”.
 
 The list itself, the `#I`/`#N`/`#D` `AF_WINDOW` nodes the *Install icon* →
 *Window* dialog writes into it, and the order it is searched in are documented

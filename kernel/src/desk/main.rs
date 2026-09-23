@@ -1052,12 +1052,6 @@ fn do_execcli() -> bool {
 /// ADR-017 rev 2).
 fn do_optnmenu(item: Item) {
     match item {
-        Item::SetBackground => {
-            // `end_dialog`'s `form_dial(FMD_FINISH)` repaints exactly the
-            // dialog's rectangle and re-asks the windows it covered — no
-            // whole-desktop composite (G7).
-            super::inf::set_background();
-        }
         Item::InstallApp => do_install_app(),
         // `case PREFITEM: if (inf_pref()) desk_all(FALSE);` (`deskmain.c:885-
         // 887`). **Named deviation in the argument**: EmuTOS passes `FALSE`
@@ -1663,7 +1657,7 @@ fn search_wildcard(name: &str) -> String {
 /// size-to-fit toggles.
 fn do_viewmenu(item: Item) -> u16 {
     use super::model::{Sort, View};
-    global::with(|g| match item {
+    let bits = global::with(|g| match item {
         Item::ShowIcons => {
             if g.view == View::Icon {
                 0
@@ -1698,7 +1692,32 @@ fn do_viewmenu(item: Item) -> u16 {
         }
         _ => 0,
     })
-    .unwrap_or(0)
+    .unwrap_or(0);
+    // `case BACKGRND: if (inf_backgrounds()) rc = BACKGROUND_HAS_CHANGED;`
+    // (`deskmain.c:823-828`) — `BACKGRND` (46) is a *View* item, so its arm
+    // belongs in this function (DESK21). It runs outside the `global::with`
+    // above because the dialog issues AES traps and cannot hold the desktop
+    // lock.
+    //
+    // **Named deviation in the predicate, not in the placement.** EmuTOS's
+    // `inf_backgrounds` returns TRUE only when the **window** background
+    // changed (`deskinf.c:910-916`); a *desktop* background change it applies
+    // and repaints itself with `do_wredraw(DESKWH, &G.g_desk)` and then
+    // returns FALSE (`:900-908`). NewTOS's stand-in offers only the desktop
+    // half — the `#Q` window bucket is round-tripped but has no consumer — and
+    // its `true` means exactly that desktop change, which
+    // [`super::inf::set_background`] has already repainted the same way. So
+    // the EmuTOS-equivalent `rc` for every outcome this dialog can produce is
+    // `0`, and `BACKGROUND_HAS_CHANGED` has no NewTOS counterpart to set: a
+    // `desk_all` here would repaint every window for a change that touched
+    // none of them.
+    if item == Item::SetBackground {
+        // `end_dialog`'s `form_dial(FMD_FINISH)` repaints exactly the
+        // dialog's rectangle and re-asks the windows it covered — no
+        // whole-desktop composite (G7).
+        super::inf::set_background();
+    }
+    bits
 }
 
 /// Switch the sort key, returning `SORT_CHANGED` (or `0` if unchanged).
