@@ -23,6 +23,7 @@ extern crate alloc;
 pub mod aes;
 pub mod bdos;
 pub mod bios;
+pub mod build;
 pub mod cookie;
 pub mod gemdos;
 pub mod i18n;

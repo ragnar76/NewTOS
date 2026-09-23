@@ -140,8 +140,16 @@ GEM/AES is reimplemented (PHASE-12 and beyond).
 ### `os_date` (0x18)
 
 TOS build date, BCD `MMDDYYYY`. EmuTOS sets it from the build
-timestamp. Programs sometimes use this to detect ROM version when
-`os_version` collides between vendors.
+timestamp: `tools/mkheader.awk` generates `obj/header.h` with
+`#define OS_DATE 0x08292026` for a build made on 2026-08-29. Programs
+sometimes use this to detect ROM version when `os_version` collides
+between vendors.
+
+**NewTOS (DESK12, 2026-09-23):** the same arrangement, one build script
+instead of an awk pass — `tos-api/build.rs` emits the date, and
+`tos_api::build::OS_DATE` packs it, which is what
+`bdos::process::loader` writes. `SOURCE_DATE_EPOCH` pins it for a
+reproducible build. It was a 1980-01-01 placeholder until then.
 
 ### `os_conf` (0x1C)
 
@@ -160,7 +168,10 @@ PHASE-08 sets video mode from the BCM2711 framebuffer config.
 ### `os_dosdate` (0x1E)
 
 Same date as `os_date` but in FAT-packed format
-(see `docs/api/structures/ofd.md` `DOSTIME`).
+(see `docs/api/structures/ofd.md` `DOSTIME`): `(year-1980) << 9 |
+month << 5 | day`, which `obj/header.h` writes as `23837` for
+2026-08-29. NewTOS builds it from the same stamp as `os_date`
+(`tos_api::build::OS_DOSDATE`).
 
 ### `os_root` (0x20)
 

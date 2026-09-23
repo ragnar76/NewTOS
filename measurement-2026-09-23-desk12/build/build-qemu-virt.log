@@ -1,0 +1,30 @@
+    |
+216 |     pub port: u8,
+    |     ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/xhci/mod.rs:219:5
+    |
+219 |     pub vid: u16,
+    |     ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/xhci/mod.rs:220:5
+    |
+220 |     pub pid: u16,
+    |     ^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> kernel/src/drivers/usb/xhci/mod.rs:340:1
+    |
+340 | pub struct Xhci {
+    | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> kernel/src/drivers/usb/xhci/mod.rs:642:5
+    |
+642 |     pub fn protocol(&self, di: usize) -> u8 {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `kernel` (lib) generated 94 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.01s

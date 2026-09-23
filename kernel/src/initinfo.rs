@@ -93,6 +93,19 @@ pub(crate) const INDEPENDENCE_NOTICE: &str =
 /// (`desk/desk_rsc.c:824-826`).
 pub(crate) const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude AI...";
 
+/// The build stamp, `YYYY-MM-DD (rev)`, re-exported from [`tos_api::build`].
+///
+/// It lives in `tos-api` because the OSHEADER's `os_date`/`os_dosdate` need the
+/// same value and a build script's environment reaches only its own crate —
+/// that is EmuTOS's arrangement as well, where `tools/mkheader.awk` generates
+/// one `obj/header.h` and the header fields read it.
+///
+/// **An own addition on this screen.** EmuTOS's boot screen prints
+/// `EmuTOS Version %s` and no date (`bios/initinfo.c:321`); its build date goes
+/// into the OS header alone. NewTOS prints it here because this screen is the
+/// project's own and a stamp is what tells two SD cards apart.
+pub(crate) const BUILD_STAMP: &str = tos_api::build::BUILD_STAMP;
+
 /// Friendly machine name for the current board.
 pub(crate) fn machine_name() -> &'static str {
     match crate::BOARD_NAME {
@@ -252,6 +265,8 @@ pub fn run() -> u8 {
     let tt = stats(Pool::Ttram);
     y += 18;
     pair(&mut v, cx, y, b"Version", VERSION_STRING.as_bytes());
+    y += 22;
+    pair(&mut v, cx, y, b"Built", BUILD_STAMP.as_bytes());
     y += 22;
     pair(&mut v, cx, y, b"CPU type", b"ARM Cortex-A72 (AArch64)");
     y += 22;

@@ -803,13 +803,14 @@ const OS_VERSION: u16 = 0x0404;
 /// §os_conf). NewTOS is US/English (`i18n::current_lang == En`, cookie
 /// `_AKP == US`) and ignores PAL → country US(0), PAL 0 → 0.
 const OS_CONF: u16 = 0x0000;
-/// OSHEADER `os_date` (+0x18): OS build date, BCD `MMDDYYYY`. NewTOS pins no
-/// build-date constant; placeholder = the codebase's default epoch
-/// 1980-01-01 (`tos-api/src/gemdos/time.rs:26`). Flagged to the lead.
-const OS_DATE: u32 = 0x0101_1980;
-/// OSHEADER `os_dosdate` (+0x1E): same date, FAT-packed
-/// (`(year-1980)<<9 | month<<5 | day`) → 1980-01-01.
-const OS_DOSDATE: u16 = 0x0021;
+/// OSHEADER `os_date` (+0x18): OS build date, BCD `MMDDYYYY` — the real build
+/// date since DESK12, from [`crate::build`], which is where EmuTOS gets it too
+/// (`tools/mkheader.awk` generates `obj/header.h`'s `OS_DATE`). It was a
+/// 1980-01-01 placeholder until a build stamp existed.
+const OS_DATE: u32 = crate::build::OS_DATE;
+/// OSHEADER `os_dosdate` (+0x1E): the same date, GEMDOS-packed
+/// (`(year-1980)<<9 | month<<5 | day`) — `obj/header.h`'s `OS_DOSDATE`.
+const OS_DOSDATE: u16 = crate::build::OS_DOSDATE;
 
 /// RAM-config validity magics (`references/emutos/bios/memory.S`), written on
 /// cold boot at the end of `memconf` (memory.S:588-590).
