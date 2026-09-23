@@ -40,6 +40,37 @@ pub(super) fn desk_busy_off() {
     graf_mouse(ARROW);
 }
 
+/// `set_default_path` (`desk/desksupp.c:1785-1801`) — "routine to change the
+/// default drive and directory":
+///
+/// ```c
+/// desk_busy_on();
+/// dos_sdrv(path[0]-'A');
+/// rc = (WORD)dos_chdir(path);
+/// desk_busy_off();
+/// return rc;
+/// ```
+///
+/// `path` is a fully-qualified directory ending in a separator, the shape
+/// `filename_start(app_path); *p = '\0'` leaves behind (`C:\SUB\`, or `C:\` at
+/// a drive root). `path[0]-'A'` is EmuTOS's own drive derivation, taken
+/// verbatim — it is why the argument must carry its `X:` prefix.
+///
+/// Returns the `Dsetpath` result: `E_OK`, or a negative GEMDOS error (`EPTHNF`
+/// for a directory that does not exist **and** for a drive that is not
+/// mounted — `docs/api/gemdos/directory/3b-dsetpath.md`, which folds
+/// `ckdrv`'s failure into `findit`'s). The busy hourglass is up across both
+/// calls "because this can involve disk i/o (for example, if the media has
+/// changed)" (`:1790-1793`).
+pub(super) fn set_default_path(path: &str) -> tos_types::Long {
+    desk_busy_on();
+    let drive = path.as_bytes().first().copied().unwrap_or(0);
+    super::dosbind::dos_sdrv(drive as i16 - b'A' as i16);
+    let rc = super::dosbind::dos_chdir(path);
+    desk_busy_off();
+    rc
+}
+
 /// `pro_exec` (`desk/deskpro.c:35-45`):
 ///
 /// ```c

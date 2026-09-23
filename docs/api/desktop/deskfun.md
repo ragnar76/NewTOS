@@ -462,6 +462,12 @@ fun_drag(wh, dest_wh, sobj, dobj, mx, my, keystate):
   terminating in the AES `shel_write(SHW_EXEC,…)` call already
   contract-documented in `docs/api/aes/scrap-shell.md`
 
+**Partial coverage since 2026-09-23 (DESK18):** `do_aopen`'s
+*current-directory* step (`desksupp.c:893-916`, the `is_installed`/`G.g_appdir`
+path choice + `set_default_path`) **is** extracted and implemented —
+[`deskpro.md`](deskpro.md) § *The current-directory step*. Everything else
+below still stands.
+
 **Missing coverage (flagged 2026-07-21):** `do_aopen`/`do_open`
 (`desksupp.c:838-1090`/`:1191-…`) — the function that every launch path
 in this file (`fun_win2win`, `fun_file2desk`, `fun_desk2win`) calls

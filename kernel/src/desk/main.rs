@@ -351,7 +351,15 @@ fn open_item(handle: i16, obid: i16) {
     match target {
         OpenTarget::Folder(spec, title) => open_dir_window(&spec, &title),
         OpenTarget::Drive(letter) => open_root_window(letter),
-        OpenTarget::App { path, name, flavor } => launch_native(&path, &name, flavor, &[]),
+        OpenTarget::App { path, name, flavor } => {
+            // `do_aopen`'s `else` arm (`desksupp.c:903-912`): the program is
+            // not an installed application, so the **desktop** config flag
+            // `G.g_appdir` picks the directory. A failure aborts the launch.
+            let appdir = global::with(|g| g.g_appdir).unwrap_or(true);
+            if set_launch_dir(appdir, &path) {
+                launch_native(&path, &name, flavor, &[]);
+            }
+        }
         OpenTarget::M68k => {
             let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
             super::form_alert(1, text.as_ptr());
@@ -383,6 +391,14 @@ fn open_document(name: &str, full_path: &str) {
         // AES `form_alert` bb_save/restores the screen — no desktop repaint.
         return;
     };
+
+    // `do_aopen`'s `if (is_installed(pa))` arm (`desksupp.c:896-902`): an
+    // installed application answers the directory question from its **own**
+    // `AF_APPDIR` flag, not from the desktop-wide `G.g_appdir`. A failure
+    // aborts the launch, as it does for a direct one.
+    if !set_launch_dir(assoc.app_dir, &assoc.app_path) {
+        return;
+    }
 
     // The associated application must itself be a native NewTOS program.
     let app_name = filename_of(&assoc.app_path);
@@ -449,6 +465,70 @@ fn native_path(p_spec: &str, name: &[u8]) -> String {
     let mut s = doc_full_path(p_spec, name);
     s.push('\0');
     s
+}
+
+/// `STDEFDIR` (`desk_rsc.c:2558-2559`) — the alert `do_aopen` raises when the
+/// current directory cannot be set. [`dir::fun_alert`] supplies the `[1][`…
+/// `][ OK ]` frame around it.
+const STDEFDIR: &[u8] = b"Failed to set default|directory.";
+
+/// The current-directory step of EmuTOS's `do_aopen` (`desksupp.c:893-916`) —
+/// the piece NewTOS had no counterpart for at all, so that a launched program
+/// inherited whatever directory happened to be current.
+///
+/// ```c
+/// pw = win_ontop();
+/// if (is_installed(pa)) {
+///     if (!(pa->a_flags & AF_APPDIR) && pw) p = pw->w_pnode.p_spec;
+///     else                                  p = pa->a_pappl;
+/// } else {
+///     if (!G.g_appdir && pw) p = pw->w_pnode.p_spec;
+///     else                   p = pathname;
+/// }
+/// strcpy(app_path, p);
+/// p = filename_start(app_path);
+/// *p = '\0';
+/// if (set_default_path(app_path) < 0) { fun_alert(1, STDEFDIR); return FALSE; }
+/// ```
+///
+/// The two arms differ only in *where the switch comes from* — the
+/// application's own `AF_APPDIR` when it is installed, the desktop-wide
+/// `G.g_appdir` when it is not — so both callers pass it in as `app_dir` and
+/// share this body, as they share `do_aopen`'s in EmuTOS.
+///
+/// `own_path` is EmuTOS's `pa->a_pappl` / `pathname`. For the non-installed
+/// arm EmuTOS passes the **window's search spec** (`C:\SUB\*.*`) and NewTOS
+/// passes the program's own full path (`C:\SUB\PROG.NCP`): `filename_start`
+/// cuts both back to the identical `C:\SUB\`, which is the only thing this
+/// function does with it.
+///
+/// Returns `false` when the directory could not be set — the caller must then
+/// **not** launch, exactly as `do_aopen` returns `FALSE` there.
+fn set_launch_dir(app_dir: bool, own_path: &str) -> bool {
+    // `pw = win_ontop()` — ours is `wind_get(DESKWH, WF_TOP)`, as everywhere
+    // else in this file; `DESKWH` is the "no real window" answer.
+    let pw = wind_get_top();
+    let from_window = if !app_dir && pw != DESKWH {
+        global::with(|g| g.win_slot(pw).map(|s| g.windows.slots[s].w_pnode.p_spec.clone())).flatten()
+    } else {
+        None
+    };
+    let src = from_window.unwrap_or_else(|| String::from(own_path));
+
+    // `p = filename_start(app_path); *p = '\0';` — keep everything up to and
+    // including the last separator (`optimize.c:226-235`). A string with no
+    // separator at all collapses to empty, as it does there.
+    let dir = &src[..src.rfind('\\').map_or(0, |i| i + 1)];
+
+    // The desktop lock is released before the trap: `set_default_path` issues
+    // `graf_mouse`, `Dsetdrv` and `Dsetpath`.
+    if pro::set_default_path(dir) < 0 {
+        dir::fun_alert(1, STDEFDIR);
+        // The AES `form_alert` bb_save/restores the screen under the alert, so
+        // the desktop comes back intact and the caller simply does not launch.
+        return false;
+    }
+    true
 }
 
 /// Launch a native NewTOS program (ADR-018) and repaint the desktop on return.
@@ -1920,6 +2000,8 @@ pub(super) fn cnx_put() {
         g.g_cnxsave.cs_dblclick = g.g_cdclkpref;
         g.g_cnxsave.cs_timefmt = g.g_ctimeform;
         g.g_cnxsave.cs_datefmt = g.g_cdateform;
+        // `cnxsave->cs_appdir = G.g_appdir;` (`deskmain.c:1391`).
+        g.g_cnxsave.cs_appdir = g.g_appdir;
     });
 
     // The open windows, front-to-back, with their desktop slot and handle.
@@ -2053,6 +2135,8 @@ fn cnx_get_prefs() {
         g.g_cdclkpref = g.g_cnxsave.cs_dblclick;
         g.g_ctimeform = g.g_cnxsave.cs_timefmt;
         g.g_cdateform = g.g_cnxsave.cs_datefmt;
+        // `G.g_appdir = cnxsave->cs_appdir;` (`deskmain.c:1453`).
+        g.g_appdir = g.g_cnxsave.cs_appdir;
         g.win_view();
         g.g_cdclkpref
     })

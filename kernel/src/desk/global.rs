@@ -239,19 +239,28 @@ pub struct WSave {
 /// keeps its own copy (gap G2 of `docs/analysis/desk-aes-gaps-2026-09-14.md`).
 ///
 /// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries `cs_blitter`,
-/// `cs_cache`, `cs_appdir` and `cs_fullpath`. Those mirror `GLOBES` fields that
-/// exist only because `inf_pref`/`inf_conf` (the Preferences and Configuration
-/// dialogs) can edit them, and NewTOS has no live state behind any of them:
+/// `cs_cache` and `cs_fullpath`. Those mirror `GLOBES` fields that exist only
+/// because `inf_pref`/`inf_conf` (the Preferences and Configuration dialogs)
+/// can edit them, and NewTOS has no live state behind any of them:
 ///
 /// * `cs_blitter` / `cs_cache` — m68k hardware (`Blitmode`, the 68030 cache),
 ///   the hardware-layer carve-out of `docs/COMPATIBILITY.md`.
-/// * `cs_appdir` / `cs_fullpath` — `inf_conf`'s launch-directory policy, which
-///   NewTOS keeps per association in the `NEWDESK.INF` `ANODE` extra block
-///   (`INF_AT_APPDIR`/`INF_AT_ISFULL`) rather than as a global.
+/// * `cs_fullpath` — the *Parameter* switch, whose consumer is
+///   `build_selected_path` (`deskfun.c:903-931`) out of `fun_win2win`'s
+///   drop-on-an-application branch (`:958-970`); NewTOS's `fun_win2win` has no
+///   such branch. The per-**association** twin of the same choice
+///   (`INF_AT_ISFULL`) does exist and is kept in the `NEWDESK.INF` `ANODE`
+///   extra block, which is why a document launch can honour it and a drop
+///   cannot.
 ///
 /// Their bits still survive a load/save round trip — the `#E` bytes they live
 /// in are preserved verbatim by [`super::inf`]'s session copy — they are simply
 /// not routed through this structure.
+///
+/// `cs_appdir` **was** in that list until DESK18, on the grounds that NewTOS's
+/// launch path set no current directory at all. It does now
+/// ([`super::main`]'s `set_launch_dir` → `set_default_path`), so the field is
+/// carried like the others.
 ///
 /// `cs_confcpy` and `cs_confovwr` **were** in that list until DESK13, on the
 /// grounds that NewTOS's copy engine asked neither question. It asks both now
@@ -280,6 +289,9 @@ pub struct CSave {
     pub cs_timefmt: TimeFmt,
     /// Saved date order (`cs_datefmt`).
     pub cs_datefmt: DateFmt,
+    /// Saved *Default dir* switch (`cs_appdir`, `deskapp.h:153`) — see
+    /// [`DeskState::g_appdir`]. Serialises to `INF_E5_APPDIR`.
+    pub cs_appdir: bool,
     /// One [`WSave`] per window slot (`cs_wnode[NUM_WNODES]`); slot 0 is the
     /// **bottom-most** window (`cnx_put`'s comment, `deskmain.c:1367-1369`).
     pub cs_wnode: [WSave; NUM_WNODES],
@@ -297,6 +309,7 @@ impl Default for CSave {
             cs_dblclick: DEF_DCLICK,
             cs_timefmt: TimeFmt::H24,
             cs_datefmt: DateFmt::Mdy,
+            cs_appdir: true,
             cs_wnode: Default::default(),
         }
     }
@@ -385,6 +398,15 @@ pub struct DeskState {
     /// Date order for the text view and Show Info (`g_cdateform`,
     /// `deskinf.c:138`).
     pub g_cdateform: DateFmt,
+    /// "Default dir is the application's dir" (`g_appdir`, `deskbind.h:180`):
+    /// the *Default dir* switch of `inf_conf`, and the one thing that decides
+    /// which directory a **not**-installed program is launched in — `true` ⇒
+    /// the program's own, `false` ⇒ the top window's when there is one
+    /// (`do_aopen`, `desksupp.c:896-912`; NewTOS's [`super::main`]
+    /// `set_launch_dir`). An *installed* application answers the same question
+    /// from its own `INF_AT_APPDIR` flag instead, so this global does not
+    /// apply to it. Persisted through [`CSave::cs_appdir`].
+    pub g_appdir: bool,
     /// The current `_IDT` cookie word (`g_idt`, `deskbind.h:183`) — the machine
     /// separator / field order / clock that [`TimeFmt::Idt`] and [`DateFmt::Idt`]
     /// defer to (see [`super::model`]'s `_IDT` block for the bit layout and for
@@ -500,6 +522,9 @@ impl DeskState {
             g_cdclkpref: DEF_DCLICK,
             g_ctimeform: TimeFmt::H24,
             g_cdateform: DateFmt::Mdy,
+            // `INF_E5_DEFAULT` carries `INF_E5_APPDIR` (`deskapp.c:114`), so
+            // the no-`.INF` default is the application's own directory.
+            g_appdir: true,
             g_idt: 0,
             g_iwext: 0,
             g_ihext: 0,

@@ -67,6 +67,7 @@ use tos_types::Long;
 // ── GEMDOS function ids (`bdosbind.h:22-54`) ────────────────────────────────
 const DSETDRV: u16 = 0x0E;
 const DGETDRV: u16 = 0x19;
+const DSETPATH: u16 = 0x3B;
 const FSETDTA: u16 = 0x1A;
 const DCREATE: u16 = 0x39;
 const DDELETE: u16 = 0x3A;
@@ -277,6 +278,20 @@ pub(super) fn dos_gdrv() -> i16 {
 /// current-drive state.
 pub(super) fn dos_sdrv(newdrv: i16) -> Long {
     dos_trap(DSETDRV, sx(newdrv as i64), 0, 0)
+}
+
+/// `dos_chdir` — `Dsetpath(pdrvpath)` (`gemdos.h:95-98`, `bdosbind.h:36`). Sets
+/// the current directory **of the drive the path names** — not the current
+/// drive, which is `dos_sdrv`'s job; `set_default_path` (`desksupp.c:1785-1801`)
+/// is the pair that does both, and the desktop's only caller.
+///
+/// `E_OK` on success, `EPTHNF` when the path does not resolve to an existing
+/// directory (`docs/api/gemdos/directory/3b-dsetpath.md`). A trailing separator
+/// is accepted: `filename_start` leaves one behind (`C:\SUB\`), and EmuTOS's
+/// `xchdir` walks the same empty final element away that ours does.
+pub(super) fn dos_chdir(path: &str) -> Long {
+    let p = cpath(path);
+    dos_trap(DSETPATH, p.as_ptr() as u64, 0, 0)
 }
 
 /// `dos_avail_stram` — `Mxalloc(-1L, MX_STRAM)` (`util/gemdos.c:100-104`): the

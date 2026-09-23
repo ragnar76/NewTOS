@@ -131,6 +131,11 @@ const INF_E2_DAYMONTH: u8 = 0x04;
 /// `INF_E2_24HCLOCK` (`deskapp.c:101`) — 1 ⇒ 24-hour clock.
 const INF_E2_24HCLOCK: u8 = 0x02;
 const INF_E5_NOSORT: u8 = 0x80;
+/// `INF_E5_APPDIR` (`deskapp.c:110`) — 1 ⇒ launch a **non-installed** program
+/// with the current directory set to the program's own directory, 0 ⇒ to the
+/// top window's. The *Default dir* group of `inf_conf` edits it and
+/// `do_aopen` reads it (`desksupp.c:901`).
+const INF_E5_APPDIR: u8 = 0x40;
 const INF_E5_NOSIZE: u8 = 0x10;
 
 /// `INF_E1_DEFAULT` = `CONFDEL|CONFCPY|dclick(2)` (`deskapp.c` `desk_inf_data1`).
@@ -638,8 +643,8 @@ impl InfData {
 
 // ── Sort ↔ `#E`-bit mapping ─────────────────────────────────────────────────
 
-/// Decode the `#E` env bytes to `(view, sort, size_to_fit)`.
-fn env_to_state(e1: u8, e5: u8) -> (View, Sort, bool) {
+/// Decode the `#E` env bytes to `(view, sort, size_to_fit, appdir)`.
+fn env_to_state(e1: u8, e5: u8) -> (View, Sort, bool, bool) {
     let view = if e1 & INF_E1_VIEWTEXT != 0 { View::Text } else { View::Icon };
     let sort = if e5 & INF_E5_NOSORT != 0 {
         Sort::NoSort
@@ -652,17 +657,27 @@ fn env_to_state(e1: u8, e5: u8) -> (View, Sort, bool) {
         }
     };
     let size_to_fit = e5 & INF_E5_NOSIZE == 0;
-    (view, sort, size_to_fit)
+    // `cnxsave->cs_appdir = ((envr & INF_E5_APPDIR) != 0);` (`deskapp.c:942`).
+    let appdir = e5 & INF_E5_APPDIR != 0;
+    (view, sort, size_to_fit, appdir)
 }
 
-/// Fold `(view, sort, size_to_fit)` into the `#E` `e1`/`e5` bytes, keeping every
-/// other bit of the base bytes (confirm/dclick/format prefs) unchanged.
-fn state_to_env(view: View, sort: Sort, size_to_fit: bool, base_e1: u8, base_e5: u8) -> (u8, u8) {
+/// Fold `(view, sort, size_to_fit, appdir)` into the `#E` `e1`/`e5` bytes,
+/// keeping every other bit of the base bytes (confirm/dclick/format prefs)
+/// unchanged.
+fn state_to_env(
+    view: View,
+    sort: Sort,
+    size_to_fit: bool,
+    appdir: bool,
+    base_e1: u8,
+    base_e5: u8,
+) -> (u8, u8) {
     let mut e1 = base_e1 & !(INF_E1_VIEWTEXT | INF_E1_SORTMASK);
     if view == View::Text {
         e1 |= INF_E1_VIEWTEXT;
     }
-    let mut e5 = base_e5 & !(INF_E5_NOSORT | INF_E5_NOSIZE);
+    let mut e5 = base_e5 & !(INF_E5_NOSORT | INF_E5_NOSIZE | INF_E5_APPDIR);
     match sort {
         Sort::Name => {}
         Sort::Type => e1 |= 1 << INF_E1_SORTSHIFT,
@@ -672,6 +687,10 @@ fn state_to_env(view: View, sort: Sort, size_to_fit: bool, base_e1: u8, base_e5:
     }
     if !size_to_fit {
         e5 |= INF_E5_NOSIZE;
+    }
+    // `env5 |= cnxsave->cs_appdir ? INF_E5_APPDIR : 0;` (`deskapp.c:1164`).
+    if appdir {
+        e5 |= INF_E5_APPDIR;
     }
     (e1, e5)
 }
@@ -969,7 +988,7 @@ pub(super) fn build_inf() {
 fn apply(data: &InfData) {
     // #E → cnxsave->cs_view / cs_sort / cs_sizefit (`deskapp.c:994-1013`) and
     // the Preferences half (`deskapp.c:917-934`).
-    let (view, sort, size_to_fit) = env_to_state(data.e1, data.e5);
+    let (view, sort, size_to_fit, appdir) = env_to_state(data.e1, data.e5);
     let (confdel, confcpy, confovwr, dclick, timefmt, datefmt) = env_to_prefs(data.e1, data.e2);
 
     // #M/#T/#O → `G.g_ahead` (`app_parse`'s tag switch, `deskapp.c:300-346`).
@@ -990,6 +1009,7 @@ fn apply(data: &InfData) {
         g.g_cnxsave.cs_dblclick = dclick;
         g.g_cnxsave.cs_timefmt = timefmt;
         g.g_cnxsave.cs_datefmt = datefmt;
+        g.g_cnxsave.cs_appdir = appdir;
         g.g_cnxsave.cs_wnode = Default::default();
         for (slot, w) in data.windows.iter().take(NUM_WNODES).enumerate() {
             g.g_cnxsave.cs_wnode[slot] = WSave {
@@ -1201,7 +1221,8 @@ fn build_from_state() -> InfData {
     // Env + desktop-icon anodes, under one lock.
     #[allow(clippy::type_complexity)]
     type Prefs = (bool, bool, bool, u8, TimeFmt, DateFmt);
-    let (view, sort, size_to_fit, prefs, desk_anodes): (View, Sort, bool, Prefs, Vec<InfAnode>) = global::with(|g| {
+    #[allow(clippy::type_complexity)]
+    let (view, sort, size_to_fit, appdir, prefs, desk_anodes): (View, Sort, bool, bool, Prefs, Vec<InfAnode>) = global::with(|g| {
         // The `ANODE` half of `app_save` (`deskapp.c:1216-1262`), for the
         // `AF_ISDESK` nodes: one line per entry of `G.g_ahead`, in list order,
         // with the spot converted back to grid units
@@ -1240,6 +1261,7 @@ fn build_from_state() -> InfData {
             g.g_cnxsave.cs_view,
             g.g_cnxsave.cs_sort,
             g.g_cnxsave.cs_sizefit,
+            g.g_cnxsave.cs_appdir,
             (
                 g.g_cnxsave.cs_confdel,
                 g.g_cnxsave.cs_confcpy,
@@ -1255,6 +1277,7 @@ fn build_from_state() -> InfData {
         View::Icon,
         Sort::Name,
         true,
+        true,
         (true, true, true, global::DEF_DCLICK, TimeFmt::H24, DateFmt::Mdy),
         Vec::new(),
     ));
@@ -1262,7 +1285,7 @@ fn build_from_state() -> InfData {
     // Base env / patcol / file-type anodes: preserved from the session, or the
     // built-in defaults on a first-ever save.
     let base = session.unwrap_or_default();
-    let (e1, e5) = state_to_env(view, sort, size_to_fit, base.e1, base.e5);
+    let (e1, e5) = state_to_env(view, sort, size_to_fit, appdir, base.e1, base.e5);
     // The Preferences bits go into the *same* `e1` byte, in a disjoint bit
     // range (`CONFDEL|DCMASK` vs `VIEWTEXT|SORTMASK`), so they are folded in on
     // top of the result rather than from `base.e1` again.
@@ -1390,6 +1413,10 @@ pub(super) struct Association {
     pub app_path: String,
     /// `AF_ISFULL`: pass the document's full path in the tail (else file name).
     pub full_path: bool,
+    /// `AF_APPDIR` (`INF_AT_APPDIR`): launch with the current directory set to
+    /// the **application's** directory; `false` ⇒ to the top window's when
+    /// there is one (`do_aopen`, `desksupp.c:896-902`).
+    pub app_dir: bool,
     /// The stored fixed argument prefix (`a_pargs`), prepended to the tail.
     pub args: String,
 }
@@ -1530,6 +1557,7 @@ pub(super) fn lookup_association(name: &[u8]) -> Option<Association> {
             return Some(Association {
                 app_path: a.pappl.clone(),
                 full_path: a.flags & INF_AT_ISFULL != 0,
+                app_dir: a.flags & INF_AT_APPDIR != 0,
                 args: a.pargs.clone(),
             });
         }
@@ -2738,9 +2766,17 @@ fn get_all_funkeys() -> [Option<FunKey>; NUM_FUNKEYS] {
 /// `include/config.h:1774-1776`, and therefore on for our Falcon030/TOS4
 /// profile).
 ///
-/// Two independent "step through a list" panels in one dialog, plus a free-RAM
-/// read-out:
+/// A radio group, two independent "step through a list" panels and a free-RAM
+/// read-out, in `ADDESKCF`'s order:
 ///
+/// * **Default dir** — out in DESK05 for want of a consumer, back since
+///   DESK18. `DCDEFAPP`/`DCDEFWIN` select the current directory a
+///   *non-installed* program is launched with, through `G.g_appdir`
+///   ([`global::DeskState::g_appdir`]); the consumer is [`super::main`]'s
+///   `set_launch_dir` → [`super::pro::set_default_path`], which is
+///   `do_aopen`'s own step (`desksupp.c:893-916`). An *installed* application
+///   ignores it and uses its own `INF_AT_APPDIR` flag, which is why the switch
+///   says nothing about those.
 /// * **Function keys** — a *viewer*. `DCFUNPRV`/`DCFUNNXT` walk the installed
 ///   applications that have a function key bound; `DCFUNLT`/`DCFUNRT` scroll
 ///   the path sideways inside the fixed-width field (`scroll_conf_funkeys`,
@@ -2764,65 +2800,72 @@ fn get_all_funkeys() -> [Option<FunKey>; NUM_FUNKEYS] {
 ///
 /// ## What this dialog does **not** offer, and why
 ///
-/// `ADDESKCF` (`desk_rsc.c:1603-1772`) starts with two further radio groups,
-/// both of which NewTOS leaves out rather than showing inert:
+/// `ADDESKCF` (`desk_rsc.c:1603-1772`) has one further radio group, which
+/// NewTOS leaves out rather than showing inert:
 ///
-/// * **Default dir** (`DCDEFAPP`/`DCDEFWIN` → `G.g_appdir`) selects the current
-///   directory a *non-installed* program is launched with:
-///   `do_aopen` picks the top window's path or the program's own and calls
-///   `set_default_path()` (`desksupp.c:896-912`). NewTOS's launch path
-///   ([`super::main`]'s `launch_native` → [`crate::launch::run_program`]) never
-///   sets a current directory at all, so there is nothing for the switch to
-///   steer.
 /// * **Parameter** (`DCPMFULL`/`DCPMFILE` → `G.g_fullpath`) selects whether a
 ///   file dropped on a program icon is passed as a full path or a bare name
 ///   (`build_selected_path`, `deskfun.c:903-931`), reached from
 ///   `fun_win2win`'s drop-on-an-application branch (`deskfun.c:960-970`).
 ///   NewTOS's `fun_win2win` has no such branch — a drop on a program is a
-///   copy — so again there is nothing behind the switch.
+///   copy — so there is nothing behind the switch.
 ///
-/// Both are missing *consumers* in other functions, not missing pieces of this
-/// one; their `#E` byte-5 bits (`INF_E5_APPDIR`/`INF_E5_ISFULL`) keep
-/// round-tripping untouched meanwhile. Same rule as the three groups
-/// [`inf_pref`] leaves out (DESK02).
+/// It is missing a *consumer* in another function, not a piece of this one;
+/// its `#E` byte-5 bit (`INF_E5_ISFULL`) keeps round-tripping untouched
+/// meanwhile. Same rule as the three groups [`inf_pref`] left out in DESK02 —
+/// and, like them and like *Default dir* now, it comes back when the
+/// consumer does.
 pub(super) fn inf_conf() {
     use super::menu;
 
-    // ── object indices (`desk_rsc.h:191-211`, minus the two omitted groups) ──
+    // ── object indices (`desk_rsc.h:191-211`, minus the omitted group) ────
+    //
+    // Objects 0..5 are `ADDESKCF`'s own numbers; from the *Function keys* label
+    // on, everything is four lower, because the four objects of the omitted
+    // *Parameter* row (`desk_rsc.c:1660-1685`, its label, its `G_IBOX` and the
+    // two buttons) are not in the tree.
+    /// `DCDEFDIR` — the unnamed `G_IBOX` (`ADDESKCF` object 3) the two
+    /// *Default dir* radio buttons hang under; the AES deselects the siblings
+    /// of the button that was hit through **this** object (see [`G_IBOX`]).
+    const DCDEFDIR: i16 = 3;
+    /// `DCDEFAPP` — *Application*: the program's own directory. It is the
+    /// first of the pair, so `inf_which(tree, DCDEFAPP, 2)` yields 1 for it and
+    /// 0 for its neighbour — which is `G.g_appdir` (`deskinf.c:1226`).
+    const DCDEFAPP: usize = 4;
     /// `DCFUNBOX` — the panel holding the function-key number, path and the two
     /// scroll arrows; the field `draw_fld` refreshes after a step (`:1163`).
-    const DCFUNBOX: i16 = 3;
+    const DCFUNBOX: i16 = 7;
     /// `DCFUNNUM` — the `F__` number field.
-    const DCFUNNUM: i16 = 4;
+    const DCFUNNUM: i16 = 8;
     /// `DCFUNLT` — scroll the path text left.
-    const DCFUNLT: i16 = 5;
+    const DCFUNLT: i16 = 9;
     /// `DCFUNPTH` — the scrollable path field.
-    const DCFUNPTH: i16 = 6;
+    const DCFUNPTH: i16 = 10;
     /// `DCFUNRT` — scroll the path text right.
-    const DCFUNRT: i16 = 7;
+    const DCFUNRT: i16 = 11;
     /// `DCFUNPRV` — previous bound function key.
-    const DCFUNPRV: i16 = 8;
+    const DCFUNPRV: i16 = 12;
     /// `DCFUNNXT` — next bound function key.
-    const DCFUNNXT: i16 = 9;
+    const DCFUNNXT: i16 = 13;
     /// `DCMNUBOX` — the panel holding the menu-item text, its key and *Clear
     /// all*.
-    const DCMNUBOX: i16 = 11;
+    const DCMNUBOX: i16 = 15;
     /// `DCMNUKEY` — the editable `Key: ^_` field.
-    const DCMNUKEY: i16 = 12;
+    const DCMNUKEY: i16 = 16;
     /// `DCMNUCLR` — clear every shortcut.
-    const DCMNUCLR: i16 = 13;
+    const DCMNUCLR: i16 = 17;
     /// `DCMNUTXT` — the menu item the current slot names.
-    const DCMNUTXT: i16 = 14;
+    const DCMNUTXT: i16 = 18;
     /// `DCMNUPRV` — previous shortcut slot.
-    const DCMNUPRV: i16 = 15;
+    const DCMNUPRV: i16 = 19;
     /// `DCMNUNXT` — next shortcut slot.
-    const DCMNUNXT: i16 = 16;
+    const DCMNUNXT: i16 = 20;
     /// `DCFREMEM` — the free-RAM read-out.
-    const DCFREMEM: i16 = 17;
+    const DCFREMEM: i16 = 21;
     /// `DCOK` — the OK button; `DC_CNCL` follows it.
-    const DCOK: i16 = 18;
+    const DCOK: i16 = 22;
     /// `DC_CNCL` — Cancel.
-    const DC_CNCL: i16 = 19;
+    const DC_CNCL: i16 = 23;
 
     // ── geometry ────────────────────────────────────────────────────────
     //
@@ -2830,24 +2873,27 @@ pub(super) fn inf_conf() {
     // 1772`, `rsrc_obfix`-resolved at 8x16): a 39x22-cell box whose rows are
     // title 1, *Default dir* 3, *Parameter* 5, *Function keys* 7, the function
     // panel 8+6px, *Menu shortcut keys* 11+8px, the shortcut panel 12+14px,
-    // free RAM 17+8px, the buttons 20. Dropping the two omitted radio rows
-    // takes four character rows out of the middle, so everything from
-    // *Function keys* down moves up by `4 * CELL_H` and the box loses the same
-    // 4 cells of height — the spacing between the rows that remain is
-    // untouched, which matters because every `FL3DACT` gadget here is grown by
-    // `ADJ3DSTD` (2 px per side) and then laid out one pixel of border wider
-    // still (`aes/gemoblib.c:504`, `sst_th` `G_BUTTON` → `-1`).
-    /// The four character rows the omitted *Default dir* / *Parameter* groups
-    /// occupied.
-    const DROPPED: i16 = 4 * CELL_H;
+    // free RAM 17+8px, the buttons 20. Dropping the one omitted radio row
+    // takes two character rows out of the middle (its own row 5 and the blank
+    // row 6 that separated it from *Function keys*), so everything from
+    // *Function keys* down moves up by `2 * CELL_H` and the box loses the same
+    // 2 cells of height — *Default dir* keeps `ADDESKCF`'s row 3 and the
+    // spacing between the rows that remain is untouched, which matters because
+    // every 3D gadget here is grown by `ADJ3DSTD` (2 px per side) and then laid
+    // out one pixel of border wider still (`aes/gemoblib.c:504`, `sst_th`
+    // `G_BUTTON` → `-1`): the one blank character cell `ADDESKCF` leaves
+    // between *Application* and *Window* is 8 px, of which the growth eats 6.
+    /// The two character rows the omitted *Parameter* group occupied.
+    const DROPPED: i16 = 2 * CELL_H;
     let dw = 39 * CELL_W; // 312
-    let dh = 22 * CELL_H - DROPPED; // 288
-    let y_fun_lbl = 7 * CELL_H - DROPPED; // 48
-    let y_fun_box = 8 * CELL_H + 6 - DROPPED; // 70
-    let y_mnu_lbl = 11 * CELL_H + 8 - DROPPED; // 120
-    let y_mnu_box = 12 * CELL_H + 14 - DROPPED; // 142
-    let y_freemem = 17 * CELL_H + 8 - DROPPED; // 216
-    let y_btn = 20 * CELL_H - DROPPED; // 256
+    let dh = 22 * CELL_H - DROPPED; // 320
+    let y_defdir = 3 * CELL_H; // 48 — `ADDESKCF`'s own row, not shifted
+    let y_fun_lbl = 7 * CELL_H - DROPPED; // 80
+    let y_fun_box = 8 * CELL_H + 6 - DROPPED; // 102
+    let y_mnu_lbl = 11 * CELL_H + 8 - DROPPED; // 152
+    let y_mnu_box = 12 * CELL_H + 14 - DROPPED; // 174
+    let y_freemem = 17 * CELL_H + 8 - DROPPED; // 248
+    let y_btn = 20 * CELL_H - DROPPED; // 288
     // `adjust_3d_positions` (`deskmain.c:1647-1656`): "avoid button overlap" —
     // the two `PRV` gadgets sit flush against their `NXT` neighbour in the
     // resource, so a 3D build moves them left by `3 * ADJ3DSTD`.
@@ -2857,6 +2903,11 @@ pub(super) fn inf_conf() {
 
     // ── strings ─────────────────────────────────────────────────────────
     static TITLE: &[u8] = b"DESKTOP CONFIGURATION\0";
+    // `ADDESKCF`'s own labels, unpadded: a `G_BUTTON` centres its text in the
+    // object rectangle, and the rectangles below are the resource's.
+    static DEFDIR_LBL: &[u8] = b"Default dir:\0";
+    static DEFAPP: &[u8] = b"Application\0";
+    static DEFWIN: &[u8] = b"Window\0";
     static FUN_LBL: &[u8] = b"Function keys:\0";
     static MNU_LBL: &[u8] = b"Menu shortcut keys:\0";
     static CLEAR_ALL: &[u8] = b"Clear all\0";
@@ -2938,30 +2989,41 @@ pub(super) fn inf_conf() {
         mk_root(BOX_SPEC, dw, dh, DC_CNCL),
         // 1 title — `align_title` centres it on the box (`deskmain.c:1739-1747`).
         mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - 21 * CELL_W) / 2, CELL_H, 21 * CELL_W, CELL_H, 2, -1, -1),
-        // 2 "Function keys:"
+        // 2 "Default dir:"      3 DCDEFDIR (its `G_IBOX`)   4/5 the buttons
+        //
+        // `ADDESKCF` objects 2-5 verbatim (`desk_rsc.c:1615-1637`): the label
+        // at char (1,3) 13x1, the `G_IBOX` at (16,3) 22x1 carrying `ob_spec`
+        // `4352L` = `0x1100` and no 3D flag, and inside it *Application* at
+        // (0,0) 12x1 and *Window* at (13,0) 9x1, both `SELECTABLE | RBUTTON |
+        // FL3DIND`.
+        mk(G_STRING, 0, DEFDIR_LBL.as_ptr() as u64, CELL_W, y_defdir, 13 * CELL_W, CELL_H, DCDEFDIR, -1, -1),
+        mk(G_IBOX, 0, TED_COLOR as u64, 16 * CELL_W, y_defdir, 22 * CELL_W, CELL_H, 6, DCDEFAPP as i16, DCDEFAPP as i16 + 1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, DEFAPP.as_ptr() as u64, 0, 0, 12 * CELL_W, CELL_H, DCDEFAPP as i16 + 1, -1, -1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, DEFWIN.as_ptr() as u64, 13 * CELL_W, 0, 9 * CELL_W, CELL_H, DCDEFDIR, -1, -1),
+        // 6 "Function keys:"
         mk(G_STRING, 0, FUN_LBL.as_ptr() as u64, CELL_W, y_fun_lbl, 14 * CELL_W, CELL_H, DCFUNBOX, -1, -1),
-        // 3 DCFUNBOX            4..7 its children
+        // 7 DCFUNBOX            8..11 its children
         mk(G_BOX, FL3DBAK, PANEL_SPEC, CELL_W, y_fun_box, 37 * CELL_W, CELL_H + 8, DCFUNPRV, DCFUNNUM, DCFUNRT),
         mk(G_FTEXT, FL3DBAK, &mut ted_funnum as *mut _ as u64, 4, 4, 3 * CELL_W, CELL_H, DCFUNLT, -1, -1),
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, LEFT.as_ptr() as u64, 5 * CELL_W + 4, 4, 3 * CELL_W + 4, CELL_H, DCFUNPTH, -1, -1),
         mk(G_FBOXTEXT, FL3DBAK, &mut ted_funpth as *mut _ as u64, 10 * CELL_W, 4, 22 * CELL_W, CELL_H, DCFUNRT, -1, -1),
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, RIGHT.as_ptr() as u64, 33 * CELL_W, 4, 3 * CELL_W + 4, CELL_H, DCFUNBOX, -1, -1),
-        // 8/9 DCFUNPRV / DCFUNNXT
+        // 12/13 DCFUNPRV / DCFUNNXT
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_fun_lbl, 4 * CELL_W, CELL_H, DCFUNNXT, -1, -1),
-        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_fun_lbl, 4 * CELL_W, CELL_H, 10, -1, -1),
-        // 10 "Menu shortcut keys:"
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_fun_lbl, 4 * CELL_W, CELL_H, 14, -1, -1),
+        // 14 "Menu shortcut keys:"
         mk(G_STRING, 0, MNU_LBL.as_ptr() as u64, CELL_W, y_mnu_lbl, 19 * CELL_W, CELL_H, DCMNUBOX, -1, -1),
-        // 11 DCMNUBOX           12..14 its children
+        // 15 DCMNUBOX           16..18 its children
         mk(G_BOX, FL3DBAK, PANEL_SPEC, CELL_W, y_mnu_box, 37 * CELL_W, 3 * CELL_H + 4, DCMNUPRV, DCMNUKEY, DCMNUTXT),
         mk(G_FTEXT, EDITABLE | FL3DBAK, &mut ted_mnukey as *mut _ as u64, 4, 2 * CELL_H, 15 * CELL_W, CELL_H, DCMNUCLR, -1, -1),
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, CLEAR_ALL.as_ptr() as u64, 17 * CELL_W + 4, 2 * CELL_H, 19 * CELL_W, CELL_H, DCMNUTXT, -1, -1),
         mk(G_FBOXTEXT, 0, &mut ted_mnutxt as *mut _ as u64, 4, 4, 36 * CELL_W, CELL_H, DCMNUBOX, -1, -1),
-        // 15/16 DCMNUPRV / DCMNUNXT
+        // 19/20 DCMNUPRV / DCMNUNXT
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_mnu_lbl, 4 * CELL_W, CELL_H, DCMNUNXT, -1, -1),
         mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_mnu_lbl, 4 * CELL_W, CELL_H, DCFREMEM, -1, -1),
-        // 17 DCFREMEM
+        // 21 DCFREMEM
         mk(G_FTEXT, FL3DBAK, &mut ted_fremem as *mut _ as u64, CELL_W, y_freemem, 36 * CELL_W, CELL_H, DCOK, -1, -1),
-        // 18/19 OK / Cancel (`DCOK` is `SELECTABLE|DEFAULT|EXIT|FL3DACT`,
+        // 22/23 OK / Cancel (`DCOK` is `SELECTABLE|DEFAULT|EXIT|FL3DACT`,
         // `DC_CNCL` the same without `DEFAULT`, `desk_rsc.c:1759-1771`).
         mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * CELL_W, y_btn, 9 * CELL_W, CELL_H, DC_CNCL, -1, -1),
         mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 23 * CELL_W, y_btn, 9 * CELL_W, CELL_H, 0, -1, -1),
@@ -2970,6 +3032,14 @@ pub(super) fn inf_conf() {
     // 1720`), which on an `FL3DBAK` panel is EmuTOS's `draw_3d_outline`.
     tree[DCFUNBOX as usize].ob_state = OUTLINED;
     tree[DCMNUBOX as usize].ob_state = OUTLINED;
+
+    // ── pre-select the current state (`deskinf.c:1105-1112`) ───────────
+    //
+    // `deselect_all(tree)` is implicit: `mk` leaves every `ob_state` at 0 (the
+    // two `OUTLINED` panels above are not `SELECTED`). Then
+    // `if (G.g_appdir) tree[DCDEFAPP] |= SELECTED; else tree[DCDEFWIN] |= …`.
+    let appdir = global::with(|g| g.g_appdir).unwrap_or(true);
+    tree[DCDEFAPP + usize::from(!appdir)].ob_state |= OB_SELECTED;
 
     // ── free-RAM line (`deskinf.c:1118-1125`) ───────────────────────────
     // `sprintf("%ld KB", dos_avail_stram()/1024)`, plus `" + %ld KB"` of
@@ -3122,6 +3192,10 @@ pub(super) fn inf_conf() {
             }
             DCOK => {
                 save_shortcut(current_shortcut, &b_mnukey);
+                // `G.g_appdir = inf_which(tree, DCDEFAPP, 2);` (`:1226`) —
+                // 1 = *Application* (the first of the pair), 0 = *Window*.
+                let chosen = inf_which(&tree, DCDEFAPP, 2) == 1;
+                global::with(|g| g.g_appdir = chosen);
                 done = true;
             }
             DC_CNCL => done = true,
@@ -3177,7 +3251,10 @@ pub fn selftest() {
     // A representative state: text view, sort by size, custom background, two
     // desktop-icon positions, one window, and the default file-type anodes.
     let mut original = InfData::default();
-    let (e1, e5) = state_to_env(View::Text, Sort::Size, false, original.e1, original.e5);
+    // `appdir = false` is the non-default *Default dir* setting (the `.INF`
+    // default `INF_E5_DEFAULT` has `INF_E5_APPDIR` set), so the round trip
+    // exercises the bit in its cleared state too (DESK18).
+    let (e1, e5) = state_to_env(View::Text, Sort::Size, false, false, original.e1, original.e5);
     // …and a non-default value for every Preferences field, so the `#E` bytes
     // the dialog writes are exercised too (DESK02/DESK13): confirm-deletes off,
     // confirm-copies on, confirm-overwrites off (i.e. `INF_E2_ALLOWOVW` set —
@@ -3223,7 +3300,7 @@ pub fn selftest() {
     // (1) In-memory round-trip: serialize → parse → compare.
     let bytes = original.serialize();
     let mem = parse_inf(&bytes);
-    check("in-memory: #E view/sort", env_to_state(mem.e1, mem.e5) == env_to_state(original.e1, original.e5));
+    check("in-memory: #E view/sort/appdir", env_to_state(mem.e1, mem.e5) == env_to_state(original.e1, original.e5));
     check(
         "in-memory: #E preferences",
         env_to_prefs(mem.e1, mem.e2) == (false, true, false, 4, TimeFmt::H12, DateFmt::Dmy),
@@ -3239,7 +3316,7 @@ pub fn selftest() {
     match read_inf_file() {
         Some(back) => {
             let disk = parse_inf(&back);
-            check("disk: #E view/sort", env_to_state(disk.e1, disk.e5) == env_to_state(original.e1, original.e5));
+            check("disk: #E view/sort/appdir", env_to_state(disk.e1, disk.e5) == env_to_state(original.e1, original.e5));
             check(
                 "disk: #E preferences",
                 env_to_prefs(disk.e1, disk.e2) == (false, true, false, 4, TimeFmt::H12, DateFmt::Dmy),

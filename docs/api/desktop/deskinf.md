@@ -1442,26 +1442,52 @@ Consequences worth naming:
 * **Nothing here writes the file.** `inf_conf` ends at `end_dialog`; the new
   shortcuts reach `NEWDESK.INF` through *Save desktop*, exactly as in EmuTOS.
 
-### Two groups of `ADDESKCF` are absent, and why
+### *Default dir* is back (DESK18); *Parameter* is still absent
 
 Same rule as DESK02: a control whose effect is not implemented is left out
-rather than shown and ignored. Both of these are missing **consumers in other
-functions**, not missing pieces of this dialog.
+rather than shown and ignored — and it comes back when the effect lands.
 
 * **Default dir** (`DCDEFAPP`/`DCDEFWIN` → `G.g_appdir`) picks the current
   directory a *non-installed* program is launched with: `do_aopen` chooses the
   top window's path or the program's own and calls `set_default_path()`
-  (`desksupp.c:896-912`). NewTOS's launch path (`desk::main::launch_native` →
-  `crate::launch::run_program`) never sets a current directory at all — there is
-  no `Dsetpath` on it — so the switch would steer nothing.
+  (`desksupp.c:896-916`). DESK05 left the group out because NewTOS's launch
+  path set no current directory at all. **DESK18 built that step**
+  (`desk::pro::set_default_path` + `desk::main::set_launch_dir`, see
+  `deskpro.md` §*The current-directory step*), so the group is in the tree
+  again, as `ADDESKCF` objects 2..5 verbatim.
 * **Parameter** (`DCPMFULL`/`DCPMFILE` → `G.g_fullpath`) picks whether a file
   dropped on a program icon is passed as a full path or a bare name
   (`build_selected_path`, `deskfun.c:903-931`), reached from `fun_win2win`'s
   drop-on-an-application branch (`deskfun.c:960-970`). NewTOS's `fun_win2win`
-  has no such branch — a drop on a program is a copy.
+  has no such branch — a drop on a program is a copy — so this one stays out.
+  Its `#E` byte-5 bit (`INF_E5_ISFULL`, `deskapp.c:111`) keeps round-tripping
+  untouched meanwhile, so a file that carries it survives.
 
-Their `#E` byte-5 bits (`INF_E5_APPDIR` / `INF_E5_ISFULL`, `deskapp.c:110-111`)
-keep round-tripping untouched meanwhile, so a file that carries them survives.
+**NewTOS notes (DESK18).**
+
+* **Object numbers.** `ADDESKCF` minus the four objects of the omitted
+  *Parameter* row (`desk_rsc.c:1660-1685`): objects 0..5 are the resource's own
+  (ROOT, title, *Default dir:*, its `G_IBOX`, `DCDEFAPP`, `DCDEFWIN`), and
+  everything from the *Function keys* label on is four lower than
+  `desk_rsc.h:191-211`. The **names** are EmuTOS's, as in `inf_pref`.
+* **Geometry.** The box is `39 x 20` cells = **312 x 288 + 32 = 312 x 320**
+  (DESK05's 288 plus the two character rows *Default dir* takes back);
+  `form_center` puts the ROOT at (164, 89) on a 640x480 screen. *Default dir*
+  keeps `ADDESKCF`'s row 3; the rows below it move up `2 * CELL_H` instead of
+  DESK05's `4 * CELL_H`. The group's inner spacing is the resource's own
+  (*Application* 12 cells at column 0, *Window* 9 cells at column 13): the one
+  blank cell between them is 8 px, of which the 3D growth (`ADJ3DSTD` 2 px per
+  side plus the 1 px border) eats 6.
+* **The group has its own `G_IBOX`** (`ADDESKCF` object 3, `ob_spec = 4352` =
+  `0x1100`, no 3D flag), because that is what makes the AES deselect the
+  sibling of the button that was hit. A `G_IBOX` draws nothing — its thickness
+  byte is 0 and `objc_draw` skips the interior — so carrying the resource's
+  colour word costs nothing and keeps the tree faithful.
+* **Pre-select and commit are EmuTOS's** (`deskinf.c:1105-1112`, `:1226`):
+  `deselect_all` is implicit (every `ob_state` starts at 0), `G.g_appdir`
+  selects `DCDEFAPP` or `DCDEFWIN`, and `OK` reads it back with
+  `inf_which(tree, DCDEFAPP, 2)` — 1 = *Application*, 0 = *Window*. Any other
+  exit leaves `G.g_appdir` alone.
 
 ### The function-key panel is a viewer
 

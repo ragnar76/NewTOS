@@ -59,6 +59,11 @@ head -c 4096 /dev/urandom                                                    > "
 mkdir -p "$V/ACC"
 mkdir -p "$V/GEMSYS"
 mkdir -p "$V/SUB";  printf 'A file inside SUB.\r\n'                           > "$V/SUB/INSIDE.TXT"
+# Two files of the SAME bare name, one per directory: what CURDIR.NCP (below)
+# reads back names the directory it was launched in. Used by the working-
+# directory proof (desktop `do_aopen` -> `set_default_path`, DESK18).
+printf 'PROOF: C:\\ (root)\r\n'                                                > "$V/PROOF.TXT"
+printf 'PROOF: C:\\SUB\r\n'                                                    > "$V/SUB/PROOF.TXT"
 mkdir -p "$V/AUTO"; printf 'AUTO runs native console (.NCP) programs at boot, before the desktop/AES.\r\nGEM apps (.NAP) do NOT belong here - they launch from the desktop.\r\n' > "$V/AUTO/READ.ME"
 
 # ADR-018 / Task #72 stage A: a native NewTOS `.NCP` console program (native
@@ -120,6 +125,18 @@ if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/scrflip.c" "$V/SCR
   fi
 else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\SCRFLIP.NCP skipped"
+fi
+
+# CURDIR.NCP is the working-directory proof (DESK18): it prints the current
+# drive + Dgetpath, then opens PROOF.TXT by a BARE RELATIVE NAME and prints
+# what it read. Installed in \SUB\ on purpose -- launched from the desktop it
+# must read C:\SUB\PROOF.TXT ("PROOF: C:\SUB"), and only does so if the
+# launcher set the current directory first. Never in \AUTO\: the AUTO path has
+# its own (root) directory and the program is there to distinguish the two.
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/curdir.c" "$V/SUB/CURDIR.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\SUB\\CURDIR.NCP (working-directory proof)"
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\SUB\\CURDIR.NCP skipped"
 fi
 
 # DTACHILD.NCP is the per-process-DTA proof (S1c): a console program that moves

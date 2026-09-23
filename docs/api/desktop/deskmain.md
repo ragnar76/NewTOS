@@ -1193,11 +1193,17 @@ next reader does not re-derive them:
 * `cs_confcpy`/`cs_confovwr` are not: NewTOS's copy engine asks no
   per-item and no overwrite question, so the switches are absent from
   `inf_pref` too (`deskinf.md`, DESK02).
-* `cs_blitter`/`cs_cache` are m68k hardware; `cs_appdir`/`cs_fullpath`
-  are `inf_conf`'s launch-directory policy, whose consumers
-  (`set_default_path` in `do_aopen`, `build_selected_path` in
-  `fun_win2win`) NewTOS does not have, so the two radios are absent from
-  `inf_conf` too (`deskinf.md`, DESK05).
+* `cs_blitter`/`cs_cache` are m68k hardware, so they stay out.
+* `cs_appdir` **is** carried since DESK18: its consumer
+  (`set_default_path` in `do_aopen`) now exists as
+  `desk::pro::set_default_path` + `desk::main::set_launch_dir`, and the
+  *Default dir* radios are back in `inf_conf` (`deskinf.md`, DESK18).
+  `cnx_put`/`cnx_get` move it exactly where EmuTOS does
+  (`deskmain.c:1391`, `:1453`).
+* `cs_fullpath` is still not: its consumer is `build_selected_path` in
+  `fun_win2win`'s drop-on-an-application branch, which NewTOS does not
+  have, so the *Parameter* radios stay out of `inf_conf`
+  (`deskinf.md`, DESK05).
 
 The bits of all of these survive a load/save round trip — `desk::inf`
 keeps the parsed `#E` bytes of the session and re-emits every bit it

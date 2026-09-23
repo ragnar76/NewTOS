@@ -299,3 +299,56 @@ Two named differences, both from the `tail` buffer this doc's
   dead parameters and an unreachable branch would be worse than naming the
   gap; they come back with `do_wopen` when the double-click path is routed
   through here.
+
+### The current-directory step (DESK18, 2026-09-23)
+
+`set_default_path` (`desksupp.c:1785-1801`) joined `desk_busy_on`/
+`desk_busy_off` in [`kernel/src/desk/pro.rs`](../../../kernel/src/desk/pro.rs)
+for the same reason they are there: it belongs to `desksupp.c`, it has no home
+of its own in the tree, and the module that starts programs is where its
+caller lives.
+
+```c
+desk_busy_on();
+dos_sdrv(path[0]-'A');
+rc = (WORD)dos_chdir(path);
+desk_busy_off();
+return rc;
+```
+
+Both calls are real GEMDOS traps through
+[`desk::dosbind`](../../../kernel/src/desk/dosbind.rs): `dos_sdrv` was already
+there (the desktop reads the drive map with it, `deskapp.c:714`), `dos_chdir`
+= `Dsetpath` (0x3B, `gemdos.h:95-98`) is new. `path[0]-'A'` is EmuTOS's own
+drive derivation, taken verbatim — which is why the argument must carry its
+`X:` prefix. An unmounted drive and a missing directory both come back as
+`EPTHNF` (`docs/api/gemdos/directory/3b-dsetpath.md`, which folds `ckdrv`'s
+failure into `findit`'s), and that is the one value the caller checks.
+
+**The caller is `do_aopen`'s path choice**, `desksupp.c:893-916`, reimplemented
+as `desk::main::set_launch_dir(app_dir, own_path)`. NewTOS splits `do_aopen`
+over two functions — `main::open_item`'s `OpenTarget::App` arm (a program
+selected directly, EmuTOS's `else` branch, switch = `G.g_appdir`) and
+`main::open_document` (a data file with an installed application, EmuTOS's
+`is_installed(pa)` branch, switch = the association's `AF_APPDIR`) — so the
+shared body takes the switch as a parameter. On failure it raises `STDEFDIR`
+(`desk_rsc.c:2558-2559`) through `dir::fun_alert` and the caller does **not**
+launch, exactly as `do_aopen` returns `FALSE` there. Note the order, which the
+alert's identity depends on: the directory is set *before* the
+`file_exists(pa->a_pappl)` check (`:933`), so an association pointing at a
+missing drive reports "failed to set default directory" and not "file not
+found".
+
+One named simplification: for the non-installed arm EmuTOS passes the
+**window's search spec** (`C:\SUB\*.*`) as `pathname` and NewTOS passes the
+program's own full path (`C:\SUB\PROG.NCP`). `filename_start`
+(`util/optimize.c:226-235`) cuts both back to the identical `C:\SUB\`, and
+that is the only thing the function does with the string.
+
+**What this does not cover.** `pro_run` still does not set a directory (it
+does not in EmuTOS either) and `crate::launch::run_program` still does not —
+the step is `do_aopen`'s, and `\AUTO\` programs and the `#Z` autorun reach
+their directory by other routes (`sh_chdef`'s `set_drvdir`,
+`aes/gemshlib.c:526-566`, which NewTOS's `tos-api/src/aes/shell.rs` already
+has). The `\AUTO\` folder run has no `set_drvdir` equivalent at all; it is
+out of this ticket's scope and named in `TASK/DESK18-STATUS-DONE.MD`.
