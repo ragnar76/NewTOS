@@ -1,0 +1,40 @@
+# DESK26 "after": delete one file out of the C:\DESKT24\ window and look at the
+# info line afterwards.  `fun_del` -> `rebuild_window`, which now calls
+# `win_sinfo(pwin, FALSE)` at EmuTOS's place (deskfun.c:141).
+#   DESKT24 window TWO.TXT (287,127)             probe run 2
+#   File title hover (88,9), Delete... (156,203) probe run 1
+#   ADCPYDEL OK (229,301)                        the [d24] dump
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_ALTC
+3100 move 431 103
+3400 down
+3403 up
+3410 down
+3413 up
+4100 parkbr
+4900 mark C_SUBDIR
+5300 move 287 127
+5900 down
+6100 up
+6700 parkbr
+7500 mark D_SELECTED
+7900 move 88 240
+8100 move 88 9
+8700 move 156 203
+9300 down
+9500 up
+10100 parkbr
+10900 mark E_DELBOX
+11300 move 229 301
+11900 down
+12100 up
+12700 parkbr
+13600 mark F_DELETED
+14400 pause

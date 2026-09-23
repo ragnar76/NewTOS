@@ -1,0 +1,243 @@
+measurement-2026-09-23-desk24-desk25-desk26
+  DESK24 (the folder name conflict: output_path / get_new_name)
+  DESK25 (STDELDIS: the extra question when a whole drive is deleted)
+  DESK26 (the info line after fun_rebld)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD 50714b7. The three tickets' change is
+UNCOMMITTED in the shared tree (one file, kernel/src/desk/dir.rs). Nothing
+flashed, nothing ejected, no real Pi run, nothing committed; no
+`git checkout/restore/clean/stash/reset` was run on the shared tree. The only
+git command used was the read-only `git show HEAD:kernel/src/desk/dir.rs`,
+which is how the "before" kernel is built (method/make_scratch.sh).
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (`method/run.sh` + `method/qmp_multi.py`). Card image: a fresh
+`tools/make-sd-image.sh` per measurement (64 MiB, MBR + FAT16) plus the
+fixture in §0 (`method/seed.sh`) -- rebuilt, never a reused copy, because the
+tool changed with DESK18; each run gets its own copy of it. Interactive runs
+use the scratch-copy IKBD injector (memory `desktop-interactive-verification-
+real-hw`): `method/make_scratch.sh` rsyncs the crates into the job scratch and
+patches the copy -- never the shared tree.
+
+`method/*.actions` are the ten action lists, `method/*.rs` the generated
+injector tables (`mkscript.sh` -> `gen_script.py ... SCRIPT_DESK`, plus an
+empty `SCRIPT_TERA`). `method/desk24_patch.py` is the DESK24/25/26-only
+serial scaffolding (see §0). `method/lsimg.py` is the read-only FAT16 lister
+used to check what each run actually wrote; `method/lfn_orphan_probe.py` is
+the read-only directory-slot probe behind §6.
+`method/desk24-desk25-desk26.diff` is the full source diff.
+No `*.img` in this directory (the ticket's rule).
+
+POINTER PARK: (639,479) -- `parkbr`, which crosses no menu title (A79). The
+one approach to the menu bar goes (639,479) -> (88,240) -> (88,9), i.e.
+straight up into *File*'s own title, crossing no other title (memory
+`injector-park-must-not-cross-menu-bar`).
+
+EVERY click point comes from a serial dump, none is guessed:
+  * `method/probe_patch.py` (the DESK16/17/21 copy, minus its ADINSDSK piece)
+    prints the menu geometry with every entry's DISABLED bit, the desktop
+    icons and the window items with their click points.
+  * `method/desk24_patch.py` prints the `ADCPYDEL` and `ADCPALER` rectangles
+    (as DESK13 did), EVERY `form_alert` box + button rectangle -- which is
+    where DESK25's two alerts come from -- every `win_sinfo` call with its
+    `check_selected` argument and the line it produced, and, in the "after"
+    tree only, what `output_path` was asked and decided and what `STDELDIS`
+    answered.
+
+Measured, and used unchanged by every later run:
+  desktop C: icon (38,35), Trash (38,449)
+  C:\ window:        DESKT24 (431,103)
+  C:\DESKT24\ window: FOLD (119,127)  ONE.TXT (203,127)  TWO.TXT (287,127)
+  File title hover (88,9), `Delete...` (156,203)
+  ADCPYDEL root (160,159) 320x180 -> OK (229,301), Cancel (411,301)
+  ADCPALER root (160,159) 320x180 -> OK (224,301), Skip (320,301), Stop (416,301)
+  STRMVDEL alert box (168,202) 304x94 -> Cancel (224,269) Remove (320,269)
+                                        Delete (416,269)
+  STDELDIS alert box (184,202) 272x94 -> Yes (288,269) No (352,269)
+
+
+0. The card, and the scaffolding
+---------------------------------
+Seeded on top of the standard image (`method/seed.sh`), so a folder copy has
+something to collide with:
+
+    C:\DESKT24\FOLD\INNER.TXT   34 bytes, "CHARLIE inside the source folder"
+    C:\DESKT24\ONE.TXT           5 bytes
+    C:\DESKT24\TWO.TXT           5 bytes
+    C:\FOLD\EXIST.TXT           27 bytes, "DELTA already on the root"
+
+So dragging `C:\DESKT24\FOLD` onto the `C:` desktop icon is a folder copy into
+`C:\` whose destination folder name is already taken -- EmuTOS's
+`output_path()`/`get_new_name()` case.
+
+All dumps go through `tos_api::aes::h02_log` (the a79 serial-only sink) or
+`kprintln!`; nothing reaches the framebuffer, so the pictures stay clean.
+
+
+1. The runs
+-----------
+
+probe   menu + desktop-icon geometry, and the C:\ window's items.
+        screendumps/probe-a-idle.png, probe-b-win.png, probe-c-csel.png
+probe2  the C:\DESKT24\ window's items, and the STRMVDEL alert rectangles.
+        screendumps/probe2-a-idle.png, probe2-b-subdir.png, probe2-c-rmvdel.png
+
+d24-merge   DESK24 after, answer 1: FOLD dragged to C:, conflict answered OK
+            on an unchanged name -> merge.
+            d24-merge-{a-idle,b-subdir,c-copybox,d-conflict,e-merged}.png
+d24-rename  DESK24 after, answer 2: the same, with `2` typed into `Copy's
+            name:` -> a new folder FOLD2.
+            d24-rename-{a-idle,b-copybox,c-conflict,d-typed,e-renamed}.png
+d24-before  DESK24 before (HEAD dir.rs): the same gesture, no question.
+            d24-before-{a-idle,b-subdir,c-copybox,d-after}.png
+
+d25-no      DESK25 after, answered No: the drive is untouched.
+            d25-no-{a-idle,b-rmvdel,c-delbox,d-stdeldis,e-answered}.png
+d25-yes     DESK25 after, answered Yes: drive C: is emptied.
+            d25-yes-{a-idle,b-delbox,c-stdeldis,d-answered}.png
+d25-before  DESK25 before (HEAD dir.rs): no second question at all; the OK on
+            the counting box empties the drive.
+            d25-before-{a-idle,b-rmvdel,c-delbox,d-after}.png
+
+d26-after   DESK26 after: delete TWO.TXT out of the C:\DESKT24\ window.
+            d26-after-{a-idle,b-subdir,c-selected,d-delbox,e-deleted}.png
+d26-before  DESK26 before (HEAD dir.rs): the same gesture.
+            d26-before-{a-idle,b-subdir,c-selected,d-delbox,e-deleted}.png
+
+final-rpi4  smoke boot of the SHARED tree's own, unpatched rpi4 build.
+            screendumps/final-rpi4-desktop.png
+
+
+2. DESK24 -- confirmed and built
+--------------------------------
+Before (serial/d24-before-serial.log) the drag produces the counting box and
+then nothing:
+
+    [d25] dir_op op=Count  icontype="<absent>" src="C:\DESKT24\" n=1
+    [d24] CPYDEL root=(160,159,320,180) ... files=1 dirs=1 confirm=true
+    [d25] dir_op op=Copy   icontype="<absent>" src="C:\DESKT24\" n=1
+
+-- no `CPALER` line: the old code did `let _ = dos_mkdir(&dst_sub)` and merged
+into the existing folder without asking. The card afterwards
+(serial/cards.txt, d24-before.img) has `C:\FOLD\{EXIST.TXT, INNER.TXT}`.
+
+After, the same gesture puts EmuTOS's dialog up for the FOLDER, pre-filled
+with the destination name in BOTH fields (`deskdir.c:705-709`, unlike the file
+case where `CACURRNA` is the source):
+
+    [d24] CPALER ... curr="FOLD" copy="FOLD"        screendumps/d24-merge-d-conflict.png
+
+  * OK on the unchanged name (`ret == 1`, `deskdir.c:770-775`):
+        [d24] CPALER answer ob=4 ... copy now "FOLD"
+        [d24] output_path(Copy, "C:\FOLD") -> Ok, dst now "C:\FOLD"
+    and the card has `C:\FOLD\{EXIST.TXT 27, INNER.TXT 34}` -- merged, as
+    EmuTOS merges. `C:\DESKT24\FOLD\INNER.TXT` is untouched.
+  * `2` typed into the editable field (`ret == 2`, the loop goes round again
+    and `dos_mkdir` succeeds):
+        [d24] CPALER answer ob=4 ... copy now "FOLD2"
+        [d24] output_path(Copy, "C:\FOLD") -> Ok, dst now "C:\FOLD2"
+    and the card has a NEW `C:\FOLD2\INNER.TXT 34` while `C:\FOLD` still holds
+    only `EXIST.TXT` -- screendumps/d24-rename-d-typed.png shows the typed
+    name in the field, e-renamed.png the result.
+
+Both answers are read out of the card image with method/lsimg.py, not off the
+screen (serial/cards.txt).
+
+
+3. DESK25 -- confirmed and built
+--------------------------------
+Before (serial/d25-before-serial.log):
+
+    [d25] dir_op op=Count  icontype="<absent>" src="C:\" n=31
+    [d24] CPYDEL ... files=42 dirs=15 confirm=true
+    [d25] dir_op op=Delete icontype="<absent>" src="C:\" n=31
+
+-- one OK and drive C: is gone (serial/cards.txt, d25-before.img: the root
+holds nothing but the volume label).
+
+After, the icon type reaches `dir_op` and the second question is asked at
+EmuTOS's place (`deskdir.c:967-976`):
+
+    [d25] dir_op op=Count  icontype=Some(Disk) src="C:\" n=31
+    [d24] CPYDEL ... files=42 dirs=15 confirm=true
+    [d25] STDELDIS drive 'C' icontype=Some(Disk) -> yes=false
+    [d25] dir_op op=Delete icontype=Some(Disk) src="C:\" n=31 stop=true
+
+  * screendumps/d25-no-d-stdeldis.png is the alert over the standing
+    `DELETE FILE(S)` box: "Do you want to delete all | the files on drive C: ?"
+    with `Yes` / `No` and the default on `No` -- `STDELDIS`, `desk_rsc.c:2499`.
+  * No -> `stop=true`, and the card is byte-for-byte the seeded one (57 files,
+    serial/fsck.txt; root listing identical to base.img).
+  * Yes -> `yes=true`, and the root holds nothing but the volume label
+    (serial/cards.txt, d25-yes.img). The question is load-bearing, not
+    decorative.
+
+The three questions of the desktop-icon delete are now EmuTOS's three:
+`STRMVDEL` (Cancel/Remove/Delete, `deskfun.c:1399`), the `ADCPYDEL` counting
+box (gated on *Confirm deletes*), and `STDELDIS`.
+
+
+4. DESK26 -- confirmed and built
+--------------------------------
+`fun_rebld` is a SIXTH `win_sinfo` call site, not one of A110's five called
+with the wrong argument: EmuTOS calls it inside `rebuild_window`
+(`deskfun.c:135-142`), which is what both `fun_rebld` (`:173`) and
+`fun_rebld_marked` (`:150`) run, and it calls it with `check_selected ==
+FALSE`. NewTOS's `rebuild_window` (dir.rs) did not call it at all; the two
+`FALSE` sites the A110 note claimed were "in `set_window_strings`" are in fact
+only `do_diropen`'s (`desksupp.c:450`) -- `set_window_strings` has no caller in
+`rebuild_window`.
+
+Delete TWO.TXT out of the C:\DESKT24\ window:
+
+    before  [d26] win_sinfo(h=2, check_selected=true)  -> " 5 bytes used in 1 selected items."
+            (nothing after it)                         d26-before-e-deleted.png
+    after   [d26] win_sinfo(h=2, check_selected=true)  -> " 5 bytes used in 1 selected items."
+            [d26] win_sinfo(h=2, check_selected=false) -> " 5 bytes used in 2 items."
+                                                       d26-after-e-deleted.png
+
+The two pictures differ in that one line; the window content (FOLD, ONE.TXT,
+nothing selected) is identical. `5 bytes / 2 items` is right: FOLD (0) plus
+ONE.TXT (5).
+
+
+5. Hygiene
+-----------
+`[EXC]` / `[PANIC]`: 0 in all ten raspi4b serial logs, in the qemu-virt boot
+log (serial/qemu-virt-boot.log, which reaches `[desk] desktop up`) and in the
+smoke boot of the shared tree's own, unpatched rpi4 build
+(serial/final-rpi4-serial.log + screendumps/final-rpi4-desktop.png).
+
+Build, on the shared tree, fresh per board:
+
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat
+    cargo xtask build --board rpi4        tos-api 64 / kernel 94   (base 64/94)
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat
+    cargo xtask build --board qemu-virt   tos-api 64 / kernel 94   (base 64/94)
+
+    cargo clippy --features board-rpi4       tos-api 80 / kernel 125 (base 80/125)
+    cargo clippy --features board-qemu-virt  tos-api 80 / kernel 125 (base 80/125)
+    hits in kernel/src/desk/: 0
+
+    cargo run -p xtask -- test   938 passed / 0 failed / 1 ignored
+
+
+6. `fsck_msdos` on the two whole-drive wipes -- a PRE-EXISTING finding
+-----------------------------------------------------------------------
+`fsck_msdos -n` is clean (Phase 1/2/3, rc=0) on eleven of the thirteen images.
+The two it is not clean on are `d25-yes.img` and `d25-before.img`, the only two
+on which a whole drive was emptied; on both it dies with exit 133 and prints
+nothing at all.
+
+It reproduces identically on the HEAD build, so DESK25 did not cause it --
+DESK25 only puts a question in front of the same delete. The cause is that
+GEMDOS `Fdelete`/`Ddelete` erase the 8.3 entry and leave the preceding
+long-filename slots (`attr == 0x0F`) behind; the card carries them because
+macOS wrote `.fseventsd`, `.Spotlight-V100` and the `._*` companions with LFN
+chains. `ctl-nolfn.img` -- a copy of `d25-yes.img` with exactly those 35 slots
+marked erased (`method/lfn_orphan_probe.py --fix`) -- passes Phase 1/2/3 with
+rc=0 and 0 files.
+
+Full record and the remaining open question in serial/fsck.txt; the slot dump
+in serial/lfn-d25-yes.txt. Reported as a new ticket, not fixed here.

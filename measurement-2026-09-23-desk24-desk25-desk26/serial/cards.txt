@@ -1,0 +1,387 @@
+Card-image listings, read with method/lsimg.py (read-only FAT16 reader).
+No *.img is kept in this directory; these are the listings they produced.
+
+=== base.img
+--- <root>
+    NEWTOS                0  date=0x5d37 time=0xb90d
+DIR FSEVEN~1              0  date=0x5d37 time=0xb90b
+DIR SPOTLI~1              0  date=0x5d37 time=0xb907
+    README.TXT           64  date=0x5d37 time=0xb907
+DIR DESKT24               0  date=0x5d37 time=0xb90d
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    HELLO.TXT            32  date=0x5d37 time=0xb907
+    CONFIG.TXT           20  date=0x5d37 time=0xb907
+    NEWDESK.INF          21  date=0x5d37 time=0xb907
+    KEYBOARD.KBD         28  date=0x5d37 time=0xb907
+    KERNEL8.IMG        4096  date=0x5d37 time=0xb907
+    LYNXBOOT.IMG        512  date=0x5d37 time=0xb907
+    DATA.BIN           4096  date=0x5d37 time=0xb907
+DIR ACC                   0  date=0x5d37 time=0xb907
+DIR GEMSYS                0  date=0x5d37 time=0xb907
+DIR SUB                   0  date=0x5d37 time=0xb907
+    PROOF.TXT            19  date=0x5d37 time=0xb907
+DIR AUTO                  0  date=0x5d37 time=0xb907
+    HELLO.NCP          4388  date=0x5d37 time=0xb907
+    PHYSBASE.NCP       5704  date=0x5d37 time=0xb907
+    BIG.NCP           15184  date=0x5d37 time=0xb907
+    HELLO2.NCP         5056  date=0x5d37 time=0xb907
+    DTACHILD.NCP       5200  date=0x5d37 time=0xb907
+    SCRFLIP.NCP        6328  date=0x5d37 time=0xb907
+    LIBTEST.NCP       86664  date=0x5d37 time=0xb907
+    CLOCKTST.NCP      89960  date=0x5d37 time=0xb907
+    SETJMPT.NCP       11504  date=0x5d37 time=0xb907
+    MATHTST.NCP       32984  date=0x5d37 time=0xb907
+DIR COREMARK              0  date=0x5d37 time=0xb907
+    DUMPVDI.NAP      140216  date=0x5d37 time=0xb907
+    VDI.TSV            6636  date=0x5d37 time=0xb907
+DIR APPS                  0  date=0x5d37 time=0xb907
+--- DESKT24
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    ONE.TXT               5  date=0x5d37 time=0xb90d
+    TWO.TXT               5  date=0x5d37 time=0xb90d
+--- DESKT24\FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb90d
+    INNER.TXT            34  date=0x5d37 time=0xb90d
+--- FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+    EXIST.TXT            27  date=0x5d37 time=0xb90d
+--- FOLD2
+no such directory: FOLD2
+
+=== d24-merge.img
+--- <root>
+    NEWTOS                0  date=0x5d37 time=0xb90d
+DIR FSEVEN~1              0  date=0x5d37 time=0xb90b
+DIR SPOTLI~1              0  date=0x5d37 time=0xb907
+    README.TXT           64  date=0x5d37 time=0xb907
+DIR DESKT24               0  date=0x5d37 time=0xb90d
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    HELLO.TXT            32  date=0x5d37 time=0xb907
+    CONFIG.TXT           20  date=0x5d37 time=0xb907
+    NEWDESK.INF          21  date=0x5d37 time=0xb907
+    KEYBOARD.KBD         28  date=0x5d37 time=0xb907
+    KERNEL8.IMG        4096  date=0x5d37 time=0xb907
+    LYNXBOOT.IMG        512  date=0x5d37 time=0xb907
+    DATA.BIN           4096  date=0x5d37 time=0xb907
+DIR ACC                   0  date=0x5d37 time=0xb907
+DIR GEMSYS                0  date=0x5d37 time=0xb907
+DIR SUB                   0  date=0x5d37 time=0xb907
+    PROOF.TXT            19  date=0x5d37 time=0xb907
+DIR AUTO                  0  date=0x5d37 time=0xb907
+    HELLO.NCP          4388  date=0x5d37 time=0xb907
+    PHYSBASE.NCP       5704  date=0x5d37 time=0xb907
+    BIG.NCP           15184  date=0x5d37 time=0xb907
+    HELLO2.NCP         5056  date=0x5d37 time=0xb907
+    DTACHILD.NCP       5200  date=0x5d37 time=0xb907
+    SCRFLIP.NCP        6328  date=0x5d37 time=0xb907
+    LIBTEST.NCP       86664  date=0x5d37 time=0xb907
+    CLOCKTST.NCP      89960  date=0x5d37 time=0xb907
+    SETJMPT.NCP       11504  date=0x5d37 time=0xb907
+    MATHTST.NCP       32984  date=0x5d37 time=0xb907
+DIR COREMARK              0  date=0x5d37 time=0xb907
+    DUMPVDI.NAP      140216  date=0x5d37 time=0xb907
+    VDI.TSV            6636  date=0x5d37 time=0xb907
+DIR APPS                  0  date=0x5d37 time=0xb907
+--- DESKT24
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    ONE.TXT               5  date=0x5d37 time=0xb90d
+    TWO.TXT               5  date=0x5d37 time=0xb90d
+--- DESKT24\FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb90d
+    INNER.TXT            34  date=0x5d37 time=0xb90d
+--- FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+    EXIST.TXT            27  date=0x5d37 time=0xb90d
+    INNER.TXT            34  date=0x5d37 time=0xb90d
+--- FOLD2
+no such directory: FOLD2
+
+=== d24-rename.img
+--- <root>
+    NEWTOS                0  date=0x5d37 time=0xb90d
+DIR FSEVEN~1              0  date=0x5d37 time=0xb90b
+DIR SPOTLI~1              0  date=0x5d37 time=0xb907
+    README.TXT           64  date=0x5d37 time=0xb907
+DIR DESKT24               0  date=0x5d37 time=0xb90d
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    HELLO.TXT            32  date=0x5d37 time=0xb907
+DIR FOLD2                 0  date=0x5d37 time=0xb936
+    CONFIG.TXT           20  date=0x5d37 time=0xb907
+    NEWDESK.INF          21  date=0x5d37 time=0xb907
+    KEYBOARD.KBD         28  date=0x5d37 time=0xb907
+    KERNEL8.IMG        4096  date=0x5d37 time=0xb907
+    LYNXBOOT.IMG        512  date=0x5d37 time=0xb907
+    DATA.BIN           4096  date=0x5d37 time=0xb907
+DIR ACC                   0  date=0x5d37 time=0xb907
+DIR GEMSYS                0  date=0x5d37 time=0xb907
+DIR SUB                   0  date=0x5d37 time=0xb907
+    PROOF.TXT            19  date=0x5d37 time=0xb907
+DIR AUTO                  0  date=0x5d37 time=0xb907
+    HELLO.NCP          4388  date=0x5d37 time=0xb907
+    PHYSBASE.NCP       5704  date=0x5d37 time=0xb907
+    BIG.NCP           15184  date=0x5d37 time=0xb907
+    HELLO2.NCP         5056  date=0x5d37 time=0xb907
+    DTACHILD.NCP       5200  date=0x5d37 time=0xb907
+    SCRFLIP.NCP        6328  date=0x5d37 time=0xb907
+    LIBTEST.NCP       86664  date=0x5d37 time=0xb907
+    CLOCKTST.NCP      89960  date=0x5d37 time=0xb907
+    SETJMPT.NCP       11504  date=0x5d37 time=0xb907
+    MATHTST.NCP       32984  date=0x5d37 time=0xb907
+DIR COREMARK              0  date=0x5d37 time=0xb907
+    DUMPVDI.NAP      140216  date=0x5d37 time=0xb907
+    VDI.TSV            6636  date=0x5d37 time=0xb907
+DIR APPS                  0  date=0x5d37 time=0xb907
+--- DESKT24
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    ONE.TXT               5  date=0x5d37 time=0xb90d
+    TWO.TXT               5  date=0x5d37 time=0xb90d
+--- DESKT24\FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb90d
+    INNER.TXT            34  date=0x5d37 time=0xb90d
+--- FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+    EXIST.TXT            27  date=0x5d37 time=0xb90d
+--- FOLD2
+DIR .                     0  date=0x5d37 time=0xb936
+DIR ..                    0  date=0x5d37 time=0xb936
+    INNER.TXT            34  date=0x5d37 time=0xb90d
+
+=== d24-before.img
+--- <root>
+    NEWTOS                0  date=0x5d37 time=0xb90d
+DIR FSEVEN~1              0  date=0x5d37 time=0xb90b
+DIR SPOTLI~1              0  date=0x5d37 time=0xb907
+    README.TXT           64  date=0x5d37 time=0xb907
+DIR DESKT24               0  date=0x5d37 time=0xb90d
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    HELLO.TXT            32  date=0x5d37 time=0xb907
+    CONFIG.TXT           20  date=0x5d37 time=0xb907
+    NEWDESK.INF          21  date=0x5d37 time=0xb907
+    KEYBOARD.KBD         28  date=0x5d37 time=0xb907
+    KERNEL8.IMG        4096  date=0x5d37 time=0xb907
+    LYNXBOOT.IMG        512  date=0x5d37 time=0xb907
+    DATA.BIN           4096  date=0x5d37 time=0xb907
+DIR ACC                   0  date=0x5d37 time=0xb907
+DIR GEMSYS                0  date=0x5d37 time=0xb907
+DIR SUB                   0  date=0x5d37 time=0xb907
+    PROOF.TXT            19  date=0x5d37 time=0xb907
+DIR AUTO                  0  date=0x5d37 time=0xb907
+    HELLO.NCP          4388  date=0x5d37 time=0xb907
+    PHYSBASE.NCP       5704  date=0x5d37 time=0xb907
+    BIG.NCP           15184  date=0x5d37 time=0xb907
+    HELLO2.NCP         5056  date=0x5d37 time=0xb907
+    DTACHILD.NCP       5200  date=0x5d37 time=0xb907
+    SCRFLIP.NCP        6328  date=0x5d37 time=0xb907
+    LIBTEST.NCP       86664  date=0x5d37 time=0xb907
+    CLOCKTST.NCP      89960  date=0x5d37 time=0xb907
+    SETJMPT.NCP       11504  date=0x5d37 time=0xb907
+    MATHTST.NCP       32984  date=0x5d37 time=0xb907
+DIR COREMARK              0  date=0x5d37 time=0xb907
+    DUMPVDI.NAP      140216  date=0x5d37 time=0xb907
+    VDI.TSV            6636  date=0x5d37 time=0xb907
+DIR APPS                  0  date=0x5d37 time=0xb907
+--- DESKT24
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    ONE.TXT               5  date=0x5d37 time=0xb90d
+    TWO.TXT               5  date=0x5d37 time=0xb90d
+--- DESKT24\FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb90d
+    INNER.TXT            34  date=0x5d37 time=0xb90d
+--- FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+    EXIST.TXT            27  date=0x5d37 time=0xb90d
+    INNER.TXT            34  date=0x5d37 time=0xb90d
+--- FOLD2
+no such directory: FOLD2
+
+=== d25-no.img
+--- <root>
+    NEWTOS                0  date=0x5d37 time=0xb90d
+DIR FSEVEN~1              0  date=0x5d37 time=0xb90b
+DIR SPOTLI~1              0  date=0x5d37 time=0xb907
+    README.TXT           64  date=0x5d37 time=0xb907
+DIR DESKT24               0  date=0x5d37 time=0xb90d
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    HELLO.TXT            32  date=0x5d37 time=0xb907
+    CONFIG.TXT           20  date=0x5d37 time=0xb907
+    NEWDESK.INF          21  date=0x5d37 time=0xb907
+    KEYBOARD.KBD         28  date=0x5d37 time=0xb907
+    KERNEL8.IMG        4096  date=0x5d37 time=0xb907
+    LYNXBOOT.IMG        512  date=0x5d37 time=0xb907
+    DATA.BIN           4096  date=0x5d37 time=0xb907
+DIR ACC                   0  date=0x5d37 time=0xb907
+DIR GEMSYS                0  date=0x5d37 time=0xb907
+DIR SUB                   0  date=0x5d37 time=0xb907
+    PROOF.TXT            19  date=0x5d37 time=0xb907
+DIR AUTO                  0  date=0x5d37 time=0xb907
+    HELLO.NCP          4388  date=0x5d37 time=0xb907
+    PHYSBASE.NCP       5704  date=0x5d37 time=0xb907
+    BIG.NCP           15184  date=0x5d37 time=0xb907
+    HELLO2.NCP         5056  date=0x5d37 time=0xb907
+    DTACHILD.NCP       5200  date=0x5d37 time=0xb907
+    SCRFLIP.NCP        6328  date=0x5d37 time=0xb907
+    LIBTEST.NCP       86664  date=0x5d37 time=0xb907
+    CLOCKTST.NCP      89960  date=0x5d37 time=0xb907
+    SETJMPT.NCP       11504  date=0x5d37 time=0xb907
+    MATHTST.NCP       32984  date=0x5d37 time=0xb907
+DIR COREMARK              0  date=0x5d37 time=0xb907
+    DUMPVDI.NAP      140216  date=0x5d37 time=0xb907
+    VDI.TSV            6636  date=0x5d37 time=0xb907
+DIR APPS                  0  date=0x5d37 time=0xb907
+--- DESKT24
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    ONE.TXT               5  date=0x5d37 time=0xb90d
+    TWO.TXT               5  date=0x5d37 time=0xb90d
+--- DESKT24\FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb90d
+    INNER.TXT            34  date=0x5d37 time=0xb90d
+--- FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+    EXIST.TXT            27  date=0x5d37 time=0xb90d
+--- FOLD2
+no such directory: FOLD2
+
+=== d25-yes.img
+--- <root>
+    NEWTOS                0  date=0x5d37 time=0xb90d
+--- DESKT24
+no such directory: DESKT24
+--- DESKT24\FOLD
+no such directory: DESKT24
+--- FOLD
+no such directory: FOLD
+--- FOLD2
+no such directory: FOLD2
+
+=== d25-before.img
+--- <root>
+    NEWTOS                0  date=0x5d37 time=0xb90d
+--- DESKT24
+no such directory: DESKT24
+--- DESKT24\FOLD
+no such directory: DESKT24
+--- FOLD
+no such directory: FOLD
+--- FOLD2
+no such directory: FOLD2
+
+=== d26-after.img
+--- <root>
+    NEWTOS                0  date=0x5d37 time=0xb90d
+DIR FSEVEN~1              0  date=0x5d37 time=0xb90b
+DIR SPOTLI~1              0  date=0x5d37 time=0xb907
+    README.TXT           64  date=0x5d37 time=0xb907
+DIR DESKT24               0  date=0x5d37 time=0xb90d
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    HELLO.TXT            32  date=0x5d37 time=0xb907
+    CONFIG.TXT           20  date=0x5d37 time=0xb907
+    NEWDESK.INF          21  date=0x5d37 time=0xb907
+    KEYBOARD.KBD         28  date=0x5d37 time=0xb907
+    KERNEL8.IMG        4096  date=0x5d37 time=0xb907
+    LYNXBOOT.IMG        512  date=0x5d37 time=0xb907
+    DATA.BIN           4096  date=0x5d37 time=0xb907
+DIR ACC                   0  date=0x5d37 time=0xb907
+DIR GEMSYS                0  date=0x5d37 time=0xb907
+DIR SUB                   0  date=0x5d37 time=0xb907
+    PROOF.TXT            19  date=0x5d37 time=0xb907
+DIR AUTO                  0  date=0x5d37 time=0xb907
+    HELLO.NCP          4388  date=0x5d37 time=0xb907
+    PHYSBASE.NCP       5704  date=0x5d37 time=0xb907
+    BIG.NCP           15184  date=0x5d37 time=0xb907
+    HELLO2.NCP         5056  date=0x5d37 time=0xb907
+    DTACHILD.NCP       5200  date=0x5d37 time=0xb907
+    SCRFLIP.NCP        6328  date=0x5d37 time=0xb907
+    LIBTEST.NCP       86664  date=0x5d37 time=0xb907
+    CLOCKTST.NCP      89960  date=0x5d37 time=0xb907
+    SETJMPT.NCP       11504  date=0x5d37 time=0xb907
+    MATHTST.NCP       32984  date=0x5d37 time=0xb907
+DIR COREMARK              0  date=0x5d37 time=0xb907
+    DUMPVDI.NAP      140216  date=0x5d37 time=0xb907
+    VDI.TSV            6636  date=0x5d37 time=0xb907
+DIR APPS                  0  date=0x5d37 time=0xb907
+--- DESKT24
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    ONE.TXT               5  date=0x5d37 time=0xb90d
+--- DESKT24\FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb90d
+    INNER.TXT            34  date=0x5d37 time=0xb90d
+--- FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+    EXIST.TXT            27  date=0x5d37 time=0xb90d
+--- FOLD2
+no such directory: FOLD2
+
+=== d26-before.img
+--- <root>
+    NEWTOS                0  date=0x5d37 time=0xb90d
+DIR FSEVEN~1              0  date=0x5d37 time=0xb90b
+DIR SPOTLI~1              0  date=0x5d37 time=0xb907
+    README.TXT           64  date=0x5d37 time=0xb907
+DIR DESKT24               0  date=0x5d37 time=0xb90d
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    HELLO.TXT            32  date=0x5d37 time=0xb907
+    CONFIG.TXT           20  date=0x5d37 time=0xb907
+    NEWDESK.INF          21  date=0x5d37 time=0xb907
+    KEYBOARD.KBD         28  date=0x5d37 time=0xb907
+    KERNEL8.IMG        4096  date=0x5d37 time=0xb907
+    LYNXBOOT.IMG        512  date=0x5d37 time=0xb907
+    DATA.BIN           4096  date=0x5d37 time=0xb907
+DIR ACC                   0  date=0x5d37 time=0xb907
+DIR GEMSYS                0  date=0x5d37 time=0xb907
+DIR SUB                   0  date=0x5d37 time=0xb907
+    PROOF.TXT            19  date=0x5d37 time=0xb907
+DIR AUTO                  0  date=0x5d37 time=0xb907
+    HELLO.NCP          4388  date=0x5d37 time=0xb907
+    PHYSBASE.NCP       5704  date=0x5d37 time=0xb907
+    BIG.NCP           15184  date=0x5d37 time=0xb907
+    HELLO2.NCP         5056  date=0x5d37 time=0xb907
+    DTACHILD.NCP       5200  date=0x5d37 time=0xb907
+    SCRFLIP.NCP        6328  date=0x5d37 time=0xb907
+    LIBTEST.NCP       86664  date=0x5d37 time=0xb907
+    CLOCKTST.NCP      89960  date=0x5d37 time=0xb907
+    SETJMPT.NCP       11504  date=0x5d37 time=0xb907
+    MATHTST.NCP       32984  date=0x5d37 time=0xb907
+DIR COREMARK              0  date=0x5d37 time=0xb907
+    DUMPVDI.NAP      140216  date=0x5d37 time=0xb907
+    VDI.TSV            6636  date=0x5d37 time=0xb907
+DIR APPS                  0  date=0x5d37 time=0xb907
+--- DESKT24
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+DIR FOLD                  0  date=0x5d37 time=0xb90d
+    ONE.TXT               5  date=0x5d37 time=0xb90d
+--- DESKT24\FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb90d
+    INNER.TXT            34  date=0x5d37 time=0xb90d
+--- FOLD
+DIR .                     0  date=0x5d37 time=0xb90d
+DIR ..                    0  date=0x5d37 time=0xb907
+    EXIST.TXT            27  date=0x5d37 time=0xb90d
+--- FOLD2
+no such directory: FOLD2
+

@@ -1,0 +1,116 @@
+fsck_msdos -n on the FAT16 partition of every card image this measurement wrote.
+(method/fsck.sh; the images themselves are not kept here.)
+
+== base.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 57 files, 63724 KiB free (31862 clusters)
+   rc=0
+== probe.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 57 files, 63724 KiB free (31862 clusters)
+   rc=0
+== probe2.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 57 files, 63724 KiB free (31862 clusters)
+   rc=0
+== d24-merge.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 58 files, 63722 KiB free (31861 clusters)
+   rc=0
+== d24-rename.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 59 files, 63720 KiB free (31860 clusters)
+   rc=0
+== d24-before.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 58 files, 63722 KiB free (31861 clusters)
+   rc=0
+== d25-no.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 57 files, 63724 KiB free (31862 clusters)
+   rc=0
+== d25-yes.img
+   (no output)
+   rc=133
+== d25-before.img
+   (no output)
+   rc=133
+== d26-after.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 56 files, 63726 KiB free (31863 clusters)
+   rc=0
+== d26-before.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 56 files, 63726 KiB free (31863 clusters)
+   rc=0
+== final-rpi4.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 57 files, 63724 KiB free (31862 clusters)
+   rc=0
+== ctl-nolfn.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 0 files, 65344 KiB free (32672 clusters)
+   rc=0
+
+-----------------------------------------------------------------------------
+The two `rc=133` lines, and why they are NOT these three tickets
+-----------------------------------------------------------------------------
+`d25-yes.img` and `d25-before.img` are the only two images on which a WHOLE
+DRIVE was emptied (DESK25's "Yes", and the same gesture on the HEAD build
+which asks nothing).  On both, `fsck_msdos -n` dies with exit 133 and prints
+nothing at all -- not even its `** /dev/rdiskNs1` banner.
+
+  * It reproduces IDENTICALLY on the HEAD build (`d25-before.img`), so it is
+    not caused by DESK25: DESK25 only adds a question in front of the same
+    delete.
+  * The filesystem itself is consistent: both FAT copies are byte-identical
+    and every cluster is free (`method/lfn_orphan_probe.py`, and the FAT dump
+    in the report).
+  * What is left behind are 35 ORPHAN long-filename slots: GEMDOS
+    `Fdelete`/`Ddelete` erase the 8.3 entry (first byte 0xE5) and leave the
+    preceding `attr == 0x0F` LFN slots untouched -- classic TOS has no long
+    names, so nothing ever erased them.  The card carries them because macOS
+    wrote `.fseventsd`, `.Spotlight-V100` and every `._*` companion with an
+    LFN chain.
+  * Proof that this is the cause: `ctl-nolfn.img` is a COPY of `d25-yes.img`
+    with exactly those 35 slots marked 0xE5 (`lfn_orphan_probe.py --fix`), and
+    it passes Phase 1/2/3 with 0 files, rc=0 -- last block above.
+  * A single hand-made orphan chain on an otherwise live card only produces a
+    WARNING ("Invalid long filename entry for /.Spotlight-V100"), not a crash,
+    so what exactly kills fsck_msdos in the all-erased case is still open.
+
+This is a pre-existing GEMDOS filesystem-layer gap (tos-api/src/bdos/fs), not
+a desktop one.  Reported as a new ticket, not fixed here.

@@ -1,0 +1,18 @@
+# Geometry probe: the menu dump (titles, drop-down boxes, entries with their
+# DISABLED bit), the desktop icons, and -- after Alt+C -- the items of the C:\
+# window, each with the click point `act_chkobj` accepts.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_ALTC
+3400 move 38 35
+3700 down
+3703 up
+4000 parkbr
+4800 mark C_CSEL
+5800 pause

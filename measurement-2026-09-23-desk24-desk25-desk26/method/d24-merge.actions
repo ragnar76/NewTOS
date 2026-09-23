@@ -1,0 +1,45 @@
+# DESK24 "after", answer 1: the folder name conflict, answered with OK on an
+# UNCHANGED name -> EmuTOS merges into the existing folder (output_path's
+# `ret == 1` break, deskdir.c:770-775).
+#
+# C:\DESKT24\FOLD is dragged onto the C: desktop icon, i.e. a folder copy into
+# C:\, where C:\FOLD already exists (seed.sh).
+#   C:\ window DESKT24 (431,103)          probe run 1
+#   DESKT24 window FOLD (119,127)         probe run 2
+#   desktop C: icon (38,35)               probe run 1
+#   ADCPYDEL OK (229,301)   ADCPALER OK (224,301)   (the [d24] dumps)
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_ALTC
+3100 move 431 103
+3400 down
+3403 up
+3410 down
+3413 up
+4100 parkbr
+4900 mark C_SUBDIR
+5300 move 119 127
+5900 down
+6700 drag 100 100
+7300 drag 60 60
+7900 drag 38 35
+8700 up
+9300 parkbr
+10100 mark D_COPYBOX
+10500 move 229 301
+11100 down
+11300 up
+11900 parkbr
+12700 mark E_CONFLICT
+13100 move 224 301
+13700 down
+13900 up
+14500 parkbr
+15400 mark F_MERGED
+16200 pause
