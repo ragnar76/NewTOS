@@ -1,0 +1,15 @@
+# DESK02 probe -- open Options -> Set preferences... and dump, to measure the
+# dialog's real geometry before scripting the clicks.
+# Options title 160..232; "Set preferences..." is entry 6 of the Options box
+# (0 SetBackground, 1 InstallIcon, 2 InstallApp, 3 InstallDevices,
+#  4 RemoveIcon, 5 separator, 6 SetPrefs) -> y = 19 + 6*16 = 115..131.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 196 8
+1800 mark B_OPTIONS_OPEN
+2100 move 200 123
+2300 down
+2303 up
+2600 parkbr
+3000 mark C_PREFS

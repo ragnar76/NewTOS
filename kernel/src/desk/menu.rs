@@ -805,7 +805,10 @@ fn item_enabled(item: Item, nsel: usize, nwin: usize, napp: usize) -> bool {
         Item::Search => nwin >= 1,
         // Task-#14 deskinf/NEWDESK.INF ops: always available (EmuTOS
         // `CONF_WITH_BACKGROUNDS`/`CONF_WITH_READ_INF` + the always-live Save).
-        Item::SetBackground | Item::ReadInf | Item::SaveDesktop => true,
+        // `PREFITEM` likewise: EmuTOS lists it in none of `ILL_NOSEL` /
+        // `ILL_MULTSEL` / `ILL_NOWIN` (`deskmain.c:143-160`), so Set
+        // preferences is enabled whatever is selected (DESK02).
+        Item::SetBackground | Item::ReadInf | Item::SaveDesktop | Item::SetPrefs => true,
         // Install Application (deskins #20): enabled iff a native program is
         // selected (EmuTOS disables `IAPPITEM` when `napp == 0`,
         // `deskmain.c:536-538`).

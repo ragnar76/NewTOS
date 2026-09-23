@@ -17,7 +17,7 @@ use tos_api::aes::object::Object;
 
 use crate::sync::SpinMutex;
 
-use super::model::{ScreenInfo, Sort, View};
+use super::model::{DateFmt, ScreenInfo, Sort, TimeFmt, View};
 use super::win::WindowList;
 
 // ── Object-tree layout constants (`deskconf.h`, our own choice of indices
@@ -238,16 +238,31 @@ pub struct WSave {
 /// it is wiped on every shell pass, which is precisely why EmuTOS's desktop
 /// keeps its own copy (gap G2 of `docs/analysis/desk-aes-gaps-2026-09-14.md`).
 ///
-/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries
-/// `cs_confcpy`/`cs_confdel`/`cs_confovwr`/`cs_dblclick`/`cs_timefmt`/
-/// `cs_datefmt`/`cs_blitter`/`cs_cache`/`cs_appdir`/`cs_fullpath`. Those mirror
-/// `GLOBES` fields that exist only because `inf_pref`/`inf_conf` (the
-/// Preferences and Configuration dialogs) can edit them; NewTOS has no live
-/// state for any of them yet, so there is nothing for `cnx_put` to read or for
-/// `cnx_get` to apply. Their bits still survive a load/save round trip — the
-/// `#E` bytes they live in are preserved verbatim by [`super::inf`]'s session
-/// copy — they are simply not routed through this structure until the dialogs
-/// that own them exist.
+/// **Field subset, deliberate.** EmuTOS's `CSAVE` also carries `cs_confcpy`,
+/// `cs_confovwr`, `cs_blitter`, `cs_cache`, `cs_appdir` and `cs_fullpath`.
+/// Those mirror `GLOBES` fields that exist only because `inf_pref`/`inf_conf`
+/// (the Preferences and Configuration dialogs) can edit them, and NewTOS has no
+/// live state behind any of them:
+///
+/// * `cs_confcpy` / `cs_confovwr` — the desktop's copy engine asks no
+///   per-item copy question and no overwrite question at all
+///   (`super::dir`'s module header records that deviation); a preference
+///   gating a dialog that is never shown would be a dead control, so the
+///   Preferences dialog does not offer them either (DESK02).
+/// * `cs_blitter` / `cs_cache` — m68k hardware (`Blitmode`, the 68030 cache),
+///   the hardware-layer carve-out of `docs/COMPATIBILITY.md`.
+/// * `cs_appdir` / `cs_fullpath` — `inf_conf`'s launch-directory policy, which
+///   NewTOS keeps per association in the `NEWDESK.INF` `ANODE` extra block
+///   (`INF_AT_APPDIR`/`INF_AT_ISFULL`) rather than as a global.
+///
+/// Their bits still survive a load/save round trip — the `#E` bytes they live
+/// in are preserved verbatim by [`super::inf`]'s session copy — they are simply
+/// not routed through this structure.
+///
+/// `cs_confdel`, `cs_dblclick`, `cs_timefmt` and `cs_datefmt` **are** carried
+/// (DESK02): each has a live consumer — the delete confirmation in
+/// `super::dir`, the AES's `evnt_dclick` rate, and the text view's
+/// `fmt_date`/`fmt_time`.
 #[derive(Clone)]
 pub struct CSave {
     /// Saved view mode (`cs_view`).
@@ -256,6 +271,15 @@ pub struct CSave {
     pub cs_sort: Sort,
     /// Saved "size windows to fit" preference (`cs_sizefit`).
     pub cs_sizefit: bool,
+    /// Saved "confirm deletes" preference (`cs_confdel`).
+    pub cs_confdel: bool,
+    /// Saved double-click speed index 0..4 (`cs_dblclick`); 0 is the slowest
+    /// (EmuTOS `gl_dcrates`, our `tos-api/src/aes/event.rs` `DCRATES`).
+    pub cs_dblclick: u8,
+    /// Saved clock format (`cs_timefmt`).
+    pub cs_timefmt: TimeFmt,
+    /// Saved date order (`cs_datefmt`).
+    pub cs_datefmt: DateFmt,
     /// One [`WSave`] per window slot (`cs_wnode[NUM_WNODES]`); slot 0 is the
     /// **bottom-most** window (`cnx_put`'s comment, `deskmain.c:1367-1369`).
     pub cs_wnode: [WSave; NUM_WNODES],
@@ -267,10 +291,19 @@ impl Default for CSave {
             cs_view: View::Icon,
             cs_sort: Sort::Name,
             cs_sizefit: true,
+            cs_confdel: true,
+            cs_dblclick: DEF_DCLICK,
+            cs_timefmt: TimeFmt::H24,
+            cs_datefmt: DateFmt::Mdy,
             cs_wnode: Default::default(),
         }
     }
 }
+
+/// The double-click speed index the desktop starts with when no `NEWDESK.INF`
+/// supplies one: `INF_E1_DEFAULT`'s low three bits (`deskapp.c:92`,
+/// `INF_E1_CONFDEL|INF_E1_CONFCPY|2`).
+pub const DEF_DCLICK: u8 = 2;
 
 /// The desktop's process-lifetime global state (EmuTOS `GLOBES G`).
 pub struct DeskState {
@@ -280,6 +313,23 @@ pub struct DeskState {
     pub sort: Sort,
     /// "Size windows to fit" preference (`g_ifit`, `CONF_WITH_SIZE_TO_FIT`).
     pub size_to_fit: bool,
+
+    /// "Confirm deletes" preference (`g_cdelepref`, `deskinf.c:735`): gate for
+    /// the delete confirmation in [`super::dir`] (`deskdir.c:906`,
+    /// `confirm = G.g_cdelepref`). Edited by `inf_pref`, persisted through
+    /// [`CSave::cs_confdel`].
+    pub g_cdelepref: bool,
+    /// Double-click speed index 0..4 (`g_cdclkpref`, `deskinf.c:751`). The
+    /// desktop does not consume it: it is the AES's rate, queried and set with
+    /// `evnt_dclick` (`deskmain.c:1460`), and held here only so `cnx_put`/
+    /// `app_save` can write it into the `#E` line.
+    pub g_cdclkpref: u8,
+    /// Clock format for the text view and Show Info (`g_ctimeform`,
+    /// `deskinf.c:82`).
+    pub g_ctimeform: TimeFmt,
+    /// Date order for the text view and Show Info (`g_cdateform`,
+    /// `deskinf.c:138`).
+    pub g_cdateform: DateFmt,
 
     /// One item's own horizontal extent (`g_iwext`) — set by `win_view()`
     /// (Task #6).
@@ -366,6 +416,10 @@ impl DeskState {
             view: View::Icon,
             sort: Sort::Name,
             size_to_fit: true,
+            g_cdelepref: true,
+            g_cdclkpref: DEF_DCLICK,
+            g_ctimeform: TimeFmt::H24,
+            g_cdateform: DateFmt::Mdy,
             g_iwext: 0,
             g_ihext: 0,
             g_iwint: 0,

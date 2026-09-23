@@ -1,0 +1,37 @@
+# DESK02 -- Options -> Set preferences..., change "Date format" to DMY, OK,
+# then Options -> Save desktop..., on the base image.
+# Menu geometry (kernel/src/desk/menu.rs adjust_menu, active_x = 2*8 = 16):
+#   Desk 16..64, File 64..112, View 112..160, Options 160..232.
+#   Options box entry n at y = 19 + n*16; entry 6 = "Set preferences..."
+#   (y 115..131), entry 11 = "Save desktop..." (y 195..211).
+# Preferences dialog: 382x212, form_center -> (129, 143) (measured on the
+# probe run). Group column gx = 24 + 20*8 = 184, buttons 22 px tall centred
+# on a 16 px label row (offset -3).
+#   "DMY" = 129+184+62 .. +56, 143+125 .. +22  -> centre (403, 279)
+#   "OK"  = 129+91 .. +90,      143+160 .. +28 -> centre (265, 317)
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 196 8
+1800 mark B_OPTIONS_OPEN
+2100 move 200 123
+2300 down
+2303 up
+2600 parkbr
+3000 mark C_PREFS
+3300 move 403 279
+3500 down
+3503 up
+3800 parkbr
+4200 mark D_DMY
+4500 move 265 317
+4700 down
+4703 up
+5000 parkbr
+5400 mark E_CLOSED
+5700 move 196 8
+6100 move 200 203
+6300 down
+6303 up
+6600 parkbr
+7000 mark F_SAVED

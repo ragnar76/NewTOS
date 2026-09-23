@@ -1,24 +1,27 @@
-//! `desk::dosbind` — the desktop's **GEMDOS / BIOS trap binding**.
+//! `desk::dosbind` — the desktop's **GEMDOS trap binding**.
 //!
 //! The desktop is a client of the operating system, not a part of it: every
 //! system service it uses it must reach the way an application reaches it —
 //! through the trap. [`super`]'s *aesbind* block does that for the AES
 //! (`svc #2`, selector 200, EmuTOS `desk/gembind.c`); this module is its
-//! counterpart for GEMDOS (`svc #1`) and the BIOS (`svc #13`), i.e. for
-//! EmuTOS's `include/gemdos.h` — the `dos_*` inline wrappers the desktop
-//! actually calls (`desk/deskdir.c:402,431,454,463,555-558`,
-//! `desk/deskinf.c`, `desk/deskfpd.c`) — layered over `include/bdosbind.h`'s
-//! `trap1()` (`util/miscasm.S`) and `include/biosbind.h`'s `bios_l_v()`.
+//! counterpart for GEMDOS (`svc #1`), i.e. for EmuTOS's `include/gemdos.h` —
+//! the `dos_*` inline wrappers the desktop actually calls
+//! (`desk/deskdir.c:402,431,454,463,555-558`, `desk/deskinf.c`,
+//! `desk/deskfpd.c`, `desk/deskapp.c:714`) — layered over
+//! `include/bdosbind.h`'s `trap1()` (`util/miscasm.S`).
 //!
 //! Naming follows EmuTOS's `gemdos.h`: [`dos_open`], [`dos_read`],
-//! [`dos_sfirst`], … . The one exception is the BIOS call, which EmuTOS spells
-//! `Drvmap()` (`biosbind.h:29`); per `CLAUDE.md` ("Naming Conventions") a TOS
-//! function becomes a lowercase Rust name, so it is [`drvmap`].
+//! [`dos_sfirst`], … .
 //!
-//! The desktop uses **no XBIOS function**, so there is no `svc #14` binding
-//! here; EmuTOS's desktop likewise includes `biosbind.h` but not `xbiosbind.h`
-//! for anything outside `deskrez.c`'s resolution change, which NewTOS does not
-//! have (the screen mode is fixed by the firmware).
+//! The desktop uses **no BIOS and no XBIOS function**, so there is neither an
+//! `svc #13` nor an `svc #14` binding here. EmuTOS's desktop includes
+//! `biosbind.h`, but the two calls it takes from it are `Drvmap()` — which the
+//! desktop itself never uses, because it reads the drive map as
+//! `dos_sdrv(dos_gdrv())` (`deskapp.c:714`, `deskins.c:297`,
+//! `desksupp.c:1575,1819`) — and `Dosound()` for the About-box Easter egg
+//! (`CONF_WITH_EASTER_EGG`), which NewTOS does not have. `xbiosbind.h` is only
+//! reached from `deskrez.c`'s resolution change, which NewTOS does not have
+//! either (the screen mode is fixed by the firmware).
 //!
 //! ## ABI
 //!
@@ -57,6 +60,8 @@
 use tos_types::Long;
 
 // ── GEMDOS function ids (`bdosbind.h:22-54`) ────────────────────────────────
+const DSETDRV: u16 = 0x0E;
+const DGETDRV: u16 = 0x19;
 const FSETDTA: u16 = 0x1A;
 const DCREATE: u16 = 0x39;
 const DDELETE: u16 = 0x3A;
@@ -70,9 +75,6 @@ const FSFIRST: u16 = 0x4E;
 const FSNEXT: u16 = 0x4F;
 const FRENAME: u16 = 0x56;
 const FDATIME: u16 = 0x57;
-
-/// BIOS `Drvmap` (`biosbind.h:29`, `bios_l_v(0xa)`).
-const DRVMAP: u16 = 0x0A;
 
 /// Issue the GEMDOS trap (`svc #1`): function id in `x8`, arguments in
 /// `x0..x2`. EmuTOS's `trap1()` (`util/miscasm.S`).
@@ -108,31 +110,6 @@ fn dos_trap(func: u16, a0: u64, a1: u64, a2: u64) -> Long {
         );
     }
     ret as Long
-}
-
-/// Issue the BIOS trap (`svc #13`) for a no-argument function — EmuTOS's
-/// `bios_l_v()` (`biosbind.h:79`). The BIOS dispatcher returns a full 64-bit
-/// `x0` (`Getbpb` is a pointer), so the raw register value is returned and the
-/// individual binding narrows it.
-#[inline]
-fn bios_trap0(func: u16) -> i64 {
-    let ret: i64;
-    // SAFETY: BIOS trap; see [`dos_trap`] for the register contract.
-    unsafe {
-        core::arch::asm!(
-            "svc #13",
-            out("x0") ret,
-            in("x1") 0u64,
-            in("x2") 0u64,
-            in("x3") 0u64,
-            in("x4") 0u64,
-            in("x5") 0u64,
-            in("x6") 0u64,
-            in("x8") func as u64,
-            options(nostack),
-        );
-    }
-    ret
 }
 
 /// Widen a signed TOS argument into its register slot.
@@ -257,11 +234,27 @@ pub(super) fn dos_setdt(handle: i16, time: u16, date: u16) -> Long {
     dos_trap(FDATIME, buf.as_ptr() as u64, sx(handle as i64), 1)
 }
 
-// ── BIOS binding (EmuTOS `include/biosbind.h`) ──────────────────────────────
+/// `dos_gdrv` — `Dgetdrv()` (`gemdos.h:45-48`, `bdosbind.h:30`). The calling
+/// process's current drive, 0-based (`0` = `A:`).
+pub(super) fn dos_gdrv() -> i16 {
+    dos_trap(DGETDRV, 0, 0, 0) as i16
+}
 
-/// `Drvmap` (BIOS 0x0A, `biosbind.h:29`) — the bitmap of mounted drives, bit
-/// `n` = drive `n` (`A:` = 0). The desktop builds its drive icons and its
-/// Alt-letter drive-open check from it.
-pub(super) fn drvmap() -> u32 {
-    bios_trap0(DRVMAP) as u32
+/// `dos_sdrv` — `Dsetdrv(newdrv)` (`gemdos.h:105-108`, `bdosbind.h:26`). Sets
+/// the current drive (0-based; an out-of-range index is silently ignored) and
+/// **returns the drive bitmap**, bit `n` = drive `n` is present
+/// (`docs/api/gemdos/drive/0e-dsetdrv.md`). The bitmap comes back regardless of
+/// whether the drive actually changed, which is what makes the idiom below
+/// work.
+///
+/// The desktop never calls this to *change* drives: it calls
+/// `dos_sdrv(dos_gdrv())` — set the current drive to the one it already is —
+/// purely to harvest the return value. That is EmuTOS's own way of reading the
+/// drive map (`deskapp.c:714` `drivemask = dos_sdrv(dos_gdrv());`,
+/// `deskins.c:297`, `desksupp.c:1575,1819` `valid_drive`), and it is a GEMDOS
+/// call, not the BIOS `Drvmap()` that yields the same bits one layer lower:
+/// going to the BIOS would step past the GEMDOS drive layer that owns the
+/// current-drive state.
+pub(super) fn dos_sdrv(newdrv: i16) -> Long {
+    dos_trap(DSETDRV, sx(newdrv as i64), 0, 0)
 }

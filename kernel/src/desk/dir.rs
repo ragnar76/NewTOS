@@ -506,8 +506,9 @@ pub fn fun_del() -> bool {
     if entries.is_empty() {
         return false;
     }
-    // Confirm (EmuTOS gates this on G.g_cdelepref, default on).
-    if !fun_confirm(b"Delete the selected item(s)?") {
+    // Confirm, unless the user turned *Confirm deletes* off in Preferences
+    // (`deskdir.c:906`).
+    if confirm_deletes() && !fun_confirm(b"Delete the selected item(s)?") {
         return false;
     }
     let done = fun_op(Op::Delete, &src_dir, &entries, None);
@@ -631,6 +632,16 @@ pub fn fun_alert(default: i16, msg: &[u8]) -> i16 {
     super::form_alert(default, text.as_ptr())
 }
 
+/// `G.g_cdelepref` — the Preferences dialog's *Confirm deletes* switch
+/// (`deskinf.c:735,786`). EmuTOS reads it in `d_doop`, where it turns the
+/// per-item delete dialog on or off (`deskdir.c:906`, `confirm =
+/// G.g_cdelepref;`); NewTOS's delete engine is dialog-free and asks once up
+/// front instead (see this module's header), so the same switch gates that one
+/// question. `false` means delete without asking.
+fn confirm_deletes() -> bool {
+    global::with(|g| g.g_cdelepref).unwrap_or(true)
+}
+
 /// A yes/no confirmation alert; `true` if the user chose the affirmative
 /// (second) button.
 fn fun_confirm(msg: &[u8]) -> bool {
@@ -743,11 +754,11 @@ fn fun_file2desk(dobj: i16, src_dir: &str, entries: &[SelEntry], keystate: u16) 
             fun_op(drag_op(keystate), src_dir, entries, Some(&dst))
         }
         AType::Trash => {
-            // EmuTOS confirms a trash drop via `wants_to_delete_files` (desktop
-            // source) or `dir_op`'s delete-confirm preference (window source).
-            // NewTOS's engine is dialog-free, so we always confirm here — no
-            // accidental delete.
-            if !fun_confirm(b"Delete the selected item(s)?") {
+            // The source here is a *window* selection, so EmuTOS skips
+            // `wants_to_delete_files` (that guard is for a dragged desktop
+            // icon, `deskfun.c:1049-1051`) and the only question is `d_doop`'s,
+            // gated on *Confirm deletes* (`deskdir.c:906`).
+            if confirm_deletes() && !fun_confirm(b"Delete the selected item(s)?") {
                 return false;
             }
             fun_op(Op::Delete, src_dir, entries, None)
@@ -807,6 +818,12 @@ fn fun_desk2desk(dobj: i16, keystate: u16) {
                 fun_op(drag_op(keystate), &src_root, &entries, Some(&dst))
             }
             AType::Trash => {
+                // **Not** gated on *Confirm deletes*: the source is a desktop
+                // icon, i.e. a whole drive, and EmuTOS puts its
+                // `wants_to_delete_files` guard in front of that case
+                // unconditionally (`deskfun.c:1049-1051`) — the preference only
+                // reaches the per-item question `d_doop` asks afterwards. This
+                // alert stands in for that guard, so it stays unconditional.
                 if fun_confirm(b"Delete the selected item(s)?") {
                     fun_op(Op::Delete, &src_root, &entries, None)
                 } else {

@@ -33,7 +33,7 @@ use crate::sync::SpinMutex;
 
 use super::dosbind::{dos_close, dos_create, dos_open, dos_read, dos_write};
 use super::global::{self, Grect, WSave, DROOT, NIL, NUM_WNODES};
-use super::model::{AType, Sort, View};
+use super::model::{AType, DateFmt, Sort, TimeFmt, View};
 
 // ── GEMDOS file access (through the trap, [`super::dosbind`]) ────────────
 
@@ -98,6 +98,20 @@ fn write_inf_file(bytes: &[u8]) -> bool {
 const INF_E1_VIEWTEXT: u8 = 0x80;
 const INF_E1_SORTMASK: u8 = 0x60;
 const INF_E1_SORTSHIFT: u8 = 5;
+/// `INF_E1_CONFDEL` (`deskapp.c:89`) — 1 ⇒ confirm deletes.
+const INF_E1_CONFDEL: u8 = 0x10;
+/// `INF_E1_DCMASK` (`deskapp.c:91`) — double-click speed index, 0..4 valid.
+const INF_E1_DCMASK: u8 = 0x07;
+/// `INF_E2_IDTDATE` (`deskapp.c:96`) — 1 ⇒ take the date format from the `_IDT`
+/// cookie and ignore [`INF_E2_DAYMONTH`].
+const INF_E2_IDTDATE: u8 = 0x40;
+/// `INF_E2_IDTTIME` (`deskapp.c:97`) — 1 ⇒ take the time format from `_IDT` and
+/// ignore [`INF_E2_24HCLOCK`].
+const INF_E2_IDTTIME: u8 = 0x20;
+/// `INF_E2_DAYMONTH` (`deskapp.c:100`) — 1 ⇒ day before month.
+const INF_E2_DAYMONTH: u8 = 0x04;
+/// `INF_E2_24HCLOCK` (`deskapp.c:101`) — 1 ⇒ 24-hour clock.
+const INF_E2_24HCLOCK: u8 = 0x02;
 const INF_E5_NOSORT: u8 = 0x80;
 const INF_E5_NOSIZE: u8 = 0x10;
 
@@ -632,6 +646,76 @@ fn state_to_env(view: View, sort: Sort, size_to_fit: bool, base_e1: u8, base_e5:
     (e1, e5)
 }
 
+/// The Preferences-dialog half of the `#E` line, decoded from env bytes 1 and 2
+/// — EmuTOS `app_start`'s `'E'` arm (`deskapp.c:917-934`):
+///
+/// ```c
+/// cnxsave->cs_confdel  = ((envr & INF_E1_CONFDEL) != 0);
+/// cnxsave->cs_dblclick =  (envr & INF_E1_DCMASK);
+/// …
+/// cnxsave->cs_datefmt = (envr & INF_E2_IDTDATE) ? DATEFORM_IDT
+///                     : (envr & INF_E2_DAYMONTH) ? DATEFORM_DMY : DATEFORM_MDY;
+/// cnxsave->cs_timefmt = (envr & INF_E2_IDTTIME) ? TIMEFORM_IDT
+///                     : (envr & INF_E2_24HCLOCK) ? TIMEFORM_24H : TIMEFORM_12H;
+/// ```
+///
+/// Returns `(confirm_deletes, dclick_index, time_format, date_format)`. The
+/// `IDT` values are decoded faithfully even though the desktop cannot render
+/// them ([`TimeFmt::Idt`] explains why) — they are what a `NEWDESK.INF` written
+/// by EmuTOS carries, and losing them on read would silently rewrite the user's
+/// file on the next save.
+fn env_to_prefs(e1: u8, e2: u8) -> (bool, u8, TimeFmt, DateFmt) {
+    let confdel = e1 & INF_E1_CONFDEL != 0;
+    let dclick = e1 & INF_E1_DCMASK;
+    let timefmt = if e2 & INF_E2_IDTTIME != 0 {
+        TimeFmt::Idt
+    } else if e2 & INF_E2_24HCLOCK != 0 {
+        TimeFmt::H24
+    } else {
+        TimeFmt::H12
+    };
+    let datefmt = if e2 & INF_E2_IDTDATE != 0 {
+        DateFmt::Idt
+    } else if e2 & INF_E2_DAYMONTH != 0 {
+        DateFmt::Dmy
+    } else {
+        DateFmt::Mdy
+    };
+    (confdel, dclick, timefmt, datefmt)
+}
+
+/// The inverse of [`env_to_prefs`] — EmuTOS `app_save`'s env assembly
+/// (`deskapp.c:1138-1160`). Every bit outside this dialog's own is taken from
+/// `base_e1`/`base_e2` unchanged, so the confirm-copy / blitter / cache bits
+/// NewTOS does not edit survive a load/save round trip.
+fn prefs_to_env(
+    confdel: bool,
+    dclick: u8,
+    timefmt: TimeFmt,
+    datefmt: DateFmt,
+    base_e1: u8,
+    base_e2: u8,
+) -> (u8, u8) {
+    let mut e1 = base_e1 & !(INF_E1_CONFDEL | INF_E1_DCMASK);
+    if confdel {
+        e1 |= INF_E1_CONFDEL;
+    }
+    e1 |= dclick & INF_E1_DCMASK;
+
+    let mut e2 = base_e2 & !(INF_E2_IDTDATE | INF_E2_IDTTIME | INF_E2_DAYMONTH | INF_E2_24HCLOCK);
+    match timefmt {
+        TimeFmt::Idt => e2 |= INF_E2_IDTTIME,
+        TimeFmt::H24 => e2 |= INF_E2_24HCLOCK,
+        TimeFmt::H12 => {}
+    }
+    match datefmt {
+        DateFmt::Idt => e2 |= INF_E2_IDTDATE,
+        DateFmt::Dmy => e2 |= INF_E2_DAYMONTH,
+        DateFmt::Mdy => {}
+    }
+    (e1, e2)
+}
+
 // ── Boot / runtime load + apply ─────────────────────────────────────────────
 
 /// Read `NEWDESK.INF` and apply it to the live desktop state
@@ -674,8 +758,10 @@ pub(super) fn load_and_apply() -> bool {
 /// into the **context save area** `G.g_cnxsave` and reach the live desktop only
 /// later, through `cnx_get` (`deskmain.c:2055`). The same split is kept here.
 fn apply(data: &InfData) {
-    // #E → cnxsave->cs_view / cs_sort / cs_sizefit (`deskapp.c:994-1013`).
+    // #E → cnxsave->cs_view / cs_sort / cs_sizefit (`deskapp.c:994-1013`) and
+    // the Preferences half (`deskapp.c:917-934`).
     let (view, sort, size_to_fit) = env_to_state(data.e1, data.e5);
+    let (confdel, dclick, timefmt, datefmt) = env_to_prefs(data.e1, data.e2);
 
     // #M/#T/#O → cached desktop-icon grid positions (grid units on disk).
     let mut desk_icons: Vec<(u8, u8, u8, u8)> = Vec::new();
@@ -695,6 +781,10 @@ fn apply(data: &InfData) {
         g.g_cnxsave.cs_view = view;
         g.g_cnxsave.cs_sort = sort;
         g.g_cnxsave.cs_sizefit = size_to_fit;
+        g.g_cnxsave.cs_confdel = confdel;
+        g.g_cnxsave.cs_dblclick = dclick;
+        g.g_cnxsave.cs_timefmt = timefmt;
+        g.g_cnxsave.cs_datefmt = datefmt;
         g.g_cnxsave.cs_wnode = Default::default();
         for (slot, w) in data.windows.iter().take(NUM_WNODES).enumerate() {
             g.g_cnxsave.cs_wnode[slot] = WSave {
@@ -760,7 +850,8 @@ fn build_from_state() -> InfData {
     let session = SESSION.lock().clone();
 
     // Env + desktop-icon anodes, under one lock.
-    let (view, sort, size_to_fit, desk_anodes) = global::with(|g| {
+    #[allow(clippy::type_complexity)]
+    let (view, sort, size_to_fit, prefs, desk_anodes): (View, Sort, bool, (bool, u8, TimeFmt, DateFmt), Vec<InfAnode>) = global::with(|g| {
         let mut anodes = Vec::new();
         let icw = g.g_icw.max(1);
         let ich = g.g_ich.max(1);
@@ -796,14 +887,36 @@ fn build_from_state() -> InfData {
             }
             child = g.g_screen[child as usize].ob_next;
         }
-        (g.g_cnxsave.cs_view, g.g_cnxsave.cs_sort, g.g_cnxsave.cs_sizefit, anodes)
+        (
+            g.g_cnxsave.cs_view,
+            g.g_cnxsave.cs_sort,
+            g.g_cnxsave.cs_sizefit,
+            (
+                g.g_cnxsave.cs_confdel,
+                g.g_cnxsave.cs_dblclick,
+                g.g_cnxsave.cs_timefmt,
+                g.g_cnxsave.cs_datefmt,
+            ),
+            anodes,
+        )
     })
-    .unwrap_or((View::Icon, Sort::Name, true, Vec::new()));
+    .unwrap_or((
+        View::Icon,
+        Sort::Name,
+        true,
+        (true, global::DEF_DCLICK, TimeFmt::H24, DateFmt::Mdy),
+        Vec::new(),
+    ));
 
     // Base env / patcol / file-type anodes: preserved from the session, or the
     // built-in defaults on a first-ever save.
     let base = session.unwrap_or_default();
     let (e1, e5) = state_to_env(view, sort, size_to_fit, base.e1, base.e5);
+    // The Preferences bits go into the *same* `e1` byte, in a disjoint bit
+    // range (`CONFDEL|DCMASK` vs `VIEWTEXT|SORTMASK`), so they are folded in on
+    // top of the result rather than from `base.e1` again.
+    let (confdel, dclick, timefmt, datefmt) = prefs;
+    let (e1, e2) = prefs_to_env(confdel, dclick, timefmt, datefmt, e1, base.e2);
 
     let mut anodes = desk_anodes;
     let type_anodes: Vec<InfAnode> = if base.anodes.iter().any(|a| !a.is_desk) {
@@ -815,7 +928,7 @@ fn build_from_state() -> InfData {
 
     InfData {
         e1,
-        e2: base.e2,
+        e2,
         e5,
         patcol: {
             let p = global::patcol_all();
@@ -1144,11 +1257,18 @@ pub(super) fn inf_show(tree: u64, start: i16) -> i16 {
     exitobj
 }
 
-// ── Show-Info dialog (`inf_file_folder`, `deskinf.c:493-639`) ───────────────
+// ── Dialog-tree primitives, shared by every `desk/` dialog built here ───────
 
 // obdefs.h object graphic types.
 const G_BOX: u16 = 20;
 const G_BOXTEXT: u16 = 22;
+/// `G_IBOX` (`obdefs.h`) — an invisible box. It draws nothing; its job is to be
+/// the **parent** of a radio-button group, because the AES's `fm_button`
+/// deselects the siblings of the button that was hit by walking the parent's
+/// child chain (`aes/gemfmlib.c` `select_radio`, our `tos-api/src/aes/form.rs`).
+/// EmuTOS wraps every `RBUTTON` group of `ADSETPRE` in one (`desk_rsc.c:1392`
+/// and the five that follow).
+const G_IBOX: u16 = 25;
 const G_BUTTON: u16 = 26;
 const G_STRING: u16 = 28;
 
@@ -1157,6 +1277,9 @@ const SELECTABLE: u16 = 0x0001;
 const DEFAULT: u16 = 0x0002;
 const EXIT: u16 = 0x0004;
 const EDITABLE: u16 = 0x0008;
+/// `RBUTTON` (`obdefs.h`) — radio button: selecting it deselects every other
+/// `RBUTTON` child of the same parent.
+const RBUTTON: u16 = 0x0010;
 const LASTOB: u16 = 0x0020;
 // obdefs.h ob_state bit.
 const OB_SELECTED: u16 = 0x0001;
@@ -1187,6 +1310,166 @@ fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, he
         ob_y: y,
         ob_width: w,
         ob_height: h,
+    }
+}
+
+/// One NUL-terminated `G_STRING` line held on the dialog's own stack frame.
+///
+/// A `G_STRING`'s `ob_spec` is a C string pointer, and the AES draws it
+/// **left-aligned at `ob_x`**, vertically centred in `ob_h`
+/// (`aes/gemoblib.c:817-845`, reproduced in `tos-api/src/aes/object.rs`'s
+/// `G_STRING` arm) — there is no centring attribute to set, so a line that must
+/// appear centred has to be *placed* centred, which is what [`Line::width`] is
+/// for. EmuTOS's resource strings are `.rsc` literals with the NUL already in
+/// them; a Rust `&str` has none, hence the copy.
+struct Line {
+    buf: [u8; LINE_MAX + 1],
+    len: usize,
+}
+
+/// Longest dialog line, in characters (72 · 8 px = 576, still inside a 640-px
+/// screen with margins).
+const LINE_MAX: usize = 72;
+
+impl Line {
+    /// Copy `s` (truncated to [`LINE_MAX`]) into a NUL-terminated buffer.
+    fn new(s: &str) -> Self {
+        let mut buf = [0u8; LINE_MAX + 1];
+        let src = s.as_bytes();
+        let len = src.len().min(LINE_MAX);
+        buf[..len].copy_from_slice(&src[..len]);
+        Self { buf, len }
+    }
+    /// The `ob_spec` value for a `G_STRING` showing this line.
+    fn spec(&self) -> u64 {
+        self.buf.as_ptr() as u64
+    }
+    /// The drawn width in pixels (the AES normal font is fixed-pitch).
+    fn width(&self) -> i16 {
+        self.len as i16 * CELL_W
+    }
+}
+
+// ── Desktop-info dialog (`do_deskmenu`'s `ABOUITEM`, `deskmain.c:612-646`) ──
+
+/// `do_aboutdesk` — the Desk menu's *Desktop info...* box.
+///
+/// EmuTOS shows the `ADDINFO` resource tree (`desk/desk_rsc.c:772-873`): an
+/// `OUTLINED` root box 40 characters wide, a `- EmuTOS -` title flanked by two
+/// `G_IMAGE` logos, a `Version` label with the value `desk_xlate_fix` patched in
+/// from the BIOS `version[]` string (`deskmain.c:1881`), the copyright block,
+/// the project URL and the GPL notice, and a single `DEOK` button
+/// (`desk_rsc.c:869-873`). The **structure** is reproduced here — centred box,
+/// a title line, text lines, one default OK button; the **content** is NewTOS's
+/// own and comes from the one place the boot screen already states it
+/// ([`crate::initinfo`]), so the version a user reads on the desktop cannot
+/// drift from the version the boot screen printed.
+///
+/// **Two named deviations.**
+///
+/// * EmuTOS runs `start_dialog` → `form_do` loop → `end_dialog` rather than
+///   [`inf_show`], solely because `DEICON` is a `TOUCHEXIT` that plays the
+///   Easter-egg tune and loops instead of closing (`deskmain.c:626-641`,
+///   `CONF_WITH_EASTER_EGG`). With no such object the loop would run exactly
+///   once, so this is `inf_show(tree, ROOT)` — the same three calls.
+/// * The box is sized to its text instead of the resource's fixed 40 columns:
+///   the machine line is board-dependent (`initinfo::machine_name`), so there is
+///   no build-time width to bake in. EmuTOS solves the same problem for its
+///   menus with the run-time `adjust_menu` (`deskmain.c:1608-1635`).
+///
+/// **One thing EmuTOS has and this box does not: a build date.** `ADDINFO`
+/// carries `DECOPYRT`, patched from `COPYRIGHT_YEAR`. NewTOS has no build-date
+/// or build-year constant anywhere — the OSHEADER's `os_date` is an explicit
+/// 1980-01-01 placeholder with the gap already recorded
+/// (`tos-api/src/bdos/process/loader.rs:806-809`), and the boot screen's
+/// `Boot time` line is the GEMDOS clock, not the build. Printing the
+/// placeholder, or the boot clock, would state something untrue about the
+/// build, so the line is **absent** until a real build-date constant exists.
+pub(super) fn do_aboutdesk() {
+    // Column layout: a `label   value` pair block, as `ADDINFO` pairs DELABEL
+    // with DEVERSN (`desk_rsc.c:803-813`).
+    const LABEL_COLS: i16 = 9;
+    const MARGIN: i16 = 24;
+    const ROW: i16 = CELL_H + 4;
+
+    let title = Line::new("- NewTOS -");
+    let ver_lbl = Line::new("Version");
+    let ver_val = Line::new(crate::initinfo::VERSION_STRING);
+    let mac_lbl = Line::new("Machine");
+    let mac_val = Line::new(crate::initinfo::machine_name());
+    // The independence notice is one sentence in `initinfo`; split it at its
+    // own dash so the box stays close to the resource's proportions instead of
+    // growing to the full 63-character line.
+    let notice = crate::initinfo::INDEPENDENCE_NOTICE;
+    let (head, tail) = match notice.find("- ") {
+        Some(i) => (&notice[..i + 1], &notice[i + 2..]),
+        None => (notice, ""),
+    };
+    let note1 = Line::new(head);
+    let note2 = Line::new(tail);
+    let author = Line::new(crate::initinfo::AUTHORSHIP_LINE);
+
+    static OK: &[u8] = b" OK \0";
+    const OK_W: i16 = 90;
+    const OK_H: i16 = 28;
+
+    // Pair block: label column + the wider of the two values.
+    let pair_w = LABEL_COLS * CELL_W + ver_val.width().max(mac_val.width());
+    let text_w = pair_w
+        .max(title.width())
+        .max(note1.width())
+        .max(note2.width())
+        .max(author.width());
+    let dw = text_w + 2 * MARGIN;
+    let pair_x = (dw - pair_w) / 2;
+    let val_x = pair_x + LABEL_COLS * CELL_W;
+    let ctr = |l: &Line| (dw - l.width()) / 2;
+
+    // Rows, top to bottom, with a blank row where `ADDINFO` leaves one.
+    let y0 = MARGIN;
+    let y_ver = y0 + 2 * ROW;
+    let y_mac = y_ver + ROW;
+    let y_n1 = y_mac + 2 * ROW;
+    let y_n2 = y_n1 + ROW;
+    let y_auth = y_n2 + 2 * ROW;
+    let y_ok = y_auth + 2 * ROW;
+    let dh = y_ok + OK_H + MARGIN;
+
+    /// Object index of the OK button — `ADDINFO`'s `DEOK` (`desk_rsc.h:91`).
+    const DEOK: i16 = 9;
+    let mut tree = [
+        mk(G_BOX, 0, BOX_SPEC, 0, 0, dw, dh, -1, 1, DEOK),
+        mk(G_STRING, 0, title.spec(), ctr(&title), y0, title.width(), CELL_H, 2, -1, -1),
+        mk(G_STRING, 0, ver_lbl.spec(), pair_x, y_ver, ver_lbl.width(), CELL_H, 3, -1, -1),
+        mk(G_STRING, 0, ver_val.spec(), val_x, y_ver, ver_val.width(), CELL_H, 4, -1, -1),
+        mk(G_STRING, 0, mac_lbl.spec(), pair_x, y_mac, mac_lbl.width(), CELL_H, 5, -1, -1),
+        mk(G_STRING, 0, mac_val.spec(), val_x, y_mac, mac_val.width(), CELL_H, 6, -1, -1),
+        mk(G_STRING, 0, note1.spec(), ctr(&note1), y_n1, note1.width(), CELL_H, 7, -1, -1),
+        mk(G_STRING, 0, note2.spec(), ctr(&note2), y_n2, note2.width(), CELL_H, 8, -1, -1),
+        mk(G_STRING, 0, author.spec(), ctr(&author), y_auth, author.width(), CELL_H, DEOK, -1, -1),
+        mk(
+            G_BUTTON,
+            SELECTABLE | DEFAULT | EXIT | LASTOB,
+            OK.as_ptr() as u64,
+            (dw - OK_W) / 2,
+            y_ok,
+            OK_W,
+            OK_H,
+            0,
+            -1,
+            -1,
+        ),
+    ];
+
+    // `inf_show(tree, ROOT)` (`deskinf.c:396-402`). `as_mut_ptr`, not `as_ptr`:
+    // the AES writes `ob_state` through this pointer while the dialog runs.
+    let clicked = inf_show(tree.as_mut_ptr() as u64, ROOT);
+    // `obj = tree + DEOK; obj->ob_state = NORMAL;` (`deskmain.c:643-644`) — the
+    // resource tree is reused on the next open, so the pressed button must not
+    // stay inverted. Ours is rebuilt each time; done anyway, for the same reason
+    // `set_background` does it.
+    if let Some(o) = tree.get_mut(clicked.max(0) as usize) {
+        o.ob_state &= !OB_SELECTED;
     }
 }
 
@@ -1231,6 +1514,99 @@ fn push_dec2(buf: &mut [u8], p: &mut usize, v: u32) {
         buf[*p + 1] = b'0' + (v % 10) as u8;
         *p += 2;
     }
+}
+
+// ── Date / time formatting (`fmt_date`/`fmt_time`, `deskinf.c:74-180`) ──────
+//
+// Both readers of the date/time preference live here, as they do in EmuTOS:
+// the text-view line builder (`format_fnode`, `deskinf.c:220-307`, ours in
+// `super::win`) and the Show-Info box (`inf_dttm`, `deskinf.c:460-468`).
+// Neither takes the desktop lock — the caller passes the format in, because
+// `format_fnode` already runs inside `global::with`.
+
+/// `DATEFORM_SEP` (`deskbind.h:64`) — the separator EmuTOS uses when the format
+/// does not come from the `_IDT` cookie.
+const DATEFORM_SEP: u8 = b'/';
+
+/// `fmt_date` (`deskinf.c:124-180`) — a DOS-packed date word written into `out`
+/// as `xx<sep>xx<sep>xx`, with a four-digit year when `fourdigit`. The field
+/// order is `datefmt`'s: month first for [`DateFmt::Mdy`], day first for
+/// [`DateFmt::Dmy`]. Returns the number of bytes written.
+///
+/// [`DateFmt::Idt`] renders as [`DateFmt::Mdy`]: the `_IDT` cookie it names is
+/// out of the desktop's reach (see [`DateFmt`]), and MDY is what the text view
+/// printed before the preference existed, so an unreachable value changes
+/// nothing on screen.
+///
+/// **`sep` is a parameter, and that is a divergence, not a design.** EmuTOS
+/// passes `DATEFORM_SEP` ('/') from both call sites; NewTOS's text view has
+/// printed `MM-DD-YY` with a dash since it was written (`super::win`'s
+/// `format_fnode`). DESK02 binds the *order* to the preference and leaves the
+/// separator exactly as each call site had it, so no screen changes that this
+/// ticket did not ask to change; the dash is reported as its own finding.
+pub(super) fn fmt_date(date: u16, fourdigit: bool, sep: u8, datefmt: DateFmt, out: &mut [u8]) -> usize {
+    let mut year = 1980u32 + ((date >> 9) & 0x7F) as u32;
+    if !fourdigit {
+        year %= 100;
+    }
+    let month = ((date >> 5) & 0x0F) as u32;
+    let day = (date & 0x1F) as u32;
+
+    let (v1, v2) = match datefmt.rendered() {
+        DateFmt::Dmy => (day, month),
+        // `default:` — MDY, which is also where `rendered()` sends the
+        // unreachable IDT value.
+        _ => (month, day),
+    };
+
+    let mut p = 0usize;
+    push_dec2(out, &mut p, v1);
+    push_str(out, &mut p, &[sep]);
+    push_dec2(out, &mut p, v2);
+    push_str(out, &mut p, &[sep]);
+    if fourdigit {
+        push_dec(out, &mut p, year as u64);
+    } else {
+        push_dec2(out, &mut p, year);
+    }
+    p
+}
+
+/// `fmt_time` (`deskinf.c:74-105`) — a DOS-packed time word written into `out`
+/// as `hh:mm` plus a **two-character suffix**: `am`/`pm` for [`TimeFmt::H12`],
+/// two blanks for [`TimeFmt::H24`] (EmuTOS's `char *suffix = "  ";`,
+/// `deskinf.c:77`). The suffix keeps the field width constant at 7 whichever
+/// format is chosen, which is why EmuTOS can lay the text view out in fixed
+/// columns. Returns the number of bytes written (always 7).
+///
+/// [`TimeFmt::Idt`] renders as [`TimeFmt::H24`] — same reasoning as
+/// [`fmt_date`]'s `Idt` arm.
+pub(super) fn fmt_time(time: u16, timefmt: TimeFmt, out: &mut [u8]) -> usize {
+    let mut hh = ((time >> 11) & 0x1F) as u32;
+    let mm = ((time >> 5) & 0x3F) as u32;
+    let suffix: &[u8] = match timefmt.rendered() {
+        TimeFmt::H12 => {
+            let pm = hh >= 12;
+            if pm {
+                hh -= 12;
+            }
+            if hh == 0 {
+                hh = 12; // `if (hh == 0) hh = 12;` (`deskinf.c:99-100`)
+            }
+            if pm {
+                b"pm"
+            } else {
+                b"am"
+            }
+        }
+        _ => b"  ",
+    };
+    let mut p = 0usize;
+    push_dec2(out, &mut p, hh);
+    push_str(out, &mut p, b":");
+    push_dec2(out, &mut p, mm);
+    push_str(out, &mut p, suffix);
+    p
 }
 
 /// FAT attribute bits (`bdosdefs.h`).
@@ -1291,25 +1667,23 @@ pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr:
         sizebuf[p.min(sizebuf.len() - 1)] = 0;
     }
 
-    // Date/time line: "Date: MM/DD/YYYY  HH:MM".
+    // Date/time line: "Date: MM/DD/YYYY  HH:MM" — `inf_dttm` (`deskinf.c:460-
+    // 468`), which formats the date with a four-digit year always (`:464`) and
+    // the time through the same `fmt_time` the text view uses (`:467`). Both
+    // take their order/clock from the Preferences dialog's values.
+    let (datefmt, timefmt) =
+        global::with(|g| (g.g_cdateform, g.g_ctimeform)).unwrap_or((DateFmt::Mdy, TimeFmt::H24));
     let mut datebuf = [0u8; 40];
     {
-        let year = 1980 + (date >> 9) as u32;
-        let month = ((date >> 5) & 0x0F) as u32;
-        let day = (date & 0x1F) as u32;
-        let hour = (time >> 11) as u32;
-        let min = ((time >> 5) & 0x3F) as u32;
         let mut p = 0usize;
         push_str(&mut datebuf, &mut p, b"Date: ");
-        push_dec2(&mut datebuf, &mut p, month);
-        push_str(&mut datebuf, &mut p, b"/");
-        push_dec2(&mut datebuf, &mut p, day);
-        push_str(&mut datebuf, &mut p, b"/");
-        push_dec(&mut datebuf, &mut p, year as u64);
+        p += fmt_date(date, true, DATEFORM_SEP, datefmt, &mut datebuf[p..]);
         push_str(&mut datebuf, &mut p, b"  ");
-        push_dec2(&mut datebuf, &mut p, hour);
-        push_str(&mut datebuf, &mut p, b":");
-        push_dec2(&mut datebuf, &mut p, min);
+        p += fmt_time(time, timefmt, &mut datebuf[p..]);
+        // Trim `fmt_time`'s two-blank 24-hour suffix off the end of the line.
+        while p > 0 && datebuf[p - 1] == b' ' {
+            p -= 1;
+        }
         datebuf[p.min(datebuf.len() - 1)] = 0;
     }
 
@@ -1370,6 +1744,235 @@ pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr:
         return None; // no change
     }
     Some(String::from(new))
+}
+
+// ── Preferences dialog (`inf_pref`, `deskinf.c:721-818`) ────────────────────
+
+/// `inf_which` (`deskinf.c:705-716`) — the index, **counted from the end**, of
+/// the first `SELECTED` object in `tree[baseobj .. baseobj+numobj]`, or `-1`
+/// when none is selected. For a two-button Yes/No pair that is `1` for Yes and
+/// `0` for No; for the three-button format groups it is EmuTOS's
+/// `TIMEFORM_*`/`DATEFORM_*` value read straight off the left-to-right button
+/// order (`deskinf.c:793-805`, whose comment says exactly that).
+fn inf_which(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
+    let mut i = numobj as i16 - 1;
+    for obj in tree.iter().skip(baseobj).take(numobj) {
+        if obj.ob_state & OB_SELECTED != 0 {
+            break;
+        }
+        i -= 1;
+    }
+    i
+}
+
+/// `inf_gindex` (`util/optimize.c:134-147`) — the index, **counted from the
+/// start**, of the first `SELECTED` object in `tree[baseobj .. baseobj+numobj]`,
+/// or `-1` when none is selected. The reverse of [`inf_which`].
+fn inf_gindex(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
+    for (n, obj) in tree.iter().skip(baseobj).take(numobj).enumerate() {
+        if obj.ob_state & OB_SELECTED != 0 {
+            return n as i16;
+        }
+    }
+    -1
+}
+
+/// `inf_what` (`util/optimize.c:157-170`) — `1` if `ok` was the selected
+/// button, `0` if `ok + 1` (its Cancel neighbour) was, `-1` otherwise; the
+/// selected button is deselected on the way out.
+fn inf_what(tree: &mut [Object], ok: usize) -> i16 {
+    let field = inf_gindex(tree, ok, 2);
+    if field == -1 {
+        return -1;
+    }
+    tree[ok + field as usize].ob_state = 0; // `objptr->ob_state = NORMAL;`
+    i16::from(field == 0)
+}
+
+/// Options → Set preferences (`inf_pref`, `deskinf.c:721-818`).
+///
+/// Pre-selects every radio group from the current preference values, runs the
+/// dialog through [`inf_show`], and on OK reads each group back with
+/// [`inf_which`] / [`inf_gindex`] and commits it. Returns EmuTOS's narrow
+/// rebuild signal: `true` **only** when the view is `V_TEXT` *and* the time or
+/// date format actually changed (`deskinf.c:807-814`) — nothing else in this
+/// dialog alters anything already on screen.
+///
+/// ## The field set, and what is missing from it
+///
+/// `ADSETPRE` (`desk/desk_rsc.c:1369-1560`) offers six groups in this order:
+/// confirm deletes, confirm copies, confirm overwrites, double-click speed,
+/// time format, date format. NewTOS shows **three** of them, in EmuTOS's order,
+/// and the three it leaves out are left out rather than shown-and-ignored:
+///
+/// * **Confirm copies** (`SPCCYES`/`SPCCNO`) — EmuTOS's switch turns on the
+///   per-item copy dialog inside `d_doop` (`deskdir.c:939`). NewTOS's copy
+///   engine has no per-item dialog at all ([`super::dir`]'s module header
+///   records that as a deliberate deviation), so there is nothing for the
+///   switch to turn on.
+/// * **Confirm overwrites** (`SPCOWYES`/`SPCOWNO`) — same reason, one level
+///   deeper: EmuTOS asks before replacing an existing file (`deskdir.c:325`,
+///   `if (!G.g_covwrpref)`), NewTOS's copy always overwrites (GEMDOS `Fcreate`
+///   truncates).
+/// * **The `Default` button of each format group** (`SPTF_DEF`/`SPDF_DEF`) —
+///   "default" means "take the format from the `_IDT` cookie", which EmuTOS
+///   reads with `Supexec(get_idt_cookie)` (`desksupp.c:219`). XBIOS `Supexec`
+///   (0x26) is not implemented (`tos-api/src/xbios/mod.rs:129`) and the desktop
+///   may not reach kernel state except through a trap (DESK10), so the value
+///   cannot be honoured. It is still *decoded* from the `#E` line and written
+///   back unchanged ([`env_to_prefs`]), so a file carrying it survives; it just
+///   has no button. A value of `Idt` pre-selects the NewTOS fallback
+///   (`24H` / `MDY`), which is what it renders as.
+///
+/// Each of the three fields that is shown has a live consumer: *Confirm
+/// deletes* gates [`super::dir`]'s delete question, the speed is the AES's own
+/// `evnt_dclick` rate, and the two formats drive `format_fnode` and the
+/// Show-Info box through [`fmt_date`]/[`fmt_time`].
+pub(super) fn inf_pref() -> bool {
+    // ── current values ──────────────────────────────────────────────────
+    let (confdel, timefmt, datefmt, view) =
+        global::with(|g| (g.g_cdelepref, g.g_ctimeform, g.g_cdateform, g.view))
+            .unwrap_or((true, TimeFmt::H24, DateFmt::Mdy, View::Icon));
+    // `G.g_cdclkpref = evnt_dclick(0, FALSE);` (`deskinf.c:751`) — the rate is
+    // the AES's, so it is asked for rather than remembered.
+    let dclick = super::evnt_dclick(0, false).clamp(0, 4);
+
+    static TITLE: &[u8] = b" SET PREFERENCES \0";
+    static CONFDEL_LBL: &[u8] = b"Confirm deletes:\0";
+    static DCLICK_LBL: &[u8] = b"Double-click speed:\0";
+    static TIME_LBL: &[u8] = b"Time format:\0";
+    static DATE_LBL: &[u8] = b"Date format:\0";
+    static YES: &[u8] = b" Yes \0";
+    static NO: &[u8] = b" No \0";
+    static DC: [&[u8]; 5] = [b"1\0", b"2\0", b"3\0", b"4\0", b"5\0"];
+    static H12: &[u8] = b" 12H \0";
+    static H24: &[u8] = b" 24H \0";
+    static MDY: &[u8] = b" MDY \0";
+    static DMY: &[u8] = b" DMY \0";
+    static OK: &[u8] = b" OK \0";
+    static CANCEL: &[u8] = b" Cancel \0";
+
+    // ── geometry ────────────────────────────────────────────────────────
+    const MARGIN: i16 = 24;
+    const ROW_H: i16 = 26;
+    const BTN_H: i16 = 22;
+    const YESNO_W: i16 = 52;
+    const DC_W: i16 = 30;
+    const FMT_W: i16 = 56;
+    const GAP: i16 = 6;
+    const LBL_W: i16 = 20 * CELL_W; // "Double-click speed:" + a blank
+    const GROUP_W: i16 = 5 * DC_W + 4 * GAP; // the widest group (five speeds)
+    let dw = MARGIN + LBL_W + GROUP_W + MARGIN;
+    let gx = MARGIN + LBL_W;
+
+    let y_del = MARGIN + ROW_H;
+    let y_dc = y_del + ROW_H;
+    let y_tf = y_dc + ROW_H;
+    let y_df = y_tf + ROW_H;
+    let y_btn = y_df + ROW_H + GAP;
+    let dh = y_btn + 28 + MARGIN;
+    // Vertical offset of a `BTN_H` button inside its `CELL_H` label row.
+    let boff = (CELL_H - BTN_H) / 2;
+
+    // ── object indices (`desk_rsc.h:164-184`, minus the omitted groups) ──
+    /// `SPCDYES` — the *Confirm deletes* `Yes` button; `SPCDNO` follows it.
+    const SPCDYES: usize = 4;
+    /// `SPDC1` — the first of the five double-click speed buttons.
+    const SPDC1: usize = 8;
+    /// `SPTF12HR` — the first *shown* time-format button (EmuTOS's `SPTF_DEF`
+    /// precedes it and has no NewTOS counterpart).
+    const SPTF12HR: usize = 15;
+    /// `SPDFMMDD` — the first *shown* date-format button.
+    const SPDFMMDD: usize = 19;
+    /// `SPOK` — the OK button; `SPCNCL` follows it, as [`inf_what`] requires.
+    const SPOK: usize = 21;
+
+    let rb = |spec: &'static [u8], x: i16, w: i16, next: i16| {
+        mk(G_BUTTON, SELECTABLE | RBUTTON, spec.as_ptr() as u64, x, 0, w, BTN_H, next, -1, -1)
+    };
+
+    // Each radio group hangs under its own `G_IBOX`, because that is what makes
+    // the AES deselect the siblings of the button that was hit (see [`G_IBOX`]).
+    #[rustfmt::skip]
+    let mut tree = [
+        // 0 ROOT
+        mk(G_BOX, 0, BOX_SPEC, 0, 0, dw, dh, -1, 1, SPOK as i16 + 1),
+        // 1 title
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, MARGIN, MARGIN, dw - 2 * MARGIN, CELL_H, 2, -1, -1),
+        // 2 "Confirm deletes:"          3 its G_IBOX      4/5 Yes/No
+        mk(G_STRING, 0, CONFDEL_LBL.as_ptr() as u64, MARGIN, y_del, LBL_W, CELL_H, 3, -1, -1),
+        mk(G_IBOX, 0, 0, gx, y_del + boff, 2 * YESNO_W + GAP, BTN_H, 6, 4, 5),
+        rb(YES, 0, YESNO_W, 5),
+        rb(NO, YESNO_W + GAP, YESNO_W, 3),
+        // 6 "Double-click speed:"       7 its G_IBOX      8..12 the five speeds
+        mk(G_STRING, 0, DCLICK_LBL.as_ptr() as u64, MARGIN, y_dc, LBL_W, CELL_H, 7, -1, -1),
+        mk(G_IBOX, 0, 0, gx, y_dc + boff, GROUP_W, BTN_H, 13, 8, 12),
+        rb(DC[0], 0, DC_W, 9),
+        rb(DC[1], DC_W + GAP, DC_W, 10),
+        rb(DC[2], 2 * (DC_W + GAP), DC_W, 11),
+        rb(DC[3], 3 * (DC_W + GAP), DC_W, 12),
+        rb(DC[4], 4 * (DC_W + GAP), DC_W, 7),
+        // 13 "Time format:"             14 its G_IBOX     15/16 12H/24H
+        mk(G_STRING, 0, TIME_LBL.as_ptr() as u64, MARGIN, y_tf, LBL_W, CELL_H, 14, -1, -1),
+        mk(G_IBOX, 0, 0, gx, y_tf + boff, 2 * FMT_W + GAP, BTN_H, 17, 15, 16),
+        rb(H12, 0, FMT_W, 16),
+        rb(H24, FMT_W + GAP, FMT_W, 14),
+        // 17 "Date format:"             18 its G_IBOX     19/20 MDY/DMY
+        mk(G_STRING, 0, DATE_LBL.as_ptr() as u64, MARGIN, y_df, LBL_W, CELL_H, 18, -1, -1),
+        mk(G_IBOX, 0, 0, gx, y_df + boff, 2 * FMT_W + GAP, BTN_H, 21, 19, 20),
+        rb(MDY, 0, FMT_W, 20),
+        rb(DMY, FMT_W + GAP, FMT_W, 18),
+        // 21 OK                         22 Cancel
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT, OK.as_ptr() as u64, dw / 2 - 100, y_btn, 90, 28, SPOK as i16 + 1, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB, CANCEL.as_ptr() as u64, dw / 2 + 10, y_btn, 90, 28, 0, -1, -1),
+    ];
+
+    // ── pre-select the current state (`deskinf.c:731-777`) ──────────────
+    // `deselect_all(tree1)` is implicit: `mk` leaves every `ob_state` at 0.
+    tree[SPCDYES + usize::from(!confdel)].ob_state |= OB_SELECTED;
+    tree[SPDC1 + dclick as usize].ob_state |= OB_SELECTED;
+    // `.rendered()`, not the raw value: a `#E` line whose `INF_E2_IDT*` bits are
+    // set (EmuTOS's `INF_E2_DEFAULT`, and therefore every file NewTOS has ever
+    // written before DESK02) decodes to `Idt`, which this dialog has no button
+    // for. Pre-selecting the button the **renderer** actually uses is what keeps
+    // the box honest — with the raw value the fallbacks disagreed, and the
+    // measured run showed `DMY` selected while `format_fnode` printed MDY.
+    tree[SPTF12HR + usize::from(timefmt.rendered() != TimeFmt::H12)].ob_state |= OB_SELECTED;
+    tree[SPDFMMDD + usize::from(datefmt.rendered() != DateFmt::Mdy)].ob_state |= OB_SELECTED;
+
+    // ── run it ──────────────────────────────────────────────────────────
+    inf_show(tree.as_mut_ptr() as u64, ROOT);
+    if inf_what(&mut tree, SPOK) != 1 {
+        return false;
+    }
+
+    // ── commit (`deskinf.c:784-814`) ────────────────────────────────────
+    let new_confdel = inf_which(&tree, SPCDYES, 2) == 1;
+    // `G.g_cdclkpref = evnt_dclick(inf_gindex(tree1, SPDC1, 5), TRUE);`
+    let picked = inf_gindex(&tree, SPDC1, 5).max(0);
+    let new_dclick = super::evnt_dclick(picked, true).clamp(0, 4) as u8;
+    // The two format groups keep EmuTOS's "read the index off the button order"
+    // trick, minus its `Default` button: with `12H` then `24H` on screen,
+    // `inf_which` yields 1 for the first and 0 for the second, which is exactly
+    // `TIMEFORM_12H` / `TIMEFORM_24H` (`deskbind.h:68-69`). Same for `MDY`/`DMY`
+    // against `DATEFORM_MDY` / `DATEFORM_DMY` (`:65-66`).
+    let new_timefmt = if inf_which(&tree, SPTF12HR, 2) == 1 { TimeFmt::H12 } else { TimeFmt::H24 };
+    let new_datefmt = if inf_which(&tree, SPDFMMDD, 2) == 1 { DateFmt::Mdy } else { DateFmt::Dmy };
+
+    global::with(|g| {
+        g.g_cdelepref = new_confdel;
+        g.g_cdclkpref = new_dclick;
+        g.g_ctimeform = new_timefmt;
+        g.g_cdateform = new_datefmt;
+    });
+
+    // "if the current view is as text, and the date or time format has changed,
+    // we need to tell the caller so he can rebuild the windows if necessary"
+    // (`deskinf.c:807-814`).
+    // Compared against the **rendered** old value, for the same reason the
+    // pre-selection uses it: leaving `Idt` for the `H24` the screen already
+    // showed changes no pixel and must not order a rebuild.
+    view == View::Text && (new_timefmt != timefmt.rendered() || new_datefmt != datefmt.rendered())
 }
 
 // ── Set-background dialog (`inf_backgrounds`, `deskinf.c:825-921`) ───────────
@@ -1508,7 +2111,12 @@ pub fn selftest() {
     // desktop-icon positions, one window, and the default file-type anodes.
     let mut original = InfData::default();
     let (e1, e5) = state_to_env(View::Text, Sort::Size, false, original.e1, original.e5);
+    // …and a non-default value for every Preferences field, so the `#E` bytes
+    // the dialog writes are exercised too (DESK02): confirm-deletes off,
+    // double-click 4, 12-hour clock, day-before-month.
+    let (e1, e2) = prefs_to_env(false, 4, TimeFmt::H12, DateFmt::Dmy, e1, original.e2);
     original.e1 = e1;
+    original.e2 = e2;
     original.e5 = e5;
     original.patcol = [(0x51, 0x40), (0x63, 0x41), (0x72, 0x0A)];
     original.windows.push(InfWindow { hsl: 0, vsl: 0, xc: 2, yc: 6, wc: 0x26, hc: 0x0C, path: String::from("C:\\") });
@@ -1548,6 +2156,10 @@ pub fn selftest() {
     let bytes = original.serialize();
     let mem = parse_inf(&bytes);
     check("in-memory: #E view/sort", env_to_state(mem.e1, mem.e5) == env_to_state(original.e1, original.e5));
+    check(
+        "in-memory: #E preferences",
+        env_to_prefs(mem.e1, mem.e2) == (false, 4, TimeFmt::H12, DateFmt::Dmy),
+    );
     check("in-memory: #Q background", mem.patcol == original.patcol);
     check("in-memory: #W geometry", mem.windows == original.windows);
     check("in-memory: ANODE positions", mem.anodes == original.anodes);
@@ -1560,6 +2172,10 @@ pub fn selftest() {
         Some(back) => {
             let disk = parse_inf(&back);
             check("disk: #E view/sort", env_to_state(disk.e1, disk.e5) == env_to_state(original.e1, original.e5));
+            check(
+                "disk: #E preferences",
+                env_to_prefs(disk.e1, disk.e2) == (false, 4, TimeFmt::H12, DateFmt::Dmy),
+            );
             check("disk: #Q background", disk.patcol == original.patcol);
             check("disk: #W geometry", disk.windows == original.windows);
             check("disk: ANODE positions", disk.anodes == original.anodes);

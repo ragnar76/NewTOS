@@ -1,0 +1,20 @@
+# DESK02 binding proof -- open C:\ and switch to "Show as text", so the date
+# column shows what `format_fnode` makes of the saved Date-format preference.
+# C: icon around (37,42); View title 112..160, entry 1 ("Show as text") at
+# y = 19 + 1*16 = 35..51.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 parkbr
+2700 mark B_WINDOW
+3000 move 136 8
+3400 move 140 43
+3600 down
+3603 up
+3900 parkbr
+4500 mark C_TEXT

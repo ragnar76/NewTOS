@@ -1,0 +1,131 @@
+measurement-2026-09-24-desk01-desk02 — DESK11 / DESK01 / DESK02
+================================================================
+
+Base: branch desk-rebuild, HEAD 8d271cb, changes UNCOMMITTED in the shared
+tree. Nothing flashed. No `git checkout/restore/clean/stash/reset` on the
+shared tree — the "before" kernel comes from a *detached worktree*
+(`git worktree add --detach <job-scratch> 8d271cb`), removed after the runs.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps. Card image: `tools/make-sd-image.sh` (64 MiB, MBR + FAT16). The
+stock image carries a 21-byte placeholder `C:\NEWDESK.INF` ("newdesk
+placeholder"), so `parse_inf` sees no `#E` line and `InfData::default()`
+applies — which is why the *un-saved* runs decode `INF_E2_DEFAULT`'s IDT bits.
+
+Interactive runs use the scratch-copy IKBD injector (memory
+`desktop-interactive-verification-real-hw`): `method/make_scratch_desk0102.sh`
+rsyncs the crates into the job scratch — never the shared tree — and applies
+`a79_patch_desk10.py` + the DESK08/09 `apply_injector.py` /`a78_patch2.py`
+/`key_step_patch.py`/`tree_dump_patch.py`. The pointer is parked bottom-right
+(`parkbr`) before every screendump so the cursor never pollutes a comparison.
+
+
+1. DESK11 — the drive map through GEMDOS
+----------------------------------------
+before = 8d271cb (worktree), after = the tree. Same card image, plain boot.
+
+  serial/boot-before-serial.log  vs  serial/boot-after-serial.log
+  diff = ONE line:
+    < [mm]   kernel: 0x80000..0x31a000 (2727936 bytes)
+    > [mm]   kernel: 0x80000..0x31c000 (2736128 bytes)
+  i.e. the kernel image's own size, nothing else.
+
+  drive line, identical on both sides:
+    [desk] desktop up (1 drives, 0 window(s) from the context)
+
+  screendumps/boot-before.png == screendumps/boot-after.png
+    md5 a53b0a3f076d7040d0a0f92f9152e611 on both
+    pixdiff: 0 differing pixels
+  the two card images compare byte-equal after the runs (`cmp`).
+  0 [EXC]/[PANIC].
+
+  NOT covered by QEMU: the four drives C:–F: of the real card (QEMU has one).
+  HW checklist item 37, step 1.
+
+
+2. DESK01 — Desk -> Desktop info...
+-----------------------------------
+`method/desk-desk01.actions` -> `method/desk01_scripts.rs`, scratch kernel.
+
+  screendumps/dlg-A-idle.png       the desktop before
+  screendumps/dlg-B-desk-open.png  the Desk drop-down open
+  screendumps/dlg-C-about.png      the box
+  screendumps/dlg-D-closed.png     after OK
+
+  Box geometry measured off dlg-C-about.png by scanline:
+    x 128..511, y 111..386  ->  (128, 111, 384, 276)
+  = form_center's value: (640-384)/2 = 128, 19 + (480-19-276)/2 = 111.
+
+  dlg-D-closed.png == dlg-A-idle.png
+    md5 710d7f24cc078d43e9351725a205a16e on both
+    pixdiff: 0 differing pixels
+  i.e. OK leaves the screen byte-identical to before the box opened.
+  0 [EXC]/[PANIC].
+
+
+3. DESK02 — Options -> Set preferences...
+-----------------------------------------
+`method/desk-desk02.actions` -> `method/desk02_scripts.rs`, scratch kernel.
+Sequence: open the dialog, click `Date format -> DMY`, OK, then
+`Options -> Save desktop...`.
+
+  screendumps/prefs-p-C-prefs.png  the dialog as it opens
+      Yes / 3 / 24H / MDY pre-selected (measured by black-fraction per
+      button rect: 0.87 / 0.91 / 0.85 / 0.85 for the selected ones,
+      0.05..0.15 for the others)
+  screendumps/prefs-p-D-dmy.png    after the DMY click — MDY cleared, DMY set,
+      the other three rows unchanged
+  screendumps/prefs-p-E-closed.png after OK; == prefs-p-A-idle.png,
+      md5 710d7f24… on both, pixdiff 0
+  screendumps/prefs-p-F-saved.png  after Save desktop
+
+  Dialog geometry: x 129..510, y 143..355 -> (129, 143, 382, 212)
+  = form_center's value: (640-382)/2 = 129, 19 + (480-19-212)/2 = 143.
+
+  inf/NEWDESK.INF.after-prefs — read out of the card image afterwards
+  (`sd-get.sh`, SHA-256
+   8a6f9dd68e7d502b3832c157fabee1c904bc2790db5d9c10003d9e37ba70da3f):
+    #E 1A 86 00 00 60
+       e1 = 0x1A  CONFDEL | CONFCPY | dclick 2      (unchanged)
+       e2 = 0x86  BLITTER | DAYMONTH | 24HCLOCK     <- DMY, IDT bits cleared
+       e5 = 0x60  APPDIR | ISFULL                   (unchanged)
+  `fsck_msdos -n` on the partition: Phase 1/2/3, no complaint.
+
+  Cold boot from that image (screendumps/cold-C-prefs.png): the dialog
+  re-opens with **DMY** pre-selected — the field survived Save desktop plus a
+  cold boot.
+
+  Binding proof (`method/desk-desk02-text.actions`), same kernel, two images:
+    screendumps/t-mdy.png  (stock image)      dates read  09-23-26
+    screendumps/t-dmy.png  (the saved image)  dates read  23-09-26
+  i.e. the preference reaches `format_fnode`, not just the dialog. The time
+  column is `09:58` in both (24-hour, unchanged). The byte count in the header
+  differs by 449 because the saved image's NEWDESK.INF replaced the 21-byte
+  placeholder.
+  0 [EXC]/[PANIC] in any run.
+
+
+4. A defect the measurement found
+---------------------------------
+screendumps/probe-C-prefs-BEFORE-idt-fix.png is the first probe run. It shows
+**DMY** pre-selected on a machine whose text view prints MDY: the `Idt`
+fallback had been written twice — once in `fmt_date` (-> Mdy) and once in the
+dialog's `!= DateFmt::Mdy` pre-selection (-> the second button, i.e. Dmy) —
+and the two disagreed. Fixed by `model::TimeFmt::rendered()` /
+`DateFmt::rendered()`, one rule that both readers go through;
+screendumps/prefs-p-C-prefs.png is the same run after the fix.
+
+
+Files
+-----
+method/       the two action lists + the generated injector scripts, the
+              scratch-tree builder, and the DESK10 anchor patch. The DESK08/09
+              method dir supplies apply_injector.py, a78_patch2.py,
+              key_step_patch.py, tree_dump_patch.py, gen_script.py, run.sh,
+              qmp_multi.py, pixdiff.py, sd-put.sh.
+screendumps/  the PNGs named above.
+serial/       every run's serial log.
+inf/          the NEWDESK.INF written by Save desktop.
+build/        the product and spec diffs, the new host test, the build/clippy/
+              test output.
+No `*.img` (the ticket's rule).

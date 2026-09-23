@@ -20,7 +20,7 @@ use super::global::{
     min_wint, DeskState, Grect, DROOT, G_BOX, G_ICON, G_STRING, MIN_HINT, NIL, NUM_WNODES,
 };
 use super::icons::{build_iconblk, IconKind};
-use super::model::{FNode, PNode, View, LEN_LABEL};
+use super::model::{DateFmt, FNode, PNode, TimeFmt, View, LEN_LABEL};
 
 /// `LEN_FNODE` (`deskwin.h:36`) — the fixed formatted text-line width in
 /// characters; the `V_TEXT` item's own extent is `LEN_FNODE * char_w`.
@@ -467,6 +467,9 @@ impl DeskState {
         // Copy the fields out first so the file-list borrow ends before the
         // g_screen/g_screeninfo borrows.
         let f = self.windows.slots[slot].w_pnode.p_flist[pidx].clone();
+        // The text view's date/time preference, read here because the
+        // `g_screeninfo` borrow below holds `self` mutably.
+        let (datefmt, timefmt) = (self.g_cdateform, self.g_ctimeform);
         // Restore the selection highlight from the file's `f_selected`
         // (EmuTOS `win_bldview`, deskwin.c:446-448) — `obj_ialloc` cleared
         // `ob_state`, so a rebuilt view (scroll / sort / view-switch / a
@@ -505,7 +508,7 @@ impl DeskState {
                 o.ob_spec = spec;
             }
             View::Text => {
-                format_fnode(&f, &mut info.label);
+                format_fnode(&f, datefmt, timefmt, &mut info.label);
                 let spec = info.label.as_ptr() as u64;
                 let o = &mut self.g_screen[obid as usize];
                 o.ob_type = G_STRING;
@@ -878,37 +881,13 @@ fn fmt_u32(mut v: u32, buf: &mut [u8; 12]) -> &[u8] {
     &buf[..len]
 }
 
-/// FAT date word → `"MM-DD-YY"` (EmuTOS `fmt_date`, 2-digit year).
-fn fmt_date(date: u16) -> [u8; 8] {
-    let day = (date & 0x1f) as u8;
-    let month = ((date >> 5) & 0x0f) as u8;
-    let year = ((1980u16 + (date >> 9)) % 100) as u8;
-    [
-        b'0' + month / 10,
-        b'0' + month % 10,
-        b'-',
-        b'0' + day / 10,
-        b'0' + day % 10,
-        b'-',
-        b'0' + year / 10,
-        b'0' + year % 10,
-    ]
-}
-
-/// FAT time word → `"HH:MM"` (EmuTOS `fmt_time`, 24-hour).
-fn fmt_time(time: u16) -> [u8; 5] {
-    let min = ((time >> 5) & 0x3f) as u8;
-    let hour = ((time >> 11) & 0x1f) as u8;
-    [b'0' + hour / 10, b'0' + hour % 10, b':', b'0' + min / 10, b'0' + min % 10]
-}
-
 /// Format one directory entry as a fixed-width `V_TEXT` line (EmuTOS
 /// `format_fnode`, `deskinf.c:220-307`, per `deskinf.md`): folder/read-only
 /// indicator, 8.3 name, size (blank for folders), date, time. The exact
 /// column widths are a NewTOS choice (the visual layout is fidelity, not
 /// contract); the **field order and semantics** match EmuTOS. Returns the
 /// NUL-terminated line length.
-fn format_fnode(f: &FNode, out: &mut [u8; LEN_LABEL]) -> usize {
+fn format_fnode(f: &FNode, datefmt: DateFmt, timefmt: TimeFmt, out: &mut [u8; LEN_LABEL]) -> usize {
     /// `FA_RO` (read-only) attribute bit.
     const FA_RO: u8 = 0x01;
     *out = [b' '; LEN_LABEL];
@@ -938,12 +917,20 @@ fn format_fnode(f: &FNode, out: &mut [u8; LEN_LABEL]) -> usize {
         put(out, 25usize.saturating_sub(s.len()), s);
     }
 
-    // 4. Date + time.
-    put(out, 27, &fmt_date(f.f_date));
-    put(out, 37, &fmt_time(f.f_time));
+    // 4. Date + time, in the Preferences dialog's order/clock — EmuTOS
+    // `format_fnode` calls the same two formatters (`deskinf.c:289,293`).
+    // `fmt_date` keeps NewTOS's dash separator here (see `inf::fmt_date`);
+    // `fmt_time` writes a fixed 7-character field, the trailing two characters
+    // being `am`/`pm` or, in 24-hour mode, the two blanks the trim below drops.
+    let mut dbuf = [b' '; 11];
+    let dn = super::inf::fmt_date(f.f_date, false, b'-', datefmt, &mut dbuf);
+    put(out, 27, &dbuf[..dn]);
+    let mut tbuf = [b' '; 8];
+    let tn = super::inf::fmt_time(f.f_time, timefmt, &mut tbuf);
+    put(out, 37, &tbuf[..tn]);
 
     // NUL-terminate after the last used column, trimming trailing spaces.
-    let mut end = 42usize;
+    let mut end = 44usize;
     while end > 0 && out[end - 1] == b' ' {
         end -= 1;
     }

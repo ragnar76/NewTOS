@@ -12,7 +12,7 @@
 
 use alloc::string::String;
 
-use super::dosbind::drvmap;
+use super::dosbind::{dos_gdrv, dos_sdrv};
 use super::global::{self, Grect, DROOT, MAX_DEPTH, NIL, NUM_WNODES, WINDOW_STYLE};
 use super::menu::{self, Item, Title};
 use super::win::{DESKWH, SliderSet, WA_DNLINE, WA_DNPAGE, WA_LFLINE, WA_RTLINE, WA_UPLINE, WA_UPPAGE};
@@ -803,7 +803,9 @@ fn check_alt_letter_key(key: i16) -> bool {
     let letter = crate::keymap::to_ascii(sc, true, false, false);
     if letter.is_ascii_uppercase() {
         let drive = letter - b'A';
-        if drvmap() & (1u32 << drive) != 0 {
+        // `if (dos_sdrv(dos_gdrv()) & (1L << drv))` — EmuTOS `valid_drive`
+        // (`desksupp.c:1819`), the same GEMDOS drive-map read as `app_blddesk`.
+        if dos_sdrv(dos_gdrv()) & (1 << drive) != 0 {
             open_root_window(letter);
             return true;
         }
@@ -840,14 +842,24 @@ fn hndl_menu(item: Item, title_obj: i16) -> bool {
     done
 }
 
-/// `do_deskmenu` (EmuTOS `deskmain.c:612`) — the Desk menu. Only `About`
-/// (Desktop info); a `form_alert` stands in for the resource About dialog.
-fn do_deskmenu(_item: Item) {
-    let text = b"[1][ NewTOS Desktop | EmuTOS-conformant rebuild | ADR-016 (Task #8) ][ OK ]\0";
-    super::form_alert(1, text.as_ptr());
-    // No after-menu whole-desktop repaint: the Desk drop-down was save/restored by
-    // the AES menu manager (P1), and the AES `form_alert` bb_save/restores the
-    // screen under the About box — the desktop returns intact via the app path.
+/// `do_deskmenu` (EmuTOS `deskmain.c:612-651`) — the Desk menu. Its one case is
+/// `ABOUITEM`, the *Desktop info...* box ([`super::inf::do_aboutdesk`]); every
+/// other Desk entry is a registered desk accessory, and the AES sends those an
+/// `AC_OPEN` of its own rather than routing them here, so the switch has no
+/// other arm (`deskmain.c:617-648`).
+///
+/// Until DESK01 a `form_alert` stood in for the resource dialog. It is gone: an
+/// alert is a different object (the AES's own `DIALERT` tree, its own
+/// `bb_save`/restore, no dialog rectangle), and `do_aboutdesk` now goes through
+/// the same `start_dialog`/`form_do`/`end_dialog` chain as every other desktop
+/// dialog — which is what makes `form_dial(FMD_FINISH)` take the box down by
+/// repainting exactly its own rectangle.
+fn do_deskmenu(item: Item) {
+    // One case, as in the source; no other Desk-menu item exists, because the
+    // accessories below the separator are opened by the AES with `AC_OPEN`.
+    if item == Item::About {
+        super::inf::do_aboutdesk();
+    }
 }
 
 /// `do_filemenu` (EmuTOS `deskmain.c:654`) — the File menu. Task-#8 items:
@@ -888,6 +900,21 @@ fn do_optnmenu(item: Item) {
             super::inf::set_background();
         }
         Item::InstallApp => do_install_app(),
+        // `case PREFITEM: if (inf_pref()) desk_all(FALSE);` (`deskmain.c:885-
+        // 887`). **Named deviation in the argument**: EmuTOS passes `FALSE`
+        // (no flags), because its text lines are formatted *at draw time* by
+        // the `G_USERDEF` `dr_fnode` (`deskinf.c:310-326`), so repainting is
+        // enough to pick a new date format up. NewTOS builds the line once, in
+        // `win_bldview` → `format_fnode`, and caches it in the object's label —
+        // so the windows have to be **rebuilt**, which is what `VIEW_CHANGED`
+        // asks `desk_all` for. `inf_pref` already returns `true` only when a
+        // rebuild is actually needed (text view + a format change).
+        Item::SetPrefs => {
+            let rebuild = super::inf::inf_pref();
+            if rebuild {
+                desk_all(VIEW_CHANGED);
+            }
+        }
         Item::ReadInf => do_read_inf(),
         Item::SaveDesktop => do_save_desktop(),
         _ => {} // remaining Options items stay disabled
@@ -1725,12 +1752,20 @@ fn slid_msg(handle: i16, horizontal: bool, value: i16) {
 /// (then `do_xyfix`'d, `:1420-1421`), the scroll position from `w_cvcol`/
 /// `w_cvrow`, the directory from `w_pnode.p_spec`.
 pub(super) fn cnx_put() {
-    // View/sort/size-to-fit — the preferences this desktop has live state for
-    // (see `global::CSave` for the ones it does not).
+    // View/sort/size-to-fit and the Preferences fields — the preferences this
+    // desktop has live state for (see `global::CSave` for the ones it does not).
+    // `cs_dblclick` comes from `G.g_cdclkpref` and **not** from a fresh
+    // `evnt_dclick` query (`deskmain.c:1382`): the field is a cache of what the
+    // AES last reported, refreshed by `inf_pref` and by `cnx_get_prefs`, and
+    // `cnx_put` runs on every window move/size — it must not trap.
     global::with(|g| {
         g.g_cnxsave.cs_view = g.view;
         g.g_cnxsave.cs_sort = g.sort;
         g.g_cnxsave.cs_sizefit = g.size_to_fit;
+        g.g_cnxsave.cs_confdel = g.g_cdelepref;
+        g.g_cnxsave.cs_dblclick = g.g_cdclkpref;
+        g.g_cnxsave.cs_timefmt = g.g_ctimeform;
+        g.g_cnxsave.cs_datefmt = g.g_cdateform;
     });
 
     // The open windows, front-to-back, with their desktop slot and handle.
@@ -1855,10 +1890,22 @@ fn cnx_get_prefs() {
 
     do_viewmenu(view_item(view));
     do_viewmenu(sort_item(sort));
-    global::with(|g| {
+    // `G.g_cdelepref = cnxsave->cs_confdel;` and the format pair (`:1441-1446`).
+    let dclick = global::with(|g| {
         g.size_to_fit = sizefit;
+        g.g_cdelepref = g.g_cnxsave.cs_confdel;
+        g.g_cdclkpref = g.g_cnxsave.cs_dblclick;
+        g.g_ctimeform = g.g_cnxsave.cs_timefmt;
+        g.g_cdateform = g.g_cnxsave.cs_datefmt;
         g.win_view();
-    });
+        g.g_cdclkpref
+    })
+    .unwrap_or(global::DEF_DCLICK);
+    // `G.g_cdclkpref = evnt_dclick(G.g_cdclkpref, TRUE);` (`:1460`) — push the
+    // restored rate into the AES and take back what it actually set, outside the
+    // desktop lock (the trap may block).
+    let applied = super::evnt_dclick(dclick as i16, true).clamp(0, 4) as u8;
+    global::with(|g| g.g_cdclkpref = applied);
 }
 
 /// Split a saved `#W` path into the scanner spec and the window title.

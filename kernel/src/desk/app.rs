@@ -18,7 +18,7 @@
 use tos_api::aes::object::IconBlk;
 use tos_api::vdi::font::{SMALL_CELL_H, SMALL_CELL_W};
 
-use super::dosbind::drvmap;
+use super::dosbind::{dos_gdrv, dos_sdrv};
 use super::global::{min_wint, DeskState, G_ICON, MIN_HINT, DROOT, NIL};
 use super::icons::{
     build_iconblk, IconKind, IB_HICON, IB_WTEXT, ICON_LABEL_SLACK, MAX_ICONTEXT_WIDTH,
@@ -118,13 +118,15 @@ impl DeskState {
         self.sync_desk_background();
 
         let cols = (d.w / self.g_icw).max(1);
-        let bits = drvmap();
+        // `drivemask = dos_sdrv(dos_gdrv());` (`deskapp.c:714`) — the drive
+        // bitmap is the *return value* of setting the current drive to itself.
+        let drivemask = dos_sdrv(dos_gdrv());
 
         // Drives down column 0 by default (A/B are floppies, C+ hard disks —
         // deskapp.c:721), or at their saved INF grid position.
         let mut row = 0i16;
         for drv in 0..26u32 {
-            if bits & (1 << drv) != 0 {
+            if drivemask & (1 << drv) != 0 {
                 let letter = b'A' + drv as u8;
                 let (kind, label): (IconKind, &[u8]) = if drv > 1 {
                     (IconKind::Hard, b"Hard disk")

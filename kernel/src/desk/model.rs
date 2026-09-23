@@ -61,6 +61,75 @@ pub enum Sort {
     NoSort,
 }
 
+/// The clock format the text view and the Show-Info box print times in
+/// (EmuTOS `TIMEFORM_*`, `deskbind.h:68-70`, held in `G.g_ctimeform`).
+///
+/// EmuTOS has a third value, `TIMEFORM_IDT`, meaning "take the format from the
+/// `_IDT` cookie". NewTOS cannot reach that cookie from the desktop: EmuTOS
+/// reads it with `Supexec(get_idt_cookie)` (`desksupp.c:219`), XBIOS `Supexec`
+/// (0x26) is not implemented (`tos-api/src/xbios/mod.rs:129`), and the desktop
+/// may not read kernel state other than through a trap (DESK10). The value is
+/// still **represented**, because it is what the `#E` byte-2 bits
+/// `INF_E2_IDTTIME`/`INF_E2_IDTDATE` encode and a `NEWDESK.INF` written
+/// elsewhere may carry it; it simply cannot be *selected* (the Preferences
+/// dialog offers no `Default` button) and renders as [`TimeFmt::H24`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum TimeFmt {
+    /// `TIMEFORM_24H` — `hh:mm`, 24-hour. NewTOS's default, and what the text
+    /// view printed before the preference existed.
+    #[default]
+    H24,
+    /// `TIMEFORM_12H` — `hh:mm` with an `am`/`pm` suffix.
+    H12,
+    /// `TIMEFORM_IDT` — "from the `_IDT` cookie"; unreachable here, see above.
+    Idt,
+}
+
+impl TimeFmt {
+    /// The format that is actually **rendered**, i.e. with the unreachable
+    /// [`TimeFmt::Idt`] resolved to its NewTOS fallback.
+    ///
+    /// One rule, two readers: `desk::inf::fmt_time` formats through it and
+    /// `desk::inf::inf_pref` pre-selects its radio button through it, so the
+    /// Preferences dialog cannot show a clock the text view does not use.
+    /// The fallback is [`TimeFmt::H24`] because that is what the text view
+    /// printed before the preference existed.
+    pub fn rendered(self) -> TimeFmt {
+        match self {
+            TimeFmt::Idt => TimeFmt::H24,
+            other => other,
+        }
+    }
+}
+
+/// The date order the text view and the Show-Info box print dates in (EmuTOS
+/// `DATEFORM_*`, `deskbind.h:65-67`, held in `G.g_cdateform`). The
+/// `DATEFORM_IDT` caveat is [`TimeFmt`]'s, verbatim; it renders as
+/// [`DateFmt::Mdy`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum DateFmt {
+    /// `DATEFORM_MDY` — month before day. NewTOS's default, and what the text
+    /// view printed before the preference existed.
+    #[default]
+    Mdy,
+    /// `DATEFORM_DMY` — day before month.
+    Dmy,
+    /// `DATEFORM_IDT` — "from the `_IDT` cookie"; unreachable here, see above.
+    Idt,
+}
+
+impl DateFmt {
+    /// The order that is actually **rendered** — [`TimeFmt::rendered`]'s rule,
+    /// with [`DateFmt::Mdy`] as the fallback for the unreachable
+    /// [`DateFmt::Idt`].
+    pub fn rendered(self) -> DateFmt {
+        match self {
+            DateFmt::Idt => DateFmt::Mdy,
+            other => other,
+        }
+    }
+}
+
 /// One matched directory entry (EmuTOS `FNODE`, `deskfpd.h:51-66`), carrying
 /// the fields the desktop needs for display and sorting.
 #[derive(Clone)]

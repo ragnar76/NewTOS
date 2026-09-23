@@ -570,12 +570,17 @@ un-highlights the title afterward (`menu_tnormal(...,title,1)`, `:1036`).
   (`win_bdall`/`win_shwall`, no `app_blddesk`) `if (rebld < 0)` — the sign
   of the return value distinguishes "desktop icon changed" from "window
   icon changed" for icon installs specifically (`CONF_WITH_WINDOW_ICONS`).
-  `PREFITEM` → `inf_pref()`, `desk_all(FALSE)` unconditionally (a no-op
-  `desk_all` — `flags=0` skips both `if`s, calls only
-  `win_shwall()`/busy-on/off — i.e. **always forces a redraw of every
-  window**, even though nothing in `desk_all`'s own flags changed,
-  because font/click-speed/date-format preferences aren't tracked by the
-  `VIEW_HAS_CHANGED`-style bitmask). `SAVEITEM` → `cnx_put()` +
+  `PREFITEM` → `if (inf_pref()) desk_all(FALSE);` (`deskmain.c:885-887`) —
+  **conditional**, not unconditional: `inf_pref` returns `TRUE` only when the
+  view is `V_TEXT` *and* the time or date format changed (`deskinf.c:807-814`),
+  and only then is `desk_all` called. *(Erratum, DESK02: this paragraph
+  previously said "unconditionally". Re-read against the pinned source
+  `references/emutos/desk/deskmain.c:885-887`.)* The argument is `FALSE`, i.e.
+  `flags = 0`, which skips both `if`s inside `desk_all` and calls only
+  `win_shwall()` between busy-on/off — a **redraw** of every window, not a
+  rebuild, because EmuTOS's text lines are formatted at draw time by the
+  `G_USERDEF` `dr_fnode` (`deskinf.c:310-326`) and so pick the new format up
+  from a repaint alone. `SAVEITEM` → `cnx_put()` +
   `app_save(TRUE)` (force disk write), bracketed by `desk_busy_on/off`.
   `RESITEM` → `change_resolution`; on success (`rebld==1`), issues
   `shel_write(SHW_RESCHNG,...)` (Falcon/Videl or Atari-video variant,
@@ -1257,3 +1262,74 @@ in place where EmuTOS restarts the desktop (`READITEM` sets
 the preference half of `cnx_get` (`main::cnx_get_prefs`,
 `:1437-1461`): the context's windows are already on screen and must not
 be opened a second time.
+
+---
+
+## NewTOS implementation notes — `do_deskmenu`'s About box (DESK01)
+
+`kernel/src/desk/main.rs::do_deskmenu` had one case and no dialog: it put a
+`form_alert` up with a NewTOS one-liner where EmuTOS shows the `ADDINFO`
+resource tree. DESK01 replaces the alert with a real dialog,
+`kernel/src/desk/inf.rs::do_aboutdesk`, built and run exactly like every other
+`desk/` dialog (DESK08's `inf_show` chain — `form_center` →
+`form_dial(FMD_START)` → `objc_draw` → `form_do` → `form_dial(FMD_FINISH)` →
+message drain).
+
+**Why the alert had to go.** A `form_alert` is not a dialog: it is the AES's own
+`DIALERT` tree with its own `bb_save`/restore, no reserved dialog rectangle, and
+no `WM_REDRAW` fan-out to the windows it covered. The About box is a dialog in
+EmuTOS (`deskmain.c:620-646` calls `start_dialog`/`end_dialog` by hand), so it is
+one here.
+
+### The tree
+
+`ADDINFO` (`desk/desk_rsc.c:772-873`) is an `OUTLINED` root box 40 characters
+wide and 19 rows tall holding a `- EmuTOS -` title between two `G_IMAGE` logos, a
+`Version` label + value pair, a copyright block, the project URL, the GPL notice
+and one `DEOK` button. NewTOS keeps the **shape** — centred box, title line, a
+label/value pair block, free text lines, one `DEFAULT|EXIT` OK button — and
+replaces the **content**:
+
+| # | Type | Content | Source |
+|---|---|---|---|
+| 0 | `G_BOX` | the box | sized to its text, see below |
+| 1 | `G_STRING` | `- NewTOS -` | (title, centred) |
+| 2/3 | `G_STRING` ×2 | `Version` + `NewTOS 0.1` | `initinfo::VERSION_STRING` |
+| 4/5 | `G_STRING` ×2 | `Machine` + the board name | `initinfo::machine_name()` |
+| 6/7 | `G_STRING` ×2 | the independence notice, split at its dash | `initinfo::INDEPENDENCE_NOTICE` |
+| 8 | `G_STRING` | the authorship line | `initinfo::AUTHORSHIP_LINE` |
+| 9 | `G_BUTTON` | ` OK ` (`SELECTABLE\|DEFAULT\|EXIT\|LASTOB`) | = `DEOK` |
+
+The three strings are **`pub(crate)` constants in `kernel/src/initinfo.rs`**, read
+by the boot screen and by this box. That is EmuTOS's own arrangement: its About
+box carries no version of its own either — `desk_xlate_fix` points `DEVERSN`'s
+`ob_spec` at the BIOS `version[]` string the boot screen also prints
+(`deskmain.c:1881`).
+
+### Named deviations
+
+1. **`inf_show`, not the `form_do` loop.** EmuTOS loops
+   (`deskmain.c:626-641`) only because `DEICON` is a `TOUCHEXIT` that plays the
+   Easter-egg tune (`CONF_WITH_EASTER_EGG`) instead of closing. With no such
+   object the loop runs exactly once, so the three calls are `inf_show`.
+2. **The box is sized to its text, not to 40 fixed columns.** The machine line
+   is board-dependent, so there is no build-time width to bake in. EmuTOS solves
+   the same problem for its menus at run time (`adjust_menu`,
+   `deskmain.c:1608-1635`).
+3. **No build date.** `ADDINFO` has `DECOPYRT`, patched from `COPYRIGHT_YEAR`.
+   NewTOS has **no build-date or build-year constant anywhere**: the OSHEADER's
+   `os_date` is an explicit 1980-01-01 placeholder with the gap already recorded
+   (`tos-api/src/bdos/process/loader.rs:806-809`), and the boot screen's
+   `Boot time` line is the GEMDOS clock, not the build. Printing either would
+   state something untrue about the build, so the line is **absent** until a real
+   constant exists. Blocked on that constant, not on this dialog.
+4. **No logos.** `ADDINFO`'s two `G_IMAGE` objects come from the resource file's
+   `BITBLK`s; NewTOS has no desktop resource file.
+
+### Measured
+
+QEMU raspi4b, 640×480, `measurement-2026-09-24-desk01-desk02/`: the box lands at
+**(128, 111, 384, 276)**, which is `form_center`'s value
+(`(640-384)/2 = 128`, `19 + (480-19-276)/2 = 111`), and after `OK` the screen is
+**byte-identical** to the one before it opened (same PNG md5, 0 differing
+pixels).

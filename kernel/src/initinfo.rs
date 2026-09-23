@@ -72,8 +72,29 @@ const DEL_ASCII: u8 = 0x7F;
 /// info lines in characters; also the width of the inverse-video bar.
 const INFO_LENGTH: i16 = 40;
 
+/// The NewTOS version string, as the boot screen's `Version` line prints it.
+///
+/// It has a second reader: the desktop's `Desk → Desktop info...` box
+/// ([`crate::desk::inf::do_aboutdesk`]). EmuTOS keeps the same single source —
+/// its About box does not carry a version of its own, `desk_xlate_fix` points
+/// the `DEVERSN` object's `ob_spec` at the BIOS `version[]` string the boot
+/// screen also prints (`desk/deskmain.c:1881`).
+pub(crate) const VERSION_STRING: &str = "NewTOS 0.1";
+
+/// The project's independence notice, as the boot screen's footer carries it —
+/// the second reader is again the desktop's About box. This is the NewTOS
+/// counterpart of the GPL/attribution block EmuTOS puts in `ADDINFO`
+/// (`desk/desk_rsc.c:810-868`).
+pub(crate) const INDEPENDENCE_NOTICE: &str =
+    "NewTOS is an independent project - not original Atari software.";
+
+/// The authorship line the boot screen closes with; the desktop's About box
+/// repeats it, where EmuTOS names "The EmuTOS development team"
+/// (`desk/desk_rsc.c:824-826`).
+pub(crate) const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude AI...";
+
 /// Friendly machine name for the current board.
-fn machine_name() -> &'static str {
+pub(crate) fn machine_name() -> &'static str {
     match crate::BOARD_NAME {
         "rpi4" => "Raspberry Pi 4 (BCM2711)",
         "qemu-virt" => "QEMU aarch64-virt",
@@ -230,7 +251,7 @@ pub fn run() -> u8 {
     let st = stats(Pool::Stram);
     let tt = stats(Pool::Ttram);
     y += 18;
-    pair(&mut v, cx, y, b"Version", b"NewTOS 0.1");
+    pair(&mut v, cx, y, b"Version", VERSION_STRING.as_bytes());
     y += 22;
     pair(&mut v, cx, y, b"CPU type", b"ARM Cortex-A72 (AArch64)");
     y += 22;
@@ -317,10 +338,10 @@ pub fn run() -> u8 {
     y += 26;
     v.set_text_align(1, 5);
     v.set_text_color(BLACK);
-    v.gtext(cx, y, b"NewTOS is an independent project - not original Atari software.");
+    v.gtext(cx, y, INDEPENDENCE_NOTICE.as_bytes());
     y += 22;
     v.set_text_color(BLUE);
-    v.gtext(cx, y, b"Adapted by Ingo Uhlemann with Claude AI...");
+    v.gtext(cx, y, AUTHORSHIP_LINE.as_bytes());
 
     v.close();
 

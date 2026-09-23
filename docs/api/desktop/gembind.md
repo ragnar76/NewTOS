@@ -242,7 +242,7 @@ checked**") is now closed for the **GEMDOS/BIOS half** of the call surface.
 | Layer | NewTOS file | Mechanism | EmuTOS counterpart |
 |---|---|---|---|
 | aesbind | `kernel/src/desk/mod.rs` | `svc #2`, selector 200 in `x0`, AESPB in `x1` | `desk/gembind.c` (`trap #2`, `d0 = 200`) |
-| dosbind | `kernel/src/desk/dosbind.rs` | `svc #1` (GEMDOS) / `svc #13` (BIOS), function id in `x8`, arguments in `x0..x7` in TOS order | `include/gemdos.h` → `include/bdosbind.h` `trap1()` / `include/biosbind.h` `bios_l_v()` |
+| dosbind | `kernel/src/desk/dosbind.rs` | `svc #1` (GEMDOS), function id in `x8`, arguments in `x0..x7` in TOS order | `include/gemdos.h` → `include/bdosbind.h` `trap1()` |
 
 Before DESK10 the desktop called the `tos_api::bdos::fs` **leaf functions**
 directly with a hand-built `TrapArgs` — mechanically a plain Rust call that
@@ -272,9 +272,14 @@ Every GEMDOS/BIOS call the desktop makes, with the EmuTOS name it carries:
 | `dos_mkdir(path)` | `svc #1` | 0x39 | `x0` = path | `Dcreate`, `gemdos.h:115` | `dir::d_doop`, `dir::mkdir` (File → New folder) |
 | `dos_rmdir(path)` | `svc #1` | 0x3A | `x0` = path | `Ddelete`, `gemdos.h:135` | `dir::d_dofoldel` |
 | `dos_setdt(h, time, date)` | `svc #1` | 0x57 | `x0` = 2-word buf, `x1` = handle, `x2` = 1 | `Fdatime`, `util/gemdos.c:49` | `dir::d_dofcopy` |
-| `drvmap()` | `svc #13` | 0x0A | — | `Drvmap`, `biosbind.h:29` | `app::app_blddesk`, `main::check_alt_letter_key`, `mod::run` |
+| `dos_gdrv()` | `svc #1` | 0x19 | — | `Dgetdrv`, `gemdos.h:45` | only as `dos_sdrv(dos_gdrv())`, below |
+| `dos_sdrv(drv)` | `svc #1` | 0x0E | `x0` = drive (0-based) | `Dsetdrv`, `gemdos.h:105` | `app::app_blddesk`, `main::check_alt_letter_key`, `mod::run` |
 
-The desktop calls **no XBIOS function**, so there is no `svc #14` binding.
+The desktop calls **no BIOS and no XBIOS function**, so there is neither an
+`svc #13` nor an `svc #14` binding. EmuTOS's desktop includes `biosbind.h`,
+but the two calls it takes from it are `Drvmap()` — which the desktop itself
+never uses (see below) — and `Dosound()` for the About-box Easter egg
+(`CONF_WITH_EASTER_EGG`), which NewTOS does not have.
 
 ### Two properties that had to be established before the rewiring
 
@@ -296,13 +301,35 @@ The desktop calls **no XBIOS function**, so there is no `svc #14` binding.
   this path. A kernel VA arrives and is dereferenced unchanged; no buffer
   had to move and no path had to be special-cased.
 
-### One named deviation, unchanged by DESK10
+### The named deviation, closed by DESK11 (2026-09-23)
 
 EmuTOS's desktop does **not** read the drive bitmap with BIOS `Drvmap`: it
-uses `dos_sdrv(dos_gdrv())` — `Dsetdrv(Dgetdrv())`, whose return value is the
-drive bitmap (`deskapp.c:714`). NewTOS reads `Drvmap` (BIOS 0x0A), which
-returns the same bitmap from the same table
+uses `dos_sdrv(dos_gdrv())` — `Dsetdrv(Dgetdrv())`, whose return value **is**
+the drive bitmap (`deskapp.c:714`, and the same idiom in `deskins.c:297`,
+`desksupp.c:1575` and `desksupp.c:1819`'s `valid_drive`). NewTOS read `Drvmap`
+(BIOS 0x0A), which yields the same bitmap from the same table
 (`tos-api/src/bios/mod.rs:223-224` → `bios/drive.rs:145`). DESK10 rewired the
-call onto the trap **without** changing which call it is, because the ticket's
-contract was "behaviour must not change". Aligning it with `deskapp.c:714` is
-a separate, one-line change and needs its own ticket.
+call onto the trap **without** changing which call it is, because its contract
+was "behaviour must not change".
+
+DESK11 changes which call it is. The two bindings above replace `drvmap()`, and
+the three call sites (`app::app_blddesk`, `main::check_alt_letter_key`,
+`mod::run`'s boot line) now read `dos_sdrv(dos_gdrv())`. `drvmap()`, the
+`bios_trap0` helper and the `DRVMAP` constant are deleted — an unused binding is
+dead code, and with them the desktop's last BIOS call is gone.
+
+**Why the layer matters and the bits do not.** Both calls return the same
+`drvbits`, so no bit changes; what changes is that the desktop now asks the
+**GEMDOS drive layer** — the layer that owns the current-drive state
+(`docs/api/gemdos/drive/0e-dsetdrv.md`, `19-dgetdrv.md`) — instead of reaching
+past it into the BIOS. `Dsetdrv(Dgetdrv())` is a deliberate no-op *as a setter*:
+`Dgetdrv` returns a value that is always in range, so `xsetdrv`'s bounds check
+passes and it stores the drive it already was (`bdos/fsmain.c:420-425`). The
+return value is the whole point.
+
+**Evidence** (`measurement-2026-09-24-desk01-desk02/`): boot logs before/after
+`diff` to a single line, the kernel image's own size; the drive line
+`[desk] desktop up (1 drives, 0 window(s) from the context)` is identical, the
+boot screendumps are byte-identical (md5 `a53b0a3f…`), and the SD images compare
+equal. QEMU shows **one** drive; the four-drive case (`C:`–`F:`) is the real
+Pi-4's, HW checklist item 37.

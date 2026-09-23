@@ -55,6 +55,7 @@ const OP_APPL_INIT: i16 = 10;
 const OP_APPL_EXIT: i16 = 19;
 const OP_EVNT_BUTTON: i16 = 21;
 const OP_EVNT_MULTI: i16 = 25;
+const OP_EVNT_DCLICK: i16 = 26;
 const OP_MENU_BAR: i16 = 30;
 const OP_MENU_ICHECK: i16 = 31;
 const OP_MENU_IENABLE: i16 = 32;
@@ -462,6 +463,26 @@ pub(super) fn evnt_button(clicks: i16, mask: i16, state: i16) {
     a.call(OP_EVNT_BUTTON, 3, 5, 0);
 }
 
+/// `evnt_dclick(rate, setit)` (26) — the AES's double-click speed index
+/// (0 = slowest … 4 = fastest). With `setit == false` the `rate` argument is
+/// ignored and the current index is returned; with `setit == true` the index is
+/// stored and returned. EmuTOS's desktop uses both halves: `inf_pref` queries
+/// with `evnt_dclick(0, FALSE)` to pre-select the dialog's radio button
+/// (`deskinf.c:751`) and applies the user's choice with
+/// `evnt_dclick(new, TRUE)` (`:791`), and `cnx_get` pushes the value restored
+/// from the context back into the AES the same way (`deskmain.c:1460`).
+///
+/// The rate is the AES's state, not the desktop's: the desktop only stores it in
+/// its `NEWDESK.INF` `#E` line, and the AES itself re-reads that line at boot
+/// (`tos-api/src/aes/init.rs:451`, `process_inf2`'s `ev_dclick(env & 7, TRUE)`).
+pub(super) fn evnt_dclick(rate: i16, setit: bool) -> i16 {
+    let mut a = Aes::new();
+    a.intin[0] = rate;
+    a.intin[1] = setit as i16;
+    a.call(OP_EVNT_DCLICK, 2, 1, 0);
+    a.intout[0]
+}
+
 /// `graf_mouse(number)` (78) — hide ([`M_OFF`]) or show ([`M_ON`]) the mouse
 /// cursor. `do_wredraw` brackets its paint with these so the cursor's
 /// save-under does not corrupt the blit (EmuTOS `desksupp.c:221`/`:231`).
@@ -797,7 +818,7 @@ pub fn run() {
 
     kprintln!(
         "[desk] desktop up ({} drives, {} window(s) from the context)",
-        dosbind::drvmap().count_ones(),
+        dosbind::dos_sdrv(dosbind::dos_gdrv()).count_ones(),
         reopened
     );
 

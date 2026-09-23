@@ -944,3 +944,129 @@ scope per `_data-model.md`'s existing note on this topic).
 - `INF_REV_LEVEL`=2 is the only revision EmuTOS currently writes;
   revision 0 and 1 read-compatibility fixups exist for icon-index
   remapping and (shortcuts only) `a_pappl`/`a_pdata` swap
+
+---
+
+## NewTOS implementation notes — `inf_pref` and the date/time formatters (DESK02)
+
+`Options → Set preferences` had no handler (`Item::SetPrefs` fell through
+`do_optnmenu`'s `_ => {}` and `men_update` kept it disabled). DESK02 implements
+it as `kernel/src/desk/inf.rs::inf_pref`, run through DESK08's `inf_show` chain
+and dispatched from `main::do_optnmenu` as `if inf_pref() { desk_all(…) }`
+(`deskmain.c:885-887`).
+
+### The tree
+
+`ADSETPRE` (`desk/desk_rsc.c:1369-1560`) is an `OUTLINED` root box 40×21 with a
+title, six labelled radio groups and an OK/Cancel pair. **Every group hangs under
+a `G_IBOX` of its own**, and that box is load-bearing, not decorative: the AES
+deselects siblings by walking the **parent's** child chain
+(`fm_button` → `select_radio`, `tos-api/src/aes/form.rs`), so two groups sharing
+a parent are one group as far as the AES is concerned. Pinned by
+`tos-api/tests/aes_desk_prefs_radio.rs`, whose third case is the counter-example.
+
+NewTOS's tree, in EmuTOS's field order:
+
+| # | Object | Group |
+|---|---|---|
+| 0 | `G_BOX` root, 382×212 | |
+| 1 | `G_STRING` `SET PREFERENCES` | |
+| 2 / 3 / **4,5** | label, `G_IBOX`, ` Yes ` ` No ` | *Confirm deletes* (`SPCDYES`) |
+| 6 / 7 / **8..12** | label, `G_IBOX`, `1`…`5` | *Double-click speed* (`SPDC1`) |
+| 13 / 14 / **15,16** | label, `G_IBOX`, ` 12H ` ` 24H ` | *Time format* |
+| 17 / 18 / **19,20** | label, `G_IBOX`, ` MDY ` ` DMY ` | *Date format* |
+| **21, 22** | ` OK ` (`DEFAULT\|EXIT`), ` Cancel ` (`EXIT\|LASTOB`) | `SPOK`, `SPCNCL` |
+
+Pre-selection and read-back are EmuTOS's, ported as free functions:
+`inf_which` (`deskinf.c:705-716`), `inf_gindex` and `inf_what`
+(`util/optimize.c:134-170`). The two format groups keep EmuTOS's
+"read the value off the left-to-right button order" trick: with `12H` then `24H`
+on screen `inf_which` yields 1 then 0, which *is* `TIMEFORM_12H` / `TIMEFORM_24H`
+(`deskbind.h:68-69`); likewise `MDY`/`DMY` against `DATEFORM_MDY`/`DATEFORM_DMY`.
+
+### Three fields of `ADSETPRE` are absent, and why
+
+A preference that gates nothing would be a dead control, so it is left out rather
+than shown and ignored:
+
+* **Confirm copies** (`SPCCYES`/`SPCCNO`) — EmuTOS's switch turns on the
+  per-item copy dialog inside `d_doop` (`deskdir.c:939`). NewTOS's copy engine
+  has no per-item dialog at all (`kernel/src/desk/dir.rs`'s module header records
+  that deviation), so there is nothing to turn on.
+* **Confirm overwrites** (`SPCOWYES`/`SPCOWNO`) — same, one level deeper:
+  EmuTOS asks before replacing an existing file (`deskdir.c:325`), NewTOS's copy
+  always overwrites (GEMDOS `Fcreate` truncates).
+* **The `Default` button of each format group** (`SPTF_DEF`/`SPDF_DEF`) —
+  "default" means *take the format from the `_IDT` cookie*, which EmuTOS reads
+  with `Supexec(get_idt_cookie)` (`desksupp.c:219`). XBIOS `Supexec` (0x26) is
+  not implemented (`tos-api/src/xbios/mod.rs:129`) and the desktop may not reach
+  kernel state except through a trap (DESK10), so the value cannot be honoured.
+
+The `Idt` values are still **represented and round-tripped**: `env_to_prefs` /
+`prefs_to_env` decode and re-encode `INF_E2_IDTDATE`/`INF_E2_IDTTIME` faithfully,
+so a `NEWDESK.INF` written by EmuTOS keeps its bits. What resolves them is
+`model::TimeFmt::rendered()` / `DateFmt::rendered()` — **one rule with two
+readers**, the formatters and the dialog's pre-selection, so the box cannot show
+a format the text view does not use. (Before that rule existed the measured run
+showed `DMY` pre-selected while `format_fnode` printed MDY; the fallbacks had
+been written twice and disagreed.) The fallbacks are `H24` and `MDY`, i.e. what
+the text view printed before the preference existed.
+
+### Where each field lives
+
+| Field | Live state | Consumer | `#E` bits |
+|---|---|---|---|
+| Confirm deletes | `DeskState::g_cdelepref` | `dir::confirm_deletes()` gating `fun_del` and the window→Trash drop (`deskdir.c:906`) | `INF_E1_CONFDEL` |
+| Double-click speed | the **AES**, via `evnt_dclick` (26); `g_cdclkpref` is only the cache `cnx_put` writes | `tos-api/src/aes/event.rs` `DCRATES` | `INF_E1_DCMASK` |
+| Time format | `DeskState::g_ctimeform` | `inf::fmt_time` → `win::format_fnode`, `inf_file_folder` | `INF_E2_IDTTIME`/`INF_E2_24HCLOCK` |
+| Date format | `DeskState::g_cdateform` | `inf::fmt_date` → the same two | `INF_E2_IDTDATE`/`INF_E2_DAYMONTH` |
+
+The desktop→Trash drop is **not** gated: its source is a whole drive, and EmuTOS
+puts `wants_to_delete_files` in front of that case unconditionally
+(`deskfun.c:1049-1051`); the preference only reaches the per-item question
+`d_doop` asks afterwards.
+
+Persistence follows EmuTOS's split exactly: `app_start`'s `'E'` arm
+(`deskapp.c:917-934`) → `CSave` (`cs_confdel`/`cs_dblclick`/`cs_timefmt`/
+`cs_datefmt`, new in `global.rs`) → `cnx_get_prefs` → `GLOBES`; and back through
+`cnx_put` (`deskmain.c:1380-1385`) → `app_save`'s env assembly
+(`deskapp.c:1138-1160`) → the `#E` line.
+
+### `fmt_date` / `fmt_time`
+
+`win.rs` carried its own `fmt_date`/`fmt_time` with a fixed MDY / 24-hour format;
+they now live in `inf.rs`, where EmuTOS keeps them (`deskinf.c:74-180`), and both
+readers go through them. Two notes:
+
+* `fmt_time` always writes **7 characters**: `hh:mm` plus `am`/`pm`, or plus the
+  two blanks EmuTOS uses for the 24-hour case (`char *suffix = "  ";`,
+  `deskinf.c:77`). That constant width is what lets the text view keep fixed
+  columns; in 24-hour mode the trailing-blank trim removes it again, so the
+  default line is byte-identical to the pre-DESK02 one.
+* The **separator is a parameter**, and that is a divergence rather than a
+  design. EmuTOS passes `DATEFORM_SEP` (`'/'`, `deskbind.h:64`) from both call
+  sites; NewTOS's text view has printed `MM-DD-YY` with a dash since it was
+  written. DESK02 binds the *order* to the preference and leaves each call site's
+  separator as it was, so no screen changes that this ticket did not ask to
+  change. The dash is reported as its own finding.
+
+### `desk_all`'s argument — named deviation
+
+EmuTOS calls `desk_all(FALSE)`, a pure repaint, because its text lines are
+formatted at draw time by the `G_USERDEF` `dr_fnode` (`deskinf.c:310-326`).
+NewTOS builds the line once in `win_bldview` → `format_fnode` and caches it in the
+object's label, so a format change needs a **rebuild**: `do_optnmenu` passes
+`VIEW_CHANGED`. `inf_pref`'s return value is unchanged — it is still `TRUE` only
+for a text view whose time or date format actually moved (`deskinf.c:807-814`),
+compared against the *rendered* old value so that leaving `Idt` for the `H24` the
+screen already showed orders no rebuild.
+
+### Measured
+
+QEMU raspi4b, 640×480, `measurement-2026-09-24-desk01-desk02/`: the dialog lands
+at **(129, 143, 382, 212)** = `form_center`'s value; `Date format → DMY` + `OK`
+leaves the screen byte-identical to before the dialog opened; `Save desktop`
+writes `#E 1A 86 00 00 60` (`0x86` = `BLITTER|DAYMONTH|24HCLOCK`, both `IDT` bits
+now cleared because the user made an explicit choice); after a **cold boot** from
+that image the dialog re-opens with `DMY` pre-selected, and the text view prints
+`23-09-26` where the unchanged image prints `09-23-26`.

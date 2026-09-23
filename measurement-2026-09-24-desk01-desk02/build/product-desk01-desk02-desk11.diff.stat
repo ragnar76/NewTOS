@@ -1,0 +1,20 @@
+ TASK/DESK01.md                          |  37 +-
+ TASK/DESK02.md                          |  62 ++-
+ TASK/DESK11.md                          |  32 +-
+ docs/STATUS.md                          |   3 +-
+ docs/api/desktop/_hw-test-2026-09-17.md |  68 ++++
+ docs/api/desktop/deskinf.md             | 126 ++++++
+ docs/api/desktop/deskmain.md            |  88 ++++-
+ docs/api/desktop/gembind.md             |  47 ++-
+ kernel/src/desk/app.rs                  |   8 +-
+ kernel/src/desk/dir.rs                  |  31 +-
+ kernel/src/desk/dosbind.rs              |  87 ++---
+ kernel/src/desk/global.rs               |  76 +++-
+ kernel/src/desk/inf.rs                  | 658 +++++++++++++++++++++++++++++++-
+ kernel/src/desk/main.rs                 |  75 +++-
+ kernel/src/desk/menu.rs                 |   5 +-
+ kernel/src/desk/mod.rs                  |  23 +-
+ kernel/src/desk/model.rs                |  69 ++++
+ kernel/src/desk/win.rs                  |  49 +--
+ kernel/src/initinfo.rs                  |  29 +-
+ 19 files changed, 1413 insertions(+), 160 deletions(-)
