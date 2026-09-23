@@ -1,0 +1,46 @@
+# DESK06 run B -- the `#if CONF_WITH_PCGEM` half of the CLIITEM arm
+# (`deskmain.c:754-767`): with a window on top, the desktop passes that
+# window's directory to `shel_wdef`, and `sh_chdef`'s CONSOLE_APP arm starts
+# EmuCON there. `pwd` in the console is the read-back; the restored desktop
+# must bring the window back with it.
+#
+#   C: icon around (37,42) -- double click = down/up/down/up (as DESK02).
+#   File drop-down: ENTRY13 "Execute EmuCON" abs y 227..243, centre 235.
+#   IKBD: p 19, w 11, d 20, e 12, x 2D, i 17, t 14, Return 1C.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+2900 mark B_WINDOW
+3200 move 88 8
+3900 mark C_FILEMENU
+4200 move 120 235
+4400 down
+4403 up
+5500 mark D_CONSOLE
+5700 key 19
+5730 key 99
+5760 key 11
+5790 key 91
+5820 key 20
+5850 key a0
+5900 key 1c
+5930 key 9c
+6500 mark E_PWD
+6700 key 12
+6730 key 92
+6760 key 2d
+6790 key ad
+6820 key 17
+6850 key 97
+6880 key 14
+6910 key 94
+6960 key 1c
+6990 key 9c
+8000 move 600 240
+8600 mark F_BACK

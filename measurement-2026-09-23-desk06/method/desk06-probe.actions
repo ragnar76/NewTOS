@@ -1,0 +1,9 @@
+# DESK06 probe -- open the File drop-down so the `Execute EmuCON` row can be
+# measured (the geometry dump itself is printed at boot by desk06_patch.py).
+# Hovering a title is enough to open its drop-down (no click), as in DESK05.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 88 8
+2200 mark B_FILEMENU

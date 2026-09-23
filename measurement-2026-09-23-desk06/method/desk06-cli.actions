@@ -1,0 +1,50 @@
+# DESK06 run A -- File -> Execute EmuCON on the bare desktop: the console takes
+# the whole screen, two commands are typed into it, `exit` brings the desktop
+# back.
+#
+#   File drop-down (serial `[desk06] FILEBOX#11=(64,19,184,240)`):
+#     entries are 16 px tall, rel y 0..224; ENTRY13 "Execute EmuCON  ^Z"
+#     rel y=208 -> abs 227..243, centre 235.  Box x 64..248.
+#   Hovering a title opens its drop-down (no click), as in DESK03..DESK05.
+#   IKBD scancodes: v 2F, e 12, r 13, d 20, i 17, x 2D, t 14, Return 1C
+#   (break = make | 0x80).
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 88 8
+2200 mark B_FILEMENU
+2500 move 120 235
+2700 down
+2703 up
+3800 mark C_CONSOLE
+4000 key 2f
+4030 key af
+4060 key 12
+4090 key 92
+4120 key 13
+4150 key 93
+4200 key 1c
+4230 key 9c
+4800 mark D_VER
+5000 key 20
+5030 key a0
+5060 key 17
+5090 key 97
+5120 key 13
+5150 key 93
+5200 key 1c
+5230 key 9c
+5900 mark E_DIR
+6100 key 12
+6130 key 92
+6160 key 2d
+6190 key ad
+6220 key 17
+6250 key 97
+6280 key 14
+6310 key 94
+6360 key 1c
+6390 key 9c
+7400 move 600 240
+8000 mark F_BACK

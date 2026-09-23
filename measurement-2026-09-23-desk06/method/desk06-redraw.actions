@@ -1,0 +1,36 @@
+# DESK06 control run -- does NOT touch File -> Execute EmuCON. It answers the
+# one question the wdef run left open: the two frame-corner pixels that differ
+# between the window as `wind_open` drew it and the window as a whole-screen
+# `redraw::redraw_desktop()` draws it.
+#
+# The control uses the *pre-existing* console-program path
+# (`main::launch_native`, ftype::Flavor::Console -> clear_and_home, run,
+# console_pause_for_key, redraw_desktop), which predates DESK06 and calls the
+# very same `redraw_desktop`. `HELLO.NCP` is the first icon of the third row of
+# the C:\ window (see wdef-F-back.png): centre about (95,190).
+#
+#   C: icon around (37,42). Any key ends the pause; SPACE = IKBD 39.
+#
+# (A first attempt used `Options -> Read .INF file...`; it returns early on
+#  this card image because `load_and_apply()` rejects the 21-byte NEWDESK.INF,
+#  so no redraw happened at all -- 0 differing pixels proved nothing.)
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+2900 mark B_WINDOW
+3200 move 95 190
+3400 down
+3403 up
+3410 down
+3413 up
+4600 mark C_PROGRAM
+4900 key 39
+4930 key b9
+5600 move 600 240
+6400 mark D_AFTER_NCP
