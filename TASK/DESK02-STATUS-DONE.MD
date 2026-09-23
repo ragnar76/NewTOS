@@ -227,3 +227,40 @@ wirklich). Die 1920x1080-Optik des Dialogs ebenso.
 Nicht gefahren: `12H` (der Lauf hat das Datumsformat geaendert, nicht das
 Zeitformat) — derselbe Pfad, dieselben zwei Knoepfe, dieselbe `#E`-Haelfte;
 der Bitwert steht in Punkt 37, Schritt 7.
+
+---
+
+## Nachtrag 2026-09-24 (DESK01b) — Ticket bleibt ERLEDIGT
+
+Der Dialog hatte keine `FL3D*`-Flagge. Er hat jetzt `ADSETPRE`s, Objekt fuer
+Objekt: Wurzel `FL3DBAK` + `ob_state = OUTLINED` + `ob_spec = (1<<16)|0x1100`
+(`desk_rsc.c:1371-1375`), jeder Radioknopf `FL3DIND` (`:1396` ff.),
+`SPOK`/`SPCNCL` `FL3DACT` (`:1174,1180`), die vier `G_IBOX`en und alle
+`G_STRING`s flaggenlos — wie in der Quelle.
+
+**Der Kastenwert musste mit.** `(1<<16)|0x1070` hat Muster 7 = `IP_SOLID`;
+`just_draw` ersetzt die Flaeche durch die 3D-Farbe nur, wenn der Kasten **hohl
+und weiss** ist (`gemoblib.c:619-636`), die Flagge waere also wirkungslos
+geblieben. Jetzt `desk_rsc.c`s `0x1100`.
+
+**Die Masse sind jetzt `ADSETPRE`s.** Ein `FL3DIND`-Knopf wird vor dem Zeichnen
+um `ADJ3DSTD` (2 px je Seite) vergroessert und bekommt seinen Rahmen ausserhalb
+davon, beansprucht also 3 px je Seite mehr als sein Rechteck sagt. Bei der
+alten Teilung (Zeilenabstand 26, Knopfluecke 6) haetten sich die Rahmen
+benachbarter Zeilen Pixel geteilt. Neu: Zeilenabstand **32** px (`ADSETPRE`
+setzt seine Zeilen auf die Zeichenzeilen 3/5/7/9, `desk_rsc.c:1386` ff.) und
+Knopfluecke **8** px (`:1462-1493`: 15-px-Knoepfe auf 23-px-Teilung). Der
+Dialog waechst damit von **382x212** auf **390x244**; gemessen steht er bei
+(125, 127) = `form_center`s Wert.
+
+Am Feldsatz, an `inf_which`/`inf_gindex`/`inf_what`, an der `#E`-Bindung und an
+den drei bewusst fehlenden Feldern aendert sich **nichts**.
+
+**Beleg:** `measurement-2026-09-24-desk01b/` — `prefs-C-prefs.png` zeigt alle
+vier Gruppen als 3D-Indikatoren (unausgewaehlt erhaben, ausgewaehlt in der
+dunkleren Flaeche mit versenkter Fase und weisser Schrift, `zoom-radios.png`);
+Vorbelegung unveraendert `Yes / 3 / 24H / MDY`; `Cancel` laesst den Schirm
+bytegleich (pixdiff **0**, md5 `710d7f24…`).
+
+Spec: `docs/api/desktop/deskinf.md`, Abschnitt „NewTOS implementation notes —
+the 3D flag set and the About content (DESK01b)".

@@ -30,10 +30,11 @@ use alloc::string::String;
 
 use tos_api::aes::object::{Object, TedInfo};
 
-use super::inf::AppFlavor;
+// `AppFlavor` plus the dialog-box spec, the TEDINFO colour word and the 3D
+// roles, shared with the other desktop dialogs.
+use super::inf::{mk_root, AppFlavor, BOX_SPEC, FL3DACT, FL3DBAK, FL3DIND, TED_COLOR};
 
 // OBJECT graphic types (`obdefs.h`).
-const G_BOX: u16 = 20;
 const G_BOXTEXT: u16 = 22;
 const G_BUTTON: u16 = 26;
 const G_STRING: u16 = 28;
@@ -47,10 +48,6 @@ const LASTOB: u16 = 0x0020;
 
 // ob_state bit (`obdefs.h`).
 const OB_SELECTED: u16 = 0x0001;
-
-/// Opaque dialog box colour word (black border + solid-white interior), as used
-/// by the other desktop dialogs and the menu drop-downs.
-const BOX_SPEC: u64 = (1 << 16) | 0x1070;
 
 /// The maximum edited extension length (a TOS 8.3 extension is 3 chars; a few
 /// slack bytes allow a `*` all-files entry too).
@@ -175,7 +172,7 @@ pub(super) fn ins_app_dialog(
         te_font: 3,
         te_junk1: 0,
         te_just: 0,
-        te_color: 1 << 8,
+        te_color: TED_COLOR,
         te_junk2: 0,
         te_thickness: 1,
         te_txtlen: EXT_MAX as i16,
@@ -186,9 +183,30 @@ pub(super) fn ins_app_dialog(
     // `ob_x`/`ob_y` into the ROOT.
     let (dw, dh) = (360i16, 240i16);
 
+    // The 3D roles are `ADINSAPP`'s, object by object (`desk_rsc.c:1027-1195`):
+    // `FL3DBAK` + `OUTLINED` ROOT; `APDOCTYP` is an `EDITABLE | FL3DBAK` field;
+    // the flavour group (`APTOS`/`APTTP`/`APGEM`/`APGTP`) and the parameter
+    // group (`APPMFULL`/`APPMFILE`) are `FL3DIND` indicators;
+    // `APINSTAL`/`APREMOVE`/`APCANCEL` are `FL3DBAK | FL3DIND` = `FL3DACT`.
+    // Two mapped-by-role notes. (1) `ADINSAPP`'s groups are true `RBUTTON`s
+    // under a `G_IBOX`, while these six carry `EXIT` and the group state is
+    // re-asserted in the loop below (`set_flavor_radio`/`set_param_radio`).
+    // `FL3DIND` is still the resource's answer for that combination, not an
+    // analogy: `ADBKGND`'s `BGDESK`/`BGWIN` are
+    // `SELECTABLE | EXIT | RBUTTON | FL3DIND` (`desk_rsc.c:2254,2260`).
+    // (2) `APNAME` is a `FL3DBAK` `G_FBOXTEXT` where NewTOS shows the
+    // application name as a plain `G_STRING`, which has no interior for a 3D
+    // background to fill.
+    //
+    // The flavour row is spaced 54 px for a 44 px button (was 52 for 48): an
+    // `FL3DIND`/`FL3DACT` object is grown by `ADJ3DSTD` (2 px per side) and its
+    // `th = -2` border is laid outside *that* (`aes/gemoblib.c:504`), so an
+    // exit button claims 4 px more per side than its rectangle. `ADINSAPP`
+    // leaves the same room: 40 px buttons on a 48 px pitch (`desk_rsc.c:1098-
+    // 1124`), an 8 px gap. `APPMFILE` moves 240 → 244 for the same reason.
     let mut tree = [
         // 0: root box.
-        mk(G_BOX, 0, BOX_SPEC, 0, 0, dw, dh, -1, 1, O_LAST as i16),
+        mk_root(BOX_SPEC, dw, dh, O_LAST as i16),
         // 1: title.
         mk(G_STRING, 0, TITLE.as_ptr() as u64, 24, 14, dw - 48, 16, 2, -1, -1),
         // 2: application label, 3: application name value.
@@ -196,21 +214,21 @@ pub(super) fn ins_app_dialog(
         mk(G_STRING, 0, namebuf.as_ptr() as u64, 144, 44, 180, 16, 4, -1, -1),
         // 4: document-type label ("Document type:  *."), 5: editable extension.
         mk(G_STRING, 0, DOC_LBL.as_ptr() as u64, 24, 72, 160, 16, 5, -1, -1),
-        mk(G_BOXTEXT, EDITABLE, &ted as *const _ as u64, 200, 68, 56, 22, 6, -1, -1),
+        mk(G_BOXTEXT, EDITABLE | FL3DBAK, &ted as *const _ as u64, 200, 68, 56, 22, 6, -1, -1),
         // 6: program-type label, 7-10: flavour radio buttons.
         mk(G_STRING, 0, TYPE_LBL.as_ptr() as u64, 24, 104, 104, 16, 7, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, GEM.as_ptr() as u64, 144, 100, 48, 22, 8, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, TOS.as_ptr() as u64, 196, 100, 48, 22, 9, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, GTP.as_ptr() as u64, 248, 100, 48, 22, 10, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, TTP.as_ptr() as u64, 300, 100, 48, 22, 11, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, GEM.as_ptr() as u64, 144, 100, 44, 22, 8, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, TOS.as_ptr() as u64, 198, 100, 44, 22, 9, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, GTP.as_ptr() as u64, 252, 100, 44, 22, 10, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, TTP.as_ptr() as u64, 306, 100, 44, 22, 11, -1, -1),
         // 11: argument label, 12-13: full-path/file-name radio.
         mk(G_STRING, 0, PARM_LBL.as_ptr() as u64, 24, 136, 104, 16, 12, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, FULL.as_ptr() as u64, 144, 132, 88, 22, 13, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, FILE.as_ptr() as u64, 240, 132, 88, 22, 14, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, FULL.as_ptr() as u64, 144, 132, 88, 22, 13, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DIND, FILE.as_ptr() as u64, 244, 132, 88, 22, 14, -1, -1),
         // 14: Install (default), 15: Remove, 16: Cancel (last).
-        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT, INSTALL.as_ptr() as u64, 24, 190, 90, 30, 15, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, REMOVE.as_ptr() as u64, 136, 190, 90, 30, 16, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB, CANCEL.as_ptr() as u64, 248, 190, 90, 30, 0, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, INSTALL.as_ptr() as u64, 24, 190, 90, 30, 15, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, REMOVE.as_ptr() as u64, 136, 190, 90, 30, 16, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 248, 190, 90, 30, 0, -1, -1),
     ];
 
     // A not-installed application cannot be removed (EmuTOS `deskins.c:585-586`).

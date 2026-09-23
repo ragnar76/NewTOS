@@ -1281,12 +1281,75 @@ const EDITABLE: u16 = 0x0008;
 /// `RBUTTON` child of the same parent.
 const RBUTTON: u16 = 0x0010;
 const LASTOB: u16 = 0x0020;
-// obdefs.h ob_state bit.
+// obdefs.h ob_state bits.
 const OB_SELECTED: u16 = 0x0001;
+/// `OUTLINED` (`obdefs.h:105`) — the ROOT state every `desk_rsc.c` dialog box
+/// carries. On an [`FL3DBAK`] panel the AES draws EmuTOS's `draw_3d_outline`
+/// instead of the flat GEM double frame (`aes/gemoblib.c:869-887`), i.e. the
+/// raised-panel optic. `ob_center` grows the rectangle it reports by 3 px per
+/// side for it (`aes/gemobed.c:81-93`), so `form_dial` reserves and restores
+/// the outline too.
+pub(super) const OUTLINED: u16 = 0x0010;
 
-/// Opaque dialog box colour word (black border + solid-white interior), as in
-/// [`super::dlg`] and the menu drop-downs.
-const BOX_SPEC: u64 = (1 << 16) | 0x1070;
+// ── The EmuTOS 3D flag set (`obdefs.h:92-97`) ───────────────────────────────
+//
+// `desk_rsc.c` uses exactly three roles, and uses them the same way in every
+// one of its twenty trees (the whole file was extracted object by object; the
+// table is in `docs/api/desktop/deskinf.md`):
+//
+// | object                                         | ob_flags     |
+// |------------------------------------------------|--------------|
+// | ROOT `G_BOX` (with `OUTLINED` state)           | `FL3DBAK`    |
+// | `G_FTEXT`/`G_FBOXTEXT` field                   | `FL3DBAK`    |
+// | `G_BUTTON` with `RBUTTON` (± `EXIT`)           | `FL3DIND`    |
+// | `G_BUTTON` with `EXIT` (OK/Cancel/Install/…)   | `FL3DACT`    |
+// | `G_BUTTON` with `TOUCHEXIT` (arrow/stepper)    | `FL3DACT`    |
+// | `G_STRING`, `G_TITLE`, `G_IBOX`, `G_IMAGE`     | none         |
+//
+// Two rows are worth naming because they are not what a guess would produce:
+// a radio button that *also* carries `EXIT` is still an indicator
+// (`ADBKGND`'s `BGDESK`/`BGWIN`, `desk_rsc.c:2254,2260`), and a stepper gadget
+// is an activator (`ADINSDSK`'s `ID_UP`/`ID_DOWN`, `:990,996`).
+//
+// (`desk_rsc.c` spells `FL3DACT` as `FL3DBAK | FL3DIND`, which is the same
+// 0x0600 bit pattern — `obdefs.h:93-97`.)
+
+/// `FL3DIND` (`obdefs.h:95`) — 3D indicator: grown by `ADJ3DSTD`, beveled, and
+/// it changes colour when pressed. Every `RBUTTON` in `desk_rsc.c` has it.
+pub(super) const FL3DIND: u16 = 0x0200;
+/// `FL3DBAK` (`obdefs.h:97`) — 3D background panel: **not** grown and **not**
+/// beveled (it does not carry the `FL3DOBJ` bit), but a hollow-white interior
+/// takes the `objc_sysvar` `backgrcol` face. Every dialog ROOT and every framed
+/// text field in `desk_rsc.c` has it.
+pub(super) const FL3DBAK: u16 = 0x0400;
+/// `FL3DACT` (`obdefs.h:96`) — 3D activator: grown and beveled like an
+/// indicator, but it keeps its colour and nudges its text when pressed. Every
+/// exit button in `desk_rsc.c` has it.
+pub(super) const FL3DACT: u16 = 0x0600;
+
+/// The dialog-box `ob_spec` of `desk_rsc.c`: a 1-pixel **inner** border over the
+/// colour word `0x1100` — black border, black text, `IP_HOLLOW` pattern,
+/// white interior (`gr_crack`). Used by every `desk_rsc.c` dialog ROOT bar
+/// `ADDINFO`, which is two pixels thick (`desk_rsc.c:622,709,877,922,1027,
+/// 1198,1237,1282,1315,1369,1570,1603,2230` all `69888L` = `(1<<16)|0x1100`).
+///
+/// **Hollow is load-bearing.** The AES only substitutes the 3D face colour when
+/// the box is `IP_HOLLOW` *and* white (EmuTOS `just_draw`, `gemoblib.c:619-636`;
+/// `tos-api/src/aes/object.rs` `takes_3d_face`). The previous NewTOS value
+/// `(1<<16)|0x1070` was pattern 7 = `IP_SOLID`, so an [`FL3DBAK`] flag on it
+/// would have been silently ignored and the box would have stayed flat white.
+/// The sign is unchanged: a dialog box's border is *inner* (positive), unlike
+/// the desktop's drop-down boxes, which A100 measured as outer (`0xFF1100`).
+pub(super) const BOX_SPEC: u64 = (1 << 16) | 0x1100;
+
+/// `TEDINFO.te_color` of every editable field in `desk_rsc.c`
+/// (`desk_rs_tedinfo[0,18,24,25,…]`, all `4352` = `0x1100`): black border,
+/// black text, hollow white interior — the same colour word as [`BOX_SPEC`],
+/// so an [`FL3DBAK`] field takes the `backgrcol` face too
+/// (`tos-api/src/aes/object.rs`, TEDINFO arm). The previous NewTOS value
+/// `1 << 8` painted the frame in pen 0 (WHITE), which under `FL3DBAK` would
+/// have drawn a white ring on the grey field.
+pub(super) const TED_COLOR: i16 = 0x1100;
 
 /// The longest edited name (a 12-char 8.3 name plus one slack byte).
 const NAME_MAX: usize = 13;
@@ -1311,6 +1374,18 @@ fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, he
         ob_width: w,
         ob_height: h,
     }
+}
+
+/// Build the ROOT box of a desktop dialog exactly as `desk_rsc.c` declares one:
+/// a `G_BOX` at the origin (`form_center` writes the centred position), with
+/// [`FL3DBAK`] flags, [`OUTLINED`] state and a `(thickness << 16) | 0x1100`
+/// `ob_spec` — the three pieces that together give EmuTOS's raised grey panel.
+/// `spec` is normally [`BOX_SPEC`]; `ADDINFO` is the one tree with a 2-pixel
+/// border (`desk_rsc.c:774-777`).
+pub(super) fn mk_root(spec: u64, w: i16, h: i16, tail: i16) -> Object {
+    let mut root = mk(G_BOX, FL3DBAK, spec, 0, 0, w, h, -1, 1, tail);
+    root.ob_state = OUTLINED;
+    root
 }
 
 /// One NUL-terminated `G_STRING` line held on the dialog's own stack frame.
@@ -1357,15 +1432,37 @@ impl Line {
 /// EmuTOS shows the `ADDINFO` resource tree (`desk/desk_rsc.c:772-873`): an
 /// `OUTLINED` root box 40 characters wide, a `- EmuTOS -` title flanked by two
 /// `G_IMAGE` logos, a `Version` label with the value `desk_xlate_fix` patched in
-/// from the BIOS `version[]` string (`deskmain.c:1881`), the copyright block,
+/// from the BIOS `version[]` string (`deskmain.c:1880`), the copyright block,
 /// the project URL and the GPL notice, and a single `DEOK` button
 /// (`desk_rsc.c:869-873`). The **structure** is reproduced here — centred box,
-/// a title line, text lines, one default OK button; the **content** is NewTOS's
-/// own and comes from the one place the boot screen already states it
-/// ([`crate::initinfo`]), so the version a user reads on the desktop cannot
-/// drift from the version the boot screen printed.
+/// title line, a `Version`/`Machine` pair block, the credit paragraphs, one
+/// default OK button.
 ///
-/// **Two named deviations.**
+/// ## The content, and where each line comes from
+///
+/// | row | line | source |
+/// |-----|------|--------|
+/// | 0 | `- NewTOS -` | `ADDINFO`'s `- EmuTOS -` title (`desk_rsc.c:785-789`) |
+/// | 2 | `Version  …` | [`crate::initinfo::VERSION_STRING`] (`DELABEL`/`DEVERSN`) |
+/// | 3 | `Machine  …` | [`crate::initinfo::machine_name`] |
+/// | 5-6 | the independence notice | [`crate::initinfo::INDEPENDENCE_NOTICE`] |
+/// | 8-9 | the EmuTOS credit | [`CREDIT_REIMPL`] / [`CREDIT_EMUTOS`] |
+/// | 11-14 | the `'GPLed'` chain | [`CREDIT_GPL`] / [`CREDIT_DRI`] / [`CREDIT_CALDERA`] / [`CREDIT_LINEO`] |
+/// | 16 | the authorship line | [`crate::initinfo::AUTHORSHIP_LINE`] |
+///
+/// The blank rows 1/4/7/10/15 are `ADDINFO`'s own: it leaves char rows 3, 6, 8
+/// and 13 empty between its blocks (`desk_rsc.c:790-866`).
+///
+/// **Two readers, one source, in two places — on purpose.** The version, the
+/// machine name, the independence notice and the authorship line are also
+/// printed by the boot screen, so they live in [`crate::initinfo`] and are read
+/// from there; that is EmuTOS's own arrangement (`desk_xlate_fix` points
+/// `DEVERSN->ob_spec` at the BIOS `version[]` the boot screen prints,
+/// `deskmain.c:1880`). The six credit lines are *not* on the boot screen —
+/// EmuTOS keeps its `'GPLed'` chain in `desk_rsc.c` alone and `bios/initinfo.c`
+/// prints none of it — so they stay local to this dialog.
+///
+/// **Three named deviations.**
 ///
 /// * EmuTOS runs `start_dialog` → `form_do` loop → `end_dialog` rather than
 ///   [`inf_show`], solely because `DEICON` is a `TOUCHEXIT` that plays the
@@ -1376,6 +1473,10 @@ impl Line {
 ///   the machine line is board-dependent (`initinfo::machine_name`), so there is
 ///   no build-time width to bake in. EmuTOS solves the same problem for its
 ///   menus with the run-time `adjust_menu` (`deskmain.c:1608-1635`).
+/// * `ADDINFO`'s copyright year is patched in at start-up from
+///   `COPYRIGHT_YEAR` (`deskmain.c:1892`, `obj/header.h:19`, generated by
+///   `tools/mkheader.awk`). NewTOS has no build-year constant (see below), so
+///   the span in [`CREDIT_EMUTOS`] is a literal.
 ///
 /// **One thing EmuTOS has and this box does not: a build date.** `ADDINFO`
 /// carries `DECOPYRT`, patched from `COPYRIGHT_YEAR`. NewTOS has no build-date
@@ -1407,6 +1508,12 @@ pub(super) fn do_aboutdesk() {
     };
     let note1 = Line::new(head);
     let note2 = Line::new(tail);
+    let reimpl = Line::new(CREDIT_REIMPL);
+    let emuteam = Line::new(CREDIT_EMUTOS);
+    let gpl = Line::new(CREDIT_GPL);
+    let dri = Line::new(CREDIT_DRI);
+    let caldera = Line::new(CREDIT_CALDERA);
+    let lineo = Line::new(CREDIT_LINEO);
     let author = Line::new(crate::initinfo::AUTHORSHIP_LINE);
 
     static OK: &[u8] = b" OK \0";
@@ -1419,37 +1526,48 @@ pub(super) fn do_aboutdesk() {
         .max(title.width())
         .max(note1.width())
         .max(note2.width())
+        .max(reimpl.width())
+        .max(emuteam.width())
+        .max(gpl.width())
+        .max(dri.width())
+        .max(caldera.width())
+        .max(lineo.width())
         .max(author.width());
     let dw = text_w + 2 * MARGIN;
     let pair_x = (dw - pair_w) / 2;
     let val_x = pair_x + LABEL_COLS * CELL_W;
     let ctr = |l: &Line| (dw - l.width()) / 2;
 
-    // Rows, top to bottom, with a blank row where `ADDINFO` leaves one.
+    // Row grid, with `ADDINFO`'s blank rows at 1, 4, 7, 10 and 15.
     let y0 = MARGIN;
-    let y_ver = y0 + 2 * ROW;
-    let y_mac = y_ver + ROW;
-    let y_n1 = y_mac + 2 * ROW;
-    let y_n2 = y_n1 + ROW;
-    let y_auth = y_n2 + 2 * ROW;
-    let y_ok = y_auth + 2 * ROW;
+    let row = |n: i16| y0 + n * ROW;
+    let y_ok = row(18);
     let dh = y_ok + OK_H + MARGIN;
 
     /// Object index of the OK button — `ADDINFO`'s `DEOK` (`desk_rsc.h:91`).
-    const DEOK: i16 = 9;
+    const DEOK: i16 = 15;
+    let str_obj = |l: &Line, x: i16, n: i16, next: i16| mk(G_STRING, 0, l.spec(), x, row(n), l.width(), CELL_H, next, -1, -1);
     let mut tree = [
-        mk(G_BOX, 0, BOX_SPEC, 0, 0, dw, dh, -1, 1, DEOK),
-        mk(G_STRING, 0, title.spec(), ctr(&title), y0, title.width(), CELL_H, 2, -1, -1),
-        mk(G_STRING, 0, ver_lbl.spec(), pair_x, y_ver, ver_lbl.width(), CELL_H, 3, -1, -1),
-        mk(G_STRING, 0, ver_val.spec(), val_x, y_ver, ver_val.width(), CELL_H, 4, -1, -1),
-        mk(G_STRING, 0, mac_lbl.spec(), pair_x, y_mac, mac_lbl.width(), CELL_H, 5, -1, -1),
-        mk(G_STRING, 0, mac_val.spec(), val_x, y_mac, mac_val.width(), CELL_H, 6, -1, -1),
-        mk(G_STRING, 0, note1.spec(), ctr(&note1), y_n1, note1.width(), CELL_H, 7, -1, -1),
-        mk(G_STRING, 0, note2.spec(), ctr(&note2), y_n2, note2.width(), CELL_H, 8, -1, -1),
-        mk(G_STRING, 0, author.spec(), ctr(&author), y_auth, author.width(), CELL_H, DEOK, -1, -1),
+        mk_root(ADDINFO_BOX_SPEC, dw, dh, DEOK),
+        str_obj(&title, ctr(&title), 0, 2),
+        str_obj(&ver_lbl, pair_x, 2, 3),
+        str_obj(&ver_val, val_x, 2, 4),
+        str_obj(&mac_lbl, pair_x, 3, 5),
+        str_obj(&mac_val, val_x, 3, 6),
+        str_obj(&note1, ctr(&note1), 5, 7),
+        str_obj(&note2, ctr(&note2), 6, 8),
+        str_obj(&reimpl, ctr(&reimpl), 8, 9),
+        str_obj(&emuteam, ctr(&emuteam), 9, 10),
+        str_obj(&gpl, ctr(&gpl), 11, 11),
+        str_obj(&dri, ctr(&dri), 12, 12),
+        str_obj(&caldera, ctr(&caldera), 13, 13),
+        str_obj(&lineo, ctr(&lineo), 14, 14),
+        str_obj(&author, ctr(&author), 16, DEOK),
+        // `DEOK`: `SELECTABLE | DEFAULT | EXIT | LASTOB | FL3DBAK | FL3DIND`
+        // (`desk_rsc.c:869-873`) — the last two bits are `FL3DACT`.
         mk(
             G_BUTTON,
-            SELECTABLE | DEFAULT | EXIT | LASTOB,
+            SELECTABLE | DEFAULT | EXIT | LASTOB | FL3DACT,
             OK.as_ptr() as u64,
             (dw - OK_W) / 2,
             y_ok,
@@ -1472,6 +1590,37 @@ pub(super) fn do_aboutdesk() {
         o.ob_state &= !OB_SELECTED;
     }
 }
+
+/// `ADDINFO`'s ROOT `ob_spec` — `135424L` = `(2 << 16) | 0x1100`
+/// (`desk_rsc.c:774-777`): the same colour word as [`BOX_SPEC`], but a
+/// **two**-pixel inner border. `ADDINFO` is the only `desk_rsc.c` tree with it.
+const ADDINFO_BOX_SPEC: u64 = (2 << 16) | 0x1100;
+
+// ── The About box's credit lines ────────────────────────────────────────────
+//
+// Local to this dialog, not in `crate::initinfo`, because EmuTOS keeps the
+// same split: `bios/initinfo.c` prints none of the `'GPLed'` chain, only
+// `desk_rsc.c`'s `ADDINFO` carries it.
+
+/// What NewTOS is, in one line. EmuTOS's `ADDINFO` has no counterpart claim —
+/// it *is* the code it credits; NewTOS is a reimplementation of it, which is
+/// the fact this line states.
+const CREDIT_REIMPL: &str = "Reimplemented from the EmuTOS sources";
+/// EmuTOS's own copyright line, as `ADDINFO` assembles it from
+/// `"Copyright \275 2001-"` + `COPYRIGHT_YEAR` + `"The EmuTOS development team"`
+/// (`desk_rsc.c:806-828`, `deskmain.c:1892`). `\275` is the Atari ST charset's
+/// `(c)` glyph; written out here, and the year span is a literal because NewTOS
+/// has no `COPYRIGHT_YEAR` equivalent.
+const CREDIT_EMUTOS: &str = "(c) 2001-2026 The EmuTOS development team";
+/// `ADDINFO`'s `"Based on 'GPLed' sources"` heading, verbatim
+/// (`desk_rsc.c:834-838`).
+const CREDIT_GPL: &str = "Based on 'GPLed' sources";
+/// `ADDINFO`'s `"\275 1987 Digital Research, Inc."` (`desk_rsc.c:840-844`).
+const CREDIT_DRI: &str = "(c) 1987 Digital Research, Inc.";
+/// `ADDINFO`'s `"\275 1999 Caldera Thin Clients, Inc."` (`desk_rsc.c:846-850`).
+const CREDIT_CALDERA: &str = "(c) 1999 Caldera Thin Clients, Inc.";
+/// `ADDINFO`'s `"\275 2001 Lineo, Inc."` (`desk_rsc.c:852-856`).
+const CREDIT_LINEO: &str = "(c) 2001 Lineo, Inc.";
 
 /// Append a decimal rendering of `v` to `buf` at `*p` (bounded by `buf.len()`).
 fn push_dec(buf: &mut [u8], p: &mut usize, mut v: u64) {
@@ -1646,7 +1795,7 @@ pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr:
         te_font: 3,
         te_junk1: 0,
         te_just: 0,
-        te_color: 1 << 8,
+        te_color: TED_COLOR,
         te_junk2: 0,
         te_thickness: 1,
         te_txtlen: NAME_MAX as i16,
@@ -1718,16 +1867,23 @@ pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr:
     let (dw, dh) = (320i16, 200i16);
     let ob_ok = 7i16;
 
+    // The 3D roles follow `ADFFINFO` object by object (`desk_rsc.c:622-703`):
+    // the ROOT is `FL3DBAK` + `OUTLINED`, `FFNAME` is an `EDITABLE | FL3DBAK`
+    // field, `FFOK`/`FFCNCL` are `FL3DBAK | FL3DIND` = `FL3DACT`, and the
+    // `G_STRING`s carry none. `ADFFINFO` shows size/date/time as `FL3DBAK`
+    // `G_FBOXTEXT` fields with an underscore template; NewTOS builds those
+    // three as plain `G_STRING` lines (no template), and a `G_STRING` has no
+    // interior for a 3D background to fill — so they stay flag-free.
     let tree = [
-        mk(G_BOX, 0, BOX_SPEC, 0, 0, dw, dh, -1, 1, 8),
+        mk_root(BOX_SPEC, dw, dh, 8),
         mk(G_STRING, 0, TITLE.as_ptr() as u64, 24, 14, dw - 48, 16, 2, -1, -1),
         mk(G_STRING, 0, NAME_LBL.as_ptr() as u64, 24, 44, 48, 16, 3, -1, -1),
-        mk(G_BOXTEXT, EDITABLE, &ted as *const _ as u64, 80, 40, 200, 22, 4, -1, -1),
+        mk(G_BOXTEXT, EDITABLE | FL3DBAK, &ted as *const _ as u64, 80, 40, 200, 22, 4, -1, -1),
         mk(G_STRING, 0, sizebuf.as_ptr() as u64, 24, 74, dw - 48, 16, 5, -1, -1),
         mk(G_STRING, 0, datebuf.as_ptr() as u64, 24, 96, dw - 48, 16, 6, -1, -1),
         mk(G_STRING, 0, attrbuf.as_ptr() as u64, 24, 118, dw - 48, 16, 7, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT, OK.as_ptr() as u64, 40, 156, 90, 28, 8, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB, CANCEL.as_ptr() as u64, 190, 156, 90, 28, 0, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, OK.as_ptr() as u64, 40, 156, 90, 28, 8, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 190, 156, 90, 28, 0, -1, -1),
     ];
 
     // `inf_show(tree, ROOT)` (`deskinf.c:396-402`).
@@ -1853,13 +2009,26 @@ pub(super) fn inf_pref() -> bool {
     static CANCEL: &[u8] = b" Cancel \0";
 
     // ── geometry ────────────────────────────────────────────────────────
+    //
+    // The pitch and the gap are `ADSETPRE`'s own, because a 3D indicator is
+    // **grown** before it is drawn: the AES adds `ADJ3DSTD` (2 px) per side and
+    // then lays the `th = -1` border outside that (`aes/gemoblib.c:504`,
+    // `tos-api/src/aes/object.rs`), so every `FL3DIND` button claims 3 px more
+    // in each direction than its `ob_*` rectangle says. `ADSETPRE` spaces its
+    // rows two character rows apart (`desk_rsc.c:1386,1406,1426,1450` — char
+    // rows 3, 5, 7, 9 → 32 px) and its speed buttons 23 px apart for a 15 px
+    // button (`:1462-1493`, an 8 px gap). With the previous 26 px pitch and
+    // 6 px gap the grown borders of neighbouring buttons would have met.
     const MARGIN: i16 = 24;
-    const ROW_H: i16 = 26;
+    /// `ADSETPRE`'s two-character row pitch (`desk_rsc.c:1386` ff.).
+    const ROW_H: i16 = 2 * CELL_H;
     const BTN_H: i16 = 22;
     const YESNO_W: i16 = 52;
     const DC_W: i16 = 30;
     const FMT_W: i16 = 56;
-    const GAP: i16 = 6;
+    /// `ADSETPRE`'s inter-button gap (`desk_rsc.c:1462-1493`: pitch 23 px,
+    /// width 15 px).
+    const GAP: i16 = 8;
     const LBL_W: i16 = 20 * CELL_W; // "Double-click speed:" + a blank
     const GROUP_W: i16 = 5 * DC_W + 4 * GAP; // the widest group (five speeds)
     let dw = MARGIN + LBL_W + GROUP_W + MARGIN;
@@ -1887,16 +2056,20 @@ pub(super) fn inf_pref() -> bool {
     /// `SPOK` — the OK button; `SPCNCL` follows it, as [`inf_what`] requires.
     const SPOK: usize = 21;
 
+    // Every `RBUTTON` of `ADSETPRE` is `SELECTABLE | RBUTTON | FL3DIND`
+    // (`desk_rsc.c:1396` ff.) — the 3D indicator role: grown, beveled, and it
+    // changes colour when selected.
     let rb = |spec: &'static [u8], x: i16, w: i16, next: i16| {
-        mk(G_BUTTON, SELECTABLE | RBUTTON, spec.as_ptr() as u64, x, 0, w, BTN_H, next, -1, -1)
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, spec.as_ptr() as u64, x, 0, w, BTN_H, next, -1, -1)
     };
 
     // Each radio group hangs under its own `G_IBOX`, because that is what makes
     // the AES deselect the siblings of the button that was hit (see [`G_IBOX`]).
+    // `ADSETPRE`'s `G_IBOX`es carry no 3D flag and `ob_spec = 0` (`:1390` ff.).
     #[rustfmt::skip]
     let mut tree = [
         // 0 ROOT
-        mk(G_BOX, 0, BOX_SPEC, 0, 0, dw, dh, -1, 1, SPOK as i16 + 1),
+        mk_root(BOX_SPEC, dw, dh, SPOK as i16 + 1),
         // 1 title
         mk(G_STRING, 0, TITLE.as_ptr() as u64, MARGIN, MARGIN, dw - 2 * MARGIN, CELL_H, 2, -1, -1),
         // 2 "Confirm deletes:"          3 its G_IBOX      4/5 Yes/No
@@ -1922,9 +2095,9 @@ pub(super) fn inf_pref() -> bool {
         mk(G_IBOX, 0, 0, gx, y_df + boff, 2 * FMT_W + GAP, BTN_H, 21, 19, 20),
         rb(MDY, 0, FMT_W, 20),
         rb(DMY, FMT_W + GAP, FMT_W, 18),
-        // 21 OK                         22 Cancel
-        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT, OK.as_ptr() as u64, dw / 2 - 100, y_btn, 90, 28, SPOK as i16 + 1, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB, CANCEL.as_ptr() as u64, dw / 2 + 10, y_btn, 90, 28, 0, -1, -1),
+        // 21 OK                         22 Cancel  (`SPOK`/`SPCNCL`: FL3DACT)
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, dw / 2 - 100, y_btn, 90, 28, SPOK as i16 + 1, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, dw / 2 + 10, y_btn, 90, 28, 0, -1, -1),
     ];
 
     // ── pre-select the current state (`deskinf.c:731-777`) ──────────────
@@ -2010,19 +2183,27 @@ pub(super) fn set_background() -> bool {
     const COL_UP: i16 = 9;
     const OK_OBJ: i16 = 10;
 
+    // 3D roles after `ADBKGND` (`desk_rsc.c:2230-2452`): `FL3DBAK` + `OUTLINED`
+    // ROOT, `FL3DACT` on `BGOK`/`BGCANCEL`, no flag on the `G_STRING` labels.
+    // `ADBKGND` has no stepper pair — it offers eight pattern and sixteen
+    // colour swatches as `TOUCHEXIT` `G_BOX`es — but `desk_rsc.c` does have
+    // stepper *gadgets*, and they are activators: `ADINSDSK`'s `ID_UP`/
+    // `ID_DOWN` and `ADINSWIN`'s `IW_UP`/`IW_DOWN` are
+    // `SELECTABLE | TOUCHEXIT | FL3DBAK | FL3DIND` = `FL3DACT`
+    // (`desk_rsc.c:990,996,2094,2100`). The four `- / +` buttons take that.
     let mut tree = [
-        mk(G_BOX, 0, BOX_SPEC, 0, 0, dw, dh, -1, 1, 11),
+        mk_root(BOX_SPEC, dw, dh, 11),
         mk(G_STRING, 0, TITLE.as_ptr() as u64, 24, 14, dw - 48, 16, 2, -1, -1),
         mk(G_STRING, 0, PAT_LBL.as_ptr() as u64, 24, 48, 72, 16, 3, -1, -1),
         mk(G_STRING, 0, patnum.as_ptr() as u64, 104, 48, 40, 16, 4, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, MINUS.as_ptr() as u64, 160, 44, 44, 24, 5, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, PLUS.as_ptr() as u64, 214, 44, 44, 24, 6, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, MINUS.as_ptr() as u64, 160, 44, 44, 24, 5, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, PLUS.as_ptr() as u64, 214, 44, 44, 24, 6, -1, -1),
         mk(G_STRING, 0, COL_LBL.as_ptr() as u64, 24, 84, 72, 16, 7, -1, -1),
         mk(G_STRING, 0, colnum.as_ptr() as u64, 104, 84, 40, 16, 8, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, MINUS.as_ptr() as u64, 160, 80, 44, 24, 9, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT, PLUS.as_ptr() as u64, 214, 80, 44, 24, 10, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT, OK.as_ptr() as u64, 30, 138, 90, 28, 11, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB, CANCEL.as_ptr() as u64, 178, 138, 90, 28, 0, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, MINUS.as_ptr() as u64, 160, 80, 44, 24, 9, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, PLUS.as_ptr() as u64, 214, 80, 44, 24, 10, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, OK.as_ptr() as u64, 30, 138, 90, 28, 11, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 178, 138, 90, 28, 0, -1, -1),
     ];
     // The two number fields, refreshed whenever a step button was pressed.
     let set_numbers = |pat: u8, col: u8, patnum: &mut [u8; 8], colnum: &mut [u8; 8]| {

@@ -20,8 +20,11 @@ use alloc::string::String;
 
 use tos_api::aes::object::{Object, TedInfo};
 
+// The dialog-box spec, the TEDINFO colour word and the 3D roles, shared with
+// the other desktop dialogs (see `super::inf`).
+use super::inf::{mk_root, BOX_SPEC, FL3DACT, FL3DBAK, TED_COLOR};
+
 // OBJECT graphic types (`obdefs.h`).
-const G_BOX: u16 = 20;
 const G_BOXTEXT: u16 = 22;
 const G_BUTTON: u16 = 26;
 const G_STRING: u16 = 28;
@@ -84,7 +87,7 @@ pub fn edit_name(prompt: &[u8], initial: &str) -> Option<String> {
         te_font: 3,
         te_junk1: 0,
         te_just: 0,
-        te_color: 1 << 8,
+        te_color: TED_COLOR,
         te_junk2: 0,
         te_thickness: 1,
         te_txtlen: NAME_MAX as i16,
@@ -96,16 +99,17 @@ pub fn edit_name(prompt: &[u8], initial: &str) -> Option<String> {
     // its dialogs from a resource file whose ROOT carries no screen position.
     let (dw, dh) = (290i16, 150i16);
 
-    // Colour word `(1<<16)|0x1070` = black border + solid-white interior, so the
-    // dialog is opaque over the desktop (matches the menu-drop-down box).
-    let box_spec: u64 = (1 << 16) | 0x1070;
-
+    // The 3D roles are `ADMKDBOX`'s and `ADSEARCH`'s, object by object — the two
+    // `desk_rsc.c` trees this dialog stands in for (`desk_rsc.c:1282-1346`):
+    // `FL3DBAK` + `OUTLINED` ROOT over the `0x1100` colour word, a plain
+    // `G_STRING` title, an `EDITABLE | FL3DBAK` name field (`MKNAME`/`SFNAME`),
+    // and `FL3DBAK | FL3DIND` = `FL3DACT` on `MKOK`/`MKCNCL`.
     let tree = [
-        mk(G_BOX, 0, box_spec, 0, 0, dw, dh, -1, 1, 4),
+        mk_root(BOX_SPEC, dw, dh, 4),
         mk(G_STRING, 0, prompt.as_ptr() as u64, 24, 18, dw - 48, 16, 2, -1, -1),
-        mk(G_BOXTEXT, EDITABLE, &ted as *const _ as u64, 24, 46, 200, 24, 3, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT, OK.as_ptr() as u64, 28, 104, 90, 28, 4, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB, CANCEL.as_ptr() as u64, 172, 104, 90, 28, 0, -1, -1),
+        mk(G_BOXTEXT, EDITABLE | FL3DBAK, &ted as *const _ as u64, 24, 46, 200, 24, 3, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, OK.as_ptr() as u64, 28, 104, 90, 28, 4, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 172, 104, 90, 28, 0, -1, -1),
     ];
 
     // `inf_show(tree, ROOT)` (`deskinf.c:396-402`): start_dialog → form_do →

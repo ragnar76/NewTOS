@@ -1070,3 +1070,183 @@ writes `#E 1A 86 00 00 60` (`0x86` = `BLITTER|DAYMONTH|24HCLOCK`, both `IDT` bit
 now cleared because the user made an explicit choice); after a **cold boot** from
 that image the dialog re-opens with `DMY` pre-selected, and the text view prints
 `23-09-26` where the unchanged image prints `09-23-26`.
+
+---
+
+## NewTOS implementation notes — the 3D flag set and the About content (DESK01b)
+
+Follow-up to DESK01 and DESK02 after the dialogs were seen on screen. Two
+corrections: the desktop's hand-built trees carried **no** `FL3D*` flag, and the
+About box's body was replaced with the approved credit block.
+
+### 1. The flag set, derived from `desk_rsc.c` tree by tree
+
+`desk_rsc.c` is a generated resource, so the flags are data, not policy. Every
+object of all twenty trees was extracted mechanically (type, `RBUTTON` /
+`EXIT` / `TOUCHEXIT`, root-or-not → 3D role) and the roles grouped; the result is
+one convention with **no exception anywhere in the file** (`FL3DACT` is spelled
+`FL3DBAK|FL3DIND` by the generator — the same `0x0600` pattern,
+`obdefs.h:93-97`):
+
+| object | 3D role | seen on |
+|---|---|---|
+| ROOT `G_BOX` | `FL3DBAK` | all 19 dialog trees, `ob_state = OUTLINED`, `ob_spec = 69888L`; `ADDINFO` alone `135424L` |
+| `G_BUTTON` with `RBUTTON` (with or without `EXIT`) | `FL3DIND` | `SPCDYES`…, `APTOS`…, `FFRWRITE`…, and `BGDESK`/`BGWIN` (`:2254`, `RBUTTON` **and** `EXIT`) |
+| `G_BUTTON` with `EXIT`, no `RBUTTON` | `FL3DACT` | every OK / Cancel / Skip / Install / Remove |
+| `G_BUTTON` with `TOUCHEXIT` (arrow / stepper gadgets) | `FL3DACT` | `ID_UP`/`ID_DOWN` (`:990,996`), `IW_UP`/`IW_DOWN` (`:2094,2100`), `DCFUN*`/`DCMNU*` (`:1683-1749`) |
+| `G_FTEXT` / `G_FBOXTEXT` field | `FL3DBAK` | every edit and display field; one exception, `DCMNUTXT` (`:1737`, flagless) |
+| `G_IBOX` (radio-group parent) | none | `ADSETPRE` `:1390` ff. (`ob_spec = 0L`), `ADINSAPP` `:1071` ff. (`4352L`) |
+| `G_IMAGE`, `G_STRING`, `G_TITLE` | none | throughout. Four `G_STRING`s in `ADINSDSK`/`ADINSWIN` carry a stray `FL3DBAK` (`:948,1002,2058,2106`); a `G_STRING` has no interior, so it is inert |
+| `G_BOX` as a swatch, or as a sub-panel | none / `FL3DBAK` | `ADBKGND`'s `TOUCHEXIT` swatches (`:2280` ff.) flagless; `ID_IBOX`/`IW_IBOX`/`DCFUNBOX`/`FMT_BAR` `FL3DBAK` |
+
+Two of those rows settle questions this ticket would otherwise have had to
+reason its way to: a radio button that also carries `EXIT` is still an
+**indicator** (`ADBKGND:2254`), and a stepper gadget is an **activator**
+(`ADINSDSK:990`). NewTOS's Install-Application flavour buttons and its
+Set-background `-`/`+` buttons are exactly those two cases, so they take
+`FL3DIND` and `FL3DACT` from the resource rather than by analogy.
+
+`desk_rsc.c` also sets `0x4000` / `0x8000` in some `ob_flags`. Those are
+resource-editor bits: **no** EmuTOS AES code reads a flag above `SUBMENU`
+(`0x0800`) — the only `ob_flags` tests in `aes/` are `SUBMENU`
+(`gemmnext.c:410`), `FL3DOBJ` (`gemgrlib.c:375,379`), `INDIRECT`
+(`gemobed.c:61`, `gemobjop.c:36`) and `EXIT`/`DEFAULT` (`gemobjop.c:61,63`).
+They are therefore *not* copied.
+
+### 2. The box spec: hollow is load-bearing
+
+Every `desk_rsc.c` dialog ROOT carries `69888L` = `(1<<16) | 0x1100`; `ADDINFO`
+alone carries `135424L` = `(2<<16) | 0x1100`. Cracked (`gr_crack`): **border
+pen 1 (black), text pen 1 (black), inside pattern 0 (`IP_HOLLOW`), inside pen 0
+(white)**, over a **positive** — i.e. *inner* — border of 1 (or 2) pixels.
+
+NewTOS used `(1<<16) | 0x1070`: pattern **7** = `IP_SOLID`. That difference is
+not cosmetic. `just_draw` only substitutes the 3D face colour when the box is
+`IP_HOLLOW` **and** white (`gemoblib.c:619-636`), so an `FL3DBAK` flag on a
+solid-white box would have been silently ignored and the panel would have stayed
+flat white. The flag and the spec had to change together.
+
+The sign is *not* changed: a dialog box's border is inner (positive). A100
+measured the desktop's **drop-down** boxes as needing `0xFF1100` (thickness −1,
+outer); that is the menu's convention, not the dialog's, and `menu.rs` keeps it.
+
+The same colour word is the one every `desk_rs_tedinfo` entry uses
+(`te_color = 4352` = `0x1100`, `desk_rsc.c:33-200`), so NewTOS's dialog
+`TEDINFO`s move from `1 << 8` (border pen **0** = white) to `0x1100`.
+
+**One named deviation on the fields.** `desk_rsc.c` gives its edit fields
+`te_thickness = 0` — no frame — because they are *formatted* fields
+(`G_FBOXTEXT` with an underscore `te_ptmplt`, e.g. `"Name: ________.___"`), and
+the template is what shows the field's extent on the flat grey panel. NewTOS's
+fields are plain `G_BOXTEXT` with an empty template, so `te_thickness = 1` is
+kept: without it the field would be grey-on-grey and invisible. Measured:
+`screendumps/mask-C-mask.png` / `zoom-field.png` — a 1-px black frame around the
+`backgrcol` interior with the text and caret inside.
+
+### 3. Geometry the 3D grow required
+
+An `FL3DIND`/`FL3DACT` object is **grown** by `ADJ3DSTD` (2 px per side) before
+it is drawn, and its negative border is laid outside *that* (`gemoblib.c:504`,
+`tos-api/src/aes/object.rs`). A radio button therefore claims 3 px more per side
+than its rectangle says, an exit button 4, a default exit button 5. Two trees had
+been laid out tighter than that:
+
+* `inf_pref`: row pitch 26 → **32** px and inter-button gap 6 → **8** px, both
+  `ADSETPRE`'s own values (`desk_rsc.c:1386` ff. — char rows 3/5/7/9, i.e. 32 px;
+  `:1462-1493` — 15 px buttons on a 23 px pitch). The dialog grows from
+  382 × 212 to **390 × 244**. At the old pitch the borders of two neighbouring
+  rows would have shared pixels.
+* `ins_app_dialog`: the flavour row goes from 48 px buttons on a 52 px pitch to
+  **44 px on 54**, and `APPMFILE` moves 240 → 244. `ADINSAPP` leaves the same
+  room (40 px buttons on a 48 px pitch, `:1098-1124`). At the old pitch `GEM`'s
+  right border and `TOS`'s left border overlapped by 4 px.
+
+Nothing else needed to move; the remaining dialogs already had ≥ 2 px clear,
+which is what `desk_rsc.c` itself leaves.
+
+### 4. The About box's content
+
+`do_aboutdesk`'s body is now the approved credit block, laid out on `ADDINFO`'s
+row grid (blank rows at 1, 4, 7, 10 and 15, as `desk_rsc.c:790-866` leaves char
+rows 3, 6, 8 and 13 empty):
+
+```
+                    - NewTOS -
+
+        Version    NewTOS 0.1
+        Machine    Raspberry Pi 4 (BCM2711)
+
+     NewTOS is an independent project -
+          not original Atari software.
+
+   Reimplemented from the EmuTOS sources
+   (c) 2001-2026 The EmuTOS development team
+
+            Based on 'GPLed' sources
+          (c) 1987 Digital Research, Inc.
+       (c) 1999 Caldera Thin Clients, Inc.
+              (c) 2001 Lineo, Inc.
+
+   Adapted by Ingo Uhlemann with Claude AI...
+```
+
+Everything but the `Version`/`Machine` pair block is centred; the pair block is
+`ADDINFO`'s `DELABEL`/`DEVERSN` arrangement (`desk_rsc.c:800-813`).
+
+**Where the strings live, and why.** Version, machine name, the independence
+notice and the authorship line stay in `crate::initinfo` because the **boot
+screen prints them too** — that is EmuTOS's own arrangement, `desk_xlate_fix`
+pointing `DEVERSN->ob_spec` at the BIOS `version[]` the boot screen prints
+(`deskmain.c:1880`). The six credit lines are **local to the dialog**, for the
+same reason EmuTOS keeps them local: `bios/initinfo.c` prints none of the
+`'GPLed'` chain, only `desk_rsc.c`'s `ADDINFO` carries it.
+
+**Wording.** `Based on 'GPLed' sources`, `1987 Digital Research, Inc.`,
+`1999 Caldera Thin Clients, Inc.` and `2001 Lineo, Inc.` are `ADDINFO`'s strings
+verbatim (`desk_rsc.c:834-856`), with EmuTOS's `\275` — the Atari charset's ©
+glyph — written as `(c)`. `(c) 2001-2026 The EmuTOS development team` is
+`ADDINFO`'s `"Copyright \275 2001-"` + `COPYRIGHT_YEAR` + `"The EmuTOS
+development team"` (`:806-828`, patched at `deskmain.c:1892` from
+`obj/header.h:19`); NewTOS has no build-year constant, so the span is a literal.
+`Reimplemented from the EmuTOS sources` has no `ADDINFO` counterpart — EmuTOS
+*is* the code it credits.
+
+**Size.** The box grows from 384 × 276 to **384 × 436** — the width is unchanged
+because the longest line (the 42-character authorship line) is still wider than
+the machine line on either board. At 640 × 480 it is centred at (128, 31) and the
+`OUTLINED` 3D outline reaches (125, 28, 390, 442): 9 px clear below the menu bar,
+10 px above the bottom edge. It fits on both board profiles; the qemu-virt
+machine name is shorter, so the box is the same size there.
+
+### Measured (`measurement-2026-09-24-desk01b/`)
+
+QEMU raspi4b, 640 × 480, the DESK08/09/10 scratch-copy IKBD injector.
+
+* **Desk → Desktop info… → OK** (`about-*.png`). The box measures, by scanline,
+  `x 128..511`, `y 31..466` = (128, 31, 384, 436) — `form_center`'s value; the
+  `draw_3d_outline` sits at 125/126-127 (grey/white-white) on the left, 512-514
+  (grey) on the right, and the ROOT's own 2-px black border at 128-129 / 510-511,
+  i.e. `ADDINFO`'s `(2<<16)` thickness. Interior `189,189,189` = `GRAY_LT` =
+  `backgrcol`. The `OK` button carries the `add_3d_effect` bevel (white top/left,
+  `GRAY_DK` bottom/right inside a 3-px black default-exit frame,
+  `zoom-ok.png`). `about-D-closed.png` == `about-A-idle.png`, md5
+  `710d7f24cc078d43e9351725a205a16e`, **0 differing pixels**.
+* **Options → Set preferences… → Cancel** (`prefs-*.png`). The dialog measures
+  (125, 127, 390, 244) = `form_center`'s value. All four groups render as 3D
+  indicators — unselected raised, selected in the darker face with a sunken
+  bevel and white text (`zoom-radios.png`); pre-selection is `Yes / 3 / 24H /
+  MDY`, unchanged from DESK02. `prefs-D-closed.png` == `prefs-A-idle.png`,
+  **0 differing pixels**.
+* **Options → Set background… → Cancel** (`bkgnd-*.png`, smoke check for the
+  four stepper buttons the flag change also touches): bevelled, 2 px clear
+  between neighbours (`zoom-steppers.png`); closed == idle, **0 differing
+  pixels**.
+* **File → Set file mask… → Cancel** (`mask-*.png`, smoke check for the
+  `EDITABLE | FL3DBAK` field): the field renders as a framed `backgrcol` box
+  with `*.*` and the caret; closed == the window before it, **0 differing
+  pixels**.
+* 0 `[EXC]` / `[PANIC]` in all four serial logs.
+
+Not driven here (they need typing or a multi-step selection, and the Tester's
+harness covers them): `inf_file_folder`'s Show-Info box and `ins_app_dialog`.
+Real-Pi4-only: the 1920 × 1080 look of all of these.

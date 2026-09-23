@@ -1,0 +1,17 @@
+=== fresh build, board rpi4 ===
+warning: `tos-api` (lib) generated 64 warnings
+warning: `kernel` (lib) generated 94 warnings
+xtask: objcopy → /Volumes/Daten/Development/PiRusTOS/kernel8.img
+
+=== fresh build, board qemu-virt ===
+warning: `tos-api` (lib) generated 64 warnings
+warning: `kernel` (lib) generated 94 warnings
+
+=== clippy, board rpi4 ===
+warning: `tos-api` (lib) generated 80 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+hits under kernel/src/desk/: 0
+=== clippy, board qemu-virt ===
+warning: `tos-api` (lib) generated 80 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+hits under kernel/src/desk/: 0

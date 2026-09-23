@@ -1,0 +1,116 @@
+measurement-2026-09-24-desk01b — DESK01b (3D flags + About content)
+===================================================================
+
+Base: branch desk-rebuild, HEAD 66b19f2 (DESK01/DESK02 committed). This
+ticket's changes are UNCOMMITTED in the shared tree. Nothing flashed. No
+`git checkout/restore/clean/stash/reset` was run on the shared tree.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps. Card image: `tools/make-sd-image.sh` (64 MiB, MBR + FAT16), a
+fresh copy per run. Interactive runs use the scratch-copy IKBD injector
+(memory `desktop-interactive-verification-real-hw`):
+`../measurement-2026-09-24-desk01-desk02/method/make_scratch_desk0102.sh`
+rsyncs the crates into the job scratch — never the shared tree — and applies
+the DESK10 anchor patch + the DESK08/09 injector patches. The pointer is
+parked bottom-right (`parkbr`) before every screendump so the cursor never
+pollutes a comparison.
+
+`method/*.actions` are the four action lists; `method/*_script.rs` the
+generated injector tables (`gen_script.py ... SCRIPT_DESK`, plus an empty
+`SCRIPT_TERA`, which is what `a78_patch2.py` expects).
+No `*.img` (the ticket's rule).
+
+
+1. Desk -> Desktop info... -> OK        (about-*.png, serial/about-serial.log)
+------------------------------------------------------------------------
+  about-A-idle.png       the desktop before
+  about-B-desk-open.png  the Desk drop-down open
+  about-C-about.png      the box, new content + 3D look
+  about-D-closed.png     after OK
+
+  Box geometry, measured by scanline off about-C-about.png:
+
+    row 200:  x=125     (140,140,140) GRAY_DK   draw_3d_outline, offset +3
+              x=126-127 (255,255,255) WHITE     draw_3d_outline, +2 / +1
+              x=128-129 (0,0,0)       BLACK     ROOT border, ADDINFO th=2
+              x=130-509 (189,189,189) GRAY_LT   backgrcol panel (FL3DBAK)
+              x=510-511 BLACK                   ROOT border
+              x=512-514 GRAY_DK                 draw_3d_outline (all grey)
+    col 300:  y=28 GRAY_DK / 29-30 WHITE / 31-32 BLACK / … /
+              465-466 BLACK / 467-469 GRAY_DK
+
+    => ROOT rect (128, 31, 384, 436) = form_center's value
+       ((640-384)/2 = 128; 19 + (480-19-436)/2 = 31)
+       outline rect (125, 28, 390, 442): 9 px clear under the menu bar,
+       10 px above the screen bottom — it fits at 640x480.
+
+  OK button (zoom-ok.png): 3 px black frame (DEFAULT|EXIT -> th = -3), then
+  1 px WHITE on top/left and 1 px GRAY_DK on bottom/right inside it, over a
+  GRAY_LT face = `add_3d_effect`'s raised bevel.
+
+  about-D-closed.png == about-A-idle.png
+    md5 710d7f24cc078d43e9351725a205a16e on both, pixdiff 0 differing pixels.
+  0 [EXC]/[PANIC].
+
+
+2. Options -> Set preferences... -> Cancel   (prefs-*.png)
+----------------------------------------------------------
+  prefs-C-prefs.png: dialog measured at x 125..514, y 127..370
+    => (125, 127, 390, 244) = form_center's value
+       ((640-390)/2 = 125; 19 + (480-19-244)/2 = 127).
+    Left edge 122 GRAY_DK / 123-124 WHITE / 125 BLACK (th=1) / 126.. GRAY_LT;
+    right 514 BLACK / 515-517 GRAY_DK; top 124/125-126/127; bottom 370/371-373.
+    The dialog is 8 px wider and 32 px taller than before, because the row
+    pitch went 26 -> 32 px and the button gap 6 -> 8 px: ADSETPRE's own values,
+    needed because an FL3DIND button is grown by ADJ3DSTD (2 px/side) before
+    its border is drawn.
+
+  zoom-radios.png: all four groups render as 3D indicators — unselected
+  raised (white top/left, dark bottom/right), selected in the darker
+  indbutcol-complement with a sunken bevel and white text. Pre-selection
+  Yes / 3 / 24H / MDY, unchanged from DESK02.
+
+  prefs-D-closed.png == prefs-A-idle.png, md5 710d7f24…, pixdiff 0.
+  0 [EXC]/[PANIC].
+
+
+3. Smoke check: Options -> Set background... -> Cancel   (bkgnd-*.png)
+-----------------------------------------------------------------------
+  Covers the four `-`/`+` stepper buttons, which the flag change also touches
+  (desk_rsc.c's stepper gadgets ID_UP/ID_DOWN are FL3DACT).
+  zoom-steppers.png: bevelled, 2 px clear between neighbours.
+  bkgnd-D-closed.png == bkgnd-A-idle.png, pixdiff 0. 0 [EXC]/[PANIC].
+
+
+4. Smoke check: File -> Set file mask... -> Cancel        (mask-*.png)
+-----------------------------------------------------------------------
+  Covers the EDITABLE | FL3DBAK G_BOXTEXT field (the TED_COLOR change).
+  Double-click "Hard disk" to open C:\, then the File menu.
+  zoom-field.png: a 1 px BLACK frame around a GRAY_LT (backgrcol) interior,
+  with `*.*` and the caret inside — i.e. the field stays visible. EmuTOS's
+  own fields have te_thickness 0 and are made visible by their underscore
+  te_ptmplt template, which NewTOS's plain G_BOXTEXT fields do not carry;
+  that is the one named deviation of the field styling.
+  mask-D-closed.png == mask-B-window.png, md5 7bfdf0c4805445a5b5a7279f2fc10ad4
+  on both, pixdiff 0. 0 [EXC]/[PANIC].
+
+
+Not driven here
+---------------
+* `inf_file_folder` (File -> Info/Rename) and `ins_app_dialog` — they need a
+  multi-step selection / typing; the Tester's harness covers them.
+* The 1920x1080 look of every dialog above — real Pi 4 only.
+
+
+Build / clippy / test
+---------------------
+  build/build-both-boards.txt   fresh per board (cargo clean -p kernel -p
+                                tos-api first): tos-api 64 / kernel 94 on
+                                BOTH, rc 0. Baseline 64/94 — delta 0.
+                                Same file, second half: clippy tos-api 80 /
+                                kernel 125 on both (baseline 80/125), 0 hits
+                                under kernel/src/desk/.
+  build/test-summary.txt        932 passed / 0 failed / 1 ignored.
+  build/product-desk01b.diff    the change-set (3 files under kernel/src/desk).
+  build/spec-and-status-desk01b.diff  docs/api/desktop/deskinf.md,
+                                docs/STATUS.md and the two TASK addenda.

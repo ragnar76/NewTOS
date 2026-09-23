@@ -161,3 +161,48 @@ kernel **125** auf beiden (Basis 80/125), **null** Treffer in
 Vergleich gegen `rscview` hat dieses Ticket nicht gefahren: der Baum ist
 **nicht** EmuTOS' `ADDINFO`, sondern eine eigene Fuellung derselben Form, ein
 Bildvergleich waere also kein Soll.
+
+---
+
+## Nachtrag 2026-09-24 (DESK01b) — Ticket bleibt ERLEDIGT
+
+Zwei Korrekturen, nachdem der Kasten auf dem Schirm stand.
+
+**Der Inhalt** ist jetzt der vom Benutzer freigegebene Kreditblock: Titel,
+`Version`/`Machine`-Paar, Unabhaengigkeitshinweis, `Reimplemented from the
+EmuTOS sources` + `(c) 2001-2026 The EmuTOS development team`, die
+`'GPLed'`-Kette (`Based on 'GPLed' sources`, DRI 1987, Caldera 1999,
+Lineo 2001) und die Urheberzeile — auf `ADDINFO`s Zeilenraster mit dessen
+Leerzeilen. Wo der Anspruch derselbe ist, ist der Wortlaut `ADDINFO`s
+(`desk_rsc.c:834-856`); EmuTOS' `\275` ist als `(c)` geschrieben.
+
+**Wo die Zeichenketten liegen.** Version, Maschine, Hinweis und Urheberzeile
+bleiben `pub(crate)` in `initinfo.rs`, weil der **Startschirm sie ebenfalls
+druckt** — die Begruendung des Haupttextes gilt unveraendert. Die sechs neuen
+Kreditzeilen sind **lokal** in `inf.rs`, und zwar aus derselben Logik: EmuTOS'
+`bios/initinfo.c` druckt von der `'GPLed'`-Kette nichts, nur `desk_rsc.c`s
+`ADDINFO` traegt sie.
+
+**Die 3D-Optik.** Der Baum fuehrte keine `FL3D*`-Flagge. Er hat jetzt
+`ADDINFO`s: Wurzel `FL3DBAK` + `ob_state = OUTLINED` + `ob_spec = (2<<16)|0x1100`
+(`desk_rsc.c:774-777` — `ADDINFO` ist der einzige Baum mit **zwei** Pixeln
+Rahmen), `DEOK` mit `FL3DACT`. Der alte `BOX_SPEC` `(1<<16)|0x1070` musste
+mit: Muster 7 = `IP_SOLID`, und `just_draw` setzt die 3D-Flaeche nur fuer einen
+**hohlen weissen** Kasten ein (`gemoblib.c:619-636`) — die Flagge allein waere
+wirkungslos verpufft.
+
+**Die Baudatumsluecke bleibt** wie im Haupttext beschrieben; die Jahresspanne
+`2001-2026` in der EmuTOS-Zeile ist EmuTOS' Jahr, nicht NewTOS' Baujahr
+(`COPYRIGHT_YEAR`, `obj/header.h:19`, gesetzt von `tools/mkheader.awk`).
+
+**Neue Masse:** der Kasten waechst von 384x276 auf **384x436** (Breite
+unveraendert, die 42 Zeichen lange Urheberzeile ist weiterhin die laengste, auf
+beiden Brettern). Bei 640x480 steht er bei (128, 31); das `OUTLINED`-Aussenrechteck
+ist (125, 28, 390, 442) — 9 px unter der Menueleiste, 10 px ueber dem Schirmrand.
+Pixelweise vermessen in `measurement-2026-09-24-desk01b/` (Rand: `draw_3d_outline`
+grau/weiss/weiss, dann der eigene 2-px-Rahmen, dann `GRAY_LT` = `backgrcol`;
+`OK` mit `add_3d_effect`-Fase). `about-D-closed.png` == `about-A-idle.png`,
+pixdiff **0**.
+
+Spec: `docs/api/desktop/deskinf.md`, Abschnitt „NewTOS implementation notes —
+the 3D flag set and the About content (DESK01b)".

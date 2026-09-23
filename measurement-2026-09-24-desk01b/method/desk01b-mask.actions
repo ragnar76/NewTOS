@@ -1,0 +1,27 @@
+# DESK01b smoke check -- the EDITABLE G_BOXTEXT field under FL3DBAK.
+# Double-click "Hard disk" (39,39) to open the C: window, then
+# File (x 64..112) -> "Set file mask..." (entry 9, y = 19+9*16 = 163..179),
+# which is `dlg::edit_name`; Cancel it.
+# The box is 290x150 at ((640-290)/2, 19+(480-19-150)/2) = (175,174);
+# Cancel is (172,104,90,28) inside -> centre (392, 292).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 move 39 39
+1600 down
+1603 up
+1608 down
+1611 up
+2000 parkbr
+2400 mark B_WINDOW
+2700 move 88 8
+3100 move 90 171
+3300 down
+3303 up
+3600 parkbr
+4000 mark C_MASK
+4300 move 392 292
+4500 down
+4503 up
+4800 parkbr
+5200 mark D_CLOSED
