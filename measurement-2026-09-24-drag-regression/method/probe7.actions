@@ -1,0 +1,36 @@
+# probe7 -- two-window arrangement for the DESK19 Default-dir pair, adapted to
+# the "folder navigates its window" behaviour: Alt+C (slot0=C:\), double-click
+# DESKT19 navigates slot0 to C:\DESKT19\, double-click the C: desktop icon
+# opens a NEW window slot1=C:\ on top, then a title-bar drag on slot0's own
+# (still exposed) title row raises it back to the top and moves it down so
+# both windows are visible with C:\DESKT19\ on top (matching win_ontop()).
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_CWIN
+3100 move 515 103
+3400 down
+3403 up
+3410 down
+3413 up
+4100 parkbr
+5000 mark C_SUBWIN
+5300 move 38 35
+5600 down
+5603 up
+5610 down
+5613 up
+6300 parkbr
+7200 mark D_SECOND
+7500 move 300 52
+8100 down
+8900 drag 300 200
+9700 drag 300 350
+10500 up
+11100 parkbr
+12000 mark E_MOVED

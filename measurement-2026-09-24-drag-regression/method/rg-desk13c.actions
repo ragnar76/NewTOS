@@ -1,0 +1,46 @@
+# DESK13 regression C -- copy confirmation (ADCPYDEL), both answers.
+# Retargeted coordinates (current image has more files -> different grid):
+#   DESKT13 in C:\ window (431,103); ONE.TXT in C:\DESKT13\ (95,103);
+#   C: desktop icon drop (38,35). Dialog geometry unchanged (dir.rs untouched
+#   by f85f9c8): copybox OK (229,301), Cancel (411,301).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 key 38
+1450 key 2e
+1500 key ae
+1550 key b8
+2400 mark B_ALTC
+2700 move 431 103
+2900 down
+2903 up
+2910 down
+2913 up
+3600 parkbr
+4300 mark C_SUBDIR
+4600 move 95 103
+5200 down
+6000 drag 70 90
+6600 drag 50 60
+7200 drag 38 35
+8000 up
+8600 parkbr
+9400 mark D_COPYBOX
+9800 move 411 301
+10400 down
+10600 up
+11200 parkbr
+12000 mark E_CANCELLED
+12400 move 95 103
+13000 down
+13800 drag 70 90
+14400 drag 50 60
+15000 drag 38 35
+15800 up
+16400 parkbr
+17200 mark F_COPYBOX2
+17600 move 229 301
+18200 down
+18400 up
+19000 parkbr
+19800 mark G_COPIED

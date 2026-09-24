@@ -1,0 +1,17 @@
+# probe4a -- open C:\, double-click DESKT13 to open C:\DESKT13\.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_WIN
+3100 move 431 103
+3400 down
+3403 up
+3410 down
+3413 up
+4100 parkbr
+5000 mark C_SUB

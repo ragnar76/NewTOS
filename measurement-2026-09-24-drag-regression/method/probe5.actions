@@ -1,0 +1,27 @@
+# probe5 -- two-window arrangement for the DESK19 Default-dir pair: Alt+C
+# opens C:\, double-click DESKT19 opens C:\DESKT19\ staggered, then a
+# title-bar drag moves it down so both windows are visible. do_wredraw
+# dumps the moved window's item coordinates.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_CWIN
+3100 move 515 103
+3400 down
+3403 up
+3410 down
+3413 up
+4100 parkbr
+5000 mark C_SUBWIN
+5300 move 300 77
+5900 down
+6700 drag 300 200
+7500 drag 300 308
+8300 up
+8900 parkbr
+9800 mark D_MOVED

@@ -1,0 +1,287 @@
+measurement-2026-09-24-drag-regression
+  Regression pass for DESK36 (commit f85f9c8): the desktop's drag loop was
+  rewritten from a single AES `graf_dragbox` (71) call to the desktop's own
+  `gr_drgplns`/VDI-workstation loop, and `fun_desk2win` / `fun_desk2desk` /
+  `fun_file2desk` / the menu-delete branch were switched from
+  `desktop_selected_disks()` to `desktop_selected_sources()`. This directory
+  re-drives every DRIVE-PATH drag/delete/copy case that worked before that
+  swap, on the CURRENT committed tree, to show it still works.
+===========================================================================
+
+Scope: branch desk-rebuild, HEAD d88fa16 (f85f9c8 already committed; d88fa16
+is a docs-only commit on top). Tester only -- no product code touched. No
+`git checkout/restore/clean/stash/reset` was run on the shared tree. Nothing
+flashed, nothing ejected, no real Pi run, nothing committed, nothing pushed.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (`method/run.sh` + `method/qmp_multi.py`, copied from
+measurement-2026-09-24-desk37-desk36-desk30/method, the harness that already
+builds against this exact committed state). Card: a single fresh
+`tools/make-sd-image.sh` image (`method/seed.sh`) plus the DESK13 + DESK19 +
+DESK24 fixture folders combined onto it (they do not collide), copied fresh
+per run. Interactive runs use the scratch-copy IKBD injector (memory
+`desktop-interactive-verification-real-hw`): the scratch tree lives in the
+job's own scratchpad, rsynced from the shared tree, never the shared tree
+itself.
+
+**Why coordinates differ from the older measurement directories.** The
+`C:\` window now holds far more files than when DESK13/19/20/24/25/26 were
+first measured (BIG.NCP, LIBTEST.NCP, CLOCKTST.NCP, SETJMPT.NCP, MATHTST.NCP,
+COREMARK, ... all added by later, unrelated tickets), so the icon grid
+positions of DESKT13/DESKT19/DESKT24/SAME.TXT/README.TXT/CMDLINE.NCP etc. are
+different today. Desktop-icon geometry (C: at (38,35), Trash at (38,449),
+Printer at (584,449)) and every dialog's geometry (ADCPYDEL, ADCPALER,
+STDELDIS, ADDESKCF -- none of their building code was touched by f85f9c8,
+confirmed by reading the commit's diff) are unchanged and were reused as
+recorded. Every OTHER coordinate below was re-measured fresh against the
+CURRENT card with a probe harness (`method/probe1..probe6.actions`,
+`method/probe_patch.py`'s `do_wredraw`/desktop-up dump), not carried over
+from the old measurement directories, and not guessed.
+
+**A behaviour change found while building the harness, logged and reasoned
+through, turned out to be unrelated to this ticket.** Opening a subfolder now
+NAVIGATES the current window instead of opening a new small staggered one
+(`method/probe2..probe4c` established this; `probe6` confirmed the desktop
+DISK icon still opens a genuinely NEW window). That is commit c38408e ("a
+folder navigates its window"), already merged before f85f9c8, not part of
+this regression's scope. It broke literal reuse of the two-window
+`d19-defdir-app`/`d19-defdir-win` gesture from the original DESK19/DESK20
+measurement (see §5, "not driven").
+
+
+0. Baseline
+-----------
+    cargo run -p xtask -- test           939 passed / 0 failed / 1 ignored
+                                          (matches the ticket's baseline exactly)
+
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat
+    cargo xtask build --board rpi4        tos-api 64 / kernel 94  warnings
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat
+    cargo xtask build --board qemu-virt   tos-api 64 / kernel 94  warnings
+    (both match the ticket's baseline exactly)
+
+    cargo clippy --features board-rpi4       tos-api 80 / kernel 125 warnings
+    cargo clippy --features board-qemu-virt  tos-api 80 / kernel 125 warnings
+    (both match the ticket's baseline exactly)
+
+    grep -rn graf_dragbox kernel/src/  ->  0 call sites left (only a doc
+    comment in main.rs and an unrelated opcode-name table in
+    dbg_qedtrace.rs). Confirms the ticket's premise: `graf_dragbox` has no
+    callers left.
+
+Logs: build/xtask-test.log, build/build-rpi4.log, build/build-qemu-virt.log,
+build/clippy-rpi4.log, build/clippy-qemu-virt.log.
+
+
+1. DESK13 -- copy between windows, both confirmations, the name-conflict
+   box, File > Delete both answers   (rg-desk13c/d/f)
+---------------------------------------------------------------------------
+Card fixture: C:\DESKT13\{SAME.TXT (73 B, "BRAVO..."), ONE.TXT (5 B),
+TWO.TXT (5 B)}, C:\SAME.TXT (21 B, "ALPHA..."). Gesture: Alt+C opens C:\,
+double-click DESKT13 opens C:\DESKT13\ (staggered, DISK icon stays reachable
+at (38,35) -- see §"why coordinates differ"), drag the file 3 hops onto the
+C: desktop icon.
+
+  rg-desk13c (copy confirmation `ADCPYDEL`, Cancel then OK)
+    D_COPYBOX  "COPY FILE(S)", 0 folders, 1 file -- matches
+                                        rg-desk13c-D-copybox.png
+    E_CANCELLED  box gone, no residue -- rg-desk13c-E-cancelled.png
+    G_COPIED   box gone; lsimg.py: C:\ONE.TXT now exists, 5 bytes,
+               content "ONE\r\n" (byte-checked with `--cat`) --
+                                        rg-desk13c-G-copied.png
+    fsck_msdos -n: Phase 1/2/3 clean, 67 files. 0 [EXC]/[PANIC].
+    All 7 markers found (rc=0). PASS.
+
+  rg-desk13d (name-conflict `ADCPALER`, Skip then OK)
+    D_COPYBOX  same box for SAME.TXT -- rg-desk13d-D-copybox.png
+    E_CONFLICT "NAME CONFLICT DURING COPY", Current/Copy's name both
+               "SAME    .TXT", OK/Skip/Stop -- rg-desk13d-E-conflict.png
+               (exact match to the ticket's recorded ADCPALER layout)
+    F_SKIPPED  Skip -> lsimg.py: C:\SAME.TXT still 21 B "ALPHA..."
+    I_OVERWRITTEN  OK on retry -> lsimg.py --cat: C:\SAME.TXT now 73 B,
+               content "BRAVO from the subfolder..." (byte-checked)
+    fsck_msdos -n: Phase 1/2/3 clean, 66 files. 0 [EXC]/[PANIC].
+    All 7 markers found (rc=0). PASS.
+
+  rg-desk13f (File > Delete..., Cancel then OK, same `ADCPYDEL` box
+              retitled "DELETE FILE(S)")
+    E_DELBOX   "DELETE FILE(S)", 1 file
+    F_CANCELLED  TWO.TXT still there
+    H_DELETED  OK -> lsimg.py: C:\DESKT13\ now lists only ONE.TXT + SAME.TXT,
+               TWO.TXT gone (dir listing checked, not a screenshot guess)
+    fsck_msdos -n: Phase 1/2/3 clean, 65 files. 0 [EXC]/[PANIC].
+    All 6 markers found (rc=0). PASS.
+
+
+2. DESK24/25/26 -- folder merge/rename, drive delete with STDELDIS both
+   answers, the info line after a rebuild   (rg-desk24merge/rename,
+   rg-desk25no/yes, rg-desk26)
+---------------------------------------------------------------------------
+Card fixture: C:\DESKT24\FOLD\INNER.TXT (34 B), C:\DESKT24\{ONE.TXT,TWO.TXT}
+(5 B each), C:\FOLD\EXIST.TXT (27 B, so the destination folder name is
+already taken). desk24merge/rename: Alt+C, double-click DESKT24, drag FOLD
+onto the C: desktop icon.
+
+  rg-desk24merge (`ADCPALER` on a FOLDER, OK on the unchanged name -> merge)
+    D_COPYBOX  "COPY FILE(S)", 1 folder, 1 file (FOLD itself + INNER.TXT
+               inside it) -- rg-desk24merge-D-copybox.png
+    E_CONFLICT pre-filled "FOLD" / "FOLD" in both fields (folder case:
+               both fields start equal, per the ticket's own note) --
+                                        rg-desk24merge-E-conflict.png
+    F_MERGED   lsimg.py: C:\FOLD\ now has BOTH EXIST.TXT (27 B, untouched)
+               and INNER.TXT (34 B, merged in); C:\DESKT24\FOLD\INNER.TXT
+               untouched
+    fsck_msdos -n: Phase 1/2/3 clean, 67 files. 0 [EXC]/[PANIC].
+    All 5 markers found (rc=0). PASS.
+
+  rg-desk24rename (same conflict, "2" typed into Copy's name -> FOLD2)
+    F_TYPED    "Copy's name: FOLD2___.___" visibly typed --
+                                        rg-desk24rename-F-typed.png
+    G_RENAMED  lsimg.py: C:\FOLD\ still only EXIST.TXT (untouched);
+               C:\FOLD2\ is NEW, holds INNER.TXT (34 B)
+    fsck_msdos -n: Phase 1/2/3 clean, 68 files. 0 [EXC]/[PANIC].
+    All 5 markers found (rc=0). PASS.
+
+  rg-desk25no / rg-desk25yes (whole-drive delete: select C: desktop icon,
+    File > Delete..., STRMVDEL -> Delete, ADCPYDEL counting box -> OK,
+    STDELDIS -> No / Yes). No coordinate changes needed here: the desktop
+    icon and File-menu geometry are unaffected by how many files are on the
+    card.
+    E_STDELDIS  "DELETE FILE(S)" box standing underneath, STDELDIS alert on
+               top: "Do you want to delete all|the files on drive C: ?",
+               Yes/No, default on No -- rg-desk25no-E-stdeldis.png (and the
+               identical box for rg-desk25yes)
+    No  -> `cmp` against base.img: BYTE-IDENTICAL (36-line lsimg.py listing
+           unchanged too). The question is load-bearing, not decorative.
+    Yes -> lsimg.py: root holds nothing but the volume label ("NEWTOS").
+           fsck_msdos -n: Phase 1/2/3 clean, 0 files, rc=0 -- the whole-drive-
+           wipe fsck issue the DESK25 ticket flagged as pre-existing (LFN
+           orphan slots from macOS re-mounting) did NOT reproduce on this
+           card; not chased further, out of scope for this regression pass.
+    0 [EXC]/[PANIC] in both logs. All 5 markers found in both (rc=0). Both PASS.
+
+  rg-desk26 (delete TWO.TXT out of C:\DESKT24\, info line after `fun_rebld`)
+    F_DELETED  "5 bytes used in 2 items." -- FOLD (0 B) + ONE.TXT (5 B),
+               TWO.TXT gone -- rg-desk26-F-deleted.png. Matches the ticket's
+               recorded `win_sinfo(check_selected=false)` total-not-selection
+               rule exactly (5 bytes / 2 items).
+    fsck_msdos -n: Phase 1/2/3 clean, 65 files. 0 [EXC]/[PANIC].
+    All 4 markers found (rc=0). PASS.
+
+
+3. DESK19 -- dragging a file onto a program, both *Parameter* settings
+   (rg-d19full, rg-d19file)
+---------------------------------------------------------------------------
+Single window (C:\), drag README.TXT onto CMDLINE.NCP -- `fun_win2win`'s
+drop-on-an-application branch (`build_selected_path` + `do_aopen_drop`,
+unchanged by f85f9c8; only the drag LOOP feeding it is new).
+
+**A methodology trap, found and corrected, not a product bug.** The first
+attempt used an injector "mark" step scheduled after the drop as the wait
+condition, the same convention the older `.actions` files use, and it never
+fired -- both attempts (80 s and 180 s budgets) stalled identically right
+after `[launch] returned (program Pterm'd)`. Root cause, read from source
+(`kernel/src/desk/main.rs::console_pause_for_key`): after an `.NCP` returns,
+the desktop shows "[ Press any key to return to the desktop ]" and blocks in
+`Host::console_read_key_blocking`, which polls USB-HID/IKBD DIRECTLY and
+does **not** call through the AES-pump anchor the H02 injector's `step()` is
+hooked into (confirmed by reading both `console_read_key_blocking` and the
+`apply_injector.py` anchor). No scripted "mark" can ever fire while stuck
+there -- not a regression, a pre-existing harness ceiling: the ORIGINAL
+(pre-DESK36) `measurement-2026-09-23-desk19-desk20/serial/d19-full-serial.log`
+ends at the exact same `[launch] returned` line with no further `[h02]`
+output, for the identical reason. That measurement's screendump was captured
+against the program's own dual-logged `Cconws` text ("CMDLINE: len ... arg"),
+not an injector mark. Corrected here to do the same
+(`method/run_batch3.sh`, `method/rg-d19file-v3` invocation) -- the wait
+marker is the literal program output, which appears in the log the instant
+`Cconws` runs, well before the blocking read.
+
+  rg-d19full-v2 (*Parameter* = Full path, the `.INF` default)
+    Marker "CMDLINE: len 13 arg" found at 44.7s (rc=0).
+    rg-d19full-v2-C-cmdline.png: "CMDLINE: cwd C:\", 'CMDLINE: len 13 arg
+    "C:\README.TXT"', "[ Press any key to return to the desktop ]" -- pixel-
+    for-pixel the same layout as the ORIGINAL measurement's
+    `measurement-2026-09-23-desk19-desk20/screendumps/d19-full-c-cmdline.png`,
+    same string.
+    `cmp` against base.img: BYTE-IDENTICAL (a drop-on-a-program launches,
+    copies nothing).
+    fsck_msdos -n: Phase 1/2/3 clean, 66 files. 0 [EXC]/[PANIC]. PASS.
+
+  rg-d19file-v3 (*Parameter* switched to File name via Options > Desktop
+                 configuration first)
+    C_CONF      ADDESKCF tree up -- rg-d19file-v3-C-conf.png
+    D_FILENAME  "File name" clicked and now highlighted, "Full path" cleared
+                -- rg-d19file-v3-D-filename.png (the two-entry `G_IBOX`
+                radio group still works)
+    Marker "CMDLINE: len 10 arg" found at 79.7s (rc=0).
+    rg-d19file-v3-G-cmdline.png: 'CMDLINE: len 10 arg "README.TXT"' -- the
+    bare file name, confirming the switch actually changed
+    `build_selected_path`'s branch, not just the widget.
+    `cmp` against base.img: BYTE-IDENTICAL.
+    fsck_msdos -n: Phase 1/2/3 clean, 66 files. 0 [EXC]/[PANIC]. PASS.
+
+(`rg-d19full`, `rg-d19file`, `rg-d19file-v2` -- the pre-correction runs that
+timed out waiting on the unreachable mark -- are kept in screendumps/serial
+as the evidence for the paragraph above, not as failures of the product.)
+
+
+4. move_drvicon -- repositioning a desktop icon with the mouse
+---------------------------------------------------------------------------
+Not in DESK03/DESK04 as briefed -- checked directly: neither
+`measurement-2026-09-24-desk03-desk04/method/*.actions` nor any other
+existing measurement drives a press-drag-release gesture that repositions an
+EXISTING desktop icon (DESK03's "Install icon" stepper is unrelated; DESK30's
+drag makes a NEW shortcut from a WINDOW item, source `handle != DESKWH`).
+`move_drvicon` is specifically `act_bdown`'s DESKWH-to-DESKWH-empty-space
+branch (`kernel/src/desk/main.rs:554`, `act.rs:191`), which f85f9c8's `act_bdown`
+rewrite touches directly (it now derives the delta from `gr_drgplns`'s
+`(dulx, duly, offx, offy)` instead of `graf_dragbox`'s single return point --
+see the diff at `main.rs` around `let dx = (dulx - offx) - o0.x;`), so it is
+squarely in scope and was built here (`method/rg-movedrvicon.actions`), not
+reused.
+
+Gesture: drag the C: desktop icon from its home cell (0,0) to an empty cell,
+grid (2,0) = box (182,19), centre (220,35).
+
+    B_MOVED  probe dump (do_wredraw hook): desk obj 9 (the C: icon) now at
+             box (182,19) 76x40 -- exactly grid (2,0); Trash (0,433) and
+             Printer (546,433) unchanged -- rg-movedrvicon-B-moved.png shows
+             "DISK C" now selected/inverted at the target cell, everything
+             else where it was.
+    `cmp` against base.img: BYTE-IDENTICAL (no Save desktop in this run, so
+    nothing is written -- EmuTOS's own in-memory-until-Save model).
+    fsck_msdos -n: Phase 1/2/3 clean, 66 files. 0 [EXC]/[PANIC].
+    Both markers found (rc=0). PASS.
+
+
+5. Not driven here
+---------------------------------------------------------------------------
+  * DESK19's *Default dir* pair (`d19-defdir-app`/`d19-defdir-win`, two
+    windows, one on top of the other). The original two-window recipe
+    (Alt+C, double-click the subfolder to open a SECOND staggered window)
+    no longer applies: opening a subfolder now NAVIGATES the current window
+    (commit c38408e, already merged before f85f9c8, out of scope for this
+    ticket). A working substitute exists -- double-clicking the DESKTOP disk
+    icon still opens a genuinely new window even while the first shows a
+    subfolder (`method/probe6.actions` confirmed this) -- and a redesigned
+    action list was drafted (`method/probe7.actions`) but not run: the
+    `Default dir` resolution itself (`do_aopen`'s `pathname` vs. `win_ontop()`
+    choice, `desksupp.c:896-905`) was not touched by f85f9c8 (confirmed by
+    reading the commit's `main.rs` diff -- only the shortcut prologue and the
+    `do_aopen_drop` call sites changed, not `do_aopen` itself), so this is a
+    lower-risk gap, not a suspected regression. Flagged for a follow-up
+    measurement, not this one.
+  * Real Pi 4 (the acceptance gate for anything cache-sensitive or
+    interactive-input-dependent): none of this regression pass needed real
+    hardware -- every case here is mouse-drag + dialog + FAT16 content, all
+    reproducible in QEMU raspi4b with the scripted IKBD injector.
+
+
+6. Hygiene summary
+---------------------------------------------------------------------------
+  [EXC]/[PANIC] count across all fourteen driven serial logs (desk13c/d/f,
+  desk24merge/rename, desk25no/yes, desk26, d19full-v2, d19file-v3,
+  movedrvicon, plus the three superseded d19 attempts kept as evidence): 0.
+  fsck_msdos -n on every card image any run wrote or read from: Phase 1/2/3,
+  no errors, on all eleven checked (build/fsck.txt).

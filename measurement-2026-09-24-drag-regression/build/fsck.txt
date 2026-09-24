@@ -1,0 +1,66 @@
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-desk13c.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 67 files, 63700 KiB free (31850 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-desk13d.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 66 files, 63702 KiB free (31851 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-desk13f.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 65 files, 63704 KiB free (31852 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-desk24merge.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 67 files, 63700 KiB free (31850 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-desk24rename.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 68 files, 63698 KiB free (31849 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-desk25no.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 66 files, 63702 KiB free (31851 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-desk25yes.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 0 files, 65344 KiB free (32672 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-desk26.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 65 files, 63704 KiB free (31852 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-movedrvicon.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 66 files, 63702 KiB free (31851 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-d19full-v2.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 66 files, 63702 KiB free (31851 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/regress/tmp/rg-d19file-v3.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 66 files, 63702 KiB free (31851 clusters)

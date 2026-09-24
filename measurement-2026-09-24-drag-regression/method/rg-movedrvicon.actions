@@ -1,0 +1,16 @@
+# move_drvicon regression -- desktop icon -> empty desktop space reposition
+# (act_bdown's DESKWH->DESKWH branch, bypasses fun_drag entirely). Drag the
+# C: icon from its home cell (0,0) to an empty cell at grid (2,0), centre
+# (220,35) (76x40 icon box at (182,19), g_icw=91, g_ich=46).
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 38 35
+2100 down
+2900 drag 120 35
+3500 drag 180 35
+4100 drag 220 35
+4900 up
+5500 parkbr
+6300 mark B_MOVED

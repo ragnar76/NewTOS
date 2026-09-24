@@ -1,0 +1,35 @@
+# DESK26 regression -- delete TWO.TXT out of C:\DESKT24\, info line after
+# fun_rebld's win_sinfo(check_selected=FALSE) call.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_ALTC
+3100 move 95 145
+3400 down
+3403 up
+3410 down
+3413 up
+4100 parkbr
+4900 mark C_SUBDIR
+5300 move 263 103
+5900 down
+6100 up
+6700 parkbr
+7500 mark D_SELECTED
+7900 move 88 240
+8100 move 88 9
+8700 move 156 203
+9300 down
+9500 up
+10100 parkbr
+10900 mark E_DELBOX
+11300 move 229 301
+11900 down
+12100 up
+12700 parkbr
+13600 mark F_DELETED

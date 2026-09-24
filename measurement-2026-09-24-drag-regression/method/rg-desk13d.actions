@@ -1,0 +1,53 @@
+# DESK13 regression D -- overwrite/name-conflict (ADCPALER), both answers.
+# SAME.TXT in C:\DESKT13\ at (179,103).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 key 38
+1450 key 2e
+1500 key ae
+1550 key b8
+2400 mark B_ALTC
+2700 move 431 103
+2900 down
+2903 up
+2910 down
+2913 up
+3600 parkbr
+4300 mark C_SUBDIR
+4600 move 179 103
+5200 down
+6000 drag 100 90
+6600 drag 60 60
+7200 drag 38 35
+8000 up
+8600 parkbr
+9400 mark D_COPYBOX
+9800 move 229 301
+10400 down
+10600 up
+11200 parkbr
+12000 mark E_CONFLICT
+12400 move 320 301
+13000 down
+13200 up
+13800 parkbr
+14600 mark F_SKIPPED
+15000 move 179 103
+15600 down
+16400 drag 100 90
+17000 drag 60 60
+17600 drag 38 35
+18400 up
+19000 parkbr
+19800 mark G_COPYBOX2
+20200 move 229 301
+20800 down
+21000 up
+21600 parkbr
+22400 mark H_CONFLICT2
+22800 move 224 301
+23400 down
+23600 up
+24200 parkbr
+25000 mark I_OVERWRITTEN

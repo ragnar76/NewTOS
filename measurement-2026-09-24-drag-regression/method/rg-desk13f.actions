@@ -1,0 +1,48 @@
+# DESK13 regression F -- delete via File > Delete..., both answers.
+# TWO.TXT in C:\DESKT13\ at (263,103).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1400 key 38
+1450 key 2e
+1500 key ae
+1550 key b8
+2400 mark B_ALTC
+2700 move 431 103
+2900 down
+2903 up
+2910 down
+2913 up
+3600 parkbr
+4300 mark C_SUBDIR
+4600 move 263 103
+5200 down
+5400 up
+6000 parkbr
+6600 mark D_SELECTED
+7000 move 88 8
+7600 move 156 203
+8200 down
+8400 up
+9000 parkbr
+9800 mark E_DELBOX
+10200 move 411 301
+10800 down
+11000 up
+11600 parkbr
+12400 mark F_CANCELLED
+12800 move 263 103
+13400 down
+13600 up
+14200 parkbr
+14800 move 88 8
+15400 move 156 203
+16000 down
+16200 up
+16800 parkbr
+17600 mark G_DELBOX2
+18000 move 229 301
+18600 down
+18800 up
+19400 parkbr
+20200 mark H_DELETED

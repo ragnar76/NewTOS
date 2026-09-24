@@ -1,0 +1,11 @@
+# probe1 -- desktop icons + C:\ window items (after seeding DESKT13/19/24).
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 move 196 8
+1900 move 200 43
+2100 down
+2103 up
+2400 move 600 240
+3000 mark B_WIN
