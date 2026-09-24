@@ -1,0 +1,40 @@
+# DESK36 -- the four cases the ticket names, in one gesture.
+#
+# Press on HELLO.TXT (a plain file) and drag it, without releasing, over
+#   C_OVER_PROG    QED.NAP      an installed application  -> must invert
+#   D_OVER_FOLDER  SUB          a folder                  -> must invert
+#   E_OVER_FILE    README.TXT   a plain file              -> must NOT invert
+#   F_OVER_TRASH   the trash    a desktop icon            -> must invert
+# then back onto the source item and release (a self-drop, which EmuTOS
+# cancels, `deskact.c:666-670`) so the run writes nothing to the card:
+#   G_BACK         over the source, still held
+#   H_RELEASED     released -- the highlight must be gone everywhere
+#
+# Coordinates from d-probe: window 1 items HELLO.TXT (347,187),
+# QED.NAP (179,271), SUB (515,103), README.TXT (347,271); desktop trash
+# (38,449).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+3000 mark B_WIN1
+3400 move 347 187
+3700 down
+3800 drag 179 271
+4100 mark C_OVER_PROG
+4700 drag 515 103
+5000 mark D_OVER_FOLDER
+5600 drag 347 271
+5900 mark E_OVER_FILE
+6500 drag 38 449
+6800 mark F_OVER_TRASH
+7400 drag 347 187
+7700 mark G_BACK
+8300 up
+8500 move 600 240
+9200 mark H_RELEASED

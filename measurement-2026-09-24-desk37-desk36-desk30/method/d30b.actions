@@ -1,0 +1,9 @@
+# DESK30, cold start: boot the card the d30 run saved (its NEWDESK.INF now
+# carries `#X 02 09 06 FF   C:\QED.NAP@ QED.NAP@`) and photograph the desktop.
+# The shortcut must be back, at the same grid cell, with the same label.
+# Built with probe_patch.py so the icon's exact hit point lands in the serial
+# log for the d30c run.
+200 parkbr
+1000 arm
+1100 mark A_BOOT
+2000 mark B_END

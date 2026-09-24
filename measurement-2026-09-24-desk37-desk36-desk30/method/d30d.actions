@@ -1,0 +1,34 @@
+# DESK30, a FOLDER shortcut (`#V`): drag the SUB folder out of the C:\ window
+# onto the desktop surface, then double-click the icon it makes. A folder
+# shortcut opens a window on its own path (`do_open`'s `AT_ISFOLD` arm,
+# `desksupp.c:1231-1259`), it does not launch anything.
+#
+#   B_WIN1      the C:\ window open
+#   C_SHORTCUT  the SUB shortcut on the desktop
+#   D_OPENED    the window it opened, titled C:\SUB\
+#
+# Coordinates from d-probe: 'SUB' in window 1 box (477,87) -> click (515,103);
+# the free bottom-row cell the d30 run used is box (182,433) -> click (220,449).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+3000 mark B_WIN1
+3400 move 515 103
+3700 down
+3800 drag 250 458
+4400 up
+4600 move 600 300
+5200 mark C_SHORTCUT
+5600 move 220 449
+5800 down
+5803 up
+5810 down
+5813 up
+6400 move 600 300
+7200 mark D_OPENED

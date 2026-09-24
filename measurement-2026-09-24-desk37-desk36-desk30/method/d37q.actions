@@ -1,0 +1,26 @@
+# DESK37 with the ticket's own application, QED. The Hatari counter-picture is
+# measurement-2026-09-24-hatari-appbg/screendumps/emutos-qed-falcon-tc.png:
+# QED's own menu bar across the top, the green #Q background behind it.
+#
+# QED does not terminate by itself, so there is no "desktop back" picture here.
+#
+# Coordinates from d-probe: 'QED.NAP' in window 1 box (141,255) -> click
+# (179,271).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+3000 mark B_WIN1
+3400 move 179 271
+3600 down
+3603 up
+3610 down
+3613 up
+3700 move 600 240
+4300 mark C_QED
+5500 mark D_QED

@@ -1,0 +1,20 @@
+# DESK30, the shortcut in use: cold-start the card the d30 run saved, then
+# double-click the restored `QED.NAP` shortcut on the desktop. QED must start
+# from it -- the shortcut's `a_pappl` (`C:\QED.NAP`) is the path that is run.
+#
+#   A_BOOT   the restored desktop, shortcut and saved window
+#   C_QED    QED up, launched from the desktop icon
+#
+# Coordinate from the d30b probe: desk obj 12 box (182,433) 76x40 -> click
+# (220,449).
+200 parkbr
+1000 arm
+1100 mark A_BOOT
+1600 move 220 449
+1800 down
+1803 up
+1810 down
+1813 up
+2400 move 600 240
+3300 mark C_QED
+4500 mark D_QED

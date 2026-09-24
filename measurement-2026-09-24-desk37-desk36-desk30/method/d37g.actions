@@ -1,0 +1,36 @@
+# DESK37 with GEMWIN.NAP -- the minimal GEM program that paints ONLY its own
+# window (no v_clrwk, no menu_bar), so what stands behind it is exactly what
+# the AES left there. The Hatari counter-picture is
+# measurement-2026-09-24-hatari-appbg/screendumps/emutos-bgwin-falcon-tc.png.
+#
+#   B_WIN1  the C:\ window open
+#   C_APP   GEMWIN's window up, the program still running
+#   D_APP   the same screen 2 s (400 ticks) later, still running
+#
+# GEMWIN.NAP holds its window for 6 s = 1200 ticks of the 200 Hz clock the
+# injector counts, so both marks sit inside that window (click at +3613).
+# They must: the injector is only stepped from the AES input pump, and the
+# child's `evnt_timer` wait does not pump, so a mark placed after the 1200
+# ticks does not fire late -- it fires once the DESKTOP is back, and would
+# photograph the wrong screen (seen once, with marks at +5200/+6200).
+#
+# Coordinates from d-probe: C: drive icon (38,35); 'GEMWIN.NAP' in window 1
+# box (141,171) -> click (179,187).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+3000 mark B_WIN1
+3400 move 179 187
+3600 down
+3603 up
+3610 down
+3613 up
+3700 move 600 240
+4100 mark C_APP
+4500 mark D_APP

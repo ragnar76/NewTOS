@@ -1,0 +1,282 @@
+measurement-2026-09-24-desk37-desk36-desk30
+===========================================
+DESK37 (the desktop background stands behind a running GEM application)
+DESK36 (the drop target under the pointer lights up while dragging)
+DESK30 (a file or folder can be parked on the desktop as a shortcut)
+
+Base: branch desk-rebuild, HEAD fa1d403. This batch's changes are UNCOMMITTED
+in the shared tree — nine files modified plus one new
+(kernel/src/desk/vdibind.rs); the full diff is in
+method/desk37-desk36-desk30.diff and the new file in method/vdibind.rs.new.
+Nothing flashed, nothing ejected, no real Pi run, nothing committed. No
+`git checkout/restore/clean/stash/reset` was run on the shared tree.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (method/run.sh + method/qmp_multi.py). Card image:
+tools/make-sd-image.sh through method/seed.sh, a fresh copy per run.
+Interactive runs use the scratch-copy IKBD injector (memory
+`desktop-interactive-verification-real-hw`): method/make_scratch.sh rsyncs the
+crates into the job scratch — never the shared tree.
+
+**Every picture below comes from ONE product state.** method/runall.sh
+re-makes both scratch trees and then drives all thirteen runs in order;
+method/runone.sh alone only swaps the injector script and rebuilds, so it
+cannot be used across a source change (it was, once, and the folder-shortcut
+picture it produced was of a stale kernel — the run was repeated).
+
+method/*.actions are the seven action lists, method/*.rs the generated
+injector tables (SCRIPT_DESK plus the empty SCRIPT_TERA the script selector
+needs). No `*.img` in this directory (the ticket's rule); the images live in
+the job scratch and are listed in build/fsck.txt.
+
+POINTER PARK: (600, 240) or (600, 300) — clear of the desktop icons and of the
+menu bar, as in the DESK03..DESK06, DESK19/DESK20, DESK22 and DESK34/DESK35
+runs.
+
+All three tickets are FIXES, not withdrawals: the "before" runs are the
+defect, the "after" runs are the acceptance.
+
+
+0. Scaffolding, and why (scratch copies only, never the shared tree)
+---------------------------------------------------------------------------
+  a79_patch_desk10.py   the standard H02 serial AES trace + the desktop-up flag
+  apply_injector.py     the scripted IKBD injector in kernel/src/host_env.rs
+  a78_patch2.py         dual arming + script selection
+  key_step_patch.py     Step::Key(u8) — unused here, kept so the injector
+                        module text is the one the earlier rounds used
+  probe_patch.py        serial dump of every desktop icon, window item and
+                        menu entry with the point that hits it — every click
+                        and drag coordinate below comes from it, none is
+                        guessed
+  gemwin.c              the measurement-only `.NAP` from the DESK34/DESK35
+                        round: appl_init / wind_create / wind_open(160,120,
+                        320,200) / v_bar + v_gtext inside its OWN work area /
+                        evnt_timer(6000) / close + appl_exit. Deliberately NO
+                        v_clrwk and NO menu_bar, which is what makes it the
+                        right probe for DESK37: whatever stands behind it is
+                        what the AES left there. It lives in method/, not in
+                        the product.
+  seed.sh               make-sd-image.sh + C:\GEMWIN.NAP, C:\QED.NAP and
+                        C:\qed.rsc into the card root
+  make_scratch.sh       rsync of the crates; with `before` the NINE files this
+                        batch touches are replaced by their committed HEAD
+                        versions (`git show HEAD:…`, read-only) and
+                        vdibind.rs is removed; with a fourth argument `probe`
+                        probe_patch.py is applied as well — it is left OFF for
+                        the DESK36/DESK30 runs, because its hook sits in
+                        do_wredraw, which the new drag loop calls once per
+                        highlight change
+  runall.sh             the whole batch, from one product state
+
+  The "before" kernel is HEAD fa1d403 for kernel/src/shell_loop.rs and
+  kernel/src/desk/{main,mod,act,app,dir,global,inf,ins}.rs, with
+  kernel/src/desk/vdibind.rs deleted. Same harness, same card, nine files
+  older.
+
+
+1. Geometry and fixtures, measured   (d-probe, serial/d-probe-serial.log)
+---------------------------------------------------------------------------
+  The card is tools/make-sd-image.sh plus three files in the ROOT:
+
+    C:\GEMWIN.NAP   method/gemwin.c, built with sdk/build.sh
+    C:\QED.NAP      a copy of C:\Apps\QED\QED.NAP
+    C:\qed.rsc      a copy of C:\Apps\QED\qed.rsc
+
+  QED is opened in the root rather than where make-sd-image.sh installs it
+  because the click coordinates are baked into the action lists and every
+  folder step would move the program icon; QED finds its resource through
+  `sh_find`'s app-directory step, so the .rsc travels with it.
+
+  method/d-probe.actions opens the C:\ window once and dumps everything:
+
+    [probe] desk obj  9 idx 0 box (0,19)    76x40 -> click (38,35)    C: drive
+    [probe] desk obj 10 idx 3 box (0,433)   76x40 -> click (38,449)   trash
+    [probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)  printer
+    [probe] win slot 0 handle 1 spec C:\*.*
+    [probe]   obj 17 'SUB'        box (477,87)  -> click (515,103)
+    [probe]   obj 25 'GEMWIN.NAP' box (141,171) -> click (179,187)
+    [probe]   obj 27 'HELLO.TXT'  box (309,171) -> click (347,187)
+    [probe]   obj 37 'QED.NAP'    box (141,255) -> click (179,271)
+    [probe]   obj 39 'README.TXT' box (309,255) -> click (347,271)
+    [probe]   3.10 obj 51 '  Save desktop...  ^S' -> click (280,187),
+                                                    title 3 hovers at (196,9)
+
+  and from the same run's AES trace: `wind_get(0, WF_WXYWH)` = (0,19,640,461),
+  window 1 = (48,43,544,400). So x >= 600 and y >= 445 are desktop surface
+  with the window open, and the bottom icon row is free between the trash and
+  the printer — that is where the DESK30 runs drop.
+
+  One tick note, learned the hard way. The injector counts `hz_200()` ticks
+  and is stepped only from the AES input pump. A child's `evnt_timer` wait
+  does NOT pump, so a mark placed after GEMWIN's 6 s (1200 ticks) does not
+  fire late — it fires once the DESKTOP is back, and photographs the wrong
+  screen. Both DESK37 marks therefore sit inside the click+1200 window
+  (click at +3613, marks at +4100 and +4500).
+
+
+2. DESK37 — the screen behind a launched GEM application
+                           (d37g-*, d37q-*, serial/d37*-serial.log)
+---------------------------------------------------------------------------
+  method/d37g.actions: open the C:\ window, double-click GEMWIN.NAP, park.
+  method/d37q.actions: the same with QED.NAP.
+
+  d37g-before-C-app.png   GEMWIN's window on an all-white screen, no menu-bar
+                          strip at all.
+  d37g-after-C-app.png    GEMWIN's window on the green #Q background, and a
+                          white menu-bar strip with GEMWIN.NAP centred in it.
+
+  d37q-before-D-qed.png   QED's own menu bar, everything below it white.
+  d37q-after-D-qed.png    QED's own menu bar, the green #Q background below.
+
+  The EmuTOS counter-pictures are
+  measurement-2026-09-24-hatari-appbg/screendumps/emutos-bgwin-falcon-tc.png
+  and emutos-qed-falcon-tc.png (Hatari 2.6.1, Falcon/VGA, EmuTOS 1.4.0+).
+  Compared pixel by pixel against d37g-after-C-app.png:
+
+    rows  0..17   white, program name in black          same
+    row   18      solid black                           same
+    rows 19..479  320 green + 320 white per row          same
+    row 19 phase  W G W G W G W G W G W G                same
+    row 20 phase  G W G W G W G W G W G W                same
+    colour words  (0,251,0) / (255,251,255)              (0,255,0)/(255,255,255)
+
+  The last line is the only difference and it is Hatari's Falcon VGA ramp
+  (5 bits per channel), not a difference in drawing. The menu bar carries the
+  program name exactly as EmuTOS's does — GEMWIN.NAP here, BGWIN.PRG there.
+
+  0 [EXC]/[PANIC] in all four logs.
+
+
+3. DESK36 — the drag highlight   (d36-*, serial/d36-*-serial.log)
+---------------------------------------------------------------------------
+  method/d36.actions, one gesture: press on HELLO.TXT (a plain file) at
+  (347,187) and drag it, without releasing, over
+
+    C_OVER_PROG    QED.NAP      an installed application  -> must invert
+    D_OVER_FOLDER  SUB          a folder                  -> must invert
+    E_OVER_FILE    README.TXT   a plain file              -> must NOT invert
+    F_OVER_TRASH   the trash    a desktop icon            -> must invert
+
+  then back onto the source item and release. That last step is a self-drop,
+  which EmuTOS cancels (deskact.c:666-670), so the run writes nothing to the
+  card — the highlight is the only thing under test.
+
+    G_BACK         over the source, still held  -> already SELECTED, untouched
+    H_RELEASED     released                     -> every highlight gone
+
+  Every d36-after-* picture meets its expectation; every d36-before-*
+  counterpart shows one dotted box outline, no highlight, and no flat-hand
+  cursor (the AES hides the pointer for the whole graf_dragbox loop).
+
+  Counted rather than eyeballed — pixels differing from the same cell in
+  d36-after-B-win1.png (the unhighlighted baseline), per target cell taken
+  from the probe's own box:
+
+    QED.NAP     (141,255) 76x40   1446      inverted
+    SUB         (477,87)  76x40   1333      inverted
+    README.TXT  (309,255) 76x40    143      NOT inverted (outline + cursor only)
+    TRASH       (0,433)   76x40   1130      inverted
+
+  An inverted cell is an order of magnitude away from an un-inverted one, so
+  the plain-file rule is not a matter of reading a picture. After the release
+  all four cells are **bit-identical** to the baseline (empty difference box).
+
+  The XOR erase is exact: d36-after-H-released.png differs from
+  d36-after-B-win1.png — taken before the drag started — only inside the
+  bounding box (58,70)-(383,211), which is the info line and the source
+  item's own cell, i.e. two real state changes. Nothing on the desktop
+  background or on any other item moved by a single pixel.
+
+  0 [EXC]/[PANIC] in both logs.
+
+
+4. DESK30 — desktop shortcuts   (d30-*, d30b, d30c, d30d)
+---------------------------------------------------------------------------
+  method/d30.actions: open the C:\ window, drag QED.NAP out of it onto the
+  free bottom strip of the desktop, release, then Options -> Save desktop.
+
+  d30-before-D-shortcut.png  the alert "Can't drop items here." — the defect
+                             the user hit on the Pi.
+  d30-after-D-shortcut.png   an icon labelled QED.NAP with the application
+                             picture, in the bottom row between the trash and
+                             the printer.
+  d30-after-E-saved.png      the desktop after the save.
+
+  The card that run wrote (method/fsck.sh lists it as d30-after.img) now
+  carries, in C:\NEWDESK.INF:
+
+    #R 02
+    ...
+    #M 00 00 00 FF C DISK C@ @
+    #T 00 09 03 FF   TRASH@ @
+    #O 06 09 04 FF   PRINTER@ @
+    #X 02 09 06 FF   C:\QED.NAP@ QED.NAP@     <- the shortcut
+    #G 06 FF *.NAP@ @
+    ...
+
+  i.e. grid cell (02,09), a_aicon 06, a_dicon FF, no drive letter, a_pappl =
+  the full path, a_pdata = the bare name — the revision-2 layout of
+  app_save (deskapp.c:1255-1262).
+
+  d30b-A-coldstart.png   that same card booted again from scratch: the
+                         shortcut is back, same cell, same label, same
+                         picture; the saved C:\ window re-opened with it.
+                         The probe puts the restored icon at box (182,433),
+                         hit point (220,449).
+  d30c-D-qed.png         double-clicking it starts QED.
+
+  method/d30d.actions is the folder case on a fresh card: drag SUB out of the
+  window onto the desktop, then double-click the icon it makes.
+
+  d30d-C-shortcut.png    the SUB shortcut on the desktop.
+  d30d-D-opened.png      a NEW window titled C:\SUB\ with its three items —
+                         do_fopen's WN_DESKTOP arm (desksupp.c:1112-1126),
+                         which always allocates.
+
+  0 [EXC]/[PANIC] in all five logs.
+
+
+5. Filesystem
+---------------------------------------------------------------------------
+  `fsck_msdos -n` on the FAT16 partition of every image any run wrote:
+  Phase 1 / 2 / 3 with no errors on all of them, including the two the
+  desktop wrote the #X line to. build/fsck.txt.
+
+
+6. Build (shared tree, the product state)
+---------------------------------------------------------------------------
+  `cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat`
+  before EACH board.
+
+    cargo xtask build --board rpi4       tos-api 64 / kernel 94   (base 64/94)
+    cargo xtask build --board qemu-virt  tos-api 64 / kernel 94   (base 64/94)
+    cargo clippy --features board-rpi4       80 / 125  (base 80/125)
+    cargo clippy --features board-qemu-virt  80 / 125  (base 80/125)
+    grep -c "desk/" on both clippy runs:  0
+    cargo run -p xtask -- test           939 passed / 0 failed / 1 ignored
+                                         (base 939/0/1 — no host test added;
+                                          every changed file is in the no_std
+                                          aarch64 `kernel` crate, which the
+                                          host suite cannot reach)
+
+  Logs in build/.
+
+
+7. Not driven here
+---------------------------------------------------------------------------
+  * Real Pi 4 (the acceptance gate, and where DESK36 and DESK30 were found):
+    checklist items 61, 62 and 63 in
+    docs/api/desktop/_hw-test-2026-09-17.md.
+  * DESK36 with a SLOW drag and with a MULTI-file selection: the injector
+    jumps up to 127 px per packet and this gesture drags one item, so neither
+    "does the XOR outline leave a trail" nor "what does a block of outlines
+    look like" is answered here. Checklist item 62, points 4 and 5.
+  * DESK30's ORPHAN case (remove_locate_shortcut): it needs the target file
+    moved between two sessions. Built and cited, not driven. Checklist item
+    63.5.
+  * DESK30 across DRIVES: the QEMU card has one partition, so every shortcut
+    measured here points into C:. Checklist item 63.6.
+  * *Show info* on a desktop icon: not implemented in NewTOS at all
+    (main::do_info_rename returns early for G.g_cwin == DESKWH), so do_info's
+    shortcut arm has nothing to attach to. Pre-existing gap, own ticket.
+  * 1920x1080: every run here is 640x480.
