@@ -1,6 +1,6 @@
 # DESK30 — Desktop-Verknuepfungen (`CONF_WITH_DESKTOP_SHORTCUTS`)
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Funktionsluecke — gemeldet in DESK15
+Status: **OFFEN** · Prioritaet: **P2** · Typ: Funktionsluecke — gemeldet in DESK15
 
 Abhaengigkeiten: [DESK15](DESK15.md) (erledigt)
 
@@ -20,6 +20,18 @@ noch `a_pargs`, siehe ihr Doc-Kommentar).
 `CONF_WITH_DESKTOP_SHORTCUTS` ist im Profil Falcon030/TOS4 (`make 512`) **1**
 (`references/emutos/include/config.h:1782-1784`; die `0` bei `:325-327` steht
 in `#ifdef TARGET_192`), also eine echte Luecke.
+
+## Auf der Pi bestaetigt (2026-09-24)
+
+Der Benutzer hat beim Hardwarelauf versucht, **QED als Verknuepfung auf den
+Desktop zu legen** — Ziehen funktioniert, aber das Ablegen auf der
+Schreibtischflaeche endet mit einer Fehlermeldung. Das ist genau diese Luecke
+und kein zusaetzlicher Defekt: unsere Desktop-Liste kennt nur
+Laufwerk/Papierkorb/Drucker, ein `AT_ISFILE`-Knoten existiert nicht, also ist
+die Ablehnung folgerichtig.
+
+**Deshalb von P3 auf P2 hochgestuft:** ein Programm auf den Desktop zu legen
+ist das Erste, was jemand bei einer Vorfuehrung versucht.
 
 ## Arbeit
 
