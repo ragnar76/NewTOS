@@ -1,6 +1,6 @@
 # ARCH01 — Wettlauf beim EL0-Eintritt: eine IRQ zwischen `msr elr_el1` und `eret` verwirft das Sprungziel
 
-Status: **OFFEN** · Prioritaet: **P1** · Typ: Belegter Defekt / Architektur — gefunden bei DESK19
+Status: **ERLEDIGT (2026-09-24)** · Prioritaet: **P1** · Typ: Belegter Defekt / Architektur — gefunden bei DESK19
 
 Abhaengigkeiten: —
 
@@ -71,3 +71,78 @@ der kuenstlich ausgeloeste Fall vorher/nachher.
 
 [Gemeinsame Regeln](README.md) gelten. Architekturdatei — Rule 6 der
 CLAUDE.md: Registerverhalten nur aus der ARM ARM, nicht aus dem Gedaechtnis.
+
+
+---
+
+## Abschluss (2026-09-24)
+
+**Die Vermutung haelt — und sie wurde ausgeloest, nicht geglaubt.** In einer
+Kopie des Baums steht zwischen `msr elr_el1, {entry}` und dem `eret` eine
+Warteschleife ueber 16.777.216 Durchlaeufe, also weit mehr als die 5 ms der
+200-Hz-Uhr (`measurement-2026-09-24-arch01/method/force_race_patch.py`).
+Damit faellt **jeder** Start, und zwar mit genau der gemeldeten Signatur:
+
+```
+[launch] EL0: slot 0 entry 0x1000
+[EXC] synchronous (non-SVC) exception (Instruction Abort (lower EL)):
+      ESR=0x000000008200000e ELR=0xffff0000000c4e80 SPSR=0x0000000000000000
+[EXC] FAR=0xffff0000000c4e80
+```
+
+`ELR`/`FAR` zeigen auf das `subs` **in der eingesetzten Schleife**
+(`evidence/forced-before-disasm.txt`) — also auf den Kern-PC, den der
+Ausnahmeeintritt nach `ELR_EL1` geschrieben hat und den der `eret` nach EL0
+mitgenommen hat. Dieselbe Kopie mit der Maske davor startet durch
+(`serial/forced-after-serial.log`).
+
+**Quellenlage.** Die ARM ARM liegt nicht unter `references/`; benutzt wurde
+DDI 0487M.c ueber Arms Dokumentendienst, die Abschnitte woertlich:
+D1.4.2 „Exception entry" R_DQXFW (der Eintritt schreibt `SPSR_ELx` **und** die
+Rueckkehradresse nach `ELR_ELx` — das ist der Defekt) und R_WTXBY
+(`PSTATE.{D,A,I,F,SP}` werden auf 1 gesetzt — deshalb ist der Trap-Rueckweg
+von Haus aus sicher); D1.4.4 „Exception return" R_BWCFK und C6.2.157 `ERET`
+(der Rueckweg setzt `PSTATE` aus `SPSR_EL1`); C6.2.288 `MSR (immediate)`
+(`DAIFSet` verodert in `PSTATE.{D,A,I,F}`); C5.2.3 `DAIF`.
+
+**Der Fix** ist eine Zeile in
+[`kernel/src/arch/aarch64/user_entry.rs`](../kernel/src/arch/aarch64/user_entry.rs),
+`enter_el0_with_resume_capture`: `msr daifset, #0xf` vor der ersten
+Zustandsschreibung. Die Maske ueberlebt den `eret` nicht — das geschriebene
+`SPSR_EL1` ist `0`, EL0 laeuft also weiter mit offenen Interrupts und nimmt
+die angestaute IRQ sofort entgegen. Asynchrone Ausnahmen sind die einzigen,
+die in das Fenster gelangen koennen; die Befehle darin ruehren keinen
+Speicher an.
+
+**Zwei Korrekturen an der Aufzaehlung im Ticket.**
+
+1. Es sind **elf Aufrufstellen in zehn Dateien**: `launch.rs:122` und **neun**
+   Selbsttestdateien (nicht acht; `selftest_sleepwake_switch.rs` ruft
+   zweimal). Keiner dieser Selbsttests haengt heute in einem Bootpfad
+   (`lib.rs` ruft nur `selftest_emmc::run()`).
+2. **`Pexec` ist nicht betroffen.** Der GEMDOS-Trap aus EL0 benutzt den Helfer
+   nicht: er schreibt den Ausnahmerahmen um
+   (`exceptions.rs:1509-1520`) und kehrt ueber `EXC_BODY` zurueck, wo `DAIF`
+   seit dem Ausnahmeeintritt maskiert ist. Im Betrieb ist `launch.rs` der
+   einzige Verbraucher — Doppelklick/Ablegen, `\AUTO\`, `#Z`-Autostart.
+
+Ein **zweites Fenster derselben Form gibt es nicht**: der Kernel hat drei
+`eret` — den Vektorrueckweg (maskiert; `gic::enable_irqs` hat genau einen
+Aufrufer, `lib.rs:299`, einmal beim Booten), den EL2→EL1-Abstieg beim Booten
+(`SPSR_EL2 = 0x3c5`, vor Vektortabelle und GIC) und diesen.
+
+Ebenfalls praezisiert: das gemeldete `+ 0x6c` liegt **im** Fenster, nicht
+hinter dem `eret` — in HEADs Bau ist das das `mov x11, #0` direkt nach
+`msr elr_el1` (`evidence/head-nofix-disasm.txt`).
+
+**Abnahme.** Derselbe Startlauf (DESK19 `d19-full`) **zwanzigmal**, je eigene
+frische Kartenkopie: 0 `[EXC]`, 0 `[PANIC]`, 40 EL0-Starts (je `\AUTO\` +
+Ziehstart), 20 von 20 mit `CMDLINE: len 13 arg "C:\README.TXT"`. Ein Lauf ist
+gegen den DESK19-Referenzmitschnitt zeilengleich bis auf den Uhrzeitstempel.
+qemu-virt bootet bis `[desk] desktop up`. Bau und Clippy auf beiden Boards
+ohne Delta (64/94 bzw. 80/125), Testsuite 938 / 0 / 1.
+
+Messung: [`measurement-2026-09-24-arch01/`](../measurement-2026-09-24-arch01/).
+Dokumentiert als **QUIRK-003** in [`docs/MEMORY.md`](../docs/MEMORY.md), plus
+die Regel im Prozessmodell ([`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)).
+Empfang: [`ARCH01-STATUS-DONE.MD`](ARCH01-STATUS-DONE.MD).

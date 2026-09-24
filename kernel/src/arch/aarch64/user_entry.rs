@@ -11,7 +11,10 @@
 //!      EC4 sentinel SVC, …) knows where to redirect.
 //!   2. Save the kernel's current SP into another caller-supplied
 //!      atomic so the handler can restore `frame.sp_el0` to it.
-//!   3. Switch `SPSel = 1` so writes to `SP_EL0` are well-defined.
+//!   3. Mask D/A/I/F — no exception may be taken between the
+//!      `ELR_EL1` / `SPSR_EL1` writes and the `eret`, because
+//!      exception entry overwrites both (ARCH01) — and switch
+//!      `SPSel = 1` so writes to `SP_EL0` are well-defined.
 //!   4. Configure `SP_EL0` / `ELR_EL1` / `SPSR_EL1` for the eret.
 //!   5. `eret` to EL0; on the handler-redirected return, land at the
 //!      captured EL1 resume PC.
@@ -200,6 +203,30 @@ pub unsafe fn enter_el0_with_resume_capture(
             // at the saved registers, so the resume restores from there.
             "mov   {kstack}, sp",
             "str   {kstack}, [{kernel_sp}]",
+
+            // Mask D/A/I/F for the rest of the sequence. From the first
+            // `MSR` below until the `eret`, `ELR_EL1` / `SPSR_EL1` hold the
+            // *user* return state; an exception taken in that window would
+            // overwrite both with the interrupted EL1 state (ARM ARM
+            // DDI 0487M.c, D1.4.2 "Exception entry", rule R_DQXFW: entry
+            // writes SPSR_ELx from PSTATE and the preferred return address
+            // to ELR_ELx). The handler returns into the middle of this
+            // block, the remaining instructions reinstate `SPSR_EL1` = EL0t
+            // — and the `eret` then drops to EL0 on the *kernel* PC the IRQ
+            // left in `ELR_EL1`, which faults as an Instruction Abort from a
+            // lower EL (ARCH01: seen once in seven launches, and reproduced
+            // on demand with a delay inserted into this window).
+            //
+            // `MSR DAIFSet, #0xf` ORs the immediate into PSTATE.{D,A,I,F}
+            // (C6.2.288 "MSR (immediate)"). Asynchronous exceptions are the
+            // only ones that can enter this window — the instructions here
+            // touch no memory and cannot fault — so masking all four closes
+            // it completely. The mask does not outlive the `eret`: an
+            // exception return sets PSTATE from `SPSR_EL1` (D1.4.4, rule
+            // R_BWCFK; C6.2.157 "ERET"), and the SPSR written below is `0`,
+            // so EL0 starts with DAIF = 0 and takes the pending interrupt
+            // right away.
+            "msr   daifset, #0xf",
 
             // Switch SPSel = 1 so the subsequent `MSR SP_EL0, …` is
             // well-defined (writing SP_EL0 while it's the active SP

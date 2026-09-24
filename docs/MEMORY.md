@@ -2232,6 +2232,96 @@ Also stale above: `console::pl011_rx_poll` no longer exists (deleted in
 BCM2711 ARM Peripherals §6 (GIC-400); ARM IHI 0048B §1.4 (GICv2 security,
 Group 0/1 → FIQ/IRQ); raspberrypi/tools `armstubs/armstub8.S` `setup_gic`.
 
+## QUIRK-003: EL0-Eintritt — eine IRQ zwischen `msr elr_el1` und `eret` verwirft das Sprungziel
+
+**Date discovered:** 2026-09-23 (belegt und behoben 2026-09-24, Ticket ARCH01)
+**Severity:** High (jeder Programmstart; rund jeder siebte Versuch)
+**Phase / context:** `kernel/src/arch/aarch64/user_entry.rs`,
+`enter_el0_with_resume_capture` — der einzige Kernelpfad, der ohne
+Ausnahmerahmen nach EL0 springt (Doppelklickstart, `\AUTO\`, `#Z`-Autostart,
+neun Selbsttests)
+**Status:** Fixed
+
+### Symptom
+
+Nach `[launch] EL0: slot 0 entry 0x1000` bricht der Start gelegentlich ab:
+
+```
+[EXC] synchronous (non-SVC) exception (Instruction Abort (lower EL)):
+      ESR=0x000000008200000e ELR=0xffff0000000c6988 SPSR=0x0000000000000000
+[EXC] FAR=0xffff0000000c6988
+```
+
+`ELR` = `FAR` = eine **Kernadresse** (high half), symbolisiert in
+`enter_el0_with_resume_capture`; `SPSR` = `0`, also der von uns geschriebene
+Wert; ESR-IFSC `0x0e` = Permission Fault Level 2 — EL0, das eine Kernseite
+ausführt. Häufigkeit: **einmal in sieben** Läufen desselben Startskripts auf
+identischer Kartenkopie (`measurement-2026-09-23-desk19-desk20/`, RUNINFO §7).
+
+### Cause
+
+Die Befehlsfolge stellte Sprungziel und Zielzustand **mit offenen Interrupts**
+ein:
+
+```
+msr sp_el0, {sp} ; msr elr_el1, {entry} ; mov {tmp},#0 ; msr spsr_el1,{tmp} ; eret
+```
+
+Ein Ausnahmeeintritt schreibt `SPSR_ELx` aus `PSTATE` **und die bevorzugte
+Rücksprungadresse nach `ELR_ELx`** (ARM ARM DDI 0487M.c, D1.4.2 „Exception
+entry", Regel R_DQXFW). Trifft die 200-Hz-Systemuhr (oder die PL011-IRQ) in
+dieses Fenster, steht danach der unterbrochene **Kern-PC** in `ELR_EL1`; der
+Behandler kehrt mitten in den Block zurück, die restlichen Befehle setzen
+`SPSR_EL1 = 0` (EL0t) — und der `eret` springt nach EL0 auf diese Kernadresse.
+Das Fenster ist rund vier Befehle breit, die Uhr tickt alle 5 ms: daher
+selten, aber unvermeidlich.
+
+### Resolution
+
+`msr daifset, #0xf` vor der ersten dieser Schreiboperationen
+(`kernel/src/arch/aarch64/user_entry.rs`, `enter_el0_with_resume_capture`).
+`MSR (immediate)` verodert das Immediate in `PSTATE.{D,A,I,F}` (C6.2.288);
+asynchrone Ausnahmen sind die einzigen, die in dieses Fenster gelangen können
+— die Befehle darin greifen auf keinen Speicher zu und können nicht
+synchron abbrechen. Die Maske **überlebt den `eret` nicht**: ein
+Ausnahmerücksprung setzt `PSTATE` aus `SPSR_EL1` (D1.4.4, Regel R_BWCFK;
+C6.2.157 `ERET`), und das geschriebene `SPSR_EL1` ist `0` — EL0 läuft also
+weiter mit offenen Interrupts und nimmt die angestaute IRQ sofort entgegen.
+
+Nicht betroffen und nicht angefasst: der **Trap-Pfad**. Ein `Pexec` aus EL0
+heraus schreibt nur den Ausnahmerahmen um und kehrt über `EXC_BODY` zurück
+(`kernel/src/arch/aarch64/exception_vectors.s`); dort ist `DAIF` seit dem
+Ausnahmeeintritt maskiert (D1.4.2, Regel R_WTXBY setzt `{D,A,I,F}` auf 1) und
+kein Behandler gibt die Interrupts vorher frei — `gic::enable_irqs` wird
+genau einmal beim Booten gerufen.
+
+### Why this is hard to rediscover
+
+Der Fehler ist nicht reproduzierbar-auf-Knopfdruck und sieht aus wie ein
+falsches Sprungziel oder ein MMU-Fehler: `entry 0x1000` steht eine Zeile
+darüber korrekt im Protokoll. Die einzige eindeutige Signatur ist die
+**Kombination** `ELR == FAR == Kernadresse` **und** `SPSR == 0`: der
+SPSR-Wert beweist, dass unsere Zuweisung durchkam, die Kernadresse, dass die
+danebenstehende `ELR`-Zuweisung überschrieben wurde. Wer nur auf `FAR`
+schaut, sucht im Lader.
+
+Der Beleg ging so: in einer **Kopie** des Baums eine Warteschleife zwischen
+`msr elr_el1` und `eret` gesetzt (`method/force_race_patch.py`, ~16,7 Mio.
+Durchläufe ≫ 5 ms). Damit fällt der Fehler bei **jedem** Start, mit genau der
+gemeldeten Signatur; `ELR`/`FAR` zeigen auf das `subs` der Schleife. Dieselbe
+Kopie mit `daifset` davor startet sauber durch. Ohne diesen Schritt wäre der
+Fix eine Vermutung geblieben.
+
+### Source
+
+ARM ARM DDI 0487M.c (Arm Architecture Reference Manual for A-profile, EAC,
+über Arms Dokumentendienst, nicht in `references/`): D1.4.2 „Exception entry"
+(R_DQXFW, R_WTXBY), D1.4.4 „Exception return" (R_BWCFK), C6.2.157 `ERET`,
+C6.2.288 `MSR (immediate)`, C5.2.3 `DAIF`. Messung:
+`measurement-2026-09-24-arch01/` (erzwungener Fall vorher/nachher, zwanzig
+saubere Startläufe), Fundstelle `measurement-2026-09-23-desk19-desk20/`
+RUNINFO §7.
+
 ### Template for new quirks
 
 ```markdown

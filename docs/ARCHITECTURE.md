@@ -118,6 +118,14 @@ both worlds.
 - Cooperative multitasking; one process active at a time until `Pexec`
   blocks or `Pterm` returns
 - `Pexec` modes per Compendium implemented
+- **EL0 entry is uninterruptible.** Whoever hands control to user code
+  owns `ELR_EL1` / `SPSR_EL1` until the `eret`; an exception taken in
+  that window overwrites both with the interrupted EL1 state (ARM ARM
+  D1.4.2). The trap path gets this for free — exception entry masks
+  `DAIF` — so the rule binds the one path that erets without an
+  exception frame:
+  `arch::aarch64::user_entry::enter_el0_with_resume_capture`, which
+  masks D/A/I/F itself (QUIRK-003 in `docs/MEMORY.md`).
 - m68k processes are NewTOS processes whose code happens to run in the
   emulator instead of native; from the kernel's perspective they are
   identical
