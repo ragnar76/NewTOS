@@ -22,6 +22,7 @@ Repository revision the documentation was written against:
 | [06-image-and-testing.md](06-image-and-testing.md) | Getting a binary onto the SD image, `AUTO`, `NEWDESK.INF` `#Z`, running in QEMU and on a real Pi 4, screendumps, serial log |
 | [07-mintlib-limits.md](07-mintlib-limits.md) | What the ported mintlib does not provide, derived from `sdk/libc/expected-failures.txt` and the test programs; `setjmp` and the libm (OpenLibm) since T07 |
 | [08-porting-checklist.md](08-porting-checklist.md) | The short, tickable list for porting an application |
+| [09-port-material.md](09-port-material.md) | What source material we hold, in which version, under which licence — and the age trap a frozen third-party library is |
 
 ## Thirty-second version
 
