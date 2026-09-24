@@ -1,0 +1,147 @@
+measurement-2026-09-24-fs01
+  FS01 (Fdelete/Ddelete leave the long-name slots behind as orphans)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD 07e55b4. The FS01 change is UNCOMMITTED in
+the shared tree (tos-api/src/bdos/fs/{dir.rs,file.rs,dirops.rs} plus the new
+host test tos-api/tests/gemdos_fs_lfn_delete.rs and the raw-image helpers in
+tos-api/tests/fatvol/mod.rs). Nothing flashed, nothing ejected, no real Pi
+run, nothing committed; no `git checkout/restore/clean/stash/reset` ran on
+the shared tree. No git command touched it at all.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (`method/run.sh` + `method/qmp_multi.py`). Host: macOS,
+`fsck_msdos` from the running system.
+
+No `*.img` in this directory (the ticket's rule). Every image is rebuilt
+from `method/seed.sh` and the two runs below.
+
+
+1. THE CARD
+---------------------------------------------------------------------------
+`method/seed.sh` builds it with `tools/make-sd-image.sh` (64 MiB, MBR +
+FAT16 -- the single source of truth for a NewTOS card) and adds a deliberate
+long-name fixture on the root:
+
+    C:\A very long file name.txt                 8.3 AVERYL~1.TXT + 2 LFN slots
+    C:\A very long folder name\                  8.3 AVERYL~3     + 2 LFN slots
+    C:\A very long folder name\inside long.txt   8.3 INSIDE~2.TXT + LFN chain
+
+plus the long names macOS writes by itself (`.fseventsd`, `.Spotlight-V100`,
+the `._*` companions) -- which is where the original finding's orphan slots
+came from.
+
+The freshly seeded card has 0 orphan long-name slots and passes
+`fsck_msdos -n` phases 1/2/3 with rc=0 (serial/fsck.txt, first block).
+
+Note on counting: `method/lfn_orphan_scan.py` counts an orphan only when the
+`attrib == 0x0F` slot is still LIVE (first byte neither 0xE5 nor 0x00) and
+its 8.3 entry is erased. The DESK24/25/26 probe counted by the 8.3 entry
+alone, which on a make-sd-image card also counts ~30 ALREADY ERASED slots
+(macOS deleting its own `._*` companions). Those are free slots and bother
+nobody; the strict count is what fsck_msdos reacts to.
+
+
+2. THE TWO RUNS
+---------------------------------------------------------------------------
+Both drive the SAME gesture with the scratch-copy IKBD injector (memory
+`desktop-interactive-verification-real-hw`): `method/make_scratch.sh` rsyncs
+the crates into the job scratch and patches the COPY -- never the shared
+tree. `method/empty-drive.actions` is the action list, taken unchanged from
+`measurement-2026-09-23-desk24-desk25-desk26/method/d25-yes.actions` (the
+run that found the defect), `method/empty-drive.rs` the generated injector
+table.
+
+  select the C: desktop icon (38,35)
+  -> File > Delete... (88,9) then (156,203)
+  -> STRMVDEL: Delete (416,269)
+  -> ADCPYDEL: OK (229,301)
+  -> STDELDIS "Do you want to delete all the files on drive C: ?": Yes (288,269)
+
+  fixed   kernel = the shared tree as it stands (FS01 applied)
+  before  kernel = the same scratch tree with `method/unfix.py` applied:
+          `dir::erase_slot_with_lfn` returns right after the 8.3 entry, i.e.
+          the pre-FS01 behaviour. One branch of one function differs.
+
+Both runs reached every marker (A_IDLE, C_RMVDEL, D_DELBOX, E_STDELDIS,
+F_ANSWERED_YES); the screendumps show the alert chain and the emptied
+desktop. Serial logs in serial/.
+
+The two serial logs are BYTE-IDENTICAL, and that is not a copy mistake: the
+injector is tick-scheduled and the delete path prints nothing about
+long-name slots, so the two kernels talk the same. They are different
+kernels -- sha256 of the two kernel8.img:
+
+  fixed   9bc81ab6617b9963c9aef77fbeedaf648fca77d06a4985d6fb2b2c8edecf1ffc
+  before  2fafa5d2886a2e8c7eb23bec0d79124f39724c214a953df5cb7541294491290d
+
+and they left different cards behind, which one kernel cannot do.
+
+
+3. RESULT
+---------------------------------------------------------------------------
+                       orphan LFN slots      fsck_msdos -n
+  seeded card                   0            rc=0, phases 1/2/3 clean
+  emptied, UNFIXED kernel       8            dies in phase 2, signal 5
+                                             (shell: 133 = 128+5, "Trace/BPT
+                                             trap"), card otherwise sound
+  emptied, FIXED kernel         0            rc=0, phases 1/2/3 clean,
+                                             "0 files, 65344 KiB free"
+
+The 8 orphans of the unfixed run are the long names of `.fseventsd`,
+`.Spotlight-V100`, `A very long file name.txt`, `A very long folder name`
+and `Apps` -- all five entries the desktop deleted whose name needed a
+chain.
+
+
+4. WHY A SINGLE ORPHAN ONLY WARNS AND THE EMPTIED CARD KILLS fsck_msdos
+---------------------------------------------------------------------------
+The open question from the DESK24/25/26 run. `method/abort_probe.sh` answers
+it with twelve controlled cases on the SAME image (serial/fsck.txt):
+
+  * It is NOT a count effect. Each of the five orphan chains ALONE, with the
+    other seven slots freed by hand, kills fsck_msdos exactly as all eight
+    do (cases "ONLY the chain at slot(s) ...").
+  * Freeing all eight by hand makes the identical image pass (rc=0) -- the
+    DESK24/25/26 counter-proof, reproduced.
+  * One hand-made orphan on the still-LIVE card only warns:
+    "Invalid long filename entry for /.Spotlight-V100", rc=206.
+  * The difference is whether the orphaned chain is ever CLOSED by a live
+    8.3 entry. Planting a single live entry AFTER the chain (immediately
+    after it, or far away at the end of the directory) turns the crash into
+    that same warning; planting one only BEFORE the chain does not.
+
+So: fsck_msdos reports an invalid long-name chain at the moment it reaches
+the next live short entry -- the warning even names THAT entry, not the
+orphan. On a completely emptied card no live short entry follows any chain,
+the scan reaches the end-of-directory marker with the chain still open, and
+that path dies. That is a defect IN fsck_msdos (a tool must not trap on a
+directory it can parse); the card's FAT is consistent and both copies agree.
+It is not a second NewTOS defect, and NewTOS no longer produces the input.
+
+The earlier run's "no output at all, not even the banner" was an artefact of
+its `fsck_msdos ... | sed` pipeline: stdout is then a fully buffered pipe and
+a process killed by a signal never flushes it. `method/fsck.sh` runs
+fsck_msdos on a pty (`script`), which is why the two phase lines are visible
+here.
+
+
+5. FILES
+---------------------------------------------------------------------------
+method/make_scratch.sh        rsync + injector patches (+ `unfix`)
+method/unfix.py               the one-branch revert for the "before" kernel
+method/seed.sh                the card
+method/empty-drive.actions    the gesture; method/empty-drive.rs generated
+method/run.sh, qmp_multi.py   QEMU + QMP driver
+method/fsck.sh                fsck_msdos -n on a pty
+method/lfn_orphan_scan.py     strict orphan count, root + sub-directories
+method/lfn_edit.py            erase named root slots in a copy
+method/plant83.py             plant one live 8.3 entry in a copy
+method/abort_probe.sh         section 4, all twelve cases
+method/lsimg.py, gen_script.py, apply_injector.py, a78_patch2.py,
+method/a79_patch_desk10.py    unchanged copies from the DESK24/25/26 method
+
+serial/fixed-serial.log       the run with FS01 applied
+serial/before-serial.log      the run without it
+serial/fsck.txt               every fsck_msdos run of this measurement
+screendumps/{fixed,before}-0[1-5]-*.png

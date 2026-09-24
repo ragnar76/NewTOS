@@ -1,0 +1,40 @@
+# DESK25 "after", answer YES: the same question answered YES -- the whole of
+#   desktop C: icon (38,35)                     probe run 1
+#   File title hover (88,9), Delete... (156,203) probe run 1
+#   STRMVDEL: Cancel (224,269) Remove (320,269) Delete (416,269)  probe run 2
+#   ADCPYDEL OK (229,301)                        the [d24] dump
+#   STDELDIS: Yes (288,269) No (352,269) -- same form_alert layout rule as the
+#   measured STRMVDEL box, two 48-px buttons in a 272-px box; confirmed by the
+#   run's own [alert] dump.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 move 38 35
+2000 down
+2003 up
+2400 parkbr
+3100 mark B_CSEL
+3500 move 88 240
+3700 move 88 9
+4300 move 156 203
+4900 down
+5100 up
+5700 parkbr
+6500 mark C_RMVDEL
+6900 move 416 269
+7500 down
+7700 up
+8300 parkbr
+9100 mark D_DELBOX
+9500 move 229 301
+10100 down
+10300 up
+10900 parkbr
+11700 mark E_STDELDIS
+12100 move 288 269
+12700 down
+12900 up
+13500 parkbr
+14300 mark F_ANSWERED_YES
+15100 pause

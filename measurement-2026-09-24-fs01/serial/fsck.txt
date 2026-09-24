@@ -1,0 +1,103 @@
+== seeded card, nothing deleted  (base.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 54 files, 63726 KiB free (31863 clusters)
+   rc=0
+
+== emptied by the FIXED kernel (0 orphans)  (fixed.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 0 files, 65344 KiB free (32672 clusters)
+   rc=0
+
+== emptied by the UNFIXED kernel (8 orphans)  (before.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   rc=5
+
+== unfixed image, all 8 orphan slots set to 0xE5  (p-none.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 0 files, 65344 KiB free (32672 clusters)
+   rc=0
+
+== unfixed image, ONLY the chain at slot(s) 1 left  (p-keep-1.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   rc=5
+
+== unfixed image, ONLY the chain at slot(s) 3,4 left  (p-keep-3-4.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   rc=5
+
+== unfixed image, ONLY the chain at slot(s) 19,20 left  (p-keep-19-20.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   rc=5
+
+== unfixed image, ONLY the chain at slot(s) 26,27 left  (p-keep-26-27.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   rc=5
+
+== unfixed image, ONLY the chain at slot(s) 92 left  (p-keep-92.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   rc=5
+
+== live card, ONE hand-made orphan  (p-live-card.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   Warning: Invalid long filename entry for /.Spotlight-V100
+   Remove?
+   : no
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: Found orphan cluster(s)
+   Fix?
+   : no
+   Warning: Found 4 orphaned clusters
+   Warning: 50 files, 63726 KiB free (31863 clusters)
+   rc=206
+
+== one orphan (slot 92), a LIVE entry right AFTER it (slot 93)  (p-after.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   Warning: Invalid long filename entry for /LIVE.TXT
+   Remove?
+   : no
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 1 files, 65344 KiB free (32672 clusters)
+   rc=206
+
+== one orphan (slot 1), a LIVE entry at the END of the directory (slot 96)  (p-end.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   Warning: Invalid long filename entry for /LIVE.TXT
+   Remove?
+   : no
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 1 files, 65344 KiB free (32672 clusters)
+   rc=206
+
+== one orphan (slot 92), a LIVE entry only BEFORE it (slot 6)  (p-before.img)
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   rc=5
+
