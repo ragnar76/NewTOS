@@ -49,6 +49,27 @@ Fassung unter `th-otto/zview`. Der Autor nennt ausserdem **ImgView** (Lonny
 Pursell) als Alternative, die zView „in manchen Bereichen abloest" — pruefen,
 ob die weniger verlangt.
 
+**LDG-Quellen gibt es** (Anwender 2026-09-25) — sie liegen nur noch nicht im
+Baum (`references/` hat heute `emutos`, `freemint`, `circle`). Damit ist LDG
+kein fremder Klotz, sondern portierbar wie alles andere, und die Frage wird
+feiner:
+
+* **Jetzt machbar:** LDG' *Schnittstelle* portieren und die Decoder
+  **statisch** dazubinden — der Lader loest die Module dann aus einer
+  eingebauten Tabelle auf, statt Dateien nachzuladen. Damit laeuft zView,
+  ohne dass MOD01 fertig sein muss.
+* **Spaeter:** echtes Nachladen, sobald [MOD01](MOD01.md) steht — dann
+  greift dieselbe Schnittstelle, und aus der Tabelle wird ein Dateizugriff.
+
+Zu klaeren ist, ob zViews Decoder diese Trennung mitmachen oder ob sie
+LDG-Eigenheiten benutzen, die nur beim echten Nachladen existieren. **Das
+entscheidet, ob zView bis Oktober laeuft** — nicht die Frage, ob wir LDG
+haben.
+
+Die Quellen sind zuerst zu **finden und zu pinnen**, nach demselben Muster
+wie `references/emutos` und `references/freemint`: fester Commit, im Ticket
+festgehalten, damit spaetere Extraktionen dieselbe Fassung lesen.
+
 `windom` ist die zweite Unbekannte: ein GEM-Rahmenwerk ueber gemlib, das wir
 bisher nicht gebaut haben. Aufwand dafuer getrennt ausweisen.
 
