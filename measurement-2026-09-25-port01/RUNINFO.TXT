@@ -1,0 +1,179 @@
+measurement-2026-09-25-port01
+  PORT01 (a file dragged onto QED never reaches the application)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD 45de38b. PORT01's change is UNCOMMITTED in the
+shared tree (five edited files + four new files, method/port01.diff). Nothing
+flashed, nothing ejected, no real Pi run, nothing committed; no
+`git checkout/restore/clean/stash/reset` was run on the shared tree. The only
+git command used on it was the read-only `git show HEAD:sdk/libc/crt0.S`
+(method/build_before.sh -- that is how the "before" programs are built) and
+`git diff` (method/port01.diff).
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (method/run.sh + method/qmp_multi.py). Card image: a fresh
+`tools/make-sd-image.sh` per measurement (64 MiB, MBR + FAT16) plus the
+fixture in 0 (method/seed.sh) -- rebuilt, never a reused copy, because the
+tool changed with PORT01 (it now installs C:\ARGVTEST.NAP). Interactive runs
+use the scratch-copy IKBD injector: method/make_scratch.sh rsyncs the crates
+into the job scratch and patches the copy -- never the shared tree.
+No `*.img` in this directory (the ticket's rule).
+
+PORT01 changes NO kernel code. The before/after pair is therefore not two
+kernels but two PROGRAMS on the same card, driven by the same kernel in the
+same style of run.
+
+
+0. FIXTURE (method/seed.sh)
+---------------------------------------------------------------------------
+On top of the standard image:
+  C:\ARGVOLD.NAP   ARGVTEST linked with the COMMITTED crt0 ("before")
+  C:\QEDOLD.NAP    QED's own objects linked with the COMMITTED crt0
+  C:\QED.NAP       QED, current build ("after"), copied to the ROOT
+  C:\qed.rsc       QED's resource, beside both
+C:\ARGVTEST.NAP ("after") comes from tools/make-sd-image.sh itself.
+C:\README.TXT (64 bytes) is the dragged file; it is on the standard image.
+
+method/build_before.sh builds the two "before" programs by linking the SAME
+argvtest.o / the SAME already-compiled QED objects against the committed crt0.
+QED is neither recompiled nor modified. The only variable between the before
+and after pictures is the C runtime startup.
+
+QED lives in C:\Apps\QED\ on a normal image; it is copied to the root here so
+the acceptance gesture is one drag inside ONE window. The drop path is the
+same either way (`fun_win2win`, kernel/src/desk/dir.rs:1793).
+
+
+1. INJECTOR (method/port01_patch.py)
+---------------------------------------------------------------------------
+a78_patch2.py's dual arming picks the empty SCRIPT_TERA whenever an EL0
+process is the running one at the first injector tick. Since commit 03394c2
+the boot starts two desk accessories, which are EL0 processes scheduled before
+the desktop appears, so the first tick always sees one and NO action fired
+(first probe run: `[h02] injector armed` during `[sched] switch -> slot 0`,
+then nothing for 200 s). port01_patch.py replaces the dual arming with the one
+case this ticket needs: step only once "[desk] desktop up" has set DESK_UP,
+and always run SCRIPT_DESK. The clock then starts at the desktop, which is
+what the action lists' timings assume.
+
+
+2. CLICK POINTS (all measured, none guessed)
+---------------------------------------------------------------------------
+method/probe.actions + probe_patch.py's `probe_icons()` print every window
+item with the point `act_chkobj` accepts. From serial/probe-serial.log:
+
+  C:\ window   README.TXT   (515,271)    ARGVTEST.NAP (179,145)
+               ARGVOLD.NAP  ( 95,145)    QED.NAP      (263,271)
+               QEDOLD.NAP   (431,271)
+
+Alt+C (scancodes 38 2e ae b8) opens the C:\ window.
+POINTER PARK: (639,479) -- `parkbr`, which crosses no menu title (A79).
+
+
+3. RUNS
+---------------------------------------------------------------------------
+before  method/port01-before.actions  serial/port01-before-serial.log
+        screendumps/before-{a-idle,b-win,c-argv,d-qed}.png
+        README.TXT dropped on ARGVOLD.NAP, then on QEDOLD.NAP.
+
+after   method/port01-after.actions   serial/port01-after-serial.log
+        screendumps/after-{a-idle,b-win,c-argv,d-qed}.png
+        + after-d-qed-alert-zoom.png (3x crop of the alert)
+        README.TXT dropped on ARGVTEST.NAP, then on QED.NAP.
+        This run is the LANDED source state: no trace patch.
+
+trace   same actions as `after`, plus method/fopen_trace_patch.py
+        (serial-only dump of every GEMDOS Fopen path and of the alert string
+        AES form_alert is handed). serial/trace-serial.log,
+        screendumps/trace-qed.png.
+
+exp2    the confirmation EXPERIMENT for the second defect (6), scratch only,
+        NOT landed: method/cflib_normalpath_experiment.py, one line of
+        sdk/cflib/overlay/fsnorm.c. serial/exp2-serial.log,
+        screendumps/exp2-qed.png.
+
+Zero `[EXC]` and zero `[PANIC]` in all five logs.
+`fsck_msdos -n` clean on every card image afterwards: serial/fsck.txt.
+
+
+4. RESULT: the argument reaches the application (the ticket's defect)
+---------------------------------------------------------------------------
+before (serial/port01-before-serial.log:616-619):
+    ARGVTEST: cmdlin len 13 raw "C:\README.TXT"
+    ARGVTEST: argc 1
+    ARGVTEST: argv[0] ""
+    ARGVTEST: argv terminated
+
+after (serial/port01-after-serial.log:515-519):
+    ARGVTEST: cmdlin len 13 raw "C:\README.TXT"
+    ARGVTEST: argc 2
+    ARGVTEST: argv[0] ""
+    ARGVTEST: argv[1] "C:\README.TXT"
+    ARGVTEST: argv terminated
+
+Both lines come from ONE program in ONE run: the first is read out of the
+BasePage through mintlib's BASEPAGE struct, the second is what the startup
+built. Before, the kernel's tail arrives and the startup drops it; after, it
+survives. That is the whole defect.
+
+Candidate 2 of the ticket (the LP64 basepage) is ruled out by the same pair of
+lines: the `cmdlin len 13 raw "C:\README.TXT"` line is read through
+`_base->p_cmdlin`, i.e. through the mintlib BASEPAGE struct, and it is right
+in BOTH runs.
+
+
+5. RESULT: QED
+---------------------------------------------------------------------------
+before  screendumps/before-d-qed.png -- QED starts, menu bar only, no window,
+        no file. Exactly the reported symptom.
+after   screendumps/after-d-qed.png -- QED now ACTS on the argument: it puts
+        up its own "Fehler beim Lesen der Datei: README.TX" alert. The name
+        is one character short; after-d-qed-alert-zoom.png is a 3x crop that
+        shows this is the rendered text, not clipping.
+
+
+6. SECOND, INDEPENDENT DEFECT (not fixed here -- for a new ticket)
+---------------------------------------------------------------------------
+Measured, not inferred (serial/trace-serial.log:1033):
+    [port01] Fopen len 12 path "C:\\README.TX"      (Rust {:?}, so \\ = one \)
+QED asks the file system for a name one character short. Read at the source:
+
+  * cflib `make_normalpath` (sdk/cflib/cflib-21/fsnorm.c:85-95) appends a
+    trailing `\` and then REMOVES it again unless `path_exists()` says the
+    result is an existing DIRECTORY;
+  * `path_exists` (fsexists.c:35-45) is `Fattrib(p,0,0) >= 0 && (attr&FA_DIR)`,
+    so for a file path it is false on TOS 1-3, on TOS 4 and on EmuTOS alike
+    (EmuTOS `xchmod` -> `findit` on "C:\README.TXT\" -> EPTHNF,
+    references/emutos/bdos/fsdir.c:402-411);
+  * QED removes the separator UNCONDITIONALLY -- src/poslist.c:53-54
+    (`make_normalpath(...); filename[strlen(filename)-1] = '\0';`) and the
+    same pattern in src/dd.c:99-101 -- i.e. it is written against a
+    make_normalpath that ALWAYS leaves the separator.
+
+Our fsnorm.c is byte-identical to the pristine cflib-21 tarball (verified),
+so this is not a porting error we introduced; QED and cflib-21 are a
+mismatched pair.
+
+CONFIRMED end to end, scratch only: with `make_normalpath` keeping the
+separator it appended (method/cflib_normalpath_experiment.py, one line, via
+the watched sdk/cflib/overlay/ channel), QED asks for the right name and opens
+the file -- serial/exp2-serial.log:1033 `Fopen len 13 path "C:\\README.TXT"`,
+screendumps/exp2-qed.png (window titled C:\README.TXT with the file's two
+lines in it).
+
+NOT landed: the change alters a vendored upstream library's behaviour for
+every cflib caller (filesel.c:205,227,265 inside cflib; clipbrd.c:281,
+dd.c:99, global.c:433, poslist.c:53, projekt.c:938 in QED) and hence every
+ported cflib application. Which side is to be corrected -- cflib via
+sdk/cflib/overlay/, or a different cflib version -- is a decision for the
+lead, not for this ticket.
+
+
+7. WHAT ONLY THE REAL PI CAN CONFIRM
+---------------------------------------------------------------------------
+The measurement drives the mouse through the scratch-copy IKBD injector; real
+HID input (a real drag with a real mouse, and the desktop-shortcut drop route
+of kernel/src/desk/dir.rs:1885) is real-Pi4 only. The code path under test is
+the same: both drag routes end in `do_aopen_drop` and hand the same tail to
+`run_program_with_tail`, and the startup this ticket fixes sees only the
+BasePage.

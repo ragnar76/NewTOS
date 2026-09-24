@@ -1,0 +1,222 @@
+# PORT01 source diff (tracked files). The change set also adds four NEW,
+# untracked files, listed here because `git diff` does not show them:
+#   sdk/libc/newtos-arch/cmdargs.c   __libc_parseargs: p_cmdlin -> argc/argv
+#   sdk/libc/tests/cmdargs-host.c    its host harness (9 cases)
+#   sdk/libc/tests/cmdargs-host.sh   the build+run wrapper
+#   sdk/examples/argvtest.c          ARGVTEST.NAP, the argc/argv proof program
+#
+diff --git a/sdk/lib-stale.sh b/sdk/lib-stale.sh
+index a419031..37ec1b7 100755
+--- a/sdk/lib-stale.sh
++++ b/sdk/lib-stale.sh
+@@ -18,7 +18,7 @@
+ # script itself", and every caller repeated that list by hand. Both halves of
+ # that sentence were wrong:
+ #
+-#   (a) The list was too short. sdk/libc/newtos-arch/ -- eleven files WE write
++#   (a) The list was too short. sdk/libc/newtos-arch/ -- twelve files WE write
+ #       -- and sdk/include/newtos.h are compiled into libc.a and were watched
+ #       by nobody: appending a function to newtos-arch/do_stat.c left libc.a
+ #       byte-identical and build-qed.sh reported nothing out of date.
+diff --git a/sdk/libc/build-libc.sh b/sdk/libc/build-libc.sh
+index 5bd2e20..ccfe263 100755
+--- a/sdk/libc/build-libc.sh
++++ b/sdk/libc/build-libc.sh
+@@ -28,6 +28,9 @@
+ #                    m68k mintlib/setjmp.S); jmp_buf grows to long[22] in the
+ #                    overlay include/setjmp.h (TASK/T07)
+ #       heap_init.c -> points mintlib's malloc arena at the free TPA region.
++#       cmdargs.c -> argc/argv from the BasePage command tail p_cmdlin (the
++#                    argument half of crtinit.c parseargs(), which does not
++#                    compile here); defines __libc_argc/__libc_argv.
+ #       getcookie.c -> Getcookie() via the Ssystem trap (was m68k getcookie.S,
+ #                      which scans the _p_cookies sysvar / trap #1). Pulled by
+ #                      cflib's cookie.c feature probes.
+@@ -39,8 +42,8 @@
+ #       include/{features,linker}.h  generated config headers
+ #       include/setjmp.h         jmp_buf = long[22] on AArch64 (setjmp.S layout)
+ #   - sdk/libc/crt0.S: libc-aware crt0 (sets SP from p_hitpa, calls
+-#     __libc_init_heap, then main) -- distinct from sdk/crt0.S used by the
+-#     libc-less examples.
++#     __libc_init_heap and __libc_parseargs, then main) -- distinct from
++#     sdk/crt0.S used by the libc-less examples.
+ #
+ # The linker pulls only the archive members it needs, so libc.a is compiled from
+ # whole core directories best-effort (files that fail to assemble for AArch64 --
+@@ -194,6 +197,12 @@ lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
+     -c "$LIBC/newtos-arch/memops.c"    -o "$OBJ/arch__memops.o"   || exit 1
+ "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+     -c "$LIBC/newtos-arch/heap_init.c" -o "$OBJ/arch__heapinit.o" || exit 1
++# argc/argv from the BasePage command tail -- the argument half of mintlib's
++# crtinit.c parseargs() (that file does not compile here). Defines
++# __libc_argc/__libc_argv, which crtinit.c would otherwise own and which
++# posix/wordexp.c references (TASK/PORT01).
++"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
++    -c "$LIBC/newtos-arch/cmdargs.c"   -o "$OBJ/arch__cmdargs.o"  || exit 1
+ "$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
+     -c "$LIBC/newtos-arch/proc.S"      -o "$OBJ/arch__proc.o"     || exit 1
+ # setjmp/longjmp -- the AArch64 retarget of mintlib/setjmp.S (m68k, never
+diff --git a/sdk/libc/crt0.S b/sdk/libc/crt0.S
+index cae9dfd..9adf7a8 100644
+--- a/sdk/libc/crt0.S
++++ b/sdk/libc/crt0.S
+@@ -1,12 +1,20 @@
+ /*
+  * crt0.S -- NewTOS C runtime startup for libc-linked programs (`.NCP`).
+  *
+- * This is the libc variant of sdk/crt0.S: identical TPA/SP setup, plus one
+- * extra step -- it calls __libc_init_heap(basepage, p_hitpa) before main,
+- * which sets mintlib's `_base` (the BASEPAGE pointer mintlib's own crt0
+- * stores at start, startup/crt0.S:69) and points the malloc arena at the
+- * free TPA region (see sdk/libc/newtos-arch/heap_init.c). Programs that do
+- * not link libc keep using the plain sdk/crt0.S, which has no such dependency.
++ * This is the libc variant of sdk/crt0.S: identical TPA/SP setup, plus the
++ * two steps mintlib's own startup (startup/crt0.S + crtinit.c, neither of
++ * which builds for AArch64) would take before main:
++ *
++ *   __libc_init_heap(basepage, p_hitpa)  -- sets mintlib's `_base` (the
++ *       BASEPAGE pointer mintlib's crt0 stores at start, startup/crt0.S:69)
++ *       and points the malloc arena at the free TPA region
++ *       (sdk/libc/newtos-arch/heap_init.c);
++ *   __libc_parseargs(basepage)           -- builds argc/argv from the
++ *       BasePage command tail p_cmdlin, the argument half of crtinit.c's
++ *       parseargs() (sdk/libc/newtos-arch/cmdargs.c).
++ *
++ * Programs that do not link libc keep using the plain sdk/crt0.S, which has
++ * no such dependency.
+  *
+  * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld), low-half
+  * VA 0x0 -- the image starts at RESERVED_LOW_END = 0x1000, above the classic
+@@ -32,37 +40,43 @@
+     .global _start
+     .type   _start, %function
+ _start:
+-    /* SP = basepage->p_hitpa (the mapped TPA top), read at VA 0 offset 4. */
+-    mov     x1, #0
+-    ldr     w9, [x1, #4]        /* w9 = p_hitpa (zero-extended into x9) */
+-    mov     sp, x9
++    /* SP = basepage->p_hitpa (the mapped TPA top), read at VA 0 offset 4.
++       x19/x20 keep the two values across the calls below; nothing has to be
++       restored, because _start never returns. */
++    mov     x19, #0             /* x19 = BasePage VA (the loader puts it at 0) */
++    ldr     w20, [x19, #4]      /* w20 = p_hitpa (zero-extended into x20) */
++    mov     sp, x20
+ 
+-    /* __libc_init_heap(basepage, p_hitpa): x1 still holds the basepage VA
+-       (0, the base register p_hitpa was read through) and x9 p_hitpa. The
+-       call needs a valid SP (set above). */
+-    mov     x0, x1
+-    mov     x1, x9
++    /* __libc_init_heap(basepage, p_hitpa) — sets mintlib's `_base` and points
++       the malloc arena at the free TPA region. Needs a valid SP (set above). */
++    mov     x0, x19
++    mov     x1, x20
+     bl      __libc_init_heap
+ 
+     /* Set up argc/argv for main(int argc, char **argv).
+      *
+      * The launcher (kernel enter_el0_with_resume_capture) sets only ELR /
+-     * SP_EL0 / the TTBR0 tables — it does NOT pass argc/argv in registers, and
+-     * mintlib's crtinit.c parseargs() (which would build argv from the
+-     * BasePage command-line tail p_cmdlin) is m68k assembly that does not
+-     * assemble for AArch64, so it is never linked. Without this, main()
+-     * inherits garbage: argc = the leftover x0 from the void __libc_init_heap
+-     * (~4 MiB, i.e. >= 2) and argv = 0, so `if (argc > 1) ... argv[1]` faults
+-     * dereferencing (char**)0 + 1.
++     * SP_EL0 / the TTBR0 tables — it does NOT pass argc/argv in registers, so
++     * without this main() would inherit garbage: argc = the leftover x0 from
++     * the void __libc_init_heap (~4 MiB, i.e. >= 2) and argv = 0, so
++     * `if (argc > 1) ... argv[1]` faults dereferencing (char**)0 + 1.
+      *
+-     * NewTOS launches GEM apps from the desktop with no command-line
+-     * arguments, so the correct value is argc == 1 with a NUL-terminated argv
+-     * whose argv[0] is "" — the TOS "program name not available" convention
+-     * (matching mintlib crtinit.c's `*arg++ = ""`). main's own return value
+-     * (w0) is the exit code. */
+-    mov     x0, #1                      /* argc = 1 */
+-    adrp    x1, __crt0_argv
+-    add     x1, x1, :lo12:__crt0_argv   /* argv = { "", NULL } */
++     * A program launched with an argument — a file dragged onto its icon or
++     * onto a desktop shortcut — gets that argument in the BasePage command
++     * tail p_cmdlin. mintlib builds argv from it in crtinit.c parseargs(),
++     * which is not compiled here (m68k asm elsewhere in the same file); the
++     * argument half of it is reimplemented in
++     * sdk/libc/newtos-arch/cmdargs.c as __libc_parseargs(), which publishes
++     * __libc_argc / __libc_argv and returns argc. With an empty tail that is
++     * argc == 1 and argv == { "", NULL } — the TOS "program name not
++     * available" convention (crtinit.c's `*arg++ = ""`), i.e. exactly what
++     * this crt0 used to hardcode. main's own return value (w0) is the exit
++     * code. */
++    mov     x0, x19
++    bl      __libc_parseargs            /* x0 = argc */
++    adrp    x1, __libc_argv
++    add     x1, x1, :lo12:__libc_argv
++    ldr     x1, [x1]                    /* x1 = argv */
+     bl      main
+ 
+     /* Pterm(main's return): GEMDOS 0x4C, rc in x0, svc #1. Never returns. */
+@@ -72,16 +86,3 @@ _start:
+     /* Safety net: Pterm does not return, but guard against a runaway PC. */
+ 1:  b       1b
+     .size   _start, . - _start
+-
+-    /* Minimal argv for a no-argument native launch: { "", NULL }. The empty
+-     * argv[0] signals "program name not available" (TOS convention). Pointers
+-     * are 8-byte (LP64) — the C program's `char **argv` ABI; the linker
+-     * resolves the .quad relocations to absolute VAs (static, no-PIE). */
+-    .section .data.crt0, "aw", @progbits
+-    .align  3
+-    .global __crt0_argv
+-__crt0_argv:
+-    .quad   __crt0_argv0                /* argv[0] = "" */
+-    .quad   0                           /* argv[1] = NULL (terminator) */
+-__crt0_argv0:
+-    .byte   0                           /* the empty string "" */
+diff --git a/sdk/run-host-tests.sh b/sdk/run-host-tests.sh
+index 6a9a954..54d2a84 100755
+--- a/sdk/run-host-tests.sh
++++ b/sdk/run-host-tests.sh
+@@ -112,6 +112,13 @@ fi
+ [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/setjmp-host.log"
+ report setjmp-host $rc "host is not AArch64"
+ 
++# cmdargs-host (PORT01): newtos-arch/cmdargs.c turns the BasePage command tail
++# into the argc/argv mintlib's crtinit.c parseargs() would -- the two DESK19
++# tails, the separator rules, MagX quoting, and the densest 128-byte tail.
++"$SDK/libc/tests/cmdargs-host.sh" > "$WORK/cmdargs-host.log" 2>&1; rc=$?
++[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/cmdargs-host.log"
++report cmdargs-host $rc "mintlib headers absent or host not LP64"
++
+ echo
+ echo "host tests: $pass passed, $fail failed, $skip skipped"
+ exit $fail
+diff --git a/tools/make-sd-image.sh b/tools/make-sd-image.sh
+index 7419b7e..cefdc4d 100755
+--- a/tools/make-sd-image.sh
++++ b/tools/make-sd-image.sh
+@@ -155,6 +155,25 @@ else
+   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\CMDLINE.NCP skipped"
+ fi
+ 
++# ARGVTEST.NAP is the argc/argv proof (PORT01), the other half of CMDLINE.NCP:
++# that one reads `p_cmdlin` itself and so only shows what the KERNEL delivered,
++# this one goes through the SDK startup (sdk/libc/crt0.S -> __libc_parseargs)
++# like every ported application and shows what the APPLICATION receives. It
++# prints both in one run, over Cconws, i.e. to the serial console as well as
++# the screen. A `.NAP` on purpose -- `*.NAP` is a GEM-application ANODE
++# (kernel/src/desk/inf.rs:678), so dropping a file on it is the same launch
++# gesture that starts QED with a document. Root of C:, so the drag is one
++# gesture inside the C:\ window; never in \AUTO\ (console-only, ADR-018).
++# Built by `sdk/libc/build-libc.sh sdk/examples/argvtest.c \
++#            sdk/libc/build/argvtest.NAP`.
++ARGVTEST_NAP="$SCRIPT_DIR/../sdk/libc/build/argvtest.NAP"
++if [ -f "$ARGVTEST_NAP" ]; then
++  cp "$ARGVTEST_NAP" "$V/ARGVTEST.NAP"
++  echo "installed C:\\ARGVTEST.NAP (argc/argv proof)"
++else
++  echo "note: sdk/libc/build/argvtest.NAP not built; C:\\ARGVTEST.NAP skipped"
++fi
++
+ # DTACHILD.NCP is the per-process-DTA proof (S1c): a console program that moves
+ # its OWN DTA (Fsetdta(0x2000)) and exits. A parent runs it between its own
+ # Fsetdta(buf) and Fgetdta() -- if Fgetdta still returns buf, the DTA really

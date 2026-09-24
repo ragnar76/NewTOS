@@ -1,0 +1,32 @@
+# PORT01 "after": the crt0 that builds argc/argv from p_cmdlin.
+# Two drags of C:\README.TXT inside the C:\ window, onto the two programs
+# linked with THAT crt0 -- first ARGVTEST.NAP (which prints its own argc/argv),
+# then QED.NAP (which should open the dropped file).
+#   C:\ window README.TXT (515,271), ARGVTEST.NAP (179,145),
+#                QED.NAP (263,271)                        [probe run, 2026-09-25]
+# Alt+C (scancodes 38 2e ae b8) opens the C:\ window.
+# Pointer park is (639,479) -- `parkbr`, which crosses no menu title (A79).
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_WIN
+3100 move 515 271
+3700 down
+4500 drag 300 200
+5100 drag 179 145
+5900 up
+6500 parkbr
+8400 mark C_ARGV
+10000 move 515 271
+10600 down
+11400 drag 350 271
+12000 drag 263 271
+12800 up
+13400 parkbr
+14400 mark D_QED
+20000 pause
