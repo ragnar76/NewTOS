@@ -1,6 +1,6 @@
 # GUI02 — `CONF_WITH_VIEWER_SUPPORT`: Standardbetrachter fuer nicht zugeordnete Dateien
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Funktionsluecke AES/Desktop — aus der Schaltertabelle (REF01)
+Status: **ZURUECKGESTELLT** (Lead 2026-09-24) · Prioritaet: **P4** · Typ: Funktionsluecke AES/Desktop — aus der Schaltertabelle (REF01)
 
 Abhaengigkeiten: [GUI01](GUI01.md)
 
@@ -26,3 +26,17 @@ Betrachter fehlt.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Zurueckgestellt — Lead-Entscheidung 2026-09-24
+
+**Nicht als eingebaute Funktion bauen.** Der Benutzer haelt den Weg ueber eine
+**Anwendung plus Dateizuordnung** fuer flexibler als eine fest eingebaute
+Ansicht: wer eine Datei ansehen will, hinterlegt einen Betrachter und ordnet
+ihm die Endung zu — dann gilt dieselbe Mechanik wie fuer jedes andere
+Dokument, und der Betrachter ist austauschbar.
+
+Das Ticket bleibt stehen, weil der Schalter in der Referenzkonfiguration an
+ist und die Lueckenliste vollstaendig sein soll; es ist aber **kein Auftrag**,
+solange die Zuordnungsmechanik den Fall abdeckt. Vor einer Wiederaufnahme
+zuerst pruefen, ob eine Zuordnung auf einen `.NAP`-Betrachter heute schon
+genuegt — wenn ja, ist dieses Ticket gegenstandslos und wird geschlossen.
