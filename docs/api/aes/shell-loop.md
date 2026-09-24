@@ -672,6 +672,95 @@ Before/after screendumps of the text screen:
 
 ---
 
+### NewTOS implementation notes — the `gl_shgem` block for a GEM program launched by the built-in desktop (DESK35, 2026-09-24)
+
+`sh_main`'s body has three statements between `sh_chgrf` and `sh_ldapp`, and
+they are **inside** `if (gl_shgem)` (`gemshlib.c:715-720`):
+
+```c
+sh_chdef(psh);                  /* :712 */
+sh_chgrf(psh);                  /* :713 */
+if (gl_shgem) {
+    wm_init();                  /* :717 -- every window closed and deleted  */
+    ratinit();                  /* :718 */
+    sh_draw(D.s_cmd, TRUE);     /* :719 -- clear the screen                 */
+}
+rc = sh_ldapp(psh);             /* :725 */
+```
+
+**DESK06 left all three out of the nested run, and that was right for exactly
+one of the two cases.** `sh_run_pending_console`'s pass has `sh_isgem == FALSE`,
+so `sh_chgrf` has already taken `gl_shgem` to FALSE and *EmuTOS itself skips the
+block*: a character program gets no `wm_init` and no `sh_draw`. It can afford
+to — the text screen covers the whole display, and the windows the desktop left
+in the AES table are torn down by the **next** graphics pass's `wm_init`, not by
+this one. A GEM program keeps `gl_shgem` TRUE and EmuTOS takes all three steps,
+because that program draws only into its own rectangles: without the clear the
+desktop's windows stay on the screen as painted pixels with no event loop behind
+them, and without `wm_init` they stay in the AES window table and clip and
+composite against the program's own. That was the defect
+(`d35q-before-E-qed.png`: QED's menu bar over the frozen desktop).
+
+| EmuTOS (`gemshlib.c`) | NewTOS |
+|---|---|
+| `wm_init(); ratinit(); sh_draw(D.s_cmd, TRUE)` (`:715-720`) | `crate::shell_loop::sh_gem_enter()`, called from `desk::main::desktop_relinquish` |
+| `unsync(&wind_spb); if (gl_shgem) wm_new()` (`:668-669,676-677`) | `crate::shell_loop::sh_gem_leave()`, called from `desk::main::desktop_resume` |
+| the restarted `deskmain`: `win_start()`, `desk_verify(DESKWH, FALSE)`, `wind_set(WF_NEWDESK)`, `cnx_get()`, `men_update()`, `menu_bar(menutree, 1)` (`deskmain.c:2028-2073`) | `desktop_resume`: `win_free_all()` (in `desktop_relinquish`, see below), `appl_init`, `desk_verify(DESKWH)`, `wind_set_newdesk`, `cnx_get()`, `men_update()`, `redraw::redraw_desktop()` |
+
+**`cnx_put`/`cnx_get` are not an alternative here, they are the requirement.**
+`wm_init` closes and deletes *every* AES window, so after it the desktop's
+`WNODE`s hold dead handles and the AES table carries none of the state the
+returning desktop needs. That is exactly EmuTOS's situation too, and exactly why
+its restarted `deskmain` re-opens the windows from the context save area
+(`cnx_get`, `deskmain.c:2055`) — which `desktop_relinquish` has filled with
+`cnx_put()` (`deskmain.c:2154`) since DESK09. AES gap G2, named in DESK06 and in
+`wm_new_keep_desktop`'s doc comment, is closed by that pair.
+
+### Named deviations
+
+1. **Order: the block runs *before* `appl_exit()`, not after it.** EmuTOS's
+   order is the desktop epilog (`deskmain.c:2166`) and *then* `gemshlib.c:717`,
+   because there the desktop is a process that has ended. Here the two share one
+   AES descriptor across the boundary, and `wm_new`'s `wm_close` fans `WM_REDRAW`
+   out to the owners of the windows still open below each one it closes
+   (`gemwmlib.c:1216-1222,1453`) — that owner being this desktop. `ap_exit`'s
+   queue drain (`gemaplib.c:251-261`) is what keeps the child from inheriting
+   those (A28), and it can only do that if it comes last. Same steps, same pass,
+   drain last.
+2. **A desktop-side `win_free_all()` with no EmuTOS counterpart.** EmuTOS's
+   `WNODE` array belongs to the desktop *process*, which ends; the restarted
+   desktop allocates a fresh one in `win_start()` (`deskmain.c:2028`). NewTOS's
+   desktop resumes in place, so the array it keeps is emptied by hand — through
+   `win_free`, so each window's item `OBJECT`s go back to the `g_screen` free
+   chain (`obj_wfree`, `deskwin.c:148`) instead of leaking one window's worth per
+   launch. It makes no AES call: the windows are closed and deleted by `wm_init`,
+   as in EmuTOS.
+3. **`sh_gem_leave` is the plain `wm_new`**, not the `wm_new_keep_desktop`
+   variant the launch path used before: `sh_gem_enter`'s `wm_init` has already
+   taken the desktop's own windows, so there is nothing left to keep and the
+   sweep is exactly EmuTOS's.
+4. `wind_update(BEG_UPDATE/END_UPDATE)` around `cnx_get` (`deskmain.c:2054,2056`)
+   is not taken: the desktop is the only AES client alive at that moment, so the
+   bracket has nothing to keep out, and the whole-screen `redraw_desktop()` that
+   follows covers what the individual `wind_open`s drew.
+
+### Measured
+
+`measurement-2026-09-24-desk34-desk35/`, §3 and §4 — QEMU raspi4b, 640×480, two
+windows open on `C:\` before the launch.
+
+* `d35-after-D-app.png`: the launched `.NAP`'s window on an otherwise empty
+  screen — no menu bar, no desktop windows, no icons. `d35-before-D-app.png` is
+  the same instant on the HEAD build: both desktop windows, both desktop icons
+  and the trash still standing, the program's window composited *inside* them.
+* `d35q-after-E-qed.png` / `d35q-before-E-qed.png`: the same for QED, the
+  ticket's own application.
+* `d35-after-E-back.png`: after the program terminated, the desktop is back with
+  **both** windows at their saved rectangles and in their saved z-order — that is
+  `cnx_get` — and the menu bar re-installed.
+
+---
+
 ## 10. The state handover channel: `app_save → shel_put` / `shel_get → app_start`
 
 **Source:** `desk/deskapp.c:136` (`CPDATA_LEN`), `:781-840` (`app_start`),

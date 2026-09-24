@@ -1,6 +1,6 @@
 # DESK34 — Ein Unterverzeichnis oeffnet ein neues Fenster statt im selben zu navigieren
 
-Status: **OFFEN** · Prioritaet: **P1** · Typ: Belegter Defekt — Pi-Runde 2026-09-24
+Status: **IMPLEMENTIERT — HW OFFEN** · Prioritaet: **P1** · Typ: Belegter Defekt — Pi-Runde 2026-09-24
 
 Abhaengigkeiten: —
 
@@ -53,3 +53,39 @@ einen Ordner → neues Fenster. Die Alt-Probe braucht eine echte Tastatur.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss
+
+**Implementiert, QEMU-belegt, Pi-Abnahme offen.** Quittung:
+[DESK34-STATUS-DONE.MD](DESK34-STATUS-DONE.MD).
+
+`do_fopen`s Fallunterscheidung steht jetzt in `kernel/src/desk/main.rs` als
+eigene Funktion `do_fopen(handle, spec, title, allow_new_win)`
+(`desksupp.c:1089-1160`): `graf_mkstate` liest den Umschalttastenzustand im
+Moment des Oeffnens, `(keystate & MODE_SCA) == MODE_ALT` ist der einzige
+`new_win`-Erzeuger, den dieser Aufrufer hat, und der `else`-Zweig ist
+`pn_close` + `do_diropen(pw, FALSE, …)` = `navigate_window` — dieselbe
+Funktion, die *Close folder* schon benutzt, weil EmuTOS dort denselben Koerper
+aufruft (`w_setpath`, `deskfun.c:817-824`).
+
+Welcher Aufrufer heute welchen Wert setzt, am Quelltext festgestellt: beide
+NewTOS-Aufrufer von `open_item` (Doppelklick und *File → Open*) sind EmuTOS'
+`do_open`, und `do_open` uebergibt `TRUE` (`desksupp.c:1259`; der Doppelklick
+laeuft ueber `do_filemenu(OPENITEM)`, `deskmain.c:988`). Der Laufwerkspfad
+geht gar nicht durch diese Funktion — `do_dopen` (`:1041-1069`) ist ein
+eigener Aufrufer und ruft `win_alloc` unbedingt; `open_root_window` blieb
+unveraendert. Der dritte EmuTOS-Fall (`WN_DESKTOP`,
+`CONF_WITH_DESKTOP_SHORTCUTS`, `:1112-1127`) ist bei uns nicht erreichbar,
+weil es keinen `AT_ISFOLD`-Desktop-`ANODE` gibt (DESK30).
+
+**Abnahme (QEMU raspi4b, `measurement-2026-09-24-desk34-desk35/`, §2):**
+Ordner `SUB` im `C:\`-Fenster geoeffnet -> Fensterslot 0 / AES-Handle 1
+bleiben, `p_spec` wechselt von `C:\*.*` auf `C:\SUB\*.*`, Titel `C:\SUB\`
+(`d34-after-C-folder.png`); dieselbe Geste auf dem HEAD-Stand oeffnete ein
+zweites Fenster (`d34-before-C-folder.png`). Laufwerkssymbol danach ->
+neues Fenster, Slot 1 / Handle 2 (`d34-after-D-drive.png`). **Alt+Doppelklick
+braucht eine echte Tastatur** und steht als Pruefpunkt 59 in
+`docs/api/desktop/_hw-test-2026-09-17.md`.
+
+Benannte Abweichungen: `docs/api/desktop/deskmain.md`, Abschnitt
+„opening a folder navigates the window (DESK34)".
