@@ -1001,7 +1001,7 @@ the situation EmuTOS itself has no honest classic code for.
 - ADR-016 (desktop rebuild — the geometry work is cross-cutting and must be
   sequenced against the in-flight `kernel/src/desk/` task list)
 
-## ADR-018: Native executable extension family — `.NAP` / `.NCP` / `.NTP`
+## ADR-018: Native executable extension family — `.NAP` / `.NCP` / `.NTP` / `.NAC`
 
 **Date:** 2026-07-16
 **Status:** **Accepted** (user decision 2026-07-16, confirmed via team lead)
@@ -1037,6 +1037,7 @@ of the TOS syscall ABI, so this does not touch TOS API compatibility.
 | `.NAP` | Native **A**pp (GEM) | `.PRG` / `.APP` | `run_program`; the app uses AES and draws its own windows over the desktop |
 | `.NCP` | Native **C**onsole program | `.TOS` | `fbcon::activate` (VT52 text screen), `run_program`, restore the desktop on `Pterm` |
 | `.NTP` | Native, **T**akes params | `.TTP` / `.GTP` | prompt for a command tail (form dialog), pass it as the child's cmdline, then run |
+| `.NAC` | Native **A**ccessory | `.ACC` | *not* launched by double-click — found by the boot-time scan, loaded, and left running; see `docs/api/aes/accessories.md` |
 
 **Why exactly three:** NewTOS's AES environment is always up, so the launcher
 does *not* need the classic GEM-vs-console environment selection at load time —
@@ -1045,6 +1046,38 @@ need distinct *launcher* behavior: GUI app (nothing special), console app (text
 screen), takes-params (tail dialog). "GEM with params" collapses into `.NTP`
 (the tail dialog is identical). More roles can be added later without breaking
 the scheme.
+
+### Amendment 2026-09-24 — `.NAC`, and where accessories are searched
+
+The family gained a fourth member when accessory support was planned
+(ACC01/ACC06). Two user decisions came with it, both recorded here because a
+worker reads this file and not the lead's notes:
+
+1. **`.NAC` is the native accessory extension**, by the same reasoning as the
+   other three: `.ACC` stays reserved for m68k so the later emulator can claim
+   it. That claim is not theoretical — a classic `.ACC` could not run here
+   whatever it were called, because `load_one_acc` hands the file to `pgmld`
+   and `gotopgm` jumps straight into m68k machine code
+   (`references/emutos/aes/gemasm.S:73-131`).
+
+2. **Accessories are searched in two places, `C:\ACC\` first and the root
+   second**, and a file name already loaded from the folder is skipped in the
+   root. Dedupe is by **file name**, not by registered menu title: the title
+   only exists once the accessory runs, which is long after the decision to
+   load it. EmuTOS has exactly one location (`\*.ACC`, `aes/geminit.c:264-284`)
+   and therefore no precedence question at all, so this ordering is **ours**,
+   not an extraction — the root scan alone stays EmuTOS-compatible, and the
+   folder is an addition for tidiness.
+
+   What is **not** ours: `NUM_ACCS = 6` is a single budget covering both loaded
+   files and registration slots (`include/sysconf.h:37-40` says so in its own
+   comment), and `count_accs` simply stops at six with no error. The two-place
+   scan inherits that one budget across both locations; it does **not** get six
+   per place.
+
+**Still open when this was written:** `kernel/src/desk/ftype.rs`'s `classify`
+has no `.NAC` case, so a `.NAC` file is a document to the desktop today. That
+is ACC02's first job, together with the scan itself.
 
 ### Routing
 
