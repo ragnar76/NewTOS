@@ -20,7 +20,7 @@
 //! [`Process`]: super::Process
 //! [`Process::runnable`]: super::Process::runnable
 
-use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use super::{MAX_PROCESSES, PROCESS_TABLE};
 use crate::host::host;
@@ -115,6 +115,11 @@ pub struct Switch {
     pub l0_pa: u64,
     /// Entry point (user VA), used only when `fresh`.
     pub entry_va: u64,
+    /// Initial `SP_EL0` for a `fresh` entry — the slot's
+    /// [`super::Process::sp_el0`] (the mapped TPA top the loader computed).
+    /// `0` for a slot whose image did not come through `pexec::load` (the
+    /// embedded selftest blobs), where the handler keeps its own default.
+    pub sp_el0: u64,
     /// Privilege class of the peer being switched to (Option B hybrid model,
     /// design §2). `false` = an EL0 user process (its own TTBR0 → `apply_switch`
     /// installs `l0_pa`); `true` = an EL1-internal cooperative thread
@@ -147,6 +152,88 @@ pub struct Switch {
 #[inline]
 pub fn current() -> usize {
     CURRENT.load(Ordering::Acquire)
+}
+
+/// The slot of the execution context physically on the CPU, derived from the
+/// BDOS running-basepage `RUN` — or [`NONE`] for an **EL1 kernel context**
+/// (the boot path, the built-in desktop), which owns no process slot.
+///
+/// This is the same derivation [`crate::aes::appl::current_identity`] uses and
+/// it is the one that is *always* maintained: every path that gives the CPU to
+/// an EL0 process sets `RUN` ([`crate::bdos::process::set_current`]) — the
+/// kernel launcher, `Pexec`, the scheduler switch — whereas [`CURRENT`] is
+/// written only by the scheduler's own [`set_running`] and is therefore
+/// [`NONE`] for a program the kernel launcher entered directly.
+///
+/// [`sleep`] must distinguish "an EL0 process is blocking" from "the EL1
+/// kernel client is blocking" (they park in different places, §-ACC03), so it
+/// keys off this rather than off [`current`].
+#[inline]
+pub fn running_slot() -> usize {
+    match super::slot_for(super::current()) {
+        Some(idx) => idx,
+        None => NONE,
+    }
+}
+
+/// `true` while an **EL1 kernel client** (the boot path's accessory wait, or
+/// the built-in desktop inside a blocking `evnt_*`) has its trap frame parked
+/// by the kernel and is waiting to be resumed — the NewTOS stand-in for
+/// EmuTOS's "the desktop's AESPD is one more entry in the round-robin"
+/// (`aes/gemasm.S:169-194` `switchto`, over `rlr`/`drl`).
+///
+/// EmuTOS has no equivalent flag because it has no privilege boundary: its
+/// desktop is an ordinary AESPD and `dsptch()` switches to it like to any
+/// other. NewTOS's desktop runs at EL1, owns no process slot and therefore
+/// cannot be a [`pick_next`] candidate; instead the trap handler snapshots its
+/// frame ("the kernel park") before switching to an accessory, and [`sleep`]
+/// consults this flag to know that such a context is waiting to be resumed.
+static KERNEL_PARKED: AtomicBool = AtomicBool::new(false);
+
+/// Record whether an EL1 kernel client's frame is parked and resumable — set
+/// by the trap handler when it parks, cleared when it restores.
+#[inline]
+pub fn set_kernel_parked(parked: bool) {
+    KERNEL_PARKED.store(parked, Ordering::Release);
+}
+
+/// `true` when [`set_kernel_parked`] armed a parked EL1 kernel client.
+#[inline]
+pub fn kernel_parked() -> bool {
+    KERNEL_PARKED.load(Ordering::Acquire)
+}
+
+/// The [`Switch`] that means "resume the parked EL1 kernel client" rather than
+/// an EL0 peer — `el1_internal` is the flag reserved for exactly this
+/// (design §2/§7.2) and `slot` is [`NONE`], so no process-table entry is read.
+/// `apply_switch` restores the kernel park instead of a slot's saved frame.
+#[inline]
+pub fn switch_to_kernel() -> Switch {
+    Switch {
+        slot: NONE,
+        fresh: false,
+        l0_pa: 0,
+        entry_va: 0,
+        sp_el0: 0,
+        el1_internal: true,
+        restartable: false,
+    }
+}
+
+/// The next runnable EL0 peer for a context that owns no slot (the EL1 kernel
+/// client). `None` when nothing is runnable, i.e. the kernel client has no
+/// accessory to give the CPU to and must fall back to the idle pass.
+///
+/// Scans from slot **0** rather than wrapping like [`pick_next`], so a kernel
+/// client that dispatches several fresh peers runs them in slot order — which
+/// for desk accessories is discovery order, the order EmuTOS starts them in
+/// (`geminit.c:309-315` loads `acc[0..n]` in turn and `pstart` gives them
+/// ascending pids) and therefore the order their `menu_register` calls fall in
+/// under *Desk*.
+pub fn pick_peer_for_kernel() -> Option<Switch> {
+    (0..MAX_PROCESSES)
+        .find(|i| PROCESS_TABLE[*i].runnable.load(Ordering::Acquire))
+        .map(switch_to)
 }
 
 /// Record `slot` as the running process.
@@ -208,6 +295,7 @@ fn switch_to(slot: usize) -> Switch {
         fresh: !p.has_ctx.load(Ordering::Acquire),
         l0_pa: p.l0_pa.load(Ordering::Acquire),
         entry_va: p.entry_va.load(Ordering::Acquire),
+        sp_el0: p.sp_el0.load(Ordering::Acquire),
         // Step 3a: every scheduler peer is an EL0 process. EL1-internal-thread
         // classification lands in step 4 (design §2/§7.2).
         el1_internal: false,
@@ -291,14 +379,31 @@ pub enum SleepOutcome {
 ///     behaviorally identical to the former per-`evnt_*` `host().pump_input()`
 ///     spin — only the wait *mechanism* moves here.
 ///
-/// A no-slot caller — the EL1 desktop, whose `evnt_multi` runs with
-/// [`current`]` == NONE` (it is not a scheduler peer, design §1.2/§8.1.8) — has
-/// no peer and no slot bookkeeping, so it always takes Ausgang (a), exactly as
-/// today.
+/// **The EL1 kernel client (ACC03).** A caller that owns no slot — the boot
+/// path and the built-in desktop, both of which reach `evnt_*` from EL1 — is
+/// not a [`pick_next`] candidate and has nothing to mark WAITING. It still has
+/// the two exits, mirrored:
+///
+///   * **Ausgang (b)** — a runnable EL0 peer exists (a desk accessory that was
+///     woken by [`crate::aes::pd::post_msg`]): yield to it. The handler parks
+///     the EL1 frame (the "kernel park") and switches; when the accessory
+///     blocks again it comes straight back here and the rewound `svc`
+///     re-enters this wait. This is EmuTOS's `dsptch()` from inside `ev_block`
+///     (`aes/gemevlib.c`, `gemasm.S:169-194`), for the one client that is not
+///     a process.
+///   * **Ausgang (a)** — nothing runnable: the idle pass, exactly as before.
+///
+/// **Yielding *to* the parked kernel client.** The symmetric case: an EL0
+/// accessory blocks, no EL0 peer is runnable, and an EL1 client is parked
+/// ([`kernel_parked`]). Without this exit the accessory would spin in the idle
+/// fallback forever and the desktop — which is not in the run-set and can
+/// therefore never be picked — would never run again. `sleep` returns
+/// [`switch_to_kernel`], which `apply_switch` turns into the kernel-park
+/// restore.
 ///
 /// `cond` is built with [`wait_input`]/[`wait_mesg`]/[`wait_timer`].
 pub fn sleep(cond: u64) -> SleepOutcome {
-    let cur = current();
+    let cur = running_slot();
     if cur < MAX_PROCESSES {
         // RUNNING → WAITING(cond): record the wake key and drop out of the
         // round-robin run-set (§3.1). Done before `on_yield` so `pick_next`
@@ -309,11 +414,18 @@ pub fn sleep(cond: u64) -> SleepOutcome {
         // Ausgang (b) — a runnable peer exists (§4.4): yield to it. The handler
         // performs the S2 frame-save (ELR rewound to the svc) + switch; we do
         // NOT touch the trap frame here — `sleep` is deep in a non-leaf syscall
-        // and does not own it. In the step-3 single-context production path
-        // there is no peer, so this never fires and Ausgang (a) is taken.
+        // and does not own it.
         if let Some(sw) = on_yield(cur) {
             return SleepOutcome::Yield(sw);
         }
+        // No EL0 peer — but an EL1 kernel client may be parked waiting for
+        // exactly this moment (ACC03). Give it the CPU back rather than spin.
+        if kernel_parked() {
+            return SleepOutcome::Yield(switch_to_kernel());
+        }
+    } else if let Some(sw) = pick_peer_for_kernel() {
+        // The EL1 kernel client blocks and an accessory is runnable: `dsptch()`.
+        return SleepOutcome::Yield(sw);
     }
 
     // Ausgang (a) — the no-peer idle-fallback (§4.4): EmuTOS `schedule()`-idle.
@@ -403,6 +515,18 @@ pub fn clear_deadline() {
     }
 }
 
+/// Pointer state seen by the previous [`idle_wake_pass`] — `x`, `y` and the
+/// button mask packed into one word, so one atomic compare detects any
+/// mouse-borne event. Seeded to a value no real pointer state can take
+/// (`u64::MAX`) so the first pass always reports a change.
+static LAST_POINTER: AtomicU64 = AtomicU64::new(u64::MAX);
+
+/// The live pointer state as one word: `x`, `y` and the button mask.
+fn mouse_state_word() -> u64 {
+    let (mx, my) = crate::vdi::mouse_position();
+    ((mx as u16 as u64) << 32) | ((my as u16 as u64) << 16) | (crate::vdi::mouse_buttons() as u64)
+}
+
 /// The cooperative idle wake-pass (design §5.2): the single point where the
 /// input and timer wake sources are polled and turned into WAITING → READY
 /// transitions — EmuTOS's `schedule()`/`chkkbd` idle, **not** the ISR (the IRQ
@@ -412,10 +536,21 @@ fn idle_wake_pass() {
         return;
     };
     // WAIT_INPUT: console/keyboard input has landed in the ring → wake input
-    // waiters (§5.2, EmuTOS `chkkbd`). Mouse/button changes reach the VDI state
-    // through `pump_input` directly and are caught by the waiter's own
-    // predicate re-check, so they need no separate wake here.
-    if h.console_has_input() {
+    // waiters (§5.2, EmuTOS `chkkbd`).
+    //
+    // **Mouse/button changes wake them too** (ACC03). The previous rule — "they
+    // reach the VDI state through `pump_input` and are caught by the waiter's
+    // own predicate re-check" — holds only while the waiter *is* the context
+    // running the idle pass. With a second client in the run-set the idle pass
+    // runs in whichever context happens to be on the CPU, and a peer WAITING on
+    // `MU_BUTTON`/`MU_M1` can only re-check its predicate once it is scheduled
+    // again — which needs a wake. `pump_input` above has already folded the
+    // ring into the VDI pointer state, so comparing that state against the
+    // previous pass is the cheapest faithful "something happened" test; a
+    // spurious wake is harmless (the waiter re-checks and re-sleeps), a missing
+    // one is a lost event.
+    let pointer = mouse_state_word();
+    if h.console_has_input() || pointer != LAST_POINTER.swap(pointer, Ordering::AcqRel) {
         wake(wait_input());
     }
     // WAIT_TIMER: per-waiter deadline reached → wake (timer-IRQ deferred to

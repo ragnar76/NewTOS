@@ -228,6 +228,17 @@ pub struct Process {
     /// loaded earlier by `Pexec(PE_LOAD)` without re-parsing the image.
     pub entry_va: AtomicU64,
 
+    /// Initial `SP_EL0` for a **fresh** entry of this process — the mapped TPA
+    /// top the loader computed (`loader::LoadedImage::sp_el0`). `0` for a slot
+    /// whose image was not loaded through `pexec::load` (the embedded selftest
+    /// blobs), in which case the entry path keeps its own default.
+    ///
+    /// The kernel launcher passes the value straight to its EL0-entry helper;
+    /// this field is for the other way in — the scheduler switch
+    /// (`apply_switch`, `Switch::fresh`), which is how a desk accessory is
+    /// first run (ACC02/ACC03).
+    pub sp_el0: AtomicU64,
+
     /// Index of the parent's slot in [`PROCESS_TABLE`], or
     /// [`NO_PARENT`] for the boot-loaded root process. Used by
     /// `Pterm` to return control to the parent's resume PC.
@@ -263,12 +274,29 @@ pub struct Process {
     /// `Pterm` brings the parent's address space back online.
     pub parent_l0_pa: AtomicU64,
 
+    /// [`Self::parent_frame`] holds a **whole** EL1 trap frame, not the partial
+    /// `elr`/`sp_el0`/`spsr` triple the EL0-entry helper writes — the
+    /// desk-accessory case (ACC03). An accessory is not entered through
+    /// `enter_el0_with_resume_capture`: it is switched to from a parked EL1
+    /// kernel client (the boot path's `wait_for_accs`, or the desktop inside a
+    /// blocking `evnt_*`), and that client's frame is copied in here so a
+    /// *terminating* accessory resumes it the same way a *blocking* one does.
+    /// Such a frame must be restored in full — its `x0`/`x1` carry the GEM-trap
+    /// selector and parameter block of an `svc` that is about to re-execute —
+    /// whereas the partial kernel-launch frame must not have its `gpr` touched
+    /// at all (see `finish_terminate`).
+    pub parent_frame_full: AtomicBool,
+
     // ── cooperative scheduler (Phase 06 EC4 / `sched`) ──
     /// Full EL0 context saved when this process yields via `Pwait`
     /// (so the round-robin can resume it exactly where it left off).
     /// Distinct from [`Self::parent_frame`], which carries the
     /// parent-resume linkage for `Pexec`/`Pterm`.
     pub saved_frame: ParentFrame,
+
+    /// The FP/SIMD half of [`Self::saved_frame`] — see [`FpContext`]. Written
+    /// when this slot yields, restored on a `!fresh` scheduler resume.
+    pub saved_fp: FpContext,
 
     /// In the scheduler's run-set (a peer in the cooperative
     /// round-robin). Cleared when the process terminates.
@@ -490,6 +518,59 @@ pub const PARENT_FRAME_SP_EL0: usize = 33;
 /// `x0..x29` plus four one-off slots above.
 pub const PARENT_FRAME_LEN: usize = 34;
 
+// ─── FP/SIMD context (ACC03) ────────────────────────────────────────
+
+/// `u64` slots in an [`FpContext`]: `v0..v31` are 128-bit (two slots each),
+/// then `FPCR` and `FPSR`.
+pub const FP_CONTEXT_LEN: usize = 32 * 2 + 2;
+/// Index of `FPCR` in [`FpContext::slots`].
+pub const FP_CONTEXT_FPCR: usize = 64;
+/// Index of `FPSR` in [`FpContext::slots`].
+pub const FP_CONTEXT_FPSR: usize = 65;
+
+/// The **FP/SIMD half** of a saved EL0 context — `v0..v31`, `FPCR`, `FPSR`.
+///
+/// [`ExceptionFrame`] carries only the general-purpose registers, which is
+/// enough for every path that existed before desk accessories: an EL1 caller
+/// never touches the vector file (both kernel crates build for
+/// `aarch64-unknown-none-softfloat`), and a kernel-launched program runs to its
+/// `Pterm` without another EL0 context ever being scheduled in between.
+///
+/// A desk accessory breaks both assumptions: it is parked mid-function while a
+/// *hard-float* EL0 program (anything from `sdk/build.sh`, which targets
+/// `aarch64-unknown-none-elf`) runs and rewrites the whole vector file.
+/// Measured: the accessory's `evnt_mesag` loop keeps its AES control block
+/// `{23, 0, 1, 1}` in `d1` as a loop-invariant constant
+/// (`str d1, [x9]` at `sysacc.c`'s call site) — after a launched GEM program
+/// had run, the resumed accessory stored *that program's* leftover `d1` into
+/// its control array and trapped with a wrong opcode, every pass, forever.
+///
+/// Saved where the GPRs are saved (a slot's yield) and restored where they are
+/// restored (a `!fresh` scheduler resume).
+#[repr(C)]
+pub struct FpContext {
+    /// `v0..v31` (low/high `u64` each), then `FPCR`, `FPSR`.
+    slots: core::cell::UnsafeCell<[u64; FP_CONTEXT_LEN]>,
+}
+
+// SAFETY: written and read only from the single-CPU trap path, with the same
+// discipline as the rest of the slot's saved context.
+unsafe impl Sync for FpContext {}
+
+impl FpContext {
+    /// All-zero.
+    #[inline]
+    pub const fn zeroed() -> Self {
+        Self { slots: core::cell::UnsafeCell::new([0; FP_CONTEXT_LEN]) }
+    }
+
+    /// Raw pointer to the first slot — what the save/restore asm addresses.
+    #[inline]
+    pub fn ptr(&self) -> *mut u64 {
+        self.slots.get() as *mut u64
+    }
+}
+
 /// Atomic snapshot of an [`ExceptionFrame`]'s restorable bits
 /// (everything the post-handler `eret` consumes). Layout matches
 /// [`crate::bdos::process::PARENT_FRAME_*`] index constants.
@@ -571,10 +652,13 @@ impl Process {
             basepage_pa: AtomicU64::new(0),
             l0_pa: AtomicU64::new(0),
             entry_va: AtomicU64::new(0),
+            sp_el0: AtomicU64::new(0),
             parent_slot: AtomicU32::new(NO_PARENT),
             parent_frame: ParentFrame::zeroed(),
             parent_l0_pa: AtomicU64::new(0),
+            parent_frame_full: AtomicBool::new(false),
             saved_frame: ParentFrame::zeroed(),
+            saved_fp: FpContext::zeroed(),
             runnable: AtomicBool::new(false),
             has_ctx: AtomicBool::new(false),
             wait_cond: AtomicU64::new(0),
@@ -817,9 +901,17 @@ pub fn free_slot(idx: usize) {
     p.basepage_pa.store(0, Ordering::Release);
     p.l0_pa.store(0, Ordering::Release);
     p.entry_va.store(0, Ordering::Release);
+    p.sp_el0.store(0, Ordering::Release);
     p.parent_slot.store(NO_PARENT, Ordering::Release);
     p.parent_frame.clear();
     p.parent_l0_pa.store(0, Ordering::Release);
+    p.parent_frame_full.store(false, Ordering::Release);
+    // Drop the slot out of the cooperative run-set: an accessory slot is
+    // admitted by the loader and would otherwise stay a `pick_next` candidate
+    // after the process behind it is gone (ACC02/ACC03).
+    p.runnable.store(false, Ordering::Release);
+    p.has_ctx.store(false, Ordering::Release);
+    p.syscall_deadline.store(0, Ordering::Release);
     // Clear any stale WAITING key so a reused slot does not get spuriously
     // woken by a `sched::wake` matching a dead process's wait condition.
     p.wait_cond.store(0, Ordering::Release);

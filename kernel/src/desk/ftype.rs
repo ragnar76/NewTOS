@@ -11,6 +11,7 @@
 //! | `.NAP` | [`Flavor::App`]      | `.PRG` / `.APP` | run; the app draws its own AES UI     |
 //! | `.NCP` | [`Flavor::Console`]  | `.TOS`          | VT52 text screen, run, restore desktop|
 //! | `.NTP` | [`Flavor::Params`]   | `.TTP` / `.GTP` | prompt for a command tail, then run   |
+//! | `.NAC` | [`Flavor::Accessory`]| `.ACC`          | **not** launched — loaded at AES start |
 //!
 //! The extension is a desktop/shell convention only — it is **not** part of the
 //! TOS syscall ABI, so this classification touches no compatibility contract.
@@ -31,6 +32,20 @@ pub enum Flavor {
     /// `.NTP` — native program that takes a command tail (prompted for before
     /// launch; the tail dialog is a Stage-3 follow-on).
     Params,
+    /// `.NAC` — native **desk accessory** (ADR-018, ACC05). Unlike the three
+    /// above it is *not* launched on demand: the AES loads it once at session
+    /// start from `C:\ACC\` or the boot drive's root and it runs for the whole
+    /// session (`crate::accs`, `docs/api/aes/accessories.md` §1).
+    ///
+    /// A double-click on a `.NAC` therefore does **nothing** — EmuTOS's
+    /// desktop has no accessory launch path either: an `.ACC` is only ever
+    /// auto-loaded by `count_accs`/`load_accs` (`aes/geminit.c:264-315`), and
+    /// its own desktop `open_item` has no case for the extension
+    /// (`desk/deskact.c`/`deskins.c` classify `.PRG`/`.APP`/`.TOS`/`.TTP`
+    /// only). Running a second copy of an accessory as an ordinary program
+    /// would give it a second `menu_register` slot and a second message loop
+    /// with no way out, so the desktop reports it instead of launching it.
+    Accessory,
 }
 
 /// What a filename's extension says about how the desktop should open it
@@ -65,6 +80,7 @@ pub fn classify(name: &[u8]) -> FileType {
         b".NAP" => FileType::Native(Flavor::App),
         b".NCP" => FileType::Native(Flavor::Console),
         b".NTP" => FileType::Native(Flavor::Params),
+        b".NAC" => FileType::Native(Flavor::Accessory),
         b".PRG" | b".APP" | b".TOS" | b".TTP" | b".GTP" => FileType::M68k,
         _ => FileType::Doc,
     }

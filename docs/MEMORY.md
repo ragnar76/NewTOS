@@ -1075,9 +1075,13 @@ worker reads this file and not the lead's notes:
    scan inherits that one budget across both locations; it does **not** get six
    per place.
 
-**Still open when this was written:** `kernel/src/desk/ftype.rs`'s `classify`
-has no `.NAC` case, so a `.NAC` file is a document to the desktop today. That
-is ACC02's first job, together with the scan itself.
+**Closed 2026-09-25 (ACC02):** `classify` has `Flavor::Accessory` for `.NAC`
+and the two-place scan is `kernel/src/accs.rs::count_accs`. A double-click on a
+`.NAC` deliberately does **not** run it — `launch_native`'s `Accessory` arm
+says so in an alert instead, because a second copy of a running accessory would
+take a second `menu_register` slot and enter a second, unreachable message
+loop. EmuTOS's desktop has no launch path for an `.ACC` either; it simply
+cannot reach the case, while ours can. See `docs/api/aes/accessories.md` §9.
 
 ### Routing
 

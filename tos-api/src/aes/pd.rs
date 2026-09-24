@@ -37,6 +37,14 @@ use core::cell::UnsafeCell;
 pub const AP_OPEN: u16 = 0x0001;
 /// `p_flags` bit: the application has waited for a message.
 pub const AP_MESAG: u16 = 0x0002;
+/// `p_flags` bit: the application has seen an `AC_CLOSE` message
+/// (`aes/struct.h:117`). Set by the Event Manager when a `MU_MESAG` delivery
+/// hands out an `AC_CLOSE` (`gemsuper.c:139-140,160-161`) — never by the
+/// accessory itself — and read by `wait_for_accs(AP_ACCLOSE)`
+/// (`geminit.c:599-628`, called from `ap_exit`, `gemaplib.c:255`). EmuTOS
+/// never clears it: once a descriptor has seen one `AC_CLOSE`, every later
+/// `wait_for_accs(AP_ACCLOSE)` passes for it immediately.
+pub const AP_ACCLOSE: u16 = 0x0004;
 
 /// Number of AES process descriptors: one per GEMDOS process slot
 /// (`bdos::process::MAX_PROCESSES`) plus one for the kernel-context desktop.
@@ -527,10 +535,12 @@ pub unsafe fn find_by_name(name: &[u8; 8]) -> Option<usize> {
 /// from then on every `WM_REDRAW`/`WM_CLOSED`/`WM_MOVED`/`MN_SELECTED` the AES
 /// posted to the desktop was silently dropped.
 ///
-/// `mn_cleanup` (`gemmnlib.c:740-758`) and `wait_for_accs` concern desk
-/// accessories, which NewTOS has none of; `wm_update`/`all_run` bracket the
-/// drain against the AES's own multitasking, which a synchronous drain on the
-/// single trap path cannot race.
+/// `mn_cleanup` (`gemmnlib.c:740-758`) and `wait_for_accs` (`geminit.c:599`)
+/// are the desk-accessory half and live one level up, in
+/// [`super::appl::appl_exit`]: they have to run **before** this drain and the
+/// wait can yield to an accessory, which this function (a leaf) cannot do.
+/// `wm_update`/`all_run` bracket the drain against the AES's own
+/// multitasking, which a synchronous drain on the single trap path cannot race.
 ///
 /// # Safety
 /// Single trap path.
@@ -579,6 +589,13 @@ pub unsafe fn close_if_open(idx: usize) {
     // SAFETY: single trap path.
     if let Some(slot) = unsafe { by_index(idx) } {
         if slot.flags & AP_OPEN != 0 {
+            // `mn_cleanup();` (`gemshlib.c:653`) — AC_CLOSE to every registered
+            // desk accessory, for a program that ended without calling
+            // `appl_exit` itself. Unlike `ap_exit` this path does **not** wait
+            // for `AP_ACCLOSE` (EmuTOS's `sh_ldapp` has no `wait_for_accs`
+            // either): the shell loop is about to start the next program and
+            // the accessories pick the message up when they next run.
+            super::menu::mn_cleanup();
             slot.queue.clear(); // ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, …)
             slot.flags &= !AP_OPEN; // rlr->p_flags &= ~AP_OPEN
         }

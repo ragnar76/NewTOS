@@ -13,6 +13,7 @@
 //! the caller's array. A caller that declares `OUT_LEN 0` gets nothing
 //! written, not even the return code.
 
+pub mod acc;
 mod appl;
 mod event;
 pub mod form;
@@ -158,6 +159,11 @@ pub fn reinit() {
     // `mn_init()` (`:808`) + `mn_cleanup`'s submenu free + `mnext_init()`
     // (`:672`).
     menu::reinit();
+    // The desk-accessory process list. EmuTOS reaches the same state by
+    // re-running `count_accs`/`load_accs` for the new session
+    // (`geminit.c:812,687`); the kernel's `free_accs` has already disposed of
+    // the processes by the time a restart gets here.
+    acc::reinit();
     // The Window Manager: the `theglo` blank of `D.w_win[]` plus `wm_start()`
     // (`:723`). Before the process table, because neither draws or posts here
     // — but the order that would matter if it ever did is this one: no window
@@ -753,7 +759,7 @@ fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
 
     match opcode {
         10 => appl::appl_init(pb),
-        19 => appl::appl_exit(pb),
+        19 => return appl::appl_exit(pb),
         // `appl_read` blocks on an empty queue like `evnt_mesag` (A75) — it
         // may yield to a peer too; propagate the `Switch`.
         11 => return appl::appl_read(pb),

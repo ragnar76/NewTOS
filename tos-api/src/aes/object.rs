@@ -344,6 +344,26 @@ impl ObjTree {
         self.wr_i16(i, self.coord_off() + 6, v)
     }
 
+    /// Write the raw `ob_spec` field at the tree's width — the inverse of
+    /// [`Self::raw_spec`]. `menu_fixup` needs it (`tree[ob].ob_spec =
+    /// (LONG)D.g_acctitle[st++]`, `aes/gemmnlib.c:117`): a registered desk
+    /// accessory's title pointer is stored straight into the placeholder
+    /// object of whichever menu tree is installed, at that tree's pointer
+    /// width. No INDIRECT resolution — EmuTOS's assignment has none either.
+    #[inline]
+    pub(crate) fn set_raw_spec(self, i: i16, v: u64) {
+        let Some(p) = self.wr_ptr(i, self.spec_off()) else {
+            return;
+        };
+        // SAFETY: as `raw_spec`; the record is writable (GEM contract).
+        unsafe {
+            match self.abi {
+                Abi::Lp64 => (p as *mut u64).write_unaligned(v),
+                Abi::Ilp32 => (p as *mut u32).write_unaligned(v as u32),
+            }
+        }
+    }
+
     /// The raw `ob_spec` field read at the caller's width: a u64 for LP64, a u32
     /// zero-extended for ILP32. This is the value *before* INDIRECT resolution —
     /// for an `INDIRECT` object it is a pointer to the cell holding the real
@@ -1427,7 +1447,7 @@ pub fn objc_order(pb: &Aespb) {
 }
 
 /// Link `child` as the last child of `parent` (EmuTOS `ob_add`).
-fn ob_add(t: ObjTree, parent: i16, child: i16) {
+pub(crate) fn ob_add(t: ObjTree, parent: i16, child: i16) {
     if parent == NIL || child == NIL {
         return;
     }

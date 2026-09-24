@@ -104,6 +104,8 @@
 
 use super::pd;
 use super::Aespb;
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use crate::bdos::process::sched;
 
 /// AES version reported in `ap_version` (`include/config.h` default).
@@ -324,11 +326,34 @@ pub fn appl_init(pb: &Aespb) {
 /// (`resource::on_process_exit`, A39 R6). XaAES frees a client's whole list
 /// here (`xa_appl.c:745-750`); not adopted.
 /// The `APPL_EXIT` arm's `ret` is the enclosing `TRUE` (`gemsuper.c:85,120-123`).
-pub fn appl_exit(pb: &Aespb) {
+pub fn appl_exit(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
+    // `mn_cleanup();` (`aes/gemaplib.c:253`) — AC_CLOSE to every registered
+    // desk accessory, so one with state tied to *this* application can drop it
+    // before the application's memory goes. Posted **once** per `appl_exit`:
+    // the wait below can abort and re-execute this whole call (the S2
+    // restartable block), and a second round of messages would be observable
+    // as duplicate `AC_CLOSE`s. The round flag is NewTOS mechanism — EmuTOS
+    // needs none because its `ap_exit` never leaves and re-enters.
+    if !ACCLOSE_ROUND.swap(true, Ordering::AcqRel) {
+        super::menu::mn_cleanup();
+    }
+    // `wait_for_accs(AP_ACCLOSE);` (`:255`) — "block until all DAs have seen
+    // AC_CLOSE". Returns a `Switch` when an accessory is runnable: this call
+    // aborts, the accessory runs, and the re-executed `svc` re-enters here.
+    if let Some(sw) = super::acc::wait_for_accs(pd::AP_ACCLOSE) {
+        return Some(sw);
+    }
+    ACCLOSE_ROUND.store(false, Ordering::Release);
     // SAFETY: single trap path.
     unsafe { pd::close(current_identity()) };
     pb.set_ret(1);
+    None
 }
+
+/// `true` between [`appl_exit`] posting its round of `AC_CLOSE` messages and
+/// the matching `wait_for_accs(AP_ACCLOSE)` completing — see [`appl_exit`].
+static ACCLOSE_ROUND: AtomicBool =
+    AtomicBool::new(false);
 
 /// Opcode 13 — `appl_find`: find an application by its 8-char name in
 /// `addrin[0]`. Returns its reported pid ([`reported_pid`] of the identity

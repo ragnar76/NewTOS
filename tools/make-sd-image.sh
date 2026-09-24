@@ -56,6 +56,8 @@ printf 'keyboard table placeholder\r\n'                                      > "
 head -c 4096 /dev/urandom                                                    > "$V/KERNEL8.IMG"
 head -c 512  /dev/urandom                                                    > "$V/LYNXBOOT.IMG"
 head -c 4096 /dev/urandom                                                    > "$V/DATA.BIN"
+# C:\ACC\ is the first of the two desk-accessory search locations (ACC02);
+# the SYSACC.NAC install block below fills it.
 mkdir -p "$V/ACC"
 mkdir -p "$V/GEMSYS"
 mkdir -p "$V/SUB";  printf 'A file inside SUB.\r\n'                           > "$V/SUB/INSIDE.TXT"
@@ -182,6 +184,31 @@ if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/sysinfo.c" "$V/SYS
   fi
 else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\SYSINFO.NCP skipped"
+fi
+
+# ACC05 / ACC02: the desk accessories. SYSACC.NAC is the accessory half of the
+# ACC06 pair (SYSINFO.NCP above is the console half): it registers " NewTOS
+# System" under *Desk* and answers AC_OPEN with a form_alert showing the ARM
+# clock and the die temperature.
+#
+# Installed in BOTH search locations so one card exercises both halves of the
+# two-place scan (docs/api/aes/accessories.md §7.3): C:\ACC\SYSACC.NAC is
+# found first, C:\SYSACC2.NAC is the root copy. The names deliberately DIFFER
+# -- a same-named file in the root is skipped by the scan's file-name dedupe,
+# which is the rule, not a defect; two names prove both locations are read.
+# Set SD_ACC_ROOT_ONLY=1 to install only the root copy (the scan then finds
+# exactly one accessory, in the second location).
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/sysacc.c" "$V/ACC/SYSACC.NAC" >/dev/null 2>&1; then
+  echo "built + installed C:\\ACC\\SYSACC.NAC (desk accessory, folder location)"
+  if [ "${SD_ACC_ROOT_ONLY:-0}" = "1" ]; then
+    mv "$V/ACC/SYSACC.NAC" "$V/SYSACC2.NAC"
+    echo "  moved to C:\\SYSACC2.NAC (SD_ACC_ROOT_ONLY=1: root location only)"
+  else
+    cp "$V/ACC/SYSACC.NAC" "$V/SYSACC2.NAC"
+    echo "  + C:\\SYSACC2.NAC (root location; a second, independently loaded copy)"
+  fi
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); SYSACC.NAC skipped"
 fi
 
 # libc milestone (mintlib port): LIBTEST.NCP is the mintlib-linked proof — real

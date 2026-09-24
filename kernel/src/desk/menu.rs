@@ -282,9 +282,18 @@ enum Entry {
     Sep(&'static [u8]),
     /// A selectable item and its label.
     Act(Item, &'static [u8]),
+    /// A **desk-accessory placeholder** under *Desk* — EmuTOS's `"1"`…`"6"`
+    /// entries of `ADMENU` (`desk/desk_rsc.c:345-407`). Built like an
+    /// [`Entry::Act`] with no [`Item`]: the AES's `menu_fixup` overwrites its
+    /// `ob_spec` with a registered accessory's title pointer and unlinks the
+    /// ones it does not need (`aes/gemmnlib.c:89-125`), and a click on it is
+    /// routed to the accessory as `AC_OPEN`, never to the desktop as
+    /// `MN_SELECTED`. The label text is only what shows if `menu_fixup` never
+    /// runs.
+    Acc(&'static [u8]),
 }
 
-use Entry::{Act, Sep};
+use Entry::{Acc, Act, Sep};
 
 /// One top-level menu: its title and its drop-down entries. Labels are padded
 /// to a common width for a rectangular drop-down (EmuTOS `copy_menu_items`).
@@ -297,10 +306,28 @@ struct Def {
 /// The four desktop menus (`_rebuild-plan.md` §8 item set). All labels are
 /// NUL-terminated; separator dash-runs match their menu's item width.
 const MENUS: [Def; 4] = [
+    // The *Desk* drop-down carries the EmuTOS `ADMENU` reservation: the About
+    // item, a separator, and **six blank placeholders** (`desk_rsc.c:345-407`,
+    // objects 9…16, whose `ob_spec` strings are literally `"1"`…`"6"`).
+    // `menu_fixup` (`aes/gemmnlib.c:89-125`) relinks this box from scratch on
+    // every `menu_bar(…, 1)` and every `menu_register`, linking `1` child with
+    // no accessory registered (About only — the separator disappears too) and
+    // `2 + n` with `n` of them, writing each registered title pointer into the
+    // `n`-th placeholder's `ob_spec`. Without the placeholders the desktop's
+    // tree would have nothing for the accessories to be spliced into.
     Def {
         title: Title::Desk,
         label: b" Desk \0",
-        entries: &[Act(Item::About, b"  Desktop info... \0"), Sep(b"------------------\0")],
+        entries: &[
+            Act(Item::About, b"  Desktop info... \0"),
+            Sep(b"------------------\0"),
+            Acc(b"  1               \0"),
+            Acc(b"  2               \0"),
+            Acc(b"  3               \0"),
+            Acc(b"  4               \0"),
+            Acc(b"  5               \0"),
+            Acc(b"  6               \0"),
+        ],
     },
     Def {
         title: Title::File,
@@ -665,7 +692,7 @@ fn build_menu() -> *mut Object {
                         dst[..cells].fill(b'-');
                         dst[cells] = 0;
                     }
-                    Act(_, _) => {
+                    Act(_, _) | Acc(_) => {
                         let n = (label_len(src) as usize).min(cells - 1);
                         dst[..n].copy_from_slice(&src[..n]);
                         dst[n..cells - 1].fill(b' ');
@@ -693,6 +720,11 @@ fn build_menu() -> *mut Object {
                         item_obj[*item as usize] = k as i16;
                         obj_item[k] = *item as i16;
                     }
+                    // A desk-accessory placeholder carries no desktop `Item`:
+                    // a click on it never reaches `hndl_menu` (the AES routes
+                    // it to the accessory as `AC_OPEN`), so `obj_item[k]` stays
+                    // at its `-1` default.
+                    Acc(_) => {}
                 }
                 k += 1;
             }
@@ -741,7 +773,7 @@ fn build_menu() -> *mut Object {
 /// separator, the item text for an action).
 fn entry_label(e: &Entry) -> &'static [u8] {
     match *e {
-        Sep(s) | Act(_, s) => s,
+        Sep(s) | Act(_, s) | Acc(s) => s,
     }
 }
 

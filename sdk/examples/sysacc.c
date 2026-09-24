@@ -2,48 +2,22 @@
  * sysacc.c -- ACC06 part 2: the desk accessory that shows the machine's ARM
  * clock and die temperature in a `form_alert` box.
  *
- * ===========================================================================
- * THIS PROGRAM CANNOT RUN YET. IT IS SOURCE, NOT A DELIVERABLE.
- * ===========================================================================
+ * The accessory half of the ACC06 pair (SYSINFO.NCP is the console half).
  *
- * It is written now so that the accessory framework has something to be
- * measured against when it lands -- the same order in which CURDIR.NCP was
- * written before the launcher could set a working directory (DESK18).
+ * FILE EXTENSION: `.NAC` (ADR-018, decided in ACC05). Our own programs carry
+ * `.NAP` (GEM) and `.NCP` (console) so that the later m68k emulator can own
+ * `.PRG`/`.TOS`/`.TTP`/`.ACC`; a native AArch64 desk accessory gets `.NAC` for
+ * the same reason. The AES scans two locations for it at session start,
+ * `C:\ACC\*.NAC` first and then `C:\*.NAC` (docs/api/aes/accessories.md §7),
+ * and a `.NAC` is never launched by double-click -- it is loaded once and runs
+ * for the whole session.
  *
- * What is missing, precisely:
+ *     sdk/build.sh sdk/examples/sysacc.c /somewhere/SYSACC.NAC
  *
- *   * `menu_register` (AES 35) exists and is real: it records the title
- *     pointer and the owning application id and hands back a stable slot
- *     number (tos-api/src/aes/menu.rs:1105-1130). That is all it does.
- *   * Nothing puts that slot into the Desk drop-down, and nothing posts
- *     `AC_OPEN` when it is picked. In EmuTOS that is `gemctrl.c:337-346`
- *     (the click on a Desk item at or past `gl_dafirst` -> `mn_getownid` ->
- *     `ct_msgup(AC_OPEN, owner, THEDESK, menu-id, 0,0,0)`), and the
- *     counterpart `mn_cleanup` (`gemmnlib.c:740-748`) which sends `AC_CLOSE`
- *     to every registered accessory.
- *   * There is also no accessory *loader*: classic TOS starts accessories
- *     from the boot drive's root before the desktop, as processes that never
- *     terminate.
- *
- * Those three are tickets ACC02/ACC03 and deliberately NOT built here. Run
- * against today's kernel this program registers successfully and then blocks
- * in `evnt_mesag` forever, because the message it waits for is never sent.
- * That is the honest state, not a defect of this file.
- *
- * FILE EXTENSION: not decided. The classic extension is `.ACC`; our own
- * native formats are `.NAP` (GEM) and `.NCP` (console), deliberately
- * different from the m68k ones so the later emulator can own `.PRG`/`.TOS`/
- * `.TTP`/`.ACC`. Which one a NewTOS accessory gets is ACC01's decision and
- * is NOT pre-empted here: build this file as `SYSACC.TBD` -- an extension
- * that is obviously a placeholder and that nothing in the system claims:
- *
- *     sdk/build.sh sdk/examples/sysacc.c /somewhere/SYSACC.TBD
- *
- * tools/make-sd-image.sh deliberately does NOT install it: a program that
- * cannot run has no business on the card.
+ * tools/make-sd-image.sh installs it into both search locations.
  *
  * ---------------------------------------------------------------------------
- * What it does once ACC02/ACC03 exist
+ * What it does
  * ---------------------------------------------------------------------------
  *   appl_init                       -> our application id
  *   menu_register(id, " NewTOS System")
@@ -66,9 +40,9 @@
  *
  * Calls used, all against docs/api/ and the EmuTOS AES:
  *   appl_init       AES  10
- *   menu_register   AES  35   tos-api/src/aes/menu.rs:1105
- *   evnt_mesag      AES  23   tos-api/src/aes/event.rs:783
- *   form_alert      AES  52   tos-api/src/aes/form.rs:136
+ *   menu_register   AES  35   tos-api/src/aes/menu.rs
+ *   evnt_mesag      AES  23   tos-api/src/aes/event.rs
+ *   form_alert      AES  52   tos-api/src/aes/form.rs
  *   Ssystem         GEMDOS 0x154, modes 2000/2001
  *                             docs/api/gemdos/154-ssystem.md
  */
@@ -271,8 +245,7 @@ int main(void)
 
     /*
      * An accessory never terminates: it waits for messages for as long as the
-     * machine runs. TODAY THIS LOOP BLOCKS ON ITS FIRST ITERATION, because
-     * nothing posts AC_OPEN yet (see the header).
+     * machine runs.
      */
     for (;;) {
         for (i = 0; i < 8; i++)

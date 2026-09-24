@@ -986,6 +986,15 @@ fn set_launch_dir(app_dir: bool, own_path: &str) -> bool {
 /// UI, or the alert).
 fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
     match flavor {
+        ftype::Flavor::Accessory => {
+            // A desk accessory (`.NAC`) is **not** launched on demand (ACC02):
+            // the AES loads it once per session from `C:\ACC\` or the root and
+            // it lives for the whole session. EmuTOS's desktop has no launch
+            // path for an `.ACC` either — `count_accs`/`load_accs`
+            // (`aes/geminit.c:264-315`) is the only way one ever starts. Say so
+            // rather than start a second, unreachable copy of it.
+            alert_accessory_not_launchable(name);
+        }
         ftype::Flavor::App | ftype::Flavor::Params => {
             // GEM app (`.NAP`) / takes-parameters (`.NTP`): both draw their own
             // AES UI directly over the screen, so they go through the
@@ -1246,6 +1255,30 @@ fn alert_launch_failed(name: &str) {
     let mut buf = [0u8; 128];
     let mut p = 0usize;
     for part in [b"[1][ Could not launch ".as_slice(), name.as_bytes(), b". ][ OK ]"] {
+        for &b in part {
+            if p < buf.len() - 1 {
+                buf[p] = b;
+                p += 1;
+            }
+        }
+    }
+    buf[p] = 0;
+    super::form_alert(1, buf.as_ptr());
+}
+
+/// Alert for a double-clicked desk accessory (`.NAC`): it is already loaded (or
+/// was not found at boot) and cannot be started a second time — see
+/// [`launch_native`]'s `Accessory` arm. EmuTOS has no message for this because
+/// its desktop cannot reach the case at all; ours can, so it says what happened
+/// instead of doing nothing.
+fn alert_accessory_not_launchable(name: &str) {
+    let mut buf = [0u8; 128];
+    let mut p = 0usize;
+    for part in [
+        b"[1][ ".as_slice(),
+        name.as_bytes(),
+        b" is a desk accessory.|It is started from C:\\ACC\\|at boot, not from here. ][ OK ]",
+    ] {
         for &b in part {
             if p < buf.len() - 1 {
                 buf[p] = b;
@@ -1695,6 +1728,12 @@ fn default_flavor(flavor: ftype::Flavor) -> super::inf::AppFlavor {
         ftype::Flavor::App => super::inf::AppFlavor::Gem,
         ftype::Flavor::Console => super::inf::AppFlavor::Tos,
         ftype::Flavor::Params => super::inf::AppFlavor::Ttp,
+        // A `.NAC` is never an *installed application* — it is not launched at
+        // all (see [`launch_native`]) — but the enum must be total. GEM is the
+        // nearest description of what the file is; the Install-Application
+        // dialog is unreachable for it, since [`selected_native_program`] only
+        // offers a program the desktop would run.
+        ftype::Flavor::Accessory => super::inf::AppFlavor::Gem,
     }
 }
 

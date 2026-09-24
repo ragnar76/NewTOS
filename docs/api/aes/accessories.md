@@ -610,6 +610,126 @@ by direct search this session (not inferred from the ticket's framing):
 
 ---
 
+## 9. NewTOS implementation notes (ACC02-ACC05, landed 2026-09-25)
+
+Where the gap list of §8 now stands, and every point where NewTOS does not do
+what EmuTOS does. Measured in
+`measurement-2026-09-25-acc02-acc04/` (QEMU raspi4b, both search locations,
+`AC_OPEN`, `AC_CLOSE`, desktop-still-usable).
+
+### 9.1 Where each piece lives
+
+| EmuTOS | NewTOS |
+|---|---|
+| `count_accs` (`geminit.c:264-284`) | `kernel/src/accs.rs::count_accs` |
+| `load_one_acc` (`:236-257`) | `kernel/src/accs.rs::load_one_acc` |
+| `load_accs` (`:309-315`), called at `:687` | `kernel/src/accs.rs::load_accs`, called from `kernel/src/lib.rs`'s session loop before `go_graphic` |
+| `dsptch(); wait_for_accs(AP_MESAG)` (`:736-737`) | `kernel/src/accs.rs::wait_for_accs_mesag`, called after `process_inf2` and before `sh_main` |
+| `free_accs` (`:296-303`), called at `:741` | `kernel/src/accs.rs::free_accs`, called after `sh_main` returns |
+| `wait_for_accs` (`:599-628`) | `tos-api/src/aes/acc.rs::wait_for_accs` |
+| the DA process list (AESPD pids 2…) | `tos-api/src/aes/acc.rs` (`register_process`/`processes`) |
+| `mn_register` (`gemmnlib.c:789-816`) | `tos-api/src/aes/menu.rs::menu_register` |
+| `menu_fixup` (`:89-125`) | `tos-api/src/aes/menu.rs::menu_fixup`, called from `menu_bar`'s show path and from `menu_register` |
+| `build_menuid_lookup` (`:766-782`) | `menu.rs::build_menuid_lookup` |
+| `mn_getownid` (`:838-848`) | `menu.rs::mn_getownid` |
+| `mn_cleanup` (`:740-758`) | `menu.rs::mn_cleanup`, called from `appl_exit` and from `pd::close_if_open` |
+| `hctl_rect`'s DA branch (`gemctrl.c:337-350`) | `menu.rs::desk_accessory_pick` + `event.rs::menu_intercept` |
+| `AP_MESAG`/`AP_ACCLOSE` (`gemsuper.c:137-140,147-161`) | `event.rs::evnt_mesag`/`evnt_multi`, `pd::AP_ACCLOSE` |
+| `bootflags & BOOTFLAG_SKIP_AUTO_ACC` (`:269-270`) | `launch::skip_auto_acc()` → `accs::load_accs(skip)` |
+| the `ADMENU` Desk box's six placeholders (`desk_rsc.c:345-407`) | `kernel/src/desk/menu.rs`'s `Entry::Acc` rows |
+
+### 9.2 The cooperative model an accessory needs — and what it cost
+
+An accessory is the **second AES client** NewTOS has ever had, and three
+things had to change for one to run beside the desktop (ACC03):
+
+1. **The EL1 kernel client can now yield.** `sched::sleep` used to consider
+   only EL0 scheduler slots; the desktop and the boot path own no slot, so
+   they always took the idle fallback and a runnable accessory never got the
+   CPU. They now park their trap frame (the "kernel park",
+   `kernel/src/arch/aarch64/exceptions.rs`) and switch, which is EmuTOS's
+   `dsptch()` from inside `ev_block` for the one client that is not a process.
+2. **A blocking EL0 process can now return to that park.** With no runnable
+   EL0 peer an accessory would otherwise spin in the idle fallback forever and
+   the boot would never reach the desktop. `sleep` returns
+   `sched::switch_to_kernel()` instead.
+3. **The vector registers are part of a saved context.** See §9.3 (b).
+
+Nothing else was needed: the S2 restartable-block discipline
+(`docs/analysis/coop-kernel/20-sleepwake-substrate-design.md` §4.3) already
+guarantees that a blocking AES call unwinds the single AES fiber before the
+switch, so a second client never begins an AES call while another client's is
+frozen on it. The inline Control Manager (A91) stays: an accessory receives no
+events during another client's menu track, which EmuTOS's does — a known,
+accepted difference, unchanged by this batch.
+
+### 9.3 Named deviations
+
+**(a) The registered title is copied, not pointed at.** EmuTOS stores the
+caller's pointer (`gemmnlib.c:806`) and the renderer dereferences it later; one
+address space makes that safe. Here it is an EL0 VA of the accessory's TPA,
+dereferenced at EL1 under the *desktop's* `TTBR0` when the drop-down draws —
+measured as a data abort (`FAR=0x1610`) on the first hover over *Desk*. NewTOS
+copies the string at registration, into `menu.rs`'s `Accs::copies`, and
+splices the copy's address in. The observable difference is narrow and
+permissive: EmuTOS requires the caller to keep the string alive and NewTOS
+does not, and a title edited *in place* after registration shows at the next
+`menu_register`/`menu_bar` rather than at the next repaint. Titles are capped
+at 32 bytes (EmuTOS has no cap because it copies nothing).
+
+**(b) A scheduler switch saves `v0..v31`, FPCR and FPSR.** EmuTOS's `switchto`
+saves `d0-a5/a6/usp/sp` (`gemasm.S:169-194`) — its whole ABI-relevant register
+set. NewTOS's `ExceptionFrame` carried only the GPRs, which was enough while
+no two EL0 contexts were ever interleaved. An accessory is interleaved with
+hard-float SDK programs by construction, and clang keeps an AES control block
+in `d1` across a trap; the leftover of a launched program then became the
+accessory's opcode. `FpContext` closes it. This is not a deviation from
+EmuTOS — it is the AArch64 spelling of what `switchto` already did.
+
+**(c) `menu_fixup` bounds how many objects it relinks.** EmuTOS writes
+`dabox + 1 … dabox + cnt` unconditionally, trusting the resource to have
+reserved `2 + NUM_ACCS` objects. A tree that did not would have its
+neighbour's objects — or memory past the array — written; on EmuTOS that is a
+malformed-resource bug with no MMU to catch it, here it is a fault in the AES
+caused by an application's tree. The count is bounded by the next drop-down
+box, or by the box's current child count when it is the only one.
+
+**(d) `wait_for_accs(AP_ACCLOSE)` posts its `AC_CLOSE` round once.** EmuTOS's
+`ap_exit` never leaves and re-enters, so `mn_cleanup` runs once by
+construction. NewTOS's `appl_exit` is an S2-restartable syscall: the wait can
+yield to an accessory and the whole call re-executes. A round flag
+(`appl.rs::ACCLOSE_ROUND`) keeps the *observable* message count at one per
+`appl_exit`. Mechanism only.
+
+**(e) `build_menuid_lookup`'s padding loop is not reproduced.** EmuTOS's
+`for ( ; slot < NUM_ACCS; slot++) acc_display[slot++] = -1;`
+(`gemmnlib.c:779-780`) increments `slot` twice and so fills only every other
+tail entry. It is unreachable through the documented API (§ `menu.md`'s
+DA-slot model); NewTOS fills the tail properly.
+
+**(f) A `.NAC` cannot be double-clicked.** EmuTOS's desktop has no launch path
+for an `.ACC` either — `count_accs`/`load_accs` is the only way one starts —
+but its desktop cannot even reach the case, while ours can. A double-click
+says so in an alert (`desk/main.rs::alert_accessory_not_launchable`) instead
+of starting a second, unreachable copy.
+
+### 9.4 Not done, and why
+
+* **Accessory titles in an *application's* menu bar.** `menu_fixup` runs on
+  every `menu_bar(tree, 1)`, so an application's own Desk box is spliced the
+  same way — but the copied title lives in kernel memory, and an app-owned
+  tree resolves every address through the app's mapping (`ObjTree::app_owned`,
+  A97), where a kernel VA has no translation. The entry is then simply not
+  drawn (`spec_none`), never a fault. A shared read-only title page mapped
+  into every process is the fix; it is a new ticket, not this batch.
+* **The `NUM_ACCS` budget across a `menu_register` from a non-accessory.** Any
+  AES client may call `menu_register` and take a slot, exactly as in EmuTOS.
+* **Accessory windows.** `sysacc.c` uses `form_alert`; an accessory that opens
+  a real window exercises the Window Manager from a second client, which this
+  batch did not drive.
+
+---
+
 ## Related
 
 - [`menu.md`](./menu.md) — `mn_register`/`menu_fixup`/`MN_SELECTED` vs.
@@ -628,5 +748,8 @@ by direct search this session (not inferred from the ticket's framing):
   finding this file's §3 confirms and extends with the `AC_CLOSE`/`msg[3]`
   half.
 - `kernel/src/desk/ftype.rs`, `docs/MEMORY.md` ADR-018 — the extension
-  classification this file's §7.5 finds has no `.NAC` entry yet.
+  classification §7.5 found had no `.NAC` entry; `Flavor::Accessory` closed
+  that in ACC02 (§9.1).
+- `kernel/src/accs.rs`, `tos-api/src/aes/acc.rs` — the implementation §9
+  describes.
 - `sdk/examples/sysacc.c` — the accessory this file's §5 reviews.

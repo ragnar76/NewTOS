@@ -246,6 +246,15 @@ pub unsafe fn load(
         }
     };
 
+    // Record the initial user stack pointer in the slot, so a context that
+    // starts this program through the **scheduler** rather than through the
+    // kernel launcher — a desk accessory, which is `pstart`ed and then first
+    // run by a `dsptch()` (ACC02/ACC03) — enters it on the same mapped TPA top
+    // the launcher would have used.
+    PROCESS_TABLE[loaded.slot]
+        .sp_el0
+        .store(loaded.sp_el0, Ordering::Release);
+
     Ok(LoadedChild {
         slot: loaded.slot,
         entry_va: loaded.entry_va,

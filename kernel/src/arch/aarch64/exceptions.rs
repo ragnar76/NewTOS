@@ -448,11 +448,20 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // (restarting) call, the yield path pumped no input so no Ctrl-C terminate
     // can be pending, and a pending upcall for *this* process is delivered on
     // its own resume (deliver-on-resume, §6), not now.
+    //
+    // **The EL1 caller (ACC03).** When the blocking client is the built-in
+    // desktop or the boot path — `RUN` names no slot — there is no
+    // `saved_frame` to write and no run-set entry to drop; the frame is parked
+    // in [`KERNEL_PARK`] instead, with the same ELR rewind, and restored the
+    // moment the accessory it yields to blocks again.
     if let Some(sw) = pending_switch {
-        let cur = tos_api::bdos::process::sched::current();
+        let cur = tos_api::bdos::process::sched::running_slot();
         if cur < tos_api::bdos::process::MAX_PROCESSES {
             save_yield_frame(cur, frame, true);
             tos_api::bdos::process::sched::mark_yielded(cur);
+        } else if !sw.el1_internal {
+            park_kernel_frame(frame, true);
+            adopt_kernel_park_as_parent(sw.slot);
         }
         apply_switch(frame, &sw);
         return;
@@ -668,6 +677,88 @@ fn read_userdef_ret_slot(slot_idx: usize) -> i16 {
 /// design doc §4.3 is corrected accordingly.
 ///
 /// [`Switch::restartable`]: tos_api::bdos::process::sched::Switch::restartable
+/// Save the live FP/SIMD register file (`v0..v31`, `FPCR`, `FPSR`) into `dst`
+/// — the vector half of a yielding EL0 context (ACC03, see
+/// [`tos_api::bdos::process::FpContext`]).
+///
+/// The kernel itself is built for `aarch64-unknown-none-softfloat` and never
+/// touches these registers, so the values in them at an `svc` from EL0 are
+/// still the caller's.
+fn save_fp_context(dst: &tos_api::bdos::process::FpContext) {
+    let p = dst.ptr();
+    // SAFETY: `p` addresses `FP_CONTEXT_LEN` (66) contiguous `u64`s — 512
+    // bytes of vector state followed by the two 32-bit status words. FP/SIMD
+    // is enabled at EL1 (`CPACR_EL1.FPEN = 0b11`, `boot.rs:296-313`).
+    unsafe {
+        core::arch::asm!(
+            // The kernel builds for `aarch64-unknown-none-softfloat`, which
+            // turns the FP/SIMD *assembler* feature off; re-enable it for this
+            // block only and put it back afterwards, so nothing else in the
+            // translation unit can accidentally emit vector code.
+            ".arch armv8-a+fp+simd",
+            "stp q0, q1, [{p}, #0x000]",
+            "stp q2, q3, [{p}, #0x020]",
+            "stp q4, q5, [{p}, #0x040]",
+            "stp q6, q7, [{p}, #0x060]",
+            "stp q8, q9, [{p}, #0x080]",
+            "stp q10, q11, [{p}, #0x0a0]",
+            "stp q12, q13, [{p}, #0x0c0]",
+            "stp q14, q15, [{p}, #0x0e0]",
+            "stp q16, q17, [{p}, #0x100]",
+            "stp q18, q19, [{p}, #0x120]",
+            "stp q20, q21, [{p}, #0x140]",
+            "stp q22, q23, [{p}, #0x160]",
+            "stp q24, q25, [{p}, #0x180]",
+            "stp q26, q27, [{p}, #0x1a0]",
+            "stp q28, q29, [{p}, #0x1c0]",
+            "stp q30, q31, [{p}, #0x1e0]",
+            "mrs {t}, fpcr",
+            "str {t}, [{p}, #0x200]",
+            "mrs {t}, fpsr",
+            "str {t}, [{p}, #0x208]",
+            ".arch armv8-a+nofp+nosimd",
+            p = in(reg) p,
+            t = out(reg) _,
+            options(nostack),
+        );
+    }
+}
+
+/// Restore an FP/SIMD register file saved by [`save_fp_context`].
+fn restore_fp_context(src: &tos_api::bdos::process::FpContext) {
+    let p = src.ptr();
+    // SAFETY: as `save_fp_context`.
+    unsafe {
+        core::arch::asm!(
+            ".arch armv8-a+fp+simd",
+            "ldp q0, q1, [{p}, #0x000]",
+            "ldp q2, q3, [{p}, #0x020]",
+            "ldp q4, q5, [{p}, #0x040]",
+            "ldp q6, q7, [{p}, #0x060]",
+            "ldp q8, q9, [{p}, #0x080]",
+            "ldp q10, q11, [{p}, #0x0a0]",
+            "ldp q12, q13, [{p}, #0x0c0]",
+            "ldp q14, q15, [{p}, #0x0e0]",
+            "ldp q16, q17, [{p}, #0x100]",
+            "ldp q18, q19, [{p}, #0x120]",
+            "ldp q20, q21, [{p}, #0x140]",
+            "ldp q22, q23, [{p}, #0x160]",
+            "ldp q24, q25, [{p}, #0x180]",
+            "ldp q26, q27, [{p}, #0x1a0]",
+            "ldp q28, q29, [{p}, #0x1c0]",
+            "ldp q30, q31, [{p}, #0x1e0]",
+            "ldr {t}, [{p}, #0x200]",
+            "msr fpcr, {t}",
+            "ldr {t}, [{p}, #0x208]",
+            "msr fpsr, {t}",
+            ".arch armv8-a+nofp+nosimd",
+            p = in(reg) p,
+            t = out(reg) _,
+            options(nostack),
+        );
+    }
+}
+
 fn save_yield_frame(cur: usize, frame: &ExceptionFrame, rewind: bool) {
     use core::sync::atomic::Ordering;
     use tos_api::bdos::process::{sched, PROCESS_TABLE};
@@ -681,21 +772,160 @@ fn save_yield_frame(cur: usize, frame: &ExceptionFrame, rewind: bool) {
     sf.elr().store(elr, Ordering::Release);
     sf.spsr().store(frame.spsr, Ordering::Release);
     sf.sp_el0().store(frame.sp_el0, Ordering::Release);
+    // The vector half of the context (ACC03): `ExceptionFrame` carries only
+    // the GPRs, and a hard-float EL0 program scheduled in between would
+    // otherwise leave its own `v0..v31` behind for this slot to resume on.
+    save_fp_context(&PROCESS_TABLE[cur].saved_fp);
     // Record how this slot yielded so `switch_to` carries it into the resume:
     // a rewound (restartable) frame must have `x0` preserved on resume.
     sched::set_resume_restartable(cur, rewind);
+}
+
+// ─── The kernel park (ACC03) ────────────────────────────────────────────────
+//
+// NewTOS's built-in desktop and the boot path are AES clients that run at EL1
+// and own no process slot, so they can never be `pick_next` candidates the way
+// EmuTOS's desktop AESPD is (`aes/geminit.c:851-877` gives it slot 0 in the
+// same round-robin as the accessories). To let an accessory run *beside* them,
+// the EL1 client's trap frame is snapshotted here — the "kernel park" — the
+// accessory is switched to, and the park is restored the moment the accessory
+// blocks again. One slot is enough: exactly one EL1 context can be inside a
+// trap at a time (single CPU, no re-entrant EL1 trap), which is the same
+// invariant the AES fiber relies on (`aes/thread.rs`, design §3.3).
+
+/// The parked EL1 kernel client's full trap frame (`x0..x29`, `lr`, `elr`,
+/// `spsr`, `sp_el0`). Armed together with [`tos_api::bdos::process::sched::set_kernel_parked`].
+static KERNEL_PARK: tos_api::bdos::process::ParentFrame =
+    tos_api::bdos::process::ParentFrame::zeroed();
+
+/// The BDOS running-basepage (`RUN`) the parked EL1 client had — normally
+/// null, but a kernel context that launched a program and is inside its own
+/// nested AES call must come back to the same value.
+static KERNEL_PARK_RUN: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// Restart-kind of the park, the EL1 twin of [`sched::Switch::restartable`]:
+/// `true` when [`park_kernel_frame`] rewound `elr` to the `svc` (a blocking
+/// `evnt_*`, which must re-execute and re-check on resume), `false` for the
+/// leaf `Pwait` park (which resumes *after* the `svc` with `x0 = 0`).
+///
+/// [`sched::Switch::restartable`]: tos_api::bdos::process::sched::Switch::restartable
+static KERNEL_PARK_RESTARTABLE: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(false);
+
+/// Snapshot the EL1 kernel client's trap `frame` into [`KERNEL_PARK`] and arm
+/// it, so a later [`restore_kernel_park`] brings this context back exactly
+/// here. `rewind` has the same meaning as in [`save_yield_frame`]: `true`
+/// rewinds `elr` by one instruction so the `svc` re-executes (the S2
+/// restartable block for a blocking `evnt_*`), `false` resumes after it.
+fn park_kernel_frame(frame: &ExceptionFrame, rewind: bool) {
+    use core::sync::atomic::Ordering;
+
+    for i in 0..30 {
+        KERNEL_PARK.gpr(i).store(frame.gpr[i], Ordering::Release);
+    }
+    KERNEL_PARK.lr().store(frame.lr, Ordering::Release);
+    let elr = if rewind { frame.elr.wrapping_sub(4) } else { frame.elr };
+    KERNEL_PARK.elr().store(elr, Ordering::Release);
+    KERNEL_PARK.spsr().store(frame.spsr, Ordering::Release);
+    KERNEL_PARK.sp_el0().store(frame.sp_el0, Ordering::Release);
+    KERNEL_PARK_RUN.store(
+        tos_api::bdos::process::current() as u64,
+        Ordering::Release,
+    );
+    KERNEL_PARK_RESTARTABLE.store(rewind, Ordering::Release);
+    tos_api::bdos::process::sched::set_kernel_parked(true);
+}
+
+/// Copy the armed [`KERNEL_PARK`] into slot `slot`'s `parent_frame` so that an
+/// accessory which **terminates** (EmuTOS accessories never do, `docs/api/aes/
+/// accessories.md` §4 point 6, but ours must not hang if one returns from
+/// `main`) resumes the same EL1 client the block path would have resumed.
+/// `parent_frame_full` marks it as a whole EL1 frame, not the partial
+/// `elr`/`sp_el0`/`spsr` triple `enter_el0_with_resume_capture` writes.
+fn adopt_kernel_park_as_parent(slot: usize) {
+    use core::sync::atomic::Ordering;
+
+    let pf = &tos_api::bdos::process::PROCESS_TABLE[slot].parent_frame;
+    for i in 0..30 {
+        pf.gpr(i)
+            .store(KERNEL_PARK.gpr(i).load(Ordering::Acquire), Ordering::Release);
+    }
+    pf.lr()
+        .store(KERNEL_PARK.lr().load(Ordering::Acquire), Ordering::Release);
+    pf.elr()
+        .store(KERNEL_PARK.elr().load(Ordering::Acquire), Ordering::Release);
+    pf.spsr()
+        .store(KERNEL_PARK.spsr().load(Ordering::Acquire), Ordering::Release);
+    pf.sp_el0()
+        .store(KERNEL_PARK.sp_el0().load(Ordering::Acquire), Ordering::Release);
+    tos_api::bdos::process::PROCESS_TABLE[slot]
+        .parent_l0_pa
+        .store(0, Ordering::Release);
+    tos_api::bdos::process::PROCESS_TABLE[slot]
+        .parent_frame_full
+        .store(true, Ordering::Release);
+}
+
+/// Restore the parked EL1 kernel client over `frame` and disarm the park —
+/// `apply_switch`'s `el1_internal` target. TTBR0 goes back to the empty
+/// no-process root (an EL1 context needs no low half), `RUN` back to the value
+/// the client had, and the scheduler's "running slot" to none.
+fn restore_kernel_park(frame: &mut ExceptionFrame) {
+    use core::sync::atomic::Ordering;
+    use tos_api::bdos::process::sched;
+
+    // Same TTBR0 bracket as `apply_switch`/`finish_terminate`: TLBI via the
+    // boot-restore, then a UART-bearing line (QUIRK-001), then no install —
+    // the resume is to EL1, which runs entirely through TTBR1.
+    // SAFETY: trap context, single-CPU; no kernel low-half VA is held.
+    unsafe {
+        crate::arch::aarch64::user_entry::restore_boot_ttbr0();
+    }
+    crate::kprintln!("[sched] switch -> kernel client");
+
+    for i in 0..30 {
+        frame.gpr[i] = KERNEL_PARK.gpr(i).load(Ordering::Acquire);
+    }
+    frame.lr = KERNEL_PARK.lr().load(Ordering::Acquire);
+    frame.elr = KERNEL_PARK.elr().load(Ordering::Acquire);
+    frame.spsr = KERNEL_PARK.spsr().load(Ordering::Acquire);
+    frame.sp_el0 = KERNEL_PARK.sp_el0().load(Ordering::Acquire);
+    if !KERNEL_PARK_RESTARTABLE.load(Ordering::Acquire) {
+        frame.gpr[0] = 0; // the resumed leaf `Pwait` returns 0
+    }
+
+    tos_api::bdos::process::set_current(
+        KERNEL_PARK_RUN.load(Ordering::Acquire) as *mut tos_types::BasePage,
+    );
+    sched::set_running(tos_api::bdos::process::MAX_PROCESSES);
+    sched::set_kernel_parked(false);
 }
 
 /// `Pwait` (GEMDOS 0x4D) — cooperative yield. Snapshot the running peer's
 /// full EL0 context into its slot, then round-robin to the next runnable
 /// peer (a context switch like `Pexec`/`Pterm`, but peer→peer). With no
 /// other runnable peer it is a no-op that returns 0.
+///
+/// **From an EL1 kernel context** (`RUN` names no slot) this is EmuTOS's
+/// `all_run(); dsptch();` — the accessory-start half of `wait_for_accs`
+/// (`aes/geminit.c:610,736`): the EL1 frame is parked and the runnable
+/// accessory gets the CPU; the call returns when it blocks again. With no
+/// runnable peer it stays the harmless no-op it was.
 fn handle_pwait(frame: &mut ExceptionFrame) {
     use tos_api::bdos::process::{sched, MAX_PROCESSES};
 
-    let cur = sched::current();
+    let cur = sched::running_slot();
     if cur >= MAX_PROCESSES {
-        frame.gpr[0] = 0; // not a scheduler peer → harmless no-op
+        match sched::pick_peer_for_kernel() {
+            Some(sw) => {
+                // Leaf park: resume *after* the `svc`, `x0 = 0` (ACC03).
+                park_kernel_frame(frame, false);
+                adopt_kernel_park_as_parent(sw.slot);
+                apply_switch(frame, &sw);
+            }
+            None => frame.gpr[0] = 0, // nothing runnable → no-op, as before
+        }
         return;
     }
 
@@ -717,6 +947,13 @@ fn handle_pwait(frame: &mut ExceptionFrame) {
 fn apply_switch(frame: &mut ExceptionFrame, sw: &tos_api::bdos::process::sched::Switch) {
     use core::sync::atomic::Ordering;
     use tos_api::bdos::process::{sched, State, PROCESS_TABLE};
+
+    // The EL1-internal target (ACC03): not a process at all but the parked
+    // kernel client — no slot, no TTBR0 install, no `saved_frame`.
+    if sw.el1_internal {
+        restore_kernel_park(frame);
+        return;
+    }
 
     // TTBR0 switch with the QUIRK-001 bracket (QEMU cortex-a72 TCG): a
     // TLBI (boot-restore) then UART-bearing prints then the no-TLBI
@@ -740,7 +977,15 @@ fn apply_switch(frame: &mut ExceptionFrame, sw: &tos_api::bdos::process::sched::
         frame.lr = 0;
         frame.elr = sw.entry_va;
         frame.spsr = 0; // SPSR.M = EL0t
-        frame.sp_el0 = crate::arch::aarch64::el0::USER_STACK_TOP_EXCLUSIVE;
+        // The slot's own initial stack when the loader computed one (a program
+        // loaded through `pexec::load`, i.e. every desk accessory — its TPA top
+        // is mapped, the fixed constant below is not); the fixed default
+        // otherwise, for the embedded selftest blobs that map it.
+        frame.sp_el0 = if sw.sp_el0 != 0 {
+            sw.sp_el0
+        } else {
+            crate::arch::aarch64::el0::USER_STACK_TOP_EXCLUSIVE
+        };
     } else {
         let sf = &PROCESS_TABLE[sw.slot].saved_frame;
         for i in 0..30 {
@@ -758,6 +1003,8 @@ fn apply_switch(frame: &mut ExceptionFrame, sw: &tos_api::bdos::process::sched::
         if !sw.restartable {
             frame.gpr[0] = 0; // the resumed `Pwait` returns 0
         }
+        // …and the vector half the `save_yield_frame` above stored (ACC03).
+        restore_fp_context(&PROCESS_TABLE[sw.slot].saved_fp);
     }
 
     let bp = PROCESS_TABLE[sw.slot].basepage_kva.load(Ordering::Acquire);
@@ -934,15 +1181,33 @@ fn finish_terminate(
     //     regs (x29, x30, …) from the local stack frame; copying
     //     zeros into `gpr` would clobber `x29` and crash the
     //     post-resume frame-pointer chain.
-    if from_el0 {
+    //   * `EL1t` **with** [`parent_frame_full`] — a desk accessory that
+    //     terminated (ACC03). Its "parent" is the EL1 kernel client whose
+    //     whole trap frame was copied in when the accessory was switched to,
+    //     and whose `svc` is about to re-execute: restore the registers too,
+    //     and do **not** write the exit code over `x0` (that would replace the
+    //     GEM-trap selector and the re-entered trap would dispatch nothing).
+    //
+    // [`parent_frame_full`]: tos_api::bdos::process::Process::parent_frame_full
+    let full = tos_api::bdos::process::PROCESS_TABLE[resume.parent_frame_slot]
+        .parent_frame_full
+        .swap(false, Ordering::AcqRel);
+    if from_el0 || full {
         for i in 0..30 {
             frame.gpr[i] = pf.gpr(i).load(Ordering::Acquire);
         }
         frame.lr = pf.lr().load(Ordering::Acquire);
-        // Exit code lands in parent's `x0` per the GEMDOS Pexec
-        // ABI. Overwrite gpr[0] *after* the bulk copy so the
-        // parent's pre-trap value doesn't shadow it.
-        frame.gpr[0] = rc as i64 as u64;
+        if from_el0 {
+            // Exit code lands in parent's `x0` per the GEMDOS Pexec
+            // ABI. Overwrite gpr[0] *after* the bulk copy so the
+            // parent's pre-trap value doesn't shadow it.
+            frame.gpr[0] = rc as i64 as u64;
+        }
+    }
+    if full {
+        // The park has been consumed by this resume; nothing is parked now.
+        tos_api::bdos::process::sched::set_kernel_parked(false);
+        tos_api::bdos::process::sched::set_running(tos_api::bdos::process::MAX_PROCESSES);
     }
     frame.elr = pf.elr().load(Ordering::Acquire);
     frame.spsr = pf_spsr;

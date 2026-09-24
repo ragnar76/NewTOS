@@ -33,7 +33,7 @@ use crate::bdos::process::Abi;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU64, AtomicUsize, Ordering};
 
 /// `THESCREEN` — the menu tree root; its `ob_tail` is the box that holds
 /// all drop-down menus.
@@ -132,10 +132,16 @@ fn ctwait_bar_rect() -> Option<(i16, i16, i16, i16)> {
 /// resized, its width is the titles'). `THEACTIVE` is a plain `G_IBOX`, so
 /// `ob_actxywh`'s `FL3DOBJ` growth (`gemoblib.c:322-335`) does not apply and
 /// [`object::abs_rect`] is the whole of it. No drawing here: [`menu_bar`] draws.
-fn install_bar(tree: *mut Object) {
+fn install_bar_state(tree: *mut Object) {
     // `gl_mnppd = p` (`gemmnlib.c:712`), `p` = the calling client.
     MNPPD.store(super::appl::current_identity(), Ordering::Relaxed);
     MNTREE.store(tree as usize, Ordering::Relaxed);
+}
+
+/// The second half of [`install_bar_state`] — `ob_actxywh(tree, THEACTIVE,
+/// &gl_ctwait.m_gr)` (`gemmnlib.c:717`), taken after `menu_fixup` and the
+/// `THEBAR` stretch, exactly where EmuTOS takes it.
+fn install_bar_ctwait(tree: *mut Object) {
     CTWAIT_RECT.store(pack_rect(object::abs_rect(tree as *const Object, THEACTIVE)), Ordering::Relaxed);
     CTWAIT_BAR.store(true, Ordering::Relaxed);
 }
@@ -223,7 +229,10 @@ pub(super) fn reinit() {
     // SAFETY: single-CPU restart path, no AES call in flight.
     unsafe {
         (*ACCS.title.get()).fill(0);
-        (*ACCS.pid.get()).fill(0);
+        (*ACCS.owner.get()).fill(usize::MAX);
+        (*ACCS.display.get()).fill(-1);
+        (*ACCS.copies.get()) = [[0; ACC_TITLE_LEN]; NUM_ACCS];
+        DAFIRST.store(NIL, Ordering::Relaxed);
         // `mn_cleanup`'s `dos_free(gl_submenu); gl_submenu = NULL;`
         // (gemmnlib.c:751-756).
         *SUBMENU_TAB.0.get() = [Smib::EMPTY; NUM_SMIBS];
@@ -365,17 +374,25 @@ pub fn menu_bar(pb: &Aespb) {
     // erase, so drawing the bar always yields a clean strip even when a
     // full-screen program (e.g. a `.NCP` console) left content there.
     backend.fill_rect(0, 0, sw, gl_hbox(), WHITE, clip);
+    // `gl_mnppd = p; gl_mntree = tree;` (`gemmnlib.c:712-713`) — before
+    // `menu_fixup`, which works on `gl_mntree`.
+    install_bar_state(tree);
+    // `menu_fixup();` (`gemmnlib.c:714`) — splice the registered desk
+    // accessories into this tree's Desk drop-down, whoever's tree it is. This
+    // is what makes an accessory's title appear under *Desk* in **every**
+    // application's menu bar, not only the desktop's.
+    menu_fixup();
     // The bar spans the full screen width. THEBAR is object 1; read/write
     // its geometry at the caller's ABI width (24-byte ILP32 / 32-byte LP64).
     let t = ObjTree::new(tree);
     t.set_width(THEBAR, sw - t.x(THEBAR));
+    // `ob_actxywh(tree, THEACTIVE, &gl_ctwait.m_gr)` (`gemmnlib.c:717`): the
+    // Control Manager waits on `THEACTIVE`'s extent from now on, not on the
+    // whole bar row (A87).
+    install_bar_ctwait(tree);
     object::draw_obj(tree as *const Object, THEBAR, MAX_DEPTH, backend);
     // Separator line under the bar (`gsx_cline(0, gl_hbox-1, …)`, gemmnlib.c:722).
     backend.fill_rect(0, gl_hbox() - 1, sw, 1, BLACK, clip);
-    // `gl_mntree = tree; … ob_actxywh(tree, THEACTIVE, &gl_ctwait.m_gr)`
-    // (`gemmnlib.c:713,717`): the Control Manager waits on `THEACTIVE`'s
-    // extent from now on, not on the whole bar row (A87).
-    install_bar(tree);
     pb.set_ret(1);
 }
 
@@ -1084,49 +1101,453 @@ pub fn menu_text(pb: &Aespb) {
     pb.set_ret(1);
 }
 
-/// Desk-accessory registry (EmuTOS `mn_register`). NewTOS records the
-/// registration — the title pointer + owning application id — and hands back
-/// a stable slot id. Wiring the accessory into the Desk menu's drop-down and
-/// posting `AC_OPEN` when it is picked is a documented follow-up (it needs
-/// the desk-menu accessory convention); the registration is real, so a
-/// caller's `menu_register` succeeds and its slot id is stable.
-const NUM_ACCS: usize = 6;
+// ── Desk-accessory registry (EmuTOS `gemmnlib.c:64-65`) ──────────────────
+//
+// `D.g_acctitle[NUM_ACCS]` (the title *pointers* — stored, never copied,
+// `:806` "save pointer, like Atari TOS"), `desk_ppd[NUM_ACCS]` (the owning
+// process descriptors) and `acc_display[NUM_ACCS]` (display slot → menu id).
+// `D.g_accreg` is the count; here it is derived from the title array, which
+// carries exactly the same information.
+
+/// `NUM_ACCS` — the one shared budget for loaded accessory files *and*
+/// registration slots (`include/sysconf.h:37-40`), re-exported from
+/// [`super::acc`] so both halves of the lifecycle use one constant.
+use super::acc::NUM_ACCS;
+
 struct Accs {
-    title: UnsafeCell<[u64; NUM_ACCS]>, // title pointer per slot (0 = free)
-    pid: UnsafeCell<[i16; NUM_ACCS]>,
+    /// `D.g_acctitle[]` — the caller's title-string pointer per slot
+    /// (`0` = free). Stored as given, at the caller's own address; EmuTOS
+    /// does the same and the spec records the consequence (the string must
+    /// outlive the registration, `docs/api/aes/menu.md` § note 6).
+    title: UnsafeCell<[u64; NUM_ACCS]>,
+    /// `desk_ppd[]` — the **AES identity** of the registering process
+    /// (`appl::current_identity`), `usize::MAX` = free.
+    ///
+    /// EmuTOS stores `rlr`, the descriptor of the process *making the call*,
+    /// not the `pid` argument (`gemmnlib.c:805`) — the argument is only
+    /// validity-checked (`pid >= 0`, `:798`). NewTOS must do the same and for
+    /// a sharper reason: every application in the chain reports pid **0**
+    /// (`appl::reported_pid`, A56), so the argument could not identify an
+    /// accessory even in principle.
+    owner: UnsafeCell<[usize; NUM_ACCS]>,
+    /// `acc_display[]` — display slot → menu id, rebuilt by
+    /// [`build_menuid_lookup`] after every registration.
+    display: UnsafeCell<[i16; NUM_ACCS]>,
+    /// **A kernel-side copy of each title string** — the one place NewTOS
+    /// cannot do what `gemmnlib.c:806` does.
+    ///
+    /// EmuTOS stores the accessory's pointer and the menu renderer
+    /// dereferences it later: one address space, always valid. Here the
+    /// pointer is an **EL0 VA of the accessory's own TPA**, and the renderer
+    /// runs at EL1 under whatever `TTBR0` the *current* client has — the
+    /// desktop's, during whose drop-down the entry is drawn. Writing that VA
+    /// into the desktop's tree faulted the AES outright (measured: data abort,
+    /// `FAR = 0x1610`, on the first hover over *Desk*), which is the A97 class
+    /// of defect exactly.
+    ///
+    /// So the string is copied here, at registration, while the accessory *is*
+    /// the current process and the read is safe, and [`menu_fixup`] writes the
+    /// **copy's** address into the placeholder's `ob_spec`. The observable
+    /// difference is narrow and in the permissive direction: EmuTOS requires
+    /// the caller to keep the string alive for the life of the registration
+    /// (`docs/api/aes/menu.md` note 6) and NewTOS does not, and a caller that
+    /// *edits* its title in place after registering sees the change only at
+    /// its next `menu_register`/`menu_bar` (where the copy is refreshed)
+    /// rather than at the next repaint. No accessory does either.
+    copies: UnsafeCell<[[u8; ACC_TITLE_LEN]; NUM_ACCS]>,
 }
+
+/// Bytes reserved per copied accessory title, NUL included. The *Desk*
+/// drop-down is [`MIN_DESKMENU_WIDTH`]-ish characters wide and classic
+/// accessory titles are far shorter (`" NewTOS System"` is 14); EmuTOS has no
+/// limit because it copies nothing. A longer title is cut here — the cap is
+/// the price of the copy.
+///
+/// [`MIN_DESKMENU_WIDTH`]: crate::aes::menu
+const ACC_TITLE_LEN: usize = 32;
 // SAFETY: single boot CPU only touches the AES.
 unsafe impl Sync for Accs {}
 static ACCS: Accs = Accs {
     title: UnsafeCell::new([0; NUM_ACCS]),
-    pid: UnsafeCell::new([0; NUM_ACCS]),
+    owner: UnsafeCell::new([usize::MAX; NUM_ACCS]),
+    display: UnsafeCell::new([-1; NUM_ACCS]),
+    copies: UnsafeCell::new([[0; ACC_TITLE_LEN]; NUM_ACCS]),
 };
 
-/// `menu_register` (35) — register a desk accessory. `int_in[0]` = the
-/// application id, `addr_in[0]` = its menu-title string. Returns the
-/// accessory's menu id (`0..NUM_ACCS`) or `-1` when the id is invalid or no
-/// slot is free (EmuTOS `mn_register`).
-pub fn menu_register(pb: &Aespb) {
-    let pid = pb.intin(0);
-    let pstr = pb.addrin(0);
-    if pid < 0 {
-        pb.set_ret(-1);
+/// Copy the NUL-terminated title string at the caller VA `pstr` into slot
+/// `idx`'s entry of [`Accs::copies`] and return the copy's (kernel) address —
+/// see that field for why a copy exists at all. Called from
+/// [`menu_register`], where the caller's mapping is the live `TTBR0`.
+fn copy_title(idx: usize, pstr: u64) -> u64 {
+    // SAFETY: single-CPU AES; exclusive owner of the registry.
+    let dst = unsafe { &mut (*ACCS.copies.get())[idx] };
+    dst.fill(0);
+    if pstr != 0 {
+        // The last byte stays 0: the copy is always NUL-terminated, however
+        // long the caller's string is.
+        for (i, slot) in dst.iter_mut().take(ACC_TITLE_LEN - 1).enumerate() {
+            // SAFETY: the GEM contract — `addr_in[0]` is a NUL-terminated
+            // string in the caller's address space, which is the installed
+            // one for the duration of this trap (the same read every other
+            // string-taking AES call makes, e.g. `appl_find`).
+            let c = unsafe { (pstr as *const u8).add(i).read() };
+            if c == 0 {
+                break;
+            }
+            *slot = c;
+        }
+    }
+    dst.as_ptr() as u64
+}
+
+/// The kernel address of slot `idx`'s copied title.
+fn title_copy_addr(idx: usize) -> u64 {
+    // SAFETY: single-CPU AES; exclusive owner of the registry.
+    unsafe { (*ACCS.copies.get())[idx].as_ptr() as u64 }
+}
+
+/// `gl_dafirst` (`aes/gemmnlib.c:68`) — the object index of the **first**
+/// desk-accessory entry in the installed menu tree's Desk drop-down, set by
+/// [`menu_fixup`]. `NIL` while no tree is installed or `menu_fixup` has not
+/// run, which makes the `item >= gl_dafirst` test in the click router
+/// impossible to pass.
+static DAFIRST: AtomicI16 = AtomicI16::new(NIL);
+
+/// `THEDESK` (`aes/gemctrl.c:42`) — "MUST be the same value as `DESKMENU` in
+/// `desk/desk_rsc.h`", i.e. object **3**: the first `G_TITLE` under
+/// `THEACTIVE` in every GEM menu tree (`desk_rsc.c:258-264`,
+/// `gem_rsc.c`'s own bar). A pick under this title at or past
+/// [`DAFIRST`] is an accessory, not an application menu item.
+const THEDESK: i16 = 3;
+
+/// `gl_dafirst` — the first accessory object of the installed tree, or [`NIL`].
+pub(super) fn gl_dafirst() -> i16 {
+    DAFIRST.load(Ordering::Relaxed)
+}
+
+/// An accessor over the **installed** menu tree, read at the ABI and through
+/// the address space of the client that installed it ([`MNPPD`]) rather than
+/// of whoever is calling.
+///
+/// EmuTOS needs no such care: one address space, one pointer width. NewTOS
+/// reaches `gl_mntree` from two contexts that are *not* its owner —
+/// [`menu_fixup`] called out of a desk accessory's `menu_register`, and the
+/// Control Manager's drop-down tracker — and an ILP32 app's 24-byte records
+/// read at LP64 width, or an EL0 VA walked under a different `TTBR0`, is the
+/// A97 class of defect. The kernel desktop's own tree (`MNPPD == pd::DESKTOP`)
+/// is native LP64 and needs no owner mapping.
+fn mntree_accessor(tree: *mut Object) -> ObjTree {
+    let owner = MNPPD.load(Ordering::Relaxed);
+    match crate::bdos::process::slot(owner) {
+        Some(p) => ObjTree::app_owned(tree, p.read_abi(), Some(owner)),
+        None => ObjTree::lp64(tree),
+    }
+}
+
+/// `menu_fixup()` (`aes/gemmnlib.c:89-125`) — splice the registered desk
+/// accessories into the installed menu tree's Desk drop-down.
+///
+/// ```c
+/// themenus = tree[THESCREEN].ob_tail;
+/// dabox = tree[themenus].ob_head;
+/// tree[dabox].ob_head = tree[dabox].ob_tail = NIL;
+/// gl_dafirst = dabox + 3;
+/// cnt = (D.g_accreg) ? (2 + D.g_accreg) : 1;
+/// for (i = 1, st = 0, height = 0; i <= cnt; i++) {
+///     ob = dabox + i;  ob_add(tree, dabox, ob);
+///     if (i > 2) { find next used g_acctitle[st]; tree[ob].ob_spec = it; }
+///     height += gl_hchar;
+/// }
+/// tree[dabox].ob_height = height;
+/// ```
+///
+/// The Desk box is **relinked from scratch** every time: its children are
+/// dropped and `cnt` of the `dabox + 1 …` placeholder objects are re-added.
+/// With no accessory registered `cnt == 1`, so only the About item is linked —
+/// the separator at `dabox + 2` disappears too, which is why EmuTOS's Desk
+/// menu shows a single entry on a machine with no `.ACC` files.
+///
+/// Called from `mn_bar`'s show path (`:714`) — so *every* application's own
+/// menu bar gets the accessories, exactly as the classic GEM convention of
+/// reserving six blank items under *Desk* expects — and from
+/// [`menu_register`] (`:808`), so a registration that arrives while a bar is
+/// up takes effect at once.
+///
+/// A tree whose Desk box has fewer than `2 + NUM_ACCS` placeholder objects
+/// after it is a caller that did not follow that convention; EmuTOS would
+/// relink objects that belong to the *next* drop-down. NewTOS stops at the
+/// box's own object budget instead — the **one deviation here**, taken because
+/// the alternative corrupts an application's tree (see the `avail` bound).
+pub(super) fn menu_fixup() {
+    let tree = active();
+    if tree.is_null() {
+        return; // `if ((tree = gl_mntree) == NULL) return;` (:95-96)
+    }
+    let t = mntree_accessor(tree);
+    let themenus = t.tail(THESCREEN);
+    if themenus == NIL {
         return;
+    }
+    let dabox = t.head(themenus);
+    if dabox == NIL {
+        return;
+    }
+    // How many objects the Desk box may relink — the **one deviation** here.
+    // EmuTOS writes `dabox + 1 … dabox + cnt` unconditionally, trusting the
+    // RSC to have reserved `2 + NUM_ACCS` objects for the box; a tree that did
+    // not reserve them has its neighbour's objects (or memory past the array)
+    // written. On EmuTOS that is a malformed-resource bug with no MMU to catch
+    // it; here it is a fault in the AES, caused by an application's tree. So
+    // the count is bounded:
+    //
+    //  * by the **next drop-down box**, when there is one — every real menu
+    //    bar has at least two menus, and the objects between the Desk box and
+    //    the following box are exactly its own (`desk_rsc.c:345-407`: box 8,
+    //    items 9…16, next box 17);
+    //  * otherwise by the box's **current child count**, since a conforming
+    //    single-menu tree arrives with its placeholders linked. (A second
+    //    fixup of such a tree sees only what the first one left linked, so it
+    //    can splice fewer entries than the tree could hold — a cosmetic limit
+    //    on a shape no GEM menu bar actually has, never a fault.)
+    let cap = if t.next(dabox) > dabox {
+        t.next(dabox) - dabox - 1
+    } else {
+        child_count(t, dabox)
+    };
+    if cap < 1 {
+        return; // nothing reserved: leave the tree exactly as it is
+    }
+
+    t.set_head(dabox, NIL); // `tree[dabox].ob_head = … = NIL` (:104)
+    t.set_tail(dabox, NIL);
+    DAFIRST.store(dabox + 3, Ordering::Relaxed); // `gl_dafirst = dabox + 3` (:105)
+
+    let accreg = registered_count();
+    let cnt = if accreg > 0 { 2 + accreg as i16 } else { 1 }.min(cap);
+
+    let hchar = super::graf::gl_hchar();
+    let mut st = 0usize;
+    let mut height = 0i16;
+    for i in 1..=cnt {
+        let ob = dabox + i;
+        object::ob_add(t, dabox, ob); // `ob_add(tree, dabox, ob)` (:110)
+        if i > 2 {
+            // "the DAs come after the accessory separator line" (:111)
+            // SAFETY: single-CPU AES; exclusive owner of the registry.
+            let titles = unsafe { &*ACCS.title.get() };
+            while st < NUM_ACCS && titles[st] == 0 {
+                st += 1;
+            }
+            if st >= NUM_ACCS {
+                break; // "should not happen" (:117)
+            }
+            // `tree[ob].ob_spec = (LONG)D.g_acctitle[st++];` (`:118`) — with
+            // the **copy's** address, not the accessory's own pointer (see
+            // `Accs::copies`).
+            t.set_raw_spec(ob, title_copy_addr(st));
+            st += 1;
+        }
+        height += hchar;
+    }
+    t.set_height(dabox, height); // `tree[dabox].ob_height = height` (:123)
+}
+
+/// How many children `parent` currently has, walking the `ob_next` sibling
+/// chain from its `ob_head` to its `ob_tail` (EmuTOS's own traversal shape,
+/// `ob_add`/`ob_delete`, `aes/gemoblib.c`). Bounded by the sibling count a
+/// menu drop-down can have, so a corrupt chain terminates the walk instead of
+/// looping.
+fn child_count(t: ObjTree, parent: i16) -> i16 {
+    let mut n = 0i16;
+    let mut child = t.head(parent);
+    while child != NIL && child != parent && n < 64 {
+        n += 1;
+        if child == t.tail(parent) {
+            break;
+        }
+        child = t.next(child);
+    }
+    n
+}
+
+/// `build_menuid_lookup()` (`aes/gemmnlib.c:766-782`) — `acc_display[n]` is
+/// the menu id of the `n`-th accessory *as displayed*, i.e. the `n`-th used
+/// `g_acctitle[]` slot; the remainder is `-1`.
+///
+/// **EmuTOS's padding loop skips every other entry** (`for ( ; slot <
+/// NUM_ACCS; slot++) acc_display[slot++] = -1;` — the body increments `slot`
+/// a second time, `:779-780`). It is unreachable through the documented API
+/// (`mn_getownid` is only ever called with a display slot below the
+/// registered count, `docs/api/aes/menu.md` § DA-slot model), so NewTOS fills
+/// the tail properly rather than reproduce a bug no caller can observe.
+fn build_menuid_lookup() {
+    // SAFETY: single-CPU AES; exclusive owner of the registry.
+    unsafe {
+        let titles = &*ACCS.title.get();
+        let display = &mut *ACCS.display.get();
+        let mut slot = 0usize;
+        for (i, &tp) in titles.iter().enumerate() {
+            if tp != 0 {
+                display[slot] = i as i16;
+                slot += 1;
+            }
+        }
+        for d in &mut display[slot..] {
+            *d = -1;
+        }
+    }
+}
+
+/// `D.g_accreg` — how many accessory slots are registered.
+fn registered_count() -> usize {
+    // SAFETY: single-CPU AES; exclusive owner of the registry.
+    unsafe { (*ACCS.title.get()).iter().filter(|t| **t != 0).count() }
+}
+
+/// `mn_getownid(&owner, &id, item)` (`aes/gemmnlib.c:838-848`) — map a Desk
+/// drop-down **display slot** to the owning accessory's `(identity, menu id)`.
+/// `None` for a slot that names no registration (EmuTOS's "paranoia" guard,
+/// `:844`, which leaves the caller's out-parameters untouched).
+pub(super) fn mn_getownid(item: i16) -> Option<(usize, i16)> {
+    if item < 0 || item as usize >= NUM_ACCS {
+        return None;
     }
     // SAFETY: single-CPU AES; exclusive owner of the registry.
     unsafe {
-        let title = &mut *ACCS.title.get();
-        let apid = &mut *ACCS.pid.get();
-        for slot in 0..NUM_ACCS {
-            if title[slot] == 0 {
-                title[slot] = pstr;
-                apid[slot] = pid;
-                pb.set_ret(slot as i16);
-                return;
-            }
+        let n = (*ACCS.display.get())[item as usize];
+        if n < 0 || n as usize >= NUM_ACCS {
+            return None;
         }
+        let owner = (*ACCS.owner.get())[n as usize];
+        (owner != usize::MAX).then_some((owner, n))
     }
-    pb.set_ret(-1); // no free accessory slot
+}
+
+/// `hctl_rect`'s desk-accessory test (`aes/gemctrl.c:337-340`):
+///
+/// ```c
+/// if ((title == THEDESK) && (item >= gl_dafirst)) {
+///     item -= gl_dafirst;
+///     mn_getownid(&owner, &item, item);   /* display slot -> (owner, menu id) */
+/// ```
+///
+/// Returns the accessory's `(identity, menu id)` for a pick that belongs to a
+/// registered desk accessory, `None` for an ordinary application menu item
+/// (which becomes `MN_SELECTED` instead). `gl_dafirst` is [`NIL`] until
+/// [`menu_fixup`] has run on an installed tree, and `item >= NIL` would then
+/// match everything, so the sentinel is rejected explicitly.
+pub(super) fn desk_accessory_pick(title: i16, item: i16) -> Option<(usize, i16)> {
+    let first = gl_dafirst();
+    if title != THEDESK || first == NIL || item < first {
+        return None;
+    }
+    mn_getownid(item - first)
+}
+
+/// `do_chg(gl_mntree, title, SELECTED, FALSE, TRUE, TRUE)` (`gemctrl.c:341`) —
+/// un-highlight a menu-bar title and repaint it, skipping a DISABLED one
+/// (`chkdisabled = TRUE`, `gemmnlib.c:158-159`). The drop-down tracker leaves
+/// the title selected for the application to clear with `menu_tnormal`; for a
+/// desk-accessory pick there is no application to do it, so the Control
+/// Manager does it here.
+pub(super) fn normalize_title(title: i16) {
+    let tree = active();
+    if tree.is_null() || title < 0 {
+        return;
+    }
+    let t = mntree_accessor(tree);
+    let state = t.state(title);
+    if state & DISABLED != 0 {
+        return;
+    }
+    object::change_t(t, title, state & !SELECTED, true);
+}
+
+/// `mn_cleanup()` (`aes/gemmnlib.c:740-758`) — "tell all DAs that the
+/// currently running application is about to terminate":
+///
+/// ```c
+/// for (i = 0; i < NUM_ACCS; i++)
+///     if (desk_ppd[i])
+///         ap_sendmsg(appl_msg, AC_CLOSE, desk_ppd[i], i, 0, 0, 0, 0);
+/// ```
+///
+/// `ap_sendmsg`'s fixed argument order (`gemwmlib.c:851-862`) puts the
+/// accessory's **menu id in `msg[3]`** and `0` in `msg[4]` — the mirror image
+/// of `AC_OPEN`, which arrives through the generic menu-click path and
+/// therefore carries the id in `msg[4]`. The asymmetry is EmuTOS's and is
+/// contract (`docs/api/aes/accessories.md` §3).
+///
+/// `msg[1]` is `rlr->p_pid`, the *sender's* pid — here the terminating
+/// application's, which for every NewTOS application is the chain pid 0.
+///
+/// EmuTOS's submenu half (`dos_free(gl_submenu)`, `:751-756`) has no NewTOS
+/// counterpart: the submenu table is a static array, not an allocation
+/// ([`SUBMENU_TAB`]); it is reset by [`reinit`] at the AES restart, which is
+/// where its lifetime actually ends.
+///
+/// Returns the number of accessories the message went to.
+pub(super) fn mn_cleanup() -> usize {
+    let sender = super::appl::reported_pid(super::appl::current_identity());
+    let mut sent = 0;
+    for i in 0..NUM_ACCS {
+        // SAFETY: single-CPU AES; exclusive owner of the registry.
+        let owner = unsafe { (*ACCS.owner.get())[i] };
+        if owner == usize::MAX {
+            continue;
+        }
+        let mut msg = [0i16; super::pd::MSG_WORDS];
+        msg[0] = AC_CLOSE;
+        msg[1] = sender;
+        msg[3] = i as i16; // `w3 = i` — the accessory's menu id
+        // SAFETY: single trap path; `post_msg` hands the message to the
+        // accessory's FIFO and wakes it (`aqueue`, `gemqueue.c:85-125`).
+        unsafe {
+            super::pd::post_msg(owner, msg);
+        }
+        sent += 1;
+    }
+    sent
+}
+
+/// `AC_CLOSE` message id (`include/aesdefs.h`, 41).
+const AC_CLOSE: i16 = 41;
+/// `AC_OPEN` message id (`include/aesdefs.h`, 40).
+pub(super) const AC_OPEN: i16 = 40;
+
+/// `menu_register` (35) — register a desk accessory. `int_in[0]` = the
+/// application id, `addr_in[0]` = its menu-title string. Returns the
+/// accessory's menu id (`0..NUM_ACCS-1`) or `-1` when the id is negative or
+/// all six slots are taken (EmuTOS `mn_register`, `gemmnlib.c:789-816`).
+///
+/// The registering process is identified by `appl::current_identity()` — the
+/// `rlr` EmuTOS records (`:805`) — and not by `int_in[0]`, which is only
+/// validity-checked; see [`Accs::owner`].
+pub fn menu_register(pb: &Aespb) {
+    let pid = pb.intin(0);
+    let pstr = pb.addrin(0);
+    // `if ((pid >= 0) && (D.g_accreg < NUM_ACCS))` (:798)
+    if pid < 0 || registered_count() >= NUM_ACCS {
+        pb.set_ret(-1); // `else return -1;` (:815)
+        return;
+    }
+    // SAFETY: single-CPU AES; exclusive owner of the registry.
+    let slot = unsafe {
+        let title = &mut *ACCS.title.get();
+        let owner = &mut *ACCS.owner.get();
+        // `for (openda = 0; …) if (!D.g_acctitle[openda]) break;` (:801-805)
+        let Some(openda) = title.iter().position(|t| *t == 0) else {
+            pb.set_ret(-1);
+            return;
+        };
+        title[openda] = pstr; // `D.g_acctitle[openda] = pstr` (:806)
+        owner[openda] = super::appl::current_identity(); // `desk_ppd[openda] = rlr` (:805)
+        copy_title(openda, pstr);
+        openda
+    };
+    menu_fixup(); // (:808)
+    build_menuid_lookup(); // (:809)
+    pb.set_ret(slot as i16); // `return openda;` (:810)
 }
 
 /// Shared helper: set/clear one `ob_state` bit on `obj`, optionally redrawing
@@ -2514,7 +2935,8 @@ mod popup_wait_tests {
         let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let host = ScriptHost::new();
         let bar = bar_tree();
-        install_bar(bar);
+        install_bar_state(bar);
+        install_bar_ctwait(bar);
         assert_eq!(ctwait_bar_rect(), Some((0, 0, 56, 19)), "gl_ctwait = THEACTIVE's rectangle (gemmnlib.c:717)");
 
         park_at(&host, 30, 200);
@@ -2584,7 +3006,8 @@ mod popup_wait_tests {
         let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let host = ScriptHost::new();
         let bar = bar_tree();
-        install_bar(bar);
+        install_bar_state(bar);
+        install_bar_ctwait(bar);
         let own = super::super::input::own_mouse;
         let fm_own = super::super::window::fm_own;
 

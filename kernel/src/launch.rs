@@ -87,6 +87,22 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     };
     busy_cursor(false);
 
+    // Desk accessories: by this point the caller's `appl_exit` has posted
+    // `AC_CLOSE` to every registered one and blocked until each had seen it
+    // (EmuTOS `ap_exit` → `mn_cleanup` + `wait_for_accs(AP_ACCLOSE)`,
+    // `gemaplib.c:253-255`). Report the state on the serial console, because
+    // an accessory that does nothing with the message — the correct behaviour
+    // for one with no state tied to the dying application — leaves no other
+    // trace that it arrived.
+    let accs = tos_api::aes::acc::count();
+    if accs > 0 {
+        kprintln!(
+            "[acc] launching with {} accessory(s); AC_CLOSE seen by all: {}",
+            accs,
+            tos_api::aes::acc::all_have(tos_api::aes::acc::AP_ACCLOSE)
+        );
+    }
+
     let s = match slot(child.slot) {
         Some(s) => s,
         None => return tos_types::error::ENSMEM,
@@ -170,13 +186,21 @@ static SKIP_AUTO_ACC: core::sync::atomic::AtomicBool =
 /// EmuTOS' `BOOTFLAG_SKIP_AUTO_ACC` is broader than the `\AUTO\` folder: it
 /// also suppresses loading desk accessories (`aes/geminit.c:268-270`), user
 /// cursors (`geminit.c:529-532`), user icons (`desk/deskapp.c:541-543`) and
-/// even the `EMUDESK.INF` read itself (`geminit.c:766-769`). NewTOS honours
-/// only the `\AUTO\` part today: accessories and loadable cursors/icons are not
-/// implemented at all, and our `.INF` read happens in `aes::init::init()`
+/// even the `EMUDESK.INF` read itself (`geminit.c:766-769`). NewTOS honours the
+/// `\AUTO\` part and, since ACC02, the **desk-accessory** part
+/// ([`skip_auto_acc`] → `crate::accs::load_accs`). Loadable cursors/icons are
+/// not implemented at all, and our `.INF` read happens in `aes::init::init()`
 /// *before* the boot screen is shown, so the flag does not exist yet at that
 /// point. Reordering the boot to fix that is a separate change.
 pub fn set_bootflags_from_shiftbits(shiftbits: u8) {
     SKIP_AUTO_ACC.store(shiftbits & MODE_CTRL != 0, Ordering::Relaxed);
+}
+
+/// `bootflags & BOOTFLAG_SKIP_AUTO_ACC` — read by [`run_auto_folder`] here and
+/// by `count_accs` (`crate::accs`, EmuTOS `aes/geminit.c:269-270`), the two
+/// consumers EmuTOS has for it that NewTOS also has.
+pub fn skip_auto_acc() -> bool {
+    SKIP_AUTO_ACC.load(Ordering::Relaxed)
 }
 
 /// The drive and directory an `\AUTO\` program runs in — the **root of the

@@ -69,6 +69,11 @@ fn rect_event_at(m: &MoBlk, (mx, my): (i16, i16)) -> bool {
 /// `MN_SELECTED` message id.
 const MN_SELECTED: i16 = 10;
 
+/// `AC_CLOSE` message id (`include/aesdefs.h`, 41) — the one message type the
+/// Event Manager reacts to itself, by setting `AP_ACCLOSE` on the receiving
+/// descriptor (`gemsuper.c:139-140,160-161`).
+const AC_CLOSE: i16 = 41;
+
 /// AES menu-bar interception (mirroring the EmuTOS Control Manager's
 /// `hctl_rect`, `gemctrl.c:318`): if a menu bar is installed and the cursor is
 /// over it, run the drop-down tracker (`menu::track`) — GEM hover menus, no
@@ -125,16 +130,38 @@ fn menu_intercept(idx: usize) -> bool {
     match super::menu::track(tree, backend) {
         Some((title, item)) => {
             let mut msg = [0i16; pd::MSG_WORDS];
-            msg[0] = MN_SELECTED;
             // ap_sendmsg: msg[1] = rlr->p_pid — the Screen Manager's, 1
             // (gemctrl.c:367 runs as ctl_pd; gemwmlib.c:855).
             msg[1] = super::appl::SCRENMGR_PID;
-            msg[3] = title; // menu title object
-            msg[4] = item; // menu item object
+            // `if ((title == THEDESK) && (item >= gl_dafirst))`
+            // (`gemctrl.c:337`) — a pick in the Desk drop-down at or past the
+            // first accessory entry belongs to a desk accessory, not to the
+            // application that owns the bar.
+            let (target, msg0, w3, w4) = match super::menu::desk_accessory_pick(title, item) {
+                Some((owner, menu_id)) => {
+                    // `do_chg(gl_mntree, title, SELECTED, FALSE, TRUE, TRUE)`
+                    // (`gemctrl.c:341`) — un-highlight the *Desk* title, which
+                    // the tracker leaves selected; the accessory's own
+                    // `form_alert`/window draws next and the title must not
+                    // stay inverted behind it.
+                    super::menu::normalize_title(title);
+                    // `ct_msgup(AC_OPEN, owner, title, item, 0, 0, 0)`
+                    // (`gemctrl.c:337-350`): the *title* (THEDESK) lands in
+                    // `msg[3]`, the accessory's **menu id** in `msg[4]` — the
+                    // asymmetry `AC_CLOSE` mirrors (`docs/api/aes/
+                    // accessories.md` §3).
+                    (owner, super::menu::AC_OPEN, title, menu_id)
+                }
+                // `owner = gl_mnppd; mesag = MN_SELECTED;` (`gemctrl.c:352-354`)
+                None => (idx, MN_SELECTED, title, item),
+            };
+            msg[0] = msg0;
+            msg[3] = w3;
+            msg[4] = w4;
             // SAFETY: single trap path; `post_msg` hands the message to the
             // live slot (EmuTOS `aqueue`/`doq`, `gemqueue.c:85-125`).
             unsafe {
-                pd::post_msg(idx, msg);
+                pd::post_msg(target, msg);
             }
             // `ct_msgup`: "send message and wait for the mouse button to come
             // up" (`gemctrl.c:81-104`).
@@ -495,6 +522,18 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
     let pbuff = pb.addrin(0);
     let idx = super::appl::current_identity();
 
+    // `if (MU_FLAGS & MU_MESAG) rlr->p_flags |= AP_MESAG;` (`gemsuper.c:147-148`)
+    // — set when the wait is **issued**, not when a message arrives: that is
+    // exactly what `wait_for_accs(AP_MESAG)` tests for ("the accessory has
+    // issued at least one wait for a message", `geminit.c:574-578`). Idempotent,
+    // so an S2 restart of this call re-sets the same bit.
+    if flags & MU_MESAG != 0 {
+        // SAFETY: single trap path; `by_index` hands out the live descriptor.
+        if let Some(p) = unsafe { pd::by_index(idx) } {
+            p.flags |= pd::AP_MESAG;
+        }
+    }
+
     let mut fired = 0u16;
     let mut key = 0i16;
     let mut clicks = 0i16;
@@ -705,7 +744,13 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                                 }
                             }
                         }
-                        src.flags |= pd::AP_MESAG;
+                        // `if ((ret & MU_MESAG) && (*(WORD *)MME_PBUFF ==
+                        // AC_CLOSE)) rlr->p_flags |= AP_ACCLOSE;`
+                        // (`gemsuper.c:160-161`) — the AES sets the flag, never
+                        // the accessory; `wait_for_accs(AP_ACCLOSE)` reads it.
+                        if msg[0] == AC_CLOSE {
+                            src.flags |= pd::AP_ACCLOSE;
+                        }
                         fired |= MU_MESAG;
                     }
                 }
@@ -783,6 +828,15 @@ pub fn evnt_keybd(pb: &Aespb) -> Option<sched::Switch> {
 pub fn evnt_mesag(pb: &Aespb) -> Option<sched::Switch> {
     let dest = pb.addrin(0);
     let idx = super::appl::current_identity();
+    // `rlr->p_flags |= AP_MESAG;` **before** `ev_mesag` (`gemsuper.c:137`) —
+    // "the accessory has issued at least one wait for a message"
+    // (`geminit.c:574-578`), which is what `wait_for_accs(AP_MESAG)` waits for.
+    // It must therefore be set on *entry*, not on delivery: at boot no message
+    // has been sent yet and the barrier would never lift.
+    // SAFETY: single trap path; `by_index` hands out the live descriptor.
+    if let Some(p) = unsafe { pd::by_index(idx) } {
+        p.flags |= pd::AP_MESAG;
+    }
     if host().is_none() {
         pb.set_ret(1);
         return None;
@@ -808,7 +862,11 @@ pub fn evnt_mesag(pb: &Aespb) -> Option<sched::Switch> {
                     }
                 }
             }
-            src.flags |= pd::AP_MESAG;
+            // `if (*(WORD *)ME_PBUFF == AC_CLOSE) rlr->p_flags |= AP_ACCLOSE;`
+            // (`gemsuper.c:139-140`).
+            if msg[0] == AC_CLOSE {
+                src.flags |= pd::AP_ACCLOSE;
+            }
             pb.set_ret(1);
             return None;
         }

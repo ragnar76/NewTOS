@@ -57,6 +57,7 @@ pub mod selftest_sleepwake;
 pub mod selftest_sleepwake_switch;
 pub mod selftest_timer_restart;
 pub mod selftest_etv_term;
+pub mod accs;
 pub mod aes_demo;
 pub mod desk;
 pub mod launch;
@@ -412,6 +413,13 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
     // `SHW_SHUTDOWN`, so the `halt()` below is as unreachable as EmuTOS'
     // `Pterm0` after `ui_start`, and just as deliberately present.
     loop {
+        // `load_accs(num_accs)` (EmuTOS `run_accs_and_desktop`,
+        // `geminit.c:687`) — discover up to `NUM_ACCS` `.NAC` desk accessories
+        // in `C:\ACC\` and the boot drive's root and load each into a process
+        // slot. Before `sh_tographic`, as EmuTOS loads before it; nothing of
+        // the accessories runs yet (`crate::accs`, ACC02).
+        accs::load_accs(launch::skip_auto_acc());
+
         // `sh_tographic()` (EmuTOS `run_accs_and_desktop`, `geminit.c:700`) —
         // go into graphic mode now that the character-screen part of the boot
         // (the initinfo screen and the \AUTO\ programs) is done, and before
@@ -435,7 +443,24 @@ extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
         // console — starts it, and starts the next one when it terminates.
         // This is what replaced the hardcoded `desk::run()` call: the desktop
         // is now a configuration choice, not a compiled-in one.
-        if shell_loop::sh_main(isauto, isgem) == tos_api::aes::shell::ShExit::Shutdown {
+        // `dsptch(); wait_for_accs(AP_MESAG);` (`geminit.c:736-737`) — this is
+        // where the loaded accessories first execute: each runs its
+        // `appl_init` + `menu_register` and parks in its message wait, and the
+        // CPU comes back here (ACC03's kernel park). EmuTOS puts it exactly
+        // here, after `process_inf2` and before `sh_main`, so that whatever an
+        // accessory allocates while initialising belongs to the AES and not to
+        // the program `sh_main` starts next (`geminit.c:579-583`).
+        accs::wait_for_accs_mesag();
+
+        let exit = shell_loop::sh_main(isauto, isgem);
+
+        // `free_accs(num_accs)` (`geminit.c:741`) — the session is over; give
+        // every accessory's memory back. EmuTOS can treat this as optional
+        // (its `run_accs_and_desktop` process dies and takes the memory with
+        // it); NewTOS has no such process, so this releases the slots.
+        accs::free_accs();
+
+        if exit == tos_api::aes::shell::ShExit::Shutdown {
             break;
         }
 
