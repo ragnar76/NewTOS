@@ -42,8 +42,20 @@ was die Anwendung mit der Basepage macht: `sdk/examples/cmdline.c` liest
    8-Byte-Felder, auf dem Draht 4 Byte. Wenn die Startroutine `p_cmdlin` ueber
    die mintlib-Struktur liest statt ueber den Draht-Offset, liest sie
    danebenвЂ" und das waere genau dieses Symptom.
-3. **QED selbst** — ob es eine Datei auf der Kommandozeile ueberhaupt
-   auswertet. Zuerst pruefen, bevor die Werkzeugkette verdaechtigt wird.
+3. ~~QED selbst~~ — **ausgeschlossen.** Der Benutzer arbeitet auf seinem
+   echten TT genau so: Datei auf QED ziehen, und zwar auf eine
+   **Desktop-Verknuepfung**, auf die er sie ablegt. QED wertet den Dateinamen
+   also aus, und der Weg ist sein normaler Arbeitsablauf, kein Sonderfall.
+
+## Beide Ziehwege sind auf unserer Seite verdrahtet
+
+Auch der zweite, den der Benutzer auf dem TT benutzt: das Ablegen auf eine
+**Desktop-Verknuepfung** baut den Schwanz genauso
+(`kernel/src/desk/dir.rs:1885`, `AType::File`-Zweig, seit DESK30) wie das
+Ablegen im Fenster (`:1793`, `fun_win2win`, seit DESK19). Beide enden in
+`do_aopen_drop`. Es gibt also keinen dritten Pfad, an dem der Schwanz
+verlorengehen koennte — und wenn der Defekt in der Werkzeugkette liegt,
+betrifft er **beide** Wege gleichermassen.
 
 ## Arbeitsregel
 
