@@ -1,0 +1,682 @@
+diff --git a/TASK/ACC06.md b/TASK/ACC06.md
+index d1716aa..ff363e0 100644
+--- a/TASK/ACC06.md
++++ b/TASK/ACC06.md
+@@ -1,6 +1,6 @@
+ # ACC06 — Ein kleines Accessory als Pruefling fuer ACC02/ACC03
+ 
+-Status: **OFFEN** · Prioritaet: **P2** · Typ: Abnahmefall + Kernelbindung
++Status: **TEIL 1 ERLEDIGT (2026-09-24), TEIL 2 ALS QUELLTEXT** · Prioritaet: **P2** · Typ: Abnahmefall + Kernelbindung
+ 
+ Abhaengigkeiten: [ACC01](ACC01.md) (Quellenanalyse, offen) — der Pruefling
+ laeuft erst, wenn ACC02/ACC03 stehen; **gebaut wird er vorher**, wie
+@@ -79,3 +79,75 @@ Kopf, warum er noch nicht laufen kann. Danach ist ACC02/ACC03 pruefbar.
+ ## Arbeitsregel
+ 
+ [Gemeinsame Regeln](README.md) gelten.
++
++---
++
++## Abschluss (2026-09-24)
++
++**Teil 1 ist gebaut und belegt, Teil 2 liegt als Quelltext vor.**
++Messung: [`measurement-2026-09-24-acc06/`](../measurement-2026-09-24-acc06/).
++Kurzfassung: [`ACC06-STATUS-DONE.MD`](ACC06-STATUS-DONE.MD).
++
++### Die Nummernwahl gegen die Quelle geprueft
++
++Das Ticket nannte FreeMiNTs belegte Bereiche als „0–29, 100, 900–913,
++1000–1100 und `0x54f8`". Die Quelle sagt etwas Weiteres: `sys/mint/ssystem.h`
++(@ `f906416`) reserviert per Kommentar **ganze Bloecke**, nicht nur die
++vergebenen Nummern — *„additional informations about the kernel / reserved
++900 - 999"* und *„debug section / reserved 1000 - **1999**"*. Und der
++Verteiler beantwortet eine Nummer, die im Header gar nicht steht: `case 3000:`
++(`sys/ssystem.c:631`), ein `register_trap2`-Testhaken hinter
++`#ifdef MINT_STATUS_CVS`, im Quelltext als *„XXX only for testing"* markiert.
++
++Ergebnis fuer uns unveraendert: **2000 ist frei**, und zwar mit einer Luecke
++von 2000 bis 2999. `S_NEWTOS_CPUCLOCK = 2000` und `S_NEWTOS_CPUTEMP = 2001`
++sind festgeschrieben. Vermerkt ist zugleich, dass ein spaeterer NewTOS-Block
++nicht ueber 2999 hinauswachsen darf, ohne 3000 erneut zu pruefen.
++
++### Der Weg, den die zwei Werte nehmen
++
++`Ssystem(0x154)` → `newtos_scalar` (`tos-api/src/gemdos/ssystem.rs`) →
++`Host::cpu_clock_hz` / `Host::cpu_temperature_mdeg` (`tos-api/src/host.rs`) →
++`kernel/src/host_env.rs` (nur `board-rpi4`) →
++`mailbox::get_clock_rate` / `::get_temperature`
++(`kernel/src/drivers/bcm2711/mailbox.rs`, Tags `0x0003_0002` und
++`0x0003_0006`).
++
++Argumente: `arg1` = Zeiger auf ein 32-Bit-LONG oder 0 fuer den Wert im
++Rueckgabe-LONG; `arg2` **reserviert und zurueckgewiesen** (`EINVAL`) statt
++stillschweigend ignoriert. Ein Brett ohne Mailbox behaelt den Trait-Standard
++`None`, und der Trap macht daraus `ERROR` — **keine erfundene Zahl**, und in
++diesem Fall wird auch nichts in den Zeiger geschrieben.
++
++### Was QEMU antwortet
++
++Der Emulator beantwortet **beide** Tags, mit festen Modellzahlen:
++**700,0 MHz** und **25,0 C**. Sie stehen so im Protokoll — erfunden ist
++nichts, gemessen ist es auch nicht. Der `ERROR`-Pfad war im Emulator also
++nicht zu sehen und ist stattdessen am Trap belegt
++(`tos-api/tests/gemdos_ssystem_cpuinfo.rs`).
++
++**Nur die echte Pi 4 kann entscheiden**, ob der Treiber wirklich die Firmware
++liest: dort duerfen dort nicht dieselben zwei Zahlen stehen, und die
++Temperatur muss sich nach einem Lastlauf veraendern. Hardwarepunkt **64** in
++`docs/api/desktop/_hw-test-2026-09-17.md`.
++
++### Teil 2
++
++`sdk/examples/sysacc.c` ist geschrieben und uebersetzt sauber, **laeuft aber
++nicht**: `menu_register` (35) traegt nur ein, niemand haengt den Eintrag in
++die Desk-Klappliste und niemand sendet `AC_OPEN`. Das steht so im Dateikopf.
++Ein Geruest wurde nicht darum herum gebaut, die Dateiendung bleibt ACC01
++ueberlassen (der Bauhinweis nennt bewusst `.TBD`), und
++`tools/make-sd-image.sh` installiert ihn absichtlich nicht.
++
++### Offen geblieben (gehoert in eigene Tickets)
++
++1. **Der Emulator taugt nicht als Bildbeleg fuer den AUTO-Textschirm.** Die
++   Textphase ist kuerzer als 0,12 s (zwei Verfahren, RUNINFO §3); ein Bild
++   der zwei Zeilen gibt es erst mit dem Accessory.
++2. **`GET_CLOCK_RATE` gegen `GET_CLOCK_RATE_MEASURED` (`0x0003_0047`).**
++   circle fragt erst den gemessenen Takt und faellt auf den eingestellten
++   zurueck (`references/circle/lib/machineinfo.cpp:459-471`). Welcher der
++   beiden auf der Pi 4 die ehrlichere Zahl ist, entscheidet ein Lauf auf der
++   Hardware — nicht dieses Ticket.
+diff --git a/docs/STATUS.md b/docs/STATUS.md
+index 98287e4..941c63f 100644
+--- a/docs/STATUS.md
++++ b/docs/STATUS.md
+@@ -236,7 +236,7 @@ Konsolen-Fundaments (nicht mehr „die aktuelle Phase").
+ | 05    | High-Half Migration & Process ABI      | ✅ Completed (D1–D6 + D8 + EC4 grün; Pseudo-Process EL0-Round-Trip in `selftest_ec4` validiert: TTBR0-Install, eret nach EL0, SVC `#0xEC4` Trap zurück, Handler-Redirect mit SP_EL0-Restore, Resume in EL1; Phase-04-/02-Selftests bleiben grün); D4 (TTBR0-Clear) als Architektur-Entscheidung auf Phase 06 verschoben — TTBR0 wird dort per Pexec mit Per-Process-L0 atomar installiert; D7 Supexec deferred bis ADR-Supexec | 2026-05-04 | 2026-05-07 |
+ | 06    | BDOS Process (`bdos/proc.c`)           | ✅ **D1–D9 komplett** (BasePage + Process-Tabelle + ELF-Loader + Per-Process-Page-Tables + m_own-RUN-Wiring; **D3 Pexec(PE_LOADGO)**, **D4 PE_LOAD**, **D5 PE_GO** via opakem PD-Handle, **D6 Pterm** mit EmuTOS-Eltern-Resume, **D7 Ptermres** mit reserve-resident). Alle Selftests grün in QEMU (EC4/D3/D6/D7/D3-PEXEC/D4D5-PEXEC), 0 Exceptions. Offen: dereferenzierbarer PD + PE_BASEPAGE/GOTHENFREE/BASEPAGEFLAGS (echte HW / Phase 09); EC4 (kooperatives Round-Robin via Pwait) | 2026-05-07 | 2026-06-16 |
+ | 07    | BDOS Misc (Time + RX completion)       | ✅ **D1–D5 komplett** (D1 CNTPCT-Clock-Source, D2 Tgetdate/Tsetdate/Tgettime/Tsettime, D3 Cconin/Cnecin/Crawcin, D4 Cconrs, D5 Sversion). Time-Selftest grün (Set/Get exakt, Invalid-Reject, CNTPCT-Tick); D3/D4 via lineecho/cconin-Demo verifiziert. **2026-09-04:** dazu der echte **200-Hz-Systemtick** — ARM-Generic-Timer-Interrupt (PPI INTID 30) treibt `_hz_200`, das der ISR in die `$4BA`-Zelle des laufenden Prozesses spiegelt; mintlibs unverändertes `clock()` misst damit auf 5 ms genau (vorher 2 s über `Tgettime`). Selftest `hz_200 +100 / 500 ms` auf beiden Boards; EL0-Beweis `CLOCKTST.NCP`. Offen: die 50-Hz-Hälfte der EmuTOS-Siebung (`etv_timer`/Tastenwiederholung/`dosound`) | 2026-06-16 | 2026-06-16 |
+-| 08    | BIOS Block Devices (Trap 13)           | ✅ **EC1+EC2** (SD-Host-Treiber Read+Write+CSD; BIOS `Rwabs`/`Mediach`/`Drvmap`/`Getbpb`; MBR-Partitionstabelle → Drives C:+). **D2 BIOS-Konsole** `Bconstat`/`Bconin`/`Bconout`/`Bcostat` (0x01/0x02/0x03/0x08) auf die PL011+FB-Konsole gemappt (Handle 2 CON / 4 IKBD / 5 raw-CON; abwesende Geräte = char_dummy-Semantik), in QEMU über `svc #13` verifiziert. **D5 Cookie-Jar** als FreeMiNT `Ssystem` (GEMDOS 0x154; `S_GETCOOKIE`/`S_SETCOOKIE`/`S_DELCOOKIE`) — kernel-eigener Jar, in QEMU über `svc #1`/0x154 verifiziert. **2026-09-14: der `$5A0`-Spiegel ist live statt Momentaufnahme** — `cookie::set`/`cookie::del` ziehen über `loader::refresh_cookie_mirrors()` den Spiegel **jedes** geladenen Prozesses nach; Größengrenze definiert (16 Plätze = 15 Cookies + `{0, Kapazität}`-Abschluss, darüber abgeschnitten, Abschluss bleibt). Belege: Hosttest `loader::cookie_mirror_tests`, B1-Selbsttest (f), apitest SX11–SX15 (`measurement-2026-09-14-cookie/`). **Offen und dokumentiert:** die Gegenrichtung (App schreibt in den Spiegel) und die LP64-Schrittweite eines 1:1 portierten `struct { long; long; }`-Lesers (apitest SX16/SX17). In QEMU raspi4b verifiziert. **2026-07-24 BIOS-Audit + Ebene komplett** (Developer→Tester je Paket): **B1** Low-Memory-Sysvars `$400`–`$5FF`/OSHEADER(`os_version=0x0404`)/`$5A0` per-Prozess in EL0-VA (fixt den TeraDesk-`$4F2`-Freeze; App-Base `0x100`→`0x1000`), **Getbpb-Härtung** M2/M3/M4/L3, **Rwabs physical-mode** L1, **conterm/cmdload/dumpflg + conterm-Fold** L2, `setexc` Sysvar-Peek; Findings+Triage+Inventar in `docs/analysis/bios-audit/`. Offen: H1 etv_critic/etv_timer (→ EL0-Upcall), BB2 STRAM/TTRAM-Split. **2026-09-05: die BIOS-Gruppe hat erstmals Laufzeit-Belege** — `sdk/apps/apitest/apitest.c` prüft jetzt alle 12 verdrahteten Trap-13-Funktionen (0x00–0x0B) aus EL0 gegen `docs/api/bios/`, **80 Prüfungen, ausschließlich lesend** (kein `Rwabs`-Schreibpfad, kein Schreiben in einen lebenden `etv_*`-Vektor). QEMU-`raspi4b`-Lauf: 59 PASS / 2 FAIL / 7 SKIP-Einträge in der BIOS-Gruppe (zwei davon fassen die 10 BPB- bzw. 4 MD-Feldprüfungen zusammen, die der Zeiger-Befund blockiert). **Befund vom 2026-09-05 (belegt) — am selben Tag geschlossen:** `Getbpb` und `Getmpb` lieferten Kernel-High-Half-Zeiger (`0xFFFF0000_0026D8F4` bzw. `…D8B8`), die ein EL0-Programm nicht dereferenzieren kann. Behoben per **ADR-023**: beide Strukturen liegen jetzt auf einer eigenen Seite und werden über `usermem::expose` read-only (FreeMiNT `PROT_PR`) in das EL0-Fenster des aufrufenden Prozesses veröffentlicht; die Funktionen geben die **User-VA** zurück (EL1-Aufrufer weiterhin die Kernel-VA). Gemessen: `Getbpb(2) = 0x00401024`, `mp_mfl = 0x00402000`, `APITEST` **82 PASS / 0 FAIL / 5 SKIP** (vorher 66/2/7) — die 14 blockierten Feldprüfungen laufen und stimmen. **Rest der Klasse erhoben, nicht umgesetzt:** `Physbase`/`Logbase` und `Kbdvbase` geben weiterhin Kernel-VAs heraus, `Iorec` ist nicht verdrahtet, `Keytbl` war nie betroffen, `Bconmap` liefert kein Zeiger — Einzelheiten unter Recent Decisions 2026-09-05. | 2026-06-17 | 2026-07-24 |
++| 08    | BIOS Block Devices (Trap 13)           | ✅ **EC1+EC2** (SD-Host-Treiber Read+Write+CSD; BIOS `Rwabs`/`Mediach`/`Drvmap`/`Getbpb`; MBR-Partitionstabelle → Drives C:+). **D2 BIOS-Konsole** `Bconstat`/`Bconin`/`Bconout`/`Bcostat` (0x01/0x02/0x03/0x08) auf die PL011+FB-Konsole gemappt (Handle 2 CON / 4 IKBD / 5 raw-CON; abwesende Geräte = char_dummy-Semantik), in QEMU über `svc #13` verifiziert. **D5 Cookie-Jar** als FreeMiNT `Ssystem` (GEMDOS 0x154; `S_GETCOOKIE`/`S_SETCOOKIE`/`S_DELCOOKIE`) — kernel-eigener Jar, in QEMU über `svc #1`/0x154 verifiziert. **2026-09-14: der `$5A0`-Spiegel ist live statt Momentaufnahme** — `cookie::set`/`cookie::del` ziehen über `loader::refresh_cookie_mirrors()` den Spiegel **jedes** geladenen Prozesses nach; Größengrenze definiert (16 Plätze = 15 Cookies + `{0, Kapazität}`-Abschluss, darüber abgeschnitten, Abschluss bleibt). Belege: Hosttest `loader::cookie_mirror_tests`, B1-Selbsttest (f), apitest SX11–SX15 (`measurement-2026-09-14-cookie/`). **Offen und dokumentiert:** die Gegenrichtung (App schreibt in den Spiegel) und die LP64-Schrittweite eines 1:1 portierten `struct { long; long; }`-Lesers (apitest SX16/SX17). In QEMU raspi4b verifiziert. **2026-07-24 BIOS-Audit + Ebene komplett** (Developer→Tester je Paket): **B1** Low-Memory-Sysvars `$400`–`$5FF`/OSHEADER(`os_version=0x0404`)/`$5A0` per-Prozess in EL0-VA (fixt den TeraDesk-`$4F2`-Freeze; App-Base `0x100`→`0x1000`), **Getbpb-Härtung** M2/M3/M4/L3, **Rwabs physical-mode** L1, **conterm/cmdload/dumpflg + conterm-Fold** L2, `setexc` Sysvar-Peek; Findings+Triage+Inventar in `docs/analysis/bios-audit/`. Offen: H1 etv_critic/etv_timer (→ EL0-Upcall), BB2 STRAM/TTRAM-Split. **2026-09-05: die BIOS-Gruppe hat erstmals Laufzeit-Belege** — `sdk/apps/apitest/apitest.c` prüft jetzt alle 12 verdrahteten Trap-13-Funktionen (0x00–0x0B) aus EL0 gegen `docs/api/bios/`, **80 Prüfungen, ausschließlich lesend** (kein `Rwabs`-Schreibpfad, kein Schreiben in einen lebenden `etv_*`-Vektor). QEMU-`raspi4b`-Lauf: 59 PASS / 2 FAIL / 7 SKIP-Einträge in der BIOS-Gruppe (zwei davon fassen die 10 BPB- bzw. 4 MD-Feldprüfungen zusammen, die der Zeiger-Befund blockiert). **Befund vom 2026-09-05 (belegt) — am selben Tag geschlossen:** `Getbpb` und `Getmpb` lieferten Kernel-High-Half-Zeiger (`0xFFFF0000_0026D8F4` bzw. `…D8B8`), die ein EL0-Programm nicht dereferenzieren kann. Behoben per **ADR-023**: beide Strukturen liegen jetzt auf einer eigenen Seite und werden über `usermem::expose` read-only (FreeMiNT `PROT_PR`) in das EL0-Fenster des aufrufenden Prozesses veröffentlicht; die Funktionen geben die **User-VA** zurück (EL1-Aufrufer weiterhin die Kernel-VA). Gemessen: `Getbpb(2) = 0x00401024`, `mp_mfl = 0x00402000`, `APITEST` **82 PASS / 0 FAIL / 5 SKIP** (vorher 66/2/7) — die 14 blockierten Feldprüfungen laufen und stimmen. **Rest der Klasse erhoben, nicht umgesetzt:** `Physbase`/`Logbase` und `Kbdvbase` geben weiterhin Kernel-VAs heraus, `Iorec` ist nicht verdrahtet, `Keytbl` war nie betroffen, `Bconmap` liefert kein Zeiger — Einzelheiten unter Recent Decisions 2026-09-05. **2026-09-24 (ACC06 Teil 1): `Ssystem` bekommt NewTOS-eigene Unterfunktionen ab 2000** — `S_NEWTOS_CPUCLOCK` (2000, ARM-Takt in Hz) und `S_NEWTOS_CPUTEMP` (2001, Chiptemperatur in 1/1000 Grad C), beide ueber die neue Hostgrenze `Host::cpu_clock_hz`/`cpu_temperature_mdeg` auf die BCM2711-Mailbox-Tags `0x0003_0002`/`0x0003_0006` (`mailbox::get_clock_rate`/`get_temperature`). 2000+ ist bei FreeMiNT frei (Header reserviert bis 1999, hoechster beantworteter Modus 3000). Ein Brett ohne Mailbox antwortet `ERROR`, nie mit einer Zahl. Belege: `tos-api/tests/gemdos_ssystem_cpuinfo.rs` (5 Faelle) + `C:\SYSINFO.NCP` (`sdk/examples/sysinfo.c`) in QEMU `raspi4b`; die Firmwarewerte selbst kann nur die echte Pi 4 bestaetigen (HW-Punkt 64). | 2026-06-17 | 2026-07-24 |
+ | 09    | BDOS File System                       | ✅ **Komplett** (FAT16 read+write, EC1–EC3). D1 Cluster-Ketten-Leser, D2 Sektor-Cache, D3 Pfad-Parser (`findit` + Unterverzeichnisse), D4 `Fopen`/`Fread`/`Fseek`/`Fclose`/`Fattrib`, D5 `Fsfirst`/`Fsnext`+`Fsetdta`/`Fgetdta`, D6 `Dgetdrv`/`Dsetdrv`/`Dfree`+`Dsetpath`/`Dgetpath`, D7 `Fcreate`/`Fwrite`/`Fdelete`/`Frename`/`Fdatime`, Dir-Ops `Dcreate`/`Ddelete`. 24 GEMDOS-File-/Dir-Calls. In QEMU raspi4b verifiziert, Write-Pfad host-seitig gegengeprüft. **2026-09-12 (Q07): `Fattrib` GET nimmt jetzt auch die Schreibweise mit Trennzeichen am Pfadende** (`Fattrib("C:\CLIPBRD\", 0, 0)` = `16` statt `-33`) — die Vollendung der am 2026-07-21 beschlossenen TOS4/FreeMiNT-Abweichung, denn cflib haengt vor jeder Pruefung ein Trennzeichen an und traf sie deshalb nie (`tos-api/src/bdos/fs/file.rs`, Dauertests `tos-api/tests/gemdos_fattrib_dir.rs`). Rein additiv: Datei, fehlender Name und Laufwerkswurzel `"C:\"` behalten ihre Antwort, `Fsfirst`/`Fopen`/`Dcreate` mit leerer Endkomponente sind unveraendert EmuTOS-treu. **2026-09-24 (FS01): `Fdelete`/`Ddelete` — und damit auch `Fcreate` ueber eine bestehende Datei — geben die Langnamen-Schlitze (`attr == 0x0F`) vor dem 8.3-Eintrag mit frei** (`dir::erase_slot_with_lfn`, nach FreeMiNTs `unlink_cookie_i`/`__readvfat`, `references/freemint/sys/fatfs.c:3690-3748,4246-4272`; EmuTOS kennt keine Langnamen und beantwortet die Frage nicht). Eine vollstaendig geleerte Karte laeuft damit wieder sauber durch `fsck_msdos -n` (`measurement-2026-09-24-fs01/`); vorher stuerzte das Werkzeug an den Waisen ab. Hosttest `tos-api/tests/gemdos_fs_lfn_delete.rs`. Offen: FAT12-Write (Floppy, out of scope); echte HW; ob `Fattrib("C:\", 0, 0)` FreeMiNTs `FA_DIR` liefern soll (heute `EFILNF`, wie EmuTOS/TOS 3.06); `Frename` gibt die Kette des Quellnamens noch nicht frei (eigener Task) | 2026-06-17 | 2026-06-18 |
+ | 10    | BIOS Screen                            | ✅ **D1–D5** (XBIOS-Screen-Gruppe `Physbase`/`Logbase`/`Getrez`/`Setscreen`/`Setpalette`/`Setcolor`; VT52-Framebuffer-Konsole `fbcon` — `Cconout` rendert auf HDMI, EC1) + interaktive EmuCON-Stil-Shell + IKBD-Tastatur-Decoder. In QEMU raspi4b verifiziert. **2026-09-04:** `fbcon` ist jetzt ein zustandsloser Adapter auf den **gemeinsamen** VDI-Alpha-Layer (`tos_api::vdi::alpha_conout`) und ohne Aktiv-Gate — wie EmuTOS' `bconout2`; damit ist die Ausgabe eines aus einem GEM-Programm per `v_enter_cur`+`Pexec` gestarteten TOS-Programms sichtbar (AUD-V3-011 aufgeloest). **2026-09-05:** `Physbase`/`Logbase` liefern einem **EL0**-Aufrufer jetzt eine erreichbare Adresse (ADR-023-Amendment) — der Framebuffer wird als `PROT_G`, **Normal Non-Cacheable** in das Prozessfenster veroeffentlicht; ein Programm schreibt mit einer gewoehnlichen Store-Schleife und **ohne jede Cache-Pflege** direkt auf den Schirm (`PHYSBASE.NCP`, Screendump-Beleg). **Offen und belegt:** `Setscreen` schaltet nach wie vor nichts um — es beschreibt nur die beiden Schatten; keine Doppelpufferung  **2026-09-05: `Setscreen` (0x05) schaltet jetzt wirklich um — Doppelpufferung.** Der VideoCore-Framebuffer wird beim Boot mit **doppelter virtueller Hoehe** angefordert (`0x0004_8004` mit `h x 2`), sein Bildschirmspeicher fasst also zwei ganze Schirme; der physische Wechsel ist das Mailbox-Tag **`0x0004_8009` set-virtual-offset** (Quelle: `references/circle`, siehe `docs/hardware/mailbox-framebuffer.md` §3b). Die beiden Schatten `LOGBASE`/`PHYSBASE` sind **entfallen**: die logische Basis *ist* der Zeichen-Zeiger des Displays (EmuTOS `v_bas_ad`), die physische wird **aus der Hardware zurueckgelesen** (EmuTOS `physbase()`, `screen.c:1030`). Gemessen auf QEMU `raspi4b`: `virtual 640x960` gewaehrt, 2400 KiB = 2 Seiten; `SCRFLIP.NCP` findet Seite 1 allein ueber den `Setscreen`/`Logbase`-Vertrag bei `0x12C000`, bemalt sie unsichtbar (Screendump: nur Konsolentext), blendet sie ein (Screendump: drei bildschirmfuellende Farbbaender, nichts kopiert) und stellt beide Basen zurueck. `Vsync` im selben Lauf gemessen: 600 Aufrufe in 9,9 s = 60,6 Hz, also eine echte Wartezeit. `board-qemu-virt` (ramfb) hat **eine** Seite und weist jede Bewegung zurueck. | 2026-06-18 | 2026-09-05 **2026-09-06/07: die Direktbildschirm-Gruppe traegt eine bewegte EL0-Anwendung im Dauerbetrieb.** Eine externe GEM-Anwendung fuhr `Logbase`/`Physbase`, den `Setscreen`-Seitenwechsel und `Vsync` ueber Minuten ohne ein verworfenes Bild (QEMU `raspi4b` 640x480, zwei Seiten, und auf echter Pi 4: 60,01 fps ueber 60,08 s, 1,47 ms von 16,7 ms Budget). Nebenbefund, ohne Kernelaenderung: der Zeilenabstand ist ueber keine Schnittstelle abfragbar und muss vom Programm per VDI-Zeilenprobe gemessen werden. Die Anwendung selbst gehoert nicht in diesen Baum und liegt seit 2026-09-09 unter `/Volumes/Daten/Development/ball-demo/`. **2026-09-21:** der VideoCore bekommt im Allokations-Telegramm set alpha mode `0x0004_8007` = 2 („ignored"), damit das X-Byte (VDI-Overlay-Bit seit V11/V12) nie als Alpha gelesen wird; Bootzeile `[fb] alpha mode = N` (QEMU raspi4b: 2, Bild byteidentisch); Pi-Abnahme = HW-Checkliste 30. |
+ | 11    | XBIOS (Trap 14)                        | ✅ **Substanziell fertig + re-auditiert** (EC2). D1 Dispatcher, D2 `Kbdvbase`, D3 `Vsync`, D4 `Random`+`Tickcal`, Clock (`Settime`/`Gettime`), Screen-Gruppe. **2026-07-09 Re-Audit (#26/#27):** der Dispatcher-Catch-all lieferte fälschlich `EINVFN` statt der **Funktionsnummer** (EmuTOS `xbios_unimpl`, D-008) → ~72/88 Slots korrigiert; Floppy/DMA → `EUNDEV`; **`Protobt` (0x12) voll implementiert** (war eine No-Stub-Lücke); `Setprt` (0x21) als Software-Config-Wort reklassifiziert; `Kbrate` verdrahtet. HW-Absence-Verträge (PSG/MIDI/Serial/Blitter) korrekt. **Bewusst deferred** (alle ehrlich-unimpl via Funktionsnummer): `Setscreen` rez-Range (Auflösungs-Politik-ADR), `Supexec` 0x26 (ADR-Supexec), IKBD-Familie `Iorec`/`Keytbl`/`Bioskeys`/`Initmous` (brauchen Keyboard/Maus-Registry). In QEMU raspi4b via `selftest_xbios` verifiziert (23/23). **2026-07-24 Machbarkeits-Triage** (`docs/analysis/bios-audit/bios-xbios-feasibility-triage.md`): alle 103 realen XBIOS-Fn kategorisiert (Implement / HW-Absenz-Kontraktwert / Weglassen); User-Entscheidungen VIDEL + Audio (DMA-Sound/DSP) + Supexec + Srealloc + Kbd-XBIOS deferred, Floppy/PSG = HW-Absenz, MFP/TT-Shifter/unimpl = Catch-all; volles Inventar `emutos-full-function-inventory.md`. | 2026-06-18 | 2026-07-24 |
+@@ -379,6 +379,7 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
+ 
+ | Date       | Decision                                            |
+ |------------|-----------------------------------------------------|
++| 2026-09-24 | **ACC06 Teil 1: Taktfrequenz und CPU-Temperatur kommen aus dem Kernel heraus — ueber `Ssystem` mit NewTOS-eigenen Unterfunktionen ab 2000.** Die Nummernwahl wurde **vor** dem Festschreiben gegen die Quelle geprueft: FreeMiNTs `sys/mint/ssystem.h` (@ `f906416`) belegt 0–29, 100 und `0x54f8`, und reserviert per Kommentar **zwei** Bloecke — *reserved 900 - 999* und *reserved 1000 - **1999*** (das Ticket nannte 1000–1100; der Header reserviert bis 1999). Hoechste Nummer, die der Verteiler ueberhaupt beantwortet, ist `case 3000:` (`sys/ssystem.c:631`), ein `#ifdef MINT_STATUS_CVS`-Testhaken. **2000…2999 gehoert niemandem**, also nehmen wir es: `S_NEWTOS_CPUCLOCK = 2000` (ARM-Takt in Hz), `S_NEWTOS_CPUTEMP = 2001` (Chiptemperatur in 1/1000 Grad C). Keine Keksdose — ein Keks ist ein Startwert, eine Temperatur aendert sich zwischen zwei Lesungen. **Der Weg:** `tos-api/src/gemdos/ssystem.rs` (`newtos_scalar`: `arg1` = Zeiger auf ein 32-Bit-LONG oder 0 fuer den Wert im Rueckgabe-LONG, `arg2` reserviert und **zurueckgewiesen** statt ignoriert → `EINVAL`) → `Host::cpu_clock_hz`/`Host::cpu_temperature_mdeg` (`tos-api/src/host.rs`, dieselbe austauschbare Hardwaregrenze wie `Host::raster`) → `kernel/src/host_env.rs` (nur `board-rpi4`) → `kernel/src/drivers/bcm2711/mailbox.rs::get_clock_rate`/`::get_temperature`, Firmware-Tags `0x0003_0002` (Takt-ID 3 = ARM) und `0x0003_0006` (Sensor-ID 0) ueber den gemeinsamen `query_id_value`. **Kein erfundener Wert an keiner Stelle:** ein Brett ohne Mailbox (`board-qemu-virt`, hostlos) behaelt den Trait-Standard `None`, und der Trap macht daraus `ERROR` (-1), ohne etwas in den Zeiger zu schreiben. Ein Takt von 0 gilt als *keine Antwort* (Beleg: circle `lib/machineinfo.cpp:459-471`), eine Temperatur von 0 nicht (circle filtert dort nicht, `lib/cputhrottle.cpp:408-418`). **Belege:** Hosttest `tos-api/tests/gemdos_ssystem_cpuinfo.rs` (5 Faelle: Wertform, Zeigerform, Brett-ohne-Sensor schreibt nichts, `arg2` != 0 → `EINVAL`, 1999/2002/2999 bleiben `EINVFN`); Konsolenprogramm `sdk/examples/sysinfo.c` → `C:\SYSINFO.NCP` (`tools/make-sd-image.sh`, mit `SD_SYSINFO_AUTO=1` zusaetzlich in `\AUTO\`). QEMU `raspi4b` antwortet auf **beide** Tags — mit den festen Modellzahlen **700,0 MHz** und **25,0 C**; die stehen so im Protokoll, sind aber keine Messung. Ob der Treiber wirklich die Firmware liest, entscheidet nur die echte Pi 4 (HW-Punkt 64). **Teil 2 ist Quelltext, kein Lieferstueck:** `sdk/examples/sysacc.c` (appl_init → menu_register → `AC_OPEN` → `form_alert`) ist geschrieben und uebersetzt sauber, **kann aber nicht laufen** — `menu_register` (35) traegt nur ein (`tos-api/src/aes/menu.rs:1105`), niemand haengt den Eintrag in die Desk-Klappliste und niemand sendet `AC_OPEN` (EmuTOS `gemctrl.c:337-346`, `gemmnlib.c:740-748`); das ist ACC02/ACC03. Die Dateiendung bleibt ACC01 ueberlassen, der Bauhinweis nennt bewusst `.TBD`. Dokumentiert in `docs/api/gemdos/154-ssystem.md` (Abschnitt *NewTOS-own modes (2000+)*) und `docs/hardware/mailbox-framebuffer.md` §3d. Messung: `measurement-2026-09-24-acc06/`. Noch **nicht committet**, liegt im gemeinsamen Baum. |
+ | 2026-09-24 | **DESK37/DESK36/DESK30 - drei Befunde der Pi-Runde, zusammen abgearbeitet.** **DESK37 - `sh_ldapp` zeichnet zweimal, wir nur einmal.** DESK35 hatte den ersten Schritt geholt, `sh_draw(D.s_cmd, TRUE)` (`gemshlib.c:719`), und der loescht den Schirm **weiss**: er tauscht den `ob_spec` der `DESKTOP`-Wurzel gegen `CLEAR_SCREEN` und zeichnet nur diese eine Wurzel (`:64,277-282`). Der zweite Schritt fehlte - `sh_show(fname)` (`:632`), also `sh_draw(lcmd, FALSE)`: der **ganze** Baum mit dem echten `ob_spec`, samt Menueleistenstreifen und `DTNAME`s Text (`:284-286`). Die offene Frage des Tickets, am Quelltext beantwortet: das Muster haelt die **AES**, `rs_trees[DESKTOP][ROOT].ob_spec` = `0x1143` aus `gem_rsc.c:551-556`, unteres Byte aus der `#Q`-Zeile ersetzt (`set_aes_background`, `geminit.c:635-641`) - bei uns `tos_api::aes::init`. `G.g_patcol` des Desktops (DESK09) spielt keine Rolle: `desktop_relinquish` hat den Hintergrundbaum mit `wind_set(DESKWH, WF_NEWDESK, NULL)` schon abgemeldet. Neu ist `shell_loop::sh_gem_show`, gerufen aus `run_gem_app` genau zwischen dem `sh_main`-Block und dem Lader. Gegen EmuTOS auf Hatari (Falcon/VGA) verglichen: gleiche Streifenhoehe, gleiche schwarze Trennzeile, gleiches 50-%-Raster mit 320 gruenen und 320 weissen Pixeln je Zeile **in derselben Phase**; nur die beiden Farbworte unterscheiden sich, und das ist Hataris 5-Bit-Rampe. **DESK36 - unsere Ziehschleife lag in der AES, deshalb konnte sie nicht hervorheben.** `act_bdown` rief `graf_dragbox` (71), die die Schleife selbst fuehrt und nur die Endposition zurueckgibt; `act_chg` kann dort nie gerufen werden, und die AES kennt keine `ANODE`s. EmuTOS' Desktop ruft `graf_dragbox` nie - seine Bindung enthaelt sie nicht (`aesbind.h:103-105`). Also Umbau: `gr_drgplns`, `gr_bwait`, `gr_isdown`, `gr_plns`, `gr_extent`, `gr_obalign`, `rc_constrain` (`deskact.c:66-355`) liegen jetzt im Desktop, mit den drei Regeln, die ein naiver Nachbau verfehlt: eine gewoehnliche Datei wird **nicht** hervorgehoben (`:340-341`), beim Wechsel geht das alte Ziel zuerst zurueck und ein schon `SELECTED`-Objekt wird nicht angefasst (`:325-335`), beim Loslassen geht die Hervorhebung **immer** zurueck (`:353`). **Benannte Abweichung:** der Desktop hat dafuer eine eigene VDI-Arbeitsstation bekommen (`kernel/src/desk/vdibind.rs`, `graf_handle` -> `v_opnvwk`), weil `gsx_pline`/`gsx_xline` (`aes/gemgraf.c:140-182`) in EmuTOS auf der mit der AES **geteilten** Station zeichnen - die es bei uns nicht gibt, da unsere AES direkt ueber das Raster-Backend malt und `v_opnwk` nie gerufen wird. **DESK30 - `CONF_WITH_DESKTOP_SHORTCUTS`, im Falcon-Profil an (`config.h:1782-1784`).** Datenebene zuerst: `Anode` hat `a_dicon`, `a_flags` (nur `AF_ISEXEC`; `AF_ISDESK` ist implizit, die uebrigen Flags liest `do_aopen` nie, weil es die `ANODE` vorher durch die der Zuordnungsliste ersetzt, `desksupp.c:857-871`) und `a_pdata`. Dann `app_blddesk`s zwei Abzweigungen (Bild `:1374-1378`, Beschriftung `:1392-1396`), `#X`/`#V` lesen und schreiben samt der Vertauschung unterhalb `inf_rev_level 2` (`:404-415`), dann `ins_shortcut` (`deskins.c:1341-1406`) am Ablegen-auf-die-Flaeche, wo bisher der Kasten *Can't drop items here.* stand. Verbraucher: Doppelklick (Datei startet, Ordner bekommt **immer** ein neues Fenster - `do_fopen`s `WN_DESKTOP`-Arm, `:1112-1126`), Ziehen von und auf eine Verknuepfung, Loeschen, und der Waisenkasten `remove_locate_shortcut` (`:376-412`) an EmuTOS' drei Stellen. Gemessen: Verknuepfung anlegen -> `Save desktop` schreibt `#X 02 09 06 FF   C:\QED.NAP@ QED.NAP@` -> Kaltstart bringt sie zurueck -> Doppelklick startet QED; dasselbe fuer einen Ordner. Belege: `measurement-2026-09-24-desk37-desk36-desk30/` - dreizehn raspi4b-Laeufe (je before/after), `fsck_msdos -n` sauber auf jedem geschriebenen Abbild, 0 `[EXC]`/`[PANIC]`. Hostsuite 939/0/1, beide Boards 64/94, Clippy 80/125, je ohne Delta. Pi-Sichtabnahme offen (HW-Punkte 61-63); nicht gefahren: der Waisenfall, das langsame Ziehen und der Mehrfachumriss, und 1920x1080. |
+ | 2026-09-24 | **DESK34/DESK35: ein Ordner navigiert im Fenster, und eine gestartete GEM-Anwendung besitzt den ganzen Schirm — beides auf der echten Pi 4 gefunden.** **DESK34 — `do_fopen` hat drei Neues-Fenster-Faelle, und unser Desktop kannte keinen davon.** `main::open_item`s Ordner-Arm rief unbedingt `open_dir_window`, also dauerhaft `do_diropen(pw, TRUE, …)`. Vor dem Bauen am Quelltext festgestellt, welcher Aufrufer welchen Wert setzt: **beide** NewTOS-Wege (Doppelklick und *File → Open*) sind EmuTOS' `do_open`, das `allow_new_win = TRUE` uebergibt (`desksupp.c:1259`, `deskmain.c:988`), und der **Laufwerkspfad geht gar nicht durch diese Funktion** — `do_dopen` (`:1041-1069`) ist ein eigener Aufrufer und ruft `win_alloc` unbedingt. Neu ist `main::do_fopen(handle, spec, title, allow_new_win)` mit `graf_mkstate` im Moment des Oeffnens und `(keystate & MODE_SCA) == MODE_ALT` (`biosdefs.h:90-94`, `desksupp.c:1132-1134`) als einzigem `new_win`-Erzeuger dieses Aufrufers; sonst `pn_close` + `do_diropen(pw, FALSE, …)` = `navigate_window`, derselbe Koerper, den *Close folder* schon benutzt (`w_setpath`, `deskfun.c:817-824`). `navigate_window` bekam dabei `do_diropen`s fehlendes `desk_verify` (`:459`) und verlor sein `w_cvcol = 0`, weil EmuTOS nur `w_cvrow` zuruecksetzt. Der dritte Fall (`WN_DESKTOP`, `CONF_WITH_DESKTOP_SHORTCUTS`) ist unerreichbar bis DESK30. **DESK35 — der `gl_shgem`-Block des Shell-Durchgangs, und warum DESK06s Auslassung fuer die Konsole richtig war.** `sh_main` nimmt vor jedem Programm `wm_init(); ratinit(); sh_draw(D.s_cmd, TRUE)` — **innerhalb** `if (gl_shgem)` (`gemshlib.c:715-720`). Der Konsolendurchgang hat `gl_shgem` in `sh_chgrf` gerade auf FALSE gesetzt, **EmuTOS ueberspringt den Block dort selbst**; der Textschirm deckt alles ab, und die Fenster raeumt der naechste Grafikdurchgang. Fuer eine GEM-Anwendung bleibt `gl_shgem` TRUE und alle drei Schritte sind noetig, weil sie nur in ihre eigenen Rechtecke zeichnet — ohne den Schirmloescher standen die Desktop-Fenster als tote Pixel darunter, ohne `wm_init` auch noch in der AES-Tabelle. Neu `shell_loop::sh_gem_enter`/`sh_gem_leave` (letzteres das schlichte `wm_new`, `:676-677`). Weil `wm_init` **jedes** Fenster loescht, halten die `WNODE`s danach tote Handles — `cnx_put`/`cnx_get` (DESK09) sind hier keine Alternative, sondern die Voraussetzung: `desktop_resume` holt die Fenster zurueck wie EmuTOS' neugestartetes `deskmain` (`cnx_get`, `deskmain.c:2055`), dazu `desk_verify(DESKWH)` und `men_update()`; AES-Luecke G2 ist zu. **Benannte Abweichungen:** der Block laeuft **vor** `appl_exit()` statt danach, weil `wm_new`s `wm_close` `WM_REDRAW` in die Queue **dieses** Desktops legt (`gemwmlib.c:1216-1222,1453`) und nur die `ap_exit`-Leerung als letzter Schritt sie vom Kind fernhaelt (A28); und `win_free_all()` hat kein EmuTOS-Gegenstueck, weil dort der Desktopprozess endet und `win_start()` ein frisches `WNODE`-Feld anlegt. **Abgrenzung gehalten:** kein Desktop-Neustartpfad, DESK14 §4 bleibt zurueckgestellt. Belege: `measurement-2026-09-24-desk34-desk35/` — acht raspi4b-Laeufe (je before/after, dazu zwei Koordinatensonden), `fsck_msdos -n` sauber auf allen acht Abbildern, 0 `[EXC]`/`[PANIC]`. `d35q-before-E-qed.png` ist das Pi-Bild des Tickets (QEDs Menueleiste ueber dem eingefrorenen Desktop), `d35q-after-E-qed.png` derselbe Moment mit QED allein auf dem Schirm. Hostsuite 939/0/1, beide Boards 64/94, Clippy 80/125, je ohne Delta. Pi-Sichtabnahme offen (HW-Punkte 59-60). |
+ | 2026-09-24 | **FS01: ein geloeschter Verzeichniseintrag nimmt seine Langnamen-Schlitze mit — und `fsck_msdos` stirbt nicht mehr an einer leergeraeumten Karte.** Die Vermutung des Tickets wurde vor dem Fix am eigenen Quelltext geprueft und stimmt: alle Loeschstellen schrieben nur `e[0] = 0xE5` in den 8.3-Eintrag, `FA_LFN` kam ausserhalb des Ueberspringens beim Scannen gar nicht vor — die `attr == 0x0F`-Schlitze davor blieben als Waisen liegen. **EmuTOS beantwortet die Frage nicht** (klassisches TOS kennt keine Langnamen; EmuTOS *ueberspringt* sie nur, `bdos/fsdir.c:326,1810`), also ist die Quelle FreeMiNTs FAT-Schicht: `LDIR`-Satz und Kettenlage (`references/freemint/sys/fatfs.c:779-790`), Validierung ueber Ordnungsfolge **und** Kurznamen-Pruefsumme (`:3690-3748`, `__readvfat`) und die Loeschreihenfolge erst 8.3, dann die Schlitze davor (`:4246-4272`, `unlink_cookie_i`) — als eigene Entscheidung benannt, nicht als EmuTOS-Extrakt. Neu: `dir::erase_slot_with_lfn` + `dir::lfn_checksum` (`tos-api/src/bdos/fs/dir.rs`), gerufen von `erase_entry` (`file.rs`, also `Fdelete` **und** `Fcreate` auf eine bestehende Datei) und von `ddelete` (`dirops.rs`); eine Kette, die nicht validiert, bleibt unangetastet. Hosttest `tos-api/tests/gemdos_fs_lfn_delete.rs` rot vorher / gruen nachher (Suite 938 → 939), Bau und Clippy auf beiden Boards mit Delta 0. **Abnahme** (`measurement-2026-09-24-fs01/`): dieselbe DESK25-Geste in QEMU raspi4b auf demselben Kartenabbild — ohne Fix 8 Waisen und `fsck_msdos -n` stirbt in Phase 2 (Signal 5, Shell 133), mit Fix 0 Waisen und rc=0 mit sauberer Phase 1/2/3. **Die offene Frage aus DESK25 ist beantwortet und es ist keine Mengenwirkung:** jede einzelne Waisenkette stuerzt `fsck_msdos` allein ab; der Unterschied zur blossen Warnung ist, ob die Kette noch von einem *lebenden* 8.3-Eintrag geschlossen wird (ein gepflanzter lebender Eintrag dahinter macht aus dem Absturz die Warnung, einer davor nicht) — ein Defekt in `fsck_msdos`, kein zweiter NewTOS-Defekt; das „gar keine Ausgabe" des Erstlaufs war die Pufferung seiner `| sed`-Pipe. **Nicht mitgefixt, eigener Task:** `Frename` laesst die Kette des Quellnamens ebenso stehen. |
+diff --git a/docs/api/desktop/_hw-test-2026-09-17.md b/docs/api/desktop/_hw-test-2026-09-17.md
+index d001a34..77c1d15 100644
+--- a/docs/api/desktop/_hw-test-2026-09-17.md
++++ b/docs/api/desktop/_hw-test-2026-09-17.md
+@@ -1440,6 +1440,35 @@ QED-Verknuepfung ziehen.
+    **anderen** Laufwerk anlegen — der Pfad in der `#X`-Zeile traegt den
+    Laufwerksbuchstaben.
+ 
++## 64. ACC06 — Taktfrequenz und CPU-Temperatur aus dem Kernel
++
++**So hinkommen:** `C:\SYSINFO.NCP` doppelklicken (liegt in der Wurzel).
++Danach etwas rechnen lassen, das die Maschine waermt — z. B.
++`C:\COREMARK\CORE.NCP` — und `SYSINFO.NCP` gleich danach **noch einmal**
++starten.
++
++**Erwartet:**
++1. Zwei Zeilen mit Werten, keine Fehlerzeile:
++   `SYSINFO: ARM clock : <n> MHz` und `SYSINFO: CPU temp  : <n> C`.
++2. Beide Zeilen tragen zusaetzlich `value form agrees: yes` — die zwei
++   Aufrufformen (Wert im LONG / Wert ueber den Zeiger) liefern dasselbe.
++3. `SYSINFO: arg2 reserved, Ssystem(2000, 0, 1) = -25  (EINVAL, as
++   specified)`.
++4. **Das ist der Punkt, den nur die echte Pi entscheiden kann:** im Emulator
++   antwortet QEMUs Firmwaremodell mit den festen Zahlen **700,0 MHz** und
++   **25,0 C**. Auf der Hardware darf dort *nicht* dasselbe stehen — die
++   Temperatur ist die des warmen Chips, und nach dem CoreMark-Lauf muss sie
++   sich gegenueber dem ersten Lauf **veraendert** haben. Steht auf der Pi
++   700,0 / 25,0, dann liest der Treiber nicht die Firmware, sondern etwas
++   anderes.
++5. Der Takt muss zur Maschine passen (Standard-Pi-4: um 1500 MHz unter Last,
++   heruntergeregelt im Leerlauf) — eine Zahl aus dem Nichts ist ein Fehler,
++   keine Messung.
++
++**Nicht enthalten:** das Accessory selbst. `sdk/examples/sysacc.c` ist
++geschrieben, laeuft aber erst mit ACC02/ACC03 (Desk-Klappliste + `AC_OPEN`);
++bis dahin ist `SYSINFO.NCP` der Pruefling.
++
+ ## Warnung
+ 
+ **`Quit → Shutdown` in TeraDesk setzt die Maschine absichtlich fest.** Mit den
+diff --git a/docs/api/gemdos/154-ssystem.md b/docs/api/gemdos/154-ssystem.md
+index 894d560..ddd881b 100644
+--- a/docs/api/gemdos/154-ssystem.md
++++ b/docs/api/gemdos/154-ssystem.md
+@@ -17,6 +17,11 @@
+ > `S_SETLVAL`, `S_SECLEVEL`, …) — catalogued below for completeness but marked
+ > **deferred**; the dispatcher returns `ENOSYS` for every unimplemented mode so
+ > the surface stays honest.
++>
++> **Plus NewTOS's own modes from 2000 upwards** (§"NewTOS-own modes (2000+)"):
++> machine facts an EL0 program cannot reach any other way, because the hardware
++> that knows them is kernel-only. These are *not* FreeMiNT modes and are marked
++> as ours wherever they appear; 2000+ is a range FreeMiNT leaves free.
+ 
+ > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+ > Contract (for the modes NewTOS implements): trap ID `0x154`, the `(mode,
+@@ -139,6 +144,78 @@ implements them it must be for the m68k emulator only, or re-mapped to the
+ kernel's sysvar struct. Several `S_OS*` and info modes could later expose a
+ NewTOS identity, but that is a separate decision.
+ 
++### NewTOS-own modes (2000+) — **implemented**
++
++| Mode | Value | Group | Notes |
++|------|------:|-------|-------|
++| `S_NEWTOS_CPUCLOCK` | 2000 | machine | ARM core clock, **Hz** |
++| `S_NEWTOS_CPUTEMP` | 2001 | machine | SoC die temperature, **1/1000 °C** |
++
++**Why the number block is free.** FreeMiNT's `sys/mint/ssystem.h` (@ `f906416`)
++assigns 0–29, 100 and `0x54f8` (21752), and reserves two ranges by comment:
++*"additional informations about the kernel / reserved 900 - 999"* and *"debug
++section / reserved 1000 - 1999"*. The highest mode its dispatcher answers at
++all is `case 3000:` (`sys/ssystem.c:631`), a `register_trap2` test hook behind
++`#ifdef MINT_STATUS_CVS` and marked *"XXX only for testing"*. **2000…2999 is
++claimed by nobody**, so NewTOS takes it. (Note for a future extension: do not
++grow past 2999 without re-checking 3000.)
++
++**Why `Ssystem` and not a cookie.** A cookie is a value deposited once at boot;
++a die temperature changes between two reads, and the ARM clock changes with
++load and thermal state. The jar cannot express "ask the machine now"
++(`docs/api/bios/_cookie-jar.md`), `Ssystem` can — and FreeMiNT-compatible
++extension is the sanctioned direction (ADR-012, `docs/MEMORY.md`).
++
++#### Interface (both modes)
++
++```
++Ssystem(2000 | 2001, arg1, arg2)
++```
++
++| Arg | Meaning |
++|-----|---------|
++| `arg1` | pointer to a **32-bit LONG** that receives the value, or **0** to have the value returned in the call's own LONG |
++| `arg2` | **reserved** for a future selector (a second clock, a second sensor). Must be **0** today |
++
++| Return | Condition |
++|--------|-----------|
++| `E_OK` (0) | `arg1 != 0`: the value was written to `*arg1` |
++| the value | `arg1 == 0`: the reading itself, in the returned LONG |
++| `ERROR` (-1) | this board cannot measure the value; nothing is written |
++| `EINVAL` (-25) | `arg2 != 0`; checked **before** the sensor is read, and nothing is written |
++
++`arg1` follows FreeMiNT's own convention for "answer into the caller's
++storage" (`S_GETBOOTLOG` 29, `S_KNAME` 900: `arg1` = buffer), narrowed to a
++single LONG. The pointer form is the unambiguous one — a returned LONG cannot
++distinguish a value of `0xFFFF_FFFF` from `ERROR`. On a Pi 4 neither reading
++can reach that far (ARM clock ≤ 2.0 GHz; a die temperature of 4.29 million
++degrees is not a physical state), but the contract, not the current board,
++decides which form a caller should prefer.
++
++`arg2` is *refused*, not ignored, so a program written against a later, wider
++version of this call is told it is talking to an older kernel instead of being
++handed the wrong quantity.
++
++#### Where the values come from
++
++Neither reading is a kernel constant. Both go out through the
++[`Host`](../../ARCHITECTURE.md) trait (`tos-api/src/host.rs`,
++`Host::cpu_clock_hz` / `Host::cpu_temperature_mdeg`) — the same swappable
++hardware boundary as `Host::raster`:
++
++| Board | Source | Answer |
++|-------|--------|--------|
++| `board-rpi4` | BCM2711 VideoCore mailbox property tags `0x0003_0002` (`GET_CLOCK_RATE`, clock id 3 = ARM) and `0x0003_0006` (`GET_TEMPERATURE`, sensor id 0) — `docs/hardware/mailbox-framebuffer.md` §3d | the firmware's reading, live per call |
++| `board-qemu-virt` | no VideoCore | trait default `None` → `ERROR` |
++| hostless (unit test) | — | trait default `None` → `ERROR` |
++
++**A board that cannot measure a value says so.** There is no fallback constant
++anywhere in this path: `None` becomes `ERROR`, and the caller decides what to
++print. Observed on QEMU `raspi4b` (2026-09-24): its firmware model *does*
++answer both tags, with the fixed values 700 000 000 Hz and 25 000 m°C — those
++are the emulator's numbers, faithfully reported, and only a real Pi 4 shows a
++clock that moves and a die that warms up.
++
+ ---
+ 
+ ## `S_GETCOOKIE` (mode 8) — `get_cookie(NULL, arg1, (ulong *)arg2)`
+@@ -241,6 +318,27 @@ set NewTOS uses (see Open questions):
+ - **Delete absent:** `Ssystem(S_DELCOOKIE, 'ZZZZ', 0)` returns `EINVAL`.
+ - **Unknown mode:** `Ssystem(9999, 0, 0)` returns `ENOSYS`/`EINVFN`.
+ 
++## Verification criteria (NewTOS-own modes 2000/2001)
++
++Driven at the trap boundary by `tos-api/tests/gemdos_ssystem_cpuinfo.rs`, and
++end-to-end on a board by `C:\SYSINFO.NCP` (`sdk/examples/sysinfo.c`, installed
++by `tools/make-sd-image.sh`; `SD_SYSINFO_AUTO=1` additionally puts it in
++`\AUTO\` for a headless serial run).
++
++- **Value form:** with a host that can measure, `Ssystem(2000, 0, 0)` returns
++  the ARM clock in Hz and `Ssystem(2001, 0, 0)` the temperature in 1/1000 °C,
++  each in the call's own LONG.
++- **Pointer form:** `Ssystem(2000, &buf, 0)` returns `E_OK` and writes the
++  same value to `buf`; likewise for 2001. Both forms must agree.
++- **Board without the sensor:** both modes return `ERROR` (-1) and write
++  **nothing** through `arg1` — a caller that ignores the status must not be
++  able to mistake a stale buffer for a reading.
++- **Reserved `arg2`:** `Ssystem(2000, 0, 1)` and `Ssystem(2001, 0, 1)` return
++  `EINVAL` (-25) and write nothing.
++- **Neighbouring numbers stay unimplemented:** 1999, 2002 and 2999 return
++  `EINVFN`, so the two modes cannot be reached by accident.
++- **The probe is unaffected:** `Ssystem(-1, 0, 0)` still returns `E_OK`.
++
+ ---
+ 
+ ## Edge cases discovered in source
+diff --git a/docs/hardware/mailbox-framebuffer.md b/docs/hardware/mailbox-framebuffer.md
+index 7dd9ddc..bd61589 100644
+--- a/docs/hardware/mailbox-framebuffer.md
++++ b/docs/hardware/mailbox-framebuffer.md
+@@ -25,7 +25,7 @@
+ | 2 | raspberrypi/firmware wiki — [Mailboxes](https://github.com/raspberrypi/firmware/wiki/Mailboxes) | register offsets |
+ | 3 | raspberrypi/firmware wiki — [Accessing mailboxes](https://github.com/raspberrypi/firmware/wiki/Accessing-mailboxes) | status bits, read/write procedure, channel encoding |
+ | 4 | raspberrypi/firmware wiki — [Mailbox property interface](https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface) | channel 8 protocol, buffer format, tag IDs + value layouts |
+-| 5 | `references/circle` (in-tree, pinned) — `include/circle/bcmpropertytags.h`, `lib/bcmframebuffer.cpp`, `lib/2dgraphics.cpp`, `addon/linux/raspberrypi-firmware.h` | virtual-offset + vsync tag ids and value layouts, the double-buffer sequence (§3b) |
++| 5 | `references/circle` (in-tree, pinned) — `include/circle/bcmpropertytags.h`, `lib/bcmframebuffer.cpp`, `lib/2dgraphics.cpp`, `addon/linux/raspberrypi-firmware.h` | virtual-offset + vsync tag ids and value layouts, the double-buffer sequence (§3b), clock-rate + temperature tag ids and value layouts (§3d) |
+ 
+ Cross-ref (verified-pattern, tertiary): rpi bare-metal FB tutorials
+ (valvers part 5), circle. **Linux is cross-reference only**, not
+@@ -362,6 +362,64 @@ carrying both tags.
+ 
+ ---
+ 
++## 3d. System-info tags — clock rate and temperature — sources #4, #5
++
++The same property channel answers "how fast is the CPU running" and "how
++warm is the die". Both tags live in the *Clocks* / *Voltage* group of the
++firmware *Mailbox property interface* page (source #4); the pinned
++in-tree `references/circle` (source #5) carries the same ids and the value
++structs verbatim, which is what fixes the request layout:
++
++| Tag id | Name | Request value | Response value |
++|--------|------|---------------|----------------|
++| `0x0003_0002` | Get clock rate | `u32 clock id` (4 B) | `u32 clock id, u32 rate in Hz` (8 B) |
++| `0x0003_0006` | Get temperature | `u32 sensor id` (4 B) | `u32 sensor id, u32 value in 1/1000 °C` (8 B) |
++
++Ids, from `references/circle/include/circle/bcmpropertytags.h`:
++
++| Constant | Value | Line |
++|----------|------:|------|
++| `PROPTAG_GET_CLOCK_RATE` | `0x00030002` | `:39` |
++| `PROPTAG_GET_TEMPERATURE` | `0x00030006` | `:41` |
++| `CLOCK_ID_ARM` (the CPU core clock) | 3 | `:184` |
++| `TEMPERATURE_ID` (the only SoC sensor) | 0 | `:196` |
++
++The request shape — id in, 4 request-parameter bytes, 8 value bytes back —
++is `references/circle/lib/cputhrottle.cpp:394-418`
++(`Tags.GetTag(nTagId, &TagClockRate, sizeof TagClockRate, 4)`; `sizeof` is
++tag header + 8 value bytes, the trailing `4` is the request parameter
++length). Both tags therefore share one buffer shape.
++
++Two rules a reader must honour, both from the interface itself (§2 and
++§3a): an unanswered tag comes back with its `b31` **clear** — that is how a
++mailbox which does not implement the tag presents itself — and the tag's own
++code word carries the value length, so a response shorter than the 8 bytes
++the reply format requires is not an answer either.
++
++One further rule is taken from the reference implementation rather than the
++interface text: **a clock rate of 0 means "no rate for this clock"**, not
++"0 Hz". Circle checks exactly that before falling back to another source
++(`references/circle/lib/machineinfo.cpp:459-471`:
++`Tags.GetTag(…) && TagClockRate.nRate != 0`). NewTOS reports it as
++"no answer". A temperature of 0 is *not* filtered — 0.000 °C is a
++temperature, and circle does not filter it either
++(`lib/cputhrottle.cpp:408-418` returns `nValue` unchanged).
++
++**Observed on QEMU `raspi4b`** (QEMU 11.0.2, `qemu-system-aarch64 -M
++raspi4b`, 2026-09-24): the emulator's firmware model answers **both** tags,
++with `rate = 700 000 000` Hz for clock id 3 and `value = 25 000` m°C for
++sensor id 0 — fixed numbers of the model, identical across boots, not a
++measurement. They are reported faithfully as what the firmware said; only a
++real Pi 4 shows a clock that moves with the governor and a die that warms
++under load.
++
++Driver: `kernel/src/drivers/bcm2711/mailbox.rs::get_clock_rate` /
++`::get_temperature`, both over the shared `query_id_value` helper. Consumer:
++GEMDOS `Ssystem` modes 2000/2001 through `Host::cpu_clock_hz` /
++`Host::cpu_temperature_mdeg` (`docs/api/gemdos/154-ssystem.md`).
++
++---
++
+ ## 4. Framebuffer bus → ARM address conversion
+ 
+ The `allocate` tag returns a **VC bus address**, not an ARM physical
+diff --git a/kernel/src/drivers/bcm2711/mailbox.rs b/kernel/src/drivers/bcm2711/mailbox.rs
+index 6af80cc..3569aa2 100644
+--- a/kernel/src/drivers/bcm2711/mailbox.rs
++++ b/kernel/src/drivers/bcm2711/mailbox.rs
+@@ -319,3 +319,118 @@ pub fn get_memory() -> Option<MemoryReport> {
+         Some(MemoryReport { arm, arm_len, vc })
+     }
+ }
++
++// ─────────────────────────────────────────────────────────────────────
++// System-info tags: "Get clock rate" (0x00030002) / "Get temperature"
++// (0x00030006)
++// ─────────────────────────────────────────────────────────────────────
++//
++// Reference: `docs/hardware/mailbox-framebuffer.md` §3d — tag ids, id
++// constants and value layouts taken from the firmware *Mailbox property
++// interface* documentation (source #4) and cross-checked against the pinned
++// in-tree `references/circle` (source #5):
++// `include/circle/bcmpropertytags.h:39` (`PROPTAG_GET_CLOCK_RATE`), `:41`
++// (`PROPTAG_GET_TEMPERATURE`), `:178-200` (both value structs, incl.
++// `CLOCK_ID_ARM = 3` and `TEMPERATURE_ID = 0`), `lib/cputhrottle.cpp:394-418`
++// (the request: id in, 4 request-parameter bytes, 8 value bytes out).
++// Nothing here is from memory (CLAUDE.md Rule 6).
++
++/// `PROPTAG_GET_CLOCK_RATE` — answers `(clock id, rate in Hz)`.
++const PROPTAG_GET_CLOCK_RATE: u32 = 0x0003_0002;
++/// `PROPTAG_GET_TEMPERATURE` — answers `(sensor id, value in 1/1000 °C)`.
++const PROPTAG_GET_TEMPERATURE: u32 = 0x0003_0006;
++
++/// Clock id of the ARM core clock (`bcmpropertytags.h:184`).
++pub const CLOCK_ID_ARM: u32 = 3;
++/// The only SoC temperature sensor id the firmware defines
++/// (`bcmpropertytags.h:196`).
++pub const TEMPERATURE_ID: u32 = 0;
++
++// Word indices into `SYSINFO_BUF`. Both tags share one shape: a 4-byte
++// request parameter (the id) and an 8-byte value buffer (id, value).
++const S_TAG: usize = 2; // tag id
++const S_LEN: usize = 3; // value buffer size we provide, bytes
++const S_CODE: usize = 4; // request/response code
++const S_ID: usize = 5; // value buffer word 0: the id (echoed in the reply)
++const S_VAL: usize = 6; // value buffer word 1: the answer
++const S_ENDTAG: usize = 7; // end tag
++/// Buffer length in words, rounded up so the byte length is a multiple of
++/// 16 (the property buffer's alignment unit) — 8 words exactly.
++const SYSINFO_BUF_WORDS: usize = (S_ENDTAG + 1 + 3) & !3;
++
++/// 16-byte-aligned property buffer for the system-info queries (the mailbox
++/// write OR's the channel into the low 4 bits, so the address must be
++/// aligned).
++#[repr(C, align(16))]
++struct SysInfoBuf {
++    words: [u32; SYSINFO_BUF_WORDS],
++}
++static mut SYSINFO_BUF: SysInfoBuf = SysInfoBuf { words: [0; SYSINFO_BUF_WORDS] };
++
++/// Send a one-tag property message of the `(id in) → (id, value out)` shape
++/// and return the value word.
++///
++/// `None` means the firmware did **not** answer: the transaction failed, the
++/// tag came back with its response bit clear (how a mailbox that does not
++/// implement the tag presents itself — see [`get_memory`]), or the response
++/// was shorter than the 8 value bytes the reply format requires. The caller
++/// must pass that `None` on; a missing answer is never rounded to a number.
++fn query_id_value(tag: u32, id: u32) -> Option<u32> {
++    // SAFETY: boot CPU, single-threaded; exclusive use of the static buffer.
++    unsafe {
++        {
++            let b = &mut (*core::ptr::addr_of_mut!(SYSINFO_BUF)).words;
++            b.fill(0);
++            b[0] = (SYSINFO_BUF_WORDS * 4) as u32; // total size in bytes
++            b[1] = 0; // request code
++            b[S_TAG] = tag;
++            b[S_LEN] = 8; // value buffer: (id, value)
++            b[S_CODE] = 4; // request, 4 parameter bytes (the id)
++            b[S_ID] = id;
++            b[S_VAL] = 0;
++            b[S_ENDTAG] = 0;
++        }
++
++        let va = (&raw const SYSINFO_BUF) as usize;
++        let pa = crate::arch::aarch64::mmu::va_to_pa(va as u64) as u32;
++        if !call_property(va, pa, SYSINFO_BUF_WORDS * 4) {
++            return None;
++        }
++
++        // Read the reply through the buffer VA, the way `call_property`
++        // reads the message's own response code — no reference into the
++        // static, so nothing here depends on it staying still.
++        let code = core::ptr::read_volatile((va + S_CODE * 4) as *const u32);
++        if code & TAG_RESPONSE == 0 || (code & !TAG_RESPONSE) < 8 {
++            return None;
++        }
++        Some(core::ptr::read_volatile((va + S_VAL * 4) as *const u32))
++    }
++}
++
++/// The current rate of clock `clock_id` in Hz ([`CLOCK_ID_ARM`] for the CPU
++/// core clock), or `None` when the firmware does not answer.
++///
++/// A rate of **0** is also reported as `None`: that is the firmware's way of
++/// saying it knows the tag but has no rate for this clock, and circle treats
++/// it the same way before falling back to another source
++/// (`references/circle/lib/machineinfo.cpp:459-471`,
++/// `Tags.GetTag(…) && TagClockRate.nRate != 0`).
++pub fn get_clock_rate(clock_id: u32) -> Option<u32> {
++    match query_id_value(PROPTAG_GET_CLOCK_RATE, clock_id) {
++        Some(0) | None => None,
++        Some(hz) => Some(hz),
++    }
++}
++
++/// The SoC temperature measured by sensor `id` ([`TEMPERATURE_ID`]) in
++/// thousandths of a degree Celsius, or `None` when the firmware does not
++/// answer the tag.
++///
++/// Unlike [`get_clock_rate`] a zero reading is passed through: 0.000 °C is a
++/// temperature, and circle applies no zero rule here either
++/// (`references/circle/lib/cputhrottle.cpp:408-418` returns `nValue`
++/// unfiltered).
++pub fn get_temperature(id: u32) -> Option<u32> {
++    query_id_value(PROPTAG_GET_TEMPERATURE, id)
++}
+diff --git a/kernel/src/host_env.rs b/kernel/src/host_env.rs
+index 08fa8c2..b833bce 100644
+--- a/kernel/src/host_env.rs
++++ b/kernel/src/host_env.rs
+@@ -358,6 +358,30 @@ impl Host for KernelHost {
+             None
+         }
+     }
++
++    /// `board-rpi4`: ask the VideoCore firmware for the ARM core clock over
++    /// the mailbox property channel. The query runs inside the GEMDOS trap
++    /// (`Ssystem(S_NEWTOS_CPUCLOCK)`), which is exactly where it belongs —
++    /// the value is live, not a boot-time snapshot: the firmware scales the
++    /// ARM clock with load and temperature, so a cached number would be a
++    /// different machine's answer. `board-qemu-virt` has no VideoCore, keeps
++    /// the trait default (`None`), and the trap reports `ERROR`.
++    #[cfg(feature = "board-rpi4")]
++    fn cpu_clock_hz(&self) -> Option<u32> {
++        use crate::drivers::bcm2711::mailbox;
++        mailbox::get_clock_rate(mailbox::CLOCK_ID_ARM)
++    }
++
++    /// `board-rpi4`: the SoC die temperature from the same property channel,
++    /// in thousandths of a degree Celsius. Live for the same reason as
++    /// [`Host::cpu_clock_hz`] — a temperature that is not read now is not a
++    /// temperature. The firmware reports it as an unsigned word; widened to
++    /// the signed TOS LONG unchanged.
++    #[cfg(feature = "board-rpi4")]
++    fn cpu_temperature_mdeg(&self) -> Option<i32> {
++        use crate::drivers::bcm2711::mailbox;
++        mailbox::get_temperature(mailbox::TEMPERATURE_ID).map(|mdeg| mdeg as i32)
++    }
+ }
+ 
+ /// Adapter exposing the EMMC2 SD card as a TOS-API [`BlockDev`].
+diff --git a/tools/make-sd-image.sh b/tools/make-sd-image.sh
+index a0a4972..1fe0886 100755
+--- a/tools/make-sd-image.sh
++++ b/tools/make-sd-image.sh
+@@ -165,6 +165,25 @@ else
+   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\DTACHILD.NCP skipped"
+ fi
+ 
++# SYSINFO.NCP is the ACC06-part-1 proof: it reads the ARM core clock and the
++# SoC die temperature through the two NewTOS-own Ssystem subfunctions (2000 /
++# 2001) and prints them -- the evidence that the two values leave the kernel
++# and reach an EL0 program, long before the desk accessory that will show them
++# (ACC02/ACC03) exists. On a board that cannot measure them it prints the
++# ERROR it got; that is a result, not a failure.
++# Double-clickable in the root. With SD_SYSINFO_AUTO=1 it additionally goes
++# into \AUTO\, which is how a headless QEMU run gets the two lines onto the
++# serial console without a click.
++if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/sysinfo.c" "$V/SYSINFO.NCP" >/dev/null 2>&1; then
++  echo "built + installed C:\\SYSINFO.NCP (Ssystem 2000/2001 clock + temperature)"
++  if [ "${SD_SYSINFO_AUTO:-0}" = "1" ]; then
++    cp "$V/SYSINFO.NCP" "$V/AUTO/SYSINFO.NCP"
++    echo "  + \\AUTO\\SYSINFO.NCP (runs at boot, prints to the serial console)"
++  fi
++else
++  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\SYSINFO.NCP skipped"
++fi
++
+ # libc milestone (mintlib port): LIBTEST.NCP is the mintlib-linked proof — real
+ # printf(), malloc()/free(), and a stdio file round-trip (fopen/fwrite/fread/
+ # fclose), linked against the ported mintlib libc.a by sdk/libc/build-libc.sh.
+diff --git a/tos-api/src/gemdos/ssystem.rs b/tos-api/src/gemdos/ssystem.rs
+index 4e64c4d..cf5006b 100644
+--- a/tos-api/src/gemdos/ssystem.rs
++++ b/tos-api/src/gemdos/ssystem.rs
+@@ -1,14 +1,24 @@
+ //! `Ssystem` — GEMDOS 0x154 (FreeMiNT extension).
+ //!
+-//! Spec: [`docs/api/gemdos/154-ssystem.md`]. Only the cookie subfunctions
+-//! (`S_GETCOOKIE`/`S_SETCOOKIE`/`S_DELCOOKIE`) are implemented; every other
+-//! mode returns `EINVFN` (NewTOS has no `ENOSYS`), so the surface stays
+-//! honest. Cookie storage: [`crate::cookie`].
++//! Spec: [`docs/api/gemdos/154-ssystem.md`]. Of FreeMiNT's modes only the
++//! cookie subfunctions (`S_GETCOOKIE`/`S_SETCOOKIE`/`S_DELCOOKIE`) are
++//! implemented; every other FreeMiNT mode returns `EINVFN` (NewTOS has no
++//! `ENOSYS`), so the surface stays honest. Cookie storage: [`crate::cookie`].
++//!
++//! On top of those sit NewTOS's **own** subfunctions from 2000 upwards
++//! ([`S_NEWTOS_CPUCLOCK`], [`S_NEWTOS_CPUTEMP`]) — machine facts an EL0
++//! program cannot otherwise reach, because the hardware that knows them (the
++//! BCM2711 mailbox) is kernel-only. 2000 is free: FreeMiNT's own header
++//! reserves 0–29, 100, `0x54f8`, 900–999 and 1000–**1999**
++//! (`references/freemint/sys/mint/ssystem.h`, the two `reserved` comments),
++//! and the highest number its dispatcher answers is the build-gated test mode
++//! 3000 (`sys/ssystem.c:631`). The gap 2000…2999 belongs to nobody.
+ 
+ use tos_types::error::{EINVAL, EINVFN, ENSMEM, ERROR, E_OK};
+ use tos_types::Long;
+ 
+ use crate::cookie;
++use crate::host;
+ use crate::trap::TrapArgs;
+ 
+ /// `Ssystem`'s GEMDOS function id. It is above `MAX_FN`, so the GEMDOS
+@@ -20,6 +30,12 @@ const S_GETCOOKIE: u16 = 8;
+ const S_SETCOOKIE: u16 = 9;
+ const S_DELCOOKIE: u16 = 26;
+ 
++/// NewTOS-own subfunction: the CPU core clock in **Hz**.
++pub const S_NEWTOS_CPUCLOCK: u16 = 2000;
++/// NewTOS-own subfunction: the CPU/SoC temperature in **thousandths of a
++/// degree Celsius**.
++pub const S_NEWTOS_CPUTEMP: u16 = 2001;
++
+ /// `Ssystem(WORD mode, LONG arg1, LONG arg2)`: `mode` in `x0`, `arg1` in
+ /// `x1`, `arg2` in `x2`.
+ pub fn ssystem(args: &TrapArgs) -> Long {
+@@ -36,6 +52,12 @@ pub fn ssystem(args: &TrapArgs) -> Long {
+         S_GETCOOKIE => s_getcookie(args),
+         S_SETCOOKIE => s_setcookie(args),
+         S_DELCOOKIE => s_delcookie(args),
++        S_NEWTOS_CPUCLOCK => {
++            newtos_scalar(args, || host::host()?.cpu_clock_hz().map(|hz| hz as Long))
++        }
++        S_NEWTOS_CPUTEMP => {
++            newtos_scalar(args, || host::host()?.cpu_temperature_mdeg())
++        }
+         _ => EINVFN,
+     }
+ }
+@@ -104,6 +126,47 @@ fn s_delcookie(args: &TrapArgs) -> Long {
+     }
+ }
+ 
++/// The shared body of the NewTOS-own scalar subfunctions (2000 upwards).
++///
++/// Argument convention — FreeMiNT's own, where `arg1` is the caller's buffer
++/// and `arg2` its length (`S_GETBOOTLOG` 29, `S_KNAME` 900,
++/// `sys/mint/ssystem.h`), narrowed to a single LONG:
++///
++/// * `arg1` — a user pointer to a LONG that receives the value, or **0** to
++///   have the value returned in the call's own LONG. The pointer form is the
++///   unambiguous one: it carries all 32 bits, while a returned LONG cannot
++///   tell a value of `0xFFFF_FFFF` from `ERROR`. (For a Pi 4 neither reading
++///   can reach that far — its ARM clock tops out at 2.0 GHz and its die
++///   temperature at some tens of degrees — but the contract, not the current
++///   board, decides which form a caller should use.)
++/// * `arg2` — reserved for a future selector (a second clock, a second
++///   sensor); it must be **0** today. Anything else is `EINVAL` rather than
++///   silently ignored, so a program written against a later, wider version
++///   of this call is told it is talking to an older kernel instead of
++///   receiving the wrong quantity.
++///
++/// `read` answers `None` when this board cannot measure the value — then the
++/// call is `ERROR` and nothing is written through `arg1`. That is the whole
++/// point of routing through [`crate::host::Host`]: a board with no sensor
++/// says so.
++fn newtos_scalar(args: &TrapArgs, read: impl FnOnce() -> Option<Long>) -> Long {
++    if args.arg_u64(2) != 0 {
++        return EINVAL;
++    }
++    let Some(value) = read() else {
++        return ERROR;
++    };
++    let out = args.arg_u64(1);
++    if out == 0 {
++        return value;
++    }
++    // SAFETY: `arg1` is a user pointer; the unprivileged store
++    // permission-checks it as EL0 and faults the caller (not the kernel) on a
++    // bad pointer — the same rule as `s_getcookie`'s `arg2`.
++    unsafe { write_user_long(out as *mut u8, value as u32) };
++    E_OK
++}
++
+ /// Write a 32-bit value to a user pointer via an unprivileged store
+ /// (`sttr`) — permission-checked as EL0, like `Cconrs`'s `sttrb`.
+ ///
+diff --git a/tos-api/src/host.rs b/tos-api/src/host.rs
+index c889196..57ba6aa 100644
+--- a/tos-api/src/host.rs
++++ b/tos-api/src/host.rs
+@@ -213,6 +213,32 @@ pub trait Host: Sync {
+     /// default is a no-op: a board with no keyboard translator has no table
+     /// to replace.
+     fn set_key_table(&self, _which: KeyTable, _table: &[u8; 128]) {}
++
++    /// The CPU core clock the machine is running at, in **Hz**, or `None`
++    /// when this board cannot be asked. Backs `Ssystem(S_NEWTOS_CPUCLOCK)`
++    /// (`docs/api/gemdos/154-ssystem.md`). Same swappable hardware boundary
++    /// as [`Host::raster`]: on `board-rpi4` the kernel host asks the
++    /// VideoCore firmware over the mailbox property channel; a board without
++    /// that channel (`board-qemu-virt`, a hostless test) keeps the default
++    /// and answers honestly with `None`, which the caller turns into
++    /// `ERROR`. It never invents a number — a clock frequency that was not
++    /// measured is not a clock frequency.
++    fn cpu_clock_hz(&self) -> Option<u32> {
++        None
++    }
++
++    /// The SoC's current die temperature in **thousandths of a degree
++    /// Celsius** (47.2 °C → `47200`), or `None` when this board has no
++    /// temperature sensor to ask. Backs `Ssystem(S_NEWTOS_CPUTEMP)`
++    /// (`docs/api/gemdos/154-ssystem.md`); same boundary and the same
++    /// honest-`None` rule as [`Host::cpu_clock_hz`].
++    ///
++    /// Signed because a temperature is: the firmware reports the value as an
++    /// unsigned word, but a board started below freezing is a physical state,
++    /// not an error, and the TOS-side LONG has to be able to carry it.
++    fn cpu_temperature_mdeg(&self) -> Option<i32> {
++        None
++    }
+ }
+ 
+ /// Bytes reserved for one AltGr override array. EmuTOS's non-`DUAL_KEYBOARD`

@@ -1,0 +1,170 @@
+measurement-2026-09-24-acc06
+============================
+ACC06 Teil 1 — Taktfrequenz und CPU-Temperatur kommen aus dem Kernel heraus
+ACC06 Teil 2 — das Accessory als Quelltext (kann noch nicht laufen)
+
+Basis: Branch `desk-rebuild`, HEAD 63c78f0. Die Aenderung liegt
+**uncommitted** im gemeinsamen Baum: acht geaenderte Dateien und drei neue
+(`sdk/examples/sysinfo.c`, `sdk/examples/sysacc.c`,
+`tos-api/tests/gemdos_ssystem_cpuinfo.rs`). `method/acc06.diff` ist der Diff
+der geaenderten Dateien; die drei neuen liegen als Kopie in `method/`, weil
+`git diff` unverfolgte Dateien nicht zeigt. Nichts geflasht, nichts
+ausgeworfen, keine echte Pi gefahren, nichts committet; kein
+`git checkout/restore/clean/stash/reset` auf dem gemeinsamen Baum.
+
+Maschine: QEMU 11.0.2, `-M raspi4b`, 640x480, `-display none`, serielle
+Ausgabe in eine Datei, Bildschirmauszuege ueber QMP. Kartenabbild:
+`tools/make-sd-image.sh` ueber `method/seed.sh`, frisch pro Lauf. **Kein
+`*.img` in diesem Verzeichnis** — die Abbilder liegen im Job-Scratch und
+sind in `build/fsck.txt` benannt.
+
+Zweiter Bretttest: `-M virt` (board-qemu-virt) nur als Startprobe — dort gibt
+es kein Blockgeraet und damit kein Laufwerk C:, das Konsolenprogramm kann dort
+also gar nicht liegen. Was `qemu-virt` belegen soll, ist genau dies: dass das
+Brett ohne Mailbox weiterbaut und weiterstartet.
+
+
+1. Was gemessen wurde, und womit
+---------------------------------------------------------------------------
+
+Der Pruefling ist `C:\SYSINFO.NCP` (`sdk/examples/sysinfo.c`), ein
+Konsolenprogramm. `method/seed.sh` setzt `SD_SYSINFO_AUTO=1`, womit
+`tools/make-sd-image.sh` dasselbe Programm zusaetzlich nach `\AUTO\` legt: so
+laeuft es ohne einen einzigen Klick und schreibt seine Zeilen auf die serielle
+Konsole (Gedaechtnis: der AUTO-Ordner ist ausdruecklich nur fuer
+`.NCP`-Konsolenprogramme da).
+
+Es setzt beide Aufrufformen ab — Wert im Rueckgabe-LONG und Wert ueber den
+Zeiger — und vergleicht sie, und es prueft das reservierte dritte Argument.
+
+
+2. Was QEMU antwortet (serial/acc06-raspi4b-serial.log)
+---------------------------------------------------------------------------
+
+    [auto] running C:\AUTO\SYSINFO.NCP
+    SYSINFO: NewTOS system values through Ssystem (ACC06 part 1)
+    SYSINFO: ARM clock : 700.0 MHz  (700000000 Hz)
+    SYSINFO:   value form agrees: yes (700000000)
+    SYSINFO: CPU temp  : 25.0 C  (25000 m C)
+    SYSINFO:   value form agrees: yes (25000)
+    SYSINFO: arg2 reserved, Ssystem(2000, 0, 1) = -25  (EINVAL, as specified)
+    SYSINFO: done.
+
+Das ist das Ergebnis, nicht der Umweg: **QEMUs Firmwaremodell beantwortet
+beide Tags.** `0x0003_0002` (Takt-ID 3) kommt mit 700 000 000 Hz zurueck,
+`0x0003_0006` (Sensor-ID 0) mit 25 000 Tausendstel Grad. Beide Zahlen sind ueber
+mehrere Laeufe identisch und exakt rund — feste Werte des Emulators, keine
+Messung. Sie stehen hier so, wie die Firmware sie gesagt hat; erfunden ist
+nichts.
+
+Der vom Ticket erwartete ehrliche `ERROR`-Pfad war damit im Emulator **nicht**
+zu sehen. Er ist stattdessen am Trap belegt (Hosttest, §4) und gilt fuer
+`board-qemu-virt` und jede hostlose Konfiguration, wo der Trait-Standard
+`None` bleibt.
+
+Null `[EXC]`, null `[PANIC]` im ganzen Protokoll (beide Bretter).
+
+
+3. Bildschirmauszuege — und warum keiner die Zahlen zeigt
+---------------------------------------------------------------------------
+
+  screendumps/acc06-boot-initinfo.png   der Startschirm; belegt, welcher Kern
+                                        lief (Built: 2026-09-24 (63c78f04))
+  screendumps/acc06-desktop.png         der Schreibtisch nach den beiden
+                                        AUTO-Programmen — er kommt sauber
+                                        hoch, keine Nachwirkung
+
+Der Textschirm mit den zwei Zeilen liess sich **nicht** einfangen, und das ist
+eine Eigenschaft des Aufbaus, kein Fehler: der `.NCP`-Startpfad loescht den
+Schirm vorher (DESK22) und `sh_tographic` loescht ihn, sobald das letzte
+AUTO-Programm beendet ist (DESK28). Zwei Anlaeufe, beide protokolliert:
+
+  a) Marke im seriellen Protokoll + QMP `stop` (`method/run.sh`,
+     `method/qmp_multi.py`, das Verfahren der DESK28-Runde). Untauglich hier:
+     QEMUs `-serial file:` erreicht die Datei in Bloecken — die Marke
+     `SYSINFO: arg2 reserved` und die Marke `[desk] desktop up` wurden beide
+     bei 15,1 s gefunden, 0,1 s auseinander, obwohl die zwei Schirme auf der
+     Anzeige Sekunden trennen. Der Auszug zeigte den Schreibtisch.
+  b) feste Taktung ohne Protokollbezug (`method/run_sweep.sh`,
+     `method/qmp_sweep.py`): 22 Auszuege ab 3,0 s im 0,7-s-Raster, danach 18
+     Auszuege ab 14,6 s im **0,12-s**-Raster. Der Startschirm steht bis 15,1 s
+     (Byte-identische PNGs, 8059 B), ab 15,2 s der Schreibtisch (4429 B) —
+     dazwischen kein einziger Textschirm. Die Textphase ist kuerzer als
+     0,12 s.
+
+Ein dritter Anlauf waere nur mit einer Aenderung am Produkt zu haben gewesen
+(das Programm auf eine Taste warten lassen), und das waere eine Messung des
+Messgeraets. Der Beleg fuer die zwei Werte ist das serielle Protokoll; der
+Bildbeleg wird das Accessory sein, wenn ACC02/ACC03 stehen.
+
+
+4. Bauen und Testen (build/)
+---------------------------------------------------------------------------
+
+  xtask-test.log        `cargo run -p xtask -- test`
+                        **944 bestanden / 0 gescheitert / 1 uebersprungen**
+                        (Ausgangswert 939/0/1; +5 sind die neuen Faelle in
+                        `tos-api/tests/gemdos_ssystem_cpuinfo.rs`)
+  build-rpi4.log        frisch nach `cargo clean -p kernel -p tos-api
+                        --target aarch64-unknown-none-softfloat`:
+                        tos-api **64**, kernel **94** Warnungen — Delta 0
+  build-qemu-virt.log   ebenso frisch: tos-api **64**, kernel **94** — Delta 0
+  clippy-rpi4.log       `cargo clippy --features board-rpi4` (in `kernel/`):
+                        tos-api **80**, kernel **125** — Delta 0
+  clippy-qemu-virt.log  `cargo clippy --features board-qemu-virt`:
+                        tos-api **80**, kernel **125** — Delta 0
+  fsck.txt              `fsck_msdos -n` auf der FAT16-Partition des benutzten
+                        Kartenabbilds: sauber (Phase 1-3, keine Fehler)
+
+Zwischenstand, der hier hingehoert, weil er im ersten Clippy-Lauf auftauchte:
+`kernel` stand kurzzeitig bei **126** — `deref_addrof` in
+`mailbox::query_id_value` (`let b = &(*(&raw const SYSINFO_BUF)).words;`). Statt
+die Warnung wie `get_memory` per `#[allow]` stillzustellen, liest die Funktion
+die Antwort jetzt ueber die Puffer-VA (`core::ptr::read_volatile((va + i*4) as
+*const u32)`) — dieselbe Form, in der `call_property` den Antwortcode der
+Nachricht liest. Danach wieder 125.
+
+
+5. Teil 2 — der Pruefling, der noch nicht laufen kann
+---------------------------------------------------------------------------
+
+`sdk/examples/sysacc.c` (Kopie in `method/`) ist geschrieben und uebersetzt
+sauber mit `-Wall -Wextra` (`sdk/build.sh sdk/examples/sysacc.c
+<scratch>/SYSACC.TBD`, 6856 Bytes). Er **laeuft nicht**, und der Dateikopf sagt
+warum: `menu_register` (35) traegt nur Titel und Anwendungs-ID ein
+(`tos-api/src/aes/menu.rs:1105-1130`); niemand haengt den Eintrag in die
+Desk-Klappliste und niemand sendet `AC_OPEN` (EmuTOS `gemctrl.c:337-346` und
+`gemmnlib.c:740-748`), und einen Accessory-Lader gibt es auch nicht. Gegen den
+heutigen Kern meldet er sich erfolgreich an und bleibt dann in `evnt_mesag`
+stehen. Das ist ACC02/ACC03 und ausdruecklich nicht dieses Ticket; ein
+Geruest wurde **nicht** darum herum gebaut.
+
+Die Dateiendung ist ACC01s Entscheidung. Der Bauhinweis im Kopf nennt deshalb
+`.TBD` — bewusst ein Nicht-Name, den nichts im System beansprucht —, und
+`tools/make-sd-image.sh` installiert die Datei absichtlich **nicht**: ein
+Programm, das nicht laufen kann, hat auf der Karte nichts verloren.
+
+
+6. Was nur die echte Pi 4 entscheiden kann
+---------------------------------------------------------------------------
+
+Dass der Treiber die **Firmware** liest und nicht irgendetwas anderes, zeigt
+sich erst dort, wo die Firmware etwas anderes als eine Konstante sagt: auf der
+Pi muessen dort **nicht** 700,0 MHz und **nicht** exakt 25,0 C stehen, und die
+Temperatur muss sich nach einem Lastlauf (`C:\COREMARK\CORE.NCP`) veraendert
+haben. Das ist Punkt **64** in `docs/api/desktop/_hw-test-2026-09-17.md`.
+
+
+7. Dateien
+---------------------------------------------------------------------------
+
+  method/seed.sh          Kartenabbild mit SD_SYSINFO_AUTO=1
+  method/run.sh           QEMU-Lauf mit markengesteuerten Auszuegen (Anlauf a)
+  method/qmp_multi.py     dazu der QMP-Treiber (aus der DESK37-Runde)
+  method/run_sweep.sh     QEMU-Lauf mit fester Taktung (Anlauf b)
+  method/qmp_sweep.py     dazu der QMP-Treiber (neu in dieser Runde)
+  method/fsck.sh          `fsck_msdos -n` auf der Partition des Abbilds
+  method/acc06.diff       Diff der acht geaenderten Dateien
+  method/sysinfo.c        neu: das Konsolenprogramm (Kopie)
+  method/sysacc.c         neu: das Accessory (Kopie)
+  method/gemdos_ssystem_cpuinfo.rs  neu: der Hosttest (Kopie)

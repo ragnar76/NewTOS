@@ -1,0 +1,6 @@
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/acc06/sd-acc06.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 49 files, 63720 KiB free (31860 clusters)
