@@ -517,16 +517,16 @@ on every run — see above).
 | `CONF_WITH_WINDOW_COLOURS` | `1` | tos-api/src/aes/window.rs:78-79 (WF_COLOR/WF_DCOLOR) |
 | `CONF_WITH_WINDOW_ICONS` | `1` | kernel/src/desk/win.rs (win_icalc); per DESK15 |
 
-**Gap** (5 — this is the list the lead can act on without opening
-this file):
+**Gap** (5 — filed as GUI01-GUI05; two (GUI01, GUI02) are
+deferred by design, not neglect — see the note on each):
 
 | Macro | Value | What it switches on in EmuTOS, and ticket status |
 |---|---|---|
-| `CONF_WITH_ALT_DESKTOP_GRAPHICS` | `1` | align_title() left-aligns dialog titles and sets ob_state for an underline (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1747, the CONF_WITH_ALT_DESKTOP_GRAPHICS arm); NewTOS's own align_title equivalents do the OTHER (non-ALT, classic-TOS) arm instead -- centre the title, no underline: kernel/src/desk/dir.rs:567-572 `(dw - title_w) / 2`, kernel/src/desk/inf.rs:3403-3404 `(dw - 21 * CELL_W) / 2`, both citing deskmain.c's centring branch by name in their own comments; unticketed |
-| `CONF_WITH_EXTENDED_MOUSE` | `1` | IKBD scancode extension for mouse buttons 3/4/5 and the wheel (config.h:1491-1498; EmuTOS bios/aciavecs.S, bios/ikbd.c:748); kernel/src/ikbd.rs:48,92-93 treats 0xF6 as the status-report packet header and 0xF8-0xFB as the standard 2-button relative packet -- no wheel or button-3/4/5 decode anywhere in that dispatch; unticketed. Distinct from the VDI vex_wheelv vector installer already present (tos-api/src/vdi/mouse.rs:710), which has nothing feeding it without this |
-| `CONF_WITH_LOADABLE_CURSORS` | `1` | loads mouse cursor shapes from A:\EMUCURS.RSC at runtime (config.h:1286-1295); kernel/src/launch.rs:174-175 says so itself: 'accessories and loadable cursors/icons are not implemented at all'; unticketed |
-| `CONF_WITH_SHOW_FILE` | `1` | double-click-to-show a file's contents in EmuDesk (config.h:1838-1844); no NewTOS reference found in kernel/src/desk (checked); unticketed |
-| `CONF_WITH_VIEWER_SUPPORT` | `1` | default file viewer when no app claims a document type (config.h:1854-1861); kernel/src/desk/inf.rs:1847-1850 says so itself: 'AF_VIEWER is CONF_WITH_VIEWER_SUPPORT, which this desktop does not implement'; unticketed |
+| `CONF_WITH_ALT_DESKTOP_GRAPHICS` | `1` | align_title() left-aligns dialog titles and sets ob_state for an underline (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1747, the CONF_WITH_ALT_DESKTOP_GRAPHICS arm); NewTOS's own align_title equivalents do the OTHER (non-ALT, classic-TOS) arm instead -- centre the title, no underline: kernel/src/desk/dir.rs:567-572 `(dw - title_w) / 2`, kernel/src/desk/inf.rs:3403-3404 `(dw - 21 * CELL_W) / 2`, both citing deskmain.c's centring branch by name in their own comments; ticketed GUI05 (OFFEN, P4) |
+| `CONF_WITH_EXTENDED_MOUSE` | `1` | IKBD scancode extension for mouse buttons 3/4/5 and the wheel (config.h:1491-1498; EmuTOS bios/aciavecs.S, bios/ikbd.c:748); kernel/src/ikbd.rs:48,92-93 treats 0xF6 as the status-report packet header and 0xF8-0xFB as the standard 2-button relative packet -- no wheel or button-3/4/5 decode anywhere in that dispatch. Distinct from the VDI vex_wheelv vector installer already present (tos-api/src/vdi/mouse.rs:710), which has nothing feeding it without this; ticketed GUI04 (OFFEN, raised to P2 -- half the path already exists in vex_wheelv) |
+| `CONF_WITH_LOADABLE_CURSORS` | `1` | loads mouse cursor shapes from A:\EMUCURS.RSC at runtime (config.h:1286-1295); kernel/src/launch.rs:174-175 says so itself: 'accessories and loadable cursors/icons are not implemented at all'; ticketed GUI03 (OFFEN, P4) |
+| `CONF_WITH_SHOW_FILE` | `1` | double-click-to-show a file's contents in EmuDesk (config.h:1838-1844); no NewTOS reference found in kernel/src/desk (checked); ticketed GUI01 (ZURUECKGESTELLT, P4 -- the user prefers a viewer registered as an application with a file mapping over a built-in view, more flexible and reuses the existing association machinery; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case) |
+| `CONF_WITH_VIEWER_SUPPORT` | `1` | default file viewer when no app claims a document type (config.h:1854-1861); kernel/src/desk/inf.rs:1847-1850 says so itself: 'AF_VIEWER is CONF_WITH_VIEWER_SUPPORT, which this desktop does not implement'; ticketed GUI02 (ZURUECKGESTELLT, P4, depends on GUI01 -- same reason: a viewer registered as an application with a file mapping is preferred over a built-in view; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case) |
 
 ### Hardware / other machine (65 macros — labelled, no per-switch audit)
 

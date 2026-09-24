@@ -374,7 +374,7 @@ CONF_WITH_68030_PMMU|HW|68030 PMMU tree install (config.h:1465-1472)
 CONF_WITH_68040_PMMU|HW|68040 PMMU tree install (config.h:1474-1481)
 CONF_WITH_ACSI|HW|ACSI bus (config.h:1032-1037)
 CONF_WITH_ADVANCED_CPU|HW|68010-68060 CPU support (config.h:828-837)
-CONF_WITH_ALT_DESKTOP_GRAPHICS|MISS|align_title() left-aligns dialog titles and sets ob_state for an underline (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1747, the CONF_WITH_ALT_DESKTOP_GRAPHICS arm); NewTOS's own align_title equivalents do the OTHER (non-ALT, classic-TOS) arm instead -- centre the title, no underline: kernel/src/desk/dir.rs:567-572 `(dw - title_w) / 2`, kernel/src/desk/inf.rs:3403-3404 `(dw - 21 * CELL_W) / 2`, both citing deskmain.c's centring branch by name in their own comments; unticketed
+CONF_WITH_ALT_DESKTOP_GRAPHICS|MISS|align_title() left-aligns dialog titles and sets ob_state for an underline (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1747, the CONF_WITH_ALT_DESKTOP_GRAPHICS arm); NewTOS's own align_title equivalents do the OTHER (non-ALT, classic-TOS) arm instead -- centre the title, no underline: kernel/src/desk/dir.rs:567-572 `(dw - title_w) / 2`, kernel/src/desk/inf.rs:3403-3404 `(dw - 21 * CELL_W) / 2`, both citing deskmain.c's centring branch by name in their own comments; ticketed GUI05 (OFFEN, P4)
 CONF_WITH_ALT_RAM|HW|Alt-RAM support (config.h:879-884)
 CONF_WITH_APOLLO_68080|HW|Apollo 68080/Vampire accelerator CPU (config.h:839-848)
 CONF_WITH_ARANYM|OM|ARAnyM emulator target (config.h:1916-1925)
@@ -396,7 +396,7 @@ CONF_WITH_DMASOUND|HW|DMA sound chip (config.h:1129-1134, has.h-gated has_dmasou
 CONF_WITH_DSP|HW|Falcon DSP chip (config.h:1136-1141, has.h-gated has_dsp)
 CONF_WITH_EASTER_EGG|HW|EmuDesk Easter Egg tune, its value is literally CONF_WITH_YM2149 (config.h:1786-1792); sound-hardware payload
 CONF_WITH_EJECT|OM|automatic floppy eject; EmuTOS's own comment: 'This isn't available on Atari hardware' (config.h:2036-2042) -- meaningful only on Amiga/Lisa
-CONF_WITH_EXTENDED_MOUSE|MISS|IKBD scancode extension for mouse buttons 3/4/5 and the wheel (config.h:1491-1498; EmuTOS bios/aciavecs.S, bios/ikbd.c:748); kernel/src/ikbd.rs:48,92-93 treats 0xF6 as the status-report packet header and 0xF8-0xFB as the standard 2-button relative packet -- no wheel or button-3/4/5 decode anywhere in that dispatch; unticketed. Distinct from the VDI vex_wheelv vector installer already present (tos-api/src/vdi/mouse.rs:710), which has nothing feeding it without this
+CONF_WITH_EXTENDED_MOUSE|MISS|IKBD scancode extension for mouse buttons 3/4/5 and the wheel (config.h:1491-1498; EmuTOS bios/aciavecs.S, bios/ikbd.c:748); kernel/src/ikbd.rs:48,92-93 treats 0xF6 as the status-report packet header and 0xF8-0xFB as the standard 2-button relative packet -- no wheel or button-3/4/5 decode anywhere in that dispatch. Distinct from the VDI vex_wheelv vector installer already present (tos-api/src/vdi/mouse.rs:710), which has nothing feeding it without this; ticketed GUI04 (OFFEN, raised to P2 -- half the path already exists in vex_wheelv)
 CONF_WITH_EXTENDED_OBJECTS|HAVE|tos-api/src/aes/object.rs:565,569,2561,3074 (G_BOXTEXT/G_FBOXTEXT/G_FTEXT MagiC-style object types)
 CONF_WITH_EXTERNAL_DISK_DRIVER|OTH|deactivates the built-in hard disk driver in favour of a disk-resident one (config.h:1670-1677); BIOS disk-driver internal
 CONF_WITH_FALCON_MMU|HW|Falcon MMU (config.h:864-869)
@@ -412,7 +412,7 @@ CONF_WITH_ICDRTC|HW|ICD AdSCSI Plus RTC board via ACSI (config.h:1112-1119, has.
 CONF_WITH_IDE|HW|Falcon IDE bus (config.h:1046-1051)
 CONF_WITH_IKBD_ACIA|HW|the 6850 ACIA chip used for keyboard wiring (config.h:998-1003); distinct from NewTOS's own IKBD-protocol handling in kernel/src/ikbd.rs, which runs over the RPi4's own UART, not an ACIA
 CONF_WITH_IKBD_CLOCK|HW|IKBD real-time-clock command (config.h:1005-1010)
-CONF_WITH_LOADABLE_CURSORS|MISS|loads mouse cursor shapes from A:\EMUCURS.RSC at runtime (config.h:1286-1295); kernel/src/launch.rs:174-175 says so itself: 'accessories and loadable cursors/icons are not implemented at all'; unticketed
+CONF_WITH_LOADABLE_CURSORS|MISS|loads mouse cursor shapes from A:\EMUCURS.RSC at runtime (config.h:1286-1295); kernel/src/launch.rs:174-175 says so itself: 'accessories and loadable cursors/icons are not implemented at all'; ticketed GUI03 (OFFEN, P4)
 CONF_WITH_MAGNUM|HW|Magnum RAM expansion card (config.h:918-924)
 CONF_WITH_MEGARTC|HW|MegaST real-time clock (config.h:1105-1110, has.h-gated has_megartc)
 CONF_WITH_MEMORY_TEST|OTH|cold-boot RAM chip self-test (config.h:1507-1512); boot diagnostic
@@ -436,7 +436,7 @@ CONF_WITH_SDMMC|HW|EmuTOS's own SD/MMC controller chip driver (config.h:1053-105
 CONF_WITH_SEARCH|HAVE|kernel/src/desk/main.rs:1482,2053 (Item::Search / do_search)
 CONF_WITH_SELECTALL|HAVE|kernel/src/desk/main.rs:1478 (Item::SelectAll)
 CONF_WITH_SFP004|HW|68881 FPU board for the Mega ST (config.h:1172-1177)
-CONF_WITH_SHOW_FILE|MISS|double-click-to-show a file's contents in EmuDesk (config.h:1838-1844); no NewTOS reference found in kernel/src/desk (checked); unticketed
+CONF_WITH_SHOW_FILE|MISS|double-click-to-show a file's contents in EmuDesk (config.h:1838-1844); no NewTOS reference found in kernel/src/desk (checked); ticketed GUI01 (ZURUECKGESTELLT, P4 -- the user prefers a viewer registered as an application with a file mapping over a built-in view, more flexible and reuses the existing association machinery; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case)
 CONF_WITH_SHUTDOWN|OTH|the shutdown() BIOS/XBIOS function (config.h:2024-2034); BIOS API surface, not AES/VDI
 CONF_WITH_SIZE_TO_FIT|HAVE|kernel/src/desk/main.rs:2201,2206,2539,2676 (Item::SizeToFit / g.size_to_fit)
 CONF_WITH_ST_MMU|HW|ST MMU (config.h:850-855)
@@ -453,7 +453,7 @@ CONF_WITH_VDI_16BIT|HAVE|tos-api/src/vdi/inquiry.rs:7 and attributes.rs/raster.r
 CONF_WITH_VDI_TEXT_SPEEDUP|HAVE|tos-api/src/vdi/text.rs:577 (v_gtext); the observable feature (VDI text output) is implemented through a differently-architected raster backend, not a port of EmuTOS's specific speedup path
 CONF_WITH_VDI_VERTLINE|HAVE|tos-api/src/vdi/primitives.rs:744 (v_pline handles vertical lines); same caveat as CONF_WITH_VDI_TEXT_SPEEDUP
 CONF_WITH_VIDEL|HW|Falcon VIDEL chip (config.h:1089-1094, has.h-gated has_videl)
-CONF_WITH_VIEWER_SUPPORT|MISS|default file viewer when no app claims a document type (config.h:1854-1861); kernel/src/desk/inf.rs:1847-1850 says so itself: 'AF_VIEWER is CONF_WITH_VIEWER_SUPPORT, which this desktop does not implement'; unticketed
+CONF_WITH_VIEWER_SUPPORT|MISS|default file viewer when no app claims a document type (config.h:1854-1861); kernel/src/desk/inf.rs:1847-1850 says so itself: 'AF_VIEWER is CONF_WITH_VIEWER_SUPPORT, which this desktop does not implement'; ticketed GUI02 (ZURUECKGESTELLT, P4, depends on GUI01 -- same reason: a viewer registered as an application with a file mapping is preferred over a built-in view; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case)
 CONF_WITH_VME|HW|Mega STe VME bus (config.h:1143-1148, has.h-gated has_vme)
 CONF_WITH_WINDOW_COLOURS|HAVE|tos-api/src/aes/window.rs:78-79 (WF_COLOR/WF_DCOLOR)
 CONF_WITH_WINDOW_ICONS|HAVE|kernel/src/desk/win.rs (win_icalc); per DESK15
@@ -738,8 +738,8 @@ done
 
 cat <<EOF
 
-**Gap** ($N_MISS — this is the list the lead can act on without opening
-this file):
+**Gap** ($N_MISS — filed as GUI01-GUI05; two (GUI01, GUI02) are
+deferred by design, not neglect — see the note on each):
 
 | Macro | Value | What it switches on in EmuTOS, and ticket status |
 |---|---|---|
