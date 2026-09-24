@@ -67,7 +67,46 @@ Ergebnis, weil es ohne Abweichung von einer fremden Bibliothek auskommt.
 Zeile. Vor dem Tausch feststellen, was sich sonst geaendert hat und was davon
 unsere Portierung beruehrt.
 
-## Die Entscheidung, die ansteht
+## Beantwortet: die gepflegte cflib hat es selbst behoben
+
+Geklont nach `Applications/cflib-git` (`github.com/freemint/cflib`, Stand
+`ce57817`, 2026-07-14). Die fragliche Stelle in `fsnorm.c`:
+
+```c
+/* unsere Fassung (cflib-21, 2004) */   /* github, heute */
+ret = path_exists(p);                   ret = path_exists(p);
+if (!ret)                               /* always return path
+    p[i] = '\0';   <-- kappt              with trailing backslash */
+strcpy(path, p);                        strcpy(path, p);
+return ret;                             return ret;
+```
+
+Das Abschneiden ist **entfernt**, mit einem Kommentar, der die Absicht
+festhaelt: *„always return path with trailing backslash"*. Genau das Verhalten,
+gegen das QED geschrieben ist — und genau die eine Zeile, die das Experiment
+im Scratch nachgestellt hatte.
+
+**Damit ist es keine Entscheidung mehr, sondern eine Versionsfrage.** Kein
+Eingriff in eine fremde Bibliothek noetig; wir haben schlicht eine 21 Jahre
+alte Fassung eingefroren, deren Fehler die Bibliothek selbst behoben hat. Die
+unten aufgefuehrten Wege 1 und 3 entfallen.
+
+## Was jetzt zu tun ist
+
+Auf die gepflegte cflib wechseln — **aber nicht blind**: zwischen 2004 und
+heute liegt mehr als diese Zeile. Zu klaeren, bevor getauscht wird:
+
+* Welche Dateien `sdk/cflib/` heute baut und welche davon sich geaendert
+  haben (der Tarball liegt als `cflib-21.tar.xz` daneben, der Vergleich ist
+  mechanisch machbar).
+* Was `sdk/cflib/expected-failures.txt` heute ausschliesst und ob das noch
+  gilt.
+* Ob `sdk/cflib/overlay/` (heute `fontsel.c`/`inline.rsh`) nach dem Wechsel
+  noch gebraucht wird oder ob die Anpassungen inzwischen oben drin sind.
+* Danach QED neu bauen und die Abnahme fahren: Datei auf QED ziehen, sie
+  oeffnet sich.
+
+## Die urspruenglich angenommene Entscheidung (hinfaellig)
 
 Welche Seite wird korrigiert:
 
