@@ -114,7 +114,23 @@ Zwei Dinge, die dabei auffallen und zu pruefen sind:
   Pfadumsetzung entpackt. Jedes Bauskript stolpert darueber; entweder
   vorher umsetzen oder ausdruecklich behandeln.
 
-`windom` ist die zweite Unbekannte: ein GEM-Rahmenwerk ueber gemlib, das wir
+**windom — Quellen und ein Versionsproblem.** Der Anwender nennt
+`https://github.com/ggnkua/Atari_ST_Sources/tree/master/C/Arnaud Bercegeay/WINDOM`.
+Dort liegt **WinDom 1.1** (September 2001) bzw. `WNDM0901` (0.9.01), als
+Archive plus Beispiele; Lizenz laut README *„FreeWare … Please use it as a GPL
+licence"*, Autoren Dominique Bereziat und Arnaud Bercegeay, offizielle Seite
+`http://windom.free.fr`.
+
+zViews Voraussetzungsliste verlangt aber **1.21.3**, und zwar ausdruecklich
+*„plus fix for gcc4 and memory protection"* — also eine spaetere Generation
+mit Anpassungen, die genau unsere Lage betreffen (gcc4-Aufbau,
+Speicherschutz). **Vor dem Bauen klaeren, welche Fassung wirklich gebraucht
+wird**: die 1.1 nehmen und die Unterschiede fressen, oder 1.21.3 beschaffen
+(offizielle Seite, oder die Fassung, gegen die zView tatsaechlich gebaut
+wurde). Die beiden sind nicht austauschbar, sonst haette die
+Voraussetzungsliste keine Nummer genannt.
+
+`windom` bleibt damit die zweite Unbekannte: ein GEM-Rahmenwerk ueber gemlib, das wir
 bisher nicht gebaut haben. Aufwand dafuer getrennt ausweisen.
 
 ## Auftrag
