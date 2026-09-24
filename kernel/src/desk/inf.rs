@@ -34,7 +34,7 @@ use tos_types::Long;
 use crate::sync::SpinMutex;
 
 use super::dosbind::{dos_close, dos_create, dos_gdrv, dos_open, dos_read, dos_sdrv, dos_write};
-use super::global::{self, Anode, Grect, WSave, NIL, NUM_WNODES};
+use super::global::{self, Anode, Grect, WSave, AF_ISEXEC, NIL, NUM_WNODES};
 use super::icons;
 use super::model::{AType, DateFmt, DateOrder, Sort, TimeFmt, View};
 
@@ -388,6 +388,11 @@ fn scan_str(c: &mut Cursor) -> String {
 /// '#') continue;`.
 fn parse_inf(bytes: &[u8]) -> InfData {
     let mut d = InfData::default();
+    // `inf_rev_level` (`deskapp.c:129,855`) — the revision of the file being
+    // read. `#R` is the first line every writer emits, so a shortcut line
+    // always sees the right value; a file with no `#R` at all is EmuTOS's
+    // `inf_rev_level = 0` initial value (`deskapp.c:150`).
+    let mut rev: u8 = 0;
     let mut c = Cursor { b: bytes, i: 0 };
     while c.i < c.b.len() {
         if c.bump() != b'#' {
@@ -396,7 +401,12 @@ fn parse_inf(bytes: &[u8]) -> InfData {
         let tag = c.bump();
         match tag {
             b'R' => {
-                let _ = scan_2(&mut c); // revision level — always upgraded on save
+                // `inf_rev_level` (`deskapp.c:855`). Written back as `02`
+                // unconditionally ([`InfData::serialize`]), read here only for
+                // the one thing EmuTOS still uses it for: the `a_pappl`/
+                // `a_pdata` swap on a pre-rev-2 desktop-shortcut line
+                // (`:404-415`).
+                rev = scan_2(&mut c);
             }
             b'Z' => {
                 c.skip_spaces();
@@ -430,7 +440,7 @@ fn parse_inf(bytes: &[u8]) -> InfData {
                 d.windows.push(parse_window(&mut c));
             }
             b'T' | b'M' | b'O' | b'X' | b'V' | b'D' | b'G' | b'Y' | b'F' | b'P' | b'I' | b'N' => {
-                d.anodes.push(parse_anode(&mut c, tag));
+                d.anodes.push(parse_anode(&mut c, tag, rev));
             }
             _ => {}
         }
@@ -455,7 +465,7 @@ fn parse_window(c: &mut Cursor) -> InfWindow {
 /// Parse one `ANODE` line after its tag (`app_parse`, `deskapp.c:295-436`).
 /// Desktop icons (`T`/`M`/`O`/`X`/`V`) carry `xx yy … L`; file types
 /// (`G`/`Y`/`F`/`P`/`I`/`N`) carry the trailing `f kk pargs@` block when present.
-fn parse_anode(c: &mut Cursor, tag: u8) -> InfAnode {
+fn parse_anode(c: &mut Cursor, tag: u8, rev: u8) -> InfAnode {
     let is_desk = matches!(tag, b'T' | b'M' | b'O' | b'X' | b'V');
     let has_extra = matches!(tag, b'G' | b'Y' | b'F' | b'P' | b'I' | b'N');
 
@@ -484,8 +494,16 @@ fn parse_anode(c: &mut Cursor, tag: u8) -> InfAnode {
         0
     };
 
-    let pappl = scan_str(c);
-    let pdata = scan_str(c);
+    let mut pappl = scan_str(c);
+    let mut pdata = scan_str(c);
+    // "fix up old format of desktop icon entries if necessary"
+    // (`deskapp.c:404-415`): before revision 2 a desktop shortcut carried the
+    // file *name* in `a_pappl` and the full path in `a_pdata`; from revision 2
+    // on it is the other way round. Only `#X`/`#V` are affected — no other tag
+    // is both `AF_ISDESK` and `AT_ISFILE`/`AT_ISFOLD`.
+    if rev < 2 && matches!(tag, b'X' | b'V') {
+        core::mem::swap(&mut pappl, &mut pdata);
+    }
 
     // The extra `f kk pargs@` block is present only when a non-space, non-EOL
     // byte follows `pdata` (the `desk_inf_data2` type defaults omit it).
@@ -920,12 +938,12 @@ const INF_FILE_WILD: &str = "C:\\*.INF";
 /// `MAXPATHLEN` (81, `sysconf.h:55`); ours has to cover what *our* AES writes
 /// back, which is its own 96-byte `FSDIRECT` text plus the NUL
 /// (`tos-api/src/aes/fsel.rs:135`). Rounded up to 128.
-const FSEL_PATH_LEN: usize = 128;
+pub(super) const FSEL_PATH_LEN: usize = 128;
 
 /// Size of the `pisel` buffer. EmuTOS uses `LEN_ZFNAME` (13); the AES writes
 /// back its 16-byte `FSSELECT` text plus the NUL
 /// (`tos-api/src/aes/fsel.rs:136`). Rounded up to 32.
-const FSEL_NAME_LEN: usize = 32;
+pub(super) const FSEL_NAME_LEN: usize = 32;
 
 /// The NUL-terminated text of a file-selector buffer.
 fn cbuf_str(buf: &[u8]) -> &str {
@@ -1092,20 +1110,41 @@ fn apply(data: &InfData) {
         g.g_ahead = parsed
             .iter()
             .map(|a| {
+                // `app_parse`'s tag switch for the `AF_ISDESK` tags
+                // (`deskapp.c:300-346`): `#X` is a file shortcut, `#V` a
+                // folder shortcut (`CONF_WITH_DESKTOP_SHORTCUTS`, `:333-343`).
                 let a_type = match a.tag {
                     b'T' => AType::Trash,
                     b'O' => AType::Printer,
+                    b'X' => AType::File,
+                    b'V' => AType::Folder,
                     _ => AType::Disk,
                 };
                 // `x = pa->a_xspot * G.g_icw; y = pa->a_yspot * G.g_ich + …;
                 //  snap_icon(x, y, &pa->a_xspot, &pa->a_yspot, 0, 0);`
                 // (`deskapp.c:981-984`) — grid units on disk, pixels in memory.
                 let (x, y) = g.snap_icon(a.xspot as i16 * g.g_icw, a.yspot as i16 * g.g_ich);
+                // "mark desktop shortcuts as executable based on file
+                // extension" (`deskapp.c:422-426`). NewTOS's executable
+                // extensions are the native `.N?P` family plus the classic
+                // m68k five ([`super::ftype`]), which is EmuTOS's `exec_ext`
+                // (`deskins.c:984`) widened by ADR-018 — the same decision
+                // `win_bldview` already makes for a window item.
+                let a_flags = if a_type == AType::File
+                    && super::ins::is_executable(a.pappl.as_bytes())
+                {
+                    AF_ISEXEC
+                } else {
+                    0
+                };
                 Anode {
                     a_type,
                     a_letter: a.letter,
                     a_aicon: a.aicon,
+                    a_dicon: a.dicon,
+                    a_flags,
                     a_pappl: a.pappl.clone(),
+                    a_pdata: a.pdata.clone(),
                     a_xspot: x,
                     a_yspot: y,
                     a_obid: NIL,
@@ -1184,7 +1223,10 @@ fn build_desk_icons() {
                 a_type: AType::Disk,
                 a_letter: letter,
                 a_aicon: aicon,
+                a_dicon: NIL,
+                a_flags: 0,
                 a_pappl: disk_label(letter),
+                a_pdata: String::new(),
                 a_xspot: drive_x * icw,
                 a_yspot: drive_y * ich,
                 a_obid: NIL,
@@ -1200,7 +1242,10 @@ fn build_desk_icons() {
             a_type: AType::Trash,
             a_letter: 0,
             a_aicon: icons::IG_TRASH,
+            a_dicon: NIL,
+            a_flags: 0,
             a_pappl: String::from(TRASH_LABEL),
+            a_pdata: String::new(),
             a_xspot: trash_x * icw,
             a_yspot: icon_y * ich,
             a_obid: NIL,
@@ -1213,7 +1258,10 @@ fn build_desk_icons() {
                 a_type: AType::Printer,
                 a_letter: 0,
                 a_aicon: icons::IG_PRINT,
+                a_dicon: NIL,
+                a_flags: 0,
                 a_pappl: String::from(PRINTER_LABEL),
+                a_pdata: String::new(),
                 a_xspot: (xcnt - 1) * icw,
                 a_yspot: icon_y * ich,
                 a_obid: NIL,
@@ -1302,9 +1350,14 @@ fn build_from_state() -> InfData {
             .g_ahead
             .iter()
             .map(|pa| InfAnode {
+                // `app_save`'s type switch (`deskapp.c:1216-1256`): an
+                // `AF_ISDESK` node of type `AT_ISFILE` is written `#X` and one
+                // of type `AT_ISFOLD` `#V` (`:1224-1227`, `:1239-1243`).
                 tag: match pa.a_type {
                     AType::Trash => b'T',
                     AType::Printer => b'O',
+                    AType::File => b'X',
+                    AType::Folder => b'V',
                     _ => b'M',
                 },
                 is_desk: true,
@@ -1312,13 +1365,15 @@ fn build_from_state() -> InfData {
                 xspot: (pa.a_xspot / icw).clamp(0, 255) as u8,
                 yspot: (pa.a_yspot / ich).clamp(0, 255) as u8,
                 aicon: pa.a_aicon,
-                // A desktop icon has no data icon: EmuTOS's `install_drive`
-                // and `install_desktop_icon` both set `a_dicon = NIL`
-                // (`deskins.c:250`, `:854`), which `app_save` writes as `FF`.
-                dicon: -1,
+                // A drive/trash/printer icon has no data icon: EmuTOS's
+                // `install_drive` and `install_desktop_icon` both set
+                // `a_dicon = NIL` (`deskins.c:250`, `:854`), which `app_save`
+                // writes as `FF`. A shortcut carries the number it copied from
+                // the `ANODE` that governs the file.
+                dicon: pa.a_dicon,
                 letter: pa.a_letter,
                 pappl: pa.a_pappl.clone(),
-                pdata: String::new(),
+                pdata: pa.a_pdata.clone(),
                 flags: 0,
                 funkey: 0,
                 pargs: String::new(),
@@ -1727,6 +1782,12 @@ pub(super) fn lookup_association(name: &[u8]) -> Option<Association> {
 /// the match kind through `pisapp`; this carries the same two answers plus the
 /// fields the two callers read off the node.
 pub(super) struct Afind {
+    /// `a_type` of the node that matched. `app_afind_by_name` only ever
+    /// returns a node whose `a_type` equals the queried one
+    /// (`deskapp.c:1450`), so this is the caller's own `atype` handed back —
+    /// carried because `i_find`'s consumers test it (`gr_drgplns`'s
+    /// "don't highlight plain files", `deskact.c:340`).
+    pub atype: AType,
     /// Index of the node in the session list, for [`set_icon`]/[`app_free`].
     /// Valid only until the list is next mutated; both callers are modal
     /// dialogs that hold it across nothing but their own edits, exactly as
@@ -1808,6 +1869,7 @@ pub(super) fn app_afind_by_name(atype: AType, pspec: &str, pname: &str) -> Optio
         }
         let hit = |isapp: bool| {
             Some(Afind {
+                atype,
                 idx,
                 isapp,
                 aicon: a.aicon,

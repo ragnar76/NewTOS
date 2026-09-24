@@ -1091,3 +1091,83 @@ writes `#N FF 03 @ README.TXT@`, and a cold boot brings the trash icon back.
 Then the `STICNTYP` alert with nothing selected, its *Window* answer opening
 the editable-name shape of the dialog, and *Remove* on the installed name
 putting the document icon back.
+
+---
+
+### `ins_shortcut` — desktop shortcuts (DESK30, 2026-09-24)
+
+`CONF_WITH_DESKTOP_SHORTCUTS` is 1 in the Falcon030/TOS4 `make 512` profile
+(`include/config.h:1782-1784`; the `0` at `:325-327` sits inside
+`#ifdef TARGET_192`), so the second half of the DESK15 report — a **file or
+folder icon parked on the desktop surface** — was a real gap. It is now
+implemented; the entry point is `kernel/src/desk/ins.rs::ins_shortcut`
+(`deskins.c:1341-1406`), called from `dir::fun_drag`'s "dropping onto desktop
+surface" arm (`deskfun.c:1312-1319`), which until now raised the `#else`
+branch's alert.
+
+**Data layer.** `global::Anode` gained `a_dicon`, `a_flags` (the `AF_ISEXEC`
+bit; `AF_ISDESK` stays implicit because every node of `G.g_ahead` *is* a
+desktop node) and `a_pdata`. For a shortcut `a_pappl` is the **full path** and
+`a_pdata` the bare file name — the revision-2 layout — and `app_blddesk`
+labels the icon from `a_pdata` (`deskapp.c:1392-1396`) and picks the icon with
+`(a_dicon < 0) || (a_type == AT_ISFILE && (a_flags & AF_ISEXEC))`
+(`:1374-1378`).
+
+**`.INF`.** The `#X` (file) and `#V` (folder) tags were already accepted by the
+parser; they now produce `AT_ISFILE`/`AT_ISFOLD` nodes, `app_save` writes them
+back (`deskapp.c:1224-1243`), and the pre-revision-2 `a_pappl`/`a_pdata` swap
+(`:404-415`) is applied for a file that carries `#R 00`/`#R 01`. `AF_ISEXEC` is
+re-derived from the extension on load (`:422-426`), through
+`ins::is_executable`, whose set is EmuTOS's five plus NewTOS's native
+`.NAP`/`.NCP`/`.NTP` (ADR-018).
+
+**Consumers.** A double-click routes through `main::open_item`'s desktop arm
+(`do_open`, `desksupp.c:1219-1259`): a file is classified by its extension and
+launched/associated exactly as its twin in a window would be, a folder always
+gets a **new** window because the "window" it was opened from is the desktop
+pseudo-window (`do_fopen`'s `WN_DESKTOP` arm, `:1112-1126`). Dragging a
+shortcut into a window or onto another icon goes through the new
+`dir::desktop_selected_sources`, which is `fun_file2any`'s `an_src` switch
+(`deskfun.c:1149-1160`): a disk contributes every top-level entry of its root,
+a shortcut the one file or folder it names. Dropping something **onto** a
+shortcut is `fun_file2desk`'s two new arms (`:1021-1040`) — a program launches
+with the dragged item as its tail, a folder takes a copy or move.
+
+**Orphans.** `remove_locate_shortcut` (`desksupp.c:376-412`) is implemented in
+`dir.rs`: the `STRMVLOC` alert (Remove | Locate | Cancel), *Locate* running
+`fsel_exinput` from the boot drive's root and rewriting `a_pappl`. It is
+raised where EmuTOS raises it — `do_aopen`'s `file_exists` check before a
+launch (`:861-868`), `do_fopen`'s `set_default_path == EPTHNF` before a folder
+window (`:1119-1123`), and the empty-file-list case of a drag (`:1183-1188`).
+
+**One collapsed step, named.** `ins_shortcut` takes the icon numbers from the
+`ANODE` `i_find` returns and then overrides them with a second lookup,
+`app_afind_by_name(…, AF_ISDESK, …)` (`:1394-1400`). The two differ only in
+the ignore mask — `i_find` also skips `AF_WINDOW` nodes (`desksupp.c:1755`) —
+and NewTOS's `app_afind_by_name` skips desktop nodes only, i.e. it already *is*
+the second call's variant. The first lookup therefore returns the node the
+override would have chosen, and the override is a no-op; one search is made.
+
+**Still open, and not part of this ticket.** *Show info* on a **desktop icon**
+is not implemented at all in NewTOS (`main::do_info_rename` returns early for
+`G.g_cwin == DESKWH`), so `do_info`'s shortcut arm (`deskinf.c` via
+`desksupp.c:1300-1330`) has nothing to attach to. That gap predates DESK30 and
+covers drives, trash and printer as well.
+
+#### Verification
+
+`measurement-2026-09-24-desk37-desk36-desk30/`, QEMU raspi4b at 640×480 with
+the scratch-copy IKBD injector:
+
+* `d30-after-D-shortcut.png` — `QED.NAP` dragged out of the `C:\` window onto
+  the desktop surface becomes an icon labelled `QED.NAP` with the application
+  picture. `d30-before-D-shortcut.png` is the defect the user hit on the Pi:
+  the alert "Can't drop items here."
+* `d30-after-E-saved.png` + the card it wrote: *Options → Save desktop* puts
+  `#X 02 09 06 FF   C:\QED.NAP@ QED.NAP@` into `NEWDESK.INF`.
+* `d30b-A-coldstart.png` — that card booted again from scratch: the shortcut is
+  back, in the same grid cell, with the same label and picture.
+* `d30c-D-qed.png` — double-clicking the restored shortcut starts QED.
+* `d30d-D-opened.png` — the folder case: `SUB` dragged to the desktop
+  (`d30d-C-shortcut.png`), double-clicked, opens a **new** window titled
+  `C:\SUB\` with its three items.

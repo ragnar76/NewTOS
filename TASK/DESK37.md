@@ -1,6 +1,6 @@
 # DESK37 — Hinter einer laufenden GEM-Anwendung steht Weiss statt des Desktop-Hintergrunds
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Belegter Defekt — Pi-Runde + Hatari-Gegenprobe 2026-09-24
+Status: **ERLEDIGT** · Prioritaet: **P2** · Typ: Belegter Defekt — Pi-Runde + Hatari-Gegenprobe 2026-09-24
 
 Abhaengigkeiten: [DESK35](DESK35.md) (erledigt)
 
@@ -61,3 +61,51 @@ Abnahme: QED aus dem Desktop starten, Hintergrund **gruen**; Vergleichsbild
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss
+
+Behoben. `sh_ldapp`s zweiter Schritt fehlte: `sh_show(fname)` (`gemshlib.c:632`),
+also `sh_draw(lcmd, FALSE)` — der **ganze** `DESKTOP`-Baum mit dem echten
+`ob_spec`, nachdem `sh_draw(…, TRUE)` ihn weiss geloescht hat.
+
+**Die offene Frage des Tickets, am Quelltext beantwortet:** das Muster haelt
+die **AES**. Unser Gegenstueck zu `rs_trees[DESKTOP]` ist der Drei-Objekt-Baum
+`DESKTOP` in [`tos-api/src/aes/init.rs`](../tos-api/src/aes/init.rs) (`:139`,
+aus `DESKTOP_ROM`, der Ressourcenkonstanten `4419` = `0x1143` von
+`gem_rsc.c:551-556`); das untere Byte ersetzt `set_aes_background` beim
+AES-Start aus der `#Q`-Zeile (`geminit.c:635-641,719-728`, bei uns
+`process_inf1_q` + `gem_rsc`). `G.g_patcol` des Desktops (DESK09) ist eine
+zweite, unabhaengige Lesung derselben Zeile und spielt hier keine Rolle:
+`desktop_relinquish` hat den Desktop-Hintergrundbaum mit
+`wind_set(DESKWH, WF_NEWDESK, NULL)` schon abgemeldet.
+
+**Geaendert:** `crate::shell_loop::sh_gem_show`
+([kernel/src/shell_loop.rs](../kernel/src/shell_loop.rs)), gerufen aus
+`desk::main::run_gem_app` ([kernel/src/desk/main.rs](../kernel/src/desk/main.rs))
+zwischen `desktop_relinquish()` und dem Lader — genau `sh_ldapp`s Platz
+zwischen dem `sh_main`-Block (`:715-720`) und `dos_exec` (`:645`).
+`tos_api::aes::shell::sh_show` gab es bereits (der Bootpfad ruft es fuer den
+Desktop selbst); neu ist nur der Aufruf an der zweiten Stelle.
+
+**Wie nah am Hatari-Vergleichsbild** (`measurement-2026-09-24-desk37-desk36-desk30/`,
+QEMU raspi4b 640x480): strukturell deckungsgleich. In beiden Bildern sind die
+Zeilen 0..17 weiss mit dem Programmnamen in Schwarz, Zeile 18 durchgehend
+schwarz, die Zeilen 19..479 ein 50-%-Schachbrett aus Gruen und Weiss — 320
+gruene und 320 weisse Pixel je Zeile in **beiden**, und in derselben Phase,
+Pixel fuer Pixel (`WGWGWG…` in Zeile 19, `GWGWGW…` in Zeile 20). Es
+unterscheiden sich nur die beiden Farbworte, und das ist Hataris
+Falcon-VGA-Rampe: dort `(0,251,0)`/`(255,251,255)`, hier `(0,255,0)`/
+`(255,255,255)` — ein Geraeteparameter, kein Unterschied im Zeichnen.
+
+**Die Menueleiste traegt den Programmnamen**, wie EmuTOS' es tut: `GEMWIN.NAP`
+bei uns gegen `BGWIN.PRG` dort. Bei QED ueberschreibt QEDs eigene Leiste ihn
+sofort — in beiden Systemen.
+
+**Belege:** `d37g-after-C-app.png` gegen
+`measurement-2026-09-24-hatari-appbg/screendumps/emutos-bgwin-falcon-tc.png`,
+`d37q-after-D-qed.png` gegen `emutos-qed-falcon-tc.png`; `d37g-before-C-app.png`
+und `d37q-before-D-qed.png` zeigen den Defekt (alles unter der Leiste weiss).
+Spec: [docs/api/aes/shell-loop.md](../docs/api/aes/shell-loop.md) §9,
+Abschnitt „`sh_show(fname)`, the screen behind a launched GEM program".
+Hardware-Gegenprobe: Punkt 61 in
+[docs/api/desktop/_hw-test-2026-09-17.md](../docs/api/desktop/_hw-test-2026-09-17.md).

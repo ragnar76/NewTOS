@@ -761,6 +761,64 @@ windows open on `C:\` before the launch.
 
 ---
 
+### NewTOS implementation notes — `sh_show(fname)`, the screen behind a launched GEM program (DESK37, 2026-09-24)
+
+The `gl_shgem` block above (DESK35) is only the **first** of two paint steps,
+and taking it alone leaves the screen white. EmuTOS's pair is:
+
+```c
+sh_draw(D.s_cmd, TRUE);   /* :719 -- ob_spec = CLEAR_SCREEN, ROOT only  */
+...
+sh_show(fname);           /* :632 -- the whole tree, real ob_spec       */
+```
+
+`sh_draw(…, TRUE)` swaps the `DESKTOP` tree ROOT's `ob_spec` for
+`CLEAR_SCREEN` — `(WHITE<<12)|(WHITE<<8)|(IP_HOLLOW<<4)|WHITE` = `0x0000`,
+`gemshlib.c:64` — draws that one object over the whole screen and puts the
+saved `ob_spec` straight back (`:277-282`). Its comment "white desktop screen"
+is true and still misleading: the white is a state that lasts milliseconds.
+`sh_ldapp` then calls `sh_show(fname)` (`:632`), which is `sh_draw(lcmd,
+FALSE)` — `ted->te_ptext = lcmd; ob_draw(tree, ROOT, MAX_DEPTH)` (`:284-286`) —
+i.e. the **whole** tree with the root's real `ob_spec`: the desktop background
+pattern, the menu-bar strip (object 1), and `DTNAME`'s text (object 2), which
+now carries the name of the program being started.
+
+**The background is the AES's, not the desktop's.** It is
+`rs_trees[DESKTOP][ROOT].ob_spec`, the resource constant `4419` = `0x1143`
+(`gem_rsc.c:551-556`), whose low byte `set_aes_background` replaces with the
+`.INF` `#Q` desktop byte at AES start-up (`geminit.c:635-641,719-728`). In
+NewTOS that tree is `tos_api::aes::init`'s `DESKTOP` static and the `#Q` read
+is `process_inf1_q`. The desktop's own `#Q` copy (`G.g_patcol`, DESK09) plays
+no part: by this point `desktop_relinquish` has already un-registered the
+desktop's background tree with `wind_set(DESKWH, WF_NEWDESK, NULL)`, so what
+the screen shows behind a launched program comes from the AES side alone.
+
+NewTOS's step is `crate::shell_loop::sh_gem_show`, called from
+`desk::main::run_gem_app` between `desktop_relinquish()` and the loader —
+exactly `sh_ldapp`'s position between the `sh_main` block (`:715-720`) and
+`dos_exec` (`:645`).
+
+**Measured** (`measurement-2026-09-24-desk37-desk36-desk30/`, QEMU raspi4b,
+640×480):
+
+* `d37g-after-C-app.png` vs. the EmuTOS reference
+  `measurement-2026-09-24-hatari-appbg/screendumps/emutos-bgwin-falcon-tc.png`
+  (Hatari 2.6.1, Falcon/VGA, EmuTOS 1.4.0+): rows 0..17 white with the program
+  name in black, row 18 solid black, rows 19..479 a 50 % green/white
+  checkerboard — 320 green + 320 white per row in **both**, and the same
+  parity phase pixel for pixel (`WGWGWG…` on row 19, `GWGWGW…` on row 20).
+  Only the two colour words differ, which is Hatari's Falcon VGA ramp:
+  `(0,251,0)`/`(255,251,255)` there against `(0,255,0)`/`(255,255,255)` here.
+  The menu bar carries the program name as EmuTOS's does (`GEMWIN.NAP` /
+  `BGWIN.PRG`).
+* `d37q-after-D-qed.png` vs. `emutos-qed-falcon-tc.png`: QED's own menu bar
+  across the top and the same green dither behind it.
+* `d37g-before-C-app.png` / `d37q-before-D-qed.png` are the defect: every row
+  below the menu strip is solid white, and there is no menu strip at all in
+  the `GEMWIN` case.
+
+---
+
 ## 10. The state handover channel: `app_save → shel_put` / `shel_get → app_start`
 
 **Source:** `desk/deskapp.c:136` (`CPDATA_LEN`), `:781-840` (`app_start`),

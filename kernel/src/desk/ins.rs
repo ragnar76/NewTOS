@@ -16,22 +16,14 @@
 //!   `ADINSWIN` dialog that binds an icon to a **file or folder name**; the
 //!   three list primitives live with the `ANODE` store they edit, in
 //!   [`super::inf`];
-//! * `ins_icon` / `rmv_icon` (`:1234-1335`), the two menu entry points.
+//! * `ins_icon` / `rmv_icon` (`:1234-1335`), the two menu entry points;
+//! * `ins_shortcut` (`:1341-1406`, `CONF_WITH_DESKTOP_SHORTCUTS`) — DESK30 —
+//!   which turns a window selection dropped on the desktop surface into
+//!   `AT_ISFILE`/`AT_ISFOLD` nodes of `G.g_ahead`.
 //!
-//! ## What is **not** here, and why
-//!
-//! EmuTOS's full build also offers *desktop shortcuts*
-//! (`CONF_WITH_DESKTOP_SHORTCUTS`, `ins_shortcut` + the `AT_ISFILE`/`AT_ISFOLD`
-//! arms of `install_desktop_icon`): a file or folder icon parked on the desktop
-//! surface itself. That needs an `AT_ISFILE`/`AT_ISFOLD` variant of the
-//! *desktop* icon list `G.g_ahead` ([`Anode`]'s doc-comment), which NewTOS does
-//! not have — a separate work item (DESK30), not the missing reader this
-//! module used to report. (`fun_win2win`'s drop-on-a-program branch was the
-//! other half of that report; it exists since DESK19.)
 //! `CONF_WITH_DESKTOP_SHORTCUTS` is 1 in our Falcon030/TOS4 `make 512` profile
 //! (`include/config.h:1782-1784`; the `0` at `:325-327` is inside
-//! `#ifdef TARGET_192`), so it is a real gap, not a feature that is off in the
-//! reference build.
+//! `#ifdef TARGET_192`).
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -40,7 +32,7 @@ use tos_api::aes::object::{IconBlk, Object, TedInfo};
 use tos_api::vdi::font::{CELL_H, CELL_W};
 
 use super::dosbind::{dos_gdrv, dos_sdrv};
-use super::global::{self, Anode, DROOT, NIL};
+use super::global::{self, Anode, AF_ISEXEC, DROOT, NIL};
 use super::icons::{build_iconblk, icon_kind, ig_of, IconKind, BUILTIN_ICONS, IG_HARD};
 use super::inf::{
     disk_label, end_dialog, mk_root, start_dialog, BOX_SPEC, FL3DACT, FL3DBAK, FL3DIND, TED_COLOR,
@@ -195,7 +187,10 @@ fn install_drive(g: &mut global::DeskState, drive: u32) -> bool {
         a_type: AType::Disk,
         a_letter: letter,
         a_aicon,
+        a_dicon: NIL,
+        a_flags: 0,
         a_pappl: disk_label(letter),
+        a_pdata: String::new(),
         a_xspot,
         a_yspot,
         a_obid: NIL,
@@ -336,7 +331,10 @@ fn install_desktop_icon(existing: Option<usize>) -> Change {
                 a_type: AType::Disk,
                 a_letter: 0,
                 a_aicon: IG_HARD,
+                a_dicon: NIL,
+                a_flags: 0,
                 a_pappl: String::new(),
+                a_pdata: String::new(),
                 a_xspot,
                 a_yspot,
                 a_obid: NIL,
@@ -995,6 +993,91 @@ pub(super) fn rmv_icon(sobj: i16) -> i16 {
     removed
 }
 
+/// `ins_shortcut(wh, mx, my)` (`deskins.c:1341-1406`,
+/// `CONF_WITH_DESKTOP_SHORTCUTS`) — turn every selected item of window `wh`
+/// into a **desktop shortcut**: an `AT_ISFILE`/`AT_ISFOLD` [`Anode`] of
+/// `G.g_ahead`, parked where the drop happened (DESK30).
+///
+/// `(mx, my)` is the drop point `fun_drag` was given, i.e. the top-left of the
+/// dragged outline; the first icon snaps to the grid cell under it and each
+/// further one takes the next free cell (`ins_posdisk`). The node keeps the
+/// **full path** in `a_pappl` and the bare name in `a_pdata`, which is the
+/// revision-2 layout of an `#X`/`#V` line (`:1380-1381`).
+///
+/// **One collapsed step.** EmuTOS takes the icon numbers from the `ANODE`
+/// `i_find` returned and then *overrides* them with a second lookup,
+/// `app_afind_by_name(…, AF_ISDESK, …)` (`:1394-1400`). The two differ only in
+/// the ignore mask: `i_find` also skips `AF_WINDOW` nodes (`desksupp.c:1755`),
+/// so the override is what lets an icon installed through *Install icon →
+/// Window* win. NewTOS's [`super::inf::app_afind_by_name`] skips desktop nodes
+/// only — it is already the second call's variant, and `i_find_win` goes
+/// through it — so the first lookup returns the node the override would have
+/// chosen and the override is a no-op. Same result, one search.
+pub(super) fn ins_shortcut(wh: i16, mx: i16, my: i16) {
+    // "put the first icon on the grid where the user wanted" (`:1352`).
+    let Some((mut x, mut y)) = global::with(|g| g.snap_icon(mx, my)) else {
+        return;
+    };
+    // `pw = win_find(wh)` + `p_spec` with its mask cut off — the `strlcpy(…,
+    // q-p+1)` of `:1373-1376`.
+    let Some(dir) = super::dir::window_dir(wh) else {
+        return;
+    };
+
+    let mut sobj = 0i16;
+    loop {
+        // `while ((sobj = win_isel(G.g_screen, G.g_croot, sobj)))` (`:1361`).
+        sobj = global::with(|g| g.win_isel(g.g_croot, sobj)).unwrap_or(0);
+        if sobj == 0 {
+            break;
+        }
+        // `pa = i_find(wh, sobj, &pf, NULL)` (`:1363`) — the `ANODE` that
+        // governs the source item, and with it the item's own file name.
+        let Some((name, pa)) = super::dir::i_find_win(wh, sobj) else {
+            continue;
+        };
+        let mut pathname = String::from(&dir);
+        pathname.push_str(&name);
+
+        // `newpa->a_flags = (pa->a_flags & ~AF_WINDOW) | AF_ISDESK;` +
+        // `if ((pa->a_type == AT_ISFILE) && is_executable(pf->f_name))
+        //      newpa->a_flags |= AF_ISEXEC;` (`:1370-1373`). `AF_ISDESK` is
+        // implicit in `G.g_ahead` and the remaining source flags are not
+        // carried on a desktop node — `do_aopen` replaces the shortcut's
+        // `ANODE` with the association-list one before it reads any of them
+        // (`desksupp.c:859-871`).
+        let a_flags = if pa.atype == AType::File && is_executable(name.as_bytes()) {
+            AF_ISEXEC
+        } else {
+            0
+        };
+        let node = Anode {
+            a_type: pa.atype,
+            a_letter: 0, // `newpa->a_letter = '\0';` (`:1375`)
+            a_aicon: pa.aicon,
+            a_dicon: pa.dicon,
+            a_flags,
+            a_pappl: pathname,
+            a_pdata: name,
+            a_xspot: x,
+            a_yspot: y,
+            a_obid: NIL, // "filled in by app_blddesk()" (`:1377`)
+        };
+        // `ins_posdisk(x, y, &x, &y);` — "update position for next icon"
+        // (`:1393`). Run *after* the node is in the list so the cell this icon
+        // just took counts as occupied.
+        global::with(|g| {
+            g.g_ahead.push(node);
+            let (nx, ny) = ins_posdisk(g, x, y);
+            (x, y) = (nx, ny);
+        });
+    }
+
+    // `app_blddesk();` (`:1404`), with the `do_wredraw(DESKWH, &G.g_desk)`
+    // EmuTOS folds into it (`deskapp.c:1403`).
+    super::main::rebuild_desktop_icons();
+}
+
 // ── Small local helpers ─────────────────────────────────────────────────────
 
 /// `inf_gindex` (`util/optimize.c:134-147`) — the index, counted from the
@@ -1119,7 +1202,10 @@ pub fn selftest() {
             a_type: AType::Disk,
             a_letter: b'Z',
             a_aicon: super::icons::IG_HARD,
+            a_dicon: NIL,
+            a_flags: 0,
             a_pappl: disk_label(b'Z'),
+            a_pdata: String::new(),
             a_xspot: 0,
             a_yspot: 0,
             a_obid: NIL,

@@ -38,6 +38,7 @@ pub mod menu;
 pub mod model;
 pub mod pro;
 pub mod redraw;
+pub mod vdibind;
 pub mod win;
 
 use crate::kprintln;
@@ -71,7 +72,7 @@ const OP_FORM_DIAL: i16 = 51;
 const OP_FORM_ALERT: i16 = 52;
 const OP_FORM_CENTER: i16 = 54;
 const OP_GRAF_RUBBERBOX: i16 = 70;
-const OP_GRAF_DRAGBOX: i16 = 71;
+const OP_GRAF_HANDLE: i16 = 77;
 const OP_GRAF_MOUSE: i16 = 78;
 const OP_GRAF_MKSTATE: i16 = 79;
 const OP_FSEL_EXINPUT: i16 = 91;
@@ -123,6 +124,10 @@ pub(super) const M_ON: i16 = 257;
 /// `graf_mouse` shape number (`aesdefs.h`): the plain arrow, which
 /// `desk_busy_off` restores (`desk/desksupp.c:1849-1852`).
 pub(super) const ARROW: i16 = 0;
+/// `graf_mouse` shape number `FLATHAND` (`desk/deskbind.h:34`, = `FLAT_HAND`,
+/// `aesdefs.h:428`): the open hand `gr_drgplns` shows for the duration of a
+/// drag (`deskact.c:264`).
+pub(super) const FLATHAND: i16 = 4;
 /// `graf_mouse` shape number `HGLASS` (`desk/deskbind.h:33`, = `HOURGLASS`,
 /// `aesdefs.h:426`): the busy indicator `desk_busy_on` sets
 /// (`desk/desksupp.c:1840-1843`).
@@ -131,6 +136,9 @@ pub(super) const HGLASS: i16 = 2;
 // evnt_multi event-class bits (`aesdefs.h`).
 pub(super) const MU_KEYBD: u16 = 0x0001;
 pub(super) const MU_BUTTON: u16 = 0x0002;
+/// `MU_M1` — the first mouse-rectangle event, the one `gr_isdown` waits on
+/// while a drag is in progress (`deskact.c:66-77`).
+pub(super) const MU_M1: u16 = 0x0004;
 pub(super) const MU_MESAG: u16 = 0x0010;
 pub(super) const MU_TIMER: u16 = 0x0020;
 
@@ -454,25 +462,6 @@ pub(super) fn graf_rubberbox(x: i16, y: i16, minw: i16, minh: i16) -> (i16, i16)
     (a.intout[1], a.intout[2])
 }
 
-/// `graf_dragbox(w, h, sx, sy, bound)` (71) — drag a fixed `w×h` outline box
-/// from `(sx, sy)`, clamped to `bound`, until the button is released. Returns
-/// the final `(x, y)`. NewTOS's single-outline replacement for EmuTOS's
-/// multi-icon XOR drag polygon (`gr_drgplns`) — the *result* (where the drop
-/// lands) is what the file-op contract observes, per `deskact.md`.
-pub(super) fn graf_dragbox(w: i16, h: i16, sx: i16, sy: i16, bound: Grect) -> (i16, i16) {
-    let mut a = Aes::new();
-    a.intin[0] = w;
-    a.intin[1] = h;
-    a.intin[2] = sx;
-    a.intin[3] = sy;
-    a.intin[4] = bound.x;
-    a.intin[5] = bound.y;
-    a.intin[6] = bound.w;
-    a.intin[7] = bound.h;
-    a.call(OP_GRAF_DRAGBOX, 8, 3, 0);
-    (a.intout[1], a.intout[2])
-}
-
 /// `evnt_button(clicks, mask, state)` (21) — wait until the button reaches
 /// `state` (masked). Used to drain the button-up after a double-click open, so
 /// the next `evnt_multi` does not re-see the same release (EmuTOS
@@ -502,6 +491,16 @@ pub(super) fn evnt_dclick(rate: i16, setit: bool) -> i16 {
     a.intin[0] = rate;
     a.intin[1] = setit as i16;
     a.call(OP_EVNT_DCLICK, 2, 1, 0);
+    a.intout[0]
+}
+
+/// `graf_handle()` (77) — the AES's VDI workstation handle, plus the system
+/// font's cell metrics the desktop does not use here. The input handle of the
+/// `v_opnvwk` in [`vdibind`], exactly as `gsx_init` uses it
+/// (`aes/gemgraf.c:432-437`).
+pub(super) fn graf_handle() -> i16 {
+    let mut a = Aes::new();
+    a.call(OP_GRAF_HANDLE, 0, 5, 0);
     a.intout[0]
 }
 
@@ -751,6 +750,30 @@ pub(super) fn evnt_multi(flags: u16, msg: &mut [i16; 8]) -> EvntOut {
     }
 }
 
+/// `evnt_multi(MU_BUTTON | MU_M1, 0x01, 0xff, 0x00, out, x, y, w, h, …)` (25)
+/// — the single shape `gr_isdown` calls (`deskact.c:70-77`): return as soon as
+/// **all** buttons are up (`bmask = 0xff`, `bstate = 0x00`) or the pointer
+/// crosses the `w`×`h` rectangle at `(x, y)` in the direction `out` asks for.
+///
+/// Returns the `RET_CODE` event mask, which is all `gr_isdown` inspects.
+/// A separate wrapper from [`evnt_multi`] because that one bakes in the
+/// desktop main loop's button parameters (`bclk = 2`, `bmask = 1`,
+/// `bstate = 1`) and leaves both MOBLKs zero.
+pub(super) fn evnt_multi_m1(out: bool, x: i16, y: i16, w: i16, h: i16) -> u16 {
+    let mut a = Aes::new();
+    a.intin[0] = (MU_BUTTON | MU_M1) as i16;
+    a.intin[1] = 1; // bclk
+    a.intin[2] = 0xff; // bmask: any button
+    a.intin[3] = 0x00; // bstate: up
+    a.intin[4] = i16::from(out); // m1flags: leave (TRUE) / enter (FALSE)
+    a.intin[5] = x;
+    a.intin[6] = y;
+    a.intin[7] = w;
+    a.intin[8] = h;
+    a.call(OP_EVNT_MULTI, 16, 7, 1);
+    a.intout[0] as u16
+}
+
 // ── aesbind wrappers (file selector) ───────────────────────────────────────
 
 /// `fsel_exinput(pipath, pisel, &button, title)` (91) — the modal file
@@ -972,4 +995,7 @@ pub fn run() {
 pub fn reset() {
     global::reset();
     inf::reset();
+    // The VDI handle table does not survive an AES restart either, so the
+    // desktop's cached virtual workstation goes with the rest of the state.
+    vdibind::reset();
 }

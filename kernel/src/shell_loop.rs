@@ -335,6 +335,44 @@ pub fn sh_gem_enter() {
     shell::sh_draw_clear(); // :719
 }
 
+/// `sh_ldapp`'s `sh_show(fname)` (`gemshlib.c:632`) for a **graphics
+/// `NORMAL_APP`** the built-in desktop runs nested (AES gap G1) — DESK37, the
+/// second half of the screen handover [`sh_gem_enter`] starts.
+///
+/// EmuTOS paints the launch screen in *two* steps, not one:
+///
+/// ```c
+/// sh_draw(D.s_cmd, TRUE);   /* :719 — ob_spec = CLEAR_SCREEN, ROOT only  */
+/// ...
+/// sh_show(fname);           /* :632 — the whole tree, original ob_spec   */
+/// ```
+///
+/// `sh_draw(…, TRUE)` swaps the `DESKTOP` tree ROOT's `ob_spec` for
+/// `CLEAR_SCREEN` (`gemshlib.c:64,279-281`) and draws **only** that root: a
+/// white screen. Its comment "white desktop screen" is true and still
+/// misleading — the white is a state that lasts milliseconds. `sh_show` then
+/// draws the **whole** tree with the root's real `ob_spec`
+/// (`gemshlib.c:284-287`), i.e. the desktop background pattern, the menu-bar
+/// strip, and `DTNAME`'s text, which `sh_draw` has just pointed at `lcmd` —
+/// the name of the program being started.
+///
+/// That background is the **AES**'s, not the desktop's: it is
+/// `rs_trees[DESKTOP][ROOT].ob_spec`, the resource constant `4419` = `0x1143`
+/// (`gem_rsc.c:551-556`) whose low byte `set_aes_background` replaces with the
+/// `.INF` `#Q` byte at AES start-up (`geminit.c:635-641,719-728`) —
+/// [`tos_api::aes::init`]. The desktop's own `#Q` copy (`G.g_patcol`, DESK09)
+/// is a second, independent read of the same line and is *gone* at this point:
+/// `desktop_relinquish` has already un-registered the desktop's background
+/// tree with `wind_set(DESKWH, WF_NEWDESK, NULL)`. Which is why this step is
+/// the AES's to take, and why the screen behind a launched GEM program shows
+/// the `#Q` colour without the desktop being alive.
+///
+/// `cmd` is the full command as `D.s_cmd` holds it; `sh_name` cuts the
+/// filename portion off it exactly as `sh_ldapp` does (`gemshlib.c:594`).
+pub fn sh_gem_show(cmd: &[u8]) {
+    shell::sh_show(shell::sh_name(cmd)); // `sh_show(fname)` (:632)
+}
+
 /// The counterpart of [`sh_gem_enter`] after the nested GEM program has
 /// terminated — `sh_ldapp`'s sweep (`gemshlib.c:668-669,676-677`):
 ///

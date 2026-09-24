@@ -661,3 +661,27 @@ new picture, `Save desktop` writes `#M 00 00 05 FF C DISK C@ @`, and a cold
 start reads it back. `method/pixcheck.py` compares every mask-set pixel of the
 preview and of the desktop icon against `icons.c`: 654 and 618 pixels, zero
 mismatching.
+
+---
+
+## NewTOS implementation notes — `app_start`'s drag outlines and the shortcut half of `app_blddesk` / `app_parse` / `app_save` (DESK30 + DESK36, 2026-09-24)
+
+Two previously unimplemented pieces of `deskapp.c` landed together.
+
+**`app_start:988-1011` — `G.g_xyicon` / `G.g_xytext`.** The two point lists
+`gr_drgplns` translates once per dragged object are now built in
+`DeskState::app_drag_outlines` (`kernel/src/desk/app.rs`) and carried in
+`DeskState`. The icon outline is the 9-vertex silhouette of one icon cell —
+a column `ib_wicon` wide over a full-cell-wide label box, stepping down at
+`g_hicon - gl_hschar - 2`; the text outline is a `DRAG_BOX_WIDTH`
+(`= 2 + LEN_ZNODE + 1 + LEN_ZEXT` = 14) × one-row rectangle. See
+`deskact.md`'s DESK36 note for the loop that uses them.
+
+**The `AF_ISDESK` file/folder node.** `app_parse`'s `#X`/`#V` arms
+(`:333-343`), the pre-revision-2 `a_pappl`/`a_pdata` swap (`:404-415`), the
+`AF_ISEXEC`-from-extension mark (`:422-426`), `app_save`'s `'X'`/`'V'` type
+switch (`:1224-1243`) and `app_blddesk`'s two shortcut-dependent choices — the
+icon (`:1374-1378`) and the label (`:1392-1396`) — are all implemented.
+`kernel/src/desk/inf.rs` holds the `.INF` halves, `app.rs` the `app_blddesk`
+half. `deskins.md`'s DESK30 note carries the rest of the feature and the
+measurement.

@@ -477,5 +477,64 @@ specific behaviour identified (EmuDesk-specific file).
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00. Filled in when the corresponding implementation
-phase begins.)
+### `gr_drgplns` — the drag loop, and the target highlight (DESK36, 2026-09-24)
+
+Until DESK36 NewTOS's desktop did not run this loop at all: `act_bdown`'s drag
+branch called the **AES** `graf_dragbox` (71), which runs its own loop, draws
+one outline box and returns only the final position. The consequence was the
+defect DESK36 reports — the object under the pointer never inverted, because
+the loop that has to call `act_chg` was inside the AES, and the AES knows
+nothing about `ANODE`s. (`graf_dragbox` was never right here on EmuTOS's own
+terms either: `gembind.md` records that the desktop's binding does not contain
+it, `aesbind.h:103-105`.)
+
+The loop now lives where `deskact.c` has it, in
+`kernel/src/desk/main.rs` — `gr_drgplns`, `gr_bwait`, `gr_isdown`, `gr_plns`,
+`gr_extent`, `gr_obalign`, `rc_constrain` — next to `gr_obfind` and
+`act_bdown`, which were already there because they need the AES trap wrappers.
+The pure halves stay in `kernel/src/desk/act.rs`: `gr_accobs` (the origins of
+the selected objects) and `DeskState::act_chg`/`obj_extent`; `act_chg_draw` in
+`main.rs` is the `dodraw` half, `do_wredraw(wh, rc_intersect(pc, extent))`.
+
+The two outline point lists are `G.g_xyicon`/`G.g_xytext`, built by
+`app_start` (`deskapp.c:988-1011`) and now carried in `DeskState`;
+`DRAG_BOX_WIDTH` is `2 + LEN_ZNODE + 1 + LEN_ZEXT` = 14.
+
+**The desktop needed a VDI binding for this, and that is the one named
+deviation.** `gr_plns` draws the outline with `gsx_pline` → `gsx_xline`, i.e.
+`vsl_udsty` + `v_pline` per segment in `MD_XOR` (`aes/gemgraf.c:140-182`),
+on the workstation EmuTOS's desktop *shares* with the AES — it may, because
+the ROM desktop is linked into the AES. NewTOS's desktop reaches the system
+only through traps, and NewTOS's AES has no VDI workstation to share (it paints
+through the raster backend directly, so nothing ever calls `v_opnwk`). The new
+`kernel/src/desk/vdibind.rs` therefore opens the desktop's **own** virtual
+workstation the way every NewTOS GEM application does — `graf_handle` (AES 77)
+→ `v_opnvwk` — and sets `vsl_type(7)` + `vsl_udsty(0xffff)` on it, which in
+EmuTOS is part of the AES's workstation set-up (`gsx_start`,
+`aes/gemgraf.c:420-422`). `gr_bwait` re-establishes the clip and the write mode
+on every pass, which is what EmuTOS's own comment at `deskact.c:211-214`
+demands anyway. One further collapse: `gsx_attr`'s `gl_mode`/`gl_lcolor` cache
+(`:205-240`) is not reproduced — it saves VDI calls and leaves the workstation
+in the same state either way.
+
+`act_bdown`'s `evnt_button(0x01, 0x01, 0x00, …)` (`:681`), which drains the
+release the drag ended on, was also missing and is now taken.
+
+**Measured** (`measurement-2026-09-24-desk37-desk36-desk30/`, one gesture,
+`method/d36.actions`): a plain file dragged over four targets in turn.
+
+| picture | target | highlight |
+|---|---|---|
+| `d36-after-C-prog.png` | `QED.NAP`, an installed application | **yes** |
+| `d36-after-D-folder.png` | the `SUB` folder | **yes** |
+| `d36-after-E-file.png` | `README.TXT`, a plain file | **no** |
+| `d36-after-F-trash.png` | the desktop trash | **yes** |
+| `d36-after-G-back.png` | the dragged item itself (already `SELECTED`) | not touched |
+| `d36-after-H-released.png` | after the release | all gone |
+
+Each `d36-before-*` counterpart shows one box outline and no highlight at all.
+The XOR erase is exact: `d36-after-H-released.png` differs from
+`d36-after-B-win1.png` (taken before the drag started) only inside the info
+line and the source item's own cell — bounding box `(58,70)-(383,211)` — so
+the drag left no residue anywhere on the desktop background or on any other
+item.

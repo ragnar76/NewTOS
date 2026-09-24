@@ -16,13 +16,20 @@
 //!   which uses a plain fixed gap).
 
 use tos_api::aes::object::IconBlk;
-use tos_api::vdi::font::{SMALL_CELL_H, SMALL_CELL_W};
+use tos_api::vdi::font::{CELL_H, CELL_W, SMALL_CELL_H, SMALL_CELL_W};
 
-use super::global::{min_wint, DeskState, DROOT, G_ICON, MIN_HINT, NIL};
+use super::global::{min_wint, DeskState, Point, AF_ISEXEC, DROOT, G_ICON, MIN_HINT, NIL};
 use super::icons::{
-    build_iconblk, icon_kind, IconKind, IB_HICON, IB_WTEXT, ICON_LABEL_SLACK, MAX_ICONTEXT_WIDTH,
+    build_iconblk, icon_kind, IconKind, IB_HICON, IB_WICON, IB_WTEXT, ICON_LABEL_SLACK,
+    MAX_ICONTEXT_WIDTH,
 };
+
 use super::model::{AType, LEN_LABEL};
+
+/// `DRAG_BOX_WIDTH` (`deskapp.c:57`): `2 + LEN_ZNODE + 1 + LEN_ZEXT` = 14 —
+/// the width, in normal-font characters, of the outline dragged for an item
+/// shown as text (`sysconf.h:53-54`).
+const DRAG_BOX_WIDTH: i16 = 2 + 8 + 1 + 3;
 
 impl DeskState {
     /// `app_start` (icon-metric portion, `deskapp.c:810-817`). Requires
@@ -60,6 +67,58 @@ impl DeskState {
         self.g_icw = self.g_desk.w / xcnt;
         let ycnt = (self.g_desk.h / (self.g_hicon + MIN_HINT)).max(1);
         self.g_ich = self.g_desk.h / ycnt;
+
+        self.app_drag_outlines();
+    }
+
+    /// The second half of `app_start` (`deskapp.c:988-1011`) — the two drag
+    /// outlines `gr_drgplns` draws while the user drags a selection, built from
+    /// the icon metrics just computed.
+    ///
+    /// **Icon outline** (9 vertices, `:989-1005`): the silhouette of one icon
+    /// cell — a narrow column the width of the icon *bitmap*, centred over a
+    /// full-cell-wide label box. `xcent` is the bitmap's inset,
+    /// `(g_wicon - ib_wicon) / 2`, the same recentre `build_iconblk` applies to
+    /// `ib_xicon`; the step down happens at `g_hicon - gl_hschar - 2`, i.e.
+    /// where the label starts.
+    ///
+    /// **Text outline** (5 vertices, `:1007-1011`): a plain rectangle
+    /// `DRAG_BOX_WIDTH` normal-font characters wide and one row high, for the
+    /// `V_TEXT` views.
+    ///
+    /// Both lists are **relative** to an item's top-left; `gr_plns` adds the
+    /// per-object origin `gr_accobs` collected.
+    fn app_drag_outlines(&mut self) {
+        // `xcent = (G.g_wicon - G.g_iblist[0].ib_wicon) / 2;` (`:991`) — the
+        // shipped icon bitmap width, which is `IB_WICON` for every icon in the
+        // built-in set (`icons.rs`).
+        let xcent = (self.g_wicon - IB_WICON) / 2;
+        let step = self.g_hicon - SMALL_CELL_H - 2; // `g_hicon-gl_hschar-2`
+        let (w, h) = (self.g_wicon, self.g_hicon);
+        self.g_xyicon = [
+            Point { x: xcent, y: 0 },
+            Point { x: xcent, y: step },
+            Point { x: 0, y: step },
+            Point { x: 0, y: h },
+            Point { x: w, y: h },
+            Point { x: w, y: step },
+            Point { x: w - xcent, y: step },
+            Point { x: w - xcent, y: 0 },
+            Point { x: xcent, y: 0 },
+        ];
+
+        // `G.g_xytext[1].x = gl_wchar * DRAG_BOX_WIDTH;` etc. (`:1008-1011`) —
+        // the other two vertices stay at the `bzero`'d origin, which closes the
+        // rectangle.
+        let tw = CELL_W * DRAG_BOX_WIDTH;
+        let th = CELL_H;
+        self.g_xytext = [
+            Point { x: 0, y: 0 },
+            Point { x: tw, y: 0 },
+            Point { x: tw, y: th },
+            Point { x: 0, y: th },
+            Point { x: 0, y: 0 },
+        ];
     }
 
     /// `snap_icon` (`deskins.c:146-184`) — round a raw pixel position to the
@@ -128,21 +187,45 @@ impl DeskState {
 
         for i in 0..self.g_ahead.len() {
             let pa = &self.g_ahead[i];
-            let (x, y, atype, letter, aicon) = (pa.a_xspot, pa.a_yspot, pa.a_type, pa.a_letter, pa.a_aicon);
-            // "choose appropriate icon" (`deskapp.c:1371-1375`): a desktop icon
-            // has no data icon, so it is always `a_aicon`. EmuTOS indexes
-            // `G.g_iblist[icon]` straight away, because `app_parse` has already
-            // made the number usable — out of range becomes `IG_APPL`
-            // (`deskapp.c:359-361`), which [`super::inf`]'s parser reproduces.
-            // The one value that still names no picture is `-1` (`FF` on an
-            // `#M`/`#T`/`#O` line, which only a hand-written file can carry:
-            // `build_inf` puts the icon number there, `deskapp.c:723`); EmuTOS
-            // would read `g_iblist[-1]`, so NewTOS takes `app_parse`'s own
-            // answer for an unusable `a_aicon` instead.
-            let kind = icon_kind(aicon).unwrap_or(IconKind::App);
+            let (x, y, atype, letter) = (pa.a_xspot, pa.a_yspot, pa.a_type, pa.a_letter);
+            // "choose appropriate icon" (`deskapp.c:1373-1378`):
+            //
+            // ```c
+            // if ((pa->a_dicon < 0) || ((pa->a_type == AT_ISFILE) && (pa->a_flags & AF_ISEXEC)))
+            //     icon = pa->a_aicon;
+            // else
+            //     icon = pa->a_dicon;
+            // ```
+            //
+            // A drive/trash/printer node has no data icon (`a_dicon == NIL`),
+            // so it always takes the first arm; a shortcut takes the
+            // application icon when the file is executable and the document
+            // icon otherwise.
+            //
+            // EmuTOS indexes `G.g_iblist[icon]` straight away, because
+            // `app_parse` has already made the number usable — out of range
+            // becomes `IG_APPL` (`deskapp.c:359-361`), which [`super::inf`]'s
+            // parser reproduces. The one value that still names no picture is
+            // `-1` (`FF` on an `#M`/`#T`/`#O` line, which only a hand-written
+            // file can carry: `build_inf` puts the icon number there,
+            // `deskapp.c:723`); EmuTOS would read `g_iblist[-1]`, so NewTOS
+            // takes `app_parse`'s own answer for an unusable number instead.
+            let icon = if pa.a_dicon < 0 || (pa.a_type == AType::File && pa.a_flags & AF_ISEXEC != 0)
+            {
+                pa.a_aicon
+            } else {
+                pa.a_dicon
+            };
+            let kind = icon_kind(icon).unwrap_or(IconKind::App);
+            // "the label position varies" (`deskapp.c:1392-1396`): a shortcut
+            // is labelled with its bare file name (`a_pdata`), everything else
+            // with `a_pappl`.
             let label = {
                 let mut buf = [0u8; LEN_LABEL];
-                let src = pa.a_pappl.as_bytes();
+                let src = match pa.a_type {
+                    AType::File | AType::Folder => pa.a_pdata.as_bytes(),
+                    _ => pa.a_pappl.as_bytes(),
+                };
                 let n = src.len().min(LEN_LABEL - 1);
                 buf[..n].copy_from_slice(&src[..n]);
                 buf
@@ -165,6 +248,14 @@ impl DeskState {
             return None;
         }
         self.g_ahead.iter().position(|pa| pa.a_obid == obid)
+    }
+
+    /// The `(a_type, a_aicon)` of the desktop node `app_afind_by_id` finds —
+    /// `i_find`'s desktop arm (`desksupp.c:1746-1749`) reads exactly these two
+    /// fields and nothing else.
+    pub fn app_afind_id_type(&self, obid: i16) -> Option<(AType, i16)> {
+        let i = self.app_afind_by_id(obid)?;
+        Some((self.g_ahead[i].a_type, self.g_ahead[i].a_aicon))
     }
 
     /// Allocate and populate one desktop `G_ICON` at pixel `(x, y)` relative to

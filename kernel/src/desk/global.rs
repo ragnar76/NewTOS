@@ -137,6 +137,24 @@ pub struct Grect {
     pub h: i16,
 }
 
+/// An x/y pair in device pixels (EmuTOS `Point`, `include/gemdos.h`-adjacent
+/// `obdefs.h:34-38`). Used for the drag-outline polylines and for the list of
+/// selected-object origins `gr_accobs` builds.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub struct Point {
+    /// Horizontal offset.
+    pub x: i16,
+    /// Vertical offset.
+    pub y: i16,
+}
+
+/// `NUM_ICON_POINTS` (`deskbind.h:123`) — the vertex count of the drag
+/// outline of an item shown as an **icon** (on the desktop or in a window).
+pub const NUM_ICON_POINTS: usize = 9;
+/// `NUM_TEXT_POINTS` (`deskbind.h:124`) — the vertex count of the drag
+/// outline of an item shown as **text** (in a window): a plain rectangle.
+pub const NUM_TEXT_POINTS: usize = 5;
+
 /// A fully-empty `OBJECT`, used to grow the arena before it is wired up.
 const EMPTY_OBJ: Object = Object {
     ob_next: NIL,
@@ -336,22 +354,43 @@ pub const DEF_DCLICK: u8 = 2;
 /// half. Both halves serialise into the same file, in the same `ANODE` line
 /// grammar — the split is internal.
 ///
-/// NewTOS has no desktop **shortcuts** (a file or folder icon parked on the
-/// desktop): there is no `AT_ISFILE`/`AT_ISFOLD` variant here, so `a_pdata`
-/// and `a_pargs` have no reader and are not carried. `a_pappl` is therefore
-/// always the icon's label (`deskapp.h:88-90`, usage (1)).
+/// Since DESK30 the list also holds desktop **shortcuts**
+/// (`CONF_WITH_DESKTOP_SHORTCUTS`): a file or folder icon parked on the
+/// desktop, `a_type` `AT_ISFILE`/`AT_ISFOLD`, written as an `#X`/`#V` line.
+/// For those, `a_pappl` is the **full path** and `a_pdata` the bare file name
+/// (`deskapp.h:88-90`, usage (2); `ins_shortcut`, `deskins.c:1380-1381`);
+/// for a drive, the trash and the printer `a_pappl` stays the icon's label
+/// (usage (1)) and `a_pdata` is empty. `a_pargs` still has no reader: EmuTOS
+/// writes it only for the non-`AF_ISDESK` association nodes
+/// (`app_save`, `deskapp.c:1263-1270`), which live in [`super::inf`].
 #[derive(Clone)]
 pub struct Anode {
-    /// `a_type` — `AT_ISDISK` / `AT_ISTRSH` / `AT_ISPRNT`.
+    /// `a_type` — `AT_ISDISK` / `AT_ISTRSH` / `AT_ISPRNT`, and since DESK30
+    /// also `AT_ISFILE` / `AT_ISFOLD` for a shortcut
+    /// (`app_parse`, `deskapp.c:333-344`).
     pub a_type: AType,
     /// `a_letter` — the drive letter drawn into the bitmap, `0` for none.
     pub a_letter: u8,
     /// `a_aicon` — the icon number, in EmuTOS's `IG_*` numbering
-    /// ([`super::icons::ig_of`]). A desktop icon has no separate data icon, so
-    /// `a_dicon` is always `NIL` and is not carried.
+    /// ([`super::icons::ig_of`]). A drive/trash/printer icon has no separate
+    /// data icon; a shortcut copies both numbers from the `ANODE` that governs
+    /// the file, so [`Anode::a_dicon`] carries the second one.
     pub a_aicon: i16,
-    /// `a_pappl` — the icon's label (≤ `MAX_ICONTEXT_WIDTH` characters).
+    /// `a_dicon` — the *data* icon number, `NIL` when the node has none.
+    /// `app_blddesk` chooses between the two (`deskapp.c:1374-1378`).
+    pub a_dicon: i16,
+    /// `a_flags` — the [`AF_ISEXEC`] bit and nothing else. `AF_ISDESK` is
+    /// implicit (every node of `G.g_ahead` *is* a desktop node, which is what
+    /// makes this list the `AF_ISDESK` half of EmuTOS's single one); the
+    /// remaining `AF_*` bits belong to the association list in
+    /// [`super::inf`].
+    pub a_flags: u16,
+    /// `a_pappl` — the icon's label for a drive/trash/printer, the **full
+    /// path** for a shortcut.
     pub a_pappl: String,
+    /// `a_pdata` — the bare file name of a shortcut, which is also its label;
+    /// empty for every other node type.
+    pub a_pdata: String,
     /// `a_xspot` — desired spot on the desktop, in **pixels relative to
     /// [`DROOT`]**. EmuTOS's is screen-absolute because its `app_blddesk` sizes
     /// `DROOT` to the whole screen (`deskapp.c:1344`); ours sizes it to the work
@@ -364,6 +403,12 @@ pub struct Anode {
     /// [`NIL`] before the first build (`deskapp.c:1369`).
     pub a_obid: i16,
 }
+
+/// `AF_ISEXEC` (`deskapp.h:37`) — "this is an executable file". Set on a
+/// desktop shortcut whose name has a program extension (`ins_shortcut`,
+/// `deskins.c:1372-1373`); `app_blddesk` reads it to prefer the *application*
+/// icon over the data icon (`deskapp.c:1374-1378`).
+pub const AF_ISEXEC: u16 = 0x4000;
 
 /// The desktop's process-lifetime global state (EmuTOS `GLOBES G`).
 pub struct DeskState {
@@ -467,6 +512,16 @@ pub struct DeskState {
     /// Desktop grid pitch, y (`g_ich`) — set by `app_start()`.
     pub g_ich: i16,
 
+    /// `G.g_xyicon` (`deskbind.h:190`) — "outline for dragging file as icon",
+    /// the 9-vertex polyline of one icon cell (bitmap column narrower than the
+    /// label box below it). Built by `app_start` (`deskapp.c:990-1005`) from
+    /// `g_wicon`/`g_hicon`, so it follows the icon metrics.
+    pub g_xyicon: [Point; NUM_ICON_POINTS],
+    /// `G.g_xytext` (`deskbind.h:191`) — "outline for dragging file as text",
+    /// the 5-vertex rectangle `DRAG_BOX_WIDTH` characters wide and one text row
+    /// high (`deskapp.c:1007-1011`).
+    pub g_xytext: [Point; NUM_TEXT_POINTS],
+
     /// Desktop work-area rectangle (screen minus the menu bar) (`g_desk`).
     pub g_desk: Grect,
 
@@ -553,6 +608,10 @@ impl DeskState {
             g_hicon: 0,
             g_icw: 0,
             g_ich: 0,
+            // `bzero(G.g_xyicon, …)` / `bzero(G.g_xytext, …)` before
+            // `app_start` fills them (`deskapp.c:989,1007`).
+            g_xyicon: [Point::default(); NUM_ICON_POINTS],
+            g_xytext: [Point::default(); NUM_TEXT_POINTS],
             g_desk,
             g_croot: DROOT,
             g_cwin: super::win::DESKWH,

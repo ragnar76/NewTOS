@@ -55,8 +55,8 @@ use tos_api::vdi::font::{CELL_H, CELL_W};
 use tos_types::error::E_OK;
 
 use super::dosbind::{
-    dos_close, dos_create, dos_delete, dos_mkdir, dos_open, dos_read, dos_rename, dos_rmdir,
-    dos_sdta, dos_setdt, dos_sfirst, dos_snext, dos_write,
+    dos_close, dos_create, dos_delete, dos_gdrv, dos_mkdir, dos_open, dos_read, dos_rename,
+    dos_rmdir, dos_sdta, dos_setdt, dos_sfirst, dos_snext, dos_write,
 };
 use super::global::{self, DeskState, DROOT, NIL};
 use super::inf::{
@@ -1391,18 +1391,20 @@ fn fun_del_desktop() -> bool {
             false
         }
         DeleteChoice::Delete => {
-            // Whole-disk / desktop-icon delete: gather each selected disk icon's
-            // drive root and delete its full contents. `delete_ffd(path,
-            // pa->a_type)` (`deskfun.c:1380,1365`) hands the icon's own type
-            // down, so `dir_op` raises `STDELDIS` once per drive on top of the
-            // `wants_to_delete_files` answer above — EmuTOS asks both.
-            let targets = desktop_selected_disks();
+            // Desktop-icon delete: for each selected icon, the path
+            // `fun_del`'s switch builds (`deskfun.c:1393-1403`) — the drive
+            // root with `*.*` for a disk, `a_pappl` for a shortcut — and then
+            // `delete_ffd(path, pa->a_type)` on it (`:1405`). The icon's own
+            // type goes down with it (`:1365`), so `dir_op` raises `STDELDIS`
+            // once per **drive** on top of the `wants_to_delete_files` answer
+            // above (EmuTOS asks both) and stays silent for a shortcut.
             let mut any = false;
-            for root in targets {
-                let entries = root_entries(&root);
-                if !entries.is_empty()
-                    && fun_op(Op::Delete, Some(AType::Disk), &root, &entries, None)
-                {
+            for src in desktop_selected_sources() {
+                if src.entries.is_empty() {
+                    continue;
+                }
+                let icontype = (src.atype == AType::Disk).then_some(AType::Disk);
+                if fun_op(Op::Delete, icontype, &src.dir, &src.entries, None) {
                     any = true;
                 }
             }
@@ -1540,21 +1542,26 @@ fn fun_confirm(msg: &[u8]) -> bool {
 /// `fun_drag` — dispatch a completed drag gesture (EmuTOS `deskfun.c:1302`).
 /// `wh` = source window handle ([`DESKWH`] for the desktop), `dest_wh` =
 /// destination window handle (`0`/[`DESKWH`] if dropped on the desktop),
-/// `dobj` = destination object index, `keystate` = modifiers at drop.
+/// `dobj` = destination object index, `(mx, my)` = the drop point EmuTOS's
+/// `act_bdown` passes back (the top-left of the dragged outline, `deskact.c:
+/// 683-684`), `keystate` = modifiers at drop.
 ///
 /// Returns `exit_desktop`. EmuTOS sets it when a dropped file launched a
 /// program so that `deskmain` leaves and the AES shell loads the child;
 /// NewTOS launches **nested** (AES gap G1, `super::main::launch_native`), so
 /// the window-to-window branch — the one that can launch (DESK19) — hands back
 /// `false` after the child has already run and the desktop is back.
-pub fn fun_drag(wh: i16, dest_wh: i16, dobj: i16, keystate: u16) -> bool {
+pub fn fun_drag(wh: i16, dest_wh: i16, dobj: i16, mx: i16, my: i16, keystate: u16) -> bool {
     if wh != DESKWH {
         // Dragging FROM a window.
         if dest_wh != DESKWH && dest_wh != NIL {
             return fun_win2win(wh, dest_wh, dobj, keystate);
         } else if dobj == DROOT {
-            // Drop onto empty desktop: making a desktop shortcut is Task #14.
-            fun_alert(1, b"Can't drop items here.");
+            // "dropping onto desktop surface" (`deskfun.c:1312-1319`): with
+            // `CONF_WITH_DESKTOP_SHORTCUTS` this installs a shortcut; the
+            // `#else` arm is the `fun_alert(1, STNODRA1)` NewTOS used to raise
+            // (DESK30).
+            super::ins::ins_shortcut(wh, mx, my);
         } else {
             fun_win2desk(wh, dobj, keystate);
         }
@@ -1617,7 +1624,7 @@ fn build_selected_path(src_dir: &str, entries: &[SelEntry], fullpath: bool) -> O
 /// [`super::inf::app_afind_by_name`] exactly as `win_icalc` resolves the
 /// icon. [`None`] where EmuTOS's `pf`/`pa` would be `NULL` — a non-item
 /// object, or a name no `ANODE` claims.
-fn i_find_win(dst_wh: i16, dobj: i16) -> Option<(String, super::inf::Afind)> {
+pub(super) fn i_find_win(dst_wh: i16, dobj: i16) -> Option<(String, super::inf::Afind)> {
     if dobj < 0 {
         return None;
     }
@@ -1638,6 +1645,128 @@ fn i_find_win(dst_wh: i16, dobj: i16) -> Option<(String, super::inf::Afind)> {
     .flatten()?;
     let pa = super::inf::app_afind_by_name(atype, &spec, &name)?;
     Some((name, pa))
+}
+
+/// `i_find(wh, item, NULL, &isapp)` (EmuTOS `desksupp.c:1731-1779`), reduced
+/// to the pair its drag-highlight caller reads: the governing `ANODE`'s
+/// `a_type` and whether the name matched it as an **application**.
+///
+/// Both arms of the original are here:
+///
+/// * `wh == DESKWH` → `app_afind_by_id(item)` (`:1746`), plus its `isapp`
+///   rule "an `AT_ISFILE` desktop node is an application iff it has an
+///   application icon" (`:1748-1749`). NewTOS's desktop list holds no
+///   `AT_ISFILE` node yet — that is the `CONF_WITH_DESKTOP_SHORTCUTS` half of
+///   DESK15, open as DESK30 — so today the rule only ever sees
+///   disk/trash/printer, for which EmuTOS also leaves `isapp` FALSE. It is
+///   written out in full anyway, so a shortcut node lands on the right answer
+///   the moment one can exist.
+/// * a window → `app_afind_by_name(folder ? AT_ISFOLD : AT_ISFILE, …)`
+///   (`:1766-1767`), i.e. [`i_find_win`].
+///
+/// [`None`] is EmuTOS's `pa == NULL`: no `ANODE` governs this object.
+pub(super) fn i_find_atype(wh: i16, obj: i16) -> Option<(AType, bool)> {
+    if wh == super::win::DESKWH {
+        let (atype, aicon) = global::with(|g| g.app_afind_id_type(obj)).flatten()?;
+        let isapp = atype == AType::File && aicon >= 0;
+        return Some((atype, isapp));
+    }
+    i_find_win(wh, obj).map(|(_, pa)| (pa.atype, pa.isapp))
+}
+
+/// `item_exists` for a desktop shortcut: does the file or folder its
+/// `a_pappl` names still exist? EmuTOS calls `file_exists(pathname, pname)`
+/// (`desksupp.c:862`) with the path split in two; ours takes the whole path
+/// and switches the probe on the node type, which is [`item_exists`]'s own
+/// distinction (`deskdir.c:186-208`).
+pub(super) fn shortcut_exists(path: &str, is_folder: bool) -> bool {
+    item_exists(path, is_folder)
+}
+
+/// `remove_locate_shortcut(curr)` (EmuTOS `desksupp.c:376-412`,
+/// `CONF_WITH_DESKTOP_SHORTCUTS`) — the orphan prompt: the file a desktop
+/// shortcut points at is gone, so ask whether to remove the icon or to point
+/// it somewhere else.
+///
+/// ```text
+/// [2][%s not found.|Do you want to remove the|icon or locate the item?][Remove|Locate|Cancel]
+/// ```
+/// (`STRMVLOC`, `desk_rsc.c:2531-2533`; the `%s` is `filename_start(a_pdata)`,
+/// `:391`.) *Remove* frees the `ANODE` and rebuilds the desktop (`:394-397`);
+/// *Locate* runs the file selector titled `STLOCATE` ("Locate item",
+/// `desk_rsc.c:2487`) from the root of the boot drive and rewrites `a_pappl`
+/// with what the user picked — the **file name** for an `AT_ISFILE` node, the
+/// **directory** (the path with its trailing separator cut) for an
+/// `AT_ISFOLD` one (`:405-410`). *Cancel* leaves the orphan standing.
+pub(super) fn remove_locate_shortcut(curr: i16) {
+    let Some((atype, label)) = global::with(|g| {
+        g.app_afind_by_id(curr).map(|i| (g.g_ahead[i].a_type, g.g_ahead[i].a_pdata.clone()))
+    })
+    .flatten() else {
+        return; // "can't happen" (`:388-389`)
+    };
+
+    let mut text = Vec::with_capacity(label.len() + 96);
+    text.extend_from_slice(b"[2][");
+    text.extend_from_slice(label.as_bytes());
+    text.extend_from_slice(
+        b" not found.|Do you want to remove the|icon or locate the item?][Remove|Locate|Cancel]\0",
+    );
+    match super::form_alert(1, text.as_ptr()) {
+        1 => {
+            // `app_free(pa); app_blddesk();` (`:395-396`).
+            global::with(|g| {
+                if let Some(i) = g.app_afind_by_id(curr) {
+                    g.g_ahead.remove(i);
+                }
+            });
+            super::main::rebuild_desktop_icons();
+        }
+        2 => {
+            // `build_root_path(path, 'A'+G.g_stdrv); fname[0] = '\0';` (`:399-400`).
+            let mut path = [0u8; super::inf::FSEL_PATH_LEN];
+            let mut sel = [0u8; super::inf::FSEL_NAME_LEN];
+            let root = root_path_of_boot_drive();
+            path[..root.len()].copy_from_slice(root.as_bytes());
+            let (rc, button) = super::fsel_exinput(&mut path, &mut sel, b"Locate item\0");
+            if rc == 0 || button == 0 {
+                return;
+            }
+            let chosen = cstr_of(&path);
+            let name = cstr_of(&sel);
+            // `p = filename_start(path); if (AT_ISFILE) strcpy(p, fname);
+            //  else *(p-1) = '\0';` (`:405-409`).
+            let dir_end = chosen.rfind('\\').map_or(0, |i| i + 1);
+            let mut newpath = String::from(&chosen[..dir_end]);
+            if atype == AType::File {
+                newpath.push_str(&name);
+            } else if dir_end > 0 {
+                newpath.truncate(dir_end - 1); // drop the trailing separator
+            }
+            global::with(|g| {
+                if let Some(i) = g.app_afind_by_id(curr) {
+                    g.g_ahead[i].a_pappl = newpath.clone();
+                }
+            });
+        }
+        _ => {} // Cancel
+    }
+}
+
+/// `build_root_path(path, 'A'+G.g_stdrv)` (`desksupp.c:399`) — `"X:\"` for the
+/// boot drive, which is where the *Locate* file selector starts.
+fn root_path_of_boot_drive() -> String {
+    let drive = dos_gdrv();
+    let mut s = String::new();
+    s.push((b'A' + (drive & 0xff) as u8) as char);
+    s.push_str(":\\");
+    s
+}
+
+/// The Rust string inside a NUL-terminated byte buffer the AES wrote back.
+fn cstr_of(buf: &[u8]) -> String {
+    let n = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    core::str::from_utf8(&buf[..n]).unwrap_or("").into()
 }
 
 /// `fun_win2win` — copy/move between two windows, **or** launch the program
@@ -1734,8 +1863,55 @@ fn fun_file2desk(
         (info.atype, (info.block.ib_char & 0xFF) as u8)
     })
     .unwrap_or((AType::None, 0));
+    // The destination's own `ANODE` — needed for the two shortcut arms, which
+    // read `a_aicon` and `a_pappl` (`deskfun.c:1018-1040`).
+    let dest = global::with(|g| {
+        g.app_afind_by_id(dobj).map(|i| (g.g_ahead[i].a_aicon, g.g_ahead[i].a_pappl.clone()))
+    })
+    .flatten();
 
     match atype {
+        // "dropping something onto a file" (`deskfun.c:1021-1034`): only a
+        // **program** takes a drop, and it takes it as a launch with the
+        // dragged item as the command tail. `a_aicon < 0` means "not a
+        // program", and EmuTOS then does nothing at all — no alert.
+        AType::File => {
+            let Some((aicon, pappl)) = dest else {
+                return false;
+            };
+            if aicon < 0 {
+                return false;
+            }
+            let Some(tail) = build_selected_path(
+                src_dir,
+                entries,
+                global::with(|g| g.g_fullpath).unwrap_or(true),
+            ) else {
+                return false;
+            };
+            // `strcpy(pathname, an_dest->a_pappl); del_fname(pathname);` — the
+            // program's own directory — and `filename_start(a_pappl)` as the
+            // name (`:1029-1033`).
+            let cut = pappl.rfind('\\').map_or(0, |i| i + 1);
+            let dst_dir = String::from(&pappl[..cut]);
+            let dst_name = String::from(&pappl[cut..]);
+            // A desktop shortcut is never an *installed* application in the
+            // `.INF` sense — `is_installed(pa)` tests `a_pappl` of an
+            // association node — so the directory choice falls to the desktop
+            // flag `G.g_appdir`, which is `do_aopen`'s `else` arm
+            // (`desksupp.c:903-912`).
+            super::main::do_aopen_drop(false, &pappl, false, &dst_dir, &dst_name, &tail);
+            false
+        }
+        // "dropping file on folder - copy or move" (`:1035-1040`).
+        AType::Folder => {
+            let Some((_, pappl)) = dest else {
+                return false;
+            };
+            let mut dst = pappl;
+            dst.push('\\');
+            fun_op(drag_op(keystate), icontype_src, src_dir, entries, Some(&dst))
+        }
         AType::Disk => {
             if !letter.is_ascii_uppercase() {
                 return false;
@@ -1753,7 +1929,7 @@ fn fun_file2desk(
             // (`deskdir.c:906`).
             fun_op(Op::Delete, icontype_src, src_dir, entries, None)
         }
-        // File/Folder shortcuts and the printer are Task #14 (deskins/print).
+        // The printer is Task #14 (`fun_print`).
         _ => {
             fun_alert(1, b"Operation not allowed.");
             false
@@ -1765,14 +1941,50 @@ fn fun_file2desk(
 /// copy each selected disk icon's contents into the window. Trash/printer icons
 /// and non-existent drives are skipped.
 fn fun_desk2win(dest_wh: i16, dobj: i16, _keystate: u16) {
+    // "check if we are launching a program by dragging a desktop icon on to
+    // it" (`deskfun.c:1229-1253`, `CONF_WITH_DESKTOP_SHORTCUTS`): when the
+    // destination item is an installed **application**, the drop is a launch
+    // with the source as the command tail, and nothing is copied. The tail is
+    // the drive's root path for a disk icon and the shortcut's own full path
+    // for a shortcut (`:1234-1245`).
+    let sources = desktop_selected_sources();
+    if let Some((dst_name, pda)) = i_find_win(dest_wh, dobj) {
+        if pda.aicon >= 0 {
+            if let Some(src) = sources.first() {
+                let mut tail = String::from(&src.dir);
+                if let Some(e) = src.entries.first() {
+                    let n = e.name.iter().position(|&b| b == 0).unwrap_or(e.name.len());
+                    tail.push_str(core::str::from_utf8(&e.name[..n]).unwrap_or(""));
+                }
+                let dst_dir = window_dir(dest_wh).unwrap_or_default();
+                super::main::do_aopen_drop(
+                    pda.is_installed(),
+                    &pda.pappl,
+                    pda.appdir,
+                    &dst_dir,
+                    &dst_name,
+                    &tail,
+                );
+                return;
+            }
+        }
+    }
+
     let dst_dir = dest_folder_dir(dest_wh, dobj).unwrap_or_else(|| window_dir(dest_wh).unwrap_or_default());
-    let disks = desktop_selected_disks();
     let mut any = false;
-    for root in disks {
-        let entries = root_entries(&root);
+    for src in &sources {
+        if src.entries.is_empty() {
+            // "we are dragging an orphan desktop shortcut. orphans happen when
+            // the corresponding file has been deleted or moved."
+            // (`deskfun.c:1183-1188`).
+            if matches!(src.atype, AType::File | AType::Folder) {
+                remove_locate_shortcut(src.sobj);
+            }
+            continue;
+        }
         // `fun_file2win` passes `-1`, not the source icon's type
         // (`deskfun.c:1113`) — it is a copy, so `STDELDIS` cannot apply anyway.
-        if !entries.is_empty() && fun_op(Op::Copy, None, &root, &entries, Some(&dst_dir)) {
+        if fun_op(Op::Copy, None, &src.dir, &src.entries, Some(&dst_dir)) {
             any = true;
         }
     }
@@ -1792,22 +2004,30 @@ fn fun_desk2desk(dobj: i16, keystate: u16) {
     })
     .unwrap_or((AType::None, 0));
 
-    let sources = desktop_selected_disks_with_obj();
+    let sources = desktop_selected_sources();
     let mut any = false;
-    for (sobj, src_root) in sources {
-        if sobj == dobj {
-            continue; // self-drop
+    for src in sources {
+        if src.sobj == dobj {
+            continue; // `if (!source || (source == target)) continue;` (`:1278`)
         }
-        let entries = root_entries(&src_root);
+        let src_root = src.dir.clone();
+        let entries = src.entries;
         if entries.is_empty() {
+            if matches!(src.atype, AType::File | AType::Folder) {
+                remove_locate_shortcut(src.sobj); // the orphan case (`:1183-1188`)
+            }
             continue;
         }
+        // `icontype = an_src->a_type` (`deskfun.c:1179`) — only a **disk**
+        // source makes `dir_op` raise the whole-drive `STDELDIS` question; a
+        // shortcut is an ordinary file or folder, so it passes `None`.
+        let icontype = (src.atype == AType::Disk).then_some(AType::Disk);
         let ran = match dtype {
             AType::Disk if dletter.is_ascii_uppercase() => {
                 let mut dst = String::new();
                 dst.push(dletter as char);
                 dst.push_str(":\\");
-                fun_op(drag_op(keystate), Some(AType::Disk), &src_root, &entries, Some(&dst))
+                fun_op(drag_op(keystate), icontype, &src_root, &entries, Some(&dst))
             }
             AType::Trash => {
                 // **Not** gated on *Confirm deletes*: the source is a desktop
@@ -1822,7 +2042,7 @@ fn fun_desk2desk(dobj: i16, keystate: u16) {
                 // `dir_op` raises `STDELDIS` for the drive behind it, as EmuTOS
                 // does after its own guard.
                 if fun_confirm(b"Delete the selected item(s)?") {
-                    fun_op(Op::Delete, Some(AType::Disk), &src_root, &entries, None)
+                    fun_op(Op::Delete, icontype, &src_root, &entries, None)
                 } else {
                     false
                 }
@@ -1911,7 +2131,7 @@ pub fn fun_rebld(path: &str) {
 // ── desktop-state helpers ───────────────────────────────────────────────────
 
 /// The directory (ending with `\`) of window `handle`'s `p_spec`.
-fn window_dir(handle: i16) -> Option<String> {
+pub(super) fn window_dir(handle: i16) -> Option<String> {
     global::with(|g| {
         let slot = g.win_slot(handle)?;
         window_dir_of(&g.windows.slots[slot].w_pnode.p_spec)
@@ -1964,33 +2184,93 @@ fn dest_folder_dir(dst_wh: i16, dobj: i16) -> Option<String> {
     .flatten()
 }
 
-/// The drive-root spec (`X:\`) of every selected desktop **disk** icon.
-fn desktop_selected_disks() -> Vec<String> {
-    desktop_selected_disks_with_obj().into_iter().map(|(_, s)| s).collect()
+/// One selected desktop icon in its role as the **source** of a drag — the
+/// `an_src` half of EmuTOS `fun_file2any` (`deskfun.c:1136-1196`).
+///
+/// ```c
+/// if ((an_src->a_type == AT_ISFILE) || (an_src->a_type == AT_ISFOLD))
+///     strcpy(path, an_src->a_pappl);          /* :1149-1152, a shortcut   */
+/// else { build_root_path(path, ib_char); set_all_files(path+3); }  /* a disk */
+/// pn_src = pn_open(path, NULL); ... mark all its files selected
+/// ```
+///
+/// A disk therefore contributes every top-level entry of its root; a shortcut
+/// contributes the **one** file or folder it names. [`DeskSource::entries`]
+/// empty is EmuTOS's `!pn_src->p_flist`, i.e. "we are dragging an orphan
+/// desktop shortcut" (`:1183-1188`).
+struct DeskSource {
+    /// The icon's `g_screen` index, for the self-drop test and the orphan
+    /// prompt.
+    sobj: i16,
+    /// `an_src->a_type`.
+    atype: AType,
+    /// The directory the entries live in, with its trailing separator.
+    dir: String,
+    /// What the drop operates on.
+    entries: Vec<SelEntry>,
 }
 
-/// Like [`desktop_selected_disks`] but also returns each icon's object index.
-fn desktop_selected_disks_with_obj() -> Vec<(i16, String)> {
-    global::with(|g| {
-        let mut v: Vec<(i16, String)> = Vec::new();
+/// Every selected desktop icon that can be the source of a drag, in object
+/// order — the `while ((sobj = win_isel(G.g_screen, DROOT, sobj)))` walk of
+/// `fun_desk2win`/`fun_desk2desk` (`deskfun.c:1209-1211`, `:1274-1276`), with
+/// the trash and the printer skipped as both do (`:1222-1227`, `:1291-1295`).
+fn desktop_selected_sources() -> Vec<DeskSource> {
+    let icons: Vec<(i16, AType, u8, String)> = global::with(|g| {
+        let mut v = Vec::new();
         let mut child = g.g_screen[DROOT as usize].ob_head;
         while child != NIL && child != DROOT {
-            let sel = g.g_screen[child as usize].ob_state & OB_SELECTED != 0;
-            let info = &g.g_screeninfo[child as usize];
-            if sel && info.atype == AType::Disk {
-                let letter = (info.block.ib_char & 0xFF) as u8;
-                if letter.is_ascii_uppercase() {
-                    let mut root = String::new();
-                    root.push(letter as char);
-                    root.push_str(":\\");
-                    v.push((child, root));
+            if g.g_screen[child as usize].ob_state & OB_SELECTED != 0 {
+                if let Some(i) = g.app_afind_by_id(child) {
+                    let pa = &g.g_ahead[i];
+                    v.push((child, pa.a_type, pa.a_letter, pa.a_pappl.clone()));
                 }
             }
             child = g.g_screen[child as usize].ob_next;
         }
         v
     })
-    .unwrap_or_default()
+    .unwrap_or_default();
+
+    let mut out = Vec::new();
+    for (sobj, atype, letter, pappl) in icons {
+        match atype {
+            AType::Disk if letter.is_ascii_uppercase() => {
+                let mut root = String::new();
+                root.push(letter as char);
+                root.push_str(":\\");
+                let entries = root_entries(&root);
+                out.push(DeskSource { sobj, atype, dir: root, entries });
+            }
+            AType::File | AType::Folder => {
+                // `strcpy(path, an_src->a_pappl)` — the shortcut's own full
+                // path. Split it into the directory the operation runs in and
+                // the single entry it selects, which is what `fun_op` takes.
+                let cut = pappl.rfind('\\').map_or(0, |i| i + 1);
+                let dir = String::from(&pappl[..cut]);
+                let name = &pappl[cut..];
+                let entries: Vec<SelEntry> = scan_folder(&dir)
+                    .into_iter()
+                    .filter(|e| {
+                        let n = e.name.iter().position(|&b| b == 0).unwrap_or(e.name.len());
+                        core::str::from_utf8(&e.name[..n])
+                            .map(|s| s.eq_ignore_ascii_case(name))
+                            .unwrap_or(false)
+                    })
+                    .map(|e| SelEntry {
+                        name: e.name,
+                        is_dir: e.is_dir(),
+                        size: e.size,
+                        time: e.time,
+                        date: e.date,
+                    })
+                    .collect();
+                out.push(DeskSource { sobj, atype, dir, entries });
+            }
+            // Trash and printer are never a drag source.
+            _ => {}
+        }
+    }
+    out
 }
 
 /// Scan a drive-root directory (`X:\`) into a full selected-entry list (every

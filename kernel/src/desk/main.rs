@@ -11,15 +11,18 @@
 //! [`super::menu`] and runs after every dispatched event except a bare redraw.
 
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use super::dosbind::{dos_gdrv, dos_sdrv};
-use super::global::{self, Grect, DROOT, MAX_DEPTH, NIL, NUM_WNODES, WINDOW_STYLE};
+use super::global::{self, Grect, Point, DROOT, MAX_DEPTH, NIL, NUM_WNODES, WINDOW_STYLE};
 use super::menu::{self, Item, Title};
+use super::model::{AType, View};
 use super::win::{DESKWH, SliderSet, WA_DNLINE, WA_DNPAGE, WA_LFLINE, WA_RTLINE, WA_UPLINE, WA_UPPAGE};
 use super::{dir, ftype, pro, redraw};
 use super::{
-    wind_get_grect, wind_get_top, wind_get_work, MU_BUTTON, MU_KEYBD, MU_MESAG, MU_TIMER, WF_CXYWH,
-    WF_FXYWH, WF_HSLIDE, WF_HSLSIZ, WF_INFO, WF_NAME, WF_PXYWH, WF_TOP, WF_VSLIDE, WF_VSLSIZ,
+    wind_get_grect, wind_get_top, wind_get_work, FLATHAND, MU_BUTTON, MU_KEYBD, MU_MESAG, MU_TIMER,
+    M_OFF, M_ON, WF_CXYWH, WF_FXYWH, WF_HSLIDE, WF_HSLSIZ, WF_INFO, WF_NAME, WF_PXYWH, WF_TOP,
+    WF_VSLIDE, WF_VSLSIZ,
 };
 
 // AES message ids (`aesdefs.h:227-261`).
@@ -222,6 +225,247 @@ fn gr_obfind(root: i16, mx: i16, my: i16) -> i16 {
     }
 }
 
+/// `gr_extent(numpts, xylnpts, pt)` (EmuTOS `deskact.c:169-188`) — the
+/// bounding rectangle of a list of points, right/bottom **inclusive**
+/// (`gx - lx + 1`). An empty list yields a zero rectangle, which is the
+/// degenerate case neither caller can reach.
+fn gr_extent(pts: &[Point]) -> Grect {
+    let (mut lx, mut ly) = (i16::MAX, i16::MAX);
+    let (mut gx, mut gy) = (0i16, 0i16);
+    for p in pts {
+        lx = lx.min(p.x);
+        ly = ly.min(p.y);
+        gx = gx.max(p.x);
+        gy = gy.max(p.y);
+    }
+    if pts.is_empty() {
+        return Grect::default();
+    }
+    Grect { x: lx, y: ly, w: gx - lx + 1, h: gy - ly + 1 }
+}
+
+/// `gr_obalign(numobs, x, y, xyobpts)` (EmuTOS `deskact.c:234-242`) — make the
+/// per-object origins relative to the drag extent's top-left.
+fn gr_obalign(pts: &mut [Point], x: i16, y: i16) {
+    for p in pts {
+        p.x -= x;
+        p.y -= y;
+    }
+}
+
+/// `rc_constrain(pc, pt)` (EmuTOS `util/rectfunc.c:32-42`) — slide `pt` back
+/// inside `pc` without resizing it.
+fn rc_constrain(pc: Grect, pt: &mut Grect) {
+    if pt.x < pc.x {
+        pt.x = pc.x;
+    }
+    if pt.y < pc.y {
+        pt.y = pc.y;
+    }
+    if pt.x + pt.w > pc.x + pc.w {
+        pt.x = pc.x + pc.w - pt.w;
+    }
+    if pt.y + pt.h > pc.y + pc.h {
+        pt.y = pc.y + pc.h - pt.h;
+    }
+}
+
+/// `gr_plns(x, y, numpts, xylnpts, numobs, xyobpts)` (EmuTOS
+/// `deskact.c:195-207`) — complement the outline polyline once per dragged
+/// object, at `(x, y)` plus that object's aligned origin, with the mouse
+/// hidden for the whole batch.
+fn gr_plns(x: i16, y: i16, xylnpts: &[Point], xyobpts: &[Point]) {
+    super::graf_mouse(M_OFF);
+    for o in xyobpts {
+        super::vdibind::gsx_pline(x + o.x, y + o.y, xylnpts);
+    }
+    super::graf_mouse(M_ON);
+}
+
+/// `gr_isdown(out, x, y, w, h)` (EmuTOS `deskact.c:66-77`) — block until the
+/// pointer leaves the `w`×`h` rectangle at `(x, y)` or the button comes up.
+/// `true` means "still dragging".
+fn gr_isdown(out: bool, x: i16, y: i16, w: i16, h: i16) -> bool {
+    super::evnt_multi_m1(out, x, y, w, h) & super::MU_BUTTON == 0
+}
+
+/// `gr_bwait(po, mx, my, …)` (EmuTOS `deskact.c:209-232`) — draw the drag
+/// outline at `po`, wait for the mouse to move or the button to come up, then
+/// erase it again. Returns `gr_isdown`'s "still down".
+///
+/// The clip and the writing mode are re-established on **every** pass, which
+/// is EmuTOS's own comment at `:211-214` ("Since the desktop and the AES
+/// currently share the same VDI workstation, we have to reset the clipping and
+/// drawing mode here"). Complementing twice at the same place is what erases
+/// the outline, so between the two `gr_plns` calls nothing may repaint under
+/// it — and nothing does: the highlight `act_chg` draws happens *after* the
+/// erase, back in [`gr_drgplns`]'s loop body.
+fn gr_bwait(po: Grect, mx: i16, my: i16, xylnpts: &[Point], xyobpts: &[Point]) -> bool {
+    super::vdibind::gsx_sclip(super::screen_rect());
+    super::vdibind::gsx_attr_line(super::vdibind::MD_XOR, super::vdibind::BLACK);
+    gr_plns(po.x, po.y, xylnpts, xyobpts); // draw old
+    let down = gr_isdown(true, mx, my, 2, 2); // wait for change
+    gr_plns(po.x, po.y, xylnpts, xyobpts); // erase old
+    down
+}
+
+/// `act_chg(wh, root, obj, pc, set, dodraw)` (EmuTOS `deskact.c:419-466`) —
+/// the state change plus, when it actually changed something, the repaint of
+/// the object's own extent clipped to `pc`.
+///
+/// Split here because [`global::with`] is not re-entrant and
+/// [`redraw::do_wredraw`] takes the desktop lock itself: the `DeskState` half
+/// is [`global::DeskState::act_chg`], the draw half is this wrapper.
+fn act_chg_draw(wh: i16, root: i16, obj: i16, pc: Grect, set: bool) {
+    let Some(t) = global::with(|g| {
+        let extent = g.obj_extent(root, obj);
+        if g.act_chg(wh, obj, set) {
+            extent
+        } else {
+            None
+        }
+    })
+    .flatten() else {
+        return;
+    };
+    // `if (dodraw && rc_intersect(pc, &t)) do_wredraw(wh, &t);` (`:457-460`) —
+    // `rc_intersect` narrows `t` to the visible part before the redraw.
+    if let Some(t) = redraw::rc_intersect(pc, t) {
+        redraw::do_wredraw(wh, t);
+    }
+}
+
+/// `gr_drgplns(…)` (EmuTOS `deskact.c:248-355`) — the desktop's own drag
+/// loop: it complements one outline polyline per selected item while the
+/// pointer moves, and **highlights the object under the pointer** as it goes.
+///
+/// Returns `(dulx, duly, offx, offy, dst_wh, dobj)` — the release point, the
+/// pointer's offset inside the dragged extent, and the window/object the drop
+/// landed on, exactly the six values EmuTOS passes back by pointer.
+///
+/// **This replaces a `graf_dragbox` call (DESK36).** Before it, NewTOS's
+/// desktop handed the whole gesture to the AES: `graf_dragbox` (71) ran the
+/// loop, drew one box, and returned only the final position. That is why no
+/// target ever lit up — the loop that must call `act_chg` was inside the AES,
+/// which knows nothing about `ANODE`s. The loop is now the desktop's, where
+/// EmuTOS has it, and reaches the screen through [`super::vdibind`].
+///
+/// Three rules live in the body and are easy to miss:
+///
+/// 1. **A plain file is not highlighted** (`:340-341`): the `ANODE` `i_find`
+///    resolves must not be an `AT_ISFILE` that matched by *data* name. Folders,
+///    drives, the trash, the printer and installed applications all are.
+/// 2. **Changing target takes the old highlight back first** (`:325-333`), and
+///    an object that is already `SELECTED` is never touched at all (`:335`) —
+///    dragging over one's own selection must not flicker it.
+/// 3. **The highlight is always taken back on release** (`:353-354`), whether
+///    or not the drop then succeeds.
+fn gr_drgplns(
+    in_mx: i16,
+    in_my: i16,
+    pc: Grect,
+    xylnpts: &[Point],
+    xyobpts: &mut [Point],
+) -> (i16, i16, i16, i16, i16, i16) {
+    super::graf_mouse(FLATHAND); // `graf_mouse(FLATHAND, NULL)` (`:264`)
+
+    let (mut l_mx, mut l_my) = (in_mx, in_my);
+
+    // Extent of one polygon, then of the whole set of origins; the outline's
+    // own size is added so the constrained box covers the drawn pixels
+    // (`:267-275`).
+    let ln = gr_extent(xylnpts);
+    let mut o = gr_extent(xyobpts);
+    o.w += ln.w;
+    o.h += ln.h;
+    gr_obalign(xyobpts, o.x, o.y);
+
+    let offx = l_mx - o.x;
+    let offy = l_my - o.y;
+
+    let mut curr_wh = 0i16;
+    let mut curr_root = 0i16;
+    let mut curr_sel = 0i16;
+    // Both are set on every pass of the loop below, which always runs at least
+    // once — the `do { } while` of `deskact.c:284-352`.
+    let mut dst_wh;
+    let mut dobj;
+
+    loop {
+        o.x = l_mx - offx;
+        o.y = l_my - offy;
+        rc_constrain(pc, &mut o);
+        let down = gr_bwait(o, l_mx, l_my, xylnpts, xyobpts);
+
+        let st = super::graf_mkstate(); // `graf_mkstate(&l_mx, &l_my, …)` (`:301`)
+        l_mx = st.mx;
+        l_my = st.my;
+        dst_wh = super::wind_find(l_mx, l_my);
+        // `tree = G.g_screen; root = DROOT; if (dst_wh) { pw = win_find(dst_wh);
+        //  if (pw) root = pw->w_root; else dst_wh = DESKWH; }` (`:303-315`).
+        let root = if dst_wh == DESKWH {
+            DROOT
+        } else {
+            match global::with(|g| g.win_slot(dst_wh).map(|s| g.windows.slots[s].w_root)).flatten() {
+                Some(r) => r,
+                None => {
+                    dst_wh = DESKWH;
+                    DROOT
+                }
+            }
+        };
+        dobj = gr_obfind(root, l_mx, l_my);
+
+        // The body's two `continue`s jump to the `while (down)` test of a
+        // do-while, i.e. they skip the rest of the body but not the exit test.
+        'body: {
+            // `:313-323` — nothing under the pointer any more: drop the
+            // highlight and go round.
+            if dobj == root && curr_sel != 0 {
+                act_chg_draw(curr_wh, curr_root, curr_sel, pc, false);
+                curr_wh = 0;
+                curr_root = 0;
+                curr_sel = 0;
+                break 'body;
+            }
+            // `:325-333` — the target changed: take the old one back first.
+            if dobj != curr_sel && curr_sel != 0 {
+                act_chg_draw(curr_wh, curr_root, curr_sel, pc, false);
+                curr_wh = 0;
+                curr_root = 0;
+                curr_sel = 0;
+            }
+            // `:334-351` — an object that is itself part of the dragged
+            // selection is never highlighted.
+            if global::with(|g| g.is_selected(dobj)).unwrap_or(false) {
+                break 'body;
+            }
+            let Some((atype, isapp)) = dir::i_find_atype(dst_wh, dobj) else {
+                break 'body; // `if (pa)` — no ANODE governs it
+            };
+            if atype == AType::File && !isapp {
+                break 'body; // "don't highlight plain files" (`:340-341`)
+            }
+            curr_wh = dst_wh;
+            curr_root = root;
+            curr_sel = dobj;
+            act_chg_draw(curr_wh, curr_root, curr_sel, pc, true);
+        }
+
+        if !down {
+            break;
+        }
+    }
+
+    // `:353-354` — the highlight always comes back off at the end.
+    if curr_sel != 0 {
+        act_chg_draw(curr_wh, curr_root, curr_sel, pc, false);
+    }
+
+    super::pro::desk_busy_off(); // `desk_busy_off()` (`:362`)
+    (l_mx, l_my, offx, offy, dst_wh, dobj)
+}
+
 /// `act_bdown` (EmuTOS `deskact.c:609`) — the button-held handler, run after
 /// `act_bsclick` when the button is still down: a **rubber-band** select when
 /// the press missed every item, or a **drag** of the current selection when it
@@ -256,36 +500,68 @@ fn act_bdown(handle: i16, root: i16, mx: i16, my: i16) -> bool {
     if !global::with(|g| g.is_selected(sobj)).unwrap_or(false) {
         return false;
     }
-    let Some((ex, ey, ew, eh)) = global::with(|g| g.selection_extent(root)).flatten() else {
+    // `obpts = gr_accobs(tree, root, &numobs); if (numobs) { … }` (`:649-651`).
+    let Some(mut obpts) = global::with(|g| g.gr_accobs(root)) else {
         return false;
     };
-    let desk = g_desk();
-    let bound = Grect { x: 0, y: 0, w: desk.x + desk.w, h: desk.y + desk.h };
-    let (fx, fy) = super::graf_dragbox(ew, eh, ex, ey, bound);
-
-    // Resolve the drop destination from the release point.
-    let st = super::graf_mkstate();
-    let dst_wh = super::wind_find(st.mx, st.my);
-    let dst_root = global::with(|g| g.root_of(dst_wh)).unwrap_or(DROOT);
-    let dobj = gr_obfind(dst_root, st.mx, st.my);
-    let drop_keystate = st.kstate as u16;
-
-    // Self-drop in the same window → cancel (deskact.c:668).
-    if dst_wh == handle && dobj == sobj {
+    if obpts.is_empty() {
         return false;
     }
+    // `view = (root == DROOT) ? V_ICON : G.g_iview;` (`:653-662`) — the desktop
+    // is always icon view; a window uses its own. The outline list follows.
+    let view = if root == DROOT {
+        View::Icon
+    } else {
+        global::with(|g| g.view).unwrap_or(View::Icon)
+    };
+    let xylnpts: Vec<Point> = global::with(|g| match view {
+        View::Icon => g.g_xyicon.to_vec(),
+        View::Text => g.g_xytext.to_vec(),
+    })
+    .unwrap_or_default();
+    // The extent origin `gr_drgplns`'s `gr_obalign` is about to subtract — kept
+    // so the `move_drvicon` arm below can express the drag as a delta.
+    let o0 = gr_extent(&obpts);
 
-    // Desktop icon → empty desktop space: reposition in place, bypass fun_drag
-    // (deskact.c:673 `move_drvicon`).
-    if handle == DESKWH && dst_wh == DESKWH && dobj == DROOT {
-        if global::with(|g| g.move_drvicon(fx - ex, fy - ey)).unwrap_or(false) {
+    // `gr_drgplns(l_mx, l_my, &gl_rfull, …)` (`:663-664`): the bound is the
+    // screen below the menu bar, which is `G.g_desk`.
+    let desk = g_desk();
+    let (dulx, duly, offx, offy, dst_wh, dobj) =
+        gr_drgplns(mx, my, desk, &xylnpts, &mut obpts);
+
+    // `evnt_button(0x01, 0x01, 0x00, &l_mx, &l_my, &button, keystate)` (`:681`)
+    // — consume the release the drag loop ended on, so the main loop's next
+    // `evnt_multi` does not see it, and take the drop-time modifier state from
+    // there (Copy vs. Move) as EmuTOS does.
+    super::evnt_button(1, 0x01, 0x00);
+    let drop_keystate = super::graf_mkstate().kstate as u16;
+
+    if dst_wh != DESKWH {
+        // `if ((wh == dst_wh) && (*pdobj == sobj)) dst_wh = NIL;` (`:666-670`)
+        // — a drop on the dragged item itself cancels.
+        if dst_wh == handle && dobj == sobj {
+            return false;
+        }
+    } else if handle == DESKWH && dobj == DROOT {
+        // `move_drvicon(tree, root, dulx, duly, obpts, offx, offy)` (`:673-676`)
+        // — desktop icons dropped on free desktop space move in place, without
+        // `fun_drag`. EmuTOS snaps each icon from `dulx + pts[i]`; because
+        // `gr_obalign` made `pts[i]` relative to the extent origin, that is the
+        // same rigid translation as "extent origin moved from `o0` to
+        // `(dulx - offx, duly - offy)`", which is what `move_drvicon` takes.
+        let dx = (dulx - offx) - o0.x;
+        let dy = (duly - offy) - o0.y;
+        if global::with(|g| g.move_drvicon(dx, dy)).unwrap_or(false) {
             redraw::do_wredraw(DESKWH, desk);
         }
         return false;
     }
 
-    // Otherwise dispatch the drag through the deskfun dispatch tree.
-    let done = dir::fun_drag(handle, dst_wh, dobj, drop_keystate);
+    // Otherwise dispatch the drag through the deskfun dispatch tree. The point
+    // handed on is EmuTOS's `*in_mx = dulx - offx; *in_my = duly - offy;`
+    // (`deskact.c:683-684`) — the top-left of the dragged outline, which
+    // `ins_shortcut` snaps to the grid.
+    let done = dir::fun_drag(handle, dst_wh, dobj, dulx - offx, duly - offy, drop_keystate);
     desk_clear(handle);
     done
 }
@@ -307,6 +583,13 @@ enum OpenTarget {
     /// tail; otherwise report that no application is installed. Carries the
     /// document's bare file name and its full `C:` path (no trailing NUL).
     Doc { name: String, full_path: String },
+    /// A desktop **file** shortcut (DESK30): its full path and bare name.
+    /// Resolved into one of the arms above once the file has been confirmed
+    /// to still exist — `do_aopen`'s `file_exists` check
+    /// (`desksupp.c:861-868`), which needs a GEMDOS trap and so cannot run
+    /// under the desktop lock. `obid` identifies the icon for the orphan
+    /// prompt.
+    Shortcut { obid: i16, path: String, name: String },
     /// Nothing openable (the Trash / Printer desktop fixtures).
     None,
 }
@@ -348,23 +631,75 @@ fn open_item(handle: i16, obid: i16) {
                 }
             }
         } else {
-            // Desktop icon: the drive letter overlay in ib_char's low byte.
-            let letter = (g.g_screeninfo[obid as usize].block.ib_char & 0xFF) as u8;
-            if letter.is_ascii_uppercase() {
-                OpenTarget::Drive(letter)
-            } else {
-                OpenTarget::None
+            // Desktop icon: `pa = i_find(DESKWH, curr, &pf, &isapp)`
+            // (`desksupp.c:1206`), i.e. the `ANODE` the object was built from,
+            // then a switch on its `a_type` (`:1219-1271`).
+            match g.app_afind_by_id(obid).map(|i| &g.g_ahead[i]) {
+                // A **desktop shortcut** (DESK30, `:1227-1245`): `a_pappl` is
+                // the full path and `a_pdata` the bare name, so the item is
+                // opened exactly as its twin in a window would be — the same
+                // extension routing (ADR-018), the same document association.
+                Some(pa) if pa.a_type == AType::File => OpenTarget::Shortcut {
+                    obid,
+                    path: pa.a_pappl.clone(),
+                    name: pa.a_pdata.clone(),
+                },
+                // A folder shortcut: `strcat(pathname, "\\*.*")` after the
+                // path, and the path itself as the window title (`:1231-1244`,
+                // `add_one_level`). `a_pappl` has no trailing separator.
+                Some(pa) if pa.a_type == AType::Folder => {
+                    let mut title = pa.a_pappl.clone();
+                    title.push('\\');
+                    let mut spec = title.clone();
+                    spec.push_str("*.*");
+                    OpenTarget::Folder(spec, title)
+                }
+                // A drive: the drive letter overlay in `ib_char`'s low byte.
+                _ => {
+                    let letter = (g.g_screeninfo[obid as usize].block.ib_char & 0xFF) as u8;
+                    if letter.is_ascii_uppercase() {
+                        OpenTarget::Drive(letter)
+                    } else {
+                        OpenTarget::None
+                    }
+                }
             }
         }
     })
     .unwrap_or(OpenTarget::None);
+
+    // `do_aopen`'s shortcut prologue (`desksupp.c:857-868`): "if this is a
+    // desktop shortcut, first make sure that the file exists" — and if it does
+    // not, offer to remove the icon or to locate the item. Outside the desktop
+    // lock, because the probe is a GEMDOS trap. EmuTOS runs this check for the
+    // `AT_ISFILE` arm only; a folder shortcut goes straight into `do_fopen`
+    // (`:1253-1259`), so an orphaned one opens an empty window there as it does
+    // here, and is caught by *Show info* or by a drag instead.
+    let target = match target {
+        OpenTarget::Shortcut { obid, path, name } => {
+            if !dir::shortcut_exists(&path, false) {
+                dir::remove_locate_shortcut(obid);
+                return;
+            }
+            match ftype::classify(name.as_bytes()) {
+                ftype::FileType::Native(flavor) => {
+                    let mut p = path;
+                    p.push('\0');
+                    OpenTarget::App { path: p, name, flavor }
+                }
+                ftype::FileType::M68k => OpenTarget::M68k,
+                ftype::FileType::Doc => OpenTarget::Doc { name, full_path: path },
+            }
+        }
+        other => other,
+    };
 
     match target {
         // `do_fopen(pw, curr, pathname, TRUE)` (`desksupp.c:1259`) — both of
         // NewTOS's callers are EmuTOS's `do_open`, which passes `allow_new_win
         // = TRUE` (a double click goes through `do_filemenu(OPENITEM)`,
         // `deskmain.c:988,666-668`, exactly as the File→Open menu pick does).
-        OpenTarget::Folder(spec, title) => do_fopen(handle, &spec, &title, true),
+        OpenTarget::Folder(spec, title) => do_fopen(handle, obid, &spec, &title, true),
         OpenTarget::Drive(letter) => open_root_window(letter),
         OpenTarget::App { path, name, flavor } => {
             // `do_aopen`'s `else` arm (`desksupp.c:903-912`): the program is
@@ -382,7 +717,8 @@ fn open_item(handle: i16, obid: i16) {
             // under the alert (EmuTOS `fm_alert`), so the desktop returns intact.
         }
         OpenTarget::Doc { name, full_path } => open_document(&name, &full_path),
-        OpenTarget::None => {}
+        // Resolved into one of the arms above by the prologue.
+        OpenTarget::Shortcut { .. } | OpenTarget::None => {}
     }
 }
 
@@ -723,6 +1059,10 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
 ///   `gl_shgem` block of the `sh_main` pass that loads the program,
 ///   `wm_init(); ratinit(); sh_draw(D.s_cmd, TRUE)` (`gemshlib.c:715-720`,
 ///   DESK35), so the program gets an empty screen and an empty window table;
+/// * **show** ([`crate::shell_loop::sh_gem_show`], still before the child):
+///   `sh_ldapp`'s `sh_show(fname)` (`gemshlib.c:632`, DESK37) — the AES draws
+///   its whole `DESKTOP` tree back over that white, so what stands behind the
+///   program is the `#Q` background and a menu-bar strip with its name;
 /// * **resume** ([`desktop_resume`], after the child's `Pterm`): `wm_new()`,
 ///   then `deskmain`'s prolog — `appl_init()`, `desk_verify(DESKWH)`,
 ///   re-register the background tree, `cnx_get()` to re-open the windows,
@@ -731,6 +1071,13 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
 /// Returns whether the child launched (`run_program` → `true`).
 fn run_gem_app(path: &[u8], tail: &[u8]) -> bool {
     desktop_relinquish();
+    // `sh_show(fname)` (`gemshlib.c:632`) — `sh_ldapp`'s own step, between the
+    // `sh_main` block [`desktop_relinquish`] ends with and the `dos_exec` on
+    // the next line (`:645`). It undoes the white of `sh_draw(…, TRUE)`: the
+    // whole built-in `DESKTOP` tree with its real `ob_spec`, i.e. the `#Q`
+    // background and the menu-bar strip carrying the program's name (DESK37).
+    // Same order as EmuTOS — clear, then draw, then load.
+    crate::shell_loop::sh_gem_show(path);
     let ran = crate::launch::run_program_with_tail(path, tail);
     desktop_resume();
     ran
@@ -1285,7 +1632,7 @@ fn first_selected() -> i16 {
 /// `do_wredraw(DESKWH, &G.g_desk)`) — rebuild the desktop icon tree from
 /// `G.g_ahead` and repaint the work area, which is what an icon that appeared,
 /// moved or vanished needs.
-fn rebuild_desktop_icons() {
+pub(super) fn rebuild_desktop_icons() {
     let desk = global::with(|g| {
         g.app_blddesk();
         g.g_desk
@@ -2430,13 +2777,28 @@ pub fn open_root_window(letter: u8) {
 ///   (`rc_copy` at `:1148` copies the new node's rect *into* `t`, so the old
 ///   window's geometry is discarded). That is [`open_dir_window`].
 ///
-/// **Two of EmuTOS's three new-window cases reach this function; the third does
-/// not exist here.** A drive icon is `do_dopen` (`:1041-1069`), a separate
-/// caller that always allocates — [`open_root_window`], unchanged. The
-/// `WN_DESKTOP` case (`:1112-1127`, `CONF_WITH_DESKTOP_SHORTCUTS`) needs a
-/// folder icon parked on the desktop surface, which NewTOS has no `ANODE` shape
-/// for (`super::ins` module docs, DESK30); when that lands it becomes the second
-/// `new_win = TRUE` producer here.
+/// **Two of EmuTOS's three new-window cases reach this function; the third is
+/// a separate caller.** A drive icon is `do_dopen` (`:1041-1069`), which always
+/// allocates — [`open_root_window`], unchanged. The other two are here: the
+/// Alt-held case above, and the `WN_DESKTOP` case (`:1112-1127`,
+/// `CONF_WITH_DESKTOP_SHORTCUTS`, DESK30) — a **folder shortcut** opened from
+/// the desktop surface, which always gets a new window because the "window" it
+/// was opened from is the desktop pseudo-window and has no file list to
+/// replace:
+///
+/// ```c
+/// if (pw->w_flags & WN_DESKTOP) {
+///     char *p = filename_start(app_path); *p = '\0';
+///     if (set_default_path(app_path) == EPTHNF) { remove_locate_shortcut(curr); return; }
+///     set_all_files(p);
+///     new_win = TRUE;
+/// }
+/// ```
+///
+/// The `set_default_path` is both the *chdir* and the **existence probe**:
+/// `EPTHNF` from it is how EmuTOS notices that the folder a shortcut points at
+/// has been renamed or deleted, and it is where the orphan prompt is raised
+/// ("handle renamed target of shortcut"). `curr` is the icon that prompt names.
 ///
 /// Not reproduced: `do_wopen`'s `graf_growbox` zoom from the source icon to the
 /// window rect and its `act_chg(…, FALSE, FALSE)` deselect of that icon
@@ -2444,12 +2806,24 @@ pub fn open_root_window(letter: u8) {
 /// pre-existing gap, not one this function introduces); the deselect is
 /// unobservable here because the window's item tree is rebuilt from the new
 /// directory, which drops every `OB_SELECTED` with the objects that carried it.
-fn do_fopen(handle: i16, spec: &str, title: &str, allow_new_win: bool) {
-    // `graf_mkstate(&junk, &junk, &junk, &keystate);` (`:1132`) — read at the
-    // moment of the open, as EmuTOS does, not the keystate the click carried.
-    let new_win = allow_new_win && {
-        let keystate = super::graf_mkstate().kstate as u16;
-        keystate & MODE_SCA == MODE_ALT
+fn do_fopen(handle: i16, curr: i16, spec: &str, title: &str, allow_new_win: bool) {
+    let new_win = if handle == DESKWH {
+        // The `WN_DESKTOP` arm (`:1112-1126`): chdir into the folder, which
+        // doubles as the existence probe, then always open a new window.
+        let dir = &spec[..=spec.rfind('\\').unwrap_or(0)];
+        if pro::set_default_path(dir) == tos_types::error::EPTHNF {
+            dir::remove_locate_shortcut(curr);
+            return;
+        }
+        true
+    } else {
+        // `graf_mkstate(&junk, &junk, &junk, &keystate);` (`:1132`) — read at
+        // the moment of the open, as EmuTOS does, not the keystate the click
+        // carried.
+        allow_new_win && {
+            let keystate = super::graf_mkstate().kstate as u16;
+            keystate & MODE_SCA == MODE_ALT
+        }
     };
 
     if new_win {

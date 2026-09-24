@@ -13,7 +13,9 @@
 //! behaviour is the only "contract" (`deskact.md`) and the state-machine
 //! internals are a clean reimplementation.
 
-use super::global::{DeskState, DROOT, NIL};
+use alloc::vec::Vec;
+
+use super::global::{DeskState, Grect, Point, DROOT, NIL};
 use super::model::{AType, View};
 use super::win::{DESKWH, LEN_FNODE, OB_SELECTED};
 
@@ -242,6 +244,43 @@ impl DeskState {
             child = self.g_screen[child as usize].ob_next;
         }
         any.then_some((x0, y0, x1 - x0, y1 - y0))
+    }
+
+    /// `gr_accobs(tree, root, &num)` (EmuTOS `deskact.c:87-127`) — the
+    /// screen-absolute top-left of every **selected** child of `root`, in
+    /// sibling order, which `gr_drgplns` translates its outline polyline to
+    /// once per dragged item.
+    ///
+    /// EmuTOS allocates the list with `dos_alloc_anyram` and caps it at
+    /// `dos_avail_anyram() / sizeof(Point)` (`:110-112`) — a ROM-era guard
+    /// against a selection larger than free RAM. A [`Vec`] carries the same
+    /// list without the cap; the allocator's own failure is the only limit,
+    /// and there is no observable difference for any selection a screen can
+    /// hold.
+    pub fn gr_accobs(&self, root: i16) -> Vec<Point> {
+        let (rx, ry) = (self.g_screen[root as usize].ob_x, self.g_screen[root as usize].ob_y);
+        let mut pts = Vec::new();
+        let mut obj = self.g_screen[root as usize].ob_head;
+        while obj > root {
+            if self.g_screen[obj as usize].ob_state & OB_SELECTED != 0 {
+                pts.push(Point {
+                    x: rx + self.g_screen[obj as usize].ob_x,
+                    y: ry + self.g_screen[obj as usize].ob_y,
+                });
+            }
+            obj = self.g_screen[obj as usize].ob_next;
+        }
+        pts
+    }
+
+    /// The screen-absolute extent of object `obid` under `root` — the
+    /// `rc_copy((GRECT *)&tree[obj].ob_x, &t); t.g_x += tree[root].ob_x;
+    /// t.g_y += tree[root].ob_y;` of `act_chg` (`deskact.c:433-435`), which
+    /// its caller clips against `pc` and hands to `do_wredraw`.
+    pub fn obj_extent(&self, root: i16, obid: i16) -> Option<Grect> {
+        let o = self.g_screen.get(obid as usize)?;
+        let r = self.g_screen.get(root as usize)?;
+        Some(Grect { x: r.ob_x + o.ob_x, y: r.ob_y + o.ob_y, w: o.ob_width, h: o.ob_height })
     }
 
     /// Whether object `obid` (under `root`) is currently selected — used by the
