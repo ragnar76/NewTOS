@@ -177,3 +177,70 @@ dasselbe wie die damalige Handpruefung.
 Off-by-N-Zitate in seinem eigenen Abschluss eingeraeumt; diese eine
 zusaetzliche gehoert in dieselbe Kategorie und rechtfertigt kein eigenes
 Ticket, ist hier nur der Vollstaendigkeit halber notiert.
+
+## Nachtrag — zwei Korrekturen des Koordinators waehrend der Bearbeitung
+
+**1. Skript-Robustheit (Koordinator-Fund).** `sh tools/emutos-config.sh`
+sah nach Erfolg aus, war es nicht: `/bin/sh` ist auf dieser Maschine
+bash selbst, das beim Aufruf als `sh` in den POSIX-Kompatibilitaetsmodus
+wechselt (`<(...)` Prozess-Substitution dort ungueltig) — und der
+resultierende Syntaxfehler tief im Skript endete mit **Exitcode 0**,
+sodass „zweimal laufen lassen, `diff` leer" fuer den falschen Grund
+bestand (kein Lauf hatte etwas geschrieben). Ein blosses
+`[ -z "$BASH_VERSION" ]` haette das **nicht** gefangen (die Variable
+bleibt gesetzt, sie nennt das Binary, nicht den Modus) — verifiziert,
+nicht angenommen: `sh -c 'echo "$SHELLOPTS"'` zeigt auf dieser Maschine
+`...:posix`, `bash -c` dasselbe nicht. Die neue Schutzklausel prueft
+`$SHELLOPTS` auf `posix` **und** `$BASH_VERSION` auf leer, ganz am
+Skriptanfang, vor jeder Seitenwirkung — geprueft unter `sh`, `zsh` und
+`bash`: `sh`/`zsh` brechen jetzt mit Exitcode 1 und einer erklaerenden
+Meldung ab, ohne die Ausgabedatei anzuruehren; `bash` laeuft
+unveraendert durch.
+
+**2. Die Maschinenfrage war zu breit formuliert (User-Korrektur).**
+Der urspruengliche Kopfabsatz liess den Vorbehalt „kann keine
+Maschinen-Aussage treffen" pauschal ueber die ganze Tabelle wirken. Der
+Vorbehalt betrifft aber nur **Hardware**: `include/has.h`s eigene erste
+Zeile sagt es selbst („BIOS `HAS_*` macros to determine if hardware is
+available", `include/has.h:2`), und alle 18 laufzeitgesteuerten
+`CONF_WITH_*` sind ausnahmslos Chips/Busse (mechanisch gegen die
+Arbeitsmenge-Klassifikation gegengeprueft, Schritt 6c des Skripts —
+Ueberschneidung **null**, jeden Lauf neu verifiziert, nicht nur
+behauptet). Genau diese Hardware-Ebene bildet NewTOS laut
+`docs/COMPATIBILITY.md:35-47` bewusst **nicht** nach — die Vertragsflaeche
+ist der Trap/Verhaltens-Rand, nicht der Chip dahinter, und der Unterbau
+ist ueberall die RPi4-HAL. Fuer alles, was diese Tabelle als
+Grafik/AES/VDI klassifiziert, gilt der Vorbehalt deshalb **gar nicht** —
+keiner der 28 Arbeitsmenge-Schalter ist laufzeitgesteuert.
+
+## Nachtrag 2 — Klassifikation aller 106 Schalter (User-Auftrag)
+
+Auf Zuruf des Nutzers (ueber den Koordinator, waehrend der Bearbeitung
+von Nachtrag 1) wurde die flache alphabetische Tabelle durch eine
+**Klassifikation** ersetzt, die genau eine Frage beantwortet: *„Was
+haben wir bisher schon, was nicht — fuer Grafik/AES/VDI, die eigentlich
+nachzubauende Flaeche?"* Hardware/Fremdmaschine (65) und GEMDOS/BIOS-
+Oberflaeche/Dateisystem/Build/Debug (13) werden nur **benannt**, keine
+Einzelpruefung. Die 28 Grafik/AES/VDI-Schalter (die „Arbeitsmenge")
+sind einzeln gegen `kernel/`/`tos-api/` gegengeprueft: **21 vorhanden**
+(mit `datei:zeile`), **7 Luecke** (mit EmuTOS-Fundstelle + Ticketstatus).
+Die Klassifikationsdaten liegen als Tabelle im Skript selbst
+(`CLASSIFICATION_DATA`), nicht ableitbar durch den Praeprozessor, und
+werden jeden Lauf gegen die lebende 106-Namen-Liste gegengeprueft
+(Schritt 6b — bricht mit Namensliste ab, wenn `config.h` und die
+Klassifikation auseinanderlaufen). Wartungsanleitung fuer einen
+kuenftigen Neu-Pin steht als Kommentar direkt ueber der Tabelle im
+Skript.
+
+**Gegenpruefung der Koordinator-Vermutungsliste.** Neun der 19
+Kandidaten, die der Koordinator als moegliche Luecken nannte, sind
+tatsaechlich **vorhanden** (Korrektur, nicht Bestaetigung):
+`CONF_WITH_SEARCH`, `CONF_WITH_GDOS` (Fix unter V16 bereits verifiziert),
+`CONF_WITH_COLOUR_ICONS`, `CONF_WITH_WINDOW_COLOURS`,
+`CONF_WITH_EXTENDED_OBJECTS`, `CONF_WITH_NICELINES`,
+`CONF_WITH_MENU_EXTENSION`, `CONF_WITH_GRAF_MOUSE_EXTENSION`,
+`CONF_WITH_PCGEM`. Die restlichen sieben echten Luecken stehen unten.
+
+Die vollstaendige Tabelle mit allen Fundstellen liegt in
+`docs/api/_emutos-config.md`, Abschnitt „Classification". Keine
+Produktcodeaenderung.

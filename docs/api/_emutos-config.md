@@ -59,24 +59,37 @@ runtime flags (`setvalue_mch`: `bios/machine.c:381-405`;
 during boot, before any AES/desktop code: `machine_detect()` from
 `bios/bios.c:246-248`, `fill_cookie_jar()` from `bios/bios.c:279-280`.
 
-**What a reader of this table may conclude:** a row with value `1`
-means the corresponding driver/feature's *code* is compiled into the
-TARGET_512 ROM and can run on TT, Falcon, STE or plain ST alike — none
-of it is compiled out for this profile.
+**What a reader of this table may conclude, for the rows this actually
+touches:** a row with value `1` means the corresponding driver's
+*code* is compiled into the TARGET_512 ROM and can run on TT, Falcon,
+STE or plain ST alike — none of it is compiled out for this profile.
+"In our Falcon profile, VIDEL is on" is not a sentence the table can
+support by itself — TARGET_512 is not a Falcon-only profile, and
+whether VIDEL (or the TT Shifter, or VME) is actually driving the
+screen on a concrete boot depends on `cookie_mch`/`cookie_vdo`/the
+`has_*` flags, runtime state set by hardware probing that a
+compile-time table cannot show.
 
-**What a reader may NOT conclude:** that a specific machine has that
-feature *active* on a given boot. "In our Falcon profile, VIDEL is on"
-is not a sentence this table can support — TARGET_512 is not a
-Falcon-only profile, and whether VIDEL (or the TT Shifter, or VME) is
-actually driving the screen on a concrete boot depends on
-`cookie_mch`/`cookie_vdo`/the `has_*` flags, which are runtime
-state set by hardware probing, not compile-time constants this table
-can show. A claim about "the Falcon" (or "the TT") specifically needs a
-citation to that runtime detection, not to this table.
+**But this caveat has a scope, and the scope is hardware, not the
+whole table.** `include/has.h`'s own first line says what its `HAS_*`
+family is for: *"BIOS `HAS_*` macros to determine if hardware is
+available"* (`references/emutos/include/has.h:2`). Every one of the
+18 `CONF_WITH_*` macros this run found gating a runtime
+`has_*` variable this way is listed below, and every single one of
+them is a physical chip, bus, or board (verified: cross-checked against
+this table's own graphics/AES/VDI classification in Step 6c — zero
+overlap on this pinned tree, checked mechanically each run, not
+asserted). That hardware layer is precisely the one NewTOS does **not**
+reproduce: by `docs/COMPATIBILITY.md`'s own contract table
+(`:35-47`), what must match is the trap surface and the observable
+behaviour a program can detect — not the chip behind it — and NewTOS's
+backend for all of it is the RPi4 HAL, not an emulated STe Shifter or
+TT Shifter or VIDEL. "Would EmuTOS have found a VIDEL chip on this
+boot" is a question about silicon NewTOS does not have; this table
+cannot and need not answer it.
 
-`CONF_WITH_*` macros in this table that gate a runtime-detected
-`has_*` variable this way (extracted from `include/has.h`, not
-hand-picked):
+`CONF_WITH_*` macros that gate a runtime-detected `has_*` variable
+this way (extracted from `include/has.h`, not hand-picked):
 
 * `CONF_WITH_ALT_RAM` = `1` (compile-time) gates the runtime variable `has_alt_ram`
 * `CONF_WITH_BLITTER` = `1` (compile-time) gates the runtime variable `has_blitter`
@@ -97,15 +110,18 @@ hand-picked):
 * `CONF_WITH_VIDEL` = `1` (compile-time) gates the runtime variable `has_videl`
 * `CONF_WITH_VME` = `1` (compile-time) gates the runtime variable `has_vme`
 
-Outside this table's scope: exactly one place in `desk/` or `aes/`
-reads a runtime machine identity directly —
-`aes/gemgsxif.c:161` (`if (HAS_VIDEL)`). The five spot-check flags
-this table was validated against (`CONF_WITH_DESKTOP_CONFIG`,
-`CONF_WITH_WINDOW_ICONS`, `CONF_WITH_DESKTOP_SHORTCUTS`,
-`CONF_WITH_READ_INF`, and the `.ACC` lifecycle) are **not** among
-the runtime-gated flags above and are not read anywhere in `desk/` or
-`aes/` against `cookie_mch`/`HAS_*` — the machine question does not
-change what those five conclude.
+**Therefore: for everything this table classifies as graphics/AES/VDI
+(the working set in the next section) — GEMDOS, the AES, the VDI, the
+desktop — the table is authoritative with *no* caveat at all,** because
+not one of those flags is runtime-gated (mechanically re-checked every
+run in Step 6c of the script, not just claimed here). A row there that
+says "`1`, NewTOS has it" or "`1`, NewTOS is missing it" means
+exactly that, on every machine the ROM boots on, TT or Falcon alike —
+there is no second, hardware-dependent half to that sentence the way
+there is for `CONF_WITH_VIDEL`. Outside the has.h list above, exactly
+one further place in `desk/`/`aes/` reads a runtime machine identity
+at all — `aes/gemgsxif.c:161` (`if (HAS_VIDEL)`) — and it is not one
+of the working-set flags either.
 
 ## Traps: every `#ifdef TARGET_*` block in config.h
 
@@ -436,116 +452,169 @@ Note: `config.h` also has non-`TARGET_*` machine-selector guards
 `#ifdef TARGET_*`), noted here so a reader doesn't mistake this
 table's silence on them for their absence.
 
-## Complete `CONF_*` table (TARGET_512, alphabetical, 106 macros)
+## Classification: what have we accounted for so far
 
-| Macro | Value |
-|---|---|
-| `CONF_ATARI_HARDWARE` | `1` |
-| `CONF_COLDFIRE_TIMER_C` | `0` |
-| `CONF_DEBUG_AES_STACK` | `0` |
-| `CONF_DEBUG_DESK_STACK` | `0` |
-| `CONF_DETECT_FIRST_BOOT_WITHOUT_MEMCONF` | `0` |
-| `CONF_LOGSEC_SIZE` | `512` |
-| `CONF_PREFER_STRAM_DISK_BUFFERS` | `1` |
-| `CONF_SERIAL_CONSOLE` | `0` |
-| `CONF_SERIAL_CONSOLE_ANSI` | `0` |
-| `CONF_SERIAL_CONSOLE_POLLING_MODE` | `0` |
-| `CONF_SERIAL_IKBD` | `0` |
-| `CONF_STRAM_SIZE` | `0` |
-| `CONF_TTRAM_SIZE` | `0` |
-| `CONF_VRAM_ADDRESS` | `0` |
-| `CONF_WITH_1FAT_SUPPORT` | `0` |
-| `CONF_WITH_3D_OBJECTS` | `1` |
-| `CONF_WITH_68030_PMMU` | `1` |
-| `CONF_WITH_68040_PMMU` | `0` |
-| `CONF_WITH_ACSI` | `1` |
-| `CONF_WITH_ADVANCED_CPU` | `1` |
-| `CONF_WITH_ALT_DESKTOP_GRAPHICS` | `1` |
-| `CONF_WITH_ALT_RAM` | `1` |
-| `CONF_WITH_APOLLO_68080` | `1` |
-| `CONF_WITH_ARANYM` | `1` |
-| `CONF_WITH_ATARI_VIDEO` | `1` |
-| `CONF_WITH_BACKGROUNDS` | `1` |
-| `CONF_WITH_BAS_MEMORY_MAP` | `0` |
-| `CONF_WITH_BIOS_EXTENSIONS` | `1` |
-| `CONF_WITH_BLITTER` | `1` |
-| `CONF_WITH_BOTTOMTOTOP` | `1` |
-| `CONF_WITH_BUS_ERROR` | `1` |
-| `CONF_WITH_CACHE_CONTROL` | `1` |
-| `CONF_WITH_CARTRIDGE` | `1` |
-| `CONF_WITH_COLDFIRE_RS232` | `0` |
-| `CONF_WITH_COLOUR_ICONS` | `1` |
-| `CONF_WITH_DESKTOP_CONFIG` | `1` |
-| `CONF_WITH_DESKTOP_SHORTCUTS` | `1` |
-| `CONF_WITH_DIP_SWITCHES` | `1` |
-| `CONF_WITH_DMASOUND` | `1` |
-| `CONF_WITH_DSP` | `1` |
-| `CONF_WITH_EASTER_EGG` | `1` |
-| `CONF_WITH_EJECT` | `0` |
-| `CONF_WITH_EXTENDED_MOUSE` | `1` |
-| `CONF_WITH_EXTENDED_OBJECTS` | `1` |
-| `CONF_WITH_EXTERNAL_DISK_DRIVER` | `0` |
-| `CONF_WITH_FALCON_MMU` | `1` |
-| `CONF_WITH_FDC` | `1` |
-| `CONF_WITH_FILEMASK` | `1` |
-| `CONF_WITH_FLEXCAN` | `0` |
-| `CONF_WITH_FORMAT` | `1` |
-| `CONF_WITH_FRB` | `1` |
-| `CONF_WITH_GDOS` | `1` |
-| `CONF_WITH_GPT_SUPPORT` | `1` |
-| `CONF_WITH_GRAF_MOUSE_EXTENSION` | `1` |
-| `CONF_WITH_ICDRTC` | `1` |
-| `CONF_WITH_IDE` | `1` |
-| `CONF_WITH_IKBD_ACIA` | `1` |
-| `CONF_WITH_IKBD_CLOCK` | `1` |
-| `CONF_WITH_LOADABLE_CURSORS` | `1` |
-| `CONF_WITH_MAGNUM` | `1` |
-| `CONF_WITH_MEGARTC` | `1` |
-| `CONF_WITH_MEMORY_TEST` | `0` |
-| `CONF_WITH_MENU_EXTENSION` | `1` |
-| `CONF_WITH_MFP` | `1` |
-| `CONF_WITH_MFP_RS232` | `1` |
-| `CONF_WITH_MIDI_ACIA` | `1` |
-| `CONF_WITH_MONSTER` | `1` |
-| `CONF_WITH_NICELINES` | `1` |
-| `CONF_WITH_NOVA` | `1` |
-| `CONF_WITH_NVRAM` | `1` |
-| `CONF_WITH_PCGEM` | `1` |
-| `CONF_WITH_PRINTER_ICON` | `1` |
-| `CONF_WITH_PRINTER_PORT` | `1` |
-| `CONF_WITH_READ_INF` | `1` |
-| `CONF_WITH_RESET` | `1` |
-| `CONF_WITH_SCC` | `1` |
-| `CONF_WITH_SCSI` | `1` |
-| `CONF_WITH_SCSI_DRIVER` | `1` |
-| `CONF_WITH_SDMMC` | `0` |
-| `CONF_WITH_SEARCH` | `1` |
-| `CONF_WITH_SELECTALL` | `1` |
-| `CONF_WITH_SFP004` | `1` |
-| `CONF_WITH_SHOW_FILE` | `1` |
-| `CONF_WITH_SHUTDOWN` | `1` |
-| `CONF_WITH_SIZE_TO_FIT` | `1` |
-| `CONF_WITH_ST_MMU` | `1` |
-| `CONF_WITH_STATIC_ALT_RAM` | `0` |
-| `CONF_WITH_STE_SHIFTER` | `1` |
-| `CONF_WITH_TT_MFP` | `1` |
-| `CONF_WITH_TT_MMU` | `1` |
-| `CONF_WITH_TT_SHIFTER` | `1` |
-| `CONF_WITH_TTRAM` | `1` |
-| `CONF_WITH_UAE` | `0` |
-| `CONF_WITH_ULTRASATAN_CLOCK` | `1` |
-| `CONF_WITH_VAMPIRE_SPI` | `0` |
-| `CONF_WITH_VDI_16BIT` | `1` |
-| `CONF_WITH_VDI_TEXT_SPEEDUP` | `1` |
-| `CONF_WITH_VDI_VERTLINE` | `1` |
-| `CONF_WITH_VIDEL` | `1` |
-| `CONF_WITH_VIEWER_SUPPORT` | `1` |
-| `CONF_WITH_VME` | `1` |
-| `CONF_WITH_WINDOW_COLOURS` | `1` |
-| `CONF_WITH_WINDOW_ICONS` | `1` |
-| `CONF_WITH_XBIOS_SOUND` | `1` |
-| `CONF_WITH_XHDI` | `1` |
-| `CONF_WITH_YM2149` | `1` |
+The question this table exists to answer is not "what are all 106
+values" — it is **"of the switches that matter for the surface NewTOS
+is actually rebuilding (graphics / the AES / the VDI), which ones does
+NewTOS already have, and which are a real gap?"** Hardware and
+other-machine switches carry no judgement either way (out of scope by
+`docs/COMPATIBILITY.md`'s contract, see above); they are labelled and
+set aside. The classification itself — which of the three groups a
+macro falls into, and whether NewTOS has a working-set one — cannot be
+derived by the preprocessor; it is a data table inside
+`tools/emutos-config.sh` (search it for `CLASSIFICATION_DATA`),
+cross-checked every run against the live 106-macro list (Step
+6b — the run fails loudly, naming names, if config.h and the
+classification table have drifted apart). See the script's own comment
+above that table for how to extend it when the pinned commit moves.
+
+### Graphics / AES / VDI — the working set (28 macros: 21 have, 7 gap)
+
+For every one of these, the expectation is that NewTOS has it. No
+machine-question caveat applies to this group (Step 6c re-checks that
+on every run — see above).
+
+**Has it** (21):
+
+| Macro | Value | NewTOS |
+|---|---|---|
+| `CONF_WITH_3D_OBJECTS` | `1` | tos-api/src/aes/object.rs:1047-1051,2798 (FL3DOBJ/FL3DIND/FL3DBAK/FL3DACT bit handling) |
+| `CONF_WITH_BACKGROUNDS` | `1` | kernel/src/desk/global.rs:173-179 (g_patcol background pattern/colour, synced to the AES) |
+| `CONF_WITH_COLOUR_ICONS` | `1` | tos-api/src/aes/resource.rs:1170-1183,1917 (fixup_colour_icons/CICONBLK relocation) |
+| `CONF_WITH_DESKTOP_CONFIG` | `1` | kernel/src/desk/menu.rs:131,231,272,361 (Item::DeskConfig / CONFITEM); see DESK05 |
+| `CONF_WITH_EXTENDED_OBJECTS` | `1` | tos-api/src/aes/object.rs:565,569,2561,3074 (G_BOXTEXT/G_FBOXTEXT/G_FTEXT MagiC-style object types) |
+| `CONF_WITH_FILEMASK` | `1` | kernel/src/desk/main.rs:1860 (fun_mask, File -> Set file mask) |
+| `CONF_WITH_GDOS` | `1` | kernel/src/arch/aarch64/exceptions.rs:416-427 (the GEM trap leaves x0/d0 unchanged for an unrecognised selector, so vq_gdos() honestly reports 'no GDOS', config.h:1615-1622); fixed and verified under V16 |
+| `CONF_WITH_GRAF_MOUSE_EXTENSION` | `1` | tos-api/src/aes/graf.rs:619-621 (M_SAVE/M_RESTORE/M_PREVIOUS) |
+| `CONF_WITH_MENU_EXTENSION` | `1` | tos-api/src/aes/menu.rs:1278,1590,1861,1899 (menu_popup/menu_settings/menu_attach/menu_istart) |
+| `CONF_WITH_NICELINES` | `1` | tos-api/src/aes/object.rs:3014 (drawn-line menu separators) |
+| `CONF_WITH_PCGEM` | `1` | tos-api/src/aes/appl.rs:364 (APPL_YIELD arm, cites EmuTOS gemsuper.c:115-119 #if CONF_WITH_PCGEM) |
+| `CONF_WITH_PRINTER_ICON` | `1` | kernel/src/desk/icons.rs:74,131,206,214,298 and kernel/src/desk/ins.rs:447,498,533 (desktop Printer icon/Anode, per DESK03/DESK04) |
+| `CONF_WITH_READ_INF` | `1` | kernel/src/desk/main.rs:1754 (do_read_inf) and kernel/src/desk/inf.rs:982 (app_read_inf); per DESK14 |
+| `CONF_WITH_SEARCH` | `1` | kernel/src/desk/main.rs:1482,2053 (Item::Search / do_search) |
+| `CONF_WITH_SELECTALL` | `1` | kernel/src/desk/main.rs:1478 (Item::SelectAll) |
+| `CONF_WITH_SIZE_TO_FIT` | `1` | kernel/src/desk/main.rs:2201,2206,2539,2676 (Item::SizeToFit / g.size_to_fit) |
+| `CONF_WITH_VDI_16BIT` | `1` | tos-api/src/vdi/inquiry.rs:7 and attributes.rs/raster.rs/workstation.rs (Falcon-truecolor workstation, landed per TASK/A86.md and TASK/A101.md) |
+| `CONF_WITH_VDI_TEXT_SPEEDUP` | `1` | tos-api/src/vdi/text.rs:577 (v_gtext); the observable feature (VDI text output) is implemented through a differently-architected raster backend, not a port of EmuTOS's specific speedup path |
+| `CONF_WITH_VDI_VERTLINE` | `1` | tos-api/src/vdi/primitives.rs:744 (v_pline handles vertical lines); same caveat as CONF_WITH_VDI_TEXT_SPEEDUP |
+| `CONF_WITH_WINDOW_COLOURS` | `1` | tos-api/src/aes/window.rs:78-79 (WF_COLOR/WF_DCOLOR) |
+| `CONF_WITH_WINDOW_ICONS` | `1` | kernel/src/desk/win.rs (win_icalc); per DESK15 |
+
+**Gap** (7 — this is the list the lead can act on without opening
+this file):
+
+| Macro | Value | What it switches on in EmuTOS, and ticket status |
+|---|---|---|
+| `CONF_WITH_ALT_DESKTOP_GRAPHICS` | `1` | left-aligns dialog titles and draws a line under them (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1739); no NewTOS reference found in kernel/src/desk (checked); unticketed |
+| `CONF_WITH_BOTTOMTOTOP` | `1` | 'Cycle windows' desktop menu item (config.h:1751-1757; EmuTOS desk/deskmain.c, desk/deskwin.c/.h); no NewTOS reference found in kernel/src/desk (checked); unticketed |
+| `CONF_WITH_DESKTOP_SHORTCUTS` | `1` | files and folders installed on the desktop as shortcuts (config.h:1778-1784); ticketed DESK30 (needs an AT_ISFILE/AT_ISFOLD Anode variant plus fun_win2win drop-on-program, per DESK15's own closure) |
+| `CONF_WITH_EXTENDED_MOUSE` | `1` | IKBD scancode extension for mouse buttons 3/4/5 and the wheel (config.h:1491-1498; EmuTOS bios/aciavecs.S, bios/ikbd.c:748); kernel/src/ikbd.rs decodes only the standard 2-button relative packet 0xF8-0xFB (checked), no wheel or extra-button decode; unticketed. Distinct from the VDI vex_wheelv vector installer already present (tos-api/src/vdi/mouse.rs:710), which has nothing feeding it without this |
+| `CONF_WITH_LOADABLE_CURSORS` | `1` | loads mouse cursor shapes from A:\EMUCURS.RSC at runtime (config.h:1286-1295); no NewTOS reference found in kernel/ or tos-api/ (checked); unticketed |
+| `CONF_WITH_SHOW_FILE` | `1` | double-click-to-show a file's contents in EmuDesk (config.h:1838-1844); no NewTOS reference found in kernel/src/desk (checked); unticketed |
+| `CONF_WITH_VIEWER_SUPPORT` | `1` | default file viewer when no app claims a document type (config.h:1854-1861); kernel/src/desk/inf.rs:1847-1850 says so itself: 'AF_VIEWER is CONF_WITH_VIEWER_SUPPORT, which this desktop does not implement'; unticketed |
+
+### Hardware / other machine (65 macros — labelled, no per-switch audit)
+
+Out of scope by `docs/COMPATIBILITY.md`'s contract (`:35-47`): a
+physical Atari chip, bus, CPU feature, or an entirely different machine
+target (Amiga/Lisa/ARAnyM/FireBee/ColdFire). This includes the
+floppy/FDC/`CONF_WITH_FORMAT` side — hardware, and additionally a
+recorded project decision (`docs/STATUS.md:240`).
+
+| Macro | Value | Label |
+|---|---|---|
+| `CONF_ATARI_HARDWARE` | `1` | **HW** — master switch for the whole Atari-hardware backend (config.h:663-667); NewTOS's backend is the RPi4 HAL, not this switch |
+| `CONF_COLDFIRE_TIMER_C` | `0` | **OM** — ColdFire Timer-C emulation, FireBee/M548x only (config.h:954-964) |
+| `CONF_PREFER_STRAM_DISK_BUFFERS` | `1` | **HW** — ST-RAM/DMA disk-buffer placement preference (config.h:1723-1732); no ST-RAM/DMA-address constraint on the RPi4 HAL |
+| `CONF_SERIAL_IKBD` | `0` | **HW** — redirects the IKBD protocol through the serial/modem port instead of the dedicated keyboard port (config.h:1458-1463); a physical port-wiring choice, distinct from NewTOS's own IKBD-over-UART path (kernel/src/ikbd.rs) |
+| `CONF_STRAM_SIZE` | `0` | **HW** — physical ST-RAM size (config.h:872-877) |
+| `CONF_TTRAM_SIZE` | `0` | **HW** — physical TT-RAM size (config.h:903-908) |
+| `CONF_VRAM_ADDRESS` | `0` | **HW** — fixed VRAM address for custom graphics cards (config.h:1096-1103) |
+| `CONF_WITH_68030_PMMU` | `1` | **HW** — 68030 PMMU tree install (config.h:1465-1472) |
+| `CONF_WITH_68040_PMMU` | `0` | **HW** — 68040 PMMU tree install (config.h:1474-1481) |
+| `CONF_WITH_ACSI` | `1` | **HW** — ACSI bus (config.h:1032-1037) |
+| `CONF_WITH_ADVANCED_CPU` | `1` | **HW** — 68010-68060 CPU support (config.h:828-837) |
+| `CONF_WITH_ALT_RAM` | `1` | **HW** — Alt-RAM support (config.h:879-884) |
+| `CONF_WITH_APOLLO_68080` | `1` | **HW** — Apollo 68080/Vampire accelerator CPU (config.h:839-848) |
+| `CONF_WITH_ARANYM` | `1` | **OM** — ARAnyM emulator target (config.h:1916-1925) |
+| `CONF_WITH_ATARI_VIDEO` | `1` | **HW** — ST-Shifter-and-higher video master switch (config.h:1068-1073) |
+| `CONF_WITH_BAS_MEMORY_MAP` | `0` | **OM** — FireBee/M548x BaS memory map (config.h:1210-1220) |
+| `CONF_WITH_BIOS_EXTENSIONS` | `1` | **HW** — gates only an extended Floprate() floppy-drive-type selector (EmuTOS bios/floppy.c:1048-1055, verified in the source, not assumed from the generic-sounding config.h comment); floppy hardware, same recorded decision as CONF_WITH_FORMAT |
+| `CONF_WITH_BLITTER` | `1` | **HW** — blitter chip (config.h:1165-1170) |
+| `CONF_WITH_BUS_ERROR` | `1` | **HW** — whether the CPU/bus raises a Bus Error exception on invalid access (config.h:2044-2051); true on Atari, the AArch64 fault model is entirely different |
+| `CONF_WITH_CACHE_CONTROL` | `1` | **HW** — 'Cache' desktop menu item toggling 68030 CPU cache registers directly (config.h:1759-1768); no ARM-cache equivalent implemented (checked) |
+| `CONF_WITH_CARTRIDGE` | `1` | **HW** — ROM port cartridge (config.h:1012-1023) |
+| `CONF_WITH_COLDFIRE_RS232` | `0` | **OM** — ColdFire internal serial port (config.h:966-975) |
+| `CONF_WITH_DIP_SWITCHES` | `1` | **HW** — STe/TT/Falcon DIP switches (config.h:1150-1156, has.h-gated has_dip_switches) |
+| `CONF_WITH_DMASOUND` | `1` | **HW** — DMA sound chip (config.h:1129-1134, has.h-gated has_dmasound) |
+| `CONF_WITH_DSP` | `1` | **HW** — Falcon DSP chip (config.h:1136-1141, has.h-gated has_dsp) |
+| `CONF_WITH_EASTER_EGG` | `1` | **HW** — EmuDesk Easter Egg tune, its value is literally CONF_WITH_YM2149 (config.h:1786-1792); sound-hardware payload |
+| `CONF_WITH_EJECT` | `0` | **OM** — automatic floppy eject; EmuTOS's own comment: 'This isn't available on Atari hardware' (config.h:2036-2042) -- meaningful only on Amiga/Lisa |
+| `CONF_WITH_FALCON_MMU` | `1` | **HW** — Falcon MMU (config.h:864-869) |
+| `CONF_WITH_FDC` | `1` | **HW** — floppy disk controller chip (config.h:1025-1030) |
+| `CONF_WITH_FLEXCAN` | `0` | **OM** — ColdFire eval-board CAN port / Eiffel keyboard adapter (config.h:1186-1192) |
+| `CONF_WITH_FORMAT` | `1` | **HW** — 'Format floppy diskette' desktop menu item (config.h:1802-1807); floppy hardware, recorded decision (docs/STATUS.md:240 'FAT12-Write (Floppy, out of scope)'; docs/analysis/bios-audit/bios-xbios-feasibility-triage.md 'Floppy = HW-Absenz') |
+| `CONF_WITH_FRB` | `1` | **HW** — _FRB cookie tied to Alt-RAM presence (config.h:1500-1505) |
+| `CONF_WITH_ICDRTC` | `1` | **HW** — ICD AdSCSI Plus RTC board via ACSI (config.h:1112-1119, has.h-gated has_icdrtc) |
+| `CONF_WITH_IDE` | `1` | **HW** — Falcon IDE bus (config.h:1046-1051) |
+| `CONF_WITH_IKBD_ACIA` | `1` | **HW** — the 6850 ACIA chip used for keyboard wiring (config.h:998-1003); distinct from NewTOS's own IKBD-protocol handling in kernel/src/ikbd.rs, which runs over the RPi4's own UART, not an ACIA |
+| `CONF_WITH_IKBD_CLOCK` | `1` | **HW** — IKBD real-time-clock command (config.h:1005-1010) |
+| `CONF_WITH_MAGNUM` | `1` | **HW** — Magnum RAM expansion card (config.h:918-924) |
+| `CONF_WITH_MEGARTC` | `1` | **HW** — MegaST real-time clock (config.h:1105-1110, has.h-gated has_megartc) |
+| `CONF_WITH_MFP` | `1` | **HW** — MFP 68901 chip (config.h:926-931) |
+| `CONF_WITH_MFP_RS232` | `1` | **HW** — MFP RS-232 (config.h:933-938) |
+| `CONF_WITH_MIDI_ACIA` | `1` | **HW** — MIDI ACIA chip (config.h:991-996) |
+| `CONF_WITH_MONSTER` | `1` | **HW** — MonSTer expansion card (config.h:910-916) |
+| `CONF_WITH_NOVA` | `1` | **HW** — Nova graphics card adapter (config.h:1179-1184) |
+| `CONF_WITH_NVRAM` | `1` | **HW** — NVRAM chip (config.h:1158-1163, has.h-gated has_nvram) |
+| `CONF_WITH_PRINTER_PORT` | `1` | **HW** — parallel printer port (config.h:984-989) |
+| `CONF_WITH_RESET` | `1` | **HW** — startup 'reset' instruction bypass quirk (config.h:1194-1208) |
+| `CONF_WITH_SCC` | `1` | **HW** — SCC chip (config.h:947-952, has.h-gated has_scc) |
+| `CONF_WITH_SCSI` | `1` | **HW** — SCSI bus (config.h:1039-1044) |
+| `CONF_WITH_SCSI_DRIVER` | `1` | **HW** — raw SCSI command pass-through to a device (config.h:1679-1686); purposeless without a real SCSI target chip, which the RPi4 HAL has none of |
+| `CONF_WITH_SDMMC` | `0` | **HW** — EmuTOS's own SD/MMC controller chip driver (config.h:1053-1058); NewTOS's SD/EMMC access is a separately-written HAL component (kernel/src/drivers/bcm2711/emmc.rs), not a port of this switch |
+| `CONF_WITH_SFP004` | `1` | **HW** — 68881 FPU board for the Mega ST (config.h:1172-1177) |
+| `CONF_WITH_ST_MMU` | `1` | **HW** — ST MMU (config.h:850-855) |
+| `CONF_WITH_STATIC_ALT_RAM` | `0` | **HW** — compile-time-fixed Alt-RAM address (config.h:886-893) |
+| `CONF_WITH_STE_SHIFTER` | `1` | **HW** — STe Shifter chip (config.h:1075-1080, has.h-gated has_ste_shifter) |
+| `CONF_WITH_TT_MFP` | `1` | **HW** — second MFP, TT only (config.h:940-945, has.h-gated has_tt_mfp) |
+| `CONF_WITH_TT_MMU` | `1` | **HW** — TT MMU (config.h:857-862) |
+| `CONF_WITH_TT_SHIFTER` | `1` | **HW** — TT Shifter chip (config.h:1082-1087, has.h-gated has_tt_shifter) |
+| `CONF_WITH_TTRAM` | `1` | **HW** — TT-RAM detection/usage (config.h:895-900) |
+| `CONF_WITH_UAE` | `0` | **OM** — UAE emulator advanced features, Amiga target (config.h:1876-1882) |
+| `CONF_WITH_ULTRASATAN_CLOCK` | `1` | **HW** — UltraSatan clock via ACSI (config.h:1121-1127, has.h-gated has_ultrasatan_clock) |
+| `CONF_WITH_VAMPIRE_SPI` | `0` | **HW** — SPI on the Vampire accelerator, for SD/MMC (config.h:1060-1066) |
+| `CONF_WITH_VIDEL` | `1` | **HW** — Falcon VIDEL chip (config.h:1089-1094, has.h-gated has_videl) |
+| `CONF_WITH_VME` | `1` | **HW** — Mega STe VME bus (config.h:1143-1148, has.h-gated has_vme) |
+| `CONF_WITH_XBIOS_SOUND` | `1` | **HW** — Falcon-XBIOS-sound-API shim running on STe/TT DMA-sound hardware (config.h:1514-1522); audio (DMA-Sound/DSP) explicitly deferred by User decision (docs/STATUS.md:242 XBIOS feasibility triage) |
+| `CONF_WITH_YM2149` | `1` | **HW** — YM2149 PSG sound chip (config.h:977-982) |
+
+### Neither (13 macros — GEMDOS / BIOS API surface / filesystem / build & debug)
+
+Not hardware, not other-machine, but also not graphics/AES/VDI, so not
+individually audited for this table — the user's question was scoped
+to the working set above. Several of these (the BIOS-disk ones
+especially — `CONF_WITH_XHDI`, `CONF_WITH_GPT_SUPPORT`) are
+plausible candidates for a **separately scoped** future audit; they are
+listed here so that scope isn't silently lost, not because this table
+judges them.
+
+| Macro | Value | Label |
+|---|---|---|
+| `CONF_DEBUG_AES_STACK` | `0` | EmuTOS-internal AES-stack-usage tracer (config.h:1934-1939); build/debug switch, not GEMDOS/BIOS/AES/VDI behaviour |
+| `CONF_DEBUG_DESK_STACK` | `0` | EmuTOS-internal desktop-stack-usage tracer (config.h:1942-1946); build/debug switch |
+| `CONF_DETECT_FIRST_BOOT_WITHOUT_MEMCONF` | `0` | cold/warm-boot detection depends on whether RAM is pre-initialised before EmuTOS runs (config.h:1408-1420); boot-sequence internal |
+| `CONF_LOGSEC_SIZE` | `512` | GEMDOS maximum logical sector size (config.h:1594-1607); filesystem internal |
+| `CONF_SERIAL_CONSOLE` | `0` | redirects BIOS console I/O to a UART for headless bring-up (config.h:1423-1429); debug/bring-up switch |
+| `CONF_SERIAL_CONSOLE_ANSI` | `0` | terminal escape-sequence dialect for the serial console above (config.h:1432-1442); debug/bring-up switch |
+| `CONF_SERIAL_CONSOLE_POLLING_MODE` | `0` | polling vs IRQ-fed serial console (config.h:1445-1455); debug/bring-up switch |
+| `CONF_WITH_1FAT_SUPPORT` | `0` | GEMDOS single-FAT filesystem compatibility (config.h:1548-1560); filesystem internal |
+| `CONF_WITH_EXTERNAL_DISK_DRIVER` | `0` | deactivates the built-in hard disk driver in favour of a disk-resident one (config.h:1670-1677); BIOS disk-driver internal |
+| `CONF_WITH_GPT_SUPPORT` | `1` | GUID partition table recognition on hard disks (config.h:1562-1568; EmuTOS bios/disk.c:614-744); BIOS disk-driver internal (tos-api/src/bios/drive.rs implements MBR/EBR partition parsing only, checked) |
+| `CONF_WITH_MEMORY_TEST` | `0` | cold-boot RAM chip self-test (config.h:1507-1512); boot diagnostic |
+| `CONF_WITH_SHUTDOWN` | `1` | the shutdown() BIOS/XBIOS function (config.h:2024-2034); BIOS API surface, not AES/VDI |
+| `CONF_WITH_XHDI` | `1` | the XHDI hard-disk abstraction cookie and vector table (config.h:1688-1693); BIOS disk-driver internal (only passing comments reference EmuTOS's XHDI in tos-api/src/bios/bpb.rs:195 and tick.rs:35 -- no cookie or vector table implemented) |
 
 ## Regenerating
 

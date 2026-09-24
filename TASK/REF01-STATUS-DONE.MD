@@ -98,3 +98,34 @@ Keins. Einzige Randnotiz: ACC01s eigenes `TARGET_192`-Zitat war um 7 Zeilen
 ungenau (`:210-401` statt `:210-394`) — ACC01 hatte bereits mehrere
 Off-by-N-Zitate in seinem eigenen Abschluss eingeraeumt; diese zusaetzliche
 gehoert in dieselbe Kategorie und rechtfertigt kein eigenes Ticket.
+
+## Nachtrag — zwei Koordinator-/User-Korrekturen waehrend der Bearbeitung
+
+**Skript-Robustheit.** `sh tools/emutos-config.sh` bestand die
+Determinismuspruefung aus dem falschen Grund (Exitcode 0 trotz
+Syntaxfehler, `/bin/sh` = bash im POSIX-Modus, `<(...)` dort ungueltig).
+Neue Schutzklausel ganz am Skriptanfang prueft `$SHELLOPTS` auf `posix`
+und `$BASH_VERSION` auf leer; geprueft unter `sh`/`zsh` (Exitcode 1,
+Ausgabedatei unangetastet) und `bash` (laeuft durch). Siehe
+`TASK/REF01.md` Nachtrag 1 fuer die volle Herleitung.
+
+**Maschinenfrage geschaerft + volle Klassifikation.** Der Vorbehalt
+„keine Maschinen-Aussage" gilt nur fuer die 18 laufzeitgesteuerten
+Hardware-Schalter (`include/has.h:2`), nicht fuer die ganze Tabelle —
+mechanisch gegen die Arbeitsmenge gegengeprueft (Schritt 6c, Ueber-
+schneidung null). Die flache 106-Zeilen-Tabelle wurde durch eine
+Klassifikation ersetzt (User-Auftrag): Hardware/Fremdmaschine (65) und
+GEMDOS/BIOS/Dateisystem/Build-Debug (13) nur benannt; die 28
+Grafik/AES/VDI-Schalter einzeln geprueft — **21 vorhanden**
+(`datei:zeile`), **7 Luecke**. Neun von 19 Koordinator-Vermutungen
+waren tatsaechlich vorhanden (`CONF_WITH_SEARCH`, `CONF_WITH_GDOS`,
+`CONF_WITH_COLOUR_ICONS`, `CONF_WITH_WINDOW_COLOURS`,
+`CONF_WITH_EXTENDED_OBJECTS`, `CONF_WITH_NICELINES`,
+`CONF_WITH_MENU_EXTENSION`, `CONF_WITH_GRAF_MOUSE_EXTENSION`,
+`CONF_WITH_PCGEM`) — Korrektur, keine Bestaetigung. Die
+Klassifikationsdaten liegen als Tabelle direkt im Skript
+(`CLASSIFICATION_DATA`), jeden Lauf gegen die lebende Namensliste
+gegengeprueft (Schritt 6b). Determinismus erneut mit zwei `bash`-Laeufen
+bestaetigt (`diff` leer). Siehe `TASK/REF01.md` Nachtrag 2 und
+`docs/api/_emutos-config.md` Abschnitt „Classification" fuer die
+vollstaendige Tabelle mit allen Fundstellen. Keine Produktcodeaenderung.
