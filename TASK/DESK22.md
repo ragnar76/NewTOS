@@ -1,6 +1,6 @@
 # DESK22 — `.NCP`-Start laesst den Mauszeiger auf dem Textschirm stehen
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Defekt — Nebenbefund DESK06
+Status: **ERLEDIGT** (2026-09-24) · Prioritaet: **P3** · Typ: Defekt — Nebenbefund DESK06
 
 Abhaengigkeiten: [DESK06](DESK06.md) (erledigt)
 
@@ -27,3 +27,33 @@ loeschen. Screendump vor/nach.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+---
+
+## Abschluss (2026-09-24)
+
+**Gebaut.** `launch_native`s `.NCP`-Arm liegt jetzt auf der Modusumschaltung,
+die DESK06 gebaut hat, statt den Schirm nur zu loeschen. Neu sind
+`crate::shell_loop::sh_alpha_enter` / `sh_alpha_leave` — ein `sh_main`-Durchlauf
+fuer ein zeichenorientiertes `NORMAL_APP`: beide setzen `sh_isgem` so, wie es
+`shel_write(SHW_EXEC, isgraf, …)` taete (`aes/gemshlib.c:173`), und rufen dann
+das echte `sh_chgrf` (`:513-523`), damit `gl_shgem` der Zustand bleibt, gegen
+den der naechste Vergleich laeuft. `sh_toalpha`s `ratexit()` (`:256`) nimmt den
+Zeiger weg; der schwarze Fleck ist fort.
+
+Die Reihenfolge des Arms ist die von `sh_main`: Umschaltung, Warnung bei
+fehlgeschlagenem Start (`fm_error`, `:722-723`), Desktopaufbau,
+`desk_busy_off` (`deskmain.c:2071`), das die Sanduhr von `sh_tographic`
+zuruecknimmt.
+
+* Code: `kernel/src/shell_loop.rs` (`sh_alpha_enter`/`sh_alpha_leave`),
+  `kernel/src/desk/main.rs` (`launch_native`, `Flavor::Console`).
+* Spezifikation: `docs/api/aes/shell-loop.md` §9, Abschnitt *NewTOS
+  implementation notes — the mode switch for a character program launched by
+  the built-in desktop (DESK22)*.
+* Messung: `measurement-2026-09-24-desk22-desk23-desk28-desk29/` §3,
+  `screendumps/d22-before-C-program.png` (Fleck bei (179,187)) gegen
+  `d22-after-C-program.png` (zeigerfrei), gleiche Karte, gleiche Klickfolge.
+* Pruefung: wie DESK28 (Basiswerte unveraendert), 0 `[EXC]`/`[PANIC]`.
+* Offen: Hardwareabnahme, Punkt **56** in
+  `docs/api/desktop/_hw-test-2026-09-17.md`.

@@ -2242,3 +2242,44 @@ byte of any buffer the caller passed (TASK/A42).
   translate that identity to the *reported* value (0 for every application
   window) rather than handing the stored identity back verbatim. See
   [`application.md`](./application.md) §"AES process identity and pid".
+
+### NewTOS implementation notes — the drop shadow's four unwritten pixels (DESK23, 2026-09-24)
+
+**They are EmuTOS's, and nothing writes them.** A window whose frame was drawn
+incrementally by `wind_open` and the same window after a full repaint were
+measured to differ in two pixels
+(`measurement-2026-09-23-desk06/`, runs `wdef` and `redraw`). The premise that
+one of the two draws is wrong does not survive the source.
+
+For a window at `(48,43,544,400)` with `W_BOX`'s border thickness 1
+(`ob_spec 0x00011101`, `gemwmlib.c:63,84`), `ob_draw` paints
+
+* the border with `gr_box(t.g_x, t.g_y, t.g_w, t.g_h, 1)` → x 48..591,
+  y 43..442, and
+* the `SHADOWED` decoration *after* `gr_inside(&t, th)`
+  (`aes/gemoblib.c:889-900`):
+  `bb_fill(… t.g_x, t.g_y+t.g_h+th, t.g_w+th, 2*th)` → x 49..591, y 443..444
+  and `bb_fill(… t.g_x+t.g_w+th, t.g_y, 2*th, t.g_h+3*th)` → x 592..593,
+  y 44..444.
+
+Each band starts one pixel *inside* the corresponding edge, so **four** pixels
+belong to neither the border nor a band: `(592,43)`, `(593,43)`, `(48,443)`,
+`(48,444)`. `draw_frame`/`draw_shadow` in `tos-api/src/aes/window.rs` compute
+the identical rectangles.
+
+The desktop does not paint them either: all four lie inside the window's
+`WS_TRUE` (the rectangle grown by `DROP_SHADOW_SIZE`, `gemwmlib.c:253-261`),
+the rectangle lists are built from `WS_TRUE` (`newrect`, `gemwrect.c:190`),
+and `w_drawdesk` walks the **desktop's** list (`do_walk(DESKWH, …)`,
+`gemwmlib.c:340-359`). So their colour is simply whatever was on the screen
+when the window opened, in EmuTOS as here.
+
+That is what the measured difference was: the incremental picture had the
+desktop under it, the repainted picture had the white screen a console program
+had left behind. The desktop background is a green/white dither, which is why
+only two of the four pixels showed up in the diff — at `(592,43)` and
+`(48,443)` the pattern is white anyway and matches the console's white. A
+control run of five window opens, toppings and full frame repaints with no
+screen clear in between leaves all four on the desktop pattern from beginning
+to end (`measurement-2026-09-24-desk22-desk23-desk28-desk29/`, §4, table from
+`method/pixels.py`). No change was made.

@@ -248,6 +248,41 @@ pub fn go_graphic() {
     }
 }
 
+/// The screen-mode half of one `sh_main` pass for a **character-mode
+/// `NORMAL_APP`** the built-in desktop runs nested (AES gap G1) — DESK22.
+///
+/// EmuTOS' desktop reaches a `.TOS`/`.TTP` through `pro_run(isgraf = FALSE,
+/// …)` → `shel_write(SHW_EXEC, 0, 1, cmd, tail)`, which records `sh_isgem =
+/// FALSE` (`aes/gemshlib.c:173`); `deskmain` then returns and `sh_main`'s next
+/// pass calls `sh_chgrf` (`:713`), which — the mode having changed — runs
+/// `sh_toalpha` (`:513-523`, `:246-260`): arrow shape, error handler back,
+/// `ratexit()` **takes the mouse pointer off the screen**, workstation closed.
+/// Only then does `sh_ldapp` load the program. When it `Pterm`s, the loop's
+/// next pass finds `sh_isgem` TRUE again (the desktop is a GEM app) and
+/// `sh_chgrf` runs `sh_tographic` (`:223-239`) on the way back.
+///
+/// NewTOS's built-in desktop cannot return into `sh_main`
+/// ([`sh_run_pending_console`] documents why), so it brackets the launch with
+/// this pair itself. Both go through the real [`sh_chgrf`] and the real
+/// `sh_isgem`/`gl_shgem` pair rather than calling `sh_toalpha`/`sh_tographic`
+/// behind the AES's back, so the state the next `sh_chgrf` compares against is
+/// the same one EmuTOS would hold.
+///
+/// [`sh_alpha_enter`] before the program, [`sh_alpha_leave`] after it. On a
+/// board without a raster backend both are no-ops in effect: `sh_chgrf`'s
+/// desired mode is already alpha and never changes.
+pub fn sh_alpha_enter() {
+    shell::set_sh_isgem(false); // `shel_write(SHW_EXEC, isgraf = 0, …)`
+    sh_chgrf(); // :713 — `gl_shgem` TRUE → FALSE: `sh_toalpha()`
+}
+
+/// The second half of [`sh_alpha_enter`] — back into graphics mode after the
+/// character-mode program has terminated (`sh_main`'s next pass, `:712-713`).
+pub fn sh_alpha_leave() {
+    shell::set_sh_isgem(true); // the desktop is a GEM application
+    sh_chgrf(); // :713 — `gl_shgem` FALSE → TRUE: `sh_tographic()`
+}
+
 /// `sh_ldapp(psh)` (`gemshlib.c:592-689`) — run the next program and block
 /// until it terminates. Three top-level arms, four `sh_nextapp` values.
 ///

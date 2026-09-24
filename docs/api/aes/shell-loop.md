@@ -643,6 +643,33 @@ always returns into an already-graphic, already-mouse-active screen (mode
 switch happens in `sh_main`'s loop *before* `sh_ldapp` runs it) — an
 application never has to perform its own mode transition on entry.
 
+### NewTOS implementation notes — the mode switch for a character program launched by the built-in desktop (DESK22, 2026-09-24)
+
+The mirror-image consequence is the one NewTOS was missing: a **character**
+program's screen has no mouse pointer on it, because `sh_toalpha`'s
+`ratexit()` (`:256`) takes the cursor off before the text screen appears.
+
+NewTOS's built-in desktop cannot return into `sh_main` (AES gap G1 — it is an
+in-kernel call, see §7), so it runs the launch nested. DESK06 built that for
+`CONSOLE_APP` (`crate::shell_loop::sh_run_pending_console`), and its EmuCON
+screen was pointer-free from the start. The `.NCP` path
+(`desk::main::launch_native`, `ftype::Flavor::Console`) predated it and only
+cleared the screen (`fbcon::clear_and_home`), so the pointer stayed on the
+text as a black smudge
+(`measurement-2026-09-23-desk06/screendumps/redraw-C-program.png`).
+
+The pair `crate::shell_loop::sh_alpha_enter` / `sh_alpha_leave` is that same
+pass for a character `NORMAL_APP`: each sets `sh_isgem` the way
+`shel_write(SHW_EXEC, isgraf, …)` would (`:173`) and then calls the real
+`sh_chgrf`, so `gl_shgem` stays the state machine EmuTOS's next `sh_chgrf`
+compares against — the switch is not performed behind the AES's back. The
+launch arm's order is `sh_main`'s: mode switch, `fm_error`-equivalent alert
+(`:722-723`), desktop rebuild, `desk_busy_off` (`deskmain.c:2071`) undoing
+`sh_tographic`'s hourglass.
+
+Before/after screendumps of the text screen:
+`measurement-2026-09-24-desk22-desk23-desk28-desk29/screendumps/d22-{before,after}-C-program.png`.
+
 ---
 
 ## 10. The state handover channel: `app_save → shel_put` / `shel_get → app_start`

@@ -70,6 +70,38 @@ In order:
   emulator-provided "native" TOS kernel first (ARAnyM/Hatari `nf_bootstrap`,
   `bios.c:584`) — irrelevant on real hardware / NewTOS.
 
+### The working directory an AUTO program starts in (DESK28, 2026-09-24)
+
+**[CONTRACT]** — it is the **root of the boot drive**, and `autoexec` does
+nothing to make it so.
+
+`run_auto_program` (`bios.c:685-695`) builds the *full* path
+`"\AUTO\<name>"` and hands it to `Pexec(PE_LOADGO, path, "", NULL)`; there is
+no `Dsetdrv` and no `Dsetpath` anywhere in `autoexec` (`:697-733`). The
+child's directory is therefore purely inherited: `Pexec` copies the current
+drive and the whole per-drive current-directory table out of the calling
+process's basepage into the child's (`init_pd_files`, `bdos/proc.c:400-410`),
+and the caller is the BIOS, whose state is `Dsetdrv(bootdev)`
+(`bios.c:827`) plus — for every drive it never `Dsetpath`ed — the **root**
+DND that `ckdrv` installs on first use (`bdos/fsdrive.c:119-131`). An AUTO
+program that opens `FOO.TXT` by a bare name reads `<bootdrive>:\FOO.TXT`, not
+`\AUTO\FOO.TXT`.
+
+The *copy* is the part that does not survive the translation to NewTOS: the
+current drive and the per-drive current directories are single globals here,
+the documented stand-in for `p_curdrv`/`p_curdir`
+(`tos-api/src/bdos/fs/drive.rs`, `…/fs/path.rs`). On EmuTOS one AUTO
+program's `Dsetpath` touches only its own copy, so the next one still starts
+at the root; on a global it would be seen by the next program and by the
+desktop after them. `crate::launch::set_auto_default_path` re-establishes the
+BIOS's state — boot drive, root on every drive — before each program and once
+after the loop, which is what makes the global behave like the copy.
+
+Measured both ways with two AUTO programs, the first of which `Dsetpath`s
+(`measurement-2026-09-24-desk22-desk23-desk28-desk29/`, §2): without the step
+the second program reports `C:\SUB` and reads `C:\SUB\PROOF.TXT`, with it
+`C:` and `C:\PROOF.TXT`.
+
 ## 4. `gem_main` → the AES, accessories and the shell loop
 
 `gem_main` (`geminit.c:753`):

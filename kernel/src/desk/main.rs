@@ -615,15 +615,15 @@ fn set_launch_dir(app_dir: bool, own_path: &str) -> bool {
 ///
 /// * [`ftype::Flavor::App`] (`.NAP`) — run directly; the app draws its own AES
 ///   UI over the desktop, so nothing special is needed around the call.
-/// * [`ftype::Flavor::Console`] (`.NCP`) — clear the screen and home the
-///   cursor (`fbcon::clear_and_home`), the same `ESC E` a GEM program's
-///   `v_enter_cur` sends before it runs a TOS program, so the child's output
-///   starts at the top left; run it, then repaint the desktop over the text
-///   below — mirroring [`crate::shell::run_console`]'s enter/restore.
-///   `run_program` is kept pure
-///   (no console/redraw coupling); the enter is done here and the restore is
-///   the trailing [`redraw::redraw_desktop`] (whole-screen recovery — the
-///   console cleared the screen).
+/// * [`ftype::Flavor::Console`] (`.NCP`) — bracket the run with the AES screen
+///   mode switch, [`crate::shell_loop::sh_alpha_enter`] /
+///   [`crate::shell_loop::sh_alpha_leave`], i.e. EmuTOS' `sh_toalpha` /
+///   `sh_tographic` (`aes/gemshlib.c:246-260,223-239`): the pointer goes away
+///   and the screen is cleared before the child's output starts at the top
+///   left, and the mouse comes back afterwards (DESK22). The desktop is then
+///   repainted over the text by the trailing [`redraw::redraw_desktop`]
+///   (whole-screen recovery — the console cleared the screen). `run_program`
+///   stays pure: no console/redraw coupling inside it.
 /// * [`ftype::Flavor::Params`] (`.NTP`) — a direct double-click runs it with an
 ///   empty tail (`tail == &[]`, Stage A). When launched as a document's
 ///   associated application (deskins #20), `tail` carries the document path.
@@ -649,21 +649,40 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
             }
         }
         ftype::Flavor::Console => {
-            // Console (`.NCP`): its own VT52 text-screen enter/restore, NOT the
-            // GEM screen handoff — left exactly as before.
-            crate::fbcon::clear_and_home();
+            // Console (`.NCP`): the AES screen-mode switch a character-mode
+            // program gets in EmuTOS — `pro_run(isgraf = FALSE, …)` →
+            // `shel_write` → `sh_main`'s `sh_chgrf` → `sh_toalpha`
+            // (`aes/gemshlib.c:513-523,246-260`), which puts the arrow shape
+            // back and **removes the mouse pointer** (`ratexit()`, `:256`)
+            // before the text screen appears. Clearing the screen alone
+            // (`fbcon::clear_and_home`, which `sh_toalpha` still does at its
+            // end) left the pointer standing in the text as a black smudge —
+            // DESK22.
+            crate::shell_loop::sh_alpha_enter();
             let ran = crate::launch::run_program_with_tail(path.as_bytes(), tail);
             // Classic TOS keeps the console up until the user acknowledges, so
             // the program's final output stays readable before the desktop
             // repaints over it. Only reached from a real double-click (an
             // interaction path that requires HID input — verified on hardware).
             console_pause_for_key();
+            // Back into graphics mode — `sh_main`'s next pass (`:712-713`),
+            // `sh_tographic` (`:223-239`): mouse on, hourglass while the
+            // desktop is rebuilt.
+            crate::shell_loop::sh_alpha_leave();
             if !ran {
+                // EmuTOS shows the failure alert on the next pass too, right
+                // after the mode switch and before the desktop is drawn
+                // (`fm_error`, `gemshlib.c:722-723`).
                 alert_launch_failed(name);
             }
             // The console program cleared the whole screen: genuine whole-screen
             // recovery of the desktop (background + windows + menu bar).
             redraw::redraw_desktop();
+            // …and the arrow back, which in EmuTOS is the last act of the
+            // restarted desktop's start-up (`desk_busy_off`,
+            // `deskmain.c:2071`) undoing `sh_tographic`'s hourglass. Same step,
+            // same place as after the nested EmuCON pass (`desk::run`'s loop).
+            pro::desk_busy_off();
         }
     }
 }

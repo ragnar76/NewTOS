@@ -1602,3 +1602,39 @@ unchanged by DESK21.
 
 Measured: `measurement-2026-09-23-desk16-desk17-desk21/`, both drop-downs
 before and after.
+
+---
+
+## NewTOS implementation notes — a selection does not survive a window change (DESK29, 2026-09-24)
+
+**EmuTOS clears unconditionally, and NewTOS already does exactly that.** The
+ticket suspected `main::top_msg`'s `desk_clear(G.g_cwin)` of being a
+simplification that made the "select in another window, then File → Open" case
+unreachable. There is no such case.
+
+Two places clear, both without a condition on *what* is selected:
+
+* `hndl_msg`'s `WM_TOPPED` arm (`deskmain.c:1282-1292`) — `desk_clear(G.g_cwin)`
+  **first**, then `wind_set(WF_TOP)`, `win_top`, `desk_verify(pw->w_id, FALSE)`.
+  `G.g_cwin` is still the *previous* window at that point: it is `desk_verify`
+  that assigns it (`desksupp.c:196`).
+* `hndl_button` (`deskmain.c:957-959`) — `wh = wind_find(mx,my); if (wh !=
+  G.g_cwin) desk_clear_all();`, i.e. any click whose window differs from the
+  current one clears **every** window's selection *and* the desktop's
+  (`desk_clear_all`, `desksupp.c:160-169`).
+
+So a selection cannot cross a window boundary on EmuTOS either, and the second
+position of *Default dir* does not need it to: `do_aopen` takes the directory
+of `win_ontop()` when `G.g_appdir` is off (`desksupp.c:878, 898-901`) — the
+**top window's** `p_spec`, whatever is selected. The case is reached whenever
+the opened item is not in the top window: a desktop icon while a window is
+open (`G.g_cwin == DESKWH`, `do_open`'s first branch, `desksupp.c:1205`), or a
+drag whose destination is another window (`fun_drag` → `do_aopen`,
+`deskfun.c:967,1034,1249`).
+
+`main::top_msg` and `main::hndl_button` are verbatim both arms; nothing was
+changed. Measured: two windows on `C:\`, a file selected in the top one, one
+click in the lower one's uncovered work area — the selection is gone, and the
+AES trace shows the EmuTOS order, `wind_set(2, WF_INFO)` (that is
+`desk_clear`'s `win_sinfo`, `desksupp.c:148`) before `wind_set(1, WF_TOP)`
+(`measurement-2026-09-24-desk22-desk23-desk28-desk29/`, §5).
