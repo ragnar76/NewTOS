@@ -25,7 +25,7 @@
 | 2 | raspberrypi/firmware wiki — [Mailboxes](https://github.com/raspberrypi/firmware/wiki/Mailboxes) | register offsets |
 | 3 | raspberrypi/firmware wiki — [Accessing mailboxes](https://github.com/raspberrypi/firmware/wiki/Accessing-mailboxes) | status bits, read/write procedure, channel encoding |
 | 4 | raspberrypi/firmware wiki — [Mailbox property interface](https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface) | channel 8 protocol, buffer format, tag IDs + value layouts |
-| 5 | `references/circle` (in-tree, pinned) — `include/circle/bcmpropertytags.h`, `lib/bcmframebuffer.cpp`, `lib/2dgraphics.cpp`, `addon/linux/raspberrypi-firmware.h` | virtual-offset + vsync tag ids and value layouts, the double-buffer sequence (§3b) |
+| 5 | `references/circle` (in-tree, pinned) — `include/circle/bcmpropertytags.h`, `lib/bcmframebuffer.cpp`, `lib/2dgraphics.cpp`, `addon/linux/raspberrypi-firmware.h` | virtual-offset + vsync tag ids and value layouts, the double-buffer sequence (§3b), clock-rate + temperature tag ids and value layouts (§3d) |
 
 Cross-ref (verified-pattern, tertiary): rpi bare-metal FB tutorials
 (valvers part 5), circle. **Linux is cross-reference only**, not
@@ -359,6 +359,64 @@ pairs, is a hardware question; the kernel prints every pair it receives
 
 Driver: `kernel/src/drivers/bcm2711/mailbox.rs::get_memory`, one message
 carrying both tags.
+
+---
+
+## 3d. System-info tags — clock rate and temperature — sources #4, #5
+
+The same property channel answers "how fast is the CPU running" and "how
+warm is the die". Both tags live in the *Clocks* / *Voltage* group of the
+firmware *Mailbox property interface* page (source #4); the pinned
+in-tree `references/circle` (source #5) carries the same ids and the value
+structs verbatim, which is what fixes the request layout:
+
+| Tag id | Name | Request value | Response value |
+|--------|------|---------------|----------------|
+| `0x0003_0002` | Get clock rate | `u32 clock id` (4 B) | `u32 clock id, u32 rate in Hz` (8 B) |
+| `0x0003_0006` | Get temperature | `u32 sensor id` (4 B) | `u32 sensor id, u32 value in 1/1000 °C` (8 B) |
+
+Ids, from `references/circle/include/circle/bcmpropertytags.h`:
+
+| Constant | Value | Line |
+|----------|------:|------|
+| `PROPTAG_GET_CLOCK_RATE` | `0x00030002` | `:39` |
+| `PROPTAG_GET_TEMPERATURE` | `0x00030006` | `:41` |
+| `CLOCK_ID_ARM` (the CPU core clock) | 3 | `:184` |
+| `TEMPERATURE_ID` (the only SoC sensor) | 0 | `:196` |
+
+The request shape — id in, 4 request-parameter bytes, 8 value bytes back —
+is `references/circle/lib/cputhrottle.cpp:394-418`
+(`Tags.GetTag(nTagId, &TagClockRate, sizeof TagClockRate, 4)`; `sizeof` is
+tag header + 8 value bytes, the trailing `4` is the request parameter
+length). Both tags therefore share one buffer shape.
+
+Two rules a reader must honour, both from the interface itself (§2 and
+§3a): an unanswered tag comes back with its `b31` **clear** — that is how a
+mailbox which does not implement the tag presents itself — and the tag's own
+code word carries the value length, so a response shorter than the 8 bytes
+the reply format requires is not an answer either.
+
+One further rule is taken from the reference implementation rather than the
+interface text: **a clock rate of 0 means "no rate for this clock"**, not
+"0 Hz". Circle checks exactly that before falling back to another source
+(`references/circle/lib/machineinfo.cpp:459-471`:
+`Tags.GetTag(…) && TagClockRate.nRate != 0`). NewTOS reports it as
+"no answer". A temperature of 0 is *not* filtered — 0.000 °C is a
+temperature, and circle does not filter it either
+(`lib/cputhrottle.cpp:408-418` returns `nValue` unchanged).
+
+**Observed on QEMU `raspi4b`** (QEMU 11.0.2, `qemu-system-aarch64 -M
+raspi4b`, 2026-09-24): the emulator's firmware model answers **both** tags,
+with `rate = 700 000 000` Hz for clock id 3 and `value = 25 000` m°C for
+sensor id 0 — fixed numbers of the model, identical across boots, not a
+measurement. They are reported faithfully as what the firmware said; only a
+real Pi 4 shows a clock that moves with the governor and a die that warms
+under load.
+
+Driver: `kernel/src/drivers/bcm2711/mailbox.rs::get_clock_rate` /
+`::get_temperature`, both over the shared `query_id_value` helper. Consumer:
+GEMDOS `Ssystem` modes 2000/2001 through `Host::cpu_clock_hz` /
+`Host::cpu_temperature_mdeg` (`docs/api/gemdos/154-ssystem.md`).
 
 ---
 

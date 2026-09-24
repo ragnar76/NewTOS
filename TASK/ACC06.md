@@ -1,6 +1,6 @@
 # ACC06 — Ein kleines Accessory als Pruefling fuer ACC02/ACC03
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Abnahmefall + Kernelbindung
+Status: **TEIL 1 ERLEDIGT (2026-09-24), TEIL 2 ALS QUELLTEXT** · Prioritaet: **P2** · Typ: Abnahmefall + Kernelbindung
 
 Abhaengigkeiten: [ACC01](ACC01.md) (Quellenanalyse, offen) — der Pruefling
 laeuft erst, wenn ACC02/ACC03 stehen; **gebaut wird er vorher**, wie
@@ -79,3 +79,75 @@ Kopf, warum er noch nicht laufen kann. Danach ist ACC02/ACC03 pruefbar.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+---
+
+## Abschluss (2026-09-24)
+
+**Teil 1 ist gebaut und belegt, Teil 2 liegt als Quelltext vor.**
+Messung: [`measurement-2026-09-24-acc06/`](../measurement-2026-09-24-acc06/).
+Kurzfassung: [`ACC06-STATUS-DONE.MD`](ACC06-STATUS-DONE.MD).
+
+### Die Nummernwahl gegen die Quelle geprueft
+
+Das Ticket nannte FreeMiNTs belegte Bereiche als „0–29, 100, 900–913,
+1000–1100 und `0x54f8`". Die Quelle sagt etwas Weiteres: `sys/mint/ssystem.h`
+(@ `f906416`) reserviert per Kommentar **ganze Bloecke**, nicht nur die
+vergebenen Nummern — *„additional informations about the kernel / reserved
+900 - 999"* und *„debug section / reserved 1000 - **1999**"*. Und der
+Verteiler beantwortet eine Nummer, die im Header gar nicht steht: `case 3000:`
+(`sys/ssystem.c:631`), ein `register_trap2`-Testhaken hinter
+`#ifdef MINT_STATUS_CVS`, im Quelltext als *„XXX only for testing"* markiert.
+
+Ergebnis fuer uns unveraendert: **2000 ist frei**, und zwar mit einer Luecke
+von 2000 bis 2999. `S_NEWTOS_CPUCLOCK = 2000` und `S_NEWTOS_CPUTEMP = 2001`
+sind festgeschrieben. Vermerkt ist zugleich, dass ein spaeterer NewTOS-Block
+nicht ueber 2999 hinauswachsen darf, ohne 3000 erneut zu pruefen.
+
+### Der Weg, den die zwei Werte nehmen
+
+`Ssystem(0x154)` → `newtos_scalar` (`tos-api/src/gemdos/ssystem.rs`) →
+`Host::cpu_clock_hz` / `Host::cpu_temperature_mdeg` (`tos-api/src/host.rs`) →
+`kernel/src/host_env.rs` (nur `board-rpi4`) →
+`mailbox::get_clock_rate` / `::get_temperature`
+(`kernel/src/drivers/bcm2711/mailbox.rs`, Tags `0x0003_0002` und
+`0x0003_0006`).
+
+Argumente: `arg1` = Zeiger auf ein 32-Bit-LONG oder 0 fuer den Wert im
+Rueckgabe-LONG; `arg2` **reserviert und zurueckgewiesen** (`EINVAL`) statt
+stillschweigend ignoriert. Ein Brett ohne Mailbox behaelt den Trait-Standard
+`None`, und der Trap macht daraus `ERROR` — **keine erfundene Zahl**, und in
+diesem Fall wird auch nichts in den Zeiger geschrieben.
+
+### Was QEMU antwortet
+
+Der Emulator beantwortet **beide** Tags, mit festen Modellzahlen:
+**700,0 MHz** und **25,0 C**. Sie stehen so im Protokoll — erfunden ist
+nichts, gemessen ist es auch nicht. Der `ERROR`-Pfad war im Emulator also
+nicht zu sehen und ist stattdessen am Trap belegt
+(`tos-api/tests/gemdos_ssystem_cpuinfo.rs`).
+
+**Nur die echte Pi 4 kann entscheiden**, ob der Treiber wirklich die Firmware
+liest: dort duerfen dort nicht dieselben zwei Zahlen stehen, und die
+Temperatur muss sich nach einem Lastlauf veraendern. Hardwarepunkt **64** in
+`docs/api/desktop/_hw-test-2026-09-17.md`.
+
+### Teil 2
+
+`sdk/examples/sysacc.c` ist geschrieben und uebersetzt sauber, **laeuft aber
+nicht**: `menu_register` (35) traegt nur ein, niemand haengt den Eintrag in
+die Desk-Klappliste und niemand sendet `AC_OPEN`. Das steht so im Dateikopf.
+Ein Geruest wurde nicht darum herum gebaut, die Dateiendung bleibt ACC01
+ueberlassen (der Bauhinweis nennt bewusst `.TBD`), und
+`tools/make-sd-image.sh` installiert ihn absichtlich nicht.
+
+### Offen geblieben (gehoert in eigene Tickets)
+
+1. **Der Emulator taugt nicht als Bildbeleg fuer den AUTO-Textschirm.** Die
+   Textphase ist kuerzer als 0,12 s (zwei Verfahren, RUNINFO §3); ein Bild
+   der zwei Zeilen gibt es erst mit dem Accessory.
+2. **`GET_CLOCK_RATE` gegen `GET_CLOCK_RATE_MEASURED` (`0x0003_0047`).**
+   circle fragt erst den gemessenen Takt und faellt auf den eingestellten
+   zurueck (`references/circle/lib/machineinfo.cpp:459-471`). Welcher der
+   beiden auf der Pi 4 die ehrlichere Zahl ist, entscheidet ein Lauf auf der
+   Hardware — nicht dieses Ticket.

@@ -1,14 +1,24 @@
 //! `Ssystem` — GEMDOS 0x154 (FreeMiNT extension).
 //!
-//! Spec: [`docs/api/gemdos/154-ssystem.md`]. Only the cookie subfunctions
-//! (`S_GETCOOKIE`/`S_SETCOOKIE`/`S_DELCOOKIE`) are implemented; every other
-//! mode returns `EINVFN` (NewTOS has no `ENOSYS`), so the surface stays
-//! honest. Cookie storage: [`crate::cookie`].
+//! Spec: [`docs/api/gemdos/154-ssystem.md`]. Of FreeMiNT's modes only the
+//! cookie subfunctions (`S_GETCOOKIE`/`S_SETCOOKIE`/`S_DELCOOKIE`) are
+//! implemented; every other FreeMiNT mode returns `EINVFN` (NewTOS has no
+//! `ENOSYS`), so the surface stays honest. Cookie storage: [`crate::cookie`].
+//!
+//! On top of those sit NewTOS's **own** subfunctions from 2000 upwards
+//! ([`S_NEWTOS_CPUCLOCK`], [`S_NEWTOS_CPUTEMP`]) — machine facts an EL0
+//! program cannot otherwise reach, because the hardware that knows them (the
+//! BCM2711 mailbox) is kernel-only. 2000 is free: FreeMiNT's own header
+//! reserves 0–29, 100, `0x54f8`, 900–999 and 1000–**1999**
+//! (`references/freemint/sys/mint/ssystem.h`, the two `reserved` comments),
+//! and the highest number its dispatcher answers is the build-gated test mode
+//! 3000 (`sys/ssystem.c:631`). The gap 2000…2999 belongs to nobody.
 
 use tos_types::error::{EINVAL, EINVFN, ENSMEM, ERROR, E_OK};
 use tos_types::Long;
 
 use crate::cookie;
+use crate::host;
 use crate::trap::TrapArgs;
 
 /// `Ssystem`'s GEMDOS function id. It is above `MAX_FN`, so the GEMDOS
@@ -19,6 +29,12 @@ pub const SSYSTEM: usize = 0x154;
 const S_GETCOOKIE: u16 = 8;
 const S_SETCOOKIE: u16 = 9;
 const S_DELCOOKIE: u16 = 26;
+
+/// NewTOS-own subfunction: the CPU core clock in **Hz**.
+pub const S_NEWTOS_CPUCLOCK: u16 = 2000;
+/// NewTOS-own subfunction: the CPU/SoC temperature in **thousandths of a
+/// degree Celsius**.
+pub const S_NEWTOS_CPUTEMP: u16 = 2001;
 
 /// `Ssystem(WORD mode, LONG arg1, LONG arg2)`: `mode` in `x0`, `arg1` in
 /// `x1`, `arg2` in `x2`.
@@ -36,6 +52,12 @@ pub fn ssystem(args: &TrapArgs) -> Long {
         S_GETCOOKIE => s_getcookie(args),
         S_SETCOOKIE => s_setcookie(args),
         S_DELCOOKIE => s_delcookie(args),
+        S_NEWTOS_CPUCLOCK => {
+            newtos_scalar(args, || host::host()?.cpu_clock_hz().map(|hz| hz as Long))
+        }
+        S_NEWTOS_CPUTEMP => {
+            newtos_scalar(args, || host::host()?.cpu_temperature_mdeg())
+        }
         _ => EINVFN,
     }
 }
@@ -102,6 +124,47 @@ fn s_delcookie(args: &TrapArgs) -> Long {
     } else {
         EINVAL
     }
+}
+
+/// The shared body of the NewTOS-own scalar subfunctions (2000 upwards).
+///
+/// Argument convention — FreeMiNT's own, where `arg1` is the caller's buffer
+/// and `arg2` its length (`S_GETBOOTLOG` 29, `S_KNAME` 900,
+/// `sys/mint/ssystem.h`), narrowed to a single LONG:
+///
+/// * `arg1` — a user pointer to a LONG that receives the value, or **0** to
+///   have the value returned in the call's own LONG. The pointer form is the
+///   unambiguous one: it carries all 32 bits, while a returned LONG cannot
+///   tell a value of `0xFFFF_FFFF` from `ERROR`. (For a Pi 4 neither reading
+///   can reach that far — its ARM clock tops out at 2.0 GHz and its die
+///   temperature at some tens of degrees — but the contract, not the current
+///   board, decides which form a caller should use.)
+/// * `arg2` — reserved for a future selector (a second clock, a second
+///   sensor); it must be **0** today. Anything else is `EINVAL` rather than
+///   silently ignored, so a program written against a later, wider version
+///   of this call is told it is talking to an older kernel instead of
+///   receiving the wrong quantity.
+///
+/// `read` answers `None` when this board cannot measure the value — then the
+/// call is `ERROR` and nothing is written through `arg1`. That is the whole
+/// point of routing through [`crate::host::Host`]: a board with no sensor
+/// says so.
+fn newtos_scalar(args: &TrapArgs, read: impl FnOnce() -> Option<Long>) -> Long {
+    if args.arg_u64(2) != 0 {
+        return EINVAL;
+    }
+    let Some(value) = read() else {
+        return ERROR;
+    };
+    let out = args.arg_u64(1);
+    if out == 0 {
+        return value;
+    }
+    // SAFETY: `arg1` is a user pointer; the unprivileged store
+    // permission-checks it as EL0 and faults the caller (not the kernel) on a
+    // bad pointer — the same rule as `s_getcookie`'s `arg2`.
+    unsafe { write_user_long(out as *mut u8, value as u32) };
+    E_OK
 }
 
 /// Write a 32-bit value to a user pointer via an unprivileged store

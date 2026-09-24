@@ -358,6 +358,30 @@ impl Host for KernelHost {
             None
         }
     }
+
+    /// `board-rpi4`: ask the VideoCore firmware for the ARM core clock over
+    /// the mailbox property channel. The query runs inside the GEMDOS trap
+    /// (`Ssystem(S_NEWTOS_CPUCLOCK)`), which is exactly where it belongs —
+    /// the value is live, not a boot-time snapshot: the firmware scales the
+    /// ARM clock with load and temperature, so a cached number would be a
+    /// different machine's answer. `board-qemu-virt` has no VideoCore, keeps
+    /// the trait default (`None`), and the trap reports `ERROR`.
+    #[cfg(feature = "board-rpi4")]
+    fn cpu_clock_hz(&self) -> Option<u32> {
+        use crate::drivers::bcm2711::mailbox;
+        mailbox::get_clock_rate(mailbox::CLOCK_ID_ARM)
+    }
+
+    /// `board-rpi4`: the SoC die temperature from the same property channel,
+    /// in thousandths of a degree Celsius. Live for the same reason as
+    /// [`Host::cpu_clock_hz`] — a temperature that is not read now is not a
+    /// temperature. The firmware reports it as an unsigned word; widened to
+    /// the signed TOS LONG unchanged.
+    #[cfg(feature = "board-rpi4")]
+    fn cpu_temperature_mdeg(&self) -> Option<i32> {
+        use crate::drivers::bcm2711::mailbox;
+        mailbox::get_temperature(mailbox::TEMPERATURE_ID).map(|mdeg| mdeg as i32)
+    }
 }
 
 /// Adapter exposing the EMMC2 SD card as a TOS-API [`BlockDev`].

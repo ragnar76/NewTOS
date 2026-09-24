@@ -213,6 +213,32 @@ pub trait Host: Sync {
     /// default is a no-op: a board with no keyboard translator has no table
     /// to replace.
     fn set_key_table(&self, _which: KeyTable, _table: &[u8; 128]) {}
+
+    /// The CPU core clock the machine is running at, in **Hz**, or `None`
+    /// when this board cannot be asked. Backs `Ssystem(S_NEWTOS_CPUCLOCK)`
+    /// (`docs/api/gemdos/154-ssystem.md`). Same swappable hardware boundary
+    /// as [`Host::raster`]: on `board-rpi4` the kernel host asks the
+    /// VideoCore firmware over the mailbox property channel; a board without
+    /// that channel (`board-qemu-virt`, a hostless test) keeps the default
+    /// and answers honestly with `None`, which the caller turns into
+    /// `ERROR`. It never invents a number — a clock frequency that was not
+    /// measured is not a clock frequency.
+    fn cpu_clock_hz(&self) -> Option<u32> {
+        None
+    }
+
+    /// The SoC's current die temperature in **thousandths of a degree
+    /// Celsius** (47.2 °C → `47200`), or `None` when this board has no
+    /// temperature sensor to ask. Backs `Ssystem(S_NEWTOS_CPUTEMP)`
+    /// (`docs/api/gemdos/154-ssystem.md`); same boundary and the same
+    /// honest-`None` rule as [`Host::cpu_clock_hz`].
+    ///
+    /// Signed because a temperature is: the firmware reports the value as an
+    /// unsigned word, but a board started below freezing is a physical state,
+    /// not an error, and the TOS-side LONG has to be able to carry it.
+    fn cpu_temperature_mdeg(&self) -> Option<i32> {
+        None
+    }
 }
 
 /// Bytes reserved for one AltGr override array. EmuTOS's non-`DUAL_KEYBOARD`

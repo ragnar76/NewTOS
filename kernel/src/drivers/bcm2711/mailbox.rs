@@ -319,3 +319,118 @@ pub fn get_memory() -> Option<MemoryReport> {
         Some(MemoryReport { arm, arm_len, vc })
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// System-info tags: "Get clock rate" (0x00030002) / "Get temperature"
+// (0x00030006)
+// ─────────────────────────────────────────────────────────────────────
+//
+// Reference: `docs/hardware/mailbox-framebuffer.md` §3d — tag ids, id
+// constants and value layouts taken from the firmware *Mailbox property
+// interface* documentation (source #4) and cross-checked against the pinned
+// in-tree `references/circle` (source #5):
+// `include/circle/bcmpropertytags.h:39` (`PROPTAG_GET_CLOCK_RATE`), `:41`
+// (`PROPTAG_GET_TEMPERATURE`), `:178-200` (both value structs, incl.
+// `CLOCK_ID_ARM = 3` and `TEMPERATURE_ID = 0`), `lib/cputhrottle.cpp:394-418`
+// (the request: id in, 4 request-parameter bytes, 8 value bytes out).
+// Nothing here is from memory (CLAUDE.md Rule 6).
+
+/// `PROPTAG_GET_CLOCK_RATE` — answers `(clock id, rate in Hz)`.
+const PROPTAG_GET_CLOCK_RATE: u32 = 0x0003_0002;
+/// `PROPTAG_GET_TEMPERATURE` — answers `(sensor id, value in 1/1000 °C)`.
+const PROPTAG_GET_TEMPERATURE: u32 = 0x0003_0006;
+
+/// Clock id of the ARM core clock (`bcmpropertytags.h:184`).
+pub const CLOCK_ID_ARM: u32 = 3;
+/// The only SoC temperature sensor id the firmware defines
+/// (`bcmpropertytags.h:196`).
+pub const TEMPERATURE_ID: u32 = 0;
+
+// Word indices into `SYSINFO_BUF`. Both tags share one shape: a 4-byte
+// request parameter (the id) and an 8-byte value buffer (id, value).
+const S_TAG: usize = 2; // tag id
+const S_LEN: usize = 3; // value buffer size we provide, bytes
+const S_CODE: usize = 4; // request/response code
+const S_ID: usize = 5; // value buffer word 0: the id (echoed in the reply)
+const S_VAL: usize = 6; // value buffer word 1: the answer
+const S_ENDTAG: usize = 7; // end tag
+/// Buffer length in words, rounded up so the byte length is a multiple of
+/// 16 (the property buffer's alignment unit) — 8 words exactly.
+const SYSINFO_BUF_WORDS: usize = (S_ENDTAG + 1 + 3) & !3;
+
+/// 16-byte-aligned property buffer for the system-info queries (the mailbox
+/// write OR's the channel into the low 4 bits, so the address must be
+/// aligned).
+#[repr(C, align(16))]
+struct SysInfoBuf {
+    words: [u32; SYSINFO_BUF_WORDS],
+}
+static mut SYSINFO_BUF: SysInfoBuf = SysInfoBuf { words: [0; SYSINFO_BUF_WORDS] };
+
+/// Send a one-tag property message of the `(id in) → (id, value out)` shape
+/// and return the value word.
+///
+/// `None` means the firmware did **not** answer: the transaction failed, the
+/// tag came back with its response bit clear (how a mailbox that does not
+/// implement the tag presents itself — see [`get_memory`]), or the response
+/// was shorter than the 8 value bytes the reply format requires. The caller
+/// must pass that `None` on; a missing answer is never rounded to a number.
+fn query_id_value(tag: u32, id: u32) -> Option<u32> {
+    // SAFETY: boot CPU, single-threaded; exclusive use of the static buffer.
+    unsafe {
+        {
+            let b = &mut (*core::ptr::addr_of_mut!(SYSINFO_BUF)).words;
+            b.fill(0);
+            b[0] = (SYSINFO_BUF_WORDS * 4) as u32; // total size in bytes
+            b[1] = 0; // request code
+            b[S_TAG] = tag;
+            b[S_LEN] = 8; // value buffer: (id, value)
+            b[S_CODE] = 4; // request, 4 parameter bytes (the id)
+            b[S_ID] = id;
+            b[S_VAL] = 0;
+            b[S_ENDTAG] = 0;
+        }
+
+        let va = (&raw const SYSINFO_BUF) as usize;
+        let pa = crate::arch::aarch64::mmu::va_to_pa(va as u64) as u32;
+        if !call_property(va, pa, SYSINFO_BUF_WORDS * 4) {
+            return None;
+        }
+
+        // Read the reply through the buffer VA, the way `call_property`
+        // reads the message's own response code — no reference into the
+        // static, so nothing here depends on it staying still.
+        let code = core::ptr::read_volatile((va + S_CODE * 4) as *const u32);
+        if code & TAG_RESPONSE == 0 || (code & !TAG_RESPONSE) < 8 {
+            return None;
+        }
+        Some(core::ptr::read_volatile((va + S_VAL * 4) as *const u32))
+    }
+}
+
+/// The current rate of clock `clock_id` in Hz ([`CLOCK_ID_ARM`] for the CPU
+/// core clock), or `None` when the firmware does not answer.
+///
+/// A rate of **0** is also reported as `None`: that is the firmware's way of
+/// saying it knows the tag but has no rate for this clock, and circle treats
+/// it the same way before falling back to another source
+/// (`references/circle/lib/machineinfo.cpp:459-471`,
+/// `Tags.GetTag(…) && TagClockRate.nRate != 0`).
+pub fn get_clock_rate(clock_id: u32) -> Option<u32> {
+    match query_id_value(PROPTAG_GET_CLOCK_RATE, clock_id) {
+        Some(0) | None => None,
+        Some(hz) => Some(hz),
+    }
+}
+
+/// The SoC temperature measured by sensor `id` ([`TEMPERATURE_ID`]) in
+/// thousandths of a degree Celsius, or `None` when the firmware does not
+/// answer the tag.
+///
+/// Unlike [`get_clock_rate`] a zero reading is passed through: 0.000 °C is a
+/// temperature, and circle applies no zero rule here either
+/// (`references/circle/lib/cputhrottle.cpp:408-418` returns `nValue`
+/// unfiltered).
+pub fn get_temperature(id: u32) -> Option<u32> {
+    query_id_value(PROPTAG_GET_TEMPERATURE, id)
+}

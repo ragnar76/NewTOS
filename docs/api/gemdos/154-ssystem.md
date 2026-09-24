@@ -17,6 +17,11 @@
 > `S_SETLVAL`, `S_SECLEVEL`, …) — catalogued below for completeness but marked
 > **deferred**; the dispatcher returns `ENOSYS` for every unimplemented mode so
 > the surface stays honest.
+>
+> **Plus NewTOS's own modes from 2000 upwards** (§"NewTOS-own modes (2000+)"):
+> machine facts an EL0 program cannot reach any other way, because the hardware
+> that knows them is kernel-only. These are *not* FreeMiNT modes and are marked
+> as ours wherever they appear; 2000+ is a range FreeMiNT leaves free.
 
 > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
 > Contract (for the modes NewTOS implements): trap ID `0x154`, the `(mode,
@@ -139,6 +144,78 @@ implements them it must be for the m68k emulator only, or re-mapped to the
 kernel's sysvar struct. Several `S_OS*` and info modes could later expose a
 NewTOS identity, but that is a separate decision.
 
+### NewTOS-own modes (2000+) — **implemented**
+
+| Mode | Value | Group | Notes |
+|------|------:|-------|-------|
+| `S_NEWTOS_CPUCLOCK` | 2000 | machine | ARM core clock, **Hz** |
+| `S_NEWTOS_CPUTEMP` | 2001 | machine | SoC die temperature, **1/1000 °C** |
+
+**Why the number block is free.** FreeMiNT's `sys/mint/ssystem.h` (@ `f906416`)
+assigns 0–29, 100 and `0x54f8` (21752), and reserves two ranges by comment:
+*"additional informations about the kernel / reserved 900 - 999"* and *"debug
+section / reserved 1000 - 1999"*. The highest mode its dispatcher answers at
+all is `case 3000:` (`sys/ssystem.c:631`), a `register_trap2` test hook behind
+`#ifdef MINT_STATUS_CVS` and marked *"XXX only for testing"*. **2000…2999 is
+claimed by nobody**, so NewTOS takes it. (Note for a future extension: do not
+grow past 2999 without re-checking 3000.)
+
+**Why `Ssystem` and not a cookie.** A cookie is a value deposited once at boot;
+a die temperature changes between two reads, and the ARM clock changes with
+load and thermal state. The jar cannot express "ask the machine now"
+(`docs/api/bios/_cookie-jar.md`), `Ssystem` can — and FreeMiNT-compatible
+extension is the sanctioned direction (ADR-012, `docs/MEMORY.md`).
+
+#### Interface (both modes)
+
+```
+Ssystem(2000 | 2001, arg1, arg2)
+```
+
+| Arg | Meaning |
+|-----|---------|
+| `arg1` | pointer to a **32-bit LONG** that receives the value, or **0** to have the value returned in the call's own LONG |
+| `arg2` | **reserved** for a future selector (a second clock, a second sensor). Must be **0** today |
+
+| Return | Condition |
+|--------|-----------|
+| `E_OK` (0) | `arg1 != 0`: the value was written to `*arg1` |
+| the value | `arg1 == 0`: the reading itself, in the returned LONG |
+| `ERROR` (-1) | this board cannot measure the value; nothing is written |
+| `EINVAL` (-25) | `arg2 != 0`; checked **before** the sensor is read, and nothing is written |
+
+`arg1` follows FreeMiNT's own convention for "answer into the caller's
+storage" (`S_GETBOOTLOG` 29, `S_KNAME` 900: `arg1` = buffer), narrowed to a
+single LONG. The pointer form is the unambiguous one — a returned LONG cannot
+distinguish a value of `0xFFFF_FFFF` from `ERROR`. On a Pi 4 neither reading
+can reach that far (ARM clock ≤ 2.0 GHz; a die temperature of 4.29 million
+degrees is not a physical state), but the contract, not the current board,
+decides which form a caller should prefer.
+
+`arg2` is *refused*, not ignored, so a program written against a later, wider
+version of this call is told it is talking to an older kernel instead of being
+handed the wrong quantity.
+
+#### Where the values come from
+
+Neither reading is a kernel constant. Both go out through the
+[`Host`](../../ARCHITECTURE.md) trait (`tos-api/src/host.rs`,
+`Host::cpu_clock_hz` / `Host::cpu_temperature_mdeg`) — the same swappable
+hardware boundary as `Host::raster`:
+
+| Board | Source | Answer |
+|-------|--------|--------|
+| `board-rpi4` | BCM2711 VideoCore mailbox property tags `0x0003_0002` (`GET_CLOCK_RATE`, clock id 3 = ARM) and `0x0003_0006` (`GET_TEMPERATURE`, sensor id 0) — `docs/hardware/mailbox-framebuffer.md` §3d | the firmware's reading, live per call |
+| `board-qemu-virt` | no VideoCore | trait default `None` → `ERROR` |
+| hostless (unit test) | — | trait default `None` → `ERROR` |
+
+**A board that cannot measure a value says so.** There is no fallback constant
+anywhere in this path: `None` becomes `ERROR`, and the caller decides what to
+print. Observed on QEMU `raspi4b` (2026-09-24): its firmware model *does*
+answer both tags, with the fixed values 700 000 000 Hz and 25 000 m°C — those
+are the emulator's numbers, faithfully reported, and only a real Pi 4 shows a
+clock that moves and a die that warms up.
+
 ---
 
 ## `S_GETCOOKIE` (mode 8) — `get_cookie(NULL, arg1, (ulong *)arg2)`
@@ -240,6 +317,27 @@ set NewTOS uses (see Open questions):
   a following `S_GETCOOKIE 'TEST'` returns not-found.
 - **Delete absent:** `Ssystem(S_DELCOOKIE, 'ZZZZ', 0)` returns `EINVAL`.
 - **Unknown mode:** `Ssystem(9999, 0, 0)` returns `ENOSYS`/`EINVFN`.
+
+## Verification criteria (NewTOS-own modes 2000/2001)
+
+Driven at the trap boundary by `tos-api/tests/gemdos_ssystem_cpuinfo.rs`, and
+end-to-end on a board by `C:\SYSINFO.NCP` (`sdk/examples/sysinfo.c`, installed
+by `tools/make-sd-image.sh`; `SD_SYSINFO_AUTO=1` additionally puts it in
+`\AUTO\` for a headless serial run).
+
+- **Value form:** with a host that can measure, `Ssystem(2000, 0, 0)` returns
+  the ARM clock in Hz and `Ssystem(2001, 0, 0)` the temperature in 1/1000 °C,
+  each in the call's own LONG.
+- **Pointer form:** `Ssystem(2000, &buf, 0)` returns `E_OK` and writes the
+  same value to `buf`; likewise for 2001. Both forms must agree.
+- **Board without the sensor:** both modes return `ERROR` (-1) and write
+  **nothing** through `arg1` — a caller that ignores the status must not be
+  able to mistake a stale buffer for a reading.
+- **Reserved `arg2`:** `Ssystem(2000, 0, 1)` and `Ssystem(2001, 0, 1)` return
+  `EINVAL` (-25) and write nothing.
+- **Neighbouring numbers stay unimplemented:** 1999, 2002 and 2999 return
+  `EINVFN`, so the two modes cannot be reached by accident.
+- **The probe is unaffected:** `Ssystem(-1, 0, 0)` still returns `E_OK`.
 
 ---
 

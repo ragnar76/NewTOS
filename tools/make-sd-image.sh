@@ -165,6 +165,25 @@ else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\DTACHILD.NCP skipped"
 fi
 
+# SYSINFO.NCP is the ACC06-part-1 proof: it reads the ARM core clock and the
+# SoC die temperature through the two NewTOS-own Ssystem subfunctions (2000 /
+# 2001) and prints them -- the evidence that the two values leave the kernel
+# and reach an EL0 program, long before the desk accessory that will show them
+# (ACC02/ACC03) exists. On a board that cannot measure them it prints the
+# ERROR it got; that is a result, not a failure.
+# Double-clickable in the root. With SD_SYSINFO_AUTO=1 it additionally goes
+# into \AUTO\, which is how a headless QEMU run gets the two lines onto the
+# serial console without a click.
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/sysinfo.c" "$V/SYSINFO.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\SYSINFO.NCP (Ssystem 2000/2001 clock + temperature)"
+  if [ "${SD_SYSINFO_AUTO:-0}" = "1" ]; then
+    cp "$V/SYSINFO.NCP" "$V/AUTO/SYSINFO.NCP"
+    echo "  + \\AUTO\\SYSINFO.NCP (runs at boot, prints to the serial console)"
+  fi
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\SYSINFO.NCP skipped"
+fi
+
 # libc milestone (mintlib port): LIBTEST.NCP is the mintlib-linked proof — real
 # printf(), malloc()/free(), and a stdio file round-trip (fopen/fwrite/fread/
 # fclose), linked against the ported mintlib libc.a by sdk/libc/build-libc.sh.
