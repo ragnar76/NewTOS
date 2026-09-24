@@ -145,11 +145,10 @@ pub fn ddelete(args: &TrapArgs) -> Long {
     };
 
     vol.free_chain(entry.cluster);
-    let mut e = [0u8; 32];
-    if dir::read_slot(&vol, parent, slot, &mut e) {
-        e[0] = 0xE5; // erased marker
-        dir::write_slot(&vol, parent, slot, &e);
-    }
+    // FS01: the folder's 8.3 entry *and* the `attr == 0x0F` long-name slots
+    // in front of it — a folder created by a foreign system carries them just
+    // like a file, and leaving them behind orphans the chain.
+    dir::erase_slot_with_lfn(&vol, parent, slot);
     super::cache::flush();
     E_OK
 }

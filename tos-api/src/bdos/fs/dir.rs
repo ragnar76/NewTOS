@@ -344,6 +344,114 @@ pub fn write_slot(vol: &Volume, start: u32, slot: u32, entry: &[u8; ENTRY]) -> b
     vol.write_rel_sector(rel, &buf)
 }
 
+// ── long-file-name slots ──────────────────────────────────────────────────
+//
+// A VFAT long name is stored in extra 32-byte slots carrying `attrib ==
+// FA_LFN` that sit **immediately in front of** the 8.3 entry they name, in
+// reverse order: the slot next to the 8.3 entry holds ordinal 1, the one
+// before it ordinal 2, and the physically first slot of the chain has bit
+// `0x40` set on top of its ordinal. Every slot of a chain repeats a checksum
+// over the eleven short-name bytes, so a chain can be told apart from a
+// stale one that happens to precede the same slot.
+//
+// Source: FreeMiNT's FAT layer, `references/freemint/sys/fatfs.c:779-790`
+// (the `LDIR` record: `head` = ordinal + `0x40` end-of-name flag at offset 0,
+// `attr` at 11, `chksum` at 13) and `:3690-3748` (`__readvfat`: walk the
+// ordinals down to 1, every slot must repeat the same checksum, and the
+// checksum must match the short entry). FreeMiNT notes the layout is
+// "informations ... from Microsoft" (`:813`). EmuTOS does **not** answer this
+// question: classic TOS has no long names at all, and EmuTOS only *skips*
+// `FA_LFN` records when scanning (`references/emutos/bdos/fsdir.c:326,1810`).
+
+/// Offset of the ordinal byte (`LDIR.head`) in a long-name slot.
+const LFN_ORD: usize = 0x00;
+/// Offset of the short-name checksum in a long-name slot.
+const LFN_CHKSUM: usize = 0x0D;
+/// `LDIR.head` bit marking the physically first slot of a chain.
+const LFN_LAST: u8 = 0x40;
+/// `LDIR.head` bits holding the ordinal (`fatfs.c:781`, "bit 0..4").
+const LFN_ORD_MASK: u8 = 0x1F;
+/// Upper bound for the backward walk — the ordinal field is five bits wide,
+/// so no well-formed chain can be longer. A corrupt chain cannot make the
+/// walk run away past it.
+const LFN_MAX_SLOTS: u8 = LFN_ORD_MASK;
+
+/// Checksum of an 8.3 name as every long-name slot of that entry repeats it:
+/// `sum = ror8(sum) + name[i]` over the eleven short-name bytes
+/// (FreeMiNT `__readvfat`, `references/freemint/sys/fatfs.c:3743-3748`).
+pub fn lfn_checksum(name11: &[u8; 11]) -> u8 {
+    let mut sum = 0u8;
+    for &c in name11.iter() {
+        sum = sum.rotate_right(1).wrapping_add(c);
+    }
+    sum
+}
+
+/// Free the directory entry at `slot` **together with its long-name slots**.
+///
+/// Marks the 8.3 entry erased (`0xE5` in the first name byte) and then walks
+/// backwards over the `FA_LFN` slots in front of it, marking each of them
+/// erased as well. This is FreeMiNT's `unlink_cookie_i`
+/// (`references/freemint/sys/fatfs.c:4246-4272`), which erases the short
+/// entry first and only then the `c->slots` VFAT slots that precede it —
+/// same order here, so an interrupted delete leaves harmless orphans rather
+/// than a live entry with a truncated name chain.
+///
+/// A slot is only taken to belong to this entry when it is a well-formed
+/// continuation: not already erased, `attrib == FA_LFN`, its checksum equal
+/// to the short name's, and its ordinal the next one expected (1, 2, 3 …).
+/// The walk stops at the slot carrying `LFN_LAST`, and refuses to touch a
+/// chain that does not match — an already-orphaned or malformed chain in
+/// front of the entry is left exactly as it was.
+///
+/// Returns whether the 8.3 entry itself was freed.
+///
+/// NewTOS never *writes* long-name slots (GEMDOS names are 8.3), but every
+/// card written by a foreign system carries them, and leaving them behind on
+/// delete accumulates orphans that make `fsck_msdos` fail (TASK/FS01).
+pub fn erase_slot_with_lfn(vol: &Volume, start: u32, slot: u32) -> bool {
+    let mut e = [0u8; ENTRY];
+    if !read_slot(vol, start, slot, &mut e) {
+        return false;
+    }
+    let mut name11 = [0u8; 11];
+    name11.copy_from_slice(&e[0..11]);
+    let sum = lfn_checksum(&name11);
+
+    // The 8.3 entry first (FreeMiNT order).
+    e[0] = ERASED;
+    if !write_slot(vol, start, slot, &e) {
+        return false;
+    }
+
+    // Then its long-name chain, ordinal 1 upwards, walking backwards.
+    let mut ord = 1u8;
+    let mut k = slot;
+    let mut l = [0u8; ENTRY];
+    while k > 0 && ord <= LFN_MAX_SLOTS {
+        k -= 1;
+        if !read_slot(vol, start, k, &mut l) {
+            break;
+        }
+        let head = l[LFN_ORD];
+        if head == ERASED || head == END || l[0x0B] != FA_LFN {
+            break; // not a live long-name slot
+        }
+        if l[LFN_CHKSUM] != sum || head & LFN_ORD_MASK != ord {
+            break; // belongs to some other (or a broken) name
+        }
+        l[LFN_ORD] = ERASED;
+        if !write_slot(vol, start, k, &l) {
+            break;
+        }
+        if head & LFN_LAST != 0 {
+            break; // physically first slot of the chain
+        }
+        ord += 1;
+    }
+    true
+}
+
 /// Build a 32-byte FCB directory entry (name, attribute, time/date,
 /// start cluster, size).
 pub fn build_fcb(name11: &[u8; 11], attr: u8, cluster: u32, size: u32, time: u16, date: u16) -> [u8; ENTRY] {

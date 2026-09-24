@@ -172,6 +172,55 @@ pub struct DiskHost {
     pub disk: RamDisk,
 }
 
+// ── raw image access ──────────────────────────────────────────────────────
+//
+// For tests that have to plant an on-disk fixture the GEMDOS layer cannot
+// write itself (long-name slots) and then assert on the raw directory bytes
+// a call left behind. Planting must happen *before* the first GEMDOS call of
+// the test binary: the BDOS sector cache has no invalidate, so bytes written
+// behind its back are only seen while it still holds nothing.
+
+/// Bytes per sector of the synthesized volume.
+pub const SECTOR_BYTES: usize = SECTOR;
+/// Number of FAT copies the image carries.
+pub const FAT_COPIES: u32 = NUM_FATS;
+
+/// Absolute LBA of the partition-relative sector `rel`.
+pub fn part_lba(rel: u32) -> u64 {
+    (PART_LBA + rel) as u64
+}
+
+/// Absolute LBA of the first root-directory sector.
+pub fn root_lba() -> u64 {
+    part_lba(ROOT_SEC)
+}
+
+/// Absolute LBA of the first sector of data cluster `cl`.
+pub fn cluster_lba(cl: u32) -> u64 {
+    part_lba(DATA_SEC + (cl - 2) * CLSIZ)
+}
+
+/// Absolute LBA of the first sector of FAT copy `copy` (0-based).
+pub fn fat_lba(copy: u32) -> u64 {
+    part_lba(FAT1 + copy * FSIZ)
+}
+
+impl DiskHost {
+    /// Read one raw sector straight from the image, bypassing the BDOS cache.
+    pub fn read_sector(&self, lba: u64) -> [u8; SECTOR] {
+        use tos_api::bios::block::BlockDev;
+        let mut buf = [0u8; SECTOR];
+        assert!(self.disk.read_blocks(lba, &mut buf), "read of LBA {lba}");
+        buf
+    }
+
+    /// Write one raw sector straight into the image, bypassing the BDOS cache.
+    pub fn write_sector(&self, lba: u64, data: &[u8; SECTOR]) {
+        use tos_api::bios::block::BlockDev;
+        assert!(self.disk.write_blocks(lba, data), "write of LBA {lba}");
+    }
+}
+
 impl Host for DiskHost {
     fn console_write_byte(&self, _byte: u8) {}
     fn block(&self) -> Option<&dyn tos_api::bios::block::BlockDev> {
@@ -234,6 +283,7 @@ pub const FCLOSE: u16 = 0x3E;
 pub const FCREATE: u16 = 0x3C;
 pub const FDELETE: u16 = 0x41;
 pub const DCREATE: u16 = 0x39;
+pub const DDELETE: u16 = 0x3A;
 pub const DGETPATH: u16 = 0x47;
 pub const DSETDRV: u16 = 0x0E;
 

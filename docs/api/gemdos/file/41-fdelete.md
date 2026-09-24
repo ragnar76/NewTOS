@@ -222,3 +222,25 @@ distinction and the same-process auto-close before delete.
 
 PHASE-05: FAT delete with cluster-chain free; the `0xE5`/`0x05` on-disk erase
 convention is preserved for native-ST media compatibility.
+
+**FS01 (2026-09-24): a deleted entry takes its long-name slots with it.**
+EmuTOS frees the 8.3 entry alone, because classic TOS knows no long names —
+its directory scan only *skips* `FA_LFN` records (`bdos/fsdir.c:326,1810`) and
+nothing ever erases them. NewTOS does not write long-name slots either, but
+every card written by a modern host carries them, and leaving them behind on
+delete accumulates orphan chains: after emptying a card completely, `fsck_msdos
+-n` no longer completes (measured: it dies in phase 2 on signal 5,
+`measurement-2026-09-24-fs01/serial/fsck.txt`).
+
+So `Fdelete` (and `Ddelete`, and the `Fcreate`-over-an-existing-file path,
+which shares `erase_entry`) now marks the 8.3 entry `0xE5` **and then** the
+`attrib == 0x0F` slots in front of it — `dir::erase_slot_with_lfn`
+(`tos-api/src/bdos/fs/dir.rs`). Which slots belong to the entry is decided the
+way FreeMiNT's FAT layer decides it (`references/freemint/sys/fatfs.c:779-790`
+for the `LDIR` record, `:3690-3748` for the ordinal/checksum validation), and
+the erase order — short entry first, then the chain — is FreeMiNT's
+`unlink_cookie_i` (`:4246-4272`). A chain that does not validate (wrong
+checksum, broken ordinal sequence, already erased) is left untouched: it was
+not this entry's name to begin with, and FreeMiNT's `__readvfat` rejects it the
+same way. This is a **NewTOS decision** taken from the FAT layout, not
+behaviour extracted from EmuTOS — EmuTOS has no answer here.

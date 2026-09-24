@@ -475,8 +475,9 @@ fn resolve_cluster(ofd: &mut Ofd, index: u32) -> Option<u32> {
     Some(cluster)
 }
 
-/// Free a file's cluster chain and mark its directory entry erased.
-/// `start` is the directory holding the entry (0 = root).
+/// Free a file's cluster chain and mark its directory entry — and the
+/// long-name slots in front of it — erased. `start` is the directory
+/// holding the entry (0 = root).
 fn erase_entry(vol: &Volume, start: u32, slot: u32, start_cluster: u32) {
     // F6: close any open handle to this same file *before* freeing its
     // clusters, so a stale handle (`Fopen`→`Fdelete`→`Fwrite`/`Fclose`)
@@ -487,11 +488,10 @@ fn erase_entry(vol: &Volume, start: u32, slot: u32, start_cluster: u32) {
     if vol.is_data_cluster(start_cluster) {
         vol.free_chain(start_cluster);
     }
-    let mut e = [0u8; 32];
-    if dir::read_slot(vol, start, slot, &mut e) {
-        e[0] = 0xE5; // erased marker
-        dir::write_slot(vol, start, slot, &e);
-    }
+    // FS01: the 8.3 entry *and* the `attr == 0x0F` long-name slots that
+    // belong to it. Freeing only the short entry leaves the chain behind as
+    // an orphan (`dir::erase_slot_with_lfn`).
+    dir::erase_slot_with_lfn(vol, start, slot);
 }
 
 /// Close every open-file-table entry that refers to the directory entry at

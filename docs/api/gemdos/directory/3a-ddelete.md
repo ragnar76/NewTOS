@@ -227,3 +227,11 @@ PHASE-05: same algorithm — verify empty (skipping erased/LFN slots), refuse
 root, erase entry, free cluster chain. The DND-tree unlink is a free NewTOS
 implementation choice; the "empty + non-root only" rule and the error codes are
 contract. NewTOS keeps the LFN skip for FAT32 media written by modern hosts.
+
+**FS01 (2026-09-24): the folder's long-name slots are freed with its entry.**
+Like `Fdelete`, `Ddelete` now erases the `attrib == 0x0F` slots that precede
+the folder's 8.3 entry (`dir::erase_slot_with_lfn`,
+`tos-api/src/bdos/fs/dir.rs`); a folder created by a modern host carries such a
+chain just as a file does. Rationale, sources and the "a chain that does not
+validate is not ours to erase" rule: `docs/api/gemdos/file/41-fdelete.md`,
+section *FS01*.
