@@ -6,7 +6,8 @@ headers in `sdk/libc/newtos-arch/`, and an `llvm-nm` pass over the `libc.a`
 built on 2026-09-17 (613 objects compiled, 11 failed, 6 excluded —
 `sdk/libc/build/{compiled,failed,excluded}.txt`); re-measured 2026-09-21
 after TASK/T07 added `setjmp` and the libm (§3, §4, §6 updated; the numbers
-that did not change are left as measured).
+that did not change are left as measured), and again 2026-09-25 after
+TASK/PORT01 added `newtos-arch/cmdargs.c` (§1, §5, §6).
 
 ## 1. mintlib files that do not compile (recorded, not repaired)
 
@@ -17,7 +18,7 @@ on any failure not in it (`sdk/lib-stale.sh:229-283`). What each costs:
 |------|--------------------------|----------------------|
 | `mintlib/linea.c` | m68k inline asm — ST Line-A | Line-A (NewTOS has none) |
 | `mintlib/nf_ops.c` | m68k inline asm — ARAnyM NatFeats | `nf_init`/`nf_get_id` (an app that needs the symbols supplies its own, as the TeraDesk overlay does) |
-| `mintlib/crtinit.c` | m68k asm + two LP64 basepage casts | **`argv`/`argc` parsing, `environ` set-up, `_base`** — see §5 |
+| `mintlib/crtinit.c` | m68k asm + two LP64 basepage casts | `environ` set-up and the `ARGV=` extension — see §5. **`argv`/`argc` and `_base` are covered**: `newtos-arch/cmdargs.c` reimplements `parseargs()`'s argument half (PORT01) and `newtos-arch/heap_init.c` sets `_base` (T05) |
 | `mintlib/spawnve.c`, `spawnvp.c` | `va_list` arithmetic that assumes m68k `char *` | `spawn*` family (`system()` links, but its `spawnvp` is dangling) |
 | `stdio/gets.c` | `.stabs` directive rejected by the integrated assembler | `gets` |
 | `mintlib/getwd.c` | same | `getwd` (`getcwd` is available) |
@@ -131,8 +132,8 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
 
 | Area | On NewTOS | Source |
 |------|-----------|--------|
-| `argc`/`argv` | always `1` / `{"", NULL}` | `sdk/libc/crt0.S:40-59` |
-| `environ`, `getenv` | `environ` is a zero global; `getenv` finds nothing | `mintlib/globals.c`, crtinit excluded |
+| `argc`/`argv` | built from the BasePage command tail `p_cmdlin` with mintlib's own rules (`argv[0]` = `""`, leading blanks skipped, split on runs of blanks/tabs, MagX single-quoting); `1` / `{"", NULL}` when the tail is empty. Host-checked by `tests/cmdargs-host.sh`, proved on the machine by `C:\ARGVTEST.NAP` (PORT01, `measurement-2026-09-25-port01/`) | `newtos-arch/cmdargs.c`, `sdk/libc/crt0.S` |
+| `environ`, `getenv` | `environ` is a zero global; `getenv` finds nothing. The Atari `ARGV=` extension (arguments passed in the environment) therefore cannot occur either — every launch path passes `EnvSpec::None`, so `p_env` is 0 | `mintlib/globals.c`, crtinit excluded; `kernel/src/launch.rs`, `loader.rs` |
 | `_base` (`BASEPAGE *`) | set by `__libc_init_heap` from the basepage address crt0 hands it (TASK/T05; until then it stayed NULL and dereferencing it worked only because the basepage *is* at VA 0 — the value is still 0 today, `USER_VA_BASE`) | `newtos-arch/heap_init.c`, `sdk/libc/crt0.S`; readers: `unix/getppid.c`, `gmon.c`, TeraDesk's `environm.c` |
 | `malloc`/`free`/`realloc` | mintlib's allocator over the in-TPA arena `[_end, p_hitpa − 64 KiB)`; `ENOMEM` when exhausted, **no** `Malloc` fall-back | `newtos-arch/heap_init.c`, `unix/sbrk.c:54-71` |
 | `exit`/`_exit` | `Pterm(rc)` | `newtos-arch/proc.S` |
@@ -147,10 +148,12 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
 
 ## 6. References `libc.a` leaves unresolved (measured)
 
-`llvm-nm` over the archive: 33 symbols are referenced by some member but
-defined by none. A link only fails if the member that references them is
-pulled in — `build/why.txt` (written by every link, `--why-extract`) shows
-the chain. Re-measured 2026-09-21 after T07: **still 33, the same list** —
+`llvm-nm` over the archive: **31** symbols are referenced by some member but
+defined by none (33 before PORT01: `newtos-arch/cmdargs.c` now defines
+`__libc_argc`/`__libc_argv`, which only `posix/wordexp.c` referenced). A link
+only fails if the member that references them is pulled in —
+`build/why.txt` (written by every link, `--why-extract`) shows the chain.
+Re-measured 2026-09-21 after T07: **still 33, the same list** —
 `setjmp.S`'s two references (`_sigmask`, `__mint`) resolve inside the archive
 (`signal/initsig.c`, `mintlib/globals.c`), and the libm is a separate archive
 (its own list follows). `setjmp`/`longjmp` were never in this list because no
@@ -159,7 +162,6 @@ mintlib member references them; they were simply undefined.
 ```
 __divtf3 __eqtf2 __getf2 __lttf2 __multf3 __trunctfdf2      quad-float compiler-rt (long double)
 __getpwnam_r __getpwuid_r getpwuid getgrent setgrent endgrent pututline   passwd/group/utmp DB
-__libc_argc __libc_argv                                     crtinit (excluded)
 __sys_fstat __waittime __waitval                            other excluded/unbuilt members
 getcontext makecontext swapcontext vfork                    m68k .S never assembled
 nf_init                                                     nf_ops.c (does not compile)

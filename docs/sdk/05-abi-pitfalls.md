@@ -256,16 +256,28 @@ FreeMiNT/cflib app misbehaves, check the TOS 1–3 vs TOS 4/FreeMiNT fork first.
 **Symptom**: `if (argc > 1) use(argv[1])` faults, or the app never sees the
 document it was started with.
 
-**Cause**: the libc crt0 always passes `argc = 1`, `argv = {"", NULL}`
-(`sdk/libc/crt0.S:40-59`), because mintlib's `crtinit.c` (which would parse
-`p_cmdlin`) is m68k assembly and excluded
-(`sdk/libc/expected-failures.txt:25`). The desktop passes an **empty** tail on
-a plain double-click and the document path only for an association launch
-(`kernel/src/desk/main.rs:458-466`). `p_env` is 0 for desktop/`AUTO` launches
-(`kernel/src/launch.rs:70-79`).
+**Cause (until 2026-09-25)**: the libc crt0 passed a hardcoded `argc = 1`,
+`argv = {"", NULL}`, because mintlib's `crtinit.c` — which parses `p_cmdlin`
+in `parseargs()` — is m68k assembly in its other half and excluded
+(`sdk/libc/expected-failures.txt:25`). Every libc-linked program therefore saw
+no arguments whatever the launcher handed it; a file dropped on QED opened an
+empty editor (TASK/PORT01, `measurement-2026-09-25-port01/`).
 
-**Do**: read the tail from the basepage (`p_cmdlin` at offset 0x80: length
-byte, then text — `loader.rs:680-691`) or via `shel_read`
+**Now**: `sdk/libc/crt0.S` calls `__libc_parseargs()`
+(`sdk/libc/newtos-arch/cmdargs.c`), which builds `argc`/`argv` from the tail
+with mintlib's own rules — `argv[0]` is `""`, leading blanks skipped, split on
+runs of blanks/tabs, MagX single-quoting honoured — and publishes
+`__libc_argc`/`__libc_argv`. Host-checked by
+`sdk/libc/tests/cmdargs-host.sh` (in `sdk/run-host-tests.sh`).
+
+Still true: the desktop passes an **empty** tail on a plain double-click and
+the document path only for an association or drop launch
+(`kernel/src/desk/main.rs`), and `p_env` is 0 for desktop/`AUTO` launches
+(`kernel/src/launch.rs:70-79`), so `environ`/`getenv` find nothing and the
+Atari `ARGV=` extension (arguments passed in the environment when the tail is
+too short) cannot occur. A program that must work with either route can still
+read the tail itself from the basepage (`p_cmdlin` at offset 0x80: length
+byte, then text — `loader.rs:680-691`) or use `shel_read`
 (`sdk/apps/chaintest/chaintest.c:41-47` shows both directions, including a
 `shel_write` that passes a tail). For a benchmark that needs parameters, build
 one binary per configuration (CoreMark's `CORE.NCP`/`COREVAL.NCP`).

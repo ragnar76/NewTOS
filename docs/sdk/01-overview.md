@@ -76,12 +76,18 @@ for TOS data structures that are 32-bit on the wire are the subject of
   (`sdk/libc/build-libc.sh` run of 2026-09-16, see
   [07-mintlib-limits.md](07-mintlib-limits.md)); the eleven that did not are
   listed with reasons in `sdk/libc/expected-failures.txt`.
-* **No command-line arguments via `argv`.** The libc `crt0` always calls
-  `main(1, {"", NULL})` (`sdk/libc/crt0.S:40-59`); mintlib's `crtinit.c`,
-  which would parse `p_cmdlin`, is m68k assembly and does not build
-  (`sdk/libc/expected-failures.txt:25`). The command tail *is* in the basepage
-  (`p_cmdlin`, `tos-api/src/bdos/process/loader.rs:680-691`) and reachable via
-  `shel_read` (`sdk/apps/chaintest/chaintest.c:41`), but not through `argv`.
+* **Command-line arguments via `argv`: yes, since 2026-09-25 (TASK/PORT01).**
+  The libc `crt0` calls `__libc_parseargs()`
+  (`sdk/libc/newtos-arch/cmdargs.c`), the argument half of mintlib's
+  `crtinit.c` `parseargs()` reimplemented for AArch64, and hands `main` the
+  `argc`/`argv` it builds from the basepage command tail (`p_cmdlin`,
+  `tos-api/src/bdos/process/loader.rs:680-691`). With an empty tail that is
+  `argc = 1`, `argv = {"", NULL}` — the TOS "program name not available"
+  convention. mintlib's own `crtinit.c` still does not build
+  (`sdk/libc/expected-failures.txt:25`), so the **environment** half of
+  `parseargs()` — `environ` and the `ARGV=` extension — is still absent; see
+  the next point. `shel_read` remains available as a second route
+  (`sdk/apps/chaintest/chaintest.c:41`).
 * **No environment.** The desktop and `AUTO` launchers pass
   `EnvSpec::None`, so `p_env = 0` (`kernel/src/launch.rs:70-79`,
   `loader.rs:675`).

@@ -113,8 +113,10 @@ $ ls -l HELLOLIB.NCP ; llvm-nm -u HELLOLIB.NCP | grep -c .
 Note the **libc crt0** (`sdk/libc/crt0.S`, not `sdk/crt0.S`): it additionally
 calls `__libc_init_heap(basepage, p_hitpa)`, which sets mintlib's `_base` and
 points `malloc` at the free TPA between `_end` and the stack reserve
-(`sdk/libc/newtos-arch/heap_init.c`), and it hands `main` `argc = 1,
-argv = {"", NULL}` (`sdk/libc/crt0.S`).
+(`sdk/libc/newtos-arch/heap_init.c`), and `__libc_parseargs(basepage)`, which
+builds `argc`/`argv` from the basepage command tail
+(`sdk/libc/newtos-arch/cmdargs.c`). With no tail — a plain double-click, or an
+`AUTO` run like the one below — that is `argc = 1, argv = {"", NULL}`.
 
 Run: the program was copied to `C:\AUTO\HELLOLIB.NCP` on a scratch image and
 booted headless in QEMU. Serial log (`[auto]`/`[launch]` lines are the
@@ -129,8 +131,10 @@ Sversion() = 0x3000, Tgettime() = 0xffff92c7
 ```
 
 Two things the log shows that a porter should know: `argc == 1` and
-`argv[0] == ""` always (see [01-overview.md](01-overview.md)), and
-`Tgettime()` is a `short` in mintlib's binding
+`argv[0] == ""` for a launch **without a command tail** — with one, `argv[1]…`
+carry it (TASK/PORT01, see [01-overview.md](01-overview.md) and
+[05 B6](05-abi-pitfalls.md#b6-argcargv-the-command-tail-and-the-environment)) —
+and `Tgettime()` is a `short` in mintlib's binding
 (`sdk/libc/overlay/include/mint/osbind.h:579-580`: `(short)trap_1_w((short)(0x2C))`),
 so the `(unsigned)` cast above sign-extended it — mask with `& 0xFFFF`.
 

@@ -18,7 +18,7 @@
 # script itself", and every caller repeated that list by hand. Both halves of
 # that sentence were wrong:
 #
-#   (a) The list was too short. sdk/libc/newtos-arch/ -- eleven files WE write
+#   (a) The list was too short. sdk/libc/newtos-arch/ -- twelve files WE write
 #       -- and sdk/include/newtos.h are compiled into libc.a and were watched
 #       by nobody: appending a function to newtos-arch/do_stat.c left libc.a
 #       byte-identical and build-qed.sh reported nothing out of date.

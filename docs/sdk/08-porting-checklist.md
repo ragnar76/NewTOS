@@ -53,8 +53,10 @@ Tick each line; every line points at the section that explains it.
       privilege; shutdown/reset paths become live → [05 B4](05-abi-pitfalls.md#b4-super-supexec-supertouser)
 - [ ] Directory probes via `Fattrib` expect the TOS4/FreeMiNT answer
       → [05 B5](05-abi-pitfalls.md#b5-fattrib-on-directories--tos-4--freemint-semantics)
-- [ ] No reliance on `argv`/`environ`; command tail read from `p_cmdlin` or
-      `shel_read` → [05 B6](05-abi-pitfalls.md#b6-argcargv-the-command-tail-and-the-environment)
+- [ ] `argv` works (PORT01); `environ`/`getenv` and the `ARGV=` extension do
+      not — an app that takes arguments only through the environment must read
+      `p_cmdlin` or `shel_read`
+      → [05 B6](05-abi-pitfalls.md#b6-argcargv-the-command-tail-and-the-environment)
 - [ ] No `uintptr_t` from mintlib's `stdint.h` for pointer round-trips
       → [05 B7](05-abi-pitfalls.md#b7-mintlibs-stdinth-gives-a-32-bit-uintptr_t-on-our-lp64-build)
 - [ ] `.RSC` converted with `tools/mkrsc.py convert` (kernel loader) or

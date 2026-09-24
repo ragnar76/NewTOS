@@ -112,6 +112,13 @@ fi
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/setjmp-host.log"
 report setjmp-host $rc "host is not AArch64"
 
+# cmdargs-host (PORT01): newtos-arch/cmdargs.c turns the BasePage command tail
+# into the argc/argv mintlib's crtinit.c parseargs() would -- the two DESK19
+# tails, the separator rules, MagX quoting, and the densest 128-byte tail.
+"$SDK/libc/tests/cmdargs-host.sh" > "$WORK/cmdargs-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/cmdargs-host.log"
+report cmdargs-host $rc "mintlib headers absent or host not LP64"
+
 echo
 echo "host tests: $pass passed, $fail failed, $skip skipped"
 exit $fail

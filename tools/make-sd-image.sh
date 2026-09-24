@@ -155,6 +155,25 @@ else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\CMDLINE.NCP skipped"
 fi
 
+# ARGVTEST.NAP is the argc/argv proof (PORT01), the other half of CMDLINE.NCP:
+# that one reads `p_cmdlin` itself and so only shows what the KERNEL delivered,
+# this one goes through the SDK startup (sdk/libc/crt0.S -> __libc_parseargs)
+# like every ported application and shows what the APPLICATION receives. It
+# prints both in one run, over Cconws, i.e. to the serial console as well as
+# the screen. A `.NAP` on purpose -- `*.NAP` is a GEM-application ANODE
+# (kernel/src/desk/inf.rs:678), so dropping a file on it is the same launch
+# gesture that starts QED with a document. Root of C:, so the drag is one
+# gesture inside the C:\ window; never in \AUTO\ (console-only, ADR-018).
+# Built by `sdk/libc/build-libc.sh sdk/examples/argvtest.c \
+#            sdk/libc/build/argvtest.NAP`.
+ARGVTEST_NAP="$SCRIPT_DIR/../sdk/libc/build/argvtest.NAP"
+if [ -f "$ARGVTEST_NAP" ]; then
+  cp "$ARGVTEST_NAP" "$V/ARGVTEST.NAP"
+  echo "installed C:\\ARGVTEST.NAP (argc/argv proof)"
+else
+  echo "note: sdk/libc/build/argvtest.NAP not built; C:\\ARGVTEST.NAP skipped"
+fi
+
 # DTACHILD.NCP is the per-process-DTA proof (S1c): a console program that moves
 # its OWN DTA (Fsetdta(0x2000)) and exits. A parent runs it between its own
 # Fsetdta(buf) and Fgetdta() -- if Fgetdta still returns buf, the DTA really
