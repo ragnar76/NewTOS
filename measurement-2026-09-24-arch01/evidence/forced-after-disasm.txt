@@ -1,0 +1,51 @@
+# ARCH01 'after': the shared tree's fixed enter_el0_with_resume_capture
+# PLUS the forced-race delay (method/force_race_patch.py), i.e. the build
+# behind serial/forced-after-serial.log. Note the 'msr DAIFSet, #0xf'.
+
+Disassembly of section .text:
+
+ffff0000000c4e10 <_RNvNtNtNtCs4kObSAa2nV_6kernel4arch7aarch6410user_entry29enter_el0_with_resume_capture>:
+ffff0000000c4e10: a9bd7bfd     	stp	x29, x30, [sp, #-0x30]!
+ffff0000000c4e14: f9000bf5     	str	x21, [sp, #0x10]
+ffff0000000c4e18: a9024ff4     	stp	x20, x19, [sp, #0x20]
+ffff0000000c4e1c: 910003fd     	mov	x29, sp
+ffff0000000c4e20: aa0003f5     	mov	x21, x0
+ffff0000000c4e24: 91040068     	add	x8, x3, #0x100
+ffff0000000c4e28: 52800089     	mov	w9, #0x4        // =4
+ffff0000000c4e2c: aa0103e0     	mov	x0, x1
+ffff0000000c4e30: aa0303f3     	mov	x19, x3
+ffff0000000c4e34: aa0203f4     	mov	x20, x2
+ffff0000000c4e38: c89ffd09     	stlr	x9, [x8]
+ffff0000000c4e3c: 94002cb0     	bl	0xffff0000000d00fc <_RNvNtNtNtCsegCISdbOYd4_7tos_api4bdos7process3mmu13install_ttbr0>
+ffff0000000c4e40: 9103e268     	add	x8, x19, #0xf8
+ffff0000000c4e44: 91042269     	add	x9, x19, #0x108
+ffff0000000c4e48: a9ba53f3     	stp	x19, x20, [sp, #-0x60]!
+ffff0000000c4e4c: a9015bf5     	stp	x21, x22, [sp, #0x10]
+ffff0000000c4e50: a90263f7     	stp	x23, x24, [sp, #0x20]
+ffff0000000c4e54: a9036bf9     	stp	x25, x26, [sp, #0x30]
+ffff0000000c4e58: a90473fb     	stp	x27, x28, [sp, #0x40]
+ffff0000000c4e5c: a9057bfd     	stp	x29, x30, [sp, #0x50]
+ffff0000000c4e60: 100001cb     	adr	x11, 0xffff0000000c4e98 <_RNvNtNtNtCs4kObSAa2nV_6kernel4arch7aarch6410user_entry29enter_el0_with_resume_capture+0x88>
+ffff0000000c4e64: f900010b     	str	x11, [x8]
+ffff0000000c4e68: 910003ea     	mov	x10, sp
+ffff0000000c4e6c: f900012a     	str	x10, [x9]
+ffff0000000c4e70: d5034fdf     	msr	DAIFSet, #0xf
+ffff0000000c4e74: d50041bf     	msr	SPSel, #0x1
+ffff0000000c4e78: d5184114     	msr	SP_EL0, x20
+ffff0000000c4e7c: d5184035     	msr	ELR_EL1, x21
+ffff0000000c4e80: d2a0200b     	mov	x11, #0x1000000 // =16777216
+ffff0000000c4e84: f100056b     	subs	x11, x11, #0x1
+ffff0000000c4e88: 54ffffe1     	b.ne	0xffff0000000c4e84 <_RNvNtNtNtCs4kObSAa2nV_6kernel4arch7aarch6410user_entry29enter_el0_with_resume_capture+0x74>
+ffff0000000c4e8c: d280000b     	mov	x11, #0x0       // =0
+ffff0000000c4e90: d518400b     	msr	SPSR_EL1, x11
+ffff0000000c4e94: d69f03e0     	eret
+ffff0000000c4e98: a94053f3     	ldp	x19, x20, [sp]
+ffff0000000c4e9c: a9415bf5     	ldp	x21, x22, [sp, #0x10]
+ffff0000000c4ea0: a94263f7     	ldp	x23, x24, [sp, #0x20]
+ffff0000000c4ea4: a9436bf9     	ldp	x25, x26, [sp, #0x30]
+ffff0000000c4ea8: a94473fb     	ldp	x27, x28, [sp, #0x40]
+ffff0000000c4eac: a9457bfd     	ldp	x29, x30, [sp, #0x50]
+ffff0000000c4eb0: 910183ff     	add	sp, sp, #0x60
+ffff0000000c4eb4: a9424ff4     	ldp	x20, x19, [sp, #0x20]
+ffff0000000c4eb8: f9400bf5     	ldr	x21, [sp, #0x10]
+ffff0000000c4ebc: a8c37bfd     	ldp	x29, x30, [sp], #0x30

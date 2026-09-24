@@ -1,0 +1,321 @@
+===========================================================================
+measurement-2026-09-24-arch01
+  ARCH01 (Wettlauf beim EL0-Eintritt: eine IRQ zwischen `msr elr_el1` und
+          `eret` verwirft das Sprungziel)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD 7e9b4aa. Die Aenderung dieses Tickets ist
+UNCOMMITTED im geteilten Baum (kernel/src/arch/aarch64/user_entry.rs,
+docs/MEMORY.md, docs/ARCHITECTURE.md, docs/STATUS.md, TASK/ARCH01*.MD).
+Nichts geflasht, nichts ausgeworfen, keine reale Pi gefahren, nichts
+committet; kein `git checkout/restore/clean/stash/reset` auf dem geteilten
+Baum. Die einzigen git-Aufrufe waren die lesenden
+`git show HEAD:kernel/src/arch/aarch64/user_entry.rs` (so entstehen die
+"vorher"-Baeume, method/make_scratch_repro.sh) und `git status`.
+
+Machine: QEMU 11.0.2, `-M raspi4b`, 640x480, `-display none`, Serial in eine
+Datei, QMP-Screendumps (method/run.sh + method/qmp_multi.py). Der
+qemu-virt-Lauf benutzt dieselben QEMU-Argumente wie
+`xtask run --board qemu-virt` (method/qvirt_boot.sh).
+
+Kartenabbild: pro Lauf eine frische Kopie EINES Abbilds, das
+`tools/make-sd-image.sh` + method/seed.sh gebaut haben (64 MiB, MBR+FAT16,
+identisch zum DESK19-Stand). Kein `*.img` in diesem Verzeichnis (Ticketregel).
+
+Alle interaktiven Laeufe benutzen den Kopie-IKBD-Injektor (Erinnerung
+`desktop-interactive-verification-real-hw`): die Kisten werden nach
+$SCRATCH rsynct und die KOPIE gepatcht — der geteilte Baum nie.
+
+
+0. Die Frage, und wie sie beantwortet wurde
+--------------------------------------------
+Das Ticket hatte eine Beobachtung (ein `[EXC]` in sieben Laeufen, DESK19-
+RUNINFO §7) und eine VERMUTUNG darueber, woher sie kommt. Der Auftrag war,
+die Vermutung erst zu belegen: das Fenster kuenstlich aufhalten und sehen,
+ob der Fehler dann auf Bestellung faellt.
+
+Er faellt. Und danach, mit der Maske davor, faellt er nicht mehr.
+
+
+1. Der erzwungene Fall — vorher
+--------------------------------
+method/force_race_patch.py setzt in einer KOPIE des Baums eine Warteschleife
+zwischen `msr elr_el1, {entry}` und den `eret` (16.777.216 Durchlaeufe zu je
+zwei Befehlen, also weit ueber der 5-ms-Periode der 200-Hz-Uhr):
+
+    "msr   elr_el1, {entry}",
+    "mov   {tmp}, #0x1000000",
+    "9:", "subs  {tmp}, {tmp}, #1", "b.ne  9b",
+    "mov   {tmp}, #0",
+    "msr   spsr_el1, {tmp}",
+    "eret",
+
+Gebaut aus HEAD 7e9b4aa (method/make_scratch_repro.sh), gebootet auf der
+Standardkarte. Der Start von C:\AUTO\HELLO.NCP faellt sofort —
+serial/forced-before-serial.log:
+
+    [auto] running C:\AUTO\HELLO.NCP
+    [launch] EL0: slot 0 entry 0x1000
+    [EXC] synchronous (non-SVC) exception (Instruction Abort (lower EL)):
+          ESR=0x000000008200000e ELR=0xffff0000000c4e80 SPSR=0x0000000000000000
+    [EXC] FAR=0xffff0000000c4e80
+
+Das ist Zeichen fuer Zeichen die gemeldete Signatur (DESK19-RUNINFO §7):
+derselbe ESR (`Instruction Abort (lower EL)`, IFSC 0x0e = Permission Fault
+Level 2), dasselbe `SPSR = 0`, dasselbe `ELR == FAR ==` Kernadresse.
+
+Und die Adresse ist diesmal zuordenbar — evidence/forced-before-disasm.txt:
+
+    ffff0000000c4e78: msr ELR_EL1, x21
+    ffff0000000c4e7c: mov x11, #0x1000000
+    ffff0000000c4e80: subs x11, x11, #0x1     <-- ELR/FAR zeigen hierher
+    ffff0000000c4e84: b.ne  ...e80
+    ffff0000000c4e90: eret
+
+`ELR_EL1` traegt also den Kern-PC aus der Warteschleife: den hat der
+Ausnahmeeintritt hineingeschrieben (ARM ARM D1.4.2, R_DQXFW), und der `eret`
+hat ihn nach EL0 mitgenommen. Damit ist die Vermutung des Tickets belegt —
+nicht plausibel gemacht, sondern ausgeloest.
+
+
+2. Der erzwungene Fall — nachher
+---------------------------------
+Dieselbe Kopie, dieselbe Warteschleife, nur mit dem Fix davor
+(`msr daifset, #0xf`): serial/forced-after-serial.log,
+evidence/forced-after-disasm.txt.
+
+    [auto] running C:\AUTO\HELLO.NCP
+    [launch] EL0: slot 0 entry 0x1000
+    Hello from a NewTOS .NCP program!
+    [launch] returned (program Pterm'd)
+    [auto] 1 AUTO program(s) run
+    ...
+    [desk] desktop up (1 drives, 0 window(s) from the context)
+
+Der Start laeuft durch, obwohl das Fenster kuenstlich eine knappe Sekunde
+offen steht. Die aufgestaute Uhr-IRQ wird unmittelbar nach dem `eret` in EL0
+zugestellt: der `eret` setzt `PSTATE` aus `SPSR_EL1`, und das ist `0`
+(D1.4.4, R_BWCFK) — die Maske ueberlebt den Sprung nicht.
+
+
+3. Die Belegkette fuer das Registerverhalten
+---------------------------------------------
+Die ARM ARM liegt nicht unter `references/` (references/README.md fuehrt sie
+als TODO). Benutzt wurde die Ausgabe **DDI 0487M.c** (EAC, nicht vertraulich)
+ueber Arms eigenen Dokumentendienst
+(`https://documentation-service.arm.com/documentation/ddi0487/mc/<Abschnitt>?lang=en`);
+die zitierten Abschnitte sind woertlich gelesen, nicht aus dem Gedaechtnis:
+
+  D1.4.2 "Exception entry", Regel R_DQXFW
+      "Fields in SPSR_ELx are written according to their description in
+       SPSR_ELx, based on the values in PSTATE immediately before the
+       exception was taken. The preferred exception return address is
+       written to ELR_ELx."
+      -> der Ausnahmeeintritt ueberschreibt BEIDE Register. Das ist der
+         ganze Defekt.
+
+  D1.4.2, Regel R_WTXBY
+      "... the following PSTATE bits are set: PSTATE.EL is set to the target
+       Exception level. All of PSTATE.{D, A, I, F, SP} are set to 1."
+      -> deshalb ist der Rueckweg durch EXC_BODY (Vektorrumpf) von Haus aus
+         maskiert und braucht nichts.
+
+  D1.4.4 "Exception return", Regel R_BWCFK
+      "Fields in PSTATE that have a corresponding field in SPSR_ELx are
+       written according to their description in SPSR_ELx. The PC is set to
+       the value in ELR_ELx. ... The contents of PSTATE are set to the values
+       held in SPSR_ELx."
+      -> `eret` holt DAIF aus `SPSR_EL1`; wir schreiben dort 0, also laeuft
+         EL0 mit offenen Interrupts.
+
+  C6.2.157 "ERET"
+      "This instruction restores PSTATE from the SPSR, and branches to the
+       address held in the ELR."
+
+  C6.2.288 "MSR (immediate)", Operation:
+      when PSTATEField_DAIFSet =>
+          PSTATE.D = PSTATE.D OR operand[3];  PSTATE.A = ... OR operand[2];
+          PSTATE.I = PSTATE.I OR operand[1];  PSTATE.F = ... OR operand[0];
+      -> `#0xf` maskiert alle vier.
+
+  C5.2.3 "DAIF, Interrupt Mask Bits" — Bitlagen D[9] A[8] I[7] F[6].
+
+
+4. Was der Fix ist
+-------------------
+kernel/src/arch/aarch64/user_entry.rs, `enter_el0_with_resume_capture`:
+ein `msr daifset, #0xf` vor der ersten Zustandsschreibung, also vor
+`msr spsel, #1` / `msr sp_el0` / `msr elr_el1` / `msr spsr_el1` / `eret`.
+Sonst nichts — keine Umstellung der Reihenfolge, kein `isb`, kein zweiter
+Puffer.
+
+evidence/fixed-shipping-disasm.txt (geteilter Baum, board-rpi4, ohne jede
+Geruestung):
+
+    ffff0000000c4e70: msr DAIFSet, #0xf
+    ffff0000000c4e74: msr SPSel, #0x1
+    ffff0000000c4e78: msr SP_EL0, x20
+    ffff0000000c4e7c: msr ELR_EL1, x21
+    ffff0000000c4e80: mov x11, #0x0
+    ffff0000000c4e84: msr SPSR_EL1, x11
+    ffff0000000c4e88: eret
+
+Asynchrone Ausnahmen sind die einzigen, die in dieses Fenster gelangen
+koennen: die Befehle darin ruehren keinen Speicher an und koennen nicht
+synchron abbrechen.
+
+Nebenbefund zur Lesart des Tickets: dort steht, das gemeldete
+`enter_el0_with_resume_capture + 0x6c` liege "hinter dem `eret`". In HEADs
+eigenem Bau (evidence/head-nofix-disasm.txt, Symbol bei ...c4e10) ist
++0x6c das `mov x11, #0` — der Befehl UNMITTELBAR NACH `msr elr_el1`, also
+mitten im Fenster. Genau dorthin zeigt die bevorzugte Rueckkehradresse, wenn
+die IRQ zwischen den beiden Schreiboperationen zuschlaegt. Der Befund des
+Tickets wird davon nicht schwaecher, sondern praeziser.
+
+
+5. Wer den Helfer wirklich aufruft (die Liste des Tickets, nachgezaehlt)
+-------------------------------------------------------------------------
+Elf Aufrufstellen in zehn Dateien:
+
+  kernel/src/launch.rs:122                (run_program_with_tail_rc)
+  kernel/src/selftest_d3.rs:374
+  kernel/src/selftest_d6.rs:254
+  kernel/src/selftest_d7.rs:151
+  kernel/src/selftest_ec4.rs:254
+  kernel/src/selftest_etv_term.rs:251
+  kernel/src/selftest_pexec.rs:286
+  kernel/src/selftest_pexec_d4d5.rs:177
+  kernel/src/selftest_sleepwake_switch.rs:363 und :422
+  kernel/src/selftest_upcall.rs:228
+
+Also NEUN Selbsttestdateien (das Ticket sagt acht), davon eine mit zwei
+Aufrufen. Keiner dieser Selbsttests haengt heute in einem Bootpfad
+(`kernel/src/lib.rs` ruft nur `selftest_emmc::run()`) — Erinnerung
+`unwired-selftests-rot-silently`.
+
+`launch.rs::run_program*` ist damit im Betrieb der einzige Verbraucher, und
+dahinter stehen drei Wege:
+  * Doppelklick / Ablegen auf ein Programm (kernel/src/desk/main.rs:655,695)
+  * `\AUTO\` beim Booten           (kernel/src/lib.rs:396 -> run_auto_folder)
+  * die Shell-Schleife / `#Z`-Autostart (kernel/src/shell_loop.rs:334)
+
+**`Pexec` gehoert NICHT dazu.** Der GEMDOS-Trap aus EL0 heraus benutzt diesen
+Helfer nicht: er schreibt den Ausnahmerahmen um (`frame.elr = child.entry_va`,
+`frame.spsr = 0`, kernel/src/arch/aarch64/exceptions.rs:1509-1520) und kehrt
+ueber EXC_BODY zurueck, wo `DAIF` seit dem Ausnahmeeintritt maskiert ist
+(D1.4.2 R_WTXBY). Die Aufzaehlung im Ticket war an dieser Stelle zu weit.
+
+
+6. Ein zweites Fenster derselben Form? Nein
+--------------------------------------------
+Der Kernel hat genau drei `eret` (gesucht ueber kernel/ und tos-api/):
+
+  a) kernel/src/arch/aarch64/exception_vectors.s:73 (EXC_BODY) — laeuft
+     maskiert; kein Behandler gibt vorher frei. `gic::enable_irqs`
+     (`msr daifclr, #0x2`) hat genau einen Aufrufer: kernel/src/lib.rs:299,
+     einmal beim Booten. Also keine geschachtelten IRQs, also kein Fenster.
+  b) kernel/src/arch/aarch64/boot.rs:291 (EL2->EL1) — `SPSR_EL2 = 0x3c5`,
+     DAIF maskiert, und es gibt zu diesem Zeitpunkt weder Vektortabelle noch
+     GIC. Nicht derselbe Defekt.
+  c) kernel/src/arch/aarch64/user_entry.rs — dieser.
+
+Ausserdem schreibt ausser diesen Stellen nichts `elr_el1`/`spsr_el1` per
+Systemregister; die Behandler fassen nur den Rahmen im Speicher an.
+
+
+7. Die Abnahme: zwanzig Startlaeufe
+------------------------------------
+Derselbe Startlauf wie in DESK19 (method/d19-full.actions ->
+method/d19-full.rs): C:\README.TXT wird im C:\-Fenster auf C:\CMDLINE.NCP
+gezogen, das ist ein Start mit Argument. Zwanzig Mal, jeder Lauf mit eigener
+frischer Kartenkopie, ein und derselbe Kernel (method/run_launch_many.sh):
+
+  serial/run01-serial.log ... serial/run20-serial.log
+
+  Laeufe:                       20
+  `[EXC]`:                       0
+  `[PANIC]`:                     0
+  EL0-Starts pro Lauf:           2   (C:\AUTO\HELLO.NCP + der Ziehstart)
+  EL0-Starts gesamt:            40
+  `CMDLINE: len 13 arg "C:\README.TXT"`: 20 von 20
+  Zeilen je Protokoll:         354   (in allen zwanzig gleich)
+
+Gegenprobe auf Unveraendertheit: `serial/run01-serial.log` ist gegen den
+DESK19-Referenzmitschnitt
+`measurement-2026-09-23-desk19-desk20/serial/d19-full-serial.log`
+zeilengleich bis auf EINE Zeile — die Uhrzeit aus dem Kartenstempel
+(`[clock] seeded from kernel8.img`). Der Fix aendert am beobachtbaren
+Startverhalten also nichts.
+
+  $ diff <(grep -v 'h02]' .../d19-full-serial.log) \
+         <(grep -v 'h02]' serial/run01-serial.log)
+  34c34
+  < [clock] seeded from kernel8.img: 2026-09-24 00:14:48
+  ---
+  > [clock] seeded from kernel8.img: 2026-09-24 01:38:30
+
+screendumps/run01-* und screendumps/run20-* zeigen den ersten und den
+letzten Lauf an denselben drei Marken (A_IDLE Leerlauf, B_WIN offenes
+C:\-Fenster, C nach dem Start).
+
+Die Injektor-Geruestung liegt NUR in der Kopie (method/make_scratch_run20.sh:
+a79_patch_desk10.py, apply_injector.py, a78_patch2.py, key_step_patch.py,
+probe_patch.py, desk19_patch.py — alle aus dem DESK19-Verzeichnis
+uebernommen, damit der Lauf derselbe ist). Der geteilte Baum enthaelt davon
+nichts.
+
+
+8. Zweites Board
+-----------------
+serial/qemu-virt-boot.log — geteilter Baum, `--board qemu-virt`, bis
+`[desk] desktop up (0 drives, 0 window(s) from the context)`, 0 `[EXC]`,
+0 `[PANIC]`. (Ohne Karte hat dieses Board keinen `\AUTO\`-Start; es belegt
+den Bau und den Bootweg, nicht den Startweg.)
+
+
+9. Bau, Warnungen, Tests (geteilter Baum)
+------------------------------------------
+    cargo run -p xtask -- test
+        938 passed / 0 failed / 1 ignored          (Basis 938 / 0 / 1)
+
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat
+    cargo run -p xtask -- build --board rpi4
+        tos-api 64 / kernel 94                     (Basis 64 / 94)
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat
+    cargo run -p xtask -- build --board qemu-virt
+        tos-api 64 / kernel 94                     (Basis 64 / 94)
+
+    cargo clippy --features board-rpi4
+        tos-api 80 / kernel 125                    (Basis 80 / 125)
+    cargo clippy --features board-qemu-virt
+        tos-api 80 / kernel 125                    (Basis 80 / 125)
+
+Delta ueberall 0.
+
+Hinweis fuer den naechsten Lauf (Erinnerung `cargo-xtask-board-target-footgun`):
+der geteilte Zielordner enthaelt zuletzt den **rpi4**-Bau.
+
+
+10. Inhalt
+-----------
+  method/force_race_patch.py      das Fenster kuenstlich aufhalten (Kopie!)
+  method/make_scratch_repro.sh    "vorher"/"nachher" des erzwungenen Falls
+  method/runboot.sh               ein raspi4b-Boot, begrenzt, Serial in Datei
+  method/make_scratch_run20.sh    Abnahmebaum (Injektor) + Karte
+  method/run_launch_many.sh       die zwanzig Startlaeufe
+  method/qvirt_boot.sh            der qemu-virt-Boot
+  method/{run.sh,qmp_multi.py,seed.sh,apply_injector.py,a78_patch2.py,
+          a79_patch_desk10.py,key_step_patch.py,probe_patch.py,
+          desk19_patch.py,d19-full.rs,d19-full.actions}
+                                  unveraendert aus
+                                  measurement-2026-09-23-desk19-desk20/method/
+  serial/forced-before-serial.log erzwungener Fall, ohne Fix  -> [EXC]
+  serial/forced-after-serial.log  erzwungener Fall, mit Fix   -> sauber
+  serial/run01..run20-serial.log  die zwanzig Startlaeufe
+  serial/qemu-virt-boot.log       zweites Board
+  evidence/head-nofix-disasm.txt      HEAD, ohne Fix, ohne Verzoegerung
+  evidence/forced-before-disasm.txt   HEAD + Verzoegerung (Fehlerbild)
+  evidence/forced-after-disasm.txt    Fix + Verzoegerung
+  evidence/fixed-shipping-disasm.txt  der Fix, wie er ausgeliefert wird
+  screendumps/run01-*, run20-*    erster und letzter Abnahmelauf
+  manifest.sha256                 SHA-256 ueber alles hier
