@@ -1,6 +1,6 @@
 # ACC01 — Quellenanalyse: der vollstaendige `.ACC`-Lebenszyklus in EmuTOS
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Quellenanalyse (Researcher) — Voraussetzung fuer ACC02–ACC05
+Status: **ERLEDIGT** (2026-09-24) · Prioritaet: **P2** · Typ: Quellenanalyse (Researcher) — Voraussetzung fuer ACC02–ACC05
 
 Abhaengigkeiten: —
 
@@ -52,3 +52,63 @@ mit Verweis auf ACC02–ACC05. Keine Codeaenderung.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss
+
+**2026-09-24.** Deliverable: `docs/api/aes/accessories.md` (neu, ~470 Zeilen).
+
+**Ticket-Zitate geprueft (Abschnitt 0 der Spec).** Kein Fehltreffer (keine
+Zitat-Adresse zeigt auf die falsche Funktion), aber sieben Bereiche sind
+off-by-1..5 gegen die exakte Funktionsgrenze (Doc-Kommentar- oder
+Leerzeilen-Versatz), u. a. `count_accs` (`:264` statt `:265`),
+`run_accs_and_desktop` (endet `:750`, nicht `:745`), `wait_for_accs`
+(Signatur `:599`, nicht `:588` — `:588` liegt im Doc-Kommentar). Korrigierte
+Zeilen durchgehend in der neuen Spec verwendet.
+
+**Gating (Abschnitt 6).** Kein `CONF_WITH_*` schaltet die `.ACC`-
+Lebenszyklus-Funktionen selbst — sie sind in jedem EmuTOS-Build
+unconditional. `TARGET_192` (`config.h:210-401`) hat keinen Effekt auf
+`TARGET_512` (kein eigener `#ifdef TARGET_512`-Block existiert in
+`config.h`); alle inhaltlich benachbarten Flags (`CONF_WITH_MENU_EXTENSION`,
+`_3D_OBJECTS`, `_BACKGROUNDS`, `_LOADABLE_CURSORS`, `_PCGEM`) fallen für
+`TARGET_512` auf ihren generischen TOS4-Default (alle `1`). **Voll an in
+unserem Referenzbuild.**
+
+**Erweiterungsfrage (Abschnitt 7).** Waehrend der Bearbeitung kam per
+Zwischennachricht die Lead-Entscheidung `.NAC`, dann die Zwei-Orte-Suche
+(`\ACC\` zuerst, dann Root, Dedupe nach Dateiname) — beide als Vorgabe
+übernommen, nicht selbst empfohlen. Ausgearbeitet: `count_accs`'s Muster hat
+in NewTOS **keine** bestehende Zeile zum Aendern (kein Scan existiert bisher
+— ACC02 schreibt ihn neu); Downstream (Laden, `menu_register`,
+`AC_OPEN`/`AC_CLOSE`) ist erweiterungsblind. `NUM_ACCS=6` ist laut
+`sysconf.h:37-40` bereits in EmuTOS ein gemeinsamer Lade- **und**
+Registrierungs-Pool — die Zwei-Orte-Suche muss ihn als **einen** Pool mit
+stillem Abbruch bei 6 behandeln (EmuTOS-Beleg fuer den Abbruch-Mechanismus,
+NewTOS-eigene Folgerung fuer den geteilten Pool ueber zwei Orte). Ein
+klassisches `.ACC` waere so oder so nicht lauffaehig — belegt ueber
+`gotopgm` (`gemasm.S:73-131`, springt in m68k-Maschinencode), nicht nur
+erwartet. Die leere `ACC\`-Testordner-Attrappe auf der Karte
+(`tools/make-sd-image.sh:59`) verwechselt den heutigen EmuTOS-Root-Scan
+nicht (Name- und Attribut-Mismatch nachvollzogen, `fsdir.c:737-796`/
+`:1802-1845`). `kernel/src/desk/ftype.rs:59-72` und `docs/MEMORY.md`
+ADR-018 (`:1004-1061`) enthalten **noch kein** `.NAC` — als Luecke fuer
+ACC02 benannt, nicht als Diskrepanz dieser Extraktion.
+
+**`msg[3]`/`msg[4]`-Frage (Abschnitt 3).** Bestaetigt, unabhaengig aus der
+Quelle hergeleitet (nicht nur aus `sysacc.c` uebernommen): `AC_OPEN` traegt
+die Menu-ID in `msg[4]` (ueber den `ct_msgup`/`MN_SELECTED`-gemeinsamen Weg),
+`AC_CLOSE` in `msg[3]` (direkter `ap_sendmsg`-Aufruf in `mn_cleanup`, kein
+Title-Wort). Beide Herleitungen trafen sich mit `sysacc.c`s eigenen Zitaten.
+
+**`sysacc.c`-Review (Abschnitt 5).** Der `AC_OPEN`/`AC_CLOSE`-Vertrag ist
+**richtig** implementiert, inklusive der Asymmetrie; Lebenszyklus-Form
+(kein `appl_exit`/`Pterm`) korrekt. Keine Korrektur an der Datei noetig.
+
+**NewTOS-Luecken (Abschnitt 8) → ACC02–ACC05**, fuenf Punkte: kein
+Discovery/Load-Pfad, keine Accessory-Slots in der AESPD-Tabelle,
+`AC_OPEN` nie gepostet, `AC_CLOSE` nie gepostet, `sysacc.c` blockiert heute
+fuer immer in `evnt_mesag` (bestaetigt als ehrlicher, dokumentierter
+Zustand, kein Defekt).
+
+Keine Produktcode-Aenderung. `docs/STATUS.md` Recent-Decisions-Eintrag
+2026-09-24 gesetzt.
