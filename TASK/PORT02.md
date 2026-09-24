@@ -66,9 +66,34 @@ LDG-Eigenheiten benutzen, die nur beim echten Nachladen existieren. **Das
 entscheidet, ob zView bis Oktober laeuft** — nicht die Frage, ob wir LDG
 haben.
 
-Die Quellen sind zuerst zu **finden und zu pinnen**, nach demselben Muster
-wie `references/emutos` und `references/freemint`: fester Commit, im Ticket
-festgehalten, damit spaetere Extraktionen dieselbe Fassung lesen.
+**Sie liegen bereits da: `Applications/ldg-2` (LDG 2.35)** — und beim
+Hineinsehen zeigt sich, dass es die **SDK-Fassung** ist, nicht der Quelltext
+des Laders:
+
+* **7 C-Dateien, null Assembler** — und alle sieben sind Demos bzw.
+  Beispielbibliotheken (`demo/client/client.c`, `demo/libs/popup.c`,
+  `contrib/fileutil/fileutil.c` …).
+* Die Umsetzung kommt fertig: `lib/gcc/libldg.a` (m68k, fuer uns wertlos)
+  und `68K/auto/ldg.prg` als Binaerdatei.
+* **Was brauchbar ist, ist die Schnittstelle:** `include/ldg.h` mit
+  `ldg_open`/`ldg_close`/`ldg_find`/`ldg_init`, den `LDG`-Strukturen,
+  Fehlercodes und Flags — dazu eine Handbuchseite je Funktion unter
+  `man/cat3/`.
+
+**Das macht den statischen Weg kleiner als gedacht:** LDGs Lader muss gar
+nicht portiert werden. Zu bauen waeren rund sechs dokumentierte Funktionen,
+die statt aus Dateien aus einer eingebauten Tabelle aufloesen.
+
+Zwei Dinge, die dabei auffallen und zu pruefen sind:
+
+* `LDG_STDCALL` ist dokumentiert als *„a2/d2 are not scratch register"* — die
+  Modulschnittstelle traegt **m68k-Registerkonventionen**. Fuer statisch
+  gebundenen AArch64-Code gegenstandslos, aber es zeigt, dass die
+  Schnittstelle Annahmen mitbringt; welche noch, ist Teil der Bewertung.
+* Die Dateinamen im Paket enthalten **literale Backslashes**
+  (`ldg-2.35\include\ldg.h` ist *ein* Dateiname) — das Archiv wurde ohne
+  Pfadumsetzung entpackt. Jedes Bauskript stolpert darueber; entweder
+  vorher umsetzen oder ausdruecklich behandeln.
 
 `windom` ist die zweite Unbekannte: ein GEM-Rahmenwerk ueber gemlib, das wir
 bisher nicht gebaut haben. Aufwand dafuer getrennt ausweisen.
