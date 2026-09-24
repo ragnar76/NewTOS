@@ -21,6 +21,37 @@ ungeportet und unbewertet.
 | `Applications/thing-neo-codeSVN-r62` | Thing — alternativer Desktop |
 | `sdk/apps/highwire` | HighWire — Browser |
 
+## Lead-Entscheidung 2026-09-25: **zView zuerst**
+
+Der Anwender hat gewaehlt. Ein Bildbetrachter wirkt auf einer Vorfuehrung
+sofort und braucht kein Netzwerk. Die uebrigen Kandidaten bleiben in der
+Liste, werden aber **nach** zView bewertet.
+
+**Was `Applications/z-tools/prerequisites.txt` selbst verlangt** (nicht
+geschaetzt, dort nachgelesen):
+
+```
+ldg (latest SVN, mandatory)     windom 1.21.3       freetype 2.4.6
+gemlib (CVS)                    mintlib (CVS)       libxml 2.9.0
+libshare 0.1.1                  libmem              pml 2.03
+xpdf 3.03                       zlib 1.2.8          transprt.h (STiK/STinG)
+```
+
+**Die Frage, die zuerst beantwortet sein muss:** `ldg` ist als *mandatory*
+gefuehrt — zView laedt seine Bilddecoder als LDG-Module nach, und
+nachladbare Module sind bei uns [MOD01](MOD01.md), ungebaut. Lassen sich die
+Decoder **statisch** dazubinden? Davon haengt ab, ob zView ein Kandidat fuer
+Oktober ist oder ein Projekt danach.
+
+Zwei Spuren aus der README des Projekts, die dabei zaehlen: ein
+**`newldg`-Zweig**, der genau die LDG-Probleme angeht, und eine gepflegtere
+Fassung unter `th-otto/zview`. Der Autor nennt ausserdem **ImgView** (Lonny
+Pursell) als Alternative, die zView „in manchen Bereichen abloest" — pruefen,
+ob die weniger verlangt.
+
+`windom` ist die zweite Unbekannte: ein GEM-Rahmenwerk ueber gemlib, das wir
+bisher nicht gebaut haben. Aufwand dafuer getrennt ausweisen.
+
 ## Auftrag
 
 Je Kandidat **eine belegte Einschaetzung**, keine Vermutung:
