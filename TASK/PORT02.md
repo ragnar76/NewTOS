@@ -142,6 +142,34 @@ trotzdem getrennt auszuweisen.
 Zum Aufwand von windom: ein GEM-Rahmenwerk ueber gemlib, das wir
 bisher nicht gebaut haben. Aufwand dafuer getrennt ausweisen.
 
+## Das Materialarchiv: `/Volumes/Daten/tho-otto-backu`
+
+Ein 42-GB-Spiegel von `tho-otto.de` liegt lokal (Anwender 2026-09-25), mit
+`www.tho-otto.de/download/` als Paketablage. Nachgesehen, was von zViews
+Liste darin steht:
+
+| gesucht | gefunden |
+|---|---|
+| `pml 2.03` | **`pml-2.03.tar.xz`** — Quelltext, genau die geforderte Fassung |
+| `windom 1.21.3` | **`windom-2.0.1.tar.xz`** — *neuer* als gefordert, siehe unten |
+| `cflib` | datierte Schnappschuesse bis **`cflib-21-20240430`** |
+| `libshare`, `libmem` | **nicht** darin |
+
+Jedes Paket bringt ein `*-build.sh` mit, das zeigt, wie es fuer Atari
+konfiguriert und gebaut wird — fuer unsere Portierung wertvoller als der
+Quelltext allein.
+
+**Die Frage, die daraus faellt:** zViews Liste nennt `windom 1.21.3` *„plus
+fix for gcc4 and memory protection"*; im Archiv liegt **2.0.1**. Entweder
+enthaelt 2.0.1 diese Korrekturen laengst — dann ist es die bessere Wahl — oder
+es hat sich die Schnittstelle geaendert und zView baut nicht mehr dagegen. Am
+Quelltext klaeren, nicht annehmen. `Applications/windom-1.21.3` (die exakt
+geforderte Fassung) liegt als Rueckfallebene daneben.
+
+`libshare` und `libmem` fehlen noch; `libmem` koennte laut zViews eigener
+Liste („same source as ldg") in `Applications/ldg-2` mitstecken — dort zuerst
+nachsehen, bevor gesucht wird.
+
 ## Auftrag
 
 Je Kandidat **eine belegte Einschaetzung**, keine Vermutung:
