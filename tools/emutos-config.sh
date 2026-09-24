@@ -336,8 +336,24 @@ N_RUNTIME_GATED="$(wc -l < "$WORK/runtime_gated.tsv" | tr -d ' ')"
 # surface has been stable across the sessions this was checked
 # against -- but it is data, not policy, and the check in 6b is what
 # keeps it honest rather than quietly wrong.
+#
+# Written straight to a file, not captured via "$(cat <<'X' ... )" into
+# a variable: bash 3.2 (this machine's actual /bin/bash -- see the
+# shell guard above) has a real, confirmed parser bug where a heredoc
+# nested inside a $(...) command substitution miscounts an ODD number
+# of literal single-quote/apostrophe characters in the body and treats
+# the substitution as unterminated, even though the heredoc itself is
+# quoted (<<'X') and its content is supposed to be fully literal.
+# Reproduced minimally before working around it, not guessed at: a
+# one-line quoted heredoc containing one apostrophe, wrapped in
+# X="$(cat <<'D' ... D)", fails to parse under this bash; two
+# apostrophes (or zero) parse fine; the same heredoc NOT wrapped in
+# $(...) parses fine regardless of apostrophe count. English prose
+# about EmuTOS/NewTOS needs contractions and possessives too often to
+# hunt for an even apostrophe count by hand on every edit, so the fix
+# is structural: no $(...) around this heredoc, ever.
 # ----------------------------------------------------------------------
-CLASSIFICATION="$(cat <<'CLASSIFICATION_DATA'
+cat <<'CLASSIFICATION_DATA' > "$WORK/classification.tsv"
 CONF_ATARI_HARDWARE|HW|master switch for the whole Atari-hardware backend (config.h:663-667); NewTOS's backend is the RPi4 HAL, not this switch
 CONF_COLDFIRE_TIMER_C|OM|ColdFire Timer-C emulation, FireBee/M548x only (config.h:954-964)
 CONF_DEBUG_AES_STACK|OTH|EmuTOS-internal AES-stack-usage tracer (config.h:1934-1939); build/debug switch, not GEMDOS/BIOS/AES/VDI behaviour
@@ -358,7 +374,7 @@ CONF_WITH_68030_PMMU|HW|68030 PMMU tree install (config.h:1465-1472)
 CONF_WITH_68040_PMMU|HW|68040 PMMU tree install (config.h:1474-1481)
 CONF_WITH_ACSI|HW|ACSI bus (config.h:1032-1037)
 CONF_WITH_ADVANCED_CPU|HW|68010-68060 CPU support (config.h:828-837)
-CONF_WITH_ALT_DESKTOP_GRAPHICS|MISS|left-aligns dialog titles and draws a line under them (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1739); no NewTOS reference found in kernel/src/desk (checked); unticketed
+CONF_WITH_ALT_DESKTOP_GRAPHICS|MISS|align_title() left-aligns dialog titles and sets ob_state for an underline (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1747, the CONF_WITH_ALT_DESKTOP_GRAPHICS arm); NewTOS's own align_title equivalents do the OTHER (non-ALT, classic-TOS) arm instead -- centre the title, no underline: kernel/src/desk/dir.rs:567-572 `(dw - title_w) / 2`, kernel/src/desk/inf.rs:3403-3404 `(dw - 21 * CELL_W) / 2`, both citing deskmain.c's centring branch by name in their own comments; unticketed
 CONF_WITH_ALT_RAM|HW|Alt-RAM support (config.h:879-884)
 CONF_WITH_APOLLO_68080|HW|Apollo 68080/Vampire accelerator CPU (config.h:839-848)
 CONF_WITH_ARANYM|OM|ARAnyM emulator target (config.h:1916-1925)
@@ -367,20 +383,20 @@ CONF_WITH_BACKGROUNDS|HAVE|kernel/src/desk/global.rs:173-179 (g_patcol backgroun
 CONF_WITH_BAS_MEMORY_MAP|OM|FireBee/M548x BaS memory map (config.h:1210-1220)
 CONF_WITH_BIOS_EXTENSIONS|HW|gates only an extended Floprate() floppy-drive-type selector (EmuTOS bios/floppy.c:1048-1055, verified in the source, not assumed from the generic-sounding config.h comment); floppy hardware, same recorded decision as CONF_WITH_FORMAT
 CONF_WITH_BLITTER|HW|blitter chip (config.h:1165-1170)
-CONF_WITH_BOTTOMTOTOP|MISS|'Cycle windows' desktop menu item (config.h:1751-1757; EmuTOS desk/deskmain.c, desk/deskwin.c/.h); no NewTOS reference found in kernel/src/desk (checked); unticketed
+CONF_WITH_BOTTOMTOTOP|HAVE|kernel/src/desk/menu.rs:108 (Item::Cycle in the BTOPITEM slot), menu.rs:187-188 (doc comment 'Cycle windows bottom-to-top'), kernel/src/desk/main.rs:1474,2340 (Item::Cycle => do_cycle()); named Cycle, not BottomToTop -- a name grep for the EmuTOS macro missed it
 CONF_WITH_BUS_ERROR|HW|whether the CPU/bus raises a Bus Error exception on invalid access (config.h:2044-2051); true on Atari, the AArch64 fault model is entirely different
 CONF_WITH_CACHE_CONTROL|HW|'Cache' desktop menu item toggling 68030 CPU cache registers directly (config.h:1759-1768); no ARM-cache equivalent implemented (checked)
 CONF_WITH_CARTRIDGE|HW|ROM port cartridge (config.h:1012-1023)
 CONF_WITH_COLDFIRE_RS232|OM|ColdFire internal serial port (config.h:966-975)
 CONF_WITH_COLOUR_ICONS|HAVE|tos-api/src/aes/resource.rs:1170-1183,1917 (fixup_colour_icons/CICONBLK relocation)
 CONF_WITH_DESKTOP_CONFIG|HAVE|kernel/src/desk/menu.rs:131,231,272,361 (Item::DeskConfig / CONFITEM); see DESK05
-CONF_WITH_DESKTOP_SHORTCUTS|MISS|files and folders installed on the desktop as shortcuts (config.h:1778-1784); ticketed DESK30 (needs an AT_ISFILE/AT_ISFOLD Anode variant plus fun_win2win drop-on-program, per DESK15's own closure)
+CONF_WITH_DESKTOP_SHORTCUTS|HAVE|kernel/src/desk/ins.rs:1016 (ins_shortcut), kernel/src/desk/dir.rs:1701 (remove_locate_shortcut), the #X/#V INF lines including the inf_rev_level<2 swap; landed under DESK30 (ERLEDIGT, commit f85f9c8) -- a shortcut survives Save desktop and a cold start and launches on double-click
 CONF_WITH_DIP_SWITCHES|HW|STe/TT/Falcon DIP switches (config.h:1150-1156, has.h-gated has_dip_switches)
 CONF_WITH_DMASOUND|HW|DMA sound chip (config.h:1129-1134, has.h-gated has_dmasound)
 CONF_WITH_DSP|HW|Falcon DSP chip (config.h:1136-1141, has.h-gated has_dsp)
 CONF_WITH_EASTER_EGG|HW|EmuDesk Easter Egg tune, its value is literally CONF_WITH_YM2149 (config.h:1786-1792); sound-hardware payload
 CONF_WITH_EJECT|OM|automatic floppy eject; EmuTOS's own comment: 'This isn't available on Atari hardware' (config.h:2036-2042) -- meaningful only on Amiga/Lisa
-CONF_WITH_EXTENDED_MOUSE|MISS|IKBD scancode extension for mouse buttons 3/4/5 and the wheel (config.h:1491-1498; EmuTOS bios/aciavecs.S, bios/ikbd.c:748); kernel/src/ikbd.rs decodes only the standard 2-button relative packet 0xF8-0xFB (checked), no wheel or extra-button decode; unticketed. Distinct from the VDI vex_wheelv vector installer already present (tos-api/src/vdi/mouse.rs:710), which has nothing feeding it without this
+CONF_WITH_EXTENDED_MOUSE|MISS|IKBD scancode extension for mouse buttons 3/4/5 and the wheel (config.h:1491-1498; EmuTOS bios/aciavecs.S, bios/ikbd.c:748); kernel/src/ikbd.rs:48,92-93 treats 0xF6 as the status-report packet header and 0xF8-0xFB as the standard 2-button relative packet -- no wheel or button-3/4/5 decode anywhere in that dispatch; unticketed. Distinct from the VDI vex_wheelv vector installer already present (tos-api/src/vdi/mouse.rs:710), which has nothing feeding it without this
 CONF_WITH_EXTENDED_OBJECTS|HAVE|tos-api/src/aes/object.rs:565,569,2561,3074 (G_BOXTEXT/G_FBOXTEXT/G_FTEXT MagiC-style object types)
 CONF_WITH_EXTERNAL_DISK_DRIVER|OTH|deactivates the built-in hard disk driver in favour of a disk-resident one (config.h:1670-1677); BIOS disk-driver internal
 CONF_WITH_FALCON_MMU|HW|Falcon MMU (config.h:864-869)
@@ -396,7 +412,7 @@ CONF_WITH_ICDRTC|HW|ICD AdSCSI Plus RTC board via ACSI (config.h:1112-1119, has.
 CONF_WITH_IDE|HW|Falcon IDE bus (config.h:1046-1051)
 CONF_WITH_IKBD_ACIA|HW|the 6850 ACIA chip used for keyboard wiring (config.h:998-1003); distinct from NewTOS's own IKBD-protocol handling in kernel/src/ikbd.rs, which runs over the RPi4's own UART, not an ACIA
 CONF_WITH_IKBD_CLOCK|HW|IKBD real-time-clock command (config.h:1005-1010)
-CONF_WITH_LOADABLE_CURSORS|MISS|loads mouse cursor shapes from A:\EMUCURS.RSC at runtime (config.h:1286-1295); no NewTOS reference found in kernel/ or tos-api/ (checked); unticketed
+CONF_WITH_LOADABLE_CURSORS|MISS|loads mouse cursor shapes from A:\EMUCURS.RSC at runtime (config.h:1286-1295); kernel/src/launch.rs:174-175 says so itself: 'accessories and loadable cursors/icons are not implemented at all'; unticketed
 CONF_WITH_MAGNUM|HW|Magnum RAM expansion card (config.h:918-924)
 CONF_WITH_MEGARTC|HW|MegaST real-time clock (config.h:1105-1110, has.h-gated has_megartc)
 CONF_WITH_MEMORY_TEST|OTH|cold-boot RAM chip self-test (config.h:1507-1512); boot diagnostic
@@ -445,12 +461,11 @@ CONF_WITH_XBIOS_SOUND|HW|Falcon-XBIOS-sound-API shim running on STe/TT DMA-sound
 CONF_WITH_XHDI|OTH|the XHDI hard-disk abstraction cookie and vector table (config.h:1688-1693); BIOS disk-driver internal (only passing comments reference EmuTOS's XHDI in tos-api/src/bios/bpb.rs:195 and tick.rs:35 -- no cookie or vector table implemented)
 CONF_WITH_YM2149|HW|YM2149 PSG sound chip (config.h:977-982)
 CLASSIFICATION_DATA
-)"
 
 # Step 6b: cross-check the classification against the live 106 names.
 # This is what keeps the table honest across a re-pin (see the
 # maintenance note above) instead of silently drifting.
-printf '%s\n' "$CLASSIFICATION" | awk -F'|' '{print $1}' | sort > "$WORK/class_names.txt"
+awk -F'|' '{print $1}' "$WORK/classification.tsv" | sort > "$WORK/class_names.txt"
 MISSING_FROM_CLASS="$(comm -23 "$WORK/names.txt" "$WORK/class_names.txt")"
 EXTRA_IN_CLASS="$(comm -13 "$WORK/names.txt" "$WORK/class_names.txt")"
 if [ -n "$MISSING_FROM_CLASS" ] || [ -n "$EXTRA_IN_CLASS" ]; then
@@ -460,7 +475,6 @@ if [ -n "$MISSING_FROM_CLASS" ] || [ -n "$EXTRA_IN_CLASS" ]; then
     die "fix the classification table in this script (see the maintenance note above) before trusting its output"
 fi
 
-printf '%s\n' "$CLASSIFICATION" > "$WORK/classification.tsv"
 awk -F'|' '$2=="HAVE"||$2=="MISS"' "$WORK/classification.tsv" | sort -t'|' -k1,1 > "$WORK/working_set.tsv"
 awk -F'|' '$2=="HW"||$2=="OM"' "$WORK/classification.tsv" | sort -t'|' -k1,1 > "$WORK/hw_om.tsv"
 awk -F'|' '$2=="OTH"' "$WORK/classification.tsv" | sort -t'|' -k1,1 > "$WORK/other_set.tsv"
@@ -694,6 +708,20 @@ cross-checked every run against the live $NUM_MACROS-macro list (Step
 classification table have drifted apart). See the script's own comment
 above that table for how to extend it when the pinned commit moves.
 
+**A working-set row is classified by what the flag *does*, never by
+whether its EmuTOS macro name turns up in a \`kernel/\`/\`tos-api/\`
+grep.** NewTOS deliberately does not carry \`CONF_*\` names into its own
+source, so a name search finds nothing for a feature NewTOS has under
+a different name — and reads as a false gap. Two rows in this table
+were misclassified exactly that way in an earlier pass and corrected
+after a source re-check (\`CONF_WITH_BOTTOMTOTOP\` is \`Item::Cycle\`
+here, not anything spelled \`BottomToTop\`; \`CONF_WITH_DESKTOP_SHORTCUTS\`
+is \`ins_shortcut\`/\`remove_locate_shortcut\`, not anything spelled
+\`Shortcut\` near the macro's own vocabulary). This will recur on the
+next re-pin unless whoever extends the table (Step 6, maintenance note
+above) reads what the EmuTOS flag *does* and greps for that behaviour
+in \`desk\`/\`aes\`/\`vdi\`, not for the flag's own name.
+
 ### Graphics / AES / VDI — the working set ($N_WORKING macros: $N_HAVE have, $N_MISS gap)
 
 For every one of these, the expectation is that NewTOS has it. No
@@ -703,7 +731,7 @@ on every run — see above).
 EOF
 
 printf '**Has it** (%s):\n\n| Macro | Value | NewTOS |\n|---|---|---|\n' "$N_HAVE"
-printf '%s\n' "$CLASSIFICATION" | awk -F'|' '$2=="HAVE"' | while IFS='|' read -r name cat note; do
+awk -F'|' '$2=="HAVE"' "$WORK/classification.tsv" | while IFS='|' read -r name cat note; do
     val="$(awk -F'\t' -v c="$name" '$1==c {print $2}' "$WORK/table_512.tsv")"
     printf '| `%s` | `%s` | %s |\n' "$name" "$val" "$note"
 done
@@ -716,7 +744,7 @@ this file):
 | Macro | Value | What it switches on in EmuTOS, and ticket status |
 |---|---|---|
 EOF
-printf '%s\n' "$CLASSIFICATION" | awk -F'|' '$2=="MISS"' | while IFS='|' read -r name cat note; do
+awk -F'|' '$2=="MISS"' "$WORK/classification.tsv" | while IFS='|' read -r name cat note; do
     val="$(awk -F'\t' -v c="$name" '$1==c {print $2}' "$WORK/table_512.tsv")"
     printf '| `%s` | `%s` | %s |\n' "$name" "$val" "$note"
 done
@@ -734,7 +762,7 @@ recorded project decision (\`docs/STATUS.md:240\`).
 | Macro | Value | Label |
 |---|---|---|
 EOF
-printf '%s\n' "$CLASSIFICATION" | awk -F'|' '$2=="HW"||$2=="OM"' | while IFS='|' read -r name cat note; do
+awk -F'|' '$2=="HW"||$2=="OM"' "$WORK/classification.tsv" | while IFS='|' read -r name cat note; do
     val="$(awk -F'\t' -v c="$name" '$1==c {print $2}' "$WORK/table_512.tsv")"
     printf '| `%s` | `%s` | **%s** — %s |\n' "$name" "$val" "$cat" "$note"
 done
@@ -754,7 +782,7 @@ judges them.
 | Macro | Value | Label |
 |---|---|---|
 EOF
-printf '%s\n' "$CLASSIFICATION" | awk -F'|' '$2=="OTH"' | while IFS='|' read -r name cat note; do
+awk -F'|' '$2=="OTH"' "$WORK/classification.tsv" | while IFS='|' read -r name cat note; do
     val="$(awk -F'\t' -v c="$name" '$1==c {print $2}' "$WORK/table_512.tsv")"
     printf '| `%s` | `%s` | %s |\n' "$name" "$val" "$note"
 done

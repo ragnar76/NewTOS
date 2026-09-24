@@ -469,20 +469,36 @@ cross-checked every run against the live 106-macro list (Step
 classification table have drifted apart). See the script's own comment
 above that table for how to extend it when the pinned commit moves.
 
-### Graphics / AES / VDI — the working set (28 macros: 21 have, 7 gap)
+**A working-set row is classified by what the flag *does*, never by
+whether its EmuTOS macro name turns up in a `kernel/`/`tos-api/`
+grep.** NewTOS deliberately does not carry `CONF_*` names into its own
+source, so a name search finds nothing for a feature NewTOS has under
+a different name — and reads as a false gap. Two rows in this table
+were misclassified exactly that way in an earlier pass and corrected
+after a source re-check (`CONF_WITH_BOTTOMTOTOP` is `Item::Cycle`
+here, not anything spelled `BottomToTop`; `CONF_WITH_DESKTOP_SHORTCUTS`
+is `ins_shortcut`/`remove_locate_shortcut`, not anything spelled
+`Shortcut` near the macro's own vocabulary). This will recur on the
+next re-pin unless whoever extends the table (Step 6, maintenance note
+above) reads what the EmuTOS flag *does* and greps for that behaviour
+in `desk`/`aes`/`vdi`, not for the flag's own name.
+
+### Graphics / AES / VDI — the working set (28 macros: 23 have, 5 gap)
 
 For every one of these, the expectation is that NewTOS has it. No
 machine-question caveat applies to this group (Step 6c re-checks that
 on every run — see above).
 
-**Has it** (21):
+**Has it** (23):
 
 | Macro | Value | NewTOS |
 |---|---|---|
 | `CONF_WITH_3D_OBJECTS` | `1` | tos-api/src/aes/object.rs:1047-1051,2798 (FL3DOBJ/FL3DIND/FL3DBAK/FL3DACT bit handling) |
 | `CONF_WITH_BACKGROUNDS` | `1` | kernel/src/desk/global.rs:173-179 (g_patcol background pattern/colour, synced to the AES) |
+| `CONF_WITH_BOTTOMTOTOP` | `1` | kernel/src/desk/menu.rs:108 (Item::Cycle in the BTOPITEM slot), menu.rs:187-188 (doc comment 'Cycle windows bottom-to-top'), kernel/src/desk/main.rs:1474,2340 (Item::Cycle => do_cycle()); named Cycle, not BottomToTop -- a name grep for the EmuTOS macro missed it |
 | `CONF_WITH_COLOUR_ICONS` | `1` | tos-api/src/aes/resource.rs:1170-1183,1917 (fixup_colour_icons/CICONBLK relocation) |
 | `CONF_WITH_DESKTOP_CONFIG` | `1` | kernel/src/desk/menu.rs:131,231,272,361 (Item::DeskConfig / CONFITEM); see DESK05 |
+| `CONF_WITH_DESKTOP_SHORTCUTS` | `1` | kernel/src/desk/ins.rs:1016 (ins_shortcut), kernel/src/desk/dir.rs:1701 (remove_locate_shortcut), the #X/#V INF lines including the inf_rev_level<2 swap; landed under DESK30 (ERLEDIGT, commit f85f9c8) -- a shortcut survives Save desktop and a cold start and launches on double-click |
 | `CONF_WITH_EXTENDED_OBJECTS` | `1` | tos-api/src/aes/object.rs:565,569,2561,3074 (G_BOXTEXT/G_FBOXTEXT/G_FTEXT MagiC-style object types) |
 | `CONF_WITH_FILEMASK` | `1` | kernel/src/desk/main.rs:1860 (fun_mask, File -> Set file mask) |
 | `CONF_WITH_GDOS` | `1` | kernel/src/arch/aarch64/exceptions.rs:416-427 (the GEM trap leaves x0/d0 unchanged for an unrecognised selector, so vq_gdos() honestly reports 'no GDOS', config.h:1615-1622); fixed and verified under V16 |
@@ -501,16 +517,14 @@ on every run — see above).
 | `CONF_WITH_WINDOW_COLOURS` | `1` | tos-api/src/aes/window.rs:78-79 (WF_COLOR/WF_DCOLOR) |
 | `CONF_WITH_WINDOW_ICONS` | `1` | kernel/src/desk/win.rs (win_icalc); per DESK15 |
 
-**Gap** (7 — this is the list the lead can act on without opening
+**Gap** (5 — this is the list the lead can act on without opening
 this file):
 
 | Macro | Value | What it switches on in EmuTOS, and ticket status |
 |---|---|---|
-| `CONF_WITH_ALT_DESKTOP_GRAPHICS` | `1` | left-aligns dialog titles and draws a line under them (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1739); no NewTOS reference found in kernel/src/desk (checked); unticketed |
-| `CONF_WITH_BOTTOMTOTOP` | `1` | 'Cycle windows' desktop menu item (config.h:1751-1757; EmuTOS desk/deskmain.c, desk/deskwin.c/.h); no NewTOS reference found in kernel/src/desk (checked); unticketed |
-| `CONF_WITH_DESKTOP_SHORTCUTS` | `1` | files and folders installed on the desktop as shortcuts (config.h:1778-1784); ticketed DESK30 (needs an AT_ISFILE/AT_ISFOLD Anode variant plus fun_win2win drop-on-program, per DESK15's own closure) |
-| `CONF_WITH_EXTENDED_MOUSE` | `1` | IKBD scancode extension for mouse buttons 3/4/5 and the wheel (config.h:1491-1498; EmuTOS bios/aciavecs.S, bios/ikbd.c:748); kernel/src/ikbd.rs decodes only the standard 2-button relative packet 0xF8-0xFB (checked), no wheel or extra-button decode; unticketed. Distinct from the VDI vex_wheelv vector installer already present (tos-api/src/vdi/mouse.rs:710), which has nothing feeding it without this |
-| `CONF_WITH_LOADABLE_CURSORS` | `1` | loads mouse cursor shapes from A:\EMUCURS.RSC at runtime (config.h:1286-1295); no NewTOS reference found in kernel/ or tos-api/ (checked); unticketed |
+| `CONF_WITH_ALT_DESKTOP_GRAPHICS` | `1` | align_title() left-aligns dialog titles and sets ob_state for an underline (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1747, the CONF_WITH_ALT_DESKTOP_GRAPHICS arm); NewTOS's own align_title equivalents do the OTHER (non-ALT, classic-TOS) arm instead -- centre the title, no underline: kernel/src/desk/dir.rs:567-572 `(dw - title_w) / 2`, kernel/src/desk/inf.rs:3403-3404 `(dw - 21 * CELL_W) / 2`, both citing deskmain.c's centring branch by name in their own comments; unticketed |
+| `CONF_WITH_EXTENDED_MOUSE` | `1` | IKBD scancode extension for mouse buttons 3/4/5 and the wheel (config.h:1491-1498; EmuTOS bios/aciavecs.S, bios/ikbd.c:748); kernel/src/ikbd.rs:48,92-93 treats 0xF6 as the status-report packet header and 0xF8-0xFB as the standard 2-button relative packet -- no wheel or button-3/4/5 decode anywhere in that dispatch; unticketed. Distinct from the VDI vex_wheelv vector installer already present (tos-api/src/vdi/mouse.rs:710), which has nothing feeding it without this |
+| `CONF_WITH_LOADABLE_CURSORS` | `1` | loads mouse cursor shapes from A:\EMUCURS.RSC at runtime (config.h:1286-1295); kernel/src/launch.rs:174-175 says so itself: 'accessories and loadable cursors/icons are not implemented at all'; unticketed |
 | `CONF_WITH_SHOW_FILE` | `1` | double-click-to-show a file's contents in EmuDesk (config.h:1838-1844); no NewTOS reference found in kernel/src/desk (checked); unticketed |
 | `CONF_WITH_VIEWER_SUPPORT` | `1` | default file viewer when no app claims a document type (config.h:1854-1861); kernel/src/desk/inf.rs:1847-1850 says so itself: 'AF_VIEWER is CONF_WITH_VIEWER_SUPPORT, which this desktop does not implement'; unticketed |
 

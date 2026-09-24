@@ -129,3 +129,19 @@ gegengeprueft (Schritt 6b). Determinismus erneut mit zwei `bash`-Laeufen
 bestaetigt (`diff` leer). Siehe `TASK/REF01.md` Nachtrag 2 und
 `docs/api/_emutos-config.md` Abschnitt „Classification" fuer die
 vollstaendige Tabelle mit allen Fundstellen. Keine Produktcodeaenderung.
+
+## Nachtrag 2 — zwei Fehlklassifikationen korrigiert, ein Skript-Bug gefunden
+
+`CONF_WITH_BOTTOMTOTOP` (`Item::Cycle`, `kernel/src/desk/menu.rs:108`,
+`main.rs:1474`) und `CONF_WITH_DESKTOP_SHORTCUTS` (DESK30 ERLEDIGT,
+`f85f9c8`, `kernel/src/desk/ins.rs:1016`) von MISS auf HAVE korrigiert —
+beide durch Namensgrep statt Verhaltenspruefung verfehlt. Neuer
+Kopfsatz in der Tabelle macht das zur stehenden Regel.
+`CONF_WITH_ALT_DESKTOP_GRAPHICS` selbst nachgeprueft, haelt als Luecke
+(NewTOS zentriert Dialogtitel statt linksbuendig+Unterstrich,
+`kernel/src/desk/dir.rs:567-572`/`inf.rs:3403-3404`). Dabei ein echter
+bash-3.2-Parserbug gefunden (Heredoc in `$(...)` mit ungerader
+Apostrophzahl "nie geschlossen") und strukturell behoben: Klassifikation
+schreibt jetzt direkt in eine Datei statt in eine Variable. Neue
+Zaehlung: **23 vorhanden, 5 Luecke** (vorher 21/7). Determinismus erneut
+mit zwei `bash`-Laeufen bestaetigt.

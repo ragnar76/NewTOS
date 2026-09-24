@@ -244,3 +244,46 @@ tatsaechlich **vorhanden** (Korrektur, nicht Bestaetigung):
 Die vollstaendige Tabelle mit allen Fundstellen liegt in
 `docs/api/_emutos-config.md`, Abschnitt „Classification". Keine
 Produktcodeaenderung.
+
+## Nachtrag 3 — zwei Fehlklassifikationen korrigiert, eine bestaetigt, ein echter Skript-Bug gefunden
+
+Der Koordinator fand zwei falsche Luecken, beide durch denselben
+Mechanismus: eine Namenssuche, die das Merkmal verfehlt, weil NewTOS es
+anders nennt. **`CONF_WITH_BOTTOMTOTOP`** ist vorhanden — `Item::Cycle`
+im `BTOPITEM`-Slot (`kernel/src/desk/menu.rs:108`, Dockommentar „Cycle
+windows bottom-to-top" `:187-188`), Handler `do_cycle()`
+(`kernel/src/desk/main.rs:1474`). **`CONF_WITH_DESKTOP_SHORTCUTS`** ist
+vorhanden — DESK30 ist nicht „ticketiert", sondern **ERLEDIGT** und
+heute committet (`f85f9c8`): `ins_shortcut` (`kernel/src/desk/ins.rs:1016`),
+`remove_locate_shortcut` (`kernel/src/desk/dir.rs:1701`). Beide von
+MISS auf HAVE umklassifiziert; eine neue Kopfsatz-Warnung in der
+Tabelle sagt jetzt ausdruecklich: ein Zeilentreffer wird nach dem
+**Verhalten** des Schalters klassifiziert, nie nach dem Namensgrep,
+weil NewTOS bewusst keine `CONF_*`-Namen im eigenen Baum traegt.
+
+**`CONF_WITH_ALT_DESKTOP_GRAPHICS` selbst gegengeprueft** (Koordinator-
+Hinweis: „unsere Dialoge zentrieren ihre Titel"): `align_title()`
+(`deskmain.c:1727-1747`) linksbuendig + Unterstrich bei
+`CONF_WITH_ALT_DESKTOP_GRAPHICS`, zentriert ohne Unterstrich sonst.
+NewTOS zentriert tatsaechlich — `kernel/src/desk/dir.rs:567-572`
+(`(dw - title_w) / 2`), `kernel/src/desk/inf.rs:3403-3404`
+(`(dw - 21 * CELL_W) / 2`), beide im eigenen Kommentar `deskmain.c`s
+Zentrier-Zweig zitierend. Bleibt Luecke, jetzt mit Codebeleg statt
+„nichts gefunden".
+
+**Ein echter Skript-Bug beim Einbau der Korrekturen gefunden und
+behoben:** `bash` 3.2 (das tatsaechliche `/bin/bash` dieser Maschine)
+hat einen reproduzierbaren Parserfehler — ein in `$(...)` eingebettetes
+Heredoc mit einer **ungeraden** Anzahl Apostrophe im Textkoerper macht
+die Substitution fuer den Parser „nie geschlossen", *obwohl* das
+Heredoc mit `<<'X'` als woertlich markiert ist. Minimal reproduziert
+(ein Apostroph bricht, zwei nicht; ohne `$(...)`-Einbettung bricht auch
+einer nicht), nicht geraten. Die 106-Zeilen-Klassifikationstabelle
+schreibt jetzt direkt in eine Datei (`cat <<'X' > datei`) statt in eine
+Variable via `$(cat <<'X' ...)"` — strukturelle Loesung statt
+Apostroph-Zaehlen bei jeder kuenftigen Zeile. Kommentar dazu direkt im
+Skript ueber der Tabelle.
+
+**Neue Zaehlung:** Arbeitsmenge weiterhin 28, jetzt **23 vorhanden, 5
+Luecke** (vorher 21/7). Determinismus mit zwei `bash`-Laeufen erneut
+bestaetigt, `diff` leer.
