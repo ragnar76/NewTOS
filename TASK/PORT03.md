@@ -44,6 +44,29 @@ Nicht gelandet, weil es das Verhalten einer **fremden Bibliothek** fuer
 und in QED (`clipbrd.c:281`, `dd.c:99`, `global.c:433`, `poslist.c:53`,
 `projekt.c:938`) — und damit fuer jede kuenftig portierte cflib-Anwendung.
 
+## Der Altersunterschied, der das erklaert
+
+| | |
+|---|---|
+| **cflib 0.21.0** | **18.07.2004**, Frank Naumann (`sdk/cflib/cflib-21/ChangeLog`) — unser Stand, eingefroren |
+| **QED 5.0.5** | **12.11.2004**, aber `doc/history.txt` laeuft bis mindestens **2010** weiter (Patches u. a. Gerhard Stoll 2010, Odd Skancke 2005, Lonny Pursell 2006) |
+
+QED ist also **juenger** als unsere cflib und wurde danach jahrelang weiter
+gepflegt — gegen das, was cflib in dieser Zeit geworden ist. Die Uneinigkeit
+ueber den Trenner ist damit kein Raetsel, sondern ein Altersunterschied.
+
+**cflib wird gepflegt:** `github.com/freemint/cflib`, aktueller Schnappschuss
+laut der eigenen README unter `https://tho-otto.de/snapshots/cflib/cflib-latest.tar.bz2`.
+
+Damit ist **Weg 2 der naheliegendste** und **zuerst** zu pruefen: sagt eine
+aktuelle cflib in `make_normalpath` etwas anderes? Wenn ja, ist der ganze
+Befund kein Eingriff, sondern eine Versionsfrage — und das waere das beste
+Ergebnis, weil es ohne Abweichung von einer fremden Bibliothek auskommt.
+
+**Vorsicht dabei:** eine 21 Jahre neuere cflib bringt mehr mit als diese eine
+Zeile. Vor dem Tausch feststellen, was sich sonst geaendert hat und was davon
+unsere Portierung beruehrt.
+
 ## Die Entscheidung, die ansteht
 
 Welche Seite wird korrigiert:
@@ -59,8 +82,10 @@ Welche Seite wird korrigiert:
    ist **das** der eigentliche Fehler, und die anderen beiden Wege kurieren
    nur sein Symptom.
 
-Weg 3 ist vor den anderen zu pruefen: er ist der einzige, bei dem die
-Bibliothek hinterher *richtiger* ist statt nur anders.
+Reihenfolge: **erst Weg 2** (Versionsfrage, siehe oben — kein Eingriff noetig,
+wenn er traegt), **dann Weg 3** (`path_exists` ist der einzige der beiden
+Eingriffe, der die Bibliothek *richtiger* macht statt nur anders), **Weg 1
+zuletzt**.
 
 Die Projektregel bleibt: **QEDs Quelltext wird nicht geaendert.**
 
