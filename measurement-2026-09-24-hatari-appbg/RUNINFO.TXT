@@ -1,0 +1,43 @@
+measurement-2026-09-24-hatari-appbg — was steht hinter einer laufenden GEM-Anwendung?
+=====================================================================================
+
+Frage des Benutzers: NewTOS zeigt hinter einer gestarteten GEM-Anwendung einen
+WEISSEN Schirm. Er erwartete den gruenen Desktop-Hintergrund. Ich hatte aus
+`gemshlib.c:64` (`CLEAR_SCREEN ... /* white desktop screen */`) geschlossen,
+weiss sei EmuTOS-konform — auf Anweisung in Hatari nachgemessen.
+
+Maschine: Hatari 2.6.1, `--machine falcon --monitor vga`, EmuTOS
+`references/emutos/etos512us.img` (1.4.0+), GEMDOS-Laufwerk C aus einem
+Verzeichnis, Truecolor per `EMUDESK.INF` `#E 1A E0 00 1C 60`. Start der
+Anwendung ueber die `#Z`-Autorun-Zeile, also ueber den **Desktop**-Startweg,
+nicht ueber `--auto` (das liefe vor dem Desktop).
+
+Zwei Laeufe:
+
+1. `screendumps/emutos-bgwin-falcon-tc.png` — `method/bgwin.c`, ein minimales
+   m68k-GEM-Programm (rohe AES-Traps, kein gemlib), das **nur** ein Fenster
+   oeffnet und wartet. Kein `v_clrwk`, damit sichtbar bleibt, was darunter
+   liegt. Ergebnis: Hintergrund **gruen**, Menueleiste zeigt `BGWIN.PRG`.
+
+2. `screendumps/emutos-qed-falcon-tc.png` — das **echte** m68k-QED
+   (`~/Downloads/qed/qed.app`). Ergebnis: Hintergrund **gruen**, QEDs eigene
+   Menueleiste.
+
+Damit ist die Frage entschieden: **weiss ist falsch.**
+
+Die Quelle, vollstaendig gelesen statt nur an einer Zeile:
+
+  sh_main   gemshlib.c:715-720   if (gl_shgem) { wm_init(); ratinit();
+                                 sh_draw(D.s_cmd, TRUE); }   <- weiss, kurz
+  sh_ldapp  gemshlib.c:633       sh_show(fname);             <- und DANN das hier
+  sh_show   gemshlib.c:291-297   sh_draw(lcmd, FALSE)
+  sh_draw   gemshlib.c:280-288   else-Zweig: ted->te_ptext = lcmd;
+                                 ob_draw(tree, ROOT, MAX_DEPTH)
+
+`sh_draw(…, TRUE)` loescht auf weiss; `sh_show(fname)` zeichnet danach den
+**ganzen** Desktop-Baum neu — Hintergrundmuster samt Menueleiste, in der der
+Programmname steht. Erst darueber malt die Anwendung. Genau das zeigen beide
+Screendumps.
+
+NewTOS macht seit DESK35 den ersten Schritt und nicht den zweiten. Folgeticket:
+DESK37.
