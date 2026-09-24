@@ -138,7 +138,10 @@ For each function (Cconin, Fopen, Setscreen, …) the workflow is:
    (e.g., Fopen depends on the FAT subsystem state from earlier mounts)
 7. **Note version-specific behavior**: EmuTOS sometimes has
    `#ifdef CONF_WITH_TT` or similar conditionals — document which
-   variant we're extracting
+   variant we're extracting. For "is this compiled into our reference
+   build" questions, cite `docs/api/_emutos-config.md` (regenerate via
+   `tools/emutos-config.sh`), not a re-read of `config.h`'s `#ifdef
+   TARGET_*` nesting by eye — see `TASK/REF01.md`.
 8. **Cross-check with Compendium** for the documented ABI; if there's a
    discrepancy, EmuTOS wins, but we record the discrepancy
 9. **Write the spec entry** in `docs/api/<trap>/<function>.md` (or grouped)
