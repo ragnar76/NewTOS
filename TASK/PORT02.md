@@ -121,16 +121,25 @@ Archive plus Beispiele; Lizenz laut README *„FreeWare … Please use it as a G
 licence"*, Autoren Dominique Bereziat und Arnaud Bercegeay, offizielle Seite
 `http://windom.free.fr`.
 
-zViews Voraussetzungsliste verlangt aber **1.21.3**, und zwar ausdruecklich
-*„plus fix for gcc4 and memory protection"* — also eine spaetere Generation
-mit Anpassungen, die genau unsere Lage betreffen (gcc4-Aufbau,
-Speicherschutz). **Vor dem Bauen klaeren, welche Fassung wirklich gebraucht
-wird**: die 1.1 nehmen und die Unterschiede fressen, oder 1.21.3 beschaffen
-(offizielle Seite, oder die Fassung, gegen die zView tatsaechlich gebaut
-wurde). Die beiden sind nicht austauschbar, sonst haette die
-Voraussetzungsliste keine Nummer genannt.
+zViews Voraussetzungsliste verlangt **1.21.3** — und die liegt inzwischen im
+Baum: **`Applications/windom-1.21.3`**, die genau geforderte Fassung. Die
+GitHub-Fundstelle oben (1.1 von 2001) wird damit nicht gebraucht; sie bleibt
+hier nur als Hinweis stehen, falls jemand spaeter eine aeltere Fassung sucht.
 
-`windom` bleibt damit die zweite Unbekannte: ein GEM-Rahmenwerk ueber gemlib, das wir
+**Was der Bestand zeigt** (nachgesehen, nicht geschaetzt):
+
+* **199 C-Dateien in `src/`, null Assembler.** Reiner C-Quelltext.
+* **LGPL 2.1** (`COPYRIGHT`).
+* Eingebunden werden `gem.h` (gemlib), `osbind.h`/`tos.h` (mintlib),
+  `mint/cookie.h`, `mint/sysvars.h`, `osheader.h`, `atari.h` und
+  Standard-C — **also genau die zwei Bibliotheken, die fuer QED bereits
+  portiert sind**, plus Systemvariablen und OS-Kopf, die wir haben.
+
+Damit faellt windom aus der Rubrik „Unbekannte" heraus: es ist Umfang
+(199 Dateien uebersetzen-und-beheben), nicht Risiko. Der Aufwand ist
+trotzdem getrennt auszuweisen.
+
+Zum Aufwand von windom: ein GEM-Rahmenwerk ueber gemlib, das wir
 bisher nicht gebaut haben. Aufwand dafuer getrennt ausweisen.
 
 ## Auftrag
