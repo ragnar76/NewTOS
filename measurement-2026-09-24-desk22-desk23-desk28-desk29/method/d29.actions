@@ -1,0 +1,46 @@
+# DESK29 -- a selection and a window change. Two windows on C:\ (the card has
+# one partition, so the second window comes from double-clicking the same
+# drive icon again: do_dopen calls win_alloc unconditionally,
+# desksupp.c:1041-1063). Window 1 opens at (48,43), window 2 cascaded to
+# (72,67), so window 1's work area is clickable at x < 72.
+#
+# Coordinates from the d-probe run:
+#   C: drive icon                     click (38,35)
+#   window 2, item 'README.TXT'       click (119,295)
+#   window 1, empty work area         (60,300)  -- below its last item row
+#                                     (obj 36 box (57,255) 76x40 ends at y 294)
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 38 35
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+2900 mark B_WIN1
+3200 move 38 35
+3400 down
+3403 up
+3410 down
+3413 up
+4000 move 600 240
+4600 mark C_WIN2
+5000 move 119 295
+5200 down
+5203 up
+5600 move 600 240
+6200 mark D_SELECTED
+6600 move 60 300
+6800 down
+6803 up
+7200 move 600 240
+7800 mark E_AFTER_TOP
+# ...and window 2 back on top, so its (now empty) selection is visible again.
+# Window 1 is 48..591 x 43..442, window 2 72..615 x 67..466, so window 2's
+# horizontal scroll bar at y 448..466 is the uncovered strip: click (300,457).
+8200 move 300 457
+8400 down
+8403 up
+8800 move 600 240
+9400 mark F_WIN2_BACK

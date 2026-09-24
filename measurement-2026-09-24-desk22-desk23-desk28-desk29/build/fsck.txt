@@ -1,0 +1,36 @@
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/tmp/d28-after.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 54 files, 63718 KiB free (31859 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/tmp/d28-before.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 54 files, 63718 KiB free (31859 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/tmp/d22-after.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 47 files, 63740 KiB free (31870 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/tmp/d22-before.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 47 files, 63740 KiB free (31870 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/tmp/d29.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 47 files, 63740 KiB free (31870 clusters)
+== /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/tmp/probe.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 47 files, 63740 KiB free (31870 clusters)

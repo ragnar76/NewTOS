@@ -1,0 +1,195 @@
+diff --git a/kernel/src/desk/main.rs b/kernel/src/desk/main.rs
+index 02f31ca..c393edc 100644
+--- a/kernel/src/desk/main.rs
++++ b/kernel/src/desk/main.rs
+@@ -615,15 +615,15 @@ fn set_launch_dir(app_dir: bool, own_path: &str) -> bool {
+ ///
+ /// * [`ftype::Flavor::App`] (`.NAP`) — run directly; the app draws its own AES
+ ///   UI over the desktop, so nothing special is needed around the call.
+-/// * [`ftype::Flavor::Console`] (`.NCP`) — clear the screen and home the
+-///   cursor (`fbcon::clear_and_home`), the same `ESC E` a GEM program's
+-///   `v_enter_cur` sends before it runs a TOS program, so the child's output
+-///   starts at the top left; run it, then repaint the desktop over the text
+-///   below — mirroring [`crate::shell::run_console`]'s enter/restore.
+-///   `run_program` is kept pure
+-///   (no console/redraw coupling); the enter is done here and the restore is
+-///   the trailing [`redraw::redraw_desktop`] (whole-screen recovery — the
+-///   console cleared the screen).
++/// * [`ftype::Flavor::Console`] (`.NCP`) — bracket the run with the AES screen
++///   mode switch, [`crate::shell_loop::sh_alpha_enter`] /
++///   [`crate::shell_loop::sh_alpha_leave`], i.e. EmuTOS' `sh_toalpha` /
++///   `sh_tographic` (`aes/gemshlib.c:246-260,223-239`): the pointer goes away
++///   and the screen is cleared before the child's output starts at the top
++///   left, and the mouse comes back afterwards (DESK22). The desktop is then
++///   repainted over the text by the trailing [`redraw::redraw_desktop`]
++///   (whole-screen recovery — the console cleared the screen). `run_program`
++///   stays pure: no console/redraw coupling inside it.
+ /// * [`ftype::Flavor::Params`] (`.NTP`) — a direct double-click runs it with an
+ ///   empty tail (`tail == &[]`, Stage A). When launched as a document's
+ ///   associated application (deskins #20), `tail` carries the document path.
+@@ -649,21 +649,40 @@ fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
+             }
+         }
+         ftype::Flavor::Console => {
+-            // Console (`.NCP`): its own VT52 text-screen enter/restore, NOT the
+-            // GEM screen handoff — left exactly as before.
+-            crate::fbcon::clear_and_home();
++            // Console (`.NCP`): the AES screen-mode switch a character-mode
++            // program gets in EmuTOS — `pro_run(isgraf = FALSE, …)` →
++            // `shel_write` → `sh_main`'s `sh_chgrf` → `sh_toalpha`
++            // (`aes/gemshlib.c:513-523,246-260`), which puts the arrow shape
++            // back and **removes the mouse pointer** (`ratexit()`, `:256`)
++            // before the text screen appears. Clearing the screen alone
++            // (`fbcon::clear_and_home`, which `sh_toalpha` still does at its
++            // end) left the pointer standing in the text as a black smudge —
++            // DESK22.
++            crate::shell_loop::sh_alpha_enter();
+             let ran = crate::launch::run_program_with_tail(path.as_bytes(), tail);
+             // Classic TOS keeps the console up until the user acknowledges, so
+             // the program's final output stays readable before the desktop
+             // repaints over it. Only reached from a real double-click (an
+             // interaction path that requires HID input — verified on hardware).
+             console_pause_for_key();
++            // Back into graphics mode — `sh_main`'s next pass (`:712-713`),
++            // `sh_tographic` (`:223-239`): mouse on, hourglass while the
++            // desktop is rebuilt.
++            crate::shell_loop::sh_alpha_leave();
+             if !ran {
++                // EmuTOS shows the failure alert on the next pass too, right
++                // after the mode switch and before the desktop is drawn
++                // (`fm_error`, `gemshlib.c:722-723`).
+                 alert_launch_failed(name);
+             }
+             // The console program cleared the whole screen: genuine whole-screen
+             // recovery of the desktop (background + windows + menu bar).
+             redraw::redraw_desktop();
++            // …and the arrow back, which in EmuTOS is the last act of the
++            // restarted desktop's start-up (`desk_busy_off`,
++            // `deskmain.c:2071`) undoing `sh_tographic`'s hourglass. Same step,
++            // same place as after the nested EmuCON pass (`desk::run`'s loop).
++            pro::desk_busy_off();
+         }
+     }
+ }
+diff --git a/kernel/src/launch.rs b/kernel/src/launch.rs
+index 7620225..8cdbd04 100644
+--- a/kernel/src/launch.rs
++++ b/kernel/src/launch.rs
+@@ -179,11 +179,52 @@ pub fn set_bootflags_from_shiftbits(shiftbits: u8) {
+     SKIP_AUTO_ACC.store(shiftbits & MODE_CTRL != 0, Ordering::Relaxed);
+ }
+ 
++/// The drive and directory an `\AUTO\` program runs in — the **root of the
++/// boot drive** (DESK28).
++///
++/// EmuTOS' `autoexec` sets neither: `run_auto_program` builds the full path
++/// `"\AUTO\<name>"` and hands it straight to `Pexec(PE_LOADGO, …)`
++/// (`bios/bios.c:685-695`), with no `Dsetdrv`/`Dsetpath` anywhere in
++/// `autoexec` (`:697-733`). The AUTO child's working directory is therefore
++/// purely *inherited*: `Pexec` copies the current drive and the per-drive
++/// current-directory table out of the calling process into the child's
++/// basepage (`init_pd_files`, `bdos/proc.c:400-410`), and the caller here is
++/// the BIOS, whose state is `Dsetdrv(bootdev)` (`bios/bios.c:827`) plus, for
++/// every drive it never `Dsetpath`ed, the **root** DND that `ckdrv` installs
++/// on first use (`bdos/fsdrive.c:119-131`). An AUTO program that opens
++/// `FOO.TXT` by a bare name sees `<bootdrive>:\FOO.TXT`, not `\AUTO\FOO.TXT`.
++///
++/// NewTOS has no per-process copy to inherit from: the current drive and the
++/// per-drive current directories are single globals, the documented stand-in
++/// for `p_curdrv`/`p_curdir` (`tos-api/src/bdos/fs/drive.rs`,
++/// `…/fs/path.rs`). Left alone, the first AUTO program's `Dsetpath` would be
++/// seen by the second and by the desktop after them — which on EmuTOS cannot
++/// happen, because each child mutates only its own copy. Re-establishing the
++/// BIOS's state here, before every program, is what makes the global behave
++/// like the copy: each `\AUTO\` program starts on the boot drive, at its
++/// root, whatever the one before it did.
++fn set_auto_default_path() {
++    // `Dsetdrv(bootdev)` (`bios/bios.c:827`) — the BIOS's current drive, which
++    // is what every AUTO child inherits as `p_curdrv`.
++    tos_api::bdos::fs::drive::set_boot_drive();
++    // …and the root on every drive: the BIOS process never `Dsetpath`ed, so
++    // `ckdrv` hands each of its drives the root DND (`bdos/fsdrive.c:119-131`).
++    // The empty string is this table's spelling of "root"
++    // (`tos-api/src/bdos/fs/path.rs`, `curdir_str`).
++    for drive in 0..16 {
++        tos_api::bdos::fs::path::set_curdir(drive, "");
++    }
++}
++
+ /// Run every auto-run program in `\AUTO\` on the boot drive (C:) in directory
+ /// order, before the desktop — EmuTOS' `autoexec` (`bios/bios.c:697`). Each
+ /// runs to its `Pterm`, then the next. AUTO programs are typically drivers /
+ /// TSRs that set something up at boot. Absent `\AUTO\` folder → no-op.
+ ///
++/// Each program starts on the boot drive at its root — see
++/// [`set_auto_default_path`] for why that is the inherited state and not
++/// `\AUTO\`.
++///
+ /// Skipped entirely when the user held Control on the boot screen — EmuTOS'
+ /// first act in `autoexec` (`bios/bios.c:702-704`, "check if the user does not
+ /// want to run AUTO programs"); see [`set_bootflags_from_shiftbits`].
+@@ -235,10 +276,18 @@ pub fn run_auto_folder() {
+             "[auto] running C:\\AUTO\\{}",
+             core::str::from_utf8(name).unwrap_or("?")
+         );
++        // The working directory EmuTOS' AUTO child inherits, re-established
++        // for every program because our drive/directory state is global
++        // (DESK28, see [`set_auto_default_path`]).
++        set_auto_default_path();
+         run_program(&path);
+         ran += 1;
+     }
+     if ran > 0 {
++        // Whatever the last program did to the global drive/directory, the
++        // desktop that follows must see the state EmuTOS' BIOS process still
++        // has after `autoexec` returns — its own, untouched by any child.
++        set_auto_default_path();
+         kprintln!("[auto] {} AUTO program(s) run", ran);
+     }
+ }
+diff --git a/kernel/src/shell_loop.rs b/kernel/src/shell_loop.rs
+index 479cb65..1fe3a5e 100644
+--- a/kernel/src/shell_loop.rs
++++ b/kernel/src/shell_loop.rs
+@@ -248,6 +248,41 @@ pub fn go_graphic() {
+     }
+ }
+ 
++/// The screen-mode half of one `sh_main` pass for a **character-mode
++/// `NORMAL_APP`** the built-in desktop runs nested (AES gap G1) — DESK22.
++///
++/// EmuTOS' desktop reaches a `.TOS`/`.TTP` through `pro_run(isgraf = FALSE,
++/// …)` → `shel_write(SHW_EXEC, 0, 1, cmd, tail)`, which records `sh_isgem =
++/// FALSE` (`aes/gemshlib.c:173`); `deskmain` then returns and `sh_main`'s next
++/// pass calls `sh_chgrf` (`:713`), which — the mode having changed — runs
++/// `sh_toalpha` (`:513-523`, `:246-260`): arrow shape, error handler back,
++/// `ratexit()` **takes the mouse pointer off the screen**, workstation closed.
++/// Only then does `sh_ldapp` load the program. When it `Pterm`s, the loop's
++/// next pass finds `sh_isgem` TRUE again (the desktop is a GEM app) and
++/// `sh_chgrf` runs `sh_tographic` (`:223-239`) on the way back.
++///
++/// NewTOS's built-in desktop cannot return into `sh_main`
++/// ([`sh_run_pending_console`] documents why), so it brackets the launch with
++/// this pair itself. Both go through the real [`sh_chgrf`] and the real
++/// `sh_isgem`/`gl_shgem` pair rather than calling `sh_toalpha`/`sh_tographic`
++/// behind the AES's back, so the state the next `sh_chgrf` compares against is
++/// the same one EmuTOS would hold.
++///
++/// [`sh_alpha_enter`] before the program, [`sh_alpha_leave`] after it. On a
++/// board without a raster backend both are no-ops in effect: `sh_chgrf`'s
++/// desired mode is already alpha and never changes.
++pub fn sh_alpha_enter() {
++    shell::set_sh_isgem(false); // `shel_write(SHW_EXEC, isgraf = 0, …)`
++    sh_chgrf(); // :713 — `gl_shgem` TRUE → FALSE: `sh_toalpha()`
++}
++
++/// The second half of [`sh_alpha_enter`] — back into graphics mode after the
++/// character-mode program has terminated (`sh_main`'s next pass, `:712-713`).
++pub fn sh_alpha_leave() {
++    shell::set_sh_isgem(true); // the desktop is a GEM application
++    sh_chgrf(); // :713 — `gl_shgem` FALSE → TRUE: `sh_tographic()`
++}
++
+ /// `sh_ldapp(psh)` (`gemshlib.c:592-689`) — run the next program and block
+ /// until it terminates. Three top-level arms, four `sh_nextapp` values.
+ ///

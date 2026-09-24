@@ -1,0 +1,278 @@
+measurement-2026-09-24-desk22-desk23-desk28-desk29
+===================================================
+DESK28 (\AUTO\ working directory) · DESK22 (.NCP launch, mouse pointer)
+DESK23 (two frame-corner pixels)  · DESK29 (selection across a window change)
+
+Base: branch desk-rebuild, HEAD 3f6b6ef. This batch's changes are UNCOMMITTED
+in the shared tree (kernel/src/launch.rs, kernel/src/shell_loop.rs,
+kernel/src/desk/main.rs — full diff in method/desk22-desk28.diff). Nothing
+flashed, nothing ejected, no real Pi run, nothing committed. No
+`git checkout/restore/clean/stash/reset` was run on the shared tree.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (method/run.sh + method/qmp_multi.py). Card image:
+tools/make-sd-image.sh (64 MiB, MBR + FAT16), a fresh copy per run; the DESK28
+runs use a seeded variant (method/seed.sh, see §1). Interactive runs use the
+scratch-copy IKBD injector (memory `desktop-interactive-verification-real-hw`):
+method/make_scratch.sh rsyncs the crates into the job scratch — never the
+shared tree.
+
+method/*.actions are the three action lists, method/*.rs the generated injector
+tables (SCRIPT_DESK plus the empty SCRIPT_TERA the script selector needs).
+No `*.img` in this directory (the ticket's rule).
+
+POINTER PARK: (600, 240) — clear of the desktop icons and of the menu bar, as
+in the DESK03..DESK06 and DESK19/DESK20 runs.
+
+Two of the four tickets are WITHDRAWN on the source: DESK23 and DESK29. The
+runs below are what withdraws them; they are not a fix's acceptance.
+
+
+0. Scaffolding, and why (scratch copies only, never the shared tree)
+---------------------------------------------------------------------------
+  a79_patch_desk10.py   the standard H02 serial AES trace + the desktop-up flag
+  apply_injector.py     the scripted IKBD injector in kernel/src/host_env.rs
+  a78_patch2.py         dual arming + script selection
+  key_step_patch.py     Step::Key(u8) — one raw IKBD key byte
+  probe_patch.py        serial dump of every desktop icon and window item with
+                        the point that hits it (every click coordinate below
+                        comes from it — see §1)
+  desk2229_patch.py     NEW, one hook: step the injector inside
+                        `console_read_key_blocking`'s spin, so a scripted key
+                        can end `console_pause_for_key` ("Press any key to
+                        return to the desktop"). Copied verbatim from
+                        measurement-2026-09-23-desk06/method/desk06_patch.py
+                        piece 1.
+  d28_pause_patch.py    NEW, one `delay_ms(4000)` after `run_auto_folder()`.
+                        The AUTO phase and the desktop build are a few hundred
+                        ms apart and QEMU flushes `-serial file:` in chunks, so
+                        without it the QMP driver never sees the \AUTO\ text
+                        screen — the first attempt photographed the finished
+                        desktop instead. Present in BOTH scratch trees, so it
+                        cannot bias the before/after comparison, and it only
+                        delays the boot.
+  autochdir.c           NEW, a measurement-only `.NCP` (see §1).
+
+  qmp_multi.py gained one option: a fourth SPEC field `stop` pauses the VM
+  before the screendump and resumes afterwards, and `|` may replace `:` as the
+  field separator when the marker itself contains a colon.
+
+  The "before" kernel is built by method/make_scratch.sh's `before` mode:
+  kernel/src/desk/main.rs, kernel/src/launch.rs and kernel/src/shell_loop.rs
+  are replaced by their committed HEAD versions (`git show HEAD:…`, read-only
+  — the shared tree is never touched by git). Same harness, same card, three
+  files older.
+
+
+1. Geometry and fixtures, measured
+---------------------------------------------------------------------------
+  method/d-probe.actions, serial/probe-serial.log. Opens the C:\ window twice
+  (the card has one partition; `do_dopen` calls `win_alloc` unconditionally,
+  desksupp.c:1041-1063, so the second double-click on the drive icon gives a
+  second window):
+
+    [probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)   C: drive icon
+    [probe] win slot 0 handle 1 spec C:\*.*
+    [probe]   obj 25 'HELLO.NCP' box (141,171) 76x40 -> click (179,187)
+    [probe] win slot 1 handle 2 spec C:\*.*
+    [probe]   obj 64 'README.TXT' box (81,279) 76x40 -> click (119,295)
+
+  and from the AES trace of the same runs:
+
+    [aes] op 104 in=(1,5,…) out=(1,48,43,544,400)    wind_get(1, WF_CXYWH)
+    [aes] op 104 in=(2,5,…) out=(1,72,67,544,400)    wind_get(2, WF_CXYWH)
+
+  i.e. window 1 = 48..591 x 43..442, window 2 cascaded to 72..615 x 67..466.
+  That is why window 1 is clickable at (60,300) (left of window 2, below
+  window 1's last item row, which ends at y 294) and window 2 at (300,457)
+  (its horizontal scroll bar, below window 1's bottom edge).
+
+  DESK28 fixture (method/seed.sh … auto), written in AUTO scan order:
+
+    C:\AUTO\AUTOCHD.NCP   method/autochdir.c — `Dsetpath("\SUB")`, runs FIRST
+    C:\AUTO\CURDIR.NCP    sdk/examples/curdir.c (DESK18) — runs SECOND
+    C:\AUTO\PROOF.TXT     "PROOF: C:\AUTO"
+
+  With C:\PROOF.TXT ("PROOF: C:\ (root)") and C:\SUB\PROOF.TXT ("PROOF:
+  C:\SUB") already on the standard image, the line CURDIR prints names the
+  directory it actually ran in, and all three candidates are distinguishable.
+  AUTOCHD exists because the question DESK28 asks is not "does an AUTO program
+  start at the root" (nothing had moved it) but "does the one before it move
+  it" — which on EmuTOS it cannot, because each child gets a copy of the
+  parent's `p_curdir` (bdos/proc.c:400-410).
+
+
+2. DESK28 — the \AUTO\ working directory        (d28-*, serial/d28-*-serial.log)
+---------------------------------------------------------------------------
+  Same card, same boot, two kernels.
+
+  before (HEAD)                        serial/d28-before-serial.log:36-43
+    [auto] running C:\AUTO\AUTOCHD.NCP
+    AUTOCHD: Dsetpath("\SUB") = 0
+    [auto] running C:\AUTO\CURDIR.NCP
+    CURDIR: drive C:\SUB
+    CURDIR: read "PROOF: C:\SUB"
+
+  after                                serial/d28-after-serial.log:36-43
+    [auto] running C:\AUTO\AUTOCHD.NCP
+    AUTOCHD: Dsetpath("\SUB") = 0
+    [auto] running C:\AUTO\CURDIR.NCP
+    CURDIR: drive C:
+    CURDIR: read "PROOF: C:\ (root)"
+
+  d28-before-A-auto-text.png / d28-after-A-auto-text.png are the same two
+  lines on the \AUTO\ text screen. `PROOF: C:\AUTO` is not printed in either
+  run and cannot be: EmuTOS' `autoexec` issues no `Dsetdrv` and no `Dsetpath`
+  (bios/bios.c:685-733), so the AUTO child's directory is the BIOS process's
+  own — `Dsetdrv(bootdev)` (bios/bios.c:827) and, for a drive that was never
+  `Dsetpath`ed, the root DND `ckdrv` installs (bdos/fsdrive.c:119-131). The
+  ticket's "\AUTO\" reading is withdrawn; what the change fixes is the leak
+  from one AUTO program into the next, which our global drive/directory
+  stand-in had and EmuTOS's per-process copy does not.
+
+  d28-*-B-desktop.png: the desktop comes up normally after the AUTO phase in
+  both builds. 0 [EXC]/[PANIC] in both logs.
+
+
+3. DESK22 — the pointer on the text screen      (d22-*, serial/d22-*-serial.log)
+---------------------------------------------------------------------------
+  method/d22.actions: open the C:\ window, double-click HELLO.NCP at
+  (179,187), photograph the text screen while `console_pause_for_key` waits,
+  press SPACE, photograph the restored desktop.
+
+  d22-before-C-program.png  the console text, and a black smudge at (179,187)
+                            — the mouse pointer, standing where the double
+                            click left it.
+  d22-after-C-program.png   the same text screen, NO pointer.
+
+  The after build reaches the text screen through `sh_alpha_enter()` →
+  `sh_chgrf` → `sh_toalpha` (gemshlib.c:513-523, :246-260), whose `ratexit()`
+  takes the cursor off the screen, exactly as the EmuCON path DESK06 built
+  does (its cli-C-console.png was pointer-free while the `.NCP` path was not).
+
+  d22-before-D-after.png vs d22-after-D-after.png: identical desktops (the
+  pointer is parked at (600,240) in both), so the mode switch costs nothing on
+  the way back. 0 [EXC]/[PANIC] in both logs.
+
+
+4. DESK23 — the two frame corners               (method/pixels.py, all dumps)
+---------------------------------------------------------------------------
+  WITHDRAWN. The premise was "wind_open leaves two corner pixels unwritten and
+  the repaint writes them white". Neither path writes them, and there are four
+  of them, not two.
+
+  Window 1 is (48,43,544,400). EmuTOS draws the W_BOX border with
+  `gr_box(t.g_x,t.g_y,t.g_w,t.g_h,1)` and then, for SHADOWED, after
+  `gr_inside(&t,th)` with th=1 (aes/gemoblib.c:889-900):
+
+      bb_fill(… t.g_x,          t.g_y+t.g_h+th, t.g_w+th, 2*th)   bottom band
+      bb_fill(… t.g_x+t.g_w+th, t.g_y,          2*th,     t.g_h+3*th) right band
+
+  which for this window is border x 48..591 / y 43..442, bottom band
+  x 49..591 / y 443..444, right band x 592..593 / y 44..444. Four pixels are
+  in none of them: (592,43), (593,43), (48,443), (48,444) — the band starts
+  one pixel in on each side, on purpose. Our `draw_frame`/`draw_shadow`
+  (tos-api/src/aes/window.rs) computes the identical rectangles.
+
+  Nor does the desktop paint them: all four lie inside the window's WS_TRUE
+  (= its rectangle grown by DROP_SHADOW_SIZE, aes/gemwmlib.c:253-261, here
+  48..593 x 43..444), and the rectangle lists are built from WS_TRUE
+  (`newrect`, aes/gemwrect.c:190), so `w_drawdesk`'s `do_walk(DESKWH, …)`
+  (gemwmlib.c:340-359) has no rectangle that contains them. Nothing writes
+  them. Their colour is whatever was on the screen when the window opened.
+
+  method/pixels.py over screendumps/ shows exactly that:
+
+    d29-B-win1 … d29-F-win2-back   (592,43)=white (593,43)=green
+                                   (48,443)=white (48,444)=green
+    d22-*-B-window                 same
+    d22-*-C-program                all four white   (the console cleared the
+                                                     screen — see the whole
+                                                     picture: every pixel is)
+    d22-*-D-after                  all four white   (the repaint did not touch
+                                                     them)
+
+  white/green alternating is the desktop's own background dither, which is
+  why the DESK06 diff saw two differing pixels and not four: at (592,43) and
+  (48,443) the pattern is white anyway, so they match the console's white.
+
+  The d29 run is the control the other way round: five window opens, toppings
+  and full frame repaints in a row, never a screen clear — and the four pixels
+  stay on the desktop pattern from beginning to end. So the difference DESK23
+  measured belongs to the screen that was underneath, not to either draw path.
+  Nothing changed.
+
+
+5. DESK29 — a selection and a window change     (d29-*, serial/d29-serial.log)
+---------------------------------------------------------------------------
+  WITHDRAWN. EmuTOS clears unconditionally, in two places:
+
+    desk/deskmain.c:1282-1292  case WM_TOPPED: desk_clear(G.g_cwin); …
+    desk/deskmain.c:957-959    wh = wind_find(mx,my);
+                               if (wh != G.g_cwin) desk_clear_all();
+
+  and `G.g_cwin` only becomes the new window afterwards, in `desk_verify`
+  (desksupp.c:196). Our `main::top_msg` and `main::hndl_button` are both
+  verbatim that. A selection therefore cannot survive a window change on
+  EmuTOS either, and `do_aopen`'s second position does not need one: it takes
+  the directory of `win_ontop()` (desksupp.c:878, 898-901), so the case is
+  reached with an icon that is NOT in the top window — a desktop icon, or a
+  drag's destination — not with a stale selection in another window.
+
+  The run shows the current behaviour:
+    d29-C-win2.png       two windows on C:\, window 2 on top
+    d29-D-selected.png   README.TXT selected in window 2; its info line reads
+                         "64 bytes used in 1 selected items."
+    d29-E-after-top.png  after one click in window 1's uncovered work area:
+                         window 1 on top
+    d29-F-win2-back.png  window 2 topped again — README.TXT is NOT selected,
+                         info line "424568 bytes used in 28 items."
+
+  and the AES trace names the path, in EmuTOS' order (between MARK D_SELECTED
+  and MARK E_AFTER_TOP in serial/d29-serial.log):
+
+    [aes] op 105 in=(2,3,…)    wind_set(2, WF_INFO)  ← desk_clear's win_sinfo
+    [aes] op 105 in=(1,10,…)   wind_set(1, WF_TOP)   ← top_msg's wind_set
+
+  i.e. `desk_clear(G.g_cwin)` on the old window first, `WF_TOP` on the new one
+  second. Nothing changed.
+
+
+6. Filesystem
+---------------------------------------------------------------------------
+  `fsck_msdos -n` on the FAT16 partition of every image written by a run
+  (d28-after, d28-before, d22-after, d22-before, d29, probe): Phase 1 / 2 / 3
+  with no errors on all six. build/fsck.txt.
+
+
+7. Build (shared tree, the product state)
+---------------------------------------------------------------------------
+  `cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat`
+  before EACH board.
+
+    cargo xtask build --board rpi4       tos-api 64 / kernel 94   (base 64/94)
+    cargo xtask build --board qemu-virt  tos-api 64 / kernel 94   (base 64/94)
+    cargo clippy --features board-rpi4       tos-api 80 / kernel 125 (base 80/125)
+    cargo clippy --features board-qemu-virt  tos-api 80 / kernel 125 (base 80/125)
+    grep -c "desk/" on both clippy runs:  0
+    cargo run -p xtask -- test           938 passed / 0 failed / 1 ignored
+                                         (base 938/0/1 — no host test added;
+                                          both changed paths are in the no_std
+                                          aarch64 `kernel` crate, which the
+                                          host suite cannot reach)
+
+  Logs in build/.
+
+
+8. Not driven here
+---------------------------------------------------------------------------
+  * Real Pi 4 (the acceptance gate): the four checklist items 55-58 in
+    docs/api/desktop/_hw-test-2026-09-17.md.
+  * DESK28 with a drive other than C: — the QEMU card has one partition, so
+    `set_auto_default_path`'s drive half (`set_boot_drive`) is exercised but
+    never observed changing anything. The physical card is C-F.
+  * DESK22 with a `.NCP` that fails to load (the `alert_launch_failed` arm,
+    now raised after the switch back to graphics mode).
+  * DESK29 with two windows on DIFFERENT directories — both windows here are
+    C:\, which is enough for the selection question but not for the info-line
+    text.
