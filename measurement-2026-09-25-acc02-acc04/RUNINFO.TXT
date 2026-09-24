@@ -1,0 +1,175 @@
+measurement-2026-09-25-acc02-acc04
+==================================
+ACC02 (load `.NAC` desk accessories at AES start)
+ACC03 (accessory process model: a second AES client beside the desktop)
+ACC04 (Desk menu: registered titles, AC_OPEN / AC_CLOSE)
+ACC05 (format and extension — answered, closed as a by-product)
+
+Base: branch desk-rebuild, HEAD 9a346a4. This batch's changes are UNCOMMITTED
+in the shared tree — seventeen files modified plus two new
+(kernel/src/accs.rs, tos-api/src/aes/acc.rs); the full diff is in
+method/acc02-acc04.diff and the two new files in method/accs.rs.new and
+method/aes-acc.rs.new. Nothing flashed, nothing ejected, no real Pi run,
+nothing committed. No `git checkout/restore/clean/stash/reset` was run on the
+shared tree.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (method/run.sh + method/qmp_multi.py). Card image:
+tools/make-sd-image.sh through method/seed.sh, a fresh copy per run.
+Interactive runs use the scratch-copy IKBD injector (memory
+`desktop-interactive-verification-real-hw`): method/make_scratch.sh rsyncs the
+crates into the job scratch — never the shared tree.
+
+POINTER PARK: (600, 300) — clear of the desktop icons and of the menu bar, as
+in the DESK37/DESK36/DESK30 runs.
+
+ALL THREE TICKETS ARE FEATURES, NOT FIXES, so there is no "before" build: the
+before-state is "no accessory is loaded and no title appears under *Desk*",
+which screendumps/noacc-deskmenu.png shows directly (that run is a card with
+the `.NAC` files removed, on the SAME kernel).
+
+
+0. Scaffolding, and why (scratch copies only, never the shared tree)
+-------------------------------------------------------------------
+method/make_scratch.sh rsyncs the crates into the job scratch and applies, in
+order:
+
+  a79_patch_desk10.py   H02 serial AES trace + the "[desk] desktop up" flag
+  apply_injector.py     the scripted IKBD injector + the run's SCRIPT
+  a78_patch2.py         dual arming / script selection
+  key_step_patch.py     Step::Key
+  acc_inject_patch.py   NEW, this batch: arm the injector on the DESKTOP ONLY
+
+The last one exists because of this batch's own subject matter. a78_patch2.py
+picks the script from whichever context armed the injector first — an EL0
+program or the desktop. A desk accessory IS an EL0 process and it runs BEFORE
+the desktop (EmuTOS `geminit.c:736-737`), so it armed the injector and every
+later step was taken from the empty SCRIPT_TERA. The gate is now simply "the
+desktop is up".
+
+Two further scratch-only patches were used for the diagnosis in section 5 and
+are NOT part of any run below (they are in method/ for reproducibility):
+ident_trace_patch.py (AES identity + raw control words in the trace) and
+elr_probe_patch.py (the EL0 return address of every GEM trap).
+
+
+1. Coordinate probe — where everything is
+-----------------------------------------
+method/probe.actions -> screendumps/probe.png, serial/probe-serial.log.gz
+
+Every click coordinate below comes from this run, none is guessed:
+
+  *Desk* title                    (20, 9)
+  Desk box entry 0  About         (104, 27)
+  Desk box entry 1  separator     (104, 43)
+  Desk box entry 2  accessory 1   (104, 59)
+  Desk box entry 3  accessory 2   (104, 75)
+  DISK C desktop icon             (38, 35)
+  GEMWIN.NAP in the C:\ window    (179, 187)
+
+The alert's OK button (319, 277) was read off c-alert.png.
+
+The probe's own dump already carries the ACC04 result: the *Desk* box has FOUR
+children (`box 0 abs (16,19) 176x64`, objects 9, 10, 11, 12) where the built
+tree reserves eight — `menu_fixup` relinked `2 + 2` of them for the two
+registered accessories, which is EmuTOS `gemmnlib.c:107-123` exactly.
+
+
+2. The acceptance run
+---------------------
+method/acc2.actions -> eight screendumps, serial/acc2-serial.log
+
+  b-deskmenu.png    the *Desk* drop-down carries BOTH registered titles
+                    (" NewTOS System" twice — the two copies are the same
+                    program, so they register the same string)
+  c-alert.png       picking the first one posted AC_OPEN to its owner, which
+                    ran beside the parked desktop and showed its form_alert
+                    with the live ARM clock (700.0 MHz, QEMU's value) and die
+                    temperature (25.0 C)
+  d-dismissed.png   the alert's OK is the accessory's own click; the desktop
+                    screen comes back untouched
+  e-alert2.png      the SECOND accessory answers its own menu entry — two
+                    distinct processes, distinct menu ids, distinct slots
+  f-back.png        dismissed again
+  g-window.png      the desktop is still usable beside them: DISK C opens its
+                    window  <-- this is the point of ACC03
+  h-gemwin.png      GEMWIN.NAP launched from that window and owns the screen
+  i-after.png       it terminated by itself and the desktop is back, window
+                    and all
+
+Serial evidence in the same run:
+
+  [acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+  [acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+  [acc] 2 file(s) found, 2 process(es) started      <- BOTH search locations
+  [sched] switch -> slot 0 / slot 1 / kernel client
+  [acc] all accessories have issued their message wait   <- wait_for_accs(AP_MESAG)
+  ...
+  [acc] launching with 2 accessory(s); AC_CLOSE seen by all: true
+
+The last line is printed by the launcher AFTER the desktop's `appl_exit` has
+run `mn_cleanup` + `wait_for_accs(AP_ACCLOSE)` and BEFORE the program is
+entered — i.e. both accessories had dequeued their AC_CLOSE before the program
+started, which is what EmuTOS's `ap_exit` (`gemaplib.c:253-255`) guarantees.
+
+Zero `[EXC]`, zero `[PANIC]`; 436 serial lines for the whole run.
+
+
+3. The two-place scan — the other two cases
+-------------------------------------------
+dedupe-deskmenu.png / serial/dedupe-serial.log
+    The SAME file name in both locations (C:\ACC\SYSACC.NAC and
+    C:\SYSACC.NAC): `1 file(s) found, 1 process(es) started`, one title under
+    *Desk*. The folder wins, the root copy is skipped — the file-name dedupe
+    rule of docs/api/aes/accessories.md §7.3.
+
+noacc-deskmenu.png / serial/noacc-serial.log
+    No `.NAC` anywhere: no `[acc]` line at all, and the *Desk* drop-down shows
+    only "Desktop info..." — `menu_fixup`'s `cnt = 1` case, which unlinks the
+    separator too (`gemmnlib.c:109`). This is the NO-REGRESSION picture for
+    every card that has no accessory on it, and it is the "before" state.
+
+boot-desktop.png / serial/boot-plain-serial.log
+    A plain, un-injected boot with both accessories present: the desktop comes
+    up normally and nothing about it changed.
+
+
+4. fsck
+-------
+build/fsck.txt — `fsck_msdos -n` on all four card images after their runs.
+All clean (the trailing "Warning: N files, … free" line is fsck_msdos's normal
+summary, not a finding).
+
+No `*.img` in this directory; the images live in the job scratch and are
+listed in build/fsck.txt.
+
+
+5. The two defects this batch found in itself, and how
+------------------------------------------------------
+Both were found by running, not by reading, and both are fixed in the diff.
+
+(a) THE ACCESSORY'S MENU TITLE IS AN EL0 POINTER.
+    `menu_register` stores the caller's string pointer, as EmuTOS does
+    (`gemmnlib.c:806`, "save pointer, like Atari TOS"). Writing that pointer
+    into the DESKTOP's menu tree and letting the drop-down renderer
+    dereference it at EL1 is a data abort — measured, ESR=0x96000004,
+    FAR=0x1610, on the first hover over *Desk*. This is the A97 class of
+    defect: one address space in EmuTOS, several here. Fixed by copying the
+    title into a kernel-side table at registration (where the accessory IS the
+    current process and the read is safe) and splicing the COPY's address into
+    the tree. Named deviation, documented at `Accs::copies`.
+
+(b) THE SCHEDULER SWITCH DID NOT PRESERVE THE FP/SIMD REGISTERS.
+    After the GEM program in step 2 had run, the resumed accessory trapped
+    into the AES with the WRONG OPCODE on every pass, forever — 110 484 calls
+    to `appl_exit` from a program whose source never calls it. Diagnosed with
+    ident_trace_patch.py (it is identity 0, an accessory) and
+    elr_probe_patch.py (the same `svc` site, sysacc's `aes_call` loop), then
+    settled by disassembling the accessory: clang keeps the AES control block
+    `{23, 0, 1, 1}` in **d1** as a loop-invariant constant and stores it with
+    `str d1, [x9]` before each trap. `ExceptionFrame` carries only the GPRs,
+    so the hard-float GEM program's leftover `d1` became the accessory's
+    opcode. Fixed by saving/restoring `v0..v31` + FPCR + FPSR across a
+    scheduler switch (`FpContext`, `save_fp_context`/`restore_fp_context`).
+    Only a second EL0 context can trigger it, which is why it had never
+    appeared before accessories existed.

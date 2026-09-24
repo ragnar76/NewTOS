@@ -1,0 +1,64 @@
+# ACC02 + ACC03 + ACC04 acceptance, one gesture list:
+#
+#   B_DESKMENU  the *Desk* drop-down carries BOTH registered accessory titles
+#               (one loaded from C:\ACC\, one from the root)
+#   C_ALERT     picking the first one posts AC_OPEN to its owner, which runs
+#               beside the parked desktop and shows its form_alert
+#   D_DISMISSED the alert's OK is the accessory's own click; the desktop
+#               screen comes back untouched
+#   E_ALERT2    the SECOND accessory answers its own menu entry -- the two
+#               are distinct processes with distinct menu ids
+#   F_BACK      dismissed again
+#   G_WINDOW    the desktop is still usable beside them: DISK C opens its
+#               window (the point of ACC03)
+#   H_GEMWIN    a GEM program launched from that window runs (it lives 6 s
+#               by its own `evnt_timer`, so the mark sits inside that window);
+#               its start went
+#               through the desktop's appl_exit, which posted AC_CLOSE to both
+#               accessories and blocked until both had seen it (serial)
+#   I_AFTER     the program terminated by itself and the desktop is back
+#
+# Coordinates from the probe run (method/probe.actions): *Desk* title (20,9);
+# Desk box entries (104,59) and (104,75); the alert's OK button (319,277) from
+# acc1-alert.png; DISK C (38,35); GEMWIN.NAP in the C:\ window (179,187).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1600 move 20 9
+2400 mark B_DESKMENU
+3000 move 104 59
+3400 down
+3403 up
+3600 move 600 300
+4600 mark C_ALERT
+5200 move 319 277
+5600 down
+5603 up
+5800 move 600 300
+6800 mark D_DISMISSED
+7400 move 20 9
+8200 move 104 75
+8600 down
+8603 up
+8800 move 600 300
+9800 mark E_ALERT2
+10400 move 319 277
+10800 down
+10803 up
+11000 move 600 300
+12000 mark F_BACK
+12600 move 37 42
+12800 down
+12803 up
+12810 down
+12813 up
+13400 move 600 300
+14400 mark G_WINDOW
+15000 move 179 187
+15200 down
+15203 up
+15210 down
+15213 up
+15800 move 600 300
+15900 mark H_GEMWIN
+17400 mark I_AFTER

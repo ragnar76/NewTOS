@@ -1,0 +1,20 @@
+# Coordinate probe for ACC02/ACC03/ACC04: open the Desk drop-down (hover) so
+# the menu probe dumps every title/box/entry rectangle, then open the C:\ drive
+# window so the icon probe dumps every window item. Every click coordinate in
+# the action lists below comes from this run.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 20 9
+2200 mark B_DESKMENU
+2600 move 600 300
+3000 down
+3003 up
+3400 move 37 42
+3600 down
+3603 up
+3610 down
+3613 up
+4300 move 600 300
+5000 mark C_WIN1
+5600 mark D_END

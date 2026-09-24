@@ -1,0 +1,16 @@
+# ACC04 part 1 -- the Desk drop-down carries the registered accessory titles,
+# and picking one posts AC_OPEN to its owner, which answers with its alert.
+#
+# Coordinates from the probe run: the *Desk* title at (20,9); the Desk box's
+# four entries at (104,27) About, (104,43) separator, (104,59) accessory 1,
+# (104,75) accessory 2.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1600 move 20 9
+2400 mark B_DESKMENU
+3000 move 104 59
+3400 down
+3403 up
+3600 move 600 300
+4600 mark C_ALERT
