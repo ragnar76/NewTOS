@@ -84,6 +84,25 @@ des Laders:
 nicht portiert werden. Zu bauen waeren rund sechs dokumentierte Funktionen,
 die statt aus Dateien aus einer eingebauten Tabelle aufloesen.
 
+**Projektseite: https://ldg.sourceforge.net** (vom Anwender). Was sie sagt:
+
+* **2.35 ist der aktuelle Stand** (Juni 2015) — unser Paket ist die letzte
+  Fassung, nicht eine alte.
+* **Lizenz LGPL** seit 2.32. Dagegen linken ist erlaubt; Aenderungen an LDG
+  selbst muessen offen sein, was bei uns ohnehin zutrifft.
+* Sie unterscheidet ein **Hauptpaket** („system components, documentation,
+  development libraries") von einem **DEV-Paket** („headers and compiled
+  libraries only"). Unseres hat System, Doku *und* Bibliotheken, ist also das
+  Hauptpaket — und traegt trotzdem keinen Laderquelltext. Der liegt entweder
+  als eigenes Paket im Dateibereich des Projekts, oder er ist trotz LGPL nicht
+  veroeffentlicht. **Im Dateibereich nachsehen, bevor das eine oder das andere
+  behauptet wird.**
+
+Fuer den statischen Weg ist das ohnehin zweitrangig — dort braucht es die
+Schnittstelle, nicht den Lader. Es entscheidet aber darueber, ob spaeter
+echtes Nachladen (MOD01) auf LDGs eigenem Code aufsetzen kann oder auf einem
+Nachbau.
+
 Zwei Dinge, die dabei auffallen und zu pruefen sind:
 
 * `LDG_STDCALL` ist dokumentiert als *„a2/d2 are not scratch register"* — die
