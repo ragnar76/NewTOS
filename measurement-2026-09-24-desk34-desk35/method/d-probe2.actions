@@ -1,0 +1,22 @@
+# Second coordinate probe: the DESK35 gesture prefix -- open the C: drive icon
+# twice, so the item grid of the SECOND (cascaded) window is dumped too. The
+# QED.NAP click point in d35.actions comes from this run, not from window 1's
+# grid plus a guessed offset.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+2900 mark B_WIN1
+3200 move 37 42
+3400 down
+3403 up
+3410 down
+3413 up
+4000 move 600 240
+4600 mark C_WIN2
+5200 mark D_END

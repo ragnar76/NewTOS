@@ -1,0 +1,20 @@
+# Coordinate probe for the DESK34 and DESK35 runs on THIS card image
+# (method/seed.sh qedroot: tools/make-sd-image.sh plus C:\QED.NAP + C:\qed.rsc,
+# so the C:\ window's item grid is not the one any earlier action list used).
+# probe_patch.py's `probe_icons` prints every desktop icon and every window item
+# with the point that hits it; every click coordinate in d34.actions /
+# d35.actions comes from this dump.
+#
+#   C: drive icon around (37,42) -- left of the first window's left edge (48),
+#   so it stays clickable after a window is open.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+2900 mark B_WIN1
+3500 mark C_END

@@ -1,0 +1,38 @@
+# DESK35, the ticket's own application: QED.
+#
+# Same gesture as d35.actions, but the program double-clicked is QED.NAP (the
+# ported GEM editor, 501592 bytes, seeded into the root by method/seed.sh -- see
+# that file for why it is not opened where make-sd-image.sh installs it).
+#
+#   C_TWO_WINDOWS  two windows on C:\, window 2 on top
+#   D_QED          QED after it has drawn its menu bar and its first window
+#   E_QED          the same screen 15 s later -- QED is interactive and does not
+#                  terminate by itself, so there is no "desktop back" picture in
+#                  this run; that one is d35-*-E-back.png (GEMWIN.NAP).
+#
+# Coordinate from the d-probe2 dump: 'QED.NAP' in window 2 box (165,279) 76x40
+# -> click (203,295).
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+2900 mark B_WIN1
+3200 move 37 42
+3400 down
+3403 up
+3410 down
+3413 up
+4000 move 600 240
+4600 mark C_TWO_WINDOWS
+5000 move 203 295
+5200 down
+5203 up
+5210 down
+5213 up
+7400 mark D_QED
+10400 mark E_QED

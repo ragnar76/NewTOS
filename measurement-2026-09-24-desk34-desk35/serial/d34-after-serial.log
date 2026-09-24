@@ -1,0 +1,663 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x000000000032f000 (2813952 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-24 07:56:44
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[aes] gsx_malloc: screen buffer pa=0x01000000 len=614400 (kernel-owned, WF_SCREEN)
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[probe] active (16,0) 216x19
+[probe] title 0 abs (16,0) 48x19 hover (40,9) st=0
+[probe] title 1 abs (64,0) 48x19 hover (88,9) st=0
+[probe] title 2 abs (112,0) 48x19 hover (136,9) st=0
+[probe] title 3 abs (160,0) 72x19 hover (196,9) st=0
+[probe] box 0 abs (16,19) 176x32
+[probe]   0.0 obj 9 '  Desktop info...    ' abs (16,19) 176x16 click (104,27) dis=0
+[probe]   0.1 obj 10 '----------------------' abs (16,35) 176x16 click (104,43) dis=1
+[probe] box 1 abs (64,19) 184x240
+[probe]   1.0 obj 12 '  Open              ^O' abs (64,19) 184x16 click (156,27) dis=1
+[probe]   1.1 obj 13 '  Info/Rename...    ^I' abs (64,35) 184x16 click (156,43) dis=1
+[probe]   1.2 obj 14 '  Search...           ' abs (64,51) 184x16 click (156,59) dis=1
+[probe]   1.3 obj 15 '-----------------------' abs (64,67) 184x16 click (156,75) dis=1
+[probe]   1.4 obj 16 '  New folder...     ^N' abs (64,83) 184x16 click (156,91) dis=1
+[probe]   1.5 obj 17 '  Close folder      ^H' abs (64,99) 184x16 click (156,107) dis=1
+[probe]   1.6 obj 18 '  Close top window  ^U' abs (64,115) 184x16 click (156,123) dis=1
+[probe]   1.7 obj 19 '  Cycle windows     ^W' abs (64,131) 184x16 click (156,139) dis=1
+[probe]   1.8 obj 20 '  Select all items  ^A' abs (64,147) 184x16 click (156,155) dis=1
+[probe]   1.9 obj 21 '  Set file mask...    ' abs (64,163) 184x16 click (156,171) dis=1
+[probe]   1.10 obj 22 '-----------------------' abs (64,179) 184x16 click (156,187) dis=1
+[probe]   1.11 obj 23 '  Delete...         ^D' abs (64,195) 184x16 click (156,203) dis=1
+[probe]   1.12 obj 24 '-----------------------' abs (64,211) 184x16 click (156,219) dis=1
+[probe]   1.13 obj 25 '  Execute EmuCON    ^Z' abs (64,227) 184x16 click (156,235) dis=0
+[probe]   1.14 obj 26 '  Shutdown            ' abs (64,243) 184x16 click (156,251) dis=1
+[probe] box 2 abs (112,19) 184x192
+[probe]   2.0 obj 28 '  Show as icons       ' abs (112,19) 184x16 click (204,27) dis=0
+[probe]   2.1 obj 29 '  Show as text        ' abs (112,35) 184x16 click (204,43) dis=0
+[probe]   2.2 obj 30 '-----------------------' abs (112,51) 184x16 click (204,59) dis=1
+[probe]   2.3 obj 31 '  Sort by name        ' abs (112,67) 184x16 click (204,75) dis=0
+[probe]   2.4 obj 32 '  Sort by type        ' abs (112,83) 184x16 click (204,91) dis=0
+[probe]   2.5 obj 33 '  Sort by size        ' abs (112,99) 184x16 click (204,107) dis=0
+[probe]   2.6 obj 34 '  Sort by date        ' abs (112,115) 184x16 click (204,123) dis=0
+[probe]   2.7 obj 35 '  No sort             ' abs (112,131) 184x16 click (204,139) dis=0
+[probe]   2.8 obj 36 '-----------------------' abs (112,147) 184x16 click (204,155) dis=1
+[probe]   2.9 obj 37 '  Size to fit         ' abs (112,163) 184x16 click (204,171) dis=0
+[probe]   2.10 obj 38 '-----------------------' abs (112,179) 184x16 click (204,187) dis=1
+[probe]   2.11 obj 39 '  Set background...   ' abs (112,195) 184x16 click (204,203) dis=0
+[probe] box 3 abs (160,19) 240x176
+[probe]   3.0 obj 41 '  Install icon...            ' abs (160,19) 240x16 click (280,27) dis=0
+[probe]   3.1 obj 42 '  Install application...     ' abs (160,35) 240x16 click (280,43) dis=1
+[probe]   3.2 obj 43 '  Install devices            ' abs (160,51) 240x16 click (280,59) dis=0
+[probe]   3.3 obj 44 '  Remove desktop icon        ' abs (160,67) 240x16 click (280,75) dis=1
+[probe]   3.4 obj 45 '------------------------------' abs (160,83) 240x16 click (280,91) dis=1
+[probe]   3.5 obj 46 '  Set preferences...         ' abs (160,99) 240x16 click (280,107) dis=0
+[probe]   3.6 obj 47 '  Desktop configuration...   ' abs (160,115) 240x16 click (280,123) dis=0
+[probe]   3.7 obj 48 '  Change resolution...     ^R' abs (160,131) 240x16 click (280,139) dis=1
+[probe]   3.8 obj 49 '------------------------------' abs (160,147) 240x16 click (280,155) dis=1
+[probe]   3.9 obj 50 '  Read .INF file...          ' abs (160,163) 240x16 click (280,171) dis=0
+[probe]   3.10 obj 51 '  Save desktop...          ^S' abs (160,179) 240x16 click (280,187) dis=0
+[h02] injector armed
+[probe] top=0
+[probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)
+[probe] desk obj 10 idx 3 box (0,433) 76x40 -> click (38,449)
+[probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)
+[desk] desktop up (1 drives, 0 window(s) from the context)
+[h02] step 0 at +200 -> mouse (446,366) mb=0
+[h02] step 1 at +201 -> mouse (573,479) mb=0
+[h02] step 2 at +202 -> mouse (639,479) mb=0
+[h02] step 3 at +203 -> mouse (639,479) mb=0
+[h02] step 4 at +204 -> mouse (639,479) mb=0
+[h02] step 5 at +205 -> mouse (639,479) mb=0
+[h02] step 6 at +1000 -> mouse (639,479) mb=0
+[h02] MARK A_IDLE step 7 at +1100 mouse (639,479) mb=0
+[h02] step 8 at +1500 -> mouse (512,352) mb=0
+[h02] step 9 at +1501 -> mouse (385,225) mb=0
+[h02] step 10 at +1502 -> mouse (258,98) mb=0
+[h02] step 11 at +1503 -> mouse (131,42) mb=0
+[h02] step 12 at +1504 -> mouse (37,42) mb=0
+[h02] step 13 at +1700 -> mouse (37,42) mb=1
+[h02] step 14 at +1703 -> mouse (37,42) mb=0
+[h02] step 15 at +1710 -> mouse (37,42) mb=1
+[aes] pid=0 op 25 in=(19,2,1,1,0,0) out=(2,37,42,1,0,0,2) yield=false
+[aes] pid=0 op 106 in=(37,42,0,0,0,0) out=(0,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 43 in=(1,8,37,42,0,0) out=(9,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(256,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,11,0,0,0,0) out=(1,0,19,640,461,0,0) yield=false
+[aes] pid=0 op 42 in=(1,8,0,19,640,461) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,12,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(257,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,10,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[probe] top=0
+[probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)
+[probe] desk obj 10 idx 3 box (0,433) 76x40 -> click (38,449)
+[probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)
+[aes] pid=0 op 100 in=(4095,0,19,640,461,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,2,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] step 16 at +1713 -> mouse (37,42) mb=0
+[aes] pid=0 op 105 in=(1,3,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 101 in=(1,48,43,544,400,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(1,4,0,0,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] pid=0 op 40 in=(2,12,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,13,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,14,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,15,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,16,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,17,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,18,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,19,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,20,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,21,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,22,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,23,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,24,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,25,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,26,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,27,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,28,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,29,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,30,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,31,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,32,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,33,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,34,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,35,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,36,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,37,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,38,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,39,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,40,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,41,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,42,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,16,1000,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,9,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,15,1000,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,8,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 21 in=(1,1,0,0,0,0) out=(1,37,42,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(9,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(12,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(13,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(14,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(16,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(17,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(18,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(19,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(20,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(21,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(23,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(25,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(26,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(28,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(29,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(31,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(32,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(33,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(34,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(35,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(37,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(39,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(41,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(42,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(43,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(44,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(46,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(47,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(48,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(50,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(51,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(28,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(29,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(31,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(32,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(33,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(34,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(35,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(37,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[probe] active (16,0) 216x19
+[probe] title 0 abs (16,0) 48x19 hover (40,9) st=0
+[probe] title 1 abs (64,0) 48x19 hover (88,9) st=0
+[probe] title 2 abs (112,0) 48x19 hover (136,9) st=0
+[probe] title 3 abs (160,0) 72x19 hover (196,9) st=0
+[probe] box 0 abs (16,19) 176x32
+[probe]   0.0 obj 9 '  Desktop info...    ' abs (16,19) 176x16 click (104,27) dis=0
+[probe]   0.1 obj 10 '----------------------' abs (16,35) 176x16 click (104,43) dis=1
+[probe] box 1 abs (64,19) 184x240
+[probe]   1.0 obj 12 '  Open              ^O' abs (64,19) 184x16 click (156,27) dis=1
+[probe]   1.1 obj 13 '  Info/Rename...    ^I' abs (64,35) 184x16 click (156,43) dis=1
+[probe]   1.2 obj 14 '  Search...           ' abs (64,51) 184x16 click (156,59) dis=0
+[probe]   1.3 obj 15 '-----------------------' abs (64,67) 184x16 click (156,75) dis=1
+[probe]   1.4 obj 16 '  New folder...     ^N' abs (64,83) 184x16 click (156,91) dis=0
+[probe]   1.5 obj 17 '  Close folder      ^H' abs (64,99) 184x16 click (156,107) dis=0
+[probe]   1.6 obj 18 '  Close top window  ^U' abs (64,115) 184x16 click (156,123) dis=0
+[probe]   1.7 obj 19 '  Cycle windows     ^W' abs (64,131) 184x16 click (156,139) dis=1
+[probe]   1.8 obj 20 '  Select all items  ^A' abs (64,147) 184x16 click (156,155) dis=0
+[probe]   1.9 obj 21 '  Set file mask...    ' abs (64,163) 184x16 click (156,171) dis=0
+[probe]   1.10 obj 22 '-----------------------' abs (64,179) 184x16 click (156,187) dis=1
+[probe]   1.11 obj 23 '  Delete...         ^D' abs (64,195) 184x16 click (156,203) dis=1
+[probe]   1.12 obj 24 '-----------------------' abs (64,211) 184x16 click (156,219) dis=1
+[probe]   1.13 obj 25 '  Execute EmuCON    ^Z' abs (64,227) 184x16 click (156,235) dis=0
+[probe]   1.14 obj 26 '  Shutdown            ' abs (64,243) 184x16 click (156,251) dis=1
+[probe] box 2 abs (112,19) 184x192
+[probe]   2.0 obj 28 '  Show as icons       ' abs (112,19) 184x16 click (204,27) dis=0
+[probe]   2.1 obj 29 '  Show as text        ' abs (112,35) 184x16 click (204,43) dis=0
+[probe]   2.2 obj 30 '-----------------------' abs (112,51) 184x16 click (204,59) dis=1
+[probe]   2.3 obj 31 '  Sort by name        ' abs (112,67) 184x16 click (204,75) dis=0
+[probe]   2.4 obj 32 '  Sort by type        ' abs (112,83) 184x16 click (204,91) dis=0
+[probe]   2.5 obj 33 '  Sort by size        ' abs (112,99) 184x16 click (204,107) dis=0
+[probe]   2.6 obj 34 '  Sort by date        ' abs (112,115) 184x16 click (204,123) dis=0
+[probe]   2.7 obj 35 '  No sort             ' abs (112,131) 184x16 click (204,139) dis=0
+[probe]   2.8 obj 36 '-----------------------' abs (112,147) 184x16 click (204,155) dis=1
+[probe]   2.9 obj 37 '  Size to fit         ' abs (112,163) 184x16 click (204,171) dis=0
+[probe]   2.10 obj 38 '-----------------------' abs (112,179) 184x16 click (204,187) dis=1
+[probe]   2.11 obj 39 '  Set background...   ' abs (112,195) 184x16 click (204,203) dis=0
+[probe] box 3 abs (160,19) 240x176
+[probe]   3.0 obj 41 '  Install icon...            ' abs (160,19) 240x16 click (280,27) dis=0
+[probe]   3.1 obj 42 '  Install application...     ' abs (160,35) 240x16 click (280,43) dis=1
+[probe]   3.2 obj 43 '  Install devices            ' abs (160,51) 240x16 click (280,59) dis=0
+[probe]   3.3 obj 44 '  Remove desktop icon        ' abs (160,67) 240x16 click (280,75) dis=1
+[probe]   3.4 obj 45 '------------------------------' abs (160,83) 240x16 click (280,91) dis=1
+[probe]   3.5 obj 46 '  Set preferences...         ' abs (160,99) 240x16 click (280,107) dis=0
+[probe]   3.6 obj 47 '  Desktop configuration...   ' abs (160,115) 240x16 click (280,123) dis=0
+[probe]   3.7 obj 48 '  Change resolution...     ^R' abs (160,131) 240x16 click (280,139) dis=1
+[probe]   3.8 obj 49 '------------------------------' abs (160,147) 240x16 click (280,155) dis=1
+[probe]   3.9 obj 50 '  Read .INF file...          ' abs (160,163) 240x16 click (280,171) dis=0
+[probe]   3.10 obj 51 '  Save desktop...          ^S' abs (160,179) 240x16 click (280,187) dis=0
+[aes] pid=0 op 25 in=(19,2,1,1,0,0) out=(16,37,42,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(256,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(1,11,0,0,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] pid=0 op 42 in=(2,8,49,85,520,335) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(1,12,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(257,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,10,0,0,0,0) out=(1,1,0,0,0,0,0) yield=false
+[probe] top=1
+[probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)
+[probe] desk obj 10 idx 3 box (0,433) 76x40 -> click (38,449)
+[probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)
+[probe] win slot 0 handle 1 spec C:\*.*
+[probe]   obj 12 'ACC' box (57,87) 76x40 -> click (95,103)
+[probe]   obj 13 'APPS' box (141,87) 76x40 -> click (179,103)
+[probe]   obj 14 'AUTO' box (225,87) 76x40 -> click (263,103)
+[probe]   obj 15 'COREMARK' box (309,87) 76x40 -> click (347,103)
+[probe]   obj 16 'GEMSYS' box (393,87) 76x40 -> click (431,103)
+[probe]   obj 17 'SUB' box (477,87) 76x40 -> click (515,103)
+[probe]   obj 18 'BIG.NCP' box (57,129) 76x40 -> click (95,145)
+[probe]   obj 19 'CLOCKTST.NCP' box (141,129) 76x40 -> click (179,145)
+[probe]   obj 20 'CMDLINE.NCP' box (225,129) 76x40 -> click (263,145)
+[probe]   obj 21 'CONFIG.TXT' box (309,129) 76x40 -> click (347,145)
+[probe]   obj 22 'DATA.BIN' box (393,129) 76x40 -> click (431,145)
+[probe]   obj 23 'DTACHILD.NCP' box (477,129) 76x40 -> click (515,145)
+[probe]   obj 24 'DUMPVDI.NAP' box (57,171) 76x40 -> click (95,187)
+[probe]   obj 25 'GEMWIN.NAP' box (141,171) 76x40 -> click (179,187)
+[probe]   obj 26 'HELLO.NCP' box (225,171) 76x40 -> click (263,187)
+[probe]   obj 27 'HELLO.TXT' box (309,171) 76x40 -> click (347,187)
+[probe]   obj 28 'HELLO2.NCP' box (393,171) 76x40 -> click (431,187)
+[probe]   obj 29 'KERNEL8.IMG' box (477,171) 76x40 -> click (515,187)
+[probe]   obj 30 'KEYBOARD.KBD' box (57,213) 76x40 -> click (95,229)
+[probe]   obj 31 'LIBTEST.NCP' box (141,213) 76x40 -> click (179,229)
+[probe]   obj 32 'LYNXBOOT.IMG' box (225,213) 76x40 -> click (263,229)
+[probe]   obj 33 'MATHTST.NCP' box (309,213) 76x40 -> click (347,229)
+[probe]   obj 34 'NEWDESK.INF' box (393,213) 76x40 -> click (431,229)
+[probe]   obj 35 'PHYSBASE.NCP' box (477,213) 76x40 -> click (515,229)
+[probe]   obj 36 'PROOF.TXT' box (57,255) 76x40 -> click (95,271)
+[probe]   obj 37 'QED.NAP' box (141,255) 76x40 -> click (179,271)
+[probe]   obj 38 'QED.RSC' box (225,255) 76x40 -> click (263,271)
+[probe]   obj 39 'README.TXT' box (309,255) 76x40 -> click (347,271)
+[probe]   obj 40 'SCRFLIP.NCP' box (393,255) 76x40 -> click (431,271)
+[probe]   obj 41 'SETJMPT.NCP' box (477,255) 76x40 -> click (515,271)
+[probe]   obj 42 'VDI.TSV' box (57,297) 76x40 -> click (95,313)
+[aes] pid=0 op 25 in=(48,2,1,1,0,0) out=(32,37,42,0,0,0,0) yield=false
+[h02] step 17 at +2300 -> mouse (164,169) mb=0
+[h02] step 18 at +2301 -> mouse (291,240) mb=0
+[h02] step 19 at +2302 -> mouse (418,240) mb=0
+[h02] step 20 at +2303 -> mouse (545,240) mb=0
+[h02] step 21 at +2304 -> mouse (600,240) mb=0
+[h02] MARK B_WIN1 step 22 at +2900 mouse (600,240) mb=0
+[h02] step 23 at +3200 -> mouse (515,113) mb=0
+[h02] step 24 at +3201 -> mouse (515,103) mb=0
+[h02] step 25 at +3400 -> mouse (515,103) mb=1
+[h02] step 26 at +3403 -> mouse (515,103) mb=0
+[h02] step 27 at +3410 -> mouse (515,103) mb=1
+[aes] pid=0 op 25 in=(19,2,1,1,0,0) out=(2,515,103,1,0,0,2) yield=false
+[aes] pid=0 op 106 in=(515,103,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(1,4,0,0,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] pid=0 op 43 in=(2,8,515,103,0,0) out=(17,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(1,4,0,0,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] pid=0 op 78 in=(256,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(1,11,0,0,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] pid=0 op 42 in=(2,8,49,85,520,335) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(1,12,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(257,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,10,0,0,0,0) out=(1,1,0,0,0,0,0) yield=false
+[probe] top=1
+[probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)
+[probe] desk obj 10 idx 3 box (0,433) 76x40 -> click (38,449)
+[probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)
+[probe] win slot 0 handle 1 spec C:\*.*
+[probe]   obj 12 'ACC' box (57,87) 76x40 -> click (95,103)
+[probe]   obj 13 'APPS' box (141,87) 76x40 -> click (179,103)
+[probe]   obj 14 'AUTO' box (225,87) 76x40 -> click (263,103)
+[probe]   obj 15 'COREMARK' box (309,87) 76x40 -> click (347,103)
+[probe]   obj 16 'GEMSYS' box (393,87) 76x40 -> click (431,103)
+[probe]   obj 17 'SUB' box (477,87) 76x40 -> click (515,103)
+[probe]   obj 18 'BIG.NCP' box (57,129) 76x40 -> click (95,145)
+[probe]   obj 19 'CLOCKTST.NCP' box (141,129) 76x40 -> click (179,145)
+[probe]   obj 20 'CMDLINE.NCP' box (225,129) 76x40 -> click (263,145)
+[probe]   obj 21 'CONFIG.TXT' box (309,129) 76x40 -> click (347,145)
+[probe]   obj 22 'DATA.BIN' box (393,129) 76x40 -> click (431,145)
+[probe]   obj 23 'DTACHILD.NCP' box (477,129) 76x40 -> click (515,145)
+[probe]   obj 24 'DUMPVDI.NAP' box (57,171) 76x40 -> click (95,187)
+[probe]   obj 25 'GEMWIN.NAP' box (141,171) 76x40 -> click (179,187)
+[probe]   obj 26 'HELLO.NCP' box (225,171) 76x40 -> click (263,187)
+[probe]   obj 27 'HELLO.TXT' box (309,171) 76x40 -> click (347,187)
+[probe]   obj 28 'HELLO2.NCP' box (393,171) 76x40 -> click (431,187)
+[probe]   obj 29 'KERNEL8.IMG' box (477,171) 76x40 -> click (515,187)
+[probe]   obj 30 'KEYBOARD.KBD' box (57,213) 76x40 -> click (95,229)
+[probe]   obj 31 'LIBTEST.NCP' box (141,213) 76x40 -> click (179,229)
+[probe]   obj 32 'LYNXBOOT.IMG' box (225,213) 76x40 -> click (263,229)
+[probe]   obj 33 'MATHTST.NCP' box (309,213) 76x40 -> click (347,229)
+[probe]   obj 34 'NEWDESK.INF' box (393,213) 76x40 -> click (431,229)
+[probe]   obj 35 'PHYSBASE.NCP' box (477,213) 76x40 -> click (515,229)
+[probe]   obj 36 'PROOF.TXT' box (57,255) 76x40 -> click (95,271)
+[probe]   obj 37 'QED.NAP' box (141,255) 76x40 -> click (179,271)
+[probe]   obj 38 'QED.RSC' box (225,255) 76x40 -> click (263,271)
+[probe]   obj 39 'README.TXT' box (309,255) 76x40 -> click (347,271)
+[probe]   obj 40 'SCRFLIP.NCP' box (393,255) 76x40 -> click (431,271)
+[probe]   obj 41 'SETJMPT.NCP' box (477,255) 76x40 -> click (515,271)
+[probe]   obj 42 'VDI.TSV' box (57,297) 76x40 -> click (95,313)
+[aes] pid=0 op 79 in=(0,0,0,0,0,0) out=(1,515,103,1,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,2,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] step 28 at +3413 -> mouse (515,103) mb=0
+[aes] pid=0 op 105 in=(1,3,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(1,4,0,0,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] pid=0 op 40 in=(2,42,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,41,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(2,40,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,16,1000,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,9,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,15,1000,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,8,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(256,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(1,11,0,0,0,0) out=(1,49,85,520,335,0,0) yield=false
+[aes] pid=0 op 42 in=(2,8,49,85,520,335) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(1,12,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(257,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,10,0,0,0,0) out=(1,1,0,0,0,0,0) yield=false
+[probe] top=1
+[probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)
+[probe] desk obj 10 idx 3 box (0,433) 76x40 -> click (38,449)
+[probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)
+[probe] win slot 0 handle 1 spec C:\SUB\*.*
+[probe]   obj 42 'CURDIR.NCP' box (57,87) 76x40 -> click (95,103)
+[probe]   obj 41 'INSIDE.TXT' box (141,87) 76x40 -> click (179,103)
+[probe]   obj 40 'PROOF.TXT' box (225,87) 76x40 -> click (263,103)
+[aes] pid=0 op 21 in=(1,1,0,0,0,0) out=(1,515,103,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(9,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(12,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(13,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(14,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(16,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(17,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(18,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(19,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(20,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(21,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(23,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(25,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(26,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(28,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(29,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(31,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(32,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(33,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(34,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(35,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(37,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(39,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(41,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(42,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(43,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(44,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(46,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(47,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(48,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(50,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(51,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(28,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(29,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(31,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(32,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(33,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(34,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(35,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(37,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[h02] step 29 at +4100 -> mouse (600,230) mb=0
+[h02] step 30 at +4101 -> mouse (600,240) mb=0
+[h02] MARK C_FOLDER step 31 at +4700 mouse (600,240) mb=0
+[h02] step 32 at +5000 -> mouse (473,113) mb=0
+[h02] step 33 at +5001 -> mouse (346,42) mb=0
+[h02] step 34 at +5002 -> mouse (219,42) mb=0
+[h02] step 35 at +5003 -> mouse (92,42) mb=0
+[h02] step 36 at +5004 -> mouse (37,42) mb=0
+[h02] step 37 at +5200 -> mouse (37,42) mb=1
+[h02] step 38 at +5203 -> mouse (37,42) mb=0
+[h02] step 39 at +5210 -> mouse (37,42) mb=1
+[aes] pid=0 op 25 in=(19,2,1,1,0,0) out=(2,37,42,1,0,0,2) yield=false
+[aes] pid=0 op 106 in=(37,42,0,0,0,0) out=(0,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(1,3,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(256,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,11,0,0,0,0) out=(1,0,19,640,24,0,0) yield=false
+[aes] pid=0 op 42 in=(1,8,0,19,640,24) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,12,0,0,0,0) out=(1,0,43,48,402,0,0) yield=false
+[aes] pid=0 op 42 in=(1,8,0,43,48,402) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,12,0,0,0,0) out=(1,594,43,46,402,0,0) yield=false
+[aes] pid=0 op 42 in=(1,8,594,43,46,402) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,12,0,0,0,0) out=(1,0,445,640,35,0,0) yield=false
+[aes] pid=0 op 42 in=(1,8,0,445,640,35) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,12,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(257,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,10,0,0,0,0) out=(1,1,0,0,0,0,0) yield=false
+[probe] top=1
+[probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)
+[probe] desk obj 10 idx 3 box (0,433) 76x40 -> click (38,449)
+[probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)
+[probe] win slot 0 handle 1 spec C:\SUB\*.*
+[probe]   obj 42 'CURDIR.NCP' box (57,87) 76x40 -> click (95,103)
+[probe]   obj 41 'INSIDE.TXT' box (141,87) 76x40 -> click (179,103)
+[probe]   obj 40 'PROOF.TXT' box (225,87) 76x40 -> click (263,103)
+[aes] pid=0 op 43 in=(1,8,37,42,0,0) out=(9,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(256,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,11,0,0,0,0) out=(1,0,19,640,24,0,0) yield=false
+[aes] pid=0 op 42 in=(1,8,0,19,640,24) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,12,0,0,0,0) out=(1,0,43,48,402,0,0) yield=false
+[aes] pid=0 op 42 in=(1,8,0,43,48,402) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,12,0,0,0,0) out=(1,594,43,46,402,0,0) yield=false
+[aes] pid=0 op 42 in=(1,8,594,43,46,402) out=(1,0,0,0,0,0,0) yield=false
+[h02] step 40 at +5213 -> mouse (37,42) mb=0
+[aes] pid=0 op 104 in=(0,12,0,0,0,0) out=(1,0,445,640,35,0,0) yield=false
+[aes] pid=0 op 42 in=(1,8,0,445,640,35) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,12,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(257,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,10,0,0,0,0) out=(1,1,0,0,0,0,0) yield=false
+[probe] top=1
+[probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)
+[probe] desk obj 10 idx 3 box (0,433) 76x40 -> click (38,449)
+[probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)
+[probe] win slot 0 handle 1 spec C:\SUB\*.*
+[probe]   obj 42 'CURDIR.NCP' box (57,87) 76x40 -> click (95,103)
+[probe]   obj 41 'INSIDE.TXT' box (141,87) 76x40 -> click (179,103)
+[probe]   obj 40 'PROOF.TXT' box (225,87) 76x40 -> click (263,103)
+[aes] pid=0 op 100 in=(4095,0,19,640,461,0) out=(2,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(2,2,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(2,3,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 101 in=(2,72,67,544,400,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(2,4,0,0,0,0) out=(1,73,109,520,335,0,0) yield=false
+[aes] pid=0 op 40 in=(3,39,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,38,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,37,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,36,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,35,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,34,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,33,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,32,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,31,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,30,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,29,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,28,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,27,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,26,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,25,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,24,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,23,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,22,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,21,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,20,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,19,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,18,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,17,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,16,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,15,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,14,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,13,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,12,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,43,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,44,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 40 in=(3,45,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(2,16,1000,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(2,9,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(2,15,1000,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 105 in=(2,8,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 21 in=(1,1,0,0,0,0) out=(1,37,42,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(9,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(12,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(13,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(14,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(16,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(17,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(18,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(19,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(20,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(21,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(23,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(25,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(26,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(28,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(29,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(31,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(32,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(33,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(34,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(35,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(37,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(39,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(41,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(42,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(43,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(44,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(46,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(47,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(48,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(50,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 32 in=(51,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(28,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(29,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(31,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(32,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(33,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(34,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(35,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 31 in=(37,1,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[probe] active (16,0) 216x19
+[probe] title 0 abs (16,0) 48x19 hover (40,9) st=0
+[probe] title 1 abs (64,0) 48x19 hover (88,9) st=0
+[probe] title 2 abs (112,0) 48x19 hover (136,9) st=0
+[probe] title 3 abs (160,0) 72x19 hover (196,9) st=0
+[probe] box 0 abs (16,19) 176x32
+[probe]   0.0 obj 9 '  Desktop info...    ' abs (16,19) 176x16 click (104,27) dis=0
+[probe]   0.1 obj 10 '----------------------' abs (16,35) 176x16 click (104,43) dis=1
+[probe] box 1 abs (64,19) 184x240
+[probe]   1.0 obj 12 '  Open              ^O' abs (64,19) 184x16 click (156,27) dis=1
+[probe]   1.1 obj 13 '  Info/Rename...    ^I' abs (64,35) 184x16 click (156,43) dis=1
+[probe]   1.2 obj 14 '  Search...           ' abs (64,51) 184x16 click (156,59) dis=0
+[probe]   1.3 obj 15 '-----------------------' abs (64,67) 184x16 click (156,75) dis=1
+[probe]   1.4 obj 16 '  New folder...     ^N' abs (64,83) 184x16 click (156,91) dis=0
+[probe]   1.5 obj 17 '  Close folder      ^H' abs (64,99) 184x16 click (156,107) dis=0
+[probe]   1.6 obj 18 '  Close top window  ^U' abs (64,115) 184x16 click (156,123) dis=0
+[probe]   1.7 obj 19 '  Cycle windows     ^W' abs (64,131) 184x16 click (156,139) dis=0
+[probe]   1.8 obj 20 '  Select all items  ^A' abs (64,147) 184x16 click (156,155) dis=0
+[probe]   1.9 obj 21 '  Set file mask...    ' abs (64,163) 184x16 click (156,171) dis=0
+[probe]   1.10 obj 22 '-----------------------' abs (64,179) 184x16 click (156,187) dis=1
+[probe]   1.11 obj 23 '  Delete...         ^D' abs (64,195) 184x16 click (156,203) dis=1
+[probe]   1.12 obj 24 '-----------------------' abs (64,211) 184x16 click (156,219) dis=1
+[probe]   1.13 obj 25 '  Execute EmuCON    ^Z' abs (64,227) 184x16 click (156,235) dis=0
+[probe]   1.14 obj 26 '  Shutdown            ' abs (64,243) 184x16 click (156,251) dis=1
+[probe] box 2 abs (112,19) 184x192
+[probe]   2.0 obj 28 '  Show as icons       ' abs (112,19) 184x16 click (204,27) dis=0
+[probe]   2.1 obj 29 '  Show as text        ' abs (112,35) 184x16 click (204,43) dis=0
+[probe]   2.2 obj 30 '-----------------------' abs (112,51) 184x16 click (204,59) dis=1
+[probe]   2.3 obj 31 '  Sort by name        ' abs (112,67) 184x16 click (204,75) dis=0
+[probe]   2.4 obj 32 '  Sort by type        ' abs (112,83) 184x16 click (204,91) dis=0
+[probe]   2.5 obj 33 '  Sort by size        ' abs (112,99) 184x16 click (204,107) dis=0
+[probe]   2.6 obj 34 '  Sort by date        ' abs (112,115) 184x16 click (204,123) dis=0
+[probe]   2.7 obj 35 '  No sort             ' abs (112,131) 184x16 click (204,139) dis=0
+[probe]   2.8 obj 36 '-----------------------' abs (112,147) 184x16 click (204,155) dis=1
+[probe]   2.9 obj 37 '  Size to fit         ' abs (112,163) 184x16 click (204,171) dis=0
+[probe]   2.10 obj 38 '-----------------------' abs (112,179) 184x16 click (204,187) dis=1
+[probe]   2.11 obj 39 '  Set background...   ' abs (112,195) 184x16 click (204,203) dis=0
+[probe] box 3 abs (160,19) 240x176
+[probe]   3.0 obj 41 '  Install icon...            ' abs (160,19) 240x16 click (280,27) dis=0
+[probe]   3.1 obj 42 '  Install application...     ' abs (160,35) 240x16 click (280,43) dis=1
+[probe]   3.2 obj 43 '  Install devices            ' abs (160,51) 240x16 click (280,59) dis=0
+[probe]   3.3 obj 44 '  Remove desktop icon        ' abs (160,67) 240x16 click (280,75) dis=1
+[probe]   3.4 obj 45 '------------------------------' abs (160,83) 240x16 click (280,91) dis=1
+[probe]   3.5 obj 46 '  Set preferences...         ' abs (160,99) 240x16 click (280,107) dis=0
+[probe]   3.6 obj 47 '  Desktop configuration...   ' abs (160,115) 240x16 click (280,123) dis=0
+[probe]   3.7 obj 48 '  Change resolution...     ^R' abs (160,131) 240x16 click (280,139) dis=1
+[probe]   3.8 obj 49 '------------------------------' abs (160,147) 240x16 click (280,155) dis=1
+[probe]   3.9 obj 50 '  Read .INF file...          ' abs (160,163) 240x16 click (280,171) dis=0
+[probe]   3.10 obj 51 '  Save desktop...          ^S' abs (160,179) 240x16 click (280,187) dis=0
+[aes] pid=0 op 25 in=(19,2,1,1,0,0) out=(16,37,42,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(256,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(2,11,0,0,0,0) out=(1,73,109,520,335,0,0) yield=false
+[aes] pid=0 op 42 in=(3,8,73,109,520,335) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(2,12,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 78 in=(257,0,0,0,0,0) out=(1,0,0,0,0,0,0) yield=false
+[aes] pid=0 op 104 in=(0,10,0,0,0,0) out=(1,2,0,0,0,0,0) yield=false
+[probe] top=2
+[probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)
+[probe] desk obj 10 idx 3 box (0,433) 76x40 -> click (38,449)
+[probe] desk obj 11 idx 4 box (546,433) 76x40 -> click (584,449)
+[probe] win slot 0 handle 1 spec C:\SUB\*.*
+[probe]   obj 42 'CURDIR.NCP' box (57,87) 76x40 -> click (95,103)
+[probe]   obj 41 'INSIDE.TXT' box (141,87) 76x40 -> click (179,103)
+[probe]   obj 40 'PROOF.TXT' box (225,87) 76x40 -> click (263,103)
+[probe] win slot 1 handle 2 spec C:\*.*
+[probe]   obj 39 'ACC' box (81,111) 76x40 -> click (119,127)
+[probe]   obj 38 'APPS' box (165,111) 76x40 -> click (203,127)
+[probe]   obj 37 'AUTO' box (249,111) 76x40 -> click (287,127)
+[probe]   obj 36 'COREMARK' box (333,111) 76x40 -> click (371,127)
+[probe]   obj 35 'GEMSYS' box (417,111) 76x40 -> click (455,127)
+[probe]   obj 34 'SUB' box (501,111) 76x40 -> click (539,127)
+[probe]   obj 33 'BIG.NCP' box (81,153) 76x40 -> click (119,169)
+[probe]   obj 32 'CLOCKTST.NCP' box (165,153) 76x40 -> click (203,169)
+[probe]   obj 31 'CMDLINE.NCP' box (249,153) 76x40 -> click (287,169)
+[probe]   obj 30 'CONFIG.TXT' box (333,153) 76x40 -> click (371,169)
+[probe]   obj 29 'DATA.BIN' box (417,153) 76x40 -> click (455,169)
+[probe]   obj 28 'DTACHILD.NCP' box (501,153) 76x40 -> click (539,169)
+[probe]   obj 27 'DUMPVDI.NAP' box (81,195) 76x40 -> click (119,211)
+[probe]   obj 26 'GEMWIN.NAP' box (165,195) 76x40 -> click (203,211)
+[probe]   obj 25 'HELLO.NCP' box (249,195) 76x40 -> click (287,211)
+[probe]   obj 24 'HELLO.TXT' box (333,195) 76x40 -> click (371,211)
+[probe]   obj 23 'HELLO2.NCP' box (417,195) 76x40 -> click (455,211)
+[probe]   obj 22 'KERNEL8.IMG' box (501,195) 76x40 -> click (539,211)
+[probe]   obj 21 'KEYBOARD.KBD' box (81,237) 76x40 -> click (119,253)
+[probe]   obj 20 'LIBTEST.NCP' box (165,237) 76x40 -> click (203,253)
+[probe]   obj 19 'LYNXBOOT.IMG' box (249,237) 76x40 -> click (287,253)
+[probe]   obj 18 'MATHTST.NCP' box (333,237) 76x40 -> click (371,253)
+[probe]   obj 17 'NEWDESK.INF' box (417,237) 76x40 -> click (455,253)
+[probe]   obj 16 'PHYSBASE.NCP' box (501,237) 76x40 -> click (539,253)
+[probe]   obj 15 'PROOF.TXT' box (81,279) 76x40 -> click (119,295)
+[probe]   obj 14 'QED.NAP' box (165,279) 76x40 -> click (203,295)
+[probe]   obj 13 'QED.RSC' box (249,279) 76x40 -> click (287,295)
+[probe]   obj 12 'README.TXT' box (333,279) 76x40 -> click (371,295)
+[probe]   obj 43 'SCRFLIP.NCP' box (417,279) 76x40 -> click (455,295)
+[probe]   obj 44 'SETJMPT.NCP' box (501,279) 76x40 -> click (539,295)
+[probe]   obj 45 'VDI.TSV' box (81,321) 76x40 -> click (119,337)
+[aes] pid=0 op 25 in=(48,2,1,1,0,0) out=(32,37,42,0,0,0,0) yield=false
+[h02] step 41 at +5800 -> mouse (164,169) mb=0
+[h02] step 42 at +5801 -> mouse (291,240) mb=0
+[h02] step 43 at +5802 -> mouse (418,240) mb=0
+[h02] step 44 at +5803 -> mouse (545,240) mb=0
+[h02] step 45 at +5804 -> mouse (600,240) mb=0
+[h02] MARK D_DRIVE step 46 at +6400 mouse (600,240) mb=0

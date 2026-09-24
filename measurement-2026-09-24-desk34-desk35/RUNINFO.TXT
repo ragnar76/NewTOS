@@ -1,0 +1,229 @@
+measurement-2026-09-24-desk34-desk35
+===================================
+DESK34 (a folder opened inside a window navigates in place)
+DESK35 (a launched GEM application owns the whole screen)
+
+Base: branch desk-rebuild, HEAD a84b0ba. This batch's changes are UNCOMMITTED
+in the shared tree (kernel/src/desk/main.rs, kernel/src/shell_loop.rs — full
+diff in method/desk34-desk35.diff). Nothing flashed, nothing ejected, no real
+Pi run, nothing committed. No `git checkout/restore/clean/stash/reset` was run
+on the shared tree.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (method/run.sh + method/qmp_multi.py). Card image:
+tools/make-sd-image.sh through method/seed.sh (see §1), a fresh copy per run.
+Interactive runs use the scratch-copy IKBD injector (memory
+`desktop-interactive-verification-real-hw`): method/make_scratch.sh rsyncs the
+crates into the job scratch — never the shared tree.
+
+method/*.actions are the four action lists, method/*.rs the generated injector
+tables (SCRIPT_DESK plus the empty SCRIPT_TERA the script selector needs).
+No `*.img` in this directory (the ticket's rule).
+
+POINTER PARK: (600, 240) — clear of the desktop icons and of the menu bar, as
+in the DESK03..DESK06, DESK19/DESK20 and DESK22 runs.
+
+Both tickets are FIXES, not withdrawals: the "before" runs below are the
+defect, the "after" runs are the acceptance.
+
+
+0. Scaffolding, and why (scratch copies only, never the shared tree)
+---------------------------------------------------------------------------
+  a79_patch_desk10.py   the standard H02 serial AES trace + the desktop-up flag
+  apply_injector.py     the scripted IKBD injector in kernel/src/host_env.rs
+  a78_patch2.py         dual arming + script selection
+  key_step_patch.py     Step::Key(u8) — one raw IKBD key byte (unused here,
+                        kept so the injector module text is the same one the
+                        earlier rounds used)
+  probe_patch.py        serial dump of every desktop icon and window item with
+                        the point that hits it (every click coordinate below
+                        comes from it — see §1)
+  gemwin.c              NEW, a measurement-only `.NAP` (see §1)
+  seed.sh               NEW, make-sd-image.sh + three files into the card root
+  make_scratch.sh       as before, but the `before` mode resets the TWO files
+                        this batch touches
+
+  The "before" kernel is built by method/make_scratch.sh's `before` mode:
+  kernel/src/desk/main.rs and kernel/src/shell_loop.rs are replaced by their
+  committed HEAD versions (`git show HEAD:…`, read-only — the shared tree is
+  never touched by git). Same harness, same card, two files older.
+
+  No desk2229_patch.py: neither ticket goes through `console_pause_for_key`.
+
+
+1. Geometry and fixtures, measured
+---------------------------------------------------------------------------
+  The card is tools/make-sd-image.sh plus three files in the ROOT, written by
+  method/seed.sh:
+
+    C:\GEMWIN.NAP   method/gemwin.c, built with sdk/build.sh (6880 bytes)
+    C:\QED.NAP      a copy of C:\Apps\QED\QED.NAP     (501592 bytes)
+    C:\qed.rsc      a copy of C:\Apps\QED\qed.rsc      (41378 bytes)
+
+  Why QED is opened in the root and not where make-sd-image.sh installs it:
+  the click coordinates are baked into the action list, and in the "before"
+  build every folder step opens a NEW window (that is DESK34) — so navigating
+  C:\ -> Apps -> QED would put the program icon somewhere else in the two
+  builds and the before/after pictures would no longer be the same gesture.
+  QED finds its resource through `sh_find`'s app-directory step, so the .rsc
+  travels with it.
+
+  Why GEMWIN.NAP exists at all (the ticket allows "add the smallest .NAP that
+  paints something and says so"): DESK35 needs a GEM program that (a) paints
+  ONLY its own rectangles and (b) terminates by itself.
+    * DUMPVDI.NAP fails (a): every case starts with `v_clrwk`
+      (tosdump/core/runner.c:82), which clears the WHOLE screen — it would
+      wipe the leftover desktop windows in the "before" build too, and the two
+      pictures would match for the wrong reason.
+    * QED.NAP fails (b): it is interactive and ends through its own menu.
+  gemwin.c does appl_init / wind_create / wind_open(160,120,320,200) / v_bar +
+  v_gtext inside its OWN work area / evnt_timer(6000) / close + appl_exit.
+  Deliberately NO v_clrwk. It lives in method/, not in the product.
+
+  method/d-probe.actions + method/d-probe2.actions, serial/d-probe*-serial.log.
+  d-probe2 opens the C:\ window twice, so the item grid of the cascaded second
+  window is dumped as well:
+
+    [probe] desk obj 9 idx 0 box (0,19) 76x40 -> click (38,35)   C: drive icon
+    [probe] win slot 0 handle 1 spec C:\*.*
+    [probe]   obj 17 'SUB'        box (477,87)  76x40 -> click (515,103)
+    [probe]   obj 25 'GEMWIN.NAP' box (141,171) 76x40 -> click (179,187)
+    [probe]   obj 37 'QED.NAP'    box (141,255) 76x40 -> click (179,271)
+    [probe] win slot 1 handle 2 spec C:\*.*
+    [probe]   obj 56 'GEMWIN.NAP' box (165,195) 76x40 -> click (203,211)
+    [probe]   obj 68 'QED.NAP'    box (165,279) 76x40 -> click (203,295)
+
+  and from the same run's AES trace, window 1's work rect:
+
+    [aes] op 104 in=(1,4,…) out=(1,49,85,520,335)     wind_get(1, WF_WXYWH)
+
+  Window 1 is the slot-0 fallback rectangle (48,43,544,400) and window 2 the
+  slot-1 one, cascaded by (+24,+24) — which is why every window-2 item sits 24
+  px right and 24 px down of its window-1 twin. The C: drive icon at (37,42)
+  is LEFT of window 1's left edge (48), so it stays clickable with windows
+  open; that is the point all the earlier rounds used too.
+
+
+2. DESK34 — a folder opened inside a window   (d34-*, serial/d34-*-serial.log)
+---------------------------------------------------------------------------
+  method/d34.actions, one run per build, both acceptance cases in each:
+  double-click the C: drive icon, then the SUB folder at (515,103) inside the
+  window it opened, then the drive icon again.
+
+  before (HEAD)                      after
+  --------------------------------   --------------------------------------
+  d34-before-B-win1.png              d34-after-B-win1.png
+    one window, title C:\              identical
+
+  d34-before-C-folder.png            d34-after-C-folder.png
+    a SECOND window, title C:\SUB\,    the SAME frame, title C:\SUB\, the
+    the C:\ one still behind it        three items of C:\SUB\ in it
+
+  d34-before-D-drive.png             d34-after-D-drive.png
+    a THIRD window (C:\)               a SECOND window (C:\)
+
+  and the serial probe says it in the desktop's own bookkeeping:
+
+    before  [probe] win slot 0 handle 1 spec C:\*.*
+            [probe] win slot 1 handle 2 spec C:\SUB\*.*      <- a new node
+    after   [probe] win slot 0 handle 1 spec C:\SUB\*.*      <- the same node
+            (slot 1 / handle 2 appears only after the drive icon)
+
+  That is EmuTOS `do_fopen`'s `else` arm, `pn_close(&pw->w_pnode)` +
+  `do_diropen(pw, FALSE, …)` (desksupp.c:1151-1156), and its `do_dopen`
+  neighbour (`:1041-1069`) unchanged for the drive.
+
+  NOT driven here: Alt+double-click (EmuTOS' third new-window case,
+  `(keystate & MODE_SCA) == MODE_ALT`, `:1132-1134`). The IKBD injector feeds
+  mouse packets and raw key bytes; it sets no modifier state that
+  `graf_mkstate` reads. Real keyboard — Pi checklist item 59.
+
+
+3. DESK35 — a GEM application with desktop windows open
+                                              (d35-*, serial/d35-*-serial.log)
+---------------------------------------------------------------------------
+  method/d35.actions: open the C: drive icon twice (two windows on C:\), then
+  double-click GEMWIN.NAP at (203,211) in the top one. The program holds its
+  window for 6 s and returns by itself.
+
+  d35-before-D-app.png   BOTH desktop windows, both desktop icons, the trash
+                         and the printer still standing; GEMWIN's own window
+                         composited INSIDE them, clipped by the desktop's
+                         window 2. The desktop menu bar is gone (the epilog
+                         removed it) — painted pixels with no event loop, which
+                         is exactly what the ticket describes from the Pi.
+  d35-after-D-app.png    GEMWIN's window alone on an empty screen. Nothing
+                         else.
+
+  d35-before-E-back.png  the desktop with both windows (they were never gone)
+                         and GEMWIN.NAP still selected.
+  d35-after-E-back.png   the desktop with BOTH windows back at their saved
+                         rectangles and in their saved z-order — that is
+                         `cnx_get` (deskmain.c:2055) — menu bar re-installed,
+                         no selection. The missing selection is EmuTOS: its
+                         restarted desktop re-opens the windows from the
+                         context save area too.
+
+  0 [EXC]/[PANIC] in both logs.
+
+
+4. DESK35 with the ticket's own application — QED
+                                            (d35q-*, serial/d35q-*-serial.log)
+---------------------------------------------------------------------------
+  method/d35q.actions: the same gesture, QED.NAP at (203,295) instead.
+
+  d35q-before-E-qed.png  QED's menu bar ("qed Datei Bearbeiten Fenster Suchen
+                         Spezial Optionen Shell") across the top, and BELOW it
+                         the frozen desktop: two windows, the C: icon, the
+                         trash, the printer, the green background. This is the
+                         Pi picture the ticket was written from.
+  d35q-after-E-qed.png   QED's menu bar and QED's empty white screen. Nothing
+                         of the desktop.
+
+  QED does not terminate by itself, so this run has no "desktop back"
+  picture — that one is d35-after-E-back.png (§3). TeraDesk was not driven for
+  the same reason; it is in the Pi checklist (item 60) together with QED.
+
+  0 [EXC]/[PANIC] in both logs.
+
+
+5. Filesystem
+---------------------------------------------------------------------------
+  `fsck_msdos -n` on the FAT16 partition of every image written by a run
+  (d-probe, d-probe2, d34-before, d34-after, d35-before, d35-after,
+  d35q-before, d35q-after): Phase 1 / 2 / 3 with no errors on all eight.
+  build/fsck.txt.
+
+
+6. Build (shared tree, the product state)
+---------------------------------------------------------------------------
+  `cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat`
+  before EACH board.
+
+    cargo xtask build --board rpi4       tos-api 64 / kernel 94   (base 64/94)
+    cargo xtask build --board qemu-virt  tos-api 64 / kernel 94   (base 64/94)
+    cargo clippy --features board-rpi4       tos-api 80 / kernel 125 (base 80/125)
+    cargo clippy --features board-qemu-virt  tos-api 80 / kernel 125 (base 80/125)
+    grep -c "desk/" on both clippy runs:  0
+    cargo run -p xtask -- test           939 passed / 0 failed / 1 ignored
+                                         (base 939/0/1 — no host test added;
+                                          both changed files are in the no_std
+                                          aarch64 `kernel` crate, which the
+                                          host suite cannot reach)
+
+  Logs in build/.
+
+
+7. Not driven here
+---------------------------------------------------------------------------
+  * Real Pi 4 (the acceptance gate, and where both defects were found): the
+    two checklist items 59 and 60 in
+    docs/api/desktop/_hw-test-2026-09-17.md.
+  * DESK34's Alt+double-click (§2) and its Alt+Shift counter-case.
+  * DESK34's `WN_DESKTOP` case — needs a folder icon on the desktop surface,
+    which NewTOS has no ANODE for (DESK30).
+  * DESK35 with TeraDesk (§4), and with a program that fails to load
+    (`alert_launch_failed` now raised on the already-rebuilt desktop).
+  * DESK35 with windows on DIFFERENT drives — the QEMU card has one
+    partition, so `cnx_get` is exercised with two C:\ windows, not with the
+    C-F set the physical card has.

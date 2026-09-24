@@ -1,0 +1,36 @@
+# DESK35 -- a GEM application started with desktop windows open.
+#
+#   C_TWO_WINDOWS  two windows on C:\, window 2 on top
+#   D_APP_RUNNING  GEMWIN.NAP's own window, and what else is on the screen
+#   E_DESKTOP_BACK the desktop after the program terminated by itself
+#
+# Coordinates from the d-probe2 dump on THIS card image:
+#   C: drive icon                 click (37,42)
+#   'GEMWIN.NAP' in window 2      box (165,195) 76x40 -> click (203,211)
+#
+# GEMWIN.NAP holds its window for 6 s (1200 ticks) and then returns, so
+# D_APP_RUNNING is taken ~3 s into that and E_DESKTOP_BACK well after it.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+2900 mark B_WIN1
+3200 move 37 42
+3400 down
+3403 up
+3410 down
+3413 up
+4000 move 600 240
+4600 mark C_TWO_WINDOWS
+5000 move 203 211
+5200 down
+5203 up
+5210 down
+5213 up
+5900 mark D_APP_RUNNING
+7800 mark E_DESKTOP_BACK
