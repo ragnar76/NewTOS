@@ -1,6 +1,6 @@
 # PORT05 — QED aus TeraDesk gestartet: die Pi friert ein, oder QED beendet sich sofort
 
-Status: **BEHOBEN in QEMU — Pi-Abnahme offen** (2026-09-25) · Prioritaet: **P1** · Typ: Belegter Defekt — Anwender 2026-09-25
+Status: **BEHOBEN — auf echter Pi 4 abgenommen** (2026-09-26) · Prioritaet: **P1** · Typ: Belegter Defekt — Anwender 2026-09-25
 
 Abhaengigkeiten: —
 
@@ -194,3 +194,19 @@ Vorher waren es in QEMU 13 Slots plus ein `Pexec` mit `-39`.
   `CURRENT` nicht, also schreiben `arm_or_get_deadline`/`clear_deadline` die
   Frist des **Kindes** in den Slot des **Elters** (latent); `sched::on_exit`
   hat keinen Aufrufer.
+
+## Hardware-Abnahme (2026-09-26)
+
+Kern `346c385c` (Release, rpi4, enthaelt ausserdem den FS04-EMMC-Fix) auf der
+Karte. Anwender: *„super, das Freeze-Problem ist behoben, alles funktioniert
+sauber."*
+
+**Damit schliesst sich die Luecke, die im QEMU-Befund ausdruecklich offen
+blieb.** Dort war nur die *Ursache* reproduziert — die unbegrenzte
+Neustartschleife bis `ENSMEM` —, nicht der Stillstand mit toter Maus; dass
+ein vielfach neu gestartetes TeraDesk in `unhandled()` → `halt()` endet, war
+als **plausibel und unbewiesen** vermerkt. Der Lauf auf der Pi bestaetigt es:
+mit behobener Schleife ist der Einfrierer weg. Es war **ein** Fehler, nicht
+zwei.
+
+Der Kopiertest (FS04-Gegenprobe) steht noch aus, der Anwender holt ihn nach.
