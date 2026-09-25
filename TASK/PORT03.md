@@ -1,6 +1,6 @@
 # PORT03 — cflib und QED sind sich ueber den Pfadtrenner uneinig
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Lead-Entscheidung + Fix — Nebenbefund PORT01
+Status: **ERLEDIGT** (2026-09-25) · Prioritaet: **P2** · Typ: Versionswechsel — Nebenbefund PORT01
 
 Abhaengigkeiten: [PORT01](PORT01.md) (erledigt)
 
@@ -131,3 +131,140 @@ Die Projektregel bleibt: **QEDs Quelltext wird nicht geaendert.**
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss (2026-09-25)
+
+Der Wechsel ist gelandet. Vorher stand eine Annahme im Ticket, die die
+Messung **nicht bestaetigt hat** und die deshalb zuerst richtiggestellt
+gehoert:
+
+### Der Altersunterschied war nicht 21 Jahre, sondern 26 Monate
+
+`sdk/cflib/cflib-21.tar.xz` war **kein Tarball von 2004**. Es war
+`download/mint/cflib-21.tar.xz` vom **2024-04-30** aus dem tho-otto-Spiegel —
+byteidentisch, sha256
+`7f0d69f43f450df1f0a4699bda8738f5d8f7cc31257e0db531b8e8ba4062e349` gegen
+`/Volumes/Daten/tho-otto-backu/www.tho-otto.de/download/mint/cflib-21.tar.xz`.
+Er enthaelt `.github/workflows/`, `.travis.yml`, `README.md`; das ist ein
+Quellschnappschuss des Git-Stands, kein Release von 2004. Die Zahl **0.21.0
+vom 18.07.2004** steht nur in `VERSION`/`ChangeLog` — cflib hat seine
+Versionsnummer seit 2004 nie erhoeht. **Die Versionsnummer sagt hier nichts
+ueber den Stand der Quellen.**
+
+Der tatsaechliche Abstand zum geklonten `ce57817` (2026-07-14) sind **13
+Commits**.
+
+### 1. Was `sdk/cflib/` baut und was sich davon geaendert hat
+
+`build-cflib.sh` uebersetzt die COBJS-Liste aus cflibs eigener `SRCFILES`:
+**129 .c-Dateien**, unveraendert 129 vor und nach dem Wechsel (`SRCFILES`
+selbst ist gleich geblieben). Der mechanische Vergleich Tarball ↔ `ce57817`
+(`diff -rq`) nennt **12 geaenderte Dateien**, davon **vier uebersetzte**:
+
+| Datei | Commit | Was |
+|---|---|---|
+| `fsnorm.c` | `2ac3e85` 2024-06-12 | `make_normalpath` kappt den angehaengten `\` nicht mehr — **der PORT03-Defekt** |
+| `fsexists.c` | `af02175` 2024-06-12, `cdb1fdf` 2024-06-18 | `path_exists` schneidet einen Schluss-`\` ab und prueft mit `Fsfirst` + `Fgetdta()->dta_attribute` statt `Fattrib` |
+| `fexists.c` | `cdb1fdf` 2024-06-18 | `file_exists` ebenso auf `Fsfirst` statt `Fattrib` |
+| `fontsel.c` | `399f7a6` 2025-04-02 | Speicherleck auf dem FONTSELECT-Pfad: `vst_unload_fonts` + `v_clsvwk` vor `do_fprotokoll` |
+
+Die uebrigen acht sind `Makefile`, `README.md` und sechs CI-Skripte
+(`.github/workflows/`, `.scripts/`) plus der Wegfall von `.travis*` — nichts
+davon benutzt unser Bauskript, es faehrt `SRCFILES` direkt.
+
+**Bemerkenswert und geprueft, weil es uns betrifft:** `cdb1fdf`/`af02175`
+sind genau **Weg 3 des Tickets** („`path_exists` reparieren"), stromaufwaerts
+schon getan. Die neue Fassung liest die DTA (`Fgetdta()->dta_attribute`) —
+der Pfad, den `docs/MEMORY.md` als LP64-Struktur-Falle fuehrt. Er traegt:
+mintlibs `_DTA` ist seit ADR-020/Task #98 die gepackte 44-Byte-Fassung mit
+`_Static_assert`-gesicherten Offsets gegen `makbuf`
+(`sdk/libc/mintlib/include/mint/ostruct.h:85-101`), und `Fgetdta` kommt als
+`(_DTA *)trap_1_w(0x2F)` ueber `__newtos_trap0`, das ein volles 64-Bit-`x0`
+liefert. Im Lauf sichtbar: cflibs Dateiauswahl listet Verzeichnisse als
+Verzeichnisse (`screendumps/qed-d-fsel.png`).
+
+### 2. `expected-failures.txt`
+
+Die Liste ist leer, und sie **gilt unveraendert**: `compiled OK=129
+skipped=0`, `failures match cflib/expected-failures.txt: 0 today, 0
+recorded, 0 new`. Keine der vier geaenderten Dateien erzeugt eine Warnung
+(`build/obj/{fsnorm,fsexists,fexists,fontsel}.err` sind leer); die einzige
+Warnung im ganzen Lauf ist die alte Atari-Zeichensatz-Warnung in
+`menucre.c:51`, unveraendert.
+
+### 3. `overlay/` — beide Dateien bleiben noetig
+
+Keine der beiden Anpassungen kann stromaufwaerts sein: beide haengen an
+`__NEWTOS__`, das cflib nicht kennt.
+
+* `inline.rsh` — stromaufwaerts unveraendert, das Overlay passt unveraendert.
+* `fontsel.c` — **musste umgesetzt (rebased) werden**. Unser Overlay ist eine
+  Vollkopie der Datei; die alte Kopie haette `399f7a6` (das Leck) wieder
+  zurueckgenommen. Sie liegt jetzt auf der neuen Fassung, mit genau unserem
+  einen Block (`#if defined(__GNUC__) && !defined(__NEWTOS__)` plus
+  Begruendung) als einzigem Unterschied — nachgewiesen per `diff -u` gegen
+  `ce57817`s `fontsel.c`.
+
+### 4. Gewaehlte Quelle: Commit-Pin, kein datierter Tarball
+
+**Entscheidung: der Git-Commit `ce57817c3f68c7d346d1081768505e81acaee807`
+(2026-07-14), als `git archive --prefix=cflib-21/` gepackt und als
+`sdk/cflib/cflib-21-ce57817.tar.xz` eingelagert** (sha256
+`8427502d6a309864cfd4621201d032d04b512dddeb8f59eff33eca545683ed8e`).
+
+Warum nicht der datierte Tarball: der Spiegel hat **keinen neueren
+Quelltarball**. `download/mint/cflib-21.tar.xz` ist genau der Stand, den wir
+gerade verlassen; die neueren `snapshots/cflib/cflib-0.21.0-*.tar.bz2` sind
+**m68k-Binaerpakete** (`usr/lib/**/libcflib.a`, `usr/include/cflib.h`,
+`stguide/`), null `.c`-Dateien. Das Repository ist also die einzige Quelle,
+die die Korrekturen traegt.
+
+Warum HEAD und nicht `399f7a6` (der letzte Code-Commit): `git diff --stat
+399f7a6 ce57817` beruehrt nur CI-Skripte, `Makefile` und `README.md` — der
+Tip kostet nichts und ist der Stand, den das Ticket untersucht hat.
+
+Warum ein **Commit** und kein „latest": dieselbe Regel wie bei
+`references/emutos` und `references/freemint`. Der Pin steht im Dateinamen
+und in `build-cflib.sh`; `Applications/cflib-git` ist nur die Herkunft, kein
+Bauabhaengigkeit — der Tarball ist selbsttragend.
+
+### 5. Ein Nebenbefund, der den Wechsel sonst still verschluckt haette
+
+Einen neuen Tarball hinzulegen hatte **keine Wirkung**: `sdk/lib-stale.sh`
+hat die Tarballs bewusst nicht beobachtet, und `build-cflib.sh` extrahierte
+nur, wenn der Baum **fehlt**. Auf jedem bestehenden Arbeitsbaum waeren
+weiter die alten Quellen uebersetzt worden, ohne eine einzige Zeile Ausgabe —
+derselbe Fehlermodus wie der Stale-Archive-Vorfall vom 2026-09-02. Zwei
+kleine Aenderungen schliessen das: `build-cflib.sh` extrahiert neu, wenn der
+Tarball juenger als der Baum ist (und stempelt den Baum danach, weil `tar`
+sonst das Commit-Datum aus dem Archiv zurueckschreibt), und `lib-stale.sh`
+beobachtet cflibs Tarball (per Glob, damit der Pin nur an **einer** Stelle
+steht). mintlib/gemlib haben die Paarung noch nicht — sie brauchen sie, wenn
+ihr Pin bewegt wird; das gehoert in ein eigenes Ticket.
+
+### 6. Abnahme (QEMU raspi4b, 640x480)
+
+`measurement-2026-09-25-port03/`.
+
+* **Die Abnahme selbst:** `C:\README.TXT` auf `C:\QED.NAP` gezogen → QED
+  oeffnet die Datei, Fenstertitel **`C:\README.TXT`**, voller Name
+  (`screendumps/qed-c-open.png`, 3x-Ausschnitt `qed-c-open-title-zoom.png`),
+  Inhalt im Fenster. Vorher: „Fehler beim Lesen der Datei: README.TX".
+* **Zweiter cflib-Pfad:** Ctrl-O in QED oeffnet cflibs Dateiauswahl
+  („Dateien oeffnen", `screendumps/qed-d-fsel.png`) — der Weg ueber
+  `select_multi` → `select_file` → `filesel.c`, also genau die Stelle, an der
+  die neuen `path_exists`/`file_exists` je Eintrag laufen.
+* **Zweiter cflib-Anwender:** TeraDesk, ueber den `#Z`-Autorun gestartet,
+  kommt hoch (`screendumps/tera-b-up.png`).
+* Drei Laeufe, **null `[EXC]`, null `[PANIC]`**; `fsck_msdos -n` auf allen
+  drei Kartenabbildern sauber (`serial/fsck.txt`).
+
+QED wurde **nicht angefasst** — der Fehler sass in der Bibliothek und ist in
+der Bibliothek behoben, indem wir sie auf den Stand gebracht haben, auf dem
+sie ihn selbst behoben hat.
+
+### 7. Was nur die echte Pi 4 bestaetigen kann
+
+Nichts an diesem Ticket ist Pi-spezifisch (reiner Hostcode ueber den
+GEMDOS-Trap), aber die Geste selbst — ein echtes Ziehen mit echter Maus statt
+des IKBD-Injektors — bleibt Hardwaresache, wie in PORT01.

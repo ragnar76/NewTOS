@@ -144,9 +144,21 @@ lib_chain() {
 # lib_inputs <name> -- append to LIB_WATCH everything WE edit that ends up in
 # <name>'s archive. Not appended, deliberately: the extracted vendor trees (they
 # are re-created from tarball+overlay on every run, so watching them would make
-# every library permanently stale) and the pristine tarballs (replacing one has
-# no effect without MINTLIB_REFRESH=1 / GEMLIB_REFRESH=1 / CFLIB_REFRESH=1, so a
-# rebuild triggered by one would be a rebuild that changes nothing).
+# every library permanently stale).
+#
+# The PRISTINE TARBALLS used to be excluded here with the same reasoning --
+# "replacing one has no effect without MINTLIB_REFRESH=1 / GEMLIB_REFRESH=1 /
+# CFLIB_REFRESH=1, so a rebuild triggered by one would be a rebuild that
+# changes nothing". PORT03 showed that this makes a VERSION SWAP invisible: the
+# extracted tree is not tracked, so on every existing working copy the new
+# tarball sat there while the old sources kept being compiled, with no output
+# anywhere saying so -- the 2026-09-02 stale-archive incident in a new place.
+# cflib's tarball is therefore watched, and build-cflib.sh re-extracts when the
+# tarball is newer than the extracted tree, which is what turns that rebuild
+# into one that does change something. mintlib's and gemlib's build scripts
+# still only extract when the tree is ABSENT, so watching their tarballs would
+# indeed rebuild nothing; they get the same pair of changes when their pin
+# moves (TASK/PORT03, "Abschluss").
 lib_inputs() {
   case "$1" in
     libc)
@@ -162,6 +174,14 @@ lib_inputs() {
     cflib)
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/cflib/overlay"
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/cflib/build-cflib.sh"
+      # Globbed, not spelled out: the vendored tarball carries its commit pin in
+      # its name, and the pin must be changed in ONE place (build-cflib.sh).
+      # An `if` and not `[ -e ] && …`: with no match the glob stays literal and
+      # the test fails, which under a caller's `set -e` would end the build
+      # here instead of in build-cflib.sh, where the message is.
+      for _t in "$LIB_SDK"/cflib/cflib-21-*.tar.xz; do
+        if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
+      done
       ;;
     libm)
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libm/overlay"

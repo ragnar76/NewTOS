@@ -9,13 +9,16 @@ The NewTOS SDK is a **clang + LLVM lld** cross toolchain targeting
 |-----------|--------|--------------|
 | libc | mintlib-0.60.1 (`sdk/libc/mintlib-0.60.1.tar.xz`) | trap macros in `include/mint/{osbind,mintbind,falcon,metados}.h`, a libc-aware `crt0.S`, eleven AArch64 shims in `sdk/libc/newtos-arch/`, a handful of LP64/endian overlays (`sdk/libc/build-libc.sh:3-43`) |
 | GEM bindings | gemlib-0.44.0 (`sdk/gemlib/gemlib-0.44.0.tar.xz`) | only the AES/VDI trap primitive (`_gc_aes.c` / `_gc_vdi.c`: m68k `trap #2` → `svc #2`), plus LP64 corrections to `mt_gem.h.in` / `gem.h` (`sdk/gemlib/build-gemlib.sh:5-30`) |
-| dialog/window helpers | cflib-21 (`sdk/cflib/cflib-21.tar.xz`) | pure C on top of gemlib; two files gated under `-D__NEWTOS__` (`sdk/cflib/build-cflib.sh:5-27`) |
+| dialog/window helpers | cflib, pinned at commit `ce57817` (`sdk/cflib/cflib-21-ce57817.tar.xz`) | pure C on top of gemlib; two files gated under `-D__NEWTOS__` (`sdk/cflib/build-cflib.sh:5-27`). cflib's version number has stood at 0.21.0 since 2004, so the pin is a COMMIT (PORT03) |
 
 Every library is vendored as a **pristine tarball**; the build scripts extract
 it and copy the overlay directory over it (`sdk/libc/build-libc.sh:63-85`,
-`sdk/gemlib/build-gemlib.sh:67-88`, `sdk/cflib/build-cflib.sh:63-84`). The
+`sdk/gemlib/build-gemlib.sh:67-88`, `sdk/cflib/build-cflib.sh:89-120`). The
 extracted trees and the archives are build artifacts and untracked
-(`sdk/.gitignore:9-27`).
+(`sdk/.gitignore:9-27`). cflib's script also re-extracts when the vendored
+tarball is newer than the extracted tree, and `sdk/lib-stale.sh` watches that
+tarball, so moving the pin actually reaches the build (PORT03); mintlib and
+gemlib still need `MINTLIB_REFRESH=1` / `GEMLIB_REFRESH=1` for that.
 
 The decision behind this — "port real Atari C libraries, don't reimplement"
 — is ADR-019 (`docs/MEMORY.md:1109-1173`). The SDK is a separate LGPL artifact

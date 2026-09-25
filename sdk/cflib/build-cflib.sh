@@ -26,6 +26,33 @@
 #                 too (our AArch64 GNU/gemlib build gets its types from mt_gem.h
 #                 and ships no <portab.h>). Arch-detection fix only.
 #
+# WHICH cflib, AND WHY IT IS PINNED BY COMMIT (TASK/PORT03)
+#
+# cflib carries the version number 0.21.0 since 2004 and has never bumped it --
+# the number says nothing about the state of the sources. What we build is
+# therefore pinned by COMMIT, the way references/emutos and references/freemint
+# are, and vendored as `cflib-21-<commit>.tar.xz`:
+#
+#   github.com/freemint/cflib, commit ce57817c3f68c7d346d1081768505e81acaee807
+#   ("Replace last remaining tho-otto.de references with my server", 2026-07-14),
+#   packed with `git archive --prefix=cflib-21/ ce57817 | xz -9`.
+#
+# It replaces tho-otto.de's source snapshot `download/mint/cflib-21.tar.xz`
+# (2024-04-30, sha256 7f0d69f4 3f450df1 f0a4699b da8738f5 d8f7cc31 257e0db5
+# 31b8e8ba 4062e349), which is 13 commits older. Four compiled files differ, all
+# fixes we need or want: fsnorm.c (make_normalpath keeps the trailing backslash
+# -- the PORT03 defect), fsexists.c + fexists.c (path_exists/file_exists probe
+# with Fsfirst+DTA instead of Fattrib, and strip a trailing backslash first),
+# fontsel.c (a workstation leak on the FONTSELECT path). Everything else that
+# moved is CI scripting, the Makefile and README -- none of which this script
+# uses; it drives the COBJS manifest in SRCFILES directly.
+#
+# The dated snapshots on the tho-otto mirror are NOT an alternative: the newest
+# SOURCE tarball there is the 2024-04-30 one we just left, and the newer
+# /snapshots/cflib/*.tar.bz2 are m68k BINARY dev packages (prebuilt libcflib.a).
+# The git repository is the only source carrying the fixes, so a commit pin --
+# not a branch, not "latest" -- is what makes the build reproducible.
+#
 # The linker pulls only the archive members it needs, so cflib.a is compiled
 # from the whole COBJS manifest (SRCFILES); a file that fails to compile for
 # AArch64/LP64 is skipped and logged, and a *needed* one surfaces as an
@@ -60,13 +87,23 @@ MINT="$LIBC/mintlib/include"
 [ -d "$GEMTOP" ] || { echo "error: gemlib headers missing ($GEMTOP); run build-gemlib.sh" >&2; exit 1; }
 
 # --- ensure the cflib source tree is present (extract tarball + overlay) ------
-# The pristine cflib-21 source is vendored as a TARBALL; our NewTOS edits live in
-# sdk/cflib/overlay/ (mirroring the cflib layout). The extracted sdk/cflib/
-# cflib-21/ tree is a build artifact (gitignored). Set CFLIB_REFRESH=1 to force a
-# clean re-extract from the pristine tarball.
-TARBALL="$CF/cflib-21.tar.xz"
+# The pristine cflib source is vendored as a commit-pinned TARBALL (see the
+# header); our NewTOS edits live in sdk/cflib/overlay/ (mirroring the cflib
+# layout). The extracted sdk/cflib/cflib-21/ tree is a build artifact
+# (gitignored). Set CFLIB_REFRESH=1 to force a clean re-extract.
+#
+# The tree is ALSO re-extracted when the vendored tarball is newer than it.
+# Without that test, changing the pin left every existing working copy building
+# the old sources in silence -- the extracted tree is not tracked, so nothing
+# else would ever notice (PORT03; sdk/lib-stale.sh watches the tarball for the
+# matching archive-level test).
+TARBALL="$CF/cflib-21-ce57817.tar.xz"
 OVERLAY="$CF/overlay"
 if [ "${CFLIB_REFRESH:-0}" = "1" ]; then rm -rf "$TOP"; fi
+if [ -d "$TOP" ] && [ "$TARBALL" -nt "$TOP" ]; then
+  echo "vendored cflib tarball is newer than $TOP -- re-extracting"
+  rm -rf "$TOP"
+fi
 if [ ! -d "$TOP" ]; then
   [ -f "$TARBALL" ] || { echo "error: pristine tarball $TARBALL missing" >&2; exit 1; }
   echo "extracting pristine cflib from $(basename "$TARBALL")…"
@@ -74,6 +111,11 @@ if [ ! -d "$TOP" ]; then
   tar xf "$TARBALL" -C "$tmp"
   mv "$tmp/cflib-21" "$TOP"
   rmdir "$tmp" 2>/dev/null || true
+  # tar restores the ARCHIVE's directory timestamp (for a `git archive` tarball
+  # that is the commit date), which would be older than the tarball file itself
+  # and make the -nt test above fire on every single run. Stamp the tree with
+  # the time it was extracted instead.
+  touch "$TOP"
 fi
 # Always (re-)apply the NewTOS overlay so our retarget is present after any extract.
 if [ -d "$OVERLAY" ]; then
