@@ -1,6 +1,6 @@
 # PORT05 — QED aus TeraDesk gestartet: die Pi friert ein, oder QED beendet sich sofort
 
-Status: **OFFEN** · Prioritaet: **P1** · Typ: Belegter Defekt — Anwender 2026-09-25
+Status: **BEHOBEN in QEMU — Pi-Abnahme offen** (2026-09-25) · Prioritaet: **P1** · Typ: Belegter Defekt — Anwender 2026-09-25
 
 Abhaengigkeiten: —
 
@@ -119,3 +119,78 @@ sagen, wo er war.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Ursache und Fix (2026-09-25)
+
+**Ein EL0-Elter, der `Pexec` ruft, blieb in der kooperativen Laufmenge stehen
+und wurde vom blockierenden Kind an seinem Einsprungpunkt neu gestartet.**
+
+In QEMU `raspi4b` deterministisch reproduziert, **ohne** Injektor, ohne Klick,
+in 16 Sekunden — es braucht nur eine EL0-Anwendung, die `Pexec` ruft und
+weiterlebt, plus ein Kind, das in einem AES-Warteruf blockiert
+(`method/pexpar.c`, `method/pexkid.c`, 80 Zeilen, gebaut mit derselben
+Werkzeugkette wie QED und TeraDesk).
+
+```
+[KID] 3 entering evnt_timer(1500)   <- das Kind blockiert
+[sched] switch -> slot 2            <- Slot 2 IST DER ELTER
+[PAR] 1 main entry                  <- der Elter wird NEU GESTARTET
+[exec] preparing program (slot 4)   <- und startet das Kind noch einmal
+```
+
+Mit dem **echten QED**: **14 Neustarts**, QED in die Slots 3…15, bis die
+Prozesstabelle voll war; der 14. `Pexec` antwortete `-39 ENSMEM`.
+
+**Drei am Quelltext belegte Schritte:** (1) jedes EL0-Programm, das einmal in
+`evnt_*` blockiert hat, ist danach `runnable` — `sleep`s Leerlauf-Ausgang
+setzt das Bit auf jedem Durchgang neu; (2) `handle_pexec` fasste die
+Laufmengen-Mitgliedschaft des Elters nicht an, und sein `has_ctx` ist `false`,
+er ist also ein **`fresh`**-Ziel; (3) der erste blockierende AES-Aufruf des
+Kindes → `sleep` → `on_yield` → `pick_next` → der Elter → `apply_switch(fresh)`.
+
+**Gebrochener Kontrakt, keine Geschmacksfrage:** `Pexec` ist synchron
+(EmuTOS `proc_go`: `run = p; gouser();`, `bdos/proc.c:536-577`; zurueck erst
+ueber `xterm`, `:601-618`), und EmuTOS' Rundlauf kann den Elter gar nicht
+sehen, weil startende und gestartete Anwendung **eine** AESPD teilen.
+
+**Es war nicht [ARCH02](ARCH02.md).** Kein FP/SIMD-Register geht verloren;
+ARCH02 bleibt unberuehrt offen.
+
+**Fix**, 123 Zeilen, nur additiv: `Process::parent_runnable` am **Kind**-Slot
+(wie `parent_frame`/`parent_l0_pa`), `suspend_parent_for_child()` /
+`resume_parent_of_child()` im Scheduler, aufgerufen in `handle_pexec` und —
+**vor** `release_slot` — in `finish_terminate`. Zurueckgegeben wird das
+gespeicherte **Bit**, kein erzwungenes `true`; `wait_cond` wird beim Aussetzen
+geloescht, sonst macht `wake()` den ausgesetzten Elter wieder scharf.
+
+**Nachher:** genau **ein** `[exec] preparing program`, genau **ein**
+`[PAR] 1 main entry`, `Pexec` liefert `rc=0`, QED steht mit voller Menueleiste
+(`screendumps/after-qed-up.png`). Echtes A/B — die Vorher-Laeufe liefen mit
+einem Kern, in dem die zwei neuen Aufrufstellen von Hand stillgelegt waren.
+
+## Was ausdruecklich NICHT belegt ist
+
+* **Der harte Einfrierer der Pi selbst.** Reproduziert ist die **Ursache**
+  (unbegrenzte Neustartschleife bis ENSMEM), nicht der Stillstand mit toter
+  Maus; in QEMU gab es kein `[EXC]`. Dass ein 14-mal neu gestartetes TeraDesk
+  in `unhandled()` → `halt()` endet, ist **plausibel und unbewiesen**.
+* **TeraDesk selbst** wurde nicht gefahren — reproduziert ist seine
+  *Handlung* (chdir + `Pexec` + am Leben bleiben).
+* Der **`TERADESK.INF`-Rueckbau** ist nicht gemacht. Durch den Befund aber
+  unwahrscheinlich geworden: der Defekt tritt ohne TeraDesk und ohne dessen
+  `.INF` auf.
+
+## Die Zahl, die es auf der Pi zeigt
+
+QED aus TeraDesk starten: **QED darf genau einen Prozessslot belegen** und
+kommt genau einmal mit eigener Menueleiste hoch; das System bleibt bedienbar.
+Vorher waren es in QEMU 13 Slots plus ein `Pexec` mit `-39`.
+
+## Herausgefallen
+
+* **[ACC10](ACC10.md)** — `appl_exit()` blockiert headless fuer immer in
+  `wait_for_accs(AP_ACCLOSE)`. Unabhaengig von PORT05 gemessen.
+* Notiert, nicht angefasst: `handle_pexec` aktualisiert `sched::set_running`/
+  `CURRENT` nicht, also schreiben `arm_or_get_deadline`/`clear_deadline` die
+  Frist des **Kindes** in den Slot des **Elters** (latent); `sched::on_exit`
+  hat keinen Aufrufer.

@@ -244,6 +244,29 @@ pub struct Process {
     /// `Pterm` to return control to the parent's resume PC.
     pub parent_slot: AtomicU32,
 
+    /// The parent's cooperative run-set membership ([`Self::runnable`]) at the
+    /// instant it launched **this** child, so the child's `Pterm` can put it
+    /// back exactly as it found it.
+    ///
+    /// GEMDOS `Pexec` is a *synchronous* call: EmuTOS's `proc_go` sets
+    /// `run = p` and enters the child through `gouser()`
+    /// (`references/emutos/bdos/proc.c:536-577`); the parent's context is
+    /// frozen in its PD and only `xterm`'s `run = run->p_parent` +
+    /// `termuser()` (`:601-618`) brings it back. The parent therefore **must
+    /// not** be a candidate of NewTOS's cooperative round-robin while the
+    /// child lives — in EmuTOS it cannot be, because parent and child share
+    /// one AESPD and `dsptch()` has nothing to pick
+    /// (`docs/analysis/coop-kernel/emutos-cooperative-model.md` §5.2).
+    ///
+    /// Written by [`sched::suspend_parent_for_child`], consumed by
+    /// [`sched::resume_parent_of_child`]. Kept on the **child** slot for the
+    /// same reason [`Self::parent_frame`] / [`Self::parent_l0_pa`] are: it is
+    /// per-launch state that must die with the launch.
+    ///
+    /// [`sched::suspend_parent_for_child`]: sched::suspend_parent_for_child
+    /// [`sched::resume_parent_of_child`]: sched::resume_parent_of_child
+    pub parent_runnable: AtomicBool,
+
     /// Snapshot of the parent's trap frame. Pterm copies this back
     /// over the child's trap frame so the post-handler `eret`
     /// resumes the parent at exactly the state it was in when it
@@ -654,6 +677,7 @@ impl Process {
             entry_va: AtomicU64::new(0),
             sp_el0: AtomicU64::new(0),
             parent_slot: AtomicU32::new(NO_PARENT),
+            parent_runnable: AtomicBool::new(false),
             parent_frame: ParentFrame::zeroed(),
             parent_l0_pa: AtomicU64::new(0),
             parent_frame_full: AtomicBool::new(false),
@@ -903,6 +927,7 @@ pub fn free_slot(idx: usize) {
     p.entry_va.store(0, Ordering::Release);
     p.sp_el0.store(0, Ordering::Release);
     p.parent_slot.store(NO_PARENT, Ordering::Release);
+    p.parent_runnable.store(false, Ordering::Release);
     p.parent_frame.clear();
     p.parent_l0_pa.store(0, Ordering::Release);
     p.parent_frame_full.store(false, Ordering::Release);

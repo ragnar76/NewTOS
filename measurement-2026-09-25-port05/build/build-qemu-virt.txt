@@ -1,0 +1,6 @@
+=== cargo build --board qemu-virt (fresh) ===
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.00s
+xtask: building kernel for board-qemu-virt (debug)
+warning: `tos-api` (lib) generated 64 warnings
+warning: `kernel` (lib) generated 94 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1.98s

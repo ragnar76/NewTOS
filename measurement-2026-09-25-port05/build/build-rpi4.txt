@@ -1,0 +1,7 @@
+=== cargo build --board rpi4 (fresh) ===
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.00s
+xtask: building kernel for board-rpi4 (debug)
+warning: `tos-api` (lib) generated 64 warnings
+warning: `kernel` (lib) generated 94 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1.66s
+xtask: objcopy → /Volumes/Daten/Development/PiRusTOS/kernel8.img

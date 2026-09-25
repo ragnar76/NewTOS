@@ -242,6 +242,81 @@ pub fn set_running(slot: usize) {
     CURRENT.store(slot, Ordering::Release);
 }
 
+/// A launch-mode `Pexec` (`PE_LOADGO` / `PE_GO`) has given the CPU to the
+/// process in `child_slot`: take its **parent** out of the cooperative run-set
+/// for as long as the child lives.
+///
+/// GEMDOS `Pexec` is a *synchronous* BDOS call. EmuTOS's `proc_go` sets
+/// `run = p` and enters the child through `gouser()`
+/// (`references/emutos/bdos/proc.c:536-577`); the parent's registers stay
+/// frozen in its PD until the child's `xterm` does `run = run->p_parent` and
+/// `termuser()` (`:601-618`). Nothing can schedule the parent in between —
+/// EmuTOS's AES round-robin cannot even see it, because the launching
+/// application and the launched one share **one** AESPD, so `dsptch()` has no
+/// second entry to pick (`docs/analysis/coop-kernel/emutos-cooperative-model.md`
+/// §5.2: *"GEMDOS `Pexec` … hat keine Verbindung zum AES-`dsptch()`-Scheduler.
+/// Während die Kindanwendung läuft, laufen Accessories/Screen-Manager
+/// nicht"*).
+///
+/// NewTOS gives parent and child **separate** slots, and a parent that ever
+/// blocked in an `evnt_*` wait is left `runnable` by [`sleep`]'s idle exit — so
+/// without this the child's first block would hand the CPU straight back to its
+/// own suspended parent (measured: `measurement-2026-09-25-port05`, the parent
+/// was re-entered `fresh` at its entry point and relaunched the child in a
+/// loop). Dropping the bit is what expresses "the parent is inside `Pexec`".
+///
+/// Accessories keep running while the child is blocked exactly as before: they
+/// are separate run-set members, and only the one parent is withdrawn.
+///
+/// No-op for a child whose `parent_slot` is [`super::NO_PARENT`] — the
+/// kernel-launched root program (`kernel/src/launch.rs`) and desk accessories,
+/// whose "parent" is an EL1 context that owns no slot and is not in the
+/// run-set to begin with.
+pub fn suspend_parent_for_child(child_slot: usize) {
+    if child_slot >= MAX_PROCESSES {
+        return;
+    }
+    let parent = PROCESS_TABLE[child_slot].parent_slot.load(Ordering::Acquire);
+    if parent == super::NO_PARENT {
+        return;
+    }
+    let p = &PROCESS_TABLE[parent as usize];
+    PROCESS_TABLE[child_slot]
+        .parent_runnable
+        .store(p.runnable.load(Ordering::Acquire), Ordering::Release);
+    p.runnable.store(false, Ordering::Release);
+    // A process that reached `Pexec` is RUNNING, so by the WAITING/READY rule
+    // (§3.2) its `wait_cond` is already `0`. Store it anyway: a stale wake key
+    // would let [`wake`] re-arm `runnable` behind our back and put the
+    // suspended parent back into `pick_next` while its child is still alive —
+    // the exact hole this function closes.
+    p.wait_cond.store(0, Ordering::Release);
+}
+
+/// The child in `child_slot` has terminated: put its parent back into the
+/// cooperative run-set exactly as [`suspend_parent_for_child`] found it.
+///
+/// Called from the `Pterm` tail **before** the slot is released (releasing it
+/// clears `parent_slot` and `parent_runnable`). Restores the saved bit rather
+/// than forcing `true`, so a parent that was never a run-set member — a
+/// program the kernel launcher started that has not yet blocked in an `evnt_*`
+/// wait — does not become one by having launched a child.
+pub fn resume_parent_of_child(child_slot: usize) {
+    if child_slot >= MAX_PROCESSES {
+        return;
+    }
+    let parent = PROCESS_TABLE[child_slot].parent_slot.load(Ordering::Acquire);
+    if parent == super::NO_PARENT {
+        return;
+    }
+    let was = PROCESS_TABLE[child_slot]
+        .parent_runnable
+        .load(Ordering::Acquire);
+    PROCESS_TABLE[parent as usize]
+        .runnable
+        .store(was, Ordering::Release);
+}
+
 /// Add `slot` to the cooperative run-set as a fresh (never-entered) peer.
 pub fn admit(slot: usize) {
     if slot < MAX_PROCESSES {

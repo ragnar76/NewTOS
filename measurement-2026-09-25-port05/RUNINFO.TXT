@@ -1,0 +1,188 @@
+measurement-2026-09-25-port05
+  PORT05 (QED aus TeraDesk gestartet: die Pi friert ein)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD c7270e4. The PORT05 change is UNCOMMITTED in
+the shared tree (three edited files + one new test file, listed in §6).
+Nothing flashed, nothing ejected, no real Pi run, nothing committed; no
+`git checkout/restore/clean/stash/reset` was run on the shared tree. The SD
+card at /Volumes/BOOT was not touched.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to a file,
+QMP screendumps (method/run-pex-shot.sh + method/qmp_multi.py, the latter
+copied unchanged from measurement-2026-09-25-port03/method/). Card image: a
+fresh `tools/make-sd-image.sh` per run (64 MiB, MBR + FAT16) plus the PORT05
+fixture (method/seed-pex.sh) -- rebuilt, never a reused copy. No `*.img` in
+this directory (the ticket's rule).
+
+NO IKBD INJECTOR, NO SCRATCH TREE COPY, NO SCRIPTED CLICK. The failure is
+reachable without any of that: it needs only an EL0 program that calls
+`Pexec` and a child that blocks in an AES wait. Every run below boots the
+SHARED TREE's kernel, started headless, and reports over `Cconws`, i.e. over
+the serial console.
+
+
+0. WHAT IS UNDER TEST
+---------------------------------------------------------------------------
+The launch route TeraDesk uses and NewTOS had never accepted anywhere: an
+EL0 application launching an EL0 application. TeraDesk does
+`chdir(prgpath)` and then `x_exec(0, ...)` = `Pexec(PE_LOADGO, ...)` and
+STAYS ALIVE across the call (sdk/apps/teradesk/startprg.c:620 and :312,
+`exec_com`). Everything accepted so far went the other way: a program
+launched from the EL1 kernel (kernel/src/launch.rs `run_program`), whose
+caller owns no process slot.
+
+
+1. FIXTURE (method/pexpar.c, method/pexkid.c, method/build-pex.sh)
+---------------------------------------------------------------------------
+Two tiny LP64 GEM applications, built with the flag/include/link recipe
+copied verbatim from sdk/apps/chaintest/build-chaintest.sh -- the same
+toolchain, headers, crt0, gemlib.a and libc.a that TeraDesk and QED are
+built with, so nothing about the programs differs from a ported app.
+
+  PEXPAR.NAP   appl_init -> evnt_timer(500) -> Pexec(0, child) -> report rc
+               -> evnt_timer(500) -> appl_exit -> Pterm(0).
+               The first evnt_timer is not decoration: it is the state
+               TeraDesk is always in when it launches (it came out of
+               evnt_multi), and it is what leaves the slot `runnable`.
+  PEXKID.NAP   appl_init -> evnt_timer(1500) -> appl_exit -> Pterm(0).
+               The blocking AES wait of the child is the whole point.
+  PEXKIDX.NAP  same source, -DNO_APPL_EXIT (see §5).
+  PEXPARQ.NAP  same source as PEXPAR, -DCHILD_PATH=C:\APPS\QED\QED.NAP and
+               -DCHILD_DIR=\APPS\QED: launches the REAL ported application,
+               with the same `Dsetpath` TeraDesk does first. That chdir is
+               what lets QED find `qed.rsc` by the bare name (`sh_find`
+               stage 2 = the current directory, aes/gemshlib.c:406-472); a
+               `Pexec` issued by an application does NOT go through the AES,
+               so `p_appdir` keeps naming the LAUNCHER -- on EmuTOS as much
+               as here. Without the chdir QED puts up "Resource nicht
+               gefunden!", which is the launcher's omission and not a kernel
+               defect.
+
+The card is `tools/make-sd-image.sh` unchanged plus the programs and a
+NEWDESK.INF whose `#Z` autorun line starts PEXPAR.NAP instead of our desktop
+(method/newdesk-pex.inf) -- the same mechanism that starts TeraDesk. Note
+that the standard image carries the two desk accessories, which ARE part of
+the state under test: they are the other members of the cooperative run-set.
+
+
+2. THE DEFECT, MEASURED
+---------------------------------------------------------------------------
+serial/before-toychild.log (shared tree as of HEAD c7270e4):
+
+    [PAR] 4 calling Pexec(0, C:\PEXKID.NAP)
+    [exec] preparing program (slot 3)
+    [KID] 3 entering evnt_timer(1500)      <- the child blocks
+    [sched] switch -> slot 2               <- slot 2 IS THE PARENT
+    [PAR] 1 main entry                     <- the parent is RESTARTED
+    [PAR] 4 calling Pexec(0, C:\PEXKID.NAP)
+    [exec] preparing program (slot 4)      <- and launches the child again
+
+serial/before-qed.log, the same with the real QED: **14 parent restarts**,
+QED loaded into slots 3..15 until the process table (16 slots) is full, and
+the 14th `Pexec` answers `rc=0xffffffffffffffd9` = -39 = ENSMEM.
+screendumps/before-qed-up.png shows what that looks like: the parent's
+banner scrolling up the screen, QED never getting to paint its menu bar.
+
+Mechanism (kernel/src/arch/aarch64/exceptions.rs, tos-api/src/bdos/process/
+sched.rs):
+
+  1. Every EL0 program that has been through ONE blocking `evnt_*` wait is
+     left `runnable` -- `sleep`'s idle exit (Ausgang (a)) re-arms the bit on
+     every pass, so it is set when the wait finally returns.
+  2. `handle_pexec` redirected the frame to the child but left the parent's
+     run-set membership untouched. `has_ctx` is false (the parent had never
+     yielded to a peer), so the parent is a `fresh` switch target.
+  3. The child's first blocking AES wait calls `sched::sleep` ->
+     `on_yield(child)` -> `pick_next` -> the parent -> `apply_switch` with
+     `fresh == true`: the suspended parent is re-entered AT ITS ENTRY POINT.
+
+That is a contract violation, not a policy question: GEMDOS `Pexec` is
+synchronous. EmuTOS's `proc_go` sets `run = p` and enters the child through
+`gouser()` (references/emutos/bdos/proc.c:536-577); the parent's registers
+stay frozen in its PD until the child's `xterm` does `run = run->p_parent`
+and `termuser()` (:601-618). EmuTOS's AES round-robin cannot even see the
+parent, because the launching and the launched application share ONE AESPD
+(docs/analysis/coop-kernel/emutos-cooperative-model.md §5.2).
+
+
+3. THE FIX, MEASURED
+---------------------------------------------------------------------------
+serial/after-toychild-roundtrip.log -- the full round trip, once:
+
+    [PAR] 4 calling Pexec(0, C:\PEXKID.NAP)
+    [exec] preparing program (slot 3)
+    [KID] 3 entering evnt_timer(1500)
+    [KID] 4 evnt_timer returned
+    [KID] 5 (no appl_exit in this build), Pterm(0)
+    [PAR] 5 Pexec returned rc=0x0000000000000000
+    [PAR] 6 second evnt_timer returned
+
+serial/after-qed.log + screendumps/after-qed-up.png -- the real QED: ONE
+`[exec] preparing program (slot 3)`, ONE `[PAR] 1 main entry`, and QED up
+with its full menu bar (`qed Datei Bearbeiten Fenster Suchen Spezial
+Optionen Shell`) and an arrow pointer, idling in its event loop while the
+parent stays suspended inside `Pexec`.
+serial/after-qed-recheck.log is a second run of the identical configuration
+after the scratch experiment of §4 had restored the tree; it is byte-
+identical to after-qed.log modulo the clock line.
+
+
+4. THE BEFORE/AFTER PAIR IS A REAL A/B, NOT A REREAD
+---------------------------------------------------------------------------
+The "before" runs were driven by a kernel whose two new call sites had been
+neutralised BY HAND in the working tree (edit, build, run, restore from a
+copy under the job scratch -- never `git checkout/restore`). The restore was
+verified by sha1: the file is bit-identical to the pre-experiment copy
+(1eb7468a8df7586fbd1fed2513af561db5cc07f0) and carries no scratch marker.
+
+
+5. SEPARATE, PRE-EXISTING DEFECT FOUND ON THE WAY (not PORT05, not fixed)
+---------------------------------------------------------------------------
+`appl_exit()` posts AC_CLOSE to every accessory and then blocks in
+`wait_for_accs(AP_ACCLOSE)`, which sleeps on the WAIT_INPUT wake class
+(tos-api/src/aes/acc.rs:164). Nothing in the accessory barrier drives that
+class: `idle_wake_pass` wakes it only when a key arrives or the pointer
+moves (tos-api/src/bdos/process/sched.rs). In a headless run neither ever
+happens, so the program never gets the CPU back.
+
+Measured, NOT reasoned, to be independent of PORT05:
+
+  serial/control-kernel-launch-unfixed.log   the kernel-launched child
+  serial/control-kernel-launch-fixed.log     (NO Pexec anywhere), before
+                                             and after the fix
+                                             (method/newdesk-kidonly.inf: the
+                                             `#Z` line starts PEXKID.NAP
+                                             itself, so no parent exists)
+
+Those two files are IDENTICAL modulo the clock line: same stop, same place,
+`[KID] 4 evnt_timer returned` then `[sched] switch -> slot 0 / slot 1` and
+silence. The fix cannot be involved -- both new calls return immediately
+when the slot has no parent slot, which is the case on that path.
+
+serial/after-toychild-applexit.log is the same stop reached by the Pexec
+child; before the fix it was hidden, because the restart loop kept producing
+output.
+
+What is NOT established: serial/control-kernel-launch-serial-byte.log fed
+one byte into the guest's serial line after 45 s (method/run-pex-input.sh)
+to test the `console_has_input()` half of the wake; the run did not come
+free, and whether the byte reached the guest at all was not established.
+The "a pointer movement wakes it" half is read off the source, not measured.
+This belongs in a ticket of its own.
+
+
+6. CHANGE SET
+---------------------------------------------------------------------------
+tos-api/src/bdos/process.rs        new `Process::parent_runnable` field
+                                   (+ `empty()` init, + `free_slot` reset)
+tos-api/src/bdos/process/sched.rs  new `suspend_parent_for_child` /
+                                   `resume_parent_of_child`
+kernel/src/arch/aarch64/exceptions.rs
+                                   `handle_pexec`: suspend the parent on the
+                                   launch path; `finish_terminate`: resume it
+                                   before `release_slot`
+tos-api/tests/sched_pexec_parent_suspend.rs   new, 6 host tests
+
+build/build-rpi4.txt, build/build-qemu-virt.txt, build/clippy.txt carry the
+build and clippy result for both boards.

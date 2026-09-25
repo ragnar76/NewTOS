@@ -1213,6 +1213,16 @@ fn finish_terminate(
     frame.spsr = pf_spsr;
     frame.sp_el0 = pf.sp_el0().load(Ordering::Acquire);
 
+    // The launch this slot stood for is over: put the parent back into the
+    // cooperative run-set exactly as `handle_pexec` found it (PORT05, EmuTOS
+    // `xterm` → `run = run->p_parent`, `bdos/proc.c:609`). Must run **before**
+    // `release_slot`, which clears the `parent_slot` / `parent_runnable` pair
+    // this reads. A no-op for a slot with no parent slot — the kernel-launched
+    // programs and the desk accessories, whose parent is an EL1 context.
+    tos_api::bdos::process::sched::resume_parent_of_child(
+        resume.parent_frame_slot,
+    );
+
     // Done with the slot's atomics — release it for re-use.
     // SAFETY: see `terminate` — caller-side BDOS-lock contract.
     unsafe {
@@ -1725,6 +1735,19 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
             // `RUN` to null on the child's exit.
         }
     }
+
+    // …and take that parent **out of the cooperative run-set** for as long as
+    // the child lives (PORT05). `Pexec` is synchronous — EmuTOS's `proc_go`
+    // enters the child through `gouser()` and the parent's registers stay
+    // frozen in its PD until the child's `xterm` (`bdos/proc.c:536-577`,
+    // `:601-618`) — so a parent suspended here must not be a `pick_next`
+    // candidate. It would otherwise be one: every EL0 program that has been
+    // through a blocking `evnt_*` wait is left `runnable` by `sleep`'s idle
+    // exit, and the child's first block would switch straight back into its
+    // own parent (`fresh`, i.e. re-entered at its entry point) instead of to an
+    // accessory. Paired with `resume_parent_of_child` in `finish_terminate`.
+    // A no-op when the parent owns no slot (the kernel launcher's programs).
+    tos_api::bdos::process::sched::suspend_parent_for_child(child.slot);
 
     // Set RUN to the child's basepage so subsequent BDOS-pool
     // allocations from the child get tagged with the right owner
