@@ -336,3 +336,200 @@ Uebergabeabbild aus Fassung 2 (`method/fs04_probe_patch.py`,
 `fs04-pi-handover.diff`, `fs04-gesture-r2.diff`). Ein `.diff` ist ein
 vollstaendiger Patch; Fassung 1 bleibt damit reproduzierbar, obwohl das Skript
 inzwischen Fassung 2 ist.
+# FS04 — Nachtrag §13: die Sonde auf den neuen EMMC-Treiber umgestellt
+
+> **An `TASK/FS04-STATUS-UNFINISHED.MD` anzuhaengen.** Er steht hier getrennt,
+> weil der Scratch-Datentraeger vollgelaufen ist und damit keine Shell mehr zur
+> Verfuegung stand — ohne Shell kann ich eine bestehende 450-Zeilen-Datei nicht
+> anhaengen, nur vollstaendig neu schreiben, und eine Abschrift von Hand waere
+> eine stille Fehlerquelle. Ein `cat` haengt ihn an:
+> `cat TASK/FS04-STATUS-UNFINISHED-13-REBASE.MD >> TASK/FS04-STATUS-UNFINISHED.MD`
+
+---
+
+## 13. Nachtrag 2026-09-25 (2): umgestellt auf `c6cf484`
+
+`c6cf484` hat den EMMC-Treiber neu geschrieben — Zeitbudgets je `Phase`,
+Wiederherstellung nach Fehler und Zeitablauf, Fehlerbuchhaltung. Die Anker der
+Sonde gab es danach nicht mehr; sie ist umgestellt. Umfang: nur die Sonde,
+weiterhin Messgeruest auf Scratch-Kopien, kein Produktcode, keine Behebung.
+
+Basis: `desk-rebuild` @ `c6cf484`.
+
+### 13.1 Re-Anker, nicht Nachbau
+
+Jede Wartefunktion **behaelt ihren Rumpf**. Der Patch benennt sie in
+`*_inner` um und setzt einen duennen Zeitmantel gleichen Namens davor:
+
+* `Emmc::wait_clear` / `wait_clear_inner`
+* `Emmc::wait_interrupt` / `wait_interrupt_inner`
+* `Emmc::command` / `command_inner`
+* `Emmc::read_one` / `read_one_inner`, `write_one` / `write_one_inner`
+
+Damit kann dieser Patch nichts zuruecknehmen, was oben im Rumpf geaendert
+wird — die Warnung aus dem Auftrag ist konstruktiv eingeloest, nicht nur
+beachtet. Die beiden PIO-Schleifen sind dort geklammert, wo sie stehen
+(zwei eingefuegte Zeilen an einem Anker aus fuenf), nicht reproduziert.
+
+### 13.2 Die fuenf Phasen, auf `Phase` abgebildet
+
+Die Zeilen heissen wie bisher, damit `raw/pi04-FS04.TXT` Zeile fuer Zeile
+vergleichbar bleibt:
+
+| Berichtszeile | neue Quelle |
+|---|---|
+| `dev.r.wait_dat` / `dev.w.wait_dat` | `wait_clear(…, Phase::DatInhibit)` |
+| `dev.r.cmd17` / `dev.w.cmd24` | der ganze `command()`-Handshake |
+| `dev.r.read_rdy` / `dev.w.write_rdy` | `wait_interrupt(…, Phase::ReadRdy / WriteRdy)` |
+| `dev.r.pio` / `dev.w.pio` | die FIFO-Schleife |
+| `dev.r.data_done` / `dev.w.data_done` | `wait_interrupt(…, Phase::ReadDone / WriteDone)` |
+
+`Phase::DatInhibit` und der Kommando-Handshake sind Lese- und Schreibseite
+gemeinsam; ein Richtungsmerker (`FS04_DIR`, gesetzt vom `read_one`/`write_one`-
+Mantel) bucht sie auf die richtige Zeile. Das ist nicht Kosmetik: was
+`DatInhibit` **vor einer Schreibung** abwartet, ist die Programmierzeit der
+vorigen Schreibung (Audit §2.4), vor einer Lesung nicht.
+`Phase::CmdInhibit`/`CmdDone` werden absichtlich **nicht** einzeln gebucht —
+sie liegen in `command()`, das als Ganzes gemessen wird; doppelt buchen hiesse
+dieselben Mikrosekunden zweimal zaehlen.
+
+### 13.3 Der Scope-Fehler — und wie er verifiziert ist
+
+**Was falsch war.** Die alte Sonde buchte eine Phase erst **nachdem** sie
+gelungen war, weil das `add(...)` hinter dem `?` / dem fruehen `return` stand.
+Genau der teure Fall — eine Wartezeit, die ihr Budget ausschoepfte — fiel
+damit aus den Summen heraus. Deshalb standen in `raw/pi04-FS04.TXT`
+
+```
+dev.write_one      n=11      total=99984 us
+dev.w.wait_dat     n=23      total=537387 us
+```
+
+nebeneinander: 23 Sektorschreibungen kamen bis zur PIO-Schleife, 11 kamen
+durch `WriteDone`; die zwoelf, die dort ihr Budget ausschoepften, trugen ihre
+teuerste Phase **gar nicht** in die Buchhaltung ein. Das ist der Grund,
+warum 0,8 s im Geraet und 1,6 s in `Fwrite` nicht zusammenzubringen waren.
+
+**Was jetzt gilt.** Jeder Mantel bucht auf **jedem** Ausgang — Erfolg,
+Fehlerbit und abgelaufenes Budget gleichermassen.
+
+**Wie verifiziert.** Nicht als Behauptung, sondern als Zeile im Bericht: zwei
+`scope.check.*`-Zeilen drucken in **jedem** Block die Identitaet
+
+```
+Gesamtzeit der Sektoroperation  ==  Summe ihrer fuenf Phasen
+```
+
+zusammen mit den Stueckzahlen. Im QEMU-Lauf der umgestellten Fassung
+(`measurement-2026-09-25-fs04/raw/g08-FS04-rebased.TXT`):
+
+```
+scope.check.r      n(read_one)=6 n(sectors)=6  total=2056us phases=2032us diff=23us
+scope.check.w      n(write_one)=6 n(sectors)=6  total=590us  phases=576us  diff=14us
+```
+
+* **Stueckzahlen stimmen ueberein:** `dev.read_one n=6` = `blk.read_blocks
+  amount=6` = jede `dev.r.*`-Zeile `n=6`; ebenso auf der Schreibseite. Der
+  Bruch 11 gegen 23 ist strukturell nicht mehr moeglich.
+* **Zeiten stimmen ueberein:** 23 us von 2056 (1,1 %) und 14 us von 590
+  (2,4 %) Rest. Das ist kein Schlupf in der Buchhaltung, sondern die Arbeit
+  **zwischen** den Phasen: der `ready`-Test, die Adressrechnung und die
+  `BLKSIZECNT`-Registerschreibung. Sie steht bewusst in keiner Phase — aber
+  sie steht sichtbar in `diff`, statt in einer Phase zu verschwinden.
+* Auf der Pi wird dieselbe Zeile gedruckt. Faellt `diff` dort gross aus, ist
+  wieder eine Phase aus der Buchhaltung entkommen, und man sieht es sofort.
+
+### 13.4 Die eigenen Zaehler des Treibers ersetzen `emmc.spin`
+
+Der Treiber meldet jetzt selbst, was frueher nur zu erschliessen war. Neu im
+Block, je mit dem Zuwachs **dieses** Blocks in Klammern (die Zaehler des
+Treibers laufen seit dem Start; ein Ruecksetzen in der Sonde wuerde einen
+Fehler verstecken, der vor der Geste passiert ist):
+
+```
+emmc.errors        timeouts=0(+0) io=2(+0) recoveries=2(+0) nonrecov=0(+0) other=0(+0)
+emmc.timeouts_by_phase cmd_inhibit=0(+0) dat_inhibit=0(+0) cmd_done=0(+0) read_rdy=0(+0) write_rdy=0(+0) read_done=0(+0) write_done=0(+0)
+emmc.error_bits    CTO=2(+0) CCRC=0(+0) CEND=0(+0) CBAD=0(+0) DTO=0(+0) DCRC=0(+0) DEND=0(+0)
+emmc.last          status=0x00018001 phase=cmd_done
+```
+
+Das ist M2 des Audits, ohne eigene Sonde im Treiber: `timeouts` trennt
+Zeitablauf von Fehler, `timeouts_by_phase` sagt **welche** Wartezeit, und die
+Bits trennen Signalintegritaet (`DCRC`/`DEND` → Befund 9/10) von einem
+Abbruch des Controllers (`DTO` → `DATA_TOUNIT`).
+
+Die beiden `CTO` und die zwei Wiederherstellungen in QEMU sind die
+kartenlose EMMC2-Basis waehrend der Identifikation — dieselbe Zahl, die die
+M1-Zeile des Treibers meldet. Der Startblock der Sonde fuehrt sie jetzt
+ebenfalls, damit sie auf der Pi sichtbar ist:
+
+```
+emmc after identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+```
+
+**`emmc.spin` ist entfallen** — bewusst, nicht versehentlich. Seit der Timeout
+eine Dauer ist, ist die Schleifenzahl keine Grenze mehr; 0,85–1,7 Millionen
+sind normal. Eine Zeile stehen zu lassen, die ein Leser als „ausgeschoepft"
+liest, waere falscher Trost. Eine NOTE-Zeile im Block sagt, dass sie weg ist
+und was sie ersetzt. Sie **nur** als Zaehler weiterzufuehren waere ausserdem
+teuer geworden: die Schleifendurchlaeufe zu zaehlen hiesse zwei Atomics pro
+Durchlauf in der heissesten Schleife des Treibers — neue Kosten, die genau
+die Dauern verfaelschen, um die es geht.
+
+### 13.5 Was unveraendert ist
+
+Blockformat, Datei `C:\FS04.TXT`, Anhaengen, und die Reihenfolgegarantie:
+Schnappschuss (jetzt **einschliesslich** `emmc::error_stats()`), formatieren,
+seriell ausgeben, **dann** die Datei. Aufgerufen wird der Bericht weiterhin
+erst, nachdem `fun_drag` `DRAG_TOTAL` verbucht hat.
+
+### 13.6 Geprueft — und was ungeprueft blieb
+
+| Pruefung | Ergebnis |
+|---|---|
+| Anker in **beiden** Betriebsarten (`driver`, `gesture`) + `fs04_redraw_bench.py` | alle sauber angewandt |
+| Bau release / Board rpi4 aus frischer Scratch-Kopie von `c6cf484` | ok, `sha256 13707ae9…58d27dab`, 1 044 632 Byte |
+| genau dieses Abbild in `qemu -M raspi4b` | bis `[desk] desktop up`, **0** `[EXC]`/`[PANIC]` |
+| `C:\FS04.TXT` entsteht, mit der Identifikationsbilanz | ja (`CTO=2`, deckungsgleich mit der M1-Zeile) |
+| Ablegeblock, injektorgetrieben | `raw/g08-FS04-rebased.TXT`; steht **hinter** dem Startblock in derselben Datei, also angehaengt |
+| Scope-Identitaet | `diff` 23 us von 2056 bzw. 14 us von 590 (§13.3) |
+| **Anhaengen ueber zwei Starts hinweg** | **nicht wiederholt** — Datentraeger voll. In der vorigen Runde mit unveraendertem Anhaengecode sauber (268 → 536 Byte) |
+| **`fsck_msdos -n` nach dem umgestellten Lauf** | **nicht wiederholt**, gleiche Ursache. Vorige Runde sauber |
+
+### 13.7 Was schiefging, und was daraus folgt
+
+Der Scratch-Datentraeger (`/private/tmp`, 30 GiB frei zu Beginn) ist beim
+letzten Pruefschritt vollgelaufen: jede Scratch-Kopie traegt ein eigenes
+`target/` (~2–3 GB), jedes Kartenabbild 2 GiB, und diese Runde hat mehrere
+davon angelegt. Danach liess sich **keine Shell mehr starten** — auch nicht,
+um aufzuraeumen, weil schon das Anlegen der Ausgabedatei eines Kommandos
+`ENOSPC` gab.
+
+Folgen, unbeschoenigt:
+
+* Das Abbild `13707ae9…` ist **gebaut und geprueft, aber nicht abgelegt**.
+  In `measurement-2026-09-25-fs04/pi-probe/` liegt weiterhin das **alte**
+  (`53bbbeab…`, gegen den alten Treiber). Es ist mit
+  `STALE-DO-NOT-FLASH.TXT` und einem Banner im `README.TXT` als veraltet
+  gekennzeichnet — **nicht flashen**.
+* Kein `.diff` fuer Fassung 3. Ersatz ist
+  `method/fs04_rebase_c6cf484.py`: es wandelt `method/fs04_probe_patch.py`
+  von Fassung 2 auf Fassung 3 und traegt den ganzen Aenderungssatz.
+  **Einschraenkung:** dieses Skript ist aus dem gepruefter Zustand heraus
+  niedergeschrieben, aber nach dem Ausfall der Shell **nicht noch einmal
+  ausgefuehrt** worden. Es ist durch `sub1`-Assertions abgesichert — ein
+  Tippfehler schlaegt laut fehl, nicht still.
+* Die seriellen Protokolle der umgestellten Laeufe (`pi05`, `pi06`, `g08`)
+  konnten nicht ins Repo kopiert werden; der Kartenbericht des Ablegelaufs
+  ist als `raw/g08-FS04-rebased.TXT` gesichert.
+* Vor dem naechsten Lauf: Platz pruefen und alte Scratch-Baeume und
+  `out/*.img` wegraeumen. Der Hinweis steht jetzt in `method/README.TXT`.
+
+### 13.8 Was der naechste Schritt ist
+
+Abbild nach dem Rezept in `pi-probe/STALE-DO-NOT-FLASH.TXT` neu bauen
+(zwei Kommandos), die beiden ausgefallenen Pruefungen aus §13.6 nachholen,
+dann auf der Pi dieselbe Geste wie bei `raw/pi04-FS04.TXT`. Was der Vergleich
+entscheidet, steht in `TASK/FS04-FIX-STATUS-DONE.MD` §5; die Sonde liefert
+jetzt zusaetzlich `timeouts` / `timeouts_by_phase` / die Fehlerbits direkt und
+die `scope.check.*`-Zeilen als Beleg, dass die Summen diesmal aufgehen.

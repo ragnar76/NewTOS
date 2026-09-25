@@ -1,0 +1,69 @@
+==== FS04 probe: kernel started ====
+screen 640x480 stride 640px   desk 640x461   CNTFRQ 62500000 Hz
+drives: C: D: E: F:
+Copy a file from one drive to another now; one block per copy is
+appended below.  Repeat as often as you like.
+emmc after identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+==== end start-up note ====
+
+==== FS04 block 1 : drop ====
+screen 640x480 stride 640px   desk 640x461   CNTFRQ 62500000 Hz
+wall 27766 us (1735375 ticks)
+previous report write 2700 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=6       total=2056     us avg=342    us max=1046   us min=123us
+dev.write_one      n=6       total=590      us avg=98     us max=114    us min=90us
+dev.r.wait_dat     n=6       total=15       us avg=2      us max=12     us min=0us
+dev.r.cmd17        n=6       total=1767     us avg=294    us max=994    us min=77us
+dev.r.read_rdy     n=6       total=4        us avg=0      us max=1      us min=0us
+dev.r.pio          n=6       total=242      us avg=40     us max=54     us min=24us
+dev.r.data_done    n=6       total=4        us avg=0      us max=1      us min=0us
+dev.w.wait_dat     n=6       total=2        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=6       total=25       us avg=4      us max=8      us min=2us
+dev.w.write_rdy    n=6       total=0        us avg=0      us max=0      us min=0us
+dev.w.pio          n=6       total=540      us avg=90     us max=102    us min=84us
+dev.w.data_done    n=6       total=6        us avg=0      us max=1      us min=0us
+cache.read.hit     n=52
+cache.read.miss    n=5
+cache.write.hit    n=6
+cache.flush.wb     n=6
+cache.flush.call   n=5
+gemdos.dispatch    n=45      total=3053     us avg=67     us max=1414   us min=0us
+desk.fun_op        n=1       total=8507164  us avg=8507164us max=8507164us min=8507164us
+desk.copy_pass     n=1       total=8506624  us avg=8506624us max=8506624us min=8506624us
+dofcopy.Fopen      n=1       total=80       us avg=80     us max=80     us min=80us
+dofcopy.outname    n=1       total=1508     us avg=1508   us max=1508   us min=1508us
+dofcopy.Fcreate    n=1       total=214      us avg=214    us max=214    us min=214us
+dofcopy.Fread      n=2       total=342      us avg=170    us max=330    us min=12us
+dofcopy.Fwrite     n=1       total=754      us avg=754    us max=754    us min=754us
+dofcopy.Fdatime    n=1       total=233      us avg=233    us max=233    us min=233us
+dofcopy.Fclose     n=1       total=112      us avg=112    us max=112    us min=112us
+dofcopy.total      n=1       total=3519     us avg=3519   us max=3519   us min=3519us
+blk.read_blocks    calls=6       amount=6         max/call=1 min/call=1
+blk.write_blocks   calls=6       amount=6         max/call=1 min/call=1
+desk.fun_drag      n=1       total=8528464  us avg=8528464us max=8528464us min=8528464us
+desk.rebuild_win   n=1       total=12090    us avg=12090  us max=12090  us min=12090us
+desk.redraw_desk   n=2       total=16971    us avg=8485   us max=8503   us min=8468us
+fb.clean           calls=2310    amount=87080336  max/call=1026752 min/call=4
+fb.clean_lines     calls=2310    amount=1362122   max/call=16043 min/call=1
+scope.check.r      n(read_one)=6 n(sectors)=6  total=2056us phases=2032us diff=23us
+scope.check.w      n(write_one)=6 n(sectors)=6  total=590us phases=576us diff=14us
+emmc.errors        timeouts=0(+0) io=2(+0) recoveries=2(+0) nonrecov=0(+0) other=0(+0)
+emmc.timeouts_by_phase cmd_inhibit=0(+0) dat_inhibit=0(+0) cmd_done=0(+0) read_rdy=0(+0) write_rdy=0(+0) read_done=0(+0) write_done=0(+0)
+emmc.error_bits    CTO=2(+0) CCRC=0(+0) CEND=0(+0) CBAD=0(+0) DTO=0(+0) DCRC=0(+0) DEND=0(+0)
+emmc.last          status=0x00018001 phase=cmd_done
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=2        us max=2us
+  0x3c  n=1      total=171      us max=171us
+  0x3d  n=1      total=48       us max=48us
+  0x3e  n=2      total=100      us max=96us
+  0x3f  n=2      total=327      us max=317us
+  0x40  n=1      total=744      us max=744us
+  0x4e  n=2      total=1426     us max=1414us
+  0x4f  n=32     total=32       us max=8us
+  0x54  n=1      total=4        us max=4us
+  0x57  n=1      total=196      us max=196us
+==== end block 1 ====
