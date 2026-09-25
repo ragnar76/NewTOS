@@ -92,6 +92,17 @@ Tick each line; every line points at the section that explains it.
 
 - [ ] Every overlay file carries a header saying **why** it exists and what it
       changes against upstream (the pattern of `sdk/overlays/*`)
+- [ ] **A moved library pin rebases every full-file overlay onto it.** An
+      overlay that is a whole copy of an upstream file silently reverts
+      everything upstream fixed in that file since the old pin. PORT03:
+      `sdk/cflib/overlay/fontsel.c` would have taken back the leak fix of
+      `399f7a6`. Diff the old pin's original against the new one first, then
+      re-apply the overlay's own change on top
+- [ ] **The new tarball actually arrives.** A library's `build-*.sh` must
+      re-extract when the tarball is newer than the tree, and `sdk/lib-stale.sh`
+      must watch the tarball. cflib has both since PORT03; **mintlib and gemlib
+      do not** ([PORT04](../../TASK/PORT04.md)) — until then use
+      `MINTLIB_REFRESH=1` / `GEMLIB_REFRESH=1`
 - [ ] `sdk/libc/expected-failures.txt` unchanged, or a new entry with a
       reason and a ticket → [04](04-porting-anatomy.md#the-library-chain-and-its-staleness-test)
 - [ ] Measured evidence kept (serial log, screendump, hashes), not claims
