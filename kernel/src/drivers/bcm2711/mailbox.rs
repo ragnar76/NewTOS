@@ -342,6 +342,13 @@ const PROPTAG_GET_TEMPERATURE: u32 = 0x0003_0006;
 
 /// Clock id of the ARM core clock (`bcmpropertytags.h:184`).
 pub const CLOCK_ID_ARM: u32 = 3;
+/// Clock id of the (legacy Arasan) EMMC controller — `bcmpropertytags.h:182`
+/// (`CLOCK_ID_EMMC = 1`), the same id `docs/hardware/emmc-sd.md` §2 names as
+/// the method for learning the SD base clock.
+pub const CLOCK_ID_EMMC: u32 = 1;
+/// Clock id of the EMMC2 controller, the one the RPi4's microSD slot hangs
+/// on — `bcmpropertytags.h:186` (`CLOCK_ID_EMMC2 = 12`).
+pub const CLOCK_ID_EMMC2: u32 = 12;
 /// The only SoC temperature sensor id the firmware defines
 /// (`bcmpropertytags.h:196`).
 pub const TEMPERATURE_ID: u32 = 0;
