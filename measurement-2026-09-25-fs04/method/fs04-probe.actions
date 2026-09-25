@@ -1,0 +1,12 @@
+# FS04 probe run: open the C:\ window and stop, so probe_icons prints the
+# click points of the desktop icons (C:..F:) and of the window's items.
+100 parkbr
+300 move 600 240
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+3000 mark B_WIN
+3600 parkbr
+6000 pause

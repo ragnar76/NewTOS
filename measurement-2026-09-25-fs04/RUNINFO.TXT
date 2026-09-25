@@ -1,0 +1,320 @@
+measurement-2026-09-25-fs04
+  FS04 Phase 1 -- wo die Sekunden beim Kopieren ueber eine Partitionsgrenze
+  hingehen: die Messung, nicht der Fix
+===========================================================================
+
+Base: branch desk-rebuild, HEAD 31fef0f ("docs(task): FS04 - the EMMC driver
+is in scope too, and it is measured per command").  Am gemeinsamen Baum wurde
+NICHTS geaendert ausser diesem Messverzeichnis und TASK/FS04-STATUS-*.MD.
+Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts committet, kein
+`git checkout/restore/clean/stash/reset`; die SD-Karte unter /Volumes/BOOT
+wurde nicht beruehrt.  Alle Instrumentierung liegt auf SCRATCH-Kopien des
+Baums unter dem Job-Scratchpad, nie im gemeinsamen Baum.
+
+Maschine: QEMU 11.0.2, `-M raspi4b`, `-display none`, serial in eine Datei,
+QMP-Screendumps.  Kein `*.img` in diesem Verzeichnis (Regel des Tickets).
+
+Host: macOS (Darwin 27).  Kein `timeout` vorhanden -- die QEMU-Laeufe sind mit
+einem Hintergrund-`sleep` + `kill` begrenzt (method/run-qemu.sh).
+
+
+0. WAS GEMESSEN WURDE, IN EINEM SATZ
+---------------------------------------------------------------------------
+Eine 64-Byte-Textdatei von C: nach D: -- ueber eine echte Partitionsgrenze --
+einmal als echte Zieh-Geste im Desktop (IKBD-Injektor, headless) und einmal
+als direkter Aufruf derselben Desktop-Funktion, mit Zeitstempeln an jeder
+Schichtgrenze und Zaehlern bis hinunter auf jedes einzelne SD-Kommando.
+
+ERGEBNIS VORWEG: in QEMU tritt der Effekt NICHT auf.  Die ganze Geste kostet
+nach dem OK-Klick **25,0 ms**, nicht 3-4 s.  Das ist selbst ein Befund; was
+sich zwischen Emulator und Pi unterscheidet und welche Messung auf echter
+Hardware die Frage entscheidet, steht in Abschnitt 6 und 7.
+
+
+1. KARTENABBILD -- VIER PARTITIONEN (method/make-sd-image-4part.sh)
+---------------------------------------------------------------------------
+tools/make-sd-image.sh baut EINE Partition; damit laesst sich eine Kopie ueber
+eine Partitionsgrenze nicht nachstellen.  Das neue Skript baut die Form der
+physischen Karte nach:
+
+  2048 MiB gesamt (Zweierpotenz -- QEMUs SD-Modell verlangt das)
+  part0  type=0x06  start_lba=2048     976568 Sektoren (476,8 MiB)  -> C:
+  part1  type=0x06  start_lba=978944   976568 Sektoren (476,8 MiB)  -> D:
+  part2  type=0x06  start_lba=1955840  976568 Sektoren (476,8 MiB)  -> E:
+  part3  type=0x05  (extended) -> ein logisches FAT16-Volume          -> F:
+
+  BPB je Partition: bps=512 spc=16 (8 KiB/Cluster) res=1 nfat=2 rde=512
+                    spf=239 numcl=61003
+
+Der INHALT von C: ist wortgleich der eines Standardabbilds aus
+tools/make-sd-image.sh -- derselbe Desktop, den jede andere Messung benutzt.
+Auf D: liegt zusaetzlich DPROBE.TXT, damit D: nicht voellig leer ist; das Ziel
+der gemessenen Kopie ist trotzdem ein freier Namensraum, wie im Ticket.
+Der Kernel meldet beim Start: "[desk] desktop up (4 drives, ...)".
+
+method/seed-bigfile.sh legt zusaetzlich C:\BIG1M.BIN (1 MiB) an -- fuer die
+schaerfste Frage des Tickets (Abschnitt 4).
+
+
+2. INSTRUMENTIERUNG (method/fs04_probe_patch.py, fs04_redraw_bench.py)
+---------------------------------------------------------------------------
+Alle Zaehler liegen im .bss, werden mit relaxten Atomics auf dem
+Einkern-Trap-Pfad gefuehrt und EINMAL nach der gemessenen Operation gedruckt.
+Waehrend der Operation geht kein Byte auf die serielle Schnittstelle: bei
+115200 Baud kostet ein Zeichen ~87 us und wuerde genau die Verteilung
+dominieren, die gemessen werden soll.  Zeitquelle ist CNTPCT_EL0
+(62,5 MHz in QEMU raspi4b, laut Startzeile des Laufs).
+
+Angezapft, von oben nach unten:
+
+  desk::dir::fun_drag        -- die ganze Fallenbehandlung (Kopie + Fensterneu-
+                                aufbau + Vollbild-Neuzeichnen)
+  desk::dir::fun_op          -- Zaehl-Durchgang, Pufferbelegung, Kopier-Durchgang
+  desk::dir::d_dofcopy       -- Fopen/output_fname/Fcreate/Fread/Fwrite/
+                                Fdatime/Fclose einzeln
+  gemdos::dispatch           -- Aufrufzahl + Zeit je OPCODE (256 Faecher)
+  bdos::fs::cache            -- Treffer/Fehlschlag lesen und schreiben,
+                                Rueckschreiben bei Verdraengung und bei flush()
+  BlockDev::read_blocks/
+           write_blocks      -- AUFRUFE und SEKTOREN je Aufruf (max/min)
+  emmc::read_one/write_one   -- je SD-Kommando, in fuenf Phasen zerlegt:
+                                DAT_INHIBIT-Warten, CMD17/CMD24, READ/WRITE_RDY,
+                                PIO-Schleife, DATA_DONE
+  emmc::wait_clear/
+       wait_interrupt        -- Zahl der Abfrageschleifen je Warten (SPIN_LIMIT
+                                ist 1_000_000)
+  vdi_backend::clean         -- Bytes und 64-Byte-Cachezeilen je `dc cvac`-Lauf
+
+Die Geste selbst treibt der Scratch-IKBD-Injektor aus
+measurement-2026-09-17-h03 / -2026-09-25-port03 (unveraendert uebernommen),
+dazu method/fs04_mark_hooks.py fuer die zwei MARK-Schritte RESET/REPORT.
+Klickpunkte stammen aus einem eigenen Sondierungslauf
+(method/fs04-probe.actions, raw/p01-probe-clickpoints.log), nicht aus Schaetzung:
+  Desktop-Symbole  C (38,35)  D (129,35)  E (220,35)  F (311,35)
+  C:\-Fenster      README.TXT (179,271)
+  COPY FILE(S)     OK (233,301)
+
+Patches als Diff: method/fs04-probe-640.diff, method/fs04-probe-1920.diff,
+method/fs04-gesture.diff.
+
+
+3. DIE GESTE (raw/g05-gesture-640x480.log)
+---------------------------------------------------------------------------
+Alt+C oeffnet C:\, README.TXT wird aufgenommen und auf das D:-Laufwerkssymbol
+gezogen, der Bestaetigungsdialog COPY FILE(S) mit OK beantwortet.  Die Uhr und
+alle Zaehler starten in dem Augenblick, in dem `form_do` mit OK zurueckkehrt --
+die Lesezeit des Anwenders wird nicht mitgezaehlt, gemessen wird die Arbeit der
+Maschine danach.  Danach lag D:\README.TXT (64 Bytes) auf der Karte;
+fsck_msdos -n auf C:, D: und E: ist sauber.
+
+  Wandzeit vom OK-Klick bis zum Ende der Fallenbehandlung   25 021 us
+
+  davon
+    d_dofcopy gesamt (Datei auf, lesen, schreiben, zu)       4 846 us   19,4 %
+    rebuild_window (Verzeichnis neu einlesen + 1 Neuzeichnen)10 370 us
+    redraw_desktop, 2 Aufrufe a ~6 960 us                    13 921 us
+    (ein redraw_desktop steckt in rebuild_window, dir.rs:2300)
+    Dialog/Buchhaltung des Desktops (Rest)                   ~2 845 us   11,4 %
+    => Verzeichnis-Neueinlesen + zwei Vollbild-Neuzeichnen   17 330 us   69,3 %
+
+  Blockebene
+    blk.read_blocks   calls=6   Sektoren=6   max/call=1  min/call=1
+    blk.write_blocks  calls=6   Sektoren=6   max/call=1  min/call=1
+    dev.read_one   n=6   gesamt 2 126 us   Durchschnitt 354  max 907 us
+    dev.write_one  n=6   gesamt   988 us   Durchschnitt 164  max 398 us
+    => Geraetezeit 3 114 us = 12,4 % der Wandzeit
+
+  EMMC je Kommando (QEMU)
+    dev.r.wait_dat    6x  gesamt    10 us
+    dev.r.cmd17       6x  gesamt 1 864 us  (max 830)
+    dev.r.read_rdy    6x  gesamt     7 us
+    dev.r.pio         6x  gesamt   228 us
+    dev.r.data_done   6x  gesamt     7 us
+    dev.w.wait_dat    6x  gesamt    47 us
+    dev.w.cmd24       6x  gesamt    25 us
+    dev.w.write_rdy   6x  gesamt    69 us
+    dev.w.pio         6x  gesamt   687 us
+    dev.w.data_done   6x  gesamt    86 us
+    emmc.spin        60 Wartevorgaenge, 0 Abfrageschleifen insgesamt
+                     -- in QEMU ist jedes Warten beim ersten Lesen erfuellt
+
+  Sektorcache
+    cache.read.hit 47   cache.read.miss 5
+    cache.write.hit 6   cache.flush.call 5   cache.flush.wb 6
+
+  Rahmenpuffer-Cachepflege
+    fb.clean        2 282 Aufrufe, 86 305 176 Bytes Spannweite,
+                    groesster Einzelaufruf 1 026 752 Bytes
+    fb.clean_lines  1 349 997 `dc cvac` auf 64-Byte-Zeilen
+    (bei einem 640x480x4 = 1,23-MiB-Bildschirm: das 70fache des ganzen
+     Bildschirms; der groesste Einzelaufruf allein 84 % davon)
+
+  GEMDOS-Profil der Geste (Opcode: Aufrufe, Gesamtzeit)
+    0x1a Fsetdta   2x      1 us
+    0x3c Fcreate   1x  1 084 us
+    0x3d Fopen     1x     28 us
+    0x3e Fclose    2x    132 us
+    0x3f Fread     2x    318 us
+    0x40 Fwrite    1x  1 152 us
+    0x4e Fsfirst   2x  1 480 us
+    0x4f Fsnext   31x     33 us
+    0x54 Fattrib   1x      3 us
+    0x57 Fdatime   1x    258 us
+    ** KEIN 0x36 Dfree.  Der Kopiervorgang liest die freie Kapazitaet nicht. **
+
+Der direkte Aufruf derselben Funktion ohne Geste (raw/r03, Fall A) kommt auf
+9 515 us Wandzeit, d_dofcopy 4 932 us, gleiche 6+6 Sektorzugriffe -- die
+Kopie selbst ist in beiden Faellen dieselbe.
+
+
+4. DIE SCHAERFSTE FRAGE DES TICKETS: ZERFAELLT DER 32-KiB-PUFFER?
+---------------------------------------------------------------------------
+JA, vollstaendig.  Gemessen an C:\BIG1M.BIN (1 MiB) nach D:
+(raw/r03-driver-640x480.log, Fall E-big-1MiB-C-to-D):
+
+  33 Fread a 32 KiB   ->  2 518 Geraetelesungen, JEDE genau 1 Sektor
+  32 Fwrite a 32 KiB  ->  2 307 Geraeteschreibungen, JEDE genau 1 Sektor
+  blk.read_blocks   calls=2518  Sektoren=2518  max/call=1
+  blk.write_blocks  calls=2307  Sektoren=2307  max/call=1
+
+Also: ein 32-KiB-Fread endet unten als 64 einzelne CMD17, ein 32-KiB-Fwrite
+als 64 einzelne CMD24.  Der Puffer ueberlebt die Schichtgrenze nicht -- weder
+im Dateisystem (`fread`/`fwrite` arbeiten sektorweise, file.rs:337-360 und
+401-440, durch einen 512-Byte-Stapelpuffer), noch im Sektorcache (16 Faecher
+a 512 Byte, cache.rs:18-19), noch im Treiber (`read_blocks`/`write_blocks`
+zerlegen jeden Auftrag in `read_one`/`write_one`, emmc.rs:339-357).
+Es gibt auf dem ganzen Weg keine einzige Mehrsektor-Uebertragung.
+
+Fuer eine KLEINE Datei ist das allerdings gegenstandslos: dort ist es ohnehin
+ein Sektor.  Die 3-4 Sekunden des Tickets kann dieser Befund nicht erklaeren.
+
+Nebenbefund derselben Messung: 132 338 Cache-Lesezugriffe fuer 1 MiB.
+Davon stammen 130 048 aus `fwrite`, das `resolve_cluster` FUER JEDEN SEKTOR
+aufruft und die Cluster-Kette jedesmal vom Anfang durchlaeuft
+(file.rs:401-406 + 447-470) -- Summe floor(k/16) ueber 2048 Sektoren.  Das ist
+O(n^2) in der Dateilaenge.  Fuer 64 Byte null, fuer 1 MiB 130 000 Nachschlage.
+
+
+5. EINZELNE TEURE OPERATIONEN, GEMESSEN
+---------------------------------------------------------------------------
+  Dfree auf einer 500-MB-FAT16-Partition (count_free_clusters, fat.rs:392):
+    238 Einzelsektor-Lesungen, 30 314 us in QEMU.
+    NICHT im Kopierpfad (kein 0x36 im GEMDOS-Profil der Geste).
+    Auf der Pi waeren das bei ~512 us/Sektor rund 122 ms -- als Zahl
+    festgehalten fuer den Fall, dass jemand Dfree spaeter in den Pfad legt.
+
+  Ein voller Desktop-Neuaufbau (redraw_desktop), 5 Durchlaeufe gemittelt:
+    640x480    3,13 ms je Neuzeichnen,   61 539 `dc cvac`-Zeilen
+    1920x1080 19,39 ms je Neuzeichnen,  256 179 `dc cvac`-Zeilen
+    (raw/r03 bzw. raw/r04, Fall G-redraw-x5; die 1920x1080-Variante erzwingt
+     die Geometrie im Scratch, method/fs04_redraw_bench.py)
+    Verhaeltnis: Zeit x6,19, Cachezeilen x4,16, Pixel x6,75.
+
+  Langsamste Einzeloperation im ganzen Kopiervorgang (QEMU):
+    ein CMD17 mit 907 us (dev.read_one max), gefolgt von einem CMD24
+    mit 398 us.  Alles andere liegt unter 200 us.
+
+
+6. WAS SICH ZWISCHEN EMULATOR UND PI UNTERSCHEIDET
+---------------------------------------------------------------------------
+Die Messung schliesst in QEMU bei 25,0 ms ab.  Fuer die 3-4 s der Pi fehlt ein
+Faktor von rund 140.  Vier Achsen, an denen QEMU und Pi ueberhaupt
+auseinanderfallen koennen -- mit der Zahl, die jede davon tragen muesste:
+
+  A) DAS SD-KOMMANDO SELBST.  Der ganze Vorgang besteht aus genau 12
+     Einzelsektor-Kommandos (6x CMD17, 6x CMD24).  Damit die Sekunden hier
+     entstehen, muesste EIN Kommando im Mittel 250-333 ms kosten.  QEMU
+     modelliert die Karte nicht: `emmc.spin` zaehlt in QEMU 0 Abfrageschleifen,
+     `dev.w.wait_dat` 47 us.  Auf echter Hardware sind genau diese beiden
+     Zaehler die Programmierzeit der Karte.  Die Instrumentierung ist dafuer
+     gebaut und laeuft unveraendert auf der Pi.
+
+     Strukturell (aus dem Quelltext, nicht gemessen): der Treiber faehrt die
+     Karte einsporig -- `init_card` setzt nie ACMD6 / CONTROL0.HCTL_DWIDTH, so
+     dass 512 Byte bei 25 MHz 164 us reine Datenzeit kosten statt 41 us im
+     4-Bit-Modus --, nutzt nur Einzelblock-CMD17/CMD24 (emmc.rs:84-86), kein
+     CMD18/CMD25, kein DMA, keine Interrupts (emmc.rs:1-7), und wartet mit
+     abgezaehlten Leerschleifen (SPIN_LIMIT = 1_000_000, emmc.rs:91).
+     Ein einziger Ablauf dieser Schleife kostet auf der Pi in der
+     Groessenordnung 100 ms; sie kann also sekundenschwer werden, wenn sie
+     oefter leer laeuft.  Ob sie das tut, sagt `emmc.spin` auf der Pi.
+
+  B) DIE BILDSCHIRMGEOMETRIE.  QEMU meldet 640x480
+     ("[fb] VideoCore display geometry detected: 640x480").  Auf der Pi ist es
+     der HDMI-Modus des Monitors; die eingebaute Rueckfallebene ist 1920x1080
+     (kernel/src/drivers/mod.rs:31-33).  Gemessene Skalierung des
+     Neuzeichnens: x6,19 in der Zeit, x4,16 in der Cachepflege.  Da 69 % des
+     Vorgangs Neuaufbau und Neuzeichnen sind, verschiebt das allein ~17 ms auf
+     ~100 ms -- deutlich, aber nicht 3,5 s.
+
+  C) DIE CACHEPFLEGE.  1 349 997 `dc cvac` pro Fallenbehandlung bei 640x480,
+     bei 1920x1080 entsprechend etwa 5,6 Millionen.  In QEMU-TCG ist `dc cvac`
+     ein Nichts; auf einem Cortex-A72 ist jede einzelne eine echte
+     Cache-Operation samt Rueckschreiben.  Die Ursache der Vervielfachung ist
+     lesbar: `clean` in kernel/src/vdi_backend.rs:284-305 pflegt "die
+     zusammenhaengende Adressspanne, die das Rechteck einschliesst" -- fuer ein
+     schmales hohes Rechteck also das ganze Zeilenband.  Der groesste
+     Einzelaufruf pflegte 1 026 752 Byte fuer EIN Primitiv, 84 % des
+     Bildschirms.  GROESSENORDNUNG, nicht Messung: 5,6 Mio Zeilen liegen bei
+     grosszuegiger Rechnung im Bereich 0,1-0,5 s, nicht 3,5 s.
+
+  D) DER SD-CONTROLLER IST NICHT DERSELBE.  QEMU haengt die Karte an den
+     Alt-EMMC bei 0xFE30_0000 ("[emmc] SD card on controller @ ...fe300000"),
+     die echte Pi 4 an EMMC2 bei 0xFE34_0000.  Es ist also auf der Pi ein
+     anderer Controller mit einer anderen Basisfrequenz
+     (CAPABILITIES[15:8], emmc.rs:216-231), der den Teiler bestimmt.  Welche
+     SD-Taktrate dort tatsaechlich herauskommt, ist in QEMU nicht messbar.
+
+Keine dieser vier Achsen traegt in der Rechnung allein 3,5 s.  Das ist der
+ehrliche Stand: die Messung kann keine Schicht mit den Sekunden BELASTEN, und
+sie kann -- ausser fuer QEMU selbst -- auch keine ENTLASTEN.
+
+
+7. DIE MESSUNG, DIE ES AUF ECHTER HARDWARE ENTSCHEIDET
+---------------------------------------------------------------------------
+Derselbe Patchsatz laeuft unveraendert auf der Pi und druckt dieselbe Tabelle
+nach der Geste auf die serielle Konsole.  Es ist kein Klick noetig ausser der
+Geste selbst; das `[fs04] ===== drop =====`-Blockende steht im Log.
+
+  cd <frische Kopie des Baums, NICHT der gemeinsame Baum>
+  python3 measurement-2026-09-25-fs04/method/fs04_probe_patch.py . gesture
+  cargo run -p xtask --release -- build --board rpi4 --release
+
+  (fuer einen Lauf ohne Injektor reicht `gesture`; `fun_drag` setzt die Zaehler
+   selbst zurueck und druckt am Ende von selbst.  Die Marke RESET/REPORT wird
+   nur gebraucht, wenn zusaetzlich der IKBD-Injektor mitlaeuft.)
+
+Auf der Pi dann eine Textdatei von einer Partition auf eine andere ziehen und
+die Tabelle ablesen.  Drei Zeilen entscheiden:
+
+  * `dev.read_one` / `dev.write_one` -- Summe und max.  Sind es dort
+    Hunderte von Millisekunden, liegen die Sekunden im EMMC-/Kartenpfad, und
+    `dev.w.wait_dat` bzw. `dev.r.cmd17` sagen in welcher Phase.
+  * `emmc.spin` -- Abfrageschleifen je Warten.  Nahe 1 000 000 heisst: eine
+    Wartschleife laeuft leer aus, das kostet je Vorkommen ~0,1 s.
+  * `desk.redraw_desk` / `desk.rebuild_win` / `fb.clean_lines` -- sind es dort
+    Sekunden, liegen sie in der VDI-/Rahmenpuffer-Ebene, und die Spannweiten-
+    pflege in vdi_backend.rs:284-305 ist der erste Ort, an dem nachzusehen ist.
+
+Dazu gehoert die Kopfzeile des Startprotokolls
+"[fb] VideoCore display geometry detected: WxH" -- ohne sie laesst sich die
+gemessene Skalierung aus Abschnitt 5 nicht anwenden.
+
+
+8. LAEUFE IN DIESEM VERZEICHNIS
+---------------------------------------------------------------------------
+  raw/p01-probe-clickpoints.log   Sondierung: Klickpunkte der Symbole/Fenster
+  raw/r03-driver-640x480.log      direkte Aufrufe A-G bei 640x480
+                                  (A kalt C->D, B warm C->D, C gleiche
+                                   Partition, D kalt C->E, E 1 MiB C->D,
+                                   F Dfree auf D:, G 5x redraw_desktop)
+  raw/r04-driver-1920x1080.log    dieselben Faelle mit erzwungener
+                                  1920x1080-Geometrie
+  raw/g05-gesture-640x480.log     die echte Zieh-Geste, Abschnitt 3
+  screendumps/01-c-window.png     C:\-Fenster, aus dem gezogen wird
+  screendumps/02-copy-confirm-dialog.png  der COPY FILE(S)-Dialog (OK-Punkt)
+  screendumps/03-after-drop.png   nach dem Ablegen
+
+Pruefungen: fsck_msdos -n auf C:, D: und E: des Abbilds nach der Geste --
+sauber (51/7/4 Dateien, keine Beanstandung).  D:\README.TXT mit 64 Byte
+vorhanden, also wurde wirklich kopiert.

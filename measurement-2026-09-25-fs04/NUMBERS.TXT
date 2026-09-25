@@ -1,0 +1,68 @@
+FS04 -- die Rohzahlen auf einer Seite
+=====================================
+Alle Zeiten aus CNTPCT_EL0 (62 500 000 Hz in QEMU raspi4b), Zaehler aus
+den .bss-Faechern der Sonde.  Quelle je Zeile in Klammern.
+
+
+1. DIE GESTE: C:\README.TXT (64 Byte) auf das D:-Symbol, ab OK-Klick
+   (raw/g05-gesture-640x480.log, Block "===== drop =====")
+
+   Wandzeit                                     25 021 us   100,0 %
+     d_dofcopy gesamt                            4 846 us    19,4 %
+       davon Geraetezeit (12 Kommandos)          3 114 us    12,4 %
+     rebuild_window (inkl. 1 redraw)            10 370 us
+     redraw_desktop (2 Aufrufe)                 13 921 us
+     Verzeichnis + Neuzeichnen zusammen         17 330 us    69,3 %
+     Desktop-Dialog/Buchhaltung (Rest)          ~2 845 us    11,4 %
+
+   Sektorzugriffe   Lesen 6, Schreiben 6, JEDER Aufruf genau 1 Sektor
+   langsamste Einzeloperation   CMD17 mit 907 us
+   emmc.spin        60 Wartevorgaenge, 0 Abfrageschleifen
+   fb.clean         2 282 Aufrufe / 86 305 176 Byte / 1 349 997 Cachezeilen
+   Dfree (0x36)     kommt im ganzen Vorgang NICHT vor
+
+
+2. DIESELBE KOPIE OHNE GESTE (direkter fun_op-Aufruf)
+   (raw/r03-driver-640x480.log)
+
+   Fall                                 Wandzeit  d_dofcopy  Lesen/Schreiben
+   A  kalt   C:\README.TXT  ->  D:\      9 515 us   4 932 us      6 / 6
+   B  warm   C:\HELLO.TXT   ->  D:\      3 492 us   1 074 us      2 / 6
+   C  gleiche Partition C:\ -> C:\SUB\   4 422 us   2 000 us      6 / 6
+   D  kalt   C:\README.TXT  ->  E:\      5 981 us   3 561 us      6 / 6
+
+   Die Partitionsgrenze macht in der ZAHL der Zugriffe keinen Unterschied.
+
+
+3. DER 32-KiB-PUFFER (Fall E: C:\BIG1M.BIN, 1 MiB, C: -> D:)
+   (raw/r03-driver-640x480.log)
+
+   Wandzeit                                    559 786 us
+   Fread   33 Aufrufe a 32 KiB                 220 591 us
+   Fwrite  32 Aufrufe a 32 KiB                 336 078 us
+   blk.read_blocks    calls=2518  Sektoren=2518  max/call=1  min/call=1
+   blk.write_blocks   calls=2307  Sektoren=2307  max/call=1  min/call=1
+   cache.read.hit     132 338     cache.read.miss   2 518
+   cache.write.miss     2 048     cache.evict.wb    1 824
+   cache.flush.call        36     cache.flush.wb      483
+
+   => 32 KiB Fread  = 64 einzelne CMD17
+      32 KiB Fwrite = 64 einzelne CMD24
+      130 048 der 132 338 Cachelesungen stammen aus dem
+      resolve_cluster-Kettenlauf in fwrite (O(n^2), file.rs:401-406/447-470)
+
+
+4. EINZELKOSTEN
+   Dfree auf 500-MB-FAT16 (F)      238 Sektoren   30 314 us  (raw/r03)
+   redraw_desktop  640x480          61 539 Zeilen  3 130 us  (raw/r03, G)
+   redraw_desktop 1920x1080        256 179 Zeilen 19 390 us  (raw/r04, G)
+   Skalierung 480 -> 1080          Zeit x6,19   Cachezeilen x4,16
+                                   (Pixel x6,75)
+
+
+5. WAS DARAUS FOLGT, RECHNERISCH
+   Fuer 3,5 s bei 12 Sektorkommandos muesste ein Kommando im Mittel
+   292 ms kosten.  In QEMU kostet das teuerste 0,907 ms.
+   Fuer 3,5 s aus der Cachepflege muesste eine `dc cvac` 2,6 us kosten
+   (bei 1 349 997) bzw. 0,6 us bei 1920x1080-Skalierung (5,6 Mio).
+   Beides ist auf der Pi messbar -- mit genau diesem Patchsatz.

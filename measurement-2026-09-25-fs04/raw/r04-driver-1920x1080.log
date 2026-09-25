@@ -1,0 +1,325 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x000000000031d000 (2740224 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 1920x1080 pitch 7680 virtual height 2160 -> 2 screen page(s), 16200 KiB
+[fb] VideoCore fb up: 1920x1080 stride 1920px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-25 09:41:20
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01802000 len=4147200 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (4 drives, 0 window(s) from the context)
+[fs04] driver start; CNTFRQ=62500000 Hz
+[fs04] A-cold-C-to-D: C:\README.TXT (64 bytes) -> D:\
+[fs04] A-cold-C-to-D: fun_op returned true
+[fs04] ===== A-cold-C-to-D =====
+[fs04] wall 11799 us  (737438 ticks @ 62500000 Hz)
+[fs04] dev.read_one       n=6       total=1812     us  avg=302    us  max=718    us  min=116us
+[fs04] dev.write_one      n=6       total=818      us  avg=136    us  max=334    us  min=88us
+[fs04] dev.r.wait_dat     n=6       total=6        us  avg=0      us  max=2      us  min=0us
+[fs04] dev.r.cmd17        n=6       total=1575     us  avg=262    us  max=690    us  min=74us
+[fs04] dev.r.read_rdy     n=6       total=5        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.r.pio          n=6       total=218      us  avg=36     us  max=54     us  min=25us
+[fs04] dev.r.data_done    n=6       total=4        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.w.wait_dat     n=6       total=32       us  avg=5      us  max=30     us  min=0us
+[fs04] dev.w.cmd24        n=6       total=22       us  avg=3      us  max=9      us  min=2us
+[fs04] dev.w.write_rdy    n=6       total=68       us  avg=11     us  max=64     us  min=0us
+[fs04] dev.w.pio          n=6       total=596      us  avg=99     us  max=139    us  min=84us
+[fs04] dev.w.data_done    n=6       total=63       us  avg=10     us  max=58     us  min=0us
+[fs04] cache.read.hit     n=11      total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.read.miss    n=5       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.write.hit    n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.wb     n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.call   n=5       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] gemdos.dispatch    n=10      total=3848     us  avg=384    us  max=1242   us  min=0us
+[fs04] desk.fun_op        n=1       total=11731    us  avg=11731  us  max=11731  us  min=11731us
+[fs04] desk.count_pass    n=1       total=340      us  avg=340    us  max=340    us  min=340us
+[fs04] desk.copy_pass     n=1       total=11280    us  avg=11280  us  max=11280  us  min=11280us
+[fs04] desk.buf_alloc     n=1       total=30       us  avg=30     us  max=30     us  min=30us
+[fs04] dofcopy.Fopen      n=1       total=21       us  avg=21     us  max=21     us  min=21us
+[fs04] dofcopy.outname    n=1       total=1076     us  avg=1076   us  max=1076   us  min=1076us
+[fs04] dofcopy.Fcreate    n=1       total=1015     us  avg=1015   us  max=1015   us  min=1015us
+[fs04] dofcopy.Fread      n=2       total=262      us  avg=130    us  max=252    us  min=10us
+[fs04] dofcopy.Fwrite     n=1       total=1249     us  avg=1249   us  max=1249   us  min=1249us
+[fs04] dofcopy.Fdatime    n=1       total=227      us  avg=227    us  max=227    us  min=227us
+[fs04] dofcopy.Fclose     n=1       total=137      us  avg=137    us  max=137    us  min=137us
+[fs04] dofcopy.total      n=1       total=4181     us  avg=4181   us  max=4181   us  min=4181us
+[fs04] blk.read_blocks    calls=6       amount=6         max/call=1 min/call=1
+[fs04] blk.write_blocks   calls=6       amount=6         max/call=1 min/call=1
+[fs04] fb.clean           calls=461     amount=31826900  max/call=1422104 min/call=4
+[fs04] fb.clean_lines     calls=461     amount=497656    max/call=22221 min/call=1
+[fs04] emmc.spin          calls=60      amount=0         max/call=0 min/call=0
+[fs04] --- GEMDOS calls (opcode: n, total us, max us) ---
+[fs04]   0x1a  n=1      total=0        us  max=0us
+[fs04]   0x3c  n=1      total=998      us  max=998us
+[fs04]   0x3d  n=1      total=6        us  max=6us
+[fs04]   0x3e  n=2      total=128      us  max=128us
+[fs04]   0x3f  n=2      total=253      us  max=246us
+[fs04]   0x40  n=1      total=1242     us  max=1242us
+[fs04]   0x4e  n=1      total=1004     us  max=1004us
+[fs04]   0x57  n=1      total=215      us  max=215us
+[fs04] ===== end A-cold-C-to-D =====
+[fs04] B-warm-C-to-D: C:\HELLO.TXT (32 bytes) -> D:\
+[fs04] B-warm-C-to-D: fun_op returned true
+[fs04] ===== B-warm-C-to-D =====
+[fs04] wall 6578 us  (411187 ticks @ 62500000 Hz)
+[fs04] dev.read_one       n=2       total=474      us  avg=237    us  max=261    us  min=213us
+[fs04] dev.write_one      n=6       total=562      us  avg=93     us  max=102    us  min=86us
+[fs04] dev.r.wait_dat     n=2       total=1        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.r.cmd17        n=2       total=387      us  avg=193    us  max=219    us  min=168us
+[fs04] dev.r.read_rdy     n=2       total=1        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.r.pio          n=2       total=65       us  avg=32     us  max=40     us  min=24us
+[fs04] dev.r.data_done    n=2       total=2        us  avg=1      us  max=1      us  min=1us
+[fs04] dev.w.wait_dat     n=6       total=2        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.w.cmd24        n=6       total=14       us  avg=2      us  max=3      us  min=2us
+[fs04] dev.w.write_rdy    n=6       total=4        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.w.pio          n=6       total=531      us  avg=88     us  max=98     us  min=80us
+[fs04] dev.w.data_done    n=6       total=6        us  avg=0      us  max=1      us  min=0us
+[fs04] cache.read.hit     n=14      total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.read.miss    n=2       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.write.hit    n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.wb     n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.call   n=5       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] gemdos.dispatch    n=10      total=1071     us  avg=107    us  max=508    us  min=0us
+[fs04] desk.fun_op        n=1       total=6578     us  avg=6578   us  max=6578   us  min=6578us
+[fs04] desk.count_pass    n=1       total=6        us  avg=6      us  max=6      us  min=6us
+[fs04] desk.copy_pass     n=1       total=6565     us  avg=6565   us  max=6565   us  min=6565us
+[fs04] desk.buf_alloc     n=1       total=6        us  avg=6      us  max=6      us  min=6us
+[fs04] dofcopy.Fopen      n=1       total=8        us  avg=8      us  max=8      us  min=8us
+[fs04] dofcopy.outname    n=1       total=5        us  avg=5      us  max=5      us  min=5us
+[fs04] dofcopy.Fcreate    n=1       total=114      us  avg=114    us  max=114    us  min=114us
+[fs04] dofcopy.Fread      n=2       total=270      us  avg=134    us  max=268    us  min=2us
+[fs04] dofcopy.Fwrite     n=1       total=510      us  avg=510    us  max=510    us  min=510us
+[fs04] dofcopy.Fdatime    n=1       total=90       us  avg=90     us  max=90     us  min=90us
+[fs04] dofcopy.Fclose     n=1       total=92       us  avg=92     us  max=92     us  min=92us
+[fs04] dofcopy.total      n=1       total=1091     us  avg=1091   us  max=1091   us  min=1091us
+[fs04] blk.read_blocks    calls=2       amount=2         max/call=1 min/call=1
+[fs04] blk.write_blocks   calls=6       amount=6         max/call=1 min/call=1
+[fs04] fb.clean           calls=461     amount=31826900  max/call=1422104 min/call=4
+[fs04] fb.clean_lines     calls=461     amount=497656    max/call=22221 min/call=1
+[fs04] emmc.spin          calls=40      amount=0         max/call=0 min/call=0
+[fs04] --- GEMDOS calls (opcode: n, total us, max us) ---
+[fs04]   0x1a  n=1      total=0        us  max=0us
+[fs04]   0x3c  n=1      total=112      us  max=112us
+[fs04]   0x3d  n=1      total=6        us  max=6us
+[fs04]   0x3e  n=2      total=88       us  max=88us
+[fs04]   0x3f  n=2      total=265      us  max=265us
+[fs04]   0x40  n=1      total=508      us  max=508us
+[fs04]   0x4e  n=1      total=2        us  max=2us
+[fs04]   0x57  n=1      total=89       us  max=89us
+[fs04] ===== end B-warm-C-to-D =====
+[fs04] C-same-part-C-to-C: C:\CONFIG.TXT (20 bytes) -> C:\SUB\
+[fs04] C-same-part-C-to-C: fun_op returned true
+[fs04] ===== C-same-part-C-to-C =====
+[fs04] wall 7220 us  (451250 ticks @ 62500000 Hz)
+[fs04] dev.read_one       n=6       total=987      us  avg=164    us  max=254    us  min=87us
+[fs04] dev.write_one      n=6       total=627      us  avg=104    us  max=116    us  min=98us
+[fs04] dev.r.wait_dat     n=6       total=2        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.r.cmd17        n=6       total=794      us  avg=132    us  max=212    us  min=58us
+[fs04] dev.r.read_rdy     n=6       total=3        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.r.pio          n=6       total=178      us  avg=29     us  max=40     us  min=24us
+[fs04] dev.r.data_done    n=6       total=6        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.w.wait_dat     n=6       total=14       us  avg=2      us  max=14     us  min=0us
+[fs04] dev.w.cmd24        n=6       total=12       us  avg=2      us  max=2      us  min=2us
+[fs04] dev.w.write_rdy    n=6       total=5        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.w.pio          n=6       total=584      us  avg=97     us  max=104    us  min=92us
+[fs04] dev.w.data_done    n=6       total=4        us  avg=0      us  max=1      us  min=0us
+[fs04] cache.read.hit     n=17      total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.read.miss    n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.write.hit    n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.wb     n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.call   n=5       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] gemdos.dispatch    n=10      total=1759     us  avg=175    us  max=751    us  min=0us
+[fs04] desk.fun_op        n=1       total=7220     us  avg=7220   us  max=7220   us  min=7220us
+[fs04] desk.count_pass    n=1       total=2        us  avg=2      us  max=2      us  min=2us
+[fs04] desk.copy_pass     n=1       total=7210     us  avg=7210   us  max=7210   us  min=7210us
+[fs04] desk.buf_alloc     n=1       total=6        us  avg=6      us  max=6      us  min=6us
+[fs04] dofcopy.Fopen      n=1       total=14       us  avg=14     us  max=14     us  min=14us
+[fs04] dofcopy.outname    n=1       total=354      us  avg=354    us  max=354    us  min=354us
+[fs04] dofcopy.Fcreate    n=1       total=173      us  avg=173    us  max=173    us  min=173us
+[fs04] dofcopy.Fread      n=2       total=224      us  avg=112    us  max=222    us  min=2us
+[fs04] dofcopy.Fwrite     n=1       total=752      us  avg=752    us  max=752    us  min=752us
+[fs04] dofcopy.Fdatime    n=1       total=138      us  avg=138    us  max=138    us  min=138us
+[fs04] dofcopy.Fclose     n=1       total=121      us  avg=121    us  max=121    us  min=121us
+[fs04] dofcopy.total      n=1       total=1778     us  avg=1778   us  max=1778   us  min=1778us
+[fs04] blk.read_blocks    calls=6       amount=6         max/call=1 min/call=1
+[fs04] blk.write_blocks   calls=6       amount=6         max/call=1 min/call=1
+[fs04] fb.clean           calls=461     amount=31826900  max/call=1422104 min/call=4
+[fs04] fb.clean_lines     calls=461     amount=497656    max/call=22221 min/call=1
+[fs04] emmc.spin          calls=60      amount=0         max/call=0 min/call=0
+[fs04] --- GEMDOS calls (opcode: n, total us, max us) ---
+[fs04]   0x1a  n=1      total=0        us  max=0us
+[fs04]   0x3c  n=1      total=170      us  max=170us
+[fs04]   0x3d  n=1      total=13       us  max=13us
+[fs04]   0x3e  n=2      total=119      us  max=119us
+[fs04]   0x3f  n=2      total=220      us  max=220us
+[fs04]   0x40  n=1      total=751      us  max=751us
+[fs04]   0x4e  n=1      total=350      us  max=350us
+[fs04]   0x57  n=1      total=136      us  max=136us
+[fs04] ===== end C-same-part-C-to-C =====
+[fs04] D-cold-C-to-E: C:\README.TXT (64 bytes) -> E:\
+[fs04] D-cold-C-to-E: fun_op returned true
+[fs04] ===== D-cold-C-to-E =====
+[fs04] wall 7398 us  (462437 ticks @ 62500000 Hz)
+[fs04] dev.read_one       n=6       total=1059     us  avg=176    us  max=214    us  min=123us
+[fs04] dev.write_one      n=6       total=566      us  avg=94     us  max=110    us  min=86us
+[fs04] dev.r.wait_dat     n=6       total=3        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.r.cmd17        n=6       total=849      us  avg=141    us  max=186    us  min=72us
+[fs04] dev.r.read_rdy     n=6       total=3        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.r.pio          n=6       total=197      us  avg=32     us  max=48     us  min=24us
+[fs04] dev.r.data_done    n=6       total=3        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.w.wait_dat     n=6       total=6        us  avg=0      us  max=1      us  min=0us
+[fs04] dev.w.cmd24        n=6       total=14       us  avg=2      us  max=3      us  min=2us
+[fs04] dev.w.write_rdy    n=6       total=4        us  avg=0      us  max=2      us  min=0us
+[fs04] dev.w.pio          n=6       total=532      us  avg=88     us  max=105    us  min=81us
+[fs04] dev.w.data_done    n=6       total=6        us  avg=1      us  max=2      us  min=0us
+[fs04] cache.read.hit     n=11      total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.read.miss    n=5       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.write.hit    n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.wb     n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.call   n=5       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] gemdos.dispatch    n=10      total=1664     us  avg=166    us  max=836    us  min=0us
+[fs04] desk.fun_op        n=1       total=7398     us  avg=7398   us  max=7398   us  min=7398us
+[fs04] desk.count_pass    n=1       total=2        us  avg=2      us  max=2      us  min=2us
+[fs04] desk.copy_pass     n=1       total=7388     us  avg=7388   us  max=7388   us  min=7388us
+[fs04] desk.buf_alloc     n=1       total=7        us  avg=7      us  max=7      us  min=7us
+[fs04] dofcopy.Fopen      n=1       total=8        us  avg=8      us  max=8      us  min=8us
+[fs04] dofcopy.outname    n=1       total=420      us  avg=420    us  max=420    us  min=420us
+[fs04] dofcopy.Fcreate    n=1       total=103      us  avg=103    us  max=103    us  min=103us
+[fs04] dofcopy.Fread      n=2       total=130      us  avg=64     us  max=126    us  min=3us
+[fs04] dofcopy.Fwrite     n=1       total=838      us  avg=838    us  max=838    us  min=838us
+[fs04] dofcopy.Fdatime    n=1       total=92       us  avg=92     us  max=92     us  min=92us
+[fs04] dofcopy.Fclose     n=1       total=92       us  avg=92     us  max=92     us  min=92us
+[fs04] dofcopy.total      n=1       total=1684     us  avg=1684   us  max=1684   us  min=1684us
+[fs04] blk.read_blocks    calls=6       amount=6         max/call=1 min/call=1
+[fs04] blk.write_blocks   calls=6       amount=6         max/call=1 min/call=1
+[fs04] fb.clean           calls=461     amount=31826900  max/call=1422104 min/call=4
+[fs04] fb.clean_lines     calls=461     amount=497656    max/call=22221 min/call=1
+[fs04] emmc.spin          calls=60      amount=0         max/call=0 min/call=0
+[fs04] --- GEMDOS calls (opcode: n, total us, max us) ---
+[fs04]   0x1a  n=1      total=0        us  max=0us
+[fs04]   0x3c  n=1      total=100      us  max=100us
+[fs04]   0x3d  n=1      total=4        us  max=4us
+[fs04]   0x3e  n=2      total=90       us  max=88us
+[fs04]   0x3f  n=2      total=126      us  max=125us
+[fs04]   0x40  n=1      total=836      us  max=836us
+[fs04]   0x4e  n=1      total=417      us  max=417us
+[fs04]   0x57  n=1      total=90       us  max=90us
+[fs04] ===== end D-cold-C-to-E =====
+[fs04] E-big-1MiB-C-to-D: C:\BIG1M.BIN (1048576 bytes) -> D:\
+[fs04] E-big-1MiB-C-to-D: fun_op returned true
+[fs04] ===== E-big-1MiB-C-to-D =====
+[fs04] wall 550227 us  (34389188 ticks @ 62500000 Hz)
+[fs04] dev.read_one       n=2518    total=244271   us  avg=97     us  max=270    us  min=76us
+[fs04] dev.write_one      n=2307    total=241635   us  avg=104    us  max=286    us  min=80us
+[fs04] dev.r.wait_dat     n=2518    total=1080     us  avg=0      us  max=21     us  min=0us
+[fs04] dev.r.cmd17        n=2518    total=160272   us  avg=63     us  max=223    us  min=52us
+[fs04] dev.r.read_rdy     n=2518    total=1452     us  avg=0      us  max=14     us  min=0us
+[fs04] dev.r.pio          n=2518    total=78849    us  avg=31     us  max=83     us  min=22us
+[fs04] dev.r.data_done    n=2518    total=1522     us  avg=0      us  max=28     us  min=0us
+[fs04] dev.w.wait_dat     n=2307    total=1034     us  avg=0      us  max=21     us  min=0us
+[fs04] dev.w.cmd24        n=2307    total=7404     us  avg=3      us  max=32     us  min=0us
+[fs04] dev.w.write_rdy    n=2307    total=2633     us  avg=1      us  max=32     us  min=0us
+[fs04] dev.w.pio          n=2307    total=225078   us  avg=97     us  max=261    us  min=75us
+[fs04] dev.w.data_done    n=2307    total=4004     us  avg=1      us  max=46     us  min=0us
+[fs04] cache.read.hit     n=132338  total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.read.miss    n=2518    total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.write.hit    n=513     total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.write.miss   n=2048    total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.evict.wb     n=1824    total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.wb     n=483     total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.call   n=36      total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] gemdos.dispatch    n=72      total=544119   us  avg=7557   us  max=12910  us  min=0us
+[fs04] desk.fun_op        n=1       total=550226   us  avg=550226 us  max=550226 us  min=550226us
+[fs04] desk.count_pass    n=1       total=4        us  avg=4      us  max=4      us  min=4us
+[fs04] desk.copy_pass     n=1       total=550214   us  avg=550214 us  max=550214 us  min=550214us
+[fs04] desk.buf_alloc     n=1       total=7        us  avg=7      us  max=7      us  min=7us
+[fs04] dofcopy.Fopen      n=1       total=6        us  avg=6      us  max=6      us  min=6us
+[fs04] dofcopy.outname    n=1       total=138      us  avg=138    us  max=138    us  min=138us
+[fs04] dofcopy.Fcreate    n=1       total=98       us  avg=98     us  max=98     us  min=98us
+[fs04] dofcopy.Fread      n=33      total=215013   us  avg=6515   us  max=8790   us  min=2us
+[fs04] dofcopy.Fwrite     n=32      total=329167   us  avg=10286  us  max=12918  us  min=8078us
+[fs04] dofcopy.Fdatime    n=1       total=206      us  avg=206    us  max=206    us  min=206us
+[fs04] dofcopy.Fclose     n=1       total=93       us  avg=93     us  max=93     us  min=93us
+[fs04] dofcopy.total      n=1       total=544754   us  avg=544754 us  max=544754 us  min=544754us
+[fs04] blk.read_blocks    calls=2518    amount=2518      max/call=1 min/call=1
+[fs04] blk.write_blocks   calls=2307    amount=2307      max/call=1 min/call=1
+[fs04] fb.clean           calls=461     amount=31826900  max/call=1422104 min/call=4
+[fs04] fb.clean_lines     calls=461     amount=497656    max/call=22221 min/call=1
+[fs04] emmc.spin          calls=24125   amount=0         max/call=0 min/call=0
+[fs04] --- GEMDOS calls (opcode: n, total us, max us) ---
+[fs04]   0x1a  n=1      total=0        us  max=0us
+[fs04]   0x3c  n=1      total=97       us  max=97us
+[fs04]   0x3d  n=1      total=6        us  max=6us
+[fs04]   0x3e  n=2      total=90       us  max=90us
+[fs04]   0x3f  n=33     total=214764   us  max=8786us
+[fs04]   0x40  n=32     total=328841   us  max=12910us
+[fs04]   0x4e  n=1      total=134      us  max=134us
+[fs04]   0x57  n=1      total=182      us  max=182us
+[fs04] ===== end E-big-1MiB-C-to-D =====
+[fs04] F-dfree-D: total=499736576 avail=498622464
+[fs04] ===== F-dfree-D =====
+[fs04] wall 31477 us  (1967313 ticks @ 62500000 Hz)
+[fs04] dev.read_one       n=238     total=30092    us  avg=126    us  max=273    us  min=80us
+[fs04] dev.r.wait_dat     n=238     total=97       us  avg=0      us  max=2      us  min=0us
+[fs04] dev.r.cmd17        n=238     total=18721    us  avg=78     us  max=230    us  min=55us
+[fs04] dev.r.read_rdy     n=238     total=143      us  avg=0      us  max=1      us  min=0us
+[fs04] dev.r.pio          n=238     total=10875    us  avg=45     us  max=70     us  min=24us
+[fs04] dev.r.data_done    n=238     total=155      us  avg=0      us  max=19     us  min=0us
+[fs04] cache.read.hit     n=1       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.read.miss    n=238     total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] gemdos.dispatch    n=1       total=31444    us  avg=31444  us  max=31444  us  min=31444us
+[fs04] blk.read_blocks    calls=238     amount=238       max/call=1 min/call=1
+[fs04] emmc.spin          calls=1190    amount=0         max/call=0 min/call=0
+[fs04] --- GEMDOS calls (opcode: n, total us, max us) ---
+[fs04]   0x36  n=1      total=31444    us  max=31444us
+[fs04] ===== end F-dfree-D =====
+[fs04] G-redraw-x5 at 1920x1061
+[fs04] ===== G-redraw-x5 =====
+[fs04] wall 96952 us  (6059500 ticks @ 62500000 Hz)
+[fs04] fb.clean           calls=935     amount=81934900  max/call=8148480 min/call=4
+[fs04] fb.clean_lines     calls=935     amount=1280895   max/call=127320 min/call=1
+[fs04] --- GEMDOS calls (opcode: n, total us, max us) ---
+[fs04] ===== end G-redraw-x5 =====
+[fs04] driver done

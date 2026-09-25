@@ -1,0 +1,134 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x000000000031d000 (2740224 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[clock] seeded from kernel8.img: 2026-09-25 09:41:20
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01802000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (4 drives, 0 window(s) from the context)
+[h02] injector armed
+[h02] step 0 at +100 -> mouse (446,366) mb=0
+[h02] step 1 at +101 -> mouse (573,479) mb=0
+[h02] step 2 at +102 -> mouse (639,479) mb=0
+[h02] step 3 at +103 -> mouse (639,479) mb=0
+[h02] step 4 at +104 -> mouse (639,479) mb=0
+[h02] step 5 at +105 -> mouse (639,479) mb=0
+[h02] step 6 at +300 -> mouse (600,352) mb=0
+[h02] step 7 at +301 -> mouse (600,240) mb=0
+[h02] MARK A_IDLE step 8 at +1200 mouse (600,240) mb=0
+[h02] step 9 at +1500 -> mouse (600,240) mb=0
+[h02] step 10 at +1550 -> mouse (600,240) mb=0
+[h02] step 11 at +1600 -> mouse (600,240) mb=0
+[h02] step 12 at +1650 -> mouse (600,240) mb=0
+[h02] MARK B_WIN step 13 at +3000 mouse (600,240) mb=0
+[h02] step 14 at +3300 -> mouse (473,271) mb=0
+[h02] step 15 at +3301 -> mouse (346,271) mb=0
+[h02] step 16 at +3302 -> mouse (219,271) mb=0
+[h02] step 17 at +3303 -> mouse (179,271) mb=0
+[h02] step 18 at +3900 -> mouse (179,271) mb=1
+[h02] step 19 at +4400 -> mouse (179,200) mb=1
+[h02] step 20 at +4900 -> mouse (160,120) mb=1
+[h02] step 21 at +5400 -> mouse (132,45) mb=1
+[h02] step 22 at +5900 -> mouse (129,35) mb=1
+[h02] step 23 at +6400 -> mouse (129,35) mb=0
+[h02] step 24 at +7400 -> mouse (233,162) mb=0
+[h02] step 25 at +7401 -> mouse (233,289) mb=0
+[h02] step 26 at +7402 -> mouse (233,301) mb=0
+[h02] step 27 at +7900 -> mouse (233,301) mb=1
+[h02] step 28 at +8100 -> mouse (233,301) mb=0
+[fs04] ===== drop =====
+[fs04] wall 25021 us  (1563813 ticks @ 62500000 Hz)
+[fs04] dev.read_one       n=6       total=2126     us  avg=354    us  max=907    us  min=90us
+[fs04] dev.write_one      n=6       total=988      us  avg=164    us  max=398    us  min=92us
+[fs04] dev.r.wait_dat     n=6       total=10       us  avg=1      us  max=6      us  min=0us
+[fs04] dev.r.cmd17        n=6       total=1864     us  avg=310    us  max=830    us  min=62us
+[fs04] dev.r.read_rdy     n=6       total=7        us  avg=1      us  max=3      us  min=0us
+[fs04] dev.r.pio          n=6       total=228      us  avg=38     us  max=58     us  min=24us
+[fs04] dev.r.data_done    n=6       total=7        us  avg=1      us  max=3      us  min=0us
+[fs04] dev.w.wait_dat     n=6       total=47       us  avg=7      us  max=30     us  min=0us
+[fs04] dev.w.cmd24        n=6       total=25       us  avg=4      us  max=10     us  min=2us
+[fs04] dev.w.write_rdy    n=6       total=69       us  avg=11     us  max=66     us  min=0us
+[fs04] dev.w.pio          n=6       total=687      us  avg=114    us  max=144    us  min=86us
+[fs04] dev.w.data_done    n=6       total=86       us  avg=14     us  max=81     us  min=0us
+[fs04] cache.read.hit     n=47      total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.read.miss    n=5       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.write.hit    n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.wb     n=6       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] cache.flush.call   n=5       total=0        us  avg=0      us  max=0      us  min=295147905179us
+[fs04] gemdos.dispatch    n=44      total=4492     us  avg=102    us  max=1470   us  min=0us
+[fs04] desk.fun_op        n=1       total=8506140  us  avg=8506140us  max=8506140us  min=8506140us
+[fs04] desk.copy_pass     n=1       total=8505655  us  avg=8505655us  max=8505655us  min=8505655us
+[fs04] dofcopy.Fopen      n=1       total=55       us  avg=55     us  max=55     us  min=55us
+[fs04] dofcopy.outname    n=1       total=1550     us  avg=1550   us  max=1550   us  min=1550us
+[fs04] dofcopy.Fcreate    n=1       total=1104     us  avg=1104   us  max=1104   us  min=1104us
+[fs04] dofcopy.Fread      n=2       total=332      us  avg=166    us  max=324    us  min=8us
+[fs04] dofcopy.Fwrite     n=1       total=1159     us  avg=1159   us  max=1159   us  min=1159us
+[fs04] dofcopy.Fdatime    n=1       total=270      us  avg=270    us  max=270    us  min=270us
+[fs04] dofcopy.Fclose     n=1       total=143      us  avg=143    us  max=143    us  min=143us
+[fs04] dofcopy.total      n=1       total=4846     us  avg=4846   us  max=4846   us  min=4846us
+[fs04] blk.read_blocks    calls=6       amount=6         max/call=1 min/call=1
+[fs04] blk.write_blocks   calls=6       amount=6         max/call=1 min/call=1
+[fs04] desk.fun_drag      n=1       total=8524120  us  avg=8524120us  max=8524120us  min=8524120us
+[fs04] desk.rebuild_win   n=1       total=10370    us  avg=10370  us  max=10370  us  min=10370us
+[fs04] desk.redraw_desk   n=2       total=13921    us  avg=6960   us  max=6989   us  min=6932us
+[fs04] fb.clean           calls=2282    amount=86305176  max/call=1026752 min/call=4
+[fs04] fb.clean_lines     calls=2282    amount=1349997   max/call=16043 min/call=1
+[fs04] emmc.spin          calls=60      amount=0         max/call=0 min/call=0
+[fs04] --- GEMDOS calls (opcode: n, total us, max us) ---
+[fs04]   0x1a  n=2      total=1        us  max=1us
+[fs04]   0x3c  n=1      total=1084     us  max=1084us
+[fs04]   0x3d  n=1      total=28       us  max=28us
+[fs04]   0x3e  n=2      total=132      us  max=130us
+[fs04]   0x3f  n=2      total=318      us  max=310us
+[fs04]   0x40  n=1      total=1152     us  max=1152us
+[fs04]   0x4e  n=2      total=1480     us  max=1470us
+[fs04]   0x4f  n=31     total=33       us  max=6us
+[fs04]   0x54  n=1      total=3        us  max=3us
+[fs04]   0x57  n=1      total=258      us  max=258us
+[fs04] ===== end drop =====
+[h02] MARK X step 29 at +8300 mouse (233,301) mb=0
+[h02] MARK C_DONE step 30 at +20000 mouse (233,301) mb=0

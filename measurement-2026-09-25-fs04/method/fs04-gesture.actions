@@ -1,0 +1,30 @@
+# FS04 reproduction: open the C:\ window (Alt+C), pick up C:\README.TXT and
+# drop it on the D: DRIVE ICON on the desktop -- i.e. copy a small text file
+# from one partition to another, the gesture in the ticket.
+# Click points from the probe run (method/fs04-probe.actions):
+#   desktop icons  C (38,35)  D (129,35)  E (220,35)  F (311,35)
+#   C:\ window     README.TXT (179,271)
+100 parkbr
+300 move 600 240
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+3000 mark B_WIN
+3300 move 179 271
+3900 down
+4400 drag 179 200
+4900 drag 160 120
+5400 drag 132 45
+5900 drag 129 35
+6400 up
+# the COPY FILE(S) confirmation comes up; OK is at (233,301).  The clock
+# restarts the instant form_do returns, so the user's reading time is not
+# counted -- what is reported is the machine's work after the click.
+7400 move 233 301
+7900 down
+8100 up
+8300 mark X
+20000 mark C_DONE
+24000 pause
