@@ -1,0 +1,67 @@
+# DESK31 item 2 -- `STILLDIR`, the alert EmuTOS raises when the source of a
+# copy/move is a parent of its destination (`source_is_parent`,
+# deskdir.c:998-1004).  NewTOS silently set `ok = false` there until DESK31.
+#
+# Reaching it needs a source and a destination that are NOT the same object:
+# a drop on the dragged item itself is cancelled one layer higher
+# (`act_bdown`: "if ((wh == dst_wh) && (*pdobj == sobj)) dst_wh = NIL",
+# deskact.c:666-670 -- confirmed by the first attempt at this gesture, which
+# did nothing at all).  So:
+#
+#   1. open the C:\ window
+#   2. drag the SUB folder onto the desktop surface -> a FOLDER shortcut
+#      (DESK30, `#V`), whose `a_pappl` is C:\SUB
+#   3. drag the SUB folder out of the window onto that shortcut
+#
+# `fun_file2desk`'s AT_ISFOLD arm makes the destination C:\SUB\, so `dir_op`
+# sees srcpth C:\SUB and dstpth C:\SUB\SUB -> `source_is_parent` -> STILLDIR.
+#
+#   B_WIN1       the C:\ window open
+#   C_SHORTCUT   the SUB folder shortcut on the desktop
+#   D_CPYDEL     the ADCPYDEL "COPY FILE(S)" confirmation, which comes first
+#   E_STILLDIR   the STILLDIR alert
+#   F_SKIPPED    its *Skip* taken -- the walk continues, nothing is copied
+#
+# Coordinates from the probe run: C: (38,35); 'SUB' in window 1 (515,103); the
+# free desktop cell below the window (220,449) (the DESK30 run's).  The two
+# boxes' buttons come from this run's own [dlg]/[alert] dumps.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 move 38 35
+1800 down
+1803 up
+1810 down
+1813 up
+2400 move 600 240
+3200 mark B_WIN1
+3600 move 515 103
+4000 down
+4100 drag 250 458
+4700 up
+5000 move 600 300
+5800 mark C_SHORTCUT
+6200 move 515 103
+6600 down
+6603 up
+7000 move 515 103
+7400 down
+7500 drag 400 300
+7900 drag 220 449
+8400 up
+8700 move 600 300
+9800 mark D_CPYDEL
+# -- OK the copy box (229,301 from this run's [dlg] dump); STILLDIR follows.
+10200 move 229 301
+10600 down
+10800 up
+11400 parkbr
+12600 mark E_STILLDIR
+# -- Skip (276,269 from this run's [alert] dump): the walk goes on, and with
+#    SUB the only selected item there is nothing left to copy.
+13000 move 276 269
+13400 down
+13600 up
+14200 parkbr
+15400 mark F_SKIPPED

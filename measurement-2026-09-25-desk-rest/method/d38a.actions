@@ -1,0 +1,74 @@
+# DESK38 -- *Show info* on the DESKTOP surface: the drive icon, the trash and
+# the printer.  Before DESK38 `do_info_rename` returned at once for
+# `G.g_cwin == DESKWH`, so all three did nothing at all.
+#
+#   B_CSEL      the C: drive icon selected
+#   C_DISKINFO  the ADDISKIN box (drive letter, label, folders, files, bytes
+#               used, bytes available)
+#   D_TRASH     the trash selected
+#   E_TRASHINFO the STTRINFO alert ("... is used to permanently delete files")
+#   F_PRINTER   the printer selected
+#   G_PRNTINFO  the STPRINFO alert ("... is a printer.")
+#
+# Coordinates, all from the probe run of this measurement:
+#   desk obj  9 (C:)      click (38,35)
+#   desk obj 10 (TRASH)   click (38,449)
+#   desk obj 11 (PRINTER) click (584,449)
+#   File title hover (88,9); "Info/Rename..." click (152,43)
+# The two alert OK buttons and the ADDISKIN OK button are filled in from this
+# run's own [alert]/[dlg] dumps -- the first pass (d38a-probe) only reaches
+# C_DISKINFO and stops there.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 move 38 35
+2000 down
+2003 up
+2400 parkbr
+3000 mark B_CSEL
+3400 move 88 240
+3600 move 88 9
+4200 move 152 43
+4800 down
+5000 up
+5600 parkbr
+7000 mark C_DISKINFO
+# -- second pass: OK the disk box (245,334 from this run's [dlg] dump), then
+#    select the trash and ask again, to measure the STTRINFO alert.
+7400 move 245 334
+7800 down
+8000 up
+8600 parkbr
+9400 mark D_DISKOK
+9800 move 38 449
+10200 down
+10203 up
+10600 parkbr
+11200 mark E_TRASHSEL
+11600 move 88 240
+11800 move 88 9
+12400 move 152 43
+13000 down
+13200 up
+13800 parkbr
+14600 mark F_TRASHINFO
+# -- third pass: OK the trash alert (320,277 from this run's [alert] dump),
+#    then the printer.
+15000 move 320 277
+15400 down
+15600 up
+16200 parkbr
+17000 mark G_TRASHOK
+17400 move 584 449
+17800 down
+17803 up
+18200 parkbr
+18800 mark H_PRNTSEL
+19200 move 88 240
+19400 move 88 9
+20000 move 152 43
+20600 down
+20800 up
+21400 parkbr
+22200 mark I_PRNTINFO

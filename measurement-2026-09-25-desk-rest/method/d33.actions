@@ -1,0 +1,33 @@
+# DESK33 -- F7 launches the application bound to it.
+#
+# The card is method/seed_d33.sh's image: C:\NEWDESK.INF carries
+# `#G 06 FF C:\ARGVTEST.NAP@ *.XYZ@ 107 @`, i.e. `a_funkey = 7` on
+# C:\ARGVTEST.NAP.  Until DESK33 `check_function_key` recognised the key and
+# then fell through -- `process_funkey` (deskmain.c:1087-1106) did not exist,
+# so nothing started.
+#
+# The pointer is PARKED at the bottom right for the whole run: nothing is
+# clicked, the only input is the key.  F7 is IKBD scancode 0x41 (make) / 0xC1
+# (break) -- scancode.h FUNKEY_01 = 0x3B00, so F7 = 0x3B + 6.
+#
+#   B_IDLE   the desktop, nothing selected
+#   C_F7     after F7: ARGVTEST ran (it prints its argc/argv to the console and
+#            terminates by itself), the desktop is back
+#
+# The proof is in the serial log, not on the picture: `[d33] process_funkey(7)
+# -> C:\ARGVTEST.NAP` followed by the program's own `ARGVTEST:` lines.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 parkbr
+2400 mark B_IDLE
+3000 key 41
+3010 key c1
+6000 mark C_F7
+# -- F6 (scancode 0x40) is bound to nothing: `process_funkey` finds no ANODE
+#    and returns -1, so `hndl_kbd` falls through to the rest of its chain and
+#    the desktop is unchanged.
+7000 key 40
+7010 key c0
+9000 mark D_F6

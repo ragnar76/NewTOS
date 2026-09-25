@@ -1,0 +1,54 @@
+# DESK31 items 5 + 6 -- the two wordings that diverged.
+#
+#   B_CSEL       the C: drive icon selected
+#   C_RMVDEL     the C: icon dropped on the TRASH -> `wants_to_delete_files`,
+#                which since DESK31 is EmuTOS's STRMVDEL: "Do you want to
+#                remove icons|or delete files?" with the buttons in the order
+#                Icons | Files | Cancel (desk_rsc.c:2523-2524).  Before DESK31
+#                this was a NewTOS `fun_confirm` reading "Delete the selected
+#                item(s)?" with Cancel | OK.
+#   D_CANCELLED  its Cancel taken -- nothing is deleted
+#   E_PRNT       the C: icon dropped on the PRINTER -> `illegal_op_msg()`,
+#                i.e. STILLOP "Illegal operation!" (desk_rsc.c:2497).  Before
+#                DESK31 this site said "Operation not allowed."
+#
+# Coordinates from the probe run: C: (38,35), TRASH (38,449), PRINTER (584,449).
+# The alert buttons come from this run's own [alert] dump.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 move 38 35
+2000 down
+2003 up
+2400 parkbr
+3000 mark B_CSEL
+3400 move 38 35
+3800 down
+3900 drag 38 449
+4600 up
+4900 parkbr
+6000 mark C_RMVDEL
+# -- Cancel (400,269 from this run's [alert] dump), then drop the same icon on
+#    the PRINTER, which is `fun_desk2desk`'s "neither disk nor trash" arm.
+6400 move 400 269
+6800 down
+7000 up
+7600 parkbr
+8400 mark D_CANCELLED
+8800 move 38 35
+9200 down
+9203 up
+9600 parkbr
+10200 mark D2_CSEL
+10600 move 38 35
+11000 down
+11100 drag 584 449
+11900 up
+12200 parkbr
+13400 mark E_PRNT
+13800 move 320 269
+14200 down
+14400 up
+15000 parkbr
+15800 mark F_END

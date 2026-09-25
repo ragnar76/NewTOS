@@ -1,0 +1,31 @@
+# Coordinate + geometry probe for DESK31/32/33/38.
+#
+# probe_patch.py's `probe_dump()` prints the menu bar, every drop-down box and
+# every entry with its absolute rectangle; that is where DESK32's measured cell
+# widths come from (box ob_width / 8 px per character cell).  `probe_icons()`
+# prints every desktop icon and every window item with the point that hits it;
+# that is where every click coordinate below and in the other lists comes from.
+#
+# The run: idle desktop (both dumps), then open the C:\ window by double-
+# clicking the C: drive icon (the dumps again, now with the window items), then
+# hover each of the four menu titles in turn.
+200 parkbr
+1000 arm
+1100 mark A_IDLE
+1500 move 37 42
+1700 down
+1703 up
+1710 down
+1713 up
+2300 move 600 240
+3000 mark B_WIN1
+3400 move 20 8
+3800 mark C_DESK_OPEN
+4200 move 68 8
+4600 mark D_FILE_OPEN
+5000 move 116 8
+5400 mark E_VIEW_OPEN
+5800 move 172 8
+6200 mark F_OPTIONS_OPEN
+6600 parkbr
+7000 mark G_END

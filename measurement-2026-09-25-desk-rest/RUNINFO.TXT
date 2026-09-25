@@ -1,0 +1,180 @@
+measurement-2026-09-25-desk-rest
+  DESK31, DESK33, DESK38, DESK32 -- the last four of the desktop series
+===========================================================================
+
+Base: branch desk-rebuild, HEAD 12fddc1.  The change of all four tickets is
+UNCOMMITTED in the shared tree (method/desk-rest.diff).  Nothing flashed,
+nothing ejected, no real Pi run, nothing committed; no
+`git checkout/restore/clean/stash/reset` was run on the shared tree.  The only
+git commands used on it were the read-only `git diff` (method/desk-rest.diff)
+and `git show HEAD:kernel/src/desk/menu.rs` (method/make_scratch_before.sh --
+that is how the DESK32 "before" kernel is built).
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (method/run.sh + method/qmp_multi.py).  Card image: a fresh
+`tools/make-sd-image.sh` (64 MiB, MBR + FAT16) per measurement family; the
+DESK33 image adds one line to the NEWDESK.INF the desktop itself wrote
+(method/seed_d33.sh).  Interactive runs use the scratch-copy IKBD injector:
+method/make_scratch.sh rsyncs the crates into the job scratch and patches the
+COPY -- never the shared tree.  No `*.img` in this directory (the ticket rule).
+
+0. T10 BIT, AND WAS WORKED AROUND (T10 STAYS OPEN)
+---------------------------------------------------------------------------
+a78_patch2.py's dual arming picks the empty SCRIPT_TERA whenever an EL0
+process is the running one at the first injector tick; since the accessories
+landed that is always the case, so the run completes and nothing happens on
+the screendumps.  That is TASK/T10.md.
+
+method/t10_workaround.py replaces the dual arming, in the scratch copy only,
+with the single case this measurement needs: step only once "[desk] desktop
+up" has set DESK_UP, always run SCRIPT_DESK.  It is PORT01's workaround under
+a new name.  The shared harness (a78_patch2.py) is untouched and T10 stays
+OPEN: the other half of its decision -- the TeraDesk-via-#Z runs -- cannot be
+re-measured from these four tickets, and a half-verified harness fix is worse
+than a named workaround.  A real fix should make the *script* say which
+program it means instead of sniffing what happens to run first.
+
+1. PROBE -- every coordinate in every action list
+---------------------------------------------------------------------------
+method/probe.actions + probe_patch.py.  `probe_dump()` prints the menu bar,
+each drop-down box and each entry with its absolute rectangle and click point;
+`probe_icons()` prints every desktop icon and window item with the point
+`act_chkobj` accepts.  serial/probe-serial.log:
+
+  desk obj  9 (DISK C) click (38,35)   obj 10 (TRASH) (38,449)
+  desk obj 11 (PRINTER) click (584,449)
+  window 1 'SUB' (515,103)  'PROOF.TXT' (95,271)  'README.TXT' (179,271)
+  titles: Desk (40,9) File (88,9) View (136,9) Options (196,9)
+  File / "Info/Rename..." click (152,43); Options / "Save desktop..." (280,187)
+
+Alert and dialog buttons are measured too, by method/deskrest_patch.py: every
+`form_alert` prints its box + buttons (`[alert]`, copied from DESK24's patch)
+and every desktop dialog its centred ROOT + EXIT buttons (`[dlg]`).  The three
+runs that needed a button therefore ran in two or three passes: stop at the
+box, read its geometry out of the same run's log, extend the action list.  No
+click point in this measurement is guessed.
+
+2. DESK32 -- the drop-down widths, measured before and after
+---------------------------------------------------------------------------
+Both kernels differ in kernel/src/desk/menu.rs alone (make_scratch_before.sh
+takes that one file from HEAD), both run method/probe.actions.
+
+  box   before          after         EmuTOS        ticket said
+  Desk  176 px = 22     168 px = 21   21            22 -> 21   OK
+  File  184 px = 23     176 px = 22   22            23 -> 22   OK
+  View  184 px = 23     184 px = 23   23            unchanged  OK
+  Optn  240 px = 30     240 px = 30   30            unchanged  OK
+
+(8 px per character cell; `[probe] box N abs (x,y) WxH` in
+serial/probe-before-serial.log and serial/probe-serial.log.)
+
+EmuTOS's own numbers come from the source, not from a picture: the widest
+non-separator RSC string plus `1 + SHORTCUT_SIZE` (copy_menu_items,
+deskmain.c:1776-1781), minus the NUL, plus adjust_menu's `m++` (:1620) --
+"  Desktop info..." is 17 -> 17+3+1 = 21, "  Close top window" is 18 ->
+18+3+1 = 22, "  Set background..." is 19 -> 23, "  Desktop configuration..."
+is 26 -> 30.  The Desk box's `MIN_DESKMENU_WIDTH - 1` seed (19) does not bind.
+
+  screendumps/before-{c-desk,d-file,e-view,f-options}.png
+  screendumps/probe-{c-desk,d-file,e-view,f-options}.png
+
+3. DESK38 -- Show info on a desktop icon
+---------------------------------------------------------------------------
+d38a (screendumps/d38a-*.png, serial/d38a-serial.log): the three desktop
+fixtures, each selected and then File / Info/Rename.
+
+  [d38] do_info(curr=9)  cwin=0 atype=Disk     -> ADDISKIN, c-diskinfo.png
+        DISK INFORMATION / Drive identifier: C / Disk label: NEWTOS /
+        Number of folders: 11 / Number of files: 40 /
+        Bytes used: 1597248 / Bytes available: 65241088
+  [d38] do_info(curr=10) cwin=0 atype=Trash    -> STTRINFO, f-trashinfo.png
+        "TRASH is used to permanently delete files or folders."
+  [d38] do_info(curr=11) cwin=0 atype=Printer  -> STPRINFO, i-prntinfo.png
+        "PRINTER is a printer."
+
+`cwin=0` is DESKWH -- the case that returned immediately before DESK38.
+
+d38b (screendumps/d38b-*.png, serial/d38b-serial.log): the two file/folder
+sources of the same arm.
+
+  [d38] do_info(curr=37) cwin=1 atype=File  -- a WINDOW item, fields from its
+        FNODE (c-fileinfo.png: README.TXT, 64 bytes, 25/09/2026 01:05, A)
+  [d38] do_info(curr=43) cwin=0 atype=File  -- a desktop SHORTCUT, fields from
+        `file_exists(a_pappl)` (g-scinfo.png, same numbers)
+
+Cancel on the box is `do_info`'s 0 and ends the SHOWITEM loop (d-cancel.png).
+
+4. DESK31 -- the file-engine remainders
+---------------------------------------------------------------------------
+item 5 (wording).  d31a: the C: icon dropped on the PRINTER is
+`fun_desk2desk`'s "neither disk nor trash" arm -> "Illegal operation!"
+(screendumps/d31a-e-prnt.png), the STILLOP text, where it used to say
+"Operation not allowed."
+
+item 6 (wants_to_delete_files).  d31a: the C: icon dropped on the TRASH ->
+"Do you want to remove icons|or delete files?" with Icons | Files | Cancel
+(screendumps/d31a-c-rmvdel.png) -- EmuTOS's STRMVDEL, in its button order,
+where NewTOS used to ask its own "Delete the selected item(s)?" with
+Cancel | OK.
+
+item 2 (STILLDIR).  d31b: a folder shortcut for C:\SUB on the desktop, then
+the SUB folder dragged out of the C:\ window onto it -> destination C:\SUB\SUB
+-> "Illegal directory operation!" with Skip | Abort
+(screendumps/d31b-e-stilldir.png), over the COPY FILE(S) box.
+  NOTE, and it is why the action list looks the way it does: dropping SUB on
+  ITSELF cannot reach this alert.  `act_bdown` cancels a drop on the dragged
+  item one layer higher ("if ((wh == dst_wh) && (*pdobj == sobj)) dst_wh =
+  NIL", deskact.c:666-670) -- the first attempt did exactly nothing, which is
+  correct behaviour, not a defect.
+
+item 1 (d_dofileren asks).  Ctrl-drag C:\PROOF.TXT onto the same C:\SUB
+shortcut: same drive, so OP_MOVE becomes OP_RENAME, and C:\SUB\PROOF.TXT
+already exists.
+  d31c -- *Stop*:  screendumps/d31c-e-namecon.png shows the ADCPALER name
+          conflict `get_new_name` puts up.  Read back from the card:
+          C:\PROOF.TXT 19 bytes "PROOF: C:\ (root)" and C:\SUB\PROOF.TXT 15
+          bytes "PROOF: C:\SUB" -- untouched, both of them.
+  d31d -- *OK*, name unchanged: `dos_delete(newname)` then the rename.  Read
+          back from the card: C:\PROOF.TXT is GONE and C:\SUB\PROOF.TXT is now
+          19 bytes "PROOF: C:\ (root)".  That is the whole of deskdir.c:815-819.
+  Both read with method/lsimg.py, a plain FAT16 reader, from the raw image.
+
+items 3 + 4 (`desk_verify` in `rebuild_window`, `fun_mark_for_rebld` /
+`fun_rebld_marked`) have no picture of their own: they are the bookkeeping
+`do_info`'s rename path uses.  d38b exercises `fun_rebld_marked` (the SHOWITEM
+loop calls it after every pass) and every window rebuild in every run above
+now goes through `desk_verify`.
+
+5. DESK33 -- F1..F20 launch the bound application
+---------------------------------------------------------------------------
+Fixture: method/seed_d33.sh adds one line to the NEWDESK.INF the desktop's own
+`app_save` wrote in the `d33-seed` run:
+
+  #G 06 FF C:\ARGVTEST.NAP@ *.XYZ@ 107 @      (a_funkey = 7, a_flags = APPDIR)
+
+d33 presses F7 with the pointer parked in the bottom-right corner -- no click
+anywhere in the run.  serial/d33-serial.log:
+
+  [d33] process_funkey(7) -> C:\ARGVTEST.NAP appdir=true
+  ARGVTEST: cmdlin len 0 raw ""
+  ARGVTEST: argc 1
+  ...
+  [d33] process_funkey(6) -> no application holds it
+
+The empty command tail is EmuTOS's: `do_aopen(pa, TRUE, -1, pathname, pfname,
+NULL)` with a non-`isparm` application takes neither the `tail` branch nor
+`opn_appl` (desksupp.c:975-987).  screendumps/d33-c-f7.png shows the desktop
+intact after the child's Pterm; d33-d-f6.png after the unbound key.
+
+6. HYGIENE
+---------------------------------------------------------------------------
+Zero `[EXC]` and zero `[PANIC]` in all twelve serial logs.
+`fsck_msdos -n` clean on all fourteen card images: serial/fsck.txt (no
+MODIFIED, no BAD, no ERROR line in it).
+
+7. WHAT ONLY THE REAL PI CAN CONFIRM
+---------------------------------------------------------------------------
+Every gesture here is driven by the scratch-copy IKBD injector.  Real HID
+input -- a real mouse drag, a real F7 on a real keyboard, a real Ctrl-drag --
+is real-Pi4 only.  The code path is the same: the injector feeds
+`crate::ikbd::feed`, which is where the IKBD driver itself delivers.

@@ -1,0 +1,74 @@
+# DESK31 item 1 -- `d_dofileren` asks before it overwrites, run B: the same
+# gesture as d31c, but the name conflict is answered with OK instead of Stop.
+#
+# `d_dofileren` is the same-drive MOVE (`Frename`).  Until DESK31 it was a bare
+# `dos_rename`, so moving a file over one of the same name simply failed and
+# the user was told nothing.  EmuTOS loops (deskdir.c:785-825): `item_exists`
+# -> `get_new_name` (the ADCPALER name-conflict dialog) -> and, when the user
+# confirms the name unchanged, `dos_delete(newname)` so the rename can succeed.
+#
+# The gesture:
+#   1. open the C:\ window
+#   2. drag the SUB folder onto the desktop -> a folder shortcut for C:\SUB
+#   3. CTRL-drag C:\PROOF.TXT onto that shortcut.  Ctrl makes it a MOVE
+#      (`drag_op`), the drive is the same, so `dir_op` turns OP_MOVE into
+#      OP_RENAME -- and C:\SUB\PROOF.TXT already exists (both files are on the
+#      standard card image, the DESK18 working-directory fixture).
+#
+#   B_WIN1       the C:\ window open
+#   C_SHORTCUT   the SUB folder shortcut on the desktop
+#   D_MOVEBOX    the ADCPYDEL box, now headed MOVE FILE(S)
+#   E_NAMECON    the ADCPALER name-conflict dialog `get_new_name` puts up
+#   F_REPLACED   its *OK* taken with the name unchanged -- the destination is
+#                deleted and the rename succeeds
+#
+# Coordinates from the probe run: C: (38,35); 'SUB' (515,103) and 'PROOF.TXT'
+# (95,271) in window 1; the free desktop cell (220,449).  Ctrl is IKBD
+# scancode 0x1D (make) / 0x9D (break) and must still be down at the release,
+# because the drop-time keystate is what `act_bdown` reads (deskact.c:681).
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 move 38 35
+1800 down
+1803 up
+1810 down
+1813 up
+2400 move 600 240
+3200 mark B_WIN1
+3600 move 515 103
+4000 down
+4100 drag 250 458
+4700 up
+5000 move 600 300
+5800 mark C_SHORTCUT
+6200 move 95 271
+6600 down
+6603 up
+7000 key 1d
+7200 move 95 271
+7600 down
+7700 drag 200 350
+8000 drag 220 449
+8500 up
+8700 key 9d
+8900 move 600 300
+10000 mark D_MOVEBOX
+# -- OK the move box (229,301 from this run's [dlg] dump); the name conflict
+#    follows.
+10400 move 229 301
+10800 down
+11000 up
+11600 parkbr
+13000 mark E_NAMECON
+# -- *OK* (223,301) with the name UNCHANGED.  That is `get_new_name`'s answer
+#    `1`, and `d_dofileren`'s one real decision: `oldname != newname`, so
+#    `dos_delete(newname)` clears the way and the `Frename` on the next turn of
+#    the loop succeeds (deskdir.c:815-819).  Read back from the image:
+#    C:\SUB\PROOF.TXT must now be the 19-byte root file and C:\PROOF.TXT gone.
+13400 move 223 301
+13800 down
+14000 up
+14600 parkbr
+16400 mark F_REPLACED
