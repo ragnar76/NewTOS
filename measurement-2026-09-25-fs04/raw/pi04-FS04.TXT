@@ -1,0 +1,711 @@
+==== FS04 probe: kernel started ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+drives: C: D: E: F:
+Copy a file from one drive to another now; one block per copy is
+appended below.  Repeat as often as you like.
+==== end start-up note ====
+
+==== FS04 block 1 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 1363 us (73644 ticks)
+previous report write 258671 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=2       total=1339     us avg=669    us max=755    us min=583us
+dev.r.wait_dat     n=2       total=0        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=2       total=11       us avg=5      us max=6      us min=5us
+dev.r.read_rdy     n=2       total=1304     us avg=652    us max=737    us min=567us
+dev.r.pio          n=2       total=21       us avg=10     us max=11     us min=10us
+dev.r.data_done    n=2       total=0        us avg=0      us max=0      us min=0us
+cache.read.hit     n=3
+cache.read.miss    n=1
+gemdos.dispatch    n=5       total=1351     us avg=270    us max=1348   us min=0us
+blk.read_blocks    calls=2       amount=2         max/call=1 min/call=1
+desk.fun_drag      n=1       total=1363     us avg=1363   us max=1363   us min=1363us
+emmc.spin          calls=10      amount=12385     max/call=6952 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=1      total=0        us max=0us
+  0x4e  n=1      total=1348     us max=1348us
+  0x4f  n=3      total=2        us max=1us
+==== end block 1 ====
+
+==== FS04 block 2 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 2182298 us (117844125 ticks)
+previous report write 10741 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=13      total=233024   us avg=17924  us max=93491  us min=513us
+dev.write_one      n=11      total=99984    us avg=9089   us max=66216  us min=1973us
+dev.r.wait_dat     n=13      total=223960   us avg=17227  us max=92971  us min=0us
+dev.r.cmd17        n=13      total=66       us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=13      total=8849     us avg=680    us max=832    us min=497us
+dev.r.pio          n=13      total=141      us avg=10     us max=11     us min=10us
+dev.r.data_done    n=13      total=5        us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=23      total=537387   us avg=23364  us max=62890  us min=0us
+dev.w.cmd24        n=23      total=116      us avg=5      us max=5      us min=4us
+dev.w.write_rdy    n=23      total=3        us avg=0      us max=0      us min=0us
+dev.w.pio          n=23      total=36       us avg=1      us max=1      us min=1us
+dev.w.data_done    n=11      total=37018    us avg=3365   us max=14771  us min=1966us
+cache.read.hit     n=12
+cache.read.miss    n=13
+cache.write.hit    n=6
+cache.write.miss   n=6
+cache.evict.wb     n=1
+cache.flush.wb     n=22
+cache.flush.call   n=5
+gemdos.dispatch    n=15      total=2079765  us avg=138651 us max=1598412us min=0us
+desk.fun_op        n=1       total=3359182  us avg=3359182us max=3359182us min=3359182us
+desk.copy_pass     n=1       total=3359165  us avg=3359165us max=3359165us min=3359165us
+dofcopy.Fopen      n=1       total=621      us avg=621    us max=621    us min=621us
+dofcopy.outname    n=1       total=5        us avg=5      us max=5      us min=5us
+dofcopy.Fcreate    n=1       total=106026   us avg=106026 us max=106026 us min=106026us
+dofcopy.Fread      n=2       total=98182    us avg=49091  us max=98182  us min=0us
+dofcopy.Fwrite     n=1       total=1598413  us avg=1598413us max=1598413us min=1598413us
+dofcopy.Fdatime    n=1       total=272414   us avg=272414 us max=272414 us min=272414us
+dofcopy.Fclose     n=1       total=4100     us avg=4100   us max=4100   us min=4100us
+dofcopy.total      n=1       total=2079765  us avg=2079765us max=2079765us min=2079765us
+blk.read_blocks    calls=13      amount=13        max/call=1 min/call=1
+blk.write_blocks   calls=23      amount=23        max/call=1 min/call=1
+desk.fun_drag      n=1       total=3459280  us avg=3459280us max=3459280us min=3459280us
+desk.rebuild_win   n=1       total=50071    us avg=50071  us max=50071  us min=50071us
+desk.redraw_desk   n=2       total=93236    us avg=46618  us max=46638  us min=46597us
+fb.clean           calls=2780    amount=412102036 max/call=3486720 min/call=4
+fb.clean_lines     calls=2780    amount=6441044   max/call=54480 min/call=1
+emmc.spin          calls=180     amount=19749327  max/call=1000000 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=106025   us max=106025us
+  0x3d  n=1      total=620      us max=620us
+  0x3e  n=2      total=4099     us max=2124us
+  0x3f  n=2      total=98182    us max=98181us
+  0x40  n=1      total=1598412  us max=1598412us
+  0x4e  n=2      total=7        us max=3us
+  0x4f  n=2      total=1        us max=1us
+  0x54  n=1      total=0        us max=0us
+  0x57  n=1      total=272413   us max=272413us
+==== end block 2 ====
+
+==== FS04 block 3 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 274714 us (14834588 ticks)
+previous report write 21820 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=7       total=4481     us avg=640    us max=789    us min=522us
+dev.write_one      n=7       total=14646    us avg=2092   us max=2299   us min=1898us
+dev.r.wait_dat     n=7       total=0        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=7       total=39       us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=7       total=4308     us avg=615    us max=764    us min=498us
+dev.r.pio          n=7       total=125      us avg=17     us max=17     us min=17us
+dev.r.data_done    n=7       total=5        us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=7       total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=7       total=39       us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=7       total=3        us avg=0      us max=1      us min=0us
+dev.w.pio          n=7       total=27       us avg=3      us max=4      us min=3us
+dev.w.data_done    n=7       total=14575    us avg=2082   us max=2288   us min=1887us
+cache.read.hit     n=14
+cache.read.miss    n=7
+cache.write.hit    n=6
+cache.write.miss   n=1
+cache.flush.wb     n=7
+cache.flush.call   n=5
+gemdos.dispatch    n=16      total=19199    us avg=1199   us max=11076  us min=0us
+desk.fun_op        n=1       total=1763629  us avg=1763629us max=1763629us min=1763629us
+desk.copy_pass     n=1       total=1763605  us avg=1763605us max=1763605us min=1763605us
+dofcopy.Fopen      n=1       total=11       us avg=11     us max=11     us min=11us
+dofcopy.outname    n=1       total=8        us avg=8      us max=8      us min=8us
+dofcopy.Fcreate    n=1       total=1912     us avg=1912   us max=1912   us min=1912us
+dofcopy.Fread      n=2       total=1677     us avg=838    us max=1676   us min=1us
+dofcopy.Fwrite     n=1       total=11077    us avg=11077  us max=11077  us min=11077us
+dofcopy.Fdatime    n=1       total=2543     us avg=2543   us max=2543   us min=2543us
+dofcopy.Fclose     n=1       total=1968     us avg=1968   us max=1968   us min=1968us
+dofcopy.total      n=1       total=19199    us avg=19199  us max=19199  us min=19199us
+blk.read_blocks    calls=7       amount=7         max/call=1 min/call=1
+blk.write_blocks   calls=7       amount=7         max/call=1 min/call=1
+desk.fun_drag      n=1       total=2013476  us avg=2013476us max=2013476us min=2013476us
+desk.rebuild_win   n=1       total=124900   us avg=124900 us max=124900 us min=124900us
+desk.redraw_desk   n=2       total=232989   us avg=116494 us max=116547 us min=116441us
+fb.clean           calls=2710    amount=413708736 max/call=3486720 min/call=4
+fb.clean_lines     calls=2710    amount=6466070   max/call=54480 min/call=1
+emmc.spin          calls=70      amount=94692     max/call=11443 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=1911     us max=1911us
+  0x3d  n=1      total=9        us max=9us
+  0x3e  n=2      total=1966     us max=1965us
+  0x3f  n=2      total=1675     us max=1675us
+  0x40  n=1      total=11076    us max=11076us
+  0x4e  n=2      total=10       us max=5us
+  0x4f  n=3      total=5        us max=2us
+  0x54  n=1      total=0        us max=0us
+  0x57  n=1      total=2542     us max=2542us
+==== end block 3 ====
+
+==== FS04 block 4 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 768608 us (41504877 ticks)
+previous report write 561431 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=6       total=4177     us avg=696    us max=788    us min=621us
+dev.write_one      n=6       total=508222   us avg=84703  us max=170012 us min=1954us
+dev.r.wait_dat     n=6       total=0        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=6       total=33       us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=6       total=4030     us avg=671    us max=763    us min=596us
+dev.r.pio          n=6       total=107      us avg=17     us max=18     us min=17us
+dev.r.data_done    n=6       total=4        us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=6       total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=6       total=33       us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=6       total=2        us avg=0      us max=0      us min=0us
+dev.w.pio          n=6       total=23       us avg=3      us max=4      us min=3us
+dev.w.data_done    n=6       total=508162   us avg=84693  us max=170002 us min=1943us
+cache.read.hit     n=17
+cache.read.miss    n=6
+cache.write.hit    n=6
+cache.flush.wb     n=6
+cache.flush.call   n=5
+gemdos.dispatch    n=17      total=512470   us avg=30145  us max=343040 us min=0us
+desk.fun_op        n=1       total=2080124  us avg=2080124us max=2080124us min=2080124us
+desk.copy_pass     n=1       total=2080099  us avg=2080099us max=2080099us min=2080099us
+dofcopy.Fopen      n=1       total=635      us avg=635    us max=635    us min=635us
+dofcopy.outname    n=1       total=681      us avg=681    us max=681    us min=681us
+dofcopy.Fcreate    n=1       total=163510   us avg=163510 us max=163510 us min=163510us
+dofcopy.Fread      n=2       total=677      us avg=338    us max=676    us min=1us
+dofcopy.Fwrite     n=1       total=343042   us avg=343042 us max=343042 us min=343042us
+dofcopy.Fdatime    n=1       total=1963     us avg=1963   us max=1963   us min=1963us
+dofcopy.Fclose     n=1       total=1958     us avg=1958   us max=1958   us min=1958us
+dofcopy.total      n=1       total=512471   us avg=512471 us max=512471 us min=512471us
+blk.read_blocks    calls=6       amount=6         max/call=1 min/call=1
+blk.write_blocks   calls=6       amount=6         max/call=1 min/call=1
+desk.fun_drag      n=1       total=2330330  us avg=2330330us max=2330330us min=2330330us
+desk.rebuild_win   n=1       total=125122   us avg=125122 us max=125122 us min=125122us
+desk.redraw_desk   n=2       total=233273   us avg=116636 us max=116675 us min=116598us
+fb.clean           calls=2840    amount=415700460 max/call=3486720 min/call=4
+fb.clean_lines     calls=2840    amount=6497296   max/call=54480 min/call=1
+emmc.spin          calls=60      amount=2561190   max/call=850010 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=163508   us max=163508us
+  0x3d  n=1      total=633      us max=633us
+  0x3e  n=2      total=1957     us max=1956us
+  0x3f  n=2      total=675      us max=675us
+  0x40  n=1      total=343040   us max=343040us
+  0x4e  n=2      total=684      us max=678us
+  0x4f  n=4      total=6        us max=2us
+  0x54  n=1      total=0        us max=0us
+  0x57  n=1      total=1962     us max=1962us
+==== end block 4 ====
+
+==== FS04 block 5 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 270678 us (14616647 ticks)
+previous report write 22113 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=3       total=1840     us avg=613    us max=637    us min=587us
+dev.write_one      n=6       total=12168    us avg=2028   us max=2180   us min=1922us
+dev.r.wait_dat     n=3       total=0        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=3       total=16       us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=3       total=1766     us avg=588    us max=612    us min=563us
+dev.r.pio          n=3       total=53       us avg=17     us max=17     us min=17us
+dev.r.data_done    n=3       total=2        us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=6       total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=6       total=33       us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=6       total=2        us avg=0      us max=0      us min=0us
+dev.w.pio          n=6       total=22       us avg=3      us max=3      us min=3us
+dev.w.data_done    n=6       total=12107    us avg=2017   us max=2170   us min=1912us
+cache.read.hit     n=21
+cache.read.miss    n=3
+cache.write.hit    n=6
+cache.flush.wb     n=6
+cache.flush.call   n=5
+gemdos.dispatch    n=18      total=14081    us avg=782    us max=6819   us min=0us
+desk.fun_op        n=1       total=1281513  us avg=1281513us max=1281513us min=1281513us
+desk.copy_pass     n=1       total=1281488  us avg=1281488us max=1281488us min=1281488us
+dofcopy.Fopen      n=1       total=14       us avg=14     us max=14     us min=14us
+dofcopy.outname    n=1       total=8        us avg=8      us max=8      us min=8us
+dofcopy.Fcreate    n=1       total=2052     us avg=2052   us max=2052   us min=2052us
+dofcopy.Fread      n=2       total=1260     us avg=630    us max=1259   us min=1us
+dofcopy.Fwrite     n=1       total=6821     us avg=6821   us max=6821   us min=6821us
+dofcopy.Fdatime    n=1       total=1956     us avg=1956   us max=1956   us min=1956us
+dofcopy.Fclose     n=1       total=1963     us avg=1963   us max=1963   us min=1963us
+dofcopy.total      n=1       total=14078    us avg=14078  us max=14078  us min=14078us
+blk.read_blocks    calls=3       amount=3         max/call=1 min/call=1
+blk.write_blocks   calls=6       amount=6         max/call=1 min/call=1
+desk.fun_drag      n=1       total=1532352  us avg=1532352us max=1532352us min=1532352us
+desk.rebuild_win   n=1       total=125296   us avg=125296 us max=125296 us min=125296us
+desk.redraw_desk   n=2       total=233805   us avg=116902 us max=117046 us min=116758us
+fb.clean           calls=2672    amount=417191508 max/call=3486720 min/call=4
+fb.clean_lines     calls=2672    amount=6520424   max/call=54480 min/call=1
+emmc.spin          calls=45      amount=69549     max/call=10851 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=2051     us max=2051us
+  0x3d  n=1      total=12       us max=12us
+  0x3e  n=2      total=1961     us max=1960us
+  0x3f  n=2      total=1258     us max=1258us
+  0x40  n=1      total=6819     us max=6819us
+  0x4e  n=2      total=12       us max=7us
+  0x4f  n=5      total=7        us max=2us
+  0x54  n=1      total=0        us max=0us
+  0x57  n=1      total=1955     us max=1955us
+==== end block 5 ====
+
+==== FS04 block 6 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 241386 us (13034845 ticks)
+previous report write 39077 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=1       total=761      us avg=761    us max=761    us min=761us
+dev.r.wait_dat     n=1       total=0        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=1       total=6        us avg=6      us max=6      us min=6us
+dev.r.read_rdy     n=1       total=736      us avg=736    us max=736    us min=736us
+dev.r.pio          n=1       total=18       us avg=18     us max=18     us min=18us
+dev.r.data_done    n=1       total=0        us avg=0      us max=0      us min=0us
+cache.read.hit     n=5
+cache.read.miss    n=1
+gemdos.dispatch    n=8       total=782      us avg=97     us max=772    us min=0us
+desk.fun_op        n=1       total=1095550  us avg=1095550us max=1095550us min=1095550us
+desk.copy_pass     n=1       total=1095527  us avg=1095527us max=1095527us min=1095527us
+blk.read_blocks    calls=1       amount=1         max/call=1 min/call=1
+desk.fun_drag      n=1       total=1332037  us avg=1332037us max=1332037us min=1332037us
+desk.rebuild_win   n=1       total=122948   us avg=122948 us max=122948 us min=122948us
+desk.redraw_desk   n=2       total=227005   us avg=113502 us max=113525 us min=113480us
+fb.clean           calls=2274    amount=313167096 max/call=3486720 min/call=4
+fb.clean_lines     calls=2274    amount=4894777   max/call=54480 min/call=1
+emmc.spin          calls=5       amount=3700      max/call=3678 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=1      total=0        us max=0us
+  0x4e  n=1      total=772      us max=772us
+  0x4f  n=5      total=7        us max=3us
+  0x54  n=1      total=0        us max=0us
+==== end block 6 ====
+
+==== FS04 block 7 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 240284 us (12975341 ticks)
+previous report write 15734 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+cache.read.hit     n=6
+gemdos.dispatch    n=8       total=16       us avg=2      us max=7      us min=0us
+desk.fun_op        n=1       total=1659583  us avg=1659583us max=1659583us min=1659583us
+desk.copy_pass     n=1       total=1659561  us avg=1659561us max=1659561us min=1659561us
+desk.fun_drag      n=1       total=1895016  us avg=1895016us max=1895016us min=1895016us
+desk.rebuild_win   n=1       total=121995   us avg=121995 us max=121995 us min=121995us
+desk.redraw_desk   n=2       total=226917   us avg=113458 us max=113493 us min=113424us
+fb.clean           calls=2176    amount=313051444 max/call=3486720 min/call=4
+fb.clean_lines     calls=2176    amount=4892879   max/call=54480 min/call=1
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=1      total=0        us max=0us
+  0x4e  n=1      total=7        us max=7us
+  0x4f  n=5      total=7        us max=2us
+  0x54  n=1      total=1        us max=1us
+==== end block 7 ====
+
+==== FS04 block 8 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 271347 us (14652787 ticks)
+previous report write 20807 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=2       total=1794     us avg=897    us max=1006   us min=787us
+dev.write_one      n=15      total=31561    us avg=2104   us max=2197   us min=1927us
+dev.r.wait_dat     n=2       total=1        us avg=0      us max=1      us min=0us
+dev.r.cmd17        n=2       total=11       us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=2       total=1743     us avg=871    us max=980    us min=762us
+dev.r.pio          n=2       total=36       us avg=18     us max=18     us min=17us
+dev.r.data_done    n=2       total=1        us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=15      total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=15      total=84       us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=15      total=5        us avg=0      us max=0      us min=0us
+dev.w.pio          n=15      total=58       us avg=3      us max=4      us min=3us
+dev.w.data_done    n=15      total=31410    us avg=2094   us max=2187   us min=1917us
+cache.read.hit     n=54
+cache.read.miss    n=2
+cache.write.hit    n=25
+cache.flush.wb     n=15
+cache.flush.call   n=5
+gemdos.dispatch    n=8       total=33448    us avg=4181   us max=8128   us min=0us
+desk.fun_op        n=1       total=1807112  us avg=1807112us max=1807112us min=1807112us
+desk.copy_pass     n=1       total=1807100  us avg=1807100us max=1807100us min=1807100us
+blk.read_blocks    calls=2       amount=2         max/call=1 min/call=1
+blk.write_blocks   calls=15      amount=15        max/call=1 min/call=1
+desk.fun_drag      n=1       total=2036842  us avg=2036842us max=2036842us min=2036842us
+desk.rebuild_win   n=1       total=118463   us avg=118463 us max=118463 us min=118463us
+desk.redraw_desk   n=2       total=222108   us avg=111054 us max=111249 us min=110859us
+fb.clean           calls=2701    amount=323050648 max/call=3486720 min/call=4
+fb.clean_lines     calls=2701    amount=5049584   max/call=54480 min/call=1
+emmc.spin          calls=85      amount=166107    max/call=10934 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=1      total=1        us max=1us
+  0x41  n=5      total=33441    us max=8128us
+  0x4e  n=1      total=4        us max=4us
+  0x54  n=1      total=0        us max=0us
+==== end block 8 ====
+
+==== FS04 block 9 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 288987 us (15605311 ticks)
+previous report write 16430 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=14      total=9312     us avg=665    us max=788    us min=521us
+dev.write_one      n=12      total=25595    us avg=2132   us max=2263   us min=1954us
+dev.r.wait_dat     n=14      total=0        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=14      total=79       us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=14      total=8967     us avg=640    us max=763    us min=496us
+dev.r.pio          n=14      total=251      us avg=17     us max=18     us min=17us
+dev.r.data_done    n=14      total=10       us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=12      total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=12      total=67       us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=12      total=4        us avg=0      us max=0      us min=0us
+dev.w.pio          n=12      total=46       us avg=3      us max=4      us min=3us
+dev.w.data_done    n=12      total=25474    us avg=2122   us max=2253   us min=1944us
+cache.read.hit     n=10
+cache.read.miss    n=14
+cache.write.hit    n=6
+cache.write.miss   n=6
+cache.flush.wb     n=12
+cache.flush.call   n=5
+gemdos.dispatch    n=14      total=34992    us avg=2499   us max=21920  us min=0us
+desk.fun_op        n=1       total=1787305  us avg=1787305us max=1787305us min=1787305us
+desk.copy_pass     n=1       total=1787281  us avg=1787281us max=1787281us min=1787281us
+dofcopy.Fopen      n=1       total=634      us avg=634    us max=634    us min=634us
+dofcopy.outname    n=1       total=681      us avg=681    us max=681    us min=681us
+dofcopy.Fcreate    n=1       total=1968     us avg=1968   us max=1968   us min=1968us
+dofcopy.Fread      n=2       total=5276     us avg=2638   us max=5275   us min=1us
+dofcopy.Fwrite     n=1       total=21921    us avg=21921  us max=21921  us min=21921us
+dofcopy.Fdatime    n=1       total=2550     us avg=2550   us max=2550   us min=2550us
+dofcopy.Fclose     n=1       total=1963     us avg=1963   us max=1963   us min=1963us
+dofcopy.total      n=1       total=34996    us avg=34996  us max=34996  us min=34996us
+blk.read_blocks    calls=14      amount=14        max/call=1 min/call=1
+blk.write_blocks   calls=12      amount=12        max/call=1 min/call=1
+desk.fun_drag      n=1       total=2035755  us avg=2035755us max=2035755us min=2035755us
+desk.rebuild_win   n=1       total=124230   us avg=124230 us max=124230 us min=124230us
+desk.redraw_desk   n=2       total=231734   us avg=115867 us max=115906 us min=115828us
+fb.clean           calls=2557    amount=409956564 max/call=3486720 min/call=4
+fb.clean_lines     calls=2557    amount=6407327   max/call=54480 min/call=1
+emmc.spin          calls=130     amount=172716    max/call=11266 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=1967     us max=1967us
+  0x3d  n=1      total=632      us max=632us
+  0x3e  n=2      total=1961     us max=1960us
+  0x3f  n=2      total=5273     us max=5273us
+  0x40  n=1      total=21920    us max=21920us
+  0x4e  n=2      total=684      us max=678us
+  0x4f  n=1      total=2        us max=2us
+  0x54  n=1      total=0        us max=0us
+  0x57  n=1      total=2549     us max=2549us
+==== end block 9 ====
+
+==== FS04 block 10 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 340109 us (18365920 ticks)
+previous report write 51318 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=13      total=8877     us avg=682    us max=877    us min=521us
+dev.write_one      n=12      total=77630    us avg=6469   us max=29596  us min=2165us
+dev.r.wait_dat     n=13      total=1        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=13      total=74       us avg=5      us max=6      us min=5us
+dev.r.read_rdy     n=13      total=8557     us avg=658    us max=852    us min=497us
+dev.r.pio          n=13      total=234      us avg=18     us max=18     us min=17us
+dev.r.data_done    n=13      total=9        us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=12      total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=12      total=67       us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=12      total=4        us avg=0      us max=0      us min=0us
+dev.w.pio          n=12      total=46       us avg=3      us max=4      us min=3us
+dev.w.data_done    n=12      total=77509    us avg=6459   us max=29586  us min=2155us
+cache.read.hit     n=12
+cache.read.miss    n=13
+cache.write.hit    n=6
+cache.write.miss   n=6
+cache.flush.wb     n=12
+cache.flush.call   n=5
+gemdos.dispatch    n=17      total=86596    us avg=5093   us max=33118  us min=0us
+desk.fun_op        n=1       total=1548399  us avg=1548399us max=1548399us min=1548399us
+desk.copy_pass     n=1       total=1548375  us avg=1548375us max=1548375us min=1548375us
+dofcopy.Fopen      n=1       total=636      us avg=636    us max=636    us min=636us
+dofcopy.outname    n=1       total=8        us avg=8      us max=8      us min=8us
+dofcopy.Fcreate    n=1       total=29611    us avg=29611  us max=29611  us min=29611us
+dofcopy.Fread      n=2       total=5284     us avg=2642   us max=5283   us min=1us
+dofcopy.Fwrite     n=1       total=33119    us avg=33119  us max=33119  us min=33119us
+dofcopy.Fdatime    n=1       total=15766    us avg=15766  us max=15766  us min=15766us
+dofcopy.Fclose     n=1       total=2171     us avg=2171   us max=2171   us min=2171us
+dofcopy.total      n=1       total=86599    us avg=86599  us max=86599  us min=86599us
+blk.read_blocks    calls=13      amount=13        max/call=1 min/call=1
+blk.write_blocks   calls=12      amount=12        max/call=1 min/call=1
+desk.fun_drag      n=1       total=1792842  us avg=1792842us max=1792842us min=1792842us
+desk.rebuild_win   n=1       total=121897   us avg=121897 us max=121897 us min=121897us
+desk.redraw_desk   n=2       total=227676   us avg=113838 us max=113841 us min=113835us
+fb.clean           calls=3647    amount=618534920 max/call=3072008 min/call=4
+fb.clean_lines     calls=3647    amount=9667213   max/call=48001 min/call=1
+emmc.spin          calls=125     amount=430818    max/call=147927 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=29609    us max=29609us
+  0x3d  n=1      total=634      us max=634us
+  0x3e  n=2      total=2169     us max=2168us
+  0x3f  n=2      total=5282     us max=5282us
+  0x40  n=1      total=33118    us max=33118us
+  0x4e  n=2      total=11       us max=6us
+  0x4f  n=2      total=4        us max=2us
+  0x54  n=3      total=0        us max=0us
+  0x57  n=1      total=15764    us max=15764us
+==== end block 10 ====
+
+==== FS04 block 11 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 283810 us (15325749 ticks)
+previous report write 23116 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=14      total=10036    us avg=716    us max=1117   us min=534us
+dev.write_one      n=14      total=32299    us avg=2307   us max=3494   us min=1957us
+dev.r.wait_dat     n=14      total=0        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=14      total=78       us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=14      total=9692     us avg=692    us max=1092   us min=510us
+dev.r.pio          n=14      total=251      us avg=17     us max=18     us min=17us
+dev.r.data_done    n=14      total=10       us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=14      total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=14      total=79       us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=14      total=4        us avg=0      us max=0      us min=0us
+dev.w.pio          n=14      total=54       us avg=3      us max=4      us min=3us
+dev.w.data_done    n=14      total=32158    us avg=2297   us max=3484   us min=1946us
+cache.read.hit     n=16
+cache.read.miss    n=14
+cache.write.hit    n=6
+cache.write.miss   n=8
+cache.flush.wb     n=14
+cache.flush.call   n=5
+gemdos.dispatch    n=17      total=42432    us avg=2496   us max=29091  us min=0us
+desk.fun_op        n=1       total=1409414  us avg=1409414us max=1409414us min=1409414us
+desk.copy_pass     n=1       total=1409391  us avg=1409391us max=1409391us min=1409391us
+dofcopy.Fopen      n=1       total=16       us avg=16     us max=16     us min=16us
+dofcopy.outname    n=1       total=8        us avg=8      us max=8      us min=8us
+dofcopy.Fcreate    n=1       total=2050     us avg=2050   us max=2050   us min=2050us
+dofcopy.Fread      n=2       total=6753     us avg=3376   us max=6752   us min=1us
+dofcopy.Fwrite     n=1       total=29092    us avg=29092  us max=29092  us min=29092us
+dofcopy.Fdatime    n=1       total=2549     us avg=2549   us max=2549   us min=2549us
+dofcopy.Fclose     n=1       total=1962     us avg=1962   us max=1962   us min=1962us
+dofcopy.total      n=1       total=42435    us avg=42435  us max=42435  us min=42435us
+blk.read_blocks    calls=14      amount=14        max/call=1 min/call=1
+blk.write_blocks   calls=14      amount=14        max/call=1 min/call=1
+desk.fun_drag      n=1       total=1644539  us avg=1644539us max=1644539us min=1644539us
+desk.rebuild_win   n=1       total=117108   us avg=117108 us max=117108 us min=117108us
+desk.redraw_desk   n=2       total=219064   us avg=109532 us max=109633 us min=109430us
+fb.clean           calls=3447    amount=585807876 max/call=3083008 min/call=4
+fb.clean_lines     calls=3447    amount=9155568   max/call=48172 min/call=1
+emmc.spin          calls=140     amount=209797    max/call=17423 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=2049     us max=2049us
+  0x3d  n=1      total=13       us max=13us
+  0x3e  n=2      total=1960     us max=1959us
+  0x3f  n=2      total=6750     us max=6750us
+  0x40  n=1      total=29091    us max=29091us
+  0x4e  n=2      total=11       us max=5us
+  0x4f  n=3      total=5        us max=2us
+  0x54  n=2      total=0        us max=0us
+  0x57  n=1      total=2548     us max=2548us
+==== end block 11 ====
+
+==== FS04 block 12 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 289744 us (15646186 ticks)
+previous report write 38872 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=19      total=11962    us avg=629    us max=796    us min=563us
+dev.write_one      n=17      total=36050    us avg=2120   us max=2298   us min=1935us
+dev.r.wait_dat     n=19      total=1        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=19      total=107      us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=19      total=11495    us avg=605    us max=771    us min=538us
+dev.r.pio          n=19      total=341      us avg=17     us max=18     us min=17us
+dev.r.data_done    n=19      total=13       us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=17      total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=17      total=96       us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=17      total=6        us avg=0      us max=0      us min=0us
+dev.w.pio          n=17      total=65       us avg=3      us max=4      us min=3us
+dev.w.data_done    n=17      total=35878    us avg=2110   us max=2288   us min=1925us
+cache.read.hit     n=15
+cache.read.miss    n=19
+cache.write.hit    n=6
+cache.write.miss   n=11
+cache.flush.wb     n=17
+cache.flush.call   n=5
+gemdos.dispatch    n=18      total=48121    us avg=2673   us max=32491  us min=0us
+desk.fun_op        n=1       total=1051007  us avg=1051007us max=1051007us min=1051007us
+desk.copy_pass     n=1       total=1050985  us avg=1050985us max=1050985us min=1050985us
+dofcopy.Fopen      n=1       total=637      us avg=637    us max=637    us min=637us
+dofcopy.outname    n=1       total=679      us avg=679    us max=679    us min=679us
+dofcopy.Fcreate    n=1       total=1950     us avg=1950   us max=1950   us min=1950us
+dofcopy.Fread      n=2       total=7847     us avg=3923   us max=7846   us min=1us
+dofcopy.Fwrite     n=1       total=32492    us avg=32492  us max=32492  us min=32492us
+dofcopy.Fdatime    n=1       total=2549     us avg=2549   us max=2549   us min=2549us
+dofcopy.Fclose     n=1       total=1966     us avg=1966   us max=1966   us min=1966us
+dofcopy.total      n=1       total=48124    us avg=48124  us max=48124  us min=48124us
+blk.read_blocks    calls=19      amount=19        max/call=1 min/call=1
+blk.write_blocks   calls=17      amount=17        max/call=1 min/call=1
+desk.fun_drag      n=1       total=1286423  us avg=1286423us max=1286423us min=1286423us
+desk.rebuild_win   n=1       total=117284   us avg=117284 us max=117284 us min=117284us
+desk.redraw_desk   n=2       total=219467   us avg=109733 us max=109960 us min=109506us
+fb.clean           calls=3478    amount=588059828 max/call=3083008 min/call=4
+fb.clean_lines     calls=3478    amount=9190771   max/call=48172 min/call=1
+emmc.spin          calls=180     amount=237570    max/call=11441 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=1948     us max=1948us
+  0x3d  n=1      total=635      us max=635us
+  0x3e  n=2      total=1964     us max=1963us
+  0x3f  n=2      total=7845     us max=7845us
+  0x40  n=1      total=32491    us max=32491us
+  0x4e  n=2      total=680      us max=675us
+  0x4f  n=4      total=6        us max=2us
+  0x54  n=2      total=0        us max=0us
+  0x57  n=1      total=2547     us max=2547us
+==== end block 12 ====
+
+==== FS04 block 13 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 288033 us (15553823 ticks)
+previous report write 22715 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=18      total=11435    us avg=635    us max=789    us min=563us
+dev.write_one      n=17      total=36109    us avg=2124   us max=2237   us min=1920us
+dev.r.wait_dat     n=18      total=1        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=18      total=102      us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=18      total=10992    us avg=610    us max=764    us min=538us
+dev.r.pio          n=18      total=324      us avg=18     us max=18     us min=17us
+dev.r.data_done    n=18      total=13       us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=17      total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=17      total=96       us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=17      total=6        us avg=0      us max=0      us min=0us
+dev.w.pio          n=17      total=65       us avg=3      us max=4      us min=3us
+dev.w.data_done    n=17      total=35937    us avg=2113   us max=2227   us min=1910us
+cache.read.hit     n=14
+cache.read.miss    n=18
+cache.write.hit    n=6
+cache.write.miss   n=11
+cache.flush.wb     n=17
+cache.flush.call   n=5
+gemdos.dispatch    n=16      total=47650    us avg=2978   us max=32547  us min=0us
+desk.fun_op        n=1       total=2225816  us avg=2225816us max=2225816us min=2225816us
+desk.copy_pass     n=1       total=2225792  us avg=2225792us max=2225792us min=2225792us
+dofcopy.Fopen      n=1       total=16       us avg=16     us max=16     us min=16us
+dofcopy.outname    n=1       total=775      us avg=775    us max=775    us min=775us
+dofcopy.Fcreate    n=1       total=1971     us avg=1971   us max=1971   us min=1971us
+dofcopy.Fread      n=2       total=7849     us avg=3924   us max=7848   us min=1us
+dofcopy.Fwrite     n=1       total=32549    us avg=32549  us max=32549  us min=32549us
+dofcopy.Fdatime    n=1       total=2564     us avg=2564   us max=2564   us min=2564us
+dofcopy.Fclose     n=1       total=1926     us avg=1926   us max=1926   us min=1926us
+dofcopy.total      n=1       total=47653    us avg=47653  us max=47653  us min=47653us
+blk.read_blocks    calls=18      amount=18        max/call=1 min/call=1
+blk.write_blocks   calls=17      amount=17        max/call=1 min/call=1
+desk.fun_drag      n=1       total=2459879  us avg=2459879us max=2459879us min=2459879us
+desk.rebuild_win   n=1       total=115218   us avg=115218 us max=115218 us min=115218us
+desk.redraw_desk   n=2       total=220872   us avg=110436 us max=110466 us min=110405us
+fb.clean           calls=3609    amount=570065324 max/call=3083008 min/call=4
+fb.clean_lines     calls=3609    amount=8909713   max/call=48172 min/call=1
+emmc.spin          calls=175     amount=235333    max/call=11134 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=1970     us max=1970us
+  0x3d  n=1      total=14       us max=14us
+  0x3e  n=2      total=1924     us max=1923us
+  0x3f  n=2      total=7847     us max=7846us
+  0x40  n=1      total=32547    us max=32547us
+  0x4e  n=2      total=778      us max=772us
+  0x4f  n=2      total=3        us max=2us
+  0x54  n=2      total=0        us max=0us
+  0x57  n=1      total=2562     us max=2562us
+==== end block 13 ====
+
+==== FS04 block 14 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 267057 us (14421123 ticks)
+previous report write 41689 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=31      total=19339    us avg=623    us max=730    us min=521us
+dev.write_one      n=6       total=11862    us avg=1977   us max=2134   us min=1930us
+dev.r.wait_dat     n=31      total=1        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=31      total=176      us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=31      total=18576    us avg=599    us max=705    us min=496us
+dev.r.pio          n=31      total=557      us avg=17     us max=18     us min=17us
+dev.r.data_done    n=31      total=22       us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=6       total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=6       total=33       us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=6       total=2        us avg=0      us max=0      us min=0us
+dev.w.pio          n=6       total=23       us avg=3      us max=4      us min=3us
+dev.w.data_done    n=6       total=11802    us avg=1967   us max=2124   us min=1920us
+cache.read.hit     n=33
+cache.read.miss    n=31
+cache.write.hit    n=6
+cache.flush.wb     n=6
+cache.flush.call   n=5
+gemdos.dispatch    n=35      total=31365    us avg=896    us max=15538  us min=0us
+desk.fun_op        n=1       total=1395235  us avg=1395235us max=1395235us min=1395235us
+desk.copy_pass     n=1       total=1395214  us avg=1395214us max=1395214us min=1395214us
+dofcopy.Fopen      n=1       total=636      us avg=636    us max=636    us min=636us
+dofcopy.outname    n=1       total=647      us avg=647    us max=647    us min=647us
+dofcopy.Fcreate    n=1       total=1961     us avg=1961   us max=1961   us min=1961us
+dofcopy.Fread      n=2       total=540      us avg=270    us max=539    us min=1us
+dofcopy.Fwrite     n=1       total=15540    us avg=15540  us max=15540  us min=15540us
+dofcopy.Fdatime    n=1       total=2572     us avg=2572   us max=2572   us min=2572us
+dofcopy.Fclose     n=1       total=1959     us avg=1959   us max=1959   us min=1959us
+dofcopy.total      n=1       total=23860    us avg=23860  us max=23860  us min=23860us
+blk.read_blocks    calls=31      amount=31        max/call=1 min/call=1
+blk.write_blocks   calls=6       amount=6         max/call=1 min/call=1
+desk.fun_drag      n=1       total=1632296  us avg=1632296us max=1632296us min=1632296us
+desk.rebuild_win   n=1       total=126584   us avg=126584 us max=126584 us min=126584us
+desk.redraw_desk   n=2       total=220939   us avg=110469 us max=110485 us min=110453us
+fb.clean           calls=3240    amount=541406640 max/call=3083008 min/call=4
+fb.clean_lines     calls=3240    amount=8461628   max/call=48172 min/call=1
+emmc.spin          calls=185     amount=152602    max/call=10621 min/call=0
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=1959     us max=1959us
+  0x3d  n=1      total=634      us max=634us
+  0x3e  n=2      total=1957     us max=1956us
+  0x3f  n=2      total=538      us max=538us
+  0x40  n=1      total=15538    us max=15538us
+  0x4e  n=2      total=1271     us max=644us
+  0x4f  n=21     total=6890     us max=5611us
+  0x54  n=2      total=1        us max=0us
+  0x57  n=1      total=2571     us max=2571us
+==== end block 14 ====
+
