@@ -664,19 +664,181 @@ fn redraw_desktop_inner() {""")
             super::fs04drv::mark_reset(); // FS04-TEMP: the freeze starts here
         }""")
 
-# ── 7. the driver ──────────────────────────────────────────────────────────
+# ── 5c. Fseek, so the report can be APPENDED rather than overwritten ───────
+sub1('kernel/src/desk/dosbind.rs', "const FDATIME: u16 = 0x57;",
+     "const FDATIME: u16 = 0x57;\nconst FSEEK: u16 = 0x42; // FS04-TEMP")
+sub1('kernel/src/desk/dosbind.rs',
+     """/// `dos_delete` — `Fdelete(name)` (`gemdos.h:125-128`).""",
+     """/// FS04-TEMP: `Fseek(offset, handle, seekmode)` — `seekmode` 2 = from the
+/// end, which is how the probe appends its report instead of overwriting it.
+pub(super) fn dos_seek(offset: i32, handle: i16, seekmode: u16) -> Long {
+    dos_trap(FSEEK, sx(offset as i64), sx(handle as i64), seekmode as u64)
+}
+
+/// `dos_delete` — `Fdelete(name)` (`gemdos.h:125-128`).""")
+
+# ── 5d. the active framebuffer's geometry, for the report header ───────────
+sub1('kernel/src/vdi_backend.rs',
+     """/// The screen VDI backend (zero-sized; state lives in the framebuffer).""",
+     """/// FS04-TEMP: the active framebuffer's geometry, so the probe's report can
+/// name the screen the numbers were taken on.  On the Pi that is the HDMI mode
+/// the VideoCore reported, which is not knowable from the QEMU runs.
+pub fn fs04_fb_geometry() -> (u32, u32, u32) {
+    let fb = active_fb();
+    (fb.width(), fb.height(), fb.stride_px())
+}
+
+/// The screen VDI backend (zero-sized; state lives in the framebuffer).""")
+
+# ── 7. the driver and the report sink ──────────────────────────────────────
 wr('kernel/src/desk/fs04drv.rs', r'''
-//! FS04-TEMP — the measurement driver (audit scaffolding; NOT product code).
+//! FS04-TEMP — the measurement driver and the report sink (audit scaffolding;
+//! NOT product code).
 //!
-//! Runs the copy the ticket describes straight through the desktop's own
-//! `fun_op` — the function a drag-and-drop ends in (`fun_win2win`,
-//! `deskfun.c:985`) — and prints the layer-by-layer distribution afterwards.
-//! Nothing is printed while a copy runs.
+//! The report goes **to a file on the card**, `C:\FS04.TXT`, because the Pi
+//! under test has no serial capture — the only output the user sees is the
+//! screen, and a `kprintln` there is invisible.  The same text also goes to
+//! the serial console, so the QEMU runs stay comparable with
+//! `measurement-2026-09-25-fs04/raw/`.
+//!
+//! ## The ordering that keeps the instrument out of its own numbers
+//!
+//! Writing a file is GEMDOS + FAT + sector cache + EMMC traffic — exactly the
+//! traffic being measured.  [`report`] therefore runs in four strictly ordered
+//! steps and the file I/O is the **last** of them:
+//!
+//! 1. [`take_snapshot`] copies every counter out of the atomics into [`SNAP`].
+//!    From here on nothing that happens can change what is reported.
+//! 2. [`format_block`] renders the whole block into [`TEXT`] — still no I/O.
+//! 3. [`emit_serial`] prints [`TEXT`] (free, and identical to the file).
+//! 4. [`write_card`] opens, seeks to the end, writes and closes.
+//!
+//! `report` itself is only ever called **after** the measured interval has
+//! been closed: the `fun_drag` wrapper records `DRAG_TOTAL` first and calls
+//! `report` afterwards, and the driver's `one_copy` reads its end timestamp
+//! before calling it.  The cost of step 4 is measured and reported in the
+//! **next** block's header (`previous report write`), so it is never silently
+//! folded into a measurement — it just is not in this block's numbers.
+//!
+//! Blocks are appended (`Fseek(0, h, 2)`), never overwritten, so repeating the
+//! gesture leaves several blocks in one file.
+
+use core::cell::UnsafeCell;
+use core::fmt::Write as _;
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use tos_api::fs04probe as fp;
 
 use super::dir::{self, Op, SelEntry};
 use crate::kprintln;
+
+/// Where the report lands: the root of the boot partition, plain 8.3 text, so
+/// the card can be read on any host with no tooling.
+const REPORT_PATH: &str = "C:\\FS04.TXT";
+
+/// Cost of the previous [`write_card`], in counter ticks.
+static PREV_WRITE: AtomicU64 = AtomicU64::new(0);
+/// Block counter, so repeated gestures are distinguishable in the file.
+static BLOCK: AtomicU32 = AtomicU32::new(0);
+/// Wall-clock origin, set by [`mark_reset`].
+static T0: AtomicU64 = AtomicU64::new(0);
+
+// ── the two scratch buffers ────────────────────────────────────────────────
+
+struct Shared<T>(UnsafeCell<T>);
+// SAFETY: the desktop is single-CPU and `report` is never re-entered (the
+// file I/O in step 4 cannot reach the desktop's copy path).
+unsafe impl<T> Sync for Shared<T> {}
+
+const TEXT_CAP: usize = 16 * 1024;
+struct TextBuf {
+    data: [u8; TEXT_CAP],
+    len: usize,
+}
+static TEXT: Shared<TextBuf> = Shared(UnsafeCell::new(TextBuf {
+    data: [0; TEXT_CAP],
+    len: 0,
+}));
+
+fn text() -> &'static mut TextBuf {
+    // SAFETY: single-CPU, non-reentrant (see `Shared`).
+    unsafe { &mut *TEXT.0.get() }
+}
+
+impl core::fmt::Write for TextBuf {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let b = s.as_bytes();
+        let n = b.len().min(TEXT_CAP - self.len);
+        self.data[self.len..self.len + n].copy_from_slice(&b[..n]);
+        self.len += n;
+        Ok(())
+    }
+}
+
+/// Number of distinct GEMDOS opcodes kept in a snapshot.
+const NG: usize = 64;
+
+struct Snap {
+    cnt: [u64; fp::NSLOT],
+    tck: [u64; fp::NSLOT],
+    mx: [u64; fp::NSLOT],
+    mn: [u64; fp::NSLOT],
+    /// `(opcode, calls, ticks, worst)`.
+    g: [(u16, u64, u64, u64); NG],
+    gn: usize,
+    freq: u64,
+    wall: u64,
+    prev_write: u64,
+    block: u32,
+}
+
+static SNAP: Shared<Snap> = Shared(UnsafeCell::new(Snap {
+    cnt: [0; fp::NSLOT],
+    tck: [0; fp::NSLOT],
+    mx: [0; fp::NSLOT],
+    mn: [0; fp::NSLOT],
+    g: [(0, 0, 0, 0); NG],
+    gn: 0,
+    freq: 0,
+    wall: 0,
+    prev_write: 0,
+    block: 0,
+}));
+
+fn snap() -> &'static mut Snap {
+    // SAFETY: single-CPU, non-reentrant (see `Shared`).
+    unsafe { &mut *SNAP.0.get() }
+}
+
+// ── step 1: every counter out of the atomics, before any I/O ───────────────
+
+fn take_snapshot(wall: u64) {
+    let s = snap();
+    for i in 0..fp::NSLOT {
+        s.cnt[i] = fp::CNT[i].load(Ordering::Relaxed);
+        s.tck[i] = fp::TCK[i].load(Ordering::Relaxed);
+        s.mx[i] = fp::MAXT[i].load(Ordering::Relaxed);
+        s.mn[i] = fp::MINT[i].load(Ordering::Relaxed);
+    }
+    s.gn = 0;
+    for op in 0..256usize {
+        let c = fp::GCNT[op].load(Ordering::Relaxed);
+        if c == 0 || s.gn >= NG {
+            continue;
+        }
+        s.g[s.gn] = (
+            op as u16,
+            c,
+            fp::GTCK[op].load(Ordering::Relaxed),
+            fp::GMAX[op].load(Ordering::Relaxed),
+        );
+        s.gn += 1;
+    }
+    s.freq = fp::freq();
+    s.wall = wall;
+    s.prev_write = PREV_WRITE.load(Ordering::Relaxed);
+    s.block = BLOCK.fetch_add(1, Ordering::Relaxed) + 1;
+}
 
 fn tick_us(t: u64) -> u64 {
     let f = fp::freq();
@@ -686,6 +848,216 @@ fn tick_us(t: u64) -> u64 {
         t * 1_000_000 / f
     }
 }
+
+fn snap_us(s: &Snap, t: u64) -> u64 {
+    if s.freq == 0 {
+        0
+    } else {
+        t * 1_000_000 / s.freq
+    }
+}
+
+// ── step 2: render the block; still no I/O ─────────────────────────────────
+
+fn format_block(tag: &str) {
+    let s = snap();
+    let t = text();
+    t.len = 0;
+    let (fw, fh, stride) = crate::vdi_backend::fs04_fb_geometry();
+    let (dw, dh) = super::global::with(|g| (g.g_desk.w, g.g_desk.h)).unwrap_or((0, 0));
+    let _ = write!(
+        t,
+        "==== FS04 block {} : {} ====\r\n",
+        s.block, tag
+    );
+    let _ = write!(
+        t,
+        "screen {}x{} stride {}px   desk {}x{}   CNTFRQ {} Hz\r\n",
+        fw, fh, stride, dw, dh, s.freq
+    );
+    let _ = write!(
+        t,
+        "wall {} us ({} ticks)\r\n",
+        snap_us(s, s.wall),
+        s.wall
+    );
+    let _ = write!(
+        t,
+        "previous report write {} us  (this block's own write is in no number below)\r\n",
+        snap_us(s, s.prev_write)
+    );
+    let _ = write!(
+        t,
+        "NOTE  `wall` is the time from the OK click in the confirmation box to the\r\n\
+         \x20     end of the whole drop -- that is the freeze.  desk.fun_op,\r\n\
+         \x20     desk.copy_pass and desk.fun_drag START BEFORE that box and so also\r\n\
+         \x20     contain the seconds it stood waiting for the click; they are not it.\r\n"
+    );
+    for i in 0..fp::NSLOT {
+        let c = s.cnt[i];
+        if c == 0 {
+            continue;
+        }
+        if i == fp::slot::BLK_READ
+            || i == fp::slot::BLK_WRITE
+            || i == fp::slot::FB_CLEAN
+            || i == fp::slot::FB_CLEAN_LINES
+            || i == fp::slot::EMMC_SPIN
+        {
+            let _ = write!(
+                t,
+                "{:<18} calls={:<7} amount={:<9} max/call={} min/call={}\r\n",
+                fp::NAMES[i], c, s.tck[i], s.mx[i], s.mn[i]
+            );
+        } else if s.tck[i] == 0 && s.mx[i] == 0 {
+            // A pure occurrence counter -- no duration was ever recorded for it.
+            let _ = write!(t, "{:<18} n={}\r\n", fp::NAMES[i], c);
+        } else {
+            let _ = write!(
+                t,
+                "{:<18} n={:<7} total={:<9}us avg={:<7}us max={:<7}us min={}us\r\n",
+                fp::NAMES[i],
+                c,
+                snap_us(s, s.tck[i]),
+                snap_us(s, s.tck[i] / c),
+                snap_us(s, s.mx[i]),
+                snap_us(s, s.mn[i])
+            );
+        }
+    }
+    let _ = write!(t, "--- GEMDOS calls (opcode: n, total us, max us) ---\r\n");
+    for k in 0..s.gn {
+        let (op, c, tk, mx) = s.g[k];
+        let _ = write!(
+            t,
+            "  0x{:02x}  n={:<6} total={:<9}us max={}us\r\n",
+            op,
+            c,
+            snap_us(s, tk),
+            snap_us(s, mx)
+        );
+    }
+    let _ = write!(t, "==== end block {} ====\r\n\r\n", s.block);
+}
+
+// ── step 3: the same text on the serial console ────────────────────────────
+
+fn emit_serial() {
+    let t = text();
+    let Ok(s) = core::str::from_utf8(&t.data[..t.len]) else {
+        kprintln!("[fs04] report buffer is not UTF-8");
+        return;
+    };
+    for line in s.split('\n') {
+        let line = line.trim_end_matches('\r');
+        if !line.is_empty() {
+            kprintln!("[fs04] {}", line);
+        }
+    }
+}
+
+// ── step 4: and only now, the card ─────────────────────────────────────────
+
+/// Append [`TEXT`] to [`REPORT_PATH`]. Returns the cost in counter ticks.
+fn write_card() -> u64 {
+    let t0 = fp::now();
+    let t = text();
+    if t.len == 0 {
+        return 0;
+    }
+    let mut h = super::dosbind::dos_open(REPORT_PATH, 2);
+    if h < 0 {
+        h = super::dosbind::dos_create(REPORT_PATH, 0);
+        if h < 0 {
+            kprintln!("[fs04] cannot create {} (err {})", REPORT_PATH, h);
+            return fp::now().wrapping_sub(t0);
+        }
+    } else {
+        // Append: put the file pointer at the end, so repeated gestures stack
+        // up instead of overwriting each other.
+        super::dosbind::dos_seek(0, h as i16, 2);
+    }
+    let hh = h as i16;
+    let n = super::dosbind::dos_write(hh, t.len as i32, t.data.as_ptr());
+    super::dosbind::dos_close(hh);
+    if n != t.len as tos_types::Long {
+        kprintln!("[fs04] short write to {}: {} of {}", REPORT_PATH, n, t.len);
+    }
+    fp::now().wrapping_sub(t0)
+}
+
+// ── the public entry points ────────────────────────────────────────────────
+
+/// Zero every counter and start the wall clock.
+pub fn mark_reset() {
+    fp::reset();
+    T0.store(fp::now(), Ordering::Relaxed);
+}
+
+/// Report what has accumulated since [`mark_reset`].
+pub fn mark_report(tag: &str) {
+    let t0 = T0.load(Ordering::Relaxed);
+    report(tag, fp::now().wrapping_sub(t0));
+}
+
+fn report(tag: &str, wall: u64) {
+    take_snapshot(wall); // 1 — nothing after this can change the numbers
+    format_block(tag); // 2 — still no I/O
+    emit_serial(); // 3 — free
+    let dt = write_card(); // 4 — GEMDOS + FAT + EMMC, deliberately last
+    PREV_WRITE.store(dt, Ordering::Relaxed);
+    kprintln!(
+        "[fs04] block written to {} in {} us",
+        REPORT_PATH,
+        tick_us(dt)
+    );
+}
+
+/// One short block at start-up: it names the machine the later blocks were
+/// taken on (screen geometry above all, which the QEMU runs cannot know), and
+/// it proves — in the very binary that is handed over — that the file path
+/// works before any measurement depends on it.
+pub fn boot_note() {
+    let t = text();
+    t.len = 0;
+    let (fw, fh, stride) = crate::vdi_backend::fs04_fb_geometry();
+    let (dw, dh) = super::global::with(|g| (g.g_desk.w, g.g_desk.h)).unwrap_or((0, 0));
+    let bits = super::dosbind::dos_sdrv(super::dosbind::dos_gdrv());
+    let _ = write!(t, "==== FS04 probe: kernel started ====\r\n");
+    let _ = write!(
+        t,
+        "screen {}x{} stride {}px   desk {}x{}   CNTFRQ {} Hz\r\n",
+        fw,
+        fh,
+        stride,
+        dw,
+        dh,
+        fp::freq()
+    );
+    let _ = write!(t, "drives:");
+    for i in 0..16u32 {
+        if bits & (1 << i) != 0 {
+            let _ = write!(t, " {}:", (b'A' + i as u8) as char);
+        }
+    }
+    let _ = write!(t, "\r\n");
+    let _ = write!(
+        t,
+        "Copy a file from one drive to another now; one block per copy is\r\n\
+         appended below.  Repeat as often as you like.\r\n"
+    );
+    let _ = write!(t, "==== end start-up note ====\r\n\r\n");
+    emit_serial();
+    let dt = write_card();
+    PREV_WRITE.store(dt, Ordering::Relaxed);
+    kprintln!(
+        "[fs04] start-up note written to {} in {} us",
+        REPORT_PATH,
+        tick_us(dt)
+    );
+}
+
+// ── the non-interactive driver (only wired in `driver` mode) ───────────────
 
 fn entry_for(path: &str) -> Option<SelEntry> {
     let info = dir::file_exists(path)?;
@@ -700,81 +1072,6 @@ fn entry_for(path: &str) -> Option<SelEntry> {
         time: info.time,
         date: info.date,
     })
-}
-
-static T0: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-
-/// Zero every counter and start the wall clock (injector MARK `RESET`).
-pub fn mark_reset() {
-    fp::reset();
-    T0.store(fp::now(), core::sync::atomic::Ordering::Relaxed);
-}
-
-/// Print the distribution accumulated since [`mark_reset`] (MARK `REPORT`).
-pub fn mark_report(tag: &str) {
-    let t0 = T0.load(core::sync::atomic::Ordering::Relaxed);
-    report(tag, fp::now().wrapping_sub(t0));
-}
-
-fn report(tag: &str, wall: u64) {
-    kprintln!("[fs04] ===== {} =====", tag);
-    kprintln!(
-        "[fs04] wall {} us  ({} ticks @ {} Hz)",
-        tick_us(wall),
-        wall,
-        fp::freq()
-    );
-    for i in 0..fp::NSLOT {
-        let c = fp::CNT[i].load(core::sync::atomic::Ordering::Relaxed);
-        if c == 0 {
-            continue;
-        }
-        let t = fp::TCK[i].load(core::sync::atomic::Ordering::Relaxed);
-        let mx = fp::MAXT[i].load(core::sync::atomic::Ordering::Relaxed);
-        let mn = fp::MINT[i].load(core::sync::atomic::Ordering::Relaxed);
-        if i == fp::slot::BLK_READ
-            || i == fp::slot::BLK_WRITE
-            || i == fp::slot::FB_CLEAN
-            || i == fp::slot::FB_CLEAN_LINES
-            || i == fp::slot::EMMC_SPIN
-        {
-            kprintln!(
-                "[fs04] {:<18} calls={:<7} amount={:<9} max/call={} min/call={}",
-                fp::NAMES[i],
-                c,
-                t,
-                mx,
-                mn
-            );
-        } else {
-            kprintln!(
-                "[fs04] {:<18} n={:<7} total={:<9}us  avg={:<7}us  max={:<7}us  min={}us",
-                fp::NAMES[i],
-                c,
-                tick_us(t),
-                tick_us(t / c),
-                tick_us(mx),
-                tick_us(mn)
-            );
-        }
-    }
-    kprintln!("[fs04] --- GEMDOS calls (opcode: n, total us, max us) ---");
-    for op in 0..256usize {
-        let c = fp::GCNT[op].load(core::sync::atomic::Ordering::Relaxed);
-        if c == 0 {
-            continue;
-        }
-        let t = fp::GTCK[op].load(core::sync::atomic::Ordering::Relaxed);
-        let mx = fp::GMAX[op].load(core::sync::atomic::Ordering::Relaxed);
-        kprintln!(
-            "[fs04]   0x{:02x}  n={:<6} total={:<9}us  max={}us",
-            op,
-            c,
-            tick_us(t),
-            tick_us(mx)
-        );
-    }
-    kprintln!("[fs04] ===== end {} =====", tag);
 }
 
 fn one_copy(tag: &str, src_dir: &str, file: &str, dst_dir: &str) {
@@ -841,10 +1138,13 @@ pub fn run() {
 # ── 8. wire the driver in ──────────────────────────────────────────────────
 m = 'kernel/src/desk/mod.rs'
 sub1(m, 'pub mod ftype;', 'pub mod fs04drv; // FS04-TEMP\npub mod ftype;')
-if mode == 'driver':
-    sub1(m, """    // Hand off to the interaction loop. It returns when a handler set `done`""",
-         """    fs04drv::run(); // FS04-TEMP
-
+# The start-up note runs in BOTH modes: it records the screen geometry the
+# numbers were taken on, and it exercises the report file in the very binary
+# that is handed over, before any measurement depends on it.
+drv = '    fs04drv::run(); // FS04-TEMP\n' if mode == 'driver' else ''
+sub1(m, """    // Hand off to the interaction loop. It returns when a handler set `done`""",
+     """    fs04drv::boot_note(); // FS04-TEMP
+""" + drv + """
     // Hand off to the interaction loop. It returns when a handler set `done`""")
 
 print("fs04 probe patch applied to", ws, "mode:", mode)

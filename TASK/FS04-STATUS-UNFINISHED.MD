@@ -185,10 +185,14 @@ nicht die Ursache. Das gehoert genauso ins Protokoll wie ein Treffer.
 
 ## 8. Der Lauf, der es entscheidet — und der dem Anwender gehoert
 
-Derselbe Patchsatz laeuft unveraendert auf der Pi und druckt dieselbe Tabelle
-nach der Geste auf die serielle Konsole; ein Injektor wird dafuer nicht
-gebraucht, `fun_drag` setzt die Zaehler selbst zurueck und druckt am Ende von
-selbst.
+**Nachtrag 2026-09-25: die Pi hat keine serielle Mitschrift.** Der Anwender
+sieht nur den Bildschirm, `kprintln` ist dort also unsichtbar und die ganze
+Messung waere verloren gewesen. Die Sonde schreibt ihren Bericht deshalb jetzt
+**in eine Datei auf der Karte** — Einzelheiten in §12.
+
+Das fertige, gepruefte Abbild liegt in
+[`measurement-2026-09-25-fs04/pi-probe/kernel8-fs04probe.img`](../measurement-2026-09-25-fs04/pi-probe/).
+Selbst gebaut wird es so:
 
 ```
 cd <frische Kopie des Baums, NICHT der gemeinsame Baum>
@@ -196,8 +200,8 @@ python3 measurement-2026-09-25-fs04/method/fs04_probe_patch.py . gesture
 cargo run -p xtask --release -- build --board rpi4 --release
 ```
 
-Dann auf der Pi eine Textdatei von einer Partition auf eine andere ziehen. Drei
-Zeilen entscheiden:
+Dann auf der Pi eine Textdatei von einer Partition auf eine andere ziehen und
+`C:\FS04.TXT` auslesen. Drei Zeilen entscheiden:
 
 * `dev.read_one` / `dev.write_one` (Summe **und** max) — Hunderte von
   Millisekunden heisst: die Sekunden liegen im EMMC-/Kartenpfad, und
@@ -242,3 +246,93 @@ Kein Produktcode geaendert, `TASK/FS04.md` und `docs/STATUS.md` nicht
 angefasst. Die gesamte Instrumentierung liegt auf Scratch-Kopien im
 Job-Scratchpad; die Patches sind als Diff in `method/` abgelegt, damit die
 Zahlen reproduzierbar sind.
+
+
+---
+
+## 12. Nachtrag 2026-09-25: der Bericht landet auf der Karte
+
+Der Anwender hat auf Nachfrage bestaetigt, dass auf der Pi **keine serielle
+Ausgabe** mitgeschnitten wird — nur der Bildschirm. Die Sonde ist deshalb um
+eine Berichtssenke erweitert worden. Umfang: nur die Sonde, weiterhin
+Messgeruest auf Scratch-Kopien, kein Produktcode im gemeinsamen Baum, keine
+Behebung.
+
+### Was sich geaendert hat
+
+| | |
+|---|---|
+| **Ziel** | `C:\FS04.TXT`, Wurzel der Bootpartition, reiner Text mit CR/LF |
+| **Startblock** | beim Hochfahren ein kurzer Block mit Bildschirmgeometrie, Stride, Desktop-Rechteck, `CNTFRQ` und Laufwerksliste |
+| **Messblock** | bei **jedem** Ablegen ein Block mit der vollen Tabelle |
+| **Anhaengen** | `Fseek(0, h, 2)` vor dem Schreiben — mehrere Versuche stapeln sich, nichts wird ueberschrieben |
+| **Seriell** | bleibt, wortgleich, damit die QEMU-Zahlen vergleichbar bleiben |
+| **Neu im Kernel-Scratch** | `dos_seek` in `desk/dosbind.rs`, `vdi_backend::fs04_fb_geometry()`, `desk::fs04drv::boot_note()` |
+
+Der Startblock ist nicht nur Bequemlichkeit: er traegt die
+**Bildschirmgeometrie**, ohne die die in §6B gemessene Skalierung nicht
+anwendbar ist — und in QEMU ist sie nicht zu erfahren. Er ist ausserdem der
+Grund, warum sich das **uebergebene** Abbild selbst pruefen laesst: es legt die
+Datei schon beim Hochfahren an, ohne dass jemand klicken muss.
+
+### Wie die Reihenfolge garantiert ist
+
+Das Schreiben der Datei ist selbst GEMDOS-, FAT-, Sektorcache- und
+EMMC-Verkehr — also genau das, was gemessen wird. `report()` laeuft deshalb in
+vier streng geordneten Schritten, und die Datei-Ein-/Ausgabe ist der letzte:
+
+1. `take_snapshot` kopiert **jeden** Zaehler aus den Atomics in `SNAP`
+   (40 Slots x cnt/tck/max/min, plus die belegten GEMDOS-Opcodes). Ab hier
+   kann nichts mehr aendern, was berichtet wird.
+2. `format_block` rendert den ganzen Block in den statischen Textpuffer —
+   immer noch kein I/O.
+3. `emit_serial` gibt den Puffer aus — kostenlos, und wortgleich zur Datei.
+4. `write_card` oeffnet, springt ans Ende, schreibt, schliesst.
+
+Aufgerufen wird `report()` erst, **nachdem das gemessene Zeitfenster
+geschlossen ist**: der `fun_drag`-Mantel verbucht `DRAG_TOTAL` und ruft den
+Bericht erst danach; der Treiberbetrieb liest seinen Endzeitstempel vor dem
+Aufruf. Die Kosten von Schritt 4 werden gemessen und im **naechsten** Block als
+`previous report write` ausgewiesen — sie verschwinden also nicht, sie stehen
+nur nicht in den Zahlen, die sie verfaelschen wuerden.
+
+Zwei Nebenwirkungen, die ehrlich dazugehoeren und im `pi-probe/README.TXT`
+stehen:
+
+* Der **wahrgenommene** Stillstand enthaelt das Schreiben der Datei (in QEMU
+  1,4–3,0 ms). Die Zahl steht im naechsten Block, ist also nicht verborgen.
+* `C:\FS04.TXT` ist ein Symbol mehr im C:-Fenster; beim Neuzeichnen kostet das
+  rund 1 % (`fb.clean` 2282 ohne, 2310 mit).
+
+### Lesbarkeit, weil ein anderer das liest
+
+Reine Zaehlslots drucken jetzt `n=<zahl>` statt eines sinnlosen
+`min=295147905179us`, und jeder Block traegt einen Hinweis, dass
+`desk.fun_op` / `desk.copy_pass` / `desk.fun_drag` **vor** dem
+Bestaetigungsdialog beginnen und daher die Wartezeit auf den Klick enthalten —
+die Zahl, auf die es ankommt, ist `wall`. Ohne diesen Hinweis liest sich
+`desk.fun_op = 8 505 831 us` wie ein Achtsekundenbefund, und er ist keiner.
+
+### Geprueft, bevor es uebergeben wurde
+
+| Pruefung | Ergebnis |
+|---|---|
+| genau dieses Abbild in `qemu -M raspi4b` | bis `[desk] desktop up`, **0** `[EXC]`/`[PANIC]` (`raw/pi03-boot-of-handover-image.log`) |
+| `C:\FS04.TXT` entsteht und ist lesbar | Startblock, 268 Byte, aus dem Abbild zurueckgelesen |
+| zweiter Start auf derselben Karte | **angehaengt** (536 Byte), nicht ueberschrieben |
+| Ablegeblock mit voller Tabelle | `raw/g07-FS04.TXT` im Wortlaut (injektorgetriebene Variante desselben Patches, `method/fs04-gesture-r2.diff`) |
+| `fsck_msdos -n` C: und D: nach allen Laeufen | sauber |
+| Zahlen gegen Fassung 1 | g05 `wall` 25 021 us gegen g07 `wall` 24 987 us, 6+6 Sektorzugriffe in beiden |
+
+`sha256 53bbbeab356e30a4bfe994f86fcdcda964c1fe29b85f8a9d0ddfbb0dc5fc762e`,
+1 036 376 Byte, release, Board rpi4.
+
+### Zwei Fassungen, beide vollstaendig abgelegt
+
+`method/README.TXT` haelt auseinander, welche Rohdaten zu welcher Fassung
+gehoeren: die Zahlen in §3–§6 stammen aus Fassung 1 (nur seriell,
+`method/fs04-probe-640.diff`, `-1920.diff`, `fs04-gesture.diff`), das
+Uebergabeabbild aus Fassung 2 (`method/fs04_probe_patch.py`,
+`fs04-pi-handover.diff`, `fs04-gesture-r2.diff`). Ein `.diff` ist ein
+vollstaendiger Patch; Fassung 1 bleibt damit reproduzierbar, obwohl das Skript
+inzwischen Fassung 2 ist.
