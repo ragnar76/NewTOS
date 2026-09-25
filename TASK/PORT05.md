@@ -28,6 +28,34 @@ wird: **der Lead hat `TERADESK.INF` auf der Karte veraendert** (2026-09-25,
 Das ist **kein Verdacht**, sondern die eine bekannte Aenderung. Ob sie
 beteiligt ist, entscheidet ein Rueckbau, nicht eine Ueberlegung.
 
+## Gemessen 2026-09-25: der Desktop startet QED einwandfrei
+
+Anwender, nach der ersten Trennung: *„Aus NewDesk funktioniert QED
+einwandfrei."*
+
+**Damit ist QED entlastet und der Startweg belastet.** Der Unterschied
+zwischen den beiden Wegen ist nicht die Anwendung, sondern **wer sie
+startet**:
+
+* Unser Desktop (`kernel/src/desk/`) laeuft **im Kernel-Bootpfad** und startet
+  ueber `kernel/src/launch.rs` / `shell_loop.rs` — kernelseitig.
+* TeraDesk ist eine **EL0-Anwendung**, die ihrerseits eine EL0-Anwendung
+  startet.
+
+Ein von einer Anwendung ausgeloester Start hat also bei uns noch nie
+funktioniert bewiesen bekommen — und ist ein anderer Pfad als der, ueber den
+jede bisherige QED-Abnahme lief.
+
+**`TERADESK.INF` ist dadurch nicht entlastet.** Die Datei ist ausschliesslich
+TeraDesks Konfiguration; unser Desktop liest sie nicht. Der Rueckbau bleibt
+der billigste Trenner und steht weiterhin aus.
+
+**Offene Ticketnachbarschaft, als Verweis und nicht als Diagnose:**
+[ARCH02](ARCH02.md) steht offen und betrifft genau diesen Pfad
+(FP/SIMD-Register auf dem `Pexec`-Eltern/Kind-Weg). ACC03 hat denselben
+Mangel fuer den Accessory-Kontextwechsel gefunden und behoben; fuer `Pexec`
+ist er **nicht** behoben. Ob das hier beteiligt ist, ist ungemessen.
+
 ## Erste Trennung (billig, ohne neuen Kern)
 
 1. **QED vom NewTOS-Desktop starten** statt aus TeraDesk. Geht es dort, liegt
