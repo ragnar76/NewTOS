@@ -1,8 +1,23 @@
 # DESK43 — Der Desktop muss im User-Space laufen, wie jede andere Anwendung
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: **Abweichung von EmuTOS** (nicht blosse Architekturfrage) — Anwenderentscheidung 2026-08-31, geschaerft 2026-09-01, belegt 2026-09-25
+Status: **OFFEN** · Prioritaet: **P1** · Typ: **Abweichung von EmuTOS** (nicht blosse Architekturfrage) — Anwenderentscheidung 2026-08-31, geschaerft 2026-09-01, belegt 2026-09-25
 
-Abhaengigkeiten: Plan liegt: `docs/analysis/desktop-userspace-plan.md` (68 KB, 2026-09-01)
+Abhaengigkeiten: **[PORT05](PORT05.md) muss vorher stehen** (Begruendung unten).
+Plan liegt: `docs/analysis/desktop-userspace-plan.md` (68 KB, 2026-09-01)
+
+## Einordnung des Anwenders 2026-09-25
+
+*„Das ist direkt das naechste nach dem Scrollwheel-Task. Das ist wichtiger als
+alles andere."* — damit **P1**, und die Reihenfolge ist: [DESK42](DESK42.md)
+(laeuft) → [GUI04](GUI04.md) (Mausrad) → **dieses Ticket**.
+
+**Mit einer Einfuegung, die technisch zwingend ist:** [PORT05](PORT05.md)
+gehoert **davor**. Zieht der Desktop nach EL0, startet er Anwendungen ueber
+genau den Weg, der laut PORT05 einfriert — heute umgeht er ihn, weil er
+kernelseitig startet, und das ist der einzige Grund, warum QED aus NewDesk
+laeuft. Der Umzug vor dem Fix wuerde den Desktop handlungsunfaehig machen.
+PORT05 ist also keine Konkurrenz zu diesem Ticket, sondern seine
+Voraussetzung.
 
 ## Warum dieses Ticket ueberhaupt existiert
 
