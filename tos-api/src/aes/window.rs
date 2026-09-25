@@ -5374,6 +5374,23 @@ fn find_handle(mx: i16, my: i16) -> i16 {
     best
 }
 
+/// EmuTOS `wm_find(x, y)` (`aes/gemwmlib.c:1767-1770`): the handle of the
+/// window the point falls in — `ob_find(gl_wtree, 0, 2, x, y)`, i.e. the
+/// topmost window whose frame contains it, `0` for the desktop window and
+/// `-1` for "outside everything". Body shared with the frame interception's
+/// own lookup ([`find_handle`]).
+pub(super) fn wm_find(x: i16, y: i16) -> i16 {
+    find_handle(x, y)
+}
+
+/// The owning identity of window `handle` — EmuTOS `D.w_win[wh].w_owner`
+/// (`aes/gemwmlib.c` `W_TREE`/`w_owner`). `None` for a handle that names no
+/// live window (including [`find_handle`]'s `-1`). The `pub(super)` face of
+/// [`owner_of`], for the wheel's `WM_ARROWED`.
+pub(super) fn owner_of_window(handle: i16) -> Option<usize> {
+    owner_of(handle)
+}
+
 /// AES window-frame interception (the `evnt_multi` hook, mirroring the EmuTOS
 /// Control Manager's `hctl_window`, `gemctrl.c:158`). On a button press in a
 /// window frame, handle the gadget and post the resulting `WM_*` message into

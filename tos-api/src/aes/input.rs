@@ -351,3 +351,118 @@ pub(super) fn bdely_pending() -> bool {
 fn b_delay() {
     GL_BDELY.store(false, Ordering::Relaxed);
 }
+
+// ── the mouse wheel (CONF_WITH_EXTENDED_MOUSE) ─────────────────────────────
+
+/// `WM_ARROWED` (`include/aesdefs.h:233`).
+const WM_ARROWED: i16 = 24;
+/// `WM_ARROWED` sub-action: scroll one line up (`include/aesdefs.h:248`).
+const WA_UPLINE: i16 = 2;
+/// `WM_ARROWED` sub-action: scroll one line down (`include/aesdefs.h:249`).
+const WA_DNLINE: i16 = 3;
+
+/// EmuTOS `wheel_change(wheel_number, wheel_amount)` (`aes/geminput.c:394-
+/// 420`) — the AES's end of the wheel chain, reached through the VDI's
+/// `user_wheel` vector ([`crate::vdi::mouse::install_aes_wheel`],
+/// [`super::aes_wheel`]).
+///
+/// EmuTOS's body, complete:
+///
+/// ```c
+/// /* Ignore the wheel messages if the menu is active */
+/// if (gl_mowner == ctl_pd)
+///     return;
+/// if (wheel_amount > 0)       type = WA_DNLINE;
+/// else if (wheel_amount < 0)  type = WA_UPLINE;
+/// else                        return;
+/// /* We have a problem here.
+///  * This function is called by forker(), where rlr is set to -1.
+///  * As a result, we can't call ap_sendmsg() which internally calls iasync().
+///  * Uncomment the following code when some solution has been found.
+///  */
+/// /*
+///     assert(rlr != (AESPD *)-1);
+///     wh = wm_find(xrat, yrat);
+///     ap_sendmsg(appl_msg, WM_ARROWED, D.w_win[wh].w_owner, wh, type, 0,0,0);
+/// */
+/// ```
+///
+/// ## The named deviation: NewTOS sends the message
+///
+/// **What EmuTOS does here.** It computes the action and then throws the
+/// event away. Its own comment names the reason: `wheel_change` runs from
+/// `forker()`, which parks the running-process pointer at a sentinel —
+/// `oldrl = rlr; rlr = (AESPD *) -1;` (`aes/gemdisp.c:105-106`) — for the
+/// whole fork-ring drain. `ap_sendmsg` dereferences exactly that pointer
+/// (`ap_msg[1] = rlr->p_pid`, `aes/gemwmlib.c:855`) and then enters
+/// `ap_rdwr`/`iasync`, the asynchronous send that reschedules. Neither is
+/// legal against `rlr == -1`, so the three lines stay commented out and a
+/// mouse wheel on EmuTOS does nothing.
+///
+/// **Why we go further.** The user's decision of 2026-09-25 is that the wheel
+/// must scroll (`TASK/GUI04.md`). This is not the "rationalised EmuTOS
+/// deviation" the project forbids: EmuTOS states in its own source that a
+/// solution is *missing*, not that the behaviour is intended.
+///
+/// **How, and why EmuTOS's obstacle is not ours.** NewTOS has no fork ring
+/// and no `forker()`. A wheel detent travels `Host::pump_input` →
+/// `usb::poll` → `ikbd::feed` → `mousexvec` → `call_user_wheel` → here, and
+/// `pump_input` is only ever called **synchronously** from EL1 code running
+/// on behalf of a well-defined caller: an AES/GEMDOS trap of the running EL0
+/// process, or the kernel desktop's own loop. There is no point at which a
+/// "no running process" sentinel is installed, so the precondition of
+/// EmuTOS's comment simply does not arise. Its two concrete obstacles are
+/// gone with it:
+///
+/// * `rlr->p_pid` — our message poster takes `msg[1]` as an explicit
+///   argument. `wheel_change` is control-manager-side code (EmuTOS's
+///   `aes_wheel` is forked exactly like `far_mcha`/`mchange`), so it stamps
+///   [`super::appl::SCRENMGR_PID`], the same stamp
+///   [`window::intercept`](super::window::intercept) uses for every `WM_*` it
+///   posts (spec § "AES process identity and pid", contract (b)).
+/// * `iasync` — [`pd::post_msg`](super::pd::post_msg) enqueues into the
+///   owner's FIFO and flags a sleeping waiter through `sched::wake`; it does
+///   not dispatch and cannot re-enter the caller.
+///
+/// So the delivery is the ordinary one: the same `ap_sendmsg` → `aqueue` →
+/// `doq` routing that `send_redraw` and the frame interception already use,
+/// including `doq`'s `WM_ARROWED` coalescing (`aes/gemqueue.c:63-67`) — a
+/// burst of detents the application has not read yet collapses to the newest,
+/// exactly as a burst of scroll-arrow clicks does.
+///
+/// The menu guard is EmuTOS's, unchanged: while the Control Manager owns the
+/// mouse (`gl_mowner == ctl_pd`, i.e. a menu is being tracked) the wheel is
+/// ignored.
+pub(crate) fn wheel_change(_wheel_number: i16, wheel_amount: i16) {
+    // `if (gl_mowner == ctl_pd) return;` (`aes/geminput.c:400-402`)
+    if !GL_MOWNER_APP.load(Ordering::Relaxed) {
+        return;
+    }
+    // `if (wheel_amount > 0) WA_DNLINE; else if (< 0) WA_UPLINE; else return;`
+    // (`:404-409`)
+    let ty = match wheel_amount {
+        a if a > 0 => WA_DNLINE,
+        a if a < 0 => WA_UPLINE,
+        _ => return,
+    };
+    // `wh = wm_find(xrat, yrat)` (`:418`) — the window under the **last
+    // reported** pointer position, the same `xrat`/`yrat` `mchange` maintains
+    // (`:370-371`), not a fresh sample.
+    let wh = super::window::wm_find(XRAT.load(Ordering::Relaxed), YRAT.load(Ordering::Relaxed));
+    let Some(owner) = super::window::owner_of_window(wh) else {
+        return;
+    };
+    // `ap_sendmsg(appl_msg, WM_ARROWED, D.w_win[wh].w_owner, wh, type, 0,0,0)`
+    // (`:419`): msg[0] type, msg[1] sender pid, msg[2] 0, msg[3] the window
+    // handle, msg[4] the action, msg[5..7] 0 (`aes/gemwmlib.c:851-862`).
+    let mut msg = [0i16; 8];
+    msg[0] = WM_ARROWED;
+    msg[1] = super::appl::SCRENMGR_PID;
+    msg[3] = wh;
+    msg[4] = ty;
+    // SAFETY: single trap path (see the module note); `post_msg` hands the
+    // message to the live descriptor of `owner`.
+    unsafe {
+        super::pd::post_msg(owner, msg);
+    }
+}

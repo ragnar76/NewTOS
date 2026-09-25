@@ -655,8 +655,19 @@ impl Xhci {
         );
     }
 
-    /// Deliver one completed HID interrupt transfer: the device index plus a
-    /// copy of its 8-byte report buffer. `None` when nothing is waiting.
+    /// Deliver one completed HID interrupt transfer: the device index, a copy
+    /// of its 8-byte report buffer, and **how many of those bytes the device
+    /// actually sent**. `None` when nothing is waiting.
+    ///
+    /// The length comes from the Transfer Event's *TRB Transfer Length* field,
+    /// which for an IN endpoint holds the **residual** — the number of bytes
+    /// of the TRB's 8 that were *not* transferred (xHCI 1.2 §4.11.5.1 /
+    /// Table 6-39, "the residual number of bytes not transferred"). A 3-byte
+    /// boot mouse therefore reports `ShortPacket` with residual 5 → length 3,
+    /// and a wheel mouse residual 4 → length 4. Without it the report buffer
+    /// gives no way to tell a byte the device sent from one it never wrote
+    /// (the buffer is not cleared between transfers), which is exactly the
+    /// distinction the wheel byte needs.
     ///
     /// An event is handed to a device only when it names that device's slot
     /// **and** the interrupt-endpoint DCI the device was configured with.
@@ -666,7 +677,7 @@ impl Xhci {
     /// transfer's completion on a hub's EP0 to the hub, whose report buffer was
     /// then fed to the IKBD stream and whose (non-existent) endpoint was then
     /// "re-armed" with doorbell target 0.
-    pub fn poll_interrupt(&mut self) -> Option<(usize, [u8; 8])> {
+    pub fn poll_interrupt(&mut self) -> Option<(usize, [u8; 8], usize)> {
         // Bounded: `poll` runs from the cooperative input pump, so drain at
         // most the parked events plus one pass over the ring per call.
         for _ in 0..(PENDING_EVENTS + EVT_RING_LEN) {
@@ -701,7 +712,12 @@ impl Xhci {
                     // SAFETY: single-CPU; DEV is ours.
                     let p = unsafe { (&raw const (*(&raw const DEV))[di].intbuf) as u64 };
                     dcache_inval(p, 8); // the controller DMA'd the HID report
-                    return Some((di, unsafe { (*(&raw const DEV))[di].intbuf }));
+                    // 8 = the TRB Transfer Length `queue_interrupt` asked for;
+                    // the event reports what is left over. A controller that
+                    // reports more residual than requested would underflow, so
+                    // saturate.
+                    let len = 8usize.saturating_sub(te.trb_transfer_length() as usize);
+                    return Some((di, unsafe { (*(&raw const DEV))[di].intbuf }, len));
                 }
                 code => {
                     // The transfer is finished either way, so the endpoint has

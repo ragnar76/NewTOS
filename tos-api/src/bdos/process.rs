@@ -527,6 +527,12 @@ pub const UPCALL_MASK_ETV_TERM: u32 = 1 << 0;
 /// `Psigreturn`. Distinct from [`UPCALL_MASK_ETV_TERM`].
 pub const UPCALL_MASK_AES_USERDEF: u32 = 1 << 1;
 
+/// Upcall-type mask bit for the VDI mouse-wheel vector `vex_wheelv`
+/// (upcall design §1, consumer **vex**). Set while the application's wheel
+/// routine runs at EL0, cleared on its `Psigreturn`. Distinct from the other
+/// two bits.
+pub const UPCALL_MASK_VEX_WHEEL: u32 = 1 << 2;
+
 // ─── Parent-frame snapshot ──────────────────────────────────────────
 
 /// Index of `lr` (`x30`) in [`ParentFrame::regs`].
@@ -958,6 +964,10 @@ pub fn free_slot(idx: usize) {
     for d in p.upcall_ctx_disp.iter() {
         d.store(0, Ordering::Release);
     }
+    // Give the VDI mouse-wheel vector back if this process owned it: a
+    // `vex_wheelv` handler is an EL0 VA and means nothing once the address
+    // space is gone (see `vdi::mouse::release_wheel_vector`).
+    crate::vdi::mouse::release_wheel_vector(idx);
     // State last so that any concurrent reader sees `Free` only once
     // every other field is observably reset.
     p.state.store(State::Free as u8, Ordering::Release);

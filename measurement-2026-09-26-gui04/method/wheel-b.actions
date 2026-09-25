@@ -1,0 +1,24 @@
+# GUI04 run B -- the desktop half: wheel_change -> WM_ARROWED -> the desktop
+# scrolls the window under the pointer.
+#
+# Coordinates from measurement-2026-09-25-desk42/method/d42a.actions, whose
+# probe run measured the C: drive icon's click point at (38,35) on the 640x480
+# screen. The double-click opens C:\, which has ~30 entries and is therefore
+# scrollable at this resolution.
+100  parkbr
+400  move 600 240
+900  mark A_DESKTOP
+1200 move 38 35
+1600 down
+1603 up
+1615 down
+1618 up
+2400 move 320 300
+3200 mark B_WINOPEN
+3600 wheel -1
+3700 wheel -1
+3800 wheel -1
+3900 wheel -1
+4000 wheel -1
+4100 wheel -1
+5000 mark C_SCROLLED

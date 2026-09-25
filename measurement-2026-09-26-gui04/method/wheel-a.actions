@@ -1,0 +1,24 @@
+# GUI04 run A -- the vex_wheelv chain, with C:\WHEELT.NAP as the `#Z` autorun.
+#
+# No pointer choreography: the program is the running process, and every
+# `wheel` line is a synthesised USB boot-mouse report fed to
+# drivers::usb::hid::mouse_report -- the very function the real xHCI poll
+# calls, with the very report layout a real wheel mouse sends.
+#
+#   wheel +1      byte 3 = +1, report length 4  -> wheel up   -> scancode 0x59
+#   wheel -1      byte 3 = -1, report length 4  -> wheel down -> scancode 0x5a
+#   wheel 127 3   byte 3 = 0x7f but length 3    -> a mouse WITHOUT a wheel:
+#                                                  must produce NOTHING
+#
+# Ticks are hz_200 (200/s) relative to the injector arming on the first pump
+# with a live EL0 process.
+600  mark A_ARMED
+800  wheel 1
+900  wheel 1
+1000 wheel -1
+1100 wheel -1
+1200 wheel -1
+1300 wheel 127 3
+1500 wheel 1
+1600 wheel -1
+1800 mark B_DONE

@@ -1,0 +1,227 @@
+measurement-2026-09-26-gui04
+  GUI04 (CONF_WITH_EXTENDED_MOUSE: mouse wheel, buttons 3-5)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD 714c5bb. The GUI04 change is UNCOMMITTED in
+the shared tree (14 edited files + 2 new test files, listed in
+TASK/GUI04-STATUS-DONE.MD §7). Nothing flashed, nothing ejected, no real Pi
+run, nothing committed; no `git checkout/restore/clean/stash/reset` was run on
+the shared tree. The SD card at /Volumes/BOOT was not touched.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to a file,
+QMP screendumps (method/run.sh + method/qmp_multi.py, the latter copied
+unchanged from measurement-2026-09-25-desk42/method/). Card image: a fresh
+`tools/make-sd-image.sh` per run (64 MiB, MBR + FAT16) plus this
+measurement's fixture (method/seed-wheel.sh) -- rebuilt, never a reused copy.
+No `*.img` in this directory (the ticket's rule); the images lived in the job
+scratch and are gone.
+
+
+0. WHICH WHEEL IS REAL AND WHICH IS SYNTHESISED -- SAY IT PLAINLY
+---------------------------------------------------------------------------
+Runs A, B and C are on **raspi4b**, which has no USB host controller for us:
+
+    [pcie] RC not present (no response at RC_BASE); USB disabled
+
+so there is no mouse there, wheel or otherwise. Every wheel event in A/B/C is
+a **synthesised USB boot-mouse report** handed to the very function the real
+xHCI poll calls:
+
+    crate::drivers::usb::hid::mouse_report(&[0,0,0,w,0,0,0,0], len)
+
+with `w` = the wheel byte and `len` = the report length the Transfer Event
+would give. That is one function short of the hardware: everything from
+`mouse_report` down -- the byte-3 decode, the length guard, the IKBD
+scancodes, `mousexvec`, `vdi_mousex_handler`, `call_user_wheel`, the EL0
+upcall, `wheel_change`, `WM_ARROWED`, the desktop's scroll -- is the real
+product code, unmodified.
+
+Run D closes the remaining hop. It runs on **virt**, where QEMU gives us a
+real emulated `usb-mouse` behind a real xHCI, and turns its wheel through
+QMP: the report comes out of a genuine interrupt transfer. What is left for
+the Pi is only whether a *physical* mouse behind the VL805 behaves the same.
+
+The injectors and probes (method/apply_injector.py, method/gen_script.py,
+method/usb_probe_patch.py, method/desk_arm_patch.py) are measurement
+scaffolding: they are applied to an **rsync'd scratch copy** of the crates
+(method/make_scratch.sh), never to the shared tree. Run D's kernel is the
+shared tree plus the two `kprintln`s of usb_probe_patch.py; runs A/B/C's
+kernels are the shared tree plus the injector.
+
+
+1. FIXTURE
+---------------------------------------------------------------------------
+method/wheeltst.c -> WHEELT.NAP (build/WHEELT.NAP, 11784 bytes): a native
+LP64 GEM application built with the flag/include/link recipe copied verbatim
+from measurement-2026-09-25-port05/method/build-pex.sh, i.e. the same
+toolchain, headers, crt0, gemlib.a and libc.a that TeraDesk and QED go
+through. It does appl_init -> graf_handle -> v_opnvwk ->
+`vex_wheelv(handle, wheel_handler, &old)` and then polls with
+`evnt_timer(50)`, printing every wheel event its routine is handed.
+
+It is launched by the `#Z` autorun line of method/newdesk-wheel.inf -- the
+same mechanism that starts TeraDesk.
+
+
+2. RUN A -- the vex_wheelv chain            serial/run-a-wheelt.log
+---------------------------------------------------------------------------
+Script: method/wheel-a.actions -> wheel-a.rs. Eight synthesised reports:
++1, +1, -1, -1, -1, then one with byte 3 = 0x7f but `len == 3` (a mouse
+WITHOUT a wheel), then +1, -1.
+
+Result, verbatim:
+
+    [WHL] 4 vex_wheelv installed, mine=0x00000000000013e4 old=0xffff000000115970
+    [WHL] 5 wheel number=0 amount=-1 total=1
+    [WHL] 5 wheel number=0 amount=-1 total=2
+    [WHL] 5 wheel number=0 amount=1 total=3
+    [WHL] 5 wheel number=0 amount=1 total=4
+    [WHL] 5 wheel number=0 amount=1 total=5
+    [h02] step 6 at +1300 ...                 <- the len==3 report: NO event
+    [WHL] 5 wheel number=0 amount=-1 total=6
+    [WHL] 5 wheel number=0 amount=1 total=7
+    [WHL] 6 summary up=3 down=4 left=0 right=0 total=7
+    [WHL] 7 vex_wheelv restored, got back=0x00000000000013e4
+
+Three readings:
+
+  * **The chain is served.** An EL0 application sitting on `vex_wheelv` sees
+    the events -- byte 3 -> scancode 0x59/0x5a -> mousexvec ->
+    vdi_mousex_handler -> call_user_wheel -> EL0 upcall -> its own routine,
+    with wheel_number in the first argument and the signed detent count in
+    the second (positive byte 3 = "up" = amount -1, EmuTOS
+    vdi_mouse.c:546-547).
+  * **7, not 8.** The sixth report carried byte 3 = 0x7f but a length of 3.
+    It produced nothing, which is the report-length guard (FreeMiNT
+    usb_mouse.c:255-261: "if there is a 4th byte, it must be z"). A mouse
+    that sends only three bytes cannot make phantom detents.
+  * **old = 0xffff000000115970** is a kernel high-half address: the AES's own
+    wheel handler, installed at boot by our `gsx_init` equivalent
+    (aes/gemgsxif.c:288-292). It also proves the LP64 pointer slot: gemlib
+    reads `old` at CONTRL[11..14], not at EmuTOS' m68k CONTRL[9]. Before this
+    change it was written at word 9 and an application read back rubbish.
+    `got back=0x13e4` is the application's own routine coming back out of the
+    restoring call.
+
+
+3. RUN B -- the desktop scrolls             serial/run-b-desktop-scroll.log
+---------------------------------------------------------------------------
+Script: method/wheel-b.actions. No `#Z`: our desktop comes up (INF
+method/newdesk-win.inf, `#E 9B` = text view so C:\'s 32 entries do not fit
+in one window). The injector double-clicks the C: drive icon at (38,35)
+-- the coordinate measurement-2026-09-25-desk42 probed -- moves the pointer
+to (320,300) inside the window and sends six wheel-down reports.
+
+  screendumps/b2-window.png   before: the list starts at ACC
+  screendumps/b3-scrolled.png after:  the list starts at ARGVTEST.NAP,
+                                      i.e. exactly 6 lines further down, and
+                                      the vertical slider has moved.
+
+  $ python3 method/pixdiff.py b2-window.png b3-scrolled.png 50 85 600 420
+  9885 differing pixels of 184250
+
+Six detents, six lines: `wheel_change` posts one `WM_ARROWED` with
+`WA_DNLINE` per detent (EmuTOS geminput.c:404-409), the desktop's
+`arrow_msg` scrolls one line per message.
+
+
+4. RUN C -- menu active, wheel ignored      serial/run-c-menu-guard.log
+---------------------------------------------------------------------------
+Script: method/wheel-c.actions. Same window, but the File drop-down is
+opened first (hovering the title hands the mouse to the Control Manager) and
+the pointer is then moved back down over the window, where the drop-down
+stays open. Six wheel-down reports there.
+
+  screendumps/c1-window.png      the window, before the menu
+  screendumps/c2-menu.png        the File drop-down open
+  screendumps/c3-after-wheel.png after six detents
+
+  $ python3 method/pixdiff.py c1-window.png c3-after-wheel.png 50 275 600 420
+  0 differing pixels of 79750
+
+Zero. Below the drop-down -- the part of the list the menu does not cover --
+nothing moved at all. That is `if (gl_mowner == ctl_pd) return;`
+(geminput.c:400-402). Over the whole list area the two frames differ by 6478
+pixels, which is the drop-down itself.
+
+
+5. RUN D -- a REAL emulated USB mouse       serial/run-d-virt-real-usb-mouse.log
+---------------------------------------------------------------------------
+The one run in which the report is NOT synthesised. QEMU's `virt` machine
+carries the USB stack `tools/xtask` gives `--board qemu-virt`
+(`-device qemu-xhci -device usb-kbd -device usb-mouse`) and our driver
+enumerates the mouse for real:
+
+    [usb] HID iface 0 protocol 2 -> int-IN ep 0x81 max 4 interval 7
+    [usb] HID configured: slot 2 ep 0x81 dci 3 (mouse)
+
+`max 4` is the point: QEMU's `usb-mouse` boot report is four bytes, the
+fourth being the wheel. method/qmp_wheel.py turns that wheel with QMP
+`input-send-event` (`wheel-up` / `wheel-down`), so the report comes out of a
+genuine xHCI interrupt transfer. A serial probe on the two hops
+(method/usb_probe_patch.py, scratch copy only) reports what arrived:
+
+    3 x wheel-up:
+      [gui04] report len=4 byte3=0x01
+      [gui04] wheel -> scancode 0x59 x1
+      [gui04] mousexvec(0x59)
+      [gui04] mousexvec(0xd9)
+    4 x wheel-down:
+      [gui04] report len=4 byte3=0xff
+      [gui04] wheel -> scancode 0x5a x1
+      [gui04] mousexvec(0x5a)
+      [gui04] mousexvec(0xda)
+
+Three readings:
+
+  * the transfer length really is **4**, so the guard of run A lets the byte
+    through on a wheel mouse and blocks it on a three-byte one;
+  * **positive byte 3 = up**: QEMU's `wheel-up` produces `0x01`, `wheel-down`
+    produces `0xff` (= -1) -- an independent confirmation of the direction
+    FreeMiNT's driver and the HID Usage Tables give;
+  * the scancodes reach `mousexvec`, make and break.
+
+Nothing else is changed in that tree: the two probes only print.
+
+
+6. HOST TESTS                                build/tests.txt
+---------------------------------------------------------------------------
+    TOTAL: 955 passed / 0 failed / 1 ignored   (baseline 950 / 0 / 1)
+
+The five new ones:
+  tos-api/tests/vdi_vex_wheelv.rs   3 -- the LP64 pointer slot, buttons 3-5
+                                        in MOUSE_BT across a relative packet,
+                                        and that a wheel code leaves the
+                                        button mask alone.
+  tos-api/tests/aes_wheel_change.rs 2 -- WM_ARROWED/WA_UPLINE/WA_DNLINE to
+                                        the window under the pointer, the
+                                        zero-amount return, and "no window,
+                                        no message".
+
+
+7. BUILD / CLIPPY                            build/build.txt, build/clippy.txt
+---------------------------------------------------------------------------
+    kernel board-rpi4       94 warnings   (baseline 94)
+    kernel board-qemu-virt  94 warnings   (baseline 94)
+    tos-api                 64 warnings   (baseline 64)
+    clippy tos-api 80 / kernel 125, both feature sets (baseline 80 / 125)
+
+Both boards were rebuilt for real (`touch kernel/src/lib.rs` before each), so
+neither can be reported "fresh" from the other's artefact.
+
+Smoke boots of the SHARED tree (release), both boards, to the desktop:
+serial/smoke-boot-rpi4.log ("[desk] desktop up (1 drives, ...)") and
+serial/smoke-boot-qemu-virt.log ("[desk] desktop up (0 drives, ...)"). The
+authoritative regression verdict is the Tester's.
+
+
+8. WHAT IS STILL THE PI'S
+---------------------------------------------------------------------------
+  * A real USB wheel mouse on real hardware. Run D answers the question for
+    QEMU's emulated mouse (byte 3 set, length 4); what it cannot answer is
+    whether a given physical mouse and the Pi's VL805 behave the same way.
+  * Whether the wheel feels right in the hand (detents per line).
+  * A mouse with a horizontal wheel -- the IKBD side (0x5c/0x5d) is
+    implemented, but nothing synthesises those codes yet, because nothing in
+    the boot protocol identifies a fifth report byte. See
+    docs/api/usb/hid-mouse.md.

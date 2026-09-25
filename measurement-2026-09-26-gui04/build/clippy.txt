@@ -1,0 +1,12 @@
+$ cargo clippy -p tos-api -p kernel --features kernel/board-rpi4
+warning: `tos-api` (lib) generated 80 warnings (64 duplicates) (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `tos-api` (lib) generated 80 warnings (16 duplicates)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+
+$ cargo clippy -p tos-api -p kernel --features kernel/board-qemu-virt
+warning: `tos-api` (lib) generated 80 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `tos-api` (lib) generated 80 warnings (80 duplicates)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+
+baseline before GUI04: tos-api 80, kernel 125 (both feature sets)
+the two new test files are clippy-clean (cargo clippy -p tos-api --tests)

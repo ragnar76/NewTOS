@@ -243,6 +243,18 @@ The button/motion/cursor vectors are called from the IKBD mouse packet
 handler in the exact order button → motion → cursor — see
 [`_mouse-packet.md`](_mouse-packet.md).
 
+#### NewTOS: the slot index follows the caller's pointer width
+
+`CONTRL[7..8]` / `CONTRL[9..10]` is the m68k reading of a rule gemlib states
+in terms of the caller's ABI: VDI pointer `n` starts at CONTRL word
+`7 + n * N_PTRINTS` with `N_PTRINTS = sizeof(void *) / sizeof(short)`
+(`sdk/gemlib/gemlib-0.44.0/gem_vdiP.h:177,248`). That is 2 WORDs on m68k —
+whence EmuTOS' fixed `CONTRL[9]` — and **4** for an LP64 NewTOS application,
+whose `old` therefore lives at `CONTRL[11..14]`. NewTOS reads and writes both
+slots at the calling process's width (`Vdipb::contrl_ptr` /
+`Vdipb::set_contrl_ptr`); the same rule already governs the raster ops' MFDB
+pointers. Test: `tos-api/tests/vdi_vex_wheelv.rs`.
+
 ### `vex_timv` extra output (`vdi_misc.c:100-112`)
 
 Beyond the vector swap, `vex_timv` also sets **`INTOUT[0] = Tickcal()`** —
@@ -338,6 +350,23 @@ by `tick_int`, which also chains the old system timer vector
   IKBD), not the framebuffer. For QEMU bring-up the source is the
   virtio/USB-HID device; until wired, `vq_mouse` returns a parked cursor and
   zero buttons (documented limitation — NOT a stub returning fake motion).
+- **`CONF_WITH_EXTENDED_MOUSE` is implemented** (GUI04, 2026-09-26):
+  `mousexvec` (`tos-api/src/bios/vectors.rs`) carries the seven extended
+  scancodes from the IKBD decoder to `mousex_handler`
+  (`tos-api/src/vdi/mouse.rs`, EmuTOS `vdi_mousex_handler`), which maintains
+  `MOUSE_BT` bits 2..4 for buttons 3/4/5 and calls the `user_wheel` vector for
+  the four wheel codes. The USB source is `kernel/src/drivers/usb/hid.rs`,
+  whose boot-report byte 3 becomes scancode `0x59`/`0x5a`.
+- **The `user_wheel` vector is really dispatched**, unlike the other four
+  `vex_*` slots (AUD-V6-002), because an application must be able to see wheel
+  events. Three cases: the `just_rts` default does nothing; the AES's own
+  handler is a same-privilege EL1 call; an application's handler is delivered
+  as an EL0 upcall (`docs/analysis/coop-kernel/10-upcall-signal-design.md`,
+  consumer **vex**) to the **owning** process only, at its next return to EL0.
+  There is no lower-EL IRQ route, so the call is not ISR-timed (design §7.3).
+  `vex_butv`/`motv`/`curv`/`timv` keep their address-sentinel behaviour: their
+  default action is inlined in `feed_relative`, and no consumer has asked for
+  the upcall yet.
 - `vsc_form` installs the 37-WORD MFORM into the NewTOS `RasterBackend`
   sprite (`tos-api/src/vdi/mouse.rs`); the interleaved `Mcdb` layout is an
   EmuTOS detail — NewTOS may store the sprite however it likes, as long as

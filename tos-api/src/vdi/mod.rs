@@ -122,22 +122,6 @@ impl Vdipb {
         unsafe { self.contrl.add(i).read() }
     }
 
-    /// Read a native 64-bit pointer packed into four consecutive CONTRL
-    /// WORDs starting at index `i` (NewTOS native MFDB-pointer
-    /// convention; see [`crate::vdi::raster`]).
-    ///
-    /// This is the fixed **LP64** packing (4 WORDs / 8 bytes at word `i`),
-    /// used by the `vex_*` mouse-vector calls, which pass a single native
-    /// EL1 routine pointer and are only reachable from LP64 callers. The
-    /// raster ops instead use [`Vdipb::contrl_ptr`], which honours the
-    /// caller's ABI (`N_PTRINTS`) so an ILP32 MFDB pointer is read at the
-    /// right offset and width.
-    #[inline]
-    pub fn contrl_u64(&self, i: usize) -> u64 {
-        // SAFETY: callers ensure CONTRL has ≥ i+4 WORDs.
-        unsafe { (self.contrl.add(i) as *const u64).read_unaligned() }
-    }
-
     /// The calling process's pointer-width ABI (ADR-020). Used by the
     /// raster ops to read the MFDB struct fields at the caller's width.
     #[inline]
@@ -151,9 +135,8 @@ impl Vdipb {
     /// sizeof(void*) / sizeof(short)` = 4 for LP64 / 2 for ILP32
     /// (`sdk/gemlib/gemlib-0.44.0/gem_vdiP.h:177,204`); the pointer itself
     /// is an 8-byte load (LP64) or a 4-byte zero-extended load (ILP32).
-    /// Unlike [`Vdipb::contrl_u64`], this honours the ILP32 packing
-    /// instead of assuming the LP64 layout, so an ILP32 app (QED, cflib)
-    /// no longer mis-reads its MFDB pointers.
+    /// Honouring `N_PTRINTS` rather than assuming the LP64 layout is what
+    /// keeps an ILP32 app (QED, cflib) from mis-reading its MFDB pointers.
     #[inline]
     pub fn contrl_ptr(&self, n: usize) -> u64 {
         let nptrints = match self.abi {
@@ -169,18 +152,32 @@ impl Vdipb {
             Abi::Ilp32 => unsafe { (base as *const u32).read_unaligned() as u64 },
         }
     }
+    /// Write VDI pointer slot `n` back into CONTRL at the **caller's**
+    /// pointer width — the inverse of [`Vdipb::contrl_ptr`], used to return
+    /// the previous routine pointer from the `vex_*` calls. gemlib reads slot
+    /// `n` at CONTRL word `7 + n * N_PTRINTS`
+    /// (`sdk/gemlib/gemlib-0.44.0/gem_vdiP.h:177,248`), so an LP64 caller's
+    /// `old` lives at word 11 and an ILP32 caller's at word 9.
+    #[inline]
+    pub fn set_contrl_ptr(&self, n: usize, v: u64) {
+        let nptrints = match self.abi {
+            Abi::Lp64 => 4,
+            Abi::Ilp32 => 2,
+        };
+        // SAFETY: a `vex_*` CONTRL holds ≥ 7 + (n+1)*N_PTRINTS WORDs (gemlib's
+        // `VDI_CNTRLMAX` = 15); the slot is WORD- but not pointer-aligned.
+        let base = unsafe { self.contrl.add(7 + n * nptrints) } as *mut u8;
+        match self.abi {
+            // SAFETY: as above.
+            Abi::Lp64 => unsafe { (base as *mut u64).write_unaligned(v) },
+            // SAFETY: as above.
+            Abi::Ilp32 => unsafe { (base as *mut u32).write_unaligned(v as u32) },
+        }
+    }
     #[inline]
     pub fn set_contrl(&self, i: usize, v: i16) {
         // SAFETY: see `contrl`.
         unsafe { self.contrl.add(i).write(v) }
-    }
-    /// Write a native 64-bit pointer into four consecutive CONTRL WORDs
-    /// (the inverse of [`contrl_u64`](Self::contrl_u64); used to return
-    /// the previous routine pointer from the `vex_*` calls).
-    #[inline]
-    pub fn set_contrl_u64(&self, i: usize, v: u64) {
-        // SAFETY: callers ensure CONTRL has ≥ i+4 WORDs.
-        unsafe { (self.contrl.add(i) as *mut u64).write_unaligned(v) }
     }
     #[inline]
     pub fn intin(&self, i: usize) -> i16 {

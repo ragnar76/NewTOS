@@ -930,3 +930,19 @@ pub fn user_but(buttons: u8) {
 pub fn user_mot(x: i16, y: i16) {
     input::mchange(x, y);
 }
+
+/// The AES's `user_wheel` vector — EmuTOS `aes_wheel`
+/// (`aes/gemdosif.S:352-374`), installed by `gsx_init` with
+/// `vex_wheelv(aes_wheel, &old_wheelv)` (`aes/gemgsxif.c:288-292`) and called
+/// by the VDI whenever the mouse wheel moves, with the wheel number in `d0.w`
+/// and the signed detent count in `d1.w`.
+///
+/// EmuTOS's `aes_wheel` is pure m68k glue: switch to the AES's interrupt
+/// stack, push the two WORDs, `forkq(_wheel_change, …)` so the work happens
+/// on the AES side of the interrupt, restore. The fork queue is an m68k-ISR
+/// deferral with no counterpart here — NewTOS reaches this function from the
+/// cooperative `pump_input`, already on the AES's own side — so what remains
+/// of `aes_wheel` is the call it defers: [`input::wheel_change`].
+pub fn aes_wheel(wheel_number: i16, wheel_amount: i16) {
+    input::wheel_change(wheel_number, wheel_amount);
+}

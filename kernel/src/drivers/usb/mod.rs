@@ -133,7 +133,7 @@ pub fn poll() {
         let Some(c) = (unsafe { (*core::ptr::addr_of_mut!(XHCI)).as_mut() }) else {
             return;
         };
-        if let Some((di, report)) = c.poll_interrupt() {
+        if let Some((di, report, len)) = c.poll_interrupt() {
             // `bInterfaceProtocol` of the HID boot interface: 1 = keyboard,
             // 2 = mouse (USB HID 1.11 §4.3). Anything else has no boot report
             // layout we could decode — a hub is 9, a device whose HID
@@ -142,7 +142,10 @@ pub fn poll() {
             // into cursor movement and button presses in the IKBD stream.
             match c.protocol(di) {
                 1 => hid::keyboard_report(&report),
-                2 => hid::mouse_report(&report),
+                // `len` — how many bytes the device really sent — matters only
+                // for the mouse: the boot report's fourth byte (the wheel) is
+                // optional, and a three-byte mouse never writes it.
+                2 => hid::mouse_report(&report, len),
                 _ => {}
             }
             // Re-arm regardless: the completed transfer left the endpoint with

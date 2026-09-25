@@ -1,0 +1,30 @@
+# GUI04 run C -- the menu guard: `if (gl_mowner == ctl_pd) return;`
+# (references/emutos/aes/geminput.c:400-402).
+#
+# Same C:\ text-view window as run B, but the File drop-down is opened first
+# (hovering the title hands the mouse to the Control Manager) and the pointer
+# is then moved back down over the window, where the drop-down stays open
+# (OUTSIDE_STATE, A73). Six wheel-down detents there must change NOTHING:
+# the Control Manager owns the mouse, so wheel_change returns before it looks
+# for a window.
+100  parkbr
+400  move 600 240
+900  mark A_DESKTOP
+1200 move 38 35
+1600 down
+1603 up
+1615 down
+1618 up
+2400 move 320 300
+3200 mark B_WINOPEN
+3600 move 88 240
+3800 move 88 9
+4400 mark C_MENUOPEN
+4600 move 320 300
+5000 wheel -1
+5100 wheel -1
+5200 wheel -1
+5300 wheel -1
+5400 wheel -1
+5500 wheel -1
+6200 mark D_MENUWHEEL

@@ -121,9 +121,43 @@ fn mouse_event(buttons: u8, dx: i16, dy: i16) {
     tos_api::vdi::feed_relative(dx, dy, buttons, &crate::vdi_backend::VDI_SCREEN);
 }
 
+/// The seven IKBD scancodes that are **not** keys but extra mouse buttons and
+/// wheel detents — EmuTOS `kbd_int`'s `CONF_WITH_EXTENDED_MOUSE` block
+/// (`bios/ikbd.c:748-760`), which lists them in this order:
+///
+/// ```c
+/// if (   scancode_only == 0x37  /* Mouse button 3 */
+///     || scancode_only == 0x5e  /* Mouse button 4 */
+///     || scancode_only == 0x5f  /* Mouse button 5 */
+///     || scancode_only == 0x59  /* Wheel up */
+///     || scancode_only == 0x5a  /* Wheel down */
+///     || scancode_only == 0x5c  /* Wheel left */
+///     || scancode_only == 0x5d) /* Wheel right */
+/// ```
+///
+/// Compared on the **make** code (`scancode & ~KEY_RELEASED`), so both the
+/// press and the release form reach the vector.
+const fn is_extended_mouse(code: u8) -> bool {
+    matches!(code, 0x37 | 0x59 | 0x5A | 0x5C | 0x5D | 0x5E | 0x5F)
+}
+
 fn decode_key(raw: u8) {
     let make = raw & 0x80 == 0;
     let code = raw & 0x7F;
+    // `CONF_WITH_EXTENDED_MOUSE` is `1` in the reference build
+    // (`include/config.h:1491-1498`): the extra mouse buttons and the wheel
+    // arrive as IKBD scancodes and "use a separate vector" — `kbd_int` hands
+    // them to `mousexvec(scancode)` and **returns** (`bios/ikbd.c:746-760`),
+    // before the modifier bookkeeping, the ASCII translation and the key
+    // queue, so none of the seven is ever seen as a key. EmuTOS places the
+    // block after its Ctrl-Alt-Del reset check, which NewTOS' decoder does not
+    // have; relative to everything the decoder *does* do, this is the same
+    // position. The **full** scancode (release bit included) is passed on; the
+    // handler tells press from release by it.
+    if is_extended_mouse(code) {
+        tos_api::bios::vectors::mousexvec(raw);
+        return;
+    }
     match code {
         SC_LSHIFT | SC_RSHIFT => SHIFT.store(make, Ordering::Relaxed),
         SC_CTRL => CTRL.store(make, Ordering::Relaxed),

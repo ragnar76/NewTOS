@@ -177,3 +177,55 @@ pub fn vector(num: usize) -> i64 {
         0
     }
 }
+
+// ─── `mousexvec` — the extended-mouse scancode vector ──────────────────────
+//
+// EmuTOS reserves a BIOS-level vector for the IKBD scancodes that are *not*
+// keys but extra mouse buttons and wheel detents: `_mousexvec: .ds.l 1
+// // mouse-routine for additional buttons` (`bios/aciavecs.S:127`), declared
+// `extern void (*mousexvec)(WORD scancode);` (`include/biosext.h:78`).
+// `init_acia_vecs` seeds it with the `just_rts` no-op (`aciavecs.S:149-151`),
+// `kbd_int` calls it for the seven extended-mouse scancodes instead of
+// decoding them as keys (`bios/ikbd.c:748-760`), and the VDI installs its own
+// handler at workstation open: `mousexvec = vdi_mousex_handler`
+// (`vdi/vdi_mouse.c:612`).
+//
+// It is **not** part of the `Kbdvbase()` table: `_mousexvec` sits two LONGs
+// *below* `_kbdvecs` (`aciavecs.S:127-131`), so no program can reach it
+// through the documented positive offsets. It is a BIOS-internal hand-off
+// from the keyboard decoder to the mouse driver, and that is all it is here.
+//
+// NewTOS' IKBD decoder lives in the kernel crate and the VDI in this one, so
+// the cell has to live on the `tos-api` side of the dependency edge; the
+// kernel's `ikbd::decode_key` calls [`mousexvec`], the VDI's
+// `vdimouse_init` equivalent calls [`set_mousexvec`].
+
+/// The installed extended-mouse handler, as a `fn(u8)` address. `0` is the
+/// power-up "nobody installed one" state and is the exact behavioural
+/// equivalent of EmuTOS' `just_rts` default (`aciavecs.S:149-151`).
+static MOUSEXVEC: core::sync::atomic::AtomicUsize =
+    core::sync::atomic::AtomicUsize::new(0);
+
+/// Install the extended-mouse handler — EmuTOS `vdimouse_init`'s
+/// `mousexvec = vdi_mousex_handler` (`vdi/vdi_mouse.c:612`). Idempotent.
+pub fn set_mousexvec(f: fn(u8)) {
+    MOUSEXVEC.store(f as usize, Ordering::Relaxed);
+}
+
+/// Call the extended-mouse handler with `scancode` — EmuTOS `kbd_int`'s
+/// `mousexvec(scancode)` (`bios/ikbd.c:758`). A no-op while no handler is
+/// installed (EmuTOS' `just_rts`).
+pub fn mousexvec(scancode: u8) {
+    let p = MOUSEXVEC.load(Ordering::Relaxed);
+    if p == 0 {
+        return;
+    }
+    // Go through a data pointer rather than an integer so no int-to-fn
+    // transmute lint fires (same shape as the kernel-built `G_USERDEF`
+    // callout, `aes/object.rs:2741-2746`).
+    let code = p as *const ();
+    // SAFETY: the cell is written only by `set_mousexvec`, always with a live
+    // `fn(u8)` of this binary; `0` (never installed) was rejected above.
+    let f: fn(u8) = unsafe { core::mem::transmute(code) };
+    f(scancode);
+}

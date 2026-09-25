@@ -103,10 +103,79 @@ pub fn keyboard_report(r: &[u8; 8]) {
 /// relative-mouse packet `[0xF8|wire, dx, dy]` fed to the decoder. USB buttons
 /// (bit0 left, bit1 right) are swapped into IKBD wire order (bit0 right, bit1
 /// left); the decoder swaps back to VDI.
-pub fn mouse_report(r: &[u8; 8]) {
+///
+/// `len` is how many bytes the device actually sent (from the Transfer
+/// Event's residual, `xhci::Controller::poll_interrupt`) — the wheel byte
+/// exists only in a longer report, see [`wheel`].
+pub fn mouse_report(r: &[u8; 8], len: usize) {
     let usb = r[0];
     let wire = ((usb & 0x01) << 1) | ((usb & 0x02) >> 1);
     ikbd::feed(0xF8 | (wire & 0x03));
     ikbd::feed(r[1]); // dx
     ikbd::feed(r[2]); // dy (the IKBD decoder owns the screen-Y convention)
+    wheel(r, len);
+}
+
+/// The wheel half of a boot mouse report → the IKBD extended-mouse scancodes
+/// (`docs/api/usb/hid-mouse.md`, GUI04).
+///
+/// **Where byte 3 comes from.** The HID boot protocol's own report descriptor
+/// (USB HID 1.11 Appendix B.2) defines exactly three bytes — buttons, X, Y —
+/// so byte 3 is *not* part of the boot protocol proper. It is the de-facto
+/// extension every wheel mouse adds, and the way to know whether a given
+/// device sends it is the **transfer length**, not the byte's value. FreeMiNT's
+/// boot-mouse driver — the source `docs/api/usb/hid-mouse.md` was extracted
+/// from — does precisely that:
+///
+/// ```c
+/// /* actlen is actual length of the mouse report */
+/// if ((r != 0) || (actlen < 3)) return;
+/// …
+/// /* if there is a 4th byte, it must be z (scroll wheel) */
+/// if (actlen > 3) { if (mse_data.new[3] != 0) wheel_change = 1; }
+/// ```
+///
+/// (`references/freemint/sys/usb/src.km/udd/hid/mouse-boot/usb_mouse.c:239-
+/// 261`.) So: a mouse that sends only three bytes produces `len == 3`, this
+/// function returns immediately and nothing about the existing behaviour
+/// changes — no phantom detents from a byte the device never wrote.
+///
+/// **Direction.** FreeMiNT reads `wheel = mse_data.new[3]` and turns a
+/// **positive** value into "up" and a negative one into "down" (`:288-311`),
+/// which is the USB HID Usage Tables' `Wheel` (Generic Desktop 0x38)
+/// convention — positive = rotation away from the user. In the Atari IKBD
+/// extension that is scancode `0x59` (wheel up) resp. `0x5a` (wheel down)
+/// (`references/emutos/bios/ikbd.c:752-753`).
+///
+/// **One scancode per detent.** FreeMiNT emits `|wheel|` events (`for (i = 0;
+/// i < wheel; i++)`); so do we. Its surrounding `MAX_WHEEL_INTERVAL` loop,
+/// which *multiplies* them by how recently the last report arrived, is a
+/// FreeMiNT acceleration heuristic with no EmuTOS counterpart and is not
+/// reproduced.
+///
+/// **Horizontal (`0x5c`/`0x5d`) is deliberately not synthesised here.** A
+/// fifth report byte is commonly AC Pan, but nothing in the boot protocol says
+/// so and FreeMiNT's boot-mouse driver does not read it; knowing would require
+/// parsing the HID report descriptor, which the boot protocol exists to avoid.
+/// The IKBD side handles both codes (`vdi_mousex_handler`), so a source that
+/// *can* identify a horizontal wheel travels the same road without a change
+/// here.
+fn wheel(r: &[u8; 8], len: usize) {
+    if len <= 3 {
+        return;
+    }
+    let w = r[3] as i8 as i32;
+    let (code, n) = match w {
+        0 => return,
+        w if w > 0 => (0x59u8, w),   // wheel up
+        w => (0x5Au8, -w),           // wheel down
+    };
+    // Make + break, like every other IKBD key event: `kbd_int` hands the full
+    // scancode to `mousexvec` and `vdi_mousex_handler` acts on the make code
+    // only (`references/emutos/vdi/vdi_mouse.c:546-553`), but a real IKBD
+    // source sends both and the decoder must cope with both.
+    for _ in 0..n {
+        ikbd::feed(code);
+        ikbd::feed(code | 0x80);
+    }
 }

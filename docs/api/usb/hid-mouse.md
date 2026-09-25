@@ -67,5 +67,27 @@ synthetic-packet test that opened a directory window). No new cursor code.
 - **Clamping / acceleration.** `vdi::feed_relative` owns position + clamp; the
   driver just passes signed deltas. High-resolution USB mice may need delta
   scaling (later refinement).
-- **Wheel + middle button.** No Atari equivalent in the relative packet; drop
-  for now (the desktop uses left/right only).
+- **Wheel.** RESOLVED (GUI04, 2026-09-26). The relative packet has no room for
+  it, but the IKBD does: `CONF_WITH_EXTENDED_MOUSE` gives the wheel its own
+  **scancodes** — `0x59` up, `0x5a` down, `0x5c` left, `0x5d` right
+  (`references/emutos/bios/ikbd.c:748-760`). `hid.rs`'s `wheel()` emits
+  `0x59`/`0x5a` from report byte 3, make and break, one pair per detent.
+  Whether byte 3 exists at all is decided by the **transfer length**, not by
+  its value: the boot protocol's own report descriptor is three bytes (USB HID
+  1.11 Appendix B.2), and FreeMiNT's boot-mouse driver reads byte 3 only when
+  `actlen > 3`
+  (`references/freemint/sys/usb/src.km/udd/hid/mouse-boot/usb_mouse.c:239-261`).
+  `Controller::poll_interrupt` therefore reports the length, derived from the
+  Transfer Event's residual (xHCI 1.2 §4.11.5.1). A mouse that sends only
+  three bytes produces no wheel events at all.
+  A **horizontal** wheel is *not* synthesised: a fifth byte is commonly AC Pan,
+  but nothing in the boot protocol says so and FreeMiNT does not read it —
+  knowing would need the HID report descriptor, which the boot protocol exists
+  to avoid. The IKBD side handles `0x5c`/`0x5d` already, so a source that can
+  identify one travels the same road.
+- **Middle button (and 4/5).** The IKBD extension carries them as scancodes
+  `0x37`/`0x5e`/`0x5f`, and `vdi_mousex_handler` turns them into `MOUSE_BT`
+  bits 2..4 (`references/emutos/vdi/vdi_mouse.c:529-545`); that half is
+  implemented. The USB driver does **not** translate byte-0 bits 2..4 yet —
+  bit 2 (middle) is in the boot protocol, bits 3/4 are not, and no ticket has
+  asked for them.

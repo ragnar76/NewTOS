@@ -1,0 +1,17 @@
+# Forced (touch kernel/src/lib.rs + tos-api/src/lib.rs) per-board rebuild, so
+# neither board can be reported 'fresh' from the other's artefact (the shared
+# target/debug/kernel footgun).
+
+$ cargo build -p kernel --no-default-features --features board-rpi4
+   Compiling tos-api v0.1.0 (/Volumes/Daten/Development/PiRusTOS/tos-api)
+   Compiling kernel v0.1.0 (/Volumes/Daten/Development/PiRusTOS/kernel)
+warning: `tos-api` (lib) generated 64 warnings
+warning: `kernel` (lib) generated 94 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1.53s
+
+$ cargo build -p kernel --no-default-features --features board-qemu-virt
+   Compiling tos-api v0.1.0 (/Volumes/Daten/Development/PiRusTOS/tos-api)
+   Compiling kernel v0.1.0 (/Volumes/Daten/Development/PiRusTOS/kernel)
+warning: `tos-api` (lib) generated 64 warnings
+warning: `kernel` (lib) generated 94 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1.31s

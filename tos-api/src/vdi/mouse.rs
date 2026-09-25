@@ -9,7 +9,7 @@
 //! lands it calls [`set_state`] and the same sprite code animates.
 
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicI16, AtomicU16, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicI16, AtomicU16, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
 use super::backend::{ClipRect, RasterBackend};
 use super::vwk::validate_color_index;
@@ -193,12 +193,19 @@ pub fn feed_relative(dx: i16, dy: i16, buttons: u8, backend: &dyn RasterBackend)
     // and `GCURX`/`GCURY` (via `set_state` below) are unchanged, so the normal
     // cursor/desktop path stays byte-identical.
     update_ms_stat(dx, dy, buttons);
+    // "keep additional mouse button states" (`vdi/vdi_asm.S:270-277`): the
+    // packet carries only buttons 1/2, so `mouse_int` merges its two bits into
+    // `MOUSE_BT` and leaves bits 2..4 — the extended buttons 3/4/5 that
+    // [`mousex_handler`] maintains — standing (`andi.w #0xfffc,d2 / or.w
+    // d2,d0`). The merged value is what it stores *and* what it hands to
+    // `user_but` (`:278-281`).
+    let merged = (MOUSE_BT.load(Ordering::Relaxed) & !0x03) | (buttons & 0x03);
     // `user_but` — the AES's button-change vector, installed with
     // `gsx_setmb(far_bcha, …)` (`aes/gemgsxif.c:271`) and called by the VDI
     // mouse interrupt on a change of the low two button bits, before the
     // position is touched (`vdi/vdi_asm.S:261-284`). `b_click` itself filters
     // out non-changes, as `mouse_int` does.
-    crate::aes::user_but(buttons);
+    crate::aes::user_but(merged);
     let max_x = backend.width() as i16 - 1;
     let max_y = backend.height() as i16 - 1;
     let (cx, cy) = position();
@@ -210,7 +217,7 @@ pub fn feed_relative(dx: i16, dy: i16, buttons: u8, backend: &dyn RasterBackend)
     if dx != 0 || dy != 0 {
         crate::aes::user_mot(nx, ny);
     }
-    set_state(nx, ny, buttons, backend);
+    set_state(nx, ny, merged, backend);
 }
 
 /// Update [`CUR_MS_STAT`] from one relative-mouse event, reproducing EmuTOS
@@ -357,16 +364,26 @@ fn ensure_init(backend: &dyn RasterBackend) {
     USER_BUT.store(just_rts as *const () as u64, Ordering::Relaxed);
     USER_MOT.store(just_rts as *const () as u64, Ordering::Relaxed);
     USER_CUR.store(mov_cur as *const () as u64, Ordering::Relaxed);
-    USER_WHEEL.store(just_rts as *const () as u64, Ordering::Relaxed);
     TIM_ADDR.store(just_rts as *const () as u64, Ordering::Relaxed);
+    // `user_wheel = just_rts` (`vdi_mouse.c:588`) and `mousexvec =
+    // vdi_mousex_handler` (`:612`) — the wheel half of `vdimouse_init`, split
+    // out into [`wheel_init`] because EmuTOS runs `vdimouse_init` (workstation
+    // open) strictly before `gsx_init`'s `vex_wheelv(aes_wheel, …)`
+    // (`aes/gemgsxif.c:291`), while NewTOS' `ensure_init` is lazy — the first
+    // cursor operation — and can therefore run *after* the AES has installed
+    // its handler. [`wheel_init`] is one-shot, so whichever runs first seeds
+    // the slot and the other leaves it alone.
+    wheel_init();
 }
 
 /// EmuTOS `just_rts` (`vdi_asm.S`): the default no-op mouse vector shared by
-/// the button / motion / wheel / timer slots. Only its **address** matters —
-/// it is the sentinel the `vex_*` swap returns so an app can save and restore
-/// the default; it is never called from NewTOS' cooperative feed path
-/// (AUD-V6-002, the STOP-split: invoking an app-installed vector would be an
-/// EL1→EL0 upcall, out of scope).
+/// the button / motion / wheel / timer slots. For the button / motion /
+/// cursor / timer slots only its **address** matters — it is the sentinel the
+/// `vex_*` swap returns so an app can save and restore the default; those
+/// four are never called from NewTOS' cooperative feed path (AUD-V6-002).
+/// The **wheel** slot is different since GUI04: [`call_user_wheel`] really
+/// dispatches it, and `just_rts` is the address it recognises as "no handler,
+/// do nothing" — the behavioural equivalent of jumping to an `rts`.
 fn just_rts() {}
 
 /// EmuTOS `mov_cur` (`vdi_asm.S:496`): the default cursor-draw vector. EmuTOS'
@@ -374,6 +391,203 @@ fn just_rts() {}
 /// cursor inline in [`feed_relative`], so this is a pure address sentinel for
 /// the `vex_curv` save/restore contract — never invoked.
 fn mov_cur() {}
+
+// ── extended mouse: buttons 3-5 and the wheel ──────────────────────────────
+//
+// `CONF_WITH_EXTENDED_MOUSE` is `1` in the reference build
+// (`include/config.h:1491-1498`). The chain, end to end:
+//
+//   IKBD scancode 0x37/0x59/0x5a/0x5c/0x5d/0x5e/0x5f
+//     → `kbd_int` → `mousexvec(scancode)`          (`bios/ikbd.c:746-760`)
+//     → `vdi_mousex_handler`                       (`vdi/vdi_mouse.c:525-553`)
+//         · buttons 3/4/5 → `MOUSE_BT` bits 2..4 + `call_user_but(MOUSE_BT)`
+//         · wheel         → `call_user_wheel(number, amount)`
+//     → `user_wheel`, the vector `vex_wheelv` installs (`:438-441`)
+//     → the AES's `aes_wheel` → `wheel_change`     (`aes/geminput.c:395-420`)
+//
+// NewTOS' source is a **USB** mouse, not an ACIA IKBD, but it enters at the
+// same point: `kernel/src/drivers/usb/hid.rs` already translates every boot
+// report into IKBD bytes, and the wheel byte becomes the very same scancodes.
+
+/// [`USER_WHEEL`] holds `just_rts` — no handler, do nothing. EmuTOS
+/// `vdimouse_init`'s `user_wheel = just_rts` (`vdi/vdi_mouse.c:588`).
+const WHEEL_KIND_NONE: u8 = 0;
+/// [`USER_WHEEL`] holds the AES's own handler, EmuTOS `aes_wheel`
+/// (`aes/gemdosif.S:353`), installed by `gsx_init`'s `vex_wheelv(aes_wheel,
+/// &old_wheelv)` (`aes/gemgsxif.c:291`). The AES is EL1 code here, so the
+/// call is a plain same-privilege call.
+const WHEEL_KIND_AES: u8 = 1;
+/// [`USER_WHEEL`] holds a routine **inside an EL0 application**, installed by
+/// that application's own `vex_wheelv`. [`USER_WHEEL_SLOT`] names the process
+/// whose address space the VA belongs to; the call is an EL1→EL0 upcall.
+const WHEEL_KIND_EL0: u8 = 2;
+
+/// Which of the three kinds [`USER_WHEEL`] currently holds.
+static USER_WHEEL_KIND: AtomicU8 = AtomicU8::new(WHEEL_KIND_NONE);
+/// The process slot owning a [`WHEEL_KIND_EL0`] vector; `usize::MAX` = none.
+static USER_WHEEL_SLOT: AtomicUsize = AtomicUsize::new(usize::MAX);
+/// One-shot guard for [`wheel_init`] (see the call in [`ensure_init`]).
+static WHEEL_INIT_DONE: AtomicU8 = AtomicU8::new(0);
+
+/// EmuTOS `aes_wheel` (`aes/gemdosif.S:353-374`) as an **address token**: the
+/// value `vex_wheelv` hands back as `old` while the AES owns the vector, and
+/// the value an application writes back to restore it. It is never jumped to
+/// — [`call_user_wheel`] dispatches on [`USER_WHEEL_KIND`] and calls
+/// [`crate::aes::aes_wheel`] directly — because an EL0 application could not
+/// call an EL1 address anyway. EmuTOS' documented "call the old routine too"
+/// chaining (gemlib `vex_wheelv.c`) therefore stops at the privilege boundary:
+/// an application that saves and later restores `old` gets the AES's wheel
+/// handling back, but it cannot chain into it while its own is installed.
+fn aes_wheel_token() {}
+
+/// Address of the `just_rts` no-op, as stored in the vector slots.
+fn just_rts_va() -> u64 {
+    just_rts as *const () as u64
+}
+
+/// Address of the [`aes_wheel_token`] sentinel.
+fn aes_wheel_va() -> u64 {
+    aes_wheel_token as *const () as u64
+}
+
+/// The wheel half of `vdimouse_init` (`vdi/vdi_mouse.c:588,612`): seed
+/// `user_wheel` with `just_rts` and install the VDI's extended-mouse handler
+/// into the BIOS' `mousexvec`. One-shot — see the comment at its
+/// [`ensure_init`] call site for why the ordering against the AES's
+/// `gsx_init` must not matter.
+fn wheel_init() {
+    if WHEEL_INIT_DONE.swap(1, Ordering::Relaxed) != 0 {
+        return;
+    }
+    USER_WHEEL.store(just_rts_va(), Ordering::Relaxed);
+    USER_WHEEL_KIND.store(WHEEL_KIND_NONE, Ordering::Relaxed);
+    crate::bios::vectors::set_mousexvec(mousex_handler);
+}
+
+/// Install the AES's wheel handler — EmuTOS `gsx_init`'s
+/// `vex_wheelv(aes_wheel, &old_wheelv)` (`aes/gemgsxif.c:288-292`), called
+/// from [`crate::aes::init::init`] (and its restart twin). EmuTOS guards that
+/// call with `aestrap_intercepted()`, an NVDI-crash workaround for a
+/// third-party VDI that does not understand opcode 134 (`:277-290`); NewTOS
+/// *is* the VDI, so there is nothing to intercept and no guard to reproduce.
+///
+/// Idempotent, and it never overrides an application's own vector: it only
+/// installs while the slot still holds the [`WHEEL_KIND_NONE`] default.
+pub fn install_aes_wheel() {
+    wheel_init();
+    if USER_WHEEL_KIND.load(Ordering::Relaxed) != WHEEL_KIND_NONE {
+        return;
+    }
+    USER_WHEEL.store(aes_wheel_va(), Ordering::Relaxed);
+    USER_WHEEL_KIND.store(WHEEL_KIND_AES, Ordering::Relaxed);
+}
+
+/// Drop a [`WHEEL_KIND_EL0`] vector owned by process slot `slot` and put the
+/// AES's handler back. Called from `free_slot` when the process goes away.
+///
+/// **Why this exists and EmuTOS has no counterpart.** EmuTOS runs every
+/// program in one flat address space, so a vector an exiting program forgot
+/// to restore still points at (dead but mapped) memory. Here it points into a
+/// torn-down EL0 address space: honouring it would deliver an upcall to a VA
+/// that names something else, and *not* honouring it would leave the wheel
+/// permanently dead for the desktop. The nearest EmuTOS anchor for "put the
+/// default back when the owner of the vector is gone" is `vdimouse_exit`'s
+/// `user_wheel = just_rts` (`vdi/vdi_mouse.c:628`); the default of a *running*
+/// AES session is the AES's own handler, which is what we restore.
+pub fn release_wheel_vector(slot: usize) {
+    if USER_WHEEL_KIND.load(Ordering::Relaxed) != WHEEL_KIND_EL0
+        || USER_WHEEL_SLOT.load(Ordering::Relaxed) != slot
+    {
+        return;
+    }
+    USER_WHEEL_SLOT.store(usize::MAX, Ordering::Relaxed);
+    USER_WHEEL.store(aes_wheel_va(), Ordering::Relaxed);
+    USER_WHEEL_KIND.store(WHEEL_KIND_AES, Ordering::Relaxed);
+}
+
+/// EmuTOS `vdi_mousex_handler` (`vdi/vdi_mouse.c:525-553`) — the
+/// `mousexvec` handler the VDI installs. `scancode` is the **full** IKBD
+/// scancode, release bit included, exactly as `kbd_int` passes it
+/// (`bios/ikbd.c:758`).
+///
+/// Buttons 3/4/5 live in `MOUSE_BT` bits 2/3/4 and, on a change, go out
+/// through the button vector (`call_user_but(MOUSE_BT)`, `:545`) — the same
+/// vector a normal packet uses, so `vq_mouse` and the AES see one consistent
+/// button mask. The four wheel codes go out through the wheel vector.
+pub fn mousex_handler(scancode: u8) {
+    let old_buttons = MOUSE_BT.load(Ordering::Relaxed);
+    let buttons = match scancode {
+        0x37 => old_buttons | 0x04,  // Mouse button 3 press
+        0xB7 => old_buttons & !0x04, // Mouse button 3 release
+        0x5E => old_buttons | 0x08,  // Mouse button 4 press
+        0xDE => old_buttons & !0x08, // Mouse button 4 release
+        0x5F => old_buttons | 0x10,  // Mouse button 5 press
+        0xDF => old_buttons & !0x10, // Mouse button 5 release
+        _ => old_buttons,
+    };
+    if buttons != old_buttons {
+        MOUSE_BT.store(buttons, Ordering::Relaxed);
+        crate::aes::user_but(buttons);
+    }
+
+    match scancode {
+        0x59 => call_user_wheel(0, -1), // Wheel up
+        0x5A => call_user_wheel(0, 1),  // Wheel down
+        0x5C => call_user_wheel(1, -1), // Wheel left
+        0x5D => call_user_wheel(1, 1),  // Wheel right
+        _ => {}
+    }
+}
+
+/// EmuTOS `call_user_wheel(wheel_number, wheel_amount)` (`vdi/vdi_asm.S:546-
+/// 552`): invoke the installed `user_wheel` vector with the wheel number in
+/// `d0.w` and the signed detent count in `d1.w` (gemlib `vex_wheelv.c`).
+/// Wheel number 0 is the vertical wheel, 1 the horizontal one; the amount is
+/// `-1` for up/left and `+1` for down/right.
+///
+/// The three kinds of vector are dispatched as [`USER_WHEEL_KIND`] says:
+///
+/// * [`WHEEL_KIND_NONE`] — `just_rts`, nothing happens.
+/// * [`WHEEL_KIND_AES`] — a direct EL1 call into [`crate::aes::aes_wheel`].
+///   EmuTOS' `aes_wheel` is the m68k glue that pushes the two WORDs and
+///   `forkq`s `wheel_change`; here it is the function itself.
+/// * [`WHEEL_KIND_EL0`] — an application routine. It is posted as an EL0
+///   upcall (`docs/analysis/coop-kernel/10-upcall-signal-design.md`, consumer
+///   **vex**) with `x0 = wheel_number`, `x1 = wheel_amount` per AAPCS64, and
+///   delivered when that process next returns to EL0.
+///
+///   Two properties follow from the cooperative model and are deliberate, not
+///   oversights: (a) the vector is only called while its **owning** process is
+///   the running one — an EL0 VA names nothing in another address space, the
+///   same rule `ob_user` applies to a `G_USERDEF`'s `ub_code`
+///   (`aes/object.rs`, A97); (b) delivery happens at the next syscall return,
+///   not inside an interrupt, and a second detent arriving before the first
+///   was delivered replaces it ([`crate::bdos::process::post_upcall`]'s
+///   last-writer-wins contract). A true ISR-timed call needs the lower-EL IRQ
+///   route the design marks as the vex consumer's open precondition (§7.3),
+///   which NewTOS does not have.
+fn call_user_wheel(wheel_number: i16, wheel_amount: i16) {
+    match USER_WHEEL_KIND.load(Ordering::Relaxed) {
+        WHEEL_KIND_AES => crate::aes::aes_wheel(wheel_number, wheel_amount),
+        WHEEL_KIND_EL0 => {
+            let slot = USER_WHEEL_SLOT.load(Ordering::Relaxed);
+            let current = crate::bdos::process::slot_for(crate::bdos::process::current());
+            if current != Some(slot) {
+                return;
+            }
+            crate::bdos::process::post_upcall(
+                slot,
+                crate::bdos::process::UpcallDesc {
+                    handler_va: USER_WHEEL.load(Ordering::Relaxed),
+                    args: [wheel_number as i64 as u64, wheel_amount as i64 as u64, 0, 0],
+                    mask_bit: crate::bdos::process::UPCALL_MASK_VEX_WHEEL,
+                    disposition: crate::bdos::process::Disposition::Resume,
+                },
+            );
+        }
+        _ => {}
+    }
+}
 
 /// Initialise the cursor subsystem at workstation-open time (EmuTOS
 /// `vdimouse_init`, `vdi_mouse.c:582-583`): load the default arrow form and
@@ -687,12 +901,23 @@ pub fn vq_mouse(pb: &Vdipb) {
     pb.set_contrl(2, 1);
 }
 
-/// Swap one exchange vector: install `CONTRL[7..10]` (native 64-bit
-/// pointer), return the previous in `CONTRL[9..12]`.
+/// Swap one exchange vector: install VDI pointer slot 0, return the previous
+/// one in VDI pointer slot 1 — EmuTOS `vdi_vex_wheelv` and friends,
+/// `CONTRL[7..8]` in, `CONTRL[9..10]` out (`vdi/vdi_mouse.c:438-441`).
+///
+/// Both slots are addressed at the **caller's** pointer width, the way gemlib
+/// packs them: pointer `n` starts at CONTRL word `7 + n * N_PTRINTS` with
+/// `N_PTRINTS = sizeof(void *) / sizeof(short)`
+/// (`sdk/gemlib/gemlib-0.44.0/gem_vdiP.h:177,248`) — 2 WORDs on m68k (whence
+/// EmuTOS' fixed `CONTRL[9]`), **4 on LP64**. Reading the new pointer at word
+/// 7 was already right; writing the old one at word 9 was the m68k offset and
+/// landed two WORDs short of where an LP64 `vex_*(new, &old)` reads it, so
+/// `old` came back as garbage. The kernel's own VDI client already uses the
+/// LP64 slot-1 offset (`kernel/src/vdi_client.rs:226`).
 fn swap_vector(pb: &Vdipb, slot: &AtomicU64) {
-    let new = pb.contrl_u64(7);
+    let new = pb.contrl_ptr(0);
     let prev = slot.swap(new, Ordering::Relaxed);
-    pb.set_contrl_u64(9, prev);
+    pb.set_contrl_ptr(1, prev);
 }
 
 /// Opcode 125 — `vex_butv`: install the button-change vector.
@@ -707,9 +932,46 @@ pub fn vex_motv(pb: &Vdipb) {
 pub fn vex_curv(pb: &Vdipb) {
     swap_vector(pb, &USER_CUR);
 }
-/// Opcode 134 — `vex_wheelv`: install the mouse-wheel vector.
+
+/// Opcode 134 — `vex_wheelv`: install the mouse-wheel vector (EmuTOS
+/// `vdi_vex_wheelv`, a Milan VDI extension, `vdi/vdi_mouse.c:424-442`).
+///
+/// EmuTOS only stores the address, because on m68k every caller is at the
+/// same privilege as the VDI. Here the stored address may belong to the EL1
+/// AES or to an EL0 application, and [`call_user_wheel`] has to know which —
+/// so the swap is followed by a classification of the **new** value:
+///
+/// * `just_rts` → [`WHEEL_KIND_NONE`] (an application clearing the vector);
+/// * the [`aes_wheel_token`] → [`WHEEL_KIND_AES`] (an application putting the
+///   `old` it saved back, the normal tear-down of a well-behaved program);
+/// * anything else, issued by a live EL0 process → [`WHEEL_KIND_EL0`] owned by
+///   that process's slot;
+/// * anything else with no live process behind the trap → left as
+///   [`WHEEL_KIND_NONE`]: the address is stored (so the `vex_*` save/restore
+///   contract still round-trips) but not called, because nothing identifies
+///   whose code it is. No in-kernel caller installs a wheel vector through the
+///   trap; the AES uses [`install_aes_wheel`].
 pub fn vex_wheelv(pb: &Vdipb) {
+    wheel_init();
     swap_vector(pb, &USER_WHEEL);
+    let new = USER_WHEEL.load(Ordering::Relaxed);
+    let kind = if new == just_rts_va() || new == 0 {
+        WHEEL_KIND_NONE
+    } else if new == aes_wheel_va() {
+        WHEEL_KIND_AES
+    } else {
+        match crate::bdos::process::slot_for(crate::bdos::process::current()) {
+            Some(slot) => {
+                USER_WHEEL_SLOT.store(slot, Ordering::Relaxed);
+                WHEEL_KIND_EL0
+            }
+            None => WHEEL_KIND_NONE,
+        }
+    };
+    if kind != WHEEL_KIND_EL0 {
+        USER_WHEEL_SLOT.store(usize::MAX, Ordering::Relaxed);
+    }
+    USER_WHEEL_KIND.store(kind, Ordering::Relaxed);
 }
 
 /// Opcode 118 — `vex_timv`: install the timer-tick vector and return the
