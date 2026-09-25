@@ -16,6 +16,34 @@ Das ist alles, was gesichert ist. Insbesondere ist **nicht** gesichert, ob
 die beiden Ausgaenge von der Art des Startens abhaengen oder derselbe
 Vorgang mal so und mal so endet.
 
+## Beide Ausgaenge, im Wortlaut (Anwender 2026-09-25)
+
+Auf die Frage „immer gleich oder mal so mal so":
+
+1. *„Einmal startet QED, und nachdem QED gestartet ist, friert das System
+   komplett ein, auch die Maus bewegt sich nicht mehr."*
+2. *„Zweitens: QED starten, es beendet sich direkt wieder, man ist im
+   TeraDesk — und dann kommt der Freeze."*
+
+**Zwei Dinge folgen daraus, ohne zu raten:**
+
+**Die Maus ist tot.** Nach der Projektregel
+[[mouse-moves-but-nothing-responds-means-app-sleeping]] heisst *lebendige*
+Maus bei totem Bild, dass eine Anwendung in einem AES-Aufruf schlaeft — denn
+`pump_input` laeuft in der AES-Warteschleife. **Tote** Maus heisst also das
+Gegenteil: es steckt **unterhalb** der AES. Interrupts weg,
+Ausnahmeschleife oder Verklemmung im Kernel. Eine ganze Ebene ist damit
+ausgeschlossen, durch die Beobachtung und nicht durch eine Vermutung.
+
+**Der Freeze kommt in beiden Faellen *danach*.** Einmal nachdem QED laeuft,
+einmal nachdem QED sich beendet hat und TeraDesk wieder da ist. Der
+gemeinsame Nenner ist damit **nicht** der Start, sondern was danach passiert.
+In Fall 2 ist der `Pexec` nachweislich zurueckgekehrt — TeraDesk zeichnet
+sich wieder — und erst dann faellt das System.
+
+Dass beide Faelle bei derselben Handlung auftreten koennen, ist selbst ein
+Befund: **es ist nicht deterministisch.**
+
 ## Was sich seit dem letzten Lauf geaendert hat
 
 Genau eines, und es gehoert hierhergeschrieben, damit es nicht uebersehen
