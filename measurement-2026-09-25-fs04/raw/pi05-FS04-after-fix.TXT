@@ -1,0 +1,204 @@
+==== FS04 probe: kernel started ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+drives: C: D: E: F:
+Copy a file from one drive to another now; one block per copy is
+appended below.  Repeat as often as you like.
+emmc after identification: 0 error(s), 0 timeout(s), 0 recovery(ies)
+==== end start-up note ====
+
+==== FS04 block 1 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 467016 us (25218869 ticks)
+previous report write 206006 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=4       total=2496     us avg=624    us max=719    us min=528us
+dev.write_one      n=2       total=366054   us avg=183027 us max=200576 us min=165478us
+dev.r.wait_dat     n=4       total=0        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=4       total=19       us avg=4      us max=4      us min=4us
+dev.r.read_rdy     n=4       total=2429     us avg=607    us max=703    us min=512us
+dev.r.pio          n=4       total=43       us avg=10     us max=10     us min=10us
+dev.r.data_done    n=4       total=0        us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=2       total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=2       total=9        us avg=4      us max=5      us min=4us
+dev.w.write_rdy    n=2       total=0        us avg=0      us max=0      us min=0us
+dev.w.pio          n=2       total=2        us avg=1      us max=1      us min=1us
+dev.w.data_done    n=2       total=366041   us avg=183020 us max=200569 us min=165471us
+cache.read.hit     n=13
+cache.read.miss    n=4
+cache.write.hit    n=2
+cache.flush.wb     n=2
+cache.flush.call   n=4
+gemdos.dispatch    n=12      total=368584   us avg=30715  us max=200584 us min=0us
+desk.fun_op        n=1       total=2646892  us avg=2646892us max=2646892us min=2646892us
+desk.copy_pass     n=1       total=2646875  us avg=2646875us max=2646875us min=2646875us
+dofcopy.Fopen      n=1       total=2510     us avg=2510   us max=2510   us min=2510us
+dofcopy.outname    n=1       total=4        us avg=4      us max=4      us min=4us
+dofcopy.Fcreate    n=1       total=200585   us avg=200585 us max=200585 us min=200585us
+dofcopy.Fread      n=1       total=1        us avg=1      us max=1      us min=1us
+dofcopy.Fdatime    n=1       total=165480   us avg=165480 us max=165480 us min=165480us
+dofcopy.Fclose     n=1       total=1        us avg=1      us max=1      us min=1us
+dofcopy.total      n=1       total=368584   us avg=368584 us max=368584 us min=368584us
+blk.read_blocks    calls=4       amount=4         max/call=1 min/call=1
+blk.write_blocks   calls=2       amount=2         max/call=1 min/call=1
+desk.fun_drag      n=1       total=2743147  us avg=2743147us max=2743147us min=2743147us
+desk.rebuild_win   n=1       total=48090    us avg=48090  us max=48090  us min=48090us
+desk.redraw_desk   n=2       total=89387    us avg=44693  us max=44717  us min=44669us
+fb.clean           calls=2175    amount=376836992 max/call=3486720 min/call=4
+fb.clean_lines     calls=2175    amount=5889634   max/call=54480 min/call=1
+scope.check.r      n(read_one)=4 n(sectors)=4  total=2496us phases=2493us diff=2us
+scope.check.w      n(write_one)=2 n(sectors)=2  total=366054us phases=366054us diff=0us
+emmc.errors        timeouts=0(+0) io=0(+0) recoveries=0(+0) nonrecov=0(+0) other=0(+0)
+emmc.timeouts_by_phase cmd_inhibit=0(+0) dat_inhibit=0(+0) cmd_done=0(+0) read_rdy=0(+0) write_rdy=0(+0) read_done=0(+0) write_done=0(+0)
+emmc.error_bits    CTO=0(+0) CCRC=0(+0) CEND=0(+0) CBAD=0(+0) DTO=0(+0) DCRC=0(+0) DEND=0(+0)
+emmc.last          status=0x00000000 phase=cmd_inhibit
+NOTE  `emmc.spin` is gone from this block.  Since the timeout became a
+      duration (c6cf484) its iteration count is no longer a limit and
+      carried no information; a wait that ran out is now reported as a
+      timeout, by phase, on the three emmc.* lines above.
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=200584   us max=200584us
+  0x3d  n=1      total=2508     us max=2508us
+  0x3e  n=2      total=0        us max=0us
+  0x3f  n=1      total=0        us max=0us
+  0x4e  n=2      total=6        us max=3us
+  0x4f  n=1      total=1        us max=1us
+  0x54  n=1      total=0        us max=0us
+  0x57  n=1      total=165480   us max=165480us
+==== end block 1 ====
+
+==== FS04 block 2 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 451206 us (24365127 ticks)
+previous report write 21744 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=1       total=605      us avg=605    us max=605    us min=605us
+dev.write_one      n=2       total=352953   us avg=176476 us max=191278 us min=161675us
+dev.r.wait_dat     n=1       total=0        us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=1       total=5        us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=1       total=587      us avg=587    us max=587    us min=587us
+dev.r.pio          n=1       total=10       us avg=10     us max=10     us min=10us
+dev.r.data_done    n=1       total=0        us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=2       total=0        us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=2       total=9        us avg=4      us max=4      us min=4us
+dev.w.write_rdy    n=2       total=0        us avg=0      us max=0      us min=0us
+dev.w.pio          n=2       total=2        us avg=1      us max=1      us min=1us
+dev.w.data_done    n=2       total=352939   us avg=176469 us max=191271 us min=161668us
+cache.read.hit     n=13
+cache.read.miss    n=1
+cache.write.hit    n=2
+cache.flush.wb     n=2
+cache.flush.call   n=4
+gemdos.dispatch    n=12      total=353591   us avg=29465  us max=191285 us min=0us
+desk.fun_op        n=1       total=2337196  us avg=2337196us max=2337196us min=2337196us
+desk.copy_pass     n=1       total=2337179  us avg=2337179us max=2337179us min=2337179us
+dofcopy.Fopen      n=1       total=618      us avg=618    us max=618    us min=618us
+dofcopy.outname    n=1       total=5        us avg=5      us max=5      us min=5us
+dofcopy.Fcreate    n=1       total=191286   us avg=191286 us max=191286 us min=191286us
+dofcopy.Fread      n=1       total=1        us avg=1      us max=1      us min=1us
+dofcopy.Fdatime    n=1       total=161678   us avg=161678 us max=161678 us min=161678us
+dofcopy.Fclose     n=1       total=1        us avg=1      us max=1      us min=1us
+dofcopy.total      n=1       total=353592   us avg=353592 us max=353592 us min=353592us
+blk.read_blocks    calls=1       amount=1         max/call=1 min/call=1
+blk.write_blocks   calls=2       amount=2         max/call=1 min/call=1
+desk.fun_drag      n=1       total=2433295  us avg=2433295us max=2433295us min=2433295us
+desk.rebuild_win   n=1       total=48074    us avg=48074  us max=48074  us min=48074us
+desk.redraw_desk   n=2       total=89113    us avg=44556  us max=44602  us min=44511us
+fb.clean           calls=2538    amount=450839984 max/call=3072008 min/call=4
+fb.clean_lines     calls=2538    amount=7046229   max/call=48001 min/call=1
+scope.check.r      n(read_one)=1 n(sectors)=1  total=605us phases=604us diff=0us
+scope.check.w      n(write_one)=2 n(sectors)=2  total=352953us phases=352952us diff=0us
+emmc.errors        timeouts=0(+0) io=0(+0) recoveries=0(+0) nonrecov=0(+0) other=0(+0)
+emmc.timeouts_by_phase cmd_inhibit=0(+0) dat_inhibit=0(+0) cmd_done=0(+0) read_rdy=0(+0) write_rdy=0(+0) read_done=0(+0) write_done=0(+0)
+emmc.error_bits    CTO=0(+0) CCRC=0(+0) CEND=0(+0) CBAD=0(+0) DTO=0(+0) DCRC=0(+0) DEND=0(+0)
+emmc.last          status=0x00000000 phase=cmd_inhibit
+NOTE  `emmc.spin` is gone from this block.  Since the timeout became a
+      duration (c6cf484) its iteration count is no longer a limit and
+      carried no information; a wait that ran out is now reported as a
+      timeout, by phase, on the three emmc.* lines above.
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=191285   us max=191285us
+  0x3d  n=1      total=616      us max=616us
+  0x3e  n=2      total=0        us max=0us
+  0x3f  n=1      total=0        us max=0us
+  0x4e  n=2      total=7        us max=4us
+  0x4f  n=1      total=1        us max=1us
+  0x54  n=1      total=0        us max=0us
+  0x57  n=1      total=161677   us max=161677us
+==== end block 2 ====
+
+==== FS04 block 3 : drop ====
+screen 1920x1080 stride 1920px   desk 1920x1061   CNTFRQ 54000000 Hz
+wall 5857961 us (316329907 ticks)
+previous report write 26629 us  (this block's own write is in no number below)
+NOTE  `wall` is the time from the OK click in the confirmation box to the
+      end of the whole drop -- that is the freeze.  desk.fun_op,
+      desk.copy_pass and desk.fun_drag START BEFORE that box and so also
+      contain the seconds it stood waiting for the click; they are not it.
+dev.read_one       n=1253    total=807136   us avg=644    us max=1118   us min=526us
+dev.write_one      n=1111    total=4784427  us avg=4306   us max=168270 us min=1769us
+dev.r.wait_dat     n=1253    total=119      us avg=0      us max=0      us min=0us
+dev.r.cmd17        n=1253    total=6714     us avg=5      us max=5      us min=5us
+dev.r.read_rdy     n=1253    total=776644   us avg=619    us max=1093   us min=502us
+dev.r.pio          n=1253    total=22323    us avg=17     us max=18     us min=17us
+dev.r.data_done    n=1253    total=471      us avg=0      us max=0      us min=0us
+dev.w.wait_dat     n=1111    total=104      us avg=0      us max=0      us min=0us
+dev.w.cmd24        n=1111    total=5952     us avg=5      us max=5      us min=5us
+dev.w.write_rdy    n=1111    total=191      us avg=0      us max=0      us min=0us
+dev.w.pio          n=1111    total=3959     us avg=3      us max=3      us min=3us
+dev.w.data_done    n=1111    total=4773792  us avg=4296   us max=168261 us min=1760us
+cache.read.hit     n=30261
+cache.read.miss    n=1253
+cache.write.hit    n=250
+cache.write.miss   n=981
+cache.evict.wb     n=872
+cache.flush.wb     n=239
+cache.flush.call   n=20
+gemdos.dispatch    n=45      total=5614512  us avg=124766 us max=2146303us min=0us
+desk.fun_op        n=1       total=7587049  us avg=7587049us max=7587049us min=7587049us
+desk.copy_pass     n=1       total=7587025  us avg=7587025us max=7587025us min=7587025us
+dofcopy.Fopen      n=1       total=2550     us avg=2550   us max=2550   us min=2550us
+dofcopy.outname    n=1       total=689      us avg=689    us max=689    us min=689us
+dofcopy.Fcreate    n=1       total=166665   us avg=166665 us max=166665 us min=166665us
+dofcopy.Fread      n=17      total=686976   us avg=40410  us max=47369  us min=1us
+dofcopy.Fwrite     n=16      total=4753094  us avg=297068 us max=2146305us min=61387us
+dofcopy.Fdatime    n=1       total=2633     us avg=2633   us max=2633   us min=2633us
+dofcopy.Fclose     n=1       total=1959     us avg=1959   us max=1959   us min=1959us
+dofcopy.total      n=1       total=5614571  us avg=5614571us max=5614571us min=5614571us
+blk.read_blocks    calls=1253    amount=1253      max/call=1 min/call=1
+blk.write_blocks   calls=1111    amount=1111      max/call=1 min/call=1
+desk.fun_drag      n=1       total=7826757  us avg=7826757us max=7826757us min=7826757us
+desk.rebuild_win   n=1       total=119843   us avg=119843 us max=119843 us min=119843us
+desk.redraw_desk   n=2       total=222374   us avg=111187 us max=111221 us min=111153us
+fb.clean           calls=2671    amount=454282980 max/call=3072008 min/call=4
+fb.clean_lines     calls=2671    amount=7100134   max/call=48001 min/call=1
+scope.check.r      n(read_one)=1253 n(sectors)=1253  total=807136us phases=806273us diff=862us
+scope.check.w      n(write_one)=1111 n(sectors)=1111  total=4784427us phases=4784001us diff=425us
+emmc.errors        timeouts=0(+0) io=0(+0) recoveries=0(+0) nonrecov=0(+0) other=0(+0)
+emmc.timeouts_by_phase cmd_inhibit=0(+0) dat_inhibit=0(+0) cmd_done=0(+0) read_rdy=0(+0) write_rdy=0(+0) read_done=0(+0) write_done=0(+0)
+emmc.error_bits    CTO=0(+0) CCRC=0(+0) CEND=0(+0) CBAD=0(+0) DTO=0(+0) DCRC=0(+0) DEND=0(+0)
+emmc.last          status=0x00000000 phase=cmd_inhibit
+NOTE  `emmc.spin` is gone from this block.  Since the timeout became a
+      duration (c6cf484) its iteration count is no longer a limit and
+      carried no information; a wait that ran out is now reported as a
+      timeout, by phase, on the three emmc.* lines above.
+--- GEMDOS calls (opcode: n, total us, max us) ---
+  0x1a  n=2      total=0        us max=0us
+  0x3c  n=1      total=166663   us max=166663us
+  0x3d  n=1      total=2547     us max=2547us
+  0x3e  n=2      total=1957     us max=1956us
+  0x3f  n=17     total=686949   us max=47367us
+  0x40  n=16     total=4753063  us max=2146303us
+  0x4e  n=2      total=693      us max=686us
+  0x4f  n=2      total=4        us max=3us
+  0x54  n=1      total=1        us max=1us
+  0x57  n=1      total=2632     us max=2632us
+==== end block 3 ====
+
