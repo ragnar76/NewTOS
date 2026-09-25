@@ -1017,7 +1017,7 @@ fn format_fnode(f: &FNode, datefmt: DateFmt, timefmt: TimeFmt, idt: u32, out: &m
     let dn = super::inf::fmt_date(f.f_date, false, datefmt, idt, &mut dbuf);
     put(out, 27, &dbuf[..dn]);
     let mut tbuf = [b' '; 8];
-    let tn = super::inf::fmt_time(f.f_time, timefmt, idt, &mut tbuf);
+    let tn = super::inf::fmt_time(f.f_time, timefmt, idt, b":", &mut tbuf);
     put(out, 37, &tbuf[..tn]);
 
     // NUL-terminate after the last used column, trimming trailing spaces.

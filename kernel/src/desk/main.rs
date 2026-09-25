@@ -2059,13 +2059,13 @@ fn do_info_file_folder(cwin: i16, curr: i16) -> i16 {
         let Some(path) = path else {
             return 1;
         };
-        let Some(info) = dir::file_exists(&path) else {
+        let Some(mut info) = dir::file_exists(&path) else {
             dir::remove_locate_shortcut(curr);
             return 1; // `break` — `ret` is still 1
         };
         // `strcpy(pathname, pa->a_pappl); del_fname(pathname);`
         let dir_path = String::from(&path[..path.rfind('\\').map_or(0, |i| i + 1)]);
-        return show_item_info(&dir_path, &info.name, info.size, info.date, info.time, info.attr);
+        return show_item_info(&dir_path, &mut info);
     }
     // `pathptr = pw->w_pnode.p_spec; pf = G.g_screeninfo[item].fnptr;`
     let sel = global::with(|g| {
@@ -2078,45 +2078,44 @@ fn do_info_file_folder(cwin: i16, curr: i16) -> i16 {
         }
         let f = g.windows.slots[slot].w_pnode.p_flist.get(fnode as usize)?;
         let name = core::str::from_utf8(f.name_bytes()).ok().map(String::from)?;
-        Some((dir, name, f.f_size, f.f_date, f.f_time, f.f_attr))
+        // The `FNODE` fields `inf_file_folder` reads, in the shape
+        // `desksupp.c:1326` gives its stack copy.
+        let info = dir::FileInfo {
+            name,
+            attr: f.f_attr,
+            time: f.f_time,
+            date: f.f_date,
+            size: f.f_size,
+        };
+        Some((dir, info))
     })
     .flatten();
-    let Some((dir_path, name, size, date, time, attr)) = sel else {
+    let Some((dir_path, mut info)) = sel else {
         return 1;
     };
-    show_item_info(&dir_path, &name, size, date, time, attr)
+    show_item_info(&dir_path, &mut info)
 }
 
 /// `ret = inf_file_folder(pathptr, pf); if (ret < 0) fun_mark_for_rebld(pathptr);`
-/// (`desksupp.c:1335-1337`) — run the box and act on its three answers.
+/// (`desksupp.c:1335-1337`) — run the box and act on its answer.
 ///
-/// **Named deviation** (predates DESK38, unchanged by it): EmuTOS renames
-/// inside `inf_file_folder`, wrapped in a `while(1)` that re-shows the whole
-/// dialog after a `STRENAME` *Retry* (`deskinf.c:551,629-634`), and it also
-/// writes back a changed read-only attribute (`:591-609`). NewTOS's
-/// [`super::inf::inf_file_folder`] hands the new name back and the rename
-/// happens here, once, with NewTOS's own failure alert; the attribute row is
-/// read-only. The observable difference is the missing *Retry*, not the rename
-/// itself.
-fn show_item_info(dir_path: &str, name: &str, size: u32, date: u16, time: u16, attr: u8) -> i16 {
-    match super::inf::inf_file_folder(name, size, date, time, attr) {
-        super::inf::InfFF::Cancel => 0,
-        super::inf::InfFF::Continue => 1,
-        super::inf::InfFF::Renamed(new) => {
-            let mut oldp = String::from(dir_path);
-            oldp.push_str(name);
-            let mut newp = String::from(dir_path);
-            newp.push_str(&new);
-            if dir::rename(&oldp, &newp) {
-                // `if (ret < 0) fun_mark_for_rebld(pathptr);` — deferred, so
-                // the `SHOWITEM` loop keeps walking a live `FNODE` list.
-                dir::fun_mark_for_rebld(dir_path);
-                return -1;
-            }
-            dir::fun_alert(1, b"Could not rename the item.");
-            1
-        }
+/// Since DESK42 the rename, the `STRENAME` *Retry* loop and the attribute
+/// write-back all live inside [`super::inf::inf_file_folder`], where EmuTOS has
+/// them; what is left here is the source's two lines. The deferral is the
+/// point of `fun_mark_for_rebld`: rebuilding the window at once would throw
+/// away the `FNODE` list the `SHOWITEM` loop is still walking.
+///
+/// **Named deviation.** EmuTOS's `pf` *is* the window's live `FNODE`, so a
+/// changed name or attribute is visible in it immediately; ours is the copy
+/// `do_info` made. The window is refreshed by the rebuild that the same `-1`
+/// triggers ([`dir::fun_rebld_marked`], which re-scans the directory), so the
+/// two agree by the time anything reads them again.
+fn show_item_info(dir_path: &str, info: &mut dir::FileInfo) -> i16 {
+    let ret = super::inf::inf_file_folder(dir_path, info);
+    if ret < 0 {
+        dir::fun_mark_for_rebld(dir_path);
     }
+    ret
 }
 
 /// `trash_alert` (EmuTOS `desksupp.c:1165-1172`) — `STTRINFO`

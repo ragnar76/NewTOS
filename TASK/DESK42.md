@@ -1,6 +1,6 @@
 # DESK42 — Der `Show info`-Kasten sieht EmuTOS' nicht aehnlich
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Konformitaet — Pi-Runde 2026-09-25
+Status: **IMPLEMENTIERT — HW-Abnahme offen** (2026-09-25) · Prioritaet: **P3** · Typ: Konformitaet — Pi-Runde 2026-09-25
 
 Abhaengigkeiten: [DESK38](DESK38.md) (erledigt)
 
@@ -31,3 +31,29 @@ benannt statt stillschweigend gelassen.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss (2026-09-25)
+
+`ADDISKIN` (`desk_rsc.c:709-768`, 10 Objekte, 304x200) und `ADFFINFO`
+(`:622-703`, 14 Objekte, 320x256) sind Objekt fuer Objekt nachgebaut —
+gleiche Reihenfolge, Objektnummern, Beschriftungen, Masse. `inf_file_folder`
+traegt wieder EmuTOS' Signatur (`ppath, pf -> 0/1/-1`), `InfFF` entfaellt.
+
+**Umfang minimal ueber „nur der Baum" hinaus, und begruendet:** der Baum
+*enthaelt* `FFSKIP` und das Attribut-Radiopaar. Sie inert zu lassen waeren
+Stubs (Regel 2), also sind sie verdrahtet. Damit schliessen sich DESK38s
+zwei benannte Abweichungen: die Attributrueckschreibung (`dos_chmod`,
+`deskinf.c:585-605`) und die `STRENAME`-Retry-Schleife (`:551-635`, jetzt
+**in** `inf_file_folder` wie in der Quelle).
+
+Neun QEMU-Laeufe, 0 `[EXC]`/`[PANIC]`, `fsck_msdos -n` sauber auf allen zehn
+Abbildern; beide Baeume zur Laufzeit Objekt fuer Objekt ausgegeben
+(`serial/dlg-dumps.txt`) und gegen `desk_rsc.c` gehalten. Basislinien
+unveraendert: 944/0/1, 64/94 beide Boards, 80/125 beide Feature-Saetze.
+
+**Was nur die echte Pi zeigt:** Mausklick auf einen Radioknopf, echte
+Ruecktaste im Namensfeld, `count_ffs` ueber die vier echten Partitionen
+(Checklistenpunkt 69) — dort ist die **Dauer** des Laufs der eigentliche Punkt.
+
+**Herausgefallen als eigenes Ticket:** [FS06](FS06.md) — `Frename` auf einen
+leeren Namen liefert `E_OK` und legt einen leeren 8.3-Eintrag an.

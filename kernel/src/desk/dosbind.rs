@@ -77,6 +77,7 @@ const FCLOSE: u16 = 0x3E;
 const FREAD: u16 = 0x3F;
 const FWRITE: u16 = 0x40;
 const FDELETE: u16 = 0x41;
+const FATTRIB: u16 = 0x43;
 const DFREE: u16 = 0x36;
 const FSFIRST: u16 = 0x4E;
 const FSNEXT: u16 = 0x4F;
@@ -220,6 +221,22 @@ pub(super) fn dos_write(handle: i16, cnt: i32, buf: *const u8) -> Long {
 pub(super) fn dos_delete(path: &str) -> Long {
     let p = cpath(path);
     dos_trap(FDELETE, p.as_ptr() as u64, 0, 0)
+}
+
+/// `F_SETMOD` (`include/bdosdefs.h:45`) — [`dos_chmod`]'s "write the attribute"
+/// mode; `F_GETMOD` (0) reads it back instead.
+pub(super) const F_SETMOD: i16 = 1;
+
+/// `dos_chmod` — `Fattrib(name, wrt, mod)` (`gemdos.h:120-123`). With
+/// `wrt = F_SETMOD` the file's attribute byte becomes `mode`; the return is the
+/// resulting attribute or a negative GEMDOS error.
+///
+/// The one caller is [`super::inf::inf_file_folder`]'s read-only switch, and it
+/// ignores the result — "like Atari TOS, we don't check the return code from
+/// dos_chmod()" (`deskinf.c:592-593`).
+pub(super) fn dos_chmod(path: &str, wrt: i16, mode: u8) -> Long {
+    let p = cpath(path);
+    dos_trap(FATTRIB, p.as_ptr() as u64, sx(wrt as i64), mode as u64)
 }
 
 /// `dos_rename` — `Frename(p1, p2)` (`gemdos.h:130-133`), which expands to

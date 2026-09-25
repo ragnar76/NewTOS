@@ -2092,7 +2092,6 @@ pub(super) fn inf_show(tree: u64, start: i16) -> i16 {
 
 // obdefs.h object graphic types.
 const G_BOX: u16 = 20;
-const G_BOXTEXT: u16 = 22;
 /// `G_IBOX` (`obdefs.h`) — an invisible box. It draws nothing; its job is to be
 /// the **parent** of a radio-button group, because the AES's `fm_button`
 /// deselects the siblings of the button that was hit by walking the parent's
@@ -2190,9 +2189,6 @@ pub(super) const BOX_SPEC: u64 = (1 << 16) | 0x1100;
 /// `1 << 8` painted the frame in pen 0 (WHITE), which under `FL3DBAK` would
 /// have drawn a white ring on the grey field.
 pub(super) const TED_COLOR: i16 = 0x1100;
-
-/// The longest edited name (a 12-char 8.3 name plus one slack byte).
-const NAME_MAX: usize = 13;
 
 /// `ROOT` (`obdefs.h`) — the tree's first object; also `form_do`'s "no editable
 /// field preselected" start value (EmuTOS passes `ROOT` for these dialogs).
@@ -2573,14 +2569,19 @@ pub(super) fn fmt_date(date: u16, fourdigit: bool, datefmt: DateFmt, idt: u32, o
 }
 
 /// `fmt_time` (`deskinf.c:74-105`) — a DOS-packed time word written into `out`
-/// as `hh:mm` plus a **two-character suffix**: `am`/`pm` for [`TimeFmt::H12`],
-/// two blanks for [`TimeFmt::H24`] (EmuTOS's `char *suffix = "  ";`,
-/// `deskinf.c:77`). The suffix keeps the field width constant at 7 whichever
-/// format is chosen, which is why EmuTOS can lay the text view out in fixed
-/// columns. Returns the number of bytes written (always 7).
+/// as `hh<sep>mm` plus a **two-character suffix**: `am`/`pm` for
+/// [`TimeFmt::H12`], two blanks for [`TimeFmt::H24`] (EmuTOS's
+/// `char *suffix = "  ";`, `deskinf.c:77`). The suffix keeps the field width
+/// constant whichever format is chosen, which is why EmuTOS can lay the text
+/// view out in fixed columns. Returns the number of bytes written.
+///
+/// `sep` is the whole of what EmuTOS varies between its call sites through the
+/// `sprintf` format string it passes in: the text view uses `"%02d:%02d%s"`
+/// (`:293`) and `inf_dttm` `"%02d%02d%s"` (`:467`), because `ADFFINFO`'s
+/// `Time:   __:__ __  ` template already carries the colon.
 ///
 /// [`TimeFmt::Idt`] is resolved against `idt` by [`TimeFmt::rendered`].
-pub(super) fn fmt_time(time: u16, timefmt: TimeFmt, idt: u32, out: &mut [u8]) -> usize {
+pub(super) fn fmt_time(time: u16, timefmt: TimeFmt, idt: u32, sep: &[u8], out: &mut [u8]) -> usize {
     let mut hh = ((time >> 11) & 0x1F) as u32;
     let mm = ((time >> 5) & 0x3F) as u32;
     let suffix: &[u8] = match timefmt.rendered(idt) {
@@ -2602,7 +2603,7 @@ pub(super) fn fmt_time(time: u16, timefmt: TimeFmt, idt: u32, out: &mut [u8]) ->
     };
     let mut p = 0usize;
     push_dec2(out, &mut p, hh);
-    push_str(out, &mut p, b":");
+    push_str(out, &mut p, sep);
     push_dec2(out, &mut p, mm);
     push_str(out, &mut p, suffix);
     p
@@ -2610,10 +2611,193 @@ pub(super) fn fmt_time(time: u16, timefmt: TimeFmt, idt: u32, out: &mut [u8]) ->
 
 /// FAT attribute bits (`bdosdefs.h`).
 const FA_RO: u8 = 0x01;
-const FA_HIDDEN: u8 = 0x02;
-const FA_SYSTEM: u8 = 0x04;
 const FA_SUBDIR: u8 = 0x10;
-const FA_ARCHIVE: u8 = 0x20;
+
+/// `DISABLED` (`obdefs.h:104`) — greyed out and not clickable. `ADFFINFO` puts
+/// it on the two attribute buttons of a folder and on the two counters of a
+/// plain file (`deskinf.c:540-546`, `:557-566`).
+const DISABLED: u16 = 0x0008;
+
+/// `te_just` codes (`obdefs.h:253-255`): the justification a `TEDINFO`'s text is
+/// merged into its template with (`ob_format`) **and** placed in its object
+/// rectangle with (`gr_just`, `aes/gemgraf.c:567-589`).
+const TE_LEFT: i16 = 0;
+const TE_RIGHT: i16 = 1;
+
+/// `LEN_ZFNAME` (`include/sysconf.h:52`) — a NUL-terminated 8.3 name, and the
+/// buffer size both [`fmt_str`] and [`unfmt_str`] write into (`fmt_str` emits
+/// at most 11 bytes, `unfmt_str` at most 12).
+const LEN_ZFNAME: usize = 13;
+
+// ── `util/optimize.c` name/number helpers of the two Show-Info boxes ────────
+
+/// `fmt_str` (`util/optimize.c:43-70`) — a normal file name laid out for an
+/// `FFFFFFFF.FFF` TEDINFO template: up to eight bytes before the **first** dot,
+/// then, if anything follows it, blanks out to column 8 and up to three more
+/// bytes. `SAMPLE.PRG` → `SAMPLE  PRG`, `TESTPROG.C` → `TESTPROGC`, `TEST` →
+/// `TEST`. Excess bytes are eaten, which is how the source copes with names a
+/// GEMDOS emulation hands it that are not 8.3 at all.
+///
+/// Returns the number of bytes written; `out` is always NUL-terminated.
+fn fmt_str(instr: &[u8], out: &mut [u8; LEN_ZFNAME]) -> usize {
+    out.fill(0);
+    let mut q = 0usize;
+    let mut i = 0usize;
+    while i < instr.len() {
+        let c = instr[i];
+        i += 1;
+        if c == b'.' {
+            break;
+        }
+        if q < 8 {
+            out[q] = c;
+            q += 1;
+        }
+    }
+    // `if (*p)` — there is something after the dot.
+    if i < instr.len() {
+        while q < 8 {
+            out[q] = b' ';
+            q += 1;
+        }
+        while q < 11 && i < instr.len() {
+            out[q] = instr[i];
+            q += 1;
+            i += 1;
+        }
+    }
+    q
+}
+
+/// `unfmt_str` (`util/optimize.c:77-93`) — the reverse of [`fmt_str`]:
+/// `SAMPLE  PRG` → `SAMPLE.PRG`. The blanks inside the first eight columns are
+/// dropped and a dot is re-inserted before whatever follows them.
+///
+/// Returns the number of bytes written; `out` is always NUL-terminated.
+fn unfmt_str(instr: &[u8], out: &mut [u8; LEN_ZFNAME]) -> usize {
+    out.fill(0);
+    let mut o = 0usize;
+    let mut i = 0usize;
+    while i < instr.len() && i < 8 {
+        let c = instr[i];
+        i += 1;
+        if c != b' ' {
+            out[o] = c;
+            o += 1;
+        }
+    }
+    if i < instr.len() {
+        out[o] = b'.';
+        o += 1;
+        while i < instr.len() && o < LEN_ZFNAME - 1 {
+            out[o] = instr[i];
+            o += 1;
+            i += 1;
+        }
+    }
+    o
+}
+
+/// `set_tedinfo_name` (`deskinf.c:424-430`) — `fmt_str` into a scratch buffer,
+/// then [`inf_sset`] into the field's text.
+fn set_tedinfo_name(buf: &mut [u8], name: &[u8]) {
+    let mut temp = [0u8; LEN_ZFNAME];
+    let n = fmt_str(name, &mut temp);
+    inf_sset(buf, &temp[..n]);
+}
+
+/// `inf_numset` (`deskinf.c:409-419`) — `sprintf(te_ptext, "%*lu",
+/// te_txtlen-1, value)`: the number right-aligned in the field's capacity,
+/// blank-padded on the left. `buf.len()` **is** `te_txtlen`.
+///
+/// A value with more digits than the field holds is written by its **last**
+/// `te_txtlen - 1` digits. EmuTOS's `sprintf` writes the whole number and
+/// overruns the field into the next one in `desk_rs_te_text[]`; what the user
+/// then *sees* is the same, because a `TE_RIGHT` `ob_format` fills the
+/// template's underscores from the right end of the text. Unreachable for
+/// either caller on a FAT16 volume (10 digits cover 9 999 999 999 bytes, five
+/// cover 99 999 files).
+fn inf_numset(buf: &mut [u8], value: u64) {
+    let len = buf.len() - 1; // `te_txtlen - 1`
+    let mut digits = [0u8; 20];
+    let mut n = 0usize;
+    push_dec(&mut digits, &mut n, value);
+    buf.fill(0);
+    if n >= len {
+        buf[..len].copy_from_slice(&digits[n - len..n]);
+    } else {
+        buf[..len - n].fill(b' ');
+        buf[len - n..len].copy_from_slice(&digits[..n]);
+    }
+}
+
+/// `inf_fifosz` (`deskinf.c:437-456`) — put a walk's file, folder and byte
+/// counts into three fields.
+///
+/// **`G.g_ndirs--`** (`:448`, "reproduce TOS's folder count in this
+/// situation"): [`super::dir::count_ffs`] counts the directory it was started
+/// on as well, and neither the drive root nor the folder whose box this is, is
+/// a folder the user put *inside* it.
+///
+/// The source also clears `DISABLED` on all three objects; here that is
+/// implicit, because both trees are built fresh with `NORMAL` states and only
+/// [`inf_file_folder`]'s plain-file branch ever sets the bit.
+fn inf_fifosz(count: &super::dir::DirCount, b_fi: &mut [u8], b_fo: &mut [u8], b_sz: &mut [u8]) {
+    inf_numset(b_fi, count.files as u64);
+    inf_numset(b_fo, count.dirs.saturating_sub(1) as u64);
+    inf_numset(b_sz, count.size);
+}
+
+/// Build one of the two Show-Info boxes' `TEDINFO`s.
+///
+/// Every field of `ADFFINFO` and `ADDISKIN` shares `te_font = IBM`,
+/// `te_color = 4352` ([`TED_COLOR`]) and `te_thickness = 0`
+/// (`desk_rs_tedinfo[0..11]`, `desk_rsc.c:34-93`), so only the text buffer, the
+/// template, the validation string and the justification vary. `te_thickness`
+/// of `0` is why these fields carry no frame of their own — the underscores of
+/// the template are the whole of the "field" the user sees.
+///
+/// `tmpl` carries its own NUL, which makes `tmpl.len()` exactly `te_tmplen`;
+/// `text.len()` is exactly `te_txtlen`.
+fn rsc_ted(text: &mut [u8], tmpl: &[u8], valid: &[u8], just: i16) -> TedInfo {
+    TedInfo {
+        te_ptext: text.as_mut_ptr() as u64,
+        te_ptmplt: tmpl.as_ptr() as u64,
+        te_pvalid: valid.as_ptr() as u64,
+        te_font: 3, // IBM (`obdefs.h:62`)
+        te_junk1: 0,
+        te_just: just,
+        te_color: TED_COLOR,
+        te_junk2: 0,
+        te_thickness: 0,
+        te_txtlen: text.len() as i16,
+        te_tmplen: tmpl.len() as i16,
+    }
+}
+
+/// `align_title` (`deskmain.c:1731-1747`) — centre object 1 on the box when it
+/// is the tree's title: a `G_STRING` exactly one character row down. EmuTOS
+/// runs this over every tree at start-up (`:1995`) and again whenever a title
+/// changes, which is why [`inf_file_folder`] calls it after picking between
+/// `STFIINFO` and `STFOINFO`.
+///
+/// `title_chars` is `strlen(title->ob_spec)`; it is passed in because our
+/// `ob_spec` is a raw pointer. Note that EmuTOS moves `ob_x` and leaves
+/// `ob_width` alone — a `G_STRING` is drawn from `ob_x` with no clamping
+/// (`gemoblib.c:817-845`), so a one-cell-wide title object still shows in full.
+///
+/// This is the **classic-TOS arm**. `CONF_WITH_ALT_DESKTOP_GRAPHICS` (1 in the
+/// reference build) left-aligns the title and underlines it instead; every
+/// NewTOS dialog centres, and closing that gap for all of them at once is
+/// `TASK/GUI05.md`.
+fn align_title(tree: &mut [Object], title_chars: i16) {
+    let root_w = tree[0].ob_width;
+    let title = &mut tree[1];
+    if title.ob_type == G_STRING && title.ob_y == CELL_H {
+        let len = (title_chars * CELL_W).min(root_w);
+        title.ob_x = (root_w - len) / 2;
+    }
+}
 
 /// `inf_disk` (EmuTOS `deskinf.c:650-693`) — the `ADDISKIN` box: how much of a
 /// drive is in use, in folders, files and bytes.
@@ -2646,15 +2830,30 @@ const FA_ARCHIVE: u8 = 0x20;
 ///   `total - avail`. A drive whose clusters are partly wasted on slack
 ///   therefore shows `used + available < total`, and that is TOS's arithmetic,
 ///   not a rounding error here.
-/// * **`inf_fifosz` decrements the folder count** — "reproduce TOS's folder
-///   count in this situation" (`deskinf.c:448`). The walk counts the directory
-///   it was started on as well ([`super::dir::count_ffs`] → `d_doop`'s
-///   post-order `dirs++`), and the drive root is not a folder the user put
-///   there.
+/// * **`inf_fifosz` decrements the folder count** ([`inf_fifosz`]).
 /// * **A missing drive is not silent.** `valid_drive` puts up `STNODRIV`
 ///   (`desksupp.c:1822`) and `inf_disk` then returns `1`, so the loop carries
 ///   on to the next icon.
+///
+/// **The tree is `ADDISKIN` object for object** (`desk_rsc.c:709-768`,
+/// `desk_rsc.h:75-84`) since DESK42: ten objects, its numbering, its labels,
+/// its six `G_FBOXTEXT` template fields, its measurements resolved through
+/// `rsrc_obfix` at 8 x 16. It used to be seven hand-laid `G_STRING` lines in a
+/// 340 x 230 box, which is what the user saw as "nothing in common with
+/// EmuTOS's".
 pub(super) fn inf_disk(dr_id: u8) -> i16 {
+    // ── object numbers (`desk_rsc.h:75-84`) ──────────────────────────────
+    //   0 ROOT · 1 DITITLE · 2 DIDRIVE · 3 DIVOLUME · 4 DINFOLDS
+    //   5 DINFILES · 6 DIUSED · 7 DIAVAIL · 8 DIOK · 9 DICNCL
+    const DIDRIVE: i16 = 2;
+    const DIVOLUME: i16 = 3;
+    const DINFOLDS: i16 = 4;
+    const DINFILES: i16 = 5;
+    const DIUSED: i16 = 6;
+    const DIAVAIL: i16 = 7;
+    const DIOK: usize = 8;
+    const DICNCL: i16 = 9;
+
     if !super::main::valid_drive(dr_id) {
         return 1;
     }
@@ -2675,247 +2874,360 @@ pub(super) fn inf_disk(dr_id: u8) -> i16 {
     super::pro::desk_busy_off();
     let label = super::dosbind::dos_label(drv).unwrap_or_default();
 
-    static TITLE: &[u8] = b" DISK INFORMATION \0";
-    static OK: &[u8] = b" OK \0";
-    static CANCEL: &[u8] = b" Cancel \0";
+    // ── strings: `ADDISKIN`'s own (`desk_rsc.c:711-768`) and the templates of
+    //    `desk_rs_tedinfo[6..11]` (`:76-93`), character for character.
+    static TITLE: &[u8] = b"DISK INFORMATION\0";
+    static OK: &[u8] = b"OK\0";
+    static CANCEL: &[u8] = b"Cancel\0";
+    static T_DRIVE: &[u8] = b"Drive identifier:  _           \0";
+    static T_VOLUME: &[u8] = b"Disk label:  ________.___\0";
+    static T_FOLDS: &[u8] = b"Number of folders:         _____\0";
+    static T_FILES: &[u8] = b"Number of files:         _____\0";
+    static T_USED: &[u8] = b"Bytes used:    __________\0";
+    static T_AVAIL: &[u8] = b"Bytes available:    __________\0";
+    static V_UPPER: &[u8] = b"A\0";
+    static V_FNAME: &[u8] = b"f\0";
+    static V_DIGIT: &[u8] = b"9\0";
 
-    // The six fields, in `ADDISKIN`'s order (`desk_rsc.c:715-755`) and with its
-    // `desk_rs_tedinfo[6..11]` prompts (`:66-93`).
-    let mut drivebuf = [0u8; 48];
-    {
-        let mut p = 0usize;
-        push_str(&mut drivebuf, &mut p, b"Drive identifier:  ");
-        if p < drivebuf.len() - 1 {
-            drivebuf[p] = dr_id;
-            p += 1;
-        }
-        drivebuf[p.min(drivebuf.len() - 1)] = 0;
-    }
-    let mut labelbuf = [0u8; 48];
-    {
-        let mut p = 0usize;
-        push_str(&mut labelbuf, &mut p, b"Disk label:  ");
-        push_str(&mut labelbuf, &mut p, label.as_bytes());
-        labelbuf[p.min(labelbuf.len() - 1)] = 0;
-    }
-    let mut foldsbuf = [0u8; 48];
-    {
-        let mut p = 0usize;
-        push_str(&mut foldsbuf, &mut p, b"Number of folders:  ");
-        // `G.g_ndirs--` (`deskinf.c:448`).
-        push_dec(&mut foldsbuf, &mut p, count.dirs.saturating_sub(1) as u64);
-        foldsbuf[p.min(foldsbuf.len() - 1)] = 0;
-    }
-    let mut filesbuf = [0u8; 48];
-    {
-        let mut p = 0usize;
-        push_str(&mut filesbuf, &mut p, b"Number of files:  ");
-        push_dec(&mut filesbuf, &mut p, count.files as u64);
-        filesbuf[p.min(filesbuf.len() - 1)] = 0;
-    }
-    let mut usedbuf = [0u8; 48];
-    {
-        let mut p = 0usize;
-        push_str(&mut usedbuf, &mut p, b"Bytes used:  ");
-        push_dec(&mut usedbuf, &mut p, count.size);
-        usedbuf[p.min(usedbuf.len() - 1)] = 0;
-    }
-    let mut availbuf = [0u8; 48];
-    {
-        let mut p = 0usize;
-        push_str(&mut availbuf, &mut p, b"Bytes available:  ");
-        push_dec(&mut availbuf, &mut p, avail);
-        availbuf[p.min(availbuf.len() - 1)] = 0;
-    }
+    // The six text buffers, each exactly its field's `te_txtlen`.
+    let mut b_drive = [0u8; 2];
+    let mut b_volume = [0u8; 12];
+    let mut b_folds = [0u8; 6];
+    let mut b_files = [0u8; 6];
+    let mut b_used = [0u8; 11];
+    let mut b_avail = [0u8; 11];
 
-    let (dw, dh) = (340i16, 230i16);
-    let ob_ok = 8i16;
-    // 3D roles follow `ADDISKIN` object for object (`desk_rsc.c:711-768`): the
-    // ROOT is `FL3DBAK` + `OUTLINED`, `DIOK`/`DICNCL` are `FL3DBAK | FL3DIND`
-    // = [`FL3DACT`], `DITITLE` carries none. The six value fields are
-    // `G_FBOXTEXT` + `FL3DBAK` there; NewTOS builds them as plain `G_STRING`
-    // lines (prompt and value in one string, no template), and a `G_STRING`
-    // has no interior a 3D background could fill — so they stay flag-free,
-    // exactly as [`inf_file_folder`]'s three value lines do.
+    // `drive[0] = dr_id; drive[1] = '\0'; inf_sset(tree, DIDRIVE, drive);`
+    inf_sset(&mut b_drive, &[dr_id]);
+    set_tedinfo_name(&mut b_volume, label.as_bytes());
+    inf_fifosz(&count, &mut b_files, &mut b_folds, &mut b_used);
+    inf_numset(&mut b_avail, avail);
+
+    let mut ted_drive = rsc_ted(&mut b_drive, T_DRIVE, V_UPPER, TE_RIGHT);
+    let mut ted_volume = rsc_ted(&mut b_volume, T_VOLUME, V_FNAME, TE_LEFT);
+    let mut ted_folds = rsc_ted(&mut b_folds, T_FOLDS, V_DIGIT, TE_RIGHT);
+    let mut ted_files = rsc_ted(&mut b_files, T_FILES, V_DIGIT, TE_RIGHT);
+    let mut ted_used = rsc_ted(&mut b_used, T_USED, V_DIGIT, TE_RIGHT);
+    let mut ted_avail = rsc_ted(&mut b_avail, T_AVAIL, V_DIGIT, TE_RIGHT);
+
+    // ── geometry: `ADDISKIN`'s own, cell for cell, resolved the way
+    //    `rsrc_obfix` resolves it (`fix_chpos`, `aes/gemrslib.c:53-83`:
+    //    `LOBYTE * cell + (signed)HIBYTE`). The ROOT's packed height `2060` is
+    //    `(8 << 8) | 12` = 12 rows + 8 px; the buttons' packed `2058` is row 10
+    //    + 8 px. At 8 x 16 that is a 304 x 200 box.
+    let dw = 38 * CELL_W; // 304
+    let dh = 12 * CELL_H + 8; // 200
+    let y_btn = 10 * CELL_H + 8; // 168
+    let col = 3 * CELL_W; // char column 3
+    let field_w = 32 * CELL_W;
+
+    // 3D roles follow `ADDISKIN` object for object and the table in DESK01b:
+    // the ROOT is `FL3DBAK` + `OUTLINED`, the six fields are `FL3DBAK`,
+    // `DIOK`/`DICNCL` are `FL3DBAK | FL3DIND` = [`FL3DACT`], `DITITLE` carries
+    // none. A 3D activator is grown by `ADJ3DSTD` (2 px per side) before it is
+    // drawn, which the resource's own measurements already leave room for:
+    // the buttons sit at y 168..184 in a 200 px box.
+    #[rustfmt::skip]
     let mut tree = [
-        mk_root(BOX_SPEC, dw, dh, 9),
-        mk(G_STRING, 0, TITLE.as_ptr() as u64, 24, 14, dw - 48, 16, 2, -1, -1),
-        mk(G_STRING, 0, drivebuf.as_ptr() as u64, 24, 46, dw - 48, 16, 3, -1, -1),
-        mk(G_STRING, 0, labelbuf.as_ptr() as u64, 24, 68, dw - 48, 16, 4, -1, -1),
-        mk(G_STRING, 0, foldsbuf.as_ptr() as u64, 24, 90, dw - 48, 16, 5, -1, -1),
-        mk(G_STRING, 0, filesbuf.as_ptr() as u64, 24, 112, dw - 48, 16, 6, -1, -1),
-        mk(G_STRING, 0, usedbuf.as_ptr() as u64, 24, 134, dw - 48, 16, 7, -1, -1),
-        mk(G_STRING, 0, availbuf.as_ptr() as u64, 24, 156, dw - 48, 16, 8, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, OK.as_ptr() as u64, 50, 186, 90, 28, 9, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 200, 186, 90, 28, 0, -1, -1),
+        // 0 ROOT — `ob_spec` 69888 = `(1 << 16) | 0x1100` ([`BOX_SPEC`]).
+        mk_root(BOX_SPEC, dw, dh, DICNCL),
+        // 1 DITITLE — a `G_STRING` one row down, so `align_title` centres it.
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, col, CELL_H, 16 * CELL_W, CELL_H, DIDRIVE, -1, -1),
+        // 2..7 the six value fields, char rows 3..8.
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_drive as *mut _ as u64, col, 3 * CELL_H, field_w, CELL_H, DIVOLUME, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_volume as *mut _ as u64, col, 4 * CELL_H, field_w, CELL_H, DINFOLDS, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_folds as *mut _ as u64, col, 5 * CELL_H, field_w, CELL_H, DINFILES, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_files as *mut _ as u64, col, 6 * CELL_H, field_w, CELL_H, DIUSED, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_used as *mut _ as u64, col, 7 * CELL_H, field_w, CELL_H, DIAVAIL, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_avail as *mut _ as u64, col, 8 * CELL_H, field_w, CELL_H, DIOK as i16, -1, -1),
+        // 8/9 DIOK / DICNCL, nine cells wide at char columns 7 and 22.
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * CELL_W, y_btn, 9 * CELL_W, CELL_H, DICNCL, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 22 * CELL_W, y_btn, 9 * CELL_W, CELL_H, 0, -1, -1),
     ];
+    align_title(&mut tree, TITLE.len() as i16 - 1);
 
     // `inf_show(tree, ROOT); return inf_what(tree, DIOK);` — `inf_show`
     // discards `form_do`'s exit object and `inf_what` reads the buttons'
     // SELECTED state instead, so the tree has to outlive the call.
     inf_show(tree.as_mut_ptr() as u64, ROOT);
-    inf_what(&mut tree, ob_ok as usize)
+    inf_what(&mut tree, DIOK)
 }
 
-/// The Show-Info / rename dialog for a single selected item (`inf_file_folder`,
-/// `deskinf.c:493-639`): show size / date / time / attributes and offer an
-/// editable name. The screen underneath is restored by `end_dialog`'s
-/// `form_dial(FMD_FINISH)` inside [`inf_show`].
+/// `inf_file_folder` (EmuTOS `deskinf.c:493-639`) — the `ADFFINFO` box for one
+/// file or folder: name (editable), size, date, time, the contents count for a
+/// folder, and the read-only switch.
 ///
-/// `size`/`date`/`time`/`attr` are the selected [`super::model::FNode`]'s own
-/// fields (DOS-packed date/time, FAT attribute byte). The date/time text layout
-/// is a display choice, not TOS contract (`deskinf.md`: "no program reads this").
+/// Returns EmuTOS's three answers: `0` cancel (which stops [`super::main`]'s
+/// `SHOWITEM` loop), `1` continue, `-1` continue and the window showing the
+/// item needs rebuilding.
 ///
-/// Returns EmuTOS's three answers ([`InfFF`]). DESK38 needed the third one:
-/// until then *Cancel* and "OK, nothing changed" were the same [`None`], and
-/// `do_info`'s caller cannot tell the `SHOWITEM` loop to stop without it
-/// (`deskmain.c:676-679`).
+/// `ppath` is the item's directory, ending in `\` — EmuTOS's `ppath` is the
+/// window's `p_spec` (or the shortcut's path with the file name deleted) and it
+/// splices the name in at `filename_start`, which is the same position.
+/// `pf` is the [`super::dir::FileInfo`] `do_info` built, i.e. the `FNODE` of
+/// `desksupp.c:1293`; a rename or an attribute change is written back into it
+/// the way EmuTOS writes into its `FNODE`.
 ///
-/// **Named deviation.** EmuTOS's `inf_file_folder` performs the `dos_rename`
-/// itself, retrying through the `STRENAME` alert until it succeeds or the user
-/// cancels (`deskinf.c:600-635`), and it also writes back changed *attributes*
-/// (`:591-599`). NewTOS hands the new name back and lets `do_info` rename;
-/// the attribute row here is read-only. Both predate DESK38 and are unchanged
-/// by it.
-pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr: u8) -> InfFF {
-    let is_dir = attr & FA_SUBDIR != 0;
+/// ## The loop
+///
+/// `while(1)` (`:551-635`) exists so that a **failed rename** can be retried
+/// with the box still up: `STRENAME` offers *Retry* / *Cancel*, and *Retry*
+/// re-shows the dialog with the attempted name still in the field. `OK`
+/// commits an attribute change first (`dos_chmod`, whose result is deliberately
+/// not checked — "like Atari TOS, we don't check the return code", `:592-593`)
+/// and then the rename; an unchanged name simply leaves the loop.
+///
+/// ## The tree
+///
+/// `ADFFINFO` object for object (`desk_rsc.c:622-703`, `desk_rsc.h:61-72`)
+/// since DESK42: fourteen objects, its numbering, its labels, its six
+/// `G_FBOXTEXT` template fields and its `Read/Write` · `Read-Only` radio pair,
+/// laid out on its own 40 x 16-cell grid. Before DESK42 it was a 320 x 200 box
+/// with a plain name field, three prose `G_STRING` lines and two buttons.
+pub(super) fn inf_file_folder(ppath: &str, pf: &mut super::dir::FileInfo) -> i16 {
+    // ── object numbers (`desk_rsc.h:61-72`) ──────────────────────────────
+    //   0 ROOT · 1 FFTITLE · 2 FFNAME · 3 FFSIZE · 4 FFDATE · 5 FFTIME
+    //   6 FFNUMFOL · 7 FFNUMFIL · 8 the pair's `G_IBOX` · 9 FFRWRITE
+    //   10 FFRONLY · 11 FFOK · 12 FFSKIP · 13 FFCNCL
+    const FFNAME: i16 = 2;
+    const FFSIZE: i16 = 3;
+    const FFDATE: i16 = 4;
+    const FFTIME: i16 = 5;
+    const FFNUMFOL: usize = 6;
+    const FFNUMFIL: usize = 7;
+    /// The unnamed `G_IBOX` (`ADFFINFO` object 8) the two attribute buttons
+    /// hang under: the AES deselects the siblings of the button that was hit
+    /// through **this** object (see [`G_IBOX`]).
+    const FFATTR: i16 = 8;
+    const FFRWRITE: usize = 9;
+    const FFRONLY: usize = 10;
+    const FFOK: usize = 11;
+    const FFSKIP: usize = 12;
+    const FFCNCL: i16 = 13;
 
-    // Editable name buffer — `form_do` edits this in place through the TEDINFO.
-    let mut namebuf = [0u8; NAME_MAX + 2];
-    let n = name.len().min(NAME_MAX);
-    namebuf[..n].copy_from_slice(&name.as_bytes()[..n]);
+    let is_dir = pf.attr & FA_SUBDIR != 0;
 
-    static EMPTY: [u8; 1] = [0];
-    static TITLE: &[u8] = b" Show Info \0";
-    static NAME_LBL: &[u8] = b"Name:\0";
-    static OK: &[u8] = b" OK \0";
-    static CANCEL: &[u8] = b" Cancel \0";
+    // ── strings: `ADFFINFO`'s own and `desk_rs_tedinfo[0..5]`'s templates ──
+    /// `STFIINFO` / `STFOINFO` (`desk_rsc.c:2470-2471`) — the title, picked by
+    /// the item's type (`deskinf.c:505-508`).
+    static STFIINFO: &[u8] = b"FILE INFORMATION\0";
+    static STFOINFO: &[u8] = b"FOLDER INFORMATION\0";
+    static RWRITE: &[u8] = b"Read/Write\0";
+    static RONLY: &[u8] = b"Read-Only\0";
+    static OK: &[u8] = b"OK\0";
+    static SKIP: &[u8] = b"Skip\0";
+    static CANCEL: &[u8] = b"Cancel\0";
+    /// `STRENAME` (`desk_rsc.c:2557`). Two buttons, so it goes to `form_alert`
+    /// verbatim rather than through [`super::dir::fun_alert`]'s one-OK wrapper.
+    static STRENAME: &[u8] = b"[1][Rename error!][ Retry | Cancel ]\0";
+    static T_NAME: &[u8] = b"Name: ________.___\0";
+    static T_SIZE: &[u8] = b"Size:   __________\0";
+    static T_DATE: &[u8] = b"Date:   __________\0";
+    static T_TIME: &[u8] = b"Time:   __:__ __  \0";
+    static T_NUMFOL: &[u8] = b"Number of folders:         _____\0";
+    static T_NUMFIL: &[u8] = b"Number of files:         _____\0";
+    static V_FNAME: &[u8] = b"f\0";
+    static V_DIGIT: &[u8] = b"9\0";
+    static V_ANY: &[u8] = b"X\0";
+    static V_TIME: &[u8] = b"9999a\0";
 
-    let ted = TedInfo {
-        te_ptext: namebuf.as_mut_ptr() as u64,
-        te_ptmplt: EMPTY.as_ptr() as u64,
-        te_pvalid: EMPTY.as_ptr() as u64,
-        te_font: 3,
-        te_junk1: 0,
-        te_just: 0,
-        te_color: TED_COLOR,
-        te_junk2: 0,
-        te_thickness: 1,
-        te_txtlen: NAME_MAX as i16,
-        te_tmplen: 0,
-    };
+    // The six text buffers, each exactly its field's `te_txtlen`.
+    let mut b_name = [0u8; 12];
+    let mut b_size = [0u8; 11];
+    let mut b_date = [0u8; 11];
+    let mut b_time = [0u8; 7];
+    let mut b_numfol = [0u8; 6];
+    let mut b_numfil = [0u8; 6];
 
-    // Size line: "Size: N bytes" (a folder shows no byte count of its own).
-    let mut sizebuf = [0u8; 40];
-    {
-        let mut p = 0usize;
-        if is_dir {
-            push_str(&mut sizebuf, &mut p, b"Size: (folder)");
-        } else {
-            push_str(&mut sizebuf, &mut p, b"Size: ");
-            push_dec(&mut sizebuf, &mut p, size as u64);
-            push_str(&mut sizebuf, &mut p, b" bytes");
-        }
-        sizebuf[p.min(sizebuf.len() - 1)] = 0;
+    // `if (pf->f_attr & FA_SUBDIR) { count the contents } else { blank the two
+    // counters and show the file's own size }` (`deskinf.c:519-546`).
+    if is_dir {
+        super::pro::desk_busy_on();
+        let mut sub = String::from(ppath);
+        sub.push_str(&pf.name);
+        sub.push('\\'); // EmuTOS's `strcat(srcpth, "\\*.*")`
+        let more = super::dir::count_ffs(&sub);
+        super::pro::desk_busy_off();
+        let Some(count) = more else {
+            return 1; // `if (!more) return 1;`
+        };
+        inf_fifosz(&count, &mut b_numfil, &mut b_numfol, &mut b_size);
+    } else {
+        // `inf_sset(tree, FFNUMFIL, "")` / `FFNUMFOL` — both buffers are
+        // already empty; the `DISABLED` state goes on below, once the tree is
+        // built.
+        inf_numset(&mut b_size, pf.size as u64);
     }
 
-    // Date/time line: "Date: MM/DD/YYYY  HH:MM" — `inf_dttm` (`deskinf.c:460-
-    // 468`), which formats the date with a four-digit year always (`:464`) and
-    // the time through the same `fmt_time` the text view uses (`:467`). Both
-    // take their order/clock from the Preferences dialog's values.
+    // `fmt_str(pf->f_name, poname); inf_sset(tree, FFNAME, poname);` — the
+    // edit field shows the 8.3-split form, and `poname` is kept because the
+    // loop unformats it back into the source path on every pass.
+    let mut poname = [0u8; LEN_ZFNAME];
+    let pon = fmt_str(pf.name.as_bytes(), &mut poname);
+    inf_sset(&mut b_name, &poname[..pon]);
+
+    // `inf_dttm(tree, pf, FFDATE, FFTIME)` (`deskinf.c:457-468`): `fmt_date`
+    // with a four-digit year always, and `fmt_time` through `"%02d%02d%s"` —
+    // **no** colon, because `T_TIME`'s template supplies it.
     let (datefmt, timefmt, idt) = global::with(|g| (g.g_cdateform, g.g_ctimeform, g.g_idt))
         .unwrap_or((DateFmt::Mdy, TimeFmt::H24, 0));
-    let mut datebuf = [0u8; 40];
-    {
-        let mut p = 0usize;
-        push_str(&mut datebuf, &mut p, b"Date: ");
-        p += fmt_date(date, true, datefmt, idt, &mut datebuf[p..]);
-        push_str(&mut datebuf, &mut p, b"  ");
-        p += fmt_time(time, timefmt, idt, &mut datebuf[p..]);
-        // Trim `fmt_time`'s two-blank 24-hour suffix off the end of the line.
-        while p > 0 && datebuf[p - 1] == b' ' {
-            p -= 1;
-        }
-        datebuf[p.min(datebuf.len() - 1)] = 0;
-    }
+    let mut work = [0u8; 16];
+    let n = fmt_date(pf.date, true, datefmt, idt, &mut work);
+    inf_sset(&mut b_date, &work[..n]);
+    let n = fmt_time(pf.time, timefmt, idt, b"", &mut work);
+    inf_sset(&mut b_time, &work[..n]);
 
-    // Attributes line.
-    let mut attrbuf = [0u8; 40];
-    {
-        let mut p = 0usize;
-        push_str(&mut attrbuf, &mut p, b"Attributes: ");
-        if is_dir {
-            push_str(&mut attrbuf, &mut p, b"DIR ");
-        }
-        if attr & FA_RO != 0 {
-            push_str(&mut attrbuf, &mut p, b"R ");
-        }
-        if attr & FA_HIDDEN != 0 {
-            push_str(&mut attrbuf, &mut p, b"H ");
-        }
-        if attr & FA_SYSTEM != 0 {
-            push_str(&mut attrbuf, &mut p, b"S ");
-        }
-        if attr & FA_ARCHIVE != 0 {
-            push_str(&mut attrbuf, &mut p, b"A ");
-        }
-        if p == "Attributes: ".len() {
-            push_str(&mut attrbuf, &mut p, b"none");
-        }
-        attrbuf[p.min(attrbuf.len() - 1)] = 0;
-    }
+    let mut ted_name = rsc_ted(&mut b_name, T_NAME, V_FNAME, TE_LEFT);
+    let mut ted_size = rsc_ted(&mut b_size, T_SIZE, V_DIGIT, TE_RIGHT);
+    let mut ted_date = rsc_ted(&mut b_date, T_DATE, V_ANY, TE_RIGHT);
+    let mut ted_time = rsc_ted(&mut b_time, T_TIME, V_TIME, TE_RIGHT);
+    let mut ted_numfol = rsc_ted(&mut b_numfol, T_NUMFOL, V_DIGIT, TE_RIGHT);
+    let mut ted_numfil = rsc_ted(&mut b_numfil, T_NUMFIL, V_DIGIT, TE_RIGHT);
 
-    // Built at the origin; `form_center` inside `inf_show` writes the centred
-    // `ob_x`/`ob_y` into the ROOT.
-    let (dw, dh) = (320i16, 200i16);
-    let ob_ok = 7i16;
+    // ── geometry: `ADFFINFO`'s own 40 x 16 cells = 320 x 256 at 8 x 16, with
+    //    its blank rows at 2, 7, 10, 12 and 13. The three exit buttons are ten
+    //    cells wide at columns 2, 15 and 28; the attribute pair sits inside a
+    //    36-cell `G_IBOX` on row 11.
+    let dw = 40 * CELL_W; // 320
+    let dh = 16 * CELL_H; // 256
+    let col = 4 * CELL_W; // char column 4
+    let y_btn = 14 * CELL_H;
+    let title: &[u8] = if is_dir { STFOINFO } else { STFIINFO };
 
-    // The 3D roles follow `ADFFINFO` object by object (`desk_rsc.c:622-703`):
-    // the ROOT is `FL3DBAK` + `OUTLINED`, `FFNAME` is an `EDITABLE | FL3DBAK`
-    // field, `FFOK`/`FFCNCL` are `FL3DBAK | FL3DIND` = `FL3DACT`, and the
-    // `G_STRING`s carry none. `ADFFINFO` shows size/date/time as `FL3DBAK`
-    // `G_FBOXTEXT` fields with an underscore template; NewTOS builds those
-    // three as plain `G_STRING` lines (no template), and a `G_STRING` has no
-    // interior for a 3D background to fill — so they stay flag-free.
-    let tree = [
-        mk_root(BOX_SPEC, dw, dh, 8),
-        mk(G_STRING, 0, TITLE.as_ptr() as u64, 24, 14, dw - 48, 16, 2, -1, -1),
-        mk(G_STRING, 0, NAME_LBL.as_ptr() as u64, 24, 44, 48, 16, 3, -1, -1),
-        mk(G_BOXTEXT, EDITABLE | FL3DBAK, &ted as *const _ as u64, 80, 40, 200, 22, 4, -1, -1),
-        mk(G_STRING, 0, sizebuf.as_ptr() as u64, 24, 74, dw - 48, 16, 5, -1, -1),
-        mk(G_STRING, 0, datebuf.as_ptr() as u64, 24, 96, dw - 48, 16, 6, -1, -1),
-        mk(G_STRING, 0, attrbuf.as_ptr() as u64, 24, 118, dw - 48, 16, 7, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, OK.as_ptr() as u64, 40, 156, 90, 28, 8, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 190, 156, 90, 28, 0, -1, -1),
+    // 3D roles follow `ADFFINFO` object for object and the DESK01b table:
+    // `FL3DBAK` + `OUTLINED` ROOT, `FL3DBAK` on the six fields, `FL3DIND` on
+    // the two `RBUTTON`s, `FL3DACT` (= `FL3DBAK | FL3DIND`) on the three exit
+    // buttons, nothing on the title or the `G_IBOX`.
+    #[rustfmt::skip]
+    let mut tree = [
+        // 0 ROOT
+        mk_root(BOX_SPEC, dw, dh, FFCNCL),
+        // 1 FFTITLE — one row down, so `align_title` centres it.
+        mk(G_STRING, 0, title.as_ptr() as u64, 11 * CELL_W, CELL_H, CELL_W, CELL_H, FFNAME, -1, -1),
+        // 2 FFNAME — the one `EDITABLE` field of the box.
+        mk(G_FBOXTEXT, EDITABLE | FL3DBAK, &mut ted_name as *mut _ as u64, col, 3 * CELL_H, 26 * CELL_W, CELL_H, FFSIZE, -1, -1),
+        // 3..5 FFSIZE / FFDATE / FFTIME, char rows 4..6.
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_size as *mut _ as u64, col, 4 * CELL_H, 26 * CELL_W, CELL_H, FFDATE, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_date as *mut _ as u64, col, 5 * CELL_H, 26 * CELL_W, CELL_H, FFTIME, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_time as *mut _ as u64, col, 6 * CELL_H, 26 * CELL_W, CELL_H, FFNUMFOL as i16, -1, -1),
+        // 6/7 FFNUMFOL / FFNUMFIL, char rows 8 and 9, 32 cells wide.
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_numfol as *mut _ as u64, col, 8 * CELL_H, 32 * CELL_W, CELL_H, FFNUMFIL as i16, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_numfil as *mut _ as u64, col, 9 * CELL_H, 32 * CELL_W, CELL_H, FFATTR, -1, -1),
+        // 8 the attribute pair's `G_IBOX` (`ob_spec` 0, so nothing is drawn).
+        mk(G_IBOX, 0, 0, 2 * CELL_W, 11 * CELL_H, 36 * CELL_W, CELL_H, FFOK as i16, FFRWRITE as i16, FFRONLY as i16),
+        // 9/10 FFRWRITE / FFRONLY, positioned inside the `G_IBOX`.
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, RWRITE.as_ptr() as u64, 0, 0, 18 * CELL_W, CELL_H, FFRONLY as i16, -1, -1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, RONLY.as_ptr() as u64, 19 * CELL_W, 0, 17 * CELL_W, CELL_H, FFATTR, -1, -1),
+        // 11/12/13 FFOK / FFSKIP / FFCNCL.
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 2 * CELL_W, y_btn, 10 * CELL_W, CELL_H, FFSKIP as i16, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, SKIP.as_ptr() as u64, 15 * CELL_W, y_btn, 10 * CELL_W, CELL_H, FFCNCL, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 28 * CELL_W, y_btn, 10 * CELL_W, CELL_H, 0, -1, -1),
     ];
+    align_title(&mut tree, title.len() as i16 - 1);
+    if !is_dir {
+        // `obj->ob_state |= DISABLED` on both counters (`deskinf.c:557-564`).
+        tree[FFNUMFOL].ob_state |= DISABLED;
+        tree[FFNUMFIL].ob_state |= DISABLED;
+    }
 
-    // `inf_show(tree, ROOT)` (`deskinf.c:396-402`).
-    let clicked = inf_show(tree.as_ptr() as u64, ROOT);
-    if clicked != ob_ok {
-        return InfFF::Cancel; // `ret = inf_what(tree, FFSKIP); if (ret >= 0) return ret;`
-    }
-    let m = namebuf.iter().position(|&b| b == 0).unwrap_or(namebuf.len());
-    if m == 0 {
-        return InfFF::Continue; // empty name rejected — nothing to rename to
-    }
-    let Ok(new) = core::str::from_utf8(&namebuf[..m]) else {
-        return InfFF::Continue;
-    };
-    if new == name {
-        return InfFF::Continue; // `strcmp(poname,pnname) == 0` — no rename
-    }
-    InfFF::Renamed(String::from(new))
-}
+    // ── the retry loop (`deskinf.c:551-635`) ────────────────────────────
+    let mut changed = false;
+    loop {
+        // The attribute pair, reset on every pass (`:556-572`): a folder has
+        // neither button, a file has exactly one selected.
+        tree[FFRONLY].ob_state = if is_dir {
+            DISABLED
+        } else if pf.attr & FA_RO != 0 {
+            OB_SELECTED
+        } else {
+            0
+        };
+        tree[FFRWRITE].ob_state = if is_dir {
+            DISABLED
+        } else if pf.attr & FA_RO == 0 {
+            OB_SELECTED
+        } else {
+            0
+        };
+        // `obj = tree + FFOK; obj->ob_state &= ~SELECTED;` (`:574-575`) — the
+        // tree is re-shown, so last pass's pressed OK must not stay inverted.
+        tree[FFOK].ob_state &= !OB_SELECTED;
 
-/// `inf_file_folder`'s three return values (`deskinf.c:487-491`).
-pub(super) enum InfFF {
-    /// `0` — cancel: the caller stops walking the selection.
-    Cancel,
-    /// `1` — continue; nothing was changed.
-    Continue,
-    /// `-1` — continue, and the item is to be renamed to this name; the
-    /// window showing it needs rebuilding.
-    Renamed(String),
+        inf_show(tree.as_mut_ptr() as u64, ROOT);
+        // `ret = inf_what(tree, FFSKIP); if (ret >= 0) return ret;` — Skip is
+        // `1` (continue with the next item), Cancel `0` (end the series).
+        let ret = inf_what(&mut tree, FFSKIP);
+        if ret >= 0 {
+            return ret;
+        }
+
+        // OK: rename and/or change attributes (`:580-634`).
+        super::pro::desk_busy_on();
+
+        // `inf_sget(tree, FFNAME, pnname)` plus the two `unfmt_str` calls that
+        // turn the template form back into a file name.
+        let mut oldname = [0u8; LEN_ZFNAME];
+        let on = unfmt_str(&poname[..pon], &mut oldname);
+        let bn = b_name.iter().position(|&c| c == 0).unwrap_or(b_name.len());
+        let mut newname = [0u8; LEN_ZFNAME];
+        let nn = unfmt_str(&b_name[..bn], &mut newname);
+        // A name the AES's validated field cannot produce (`te_pvalid` "f"
+        // admits no byte above 0x7E) — treated as "unchanged", which is the
+        // one answer that cannot damage the file.
+        let (Ok(old_s), Ok(new_s)) = (
+            core::str::from_utf8(&oldname[..on]),
+            core::str::from_utf8(&newname[..nn]),
+        ) else {
+            break;
+        };
+
+        // `if (!(pf->f_attr & FA_SUBDIR)) { … dos_chmod … }` (`:585-605`).
+        if !is_dir {
+            let mut attr = pf.attr;
+            if tree[FFRONLY].ob_state & OB_SELECTED != 0 {
+                attr |= FA_RO;
+            } else {
+                attr &= !FA_RO;
+            }
+            if attr != pf.attr {
+                let mut src = String::from(ppath);
+                src.push_str(old_s);
+                super::dosbind::dos_chmod(&src, super::dosbind::F_SETMOD, attr);
+                pf.attr = attr;
+                changed = true;
+            }
+        }
+
+        // `if (strcmp(srcpth+nmidx, dstpth+nmidx) == 0) break;` (`:610-614`).
+        if old_s == new_s {
+            break;
+        }
+
+        let mut src = String::from(ppath);
+        src.push_str(old_s);
+        let mut dst = String::from(ppath);
+        dst.push_str(new_s);
+        if super::dir::rename(&src, &dst) {
+            // `strcpy(pf->f_name, dstpth+nmidx);` (`:623`).
+            pf.name = String::from(new_s);
+            changed = true;
+            break;
+        }
+
+        // `if (fun_alert(1, STRENAME) == 2) break;` (`:632-633`) — *Retry*
+        // re-shows the box with the attempted name still in the field.
+        if super::form_alert(1, STRENAME.as_ptr()) == 2 {
+            break;
+        }
+    }
+
+    super::pro::desk_busy_off();
+    // `return changed ? -1 : 1;`
+    if changed {
+        -1
+    } else {
+        1
+    }
 }
 
 // ── Preferences dialog (`inf_pref`, `deskinf.c:721-818`) ────────────────────

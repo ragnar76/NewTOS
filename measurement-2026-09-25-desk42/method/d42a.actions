@@ -1,0 +1,33 @@
+# DESK42 -- the rebuilt ADDISKIN box on the C: drive icon.
+#
+#   B_CSEL      the C: drive icon selected
+#   C_DISKINFO  the ADDISKIN box: DISK INFORMATION / Drive identifier /
+#               Disk label / Number of folders / Number of files /
+#               Bytes used / Bytes available, OK + Cancel
+#   D_DISKOK    after OK -- the box is gone and the desktop is intact
+#
+# Coordinates: probe run (desk obj 9 click (38,35); File title (88,9);
+# "Info/Rename..." (152,43)) and this measurement's d42a1 pass, whose [dlg]
+# dump measured the box at root (168,149) 304x200 with DIOK -> click (260,325)
+# and DICNCL -> click (380,325).  Nothing here is guessed.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 move 38 35
+2000 down
+2003 up
+2400 parkbr
+3000 mark B_CSEL
+3400 move 88 240
+3600 move 88 9
+4200 move 152 43
+4800 down
+5000 up
+5600 parkbr
+7000 mark C_DISKINFO
+7400 move 260 325
+7800 down
+8000 up
+8600 parkbr
+9600 mark D_DISKOK

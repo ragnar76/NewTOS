@@ -293,9 +293,12 @@ window throws away the very `FNODE`s the loop is walking. That is the whole
 reason `fun_mark_for_rebld`/`WN_REBUILD` exist — see
 [`deskfun.md`](deskfun.md).
 
-**Named deviation** (older than DESK38): the rename itself happens in
-`do_info`'s helper rather than inside `inf_file_folder`, and there is no
-`STRENAME` *Retry* loop. Details in [`deskinf.md`](deskinf.md).
+DESK38 named a deviation here — the rename happened in `do_info`'s helper
+rather than inside `inf_file_folder`, and there was no `STRENAME` *Retry*
+loop. **DESK42 closed it:** `inf_file_folder(ppath, pf)` renames and changes
+attributes itself, in EmuTOS's `while(1)`, and the arm here is the source's two
+lines (`ret = inf_file_folder(pathptr, pf); if (ret < 0)
+fun_mark_for_rebld(pathptr);`). Details in [`deskinf.md`](deskinf.md).
 
 ### Measured
 

@@ -1,0 +1,23 @@
+DESK42 -- C:\README.TXT as read back off each card image with
+method/lsimg.py (a plain FAT16 reader; the image is never mounted).
+
+base       README.TXT           64  attr=0x20 date=0x5d39 time=0xaa5c
+d42a       README.TXT           64  attr=0x20 date=0x5d39 time=0xaa5c
+d42b       README.TXT           64  attr=0x20 date=0x5d39 time=0xaa5c
+d42c       README.TXT           64  attr=0x21 date=0x5d39 time=0xaa5c
+d42d       README.TXT           64  attr=0x21 date=0x5d39 time=0xaa5c
+d42e   (README.TXT ABSENT)
+
+d42e root directory, first four entries -- the blank-named entry that
+C:\README.TXT became (GEMDOS Frename side finding, see RUNINFO.TXT S6):
+    NEWTOS                0  attr=0x28 date=0x5d39 time=0xaa5d
+                         64  attr=0x20 date=0x5d39 time=0xaa5c
+DIR SPOTLI~1              0  attr=0x12 date=0x5d39 time=0xaa5c
+    HELLO.TXT            32  attr=0x20 date=0x5d39 time=0xaa5c
+
+d42b SUB, for the FOLDER INFORMATION counters (3 files, 0 folders):
+DIR .                     0  attr=0x12 date=0x5d39 time=0xaa5d
+DIR ..                    0  attr=0x12 date=0x5d39 time=0xaa5c
+    INSIDE.TXT           20  attr=0x20 date=0x5d39 time=0xaa5c
+    PROOF.TXT            15  attr=0x20 date=0x5d39 time=0xaa5c
+    CURDIR.NCP         6024  attr=0x20 date=0x5d39 time=0xaa5d

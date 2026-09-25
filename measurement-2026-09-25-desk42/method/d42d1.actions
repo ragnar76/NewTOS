@@ -1,0 +1,44 @@
+# DESK42 pass 1 -- make the rename FAIL for a legitimate reason and stop on the
+# STRENAME alert, so this run's own [alert] dump gives its button click points.
+#
+# The failure is EmuTOS's own ordering: OK writes the attribute first
+# (`dos_chmod`, deskinf.c:591-605) and renames afterwards (`:616-626`), and a
+# Read-Only file cannot be renamed (`xrename`: `if (fcb->f_attrib & FA_RO)
+# return EACCDN`, bdos/fsdir.c:943-944).  So one dialog pass that ticks
+# Read-Only *and* shortens the name ends in `STRENAME`.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 move 38 35
+1800 down
+1803 up
+1810 down
+1813 up
+2400 move 600 240
+3200 mark B_WIN1
+3600 move 179 271
+4000 down
+4003 up
+4400 parkbr
+5000 mark B2_FILESEL
+5400 move 88 240
+5600 move 88 9
+6200 move 152 43
+6800 down
+7000 up
+7600 parkbr
+8600 mark C_FILEINFO
+9000 move 396 305
+9400 down
+9600 up
+10000 parkbr
+10800 mark D_RONLY
+11200 key 0E
+11220 key 8E
+11800 mark E_SHORTNAME
+12200 move 216 353
+12600 down
+12800 up
+13400 parkbr
+14400 mark F_STRENAME

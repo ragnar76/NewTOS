@@ -1,0 +1,67 @@
+# DESK42 side finding -- NOT a DESK42 behaviour: GEMDOS `Frename` accepts an
+# EMPTY destination file name and writes a directory entry with an all-blank
+# 8.3 name.
+#
+# The box's name field is emptied (11 x Backspace) and OK pressed.  EmuTOS's
+# `inf_file_folder` has no empty-name special case either -- it unformats the
+# field into `dstpth+nmidx` and calls `dos_rename(srcpth, dstpth)`, so with an
+# empty field the destination is the bare directory `C:\`
+# (deskinf.c:600-626).  EmuTOS's own GEMDOS refuses that
+# (`xrename`: `if (!ixsfirst(p2,FA_SUBDIR,0)) return EACCDN`,
+# bdos/fsdir.c:912-913); ours does not, and C:\README.TXT becomes an entry
+# with no name at all.
+#
+#   D_EMPTY     the box with the name field emptied
+#   E_AFTEROK   after OK -- no STRENAME, the window rebuilt, and the first file
+#               icon has no label
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 move 38 35
+1800 down
+1803 up
+1810 down
+1813 up
+2400 move 600 240
+3200 mark B_WIN1
+3600 move 179 271
+4000 down
+4003 up
+4400 parkbr
+5000 mark B2_FILESEL
+5400 move 88 240
+5600 move 88 9
+6200 move 152 43
+6800 down
+7000 up
+7600 parkbr
+8600 mark C_FILEINFO
+9000 key 0E
+9020 key 8E
+9080 key 0E
+9100 key 8E
+9160 key 0E
+9180 key 8E
+9240 key 0E
+9260 key 8E
+9320 key 0E
+9340 key 8E
+9400 key 0E
+9420 key 8E
+9480 key 0E
+9500 key 8E
+9560 key 0E
+9580 key 8E
+9640 key 0E
+9660 key 8E
+9720 key 0E
+9740 key 8E
+9800 key 0E
+9820 key 8E
+10400 mark D_EMPTY
+10800 move 216 353
+11200 down
+11400 up
+12000 parkbr
+13000 mark E_AFTEROK

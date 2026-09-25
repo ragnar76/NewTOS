@@ -1,0 +1,74 @@
+DESK42 -- the [dlg] object dumps of the two rebuilt trees.
+
+method/desk42_patch.py widens deskrest_patch.py's dump (which prints the
+EXIT objects only) to every object: index, ob_type, ob_flags, ob_state and
+the absolute rectangle with its centre point.  Read it against
+references/emutos/desk/desk_rsc.c:709-768 (ADDISKIN) and :622-703
+(ADFFINFO).  ob_type 20 = G_BOX, 25 = G_IBOX, 26 = G_BUTTON,
+28 = G_STRING, 30 = G_FBOXTEXT; ob_flags 0x400 = FL3DBAK,
+0x600 = FL3DACT, 0x200 = FL3DIND; ob_state 0x10 = OUTLINED,
+0x08 = DISABLED, 0x01 = SELECTED.
+
+The 'obj 0' line double-counts the ROOT's own position (the patch adds
+o[0].ob_x to every object, and for the ROOT that is itself); the 'root'
+line above it is the real one.
+
+== ADDISKIN, the C: drive (d42a-serial.log) ==
+[dlg] root (168,149) 304x200
+[dlg]   obj 0 ty 20 fl 0x0400 st 0x0010 abs (336,298) 304x200 -> click (488,398)
+[dlg]   obj 1 ty 28 fl 0x0000 st 0x0000 abs (256,165) 128x16 -> click (320,173)
+[dlg]   obj 2 ty 30 fl 0x0400 st 0x0000 abs (192,197) 256x16 -> click (320,205)
+[dlg]   obj 3 ty 30 fl 0x0400 st 0x0000 abs (192,213) 256x16 -> click (320,221)
+[dlg]   obj 4 ty 30 fl 0x0400 st 0x0000 abs (192,229) 256x16 -> click (320,237)
+[dlg]   obj 5 ty 30 fl 0x0400 st 0x0000 abs (192,245) 256x16 -> click (320,253)
+[dlg]   obj 6 ty 30 fl 0x0400 st 0x0000 abs (192,261) 256x16 -> click (320,269)
+[dlg]   obj 7 ty 30 fl 0x0400 st 0x0000 abs (192,277) 256x16 -> click (320,285)
+[dlg]   exit obj 8 abs (224,317) 72x16 -> click (260,325)
+[dlg]   obj 8 ty 26 fl 0x0607 st 0x0000 abs (224,317) 72x16 -> click (260,325)
+[dlg]   exit obj 9 abs (344,317) 72x16 -> click (380,325)
+[dlg]   obj 9 ty 26 fl 0x0625 st 0x0000 abs (344,317) 72x16 -> click (380,325)
+
+== ADFFINFO, a FILE: C:\README.TXT (d42b-serial.log, first box) ==
+[dlg] root (160,121) 320x256
+[dlg]   obj 0 ty 20 fl 0x0400 st 0x0010 abs (320,242) 320x256 -> click (480,370)
+[dlg]   obj 1 ty 28 fl 0x0000 st 0x0000 abs (256,137) 8x16 -> click (260,145)
+[dlg]   obj 2 ty 30 fl 0x0408 st 0x0000 abs (192,169) 208x16 -> click (296,177)
+[dlg]   obj 3 ty 30 fl 0x0400 st 0x0000 abs (192,185) 208x16 -> click (296,193)
+[dlg]   obj 4 ty 30 fl 0x0400 st 0x0000 abs (192,201) 208x16 -> click (296,209)
+[dlg]   obj 5 ty 30 fl 0x0400 st 0x0000 abs (192,217) 208x16 -> click (296,225)
+[dlg]   obj 6 ty 30 fl 0x0400 st 0x0008 abs (192,249) 256x16 -> click (320,257)
+[dlg]   obj 7 ty 30 fl 0x0400 st 0x0008 abs (192,265) 256x16 -> click (320,273)
+[dlg]   obj 8 ty 25 fl 0x0000 st 0x0000 abs (176,297) 288x16 -> click (320,305)
+[dlg]   obj 9 ty 26 fl 0x0211 st 0x0001 abs (176,297) 144x16 -> click (248,305)
+[dlg]   obj 10 ty 26 fl 0x0211 st 0x0000 abs (328,297) 136x16 -> click (396,305)
+[dlg]   exit obj 11 abs (176,345) 80x16 -> click (216,353)
+[dlg]   obj 11 ty 26 fl 0x0607 st 0x0000 abs (176,345) 80x16 -> click (216,353)
+[dlg]   exit obj 12 abs (280,345) 80x16 -> click (320,353)
+[dlg]   obj 12 ty 26 fl 0x0605 st 0x0000 abs (280,345) 80x16 -> click (320,353)
+[dlg]   exit obj 13 abs (384,345) 80x16 -> click (424,353)
+[dlg]   obj 13 ty 26 fl 0x0625 st 0x0000 abs (384,345) 80x16 -> click (424,353)
+[dlg] root (160,121) 320x256
+
+== ADFFINFO, a FOLDER: C:\SUB (d42b-serial.log, second box) ==
+[dlg]   obj 0 ty 20 fl 0x0400 st 0x0010 abs (320,242) 320x256 -> click (480,370)
+[dlg]   obj 1 ty 28 fl 0x0000 st 0x0000 abs (248,137) 8x16 -> click (252,145)
+[dlg]   obj 2 ty 30 fl 0x0408 st 0x0000 abs (192,169) 208x16 -> click (296,177)
+[dlg]   obj 3 ty 30 fl 0x0400 st 0x0000 abs (192,185) 208x16 -> click (296,193)
+[dlg]   obj 4 ty 30 fl 0x0400 st 0x0000 abs (192,201) 208x16 -> click (296,209)
+[dlg]   obj 5 ty 30 fl 0x0400 st 0x0000 abs (192,217) 208x16 -> click (296,225)
+[dlg]   obj 6 ty 30 fl 0x0400 st 0x0000 abs (192,249) 256x16 -> click (320,257)
+[dlg]   obj 7 ty 30 fl 0x0400 st 0x0000 abs (192,265) 256x16 -> click (320,273)
+[dlg]   obj 8 ty 25 fl 0x0000 st 0x0000 abs (176,297) 288x16 -> click (320,305)
+[dlg]   obj 9 ty 26 fl 0x0211 st 0x0008 abs (176,297) 144x16 -> click (248,305)
+[dlg]   obj 10 ty 26 fl 0x0211 st 0x0008 abs (328,297) 136x16 -> click (396,305)
+[dlg]   exit obj 11 abs (176,345) 80x16 -> click (216,353)
+[dlg]   obj 11 ty 26 fl 0x0607 st 0x0000 abs (176,345) 80x16 -> click (216,353)
+[dlg]   exit obj 12 abs (280,345) 80x16 -> click (320,353)
+[dlg]   obj 12 ty 26 fl 0x0605 st 0x0000 abs (280,345) 80x16 -> click (320,353)
+[dlg]   exit obj 13 abs (384,345) 80x16 -> click (424,353)
+[dlg]   obj 13 ty 26 fl 0x0625 st 0x0000 abs (384,345) 80x16 -> click (424,353)
+
+== STRENAME (d42d-serial.log) ==
+[alert] box (216,202) 208x94 nbut=2 defbut=1
+[alert]   but 1 abs (232,258) 80x22 -> click (272,269)
+[alert]   but 2 abs (328,258) 80x22 -> click (368,269)

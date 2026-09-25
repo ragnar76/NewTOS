@@ -1,0 +1,64 @@
+# DESK42 -- the Read/Write . Read-Only pair of ADFFINFO, which is the part of
+# the rebuilt tree that needed a writer behind it (`dos_chmod`, deskinf.c:591-
+# 605).  C:\README.TXT is switched to Read-Only and the box is asked again.
+#
+#   C_FILEINFO   the box, Read/Write selected (attr 0x20 on the card)
+#   D_RONLY      Read-Only clicked -- the AES has moved the radio selection
+#   E_AFTEROK    after OK: `dos_chmod` ran, `changed` is true, `do_info`
+#                returned -1 and `fun_rebld_marked` rebuilt the window
+#   G_AGAIN      the box a second time -- now Read-Only is the selected one
+#   H_END        Cancel taken
+#
+# Coordinates: probe run, plus the d42b [dlg] dump (root (160,121) 320x256;
+# FFRWRITE -> click (248,305), FFRONLY -> (396,305), FFOK -> (216,353),
+# FFCNCL -> (424,353)).
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 move 38 35
+1800 down
+1803 up
+1810 down
+1813 up
+2400 move 600 240
+3200 mark B_WIN1
+3600 move 179 271
+4000 down
+4003 up
+4400 parkbr
+5000 mark B2_FILESEL
+5400 move 88 240
+5600 move 88 9
+6200 move 152 43
+6800 down
+7000 up
+7600 parkbr
+8600 mark C_FILEINFO
+9000 move 396 305
+9400 down
+9600 up
+10000 parkbr
+10800 mark D_RONLY
+11200 move 216 353
+11600 down
+11800 up
+12400 parkbr
+13400 mark E_AFTEROK
+13800 move 179 271
+14200 down
+14203 up
+14600 parkbr
+15200 mark F_FILESEL2
+15600 move 88 240
+15800 move 88 9
+16400 move 152 43
+17000 down
+17200 up
+17800 parkbr
+18800 mark G_AGAIN
+19200 move 424 353
+19600 down
+19800 up
+20400 parkbr
+21400 mark H_END

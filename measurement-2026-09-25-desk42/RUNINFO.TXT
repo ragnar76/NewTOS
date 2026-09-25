@@ -1,0 +1,188 @@
+measurement-2026-09-25-desk42
+  DESK42 -- ADDISKIN and ADFFINFO rebuilt object for object from desk_rsc.c
+===========================================================================
+
+Base: branch desk-rebuild, HEAD 0b179c3.  The change is UNCOMMITTED in the
+shared tree (method/desk42.diff, `git diff -- kernel/src/desk`).  Nothing
+flashed, nothing ejected, no real Pi run, nothing committed; no
+`git checkout/restore/clean/stash/reset` was run on the shared tree.  The only
+git commands used on it were the read-only `git diff` and `git status`.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (method/run.sh + method/qmp_multi.py).  Card image: a fresh
+`tools/make-sd-image.sh` (64 MiB, MBR + FAT16), one copy per run.  Interactive
+runs use the scratch-copy IKBD injector: method/make_scratch.sh rsyncs the
+crates into the job scratch and patches the COPY -- never the shared tree.  No
+`*.img` in this directory (the ticket rule); every image statement below is
+read back with method/lsimg.py, a plain FAT16 reader, and recorded in
+serial/lsimg.txt.
+
+0. WHAT THE TICKET ASKED, AND WHAT IS HERE
+---------------------------------------------------------------------------
+DESK38 built *Show info* functionally; the boxes were hand-laid G_STRING lines
+and had, in the user's words, nothing in common with EmuTOS's.  DESK42 rebuilds
+the two resource trees object for object -- same order, same object numbers,
+same labels, same measurements resolved the way `rsrc_obfix` resolves them.
+
+  ADDISKIN  desk_rsc.c:709-768, desk_rsc.h:75-84  -- 10 objects, 38 x 12+8
+            character cells = 304 x 200 px
+  ADFFINFO  desk_rsc.c:622-703, desk_rsc.h:61-72  -- 14 objects, 40 x 16
+            character cells = 320 x 256 px
+
+Both dumped object by object at run time (serial/dlg-dumps.txt) so the tree can
+be diffed against the resource without reading our source.
+
+1. PROBE -- every coordinate in every action list
+---------------------------------------------------------------------------
+method/probe.actions + probe_patch.py, unchanged from
+measurement-2026-09-25-desk-rest.  serial/probe-serial.log:
+
+  desk obj 9 (DISK C) click (38,35)
+  window 1 'README.TXT' (179,271)   'SUB' (515,103)
+  titles: Desk (40,9) File (88,9) View (136,9) Options (196,9)
+  File / "Info/Rename..." click (152,43)
+
+Dialog and alert click points are measured too: method/deskrest_patch.py prints
+every `form_alert` box and button (`[alert]`), and method/desk42_patch.py
+widens its `[dlg]` dump from the EXIT objects to **every** object of the
+dialog, because DESK42 also has to click a radio button.  The runs that needed
+a button therefore ran in two passes (d42a1, d42b1, d42d1): stop at the box,
+read its geometry out of the same run's log, extend the action list.  No click
+point in this measurement is guessed.
+
+2. d42a -- ADDISKIN on the C: drive icon
+---------------------------------------------------------------------------
+screendumps/d42a-c-diskinfo.png (magnified: zoom-a-diskinfo.png),
+serial/d42a-serial.log.  `[dlg] root (168,149) 304x200`.
+
+  DISK INFORMATION            centred by align_title: 16 chars = 128 px,
+                              (304-128)/2 = 88 -> abs x 256
+  Drive identifier:  C        te_tmplen 32, TE_RIGHT
+  Disk label:  NEWTOS__.___   te_tmplen 26, TE_LEFT; the unfilled underscores
+                              of the 8.3 template are EmuTOS's own look
+  Number of folders:      11
+  Number of files:        40
+  Bytes used:        1597296
+  Bytes available:  65241088
+  OK                Cancel    9 cells each, char columns 7 and 22
+
+The six lines start at DIFFERENT x, and that is the resource, not a defect:
+every field is `G_FBOXTEXT` at char column 3 with the same 32-cell rectangle,
+but five of the six templates are shorter than 32 characters and carry
+`te_just = TE_RIGHT`, so `gr_gtext`/`gr_just` (gemgraf.c:567-589, reproduced in
+tos-api/src/aes/object.rs) flush them against the right edge of the rectangle.
+Template lengths 31/25/32/30/25/30 give left edges 32/24/24/40/80/40 relative
+to the box -- exactly what the picture shows.
+
+The 3D roles are the resource's: FL3DBAK + OUTLINED ROOT (`obj 0 fl 0x0400
+st 0x0010`), FL3DBAK on all six fields, FL3DACT on DIOK (`0x0607`) and DICNCL
+(`0x0625`), nothing on the title.
+
+d42a-d-ok.png: after OK the box is gone and the desktop is intact.
+
+3. d42b -- ADFFINFO, both titles
+---------------------------------------------------------------------------
+screendumps/d42b-c-fileinfo.png and d42b-f-folderinfo.png (magnified:
+zoom-b-fileinfo.png, zoom-c-folderinfo.png), serial/d42b-serial.log.
+`[dlg] root (160,121) 320x256` for both.
+
+  a FILE (C:\README.TXT)              a FOLDER (C:\SUB)
+  -----------------------------       -----------------------------
+  FILE INFORMATION  (x 256)           FOLDER INFORMATION  (x 248)
+  Name: README  .TXT   (editable)     Name: SUB_____.___   (editable)
+  Size:            64                 Size:          6059
+  Date:    25/09/2026                 Date:    25/09/2026
+  Time:         21:18                 Time:         21:18
+  Number of folders: ____  DISABLED   Number of folders:        0
+  Number of files:   ____  DISABLED   Number of files:          3
+  [Read/Write] selected, Read-Only    both DISABLED
+  OK     Skip     Cancel              OK     Skip     Cancel
+
+Both titles are centred by the same `align_title`, at 256 and 248, which is
+(320 - 16*8)/2 and (320 - 18*8)/2.  The folder's counters are `count_ffs` over
+C:\SUB -- 3 files, and 0 folders because `inf_fifosz` decrements
+(deskinf.c:448); the directory really holds INSIDE.TXT, PROOF.TXT and
+CURDIR.NCP and no sub-directory (serial/lsimg.txt).  The file's two counters
+carry EmuTOS's `DISABLED` and its empty text, so the template's underscores
+show through greyed -- `deskinf.c:557-566`.
+
+  d42b-d-cancel.png   Cancel -> `inf_what(tree,FFSKIP)` = 0 -> `do_info` 0 ->
+                      the SHOWITEM loop ends; desktop intact
+  d42b-g-skip.png     Skip   -> 1 -> continue; desktop intact
+
+4. d42c -- the Read/Write . Read-Only pair has a writer behind it
+---------------------------------------------------------------------------
+serial/d42c-serial.log, screendumps/d42c-*.png.  The pair is part of the tree,
+so it is wired to `dos_chmod` the way EmuTOS wires it (deskinf.c:585-605), and
+`desk::dosbind::dos_chmod` (GEMDOS `Fattrib`, F_SETMOD) is new.
+
+  C:\README.TXT before   attr=0x20  (base.img)
+  Read-Only clicked, OK  ->  attr=0x21  (d42c.img, serial/lsimg.txt)
+  the box asked again    ->  `[dlg] obj 10 ... st 0x0001` -- Read-Only is now
+                             the selected radio (d42c-g-again.png)
+
+`changed` was true, so `do_info` returned -1, `fun_mark_for_rebld` ran and the
+window was rebuilt -- d42c-e-afterok.png.
+
+5. d42d -- the STRENAME retry loop
+---------------------------------------------------------------------------
+serial/d42d-serial.log, screendumps/d42d-*.png.  `while(1)`
+(deskinf.c:551-635) is the part of `inf_file_folder` NewTOS did not have; the
+rename lived in the caller and a failure ended it.
+
+One dialog pass ticks Read-Only *and* shortens the name (one Backspace,
+"README  TXT" -> "README  TX").  EmuTOS's order then produces the failure by
+itself: the attribute is written first (`:591-605`) and the rename attempted
+afterwards (`:616-626`), and a Read-Only file cannot be renamed
+(`xrename`: `if (fcb->f_attrib & FA_RO) return EACCDN`, bdos/fsdir.c:943-944).
+
+  d42d-e-short.png     the field reads "Name: README  .TX_"
+  d42d-f-strename.png  STRENAME: "Rename error!" with [Retry] [Cancel]
+                       -- desk_rsc.c:2557, verbatim
+  d42d-g-retry.png     Retry re-shows the SAME box with the attempted name
+                       still in it and Read-Only now selected (the attribute
+                       was written on the first pass) -- the `:632-633` comment
+  d42d-h-end.png       Cancel leaves it; C:\README.TXT is still there with
+                       attr=0x21 (serial/lsimg.txt)
+
+6. SIDE FINDING, NOT A DESK42 BEHAVIOUR: GEMDOS `Frename` takes an empty name
+---------------------------------------------------------------------------
+serial/d42e-serial.log, screendumps/d42e-*.png, serial/lsimg.txt.
+
+Empty the name field (11 x Backspace) and press OK.  EmuTOS has no empty-name
+special case either: it unformats the field into `dstpth+nmidx` and calls
+`dos_rename(srcpth, dstpth)`, so the destination is the bare directory `C:\`
+(deskinf.c:600-626).  EmuTOS's GEMDOS refuses that -- `xrename` opens with
+`if (!ixsfirst(p2,FA_SUBDIR,0)) return EACCDN` (bdos/fsdir.c:912-913).
+
+Ours does not.  `Frename("C:\\README.TXT","C:\\")` returns E_OK and the
+directory entry is rewritten with an ALL-BLANK 8.3 name:
+
+  d42e.img root, entry 2:   (no name)   64  attr=0x20
+  the window shows an unlabelled file icon (d42e-e-afterok.png)
+
+The cause is generic, not rename-specific: `tos-api/src/bdos/fs/dir.rs:148`
+`fcb_name("")` returns `Some([b' '; 11])`, an all-blank FCB name, and every
+GEMDOS entry point that takes a final path component goes through it.
+
+This is a GEMDOS defect, not a desktop one, and it is NOT fixed here (DESK42's
+scope is the two trees).  DESK42 does make it *reachable*: the box NewTOS had
+before rejected an empty name in the desktop, which EmuTOS does not do, so the
+call was never issued.  It needs its own ticket.
+
+`fsck_msdos -n` does not flag the blank entry -- an all-blank name is
+structurally valid FAT, merely an illegal 8.3 name.
+
+7. HYGIENE
+---------------------------------------------------------------------------
+Zero `[EXC]` and zero `[PANIC]` in all nine serial logs.
+`fsck_msdos -n` clean on all ten card images: serial/fsck.txt (no MODIFIED, no
+BAD, no ERROR line in it).
+
+8. WHAT ONLY THE REAL PI CAN CONFIRM
+---------------------------------------------------------------------------
+Every gesture here is driven by the scratch-copy IKBD injector, and every
+keystroke is a raw IKBD byte fed into `crate::ikbd::feed` -- which is where the
+IKBD driver itself delivers, so the code path is the same.  A real mouse click
+on a radio button, a real Backspace in the edit field, and `count_ffs` over the
+four real partitions (Pi checklist item 69) are real-Pi4 only.

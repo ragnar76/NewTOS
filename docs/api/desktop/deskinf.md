@@ -1043,6 +1043,12 @@ readers go through them. Two notes:
   `deskinf.c:77`). That constant width is what lets the text view keep fixed
   columns; in 24-hour mode the trailing-blank trim removes it again, so the
   default line is byte-identical to the pre-DESK02 one.
+  **DESK42 made the `hh`/`mm` separator an argument**, because EmuTOS varies it
+  through the `sprintf` format string it hands in and its two callers differ:
+  the text view passes `"%02d:%02d%s"` (`:293`) and `inf_dttm` `"%02d%02d%s"`
+  (`:467`) — `ADFFINFO`'s `Time:   __:__ __  ` template already carries the
+  colon, so a six-character `hhmm` + suffix is what that field wants. The text
+  view's call passes `":"` and is unchanged.
 * The **separator is a parameter**, and that is a divergence rather than a
   design. EmuTOS passes `DATEFORM_SEP` (`'/'`, `deskbind.h:64`) from both call
   sites; NewTOS's text view has printed `MM-DD-YY` with a dash since it was
@@ -1588,30 +1594,196 @@ already overflows EmuTOS's signed 32-bit byte count), and `Fsfirst` on
 inline drive-map test, because EmuTOS filters impossible letters out *before*
 calling `valid_drive` for exactly that path (`deskmain.c:1147-1152`).
 
-NewTOS builds the box as plain `G_STRING` lines (prompt and value in one
-string) rather than `ADDISKIN`'s six `G_FBOXTEXT` template fields — the same
-choice `inf_file_folder`'s three value lines already make, and for the same
-reason: a `G_STRING` has no interior a 3D background could fill, so those lines
-carry no 3D flag. `DIOK`/`DICNCL` are `FL3DACT`, the ROOT is `FL3DBAK` +
-`OUTLINED`, as in the resource.
+DESK38 built the box as seven hand-laid `G_STRING` lines (prompt and value in
+one string) in a 340 × 230 rectangle. **DESK42 replaced that with `ADDISKIN`
+itself** — see the next section; the paragraph that used to stand here, and
+argued that a `G_STRING` needs no 3D flag because it has no interior, described
+a tree that no longer exists.
 
 ### `inf_file_folder` returns three answers (DESK38, 2026-09-25)
 
 It returned `Option<String>`, in which *Cancel* and "OK, nothing changed" were
 the same `None`. `do_info`'s contract needs them apart: its `0` stops the
-`SHOWITEM` loop. The return is now `InfFF::{Cancel, Continue, Renamed(name)}`,
+`SHOWITEM` loop. The return became `InfFF::{Cancel, Continue, Renamed(name)}`,
 EmuTOS's `0`/`1`/`-1` (`:487-491`).
 
-**Named deviations, both older than DESK38 and unchanged by it.** EmuTOS
-renames inside `inf_file_folder`, in a `while(1)` that re-shows the whole
-dialog after a `STRENAME` *Retry* (`:551,629-634`), and it writes back a
-changed read-only attribute (`:591-609`). NewTOS hands the new name back, the
-caller renames once, and the attribute row is read-only. The observable
-difference is the missing *Retry*, not the rename.
+DESK38 named two deviations here: EmuTOS renames inside `inf_file_folder`, in a
+`while(1)` that re-shows the whole dialog after a `STRENAME` *Retry*
+(`:551,629-634`), and it writes back a changed read-only attribute
+(`:591-609`), while NewTOS handed the new name back and had a read-only
+attribute row. **DESK42 closed both**, and with them the `InfFF` enum: the
+function is `inf_file_folder(ppath, pf) -> i16` again, EmuTOS's own signature
+and its own `0`/`1`/`-1`.
 
-### Measured
+### Measured (DESK38)
 
 `measurement-2026-09-25-desk-rest/` §3 — `DISK INFORMATION` for `C:`: label
 `NEWTOS` (through the `FA_VOL` `Fsfirst`), 11 folders, 40 files, 1 597 248
 bytes used, 65 241 088 available. Pi checklist item 69, where the four real
 partitions make the `count_ffs` walk long enough to be worth watching.
+
+## NewTOS implementation notes — the two boxes are the resource trees (DESK42, 2026-09-25)
+
+DESK38 reproduced *Show info*'s **behaviour**; its two boxes were laid out by
+hand and, in the user's words, had nothing in common with EmuTOS's. DESK42
+rebuilds both trees object for object out of `desk_rsc.c` — same order, same
+object numbers, same labels, same measurements — the way DESK03 did `ADINSDSK`
+and DESK05 `ADDESKCF`.
+
+### Reading `desk_rsc.c`'s numbers
+
+`ob_x`/`ob_y`/`ob_width`/`ob_height` in the generated resource are **packed**:
+`LOBYTE` counts character cells, the signed `HIBYTE` adds pixels
+(`fix_chpos`, `aes/gemrslib.c:53-83`). `ADDISKIN`'s ROOT height `2060` is
+`(8 << 8) | 12` = 12 rows + 8 px, and its buttons' `2058` is row 10 + 8 px. At
+the 8 × 16 cell that is:
+
+| tree | cells | pixels |
+|---|---|---|
+| `ADDISKIN` (`:709-768`, `desk_rsc.h:75-84`) | 38 × (12 rows + 8 px) | **304 × 200** |
+| `ADFFINFO` (`:622-703`, `desk_rsc.h:61-72`) | 40 × 16 | **320 × 256** |
+
+Measured at run time: `form_center` puts `ADDISKIN`'s ROOT at (168, 149) and
+`ADFFINFO`'s at (160, 121) on a 640 × 480 screen.
+
+### `ADDISKIN` — ten objects
+
+| # | name | type / flags | rect (cells) | content |
+|---|---|---|---|---|
+| 0 | ROOT | `G_BOX`, `FL3DBAK`, state `OUTLINED`, `ob_spec` 69888 | 0,0,38,12+8px | |
+| 1 | `DITITLE` | `G_STRING`, no flag | 3,1,16,1 | `DISK INFORMATION` |
+| 2 | `DIDRIVE` | `G_FBOXTEXT`, `FL3DBAK` | 3,3,32,1 | ted[6], `TE_RIGHT` |
+| 3 | `DIVOLUME` | `G_FBOXTEXT`, `FL3DBAK` | 3,4,32,1 | ted[7], `TE_LEFT` |
+| 4 | `DINFOLDS` | `G_FBOXTEXT`, `FL3DBAK` | 3,5,32,1 | ted[8], `TE_RIGHT` |
+| 5 | `DINFILES` | `G_FBOXTEXT`, `FL3DBAK` | 3,6,32,1 | ted[9], `TE_RIGHT` |
+| 6 | `DIUSED` | `G_FBOXTEXT`, `FL3DBAK` | 3,7,32,1 | ted[10], `TE_RIGHT` |
+| 7 | `DIAVAIL` | `G_FBOXTEXT`, `FL3DBAK` | 3,8,32,1 | ted[11], `TE_RIGHT` |
+| 8 | `DIOK` | `G_BUTTON`, `SELECTABLE\|DEFAULT\|EXIT\|FL3DACT` | 7,10+8px,9,1 | `OK` |
+| 9 | `DICNCL` | `G_BUTTON`, `SELECTABLE\|EXIT\|LASTOB\|FL3DACT` | 22,10+8px,9,1 | `Cancel` |
+
+### `ADFFINFO` — fourteen objects
+
+| # | name | type / flags | rect (cells) | content |
+|---|---|---|---|---|
+| 0 | ROOT | `G_BOX`, `FL3DBAK`, `OUTLINED` | 0,0,40,16 | |
+| 1 | `FFTITLE` | `G_STRING`, no flag | 11,1,1,1 | `STFIINFO` / `STFOINFO` |
+| 2 | `FFNAME` | `G_FBOXTEXT`, `EDITABLE\|FL3DBAK` | 4,3,26,1 | ted[0], `TE_LEFT` |
+| 3 | `FFSIZE` | `G_FBOXTEXT`, `FL3DBAK` | 4,4,26,1 | ted[1], `TE_RIGHT` |
+| 4 | `FFDATE` | `G_FBOXTEXT`, `FL3DBAK` | 4,5,26,1 | ted[2], `TE_RIGHT` |
+| 5 | `FFTIME` | `G_FBOXTEXT`, `FL3DBAK` | 4,6,26,1 | ted[3], `TE_RIGHT` |
+| 6 | `FFNUMFOL` | `G_FBOXTEXT`, `FL3DBAK` | 4,8,32,1 | ted[4], `TE_RIGHT` |
+| 7 | `FFNUMFIL` | `G_FBOXTEXT`, `FL3DBAK` | 4,9,32,1 | ted[5], `TE_RIGHT` |
+| 8 | — | `G_IBOX`, no flag, `ob_spec` 0 | 2,11,36,1 | parent of 9/10 |
+| 9 | `FFRWRITE` | `G_BUTTON`, `SELECTABLE\|RBUTTON\|FL3DIND` | 0,0,18,1 | `Read/Write` |
+| 10 | `FFRONLY` | `G_BUTTON`, `SELECTABLE\|RBUTTON\|FL3DIND` | 19,0,17,1 | `Read-Only` |
+| 11 | `FFOK` | `G_BUTTON`, `SELECTABLE\|DEFAULT\|EXIT\|FL3DACT` | 2,14,10,1 | `OK` |
+| 12 | `FFSKIP` | `G_BUTTON`, `SELECTABLE\|EXIT\|FL3DACT` | 15,14,10,1 | `Skip` |
+| 13 | `FFCNCL` | `G_BUTTON`, `SELECTABLE\|EXIT\|LASTOB\|FL3DACT` | 28,14,10,1 | `Cancel` |
+
+Objects 9 and 10 are positioned **inside** object 8, which is what makes the
+AES deselect the sibling of the button that was hit — `RBUTTON` deselection is
+per parent, the same reason `ADDESKCF`'s two radio groups each have their own
+`G_IBOX` (DESK18/DESK19 above).
+
+### The `TEDINFO`s, and why the lines are not flush left
+
+`desk_rs_tedinfo[0..11]` (`desk_rsc.c:34-93`) all share `te_font = IBM`,
+`te_color = 4352` (`0x1100`) and **`te_thickness = 0`** — so none of these
+"fields" has a frame; the template's underscores are the whole of what the user
+sees as a field. Their `te_txtlen`/`te_tmplen` are copied verbatim, which is
+what makes the merge and the edit behave as they do:
+
+| field | template | `te_txtlen` | `te_tmplen` | `te_just` |
+|---|---|---|---|---|
+| `FFNAME` | `Name: ________.___` | 12 | 19 | `TE_LEFT` |
+| `FFSIZE` | `Size:   __________` | 11 | 19 | `TE_RIGHT` |
+| `FFDATE` | `Date:   __________` | 11 | 19 | `TE_RIGHT` |
+| `FFTIME` | `Time:   __:__ __  ` | 7 | 19 | `TE_RIGHT` |
+| `FFNUMFOL` | `Number of folders:         _____` | 6 | 33 | `TE_RIGHT` |
+| `FFNUMFIL` | `Number of files:         _____` | 6 | 31 | `TE_RIGHT` |
+| `DIDRIVE` | `Drive identifier:  _           ` | 2 | 32 | `TE_RIGHT` |
+| `DIVOLUME` | `Disk label:  ________.___` | 12 | 26 | `TE_LEFT` |
+| `DINFOLDS` | `Number of folders:         _____` | 6 | 33 | `TE_RIGHT` |
+| `DINFILES` | `Number of files:         _____` | 6 | 31 | `TE_RIGHT` |
+| `DIUSED` | `Bytes used:    __________` | 11 | 26 | `TE_RIGHT` |
+| `DIAVAIL` | `Bytes available:    __________` | 11 | 31 | `TE_RIGHT` |
+
+`te_just` does **two** things, and the second one is easy to miss: `ob_format`
+fills the template's underscores from the left or the right end, and
+`gr_gtext`/`gr_just` (`gemgraf.c:567-589`) then place the *whole formatted
+string* left, centred or right inside the object rectangle. `ADDISKIN`'s six
+fields all sit at char column 3 with the same 32-cell rectangle, but only
+`DINFOLDS`'s template is 32 characters long; the shorter `TE_RIGHT` ones are
+pushed right by their slack. The left edges that come out of that, relative to
+the box, are 32 / 24 / 24 / 40 / 80 / 40 — the staircase the screendump shows
+is the resource's own, not a layout defect.
+
+### The three helpers the trees needed
+
+* **`fmt_str` / `unfmt_str`** (`util/optimize.c:43-93`) — `SAMPLE.PRG` ↔
+  `SAMPLE  PRG`, the form the `FFFFFFFF.FFF` template wants. `FFNAME` shows the
+  formatted name and `inf_file_folder` unformats it back before renaming;
+  `set_tedinfo_name` (`deskinf.c:424-430`) is `fmt_str` + `inf_sset` and is how
+  `DIVOLUME` gets the disk label.
+* **`inf_numset`** (`:409-419`) — `sprintf("%*lu", te_txtlen-1, value)`: the
+  number right-aligned in the field's capacity. A value with more digits than
+  the field holds keeps its **last** `te_txtlen-1` digits here; EmuTOS's
+  `sprintf` writes the whole number and overruns into the next field's storage,
+  but what the user sees is the same, because a `TE_RIGHT` `ob_format` fills
+  from the right end of the text. Unreachable for both callers on FAT16.
+* **`align_title`** (`deskmain.c:1731-1747`) — object 1 centred on the box when
+  it is a `G_STRING` one character row down. EmuTOS moves `ob_x` and leaves
+  `ob_width` alone, which is sound because a `G_STRING` is drawn from `ob_x`
+  with no clamping (`gemoblib.c:817-845`); `ADFFINFO`'s title object really is
+  one cell wide in the resource. **This is the classic-TOS arm.**
+  `CONF_WITH_ALT_DESKTOP_GRAPHICS` is 1 in the reference build and left-aligns
+  the title with an underline instead; every NewTOS dialog centres, and
+  changing that for all of them at once is `TASK/GUI05.md`.
+
+### `inf_file_folder` is EmuTOS's function again
+
+`inf_file_folder(ppath, pf) -> i16`, with the `while(1)` of `:551-635` inside
+it, and the caller (`desksupp.c:1335-1337`) reduced to the two lines the source
+has. That closes DESK38's two named deviations:
+
+* **the attribute write-back** (`:585-605`) — `dos_chmod(srcpth, F_SETMOD,
+  attr)`, a new `desk::dosbind` binding on GEMDOS `Fattrib` (0x43). Its result
+  is deliberately not checked: "like Atari TOS, we don't check the return code
+  from dos_chmod()" (`:592-593`);
+* **the `STRENAME` retry** (`:628-634`) — a failed `dos_rename` puts up
+  `[1][Rename error!][ Retry | Cancel ]` (`desk_rsc.c:2557`) and *Retry* loops
+  back to `inf_show` with the attempted name still in the field.
+
+For a **folder** the box now counts its contents (`count_ffs` → `inf_fifosz`
+into `FFNUMFIL`/`FFNUMFOL`/`FFSIZE`, `:519-533`); for a **file** those two
+objects get `DISABLED` and an empty text, so the template shows through greyed
+(`:535-545`). `FFSKIP` — the third exit button, which NewTOS did not have — is
+`inf_what(tree, FFSKIP)`'s `1`: continue with the next item of the `SHOWITEM`
+selection without changing this one.
+
+**One named deviation remains.** EmuTOS's `pf` is the window's live `FNODE`, so
+a changed name or attribute is visible in it at once; ours is the copy
+`do_info` made from it (`desksupp.c:1326` builds exactly such a copy for the
+desktop-shortcut case, so the shape is the source's). The window is refreshed
+by the rebuild the same `-1` triggers — `fun_mark_for_rebld` +
+`fun_rebld_marked` re-scan the directory — so the two agree by the time
+anything reads them again.
+
+### Measured (DESK42)
+
+`measurement-2026-09-25-desk42/`. Both trees dumped object by object at run
+time (`serial/dlg-dumps.txt`) and screendumped: `ADDISKIN` on the C: drive,
+`ADFFINFO` for `C:\README.TXT` (FILE INFORMATION) and for `C:\SUB` (FOLDER
+INFORMATION, 3 files / 0 folders / 6059 bytes), the Read-Only switch read back
+off the card (`attr` 0x20 → 0x21), and the `STRENAME` *Retry* bringing the same
+box back. Zero `[EXC]`/`[PANIC]` in ten serial logs, `fsck_msdos -n` clean on
+ten card images.
+
+**Side finding, filed separately and not fixed here:** GEMDOS `Frename` accepts
+an **empty** destination file name and writes a directory entry with an
+all-blank 8.3 name (`tos-api/src/bdos/fs/dir.rs:148`, `fcb_name("")` →
+`Some([b' '; 11])`). EmuTOS's `xrename` refuses it at `bdos/fsdir.c:912-913`.
+EmuTOS's `inf_file_folder` has no empty-name special case and neither does
+ours any more, so emptying the name field and pressing OK now reaches the
+defect; the pre-DESK42 NewTOS box rejected an empty name itself, which EmuTOS
+does not do. Reproduced in `measurement-2026-09-25-desk42/` §6.

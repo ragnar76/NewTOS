@@ -1,0 +1,25 @@
+# DESK42 pass 1 -- reach the ADDISKIN box and stop there, so that this run's
+# own [dlg] dump gives the OK/Cancel click points for pass 2.
+#
+#   B_CSEL      the C: drive icon selected
+#   C_DISKINFO  the rebuilt ADDISKIN box
+#
+# Coordinates from this measurement's own probe run (serial/probe-serial.log):
+#   desk obj 9 (DISK C) click (38,35)
+#   File title hover (88,9); "Info/Rename..." click (152,43)
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1600 move 38 35
+2000 down
+2003 up
+2400 parkbr
+3000 mark B_CSEL
+3400 move 88 240
+3600 move 88 9
+4200 move 152 43
+4800 down
+5000 up
+5600 parkbr
+7000 mark C_DISKINFO
