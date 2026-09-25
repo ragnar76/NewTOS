@@ -1,6 +1,6 @@
 # DESK43 — Der Desktop muss im User-Space laufen, wie jede andere Anwendung
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Architektur — Anwenderentscheidung 2026-08-31, geschaerft 2026-09-01
+Status: **OFFEN** · Prioritaet: **P2** · Typ: **Abweichung von EmuTOS** (nicht blosse Architekturfrage) — Anwenderentscheidung 2026-08-31, geschaerft 2026-09-01, belegt 2026-09-25
 
 Abhaengigkeiten: Plan liegt: `docs/analysis/desktop-userspace-plan.md` (68 KB, 2026-09-01)
 
@@ -23,6 +23,29 @@ Gemessener Ausgangspunkt (2026-09-01): `kernel/src/desk/` = **9 234 Zeilen in
 rund **40 direkte `tos_api::`-Aufrufe am Trap vorbei** (`aes::object` 9,
 `bdos::fs` 9, `vdi::font` 6, `host::host` 6, `aes::window` 6, `bios::drive` 3,
 `vdi::mouse` 1). Das sind die Stellen, die der Umzug geradezieht.
+
+## Belegt 2026-09-25: EmuTOS' Desktop laeuft im User-Modus
+
+Der Anwender fragte: *„aber im EmuTOS laeuft er doch auch im User-Space?"* —
+und das stimmt, nachgelesen statt angenommen:
+
+* `aes/gemasm.S:77-79` — die AES springt in das TEXT-Segment eines
+  Accessories *„in user mode"*.
+* `aes/gemstart.S:126` — *„Super() to go back to user mode"*.
+* `aes/gemshlib.c:604,634` — beim Start einer Anwendung uebernimmt diese
+  **denselben** Deskriptor `rlr`, den der Desktop hatte.
+
+**Damit ist `desk/` auf EL1 eine Abweichung von EmuTOS, keine
+Entwurfsfreiheit.** Nach [Don't rationalize EmuTOS deviations] ist die
+Vorgabe dann *angleichen*, nicht begruenden — dieses Ticket ist also kein
+„waere schoener", sondern eine offene Konformitaetsluecke.
+
+**Ein Unterschied bleibt und bestimmt den Aufwand:** EmuTOS hat **keinen**
+Speicherschutz. „User mode" heisst dort nur S-Bit aus, alles liegt in einem
+flachen Adressraum. Unser EL0 bringt Modus **und** eigenen Adressraum mit.
+Die Richtung ist EmuTOS-konform; der Weg dorthin ist bei uns teurer, weil die
+rund 40 Aufrufe am Trap vorbei echte Adressraumgrenzen ueberqueren muessen,
+die es dort nicht gibt.
 
 ## Was sich damit von selbst aufloest
 
