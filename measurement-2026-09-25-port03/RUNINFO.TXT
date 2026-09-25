@@ -1,0 +1,150 @@
+measurement-2026-09-25-port03
+  PORT03 (cflib und QED sind sich ueber den Pfadtrenner uneinig)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD feb171d. PORT03's change is UNCOMMITTED in
+the shared tree (four edited files + one new tarball + the doc/ticket
+updates, method/port03.diff -- the diff carries no binaries, so the new
+sdk/cflib/cflib-21-ce57817.tar.xz shows only by its sha256 below). Nothing
+flashed, nothing ejected, no real Pi run, nothing committed; no
+`git checkout/restore/clean/stash/reset` was run on the shared tree. The SD
+card at /Volumes/BOOT was not touched.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to file, QMP
+screendumps (method/run.sh + method/qmp_multi.py). Card image: a fresh
+`tools/make-sd-image.sh` per measurement (64 MiB, MBR + FAT16) plus one copy
+(method/seed.sh) -- rebuilt, never a reused copy. Interactive runs use the
+scratch-copy IKBD injector: method/make_scratch.sh rsyncs the crates into the
+job scratch and patches the copy -- never the shared tree.
+No `*.img` in this directory (the ticket's rule).
+
+PORT03 changes NO kernel code. What is under test is the LIBRARY the programs
+on the card are linked against; the kernel in the runs is the shared tree's
+kernel plus the measurement scaffolding.
+
+
+0. WHAT WAS SWAPPED
+---------------------------------------------------------------------------
+sdk/cflib is no longer pinned by "version" but by COMMIT:
+
+  github.com/freemint/cflib, ce57817c3f68c7d346d1081768505e81acaee807
+  ("Replace last remaining tho-otto.de references with my server", 2026-07-14)
+  packed with `git archive --prefix=cflib-21/ ce57817 | xz -9`
+  -> sdk/cflib/cflib-21-ce57817.tar.xz
+     sha256 8427502d6a309864cfd4621201d032d04b512dddeb8f59eff33eca545683ed8e
+
+It replaces the previous sdk/cflib/cflib-21.tar.xz, which was NOT a 2004
+tarball: it is byte-identical to the tho-otto mirror's SOURCE snapshot
+download/mint/cflib-21.tar.xz of 2024-04-30,
+sha256 7f0d69f43f450df1f0a4699bda8738f5d8f7cc31257e0db531b8e8ba4062e349.
+cflib has never raised its 0.21.0 version number since 2004, so the number in
+VERSION/ChangeLog says nothing about the state of the sources. The real gap
+was 13 commits, of which four touch compiled files: fsnorm.c (2ac3e85),
+fsexists.c (af02175 + cdb1fdf), fexists.c (cdb1fdf), fontsel.c (399f7a6).
+
+The mirror was checked for a dated alternative and has none that carries the
+fixes: /snapshots/cflib/*.tar.bz2 are m68k BINARY dev packages (usr/lib/**/
+libcflib.a, usr/include, stguide), zero .c files.
+
+
+1. FIXTURE (method/seed.sh)
+---------------------------------------------------------------------------
+On top of the standard image:
+  C:\QED.NAP + C:\qed.rsc   QED (current build) at the ROOT
+C:\README.TXT (64 bytes) is the dragged file; it is on the standard image, as
+is C:\Apps\TERADESK\.
+QED normally lives in C:\Apps\QED\; it is copied to the root so the acceptance
+gesture is one drag inside ONE window (identical drop path, `fun_win2win`,
+kernel/src/desk/dir.rs:1793) -- the same arrangement PORT01 used.
+
+The TeraDesk run (method/seed-tera.sh) takes that same card and replaces
+C:\NEWDESK.INF with the #Z autorun line (method/newdesk-tera.inf, unchanged
+from measurement-2026-09-21-t04).
+
+
+2. INJECTOR (method/t10_workaround.py)
+---------------------------------------------------------------------------
+a78_patch2.py's dual arming picks the empty SCRIPT_TERA whenever an EL0
+process is the running one at the first injector tick, and since the
+accessories landed that is always the case (TASK/T10.md, still OPEN).
+t10_workaround.py replaces the dual arming with the one case needed here:
+step only once "[desk] desktop up" has set DESK_UP, and always run
+SCRIPT_DESK. The shared harness is left untouched.
+
+In the TeraDesk run the #Z autorun starts TeraDesk INSTEAD of our desktop, so
+DESK_UP is never set and the injector never arms -- measured in a first
+attempt whose log stops at "[shell] sh_ldapp: starting
+C:\APPS\TERADESK\DESKTOP.NAP" with no [h02] line. That run's screendump is
+therefore triggered on that kernel line plus a 45 s settle, not on a mark.
+
+
+3. CLICK POINTS (all measured, none guessed)
+---------------------------------------------------------------------------
+method/probe.actions + probe_patch.py's `probe_icons()` print every window
+item with the point `act_chkobj` accepts. From serial/probe-serial.log
+(this card's layout, which differs from PORT01's -- that card carried two
+extra "before" programs):
+
+  C:\ window   README.TXT (347,271)    QED.NAP (179,271)
+
+Alt+C (scancodes 38 2e ae b8) opens the C:\ window.
+Ctrl-O in QED is 1d 18 98 9d (qed.rsc: "Oeffnen...  ^O", menu.c:409 MOPEN).
+POINTER PARK: (639,479) -- `parkbr`, which crosses no menu title (A79).
+
+
+4. RUNS
+---------------------------------------------------------------------------
+probe       method/probe.actions       serial/probe-serial.log
+            screendumps/probe-{a-idle,b-altc,c-csel}.png
+            geometry only; this is where section 3's numbers come from.
+
+port03-qed  method/port03-qed.actions  serial/port03-qed-serial.log
+            screendumps/qed-{a-idle,b-win,c-open,d-fsel}.png
+            + qed-c-open-title-zoom.png (3x crop of the window title)
+            README.TXT dropped on QED.NAP, then Ctrl-O.
+
+port03-tera method/port03-tera.actions serial/port03-tera-serial.log
+            screendumps/tera-b-up.png
+            TeraDesk started by the #Z autorun line.
+
+Zero `[EXC]` and zero `[PANIC]` in all three logs.
+`fsck_msdos -n` clean on every card image afterwards: serial/fsck.txt.
+
+
+5. RESULT: the acceptance case
+---------------------------------------------------------------------------
+screendumps/qed-c-open.png -- QED opens the dropped file. The window title is
+`C:\README.TXT`, the FULL name (qed-c-open-title-zoom.png is a 3x crop that
+shows this is the rendered text), and the file's two lines are in the window.
+Before the swap the same gesture produced QED's alert "Fehler beim Lesen der
+Datei: README.TX" (measurement-2026-09-25-port01/screendumps/after-d-qed.png).
+
+The chain, unchanged on QED's side: cflib `make_normalpath` now keeps the `\`
+it appended (upstream 2ac3e85), QED strips exactly one separator
+unconditionally (src/poslist.c:53-54), and what is left is the whole name.
+QED's source was not touched.
+
+
+6. RESULT: the other cflib paths
+---------------------------------------------------------------------------
+screendumps/qed-d-fsel.png -- Ctrl-O opens cflib's OWN file selector
+("Dateien oeffnen", filesel.c) with Directory C:\*.* : the seven directories
+(ACC, APPS, AUTO, CLIPBRD, COREMARK, GEMSYS, SUB) are listed AS directories
+and the files (ARGVTEST.NAP, BIG.NCP) as files. That is the visible proof
+that the rewritten path_exists/file_exists -- which now probe with Fsfirst
+and read `Fgetdta()->dta_attribute` instead of calling Fattrib -- work on our
+kernel. The DTA path holds because mintlib's `_DTA` is the packed 44-byte
+layout with _Static_assert'ed offsets against makbuf (ADR-020,
+sdk/libc/mintlib/include/mint/ostruct.h:85-101) and Fgetdta returns a full
+64-bit x0 through __newtos_trap0.
+
+screendumps/tera-b-up.png -- TeraDesk, relinked against the new cflib.a,
+comes up with its own menu bar and its colour icons.
+
+
+7. WHAT ONLY THE REAL PI CAN CONFIRM
+---------------------------------------------------------------------------
+Nothing in this ticket is Pi-specific -- it is host C code over the GEMDOS
+trap. What stays real-Pi4-only is the same thing as in PORT01: a real drag
+with a real mouse (and the desktop-shortcut drop route,
+kernel/src/desk/dir.rs:1885) instead of the scratch-copy IKBD injector.

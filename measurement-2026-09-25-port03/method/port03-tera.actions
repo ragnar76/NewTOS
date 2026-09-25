@@ -1,0 +1,17 @@
+# PORT03, second cflib client: TeraDesk. No gesture -- the run only has to show
+# that DESKTOP.NAP, relinked against the new cflib.a, comes up. It is started
+# through the project's own mechanism, the #Z autorun line in C:\NEWDESK.INF
+# (method/newdesk-tera.inf), not by a scripted click.
+#
+# With #Z, TeraDesk is started INSTEAD of our desktop, so DESK_UP is never set
+# and the injector (which t10_workaround.py gates on DESK_UP) never arms --
+# measured in the first attempt of this run, whose log stops at
+# "[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP" with no [h02] line.
+# The screendump is therefore triggered on THAT kernel line plus a settle, not
+# on an injector mark; this action list stays only so the injector is armed the
+# same way as in the QED run.
+100 parkbr
+1000 arm
+1200 mark A_DESK
+8000 mark B_TERA
+12000 pause

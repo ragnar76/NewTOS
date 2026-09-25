@@ -1,0 +1,37 @@
+# PORT03 acceptance: drag C:\README.TXT onto C:\QED.NAP inside the C:\ window.
+# With the cflib pin moved to ce57817, make_normalpath keeps the trailing
+# backslash it appended, QED's unconditional strip in poslist.c:53-54 removes
+# exactly that one character again, and the file QED asks for is the whole
+# name -- so the window must carry the FULL title C:\README.TXT.
+#
+# Click points for THIS card (probe run, method/probe.actions, 2026-09-25):
+#   C:\ window   README.TXT (347,271)   QED.NAP (179,271)
+# Alt+C (scancodes 38 2e ae b8) opens the C:\ window.
+# Pointer park is (639,479) -- `parkbr`, which crosses no menu title (A79).
+#
+# After the file is open, Ctrl+O (1d 18 98 9d) opens QED's "Oeffnen..."
+# (qed.rsc: "Oeffnen...  ^O", menu.c:409 MOPEN -> select_multi -> cflib
+# select_file): the SECOND cflib path the swap has to survive, and the one
+# that calls the rewritten path_exists/file_exists on every listed entry.
+100 parkbr
+300 move 600 240
+1000 arm
+1200 mark A_IDLE
+1500 key 38
+1550 key 2e
+1600 key ae
+1650 key b8
+2800 mark B_WIN
+3100 move 347 271
+3700 down
+4500 drag 260 271
+5100 drag 179 271
+5900 up
+6500 parkbr
+9500 mark C_QED
+10500 key 1d
+10600 key 18
+10700 key 98
+10800 key 9d
+13500 mark D_FSEL
+16000 pause
