@@ -1706,3 +1706,96 @@ handle 1 spec …`), with the title bar reading `C:\SUB\`
 window (`d34-before-C-folder.png`). The drive icon still opens a new window in
 both builds (`d34-*-D-drive.png`, slot 1 / handle 2). The Alt case needs a real
 keyboard and is a Pi checklist item (`_hw-test-2026-09-17.md` #59).
+
+## `process_funkey` — F1…F20 start their application (DESK33, 2026-09-25)
+
+`check_function_key` (`deskmain.c:1117-1128`) recognised the key and then fell
+through: `process_funkey` (`:1087-1106`) did not exist. Since DESK20 made a
+function key assignable, that was a real gap rather than a theoretical one.
+
+```c
+for (pa = G.g_ahead; pa; pa = pa->a_next)
+    if (pa->a_funkey == funkey) break;
+if (pa) {
+    pfname = filename_start(pa->a_pappl);
+    strlcpy(pathname,pa->a_pappl,pfname-pa->a_pappl+1);
+    return do_aopen(pa,TRUE,-1,pathname,pfname,NULL);
+}
+return -1;
+```
+
+### The ANODE search
+
+EmuTOS walks the single `G.g_ahead`, which holds the desktop icons and the
+installed applications together. NewTOS splits those two, and only the
+association half — `desk::inf`'s session model — can carry `a_funkey` at all:
+a desktop node is created with `a_funkey = 0` (`deskins.c:243,825,1037,1385`)
+and nothing ever sets it. `inf::app_by_funkey` therefore walks the association
+list alone and finds exactly the same node.
+
+### The launch
+
+`do_aopen` is reached with `isapp = TRUE` and `tail = NULL`. That rules out
+the `installed_datafile` arm (`desksupp.c:924`) and leaves the directory step
+— from the node's own `AF_APPDIR`/`a_pappl`, because the node *is* an
+installed application — the rejoin of `pathname` + `pfname`, and `pro_run`.
+All three are `main::do_aopen_drop`'s body, which is why `process_funkey` calls
+it with an empty tail rather than repeating them: `pro_run` writes
+`tail[0] = strlen(tail+1) = 0` for a `NULL` tail too (`deskpro.c:56-57`).
+
+`curr = -1` in this call only suppresses `pro_run`'s `do_wopen`
+(`deskpro.c:61-62`); NewTOS launches nested and repaints on return, so there is
+nothing to suppress.
+
+**Named gap, not a new one.** The one EmuTOS branch this cannot reach is
+`opn_appl`'s parameter prompt for a `.TTP`/`.GTP` (`:978-985`). NewTOS has no
+prompt for a `.NTP` on the double-click path either (`launch_native`, Stage A),
+so a `.NTP` started from a key runs with the same empty tail a double click
+gives it.
+
+`hndl_kbd` returns the answer straight out (`:1224-1226`, `if (done >= 0)
+return done;`) — like CR/ESC/arrows above it, and unlike every path below it,
+this one does **not** run `men_update`.
+
+### Measured
+
+`measurement-2026-09-25-desk-rest/` §5 — QEMU raspi4b, 640×480, pointer parked
+in the corner, no click in the whole run. With `#G 06 FF C:\ARGVTEST.NAP@
+*.XYZ@ 107 @` in `NEWDESK.INF`, F7 gives `[d33] process_funkey(7) ->
+C:\ARGVTEST.NAP appdir=true` and the program's own output; F6 gives
+`no application holds it` and nothing happens. The real keyboard is Pi
+checklist item 70.
+
+## `adjust_menu` measures the unpadded strings (DESK32, 2026-09-25)
+
+`Desk` came out 22 character cells wide where EmuTOS has 21, and `File` 23
+where it has 22. The cause was not in `adjust_menu` but in what it was given
+to measure.
+
+EmuTOS's chain is two functions. `copy_menu_items` (`:1755-1813`) measures the
+**resource** strings — `"  Desktop info..."`, `"  Close top window"`, unpadded
+— takes the widest, adds `1 + SHORTCUT_SIZE`, and copies each string into RAM
+padded with blanks to `width - 1`. `adjust_menu` (`:1602-1635`) then measures
+those RAM strings, so the shortcut reserve is already in `maxlen`, and its
+`m++` (`:1620`) adds the last cell.
+
+NewTOS's `build_menu` has always done `copy_menu_items`'s padding — but the
+strings in `MENUS` were *also* pre-padded, so `adjust_menu` counted the filler
+a second time. DESK32 takes the padding out of `MENUS` (and puts the separators
+back to the resource's one-character `"-"`, which `build_menu` fills anyway),
+and widens `adjust_menu`'s measurement from "action entries" to "everything
+that is not a separator" — `copy_menu_items`'s own rule, which includes the six
+accessory placeholders `"1"`…`"6"` (one character each, never decisive, but the
+rule is the source's).
+
+Widths now, from the source rather than from a picture: `17+3+1 = 21`,
+`18+3+1 = 22`, `19+3+1 = 23`, `26+3+1 = 30`. The Desk box's
+`MIN_DESKMENU_WIDTH - 1` seed (19) does not bind.
+
+### Measured
+
+`measurement-2026-09-25-desk-rest/` §2 — the same action list on two kernels
+that differ in `kernel/src/desk/menu.rs` alone. `[probe] box N abs (x,y) WxH`,
+8 px per cell: Desk 176 → 168 px (22 → 21), File 184 → 176 px (23 → 22), View
+184 px (23) and Options 240 px (30) unchanged. Screendumps of all four
+drop-downs in both builds.

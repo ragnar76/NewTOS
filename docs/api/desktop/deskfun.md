@@ -582,3 +582,56 @@ EmuTOS' `rebuild_window` ist vier Schritte lang: `pn_active`, `desk_verify`,
 dritte fehlte. `dir.rs` `rebuild_window` ruft ihn jetzt nach dem Neueinlesen
 und vor dem Neuzeichnen — Einzelheiten und die Messung in
 [`deskwin.md`](deskwin.md#win_srtallwin_bdallwin_shwallwin_iselwin_snamewin_sinfo--deskwinc768-906).
+
+### `rebuild_window` verifiziert das Fenster (DESK31, 2026-09-25)
+
+Der zweite der vier Schritte fehlte auch noch: `desk_verify(pwin->w_id, TRUE)`
+(`deskfun.c:140`). Wir hatten dort nur `win_bldview`, also das Neuaufbauen des
+Rasters — nicht aber das, was `desk_verify` sonst noch tut
+(`desksupp.c:175-199`): `g_cwin`, `g_croot` und `g_wlastsel` auf das eben
+aufgebaute Fenster setzen.
+
+Das ist beobachtbar, nicht nur ordentlich: `fun_rebld` baut **jedes** Fenster
+mit passendem Pfad neu, und danach zeigen die drei Felder bei EmuTOS auf das
+zuletzt aufgebaute. Ein Menuebefehl direkt nach einem Wurf wirkt auf dieses
+Fenster, und `men_update` laeuft dessen Auswahl ab. Bei uns zeigten sie
+weiterhin auf das, was vor der Operation aktuell war.
+
+### `fun_mark_for_rebld` / `fun_rebld_marked` / `WN_REBUILD` (DESK31, 2026-09-25)
+
+Die dritte Art, ein Fenster neu aufzubauen, und die einzige mit Aufschub:
+`fun_mark_for_rebld(path)` (`:119-129`) setzt `WN_REBUILD` an jedem offenen
+Fenster mit diesem Pfad, `fun_rebld_marked()` (`:150-167`) baut die markierten
+auf und loescht das Bit wieder.
+
+Der Aufschub ist der Zweck. Der einzige EmuTOS-Aufrufer von
+`fun_mark_for_rebld` ist `do_info` (`desksupp.c:1336`), und `do_info` laeuft in
+einer Schleife ueber die Auswahl eines Fensters (`deskmain.c:674-680`). Ein
+Neuaufbau mitten in dieser Schleife wuerfe genau die `FNODE`s weg, die sie
+gerade abschreitet; `fun_rebld_marked` steht darum **hinter** der Schleife.
+
+`WN_REBUILD` (`deskwin.h:51`) gab es bei uns schon als Konstante, ohne Leser.
+
+**Benannte Abweichung beim Pfadvergleich.** EmuTOS vergleicht mit
+`strcmp(pwin->w_pnode.p_spec, path)`, also gegen die volle Suchmaske
+`C:\SUB\*.*`. `do_info`s zwei Aufrufer geben nicht dieselbe Form: der
+Fensterfall gibt `pw->w_pnode.p_spec` (trifft), der Verknuepfungsfall
+`pathname` nach `del_fname`, also `C:\SUB\` (trifft **nie**). Bei EmuTOS
+wird nach dem Umbenennen aus einer Verknuepfung heraus darum kein Fenster
+markiert. NewTOS vergleicht seit `fun_rebld` gegen das **Verzeichnis**
+(`window_dir_of`) — die Form, in der jeder unserer Aufrufer seinen Pfad hat —,
+und damit trifft auch der Verknuepfungsfall. Der Unterschied ist sichtbar: ein
+Fenster, das dieses Verzeichnis zeigt, wird bei uns nach so einem Umbenennen
+aufgefrischt und bei EmuTOS nicht. Die Vergleichsform ist aelter als DESK31
+und liegt in `fun_rebld`; sie hier anders zu machen als dort waere die
+groessere Abweichung gewesen.
+
+### `illegal_op_msg` und `wants_to_delete_files` (DESK31, 2026-09-25)
+
+Beide betreffen Aufrufstellen in dieser Datei; die Begruendung steht bei der
+Funktion selbst in [`deskdir.md`](deskdir.md). Kurz:
+`deskfun.c:794`, `:1075-1076` und `:1286` sagen jetzt „Illegal operation!"
+statt „Operation not allowed."; und der Papierkorb-Zweig von `fun_desk2desk`
+stellt EmuTOS' Dreifachfrage `STRMVDEL` statt einer NewTOS-Ja/Nein-Frage,
+samt dem `MN_SELECTED`-Umweg der Antwort *Icons*, der jetzt — wie bei EmuTOS —
+in `wants_to_delete_files` selbst liegt und nicht bei seinen Aufrufern.

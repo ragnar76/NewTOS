@@ -503,9 +503,30 @@ fn item_exists(path: &str, is_folder: bool) -> bool {
 
 /// `illegal_op_msg` (`deskdir.c:220-224`) — the `STILLOP` alert
 /// (`desk_rsc.c:2497`), and the `FALSE` it returns: the caller stops.
+///
+/// Every place EmuTOS writes `illegal_op_msg()` calls this, so the wording is
+/// stated once: `deskdir.c:742,791` (the two file-engine sites),
+/// `deskfun.c:794` ([`fun_op`]'s failed count pass), `:1076`
+/// ([`fun_file2desk`]'s "can't happen" default) and `:1286`
+/// ([`fun_desk2desk`]'s same-disk drop) — DESK31 item 5.
 fn illegal_op_msg() -> More {
     fun_alert(1, b"Illegal operation!");
     More::Stop
+}
+
+/// `fun_alert(1, STILLDIR)` (`deskdir.c:1001`) — the `STILLDIR` alert
+/// (`desk_rsc.c:2496`), which unlike [`illegal_op_msg`] offers a choice:
+///
+/// ```text
+/// [1][Illegal directory operation!][ Skip | Abort ]
+/// ```
+///
+/// `true` for *Skip* (EmuTOS's `== 1`), `false` for *Abort*. Built here rather
+/// than through [`fun_alert`], which wraps its text in a fixed single-button
+/// alert — the same reason [`delete_disk_alert`] builds its own string.
+fn illegal_dir_op_alert() -> bool {
+    let text = b"[1][Illegal directory operation!][ Skip | Abort ]\0";
+    super::form_alert(1, text.as_ptr()) == 1
 }
 
 /// `do_namecon` (`deskdir.c:93-130`) — put the `ADCPALER` name-conflict dialog
@@ -915,10 +936,65 @@ fn d_dofoldel(path: &str) -> bool {
     dos_rmdir(path) == E_OK
 }
 
-/// `d_dofileren`/`d_dofoldren` — rename one file/folder (EmuTOS
-/// `deskdir.c:785`/`:831`). Same-drive move via `Frename`.
-fn d_dofileren(old: &str, new: &str) -> bool {
-    dos_rename(old, new) == E_OK
+/// `d_dofileren` (EmuTOS `deskdir.c:785-825`) — rename one file/folder, i.e. a
+/// same-drive move via `Frename`, asking for another name when one of that name
+/// is already in the way.
+///
+/// ```c
+/// while(1) {
+///     ret = dos_rename(oldname,newname);
+///     if (ret == 0) return TRUE;                      /* rename ok */
+///     if (!item_exists(newname,is_folder))
+///         return illegal_op_msg();                    /* nothing in the way */
+///     ret = get_new_name(newname);
+///     if (ret <= 0) break;                            /* Stop or Skip */
+///     if ((ret == 1) && (strcmp(oldname,newname) != 0))
+///         dos_delete(newname);
+/// }
+/// return FALSE;
+/// ```
+///
+/// The `dos_delete` is the point (DESK31): `Frename` cannot overwrite, so the
+/// one case where the user really means "replace that file" — they were offered
+/// a new name, left it as it was, and the source is a *different* path — is
+/// served by deleting the destination first. An unchanged name for
+/// `oldname == newname` (dropping a file back where it came from) is **not**
+/// a replace and nothing is deleted; the loop simply retries the same failing
+/// rename until the user picks *Stop* or *Skip*.
+///
+/// `new` is `&mut` because [`get_new_name`] edits it in place, exactly as
+/// EmuTOS edits `newname`. `d_dofoldren` (`:831-841`) is this function with
+/// `is_folder = true`: it only exists in EmuTOS to strip the `\*.*` its caller
+/// carries, and NewTOS's walker never puts wildcards on those paths.
+///
+/// Returns EmuTOS's `TRUE`/`FALSE` — and `FALSE` there means "stop the whole
+/// operation", for a real failure (the alert is already up) as much as for a
+/// user *Skip* (see [`dir_op`]).
+fn d_dofileren(old: &str, new: &mut String, is_folder: bool, ctx: &mut OpCtx) -> bool {
+    loop {
+        if dos_rename(old, new) == E_OK {
+            return true; // rename ok
+        }
+        // "either it already exists or there is insufficient space"
+        if !item_exists(new, is_folder) {
+            illegal_op_msg();
+            return false;
+        }
+        // "we cannot rename because the file/folder exists, so prompt for a
+        // new name"
+        match get_new_name(new, ctx) {
+            NewName::Stop | NewName::Skip => break, // `if (ret <= 0) break;`
+            // `ret == 1` — the user confirmed the name unchanged: delete the
+            // item in the way so the rename can succeed.
+            NewName::Unchanged => {
+                if old != new.as_str() {
+                    dos_delete(new);
+                }
+            }
+            NewName::Changed => {} // `ret == 2` — retry with the new name
+        }
+    }
+    false
 }
 
 /// `d_dofcopy` — copy one file (EmuTOS `deskdir.c:389-519`): open the source,
@@ -988,6 +1064,32 @@ fn d_dofcopy(
         return More::Failed;
     }
     More::Ok
+}
+
+/// `count_ffs` (EmuTOS `deskinf.c:476-481`) — count the files, folders and
+/// total size under `path`, which is a directory path ending in `\`:
+///
+/// ```c
+/// G.g_nfiles = G.g_ndirs = G.g_size = 0L;
+/// return d_doop(0, OP_COUNT, path, path, 0L, NULL);
+/// ```
+///
+/// `None` when the walk did not complete (EmuTOS's `!more`, which both callers
+/// turn into "give up and show nothing"). The running totals live in
+/// [`DirCount`] here rather than in three globals, so there is nothing to reset
+/// first.
+///
+/// EmuTOS's `d_doop` takes the search spec `…\*.*`; NewTOS's walker appends its
+/// own wildcard ([`scan_folder`]), so a directory path is what it wants.
+pub(super) fn count_ffs(path: &str) -> Option<DirCount> {
+    let mut count = DirCount::default();
+    let mut ctx = OpCtx::quiet();
+    let mut empty: [u8; 0] = [];
+    if d_doop(0, Op::Count, path, path, &mut count, &mut empty, &mut ctx) {
+        Some(count)
+    } else {
+        None
+    }
 }
 
 // ── the recursive subtree walker ────────────────────────────────────────────
@@ -1204,8 +1306,18 @@ pub fn dir_op(
                 Op::Copy | Op::Move | Op::Rename => {
                     let dst = dst_dir.unwrap_or("");
                     let mut dst_sub = join_leaf(dst, name);
+                    // "if (source_is_parent(srcpth,dstpth)) { if (fun_alert(1,
+                    //  STILLDIR) == 1) continue; break; }" (`deskdir.c:998-
+                    // 1004`) — copying a folder into itself is the one case
+                    // that gets its own *Skip | Abort* question, because the
+                    // walk would otherwise never terminate. Neither answer is
+                    // a failure: *Abort* is the user's, so `ok` stays as it is
+                    // and only the walk ends (DESK31).
                     if source_is_parent(&src_sub, &dst_sub) {
-                        ok = false; // STILLDIR — skip (deskdir.c:999)
+                        if illegal_dir_op_alert() {
+                            continue; // Skip this folder
+                        }
+                        ctx.stop = true; // Abort — `break`
                         continue;
                     }
                     // `more = output_path(op,srcpth,dstpth);` (`deskdir.c:1002`)
@@ -1232,12 +1344,21 @@ pub fn dir_op(
                     let more = if op == Op::Rename {
                         // `d_dofoldren(srcpth,dstpth)` (`deskdir.c:1015`), which
                         // strips the trailing wildcards and renames (`:829-841`).
-                        d_dofileren(&src_sub, &dst_sub)
+                        d_dofileren(&src_sub, &mut dst_sub, true, &mut ctx)
                     } else {
                         d_doop(0, op, &as_dir(&src_sub), &as_dir(&dst_sub), count, buf, &mut ctx)
                     };
                     if !more {
-                        ok = false;
+                        // `if (!more) break;` (`deskdir.c:1017`). A false from
+                        // `d_dofileren` is either an alert the user has already
+                        // seen or a *Stop*/*Skip* they pressed, so it ends the
+                        // walk without adding a second complaint (DESK31);
+                        // `d_doop` keeps its own `ok` bookkeeping.
+                        if op == Op::Rename {
+                            ctx.stop = true;
+                        } else {
+                            ok = false;
+                        }
                     }
                 }
             }
@@ -1260,8 +1381,12 @@ pub fn dir_op(
                 let dst = dst_dir.unwrap_or("");
                 let mut dst_file = join_leaf(dst, name);
                 if op == Op::Rename {
-                    if !d_dofileren(&src_file, &dst_file) {
-                        ok = false;
+                    // `more = d_dofileren(srcpth,dstpth,FALSE);` (`deskdir.c:
+                    // 1046`), and `more == FALSE` ends the `for (pf = …; pf &&
+                    // more; …)` walk (`:983`) — see the folder branch above
+                    // for why that is not an `ok = false`.
+                    if !d_dofileren(&src_file, &mut dst_file, false, &mut ctx) {
+                        ctx.stop = true;
                     }
                 } else {
                     match d_dofcopy(&src_file, &mut dst_file, e.time, e.date, e.attr(), buf, &mut ctx) {
@@ -1322,7 +1447,9 @@ pub fn fun_op(
     let mut count = DirCount::default();
     let mut empty: [u8; 0] = [];
     if !dir_op(Op::Count, icontype, src_dir, entries, None, &mut count, &mut empty) {
-        fun_alert(1, b"Operation not allowed.");
+        // `return illegal_op_msg();` (`deskfun.c:794`) — the shared `STILLOP`
+        // wording, not a second one of its own (DESK31).
+        illegal_op_msg();
         return false;
     }
     if count.files == 0 && count.dirs == 0 {
@@ -1378,64 +1505,65 @@ pub fn fun_del() -> bool {
 /// `MN_SELECTED`) to the Options→Remove-desktop-icon handler instead of
 /// touching the filesystem.
 fn fun_del_desktop() -> bool {
-    match wants_to_delete_files() {
-        DeleteChoice::Cancel => false,
-        DeleteChoice::Remove => {
-            // Redirect to Options → Remove desktop icon (deskfun.c:1443). The
-            // icon-removal handler is deskins (Task #14); the redirect itself is
-            // implemented here so the wiring is faithful the moment it lands.
-            super::main::fun_msg_mn_selected(
-                super::menu::Title::Options,
-                super::menu::Item::RemoveIcon,
-            );
-            false
+    // `if (wants_to_delete_files() == FALSE) return;` (`deskfun.c:1388-1389`)
+    // — the *Icons* answer has already sent the `MN_SELECTED` redirect from
+    // inside the alert helper, so there is nothing left to do here.
+    if !wants_to_delete_files() {
+        return false;
+    }
+    // Desktop-icon delete: for each selected icon, the path `fun_del`'s switch
+    // builds (`deskfun.c:1393-1403`) — the drive root with `*.*` for a disk,
+    // `a_pappl` for a shortcut — and then `delete_ffd(path, pa->a_type)` on it
+    // (`:1405`). The icon's own type goes down with it (`:1365`), so `dir_op`
+    // raises `STDELDIS` once per **drive** on top of the
+    // `wants_to_delete_files` answer above (EmuTOS asks both) and stays silent
+    // for a shortcut.
+    let mut any = false;
+    for src in desktop_selected_sources() {
+        if src.entries.is_empty() {
+            continue;
         }
-        DeleteChoice::Delete => {
-            // Desktop-icon delete: for each selected icon, the path
-            // `fun_del`'s switch builds (`deskfun.c:1393-1403`) — the drive
-            // root with `*.*` for a disk, `a_pappl` for a shortcut — and then
-            // `delete_ffd(path, pa->a_type)` on it (`:1405`). The icon's own
-            // type goes down with it (`:1365`), so `dir_op` raises `STDELDIS`
-            // once per **drive** on top of the `wants_to_delete_files` answer
-            // above (EmuTOS asks both) and stays silent for a shortcut.
-            let mut any = false;
-            for src in desktop_selected_sources() {
-                if src.entries.is_empty() {
-                    continue;
-                }
-                let icontype = (src.atype == AType::Disk).then_some(AType::Disk);
-                if fun_op(Op::Delete, icontype, &src.dir, &src.entries, None) {
-                    any = true;
-                }
-            }
-            if any {
-                super::redraw::redraw_desktop();
-            }
-            any
+        let icontype = (src.atype == AType::Disk).then_some(AType::Disk);
+        if fun_op(Op::Delete, icontype, &src.dir, &src.entries, None) {
+            any = true;
         }
     }
-}
-
-/// `wants_to_delete_files` — the three-choice delete alert (EmuTOS
-/// `deskfun.c:1433`, `STRMVDEL`): Cancel / Remove (icon only) / Delete (files).
-/// `form_alert` returns the 1-based button, left→right.
-fn wants_to_delete_files() -> DeleteChoice {
-    let text = b"[2][Remove the desktop icon,|or delete its files?][ Cancel | Remove | Delete ]\0";
-    match super::form_alert(1, text.as_ptr()) {
-        2 => DeleteChoice::Remove,
-        3 => DeleteChoice::Delete,
-        _ => DeleteChoice::Cancel,
+    if any {
+        super::redraw::redraw_desktop();
     }
+    any
 }
 
-/// The answer to [`wants_to_delete_files`].
-enum DeleteChoice {
-    /// Do nothing.
-    Cancel,
-    /// Remove the desktop icon only (redirect to Options→Remove).
-    Remove,
-    /// Delete the underlying files.
-    Delete,
+/// `wants_to_delete_files` (EmuTOS `deskfun.c:1433-1446`) — the three-choice
+/// question every "delete what a desktop icon stands for" path asks first:
+///
+/// ```c
+/// ret = fun_alert(1,STRMVDEL);
+/// if (ret == 2) return TRUE;                              /* Delete */
+/// if (ret == 1) fun_msg(MN_SELECTED,OPTNMENU,RICNITEM,0,0,0);
+/// return FALSE;                                           /* Remove or Cancel */
+/// ```
+///
+/// `STRMVDEL` is `[2][Do you want to remove icons|or delete files?][Icons|
+/// Files|Cancel]` (`desk_rsc.c:2523-2524`): icon 2 (the question mark), three
+/// buttons in the order *Icons*, *Files*, *Cancel*, and `fun_alert`'s default
+/// button 1 — DESK31 corrected all three against the earlier NewTOS wording,
+/// which read *Cancel | Remove | Delete*.
+///
+/// The `MN_SELECTED` redirect lives **inside** this function in EmuTOS, so
+/// every caller gets it: choosing *Icons* opens Options→Remove desktop icon
+/// instead of touching the filesystem. Returns `true` only for *Files*.
+fn wants_to_delete_files() -> bool {
+    let text = b"[2][Do you want to remove icons|or delete files?][Icons|Files|Cancel]\0";
+    let ret = super::form_alert(1, text.as_ptr());
+    if ret == 2 {
+        return true; // Files — delete them
+    }
+    if ret == 1 {
+        // Icons — `fun_msg(MN_SELECTED, OPTNMENU, RICNITEM, …)` (`:1443`).
+        super::main::fun_msg_mn_selected(super::menu::Title::Options, super::menu::Item::RemoveIcon);
+    }
+    false // Remove or Cancel
 }
 
 /// Create directory `path` (`Dcreate`); `true` on success. The single-level
@@ -1527,15 +1655,10 @@ fn delete_disk_alert(letter: u8) -> bool {
     super::form_alert(2, text.as_ptr()) == 1
 }
 
-/// A yes/no confirmation alert; `true` if the user chose the affirmative
-/// (second) button.
-fn fun_confirm(msg: &[u8]) -> bool {
-    let mut text = Vec::with_capacity(msg.len() + 24);
-    text.extend_from_slice(b"[2][");
-    text.extend_from_slice(msg);
-    text.extend_from_slice(b"][ Cancel | OK ]\0");
-    super::form_alert(2, text.as_ptr()) == 2
-}
+// `fun_confirm` — a generic NewTOS yes/no alert — lived here until DESK31.
+// Its last caller was the trash branch of `fun_desk2desk`, where EmuTOS asks
+// `wants_to_delete_files()` (`deskfun.c:1049`); there is no EmuTOS function it
+// corresponds to, so it went with that call rather than staying unused.
 
 // ── the drag-and-drop dispatch tree (deskfun.c fun_drag) ────────────────────
 
@@ -1672,6 +1795,58 @@ pub(super) fn i_find_atype(wh: i16, obj: i16) -> Option<(AType, bool)> {
         return Some((atype, isapp));
     }
     i_find_win(wh, obj).map(|(_, pa)| (pa.atype, pa.isapp))
+}
+
+/// What [`file_exists`] reads out of the DTA — the 23 bytes `do_info` copies
+/// into its stack `FNODE` (`memcpy(&pf->f_attr, &dta->d_attrib, 23)`,
+/// `desksupp.c:1326`): the attribute byte, time, date, size and the 14-byte
+/// name.
+pub(super) struct FileInfo {
+    /// `d_fname` — the item's own name as the file system spells it.
+    pub name: String,
+    /// `d_attrib`.
+    pub attr: u8,
+    /// `d_time`.
+    pub time: u16,
+    /// `d_date`.
+    pub date: u16,
+    /// `d_length`.
+    pub size: u32,
+}
+
+/// `file_exists(path, NULL)` (EmuTOS `desksupp.c:354-373`) — probe one fully
+/// qualified item and hand back its directory entry:
+///
+/// ```c
+/// dta = dos_gdta(); dos_sdta(&G.g_wdta);
+/// rc = dos_sfirst(fullname, ALLFILES);
+/// dos_sdta(dta);
+/// return rc ? NULL : &G.g_wdta;
+/// ```
+///
+/// EmuTOS saves and restores the caller's DTA around the probe because its
+/// directory walker has a live `Fsfirst`/`Fsnext` search running; NewTOS's
+/// [`scan_folder`] drains its search before returning, so there is none to
+/// disturb — the same reasoning [`item_exists`] records. The busy cursor is
+/// EmuTOS's ("in case we're on a slow drive").
+pub(super) fn file_exists(path: &str) -> Option<FileInfo> {
+    super::pro::desk_busy_on();
+    let mut dta = [0u8; 44];
+    dos_sdta(dta.as_mut_ptr());
+    let rc = dos_sfirst(path, ALLFILES);
+    super::pro::desk_busy_off();
+    if rc != E_OK {
+        return None;
+    }
+    let name = &dta[30..44];
+    let n = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+    Some(FileInfo {
+        name: String::from(core::str::from_utf8(&name[..n]).unwrap_or("")),
+        attr: dta[21],
+        time: u16::from_le_bytes([dta[22], dta[23]]),
+        date: u16::from_le_bytes([dta[24], dta[25]]),
+        size: u32::from_le_bytes([dta[26], dta[27], dta[28], dta[29]]),
+    })
 }
 
 /// `item_exists` for a desktop shortcut: does the file or folder its
@@ -1931,7 +2106,8 @@ fn fun_file2desk(
         }
         // The printer is Task #14 (`fun_print`).
         _ => {
-            fun_alert(1, b"Operation not allowed.");
+            // `default: illegal_op_msg();` (`deskfun.c:1075-1076`).
+            illegal_op_msg();
             false
         }
     }
@@ -2030,25 +2206,32 @@ fn fun_desk2desk(dobj: i16, keystate: u16) {
                 fun_op(drag_op(keystate), icontype, &src_root, &entries, Some(&dst))
             }
             AType::Trash => {
-                // **Not** gated on *Confirm deletes*: the source is a desktop
-                // icon, i.e. a whole drive, and EmuTOS puts its
-                // `wants_to_delete_files` guard in front of that case
-                // unconditionally (`deskfun.c:1049-1051`) — the preference only
-                // reaches the per-item question `d_doop` asks afterwards. This
-                // alert stands in for that guard, so it stays unconditional.
+                // `case AT_ISTRSH: if (icontype_src >= 0) if
+                //  (wants_to_delete_files() == FALSE) return FALSE;`
+                // (`deskfun.c:1047-1053`). The source here is a desktop icon by
+                // construction — `fun_file2any` passes `icontype =
+                // an_src->a_type` (`:1179-1180`), which is never negative — so
+                // the guard always runs, for a disk as much as for a shortcut,
+                // and it is **not** gated on *Confirm deletes*: that preference
+                // only reaches the `ADCPYDEL` box `dir_op` puts up afterwards.
                 //
-                // The icon type *is* handed on (`fun_file2any`:
-                // `icontype = an_src->a_type`, `deskfun.c:1179-1180`), so
-                // `dir_op` raises `STDELDIS` for the drive behind it, as EmuTOS
-                // does after its own guard.
-                if fun_confirm(b"Delete the selected item(s)?") {
+                // DESK31: this was a NewTOS `fun_confirm` stand-in. The real
+                // question has three answers, and its *Icons* answer redirects
+                // to Options→Remove desktop icon instead of deleting anything.
+                //
+                // The icon type *is* handed on, so `dir_op` raises `STDELDIS`
+                // for the drive behind it, as EmuTOS does after its own guard.
+                if wants_to_delete_files() {
                     fun_op(Op::Delete, icontype, &src_root, &entries, None)
                 } else {
                     false
                 }
             }
             _ => {
-                fun_alert(1, b"Operation not allowed.");
+                // The drop target is neither a disk nor the trash — EmuTOS
+                // reaches `illegal_op_msg()` for it too (`deskfun.c:1286` for
+                // a disk onto itself, `:1076` for anything else).
+                illegal_op_msg();
                 false
             }
         };
@@ -2080,33 +2263,85 @@ fn fun_desk2desk(dobj: i16, keystate: u16) {
 /// stale `" … in N selected items."`. It is the sixth `win_sinfo` call site,
 /// and the second of the two that pass `FALSE` (the other being `do_diropen`,
 /// `desksupp.c:450`).
+///
+/// The `desk_verify(pwin->w_id, **TRUE**)` on line `:140` is the second point
+/// (DESK31): the rebuild does not only re-flow the item grid, it also makes the
+/// rebuilt window the **current** one — `g_cwin` / `g_croot` / `g_wlastsel`
+/// (`desksupp.c:175-199`). That is what a menu action taken straight after a
+/// drop then applies to, and what `men_update` walks for the selection. Until
+/// DESK31 this called `win_bldview` alone, so the three fields kept pointing at
+/// whatever was current before the operation.
 pub fn rebuild_window(handle: i16) {
     if handle == DESKWH {
         return;
     }
     let work = super::wind_get_work(handle);
-    let scanned = global::with(|g| {
+    // `pn_active(&pwin->w_pnode, TRUE)` (`deskfun.c:139`) — re-read the
+    // directory and re-apply the mask/sort.
+    global::with(|g| {
         let sort = g.sort;
-        let slot = g.win_slot(handle)?;
+        let Some(slot) = g.win_slot(handle) else {
+            return;
+        };
         let spec = g.windows.slots[slot].w_pnode.p_spec.clone();
-        {
-            let pn = &mut g.windows.slots[slot].w_pnode;
-            pn.pn_open(&spec);
-            pn.pn_active(true);
-            pn.pn_sort(sort);
-        }
-        Some(slot)
-    })
-    .flatten();
-    if let Some(slot) = scanned {
-        if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
-            super::main::set_sliders_pub(handle, sliders);
-        }
+        let pn = &mut g.windows.slots[slot].w_pnode;
+        pn.pn_open(&spec);
+        pn.pn_active(true);
+        pn.pn_sort(sort);
+    });
+    // `desk_verify(pwin->w_id, TRUE)` (`deskfun.c:140`): current window + a
+    // rebuilt view, whose sliders go back to the AES.
+    if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
+        super::main::set_sliders_pub(handle, sliders);
     }
     // `win_sinfo(pwin, FALSE)` (`deskfun.c:141`), after the re-scan and before
     // the redraw.
     super::main::win_sinfo(handle, false);
     super::redraw::redraw_desktop();
+}
+
+/// `fun_mark_for_rebld` (EmuTOS `deskfun.c:119-129`) — flag every open window
+/// showing `path` as needing a rebuild ([`WN_REBUILD`]), without doing it yet.
+///
+/// The one EmuTOS caller is `do_info` (`desksupp.c:1336`): a *Show info* that
+/// renamed the item must not rebuild the window from under the `SHOWITEM` loop,
+/// which is still walking that window's selection — so the work is deferred to
+/// [`fun_rebld_marked`] once the loop is done.
+pub fn fun_mark_for_rebld(path: &str) {
+    global::with(|g| {
+        for w in &mut g.windows.slots {
+            // `if ((pwin->w_id) && (strcmp(pwin->w_pnode.p_spec, path)==0))`
+            // — matched on the directory, the form every NewTOS caller has
+            // (see [`fun_rebld`]).
+            if w.w_id != DESKWH && window_dir_of(&w.w_pnode.p_spec).as_deref() == Some(path) {
+                w.w_flags |= super::win::WN_REBUILD;
+            }
+        }
+    });
+}
+
+/// `fun_rebld_marked` (EmuTOS `deskfun.c:150-167`) — rebuild every window
+/// [`fun_mark_for_rebld`] flagged and clear the flag again.
+pub fn fun_rebld_marked() {
+    let handles = global::with(|g| {
+        let mut v: Vec<i16> = Vec::new();
+        for w in &g.windows.slots {
+            if w.w_id != DESKWH && w.w_flags & super::win::WN_REBUILD != 0 {
+                v.push(w.w_id);
+            }
+        }
+        v
+    })
+    .unwrap_or_default();
+    for h in handles {
+        rebuild_window(h);
+        // `pwin->w_flags &= ~WN_REBUILD;` (`:162`).
+        global::with(|g| {
+            if let Some(slot) = g.win_slot(h) {
+                g.windows.slots[slot].w_flags &= !super::win::WN_REBUILD;
+            }
+        });
+    }
 }
 
 /// `fun_rebld` — rebuild every open window whose directory equals `path`
@@ -2373,14 +2608,21 @@ pub fn selftest() {
         scan_folder(base).iter().any(|e| e.name_str() == "B.TXT" && e.size == body.len() as u32),
     );
 
-    // 4. Rename (same-drive move) — A.TXT -> R.TXT.
-    let renamed = d_dofileren(base_join("A.TXT").as_str(), base_join("R.TXT").as_str());
+    // 4. Rename (same-drive move) — A.TXT -> R.TXT. Nothing is in the way, so
+    // `d_dofileren`'s conflict loop (DESK31) exits on the first `Frename`.
+    let mut ren_dst = base_join("R.TXT");
+    let renamed = d_dofileren(base_join("A.TXT").as_str(), &mut ren_dst, false, &mut ctx);
     check("Rename A.TXT -> R.TXT", renamed);
     check(
         "  rescan: R.TXT present, A.TXT gone",
         scan_folder(base).iter().any(|e| e.name_str() == "R.TXT")
             && !scan_folder(base).iter().any(|e| e.name_str() == "A.TXT"),
     );
+
+    // `d_dofileren`'s two other exits cannot be driven from here: the failure
+    // arm ends in `illegal_op_msg()` and the conflict arm in `get_new_name`,
+    // and both block on a `form_alert` / `form_do` that needs a real click.
+    // They are exercised in the interactive QEMU run instead (DESK31).
 
     // 5. Recursive delete via dir_op(Delete) on a whole sub-folder.
     let _ = dos_mkdir("C:\\DESKT9\\SUB");

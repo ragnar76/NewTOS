@@ -1541,3 +1541,77 @@ shortcut (`init_conf_shortcuts` writes `' '`, `deskinf.c:1006-1010`) but an
 **underscore** right after *Clear all* (`inf_sset(tree, DCMNUKEY, "")`,
 `:1221`, so the template shows through). That asymmetry is the source's, not a
 defect.
+
+## `inf_disk` — the `ADDISKIN` box (DESK38, 2026-09-25)
+
+`inf_disk(dr_id)` (`deskinf.c:650-693`) did not exist in NewTOS; it is the
+first of `do_info`'s four arms (see
+[`desksupp-redraw.md`](desksupp-redraw.md)) and also what `SHOWITEM` falls back
+to when nothing is selected (`deskmain.c:683-684`).
+
+```c
+if (!valid_drive(dr_id)) return 1;
+desk_busy_on();
+srcpth = "X:\\*.*"; more = count_ffs(srcpth);
+if (!more) { desk_busy_off(); return 1; }
+dos_space(dr_id - 'A' + 1, &total, &avail);
+desk_busy_off();
+if (!dos_label(dr_id - 'A' + 1, label)) label[0] = '\0';
+inf_sset(tree, DIDRIVE, drive);
+set_tedinfo_name(tree, DIVOLUME, label);
+inf_fifosz(tree, DINFILES, DINFOLDS, DIUSED);
+inf_numset(tree, DIAVAIL, avail);
+inf_show(tree, ROOT);
+return inf_what(tree, DIOK);
+```
+
+Three details of the source that are easy to lose, and that the implementation
+keeps:
+
+* **`total` is read and never shown.** The dialog has a field for `avail`
+  only; the *used* figure is `inf_fifosz`'s `G.g_size`, i.e. the bytes the
+  **walk** added up — not `total - avail`. On a drive with cluster slack,
+  `used + available < total`, and that is TOS's arithmetic.
+* **`inf_fifosz` decrements the folder count** — "reproduce TOS's folder count
+  in this situation" (`:448`). `count_ffs` → `d_doop` counts the directory it
+  was started on as well (its post-order `dirs++`), and the drive root is not
+  a folder the user put there.
+* **A missing drive is not silent.** `valid_drive` (`desksupp.c:1810-1826`)
+  puts up `STNODRIV` and `inf_disk` then returns `1`, so a `SHOWITEM` loop
+  carries on to the next icon.
+
+`dos_space` and `dos_label` are new in `desk::dosbind`: `Dfree` with EmuTOS's
+`buf[3]*buf[2]` arithmetic (done in 64 bits here — a 500 MB FAT16 partition
+already overflows EmuTOS's signed 32-bit byte count), and `Fsfirst` on
+`"X:\\*.*"` with attribute `0x08`, which matches volume labels exclusively.
+`valid_drive` is new in `desk::main`; `check_alt_letter_key` keeps its own
+inline drive-map test, because EmuTOS filters impossible letters out *before*
+calling `valid_drive` for exactly that path (`deskmain.c:1147-1152`).
+
+NewTOS builds the box as plain `G_STRING` lines (prompt and value in one
+string) rather than `ADDISKIN`'s six `G_FBOXTEXT` template fields — the same
+choice `inf_file_folder`'s three value lines already make, and for the same
+reason: a `G_STRING` has no interior a 3D background could fill, so those lines
+carry no 3D flag. `DIOK`/`DICNCL` are `FL3DACT`, the ROOT is `FL3DBAK` +
+`OUTLINED`, as in the resource.
+
+### `inf_file_folder` returns three answers (DESK38, 2026-09-25)
+
+It returned `Option<String>`, in which *Cancel* and "OK, nothing changed" were
+the same `None`. `do_info`'s contract needs them apart: its `0` stops the
+`SHOWITEM` loop. The return is now `InfFF::{Cancel, Continue, Renamed(name)}`,
+EmuTOS's `0`/`1`/`-1` (`:487-491`).
+
+**Named deviations, both older than DESK38 and unchanged by it.** EmuTOS
+renames inside `inf_file_folder`, in a `while(1)` that re-shows the whole
+dialog after a `STRENAME` *Retry* (`:551,629-634`), and it writes back a
+changed read-only attribute (`:591-609`). NewTOS hands the new name back, the
+caller renames once, and the attribute row is read-only. The observable
+difference is the missing *Retry*, not the rename.
+
+### Measured
+
+`measurement-2026-09-25-desk-rest/` §3 — `DISK INFORMATION` for `C:`: label
+`NEWTOS` (through the `FA_VOL` `Fsfirst`), 11 folders, 40 files, 1 597 248
+bytes used, 65 241 088 available. Pi checklist item 69, where the four real
+partitions make the `count_ffs` walk long enough to be worth watching.

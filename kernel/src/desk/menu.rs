@@ -304,7 +304,19 @@ struct Def {
 }
 
 /// The four desktop menus (`_rebuild-plan.md` §8 item set). All labels are
-/// NUL-terminated; separator dash-runs match their menu's item width.
+/// NUL-terminated and carry the text EmuTOS's `ADMENU` resource carries — the
+/// leading two blanks for the check column, and **nothing after the text**
+/// (`desk_rsc.c:294-483`).
+///
+/// **DESK32.** These strings used to be pre-padded to a common width per menu.
+/// That is the wrong place for the padding: EmuTOS's own strings are unpadded
+/// and `copy_menu_items` pads the **RAM copy** it makes of them to `widest + 1
+/// + SHORTCUT_SIZE` (`deskmain.c:1781,1799-1805`) — which [`build_menu`] has
+/// always done here too. `adjust_menu` measured our padded source strings and
+/// so added the filler to `maxlen` a second time, making *Desk* 22 cells wide
+/// instead of 21 and *File* 23 instead of 22. A separator is `"-"` for the same
+/// reason: `copy_menu_items` skips it and `adjust_menu` fills it to the
+/// finished width (`:1621-1624`), which is what `build_menu` does.
 const MENUS: [Def; 4] = [
     // The *Desk* drop-down carries the EmuTOS `ADMENU` reservation: the About
     // item, a separator, and **six blank placeholders** (`desk_rsc.c:345-407`,
@@ -319,51 +331,51 @@ const MENUS: [Def; 4] = [
         title: Title::Desk,
         label: b" Desk \0",
         entries: &[
-            Act(Item::About, b"  Desktop info... \0"),
-            Sep(b"------------------\0"),
-            Acc(b"  1               \0"),
-            Acc(b"  2               \0"),
-            Acc(b"  3               \0"),
-            Acc(b"  4               \0"),
-            Acc(b"  5               \0"),
-            Acc(b"  6               \0"),
+            Act(Item::About, b"  Desktop info...\0"),
+            Sep(b"-\0"),
+            Acc(b"1\0"),
+            Acc(b"2\0"),
+            Acc(b"3\0"),
+            Acc(b"4\0"),
+            Acc(b"5\0"),
+            Acc(b"6\0"),
         ],
     },
     Def {
         title: Title::File,
         label: b" File \0",
         entries: &[
-            Act(Item::Open, b"  Open             \0"),
-            Act(Item::InfoRename, b"  Info/Rename...   \0"),
-            Act(Item::Search, b"  Search...        \0"),
-            Sep(b"-------------------\0"),
-            Act(Item::NewFolder, b"  New folder...    \0"),
-            Act(Item::CloseFolder, b"  Close folder     \0"),
-            Act(Item::CloseWindow, b"  Close top window \0"),
-            Act(Item::Cycle, b"  Cycle windows    \0"),
-            Act(Item::SelectAll, b"  Select all items \0"),
-            Act(Item::SetMask, b"  Set file mask... \0"),
-            Sep(b"-------------------\0"),
-            Act(Item::Delete, b"  Delete...        \0"),
-            Sep(b"-------------------\0"),
-            Act(Item::ExecEmuCon, b"  Execute EmuCON   \0"),
-            Act(Item::Shutdown, b"  Shutdown         \0"),
+            Act(Item::Open, b"  Open\0"),
+            Act(Item::InfoRename, b"  Info/Rename...\0"),
+            Act(Item::Search, b"  Search...\0"),
+            Sep(b"-\0"),
+            Act(Item::NewFolder, b"  New folder...\0"),
+            Act(Item::CloseFolder, b"  Close folder\0"),
+            Act(Item::CloseWindow, b"  Close top window\0"),
+            Act(Item::Cycle, b"  Cycle windows\0"),
+            Act(Item::SelectAll, b"  Select all items\0"),
+            Act(Item::SetMask, b"  Set file mask...\0"),
+            Sep(b"-\0"),
+            Act(Item::Delete, b"  Delete...\0"),
+            Sep(b"-\0"),
+            Act(Item::ExecEmuCon, b"  Execute EmuCON\0"),
+            Act(Item::Shutdown, b"  Shutdown\0"),
         ],
     },
     Def {
         title: Title::View,
         label: b" View \0",
         entries: &[
-            Act(Item::ShowIcons, b"  Show as icons    \0"),
-            Act(Item::ShowText, b"  Show as text     \0"),
-            Sep(b"-------------------\0"),
-            Act(Item::SortName, b"  Sort by name     \0"),
-            Act(Item::SortType, b"  Sort by type     \0"),
-            Act(Item::SortSize, b"  Sort by size     \0"),
-            Act(Item::SortDate, b"  Sort by date     \0"),
-            Act(Item::NoSort, b"  No sort          \0"),
-            Sep(b"-------------------\0"),
-            Act(Item::SizeToFit, b"  Size to fit      \0"),
+            Act(Item::ShowIcons, b"  Show as icons\0"),
+            Act(Item::ShowText, b"  Show as text\0"),
+            Sep(b"-\0"),
+            Act(Item::SortName, b"  Sort by name\0"),
+            Act(Item::SortType, b"  Sort by type\0"),
+            Act(Item::SortSize, b"  Sort by size\0"),
+            Act(Item::SortDate, b"  Sort by date\0"),
+            Act(Item::NoSort, b"  No sort\0"),
+            Sep(b"-\0"),
+            Act(Item::SizeToFit, b"  Size to fit\0"),
             // `SEP_VW2` (45) + `BACKGRND` (46) close the View box: object 46 is
             // the **last child** of the View drop-down (`desk_rsc.c:446,
             // :473-483`), and the Options box does not start until `IICNITEM`
@@ -371,7 +383,7 @@ const MENUS: [Def; 4] = [
             // head of Options; `shortcut_mapping[]` never had to move, it has
             // carried `BACKGRND` in the View group all along
             // (`deskmain.c:211-217`).
-            Sep(b"-------------------\0"),
+            Sep(b"-\0"),
             Act(Item::SetBackground, b"  Set background...\0"),
         ],
     },
@@ -379,17 +391,17 @@ const MENUS: [Def; 4] = [
         title: Title::Options,
         label: b" Options \0",
         entries: &[
-            Act(Item::InstallIcon, b"  Install icon...         \0"),
-            Act(Item::InstallApp, b"  Install application...  \0"),
-            Act(Item::InstallDevices, b"  Install devices         \0"),
-            Act(Item::RemoveIcon, b"  Remove desktop icon     \0"),
-            Sep(b"--------------------------\0"),
-            Act(Item::SetPrefs, b"  Set preferences...      \0"),
+            Act(Item::InstallIcon, b"  Install icon...\0"),
+            Act(Item::InstallApp, b"  Install application...\0"),
+            Act(Item::InstallDevices, b"  Install devices\0"),
+            Act(Item::RemoveIcon, b"  Remove desktop icon\0"),
+            Sep(b"-\0"),
+            Act(Item::SetPrefs, b"  Set preferences...\0"),
             Act(Item::DeskConfig, b"  Desktop configuration...\0"),
-            Act(Item::ChangeRez, b"  Change resolution...    \0"),
-            Sep(b"--------------------------\0"),
-            Act(Item::ReadInf, b"  Read .INF file...       \0"),
-            Act(Item::SaveDesktop, b"  Save desktop...         \0"),
+            Act(Item::ChangeRez, b"  Change resolution...\0"),
+            Sep(b"-\0"),
+            Act(Item::ReadInf, b"  Read .INF file...\0"),
+            Act(Item::SaveDesktop, b"  Save desktop...\0"),
         ],
     },
 ];
@@ -532,18 +544,24 @@ fn adjust_menu(sw: i16) -> MenuGeom {
         // strings `adjust_menu` measures are the **RAM** ones
         // `copy_menu_items` has already padded to `widest + 1 + SHORTCUT_SIZE`
         // minus the NUL (`deskmain.c:1781,1799-1805`), so the shortcut reserve
-        // is part of `maxlen` — reproduced by the `+ SHORTCUT_SIZE` below.
+        // is part of `maxlen` — reproduced by the `+ SHORTCUT_SIZE` below, on
+        // the **unpadded** [`MENUS`] text, which is what `copy_menu_items`
+        // itself measures (`:1776-1780`). DESK32: while the source strings
+        // carried the padding as well, this counted it twice.
         // (2) A **separator** is not in that measurement: `copy_menu_items`
         // skips it (`:1773`, `if (*q != '-')`), so its `ob_spec` still points
         // at the resource's one-character `"-"` when `adjust_menu` runs and it
         // can never be the widest entry. [`build_menu`] then fills the
         // separator with `m` dashes, which is EmuTOS's
-        // `separator+MAXLEN_SEPARATOR-m` (`:1623`).
+        // `separator+MAXLEN_SEPARATOR-m` (`:1623`). Everything that is **not**
+        // a separator is measured, the six accessory placeholders included —
+        // they are one character long (`"1"`…`"6"`) and never decide a width,
+        // but the rule is the source's, not a shortcut.
         let seed = if ti == 0 { MIN_DESKMENU_WIDTH - 1 } else { 0 };
         let widest = def
             .entries
             .iter()
-            .filter(|e| matches!(e, Act(_, _)))
+            .filter(|e| !matches!(e, Sep(_)))
             .map(|e| label_len(entry_label(e)))
             .fold(0, i16::max);
         let m = seed.max(widest + SHORTCUT_SIZE) + 1;

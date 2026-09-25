@@ -1640,6 +1640,43 @@ pub(super) fn release_funkey(funkey: u8, except_app: &str) -> bool {
     false
 }
 
+/// What [`app_by_funkey`] hands back: the two `ANODE` fields `do_aopen` reads
+/// for an **installed** application launched from a function key.
+pub(super) struct FunkeyApp {
+    /// `pa->a_pappl` — the application's full path.
+    pub app_path: String,
+    /// `pa->a_flags & AF_APPDIR` ([`INF_AT_APPDIR`]) — "set the current
+    /// directory to the application's own", the choice `do_aopen` makes for an
+    /// installed application (`desksupp.c:884-890`).
+    pub app_dir: bool,
+}
+
+/// `process_funkey`'s `ANODE` search (EmuTOS `deskmain.c:1092-1094`):
+///
+/// ```c
+/// for (pa = G.g_ahead; pa; pa = pa->a_next)
+///     if (pa->a_funkey == funkey)
+///         break;
+/// ```
+///
+/// EmuTOS walks the single `G.g_ahead` list, which holds the desktop icons and
+/// the installed applications together; NewTOS splits the two ([`Anode`]'s
+/// doc-comment), and only the association half this module owns can carry
+/// `a_funkey` at all — a desktop node is created with `a_funkey = 0`
+/// (`deskins.c:243,825,1037,1385`) and nothing ever sets it, so walking the
+/// association list alone finds exactly the same node.
+pub(super) fn app_by_funkey(funkey: u8) -> Option<FunkeyApp> {
+    if funkey == 0 {
+        return None; // 0 is "no key", never a match
+    }
+    let guard = SESSION.lock();
+    let data = guard.as_ref()?;
+    data.anodes
+        .iter()
+        .find(|a| !a.is_desk && a.funkey == funkey)
+        .map(|a| FunkeyApp { app_path: a.pappl.clone(), app_dir: a.flags & INF_AT_APPDIR != 0 })
+}
+
 /// Whether `pappl` is a concrete file path rather than a wildcard/empty
 /// placeholder — EmuTOS `is_installed` (`deskins.c:71-80`).
 fn is_real_path(pappl: &str) -> bool {
@@ -2578,16 +2615,169 @@ const FA_SYSTEM: u8 = 0x04;
 const FA_SUBDIR: u8 = 0x10;
 const FA_ARCHIVE: u8 = 0x20;
 
+/// `inf_disk` (EmuTOS `deskinf.c:650-693`) — the `ADDISKIN` box: how much of a
+/// drive is in use, in folders, files and bytes.
+///
+/// ```c
+/// if (!valid_drive(dr_id)) return 1;
+/// desk_busy_on();
+/// srcpth = "X:\\*.*"; more = count_ffs(srcpth);
+/// if (!more) { desk_busy_off(); return 1; }
+/// dos_space(dr_id - 'A' + 1, &total, &avail);
+/// desk_busy_off();
+/// if (!dos_label(dr_id - 'A' + 1, label)) label[0] = '\0';
+/// inf_sset(tree, DIDRIVE, drive);
+/// set_tedinfo_name(tree, DIVOLUME, label);
+/// inf_fifosz(tree, DINFILES, DINFOLDS, DIUSED);
+/// inf_numset(tree, DIAVAIL, avail);
+/// inf_show(tree, ROOT);
+/// return inf_what(tree, DIOK);
+/// ```
+///
+/// Returns EmuTOS's `1` (continue) / `0` (cancel), which is what
+/// [`super::main`]'s `SHOWITEM` loop tests: *Cancel* stops it walking the rest
+/// of the selection.
+///
+/// Three details of the source that are easy to lose:
+///
+/// * **`total` is read and not shown.** `dos_space` yields both figures, the
+///   dialog has a field only for `avail`, and the used figure comes from
+///   `inf_fifosz`'s `G.g_size` — the bytes the *walk* added up, not
+///   `total - avail`. A drive whose clusters are partly wasted on slack
+///   therefore shows `used + available < total`, and that is TOS's arithmetic,
+///   not a rounding error here.
+/// * **`inf_fifosz` decrements the folder count** — "reproduce TOS's folder
+///   count in this situation" (`deskinf.c:448`). The walk counts the directory
+///   it was started on as well ([`super::dir::count_ffs`] → `d_doop`'s
+///   post-order `dirs++`), and the drive root is not a folder the user put
+///   there.
+/// * **A missing drive is not silent.** `valid_drive` puts up `STNODRIV`
+///   (`desksupp.c:1822`) and `inf_disk` then returns `1`, so the loop carries
+///   on to the next icon.
+pub(super) fn inf_disk(dr_id: u8) -> i16 {
+    if !super::main::valid_drive(dr_id) {
+        return 1;
+    }
+
+    super::pro::desk_busy_on();
+    // `srcpth = "X:\\*.*"` — NewTOS's walker takes the directory and appends
+    // its own wildcard.
+    let mut root = String::new();
+    root.push(dr_id as char);
+    root.push_str(":\\");
+    let count = super::dir::count_ffs(&root);
+    let Some(count) = count else {
+        super::pro::desk_busy_off();
+        return 1; // `if (!more) { desk_busy_off(); return 1; }`
+    };
+    let drv = (dr_id - b'A' + 1) as i16; // `dos_space`/`dos_label` are 1-based
+    let (_total, avail) = super::dosbind::dos_space(drv);
+    super::pro::desk_busy_off();
+    let label = super::dosbind::dos_label(drv).unwrap_or_default();
+
+    static TITLE: &[u8] = b" DISK INFORMATION \0";
+    static OK: &[u8] = b" OK \0";
+    static CANCEL: &[u8] = b" Cancel \0";
+
+    // The six fields, in `ADDISKIN`'s order (`desk_rsc.c:715-755`) and with its
+    // `desk_rs_tedinfo[6..11]` prompts (`:66-93`).
+    let mut drivebuf = [0u8; 48];
+    {
+        let mut p = 0usize;
+        push_str(&mut drivebuf, &mut p, b"Drive identifier:  ");
+        if p < drivebuf.len() - 1 {
+            drivebuf[p] = dr_id;
+            p += 1;
+        }
+        drivebuf[p.min(drivebuf.len() - 1)] = 0;
+    }
+    let mut labelbuf = [0u8; 48];
+    {
+        let mut p = 0usize;
+        push_str(&mut labelbuf, &mut p, b"Disk label:  ");
+        push_str(&mut labelbuf, &mut p, label.as_bytes());
+        labelbuf[p.min(labelbuf.len() - 1)] = 0;
+    }
+    let mut foldsbuf = [0u8; 48];
+    {
+        let mut p = 0usize;
+        push_str(&mut foldsbuf, &mut p, b"Number of folders:  ");
+        // `G.g_ndirs--` (`deskinf.c:448`).
+        push_dec(&mut foldsbuf, &mut p, count.dirs.saturating_sub(1) as u64);
+        foldsbuf[p.min(foldsbuf.len() - 1)] = 0;
+    }
+    let mut filesbuf = [0u8; 48];
+    {
+        let mut p = 0usize;
+        push_str(&mut filesbuf, &mut p, b"Number of files:  ");
+        push_dec(&mut filesbuf, &mut p, count.files as u64);
+        filesbuf[p.min(filesbuf.len() - 1)] = 0;
+    }
+    let mut usedbuf = [0u8; 48];
+    {
+        let mut p = 0usize;
+        push_str(&mut usedbuf, &mut p, b"Bytes used:  ");
+        push_dec(&mut usedbuf, &mut p, count.size);
+        usedbuf[p.min(usedbuf.len() - 1)] = 0;
+    }
+    let mut availbuf = [0u8; 48];
+    {
+        let mut p = 0usize;
+        push_str(&mut availbuf, &mut p, b"Bytes available:  ");
+        push_dec(&mut availbuf, &mut p, avail);
+        availbuf[p.min(availbuf.len() - 1)] = 0;
+    }
+
+    let (dw, dh) = (340i16, 230i16);
+    let ob_ok = 8i16;
+    // 3D roles follow `ADDISKIN` object for object (`desk_rsc.c:711-768`): the
+    // ROOT is `FL3DBAK` + `OUTLINED`, `DIOK`/`DICNCL` are `FL3DBAK | FL3DIND`
+    // = [`FL3DACT`], `DITITLE` carries none. The six value fields are
+    // `G_FBOXTEXT` + `FL3DBAK` there; NewTOS builds them as plain `G_STRING`
+    // lines (prompt and value in one string, no template), and a `G_STRING`
+    // has no interior a 3D background could fill — so they stay flag-free,
+    // exactly as [`inf_file_folder`]'s three value lines do.
+    let mut tree = [
+        mk_root(BOX_SPEC, dw, dh, 9),
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, 24, 14, dw - 48, 16, 2, -1, -1),
+        mk(G_STRING, 0, drivebuf.as_ptr() as u64, 24, 46, dw - 48, 16, 3, -1, -1),
+        mk(G_STRING, 0, labelbuf.as_ptr() as u64, 24, 68, dw - 48, 16, 4, -1, -1),
+        mk(G_STRING, 0, foldsbuf.as_ptr() as u64, 24, 90, dw - 48, 16, 5, -1, -1),
+        mk(G_STRING, 0, filesbuf.as_ptr() as u64, 24, 112, dw - 48, 16, 6, -1, -1),
+        mk(G_STRING, 0, usedbuf.as_ptr() as u64, 24, 134, dw - 48, 16, 7, -1, -1),
+        mk(G_STRING, 0, availbuf.as_ptr() as u64, 24, 156, dw - 48, 16, 8, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, OK.as_ptr() as u64, 50, 186, 90, 28, 9, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 200, 186, 90, 28, 0, -1, -1),
+    ];
+
+    // `inf_show(tree, ROOT); return inf_what(tree, DIOK);` — `inf_show`
+    // discards `form_do`'s exit object and `inf_what` reads the buttons'
+    // SELECTED state instead, so the tree has to outlive the call.
+    inf_show(tree.as_mut_ptr() as u64, ROOT);
+    inf_what(&mut tree, ob_ok as usize)
+}
+
 /// The Show-Info / rename dialog for a single selected item (`inf_file_folder`,
 /// `deskinf.c:493-639`): show size / date / time / attributes and offer an
-/// editable name. Returns the new name on OK when it changed (an empty name is
-/// rejected), otherwise [`None`]. The screen underneath is restored by
-/// `end_dialog`'s `form_dial(FMD_FINISH)` inside [`inf_show`].
+/// editable name. The screen underneath is restored by `end_dialog`'s
+/// `form_dial(FMD_FINISH)` inside [`inf_show`].
 ///
 /// `size`/`date`/`time`/`attr` are the selected [`super::model::FNode`]'s own
 /// fields (DOS-packed date/time, FAT attribute byte). The date/time text layout
 /// is a display choice, not TOS contract (`deskinf.md`: "no program reads this").
-pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr: u8) -> Option<String> {
+///
+/// Returns EmuTOS's three answers ([`InfFF`]). DESK38 needed the third one:
+/// until then *Cancel* and "OK, nothing changed" were the same [`None`], and
+/// `do_info`'s caller cannot tell the `SHOWITEM` loop to stop without it
+/// (`deskmain.c:676-679`).
+///
+/// **Named deviation.** EmuTOS's `inf_file_folder` performs the `dos_rename`
+/// itself, retrying through the `STRENAME` alert until it succeeds or the user
+/// cancels (`deskinf.c:600-635`), and it also writes back changed *attributes*
+/// (`:591-599`). NewTOS hands the new name back and lets `do_info` rename;
+/// the attribute row here is read-only. Both predate DESK38 and are unchanged
+/// by it.
+pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr: u8) -> InfFF {
     let is_dir = attr & FA_SUBDIR != 0;
 
     // Editable name buffer — `form_do` edits this in place through the TEDINFO.
@@ -2702,17 +2892,30 @@ pub(super) fn inf_file_folder(name: &str, size: u32, date: u16, time: u16, attr:
     // `inf_show(tree, ROOT)` (`deskinf.c:396-402`).
     let clicked = inf_show(tree.as_ptr() as u64, ROOT);
     if clicked != ob_ok {
-        return None;
+        return InfFF::Cancel; // `ret = inf_what(tree, FFSKIP); if (ret >= 0) return ret;`
     }
     let m = namebuf.iter().position(|&b| b == 0).unwrap_or(namebuf.len());
     if m == 0 {
-        return None; // empty name rejected
+        return InfFF::Continue; // empty name rejected — nothing to rename to
     }
-    let new = core::str::from_utf8(&namebuf[..m]).ok()?;
+    let Ok(new) = core::str::from_utf8(&namebuf[..m]) else {
+        return InfFF::Continue;
+    };
     if new == name {
-        return None; // no change
+        return InfFF::Continue; // `strcmp(poname,pnname) == 0` — no rename
     }
-    Some(String::from(new))
+    InfFF::Renamed(String::from(new))
+}
+
+/// `inf_file_folder`'s three return values (`deskinf.c:487-491`).
+pub(super) enum InfFF {
+    /// `0` — cancel: the caller stops walking the selection.
+    Cancel,
+    /// `1` — continue; nothing was changed.
+    Continue,
+    /// `-1` — continue, and the item is to be renamed to this name; the
+    /// window showing it needs rebuilding.
+    Renamed(String),
 }
 
 // ── Preferences dialog (`inf_pref`, `deskinf.c:721-818`) ────────────────────

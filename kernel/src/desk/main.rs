@@ -1314,10 +1314,11 @@ fn hndl_kbd(key: i16) -> bool {
         kbd_arrow(action);
         return false;
     }
-    // 4. Function key F1-F20 — launch its installed application (none until
-    //    Task #9 → unhandled, falls through).
+    // 4. Function key F1-F20 — launch its installed application. EmuTOS
+    //    `return`s the answer straight out (`deskmain.c:1224-1226`, `if (done
+    //    >= 0) return done;`), so — like CR/ESC/arrows above it — this path
+    //    does **not** run `men_update` (DESK33).
     if let Some(done) = check_function_key(key) {
-        menu::men_update();
         return done;
     }
     // 5. Alt+letter — open that drive.
@@ -1377,22 +1378,64 @@ fn kbd_arrow(action: i16) {
     }
 }
 
-/// `check_function_key` (EmuTOS `deskmain.c:1117`) — F1-F20 launch the
+/// `check_function_key` (EmuTOS `deskmain.c:1117-1128`) — F1-F20 launch the
 /// installed application bound to that function key.
 ///
-/// **Named gap, and it is now a real one.** Until DESK20 no application could
-/// carry a key at all, so falling through was the only possible answer. DESK20
-/// built the assignment (`APFUNKEY` in [`super::insapp`], `a_funkey` in the
-/// `NEWDESK.INF` model), so a bound key can exist — what is still missing is
-/// `process_funkey` (`deskmain.c:1087-1106`): find the `ANODE` with that
-/// `a_funkey` and `do_aopen(pa, TRUE, -1, pathname, pfname, NULL)`. That is a
-/// separate work item, not part of DESK20's "make the key assignable".
+/// ```c
+/// if ((thechar >= FUNKEY_01) && (thechar <= FUNKEY_10))
+///     funkey = HIBYTE(thechar-FUNKEY_01) + 1;
+/// else if ((thechar >= FUNKEY_11) && (thechar <= FUNKEY_20))
+///     funkey = HIBYTE(thechar-FUNKEY_11) + 11;
+/// else return -1;
+/// return process_funkey(funkey);
+/// ```
 ///
-/// Returns `None` (unhandled) for both a non-function key and a function key
-/// whose launch is that missing step.
+/// EmuTOS's three answers are `-1` (not a function key, or no application
+/// holds it), `0` (a non-graphics program was launched) and `1` (a graphics
+/// one) — here [`None`] for the `-1` and `Some(exit_desktop)` otherwise.
 fn check_function_key(key: i16) -> Option<bool> {
-    funkey_number(key)?; // must be F1-F20, else fall through
-    None // `process_funkey` is not built yet — see the note above
+    let funkey = funkey_number(key)?; // must be F1-F20, else fall through
+    process_funkey(funkey)
+}
+
+/// `process_funkey` (EmuTOS `deskmain.c:1087-1106`) — find the installed
+/// application that holds function key `funkey` and open it.
+///
+/// ```c
+/// for (pa = G.g_ahead; pa; pa = pa->a_next)
+///     if (pa->a_funkey == funkey) break;
+/// if (pa) {
+///     pfname = filename_start(pa->a_pappl);
+///     strlcpy(pathname,pa->a_pappl,pfname-pa->a_pappl+1);
+///     return do_aopen(pa,TRUE,-1,pathname,pfname,NULL);
+/// }
+/// return -1;
+/// ```
+///
+/// The `ANODE` search is [`super::inf::app_by_funkey`]. `pathname` is
+/// `a_pappl` truncated at the file name, i.e. the directory including its
+/// trailing separator, and `pfname` the file name — the two halves
+/// [`do_aopen_drop`] rejoins.
+///
+/// `do_aopen` is reached with `isapp = TRUE` and `tail = NULL`, so neither the
+/// `installed_datafile` arm (`desksupp.c:924`, ruled out by `isapp`) nor a
+/// document tail applies; what is left is the directory step, the rejoin and
+/// the launch. The one EmuTOS branch this cannot reach is `opn_appl`'s
+/// parameter prompt for a `.TTP`/`.GTP` (`:978-985`), which NewTOS does not
+/// have for `.NTP` either — a `.NTP` launched from a key runs with the same
+/// empty tail a double click gives it ([`launch_native`], Stage A). No new gap:
+/// the same named one, now reachable from a second place.
+///
+/// `curr` is `-1` in this call, which in EmuTOS only suppresses `pro_run`'s
+/// `do_wopen` re-open of the desktop window (`deskpro.c:61-62`); NewTOS launches
+/// nested and repaints on return, so there is nothing to suppress.
+fn process_funkey(funkey: u16) -> Option<bool> {
+    let pa = super::inf::app_by_funkey(funkey as u8)?;
+    let pname = filename_of(&pa.app_path);
+    let dir = &pa.app_path[..pa.app_path.rfind('\\').map_or(0, |i| i + 1)];
+    // `do_aopen(pa, TRUE, -1, pathname, pfname, NULL)` — an **installed**
+    // application, so the directory comes from its own `AF_APPDIR`/`a_pappl`.
+    Some(do_aopen_drop(true, &pa.app_path, pa.app_dir, dir, &pname, ""))
 }
 
 /// The function-key number 1..20 for `key`, or `None` if it is not a function
@@ -1442,6 +1485,41 @@ fn check_alt_letter_key(key: i16) -> bool {
             return true;
         }
     }
+    false
+}
+
+/// `valid_drive` (EmuTOS `desksupp.c:1810-1826`) — is drive letter `drive`
+/// present?
+///
+/// ```c
+/// if ((drv >= 0) && (drv < BLKDEVNUM))
+///     if (dos_sdrv(dos_gdrv()) & (1L << drv))
+///         return TRUE;
+/// fun_alert_merge(1, STNODRIV, drvstr);
+/// return FALSE;
+/// ```
+///
+/// The alert is part of the function, not of its callers: a drive icon that no
+/// longer has a drive behind it says so (`[1][Drive X: does not exist.]
+/// [ Cancel ]`, `desk_rsc.c:2541`) instead of failing silently.
+///
+/// [`check_alt_letter_key`] keeps its own inline drive-map test: EmuTOS filters
+/// out impossible letters *before* calling `valid_drive`, "otherwise
+/// valid_drive() will issue an (ugly) error message" (`deskmain.c:1147-1152`),
+/// and that filtering is a separate piece of work from DESK38.
+pub(super) fn valid_drive(drive: u8) -> bool {
+    /// `BLKDEVNUM` (`bdosdefs.h`) — the GEMDOS drive-map width.
+    const BLKDEVNUM: u32 = 16;
+    let drv = drive.wrapping_sub(b'A') as u32;
+    if drv < BLKDEVNUM && dos_sdrv(dos_gdrv()) & (1 << drv) != 0 {
+        return true;
+    }
+    // `fun_alert_merge(1, STNODRIV, drvstr)` — the `%s` is the bare letter.
+    let mut text = alloc::vec::Vec::with_capacity(48);
+    text.extend_from_slice(b"[1][Drive ");
+    text.push(drive);
+    text.extend_from_slice(b": does not exist.][ Cancel ]\0");
+    super::form_alert(1, text.as_ptr());
     false
 }
 
@@ -1514,7 +1592,7 @@ fn do_filemenu(item: Item) -> bool {
         Item::SetMask => do_set_mask(),
         Item::Search => do_search(),
         Item::NewFolder => do_new_folder(),
-        Item::InfoRename => do_info_rename(),
+        Item::InfoRename => do_showitem(),
         Item::ExecEmuCon => done = do_execcli(),
         _ => {} // remaining File items have no live handler yet
     }
@@ -1856,44 +1934,228 @@ fn do_new_folder() {
     }
 }
 
-/// File → Info/Rename (EmuTOS `do_filemenu` `SHOWITEM` → `inf_file_folder`,
-/// `deskinf.c:493-639`): show the single selected item's size/date/attributes
-/// in a dialog with an editable name; on OK with a changed name, `Frename` it.
-/// The dialog itself lives in [`super::inf`].
-fn do_info_rename() {
-    let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
-    if cwin == DESKWH {
+/// `case SHOWITEM:` of `do_filemenu` (EmuTOS `deskmain.c:674-689`) — File →
+/// Info/Rename.
+///
+/// ```c
+/// if (curr) {
+///     for ( ; curr; curr = win_isel(G.g_screen, G.g_croot, curr))
+///         if (!do_info(curr)) break;
+///     fun_rebld_marked();     /* rebuild any changed windows */
+///     break;
+/// }
+/// /* no highlighted icons: display info for the disk of the top window */
+/// if (pw) inf_disk(pw->w_pnode.p_spec[0]);
+/// ```
+///
+/// Two things DESK38 restored here. The **loop**: a *Show info* on three
+/// selected items puts three boxes up in turn, and *Cancel* on one of them ends
+/// the series (that is what `do_info`'s `0` means). And the **no-selection
+/// case**: with nothing highlighted, the top window's drive gets the
+/// [`super::inf::inf_disk`] box, "just like TOS" (`:683-684`).
+///
+/// [`dir::fun_rebld_marked`] runs **after** the loop, not inside `do_info`,
+/// because rebuilding a window throws away the very `FNODE`s the loop is
+/// walking (`deskfun.c:119-129` and its caller here).
+fn do_showitem() {
+    // `curr = win_isel(G.g_screen, G.g_croot, 0);` (`deskmain.c:668`).
+    let mut curr = first_selected();
+    if curr != 0 {
+        while curr != 0 {
+            if do_info(curr) == 0 {
+                break; // Cancel — stop walking the selection
+            }
+            curr = global::with(|g| g.win_isel(g.g_croot, curr)).unwrap_or(0);
+        }
+        dir::fun_rebld_marked();
         return;
     }
-    // The single selected window item and its display fields.
+    // `if (pw) inf_disk(pw->w_pnode.p_spec[0]);` — `win_ontop()`, i.e. the
+    // topped **window**; the desktop is not one, so nothing happens there.
+    let pw = wind_get_top();
+    if pw != DESKWH {
+        let letter = global::with(|g| {
+            let slot = g.win_slot(pw)?;
+            g.windows.slots[slot].w_pnode.p_spec.as_bytes().first().copied()
+        })
+        .flatten();
+        if let Some(letter) = letter {
+            super::inf::inf_disk(letter);
+        }
+    }
+}
+
+/// `do_info` (EmuTOS `desksupp.c:1288-1354`) — the *Show info* box for one
+/// icon, chosen by its type:
+///
+/// ```c
+/// pa = i_find(G.g_cwin, curr, &pf, NULL);
+/// if (!pa) return ret;
+/// switch(pa->a_type) {
+/// case AT_ISFOLD: case AT_ISFILE:  … inf_file_folder(pathptr, pf) …  break;
+/// case AT_ISDISK: drive = LOBYTE(get_iconblk_ptr(G.g_screen,curr)->ib_char);
+///                 ret = inf_disk(drive); break;
+/// case AT_ISTRSH: trash_alert(pa); break;
+/// case AT_ISPRNT: printer_alert(pa); break;
+/// }
+/// return ret;
+/// ```
+///
+/// Returns EmuTOS's `1` (continue) / `0` (cancel) / `-1` (continue, and a
+/// window was marked for rebuild). Only `0` stops [`do_showitem`]'s loop.
+///
+/// **DESK38.** The predecessor of this function returned immediately for
+/// `G.g_cwin == DESKWH`, so *Show info* did not exist on the desktop surface at
+/// all — not for a drive, not for the trash, not for the printer, and since
+/// DESK30 not for a shortcut either. Every one of those four is a case of this
+/// switch.
+fn do_info(curr: i16) -> i16 {
+    let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
+    // `pa = i_find(G.g_cwin, curr, &pf, NULL)` — the governing `ANODE`'s type
+    // is all this switch reads off it.
+    let Some((atype, _isapp)) = dir::i_find_atype(cwin, curr) else {
+        return 1; // `if (!pa) return ret;`
+    };
+    match atype {
+        AType::Folder | AType::File => do_info_file_folder(cwin, curr),
+        AType::Disk => {
+            // `drive = LOBYTE(get_iconblk_ptr(G.g_screen, curr)->ib_char)` —
+            // the drive letter drawn into the icon's bitmap.
+            let letter = global::with(|g| {
+                g.g_screeninfo.get(curr as usize).map(|i| (i.block.ib_char & 0xFF) as u8)
+            })
+            .flatten()
+            .unwrap_or(0);
+            super::inf::inf_disk(letter)
+        }
+        AType::Trash => {
+            trash_alert(curr);
+            1
+        }
+        AType::Printer => {
+            printer_alert(curr);
+            1
+        }
+        AType::None => 1,
+    }
+}
+
+/// `do_info`'s `AT_ISFOLD`/`AT_ISFILE` arm (`desksupp.c:1306-1339`).
+///
+/// Two sources for the same box. A **window** item takes its fields from the
+/// `FNODE` the object carries and its directory from the window's `p_spec`;
+/// a **desktop shortcut** (`pa->a_flags & AF_ISDESK`, which every
+/// [`global::Anode`] is) has no `FNODE`, so EmuTOS probes the file it points at
+/// — `file_exists(pa->a_pappl, NULL)` — and builds one on its stack from the
+/// DTA (`memcpy(&pf->f_attr, &dta->d_attrib, 23)`). A shortcut whose file is
+/// gone goes to `remove_locate_shortcut` instead of showing a box, exactly as
+/// opening it would (`:1320-1324`).
+fn do_info_file_folder(cwin: i16, curr: i16) -> i16 {
+    if cwin == DESKWH {
+        // `win_find(DESKWH)` is the desktop pseudo-window and never NULL
+        // (`deskwin.c:202-203`), so the `if (pw)` is always taken here.
+        let path = global::with(|g| g.app_afind_by_id(curr).map(|i| g.g_ahead[i].a_pappl.clone()))
+            .flatten();
+        let Some(path) = path else {
+            return 1;
+        };
+        let Some(info) = dir::file_exists(&path) else {
+            dir::remove_locate_shortcut(curr);
+            return 1; // `break` — `ret` is still 1
+        };
+        // `strcpy(pathname, pa->a_pappl); del_fname(pathname);`
+        let dir_path = String::from(&path[..path.rfind('\\').map_or(0, |i| i + 1)]);
+        return show_item_info(&dir_path, &info.name, info.size, info.date, info.time, info.attr);
+    }
+    // `pathptr = pw->w_pnode.p_spec; pf = G.g_screeninfo[item].fnptr;`
     let sel = global::with(|g| {
         let slot = g.win_slot(cwin)?;
-        let spec = g.windows.slots[slot].w_pnode.p_spec.clone();
+        let spec = &g.windows.slots[slot].w_pnode.p_spec;
         let dir = spec.rfind('\\').map(|i| String::from(&spec[..=i]))?;
-        let f = g.windows.slots[slot].w_pnode.p_flist.iter().find(|f| f.f_selected)?;
+        let fnode = g.g_screeninfo.get(curr as usize)?.fnode;
+        if fnode < 0 {
+            return None;
+        }
+        let f = g.windows.slots[slot].w_pnode.p_flist.get(fnode as usize)?;
         let name = core::str::from_utf8(f.name_bytes()).ok().map(String::from)?;
         Some((dir, name, f.f_size, f.f_date, f.f_time, f.f_attr))
     })
     .flatten();
-    let Some((dir_path, old, size, date, time, attr)) = sel else {
-        return;
+    let Some((dir_path, name, size, date, time, attr)) = sel else {
+        return 1;
     };
-    let renamed = super::inf::inf_file_folder(&old, size, date, time, attr);
-    let Some(new) = renamed else {
-        return; // cancelled / no change — `end_dialog` restored the screen
-    };
-    let new = new.trim();
-    if !new.is_empty() && new != old {
-        let mut oldp = dir_path.clone();
-        oldp.push_str(&old);
-        let mut newp = dir_path;
-        newp.push_str(new);
-        if dir::rename(&oldp, &newp) {
-            dir::rebuild_window(cwin);
-            return;
+    show_item_info(&dir_path, &name, size, date, time, attr)
+}
+
+/// `ret = inf_file_folder(pathptr, pf); if (ret < 0) fun_mark_for_rebld(pathptr);`
+/// (`desksupp.c:1335-1337`) — run the box and act on its three answers.
+///
+/// **Named deviation** (predates DESK38, unchanged by it): EmuTOS renames
+/// inside `inf_file_folder`, wrapped in a `while(1)` that re-shows the whole
+/// dialog after a `STRENAME` *Retry* (`deskinf.c:551,629-634`), and it also
+/// writes back a changed read-only attribute (`:591-609`). NewTOS's
+/// [`super::inf::inf_file_folder`] hands the new name back and the rename
+/// happens here, once, with NewTOS's own failure alert; the attribute row is
+/// read-only. The observable difference is the missing *Retry*, not the rename
+/// itself.
+fn show_item_info(dir_path: &str, name: &str, size: u32, date: u16, time: u16, attr: u8) -> i16 {
+    match super::inf::inf_file_folder(name, size, date, time, attr) {
+        super::inf::InfFF::Cancel => 0,
+        super::inf::InfFF::Continue => 1,
+        super::inf::InfFF::Renamed(new) => {
+            let mut oldp = String::from(dir_path);
+            oldp.push_str(name);
+            let mut newp = String::from(dir_path);
+            newp.push_str(&new);
+            if dir::rename(&oldp, &newp) {
+                // `if (ret < 0) fun_mark_for_rebld(pathptr);` — deferred, so
+                // the `SHOWITEM` loop keeps walking a live `FNODE` list.
+                dir::fun_mark_for_rebld(dir_path);
+                return -1;
+            }
+            dir::fun_alert(1, b"Could not rename the item.");
+            1
         }
-        dir::fun_alert(1, b"Could not rename the item.");
     }
+}
+
+/// `trash_alert` (EmuTOS `desksupp.c:1165-1172`) — `STTRINFO`
+/// (`desk_rsc.c:2517-2519`) with the trash icon's **current** name merged in,
+/// which is why it is read from the `ANODE` and not from a literal:
+///
+/// ```text
+/// [1][%s is used to|permanently delete files|or folders.][  OK  ]
+/// ```
+fn trash_alert(curr: i16) {
+    let name = anode_label(curr);
+    let mut text = alloc::vec::Vec::with_capacity(96);
+    text.extend_from_slice(b"[1][");
+    text.extend_from_slice(name.as_bytes());
+    text.extend_from_slice(b" is used to|permanently delete files|or folders.][  OK  ]\0");
+    super::form_alert(1, text.as_ptr());
+}
+
+/// `printer_alert` (EmuTOS `desksupp.c:1177-1183`, `CONF_WITH_PRINTER_ICON`) —
+/// `STPRINFO` (`desk_rsc.c:2520-2521`), the same shape:
+///
+/// ```text
+/// [1][%s|is a printer.][  OK  ]
+/// ```
+fn printer_alert(curr: i16) {
+    let name = anode_label(curr);
+    let mut text = alloc::vec::Vec::with_capacity(64);
+    text.extend_from_slice(b"[1][");
+    text.extend_from_slice(name.as_bytes());
+    text.extend_from_slice(b"|is a printer.][  OK  ]\0");
+    super::form_alert(1, text.as_ptr());
+}
+
+/// `pa->a_pappl` of the desktop icon `curr` — its label for a drive, the trash
+/// and the printer (`deskapp.h:88-90`, usage (1)).
+fn anode_label(curr: i16) -> String {
+    global::with(|g| g.app_afind_by_id(curr).map(|i| g.g_ahead[i].a_pappl.clone()))
+        .flatten()
+        .unwrap_or_default()
 }
 
 /// `fun_mask` (EmuTOS `deskfun.c:639`, `CONF_WITH_FILEMASK`) — File → Set file

@@ -231,4 +231,74 @@ individually re-derived):
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00 / this extraction task.)
+### `do_info` — *Show info*, one box per icon type (DESK38, 2026-09-25)
+
+`main::do_info_rename` returned immediately for `G.g_cwin == DESKWH`, so *Show
+info* did not exist on the desktop surface **at all** — not for a drive, not
+for the trash, not for the printer, and since DESK30 not for a shortcut
+either. EmuTOS's `do_info` (`desksupp.c:1288-1354`) is a switch on the icon's
+`a_type`, and every one of those four is an arm of it.
+
+```c
+pa = i_find(G.g_cwin, curr, &pf, NULL);
+if (!pa) return ret;
+switch(pa->a_type) {
+case AT_ISFOLD: case AT_ISFILE:  ... inf_file_folder(pathptr, pf) ...  break;
+case AT_ISDISK: drive = LOBYTE(get_iconblk_ptr(G.g_screen,curr)->ib_char);
+                ret = inf_disk(drive); break;
+case AT_ISTRSH: trash_alert(pa); break;
+case AT_ISPRNT: printer_alert(pa); break;
+}
+return ret;
+```
+
+* **`AT_ISFOLD`/`AT_ISFILE`** has two sources for the same box. A **window**
+  item takes its fields from the `FNODE` the object carries and its directory
+  from the window's `p_spec`; a **desktop shortcut** (`AF_ISDESK`, which every
+  `global::Anode` implicitly is) has no `FNODE`, so EmuTOS probes the file it
+  points at — `file_exists(pa->a_pappl, NULL)` — and builds one on its stack
+  from the DTA (`memcpy(&pf->f_attr, &dta->d_attrib, 23)`, `:1326`). A
+  shortcut whose file is gone goes to `remove_locate_shortcut` instead of
+  showing a box, exactly as opening it would. `win_find(DESKWH)` is the desktop
+  pseudo-window and never NULL (`deskwin.c:202-203`), so the `if (pw)` guard is
+  always taken on the desktop.
+* **`AT_ISDISK`** is `inf_disk` — [`deskinf.md`](deskinf.md).
+* **`AT_ISTRSH` / `AT_ISPRNT`** are `trash_alert` (`:1165-1172`) and
+  `printer_alert` (`:1177-1183`), `STTRINFO` and `STPRINFO`
+  (`desk_rsc.c:2517-2521`) with the icon's **current** name merged in — read
+  from the `ANODE`, which is why renaming the trash changes its alert too.
+
+### The `SHOWITEM` loop and `fun_rebld_marked`
+
+`do_filemenu`'s `SHOWITEM` (`deskmain.c:674-689`) is a loop, and NewTOS only
+ever showed one box:
+
+```c
+if (curr) {
+    for ( ; curr; curr = win_isel(G.g_screen, G.g_croot, curr))
+        if (!do_info(curr)) break;
+    fun_rebld_marked();     /* rebuild any changed windows */
+    break;
+}
+if (pw) inf_disk(pw->w_pnode.p_spec[0]);
+```
+
+Three selected items give three boxes in turn, and *Cancel* on one ends the
+series — that is `do_info`'s `0`, which is why `inf_file_folder` had to grow a
+third return value ([`deskinf.md`](deskinf.md)). With **nothing** selected the
+top window's drive gets the disk box, "just like TOS" (`:683-684`).
+
+`fun_rebld_marked` runs after the loop, not inside `do_info`: rebuilding a
+window throws away the very `FNODE`s the loop is walking. That is the whole
+reason `fun_mark_for_rebld`/`WN_REBUILD` exist — see
+[`deskfun.md`](deskfun.md).
+
+**Named deviation** (older than DESK38): the rename itself happens in
+`do_info`'s helper rather than inside `inf_file_folder`, and there is no
+`STRENAME` *Retry* loop. Details in [`deskinf.md`](deskinf.md).
+
+### Measured
+
+`measurement-2026-09-25-desk-rest/` §3 — all four icon types on the desktop
+(`[d38] do_info(curr=…) cwin=0 atype=Disk|Trash|Printer|File`) plus the window
+item, with a screendump of each box. Pi checklist item 69.

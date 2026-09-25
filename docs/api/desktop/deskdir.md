@@ -686,3 +686,124 @@ Die Frage ist **nicht** an `g_cdelepref` gebunden: *Confirm deletes* aus
 nimmt den zaehlenden Kasten weg, nicht diese Frage. Gemessen in
 `measurement-2026-09-23-desk24-desk25-desk26` §3 — `Nein` laesst die Karte
 unveraendert, `Ja` leert sie.
+
+### `d_dofileren` fragt vor dem Ueberschreiben (DESK31, 2026-09-25)
+
+`d_dofileren` (`deskdir.c:785-825`) war bei uns ein blankes `dos_rename`. Es
+ist bei EmuTOS eine Schleife, und der Grund steht in seinem eigenen Kommentar:
+`Frename` kann nicht ueberschreiben, also braucht der eine Fall, in dem der
+Benutzer das wirklich meint, einen eigenen Weg.
+
+```c
+while(1) {
+    if (dos_rename(oldname,newname) == 0) return TRUE;
+    if (!item_exists(newname,is_folder)) return illegal_op_msg();
+    ret = get_new_name(newname);
+    if (ret <= 0) break;                                   /* Stop oder Skip */
+    if ((ret == 1) && (strcmp(oldname,newname) != 0))
+        dos_delete(newname);
+}
+return FALSE;
+```
+
+* `ret == 1` heisst „OK, Name unveraendert". Zusammen mit `oldname != newname`
+  ist das „ersetze die Datei, die im Weg steht": das Ziel wird geloescht und
+  der naechste Schleifendurchlauf benennt um.
+* `oldname == newname` — eine Datei dorthin zurueckgeschoben, wo sie herkommt
+  — loescht **nichts**; die Schleife wiederholt dieselbe fehlschlagende
+  Umbenennung, bis *Stop* oder *Skip* kommt.
+* `d_dofoldren` (`:831-841`) ist dieselbe Funktion mit `is_folder = TRUE`; es
+  existiert bei EmuTOS nur, um die `\*.*` abzuschneiden, die sein Aufrufer
+  mitfuehrt. Unser Laeufer fuehrt dort keine Platzhalter, also ist es ein
+  Argument statt einer Funktion.
+
+`FALSE` heisst bei EmuTOS „die ganze Operation anhalten", fuer den echten
+Fehler (der Alert steht schon) wie fuer ein *Skip* des Benutzers. Beide
+Aufrufstellen in `dir_op` setzen darum `ctx.stop` und **nicht** `ok = false`:
+ein `ok = false` wuerde am Ende die NewTOS-Zusammenfassung „Some items could
+not be processed." dazuschalten, und das ist weder ein Fehler noch EmuTOS'
+Verhalten.
+
+Gemessen in `measurement-2026-09-25-desk-rest` §4: *Stop* laesst beide Dateien
+stehen, *OK* auf unveraendertem Namen ersetzt die Zieldatei — beides aus dem
+Kartenabbild zurueckgelesen.
+
+### `STILLDIR` (DESK31, 2026-09-25)
+
+`dir_op`s `source_is_parent`-Zweig setzte nur `ok = false`. EmuTOS fragt dort
+(`:998-1004`):
+
+```c
+if (source_is_parent(srcpth,dstpth)) {
+    if (fun_alert(1, STILLDIR) == 1)    /* Skip */
+        continue;
+    break;                              /* Abort */
+}
+```
+
+`STILLDIR` ist `[1][Illegal directory operation!][ Skip | Abort ]`
+(`desk_rsc.c:2496`). Der Text hat zwei Knoepfe, also baut ihn
+`illegal_dir_op_alert` selbst, wie `delete_disk_alert` das fuer `STDELDIS`
+tut — `fun_alert` klammert seinen Text fest in einen Ein-Knopf-Alert.
+
+Keine der beiden Antworten ist ein Fehler: *Abort* ist die Entscheidung des
+Benutzers, `more` bleibt bei EmuTOS `TRUE`, und bei uns bleibt `ok`
+unveraendert; nur der Lauf endet (`ctx.stop`).
+
+**Wie man da ueberhaupt hinkommt.** Nicht, indem man einen Ordner auf sich
+selbst zieht: `act_bdown` bricht einen Wurf auf das gezogene Objekt eine Ebene
+hoeher ab (`if ((wh == dst_wh) && (*pdobj == sobj)) dst_wh = NIL;`,
+`deskact.c:666-670`). Quelle und Ziel muessen verschiedene Objekte sein — eine
+Verknuepfung des Ordners auf der Schreibtischflaeche tut es, oder ein zweites
+Fenster.
+
+### Der Wortlaut von `illegal_op_msg` (DESK31, 2026-09-25)
+
+`illegal_op_msg` ist EmuTOS' einzige Stelle fuer `STILLOP` („Illegal
+operation!", `desk_rsc.c:2497`). Drei NewTOS-Aufrufstellen sagten noch
+„Operation not allowed.": `fun_op`s fehlgeschlagener Zaehllauf
+(`deskfun.c:794`), `fun_file2desk`s `default`-Zweig (`:1075-1076`) und
+`fun_desk2desk`s „weder Platte noch Papierkorb" (`:1286`). Alle drei rufen
+jetzt `illegal_op_msg()`.
+
+### `wants_to_delete_files` statt `fun_confirm` (DESK31, 2026-09-25)
+
+Der Papierkorb-Zweig von `fun_desk2desk` hatte einen NewTOS-Vorbau
+(`fun_confirm`, „Delete the selected item(s)?", Cancel | OK). EmuTOS fragt
+dort `wants_to_delete_files()` (`deskfun.c:1047-1053`), und das ist eine
+andere Frage:
+
+```text
+[2][Do you want to remove icons|or delete files?][Icons|Files|Cancel]
+```
+
+(`STRMVDEL`, `desk_rsc.c:2523-2524`; `fun_alert(1, …)`, also Vorgabeknopf 1.)
+Drei Antworten statt zwei, und die mittlere ist die loeschende. Der
+`MN_SELECTED`-Umweg der Antwort *Icons* liegt bei EmuTOS **in** der Funktion
+(`:1443`), nicht bei ihren Aufrufern — so bekommt ihn jeder Aufrufer; bei uns
+lag er bis DESK31 in `fun_del_desktop`. `fun_confirm` hatte danach keinen
+Aufrufer mehr und keine EmuTOS-Entsprechung und ist weg.
+
+Die Bedingung `if (icontype_src >= 0)` ist in `fun_desk2desk` immer wahr:
+`fun_file2any` reicht `an_src->a_type` durch (`:1179-1180`), und das ist nie
+negativ. Die Frage kommt also fuer ein Laufwerk wie fuer eine Verknuepfung,
+und sie haengt **nicht** an *Confirm deletes* — diese Voreinstellung erreicht
+erst den `ADCPYDEL`-Kasten dahinter.
+
+### `count_ffs` (DESK38, 2026-09-25)
+
+`count_ffs` (`deskinf.c:476-481`) ist `d_doop(0, OP_COUNT, path, path, 0L,
+NULL)` mit vorherigem Nullsetzen der drei Globalen. Bei uns liegen die drei
+Zaehler in `DirCount`, es gibt also nichts zurueckzusetzen; `None` ist EmuTOS'
+`!more`. Sein einziger neuer Aufrufer ist `inf_disk`
+([deskinf.md](deskinf.md)); `inf_file_folder` zaehlt bei uns fuer einen Ordner
+weiterhin nicht mit — das ist aelter als DESK38 und dort vermerkt.
+
+### `file_exists` (DESK38, 2026-09-25)
+
+`file_exists(path, NULL)` (`desksupp.c:354-373`) ist die Sonde, mit der
+`do_info` die Felder einer Verknuepfung holt: `Fsfirst` mit `ALLFILES` und die
+23 Bytes `d_attrib` … `d_fname` aus der DTA. EmuTOS rettet die DTA des
+Aufrufers darum herum, weil sein Laeufer eine laufende Suche hat; unser
+`scan_folder` leert seine Suche, bevor es zurueckkehrt (dieselbe Begruendung
+wie bei `item_exists`).

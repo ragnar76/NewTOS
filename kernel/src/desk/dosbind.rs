@@ -77,6 +77,7 @@ const FCLOSE: u16 = 0x3E;
 const FREAD: u16 = 0x3F;
 const FWRITE: u16 = 0x40;
 const FDELETE: u16 = 0x41;
+const DFREE: u16 = 0x36;
 const FSFIRST: u16 = 0x4E;
 const FSNEXT: u16 = 0x4F;
 const FRENAME: u16 = 0x56;
@@ -90,6 +91,10 @@ const SSYSTEM: u16 = 0x154;
 
 /// `S_GETCOOKIE` (FreeMiNT `sys/mint/ssystem.h`) — `Ssystem` subfunction 8.
 const S_GETCOOKIE: i16 = 8;
+
+/// `FA_VOL` (`include/bdosdefs.h`) — the volume-label attribute, [`dos_label`]'s
+/// `Fsfirst` mask.
+const FA_VOL: u8 = 0x08;
 
 // ── `Mxalloc` modes (`include/bdosdefs.h:18-19`) ────────────────────────────
 /// `MX_STRAM` — allocate/measure ST-RAM only.
@@ -278,6 +283,62 @@ pub(super) fn dos_gdrv() -> i16 {
 /// current-drive state.
 pub(super) fn dos_sdrv(newdrv: i16) -> Long {
     dos_trap(DSETDRV, sx(newdrv as i64), 0, 0)
+}
+
+/// `dos_space` — `Dfree(buf, drv)` (`util/gemdos.c:77-90`, `bdosbind.h:34`),
+/// the **total** and **available** byte counts of a drive:
+///
+/// ```c
+/// if (Dfree(buf,drv) < 0L) return;        /* 0 = default, 1 = A for gemdos */
+/// mult = buf[3] * buf[2];                 /* sectors/cluster * bytes/sector */
+/// *ptotal = mult * buf[1];                /* total clusters   */
+/// *pavail = mult * buf[0];                /* free clusters    */
+/// ```
+///
+/// `drv` is **1-based** (`1` = `A:`, `0` = current), unlike every other drive
+/// argument the desktop passes. `(0, 0)` on error, which is what EmuTOS leaves
+/// in its two output longs.
+///
+/// The buffer is four 32-bit LONGs in GEMDOS's on-wire layout
+/// (`docs/api/gemdos/directory/36-dfree.md`) and the arithmetic is done in 64
+/// bits here: a 500 MB FAT16 partition already overflows a signed 32-bit byte
+/// count at 2 GB, and EmuTOS's `LONG` result silently wraps there.
+pub(super) fn dos_space(drv: i16) -> (u64, u64) {
+    let mut buf = [0u32; 4];
+    if dos_trap(DFREE, buf.as_mut_ptr() as u64, sx(drv as i64), 0) < 0 {
+        return (0, 0);
+    }
+    let mult = buf[3] as u64 * buf[2] as u64;
+    (mult * buf[1] as u64, mult * buf[0] as u64)
+}
+
+/// `dos_label` — the volume label of a drive (`util/gemdos.c:59-74`):
+///
+/// ```c
+/// Fsetdta(&dta);
+/// strcpy(path, " :\\*.*");
+/// path[0] = (drive + 'A') - 1;
+/// if (!Fsfirst(path,0x08)) { strcpy(plabel,dta.d_fname); return TRUE; }
+/// return FALSE;
+/// ```
+///
+/// `drive` is 1-based, as [`dos_space`]'s is. `0x08` is `FA_VOL`, and a search
+/// mask of exactly `FA_VOL` matches volume labels **only** — nothing else in
+/// the root can come back (`tos-api/src/bdos/fs/find.rs:190-199`, EmuTOS
+/// `bdos/fsdir.c` `scan`). [`None`] when the drive carries no label.
+pub(super) fn dos_label(drv: i16) -> Option<alloc::string::String> {
+    let mut dta = [0u8; 44];
+    dos_sdta(dta.as_mut_ptr());
+    let mut path = alloc::string::String::new();
+    path.push((b'A' + (drv as u8).saturating_sub(1)) as char);
+    path.push_str(":\\*.*");
+    if dos_sfirst(&path, FA_VOL) != 0 {
+        return None;
+    }
+    // `d_fname` is the last 14 bytes of the 44-byte DTA (`dir.rs` `scan_folder`).
+    let name = &dta[30..44];
+    let n = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+    core::str::from_utf8(&name[..n]).ok().map(alloc::string::String::from)
 }
 
 /// `dos_chdir` — `Dsetpath(pdrvpath)` (`gemdos.h:95-98`, `bdosbind.h:36`). Sets
