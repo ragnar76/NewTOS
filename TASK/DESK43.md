@@ -119,4 +119,4 @@ der Schnitt steht und der Anwender ihn gesehen hat.
 | U3 Desktop endet (G1) | **fertig** 2026-09-26 — Driftprobe **47 → 38**; HW-Punkte 1+2 offen |
 | U4 Kernel loest sich | **fertig** 2026-09-26 — Driftprobe **38 → 32**; zwei Stehenbleiber mit Messbegruendung |
 | — Trennlinie — | *alles darueber ohne EL0 und ohne neue Werkzeugkette* |
-| U5–U10 | nach dem Termin |
+| U5–U10 | nach dem Termin; **[X03](X03.md) muss vor U8 stehen** (Maschinenzeile) |
