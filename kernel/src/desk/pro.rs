@@ -107,17 +107,15 @@ fn pro_exec(isgraf: bool, isover: i16, pcmd: &[u8], ptail: &[u8]) -> bool {
 /// `tail` comes in as EmuTOS hands it over: the **text** of the command tail
 /// starting at byte 1, byte 0 reserved for the length this function fills in.
 ///
-/// **The `(wh, curr)` pair is not carried.** EmuTOS's second half is the
-/// "optionally, deselect the current icon & zoom to desktop size" step of the
-/// double-click launch (`do_open` → `pro_run(…, G.g_cwin, curr)`,
-/// `desksupp.c:951`), which un-zooms the icon the user opened. NewTOS's
-/// double-click does not go through `pro_run` yet — it calls the loader
-/// directly (`main::launch_native`, AES gap G1) — and `do_wopen`
-/// (`desksupp.c:294`) has no counterpart in the tree, so the only caller is
-/// `CLIITEM`, which passes `wh = -1` and skips the step (`deskmain.c:753`).
-/// Carrying two dead parameters and an unreachable branch would be worse than
-/// naming the gap; when the double-click path is routed through here, they
-/// come back together with `do_wopen`.
+/// **The `(wh, curr)` pair is not carried, and that is the one named gap left
+/// here.** EmuTOS's second half is the *"optionally, deselect the current icon
+/// & zoom to desktop size"* step (`deskpro.c:61-62`), reached from the
+/// double-click launch (`do_open` → `do_aopen` → `pro_run(…, G.g_cwin, curr)`,
+/// `desksupp.c:986`). Since DESK43 U3 every desktop launch does come through
+/// here, so the branch is no longer unreachable — but its body, `do_wopen(FALSE,
+/// wh, curr, &G.g_desk)` (`desksupp.c:294`), has no counterpart in the tree yet.
+/// Adding two parameters whose only use would be a call that does not exist
+/// would be a stub; they come back with `do_wopen`.
 pub(super) fn pro_run(isgraf: bool, cmd: &[u8], tail: &mut [u8; CMDTAILSIZE]) -> bool {
     // `tail[0] = len = strlen(tail+1);` — clamped so the length byte, the
     // text, its NUL and the CR all fit the image. EmuTOS has no such bound

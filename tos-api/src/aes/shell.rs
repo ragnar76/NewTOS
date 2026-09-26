@@ -373,11 +373,13 @@ pub fn shel_read(pb: &Aespb) {
 /// the desktop's `shel_write(SHW_EXEC, …)` (`desk/deskpro.c:41` → `:169-170`)
 /// or by `sh_chdef` for an autorun entry (`:557-562`). NewTOS's shell loop
 /// takes the same route (`kernel/src/shell_loop.rs` reads `D.s_cmd`/`ad_stail`
-/// and hands them to the launcher, so this call rewrites the same values),
-/// but the built-in desktop's double-click launches through the kernel
-/// launcher directly, without a `shel_write` (AES gap G1). The launcher
-/// therefore calls this just before the program enters EL0 on **every** path,
-/// so both are covered by one writer.
+/// and hands them to the launcher, so this call rewrites the same values), and
+/// since DESK43 U3 the built-in desktop does too — its double click is a
+/// `shel_write(SHW_EXEC, …)` like EmuTOS's (`desk/deskpro.c:41`). What has no
+/// `shel_write` in front of it is the `\AUTO\` runner, which starts before the
+/// AES exists at all (`bios/bios.c:713-714`). The launcher therefore calls this
+/// just before the program enters EL0 on **every** path, so both are covered by
+/// one writer.
 ///
 /// `cmd` is the full launch path (`C:\APPS\QED\QED.NAP`, NUL-terminated);
 /// `tail` is the Atari command-tail **image** exactly as handed to the loader

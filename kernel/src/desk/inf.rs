@@ -1064,19 +1064,26 @@ fn filename_start(path: &str) -> &str {
     }
 }
 
-/// `app_read_inf` (`deskapp.c:1491-1546`) — the *Options → Read .INF file*
+/// `app_read_inf` (`deskapp.c:1492-1546`) — the *Options → Read .INF file*
 /// worker: prompt for a file with [`fsel_exinput`](super::fsel_exinput), load
-/// it, validate its signature, and report the two failures by alert. Returns
-/// `TRUE` iff a file was read (EmuTOS's own contract).
+/// it, validate its signature, **merge it into the AES shell buffer**, and
+/// report the two failures by alert. Returns `TRUE` iff a file was read
+/// (EmuTOS's own contract).
 ///
-/// **Deviation — where the file goes** (`TASK/DESK14.md`, lead decision
-/// 2026-09-23). EmuTOS merges the bytes into the shell buffer (`shel_get` /
-/// `shel_put`, `:1532-1533`) and leaves the desktop, which re-enters and reads
-/// them through `app_start` (`deskmain.c:919-922`, `:2136-2148`). NewTOS has no
-/// desktop-restart path yet, so the bytes are parsed and applied in place here
-/// — [`apply_inf_bytes`], the identical tail the boot path runs — and the
-/// caller ([`super::main::do_read_inf`]) rebuilds the live views. Everything
-/// observable before that point is EmuTOS's.
+/// ```c
+/// shel_get(buf, CPDATA_LEN);          /* :1532 */
+/// shel_put(buf, CPDATA_LEN+rc+1);     /* :1533 — also save terminating nul */
+/// ret = TRUE;
+/// ```
+///
+/// The 128-byte control-panel prefix is read back out of the buffer and put in
+/// front of the file text unchanged, exactly as [`app_save`] does; the file
+/// never reaches the live desktop from here. The caller
+/// ([`super::main::do_read_inf`]) ends the desktop with `restart_desktop`, and
+/// the restarted one picks the image up through [`load_and_apply`]'s
+/// `shel_get` (`deskapp.c:832`) — which is why this is the only write.
+/// **DESK43 U3 retired the DESK14 §4 "apply in place" deviation that stood
+/// here while there was no restart path.**
 pub(super) fn app_read_inf() -> bool {
     // "prompt for filename" (`deskapp.c:1499-1508`): the wildcard on the INF
     // drive as the path, the desktop's own INF file name as the selection.
@@ -1099,15 +1106,15 @@ pub(super) fn app_read_inf() -> bool {
     };
     full.push_str(&leaf);
 
-    // "load in file & validate contents" (`:1517-1526`). EmuTOS reads at most
-    // `SIZE_SHELBUF-CPDATA_LEN-1` bytes (4192 minus the copy-data header,
-    // `sysconf.h:74`) because it is staging into the **shell buffer**; with the
-    // restart path deferred there is no such buffer here, so the read is the
-    // desktop's own `MAX_INF_BYTES`. A truncating read is a property of the
-    // mechanism, not of the contract (`docs/COMPATIBILITY.md`) — a `.INF` that
-    // long would give EmuTOS a half-parsed file and us a whole one.
+    // "load in file & validate contents" (`:1517-1526`):
+    // `dos_load_file(path, SIZE_SHELBUF-CPDATA_LEN-1, p)` — at most
+    // [`MAX_INF_TEXT`] bytes, because the destination *is* the shell buffer
+    // behind its copy-data header (`sysconf.h:74`, `deskapp.c:136`).
     let loaded = match read_file(&full) {
-        Ok(bytes) if is_inf_signature(&bytes) => Some(bytes),
+        Ok(mut bytes) if is_inf_signature(&bytes) => {
+            bytes.truncate(MAX_INF_TEXT);
+            Some(bytes)
+        }
         // A file that opened but is not an INF is EmuTOS's `rc = 0L`, which
         // falls through to the STINVINF arm below — as does an empty file.
         Ok(_) => None,
@@ -1129,7 +1136,16 @@ pub(super) fn app_read_inf() -> bool {
         return false;
     };
 
-    apply_inf_bytes(&bytes);
+    // "still OK: merge contents into shell buffer" (`:1530-1534`).
+    // `shel_get(buf, CPDATA_LEN)` keeps whatever a control panel parked in the
+    // prefix; `shel_put(buf, CPDATA_LEN+rc+1)` stores prefix + text + the
+    // terminating NUL, which is what `app_start`'s `inf_data[0] != '#'` test
+    // then reads (`:834`).
+    let mut buf = alloc::vec![0u8; CPDATA_LEN];
+    super::shel_get(&mut buf);
+    buf.extend_from_slice(&bytes);
+    buf.push(0);
+    super::shel_put(&buf);
     true
 }
 

@@ -1,0 +1,15 @@
+# DESK43 U3, proof 5: double-click C:\U3\ARGVTEST.NAP in the window the
+# NEWDESK.INF #W line opened. Icon glyph measured from locate-desktop.png
+# (x 52..80, y 112..135) -> hit point (64,124).
+200 parkbr
+600 mark A_IDLE
+900 move 64 124
+1100 mark B_ON_ICON
+1300 down
+1303 up
+1308 down
+1311 up
+1400 mark C_DOUBLECLICKED
+2400 mark D_AFTER_5S
+4400 mark E_AFTER_15S
+6400 mark F_AFTER_25S

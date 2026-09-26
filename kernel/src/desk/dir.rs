@@ -1669,11 +1669,11 @@ fn delete_disk_alert(letter: u8) -> bool {
 /// `act_bdown` passes back (the top-left of the dragged outline, `deskact.c:
 /// 683-684`), `keystate` = modifiers at drop.
 ///
-/// Returns `exit_desktop`. EmuTOS sets it when a dropped file launched a
-/// program so that `deskmain` leaves and the AES shell loads the child;
-/// NewTOS launches **nested** (AES gap G1, `super::main::launch_native`), so
-/// the window-to-window branch — the one that can launch (DESK19) — hands back
-/// `false` after the child has already run and the desktop is back.
+/// Returns `exit_desktop`: EmuTOS sets it when a dropped file launched a
+/// program, so that `deskmain` leaves and the AES shell loads the child
+/// (`deskfun.c:967` → `do_aopen` → `pro_run`). Since DESK43 U3 NewTOS does the
+/// same — the window-to-window branch is the one that can launch (DESK19) and
+/// it hands back whatever `super::main::do_aopen_drop`'s `shel_write` returned.
 pub fn fun_drag(wh: i16, dest_wh: i16, dobj: i16, mx: i16, my: i16, keystate: u16) -> bool {
     if wh != DESKWH {
         // Dragging FROM a window.

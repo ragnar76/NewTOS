@@ -1,0 +1,39 @@
+[desk] desktop up (1 drives, 1 window(s) from the context)
+[h02] injector armed
+[h02] step 0 at +200 -> mouse (446,366) mb=0
+[h02] step 1 at +201 -> mouse (573,479) mb=0
+[h02] step 2 at +202 -> mouse (639,479) mb=0
+[h02] step 3 at +203 -> mouse (639,479) mb=0
+[h02] step 4 at +204 -> mouse (639,479) mb=0
+[h02] step 5 at +205 -> mouse (639,479) mb=0
+[h02] MARK A_IDLE step 6 at +600 mouse (639,479) mb=0
+[h02] step 7 at +900 -> mouse (512,352) mb=0
+[h02] step 8 at +901 -> mouse (385,225) mb=0
+[h02] step 9 at +902 -> mouse (258,124) mb=0
+[h02] step 10 at +903 -> mouse (131,124) mb=0
+[h02] step 11 at +904 -> mouse (64,124) mb=0
+[h02] MARK B_ON_ICON step 12 at +1100 mouse (64,124) mb=0
+[h02] step 13 at +1300 -> mouse (64,124) mb=1
+[h02] step 14 at +1303 -> mouse (64,124) mb=0
+[h02] step 15 at +1308 -> mouse (64,124) mb=1
+[h02] step 16 at +1311 -> mouse (64,124) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[shell] sh_ldapp: starting C:\U3\ARGVTEST.NAP, sh_nextapp=0, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: true
+[launch] EL0: slot 2 entry 0x1000
+ARGVTEST: cmdlin len 0 raw ""
+ARGVTEST: argc 1
+ARGVTEST: argv[0] ""
+ARGVTEST: argv terminated
+[launch] returned (program Pterm'd)
+[shell] sh_ldapp: 'C:\U3\ARGVTEST.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (1 drives, 1 window(s) from the context)
+[h02] MARK C_DOUBLECLICKED step 17 at +1400 mouse (64,124) mb=0
+[h02] MARK D_AFTER_5S step 18 at +2400 mouse (64,124) mb=0
+[h02] MARK E_AFTER_15S step 19 at +4400 mouse (64,124) mb=0
+[h02] MARK F_AFTER_25S step 20 at +6400 mouse (64,124) mb=0

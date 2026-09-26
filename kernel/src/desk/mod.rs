@@ -85,6 +85,7 @@ const OP_WIND_SET: i16 = 105;
 const OP_WIND_FIND: i16 = 106;
 const OP_WIND_UPDATE: i16 = 107;
 const OP_WIND_CALC: i16 = 108;
+const OP_WIND_NEW: i16 = 109;
 const OP_SHEL_WRITE: i16 = 121;
 const OP_SHEL_GET: i16 = 122;
 const OP_SHEL_PUT: i16 = 123;
@@ -427,6 +428,22 @@ pub(super) fn wind_delete(handle: i16) {
     let mut a = Aes::new();
     a.intin[0] = handle;
     a.call(OP_WIND_DELETE, 1, 1, 0);
+}
+
+/// `wind_new()` (109) — close and delete **every** window this application
+/// still has open and drop its `wind_update` locks (`desk/gembind.c:827-831`,
+/// `AES_CTRL_CODE(WIND_NEW, 0, 1, 0)`; AES side `wm_new`,
+/// `gemwmlib.c:1875-1893`).
+///
+/// The desktop's one caller is [`deskmain`]'s restart tail (`deskmain.c:2168-
+/// 2169`, `if (rc == FALSE) wind_new();`): the *Read .INF file* path re-enters
+/// `deskmain` inside the same process, so the AES handles
+/// [`close_desktop_windows`] closed but did not delete have to be swept before
+/// the next `win_start`. On the normal exit the process ends and the AES does
+/// it (`gemshlib.c:676-677`).
+pub(super) fn wind_new() {
+    let mut a = Aes::new();
+    a.call(OP_WIND_NEW, 0, 1, 0);
 }
 
 /// The instantaneous mouse/keyboard state from `graf_mkstate` (79).
@@ -861,10 +878,51 @@ pub(super) fn screen_rect() -> Grect {
 
 // ── Boot entry ─────────────────────────────────────────────────────────────
 
-/// The desktop entry point (EmuTOS `deskmain`): one-time setup (metrics, the
-/// desktop icon tree, menu bar), open the first directory window, paint the
-/// full desktop, then hand off to the interaction event loop ([`main::run`]).
+/// `_deskstart` (`desk/deskstart.S:52-56`) — the desktop program's entry point,
+/// which is what `sh_ldapp`'s DESKTOP arm starts
+/// (`aes_run_rom_program(deskstart)`, `gemshlib.c:606`):
+///
+/// ```asm
+/// restart:
+///         jsr     _deskmain               // Run the desktop
+///         tst.w   d0
+///         jeq     restart                 // handle read of .INF file
+///         clr.w   -(sp)
+///         trap    #1                      // Pterm
+/// ```
+///
+/// [`deskmain`] answers `false` for the one case that re-enters it in the same
+/// process — a successful *Options → Read .INF file* — and `true` when the
+/// desktop is done, which on an Atari is a `Pterm` and here is this function
+/// returning into [`crate::shell_loop::sh_ldapp`]. The `Mshrink` and the stack
+/// switch the rest of `deskstart.S` performs are a process's own setup; the
+/// NewTOS desktop is still called on the kernel stack (DESK43 U9 moves it).
 pub fn run() {
+    while !deskmain() {
+        // The allocations `deskmain`'s restart arm gave back
+        // (`deskmain.c:2140-2147`, eight `dos_free`s of `G.g_wlist` …
+        // `desk_rs_strings`) are ours as one singleton, and they are dropped
+        // here rather than inside `deskmain` for a reason EmuTOS does not have:
+        // `dos_free` leaves the bytes readable, `drop` does not — and at
+        // `:2141` the AES still holds `g_screen` as its background tree, which
+        // `menu_bar(NULL, 0)` (`:2160`) could still make it read before
+        // `wind_set(DESKWH, WF_NEWDESK, NULL)` (`:2163`) takes it away. Freeing
+        // after the un-registration is the same state transition without that
+        // window.
+        reset();
+    }
+}
+
+/// `deskmain` (`desk/deskmain.c:1938-2172`) — one run of the desktop: the
+/// library/state prolog (metrics, the desktop icon tree, the menu bar, the
+/// windows the context asks for), the event loop, and the epilog that hands the
+/// screen back. Returns `deskmain`'s `rc`: `true` = "the desktop process
+/// terminates", `false` = "restart me immediately" (*Read .INF file*).
+fn deskmain() -> bool {
+    // `restart_desktop = FALSE;` (`:1946`) — this run's answer, until
+    // `do_optnmenu`'s READITEM arm says otherwise.
+    main::clear_restart_desktop();
+
     // No raster check here: `sh_ldapp`'s DESKTOP arm only reaches this function
     // when `gl_shgem` is set (`gemshlib.c:600-601`, `crate::shell_loop`), which
     // is where EmuTOS makes that decision too.
@@ -985,50 +1043,110 @@ pub fn run() {
         reopened
     );
 
-    // Hand off to the interaction loop. It returns when a handler set `done`
-    // — today only File → Execute EmuCON (`deskmain.c:750-753`), which asked
-    // the AES shell for the console with `shel_write(SHW_EXEC, …)` on its way
-    // out.
+    // The event loop (`deskmain.c:2077-2123`). It returns when a handler set
+    // `done` — a program start (`hndl_button`'s double click, `:988`), *File →
+    // Execute EmuCON* (`:750-753`) or a successful *Read .INF file*
+    // (`:919-925`) — each of which has already told the AES shell what is to
+    // happen next with `shel_write(SHW_EXEC, …)`.
+    main::event_loop();
+
+    // ── The epilog (`deskmain.c:2124-2171`) ──────────────────────────────
     //
-    // **This loop is EmuTOS's `sh_main`, standing in for it (AES gap G1).**
-    // There, `deskmain` returning *is* the handover: the desktop process ends
-    // and `sh_main` (`gemshlib.c:708-731`) runs whatever `shel_write` made
-    // pending, then starts the desktop again from the top. NewTOS's built-in
-    // desktop is an in-kernel call that cannot be restarted — [`global::init`]
-    // is idempotent and there is no `win_start()` on re-entry, so a restarted
-    // desktop would inherit a window list of handles the intervening
-    // `wm_init()` had deleted (`TASK/DESK14.md` §4 is the same decision, for
-    // the `Read .INF file` item). So the pending program is run here, nested,
-    // by the shell loop's own code
-    // ([`crate::shell_loop::sh_run_pending_console`]), and the desktop picks
-    // its event loop up again instead of being rebuilt.
-    loop {
-        main::event_loop();
-        if !crate::shell_loop::sh_run_pending_console() {
-            break;
-        }
-        // What EmuTOS gets from restarting `deskmain` (`gemshlib.c:717-719` +
-        // `deskmain.c:2064-2071`): the screen back, the menu state re-derived,
-        // the arrow back. `redraw_desktop` is whole-screen recovery, which is
-        // right — the console cleared the screen and wrote text over it.
-        menu::men_update();
-        redraw::redraw_desktop();
+    // "if we are exiting because of a successful 'Read INF file', we must close
+    // all the windows & free all the memory we allocated above, since we will
+    // re-enter deskmain() immediately. in all other cases, the desktop process
+    // will terminate and the allocated memory will be automatically freed. we
+    // must save the desktop state in memory for when the desktop process
+    // restarts." (`:2124-2134`)
+    let rc = if main::restart_desktop() {
+        // `:2136-2150`
+        pro::desk_busy_on();
+        close_desktop_windows();
         pro::desk_busy_off();
+        false // "_deskstart will call us again immediately" (`:2149`)
+    } else {
+        // `:2153-2157`. `cnx_put()` snapshots the window layout into
+        // `G.g_cnxsave`; `app_save(FALSE)` serialises that snapshot into the
+        // **AES shell buffer** (`shel_put`, `deskapp.c:1293`) — the channel that
+        // carries the desktop's state across its own death, which the next
+        // `app_start` reads back (`deskapp.c:832`, DESK43 U2).
+        main::cnx_put();
+        inf::app_save(false);
+        true // "_deskstart will terminate the process" (`:2156`)
+    };
+
+    // "turn off the menu bar" (`:2159-2160`, `menu_bar(NULL, 0)`). Our AES
+    // `menu_bar(tree, 0)` needs the real (non-null) tree to erase the strip.
+    menu_bar(menu::tree_ptr(), 0);
+
+    // "give up the desktop" (`:2162-2163`, `wind_set(DESKWH, WF_NEWDESK, NULL,
+    // 0, 0)`) — the AES `w_drawdesk` falls back to its own built-in DESKTOP
+    // root from here (`gemwmlib.c:340-359,1268-1271`).
+    wind_set_newdesk(0, 0);
+
+    // "exit the gem AES" (`:2165-2166`). `ap_exit` (`gemaplib.c:251-261`)
+    // drains the message queue and clears `AP_OPEN`; the drain is what stops
+    // the next program inheriting the desktop's unread `WM_*` (A28), which
+    // matters here because desktop and child share `rlr` (`gemshlib.c:633`).
+    // Last, as in EmuTOS: nothing that can queue a message may follow it.
+    appl_exit();
+
+    // `if (rc == FALSE) wind_new();` (`:2168-2169`) — "restarting: clean up AES
+    // windows", i.e. delete the handles `close_desktop_windows` only closed.
+    if !rc {
+        wind_new();
     }
 
-    // On the way out, deregister from the AES — the symmetric counterpart to
-    // the boot `appl_init` (EmuTOS `deskmain.c:2166`, `appl_exit();`).
-    appl_exit();
+    rc
 }
 
-/// Take the desktop down for an AES restart (A106) — the counterpart of
-/// EmuTOS's desktop simply *ending* with the session that requested the
-/// resolution change (`aes/gemshlib.c:727`, `desk/deskmain.c`'s epilog) and
-/// being started afresh by the next `sh_main`.
+/// `close_desktop_windows` (`desk/deskmain.c:1921-1930`, `#if
+/// CONF_WITH_READ_INF`) — "close desktop windows":
 ///
-/// Must run **after** [`tos_api::aes::reinit`], which clears the AES's
-/// `gl_newdesk` registration ([`wind_set_newdesk`]) — that pointer addresses
-/// the object arena this call frees.
+/// ```c
+/// while( (pw=win_ontop()) )
+/// {
+///     wind_close(pw->w_id);           /* close the window */
+///     dos_free(pw->w_pnode.p_fbase);  /* free the fnodes */
+///     win_free(pw);                   /* free the wnode */
+/// }
+/// ```
+///
+/// `win_ontop()` is `wind_get(DESKWH, WF_TOP)` here as everywhere else in the
+/// desktop, and the `FNODE` vector lives inside the `WNODE`, so
+/// [`global::DeskState::win_free`] performs both of the last two steps. The
+/// loop is bounded by the window table because our top handle comes from the
+/// AES rather than from the list being emptied: EmuTOS's terminates when
+/// `win_free` unlinks the node, ours when the table runs out — same set, no way
+/// to spin.
+fn close_desktop_windows() {
+    for _ in 0..global::NUM_WNODES {
+        let pw = wind_get_top();
+        if pw == win::DESKWH {
+            break;
+        }
+        wind_close(pw);
+        if global::with(|g| g.win_free(pw)) != Some(true) {
+            break;
+        }
+    }
+}
+
+/// Give the dead desktop's memory back — what GEMDOS does for EmuTOS when the
+/// desktop *process* ends (`desk/deskstart.S:57-59`, `deskmain.c:2131-2133`
+/// *"the desktop process will terminate and the allocated memory will be
+/// automatically freed"*), and what `deskmain`'s own restart arm does by hand
+/// for the *Read .INF file* re-entry (`:2140-2147`).
+///
+/// Three callers, all of them a desktop that has just ended:
+/// [`crate::shell_loop::sh_ldapp`]'s DESKTOP arm before the next start,
+/// [`run`]'s restart loop, and the kernel's AES-restart path (A106,
+/// `kernel/src/lib.rs`).
+///
+/// Must run **after** whatever clears the AES's `gl_newdesk` registration
+/// ([`wind_set_newdesk`]) — [`deskmain`]'s epilog on the desktop's own way out,
+/// [`tos_api::aes::reinit`] on the A106 path. That pointer addresses the object
+/// arena this call frees.
 pub fn reset() {
     global::reset();
     inf::reset();

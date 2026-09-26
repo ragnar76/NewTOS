@@ -1,0 +1,1642 @@
+diff --git a/kernel/src/desk/dir.rs b/kernel/src/desk/dir.rs
+index 271f1c3..5124932 100644
+--- a/kernel/src/desk/dir.rs
++++ b/kernel/src/desk/dir.rs
+@@ -1669,11 +1669,11 @@ fn delete_disk_alert(letter: u8) -> bool {
+ /// `act_bdown` passes back (the top-left of the dragged outline, `deskact.c:
+ /// 683-684`), `keystate` = modifiers at drop.
+ ///
+-/// Returns `exit_desktop`. EmuTOS sets it when a dropped file launched a
+-/// program so that `deskmain` leaves and the AES shell loads the child;
+-/// NewTOS launches **nested** (AES gap G1, `super::main::launch_native`), so
+-/// the window-to-window branch — the one that can launch (DESK19) — hands back
+-/// `false` after the child has already run and the desktop is back.
++/// Returns `exit_desktop`: EmuTOS sets it when a dropped file launched a
++/// program, so that `deskmain` leaves and the AES shell loads the child
++/// (`deskfun.c:967` → `do_aopen` → `pro_run`). Since DESK43 U3 NewTOS does the
++/// same — the window-to-window branch is the one that can launch (DESK19) and
++/// it hands back whatever `super::main::do_aopen_drop`'s `shel_write` returned.
+ pub fn fun_drag(wh: i16, dest_wh: i16, dobj: i16, mx: i16, my: i16, keystate: u16) -> bool {
+     if wh != DESKWH {
+         // Dragging FROM a window.
+diff --git a/kernel/src/desk/global.rs b/kernel/src/desk/global.rs
+index 38c0fe0..f75e847 100644
+--- a/kernel/src/desk/global.rs
++++ b/kernel/src/desk/global.rs
+@@ -839,23 +839,25 @@ pub fn init(g_desk: Grect) {
+ }
+ 
+ /// Drop the desktop state so the next [`init`] builds it from scratch — the
+-/// desktop's share of an AES restart (A106, [`super::reset`]).
++/// desktop's share of [`super::reset`].
+ ///
+-/// On EmuTOS the desktop is an ordinary shell program: a resolution change
+-/// ends it with everything else (`gemshlib.c:727`), its memory goes back to
+-/// the pool, and the restarted AES runs `deskstart` again, which re-runs
+-/// `app_start`/`win_start`/`cnx_get` on a zeroed `G` (`desk/deskmain.c`).
+-/// NewTOS's desktop is an in-kernel call whose state is this one
+-/// lazily-initialised singleton and whose [`init`] is a no-op once built —
+-/// so without this the restarted desktop would keep the previous session's
+-/// window list and object arena while the AES's own window table has just
+-/// been emptied ([`tos_api::aes::reinit`]), i.e. it would believe in windows
+-/// that no longer exist.
++/// On EmuTOS the desktop is an ordinary shell program: it ends, its memory goes
++/// back to the pool (`deskmain.c:2131-2133`, `deskstart.S:57-59`), and the next
++/// `sh_ldapp` runs `deskstart` again, which re-runs `app_start`/`win_start`/
++/// `cnx_get` on a zeroed `G`. NewTOS's desktop ends the same way since DESK43
++/// U3, but its state is this lazily-initialised singleton and [`init`] is a
++/// no-op once built — so the "memory goes back to the pool" half has to be
++/// stated. Without it the next desktop would keep the previous one's window
++/// list and object arena while the AES's own window table has just been emptied
++/// (`sh_main`'s `wm_init`, `gemshlib.c:717`; or [`tos_api::aes::reinit`] on the
++/// A106 path), i.e. it would believe in windows that no longer exist.
+ ///
+ /// Dropping the state frees the object arena and the cached `.INF` vectors
+ /// (all `alloc` allocations). Nothing else holds a pointer into them by then:
+-/// the AES's `gl_newdesk` registration, which does, is cleared by `wm_init`
+-/// inside `tos_api::aes::reinit`, which the caller runs **first**.
++/// the AES's `gl_newdesk` registration, which does, has been cleared by
++/// `deskmain`'s own epilog (`wind_set(DESKWH, WF_NEWDESK, NULL)`, `:2163`) or
++/// by the `wm_init` inside [`tos_api::aes::reinit`], both of which precede
++/// every caller.
+ pub fn reset() {
+     *DESK.lock() = None;
+ }
+diff --git a/kernel/src/desk/inf.rs b/kernel/src/desk/inf.rs
+index bf4d4a9..c888d85 100644
+--- a/kernel/src/desk/inf.rs
++++ b/kernel/src/desk/inf.rs
+@@ -1064,19 +1064,26 @@ fn filename_start(path: &str) -> &str {
+     }
+ }
+ 
+-/// `app_read_inf` (`deskapp.c:1491-1546`) — the *Options → Read .INF file*
++/// `app_read_inf` (`deskapp.c:1492-1546`) — the *Options → Read .INF file*
+ /// worker: prompt for a file with [`fsel_exinput`](super::fsel_exinput), load
+-/// it, validate its signature, and report the two failures by alert. Returns
+-/// `TRUE` iff a file was read (EmuTOS's own contract).
++/// it, validate its signature, **merge it into the AES shell buffer**, and
++/// report the two failures by alert. Returns `TRUE` iff a file was read
++/// (EmuTOS's own contract).
+ ///
+-/// **Deviation — where the file goes** (`TASK/DESK14.md`, lead decision
+-/// 2026-09-23). EmuTOS merges the bytes into the shell buffer (`shel_get` /
+-/// `shel_put`, `:1532-1533`) and leaves the desktop, which re-enters and reads
+-/// them through `app_start` (`deskmain.c:919-922`, `:2136-2148`). NewTOS has no
+-/// desktop-restart path yet, so the bytes are parsed and applied in place here
+-/// — [`apply_inf_bytes`], the identical tail the boot path runs — and the
+-/// caller ([`super::main::do_read_inf`]) rebuilds the live views. Everything
+-/// observable before that point is EmuTOS's.
++/// ```c
++/// shel_get(buf, CPDATA_LEN);          /* :1532 */
++/// shel_put(buf, CPDATA_LEN+rc+1);     /* :1533 — also save terminating nul */
++/// ret = TRUE;
++/// ```
++///
++/// The 128-byte control-panel prefix is read back out of the buffer and put in
++/// front of the file text unchanged, exactly as [`app_save`] does; the file
++/// never reaches the live desktop from here. The caller
++/// ([`super::main::do_read_inf`]) ends the desktop with `restart_desktop`, and
++/// the restarted one picks the image up through [`load_and_apply`]'s
++/// `shel_get` (`deskapp.c:832`) — which is why this is the only write.
++/// **DESK43 U3 retired the DESK14 §4 "apply in place" deviation that stood
++/// here while there was no restart path.**
+ pub(super) fn app_read_inf() -> bool {
+     // "prompt for filename" (`deskapp.c:1499-1508`): the wildcard on the INF
+     // drive as the path, the desktop's own INF file name as the selection.
+@@ -1099,15 +1106,15 @@ pub(super) fn app_read_inf() -> bool {
+     };
+     full.push_str(&leaf);
+ 
+-    // "load in file & validate contents" (`:1517-1526`). EmuTOS reads at most
+-    // `SIZE_SHELBUF-CPDATA_LEN-1` bytes (4192 minus the copy-data header,
+-    // `sysconf.h:74`) because it is staging into the **shell buffer**; with the
+-    // restart path deferred there is no such buffer here, so the read is the
+-    // desktop's own `MAX_INF_BYTES`. A truncating read is a property of the
+-    // mechanism, not of the contract (`docs/COMPATIBILITY.md`) — a `.INF` that
+-    // long would give EmuTOS a half-parsed file and us a whole one.
++    // "load in file & validate contents" (`:1517-1526`):
++    // `dos_load_file(path, SIZE_SHELBUF-CPDATA_LEN-1, p)` — at most
++    // [`MAX_INF_TEXT`] bytes, because the destination *is* the shell buffer
++    // behind its copy-data header (`sysconf.h:74`, `deskapp.c:136`).
+     let loaded = match read_file(&full) {
+-        Ok(bytes) if is_inf_signature(&bytes) => Some(bytes),
++        Ok(mut bytes) if is_inf_signature(&bytes) => {
++            bytes.truncate(MAX_INF_TEXT);
++            Some(bytes)
++        }
+         // A file that opened but is not an INF is EmuTOS's `rc = 0L`, which
+         // falls through to the STINVINF arm below — as does an empty file.
+         Ok(_) => None,
+@@ -1129,7 +1136,16 @@ pub(super) fn app_read_inf() -> bool {
+         return false;
+     };
+ 
+-    apply_inf_bytes(&bytes);
++    // "still OK: merge contents into shell buffer" (`:1530-1534`).
++    // `shel_get(buf, CPDATA_LEN)` keeps whatever a control panel parked in the
++    // prefix; `shel_put(buf, CPDATA_LEN+rc+1)` stores prefix + text + the
++    // terminating NUL, which is what `app_start`'s `inf_data[0] != '#'` test
++    // then reads (`:834`).
++    let mut buf = alloc::vec![0u8; CPDATA_LEN];
++    super::shel_get(&mut buf);
++    buf.extend_from_slice(&bytes);
++    buf.push(0);
++    super::shel_put(&buf);
+     true
+ }
+ 
+diff --git a/kernel/src/desk/main.rs b/kernel/src/desk/main.rs
+index fd74114..8e2852a 100644
+--- a/kernel/src/desk/main.rs
++++ b/kernel/src/desk/main.rs
+@@ -53,6 +53,28 @@ const VIEW_CHANGED: u16 = 0x0001;
+ const SORT_CHANGED: u16 = 0x0002;
+ const SIZETOFIT_CHANGED: u16 = 0x0004;
+ 
++/// `static BOOL restart_desktop;` (`deskmain.c:359`) — *"TRUE iff we need to
++/// restart the desktop"*. Set by [`do_read_inf`] (`:921`), cleared at the top
++/// of every `deskmain` (`:1946`), read by its epilog (`:2136`) to pick between
++/// "free everything and come straight back" and "terminate".
++///
++/// A plain `AtomicBool` rather than one of the desktop's `SpinMutex` cells: it
++/// is a single flag with no invariant tying it to the rest of `G`, and the
++/// epilog reads it while the desktop lock is free.
++static RESTART_DESKTOP: core::sync::atomic::AtomicBool =
++    core::sync::atomic::AtomicBool::new(false);
++
++/// `restart_desktop = FALSE;` (`deskmain.c:1946`) — the first statement of
++/// `deskmain`.
++pub(super) fn clear_restart_desktop() {
++    RESTART_DESKTOP.store(false, core::sync::atomic::Ordering::Relaxed);
++}
++
++/// `if (restart_desktop)` (`deskmain.c:2136`) — the epilog's question.
++pub(super) fn restart_desktop() -> bool {
++    RESTART_DESKTOP.load(core::sync::atomic::Ordering::Relaxed)
++}
++
+ // ── Event loop ─────────────────────────────────────────────────────────────
+ 
+ /// The desktop main loop (EmuTOS `deskmain.c:2077-2123`): block in `evnt_multi`
+@@ -192,11 +214,15 @@ fn hndl_button(clicks: i16, mx: i16, my: i16) -> bool {
+         // switches between the selection count and the directory totals.
+         win_sinfo(handle, true);
+     } else {
+-        // Double-click: select just the hit item, then open it.
++        // `act_bsclick(…, TRUE); done = do_filemenu(OPENITEM);`
++        // (`deskmain.c:987-988`) — select just the hit item, then open it. The
++        // flag matters since DESK43 U3: opening an application is a
++        // `shel_write(SHW_EXEC, …)`, and `done` is how the desktop leaves so
++        // the AES shell can start it.
+         let obid = gr_obfind(root, mx, my);
+         global::with(|g| g.act_bsclick(handle, root, obid, false, true));
+         redraw_window(handle);
+-        do_open_selected();
++        done = do_filemenu(Item::Open);
+         // Drain the button-up so the AES does not re-fire the double-click.
+         super::evnt_button(1, 0x01, 0x00);
+     }
+@@ -594,11 +620,18 @@ enum OpenTarget {
+     None,
+ }
+ 
+-/// Open the item object `obid` of window `handle`: a folder opens in a new
+-/// directory window, a drive icon at its root, a native `.NAP`/`.NCP`/`.NTP`
+-/// program launches (ADR-018), and a classic m68k binary raises an honest
+-/// "needs the emulator" alert. A document is a no-op (association is future).
+-fn open_item(handle: i16, obid: i16) {
++/// `do_open(pwin, curr)` (EmuTOS `desksupp.c:1190-1280`) — open the item object
++/// `obid` of window `handle`: a folder opens in a new directory window, a drive
++/// icon at its root, a native `.NAP`/`.NCP`/`.NTP` program launches (ADR-018),
++/// and a classic m68k binary raises an honest "needs the emulator" alert. A
++/// document goes through its installed-application association.
++///
++/// Returns `do_open`'s `WORD`: *"TRUE iff `shel_write()` was issued
++/// successfully"* (`do_aopen`'s contract, `desksupp.c:842`), which is what
++/// makes the desktop's event loop end so the AES shell can start the program.
++/// Every arm that does not launch answers `FALSE`, exactly as `do_open`'s
++/// `break`s fall through to its trailing `return FALSE` (`:1277`).
++fn open_item(handle: i16, obid: i16) -> bool {
+     let target = global::with(|g| {
+         let fnode = g.g_screeninfo[obid as usize].fnode;
+         if fnode >= 0 {
+@@ -679,7 +712,7 @@ fn open_item(handle: i16, obid: i16) {
+         OpenTarget::Shortcut { obid, path, name } => {
+             if !dir::shortcut_exists(&path, false) {
+                 dir::remove_locate_shortcut(obid);
+-                return;
++                return false; // `remove_locate_shortcut(curr); return FALSE;` (`:865-866`)
+             }
+             match ftype::classify(name.as_bytes()) {
+                 ftype::FileType::Native(flavor) => {
+@@ -699,26 +732,37 @@ fn open_item(handle: i16, obid: i16) {
+         // NewTOS's callers are EmuTOS's `do_open`, which passes `allow_new_win
+         // = TRUE` (a double click goes through `do_filemenu(OPENITEM)`,
+         // `deskmain.c:988,666-668`, exactly as the File→Open menu pick does).
+-        OpenTarget::Folder(spec, title) => do_fopen(handle, obid, &spec, &title, true),
+-        OpenTarget::Drive(letter) => open_root_window(letter),
++        OpenTarget::Folder(spec, title) => {
++            do_fopen(handle, obid, &spec, &title, true);
++            false // `break;` → `return FALSE` (`:1272,1277`)
++        }
++        OpenTarget::Drive(letter) => {
++            open_root_window(letter); // `do_dopen(curr); break;` (`:1263-1264`)
++            false
++        }
+         OpenTarget::App { path, name, flavor } => {
+             // `do_aopen`'s `else` arm (`desksupp.c:903-912`): the program is
+             // not an installed application, so the **desktop** config flag
+             // `G.g_appdir` picks the directory. A failure aborts the launch.
+             let appdir = global::with(|g| g.g_appdir).unwrap_or(true);
+-            if set_launch_dir(appdir, &path) {
+-                launch_native(&path, &name, flavor, &[]);
++            if !set_launch_dir(appdir, &path) {
++                return false;
+             }
++            // `return pro_run(isgraf, app_path, G.g_work, G.g_cwin, curr);`
++            // (`:986`) — a plain double click passes no tail (`tail == NULL`
++            // and `isparm` is answered by the flavour, see [`pro_run_native`]).
++            pro_run_native(&path, &name, flavor, "")
+         }
+         OpenTarget::M68k => {
+             let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
+             super::form_alert(1, text.as_ptr());
+             // No desktop repaint: the AES `form_alert` bb_save/restores the screen
+             // under the alert (EmuTOS `fm_alert`), so the desktop returns intact.
++            false
+         }
+         OpenTarget::Doc { name, full_path } => open_document(&name, &full_path),
+         // Resolved into one of the arms above by the prologue.
+-        OpenTarget::Shortcut { .. } | OpenTarget::None => {}
++        OpenTarget::Shortcut { .. } | OpenTarget::None => false,
+     }
+ }
+ 
+@@ -729,18 +773,20 @@ fn open_item(handle: i16, obid: i16) {
+ /// honestly (EmuTOS would offer Show/Print or alert `STNOAPPL`; NewTOS raises
+ /// the "no application" alert — Show/Print is a separate, unimplemented feature).
+ ///
+-/// The command tail is the classic Atari `[len][args][\0][\r]` image: the
+-/// association's fixed argument prefix (`a_pargs`), then either the document's
+-/// full path (`AF_ISFULL`) or just its file name (`deskins.md` §`ins_app`,
+-/// `desksupp.c:942-950`). The associated application's own extension selects the
+-/// launch behaviour (console screen setup etc.), exactly as a direct
++/// The command tail is the association's fixed argument prefix (`a_pargs`),
++/// then either the document's full path (`AF_ISFULL`) or just its file name
++/// (`deskins.md` §`ins_app`, `desksupp.c:942-950`); `pro_run` turns it into the
++/// classic Atari `[len][args][\0][\r]` image (`deskpro.c:56-57`). The
++/// associated application's own extension selects `isgraf`, exactly as a direct
+ /// double-click would.
+-fn open_document(name: &str, full_path: &str) {
++///
++/// Returns `do_aopen`'s `WORD` — TRUE iff the `shel_write` was issued.
++fn open_document(name: &str, full_path: &str) -> bool {
+     let Some(assoc) = super::inf::lookup_association(name.as_bytes()) else {
+         let text = b"[1][ No application is installed | for this document type. ][ OK ]\0";
+         super::form_alert(1, text.as_ptr());
+         // AES `form_alert` bb_save/restores the screen — no desktop repaint.
+-        return;
++        return false; // `fun_alert(1, STNOAPPL); return FALSE;` (`:1016,1020`)
+     };
+ 
+     // `do_aopen`'s `if (is_installed(pa))` arm (`desksupp.c:896-902`): an
+@@ -748,7 +794,7 @@ fn open_document(name: &str, full_path: &str) {
+     // `AF_APPDIR` flag, not from the desktop-wide `G.g_appdir`. A failure
+     // aborts the launch, as it does for a direct one.
+     if !set_launch_dir(assoc.app_dir, &assoc.app_path) {
+-        return;
++        return false;
+     }
+ 
+     // The associated application must itself be a native NewTOS program.
+@@ -759,20 +805,20 @@ fn open_document(name: &str, full_path: &str) {
+             let text = b"[1][ The associated application is | not a native NewTOS program. ][ OK ]\0";
+             super::form_alert(1, text.as_ptr());
+             // AES `form_alert` bb_save/restores the screen — no desktop repaint.
+-            return;
++            return false;
+         }
+     };
+ 
+-    // Build the command tail: fixed args + full path or file name.
+-    let mut tail_str = String::from(assoc.args.as_str());
+-    tail_str.push_str(if assoc.full_path { full_path } else { name });
+-    let mut tailbuf = [0u8; 128];
+-    let taillen = build_cmd_tail(&mut tailbuf, &tail_str);
++    // `strcpy(ptail, pa->a_pargs); … strcpy(p, pname);` (`:941-950`) — the
++    // fixed args, then the full path or just the file name.
++    let mut tail = String::from(assoc.args.as_str());
++    tail.push_str(if assoc.full_path { full_path } else { name });
+ 
+-    // NUL-terminate the application path for the loader.
++    // NUL-terminate the application path for `shel_write`'s `pcmd`.
+     let mut app_path = String::from(assoc.app_path.as_str());
+     app_path.push('\0');
+-    launch_native(&app_path, &app_name, flavor, &tailbuf[..taillen]);
++    // `return pro_run(isgraf, pa->a_pappl, G.g_work, G.g_cwin, curr);` (`:951`)
++    pro_run_native(&app_path, &app_name, flavor, &tail)
+ }
+ 
+ /// `do_aopen(pa, TRUE, curr, pathname, pname, tail)` (`desksupp.c:843-1031`)
+@@ -796,10 +842,9 @@ fn open_document(name: &str, full_path: &str) {
+ /// `ANODE` those steps read; `tail` is the command line
+ /// [`dir::build_selected_path`] built.
+ ///
+-/// Returns EmuTOS's `exit_desktop`. NewTOS launches **nested** instead of
+-/// leaving the desktop process (AES gap G1, see [`launch_native`]), so the
+-/// answer is always `false` — there is no desktop to exit, and the desktop is
+-/// back on screen by the time this returns.
++/// Returns `do_aopen`'s `WORD`, i.e. EmuTOS's `exit_desktop` for this drop:
++/// TRUE iff the `shel_write` was issued, which ends the desktop's event loop
++/// (`fun_drag` → `hndl_button` → `deskmain.c:2103-2104`).
+ pub(super) fn do_aopen_drop(
+     installed: bool,
+     pappl: &str,
+@@ -829,14 +874,15 @@ pub(super) fn do_aopen_drop(
+     // double-click path already uses for them.
+     match ftype::classify(prog_name.as_bytes()) {
+         ftype::FileType::Native(flavor) => {
+-            let mut tailbuf = [0u8; 128];
+-            let taillen = build_cmd_tail(&mut tailbuf, tail);
+-            app_path.push('\0'); // the loader reads up to the first NUL
+-            launch_native(&app_path, prog_name, flavor, &tailbuf[..taillen]);
++            app_path.push('\0'); // `shel_write`'s `pcmd` reads up to the NUL
++            // `strcpy(ptail, tail); … return pro_run(isgraf, app_path,
++            //  G.g_work, G.g_cwin, curr);` (`:969-975,986`).
++            pro_run_native(&app_path, prog_name, flavor, tail)
+         }
+         ftype::FileType::M68k => {
+             let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
+             super::form_alert(1, text.as_ptr());
++            false
+         }
+         // Reachable, and an EmuTOS quirk rather than an accident: an installed
+         // application's `ANODE` carries `a_aicon = IG_APPL` **and** its
+@@ -846,24 +892,9 @@ pub(super) fn do_aopen_drop(
+         ftype::FileType::Doc => {
+             let text = b"[1][ This file is not a native | NewTOS program. ][ OK ]\0";
+             super::form_alert(1, text.as_ptr());
++            false
+         }
+     }
+-    false
+-}
+-
+-/// Build the classic Atari command-tail image into `buf` and return its length:
+-/// `buf[0]` = argument length, `buf[1..]` = the argument characters, then a NUL
+-/// and a trailing `\r` (EmuTOS `pro_run`, `deskpro.c:56-57`; the loader appends
+-/// the final NUL into `p_cmdlin`). The argument string is capped so the whole
+-/// image fits the 128-byte `p_cmdlin`.
+-fn build_cmd_tail(buf: &mut [u8; 128], s: &str) -> usize {
+-    let bytes = s.as_bytes();
+-    let n = bytes.len().min(124);
+-    buf[0] = n as u8;
+-    buf[1..1 + n].copy_from_slice(&bytes[..n]);
+-    buf[1 + n] = 0; // NUL after the arguments
+-    buf[2 + n] = 0x0D; // trailing CR, just like Atari TOS
+-    3 + n
+ }
+ 
+ /// The bare file name of a `C:` path (the part after the last `\`).
+@@ -886,8 +917,8 @@ fn doc_full_path(p_spec: &str, name: &[u8]) -> String {
+     s
+ }
+ 
+-/// [`doc_full_path`] plus a trailing `\0`, ready to hand to
+-/// [`crate::launch::run_program`] (which reads up to the first NUL).
++/// [`doc_full_path`] plus a trailing `\0`, ready to hand to `shel_write`'s
++/// `pcmd` (which reads up to the first NUL).
+ fn native_path(p_spec: &str, name: &[u8]) -> String {
+     let mut s = doc_full_path(p_spec, name);
+     s.push('\0');
+@@ -958,327 +989,88 @@ fn set_launch_dir(app_dir: bool, own_path: &str) -> bool {
+     true
+ }
+ 
+-/// Launch a native NewTOS program (ADR-018) and repaint the desktop on return.
+-///
+-/// The launch primitive is [`crate::launch::run_program`], which loads the ELF
+-/// from the `C:` FAT16 path, drops to EL0, runs it, and returns on `Pterm`.
+-/// The flavour selects the surrounding behaviour:
+-///
+-/// * [`ftype::Flavor::App`] (`.NAP`) — run directly; the app draws its own AES
+-///   UI over the desktop, so nothing special is needed around the call.
+-/// * [`ftype::Flavor::Console`] (`.NCP`) — bracket the run with the AES screen
+-///   mode switch, [`crate::shell_loop::sh_alpha_enter`] /
+-///   [`crate::shell_loop::sh_alpha_leave`], i.e. EmuTOS' `sh_toalpha` /
+-///   `sh_tographic` (`aes/gemshlib.c:246-260,223-239`): the pointer goes away
+-///   and the screen is cleared before the child's output starts at the top
+-///   left, and the mouse comes back afterwards (DESK22). The desktop is then
+-///   repainted over the text by the trailing [`redraw::redraw_desktop`]
+-///   (whole-screen recovery — the console cleared the screen). `run_program`
+-///   stays pure: no console/redraw coupling inside it.
+-/// * [`ftype::Flavor::Params`] (`.NTP`) — a direct double-click runs it with an
+-///   empty tail (`tail == &[]`, Stage A). When launched as a document's
+-///   associated application (deskins #20), `tail` carries the document path.
+-///
+-/// `tail` is the command-tail image handed to the child's `p_cmdlin` (empty for
+-/// a plain double-click; the document tail for an association launch). A
+-/// load/launch failure (`run_program` → `false`) raises an alert. The desktop is
+-/// repainted on return in every case (it overpaints the console text, the app's
+-/// UI, or the alert).
+-fn launch_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) {
+-    match flavor {
+-        ftype::Flavor::Accessory => {
+-            // A desk accessory (`.NAC`) is **not** launched on demand (ACC02):
+-            // the AES loads it once per session from `C:\ACC\` or the root and
+-            // it lives for the whole session. EmuTOS's desktop has no launch
+-            // path for an `.ACC` either — `count_accs`/`load_accs`
+-            // (`aes/geminit.c:264-315`) is the only way one ever starts. Say so
+-            // rather than start a second, unreachable copy of it.
+-            alert_accessory_not_launchable(name);
+-        }
+-        ftype::Flavor::App | ftype::Flavor::Params => {
+-            // GEM app (`.NAP`) / takes-parameters (`.NTP`): both draw their own
+-            // AES UI directly over the screen, so they go through the
+-            // single-tasking screen handoff (F5) — [`run_gem_app`] relinquishes
+-            // the desktop before the child and rebuilds it on the child's
+-            // `Pterm`. A load/launch failure surfaces as an alert on the
+-            // (already rebuilt) desktop.
+-            if !run_gem_app(path.as_bytes(), tail) {
+-                alert_launch_failed(name);
+-                // `run_gem_app` already rebuilt the desktop (`desktop_resume`); the
+-                // AES `form_alert` bb_save/restores over it — no further repaint.
+-            }
+-        }
+-        ftype::Flavor::Console => {
+-            // Console (`.NCP`): the AES screen-mode switch a character-mode
+-            // program gets in EmuTOS — `pro_run(isgraf = FALSE, …)` →
+-            // `shel_write` → `sh_main`'s `sh_chgrf` → `sh_toalpha`
+-            // (`aes/gemshlib.c:513-523,246-260`), which puts the arrow shape
+-            // back and **removes the mouse pointer** (`ratexit()`, `:256`)
+-            // before the text screen appears. Clearing the screen alone
+-            // (`fbcon::clear_and_home`, which `sh_toalpha` still does at its
+-            // end) left the pointer standing in the text as a black smudge —
+-            // DESK22.
+-            crate::shell_loop::sh_alpha_enter();
+-            let ran = crate::launch::run_program_with_tail(path.as_bytes(), tail);
+-            // Classic TOS keeps the console up until the user acknowledges, so
+-            // the program's final output stays readable before the desktop
+-            // repaints over it. Only reached from a real double-click (an
+-            // interaction path that requires HID input — verified on hardware).
+-            console_pause_for_key();
+-            // Back into graphics mode — `sh_main`'s next pass (`:712-713`),
+-            // `sh_tographic` (`:223-239`): mouse on, hourglass while the
+-            // desktop is rebuilt.
+-            crate::shell_loop::sh_alpha_leave();
+-            if !ran {
+-                // EmuTOS shows the failure alert on the next pass too, right
+-                // after the mode switch and before the desktop is drawn
+-                // (`fm_error`, `gemshlib.c:722-723`).
+-                alert_launch_failed(name);
+-            }
+-            // The console program cleared the whole screen: genuine whole-screen
+-            // recovery of the desktop (background + windows + menu bar).
+-            redraw::redraw_desktop();
+-            // …and the arrow back, which in EmuTOS is the last act of the
+-            // restarted desktop's start-up (`desk_busy_off`,
+-            // `deskmain.c:2071`) undoing `sh_tographic`'s hourglass. Same step,
+-            // same place as after the nested EmuCON pass (`desk::run`'s loop).
+-            pro::desk_busy_off();
+-        }
+-    }
+-}
+-
+-/// Launch a GEM application: the EmuTOS desktop *epilog* → child → *prolog*
+-/// sequence, run **nested** inside the desktop's event loop.
+-///
+-/// **This is not how EmuTOS launches a program, and the difference is AES gap
+-/// G1.** In EmuTOS the desktop calls `shel_write(SHW_EXEC, …)` (`deskpro.c:41`,
+-/// AES opcode 121), `hndl_button` gets TRUE back and sets `done`
+-/// (`deskmain.c:988`), `deskmain` runs its epilog and **returns**, the desktop
+-/// process terminates, and the AES shell loop `sh_main` (`gemshlib.c:708-731`)
+-/// does the rest: `wm_init()`, `ratinit()`, `sh_draw(D.s_cmd, TRUE)`, then
+-/// `sh_ldapp` loads the child. When the child `Pterm`s, `sh_main` loops and
+-/// re-enters the desktop from the top. NewTOS has that shell loop
+-/// ([`crate::shell_loop::sh_main`], which already performs every one of those
+-/// steps) — but [`crate::desk::run`] never returns, so the desktop can never
+-/// hand control back to it and instead calls the loader itself.
+-///
+-/// * **relinquish** ([`desktop_relinquish`], before the child): the EmuTOS
+-///   desktop epilog — `cnx_put()`, `menu_bar(NULL,0)`, `wind_set(DESKWH,
+-///   WF_NEWDESK, NULL)`, `appl_exit()` (`deskmain.c:2152-2166`) — **plus** the
+-///   `gl_shgem` block of the `sh_main` pass that loads the program,
+-///   `wm_init(); ratinit(); sh_draw(D.s_cmd, TRUE)` (`gemshlib.c:715-720`,
+-///   DESK35), so the program gets an empty screen and an empty window table;
+-/// * **show** ([`crate::shell_loop::sh_gem_show`], still before the child):
+-///   `sh_ldapp`'s `sh_show(fname)` (`gemshlib.c:632`, DESK37) — the AES draws
+-///   its whole `DESKTOP` tree back over that white, so what stands behind the
+-///   program is the `#Q` background and a menu-bar strip with its name;
+-/// * **resume** ([`desktop_resume`], after the child's `Pterm`): `wm_new()`,
+-///   then `deskmain`'s prolog — `appl_init()`, `desk_verify(DESKWH)`,
+-///   re-register the background tree, `cnx_get()` to re-open the windows,
+-///   `men_update()`, repaint.
+-///
+-/// Returns whether the child launched (`run_program` → `true`).
+-fn run_gem_app(path: &[u8], tail: &[u8]) -> bool {
+-    desktop_relinquish();
+-    // `sh_show(fname)` (`gemshlib.c:632`) — `sh_ldapp`'s own step, between the
+-    // `sh_main` block [`desktop_relinquish`] ends with and the `dos_exec` on
+-    // the next line (`:645`). It undoes the white of `sh_draw(…, TRUE)`: the
+-    // whole built-in `DESKTOP` tree with its real `ob_spec`, i.e. the `#Q`
+-    // background and the menu-bar strip carrying the program's name (DESK37).
+-    // Same order as EmuTOS — clear, then draw, then load.
+-    crate::shell_loop::sh_gem_show(path);
+-    let ran = crate::launch::run_program_with_tail(path, tail);
+-    desktop_resume();
+-    ran
+-}
+-
+-/// The **relinquish** half of [`run_gem_app`]: the EmuTOS desktop *epilog*
+-/// (`deskmain.c:2152-2166`), followed by the graphics half of the `sh_main`
+-/// pass that starts the program (`gemshlib.c:715-720`,
+-/// [`crate::shell_loop::sh_gem_enter`]).
+-///
+-/// **The screen the program gets is empty, and its window table is empty**
+-/// (DESK35). Before that, the desktop's windows stayed both painted and
+-/// registered: a GEM application draws only into its own rectangles, so the
+-/// leftovers sat there as pixels with no event loop behind them and as AES
+-/// windows the program's own had to composite against. The single-tasking
+-/// decision is that a launched application owns the **whole** screen.
+-fn desktop_relinquish() {
+-    // `cnx_put(); app_save(FALSE);` — the EmuTOS epilog's first two statements
+-    // (`deskmain.c:2154-2155`), in that order.
+-    //
+-    // `cnx_put()` puts the window layout the desktop is about to give up into
+-    // `G.g_cnxsave`; that is what [`desktop_resume`]'s `cnx_get()` reads the
+-    // windows back from, exactly as EmuTOS's restarted `deskmain` does
+-    // (`deskmain.c:2055`). Since DESK35 the `wm_init()` below deletes them for
+-    // real, so the context save area is the only place their paths, rectangles
+-    // and scroll positions survive the program.
+-    //
+-    // `app_save(FALSE)` then serialises that same state into the **AES shell
+-    // buffer** (`shel_put`, `deskapp.c:1293`) — the channel that carries the
+-    // desktop's state over its own death, because `G.g_cnxsave` only lives as
+-    // long as the desktop does. Our desktop resumes in place instead of being
+-    // restarted (gap G1, `desk/mod.rs`'s `run` note), so today nothing reads
+-    // this image back; EmuTOS's restarted `deskmain` picks it up in
+-    // `app_start` (`:832`). Writing it here is not speculative — it is the
+-    // statement `deskmain.c:2155` runs at this point, and the unit that makes
+-    // the desktop a process that ends is the one that gains the reader.
+-    cnx_put();
+-    super::inf::app_save(false);
+-    // Remove the desktop menu bar (EmuTOS `menu_bar(NULL,0)`). Our AES
+-    // `menu_bar(tree, 0)` needs the real (non-null) tree to erase the strip.
+-    super::menu_bar(menu::tree_ptr(), 0);
+-    // Un-register the desktop background tree (EmuTOS
+-    // `wind_set(DESKWH, WF_NEWDESK, NULL, 0, 0)`, `deskmain.c:2163`) so the AES
+-    // `w_drawdesk` falls back to its own built-in DESKTOP root
+-    // (`gemwmlib.c:340-359,1268-1271`).
+-    super::wind_set_newdesk(0, 0);
+-    // The desktop-side `WNODE`s go with the AES handles the `wm_init` below
+-    // deletes. EmuTOS gets this for free — its desktop *process* ends and the
+-    // restarted one rebuilds the array with `win_start()` (`deskmain.c:2028`,
+-    // `deskwin.c:105-135`) — but ours resumes in place, so the nodes have to be
+-    // released explicitly, and through `win_free` so each window's item
+-    // `OBJECT`s go back to the `g_screen` free chain (`obj_wfree`,
+-    // `deskwin.c:148`) instead of leaking one window's worth per launch.
+-    win_free_all();
+-    // `wm_init(); ratinit(); sh_draw(D.s_cmd, TRUE);` — the `gl_shgem` block of
+-    // the `sh_main` pass that loads the program (`gemshlib.c:715-720`). It runs
+-    // *before* the `appl_exit()` below rather than after it; the reason is in
+-    // [`crate::shell_loop::sh_gem_enter`] (the sweep queues `WM_REDRAW`s that
+-    // only the drain may be allowed to see).
+-    crate::shell_loop::sh_gem_enter();
+-    // Leave the AES — EmuTOS `appl_exit()` (`deskmain.c:2166`), the last step of
+-    // the desktop epilog and the first of the two state resets at this boundary.
+-    // `ap_exit` (`gemaplib.c:251-261`) **drains the message queue** and clears
+-    // `AP_OPEN`; it does not destroy the descriptor (A29). That drain is what
+-    // stops the child inheriting the desktop's unread `WM_*` — desktop and first
+-    // child share pid 1 here exactly as EmuTOS's successive programs share `rlr`
+-    // (`gemshlib.c:633-636`), so without it the child's first `evnt_mesag` hands
+-    // it a `WM_REDRAW` for a window it does not own (A28). Last, as in EmuTOS:
+-    // the step above must be able to queue, this one must not be followed by
+-    // anything that can. The second reset is `rlr->p_flags = 0`, done where
+-    // EmuTOS does it — at the handover in `tos_api::aes::register_process`.
+-    super::appl_exit();
+-}
+-
+-/// The **resume** half of [`run_gem_app`]: rebuild the desktop exactly as it was
+-/// before the launch (EmuTOS `deskmain.c:2028-2074` + `gemshlib.c:606,668-677`),
+-/// in `deskmain`'s own prolog order.
+-fn desktop_resume() {
+-    // The shell loop's sweep after the program — `sh_ldapp`: `unsync
+-    // (&wind_spb)` + `wm_new()` (`gemshlib.c:668-669,676-677`), which in EmuTOS
+-    // runs between the child's `Pterm` and the desktop's restart. It is a
+-    // shell-loop step, not a desktop one (like everything in this function,
+-    // gap G1), and the built-in desktop's launch path bypasses the shell loop,
+-    // so it has to be taken here or not at all (A96). Since DESK35 it is the
+-    // **plain** `wm_new`: `desktop_relinquish`'s `wm_init` already took this
+-    // desktop's own windows, so what is left to sweep is the program's, and
+-    // any a `Pexec` descendant outlived it with — closed, deleted, locks
+-    // released, `WF_NEWDESK` tree dropped.
+-    crate::shell_loop::sh_gem_leave();
+-    // Re-enter the AES — EmuTOS `deskmain.c:1953`, `gl_apid = appl_init();`,
+-    // the first statement of the desktop it re-enters after every program
+-    // (`sh_main` → `sh_ldapp`'s DESKTOP arm → `deskstart`,
+-    // `gemshlib.c:600-612,710-727`). The counterpart of the `appl_exit()` in
+-    // [`desktop_relinquish`]: without it the resumed desktop would run with
+-    // `AP_OPEN` clear, which is not a state EmuTOS's running desktop is ever
+-    // in. `ap_init` only ORs the flag back on — descriptor, name and queue are
+-    // untouched (`gemaplib.c:54-63`, A25) — so this restores a flag, it does
+-    // not undo the relinquish's drain.
+-    super::appl_init();
+-    // `desk_verify(DESKWH, FALSE)` (`deskmain.c:2035`) — "initialise g_croot,
+-    // g_cwin, g_wlastsel". There is no window left to be current: `wm_init`
+-    // deleted them all and `cnx_get` below has not re-opened any yet. (The
+-    // desk rectangle is read first: `global::with` takes the desktop lock and
+-    // is not re-entrant.)
+-    let desk = g_desk();
+-    global::with(|g| g.desk_verify(DESKWH, desk, false));
+-    // Re-register the desktop's background object tree (EmuTOS
+-    // `wind_set(DESKWH, WF_NEWDESK, G.g_screen, 1, 0)`, `deskmain.c:2049`).
+-    // The AES `w_drawdesk` draws `DROOT` + icons again from here.
+-    if let Some(tree) = super::global::screen_addr() {
+-        super::wind_set_newdesk(tree, super::global::DROOT);
+-    }
+-    // `cnx_get()` (`deskmain.c:2055`) — "establish desktop's state from info
+-    // found in app_start, open windows". This is the half of the EmuTOS prolog
+-    // that used to be missing (AES gap G2, now closed by DESK35): the windows
+-    // `desktop_relinquish`'s `cnx_put()` recorded are re-opened here, in
+-    // z-order from slot 0 up, each at its saved rectangle, path and scroll
+-    // position. EmuTOS brackets it in `wind_update(BEG_UPDATE/END_UPDATE)`
+-    // (`:2054,2056`); the desktop is the only AES client alive here, so the
+-    // bracket has nothing to keep out and the whole-screen repaint below
+-    // covers what the individual `wind_open`s drew.
+-    cnx_get();
+-    // `men_update()` (`deskmain.c:2069`) — the File/View items that depend on
+-    // how many windows are open and what is selected in them.
+-    menu::men_update();
+-    // App-return recovery: the child cleared/overdrew the whole screen, so rebuild
+-    // the desktop background + windows + menu bar (`redraw_desktop` re-installs the
+-    // menu bar itself, EmuTOS `menu_bar(menutree, 1)`, `deskmain.c:2073`). Not a
+-    // per-event shortcut — a genuine whole-screen restore.
+-    redraw::redraw_desktop();
+-}
+-
+-/// Release every open desktop `WNODE` — `win_free` per window
+-/// (`deskwin.c:141-150`), which is also the `obj_wfree` that returns the
+-/// window's item `OBJECT`s to the `g_screen` free chain (`:148`).
++/// `do_aopen`'s launch tail (`desksupp.c:955-986`) for a native NewTOS program
++/// (ADR-018):
+ ///
+-/// EmuTOS has no such function because it never needs one: the desktop's
+-/// `WNODE` array belongs to the desktop *process*, which ends, and the
+-/// restarted desktop allocates a fresh one in `win_start()`
+-/// (`deskmain.c:2028`). NewTOS's desktop resumes in place, so the array it
+-/// keeps must be emptied by hand when the AES handles in it are about to be
+-/// deleted ([`crate::shell_loop::sh_gem_enter`]'s `wm_init`). No AES call is
+-/// made here — the windows are closed and deleted by that `wm_init`, exactly
+-/// as in EmuTOS.
+-fn win_free_all() {
+-    let (handles, n) = open_handles();
+-    for &handle in &handles[..n] {
+-        global::with(|g| g.win_free(handle));
+-    }
+-}
+-
+-/// Keep the VT52 console up after a `.NCP` program returns and block until the
+-/// user presses a key, then let the caller repaint the desktop — the classic-TOS
+-/// "the program's output stays on screen until acknowledged" affordance.
++/// ```c
++/// strcpy(app_path, pathname);
++/// p = filename_start(app_path);
++/// strcpy(p, pname);
++/// if (isapp)
++/// {
++///     ret = TRUE;
++///     if (tail)        strcpy(ptail, tail);
++///     else if (isparm) ret = opn_appl(pname, ptail);
++///     return ret ? pro_run(isgraf, app_path, G.g_work, G.g_cwin, curr) : FALSE;
++/// }
++/// ```
+ ///
+-/// The prompt renders through the same `fbcon` console the program wrote to
+-/// (still active on return); the blocking read reuses the EmuCON shell's console
+-/// input source ([`crate::host_env`] `console_read_key_blocking` → IKBD / USB
+-/// HID). That input path exists only on hardware (and interactive QEMU), which
+-/// is also the only place a `.NCP` can be double-clicked — so this never stalls
+-/// a headless boot (the `\AUTO\` path does not go through here).
+-fn console_pause_for_key() {
+-    for &b in b"\r\n[ Press any key to return to the desktop ]" {
+-        crate::fbcon::write_byte(b);
+-    }
+-    if let Some(h) = tos_api::host::host() {
+-        let _ = h.console_read_key_blocking();
++/// The three callers assemble `app_path` themselves — the double click, the
++/// document association and the drop-on-an-application reach it by different
++/// routes — and hand it in NUL-terminated; what they share is the `G.g_work`
++/// tail image and the single `pro_run`.
++///
++/// **This is the desktop's only way to start a program.** There is no loader
++/// call here and none anywhere else in `desk/`: `pro_run` issues
++/// `shel_write(SHW_EXEC, …)` (`deskpro.c:41`), the caller's `done` takes the
++/// desktop out (`deskmain.c:988`, [`super::run`]'s epilog), and the start
++/// itself belongs to [`crate::shell_loop::sh_ldapp`] — where EmuTOS leaves it
++/// too (`gemshlib.c:645`).
++///
++/// **`opn_appl` is not built** (`deskpro.c:71-121`, the `.TTP`/`.GTP` parameter
++/// prompt): a `.NTP` double click launches with the empty tail its caller
++/// passes, i.e. the `tail != NULL` branch above. Named here rather than
++/// silently absent — it is a dialog of its own.
++fn pro_run_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &str) -> bool {
++    if flavor == ftype::Flavor::Accessory {
++        // A desk accessory (`.NAC`) is **not** launched on demand (ACC02): the
++        // AES loads it once per session from `C:\ACC\` or the root and it lives
++        // for the whole session. EmuTOS's desktop has no launch path for an
++        // `.ACC` either — `count_accs`/`load_accs` (`aes/geminit.c:264-315`) is
++        // the only way one ever starts. Say so rather than start a second,
++        // unreachable copy of it.
++        alert_accessory_not_launchable(name);
++        return false;
+     }
+-}
+-
+-/// Raise a `form_alert` reporting that `name` could not be launched (an
+-/// `ENSMEM` / bad-format / not-found from the loader).
+-fn alert_launch_failed(name: &str) {
+-    let mut buf = [0u8; 128];
+-    let mut p = 0usize;
+-    for part in [b"[1][ Could not launch ".as_slice(), name.as_bytes(), b". ][ OK ]"] {
+-        for &b in part {
+-            if p < buf.len() - 1 {
+-                buf[p] = b;
+-                p += 1;
+-            }
+-        }
++    // `G.g_work[1] = '\0'; ptail = G.g_work + 1; strcpy(ptail, tail);`
++    // (`desksupp.c:918-919,969-975`) — the tail **text** goes at byte 1;
++    // `pro_run` writes the length byte in front of it and the CR behind it
++    // (`deskpro.c:56-57`). Clamped to the same bound `pro_run` applies.
++    let mut work = [0u8; pro::CMDTAILSIZE];
++    let bytes = tail.as_bytes();
++    let n = bytes.len().min(pro::CMDTAILSIZE - 3);
++    work[1..1 + n].copy_from_slice(&bytes[..n]);
++    pro::pro_run(isgraf(flavor), path.as_bytes(), &mut work)
++}
++
++/// `isgraf = pa->a_flags & AF_ISCRYS;` (`desksupp.c:876`) — *"is GEM
++/// application"* (`deskapp.h:28`). It is `shel_write`'s `isgr` argument, which
++/// the AES records as `sh_isgem` (`gemshlib.c:173`) and `sh_chgrf` turns into
++/// the screen mode of the next `sh_main` pass (`:513-523`): a GEM program keeps
++/// the graphics screen, a character program gets `sh_toalpha`.
++///
++/// For a file that is not an installed application EmuTOS reads the flag off
++/// the built-in `EMUDESK.INF` entry for its extension (`deskapp.c:181-188`,
++/// parsed by `app_parse`, `:311-322`): `#G *.APP`/`*.PRG` and `#Y *.GTP` carry
++/// `AF_ISCRYS`, `#F *.TOS` and `#P *.TTP` do not. The native family maps onto
++/// that table through the analogy [`super::ftype`] documents.
++fn isgraf(flavor: ftype::Flavor) -> bool {
++    match flavor {
++        // `.NAP` = `*.PRG`/`*.APP` (`#G`), `.NTP` = `*.GTP` (`#Y`).
++        ftype::Flavor::App | ftype::Flavor::Params => true,
++        // `.NCP` = `*.TOS` (`#F`).
++        ftype::Flavor::Console => false,
++        // `.NAC` never reaches `pro_run` — [`pro_run_native`] turns it away
++        // before this is asked.
++        ftype::Flavor::Accessory => true,
+     }
+-    buf[p] = 0;
+-    super::form_alert(1, buf.as_ptr());
+ }
+ 
+ /// Alert for a double-clicked desk accessory (`.NAC`): it is already loaded (or
+ /// was not found at boot) and cannot be started a second time — see
+-/// [`launch_native`]'s `Accessory` arm. EmuTOS has no message for this because
+-/// its desktop cannot reach the case at all; ours can, so it says what happened
+-/// instead of doing nothing.
++/// [`pro_run_native`]'s `Accessory` guard. EmuTOS has no message for this
++/// because its desktop cannot reach the case at all; ours can, so it says what
++/// happened instead of doing nothing.
+ fn alert_accessory_not_launchable(name: &str) {
+     let mut buf = [0u8; 128];
+     let mut p = 0usize;
+@@ -1431,12 +1223,13 @@ fn check_function_key(key: i16) -> Option<bool> {
+ /// the launch. The one EmuTOS branch this cannot reach is `opn_appl`'s
+ /// parameter prompt for a `.TTP`/`.GTP` (`:978-985`), which NewTOS does not
+ /// have for `.NTP` either — a `.NTP` launched from a key runs with the same
+-/// empty tail a double click gives it ([`launch_native`], Stage A). No new gap:
+-/// the same named one, now reachable from a second place.
++/// empty tail a double click gives it ([`pro_run_native`]). No new gap: the
++/// same named one, now reachable from a second place.
+ ///
+ /// `curr` is `-1` in this call, which in EmuTOS only suppresses `pro_run`'s
+-/// `do_wopen` re-open of the desktop window (`deskpro.c:61-62`); NewTOS launches
+-/// nested and repaints on return, so there is nothing to suppress.
++/// `do_wopen` re-open of the desktop window (`deskpro.c:61-62`); NewTOS's
++/// `pro_run` carries neither parameter (`pro.rs`), so there is nothing to
++/// suppress.
+ fn process_funkey(funkey: u16) -> Option<bool> {
+     let pa = super::inf::app_by_funkey(funkey as u8)?;
+     let pname = filename_of(&pa.app_path);
+@@ -1551,10 +1344,7 @@ fn hndl_menu(item: Item, title_obj: i16) -> bool {
+             }
+             false
+         }
+-        Title::Options => {
+-            do_optnmenu(item);
+-            false
+-        }
++        Title::Options => do_optnmenu(item),
+     };
+     super::menu_tnormal(menu::tree_ptr(), title_obj, true);
+     done
+@@ -1587,7 +1377,7 @@ fn do_deskmenu(item: Item) {
+ fn do_filemenu(item: Item) -> bool {
+     let mut done = false;
+     match item {
+-        Item::Open => do_open_selected(),
++        Item::Open => done = do_open_selected(),
+         Item::CloseFolder => do_close_folder(),
+         Item::CloseWindow => do_close_window(),
+         Item::Cycle => do_cycle(),
+@@ -1637,10 +1427,11 @@ fn do_filemenu(item: Item) -> bool {
+ /// in; `sh_chdef`'s `CONSOLE_APP` arm is what applies it
+ /// (`gemshlib.c:545-549`).
+ ///
+-/// Returns `done` for the caller, and — because NewTOS's desktop cannot
+-/// terminate on it — that flag is consumed by [`super::run`]'s loop rather
+-/// than by the AES shell loop. See
+-/// [`crate::shell_loop::sh_run_pending_console`] for the gap and its reason.
++/// Returns `done` for the caller. Since DESK43 U3 that flag does what it does
++/// in EmuTOS: it ends the desktop, and the console is started by
++/// [`crate::shell_loop::sh_main`]'s next pass through its `CONSOLE_APP` arm
++/// (`gemshlib.c:614-622`) — `sh_chgrf` having taken the screen to alpha mode
++/// first, because `isgraf = FALSE` recorded `sh_isgem = 0` (`:173,513-523`).
+ fn do_execcli() -> bool {
+     // `G.g_work[1] = '\0';` — an empty command tail. Byte 0 is the length
+     // byte `pro_run` fills in, byte 1 the first text byte.
+@@ -1673,12 +1464,16 @@ fn do_execcli() -> bool {
+     done
+ }
+ 
+-/// `do_optnmenu` (EmuTOS `deskmain.c:786`) — the Options menu. Live items: Set
++/// `do_optnmenu` (EmuTOS `deskmain.c:836`) — the Options menu. Live items: Set
+ /// background (`inf_backgrounds`), Install Application (deskins #20), Read .INF
+-/// (reload + apply), Save desktop (`app_save`). The remaining preferences /
+-/// resolution items stay disabled by `men_update` (deskrez is config.txt-driven,
+-/// ADR-017 rev 2).
+-fn do_optnmenu(item: Item) {
++/// (which restarts the desktop, `:918-925`), Save desktop (`app_save`). The
++/// remaining preferences / resolution items stay disabled by `men_update`
++/// (deskrez is config.txt-driven, ADR-017 rev 2).
++///
++/// Returns `done` (`WORD do_optnmenu(WORD item)`, `:836`) — `READITEM` is the
++/// one live item that sets it.
++fn do_optnmenu(item: Item) -> bool {
++    let mut done = false;
+     match item {
+         Item::InstallApp => do_install_app(),
+         // `case PREFITEM: if (inf_pref()) desk_all(FALSE);` (`deskmain.c:885-
+@@ -1734,10 +1529,11 @@ fn do_optnmenu(item: Item) {
+         // screen while a drop-down is closed, and `end_dialog`'s
+         // `form_dial(FMD_FINISH)` restores what the dialog covered (DESK05).
+         Item::DeskConfig => super::inf::inf_conf(),
+-        Item::ReadInf => do_read_inf(),
++        Item::ReadInf => done = do_read_inf(),
+         Item::SaveDesktop => do_save_desktop(),
+         _ => {} // remaining Options items stay disabled
+     }
++    done
+ }
+ 
+ /// `curr = win_isel(G.g_screen, G.g_croot, 0);` — the first selected item of the
+@@ -1815,7 +1611,7 @@ fn default_flavor(flavor: ftype::Flavor) -> super::inf::AppFlavor {
+         ftype::Flavor::Console => super::inf::AppFlavor::Tos,
+         ftype::Flavor::Params => super::inf::AppFlavor::Ttp,
+         // A `.NAC` is never an *installed application* — it is not launched at
+-        // all (see [`launch_native`]) — but the enum must be total. GEM is the
++        // all (see [`pro_run_native`]) — but the enum must be total. GEM is the
+         // nearest description of what the file is; the Install-Application
+         // dialog is unreachable for it, since [`selected_native_program`] only
+         // offers a program the desktop would run.
+@@ -1860,45 +1656,35 @@ fn selected_native_program() -> Option<(String, String, ftype::Flavor)> {
+     .flatten()
+ }
+ 
+-/// `READITEM` (`deskmain.c:919-925`) — *Options → Read .INF file*: run
+-/// [`super::inf::app_read_inf`] (prompt, load, validate, alert on failure) and,
+-/// if it read a file, put the new settings into effect.
+-///
+-/// **Deviation — no desktop restart** (`TASK/DESK14.md`, lead decision
+-/// 2026-09-23, point 4). EmuTOS answers a successful read with
+-/// `restart_desktop = TRUE; done = TRUE;`: `deskmain` tears its allocations
+-/// down (`:2136-2148`) and `_deskstart` immediately re-enters it, so the new
+-/// file is read exactly the way the boot path reads one. NewTOS's desktop is
+-/// still a kernel call, not a process `sh_main` can re-enter — `global::init`
+-/// is idempotent, there is no `win_start()` on re-entry, and the
+-/// `cnx_put(); app_save(FALSE)` → `shel_get` bridge (`deskmain.c:2152-2153`)
+-/// does not exist — so the settings are pulled into the *running* desktop
+-/// instead: the block below is what the restart would otherwise have done.
+-/// The restart path belongs to the move of the desktop into user scope and is
+-/// deferred; do not work around its absence here.
+-fn do_read_inf() {
++/// `case READITEM:` of `do_optnmenu` (`deskmain.c:918-925`, `#if
++/// CONF_WITH_READ_INF`) — *Options → Read .INF file*:
++///
++/// ```c
++/// if (app_read_inf())
++/// {
++///     restart_desktop = TRUE;
++///     done = TRUE;
++/// }
++/// ```
++///
++/// [`super::inf::app_read_inf`] prompts, loads, validates and — since DESK43 U3
++/// — merges the file into the AES shell buffer (`deskapp.c:1530-1534`). The two
++/// flags then end this desktop: `done` takes the event loop out, `restart_
++/// desktop` picks the epilog's free-everything arm (`:2136-2150`), and
++/// [`super::run`] re-enters [`super::deskmain`] immediately, which reads the
++/// new file back through `app_start` exactly the way the boot path reads one.
++///
++/// **The DESK14 §4 deviation ("no desktop restart", lead decision 2026-09-23)
++/// is hereby retired**, together with the in-place re-apply that stood in for
++/// it (`cnx_get_prefs` + `install_shortcuts` + `win_view`/`app_blddesk`/
++/// `win_srtall` + `win_bdall` + `redraw_desktop`): the restart does all of it,
++/// from `deskmain`'s own prolog.
++fn do_read_inf() -> bool {
+     if !super::inf::app_read_inf() {
+-        return;
++        return false;
+     }
+-    // The re-read `#E` bytes land in `G.g_cnxsave`; push their preference half
+-    // into the live desktop (see [`cnx_get_prefs`] for why not the whole
+-    // `cnx_get`).
+-    cnx_get_prefs();
+-    // The re-read `#K` line landed in `menu_shortcuts[]`; render it into the
+-    // menu strings. EmuTOS gets this for free — the restart rebuilds the whole
+-    // desktop from `deskmain`, `install_shortcuts()` included
+-    // (`deskmain.c:920-926`, `:2023`) — whereas NewTOS re-applies in place (see
+-    // the deviation above), so it has to say so.
+-    menu::install_shortcuts();
+-    global::with(|g| {
+-        g.win_view();
+-        g.app_blddesk();
+-        g.win_srtall();
+-    });
+-    win_bdall();
+-    // Read .INF rebuilt the desktop icon tree + every window's view (background,
+-    // icon grid, sort may all have changed): a genuine whole-desktop repaint.
+-    redraw::redraw_desktop();
++    RESTART_DESKTOP.store(true, core::sync::atomic::Ordering::Relaxed);
++    true
+ }
+ 
+ /// Options → Save desktop: snapshot the session context, then serialise it to
+@@ -2588,10 +2374,16 @@ fn win_bdall() {
+ 
+ // ── File-menu actions ──────────────────────────────────────────────────────
+ 
+-/// File → Open: open the single selected item of the current window (a folder
+-/// in a new window, a drive icon at its root). Enabled only when exactly one
+-/// item is selected (`men_update`).
+-fn do_open_selected() {
++/// `case OPENITEM:` of `do_filemenu` (`deskmain.c:666-668`):
++/// `if (pw || curr) done = do_open(pw, curr);` — open the single selected item
++/// of the current window (a folder in a new window, a drive icon at its root, a
++/// program through [`pro_run_native`]). Enabled only when exactly one item is
++/// selected (`men_update`).
++///
++/// Returns `do_open`'s answer: TRUE iff a `shel_write` was issued, i.e. the
++/// desktop is to end so the AES shell can start the program. Nothing selected
++/// is EmuTOS's `if (pw || curr)` being false — no call, `done` stays FALSE.
++fn do_open_selected() -> bool {
+     let picked = global::with(|g| {
+         let root = g.g_croot;
+         let handle = g.g_cwin;
+@@ -2605,8 +2397,9 @@ fn do_open_selected() {
+         None
+     })
+     .flatten();
+-    if let Some((handle, obid)) = picked {
+-        open_item(handle, obid);
++    match picked {
++        Some((handle, obid)) => open_item(handle, obid),
++        None => false,
+     }
+ }
+ 
+diff --git a/kernel/src/desk/mod.rs b/kernel/src/desk/mod.rs
+index e18481f..4cf8976 100644
+--- a/kernel/src/desk/mod.rs
++++ b/kernel/src/desk/mod.rs
+@@ -85,6 +85,7 @@ const OP_WIND_SET: i16 = 105;
+ const OP_WIND_FIND: i16 = 106;
+ const OP_WIND_UPDATE: i16 = 107;
+ const OP_WIND_CALC: i16 = 108;
++const OP_WIND_NEW: i16 = 109;
+ const OP_SHEL_WRITE: i16 = 121;
+ const OP_SHEL_GET: i16 = 122;
+ const OP_SHEL_PUT: i16 = 123;
+@@ -429,6 +430,22 @@ pub(super) fn wind_delete(handle: i16) {
+     a.call(OP_WIND_DELETE, 1, 1, 0);
+ }
+ 
++/// `wind_new()` (109) — close and delete **every** window this application
++/// still has open and drop its `wind_update` locks (`desk/gembind.c:790-794`,
++/// `AES_CTRL_CODE(WIND_NEW, 0, 1, 0)`; AES side `wm_new`,
++/// `gemwmlib.c:1875-1893`).
++///
++/// The desktop's one caller is [`deskmain`]'s restart tail (`deskmain.c:2168-
++/// 2169`, `if (rc == FALSE) wind_new();`): the *Read .INF file* path re-enters
++/// `deskmain` inside the same process, so the AES handles
++/// [`close_desktop_windows`] closed but did not delete have to be swept before
++/// the next `win_start`. On the normal exit the process ends and the AES does
++/// it (`gemshlib.c:676-677`).
++pub(super) fn wind_new() {
++    let mut a = Aes::new();
++    a.call(OP_WIND_NEW, 0, 1, 0);
++}
++
+ /// The instantaneous mouse/keyboard state from `graf_mkstate` (79).
+ pub(super) struct MouseState {
+     /// Mouse x.
+@@ -861,10 +878,51 @@ pub(super) fn screen_rect() -> Grect {
+ 
+ // ── Boot entry ─────────────────────────────────────────────────────────────
+ 
+-/// The desktop entry point (EmuTOS `deskmain`): one-time setup (metrics, the
+-/// desktop icon tree, menu bar), open the first directory window, paint the
+-/// full desktop, then hand off to the interaction event loop ([`main::run`]).
++/// `_deskstart` (`desk/deskstart.S:52-56`) — the desktop program's entry point,
++/// which is what `sh_ldapp`'s DESKTOP arm starts
++/// (`aes_run_rom_program(deskstart)`, `gemshlib.c:606`):
++///
++/// ```asm
++/// restart:
++///         jsr     _deskmain               // Run the desktop
++///         tst.w   d0
++///         jeq     restart                 // handle read of .INF file
++///         clr.w   -(sp)
++///         trap    #1                      // Pterm
++/// ```
++///
++/// [`deskmain`] answers `false` for the one case that re-enters it in the same
++/// process — a successful *Options → Read .INF file* — and `true` when the
++/// desktop is done, which on an Atari is a `Pterm` and here is this function
++/// returning into [`crate::shell_loop::sh_ldapp`]. The `Mshrink` and the stack
++/// switch the rest of `deskstart.S` performs are a process's own setup; the
++/// NewTOS desktop is still called on the kernel stack (DESK43 U9 moves it).
+ pub fn run() {
++    while !deskmain() {
++        // The allocations `deskmain`'s restart arm gave back
++        // (`deskmain.c:2140-2147`, eight `dos_free`s of `G.g_wlist` …
++        // `desk_rs_strings`) are ours as one singleton, and they are dropped
++        // here rather than inside `deskmain` for a reason EmuTOS does not have:
++        // `dos_free` leaves the bytes readable, `drop` does not — and at
++        // `:2141` the AES still holds `g_screen` as its background tree, which
++        // `menu_bar(NULL, 0)` (`:2160`) could still make it read before
++        // `wind_set(DESKWH, WF_NEWDESK, NULL)` (`:2163`) takes it away. Freeing
++        // after the un-registration is the same state transition without that
++        // window.
++        reset();
++    }
++}
++
++/// `deskmain` (`desk/deskmain.c:1938-2172`) — one run of the desktop: the
++/// library/state prolog (metrics, the desktop icon tree, the menu bar, the
++/// windows the context asks for), the event loop, and the epilog that hands the
++/// screen back. Returns `deskmain`'s `rc`: `true` = "the desktop process
++/// terminates", `false` = "restart me immediately" (*Read .INF file*).
++fn deskmain() -> bool {
++    // `restart_desktop = FALSE;` (`:1946`) — this run's answer, until
++    // `do_optnmenu`'s READITEM arm says otherwise.
++    main::clear_restart_desktop();
++
+     // No raster check here: `sh_ldapp`'s DESKTOP arm only reaches this function
+     // when `gl_shgem` is set (`gemshlib.c:600-601`, `crate::shell_loop`), which
+     // is where EmuTOS makes that decision too.
+@@ -985,50 +1043,110 @@ pub fn run() {
+         reopened
+     );
+ 
+-    // Hand off to the interaction loop. It returns when a handler set `done`
+-    // — today only File → Execute EmuCON (`deskmain.c:750-753`), which asked
+-    // the AES shell for the console with `shel_write(SHW_EXEC, …)` on its way
+-    // out.
++    // The event loop (`deskmain.c:2077-2123`). It returns when a handler set
++    // `done` — a program start (`hndl_button`'s double click, `:988`), *File →
++    // Execute EmuCON* (`:750-753`) or a successful *Read .INF file*
++    // (`:919-925`) — each of which has already told the AES shell what is to
++    // happen next with `shel_write(SHW_EXEC, …)`.
++    main::event_loop();
++
++    // ── The epilog (`deskmain.c:2124-2171`) ──────────────────────────────
+     //
+-    // **This loop is EmuTOS's `sh_main`, standing in for it (AES gap G1).**
+-    // There, `deskmain` returning *is* the handover: the desktop process ends
+-    // and `sh_main` (`gemshlib.c:708-731`) runs whatever `shel_write` made
+-    // pending, then starts the desktop again from the top. NewTOS's built-in
+-    // desktop is an in-kernel call that cannot be restarted — [`global::init`]
+-    // is idempotent and there is no `win_start()` on re-entry, so a restarted
+-    // desktop would inherit a window list of handles the intervening
+-    // `wm_init()` had deleted (`TASK/DESK14.md` §4 is the same decision, for
+-    // the `Read .INF file` item). So the pending program is run here, nested,
+-    // by the shell loop's own code
+-    // ([`crate::shell_loop::sh_run_pending_console`]), and the desktop picks
+-    // its event loop up again instead of being rebuilt.
+-    loop {
+-        main::event_loop();
+-        if !crate::shell_loop::sh_run_pending_console() {
+-            break;
+-        }
+-        // What EmuTOS gets from restarting `deskmain` (`gemshlib.c:717-719` +
+-        // `deskmain.c:2064-2071`): the screen back, the menu state re-derived,
+-        // the arrow back. `redraw_desktop` is whole-screen recovery, which is
+-        // right — the console cleared the screen and wrote text over it.
+-        menu::men_update();
+-        redraw::redraw_desktop();
++    // "if we are exiting because of a successful 'Read INF file', we must close
++    // all the windows & free all the memory we allocated above, since we will
++    // re-enter deskmain() immediately. in all other cases, the desktop process
++    // will terminate and the allocated memory will be automatically freed. we
++    // must save the desktop state in memory for when the desktop process
++    // restarts." (`:2124-2134`)
++    let rc = if main::restart_desktop() {
++        // `:2136-2150`
++        pro::desk_busy_on();
++        close_desktop_windows();
+         pro::desk_busy_off();
++        false // "_deskstart will call us again immediately" (`:2149`)
++    } else {
++        // `:2153-2157`. `cnx_put()` snapshots the window layout into
++        // `G.g_cnxsave`; `app_save(FALSE)` serialises that snapshot into the
++        // **AES shell buffer** (`shel_put`, `deskapp.c:1293`) — the channel that
++        // carries the desktop's state across its own death, which the next
++        // `app_start` reads back (`deskapp.c:832`, DESK43 U2).
++        main::cnx_put();
++        inf::app_save(false);
++        true // "_deskstart will terminate the process" (`:2156`)
++    };
++
++    // "turn off the menu bar" (`:2159-2160`, `menu_bar(NULL, 0)`). Our AES
++    // `menu_bar(tree, 0)` needs the real (non-null) tree to erase the strip.
++    menu_bar(menu::tree_ptr(), 0);
++
++    // "give up the desktop" (`:2162-2163`, `wind_set(DESKWH, WF_NEWDESK, NULL,
++    // 0, 0)`) — the AES `w_drawdesk` falls back to its own built-in DESKTOP
++    // root from here (`gemwmlib.c:340-359,1268-1271`).
++    wind_set_newdesk(0, 0);
++
++    // "exit the gem AES" (`:2165-2166`). `ap_exit` (`gemaplib.c:251-261`)
++    // drains the message queue and clears `AP_OPEN`; the drain is what stops
++    // the next program inheriting the desktop's unread `WM_*` (A28), which
++    // matters here because desktop and child share `rlr` (`gemshlib.c:633`).
++    // Last, as in EmuTOS: nothing that can queue a message may follow it.
++    appl_exit();
++
++    // `if (rc == FALSE) wind_new();` (`:2168-2169`) — "restarting: clean up AES
++    // windows", i.e. delete the handles `close_desktop_windows` only closed.
++    if !rc {
++        wind_new();
+     }
+ 
+-    // On the way out, deregister from the AES — the symmetric counterpart to
+-    // the boot `appl_init` (EmuTOS `deskmain.c:2166`, `appl_exit();`).
+-    appl_exit();
++    rc
+ }
+ 
+-/// Take the desktop down for an AES restart (A106) — the counterpart of
+-/// EmuTOS's desktop simply *ending* with the session that requested the
+-/// resolution change (`aes/gemshlib.c:727`, `desk/deskmain.c`'s epilog) and
+-/// being started afresh by the next `sh_main`.
++/// `close_desktop_windows` (`desk/deskmain.c:1921-1930`, `#if
++/// CONF_WITH_READ_INF`) — "close desktop windows":
++///
++/// ```c
++/// while( (pw=win_ontop()) )
++/// {
++///     wind_close(pw->w_id);           /* close the window */
++///     dos_free(pw->w_pnode.p_fbase);  /* free the fnodes */
++///     win_free(pw);                   /* free the wnode */
++/// }
++/// ```
++///
++/// `win_ontop()` is `wind_get(DESKWH, WF_TOP)` here as everywhere else in the
++/// desktop, and the `FNODE` vector lives inside the `WNODE`, so
++/// [`global::DeskState::win_free`] performs both of the last two steps. The
++/// loop is bounded by the window table because our top handle comes from the
++/// AES rather than from the list being emptied: EmuTOS's terminates when
++/// `win_free` unlinks the node, ours when the table runs out — same set, no way
++/// to spin.
++fn close_desktop_windows() {
++    for _ in 0..global::NUM_WNODES {
++        let pw = wind_get_top();
++        if pw == win::DESKWH {
++            break;
++        }
++        wind_close(pw);
++        if global::with(|g| g.win_free(pw)) != Some(true) {
++            break;
++        }
++    }
++}
++
++/// Give the dead desktop's memory back — what GEMDOS does for EmuTOS when the
++/// desktop *process* ends (`desk/deskstart.S:57-59`, `deskmain.c:2131-2133`
++/// *"the desktop process will terminate and the allocated memory will be
++/// automatically freed"*), and what `deskmain`'s own restart arm does by hand
++/// for the *Read .INF file* re-entry (`:2140-2147`).
++///
++/// Three callers, all of them a desktop that has just ended:
++/// [`crate::shell_loop::sh_ldapp`]'s DESKTOP arm before the next start,
++/// [`run`]'s restart loop, and the kernel's AES-restart path (A106,
++/// `kernel/src/lib.rs`).
+ ///
+-/// Must run **after** [`tos_api::aes::reinit`], which clears the AES's
+-/// `gl_newdesk` registration ([`wind_set_newdesk`]) — that pointer addresses
+-/// the object arena this call frees.
++/// Must run **after** whatever clears the AES's `gl_newdesk` registration
++/// ([`wind_set_newdesk`]) — [`deskmain`]'s epilog on the desktop's own way out,
++/// [`tos_api::aes::reinit`] on the A106 path. That pointer addresses the object
++/// arena this call frees.
+ pub fn reset() {
+     global::reset();
+     inf::reset();
+diff --git a/kernel/src/desk/pro.rs b/kernel/src/desk/pro.rs
+index 00c17c5..28cd91b 100644
+--- a/kernel/src/desk/pro.rs
++++ b/kernel/src/desk/pro.rs
+@@ -107,17 +107,15 @@ fn pro_exec(isgraf: bool, isover: i16, pcmd: &[u8], ptail: &[u8]) -> bool {
+ /// `tail` comes in as EmuTOS hands it over: the **text** of the command tail
+ /// starting at byte 1, byte 0 reserved for the length this function fills in.
+ ///
+-/// **The `(wh, curr)` pair is not carried.** EmuTOS's second half is the
+-/// "optionally, deselect the current icon & zoom to desktop size" step of the
+-/// double-click launch (`do_open` → `pro_run(…, G.g_cwin, curr)`,
+-/// `desksupp.c:951`), which un-zooms the icon the user opened. NewTOS's
+-/// double-click does not go through `pro_run` yet — it calls the loader
+-/// directly (`main::launch_native`, AES gap G1) — and `do_wopen`
+-/// (`desksupp.c:294`) has no counterpart in the tree, so the only caller is
+-/// `CLIITEM`, which passes `wh = -1` and skips the step (`deskmain.c:753`).
+-/// Carrying two dead parameters and an unreachable branch would be worse than
+-/// naming the gap; when the double-click path is routed through here, they
+-/// come back together with `do_wopen`.
++/// **The `(wh, curr)` pair is not carried, and that is the one named gap left
++/// here.** EmuTOS's second half is the *"optionally, deselect the current icon
++/// & zoom to desktop size"* step (`deskpro.c:61-62`), reached from the
++/// double-click launch (`do_open` → `do_aopen` → `pro_run(…, G.g_cwin, curr)`,
++/// `desksupp.c:986`). Since DESK43 U3 every desktop launch does come through
++/// here, so the branch is no longer unreachable — but its body, `do_wopen(FALSE,
++/// wh, curr, &G.g_desk)` (`desksupp.c:294`), has no counterpart in the tree yet.
++/// Adding two parameters whose only use would be a call that does not exist
++/// would be a stub; they come back with `do_wopen`.
+ pub(super) fn pro_run(isgraf: bool, cmd: &[u8], tail: &mut [u8; CMDTAILSIZE]) -> bool {
+     // `tail[0] = len = strlen(tail+1);` — clamped so the length byte, the
+     // text, its NUL and the CR all fit the image. EmuTOS has no such bound
+diff --git a/kernel/src/launch.rs b/kernel/src/launch.rs
+index 142ff66..210302b 100644
+--- a/kernel/src/launch.rs
++++ b/kernel/src/launch.rs
+@@ -120,10 +120,14 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
+     // — the one pair `shel_read` answers from and `shel_write(SHW_EXEC)`
+     // overwrites (`aes/gemshlib.c:104-105,169-170`; H05). In EmuTOS the
+     // desktop's `shel_write` has filled them by the time `sh_ldapp` reaches
+-    // `dos_exec(PE_LOADGO, D.s_cmd, ad_stail, …)` (`:645`); the built-in
+-    // desktop's double-click reaches this launcher without one (gap G1), so
+-    // the launcher publishes them here on every path. `tail` is handed over
+-    // verbatim: it is the length-prefixed `p_cmdlin` image the loader copied.
++    // `dos_exec(PE_LOADGO, D.s_cmd, ad_stail, …)` (`:645`), and since DESK43 U3
++    // the NewTOS desktop takes that route too — for the shell loop's own arm
++    // this therefore rewrites the identical values. The path that has no
++    // `shel_write` in front of it is the `\AUTO\` runner (`run_auto_programs`,
++    // EmuTOS `bios/bios.c:713-714`, which precedes the AES entirely), so the
++    // launcher publishes them here on every path, one writer for both. `tail`
++    // is handed over verbatim: it is the length-prefixed `p_cmdlin` image the
++    // loader copied.
+     tos_api::aes::shell::set_launch_info(path, tail);
+     set_current(s.basepage_kva.load(Ordering::Acquire));
+     kprintln!("[launch] EL0: slot {} entry 0x{:x}", child.slot, child.entry_va);
+diff --git a/kernel/src/shell_loop.rs b/kernel/src/shell_loop.rs
+index 6b84fc3..6154c06 100644
+--- a/kernel/src/shell_loop.rs
++++ b/kernel/src/shell_loop.rs
+@@ -248,155 +248,6 @@ pub fn go_graphic() {
+     }
+ }
+ 
+-/// The screen-mode half of one `sh_main` pass for a **character-mode
+-/// `NORMAL_APP`** the built-in desktop runs nested (AES gap G1) — DESK22.
+-///
+-/// EmuTOS' desktop reaches a `.TOS`/`.TTP` through `pro_run(isgraf = FALSE,
+-/// …)` → `shel_write(SHW_EXEC, 0, 1, cmd, tail)`, which records `sh_isgem =
+-/// FALSE` (`aes/gemshlib.c:173`); `deskmain` then returns and `sh_main`'s next
+-/// pass calls `sh_chgrf` (`:713`), which — the mode having changed — runs
+-/// `sh_toalpha` (`:513-523`, `:246-260`): arrow shape, error handler back,
+-/// `ratexit()` **takes the mouse pointer off the screen**, workstation closed.
+-/// Only then does `sh_ldapp` load the program. When it `Pterm`s, the loop's
+-/// next pass finds `sh_isgem` TRUE again (the desktop is a GEM app) and
+-/// `sh_chgrf` runs `sh_tographic` (`:223-239`) on the way back.
+-///
+-/// NewTOS's built-in desktop cannot return into `sh_main`
+-/// ([`sh_run_pending_console`] documents why), so it brackets the launch with
+-/// this pair itself. Both go through the real [`sh_chgrf`] and the real
+-/// `sh_isgem`/`gl_shgem` pair rather than calling `sh_toalpha`/`sh_tographic`
+-/// behind the AES's back, so the state the next `sh_chgrf` compares against is
+-/// the same one EmuTOS would hold.
+-///
+-/// [`sh_alpha_enter`] before the program, [`sh_alpha_leave`] after it. On a
+-/// board without a raster backend both are no-ops in effect: `sh_chgrf`'s
+-/// desired mode is already alpha and never changes.
+-pub fn sh_alpha_enter() {
+-    shell::set_sh_isgem(false); // `shel_write(SHW_EXEC, isgraf = 0, …)`
+-    sh_chgrf(); // :713 — `gl_shgem` TRUE → FALSE: `sh_toalpha()`
+-}
+-
+-/// The second half of [`sh_alpha_enter`] — back into graphics mode after the
+-/// character-mode program has terminated (`sh_main`'s next pass, `:712-713`).
+-pub fn sh_alpha_leave() {
+-    shell::set_sh_isgem(true); // the desktop is a GEM application
+-    sh_chgrf(); // :713 — `gl_shgem` FALSE → TRUE: `sh_tographic()`
+-}
+-
+-/// The window-manager and screen half of one `sh_main` pass for a **graphics
+-/// `NORMAL_APP`** the built-in desktop runs nested (AES gap G1) — DESK35.
+-///
+-/// ```c
+-/// if (gl_shgem)
+-/// {
+-///     wm_init();                  /* :717 */
+-///     ratinit();                  /* :718 */
+-///     sh_draw(D.s_cmd, TRUE);     /* :719 — clear the screen */
+-/// }
+-/// rc = sh_ldapp(psh);             /* :725 */
+-/// ```
+-///
+-/// **Why this is *not* skipped where [`sh_run_pending_console`] skips it.**
+-/// That function's pass runs with `sh_isgem == FALSE`, so `sh_chgrf` (`:713`)
+-/// has already taken `gl_shgem` to FALSE and EmuTOS itself skips the whole
+-/// block: a character program gets no `wm_init` and no `sh_draw`, and the
+-/// desktop windows its text screen covers survive in the AES table until the
+-/// *next* graphics pass. A GEM program keeps `gl_shgem` TRUE, so EmuTOS takes
+-/// all three steps — and must, because that program draws only into its own
+-/// rectangles: without the clear the desktop's windows stay on the screen as
+-/// painted pixels with no event loop behind them (the DESK35 defect), and
+-/// without `wm_init` they stay in the AES window table, where they clip and
+-/// composite against the program's own.
+-///
+-/// **What `wm_init` costs, and who pays it.**
+-/// [`tos_api::aes::window::wm_init`] is `wm_new` + the desktop-window reset:
+-/// every window handle is closed and deleted, `gl_newdesk` goes to NULL and
+-/// handle 0 spans the screen again. The desktop's `WNODE`s therefore hold
+-/// **dead** handles afterwards — the AES table carries none of the state the
+-/// returning desktop needs, so `cnx_put`/`cnx_get` are not an alternative here
+-/// but the requirement: `crate::desk::main`'s `desktop_relinquish` has already
+-/// run `cnx_put()`, and `desktop_resume` re-opens the windows with `cnx_get()`
+-/// — exactly what EmuTOS's restarted `deskmain` does (`deskmain.c:2028,2055`).
+-///
+-/// **The one ordering deviation, and why.** EmuTOS runs this block *after* the
+-/// desktop's `appl_exit()` (`deskmain.c:2166`, then `gemshlib.c:717`), because
+-/// there the desktop is a process that has ended. Here it runs *before* it:
+-/// `wm_new`'s `wm_close` fans `WM_REDRAW` out to the owners of the windows
+-/// still open below each one it closes (`gemwmlib.c:1216-1222,1453`), and that
+-/// owner is this desktop. `ap_exit`'s queue drain (`gemaplib.c:251-261`, A28)
+-/// is what keeps the child from inheriting those, and it can only do so if it
+-/// comes last. Same steps, same pass, drain last.
+-pub fn sh_gem_enter() {
+-    if !shell::gl_shgem() {
+-        return;
+-    }
+-    tos_api::aes::window::wm_init(); // :717
+-    ratinit(); // :718
+-    shell::sh_draw_clear(); // :719
+-}
+-
+-/// `sh_ldapp`'s `sh_show(fname)` (`gemshlib.c:632`) for a **graphics
+-/// `NORMAL_APP`** the built-in desktop runs nested (AES gap G1) — DESK37, the
+-/// second half of the screen handover [`sh_gem_enter`] starts.
+-///
+-/// EmuTOS paints the launch screen in *two* steps, not one:
+-///
+-/// ```c
+-/// sh_draw(D.s_cmd, TRUE);   /* :719 — ob_spec = CLEAR_SCREEN, ROOT only  */
+-/// ...
+-/// sh_show(fname);           /* :632 — the whole tree, original ob_spec   */
+-/// ```
+-///
+-/// `sh_draw(…, TRUE)` swaps the `DESKTOP` tree ROOT's `ob_spec` for
+-/// `CLEAR_SCREEN` (`gemshlib.c:64,279-281`) and draws **only** that root: a
+-/// white screen. Its comment "white desktop screen" is true and still
+-/// misleading — the white is a state that lasts milliseconds. `sh_show` then
+-/// draws the **whole** tree with the root's real `ob_spec`
+-/// (`gemshlib.c:284-287`), i.e. the desktop background pattern, the menu-bar
+-/// strip, and `DTNAME`'s text, which `sh_draw` has just pointed at `lcmd` —
+-/// the name of the program being started.
+-///
+-/// That background is the **AES**'s, not the desktop's: it is
+-/// `rs_trees[DESKTOP][ROOT].ob_spec`, the resource constant `4419` = `0x1143`
+-/// (`gem_rsc.c:551-556`) whose low byte `set_aes_background` replaces with the
+-/// `.INF` `#Q` byte at AES start-up (`geminit.c:635-641,719-728`) —
+-/// [`tos_api::aes::init`]. The desktop's own `#Q` copy (`G.g_patcol`, DESK09)
+-/// is a second, independent read of the same line and is *gone* at this point:
+-/// `desktop_relinquish` has already un-registered the desktop's background
+-/// tree with `wind_set(DESKWH, WF_NEWDESK, NULL)`. Which is why this step is
+-/// the AES's to take, and why the screen behind a launched GEM program shows
+-/// the `#Q` colour without the desktop being alive.
+-///
+-/// `cmd` is the full command as `D.s_cmd` holds it; `sh_name` cuts the
+-/// filename portion off it exactly as `sh_ldapp` does (`gemshlib.c:594`).
+-pub fn sh_gem_show(cmd: &[u8]) {
+-    shell::sh_show(shell::sh_name(cmd)); // `sh_show(fname)` (:632)
+-}
+-
+-/// The counterpart of [`sh_gem_enter`] after the nested GEM program has
+-/// terminated — `sh_ldapp`'s sweep (`gemshlib.c:668-669,676-677`):
+-///
+-/// ```c
+-/// unsync(&wind_spb);
+-/// if (gl_shgem)
+-///     wm_new();
+-/// ```
+-///
+-/// Plain [`tos_api::aes::window::wm_new`], not the `keep_desktop` variant the
+-/// launch path used before DESK35: [`sh_gem_enter`]'s `wm_init` has already
+-/// taken the desktop's own windows, so there is nothing left to keep and this
+-/// sweeps exactly what EmuTOS sweeps — the program's windows, and those of any
+-/// `Pexec` descendant that outlived it. A desktop-background tree the program
+-/// registered is a VA of an address space that is gone; the AES drops an
+-/// unresolvable one by itself (A97) and `desktop_resume` re-registers the
+-/// desktop's immediately afterwards.
+-pub fn sh_gem_leave() {
+-    if !shell::gl_shgem() {
+-        return;
+-    }
+-    tos_api::aes::window::wm_new(); // :676-677
+-}
+-
+ /// `sh_ldapp(psh)` (`gemshlib.c:592-689`) — run the next program and block
+ /// until it terminates. Three top-level arms, four `sh_nextapp` values.
+ ///
+@@ -427,7 +278,18 @@ fn sh_ldapp() -> i32 {
+         }
+         shell::sh_show(&[]); // `sh_show("")` — no name for the desktop (:603)
+         p_setappdir(&cmd); // (:605)
+-        crate::desk::run(); // `aes_run_rom_program(deskstart)` (:606)
++        // `aes_run_rom_program(deskstart)` (:606) starts the desktop as a
++        // **fresh process** every time: the previous one terminated
++        // (`deskmain.c:2166-2171`, `deskstart.S:57-59`) and GEMDOS gave its
++        // memory back, so `deskstart` re-runs `app_start`/`win_start`/`cnx_get`
++        // on a zeroed `G`. NewTOS's desktop state is a lazily-built singleton
++        // that outlives the call, so the equivalent of that free is explicit —
++        // and it must happen *here*, before the start, for the same reason it
++        // happens there: the state the next desktop must not inherit is the
++        // dead one's window list, whose AES handles `sh_main`'s `wm_init`
++        // (`:717`) has just deleted.
++        crate::desk::reset();
++        crate::desk::run();
+         // EmuTOS calls `wm_new()` only when the desktop terminated
+         // *abnormally* (`:606-610`); the normal exit path already cleaned up
+         // in `deskmain`'s epilog. Our built-in desktop has no abnormal-exit
+@@ -524,68 +386,6 @@ fn run_console_arm() -> i32 {
+     0
+ }
+ 
+-/// Run the console a `shel_write(SHW_EXEC, 0, 1, DEF_CONSOLE, …)` has made
+-/// pending, **nested** in the caller, and come back with the screen in
+-/// graphics mode again. Returns `false` — without doing anything — when the
+-/// pending program is not the console.
+-///
+-/// This is one pass of `sh_main`'s body (`gemshlib.c:710-727`) for the
+-/// [`CONSOLE_APP`] case:
+-///
+-/// ```c
+-/// sh_chdef(psh);          /* :712 — CONSOLE_APP: set_drvdir(psh->sh_cdir) */
+-/// sh_chgrf(psh);          /* :713 — sh_isgem == 0 → sh_toalpha()          */
+-/// rc = sh_ldapp(psh);     /* :725 — the CONSOLE_APP arm, :614-622         */
+-/// /* next pass */
+-/// sh_chdef(psh);          /* :712 — DESKTOP_APP after set_default_desktop */
+-/// sh_chgrf(psh);          /* :713 — sh_isgem == 1 → sh_tographic()        */
+-/// ```
+-///
+-/// **Why it exists (AES gap G1).** In EmuTOS the desktop does not need this:
+-/// `do_filemenu(CLIITEM)` returns TRUE (`deskmain.c:753`), `deskmain`'s loop
+-/// ends, the desktop **process terminates**, and the loop above runs in
+-/// `sh_main` where it belongs. NewTOS's built-in desktop is an in-kernel call
+-/// ([`crate::desk::run`], `sh_ldapp`'s DESKTOP arm) that cannot terminate and
+-/// be started again: its state singleton is built once
+-/// ([`crate::desk::global::init`] is idempotent) and its window list has no
+-/// `win_start()` re-entry, so returning here would hand the restarted desktop
+-/// a window list full of handles the intervening `wm_init()` had already
+-/// deleted. Until that restart path exists (`TASK/DESK14.md` §4, the same
+-/// decision the `Read .INF file` item waits on), the desktop calls this
+-/// instead of returning, and its event loop resumes afterwards.
+-///
+-/// **The two steps of the pass that are left out here, and why that is
+-/// EmuTOS's own decision.** `wm_init()` and `sh_draw(D.s_cmd, TRUE)` sit
+-/// inside `if (gl_shgem)` (`:715-720`), and this pass has just taken
+-/// `gl_shgem` to FALSE in `sh_chgrf` above — so EmuTOS skips both for a
+-/// character program too. It can: the text screen covers the whole display
+-/// while the program runs, and the windows the desktop left in the AES table
+-/// are torn down by the *next* graphics pass's `wm_init`, not by this one. The
+-/// nested desktop here simply keeps them and repaints them on the way back.
+-/// `ratinit()` (`:718`) is not skipped either: it is inside `sh_tographic`,
+-/// which does run.
+-///
+-/// A **GEM** program is the other case, and there the same reasoning does not
+-/// hold — it draws only into its own rectangles. That launch path takes all
+-/// three steps: [`sh_gem_enter`] (DESK35, which closed gap G2 on that side).
+-pub fn sh_run_pending_console() -> bool {
+-    if shell::sh_nextapp() != CONSOLE_APP {
+-        return false;
+-    }
+-
+-    shell::sh_chdef(); // :712 — the directory `shel_wdef` named
+-    sh_chgrf(); // :713 — into alpha mode
+-
+-    run_console_arm(); // :725 → sh_ldapp's CONSOLE_APP arm (:614-622)
+-
+-    // The next pass's first two statements: `set_default_desktop` (run by the
+-    // arm above, `:619`) has put DESKTOP_APP/`sh_isgem = TRUE` back, so these
+-    // restore the AES's start directory and the graphics screen.
+-    shell::sh_chdef(); // :712
+-    sh_chgrf(); // :713 — back into graphics mode
+-    true
+-}
+-
+ /// `p_setappdir(rlr, D.s_cmd)` (`gempd.c:90-107`) — record the directory the
+ /// program was started from, which `sh_find` step (1) searches first.
+ fn p_setappdir(cmd: &[u8]) {
+@@ -603,9 +403,10 @@ fn p_setappdir(cmd: &[u8]) {
+ /// `tos_api::aes::pd::register`), because NewTOS's AES process descriptors are
+ /// keyed on that slot (A62: one entry per GEMDOS slot plus one for this
+ /// kernel-context desktop, `tos_api::aes::pd::DESKTOP`), so the descriptor to
+-/// rename and clear is only identified there. Both launch paths go through it:
+-/// this shell loop's NORMAL/AUTORUN arm and the desktop's double-click
+-/// ([`crate::desk`]).
++/// rename and clear is only identified there. There is exactly **one** launch
++/// path — this arm: since DESK43 U3 the desktop asks for a program with
++/// `shel_write(SHW_EXEC, …)` and terminates (`deskpro.c:35-45`,
++/// `deskmain.c:2166`), as EmuTOS's does.
+ ///
+ /// Item 10 of the plan's gap list ("AESPD numbering + `p_nameit`/`p_setappdir`
+ /// on `rlr`") is closed: like EmuTOS's `AESPD`s (`aes/gempd.c:32-35`),
+@@ -617,8 +418,8 @@ fn p_setappdir(cmd: &[u8]) {
+ /// EmuTOS gets from its model at
+ /// this boundary — a program never starting on the previous occupant's flags
+ /// or messages — is in place (A28): the flag reset in `pd::register`, the queue
+-/// drain in the desktop's own `appl_exit()` (`deskmain.c:2166`,
+-/// `crate::desk::main::desktop_relinquish`), and since A62 the slot's release
++/// drain in the desktop's own `appl_exit()` at the end of `deskmain`
++/// (`deskmain.c:2166`, `crate::desk::run`), and since A62 the slot's release
+ /// (`pterm::release_slot` → `pd::release`) for every way a process ends.
+ fn p_nameit_and_appdir(cmd: &[u8]) {
+     p_setappdir(cmd);
+diff --git a/tos-api/src/aes/shell.rs b/tos-api/src/aes/shell.rs
+index 7ff5d5d..849464b 100644
+--- a/tos-api/src/aes/shell.rs
++++ b/tos-api/src/aes/shell.rs
+@@ -373,11 +373,13 @@ pub fn shel_read(pb: &Aespb) {
+ /// the desktop's `shel_write(SHW_EXEC, …)` (`desk/deskpro.c:41` → `:169-170`)
+ /// or by `sh_chdef` for an autorun entry (`:557-562`). NewTOS's shell loop
+ /// takes the same route (`kernel/src/shell_loop.rs` reads `D.s_cmd`/`ad_stail`
+-/// and hands them to the launcher, so this call rewrites the same values),
+-/// but the built-in desktop's double-click launches through the kernel
+-/// launcher directly, without a `shel_write` (AES gap G1). The launcher
+-/// therefore calls this just before the program enters EL0 on **every** path,
+-/// so both are covered by one writer.
++/// and hands them to the launcher, so this call rewrites the same values), and
++/// since DESK43 U3 the built-in desktop does too — its double click is a
++/// `shel_write(SHW_EXEC, …)` like EmuTOS's (`desk/deskpro.c:41`). What has no
++/// `shel_write` in front of it is the `\AUTO\` runner, which starts before the
++/// AES exists at all (`bios/bios.c:713-714`). The launcher therefore calls this
++/// just before the program enters EL0 on **every** path, so both are covered by
++/// one writer.
+ ///
+ /// `cmd` is the full launch path (`C:\APPS\QED\QED.NAP`, NUL-terminated);
+ /// `tail` is the Atari command-tail **image** exactly as handed to the loader
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index ff48663..b4071d2 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -4511,11 +4511,13 @@ pub fn wm_new() {
+ /// `sh_ldapp` runs the child and sweeps, `sh_main` loops and starts the
+ /// desktop afresh (`gemshlib.c:600-612,708-731`), which rebuilds its
+ /// windows from its own context save (`cnx_get`, `desk/deskmain.c:2055`).
+-/// The NewTOS desktop does not restart: `run_gem_app` runs the child
+-/// **nested** in the desktop's event loop (AES gap G1) and `desktop_resume`
+-/// repaints the desktop windows it still holds in this table (gap G2 —
+-/// no save/restore, no `cnx_get`; `kernel/src/desk/main.rs`). So the sweep
+-/// that runs when the desktop regains control keeps the windows the
++/// This variant dates from the time the NewTOS desktop did **not** restart: it
++/// ran the child nested in its own event loop (AES gap G1) and kept its windows
++/// in this table across the launch. **It has had no caller since DESK35 and the
++/// construct behind it is gone since DESK43 U3** — the desktop now ends and is
++/// started afresh, so `sh_ldapp`'s plain [`wm_new`] is what runs. Kept only
++/// because removing public AES surface is a step of its own. What it does: the
++/// sweep keeps the windows the
+ /// desktop identity owns (`pd::DESKTOP`, `w_owner`) and takes everything
+ /// else, exactly as `wm_new` would: closed if open (`wm_close`, with its
+ /// `draw_change` repaint and `WM_REDRAW` fan-out), then deleted
+@@ -4531,8 +4533,8 @@ pub fn wm_new() {
+ /// desktop-background tree the program registered is dropped: EmuTOS
+ /// resets `gl_newdesk` in `wm_init` before the desktop restarts
+ /// (`gemwmlib.c:1300`) and the desktop registers its own again
+-/// (`deskmain.c:2049`); `desktop_resume` re-registers likewise, and the
+-/// program's tree is a VA of an address space that is gone (A97).
++/// (`deskmain.c:2049`); the restarted NewTOS desktop re-registers likewise, and
++/// the program's tree is a VA of an address space that is gone (A97).
+ ///
+ /// Draws what closing those windows draws (see [`wm_new`]); the
+ /// whole-screen repaint is the desktop's `redraw_desktop` afterwards.

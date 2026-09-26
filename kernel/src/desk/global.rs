@@ -839,23 +839,25 @@ pub fn init(g_desk: Grect) {
 }
 
 /// Drop the desktop state so the next [`init`] builds it from scratch — the
-/// desktop's share of an AES restart (A106, [`super::reset`]).
+/// desktop's share of [`super::reset`].
 ///
-/// On EmuTOS the desktop is an ordinary shell program: a resolution change
-/// ends it with everything else (`gemshlib.c:727`), its memory goes back to
-/// the pool, and the restarted AES runs `deskstart` again, which re-runs
-/// `app_start`/`win_start`/`cnx_get` on a zeroed `G` (`desk/deskmain.c`).
-/// NewTOS's desktop is an in-kernel call whose state is this one
-/// lazily-initialised singleton and whose [`init`] is a no-op once built —
-/// so without this the restarted desktop would keep the previous session's
-/// window list and object arena while the AES's own window table has just
-/// been emptied ([`tos_api::aes::reinit`]), i.e. it would believe in windows
-/// that no longer exist.
+/// On EmuTOS the desktop is an ordinary shell program: it ends, its memory goes
+/// back to the pool (`deskmain.c:2131-2133`, `deskstart.S:57-59`), and the next
+/// `sh_ldapp` runs `deskstart` again, which re-runs `app_start`/`win_start`/
+/// `cnx_get` on a zeroed `G`. NewTOS's desktop ends the same way since DESK43
+/// U3, but its state is this lazily-initialised singleton and [`init`] is a
+/// no-op once built — so the "memory goes back to the pool" half has to be
+/// stated. Without it the next desktop would keep the previous one's window
+/// list and object arena while the AES's own window table has just been emptied
+/// (`sh_main`'s `wm_init`, `gemshlib.c:717`; or [`tos_api::aes::reinit`] on the
+/// A106 path), i.e. it would believe in windows that no longer exist.
 ///
 /// Dropping the state frees the object arena and the cached `.INF` vectors
 /// (all `alloc` allocations). Nothing else holds a pointer into them by then:
-/// the AES's `gl_newdesk` registration, which does, is cleared by `wm_init`
-/// inside `tos_api::aes::reinit`, which the caller runs **first**.
+/// the AES's `gl_newdesk` registration, which does, has been cleared by
+/// `deskmain`'s own epilog (`wind_set(DESKWH, WF_NEWDESK, NULL)`, `:2163`) or
+/// by the `wm_init` inside [`tos_api::aes::reinit`], both of which precede
+/// every caller.
 pub fn reset() {
     *DESK.lock() = None;
 }

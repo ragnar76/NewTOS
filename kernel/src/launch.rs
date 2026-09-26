@@ -120,10 +120,14 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // — the one pair `shel_read` answers from and `shel_write(SHW_EXEC)`
     // overwrites (`aes/gemshlib.c:104-105,169-170`; H05). In EmuTOS the
     // desktop's `shel_write` has filled them by the time `sh_ldapp` reaches
-    // `dos_exec(PE_LOADGO, D.s_cmd, ad_stail, …)` (`:645`); the built-in
-    // desktop's double-click reaches this launcher without one (gap G1), so
-    // the launcher publishes them here on every path. `tail` is handed over
-    // verbatim: it is the length-prefixed `p_cmdlin` image the loader copied.
+    // `dos_exec(PE_LOADGO, D.s_cmd, ad_stail, …)` (`:645`), and since DESK43 U3
+    // the NewTOS desktop takes that route too — for the shell loop's own arm
+    // this therefore rewrites the identical values. The path that has no
+    // `shel_write` in front of it is the `\AUTO\` runner (`run_auto_programs`,
+    // EmuTOS `bios/bios.c:713-714`, which precedes the AES entirely), so the
+    // launcher publishes them here on every path, one writer for both. `tail`
+    // is handed over verbatim: it is the length-prefixed `p_cmdlin` image the
+    // loader copied.
     tos_api::aes::shell::set_launch_info(path, tail);
     set_current(s.basepage_kva.load(Ordering::Acquire));
     kprintln!("[launch] EL0: slot {} entry 0x{:x}", child.slot, child.entry_va);

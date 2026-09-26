@@ -4511,11 +4511,13 @@ pub fn wm_new() {
 /// `sh_ldapp` runs the child and sweeps, `sh_main` loops and starts the
 /// desktop afresh (`gemshlib.c:600-612,708-731`), which rebuilds its
 /// windows from its own context save (`cnx_get`, `desk/deskmain.c:2055`).
-/// The NewTOS desktop does not restart: `run_gem_app` runs the child
-/// **nested** in the desktop's event loop (AES gap G1) and `desktop_resume`
-/// repaints the desktop windows it still holds in this table (gap G2 —
-/// no save/restore, no `cnx_get`; `kernel/src/desk/main.rs`). So the sweep
-/// that runs when the desktop regains control keeps the windows the
+/// This variant dates from the time the NewTOS desktop did **not** restart: it
+/// ran the child nested in its own event loop (AES gap G1) and kept its windows
+/// in this table across the launch. **It has had no caller since DESK35 and the
+/// construct behind it is gone since DESK43 U3** — the desktop now ends and is
+/// started afresh, so `sh_ldapp`'s plain [`wm_new`] is what runs. Kept only
+/// because removing public AES surface is a step of its own. What it does: the
+/// sweep keeps the windows the
 /// desktop identity owns (`pd::DESKTOP`, `w_owner`) and takes everything
 /// else, exactly as `wm_new` would: closed if open (`wm_close`, with its
 /// `draw_change` repaint and `WM_REDRAW` fan-out), then deleted
@@ -4531,8 +4533,8 @@ pub fn wm_new() {
 /// desktop-background tree the program registered is dropped: EmuTOS
 /// resets `gl_newdesk` in `wm_init` before the desktop restarts
 /// (`gemwmlib.c:1300`) and the desktop registers its own again
-/// (`deskmain.c:2049`); `desktop_resume` re-registers likewise, and the
-/// program's tree is a VA of an address space that is gone (A97).
+/// (`deskmain.c:2049`); the restarted NewTOS desktop re-registers likewise, and
+/// the program's tree is a VA of an address space that is gone (A97).
 ///
 /// Draws what closing those windows draws (see [`wm_new`]); the
 /// whole-screen repaint is the desktop's `redraw_desktop` afterwards.

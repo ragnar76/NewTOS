@@ -1,0 +1,183 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x000000000033b000 (2863104 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f00 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-09-26 12:04:54
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01802000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[h02] injector armed
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1000
+[h02] step 0 at +200 -> mouse (446,366) mb=0
+[h02] step 1 at +201 -> mouse (573,479) mb=0
+[h02] step 2 at +202 -> mouse (639,479) mb=0
+[h02] step 3 at +203 -> mouse (639,479) mb=0
+[h02] step 4 at +204 -> mouse (639,479) mb=0
+[h02] step 5 at +205 -> mouse (639,479) mb=0
+[h02] step 6 at +1000 -> mouse (639,479) mb=0
+[h02] MARK A_IDLE step 7 at +1100 mouse (639,479) mb=0
+[h02] step 8 at +1400 -> mouse (512,352) mb=0
+[h02] step 9 at +1401 -> mouse (385,225) mb=0
+[h02] step 10 at +1402 -> mouse (260,98) mb=0
+[h02] step 11 at +1403 -> mouse (260,8) mb=0
+[h02] step 12 at +2200 -> mouse (300,135) mb=0
+[h02] step 13 at +2201 -> mouse (300,170) mb=0
+[h02] step 14 at +2500 -> mouse (300,170) mb=1
+[h02] step 15 at +2503 -> mouse (300,170) mb=0
+[h02] MARK C_VIDEO_DIALOG step 16 at +3100 mouse (300,170) mb=0
+[h02] step 17 at +3400 -> mouse (247,185) mb=0
+[h02] step 18 at +3700 -> mouse (247,185) mb=1
+[h02] step 19 at +3703 -> mouse (247,185) mb=0
+[h02] MARK D_STLOW_PICKED step 20 at +4100 mouse (247,185) mb=0
+[h02] step 21 at +4400 -> mouse (347,312) mb=0
+[h02] step 22 at +4401 -> mouse (347,361) mb=0
+[h02] step 23 at +4700 -> mouse (347,361) mb=1
+[h02] step 24 at +4703 -> mouse (347,361) mb=0
+[h02] MARK E_ALERT step 25 at +5300 mouse (347,361) mb=0
+[h02] step 26 at +5600 -> mouse (280,276) mb=0
+[h02] step 27 at +5900 -> mouse (280,276) mb=1
+[h02] step 28 at +5903 -> mouse (280,276) mb=0
+[h02] MARK F_CONFIRMED step 29 at +6000 mouse (280,276) mb=0
+[h02] step 30 at +6100 -> mouse (407,403) mb=0
+[h02] step 31 at +6101 -> mouse (534,479) mb=0
+[h02] step 32 at +6102 -> mouse (639,479) mb=0
+[h02] step 33 at +6103 -> mouse (639,479) mb=0
+[h02] step 34 at +6104 -> mouse (639,479) mb=0
+[h02] step 35 at +6105 -> mouse (639,479) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> slot 2
+[sched] running
+[launch] returned (program Pterm'd)
+[shell] sh_ldapp: 'C:\APPS\TERADESK\DESKTOP.NAP' exited with rc=0
+[shell] sh_main: session over — shel_write(SHW_RESCHNG) pending, restarting the AES
+[acc] freeing C:\ACC\SYSACC.NAC (slot 0)
+[acc] freeing C:\SYSACC2.NAC (slot 1)
+[shell] AES restart (resolution change requested)
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+[acc] 2 file(s) found, 2 process(es) started
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1000
+[h02] step 36 at +8200 -> mouse (639,479) mb=0
+[h02] step 37 at +8201 -> mouse (639,479) mb=0
+[h02] step 38 at +8202 -> mouse (639,479) mb=0
+[h02] step 39 at +8203 -> mouse (639,479) mb=0
+[h02] step 40 at +8204 -> mouse (639,479) mb=0
+[h02] step 41 at +8205 -> mouse (639,479) mb=0
+[h02] MARK I_RESTARTED step 42 at +9000 mouse (639,479) mb=0
+[h02] step 43 at +9300 -> mouse (512,352) mb=0
+[h02] step 44 at +9301 -> mouse (385,225) mb=0
+[h02] step 45 at +9302 -> mouse (260,98) mb=0
+[h02] step 46 at +9303 -> mouse (260,8) mb=0
+[h02] step 47 at +10100 -> mouse (300,135) mb=0
+[h02] step 48 at +10101 -> mouse (300,170) mb=0
+[h02] step 49 at +10400 -> mouse (300,170) mb=1
+[h02] step 50 at +10404 -> mouse (300,170) mb=0
+[h02] MARK J_VIDEO_DIALOG_2 step 51 at +11000 mouse (300,170) mb=0
+[h02] step 52 at +11300 -> mouse (247,185) mb=0
+[h02] step 53 at +11600 -> mouse (247,185) mb=1
+[h02] step 54 at +11603 -> mouse (247,185) mb=0
+[h02] step 55 at +12000 -> mouse (347,312) mb=0
+[h02] step 56 at +12001 -> mouse (347,361) mb=0
+[h02] step 57 at +12300 -> mouse (347,361) mb=1
+[h02] step 58 at +12303 -> mouse (347,361) mb=0
+[h02] MARK K_ALERT_2 step 59 at +12900 mouse (347,361) mb=0
+[h02] step 60 at +13200 -> mouse (280,276) mb=0
+[h02] step 61 at +13500 -> mouse (280,276) mb=1
+[h02] step 62 at +13503 -> mouse (280,276) mb=0
+[h02] MARK L_CONFIRMED_2 step 63 at +13600 mouse (280,276) mb=0
+[h02] step 64 at +13700 -> mouse (407,403) mb=0
+[h02] step 65 at +13701 -> mouse (534,479) mb=0
+[h02] step 66 at +13702 -> mouse (639,479) mb=0
+[h02] step 67 at +13703 -> mouse (639,479) mb=0
+[h02] step 68 at +13704 -> mouse (639,479) mb=0
+[h02] step 69 at +13705 -> mouse (639,479) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> slot 2
+[sched] running
+[launch] returned (program Pterm'd)
+[shell] sh_ldapp: 'C:\APPS\TERADESK\DESKTOP.NAP' exited with rc=0
+[shell] sh_main: session over — shel_write(SHW_RESCHNG) pending, restarting the AES
+[acc] freeing C:\ACC\SYSACC.NAC (slot 0)
+[acc] freeing C:\SYSACC2.NAC (slot 1)
+[shell] AES restart (resolution change requested)
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+[acc] 2 file(s) found, 2 process(es) started
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\APPS\TERADESK\DESKTOP.NAP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1000
+[h02] step 70 at +15800 -> mouse (639,479) mb=0
+[h02] step 71 at +15801 -> mouse (639,479) mb=0
+[h02] step 72 at +15802 -> mouse (639,479) mb=0
+[h02] step 73 at +15803 -> mouse (639,479) mb=0
+[h02] step 74 at +15804 -> mouse (639,479) mb=0
+[h02] step 75 at +15805 -> mouse (639,479) mb=0
+[h02] MARK M_RESTARTED_2 step 76 at +16600 mouse (639,479) mb=0

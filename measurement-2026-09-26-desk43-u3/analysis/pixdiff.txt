@@ -1,0 +1,15 @@
+# Pixelvergleiche (measurement-2026-09-22-a106/method/pixdiff.py)
+
+boot-head-placeholder            boot-u3-placeholder      0 differing pixels, bbox None
+boot-head-u3                     boot-u3-u3               0 differing pixels, bbox None
+z-head-desktop                   z-tree-desktop           0 differing pixels, bbox None
+t-on-icon                        t-after25                0 differing pixels, bbox None
+t-after5                         t-after25                0 differing pixels, bbox None
+t-desktop                        t-after25                56 differing pixels, bbox (64, 125, 640, 480)
+a-idle                           i-restarted              0 differing pixels, bbox None
+a-idle                           m-restarted2             0 differing pixels, bbox None
+i-restarted                      m-restarted2             0 differing pixels, bbox None
+c-video                          j-video2                 0 differing pixels, bbox None
+e-alert                          k-alert2                 0 differing pixels, bbox None
+f-conf                           l-conf2                  0 differing pixels, bbox None
+n-on-icon                        n-after25                0 differing pixels, bbox None

@@ -1,0 +1,93 @@
+--- evnt_multi cycle boundary ---
+AES    op=25  evnt_multi   -> 2
+    evnt_multi: fired=0x0002 mx=64 my=124 btn=0x1 ks=0x0 key=0x0000 clicks=2
+AES    op=106 wind_find    -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=4 -> (17,106,280,127)
+AES    op=43  objc_find    -> 12
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=4 -> (17,106,280,127)
+GEMDOS #1  fn=0x154           -> 4399
+AES    op=78  graf_mouse   -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=11 -> (17,106,280,127)
+AES    op=42  objc_draw    -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=12 -> (0,0,0,0)
+AES    op=78  graf_mouse   -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=0 field=10 -> (1,0,0,0)
+AES    op=78  graf_mouse   -> 1
+GEMDOS #1  fn=0x0e Dsetdrv   -> 4
+GEMDOS #1  fn=0x3b Dsetpath  -> 0
+    Dsetpath path="C:\U3\"
+AES    op=78  graf_mouse   -> 1
+AES    op=78  graf_mouse   -> 1
+AES    op=121 shel_write   -> 1
+AES    op=21  evnt_button  -> 1
+    evnt_button: clicks=1 mx=64 my=124 btn=0x0 ks=0x0
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=32  ?            -> 1
+AES    op=31  ?            -> 1
+AES    op=31  ?            -> 1
+AES    op=31  ?            -> 1
+AES    op=31  ?            -> 1
+AES    op=31  ?            -> 1
+AES    op=31  ?            -> 1
+AES    op=31  ?            -> 1
+AES    op=31  ?            -> 1
+AES    op=104 wind_get     -> 1
+    wind_get: handle=1 field=5 -> (16,64,304,192)
+AES    op=122 ?            -> 1
+AES    op=123 ?            -> 1
+AES    op=30  menu_bar     -> 1
+AES    op=105 wind_set     -> 1
+AES    op=23  evnt_mesag   -> 1
+AES    op=23  evnt_mesag   -> 1
+AES    op=19  appl_exit    -> 1
+GEMDOS #1  fn=0x09 Cconws    -> 21
+GEMDOS #1  fn=0x09 Cconws    -> 1
+GEMDOS #1  fn=0x09 Cconws    -> 6
+GEMDOS #1  fn=0x09 Cconws    -> 3
+GEMDOS #1  fn=0x09 Cconws    -> 15
+GEMDOS #1  fn=0x09 Cconws    -> 1
+GEMDOS #1  fn=0x09 Cconws    -> 2
+GEMDOS #1  fn=0x09 Cconws    -> 15
+GEMDOS #1  fn=0x09 Cconws    -> 1
+GEMDOS #1  fn=0x09 Cconws    -> 3
+GEMDOS #1  fn=0x09 Cconws    -> 0
+GEMDOS #1  fn=0x09 Cconws    -> 3
+GEMDOS #1  fn=0x09 Cconws    -> 27
+AES    op=10  appl_init    -> 0
+AES    op=104 wind_get     -> 1
+    wind_get(desk, WF_WORKXYWH): xywh=(0,19,640,461)
+AES    op=40  objc_add     -> 1

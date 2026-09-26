@@ -248,155 +248,6 @@ pub fn go_graphic() {
     }
 }
 
-/// The screen-mode half of one `sh_main` pass for a **character-mode
-/// `NORMAL_APP`** the built-in desktop runs nested (AES gap G1) — DESK22.
-///
-/// EmuTOS' desktop reaches a `.TOS`/`.TTP` through `pro_run(isgraf = FALSE,
-/// …)` → `shel_write(SHW_EXEC, 0, 1, cmd, tail)`, which records `sh_isgem =
-/// FALSE` (`aes/gemshlib.c:173`); `deskmain` then returns and `sh_main`'s next
-/// pass calls `sh_chgrf` (`:713`), which — the mode having changed — runs
-/// `sh_toalpha` (`:513-523`, `:246-260`): arrow shape, error handler back,
-/// `ratexit()` **takes the mouse pointer off the screen**, workstation closed.
-/// Only then does `sh_ldapp` load the program. When it `Pterm`s, the loop's
-/// next pass finds `sh_isgem` TRUE again (the desktop is a GEM app) and
-/// `sh_chgrf` runs `sh_tographic` (`:223-239`) on the way back.
-///
-/// NewTOS's built-in desktop cannot return into `sh_main`
-/// ([`sh_run_pending_console`] documents why), so it brackets the launch with
-/// this pair itself. Both go through the real [`sh_chgrf`] and the real
-/// `sh_isgem`/`gl_shgem` pair rather than calling `sh_toalpha`/`sh_tographic`
-/// behind the AES's back, so the state the next `sh_chgrf` compares against is
-/// the same one EmuTOS would hold.
-///
-/// [`sh_alpha_enter`] before the program, [`sh_alpha_leave`] after it. On a
-/// board without a raster backend both are no-ops in effect: `sh_chgrf`'s
-/// desired mode is already alpha and never changes.
-pub fn sh_alpha_enter() {
-    shell::set_sh_isgem(false); // `shel_write(SHW_EXEC, isgraf = 0, …)`
-    sh_chgrf(); // :713 — `gl_shgem` TRUE → FALSE: `sh_toalpha()`
-}
-
-/// The second half of [`sh_alpha_enter`] — back into graphics mode after the
-/// character-mode program has terminated (`sh_main`'s next pass, `:712-713`).
-pub fn sh_alpha_leave() {
-    shell::set_sh_isgem(true); // the desktop is a GEM application
-    sh_chgrf(); // :713 — `gl_shgem` FALSE → TRUE: `sh_tographic()`
-}
-
-/// The window-manager and screen half of one `sh_main` pass for a **graphics
-/// `NORMAL_APP`** the built-in desktop runs nested (AES gap G1) — DESK35.
-///
-/// ```c
-/// if (gl_shgem)
-/// {
-///     wm_init();                  /* :717 */
-///     ratinit();                  /* :718 */
-///     sh_draw(D.s_cmd, TRUE);     /* :719 — clear the screen */
-/// }
-/// rc = sh_ldapp(psh);             /* :725 */
-/// ```
-///
-/// **Why this is *not* skipped where [`sh_run_pending_console`] skips it.**
-/// That function's pass runs with `sh_isgem == FALSE`, so `sh_chgrf` (`:713`)
-/// has already taken `gl_shgem` to FALSE and EmuTOS itself skips the whole
-/// block: a character program gets no `wm_init` and no `sh_draw`, and the
-/// desktop windows its text screen covers survive in the AES table until the
-/// *next* graphics pass. A GEM program keeps `gl_shgem` TRUE, so EmuTOS takes
-/// all three steps — and must, because that program draws only into its own
-/// rectangles: without the clear the desktop's windows stay on the screen as
-/// painted pixels with no event loop behind them (the DESK35 defect), and
-/// without `wm_init` they stay in the AES window table, where they clip and
-/// composite against the program's own.
-///
-/// **What `wm_init` costs, and who pays it.**
-/// [`tos_api::aes::window::wm_init`] is `wm_new` + the desktop-window reset:
-/// every window handle is closed and deleted, `gl_newdesk` goes to NULL and
-/// handle 0 spans the screen again. The desktop's `WNODE`s therefore hold
-/// **dead** handles afterwards — the AES table carries none of the state the
-/// returning desktop needs, so `cnx_put`/`cnx_get` are not an alternative here
-/// but the requirement: `crate::desk::main`'s `desktop_relinquish` has already
-/// run `cnx_put()`, and `desktop_resume` re-opens the windows with `cnx_get()`
-/// — exactly what EmuTOS's restarted `deskmain` does (`deskmain.c:2028,2055`).
-///
-/// **The one ordering deviation, and why.** EmuTOS runs this block *after* the
-/// desktop's `appl_exit()` (`deskmain.c:2166`, then `gemshlib.c:717`), because
-/// there the desktop is a process that has ended. Here it runs *before* it:
-/// `wm_new`'s `wm_close` fans `WM_REDRAW` out to the owners of the windows
-/// still open below each one it closes (`gemwmlib.c:1216-1222,1453`), and that
-/// owner is this desktop. `ap_exit`'s queue drain (`gemaplib.c:251-261`, A28)
-/// is what keeps the child from inheriting those, and it can only do so if it
-/// comes last. Same steps, same pass, drain last.
-pub fn sh_gem_enter() {
-    if !shell::gl_shgem() {
-        return;
-    }
-    tos_api::aes::window::wm_init(); // :717
-    ratinit(); // :718
-    shell::sh_draw_clear(); // :719
-}
-
-/// `sh_ldapp`'s `sh_show(fname)` (`gemshlib.c:632`) for a **graphics
-/// `NORMAL_APP`** the built-in desktop runs nested (AES gap G1) — DESK37, the
-/// second half of the screen handover [`sh_gem_enter`] starts.
-///
-/// EmuTOS paints the launch screen in *two* steps, not one:
-///
-/// ```c
-/// sh_draw(D.s_cmd, TRUE);   /* :719 — ob_spec = CLEAR_SCREEN, ROOT only  */
-/// ...
-/// sh_show(fname);           /* :632 — the whole tree, original ob_spec   */
-/// ```
-///
-/// `sh_draw(…, TRUE)` swaps the `DESKTOP` tree ROOT's `ob_spec` for
-/// `CLEAR_SCREEN` (`gemshlib.c:64,279-281`) and draws **only** that root: a
-/// white screen. Its comment "white desktop screen" is true and still
-/// misleading — the white is a state that lasts milliseconds. `sh_show` then
-/// draws the **whole** tree with the root's real `ob_spec`
-/// (`gemshlib.c:284-287`), i.e. the desktop background pattern, the menu-bar
-/// strip, and `DTNAME`'s text, which `sh_draw` has just pointed at `lcmd` —
-/// the name of the program being started.
-///
-/// That background is the **AES**'s, not the desktop's: it is
-/// `rs_trees[DESKTOP][ROOT].ob_spec`, the resource constant `4419` = `0x1143`
-/// (`gem_rsc.c:551-556`) whose low byte `set_aes_background` replaces with the
-/// `.INF` `#Q` byte at AES start-up (`geminit.c:635-641,719-728`) —
-/// [`tos_api::aes::init`]. The desktop's own `#Q` copy (`G.g_patcol`, DESK09)
-/// is a second, independent read of the same line and is *gone* at this point:
-/// `desktop_relinquish` has already un-registered the desktop's background
-/// tree with `wind_set(DESKWH, WF_NEWDESK, NULL)`. Which is why this step is
-/// the AES's to take, and why the screen behind a launched GEM program shows
-/// the `#Q` colour without the desktop being alive.
-///
-/// `cmd` is the full command as `D.s_cmd` holds it; `sh_name` cuts the
-/// filename portion off it exactly as `sh_ldapp` does (`gemshlib.c:594`).
-pub fn sh_gem_show(cmd: &[u8]) {
-    shell::sh_show(shell::sh_name(cmd)); // `sh_show(fname)` (:632)
-}
-
-/// The counterpart of [`sh_gem_enter`] after the nested GEM program has
-/// terminated — `sh_ldapp`'s sweep (`gemshlib.c:668-669,676-677`):
-///
-/// ```c
-/// unsync(&wind_spb);
-/// if (gl_shgem)
-///     wm_new();
-/// ```
-///
-/// Plain [`tos_api::aes::window::wm_new`], not the `keep_desktop` variant the
-/// launch path used before DESK35: [`sh_gem_enter`]'s `wm_init` has already
-/// taken the desktop's own windows, so there is nothing left to keep and this
-/// sweeps exactly what EmuTOS sweeps — the program's windows, and those of any
-/// `Pexec` descendant that outlived it. A desktop-background tree the program
-/// registered is a VA of an address space that is gone; the AES drops an
-/// unresolvable one by itself (A97) and `desktop_resume` re-registers the
-/// desktop's immediately afterwards.
-pub fn sh_gem_leave() {
-    if !shell::gl_shgem() {
-        return;
-    }
-    tos_api::aes::window::wm_new(); // :676-677
-}
-
 /// `sh_ldapp(psh)` (`gemshlib.c:592-689`) — run the next program and block
 /// until it terminates. Three top-level arms, four `sh_nextapp` values.
 ///
@@ -427,7 +278,18 @@ fn sh_ldapp() -> i32 {
         }
         shell::sh_show(&[]); // `sh_show("")` — no name for the desktop (:603)
         p_setappdir(&cmd); // (:605)
-        crate::desk::run(); // `aes_run_rom_program(deskstart)` (:606)
+        // `aes_run_rom_program(deskstart)` (:606) starts the desktop as a
+        // **fresh process** every time: the previous one terminated
+        // (`deskmain.c:2166-2171`, `deskstart.S:57-59`) and GEMDOS gave its
+        // memory back, so `deskstart` re-runs `app_start`/`win_start`/`cnx_get`
+        // on a zeroed `G`. NewTOS's desktop state is a lazily-built singleton
+        // that outlives the call, so the equivalent of that free is explicit —
+        // and it must happen *here*, before the start, for the same reason it
+        // happens there: the state the next desktop must not inherit is the
+        // dead one's window list, whose AES handles `sh_main`'s `wm_init`
+        // (`:717`) has just deleted.
+        crate::desk::reset();
+        crate::desk::run();
         // EmuTOS calls `wm_new()` only when the desktop terminated
         // *abnormally* (`:606-610`); the normal exit path already cleaned up
         // in `deskmain`'s epilog. Our built-in desktop has no abnormal-exit
@@ -524,68 +386,6 @@ fn run_console_arm() -> i32 {
     0
 }
 
-/// Run the console a `shel_write(SHW_EXEC, 0, 1, DEF_CONSOLE, …)` has made
-/// pending, **nested** in the caller, and come back with the screen in
-/// graphics mode again. Returns `false` — without doing anything — when the
-/// pending program is not the console.
-///
-/// This is one pass of `sh_main`'s body (`gemshlib.c:710-727`) for the
-/// [`CONSOLE_APP`] case:
-///
-/// ```c
-/// sh_chdef(psh);          /* :712 — CONSOLE_APP: set_drvdir(psh->sh_cdir) */
-/// sh_chgrf(psh);          /* :713 — sh_isgem == 0 → sh_toalpha()          */
-/// rc = sh_ldapp(psh);     /* :725 — the CONSOLE_APP arm, :614-622         */
-/// /* next pass */
-/// sh_chdef(psh);          /* :712 — DESKTOP_APP after set_default_desktop */
-/// sh_chgrf(psh);          /* :713 — sh_isgem == 1 → sh_tographic()        */
-/// ```
-///
-/// **Why it exists (AES gap G1).** In EmuTOS the desktop does not need this:
-/// `do_filemenu(CLIITEM)` returns TRUE (`deskmain.c:753`), `deskmain`'s loop
-/// ends, the desktop **process terminates**, and the loop above runs in
-/// `sh_main` where it belongs. NewTOS's built-in desktop is an in-kernel call
-/// ([`crate::desk::run`], `sh_ldapp`'s DESKTOP arm) that cannot terminate and
-/// be started again: its state singleton is built once
-/// ([`crate::desk::global::init`] is idempotent) and its window list has no
-/// `win_start()` re-entry, so returning here would hand the restarted desktop
-/// a window list full of handles the intervening `wm_init()` had already
-/// deleted. Until that restart path exists (`TASK/DESK14.md` §4, the same
-/// decision the `Read .INF file` item waits on), the desktop calls this
-/// instead of returning, and its event loop resumes afterwards.
-///
-/// **The two steps of the pass that are left out here, and why that is
-/// EmuTOS's own decision.** `wm_init()` and `sh_draw(D.s_cmd, TRUE)` sit
-/// inside `if (gl_shgem)` (`:715-720`), and this pass has just taken
-/// `gl_shgem` to FALSE in `sh_chgrf` above — so EmuTOS skips both for a
-/// character program too. It can: the text screen covers the whole display
-/// while the program runs, and the windows the desktop left in the AES table
-/// are torn down by the *next* graphics pass's `wm_init`, not by this one. The
-/// nested desktop here simply keeps them and repaints them on the way back.
-/// `ratinit()` (`:718`) is not skipped either: it is inside `sh_tographic`,
-/// which does run.
-///
-/// A **GEM** program is the other case, and there the same reasoning does not
-/// hold — it draws only into its own rectangles. That launch path takes all
-/// three steps: [`sh_gem_enter`] (DESK35, which closed gap G2 on that side).
-pub fn sh_run_pending_console() -> bool {
-    if shell::sh_nextapp() != CONSOLE_APP {
-        return false;
-    }
-
-    shell::sh_chdef(); // :712 — the directory `shel_wdef` named
-    sh_chgrf(); // :713 — into alpha mode
-
-    run_console_arm(); // :725 → sh_ldapp's CONSOLE_APP arm (:614-622)
-
-    // The next pass's first two statements: `set_default_desktop` (run by the
-    // arm above, `:619`) has put DESKTOP_APP/`sh_isgem = TRUE` back, so these
-    // restore the AES's start directory and the graphics screen.
-    shell::sh_chdef(); // :712
-    sh_chgrf(); // :713 — back into graphics mode
-    true
-}
-
 /// `p_setappdir(rlr, D.s_cmd)` (`gempd.c:90-107`) — record the directory the
 /// program was started from, which `sh_find` step (1) searches first.
 fn p_setappdir(cmd: &[u8]) {
@@ -603,9 +403,10 @@ fn p_setappdir(cmd: &[u8]) {
 /// `tos_api::aes::pd::register`), because NewTOS's AES process descriptors are
 /// keyed on that slot (A62: one entry per GEMDOS slot plus one for this
 /// kernel-context desktop, `tos_api::aes::pd::DESKTOP`), so the descriptor to
-/// rename and clear is only identified there. Both launch paths go through it:
-/// this shell loop's NORMAL/AUTORUN arm and the desktop's double-click
-/// ([`crate::desk`]).
+/// rename and clear is only identified there. There is exactly **one** launch
+/// path — this arm: since DESK43 U3 the desktop asks for a program with
+/// `shel_write(SHW_EXEC, …)` and terminates (`deskpro.c:35-45`,
+/// `deskmain.c:2166`), as EmuTOS's does.
 ///
 /// Item 10 of the plan's gap list ("AESPD numbering + `p_nameit`/`p_setappdir`
 /// on `rlr`") is closed: like EmuTOS's `AESPD`s (`aes/gempd.c:32-35`),
@@ -617,8 +418,8 @@ fn p_setappdir(cmd: &[u8]) {
 /// EmuTOS gets from its model at
 /// this boundary — a program never starting on the previous occupant's flags
 /// or messages — is in place (A28): the flag reset in `pd::register`, the queue
-/// drain in the desktop's own `appl_exit()` (`deskmain.c:2166`,
-/// `crate::desk::main::desktop_relinquish`), and since A62 the slot's release
+/// drain in the desktop's own `appl_exit()` at the end of `deskmain`
+/// (`deskmain.c:2166`, `crate::desk::run`), and since A62 the slot's release
 /// (`pterm::release_slot` → `pd::release`) for every way a process ends.
 fn p_nameit_and_appdir(cmd: &[u8]) {
     p_setappdir(cmd);

@@ -444,6 +444,11 @@ noch nicht; der Kanal liegt ungenutzt daneben und wird von A106 mitgetestet.
 4. Driftprobe: die `shell_loop`- und `launch`-Gruppen aus §2.2 D sind **weg**.
 5. AES-Trace (U1) des Doppelklicks: `shel_write(121)` ist die letzte
    Desktop-Aktion vor `appl_exit(19)`; kein `Pexec` aus dem Desktop.
+   **Wortlaut bei der Umsetzung praezisiert (2026-09-26):** zwischen beiden
+   liegen genau EmuTOS' eigene Schritte (`deskmain.c:1003,1006,2154,2155,
+   2160,2163`). Richtig ist: `shel_write` beendet die **Ereignisschleife**,
+   `appl_exit` den **Epilog**, dazwischen `deskmain.c:989-2166` und sonst
+   nichts. `Pexec`: **0 Treffer in 744 Trace-Zeilen** — das hielt woertlich.
 
 **Named blocker.** **ACC10** (`TASK/ACC10.md`): `appl_exit` → `wait_for_accs
 (AP_ACCLOSE)` schläft auf `WAIT_INPUT` (`tos-api/src/aes/acc.rs:164`), das
