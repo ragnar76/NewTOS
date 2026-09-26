@@ -128,7 +128,7 @@ Das Wachstum ist ganz überwiegend **Funktionalität** (DESK01–DESK42) und
 ### 2.2 Das Bypass-Register — jede Stelle, heute
 
 `/usr/bin/grep -n 'tos_api::' kernel/src/desk/*.rs` liefert **36 Treffer**,
-davon **19 reine Doc-Kommentare**. Was im Code steht:
+davon **reine Doc-Kommentare (die Zahl 19 ist **falsch** — U1 hat sie gemessen: **21 Codezeilen / 15 Kommentarzeilen**, und 21 ist auch die Summe der Gruppentabellen dieses Abschnitts)**. Was im Code steht:
 
 **A — `tos_api::aes::object::{Object, TedInfo, IconBlk}` · 11 `use`-Zeilen**
 

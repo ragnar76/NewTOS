@@ -1,0 +1,69 @@
+NewTOS desktop drift probe — /Volumes/Daten/Development/PiRusTOS @ b3cec0c (3 modified file(s))
+
+A  kernel/src/desk/ -> tos_api::                            21 code line(s)
+    tos_api::aes::object                                    12
+    tos_api::host::host                                      1
+    tos_api::vdi::font                                       8
+      kernel/src/desk/act.rs:22          use tos_api::vdi::font::CELL_W;
+      kernel/src/desk/app.rs:18          use tos_api::aes::object::IconBlk;
+      kernel/src/desk/app.rs:19          use tos_api::vdi::font::{CELL_H, CELL_W, SMALL_CELL_H, SMALL_CELL_W};
+      kernel/src/desk/dir.rs:1623        let o = unsafe { &*(tree as *const tos_api::aes::object::Object).add(obj as usize) };
+      kernel/src/desk/dir.rs:53          use tos_api::aes::object::{Object, TedInfo};
+      kernel/src/desk/dir.rs:54          use tos_api::vdi::font::{CELL_H, CELL_W};
+      kernel/src/desk/dlg.rs:21          use tos_api::aes::object::{Object, TedInfo};
+      kernel/src/desk/global.rs:16       use tos_api::aes::object::Object;
+      kernel/src/desk/icons.rs:19        use tos_api::aes::object::IconBlk;
+      kernel/src/desk/icons.rs:20        use tos_api::vdi::font::{SMALL_CELL_H, SMALL_CELL_W};
+      kernel/src/desk/inf.rs:29          use tos_api::aes::object::{Object, TedInfo};
+      kernel/src/desk/inf.rs:30          use tos_api::vdi::font::{CELL_H, CELL_W};
+      kernel/src/desk/ins.rs:31          use tos_api::aes::object::{IconBlk, Object, TedInfo};
+      kernel/src/desk/ins.rs:32          use tos_api::vdi::font::{CELL_H, CELL_W};
+      kernel/src/desk/insapp.rs:32       use tos_api::aes::object::{Object, TedInfo};
+      kernel/src/desk/main.rs:1247       if let Some(h) = tos_api::host::host() {
+      kernel/src/desk/menu.rs:31         use tos_api::vdi::font::{CELL_H, CELL_W};
+      kernel/src/desk/menu.rs:38         use tos_api::aes::object::Object;
+      kernel/src/desk/model.rs:23        use tos_api::aes::object::IconBlk;
+      kernel/src/desk/win.rs:16          use tos_api::aes::object::IconBlk;
+      kernel/src/desk/win.rs:17          use tos_api::vdi::font::{CELL_H, CELL_W};
+
+B  kernel/src/desk/ -> crate:: (kernel internals)           21 code line(s)
+    crate::fbcon                                             1
+    crate::initinfo                                          4
+    crate::keymap                                            1
+    crate::kprintln                                          5
+    crate::launch                                            2
+    crate::shell_loop                                        6
+    crate::sync                                              2
+      kernel/src/desk/dir.rs:2558        use crate::kprintln;
+      kernel/src/desk/global.rs:18       use crate::sync::SpinMutex;
+      kernel/src/desk/inf.rs:2339        let ver_val = Line::new(crate::initinfo::VERSION_STRING);
+      kernel/src/desk/inf.rs:2341        let mac_val = Line::new(crate::initinfo::machine_name());
+      kernel/src/desk/inf.rs:2345        let notice = crate::initinfo::INDEPENDENCE_NOTICE;
+      kernel/src/desk/inf.rs:2358        let author = Line::new(crate::initinfo::AUTHORSHIP_LINE);
+      kernel/src/desk/inf.rs:34          use crate::sync::SpinMutex;
+      kernel/src/desk/inf.rs:4183        use crate::kprintln;
+      kernel/src/desk/inf.rs:4290        use crate::kprintln;
+      kernel/src/desk/ins.rs:1131        use crate::kprintln;
+      kernel/src/desk/main.rs:1021       crate::shell_loop::sh_alpha_enter();
+      kernel/src/desk/main.rs:1022       let ran = crate::launch::run_program_with_tail(path.as_bytes(), tail);
+      kernel/src/desk/main.rs:1031       crate::shell_loop::sh_alpha_leave();
+      kernel/src/desk/main.rs:1089       crate::shell_loop::sh_gem_show(path);
+      kernel/src/desk/main.rs:1090       let ran = crate::launch::run_program_with_tail(path, tail);
+      kernel/src/desk/main.rs:1141       crate::shell_loop::sh_gem_enter();
+      kernel/src/desk/main.rs:1170       crate::shell_loop::sh_gem_leave();
+      kernel/src/desk/main.rs:1245       crate::fbcon::write_byte(b);
+      kernel/src/desk/main.rs:1478       let letter = crate::keymap::to_ascii(sc, true, false, false);
+      kernel/src/desk/mod.rs:44          use crate::kprintln;
+      kernel/src/desk/mod.rs:970         if !crate::shell_loop::sh_run_pending_console() {
+
+C  kernel/ -> desk module (outside kernel/src/desk/)         5 code line(s)
+    crate::desk                                              3
+    desk::reset                                              1
+    mod desk                                                 1
+      kernel/src/accs.rs:48              use crate::desk::ftype::{classify, FileType, Flavor};
+      kernel/src/launch.rs:266           use crate::desk::ftype::{classify, FileType, Flavor};
+      kernel/src/lib.rs:475              desk::reset();
+      kernel/src/lib.rs:62               pub mod desk;
+      kernel/src/shell_loop.rs:430       crate::desk::run(); // `aes_run_rom_program(deskstart)` (:606)
+
+DRIFT-PROBE TOTAL: 47

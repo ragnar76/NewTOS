@@ -336,13 +336,20 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         svc_imm,
     };
 
-    // TEMPORARY QED syscall tracer (debug tooling, not product history). Traces
-    // only EL0 (user-app) traps — the desktop runs at EL1 and never reaches
-    // here. `pre_dispatch` flushes the RAM trace to C: at each `evnt_multi`
-    // entry; `post_dispatch` records the completed call. Both fold away when
-    // `QED_SVC_TRACE` is false, so this is a no-op with the tool disabled.
-    let dbg_from_el0 = (frame.spsr & 0xF) == 0;
-    if crate::dbg_qedtrace::QED_SVC_TRACE && dbg_from_el0 {
+    // TEMPORARY `svc` tracer (debug tooling, not product history). It records
+    // **every** `svc`, whichever exception level it came from. This gate also
+    // tested `SPSR.M[3:0] == 0` until DESK43/U1, on the stated grounds that
+    // "the desktop runs at EL1 and never reaches here"; those grounds have been
+    // wrong since DESK10 — the built-in desktop issues the same two
+    // instructions an application does (`svc #2`, `crate::desk`'s `gem_trap`;
+    // `svc #1`, `crate::desk::dosbind`'s `dos_trap`), so an EL0-only gate silently
+    // excluded the one caller whose call sequence has to be diffable against
+    // `desk/deskmain.c` (`docs/analysis/desktop-userspace-plan-v2.md` §5 U1 and
+    // measure 4 of §6.4). `pre_dispatch` flushes the RAM trace to C: at each
+    // `evnt_multi` entry; `post_dispatch` records the completed call. Both fold
+    // away when `QED_SVC_TRACE` is false, so this is a no-op with the tool
+    // disabled — which is its committed state.
+    if crate::dbg_qedtrace::QED_SVC_TRACE {
         crate::dbg_qedtrace::pre_dispatch(class, &args);
     }
 
@@ -478,9 +485,10 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         return;
     }
 
-    // TEMPORARY QED syscall tracer (debug tooling): record the completed EL0
-    // call. Folds away when `QED_SVC_TRACE` is false.
-    if crate::dbg_qedtrace::QED_SVC_TRACE && dbg_from_el0 {
+    // TEMPORARY `svc` tracer (debug tooling): record the completed call, from
+    // either exception level (see the `pre_dispatch` hook above). Folds away
+    // when `QED_SVC_TRACE` is false.
+    if crate::dbg_qedtrace::QED_SVC_TRACE {
         crate::dbg_qedtrace::post_dispatch(class, &args, result);
     }
 

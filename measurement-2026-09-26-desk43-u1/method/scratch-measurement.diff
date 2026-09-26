@@ -1,0 +1,21 @@
+kernel/src/dbg_qedtrace.rs.orig	2026-09-26 08:07:05
+kernel/src/dbg_qedtrace.rs.scratch	2026-09-26 08:07:05
+@@ -68,7 +68,7 @@
+ /// Master gate for the QED syscall tracer. Set to `false` to compile the tool
+ /// out completely (both hook sites fold away, no runtime effect). This is the
+ /// single obvious switch the task asks for.
+-pub const QED_SVC_TRACE: bool = false;
++pub const QED_SVC_TRACE: bool = true; // SCRATCH: U1 measurement, reverted before hand-off
+ 
+ /// RAM trace buffer size (96 KiB) — generous for a full QED startup + a few
+ /// idle-loop iterations; excess is dropped after the truncation marker.
+@@ -324,7 +324,8 @@
+                     // Window geometry goes to the kept prologue, everything
+                     // else to the per-cycle buffer.
+                     let op = aes_opcode(block);
+-                    let geometry = matches!(op, 100 | 101 | 108) || is_work_query(block, op);
++                    // SCRATCH (U1 measurement): keep every call in stream order.
++                    let geometry = false && (matches!(op, 100 | 101 | 108) || is_work_query(block, op));
+                     if geometry {
+                         PRO_MODE.store(true, Ordering::Release);
+                     }

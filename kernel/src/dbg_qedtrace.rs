@@ -1,21 +1,45 @@
-//! **TEMPORARY** kernel-side syscall tracer for an EL0 application (QED).
+//! **TEMPORARY** kernel-side `svc` tracer — originally for an EL0 application
+//! (QED), now for every `svc` caller including the built-in desktop.
 //!
 //! This is a DEBUG tool — it is **not** part of the product and must **not**
-//! be committed to product history. It exists solely to root-cause real-HW QED
-//! behaviour without a UART: it logs every EL0 (user-app) `svc` call to a RAM
-//! buffer and periodically flushes that buffer to `C:\QEDTRACE.LOG` so the
-//! trace can be read off the SD card after power-off.
+//! be committed to product history. It was built to root-cause real-HW QED
+//! behaviour without a UART: it logs `svc` calls to a RAM buffer and
+//! periodically flushes that buffer to `C:\QEDTRACE.LOG` so the trace can be
+//! read off the SD card after power-off.
 //!
 //! ## How it hooks in
 //!
 //! [`crate::arch::aarch64::exceptions::rust_sync_handler`] calls
 //! [`pre_dispatch`] just before, and [`post_dispatch`] just after, the per-class
-//! TOS dispatch — but **only** when the trap came from EL0 (`SPSR.M[3:0] == 0`).
-//! The desktop runs at EL1 and calls the AES/VDI directly (never through the
-//! `svc` path), so hooking the EL0 handler naturally traces **only** the app
-//! (QED). Both hooks are guarded by the compile-time [`QED_SVC_TRACE`] const, so
+//! TOS dispatch, for **every** trap regardless of the exception level it came
+//! from. Both hooks are guarded by the compile-time [`QED_SVC_TRACE`] const, so
 //! with it `false` the tracer vanishes entirely (`if false && …` folds away) and
 //! there is zero effect on product behaviour.
+//!
+//! ## Why the hook is no longer EL0-only
+//!
+//! It used to test `SPSR.M[3:0] == 0` as well, justified with *"the desktop runs
+//! at EL1 and calls the AES/VDI directly (never through the `svc` path), so
+//! hooking the EL0 handler naturally traces only the app"*. **That has been
+//! false since DESK10.** The built-in desktop reaches the AES through
+//! [`crate::desk`]'s `gem_trap` (`svc #2`) and GEMDOS through
+//! [`crate::desk::dosbind`]'s `dos_trap` (`svc #1`) — the same two instructions
+//! an application uses; it was simply not recorded, because its `svc` is taken
+//! at EL1. The gate was widened for
+//! `docs/analysis/desktop-userspace-plan-v2.md` §5 U1, whose whole purpose is
+//! to make the desktop's call sequence diffable against
+//! `references/emutos/desk/deskmain.c` (measure 4 of §6.4).
+//!
+//! ## Reading a trace of a long-lived client
+//!
+//! [`pre_dispatch`] flushes **and then clears** the buffer at every
+//! `evnt_multi` entry (unless the QED-specific freeze logic below has latched),
+//! so for a client that keeps returning to its event loop — the desktop does,
+//! forever — `C:\QEDTRACE.LOG` holds the calls of the **most recent** idle
+//! cycle, not the start-up. To keep a start-up, read the file after the first
+//! `evnt_multi` and before the second, or use the non-clearing ring of
+//! [`tos_api::aes::trace`] (cargo feature `aes-trace`), which is the
+//! product-grade instrument and is not exception-level gated either.
 //!
 //! ## Buffer + flush
 //!
@@ -189,9 +213,9 @@ macro_rules! trace {
     }};
 }
 
-/// Called from the EL0 `svc` handler **before** dispatch. Flushes the buffer at
-/// each `evnt_multi` entry so the startup trace reaches C: even if the ensuing
-/// blocking wait never returns.
+/// Called from the `svc` handler (any exception level) **before** dispatch.
+/// Flushes the buffer at each `evnt_multi` entry so the startup trace reaches
+/// C: even if the ensuing blocking wait never returns.
 pub fn pre_dispatch(class: TrapClass, args: &TrapArgs) {
     if !QED_SVC_TRACE {
         return;
@@ -235,8 +259,9 @@ pub fn pre_dispatch(class: TrapClass, args: &TrapArgs) {
     IN_TRACE.store(false, Ordering::Release);
 }
 
-/// Called from the EL0 `svc` handler **after** dispatch. Appends the one-line
-/// record (plus decoded detail for the key calls) for the call just completed.
+/// Called from the `svc` handler (any exception level) **after** dispatch.
+/// Appends the one-line record (plus decoded detail for the key calls) for the
+/// call just completed.
 pub fn post_dispatch(class: TrapClass, args: &TrapArgs, result: i64) {
     if !QED_SVC_TRACE {
         return;
@@ -261,8 +286,11 @@ fn is_evnt_multi(class: TrapClass, args: &TrapArgs) -> bool {
     let abi = current_abi();
     // control = block[0]; opcode = control[0] — the same reads the AES
     // dispatcher performs on this block.
-    // SAFETY: QED's TTBR0 is active and the block is a mapped user VA that the
-    // AES dispatcher itself reads identically.
+    // SAFETY: the calling client's `TTBR0` is still active, so an EL0 caller's
+    // block is a mapped user VA; an EL1 caller (the built-in desktop) passes a
+    // kernel high-half VA, and `current_abi()` resolves to LP64 for it, which
+    // is the width that caller wrote. Either way this is the same read the AES
+    // dispatcher performs on the same block a few instructions later.
     let control = unsafe { abi.read_ptr(block, 0) } as *const i16;
     if control.is_null() {
         return false;
@@ -272,7 +300,7 @@ fn is_evnt_multi(class: TrapClass, args: &TrapArgs) -> bool {
     op == 25
 }
 
-/// Append the one-line record for a completed EL0 call.
+/// Append the one-line record for a completed call.
 fn record(class: TrapClass, args: &TrapArgs, result: i64) {
     match class {
         TrapClass::Gemdos => {
@@ -341,9 +369,10 @@ fn record_gemdos_path(f: u16, args: &TrapArgs) {
 /// quotes. A null pointer prints `(null)`.
 ///
 /// This reads the very pointer the just-dispatched GEMDOS call already walked
-/// (via `super::cstr`) in this same trap context with QED's `TTBR0` active, so
-/// it is exactly as safe as that call: it stops at the NUL or the 128-byte cap
-/// and never scans unbounded memory.
+/// (via `super::cstr`) in this same trap context, with the caller's `TTBR0`
+/// still active — a user VA from EL0, a kernel high-half VA from the built-in
+/// desktop at EL1. So it is exactly as safe as that call: it stops at the NUL
+/// or the 128-byte cap and never scans unbounded memory.
 fn trace_path(ptr: u64) {
     if ptr == 0 {
         append(b"(null)");
@@ -353,9 +382,10 @@ fn trace_path(ptr: u64) {
     let p = ptr as *const u8;
     let mut i = 0usize;
     while i < 128 {
-        // SAFETY: `p` is the same user string pointer the dispatched GEMDOS
-        // call read through `super::cstr`; QED's TTBR0 is active, the scan is
-        // bounded to 128 bytes and stops at the first NUL.
+        // SAFETY: `p` is the same string pointer the dispatched GEMDOS call
+        // read through `super::cstr`; the caller's TTBR0 is still active (EL1
+        // callers pass a kernel VA), the scan is bounded to 128 bytes and
+        // stops at the first NUL.
         let b = unsafe { p.add(i).read() };
         if b == 0 {
             break;

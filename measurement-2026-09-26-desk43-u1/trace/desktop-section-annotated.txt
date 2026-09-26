@@ -1,0 +1,27 @@
+AES    op=10  appl_init     -> 0
+AES    op=104 wind_get      -> 1
+    wind_get(desk, WF_WORKXYWH): xywh=(0,19,640,461)
+AES    op=40  objc_add      -> 1   [x8]
+GEMDOS #1  fn=0x154           -> 4399
+AES    op=108 wind_calc     -> 1
+    wind_calc: wtype=1 kind=0x0fff in=(0,19,640,461) out=(1,61,616,396)
+GEMDOS #1  fn=0x3d Fopen     -> 6
+    Fopen    path="C:\NEWDESK.INF"
+GEMDOS #1  fn=0x3f Fread     -> 21
+GEMDOS #1  fn=0x3e Fclose    -> 0
+GEMDOS #1  fn=0x19 Dgetdrv   -> 2
+GEMDOS #1  fn=0x0e Dsetdrv   -> 4
+AES    op=40  objc_add      -> 1   [x3]
+AES    op=105 wind_set      -> 1
+AES    op=30  menu_bar      -> 1
+AES    op=107 wind_update   -> 1
+AES    op=26  evnt_dclick   -> 2
+AES    op=107 wind_update   -> 1
+AES    op=32  menu_ienable  -> 1   [x31]
+AES    op=31  menu_icheck   -> 1   [x8]
+AES    op=78  graf_mouse    -> 1
+AES    op=51  form_dial     -> 1
+AES    op=30  menu_bar      -> 1
+AES    op=78  graf_mouse    -> 1   [x2]
+GEMDOS #1  fn=0x19 Dgetdrv   -> 2
+GEMDOS #1  fn=0x0e Dsetdrv   -> 4

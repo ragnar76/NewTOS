@@ -1,0 +1,21 @@
+kernel/src/arch/aarch64/exceptions.rs.orig	2026-09-26 08:07:05
+kernel/src/arch/aarch64/exceptions.rs.control	2026-09-26 08:07:05
+@@ -349,7 +349,8 @@
+     // `evnt_multi` entry; `post_dispatch` records the completed call. Both fold
+     // away when `QED_SVC_TRACE` is false, so this is a no-op with the tool
+     // disabled — which is its committed state.
+-    if crate::dbg_qedtrace::QED_SVC_TRACE {
++    let dbg_from_el0 = (frame.spsr & 0xF) == 0; // SCRATCH: U1 control run
++    if crate::dbg_qedtrace::QED_SVC_TRACE && dbg_from_el0 {
+         crate::dbg_qedtrace::pre_dispatch(class, &args);
+     }
+ 
+@@ -488,7 +489,7 @@
+     // TEMPORARY `svc` tracer (debug tooling): record the completed call, from
+     // either exception level (see the `pre_dispatch` hook above). Folds away
+     // when `QED_SVC_TRACE` is false.
+-    if crate::dbg_qedtrace::QED_SVC_TRACE {
++    if crate::dbg_qedtrace::QED_SVC_TRACE && dbg_from_el0 {
+         crate::dbg_qedtrace::post_dispatch(class, &args, result);
+     }
+ 

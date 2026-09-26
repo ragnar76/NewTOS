@@ -17,8 +17,15 @@
 //! `Mfree`/`Mshrink` translate that user VA back to the pool key first. The
 //! discrimination mirrors [`crate::aes::resource`] exactly — a non-null
 //! [`crate::bdos::process::current`] means an EL0 app is running; a kernel /
-//! desktop caller (which calls the pool directly, never through these trap
-//! readers) resolves to `null` and keeps **raw physical addresses**.
+//! desktop caller resolves to `null` and keeps **raw physical addresses**.
+//!
+//! This used to add *"which calls the pool directly, never through these trap
+//! readers"*. **That has been false since DESK10:** the built-in desktop does
+//! come through here, via `svc #1` (`kernel/src/desk/dosbind.rs`,
+//! `dos_avail_stram`/`dos_avail_altram` = `Mxalloc(-1L, MX_STRAM|MX_TTRAM)`).
+//! It is only ever the probe form, which measures and allocates nothing, so
+//! nothing is mapped and nothing has to be translated back — but the thing that
+//! decides is the null `current()`, not the entry point.
 
 use crate::bdos::mem::traps;
 use crate::bdos::process::{self, usermem};
