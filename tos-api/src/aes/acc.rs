@@ -22,6 +22,7 @@
 //! process table, which sit below this layer.
 
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use super::pd;
 use crate::bdos::process::sched;
@@ -46,6 +47,22 @@ pub const NUM_ACCS: usize = 6;
 /// loops actually used was less than 100." [`wait_for_accs`] gives up after
 /// this many passes and returns as if the flag had been set.
 pub const WAIT_TIMEOUT: u32 = 500;
+
+/// Passes already spent by an **in-flight** [`wait_for_accs`], one counter per
+/// AES identity ([`pd::NUM_PDS`]); `0` = no wait in flight.
+///
+/// EmuTOS's `n` (`aes/geminit.c:602,609`) is a C automatic and can be, because
+/// its loop never leaves the function: `dsptch()` returns to the very same
+/// instruction once the process is rescheduled. A NewTOS pass **does** leave
+/// the function — the yield unwinds the AES call and the re-executed `svc`
+/// re-enters it from the top (the S2 restartable block,
+/// `docs/analysis/coop-kernel/20-sleepwake-substrate-design.md` §4.3) — so a
+/// counter on the stack would be reset by every pass that yields, which is
+/// precisely the pathological case `WAIT_TIMEOUT` exists to bound. It lives out
+/// here instead, for the same reason and in the same shape as the timer
+/// deadline ([`sched::arm_or_get_deadline`]): armed on first entry, carried
+/// across restarts, cleared on both exits and by [`forget_wait`].
+static WAIT_PASSES: [AtomicU32; pd::NUM_PDS] = [const { AtomicU32::new(0) }; pd::NUM_PDS];
 
 /// The AES identities (process-descriptor indices) of the loaded accessory
 /// processes, in load order — EmuTOS's AESPD slots 2..`num_accs+1`.
@@ -117,6 +134,9 @@ pub fn count() -> usize {
 pub(super) fn reinit() {
     // SAFETY: single restart path, no AES call in flight.
     unsafe { table() }.fill(usize::MAX);
+    for c in WAIT_PASSES.iter() {
+        c.store(0, Ordering::Release);
+    }
 }
 
 /// `true` when every loaded accessory has `bitmask` set in its `p_flags` —
@@ -131,39 +151,99 @@ pub fn all_have(bitmask: u16) -> bool {
     })
 }
 
-/// `wait_for_accs(bitmask)` (`aes/geminit.c:599-628`) — block until every desk
-/// accessory has `bitmask` set in its `p_flags`, or [`WAIT_TIMEOUT`] passes
-/// have gone by.
+/// `all_run()` (`aes/geminit.c:554-566`) — "give everyone a chance to run, at
+/// least once": one [`sched::dsptch`] per loaded accessory.
 ///
-/// EmuTOS's body is `all_run(); check every DA's p_flags;` in a bounded loop:
-/// `all_run()` puts every accessory back in the ready list and the check runs
-/// after the dispatcher has let them run. Here the two halves are the
-/// scheduler's: [`sched::sleep`] hands the CPU to a runnable accessory
-/// (returning [`sched::SleepOutcome::Yield`], which the caller must propagate
-/// to the trap handler as the S2 restartable block) or, with none runnable,
-/// runs the idle pass and comes back for another look.
+/// Returns `Some(switch)` as soon as one of those dispatches finds a peer: a
+/// NewTOS syscall can only perform **one** context switch, because the switch
+/// is the trap handler's and reaching it means unwinding this call. The
+/// remaining dispatches of the pass are therefore performed by the re-executed
+/// call — the same sequence of switches, with the loop state kept in
+/// [`WAIT_PASSES`] instead of on the stack.
+///
+/// EmuTOS's trailing `wm_update(BEG_UPDATE); wm_update(END_UPDATE);` (`:564-565`,
+/// "then get in the wait line") has no counterpart on purpose: it is there to
+/// block behind whoever holds the window-tree lock, and NewTOS's lock never
+/// parks anybody (`super::window`'s `update_beg`: "the refusal is the one thing
+/// that is not reproduced"), so taking and immediately dropping it is provably
+/// a no-op here.
+fn all_run() -> Option<sched::Switch> {
+    for _ in 0..count() {
+        if let sched::Dispatch::Yield(sw) = sched::dsptch() {
+            return Some(sw);
+        }
+    }
+    None
+}
+
+/// `wait_for_accs(bitmask)` (`aes/geminit.c:599-628`) — let every desk
+/// accessory run until each has `bitmask` set in its `p_flags`, or
+/// [`WAIT_TIMEOUT`] passes have gone by.
+///
+/// EmuTOS's body is `all_run(); walk the DAs' p_flags;` in a bounded loop, and
+/// the decisive property — extracted in `docs/api/aes/accessories.md` §3a — is
+/// that `all_run`'s `dsptch()` **keeps the caller on the ready list**
+/// (`disp_act`, `aes/gemdisp.c:74-79,231`). The barrier is a round-robin yield,
+/// not a wait on an event: nothing but the dispatcher is needed to satisfy it,
+/// and it makes progress on a machine nobody is touching.
+///
+/// That is why this is [`sched::dsptch`] and not [`sched::sleep`]. Sleeping
+/// here is EmuTOS's `WAITIN` branch, which `ap_exit` is not in; it took the
+/// caller out of the run-set and left it for `idle_wake_pass` to revive on a
+/// key or a pointer movement, so headless — no key, no pointer — a program
+/// that called `appl_exit` with an accessory loaded never reached its `Pterm`
+/// (ACC10, measured in `measurement-2026-09-26-acc10/`).
 ///
 /// Returns `Some(switch)` when the caller must abort its syscall and yield —
 /// the wait resumes from the top when the caller's `svc` re-executes — and
 /// `None` when the barrier is satisfied (or timed out, as EmuTOS's is).
 ///
-/// **Restart-safety.** The function commits nothing: it only reads `p_flags`.
-/// The `TIMEOUT_PASSES` counter is deliberately *not* carried across a yield —
-/// EmuTOS's `n` is not either, in the sense that its loop never leaves the
-/// function; a caller that yields and re-enters simply gets a fresh budget,
-/// which can only make the barrier more patient, never less.
+/// **Restart-safety.** The function commits nothing but the pass counter: it
+/// only reads `p_flags`.
 #[must_use]
 pub fn wait_for_accs(bitmask: u16) -> Option<sched::Switch> {
-    for _ in 0..WAIT_TIMEOUT {
-        if all_have(bitmask) {
-            return None;
+    let who = super::appl::current_identity();
+    // `for (n = 0; n < WAIT_TIMEOUT; n++)` (`:609`), with `n` in `WAIT_PASSES`
+    // because a pass can leave this function (see there).
+    while spend_pass(who) <= WAIT_TIMEOUT {
+        // `all_run();` (`:612`)
+        if let Some(sw) = all_run() {
+            return Some(sw);
         }
-        match sched::sleep(sched::wait_input()) {
-            sched::SleepOutcome::Yield(sw) => return Some(sw),
-            sched::SleepOutcome::Recheck => {}
+        // The `fpdnm(NULL, pid)` walk over the DA descriptors (`:617-625`):
+        // no more DAs means they all have the bit.
+        if all_have(bitmask) {
+            forget_wait(who);
+            return None;
         }
     }
     // `KDEBUG(("wait_for_accs(): %8.8s took too long\n", pd->p_name))` (`:627`)
     // — EmuTOS gives up and carries on, and so do we.
+    forget_wait(who);
     None
+}
+
+/// Charge one pass to AES identity `who`'s [`WAIT_PASSES`] budget and report
+/// the new total (1 on the first pass of a wait).
+fn spend_pass(who: usize) -> u32 {
+    match WAIT_PASSES.get(who) {
+        Some(c) => c.fetch_add(1, Ordering::AcqRel) + 1,
+        // No identity to charge — a caller outside the descriptor table cannot
+        // exist (`current_identity` returns a slot or `pd::DESKTOP`), but an
+        // out-of-range index must not silently wait forever either.
+        None => WAIT_TIMEOUT + 1,
+    }
+}
+
+/// Drop AES identity `who`'s in-flight [`wait_for_accs`] budget, so its next
+/// wait starts with the full [`WAIT_TIMEOUT`].
+///
+/// Called on both exits of [`wait_for_accs`] and from [`super::release_client`]
+/// — a process killed between a yield and its resume would otherwise leave a
+/// spent budget behind for the slot's next tenant, which would then skip the
+/// `AC_CLOSE` handshake instead of performing it.
+pub(super) fn forget_wait(who: usize) {
+    if let Some(c) = WAIT_PASSES.get(who) {
+        c.store(0, Ordering::Release);
+    }
 }

@@ -1,0 +1,14 @@
+=== clippy kernel --features board-rpi4 ===
+warning: `tos-api` (lib) generated 80 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+=== clippy kernel --features board-qemu-virt ===
+warning: `tos-api` (lib) generated 80 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+=== clippy tos-api (host) ===
+warning: `tos-api` (lib) generated 80 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+=== clippy tos-api tests ===
+warning: `tos-api` (lib) generated 80 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `tos-api` (lib test) generated 83 warnings (80 duplicates) (run `cargo clippy --fix --lib -p tos-api --tests -- ` to apply 1 suggestion)
+warning: `tos-api` (test "vdi_mouse_park") generated 2 warnings
+warning: `tos-api` (test "vdi_reference_raster_screen") generated 2 warnings
+warning: `tos-api` (test "vdi_raster_reference") generated 2 warnings (2 duplicates)

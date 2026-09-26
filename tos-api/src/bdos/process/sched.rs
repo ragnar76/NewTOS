@@ -541,6 +541,83 @@ pub fn wake(cond: u64) {
     }
 }
 
+// ─── dsptch: the yield that keeps the caller on the ready list ──────────────
+//
+// `sleep` above is EmuTOS's `WAITIN` branch. This is the other one, and the AES
+// needs both: a poll loop whose condition no wake class covers must yield, not
+// sleep, or nothing will ever wake it (ACC10).
+
+/// The outcome of a [`dsptch`] pass — the two exits of [`SleepOutcome`], with
+/// the caller's run-set membership left alone.
+#[must_use]
+pub enum Dispatch {
+    /// A ready **peer** got the CPU. Like [`SleepOutcome::Yield`] the caller
+    /// must abort its syscall and propagate the [`Switch`] to the trap handler
+    /// (the S2 restartable block, design §4.3); unlike it, the caller is still
+    /// READY, so the round-robin comes back on its own.
+    Yield(Switch),
+    /// Nobody else was ready: the idle pass ran (host input pumped, wake
+    /// sources polled) and the caller simply carries on.
+    Idle,
+}
+
+/// `dsptch()` (`aes/gemasm.S:129-167` → `disp`, `aes/gemdisp.c:220-254`) — give
+/// the CPU to the next ready context **without leaving the ready list**.
+///
+/// The second block primitive next to [`sleep`], and the difference is the
+/// entire point. `disp` takes the running process off the head of `rlr` and
+/// then branches on its *own* state (`gemdisp.c:229-231`):
+///
+/// ```text
+/// if (p->p_stat & WAITIN)  mwait_act(p);   /* park it on nrl  -> `sleep`  */
+/// else                     disp_act(p);    /* back on rlr     -> `dsptch` */
+/// ```
+///
+/// and `disp_act` is `insert_process(p, &rlr)` (`gemdisp.c:74-79`) — straight
+/// back onto the ready list. A process that calls `dsptch()` outside an
+/// `ev_block` has not set `WAITIN`, so it is rescheduled unconditionally, with
+/// no wake source, no event and no input involved.
+///
+/// **When to use which.** [`sleep`] is right for a wait that a wake class
+/// covers (`evnt_keybd`, `evnt_mesag`, `evnt_timer`): the caller is parked and
+/// the poster wakes it. `dsptch` is right for a poll loop over state no wake
+/// class covers — `wait_for_accs`'s walk over the desk accessories' `p_flags`
+/// (`aes/geminit.c:609-626`) is the AES's one instance. Sleeping on an
+/// unrelated class there parks the caller until something unrelated happens,
+/// which on a machine nobody is touching is never (ACC10; the barrier used to
+/// sleep on `wait_input()` and a headless `appl_exit` did not return).
+///
+/// The counterpart for the *other* half of `disp` — the `forker(); schedule();`
+/// input drain every completed AES call ends with — is `aes::dsptch`.
+pub fn dsptch() -> Dispatch {
+    let cur = running_slot();
+    if cur < MAX_PROCESSES {
+        // `disp_act(p)`: the caller's `runnable` bit and `wait_cond` are
+        // deliberately untouched — `on_yield` only picks the next runnable
+        // slot after it, and will pick the caller again when it comes round.
+        if let Some(sw) = on_yield(cur) {
+            return Dispatch::Yield(sw);
+        }
+        // No EL0 peer, but an EL1 kernel client may be parked (ACC03) — it is
+        // one more entry on EmuTOS's ready list, so it is a `dsptch` target.
+        if kernel_parked() {
+            return Dispatch::Yield(switch_to_kernel());
+        }
+    } else if let Some(sw) = pick_peer_for_kernel() {
+        // The EL1 kernel client dispatches: an accessory is runnable.
+        return Dispatch::Yield(sw);
+    }
+
+    // Nothing to switch to. `disp`'s `schedule()` still runs (`gemdisp.c:240`),
+    // which is our idle pass; then the caller carries on, exactly as EmuTOS's
+    // would after being put straight back on a ready list it is alone on.
+    if let Some(h) = host() {
+        h.pump_input();
+    }
+    idle_wake_pass();
+    Dispatch::Idle
+}
+
 // ─── timer deadline persistence (S2-restart idempotency, §4.3 OPEN) ─────────
 //
 // A timer-bearing wait (`evnt_timer`/`wait_ms`/`evnt_multi`-`MU_TIMER`) computes

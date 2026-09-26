@@ -883,6 +883,10 @@ pub fn release_client(slot: usize) {
     // SAFETY: single-CPU process-release context under the BDOS giant lock;
     // no GEM trap is in flight for the slot being released.
     unsafe { pd::release(slot) };
+    // A `wait_for_accs` the tenant was in the middle of dies with it: drop the
+    // pass budget so the slot's next tenant gets the full `WAIT_TIMEOUT` and
+    // performs the `AC_CLOSE` handshake instead of skipping it (ACC10).
+    acc::forget_wait(slot);
     // The Window-Manager half of the same release — `sh_ldapp`'s `wm_new()`
     // (`aes/gemshlib.c:676-677`) for a client the shell loop never ran. Only
     // *marked* here: this runs on the `Pterm` exception stack and the sweep

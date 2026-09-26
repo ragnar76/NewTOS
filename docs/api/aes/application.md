@@ -645,7 +645,14 @@ falls to the `default` arm and returns `-1` (see [`_dispatcher.md`](./_dispatche
 2. `mn_cleanup()` — drop the app's menu bar if it owns one.
 3. `wait_for_accs(AP_ACCLOSE)` — block until every desk accessory has seen the
    `AC_CLOSE` message (`geminit.c:599-628`; polls the DA descriptors' flags
-   with a `WAIT_TIMEOUT = 500` loop cap).
+   with a `WAIT_TIMEOUT = 500` loop cap). **"Block" is a round-robin yield, not
+   a wait on an event**: each pass is `all_run()` (`geminit.c:554-566`), i.e.
+   `dsptch()` once per accessory, and `dsptch` from a process that has not set
+   `WAITIN` puts it straight back on the ready list (`gemdisp.c:74-79,230-231`).
+   The barrier therefore makes progress with no input of any kind, and it is
+   bounded. Extracted in full in
+   [`accessories.md`](./accessories.md) §3a — the distinction is load-bearing
+   (ACC10).
 4. If the app still has a queued message (`rlr->p_qindex != 0`), drain it with
    `ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, D.g_valstr)` (`gemaplib.c:256-257`;
    `D.g_valstr` is a scratch buffer in `THEGLO`, `aes/gemlib.h:133`).
@@ -654,8 +661,10 @@ falls to the `default` arm and returns `-1` (see [`_dispatcher.md`](./_dispatche
 7. `rlr->p_flags &= ~AP_OPEN` — mark `appl_exit` done.
 
 > `appl_exit` always returns `1`. The DA-close handshake (steps 2-3) presumes
-> concurrent AES processes; in NewTOS's single-app bring-up there are no DAs, so
-> `wait_for_accs` returns immediately.
+> concurrent AES processes; with no `.NAC` loaded `wait_for_accs` returns
+> immediately, which is what NewTOS's single-app bring-up saw until ACC02-ACC05
+> gave it real accessory processes (2026-09-25) — from then on the handshake is
+> live and step 3's *yield* semantics matter (ACC10, 2026-09-26).
 
 **The descriptor is not freed.** The list above is exhaustive: `ap_exit` drains
 the queue and clears one flag bit. `p_pid`, `p_name` and the remaining flags

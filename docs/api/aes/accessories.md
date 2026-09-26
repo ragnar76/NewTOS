@@ -93,7 +93,8 @@ Six distinct phases, in the order EmuTOS actually runs them:
 4. **First run and synchronisation** (`run_accs_and_desktop`, `:736-737`) —
    `dsptch()` starts the scheduler; `wait_for_accs(AP_MESAG)`
    (`geminit.c:599-628`) then blocks (polling `all_run()` in a loop capped at
-   `WAIT_TIMEOUT = 500` iterations, `:609`) until every accessory AESPD has
+   `WAIT_TIMEOUT = 500` iterations, `:609` — **§3a** for what that "blocks"
+   is: a round-robin yield, not a wait on an event) until every accessory AESPD has
    `p_flags & AP_MESAG` set — i.e. until each accessory has made its first
    `evnt_mesag()`/`evnt_multi()` call. This is the point at which the AES
    trusts that every accessory has finished its own `appl_init` +
@@ -228,6 +229,90 @@ rigor.
 An accessory that only checks `msg[0]` and assumes a fixed slot for "my
 menu id" regardless of message type will misroute one of the two messages.
 `sdk/examples/sysacc.c:284-289` gets this right (see §5).
+
+---
+
+## 3a. The barrier is a *yield* loop, not a blocking wait (ACC10)
+
+§1 step 4 and [`application.md`](./application.md) `appl_exit (19)` both say
+`wait_for_accs` "blocks". That word is right about the effect and wrong about
+the mechanism, and the difference decides whether a headless session ever
+comes back. Extracted here in full because nothing in `docs/api/` said it.
+
+**What one pass does.** `wait_for_accs` (`geminit.c:599-628`) is
+
+```c
+for (n = 0; n < WAIT_TIMEOUT; n++)      /* :609, WAIT_TIMEOUT = 500, :102 */
+{
+    all_run();                          /* :612 */
+    for (pid = 2; ; pid++)              /* :617-625 */
+    {
+        pd = fpdnm(NULL, pid);
+        if (!pd)  return;               /* no more DAs -> all have the bit */
+        if (!(pd->p_flags & bitmask)) break;   /* go round again */
+    }
+}
+KDEBUG(("wait_for_accs(): %8.8s took too long\n", pd->p_name));  /* :627 */
+```
+
+and `all_run()` (`geminit.c:554-566`) is
+
+```c
+for (i = 0; i < num_accs; i++)
+    dsptch();                           /* :559-562 */
+wm_update(BEG_UPDATE);                  /* :564 — "get in the wait line" */
+wm_update(END_UPDATE);                  /* :565 */
+```
+
+**`dsptch()` does not remove the caller from the ready list.** `dsptch`
+(`gemasm.S:129-167`) saves the machine state and jumps to `disp`
+(`gemdisp.c:220-254`), which takes the running process off the head of `rlr`
+and then decides what to do with it *from its own `p_stat`*:
+
+```c
+p = rlr;  rlr = p->p_link;              /* gemdisp.c:225-226 */
+if (p->p_stat & WAITIN)  mwait_act(p);  /* :230 — sleep on nrl */
+else                     disp_act(p);   /* :231 */
+```
+
+and `disp_act` is `p->p_stat &= ~WAITIN; insert_process(p, &rlr);`
+(`gemdisp.c:74-79`) — straight back onto the ready list. A process calling
+`dsptch()` outside an `ev_block` has **not** set `WAITIN`, so `all_run()` is a
+plain round-robin *yield*: everybody else gets a turn and the caller is
+rescheduled unconditionally, with no wake source, no event and no input
+involved. `ap_exit` reaches `wait_for_accs` in exactly that state
+(`gemaplib.c:251-255`: `wm_update` + `mn_cleanup` + the call; no `ev_block`
+anywhere in between).
+
+**Consequences that are contract, not mechanism:**
+
+1. **The barrier makes progress with no input whatsoever.** The only thing
+   that can satisfy it is an accessory running and consuming its `AC_CLOSE`,
+   and the only thing needed for that is the dispatcher. A build that parks
+   the waiter on a keyboard/pointer wake class instead never returns on a
+   machine nobody is touching.
+2. **The wait is bounded.** After `WAIT_TIMEOUT = 500` passes (`geminit.c:102`
+   — "as a precaution against infinite loops … in limited testing, the maximum
+   number of loops actually used was less than 100") it gives up, logs, and
+   returns *as if* the flag had been set. An accessory that never reads its
+   queue delays `appl_exit`; it cannot stop it.
+3. **Zero accessories means zero waiting and zero yielding.** With
+   `num_accs == 0`, `all_run()` performs no `dsptch()` at all and the `fpdnm`
+   walk returns on its first step (`:619-621`), so the whole call is the
+   `wm_update` pair. This is the NewTOS bring-up case and is why the barrier
+   looked correct for as long as no accessory existed.
+
+**NewTOS's spelling of `dsptch()`.** NewTOS cannot return into the middle of a
+syscall: a blocking AES call unwinds the AES fiber and the trap is re-executed
+on resume (the S2 restartable block,
+`docs/analysis/coop-kernel/20-sleepwake-substrate-design.md` §4.3). So EmuTOS's
+one `dsptch()` becomes *yield out of the syscall and re-enter it*, and the two
+halves of `disp` live in two places: `sched::dsptch` is the ready-list-preserving
+process switch, `aes::dsptch` is `disp`'s `forker(); schedule();` input drain
+that every completed AES call ends with. The one piece of `all_run` that has no
+counterpart is the `wm_update` pair: NewTOS's update lock is a counter nobody
+is ever parked on (`window.rs::update_beg`'s own note), so `BEG` immediately
+followed by `END` is provably a no-op here. See §9.5 for what this cost.
 
 ---
 
@@ -727,6 +812,48 @@ of starting a second, unreachable copy.
 * **Accessory windows.** `sysacc.c` uses `form_alert`; an accessory that opens
   a real window exercises the Window Manager from a second client, which this
   batch did not drive.
+
+### 9.5 The barrier waited on the wrong thing (ACC10, 2026-09-26)
+
+The §9.1 mapping was complete and the barrier still never returned headless,
+because `acc.rs::wait_for_accs` spent its pass in `sched::sleep(wait_input())`
+— the **`WAITIN` branch** of `disp` (`gemdisp.c:230` → `mwait_act`), where
+EmuTOS is in the `disp_act` branch (§3a). The caller left the cooperative
+run-set and only a key or a pointer movement (`sched::idle_wake_pass`) could
+put it back; with an accessory loaded, a program that called `appl_exit` on a
+machine nobody was touching never reached its `Pterm`. Measured on the
+kernel-launched control of `measurement-2026-09-25-port05`, i.e. with no
+`Pexec` anywhere: `measurement-2026-09-26-acc10/serial/before-*.log`.
+
+What landed:
+
+* **`sched::dsptch` (`tos-api/src/bdos/process/sched.rs`)** — the
+  ready-list-preserving switch, the second block primitive beside
+  `sched::sleep`. Same two exits as `sleep` (`Yield` to a peer / `Idle` = pump
+  + wake-pass), and exactly one difference, which is the whole point: it does
+  **not** write `wait_cond` and does **not** clear `runnable`, so the
+  round-robin comes back to the caller with no wake source involved. A poll
+  loop whose condition no wake class covers — `wait_for_accs` over the DAs'
+  `p_flags` is the AES's only one — must use this.
+* **`acc.rs::all_run`** — `count()` `dsptch` passes, EmuTOS's `geminit.c:559-562`.
+  The `wm_update` pair (`:564-565`) is not reproduced: NewTOS's update lock
+  never parks anyone (`window.rs::update_beg`), so `BEG` + `END` back to back
+  is a no-op by construction.
+* **`acc.rs::WAIT_PASSES`** — EmuTOS's `n` (`geminit.c:602,609`) is a C
+  automatic and its loop never leaves the function; ours leaves it on every
+  `Yield` and re-enters from the top, which would hand each re-entry a fresh
+  budget and turn a precaution against infinite loops into one. The counter
+  therefore lives outside the stack frame, one entry per AES identity, armed
+  on first entry, carried across restarts, cleared on both exits and on
+  `release_client`. Same reason and same shape as the timer deadline
+  (`sched::arm_or_get_deadline`, design §4.3).
+
+**Named deviation (g): the 500 counts passes, not `dsptch` calls.** EmuTOS's
+cap is 500 *outer* passes and each performs `num_accs` dispatches; a NewTOS
+pass that yields performs one and is still counted whole, so with more than
+one accessory our budget is the tighter of the two. It can only bite in the
+case where both sides give up anyway — a DA that never consumes its
+`AC_CLOSE` — and in that case both return as if the flag were set.
 
 ---
 

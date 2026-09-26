@@ -1,0 +1,221 @@
+measurement-2026-09-26-acc10
+  ACC10 (appl_exit blockiert headless fuer immer in wait_for_accs)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD c141be2. The ACC10 change is UNCOMMITTED in
+the shared tree (three edited source files, two edited spec files, one new
+test file; §6). Nothing flashed, nothing ejected, no real Pi run, nothing
+committed; no `git checkout/restore/clean/stash/reset` was run on the shared
+tree. The SD card at /Volumes/BOOT was not touched.
+
+Machine: QEMU `-M raspi4b`, 640x480, `-display none`, serial to a file,
+bounded by a shell-side kill (the host is macOS and has no `timeout`). Card
+image: a fresh `tools/make-sd-image.sh` per run (64 MiB, MBR + FAT16) plus
+the PORT05 fixture (method/seed-pex.sh) -- rebuilt, never a reused copy. No
+`*.img` in this directory (the ticket's rule); the images were written to the
+session scratch and deleted.
+
+NO IKBD INJECTOR, NO SCRIPTED CLICK, NO SCRATCH TREE COPY, NO MOUSE
+MOVEMENT OF ANY KIND. That is the whole point of the acceptance criterion:
+the program has to come back from `appl_exit` with nobody touching the
+machine.
+
+
+0. WHAT IS UNDER TEST
+---------------------------------------------------------------------------
+`appl_exit()` -> `wait_for_accs(AP_ACCLOSE)` with desk accessories loaded.
+`tools/make-sd-image.sh` puts two of them on the card (C:\ACC\SYSACC.NAC and
+C:\SYSACC2.NAC), so every boot in this directory has a live cooperative
+run-set of two EL0 accessory processes plus the program under test.
+
+
+1. FIXTURE -- the PORT05 control, unchanged
+---------------------------------------------------------------------------
+method/ is a copy of measurement-2026-09-25-port05/method (build-pex.sh,
+pexkid.c, pexpar.c, seed-pex.sh, run-pex.sh, the two .INF files), used
+verbatim. The programs in nap/ are its output:
+
+  PEXKID.NAP   appl_init -> evnt_timer(1500) -> appl_exit -> Pterm(0)
+  PEXPAR.NAP   appl_init -> evnt_timer(500) -> Pexec(0, PEXKID) -> report rc
+               -> evnt_timer(500) -> appl_exit -> Pterm(0)
+  PEXKIDX.NAP  PEXKID without the appl_exit (built, not used here -- it is
+               the workaround PORT05 needed *because of* this defect)
+  PEXPARQ.NAP  PEXPAR launching the real QED (built, not used here)
+
+Two card layouts:
+  newdesk-kidonly.inf   `#Z 01 C:\PEXKID.NAP` -- the KERNEL launches the
+                        program (kernel/src/launch.rs). NO Pexec anywhere.
+                        This is the control the ticket names.
+  newdesk-pex.inf       `#Z 01 C:\PEXPAR.NAP` -- EL0 parent Pexec's an EL0
+                        child, both with a real appl_exit.
+
+Rebuild:  ./method/build-pex.sh <outdir>
+Seed:     ./method/seed-pex.sh <img> <napdir> [method/newdesk-kidonly.inf]
+Run:      ./method/run-pex.sh kernel8.img <img> <log> <seconds>
+
+
+2. BEFORE  (serial/before-kernel-launch-applexit.log, 70 s)
+---------------------------------------------------------------------------
+Unmodified tree, kernel built fresh for board-rpi4
+(build/build-rpi4-before.txt, tos-api 64 / kernel 94 warnings).
+
+  [acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+  [acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+  [acc] 2 file(s) found, 2 process(es) started
+  ...
+  [acc] all accessories have issued their message wait
+  [shell] sh_ldapp: starting C:\PEXKID.NAP, sh_nextapp=2, sh_isgem=1
+  [launch] EL0: slot 2 entry 0x1000
+  [KID] 1 main entry
+  [KID] 2 appl_init done
+  [KID] 3 entering evnt_timer(1500)
+  [KID] 4 evnt_timer returned
+  [sched] switch -> slot 0
+  [sched] running
+  [sched] switch -> slot 1
+  [sched] running
+  <END OF LOG -- 65 lines, nothing further for the remaining ~65 seconds>
+
+`[KID] 5` never prints. The child's `appl_exit` posted AC_CLOSE, yielded to
+accessory slot 0, then to slot 1; both consumed the message and blocked
+again, and after that nothing was runnable and nothing woke slot 2. The
+desktop is never started either -- the whole session is stuck.
+
+
+3. THE CAUSE (read from EmuTOS, not inferred from the log)
+---------------------------------------------------------------------------
+It is NOT (only) the timeout the ticket suspected. The timeout is the
+*second* half; the first half is which scheduler primitive the barrier uses.
+
+EmuTOS `wait_for_accs` (aes/geminit.c:599-628) spends each pass in
+`all_run()` (:612), and `all_run` (:554-566) is
+
+    for (i = 0; i < num_accs; i++)  dsptch();      /* :559-562 */
+    wm_update(BEG_UPDATE); wm_update(END_UPDATE);  /* :564-565 */
+
+`dsptch` (aes/gemasm.S:129-167) jumps to `disp` (aes/gemdisp.c:220-254),
+which branches on the CALLER's own state:
+
+    p = rlr;  rlr = p->p_link;                 /* gemdisp.c:225-226 */
+    if (p->p_stat & WAITIN)  mwait_act(p);     /* :230  park on nrl */
+    else                     disp_act(p);      /* :231             */
+
+and `disp_act` is `p->p_stat &= ~WAITIN; insert_process(p, &rlr);`
+(gemdisp.c:74-79) -- straight back onto the ready list. `ap_exit`
+(aes/gemaplib.c:251-255) has no `ev_block` between its entry and the call,
+so it is in the `else` branch: EmuTOS's barrier is a bounded round-robin
+YIELD. It needs nothing but the dispatcher and makes progress on a machine
+nobody is touching.
+
+NewTOS was in the other branch. `tos-api/src/aes/acc.rs::wait_for_accs`
+called `sched::sleep(sched::wait_input())`, i.e. `mwait_act`: the caller was
+taken out of the cooperative run-set with a WAIT_INPUT wake key, and only
+`sched::idle_wake_pass` -- a console byte or a pointer-state change -- could
+put it back. Headless there is neither. (Interactively a moving mouse hides
+it; before ACC02-ACC05 there were no accessories at all, so `all_have` was
+vacuously true and the barrier never slept.)
+
+The bound is real too, and is the second half of the fix: EmuTOS's `n` is a
+C automatic and its loop never leaves the function, whereas a NewTOS pass
+leaves it on every yield and re-enters from the top (the S2 restartable
+block). A stack counter would be reset by every yield -- the precaution
+against infinite loops would itself become one.
+
+Extracted into the spec as docs/api/aes/accessories.md §3a (new), with
+docs/api/aes/application.md `appl_exit (19)` step 3 corrected to match.
+Nothing in docs/api/ had said what the "block" is; that omission is why the
+wrong primitive looked acceptable.
+
+
+4. AFTER  (serial/after-kernel-launch-applexit.log, 70 s)
+---------------------------------------------------------------------------
+Same card image, same command line, kernel rebuilt fresh for board-rpi4.
+`diff before after` is exactly seven added lines at the end and nothing
+else:
+
+  > [sched] switch -> slot 2
+  > [sched] running
+  > [KID] 5 appl_exit done, Pterm(0)
+  > [launch] returned (program Pterm'd)
+  > [shell] sh_ldapp: 'C:\PEXKID.NAP' exited with rc=0
+  > [shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+  > [desk] desktop up (1 drives, 0 window(s) from the context)
+
+ACCEPTANCE MET: a headless run in which a program passes through
+`appl_exit` and terminates, with nobody moving the mouse. The shell loop
+continues to the desktop afterwards.
+
+The trace is EmuTOS's shape: `mn_cleanup` posts AC_CLOSE and wakes both
+accessories, `all_run` dispatches to slot 0 and slot 1, each consumes the
+message (setting AP_ACCLOSE) and blocks again, the round-robin comes back to
+slot 2 because the waiter never left it, the `fpdnm` walk passes, the call
+returns.
+
+
+5. AFTER, second scenario  (serial/after-pexec-child-applexit.log, 80 s)
+---------------------------------------------------------------------------
+The full PORT05 fixture, which PORT05 itself could not run with a real
+`appl_exit` and had to work around with the -DNO_APPL_EXIT build. Both
+`appl_exit`s now complete headless:
+
+  [KID] 5 appl_exit done, Pterm(0)
+  [PAR] 5 Pexec returned rc=0x0000000000000000
+  [PAR] 6 second evnt_timer returned
+  [sched] switch -> slot 0 / slot 1 / slot 2
+  [PAR] 7 appl_exit done, Pterm(0)
+  [shell] sh_ldapp: 'C:\PEXPAR.NAP' exited with rc=0
+  [desk] desktop up (1 drives, 0 window(s) from the context)
+
+Note the parent's barrier still gives both accessories a turn even though
+their AP_ACCLOSE is long set: `all_run()` runs BEFORE the flag walk
+(geminit.c:612 before :617), which is EmuTOS's order and now ours.
+
+serial/smoke-qemu-virt-boot.log is a cheap cross-board smoke: the
+board-qemu-virt kernel boots to `[desk] desktop up`. It carries no
+accessories (no card), so it exercises the count()==0 fast path.
+
+
+6. WHAT CHANGED
+---------------------------------------------------------------------------
+  tos-api/src/bdos/process/sched.rs   + `Dispatch` + `dsptch()`: the
+                                        ready-list-preserving yield, the
+                                        second block primitive beside
+                                        `sleep`. Same two exits; the one
+                                        difference is that it does not touch
+                                        the caller's `runnable`/`wait_cond`.
+  tos-api/src/aes/acc.rs              + `all_run()` (geminit.c:554-566)
+                                      + `WAIT_PASSES` / `spend_pass` /
+                                        `forget_wait`: EmuTOS's `n`, kept
+                                        out of the stack frame so the bound
+                                        survives the S2 restart
+                                      ~ `wait_for_accs`: `all_run(); walk;`
+                                        in a bounded loop, no `sleep`
+  tos-api/src/aes/mod.rs              ~ `release_client`: drop the dead
+                                        tenant's pass budget
+  docs/api/aes/accessories.md         + §3a (the yield-not-block extraction)
+                                      + §9.5 (what landed, deviation (g))
+                                      ~ §1 step 4 pointer
+  docs/api/aes/application.md         ~ `appl_exit (19)` step 3 + the stale
+                                        "there are no DAs" note
+  tos-api/tests/sched_dsptch_keeps_caller_ready.rs   new regression test
+
+Builds, fresh per board:
+  build/build-rpi4-after.txt        tos-api 64 / kernel 94 warnings
+  build/build-qemu-virt-after.txt   tos-api 64 / kernel 94 warnings
+  build/clippy-after.txt            80 / 125 on both feature sets
+  build/xtask-test-after.txt        956 passed / 0 failed / 1 ignored
+                                    (baseline 955 + the new test)
+
+
+7. WHAT THIS DOES NOT ESTABLISH
+---------------------------------------------------------------------------
+* Nothing was run on real hardware. Everything here is QEMU raspi4b.
+* No interactive run: the point was the headless case, so no click, no key
+  and no pointer movement was fed to any of these boots.
+* The `wm_update(BEG_UPDATE)/(END_UPDATE)` bracket of EmuTOS's `ap_exit`
+  (gemaplib.c:253,258) and its trailing `all_run()` (:259) are still absent
+  from NewTOS's `appl_exit`. They are a separate divergence, reported, not
+  touched here.
+* `appl_yield` (AES 17) still returns 1 without dispatching, where EmuTOS
+  calls `dsptch()` (gemsuper.c:116-118). The primitive it would need now
+  exists; wiring it is a separate change.

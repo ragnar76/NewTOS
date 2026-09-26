@@ -1,6 +1,6 @@
 # ACC10 — `appl_exit` blockiert headless fuer immer in `wait_for_accs`
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Belegter Defekt — aus PORT05 herausgefallen
+Status: **BEHOBEN** (2026-09-26) · Prioritaet: **P2** · Typ: Belegter Defekt — aus PORT05 herausgefallen
 
 Abhaengigkeiten: —
 
@@ -44,3 +44,69 @@ terminiert, ohne dass jemand die Maus bewegt.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss (2026-09-26) — die Zeitgrenze war es nicht allein
+
+Der Verdacht im Auftrag (`WAIT_TIMEOUT 500`) stimmt zur Haelfte, und die
+**erste** Haelfte ist die wichtigere: es geht darum, **welche
+Scheduler-Primitive** die Schranke benutzt.
+
+EmuTOS' `wait_for_accs` (`aes/geminit.c:599-628`) verbringt jeden Durchgang in
+`all_run()` (`:612`) = `dsptch()` je Accessory (`:559-562`). `dsptch`
+(`gemasm.S:129-167`) → `disp` (`gemdisp.c:220-254`) verzweigt nach dem Zustand
+**des Aufrufers**:
+
+```c
+if (p->p_stat & WAITIN)  mwait_act(p);   /* gemdisp.c:230 — auf nrl parken */
+else                     disp_act(p);    /* :231 */
+```
+
+und `disp_act` ist `insert_process(p, &rlr)` (`:74-79`) — direkt zurueck in die
+Bereitliste. `ap_exit` (`gemaplib.c:251-255`) hat kein `ev_block` dazwischen,
+steht also im `else`-Zweig: **EmuTOS' Schranke ist ein begrenztes
+Rundlauf-Weiterreichen, kein Warten auf ein Ereignis.** Sie braucht nichts als
+den Dispatcher.
+
+Unsere Fassung stand im anderen Zweig (`sched::sleep(wait_input())` =
+`mwait_act`): der Aufrufer verliess die Laufmenge, und nur `idle_wake_pass`
+(Taste/Zeiger) konnte ihn zurueckholen — headless also nie.
+
+Die Zeitgrenze ist die zweite Haelfte, und sie brauchte eine eigene Ueberlegung:
+EmuTOS' Zaehler `n` darf eine C-Automatik sein, weil seine Schleife die Funktion
+nie verlaesst. Ein NewTOS-Durchgang verlaesst sie beim Weiterreichen und tritt
+oben neu ein (S2-Restart) — ein Stapelzaehler wuerde bei jedem Weiterreichen
+zurueckgesetzt, die Vorsichtsmassnahme gegen Endlosschleifen waere selbst eine.
+Der Zaehler liegt jetzt ausserhalb des Rahmens, je AES-Identitaet.
+
+**Spec zuerst** (Regel 5): `docs/api/aes/accessories.md` beschrieb alles ausser
+genau diesem Punkt. §3a („The barrier is a *yield* loop, not a blocking wait")
+und §9.5 nachgetragen, dazu `application.md` `appl_exit (19)` Schritt 3.
+Zitate nachgezaehlt — die im Ticket genannten `:588-630` sind real `:599-628`.
+
+**Neu:** `sched::dsptch()` als zweite Block-Primitive neben `sleep` — der
+einzige Unterschied ist, dass sie `runnable`/`wait_cond` des Aufrufers **nicht**
+anfasst. `aes::acc::all_run()`, `WAIT_PASSES`/`spend_pass`/`forget_wait`.
+Reihenfolge wie EmuTOS: `all_run()` **vor** dem Flaggenlauf.
+
+**Abnahme, headless, ohne Maus, ohne Taste, ohne Injektor.** Die
+PORT05-Kontrolle (`#Z 01 C:\PEXKID.NAP`, kernelgestartet, kein `Pexec`): der
+`diff` ist exakt sieben angehaengte Zeilen, vorher endete das Protokoll nach 65
+Zeilen mit 65 Sekunden Stille.
+
+```
+> [KID] 5 appl_exit done, Pterm(0)
+> [shell] sh_ldapp: 'C:\PEXKID.NAP' exited with rc=0
+> [desk] desktop up (1 drives, 0 window(s) from the context)
+```
+
+Zweites Szenario: die **volle** PORT05-Vorrichtung (EL0-Elter `Pexec`t
+EL0-Kind, **beide** mit echtem `appl_exit`) laeuft bis zu beiden `Pterm`s und
+in den Desktop — genau das, was PORT05 noch mit `-DNO_APPL_EXIT` umgehen musste.
+
+Basislinien: 956/0/1 (955 + 1), 64/94 beide Boards, 80/125 beide Feature-Saetze.
+
+**Nicht nachgebildet, benannt:** die `wm_update(BEG/END)`-Klammer am Ende von
+`all_run` (`:564-565`) — NewTOS' Sperre parkt niemanden, nehmen und sofort
+abgeben ist beweisbar wirkungslos.
+
+**Damit ist die Vorbedingung fuer [DESK43](DESK43.md) U2/U3 erfuellt.**
