@@ -1036,7 +1036,7 @@ of the TOS syscall ABI, so this does not touch TOS API compatibility.
 |-----|------|-------------|-------------------|
 | `.NAP` | Native **A**pp (GEM) | `.PRG` / `.APP` | `run_program`; the app uses AES and draws its own windows over the desktop |
 | `.NCP` | Native **C**onsole program | `.TOS` | `fbcon::activate` (VT52 text screen), `run_program`, restore the desktop on `Pterm` |
-| `.NTP` | Native, **T**akes params | `.TTP` / `.GTP` | prompt for a command tail (form dialog), pass it as the child's cmdline, then run |
+| `.NTP` | Native, **T**akes params | `.TTP` (**not** `.GTP` — decided 2026-09-26) | prompt for a command tail (form dialog), pass it as the child's cmdline, then run **on the console arm**; see [DESK44](../TASK/DESK44.md) |
 | `.NAC` | Native **A**ccessory | `.ACC` | *not* launched by double-click — found by the boot-time scan, loaded, and left running; see `docs/api/aes/accessories.md` |
 
 **Why exactly three:** NewTOS's AES environment is always up, so the launcher
