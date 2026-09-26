@@ -1,0 +1,41 @@
+Der Befund, der ohne Messung nicht aufgefallen waere
+====================================================
+
+`tos_types::Long` ist `i32` (tos-types/src/lib.rs:31) — der m68k-LONG, auf m68k
+zugleich die Zeigerbreite. `kernel/src/desk/dosbind.rs`' `dos_trap` gibt `Long`
+zurueck, und die erste Fassung von `xbiosbind::xbios_trap` hat das uebernommen.
+
+`Keytbl` liefert eine **Adresse** (`bios/ikbd.c:133`). Im Kernel-Boot-Kontext
+des Desktops ist das die Kernel-VA des statischen `KERNEL_AREA`
+(`tos-api/src/xbios/keytbl.rs`, "Where current_keytbl lives"), also high-half.
+
+Lauf 1 — Rueckgabe durch `Long` (i32) verengt:
+
+  [EXC] synchronous (non-SVC) exception (Data Abort (same EL)):
+        ESR=0x0000000096000004 ELR=0xffff0000000a71f8 SPSR=0x0000000040000004
+  [EXC] FAR=0x00000000002fcaa8
+
+  ESR 0x96000004: EC=0x25 (Data Abort, same EL), DFSC=0b000100
+  (Translation fault, level 0), WnR=0. FAR ist genau die um die high-half-
+  Praefixbits gekuerzte Adresse.
+
+Lauf 2 — `xbios_trap`/`keytbl_query` geben `u64`:
+
+  [u4probe] Keytbl=0xffff0000002fcaa0 shift=0xffff0000002fcb60
+            shift[0x1E]=0x41 shift[0x2E]=0x43 keymap=0x41/0x43
+
+  0xffff0000002fcaa8 - 0x8 = 0xffff0000002fcaa0  → dieselbe Adresse, ungekuerzt.
+  shift = Basis + 0xC0 (OFF_SHFT, keytbl.rs) — korrekt.
+  shift[0x1E] = 'A', shift[0x2E] = 'C' — **wertgleich** mit dem bisherigen
+  `crate::keymap::to_ascii(sc, true, false, false)`, das daneben mitgedruckt
+  wurde. Der Ersatz aendert also keinen einzigen Buchstaben; Alt-C oeffnet
+  weiterhin C:.
+
+Die Messsonde lag voruebergehend in `desk::run()` (nach `appl_init`), wurde von
+Hand wieder entfernt; `grep -rn 'u4probe' kernel/src tos-api/src` ist leer.
+
+Folgerung fuer spaeter, **nicht** in dieser Einheit angefasst:
+`dos_trap` hat dieselbe Verengung. Heute ruft der Desktop keine
+zeigerliefernde GEMDOS-Funktion (kein `Malloc`, kein `Pexec`), also ist es
+latent — aber es ist dieselbe Falle, und wer dort die erste solche Funktion
+ergaenzt, faellt hinein.

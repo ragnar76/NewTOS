@@ -10,7 +10,7 @@
 //! |--------|------------------|-----------------|---------------------------------------|
 //! | `.NAP` | [`Flavor::App`]      | `.PRG` / `.APP` | run; the app draws its own AES UI     |
 //! | `.NCP` | [`Flavor::Console`]  | `.TOS`          | VT52 text screen, run, restore desktop|
-//! | `.NTP` | [`Flavor::Params`]   | `.TTP` / `.GTP` | prompt for a command tail, then run   |
+//! | `.NTP` | [`Flavor::Params`]   | `.TTP`          | VT52 text screen, prompt for a command tail, then run |
 //! | `.NAC` | [`Flavor::Accessory`]| `.ACC`          | **not** launched — loaded at AES start |
 //!
 //! The extension is a desktop/shell convention only — it is **not** part of the
@@ -29,8 +29,16 @@ pub enum Flavor {
     /// `.NCP` — native console program; runs on a VT52 text screen
     /// (`fbcon::clear_and_home` before, desktop restore after).
     Console,
-    /// `.NTP` — native program that takes a command tail (prompted for before
-    /// launch; the tail dialog is a Stage-3 follow-on).
+    /// `.NTP` — native **console** program that takes a command tail (prompted
+    /// for before launch; the tail dialog is a Stage-3 follow-on).
+    ///
+    /// The classic analogue is `.TTP`, **not** `.GTP` (user decision
+    /// 2026-09-26, DESK44): the ADR-018 middle letter names the launcher role,
+    /// and `.NCP`/`.NTP` are the console pair exactly as `.TOS`/`.TTP` are.
+    /// EmuTOS separates the two by one flag — `#P *.TTP` is `AF_ISPARM`,
+    /// `#Y *.GTP` is `AF_ISPARM | AF_ISCRYS` (`deskapp.c:181-188`, parsed at
+    /// `:310-322`) — so this choice is what [`super::main`]'s `isgraf` answers
+    /// and what puts a `.NTP` on the alpha screen (`gemshlib.c:513-523`).
     Params,
     /// `.NAC` — native **desk accessory** (ADR-018, ACC05). Unlike the three
     /// above it is *not* launched on demand: the AES loads it once at session

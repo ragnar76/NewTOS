@@ -72,25 +72,37 @@ const DEL_ASCII: u8 = 0x7F;
 /// info lines in characters; also the width of the inverse-video bar.
 const INFO_LENGTH: i16 = 40;
 
+// ── The three strings the desktop's About box also shows ────────────────────
+//
+// **They are duplicated there, since DESK43 U4 (2026-09-26), and that is the
+// intended arrangement.** The older note here claimed the desktop reads these
+// very constants because "EmuTOS keeps the same single source". EmuTOS does —
+// `desk_xlate_fix` re-points `DEVERSN->ob_spec` at the BIOS `version[]` symbol
+// (`desk/deskmain.c:1880`) — but it can, because its desktop is linked into
+// the same ROM image as its BIOS. NewTOS's will not be: `programs/desktop` is
+// to have neither `kernel` nor `tos-api` in its dependency graph
+// (`docs/analysis/desktop-userspace-plan-v2.md` §6.4, measure 1), so the shared
+// symbol is exactly the kind of link that move removes. The desktop's copies
+// live at `kernel/src/desk/inf.rs`, next to the About box's other literals,
+// and name this comment. Editing one means editing both — there is no syscall
+// that reports an OS *name* string (the `NTOS` cookie is a number,
+// `tos-api/src/cookie.rs:142`; `Sversion` is the GEMDOS version).
+
 /// The NewTOS version string, as the boot screen's `Version` line prints it.
-///
-/// It has a second reader: the desktop's `Desk → Desktop info...` box
-/// ([`crate::desk::inf::do_aboutdesk`]). EmuTOS keeps the same single source —
-/// its About box does not carry a version of its own, `desk_xlate_fix` points
-/// the `DEVERSN` object's `ob_spec` at the BIOS `version[]` string the boot
-/// screen also prints (`desk/deskmain.c:1881`).
+/// The desktop's About box shows the same text from its own constant — see the
+/// block comment above.
 pub(crate) const VERSION_STRING: &str = "NewTOS 0.1";
 
-/// The project's independence notice, as the boot screen's footer carries it —
-/// the second reader is again the desktop's About box. This is the NewTOS
-/// counterpart of the GPL/attribution block EmuTOS puts in `ADDINFO`
-/// (`desk/desk_rsc.c:810-868`).
+/// The project's independence notice, as the boot screen's footer carries it.
+/// This is the NewTOS counterpart of the GPL/attribution block EmuTOS puts in
+/// `ADDINFO` (`desk/desk_rsc.c:810-868`); the desktop's About box shows the
+/// same text from its own constant.
 pub(crate) const INDEPENDENCE_NOTICE: &str =
     "NewTOS is an independent project - not original Atari software.";
 
-/// The authorship line the boot screen closes with; the desktop's About box
-/// repeats it, where EmuTOS names "The EmuTOS development team"
-/// (`desk/desk_rsc.c:824-826`).
+/// The authorship line the boot screen closes with, where EmuTOS names "The
+/// EmuTOS development team" (`desk/desk_rsc.c:824-826`). The desktop's About
+/// box shows the same text from its own constant.
 pub(crate) const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude AI...";
 
 /// The build stamp, `YYYY-MM-DD (rev)`, re-exported from [`tos_api::build`].
@@ -107,6 +119,14 @@ pub(crate) const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude A
 pub(crate) const BUILD_STAMP: &str = tos_api::build::BUILD_STAMP;
 
 /// Friendly machine name for the current board.
+///
+/// **Still read by the desktop's About box** (`desk::inf::do_aboutdesk`) — the
+/// one `crate::initinfo` reference DESK43 U4 left standing, named there and in
+/// that unit's receipt. It cannot follow the three constants above, because it
+/// is not a constant: it answers from [`crate::BOARD_NAME`], and no syscall
+/// carries that answer. `_MCH` is a single fixed NewTOS marker, `0x0005_0000`
+/// on both boards (`tos-api/src/cookie.rs:143`), so a cookie read cannot tell
+/// the two apart.
 pub(crate) fn machine_name() -> &'static str {
     match crate::BOARD_NAME {
         "rpi4" => "Raspberry Pi 4 (BCM2711)",

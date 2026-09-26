@@ -16,17 +16,19 @@
 //! desktop reads with an XBIOS call, the `_IDT` cookie — see its own comment
 //! for why that is a GEMDOS call here and not `Supexec`.
 //!
-//! The desktop uses **no BIOS and no XBIOS function**, so there is neither an
-//! `svc #13` nor an `svc #14` binding here. EmuTOS's desktop includes
-//! `biosbind.h`, but the two calls it takes from it are `Drvmap()` — which the
-//! desktop itself never uses, because it reads the drive map as
-//! `dos_sdrv(dos_gdrv())` (`deskapp.c:714`, `deskins.c:297`,
-//! `desksupp.c:1575,1819`) — and `Dosound()` for the About-box Easter egg
-//! (`CONF_WITH_EASTER_EGG`), which NewTOS does not have. From `xbiosbind.h` it
-//! takes `deskrez.c`'s resolution change, which NewTOS does not have either
-//! (the screen mode is fixed by the firmware), and `Supexec` in `do_wredraw`
-//! (`desksupp.c:219`) — that one it *does* need, and [`dos_getcookie`] is where
-//! it goes instead.
+//! The desktop uses **no BIOS function**, so there is no `svc #13` binding
+//! here. EmuTOS's desktop includes `biosbind.h`, but the two calls it takes
+//! from it are `Drvmap()` — which the desktop itself never uses, because it
+//! reads the drive map as `dos_sdrv(dos_gdrv())` (`deskapp.c:714`,
+//! `deskins.c:297`, `desksupp.c:1575,1819`) — and `Dosound()` for the About-box
+//! Easter egg (`CONF_WITH_EASTER_EGG`), which NewTOS does not have.
+//!
+//! It does use **one** XBIOS function, and that has a binding of its own:
+//! [`super::xbiosbind`] (`svc #14`). Of the three EmuTOS's desktop takes from
+//! `xbiosbind.h`, `Keytbl(-1,-1,-1)` (`deskmain.c:1144`) is the one NewTOS
+//! needs; `deskrez.c`'s resolution change it does not have (the screen mode is
+//! fixed by the firmware), and `Supexec` in `do_wredraw` (`desksupp.c:219`)
+//! fetches the `_IDT` cookie, for which [`dos_getcookie`] is the route instead.
 //!
 //! ## ABI
 //!

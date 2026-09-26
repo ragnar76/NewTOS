@@ -1,0 +1,11 @@
+ docs/api/desktop/gembind.md |  37 ++++++++++----
+ docs/sdk/01-overview.md     |   2 +-
+ kernel/src/accs.rs          |  22 +++++----
+ kernel/src/desk/dosbind.rs  |  24 ++++-----
+ kernel/src/desk/ftype.rs    |  14 ++++--
+ kernel/src/desk/inf.rs      |  92 +++++++++++++++++++++++++---------
+ kernel/src/desk/main.rs     | 118 +++++++++++++++++++++++++++++++++++++-------
+ kernel/src/desk/mod.rs      |  25 ++++++++++
+ kernel/src/initinfo.rs      |  46 ++++++++++++-----
+ kernel/src/launch.rs        |  42 ++++++++--------
+ 10 files changed, 314 insertions(+), 108 deletions(-)

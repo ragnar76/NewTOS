@@ -1,0 +1,7 @@
+kernel/src/shell_loop.rs:291:        crate::desk::reset();
+kernel/src/shell_loop.rs:292:        crate::desk::run();
+kernel/src/shell_loop.rs:422:/// (`deskmain.c:2166`, `crate::desk::run`), and since A62 the slot's release
+kernel/src/arch/aarch64/exceptions.rs:344:    // instructions an application does (`svc #2`, `crate::desk`'s `gem_trap`;
+kernel/src/arch/aarch64/exceptions.rs:345:    // `svc #1`, `crate::desk::dosbind`'s `dos_trap`), so an EL0-only gate silently
+kernel/src/dbg_qedtrace.rs:25://! [`crate::desk`]'s `gem_trap` (`svc #2`) and GEMDOS through
+kernel/src/dbg_qedtrace.rs:26://! [`crate::desk::dosbind`]'s `dos_trap` (`svc #1`) — the same two instructions

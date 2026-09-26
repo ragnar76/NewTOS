@@ -44,7 +44,7 @@ The file extension decides how the desktop launches the program (ADR-018,
 |-----------|------|---------------|---------------------------------------------------------|
 | `.NAP` | native GEM **A**pplication | `.PRG` / `.APP` | desktop relinquishes the screen (`desktop_relinquish`), runs the program, rebuilds itself on `Pterm` (`run_gem_app`, `:524-529`) |
 | `.NCP` | native **C**onsole **P**rogram | `.TOS` | `fbcon::clear_and_home()`, run, wait for a key, redraw the desktop |
-| `.NTP` | native, **T**akes **P**arameters | `.TTP` / `.GTP` | treated like `.NAP`; a plain double-click passes an **empty** tail — the tail dialog is not implemented (`main.rs:458-460`, `ftype.rs:33-35`) |
+| `.NTP` | native, **T**akes **P**arameters | `.TTP` (**not** `.GTP` — decided 2026-09-26, DESK44) | a **console** program with a command tail: `isgraf = FALSE`, so `sh_chgrf` takes the screen to alpha before it runs (`main.rs:1068`, `gemshlib.c:513-523`). A plain double-click passes an **empty** tail — the tail dialog (`opn_appl`, `deskpro.c:71-121`) is not implemented (`ftype.rs:42`) |
 
 The extension is a desktop/shell convention, **not** part of the TOS syscall
 ABI (`ftype.rs:16-17`). The classic suffixes `.PRG/.APP/.TOS/.TTP/.GTP` are

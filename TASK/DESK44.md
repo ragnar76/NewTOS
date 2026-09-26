@@ -1,6 +1,6 @@
 # DESK44 — `.NTP` laeuft als GEM, soll aber Konsole mit Parametern sein
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Belegter Widerspruch im Baum — aus DESK43 U3, Anwenderentscheidung 2026-09-26
+Status: **BEHOBEN — HW-Gegenprobe offen** (2026-09-26) · Prioritaet: **P3** · Typ: Belegter Widerspruch im Baum — aus DESK43 U3, Anwenderentscheidung 2026-09-26
 
 Abhaengigkeiten: —
 
@@ -47,3 +47,31 @@ der Parameterzeile aus dem Tail-Dialog. Gegenprobe: `.NAP` bleibt GEM,
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss (2026-09-26)
+
+`isgraf` gibt fuer `Flavor::Params` jetzt **`false`** zurueck, `App` allein
+`true`. Beleg: `app_parse`s Fallthrough `case 'Y' → case 'G'` setzt
+`AF_ISPARM|AF_ISCRYS`, `case 'P' → case 'F'` setzt **nur** `AF_ISPARM`
+(`deskapp.c:310-322`, Tabelle `:181-188`); `isgraf` liest genau `AF_ISCRYS`
+(`desksupp.c:876`).
+
+**Kein zweiter Codeort noetig** — der Konsolenarm ist der regulaere Weg:
+`pro_run` → `shel_write(SHW_EXEC, isgr=0)` → `sh_isgem = 0` → `sh_chgrf` →
+`sh_toalpha`, gegen `gemshlib.c:513-523`.
+
+Sweep nach `.GTP`-als-Analogon: **drei** Kopien, alle korrigiert
+(`ftype.rs:13`, `main.rs:1059`, `docs/sdk/01-overview.md:47` — letztere sagte
+zusaetzlich faelschlich „treated like `.NAP`"). Alle uebrigen `GTP`-Treffer
+sind Aussagen **ueber EmuTOS** bzw. die klassische m68k-Familie und bleiben
+richtig.
+
+**Abnahme nur zur Haelfte einloesbar, und das ist eine alte Luecke, keine
+neue:** `opn_appl` (der Tail-Dialog, `deskpro.c:71-121`) ist weiterhin nicht
+gebaut. Der Doppelklick startet also mit **leerer** Parameterzeile — jetzt aber
+auf dem Textschirm, wo er hingehoert. Gegenprobe im Code:
+`inf::default_type_anodes` schrieb schon immer `#P *.NTP`, beide Seiten stimmen
+jetzt ueberein.
+
+**HW-Gegenprobe offen:** `.NTP` doppelklicken → `sh_isgem=0` im Serial und
+Textschirm statt Desktop; `.NAP` bleibt GEM, `.NCP` bleibt Konsole ohne Dialog.

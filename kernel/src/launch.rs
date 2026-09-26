@@ -257,17 +257,23 @@ fn set_auto_default_path() {
 /// first act in `autoexec` (`bios/bios.c:702-704`, "check if the user does not
 /// want to run AUTO programs"); see [`set_bootflags_from_shiftbits`].
 ///
-/// Runs **only** native NewTOS *console* programs, `.NCP` (ADR-018). A GEM
-/// application (`.NAP`) needs the AES, which is not up yet at this point of
-/// the boot — it launches from the desktop (double-click, or the `#Z`
-/// NEWDESK.INF autorun) instead, see the `classify` match below. Classic
-/// Atari `.PRG` / `.TOS` are m68k and cannot load without the (unavailable)
-/// emulator — attempting one at boot only produced a failed load and an alert,
-/// so they are skipped here (the desktop still reports them as m68k when a
-/// user explicitly opens one). `.NTP` is also excluded: it takes a command tail
-/// there is no dialog for at boot.
+/// Runs **only** native NewTOS *console* programs, `.NCP` (ADR-018), and the
+/// filter is the **search pattern**, exactly as EmuTOS's is:
+/// `Fsfirst("\\AUTO\\*.PRG", 7)` (`bios/bios.c:713-714`) states the one
+/// extension the AUTO folder runs and nothing downstream re-decides it. Ours
+/// says `C:\AUTO\*.NCP` for the same reason and in the same place — the boot
+/// code owns this test; it does not ask the desktop.
+///
+/// Why `.NCP` is the one: AUTO runs **before** the AES, so a GEM application
+/// (`.NAP`) — which needs `menu_bar`/`objc_draw`/`gl_wchar` — must not start
+/// here; it launches from the desktop instead (double-click, or the `#Z`
+/// NEWDESK.INF autorun). Classic Atari `.PRG`/`.TOS` are m68k and cannot load
+/// without the (unavailable) emulator — attempting one at boot only produced a
+/// failed load and an alert (the desktop still reports them as m68k when a
+/// user explicitly opens one). `.NTP` is excluded too: it is a console program
+/// that takes a command tail, and there is no dialog to ask for one at boot
+/// (`desk/ftype.rs`'s `Flavor::Params`, DESK44).
 pub fn run_auto_folder() {
-    use crate::desk::ftype::{classify, FileType, Flavor};
     use tos_api::bdos::fs::find::{list_dir_ex, DirInfo};
 
     // `if (bootflags & BOOTFLAG_SKIP_AUTO_ACC) return;` (`bios/bios.c:702-704`)
@@ -276,24 +282,20 @@ pub fn run_auto_folder() {
         return;
     }
 
+    // `err = Fsfirst("\\AUTO\\*.PRG", 7)` (`bios/bios.c:713-714`) — the
+    // extension is the pattern; see the function doc.
     let mut ents = [DirInfo::default(); 32];
-    let n = list_dir_ex("C:\\AUTO\\*.*", &mut ents);
+    let n = list_dir_ex("C:\\AUTO\\*.NCP", &mut ents);
     let mut ran = 0;
     for e in &ents[..n] {
+        // EmuTOS's search attribute is `7` (`FA_RO|FA_HIDDEN|FA_SYSTEM`), which
+        // excludes directories (`bdos/fsdir.c:1840-1844`); `list_dir_ex`
+        // reports them, so this test is that attribute's stand-in.
         if e.attrib & 0x10 != 0 {
             continue; // skip "." / ".." / sub-directories
         }
         let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
         let name = &e.name[..end];
-        // AUTO auto-runs native *console* (.NCP) programs only. It runs at boot,
-        // BEFORE the desktop and AES/appl_init are up, so a GEM app (.NAP) — which
-        // needs AES (menu_bar/objc_draw/gl_wchar…) — must NOT run here; GEM apps
-        // launch from the desktop instead (double-click, or the `#Z` NEWDESK.INF
-        // autorun, both after AES init). Classic .PRG/.TOS are non-native m68k, so
-        // skip anything that is not a native console program.
-        if !matches!(classify(name), FileType::Native(Flavor::Console)) {
-            continue;
-        }
         // Build "C:\AUTO\<name>\0".
         let mut path = [0u8; 40];
         let prefix = b"C:\\AUTO\\";

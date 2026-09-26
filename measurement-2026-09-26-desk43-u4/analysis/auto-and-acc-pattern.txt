@@ -1,0 +1,42 @@
+Der Endungstest wandert in das Suchmuster — was der Bootlauf zeigt
+==================================================================
+
+Vorher: `list_dir_ex("C:\AUTO\*.*")` + `crate::desk::ftype::classify(name)`
+        `list_dir_ex("C:\ACC\*.*")`  + `classify(name)`
+Nachher: `list_dir_ex("C:\AUTO\*.NCP")`, `list_dir_ex("C:\ACC\*.NAC")`,
+        `list_dir_ex("C:\*.NAC")` — kein Aufruf in den Desktop mehr.
+
+1:1 zu EmuTOS: `err = Fsfirst("\\AUTO\\*.PRG", 7);` (`bios/bios.c:713-714`) und
+`strcpy(D.g_work, "\\*.ACC");` (`aes/geminit.c:272`) — dort steht die Endung
+ebenfalls **im Muster**, und danach klassifiziert nichts mehr nach.
+
+Abbild (tools/make-sd-image.sh, 64 MiB):
+  C:\AUTO\HELLO.NCP   ein natives Konsolenprogramm
+  C:\AUTO\READ.ME     eine Textdatei  → darf nicht laufen
+  C:\ACC\SYSACC.NAC   Accessory, Ordnerfundort
+  C:\SYSACC2.NAC      Accessory, Wurzelfundort (zweite, eigene Kopie)
+
+serial/boot-rpi4-u4.log:
+
+  [auto] running C:\AUTO\HELLO.NCP
+  [launch] EL0: slot 0 entry 0x1000
+  Hello from a NewTOS .NCP program!
+  [launch] returned (program Pterm'd)
+  [auto] 1 AUTO program(s) run
+  [acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+  [acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+  [acc] 2 file(s) found, 2 process(es) started
+  [acc] all accessories have issued their message wait
+  [desk] desktop up (1 drives, 0 window(s) from the context)
+
+Also: `READ.ME` faellt weiterhin durch (1 statt 2 AUTO-Programme), beide
+Fundorte liefern weiterhin je ein Accessory, die Namens-Dedupe bleibt
+unberuehrt (die beiden heissen verschieden). Das FCB-Muster stammt aus
+`tos-api/src/bdos/fs/find.rs:132` (`fcb_pattern`), das `*.NCP`/`*.NAC`
+gross-/kleinschreibungsblind in das 8.3-Feld uebersetzt.
+
+Der Unterverzeichnisfilter bleibt eine eigene Zeile (`attrib & 0x10`): EmuTOS'
+Suchattribut 7 schliesst Verzeichnisse aus (`bdos/fsdir.c:1840-1844`),
+`list_dir_ex` meldet sie aber mit. Vorher tat das der Klassifizierer
+mit; jetzt steht es dort, wo es hingehoert, und ist als Stellvertreter des
+Attributs kommentiert.

@@ -2430,24 +2430,28 @@ impl Line {
 /// | row | line | source |
 /// |-----|------|--------|
 /// | 0 | `- NewTOS -` | `ADDINFO`'s `- EmuTOS -` title (`desk_rsc.c:785-789`) |
-/// | 2 | `Version  …` | [`crate::initinfo::VERSION_STRING`] (`DELABEL`/`DEVERSN`) |
-/// | 3 | `Machine  …` | [`crate::initinfo::machine_name`] |
-/// | 5-6 | the independence notice | [`crate::initinfo::INDEPENDENCE_NOTICE`] |
+/// | 2 | `Version  …` | [`VERSION_STRING`] (`DELABEL`/`DEVERSN`) |
+/// | 3 | `Machine  …` | [`crate::initinfo::machine_name`] — the one line still reached through a kernel symbol; see the `[STOP]` note at the call site |
+/// | 5-6 | the independence notice | [`INDEPENDENCE_NOTICE`] |
 /// | 8-9 | the EmuTOS credit | [`CREDIT_REIMPL`] / [`CREDIT_EMUTOS`] |
 /// | 11-14 | the `'GPLed'` chain | [`CREDIT_GPL`] / [`CREDIT_DRI`] / [`CREDIT_CALDERA`] / [`CREDIT_LINEO`] |
-/// | 16 | the authorship line | [`crate::initinfo::AUTHORSHIP_LINE`] |
+/// | 16 | the authorship line | [`AUTHORSHIP_LINE`] |
 ///
 /// The blank rows 1/4/7/10/15 are `ADDINFO`'s own: it leaves char rows 3, 6, 8
 /// and 13 empty between its blocks (`desk_rsc.c:790-866`).
 ///
-/// **Two readers, one source, in two places — on purpose.** The version, the
-/// machine name, the independence notice and the authorship line are also
-/// printed by the boot screen, so they live in [`crate::initinfo`] and are read
-/// from there; that is EmuTOS's own arrangement (`desk_xlate_fix` points
-/// `DEVERSN->ob_spec` at the BIOS `version[]` the boot screen prints,
-/// `deskmain.c:1880`). The six credit lines are *not* on the boot screen —
-/// EmuTOS keeps its `'GPLed'` chain in `desk_rsc.c` alone and `bios/initinfo.c`
-/// prints none of it — so they stay local to this dialog.
+/// **Two readers, two copies — on purpose, since DESK43 U4.** The version, the
+/// independence notice and the authorship line are also printed by the boot
+/// screen. They *were* read from [`crate::initinfo`], on the argument that
+/// EmuTOS shares one source (`desk_xlate_fix` points `DEVERSN->ob_spec` at the
+/// BIOS `version[]` the boot screen prints, `deskmain.c:1880`). That argument
+/// holds only while the desktop is linked with the BIOS, which is EmuTOS's
+/// situation and stops being ours: the desktop crate will not have `kernel` in
+/// its dependency graph. The strings are therefore the desktop's own
+/// (see the block at [`VERSION_STRING`]), and `initinfo`'s copies say the same
+/// at their definition. The six credit lines were always local, and for a
+/// reason that is unchanged — EmuTOS keeps its `'GPLed'` chain in
+/// `desk_rsc.c` alone and `bios/initinfo.c` prints none of it.
 ///
 /// **Three named deviations.**
 ///
@@ -2487,13 +2491,23 @@ pub(super) fn do_aboutdesk() {
 
     let title = Line::new("- NewTOS -");
     let ver_lbl = Line::new("Version");
-    let ver_val = Line::new(crate::initinfo::VERSION_STRING);
+    let ver_val = Line::new(VERSION_STRING);
     let mac_lbl = Line::new("Machine");
+    // [STOP — DESK43 U4] The one line in this box still reached through a
+    // kernel symbol. It has no syscall source: `_MCH` is a single fixed
+    // NewTOS marker, `0x0005_0000` on **both** boards
+    // (`tos-api/src/cookie.rs:143`, `docs/api/bios/_cookie-jar.md:136`), so a
+    // cookie read cannot tell "Raspberry Pi 4 (BCM2711)" from "QEMU
+    // aarch64-virt"; and the row itself is a NewTOS addition — EmuTOS's
+    // `ADDINFO` has no Machine line at all (`desk_rsc.c:772-873`). Dropping the
+    // row would remove the dependency for free and move the box *towards*
+    // EmuTOS, but that is a visible change to a deliberate own feature, so it
+    // is the user's call, not this unit's.
     let mac_val = Line::new(crate::initinfo::machine_name());
-    // The independence notice is one sentence in `initinfo`; split it at its
-    // own dash so the box stays close to the resource's proportions instead of
-    // growing to the full 63-character line.
-    let notice = crate::initinfo::INDEPENDENCE_NOTICE;
+    // The independence notice is one sentence; split it at its own dash so the
+    // box stays close to the resource's proportions instead of growing to the
+    // full 63-character line.
+    let notice = INDEPENDENCE_NOTICE;
     let (head, tail) = match notice.find("- ") {
         Some(i) => (&notice[..i + 1], &notice[i + 2..]),
         None => (notice, ""),
@@ -2506,7 +2520,7 @@ pub(super) fn do_aboutdesk() {
     let dri = Line::new(CREDIT_DRI);
     let caldera = Line::new(CREDIT_CALDERA);
     let lineo = Line::new(CREDIT_LINEO);
-    let author = Line::new(crate::initinfo::AUTHORSHIP_LINE);
+    let author = Line::new(AUTHORSHIP_LINE);
 
     static OK: &[u8] = b" OK \0";
     const OK_W: i16 = 90;
@@ -2588,11 +2602,45 @@ pub(super) fn do_aboutdesk() {
 /// **two**-pixel inner border. `ADDINFO` is the only `desk_rsc.c` tree with it.
 const ADDINFO_BOX_SPEC: u64 = (2 << 16) | 0x1100;
 
-// ── The About box's credit lines ────────────────────────────────────────────
+// ── The About box's text ────────────────────────────────────────────────────
 //
-// Local to this dialog, not in `crate::initinfo`, because EmuTOS keeps the
-// same split: `bios/initinfo.c` prints none of the `'GPLed'` chain, only
-// `desk_rsc.c`'s `ADDINFO` carries it.
+// **All of it is the desktop's own** (DESK43 U4, 2026-09-26). EmuTOS's
+// `ADDINFO` carries every line as a literal in `desk_rsc.c:772-873` except
+// `DEVERSN`, whose `ob_spec` `desk_xlate_fix` re-points at the BIOS `version[]`
+// symbol (`deskmain.c:1880`) — a shared *symbol*, which costs EmuTOS nothing
+// because its desktop is linked into the same ROM as its BIOS. Ours will not
+// be: `programs/desktop` has neither `kernel` nor `tos-api` in its dependency
+// graph (`docs/analysis/desktop-userspace-plan-v2.md` §6.4, measure 1), so a
+// `crate::initinfo::…` here is a link the move has to break, and breaking it
+// means the string lives on this side. `crate::initinfo`'s own copies stay for
+// the boot screen and say so at their definition.
+
+/// The NewTOS version, as the About box's `Version` row prints it —
+/// `ADDINFO`'s `DEVERSN` (`desk_rsc.c:808-813`, patched at `deskmain.c:1880`).
+///
+/// **Deliberately the same text as [`crate::initinfo::VERSION_STRING`], and
+/// deliberately a second copy of it.** See the block comment above for why the
+/// shared symbol cannot survive the move. There is no NewTOS syscall that
+/// reports this string: the `NTOS` cookie carries a *number*
+/// (`0x0000_0100`, `tos-api/src/cookie.rs:142`) with no defined rendering, and
+/// `Sversion` reports the GEMDOS version, not the OS name.
+const VERSION_STRING: &str = "NewTOS 0.1";
+
+/// The project's independence notice — the NewTOS counterpart of the
+/// GPL/attribution block `ADDINFO` puts below its copyright
+/// (`desk_rsc.c:810-868`). Same text as
+/// [`crate::initinfo::INDEPENDENCE_NOTICE`], same reason as above.
+const INDEPENDENCE_NOTICE: &str =
+    "NewTOS is an independent project - not original Atari software.";
+
+/// The authorship line, where EmuTOS names *"The EmuTOS development team"*
+/// (`desk_rsc.c:824-826`). Same text as
+/// [`crate::initinfo::AUTHORSHIP_LINE`], same reason as above.
+const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude AI...";
+
+// The credit lines are local to this dialog for a second, older reason:
+// EmuTOS keeps the same split — `bios/initinfo.c` prints none of the `'GPLed'`
+// chain, only `desk_rsc.c`'s `ADDINFO` carries it.
 
 /// What NewTOS is, in one line. EmuTOS's `ADDINFO` has no counterpart claim —
 /// it *is* the code it credits; NewTOS is a reimplementation of it, which is

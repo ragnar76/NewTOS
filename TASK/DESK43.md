@@ -117,5 +117,6 @@ der Schnitt steht und der Anwender ihn gesehen hat.
 | ACC10 (Vorbedingung) | **fertig** 2026-09-26 (`814de2c`) |
 | U2 Zustandskanal | **fertig** 2026-09-26 (`d79e71f`) — Beweispunkt 1 des Plans dabei **widerlegt** |
 | U3 Desktop endet (G1) | **fertig** 2026-09-26 — Driftprobe **47 → 38**; HW-Punkte 1+2 offen |
-| U4 Kernel loest sich | offen — als naechstes |
+| U4 Kernel loest sich | **fertig** 2026-09-26 — Driftprobe **38 → 32**; zwei Stehenbleiber mit Messbegruendung |
+| — Trennlinie — | *alles darueber ohne EL0 und ohne neue Werkzeugkette* |
 | U5–U10 | nach dem Termin |

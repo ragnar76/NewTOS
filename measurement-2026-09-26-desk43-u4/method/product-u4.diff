@@ -1,0 +1,644 @@
+diff --git a/docs/api/desktop/gembind.md b/docs/api/desktop/gembind.md
+index 7490c71..61da3d5 100644
+--- a/docs/api/desktop/gembind.md
++++ b/docs/api/desktop/gembind.md
+@@ -276,20 +276,37 @@ Every GEMDOS/BIOS call the desktop makes, with the EmuTOS name it carries:
+ | `dos_sdrv(drv)` | `svc #1` | 0x0E | `x0` = drive (0-based) | `Dsetdrv`, `gemdos.h:105` | `app::app_blddesk`, `main::check_alt_letter_key`, `mod::run` |
+ | `dos_getcookie(tag)` | `svc #1` | 0x154 | `x0` = 8 (`S_GETCOOKIE`), `x1` = tag, `x2` = 0 | **no EmuTOS counterpart** — see below | `redraw::refresh_idt` |
+ 
+-The desktop calls **no BIOS and no XBIOS function**, so there is neither an
+-`svc #13` nor an `svc #14` binding. EmuTOS's desktop includes `biosbind.h`,
+-but the two calls it takes from it are `Drvmap()` — which the desktop itself
+-never uses (see below) — and `Dosound()` for the About-box Easter egg
+-(`CONF_WITH_EASTER_EGG`), which NewTOS does not have.
++The desktop calls **no BIOS function**, so there is no `svc #13` binding.
++EmuTOS's desktop includes `biosbind.h`, but the two calls it takes from it are
++`Drvmap()` — which the desktop itself never uses (see below) — and `Dosound()`
++for the About-box Easter egg (`CONF_WITH_EASTER_EGG`), which NewTOS does not
++have.
+ 
+-### The one call EmuTOS takes from `xbiosbind.h`, and where it goes here (DESK13)
++### The `svc #14` binding — `xbiosbind.rs` (DESK43 U4, 2026-09-26)
++
++EmuTOS's desktop takes **three** things from `xbiosbind.h`, not one:
++
++| EmuTOS call | Site | NewTOS |
++|---|---|---|
++| `Keytbl(-1,-1,-1)` | `deskmain.c:1144`, the Alt-letter drive shortcut | **built** — `kernel/src/desk/xbiosbind.rs`, `svc #14`, function id 16 |
++| `Supexec(get_idt_cookie)` | `desksupp.c:219`, the `_IDT` cookie | replaced by `dos_getcookie` (`svc #1`), next section |
++| resolution change | `deskrez.c` | not present — the screen mode is fixed by the firmware |
++
++`keytbl_query()` is the whole binding: three `(UBYTE *)-1` sentinels in, the
++address of the `struct keytbl` out. The desktop declares the first three
++pointers of that struct for itself, exactly as EmuTOS's `deskmain.c:64-69`
++does, and reads `shift[scancode]`. Until U4 that read went to
++`crate::keymap::to_ascii(sc, true, false, false)` — the same bytes
++(`kernel/src/host_env.rs:344` hands `Keytbl` the very table `to_ascii` indexes),
++reached by naming a kernel symbol instead of trapping.
++
++### The `xbiosbind.h` call EmuTOS makes that goes to GEMDOS here (DESK13)
+ 
+ `dos_getcookie` is the only binding in this table with **no** `gemdos.h`
+-counterpart, and it is here because EmuTOS's desktop *does* make one XBIOS
+-call: `G.g_idt = Supexec((LONG)get_idt_cookie);` in `do_wredraw`
++counterpart, and it is here because of the second row of the table above:
++`G.g_idt = Supexec((LONG)get_idt_cookie);` in `do_wredraw`
+ (`desksupp.c:219`), which fetches the `_IDT` cookie the `Default` buttons of
+-*Set preferences* defer to. (The other `xbiosbind.h` user is `deskrez.c`'s
+-resolution change, which NewTOS does not have.)
++*Set preferences* defer to.
+ 
+ `Supexec` is there because on m68k the cookie jar is reached through the
+ pointer at `$5A0`, in supervisor-only low memory — an m68k *mechanism*, which
+diff --git a/docs/sdk/01-overview.md b/docs/sdk/01-overview.md
+index 9150405..dd3dda5 100644
+--- a/docs/sdk/01-overview.md
++++ b/docs/sdk/01-overview.md
+@@ -44,7 +44,7 @@ The file extension decides how the desktop launches the program (ADR-018,
+ |-----------|------|---------------|---------------------------------------------------------|
+ | `.NAP` | native GEM **A**pplication | `.PRG` / `.APP` | desktop relinquishes the screen (`desktop_relinquish`), runs the program, rebuilds itself on `Pterm` (`run_gem_app`, `:524-529`) |
+ | `.NCP` | native **C**onsole **P**rogram | `.TOS` | `fbcon::clear_and_home()`, run, wait for a key, redraw the desktop |
+-| `.NTP` | native, **T**akes **P**arameters | `.TTP` / `.GTP` | treated like `.NAP`; a plain double-click passes an **empty** tail — the tail dialog is not implemented (`main.rs:458-460`, `ftype.rs:33-35`) |
++| `.NTP` | native, **T**akes **P**arameters | `.TTP` (**not** `.GTP` — decided 2026-09-26, DESK44) | a **console** program with a command tail: `isgraf = FALSE`, so `sh_chgrf` takes the screen to alpha before it runs (`main.rs:1068`, `gemshlib.c:513-523`). A plain double-click passes an **empty** tail — the tail dialog (`opn_appl`, `deskpro.c:71-121`) is not implemented (`ftype.rs:42`) |
+ 
+ The extension is a desktop/shell convention, **not** part of the TOS syscall
+ ABI (`ftype.rs:16-17`). The classic suffixes `.PRG/.APP/.TOS/.TTP/.GTP` are
+diff --git a/kernel/src/accs.rs b/kernel/src/accs.rs
+index 9e58ae8..9d67e86 100644
+--- a/kernel/src/accs.rs
++++ b/kernel/src/accs.rs
+@@ -45,7 +45,6 @@ use tos_api::aes::acc::NUM_ACCS;
+ use tos_api::bdos::fs::find::{list_dir_ex, DirInfo};
+ use tos_api::bdos::process::{self, set_current, slot, State};
+ 
+-use crate::desk::ftype::{classify, FileType, Flavor};
+ use crate::kprintln;
+ 
+ /// `LEN_ZFNAME` (`include/sysconf.h:53`) — the `NAME.EXT\0` field
+@@ -94,7 +93,14 @@ unsafe fn table() -> &'static mut ([Acc; NUM_ACCS], usize) {
+ /// The two search locations, in precedence order (see the module note).
+ /// `(directory prefix, wildcard)`; the prefix is what a found name is
+ /// appended to.
+-const SEARCH: [(&str, &str); 2] = [("C:\\ACC\\", "C:\\ACC\\*.*"), ("C:\\", "C:\\*.*")];
++///
++/// **The extension lives in the wildcard**, exactly as EmuTOS's does:
++/// `count_accs` searches the literal string `"\\*.ACC"` (`geminit.c:272`) and
++/// never classifies a name afterwards. The pattern is `*.NAC` instead of
++/// `*.ACC` for the reason the function doc gives (ADR-018), and it is the
++/// *only* extension test on this path — the boot code does not consult the
++/// desktop for it.
++const SEARCH: [(&str, &str); 2] = [("C:\\ACC\\", "C:\\ACC\\*.NAC"), ("C:\\", "C:\\*.NAC")];
+ 
+ /// `count_accs()` (`aes/geminit.c:264-284`) — record up to [`NUM_ACCS`]
+ /// accessory file names, without loading anything.
+@@ -116,10 +122,11 @@ const SEARCH: [(&str, &str); 2] = [("C:\\ACC\\", "C:\\ACC\\*.*"), ("C:\\", "C:\\
+ /// `docs/api/aes/accessories.md` §7.4), and the scan runs over two
+ /// directories, `C:\ACC\` before the root, sharing the one budget.
+ ///
+-/// Sub-directories are skipped: EmuTOS's `FA_RO` search attribute already
+-/// excludes them (`match()`'s attribute test, `bdos/fsdir.c:1840-1844`:
+-/// `FA_RO & FA_SUBDIR == 0`), and the extension filter would reject a
+-/// directory named `FOO.NAC` in any case.
++/// Sub-directories are skipped explicitly: EmuTOS's `FA_RO` search attribute
++/// already excludes them (`match()`'s attribute test, `bdos/fsdir.c:1840-1844`:
++/// `FA_RO & FA_SUBDIR == 0`), while [`list_dir_ex`] reports them, so the
++/// `FA_SUBDIR` test below is this function's stand-in for that attribute —
++/// not an extra rule.
+ fn count_accs(skip: bool) -> usize {
+     // `if (bootflags & BOOTFLAG_SKIP_AUTO_ACC) return 0;` (`:268-270`)
+     if skip {
+@@ -145,9 +152,6 @@ fn count_accs(skip: bool) -> usize {
+             }
+             let end = e.name.iter().position(|&b| b == 0).unwrap_or(LEN_ZFNAME);
+             let name = &e.name[..end];
+-            if !matches!(classify(name), FileType::Native(Flavor::Accessory)) {
+-                continue;
+-            }
+             // Dedupe by file name across the two locations: a name the
+             // `\ACC\` folder already provided is skipped in the root.
+             if acc[..found].iter().any(|a| same_name(&a.name, name)) {
+diff --git a/kernel/src/desk/dosbind.rs b/kernel/src/desk/dosbind.rs
+index 26c8640..bd6b87a 100644
+--- a/kernel/src/desk/dosbind.rs
++++ b/kernel/src/desk/dosbind.rs
+@@ -16,17 +16,19 @@
+ //! desktop reads with an XBIOS call, the `_IDT` cookie — see its own comment
+ //! for why that is a GEMDOS call here and not `Supexec`.
+ //!
+-//! The desktop uses **no BIOS and no XBIOS function**, so there is neither an
+-//! `svc #13` nor an `svc #14` binding here. EmuTOS's desktop includes
+-//! `biosbind.h`, but the two calls it takes from it are `Drvmap()` — which the
+-//! desktop itself never uses, because it reads the drive map as
+-//! `dos_sdrv(dos_gdrv())` (`deskapp.c:714`, `deskins.c:297`,
+-//! `desksupp.c:1575,1819`) — and `Dosound()` for the About-box Easter egg
+-//! (`CONF_WITH_EASTER_EGG`), which NewTOS does not have. From `xbiosbind.h` it
+-//! takes `deskrez.c`'s resolution change, which NewTOS does not have either
+-//! (the screen mode is fixed by the firmware), and `Supexec` in `do_wredraw`
+-//! (`desksupp.c:219`) — that one it *does* need, and [`dos_getcookie`] is where
+-//! it goes instead.
++//! The desktop uses **no BIOS function**, so there is no `svc #13` binding
++//! here. EmuTOS's desktop includes `biosbind.h`, but the two calls it takes
++//! from it are `Drvmap()` — which the desktop itself never uses, because it
++//! reads the drive map as `dos_sdrv(dos_gdrv())` (`deskapp.c:714`,
++//! `deskins.c:297`, `desksupp.c:1575,1819`) — and `Dosound()` for the About-box
++//! Easter egg (`CONF_WITH_EASTER_EGG`), which NewTOS does not have.
++//!
++//! It does use **one** XBIOS function, and that has a binding of its own:
++//! [`super::xbiosbind`] (`svc #14`). Of the three EmuTOS's desktop takes from
++//! `xbiosbind.h`, `Keytbl(-1,-1,-1)` (`deskmain.c:1144`) is the one NewTOS
++//! needs; `deskrez.c`'s resolution change it does not have (the screen mode is
++//! fixed by the firmware), and `Supexec` in `do_wredraw` (`desksupp.c:219`)
++//! fetches the `_IDT` cookie, for which [`dos_getcookie`] is the route instead.
+ //!
+ //! ## ABI
+ //!
+diff --git a/kernel/src/desk/ftype.rs b/kernel/src/desk/ftype.rs
+index 8bf7875..df7aa49 100644
+--- a/kernel/src/desk/ftype.rs
++++ b/kernel/src/desk/ftype.rs
+@@ -10,7 +10,7 @@
+ //! |--------|------------------|-----------------|---------------------------------------|
+ //! | `.NAP` | [`Flavor::App`]      | `.PRG` / `.APP` | run; the app draws its own AES UI     |
+ //! | `.NCP` | [`Flavor::Console`]  | `.TOS`          | VT52 text screen, run, restore desktop|
+-//! | `.NTP` | [`Flavor::Params`]   | `.TTP` / `.GTP` | prompt for a command tail, then run   |
++//! | `.NTP` | [`Flavor::Params`]   | `.TTP`          | VT52 text screen, prompt for a command tail, then run |
+ //! | `.NAC` | [`Flavor::Accessory`]| `.ACC`          | **not** launched — loaded at AES start |
+ //!
+ //! The extension is a desktop/shell convention only — it is **not** part of the
+@@ -29,8 +29,16 @@ pub enum Flavor {
+     /// `.NCP` — native console program; runs on a VT52 text screen
+     /// (`fbcon::clear_and_home` before, desktop restore after).
+     Console,
+-    /// `.NTP` — native program that takes a command tail (prompted for before
+-    /// launch; the tail dialog is a Stage-3 follow-on).
++    /// `.NTP` — native **console** program that takes a command tail (prompted
++    /// for before launch; the tail dialog is a Stage-3 follow-on).
++    ///
++    /// The classic analogue is `.TTP`, **not** `.GTP` (user decision
++    /// 2026-09-26, DESK44): the ADR-018 middle letter names the launcher role,
++    /// and `.NCP`/`.NTP` are the console pair exactly as `.TOS`/`.TTP` are.
++    /// EmuTOS separates the two by one flag — `#P *.TTP` is `AF_ISPARM`,
++    /// `#Y *.GTP` is `AF_ISPARM | AF_ISCRYS` (`deskapp.c:181-188`, parsed at
++    /// `:310-322`) — so this choice is what [`super::main`]'s `isgraf` answers
++    /// and what puts a `.NTP` on the alpha screen (`gemshlib.c:513-523`).
+     Params,
+     /// `.NAC` — native **desk accessory** (ADR-018, ACC05). Unlike the three
+     /// above it is *not* launched on demand: the AES loads it once at session
+diff --git a/kernel/src/desk/inf.rs b/kernel/src/desk/inf.rs
+index c888d85..410b0e7 100644
+--- a/kernel/src/desk/inf.rs
++++ b/kernel/src/desk/inf.rs
+@@ -2430,24 +2430,28 @@ impl Line {
+ /// | row | line | source |
+ /// |-----|------|--------|
+ /// | 0 | `- NewTOS -` | `ADDINFO`'s `- EmuTOS -` title (`desk_rsc.c:785-789`) |
+-/// | 2 | `Version  …` | [`crate::initinfo::VERSION_STRING`] (`DELABEL`/`DEVERSN`) |
+-/// | 3 | `Machine  …` | [`crate::initinfo::machine_name`] |
+-/// | 5-6 | the independence notice | [`crate::initinfo::INDEPENDENCE_NOTICE`] |
++/// | 2 | `Version  …` | [`VERSION_STRING`] (`DELABEL`/`DEVERSN`) |
++/// | 3 | `Machine  …` | [`crate::initinfo::machine_name`] — the one line still reached through a kernel symbol; see the `[STOP]` note at the call site |
++/// | 5-6 | the independence notice | [`INDEPENDENCE_NOTICE`] |
+ /// | 8-9 | the EmuTOS credit | [`CREDIT_REIMPL`] / [`CREDIT_EMUTOS`] |
+ /// | 11-14 | the `'GPLed'` chain | [`CREDIT_GPL`] / [`CREDIT_DRI`] / [`CREDIT_CALDERA`] / [`CREDIT_LINEO`] |
+-/// | 16 | the authorship line | [`crate::initinfo::AUTHORSHIP_LINE`] |
++/// | 16 | the authorship line | [`AUTHORSHIP_LINE`] |
+ ///
+ /// The blank rows 1/4/7/10/15 are `ADDINFO`'s own: it leaves char rows 3, 6, 8
+ /// and 13 empty between its blocks (`desk_rsc.c:790-866`).
+ ///
+-/// **Two readers, one source, in two places — on purpose.** The version, the
+-/// machine name, the independence notice and the authorship line are also
+-/// printed by the boot screen, so they live in [`crate::initinfo`] and are read
+-/// from there; that is EmuTOS's own arrangement (`desk_xlate_fix` points
+-/// `DEVERSN->ob_spec` at the BIOS `version[]` the boot screen prints,
+-/// `deskmain.c:1880`). The six credit lines are *not* on the boot screen —
+-/// EmuTOS keeps its `'GPLed'` chain in `desk_rsc.c` alone and `bios/initinfo.c`
+-/// prints none of it — so they stay local to this dialog.
++/// **Two readers, two copies — on purpose, since DESK43 U4.** The version, the
++/// independence notice and the authorship line are also printed by the boot
++/// screen. They *were* read from [`crate::initinfo`], on the argument that
++/// EmuTOS shares one source (`desk_xlate_fix` points `DEVERSN->ob_spec` at the
++/// BIOS `version[]` the boot screen prints, `deskmain.c:1880`). That argument
++/// holds only while the desktop is linked with the BIOS, which is EmuTOS's
++/// situation and stops being ours: the desktop crate will not have `kernel` in
++/// its dependency graph. The strings are therefore the desktop's own
++/// (see the block at [`VERSION_STRING`]), and `initinfo`'s copies say the same
++/// at their definition. The six credit lines were always local, and for a
++/// reason that is unchanged — EmuTOS keeps its `'GPLed'` chain in
++/// `desk_rsc.c` alone and `bios/initinfo.c` prints none of it.
+ ///
+ /// **Three named deviations.**
+ ///
+@@ -2487,13 +2491,23 @@ pub(super) fn do_aboutdesk() {
+ 
+     let title = Line::new("- NewTOS -");
+     let ver_lbl = Line::new("Version");
+-    let ver_val = Line::new(crate::initinfo::VERSION_STRING);
++    let ver_val = Line::new(VERSION_STRING);
+     let mac_lbl = Line::new("Machine");
++    // [STOP — DESK43 U4] The one line in this box still reached through a
++    // kernel symbol. It has no syscall source: `_MCH` is a single fixed
++    // NewTOS marker, `0x0005_0000` on **both** boards
++    // (`tos-api/src/cookie.rs:143`, `docs/api/bios/_cookie-jar.md:136`), so a
++    // cookie read cannot tell "Raspberry Pi 4 (BCM2711)" from "QEMU
++    // aarch64-virt"; and the row itself is a NewTOS addition — EmuTOS's
++    // `ADDINFO` has no Machine line at all (`desk_rsc.c:772-873`). Dropping the
++    // row would remove the dependency for free and move the box *towards*
++    // EmuTOS, but that is a visible change to a deliberate own feature, so it
++    // is the user's call, not this unit's.
+     let mac_val = Line::new(crate::initinfo::machine_name());
+-    // The independence notice is one sentence in `initinfo`; split it at its
+-    // own dash so the box stays close to the resource's proportions instead of
+-    // growing to the full 63-character line.
+-    let notice = crate::initinfo::INDEPENDENCE_NOTICE;
++    // The independence notice is one sentence; split it at its own dash so the
++    // box stays close to the resource's proportions instead of growing to the
++    // full 63-character line.
++    let notice = INDEPENDENCE_NOTICE;
+     let (head, tail) = match notice.find("- ") {
+         Some(i) => (&notice[..i + 1], &notice[i + 2..]),
+         None => (notice, ""),
+@@ -2506,7 +2520,7 @@ pub(super) fn do_aboutdesk() {
+     let dri = Line::new(CREDIT_DRI);
+     let caldera = Line::new(CREDIT_CALDERA);
+     let lineo = Line::new(CREDIT_LINEO);
+-    let author = Line::new(crate::initinfo::AUTHORSHIP_LINE);
++    let author = Line::new(AUTHORSHIP_LINE);
+ 
+     static OK: &[u8] = b" OK \0";
+     const OK_W: i16 = 90;
+@@ -2588,11 +2602,45 @@ pub(super) fn do_aboutdesk() {
+ /// **two**-pixel inner border. `ADDINFO` is the only `desk_rsc.c` tree with it.
+ const ADDINFO_BOX_SPEC: u64 = (2 << 16) | 0x1100;
+ 
+-// ── The About box's credit lines ────────────────────────────────────────────
++// ── The About box's text ────────────────────────────────────────────────────
+ //
+-// Local to this dialog, not in `crate::initinfo`, because EmuTOS keeps the
+-// same split: `bios/initinfo.c` prints none of the `'GPLed'` chain, only
+-// `desk_rsc.c`'s `ADDINFO` carries it.
++// **All of it is the desktop's own** (DESK43 U4, 2026-09-26). EmuTOS's
++// `ADDINFO` carries every line as a literal in `desk_rsc.c:772-873` except
++// `DEVERSN`, whose `ob_spec` `desk_xlate_fix` re-points at the BIOS `version[]`
++// symbol (`deskmain.c:1880`) — a shared *symbol*, which costs EmuTOS nothing
++// because its desktop is linked into the same ROM as its BIOS. Ours will not
++// be: `programs/desktop` has neither `kernel` nor `tos-api` in its dependency
++// graph (`docs/analysis/desktop-userspace-plan-v2.md` §6.4, measure 1), so a
++// `crate::initinfo::…` here is a link the move has to break, and breaking it
++// means the string lives on this side. `crate::initinfo`'s own copies stay for
++// the boot screen and say so at their definition.
++
++/// The NewTOS version, as the About box's `Version` row prints it —
++/// `ADDINFO`'s `DEVERSN` (`desk_rsc.c:808-813`, patched at `deskmain.c:1880`).
++///
++/// **Deliberately the same text as [`crate::initinfo::VERSION_STRING`], and
++/// deliberately a second copy of it.** See the block comment above for why the
++/// shared symbol cannot survive the move. There is no NewTOS syscall that
++/// reports this string: the `NTOS` cookie carries a *number*
++/// (`0x0000_0100`, `tos-api/src/cookie.rs:142`) with no defined rendering, and
++/// `Sversion` reports the GEMDOS version, not the OS name.
++const VERSION_STRING: &str = "NewTOS 0.1";
++
++/// The project's independence notice — the NewTOS counterpart of the
++/// GPL/attribution block `ADDINFO` puts below its copyright
++/// (`desk_rsc.c:810-868`). Same text as
++/// [`crate::initinfo::INDEPENDENCE_NOTICE`], same reason as above.
++const INDEPENDENCE_NOTICE: &str =
++    "NewTOS is an independent project - not original Atari software.";
++
++/// The authorship line, where EmuTOS names *"The EmuTOS development team"*
++/// (`desk_rsc.c:824-826`). Same text as
++/// [`crate::initinfo::AUTHORSHIP_LINE`], same reason as above.
++const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude AI...";
++
++// The credit lines are local to this dialog for a second, older reason:
++// EmuTOS keeps the same split — `bios/initinfo.c` prints none of the `'GPLed'`
++// chain, only `desk_rsc.c`'s `ADDINFO` carries it.
+ 
+ /// What NewTOS is, in one line. EmuTOS's `ADDINFO` has no counterpart claim —
+ /// it *is* the code it credits; NewTOS is a reimplementation of it, which is
+diff --git a/kernel/src/desk/main.rs b/kernel/src/desk/main.rs
+index 8e2852a..6ce4f01 100644
+--- a/kernel/src/desk/main.rs
++++ b/kernel/src/desk/main.rs
+@@ -1054,12 +1054,25 @@ fn pro_run_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &str) ->
+ /// parsed by `app_parse`, `:311-322`): `#G *.APP`/`*.PRG` and `#Y *.GTP` carry
+ /// `AF_ISCRYS`, `#F *.TOS` and `#P *.TTP` do not. The native family maps onto
+ /// that table through the analogy [`super::ftype`] documents.
++///
++/// **`.NTP` is `*.TTP` (`#P`), not `*.GTP` (`#Y`)** — user decision 2026-09-26,
++/// DESK44. The two classic parameter extensions differ in exactly this flag:
++/// `app_parse`'s `case 'Y'` falls through into `case 'G'` and so sets
++/// `AF_ISPARM | AF_ISCRYS`, while `case 'P'` falls through into `case 'F'` and
++/// sets `AF_ISPARM` alone (`deskapp.c:310-322`). The ADR-018 family names the
++/// console pair after the classic console pair — `.NCP` is `*.TOS`, `.NTP` is
++/// `*.TOS`-with-parameters — so `.NTP` is a **character** program and
++/// `sh_chgrf` must take the screen to alpha for it (`gemshlib.c:513-523`).
++/// [`super::inf::default_type_anodes`] already writes `#P` for `*.NTP`; this is
++/// the side that was out of step with it.
+ fn isgraf(flavor: ftype::Flavor) -> bool {
+     match flavor {
+-        // `.NAP` = `*.PRG`/`*.APP` (`#G`), `.NTP` = `*.GTP` (`#Y`).
+-        ftype::Flavor::App | ftype::Flavor::Params => true,
+-        // `.NCP` = `*.TOS` (`#F`).
+-        ftype::Flavor::Console => false,
++        // `.NAP` = `*.PRG`/`*.APP` (`#G`), the only native GEM flavour.
++        ftype::Flavor::App => true,
++        // `.NCP` = `*.TOS` (`#F`), `.NTP` = `*.TTP` (`#P`) — both character
++        // programs; `#P` differs from `#F` only in `AF_ISPARM`, which is
++        // `isparm`, not `isgraf` (`desksupp.c:876-877`).
++        ftype::Flavor::Console | ftype::Flavor::Params => false,
+         // `.NAC` never reaches `pro_run` — [`pro_run_native`] turns it away
+         // before this is asked.
+         ftype::Flavor::Accessory => true,
+@@ -1251,24 +1264,58 @@ fn funkey_number(key: i16) -> Option<u16> {
+     }
+ }
+ 
+-/// `check_alt_letter_key` (EmuTOS `deskmain.c:1136`) — Alt+A..Z opens that
+-/// drive letter. Only fires for a key whose ASCII byte is genuinely `0` (a bare
+-/// scancode), reading the shifted character for the scancode to infer the
+-/// letter (EmuTOS reads `KEYTAB.shift[]`; there is no dedicated Alt table).
++/// The structure `Keytbl`'s return value points at, as EmuTOS's desktop
++/// declares it for itself (`deskmain.c:64-69`):
++///
++/// ```c
++/// typedef struct {
++///     UBYTE *normal;
++///     UBYTE *shift;
++///     UBYTE *caps;
++/// } KEYTAB;
++/// ```
++///
++/// The first three fields of the BIOS's `struct keytbl` (`bios/ikbd.h:57-86`);
++/// the desktop needs no more of it. The XBIOS lays the image out at the
++/// **caller's** pointer width (`tos-api/src/xbios/keytbl.rs`, `write_area`),
++/// which for the desktop's kernel-boot context is LP64 — this `#[repr(C)]`
++/// struct of three raw pointers.
++#[repr(C)]
++struct Keytab {
++    normal: *const u8,
++    shift: *const u8,
++    caps: *const u8,
++}
++
++/// `check_alt_letter_key` (EmuTOS `deskmain.c:1136-1159`) — Alt+A..Z opens that
++/// drive letter:
++///
++/// ```c
++/// if (LOBYTE(thechar)) return FALSE;      /* not an alt key */
++/// keytab = (KEYTAB *)Keytbl(-1, -1, -1);
++/// drive = keytab->shift[HIBYTE(thechar)];
++/// if ((drive < 'A') || (drive > 'Z')) return FALSE;
++/// if (!valid_drive(drive)) return FALSE;
++/// do_dopen(-drive); men_update(); return TRUE;
++/// ```
++///
++/// The shifted character of the scancode *is* the letter — there is no
++/// dedicated Alt table, in EmuTOS or here — and the desktop reads it through
++/// the XBIOS, not through a kernel symbol: [`super::xbiosbind::keytbl_query`].
+ ///
+ /// **This path is live** (re-established DESK13). An older note here, and the
+ /// one DESK11 copied into its report, called it inert on the grounds that the
+ /// keyboard layer "folds Alt into AltGr and never yields ASCII 0 for a letter
+-/// key". That is not what the layer does: `crate::keymap::to_ascii` zeroes an
+-/// alphabetic result whenever the Alt modifier is set
+-/// (`kernel/src/keymap.rs`, the `if ascii.is_ascii_alphabetic()` arm of the
+-/// `alt` branch), `ikbd::to_ascii` turns that `0` into `None`, and
+-/// `ikbd::decode_key` queues the word as `scancode << 8 | 0` — exactly the
+-/// bare-scancode shape this check wants. Both key sources set the Alt bit: the
+-/// native IKBD stream (`SC_ALT` = `0x38`) and the USB-HID report, whose
+-/// `modifiers()` maps LAlt **and** RAlt to `0x38`. The AES hands the whole word
+-/// through as `EV_KRET` (`tos-api/src/aes/event.rs:598`), so nothing between
+-/// the key and here re-interprets it.
++/// key". That is not what the layer does: the translator zeroes an alphabetic
++/// result whenever the Alt modifier is set (`kernel/src/keymap.rs`, the
++/// `if ascii.is_ascii_alphabetic()` arm of the `alt` branch), `ikbd::to_ascii`
++/// turns that `0` into `None`, and `ikbd::decode_key` queues the word as
++/// `scancode << 8 | 0` — exactly the bare-scancode shape this check wants.
++/// Both key sources set the Alt bit: the native IKBD stream (`SC_ALT` = `0x38`)
++/// and the USB-HID report, whose `modifiers()` maps LAlt **and** RAlt to
++/// `0x38`. The AES hands the whole word through as `EV_KRET`
++/// (`tos-api/src/aes/event.rs:598`), so nothing between the key and here
++/// re-interprets it.
+ ///
+ /// Returns `true` only if it actually opened a drive.
+ fn check_alt_letter_key(key: i16) -> bool {
+@@ -1276,7 +1323,40 @@ fn check_alt_letter_key(key: i16) -> bool {
+         return false;
+     }
+     let sc = ((key >> 8) & 0xFF) as u8;
+-    let letter = crate::keymap::to_ascii(sc, true, false, false);
++    // `keytab = (KEYTAB *)Keytbl(-1, -1, -1);` (`:1144`). A 0 return means the
++    // board has no keyboard translator to describe and must not be
++    // dereferenced (`docs/api/xbios/10-keytbl.md`); EmuTOS cannot reach that
++    // case, so there is no behaviour of its to match — the shortcut simply has
++    // no letter to look up.
++    let p = super::xbiosbind::keytbl_query();
++    if p == 0 {
++        return false;
++    }
++    // `drive = keytab->shift[HIBYTE(thechar)];` (`:1145`).
++    // SAFETY: `p` is the `struct keytbl` image the XBIOS just wrote, at this
++    // caller's own pointer width and in kernel-addressable memory (see
++    // [`Keytab`] and `keytbl_query`'s doc). `shift` points at that image's
++    // 128-byte `shft` table, and `sc` is a `u8` masked out of the key word,
++    // i.e. < 128 for every scancode the IKBD produces — the two scancodes
++    // ≥ 0x80 are key *releases*, which the AES never forwards as `EV_KRET`.
++    //
++    // The one case where `shift` would *not* point into that image is a
++    // program having installed its own table: `Keytbl` then reports the
++    // caller's pointer verbatim, as EmuTOS does (`bios/ikbd.c:126`), and in
++    // EmuTOS's flat address space that stays readable. Ours would be an EL0 VA
++    // read from EL1 — the address-space difference DESK43 names as the cost of
++    // the move, and U9's business, not this unit's. It is unreachable in this
++    // tree: every `Keytbl` caller in `sdk/` passes the `(void *)-1` sentinel
++    // (`sdk/cflib/cflib-21/nkccinit.c:97-99`, `sdk/apps/apitest/apitest.c:1474`,
++    // `sdk/apps/teradesk/library/xdialog/xdevent.c:76`), so `OVERRIDE` is never
++    // assigned.
++    let letter = unsafe {
++        let tab = &*(p as usize as *const Keytab);
++        if sc >= 128 {
++            return false;
++        }
++        *tab.shift.add(sc as usize)
++    };
+     if letter.is_ascii_uppercase() {
+         let drive = letter - b'A';
+         // `if (dos_sdrv(dos_gdrv()) & (1L << drv))` — EmuTOS `valid_drive`
+diff --git a/kernel/src/desk/mod.rs b/kernel/src/desk/mod.rs
+index 6181745..c6b6275 100644
+--- a/kernel/src/desk/mod.rs
++++ b/kernel/src/desk/mod.rs
+@@ -40,7 +40,32 @@ pub mod pro;
+ pub mod redraw;
+ pub mod vdibind;
+ pub mod win;
++pub mod xbiosbind;
+ 
++// The desktop's diagnostic channel — EmuTOS's `KDEBUG` (`bios/kprint.h`),
++// which its desktop also reaches as a linked-in BIOS symbol and which every
++// `desk/*.c` leaves compiled out (`/* #define ENABLE_KDEBUG */`,
++// `deskact.c:19`, `deskapp.c:20`).
++//
++// **[STOP — DESK43 U4] It stays a `crate::` path for now.** The plan's
++// replacement, `Cconws`, is not available to this caller for two independent
++// reasons, both measured rather than assumed:
++//
++// 1. `Cconws` reads its string with the *unprivileged* load `ldtrb`
++//    (`tos-api/src/gemdos/console.rs:527`), so a kernel-VA literal — which is
++//    every literal in this module while the desktop is EL1 code — faults. The
++//    same property already closes `Ssystem`'s pointer form to the desktop
++//    (`docs/api/desktop/gembind.md`).
++// 2. Even from EL0 it would be the wrong device: the console writes to the
++//    framebuffer as well as the serial line (`host_env.rs:58-61` →
++//    `fbcon::write_byte` → `vdi::alpha_conout`), so a diagnostic would paint
++//    characters onto the live desktop. EmuTOS's `kprintf` goes to the *debug*
++//    device, `bconout1(1, c)` (`bios/kprint.c:91-99`), never to `bconout2(2)`
++//    — and our `Bconout(1)` is an absent device that discards the byte
++//    (`tos-api/src/bios/chardev.rs:176-186`).
++//
++// So the replacement has to be built before the removal (plan §6.3's ordering
++// rule), and building a debug-output device is not this unit's business.
+ use crate::kprintln;
+ 
+ use global::{Grect, MAX_DEPTH, WINDOW_STYLE};
+diff --git a/kernel/src/initinfo.rs b/kernel/src/initinfo.rs
+index 4d0080d..9a0747c 100644
+--- a/kernel/src/initinfo.rs
++++ b/kernel/src/initinfo.rs
+@@ -72,25 +72,37 @@ const DEL_ASCII: u8 = 0x7F;
+ /// info lines in characters; also the width of the inverse-video bar.
+ const INFO_LENGTH: i16 = 40;
+ 
++// ── The three strings the desktop's About box also shows ────────────────────
++//
++// **They are duplicated there, since DESK43 U4 (2026-09-26), and that is the
++// intended arrangement.** The older note here claimed the desktop reads these
++// very constants because "EmuTOS keeps the same single source". EmuTOS does —
++// `desk_xlate_fix` re-points `DEVERSN->ob_spec` at the BIOS `version[]` symbol
++// (`desk/deskmain.c:1880`) — but it can, because its desktop is linked into
++// the same ROM image as its BIOS. NewTOS's will not be: `programs/desktop` is
++// to have neither `kernel` nor `tos-api` in its dependency graph
++// (`docs/analysis/desktop-userspace-plan-v2.md` §6.4, measure 1), so the shared
++// symbol is exactly the kind of link that move removes. The desktop's copies
++// live at `kernel/src/desk/inf.rs`, next to the About box's other literals,
++// and name this comment. Editing one means editing both — there is no syscall
++// that reports an OS *name* string (the `NTOS` cookie is a number,
++// `tos-api/src/cookie.rs:142`; `Sversion` is the GEMDOS version).
++
+ /// The NewTOS version string, as the boot screen's `Version` line prints it.
+-///
+-/// It has a second reader: the desktop's `Desk → Desktop info...` box
+-/// ([`crate::desk::inf::do_aboutdesk`]). EmuTOS keeps the same single source —
+-/// its About box does not carry a version of its own, `desk_xlate_fix` points
+-/// the `DEVERSN` object's `ob_spec` at the BIOS `version[]` string the boot
+-/// screen also prints (`desk/deskmain.c:1881`).
++/// The desktop's About box shows the same text from its own constant — see the
++/// block comment above.
+ pub(crate) const VERSION_STRING: &str = "NewTOS 0.1";
+ 
+-/// The project's independence notice, as the boot screen's footer carries it —
+-/// the second reader is again the desktop's About box. This is the NewTOS
+-/// counterpart of the GPL/attribution block EmuTOS puts in `ADDINFO`
+-/// (`desk/desk_rsc.c:810-868`).
++/// The project's independence notice, as the boot screen's footer carries it.
++/// This is the NewTOS counterpart of the GPL/attribution block EmuTOS puts in
++/// `ADDINFO` (`desk/desk_rsc.c:810-868`); the desktop's About box shows the
++/// same text from its own constant.
+ pub(crate) const INDEPENDENCE_NOTICE: &str =
+     "NewTOS is an independent project - not original Atari software.";
+ 
+-/// The authorship line the boot screen closes with; the desktop's About box
+-/// repeats it, where EmuTOS names "The EmuTOS development team"
+-/// (`desk/desk_rsc.c:824-826`).
++/// The authorship line the boot screen closes with, where EmuTOS names "The
++/// EmuTOS development team" (`desk/desk_rsc.c:824-826`). The desktop's About
++/// box shows the same text from its own constant.
+ pub(crate) const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude AI...";
+ 
+ /// The build stamp, `YYYY-MM-DD (rev)`, re-exported from [`tos_api::build`].
+@@ -107,6 +119,14 @@ pub(crate) const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude A
+ pub(crate) const BUILD_STAMP: &str = tos_api::build::BUILD_STAMP;
+ 
+ /// Friendly machine name for the current board.
++///
++/// **Still read by the desktop's About box** (`desk::inf::do_aboutdesk`) — the
++/// one `crate::initinfo` reference DESK43 U4 left standing, named there and in
++/// that unit's receipt. It cannot follow the three constants above, because it
++/// is not a constant: it answers from [`crate::BOARD_NAME`], and no syscall
++/// carries that answer. `_MCH` is a single fixed NewTOS marker, `0x0005_0000`
++/// on both boards (`tos-api/src/cookie.rs:143`), so a cookie read cannot tell
++/// the two apart.
+ pub(crate) fn machine_name() -> &'static str {
+     match crate::BOARD_NAME {
+         "rpi4" => "Raspberry Pi 4 (BCM2711)",
+diff --git a/kernel/src/launch.rs b/kernel/src/launch.rs
+index 210302b..09ee220 100644
+--- a/kernel/src/launch.rs
++++ b/kernel/src/launch.rs
+@@ -257,17 +257,23 @@ fn set_auto_default_path() {
+ /// first act in `autoexec` (`bios/bios.c:702-704`, "check if the user does not
+ /// want to run AUTO programs"); see [`set_bootflags_from_shiftbits`].
+ ///
+-/// Runs **only** native NewTOS *console* programs, `.NCP` (ADR-018). A GEM
+-/// application (`.NAP`) needs the AES, which is not up yet at this point of
+-/// the boot — it launches from the desktop (double-click, or the `#Z`
+-/// NEWDESK.INF autorun) instead, see the `classify` match below. Classic
+-/// Atari `.PRG` / `.TOS` are m68k and cannot load without the (unavailable)
+-/// emulator — attempting one at boot only produced a failed load and an alert,
+-/// so they are skipped here (the desktop still reports them as m68k when a
+-/// user explicitly opens one). `.NTP` is also excluded: it takes a command tail
+-/// there is no dialog for at boot.
++/// Runs **only** native NewTOS *console* programs, `.NCP` (ADR-018), and the
++/// filter is the **search pattern**, exactly as EmuTOS's is:
++/// `Fsfirst("\\AUTO\\*.PRG", 7)` (`bios/bios.c:713-714`) states the one
++/// extension the AUTO folder runs and nothing downstream re-decides it. Ours
++/// says `C:\AUTO\*.NCP` for the same reason and in the same place — the boot
++/// code owns this test; it does not ask the desktop.
++///
++/// Why `.NCP` is the one: AUTO runs **before** the AES, so a GEM application
++/// (`.NAP`) — which needs `menu_bar`/`objc_draw`/`gl_wchar` — must not start
++/// here; it launches from the desktop instead (double-click, or the `#Z`
++/// NEWDESK.INF autorun). Classic Atari `.PRG`/`.TOS` are m68k and cannot load
++/// without the (unavailable) emulator — attempting one at boot only produced a
++/// failed load and an alert (the desktop still reports them as m68k when a
++/// user explicitly opens one). `.NTP` is excluded too: it is a console program
++/// that takes a command tail, and there is no dialog to ask for one at boot
++/// (`desk/ftype.rs`'s `Flavor::Params`, DESK44).
+ pub fn run_auto_folder() {
+-    use crate::desk::ftype::{classify, FileType, Flavor};
+     use tos_api::bdos::fs::find::{list_dir_ex, DirInfo};
+ 
+     // `if (bootflags & BOOTFLAG_SKIP_AUTO_ACC) return;` (`bios/bios.c:702-704`)
+@@ -276,24 +282,20 @@ pub fn run_auto_folder() {
+         return;
+     }
+ 
++    // `err = Fsfirst("\\AUTO\\*.PRG", 7)` (`bios/bios.c:713-714`) — the
++    // extension is the pattern; see the function doc.
+     let mut ents = [DirInfo::default(); 32];
+-    let n = list_dir_ex("C:\\AUTO\\*.*", &mut ents);
++    let n = list_dir_ex("C:\\AUTO\\*.NCP", &mut ents);
+     let mut ran = 0;
+     for e in &ents[..n] {
++        // EmuTOS's search attribute is `7` (`FA_RO|FA_HIDDEN|FA_SYSTEM`), which
++        // excludes directories (`bdos/fsdir.c:1840-1844`); `list_dir_ex`
++        // reports them, so this test is that attribute's stand-in.
+         if e.attrib & 0x10 != 0 {
+             continue; // skip "." / ".." / sub-directories
+         }
+         let end = e.name.iter().position(|&b| b == 0).unwrap_or(14);
+         let name = &e.name[..end];
+-        // AUTO auto-runs native *console* (.NCP) programs only. It runs at boot,
+-        // BEFORE the desktop and AES/appl_init are up, so a GEM app (.NAP) — which
+-        // needs AES (menu_bar/objc_draw/gl_wchar…) — must NOT run here; GEM apps
+-        // launch from the desktop instead (double-click, or the `#Z` NEWDESK.INF
+-        // autorun, both after AES init). Classic .PRG/.TOS are non-native m68k, so
+-        // skip anything that is not a native console program.
+-        if !matches!(classify(name), FileType::Native(Flavor::Console)) {
+-            continue;
+-        }
+         // Build "C:\AUTO\<name>\0".
+         let mut path = [0u8; 40];
+         let prefix = b"C:\\AUTO\\";

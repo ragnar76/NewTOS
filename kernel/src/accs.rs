@@ -45,7 +45,6 @@ use tos_api::aes::acc::NUM_ACCS;
 use tos_api::bdos::fs::find::{list_dir_ex, DirInfo};
 use tos_api::bdos::process::{self, set_current, slot, State};
 
-use crate::desk::ftype::{classify, FileType, Flavor};
 use crate::kprintln;
 
 /// `LEN_ZFNAME` (`include/sysconf.h:53`) — the `NAME.EXT\0` field
@@ -94,7 +93,14 @@ unsafe fn table() -> &'static mut ([Acc; NUM_ACCS], usize) {
 /// The two search locations, in precedence order (see the module note).
 /// `(directory prefix, wildcard)`; the prefix is what a found name is
 /// appended to.
-const SEARCH: [(&str, &str); 2] = [("C:\\ACC\\", "C:\\ACC\\*.*"), ("C:\\", "C:\\*.*")];
+///
+/// **The extension lives in the wildcard**, exactly as EmuTOS's does:
+/// `count_accs` searches the literal string `"\\*.ACC"` (`geminit.c:272`) and
+/// never classifies a name afterwards. The pattern is `*.NAC` instead of
+/// `*.ACC` for the reason the function doc gives (ADR-018), and it is the
+/// *only* extension test on this path — the boot code does not consult the
+/// desktop for it.
+const SEARCH: [(&str, &str); 2] = [("C:\\ACC\\", "C:\\ACC\\*.NAC"), ("C:\\", "C:\\*.NAC")];
 
 /// `count_accs()` (`aes/geminit.c:264-284`) — record up to [`NUM_ACCS`]
 /// accessory file names, without loading anything.
@@ -116,10 +122,11 @@ const SEARCH: [(&str, &str); 2] = [("C:\\ACC\\", "C:\\ACC\\*.*"), ("C:\\", "C:\\
 /// `docs/api/aes/accessories.md` §7.4), and the scan runs over two
 /// directories, `C:\ACC\` before the root, sharing the one budget.
 ///
-/// Sub-directories are skipped: EmuTOS's `FA_RO` search attribute already
-/// excludes them (`match()`'s attribute test, `bdos/fsdir.c:1840-1844`:
-/// `FA_RO & FA_SUBDIR == 0`), and the extension filter would reject a
-/// directory named `FOO.NAC` in any case.
+/// Sub-directories are skipped explicitly: EmuTOS's `FA_RO` search attribute
+/// already excludes them (`match()`'s attribute test, `bdos/fsdir.c:1840-1844`:
+/// `FA_RO & FA_SUBDIR == 0`), while [`list_dir_ex`] reports them, so the
+/// `FA_SUBDIR` test below is this function's stand-in for that attribute —
+/// not an extra rule.
 fn count_accs(skip: bool) -> usize {
     // `if (bootflags & BOOTFLAG_SKIP_AUTO_ACC) return 0;` (`:268-270`)
     if skip {
@@ -145,9 +152,6 @@ fn count_accs(skip: bool) -> usize {
             }
             let end = e.name.iter().position(|&b| b == 0).unwrap_or(LEN_ZFNAME);
             let name = &e.name[..end];
-            if !matches!(classify(name), FileType::Native(Flavor::Accessory)) {
-                continue;
-            }
             // Dedupe by file name across the two locations: a name the
             // `\ACC\` folder already provided is skipped in the root.
             if acc[..found].iter().any(|a| same_name(&a.name, name)) {

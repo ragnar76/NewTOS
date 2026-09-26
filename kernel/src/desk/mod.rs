@@ -40,7 +40,32 @@ pub mod pro;
 pub mod redraw;
 pub mod vdibind;
 pub mod win;
+pub mod xbiosbind;
 
+// The desktop's diagnostic channel — EmuTOS's `KDEBUG` (`bios/kprint.h`),
+// which its desktop also reaches as a linked-in BIOS symbol and which every
+// `desk/*.c` leaves compiled out (`/* #define ENABLE_KDEBUG */`,
+// `deskact.c:19`, `deskapp.c:20`).
+//
+// **[STOP — DESK43 U4] It stays a `crate::` path for now.** The plan's
+// replacement, `Cconws`, is not available to this caller for two independent
+// reasons, both measured rather than assumed:
+//
+// 1. `Cconws` reads its string with the *unprivileged* load `ldtrb`
+//    (`tos-api/src/gemdos/console.rs:527`), so a kernel-VA literal — which is
+//    every literal in this module while the desktop is EL1 code — faults. The
+//    same property already closes `Ssystem`'s pointer form to the desktop
+//    (`docs/api/desktop/gembind.md`).
+// 2. Even from EL0 it would be the wrong device: the console writes to the
+//    framebuffer as well as the serial line (`host_env.rs:58-61` →
+//    `fbcon::write_byte` → `vdi::alpha_conout`), so a diagnostic would paint
+//    characters onto the live desktop. EmuTOS's `kprintf` goes to the *debug*
+//    device, `bconout1(1, c)` (`bios/kprint.c:91-99`), never to `bconout2(2)`
+//    — and our `Bconout(1)` is an absent device that discards the byte
+//    (`tos-api/src/bios/chardev.rs:176-186`).
+//
+// So the replacement has to be built before the removal (plan §6.3's ordering
+// rule), and building a debug-output device is not this unit's business.
 use crate::kprintln;
 
 use global::{Grect, MAX_DEPTH, WINDOW_STYLE};

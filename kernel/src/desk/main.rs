@@ -1054,12 +1054,25 @@ fn pro_run_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &str) -> 
 /// parsed by `app_parse`, `:311-322`): `#G *.APP`/`*.PRG` and `#Y *.GTP` carry
 /// `AF_ISCRYS`, `#F *.TOS` and `#P *.TTP` do not. The native family maps onto
 /// that table through the analogy [`super::ftype`] documents.
+///
+/// **`.NTP` is `*.TTP` (`#P`), not `*.GTP` (`#Y`)** — user decision 2026-09-26,
+/// DESK44. The two classic parameter extensions differ in exactly this flag:
+/// `app_parse`'s `case 'Y'` falls through into `case 'G'` and so sets
+/// `AF_ISPARM | AF_ISCRYS`, while `case 'P'` falls through into `case 'F'` and
+/// sets `AF_ISPARM` alone (`deskapp.c:310-322`). The ADR-018 family names the
+/// console pair after the classic console pair — `.NCP` is `*.TOS`, `.NTP` is
+/// `*.TOS`-with-parameters — so `.NTP` is a **character** program and
+/// `sh_chgrf` must take the screen to alpha for it (`gemshlib.c:513-523`).
+/// [`super::inf::default_type_anodes`] already writes `#P` for `*.NTP`; this is
+/// the side that was out of step with it.
 fn isgraf(flavor: ftype::Flavor) -> bool {
     match flavor {
-        // `.NAP` = `*.PRG`/`*.APP` (`#G`), `.NTP` = `*.GTP` (`#Y`).
-        ftype::Flavor::App | ftype::Flavor::Params => true,
-        // `.NCP` = `*.TOS` (`#F`).
-        ftype::Flavor::Console => false,
+        // `.NAP` = `*.PRG`/`*.APP` (`#G`), the only native GEM flavour.
+        ftype::Flavor::App => true,
+        // `.NCP` = `*.TOS` (`#F`), `.NTP` = `*.TTP` (`#P`) — both character
+        // programs; `#P` differs from `#F` only in `AF_ISPARM`, which is
+        // `isparm`, not `isgraf` (`desksupp.c:876-877`).
+        ftype::Flavor::Console | ftype::Flavor::Params => false,
         // `.NAC` never reaches `pro_run` — [`pro_run_native`] turns it away
         // before this is asked.
         ftype::Flavor::Accessory => true,
@@ -1251,24 +1264,58 @@ fn funkey_number(key: i16) -> Option<u16> {
     }
 }
 
-/// `check_alt_letter_key` (EmuTOS `deskmain.c:1136`) — Alt+A..Z opens that
-/// drive letter. Only fires for a key whose ASCII byte is genuinely `0` (a bare
-/// scancode), reading the shifted character for the scancode to infer the
-/// letter (EmuTOS reads `KEYTAB.shift[]`; there is no dedicated Alt table).
+/// The structure `Keytbl`'s return value points at, as EmuTOS's desktop
+/// declares it for itself (`deskmain.c:64-69`):
+///
+/// ```c
+/// typedef struct {
+///     UBYTE *normal;
+///     UBYTE *shift;
+///     UBYTE *caps;
+/// } KEYTAB;
+/// ```
+///
+/// The first three fields of the BIOS's `struct keytbl` (`bios/ikbd.h:57-86`);
+/// the desktop needs no more of it. The XBIOS lays the image out at the
+/// **caller's** pointer width (`tos-api/src/xbios/keytbl.rs`, `write_area`),
+/// which for the desktop's kernel-boot context is LP64 — this `#[repr(C)]`
+/// struct of three raw pointers.
+#[repr(C)]
+struct Keytab {
+    normal: *const u8,
+    shift: *const u8,
+    caps: *const u8,
+}
+
+/// `check_alt_letter_key` (EmuTOS `deskmain.c:1136-1159`) — Alt+A..Z opens that
+/// drive letter:
+///
+/// ```c
+/// if (LOBYTE(thechar)) return FALSE;      /* not an alt key */
+/// keytab = (KEYTAB *)Keytbl(-1, -1, -1);
+/// drive = keytab->shift[HIBYTE(thechar)];
+/// if ((drive < 'A') || (drive > 'Z')) return FALSE;
+/// if (!valid_drive(drive)) return FALSE;
+/// do_dopen(-drive); men_update(); return TRUE;
+/// ```
+///
+/// The shifted character of the scancode *is* the letter — there is no
+/// dedicated Alt table, in EmuTOS or here — and the desktop reads it through
+/// the XBIOS, not through a kernel symbol: [`super::xbiosbind::keytbl_query`].
 ///
 /// **This path is live** (re-established DESK13). An older note here, and the
 /// one DESK11 copied into its report, called it inert on the grounds that the
 /// keyboard layer "folds Alt into AltGr and never yields ASCII 0 for a letter
-/// key". That is not what the layer does: `crate::keymap::to_ascii` zeroes an
-/// alphabetic result whenever the Alt modifier is set
-/// (`kernel/src/keymap.rs`, the `if ascii.is_ascii_alphabetic()` arm of the
-/// `alt` branch), `ikbd::to_ascii` turns that `0` into `None`, and
-/// `ikbd::decode_key` queues the word as `scancode << 8 | 0` — exactly the
-/// bare-scancode shape this check wants. Both key sources set the Alt bit: the
-/// native IKBD stream (`SC_ALT` = `0x38`) and the USB-HID report, whose
-/// `modifiers()` maps LAlt **and** RAlt to `0x38`. The AES hands the whole word
-/// through as `EV_KRET` (`tos-api/src/aes/event.rs:598`), so nothing between
-/// the key and here re-interprets it.
+/// key". That is not what the layer does: the translator zeroes an alphabetic
+/// result whenever the Alt modifier is set (`kernel/src/keymap.rs`, the
+/// `if ascii.is_ascii_alphabetic()` arm of the `alt` branch), `ikbd::to_ascii`
+/// turns that `0` into `None`, and `ikbd::decode_key` queues the word as
+/// `scancode << 8 | 0` — exactly the bare-scancode shape this check wants.
+/// Both key sources set the Alt bit: the native IKBD stream (`SC_ALT` = `0x38`)
+/// and the USB-HID report, whose `modifiers()` maps LAlt **and** RAlt to
+/// `0x38`. The AES hands the whole word through as `EV_KRET`
+/// (`tos-api/src/aes/event.rs:598`), so nothing between the key and here
+/// re-interprets it.
 ///
 /// Returns `true` only if it actually opened a drive.
 fn check_alt_letter_key(key: i16) -> bool {
@@ -1276,7 +1323,40 @@ fn check_alt_letter_key(key: i16) -> bool {
         return false;
     }
     let sc = ((key >> 8) & 0xFF) as u8;
-    let letter = crate::keymap::to_ascii(sc, true, false, false);
+    // `keytab = (KEYTAB *)Keytbl(-1, -1, -1);` (`:1144`). A 0 return means the
+    // board has no keyboard translator to describe and must not be
+    // dereferenced (`docs/api/xbios/10-keytbl.md`); EmuTOS cannot reach that
+    // case, so there is no behaviour of its to match — the shortcut simply has
+    // no letter to look up.
+    let p = super::xbiosbind::keytbl_query();
+    if p == 0 {
+        return false;
+    }
+    // `drive = keytab->shift[HIBYTE(thechar)];` (`:1145`).
+    // SAFETY: `p` is the `struct keytbl` image the XBIOS just wrote, at this
+    // caller's own pointer width and in kernel-addressable memory (see
+    // [`Keytab`] and `keytbl_query`'s doc). `shift` points at that image's
+    // 128-byte `shft` table, and `sc` is a `u8` masked out of the key word,
+    // i.e. < 128 for every scancode the IKBD produces — the two scancodes
+    // ≥ 0x80 are key *releases*, which the AES never forwards as `EV_KRET`.
+    //
+    // The one case where `shift` would *not* point into that image is a
+    // program having installed its own table: `Keytbl` then reports the
+    // caller's pointer verbatim, as EmuTOS does (`bios/ikbd.c:126`), and in
+    // EmuTOS's flat address space that stays readable. Ours would be an EL0 VA
+    // read from EL1 — the address-space difference DESK43 names as the cost of
+    // the move, and U9's business, not this unit's. It is unreachable in this
+    // tree: every `Keytbl` caller in `sdk/` passes the `(void *)-1` sentinel
+    // (`sdk/cflib/cflib-21/nkccinit.c:97-99`, `sdk/apps/apitest/apitest.c:1474`,
+    // `sdk/apps/teradesk/library/xdialog/xdevent.c:76`), so `OVERRIDE` is never
+    // assigned.
+    let letter = unsafe {
+        let tab = &*(p as usize as *const Keytab);
+        if sc >= 128 {
+            return false;
+        }
+        *tab.shift.add(sc as usize)
+    };
     if letter.is_ascii_uppercase() {
         let drive = letter - b'A';
         // `if (dos_sdrv(dos_gdrv()) & (1L << drv))` — EmuTOS `valid_drive`

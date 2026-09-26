@@ -276,20 +276,37 @@ Every GEMDOS/BIOS call the desktop makes, with the EmuTOS name it carries:
 | `dos_sdrv(drv)` | `svc #1` | 0x0E | `x0` = drive (0-based) | `Dsetdrv`, `gemdos.h:105` | `app::app_blddesk`, `main::check_alt_letter_key`, `mod::run` |
 | `dos_getcookie(tag)` | `svc #1` | 0x154 | `x0` = 8 (`S_GETCOOKIE`), `x1` = tag, `x2` = 0 | **no EmuTOS counterpart** — see below | `redraw::refresh_idt` |
 
-The desktop calls **no BIOS and no XBIOS function**, so there is neither an
-`svc #13` nor an `svc #14` binding. EmuTOS's desktop includes `biosbind.h`,
-but the two calls it takes from it are `Drvmap()` — which the desktop itself
-never uses (see below) — and `Dosound()` for the About-box Easter egg
-(`CONF_WITH_EASTER_EGG`), which NewTOS does not have.
+The desktop calls **no BIOS function**, so there is no `svc #13` binding.
+EmuTOS's desktop includes `biosbind.h`, but the two calls it takes from it are
+`Drvmap()` — which the desktop itself never uses (see below) — and `Dosound()`
+for the About-box Easter egg (`CONF_WITH_EASTER_EGG`), which NewTOS does not
+have.
 
-### The one call EmuTOS takes from `xbiosbind.h`, and where it goes here (DESK13)
+### The `svc #14` binding — `xbiosbind.rs` (DESK43 U4, 2026-09-26)
+
+EmuTOS's desktop takes **three** things from `xbiosbind.h`, not one:
+
+| EmuTOS call | Site | NewTOS |
+|---|---|---|
+| `Keytbl(-1,-1,-1)` | `deskmain.c:1144`, the Alt-letter drive shortcut | **built** — `kernel/src/desk/xbiosbind.rs`, `svc #14`, function id 16 |
+| `Supexec(get_idt_cookie)` | `desksupp.c:219`, the `_IDT` cookie | replaced by `dos_getcookie` (`svc #1`), next section |
+| resolution change | `deskrez.c` | not present — the screen mode is fixed by the firmware |
+
+`keytbl_query()` is the whole binding: three `(UBYTE *)-1` sentinels in, the
+address of the `struct keytbl` out. The desktop declares the first three
+pointers of that struct for itself, exactly as EmuTOS's `deskmain.c:64-69`
+does, and reads `shift[scancode]`. Until U4 that read went to
+`crate::keymap::to_ascii(sc, true, false, false)` — the same bytes
+(`kernel/src/host_env.rs:344` hands `Keytbl` the very table `to_ascii` indexes),
+reached by naming a kernel symbol instead of trapping.
+
+### The `xbiosbind.h` call EmuTOS makes that goes to GEMDOS here (DESK13)
 
 `dos_getcookie` is the only binding in this table with **no** `gemdos.h`
-counterpart, and it is here because EmuTOS's desktop *does* make one XBIOS
-call: `G.g_idt = Supexec((LONG)get_idt_cookie);` in `do_wredraw`
+counterpart, and it is here because of the second row of the table above:
+`G.g_idt = Supexec((LONG)get_idt_cookie);` in `do_wredraw`
 (`desksupp.c:219`), which fetches the `_IDT` cookie the `Default` buttons of
-*Set preferences* defer to. (The other `xbiosbind.h` user is `deskrez.c`'s
-resolution change, which NewTOS does not have.)
+*Set preferences* defer to.
 
 `Supexec` is there because on m68k the cookie jar is reached through the
 pointer at `$5A0`, in supervisor-only low memory — an m68k *mechanism*, which
