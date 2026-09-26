@@ -214,7 +214,7 @@ pub fn set_patcol_all(vals: [u8; 6]) {
 }
 
 /// Read all six background pattern/colour bytes, for serialising the `#Q` line
-/// ([`super::inf::save_desktop`]).
+/// ([`super::inf::app_save`]).
 pub fn patcol_all() -> [u8; 6] {
     let mut out = [0u8; 6];
     for (o, slot) in out.iter_mut().zip(G_PATCOL.iter()) {
@@ -555,7 +555,7 @@ pub struct DeskState {
     /// `deskapp.c:851-987`) or, when the file supplies none, from the drive map
     /// ([`super::inf::build_desk_icons`] = `build_inf`, `deskapp.c:696-752`);
     /// edited by [`super::ins`] (`ins_devices` / `ins_icon` / `rmv_icon`) and by
-    /// `move_drvicon`; written back by [`super::inf::save_desktop`]
+    /// `move_drvicon`; written back by [`super::inf::app_save`]
     /// (`app_save`).
     ///
     /// **Order.** EmuTOS's `app_alloc` *prepends* (`deskapp.c:215-216`), so
@@ -569,7 +569,7 @@ pub struct DeskState {
     /// view/sort/size-to-fit and the per-slot window layout. Filled from the
     /// `#E`/`#W` lines by [`super::inf::load_and_apply`] (`app_start`) and from
     /// the live desktop by [`super::main::cnx_put`]; read back by
-    /// [`super::main::cnx_get`] and by [`super::inf::save_desktop`]
+    /// [`super::main::cnx_get`] and by [`super::inf::app_save`]
     /// (`app_save`).
     pub g_cnxsave: CSave,
 }

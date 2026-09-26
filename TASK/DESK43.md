@@ -108,3 +108,14 @@ der Schnitt steht und der Anwender ihn gesehen hat.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Fortschritt
+
+| Einheit | Stand |
+|---|---|
+| U1 Instrument | **fertig** 2026-09-26 (`c141be2`) — Driftprobe 47, 12 Abweichungen gelistet |
+| ACC10 (Vorbedingung) | **fertig** 2026-09-26 (`814de2c`) |
+| U2 Zustandskanal | **fertig** 2026-09-26 — Beweispunkt 1 des Plans dabei **widerlegt** |
+| U3 Desktop endet (G1) | offen — als naechstes |
+| U4 Kernel loest sich | offen |
+| U5–U10 | nach dem Termin |

@@ -1,0 +1,39 @@
+--- /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/mod.rs.pristine	2026-09-26 10:50:09
++++ kernel/src/desk/mod.rs	2026-09-26 11:01:05
+@@ -38,10 +38,15 @@
+ pub mod model;
+ pub mod pro;
+ pub mod redraw;
++pub mod u2probe; // SCRATCH DESK43-U2
+ pub mod vdibind;
+ pub mod win;
+ 
+ use crate::kprintln;
++
++// SCRATCH DESK43-U2 measurement switches.
++const U2_SEED: bool = true;
++const U2_PROBE: bool = true;
+ 
+ use global::{Grect, MAX_DEPTH, WINDOW_STYLE};
+ 
+@@ -877,6 +882,9 @@
+     // every `send_redraw` → `post_msg(1, WM_REDRAW)` from a MOVE/SIZE/TOP/CLOSE/
+     // open-new-window drops silently and the window content only appears on the
+     // direct-draw boot / view-switch paths (the empty directory-window bug).
++    if U2_SEED {
++        u2probe::seed();
++    }
+     let ap_id = appl_init();
+     if ap_id < 0 {
+         kprintln!("[desk] appl_init failed — AES window redraws will be dropped");
+@@ -985,6 +993,10 @@
+         reopened
+     );
+ 
++    if U2_PROBE {
++        u2probe::probe();
++    }
++
+     // Hand off to the interaction loop. It returns when a handler set `done`
+     // — today only File → Execute EmuCON (`deskmain.c:750-753`), which asked
+     // the AES shell for the console with `shel_write(SHW_EXEC, …)` on its way

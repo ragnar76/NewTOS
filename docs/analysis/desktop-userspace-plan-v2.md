@@ -377,10 +377,20 @@ die Umgehungen zweimal am Leben erhalten hat (§6). Der Ersatz kommt zuerst,
 dann die Entfernung.
 
 **Was es beweist.**
-1. Headless raspi4b: Desktop hoch, Fenster öffnen, **A106-Restart** auslösen
+1. ~~Headless raspi4b: Desktop hoch, Fenster öffnen, **A106-Restart** auslösen
    (`shel_write(SHW_RESCHNG)`) — der neue Desktop kommt mit **denselben**
-   Fenstern aus dem Shell-Puffer, nicht aus der Datei. Screendump gegen den
-   Vorzustand.
+   Fenstern aus dem Shell-Puffer, nicht aus der Datei.~~
+   **WIDERLEGT bei der Umsetzung, 2026-09-26.** Der Shell-Puffer ueberlebt
+   einen A106-Neustart **nicht, und darf es nicht**: `aes_restart` nullt vor
+   jedem `gem_main` den ganzen `THEGLO` (`aes/gemstart.S:86,99-106`,
+   `size_theglo` = `sizeof(THEGLO)`, `aes/geminit.c:149-152`), und
+   `g_shelbuf` ist ein `THEGLO`-Mitglied (`aes/gemlib.h:129`). EmuTOS' Desktop
+   liest nach einem Aufloesungswechsel die **Datei**. Unser Baum machte das
+   bereits richtig und begruendet (`aes::reinit()` → `shell::reinit()`,
+   `tos-api/src/aes/shell.rs:801`) und wurde nicht angefasst.
+   **Der Kanal traegt ueber den Tod des Desktop-*Prozesses innerhalb einer
+   Sitzung* (Anwendungsstart), nicht ueber den Neustart der Sitzung.** Ersetzt
+   durch: Puffer nullen, `run_gem_app` fahren, Puffer danach wieder gefuellt.
 2. Kaltstart ohne `NEWDESK.INF`: unverändert Standardumgebung
    (`deskapp.c:833-834`).
 3. *Save desktop* schreibt weiter korrekt; `fsck_msdos` sauber.

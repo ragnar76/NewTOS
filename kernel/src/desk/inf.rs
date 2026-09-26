@@ -49,10 +49,43 @@ const INF_PATH: &str = "C:\\NEWDESK.INF";
 /// a few KiB; this guards a runaway read).
 const MAX_INF_BYTES: usize = 64 * 1024;
 
-/// Read the whole `NEWDESK.INF` into a heap buffer, or [`None`] if it cannot be
-/// opened (a missing file is **not** an error — the caller keeps defaults).
+/// `SIZE_SHELBUF` (`include/sysconf.h:74`, *"size of shell buffer — same as TOS
+/// 1.04→"*) — the capacity of the AES shell buffer [`super::shel_get`] /
+/// [`super::shel_put`] transfer. Matches `tos_api::aes::shell`'s own
+/// `SHELLBUF`, which is the buffer this number describes.
+const SIZE_SHELBUF: usize = 4192;
+
+/// `CPDATA_LEN` (`desk/deskapp.c:136`) — *"the number of bytes reserved for
+/// control panel use at the start of the shell buffer. these bytes are not
+/// modified by EmuDesk, and are (currently) not saved to the EMUDESK.INF
+/// file."* (`:131-135`).
+///
+/// This is a **desktop-side** convention layered on an opaque AES buffer, not
+/// an AES contract — the server has no knowledge of it
+/// (`docs/api/aes/shell-loop.md` §10). The `.INF` text therefore starts at
+/// offset 128 in the shell buffer, `app_save` round-trips the first 128 bytes
+/// unmodified (`:1123`, `:1293`), and the disk file never contains them
+/// (`:1297`).
+const CPDATA_LEN: usize = 128;
+
+/// `SIZE_SHELBUF-CPDATA_LEN-1` (`deskapp.c:688`) — the most `read_inf_file`
+/// will load, because it loads **into the shell buffer**, behind the
+/// control-panel prefix and leaving room for the terminating NUL.
+const MAX_INF_TEXT: usize = SIZE_SHELBUF - CPDATA_LEN - 1;
+
+/// `read_inf_file` (`deskapp.c:680-692`) — load `NEWDESK.INF` into the `.INF`
+/// half of the shell buffer, or [`None`] if it cannot be opened (a missing file
+/// is **not** an error — the caller falls through to `build_inf`).
+///
+/// EmuTOS reads at most [`MAX_INF_TEXT`] bytes (`dos_load_file(…,
+/// SIZE_SHELBUF-CPDATA_LEN-1, infbuf)`) and NUL-terminates what it got; the
+/// same bound holds here now that the buffer it reads into exists. A longer
+/// file is truncated exactly where EmuTOS truncates it — and `app_save`'s own
+/// overflow check (`:1276-1282`) keeps everything *we* write below it.
 fn read_inf_file() -> Option<Vec<u8>> {
-    read_file(INF_PATH).ok()
+    let mut bytes = read_file(INF_PATH).ok()?;
+    bytes.truncate(MAX_INF_TEXT);
+    Some(bytes)
 }
 
 /// `dos_load_file` (`util/gemdos.c:148-162`) for an arbitrary path: `Fopen`,
@@ -541,9 +574,13 @@ fn push_icon(out: &mut Vec<u8>, v: i16) {
 impl InfData {
     /// Serialise to the `NEWDESK.INF` byte grammar in `app_save`'s line order:
     /// `#R`, `#Z`, `#E`, `#Q`, all `#W`, then every `ANODE` line.
-    fn serialize(&self) -> Vec<u8> {
-        let mut out = Vec::new();
-
+    ///
+    /// Appends to `out`, which is EmuTOS's `outbuf` — the buffer that already
+    /// holds the [`CPDATA_LEN`]-byte control-panel prefix when [`app_save`]
+    /// calls this (`deskapp.c:1121-1124`). `out.len()` is therefore
+    /// `pcurr - outbuf`, which is the origin the `ANODE` loop's overflow check
+    /// measures from (`:1276`).
+    fn serialize_into(&self, out: &mut Vec<u8>) {
         // #R — always written at the current revision level (2).
         out.extend_from_slice(b"#R 02\r\n");
 
@@ -553,7 +590,7 @@ impl InfData {
         // character mode.
         if !self.autorun.is_empty() {
             out.extend_from_slice(b"#Z ");
-            push_hex2(&mut out, self.autorun_gem);
+            push_hex2(out, self.autorun_gem);
             out.push(b' ');
             out.extend_from_slice(self.autorun.as_bytes());
             out.extend_from_slice(b"@\r\n");
@@ -561,11 +598,11 @@ impl InfData {
 
         // #E — the video-mode bytes are informational only; written as 00 00.
         out.extend_from_slice(b"#E ");
-        push_hex2(&mut out, self.e1);
+        push_hex2(out, self.e1);
         out.push(b' ');
-        push_hex2(&mut out, self.e2);
+        push_hex2(out, self.e2);
         out.extend_from_slice(b" 00 00 ");
-        push_hex2(&mut out, self.e5);
+        push_hex2(out, self.e5);
         out.extend_from_slice(b"\r\n");
 
         // #Q — three (desktop, window) pattern/colour pairs.
@@ -574,9 +611,9 @@ impl InfData {
             if i > 0 {
                 out.push(b' ');
             }
-            push_hex2(&mut out, pair.0);
+            push_hex2(out, pair.0);
             out.push(b' ');
-            push_hex2(&mut out, pair.1);
+            push_hex2(out, pair.1);
         }
         out.extend_from_slice(b"\r\n");
 
@@ -587,7 +624,7 @@ impl InfData {
         out.extend_from_slice(b"#K");
         for k in self.shortcuts {
             out.push(b' ');
-            push_hex2(&mut out, k);
+            push_hex2(out, k);
         }
         out.extend_from_slice(b"\r\n");
 
@@ -595,7 +632,7 @@ impl InfData {
         for w in &self.windows {
             out.extend_from_slice(b"#W ");
             for v in [w.hsl, w.vsl, w.xc, w.yc, w.wc, w.hc] {
-                push_hex2(&mut out, v);
+                push_hex2(out, v);
                 out.push(b' ');
             }
             out.extend_from_slice(b"00 ");
@@ -605,18 +642,19 @@ impl InfData {
 
         // ANODE lines.
         for a in &self.anodes {
+            let line_start = out.len();
             out.push(b'#');
             out.push(a.tag);
             out.push(b' ');
             if a.is_desk {
-                push_hex2(&mut out, a.xspot);
+                push_hex2(out, a.xspot);
                 out.push(b' ');
-                push_hex2(&mut out, a.yspot);
+                push_hex2(out, a.yspot);
                 out.push(b' ');
             }
-            push_icon(&mut out, a.aicon);
+            push_icon(out, a.aicon);
             out.push(b' ');
-            push_icon(&mut out, a.dicon);
+            push_icon(out, a.dicon);
             out.push(b' ');
             if a.is_desk {
                 out.push(if a.letter == 0 { b' ' } else { a.letter });
@@ -633,15 +671,25 @@ impl InfData {
                 const HEX: &[u8; 16] = b"0123456789ABCDEF";
                 out.push(b' ');
                 out.push(HEX[(a.flags & 0x0F) as usize]);
-                push_hex2(&mut out, a.funkey);
+                push_hex2(out, a.funkey);
                 out.push(b' ');
                 out.extend_from_slice(a.pargs.as_bytes());
                 out.push(b'@');
             }
             out.extend_from_slice(b"\r\n");
-        }
 
-        out
+            // `if (pcurr-outbuf >= SIZE_SHELBUF) { … break; }`
+            // (`deskapp.c:1276-1282`) — the shell buffer is the hard limit on
+            // what a save can carry, and the `ANODE` list is the only
+            // unbounded part of the file. EmuTOS drops the line that crossed
+            // the boundary **whole** (it rewinds past the `\r\n` it just wrote
+            // to the end of the previous line) and stops; the disk copy is
+            // truncated with it, because `save_to_disk` gets the same buffer.
+            if out.len() >= SIZE_SHELBUF {
+                out.truncate(line_start);
+                break;
+            }
+        }
     }
 
     /// The built-in file-type default `ANODE`s (`desk_inf_data2`,
@@ -854,19 +902,6 @@ fn prefs_to_env(
 
 // ── Boot / runtime load + apply ─────────────────────────────────────────────
 
-/// Read `NEWDESK.INF` and apply it to the live desktop state
-/// (`app_start`'s INF-position apply loop + the env/background application).
-///
-/// Applies: the `#E` view/sort/size-to-fit, the `#Q` background (`g_patcol`),
-/// the `#M`/`#T`/`#O` desktop-icon grid positions (cached for `app_blddesk`),
-/// and the `#W` window rectangles (cached for `open_dir_window`). The parsed
-/// file is stashed in [`SESSION`] so a later Save preserves the file-type
-/// `ANODE`s and the confirm/format prefs. A missing file leaves every default
-/// in place and is **not** an error.
-///
-/// Must run **after** `app_start` (so `g_icw`/`g_ich` exist for the grid
-/// rounding) and **before** `win_view`/`app_blddesk` (so the view and icon
-/// positions take effect). Returns whether a file was actually loaded.
 /// Forget the parsed `.INF` of the session that has ended — the `inf` half of
 /// [`super::reset`] (A106). [`load_and_apply`] fills it again at the next
 /// desktop start; dropping it here means a file that has since disappeared
@@ -875,11 +910,67 @@ pub(super) fn reset() {
     *SESSION.lock() = None;
 }
 
+/// The bytes of a shell-buffer image up to its terminating NUL — EmuTOS's
+/// `infbuf` is a C string and every reader of it (`app_start`'s
+/// `while (*pcurr)`, `deskapp.c:845`) stops there, while the rest of the
+/// 4192-byte buffer still holds whatever the previous `shel_put` left.
+fn inf_text(buf: &[u8]) -> &[u8] {
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    &buf[..end]
+}
+
+/// Get the `.INF` image and apply it to the live desktop state — the
+/// acquisition half of `app_start` (`deskapp.c:808-841`) plus the env/
+/// background/INF-position apply loop (`:845-987`).
+///
+/// **The three-level fallback, in EmuTOS's order** (`:832-840`,
+/// `docs/api/aes/shell-loop.md` §10):
+///
+/// ```c
+/// shel_get(buf, SIZE_SHELBUF);                 /* :832 */
+/// inf_data = buf + CPDATA_LEN;                 /* :833 */
+/// if (!(bootflags & BOOTFLAG_SKIP_AUTO_ACC)
+///  && (inf_data[0] != '#'))                    /* :834-835 */
+///     read_inf_file(inf_data);                 /* :836 */
+/// if (inf_data[0] != '#')                      /* :839 */
+///     build_inf(inf_data, xcnt, ycnt);         /* :840 */
+/// ```
+///
+/// **shell-buffer memory → disk file → built-in defaults.** The memory image is
+/// what the dying desktop's `app_save(FALSE)` parked there ([`app_save`],
+/// `:1293`), so a desktop that is restarted inside one AES session comes back
+/// with the state it had, without touching the disk. The 128 bytes in front of
+/// it ([`CPDATA_LEN`]) are not part of the `.INF` text and are never inspected
+/// here.
+///
+/// Applies: the `#E` view/sort/size-to-fit, the `#Q` background (`g_patcol`),
+/// the `#M`/`#T`/`#O` desktop-icon grid positions (cached for `app_blddesk`),
+/// and the `#W` window rectangles (cached for `open_dir_window`). The parsed
+/// image is stashed in [`SESSION`] so a later Save preserves the file-type
+/// `ANODE`s and the confirm/format prefs.
+///
+/// Must run **after** `app_start` (so `g_icw`/`g_ich` exist for the grid
+/// rounding) and **before** `win_view`/`app_blddesk` (so the view and icon
+/// positions take effect). Returns `false` for "still no `.INF` data", i.e.
+/// EmuTOS's `:839` test — the caller then runs [`build_inf`] (`:840`).
+///
+/// **One divergence, unchanged by this unit and named rather than rationalised:**
+/// the `!(bootflags & BOOTFLAG_SKIP_AUTO_ACC)` term of `:834` is missing, so a
+/// Ctrl-held boot still reads the file. The flag is a BIOS global EmuTOS's
+/// desktop shares an address space with; NewTOS has it in
+/// `crate::launch::skip_auto_acc()`, which is a kernel symbol the desktop must
+/// not name on its way to EL0 (DESK43 §6.4), and there is no trap that carries
+/// it. Closing it needs that carrier first.
 pub(super) fn load_and_apply() -> bool {
-    let Some(bytes) = read_inf_file() else {
-        return false;
-    };
-    // `if (inf_data[0] != '#') build_inf(inf_data, …);` (`deskapp.c:833-834`).
+    // `buf = must_alloc_buf(SIZE_SHELBUF)` (`:808`) — the whole shell buffer,
+    // prefix included, because `shel_get` transfers from offset 0.
+    let mut buf = alloc::vec![0u8; SIZE_SHELBUF];
+    super::shel_get(&mut buf); // `shel_get(buf, SIZE_SHELBUF)` (`:832`)
+    // `inf_data = buf + CPDATA_LEN` (`:833`).
+    let mut inf_data: Vec<u8> = Vec::from(inf_text(&buf[CPDATA_LEN..]));
+
+    // `if (inf_data[0] != '#') read_inf_file(inf_data);` (`:834-836`).
+    //
     // EmuTOS decides "is there INF data?" on the **signature**, not on whether
     // a file exists — `shel_get` hands it a buffer either way, and a buffer
     // that does not start with `#` is not an INF. Our test image ships a
@@ -892,10 +983,17 @@ pub(super) fn load_and_apply() -> bool {
     // and they are not interchangeable — at boot the buffer may be a `shel_put`
     // image whose first line is any tag, whereas the Read path is validating a
     // file the user just picked out of a selector.
-    if bytes.first() != Some(&b'#') {
+    if inf_data.first() != Some(&b'#') {
+        if let Some(bytes) = read_inf_file() {
+            inf_data = bytes;
+        }
+    }
+
+    // `if (inf_data[0] != '#') build_inf(…);` (`:839-840`) — the caller's job.
+    if inf_data.first() != Some(&b'#') {
         return false;
     }
-    apply_inf_bytes(&bytes);
+    apply_inf_bytes(&inf_data);
     true
 }
 
@@ -1467,14 +1565,51 @@ fn collect_open_windows() -> Vec<InfWindow> {
     .unwrap_or_default()
 }
 
-/// Options → Save desktop: serialise the context save area + the live icon
-/// positions and write `NEWDESK.INF` — EmuTOS `app_save(TRUE)`. The caller runs
-/// `cnx_put()` first (`deskmain.c:889-893`, `SAVEITEM`). Returns whether the
-/// write succeeded.
-pub(super) fn save_desktop() -> bool {
+/// `app_save(todisk)` (`deskapp.c:1106-1299`) — *"save the current state of all
+/// the desktop options/icons/windows etc **to memory** and, optionally, to a
+/// file called EMUDESK.INF"*. Both callers run `cnx_put()` first
+/// (`deskmain.c:891` *Save desktop*, `:2154` the desktop epilog).
+///
+/// ```c
+/// outbuf = must_alloc_buf(SIZE_SHELBUF+MAX_SIZE_INF_LINE);
+/// shel_get(outbuf, CPDATA_LEN);            /* :1123 */
+/// inf_data = outbuf + CPDATA_LEN;          /* :1124 */
+/// …                                        /* :1128-1284, the INF text */
+/// *pcurr = 0x00;                           /* :1285 */
+/// len = pcurr - outbuf;                    /* :1290 */
+/// shel_put(outbuf, len+1);                 /* :1293 */
+/// if (todisk) save_to_disk(inf_data, len-CPDATA_LEN);   /* :1296-1297 */
+/// ```
+///
+/// The 128-byte control-panel prefix is pulled **out** of the shared buffer
+/// first and put back in front of the fresh text unchanged, so whatever a
+/// control panel left there survives every save; the disk file never contains
+/// it. `MAX_SIZE_INF_LINE` is EmuTOS's "one line of slack so the overflow check
+/// only has to run at end of line" — a `Vec` needs no such headroom, and the
+/// check itself is in [`InfData::serialize_into`].
+///
+/// Returns whether the disk write succeeded — NewTOS's addition for
+/// `SAVEITEM`'s alert; `app_save(FALSE)`, which writes no file, is always
+/// `true`.
+pub(super) fn app_save(todisk: bool) -> bool {
     let data = build_from_state();
-    let bytes = data.serialize();
-    let ok = write_inf_file(&bytes);
+
+    // `shel_get(outbuf, CPDATA_LEN)` (`:1123`) — round-trip **only** the
+    // prefix, then `inf_data = outbuf + CPDATA_LEN` (`:1124`).
+    let mut outbuf = alloc::vec![0u8; CPDATA_LEN];
+    super::shel_get(&mut outbuf);
+    data.serialize_into(&mut outbuf);
+    // `len = pcurr - outbuf` (`:1290`) is measured before the NUL; `shel_put`
+    // then stores `len+1` bytes, "also save terminating NUL" (`:1293`).
+    let len = outbuf.len();
+    outbuf.push(0);
+    super::shel_put(&outbuf);
+
+    // `if (todisk) save_to_disk(inf_data, len-CPDATA_LEN);` (`:1296-1297`).
+    if !todisk {
+        return true;
+    }
+    let ok = write_inf_file(&outbuf[CPDATA_LEN..len]);
     if ok {
         *SESSION.lock() = Some(data);
     }
@@ -3636,7 +3771,7 @@ pub(super) fn set_background() -> bool {
     // anyway — `cnx_put()` first (`deskmain.c:891,2154`) — so the `#W` lines
     // written here describe the windows that are actually on screen.
     super::main::cnx_put();
-    save_desktop();
+    app_save(true);
     true
 }
 
@@ -4245,8 +4380,11 @@ pub fn selftest() {
     });
     original.anodes.extend(InfData::default_type_anodes());
 
-    // (1) In-memory round-trip: serialize → parse → compare.
-    let bytes = original.serialize();
+    // (1) In-memory round-trip: serialize → parse → compare. The buffer starts
+    // empty rather than behind the `CPDATA_LEN` prefix `app_save` reserves —
+    // this is the file grammar under test, not the shell-buffer layout.
+    let mut bytes = Vec::new();
+    original.serialize_into(&mut bytes);
     let mem = parse_inf(&bytes);
     check("in-memory: #E view/sort/appdir/fullpath", env_to_state(mem.e1, mem.e5) == env_to_state(original.e1, original.e5));
     check(
@@ -4322,7 +4460,7 @@ pub fn selftest_install() {
     check("mem: funkey 7 is not taken by its owner", !funkey_owner(7, "C:\\HELLO.NCP"));
 
     // Persist to disk, then dump the written NEWDESK.INF so the #F line is visible.
-    let wrote = save_desktop();
+    let wrote = app_save(true);
     check("disk: write NEWDESK.INF", wrote);
     if let Some(bytes) = read_inf_file() {
         kprintln!("[desk-ins] ---- NEWDESK.INF ({} bytes) ----", bytes.len());

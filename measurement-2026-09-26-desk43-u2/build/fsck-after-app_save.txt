@@ -1,0 +1,7 @@
+# fsck_msdos -n on the raspi4b image after run4 (app_save(TRUE) wrote C:\NEWDESK.INF)
+** /dev/rdisk4s1
+** Phase 1 - Preparing FAT
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Orphan Clusters
+Warning: 56 files, 63700 KiB free (31850 clusters)
+rc=0

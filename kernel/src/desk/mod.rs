@@ -86,6 +86,8 @@ const OP_WIND_FIND: i16 = 106;
 const OP_WIND_UPDATE: i16 = 107;
 const OP_WIND_CALC: i16 = 108;
 const OP_SHEL_WRITE: i16 = 121;
+const OP_SHEL_GET: i16 = 122;
+const OP_SHEL_PUT: i16 = 123;
 const OP_SHEL_WDEF: i16 = 127;
 
 // wind_get/set `WF_*` fields and wind_calc `WC_*` types.
@@ -533,6 +535,41 @@ pub(super) fn shel_write(doex: i16, isgr: i16, iscr: i16, pcmd: *const u8, ptail
     a.addrin[0] = pcmd as i64;
     a.addrin[1] = ptail as i64;
     a.call(OP_SHEL_WRITE, 3, 1, 2);
+    a.intout[0]
+}
+
+/// `shel_get(pbuffer, len)` (122) — copy the first `pbuffer.len()` bytes of the
+/// AES shell buffer into `pbuffer` (`desk/gembind.c:918-923`,
+/// `AES_CTRL_CODE(SHEL_GET, 1, 1, 1)`; AES side `sh_get`,
+/// `aes/gemshlib.c:203-206`).
+///
+/// The buffer is `SIZE_SHELBUF = 4192` bytes of **opaque** memory the AES only
+/// `memcpy`s (`docs/api/aes/scrap-shell.md` §2, `docs/api/aes/shell-loop.md`
+/// §10): every convention about what lives in it — the 128-byte control-panel
+/// prefix, the `.INF` text behind it — belongs to the desktop, not the server.
+/// [`inf::load_and_apply`] is the `app_start` reader (`deskapp.c:832`) and
+/// [`inf::app_save`] the `app_save` one (`:1123`).
+///
+/// EmuTOS's `len` is a `WORD`; a slice longer than `i16::MAX` cannot be
+/// expressed in the ABI, so it is bounded here. Both callers pass at most
+/// `SIZE_SHELBUF`.
+pub(super) fn shel_get(pbuffer: &mut [u8]) -> i16 {
+    let mut a = Aes::new();
+    a.intin[0] = pbuffer.len().min(i16::MAX as usize) as i16;
+    a.addrin[0] = pbuffer.as_mut_ptr() as i64;
+    a.call(OP_SHEL_GET, 1, 1, 1);
+    a.intout[0]
+}
+
+/// `shel_put(pdata, len)` (123) — write `pdata` into the front of the AES shell
+/// buffer (`desk/gembind.c:926-931`, `AES_CTRL_CODE(SHEL_PUT, 1, 1, 1)`; AES
+/// side `sh_put`, `aes/gemshlib.c:213-216`). The write half of the state
+/// channel [`shel_get`] reads back — [`inf::app_save`] (`deskapp.c:1293`).
+pub(super) fn shel_put(pdata: &[u8]) -> i16 {
+    let mut a = Aes::new();
+    a.intin[0] = pdata.len().min(i16::MAX as usize) as i16;
+    a.addrin[0] = pdata.as_ptr() as i64;
+    a.call(OP_SHEL_PUT, 1, 1, 1);
     a.intout[0]
 }
 

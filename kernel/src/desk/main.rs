@@ -1104,19 +1104,27 @@ fn run_gem_app(path: &[u8], tail: &[u8]) -> bool {
 /// windows the program's own had to composite against. The single-tasking
 /// decision is that a launched application owns the **whole** screen.
 fn desktop_relinquish() {
-    // `cnx_put()` — the first statement of the EmuTOS epilog
-    // (`deskmain.c:2154`), so the window layout the desktop is about to give up
-    // is in `G.g_cnxsave`. Its `app_save(FALSE)` companion, which parks the
-    // whole INF image in the AES shell buffer, has no counterpart yet: NewTOS's
-    // `NEWDESK.INF` goes to and from the file directly, with no
-    // `shel_get`/`shel_put` memory image in between.
+    // `cnx_put(); app_save(FALSE);` — the EmuTOS epilog's first two statements
+    // (`deskmain.c:2154-2155`), in that order.
     //
-    // This is what [`desktop_resume`]'s `cnx_get()` reads the windows back
-    // from, exactly as EmuTOS's restarted `deskmain` does (`deskmain.c:2055`):
-    // since DESK35 the `wm_init()` below deletes them for real, so the context
-    // save area is the *only* place their paths, rectangles and scroll
-    // positions survive the program.
+    // `cnx_put()` puts the window layout the desktop is about to give up into
+    // `G.g_cnxsave`; that is what [`desktop_resume`]'s `cnx_get()` reads the
+    // windows back from, exactly as EmuTOS's restarted `deskmain` does
+    // (`deskmain.c:2055`). Since DESK35 the `wm_init()` below deletes them for
+    // real, so the context save area is the only place their paths, rectangles
+    // and scroll positions survive the program.
+    //
+    // `app_save(FALSE)` then serialises that same state into the **AES shell
+    // buffer** (`shel_put`, `deskapp.c:1293`) — the channel that carries the
+    // desktop's state over its own death, because `G.g_cnxsave` only lives as
+    // long as the desktop does. Our desktop resumes in place instead of being
+    // restarted (gap G1, `desk/mod.rs`'s `run` note), so today nothing reads
+    // this image back; EmuTOS's restarted `deskmain` picks it up in
+    // `app_start` (`:832`). Writing it here is not speculative — it is the
+    // statement `deskmain.c:2155` runs at this point, and the unit that makes
+    // the desktop a process that ends is the one that gains the reader.
     cnx_put();
+    super::inf::app_save(false);
     // Remove the desktop menu bar (EmuTOS `menu_bar(NULL,0)`). Our AES
     // `menu_bar(tree, 0)` needs the real (non-null) tree to erase the strip.
     super::menu_bar(menu::tree_ptr(), 0);
@@ -1898,7 +1906,7 @@ fn do_read_inf() {
 /// desk_busy_off();` (`deskmain.c:888-893`). Reports failure through an alert.
 fn do_save_desktop() {
     cnx_put();
-    if !super::inf::save_desktop() {
+    if !super::inf::app_save(true) {
         dir::fun_alert(1, b"Could not save the desktop file.");
         // AES `form_alert` (fun_alert) bb_save/restores the screen — no repaint.
     }
