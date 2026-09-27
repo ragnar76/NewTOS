@@ -310,6 +310,25 @@ pub struct Process {
     /// at all (see `finish_terminate`).
     pub parent_frame_full: AtomicBool,
 
+    /// [`Self::parent_frame`] is the trap frame of a **`Pexec` caller** — an
+    /// `svc` that has not returned yet and whose result is the child's exit
+    /// code (`docs/api/gemdos/process/4b-pexec.md`, "Trap interface":
+    /// "`PE_LOADGO (0)` … the child's `xterm` delivers the child's exit code
+    /// … as *this* call's return value via the parent's saved trap frame";
+    /// EmuTOS `bdos/proc.c:601-618`). Set by `handle_pexec` for every launch
+    /// it redirects, **whichever exception level the caller trapped from**:
+    /// the whole register file has to come back, because the caller's
+    /// compiler assumed an `svc` preserves the callee-saved registers, and
+    /// `x0` has to carry the exit code.
+    ///
+    /// Distinct from [`Self::parent_frame_full`], which is the adopted
+    /// kernel-park of a terminating desk accessory: that frame is restored in
+    /// full **without** the exit code (its `svc` re-executes), and consuming
+    /// it also disarms the park. The two are never set together, and a
+    /// `parent_frame` with neither flag is the partial kernel-launch triple
+    /// the EL0-entry helper writes.
+    pub parent_frame_pexec: AtomicBool,
+
     // ── cooperative scheduler (Phase 06 EC4 / `sched`) ──
     /// Full EL0 context saved when this process yields via `Pwait`
     /// (so the round-robin can resume it exactly where it left off).
@@ -687,6 +706,7 @@ impl Process {
             parent_frame: ParentFrame::zeroed(),
             parent_l0_pa: AtomicU64::new(0),
             parent_frame_full: AtomicBool::new(false),
+            parent_frame_pexec: AtomicBool::new(false),
             saved_frame: ParentFrame::zeroed(),
             saved_fp: FpContext::zeroed(),
             runnable: AtomicBool::new(false),
@@ -937,6 +957,7 @@ pub fn free_slot(idx: usize) {
     p.parent_frame.clear();
     p.parent_l0_pa.store(0, Ordering::Release);
     p.parent_frame_full.store(false, Ordering::Release);
+    p.parent_frame_pexec.store(false, Ordering::Release);
     // Drop the slot out of the cooperative run-set: an accessory slot is
     // admitted by the loader and would otherwise stay a `pick_next` candidate
     // after the process behind it is gone (ACC02/ACC03).

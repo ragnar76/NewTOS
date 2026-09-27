@@ -1,0 +1,42 @@
+DESK46 -- Laufbedingungen
+=========================================================================
+
+Basis:    branch desk-rebuild, HEAD 4d00e83 ("docs(task): DESK46 - console
+          programs freeze from EmuCON, and flash white from the desktop").
+Aenderung am gemeinsamen Baum: method/product-desk46.diff -- zwei Dateien,
+          kernel/src/arch/aarch64/exceptions.rs und tos-api/src/bdos/process.rs.
+          Sonst wurde am gemeinsamen Baum nur dieses Messverzeichnis und
+          TASK/DESK46-STATUS-DONE.MD angelegt.
+
+Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts committet,
+kein `git checkout/restore/clean/stash/reset`; /Volumes/BOOT nicht beruehrt.
+docs/STATUS.md, TASK/DESK46.md, TASK/DESK43.md und der Plan unberuehrt.
+Die gesamte Instrumentierung liegt auf SCRATCH-Kopien des Baums unter dem
+Job-Scratchpad, nie im gemeinsamen Baum; die SD-Abbilder ebenso und sind
+geloescht. Kein *.img in diesem Verzeichnis.
+
+Maschine: QEMU 11.0.2.
+  raspi4b: -M raspi4b -no-reboot -display none -serial file:<log>
+           -drive file=<sd>,if=sd,format=raw -qmp unix:<sock>
+           Bildschirmgeometrie laut Startprotokoll 640x480.
+  virt:    -M virt,gic-version=2 -cpu cortex-a72 -m 272M -device ramfb
+           -device qemu-xhci -device usb-kbd -device usb-mouse
+           -display none -serial file:<log> -no-reboot
+           (kernel8.img fuer dieses Board von Hand mit llvm-objcopy aus
+            target/aarch64-unknown-none-softfloat/debug/kernel erzeugt --
+            `xtask build --board qemu-virt` schreibt kein kernel8.img,
+            und ein `cargo clean -p kernel` davor, sonst greift der in
+            [[cargo-xtask-board-target-footgun]] beschriebene Fehlgriff.)
+
+Host: macOS (Darwin 27). Kein `timeout` vorhanden -- die QEMU-Laeufe sind
+durch method/qmp_multi.py begrenzt (es beendet die VM per QMP `quit`), die
+qemu-virt-Rauchprobe durch einen Hintergrund-`sleep` + `kill`.
+
+Kartenabbild: tools/make-sd-image.sh <img> 64, danach method/sd-prep.sh
+(NEWDESK.INF aus method/newdesk-d46.inf, C:\D46\SYSINFO.NCP als Kopie von
+C:\SYSINFO.NCP). \AUTO\HELLO.NCP des Standardabbilds blieb an Ort und Stelle;
+es laeuft vor dem Desktop und ist in jedem Protokoll als Slot 0 zu sehen.
+
+Bauprofil: dev (nicht --release), weil die Messung headless in QEMU laeuft und
+kein Zeitverhalten misst ausser der 200-Hz-Tickdifferenz aus Abschnitt
+"Befund 1" der README, die von der Optimierstufe nicht abhaengt.

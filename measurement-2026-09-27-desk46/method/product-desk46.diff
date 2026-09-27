@@ -1,0 +1,183 @@
+diff --git a/kernel/src/arch/aarch64/exceptions.rs b/kernel/src/arch/aarch64/exceptions.rs
+index cdcc8ac..189b527 100644
+--- a/kernel/src/arch/aarch64/exceptions.rs
++++ b/kernel/src/arch/aarch64/exceptions.rs
+@@ -873,6 +873,12 @@ fn adopt_kernel_park_as_parent(slot: usize) {
+     tos_api::bdos::process::PROCESS_TABLE[slot]
+         .parent_frame_full
+         .store(true, Ordering::Release);
++    // …and it is explicitly *not* a `Pexec` caller's frame: the two
++    // classifications are mutually exclusive, and the one that writes the
++    // frame states both (DESK46).
++    tos_api::bdos::process::PROCESS_TABLE[slot]
++        .parent_frame_pexec
++        .store(false, Ordering::Release);
+ }
+ 
+ /// Restore the parked EL1 kernel client over `frame` and disarm the park —
+@@ -1168,47 +1174,62 @@ fn finish_terminate(
+     let pf = &tos_api::bdos::process::PROCESS_TABLE[resume.parent_frame_slot]
+         .parent_frame;
+     let pf_spsr = pf.spsr().load(Ordering::Acquire);
+-    let from_el0 = (pf_spsr & 0xF) == 0;
+ 
+     // Copy the parent's frame snapshot over the current trap frame.
+     // After this, the post-handler asm restore + eret resumes the
+     // parent at exactly the state captured when `Pexec` redirected
+-    // EL0 (or, for the kernel-launch path, at the EL1 resume PC the
++    // it (or, for the kernel-launch path, at the EL1 resume PC the
+     // EL0-entry helper stamped into `parent_frame.elr`).
+     //
+-    // SPSR.M discriminates the two cases:
+-    //   * `EL0t` (= 0b0000) — Phase 06 D3 `Pexec`: the parent is a
+-    //     real EL0 process. Full register restore so the parent's
+-    //     `x0..x29 / lr / sp_el0` are exactly what they were at the
+-    //     `Pexec` SVC, with `gpr[0]` overwritten to the child's
+-    //     exit code.
+-    //   * `EL1t` (= 0b0100) — kernel-launch (Phase 05 EC4 / D3 / D6
+-    //     selftests): the "parent" is the test driver function.
+-    //     **Only** restore `elr` / `sp_el0` / `spsr`. The kernel
+-    //     resume function's epilogue restores its callee-saved
+-    //     regs (x29, x30, …) from the local stack frame; copying
+-    //     zeros into `gpr` would clobber `x29` and crash the
+-    //     post-resume frame-pointer chain.
+-    //   * `EL1t` **with** [`parent_frame_full`] — a desk accessory that
+-    //     terminated (ACC03). Its "parent" is the EL1 kernel client whose
+-    //     whole trap frame was copied in when the accessory was switched to,
+-    //     and whose `svc` is about to re-execute: restore the registers too,
+-    //     and do **not** write the exit code over `x0` (that would replace the
+-    //     GEM-trap selector and the re-entered trap would dispatch nothing).
++    // Which of the three kinds of `parent_frame` this is, is recorded by
++    // whoever wrote it — **not** derived from `SPSR.M`, because two of the
++    // three are `EL1t` (DESK46):
++    //
++    //   * [`parent_frame_pexec`] — a `Pexec` caller's trap frame, written by
++    //     [`handle_pexec`] for every launch it redirects. Full register
++    //     restore, so the caller's `x0..x29 / lr / sp_el0` are exactly what
++    //     they were at the `Pexec` SVC, with `gpr[0]` overwritten to the
++    //     child's exit code (`docs/api/gemdos/process/4b-pexec.md`,
++    //     "Trap interface"; EmuTOS `bdos/proc.c:601-618`). This holds for an
++    //     **EL1** caller as much as for an EL0 one: an `svc` preserves the
++    //     callee-saved registers as far as its caller's compiler is
++    //     concerned, and the only EL1 caller — EmuCON's `run` command,
++    //     [`crate::shell`] — kept the UART base and its own buffers in
++    //     `x19`…`x28` across the trap and read them back as the child's
++    //     zeroes. Before DESK46 this arm was gated on `SPSR.M == EL0t` and
++    //     that case fell through to the partial restore below.
++    //   * [`parent_frame_full`] — a desk accessory that terminated (ACC03).
++    //     Its "parent" is the EL1 kernel client whose whole trap frame was
++    //     copied in when the accessory was switched to, and whose `svc` is
++    //     about to **re-execute**: restore the registers too, but do *not*
++    //     write the exit code over `x0` (that would replace the GEM-trap
++    //     selector and the re-entered trap would dispatch nothing). Consuming
++    //     the frame also disarms the kernel park.
++    //   * neither — the kernel-launch path (Phase 05 EC4 / D3 / D6 selftests,
++    //     `crate::launch`): the "parent" is a kernel function and only
++    //     `elr` / `sp_el0` / `spsr` were written. **Only** those are
++    //     restored; the resume function's epilogue restores its callee-saved
++    //     registers from its own stack frame, and copying zeroes into `gpr`
++    //     would clobber `x29` and crash the post-resume frame-pointer chain.
+     //
+     // [`parent_frame_full`]: tos_api::bdos::process::Process::parent_frame_full
++    // [`parent_frame_pexec`]: tos_api::bdos::process::Process::parent_frame_pexec
+     let full = tos_api::bdos::process::PROCESS_TABLE[resume.parent_frame_slot]
+         .parent_frame_full
+         .swap(false, Ordering::AcqRel);
+-    if from_el0 || full {
++    let pexec_caller = tos_api::bdos::process::PROCESS_TABLE
++        [resume.parent_frame_slot]
++        .parent_frame_pexec
++        .swap(false, Ordering::AcqRel);
++    if pexec_caller || full {
+         for i in 0..30 {
+             frame.gpr[i] = pf.gpr(i).load(Ordering::Acquire);
+         }
+         frame.lr = pf.lr().load(Ordering::Acquire);
+-        if from_el0 {
+-            // Exit code lands in parent's `x0` per the GEMDOS Pexec
++        if pexec_caller {
++            // Exit code lands in the caller's `x0` per the GEMDOS Pexec
+             // ABI. Overwrite gpr[0] *after* the bulk copy so the
+-            // parent's pre-trap value doesn't shadow it.
++            // caller's pre-trap value doesn't shadow it.
+             frame.gpr[0] = rc as i64 as u64;
+         }
+     }
+@@ -1693,11 +1714,16 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
+         return;
+     }
+ 
+-    // Launch path (PE_LOADGO / PE_GO): redirect EL0 to the child.
+-    // Snapshot the parent's full trap frame into the child slot's
+-    // `parent_frame`. Pterm's full-frame restore (when SPSR.M=EL0t)
+-    // brings the parent back to exactly this state, with `gpr[0]`
+-    // overwritten to the child's exit code.
++    // Launch path (PE_LOADGO / PE_GO): redirect execution to the child.
++    // Snapshot the caller's full trap frame into the child slot's
++    // `parent_frame` and mark it as a `Pexec` caller's frame, so
++    // [`finish_terminate`]'s full-frame restore brings the caller back to
++    // exactly this state with `gpr[0]` overwritten to the child's exit code.
++    // The mark is what makes that restore independent of the exception level
++    // the caller trapped from (DESK46): an EL1 caller — EmuCON's `run`
++    // command — needs its callee-saved registers back just as much as an EL0
++    // one, and `SPSR.M` cannot tell its frame from the partial kernel-launch
++    // triple, which is `EL1t` too.
+     let pf = &tos_api::bdos::process::PROCESS_TABLE[child.slot]
+         .parent_frame;
+     for i in 0..30 {
+@@ -1707,6 +1733,9 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
+     pf.elr().store(frame.elr, Ordering::Release);
+     pf.spsr().store(frame.spsr, Ordering::Release);
+     pf.sp_el0().store(frame.sp_el0, Ordering::Release);
++    tos_api::bdos::process::PROCESS_TABLE[child.slot]
++        .parent_frame_pexec
++        .store(true, Ordering::Release);
+ 
+     // Stamp the child slot's `parent_l0_pa` with the parent's
+     // current `TTBR0_EL1`. Pterm's TTBR0 restore lands here on
+diff --git a/tos-api/src/bdos/process.rs b/tos-api/src/bdos/process.rs
+index 78afe2c..feb8eec 100644
+--- a/tos-api/src/bdos/process.rs
++++ b/tos-api/src/bdos/process.rs
+@@ -310,6 +310,25 @@ pub struct Process {
+     /// at all (see `finish_terminate`).
+     pub parent_frame_full: AtomicBool,
+ 
++    /// [`Self::parent_frame`] is the trap frame of a **`Pexec` caller** — an
++    /// `svc` that has not returned yet and whose result is the child's exit
++    /// code (`docs/api/gemdos/process/4b-pexec.md`, "Trap interface":
++    /// "`PE_LOADGO (0)` … the child's `xterm` delivers the child's exit code
++    /// … as *this* call's return value via the parent's saved trap frame";
++    /// EmuTOS `bdos/proc.c:601-618`). Set by `handle_pexec` for every launch
++    /// it redirects, **whichever exception level the caller trapped from**:
++    /// the whole register file has to come back, because the caller's
++    /// compiler assumed an `svc` preserves the callee-saved registers, and
++    /// `x0` has to carry the exit code.
++    ///
++    /// Distinct from [`Self::parent_frame_full`], which is the adopted
++    /// kernel-park of a terminating desk accessory: that frame is restored in
++    /// full **without** the exit code (its `svc` re-executes), and consuming
++    /// it also disarms the park. The two are never set together, and a
++    /// `parent_frame` with neither flag is the partial kernel-launch triple
++    /// the EL0-entry helper writes.
++    pub parent_frame_pexec: AtomicBool,
++
+     // ── cooperative scheduler (Phase 06 EC4 / `sched`) ──
+     /// Full EL0 context saved when this process yields via `Pwait`
+     /// (so the round-robin can resume it exactly where it left off).
+@@ -687,6 +706,7 @@ impl Process {
+             parent_frame: ParentFrame::zeroed(),
+             parent_l0_pa: AtomicU64::new(0),
+             parent_frame_full: AtomicBool::new(false),
++            parent_frame_pexec: AtomicBool::new(false),
+             saved_frame: ParentFrame::zeroed(),
+             saved_fp: FpContext::zeroed(),
+             runnable: AtomicBool::new(false),
+@@ -937,6 +957,7 @@ pub fn free_slot(idx: usize) {
+     p.parent_frame.clear();
+     p.parent_l0_pa.store(0, Ordering::Release);
+     p.parent_frame_full.store(false, Ordering::Release);
++    p.parent_frame_pexec.store(false, Ordering::Release);
+     // Drop the slot out of the cooperative run-set: an accessory slot is
+     // admitted by the loader and would otherwise stay a `pick_next` candidate
+     // after the process behind it is gone (ACC02/ACC03).

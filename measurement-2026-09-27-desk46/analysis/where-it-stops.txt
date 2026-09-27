@@ -1,0 +1,136 @@
+DESK46 -- Befund 2: wo es stehenbleibt, und warum
+=================================================================
+
+Alles hier stammt aus serial/B3-serial.log (Produktpfad, Kernel OHNE den Fix,
+nur Injektor + Registerabzug) und aus der Disassemblierung des dazugehoerigen
+ELF (target/aarch64-unknown-none-softfloat/debug/kernel im Scratchbaum).
+Reproduzierbar: method/make_scratch_d46.sh mit method/runB.rs, danach
+`D46_HOLD=600 python3 method/desk46_patch.py <scratch> noshell` und
+`python3 method/desk46_probe2.py <scratch>` auf einem Baum OHNE
+method/product-desk46.diff.
+
+
+1. DAS PROTOKOLL
+-----------------------------------------------------------------
+    [exec] preparing program (slot 2)
+    [exec] launching
+    SYSINFO: ... (die vollstaendige Ausgabe des Programms)
+    SYSINFO: done.
+    [d46] finish_terminate: slot=2 from_el0=0 full=0 pf.spsr=0x80000004 rc=0
+    [d46]   child frame : x19=0x0000000000000000 x29=0x0000000000000000
+                          lr=0x0000000000001010 elr=0x0000000000001018
+    [d46]   parent saved: x19=0xffff000000149fd5 x29=0xffff000000338b40
+                          lr=0xffff0000000d1b50 elr=0xffff0000000d2288
+    [program exited]
+    C:\
+    [EXC] synchronous (non-SVC) exception (Data Abort (same EL)):
+          ESR=0x0000000096000004 ELR=0xffff0000000d1b68 SPSR=0x0000000060000004
+    [EXC] FAR=0x0000000000000000
+    [EXC] x19..x29 = 0, lr=0xffff0000000d1b50, sp_el0=0xffff000000338870
+
+ESR 0x96000004: EC=0x25 (Data Abort, gleiche EL), WnR=0 (Lesen),
+DFSC=0b000100 (Translation fault, Level 0) -- ein Lesezugriff auf Adresse 0.
+`unhandled` (kernel/src/arch/aarch64/exceptions.rs:1827-1874 vor dem Fix,
+:1856-1903 danach) druckt und ruft
+`halt()`. **Das ist das Einfrieren**: die CPU parkt, die Tastatur ist tot, die
+Karte bekommt nichts mehr zu sehen. Auf dem Bildschirm bleibt genau das
+stehen, was screendumps/b5-frozen-console.png zeigt -- die Programmausgabe,
+`[program exited]`, und eine abgebrochene Eingabeaufforderung `C:\`.
+
+
+2. DIE STELLE, AN DER DIE CPU STEHT
+-----------------------------------------------------------------
+addr2line auf 0xffff0000000d1b68:
+
+    kernel::shell::prompt::{closure#0}   kernel/src/shell.rs:265
+    ...::Iterator>::position::<...>      core/src/slice/iter/macros.rs:384
+    kernel::shell::prompt                kernel/src/shell.rs:265
+    kernel::shell::run_console           kernel/src/shell.rs:22
+
+Disassemblierung (alles in `run_console` inline):
+
+    ffff0000000d2284: svc  #0x1          <- EmuCONs Pexec (x8 = 0x4B)
+    ffff0000000d2288: tbnz x0, #0x3f     <- Ruecksprungstelle = pf.elr
+    ...
+    ffff0000000d1b4c: bl   memset
+    ffff0000000d1b50: add  x0, sp, #0xc8
+    ffff0000000d1b54: mov  w8, #0x47     <- Dgetpath
+    ffff0000000d1b5c: svc  #0x1
+    ffff0000000d1b60: cbnz x0, ...
+    ffff0000000d1b64: mov  x8, xzr
+    ffff0000000d1b68: ldrb w9, [x25, x8] <- FAULT, x25 = 0
+
+`x25` traegt den Zeiger auf den Pfadpuffer, den `prompt()`
+(kernel/src/shell.rs:258-271) laengenbestimmt. Es ist ein *callee-saved*
+Register, das der Uebersetzer ueber den `svc` hinweg lebend gehalten hat --
+zu Recht: ein `svc` erhaelt aus Sicht seines Aufrufers die callee-saved
+Register.
+
+
+3. WARUM x25 NULL IST
+-----------------------------------------------------------------
+`finish_terminate` (exceptions.rs:1168-1222 vor dem Fix, :1154-1239 danach) hat den Ruecksprung
+aus dem Kind so gefahren:
+
+    let from_el0 = (pf_spsr & 0xF) == 0;
+    ...
+    if from_el0 || full { <alle 30 gpr + lr zurueck>; if from_el0 { gpr[0]=rc } }
+
+`from_el0 = 0` (der Aufrufer ist EmuCON auf EL1, SPSR.M = 0b0100 = EL1t) und
+`full = 0` -- `parent_frame_full` setzt **nur**
+`adopt_kernel_park_as_parent` (der Accessory-Fall, ACC03), `handle_pexec`
+setzt es nie. Also wurde **kein einziges** GPR zurueckgeschrieben: gesetzt
+wurden nur `elr`, `spsr` und `sp_el0`. Der Rahmen, mit dem `eret` ausfaehrt,
+ist damit noch der des **Kindes** bei seinem `Pterm` -- und ein EL0-Programm,
+das gerade fertig ist, hat x19..x29 auf 0.
+
+Das steht wortwoertlich in den beiden Zeilen des Protokolls oben: `child
+frame` sind die Werte, mit denen EmuCON weiterlaeuft, `parent saved` die, die
+es haette bekommen muessen.
+
+Zwei Folgen, beide belegt:
+  a) der erste Zugriff ueber ein callee-saved Register nach dem `svc` liest
+     aus dem Nichts. Welches Register es trifft, haengt an der
+     Registerbelegung; **dass** es eines trifft, nicht -- drei Laeufe, drei
+     Stellen, dieselbe Ursache:
+       serial/B-serial.log   0xffff000000133d54  `ldr x9, [x0]`  x0 = 0
+                             in `<i64 as Display>::fmt` (unser `{}`-Marker)
+       serial/B2-serial.log  0xffff0000000d2360  `ldr w11, [x28]` x28 = 0
+                             (PL011-Basis im eingebetteten `kprintln`)
+       serial/B3-serial.log  0xffff0000000d1b68  `ldrb w9, [x25, x8]` x25 = 0
+                             -- **der Produktpfad**: `&buf` in `prompt()`.
+     B3 ist der Lauf ohne jeden eigenen Marker in `shell.rs`; dort laeuft das
+     Produkt genau so weit wie beim Anwender (`[program exited]`, dann eine
+     halbe Eingabeaufforderung) und faellt dann um.
+  b) `frame.gpr[0] = rc` lief nur im `from_el0`-Arm. Ein EL1-Aufrufer bekam
+     also nie den Beendigungscode des Kindes, sondern das, was das Kind
+     zufaellig in x0 stehen liess. Im Lauf ist das 0 und faellt nicht auf;
+     `docs/api/gemdos/process/4b-pexec.md` ("Trap interface": das Ergebnis
+     ist bei Modus 0/4/6 der Beendigungscode, geliefert ueber den
+     gespeicherten Trap-Rahmen des Aufrufers) verlangt es trotzdem.
+
+
+4. WER SONST NOCH BETROFFEN WAER
+-----------------------------------------------------------------
+Es gibt genau **einen** EL1-Aufrufer des GEMDOS-`Pexec`-Traps:
+`kernel::shell::cmd_run` (kernel/src/shell.rs:120-137) ueber
+`kernel::shell::pexec` (:331-347) -- EmuCONs `run`-Kommando. Der Desktop und
+der `\AUTO\`-Lauf gehen **nicht** hier durch: `crate::launch::
+run_program_with_tail_rc` ruft `pexec::load` direkt und faehrt ueber
+`enter_el0_with_resume_capture` (kernel/src/launch.rs:8-13, :135-150), also
+ueber den Teilrestore, fuer den er gebaut ist. Belegt in serial/A2-serial.log:
+dort meldet `finish_terminate` fuer beide Programme (`\AUTO\HELLO.NCP` und
+`C:\D46\SYSINFO.NCP`) `pexec_caller=0 full=0`.
+
+
+5. SEIT WANN
+-----------------------------------------------------------------
+Kein U3-Rueckschritt. `git log -S"if from_el0 || full {" --
+kernel/src/arch/aarch64/exceptions.rs` nennt 03394c2 ("feat(aes): NewTOS can
+run desk accessories"), und der `if from_el0`-Gate davor ist aelter
+(`git show 03394c2^:kernel/src/arch/aarch64/exceptions.rs`, Zeile 937). U3
+(e0069e5) und U4 (5a485be) fassen weder `exceptions.rs` noch `process.rs`
+noch `shell.rs` an (`git show --stat`). EmuCONs `run` gab es lange vorher
+(a3c4329); erreichbar war es vor U3 ueber `sh_run_pending_console` und ist es
+seit U3 ueber `sh_ldapp`s `CONSOLE_APP`-Arm -- der Weg dorthin hat sich
+geaendert, der Defekt am Ende nicht.

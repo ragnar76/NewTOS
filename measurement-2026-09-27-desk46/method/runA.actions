@@ -1,0 +1,14 @@
+# DESK46 run A -- finding 1: double-click C:\D46\SYSINFO.NCP on the desktop.
+# The icon centre (64,124) is the single file in the window the INF opens,
+# measured in measurement-2026-09-26-desk43-u3 (screendumps/locate-desktop.png)
+# and re-confirmed by this run's own A_IDLE screendump.
+100 parkbr
+600 mark A_IDLE
+900 move 64 124
+1100 mark B_ON_ICON
+1300 down
+1303 up
+1308 down
+1311 up
+1500 mark C_CLICKED
+7000 mark D_END

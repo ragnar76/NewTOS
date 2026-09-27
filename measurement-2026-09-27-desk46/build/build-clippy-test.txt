@@ -1,0 +1,29 @@
+# DESK46 — Bauen, clippy, Hosttests, Driftprobe (gemeinsamer Baum, HEAD 4d00e83 + die DESK46-Aenderung)
+
+## cargo build, frisch je Board (cargo clean -p kernel -p tos-api davor)
+### --board rpi4
+warning: `tos-api` (lib) generated 64 warnings
+warning: `kernel` (lib) generated 94 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 1.63s
+### --board qemu-virt
+warning: `tos-api` (lib) generated 64 warnings
+warning: `kernel` (lib) generated 94 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.81s
+## cargo clippy --features board-rpi4
+warning: `tos-api` (lib) generated 80 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `tos-api` (lib) generated 80 warnings (80 duplicates)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+## cargo clippy --features board-qemu-virt
+warning: `tos-api` (lib) generated 80 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `tos-api` (lib) generated 80 warnings (80 duplicates)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+## cargo run -p xtask -- test
+Lauf 1: passed=635 failed=1 ignored=0 -- `sched_pexec_parent_suspend`
+        (`blocking_child_never_yields_to_its_own_parent`), der in TASK/T11
+        beschriebene Flake; die Laeufe brechen danach ab, daher 635.
+        Protokoll: build/xtask-test-T11-flake.log
+Lauf 2: passed=956 failed=0 ignored=1   (build/xtask-test-run1.log)
+Lauf 3: passed=956 failed=0 ignored=1   (build/xtask-test-run2.log)
+Basis:  956 / 0 / 1
+## sh tools/desk-drift-probe.sh
+DRIFT-PROBE TOTAL: 32   (Basis 32, unveraendert)

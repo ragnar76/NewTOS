@@ -1,6 +1,6 @@
 # DESK46 — Konsolenprogramme nach U3: Bildschirm blitzt weiss, und aus EmuCON heraus friert es ein
 
-Status: **OFFEN** · Prioritaet: **P1** · Typ: Belegter Defekt — Pi-Runde 2026-09-26
+Status: **BEHOBEN — Pi-Gegenprobe offen** (2026-09-27) · Prioritaet: **P1** · Typ: Belegter Defekt — Pi-Runde 2026-09-26
 
 Abhaengigkeiten: [DESK43](DESK43.md) U3/U4 (`e0069e5`, `5a485be`) — der Konsolenarm wurde dort umgebaut
 
@@ -74,3 +74,64 @@ eingefrorenes System nach einem Konsolenprogramm ist genau das.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss (2026-09-27)
+
+### Befund 1: **kein Defekt** — das Ticket schrumpfte auf Befund 2
+
+Der Textschirm wird betreten **und** das Programm kommt zum Zeichnen.
+Screendump im Augenblick, in dem `SYSINFO.NCP` fertig ist und bevor
+`sh_chgrf` zurueckschaltet: alle sieben Ausgabezeilen stehen da
+(`screendumps/a3-3-console.png`).
+
+**Dauer gemessen statt geschaetzt**, 200-Hz-Marken an `sh_chgrf`:
+`want=0` bei `t=4333`, `want=1` bei `t=4338` — **5 Ticks = 25 ms**, Programmlauf
+und Ausgabe inbegriffen. Das ist die Folge der Anwenderentscheidung vom
+2026-09-26 (`console_pause_for_key` entfaellt). **Nichts repariert.**
+
+### Befund 2: ein Defekt, aelter als U3, und behoben
+
+Headless im **Produktpfad** reproduziert (Ctrl-Z = die `#K`-Abkuerzung von
+*File → Execute EmuCON*, gleiche Route wie der Klick): `run sysinfo.ncp` →
+volle Ausgabe → die Eingabeaufforderung bricht nach `C:\` ab.
+
+**Die Tastaturfrage des Tickets ist beantwortet: nein.** Der Kernel nimmt einen
+Daten-Abort (`ESR=0x96000004`, `FAR=0`) und parkt in `unhandled` → `halt()`.
+Als Ersatz fuer den Maus-Trenner diente ein Herzschlag aus **derselben
+Schleife, die die Taste lesen wuerde** — er endet mit dem `[EXC]`.
+
+**Ursache, an der Maschine belegt:** `finish_terminate` stellte die Register des
+Eltern-Rahmens nur unter `if from_el0 || full` her, und `parent_frame_full`
+setzt **nur** `adopt_kernel_park_as_parent` (Accessory, ACC03), `handle_pexec`
+nie. EmuCON ruft den `Pexec`-Trap **aus EL1** — also traf keiner der Arme:
+`elr`/`spsr`/`sp_el0` kamen zurueck, **kein einziges GPR**. EmuCON lief mit dem
+Registersatz des Kindes weiter (x19…x29 = 0), und der erste Zugriff ueber ein
+callee-saved Register las aus Adresse 0. Drei Laeufe, drei verschiedene
+Register, dieselbe Ursache.
+
+Zweite, stillere Folge: `frame.gpr[0] = rc` lief ebenfalls nur im
+`from_el0`-Arm — ein EL1-Aufrufer bekam **nie** den Beendigungscode, den
+`docs/api/gemdos/process/4b-pexec.md` verlangt.
+
+**Kein U3-Rueckschritt und nicht PORT05.** Das `if from_el0`-Gate ist aelter als
+`03394c2`; U3 und U4 fassen `exceptions.rs`, `process.rs` und `shell.rs` nicht
+an. PORT05s `suspend_`/`resume_parent_of_child` laufen hier korrekt — der Fehler
+sitzt eine Ebene tiefer, im Registerrestore.
+
+**Fix:** neues Kennzeichen `Process::parent_frame_pexec` — gesetzt von
+`handle_pexec` fuer **jeden** umgeleiteten Start, gleich von welcher
+Ausnahmestufe; `adopt_kernel_park_as_parent` setzt es ausdruecklich auf `false`;
+`finish_terminate` entscheidet an den zwei Kennzeichen statt an `SPSR.M`. Grund
+fuer das eigene Kennzeichen: es gibt **drei** Arten von `parent_frame` und zwei
+davon sind `EL1t` — genau daran hing der Defekt.
+
+**Nachweis:** derselbe Lauf mit Fix geht durch bis `[program exited]`, Prompt,
+`ver` antwortet, `exit` bringt den Desktop; **0** `EXC`/`PANIC`. Der Desktop-
+und AUTO-Startweg bleibt unveraendert (`pexec_caller=0 full=0`).
+
+Basislinien 956/0/1 (dreimal), 64/94 beide Boards, 80/125 beide Feature-Saetze,
+Driftprobe 32.
+
+**Pi-Gegenprobe:** EmuCON per Tastatur, `run c:\sysinfo.ncp` → **vollstaendige**
+Eingabeaufforderung `C:\…>`, die auf Tasten antwortet; `exit` bringt den
+Desktop neu gezeichnet zurueck.

@@ -1,0 +1,82 @@
+# DESK46 run B -- finding 2: Ctrl-Z (File -> Execute EmuCON, #K slot 12 = 'Z')
+# opens the console; `pwd`, then `run sysinfo.ncp`, then `ver` (does the
+# console still answer?), then `exit`.
+# IKBD scancodes (US table, kernel/src/keymap.rs): ctrl 1D  z 2C  p 19  w 11
+# d 20  r 13  u 16  n 31  space 39  s 1F  y 15  i 17  f 21  o 18  . 34  c 2E
+# e 12  v 2F  x 2D  t 14  CR 1C ; break = make | 0x80.
+100 parkbr
+600 mark A_IDLE
+800 key 1d
+805 key 2c
+810 key ac
+815 key 9d
+1200 mark B_CONSOLE
+# pwd
+1400 key 19
+1405 key 99
+1410 key 11
+1415 key 91
+1420 key 20
+1425 key a0
+1430 key 1c
+1435 key 9c
+1700 mark C_PWD
+# run sysinfo.ncp
+1900 key 13
+1905 key 93
+1910 key 16
+1915 key 96
+1920 key 31
+1925 key b1
+1930 key 39
+1935 key b9
+1940 key 1f
+1945 key 9f
+1950 key 15
+1955 key 95
+1960 key 1f
+1965 key 9f
+1970 key 17
+1975 key 97
+1980 key 31
+1985 key b1
+1990 key 21
+1995 key a1
+2000 key 18
+2005 key 98
+2010 key 34
+2015 key b4
+2020 key 31
+2025 key b1
+2030 key 2e
+2035 key ae
+2040 key 19
+2045 key 99
+2100 mark D_TYPED_RUN
+2200 key 1c
+2205 key 9c
+2600 mark E_AFTER_RUN_2S
+3600 mark F_AFTER_RUN_7S
+# ver -- if the console still reads keys, this answers
+3800 key 2f
+3805 key af
+3810 key 12
+3815 key 92
+3820 key 13
+3825 key 93
+3830 key 1c
+3835 key 9c
+4200 mark G_AFTER_VER
+# exit
+4400 key 12
+4405 key 92
+4410 key 2d
+4415 key ad
+4420 key 17
+4425 key 97
+4430 key 14
+4435 key 94
+4440 key 1c
+4445 key 9c
+4900 mark H_AFTER_EXIT
+6900 mark I_END
