@@ -60,7 +60,7 @@ pub fn mount() -> usize {
         None => return 0,
     };
     let mut sec0 = [0u8; 512];
-    if !blk.read_blocks(0, &mut sec0) {
+    if blk.read_blocks(0, &mut sec0).is_err() {
         return 0;
     }
 
@@ -97,7 +97,7 @@ pub fn mount() -> usize {
             // Bounded by MAX_DRIVES iterations to defend against a loop.
             for _ in 0..MAX_DRIVES {
                 let mut buf = [0u8; 512];
-                if !blk.read_blocks(ebr as u64, &mut buf)
+                if blk.read_blocks(ebr as u64, &mut buf).is_err()
                     || buf[510] != 0x55
                     || buf[511] != 0xAA
                 {

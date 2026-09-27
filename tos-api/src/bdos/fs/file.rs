@@ -270,7 +270,12 @@ pub fn fcreate(args: &TrapArgs) -> Long {
     if !dir::write_slot(&vol, parent, dir_slot, &fcb) {
         return EACCDN;
     }
-    super::cache::flush();
+    // A device error while the new directory entry goes to the card is the
+    // call's result, not a silent success: EmuTOS' `longjmp_rwabs` unwinds
+    // `xcreat` with the BIOS code (`bdos/fs.h:60`, `_dispatcher.md` §8).
+    if let Err(code) = super::cache::flush() {
+        return code;
+    }
 
     let slot = match table().iter().position(Option::is_none) {
         Some(s) => s,
@@ -325,7 +330,11 @@ pub fn fread(args: &TrapArgs) -> Long {
     for _ in 0..skip {
         match vol.fat_entry(cluster) {
             Some(n) if !vol.is_eoc(n) => cluster = n,
-            _ => return 0, // chain ended early
+            // A chain that ends early is a short read (0 bytes); a chain
+            // walk that failed because the *device* failed is a hard error
+            // and carries the BIOS code (`EREADF`), the way EmuTOS' FAT
+            // walk unwinds through `longjmp_rwabs` (`bdos/fs.h:60`).
+            _ => return super::cache::take_error().unwrap_or(0),
         }
     }
 
@@ -362,6 +371,12 @@ pub fn fread(args: &TrapArgs) -> Long {
     }
 
     ofd.pos += done;
+    // A read that stopped on a device error reports the error, not a short
+    // count (`docs/api/gemdos/file/3f-fread.md` §"Error conditions": an
+    // underlying disk read failure surfaces as the BIOS code, `EREADF`).
+    if let Some(code) = super::cache::take_error() {
+        return code;
+    }
     done as Long
 }
 
@@ -443,7 +458,19 @@ pub fn fwrite(args: &TrapArgs) -> Long {
     if done > 0 {
         ofd.dirty = true;
     }
-    super::cache::flush();
+    // Write-back of everything this call dirtied. Its code wins over the
+    // byte count: EmuTOS never returns a short count for a hard error, it
+    // unwinds with `EWRITF` (`bdos/fs.h:60`).
+    if let Err(code) = super::cache::flush() {
+        return code;
+    }
+    // ...and a loop that stopped early because the *device* failed is the
+    // same hard error, not the "disk full" short count
+    // (`docs/api/gemdos/file/40-fwrite.md` §"Error conditions": disk-full is
+    // a short count, a media fault is a BIOS code).
+    if let Some(code) = super::cache::take_error() {
+        return code;
+    }
     done as Long
 }
 
@@ -553,7 +580,9 @@ pub fn fdelete(args: &TrapArgs) -> Long {
         None => return EFILNF,
     };
     erase_entry(&vol, parent, slot, entry.cluster);
-    super::cache::flush();
+    if let Err(code) = super::cache::flush() {
+        return code;
+    }
     E_OK
 }
 
@@ -676,7 +705,9 @@ pub fn fattrib(args: &TrapArgs) -> Long {
     if !dir::write_slot(&vol, parent, slot, &e) {
         return EACCDN;
     }
-    super::cache::flush();
+    if let Err(code) = super::cache::flush() {
+        return code;
+    }
     mode as Long
 }
 
@@ -779,7 +810,9 @@ pub fn frename(args: &TrapArgs) -> Long {
     if entry.attrib & dir::FA_SUBDIR != 0 && parent1 != parent2 && !fix_dotdot(&vol1, entry.cluster, parent2) {
         return EINTRN;
     }
-    super::cache::flush();
+    if let Err(code) = super::cache::flush() {
+        return code;
+    }
     E_OK
 }
 
@@ -862,7 +895,9 @@ pub fn fdatime(args: &TrapArgs) -> Long {
             core::ptr::copy_nonoverlapping(p as *const u8, e.as_mut_ptr().add(0x16), 4);
         }
         dir::write_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &e);
-        super::cache::flush();
+        if let Err(code) = super::cache::flush() {
+            return code;
+        }
     }
     E_OK
 }
@@ -907,14 +942,22 @@ pub fn fclose(args: &TrapArgs) -> Long {
             // Flush the directory entry (size / start cluster) if writes
             // changed it, then write back dirty cached sectors. A `Fdup`
             // redirect entry holds no file, so it is just released.
+            let mut err = E_OK;
             if let Some(Slot::File(ofd)) = s {
                 if ofd.dirty {
                     flush_ofd(ofd);
                 }
-                super::cache::flush();
+                // The close is where the file's length and time reach the
+                // card. A failure here means the file on the card is not
+                // the file the application wrote, so it is the result of
+                // `Fclose` — the handle is released either way, exactly as
+                // EmuTOS' `xclose` runs its buffer flush before returning.
+                if let Err(code) = super::cache::flush() {
+                    err = code;
+                }
             }
             *s = None;
-            E_OK
+            err
         }
         _ => EIHNDL,
     }

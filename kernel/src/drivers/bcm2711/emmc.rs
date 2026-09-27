@@ -82,6 +82,115 @@ const INT_ERR_DTO: u32 = 1 << 20; // Data Timeout Error
 const INT_ERR_DCRC: u32 = 1 << 21; // Data CRC Error
 const INT_ERR_DEND: u32 = 1 << 22; // Data End Bit Error
 
+// ── R1 card status (SD Phys 9.10 Table 4-42, `docs/hardware/emmc-sd.md`
+// §5) ────────────────────────────────────────────────────────────────
+//
+// An R1 response carries the card's own verdict on the command. The
+// controller's `INTERRUPT` register says nothing about it: a command the
+// card *refuses* still completes on the bus without a single error bit
+// (audit finding 3 drove exactly that — a write past the end of the card
+// returned `Ok(())` with `INTERRUPT = 0`).
+//
+// Listed below are the entries whose *Type* column in Table 4-42 contains
+// `E` (error bit); status entries (`CURRENT_STATE`, `READY_FOR_DATA`,
+// `APP_CMD`, `CARD_IS_LOCKED`, `CARD_ECC_DISABLED`, `ERASE_RESET`,
+// `FX_EVENT`) are deliberately **not** here — they are not failures.
+
+/// Bit 31 — "The command's argument was out of the allowed range for this
+/// card." (Table 4-42)
+const R1_OUT_OF_RANGE: u32 = 1 << 31;
+/// Bit 30 — "A misaligned address which did not match the block length was
+/// used in the command."
+const R1_ADDRESS_ERROR: u32 = 1 << 30;
+/// Bit 29 — "The transferred block length is not allowed for this card, or
+/// the number of transferred bytes does not match the block length."
+const R1_BLOCK_LEN_ERROR: u32 = 1 << 29;
+/// Bit 28 — "An error in the sequence of erase commands occurred."
+const R1_ERASE_SEQ_ERROR: u32 = 1 << 28;
+/// Bit 27 — "An invalid selection of write-blocks for erase occurred."
+const R1_ERASE_PARAM: u32 = 1 << 27;
+/// Bit 26 — "Set when the host attempts to write to a protected block or to
+/// the temporary write protected card or write protected until power cycle
+/// card or permanent write protected card."
+const R1_WP_VIOLATION: u32 = 1 << 26;
+/// Bit 24 — "Set when a sequence or password error has been detected in
+/// lock/unlock card command."
+const R1_LOCK_UNLOCK_FAILED: u32 = 1 << 24;
+/// Bit 23 — "The CRC check of the previous command failed."
+const R1_COM_CRC_ERROR: u32 = 1 << 23;
+/// Bit 22 — "Command not legal for the card state".
+const R1_ILLEGAL_COMMAND: u32 = 1 << 22;
+/// Bit 21 — "Card internal ECC was applied but failed to correct the data."
+const R1_CARD_ECC_FAILED: u32 = 1 << 21;
+/// Bit 20 — "Internal card controller error".
+const R1_CC_ERROR: u32 = 1 << 20;
+/// Bit 19 — "A general or an unknown error occurred during the operation."
+const R1_ERROR: u32 = 1 << 19;
+/// Bit 16 — "The read only section of the CSD does not match the card
+/// content" / an attempt to reverse copy or permanent-WP bits.
+const R1_CSD_OVERWRITE: u32 = 1 << 16;
+/// Bit 15 — "Set when only partial address space was erased due to existing
+/// write protected blocks …".
+const R1_WP_ERASE_SKIP: u32 = 1 << 15;
+/// Bit 3 — "Error in the sequence of the authentication process".
+const R1_AKE_SEQ_ERROR: u32 = 1 << 3;
+
+/// Every Type-`E` bit of Table 4-42 — a non-zero AND means the card
+/// refused or failed the command.
+const R1_ERROR_MASK: u32 = R1_OUT_OF_RANGE
+    | R1_ADDRESS_ERROR
+    | R1_BLOCK_LEN_ERROR
+    | R1_ERASE_SEQ_ERROR
+    | R1_ERASE_PARAM
+    | R1_WP_VIOLATION
+    | R1_LOCK_UNLOCK_FAILED
+    | R1_COM_CRC_ERROR
+    | R1_ILLEGAL_COMMAND
+    | R1_CARD_ECC_FAILED
+    | R1_CC_ERROR
+    | R1_ERROR
+    | R1_CSD_OVERWRITE
+    | R1_WP_ERASE_SKIP
+    | R1_AKE_SEQ_ERROR;
+
+/// The R1 error bits the driver counts by name, in [`R1_BIT_NAMES`] order.
+const R1_BIT_MASKS: [u32; 15] = [
+    R1_OUT_OF_RANGE,
+    R1_ADDRESS_ERROR,
+    R1_BLOCK_LEN_ERROR,
+    R1_ERASE_SEQ_ERROR,
+    R1_ERASE_PARAM,
+    R1_WP_VIOLATION,
+    R1_LOCK_UNLOCK_FAILED,
+    R1_COM_CRC_ERROR,
+    R1_ILLEGAL_COMMAND,
+    R1_CARD_ECC_FAILED,
+    R1_CC_ERROR,
+    R1_ERROR,
+    R1_CSD_OVERWRITE,
+    R1_WP_ERASE_SKIP,
+    R1_AKE_SEQ_ERROR,
+];
+
+/// Names of the counted R1 error bits, in [`R1_BIT_MASKS`] order.
+pub const R1_BIT_NAMES: [&str; 15] = [
+    "OUT_OF_RANGE",
+    "ADDRESS_ERROR",
+    "BLOCK_LEN_ERROR",
+    "ERASE_SEQ_ERROR",
+    "ERASE_PARAM",
+    "WP_VIOLATION",
+    "LOCK_UNLOCK_FAILED",
+    "COM_CRC_ERROR",
+    "ILLEGAL_COMMAND",
+    "CARD_ECC_FAILED",
+    "CC_ERROR",
+    "ERROR",
+    "CSD_OVERWRITE",
+    "WP_ERASE_SKIP",
+    "AKE_SEQ_ERROR",
+];
+
 /// The error bits that belong to the **command** line — SD-HC §3.10.1 asks
 /// for `Software Reset For CMD Line` when one of these is set.
 const INT_ERR_CMD_MASK: u32 = INT_ERR_CTO | INT_ERR_CCRC | INT_ERR_CEND | INT_ERR_CBAD;
@@ -406,6 +515,10 @@ static ERR_TIMEOUT_PHASE: [AtomicU32; Phase::COUNT] =
     [const { AtomicU32::new(0) }; Phase::COUNT];
 static ERR_RECOVERIES: AtomicU32 = AtomicU32::new(0);
 static ERR_NONRECOVERABLE: AtomicU32 = AtomicU32::new(0);
+static ERR_R1_TOTAL: AtomicU32 = AtomicU32::new(0);
+static ERR_R1_LAST: AtomicU32 = AtomicU32::new(0);
+static ERR_R1_BIT_COUNT: [AtomicU32; R1_BIT_MASKS.len()] =
+    [const { AtomicU32::new(0) }; R1_BIT_MASKS.len()];
 /// Print failures on the console? Off while [`init`] probes the controller
 /// bases — a slot without a card answers every response command with a
 /// command timeout, and that is the probe doing its job.
@@ -437,6 +550,13 @@ pub struct ErrorStats {
     /// Recoveries after which Command Inhibit was still set — SD-HC
     /// §3.10.1's "Non-recoverable Error".
     pub nonrecoverable: u32,
+    /// Commands the **card** rejected: R1 responses carrying at least one
+    /// Type-`E` bit of SD Phys Table 4-42 (audit finding 3).
+    pub card_errors: u32,
+    /// The card status word of the most recent rejected command.
+    pub last_card_status: u32,
+    /// How often each named R1 error bit was seen, in [`R1_BIT_NAMES`] order.
+    pub card_bits: [u32; R1_BIT_MASKS.len()],
 }
 
 /// A snapshot of the driver's error bookkeeping. Cheap: plain relaxed loads.
@@ -449,10 +569,15 @@ pub fn error_stats() -> ErrorStats {
         timeouts: ERR_TIMEOUT_TOTAL.load(Ordering::Relaxed),
         recoveries: ERR_RECOVERIES.load(Ordering::Relaxed),
         nonrecoverable: ERR_NONRECOVERABLE.load(Ordering::Relaxed),
+        card_errors: ERR_R1_TOTAL.load(Ordering::Relaxed),
+        last_card_status: ERR_R1_LAST.load(Ordering::Relaxed),
         ..ErrorStats::default()
     };
     for (i, c) in ERR_BIT_COUNT.iter().enumerate() {
         s.bits[i] = c.load(Ordering::Relaxed);
+    }
+    for (i, c) in ERR_R1_BIT_COUNT.iter().enumerate() {
+        s.card_bits[i] = c.load(Ordering::Relaxed);
     }
     for (i, c) in ERR_TIMEOUT_PHASE.iter().enumerate() {
         s.timeouts_by_phase[i] = c.load(Ordering::Relaxed);
@@ -578,6 +703,39 @@ fn note_failure(phase: Phase, status: u32, timed_out: bool) {
     crate::kprintln!("");
 }
 
+/// Evaluate an **R1 card status** word and report what the card said —
+/// audit finding 3 (`docs/api/hw/emmc-audit.md` §4), the bit table is
+/// `docs/hardware/emmc-sd.md` §5 (SD Phys 9.10 Table 4-42).
+///
+/// `cmd_index` is the SD command number, only used for the console line.
+/// Returns `Err(BlockError::Card)` when any Type-`E` bit is set: the card
+/// has refused or failed the command, whatever the controller's
+/// `INTERRUPT` register says.
+fn check_r1(cmd_index: u32, status: u32) -> Result<(), BlockError> {
+    if status & R1_ERROR_MASK == 0 {
+        return Ok(());
+    }
+    ERR_R1_TOTAL.fetch_add(1, Ordering::Relaxed);
+    ERR_R1_LAST.store(status, Ordering::Relaxed);
+    for (i, mask) in R1_BIT_MASKS.iter().enumerate() {
+        if status & mask != 0 {
+            ERR_R1_BIT_COUNT[i].fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    if REPORT_ERRORS.load(Ordering::Relaxed) {
+        crate::kprint!("[emmc] CMD{} rejected by card: status=0x{:08x}", cmd_index, status);
+        for (i, mask) in R1_BIT_MASKS.iter().enumerate() {
+            if status & mask != 0 {
+                crate::kprint!(" {}", R1_BIT_NAMES[i]);
+            }
+        }
+        // CURRENT_STATE (bits 12:9) says which state the card was in when
+        // it received the command — Table 4-42, entry 12:9.
+        crate::kprintln!(" (state {})", (status >> 9) & 0xF);
+    }
+    Err(BlockError::Card)
+}
+
 impl Emmc {
     /// Poll until `(rd(off) & mask) == 0` within `phase`'s time budget.
     /// On expiry the failure is recorded and the controller is recovered
@@ -639,12 +797,29 @@ impl Emmc {
     ///    the controller is blocked and that is reported as §3.10.1's
     ///    "Non-recoverable Error".
     fn recover(phase: Phase, status: u32) {
+        Self::recover_inner(phase, status, phase.on_dat_line())
+    }
+
+    /// [`Emmc::recover`] with the abort command suppressed — for the case
+    /// where the **card** rejected the command (its R1 carried an error
+    /// bit) rather than the transfer breaking. The card never left transfer
+    /// state, so there is no data transaction on its side to abort; all
+    /// that is stuck is the controller's data state machine, and
+    /// `Software Reset For DAT Line` is defined to clear exactly that:
+    /// SD-HC 3.00 §2.2.15 lists "Buffer Data Port", "Buffer Read Enable",
+    /// "Buffer Write Enable", "Command Inhibit (DAT)" and "DAT Line Active"
+    /// among the bits it clears (`docs/hardware/emmc-sd.md` §1 CONTROL1).
+    fn recover_no_abort(phase: Phase) {
+        Self::recover_inner(phase, 0, false)
+    }
+
+    fn recover_inner(phase: Phase, status: u32, abort: bool) {
         ERR_RECOVERIES.fetch_add(1, Ordering::Relaxed);
         // §3.10.1 (4): save and clear the interrupt status. Saved already —
         // `note_failure` has it (finding 12) — so the W1C here loses
         // nothing and leaves no stale bit for the next command to trip on.
         wr(INTERRUPT, rd(INTERRUPT));
-        if phase.on_dat_line() {
+        if abort {
             Self::abort_transaction();
         }
         Self::soft_reset(phase.resets(status));
@@ -671,17 +846,34 @@ impl Emmc {
     /// controller to clear them again (SD-HC §2.2.15). A reset that does not
     /// complete is not reported here — the Command Inhibit check in
     /// [`Emmc::recover`] is what decides recoverable vs. not.
+    ///
+    /// **One bit per write.** SD-HC §3.10.1 lists the two resets as two
+    /// steps ("Software Reset For CMD Line", then "Software Reset For DAT
+    /// Line"), and so does the abort sequence of §3.8; issuing them in one
+    /// write is an optimisation the specification never asks for. It is
+    /// also one a host controller may not implement: QEMU's SDHCI model
+    /// decodes the reset byte with an **exact-match** `switch`
+    /// (`hw/sd/sdhci.c:1150-1170`, v11.0.2 — `case SDHC_RESET_CMD:` /
+    /// `case SDHC_RESET_DATA:`), so a write with both bits set matches no
+    /// case and resets *nothing*, silently: the bits live in the upper byte
+    /// of `CLKCON`, which the model does not store, so they read back as 0
+    /// and the wait below reports a completed reset that never happened.
+    /// Driven: with both bits in one write the controller stayed at
+    /// `STATUS=0x01ff0506` (Command Inhibit (DAT) + DAT Line Active) after
+    /// every recovery and no further sector access succeeded.
     fn soft_reset(bits: u32) {
-        if bits == 0 {
-            return;
-        }
-        wr(CONTROL1, rd(CONTROL1) | bits);
-        let mut budget = Budget::new(RECOVERY_MS);
-        while rd(CONTROL1) & bits != 0 {
-            if budget.expired() {
-                return;
+        for one in [C1_SRST_CMD, C1_SRST_DATA] {
+            if bits & one == 0 {
+                continue;
             }
-            core::hint::spin_loop();
+            wr(CONTROL1, (rd(CONTROL1) & !(C1_SRST_CMD | C1_SRST_DATA)) | one);
+            let mut budget = Budget::new(RECOVERY_MS);
+            while rd(CONTROL1) & one != 0 {
+                if budget.expired() {
+                    break;
+                }
+                core::hint::spin_loop();
+            }
         }
     }
 
@@ -826,6 +1018,27 @@ impl Emmc {
         Ok(())
     }
 
+    /// The `ARG1` value that addresses block `lba` on this card.
+    ///
+    /// SDHC/SDXC take a **block number**, SDSC a **byte address**
+    /// (`docs/hardware/emmc-sd.md` §3, `CCS`) — and both are a single
+    /// 32-bit command argument. An `lba` whose address does not fit is
+    /// refused here instead of being truncated: `(lba as u32) * 512`
+    /// wrapped silently in a release build, which would have put the
+    /// transfer on a **different, valid** sector of the card. Found while
+    /// driving the finding-3 probe, which is the first caller that ever
+    /// reached the arithmetic with a large `lba`.
+    fn card_address(&self, lba: u64) -> Result<u32, BlockError> {
+        if self.sdhc.load(Ordering::Relaxed) {
+            u32::try_from(lba).map_err(|_| BlockError::OutOfRange)
+        } else {
+            u32::try_from(lba)
+                .ok()
+                .and_then(|b| b.checked_mul(SECTOR_SIZE as u32))
+                .ok_or(BlockError::OutOfRange)
+        }
+    }
+
     /// Read one 512-byte block at `lba` into `buf` (PIO).
     fn read_one(&self, lba: u64, buf: &mut [u8]) -> Result<(), BlockError> {
         if !self.ready.load(Ordering::Acquire) {
@@ -834,15 +1047,18 @@ impl Emmc {
         if !Self::wait_clear(STATUS, SR_DAT_INHIBIT, Phase::DatInhibit) {
             return Err(BlockError::Timeout);
         }
-        // SDHC addresses by block; SDSC by byte.
-        let addr = if self.sdhc.load(Ordering::Relaxed) {
-            lba as u32
-        } else {
-            (lba as u32) * SECTOR_SIZE as u32
-        };
+        let addr = self.card_address(lba)?;
         wr(BLKSIZECNT, (1 << 16) | SECTOR_SIZE as u32);
-        let resp0 = self.command(READ_SINGLE, addr)?;
-        let _ = resp0;
+        // The card answers CMD17 with R1 **before** the data phase, so a
+        // refusal (address past the end of the card, internal error) is
+        // visible here — and only here (finding 3). A refused command has
+        // no data phase: returning without aborting would leave the next
+        // wait to run its full budget for data that never comes.
+        let status = self.command(READ_SINGLE, addr)?;
+        if let Err(e) = check_r1(17, status) {
+            Self::recover_no_abort(Phase::ReadRdy);
+            return Err(e);
+        }
         Self::wait_interrupt(INT_READ_RDY, Phase::ReadRdy)?;
         for word in buf.chunks_exact_mut(4) {
             let w = rd(DATA);
@@ -860,13 +1076,16 @@ impl Emmc {
         if !Self::wait_clear(STATUS, SR_DAT_INHIBIT, Phase::DatInhibit) {
             return Err(BlockError::Timeout);
         }
-        let addr = if self.sdhc.load(Ordering::Relaxed) {
-            lba as u32
-        } else {
-            (lba as u32) * SECTOR_SIZE as u32
-        };
+        let addr = self.card_address(lba)?;
         wr(BLKSIZECNT, (1 << 16) | SECTOR_SIZE as u32);
-        self.command(WRITE_SINGLE, addr)?;
+        // Same as the read side: CMD24's R1 arrives before the data phase.
+        // This is the check whose absence let a write past the end of the
+        // card report success (audit finding 3, driven).
+        let status = self.command(WRITE_SINGLE, addr)?;
+        if let Err(e) = check_r1(24, status) {
+            Self::recover_no_abort(Phase::WriteRdy);
+            return Err(e);
+        }
         Self::wait_interrupt(INT_WRITE_RDY, Phase::WriteRdy)?;
         for word in buf.chunks_exact(4) {
             wr(DATA, u32::from_le_bytes([word[0], word[1], word[2], word[3]]));

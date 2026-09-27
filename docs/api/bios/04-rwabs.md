@@ -453,7 +453,12 @@ the SD partitions are assigned from **C:** upward (`drive.rs:14-15,71`).
 - **`0x7FFF`-sector chunking:** not needed — transfers loop one 512-byte block
   at a time (`emmc.rs:343-346,353-356`); no signed-WORD count limit.
 - **Error codes:** invalid/unmounted drive → `EUNDEV`; out-of-range sector →
-  `ESECNF`; driver failure → `EREADF`/`EWRITF` (`bios/mod.rs:77,93,111-115`).
+  `ESECNF`; driver failure → **the driver's own code, passed through**, as in
+  EmuTOS `blkdev_rwabs` (`bios/blkdev.c:512-523`). Since HW03 the block
+  interface carries a TOS code instead of a `bool`, so the card's refusal
+  (R1 error bit) and a broken transfer arrive as `EWRITF`/`EREADF`, a wait
+  that ran out as `EDRVNR`, and a block outside the card's address space as
+  `ESECNF` (`docs/hardware/emmc-sd.md` §5).
   The invalid-BPB (`recsiz==0`) `ESECNF` guard is **not** in `Rwabs` here —
   FAT32/exFAT rejection happens in `Getbpb` (see `07-getbpb.md`), and `Rwabs`
   does no BPB lookup, so a logical `Rwabs` on a FAT32 partition transfers raw

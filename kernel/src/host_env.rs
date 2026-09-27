@@ -388,19 +388,59 @@ impl Host for KernelHost {
 #[cfg(feature = "board-rpi4")]
 struct KernelBlock;
 
+/// Translate a driver failure into the TOS error code the BIOS block
+/// interface is defined in terms of — the same mapping EmuTOS' own SD
+/// driver makes in `bios/sd.c` (table in `docs/hardware/emmc-sd.md` §5).
+///
+/// Before HW03 this function did not exist: the driver's `Result` was
+/// flattened to a `bool` here, which is where every device error stopped
+/// (audit finding 5). `write` selects between the write and the read
+/// fault code exactly as `sd_rw` does with `rw & RW_RW` (`sd.c:188`).
+#[cfg(feature = "board-rpi4")]
+fn block_error_code(e: crate::hal::block::BlockError, write: bool) -> tos_types::Long {
+    use crate::hal::block::BlockError;
+    use tos_types::error::{EDRVNR, EREADF, ESECNF, EUNDEV, EWRITF};
+    match e {
+        // "error but not timeout" — the card refused the command, or the
+        // transfer broke on the bus (`sd.c:187-190`). EmuTOS makes no
+        // distinction between the two here.
+        BlockError::Card | BlockError::Io => {
+            if write {
+                EWRITF
+            } else {
+                EREADF
+            }
+        }
+        // A wait ran out of time, or there is no card: `sd.c:195` and
+        // `sd.c:172-173`. Both are "drive not ready" for a card that
+        // cannot report a media change.
+        BlockError::Timeout | BlockError::NotReady => EDRVNR,
+        // The block is not on this device: EmuTOS' own range check answers
+        // a sector past the unit with `ESECNF` (`bios/blkdev.c:488-490`).
+        BlockError::OutOfRange => ESECNF,
+        // A request this device cannot serve at all — the code
+        // `blkdev_rwabs` gives an unusable device (`bios/blkdev.c:440-441`).
+        BlockError::Unsupported => EUNDEV,
+    }
+}
+
 #[cfg(feature = "board-rpi4")]
 impl tos_api::bios::block::BlockDev for KernelBlock {
     fn block_count(&self) -> u64 {
         use crate::hal::block::BlockDevice;
         crate::drivers::bcm2711::emmc::SDCARD.block_count()
     }
-    fn read_blocks(&self, lba: u64, buf: &mut [u8]) -> bool {
+    fn read_blocks(&self, lba: u64, buf: &mut [u8]) -> Result<(), tos_types::Long> {
         use crate::hal::block::BlockDevice;
-        crate::drivers::bcm2711::emmc::SDCARD.read_blocks(lba, buf).is_ok()
+        crate::drivers::bcm2711::emmc::SDCARD
+            .read_blocks(lba, buf)
+            .map_err(|e| block_error_code(e, false))
     }
-    fn write_blocks(&self, lba: u64, buf: &[u8]) -> bool {
+    fn write_blocks(&self, lba: u64, buf: &[u8]) -> Result<(), tos_types::Long> {
         use crate::hal::block::BlockDevice;
-        crate::drivers::bcm2711::emmc::SDCARD.write_blocks(lba, buf).is_ok()
+        crate::drivers::bcm2711::emmc::SDCARD
+            .write_blocks(lba, buf)
+            .map_err(|e| block_error_code(e, true))
     }
 }
 

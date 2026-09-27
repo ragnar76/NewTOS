@@ -1,0 +1,8 @@
+6b1a8393e628a950b5d124569b2b71aa7dbf37d0942c23db73c6206b9cf164f3  raw/01-qemu-selftest-abort-recovery.log
+1e17e8d30b73400a74a1bdc22bd196d44b23a090bf1fe825e5a53854c4359528  raw/02-qemu-selftest-no-abort.log
+98f1b80195a686f0eed4924012b58a560ad4b815de15c9166bb00e4653fe3bf9  raw/03-qemu-selftest-perbit-reset.log
+675f0d215617af9f3923f391f14f49a6f17972ebd5fbc167f6aa013c33acf04b  raw/04-boot-rpi4-plain.log
+10196ae975e82bc3056d92d4f84b83e291622f765b3fc4e043813c707139e3a2  raw/05-boot-qemu-virt-plain.log
+f752e499ff10c2a3f73111b3251b933e00472e095d537cb877d84467d2c11e26  method/run-selftest-qemu.sh
+8559aff6f2c8fa667ab7e176083a7ea71feca391e5bda88baa655eba9d9fd68e  NUMBERS.TXT
+1fe566c5e1748d6073fbcc9ca4cb6f55660cce0d46e925e8590bdf5cffa7a9b8  RUNINFO.TXT

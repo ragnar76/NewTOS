@@ -236,7 +236,7 @@ pub fn geometry(drive: u16) -> Option<Geometry> {
     let part = drive::resolve(drive)?;
     let blk = host::host().and_then(|h| h.block())?;
     let mut sec = [0u8; 512];
-    if !blk.read_blocks(part.start_lba as u64, &mut sec) {
+    if blk.read_blocks(part.start_lba as u64, &mut sec).is_err() {
         return None;
     }
     parse(&sec, part.count)
@@ -252,7 +252,7 @@ pub fn bpb_for(drive: u16) -> Option<Bpb> {
     let part = drive::resolve(drive)?;
     let blk = host::host().and_then(|h| h.block())?;
     let mut sec = [0u8; 512];
-    if !blk.read_blocks(part.start_lba as u64, &mut sec) {
+    if blk.read_blocks(part.start_lba as u64, &mut sec).is_err() {
         return None;
     }
     let bpb = parse(&sec, part.count)?.bpb;

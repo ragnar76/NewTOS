@@ -208,3 +208,9 @@ error (returns `0`), and reading at/after EOF returns `0`, not an error.
 PHASE-05: backed by the FAT driver. On AArch64 the `[ubufr, ubufr+len)` range
 is validated once at the trap boundary; the mode-not-enforced behaviour is
 contract for source compatibility.
+
+HW03 (2026-09-27): a read that stops because the **device** failed returns the
+BIOS code (`EREADF` -11, or `EDRVNR` / `ESECNF` as the driver reported) rather
+than a short count; end-of-file and a chain that ends early stay short counts.
+Same mechanism as `40-fwrite.md`; driven by
+`tos-api/tests/gemdos_fs_device_error.rs`.

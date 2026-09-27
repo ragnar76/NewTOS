@@ -71,6 +71,8 @@ pub fn run() {
         }
     }
 
+    r1_rejection_test();
+
     // ── partition table + BIOS Rwabs over the real trap path ──
     let n = tos_api::bios::mount();
     let map = drvmap();
@@ -137,6 +139,48 @@ pub fn run() {
         // ── Phase 09 D1: FAT cluster-chain reader on C: ──
         fat_test(drv as u16, letter);
     }
+}
+
+/// HW03 / audit finding 3: a command the **card** refuses must be reported
+/// as a failure, not as success.
+///
+/// The lever is the one the audit drove (`docs/api/hw/emmc-audit.md`
+/// finding 3): an access far past the end of the card. The card answers
+/// `CMD17`/`CMD24` with an R1 status carrying `OUT_OF_RANGE` (bit 31) or
+/// `ADDRESS_ERROR` (bit 30) — SD Phys 9.10 Table 4-42,
+/// `docs/hardware/emmc-sd.md` §5 — and the controller's `INTERRUPT`
+/// register stays at 0, which is why the old driver reported `Ok(())`.
+///
+/// **Non-destructive on real hardware by construction:** the probe goes
+/// 4096 blocks past the capacity the card itself reported in its CSD — the
+/// same offset the audit drove — so there is no sector of this card it
+/// could reach. A card that refuses the command never enters the data
+/// phase, so the buffer below is never transferred.
+fn r1_rejection_test() {
+    let beyond = emmc::SDCARD.block_count() + 4096;
+
+    let mut buf = [0u8; 512];
+    let rd = emmc::SDCARD.read_blocks(beyond, &mut buf);
+    let wr = emmc::SDCARD.write_blocks(beyond, &buf);
+    let s = emmc::error_stats();
+    kprintln!(
+        "[emmc] R1 out-of-range probe @ block {}: read -> {:?}, write -> {:?} {}",
+        beyond,
+        rd,
+        wr,
+        if rd.is_err() && wr.is_err() { "OK (refused)" } else { "FAIL (accepted!)" },
+    );
+    crate::kprint!(
+        "[emmc] R1 probe: {} card rejection(s), last status=0x{:08x}",
+        s.card_errors,
+        s.last_card_status,
+    );
+    for (i, n) in s.card_bits.iter().enumerate() {
+        if *n != 0 {
+            crate::kprint!(" {}={}", emmc::R1_BIT_NAMES[i], n);
+        }
+    }
+    kprintln!("");
 }
 
 /// Phase 09 D1: mount the FAT volume on `drive` and walk the cluster

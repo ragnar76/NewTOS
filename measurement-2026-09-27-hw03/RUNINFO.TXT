@@ -1,0 +1,209 @@
+measurement-2026-09-27-hw03
+  HW03 -- ein fehlgeschlagener Zugriff erreicht die Anwendung; und kein
+  Sektor verschwindet, weil sein Rueckschreiben scheiterte
+===========================================================================
+
+Base: branch desk-rebuild, HEAD 84baa34 ("fix(sched): restore the parent's
+registers across Pexec for an EL1 caller too").  Nichts geflasht, nichts
+ausgeworfen, keine Pi gefahren, /Volumes/BOOT nicht beruehrt, nichts
+committet, kein `git checkout/restore/clean/stash/reset`.  Das Kartenabbild
+liegt im Job-Scratchpad, nicht hier (Regel des Tickets: kein *.img).
+
+Maschine: QEMU 11.0.2, `-M raspi4b`, serielle Ausgabe in eine Datei.  Host:
+macOS (Darwin 27); kein `timeout` vorhanden, die Laeufe sind mit einem
+Hintergrund-`sleep` + `kill` begrenzt (method/run-selftest-qemu.sh).
+
+
+0. WAS GEMESSEN WURDE, IN EINEM SATZ
+---------------------------------------------------------------------------
+Ein Lese- und ein Schreibzugriff **hinter das Kartenende** -- der Hebel, den
+das Audit fuer Befund 3 getrieben hat -- durch den echten Treiberpfad, mit
+der R1-Antwort der Karte im Klartext; dazu je ein vollstaendiger Bootlauf
+beider Boards als Gegenprobe, dass die neue Fehlerbehandlung nichts bricht.
+
+
+1. DER BEFUND DES AUDITS, WIEDERHOLT
+---------------------------------------------------------------------------
+`docs/api/hw/emmc-audit.md` Befund 3, getrieben am 2026-09-25:
+
+    Schreiben auf LBA 135168 (hinter dem Kartenende) ->
+    write_blocks(...) -> Ok(()), INTERRUPT=0x00000000
+
+Das ist reproduziert worden: der Controller meldet **keinen** Fehler, weil
+kein Controllerfehler vorliegt.  Die Karte hat abgelehnt, und ihre Ablehnung
+steht ausschliesslich in der R1-Antwort.
+
+
+2. WAS DIE KARTE TATSAECHLICH ANTWORTET (raw/03, Zeilen 1531-1534)
+---------------------------------------------------------------------------
+    [emmc] CMD17 rejected by card: status=0x40000900 ADDRESS_ERROR (state 4)
+    [emmc] CMD24 rejected by card: status=0x40000900 ADDRESS_ERROR (state 4)
+    [emmc] R1 out-of-range probe @ block 135168:
+             read -> Err(Card), write -> Err(Card)   OK (refused)
+    [emmc] R1 probe: 2 card rejection(s), last status=0x40000900
+             ADDRESS_ERROR=2
+
+  status = 0x4000_0900
+    Bit 30  ADDRESS_ERROR  -- "A misaligned address which did not match the
+                              block length was used in the command."
+                              (SD Phys 9.10 Tabelle 4-42)
+    Bits 12:9 = 0b100 = 4  -- CURRENT_STATE = tran; die Karte war im
+                              Transferzustand und ist es geblieben, sie hat
+                              die Datenphase nie begonnen
+    Bit 8   READY_FOR_DATA -- Statusbit, kein Fehler
+
+QEMUs SD-Modell setzt fuer einen Zugriff hinter das Kartenende
+ADDRESS_ERROR (Bit 30), nicht OUT_OF_RANGE (Bit 31).  Beide liegen in der
+Typ-`E`-Maske der Tabelle 4-42 (`R1_ERROR_MASK = 0xFDF9_8008`,
+`docs/hardware/emmc-sd.md` §5), die Pruefung faengt also beide.  Welches der
+zwei Bits eine **echte** Karte setzt, ist damit gleichgueltig -- das ist der
+Grund, die ganze Typ-E-Menge zu maskieren statt einzelner Bits.
+
+Bis HW03 lautete dieselbe Zeile: `read -> Ok(()), write -> Ok(())`.
+
+
+3. DER NEBENBEFUND, DER DIE ERSTEN ZWEI LAEUFE GEKOSTET HAT
+---------------------------------------------------------------------------
+Nach der erkannten Ablehnung muss der Controller wieder sauber gemacht
+werden -- die Datenzustandsmaschine wartet sonst auf eine Datenphase, die
+nie kommt (SD-HC 3.00 §3.10.1).  Die vorhandene Wiederherstellung tat das
+nicht:
+
+  raw/01  Wiederherstellung MIT Abbruchkommando (CMD12 + beide Resets)
+  raw/02  Wiederherstellung OHNE Abbruchkommando (nur beide Resets)
+
+Beide Laeufe sind in ihren `[emmc]`-Zeilen **zeichengleich**:
+
+    [emmc] recovery incomplete, STATUS=0x01ff0506 -- non-recoverable
+    [emmc] dat_inhibit timed out after 1000 ms (INTERRUPT=0x00000000, ...)
+    ... und danach kein einziger Sektorzugriff mehr:
+    [emmc] mounted 0 partition(s)
+    [emmc] Rwabs(read sec 0 of C:) -> -2 ... FAIL
+
+`diff` ueber die `[emmc]`-Zeilen von raw/01 und raw/02 ist leer.  Das
+Abbruchkommando war also nicht die Ursache -- die Resets selbst wirkten
+nicht.
+
+Ursache, in der Quelle nachgelesen statt geraten (QEMU 11.0.2,
+`hw/sd/sdhci.c:1150-1170`, geholt von gitlab.com/qemu-project/qemu, Tag
+v11.0.2):
+
+    static inline void sdhci_reset_write(SDHCIState *s, uint8_t value)
+    {
+        switch (value) {
+        case SDHC_RESET_ALL:  ...
+        case SDHC_RESET_CMD:  ...
+        case SDHC_RESET_DATA: ...
+        }
+    }
+
+Ein **exakter** Vergleich.  Unser `soft_reset` schrieb beide Resetbits in
+einem Zugriff (`SRST_CMD | SRST_DATA`, im Resetbyte 0x02|0x04 = 0x06); kein
+`case` trifft, es wird **nichts** zurueckgesetzt.  Und es faellt nicht auf:
+die Resetbits liegen im oberen Byte von `CLKCON`, das QEMU gar nicht
+speichert (`ret = s->clkcon | (s->timeoutcon << 16)`, `:1073`), sie lesen
+sich also sofort als 0 zurueck -- die Warteschleife meldet einen
+abgeschlossenen Reset, der nie stattgefunden hat.
+
+  raw/03  ein Resetbit pro Zugriff, CMD-Leitung zuerst, dann DAT-Leitung
+
+    [emmc] CMD17 rejected by card: ...  (kein "recovery incomplete" mehr)
+    [emmc] mounted 1 partition(s); Drvmap=0x4
+    [emmc] Rwabs(read sec 0 of C:) -> 0 ; sig=0xaa55 OK
+    ... der ganze restliche Selftest laeuft durch, bis
+    [desk] desktop up (1 drives, 0 window(s) from the context)
+
+Einzeln zu schreiben ist zugleich das, was die Spezifikation beschreibt:
+SD-HC §3.10.1 fuehrt "Software Reset For CMD Line" und "Software Reset For
+DAT Line" als zwei Schritte auf, ebenso die Abbruchfolge in §3.8.  Das
+Zusammenfassen war eine Abkuerzung, die keine Quelle verlangt.
+
+  Tragweite ueber HW03 hinaus: dieselbe Zusammenfassung stand im
+  Wiederherstellungspfad aus FS04 (`Phase::on_dat_line()` -> beide Resets).
+  In QEMU hat der also nie gewirkt.  Auf echter Hardware ist das ungeprueft
+  -- ein Controller, der das Resetbyte bitweise dekodiert, tut dort das
+  Richtige.  Siehe Abschnitt 6.
+
+
+4. DER ZWEITE NEBENBEFUND: EINE STILL UEBERLAUFENDE ADRESSE
+---------------------------------------------------------------------------
+Der erste Versuch sondierte bei Block 0xFFFF_FFFE.  Ergebnis:
+
+    [PANIC] attempt to multiply with overflow
+      at kernel/src/drivers/bcm2711/emmc.rs:999
+
+QEMUs emulierte Karte ist **byteadressiert** (SDSC, kein CCS), und
+`(lba as u32) * 512` laeuft dort ueber.  Im Debugbau ist das eine Panik; im
+Releasebau waere es ein **stiller Umlauf auf eine andere, gueltige
+Sektoradresse** -- bei einem Schreibzugriff die schlimmstmoegliche Form von
+Datenverlust.  Erreichbar war die Stelle bisher nicht (`Rwabs` prueft den
+Bereich vorher ab), die Sonde ist ihr erster Aufrufer mit grossem `lba`.
+
+Behoben in `Emmc::card_address()`: die Adresse wird geprueft gebildet, eine
+nicht darstellbare Adresse wird als `BlockError::OutOfRange` gemeldet und
+nach `ESECNF` uebersetzt -- der Code, den EmuTOS' eigene Bereichspruefung
+fuer einen Sektor hinter der Einheit liefert (`bios/blkdev.c:488-490`).
+
+Die Sonde selbst liegt seither bei `block_count() + 4096`, dem Offset, den
+das Audit getrieben hat: auf jeder Karte hinter dem Ende, auf jeder Karte
+darstellbar, auf echter Hardware zerstoerungsfrei (die Karte lehnt ab,
+bevor eine Datenphase beginnt).
+
+
+5. GEGENPROBE: BEIDE BOARDS BOOTEN UNVERAENDERT
+---------------------------------------------------------------------------
+  raw/04  board-rpi4, frischer Build, ohne Selftest-Feature, mit Karte
+          -> [desk] desktop up (1 drives, ...), 0 PANIC
+  raw/05  board-qemu-virt, frischer Build, ohne Karte
+          -> [desk] desktop up (0 drives, ...), 0 PANIC
+
+Beide Laeufe enthalten keine `[emmc]`-Fehlerzeile und keinen
+Wiederherstellungsdurchlauf; der geaenderte Pfad wird im Normalbetrieb nicht
+betreten.
+
+
+6. WAS AN DER ECHTEN PI ZU PRUEFEN IST
+---------------------------------------------------------------------------
+Drei Dinge, die QEMU nicht entscheiden kann.  Keines blockiert HW03; alle
+drei sind billig, wenn jemand ohnehin an der Pi sitzt.
+
+M-A  Welches R1-Bit die echte Karte fuer einen Zugriff hinter das Ende
+     setzt.  Bau mit `--features selftest-emmc`, Bootlog lesen:
+       erwartet: "CMD17 rejected by card: status=0x8...." mit
+                 OUT_OF_RANGE (Bit 31) -- so sagt es Tabelle 4-42 --
+                 oder ADDRESS_ERROR wie in QEMU.  Beides ist richtig; was
+                 falsch waere, ist "OK (accepted!)".
+     Danach muss der Selftest wie in raw/03 weiterlaufen: Partition
+     gemountet, `Rwabs -> 0`.  Bleibt er stehen, dekodiert EMMC2 das
+     Resetbyte anders als erwartet -- dann steht die Zeile
+     "recovery incomplete, STATUS=0x..." im Log und der STATUS-Wert sagt,
+     welche Leitung haengt.
+
+M-B  Ob die zwoelf Fehlschlaege der Messung vom 2026-09-25 jetzt eine Zeile
+     erzeugen.  Dieselbe Kopiergeste (kleine Datei ueber die
+     Partitionsgrenze) auf der kalten Karte, Serielle mitschreiben:
+       erwartet, falls die Fehlschlaege noch auftreten:
+         "[emmc] write_done timed out after 1000 ms" je Fehlschlag,
+         und -- weil FS04 das Budget bereits auf eine echte Zeit gestellt
+         hat -- sehr wahrscheinlich gar keine mehr.
+       erwartet, falls einer bis oben durchschlaegt: der Desktop meldet
+         den Fehler, statt die Kopie als gelungen zu zeigen.
+     Frueher war beides unsichtbar.
+
+M-C  Ob der FS04-Wiederherstellungspfad auf EMMC2 wirklich zurueckstellt.
+     Nur aus dem Log ablesbar: nach einer `[emmc] ... timed out`-Zeile darf
+     **keine** "recovery incomplete"-Zeile folgen, und der naechste Zugriff
+     muss normal schnell sein.
+
+
+7. WAS HIER LIEGT
+---------------------------------------------------------------------------
+  raw/01-qemu-selftest-abort-recovery.log   Wiederherstellung mit CMD12
+  raw/02-qemu-selftest-no-abort.log         Wiederherstellung ohne CMD12
+                                            (in den [emmc]-Zeilen gleich 01)
+  raw/03-qemu-selftest-perbit-reset.log     ein Resetbit pro Zugriff -- gut
+  raw/04-boot-rpi4-plain.log                Gegenprobe board-rpi4
+  raw/05-boot-qemu-virt-plain.log           Gegenprobe board-qemu-virt
+  method/run-selftest-qemu.sh               erzeugt raw/03 neu
+  NUMBERS.TXT                               die Zahlen ohne Prosa
+  manifest.sha256                           Pruefsummen

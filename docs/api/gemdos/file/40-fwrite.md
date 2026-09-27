@@ -209,3 +209,14 @@ count**, never as a negative code, from `Fwrite` itself.
 
 PHASE-05: FAT write path with explicit cluster allocation. NewTOS may add an
 `Fsync`-style extension later; existing programs rely on `Fclose` for flush.
+
+HW03 (2026-09-27): the hard-error path is wired. EmuTOS reaches it with
+`longjmp_rwabs` (`bdos/fs.h:60`), which cannot be reproduced in Rust; instead
+the sector cache records the BIOS code of a failed access
+(`tos-api/src/bdos/fs/cache.rs`, the reimplementation of EmuTOS' `rwerr` /
+`errcode` globals) and `fwrite` returns it. The distinction the table above
+draws is therefore live: a **full disk** is still a short byte count, a
+**device error** is `EWRITF` (-10) / `EDRVNR` (-2) / `ESECNF` (-8) — whatever
+the driver reported. Driven by `tos-api/tests/gemdos_fs_device_error.rs`.
+Before HW03, `Fwrite` returned the full byte count for data that never left
+the machine (`docs/api/hw/emmc-audit.md` finding 5).

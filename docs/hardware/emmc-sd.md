@@ -178,7 +178,119 @@ after single-block read works.
 
 ---
 
-## 5. NewTOS integration
+## 5. Card status (R1) — the response the host must check
+
+Every command answered with an **R1** response carries a 32-bit *card
+status* field in `RESP0`. Waiting for `CMD_DONE` and finding no
+`INTERRUPT` error bit only says that the **controller** put the command on
+the bus and got a well-formed answer back; whether the **card** accepted
+the command is in that response and nowhere else:
+
+> "The software is responsible for checking the status bits of the card's
+> response in order to verify successful processing by the card."
+> — BCM2835 ARM Peripherals §5 (External Mass Media Controller), p. 65
+
+> §3.7.1.2 step (7): "Check for errors in Response Data … Return Status
+> (Response Contents Error)."
+> — SD Host Controller Simplified Specification 3.00
+> (both quoted in `docs/api/hw/emmc-audit.md` §2.4 / finding 3)
+
+> "The response format R1 shall contain a 32-bit field named card status …
+> This field is intended to transmit the card's status information (which
+> may be stored in a local status register) to the host. If not specified
+> otherwise, the status entries are always related to the previous issued
+> command."
+> — SD Physical Layer Simplified Specification Ver. 9.10 §4.10.1
+
+### The error bits — SD Phys 9.10 Table 4-42 "Card Status"
+
+Table 4-42's *Type* column marks each entry `E` (error bit), `S` (status
+bit), `R` (set for the actual command response) and/or `X` (set during
+command execution). **`E` is the discriminator**: the bits below are the
+complete set of Type-`E` entries, quoted from the table's own
+*Description* column. Everything else in the word (`CURRENT_STATE`,
+`READY_FOR_DATA`, `APP_CMD`, `CARD_IS_LOCKED`, `CARD_ECC_DISABLED`,
+`ERASE_RESET`, `FX_EVENT`) is status, not failure, and must **not** be
+treated as an error.
+
+| Bit | Identifier | Type | Description (verbatim, Table 4-42) |
+|-----|------------|------|------------------------------------|
+| 31 | `OUT_OF_RANGE` | E R X | "The command's argument was out of the allowed range for this card." |
+| 30 | `ADDRESS_ERROR` | E R X | "A misaligned address which did not match the block length was used in the command." |
+| 29 | `BLOCK_LEN_ERROR` | E R X | "The transferred block length is not allowed for this card, or the number of transferred bytes does not match the block length." |
+| 28 | `ERASE_SEQ_ERROR` | E R | "An error in the sequence of erase commands occurred." |
+| 27 | `ERASE_PARAM` | E R X | "An invalid selection of write-blocks for erase occurred." |
+| 26 | `WP_VIOLATION` | E R X | "Set when the host attempts to write to a protected block or to the temporary write protected card or write protected until power cycle card or permanent write protected card." |
+| 24 | `LOCK_UNLOCK_FAILED` | E R X | "Set when a sequence or password error has been detected in lock/unlock card command." |
+| 23 | `COM_CRC_ERROR` | E R | "The CRC check of the previous command failed." |
+| 22 | `ILLEGAL_COMMAND` | E R | "Command not legal for the card state" |
+| 21 | `CARD_ECC_FAILED` | E R X | "Card internal ECC was applied but failed to correct the data." |
+| 20 | `CC_ERROR` | E R X | "Internal card controller error" |
+| 19 | `ERROR` | E R X | "A general or an unknown error occurred during the operation." |
+| 16 | `CSD_OVERWRITE` | E R X | "The read only section of the CSD does not match the card content. / An attempt to reverse the copy (set as original) or permanent WP (unprotected) bits was made." |
+| 15 | `WP_ERASE_SKIP` | E R X | "Set when only partial address space was erased due to existing write protected blocks or the temporary write protected or write protected until power cycle or permanent write protected card was erased." |
+| 3 | `AKE_SEQ_ERROR` | E R | "Error in the sequence of the authentication process" |
+
+Bits 18, 17, 7, 4, 2, 1, 0 are reserved. As one mask:
+
+```
+R1_ERROR_MASK = 0xFDF9_8008
+```
+
+**Per-command applicability** — SD Phys 9.10 Table 4-43 ("Card Status
+Field/Command — Cross Reference") says per command which of those bits may
+appear in its response; the rows for `CMD17` (READ_SINGLE_BLOCK) and
+`CMD24` (WRITE_BLOCK) are among the widest in the table and both mark
+`OUT_OF_RANGE` and `ADDRESS_ERROR`. Masking the whole Type-`E` set is
+therefore never wider than what those two commands may answer with, and
+the reserved bits are specified as zero ("Unused reserved bits shall be
+set to 0", §4.10.1).
+
+**Which response carries it for a data command:** `CMD17`/`CMD24` answer
+R1 **before** the data phase, so a rejected transfer (an address past the
+end of the card, a write-protected card) is visible in `RESP0` at a point
+where the data phase has not started. The host must therefore check R1 and
+**abort the transaction** (SD-HC 3.00 §3.8: CMD12 + both software resets)
+instead of waiting out `Buffer Read/Write Ready`, which will never come.
+
+### Mapping a card error to a TOS error code
+
+The block driver is the BIOS layer's disk driver, so it returns a TOS
+error code, exactly as EmuTOS' own SD driver does (`bios/sd.c:187-190`):
+
+```c
+if (ret > 0L) {         /* error but not timeout */
+    ret = (rw&RW_RW) ? EWRITF : EREADF;
+    break;
+}
+```
+
+| Driver outcome | TOS code | EmuTOS source |
+|----------------|----------|---------------|
+| card reported an R1 error bit | `EWRITF` (-10) on write, `EREADF` (-11) on read | `bios/sd.c:187-190` |
+| controller reported an `INTERRUPT` error bit (CRC, end-bit, …) | `EWRITF` / `EREADF` | same path — EmuTOS makes no distinction between "card said no" and "transfer broke" |
+| a wait ran out of time | `EDRVNR` (-2) | `bios/sd.c:195` (`RW_NOMEDIACH` case; the media-change branch does not apply to a non-removable card) |
+| no card / device not initialised | `EDRVNR` (-2) | `bios/sd.c:172-173` (`sd_check` failure) |
+| request the device cannot serve | `EUNDEV` (-15) | `bios/blkdev.c:440-441` |
+
+Note that EmuTOS' SD driver does **not** translate `WP_VIOLATION` into
+`EWRPRO`; a write-protect violation is an `EWRITF` like any other card
+error. (Its *floppy* driver reports `EWRPRO` from the FDC status, which is
+a different device.)
+
+> **Source gap (audit finding S1).** None of the SD specifications are in
+> `references/`. The Table 4-42 quotations above were taken from *SD
+> Specifications Part 1 — Physical Layer Simplified Specification Version
+> 9.10, December 1, 2023* (SD Card Association), obtained from
+> sdcard.org's public Simplified Specification download page. That is a
+> **later edition** than the Ver. 6.00 `docs/api/hw/emmc-audit.md` cites —
+> the bit positions were read from 9.10 and have **not** been diffed
+> against 6.00 here. Depositing both PDFs under `references/sd-spec/` is
+> REF02's job.
+
+---
+
+## 6. NewTOS integration
 
 - **`BlockDevice` HAL trait** (`kernel/src/hal/block.rs`), mirroring the
   `Framebuffer` trait: `block_count()`, `block_size()` (= 512),

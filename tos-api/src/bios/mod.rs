@@ -32,7 +32,7 @@ pub fn mount() -> usize {
     drive::mount()
 }
 
-use tos_types::error::{EREADF, ESECNF, EUNDEV, EWRITF, E_OK};
+use tos_types::error::{ESECNF, EUNDEV, E_OK};
 use tos_types::Long;
 
 use crate::host;
@@ -187,19 +187,21 @@ fn rwabs(args: &TrapArgs) -> Long {
     // SAFETY: `adr` is the caller's buffer for `len` bytes. EL1 self-test
     // passes kernel memory; EL0 user-pointer handling lands with the
     // process-aware BIOS path.
-    let ok = unsafe {
+    let result = unsafe {
         if write {
             blk.write_blocks(lba, core::slice::from_raw_parts(adr as *const u8, len))
         } else {
             blk.read_blocks(lba, core::slice::from_raw_parts_mut(adr as *mut u8, len))
         }
     };
-    if ok {
-        E_OK
-    } else if write {
-        EWRITF
-    } else {
-        EREADF
+    // The driver's own code, passed through — EmuTOS `blkdev_rwabs` returns
+    // `retval` from `disk_rw`/`floppy_rw` unchanged (`bios/blkdev.c:512-523`),
+    // so a caller sees `EWRITF`/`EREADF` for a failed transfer but `EDRVNR`
+    // for a card that did not answer. Before HW03 the device could only say
+    // "false" and this function invented the code.
+    match result {
+        Ok(()) => E_OK,
+        Err(code) => code,
     }
 }
 

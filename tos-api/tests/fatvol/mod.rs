@@ -7,7 +7,7 @@
 
 #![allow(dead_code)] // each test binary uses a different part of this
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicI32, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use tos_api::host::Host;
@@ -133,6 +133,40 @@ pub struct RamDisk {
     /// Reads of the partition's boot sector, i.e. drive log-ins.
     pub boot_reads: AtomicU32,
     pub writes: AtomicU32,
+    /// Fault injection (HW03): while set, every **write** to this LBA is
+    /// refused with the TOS code in [`RamDisk::fail_code`] and the image is
+    /// left untouched — the host-side stand-in for the card that answers
+    /// `CMD24` with an R1 error bit. `u64::MAX` = no fault armed.
+    pub fail_write_lba: AtomicU64,
+    /// Same for reads.
+    pub fail_read_lba: AtomicU64,
+    /// The code the armed fault reports.
+    pub fail_code: AtomicI32,
+    /// Write attempts the fault injector refused.
+    pub refused_writes: AtomicU32,
+}
+
+/// "No LBA" for the fault-injection registers.
+pub const NO_LBA: u64 = u64::MAX;
+
+impl RamDisk {
+    /// Refuse every write to `lba` with `code` until [`RamDisk::disarm`].
+    pub fn fail_write_at(&self, lba: u64, code: i32) {
+        self.fail_code.store(code, Ordering::Relaxed);
+        self.fail_write_lba.store(lba, Ordering::Relaxed);
+    }
+
+    /// Refuse every read of `lba` with `code` until [`RamDisk::disarm`].
+    pub fn fail_read_at(&self, lba: u64, code: i32) {
+        self.fail_code.store(code, Ordering::Relaxed);
+        self.fail_read_lba.store(lba, Ordering::Relaxed);
+    }
+
+    /// Take the fault injector out again.
+    pub fn disarm(&self) {
+        self.fail_write_lba.store(NO_LBA, Ordering::Relaxed);
+        self.fail_read_lba.store(NO_LBA, Ordering::Relaxed);
+    }
 }
 
 impl tos_api::bios::block::BlockDev for RamDisk {
@@ -140,31 +174,40 @@ impl tos_api::bios::block::BlockDev for RamDisk {
         (self.img.lock().unwrap().len() / SECTOR) as u64
     }
 
-    fn read_blocks(&self, lba: u64, buf: &mut [u8]) -> bool {
-        let img = self.img.lock().unwrap();
+    fn read_blocks(&self, lba: u64, buf: &mut [u8]) -> Result<(), i32> {
         let n = buf.len() / SECTOR;
+        let armed = self.fail_read_lba.load(Ordering::Relaxed);
+        if armed != NO_LBA && (lba..lba + n as u64).contains(&armed) {
+            return Err(self.fail_code.load(Ordering::Relaxed));
+        }
+        let img = self.img.lock().unwrap();
         let off = lba as usize * SECTOR;
         if off + n * SECTOR > img.len() {
-            return false;
+            return Err(tos_types::error::ESECNF);
         }
         buf.copy_from_slice(&img[off..off + n * SECTOR]);
         self.reads.fetch_add(n as u32, Ordering::Relaxed);
         if (lba as u32) == PART_LBA {
             self.boot_reads.fetch_add(1, Ordering::Relaxed);
         }
-        true
+        Ok(())
     }
 
-    fn write_blocks(&self, lba: u64, buf: &[u8]) -> bool {
-        let mut img = self.img.lock().unwrap();
+    fn write_blocks(&self, lba: u64, buf: &[u8]) -> Result<(), i32> {
         let n = buf.len() / SECTOR;
+        let armed = self.fail_write_lba.load(Ordering::Relaxed);
+        if armed != NO_LBA && (lba..lba + n as u64).contains(&armed) {
+            self.refused_writes.fetch_add(1, Ordering::Relaxed);
+            return Err(self.fail_code.load(Ordering::Relaxed));
+        }
+        let mut img = self.img.lock().unwrap();
         let off = lba as usize * SECTOR;
         if off + n * SECTOR > img.len() {
-            return false;
+            return Err(tos_types::error::ESECNF);
         }
         img[off..off + n * SECTOR].copy_from_slice(buf);
         self.writes.fetch_add(n as u32, Ordering::Relaxed);
-        true
+        Ok(())
     }
 }
 
@@ -210,14 +253,14 @@ impl DiskHost {
     pub fn read_sector(&self, lba: u64) -> [u8; SECTOR] {
         use tos_api::bios::block::BlockDev;
         let mut buf = [0u8; SECTOR];
-        assert!(self.disk.read_blocks(lba, &mut buf), "read of LBA {lba}");
+        self.disk.read_blocks(lba, &mut buf).unwrap_or_else(|e| panic!("read of LBA {lba}: {e}"));
         buf
     }
 
     /// Write one raw sector straight into the image, bypassing the BDOS cache.
     pub fn write_sector(&self, lba: u64, data: &[u8; SECTOR]) {
         use tos_api::bios::block::BlockDev;
-        assert!(self.disk.write_blocks(lba, data), "write of LBA {lba}");
+        self.disk.write_blocks(lba, data).unwrap_or_else(|e| panic!("write of LBA {lba}: {e}"));
     }
 }
 
@@ -243,6 +286,10 @@ pub fn fs<'a>() -> (MutexGuard<'a, ()>, &'static DiskHost) {
                 reads: AtomicU32::new(0),
                 boot_reads: AtomicU32::new(0),
                 writes: AtomicU32::new(0),
+                fail_write_lba: AtomicU64::new(NO_LBA),
+                fail_read_lba: AtomicU64::new(NO_LBA),
+                fail_code: AtomicI32::new(0),
+                refused_writes: AtomicU32::new(0),
             },
         }));
         let slot: &'static &'static dyn Host = Box::leak(Box::new(host as &'static dyn Host));
@@ -279,6 +326,8 @@ pub const FSETDTA: u16 = 0x1A;
 pub const FSFIRST: u16 = 0x4E;
 pub const FSNEXT: u16 = 0x4F;
 pub const FOPEN: u16 = 0x3D;
+pub const FREAD: u16 = 0x3F;
+pub const FWRITE: u16 = 0x40;
 pub const FCLOSE: u16 = 0x3E;
 pub const FCREATE: u16 = 0x3C;
 pub const FDELETE: u16 = 0x41;
@@ -288,6 +337,8 @@ pub const DGETPATH: u16 = 0x47;
 pub const DSETDRV: u16 = 0x0E;
 
 pub const E_OK: i32 = 0;
+pub const EWRITF: i32 = -10;
+pub const EREADF: i32 = -11;
 pub const EFILNF: i32 = -33;
 pub const EPTHNF: i32 = -34;
 pub const ENMFIL: i32 = -49;

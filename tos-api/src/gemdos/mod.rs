@@ -139,6 +139,12 @@ fn dispatch_inner(args: &TrapArgs) -> Long {
         // the trap path remains reentrant.
         return EUNDEV;
     }
+    // A fresh hard-error context for this call — EmuTOS establishes one by
+    // re-arming `setjmp(errbuf)` at the top of `osif`
+    // (`bdos/bdosmain.c:448`, `docs/api/gemdos/_dispatcher.md` §8). Without
+    // it a device error nobody consumed could leak into the next call's
+    // result (HW03).
+    crate::bdos::fs::cache::clear_error();
     let id = args.func_id() as usize;
     // MiNT extensions live above MAX_FN and are special-cased before the
     // static table lookup (FreeMiNT compatibility, ADR-012).

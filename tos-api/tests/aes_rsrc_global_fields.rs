@@ -171,25 +171,25 @@ impl tos_api::bios::block::BlockDev for RamDisk {
     fn block_count(&self) -> u64 {
         (self.img.lock().unwrap().len() / SECTOR) as u64
     }
-    fn read_blocks(&self, lba: u64, buf: &mut [u8]) -> bool {
+    fn read_blocks(&self, lba: u64, buf: &mut [u8]) -> Result<(), i32> {
         let img = self.img.lock().unwrap();
         let n = buf.len() / SECTOR;
         let off = lba as usize * SECTOR;
         if off + n * SECTOR > img.len() {
-            return false;
+            return Err(tos_types::error::ESECNF);
         }
         buf.copy_from_slice(&img[off..off + n * SECTOR]);
-        true
+        Ok(())
     }
-    fn write_blocks(&self, lba: u64, buf: &[u8]) -> bool {
+    fn write_blocks(&self, lba: u64, buf: &[u8]) -> Result<(), i32> {
         let mut img = self.img.lock().unwrap();
         let n = buf.len() / SECTOR;
         let off = lba as usize * SECTOR;
         if off + n * SECTOR > img.len() {
-            return false;
+            return Err(tos_types::error::ESECNF);
         }
         img[off..off + n * SECTOR].copy_from_slice(buf);
-        true
+        Ok(())
     }
 }
 

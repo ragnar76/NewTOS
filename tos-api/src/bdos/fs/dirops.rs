@@ -99,7 +99,9 @@ pub fn dcreate(args: &TrapArgs) -> Long {
         vol.free_chain(cl);
         return EACCDN;
     }
-    super::cache::flush();
+    if let Err(code) = super::cache::flush() {
+        return code;
+    }
     E_OK
 }
 
@@ -149,7 +151,9 @@ pub fn ddelete(args: &TrapArgs) -> Long {
     // in front of it — a folder created by a foreign system carries them just
     // like a file, and leaving them behind orphans the chain.
     dir::erase_slot_with_lfn(&vol, parent, slot);
-    super::cache::flush();
+    if let Err(code) = super::cache::flush() {
+        return code;
+    }
     E_OK
 }
 

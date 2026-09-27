@@ -36,6 +36,21 @@ soll, und er hat uns die FS04-Sekunden gekostet.
      uns folgenlos, weil wir beide Basen probieren — aber eine ungepruefte
      Behauptung in einer Hardwarenotiz ist eine Falle fuer den naechsten.
 
+## Nachtrag 2026-09-27 aus HW03
+
+HW03 brauchte ein Zitat je R1-Fehlerbit und stand vor derselben Luecke. Der
+Entwickler hat sich die **Physical Layer Simplified Specification Ver. 9.10**
+von der oeffentlichen Downloadseite der SD Association geholt und unter
+`references/sd-spec/` abgelegt — das Verzeichnis ist **gitignored**
+(`/references/*`), die Fassung ist also **nicht** gepinnt und liegt nur auf
+diesem Rechner.
+
+**Zusaetzliche Aufgabe fuer dieses Ticket:** das Audit
+(`docs/api/hw/emmc-audit.md`) zitiert **Ver. 6.00**, HW03s Bitpositionen
+stammen aus **9.10**, und die beiden sind **nicht gegeneinander geprueft**.
+Beim Pinnen ist also zu entscheiden, welche Fassung die Referenz ist, und die
+Zitate der anderen sind nachzuziehen.
+
 ## Abnahme
 
 `references/` traegt die gepinnten Spezifikationen; `docs/hardware/emmc-sd.md`

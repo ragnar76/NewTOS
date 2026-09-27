@@ -1,0 +1,64 @@
+measurement-2026-09-27-hw03 -- NUMBERS
+===========================================================================
+
+R1 OUT-OF-RANGE PROBE (QEMU raspi4b, 64-MiB-Karte, 131072 Bloecke)
+---------------------------------------------------------------------------
+probe block                          135168   (= block_count + 4096)
+CMD17 (read)   R1 status         0x40000900   ADDRESS_ERROR, state 4 (tran)
+CMD24 (write)  R1 status         0x40000900   ADDRESS_ERROR, state 4 (tran)
+INTERRUPT waehrend beider        0x00000000   <- Controller meldet nichts
+read_blocks()  vor HW03               Ok(())
+read_blocks()  nach HW03          Err(Card)
+write_blocks() vor HW03               Ok(())
+write_blocks() nach HW03          Err(Card)
+card rejections gezaehlt                   2
+ADDRESS_ERROR gezaehlt                     2
+
+
+RECOVERY NACH DER ABLEHNUNG
+---------------------------------------------------------------------------
+                             beide Resetbits     ein Bit pro Zugriff
+                             in einem Zugriff    (CMD, dann DAT)
+STATUS nach Recovery         0x01ff0506          sauber
+  Bit 1  Command Inhibit(DAT)        1                   0
+  Bit 2  DAT Line Active             1                   0
+  Bit 8  Write Transfer Active       1                   0
+  Bit 10 Buffer Write Enable         1                   0
+"recovery incomplete"-Zeilen        15+                  0
+Partitionen danach gemountet          0                   1
+Rwabs(read sec 0 of C:)              -2 (EDRVNR)          0
+Selftest laeuft durch                nein                 ja
+mit CMD12-Abbruch                    0x01ff0506          --
+ohne CMD12-Abbruch                   0x01ff0506          --
+  -> diff der [emmc]-Zeilen raw/01 vs raw/02: leer
+
+
+ADRESSARITHMETIK (der Nebenbefund aus Abschnitt 4)
+---------------------------------------------------------------------------
+QEMU-Karte                        SDSC (byteadressiert), CCS = 0
+(lba as u32) * 512 bei lba=0xFFFFFFFE   Ueberlauf
+  Debugbau                              PANIC (emmc.rs:999)
+  Releasebau                            stiller Umlauf auf eine andere,
+                                        gueltige Sektoradresse
+nach HW03                               BlockError::OutOfRange -> ESECNF (-8)
+
+
+HOSTTESTS (cargo run -p xtask -- test)
+---------------------------------------------------------------------------
+vorher                                  956 passed / 0 failed / 1 ignored
+nachher                                 961 passed / 0 failed / 1 ignored
+  neu: tos-api/tests/gemdos_fs_device_error.rs, 5 Tests
+       fwrite_reports_ewritf_when_the_sector_does_not_reach_the_card
+       fread_reports_ereadf_when_the_sector_cannot_be_read
+       rwabs_passes_the_drivers_own_code_through
+       a_failed_write_back_keeps_the_sector_and_lands_it_afterwards
+       the_write_back_retry_is_bounded_and_visible
+
+
+BUILD / CLIPPY (unveraendert gegen die Basislinie)
+---------------------------------------------------------------------------
+cargo xtask build --board rpi4          tos-api 64, kernel 94
+cargo xtask build --board qemu-virt     tos-api 64, kernel 94
+cargo clippy -p kernel -F board-rpi4    tos-api 80, kernel 125
+cargo clippy -p kernel -F board-qemu-virt  tos-api 80, kernel 125
+sh tools/desk-drift-probe.sh            32
