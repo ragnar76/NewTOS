@@ -43,7 +43,48 @@ Geraetebaum unserer Bootkarte (`bcm2711-rpi-4-b.dtb` — hat uns bei REF02 schon
 einmal die richtige Antwort geliefert). Linux' `vc4-hdmi` und circle sind
 **Querverweise, keine Autoritaet**.
 
-**Die Klinke ist der einfachere Weg:** PWM auf GPIO 40/41. Als Rueckfall
+### Belegt aus dem Firmware-Geraetebaum (2026-09-28)
+
+Gelesen aus `sd-card-backup-20260618/boot-files/bcm2711-rpi-4-b.dtb`
+(`dtc -I dtb -O dts`) — dieselbe Quellenart, die bei REF02 die richtige Antwort
+gab, wo das Datenblatt schwieg.
+
+**Klinke:**
+
+```
+audio_pins: brcm,pins = <0x28 0x29>;   /* GPIO 40, 41 */
+            brcm,function = <0x04>;    /* ALT0        */
+pwm:  pwm@7e20c000  "brcm,bcm2835-pwm"  status = "disabled"
+pwm1: pwm@7e20c800  "brcm,bcm2835-pwm"  status = "disabled"
+      assigned-clock-rates = <0x2faf080>   /* 50 MHz */
+```
+
+Zwei PWM-Bloecke, ein Kanal je Stereoseite, **ab Werk abgeschaltet** — wir
+muessten sie selbst einschalten. Busadresse `0x7E20C000` → ARM `0xFE20C000`
+nach der Umrechnungsregel (BCM2711 §1.2.4, siehe `docs/hardware/emmc-sd.md`),
+dieselbe Peripheriebasis wie unsere uebrigen Treiber. Der PWM-Block steht im
+**BCM2711-Datenblatt** — eine Track-B-Primaerquelle.
+
+**HDMI — die Einschaetzung oben war zu pessimistisch:**
+
+```
+clock-names = "hdmi", "bvb", "audio", "cec";
+dmas = <0x2e 0x41fa000a>;
+dma-names = "audio-rx";
+reg-names = "hdmi", "dvp", "phy", "rm", "packet", "metadata", "csc", "cec", "hd", "intr2";
+```
+
+Der HDMI-Block hat einen **eigenen Audiotakt und einen eigenen DMA-Kanal**, und
+seine Registerbereiche sind benannt. Der Ton wird also per DMA von der
+**ARM-Seite** hineingeschoben — **nicht** ueber die Firmware, wie oben zunaechst
+vermutet. Das ist hiermit richtiggestellt.
+
+Was dadurch **nicht** wegfaellt: HDMI-Ton braucht zusaetzlich die
+Audio-Infoframes und die Kanalzuordnung, also mehr als einen Puffer
+hinzuschieben. Es ist ein normaler Treiber gegen dokumentierte Register statt
+eines Firmware-Handels — aber kein Einzeiler.
+
+**Die Klinke bleibt trotzdem der erste Schritt:** PWM auf GPIO 40/41. Als Rueckfall
 ausdruecklich erwuenscht, und als erster Schritt sinnvoll — ein hoerbarer Ton
 ueber Klinke beweist die ganze API-Seite, bevor die HDMI-Frage geklaert ist.
 
