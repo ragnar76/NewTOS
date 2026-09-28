@@ -50,6 +50,52 @@ Verfahren in `measurement-2026-09-28-port07/method/`.
    Falcon-Dumps) — sie muss **unveraendert** gruen bleiben, sonst ist es kein
    Durchsatzfix, sondern ein Verhaltensfehler.
 
+## Die Staffelung bis zum Assembler — Anwenderfrage 2026-09-28
+
+Frage war: was kostet es, die Blit-Routine in optimiertem Assembler zu bauen?
+Antwort: **Assembler ist der letzte Schritt und wahrscheinlich der kleinste
+Gewinn.** Die Reihenfolge ist wichtiger als die Technik.
+
+**Null — messen.** Die **80,49 ns/px sind eine QEMU-Zahl**. `vro_cpyfm` ist
+auf echter Hardware **nie** gemessen worden, und TCG hat sich bei der
+Cachepflege gerade um Faktor 8 vertan ([GUI06](GUI06.md)). Ein Pi-Lauf der
+konformen Ball-Demo liefert `ns/px` auf einem A72 — **ohne diese Zahl ist
+alles Weitere Raten**.
+
+**Eins — dieses Ticket (reines Rust).** Den Bildschirmlesezugriff weglassen,
+wo das Ergebnis verworfen wird; Basis und Zeilenabstand einmal je Zeile.
+Klein, begrenzt, und **vermutlich der groesste Einzelfaktor** der Kette.
+
+**Zwei — Schnellpfade je Rasteroperation, auch Rust.** Reines Kopieren ist
+zeilenweise ein `memcpy`; dafuer erzeugt LLVM bereits gute Befehlsfolgen. Von
+den sechzehn Operationen sind die meisten Wort-Logik, die der Uebersetzer oft
+selbst vektorisiert, sobald die Schleife sauber ist.
+
+**Drei — NEON als Intrinsics in Rust** (`core::arch::aarch64`), **nicht** als
+`.S`-Datei: vier Pixel je 128-Bit-Register, und es bleibt Code, den der
+Uebersetzer gegenliest. Deutlich weniger Aufwand und Risiko als
+handgeschriebener Assembler, bei praktisch demselben Ergebnis.
+
+**Vier — echtes Assembler** nur dort, wo Schritt drei nachweislich nicht
+liefert. Erwartung: ein bis zwei Operationen, nicht der Blit als Ganzes.
+
+### Warum unser Fall einfacher ist als EmuTOS'
+
+EmuTOS' Assembler-Blit existiert wegen der **Bitplanes** — Bits ueber
+Wortgrenzen zwischen vier Ebenen schieben, mit Randmasken. Das ist auf einem
+m68k echte Arbeit. **Wir sind chunky 32 Bit:** ein Pixel ist ein Wort, kein
+Verschieben, keine Ebenenverzahnung. **Der Grund, aus dem EmuTOS Assembler
+schreibt, existiert bei uns nicht.**
+
+### Was es beherrschbar macht
+
+Die Aenderung ist **backend-lokal** — dafuer war die `RasterBackend`-
+Schnittstelle so geschnitten ([[vdi-draw-asm-optimization-later]]). Und es
+gibt den Waechter, der das Ganze ueberhaupt wagbar macht: die **59 Faelle der
+Referenzsuite gegen echte TT- und Falcon-Dumps**. Bleiben die bitgleich, ist
+die Umschreibung nachweislich verhaltensneutral. **Ohne diesen Waechter waere
+von handgeschriebenem Assembler im Zeichenpfad abzuraten.**
+
 ## Abnahme
 
 `ns/px` der Ball-Demo vorher/nachher auf derselben Maschine; die 59 Faelle der
