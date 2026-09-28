@@ -57,6 +57,47 @@ Nicht als Diagnose, sondern als Nachbarschaft: `appl_exit` ist die Stelle, die
 Accessories geladen. Ob das hier beteiligt ist, ist **ungemessen** — ACC10s
 Abnahme lief headless und ohne GEM-Anwendung davor.
 
+## Nachtrag 2026-09-29 — der Suchraum ist zwei Aufrufe gross
+
+Zweiter Pi-Lauf, mit mehr Wartezeit. **Der Anwender korrigiert seine eigene
+erste Beschreibung:** beide Laeufe sehen **gleich** aus, nicht verschieden. Es
+ist also **deterministisch**.
+
+**Das Bild:** gruener Desktop-Hintergrund, und am oberen Rand ein Streifen
+ueber die volle Breite, in dem noch der Hintergrund der Demo steht. Hoehe nach
+Augenmass schwer zu schaetzen; die Arbeitsflaeche meldet sich als 1920x1061,
+also sind **19 px** fuer die Menuezeile reserviert.
+
+**Der entscheidende Satz des Anwenders: *„wenn ich ueber die Stellen hovere, wo
+die Menues sind, kommt nichts."***
+
+**Damit ist es kein Neuzeichenfehler.** Waere es einer, waeren die Menues da
+und nur unsichtbar — ein Klick wuerde trotzdem aufklappen. Dass nichts kommt,
+heisst: **die Menuezeile ist nicht angemeldet.** Zustandsproblem, nicht
+Zeichenproblem.
+
+### Was daraus folgt
+
+Der gruene Hintergrund ist zurueck, also **hat `form_dial(FMD_FINISH)`
+gearbeitet** und den Schirm zurueckgegeben; die AES hat gezeichnet, was sie von
+sich aus zeichnen kann. Was fehlt, ist alles, wofuer **der Desktop selbst**
+laufen muesste.
+
+**Die Lesart der abgeschnittenen Logdatei war damit falsch — zum zweiten Mal
+an derselben Datei.** Die Abschneidung ist **keine Ortsangabe**, sondern die
+Folge einer nie geschlossenen Datei: der letzte Puffer blieb stehen. Die Demo
+kam also **ueber** `write_report` **und ueber** `form_dial` hinaus.
+
+**Es bleiben zwei Aufrufe:** `v_clsvwk` und `appl_exit`.
+
+### Nachbarschaft, ausdruecklich keine Diagnose
+
+`appl_exit` ist die Stelle, die [ACC10](ACC10.md) am 2026-09-26 repariert hat
+(`wait_for_accs` schlief auf `WAIT_INPUT` statt weiterzureichen). Dessen
+Abnahme lief **headless und ohne GEM-Anwendung davor**, und auf der Karte des
+Anwenders sind **zwei Accessories geladen**. Ob das hier beteiligt ist, ist
+**ungemessen**.
+
 ## Auftrag
 
 1. **Headless nachstellen.** Die Demo laeuft in QEMU `raspi4b`
