@@ -1,0 +1,505 @@
+BALL: screen 640x480, 1 page(s), ball d=102 px, apex=303 px
+BALL: ball 0.1600 of screen width = 102 px; readout on, from C:\BALL.CFG
+BALL: ST-RAM top 0x00E00000, ramtop 0x3BE00000; buffers asked for alternate RAM (MX_PREFTTRAM)
+BALL: buffers idx=300K/ST bg=300K/ST bgrow=0K/ST map_off=20K/ST map_shd=10K/ST run0=0K/ST run1=0K/ST tex=64K/ST log=32K/ST
+BALL: texture 256x128, 4 hues, from C:\BALL.NTX
+BALL: room 10x10 floor cells, wall 10x6, 24 palette entries, background image 307200 bytes painted in 10.00 ms; reflection fades over 48 rows
+BALL: sphere map 8184 px in 10.00 ms (2 ticks of 200 Hz)
+BALL: bounce 326 ticks, traverse 1090 ticks, roll 197.61 px/s; elastic, no decay; path holds 32 traverses (174.40 s) before coming within 3 % of retracing
+BALL: wind 15.81 px/s peak (8 % of the roll), 3 sines, periods 2.64 / 4.27 / 6.90 s, seed 1592637969
+BALL: headroom 153 frames in 0.20 s free-running = 765.00 fps, 1.31 ms/frame
+BALL: platform wait 60.38 Hz measured (3.31 ticks of 200 Hz); a frame counts as dropped above 4 ticks
+BALL: clock read 10 ns; the frame budget is split with 3 extra reads a frame = 0.00 % of a 20 ms frame
+BALL: one page and no flip, so the BLIT is the presentation: deferred to just after the platform wait, one frame behind composing
+BALL: model 28.98 rows/ms -- the card's phase is UNVERIFIED, so this is a cost model and not a guarantee against tearing
+BALL: blit 78.57 ns/px + 2.88 us/call, so one more rectangle is worth 37 px, and one merge may add at most an eighth; the frame splits up to 3 ways
+BALL: t=5.01 s  301 frames  60.08 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.47 ms  blit 0.48 ms  wait 15.66 ms
+BALL:   compose room 0.03 shadow 0.07 reflect 0.00 ball 0.17 text 0.20 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 2:1 3:200 4:100
+BALL:   redrew 14174.75 px in 2.06 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.05x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f38; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x110@229,197(1,1) 101x31@275,403(1,1) = 16355 px
+BALL: t=10.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.70 ms  blit 0.28 ms  wait 15.68 ms
+BALL:   compose room 0.07 shadow 0.08 reflect 0.00 ball 0.32 text 0.23 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14219.22 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f341; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x113@169,299(1,1) 142x44@159,410(1,0) 105x29@169,451(1,1) = 22832 px
+BALL: t=15.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.68 ms  blit 0.30 ms  wait 15.68 ms
+BALL:   compose room 0.05 shadow 0.12 reflect 0.00 ball 0.18 text 0.33 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14139.99 px in 2.03 rect/frame (4.60 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f632; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 104x112@62,272(0,0) 128x39@68,409(0,0) 102x1@64,479(0,0) = 18416 px
+BALL: t=20.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.67 ms  blit 0.28 ms  wait 15.72 ms
+BALL:   compose room 0.05 shadow 0.13 reflect 0.00 ball 0.22 text 0.27 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14211.86 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f908; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x108@125,117(1,1) 86x25@206,395(0,0) = 15164 px
+BALL: t=25.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.75 ms  blit 0.43 ms  wait 15.48 ms
+BALL:   compose room 0.13 shadow 0.10 reflect 0.00 ball 0.25 text 0.25 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14217.33 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f1202; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x108@255,121(1,1) 87x26@334,395(0,1) = 15276 px
+BALL: t=30.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.63 ms  blit 0.37 ms  wait 15.67 ms
+BALL:   compose room 0.08 shadow 0.12 reflect 0.00 ball 0.17 text 0.27 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14209.31 px in 2.03 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f1505; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x111@319,198(1,1) 106x31@361,403(1,0) = 16615 px
+BALL: t=35.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.02 ms  compose 0.58 ms  blit 0.35 ms  wait 15.72 ms
+BALL:   compose room 0.08 shadow 0.07 reflect 0.00 ball 0.23 text 0.18 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14294.04 px in 2.07 rect/frame (4.65 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f1805; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@378,265(0,1) 129x39@385,408(1,1) = 18465 px
+BALL: t=40.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.65 ms  blit 0.30 ms  wait 15.72 ms
+BALL:   compose room 0.13 shadow 0.10 reflect 0.02 ball 0.17 text 0.23 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14448.55 px in 2.07 rect/frame (4.70 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f2102; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x113@479,306(1,1) 149x69@462,411(0,1) = 23820 px
+BALL: t=45.01 s  300 frames  60.00 fps  1 dropped
+BALL:   step 0.00 ms  compose 0.65 ms  blit 0.40 ms  wait 15.62 ms
+BALL:   compose room 0.12 shadow 0.02 reflect 0.00 ball 0.17 text 0.33 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 0:1 3:198 4:100 6:1
+BALL:   redrew 14251.45 px in 2.06 rect/frame (4.64 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f2402; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@476,266(0,1) 129x39@483,408(1,1) = 18465 px
+BALL: t=50.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.50 ms  blit 0.37 ms  wait 15.80 ms
+BALL:   compose room 0.08 shadow 0.15 reflect 0.00 ball 0.08 text 0.18 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14195.80 px in 2.04 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 1.11x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f2714; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x107@423,106(1,1) 84x25@508,394(0,0) = 15009 px
+BALL: t=55.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.37 ms  blit 0.35 ms  wait 15.95 ms
+BALL:   compose room 0.02 shadow 0.10 reflect 0.00 ball 0.10 text 0.15 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14225.87 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f3029; worst compose 5.00 ms
+BALL:   worst rects 105x103@403,29(1,1) 93x9@536,44(0,1) 93x9@536,53(0,1) 75x22@520,385(0,1) = 14139 px
+BALL: t=60.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.02 ms  compose 0.45 ms  blit 0.37 ms  wait 15.83 ms
+BALL:   compose room 0.07 shadow 0.07 reflect 0.00 ball 0.12 text 0.20 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14193.04 px in 2.06 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f3305; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x106@240,82(0,1) 80x24@336,391(0,0) = 14724 px
+BALL: t=65.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.45 ms  blit 0.38 ms  wait 15.83 ms
+BALL:   compose room 0.08 shadow 0.07 reflect 0.00 ball 0.12 text 0.18 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14147.81 px in 2.04 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.11x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f3626; worst compose 5.00 ms
+BALL:   worst rects 105x104@208,32(0,1) 93x9@536,44(0,1) 93x9@536,53(0,1) 74x22@324,386(0,0) = 14222 px
+BALL: t=70.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.53 ms  blit 0.33 ms  wait 15.80 ms
+BALL:   compose room 0.10 shadow 0.07 reflect 0.00 ball 0.08 text 0.28 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14212.10 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f3905; worst compose 5.00 ms
+BALL:   worst rects 105x103@52,35(0,1) 93x9@536,44(0,1) 93x9@536,53(0,1) 76x22@166,386(0,0) = 14161 px
+BALL: t=75.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.02 ms  compose 0.52 ms  blit 0.32 ms  wait 15.82 ms
+BALL:   compose room 0.10 shadow 0.05 reflect 0.00 ball 0.12 text 0.25 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14151.33 px in 2.06 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f4217; worst compose 5.00 ms
+BALL:   worst rects 105x105@1,41(1,1) 93x9@536,44(0,1) 93x9@536,53(0,1) 76x22@113,387(1,0) = 14371 px
+BALL: t=80.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.52 ms  blit 0.23 ms  wait 15.92 ms
+BALL:   compose room 0.02 shadow 0.07 reflect 0.00 ball 0.17 text 0.27 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14145.26 px in 2.04 rect/frame (4.60 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f4544; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@4,272(0,1) 132x39@7,409(1,0) 102x1@4,479(0,0) = 18684 px
+BALL: t=85.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.53 ms  blit 0.38 ms  wait 15.75 ms
+BALL:   compose room 0.15 shadow 0.07 reflect 0.00 ball 0.12 text 0.20 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14224.68 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f4838; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@104,279(0,1) 135x40@103,409(1,1) 102x8@104,472(0,0) = 19650 px
+BALL: t=90.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.45 ms  blit 0.38 ms  wait 15.83 ms
+BALL:   compose room 0.07 shadow 0.08 reflect 0.00 ball 0.08 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14175.78 px in 2.06 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.11x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f5108; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x107@277,84(1,1) 80x23@372,392(0,0) = 14749 px
+BALL: t=95.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.50 ms  blit 0.30 ms  wait 15.87 ms
+BALL:   compose room 0.08 shadow 0.10 reflect 0.00 ball 0.13 text 0.17 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14163.38 px in 2.06 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f5420; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x111@325,227(1,1) 115x34@353,405(1,1) = 17239 px
+BALL: t=100.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.40 ms  blit 0.33 ms  wait 15.93 ms
+BALL:   compose room 0.07 shadow 0.08 reflect 0.00 ball 0.07 text 0.18 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14300.57 px in 2.06 rect/frame (4.66 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f5714; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@463,233(1,1) 117x34@487,406(1,1) = 17412 px
+BALL: t=105.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.50 ms  blit 0.43 ms  wait 15.73 ms
+BALL:   compose room 0.05 shadow 0.10 reflect 0.00 ball 0.15 text 0.20 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14285.07 px in 2.06 rect/frame (4.65 % of the screen)
+BALL:   scanout MODEL first-row margin 1.11x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f6005; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x110@483,210(1,1) 104x32@523,404(1,0) = 16552 px
+BALL: t=110.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.47 ms  blit 0.35 ms  wait 15.85 ms
+BALL:   compose room 0.03 shadow 0.12 reflect 0.00 ball 0.15 text 0.17 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14294.62 px in 2.07 rect/frame (4.65 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f6302; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x111@413,246(1,1) 117x36@434,407(0,1) = 17541 px
+BALL: t=115.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.45 ms  blit 0.37 ms  wait 15.85 ms
+BALL:   compose room 0.07 shadow 0.08 reflect 0.00 ball 0.17 text 0.13 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14303.54 px in 2.05 rect/frame (4.66 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f6602; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 69x9@560,62(0,1) 105x111@343,321(1,1) 154x69@321,411(1,0) = 24576 px
+BALL: t=120.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.53 ms  blit 0.25 ms  wait 15.88 ms
+BALL:   compose room 0.03 shadow 0.15 reflect 0.00 ball 0.17 text 0.18 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14273.34 px in 2.06 rect/frame (4.65 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f6917; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x108@281,122(1,1) 87x26@359,395(1,1) = 15276 px
+BALL: t=125.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.43 ms  blit 0.43 ms  wait 15.80 ms
+BALL:   compose room 0.07 shadow 0.10 reflect 0.00 ball 0.05 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14188.22 px in 2.04 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f7241; worst compose 5.00 ms
+BALL:   worst rects 105x102@248,29(0,1) 93x9@536,44(0,1) 93x9@536,53(0,1) 75x22@365,385(1,1) = 14034 px
+BALL: t=130.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.43 ms  blit 0.45 ms  wait 15.78 ms
+BALL:   compose room 0.08 shadow 0.05 reflect 0.00 ball 0.10 text 0.20 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14196.36 px in 2.06 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f7505; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x108@45,113(1,1) 85x25@127,395(1,1) = 15139 px
+BALL: t=135.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.47 ms  blit 0.25 ms  wait 15.95 ms
+BALL:   compose room 0.10 shadow 0.12 reflect 0.00 ball 0.05 text 0.20 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14227.04 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f7838; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 105x105@89,48(1,1) 93x9@536,53(0,1) 74x22@199,388(1,0) = 14327 px
+BALL: t=140.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.40 ms  blit 0.40 ms  wait 15.87 ms
+BALL:   compose room 0.07 shadow 0.12 reflect 0.00 ball 0.03 text 0.18 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14137.29 px in 2.04 rect/frame (4.60 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f8144; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x108@19,109(1,1) 81x25@105,394(1,1) = 15039 px
+BALL: t=145.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.57 ms  blit 0.43 ms  wait 15.67 ms
+BALL:   compose room 0.08 shadow 0.12 reflect 0.00 ball 0.13 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14183.30 px in 2.06 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f8405; worst compose 5.00 ms
+BALL:   worst rects 105x103@208,33(0,1) 93x9@536,44(0,1) 93x9@536,53(0,1) 74x22@324,386(0,0) = 14117 px
+BALL: t=150.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.02 ms  compose 0.35 ms  blit 0.40 ms  wait 15.90 ms
+BALL:   compose room 0.03 shadow 0.02 reflect 0.00 ball 0.10 text 0.20 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14191.92 px in 2.06 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f8720; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x106@245,54(1,1) 76x23@353,388(1,0) = 14552 px
+BALL: t=155.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.43 ms  blit 0.30 ms  wait 15.93 ms
+BALL:   compose room 0.03 shadow 0.15 reflect 0.00 ball 0.07 text 0.17 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14158.69 px in 2.03 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.11x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f9038; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x111@277,221(1,1) 112x33@308,405(0,0) = 17025 px
+BALL: t=160.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.47 ms  blit 0.33 ms  wait 15.87 ms
+BALL:   compose room 0.12 shadow 0.07 reflect 0.00 ball 0.10 text 0.18 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14258.85 px in 2.06 rect/frame (4.64 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f9314; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x107@454,87(0,1) 80x24@548,392(0,0) = 14829 px
+BALL: t=165.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.02 ms  compose 0.48 ms  blit 0.40 ms  wait 15.77 ms
+BALL:   compose room 0.05 shadow 0.10 reflect 0.00 ball 0.12 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14211.72 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f9629; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@481,265(1,1) 129x39@489,408(1,1) = 18465 px
+BALL: t=170.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.40 ms  blit 0.27 ms  wait 16.00 ms
+BALL:   compose room 0.05 shadow 0.08 reflect 0.00 ball 0.10 text 0.17 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14230.34 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f9914; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x110@462,182(0,1) 96x30@515,401(1,0) = 16104 px
+BALL: t=175.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.02 ms  compose 0.30 ms  blit 0.32 ms  wait 16.03 ms
+BALL:   compose room 0.03 shadow 0.07 reflect 0.00 ball 0.08 text 0.12 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14159.69 px in 2.03 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f10214; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x111@362,246(0,1) 117x36@383,407(1,1) = 17541 px
+BALL: t=180.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.42 ms  blit 0.30 ms  wait 15.95 ms
+BALL:   compose room 0.05 shadow 0.05 reflect 0.00 ball 0.10 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14270.87 px in 2.06 rect/frame (4.65 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f10508; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@230,252(0,1) 119x37@248,407(0,1) = 17837 px
+BALL: t=185.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.48 ms  blit 0.32 ms  wait 15.87 ms
+BALL:   compose room 0.03 shadow 0.10 reflect 0.00 ball 0.13 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14352.00 px in 2.07 rect/frame (4.67 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f10805; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x113@132,292(0,1) 138x42@127,410(1,0) 105x22@132,458(0,1) = 21645 px
+BALL: t=190.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.43 ms  blit 0.32 ms  wait 15.92 ms
+BALL:   compose room 0.03 shadow 0.07 reflect 0.00 ball 0.12 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14298.20 px in 2.04 rect/frame (4.65 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f11102; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x113@63,315(1,1) 155x69@40,411(0,1) = 24234 px
+BALL: t=195.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.47 ms  blit 0.30 ms  wait 15.90 ms
+BALL:   compose room 0.07 shadow 0.05 reflect 0.00 ball 0.08 text 0.27 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14244.28 px in 2.06 rect/frame (4.64 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f11459; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x105@168,57(0,1) 74x22@276,389(0,0) = 14327 px
+BALL: t=200.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.02 ms  compose 0.42 ms  blit 0.28 ms  wait 15.95 ms
+BALL:   compose room 0.12 shadow 0.05 reflect 0.00 ball 0.08 text 0.17 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14186.46 px in 2.06 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f11702; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x110@135,178(1,1) 95x30@191,401(1,1) = 16074 px
+BALL: t=205.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.37 ms  blit 0.42 ms  wait 15.88 ms
+BALL:   compose room 0.08 shadow 0.05 reflect 0.00 ball 0.10 text 0.13 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14171.56 px in 2.04 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f12008; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x107@216,88(0,1) 78x24@311,392(1,0) = 14781 px
+BALL: t=210.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.45 ms  blit 0.30 ms  wait 15.92 ms
+BALL:   compose room 0.12 shadow 0.03 reflect 0.00 ball 0.08 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14215.29 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.11x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f12305; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x106@297,70(1,1) 74x23@400,390(0,0) = 14506 px
+BALL: t=215.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.33 ms  blit 0.32 ms  wait 16.02 ms
+BALL:   compose room 0.05 shadow 0.08 reflect 0.00 ball 0.10 text 0.08 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14179.21 px in 2.06 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 1.11x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f12659; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x111@190,246(0,1) 121x36@208,407(0,1) = 17685 px
+BALL: t=220.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.45 ms  blit 0.32 ms  wait 15.90 ms
+BALL:   compose room 0.03 shadow 0.10 reflect 0.00 ball 0.12 text 0.20 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14261.93 px in 2.06 rect/frame (4.64 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f12908; worst compose 5.00 ms
+BALL:   worst rects 105x103@456,28(0,1) 93x9@536,44(0,1) 93x9@536,53(0,1) 66x22@574,385(0,0) = 13941 px
+BALL: t=225.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.45 ms  blit 0.35 ms  wait 15.87 ms
+BALL:   compose room 0.08 shadow 0.07 reflect 0.00 ball 0.13 text 0.17 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14157.28 px in 2.04 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.11x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f13229; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x108@488,105(0,1) 66x25@574,394(0,0) = 14664 px
+BALL: t=230.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.53 ms  blit 0.35 ms  wait 15.78 ms
+BALL:   compose room 0.05 shadow 0.13 reflect 0.00 ball 0.10 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14214.62 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f13517; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x106@453,75(1,1) 75x23@554,391(0,1) = 14529 px
+BALL: t=235.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.47 ms  blit 0.32 ms  wait 15.88 ms
+BALL:   compose room 0.08 shadow 0.07 reflect 0.00 ball 0.12 text 0.20 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14157.81 px in 2.06 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f13808; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x106@334,64(0,1) 74x23@439,389(1,0) = 14506 px
+BALL: t=240.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.43 ms  blit 0.32 ms  wait 15.92 ms
+BALL:   compose room 0.08 shadow 0.07 reflect 0.00 ball 0.15 text 0.13 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14156.92 px in 2.04 rect/frame (4.61 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f14129; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@312,279(0,1) 131x40@314,409(0,1) 102x8@315,472(1,0) = 19490 px
+BALL: t=245.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.40 ms  blit 0.38 ms  wait 15.88 ms
+BALL:   compose room 0.03 shadow 0.03 reflect 0.00 ball 0.22 text 0.12 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14245.37 px in 2.06 rect/frame (4.64 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f14405; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x108@153,121(1,1) 83x26@234,395(0,1) = 15172 px
+BALL: t=250.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.38 ms  blit 0.38 ms  wait 15.90 ms
+BALL:   compose room 0.07 shadow 0.00 reflect 0.00 ball 0.10 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14190.98 px in 2.06 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f14702; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x109@64,147(0,1) 88x27@133,398(1,0) = 15495 px
+BALL: t=255.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.02 ms  compose 0.40 ms  blit 0.32 ms  wait 15.93 ms
+BALL:   compose room 0.07 shadow 0.07 reflect 0.00 ball 0.10 text 0.17 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14223.57 px in 2.06 rect/frame (4.63 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f15008; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@22,265(0,1) 129x39@30,408(0,1) = 18465 px
+BALL: t=260.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.40 ms  blit 0.38 ms  wait 15.88 ms
+BALL:   compose room 0.03 shadow 0.03 reflect 0.00 ball 0.15 text 0.18 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14403.91 px in 2.07 rect/frame (4.69 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f15302; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@148,272(0,1) 132x39@152,409(0,0) 102x1@148,479(0,0) = 18684 px
+BALL: t=265.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.47 ms  blit 0.37 ms  wait 15.83 ms
+BALL:   compose room 0.03 shadow 0.12 reflect 0.00 ball 0.13 text 0.18 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14286.19 px in 2.07 rect/frame (4.65 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f15602; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@219,301(1,1) 143x44@208,410(0,1) 105x30@219,450(1,1) = 22876 px
+BALL: t=270.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.50 ms  blit 0.43 ms  wait 15.73 ms
+BALL:   compose room 0.07 shadow 0.05 reflect 0.00 ball 0.20 text 0.18 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:200 4:100
+BALL:   redrew 14198.53 px in 2.05 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 1.12x worst, 0 rect(s) at predicted risk
+BALL:   worst blit 5.00 ms f15905; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x111@271,199(1,1) 101x31@316,403(0,1) = 16460 px
+BALL: t=275.01 s  300 frames  60.00 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.42 ms  blit 0.33 ms  wait 15.92 ms
+BALL:   compose room 0.07 shadow 0.10 reflect 0.00 ball 0.03 text 0.22 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame

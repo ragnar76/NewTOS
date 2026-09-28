@@ -149,6 +149,25 @@ Doom ohnehin sein fertiges Bild hinausschiebt.
 echter 256-Farben-Modus, faellt die Umrechnung weg, ohne dass am Port etwas zu
 aendern waere.
 
+### Gemessen 2026-09-28 durch [PORT07](PORT07.md) — zwei Praezisierungen
+
+Die konforme Ball-Demo hat den Weg gefahren, den dieser Abschnitt entwirft.
+Damit ist er **belegt statt angenommen** — und zwei Zahlen sind jetzt bekannt:
+
+1. **„Truecolor" heisst hier 15 Bit (5-5-5), nicht 24.** Das VDI-Gerätewort
+   ist der Falcon-Pixel. Gemessen: von 159 Farben im nicht-konformen Bild sind
+   158 nicht in 5 Bit darstellbar, von 116 im konformen **keine einzige**. Die
+   Umsetztabelle fuer Dooms Palette rechnet also auf 5-5-5, nicht auf 8-8-8.
+2. **Der Preis je Bild ist die Kopie, nicht die Umrechnung.** 320x200 =
+   64 000 px x **80,49 ns** = **5,15 ms allein im `vro_cpyfm`** (18 % eines
+   35-Hz-Taktes, 31 % eines 60-Hz-Bildes). Der Umrechnungsdurchlauf, den dieser
+   Abschnitt mit „unter einer Millisekunde" veranschlagt hat, ist der
+   **billige** Teil und verschwindet im Staging.
+
+**Daraus folgt nichts gegen den Entwurf** — 5,15 ms sind tragbar —, aber es
+verschiebt, wo sich Optimierung lohnt: nicht an Dooms Seite, sondern an
+unserer. [GUI07](GUI07.md) hat die zwei konkreten Stellen.
+
 ## 4. Vor dem Anfangen zu klaeren
 
 * **Lizenz.** Die Quelltextfreigabe von 1997 stand unter einer eigenen,

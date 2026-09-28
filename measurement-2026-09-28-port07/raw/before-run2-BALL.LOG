@@ -1,0 +1,15 @@
+BALL: screen 640x480, 2 page(s), ball d=102 px, apex=303 px
+BALL: ball 0.1600 of screen width = 102 px; readout on, from C:\BALL.CFG
+BALL: ST-RAM top 0x00E00000, ramtop 0x3BE00000; buffers asked for alternate RAM (MX_PREFTTRAM)
+BALL: buffers idx=300K/ST bg=300K/ST bgrow=0K/ST map_off=20K/ST map_shd=10K/ST run0=0K/ST run1=0K/ST tex=64K/ST log=32K/ST
+BALL: texture 256x128, 4 hues, from C:\BALL.NTX
+BALL: room 10x10 floor cells, wall 10x6, 24 palette entries, background image 307200 bytes painted in 10.00 ms; reflection fades over 48 rows
+BALL: sphere map 8184 px in 5.00 ms (1 ticks of 200 Hz)
+BALL: bounce 326 ticks, traverse 1090 ticks, roll 197.61 px/s; elastic, no decay; path holds 32 traverses (174.40 s) before coming within 3 % of retracing
+BALL: wind 15.81 px/s peak (8 % of the roll), 3 sines, periods 2.64 / 4.27 / 6.90 s, seed 1592637969
+BALL: headroom 819 frames in 0.20 s free-running = 4095.00 fps, 0.24 ms/frame
+BALL: platform wait 60.38 Hz measured (3.31 ticks of 200 Hz); a frame counts as dropped above 4 ticks
+BALL: clock read 13 ns; the frame budget is split with 3 extra reads a frame = 0.00 % of a 20 ms frame
+BALL: 2 pages, so the FLIP is the presentation: the blit stays where it was composed and this program never writes a page that is being shown
+BALL: whether the flip ITSELF is whole is the platform's answer, not this program's -- on NewTOS it is not (see plat-newtos.c)
+BALL: blit 4.42 ns/px + 0.00 us/call, so one more rectangle is worth 0 px, and one merge may add at most an eighth; the frame splits up to 3 ways

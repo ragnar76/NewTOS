@@ -1,0 +1,15 @@
+--- /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/port07/plat-newtos.c.ORIG	2026-09-28 21:36:13
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/d7ff6c34-253d-4fd6-839f-efa08458ba32/scratchpad/port07/before-src/plat-newtos.c	2026-09-28 21:40:39
+@@ -104,7 +104,11 @@
+ 		p[i] = 0u;
+ 
+ 	vsf_interior(vdi_handle, FIS_SOLID);
+-	vsf_color(vdi_handle, 1);
++	vsf_color(vdi_handle, 2);	/* PORT07 measurement repair: pen 1 (black)
++					 * is device 0x00000000 since 2d6b3cc, so
++					 * the "any drawn pixel is non-zero"
++					 * search below can never succeed. Pen 2
++					 * (red) is 0x00FF0000.		     */
+ 	pxy[0] = 0;
+ 	pxy[1] = 1;
+ 	pxy[2] = (short)(w - 1);

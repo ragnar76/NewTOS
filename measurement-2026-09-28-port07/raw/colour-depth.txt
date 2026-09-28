@@ -1,0 +1,4 @@
+02-before-repaired-t45.png                   640x480  159 distinct  158 NOT 5-bit/gun
+03-after-t45.png                             640x480  116 distinct    0 NOT 5-bit/gun
+04-before-long-t430.png                      640x480  164 distinct  163 NOT 5-bit/gun
+05-after-long-t430.png                       640x480  123 distinct    0 NOT 5-bit/gun

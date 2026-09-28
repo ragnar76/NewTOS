@@ -1,0 +1,151 @@
+PORT07 -- die Rohzahlen auf einer Seite
+=======================================
+Quelle je Zeile in Klammern.  Alle Laeufe: QEMU `-M raspi4b`, NewTOS-Kern
+HEAD b9a2444 (debug), Karte 64 MiB FAT16, Bildschirm 640x480, `BALL.CFG` mit
+`hud 1`, Ballfraktion 0,16 (= 102 px), Textur `C:\BALL.NTX`.
+
+"vorher" = `plat-newtos.c` wie vorgefunden (XBIOS 2/3/5), mit der
+einzeiligen Reparatur aus method/before-arm-repair.diff, ohne die es gar
+nicht erst startet.  "nachher" = die neue, konforme Datei.
+
+
+1. DER STARTABBRUCH DES VORGEFUNDENEN STANDES
+---------------------------------------------------------------------------
+  frisch uebersetzt      "BALL: could not measure the screen pitch"
+                         (raw/before-unrepaired-serial.log:58)
+  Binaerbild 2026-09-09  dieselbe Zeile
+                         (raw/shipped-2026-09-09-serial.log:58)
+  Ursache                2d6b3cc (2026-09-21), kernel/src/hal/framebuffer.rs
+                         `rgb()` verliert das unbedingte 0xFF im X-Byte
+  Bildabzug              screendumps/01-before-unrepaired-refuses.png
+                         (der Desktop steht da, die Demo ist weg)
+
+
+2. FREILAUFENDE BILDRATE (ball.c `bench()`, 0,2 s ohne Vsync)
+---------------------------------------------------------------------------
+                    Bilder   fps        ms/Bild   Quelle
+  vorher  Lauf 1      813    4065,00     0,246    raw/before-run1-BALL.LOG
+  vorher  Lauf 2      819    4095,00     0,244    raw/before-run2-BALL.LOG
+  vorher  lang        848    4240,00     0,236    raw/before-long-BALL.LOG
+  nachher Lauf 1      154     770,00     1,299    raw/after-run1-BALL.LOG
+  nachher lang        153     765,00     1,307    raw/after-long-BALL.LOG
+
+  Mittel  vorher  0,242 ms/Bild    nachher  1,303 ms/Bild
+  ------------------------------------------------------------------
+  FAKTOR  5,39    (die Reserve faellt von ~4 130 auf ~767 fps)
+
+
+3. WAS EIN PIXEL IM BLIT KOSTET (ball.c `blit_cost()`, zwei Rechtecke,
+   Gerade durch die beiden Messpunkte, Uhrkosten abgezogen)
+---------------------------------------------------------------------------
+                    ns/Pixel   us/Aufruf   ein Rechteck ist wert
+  vorher  Lauf 1      4,42       0,00           0 px
+  vorher  Lauf 2      4,42       0,00           0 px
+  vorher  lang        4,30       0,00           0 px
+  nachher Lauf 1     82,41       2,01          24 px
+  nachher lang       78,57       2,88          37 px
+
+  Mittel  vorher  4,38 ns/px     nachher  80,49 ns/px
+  ------------------------------------------------------------------
+  FAKTOR  18,4
+
+  Der feste Anteil je Aufruf war vorher unter der Aufloesung des Verfahrens
+  (0,00 us = "nicht unterscheidbar"), nachher 2,0-2,9 us -- das ist der
+  Trap plus die Vorbereitung im `vro_cpyfm`.  Er ist so klein, dass ein
+  zusaetzliches Rechteck sich schon ab 24-37 Pixeln lohnt.
+
+
+4. DAS BILD SELBST
+---------------------------------------------------------------------------
+4.1 Dargebotene Bildrate (Vsync-gebunden, Intervallzeilen aus dem
+    32-KB-Puffer-Commit)
+
+                   Intervalle   fps                  verworfene Bilder
+  vorher  lang     75 (375 s)   74x 60,00, 1x 60,22  4 von 22 500
+  nachher lang     55 (275 s)   54x 60,00, 1x 60,08  1 von 16 500
+  (raw/before-long-BALL.LOG, raw/after-long-BALL.LOG; die Verwerfungen
+   liegen jeweils in den ersten Intervallen, danach durchgehend 0)
+
+  Der Vsync deckelt beide bei 60 fps -- deshalb ist Abschnitt 2 und nicht
+  diese Tabelle die Zahl, die vorher und nachher unterscheidet.
+
+4.2 Gezeichnete Flaeche je Bild (identischer Arbeitsauftrag, nur andere
+    Flugphase)
+       vorher   15 517 px / Bild in 2,06 Rechtecken (5,05 % des Schirms)
+       nachher  14 301 px / Bild in 2,06 Rechtecken (4,66 % des Schirms)
+
+    Daraus der Blitanteil am freilaufenden Bild:
+       vorher   15 517 x 4,30 ns =  0,067 ms von 0,236 ms  = 28 %
+       nachher  14 301 x 78,57 ns = 1,124 ms von 1,307 ms  = 86 %
+    Der Blit ist jetzt das Bild.
+
+4.3 Farbtiefe (method/colour-depth.py ueber die Bildabzuege,
+    raw/colour-depth.txt)
+
+       02-before-repaired-t45.png   159 verschiedene Farben, 158 davon
+                                    NICHT in 5 Bit je Kanal darstellbar
+       03-after-t45.png             116 verschiedene Farben,   0 davon
+       04-before-long-t430.png      164 / 163
+       05-after-long-t430.png       123 /   0
+
+    Der Weg ueber die VDI quantisiert das Bild auf den Falcon-Pixel, fuenf
+    Bit je Kanal, obwohl der Framebuffer darunter acht haelt.  Die Demo
+    dithert ihre Palette, deshalb sieht man Baender statt Stufen; die
+    Bildabzuege 04 und 05 zeigen dieselbe Szene, 05 eine Spur kuehler.
+
+4.4 Sichtprobe nach 430 s (254 Abpraller)
+       screendumps/04-before-long-t430.png  Ball bei (51,93)
+       screendumps/05-after-long-t430.png   Ball bei (51,94)
+    Keine Reste, kein Nachziehen, kein halbes Rechteck, HUD 60.0 fps in
+    beiden.  Die Bildstaende sind bis auf ein Pixel dieselben, weil der
+    feste Zeitschritt aus dem 200-Hz-Takt kommt und nicht aus der Bildrate.
+
+
+5. WAS DARAUS FUER PORT06 FOLGT -- UND WAS NICHT
+---------------------------------------------------------------------------
+5.1 Auf DIESER Maschine gemessen, ohne Hochrechnung:
+
+    Dooms Bild ist 320x200 = 64 000 Pixel.
+        64 000 x 80,49 ns  =  5,15 ms je Bild, nur der `vro_cpyfm`.
+    Dooms Takt ist 35 Hz = 28,6 ms  ->  18 % des Budgets.
+    Bei 60 Bildern/s = 16,7 ms      ->  31 % des Budgets.
+
+    Zum Vergleich der ganze Schirm dieser Maschine:
+        307 200 x 80,49 ns = 24,7 ms -- ein Vollbild je `vro_cpyfm` passt
+        hier NICHT in 16,7 ms.  Doom passt, weil Doom klein ist.
+
+5.2 Hochgerechnet auf die Pi -- und das ist KEINE Messung:
+
+    Der einzige Bezugspunkt ist der HW-Lauf vom 2026-09-09
+    (/Volumes/Daten/Development/ball-demo/logs/BALL-hw-2026-09-09-pi.LOG):
+    dort kostete der DIREKTE Weg 1,66 ns/px bei 1920x1080.  Derselbe direkte
+    Weg kostet hier 4,38 ns/px, also ist QEMU auf diesem Pfad 2,64-mal
+    langsamer.  Traegt derselbe Faktor auf dem VDI-Pfad, waere die Pi bei
+    30,5 ns/px, und dann
+
+        Doom       64 000 px x 30,5 ns = 1,95 ms je Bild
+        Ball-Demo 134 000 px x 30,5 ns = 4,08 ms je Bild (24 % von 16,7 ms)
+
+    **Der Faktor ist nicht uebertragbar und wird hier nur als
+    Groessenordnung genannt.** Ein Speicherschreibbefehl in einer Schleife
+    und ein Pfad aus zwei virtuellen Aufrufen, zwei Umrechnungen und einer
+    Cachepflege je Pixel sind nicht dieselbe Art Arbeit; QEMU hat kein
+    Cachemodell und macht aus dem nicht-cachenden Framebuffer gewoehnlichen
+    Hostspeicher.  Die Zahl, die zaehlt, muss auf der Pi gemessen werden --
+    die Demo meldet sie von selbst, es reicht ein Lauf.
+
+5.3 Das Urteil, das PORT07 schuldet:
+
+    **Dooms Bildweg aus PORT06 §3a ist belegt, nicht mehr angenommen.**
+    Ein Truecolor-Speicher-MFDB geht per `vro_cpyfm` auf den Schirm, in
+    voller Groesse, Bild fuer Bild, ueber Stunden, ohne Physbase und ohne
+    Setscreen, und das Ergebnis ist von der direkten Fassung mit blossem
+    Auge nicht zu unterscheiden.
+
+    Zwei Praezisierungen, die PORT06 aufnehmen sollte:
+      (a) "Truecolor" heisst hier 15 Bit (5-5-5), nicht 24.
+      (b) Der Bildweg kostet 80 ns/px auf QEMU; der Umrechnungsdurchlauf,
+          den §3a auf "unter einer Millisekunde" veranschlagt hat, ist
+          dabei der billige Teil -- er verschwindet im Staging.  Teuer ist
+          das `vro_cpyfm` selbst, und der Grund dafuer steht in
+          RUNINFO.TXT Abschnitt 4 (V-a, V-b) und ist behebbar.

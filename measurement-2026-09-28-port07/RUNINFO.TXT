@@ -1,0 +1,173 @@
+measurement-2026-09-28-port07
+  PORT07 -- die Ball-Demo laeuft ueber die VDI, und was das je Bild kostet
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD b9a2444 ("perf(desk): a drop redraws its
+window, not the whole screen").  **Am NewTOS-Baum wurde kein Quelltext
+angefasst** -- `git status --short` nennt vor wie nach dem Lauf nur die zwei
+vorgefundenen unversionierten Eintraege (emutos-switches.txt,
+hw-round-2026-09-24/) und dieses Messverzeichnis.  `git diff --stat` ist
+leer.  Geaendert wurde ausschliesslich
+`/Volumes/Daten/Development/ball-demo/plat-newtos.c`, und die Demo liegt
+ausserhalb des Repos; der Unterschied liegt als
+`method/plat-newtos.c.diff` hier bei, weil er sonst nirgends aufgehoben ist.
+
+Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, /Volumes/BOOT nicht
+beruehrt, nichts committet, kein `git checkout/restore/clean/stash/reset`.
+Alle Zwischenstaende (Kartenabbild, Vorher-Bau, Protokolle) lagen im
+Job-Scratchpad; **kein `*.img` in diesem Verzeichnis.**
+
+Maschine: QEMU 11.0.2, `-M raspi4b`, `-display none`, serielle Ausgabe in
+eine Datei, Karte als `-drive if=sd,format=raw`, Bildschirmabzuege ueber QMP
+`screendump`.  Bildschirm 640x480 -- das ist, was die Firmware dieser
+Maschine meldet; die echte Pi 4 laeuft 1920x1080, und was das aendert steht
+in NUMBERS.TXT Abschnitt 5.
+
+Host: macOS (Darwin 27).  Kein `timeout`; die QEMU-Laeufe sind durch den
+QMP-Treiber begrenzt, der nach dem letzten Abzug `quit` schickt.
+
+
+0. DIE FRAGE, IN EINEM SATZ
+---------------------------------------------------------------------------
+Was kostet es, die Ball-Demo auf der Pi denselben Weg gehen zu lassen wie auf
+dem TT und auf dem PiStorm -- einen Speicher-MFDB und ein `vro_cpyfm` je
+Rechteck statt eigener Schreibzugriffe in den Framebuffer -- und ist damit
+Dooms Bildweg aus PORT06 §3a belegt?
+
+ANTWORT VORWEG:
+
+    Die Demo laeuft konform, sichtbar, 60,00 fps, 0 verworfene Bilder.
+    Das freilaufende Bild kostet 0,24 ms -> 1,31 ms   (Faktor 5,4)
+    Das Pixel im Blit kostet 4,4 ns -> 80,5 ns        (Faktor 18,4)
+    Die Bildfarbe faellt von 8 auf 5 Bit je Kanal.
+
+    Fuer Doom heisst das auf DIESER Maschine: 320x200 = 64 000 Pixel
+    kosten 5,15 ms je Bild allein im `vro_cpyfm`.  Der Weg ist belegt.
+    Billig ist er nicht.
+
+
+1. WAS SICH UNTERWEGS HERAUSSTELLTE, UND DIE MESSUNG ERST VERSCHOB
+---------------------------------------------------------------------------
+Die unveraenderte Plattformdatei **startet auf HEAD b9a2444 ueberhaupt
+nicht**.  Sie bricht mit "could not measure the screen pitch" ab -- sowohl
+frisch uebersetzt (raw/before-unrepaired-serial.log:58) als auch als das
+ausgelieferte Binaerbild vom 2026-09-09, das im Demo-Verzeichnis liegt
+(raw/shipped-2026-09-09-serial.log:58).
+
+Der Grund ist genau das, wogegen PORT06 argumentiert.  Die Zeilenbreite wurde
+gemessen, indem der Bildschirmanfang genullt, Zeile 1 per `vr_recfl` mit Stift
+1 gefuellt und das erste geaenderte Wort gesucht wurde -- begruendet mit
+"every VDI pen is opaque (alpha 0xFF), so any pixel it draws is non-zero".
+Am 2026-09-21 hat `2d6b3cc` ("fix(vdi): the device pixel carries the Falcon
+word's overlay bit") dem Bildpunkt sein unbedingtes 0xFF im X-Byte genommen:
+
+    kernel/src/hal/framebuffer.rs, vor 2d6b3cc
+        pub const fn rgb(r,g,b) -> u32 { 0xFF00_0000 | ... }
+    danach
+        pub const fn rgb(r,g,b) -> u32 { ((r)<<16)|((g)<<8)|(b) }
+
+Stift 1 ist Schwarz, Schwarz ist seither das Nullwort, und die Suche kann
+nicht mehr anschlagen.  **An der zugesagten Schnittstelle hat sich nichts
+bewegt** -- nur an einem Interna, von dem die Demo nie haette abhaengen
+duerfen.  Sieben Tage lang war die Demo damit tot, ohne dass es jemand
+gemerkt hat.
+
+Fuer den Vorher-Arm der Messung war deshalb eine Reparatur noetig, und sie
+ist einzeilig: Stift 2 (Rot, 0x00FF0000) statt Stift 1.
+`method/before-arm-repair.diff`.  Sie steckt NUR in einer Scratch-Kopie; die
+ausgelieferte Datei ist die neue, konforme.
+
+
+2. WAS GEAENDERT WURDE
+---------------------------------------------------------------------------
+`plat-newtos.c`, sonst nichts.  `ball.c`, `ball_neu.c`, `ball-tex.c`,
+`ball.h` und die Bauskripte sind unangetastet (Projektregel
+[[port-target-app-unmodified]]).
+
+  * Der Rahmen kommt in einen Speicher-MFDB in der Geraeteform der NewTOS-VDI
+    (`fd_stand = 0`, `fd_nplanes = 16`, ein Geraetewort je Pixel,
+    `fd_wdwidth = (fd_w + 15) / 16` -- docs/api/vdi/raster/_raster.md,
+    tos-api/src/vdi/raster.rs "NewTOS memory-MFDB format") und geht mit
+    **einem `vro_cpyfm` je Rechteck** auf den Schirm.
+  * Die Farbtabelle wird nicht mehr gerechnet, sondern **gemessen**:
+    `vs_color` setzt die 256 Farben der Demo als VDI-Stifte, je Stift wird
+    ein Pixel gemalt und die Zeile per `vro_cpyfm` Bildschirm->Speicher
+    zurueckgelesen.  In der Datei steht keine RGB-nach-Wort-Formel mehr.
+  * Die Form wird einmalig verifiziert (`probe_format`): ein bekanntes
+    Muster wird gestaged, mit demselben Aufruf geblittet, den `plat_blit`
+    benutzt, und vollstaendig zurueckgelesen.  Stimmt es nicht, weigert sich
+    die Demo, statt Unsinn zu malen.
+  * Weg sind: die Zeilenbreitenmessung, die Seitenumschaltung und jeder
+    Framebuffer-Zeiger.  `/usr/bin/grep -i -E "setscreen|physbase|logbase"`
+    ueber `plat-newtos.c` findet **0** Treffer (auch in den Kommentaren
+    nicht -- die drei sind dort als "XBIOS 2/3/5" benannt, damit die Pruefung
+    des Tickets buchstaeblich durchlaeuft).
+  * Neu dazugekommen und in beiden Vorlagen ebenso vorhanden:
+    `wind_update`/`form_dial` um den Bildschirm, `vs_clip` auf das ganze
+    Bild, `vq_extnd` als Tiefenpruefung, `vq_color` zum Sichern der Stifte,
+    und die Schlusszeile ins `C:\BALL.LOG`.
+
+
+3. WAS DIE KONFORMITAET KOSTET, UND WAS SIE NICHT KOSTET
+---------------------------------------------------------------------------
+Die Zahlen stehen in NUMBERS.TXT.  Drei Saetze vorweg:
+
+  * **Auf dem Schirm sieht man keinen Unterschied.** 60,00 fps in beiden
+    Faellen, ueber 275 s bzw. 375 s, ein verworfenes Bild in der Anlaufphase.
+    Die Bildabzuege 04 und 05 sind dieselbe Szene bei demselben Ballstand
+    (254 Abpraller).
+  * **Die Reserve schrumpft um das Fuenffache.** 0,24 -> 1,31 ms je
+    freilaufendem Bild bei ~14 300 gezeichneten Pixeln.  Von den 1,31 ms ist
+    rund 1,15 ms der Blit.  Bei 16,7 ms Bildbudget bleibt trotzdem reichlich
+    Luft -- auf DIESER Aufloesung.
+  * **Die Seitenumschaltung ist weg.** Ohne XBIOS 5 gibt es keine zweite
+    sichtbare Basis, und die Standard-VDI bietet keine.  Das ist derselbe
+    Grund, aus dem `plat-tt.c` und `plat-pistorm.c` eine Seite melden.  Viel
+    verloren ist hier nichts: die Umschaltung war ohnehin nie atomar
+    (`# KNOWN DEFECT`, tos-api/src/xbios/screen.rs:221).
+
+
+4. BEFUNDE AN DER VDI -- BERICHTET, NICHT BEHOBEN
+---------------------------------------------------------------------------
+Auftragsgemaess wurde am Kern nichts angefasst.  Zwei Stellen erklaeren den
+Faktor 18 je Pixel und gehoeren in ein eigenes Ticket:
+
+  V-a  `mem_to_screen` (tos-api/src/vdi/raster.rs:494-533) liest fuer JEDES
+       Pixel den lebenden Bildschirmpunkt und rechnet ihn nach RGB565 --
+       auch bei `S_ONLY` (Op 3), wo `raster_op` das Ergebnis wegwirft.  Beim
+       mit Abstand haeufigsten Kopiermodus ist das ein Framebuffer-Lesezugriff
+       plus eine Umrechnung je Pixel umsonst.
+  V-b  Die Schleife laeuft ueber `&dyn RasterBackend`: zwei virtuelle Aufrufe
+       (`get_device_pixel`, `put_device_pixel`) und zwei Umrechnungen je
+       Pixel.  Basis und Zeilenabstand des Framebuffers werden je Pixel neu
+       geholt (`active_fb()`), statt einmal je Zeile.
+
+Beides ist Durchsatz, nicht Verhalten: kein Bild wird dadurch falsch.  Die
+Aenderung gehoert nach dem Termin gemacht, und die Ball-Demo ist dann der
+Messstand, der sie bewertet.
+
+  V-c  (Beobachtung, kein Defekt) Ein "Truecolor-Speicher-MFDB" ist auf
+       NewTOS **15 Bit Farbe**, nicht 24: das Geraetewort ist der
+       Falcon-Pixel mit fuenf Bit je Kanal.  Belegt: von 159 Farben im
+       Vorher-Bild sind 158 nicht in 5 Bit darstellbar, von 116 Farben im
+       Nachher-Bild ist es **keine einzige** (raw/colour-depth.txt).  Fuer
+       PORT06 §3a heisst das: Dooms Palette wird beim Umsetzen auf 5 Bit je
+       Kanal quantisiert.  Das ist kein Hindernis, aber es gehoert gewusst.
+
+
+5. WAS NUR DIE ECHTE PI ZEIGEN KANN
+---------------------------------------------------------------------------
+  * **1920x1080.** QEMU meldet hier 640x480.  Auf der Pi zeichnet die Demo
+    rund 134 000 Pixel je Bild statt 14 300 -- der Faktor 9,4 geht direkt in
+    die Blitzeit.  Ob das im 16,7-ms-Budget bleibt, sagt nur die Pi.
+    Abschaetzung und ihre Grenzen: NUMBERS.TXT Abschnitt 5.
+  * **Der saubere Ausstieg.** Die Demo endet auf einen Tastendruck; auf
+    `raspi4b` gibt es keine Tastatur und die serielle Leitung wird auf
+    diesem Board absichtlich verworfen.  Die Laeufe hier wurden abgeschossen,
+    die Intervallzeilen stammen deshalb aus dem automatischen Puffer-Commit
+    nach 32 KB.  Die Abschlusszusammenfassung, die Palettenwiederherstellung
+    und die neue `BALL: NewTOS screen ...`-Zeile aus `plat_close()` sind
+    damit hier NICHT belegt -- das ist ein Punkt fuer die HW-Liste.
+  * **Der Cache.** QEMU hat kein Cachemodell und macht aus dem
+    nicht-cachenden Framebuffer gewoehnlichen Hostspeicher.  Genau die
+    Kosten, die auf der Pi zaehlen, fehlen hier -- in beide Richtungen.

@@ -1,6 +1,6 @@
 # PORT07 — Die Ball-Demo auf der Pi konform machen (und damit Dooms Bildweg beweisen)
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Portierung / Konformitaet — Anwenderwunsch 2026-09-28
+Status: **ERLEDIGT — ein Pi-Lauf offen** (2026-09-28) · Prioritaet: **P2** · Typ: Portierung / Konformitaet — Anwenderwunsch 2026-09-28
 
 Abhaengigkeiten: — · **Vorbedingung im Sinne eines Beweises** fuer [PORT06](PORT06.md)
 
@@ -68,3 +68,77 @@ nicht behoben — elf Tage vor dem Termin wird der Zeichenpfad nicht angefasst.
 [Gemeinsame Regeln](README.md) gelten. Die Demo liegt ausserhalb des Repos —
 Aenderungen dort sind **nicht** Teil eines NewTOS-Commits; der Messbericht
 schon.
+
+## Abschluss (2026-09-28)
+
+`plat-newtos.c` geht jetzt denselben Weg wie `plat-tt.c` und `plat-pistorm.c`:
+Speicher-MFDB plus **ein `vro_cpyfm` je Rechteck**, kein XBIOS 2/3/5, kein
+Framebuffer-Zeiger. **Am NewTOS-Baum ist keine Quelltextzeile geaendert**
+(`git diff --stat` leer, Basislinien alle unveraendert). `ball.c`,
+`ball_neu.c`, `ball-tex.c` unangetastet.
+
+### Der Befund, der zuerst kam: die Demo war seit dem 21. September kaputt
+
+**Der vorgefundene Stand startet auf `b9a2444` ueberhaupt nicht**, frisch
+uebersetzt wie auch das ausgelieferte Binaerbild vom 2026-09-09:
+
+```
+BALL: could not measure the screen pitch
+```
+
+Ursache per `git log -S` belegt: **`2d6b3cc`** (2026-09-21, „the device pixel
+carries the Falcon word's overlay bit") nahm `hal/framebuffer.rs` das
+unbedingte `0xFF00_0000` aus `rgb()`. Die Zeilenbreitenmessung der Demo suchte
+„das erste Pixel, das die VDI geaendert hat", begruendet mit *„every VDI pen is
+opaque (alpha 0xFF)"*. Stift 1 ist Schwarz, und Schwarz ist seither das
+Nullwort — die Suche kann nicht mehr anschlagen.
+
+**An der zugesagten Schnittstelle bewegte sich nichts; nur an einem Interna,
+von dem die Demo nie haette abhaengen duerfen.** Das ist PORT06s
+Konformitaetsargument, unfreiwillig belegt. Fuer den Vorher-Arm war eine
+einzeilige Reparatur in einer Scratch-Kopie noetig (Stift 2 statt 1), sonst
+gaebe es keine Vorher-Zahl.
+
+### Die Zahlen (QEMU `raspi4b`, 640x480, 3 Vorher- / 2 Nachher-Laeufe)
+
+```
+freilaufendes Bild   vorher 0,242 ms   nachher 1,303 ms   Faktor 5,39
+Pixel im Blit        vorher  4,38 ns   nachher 80,49 ns   Faktor 18,4
+dargeboten           60,00 fps beide; 4 verworfen/22 500 vs 1/16 500
+Farbtiefe            159 Farben (158 nicht 5-Bit) -> 116 Farben (0 nicht 5-Bit)
+```
+
+Der Blit waechst von 28 % auf 86 % des freilaufenden Bildes. **Auf dem Schirm
+sieht man nichts davon** — Vsync deckelt beides bei 60 fps, die Abzuege nach
+430 s zeigen dieselbe Szene, keine Reste.
+
+### Urteil fuer [PORT06](PORT06.md)
+
+**Dooms Bildweg ist belegt, nicht mehr angenommen.** Zwei Praezisierungen
+fuer dessen §3a, beide gemessen:
+
+1. **„Truecolor" heisst hier 15 Bit (5-5-5), nicht 24** — das VDI-Gerätewort
+   ist der Falcon-Pixel. Von 159 Farben im Vorher-Bild sind 158 nicht in 5 Bit
+   darstellbar, von 116 im Nachher-Bild **keine einzige**.
+2. **Preis je Bild:** 320x200 = 64 000 px x 80,49 ns = **5,15 ms allein im
+   `vro_cpyfm`** (18 % eines 35-Hz-Taktes). Der Umrechnungsdurchlauf, den §3a
+   mit „unter einer Millisekunde" veranschlagt, ist der **billige** Teil.
+   Teuer ist die Kopie.
+
+### Der eine offene Punkt — und er kostet genau einen Lauf
+
+**1920x1080 auf der echten Pi.** QEMU meldet 640x480; dort sind es ~134 000
+statt ~14 300 Pixel je Bild. Ob das im 16,7-ms-Budget bleibt, sagt nur die Pi.
+Die Hochrechnung (≈ 4,1 ms/Bild) steht in `NUMBERS.TXT` §5.2 und ist
+**ausdruecklich keine Messung** — ein Store-Loop und ein Pfad aus zwei
+virtuellen Aufrufen plus Cachepflege sind nicht dieselbe Art Arbeit, und QEMU
+hat kein Cachemodell.
+
+Ebenfalls nur auf der Pi: der saubere Ausstieg (`raspi4b` hat keine Tastatur),
+also Abschlusszusammenfassung, Palettenwiederherstellung und
+`form_dial(FMD_FINISH)`.
+
+### Herausgefallen
+
+**[GUI07](GUI07.md)** — zwei Durchsatzbefunde in `vdi/raster.rs`, berichtet und
+**nicht** behoben (kein Kerneleingriff vor dem Termin).
