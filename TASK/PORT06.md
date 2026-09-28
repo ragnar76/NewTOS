@@ -14,6 +14,34 @@ den **VDI-Treiber**, nicht den Shifter dahinter. Was ueber die VDI geht, laeuft
 auf NewTOS, auf einem TT, auf einem Falcon, auf einer Nova, unter Hatari. Was
 `Physbase` anfasst, laeuft nur dort, wo der Shifter sitzt.
 
+### Das staerkere Argument ist nicht Portabilitaet, sondern Geschwindigkeit
+
+Anwender 2026-09-28: *„wenn man VDI-Routinen verwendet, dann wird auch die
+Hardwarebeschleunigung verwendet."*
+
+**Das dreht die uebliche Abwaegung um.** Der VDI-Treiber einer Grafikkarte kann
+benutzen, was die Karte mitbringt; ein Programm, das selbst in den Framebuffer
+schreibt, bekommt davon **nichts** — es hat sich die Beschleunigung durch
+seinen eigenen Sonderweg weggenommen. Konformitaet ist hier also der
+**schnellere** Weg, nicht der brave.
+
+Fuer uns gilt dasselbe in die Zukunft: die VDI-Zeichenroutinen sollen spaeter
+in optimiertes aarch64-Assembler wandern
+([[vdi-draw-asm-optimization-later]]). Wer ueber die VDI geht, erbt das;
+wer am Framebuffer vorbei arbeitet, nicht.
+
+### ST-RAM ist auch auf dem TT kein Thema
+
+Anwender: *„auch am TT brauchen wir kein ST-RAM, weil die Nova von der CPU
+bedient wird."*
+
+Das verallgemeinert, was [FS04](FS04.md) belegt hat: EmuTOS bevorzugt ST-RAM
+fuer Puffer wegen **Floppy-/ACSI-DMA**
+(`references/emutos/include/config.h:1723-1724`). Eine **CPU-bediente** Karte
+hat keine DMA-Einschraenkung — der Grund faellt dort genauso weg wie bei uns.
+**Kein Pi-Sonderfall, sondern die allgemeine Regel**, und damit traegt die
+TT-RAM-Richtung aus §3 auf beiden Maschinen.
+
 **Die Ball-Demo ist der Beleg in beide Richtungen** (`/Volumes/Daten/Development/ball-demo`,
 ausserhalb des Repos). Gezaehlt ueber ihre Quellen: `vro_cpyfm` 41x,
 `v_opnvwk` 16x, `v_get_pixel` 18x, `vs_color` 9x, `appl_init`/`graf_handle` je
