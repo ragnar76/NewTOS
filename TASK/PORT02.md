@@ -223,7 +223,7 @@ Maus inkl. Rad ✓ (GUI04), Framebuffer/VDI ✓ (alle ~70 Opcodes).
 | **Videoplayer** | **Faellt aus.** Nicht wegen des Tons: die **Leseseite** der Karte ist gemessen **~730 KB/s** (`QED.NAP`, 502 KB in 687 ms, `measurement-2026-09-25-fs04/raw/pi05-…`). Das reicht fuer Video nicht. Ursache ist [HW04](HW04.md)/[HW05](HW05.md) — 1-Bit-Bus, Einzelblock, kein DMA |
 | **HighWire / NetSurf** | **Blockiert, aber nicht woran der Veranstalter dachte.** Er vermutet NVDI; unsere VDI ist vollstaendig. Der Blocker ist der **fehlende Netzwerkstapel** (NET01–06). HighWire liegt bereits unter `sdk/apps/highwire` und wartet genau darauf |
 | **SDL-Port** | **Der beste Vorschlag der Liste** — aber als *Unterbau*, nicht als Anwendung. Eigenes Ticket [SDL01](SDL01.md) |
-| **Doom, Spiele** | kommen ueber SDL01, dann als Uebersetzung statt Portierung |
+| **Doom, Spiele** | **Korrektur 2026-09-28:** Doom braucht SDL **nicht** — die Originalfassung trennt die Plattform in eigene Dateien, und wir haben Framebuffer, Tastatur und Takt. Eigener, moeglicherweise kuerzerer Weg: [PORT06](PORT06.md). Andere Spiele weiterhin ueber SDL01 |
 | **CastAway, Atari800** | **Die passendste Kategorie fuer das, was wir heute haben:** Framebuffer, Eingabe, Timer — alles da; ohne Ton laufen sie still. Und sie beantworten die Frage des Veranstalters (*wie schnell laeuft das?*) ehrlicher als jede Messreihe |
 | **FireBee-m68k-Kern** | **Liegt auf unserer eigenen Linie, kein Seitenprojekt.** ADR-018 reserviert `.PRG`/`.TOS`/`.TTP` ausdruecklich fuer einen spaeteren m68k-Emulator — deshalb heissen unsere Endungen `.NAP`/`.NCP` |
 
