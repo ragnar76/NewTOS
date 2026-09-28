@@ -23,8 +23,8 @@
 |---|--------|-------|------------|
 | 1 | **BCM2711 ARM Peripherals** (`references/datasheets/RP-008248-DS-1-bcm2711-peripherals.pdf`, Release 4, 2022-01-18) | vorhanden | **enthaelt kein EMMC-Kapitel.** Einziger Treffer im ganzen Dokument: IRQ 62 „EMMC & EMMC2" (Tabelle 102, Kap. 6). Fuer Register und Bits ist es **keine** Quelle. |
 | 2 | **BCM2835 ARM Peripherals**, Kap. 5 „External Mass Media Controller", S. 65–81 | nachgeladen | Registerlage + Broadcom-eigene Warnungen. Gilt fuer den Arasan-EMMC; EMMC2 ist ein anderer Block, siehe unten. |
-| 3 | **SD Physical Layer Simplified Specification Ver. 6.00** (2017-04-10) | nachgeladen | Kommandofolge, Takt- und **Timeout-Grenzen**. |
-| 4 | **SD Host Controller Simplified Specification Ver. 3.00** (2011-02-25) | nachgeladen | Registersemantik (EMMC2 = Standard-SDHCI), Kommando- und **Fehlerbehandlungsablauf**. |
+| 3 | **SD Physical Layer Simplified Specification Ver. 6.00** (Titelblatt: 2018-08-29) | seit REF02 `references/sd-spec/archive/`; **Referenzausgabe ist jetzt 9.10**, siehe Nachtrag | Kommandofolge, Takt- und **Timeout-Grenzen**. |
+| 4 | **SD Host Controller Simplified Specification Ver. 3.00** (2011-02-25) | seit REF02 `references/sd-spec/archive/`, **Referenzausgabe** | Registersemantik (EMMC2 = Standard-SDHCI), Kommando- und **Fehlerbehandlungsablauf**. |
 
 **Befund S1 (Quellenlage, an den Researcher):** Quellen 2–4 liegen **nicht**
 in `references/`. `references/README.md` fuehrt „BCM2711 ARM Peripherals" als
@@ -35,6 +35,32 @@ abgelegt sind — und die Zeitgrenzen aus Quelle 3, an denen dieses Ticket
 haengt, stehen in **keinem** unserer Dokumente. Das ist die Wurzel von
 Befund 1. Beide Simplified Specs sind frei beziehbar und gehoeren nach
 `references/sd-spec/`.
+
+> **Nachtrag REF02, 2026-09-28 — Befund S1 ist erledigt.** Beide
+> Simplified Specs liegen jetzt unter `references/sd-spec/` und sind in
+> `references/README.md` nach Ausgabe, Datum und SHA-256 **gepinnt**
+> (das Verzeichnis ist gitignored, die Tabelle im committeten README ist
+> deshalb der Pin). Die Zeitgrenzen dieses Audits stehen jetzt in
+> `docs/hardware/emmc-sd.md` §7, je mit Abschnittsangabe.
+>
+> **Zur Fassung:** Referenzausgabe ist fuer die Physical Layer Spec
+> **Ver. 9.10**, nicht die hier zitierte 6.00 — die tragenden Stellen
+> wurden Text gegen Text verglichen und sind gleich: §4.6.2 samt
+> §4.6.2.1/§4.6.2.2 unterscheidet sich nur dadurch, dass 9.10 in drei
+> Saetzen „SDUC" neben SDXC nennt; §4.10.1 ist wortgleich; Tabelle 4-42
+> hat dieselbe Bitbelegung und Typspalte. **Jedes `6.00 §4.6.2.x`-Zitat
+> in diesem Dokument ist damit auch als 9.10-Zitat richtig** und bleibt
+> unveraendert stehen. Fuer die Host Controller Spec bleibt **Ver. 3.00**
+> die Referenz (das ist die Version, die der Controller meldet); die
+> Registerabschnitte sind in 4.20 **um eins verschoben**, die
+> Umrechnungstabelle steht in `docs/hardware/emmc-sd.md` §8.
+>
+> **Eine Praezisierung zu §4.6.2.2, die dieses Audit nicht macht:** die
+> 500 ms aus Fall a)–d) sind ausdruecklich den **SDXC/SDUC**-Karten
+> zugestanden („in the case of SDXC and SDUC card"); fuer SDHC bleibt die
+> Obergrenze 250 ms. Am Schluss des Audits aendert das nichts — der
+> Application Note verlangt vom Host ohnehin „more than 500 ms"
+> unabhaengig von der Kartenklasse.
 
 **Zur Zustaendigkeit von Quelle 2:** BCM2835 Kap. 5 beschreibt den
 Arasan-EMMC an `0x7E30_0000`. Der microSD-Schacht der Pi 4 haengt an
@@ -72,7 +98,7 @@ steht es dabei.
 | Schritt | Spezifiziert | Unser Code | Urteil |
 |---|---|---|---|
 | Software-Reset | SDHCI Software Reset All, warten bis 0 | `CONTROL0=0`, `CONTROL1=SRST_HC`, Warteschleife `emmc.rs:199-205` | Form richtig, **Fehlerfall fehlt**: laeuft die Schleife leer, faehrt der Code wortlos weiter (`break` ohne `else`) |
-| Busspannung | SD-HC §3.3 Fig. 3-6: erst *SD Bus Voltage Select*, **dann** *SD Bus Power*; vorher *Voltage Support* in CAPABILITIES pruefen | ein Schreibzugriff `wr(CONTROL0, 0x0F00)` (`emmc.rs:208`) | Bitlage korrekt (Bit 8 = SD Bus Power, 11:9 = 111b = 3,3 V, SD-HC Ver. 3.00 §2.2.1, `Power Control`); Reihenfolge und Voltage-Support-Pruefung fehlen. **Ohne beobachtbare Wirkung** — im QEMU-Lauf liest CONTROL0 an einem Sockel *ohne* Karte als `0x0000_0e00` zurueck, also Power-Bit geloescht, genau wie die Spec es fordert („If the Host Controller detects the No Card state, this bit shall be cleared") |
+| Busspannung | SD-HC §3.3 Fig. 3-6: erst *SD Bus Voltage Select*, **dann** *SD Bus Power*; vorher *Voltage Support* in CAPABILITIES pruefen | ein Schreibzugriff `wr(CONTROL0, 0x0F00)` (`emmc.rs:208`) | Bitlage korrekt (Bit 8 = SD Bus Power, 11:9 = 111b = 3,3 V, SD-HC Ver. 3.00 **§2.2.11** `Power Control Register` (Offset 029h) — im Audit stand versehentlich §2.2.1, das ist das SDMA-Adressregister; korrigiert REF02); Reihenfolge und Voltage-Support-Pruefung fehlen. **Ohne beobachtbare Wirkung** — im QEMU-Lauf liest CONTROL0 an einem Sockel *ohne* Karte als `0x0000_0e00` zurueck, also Power-Bit geloescht, genau wie die Spec es fordert („If the Host Controller detects the No Card state, this bit shall be cleared") |
 | 74 Takte vor CMD0 | SD Phys §6.4.1: „start to supply **at least 74 SD clocks** to the SD card with keeping CMD line to high"; Fig. 6-4: Initialisierungsverzoegerung = max(1 ms, 74 Takte, Ramp-up) | `set_clock` setzt `CLK_EN` (`emmc.rs:234`), danach zwei MMIO-Schreibzugriffe (`:210-211`) und sofort `GO_IDLE` (`:242`) | **Verletzt.** 74 Takte bei 400 kHz = 185 µs; zwischen `CLK_EN` und CMD0 liegen einige hundert Nanosekunden. Siehe Befund 6 |
 
 ### 2.2 Takt
@@ -83,7 +109,7 @@ MHz und faellt bei 0 auf **fest verdrahtete 100 MHz** zurueck (`:219`).
 * SD-HC §3.2.1 (1): *„If Base Clock Frequency For SD Clock is 00 0000b, the
   Host System shall **provide this information to the Host Driver by another
   method**."* — Ein geratener Wert ist nicht „another method".
-* `docs/hardware/emmc-sd.md:136-139` schreibt genau diese Methode vor:
+* `docs/hardware/emmc-sd.md` §2 (Schlusskasten) schreibt genau diese Methode vor:
   Mailbox-Tag `0x00030002`, Clock-ID EMMC. **Die Funktion existiert bereits**
   — `kernel/src/drivers/bcm2711/mailbox.rs:419` `get_clock_rate()` — und wird
   vom Treiber nicht benutzt.
@@ -567,7 +593,8 @@ Note empfiehlt dem Host **ueber 500 ms** Timeout.
 ### Befund 6 — 74-Takte-Regel vor CMD0 verletzt · **VERMUTET (Quelltext gegen Spec, Wirkung ungemessen)** · Fehler
 
 * **Quelle:** SD Phys §6.4.1.4 (5): *„After 1ms VDD stable time, host provides
-  at least 74 clocks before issuing the first command"*; §6.4.1.2: *„start to
+  at least 74 clocks before issuing the first command"*; §6.4.1.**1**
+  (Text unter Figur 6-4; im Audit stand §6.4.1.2, korrigiert REF02): *„start to
   supply at least 74 SD clocks to the SD card with keeping CMD line to high"*.
 * **Unser Code:** `emmc.rs:234` (`CLK_EN`), `:210-211`, `:242` (`GO_IDLE`).
   Bei 400 kHz waeren 185 µs zu warten; dazwischen liegen einige hundert
@@ -604,7 +631,7 @@ Note empfiehlt dem Host **ueber 500 ms** Timeout.
 
 * **Quelle:** SD-HC §3.2.1 (1): *„If Base Clock Frequency For SD Clock is
   00 0000b, the Host System shall provide this information to the Host Driver
-  by another method."* `docs/hardware/emmc-sd.md:136-139` schreibt die Methode
+  by another method."* `docs/hardware/emmc-sd.md` §2 (Schlusskasten) schreibt die Methode
   vor (Mailbox `0x00030002`).
 * **Unser Code:** `emmc.rs:219` (`if base_mhz == 0 { 100_000_000 }`),
   `:228-233` (CLK_STABLE-Schleife ohne Fehlerpfad), `:235` (`Ok(())`

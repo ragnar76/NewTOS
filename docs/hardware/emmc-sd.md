@@ -5,36 +5,88 @@
 > slot** of the Raspberry Pi 4 — the card that holds the boot files —
 > which is wired to the **EMMC2** controller. First test vehicle: QEMU
 > `raspi4b` (emulates the SDHCI controller; debuggable).
+>
+> **Writing or reviewing a wait loop? Read §7 first** — every timing
+> limit the card and the controller are allowed to take, with its section
+> number. §8 maps the section numbers across specification editions;
+> `references/README.md` pins the editions themselves.
 
 ## Which controller (important)
 
-The RPi4 has three storage-ish paths; we target exactly one:
+The RPi4 has **three** SD/SDIO controllers plus USB; we target exactly
+one. Names matter here, because two of the three are routinely confused:
 
-| Controller | Phys base | Connected to |
-|------------|-----------|--------------|
-| **EMMC2 (Arasan/iproc SDHCI)** | **`0xFE34_0000`** | **the microSD card slot** (boot card) ← us |
-| sdhost (legacy BCM2835 EMMC) | `0xFE30_0000` | internal SDIO → Wi-Fi chip (not the slot) |
-| xHCI (USB) | — | external USB storage (later, loadable driver) |
+| Controller | Phys base | Device-tree node | State in the shipped DT | Drives |
+|------------|-----------|------------------|-------------------------|--------|
+| **EMMC2** (Arasan/iproc SDHCI) | **`0xFE34_0000`** | `mmc@7e340000`, `compatible = "brcm,bcm2711-emmc2"`, alias **`mmc0`** | `status = "okay"` | **the microSD card slot** (boot card) ← us |
+| EMMC / "sdhci" (the BCM2835-style Arasan block) | `0xFE30_0000` | `mmcnr@7e300000`, `compatible = "brcm,bcm2835-sdhci"`, alias `mmc1` | `status = "okay"`, `non-removable` | the **on-board Wi-Fi** — the node carries the child `wifi@1`, `compatible = "brcm,bcm4329-fmac"`, on `sdio_pins` = GPIO 34–39, ALT3 |
+| SDHOST (Broadcom's own controller) | `0xFE20_2000` | `mmc@7e202000`, `compatible = "brcm,bcm2835-sdhost"`, alias `sdhost` | `status = "disabled"` | nothing, in the default Pi 4 configuration |
+| xHCI (USB) | — | — | — | external USB storage (later, loadable driver) |
 
-Confirmed by the official Linux device tree (`bcm2711-rpi-4-b.dts`:
-`emmc2@7e340000` is the SD slot) and circle `include/circle/bcm2711.h`
-(`ARM_EMMC2_BASE = ARM_IO_BASE + 0x340000` → `0xFE340000`). The
-VideoCore firmware uses this card to load `start4.elf`/`kernel8.img`;
+**Correction (REF02, 2026-09-28).** Earlier editions of this note called
+the block at `0xFE30_0000` "sdhost (legacy BCM2835 EMMC)". That is two
+peripherals conflated: **SDHOST is a different controller at
+`0xFE20_2000`**, and on the Pi 4 it is disabled. Broadcom's own
+documentation keeps them apart — BCM2711 ARM Peripherals §6.2 Table 102
+lists *IRQ 56 SDHOST* and *IRQ 62 "EMMC & EMMC2"* as separate sources —
+and so does circle (`include/circle/bcm2835.h:256`
+`ARM_SDHOST_BASE = ARM_IO_BASE + 0x202000` versus `:248`
+`ARM_EMMC_BASE = ARM_IO_BASE + 0x300000`). The *substance* of the old
+claim survives the correction: the controller at `0xFE30_0000` is indeed
+the one the Wi-Fi hangs off — but it is the EMMC, not SDHOST, and the
+claim now has a source.
+
+Two device-tree nodes describe the same registers at `0x7e30_0000`:
+`mmc@7e300000` (label `sdhci`, `status = "disabled"`) and
+`mmcnr@7e300000` (label `mmcnr`, `status = "okay"`, `non-removable`,
+child `wifi@1`). The active one is the second. Note what this evidence is
+and is not: a device tree is the **firmware's configuration** of the
+board, which overlays can change — it is not a statement about
+unchangeable silicon wiring. For us that is enough, because it is the
+configuration our Pi actually boots with, and because the driver probes
+both bases anyway (§6).
+
+**Where the evidence comes from, and what it is worth.** The BCM2711
+datasheet documents **no** EMMC block at all: the only occurrence of the
+name in the whole document is the interrupt table above (audit §0). The
+base addresses themselves are therefore *not* in the datasheet; what the
+datasheet does give is the mapping rule, §1.2.4: "a peripheral described
+in this document as being at legacy address `0x7Enn_nnnn` … [is] visible
+to the ARM at `0x0_FEnn_nnnn` if Low Peripheral mode is enabled". The
+board-level assignment comes from the device tree the **Raspberry Pi
+firmware itself ships** (`bcm2711-rpi-4-b.dtb`, our boot card's copy,
+sha256 `75761b73…`, see `references/README.md`), which also states the
+mapping for this bus explicitly: the `emmc2bus` node has
+`ranges = <0x0 0x7e000000 0x0 0xfe000000 0x1800000>`. circle
+(`include/circle/bcm2711.h:31`, `ARM_EMMC2_BASE = ARM_IO_BASE + 0x340000`)
+agrees, as a tertiary cross-check.
+
+The VideoCore firmware uses this card to load `start4.elf`/`kernel8.img`;
 once our kernel runs the firmware is done, so we **re-initialise** the
 controller and take it over (same physical card).
 
-EMMC2's SD lines are dedicated (not muxed through the GPIO ALT function
-selects the legacy sdhost needed), so no GPIO setup is required.
+EMMC2 needs no GPIO setup: its device-tree node has no `pinctrl`
+property at all, whereas the Wi-Fi controller at `0xFE30_0000` is
+explicitly routed to `sdio_pins` (GPIO 34–39, ALT3). The card slot's
+lines are dedicated.
 
 ## Sources
 
 | # | Source | Used for |
 |---|--------|----------|
-| 1 | BCM2711 ARM Peripherals datasheet §1.2 (address map) | EMMC2 base |
-| 2 | BCM2835 ARM Peripherals datasheet §5 "External Mass Media Controller" | the EMMC register grouping (Arasan) — EMMC2 follows it |
-| 3 | SD Host Controller Simplified Specification (SD Association) | register/bit semantics (EMMC2 = standard SDHCI) |
-| 4 | SD Physical Layer Simplified Specification (SD Association) | the command/init sequence |
-| 5 | circle (`rsta2/circle`, `addon/SDCard`) | verified-working RPi4 EMMC2 reference |
+| 1 | **SD Physical Layer Simplified Specification Ver. 9.10** (2023-12-01) | card protocol: init sequence, card status, **timing limits** (§7) |
+| 2 | **SD Host Controller Simplified Specification Ver. 3.00** (2011-02-25) | controller register/bit semantics and sequences (EMMC2 = standard SDHCI, and reports HC version 3.00) |
+| 3 | BCM2835 ARM Peripherals datasheet §5 "External Mass Media Controller" | the 32-bit register *grouping* the BCM puts over the SDHCI registers |
+| 4 | BCM2711 ARM Peripherals datasheet §1.2.4 (legacy→ARM address rule), §6.2 Table 102 (IRQs) | the `0x7E…`→`0xFE…` mapping; the fact that EMMC has **no** chapter here |
+| 5 | Raspberry Pi firmware device tree `bcm2711-rpi-4-b.dtb` | which controller drives which port, and on which pins |
+| 6 | circle (`rsta2/circle` @ `6177984e`, `addon/SDCard`) | tertiary cross-reference: a verified-working RPi4 EMMC2 driver |
+
+Sources 1 and 2 are **pinned by checksum** in `references/README.md`
+("SD specifications"), together with the licence terms — the PDFs are
+free to fetch but must not be committed or re-hosted, so the pin table is
+the citation anchor. Quote them sparingly and always **by section
+number, never by page**; §8 below maps the section numbers across
+editions.
 
 Exact register bits are validated empirically against QEMU `raspi4b`
 during bring-up (QEMU implements the SDHCI standard).
@@ -130,6 +182,10 @@ The BCM groups the SDHCI registers into 32-bit words (datasheet §5).
    reported via the mailbox `get clock rate` tag, clock id 1 = EMMC).
 3. **Enable interrupt status** (`IRPT_MASK = 0xFFFFFFFF`) but **poll**
    `INTERRUPT` rather than taking IRQs in the bring-up driver.
+4. **Wait out the card's preparation clocks before CMD0:** at least
+   **74 SD clocks** with the CMD line high (SD Phys 9.10 §6.4.1.1 and
+   §6.4.1.4 (5); see §7.4). At 400 kHz that is 185 µs. *The driver does
+   not do this today* — audit finding 6, open.
 
 After card identification, switch the clock to ~25 MHz (default speed).
 
@@ -150,7 +206,7 @@ Issue a command by: wait `!STATUS.CMD_INHIBIT`, write `ARG1`, write
 | GO_IDLE | CMD0 | 0 | none | reset card to idle |
 | SEND_IF_COND | CMD8 | `0x1AA` | R7 | voltage check (echo `0xAA`); R7=`0x1AA` ⇒ SD v2 |
 | APP_CMD | CMD55 | `RCA<<16` | R1 | prefix for an ACMD |
-| SD_SEND_OP_COND | ACMD41 | `0x5100_0000` | R3 | `HCS`(bit30)+voltage; loop until OCR bit31=ready; OCR bit30=`CCS` ⇒ SDHC |
+| SD_SEND_OP_COND | ACMD41 | `0x40FF_8000` | R3 | `HCS`(bit30) + **voltage window** (bits 23:15); loop until OCR bit31=ready; OCR bit30=`CCS` ⇒ SDHC. See the correction below |
 | ALL_SEND_CID | CMD2 | 0 | R2 | card identification |
 | SEND_REL_ADDR | CMD3 | 0 | R6 | get the card's `RCA` |
 | SELECT_CARD | CMD7 | `RCA<<16` | R1b | put card in transfer state |
@@ -159,6 +215,47 @@ Issue a command by: wait `!STATUS.CMD_INHIBIT`, write `ARG1`, write
 `CCS` (Card Capacity Status) decides addressing: **SDHC/SDXC use block
 addressing** (arg = block number), **SDSC uses byte addressing** (arg =
 block × 512).
+
+### The ACMD41 argument — correction (REF02, 2026-09-28)
+
+Earlier editions of this note gave the ACMD41 argument as
+`0x5100_0000`. That value has **no voltage window**, and a zero voltage
+window does not mean "don't care" — it means a different command.
+SD Phys 9.10 **§4.2.3.1**, the general rules for the argument:
+
+1. voltage window field (bits 23:0) = 0 → this is the **"inquiry
+   ACMD41"**; it *does not start initialization*, it only returns the
+   OCR, and it explicitly **ignores** the rest of the argument
+   (bits 31:24) — so the `HCS` bit in `0x5100_0000` would have had no
+   effect either.
+2. voltage window ≠ 0 on the first ACMD41 → this is the **"first
+   ACMD41"** that starts initialization; now bits 31:24 are effective.
+3. every following ACMD41 must repeat the *same* argument.
+
+A host that loops on `0x5100_0000` waiting for the busy bit therefore
+loops forever: the card never leaves the power-up procedure, because it
+was never asked to start it. The documented value was wrong, not merely
+incomplete; **the driver has always done it right**
+(`kernel/src/drivers/bcm2711/emmc.rs`: `hcs | 0x00FF_8000`).
+
+Argument layout, SD Phys 9.10 Figure 4-3 with the OCR field per Table 5-1
+(§5.1):
+
+| Argument bits | Field | Ours |
+|---|---|---|
+| 31 | reserved (0) | 0 |
+| 30 | `HCS` — Host Capacity Support (1 = SDHC/SDXC supported) | 1 after a successful CMD8, else 0 |
+| 29 | reserved for eSD Fast Boot | 0 |
+| 28 | `XPC` — SDXC power control (1 = max performance) | 0 |
+| 27:25 | reserved | 0 |
+| 24 | `S18R` — request switch to 1.8 V signalling (UHS-I) | 0, we stay at 3.3 V |
+| 23:15 | VDD voltage window, one bit per 100 mV step from 2.7–2.8 V (bit 15) to 3.5–3.6 V (bit 23) | **all nine set → `0x00FF_8000`** |
+| 14:0 | reserved | 0 |
+
+So `0x40FF_8000` for a v2 card (CMD8 answered) and `0x00FF_8000` for a
+v1 card. The same OCR layout comes back in the R3 response, where
+**bit 31** is the power-up/busy bit (0 while the card is still busy) and
+**bit 30** is `CCS`.
 
 ---
 
@@ -176,6 +273,11 @@ Multi-block (CMD18) and writes (CMD24/25) follow the same pattern with
 `TM_MULTI_BLOCK`/`TM_BLKCNT_EN` and the opposite `TM_DAT_DIR`; added
 after single-block read works.
 
+**How long may each of those waits take?** §7. Steps 5 and 6 are the ones
+with a card-side limit (100 ms minimum for a read, 250 ms of programming
+busy for a write, and the host is told to allow more than 500 ms); steps
+1–4 have none that the Simplified Specification states (§7.5).
+
 ---
 
 ## 5. Card status (R1) — the response the host must check
@@ -190,17 +292,28 @@ the command is in that response and nowhere else:
 > response in order to verify successful processing by the card."
 > — BCM2835 ARM Peripherals §5 (External Mass Media Controller), p. 65
 
-> §3.7.1.2 step (7): "Check for errors in Response Data … Return Status
-> (Response Contents Error)."
+> §3.7.1.2, the Command Complete Sequence, step (7): "Check for errors in
+> Response Data. If there is no error, go to step (8). If there is an
+> error, go to step (9)." — and step (9) is: "Return Status of 'Response
+> Contents Error'."
 > — SD Host Controller Simplified Specification 3.00
-> (both quoted in `docs/api/hw/emmc-audit.md` §2.4 / finding 3)
+> (checked against the PDF, REF02; identical wording and section number in
+> Ver. 4.20. Earlier editions of this note ran the two steps together into
+> one sentence.)
 
-> "The response format R1 shall contain a 32-bit field named card status …
-> This field is intended to transmit the card's status information (which
-> may be stored in a local status register) to the host. If not specified
-> otherwise, the status entries are always related to the previous issued
-> command."
+> "The response format R1 shall contain a 32-bit field named card status
+> as a response to CMD13 with argument b[15]='0'. This field is intended
+> to transmit the card's status information (which may be stored in a
+> local status register) to the host. If not specified otherwise, the
+> status entries are always related to the previous issued command."
 > — SD Physical Layer Simplified Specification Ver. 9.10 §4.10.1
+> (word-identical in Ver. 6.00. The earlier ellipsis in this note dropped
+> "as a response to CMD13 with argument b[15]='0'". That clause does
+> **not** narrow the card status to CMD13: it distinguishes CMD13's two
+> answers from each other — "CMD13 R1 indicates either Card Status or
+> Task Status by selecting b[15] of CMD13 argument" (§4.10.1, same
+> paragraph). Which *other* commands answer with which status bits is
+> Table 4-43's job, and CMD17 and CMD24 are both in it.)
 
 ### The error bits — SD Phys 9.10 Table 4-42 "Card Status"
 
@@ -253,6 +366,34 @@ where the data phase has not started. The host must therefore check R1 and
 **abort the transaction** (SD-HC 3.00 §3.8: CMD12 + both software resets)
 instead of waiting out `Buffer Read/Write Ready`, which will never come.
 
+The two recovery sequences are **not** the same, and it is worth keeping
+them apart (both SD-HC 3.00):
+
+* **§3.8.1 Asynchronous Abort**, step (2): "Set **both** Software Reset
+  For DAT Line and Software Reset For CMD Line to 1 in the Software Reset
+  register"; step (3) then polls until both read 0.
+* **§3.10.1 Error Interrupt Recovery**, steps (2)–(7): each reset is
+  **conditional and separate** — check Error Interrupt Status bits 3:0
+  (CMD line errors) → CMD reset → poll it to 0; then check bits 6:4 (DAT
+  line errors) → DAT reset → poll it to 0. Only afterwards save and clear
+  the error status.
+
+Neither sequence prescribes how many *register writes* the reset bits
+take; §3.8.1 asks for both bits to be set, §3.10.1 arrives at them one at
+a time. That is a separate question from whether a given controller
+decodes a two-bit write — QEMU's SDHCI model does not (HW03, finding N1).
+
+> **One exception, for the day multi-block lands.** SD-HC 3.00 §3.7.1.2,
+> Note 3: "When the last block of un-protected area is read using memory
+> multiple block read command (CMD18), OUT_OF_RANGE error may occur even
+> if the sequence is correct. The Host Driver should ignore it. This
+> error will appear in the response of Auto CMD12 or in the response of
+> the next memory command." (Identical in Ver. 4.20.) We only issue
+> `CMD17`/`CMD24` today, so the rule is not yet reachable — but a
+> `check_r1()` that rejects `OUT_OF_RANGE` unconditionally will refuse a
+> legal read the moment `CMD18` is added. Whoever adds multi-block owns
+> this.
+
 ### Mapping a card error to a TOS error code
 
 The block driver is the BIOS layer's disk driver, so it returns a TOS
@@ -278,15 +419,17 @@ Note that EmuTOS' SD driver does **not** translate `WP_VIOLATION` into
 error. (Its *floppy* driver reports `EWRPRO` from the FDC status, which is
 a different device.)
 
-> **Source gap (audit finding S1).** None of the SD specifications are in
-> `references/`. The Table 4-42 quotations above were taken from *SD
-> Specifications Part 1 — Physical Layer Simplified Specification Version
-> 9.10, December 1, 2023* (SD Card Association), obtained from
-> sdcard.org's public Simplified Specification download page. That is a
-> **later edition** than the Ver. 6.00 `docs/api/hw/emmc-audit.md` cites —
-> the bit positions were read from 9.10 and have **not** been diffed
-> against 6.00 here. Depositing both PDFs under `references/sd-spec/` is
-> REF02's job.
+> **Source gap (audit finding S1) — closed, REF02, 2026-09-28.** Both SD
+> specifications now live in `references/sd-spec/` and are pinned by
+> edition, date and SHA-256 in `references/README.md`. The open question
+> from HW03 — bit positions read from Ver. 9.10 against an audit that
+> cites Ver. 6.00 — was settled by diffing the two texts: **Table 4-42 is
+> unchanged in bit assignment and Type column**; 9.10 only extends the
+> prose of `WP_VIOLATION` and `WP_ERASE_SKIP` by "write protected until
+> power cycle card", adds a note to `CURRENT_STATE`, and adds rows for
+> new commands to Table 4-43. §4.10.1 is word-identical. The table above
+> quotes 9.10, which is this project's reference edition; every 6.00
+> citation elsewhere in the tree remains correct.
 
 ---
 
@@ -315,9 +458,178 @@ a different device.)
   a responding card — works on QEMU and (expected) on HW with one binary.
 - **Bus power matters:** after `SRST_HC`, set `CONTROL0` Power Control
   (`0x0F00` = SD bus power + 3.3 V) before issuing commands, or the card
-  never responds (every response-command times out with `CTO`).
+  never responds (every response-command times out with `CTO`). The
+  register is SD-HC 3.00 **§2.2.11** *Power Control Register* (offset
+  `029h`): bit 0 `SD Bus Power`, bits 3:1 `SD Bus Voltage Select`
+  (`111b` = 3.3 V typ.) — which, inside the BCM's 32-bit `CONTROL0` word
+  at `028h`, are bit 8 and bits 11:9. Two rules of that section we do not
+  follow yet: the voltage must be selected *before* the power bit ("Before
+  setting this bit, the SD Host Driver shall set SD Bus Voltage Select"),
+  and the Voltage Support bits in `CAPABILITIES` should be checked first.
 - **Bring-up status:** init + single-block read verified on QEMU
   `raspi4b` (reads a known sector 0 back byte-exact, `0x55AA` signature).
   Real-HW verification pending: there, the card is on EMMC2 and is the
   live boot card — read-only sector probes are safe; the EMMC2 base
   clock is already running from the firmware boot.
+
+---
+
+## 7. Timing limits — how long the card is allowed to take
+
+> **Why this section exists.** The FS04 audit found a driver that
+> abandoned a write after 104–200 ms, while the card was legally still
+> programming; the audit then found that **no document in this project
+> named a single one of these limits** (audit finding 1, finding S1). A
+> driver cannot obey a limit that is written nowhere. Every number below
+> is therefore given with its section, so that the next person can check
+> it instead of guessing it. Reference edition: **SD Physical Layer
+> Simplified Specification Ver. 9.10**; §4.6.2 is materially identical to
+> the Ver. 6.00 the audit cites (REF02 diffed them — see §8).
+
+### 7.1 What the card may take — the four limits
+
+| # | Situation | Limit | Section |
+|---|-----------|-------|---------|
+| 1 | **Programming (write busy) of a High Capacity card** — the DAT-line busy after a block write | **250 ms**, for *all* write operations | §4.6.2.2 |
+| 2 | **The last busy of a write operation**, the busy from a CMD12 response, and the busy after the last data block when CMD23 stopped the transfer | **500 ms** — but this allowance is granted to **SDXC and SDUC** cards that cannot hold 250 ms, in four enumerated cases a)–d). For SDHC the limit stays 250 ms | §4.6.2.2 |
+| 3 | **Read** on a High Capacity / Extended Capacity card | the host **should** use a timeout of **at least 100 ms** ("100 ms timeout (minimum) for single and multiple read operations"), *instead of* computing one from TAAC/NSAC — those are fixed values on such cards | §4.6.2.1 |
+| 4 | **Busy at a block gap** inside a multiple-block write | 250 ms; 500 ms only for the two-block case that spans a physical block boundary (case d) | §4.6.2.2 |
+
+Two more from the same section, for completeness:
+
+* **Standard Capacity cards** are the case where the timeout *is*
+  computed: read = the lower of `100 × (TAAC + NSAC)` and 100 ms;
+  write = the lower of `100 ×` the typical program time (read access time
+  × `R2W_FACTOR` from the CSD) and 250 ms (§4.6.2.1, §4.6.2.2).
+* **Erase** has no fixed limit: estimate it as *number of write blocks ×
+  250 ms*, or from the erase-timeout parameters in the SD Status if the
+  card provides them (§4.6.2.3).
+
+And the sentence that frames all of them, §4.6.2: "A card shall complete
+the command within the time period defined as follows or give up and
+return an error message. If the host does not get any response with the
+given timeout it should assume that the card is not going to respond and
+try to recover (e.g. reset the card, power cycle, reject, etc.)."
+
+### 7.2 What the specification recommends the host do
+
+§4.6.2.2, Application Notes — of its four notes, these two are aimed
+exactly at the mistake FS04 made:
+
+* "The host should use a **fixed timeout** for write operations rather
+  than using a timeout calculated from the `R2W_FACTOR` parameter."
+* "It is **strongly recommended for hosts to implement more than 500 ms
+  timeout value** even if the card indicates the 250 ms maximum busy
+  length."
+
+The Host Controller specification says the same from its side, as an
+Implementation Note to the Timeout Control Register (SD-HC 3.00
+§2.2.15): "The Physical Layer Specification Version 3.0x defines that
+SDXC card may indicate 500 ms busy. Then Host Driver may need to change
+timeout value for SDXC. It is also possible to set more than 500 ms
+timeout regardless of card capacities."
+
+So: **a fixed wall-clock timeout of more than 500 ms for a write, at
+least 100 ms for a read.** Note what "fixed" rules out — a loop counter.
+A counter is a timeout that shrinks when the CPU speeds up; on one Pi 4,
+inside one measurement run, the same counter was worth 104 ms in one
+block and 200 ms in another (audit §3.1).
+
+### 7.3 The controller's own data timeout
+
+Independently of the software budget, the SDHCI controller times the DAT
+line itself and reports `Data Timeout Error`. The limit is
+`CONTROL1.DATA_TOUNIT` (`Data Timeout Counter Value`, SD-HC 3.00
+§2.2.15, offset `02Eh` bits 3:0): the interval is **`TMCLK × 2^(13+n)`**
+for value `n`, from `0000b` = `TMCLK × 2^13` to `1110b` = `TMCLK × 2^27`
+(`1111b` is reserved). We set `0xE`, the maximum — with the 52 MHz TMCLK
+measured in QEMU that is ≈ 2.58 s, i.e. deliberately *longer* than the
+software budget, so the software limit is the one that fires and the
+recovery path is ours.
+
+### 7.4 Initialisation timing
+
+| Situation | Limit | Section |
+|---|---|---|
+| Card must be ready to accept the first command | within **1 ms** from detecting VDD min; the card may use up to **74 clocks** to prepare | §6.4.1.1 |
+| Host before the first command | supply power so VDD min is reached **within 250 ms**, then "start to supply **at least 74 SD clocks** to the SD card with keeping CMD line to high" (§6.4.1.1, text under Figure 6-4); "After 1 ms VDD stable time, host provides at least 74 clocks before issuing the first command" (§6.4.1.4 (5)) | §6.4.1.1, §6.4.1.4 |
+| Power-down / power-cycle | VDD below 0.5 V for at least **1 ms** | §6.4.1.3, §6.4.1.5 |
+| `ACMD41` initialisation | "Card initialization shall be completed within **1 second** from the first ACMD41. The host repeatedly issues ACMD41 for at least 1 second or until the busy bit are set to 1"; and: "The host shall set ACMD41 timeout **more than 1 second**", counted from the first ACMD41 that carries a voltage window | §4.2.3, §4.2.3.1 |
+
+### 7.5 What the Simplified Specification does **not** contain
+
+Honest gap, so nobody looks for it twice: the bus-level timing
+parameters — `N_CR` (command-to-response), `N_AC`, `N_WR` and the rest of
+the "Timing Values" table — are **not** in the Simplified edition.
+§4.12 and all of its subsections are listed in the table of contents as
+"(Removed in the Simplified Specification)". Any statement about the
+number of clock cycles between a command and its response therefore has
+**no citable source in our pinned documents**; what we can rely on is
+that the controller polices that interval itself and reports
+`Command Timeout Error` (SD-HC 3.00 §2.2.18). A software budget on the
+command phase bounds a wedged *controller*, not a slow card, and should
+be documented as such.
+
+### 7.6 What the driver does with this today
+
+Not part of the specification — recorded here so the numbers stay
+traceable. `kernel/src/drivers/bcm2711/emmc.rs`:
+
+| Constant | Value | Derived from |
+|---|---|---|
+| `WRITE_BUSY_MS` | 1000 ms | §4.6.2.2 Application Note ("more than 500 ms"), doubled for margin; still below the controller's own ≈ 2.58 s |
+| `READ_MS` | 200 ms | §4.6.2.1 minimum of 100 ms, doubled for the same reason |
+| `CTRL_MS` | = `WRITE_BUSY_MS` | the phases §7.5 gives no card-side limit for: the two Command Inhibit waits, Command Complete, Buffer Write Ready |
+| `DATA_TOUNIT` | `0xE` | SD-HC §2.2.15 maximum, see §7.3 |
+
+Each is a **duration on the ARM generic timer**, not an iteration count —
+that is the FS04 correction. `SPIN_LIMIT` still exists but only for the
+initialisation-phase polls (controller reset, clock-stable, the ACMD41
+loop); turning the ACMD41 loop into the "more than 1 second" of §4.2.3.1
+is audit finding 11 and still open.
+
+---
+
+## 8. Citing the SD specifications — edition map
+
+The pinned editions and their checksums are in `references/README.md`.
+Two traps when citing them:
+
+**1. Physical Layer 6.00 → 9.10: the sections we use did not move.**
+Diffed text-for-text on 2026-09-28:
+
+| Section | 6.00 vs 9.10 |
+|---|---|
+| §4.6.2, §4.6.2.1, §4.6.2.2, §4.6.2.3 (timeouts) | same numbers, same text, except that 9.10 adds "SDUC" alongside SDXC in three sentences |
+| §4.10.1 (card status) | word-identical |
+| Table 4-42 (card status bits) | identical bit assignment and Type column; 9.10 extends the prose of `WP_VIOLATION` / `WP_ERASE_SKIP` ("write protected until power cycle card") and adds a note to `CURRENT_STATE` |
+| Table 4-43 (per-command cross reference) | 9.10 adds rows for CMD22, CMD39, ACMD53, ACMD54 |
+| §4.2.3 / §4.2.3.1 (ACMD41), §6.4.1.x (power-up) | same numbers, same wording |
+
+So every `SD Phys 6.00 §4.6.2.x` citation already in the tree — the
+audit, the driver's doc comments — is **also a correct 9.10 citation**
+and needs no rewriting. New work cites 9.10.
+
+**2. Host Controller 3.00 → 4.20: the register sections all moved by
+one.** This one *does* bite. 4.20 inserts a section in Chapter 2 and
+renames the clock sequences:
+
+| Register / sequence | HC 3.00 | HC 4.20 |
+|---|---|---|
+| Present State (`024h`) | §2.2.9 | §2.2.9 |
+| Host Control 1 (`028h`) | §2.2.10 | §2.2.11 |
+| Power Control (`029h`) | **§2.2.11** | §2.2.12 |
+| Clock Control (`02Ch`) | §2.2.14 | §2.2.15 |
+| Timeout Control (`02Eh`) | **§2.2.15** | §2.2.16 |
+| Software Reset (`02Fh`) | **§2.2.16** | §2.2.17 |
+| Normal Interrupt Status (`030h`) | §2.2.17 | §2.2.18 |
+| Error Interrupt Status (`032h`) | §2.2.18 | §2.2.19 |
+| Capabilities (`040h`) | §2.2.25 | §2.2.26 |
+| SD clock supply | §3.2.1 "SD Clock Supply Sequence" | §3.2.1 is "Internal Clock Setup Sequence"; supply+stop merge into §3.2.2 |
+| SD clock stop | §3.2.2 "SD Clock Stop Sequence" | §3.2.2 "SD Clock Supply and Stop Sequence" |
+| Bus power, transaction, abort, error recovery | §3.3, §3.7.1.2, §3.8, §3.10.1 | unchanged numbers — but **§3.8.1 was rewritten**: 3.00 has "Asynchronous Abort" (CMD12, then both software resets, then poll them to 0), 4.20 has "Abort Command Sequence" (CMD12 → CMD13 → check R1 for `tran`, one retry, else "Abort Failed") |
+
+**Always write the edition in front of the section** — `SD-HC 3.00
+§2.2.16` — because `§2.2.16` alone means the Software Reset Register in
+one edition and the Timeout Control Register in the other. There is no
+Simplified edition 4.00 or 4.10; the series is 1.00, 2.00, 3.00, 4.20.
