@@ -1,0 +1,16 @@
+BALL: screen 1920x1080, 1 page(s), ball d=306 px, apex=612 px
+BALL: ball 0.1600 of screen width = 306 px; readout on, from C:\BALL.CFG
+BALL: ST-RAM top 0x00E00000, ramtop 0x2FE00000; buffers asked for alternate RAM (MX_PREFTTRAM)
+BALL: buffers idx=2025K/ST bg=2025K/ST bgrow=1K/ST map_off=182K/ST map_shd=91K/ST run0=0K/ST run1=0K/ST tex=64K/ST log=32K/ST
+BALL: texture 256x128, 4 hues, from C:\BALL.NTX
+BALL: room 10x10 floor cells, wall 10x5, 24 palette entries, background image 2073600 bytes painted in 20.00 ms; reflection fades over 108 rows
+BALL: sphere map 73568 px in 20.00 ms (4 ticks of 200 Hz)
+BALL: bounce 309 ticks, traverse 1136 ticks, roll 568.81 px/s; elastic, no decay; path holds 34 traverses (193.12 s) before coming within 3 % of retracing
+BALL: wind 45.50 px/s peak (8 % of the roll), 3 sines, periods 2.50 / 4.04 / 6.54 s, seed 1592637969
+BALL: headroom 23 frames in 0.20 s free-running = 115.00 fps, 8.70 ms/frame
+BALL: platform wait 59.81 Hz measured (3.34 ticks of 200 Hz); a frame counts as dropped above 5 ticks
+BALL: clock read 5 ns; the frame budget is split with 3 extra reads a frame = 0.00 % of a 20 ms frame
+BALL: one page and no flip, so the BLIT is the presentation: deferred to just after the platform wait, one frame behind composing
+BALL: model 64.60 rows/ms -- the card's phase is UNVERIFIED, so this is a cost model and not a guarantee against tearing
+BALL: blit 73.41 ns/px + 1.41 us/call, so one more rectangle is worth 19 px, and one merge may add at most an eighth; the frame splits up to 3 ways
+BALL: NewTOS screen 1920x1080x16, memory form VERIFIED (fd_wdwidth = pixels/16, one device word per pixel), colour table MEASURED through vs_color, one page over vro_cpyfm -- no XBIOS screen-base cal

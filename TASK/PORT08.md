@@ -98,6 +98,29 @@ Abnahme lief **headless und ohne GEM-Anwendung davor**, und auf der Karte des
 Anwenders sind **zwei Accessories geladen**. Ob das hier beteiligt ist, ist
 **ungemessen**.
 
+### Beide Laeufe brechen am **selben Byte** ab — es ist kein Zeitproblem
+
+Die Logdatei des zweiten Laufs liegt als `raw/pi02-BALL.LOG`. Sie ist **neu
+geschrieben** (fuenf Bytes Unterschied, alle in Messwerten) und endet
+**ebenfalls bei 1755 Byte, mitten im selben Wort**.
+
+```
+sphere map  25,00 ms (5 Ticks)          ->  20,00 ms (4 Ticks)
+blit        73,41 ns/px + 1,28 us/call  ->  73,41 ns/px + 1,41 us/call
+```
+
+**Die Vermutung des Anwenders (Langsamkeit beim Schreiben auf die Karte) ist
+damit widerlegt** — mehr Wartezeit aendert nichts, es bricht deterministisch an
+derselben Stelle ab. Das ist ein **Pfad**problem.
+
+**Nebenbei belastbar geworden:** der Pixelpreis ist in beiden Laeufen
+**73,41 ns** auf die zweite Nachkommastelle. Fuer [PORT06](PORT06.md) heisst
+das 4,70 ms je 320x200-Bild, reproduziert.
+
+**Kein Dateisystemfehler:** beide Laeufe tragen denselben Zeitstempel, weil die
+Pi keine Echtzeituhr hat ([H01](H01.md) wartet auf Hardware) — die Uhr startet
+bei jedem Boot beim selben Wert.
+
 ## Auftrag
 
 1. **Headless nachstellen.** Die Demo laeuft in QEMU `raspi4b`
