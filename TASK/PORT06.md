@@ -91,6 +91,64 @@ Der Weg dorthin ist `Malloc`/`Mxalloc` mit TT-RAM-Praeferenz; dass ein solcher
 Block in den EL0-Raum der Anwendung eingeblendet werden muss, ist bei uns
 bekannt und gebaut ([[el0-app-memory-must-be-mapped]]).
 
+## 3a. Der Farbweg — entschieden 2026-09-28, mit Begruendung
+
+**Die Engine bleibt 8-Bit-indiziert. Umgerechnet wird einmal am Ende, beim
+Bildaufbau.**
+
+### Warum nicht der Bildschirm auf 8 Bit
+
+Waere kein Schalter, sondern zwei Baustellen: der Framebuffer wird per Mailbox
+mit **Tiefe 32** angefordert (`kernel/src/drivers/bcm2711/framebuffer.rs:233`),
+den Paletten-Tag benutzen wir nirgends; und die VDI meldet **`PLANES = 16`**
+(`kernel/src/vdi_backend.rs:43`), das Raster-Backend ist auf 32 Bit gebaut
+(V11/V12 legten das `OVERLAY_BIT` ins X-Byte des Pixels). Daraus einen
+**Laufzeit**-Modus zu machen ist ein Umbau. Konform waere es ohnehin ein
+Aufloesungswechsel ueber eine Modusliste — das ist [X02](X02.md), **nach** dem
+Termin.
+
+### Warum nicht die Engine auf 32 Bit umrechnen
+
+Mehr Arbeit **und** langsamer, und es verliert, was im 8-Bit-Entwurf umsonst
+ist:
+
+* **Das Lichtmodell ist der Palettenindex.** Entfernungsabdunklung und
+  Helligkeitsstufen laufen ueber Umsetztabellen Index → Index. In Truecolor
+  muesste man je Pixel rechnen statt nachzuschlagen. Dasselbe fuer die
+  Spielerfarben und den Flimmereffekt der Spektren, der Nachbarpixel durch
+  genau so eine Tabelle liest.
+* **Paletteneffekte kosten in 8 Bit nichts** (Trefferblitz, Strahlenschutz,
+  Einsammeln): das Bild ist gezeichnet, es wechselt nur die Palette. In
+  Truecolor muesste jedes Pixel angefasst oder das Bild neu gezeichnet werden.
+* **Der Renderer wuerde langsamer.** Die inneren Schleifen schreiben **ein
+  Byte** je Pixel; in 32 Bit waeren es vier. Diese Schleifen sind
+  speichergebunden — man vervierfacht den Verkehr genau dort, wo die Zeit
+  verbraucht wird, und zwar auch fuer Pixel, die im selben Bild spaeter wieder
+  ueberschrieben werden.
+
+### Der gewaehlte Weg
+
+Ein **einziger Durchlauf** ueber das fertige 320x200-Bild, durch eine Tabelle
+mit 256 Eintraegen, in einen **Truecolor-Speicher-MFDB**; der geht per
+`vro_cpyfm` auf den Schirm. Jedes Pixel genau **einmal**, gleich wie oft der
+Renderer es vorher angefasst hat — ueberschlagen unter einer Millisekunde auf
+einem 1,5-GHz-A72; die Kopie selbst sind 256 KB.
+
+**Dooms Palette wird dabei schlicht zu unserer Umsetztabelle** — die
+Paletteneffekte bleiben also kostenlos.
+
+Das ist **vollstaendig konform**: die Anwendung rechnet ihre eigenen Pixel aus,
+was ihr freisteht, und nach aussen benutzt sie nur `vro_cpyfm`. Kein
+`Physbase`, kein Framebuffer-Umbau, **kein Kerneleingriff**. Es ist ausserdem
+die **kleinste Aenderung am fremden Quelltext**, was
+[[port-target-app-unmodified]] verlangt: die Umrechnung sitzt genau dort, wo
+Doom ohnehin sein fertiges Bild hinausschiebt.
+
+**Nebeneffekt:** derselbe Port laeuft auf einem TT mit Nova — dort in echtem
+8 Bit ueber die Karte, ohne eine Zeile anders. Und kaeme spaeter ueber X02 ein
+echter 256-Farben-Modus, faellt die Umrechnung weg, ohne dass am Port etwas zu
+aendern waere.
+
 ## 4. Vor dem Anfangen zu klaeren
 
 * **Lizenz.** Die Quelltextfreigabe von 1997 stand unter einer eigenen,
