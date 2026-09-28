@@ -1,0 +1,2 @@
+1920x1080 -> Fwrite length 199, tail b'pyfm -- no XBIOS screen-base cal'
+640x480 -> Fwrite length 199, tail b'fm -- no XBIOS screen-base call\r'

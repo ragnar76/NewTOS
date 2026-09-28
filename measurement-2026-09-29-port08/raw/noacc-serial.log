@@ -1,0 +1,774 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x000000000031c000 (2736128 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f00 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-09-29 00:23:50
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[aes] gsx_malloc: screen buffer pa=0x01000000 len=614400 (kernel-owned, WF_SCREEN)
+[shell] sh_ldapp: starting C:\BALL.NAP, sh_nextapp=2, sh_isgem=1
+[launch] EL0: slot 0 entry 0x1000
+[port08] Bconstat(2) poll #600 -> trace ON, injecting 'q'
+[port08] 0 d0 >> BIOS   fn=0x01 a0=0x2 a1=0x3ffb60
+[port08]      d0 <<                     -> -1 (0xffffffffffffffff)
+[port08] 1 d0 >> BIOS   fn=0x02 a0=0x2 a1=0x3ffb60
+[port08]      d0 <<                     -> 1048689 (0x100071)
+[port08] 2 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 3 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 4 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 5 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 6 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 7 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 8 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 9 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 10 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 11 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 12 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 13 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 14 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 15 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 16 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 17 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 18 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 19 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 20 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 21 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 22 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 23 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 24 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 25 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 26 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 27 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 28 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 29 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 30 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 31 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 32 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 33 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 34 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 35 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 36 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 37 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 38 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 39 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 40 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 41 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 42 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 43 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 44 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 45 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 46 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 47 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 48 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 49 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 50 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 51 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 52 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 53 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 54 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 55 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 56 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 57 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 58 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 59 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 60 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 61 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 62 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 63 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 64 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 65 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 66 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 67 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 68 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 69 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 70 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 71 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 72 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 73 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 74 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 75 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 76 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 77 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 78 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 79 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 80 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 81 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 82 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 83 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 84 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 85 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 86 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 87 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 88 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 89 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 90 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 91 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 92 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 93 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 94 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 95 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 96 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 97 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 98 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 99 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 100 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 101 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 102 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 103 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 104 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 105 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 106 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 107 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 108 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 109 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 110 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 111 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 112 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 113 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 114 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 115 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 116 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 117 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 118 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 119 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 120 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 121 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 122 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 123 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 124 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 125 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 126 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 127 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 128 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 129 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 130 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 131 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 132 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 133 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 134 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 135 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 136 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 137 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 138 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 139 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 140 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 141 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 142 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 143 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 144 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 145 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 146 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 147 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 148 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 149 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 150 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 151 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 152 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 153 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 154 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 155 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 156 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 157 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 158 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 159 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 160 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 161 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 162 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 163 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 164 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 165 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 166 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 167 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 168 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 169 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 170 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 171 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 172 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 173 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 174 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 175 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 176 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 177 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 178 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 179 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 180 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 181 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 182 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 183 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 184 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 185 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 186 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 187 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 188 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 189 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 190 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 191 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 192 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 193 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 194 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 195 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 196 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 197 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 198 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 199 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 200 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 201 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 202 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 203 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 204 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 205 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 206 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 207 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 208 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 209 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 210 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 211 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 212 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 213 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 214 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 215 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 216 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 217 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 218 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 219 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 220 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 221 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 222 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 223 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 224 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 225 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 226 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 227 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 228 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 229 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 230 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 231 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 232 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 233 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 234 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 235 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 236 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 237 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 238 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 239 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 240 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 241 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 242 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 243 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 244 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 245 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 246 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 247 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 248 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 249 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 250 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 251 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 252 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 253 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 254 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 255 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 256 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 257 d0 >> VDI op=14 ? sub=0 handle=2 pb=0x3ffb30
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 258 d0 >> GEMDOS fn=0x3d Fopen a0=0x1357b a1=0x2 a2=0x1622c
+[port08]      d0 <<                     -> 6 (0x6)
+[port08] 259 d0 >> GEMDOS fn=0x42 Fseek a0=0x0 a1=0x6 a2=0x2
+[port08]      d0 <<                     -> 1549 (0x60d)
+[port08] 260 d0 >> GEMDOS fn=0x40 Fwrite a0=0x6 a1=0xc7 a2=0x16480
+[port08]      d0 <<                     -> 199 (0xc7)
+[port08] 261 d0 >> GEMDOS fn=0x3e Fclose a0=0x6 a1=0xc7 a2=0x16480
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 262 d0 >> AES op=78 graf_mouse pb=0x3ffa00 ctl=[78,1,1,1,0] in=[257,1,0,0,255,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 263 d0 >> AES op=51 form_dial pb=0x3ffa00 ctl=[51,9,1,0,0] in=[3,0,0,0,0,0,0,640]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 264 d0 >> AES op=107 wind_update pb=0x3ffa00 ctl=[107,1,1,0,0] in=[2,0,0,0,0,0,0,640]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 265 d0 >> AES op=107 wind_update pb=0x3ffa00 ctl=[107,1,1,0,0] in=[0,0,0,0,0,0,0,640]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 266 d0 >> VDI op=101 v_clsvwk sub=0 handle=2 pb=0x3ffb38
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 267 d0 >> AES op=19 appl_exit pb=0x3ffa00 ctl=[19,0,1,0,0] in=[25964,1,0,0,25964,1,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 268 d0 >> GEMDOS fn=0x49 Mfree a0=0x497000 a1=0x3ffa00 a2=0x0
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 269 d0 >> GEMDOS fn=0x49 Mfree a0=0x400000 a1=0x3ffa00 a2=0x0
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 270 d0 >> GEMDOS fn=0x09 Cconws a0=0x15a9c a1=0x3ffa00 a2=0x0
+BALL: 599 frames in 10.00 s = 59.90 fps presented, 0 dropped, 6 bounces
+[port08]      d0 <<                     -> 73 (0x49)
+[port08] 271 d0 >> GEMDOS fn=0x09 Cconws a0=0x15a9c a1=0x382 a2=0x266
+BALL: whole run per frame: step 0.03 ms  compose 0.76 ms  blit 0.88 ms  wait 14.99 ms
+[port08]      d0 <<                     -> 87 (0x57)
+[port08] 272 d0 >> GEMDOS fn=0x09 Cconws a0=0x15a9c a1=0x15a9c a2=0x39
+BALL: whole run redrew 14204.38 px in 2.06 rect/frame = 4.62 % of the screen
+[port08]      d0 <<                     -> 78 (0x4e)
+[port08] 273 d0 >> GEMDOS fn=0x3d Fopen a0=0x1357b a1=0x2 a2=0x4e
+[port08]      d0 <<                     -> 6 (0x6)
+[port08] 274 d0 >> GEMDOS fn=0x42 Fseek a0=0x0 a1=0x6 a2=0x2
+[port08]      d0 <<                     -> 1748 (0x6d4)
+[port08] 275 d0 >> GEMDOS fn=0x40 Fwrite a0=0x6 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 1120 (0x460)
+[port08] 276 d0 >> GEMDOS fn=0x3e Fclose a0=0x6 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 277 d0 >> GEMDOS fn=0x49 Mfree a0=0x54a000 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 278 d0 >> GEMDOS fn=0x49 Mfree a0=0x53a000 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 279 d0 >> GEMDOS fn=0x49 Mfree a0=0x539000 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 280 d0 >> GEMDOS fn=0x49 Mfree a0=0x538000 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 281 d0 >> GEMDOS fn=0x49 Mfree a0=0x535000 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 282 d0 >> GEMDOS fn=0x49 Mfree a0=0x52f000 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 283 d0 >> GEMDOS fn=0x49 Mfree a0=0x52e000 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 284 d0 >> GEMDOS fn=0x49 Mfree a0=0x4e3000 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 285 d0 >> GEMDOS fn=0x49 Mfree a0=0x498000 a1=0x460 a2=0x54a000
+[port08]      d0 <<                     -> 0 (0x0)
+[launch] returned (program Pterm'd)
+[shell] sh_ldapp: 'C:\BALL.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[port08] 286 d0 >> AES op=10 appl_init pb=0xffff0000003179c0 ctl=[10,0,1,0,0] in=[0,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 287 d0 >> AES op=104 wind_get pb=0xffff0000003179c0 ctl=[104,2,5,0,0] in=[0,4,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 288 d0 >> AES op=40 objc_add pb=0xffff000000317538 ctl=[40,2,1,1,0] in=[0,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 289 d0 >> AES op=40 objc_add pb=0xffff000000317538 ctl=[40,2,1,1,0] in=[0,2,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 290 d0 >> AES op=40 objc_add pb=0xffff000000317538 ctl=[40,2,1,1,0] in=[0,3,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 291 d0 >> AES op=40 objc_add pb=0xffff000000317538 ctl=[40,2,1,1,0] in=[0,4,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 292 d0 >> AES op=40 objc_add pb=0xffff000000317538 ctl=[40,2,1,1,0] in=[0,5,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 293 d0 >> AES op=40 objc_add pb=0xffff000000317538 ctl=[40,2,1,1,0] in=[0,6,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 294 d0 >> AES op=40 objc_add pb=0xffff000000317538 ctl=[40,2,1,1,0] in=[0,7,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 295 d0 >> AES op=40 objc_add pb=0xffff000000317538 ctl=[40,2,1,1,0] in=[0,8,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 296 d0 >> GEMDOS fn=0x154  a0=0x8 a1=0x5f494454 a2=0x0
+[port08]      d0 <<                     -> 4399 (0x112f)
+[port08] 297 d0 >> AES op=108 wind_calc pb=0xffff0000003179c0 ctl=[108,6,5,0,0] in=[1,4095,0,19,640,461,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 298 d0 >> AES op=122 ? pb=0xffff0000003179c0 ctl=[122,1,1,1,0] in=[4192,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 299 d0 >> GEMDOS fn=0x3d Fopen a0=0xffff00000031788e a1=0x0 a2=0x0
+[port08]      d0 <<                     -> 6 (0x6)
+[port08] 300 d0 >> GEMDOS fn=0x3f Fread a0=0x6 a1=0x200 a2=0xffff00000031768e
+[port08]      d0 <<                     -> 394 (0x18a)
+[port08] 301 d0 >> GEMDOS fn=0x3e Fclose a0=0x6 a1=0x0 a2=0x0
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 302 d0 >> AES op=40 objc_add pb=0xffff000000317800 ctl=[40,2,1,1,0] in=[1,9,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 303 d0 >> AES op=40 objc_add pb=0xffff000000317800 ctl=[40,2,1,1,0] in=[1,10,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 304 d0 >> AES op=40 objc_add pb=0xffff000000317800 ctl=[40,2,1,1,0] in=[1,11,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 305 d0 >> AES op=40 objc_add pb=0xffff000000317800 ctl=[40,2,1,1,0] in=[1,12,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 306 d0 >> AES op=40 objc_add pb=0xffff000000317800 ctl=[40,2,1,1,0] in=[1,13,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 307 d0 >> AES op=40 objc_add pb=0xffff000000317800 ctl=[40,2,1,1,0] in=[1,14,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 308 d0 >> AES op=105 wind_set pb=0xffff0000003179c0 ctl=[105,3,1,1,0] in=[0,14,1,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 309 d0 >> AES op=30 menu_bar pb=0xffff0000003178c8 ctl=[30,1,1,1,0] in=[1,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 310 d0 >> AES op=107 wind_update pb=0xffff0000003179c0 ctl=[107,1,1,0,0] in=[1,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 311 d0 >> AES op=26 evnt_dclick pb=0xffff0000003179c0 ctl=[26,2,1,0,0] in=[3,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 312 d0 >> AES op=107 wind_update pb=0xffff0000003179c0 ctl=[107,1,1,0,0] in=[0,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 313 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[9,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 314 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[18,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 315 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[19,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 316 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[20,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 317 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[22,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 318 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[23,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 319 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[24,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 320 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[25,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 321 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[26,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 322 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[27,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 323 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[29,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 324 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[31,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 325 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[32,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 326 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[34,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 327 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[35,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 328 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[37,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 329 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[38,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 330 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[39,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 331 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[40,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 332 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[41,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 333 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[43,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 334 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[45,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 335 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[47,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 336 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[48,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 337 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[49,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 338 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[50,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 339 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[52,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 340 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[53,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 341 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[54,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 342 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[56,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 343 d0 >> AES op=32 ? pb=0xffff0000003178c8 ctl=[32,2,1,1,0] in=[57,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 344 d0 >> AES op=31 ? pb=0xffff0000003178c8 ctl=[31,2,1,1,0] in=[34,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 345 d0 >> AES op=31 ? pb=0xffff0000003178c8 ctl=[31,2,1,1,0] in=[35,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 346 d0 >> AES op=31 ? pb=0xffff0000003178c8 ctl=[31,2,1,1,0] in=[37,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 347 d0 >> AES op=31 ? pb=0xffff0000003178c8 ctl=[31,2,1,1,0] in=[38,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 348 d0 >> AES op=31 ? pb=0xffff0000003178c8 ctl=[31,2,1,1,0] in=[39,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 349 d0 >> AES op=31 ? pb=0xffff0000003178c8 ctl=[31,2,1,1,0] in=[40,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 350 d0 >> AES op=31 ? pb=0xffff0000003178c8 ctl=[31,2,1,1,0] in=[41,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 351 d0 >> AES op=31 ? pb=0xffff0000003178c8 ctl=[31,2,1,1,0] in=[43,1,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 352 d0 >> AES op=78 graf_mouse pb=0xffff0000003178d0 ctl=[78,1,1,0,0] in=[256,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 353 d0 >> AES op=51 form_dial pb=0xffff0000003178d0 ctl=[51,9,1,0,0] in=[3,0,0,0,0,0,0,640]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 354 d0 >> AES op=30 menu_bar pb=0xffff000000317768 ctl=[30,1,1,1,0] in=[1,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 355 d0 >> AES op=78 graf_mouse pb=0xffff0000003178d0 ctl=[78,1,1,0,0] in=[257,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 356 d0 >> AES op=78 graf_mouse pb=0xffff0000003179c0 ctl=[78,1,1,0,0] in=[0,0,0,0,0,0,0,0]
+[port08]      d0 <<                     -> 0 (0x0)
+[port08] 357 d0 >> GEMDOS fn=0x19 Dgetdrv a0=0x0 a1=0x0 a2=0x0
+[port08]      d0 <<                     -> 2 (0x2)
+[port08] 358 d0 >> GEMDOS fn=0x0e Dsetdrv a0=0x2 a1=0x0 a2=0x0
+[port08]      d0 <<                     -> 4 (0x4)
+[desk] desktop up (1 drives, 0 window(s) from the context)
+[port08] 359 d0 >> AES op=25 evnt_multi pb=0xffff000000317748 ctl=[25,16,7,1,0] in=[19,2,1,1,0,0,0,0]

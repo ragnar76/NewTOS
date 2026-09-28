@@ -1,0 +1,12 @@
+38868f4f49681851fbb051d4e1a61d99358bf3d8fba7d83027daf5843d8e1f15  ./method/port08-scaffolding.diff
+b0fffa18e45a24475555ac8111f06c617238bfe8cd0d296f485051d82344bb1d  ./method/report-buffer-cap.py
+bf7bcf7f1971e281012b97035d71b9b569d3b9b8a22d58979d6e9bcf91930f7c  ./method/strip-accessories.py
+bf4dd78698523372ddcb4a75a06aef6c6de909d496da16b7e0dc49838404beb8  ./raw/noacc-BALL.LOG
+fd87b41145c59bb5f5aa6571599cf58df476a19d62e0523f26c81f6408e2cc5d  ./raw/noacc-serial.log
+9fce6ed667d7bf015879d1892785e223815167861ca426e4869e75f478d38087  ./raw/q1-serial.log
+d4502bd685839fbc8eca17e01a1da28640c701e5e1ec80cef268d035f598a87b  ./raw/q2-exit-trace.log
+1facf36d9853b9826b32f1f8981bb8dd2b81d9fdcabca6a38bdc72a10467c496  ./raw/report-buffer-cap.txt
+66c8dd161800771525e71bb478984521c76c7c57f2082c5681e0fe91387cac26  ./RUNINFO.TXT
+c4ab9aaafefd7c9b434d86a10af0a8bac00db6429aac4828810e745062ab6419  ./screendumps/01-demo-running-t45.png
+21d23411384ea73f428e684b53b6acfa3ce0c24ee5b768282a329d9e798e696b  ./screendumps/02-hang-with-two-accessories-t75.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  ./screendumps/03-clean-exit-no-accessories-t60.png

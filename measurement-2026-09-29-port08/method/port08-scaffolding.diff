@@ -1,0 +1,198 @@
+--- a/kernel/src/dbg_qedtrace.rs	2026-09-29 00:37:50
++++ b/kernel/src/dbg_qedtrace.rs	2026-09-29 00:38:47
+@@ -888,3 +888,164 @@
+         _ => "?",
+     }
+ }
++
++// PORT08-TEMP BEGIN — audit scaffolding for TASK/PORT08 (2026-09-29).
++// Reverted by hand after the measurement; nothing below belongs in the product.
++//
++// Two jobs, both outside the `QED_SVC_TRACE` machinery above so that stays
++// inert: (1) inject the demo's quit key after a fixed number of `Bconstat(2)`
++// polls — `raspi4b` has no keyboard — and (2) from that moment on, write one
++// serial line per `svc` **on entry** and one on return, so a call that never
++// returns is the last unmatched `>>` line in the log.
++pub mod port08 {
++    use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
++    use tos_api::trap::{TrapArgs, TrapClass};
++
++    /// How many per-frame `Bconstat(2)` polls to let pass before quitting.
++    const QUIT_AFTER: u32 = 600;
++    static POLLS: AtomicU32 = AtomicU32::new(0);
++    static ON: AtomicBool = AtomicBool::new(false);
++    static SEQ: AtomicU32 = AtomicU32::new(0);
++    static DEPTH: AtomicU32 = AtomicU32::new(0);
++
++    fn wrd(base: *const i16, i: usize) -> i16 {
++        if base.is_null() {
++            return 0;
++        }
++        unsafe { base.add(i).read() }
++    }
++
++    fn arrays(block: u64) -> (*const i16, *const i16) {
++        if block == 0 {
++            return (core::ptr::null(), core::ptr::null());
++        }
++        let abi = tos_api::bdos::process::current_abi();
++        let control = unsafe { abi.read_ptr(block, 0) } as *const i16;
++        let intin = unsafe { abi.read_ptr(block, 2) } as *const i16;
++        (control, intin)
++    }
++
++    pub fn pre(class: TrapClass, args: &TrapArgs) {
++        if class == TrapClass::Bios && args.func_id() == 1 && args.arg_i16(0) == 2 {
++            let n = POLLS.fetch_add(1, Ordering::Relaxed) + 1;
++            if n == QUIT_AFTER {
++                ON.store(true, Ordering::Release);
++                crate::kprintln!("[port08] Bconstat(2) poll #{n} -> trace ON, injecting 'q'");
++                crate::ikbd::feed(0x10);
++                crate::ikbd::feed(0x90);
++            }
++        }
++        if !ON.load(Ordering::Acquire) {
++            return;
++        }
++        let s = SEQ.fetch_add(1, Ordering::Relaxed);
++        let d = DEPTH.fetch_add(1, Ordering::Relaxed);
++        match class {
++            TrapClass::Gemdos => crate::kprintln!(
++                "[port08] {s} d{d} >> GEMDOS fn=0x{:02x} {} a0=0x{:x} a1=0x{:x} a2=0x{:x}",
++                args.func_id(),
++                super::gemdos_name(args.func_id()),
++                args.regs[0],
++                args.regs[1],
++                args.regs[2]
++            ),
++            TrapClass::Bios => crate::kprintln!(
++                "[port08] {s} d{d} >> BIOS   fn=0x{:02x} a0=0x{:x} a1=0x{:x}",
++                args.func_id(),
++                args.regs[0],
++                args.regs[1]
++            ),
++            TrapClass::Xbios => crate::kprintln!(
++                "[port08] {s} d{d} >> XBIOS  fn=0x{:02x} a0=0x{:x} a1=0x{:x}",
++                args.func_id(),
++                args.regs[0],
++                args.regs[1]
++            ),
++            TrapClass::Gem => {
++                let sel = args.regs[0];
++                let block = args.regs[1];
++                let (control, intin) = arrays(block);
++                let op = wrd(control, 0);
++                if sel == 200 {
++                    crate::kprintln!(
++                        "[port08] {s} d{d} >> AES op={op} {} pb=0x{:x} ctl=[{},{},{},{},{}] in=[{},{},{},{},{},{},{},{}]",
++                        super::aes_name(op),
++                        block,
++                        wrd(control, 0), wrd(control, 1), wrd(control, 2),
++                        wrd(control, 3), wrd(control, 4),
++                        wrd(intin, 0), wrd(intin, 1), wrd(intin, 2), wrd(intin, 3),
++                        wrd(intin, 4), wrd(intin, 5), wrd(intin, 6), wrd(intin, 7)
++                    );
++                } else {
++                    // VDI parameter block: contrl, intin, ptsin, intout, ptsout.
++                    let abi = tos_api::bdos::process::current_abi();
++                    let contrl = if block == 0 {
++                        core::ptr::null()
++                    } else {
++                        unsafe { abi.read_ptr(block, 0) as *const i16 }
++                    };
++                    let vop = wrd(contrl, 0);
++                    crate::kprintln!(
++                        "[port08] {s} d{d} >> VDI op={vop} {} sub={} handle={} pb=0x{:x}",
++                        super::vdi_name(vop),
++                        wrd(contrl, 5),
++                        wrd(contrl, 6),
++                        block
++                    );
++                }
++            }
++        }
++        runset();
++    }
++
++    /// One compact line with the cooperative run-set: which slots exist, which
++    /// are `runnable` (the only thing `pick_next` looks at), which have a saved
++    /// context, and what they are waiting on.
++    pub fn runset() {
++        use tos_api::bdos::process::{PROCESS_TABLE, MAX_PROCESSES};
++        use core::fmt::Write as _;
++        let mut w = crate::hal::uart::UartWriter(&crate::console::CONSOLE);
++        let _ = write!(w, "[port08] runset cur={} :", tos_api::bdos::process::sched::running_slot());
++        for i in 0..MAX_PROCESSES {
++            let p = &PROCESS_TABLE[i];
++            let st = p.state.load(Ordering::Relaxed);
++            if st == 0 {
++                continue;
++            }
++            let _ = write!(
++                w,
++                " s{}(st={} run={} ctx={} cond=0x{:x})",
++                i,
++                st,
++                p.runnable.load(Ordering::Relaxed) as u8,
++                p.has_ctx.load(Ordering::Relaxed) as u8,
++                p.wait_cond.load(Ordering::Relaxed)
++            );
++        }
++        let _ = write!(w, "\r\n");
++    }
++
++    /// Called from `host_env::pump_input` — the single funnel of the idle
++    /// fallback. Prints every 20000th pass so a spin shows up in the log
++    /// without drowning it.
++    static PUMPS: AtomicU32 = AtomicU32::new(0);
++    pub fn pump_tick() {
++        if !ON.load(Ordering::Acquire) {
++            return;
++        }
++        let n = PUMPS.fetch_add(1, Ordering::Relaxed) + 1;
++        if n % 20000 == 0 {
++            crate::kprintln!("[port08] idle pump #{n}");
++            runset();
++        }
++    }
++
++    pub fn post(_class: TrapClass, _args: &TrapArgs, result: i64) {
++        if !ON.load(Ordering::Acquire) {
++            return;
++        }
++        let d = DEPTH.fetch_sub(1, Ordering::Relaxed).wrapping_sub(1);
++        crate::kprintln!("[port08]      d{d} <<                     -> {result} (0x{result:x})");
++    }
++}
++// PORT08-TEMP END
+--- a/kernel/src/host_env.rs	2026-09-29 00:37:50
++++ b/kernel/src/host_env.rs	2026-09-29 00:38:47
+@@ -107,6 +107,8 @@
+         // On real Pi-4 this is the sole console input source; no-op until a
+         // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        // PORT08-TEMP: audit scaffolding, reverted by hand.
++        crate::dbg_qedtrace::port08::pump_tick();
+         core::hint::spin_loop();
+ 
+         // SAFETY: restore the caller's original DAIF mask state.
+--- a/kernel/src/arch/aarch64/exceptions.rs	2026-09-29 00:37:50
++++ b/kernel/src/arch/aarch64/exceptions.rs	2026-09-29 00:38:47
+@@ -352,6 +352,8 @@
+     if crate::dbg_qedtrace::QED_SVC_TRACE {
+         crate::dbg_qedtrace::pre_dispatch(class, &args);
+     }
++    // PORT08-TEMP: audit scaffolding, reverted by hand.
++    crate::dbg_qedtrace::port08::pre(class, &args);
+ 
+     // A blocking `evnt_*` AES wait may yield to a runnable peer (S2
+     // restartable block, design §4.3 + §8.2 sub-step 3); the AES dispatch
+@@ -491,6 +493,8 @@
+     if crate::dbg_qedtrace::QED_SVC_TRACE {
+         crate::dbg_qedtrace::post_dispatch(class, &args, result);
+     }
++    // PORT08-TEMP: audit scaffolding, reverted by hand.
++    crate::dbg_qedtrace::port08::post(class, &args, result);
+ 
+     // AES trap tracer: perform a pending trace flush here — on the kernel
+     // exception stack, with the AES dispatch already returned — rather than

@@ -1,6 +1,6 @@
 # PORT08 — Die Ball-Demo parkt beim Beenden in einem AES-Aufruf
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Belegter Defekt — Pi-Lauf 2026-09-28
+Status: **GEKLAERT — Ursache getrennt** (2026-09-29) · Prioritaet: **P2** · Typ: Belegter Defekt — Pi-Lauf 2026-09-28
 
 Abhaengigkeiten: [PORT07](PORT07.md) (dort als ungeprueft benannt)
 
@@ -141,3 +141,24 @@ die Palette ist wiederhergestellt, und `C:\BALL.LOG` endet mit einer
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss (2026-09-29): zwei Fehler, und sie gehoeren verschiedenen Leuten
+
+**Der Haenger gehoert uns** → **[SCHED01](SCHED01.md)**, P1. Gemessen: der
+letzte Aufruf ist `appl_exit` (AES 19), und er kehrt nicht zurueck, weil ein
+gestartetes GEM-Programm **nie in der kooperativen Laufmenge steht** —
+`sched::admit` wird nur fuer Accessories gerufen, und `sched::dsptch` legt den
+Aufrufer im Gegensatz zu EmuTOS' `disp_act` nicht ein. `appl_exit` verliert die
+Anwendung damit an das erste Accessory. Betrifft **jede** EL0-GEM-Anwendung,
+die `appl_exit` ruft, sobald ein Accessory geladen ist.
+
+**Die abgeschnittene Logzeile gehoert der Demo** und kostet den Kern nichts:
+`plat-newtos.c:543` hat `static char rbuf[200]`, der Text ist bei 1920x1080
+201 Zeichen. Der Trace zeigt `Fwrite len=199 -> 199` und `Fclose -> 0` — der
+Kern hat geschrieben und geschlossen, was er bekam. Bei 640x480 faellt nur das
+LF weg; **die Zeile ist in jeder Aufloesung unvollstaendig**.
+
+**Damit war meine Lesart dieser Datei zum dritten Mal falsch.** Erst „haengt im
+Schreiben", dann „nie geschlossene Datei", und richtig ist: ein zu kleiner
+Puffer in der Demo. Die Datei hat dreimal etwas anderes zu sagen geschienen,
+als sie sagte — sie war nie eine Ortsangabe.

@@ -1,0 +1,231 @@
+measurement-2026-09-29-port08
+  PORT08 -- wo die Ball-Demo beim Beenden stehenbleibt, und wessen Fehler es ist
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 6726163.  **Am NewTOS-Baum ist nach dem Lauf
+keine Quelltextzeile geaendert**; `git status --short` nennt vor wie nach dem
+Lauf nur emutos-switches.txt, hw-round-2026-09-24/ und dieses
+Messverzeichnis, `git diff --stat` ist leer.  Die Messgeruest-Aenderung lag
+waehrend der Laeufe in drei Kerndateien und ist von Hand zurueckgenommen
+worden; sie liegt als method/port08-scaffolding.diff hier bei, weil sie sonst
+nirgends aufgehoben ist.
+
+Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, /Volumes/BOOT nicht
+beruehrt, nichts committet, kein `git checkout/restore/clean/stash/reset`.
+Kartenabbilder und Rohlaeufe lagen im Job-Scratchpad; **kein `*.img` hier.**
+
+Maschine: QEMU 11.0.2, `-M raspi4b`, `-display none`, serielle Ausgabe in
+eine Datei, Karte als `-drive if=sd,format=raw`, Bildabzuege ueber QMP
+`screendump`.  Bildschirm 640x480 (die Pi laeuft 1920x1080).
+Host: macOS (Darwin 27), kein `timeout`; die Laeufe begrenzt der QMP-Treiber.
+
+Kern: `cargo xtask build --board rpi4 --release`.
+Karte: `tools/make-sd-image.sh` (64 MiB, FAT16) + PORT07s `seed-ball.sh`
+(BALL.NAP vom 2026-09-28, BALL.NTX, `hud 1`, `#Z`-Autorun).  Die
+Standardkarte traegt **zwei** Accessories -- C:\ACC\SYSACC.NAC und
+C:\SYSACC2.NAC --, genau wie die Karte des Anwenders.
+
+
+0. DIE FRAGE, IN EINEM SATZ
+---------------------------------------------------------------------------
+Welcher Aufruf ist der letzte, wenn die konforme Ball-Demo sich nicht mehr
+beenden laesst -- und liegt der Fehler in der Demo oder bei uns?
+
+ANTWORT VORWEG:
+
+    Der letzte Aufruf ist  AES Opcode 19, appl_exit.  Er kehrt nie zurueck.
+    Der Fehler liegt BEI UNS.  Die Demo tut das Richtige.
+    Er tritt nur mit mindestens einem geladenen Accessory auf.
+    Der abgeschnittene C:\BALL.LOG ist ein DRITTER, eigener Befund und
+    gehoert der Demo -- er hat mit dem Haenger nichts zu tun.
+
+
+1. NACHGESTELLT, HEADLESS
+---------------------------------------------------------------------------
+Die Demo laeuft in QEMU raspi4b; was fehlte, war die Taste zum Beenden.  Das
+Messgeruest (method/port08-scaffolding.diff) zaehlt die `Bconstat(2)`-Abfragen
+der Bildschleife und speist nach der 600. den Scancode 0x10/0x90 ('q') ueber
+`crate::ikbd::feed` ein -- derselbe Weg, den die echte Tastatur nimmt.  Ab
+demselben Augenblick schreibt es je `svc` eine Zeile **beim Eintritt** und
+eine beim Austritt, damit ein Aufruf, der nicht zurueckkehrt, als letzte
+unbeantwortete `>>`-Zeile im Protokoll steht.
+
+Das Bild nach dem Tastendruck (screendumps/02) ist das des Anwenders:
+gruener Desktop-Hintergrund, am oberen Rand ein Streifen ueber die volle
+Breite mit dem Hintergrund der Demo, keine Menuezeile, lebender Mauszeiger.
+
+
+2. DER LETZTE AUFRUF, MIT SEINEN WIRE-ARGUMENTEN
+---------------------------------------------------------------------------
+raw/q1-serial.log und raw/q2-exit-trace.log, Ausstiegsfolge von plat_close():
+
+    258 GEMDOS fn=0x3d Fopen              -> 6
+    259 GEMDOS fn=0x42 Fseek              -> 1551
+    260 GEMDOS fn=0x40 Fwrite  len=0xc7   -> 199
+    261 GEMDOS fn=0x3e Fclose             -> 0
+    262 AES op=78  graf_mouse  in=[257,...]            -> 0
+    263 AES op=51  form_dial   in=[3,0,0,0,0,0,0,640]  -> 0     (FMD_FINISH)
+    264 AES op=107 wind_update in=[2,...]              -> 0     (END_MCTRL)
+    265 AES op=107 wind_update in=[0,...]              -> 0     (END_UPDATE)
+    266 VDI op=101 v_clsvwk    handle=2                -> 0
+    267 AES op=19  appl_exit   pb=0x3ffa00
+                               ctl=[19,0,1,0,0]        -> KEIN RUECKSPRUNG
+    [sched] switch -> slot 0
+    268 AES op=23  evnt_mesag  (Accessory 1)           -> 0     (AC_CLOSE)
+    269 AES op=23  evnt_mesag  (Accessory 1)           -> blockiert
+    [sched] switch -> slot 1
+    270 AES op=23  evnt_mesag  (Accessory 2)           -> 0     (AC_CLOSE)
+    271 AES op=23  evnt_mesag  (Accessory 2)           -> blockiert
+    ... danach kein einziger `svc` mehr.
+
+`ctl=[19,0,1,0,0]` ist die AESPB-CONTRL: Opcode 19, 0 int_in, 1 int_out,
+0 addr_in, 0 addr_out -- die Bindung, die jede GEM-Anwendung fuer
+`appl_exit()` baut.  Der Aufruf ist vollstaendig regelkonform.
+
+**Die Reihenfolge des Tickets stimmt und ist am Quelltext nachgeprueft**
+(`plat-newtos.c:604-644`): Palette -> write_report -> graf_mouse(M_ON) ->
+form_dial(FMD_FINISH) -> END_MCTRL/END_UPDATE -> v_clsvwk -> appl_exit ->
+zwei Mfree.  Der Suchraum des Nachtrags war `v_clsvwk` oder `appl_exit`; es
+ist `appl_exit`, und `v_clsvwk` ist mit `-> 0` zurueckgekehrt.
+
+
+3. WARUM ER NICHT ZURUECKKEHRT
+---------------------------------------------------------------------------
+Das Messgeruest schreibt zu jedem Aufruf die Laufmenge mit.  In dem
+Augenblick, in dem die Demo `appl_exit` ruft (raw/q2-exit-trace.log):
+
+    runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000)
+                   s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+                   s2(st=2 run=0 ctx=0 cond=0x0)
+
+**s2 ist die Demo, und `run=0`.**  Sie laeuft auf der CPU, steht aber nicht
+in der kooperativen Laufmenge.  `sched::admit` -- das Einzige, was das Bit
+setzt -- wird nur fuer Accessories gerufen (`tos-api/src/aes/acc.rs:103`);
+ein gestartetes GEM-Programm wird nirgends aufgenommen.
+
+Ablauf danach:
+
+  * `appl_exit` -> `mn_cleanup()` schickt AC_CLOSE an beide Accessories
+    (`tos-api/src/aes/appl.rs:338`), das weckt sie (`run=1`).
+  * `wait_for_accs(AP_ACCLOSE)` -> `all_run()` -> `sched::dsptch()`
+    (`acc.rs:172`) gibt die CPU an Slot 0 ab.  Der Aufruf der Demo wird
+    abgebrochen (S2-Restartblock) und soll spaeter erneut ausgefuehrt werden.
+  * Beide Accessories holen ihr AC_CLOSE ab und blockieren wieder
+    (`run=0`, `cond=wait_mesg`).
+  * `pick_next` sucht den naechsten Slot mit `runnable == true`.  Es gibt
+    keinen: die Demo hat `run=0` **und** `cond=0`.  Sie ist damit weder
+    bereit noch wartend, also weder waehlbar noch weckbar.
+
+Endzustand, 103 600 000 Leerlaufdurchgaenge lang unveraendert
+(raw/q2-exit-trace.log, Schluss):
+
+    runset cur=1 : s0(run=0 cond=0x200000000000000)
+                   s1(run=0 cond=0x200000000000001)
+                   s2(run=0 ctx=1 cond=0x0)
+
+Slot 1 dreht in `sleep`s Ausgang (a), und dessen Rumpf ist
+`host().pump_input()` -- **darum lebt die Maus.**  Genau die Beobachtung des
+Anwenders, und sie ist kein Hinweis auf eine schlafende Anwendung, sondern
+auf einen leerlaufenden Accessory.
+
+Die Quelle sagt es anders herum.  EmuTOS' `disp` (`aes/gemdisp.c:220-238`)
+nimmt den laufenden Prozess vom Kopf von `rlr` und legt ihn, wenn er kein
+WAITIN gesetzt hat, mit `disp_act` -> `insert_process(p, &rlr)`
+(`gemdisp.c:74-79`) **wieder hinein**.  Bei EmuTOS ist der laufende Prozess
+per Konstruktion auf der Bereitliste; ein "laeuft, ist aber nicht bereit"
+gibt es dort nicht.  Unser `sched::dsptch` legt nichts ein -- es laesst das
+Bit unberuehrt und setzt Mitgliedschaft voraus (`sched.rs:592-605`, Kommentar
+"the caller's `runnable` bit ... will pick the caller again when it comes
+round").  Fuer ein gestartetes Programm ist diese Zusicherung falsch.
+
+
+4. DIE GEGENPROBE: DIESELBE KARTE OHNE ACCESSORIES
+---------------------------------------------------------------------------
+Dieselbe Karte, derselbe Kern, nur C:\ACC\SYSACC.NAC und C:\SYSACC2.NAC
+entfernt (method/strip-accessories.py).  raw/noacc-serial.log:
+
+    267 AES op=19 appl_exit -> 0          (kehrt sofort zurueck)
+    268..269 Mfree, Mfree
+    270..272 Cconws  -- die drei Schlusszeilen der Demo
+    273..276 Fopen / Fseek / Fwrite 1120 / Fclose   -- log_commit()
+    277..    Mfree  (b_free der neun Puffer)
+    ...
+    353 AES op=51  form_dial  (FMD_FINISH)
+    354 AES op=30  menu_bar   in=[1,...]   -- die Menuezeile wird wieder
+                                              angemeldet und gezeichnet
+    357 GEMDOS Dgetdrv / 358 Dsetdrv
+    [desk] desktop up (1 drives, 0 window(s) from the context)
+    359 AES op=25 evnt_multi  -- der Desktop lebt
+
+screendumps/03 zeigt den vollstaendigen Desktop mit Menuezeile und Symbolen.
+raw/noacc-BALL.LOG ist 2868 Byte und endet mit einer **vollstaendigen**
+Zeile.  Ohne Accessory ist `count() == 0`, `all_run()` laeuft null Runden,
+`all_have` ist trivial wahr -- `wait_for_accs` gibt sofort auf, und der Weg
+wird nie betreten.
+
+**Damit ist die Ursache eingekreist und nicht nur erschlossen.**
+
+
+5. DER ABGESCHNITTENE C:\BALL.LOG -- ZUM DRITTEN MAL FALSCH GELESEN
+---------------------------------------------------------------------------
+Er ist **keine Ortsangabe, aber auch keine Folge einer nie geschlossenen
+Datei.**  Die Datei wird geschlossen; die Zeile passt nicht in den Puffer
+der Demo.
+
+`plat-newtos.c:543` hat `static char rbuf[200]`, und `r_str` bricht bei
+`rlen < (int)sizeof(rbuf) - 1` ab, also bei **199** Zeichen.  Der Text von
+`write_report()` ist bei 1920x1080 201 Zeichen plus CRLF.  Die
+Nachbildung (method/report-buffer-cap.py, raw/report-buffer-cap.txt) liefert
+
+    1920x1080 -> Fwrite length 199, tail b'pyfm -- no XBIOS screen-base cal'
+    640x480   -> Fwrite length 199, tail b'fm -- no XBIOS screen-base call\r'
+
+und das ist **byteweise** der Schluss von
+measurement-2026-09-28-port07/raw/pi01-BALL.LOG: der Satz beginnt bei
+Offset 1556, ist 199 Byte lang, 1556+199 = 1755.  pi02 ist an dieser Stelle
+identisch.
+
+Der Kern hat getan, was ihm aufgetragen wurde -- im Trace steht
+`Fwrite len=0xc7 -> 199` und `Fclose -> 0`, also 199 von 199 Byte
+geschrieben und die Datei geschlossen.  Dass danach nichts mehr kommt, liegt
+daran, dass der Rest des Protokolls im 32-KiB-Puffer der Demo steht und erst
+das `log_commit()` **nach** `plat_close()` ihn schreibt (`ball.c:5306`) --
+und dorthin kommt die Demo wegen Abschnitt 3 nicht.
+
+Nebenbefund: bei 640x480 faellt nur das LF weg, die Zeile endet auf "call\r".
+Die Zeile ist also **in jeder Aufloesung** unvollstaendig, nur faellt es dort
+nicht auf.
+
+
+6. DAS URTEIL
+---------------------------------------------------------------------------
+  * **Der Haenger gehoert uns.**  `plat_close()` ruft `appl_exit()` als
+    letzten AES-Aufruf, genau wie `plat-tt.c` und `plat-pistorm.c` und genau
+    wie jede GEM-Anwendung.  An der Demo ist dafuer nichts zu reparieren, und
+    eine Umgehung in der Demo waere auch keine: jedes andere GEM-Programm --
+    QED, TeraDesk, jede portierte Anwendung -- trifft dieselbe Stelle,
+    sobald ein Accessory geladen ist.
+  * **Der abgeschnittene C:\BALL.LOG gehoert der Demo** und kostet den Kern
+    nichts: `rbuf[200]` ist zu klein fuer die eigene Zeile.
+
+Dass beides in derselben Datei zusammentrifft, ist der Grund, warum die
+Logdatei zweimal als Ortsangabe gelesen wurde.  Sie ist keine.
+
+
+7. WAS HIER NICHT GEMESSEN WURDE
+---------------------------------------------------------------------------
+  * **Ein Accessory statt zwei** ist nicht gefahren.  Der Mechanismus haengt
+    nicht an der Zahl -- s2 hat `run=0`, bevor irgendein Accessory laeuft --
+    aber gemessen ist nur 0 und 2.
+  * **Der Vergleich mit dem Stand vor ACC10** ist nicht gefahren.  Aus dem
+    Quelltext gelesen (`814de2c^:tos-api/src/aes/acc.rs`) schlief die Barriere
+    vorher auf `wait_input()`; damit haette der Slot `cond != 0` gehabt und
+    `idle_wake_pass` haette ihn bei einer Mausbewegung wieder bereit gesetzt
+    (`sched.rs:704-707`).  Das heisst: auf der echten, interaktiven Pi waere
+    der Haenger vor ACC10 vermutlich von selbst weitergegangen.  **Erschlossen,
+    nicht gemessen.**
+  * **Die echte Pi** wurde auftragsgemaess nicht gefahren.  Das QEMU-Bild ist
+    dem geschilderten bis auf die Aufloesung gleich; die Pi bringt keinen
+    Unterschied ins Spiel, den der Mechanismus kennt.
+  * Die uebrige AES-Ausstiegsstrecke wurde nur so weit geprueft, wie der
+    Trace sie zeigt.
