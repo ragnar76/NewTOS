@@ -75,3 +75,22 @@ jetzt ueberein.
 
 **HW-Gegenprobe offen:** `.NTP` doppelklicken → `sh_isgem=0` im Serial und
 Textschirm statt Desktop; `.NAP` bleibt GEM, `.NCP` bleibt Konsole ohne Dialog.
+
+## Hardware-Runde 2026-09-28 — und was dabei sichtbar wurde
+
+Anwender zu Punkt 4 der Testliste: *„Doppelklick geht ja nur im Desktop und
+nicht im Textschirm, und da oeffnet sich kein Argument-Eingabefenster; der
+Desktop blitzt kurz auf und das war's."*
+
+**Der Kern der Rueckmeldung ist der fehlende Tail-Dialog** — genau die Haelfte
+der Abnahme, die dieses Ticket als „nicht einloesbar" vermerkt hat, weil
+`opn_appl` (`deskpro.c:71-121`) nicht gebaut ist. Ohne ihn startet ein `.NTP`
+mit **leerer** Parameterzeile und ist damit von einem `.NCP` nicht zu
+unterscheiden. **Eigenes Ticket: [DESK47](DESK47.md).**
+
+Das kurze Aufblitzen selbst deckt sich mit der Messung aus
+[DESK46](DESK46.md): der Konsolenschirm steht **25 ms**, Programmlauf
+eingeschlossen. Mit blossem Auge ist daraus nicht zu entscheiden, ob der
+Textschirm betreten wurde — fuer `.NCP` ist das per Screendump belegt
+(`measurement-2026-09-27-desk46/screendumps/a3-3-console.png`), fuer `.NTP`
+steht derselbe Nachweis aus und ist Teil von DESK47s Abnahme.

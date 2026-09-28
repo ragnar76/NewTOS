@@ -1,6 +1,6 @@
 # DESK46 — Konsolenprogramme nach U3: Bildschirm blitzt weiss, und aus EmuCON heraus friert es ein
 
-Status: **BEHOBEN — Pi-Gegenprobe offen** (2026-09-27) · Prioritaet: **P1** · Typ: Belegter Defekt — Pi-Runde 2026-09-26
+Status: **BEHOBEN — auf echter Pi 4 abgenommen** (2026-09-28) · Prioritaet: **P1** · Typ: Belegter Defekt — Pi-Runde 2026-09-26
 
 Abhaengigkeiten: [DESK43](DESK43.md) U3/U4 (`e0069e5`, `5a485be`) — der Konsolenarm wurde dort umgebaut
 
@@ -135,3 +135,10 @@ Driftprobe 32.
 **Pi-Gegenprobe:** EmuCON per Tastatur, `run c:\sysinfo.ncp` → **vollstaendige**
 Eingabeaufforderung `C:\…>`, die auf Tasten antwortet; `exit` bringt den
 Desktop neu gezeichnet zurueck.
+
+## Hardware-Abnahme (2026-09-28)
+
+Kern `92ec0ab7`. Anwender zu Punkt 1 der Testliste: *„funktioniert."* EmuCON
+laeuft, `run c:\sysinfo.ncp` bringt die Ausgabe, der Prompt kommt
+**vollstaendig** zurueck und antwortet auf Tasten. Damit ist der
+EL1-`Pexec`-Registerrestore auf echter Hardware bestaetigt.

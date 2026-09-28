@@ -120,3 +120,14 @@ der Schnitt steht und der Anwender ihn gesehen hat.
 | U4 Kernel loest sich | **fertig** 2026-09-26 — Driftprobe **38 → 32**; zwei Stehenbleiber mit Messbegruendung |
 | — Trennlinie — | *alles darueber ohne EL0 und ohne neue Werkzeugkette* |
 | U5–U10 | nach dem Termin; **[X03](X03.md) muss vor U8 stehen** (Maschinenzeile) |
+
+## Hardware-Abnahme U3/U4 (2026-09-28)
+
+Kern `92ec0ab7`. Anwender: QED per Doppelklick starten und beenden, TeraDesk,
+QED **aus TeraDesk heraus**, Fensterrekonstruktion — *„funktionierte schon
+laengst"* bzw. am 2026-09-26 bestaetigt. **Alt+Buchstabe: funktioniert** —
+damit ist U4s `Keytbl`-Weg (`svc #14` statt `crate::keymap`) auf echter
+Hardware belegt, und zwar der Klickweg davor mit.
+
+**Damit sind U1–U4 vollstaendig abgenommen.** Offen bleiben nur U5–U10
+(nach dem Termin) und [X03](X03.md) davor.

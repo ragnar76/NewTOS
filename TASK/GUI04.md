@@ -1,6 +1,6 @@
 # GUI04 — `CONF_WITH_EXTENDED_MOUSE`: Mausrad und Tasten 3 bis 5
 
-Status: **IMPLEMENTIERT — Pi-Abnahme offen** (2026-09-26) · Prioritaet: **P2** · Typ: Funktionsluecke USB/AES + **benannte Erweiterung ueber EmuTOS hinaus** — aus der Schaltertabelle (REF01)
+Status: **ERLEDIGT — auf echter Pi 4 abgenommen** (2026-09-28) · Prioritaet: **P2** · Typ: Funktionsluecke USB/AES + **benannte Erweiterung ueber EmuTOS hinaus** — aus der Schaltertabelle (REF01)
 
 Abhaengigkeiten: —
 
@@ -151,3 +151,14 @@ Festgehalten in `docs/api/usb/hid-mouse.md`.
 **Was nur die echte Pi entscheidet:** ob eine physische Radmaus hinter dem
 VL805 Byte 3 mit Laenge 4 liefert (fuer QEMUs Maus beantwortet Lauf D das),
 und die Haptik — Rastungen je Zeile.
+
+## Hardware-Abnahme (2026-09-28)
+
+Kern `92ec0ab7`, echte USB-Maus. Anwender: *„Mausrad funktioniert."* Damit ist
+die Frage beantwortet, die nur die Pi entscheiden konnte: eine **physische**
+Radmaus hinter dem VL805 liefert Byte 3 mit Laenge 4, und die Kette
+USB → IKBD-Scancode → `mousexvec` → `wheel_change` → `WM_ARROWED` traegt bis
+ins Fenster.
+
+Weiterhin **nicht** gebaut und benannt: das waagerechte Rad (kein fuenftes
+Berichtbyte im Boot-Protokoll).
