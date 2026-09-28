@@ -203,3 +203,36 @@ Keine Codeaenderung in diesem Ticket. Ergebnis ist ein Dokument.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+
+## Vorschlaege des Veranstalters, bewertet am vorhandenen Unterbau (2026-09-28)
+
+Der Veranstalter der OFAM — Freund des Anwenders und Programmierer — wurde
+gefragt, was sich zum Vorfuehren eignet, und nannte: Doom, einen Videoplayer,
+HighWire/NetSurf, einen SDL-Port, „irgendein Spiel, wo man sieht wie schnell
+das laeuft", den FireBee-m68k-Kern, CastAway, Atari800.
+
+**Gepruefter Unterbau, nicht vermutet:** 200-Hz-Takt ✓
+(`tos-api/src/bios/tick.rs`), AES-Ereignisse ✓ (31 `evnt_*`), Tastatur ✓,
+Maus inkl. Rad ✓ (GUI04), Framebuffer/VDI ✓ (alle ~70 Opcodes).
+**Ton ✗** (`xbios/system.rs:145-161`, ehrliche No-ops „no PSG").
+**Netz ✗** (NET01–NET06 alle offen).
+
+| Vorschlag | Bewertung |
+|---|---|
+| **Videoplayer** | **Faellt aus.** Nicht wegen des Tons: die **Leseseite** der Karte ist gemessen **~730 KB/s** (`QED.NAP`, 502 KB in 687 ms, `measurement-2026-09-25-fs04/raw/pi05-…`). Das reicht fuer Video nicht. Ursache ist [HW04](HW04.md)/[HW05](HW05.md) — 1-Bit-Bus, Einzelblock, kein DMA |
+| **HighWire / NetSurf** | **Blockiert, aber nicht woran der Veranstalter dachte.** Er vermutet NVDI; unsere VDI ist vollstaendig. Der Blocker ist der **fehlende Netzwerkstapel** (NET01–06). HighWire liegt bereits unter `sdk/apps/highwire` und wartet genau darauf |
+| **SDL-Port** | **Der beste Vorschlag der Liste** — aber als *Unterbau*, nicht als Anwendung. Eigenes Ticket [SDL01](SDL01.md) |
+| **Doom, Spiele** | kommen ueber SDL01, dann als Uebersetzung statt Portierung |
+| **CastAway, Atari800** | **Die passendste Kategorie fuer das, was wir heute haben:** Framebuffer, Eingabe, Timer — alles da; ohne Ton laufen sie still. Und sie beantworten die Frage des Veranstalters (*wie schnell laeuft das?*) ehrlicher als jede Messreihe |
+| **FireBee-m68k-Kern** | **Liegt auf unserer eigenen Linie, kein Seitenprojekt.** ADR-018 reserviert `.PRG`/`.TOS`/`.TTP` ausdruecklich fuer einen spaeteren m68k-Emulator — deshalb heissen unsere Endungen `.NAP`/`.NCP` |
+
+**Einordnung des Leads zur OFAM (9./10. Oktober):** keiner dieser Kandidaten
+ist in der verbleibenden Zeit serioes zu machen, **zView eingeschlossen** — der
+Anwender hat ihn am 2026-09-28 selbst als „wichtiges Werkzeug, fuer eine
+Vorfuehrung aber nicht unbedingt noetig" eingeordnet.
+
+**Empfohlene Reihenfolge nach dem Termin:**
+[SND01](SND01.md) (Ton) → [SDL01](SDL01.md) (Backend) → Vorfuehrmaterial kommt
+dann von selbst; parallel [HW04](HW04.md)/[HW05](HW05.md), weil ohne Durchsatz
+jedes davon zaeh aussieht.
