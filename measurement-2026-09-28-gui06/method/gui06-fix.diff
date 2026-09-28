@@ -1,0 +1,231 @@
+diff --git a/kernel/src/arch/aarch64/mmu.rs b/kernel/src/arch/aarch64/mmu.rs
+index 6fd1323..087ea88 100644
+--- a/kernel/src/arch/aarch64/mmu.rs
++++ b/kernel/src/arch/aarch64/mmu.rs
+@@ -366,6 +366,81 @@ pub unsafe fn clean_invalidate_dcache_range(va: usize, len: usize) {
+     unsafe { core::arch::asm!("dsb sy", options(nostack, preserves_flags)) };
+ }
+ 
++/// Clean (write back) the cache lines covering a **strided rectangle**:
++/// `rows` runs of `row_bytes` bytes, the first starting at `va` and each
++/// following one `stride_bytes` further on.
++///
++/// This is [`clean_dcache_range`] for a 2-D region whose rows are *not*
++/// contiguous. Treating such a region as the single address span that
++/// encloses it cleans the whole `stride_bytes` band per row — for a narrow,
++/// tall rectangle that is the row width over and over: a 2-pixel-wide,
++/// 401-row primitive on a 1920-pixel line spans 400*7680+8 = 3 072 008 bytes
++/// and costs 48 001 `dc cvac`, against at most 802 for the 3 208 bytes it
++/// actually wrote (Pi 4, `fb.clean max/call` in
++/// `measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`). Cleaning a line that is
++/// not dirty is cheap but not free, and the redundant work grows with the
++/// line length.
++///
++/// One `dsb sy` closes the whole walk, exactly as in [`clean_dcache_range`]:
++/// `dc` operations need no barrier *between* them, only one after the last
++/// to order them against the following accesses (ARM ARM B2.4).
++///
++/// # Safety
++/// Every row `[va + r * stride_bytes, … + row_bytes)`, `r < rows`, must lie
++/// in a mapped, readable region.
++pub unsafe fn clean_dcache_rect(va: usize, row_bytes: usize, stride_bytes: usize, rows: usize) {
++    if row_bytes == 0 || rows == 0 {
++        return;
++    }
++    const LINE: usize = 64;
++    for r in 0..rows {
++        let row = va + r * stride_bytes;
++        let mut p = row & !(LINE - 1);
++        let end = row + row_bytes;
++        while p < end {
++            // SAFETY: `dc cvac` on a mapped VA is well-defined.
++            unsafe { core::arch::asm!("dc cvac, {}", in(reg) p, options(nostack, preserves_flags)) };
++            p += LINE;
++        }
++    }
++    // SAFETY: ordering barrier; no memory effect of its own.
++    unsafe { core::arch::asm!("dsb sy", options(nostack, preserves_flags)) };
++}
++
++/// Clean **and invalidate** the cache lines covering a strided rectangle —
++/// [`clean_dcache_rect`] with `dc civac`, for the same reason
++/// [`clean_invalidate_dcache_range`] exists: while an EL0 process holds a
++/// Normal Non-Cacheable alias of these pages, no line of the region may stay
++/// valid in this PE's caches.
++///
++/// # Safety
++/// Same contract as [`clean_dcache_rect`].
++pub unsafe fn clean_invalidate_dcache_rect(
++    va: usize,
++    row_bytes: usize,
++    stride_bytes: usize,
++    rows: usize,
++) {
++    if row_bytes == 0 || rows == 0 {
++        return;
++    }
++    const LINE: usize = 64;
++    for r in 0..rows {
++        let row = va + r * stride_bytes;
++        let mut p = row & !(LINE - 1);
++        let end = row + row_bytes;
++        while p < end {
++            // SAFETY: `dc civac` on a mapped VA is well-defined.
++            unsafe {
++                core::arch::asm!("dc civac, {}", in(reg) p, options(nostack, preserves_flags))
++            };
++            p += LINE;
++        }
++    }
++    // SAFETY: ordering barrier; no memory effect of its own.
++    unsafe { core::arch::asm!("dsb sy", options(nostack, preserves_flags)) };
++}
++
+ /// Convert a high-half kernel VA to the corresponding physical
+ /// address. Valid only for symbols inside the kernel image (where
+ /// VA = LMA + VA_OFFSET); do not use for arbitrary mappings.
+diff --git a/kernel/src/desk/dir.rs b/kernel/src/desk/dir.rs
+index 5124932..a0db640 100644
+--- a/kernel/src/desk/dir.rs
++++ b/kernel/src/desk/dir.rs
+@@ -1993,8 +1993,13 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) -> bool {
+         if op == Op::Move {
+             rebuild_window(src_wh);
+         }
++        // `fun_rebld(pdw->w_pnode.p_spec)` (`deskfun.c:995`) — and that is the
++        // *whole* repaint EmuTOS does here: `fun_rebld` → `rebuild_window` →
++        // one `WM_REDRAW` over each rebuilt window's own rectangle. There is no
++        // whole-screen composite on this path; the area the copy dialog covered
++        // was already restored by its own `form_dial(FMD_FINISH)` in
++        // `end_dialog` (`deskinf.c:363-378`).
+         rebuild_window(dst_wh);
+-        super::redraw::redraw_desktop();
+     }
+     false
+ }
+@@ -2012,9 +2017,11 @@ fn fun_win2desk(src_wh: i16, dobj: i16, keystate: u16) {
+     }
+     // `fun_file2desk(&wn_src->w_pnode, -1, an_dest, obj, keystate)`
+     // (`deskfun.c:1130`) — a window source carries no icon type.
++    // `if (fun_file2desk(…)) fun_rebld(wn_src->w_pnode.p_spec);`
++    // (`deskfun.c:1129-1130`) — one rebuilt source window, one `WM_REDRAW` over
++    // its own rectangle, and nothing else. No whole-screen composite.
+     if fun_file2desk(dobj, None, &src_dir, &entries, keystate) {
+         rebuild_window(src_wh);
+-        super::redraw::redraw_desktop();
+     }
+ }
+ 
+@@ -2164,9 +2171,10 @@ fn fun_desk2win(dest_wh: i16, dobj: i16, _keystate: u16) {
+             any = true;
+         }
+     }
++    // `if (copied) fun_rebld(wn_dest->w_pnode.p_spec);` (`deskfun.c:1253-1254`)
++    // — the destination window alone, repainted over its own rectangle.
+     if any {
+         rebuild_window(dest_wh);
+-        super::redraw::redraw_desktop();
+     }
+ }
+ 
+@@ -2297,7 +2305,16 @@ pub fn rebuild_window(handle: i16) {
+     // `win_sinfo(pwin, FALSE)` (`deskfun.c:141`), after the re-scan and before
+     // the redraw.
+     super::main::win_sinfo(handle, false);
+-    super::redraw::redraw_desktop();
++    // `wind_get_grect(pwin->w_id, WF_WXYWH, &gr);`
++    // `fun_msg(WM_REDRAW, pwin->w_id, gr.g_x, gr.g_y, gr.g_w, gr.g_h);`
++    // (`deskfun.c:141-142`). `fun_msg` fills `G.g_rmsg` and calls `hndl_msg()`
++    // straight away (`deskfun.c:100-113`), whose `WM_REDRAW` arm is
++    // `do_wredraw(handle, &G.g_rmsg[4])` (`deskmain.c:1268-1272`) — so the
++    // repaint is **this window's rectangle**, synchronously, and nothing else.
++    // Re-read the rectangle here rather than reusing the one taken before the
++    // re-scan, so the order matches EmuTOS's exactly.
++    let gr = super::wind_get_grect(handle, super::WF_WXYWH);
++    super::redraw::do_wredraw(handle, gr);
+ }
+ 
+ /// `fun_mark_for_rebld` (EmuTOS `deskfun.c:119-129`) — flag every open window
+diff --git a/kernel/src/drivers/bcm2711/framebuffer.rs b/kernel/src/drivers/bcm2711/framebuffer.rs
+index e498597..fee4c70 100644
+--- a/kernel/src/drivers/bcm2711/framebuffer.rs
++++ b/kernel/src/drivers/bcm2711/framebuffer.rs
+@@ -568,7 +568,8 @@ pub unsafe fn init() -> bool {
+         // DRAM transaction. The display controller scans out DRAM beyond the ARM
+         // caches, so with a cacheable FB every drawn region must be cleaned to
+         // PoC: NewTOS routes all FB writes through the `VdiScreen` backend, which
+-        // cleans each primitive's rectangle (`clean_dcache_range`), so no stale
++        // cleans each primitive's rectangle row by row (`clean_dcache_rect`
++        // — GUI06; before that, the enclosing address span), so no stale
+         // pixels result. The VC never writes the FB, so no invalidate is needed.
+         // QEMU has no cache model, so cacheable vs. NC render identically there;
+         // this is a real-RPi4 speed fix (and the no-stale-pixels correctness is
+diff --git a/kernel/src/vdi_backend.rs b/kernel/src/vdi_backend.rs
+index 59b1bf2..867eef8 100644
+--- a/kernel/src/vdi_backend.rs
++++ b/kernel/src/vdi_backend.rs
+@@ -279,13 +279,34 @@ impl VdiScreen {
+     /// `[x0..=x1] × [y0..=y1]` to the point of coherency, so the display
+     /// controller (a separate DMA master beyond the ARM caches) sees the
+     /// pixels just written. A no-op if the framebuffer is Non-Cacheable.
+-    /// We clean the contiguous address span enclosing the rectangle —
+-    /// cleaning the few row-end bytes in between is harmless.
++    ///
++    /// Maintenance is **row-wise**: `y1 - y0 + 1` runs of `(x1 - x0 + 1) * 4`
++    /// bytes, one per scan line. Every primitive that calls this writes only
++    /// inside `[x0..=x1] × [y0..=y1]` — `fill_rect`, `fill_pattern`,
++    /// `draw_glyph_sized`, `blit_mono` and `copy_rect` write the whole box,
++    /// `abline` a subset of it — so the rows are exactly the bytes that can
++    /// be dirty, and no written byte is left behind.
++    ///
++    /// It used to clean the single contiguous address span *enclosing* the
++    /// rectangle, which for a narrow, tall primitive is the whole scan-line
++    /// band: one measured window-frame edge on the Pi 4 at 1920x1080 cleaned
++    /// 3 072 008 bytes — 48 001 lines — for 3 208 bytes of pixels, and a
++    /// whole desktop drop pushed 313-618 MB through `dc cvac` for an 8.3 MB
++    /// screen (`measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`, GUI06). A
++    /// clean of a line that is not dirty costs about two cycles on a
++    /// Cortex-A72 (1.32 ns, measured in `measurement-2026-09-28-gui06`), so
++    /// the 40-to-75-fold redundancy is worth removing even though it is not
++    /// what made the drop slow. In QEMU's TCG the cost is a different one
++    /// (~10.9 ns per operation) — do not size this from an emulator run.
+     fn clean(fb: &dyn Framebuffer, x0: u32, y0: u32, x1: u32, y1: u32) {
+-        let stride = fb.stride_px() as usize;
++        if x1 < x0 || y1 < y0 {
++            return;
++        }
++        let stride_bytes = fb.stride_px() as usize * 4;
+         let base = fb.pixels() as usize;
+-        let start = base + (y0 as usize * stride + x0 as usize) * 4;
+-        let end = base + (y1 as usize * stride + x1 as usize) * 4 + 4;
++        let start = base + y0 as usize * stride_bytes + x0 as usize * 4;
++        let row_bytes = (x1 - x0 + 1) as usize * 4;
++        let rows = (y1 - y0 + 1) as usize;
+         if tos_api::xbios::screen::direct_screen_active() {
+             // A process holds a Normal Non-Cacheable EL0 alias of these very
+             // pixels (`Physbase`/`Logbase`, ADR-023). Leaving *any* line of
+@@ -294,13 +315,20 @@ impl VdiScreen {
+             // line back and would undo the program's own stores. Clean **and
+             // invalidate**, so nothing of the framebuffer survives a
+             // primitive (ARM ARM, "Mismatched memory attributes").
+-            // SAFETY: the span lies within the framebuffer's pixel store.
++            // SAFETY: every row lies within the framebuffer's pixel store.
+             unsafe {
+-                crate::arch::aarch64::mmu::clean_invalidate_dcache_range(start, end - start)
++                crate::arch::aarch64::mmu::clean_invalidate_dcache_rect(
++                    start,
++                    row_bytes,
++                    stride_bytes,
++                    rows,
++                )
+             };
+         } else {
+-            // SAFETY: the span lies within the framebuffer's pixel store.
+-            unsafe { crate::arch::aarch64::mmu::clean_dcache_range(start, end - start) };
++            // SAFETY: every row lies within the framebuffer's pixel store.
++            unsafe {
++                crate::arch::aarch64::mmu::clean_dcache_rect(start, row_bytes, stride_bytes, rows)
++            };
+         }
+     }
+ 

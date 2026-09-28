@@ -1993,8 +1993,13 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) -> bool {
         if op == Op::Move {
             rebuild_window(src_wh);
         }
+        // `fun_rebld(pdw->w_pnode.p_spec)` (`deskfun.c:995`) — and that is the
+        // *whole* repaint EmuTOS does here: `fun_rebld` → `rebuild_window` →
+        // one `WM_REDRAW` over each rebuilt window's own rectangle. There is no
+        // whole-screen composite on this path; the area the copy dialog covered
+        // was already restored by its own `form_dial(FMD_FINISH)` in
+        // `end_dialog` (`deskinf.c:363-378`).
         rebuild_window(dst_wh);
-        super::redraw::redraw_desktop();
     }
     false
 }
@@ -2012,9 +2017,11 @@ fn fun_win2desk(src_wh: i16, dobj: i16, keystate: u16) {
     }
     // `fun_file2desk(&wn_src->w_pnode, -1, an_dest, obj, keystate)`
     // (`deskfun.c:1130`) — a window source carries no icon type.
+    // `if (fun_file2desk(…)) fun_rebld(wn_src->w_pnode.p_spec);`
+    // (`deskfun.c:1129-1130`) — one rebuilt source window, one `WM_REDRAW` over
+    // its own rectangle, and nothing else. No whole-screen composite.
     if fun_file2desk(dobj, None, &src_dir, &entries, keystate) {
         rebuild_window(src_wh);
-        super::redraw::redraw_desktop();
     }
 }
 
@@ -2164,9 +2171,10 @@ fn fun_desk2win(dest_wh: i16, dobj: i16, _keystate: u16) {
             any = true;
         }
     }
+    // `if (copied) fun_rebld(wn_dest->w_pnode.p_spec);` (`deskfun.c:1253-1254`)
+    // — the destination window alone, repainted over its own rectangle.
     if any {
         rebuild_window(dest_wh);
-        super::redraw::redraw_desktop();
     }
 }
 
@@ -2297,7 +2305,16 @@ pub fn rebuild_window(handle: i16) {
     // `win_sinfo(pwin, FALSE)` (`deskfun.c:141`), after the re-scan and before
     // the redraw.
     super::main::win_sinfo(handle, false);
-    super::redraw::redraw_desktop();
+    // `wind_get_grect(pwin->w_id, WF_WXYWH, &gr);`
+    // `fun_msg(WM_REDRAW, pwin->w_id, gr.g_x, gr.g_y, gr.g_w, gr.g_h);`
+    // (`deskfun.c:141-142`). `fun_msg` fills `G.g_rmsg` and calls `hndl_msg()`
+    // straight away (`deskfun.c:100-113`), whose `WM_REDRAW` arm is
+    // `do_wredraw(handle, &G.g_rmsg[4])` (`deskmain.c:1268-1272`) — so the
+    // repaint is **this window's rectangle**, synchronously, and nothing else.
+    // Re-read the rectangle here rather than reusing the one taken before the
+    // re-scan, so the order matches EmuTOS's exactly.
+    let gr = super::wind_get_grect(handle, super::WF_WXYWH);
+    super::redraw::do_wredraw(handle, gr);
 }
 
 /// `fun_mark_for_rebld` (EmuTOS `deskfun.c:119-129`) — flag every open window

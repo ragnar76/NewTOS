@@ -366,6 +366,81 @@ pub unsafe fn clean_invalidate_dcache_range(va: usize, len: usize) {
     unsafe { core::arch::asm!("dsb sy", options(nostack, preserves_flags)) };
 }
 
+/// Clean (write back) the cache lines covering a **strided rectangle**:
+/// `rows` runs of `row_bytes` bytes, the first starting at `va` and each
+/// following one `stride_bytes` further on.
+///
+/// This is [`clean_dcache_range`] for a 2-D region whose rows are *not*
+/// contiguous. Treating such a region as the single address span that
+/// encloses it cleans the whole `stride_bytes` band per row — for a narrow,
+/// tall rectangle that is the row width over and over: a 2-pixel-wide,
+/// 401-row primitive on a 1920-pixel line spans 400*7680+8 = 3 072 008 bytes
+/// and costs 48 001 `dc cvac`, against at most 802 for the 3 208 bytes it
+/// actually wrote (Pi 4, `fb.clean max/call` in
+/// `measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`). Cleaning a line that is
+/// not dirty is cheap but not free, and the redundant work grows with the
+/// line length.
+///
+/// One `dsb sy` closes the whole walk, exactly as in [`clean_dcache_range`]:
+/// `dc` operations need no barrier *between* them, only one after the last
+/// to order them against the following accesses (ARM ARM B2.4).
+///
+/// # Safety
+/// Every row `[va + r * stride_bytes, … + row_bytes)`, `r < rows`, must lie
+/// in a mapped, readable region.
+pub unsafe fn clean_dcache_rect(va: usize, row_bytes: usize, stride_bytes: usize, rows: usize) {
+    if row_bytes == 0 || rows == 0 {
+        return;
+    }
+    const LINE: usize = 64;
+    for r in 0..rows {
+        let row = va + r * stride_bytes;
+        let mut p = row & !(LINE - 1);
+        let end = row + row_bytes;
+        while p < end {
+            // SAFETY: `dc cvac` on a mapped VA is well-defined.
+            unsafe { core::arch::asm!("dc cvac, {}", in(reg) p, options(nostack, preserves_flags)) };
+            p += LINE;
+        }
+    }
+    // SAFETY: ordering barrier; no memory effect of its own.
+    unsafe { core::arch::asm!("dsb sy", options(nostack, preserves_flags)) };
+}
+
+/// Clean **and invalidate** the cache lines covering a strided rectangle —
+/// [`clean_dcache_rect`] with `dc civac`, for the same reason
+/// [`clean_invalidate_dcache_range`] exists: while an EL0 process holds a
+/// Normal Non-Cacheable alias of these pages, no line of the region may stay
+/// valid in this PE's caches.
+///
+/// # Safety
+/// Same contract as [`clean_dcache_rect`].
+pub unsafe fn clean_invalidate_dcache_rect(
+    va: usize,
+    row_bytes: usize,
+    stride_bytes: usize,
+    rows: usize,
+) {
+    if row_bytes == 0 || rows == 0 {
+        return;
+    }
+    const LINE: usize = 64;
+    for r in 0..rows {
+        let row = va + r * stride_bytes;
+        let mut p = row & !(LINE - 1);
+        let end = row + row_bytes;
+        while p < end {
+            // SAFETY: `dc civac` on a mapped VA is well-defined.
+            unsafe {
+                core::arch::asm!("dc civac, {}", in(reg) p, options(nostack, preserves_flags))
+            };
+            p += LINE;
+        }
+    }
+    // SAFETY: ordering barrier; no memory effect of its own.
+    unsafe { core::arch::asm!("dsb sy", options(nostack, preserves_flags)) };
+}
+
 /// Convert a high-half kernel VA to the corresponding physical
 /// address. Valid only for symbols inside the kernel image (where
 /// VA = LMA + VA_OFFSET); do not use for arbitrary mappings.

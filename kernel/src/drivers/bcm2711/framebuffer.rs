@@ -568,7 +568,8 @@ pub unsafe fn init() -> bool {
         // DRAM transaction. The display controller scans out DRAM beyond the ARM
         // caches, so with a cacheable FB every drawn region must be cleaned to
         // PoC: NewTOS routes all FB writes through the `VdiScreen` backend, which
-        // cleans each primitive's rectangle (`clean_dcache_range`), so no stale
+        // cleans each primitive's rectangle row by row (`clean_dcache_rect`
+        // — GUI06; before that, the enclosing address span), so no stale
         // pixels result. The VC never writes the FB, so no invalidate is needed.
         // QEMU has no cache model, so cacheable vs. NC render identically there;
         // this is a real-RPi4 speed fix (and the no-stale-pixels correctness is

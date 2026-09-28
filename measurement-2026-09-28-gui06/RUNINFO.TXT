@@ -1,0 +1,428 @@
+measurement-2026-09-28-gui06
+  GUI06 -- die Zuordnung der ~230 ms auf die zwei Anteile, und was das
+  Beheben des groesseren davon kostet
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 9731f16 ("docs(task): SND01 - ground the
+audio paths in the firmware device tree").  Zwischen d7ecec5 (dem Stand, den
+der Auftrag nennt) und 9731f16 liegen NUR drei TASK-Dokumente, kein Quelltext
+-- `git diff --stat d7ecec5 HEAD` = TASK/PORT02.md, TASK/SDL01.md,
+TASK/SND01.md.  Der "Vorher"-Stand dieser Messung ist also wortgleich d7ecec5.
+
+Am gemeinsamen Baum wurde ausser diesem Messverzeichnis und den drei
+Quelldateien des Fixes nichts angefasst.  Nichts geflasht, nichts
+ausgeworfen, keine Pi gefahren, /Volumes/BOOT nicht beruehrt, nichts
+committet, kein `git checkout/restore/clean/stash/reset`.  Alle
+Instrumentierung liegt auf SCRATCH-Kopien unter dem Job-Scratchpad; der
+"Vorher"-Baum stammt aus `git archive HEAD` (nur lesend), nie aus einem
+Auschecken.
+
+Maschine: QEMU 11.0.2, `-M raspi4b` und `-M virt,gic-version=2`,
+`-display none`, serielle Ausgabe in eine Datei, QMP-Screendumps.
+Kein `*.img` in diesem Verzeichnis.
+
+Host: macOS (Darwin 27).  Kein `timeout` -- die QEMU-Laeufe sind mit einem
+Hintergrund-`sleep` + `kill` bzw. mit dem QMP-Treiber begrenzt.
+
+
+0. DIE FRAGE, IN EINEM SATZ
+---------------------------------------------------------------------------
+Von den ~230 ms, die ein Fallenlassen im Desktop auf der Pi 4 bei 1920x1080
+noch kostet, nachdem die Karte warm ist: wieviel traegt das zweimalige
+Vollbild-Neuzeichnen, und wieviel die Cachepflege ueber die einschliessende
+Adressspanne?  Erst die Zuordnung, dann der Fix.
+
+ANTWORT VORWEG:
+
+    Anteil 1  zwei Vollbild-Neuzeichnen   >= 95 %  der ~230 ms
+    Anteil 2  Spannenpflege (`dc cvac`)   <=  5 %  der ~230 ms
+
+Die Zuordnung stammt aus der VORHANDENEN Pi-Messung
+(`../measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`, 13 Bloecke), nicht aus
+einem neuen Hardwarelauf -- die Sonde hat beide Zaehler, und die 13 Bloecke
+sind ein natuerliches Experiment: die Zahl der Cachezeilen schwankt zwischen
+ihnen um den Faktor 1,98, die Neuzeichenzeit um 1,07 -- und zwar in die
+FALSCHE Richtung.  Abschnitt 1.
+
+
+1. DIE ZUORDNUNG (Schritt 1 des Tickets) -- aus den Pi-Zahlen
+---------------------------------------------------------------------------
+Quelle: ../measurement-2026-09-25-fs04/raw/pi04-FS04.TXT, Bloecke 2-14.
+Alle Zeiten aus CNTPCT_EL0 (54 MHz auf der Pi), Bildschirm 1920x1080.
+
+  blk     wall  2xredraw  rebuild  gemdos     Rest  fb.clean_lines    MB
+    2  2182298     93236    50071 2079765     9297       6 441 044  412,1
+    3   274714    232989   124900   19199    22526       6 466 070  413,7
+    4   768608    233273   125122  512470    22865       6 497 296  415,7
+    5   270678    233805   125296   14081    22792       6 520 424  417,2
+    6   241386    227005   122948     782    13599       4 894 777  313,2
+    7   240284    226917   121995      16    13351       4 892 879  313,1
+    8   271347    222108   118463   33448    15791       5 049 584  323,1
+    9   288987    231734   124230   34992    22261       6 407 327  410,0
+   10   340109    227676   121897   86596    25837       9 667 213  618,5
+   11   283810    219064   117108   42432    22314       9 155 568  585,8
+   12   289744    219467   117284   48121    22156       9 190 771  588,1
+   13   288033    220872   115218   47650    19511       8 909 713  570,1
+   14   267057    220939   126584   31365    14753       8 461 628  541,4
+
+  (`rebuild` ist in `wall` enthalten und enthaelt seinerseits EINES der
+   beiden Neuzeichnen; `Rest` = wall - 2xredraw - gemdos.)
+
+1a. DIE CACHEPFLEGE TRAEGT DIE NEUZEICHENZEIT NICHT
+
+  Regression der Neuzeichenzeit gegen die Zahl der Cachezeilen, Bloecke 3-14
+  (12 Punkte):
+
+      Steigung  -1,50 ns je Cachezeile      r = -0,48
+      Achsenabschnitt 237,1 ms
+
+  Die Steigung ist NEGATIV: die Bloecke mit den meisten `dc cvac`
+  (10-14, 8,5-9,7 Mio Zeilen) zeichnen das Bild SCHNELLER neu (219-227 ms)
+  als die mit den wenigsten (6/7, 4,9 Mio Zeilen, 227,0 ms).  Eine Groesse,
+  die sich verdoppelt, waehrend die Zielgroesse um 5 % faellt, ist nicht
+  deren Ursache.
+
+  Der direkte Vergleich, ohne Regression:
+
+      Block  7   4 892 879 Zeilen   2xredraw 226 917 us
+      Block 10   9 667 213 Zeilen   2xredraw 227 676 us
+      +98 % Cachepflege  ->  +0,3 % Neuzeichenzeit
+
+1b. WAS EINE `dc cvac` AUF DER PI 4 WIRKLICH KOSTET
+
+  Derselbe Satz, diesmal gegen den `Rest` (wall minus Neuzeichnen minus
+  GEMDOS -- die Dialogarbeit, in der die uebrige Cachepflege sitzt):
+
+      Steigung  +1,32 ns je Cachezeile      r = +0,56
+      Achsenabschnitt 10,3 ms
+
+  1,3 ns sind bei 1,5 GHz rund zwei Zyklen -- der Preis einer `dc cvac` auf
+  eine Zeile, die NICHT schmutzig ist.  Und genau das sind fast alle: der
+  Bildschirm hat 1920x1080x4 / 64 = 129 600 Zeilen, die Pflege laeuft ueber
+  4,9-9,7 Mio davon, also das 38- bis 75-fache.  Jede Zeile wird beim ersten
+  Mal zurueckgeschrieben und danach 40-70 mal nachgeschlagen und fuer sauber
+  befunden.  Die 313-618 MB aus dem Ticket sind echt -- aber es sind
+  groesstenteils Nachschlaege, nicht Rueckschreibungen.
+
+  Obergrenze fuer Anteil 2, grosszuegig gerechnet: selbst wenn JEDE Zeile des
+  ganzen Fallenlassens in den beiden Neuzeichnen saesse,
+
+      9 667 213 Zeilen x 1,32 ns = 12,8 ms   von 219-234 ms  =  5,4 %
+
+  Mit dem Median (6,5 Mio) sind es 8,6 ms = 3,7 %.
+
+1c. DIE FOLGERUNG
+
+      Anteil 1 (2x Vollbild-Neuzeichnen)   >= 95 %   ~ 208-225 ms
+      Anteil 2 (Spannenpflege)             <=  5 %   ~   6-13 ms
+
+  Damit ist die Reihenfolge des Tickets entschieden: der Fix gehoert an die
+  Zahl der Neuzeichnen, nicht an die Cachepflege.  Die Cachepflege wird
+  trotzdem mitbehoben -- sie ist klein, aber sie ist auch billig zu beheben
+  und sie belastet JEDE Zeichenoperation, nicht nur das Fallenlassen.
+
+1d. EIN BEFUND DANEBEN, DER NICHT ZU GUI06 GEHOERT (unverfolgt)
+
+  Bloecke 1-2 jedes Pi-Laufs zeichnen mit 46,6 bzw. 44,7 ms je Neuzeichnen,
+  ab Block 3 sind es 109-117 ms -- bei gleicher Arbeit (Block 2: 6 441 044
+  Zeilen, Block 3: 6 466 070).  Das Verhaeltnis ist in beiden Laeufen
+  116,5/46,6 = 2,50 und 111,2/44,7 = 2,49.  Die beiden ARM-Taktraten der
+  Pi 4 verhalten sich wie 1500/600 = 2,50.  Das ist eine AUFFAELLIGKEIT,
+  keine Feststellung -- geprueft werden kann sie nur auf der Pi (Mailbox-Tag
+  GET_CLOCK_RATE / THROTTLED).  Wenn sie stimmt, laufen alle 1920x1080-Zahlen
+  aus FS04 ab Block 3 auf dem halben Takt und die HAELFTE der ~230 ms ist
+  gar nicht Zeichenarbeit, sondern Taktabsenkung.  Fuer GUI06 aendert das
+  nichts: die ZUORDNUNG auf die zwei Anteile ist ein Verhaeltnis und von der
+  Taktrate unabhaengig.
+
+
+2. ANTEIL 1 -- WARUM ZWEI VOLLBILD-NEUZEICHNEN, GEGEN EMUTOS
+---------------------------------------------------------------------------
+EmuTOS loest nach einem Kopieren durch Ziehen NULL Vollbild-Neuzeichnen aus.
+Es loest GENAU EIN `WM_REDRAW` je neu aufgebautem Fenster aus, ueber dessen
+EIGENES Rechteck.  Die Kette, Zeile fuer Zeile:
+
+  desk/deskfun.c:1116-1130  fun_win2desk()
+        if (fun_file2desk(...)) fun_rebld(wn_src->w_pnode.p_spec);
+        -- und weiter nichts.
+
+  desk/deskfun.c:171-189    fun_rebld(path)
+        fuer jedes Fenster mit diesem Pfad: rebuild_window(pwin)
+
+  desk/deskfun.c:133-143    rebuild_window(pwin)
+        pn_active(&pwin->w_pnode, TRUE);
+        desk_verify(pwin->w_id, TRUE);
+        win_sinfo(pwin, FALSE);
+        wind_get_grect(pwin->w_id, WF_WXYWH, &gr);
+        fun_msg(WM_REDRAW, pwin->w_id, gr.g_x, gr.g_y, gr.g_w, gr.g_h);
+
+  desk/deskfun.c:100-113    fun_msg()  fuellt G.g_rmsg und ruft hndl_msg()
+  desk/deskmain.c:1268-1272 hndl_msg() WM_REDRAW-Arm:
+        if (handle) do_wredraw(handle, &G.g_rmsg[4]);
+
+Also: EIN `do_wredraw` ueber `WF_WXYWH` des Quellfensters, synchron.  Der
+Bereich, den der COPY-FILE(S)-Kasten verdeckt hatte, ist zu diesem Zeitpunkt
+laengst wiederhergestellt -- von `end_dialog` (`deskinf.c:363-378`), dessen
+`form_dial(FMD_FINISH)` den Hintergrund ueber SEINEM Rechteck neu malt und
+den betroffenen Fenstern ein `WM_REDRAW` schickt (`gemfmlib.c:375-379`).
+
+Dieselbe Form in den drei anderen Armen:
+
+  deskfun.c:986-999   fun_win2win   fun_rebld(src, nur bei MOVE); fun_rebld(dst)
+  deskfun.c:1253-1254 fun_desk2win  if (copied) fun_rebld(wn_dest->...p_spec)
+  deskfun.c:1260-1298 fun_desk2desk gar kein Neuzeichnen; das Aufheben der
+                                    Auswahl macht `desk_clear(DESKWH)` in
+                                    fun_file2any (`deskfun.c:1187`), und DAS
+                                    zeichnet ueber die VEREINIGUNG der
+                                    geaenderten Symbolrechtecke
+                                    (`desksupp.c:143` -> `act_allchg`
+                                    -> `deskact.c` Schluss: do_wredraw(wh,&a))
+
+NewTOS hatte an genau diesen Stellen `redraw::redraw_desktop()` -- einen
+Vollbild-Verbund aus `form_dial(FMD_FINISH)` ueber den GANZEN Bildschirm,
+plus `win_shwall` ueber alle Fensterinhalte, plus `install_menu_bar()`.
+Zweimal je Fallenlassen: einmal in `rebuild_window` (dir.rs:2300), einmal im
+Aufrufer (dir.rs:2017).  Die Dokumentation von `rebuild_window` zitierte die
+richtige EmuTOS-Zeile und tat dann etwas anderes.
+
+DER FIX (method/gui06-fix.diff):
+  kernel/src/desk/dir.rs
+    rebuild_window()  redraw_desktop() -> wind_get_grect(h, WF_WXYWH)
+                                          + redraw::do_wredraw(h, gr)
+    fun_win2desk()    redraw_desktop() entfernt  (deskfun.c:1129-1130)
+    fun_win2win()     redraw_desktop() entfernt  (deskfun.c:986-999)
+    fun_desk2win()    redraw_desktop() entfernt  (deskfun.c:1253-1254)
+
+NICHT angefasst, mit Grund (Abschnitt 6): `fun_desk2desk` (dir.rs:2249).
+
+
+3. ANTEIL 2 -- WARUM DIE EINSCHLIESSENDE SPANNE
+---------------------------------------------------------------------------
+`VdiScreen::clean` (vdi_backend.rs:284-305 vor dem Fix) pflegte
+
+    start = base + (y0*stride + x0)*4
+    end   = base + (y1*stride + x1)*4 + 4
+
+also EINE zusammenhaengende Spanne.  Fuer ein 2 Pixel breites, 401 Zeilen
+hohes Primitiv auf einer 1920-Pixel-Zeile sind das 400x7680+8 = 3 072 008
+Byte statt 401x8 = 3 208 -- 48 001 `dc cvac` statt hoechstens 802.  Genau
+diese beiden Zahlen stehen in pi04-FS04.TXT als `fb.clean max/call` und
+`fb.clean_lines max/call` (Bloecke 10-14).  In den Bloecken 2-9 ist der
+groesste Einzelaufruf 3 486 720 = 454 volle Zeilen (54 480 Cachezeilen) --
+dort ist die Spanne schon richtig, weil das Primitiv die volle Breite hat.
+
+Die Schreibgeometrie JEDES Aufrufers wurde dagegengehalten (die Frage, die
+das Ticket stellt):
+
+  fill_rect      (vdi_backend.rs:533)  schreibt genau [x0..=x1] x [y0..=y1]
+  abline waagr.  (:592)                eine Zeile, [xlo..=xhi]
+  abline allg.   (:643)                Bresenham INNERHALB des Huellrechtecks
+  fill_pattern   (:674)                genau das Rechteck (Teilmenge bei
+                                       Transparent/XOR)
+  draw_glyph     (:723)                genau die Zelle
+  blit_mono      (:763)                genau das Rechteck
+  copy_rect      (:813)                genau das Zielrechteck (Teilmenge bei
+                                       uebersprungenen Quellzeilen)
+  flush_rect     (:850)                das Rechteck des Aufrufers
+
+Kein Aufrufer schreibt ausserhalb von [x0..=x1] x [y0..=y1].  Zeilenweise
+Pflege deckt damit JEDES geschriebene Byte ab und nichts dahinter -- die
+Bedingung, die das Ticket an die Antwort knuepft, ist erfuellt.
+
+DER FIX:
+  kernel/src/arch/aarch64/mmu.rs  neu: clean_dcache_rect() /
+                                  clean_invalidate_dcache_rect() --
+                                  `rows` Laeufe zu `row_bytes`, im Abstand
+                                  `stride_bytes`, und EIN `dsb sy` am Ende
+                                  fuer den ganzen Lauf.  Ein `dsb` je Zeile
+                                  waere teurer als das, was er spart; `dc`
+                                  braucht untereinander keine Schranke
+                                  (ARM ARM B2.4).
+  kernel/src/vdi_backend.rs       clean() rechnet row_bytes/rows und ruft die
+                                  neuen Funktionen.
+  kernel/src/drivers/bcm2711/     EINE Kommentarzeile: die Begruendung der
+    framebuffer.rs                cacheablen Abbildung nannte
+                                  `clean_dcache_range` als das, was die
+                                  Kohaerenz herstellt.  Diese Funktion wird
+                                  vom VDI-Backend nicht mehr gerufen -- die
+                                  Begruendung stand an zwei Stellen und haette
+                                  sonst dem Quelltext widersprochen.  Kein
+                                  Code.
+
+Was die zeilenweise Pflege NICHT mehr tut: die Luecken zwischen den Zeilen
+ungueltig machen, wenn ein EL0-Prozess einen Non-Cacheable-Alias haelt
+(`direct_screen_active`).  Das ist richtig so und keine Abschwaechung: eine
+Zeile kann nur schmutzig sein, wenn der Kernel sie geschrieben hat, jeder
+Schreibvorgang geht durch eines der acht Primitive oben, und jedes davon
+pflegt danach genau seine Zeilen.  Die Luecken schreibt niemand.
+
+
+4. DIE MESSUNG DES FIXES -- DREI STAENDE, EINE GESTE
+---------------------------------------------------------------------------
+Dieselbe Geste wie in FS04 (method/gui06-gesture.actions, wortgleich
+uebernommen): Alt+C oeffnet C:\, README.TXT wird auf das D:-Symbol gezogen,
+COPY FILE(S) mit OK beantwortet.  Die Uhr startet, wenn `form_do` mit OK
+zurueckkehrt.  QEMU raspi4b, 640x480, vierpartitioniertes Kartenabbild
+(FS04 make-sd-image-4part.sh).
+
+Drei Staende, damit die Ersparnis auf die Anteile aufteilbar ist:
+
+  before    HEAD, unveraendert                       (Spanne, 2 Verbunde)
+  midclean  HEAD + NUR der vdi_backend/mmu-Fix       (Zeilen, 2 Verbunde)
+  after     HEAD + beide Fixe                        (Zeilen, 0 Verbunde)
+
+`midclean` ist aus `after` gebaut, indem genau EINE Datei
+(kernel/src/desk/dir.rs) durch die `before`-Fassung ersetzt wurde -- die
+Sondenhaken darin sind in beiden Faellen dieselben.
+
+Zahlen: NUMBERS.TXT Abschnitt 2.  Kurz:
+
+                       wall     2xredraw   rebuild   do_wredraw   fb.clean_lines
+  before             23 825 us   14 094      10 564    1x  1 335     1 362 715
+  midclean           13 000 us    6 238       4 474    1x    709       106 321
+  after               8 598 us    --- (n=0)   2 894    2x  1 078        44 839
+
+Und einmal ausdruecklich: **QEMU ist fuer Anteil 2 kein Massstab.**  Aus dem
+1920x1080-Lauf (Abschnitt 5) laesst sich QEMUs eigener Preis je `dc cvac`
+ablesen: 610 335 eingesparte Zeilen sparten 6 677 us, also 10,9 ns je
+`dc cvac` in TCG gegen 1,3 ns auf der Pi 4.  QEMU berechnet die
+Spannenpflege rund ACHTMAL so teuer wie die Hardware.  Die QEMU-Halbierung
+der Neuzeichenzeit durch den Zeilen-Fix (7 047 -> 3 119 us) ist also ein
+Emulatoreffekt und wird auf der Pi nicht eintreten; dort bleiben die ~5 %
+aus Abschnitt 1.
+
+
+5. DIE 1920x1080-ZAHLEN, DIE BOARDUNABHAENGIG SIND
+---------------------------------------------------------------------------
+Zahlen von `dc cvac`-Operationen sind reine Geometrie -- sie gelten auf der
+Pi genauso wie in QEMU.  Gemessen mit dem FS04-Treiberbetrieb und
+fs04_redraw_bench.py (erzwungene 1920x1080-Geometrie), Fall G:
+fuenf `redraw_desktop` auf dem BOOT-Desktop (kein Fenster offen).
+
+                      5x wall    fb.clean   Bytes        Cachezeilen
+  before (Spanne)     99 885 us     935     81 934 900     1 281 010
+  midclean (Zeilen)   93 208 us     935     42 621 460       670 675
+
+  je Neuzeichnen      19 977 us             16,39 MB         256 202   (vorher)
+                      18 642 us              8,52 MB         134 135   (nachher)
+
+  -> -47,6 % Cachezeilen, -48,0 % Bytes, bei gleicher Aufrufzahl.
+
+Auf dem BOOT-Desktop ist die Ersparnis "nur" die Haelfte, weil das groesste
+Primitiv (der Desktop-Hintergrund, 1061 Zeilen x 1920 Pixel = 8 148 480 Byte)
+schon die volle Breite hat -- da hilft zeilenweise Pflege nichts, und
+`max/call` bleibt in beiden Staenden 8 148 480.  Mit einem OFFENEN FENSTER,
+also in der Lage, die die Pi gemessen hat, ist die Ersparnis weit groesser:
+in der 640x480-Geste 1 362 715 -> 106 321 Zeilen (-92,2 %), weil dort die
+schmalen hohen Primitive (Fensterrahmen, Rollbalken, Elementkaesten)
+dazukommen.  Der Pi-Bericht zeigt dieselbe Signatur: `fb.clean max/call`
+3 072 008 fuer ein 2 Pixel breites Primitiv.
+
+
+6. WAS BEWUSST STEHEN GEBLIEBEN IST
+---------------------------------------------------------------------------
+`fun_desk2desk` (dir.rs:2249) behaelt sein `redraw_desktop()`.
+
+  EmuTOS hat dort KEIN Neuzeichnen; das Aufheben der Symbolauswahl wird von
+  `desk_clear(DESKWH)` in `fun_file2any` (`deskfun.c:1187`) erledigt, und
+  EmuTOS' `desk_clear` zeichnet (`desksupp.c:143` -> `act_allchg(..., FALSE)`
+  -> `do_wredraw(wh, &a)` ueber die Vereinigung der geaenderten Rechtecke).
+  NewTOS' `desk_clear` (main.rs:2208) hat diese ZWEITE Haelfte nicht: es
+  aendert nur den Zustand und gibt `changed` zurueck, das die meisten
+  Aufrufer wegwerfen.  Wuerde man das `redraw_desktop()` hier entfernen,
+  ohne `desk_clear` vorher seine Zeichenhaelfte zu geben, blieben die
+  Laufwerkssymbole sichtbar ausgewaehlt stehen.
+
+  `desk_clear` liegt auf dem Klickpfad (`deskmain.c:958` `desk_clear_all`
+  bei jedem Fensterwechsel).  Elf Tage vor dem Termin ist das der falsche
+  Ort fuer eine nicht erzwungene Aenderung -- und `fun_desk2desk` ist NICHT
+  die gemessene Geste (die ist `fun_win2desk`).  Als eigener Befund
+  weitergereicht, nicht hier behoben.
+
+Ebenfalls nicht angefasst (ausserhalb des Fallenlassens):
+  dir.rs:1532 `fun_del_desktop`, dir.rs:1598 `fun_selectall`,
+  main.rs:2102/2281/2284, mod.rs:1046 (Startbild -- dort ist der Verbund
+  richtig).
+
+
+7. PRUEFUNGEN
+---------------------------------------------------------------------------
+  Bildpunktgleichheit der Geste (640x480, QEMU raspi4b):
+    01-cwin-before.png   == 02-cwin-after.png        sha256 gleich
+    03-afterdrop-before.png == 04-afterdrop-midclean.png
+                            == 05-afterdrop-after.png sha256 gleich
+    (eb42b444f5b6c1a4a1a2243940144eccce51a27154beae1be0c5b77122265628)
+
+  Startbild, beide Boards, ohne Sonde, Standardprofil:
+    06-boot-rpi4-before.png     == 07-boot-rpi4-after.png
+    08-boot-qemuvirt-before.png == 09-boot-qemuvirt-after.png
+    0 [EXC] / 0 [PANIC] in allen vier Startprotokollen (raw/b06-*.log)
+
+  Dateisystem nach der Geste, beide Abbilder:
+    fsck_msdos -n auf C:, D:, E: -- sauber, keine Beanstandung
+    Dateizahlen identisch (C: 52, D: 7, E: 4) -> beide Laeufe haben
+    dieselbe Kopie ausgefuehrt
+
+  Bau und clippy am gemeinsamen Baum:
+    cargo run -p xtask -- build --board qemu-virt  tos-api 64 / kernel 94
+    cargo run -p xtask -- build --board rpi4       tos-api 64 / kernel 94
+    cargo clippy (board-rpi4 und board-qemu-virt)  tos-api 80 / kernel 125
+    -> je genau die Ausgangswerte, keine neue Warnung
+    cargo run -p xtask -- test                     961 / 0 / 1
+    sh tools/desk-drift-probe.sh                   32
+
+  Was QEMU NICHT zeigen kann, und deshalb offen bleibt:
+    * Cachepflege ueberhaupt -- TCG hat keine Caches.  Dass zeilenweise
+      Pflege auf echter Hardware keine schalen Bildpunkte hinterlaesst,
+      folgt aus Abschnitt 3 (Schreibgeometrie), ist aber in QEMU nicht
+      beobachtbar.  Die Pi ist die Abnahme.
+    * Die 1920x1080-Zeiten.  Boardunabhaengig sind nur die ZAHLEN der
+      Operationen (Abschnitt 5), nicht die Millisekunden.
+    * Der Effekt selbst ist ein 1920x1080-Phaenomen: bei 640x480 kostet ein
+      Vollbild-Neuzeichnen 3,1 ms, bei 1920x1080 auf der Pi 110 ms.
+
+
+8. LAEUFE IN DIESEM VERZEICHNIS
+---------------------------------------------------------------------------
+  raw/g01-gesture-before-640x480.log     Geste, HEAD unveraendert
+  raw/g02-gesture-midclean-640x480.log   Geste, nur der Cachepflege-Fix
+  raw/g03-gesture-after-640x480.log      Geste, beide Fixe
+  raw/d04-driver-before-1920x1080.log    Treiberbetrieb A-G, Spannenpflege
+  raw/d05-driver-rowclean-1920x1080.log  dasselbe, zeilenweise Pflege
+  raw/b06-boot{before,after}-{rpi4,virt}.log   die vier Startlaeufe
+  screendumps/01..09                     siehe Abschnitt 7
+  method/gui06_probe_patch.py            die Sonde (Abschnitt 9)
+  method/gui06-gesture.actions           die Geste (aus FS04 uebernommen)
+  method/gui06-bootshot.sh               Startbild je Board ueber QMP
+  method/gui06-fix.diff                  der Fix selbst
+
+
+9. DIE SONDE (method/gui06_probe_patch.py)
+---------------------------------------------------------------------------
+`measurement-2026-09-25-fs04/method/fs04_probe_patch.py` (Fassung 3) mit vier
+Aenderungen und sonst byteweise gleich:
+
+  1. Der `VdiScreen::clean`-Haken versteht BEIDE Gestalten der Funktion --
+     die Spanne (<= d7ecec5) und die zeilenweise (GUI06) -- und bucht in
+     beiden Faellen die EXAKTE Zahl der `dc cvac`, so wie die Schleife sie
+     ausfuehrt (ab der 64-ausgerichteten Anfangsadresse jedes Laufs).  FS04
+     buchte `span.div_ceil(64)`, was je Aufruf um bis zu eine Zeile zu wenig
+     ist; deshalb steht hier fuer den `before`-Stand 1 362 715 und im
+     FS04-Bericht 1 349 997 fuer denselben Vorgang.
+  2. Ein 41. Zaehler `desk.do_wredraw` um den Fensterschaden-Neuzeichner --
+     ohne ihn waere die Arbeit, die die zwei Verbunde ERSETZT, unsichtbar.
+  3. Die fuenf Sektorcache-Haken sind optional: drei ihrer Anker gibt es seit
+     6642409 ("a failed write now reaches the application") nicht mehr.  Sie
+     werden uebersprungen und das Ueberspringen wird gedruckt, statt sie auf
+     Quelltext neu zu verankern, den dieses Ticket nicht liest.  GUI06
+     braucht keinen `cache.*`-Zaehler; im Bericht fehlen diese Zeilen.
+  4. Zwei Anker sind nachgezogen, weil der Quelltext sich zwischen 31fef0f
+     und 9731f16 geaendert hat: der Kommentar vor `main::event_loop()` in
+     kernel/src/desk/mod.rs, und `ErrorStats` hat drei Felder mehr.
+
+Sonst unveraendert: gleiche Zaehler, gleiches Blockformat, gleiche
+Zeitquelle (CNTPCT_EL0, in QEMU raspi4b 62,5 MHz).
+
+Der Injektor ist die Scratch-Kette aus measurement-2026-09-25-port03/method
+(a79_patch_desk10, apply_injector, a78_patch2, key_step_patch,
+t10_workaround), unveraendert uebernommen.

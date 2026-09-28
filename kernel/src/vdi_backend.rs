@@ -279,13 +279,34 @@ impl VdiScreen {
     /// `[x0..=x1] × [y0..=y1]` to the point of coherency, so the display
     /// controller (a separate DMA master beyond the ARM caches) sees the
     /// pixels just written. A no-op if the framebuffer is Non-Cacheable.
-    /// We clean the contiguous address span enclosing the rectangle —
-    /// cleaning the few row-end bytes in between is harmless.
+    ///
+    /// Maintenance is **row-wise**: `y1 - y0 + 1` runs of `(x1 - x0 + 1) * 4`
+    /// bytes, one per scan line. Every primitive that calls this writes only
+    /// inside `[x0..=x1] × [y0..=y1]` — `fill_rect`, `fill_pattern`,
+    /// `draw_glyph_sized`, `blit_mono` and `copy_rect` write the whole box,
+    /// `abline` a subset of it — so the rows are exactly the bytes that can
+    /// be dirty, and no written byte is left behind.
+    ///
+    /// It used to clean the single contiguous address span *enclosing* the
+    /// rectangle, which for a narrow, tall primitive is the whole scan-line
+    /// band: one measured window-frame edge on the Pi 4 at 1920x1080 cleaned
+    /// 3 072 008 bytes — 48 001 lines — for 3 208 bytes of pixels, and a
+    /// whole desktop drop pushed 313-618 MB through `dc cvac` for an 8.3 MB
+    /// screen (`measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`, GUI06). A
+    /// clean of a line that is not dirty costs about two cycles on a
+    /// Cortex-A72 (1.32 ns, measured in `measurement-2026-09-28-gui06`), so
+    /// the 40-to-75-fold redundancy is worth removing even though it is not
+    /// what made the drop slow. In QEMU's TCG the cost is a different one
+    /// (~10.9 ns per operation) — do not size this from an emulator run.
     fn clean(fb: &dyn Framebuffer, x0: u32, y0: u32, x1: u32, y1: u32) {
-        let stride = fb.stride_px() as usize;
+        if x1 < x0 || y1 < y0 {
+            return;
+        }
+        let stride_bytes = fb.stride_px() as usize * 4;
         let base = fb.pixels() as usize;
-        let start = base + (y0 as usize * stride + x0 as usize) * 4;
-        let end = base + (y1 as usize * stride + x1 as usize) * 4 + 4;
+        let start = base + y0 as usize * stride_bytes + x0 as usize * 4;
+        let row_bytes = (x1 - x0 + 1) as usize * 4;
+        let rows = (y1 - y0 + 1) as usize;
         if tos_api::xbios::screen::direct_screen_active() {
             // A process holds a Normal Non-Cacheable EL0 alias of these very
             // pixels (`Physbase`/`Logbase`, ADR-023). Leaving *any* line of
@@ -294,13 +315,20 @@ impl VdiScreen {
             // line back and would undo the program's own stores. Clean **and
             // invalidate**, so nothing of the framebuffer survives a
             // primitive (ARM ARM, "Mismatched memory attributes").
-            // SAFETY: the span lies within the framebuffer's pixel store.
+            // SAFETY: every row lies within the framebuffer's pixel store.
             unsafe {
-                crate::arch::aarch64::mmu::clean_invalidate_dcache_range(start, end - start)
+                crate::arch::aarch64::mmu::clean_invalidate_dcache_rect(
+                    start,
+                    row_bytes,
+                    stride_bytes,
+                    rows,
+                )
             };
         } else {
-            // SAFETY: the span lies within the framebuffer's pixel store.
-            unsafe { crate::arch::aarch64::mmu::clean_dcache_range(start, end - start) };
+            // SAFETY: every row lies within the framebuffer's pixel store.
+            unsafe {
+                crate::arch::aarch64::mmu::clean_dcache_rect(start, row_bytes, stride_bytes, rows)
+            };
         }
     }
 

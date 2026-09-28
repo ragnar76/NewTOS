@@ -1,0 +1,143 @@
+GUI06 -- die Rohzahlen auf einer Seite
+======================================
+Quelle je Zeile in Klammern.  Zeiten aus CNTPCT_EL0 (QEMU raspi4b
+62 500 000 Hz, Pi 4 54 000 000 Hz).
+
+
+1. DIE ZUORDNUNG -- AUF DER PI GEMESSEN, HIER NUR AUSGEWERTET
+   (../measurement-2026-09-25-fs04/raw/pi04-FS04.TXT, Bloecke 2-14,
+    1920x1080, warme Karte)
+
+   Regression ueber die 12 Bloecke 3-14:
+
+     Neuzeichenzeit (2 Aufrufe) gegen fb.clean_lines
+        Steigung  -1,50 ns/Zeile   r = -0,48   Achsenabschnitt 237,1 ms
+     Rest (wall - 2xredraw - gemdos) gegen fb.clean_lines
+        Steigung  +1,32 ns/Zeile   r = +0,56   Achsenabschnitt  10,3 ms
+
+   Der direkte Vergleich:
+     Block  7   4 892 879 Cachezeilen   2xredraw 226 917 us
+     Block 10   9 667 213 Cachezeilen   2xredraw 227 676 us
+     +98 % Cachepflege -> +0,3 % Neuzeichenzeit
+
+   Daraus:
+     Anteil 1  zwei Vollbild-Neuzeichnen   208-225 ms   >= 95 %
+     Anteil 2  Spannenpflege                 6-13 ms   <=  5 %
+
+   Spannweite der 13 Bloecke:
+     wall                       240 284 .. 340 109 us (ohne die drei mit
+                                langer Kartenzeit: 2, 4, 8)
+     2x redraw_desktop          219 064 .. 233 805 us
+     rebuild_window             115 218 .. 126 584 us (enthaelt EIN redraw)
+     fb.clean                   2 175 .. 3 647 Aufrufe
+     fb.clean (Bytes)           313,1 .. 618,5 MB
+     fb.clean_lines             4 892 879 .. 9 667 213
+     groesster Einzelaufruf     3 486 720 B / 54 480 Zeilen  (Bloecke 2-9)
+                                3 072 008 B / 48 001 Zeilen  (Bloecke 10-14)
+     Bildschirm zum Vergleich   1920x1080x4 = 8 294 400 B = 129 600 Zeilen
+
+
+2. DIE GESTE, DREI STAENDE (QEMU raspi4b, 640x480)
+   (raw/g01-, g02-, g03-*.log, Block "FS04 block 1 : drop")
+
+   Zeile                       before      midclean       after
+   ------------------------------------------------------------------
+   wall                      23 825 us    13 000 us     8 598 us
+   desk.redraw_desk          n=2          n=2           n=0
+     total                   14 094 us     6 238 us     --
+     je Aufruf                7 047 us     3 119 us     --
+   desk.rebuild_win          10 564 us     4 474 us     2 894 us
+   desk.do_wredraw           n=1  1 335    n=1    709   n=2  2 157
+     je Aufruf                1 335 us       709 us     1 078 us
+   fb.clean  Aufrufe             2 310        2 310       1 332
+   fb.clean  Bytes          87 080 336    4 806 364   1 964 080
+   fb.clean_lines            1 362 715      106 321      44 839
+   groesster Einzelaufruf    1 026 752 B    696 800 B    696 800 B
+   dofcopy.total              3 409 us     3 636 us     3 744 us
+   desk.fun_op             8 505 782 us  8 503 728 us  8 505 442 us
+     (enthaelt die Lesezeit vor dem OK-Klick -- nicht die Wandzeit)
+
+   Aufteilung der QEMU-Ersparnis:
+     before -> midclean   -10 825 us   (nur Cachepflege; siehe Warnung unten)
+     midclean -> after     -4 402 us   (nur die Neuzeichen)
+     before -> after      -15 227 us   = -63,9 %
+
+   WARNUNG ZUR UEBERTRAGBARKEIT: der erste Schritt ist ein Emulatoreffekt.
+   QEMUs TCG berechnet eine `dc cvac` mit rund 10,9 ns (Abschnitt 3), die
+   Pi 4 mit 1,32 ns (Abschnitt 1) -- Faktor 8,3.  Auf der Pi faellt dieser
+   Schritt entsprechend kleiner aus; die Pi-Zahl dafuer ist Abschnitt 1,
+   nicht diese Tabelle.
+
+
+3. DAS NEUZEICHNEN BEI 1920x1080, BOOT-DESKTOP, 5 DURCHLAEUFE
+   (raw/d04-, d05-*.log, Fall G-redraw-x5, erzwungene Geometrie)
+
+                            before (Spanne)   nachher (Zeilen)
+   5x wall                      99 885 us        93 208 us
+   je Neuzeichnen               19 977 us        18 642 us
+   fb.clean  Aufrufe (5x)             935              935
+   fb.clean  Bytes (5x)        81 934 900       42 621 460
+   fb.clean_lines (5x)          1 281 010          670 675
+   je Neuzeichnen: Bytes        16 386 980        8 524 292
+   je Neuzeichnen: Zeilen          256 202          134 135
+   groesster Einzelaufruf        8 148 480        8 148 480
+                                 (= 1061 Zeilen x 1920 px x 4 -- volle
+                                  Breite, da hilft zeilenweise Pflege nicht)
+
+   -> -47,6 % Cachezeilen, -48,0 % Bytes, gleiche Aufrufzahl.
+      (Mit offenem Fenster, wie auf der Pi: -92,2 %, siehe Abschnitt 2.)
+
+   QEMUs eigener Preis je `dc cvac`, hier abgelesen:
+      (1 281 010 - 670 675) Zeilen sparen 6 677 us  ->  10,9 ns je Zeile
+      Pi 4 (Abschnitt 1):                                1,32 ns je Zeile
+
+
+4. WAS DAS AUF DER PI HEISST -- RECHNUNG, KEINE MESSUNG
+   Der Fix ersetzt je Fallenlassen ZWEI `redraw_desktop` durch EIN
+   zusaetzliches `do_wredraw` ueber das Fensterrechteck (das zweite
+   `do_wredraw` im "after"-Stand ist das, was `end_dialog` schon vorher
+   ausloeste, und steckt auch im "before"-Stand).
+
+   Verhaeltnis do_wredraw : redraw_desktop, in QEMU bei offenem C:-Fenster
+   gemessen:  1 078 / 7 047 = 0,153.
+
+   Auf der Pi (redraw_desktop = 110 ms)  ->  do_wredraw ~ 17 ms.
+   Das Verhaeltnis ist eine OBERGRENZE: bei 1920x1080 nimmt dasselbe
+   Fenster einen kleineren Anteil des Bildschirms ein als bei 640x480.
+
+   Vorhersage je Block (wall_neu = wall - 2xredraw + 17 ms):
+
+     Block  7   240 284 ->  ~30 ms   (kein Kartenzugriff)
+     Block 14   267 057 ->  ~63 ms   (23,9 ms Kopie)
+     Block 10   340 109 -> ~129 ms   (86,6 ms Kopie -- die Karte, nicht wir)
+     Block  5   270 678 ->  ~54 ms
+
+   Dazu kommt Anteil 2 mit weiteren 6-13 ms, die ebenfalls wegfallen.
+
+   Faustzahl fuer die Abnahme auf der Pi: aus 267-340 ms werden
+   **30-130 ms**, je nachdem was die Karte tut -- und der Rest ist dann
+   die Karte, nicht mehr der Desktop.
+
+   NICHT GEMESSEN.  Die Pi-Abnahme steht aus; diese Zeilen sind die
+   Vorhersage, gegen die sie zu halten ist.
+
+
+5. GLEICHHEITSPRUEFUNGEN
+   (sha256 der PNG, screendumps/)
+
+   01-cwin-before.png       == 02-cwin-after.png
+   03-afterdrop-before.png  == 04-afterdrop-midclean.png
+                            == 05-afterdrop-after.png
+   06-boot-rpi4-before.png  == 07-boot-rpi4-after.png
+   08-boot-qemuvirt-before.png == 09-boot-qemuvirt-after.png
+
+   fsck_msdos -n auf C:, D:, E: beider Kartenabbilder nach der Geste:
+   sauber; Dateizahlen identisch (52 / 7 / 4).
+
+   Bau + clippy + Tests am gemeinsamen Baum, gegen die Ausgangswerte:
+     build qemu-virt   tos-api 64 / kernel 94   (unveraendert)
+     build rpi4        tos-api 64 / kernel 94   (unveraendert)
+     clippy            tos-api 80 / kernel 125  (unveraendert, beide
+                                                 Merkmalssaetze)
+     xtask test        961 / 0 / 1              (unveraendert)
+     desk-drift-probe  32                       (unveraendert)
