@@ -22,8 +22,10 @@ Der Anwender 2026-09-28: das sei „gar nicht sooo ein grosses Problem", und
 Unser Zielprofil ist **EmuTOS Falcon030/TOS4**
 ([[emutos-target-profile-falcon-tos4]]). Damit ist die konforme Wahl **nicht**
 die PSG-Emulation, sondern Falcons **DMA-Sound**: `Devconnect` (0x8B),
-`Sndstatus` (0x8C), `Buffoper` (0x89), `Setbuffer` (0x83), `Soundcmd` (0x82),
-`Buffptr` (0x8D), `Dsptristate`/`Gpio` soweit sinnvoll.
+`Sndstatus` (0x8C), **`Buffoper` (0x88 — das Ticket nannte 0x89, falsch; 0x89
+ist `Dsptristate`)**, `Setbuffer` (0x83), `Soundcmd` (0x82), `Buffptr` (0x8D),
+**`Setmode` (0x84 — im Ticket zunaechst ganz vergessen; EmuTOS nennt die
+C-Funktion `setsndmode`)**, `Dsptristate`/`Gpio` soweit sinnvoll.
 
 **Zuerst zu klaeren, nicht anzunehmen:** was EmuTOS von dieser Gruppe
 ueberhaupt implementiert und unter welchem `CONF_WITH_*`, und was davon im
