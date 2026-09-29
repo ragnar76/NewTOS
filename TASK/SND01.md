@@ -106,3 +106,41 @@ vorhanden", kein stiller Erfolg.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+---
+
+## Entscheidung 2026-09-29 — zurueckgestellt, mit verbessertem Ausgangspunkt
+
+Der Anwender: *„gehen wir erstmal ohne Sound und gehen den Sound nach der
+Ofam an, DOOM geht auch ohne Sound"*. Das Ticket bleibt **P3 nach dem
+OFAM-Termin**. [PORT06](PORT06.md) (Doom) haengt damit ausdruecklich **nicht**
+an SND01.
+
+**Was die Rueckstellung getragen hat, und was davon sich als falsch erwies.**
+Der Lead hat als Grund drei Hindernisse genannt. Auf den Einwand des
+Anwenders — *„aber wir haben doch Circle als Vorlage"* — sind zwei davon
+weggefallen:
+
+| Einwand des Leads | Stand nach Durchsicht von `references/circle` @ `6177984e` |
+|---|---|
+| „Es gibt keinen DMA-Treiber" | Gilt fuer **unseren** Baum. Aber `kernel/src/drivers/gic.rs:95` hat `enable_spi(intid)` — genau das, was ein DMA-Kanal-Interrupt braucht (circle: `lib/dmachannel.cpp:387`, `ARM_IRQ_DMA0+Kanal`). DMA steht im **Datenblatt** Kap. 4, Interruptquellen in Kap. 6. Also Primaerquelle, circle nur zur Gegenprobe (Protokoll Rang 6). **Kein Hindernis, ein Arbeitspunkt.** |
+| „Die PWM-Taktregister stehen in keiner gepinnten Quelle" | Bleibt richtig (§7 dieser Datei, Weg C). Fuer **HDMI** ist es gegenstandslos: circle fasst den Takt auf RPi4 gar nicht an — `lib/sound/hdmisoundbasedevice.cpp:234`, `TODO? manage clocks for RASPPI >= 4`. |
+| „QEMU modelliert den PWM-Block nicht" | **Unveraendert, und der eigentliche Preis.** Jede Iteration ist eine Hardwarerunde. |
+
+**Der Befund, der die Reihenfolge aendert.** Ein DMA-Treiber ist keine
+Ton-Arbeit. [HW05](HW05.md) — 89 KB/s Schreibdurchsatz — sitzt auf demselben
+Treiber; `emmc.rs` pollt heute. Wer DMA baut, bezahlt zweimal.
+
+**Reihenfolge nach dem OFAM** (ersetzt den Vorschlag oben nicht, sondern
+setzt einen Schritt davor):
+
+0. **DMA-Treiber** gegen Datenblatt Kap. 4 + Kap. 6, `gic::enable_spi` als
+   vorhandene Anbindung, circle als Gegenprobe. Nuetzt Ton **und** HW05.
+1. Klinke (circle: `pwmsoundbasedevice.cpp`, 257 Zeilen).
+2. HDMI als [SND02](SND02.md) — **der groessere Brocken**, 794 Zeilen gegen
+   257, und HDMI0 only auf RPi 4 (circles eigene Notiz,
+   `include/circle/sound/hdmisoundbasedevice.h:41`).
+
+**Lizenz.** circle ist GPLv3, dieses Projekt GPLv2 wie EmuTOS. Lesen und
+nachbauen ist gedeckt und vom Protokoll als Rang 6 vorgesehen; woertliche
+Uebernahme waere ein abgeleitetes Werk. Registerzahlen bleiben Tatsachen.

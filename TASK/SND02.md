@@ -50,3 +50,38 @@ Kein Code.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+---
+
+## Nachtrag 2026-09-29 — die Frage „gibt es eine Quelle" hat eine Antwort
+
+Dieses Ticket stellte die Frage, ob fuer HDMI-Ton ueberhaupt eine Quelle
+existiert. **Ja — aber keine primaere.**
+
+`references/circle` @ `6177984e` enthaelt `lib/sound/hdmisoundbasedevice.cpp`
+(794 Zeilen) mit einer **eigenen Registerkarte fuer RPi 4**: der Quelltext
+unterscheidet `RASPPI <= 3`, `== 4` und `== 5` an sechzehn Stellen und fuehrt
+die HDMI-Audioregister relativ zu `ARM_HDMI_BASE` — Audio-Paket-Konfiguration,
+CRP/CTS-Taktrueckgewinnung, Kanalstatus. `README.md:90` fuehrt „HDMI sound
+output (without VCHIQ)" als unterstuetzt.
+
+**Was das aendert und was nicht.**
+
+- Die Aussage des Leads *„das BCM2711-Datenblatt hat kein HDMI-Kapitel"*
+  bleibt **wahr**. Es gibt weiterhin **keine primaere** Quelle.
+- Es gibt aber eine **getestete tertiaere**. Damit ist HDMI-Ton nicht mehr
+  „Quellenlage ungeklaert", sondern „nur Rang 6 belegt" — eine andere,
+  schwaechere, aber benennbare Lage.
+- Regel 6 („No invented hardware") ist damit **nicht** erledigt. Rang 6 traegt
+  eine Gegenprobe, keine Autoritaet. Ob dieses Projekt einen Treiber auf einer
+  reinen Rang-6-Belegung baut, ist eine Entscheidung, keine Ableitung — und
+  sie faellt, wenn dieses Ticket drankommt, nicht hier.
+
+**Dritter Weg bleibt offen und ist weiter der billigere:** circles Klasse
+umgeht VCHIQ ausdruecklich. Ob die Firmware eine Mailbox-Schnittstelle fuer
+HDMI-Audio anbietet, ist damit **nicht** beantwortet — Punkt 2 der
+Arbeitsliste oben steht unveraendert.
+
+**Reihenfolge:** unveraendert nach [SND01](SND01.md). HDMI ist mit 794 gegen
+257 Zeilen der groessere Brocken, nicht der kleinere. Und: HDMI0 only auf
+RPi 4 (`include/circle/sound/hdmisoundbasedevice.h:41`).
