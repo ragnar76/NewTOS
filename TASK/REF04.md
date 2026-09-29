@@ -1,6 +1,6 @@
 # REF04 — Die woertliche Tabelle 4-42 in `emmc-sd.md` gegen die Lizenzbedingungen
 
-Status: **OFFEN — Anwenderentscheidung** · Prioritaet: **P2** · Typ: Lizenz / Veroeffentlichung — aus REF02
+Status: **ENTSCHIEDEN — Weg 1, Umsetzung offen** · Prioritaet: **P2** · Typ: Lizenz / Veroeffentlichung — aus REF02
 
 Abhaengigkeiten: [REF02](REF02.md) (dort im Wortlaut gelesen)
 
@@ -54,3 +54,28 @@ Einheit nicht wieder hineinlaeuft.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+---
+
+## Entscheidung 2026-09-29 — Weg 1
+
+Der Anwender hat **Weg 1** gewaehlt: den Originalwortlaut in eigene Worte
+fassen. Jedes Bit behaelt **Nummer und Namen** — das sind Bezeichner, keine
+Prosa, und sie stehen ohnehin im Treiber — und bekommt eine **eigene**
+Beschreibung dessen, was es fuer `kernel/src/drivers/bcm2711/emmc.rs`
+bedeutet. Die Abschnittsangabe bleibt als Verweis stehen.
+
+Die Form, an der sich die Umsetzung zu orientieren hat:
+
+```
+| 31 | OUT_OF_RANGE | Blockadresse jenseits der Kartenkapazitaet.
+                     Unser Treiber meldet EUNDEV. Vgl. SD PLS §4.10.1.
+```
+
+Also: **Wirkung fuer unseren Treiber zuerst**, Quellenverweis zuletzt. Wo
+ein Bit in unserem Treiber heute keine Wirkung hat, wird **das** gesagt —
+nicht die Spec umschrieben, um die Zelle zu fuellen.
+
+`references/README.md` haelt anschliessend fest, was fuer kuenftige
+Uebernahmen aus dieser Quelle gilt, damit die naechste Einheit nicht wieder
+hineinlaeuft (Abnahme oben).
