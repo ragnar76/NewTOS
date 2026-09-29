@@ -149,10 +149,20 @@ fi
 # configuration's *Parameter* setting (`build_selected_path`, :903-928). Put in
 # the root so the drag is one gesture inside the C:\ window; never in \AUTO\,
 # where it would get an empty tail and say nothing.
+#
+# The SAME program is installed a second time as CMDLINE.NTP, because `.NTP`
+# is the one member of the ADR-018 family that had no file on the card at all
+# and so nothing to double-click (DESK41's acceptance asks for one). `.NTP` =
+# "takes a command line", so the program that PRINTS the command line it got is
+# exactly the right demonstration: started from TeraDesk it first asks for a
+# command line (PTTP, sdk/apps/teradesk/applik.c:1390) and then shows the tail
+# that arrived; started from our own desktop it shows the empty tail that
+# launcher passes today (the parameter dialog is DESK44).
 if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/cmdline.c" "$V/CMDLINE.NCP" >/dev/null 2>&1; then
-  echo "built + installed C:\\CMDLINE.NCP (command-line proof)"
+  cp "$V/CMDLINE.NCP" "$V/CMDLINE.NTP"
+  echo "built + installed C:\\CMDLINE.NCP + C:\\CMDLINE.NTP (command-line proof; .NTP demo)"
 else
-  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\CMDLINE.NCP skipped"
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\CMDLINE.NCP + .NTP skipped"
 fi
 
 # ARGVTEST.NAP is the argc/argv proof (PORT01), the other half of CMDLINE.NCP:
@@ -429,6 +439,406 @@ if [ -f "$TERA_DIR/DESKTOP.NAP" ] && [ -f "$TERA_DIR/desktop.rsc" ] && [ -f "$TE
   fi
 else
   echo "note: sdk/apps/teradesk/build/dist not staged; C:\\Apps\\TERADESK skipped (run sdk/apps/build-teradesk.sh)"
+fi
+
+# ── TERADESK.INF: TeraDesk's own configuration — GENERATED here (DESK41) ────
+# TeraDesk does NOT know the NewTOS extensions by itself: its built-in defaults
+# (`prg_default`, sdk/apps/teradesk/prgtype.c:344-358) register *.PRG, *.APP,
+# *.GTP, *.TOS, *.TTP and nothing else, so without this file a `.NAP` is a
+# document — no program icon, no launch on double-click. The registration lives
+# in the `apptypes` section as one `ptype` block per mask, and it used to exist
+# only as a hand-kept file on the card, where the next re-flash deleted it.
+# It is written here so every image carries it.
+#
+# The two numbers per block, from TeraDesk's own source (read-only reference):
+#   appt = ApplType (desk.h:130-137): PGEM=0, PGTP=1, PACC=2, PTOS=3, PTTP=4.
+#          A zero value is omitted by TeraDesk's own writer (CFGEMP=0,
+#          library/xdialog/library.h:145), which is why *.NAP has no `appt`.
+#   flag = PRGTYPE.flags (prgtype.h:42-57): PT_ARGV 0x0001 "understands ARGV",
+#          PD_PDIR 0x2000 "program directory is the default".
+# The four values are TeraDesk's own defaults for the m68k extension each
+# native one replaces (prgtype.c:346-347 `pt[]`/`dd[]`), per ADR-018's table:
+#   *.NAP (GEM app, = .PRG/.APP) appt 0 PGEM, flag 0x2001 PD_PDIR|PT_ARGV
+#   *.NCP (console,  = .TOS)     appt 3 PTOS, flag 0x2000 PD_PDIR
+#   *.NTP (takes a command line, = .TTP) appt 4 PTTP, flag 0x2000 PD_PDIR
+#         PTTP is what makes TeraDesk ask for a command line before it starts
+#         the program (applik.c:1390) and run it on the text screen
+#         (startprg.c:475 `appl_type = (PGEM||PGTP) ? 1 : 0`, :286-291
+#         `v_enter_cur`) — exactly ADR-018's "takes params, console arm".
+#         NOT PT_ARGV: TeraDesk's own .TTP default has no ARGV bit either, and
+#         with it set the tail is signalled as ARGV (length byte 127,
+#         startprg.c:654-655) instead of being passed as a plain tail.
+#   *.NAC (accessory, = .ACC)    appt 2 PACC, flag 0x2000 PD_PDIR
+#         PACC is also what makes a double-click REFUSE to start it in
+#         single-TOS (startprg.c:643-645 `alert_iprint(MCANTACC)`) — the same
+#         "an accessory is not launched on demand" rule ADR-018/ACC02 states
+#         for our own desktop. This build is single-TOS (-D_TOS_ONLY in
+#         sdk/apps/build-teradesk.sh:101 -> _MINT_ = 0).
+#
+# Why the whole file and not just the `apptypes` section: TeraDesk reads the
+# configuration as ONE document. A missing section is not defaulted (its
+# handler simply never runs; Config_table is main.c:984-998), and a missing
+# final `end` token makes the load fail altogether (config.c:453,504-514),
+# whereupon load_options() throws everything away and uses built-in defaults
+# (main.c:1002-1027) — the .NAP registration with it. The body below is
+# therefore a complete, TeraDesk-written configuration: the one recovered from
+# the card (hw-round-2026-09-24/TERADESK.INF; `infv=0x0400` is the current
+# CFG_VERSION, version.h:24) with the two new `ptype` blocks added.
+#
+# Both locations are written on purpose. TeraDesk resolves "teradesk.inf"
+# through shel_find (main.c:1111-1132, xfilesys.c:1284-1311), and shel_find
+# looks in the APPLICATION DIRECTORY first and only then in the current
+# directory and the root of the current drive (EmuTOS `findfile`,
+# aes/gemshlib.c:406-470; ours: tos-api/src/aes/shell.rs `sh_find`). The copy
+# beside DESKTOP.NAP is the one it finds and saves back to; the copy in the
+# root is what the card had, and what a DESKTOP.NAP started from somewhere
+# else on C: still finds.
+cat > "$V/TERADESK.INF" <<'TERAINF'
+TeraDesk-inf
+
+; Avoid editing this file by hand !!!
+; Generated by tools/make-sd-image.sh (NewTOS, DESK41) -- change the script,
+; not this file.  It registers the ADR-018 native extensions with TeraDesk:
+; *.NAP GEM app, *.NCP console, *.NTP takes a command line, *.NAC accessory.
+; Saving settings from inside TeraDesk rewrites the file and drops these
+; comment lines; the apptypes entries below survive.
+
+options=
+{
+	infv=0x0400
+	save=0x0000
+	dial=0x0001
+	xpre=0x0000
+	pref=0x101F
+	buff=512
+	maxd=256
+	plin=80
+	tabs=8
+	cwin=0
+	mode=1
+	sort=0
+	aarr=1
+	attr=0x0014
+	flds=0x001F
+	vidp=0x0000
+	vres=0
+	dpat=8
+	dcol=3
+	wpat=1
+	wcol=0
+}
+
+shortcuts=
+{
+	open=0x024F
+	show=0x0249
+	srch=0x0246
+	prin=0x0250
+	dele=0x027F
+	sela=0x0241
+	quit=0x0251
+	cycl=0x0257
+	svop=0x0253
+}
+
+filetypes=
+{
+	ftype=
+	{
+		mask=*
+	}
+	ftype=
+	{
+		mask=*.*
+	}
+	ftype=
+	{
+		mask=*.PRG
+	}
+	ftype=
+	{
+		mask=*.APP
+	}
+	ftype=
+	{
+		mask=*.GTP
+	}
+	ftype=
+	{
+		mask=*.TOS
+	}
+	ftype=
+	{
+		mask=*.TTP
+	}
+	ftype=
+	{
+		mask=*.ACC
+	}
+	ftype=
+	{
+		mask=*.TXT
+	}
+	ftype=
+	{
+		mask=*.IMG
+	}
+}
+
+apptypes=
+{
+	ptype=
+	{
+		name=*.PRG
+		flag=0x2001
+	}
+	ptype=
+	{
+		name=*.APP
+		flag=0x2001
+	}
+	ptype=
+	{
+		name=*.GTP
+		appt=1
+		flag=0x2001
+	}
+	ptype=
+	{
+		name=*.TOS
+		appt=3
+		flag=0x2000
+	}
+	ptype=
+	{
+		name=*.TTP
+		appt=4
+		flag=0x2000
+	}
+	ptype=
+	{
+		name=*.NAP
+		flag=0x2001
+	}
+	ptype=
+	{
+		name=*.NCP
+		appt=3
+		flag=0x2000
+	}
+	ptype=
+	{
+		name=*.NTP
+		appt=4
+		flag=0x2000
+	}
+	ptype=
+	{
+		name=*.NAC
+		appt=2
+		flag=0x2000
+	}
+}
+
+icontypes=
+{
+}
+
+deskicons=
+{
+	iconw=80
+	iconh=46
+	icon=
+	{
+		name=HARD@DISC
+		labl=HARD@DISC
+		type=1
+		driv=2
+		xpos=2
+	}
+	icon=
+	{
+		name=HARD@DISC
+		labl=HARD@DISC
+		type=1
+		driv=3
+		xpos=3
+	}
+	icon=
+	{
+		name=HARD@DISC
+		labl=HARD@DISC
+		type=1
+		driv=4
+		xpos=4
+	}
+	icon=
+	{
+		name=HARD@DISC
+		labl=HARD@DISC
+		type=1
+		driv=5
+		xpos=5
+	}
+	icon=
+	{
+		name=TRASH
+		labl=TRASH
+		type=2
+		ypos=2
+	}
+}
+
+applications=
+{
+}
+
+windows=
+{
+	directories=
+	{
+		font=
+		{
+			iden=1
+			size=10
+			fcol=1
+		}
+		pos=
+		{
+			xpos=303
+			ypos=123
+			winw=103
+			winh=38
+		}
+		pos=
+		{
+			xpos=496
+			ypos=51
+			winw=122
+			winh=37
+		}
+		pos=
+		{
+			xpos=512
+			ypos=67
+			winw=124
+			winh=37
+		}
+		pos=
+		{
+			xpos=528
+			ypos=83
+			winw=126
+			winh=37
+		}
+		pos=
+		{
+			xpos=544
+			ypos=99
+			winw=128
+			winh=37
+		}
+		pos=
+		{
+			xpos=560
+			ypos=115
+			winw=130
+			winh=37
+		}
+		pos=
+		{
+			xpos=576
+			ypos=131
+			winw=132
+			winh=37
+		}
+		pos=
+		{
+			xpos=592
+			ypos=147
+			winw=134
+			winh=37
+		}
+	}
+	views=
+	{
+		font=
+		{
+			iden=1
+			size=10
+			fcol=1
+		}
+		pos=
+		{
+			xpos=240
+			ypos=39
+			winw=180
+			winh=29
+		}
+		pos=
+		{
+			xpos=248
+			ypos=71
+			winw=182
+			winh=29
+		}
+		pos=
+		{
+			xpos=256
+			ypos=103
+			winw=182
+			winh=29
+		}
+		pos=
+		{
+			xpos=264
+			ypos=135
+			winw=184
+			winh=29
+		}
+		pos=
+		{
+			xpos=272
+			ypos=167
+			winw=184
+			winh=29
+		}
+		pos=
+		{
+			xpos=280
+			ypos=199
+			winw=186
+			winh=29
+		}
+		pos=
+		{
+			xpos=288
+			ypos=231
+			winw=186
+			winh=29
+		}
+		pos=
+		{
+			xpos=296
+			ypos=263
+			winw=188
+			winh=29
+		}
+	}
+}
+
+avstats=
+{
+}
+
+end
+
+TERAINF
+if [ -d "$V/Apps/TERADESK" ]; then
+  cp "$V/TERADESK.INF" "$V/Apps/TERADESK/TERADESK.INF"
+  echo "generated C:\\TERADESK.INF + C:\\Apps\\TERADESK\\TERADESK.INF (registers *.NAP/*.NCP/*.NTP/*.NAC)"
+else
+  echo "generated C:\\TERADESK.INF (registers *.NAP/*.NCP/*.NTP/*.NAC; no C:\\Apps\\TERADESK staged)"
 fi
 
 # Strip macOS metadata so it does not clutter the directory listing.
