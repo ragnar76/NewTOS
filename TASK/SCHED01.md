@@ -1,8 +1,8 @@
-# SCHED01 — Ein gestartetes GEM-Programm steht nie in der Laufmenge; `appl_exit` verliert es an das erste Accessory
+# SCHED01 — `dsptch` legt den Aufrufer nicht in die Laufmenge ein; ein Vollbildprogramm ohne Ereignisschleife haengt in `appl_exit`
 
 Status: **OFFEN** · Prioritaet: **P1** · Typ: Belegter Defekt / Haenger — aus [PORT08](PORT08.md), gemessen 2026-09-29
 
-Abhaengigkeiten: — · **Betrifft jede EL0-GEM-Anwendung, sobald mindestens ein Accessory geladen ist**
+Abhaengigkeiten: — · **Tragweite am 2026-09-29 korrigiert, siehe unten**
 
 ## Der Befund, direkt gemessen
 
@@ -52,20 +52,70 @@ pick the caller again when it comes round"* — ist fuer ein gestartetes Program
 schlicht falsch. **ACC10s Commit `814de2c` zitiert genau dieses
 `insert_process`; der Einfuegeschritt selbst ist nicht mitgekommen.**
 
-## Tragweite — nicht demospezifisch
+## Tragweite — **korrigiert 2026-09-29, meine erste Fassung war zu weit**
 
-`sched::dsptch` hat genau einen Aufrufer (`acc::all_run`), erreichbar ueber
-`appl_exit`. Betroffen ist damit **jede EL0-GEM-Anwendung, die `appl_exit`
-ruft**, sobald mindestens ein Accessory geladen ist. Der EL1-Bootpfad hat
-keinen Slot und ist nicht betroffen.
+**Falsch war:** *„betrifft jede EL0-GEM-Anwendung, sobald mindestens ein
+Accessory geladen ist."*
 
-**Nachgezaehlt im Baum:** `Applications/qed` ruft `appl_exit` **null**-mal —
-deshalb beendet QED sauber, und das ist **kein Gegenbeweis, sondern eine
-Bestaetigung des Mechanismus**. `sdk/apps/teradesk` ruft es **achtmal**.
+**Der Anwender hat widersprochen** — TeraDesk beendet sich seit langem sauber,
+auf derselben Karte, mit denselben zwei Accessories —, und die Gegenmessung
+gibt ihm recht. TeraDesk wurde unter demselben Geruest bis zu seinem
+`appl_exit` gefahren (*File → Quit*): es kehrt zurueck, `Pterm`t, und der
+eingebaute Desktop kommt vollstaendig mit Menuezeile zurueck.
 
-**Offene Frage an den Anwender:** wurde TeraDesk je selbst beendet? Die
-Rueckmeldung vom 2026-09-26 („in TeraDesk QED starten und sauber beenden")
-betraf QED.
+**Ein einziges Bit unterscheidet die Faelle:**
+
+```
+Ball-Demo   runset … s2(st=2 run=0 ctx=0 cond=0x0)   appl_exit -> kein Ruecksprung
+TeraDesk    runset … s2(st=2 run=1 ctx=0 cond=0x0)   appl_exit -> kehrt zurueck
+```
+
+Accessories, `AC_CLOSE`, Barriere und die Reihenfolge der Umschaltungen sind
+Schritt fuer Schritt **identisch**.
+
+### Woher TeraDesks `run=1` kommt — und es ist **nicht** `sched::admit`
+
+Auch TeraDesk wird nirgends aufgenommen. Das Bit setzt **`sleep()`s
+Leerlaufausgang selbst** (*„WAITING → READY: the caller now re-evaluates its
+full predicate"*, `sched.rs`: `runnable.store(true)`) — und es wird danach nie
+wieder geloescht.
+
+**Eine Anwendung, die auch nur einmal in einem AES-Warteruf blockiert hat, ist
+ab da in der Laufmenge — als Nebenwirkung eines fremden Codepfads, nicht als
+Zusage.**
+
+Die Ball-Demo blockiert **nie**: statisch nachgezaehlt ueber `ball.c`,
+`ball_neu.c`, `plat-newtos.c`, `ball.h` — **null** Treffer fuer `evnt_*`,
+`form_do`, `form_alert`. Sie nimmt den Schirm mit `form_dial(FMD_START)`,
+zeichnet selbst und fragt die Taste ueber `Bconstat(2)` ab. Ihr `runnable`
+bleibt bis zuletzt das `false` aus `Process::empty()`.
+
+### Die richtige Klasse
+
+**Eine GEM-Anwendung, die `appl_exit` erreicht, ohne je in einem AES-Warteruf
+blockiert zu haben, bei mindestens einem registrierten Accessory.** Also:
+**Vollbildprogramm ohne Ereignisschleife** — Schirm nehmen, selbst zeichnen,
+Taste ueber BIOS abfragen, beenden. Die Ball-Demo ist genau das; TeraDesk und
+QED sind es nicht.
+
+### Zwei geprüfte Verdachte, die **nicht** zutrafen
+
+* **`mn_cleanup` nur fuer *offene* Accessories?** Nein — weder bei uns
+  (`tos-api/src/aes/menu.rs:1490-1511`) noch bei EmuTOS
+  (`aes/gemmnlib.c:740-748`); es geht an jedes **registrierte**. In beiden
+  Laeufen haben beide Accessories ihr `AC_CLOSE` bekommen. **Das war ein
+  Lead-Verdacht, und er ist widerlegt.**
+* **Schirmbesitz (`form_dial(FMD_START)`, `wind_update(BEG_MCTRL)`)?** Nicht
+  die Ursache — das unterscheidende Bit ist direkt gemessen.
+
+### Warum die Prioritaet **nicht** sinkt
+
+Der Mechanismus bleibt ein Defekt: `dsptch` setzt Mitgliedschaft voraus, statt
+sie herzustellen. Dass es fuer die meisten Anwendungen trotzdem geht, liegt an
+einer **beilaeufigen Nebenwirkung** statt an einer Invariante — und genau
+deshalb faellt die eine Klasse durch, die diesen Pfad nie betritt.
+
+**Und das betroffene Programm ist das Vorfuehrprogramm fuer den 9./10. Oktober.**
 
 ## Gegenprobe, gefahren
 
