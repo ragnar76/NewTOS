@@ -95,44 +95,69 @@ const INT_ERR_DEND: u32 = 1 << 22; // Data End Bit Error
 // `E` (error bit); status entries (`CURRENT_STATE`, `READY_FOR_DATA`,
 // `APP_CMD`, `CARD_IS_LOCKED`, `CARD_ECC_DISABLED`, `ERASE_RESET`,
 // `FX_EVENT`) are deliberately **not** here — they are not failures.
+//
+// Each comment below says in our own words what the bit means *for this
+// driver*, not what the specification says about it; the long form, with
+// the per-command cross-reference and the error-code mapping, is in
+// `docs/hardware/emmc-sd.md` §5. All fifteen share one baseline:
+// `check_r1()` tests them as a single mask, so any of them turns the call
+// into `Err(BlockError::Card)` → `EREADF` / `EWRITF`; the per-bit counter
+// in `ErrorStats` is diagnostic only.
 
-/// Bit 31 — "The command's argument was out of the allowed range for this
-/// card." (Table 4-42)
+/// Bit 31 — the block address we sent lies outside what the card accepts.
+/// One of the two bits a `CMD17`/`CMD24` response realistically carries,
+/// and the reason `check_r1()` exists at all: before it, a write past the
+/// end of the card returned `Ok(())`. SD Phys 9.10 §4.10.1.
 const R1_OUT_OF_RANGE: u32 = 1 << 31;
-/// Bit 30 — "A misaligned address which did not match the block length was
-/// used in the command."
+/// Bit 30 — the card rejected our address against its block length. The
+/// other bit Table 4-43 lists for `CMD17`/`CMD24`; `card_address()` cannot
+/// produce a misaligned argument, so this fires only if the card disagrees
+/// with our own arithmetic.
 const R1_ADDRESS_ERROR: u32 = 1 << 30;
-/// Bit 29 — "The transferred block length is not allowed for this card, or
-/// the number of transferred bytes does not match the block length."
+/// Bit 29 — the card rejected the transfer length. We always request
+/// exactly `SECTOR_SIZE` and pin an SDSC card to 512 bytes during init, so
+/// nothing in our own request should reach this.
 const R1_BLOCK_LEN_ERROR: u32 = 1 << 29;
-/// Bit 28 — "An error in the sequence of erase commands occurred."
+/// Bit 28 — the card's erase sequence went wrong. We issue no erase
+/// command, so this cannot arise from our own traffic; it stays in the
+/// mask so a card that sets it anyway is still treated as a failure.
 const R1_ERASE_SEQ_ERROR: u32 = 1 << 28;
-/// Bit 27 — "An invalid selection of write-blocks for erase occurred."
+/// Bit 27 — the card rejected an erase block range. Unreachable for the
+/// same reason as `R1_ERASE_SEQ_ERROR`: we never erase.
 const R1_ERASE_PARAM: u32 = 1 << 27;
-/// Bit 26 — "Set when the host attempts to write to a protected block or to
-/// the temporary write protected card or write protected until power cycle
-/// card or permanent write protected card."
+/// Bit 26 — a write hit protected storage. Reachable through `CMD24`, our
+/// only write command; like EmuTOS' own SD driver we fold it into the
+/// generic `EWRITF` instead of a write-protect-specific code.
 const R1_WP_VIOLATION: u32 = 1 << 26;
-/// Bit 24 — "Set when a sequence or password error has been detected in
-/// lock/unlock card command."
+/// Bit 24 — the card's lock/unlock feature refused the request. We never
+/// issue that command, so this is unreachable in practice.
 const R1_LOCK_UNLOCK_FAILED: u32 = 1 << 24;
-/// Bit 23 — "The CRC check of the previous command failed."
+/// Bit 23 — the *card* found the command it received corrupted. Distinct
+/// from `INT_ERR_CCRC`, which is the *controller's* verdict on the same
+/// kind of failure and is handled earlier, in `wait_interrupt()`.
 const R1_COM_CRC_ERROR: u32 = 1 << 23;
-/// Bit 22 — "Command not legal for the card state".
+/// Bit 22 — the card refuses the command in the state it is currently in.
+/// Reachable on either of our two data commands; no special handling.
 const R1_ILLEGAL_COMMAND: u32 = 1 << 22;
-/// Bit 21 — "Card internal ECC was applied but failed to correct the data."
+/// Bit 21 — the card's internal ECC could not repair the data it read.
+/// Reachable on `CMD17`; we neither retry nor report it separately.
 const R1_CARD_ECC_FAILED: u32 = 1 << 21;
-/// Bit 20 — "Internal card controller error".
+/// Bit 20 — the card's own controller failed internally. Generic and
+/// reachable on either command, with no special handling.
 const R1_CC_ERROR: u32 = 1 << 20;
-/// Bit 19 — "A general or an unknown error occurred during the operation."
+/// Bit 19 — the card's catch-all rejection, given when it has no finer
+/// reason to report. Beyond its own counter it is indistinguishable here
+/// from any other bit in this list.
 const R1_ERROR: u32 = 1 << 19;
-/// Bit 16 — "The read only section of the CSD does not match the card
-/// content" / an attempt to reverse copy or permanent-WP bits.
+/// Bit 16 — an illegal attempt to change a read-only CSD field or undo a
+/// permanent write-protect bit. We issue none of the programming commands
+/// this covers, so it is unreachable via `CMD17`/`CMD24`.
 const R1_CSD_OVERWRITE: u32 = 1 << 16;
-/// Bit 15 — "Set when only partial address space was erased due to existing
-/// write protected blocks …".
+/// Bit 15 — an erase left write-protected blocks untouched. Unreachable
+/// like the other two erase-family bits: we never erase.
 const R1_WP_ERASE_SKIP: u32 = 1 << 15;
-/// Bit 3 — "Error in the sequence of the authentication process".
+/// Bit 3 — the card's authentication sequence went wrong. We run no
+/// authentication, so this is unreachable.
 const R1_AKE_SEQ_ERROR: u32 = 1 << 3;
 
 /// Every Type-`E` bit of Table 4-42 — a non-zero AND means the card

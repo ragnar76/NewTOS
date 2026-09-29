@@ -180,6 +180,36 @@ CONDITIONS" shown behind the Download button) and in the PDFs' own
    load-bearing that only the wording will do, keep it to a sentence and
    name the section.
 
+### Lesson from REF04 (2026-09-29) — where "paraphrase" stops being enough
+
+`docs/hardware/emmc-sd.md` §5 had turned SD Phys Table 4-42's entire
+*Description* column (15 rows, one per R1 error bit) into a table of
+verbatim quotes. That is not the "keep it to a sentence" case point 3
+above allows for a single load-bearing passage — it is a whole table
+column reproduced row for row, which is squarely "copy portions … by
+screen scraping, screen shots, electronically or otherwise" under §2(a)
+of the licence. REF04 replaced it: bit number and identifier stay (they
+are identifiers our code already uses, not the specification's
+expression), and each row now says, in our own words, what the bit does
+to *our* driver, with the section reference moved to the end as a
+pointer rather than a quote framer.
+
+Two things for whoever next extracts from this source:
+
+- **A whole table's Description/Note column, copied row by row, is the
+  line — even when each individual row is short.** Single isolated
+  sentence-quotes elsewhere in `emmc-sd.md` §5 (e.g. the short R1
+  quotations above the Table 4-42 section) are the smaller, still-allowed
+  case and were correctly left alone by REF04's scope.
+- **Check driver doc-comments too, not only `docs/*.md`.** The same
+  Table 4-42 Description-column wording sat a second time in
+  `kernel/src/drivers/bcm2711/emmc.rs`, one sentence per `R1_*` constant
+  — found only while writing this entry, after `emmc-sd.md` had already
+  been fixed. It was rewritten in the same unit of work; a sweep of the
+  whole tree afterwards found no third copy. Had the sweep been skipped,
+  REF04 would have closed with the reproduction still in the public
+  repository, just in a different file.
+
 ### Acquisition
 
 The Site is Cloudflare-protected; a plain `curl` without browser headers

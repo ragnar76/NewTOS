@@ -320,29 +320,43 @@ the command is in that response and nowhere else:
 Table 4-42's *Type* column marks each entry `E` (error bit), `S` (status
 bit), `R` (set for the actual command response) and/or `X` (set during
 command execution). **`E` is the discriminator**: the bits below are the
-complete set of Type-`E` entries, quoted from the table's own
-*Description* column. Everything else in the word (`CURRENT_STATE`,
-`READY_FOR_DATA`, `APP_CMD`, `CARD_IS_LOCKED`, `CARD_ECC_DISABLED`,
-`ERASE_RESET`, `FX_EVENT`) is status, not failure, and must **not** be
-treated as an error.
+complete set of Type-`E` entries. Everything else in the word
+(`CURRENT_STATE`, `READY_FOR_DATA`, `APP_CMD`, `CARD_IS_LOCKED`,
+`CARD_ECC_DISABLED`, `ERASE_RESET`, `FX_EVENT`) is status, not failure,
+and must **not** be treated as an error.
 
-| Bit | Identifier | Type | Description (verbatim, Table 4-42) |
-|-----|------------|------|------------------------------------|
-| 31 | `OUT_OF_RANGE` | E R X | "The command's argument was out of the allowed range for this card." |
-| 30 | `ADDRESS_ERROR` | E R X | "A misaligned address which did not match the block length was used in the command." |
-| 29 | `BLOCK_LEN_ERROR` | E R X | "The transferred block length is not allowed for this card, or the number of transferred bytes does not match the block length." |
-| 28 | `ERASE_SEQ_ERROR` | E R | "An error in the sequence of erase commands occurred." |
-| 27 | `ERASE_PARAM` | E R X | "An invalid selection of write-blocks for erase occurred." |
-| 26 | `WP_VIOLATION` | E R X | "Set when the host attempts to write to a protected block or to the temporary write protected card or write protected until power cycle card or permanent write protected card." |
-| 24 | `LOCK_UNLOCK_FAILED` | E R X | "Set when a sequence or password error has been detected in lock/unlock card command." |
-| 23 | `COM_CRC_ERROR` | E R | "The CRC check of the previous command failed." |
-| 22 | `ILLEGAL_COMMAND` | E R | "Command not legal for the card state" |
-| 21 | `CARD_ECC_FAILED` | E R X | "Card internal ECC was applied but failed to correct the data." |
-| 20 | `CC_ERROR` | E R X | "Internal card controller error" |
-| 19 | `ERROR` | E R X | "A general or an unknown error occurred during the operation." |
-| 16 | `CSD_OVERWRITE` | E R X | "The read only section of the CSD does not match the card content. / An attempt to reverse the copy (set as original) or permanent WP (unprotected) bits was made." |
-| 15 | `WP_ERASE_SKIP` | E R X | "Set when only partial address space was erased due to existing write protected blocks or the temporary write protected or write protected until power cycle or permanent write protected card was erased." |
-| 3 | `AKE_SEQ_ERROR` | E R | "Error in the sequence of the authentication process" |
+What every one of the fifteen bits below does to our driver, before any
+per-bit detail, is the same: `check_r1()` (`emmc.rs:714`) treats the
+whole Type-`E` set as one mask (`R1_ERROR_MASK`) — any bit set turns the
+call into `Err(BlockError::Card)`, which the BIOS adapter
+(`host_env.rs::block_error_code`) reports as `EREADF` on a read /
+`EWRITF` on a write, the same way EmuTOS' own `sd.c` does (§5 "Mapping a
+card error" above). Each bit is additionally counted on its own
+(`ErrorStats::card_bits`), but that count is diagnostic only — it never
+changes which error code comes back. `check_r1()` is called nowhere
+except after `CMD17` (read) and `CMD24` (write); no other command's R1
+is examined this way. The table states, in our own words, what each bit
+means and — where our code treats it differently from that shared
+baseline — what that difference is; it does not restate the
+specification's own wording, only the section it comes from.
+
+| Bit | Identifier | For our driver |
+|-----|------------|-----------------|
+| 31 | `OUT_OF_RANGE` | The block address we sent is outside what the card will accept. One of only two bits the per-command cross-reference actually lists for `CMD17`/`CMD24` (see "Per-command applicability" below) — the realistic case, and the one that motivated `check_r1()` existing at all: before it did, a write past the end of the card came back `Ok(())` because nothing looked at `RESP0` (`write_one`, `emmc.rs:1082-1084`). SD Phys 9.10 §4.10.1 / Table 4-42. |
+| 30 | `ADDRESS_ERROR` | The other bit Table 4-43 lists for `CMD17`/`CMD24`: the address didn't match the card's block length. `card_address()` (`emmc.rs:1031`) cannot itself produce a misaligned argument — SDHC is a plain block number, SDSC is `block × 512` — so this bit would only fire if the card disagreed with our own arithmetic. |
+| 29 | `BLOCK_LEN_ERROR` | Wrong or mismatched transfer length. We always ask for exactly `SECTOR_SIZE` (512) via `BLKSIZECNT`, and fix an SDSC card to 512 once during init with `SET_BLOCKLEN` (`emmc.rs:1012`) — nothing in our own request should be able to trigger this. |
+| 28 | `ERASE_SEQ_ERROR` | Erase-sequence error. We issue no erase command at all (no `CMD38`); the situation this bit reports on cannot arise from our driver. It is still part of the same mask — a card that set it anyway on a `CMD17`/`CMD24` response would be handled exactly like every other bit here. |
+| 27 | `ERASE_PARAM` | Invalid erase block-range selection — same as `ERASE_SEQ_ERROR`: unreachable, because we never send an erase command. |
+| 26 | `WP_VIOLATION` | A write hit a protected block. Reachable through `CMD24`, our only write command. It gets no code of its own: like EmuTOS' own SD driver (§5 "Mapping a card error" above), we fold it into the generic write-fault code `EWRITF`, not a write-protect-specific one. |
+| 24 | `LOCK_UNLOCK_FAILED` | Password/sequence error in the card lock feature. We never issue the lock/unlock command (`CMD42`) — unreachable in practice; same generic handling if the card set it anyway. |
+| 23 | `COM_CRC_ERROR` | The card's own verdict that the command it just received failed CRC. Worth keeping apart from `INT_ERR_CCRC` (`emmc.rs:78`): that one is the **controller's** verdict on the same kind of failure, checked and recovered separately in `wait_interrupt()`/`note_failure()`, before `check_r1()` is ever reached. Both end up as the same TOS code, but they are two different mechanisms in the driver. |
+| 22 | `ILLEGAL_COMMAND` | The card considers the command illegal for its current state. Reachable on either `CMD17` or `CMD24` in principle; handled like every other bit in this table. |
+| 21 | `CARD_ECC_FAILED` | The card's internal ECC could not correct the data it read. Reachable on `CMD17`; the driver does not distinguish it from any other card refusal — no retry, no separate code. |
+| 20 | `CC_ERROR` | Internal card-controller error. Generic, reachable on either command, no special handling. |
+| 19 | `ERROR` (general) | The card's catch-all for a failure it has no more specific code for. Gets exactly the same treatment as every other bit in this table — a card that only ever sets this one is, from our driver's point of view, indistinguishable from any other rejection beyond its own counter. |
+| 16 | `CSD_OVERWRITE` | Illegal attempt to change a read-only CSD field or reverse a permanent write-protect bit. We issue none of the programming commands (e.g. `CMD27`) this reports on — unreachable via `CMD17`/`CMD24`. |
+| 15 | `WP_ERASE_SKIP` | Erase partially skipped write-protected blocks. Same as the other two erase-family bits above: unreachable, we never erase. |
+| 3 | `AKE_SEQ_ERROR` | Authentication-sequence error. We run no authentication command sequence — unreachable. |
 
 Bits 18, 17, 7, 4, 2, 1, 0 are reserved. As one mask:
 
