@@ -1,0 +1,2111 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x000000000031c000 (2736128 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f00 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-09-29 09:31:52
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[port08] pump #400000
+[port08] runset cur=16 :
+[port08] pump #800000
+[port08] runset cur=16 :
+[port08] pump #1200000
+[port08] runset cur=16 :
+[port08] pump #1600000
+[port08] runset cur=16 :
+[port08] pump #2000000
+[port08] runset cur=16 :
+[port08] pump #2400000
+[port08] runset cur=16 :
+[port08] pump #2800000
+[port08] runset cur=16 :
+[port08] pump #3200000
+[port08] runset cur=16 :
+[port08] pump #3600000
+[port08] runset cur=16 :
+[port08] pump #4000000
+[port08] runset cur=16 :
+[port08] pump #4400000
+[port08] runset cur=16 :
+[port08] pump #4800000
+[port08] runset cur=16 :
+[port08] pump #5200000
+[port08] runset cur=16 :
+[port08] pump #5600000
+[port08] runset cur=16 :
+[port08] pump #6000000
+[port08] runset cur=16 :
+[port08] pump #6400000
+[port08] runset cur=16 :
+[port08] pump #6800000
+[port08] runset cur=16 :
+[port08] pump #7200000
+[port08] runset cur=16 :
+[port08] pump #7600000
+[port08] runset cur=16 :
+[port08] pump #8000000
+[port08] runset cur=16 :
+[port08] pump #8400000
+[port08] runset cur=16 :
+[port08] pump #8800000
+[port08] runset cur=16 :
+[port08] pump #9200000
+[port08] runset cur=16 :
+[port08] pump #9600000
+[port08] runset cur=16 :
+[port08] pump #10000000
+[port08] runset cur=16 :
+[port08] pump #10400000
+[port08] runset cur=16 :
+[port08] pump #10800000
+[port08] runset cur=16 :
+[port08] pump #11200000
+[port08] runset cur=16 :
+[port08] pump #11600000
+[port08] runset cur=16 :
+[port08] pump #12000000
+[port08] runset cur=16 :
+[port08] pump #12400000
+[port08] runset cur=16 :
+[port08] pump #12800000
+[port08] runset cur=16 :
+[port08] pump #13200000
+[port08] runset cur=16 :
+[port08] pump #13600000
+[port08] runset cur=16 :
+[port08] pump #14000000
+[port08] runset cur=16 :
+[port08] pump #14400000
+[port08] runset cur=16 :
+[port08] pump #14800000
+[port08] runset cur=16 :
+[port08] pump #15200000
+[port08] runset cur=16 :
+[port08] pump #15600000
+[port08] runset cur=16 :
+[port08] pump #16000000
+[port08] runset cur=16 :
+[port08] pump #16400000
+[port08] runset cur=16 :
+[port08] pump #16800000
+[port08] runset cur=16 :
+[port08] pump #17200000
+[port08] runset cur=16 :
+[port08] pump #17600000
+[port08] runset cur=16 :
+[port08] pump #18000000
+[port08] runset cur=16 :
+[port08] pump #18400000
+[port08] runset cur=16 :
+[port08] pump #18800000
+[port08] runset cur=16 :
+[port08] pump #19200000
+[port08] runset cur=16 :
+[port08] pump #19600000
+[port08] runset cur=16 :
+[port08] pump #20000000
+[port08] runset cur=16 :
+[port08] pump #20400000
+[port08] runset cur=16 :
+[port08] pump #20800000
+[port08] runset cur=16 :
+[port08] pump #21200000
+[port08] runset cur=16 :
+[port08] pump #21600000
+[port08] runset cur=16 :
+[port08] pump #22000000
+[port08] runset cur=16 :
+[port08] pump #22400000
+[port08] runset cur=16 :
+[port08] pump #22800000
+[port08] runset cur=16 :
+[port08] pump #23200000
+[port08] runset cur=16 :
+[port08] pump #23600000
+[port08] runset cur=16 :
+[port08] pump #24000000
+[port08] runset cur=16 :
+[port08] pump #24400000
+[port08] runset cur=16 :
+[port08] pump #24800000
+[port08] runset cur=16 :
+[port08] pump #25200000
+[port08] runset cur=16 :
+[port08] pump #25600000
+[port08] runset cur=16 :
+[port08] pump #26000000
+[port08] runset cur=16 :
+[port08] pump #26400000
+[port08] runset cur=16 :
+[port08] pump #26800000
+[port08] runset cur=16 :
+[port08] pump #27200000
+[port08] runset cur=16 :
+[port08] pump #27600000
+[port08] runset cur=16 :
+[port08] pump #28000000
+[port08] runset cur=16 :
+[port08] pump #28400000
+[port08] runset cur=16 :
+[port08] pump #28800000
+[port08] runset cur=16 :
+[port08] pump #29200000
+[port08] runset cur=16 :
+[port08] pump #29600000
+[port08] runset cur=16 :
+[port08] pump #30000000
+[port08] runset cur=16 :
+[port08] pump #30400000
+[port08] runset cur=16 :
+[port08] pump #30800000
+[port08] runset cur=16 :
+[port08] pump #31200000
+[port08] runset cur=16 :
+[port08] pump #31600000
+[port08] runset cur=16 :
+[port08] pump #32000000
+[port08] runset cur=16 :
+[port08] pump #32400000
+[port08] runset cur=16 :
+[port08] pump #32800000
+[port08] runset cur=16 :
+[port08] pump #33200000
+[port08] runset cur=16 :
+[port08] pump #33600000
+[port08] runset cur=16 :
+[port08] pump #34000000
+[port08] runset cur=16 :
+[port08] pump #34400000
+[port08] runset cur=16 :
+[port08] pump #34800000
+[port08] runset cur=16 :
+[port08] pump #35200000
+[port08] runset cur=16 :
+[port08] pump #35600000
+[port08] runset cur=16 :
+[port08] pump #36000000
+[port08] runset cur=16 :
+[port08] pump #36400000
+[port08] runset cur=16 :
+[port08] pump #36800000
+[port08] runset cur=16 :
+[port08] pump #37200000
+[port08] runset cur=16 :
+[port08] pump #37600000
+[port08] runset cur=16 :
+[port08] pump #38000000
+[port08] runset cur=16 :
+[port08] pump #38400000
+[port08] runset cur=16 :
+[port08] pump #38800000
+[port08] runset cur=16 :
+[port08] pump #39200000
+[port08] runset cur=16 :
+[port08] pump #39600000
+[port08] runset cur=16 :
+[port08] pump #40000000
+[port08] runset cur=16 :
+[port08] pump #40400000
+[port08] runset cur=16 :
+[port08] pump #40800000
+[port08] runset cur=16 :
+[port08] pump #41200000
+[port08] runset cur=16 :
+[port08] pump #41600000
+[port08] runset cur=16 :
+[port08] pump #42000000
+[port08] runset cur=16 :
+[port08] pump #42400000
+[port08] runset cur=16 :
+[port08] pump #42800000
+[port08] runset cur=16 :
+[port08] pump #43200000
+[port08] runset cur=16 :
+[port08] pump #43600000
+[port08] runset cur=16 :
+[port08] pump #44000000
+[port08] runset cur=16 :
+[port08] pump #44400000
+[port08] runset cur=16 :
+[port08] pump #44800000
+[port08] runset cur=16 :
+[port08] pump #45200000
+[port08] runset cur=16 :
+[port08] pump #45600000
+[port08] runset cur=16 :
+[port08] pump #46000000
+[port08] runset cur=16 :
+[port08] pump #46400000
+[port08] runset cur=16 :
+[port08] pump #46800000
+[port08] runset cur=16 :
+[port08] pump #47200000
+[port08] runset cur=16 :
+[port08] pump #47600000
+[port08] runset cur=16 :
+[port08] pump #48000000
+[port08] runset cur=16 :
+[port08] pump #48400000
+[port08] runset cur=16 :
+[port08] pump #48800000
+[port08] runset cur=16 :
+[port08] pump #49200000
+[port08] runset cur=16 :
+[port08] pump #49600000
+[port08] runset cur=16 :
+[port08] pump #50000000
+[port08] runset cur=16 :
+[port08] pump #50400000
+[port08] runset cur=16 :
+[port08] pump #50800000
+[port08] runset cur=16 :
+[port08] pump #51200000
+[port08] runset cur=16 :
+[port08] pump #51600000
+[port08] runset cur=16 :
+[auto] running C:\AUTO\HELLO.NCP
+[launch] EL0: slot 0 entry 0x1000
+Hello from a NewTOS .NCP program!
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01802000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[port08] EL0 AES #1 op=10
+[port08] EL0 AES #2 op=35
+[port08] EL0 AES #3 op=23
+[sched] switch -> slot 1
+[sched] running
+[port08] EL0 AES #4 op=10
+[port08] EL0 AES #5 op=35
+[port08] EL0 AES #6 op=23
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\Apps\TERADESK\DESKTOP.NAP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1000
+[port08] EL0 AES #7 op=10
+[port08] mouse script armed at tick 3018
+[port08] EL0 AES #8 op=110
+[port08] EL0 AES #9 op=112
+[port08] EL0 AES #10 op=104
+[port08] EL0 AES #11 op=77
+[port08] EL0 AES #12 op=13
+[port08] EL0 AES #13 op=112
+[port08] EL0 AES #14 op=112
+[port08] EL0 AES #15 op=112
+[port08] EL0 AES #16 op=112
+[port08] EL0 AES #17 op=112
+[port08] EL0 AES #18 op=112
+[port08] EL0 AES #19 op=112
+[port08] EL0 AES #20 op=112
+[port08] EL0 AES #21 op=112
+[port08] EL0 AES #22 op=112
+[port08] EL0 AES #23 op=112
+[port08] EL0 AES #24 op=112
+[port08] EL0 AES #25 op=112
+[port08] EL0 AES #26 op=112
+[port08] EL0 AES #27 op=112
+[port08] EL0 AES #28 op=112
+[port08] EL0 AES #29 op=112
+[port08] EL0 AES #30 op=112
+[port08] EL0 AES #31 op=112
+[port08] EL0 AES #32 op=112
+[port08] EL0 AES #33 op=112
+[port08] EL0 AES #34 op=112
+[port08] EL0 AES #35 op=112
+[port08] EL0 AES #36 op=112
+[port08] EL0 AES #37 op=112
+[port08] EL0 AES #38 op=112
+[port08] EL0 AES #39 op=112
+[port08] EL0 AES #40 op=112
+[port08] first EL0 evnt_multi; run-set:
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x0)
+[port08] pump #52000000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #52400000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] pump #52800000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #53200000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #53600000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] pump #54000000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #54400000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #54800000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] pump #55200000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #55600000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #56000000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] pump #56400000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #56800000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #57200000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] mouse step 0 at +400 -> (192, 112)
+[port08] mouse step 1 at +401 -> (65, 0)
+[port08] mouse step 2 at +402 -> (0, 0)
+[port08] mouse step 3 at +403 -> (0, 0)
+[port08] mouse step 4 at +404 -> (0, 0)
+[port08] mouse step 5 at +405 -> (0, 0)
+[port08] pump #57600000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] mouse step 6 at +600 -> (88, 7)
+[port08] mouse step 7 at +700 -> (88, 7)
+[port08] mouse step 8 at +710 -> (88, 7)
+[port08] mouse step 9 at +800 -> (130, 127)
+[port08] mouse step 10 at +801 -> (130, 234)
+[port08] pump #58000000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] mouse step 11 at +900 -> (130, 234)
+[port08] mouse step 12 at +910 -> (130, 234)
+[port08] pump #58400000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x300000000004d2e)
+[port08] first EL0 evnt_multi; run-set:
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] trace ON (quit item clicked)
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] pump #58800000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #59200000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] mouse step 13 at +1000 -> (250, 313)
+[port08] mouse step 14 at +1001 -> (320, 313)
+[port08] pump #59600000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] pump #60000000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #60400000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=0 ctx=0 cond=0x100000000000000)
+[port08] pump #60800000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] mouse step 15 at +1100 -> (320, 313)
+[port08] mouse step 16 at +1110 -> (320, 313)
+[port08] pump #61200000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] pump #61600000
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08]    << -> 0
+[port08] 0 >> AES op=43 objc_find pb=0x3ffa20 in=[0,8,320,313]
+[port08]    << -> 0
+[port08] 1 >> AES op=56 ? pb=0x3ff950 in=[7,0,0,0]
+[port08] 2 >> VDI op=129 pb=0x3ff890
+[port08]    << -> 0
+[port08] 3 >> VDI op=32 pb=0x3ff850
+[port08]    << -> 0
+[port08] 4 >> VDI op=23 pb=0x3ff820
+[port08]    << -> 0
+[port08] 5 >> VDI op=25 pb=0x3ff820
+[port08]    << -> 0
+[port08] 6 >> VDI op=32 pb=0x3ff820
+[port08]    << -> 0
+[port08] 7 >> VDI op=11 pb=0x3ff828
+[port08]    << -> 0
+[port08] 8 >> VDI op=17 pb=0x3ff840
+[port08]    << -> 0
+[port08] 9 >> VDI op=108 pb=0x3ff840
+[port08]    << -> 0
+[port08] 10 >> VDI op=15 pb=0x3ff840
+[port08]    << -> 0
+[port08] 11 >> VDI op=16 pb=0x3ff850
+[port08]    << -> 0
+[port08] 12 >> VDI op=6 pb=0x3ff828
+[port08]    << -> 0
+[port08] 13 >> VDI op=6 pb=0x3ff828
+[port08]    << -> 0
+[port08] 14 >> VDI op=21 pb=0x3ff880
+[port08]    << -> 1
+[port08] 15 >> VDI op=13 pb=0x3ff880
+[port08]    << -> 0
+[port08] 16 >> VDI op=39 pb=0x3ff870
+[port08]    << -> 0
+[port08] 17 >> VDI op=107 pb=0x3ff848
+[port08]    << -> 1
+[port08] 18 >> VDI op=22 pb=0x3ff880
+[port08]    << -> 0
+[port08] 19 >> VDI op=32 pb=0x3ff880
+[port08]    << -> 0
+[port08] 20 >> VDI op=32 pb=0x3ff8a0
+[port08]    << -> 0
+[port08] 21 >> VDI op=106 pb=0x3ff820
+[port08]    << -> 0
+[port08] 22 >> VDI op=8 pb=0x3ff818
+[port08]    << -> 0
+[port08] 23 >> VDI op=116 pb=0x3ff828
+[port08]    << -> 1
+[port08] 24 >> VDI op=106 pb=0x3ff820
+[port08]    << -> 0
+[port08] 25 >> VDI op=22 pb=0x3ff820
+[port08]    << -> 0
+[port08] 26 >> VDI op=8 pb=0x3ff818
+[port08]    << -> 0
+[port08] 27 >> VDI op=22 pb=0x3ff820
+[port08]    << -> 0
+[port08] 28 >> VDI op=129 pb=0x3ff890
+[port08]    << -> 0
+[port08] 29 >> AES op=44 ? pb=0x3ff940 in=[7,0,0,0]
+[port08]    << -> 0
+[port08] 30 >> AES op=47 objc_change pb=0x3ff950 in=[7,0,205,126]
+[port08]    << -> 0
+[port08] first EL0 evnt_multi; run-set:
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] 31 >> AES op=25 evnt_multi pb=0x3ff880 in=[34,1,1,0]
+[port08]    << -> 0
+[port08] 32 >> AES op=107 wind_update pb=0x3ffa20 in=[2,0,0,0]
+[port08]    << -> 0
+[port08] 33 >> AES op=47 objc_change pb=0x3ffbb0 in=[7,0,205,126]
+[port08]    << -> 0
+[port08] 34 >> AES op=78 graf_mouse pb=0x3ffb40 in=[256,0,0,0]
+[port08]    << -> 0
+[port08] 35 >> VDI op=109 pb=0x3ffc70
+[port08]    << -> 0
+[port08] 36 >> AES op=78 graf_mouse pb=0x3ffb40 in=[257,3,0,0]
+[port08]    << -> 0
+[port08] 37 >> GEMDOS fn=0x49 Mfree a0=0x74a000 a1=0x3ffb40
+[port08]    << -> 0
+[port08] 38 >> AES op=107 wind_update pb=0x3ffb90 in=[0,126,434,371]
+[port08]    << -> 0
+[port08] 39 >> AES op=33 ? pb=0x3ffc40 in=[4,1,15,0]
+[port08]    << -> 0
+[port08] 40 >> AES op=30 menu_bar pb=0x3ffe20 in=[0,1,0,0]
+[port08]    << -> 0
+[port08] 41 >> GEMDOS fn=0x49 Mfree a0=0x4bc000 a1=0x3ffe20
+[port08]    << -> 0
+[port08] 42 >> AES op=105 wind_set pb=0x3ffe10 in=[0,14,0,0]
+[port08]    << -> 0
+[port08] 43 >> AES op=51 form_dial pb=0x3ffde0 in=[0,0,19,640]
+[port08]    << -> 0
+[port08] 44 >> AES op=51 form_dial pb=0x3ffde0 in=[3,0,19,640]
+[port08]    << -> 0
+[port08] 45 >> GEMDOS fn=0x49 Mfree a0=0x4a0000 a1=0x3ffde0
+[port08]    << -> 0
+[port08] 46 >> VDI op=51 pb=0x3ffde0
+[port08]    << -> -2
+[port08] 47 >> VDI op=101 pb=0x3fff58
+[port08]    << -> 0
+[port08] 48 >> AES op=111 rsrc_free pb=0x3ffe20 in=[10316,3,0,0]
+[port08]    << -> 0
+[port08] *** EL0 appl_exit entered, run-set follows ***
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[port08] 49 >> AES op=19 appl_exit pb=0x3ffe20 in=[10316,3,0,0]
+[port08] *** appl_exit entered, run-set follows ***
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=0 cond=0x0)
+[sched] switch -> slot 0
+[sched] running
+[port08] 50 >> AES op=23 evnt_mesag pb=0x3fff70 in=[0,0,0,0]
+[port08]    << -> 0
+[port08] 51 >> AES op=23 evnt_mesag pb=0x3fff70 in=[0,0,0,0]
+[sched] switch -> slot 1
+[sched] running
+[port08] 52 >> AES op=23 evnt_mesag pb=0x3fff70 in=[0,0,0,0]
+[port08]    << -> 0
+[port08] 53 >> AES op=23 evnt_mesag pb=0x3fff70 in=[0,0,0,0]
+[sched] switch -> slot 2
+[sched] running
+[port08] *** EL0 appl_exit entered, run-set follows ***
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=1 cond=0x0)
+[port08] 54 >> AES op=19 appl_exit pb=0x3ffe20 in=[10316,3,0,0]
+[port08] *** appl_exit entered, run-set follows ***
+[port08] runset cur=2 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001) s2(st=2 run=1 ctx=1 cond=0x0)
+[port08]    << -> 0
+[launch] returned (program Pterm'd)
+[shell] sh_ldapp: 'C:\Apps\TERADESK\DESKTOP.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[port08] 55 >> AES op=10 appl_init pb=0xffff0000003179c0 in=[0,0,0,0]
+[port08]    << -> 0
+[port08] 56 >> AES op=104 wind_get pb=0xffff0000003179c0 in=[0,4,0,0]
+[port08]    << -> 0
+[port08] 57 >> AES op=40 objc_add pb=0xffff000000317538 in=[0,1,0,0]
+[port08]    << -> 0
+[port08] 58 >> AES op=40 objc_add pb=0xffff000000317538 in=[0,2,0,0]
+[port08]    << -> 0
+[port08] 59 >> AES op=40 objc_add pb=0xffff000000317538 in=[0,3,0,0]
+[port08]    << -> 0
+[port08] 60 >> AES op=40 objc_add pb=0xffff000000317538 in=[0,4,0,0]
+[port08]    << -> 0
+[port08] 61 >> AES op=40 objc_add pb=0xffff000000317538 in=[0,5,0,0]
+[port08]    << -> 0
+[port08] 62 >> AES op=40 objc_add pb=0xffff000000317538 in=[0,6,0,0]
+[port08]    << -> 0
+[port08] 63 >> AES op=40 objc_add pb=0xffff000000317538 in=[0,7,0,0]
+[port08]    << -> 0
+[port08] 64 >> AES op=40 objc_add pb=0xffff000000317538 in=[0,8,0,0]
+[port08]    << -> 0
+[port08] 65 >> GEMDOS fn=0x154  a0=0x8 a1=0x5f494454
+[port08]    << -> 4399
+[port08] 66 >> AES op=108 wind_calc pb=0xffff0000003179c0 in=[1,4095,0,19]
+[port08]    << -> 0
+[port08] 67 >> AES op=122 ? pb=0xffff0000003179c0 in=[4192,0,0,0]
+[port08]    << -> 0
+[port08] 68 >> GEMDOS fn=0x3d Fopen a0=0xffff00000031788e a1=0x0
+[port08]    << -> 6
+[port08] 69 >> GEMDOS fn=0x3f Fread a0=0x6 a1=0x200
+[port08]    << -> 411
+[port08] 70 >> GEMDOS fn=0x3e Fclose a0=0x6 a1=0x0
+[port08]    << -> 0
+[port08] 71 >> AES op=40 objc_add pb=0xffff000000317800 in=[1,9,0,0]
+[port08]    << -> 0
+[port08] 72 >> AES op=40 objc_add pb=0xffff000000317800 in=[1,10,0,0]
+[port08]    << -> 0
+[port08] 73 >> AES op=40 objc_add pb=0xffff000000317800 in=[1,11,0,0]
+[port08]    << -> 0
+[port08] 74 >> AES op=40 objc_add pb=0xffff000000317800 in=[1,12,0,0]
+[port08]    << -> 0
+[port08] 75 >> AES op=40 objc_add pb=0xffff000000317800 in=[1,13,0,0]
+[port08]    << -> 0
+[port08] 76 >> AES op=40 objc_add pb=0xffff000000317800 in=[1,14,0,0]
+[port08]    << -> 0
+[port08] 77 >> AES op=105 wind_set pb=0xffff0000003179c0 in=[0,14,1,0]
+[port08]    << -> 0
+[port08] 78 >> AES op=30 menu_bar pb=0xffff0000003178c8 in=[1,0,0,0]
+[port08]    << -> 0
+[port08] 79 >> AES op=107 wind_update pb=0xffff0000003179c0 in=[1,0,0,0]
+[port08]    << -> 0
+[port08] 80 >> AES op=26 evnt_dclick pb=0xffff0000003179c0 in=[3,1,0,0]
+[port08]    << -> 0
+[port08] 81 >> AES op=107 wind_update pb=0xffff0000003179c0 in=[0,0,0,0]
+[port08]    << -> 0
+[port08] 82 >> AES op=32 ? pb=0xffff0000003178c8 in=[9,1,0,0]
+[port08]    << -> 0
+[port08] 83 >> AES op=32 ? pb=0xffff0000003178c8 in=[18,0,0,0]
+[port08]    << -> 0
+[port08] 84 >> AES op=32 ? pb=0xffff0000003178c8 in=[19,0,0,0]
+[port08]    << -> 0
+[port08] 85 >> AES op=32 ? pb=0xffff0000003178c8 in=[20,0,0,0]
+[port08]    << -> 0
+[port08] 86 >> AES op=32 ? pb=0xffff0000003178c8 in=[22,0,0,0]
+[port08]    << -> 0
+[port08] 87 >> AES op=32 ? pb=0xffff0000003178c8 in=[23,0,0,0]
+[port08]    << -> 0
+[port08] 88 >> AES op=32 ? pb=0xffff0000003178c8 in=[24,0,0,0]
+[port08]    << -> 0
+[port08] 89 >> AES op=32 ? pb=0xffff0000003178c8 in=[25,0,0,0]
+[port08]    << -> 0
+[port08] 90 >> AES op=32 ? pb=0xffff0000003178c8 in=[26,0,0,0]
+[port08]    << -> 0
+[port08] 91 >> AES op=32 ? pb=0xffff0000003178c8 in=[27,0,0,0]
+[port08]    << -> 0
+[port08] 92 >> AES op=32 ? pb=0xffff0000003178c8 in=[29,0,0,0]
+[port08]    << -> 0
+[port08] 93 >> AES op=32 ? pb=0xffff0000003178c8 in=[31,1,0,0]
+[port08]    << -> 0
+[port08] 94 >> AES op=32 ? pb=0xffff0000003178c8 in=[32,0,0,0]
+[port08]    << -> 0
+[port08] 95 >> AES op=32 ? pb=0xffff0000003178c8 in=[34,1,0,0]
+[port08]    << -> 0
+[port08] 96 >> AES op=32 ? pb=0xffff0000003178c8 in=[35,1,0,0]
+[port08]    << -> 0
+[port08] 97 >> AES op=32 ? pb=0xffff0000003178c8 in=[37,1,0,0]
+[port08]    << -> 0
+[port08] 98 >> AES op=32 ? pb=0xffff0000003178c8 in=[38,1,0,0]
+[port08]    << -> 0
+[port08] 99 >> AES op=32 ? pb=0xffff0000003178c8 in=[39,1,0,0]
+[port08]    << -> 0
+[port08] 100 >> AES op=32 ? pb=0xffff0000003178c8 in=[40,1,0,0]
+[port08]    << -> 0
+[port08] 101 >> AES op=32 ? pb=0xffff0000003178c8 in=[41,1,0,0]
+[port08]    << -> 0
+[port08] 102 >> AES op=32 ? pb=0xffff0000003178c8 in=[43,1,0,0]
+[port08]    << -> 0
+[port08] 103 >> AES op=32 ? pb=0xffff0000003178c8 in=[45,1,0,0]
+[port08]    << -> 0
+[port08] 104 >> AES op=32 ? pb=0xffff0000003178c8 in=[47,1,0,0]
+[port08]    << -> 0
+[port08] 105 >> AES op=32 ? pb=0xffff0000003178c8 in=[48,0,0,0]
+[port08]    << -> 0
+[port08] 106 >> AES op=32 ? pb=0xffff0000003178c8 in=[49,1,0,0]
+[port08]    << -> 0
+[port08] 107 >> AES op=32 ? pb=0xffff0000003178c8 in=[50,0,0,0]
+[port08]    << -> 0
+[port08] 108 >> AES op=32 ? pb=0xffff0000003178c8 in=[52,1,0,0]
+[port08]    << -> 0
+[port08] 109 >> AES op=32 ? pb=0xffff0000003178c8 in=[53,1,0,0]
+[port08]    << -> 0
+[port08] 110 >> AES op=32 ? pb=0xffff0000003178c8 in=[54,0,0,0]
+[port08]    << -> 0
+[port08] 111 >> AES op=32 ? pb=0xffff0000003178c8 in=[56,1,0,0]
+[port08]    << -> 0
+[port08] 112 >> AES op=32 ? pb=0xffff0000003178c8 in=[57,1,0,0]
+[port08]    << -> 0
+[port08] 113 >> AES op=31 ? pb=0xffff0000003178c8 in=[34,0,0,0]
+[port08]    << -> 0
+[port08] 114 >> AES op=31 ? pb=0xffff0000003178c8 in=[35,1,0,0]
+[port08]    << -> 0
+[port08] 115 >> AES op=31 ? pb=0xffff0000003178c8 in=[37,1,0,0]
+[port08]    << -> 0
+[port08] 116 >> AES op=31 ? pb=0xffff0000003178c8 in=[38,0,0,0]
+[port08]    << -> 0
+[port08] 117 >> AES op=31 ? pb=0xffff0000003178c8 in=[39,0,0,0]
+[port08]    << -> 0
+[port08] 118 >> AES op=31 ? pb=0xffff0000003178c8 in=[40,0,0,0]
+[port08]    << -> 0
+[port08] 119 >> AES op=31 ? pb=0xffff0000003178c8 in=[41,0,0,0]
+[port08]    << -> 0
+[port08] 120 >> AES op=31 ? pb=0xffff0000003178c8 in=[43,1,0,0]
+[port08]    << -> 0
+[port08] 121 >> AES op=78 graf_mouse pb=0xffff0000003178d0 in=[256,0,0,0]
+[port08]    << -> 0
+[port08] 122 >> AES op=51 form_dial pb=0xffff0000003178d0 in=[3,0,0,0]
+[port08]    << -> 0
+[port08] 123 >> AES op=30 menu_bar pb=0xffff000000317768 in=[1,0,0,0]
+[port08]    << -> 0
+[port08] 124 >> AES op=78 graf_mouse pb=0xffff0000003178d0 in=[257,0,0,0]
+[port08]    << -> 0
+[port08] 125 >> AES op=78 graf_mouse pb=0xffff0000003179c0 in=[0,0,0,0]
+[port08]    << -> 0
+[port08] 126 >> GEMDOS fn=0x19 Dgetdrv a0=0x0 a1=0x0
+[port08]    << -> 2
+[port08] 127 >> GEMDOS fn=0x0e Dsetdrv a0=0x2 a1=0x0
+[port08]    << -> 4
+[desk] desktop up (1 drives, 0 window(s) from the context)
+[port08] 128 >> AES op=25 evnt_multi pb=0xffff000000317748 in=[19,2,1,1]
+[port08] pump #62000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #62400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #62800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #63200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #63600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #64000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #64400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #64800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #65200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #65600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #66000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #66400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #66800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #67200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #67600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #68000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #68400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #68800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #69200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #69600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #70000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #70400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #70800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #71200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #71600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #72000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #72400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #72800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #73200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #73600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #74000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #74400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #74800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #75200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #75600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #76000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #76400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #76800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #77200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #77600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #78000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #78400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #78800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #79200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #79600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #80000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #80400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #80800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #81200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #81600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #82000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #82400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #82800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #83200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #83600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #84000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #84400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #84800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #85200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #85600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #86000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #86400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #86800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #87200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #87600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #88000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #88400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #88800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #89200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #89600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #90000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #90400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #90800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #91200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #91600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #92000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #92400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #92800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #93200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #93600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #94000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #94400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #94800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #95200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #95600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #96000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #96400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #96800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #97200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #97600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #98000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #98400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #98800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #99200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #99600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #100000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #100400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #100800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #101200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #101600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #102000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #102400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #102800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #103200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #103600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #104000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #104400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #104800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #105200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #105600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #106000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #106400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #106800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #107200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #107600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #108000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #108400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #108800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #109200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #109600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #110000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #110400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #110800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #111200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #111600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #112000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #112400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #112800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #113200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #113600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #114000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #114400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #114800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #115200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #115600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #116000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #116400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #116800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #117200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #117600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #118000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #118400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #118800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #119200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #119600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #120000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #120400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #120800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #121200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #121600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #122000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #122400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #122800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #123200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #123600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #124000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #124400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #124800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #125200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #125600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #126000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #126400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #126800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #127200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #127600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #128000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #128400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #128800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #129200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #129600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #130000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #130400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #130800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #131200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #131600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #132000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #132400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #132800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #133200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #133600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #134000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #134400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #134800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #135200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #135600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #136000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #136400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #136800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #137200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #137600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #138000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #138400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #138800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #139200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #139600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #140000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #140400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #140800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #141200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #141600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #142000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #142400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #142800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #143200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #143600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #144000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #144400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #144800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #145200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #145600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #146000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #146400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #146800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #147200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #147600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #148000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #148400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #148800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #149200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #149600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #150000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #150400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #150800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #151200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #151600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #152000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #152400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #152800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #153200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #153600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #154000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #154400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #154800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #155200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #155600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #156000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #156400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #156800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #157200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #157600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #158000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #158400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #158800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #159200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #159600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #160000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #160400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #160800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #161200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #161600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #162000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #162400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #162800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #163200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #163600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #164000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #164400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #164800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #165200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #165600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #166000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #166400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #166800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #167200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #167600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #168000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #168400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #168800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #169200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #169600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #170000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #170400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #170800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #171200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #171600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #172000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #172400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #172800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #173200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #173600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #174000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #174400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #174800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #175200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #175600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #176000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #176400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #176800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #177200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #177600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #178000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #178400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #178800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #179200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #179600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #180000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #180400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #180800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #181200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #181600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #182000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #182400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #182800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #183200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #183600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #184000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #184400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #184800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #185200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #185600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #186000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #186400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #186800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #187200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #187600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #188000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #188400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #188800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #189200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #189600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #190000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #190400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #190800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #191200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #191600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #192000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #192400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #192800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #193200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #193600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #194000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #194400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #194800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #195200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #195600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #196000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #196400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #196800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #197200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #197600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #198000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #198400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #198800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #199200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #199600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #200000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #200400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #200800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #201200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #201600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #202000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #202400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #202800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #203200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #203600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #204000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #204400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #204800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #205200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #205600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #206000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #206400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #206800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #207200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #207600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #208000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #208400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #208800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #209200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #209600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #210000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #210400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #210800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #211200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #211600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #212000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #212400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #212800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #213200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #213600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #214000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #214400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #214800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #215200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #215600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #216000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #216400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #216800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #217200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #217600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #218000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #218400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #218800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #219200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #219600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #220000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #220400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #220800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #221200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #221600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #222000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #222400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #222800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #223200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #223600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #224000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #224400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #224800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #225200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #225600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #226000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #226400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #226800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #227200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #227600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #228000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #228400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #228800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #229200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #229600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #230000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #230400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #230800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #231200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #231600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #232000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #232400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #232800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #233200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #233600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #234000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #234400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #234800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #235200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #235600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #236000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #236400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #236800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #237200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #237600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #238000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #238400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #238800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #239200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #239600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #240000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #240400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #240800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #241200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #241600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #242000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #242400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #242800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #243200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #243600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #244000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #244400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #244800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #245200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #245600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #246000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #246400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #246800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #247200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #247600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #248000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #248400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #248800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #249200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #249600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #250000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #250400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #250800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #251200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #251600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #252000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #252400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #252800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #253200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #253600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #254000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #254400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #254800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #255200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #255600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #256000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #256400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #256800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #257200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #257600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #258000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #258400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #258800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #259200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #259600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #260000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #260400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #260800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #261200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #261600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #262000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #262400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #262800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #263200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #263600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #264000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #264400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #264800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #265200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #265600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #266000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #266400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #266800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #267200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #267600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #268000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #268400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #268800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #269200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #269600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #270000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #270400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #270800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #271200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #271600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #272000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #272400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #272800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #273200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #273600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #274000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #274400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #274800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #275200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #275600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #276000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #276400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #276800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #277200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #277600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #278000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #278400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #278800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #279200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #279600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #280000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #280400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #280800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #281200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #281600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #282000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #282400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #282800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #283200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #283600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #284000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #284400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #284800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #285200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #285600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #286000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #286400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #286800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #287200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #287600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #288000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #288400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #288800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #289200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #289600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #290000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #290400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #290800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #291200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #291600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #292000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #292400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #292800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #293200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #293600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #294000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #294400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #294800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #295200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #295600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #296000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #296400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #296800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #297200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #297600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #298000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #298400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #298800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #299200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #299600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #300000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #300400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #300800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #301200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #301600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #302000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #302400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #302800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #303200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #303600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #304000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #304400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #304800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #305200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #305600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #306000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #306400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #306800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #307200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #307600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #308000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #308400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #308800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #309200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #309600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #310000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #310400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #310800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #311200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #311600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #312000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #312400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #312800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #313200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #313600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #314000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #314400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #314800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #315200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #315600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #316000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #316400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #316800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #317200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #317600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #318000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #318400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #318800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #319200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #319600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #320000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #320400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #320800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #321200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #321600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #322000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #322400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #322800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #323200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #323600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #324000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #324400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #324800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #325200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #325600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #326000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #326400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #326800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #327200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #327600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #328000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #328400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #328800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #329200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #329600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #330000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #330400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #330800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #331200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #331600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #332000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #332400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #332800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #333200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #333600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #334000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #334400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #334800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #335200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #335600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #336000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #336400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #336800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #337200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #337600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #338000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #338400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #338800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #339200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #339600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #340000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #340400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #340800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #341200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #341600000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #342000000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #342400000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #342800000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)
+[port08] pump #343200000
+[port08] runset cur=16 : s0(st=2 run=0 ctx=1 cond=0x200000000000000) s1(st=2 run=0 ctx=1 cond=0x200000000000001)

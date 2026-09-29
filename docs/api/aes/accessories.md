@@ -284,6 +284,17 @@ involved. `ap_exit` reaches `wait_for_accs` in exactly that state
 (`gemaplib.c:251-255`: `wm_update` + `mn_cleanup` + the call; no `ev_block`
 anywhere in between).
 
+**And it is an *insert*, not a no-op.** `disp_act` does not "leave the caller
+where it was": it *links the caller into* `rlr`. The distinction is invisible
+in EmuTOS, where the running process is on the ready list by construction —
+`disp` took it off the head one line earlier, and a launched program runs under
+the shell's own AESPD, which is `rlr` itself (`sh_ldapp` renames `rlr` and
+`dos_exec`s, `gemshlib.c:604-605,634-636`) — and it is decisive anywhere the
+running context is *not* guaranteed to be on the list. Reading this step as
+"the bit is left alone" is what made a NewTOS program that had never blocked in
+an AES wait hang in `appl_exit` (SCHED01, `measurement-2026-09-29-port08`:
+`s2 run=0` for a program with no event loop, `run=1` for one with).
+
 **Consequences that are contract, not mechanism:**
 
 1. **The barrier makes progress with no input whatsoever.** The only thing
@@ -307,9 +318,11 @@ syscall: a blocking AES call unwinds the AES fiber and the trap is re-executed
 on resume (the S2 restartable block,
 `docs/analysis/coop-kernel/20-sleepwake-substrate-design.md` §4.3). So EmuTOS's
 one `dsptch()` becomes *yield out of the syscall and re-enter it*, and the two
-halves of `disp` live in two places: `sched::dsptch` is the ready-list-preserving
-process switch, `aes::dsptch` is `disp`'s `forker(); schedule();` input drain
-that every completed AES call ends with. The one piece of `all_run` that has no
+halves of `disp` live in two places: `sched::dsptch` is the process switch that
+puts the caller on the ready list (the `disp_act` insert, SCHED01 — NewTOS has
+no `pstart` for a launched program and therefore no other step that would),
+`aes::dsptch` is `disp`'s `forker(); schedule();` input drain that every
+completed AES call ends with. The one piece of `all_run` that has no
 counterpart is the `wm_update` pair: NewTOS's update lock is a counter nobody
 is ever parked on (`window.rs::update_beg`'s own note), so `BEG` immediately
 followed by `END` is provably a no-op here. See §9.5 for what this cost.

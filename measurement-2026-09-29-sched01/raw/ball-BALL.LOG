@@ -1,0 +1,30 @@
+BALL: screen 640x480, 1 page(s), ball d=102 px, apex=303 px
+BALL: ball 0.1600 of screen width = 102 px; readout on, from C:\BALL.CFG
+BALL: ST-RAM top 0x00E00000, ramtop 0x3BE00000; buffers asked for alternate RAM (MX_PREFTTRAM)
+BALL: buffers idx=300K/ST bg=300K/ST bgrow=0K/ST map_off=20K/ST map_shd=10K/ST run0=0K/ST run1=0K/ST tex=64K/ST log=32K/ST
+BALL: texture 256x128, 4 hues, from C:\BALL.NTX
+BALL: room 10x10 floor cells, wall 10x6, 24 palette entries, background image 307200 bytes painted in 15.00 ms; reflection fades over 48 rows
+BALL: sphere map 8184 px in 5.00 ms (1 ticks of 200 Hz)
+BALL: bounce 326 ticks, traverse 1090 ticks, roll 197.61 px/s; elastic, no decay; path holds 32 traverses (174.40 s) before coming within 3 % of retracing
+BALL: wind 15.81 px/s peak (8 % of the roll), 3 sines, periods 2.64 / 4.27 / 6.90 s, seed 1592637969
+BALL: headroom 109 frames in 0.20 s free-running = 545.00 fps, 1.83 ms/frame
+BALL: platform wait 60.38 Hz measured (3.31 ticks of 200 Hz); a frame counts as dropped above 4 ticks
+BALL: clock read 13 ns; the frame budget is split with 3 extra reads a frame = 0.00 % of a 20 ms frame
+BALL: one page and no flip, so the BLIT is the presentation: deferred to just after the platform wait, one frame behind composing
+BALL: model 28.98 rows/ms -- the card's phase is UNVERIFIED, so this is a cost model and not a guarantee against tearing
+BALL: blit 124.93 ns/px + 2.35 us/call, so one more rectangle is worth 19 px, and one merge may add at most an eighth; the frame splits up to 3 ways
+BALL: NewTOS screen 640x480x16, memory form VERIFIED (fd_wdwidth = pixels/16, one device word per pixel), colour table MEASURED through vs_color, one page over vro_cpyfm -- no XBIOS screen-base callBALL: t=5.01 s  301 frames  60.02 fps  0 dropped
+BALL:   step 0.00 ms  compose 0.15 ms  blit 0.17 ms  wait 16.30 ms
+BALL:   compose room 0.00 shadow 0.03 reflect 0.00 ball 0.02 text 0.10 ms
+BALL:   split cost 24 clock reads/frame = 0.00 ms/frame
+BALL:   frame ticks 3:201 4:100
+BALL:   redrew 14182.45 px in 2.06 rect/frame (4.62 % of the screen)
+BALL:   scanout MODEL first-row margin 0.66x worst, 72 rect(s) at predicted risk -- PREDICTION ONLY, the card's phase is unverified
+BALL:   worst blit 5.00 ms f47; worst compose 5.00 ms
+BALL:   worst rects 93x9@536,44(0,1) 93x9@536,53(0,1) 105x112@261,295(1,1) 139x43@254,410(0,1) 105x24@261,456(1,1) = 21931 px
+BALL: 599 frames in 10.00 s = 59.90 fps presented, 0 dropped, 6 bounces
+BALL: whole run per frame: step 0.00 ms  compose 0.13 ms  blit 0.16 ms  wait 16.38 ms
+BALL: whole run scanout MODEL first-row margin 0.66x at its worst, 138 rect(s) at predicted risk
+BALL: whole run compose room 0.00 shadow 0.04 reflect 0.00 ball 0.02 text 0.07 ms
+BALL: whole run split cost 0.00 ms/frame in clock reads
+BALL: whole run redrew 14204.34 px in 2.06 rect/frame = 4.62 % of the screen

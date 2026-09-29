@@ -548,13 +548,13 @@ pub fn wake(cond: u64) {
 // sleep, or nothing will ever wake it (ACC10).
 
 /// The outcome of a [`dsptch`] pass — the two exits of [`SleepOutcome`], with
-/// the caller's run-set membership left alone.
+/// the caller left **on** the ready list.
 #[must_use]
 pub enum Dispatch {
     /// A ready **peer** got the CPU. Like [`SleepOutcome::Yield`] the caller
     /// must abort its syscall and propagate the [`Switch`] to the trap handler
-    /// (the S2 restartable block, design §4.3); unlike it, the caller is still
-    /// READY, so the round-robin comes back on its own.
+    /// (the S2 restartable block, design §4.3); unlike it, the caller is READY,
+    /// so the round-robin comes back on its own.
     Yield(Switch),
     /// Nobody else was ready: the idle pass ran (host input pumped, wake
     /// sources polled) and the caller simply carries on.
@@ -578,6 +578,18 @@ pub enum Dispatch {
 /// `ev_block` has not set `WAITIN`, so it is rescheduled unconditionally, with
 /// no wake source, no event and no input involved.
 ///
+/// **It is an insert, not a promise.** `disp_act` *puts* the caller on the
+/// ready list; it does not assume it is there. That distinction is the whole
+/// of SCHED01: NewTOS has no `pstart`-equivalent for a launched program — in
+/// EmuTOS one is not needed, because `sh_ldapp` runs the program under the
+/// *shell's own* AESPD (`aes/gemshlib.c:604-605,634-636`: it renames `rlr`
+/// and `dos_exec`s), and `rlr` is by definition the ready list — so the only
+/// thing that ever made a NewTOS program a `pick_next` candidate was the
+/// `runnable.store(true)` in [`sleep`]'s idle exit. A program that never
+/// blocks in an AES wait therefore reached `wait_for_accs` outside the
+/// run-set and hung in `appl_exit`. This function establishes the membership
+/// that EmuTOS has by construction.
+///
 /// **When to use which.** [`sleep`] is right for a wait that a wake class
 /// covers (`evnt_keybd`, `evnt_mesag`, `evnt_timer`): the caller is parked and
 /// the poster wakes it. `dsptch` is right for a poll loop over state no wake
@@ -592,9 +604,30 @@ pub enum Dispatch {
 pub fn dsptch() -> Dispatch {
     let cur = running_slot();
     if cur < MAX_PROCESSES {
-        // `disp_act(p)`: the caller's `runnable` bit and `wait_cond` are
-        // deliberately untouched — `on_yield` only picks the next runnable
-        // slot after it, and will pick the caller again when it comes round.
+        // `disp_act(p)` = `insert_process(p, &rlr)` (`gemdisp.c:74-79`): the
+        // caller is **put on** the ready list. Establishing the membership is
+        // the point — EmuTOS's running process is on `rlr` by construction
+        // (`disp` takes it off the head at `:225-226`, `disp_act` links it
+        // back in at the tail), and a NewTOS slot has no such guarantee:
+        // `admit` is called for desk accessories only (`aes/acc.rs`), and a
+        // launched program acquires the bit solely as a side effect of
+        // [`sleep`]'s idle exit, i.e. only once it has blocked in some AES
+        // wait. A full-screen program with no event loop never blocks, so it
+        // reached this line with `runnable == false`, handed the CPU to the
+        // accessories, and `pick_next` then had no candidate to hand it back
+        // to: measured, the ball demo never returned from `appl_exit` with an
+        // accessory loaded (SCHED01, `measurement-2026-09-29-port08`). Set
+        // before the pick, so the peer we switch to already sees the caller on
+        // the list.
+        //
+        // `wait_cond` is deliberately left alone. EmuTOS's `disp_act` clears
+        // `WAITIN` because `mwait_act` calls it too, for a waiter whose event
+        // flags are already set (`gemdisp.c:82-90`); our counterpart of that
+        // shortcut is [`sleep`]'s idle exit, which clears the key itself. In
+        // the `else` branch — the one this function is — the caller is RUNNING
+        // and its key is `0` by the WAITING/READY rule (§3.2), so the clear is
+        // the no-op it is in EmuTOS.
+        PROCESS_TABLE[cur].runnable.store(true, Ordering::Release);
         if let Some(sw) = on_yield(cur) {
             return Dispatch::Yield(sw);
         }

@@ -1,0 +1,227 @@
+measurement-2026-09-29-sched01
+  SCHED01 -- `dsptch` legt den Aufrufer in die Laufmenge ein; die Ball-Demo
+  beendet sich jetzt mit geladenen Accessories
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 3460eef.  Die Aenderung liegt **unverbaut im
+Baum** (nicht committet):
+
+    tos-api/src/bdos/process/sched.rs          dsptch(): disp_act-Einfuegung
+    docs/api/aes/accessories.md                §3a: "es ist ein Insert"
+    tos-api/tests/sched_dsptch_admits_the_caller.rs   (neu)
+
+Das Messgeruest lag waehrend der Ball- und TeraDesk-Laeufe in drei
+Kerndateien (kernel/src/dbg_qedtrace.rs, kernel/src/host_env.rs,
+kernel/src/arch/aarch64/exceptions.rs) und ist danach **von Hand** aus
+Dateikopien zurueckgenommen; es liegt als method/sched01-scaffolding.diff
+hier bei.  `git status --short` nennt danach wieder nur die drei Dateien
+oben (plus fremde, nicht von mir angefasste Eintraege).
+
+Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, /Volumes/BOOT nicht
+beruehrt, nichts committet, kein `git checkout/restore/clean/stash/reset`.
+Kartenabbilder und Zwischenstaende lagen im Job-Scratchpad; **kein `*.img`
+hier.**
+
+Maschine: QEMU 11.0.2, `-M raspi4b`, `-display none`, seriell in eine Datei,
+Karte als `-drive if=sd,format=raw`, Bildabzuege ueber QMP `screendump`.
+Bildschirm 640x480 (die Pi laeuft 1920x1080).  Zweites Board: `-M virt`
+(GICv2, cortex-a72, 272 MiB, ramfb) wie `xtask run --board qemu-virt`.
+Host: macOS 27, kein `timeout`; die Laeufe begrenzt der QMP-Treiber.
+
+Kern: `cargo run -p xtask -- build --board {rpi4|qemu-virt} --release`,
+frisch je Board.
+Karte: `tools/make-sd-image.sh` (64 MiB, FAT16) ueber method/seed.sh.  Die
+Standardkarte traegt **zwei** Accessories -- C:\ACC\SYSACC.NAC und
+C:\SYSACC2.NAC --, genau wie die Karte des Anwenders, dazu QED und TeraDesk.
+Ball-Demo: /Volumes/Daten/Development/ball-demo/BALL.NAP vom 2026-09-28
+21:51 (md5 8059109f764104edfce8dfe304f45e19), unveraendert.
+
+
+0. DIE AENDERUNG, IN EINEM SATZ
+---------------------------------------------------------------------------
+`sched::dsptch()` setzt jetzt `runnable` des **laufenden** Slots, bevor es
+den naechsten waehlt -- `disp_act(p)` = `insert_process(p, &rlr)`
+(`references/emutos/aes/gemdisp.c:74-79`).  Eine Zeile Wirkcode; der Rest
+sind Kommentare, die vorher das Gegenteil behaupteten.
+
+
+1. BEWEIS 1 -- DIE BALL-DEMO BEENDET SICH MIT BEIDEN ACCESSORIES
+---------------------------------------------------------------------------
+raw/ball-exit-trace.log, Ausstiegsfolge (Zeilennummern des Geruests):
+
+    266 >> VDI op=101 v_clsvwk                     -> 0
+    267 >> AES op=19  appl_exit
+        runset cur=2 : s0(run=0 cond=0x200000000000000)
+                       s1(run=0 cond=0x200000000000001)
+                       s2(st=2 run=0 ctx=0 cond=0x0)      <-- EINTRITT: run=0
+    [sched] switch -> slot 0
+    268/269 AES op=23 evnt_mesag (Accessory 1)  AC_CLOSE, dann blockiert
+    [sched] switch -> slot 1
+    270/271 AES op=23 evnt_mesag (Accessory 2)  AC_CLOSE, dann blockiert
+    [sched] switch -> slot 2                            <-- KOMMT ZURUECK
+    272 >> AES op=19 appl_exit   (der S2-Neustart)
+        runset cur=2 : s0(run=0 ...) s1(run=0 ...)
+                       s2(st=2 run=1 ctx=1 cond=0x0)      <-- run=1
+        << -> 0                                          <-- KEHRT ZURUECK
+    273/274 Mfree, Mfree
+    275..277 Cconws -- die drei Schlusszeilen der Demo
+    278..281 Fopen/Fseek/Fwrite 1144/Fclose -- log_commit()
+    282..290 neun Mfree
+    [launch] returned (program Pterm'd)
+    [shell] sh_ldapp: 'C:\BALL.NAP' exited with rc=0
+    [shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+    314 >> AES op=30 menu_bar in=[1,...]   -- Menuezeile wieder angemeldet
+    [desk] desktop up (1 drives, 0 window(s) from the context)
+    364 >> AES op=25 evnt_multi            -- der Desktop lebt
+
+**Das unterscheidende Bit wechselt genau ueber die Umschaltung hinweg von
+0 auf 1, und zwar im `dsptch` des Aufrufers selbst.**  Vorher (PORT08,
+gleiche Karte, gleiches Geruest) endete das Protokoll nach `-> slot 1` und
+es kam kein einziger `svc` mehr.
+
+Die Demo hat ihre Arbeit getan: "BALL: 599 frames in 10.00 s = 59.90 fps
+presented, 0 dropped, 6 bounces".  C:\BALL.LOG ist **2893 Byte** und endet
+vollstaendig (raw/ball-BALL.LOG) -- das `log_commit()` **nach** `plat_close()`
+laeuft jetzt.  (Die eine im Protokoll abgeschnittene Zeile ist PORT08s
+Nebenbefund `rbuf[200]` und gehoert der Demo.)
+
+Dreimal unabhaengig gefahren, gleiches Ergebnis: raw/ball-exit-trace.log,
+raw/ball-exit-repeat2.log, raw/ball-exit-repeat3.log (dort Zeilen 925/940
+bzw. 953/968).
+
+Bilder: screendumps/01 (Demo laeuft, 60 fps, HUD),
+02 (Desktop vollstaendig zurueck, Menuezeile da),
+03 (derselbe Desktop 55 s spaeter -- kein Nachlauf, kein Haenger).
+
+
+2. BEWEIS 2 -- TERADESK BEENDET SICH WEITERHIN SAUBER
+---------------------------------------------------------------------------
+Gleiche Karte, gleiche zwei Accessories, PORT08s Mausskript
+(*File* -> *Quit/Shutdown* -> Knopf *Quit*).  raw/teradesk-exit-trace.log:
+
+    49 >> AES op=19 appl_exit
+        runset cur=2 : ... s2(st=2 run=1 ctx=0 cond=0x0)
+    [sched] switch -> slot 0 ... -> slot 1 ... -> slot 2
+    54 >> AES op=19 appl_exit   (der S2-Neustart)
+        runset cur=2 : ... s2(st=2 run=1 ctx=1 cond=0x0)
+        << -> 0
+    [launch] returned (program Pterm'd)
+    [shell] sh_ldapp: 'C:\Apps\TERADESK\DESKTOP.NAP' exited with rc=0
+    [shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+    [desk] desktop up
+
+**Dieselben Aufrufnummern (49, 54) wie in PORT08 Runde 2** -- der Weg ist
+Schritt fuer Schritt unveraendert.
+
+Bilder: screendumps/04, 05 und 06 -- der eingebaute Desktop, vollstaendig mit
+Menuezeile, bei t=60 s, t=75 s und t=115 s.  **Kein Bild vom laufenden
+TeraDesk und keines vom Quit-Dialog:** dieser Lauf war schneller als der von
+PORT08, TeraDesk war beim ersten Bildabzug schon beendet.  Dass es lief,
+geklickt wurde und der Dialog kam, steht im Protokoll (mouse step 0..16,
+"trace ON (quit item clicked)"); die Bilder des laufenden TeraDesk liegen in
+measurement-2026-09-29-port08/round2-teradesk/screendumps/11-13.
+
+
+3. BEWEIS 3 -- DER ACCESSORY-WEG SELBST (ACC02-ACC06)
+---------------------------------------------------------------------------
+Gefahren mit dem Klickskript der ACC02/ACC03/ACC04-Abnahme, unveraendert
+uebernommen: measurement-2026-09-25-acc02-acc04/method/{make_scratch.sh,
+acc2.rs,acc2.actions,run.sh,seed.sh}.  Der Injektor arbeitet auf einer
+**rsync-Kopie** der Crates im Job-Scratch, nie im gemeinsamen Baum; die
+Kopie enthaelt die SCHED01-Aenderung.  Protokoll:
+raw/acc-desk-menu-and-launch.log.
+
+    07  A_IDLE       Desktop im Leerlauf
+    08  B_DESKMENU   *Desk* traegt BEIDE registrierten Titel
+                     ("Desktop info...", "NewTOS System", "NewTOS System")
+    09  C_ALERT      Titel 1 gewaehlt -> AC_OPEN -> das Accessory laeuft
+                     neben dem geparkten Desktop und zeigt seinen form_alert
+                     mit echten Ssystem-Werten (700.0 MHz / 25.0 C)
+    10  D_DISMISSED  sein OK -> der Desktopschirm kommt unberuehrt zurueck
+    11  E_ALERT2     Titel 2 -> das ZWEITE Accessory antwortet (eigener
+                     Prozess, eigene Menue-Id)
+    12  F_BACK       auch das wieder zu
+    13  G_WINDOW     DISK C oeffnet sein Fenster ("998146 bytes used in 34
+                     items") -- der Desktop ist neben den Accessories weiter
+                     bedienbar (ACC03)
+
+**09, 10, 11 und 12 sind bitgleich mit den Bildern der ACC02-Abnahme vom
+2026-09-25** (`screendumps/{c-alert,d-dismissed,e-alert2,f-back}.png`).
+08 und 13 unterscheiden sich um wenige Byte bzw. im Fensterinhalt -- seit
+dem 25.09. sind DESK43-DESK46 und GUI06 gelandet; das ist nicht SCHED01.
+
+
+4. BEWEIS 4 -- JEDER PROGRAMMSTART
+---------------------------------------------------------------------------
+  * **\AUTO\**  -- raw/boot-fix-rpi4.log: "[auto] running C:\AUTO\HELLO.NCP",
+    "Hello from a NewTOS .NCP program!", "[launch] returned (program
+    Pterm'd)", "[auto] 1 AUTO program(s) run".  In **jedem** Lauf dieser
+    Messung.
+  * **Doppelklick auf dem Desktop** -- raw/acc-desk-menu-and-launch.log:
+    der Doppelklick im C:\-Fenster startet ein GEM-Programm ueber den
+    Desktop-appl_exit-Weg, mit beiden Accessories:
+
+        [shell] sh_ldapp: starting C:\DUMPVDI.NAP, sh_nextapp=0, sh_isgem=1
+        [acc] launching with 2 accessory(s); AC_CLOSE seen by all: true
+        [launch] EL0: slot 2 entry 0x1000
+        [launch] returned (program Pterm'd)
+        [shell] sh_ldapp: 'C:\DUMPVDI.NAP' exited with rc=0
+        [desk] desktop up (1 drives, 1 window(s) from the context)
+
+    Dass das Programm wirklich gelaufen ist, steht auch im Bild: das
+    C:\-Fenster zaehlt vorher 34 Eintraege (screendumps/13) und nachher 36
+    (screendumps/14) -- DUMPVDI.NAP hat VDI.BIN und VDI.LOG geschrieben.
+
+    **Offen benannt:** die Klickliste stammt vom 2026-09-25 und zielte auf
+    GEMWIN.NAP an (179,187).  Das Symbolraster hat sich seither geaendert;
+    an dieser Stelle liegt heute DUMPVDI.NAP.  Der Startweg ist damit
+    gefahren, nur eben mit einem anderen Programm -- die Bilder 14 zeigen
+    deshalb das C:\-Fenster und nicht das Fenster eines laufenden Programms
+    (DUMPVDI ist vor dem Bildabzug von selbst fertig).
+  * **#Z-Autorun** -- dreimal: BALL.NAP (Beweis 1), TERADESK (Beweis 2) und
+    QED (raw/qed-autorun.log, screendumps/15: QED steht mit eigener
+    Menuezeile *qed / Datei / Bearbeiten / Fenster / Suchen / Spezial /
+    Optionen / Shell*).
+  * **QED** -- ebenda; QED laeuft mit beiden geladenen Accessories.
+
+
+5. BEWEIS 5 -- BASISLINIEN UND BILDGLEICHHEIT
+---------------------------------------------------------------------------
+    cargo run -p xtask -- test        962 / 0 / 1   (961 + der neue Test)
+    build --board rpi4                tos-api 64 / kernel 94 warnings
+    build --board qemu-virt           tos-api 64 / kernel 94 warnings
+    clippy kernel --features board-rpi4        tos-api 80 / kernel 125
+    clippy kernel --features board-qemu-virt   tos-api 80 / kernel 125
+    sh tools/desk-drift-probe.sh      DRIFT-PROBE TOTAL: 32
+
+Frisch je Board gebaut (die bekannte Falle: sequentielle Board-Builds teilen
+`target/.../{debug,release}/kernel`).  Warnungsdelta null; in
+`process/sched.rs` steht keine einzige Clippy-Warnung.
+
+**Bildgleichheit Start, beide Boards.**  Derselbe Baum einmal mit der
+HEAD-Fassung von `sched.rs` und einmal mit der reparierten gebaut (die
+Dateien wurden ueber Kopien getauscht, nicht ueber git), dieselbe Karte,
+dieselben Zeitpunkte:
+
+    rpi4       t=30 s  identisch      t=45 s  identisch   (cmp)
+    qemu-virt  t=30 s  identisch      t=45 s  identisch   (cmp)
+    serielle Protokolle beider Boards: `diff` leer
+
+raw/boot-{base,fix}-{rpi4,qemu-virt}.log, screendumps/16 und 17.
+
+
+6. WAS HIER NICHT GEMESSEN WURDE
+---------------------------------------------------------------------------
+  * **Die echte Pi** wurde auftragsgemaess nicht gefahren.  Die Aenderung
+    ist board-unabhaengig (kein HAL-Bezug); der Unterschied zur Pi ist die
+    Aufloesung und die Eingabe, nicht der Scheduler.
+  * **Ein** Accessory statt zwei ist wieder nicht gefahren -- wie in PORT08.
+  * Die H_GEMWIN-Marke der ACC02-Liste trifft heute ein anderes Programm
+    (Abschnitt 4); ein Lauf mit korrigierter Klickkoordinate ist **nicht**
+    nachgeholt worden.
+  * `sched_pexec_parent_suspend` (T11) ist in einem von zwei vollen
+    Testlaeufen einmal rot gewesen
+    (`an_awake_accessory_still_gets_the_cpu_while_the_child_blocks`,
+    globale Prozesstabelle, Parallel-Threads).  Sechs Einzellaeufe der
+    Datei danach gruen, der zweite volle Lauf gruen.  Das ist T11 und
+    beruehrt `dsptch` nicht -- die Datei ruft es nirgends auf.

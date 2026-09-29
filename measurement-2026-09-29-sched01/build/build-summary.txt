@@ -1,0 +1,5 @@
+# cargo run -p xtask -- build --board rpi4       (fresh, after the fix)
+tos-api 64 warnings / kernel 94 warnings / 0 errors
+
+# cargo run -p xtask -- build --board qemu-virt  (fresh, after the fix)
+tos-api 64 warnings / kernel 94 warnings / 0 errors

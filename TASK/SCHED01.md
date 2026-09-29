@@ -1,6 +1,6 @@
 # SCHED01 — `dsptch` legt den Aufrufer nicht in die Laufmenge ein; ein Vollbildprogramm ohne Ereignisschleife haengt in `appl_exit`
 
-Status: **OFFEN** · Prioritaet: **P1** · Typ: Belegter Defekt / Haenger — aus [PORT08](PORT08.md), gemessen 2026-09-29
+Status: **BEHOBEN — Pi-Gegenprobe offen** (2026-09-29) · Prioritaet: **P1** · Typ: Belegter Defekt / Haenger — aus [PORT08](PORT08.md), gemessen 2026-09-29
 
 Abhaengigkeiten: — · **Tragweite am 2026-09-29 korrigiert, siehe unten**
 
@@ -158,3 +158,68 @@ Accessory-Weg selbst) und jeder Programmstart.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Abschluss (2026-09-29)
+
+**Eine Wirkzeile:**
+
+```rust
+PROCESS_TABLE[cur].runnable.store(true, Ordering::Release);   // vor on_yield(cur)
+```
+
+Dazu der Kommentar, der den Defekt bisher **begruendet** hat, und die
+`Dispatch`-Doku richtiggestellt; `docs/api/aes/accessories.md` §3a ergaenzt
+(*„es ist ein Insert, kein No-op"*). Neuer Hosttest
+`tos-api/tests/sched_dsptch_admits_the_caller.rs`.
+
+### Die Entscheidung: `dsptch` allein, und warum nicht der Startpfad
+
+EmuTOS hat fuer ein **gestartetes Programm keinen Aufnahmeschritt, weil es
+keinen braucht**: `sh_ldapp` laeuft unter der AESPD der Shell — es benennt
+`rlr` um und ruft `dos_exec` (`aes/gemshlib.c:604-605,634-636,645`). `pstart`
+(→ `drl` → `rlr`) gibt es nur fuer interne Prozesse (`geminit.c:214-227`) und
+Accessories (`:255`) — genau wie unser `sched::admit`. **Ein `admit` beim
+Programmstart waere eine NewTOS-Erfindung ohne Quellenbeleg, und `dsptch`
+bliebe trotzdem falsch.**
+
+`wait_cond` bleibt unberuehrt. Die Auflage des Auftrags (nichts wecken, was
+schlafen soll) ist eingehalten: `dsptch` fasst **nur** `running_slot()` an, und
+ein fuer sein Kind ausgesetzter Elter ist das nie —
+`suspend_parent_for_child` steht **vor** `set_current(child_basepage)`
+(`kernel/src/arch/aarch64/exceptions.rs:1787`/`:1794`). Als Testfall
+festgeschrieben.
+
+### Die fuenf Beweise, alle gefahren
+
+1. **Die Ball-Demo beendet sich**, dreimal unabhaengig, mit **beiden**
+   Accessories: `appl_exit` mit `s2(run=0)` → Umschaltung → **zurueck zu
+   slot 2** → `appl_exit` mit `s2(run=1)` → `-> 0` → `Pterm` → `menu_bar` →
+   `[desk] desktop up`. `C:\BALL.LOG` **2893 Byte und vollstaendig**.
+2. **TeraDesk unveraendert sauber**, dieselben Aufrufnummern wie in PORT08
+   Runde 2.
+3. **Accessory-Weg unbeschaedigt** — und das haerteste Stueck Beleg:
+   **vier der Bildabzuege sind bitgleich mit der ACC02-Abnahme vom
+   2026-09-25.**
+4. **Alle Startwege**: `\AUTO\`, Doppelklick, `#Z` dreimal (BALL, TERADESK,
+   QED), QED mit eigener Menuezeile.
+5. **Startbilder bitgleich auf beiden Boards**, serielle Protokolle
+   diff-leer.
+
+Basislinien: **962/0/1** (961 + der neue Test), 64/94 beide Boards, 80/125
+beide Feature-Saetze, Driftprobe 32.
+
+### Ehrlich benannte Luecken
+
+Kein Bild vom laufenden TeraDesk-Quit-Dialog (dieser Lauf war schneller als
+PORT08s; Protokoll und die PORT08-Bilder decken es ab). Die
+Doppelklick-Koordinate der 2026-09-25-Liste trifft heute ein anderes Symbol —
+der **Startweg** ist gefahren und belegt, das Bild zeigt aber kein laufendes
+Programm. **T11 einmal gesehen** (`sched_pexec_parent_suspend`), danach sieben
+Laeufe gruen; die Datei ruft `dsptch` nirgends.
+
+### Pi-Gegenprobe
+
+Ball-Demo starten, laufen lassen, mit einer Taste beenden: der Desktop muss
+**vollstaendig mit Menuezeile** zurueckkommen, und `C:\BALL.LOG` muss
+vollstaendig enden. Der 19-px-Streifen und die tote Menuezeile duerfen nicht
+mehr auftreten.

@@ -1,0 +1,287 @@
+# SCHED01 measurement scaffolding — applied BY HAND to three kernel files
+# during the ball-demo and TeraDesk runs, and removed BY HAND afterwards
+# (file copies, never git). Nothing below is product code.
+#
+# It is PORT08 round 2's scaffolding
+# (measurement-2026-09-29-port08/round2-teradesk/method/port08-round2-scaffolding.diff)
+# with two edits:
+#   * APP = 0 for the ball-demo run, APP = 1 for the TeraDesk run
+#   * pump_tick() leaves early unless APP == 1, so the TeraDesk mouse
+#     script does not also run during the ball-demo arm
+# Shown here in the APP = 1 (TeraDesk) state.
+
+--- a/kernel/src/dbg_qedtrace.rs	2026-09-29 09:21:25
++++ b/kernel/src/dbg_qedtrace.rs	2026-09-29 09:31:42
+@@ -886,5 +886,241 @@
+         124 => "vq_mouse",
+         129 => "vs_clip",
+         _ => "?",
++    }
++}
++
++// PORT08-TEMP BEGIN — audit scaffolding for TASK/PORT08 (2026-09-29), round 2.
++// Reverted by hand after the measurement.
++//
++// Round 2 answers one question only: what is the cooperative run-set of a GEM
++// application at the moment it calls `appl_exit`, for an application that
++// DOES sit in `evnt_multi` (TeraDesk) versus one that never does (the ball
++// demo). Trigger and quit keys are per-application, selected by PORT08_APP.
++pub mod port08 {
++    use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
++    use tos_api::bdos::process::MAX_PROCESSES;
++    use tos_api::trap::{TrapArgs, TrapClass};
++
++    /// 0 = ball demo (`Bconstat(2)` poll count, quit = 'q').
++    /// 1 = TeraDesk (mouse script: File -> Quit/Shutdown -> button "Quit").
++    pub const APP: u32 = 1;
++
++    /// Ball demo: how many per-frame `Bconstat(2)` polls before the quit key.
++    const QUIT_AFTER_POLLS: u32 = 600;
++    /// TeraDesk: EL0 `evnt_multi` count at which the full trace switches on.
++    const QUIT_AFTER_EVNT: u32 = 120;
++
++    static POLLS: AtomicU32 = AtomicU32::new(0);
++    static EVNTS: AtomicU32 = AtomicU32::new(0);
++    static AESN: AtomicU32 = AtomicU32::new(0);
++    static ON: AtomicBool = AtomicBool::new(false);
++    static SEQ: AtomicU32 = AtomicU32::new(0);
++
++    fn wrd(base: *const i16, i: usize) -> i16 {
++        if base.is_null() {
++            return 0;
++        }
++        unsafe { base.add(i).read() }
++    }
++
++    fn arrays(block: u64) -> (*const i16, *const i16) {
++        if block == 0 {
++            return (core::ptr::null(), core::ptr::null());
++        }
++        let abi = tos_api::bdos::process::current_abi();
++        let control = unsafe { abi.read_ptr(block, 0) } as *const i16;
++        let intin = unsafe { abi.read_ptr(block, 2) } as *const i16;
++        (control, intin)
++    }
++
++    pub fn pre(class: TrapClass, args: &TrapArgs) {
++        let el0 = tos_api::bdos::process::sched::running_slot() < MAX_PROCESSES;
++        if APP == 0 && class == TrapClass::Bios && args.func_id() == 1 && args.arg_i16(0) == 2 {
++            let n = POLLS.fetch_add(1, Ordering::Relaxed) + 1;
++            if n == QUIT_AFTER_POLLS {
++                ON.store(true, Ordering::Release);
++                crate::kprintln!("[port08] poll #{n} -> trace ON, injecting 'q'");
++                crate::ikbd::feed(0x10);
++                crate::ikbd::feed(0x90);
++            }
++        }
++        if APP == 1 && el0 && class == TrapClass::Gem && args.regs[0] == 200 {
++            let (control, _) = arrays(args.regs[1]);
++            let seen = AESN.fetch_add(1, Ordering::Relaxed) + 1;
++            if seen <= 40 {
++                crate::kprintln!("[port08] EL0 AES #{seen} op={}", wrd(control, 0));
++            }
++            if wrd(control, 0) == 19 {
++                crate::kprintln!("[port08] *** EL0 appl_exit entered, run-set follows ***");
++                runset();
++            }
++            if wrd(control, 0) == 25 {
++                let n = EVNTS.fetch_add(1, Ordering::Relaxed) + 1;
++                if n <= 3 {
++                    crate::kprintln!("[port08] first EL0 evnt_multi; run-set:");
++                    runset();
++                    arm_t0();
++                }
++                if n == QUIT_AFTER_EVNT {
++                    ON.store(true, Ordering::Release);
++                    crate::kprintln!("[port08] evnt_multi #{n} -> trace ON");
++                    runset();
++                }
++            }
++        }
++        if !ON.load(Ordering::Acquire) {
++            return;
++        }
++        let s = SEQ.fetch_add(1, Ordering::Relaxed);
++        match class {
++            TrapClass::Gemdos => crate::kprintln!(
++                "[port08] {s} >> GEMDOS fn=0x{:02x} {} a0=0x{:x} a1=0x{:x}",
++                args.func_id(),
++                super::gemdos_name(args.func_id()),
++                args.regs[0],
++                args.regs[1]
++            ),
++            TrapClass::Bios => crate::kprintln!(
++                "[port08] {s} >> BIOS   fn=0x{:02x} a0=0x{:x}",
++                args.func_id(),
++                args.regs[0]
++            ),
++            TrapClass::Xbios => crate::kprintln!(
++                "[port08] {s} >> XBIOS  fn=0x{:02x} a0=0x{:x}",
++                args.func_id(),
++                args.regs[0]
++            ),
++            TrapClass::Gem => {
++                let sel = args.regs[0];
++                let block = args.regs[1];
++                let (control, intin) = arrays(block);
++                let op = wrd(control, 0);
++                if sel == 200 {
++                    crate::kprintln!(
++                        "[port08] {s} >> AES op={op} {} pb=0x{:x} in=[{},{},{},{}]",
++                        super::aes_name(op),
++                        block,
++                        wrd(intin, 0), wrd(intin, 1), wrd(intin, 2), wrd(intin, 3)
++                    );
++                    if op == 19 {
++                        crate::kprintln!("[port08] *** appl_exit entered, run-set follows ***");
++                        runset();
++                    }
++                } else {
++                    crate::kprintln!("[port08] {s} >> VDI op={} pb=0x{:x}", wrd(control, 0), block);
++                }
++            }
++        }
+     }
++
++    /// One compact line with the cooperative run-set.
++    pub fn runset() {
++        use tos_api::bdos::process::PROCESS_TABLE;
++        use core::fmt::Write as _;
++        let mut w = crate::hal::uart::UartWriter(&crate::console::CONSOLE);
++        let _ = write!(
++            w,
++            "[port08] runset cur={} :",
++            tos_api::bdos::process::sched::running_slot()
++        );
++        for i in 0..MAX_PROCESSES {
++            let p = &PROCESS_TABLE[i];
++            let st = p.state.load(Ordering::Relaxed);
++            if st == 0 {
++                continue;
++            }
++            let _ = write!(
++                w,
++                " s{}(st={} run={} ctx={} cond=0x{:x})",
++                i,
++                st,
++                p.runnable.load(Ordering::Relaxed) as u8,
++                p.has_ctx.load(Ordering::Relaxed) as u8,
++                p.wait_cond.load(Ordering::Relaxed)
++            );
++        }
++        let _ = write!(w, "\r\n");
++    }
++
++    static PUMPS: AtomicU32 = AtomicU32::new(0);
++    static T0: AtomicU32 = AtomicU32::new(0);
++    static NEXT: AtomicU32 = AtomicU32::new(0);
++
++    // Relative-mouse packets: header 0xF8 = no button, 0xFA = left down.
++    const fn mv(dx: i8, dy: i8) -> [u8; 3] { [0xF8, dx as u8, dy as u8] }
++    const fn dn(dx: i8, dy: i8) -> [u8; 3] { [0xFA, dx as u8, dy as u8] }
++    const P: [u8; 3] = mv(-127, -127);
++    /// (ticks after T0 at 200 Hz, packet) — TeraDesk at 640x480:
++    /// "File" title, then "Quit/Shutdown", then the dialog's "Quit" button.
++    const SCRIPT: &[(u32, &[u8])] = &[
++        (400, &P), (401, &P), (402, &P), (403, &P), (404, &P), (405, &P),
++        (600, &mv(88, 7)),
++        (700, &dn(0, 0)),
++        (710, &mv(0, 0)),
++        (800, &mv(42, 120)),
++        (801, &mv(0, 107)),
++        (900, &dn(0, 0)),
++        (910, &mv(0, 0)),
++        (1000, &mv(120, 79)),
++        (1001, &mv(70, 0)),
++        (1100, &dn(0, 0)),
++        (1110, &mv(0, 0)),
++    ];
++
++    pub fn pump_tick() {
++        let n = PUMPS.fetch_add(1, Ordering::Relaxed) + 1;
++        if n % 400000 == 0 {
++            crate::kprintln!("[port08] pump #{n}");
++            runset();
++        }
++        // Arm the script the first time a pump runs with slot 2 (the launched
++        // application) as the running slot — i.e. the app is inside a blocking
++        // AES wait's idle fallback. Cannot be missed the way an opcode test can.
++        if APP != 1 {
++            return; // SCHED01: the mouse script belongs to the TeraDesk arm only
++        }
++        if T0.load(Ordering::Relaxed) == 0 {
++            if tos_api::bdos::process::sched::running_slot() == 2 {
++                arm_t0();
++            }
++            return;
++        }
++        let now = tos_api::bios::tick::hz_200() as u32;
++        let t0 = T0.load(Ordering::Relaxed);
++        let i = NEXT.load(Ordering::Relaxed) as usize;
++        if i >= SCRIPT.len() {
++            return;
++        }
++        if now.wrapping_sub(t0) >= 950 && !ON.load(Ordering::Acquire) {
++            ON.store(true, Ordering::Release);
++            crate::kprintln!("[port08] trace ON (quit item clicked)");
++            runset();
++        }
++        let (at, bytes) = SCRIPT[i];
++        if now.wrapping_sub(t0) >= at {
++            for &b in bytes {
++                crate::ikbd::feed(b);
++            }
++            let (mx, my) = tos_api::vdi::mouse_position();
++            crate::kprintln!("[port08] mouse step {i} at +{} -> ({mx}, {my})", now.wrapping_sub(t0));
++            NEXT.store(i as u32 + 1, Ordering::Relaxed);
++        }
++    }
++
++    /// Arm the mouse script's time base.
++    fn arm_t0() {
++        if T0.load(Ordering::Relaxed) == 0 {
++            let now = tos_api::bios::tick::hz_200() as u32;
++            T0.store(now.max(1), Ordering::Relaxed);
++            crate::kprintln!("[port08] mouse script armed at tick {now}");
++        }
++    }
++
++    pub fn post(_class: TrapClass, _args: &TrapArgs, result: i64) {
++        if !ON.load(Ordering::Acquire) {
++            return;
++        }
++        crate::kprintln!("[port08]    << -> {result}");
++    }
+ }
++// PORT08-TEMP END
+--- a/kernel/src/host_env.rs
++++ b/kernel/src/host_env.rs
+@@ -107,6 +107,8 @@
+         // On real Pi-4 this is the sole console input source; no-op until a
+         // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        // PORT08-TEMP: audit scaffolding, reverted by hand.
++        crate::dbg_qedtrace::port08::pump_tick();
+         core::hint::spin_loop();
+ 
+         // SAFETY: restore the caller's original DAIF mask state.
+--- a/kernel/src/arch/aarch64/exceptions.rs
++++ b/kernel/src/arch/aarch64/exceptions.rs
+@@ -352,6 +352,8 @@
+     if crate::dbg_qedtrace::QED_SVC_TRACE {
+         crate::dbg_qedtrace::pre_dispatch(class, &args);
+     }
++    // PORT08-TEMP: audit scaffolding, reverted by hand.
++    crate::dbg_qedtrace::port08::pre(class, &args);
+ 
+     // A blocking `evnt_*` AES wait may yield to a runnable peer (S2
+     // restartable block, design §4.3 + §8.2 sub-step 3); the AES dispatch
+@@ -491,6 +493,8 @@
+     if crate::dbg_qedtrace::QED_SVC_TRACE {
+         crate::dbg_qedtrace::post_dispatch(class, &args, result);
+     }
++    // PORT08-TEMP: audit scaffolding, reverted by hand.
++    crate::dbg_qedtrace::port08::post(class, &args, result);
+ 
+     // AES trap tracer: perform a pending trace flush here — on the kernel
+     // exception stack, with the AES dispatch already returned — rather than
