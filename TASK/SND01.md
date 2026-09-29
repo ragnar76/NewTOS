@@ -51,23 +51,15 @@ Gelesen aus `sd-card-backup-20260618/boot-files/bcm2711-rpi-4-b.dtb`
 (`dtc -I dtb -O dts`) — dieselbe Quellenart, die bei REF02 die richtige Antwort
 gab, wo das Datenblatt schwieg.
 
-**Klinke:**
+**Klinke** (Korrektur 2026-09-29, Track B): die urspruengliche Lesart des
+Geraetebaums war falsch — `<0x28 0x29>` in `pwm1/pinctrl-0` sind **Phandles**,
+keine Pinnummern, und `audio_pins` haengt am **`vchiq`**-Knoten, also am
+VideoCore-Firmwarepfad, nicht am PWM-Treiber. **Die Schlussfolgerung bleibt
+richtig** — PWM1 auf `0xFE20_C800`, GPIO 40/41 in ALT0 —, sie steht jetzt aber
+auf dem **Datenblatt** (Rel. 4 §5.3, §8.5) statt auf der Verwechslung.
+Einzelheiten in `docs/hardware/pwm-audio.md`.
 
-```
-audio_pins: brcm,pins = <0x28 0x29>;   /* GPIO 40, 41 */
-            brcm,function = <0x04>;    /* ALT0        */
-pwm:  pwm@7e20c000  "brcm,bcm2835-pwm"  status = "disabled"
-pwm1: pwm@7e20c800  "brcm,bcm2835-pwm"  status = "disabled"
-      assigned-clock-rates = <0x2faf080>   /* 50 MHz */
-```
-
-Zwei PWM-Bloecke, ein Kanal je Stereoseite, **ab Werk abgeschaltet** — wir
-muessten sie selbst einschalten. Busadresse `0x7E20C000` → ARM `0xFE20C000`
-nach der Umrechnungsregel (BCM2711 §1.2.4, siehe `docs/hardware/emmc-sd.md`),
-dieselbe Peripheriebasis wie unsere uebrigen Treiber. Der PWM-Block steht im
-**BCM2711-Datenblatt** — eine Track-B-Primaerquelle.
-
-**HDMI — die Einschaetzung oben war zu pessimistisch:**
+**HDMI — und hier lag der Lead erneut falsch, diesmal zu optimistisch:**
 
 ```
 clock-names = "hdmi", "bvb", "audio", "cec";
@@ -81,10 +73,14 @@ seine Registerbereiche sind benannt. Der Ton wird also per DMA von der
 **ARM-Seite** hineingeschoben — **nicht** ueber die Firmware, wie oben zunaechst
 vermutet. Das ist hiermit richtiggestellt.
 
-Was dadurch **nicht** wegfaellt: HDMI-Ton braucht zusaetzlich die
-Audio-Infoframes und die Kanalzuordnung, also mehr als einen Puffer
-hinzuschieben. Es ist ein normaler Treiber gegen dokumentierte Register statt
-eines Firmware-Handels — aber kein Einzeiler.
+**Widerrufen 2026-09-29 (Track B):** das **BCM2711-Datenblatt hat gar kein
+HDMI-Kapitel** (13 Kapitel, keines davon HDMI). Die Aussage „normaler Treiber
+gegen dokumentierte Register" ist mit unseren gepinnten Quellen **nicht
+belegt**. Was der Geraetebaum zeigt (eigener Audiotakt, eigener DMA-Kanal,
+benannte Registerbereiche), bleibt richtig — es sagt nur nichts darueber, ob
+die Register **dokumentiert** sind. Der DMA-Name des HDMI-Knotens ist zudem
+`audio-rx`, und die Karte traegt `snd_bcm2835.enable_hdmi` in ihren Schaltern.
+**Eigenes Ticket, eigene Recherche.**
 
 **Die Klinke bleibt trotzdem der erste Schritt:** PWM auf GPIO 40/41. Als Rueckfall
 ausdruecklich erwuenscht, und als erster Schritt sinnvoll — ein hoerbarer Ton
