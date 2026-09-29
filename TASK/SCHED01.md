@@ -241,3 +241,7 @@ ausserhalb unseres Baums, den wir bewusst nicht angefasst haben. Die Datei
 laeuft jetzt nur darueber hinaus weiter, weil nichts mehr haengt. Damit ist die
 Trennung „Haenger gehoert uns, abgeschnittene Zeile gehoert der Demo"
 gemessen bestaetigt.
+
+**Sichtbar bestaetigt (Anwender, 2026-09-29):** *„der Desktop kam wieder
+zurueck und war auch bedienbar."* Damit ist auch die Bildseite abgenommen —
+der 19-px-Streifen und die tote Menuezeile treten nicht mehr auf.
