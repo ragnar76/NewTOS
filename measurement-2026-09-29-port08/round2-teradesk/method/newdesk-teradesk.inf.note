@@ -1,0 +1,6 @@
+The card is PORT07's seed-ball.sh product with one line changed in NEWDESK.INF:
+
+    #Z 01 C:\BALL.NAP@              ->    #Z 01 C:\Apps\TERADESK\DESKTOP.NAP@
+
+Everything else is identical, including the two accessories that
+tools/make-sd-image.sh installs (C:\ACC\SYSACC.NAC and C:\SYSACC2.NAC).

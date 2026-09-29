@@ -1,0 +1,125 @@
+measurement-2026-09-29-port08/round2-teradesk
+  Runde 2 -- TeraDesk unter demselben Geruest, weil die Reichweite bestritten
+  wurde
+===========================================================================
+
+Anlass: die Reichweitenaussage aus Runde 1 ("betrifft jede EL0-GEM-Anwendung,
+sobald mindestens ein Accessory geladen ist") ist vom Anwender bestritten
+worden: TeraDesk beendet sich auf derselben Karte mit denselben zwei
+Accessories sauber.  **Er hat recht.**  Diese Runde misst beide Faelle
+nebeneinander.
+
+Gleiche Maschine, gleicher Kern, gleiches Geruest wie Runde 1; nur die
+`#Z`-Zeile der NEWDESK.INF zeigt auf C:\Apps\TERADESK\DESKTOP.NAP, und das
+Geruest bekam statt des Tastendrucks ein Mausskript.
+
+Am NewTOS-Baum ist nach dem Lauf keine Quelltextzeile geaendert; das Geruest
+ist von Hand zurueckgenommen.  Kein *.img hier.
+
+
+1. WIE TERADESK HEADLESS ZUM BEENDEN GEBRACHT WURDE
+---------------------------------------------------------------------------
+TeraDesks Ctrl-Q oeffnet nur den Dialog; gequittet wird mit der Maus.  Das
+Geruest fuettert relative IKBD-Mauspakete, zeitbezogen auf den ersten
+`pump_input`, bei dem Slot 2 der laufende Slot ist (= die Anwendung sitzt in
+einem blockierenden AES-Warteruf):
+
+    +400..405  sechsmal (-127,-127)   Zeiger in die Ecke parken
+    +600       (+88, +7)              auf den Menuetitel "File"
+    +700/+710  Taste runter/hoch      Menue klappt auf (screendumps/11)
+    +800/+801  (+42,+120) (+0,+107)   auf "Quit/Shutdown"
+    +900/+910  Taste runter/hoch      Dialog erscheint (screendumps/12,13)
+    +1000/1001 (+120,+79) (+70,+0)    auf den Knopf "Quit"
+    +1100/1110 Taste runter/hoch      TeraDesk setzt quit = TRUE
+
+Ab +950 schreibt das Geruest jeden `svc` mit; ausserdem wird bei **jedem**
+AES-Opcode 19 die Laufmenge ausgegeben, unabhaengig vom Trace-Schalter.
+
+
+2. DAS ERGEBNIS, NEBENEINANDER
+---------------------------------------------------------------------------
+Im Augenblick des `appl_exit`, gleiche Karte, gleiche zwei Accessories:
+
+  Ball-Demo (raw/q2-exit-trace.log der Runde 1)
+
+    runset cur=2 : s0(run=0) s1(run=0) s2(st=2 run=0 ctx=0 cond=0x0)
+    267 >> AES op=19 appl_exit
+    [sched] switch -> slot 0 ... -> slot 1 ... danach nichts mehr
+
+  TeraDesk (raw/teradesk-exit-trace.log)
+
+    runset cur=2 : s0(run=0) s1(run=0) s2(st=2 run=1 ctx=0 cond=0x0)
+    49  >> AES op=19 appl_exit
+    [sched] switch -> slot 0 ... -> slot 1 ... -> slot 2   <-- kommt zurueck
+    54  >> AES op=19 appl_exit   (der S2-Neustart)
+        << -> 0
+    [launch] returned (program Pterm'd)
+    [shell] sh_ldapp: 'C:\Apps\TERADESK\DESKTOP.NAP' exited with rc=0
+    [shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+
+**Ein einziges Bit unterscheidet die Faelle: `s2 run`.**  Accessories,
+AC_CLOSE, Barriere und die Reihenfolge der Umschaltungen sind identisch.
+
+
+3. WOHER TERADESKS run=1 KOMMT -- UND ES IST NICHT sched::admit
+---------------------------------------------------------------------------
+Auch TeraDesk wird nirgends aufgenommen.  Der Uebergang steht im selben
+Protokoll (raw/teradesk-exit-trace.log, bei "first EL0 evnt_multi"):
+
+    runset ... s2(st=2 run=0 ctx=0 cond=0x0)                     vor dem 1. Warten
+    runset ... s2(st=2 run=1 ctx=0 cond=0x0)                     nach dem 1. Warten
+    runset ... s2(st=2 run=0 ctx=0 cond=0x100000000000000)       mittendrin (WAITING)
+
+Gesetzt wird das Bit von `sleep()`s Leerlaufausgang selbst --
+"WAITING -> READY: the caller now re-evaluates its full predicate",
+`tos-api/src/bdos/process/sched.rs`: `runnable.store(true)`.  Danach wird es
+nie wieder geloescht.  Eine Anwendung, die auch nur **einmal** in einem
+AES-Warteruf blockiert, ist ab da in der Laufmenge -- als **Nebenwirkung**,
+nicht als Zusage.
+
+Die Ball-Demo ruft keine einzige blockierende AES-Funktion.  Statisch
+nachgezaehlt ueber ball.c, ball_neu.c, plat-newtos.c, ball.h: **null** Treffer
+fuer `evnt_*`, `form_do`, `form_alert`.  Ihr `runnable` ist bis zuletzt das
+`false` aus `Process::empty()`.
+
+
+4. DIE BERICHTIGTE REICHWEITE
+---------------------------------------------------------------------------
+FALSCH (Runde 1, und so steht es in TASK/SCHED01.md):
+    jede EL0-GEM-Anwendung, sobald mindestens ein Accessory geladen ist.
+
+RICHTIG:
+    eine GEM-Anwendung, die `appl_exit` erreicht, OHNE je in einem
+    AES-Warteruf blockiert zu haben, bei mindestens einem registrierten
+    Accessory.
+
+Das ist die Klasse "Vollbild-Programm ohne Ereignisschleife": Schirm nehmen,
+selbst zeichnen, Taste ueber BIOS abfragen, beenden.  Die Ball-Demo ist genau
+das.  TeraDesk ist es nicht, QED ist es nicht.
+
+**Der Mechanismus bleibt ein Defekt.**  `sched::dsptch` legt den Aufrufer
+nicht in die Laufmenge ein, wie EmuTOS' `disp_act` es tut
+(`aes/gemdisp.c:74-79`), sondern setzt Mitgliedschaft voraus.  Dass es fuer
+die meisten Anwendungen trotzdem geht, liegt an einer beilaeufigen
+Nebenwirkung eines fremden Codepfads, nicht an einer Invariante.
+
+
+5. ZWEI KANDIDATEN, DIE DAMIT WIDERLEGT SIND
+---------------------------------------------------------------------------
+  * "mn_cleanup schickt AC_CLOSE nur an OFFENE Accessories."  Nein -- weder
+    bei uns (tos-api/src/aes/menu.rs:1490-1511, Schleife ueber ACCS.owner)
+    noch bei EmuTOS (aes/gemmnlib.c:740-748, Schleife ueber desk_ppd[]).  Es
+    geht an jedes **registrierte**, offen oder nicht.
+  * "Der Schirmbesitz (form_dial(FMD_START), wind_update(BEG_MCTRL)) ist der
+    Unterschied."  Nicht die Ursache: das unterscheidende Bit ist gemessen,
+    und das Verhalten der Accessories ist in beiden Laeufen Schritt fuer
+    Schritt gleich.
+
+
+6. WAS AUCH HIER OFFEN BLEIBT
+---------------------------------------------------------------------------
+  * Ein Accessory statt zwei ist weiterhin nicht gefahren.
+  * Der Vergleich mit dem Stand vor ACC10 ist weiterhin nur erschlossen.
+  * Die echte Pi wurde auftragsgemaess nicht gefahren.
+  * TeraDesks Weg wurde ueber *Quit* gefahren, nicht ueber *Shutdown* oder
+    *Reboot*; das sind andere Zweige (main.c:2046-2069) und sind ungemessen.

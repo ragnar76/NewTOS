@@ -1,3 +1,4 @@
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  ./manifest.sha256
 38868f4f49681851fbb051d4e1a61d99358bf3d8fba7d83027daf5843d8e1f15  ./method/port08-scaffolding.diff
 b0fffa18e45a24475555ac8111f06c617238bfe8cd0d296f485051d82344bb1d  ./method/report-buffer-cap.py
 bf7bcf7f1971e281012b97035d71b9b569d3b9b8a22d58979d6e9bcf91930f7c  ./method/strip-accessories.py
@@ -6,6 +7,15 @@ fd87b41145c59bb5f5aa6571599cf58df476a19d62e0523f26c81f6408e2cc5d  ./raw/noacc-se
 9fce6ed667d7bf015879d1892785e223815167861ca426e4869e75f478d38087  ./raw/q1-serial.log
 d4502bd685839fbc8eca17e01a1da28640c701e5e1ec80cef268d035f598a87b  ./raw/q2-exit-trace.log
 1facf36d9853b9826b32f1f8981bb8dd2b81d9fdcabca6a38bdc72a10467c496  ./raw/report-buffer-cap.txt
+9e55f88004c6023248b7d0c13341c784e7ce6d05109f0b6cdbad08e7a7d37ee1  ./round2-teradesk/method/newdesk-teradesk.inf.note
+5b0c3ba49b6dbe52488da88e7228d4941988a4126f551ca9e1c0e4844c893453  ./round2-teradesk/method/port08-round2-scaffolding.diff
+3940accd5920db4bed0a97c457c84842d69c6ee42531a4471dae5fa848021566  ./round2-teradesk/raw/teradesk-exit-trace.log
+c5a003529f67a9392d267c347bba58295878cd0e056ef8c39a4bbd6b5a14e380  ./round2-teradesk/raw/teradesk-idle-runset.log
+41bd4cdc303ec212e436063200f64a5b62de6ee5af3b82a9b8345a81ba950c3a  ./round2-teradesk/RUNINFO.TXT
+e1e391f77f0114925f7d45dba0b9121e532871a0bba184cbd7016c2f66269857  ./round2-teradesk/screendumps/11-teradesk-file-menu.png
+6810a0fca4e66e413819178185967f40742f89975a924d18e8f3d4625cd47bee  ./round2-teradesk/screendumps/12-teradesk-quit-dialog-t50.png
+d5c3eea108f8164b08ad7892f77aad65538f2815a70df6e42c8578ea75120d80  ./round2-teradesk/screendumps/13-teradesk-quit-dialog.png
+d5c3eea108f8164b08ad7892f77aad65538f2815a70df6e42c8578ea75120d80  ./round2-teradesk/screendumps/14-after-teradesk-exit.png
 66c8dd161800771525e71bb478984521c76c7c57f2082c5681e0fe91387cac26  ./RUNINFO.TXT
 c4ab9aaafefd7c9b434d86a10af0a8bac00db6429aac4828810e745062ab6419  ./screendumps/01-demo-running-t45.png
 21d23411384ea73f428e684b53b6acfa3ce0c24ee5b768282a329d9e798e696b  ./screendumps/02-hang-with-two-accessories-t75.png

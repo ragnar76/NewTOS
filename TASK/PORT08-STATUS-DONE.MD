@@ -149,3 +149,96 @@ Die Abnahme („die Demo beendet sich, der Desktop kommt vollständig zurück,
 war für diesen Auftrag auch nicht verlangt — er war eine Messung. Sie ist im
 Gegenprobe-Arm ohne Accessories vollständig erreicht, was zeigt, dass zwischen
 ihr und heute genau eine Sache steht.
+
+---
+
+# Nachtrag 2026-09-29, Runde 2 — die Reichweite war zu weit gefasst
+
+**Der Anwender hat widersprochen: TeraDesk beendet sich auf derselben Karte,
+mit denselben zwei Accessories, sauber. Er hat recht, und mein Satz „betrifft
+jede EL0-GEM-Anwendung" war falsch.** TeraDesk ist daraufhin unter demselben
+Gerüst bis zu seinem `appl_exit` gefahren worden (Ctrl-freie Mausskript-Folge:
+*File* → *Quit/Shutdown* → Knopf *Quit*), Belege in
+`measurement-2026-09-29-port08/round2-teradesk/`.
+
+## Die beiden Läufe nebeneinander
+
+Im Augenblick des `appl_exit`, gleiche Karte, gleiche zwei Accessories:
+
+```
+Ball-Demo   runset cur=2 : s0(run=0) s1(run=0) s2(st=2 run=0 ctx=0 cond=0x0)
+            267 >> AES op=19 appl_exit
+            [sched] switch -> slot 0 ... -> slot 1 ... danach nichts mehr
+
+TeraDesk    runset cur=2 : s0(run=0) s1(run=0) s2(st=2 run=1 ctx=0 cond=0x0)
+            49  >> AES op=19 appl_exit
+            [sched] switch -> slot 0 ... -> slot 1 ... -> slot 2   <-- kommt zurück
+            54  >> AES op=19 appl_exit   (der S2-Neustart)
+                << -> 0
+            [launch] returned (program Pterm'd)
+            [shell] sh_ldapp: 'C:\Apps\TERADESK\DESKTOP.NAP' exited with rc=0
+```
+
+**Ein einziges Bit unterscheidet die Fälle: `s2 run`.** Alles andere —
+Accessories, AC_CLOSE, Barriere, Reihenfolge der Umschaltungen — ist identisch.
+
+## Woher TeraDesks `run=1` kommt (und es ist *nicht* `sched::admit`)
+
+Auch TeraDesk wird **nirgends** aufgenommen. Der Übergang ist im selben
+Protokoll festgehalten:
+
+```
+first EL0 evnt_multi; run-set:
+runset cur=2 : … s2(st=2 run=0 ctx=0 cond=0x0)            <- vor dem ersten Warten
+runset cur=2 : … s2(st=2 run=1 ctx=0 cond=0x0)            <- nach dem ersten Warten
+runset cur=2 : … s2(st=2 run=0 ctx=0 cond=0x100000000000000)  <- mittendrin (WAITING)
+```
+
+Gesetzt wird das Bit von `sleep()`s Leerlaufausgang selbst — *„WAITING → READY:
+the caller now re-evaluates its full predicate"*,
+`tos-api/src/bdos/process/sched.rs`: `runnable.store(true)`. Es wird danach nie
+wieder gelöscht. **Eine Anwendung, die auch nur einmal in einem AES-Warteruf
+blockiert, ist ab da in der Laufmenge — als Nebenwirkung, nicht als Zusage.**
+
+Die Ball-Demo ruft **keine einzige blockierende AES-Funktion**. Statisch
+nachgezählt über `ball.c`, `ball_neu.c`, `plat-newtos.c`, `ball.h`: null
+Treffer für `evnt_*`, `form_do`, `form_alert`. Sie nimmt den Schirm mit
+`form_dial(FMD_START)`, zeichnet in ihrer eigenen Schleife und fragt die Taste
+über `Bconstat(2)` ab. Ihr `runnable` ist deshalb bis zuletzt das `false` aus
+`Process::empty()`.
+
+## Die berichtigte Reichweite
+
+**Falsch (mein Satz, und so steht er in SCHED01):** *jede EL0-GEM-Anwendung,
+sobald mindestens ein Accessory geladen ist.*
+
+**Richtig:** eine GEM-Anwendung, die `appl_exit` erreicht, **ohne je in einem
+AES-Warteruf blockiert zu haben**, bei mindestens einem registrierten
+Accessory. Das ist die Klasse „Vollbild-Programm ohne Ereignisschleife":
+Schirm nehmen, selbst zeichnen, Taste über BIOS abfragen, beenden. Die
+Ball-Demo ist genau das. TeraDesk ist es nicht (Ereignisschleife), QED ist es
+nicht (Ereignisschleife, und ruft `appl_exit` ohnehin nie).
+
+**Der Mechanismus bleibt derselbe und bleibt ein Defekt.** `sched::dsptch`
+legt den Aufrufer nicht in die Laufmenge ein, wie EmuTOS' `disp_act` es tut
+(`aes/gemdisp.c:74-79`), sondern setzt Mitgliedschaft voraus. Dass es für die
+meisten Anwendungen trotzdem funktioniert, liegt an einer **beiläufigen
+Nebenwirkung eines fremden Codepfads**, nicht an einer Invariante — und genau
+deshalb fällt die eine Klasse durch, die diesen Pfad nie betritt.
+
+## Was damit auch beantwortet ist
+
+Die offene Frage in SCHED01 — *„wurde TeraDesk je selbst beendet?"* — ist
+gemessen: **ja, und es funktioniert.** `screendumps/14-after-teradesk-exit.png`
+zeigt den vollständig zurückgekehrten eingebauten Desktop mit Menüzeile, nach
+`appl_exit` mit zwei geladenen Accessories.
+
+Die beiden anderen genannten Kandidaten sind widerlegt:
+
+* **`mn_cleanup` schickt AC_CLOSE nur an *offene* Accessories?** Nein. Weder
+  bei uns (`tos-api/src/aes/menu.rs:1490-1511`, Schleife über `ACCS.owner`)
+  noch bei EmuTOS (`aes/gemmnlib.c:740-748`, Schleife über `desk_ppd[]`) — es
+  geht an jedes **registrierte**, unabhängig davon, ob es geöffnet wurde.
+* **Der Schirmbesitz (`form_dial(FMD_START)`, `wind_update(BEG_MCTRL)`)?**
+  Nicht die Ursache: das unterscheidende Bit ist gemessen, und das Verhalten
+  der Accessories ist in beiden Läufen Schritt für Schritt identisch.
