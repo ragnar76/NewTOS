@@ -1,6 +1,6 @@
 # SCHED01 — `dsptch` legt den Aufrufer nicht in die Laufmenge ein; ein Vollbildprogramm ohne Ereignisschleife haengt in `appl_exit`
 
-Status: **BEHOBEN — Pi-Gegenprobe offen** (2026-09-29) · Prioritaet: **P1** · Typ: Belegter Defekt / Haenger — aus [PORT08](PORT08.md), gemessen 2026-09-29
+Status: **BEHOBEN — auf echter Pi 4 abgenommen** (2026-09-29) · Prioritaet: **P1** · Typ: Belegter Defekt / Haenger — aus [PORT08](PORT08.md), gemessen 2026-09-29
 
 Abhaengigkeiten: — · **Tragweite am 2026-09-29 korrigiert, siehe unten**
 
@@ -223,3 +223,21 @@ Ball-Demo starten, laufen lassen, mit einer Taste beenden: der Desktop muss
 **vollstaendig mit Menuezeile** zurueckkommen, und `C:\BALL.LOG` muss
 vollstaendig enden. Der 19-px-Streifen und die tote Menuezeile duerfen nicht
 mehr auftreten.
+
+## Hardware-Abnahme (2026-09-29)
+
+Kern `9251440d`, echte Pi 4, **ein** registriertes Accessory
+(`C:\ACC\SYSACC.NAC`). Beleg: `measurement-2026-09-29-sched01/pi-BALL.LOG`.
+
+**`BALL.LOG` ist 2891 Byte und endet mit einer vollstaendigen Zeile** — vorher
+1755 Byte, mitten im Wort. Die Demo hat also ihren gesamten Bericht
+geschrieben, die Datei geschlossen, ihre Puffer freigegeben und beendet.
+**Der Haenger ist weg.**
+
+**Und die zweite Haelfte von [PORT08](PORT08.md) bestaetigt sich dabei
+beilaeufig:** Zeile 16 (*„NewTOS screen 1920x1080x16 …"*) ist **weiterhin bei
+199 Zeichen abgeschnitten** — das ist der 200-Byte-Berichtspuffer der Demo,
+ausserhalb unseres Baums, den wir bewusst nicht angefasst haben. Die Datei
+laeuft jetzt nur darueber hinaus weiter, weil nichts mehr haengt. Damit ist die
+Trennung „Haenger gehoert uns, abgeschnittene Zeile gehoert der Demo"
+gemessen bestaetigt.

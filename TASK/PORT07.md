@@ -142,3 +142,27 @@ also Abschlusszusammenfassung, Palettenwiederherstellung und
 
 **[GUI07](GUI07.md)** — zwei Durchsatzbefunde in `vdi/raster.rs`, berichtet und
 **nicht** behoben (kein Kerneleingriff vor dem Termin).
+
+## Die Hochrechnung ist gemessen — und sie lag um Faktor 2,4 daneben
+
+Pi-Lauf vom 2026-09-29 (Kern `9251440d`, 1920x1080),
+`measurement-2026-09-29-sched01/pi-BALL.LOG`:
+
+```
+blit 75.08 ns/px + 1.41 us/call
+je Bild:  step 0.02 ms  compose 0.76 ms  blit 9.93 ms  wait 5.93 ms
+ganzer Lauf: 126 459 px in 2,05 Rechtecken je Bild = 6,10 % des Schirms
+```
+
+**`NUMBERS.TXT` §5.2 schaetzte ≈ 4,1 ms je Bild; gemessen sind es 9,93 ms.**
+Die Schaetzung war ausdruecklich als *keine Messung* gekennzeichnet — zu Recht.
+Die **Pixelzahl** war dagegen gut getroffen (geschaetzt ~134 000, gemessen
+126 460).
+
+Die Bildzeit bleibt trotzdem im Rahmen: 9,93 ms Blit plus 0,78 ms Rechnen
+gegen ein 16,7-ms-Budget bei 60 Hz, der Rest ist Warten.
+
+**Der Pixelpreis ist ueber drei Laeufe stabil:** 73,41 / 73,41 / **75,08** ns.
+Der dritte Lauf enthaelt [GUI06](GUI06.md) — die zeilenweise Cachepflege hat
+den Blit also **nicht** verbilligt, was zu GUI06s eigenem Befund passt
+(Cachepflege war ≤ 5 % der Geste, nicht des Blits).
