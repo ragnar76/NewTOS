@@ -33,6 +33,13 @@
  * pages `Physbase`/`Logbase` publish are mapped Normal Non-Cacheable exactly
  * so that a program never has to know about caches (ADR-023 amendment).
  *
+ * Deliberately **no** newtos_pause() (TASK/T13), for two reasons. It keeps a
+ * live \AUTO\ route -- tools/make-sd-image.sh copies it there on
+ * SD_SCRFLIP_AUTO=1, which this program is built for ("it restores
+ * everything and exits, so the boot can carry on"); a key wait would stop
+ * that boot. And it already holds what it wants shown: each of the two
+ * screendump windows in steps 3 and 4 stands ~10 s by itself.
+ *
  * Spec: docs/api/xbios/05-setscreen.md, 02-physbase.md, 03-logbase.md,
  *       25-vsync.md.
  */

@@ -322,8 +322,12 @@ set NewTOS uses (see Open questions):
 
 Driven at the trap boundary by `tos-api/tests/gemdos_ssystem_cpuinfo.rs`, and
 end-to-end on a board by `C:\SYSINFO.NCP` (`sdk/examples/sysinfo.c`, installed
-by `tools/make-sd-image.sh`; `SD_SYSINFO_AUTO=1` additionally puts it in
-`\AUTO\` for a headless serial run).
+in the root of C: by `tools/make-sd-image.sh`). Since TASK/T13 that program
+waits for a key before it returns, so it is no longer copied into `\AUTO\`
+(the `SD_SYSINFO_AUTO=1` switch is gone: a program that waits for a key halts
+the boot when it runs from there). For a headless serial run put a
+`#Z 01 C:\SYSINFO.NCP@` line in `C:\NEWDESK.INF` instead — that starts it
+through the shell loop after the AES is up, where the key can still arrive.
 
 - **Value form:** with a host that can measure, `Ssystem(2000, 0, 0)` returns
   the ARM clock in Hz and `Ssystem(2001, 0, 0)` the temperature in 1/1000 °C,

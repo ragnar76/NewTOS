@@ -16,10 +16,16 @@
  * directory `do_aopen` (desksupp.c:884-905) chose -- the *Default dir* switch
  * DESK18 could not make observable on its own.
  *
+ * Installed as C:\CMDLINE.NCP and C:\CMDLINE.NTP, both reached only by a
+ * double-click or a drop on the icon (never \AUTO\, where the tail would be
+ * empty and the program would have nothing to say), so it holds its two lines
+ * with newtos_pause() before it returns (TASK/T13).
+ *
  * Calls used, all against docs/api/:
  *   Dgetdrv  GEMDOS 0x19  docs/api/gemdos/drive/19-dgetdrv.md
  *   Dgetpath GEMDOS 0x47  docs/api/gemdos/directory/47-dgetpath.md
  *   Cconws   GEMDOS 0x09  docs/api/gemdos/console/09-cconws.md
+ *   Cconin   GEMDOS 0x01  docs/api/gemdos/console/01-cconin.md
  */
 #include <newtos.h>
 
@@ -79,5 +85,6 @@ int main(void)
     j = puts_at(line, j, "\"\r\n");
     Cconws(line);
 
+    newtos_pause();
     return 0;
 }

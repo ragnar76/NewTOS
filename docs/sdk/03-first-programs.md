@@ -66,9 +66,14 @@ basepage at VA 0 (`ldr w9, [x1, #4]`), set `SP` to it, `bl main`, then
 whole TPA, so there is no BSS clearing in crt0
 (`tos-api/src/bdos/process/loader.rs:35-38`).
 
-The `HELLO2.NCP` that `tools/make-sd-image.sh:73-83` builds from the same
-source is this program; on the image it lands in `C:\` (and the hand-crafted
-`HELLO.NCP` also in `C:\AUTO\`).
+The `HELLO2.NCP` that `tools/make-sd-image.sh` builds from the same source is
+this program; on the image it lands in `C:\`, beside the hand-crafted
+`HELLO.NCP` from `tools/mk-hello-ncp.py` (a different program — a
+by-hand-assembled ELF, not this C source). Both are reached by a double-click
+and by nothing else; since TASK/T13 the C one ends in `newtos_pause()` so its
+banner stays on the screen until a key arrives. `\AUTO\` is **empty** on the
+default image: the second `HELLO.NCP` copy that used to auto-run there was
+dropped on 2026-09-30.
 
 ## Step 2 — Hello World with mintlib (`printf`, `malloc`, GEMDOS bindings)
 

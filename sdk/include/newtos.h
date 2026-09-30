@@ -35,6 +35,8 @@
  *   Pterm   GEMDOS 0x4C  docs/api/gemdos/process/4c-pterm.md
  *   Pterm0  GEMDOS 0x00  docs/api/gemdos/process/00-pterm0.md
  *
+ * plus one convenience built from two of them, `newtos_pause()` (TASK/T13).
+ *
  * The generic gemdos()/bios()/xbios() marshaling helpers implement the raw
  * trap ABI; named BIOS/XBIOS/AES/VDI wrappers arrive in Stage 2 (AES/VDI) and
  * Stage 3 (libc), each against its own spec entry.
@@ -176,6 +178,41 @@ static inline NLONG Cconws(const char *s)
 static inline NLONG Cconin(void)
 {
     return gemdos0(0x01);
+}
+
+/*
+ * newtos_pause -- hold the console screen until the user presses a key.
+ *
+ * Why a program has to do this itself: a console program started by a
+ * double-click owns the screen only until it returns. Measured on QEMU
+ * raspi4b (measurement-2026-09-27-desk46, 200 Hz marks either side of
+ * `sh_chgrf`: want=0 at t=4333, want=1 at t=4338) that is **25 ms** before
+ * the desktop repaints over the output -- unreadable on real hardware.
+ *
+ * The fix belongs here and not in the desktop. EmuTOS' desktop does not pause
+ * after running a program: `pro_run` (`desk/deskpro.c:51-63`) returns at once,
+ * and the only keyboard halt in it is *Show file*'s `Bconin(2)`
+ * (`desk/desksupp.c:484`, under CONF_WITH_SHOW_FILE). NewTOS did have such a
+ * desktop-side pause (`console_pause_for_key`, 0c6e4ef) and removed it on
+ * purpose (e0069e5, DESK43 U3 / STOP-3 of
+ * `docs/analysis/desktop-userspace-plan.md:614,1184`). A TOS program that
+ * wants to be read asks for the key itself -- plain GEMDOS 0x09 + 0x01, no
+ * desktop code, no divergence from EmuTOS.
+ *
+ * Call it as the last statement before `main` returns.
+ *
+ * **Never** call it from a program that runs without a double-click: anything
+ * in `C:\AUTO\` (it would stop the boot), an accessory (it has no console
+ * screen), or a child another program `Pexec`s as part of a test (it would
+ * block the parent). `tools/make-sd-image.sh` records which route each
+ * example takes; that file, not the extension, decides.
+ *
+ * Spec: docs/api/gemdos/console/09-cconws.md, docs/api/gemdos/console/01-cconin.md
+ */
+static inline void newtos_pause(void)
+{
+    Cconws("\r\n-- press a key --\r\n");
+    Cconin();
 }
 
 /*

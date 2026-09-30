@@ -23,6 +23,11 @@
  *   5. `appl_exit`, returns. Every line goes out through `Cconws`, so the
  *      serial log carries the verdict.
  *
+ * Deliberately **no** key pause (TASK/T13): this is measurement scaffolding,
+ * not a card program. tools/make-sd-image.sh does not install it; it is built
+ * into a scratch image for TASK/A57 and started by the `#Z` autorun line with
+ * no mouse and no keyboard in the run, so a key wait would simply park it.
+ *
  * Spec: docs/api/aes/window-graphics.md (`WF_SCREEN`), TASK/A57.md.
  */
 #include <newtos.h>

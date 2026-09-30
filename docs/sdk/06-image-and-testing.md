@@ -17,7 +17,7 @@ freestanding examples):
 
 | On the image | Source | Built by | Lines |
 |--------------|--------|----------|-------|
-| `C:\HELLO.NCP`, `C:\AUTO\HELLO.NCP` | `tools/mk-hello-ncp.py` (hand-crafted ELF) | the script | `:70-71` |
+| `C:\HELLO.NCP` | `tools/mk-hello-ncp.py` (hand-crafted ELF) | the script | `:71-83` |
 | `C:\HELLO2.NCP`, `BIG.NCP`, `PHYSBASE.NCP`, `SCRFLIP.NCP`, `DTACHILD.NCP` | `sdk/examples/*.c` | `sdk/build.sh`, run **by the script** | `:78-136` |
 | `C:\LIBTEST.NCP`, `C:\CLOCKTST.NCP` | `sdk/libc/build/{libtest,clocktest}.NCP` | you: `sdk/libc/build-libc.sh [sdk/libc/tests/clocktest.c]` | `:143-166` |
 | `C:\SETJMPT.NCP`, `C:\MATHTST.NCP` (T07) | `sdk/libc/build/setjmptst.NCP`, `sdk/libm/build/mathtst.NCP` | you: `sdk/libc/build-libc.sh sdk/examples/setjmptst.c sdk/libc/build/setjmptst.NCP`, `sdk/libm/build-libm.sh` | `:169-200` |
@@ -27,11 +27,26 @@ freestanding examples):
 | `C:\Apps\TERADESK\{DESKTOP.NAP,desktop.rsc,icons.rsc}` | `sdk/apps/teradesk/build/dist/` | you: `sdk/apps/build-teradesk.sh` | `:277-286` |
 | `C:\NEWDESK.INF` | the literal text `newdesk placeholder` | — | `:54` |
 
-Missing inputs are skipped with a `note:` line, not an error. Five
-environment switches also copy a program into `\AUTO\`:
-`SD_SCRFLIP_AUTO=1`, `SD_CLOCKTEST_AUTO=1`, `SD_SETJMPTST_AUTO=1`,
-`SD_MATHTST_AUTO=1`, `SD_COREMARK_AUTO=1` (`:117-120`, `:161-164`,
-`:179-182`, `:196-199`, `:230-233`).
+Missing inputs are skipped with a `note:` line, not an error.
+
+**`\AUTO\` is empty on the default image** (since 2026-09-30): only
+`\AUTO\READ.ME` is there, saying what the folder is for. The `HELLO.NCP` copy
+that used to auto-run at boot was dropped, and `SD_SYSINFO_AUTO=1` went with
+TASK/T13 — `SYSINFO.NCP` now waits for a key, and a program that waits for a
+key stops the boot when it runs from `\AUTO\`. Five environment switches still
+copy a program into `\AUTO\` on request, and all five programs are ones that
+end by themselves: `SD_SCRFLIP_AUTO=1`, `SD_CLOCKTEST_AUTO=1`,
+`SD_SETJMPTST_AUTO=1`, `SD_MATHTST_AUTO=1`, `SD_COREMARK_AUTO=1`.
+
+**Whether a program may wait for a key** is decided by its route, and the
+script is where the route is written down (TASK/T13). Double-click only →
+it may pause, and the SDK's `newtos_pause()` (`sdk/include/newtos.h`) is the
+one place that line lives: `HELLO2.NCP`, `BIG.NCP`, `PHYSBASE.NCP`,
+`SUB\CURDIR.NCP`, `CMDLINE.NCP`/`.NTP`, `SYSINFO.NCP`, `ARGVTEST.NAP`.
+Anything that also runs without a click gets **no** pause: `DTACHILD.NCP` (a
+`Pexec` child of `\AUTO\APITEST.NCP`), `SCRFLIP.NCP`, `SETJMPT.NCP`,
+`MATHTST.NCP`, `CLOCKTST.NCP`, the CoreMark pair (all with a live `\AUTO\`
+switch), and `ACC\SYSACC.NAC` (an accessory, which has no console screen).
 
 **Adding your own program.** The project rule is that the script is the
 single source of truth for the base image — add an install block to it
