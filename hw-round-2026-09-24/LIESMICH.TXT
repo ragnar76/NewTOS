@@ -1,0 +1,38 @@
+Pi-Runde 2026-09-24 — was auf die Karte muss
+============================================
+
+kernel8.img ist der RELEASE-Bau (sha256 e792bcdb…65866), gebaut aus
+desk-rebuild nach `cargo clean`. Er gehoert dorthin, wo der bisherige
+kernel8.img liegt.
+
+Der Rest sind Pruefdateien fuer die Checklistenpunkte 43, 51, 52 und 55
+(docs/api/desktop/_hw-test-2026-09-17.md). Ohne sie sind diese vier Punkte
+nicht pruefbar. Layout auf C: — die Namen und Orte sind Teil der Pruefung:
+
+  C:\PROOF.TXT            <- "PROOF: C:\ (root)"
+  C:\CMDLINE.NCP          <- Punkt 51/52
+  C:\SUB\PROOF.TXT        <- "PROOF: C:\SUB"
+  C:\SUB\CURDIR.NCP       <- Punkt 43
+  C:\AUTO\CURDIR.NCP      <- Punkt 55  (optional, siehe unten)
+
+Die zwei PROOF.TXT tragen ABSICHTLICH denselben Namen in zwei Verzeichnissen.
+CURDIR.NCP oeffnet "PROOF.TXT" mit blossem relativem Namen und druckt, was es
+gelesen hat — daran sieht man, welches Verzeichnis beim Start gesetzt war.
+
+  Punkt 43: C:\SUB\CURDIR.NCP vom Desktop aus doppelklicken.
+            Erwartet: "PROOF: C:\SUB".   Falsch waere "PROOF: C:\ (root)".
+
+  Punkt 51: eine Textdatei auf C:\CMDLINE.NCP ziehen.
+            Erwartet: es STARTET (kein Kopierkasten) und druckt den Namen.
+            Mit *Parameter = Full path*: "C:\<datei>", mit *File name*: "<datei>".
+
+  Punkt 52: zwei Fenster offen, Datei aus dem oberen auf das Programm im
+            unteren ziehen. *Default dir = Application* gegen *= Window*
+            muessen verschiedene "cwd"-Zeilen drucken.
+
+  Punkt 55: C:\AUTO\CURDIR.NCP laeuft beim BOOT, vor dem Desktop.
+            Erwartet: "PROOF: C:\ (root)" — ein AUTO-Programm sieht die
+            Wurzel, das ist TOS-konform und kein Fehler.
+            Wer den Ausdruck bei jedem Boot nicht will: Datei danach loeschen.
+
+Alles andere auf der Karte bleibt wie es ist.

@@ -5,6 +5,62 @@
 
 ## Current Phase
 
+### Stand 2026-09-30 — vor der OFAM (9.–10. Oktober 2026)
+
+**Harter Termin.** Zweig `desk-rebuild`. Priorisiert ist **Vorfuehrbarkeit**:
+nichts darf haengen, sichtbare Fehler gehen vor Konformitaet
+(Anwendervorgabe).
+
+**Auf echter Pi 4 abgenommen:** Boot, Desktop, TeraDesk (Start und sauberes
+Beenden), QED aus TeraDesk heraus, EmuCON, **USB-Maus samt Mausrad**,
+Dateikopieren ueber Partitionsgrenzen (FS04: 2182 → 467 ms), und seit heute
+der `.NTP`-Parameterdialog (DESK47).
+
+**Kein P1 offen.**
+
+**Basislinien** (bei jedem Arbeitsschritt zu halten):
+
+| | |
+|---|---|
+| Hosttests | **962 / 0 / 1** |
+| Bau, beide Boards | `tos-api` **64**, `kernel` **94** |
+| Clippy, beide Feature-Saetze | **80 / 125** |
+| `sh tools/desk-drift-probe.sh` | **32** |
+
+> `cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat`
+> **braucht `--release`**, sonst wird fuer Release-Bauten nichts geraeumt und
+> der naechste Bau kommt aus warmem Zwischenspeicher — die grosse
+> „Removed … files“-Zahl ist dann der Debug-Baum.
+
+**Desktop:** ADR-022 — `kernel/src/desk/` wird **1:1 gegen EmuTOS** gebaut,
+durch die AES-Falle, ohne Umgehungen. Die DESK43-Reihe hat U1–U4 abgenommen
+(Driftprobe 47 → 32, die Linie des Plans ist erreicht); U5–U10 kommen nach
+dem Termin, X03 davor.
+
+**Offen, nach Naehe zum Termin:**
+
+- **DESK41** — Abnahme steht aus: die vier Endungen **aus TeraDesk heraus**
+  (Programmsymbol, Doppelklick, `.NTP`-Dialog, `.NAC`-Weigerung). Die erzeugte
+  `TERADESK.INF` ist in QEMU als gefunden und fehlerfrei geparst belegt.
+- **DESK50** (`do_wopen`/`do_diropen`), **DESK49**, **PORT09**, **T12**.
+- Nach dem Termin: **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`), DESK43
+  U5–U10, **SND01/SND02** (Ton — zuerst ein DMA-Treiber, der auch HW05
+  traegt), SDL01, PORT06 (Doom), PORT02 (zView), GUI07, HW04–HW07,
+  DESK48, REF03, FS05/FS06, ARCH02.
+
+**Regel zur SD-Karte, seit 2026-09-30:** `tools/make-sd-image.sh` baut das
+**QEMU-Abbild**, **nicht** die echte Karte. Die physische Karte ist
+handgepflegt; auf sie kommt **nur**, was der Anwender ausdruecklich nennt.
+
+**Arbeitsweise:** ein Task pro Agent, seriell, nie parallel. Der Lead baut
+nicht selbst; er prueft nach, committet und schreibt hier. Worker fassen
+weder Karte noch Pi an und committen nicht.
+
+---
+
+### Historischer Text (abgeloest, bleibt als Protokoll)
+
+
 > **⚠️ Kurswechsel 2026-07-04 (ADR-016):** Der Desktop wird als **komplett
 > buggy** eingestuft und **von Grund auf neu** als EmuTOS-konforme Anwendung im
 > neuen Modul **`kernel/src/desk/`** gebaut (ganze Desktop-App; behalten wird

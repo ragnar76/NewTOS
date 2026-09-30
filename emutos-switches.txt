@@ -1,0 +1,112 @@
+# EmuTOS-Buildoptionen – Kurzbeschreibung nach references/emutos/include/config.h.
+# Bei Ein/Aus-Schaltern: 1 = einkompiliert/aktiviert, 0 = deaktiviert (Ausnahmen stehen in der Zeile).
+# Hardwarefunktionen benötigen zusätzlich passende Hardware; dies sind keine Laufzeitschalter.
+# Größen und Adressen sind Zahlenwerte. Die vorhandenen Werte bleiben unverändert.
+# Markierungen: [GRAFIK] = Grafik/VDI/Videohardware; [DESKTOP] = Desktop/AES/GUI-Bedienung einschließlich Diagnose und interner Optionen.
+
+CONF_ATARI_HARDWARE 1                             # Atari-Hardware als Plattformbasis; 1 setzt Atari-Chip-Unterstützung als Standard, 0 eine Plattform ohne diese Chips.
+CONF_COLDFIRE_TIMER_C 0                           # Timer-C-Nachbildung durch interne ColdFire-Timer; 1 aktiviert sie, hier ausgeschaltet.
+CONF_DEBUG_AES_STACK 0                            # [DESKTOP] Diagnose des AES-Stacks (GUI-System); 1 protokolliert den Verbrauch zur Größenabschätzung, hier aus.
+CONF_DEBUG_DESK_STACK 0                           # [DESKTOP] Diagnose des Desktop-Stacks; 1 überwacht den Stackverbrauch, hier aus.
+CONF_DETECT_FIRST_BOOT_WITHOUT_MEMCONF 0          # Erkennung des ersten Starts ohne RAM-Konfiguration; 1 erlaubt sie auch bei bereits initialisiertem RAM, hier aus.
+CONF_LOGSEC_SIZE 512                              # Vorgabe für die maximale logische GEMDOS-Sektorgröße in Byte; hier 512, beim Start erkannte größere Sektoren erhöhen sie.
+CONF_PREFER_STRAM_DISK_BUFFERS 1                  # [DESKTOP] Desktop-Datenträgerpuffer bevorzugt im ST-RAM; 1 erleichtert direkte Floppy-/ACSI-DMA-Transfers.
+CONF_SERIAL_CONSOLE 0                             # Serielle Konsole; 1 gibt zusätzlich seriell aus und nimmt Konsoleneingaben ausschließlich seriell an, hier aus.
+CONF_SERIAL_CONSOLE_ANSI 0                        # Steuerzeichen der seriellen Konsole; 1 verwendet ANSI, 0 Atari-VT52; nur bei serieller Konsole relevant.
+CONF_SERIAL_CONSOLE_POLLING_MODE 0                # Serielle Konsoleneingabe; 1 fragt Daten aktiv ab (Polling), 0 verwendet Interrupts.
+CONF_SERIAL_IKBD 0                                # Atari-Tastaturprozessor (Tastatur/Maus/Joystick) am seriellen Port; 1 erlaubt diesen Anschluss, hier aus.
+CONF_STRAM_SIZE 0                                 # Feste ST-RAM-Größe in Byte; 0 erkennt die Größe automatisch.
+CONF_TTRAM_SIZE 0                                 # Feste TT-RAM-Größe in Byte; 0 erkennt die Größe automatisch.
+CONF_VRAM_ADDRESS 0                               # [GRAFIK] Feste Bildspeicheradresse für eigene Grafikhardware; 0 reserviert den Bildspeicher regulär im ST-RAM.
+CONF_WITH_1FAT_SUPPORT 0                          # Datenträger mit nur einer FAT (Dateizuordnungstabelle); 1 unterstützt sie, 0 nimmt aus Atari-TOS-Kompatibilität zwei FATs an.
+CONF_WITH_3D_OBJECTS 1                            # [GRAFIK] [DESKTOP] Dreidimensionale AES-Bedienelemente wie in TOS 4; aktiviert die Darstellung erhabener/vertiefter Objekte.
+CONF_WITH_68030_PMMU 1                            # Speicherverwaltungseinheit des 68030; richtet Tabellen ein, damit der Daten-Cache zur Beschleunigung aktiviert werden kann.
+CONF_WITH_68040_PMMU 0                            # Speicherverwaltungseinheit des 68040; 1 richtet Tabellen ein, etwa für FreeMiNT unter aranym-mmu ohne set_mmu.prg, hier aus.
+CONF_WITH_ACSI 1                                  # Atari-Festplattenbus ACSI; aktiviert den Zugriff auf angeschlossene Massenspeicher.
+CONF_WITH_ADVANCED_CPU 1                          # Motorola-Prozessoren 68010 bis 68060; aktiviert deren zusätzliche CPU-Unterstützung.
+CONF_WITH_ALT_DESKTOP_GRAPHICS 1                  # [GRAFIK] [DESKTOP] Alternative Desktop-Dialoggestaltung; richtet Titel linksbündig aus und zeichnet darunter eine Linie.
+CONF_WITH_ALT_RAM 1                               # Zusätzlicher Speicher außerhalb des ST-RAM; ermöglicht dessen Einbindung und Nutzung.
+CONF_WITH_APOLLO_68080 1                          # Apollo-68080-Prozessor; aktiviert die spezifische CPU-Unterstützung.
+CONF_WITH_ARANYM 1                                # ARAnyM-Emulator; aktiviert dessen besondere Funktionen und Kompatibilitätsanpassungen.
+CONF_WITH_ATARI_VIDEO 1                           # [GRAFIK] Atari-Videohardware ab ST-Shifter; aktiviert deren Bildschirmunterstützung.
+CONF_WITH_BACKGROUNDS 1                           # [GRAFIK] [DESKTOP] Desktop- und Fensterhintergründe; erlaubt die Einstellung von Muster und Farbe.
+CONF_WITH_BAS_MEMORY_MAP 0                        # Speicheraufteilung des BaS-Vorsystems auf FireBee/ColdFire; 1 passt EmuTOS daran an, hier aus.
+CONF_WITH_BIOS_EXTENSIONS 1                       # Zusätzliche BIOS-/XBIOS-Funktionen; aktiviert die unterstützten Erweiterungen über die Basisfunktionen hinaus.
+CONF_WITH_BLITTER 1                               # [GRAFIK] Atari-Blitter für Grafik-Blockoperationen; aktiviert dessen Nutzung auf geeigneter Hardware.
+CONF_WITH_BOTTOMTOTOP 1                           # [DESKTOP] Desktop-Menüpunkt zum Durchwechseln der Fenster; holt das unterste Fenster nach vorn.
+CONF_WITH_BUS_ERROR 1                             # Busfehler bei ungültigen Speicherzugriffen; 1 berücksichtigt diese Hardware-Eigenschaft, etwa bei Hardwareproben.
+CONF_WITH_CACHE_CONTROL 1                         # [DESKTOP] Cache-Eintrag im Desktop-Menü; ermöglicht das Umschalten des CPU-Caches.
+CONF_WITH_CARTRIDGE 1                             # Module am Atari-ROM-Port; aktiviert die Unterstützung für Anwendungs-Cartridges.
+CONF_WITH_COLDFIRE_RS232 0                        # Interner serieller ColdFire-Anschluss; 1 aktiviert dessen RS-232-Unterstützung, hier aus.
+CONF_WITH_COLOUR_ICONS 1                          # [GRAFIK] [DESKTOP] Mehrfarbige AES-Symbole wie in TOS 4; aktiviert deren Verarbeitung und Darstellung.
+CONF_WITH_DESKTOP_CONFIG 1                        # [DESKTOP] Desktop-Konfigurationsdialog; stellt den Dialog zum Anpassen der Desktop-Einstellungen bereit.
+CONF_WITH_DESKTOP_SHORTCUTS 1                     # [DESKTOP] Verknüpfungen auf dem Desktop; erlaubt dort Verweise auf Dateien und Ordner.
+CONF_WITH_DIP_SWITCHES 1                          # Hardware-Konfigurationsschalter bei STe/TT/Falcon; aktiviert deren Auswertung.
+CONF_WITH_DMASOUND 1                              # Digitale Tonwiedergabe per DMA bei STe/TT/Falcon; aktiviert die entsprechende Soundhardware-Unterstützung.
+CONF_WITH_DSP 1                                   # Digitaler Signalprozessor des Falcon; aktiviert die Unterstützung seiner Funktionen.
+CONF_WITH_EASTER_EGG 1                            # [DESKTOP] Versteckte EmuDesk-Zugabe; bindet eine kleine Melodie ein und benötigt YM2149-Unterstützung.
+CONF_WITH_EJECT 0                                 # Automatischer Diskettenauswurf; 1 aktiviert ihn auf geeigneten Plattformen, auf Atari-Hardware nicht verfügbar, hier aus.
+CONF_WITH_EXTENDED_MOUSE 1                        # [DESKTOP] Erweiterte Mausbedienung; verarbeitet Eiffel-Codes für Tasten 3 bis 5 und das Mausrad.
+CONF_WITH_EXTENDED_OBJECTS 1                      # [GRAFIK] [DESKTOP] MagiC-kompatible AES-Objekterweiterungen; aktiviert zusätzliche Objektdarstellungen, etwa Textunterstreichungen.
+CONF_WITH_EXTERNAL_DISK_DRIVER 0                  # Externer Festplattentreiber; 1 deaktiviert den eingebauten Treiber und lädt einen aus dem Rootsektor, 0 nutzt den eingebauten.
+CONF_WITH_FALCON_MMU 1                            # Falcon-Speichercontroller; aktiviert dessen Ansteuerung zur RAM-Konfiguration.
+CONF_WITH_FDC 1                                   # Diskettencontroller; aktiviert den Zugriff auf physische Diskettenlaufwerke.
+CONF_WITH_FILEMASK 1                              # [DESKTOP] Dateifilter in Desktop-Fenstern; erlaubt einstellbare Suchmuster für die angezeigten Dateien.
+CONF_WITH_FLEXCAN 0                               # ColdFire-CAN-Controller; 1 ermöglicht unter anderem Eiffel-Tastaturadapter am CAN-Port, hier aus.
+CONF_WITH_FORMAT 1                                # [DESKTOP] Diskettenformatierung im Desktop; stellt die Formatierfunktion bereit.
+CONF_WITH_FRB 1                                   # Zwischenpuffer für Datenträgertransfers mit Alt-RAM; stellt bei Bedarf den _FRB-Cookie für Treiber bereit.
+CONF_WITH_GDOS 1                                  # [GRAFIK] Anbindung externer GDOS-Schrifterweiterungen; ergänzt die benötigten Routinen in vst_load_fonts/vst_unload_fonts, kein vollständiges GDOS.
+CONF_WITH_GPT_SUPPORT 1                           # GUID-Partitionstabellen (GPT); ermöglicht die Erkennung entsprechend partitionierter Festplatten.
+CONF_WITH_GRAF_MOUSE_EXTENSION 1                  # [GRAFIK] [DESKTOP] Erweiterte AES-Mauszeigerfunktionen; erlaubt Speichern, Wiederherstellen und Rückkehr zum vorherigen Zeiger.
+CONF_WITH_ICDRTC 1                                # Echtzeituhr der ICD-AdSCSI-Plus-ST-Karte; aktiviert den Uhrzugriff und benötigt ACSI.
+CONF_WITH_IDE 1                                   # IDE-Festplattenschnittstelle des Falcon; aktiviert den Zugriff auf IDE-Laufwerke.
+CONF_WITH_IKBD_ACIA 1                             # Serieller ACIA-Baustein zum Atari-Tastaturprozessor; aktiviert dessen Tastatur-/Mauskommunikation.
+CONF_WITH_IKBD_CLOCK 1                            # Uhr im Atari-Tastaturprozessor; aktiviert das Lesen und Setzen von Datum und Uhrzeit.
+CONF_WITH_LOADABLE_CURSORS 1                      # [GRAFIK] [DESKTOP] Nachladbare Mauszeiger; erlaubt das Laden eigener Zeiger aus A:\EMUCURS.RSC.
+CONF_WITH_MAGNUM 1                                # Magnum-RAM-Erweiterung; aktiviert deren Erkennung und Speichernutzung.
+CONF_WITH_MEGARTC 1                               # Echtzeituhr des Mega ST; aktiviert deren Unterstützung.
+CONF_WITH_MEMORY_TEST 0                           # RAM-Test beim Kaltstart; 1 prüft den Speicher beim Einschalten, hier aus.
+CONF_WITH_MENU_EXTENSION 1                        # [DESKTOP] Erweiterte AES-Menüfunktionen; aktiviert Popup-Menüs sowie menu_attach, menu_istart und menu_settings.
+CONF_WITH_MFP 1                                   # Multifunktionsbaustein MFP 68901; aktiviert dessen Timer- und Interrupt-Unterstützung.
+CONF_WITH_MFP_RS232 1                             # Serielle Schnittstelle des MFP; aktiviert deren RS-232-Ein-/Ausgabe.
+CONF_WITH_MIDI_ACIA 1                             # ACIA-Baustein der MIDI-Anschlüsse; aktiviert die MIDI-Ein-/Ausgabe.
+CONF_WITH_MONSTER 1                               # MonSTer-Erweiterung für ST/STE; aktiviert deren Erkennung und zusätzlichen RAM.
+CONF_WITH_NICELINES 1                             # [GRAFIK] [DESKTOP] Menü-Trennlinien; zeichnet deaktivierte Trenntexte aus mehr als drei Bindestrichen als Linie.
+CONF_WITH_NOVA 1                                  # [GRAFIK] Nova-Grafikkartenadapter; aktiviert die Unterstützung angeschlossener Nova-Grafikhardware.
+CONF_WITH_NVRAM 1                                 # Nichtflüchtiger Konfigurationsspeicher; ermöglicht den Zugriff auf dauerhaft gespeicherte Einstellungen.
+CONF_WITH_PCGEM 1                                 # [DESKTOP] PC-GEM-kompatible AES-Erweiterungen; aktiviert zusätzliche Funktionen wie appl_yield und scrp_clear.
+CONF_WITH_PRINTER_ICON 1                          # [DESKTOP] Druckersymbol im Desktop; ermöglicht die Nutzung eines Drucker-Icons.
+CONF_WITH_PRINTER_PORT 1                          # Paralleler Atari-Druckeranschluss; aktiviert dessen Ausgabe-Unterstützung.
+CONF_WITH_READ_INF 1                              # [DESKTOP] Desktop-Menüpunkt zum Lesen einer INF-Datei; erlaubt das Nachladen gespeicherter Desktop-Einstellungen.
+CONF_WITH_RESET 1                                 # Hardware-RESET-Befehl beim Start; 1 führt ihn aus, 0 überspringt ihn, etwa bei empfindlichen RAM-Builds.
+CONF_WITH_SCC 1                                   # Serieller Kommunikationscontroller in TT/Falcon; aktiviert dessen serielle Anschlüsse.
+CONF_WITH_SCSI 1                                  # SCSI-Massenspeicherbus; aktiviert den Zugriff auf SCSI-Hardware.
+CONF_WITH_SCSI_DRIVER 1                           # SCSI-Treiber-Programmierschnittstelle; erlaubt Programmen direkte SCSI-artige Gerätebefehle.
+CONF_WITH_SDMMC 0                                 # SD-/MMC-Kartenbus; 1 aktiviert die Kartenunterstützung, hier aus.
+CONF_WITH_SEARCH 1                                # [DESKTOP] Dateisuche im Desktop; ergänzt den Menüpunkt zum Suchen.
+CONF_WITH_SELECTALL 1                             # [DESKTOP] Desktop-Auswahlfunktion; ergänzt den Menüpunkt zum Markieren aller Einträge.
+CONF_WITH_SFP004 1                                # SFP004-Erweiterung mit 68881-Rechenkoprozessor für Mega ST; aktiviert deren Unterstützung.
+CONF_WITH_SHOW_FILE 1                             # [DESKTOP] Eingebaute Dateiansicht im Desktop; erlaubt das Anzeigen einer Datei per Doppelklick.
+CONF_WITH_SHUTDOWN 1                              # [DESKTOP] Herunterfahren/Ausschalten; bindet die Abschaltfunktion ein, wirksam nur mit passender Hardware-/Emulator-Unterstützung.
+CONF_WITH_SIZE_TO_FIT 1                           # [DESKTOP] Desktop-Menüpunkt „Size to fit“; erlaubt die Wahl, ob Dateieinträge auf die Fensterbreite umgebrochen werden.
+CONF_WITH_STATIC_ALT_RAM 0                        # Statische EmuTOS-Daten im Alt-RAM; 1 legt sie in einen beim Übersetzen bekannten Bereich aus emutos.ld, hier aus.
+CONF_WITH_STE_SHIFTER 1                           # [GRAFIK] Erweiterter Grafikchip des STe; aktiviert dessen zusätzliche Videofunktionen.
+CONF_WITH_ST_MMU 1                                # ST-Speichercontroller; aktiviert dessen Ansteuerung zur RAM-Konfiguration, keine CPU-PMMU.
+CONF_WITH_TTRAM 1                                 # Zusätzlicher TT-RAM; aktiviert dessen Erkennung und Nutzung.
+CONF_WITH_TT_MFP 1                                # Zweiter MFP-Baustein des TT; aktiviert dessen Unterstützung.
+CONF_WITH_TT_MMU 1                                # TT-Speichercontroller; aktiviert dessen Ansteuerung zur RAM-Konfiguration.
+CONF_WITH_TT_SHIFTER 1                            # [GRAFIK] Grafikchip des TT; aktiviert dessen zusätzliche Auflösungen und Farbmodi.
+CONF_WITH_UAE 0                                   # UAE-Amiga-Emulator; 1 aktiviert dessen erweiterte Emulatorfunktionen für das Amiga-Ziel, hier aus.
+CONF_WITH_ULTRASATAN_CLOCK 1                      # Echtzeituhr des UltraSatan-Speicheradapters; aktiviert den Uhrzugriff über ACSI.
+CONF_WITH_VAMPIRE_SPI 0                           # SPI-Schnittstelle der Vampire-Karte; 1 aktiviert sie als Grundlage für SD/MMC-Zugriffe, hier aus.
+CONF_WITH_VDI_16BIT 1                             # [GRAFIK] VDI-Grafikausgabe in Falcon-16-Bit-Farbmodi; aktiviert deren Zeichenunterstützung.
+CONF_WITH_VDI_TEXT_SPEEDUP 1                      # [GRAFIK] Optimierte VDI-Textausgabe; aktiviert schnellere Routinen für bestimmte Textoperationen.
+CONF_WITH_VDI_VERTLINE 1                          # [GRAFIK] Optimierte senkrechte VDI-Linien; aktiviert deren beschleunigtes Zeichnen.
+CONF_WITH_VIDEL 1                                 # [GRAFIK] VIDEL-Grafikchip des Falcon; aktiviert dessen Videomodi und Ansteuerung.
+CONF_WITH_VIEWER_SUPPORT 1                        # [DESKTOP] Standardprogramm zur Dateiansicht; erlaubt einen Viewer für Dateien ohne passende Anwendungszuordnung.
+CONF_WITH_VME 1                                   # VME-Erweiterungsbus des Mega STe; aktiviert dessen Unterstützung.
+CONF_WITH_WINDOW_COLOURS 1                        # [GRAFIK] [DESKTOP] Farben der AES-Fensterbedienelemente; erlaubt deren Verwaltung über WF_COLOR und WF_DCOLOR.
+CONF_WITH_WINDOW_ICONS 1                          # [GRAFIK] [DESKTOP] Datei- und Ordnersymbole in Desktop-Fenstern; bindet diese Icons ein.
+CONF_WITH_XBIOS_SOUND 1                           # Erweiterte XBIOS-Soundfunktionen; stellt einen Teil der Falcon-Soundfunktionen auch auf STe/TT bereit, benötigt DMA-Sound.
+CONF_WITH_XHDI 1                                  # Erweiterte Festplatten-Programmierschnittstelle XHDI; stellt deren Funktionen und Cookie bereit.
+CONF_WITH_YM2149 1                                # Atari-Soundchip YM2149; aktiviert dessen Tonerzeugung und Ansteuerung.
