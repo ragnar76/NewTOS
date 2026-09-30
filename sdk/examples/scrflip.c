@@ -33,8 +33,8 @@
  * pages `Physbase`/`Logbase` publish are mapped Normal Non-Cacheable exactly
  * so that a program never has to know about caches (ADR-023 amendment).
  *
- * Deliberately **no** newtos_pause() (TASK/T13), for two reasons. It keeps a
- * live \AUTO\ route -- tools/make-sd-image.sh copies it there on
+ * Deliberately **no** key wait at the end (TASK/T13), for two reasons. It
+ * keeps a live \AUTO\ route -- tools/make-sd-image.sh copies it there on
  * SD_SCRFLIP_AUTO=1, which this program is built for ("it restores
  * everything and exits, so the boot can carry on"); a key wait would stop
  * that boot. And it already holds what it wants shown: each of the two

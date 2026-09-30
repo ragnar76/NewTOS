@@ -70,10 +70,8 @@ The `HELLO2.NCP` that `tools/make-sd-image.sh` builds from the same source is
 this program; on the image it lands in `C:\`, beside the hand-crafted
 `HELLO.NCP` from `tools/mk-hello-ncp.py` (a different program — a
 by-hand-assembled ELF, not this C source). Both are reached by a double-click
-and by nothing else; since TASK/T13 the C one ends in `newtos_pause()` so its
-banner stays on the screen until a key arrives. `\AUTO\` is **empty** on the
-default image: the second `HELLO.NCP` copy that used to auto-run there was
-dropped on 2026-09-30.
+and by nothing else: `\AUTO\` is **empty** on the default image, because the
+second `HELLO.NCP` copy that used to auto-run there was dropped on 2026-09-30.
 
 ## Step 2 — Hello World with mintlib (`printf`, `malloc`, GEMDOS bindings)
 

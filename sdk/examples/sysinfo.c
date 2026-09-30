@@ -17,7 +17,6 @@
  *     mode 2000  S_NEWTOS_CPUCLOCK  ARM core clock, Hz
  *     mode 2001  S_NEWTOS_CPUTEMP   SoC die temperature, 1/1000 degree C
  *   Cconws   GEMDOS 0x09   docs/api/gemdos/console/09-cconws.md
- *   Cconin   GEMDOS 0x01   docs/api/gemdos/console/01-cconin.md
  *
  * Both modes take:
  *     arg1 = pointer to a 32-bit LONG that receives the value, or 0 to have
@@ -29,15 +28,9 @@
  * firmware model answers only part of what a real Pi 4 does. That ERROR is a
  * result, not a failure: this program prints it as such and invents nothing.
  *
- * Staged by tools/make-sd-image.sh as C:\SYSINFO.NCP, in the root and nowhere
- * else: a double-click is the only way it starts. That is why it ends in
- * newtos_pause() -- this program is TASK/T13's acceptance case ("double-click
- * C:\SYSINFO.NCP, the output stays until a key comes"). The former
- * SD_SYSINFO_AUTO=1 switch, which put a second copy into C:\AUTO\ for a
- * click-free serial run, is gone with that pause: a pausing program in \AUTO\
- * stops the boot. The click-free route is now a `#Z 01 C:\SYSINFO.NCP@` line
- * in C:\NEWDESK.INF, which starts the program through the shell loop after
- * the AES is up, where a key can still arrive.
+ * Staged by tools/make-sd-image.sh as C:\SYSINFO.NCP (and, with
+ * SD_SYSINFO_AUTO=1, additionally into C:\AUTO\ so a headless QEMU run prints
+ * the two lines on the serial console).
  */
 #include <newtos.h>
 
@@ -238,6 +231,5 @@ int main(void)
     line(buf);
 
     line("SYSINFO: done.");
-    newtos_pause();
     return 0;
 }

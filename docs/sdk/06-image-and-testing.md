@@ -31,22 +31,11 @@ Missing inputs are skipped with a `note:` line, not an error.
 
 **`\AUTO\` is empty on the default image** (since 2026-09-30): only
 `\AUTO\READ.ME` is there, saying what the folder is for. The `HELLO.NCP` copy
-that used to auto-run at boot was dropped, and `SD_SYSINFO_AUTO=1` went with
-TASK/T13 — `SYSINFO.NCP` now waits for a key, and a program that waits for a
-key stops the boot when it runs from `\AUTO\`. Five environment switches still
-copy a program into `\AUTO\` on request, and all five programs are ones that
-end by themselves: `SD_SCRFLIP_AUTO=1`, `SD_CLOCKTEST_AUTO=1`,
-`SD_SETJMPTST_AUTO=1`, `SD_MATHTST_AUTO=1`, `SD_COREMARK_AUTO=1`.
-
-**Whether a program may wait for a key** is decided by its route, and the
-script is where the route is written down (TASK/T13). Double-click only →
-it may pause, and the SDK's `newtos_pause()` (`sdk/include/newtos.h`) is the
-one place that line lives: `HELLO2.NCP`, `BIG.NCP`, `PHYSBASE.NCP`,
-`SUB\CURDIR.NCP`, `CMDLINE.NCP`/`.NTP`, `SYSINFO.NCP`, `ARGVTEST.NAP`.
-Anything that also runs without a click gets **no** pause: `DTACHILD.NCP` (a
-`Pexec` child of `\AUTO\APITEST.NCP`), `SCRFLIP.NCP`, `SETJMPT.NCP`,
-`MATHTST.NCP`, `CLOCKTST.NCP`, the CoreMark pair (all with a live `\AUTO\`
-switch), and `ACC\SYSACC.NAC` (an accessory, which has no console screen).
+that used to auto-run at boot was dropped. Six environment switches copy a
+program into `\AUTO\` on request: `SD_SCRFLIP_AUTO=1`, `SD_SYSINFO_AUTO=1`,
+`SD_CLOCKTEST_AUTO=1`, `SD_SETJMPTST_AUTO=1`, `SD_MATHTST_AUTO=1`,
+`SD_COREMARK_AUTO=1`. Every one of them names a program that ends by itself —
+a program that waits for a key would stop the boot from there.
 
 **Adding your own program.** The project rule is that the script is the
 single source of truth for the base image — add an install block to it

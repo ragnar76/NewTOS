@@ -1,6 +1,6 @@
 # DESK47 — `opn_appl`: der Parameterdialog fehlt, und ohne ihn ist `.NTP` sinnlos
 
-Status: **IMPLEMENTIERT — HW-Abnahme offen** (2026-09-30) · Prioritaet: **P2** · Typ: Fehlende EmuTOS-Funktion — Anwenderbefund Pi-Runde 2026-09-28
+Status: **ERLEDIGT** (2026-09-30, auf der Pi abgenommen) · Prioritaet: **P2** · Typ: Fehlende EmuTOS-Funktion — Anwenderbefund Pi-Runde 2026-09-28
 
 Abhaengigkeiten: [DESK44](DESK44.md) (dort als „nicht einloesbare Haelfte" vermerkt)
 
@@ -179,3 +179,14 @@ Naechste ihn sucht.
 962/0/1 Hosttests; release nach `cargo clean -p kernel -p tos-api --target
 aarch64-unknown-none-softfloat --release` je Board 64/94; Clippy 80/125 in
 beiden Feature-Saetzen; `tools/desk-drift-probe.sh` **32** (unveraendert).
+
+---
+
+## Abgenommen auf der Pi, 2026-09-30
+
+Anwender nach der Runde mit Kern `470bfeed`: *„Das Eingabefenster taucht jetzt
+auch auf."*
+
+Damit ist die erste Zeile der Abnahme auf echter Hardware erfuellt. Der
+Konsolen-Screendump und die Gegenproben (`.NCP`/`.NAP` ohne Kasten) liegen aus
+QEMU vor (`measurement-2026-09-30-desk47/`). **DESK47 ist erledigt.**

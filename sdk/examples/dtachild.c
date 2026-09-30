@@ -15,8 +15,8 @@
  * is 4 MiB), so the address is legal for the child and meaningless for the
  * parent -- exactly what makes the leak visible if there is one.
  *
- * Deliberately **no** newtos_pause() (TASK/T13): nobody double-clicks this
- * program for its two lines. Its caller is C:\AUTO\APITEST.NCP, case T29
+ * Deliberately **no** key wait at the end (TASK/T13): nobody double-clicks
+ * this program for its two lines. Its caller is C:\AUTO\APITEST.NCP, case T29
  * (sdk/apps/apitest/apitest.c:1417-1464), which Pexecs it at boot and waits
  * for it to end -- a key wait here would stop APITEST and with it the boot.
  */

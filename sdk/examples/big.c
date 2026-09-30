@@ -15,9 +15,6 @@
  * It prints each computed result via GEMDOS Cconws (0x09); crt0 then calls
  * Pterm (0x4C) with main's return value. A clean run + zero faults proves the
  * whole image + BSS + heap + stack live in one mapped multi-page TPA.
- *
- * Installed as C:\BIG.NCP and reached only by a double-click, so it holds its
- * four result lines with newtos_pause() before it returns (TASK/T13).
  */
 #include <newtos.h>
 
@@ -109,6 +106,5 @@ int main(void)
     put_num("  heap sum       = ", heap_sum);
 
     Cconws("BIG: done\r\n");
-    newtos_pause();
     return 0;
 }

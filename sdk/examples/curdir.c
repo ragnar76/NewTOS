@@ -15,11 +15,6 @@
  *
  * so the printed line names the directory the program actually ran in.
  *
- * Reached only by a double-click (make-sd-image.sh keeps it out of \AUTO\ on
- * purpose -- the AUTO path has its own directory and this program is there to
- * tell the two apart), so both of its exits hold the report with
- * newtos_pause() (TASK/T13).
- *
  * Calls used, all against docs/api/:
  *   Dgetdrv  GEMDOS 0x19  docs/api/gemdos/drive/19-dgetdrv.md
  *   Dgetpath GEMDOS 0x47  docs/api/gemdos/directory/47-dgetpath.md
@@ -108,7 +103,6 @@ int main(void)
         putnum(line, h);
         { j = 0; while (line[j]) j++; line[j++] = '\r'; line[j++] = '\n'; line[j] = '\0'; }
         Cconws(line);
-        newtos_pause();
         return 1;
     }
 
@@ -135,6 +129,5 @@ int main(void)
     line[j] = '\0';
     Cconws(line);
 
-    newtos_pause();
     return 0;
 }

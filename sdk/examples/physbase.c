@@ -12,9 +12,7 @@
  *      plain `*p++ = colour` loop with **no cache maintenance whatsoever**,
  *      because the pages `Physbase` publishes are mapped Normal Non-Cacheable
  *      exactly so that a program never has to know about caches;
- *   3. blocks on `newtos_pause` (GEMDOS 0x09 + 0x01), so the bands stay on
- *      screen for a screendump. This program had that pause from the start;
- *      since TASK/T13 it takes it from the shared SDK helper.
+ *   3. blocks on `Cconin`, so the bands stay on screen for a screendump.
  *
  * The pattern is written as one linear run from the base, which needs no
  * knowledge of the display geometry: whatever the width and pitch, the first
@@ -73,7 +71,6 @@ int main(void)
 
     if (phys == 0) {
         puts_("no display up -- nothing to draw\r\n");
-        newtos_pause();
         return 1;
     }
 
@@ -87,7 +84,7 @@ int main(void)
     for (i = 0; i < BAND_PIXELS; i++)
         p[2 * BAND_PIXELS + i] = BLUE;
 
-    puts_("wrote 3 bands\r\n");
-    newtos_pause();
+    puts_("wrote 3 bands; press a key\r\n");
+    Cconin();
     return 0;
 }

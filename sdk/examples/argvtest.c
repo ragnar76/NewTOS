@@ -30,9 +30,6 @@
  *     ARGVTEST: argv[0] ""
  *     ARGVTEST: argv[1] "C:\README.TXT"
  *
- * and then holds the screen until a key arrives (TASK/T13) -- it is reached
- * only by a double-click or a drop on its icon.
- *
  * Build (links libc.a, so it uses sdk/libc/crt0.S):
  *     sdk/libc/build-libc.sh sdk/examples/argvtest.c sdk/libc/build/argvtest.NAP
  * Installed as C:\ARGVTEST.NAP by tools/make-sd-image.sh.
@@ -81,20 +78,6 @@ put_bytes (const char *p, unsigned n)
     }
 }
 
-/* The TASK/T13 pause, hand-written rather than taken from the SDK header:
-   this program is linked against mintlib, whose <mint/osbind.h> defines
-   Cconws and Cconin as function-like MACROS, so <newtos.h> -- which declares
-   both as static inline functions -- cannot be included beside it. Same two
-   calls, same contract as newtos.h's newtos_pause(); keep the wording in step
-   with it. ARGVTEST.NAP sits in the root of C: and is reached only by a
-   double-click or a drop on its icon, never from \AUTO\. */
-static void
-pause_for_key (void)
-{
-  Cconws ("\r\n-- press a key --\r\n");
-  Cconin ();
-}
-
 int
 main (int argc, char *argv[])
 {
@@ -128,6 +111,5 @@ main (int argc, char *argv[])
   Cconws (argv[argc] == 0 ? "ARGVTEST: argv terminated\r\n"
 			  : "ARGVTEST: argv NOT terminated\r\n");
 
-  pause_for_key ();
   return 0;
 }
