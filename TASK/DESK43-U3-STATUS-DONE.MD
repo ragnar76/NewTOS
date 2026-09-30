@@ -344,7 +344,7 @@ zurueckbauen, nicht nachtraeglich einschmuggeln.
    **Widerspruch im eigenen Baum:** `main::default_flavor` bildet
    `Params → AppFlavor::Ttp` ab, also auf die andere Haelfte. Eine Zeile, eine
    Entscheidung — gehoert gestellt, nicht geraten.
-2. **`opn_appl` fehlt weiter** (`deskpro.c:71-121`, der Parameterdialog fuer
+2. **`opn_appl` fehlt weiter** (`deskinf.c:1253-1271`, der Parameterdialog fuer
    `.TTP`/`.GTP`): ein `.NTP`-Doppelklick startet mit leerem Tail. Unveraendert
    benannt, jetzt im Doc von `pro_run_native`.
 3. **`pro_run`s `(wh, curr)`** und `do_wopen` (`desksupp.c:294`) fehlen weiter.

@@ -1740,18 +1740,20 @@ the `installed_datafile` arm (`desksupp.c:924`) and leaves the directory step
 — from the node's own `AF_APPDIR`/`a_pappl`, because the node *is* an
 installed application — the rejoin of `pathname` + `pfname`, and `pro_run`.
 All three are `main::do_aopen_drop`'s body, which is why `process_funkey` calls
-it with an empty tail rather than repeating them: `pro_run` writes
+it with `None` rather than repeating them: `pro_run` writes
 `tail[0] = strlen(tail+1) = 0` for a `NULL` tail too (`deskpro.c:56-57`).
 
 `curr = -1` in this call only suppresses `pro_run`'s `do_wopen`
 (`deskpro.c:61-62`); NewTOS launches nested and repaints on return, so there is
 nothing to suppress.
 
-**Named gap, not a new one.** The one EmuTOS branch this cannot reach is
-`opn_appl`'s parameter prompt for a `.TTP`/`.GTP` (`:978-985`). NewTOS has no
-prompt for a `.NTP` on the double-click path either (`launch_native`, Stage A),
-so a `.NTP` started from a key runs with the same empty tail a double click
-gives it.
+**The `opn_appl` branch is reached, and that is what `NULL` is for.** EmuTOS
+asks `isparm` precisely when `tail == NULL` (`:969-985`), which is this call's
+argument — so a parameter-taking program bound to a function key gets the
+`ADOPENAP` box, exactly as a double click on it does. NewTOS's
+`do_aopen_drop` therefore takes `Option<&[u8]>` rather than a string: `None`
+is this call, `Some` is the drop-on-an-application path, where the tail is
+already known and the box is skipped (DESK47).
 
 `hndl_kbd` returns the answer straight out (`:1224-1226`, `if (done >= 0)
 return done;`) — like CR/ESC/arrows above it, and unlike every path below it,

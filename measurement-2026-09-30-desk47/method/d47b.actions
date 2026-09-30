@@ -1,0 +1,10 @@
+# DESK47 run B -- counter-check: a .NCP must launch with NO dialog.
+# Same window geometry as run A, so the single icon is at (64,124).
+100 parkbr
+600 mark A_IDLE
+900 move 64 124
+1300 down
+1303 up
+1308 down
+1311 up
+1500 mark C_CLICKED

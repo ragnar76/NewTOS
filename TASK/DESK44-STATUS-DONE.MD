@@ -82,7 +82,7 @@ im Desktop**, sondern der reguläre Weg: `sh_main`s `sh_chgrf` sieht
 musste.
 
 Unverändert und ausdrücklich benannt: **`opn_appl` ist nicht gebaut**
-(`deskpro.c:71-121`). Ein `.NTP`-Doppelklick startet weiterhin mit **leerer**
+(`deskinf.c:1253-1271`). Ein `.NTP`-Doppelklick startet weiterhin mit **leerer**
 Parameterzeile. Das ist die alte, benannte Lücke (`main.rs` `pro_run_native`,
 `TASK/DESK33.md:44`) — dieses Ticket verschiebt nur den Bildschirmmodus, nicht
 den Tail-Dialog. Die Abnahmezeile von DESK44 („mit der Parameterzeile aus dem

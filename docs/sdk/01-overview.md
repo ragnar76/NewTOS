@@ -44,7 +44,7 @@ The file extension decides how the desktop launches the program (ADR-018,
 |-----------|------|---------------|---------------------------------------------------------|
 | `.NAP` | native GEM **A**pplication | `.PRG` / `.APP` | desktop relinquishes the screen (`desktop_relinquish`), runs the program, rebuilds itself on `Pterm` (`run_gem_app`, `:524-529`) |
 | `.NCP` | native **C**onsole **P**rogram | `.TOS` | `fbcon::clear_and_home()`, run, wait for a key, redraw the desktop |
-| `.NTP` | native, **T**akes **P**arameters | `.TTP` (**not** `.GTP` — decided 2026-09-26, DESK44) | a **console** program with a command tail: `isgraf = FALSE`, so `sh_chgrf` takes the screen to alpha before it runs (`main.rs:1068`, `gemshlib.c:513-523`). A plain double-click passes an **empty** tail — the tail dialog (`opn_appl`, `deskpro.c:71-121`) is not implemented (`ftype.rs:42`) |
+| `.NTP` | native, **T**akes **P**arameters | `.TTP` (**not** `.GTP` — decided 2026-09-26, DESK44) | a **console** program with a command tail: `isgraf = FALSE`, so `sh_chgrf` takes the screen to alpha before it runs (`main.rs:1068`, `gemshlib.c:513-523`). A double-click puts EmuTOS's `ADOPENAP` box up first and passes what was typed there as the tail (`opn_appl`, `deskinf.c:1250-1271`, NewTOS `kernel/src/desk/inf.rs`); *Cancel* starts nothing |
 
 The extension is a desktop/shell convention, **not** part of the TOS syscall
 ABI (`ftype.rs:16-17`). The classic suffixes `.PRG/.APP/.TOS/.TTP/.GTP` are
@@ -104,4 +104,3 @@ for TOS data structures that are 32-bit on the wire are the subject of
   a linear XRGB8888 framebuffer (`sdk/examples/physbase.c:24-29`,
   `docs/MEMORY.md:1694-1757`), never Shifter planes.
 * **No 32-bit (`--ilp32`) build.** See above.
-* **No `.NTP` tail dialog.** See the table.

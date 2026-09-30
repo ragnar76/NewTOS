@@ -113,9 +113,28 @@ fn pro_exec(isgraf: bool, isover: i16, pcmd: &[u8], ptail: &[u8]) -> bool {
 /// double-click launch (`do_open` → `do_aopen` → `pro_run(…, G.g_cwin, curr)`,
 /// `desksupp.c:986`). Since DESK43 U3 every desktop launch does come through
 /// here, so the branch is no longer unreachable — but its body, `do_wopen(FALSE,
-/// wh, curr, &G.g_desk)` (`desksupp.c:294`), has no counterpart in the tree yet.
-/// Adding two parameters whose only use would be a call that does not exist
+/// wh, curr, &G.g_desk)` (`desksupp.c:274-322`), has no counterpart in the tree
+/// yet. Adding two parameters whose only use would be a call that does not exist
 /// would be a stub; they come back with `do_wopen`.
+///
+/// **Why that is a unit of its own** (established for DESK47, which had to
+/// settle the question before touching it): `do_wopen` is not a `pro_run`
+/// helper. It has a second EmuTOS caller, `do_diropen` (`desksupp.c:454`),
+/// which in turn has four (`deskfun.c:413`, `deskmain.c:1496`,
+/// `desksupp.c:1067`, `:1156`) — it is the shared tail of *every* window open.
+/// NewTOS has no `do_diropen` either: its body is spread over
+/// [`super::main`]'s `open_dir_window_at`, `navigate_window`,
+/// `rebuild_window`, `open_root_window` and the `cnx_get` restore path, and
+/// **none** of them performs `do_wopen`'s `graf_growbox` zoom or its
+/// `act_chg(G.g_cwin, G.g_croot, curr, &gl_rfull, FALSE, FALSE)` deselect
+/// (`super::main::do_fopen`'s doc-comment records the same gap from the window
+/// side). Building `do_wopen` for this one caller would produce a function
+/// wearing the name without being it. The pieces it needs that do not exist:
+/// a `graf_growbox` wrapper in [`super`] (AES opcode 73 is implemented in
+/// `tos-api/src/aes/graf.rs`, the desktop has no binding), and a single
+/// `do_diropen` the five inlined copies above fold back into. `do_xyfix`,
+/// `obj_extent` (= `get_xywh` + the root offset), `act_chg` and `g_wlastsel`
+/// are all already there.
 pub(super) fn pro_run(isgraf: bool, cmd: &[u8], tail: &mut [u8; CMDTAILSIZE]) -> bool {
     // `tail[0] = len = strlen(tail+1);` — clamped so the length byte, the
     // text, its NUL and the CR all fit the image. EmuTOS has no such bound

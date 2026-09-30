@@ -1,0 +1,9 @@
+ docs/api/desktop/deskinf.md  | 129 +++++++++++++++++++++++++++++++++++++++
+ docs/api/desktop/deskmain.md |  14 +++--
+ docs/sdk/01-overview.md      |   3 +-
+ kernel/src/desk/dir.rs       |   6 +-
+ kernel/src/desk/ftype.rs     |   7 ++-
+ kernel/src/desk/inf.rs       | 142 +++++++++++++++++++++++++++++++++++++++++++
+ kernel/src/desk/main.rs      | 121 ++++++++++++++++++++++++++----------
+ kernel/src/desk/pro.rs       |  23 ++++++-
+ 8 files changed, 397 insertions(+), 48 deletions(-)

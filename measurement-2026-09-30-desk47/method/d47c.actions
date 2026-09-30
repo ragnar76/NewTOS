@@ -1,0 +1,18 @@
+# DESK47 run C -- counter-check: Cancel in the ADOPENAP box starts nothing.
+# The Cancel click point comes from run A's own [dlg] dump, not a guess:
+#   root abs (160,165); obj 6 APPLCNCL rel (192,136) 72x16
+#   -> abs (352,301)..(424,317), centre (388,309).
+100 parkbr
+600 mark A_IDLE
+900 move 64 124
+1300 down
+1303 up
+1308 down
+1311 up
+1500 mark C_CLICKED
+2500 mark D_DIALOG
+2800 move 388 309
+3000 down
+3200 up
+3600 parkbr
+4600 mark E_CANCELLED

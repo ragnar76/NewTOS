@@ -748,10 +748,19 @@ fn open_item(handle: i16, obid: i16) -> bool {
             if !set_launch_dir(appdir, &path) {
                 return false;
             }
+            // `if (tail) … else if (isparm) ret = opn_appl(pname, ptail);`
+            // (`desksupp.c:969-985`) — a plain double click passes no tail
+            // (EmuTOS's `tail == NULL`), so a parameter-taking program is
+            // asked for its command line here, before `pro_run`. `pname` is
+            // the bare file name, which is what the box shows.
+            let mut tail: Vec<u8> = Vec::new();
+            if isparm(flavor) && !super::inf::opn_appl(&name, &mut tail) {
+                // `return ret ? pro_run(…) : FALSE;` — Cancel starts nothing.
+                return false;
+            }
             // `return pro_run(isgraf, app_path, G.g_work, G.g_cwin, curr);`
-            // (`:986`) — a plain double click passes no tail (`tail == NULL`
-            // and `isparm` is answered by the flavour, see [`pro_run_native`]).
-            pro_run_native(&path, &name, flavor, "")
+            // (`:986`).
+            pro_run_native(&path, &name, flavor, &tail)
         }
         OpenTarget::M68k => {
             let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
@@ -818,15 +827,17 @@ fn open_document(name: &str, full_path: &str) -> bool {
     let mut app_path = String::from(assoc.app_path.as_str());
     app_path.push('\0');
     // `return pro_run(isgraf, pa->a_pappl, G.g_work, G.g_cwin, curr);` (`:951`)
-    pro_run_native(&app_path, &app_name, flavor, &tail)
+    // The `installed_datafile` arm returns before `isapp`'s `isparm` test, so
+    // an association never puts `opn_appl` up: the document *is* the tail.
+    pro_run_native(&app_path, &app_name, flavor, tail.as_bytes())
 }
 
 /// `do_aopen(pa, TRUE, curr, pathname, pname, tail)` (`desksupp.c:843-1031`)
-/// for the single case `fun_win2win`'s drop-on-an-application branch reaches
-/// (`deskfun.c:967`): `isapp` is `TRUE` and `tail` is **not** `NULL`, so
-/// neither the `installed_datafile` arm (`:924`, `isapp` rules it out) nor
-/// `opn_appl`'s `.TTP` parameter prompt (`:978-985`, the `tail` branch takes
-/// precedence) runs. What is left is three steps:
+/// for the two cases that reach it with `isapp = TRUE` and no document
+/// association: `fun_win2win`'s drop-on-an-application branch
+/// (`deskfun.c:967`, `tail != NULL`) and a function-key launch
+/// (`deskmain.c:1084`, `tail == NULL`). The `installed_datafile` arm (`:924`)
+/// is ruled out by `isapp` in both. What is left is four steps:
 ///
 /// * the current directory, set exactly as `do_aopen` sets it (`:873-890`):
 ///   from the node's own `AF_APPDIR` + `a_pappl` when it is an **installed**
@@ -836,11 +847,17 @@ fn open_document(name: &str, full_path: &str) -> bool {
 /// * `app_path = pathname` with its file-name part replaced by `pname`
 ///   (`:958-960`) — here `dst_dir` (which already ends in `\`) plus
 ///   `prog_name`;
-/// * `strcpy(ptail, tail)` and `pro_run` (`:969-975`, `:986`).
+/// * the tail: `strcpy(ptail, tail)` when there is one, **else** `isparm`'s
+///   [`super::inf::opn_appl`] prompt (`:969-985`). The `tail` branch takes
+///   precedence, which is why a file dropped on a `.NTP` is passed straight
+///   through without a box;
+/// * `pro_run` (`:986`).
 ///
 /// `installed`/`pappl`/`node_appdir` are the three fields of the destination
-/// `ANODE` those steps read; `tail` is the command line
-/// [`dir::build_selected_path`] built.
+/// `ANODE` those steps read. `tail` is `Option` because EmuTOS's two branches
+/// separate on `tail == NULL`, not on an empty string: `Some` is the command
+/// line [`dir::build_selected_path`] built, `None` is the function key's
+/// `do_aopen(pa, TRUE, -1, pathname, pfname, NULL)`.
 ///
 /// Returns `do_aopen`'s `WORD`, i.e. EmuTOS's `exit_desktop` for this drop:
 /// TRUE iff the `shel_write` was issued, which ends the desktop's event loop
@@ -851,7 +868,7 @@ pub(super) fn do_aopen_drop(
     node_appdir: bool,
     dst_dir: &str,
     prog_name: &str,
-    tail: &str,
+    tail: Option<&[u8]>,
 ) -> bool {
     // `if (is_installed(pa)) { … AF_APPDIR … pa->a_pappl } else { … G.g_appdir
     //  … pathname }` (`desksupp.c:884-905`).
@@ -875,8 +892,21 @@ pub(super) fn do_aopen_drop(
     match ftype::classify(prog_name.as_bytes()) {
         ftype::FileType::Native(flavor) => {
             app_path.push('\0'); // `shel_write`'s `pcmd` reads up to the NUL
-            // `strcpy(ptail, tail); … return pro_run(isgraf, app_path,
-            //  G.g_work, G.g_cwin, curr);` (`:969-975,986`).
+            // `if (tail) strcpy(ptail, tail); else if (isparm) ret =
+            //  opn_appl(pname, ptail);` (`:969-985`).
+            let mut prompted: Vec<u8> = Vec::new();
+            let tail = match tail {
+                Some(t) => t,
+                None if isparm(flavor) => {
+                    if !super::inf::opn_appl(prog_name, &mut prompted) {
+                        return false; // `return ret ? pro_run(…) : FALSE;`
+                    }
+                    &prompted
+                }
+                None => b"",
+            };
+            // `return pro_run(isgraf, app_path, G.g_work, G.g_cwin, curr);`
+            // (`:986`).
             pro_run_native(&app_path, prog_name, flavor, tail)
         }
         ftype::FileType::M68k => {
@@ -1017,11 +1047,15 @@ fn set_launch_dir(app_dir: bool, own_path: &str) -> bool {
 /// itself belongs to [`crate::shell_loop::sh_ldapp`] — where EmuTOS leaves it
 /// too (`gemshlib.c:645`).
 ///
-/// **`opn_appl` is not built** (`deskpro.c:71-121`, the `.TTP`/`.GTP` parameter
-/// prompt): a `.NTP` double click launches with the empty tail its caller
-/// passes, i.e. the `tail != NULL` branch above. Named here rather than
-/// silently absent — it is a dialog of its own.
-fn pro_run_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &str) -> bool {
+/// The `ret = opn_appl(pname, ptail)` line above is **not** here: it belongs to
+/// the branch, not to the launch, so it sits with each `do_aopen` embodiment —
+/// [`open_item`]'s `App` arm and [`do_aopen_drop`] — exactly where the source
+/// has it. What reaches this function is the finished tail.
+///
+/// `tail` is bytes, not a `&str`, because one of its three producers is
+/// [`super::inf::opn_appl`]'s `X`-validated edit field, which admits every
+/// character the AES's `check` lets through.
+fn pro_run_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) -> bool {
     if flavor == ftype::Flavor::Accessory {
         // A desk accessory (`.NAC`) is **not** launched on demand (ACC02): the
         // AES loads it once per session from `C:\ACC\` or the root and it lives
@@ -1037,9 +1071,8 @@ fn pro_run_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &str) -> 
     // `pro_run` writes the length byte in front of it and the CR behind it
     // (`deskpro.c:56-57`). Clamped to the same bound `pro_run` applies.
     let mut work = [0u8; pro::CMDTAILSIZE];
-    let bytes = tail.as_bytes();
-    let n = bytes.len().min(pro::CMDTAILSIZE - 3);
-    work[1..1 + n].copy_from_slice(&bytes[..n]);
+    let n = tail.len().min(pro::CMDTAILSIZE - 3);
+    work[1..1 + n].copy_from_slice(&tail[..n]);
     pro::pro_run(isgraf(flavor), path.as_bytes(), &mut work)
 }
 
@@ -1076,6 +1109,27 @@ fn isgraf(flavor: ftype::Flavor) -> bool {
         // `.NAC` never reaches `pro_run` — [`pro_run_native`] turns it away
         // before this is asked.
         ftype::Flavor::Accessory => true,
+    }
+}
+
+/// `isparm = pa->a_flags & AF_ISPARM;` (`desksupp.c:877`) — *"is parameter
+/// application"* (`deskapp.h:29`), i.e. the program wants a command line typed
+/// for it. It is the flag `do_aopen` tests before it puts
+/// [`super::inf::opn_appl`] up (`:978-985`), and nothing else reads it.
+///
+/// `app_parse`'s table has it on exactly the two classic parameter extensions
+/// (`deskapp.c:181-188`, parsed at `:310-322`): `#P *.TTP` sets `AF_ISPARM`
+/// alone, `#Y *.GTP` sets `AF_ISPARM | AF_ISCRYS`. The native family has one
+/// such extension, `.NTP`, and DESK44 fixed it as the `*.TTP` (`#P`) twin — so
+/// it is the one flavour that answers `true` here, and the one that answers
+/// `false` to [`isgraf`].
+fn isparm(flavor: ftype::Flavor) -> bool {
+    match flavor {
+        // `.NTP` = `*.TTP` (`#P`): `AF_ISPARM`.
+        ftype::Flavor::Params => true,
+        // `.NAP` = `*.PRG`/`*.APP` (`#G`) and `.NCP` = `*.TOS` (`#F`) carry no
+        // `AF_ISPARM`; a `.NAC` never reaches `do_aopen`'s `isapp` branch.
+        ftype::Flavor::App | ftype::Flavor::Console | ftype::Flavor::Accessory => false,
     }
 }
 
@@ -1230,14 +1284,13 @@ fn check_function_key(key: i16) -> Option<bool> {
 /// trailing separator, and `pfname` the file name — the two halves
 /// [`do_aopen_drop`] rejoins.
 ///
-/// `do_aopen` is reached with `isapp = TRUE` and `tail = NULL`, so neither the
-/// `installed_datafile` arm (`desksupp.c:924`, ruled out by `isapp`) nor a
-/// document tail applies; what is left is the directory step, the rejoin and
-/// the launch. The one EmuTOS branch this cannot reach is `opn_appl`'s
-/// parameter prompt for a `.TTP`/`.GTP` (`:978-985`), which NewTOS does not
-/// have for `.NTP` either — a `.NTP` launched from a key runs with the same
-/// empty tail a double click gives it ([`pro_run_native`]). No new gap: the
-/// same named one, now reachable from a second place.
+/// `do_aopen` is reached with `isapp = TRUE` and `tail = NULL`, so the
+/// `installed_datafile` arm (`desksupp.c:924`) is ruled out by `isapp` and
+/// there is no document tail; what is left is the directory step, the rejoin
+/// and the launch — **including** `opn_appl`'s parameter prompt, because
+/// `tail == NULL` is exactly the condition under which `isparm` is asked
+/// (`:969-985`). A `.NTP` bound to a function key therefore gets the same box
+/// a double click gives it.
 ///
 /// `curr` is `-1` in this call, which in EmuTOS only suppresses `pro_run`'s
 /// `do_wopen` re-open of the desktop window (`deskpro.c:61-62`); NewTOS's
@@ -1248,8 +1301,10 @@ fn process_funkey(funkey: u16) -> Option<bool> {
     let pname = filename_of(&pa.app_path);
     let dir = &pa.app_path[..pa.app_path.rfind('\\').map_or(0, |i| i + 1)];
     // `do_aopen(pa, TRUE, -1, pathname, pfname, NULL)` — an **installed**
-    // application, so the directory comes from its own `AF_APPDIR`/`a_pappl`.
-    Some(do_aopen_drop(true, &pa.app_path, pa.app_dir, dir, &pname, ""))
+    // application, so the directory comes from its own `AF_APPDIR`/`a_pappl`;
+    // `NULL` (not an empty tail) is what sends a parameter-taking program
+    // through `opn_appl`.
+    Some(do_aopen_drop(true, &pa.app_path, pa.app_dir, dir, &pname, None))
 }
 
 /// The function-key number 1..20 for `key`, or `None` if it is not a function

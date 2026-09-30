@@ -1787,3 +1787,132 @@ EmuTOS's `inf_file_folder` has no empty-name special case and neither does
 ours any more, so emptying the name field and pressing OK now reaches the
 defect; the pre-DESK42 NewTOS box rejected an empty name itself, which EmuTOS
 does not do. Reproduced in `measurement-2026-09-25-desk42/` §6.
+
+---
+
+## `opn_appl` — the command-tail prompt (DESK47, 2026-09-30)
+
+### EmuTOS
+
+`opn_appl(papname, ptail)` (`deskinf.c:1250-1271`, the last function of the
+file) is the *"Open application icon"* box: it asks for the command line of a
+program that takes parameters, and it is the only place `ADOPENAP` is used.
+
+```c
+tree = desk_rs_trees[ADOPENAP];
+
+set_tedinfo_name(tree, APPLNAME, papname);
+inf_sset(tree, APPLPARM, "");
+inf_show(tree, APPLPARM);
+
+/* now find out what happened */
+if (inf_what(tree, APPLOK))
+{
+    inf_sget(tree, APPLPARM, ptail);
+    return TRUE;
+}
+
+return FALSE;
+```
+
+Four details of those six lines matter:
+
+* **`inf_show(tree, APPLPARM)`, not `ROOT`.** The start field is the parameter
+  line, so the edit cursor opens there. Every other `deskinf.c` dialog passes
+  `ROOT` and lets `fm_inifld` find the first editable object
+  (`aes/gemfmlib.c:153-160`); here the resource's one editable object is named
+  explicitly.
+* **The name is shown through `set_tedinfo_name`**, i.e. `fmt_str` into the
+  `________.___` template (`CMDLINE.NTP` → `CMDLINE NTP`), not as typed.
+* **`inf_what`'s third answer counts as TRUE.** `if (inf_what(tree, APPLOK))`
+  is a plain non-zero test, so the `-1` returned when neither button ended up
+  `SELECTED` also launches the program. `0` — Cancel — is the only answer that
+  does not.
+* **The tail field is `X`-validated** (`desk_rs_tedinfo[13]`), so it admits
+  every character `check()` lets through, including bytes above 0x7E.
+
+### Where it sits in the flow
+
+`do_aopen` (`desksupp.c:969-986`), **after** `set_default_path` and the
+`app_path` rejoin, inside the `isapp` branch:
+
+```c
+ret = TRUE;
+if (tail)        strcpy(ptail, tail);     /* a file was dropped on the program */
+else if (isparm) ret = opn_appl(pname, ptail);
+return ret ? pro_run(isgraf, app_path, G.g_work, G.g_cwin, curr) : FALSE;
+```
+
+So the prompt is asked **only** when `tail == NULL` — the double-click /
+File→Open path (`do_open` → `do_aopen(…, NULL)`, `desksupp.c:1229`) and the
+function-key path (`process_funkey` → `do_aopen(pa, TRUE, -1, …, NULL)`,
+`deskmain.c:1099`). A file dropped on a program icon (`fun_win2win`,
+`deskfun.c:967`) brings its own tail and skips the box. The
+`installed_datafile` arm returns before this point entirely (`:951`): for a
+document association the document *is* the tail.
+
+`isparm` is `pa->a_flags & AF_ISPARM` (`desksupp.c:877`), which `app_parse`
+sets for exactly `#P *.TTP` and `#Y *.GTP` (`deskapp.c:181-188`, `:310-322`).
+
+### `ADOPENAP` — seven objects
+
+`desk_rsc.c:877-919`, `desk_rsc.h:93-98`. Packed measurements as in DESK42
+above (`LOBYTE` cells + signed `HIBYTE` pixels): the ROOT's `2058` is
+`(8 << 8) | 10` = 10 rows + 8 px and the buttons' `2056` is row 8 + 8 px, so at
+the 8 × 16 cell the box is **320 × 168** with the buttons at y 136…152 — room
+for the 2 px per side an `FL3DACT` object grows by before it is drawn.
+
+| # | name | type / flags | rect (cells) | content |
+|---|---|---|---|---|
+| 0 | ROOT | `G_BOX`, `FL3DBAK`, state `OUTLINED`, `ob_spec` 69888 | 0,0,40,10+8px | |
+| 1 | `APPLOPEN` | `G_STRING`, no flag | 11,1,16,1 | `OPEN APPLICATION` |
+| 2 | `APPLNAME` | `G_FBOXTEXT`, `FL3DBAK` | 1,3,21,1 | ted[12], `TE_LEFT` |
+| 3 | — | `G_STRING`, no flag | 1,5,11,1 | `Parameters:` |
+| 4 | `APPLPARM` | `G_FBOXTEXT`, `EDITABLE\|FL3DBAK` | 1,6,38,1 | ted[13], `TE_LEFT` |
+| 5 | `APPLOK` | `G_BUTTON`, `SELECTABLE\|DEFAULT\|EXIT\|FL3DACT` | 7,8+8px,9,1 | `OK` |
+| 6 | `APPLCNCL` | `G_BUTTON`, `SELECTABLE\|EXIT\|LASTOB\|FL3DACT` | 24,8+8px,9,1 | `Cancel` |
+
+Object 3 is the one object of the tree `desk_rsc.h` does not name — nothing in
+`deskinf.c` addresses it.
+
+The two `TEDINFO`s, from the same `desk_rs_tedinfo[]` the Show-Info boxes draw
+on (`desk_rsc.c:34-104`; `te_font = IBM`, `te_color = 4352`,
+`te_thickness = 0`, so neither field has a frame of its own):
+
+| field | template | `te_pvalid` | `te_txtlen` | `te_tmplen` | `te_just` |
+|---|---|---|---|---|---|
+| `APPLNAME` (ted[12]) | `Name: ________.___` | `f` | 12 | 19 | `TE_LEFT` |
+| `APPLPARM` (ted[13]) | 38 × `_` | `X` | 39 | 39 | `TE_LEFT` |
+
+`APPLNAME` shares its template literal (`rs_str_Name______________`,
+`desk_rsc.c:18`) with `ADFFINFO`'s `FFNAME`, so the name is shown in the same
+8.3-split form the Show-Info box uses. `APPLPARM`'s 39-byte text is the hard
+limit on the tail this box can produce — well inside `CMDTAILSIZE`.
+
+### NewTOS
+
+`kernel/src/desk/inf.rs` `opn_appl(papname, ptail)` — the tree built object for
+object with [`mk`]/[`mk_root`]/[`rsc_ted`]/`align_title`, exactly as DESK42
+built `ADDISKIN`/`ADFFINFO`. `ptail` is a `Vec<u8>` rather than a `String`
+because of the `X` validation above; `inf_sget` is added next to `inf_sset` as
+its `util/optimize.c:119-126` counterpart.
+
+The call sites are the two `do_aopen` embodiments in `kernel/src/desk/main.rs`:
+`open_item`'s `App` arm (double click / File→Open) and `do_aopen_drop`, whose
+`tail` parameter became `Option<&[u8]>` so that EmuTOS's `tail == NULL`
+distinction is carried rather than approximated by an empty string — `None` is
+`process_funkey`, `Some` the three drop paths in `kernel/src/desk/dir.rs`.
+
+**Still missing in the same corner, and named rather than half-built:**
+`pro_run`'s `(wh, curr)` pair and `do_wopen` (`desksupp.c:274-322`). `do_wopen`
+has two callers in EmuTOS — `pro_run` (`deskpro.c:61`) and `do_diropen`
+(`desksupp.c:454`) — and `do_diropen` itself has four (`deskfun.c:413`,
+`deskmain.c:1496`, `desksupp.c:1067`, `:1156`). NewTOS has neither function:
+the `do_diropen` body is spread over `open_dir_window_at`, `navigate_window`,
+`rebuild_window`, `open_root_window` and the `cnx_get` restore path, none of
+which does `do_wopen`'s `graf_growbox` zoom or its
+`act_chg(…, FALSE, FALSE)` deselect. Building `do_wopen` for `pro_run` alone
+would produce a function wearing the name without being it; it needs its own
+unit, together with a `graf_growbox` binding in `kernel/src/desk/mod.rs`
+(AES opcode 73 is implemented in `tos-api/src/aes/graf.rs:356` but the desktop
+has no wrapper for it).

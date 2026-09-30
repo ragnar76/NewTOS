@@ -1,0 +1,35 @@
+# DESK47 run A -- double-click C:\D47\CMDLINE.NTP from our own desktop.
+#
+# The window C:\D47\ is opened by method/newdesk-d47.inf (#W 02 04 26 0C), the
+# same geometry DESK46 used for C:\D46\, so its single file sits at the same
+# icon centre (64,124) -- measured in measurement-2026-09-26-desk43-u3
+# (screendumps/locate-desktop.png) and re-confirmed by this run's own A_IDLE
+# screendump.
+#
+# Keys are raw IKBD bytes (make, then break = make|0x80).  h=23 e=12 l=26
+# o=18, Return=1C -- kernel/src/keymap.rs US_NORM: index 0x23 -> 0x68 'h',
+# 0x12 -> 0x65 'e', 0x26 -> 0x6C 'l', 0x18 -> 0x6F 'o', 0x1C -> 0x0D CR.
+100 parkbr
+600 mark A_IDLE
+900 move 64 124
+1100 mark B_ON_ICON
+1300 down
+1303 up
+1308 down
+1311 up
+1500 mark C_CLICKED
+2500 mark D_DIALOG
+2600 key 23
+2620 key A3
+2640 key 12
+2660 key 92
+2680 key 26
+2700 key A6
+2720 key 26
+2740 key A6
+2760 key 18
+2780 key 98
+3000 mark E_TYPED
+3200 key 1C
+3220 key 9C
+3400 mark F_OK

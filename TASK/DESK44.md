@@ -67,7 +67,7 @@ sind Aussagen **ueber EmuTOS** bzw. die klassische m68k-Familie und bleiben
 richtig.
 
 **Abnahme nur zur Haelfte einloesbar, und das ist eine alte Luecke, keine
-neue:** `opn_appl` (der Tail-Dialog, `deskpro.c:71-121`) ist weiterhin nicht
+neue:** `opn_appl` (der Tail-Dialog, `deskinf.c:1253-1271`) ist weiterhin nicht
 gebaut. Der Doppelklick startet also mit **leerer** Parameterzeile — jetzt aber
 auf dem Textschirm, wo er hingehoert. Gegenprobe im Code:
 `inf::default_type_anodes` schrieb schon immer `#P *.NTP`, beide Seiten stimmen
@@ -84,7 +84,7 @@ Desktop blitzt kurz auf und das war's."*
 
 **Der Kern der Rueckmeldung ist der fehlende Tail-Dialog** — genau die Haelfte
 der Abnahme, die dieses Ticket als „nicht einloesbar" vermerkt hat, weil
-`opn_appl` (`deskpro.c:71-121`) nicht gebaut ist. Ohne ihn startet ein `.NTP`
+`opn_appl` (`deskinf.c:1253-1271`) nicht gebaut ist. Ohne ihn startet ein `.NTP`
 mit **leerer** Parameterzeile und ist damit von einem `.NCP` nicht zu
 unterscheiden. **Eigenes Ticket: [DESK47](DESK47.md).**
 

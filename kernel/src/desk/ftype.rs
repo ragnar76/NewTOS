@@ -29,8 +29,11 @@ pub enum Flavor {
     /// `.NCP` — native console program; runs on a VT52 text screen
     /// (`fbcon::clear_and_home` before, desktop restore after).
     Console,
-    /// `.NTP` — native **console** program that takes a command tail (prompted
-    /// for before launch; the tail dialog is a Stage-3 follow-on).
+    /// `.NTP` — native **console** program that takes a command tail. The tail
+    /// is asked for before the launch, in EmuTOS's own `ADOPENAP` box
+    /// ([`super::inf::opn_appl`], `deskinf.c:1250-1271`) — this is the flavour
+    /// that answers `true` to [`super::main`]'s `isparm`, i.e. the one bit
+    /// `do_aopen` tests before it puts the box up (`desksupp.c:877,978-985`).
     ///
     /// The classic analogue is `.TTP`, **not** `.GTP` (user decision
     /// 2026-09-26, DESK44): the ADR-018 middle letter names the launcher role,

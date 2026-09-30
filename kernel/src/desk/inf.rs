@@ -3855,6 +3855,16 @@ fn inf_sset(buf: &mut [u8], src: &[u8]) {
     buf[n..].fill(0);
 }
 
+/// `inf_sget` (`util/optimize.c:119-126`) — `strcpy(pstr, ted->te_ptext)`: the
+/// other direction, i.e. what the user left in a `TEDINFO` text buffer, up to
+/// its NUL. The source copies into a caller buffer because it has only a
+/// `char *`; here the buffer is a slice, so the same bytes are borrowed out of
+/// it instead of copied.
+fn inf_sget(buf: &[u8]) -> &[u8] {
+    let n = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    &buf[..n]
+}
+
 /// One function key the desktop knows about: its number (1…20) and the
 /// application path bound to it — EmuTOS's `pa[]` array of `ANODE` pointers
 /// (`get_all_funkeys`, `deskinf.c:928-948`).
@@ -4369,6 +4379,138 @@ pub(super) fn inf_conf() {
     }
 
     end_dialog(tree_ptr);
+}
+
+// ── Open-application dialog (`opn_appl`, `deskinf.c:1250-1271`) ─────────────
+
+/// `opn_appl` (EmuTOS `deskinf.c:1250-1271`) — *"Open application icon"*: the
+/// `ADOPENAP` box that asks a parameter-taking program for its command tail
+/// before `pro_run` starts it.
+///
+/// ```c
+/// tree = desk_rs_trees[ADOPENAP];
+///
+/// set_tedinfo_name(tree, APPLNAME, papname);
+/// inf_sset(tree, APPLPARM, "");
+/// inf_show(tree, APPLPARM);
+///
+/// /* now find out what happened */
+/// if (inf_what(tree, APPLOK))
+/// {
+///     inf_sget(tree, APPLPARM, ptail);
+///     return TRUE;
+/// }
+///
+/// return FALSE;
+/// ```
+///
+/// `papname` is the program's bare file name — `do_aopen`'s `pname`
+/// (`desksupp.c:984`) — and it is shown through [`set_tedinfo_name`], i.e.
+/// split into the `________.___` template like every other name field of the
+/// desktop. `ptail` receives the typed line; EmuTOS's caller points it at
+/// `G.g_work + 1`, where [`super::pro::pro_run`] turns it into the Atari
+/// command-tail image. Bytes rather than a `String` because the field's
+/// `te_pvalid` is `X`, which admits every character the AES's `check` lets
+/// through (`tos-api/src/aes/object.rs`), including the ones above 0x7E that
+/// are not UTF-8 — the tail is handed on as the bytes the user typed.
+///
+/// Returns EmuTOS's `WORD`: TRUE → run the program with this tail, FALSE →
+/// the user cancelled and nothing is started. **[`inf_what`]'s third answer
+/// counts as TRUE**: `if (inf_what(tree, APPLOK))` is a plain non-zero test,
+/// so the `-1` it gives when neither button ended up `SELECTED` launches too.
+/// That is the source's own arithmetic, kept rather than tidied.
+///
+/// ## The tree
+///
+/// `ADOPENAP` object for object (`desk_rsc.c:877-919`, `desk_rsc.h:93-98`) —
+/// seven objects, its numbering, its labels, its two `G_FBOXTEXT` template
+/// fields, its measurements resolved the way `rsrc_obfix` resolves them
+/// (`fix_chpos`, `aes/gemrslib.c:53-83`: `LOBYTE * cell + (signed)HIBYTE`).
+/// The ROOT's packed height `2058` is `(8 << 8) | 10` = 10 rows + 8 px and the
+/// buttons' packed `2056` is row 8 + 8 px, so at 8 x 16 the box is 320 x 168
+/// with the buttons at y 136..152 — room for the 2 px per side a 3D activator
+/// grows by before it is drawn.
+pub(super) fn opn_appl(papname: &str, ptail: &mut Vec<u8>) -> bool {
+    // ── object numbers (`desk_rsc.h:93-98`) ──────────────────────────────
+    //   0 ROOT · 1 APPLOPEN · 2 APPLNAME · 3 (the `Parameters:` label, which
+    //   the resource header does not name) · 4 APPLPARM · 5 APPLOK
+    //   6 APPLCNCL
+    const APPLNAME: i16 = 2;
+    /// `ADOPENAP` object 3, the `Parameters:` label. `desk_rsc.h` gives it no
+    /// name — it lists only `APPLOPEN`/`APPLNAME`/`APPLPARM`/`APPLOK`/
+    /// `APPLCNCL` — because nothing in `deskinf.c` addresses it.
+    const APPLPLBL: i16 = 3;
+    const APPLPARM: i16 = 4;
+    const APPLOK: usize = 5;
+    const APPLCNCL: i16 = 6;
+
+    // ── strings: `ADOPENAP`'s own (`desk_rsc.c:877-919`) and the templates of
+    //    `desk_rs_tedinfo[12]`/`[13]` (`:62-70`), character for character.
+    static TITLE: &[u8] = b"OPEN APPLICATION\0";
+    static PARAMS: &[u8] = b"Parameters:\0";
+    static OK: &[u8] = b"OK\0";
+    static CANCEL: &[u8] = b"Cancel\0";
+    /// `desk_rs_tedinfo[12]`'s template, `rs_str_Name______________`
+    /// (`desk_rsc.c:18`) — `te_tmplen` 19, so 18 characters and the NUL.
+    static T_NAME: &[u8] = b"Name: ________.___\0";
+    /// `desk_rs_tedinfo[13]`'s template — 38 underscores, `te_tmplen` 39.
+    static T_PARM: &[u8] = b"______________________________________\0";
+    static V_FNAME: &[u8] = b"f\0";
+    static V_ANY: &[u8] = b"X\0";
+
+    // The two text buffers, each exactly its field's `te_txtlen`
+    // (`desk_rs_tedinfo[12]` 12, `[13]` 39).
+    let mut b_name = [0u8; 12];
+    let mut b_parm = [0u8; 39];
+
+    // `set_tedinfo_name(tree, APPLNAME, papname);` and
+    // `inf_sset(tree, APPLPARM, "");`
+    set_tedinfo_name(&mut b_name, papname.as_bytes());
+    inf_sset(&mut b_parm, b"");
+
+    let mut ted_name = rsc_ted(&mut b_name, T_NAME, V_FNAME, TE_LEFT);
+    let mut ted_parm = rsc_ted(&mut b_parm, T_PARM, V_ANY, TE_LEFT);
+
+    // ── geometry: `ADOPENAP`'s own, cell for cell. 40 x (10 cells + 8 px).
+    let dw = 40 * CELL_W; // 320
+    let dh = 10 * CELL_H + 8; // 168
+    let col = CELL_W; // char column 1 — both fields and the label
+    let y_btn = 8 * CELL_H + 8; // 136
+
+    // 3D roles follow `ADOPENAP` object for object and the table in DESK01b:
+    // the ROOT is `FL3DBAK` + `OUTLINED`, both fields are `FL3DBAK`,
+    // `APPLOK`/`APPLCNCL` are `FL3DBAK | FL3DIND` = [`FL3DACT`], the two
+    // `G_STRING`s carry none.
+    #[rustfmt::skip]
+    let mut tree = [
+        // 0 ROOT — `ob_spec` 69888 = `(1 << 16) | 0x1100` ([`BOX_SPEC`]).
+        mk_root(BOX_SPEC, dw, dh, APPLCNCL),
+        // 1 APPLOPEN — a `G_STRING` one row down, so `align_title` centres it.
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, 11 * CELL_W, CELL_H, 16 * CELL_W, CELL_H, APPLNAME, -1, -1),
+        // 2 APPLNAME — the program's name, 21 cells wide on char row 3.
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_name as *mut _ as u64, col, 3 * CELL_H, 21 * CELL_W, CELL_H, APPLPLBL, -1, -1),
+        // 3 the `Parameters:` label, char row 5.
+        mk(G_STRING, 0, PARAMS.as_ptr() as u64, col, 5 * CELL_H, 11 * CELL_W, CELL_H, APPLPARM, -1, -1),
+        // 4 APPLPARM — the one `EDITABLE` field of the box, 38 cells on row 6.
+        mk(G_FBOXTEXT, EDITABLE | FL3DBAK, &mut ted_parm as *mut _ as u64, col, 6 * CELL_H, 38 * CELL_W, CELL_H, APPLOK as i16, -1, -1),
+        // 5/6 APPLOK / APPLCNCL, nine cells wide at char columns 7 and 24.
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * CELL_W, y_btn, 9 * CELL_W, CELL_H, APPLCNCL, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 24 * CELL_W, y_btn, 9 * CELL_W, CELL_H, 0, -1, -1),
+    ];
+    align_title(&mut tree, TITLE.len() as i16 - 1);
+
+    // `inf_show(tree, APPLPARM);` — the **start field**, not `ROOT`: the edit
+    // cursor opens in the parameter line, which is the only editable object
+    // of the box (`fm_inifld`, `aes/gemfmlib.c:153-160`).
+    inf_show(tree.as_mut_ptr() as u64, APPLPARM);
+
+    // `if (inf_what(tree, APPLOK)) { inf_sget(tree, APPLPARM, ptail); return TRUE; }`
+    if inf_what(&mut tree, APPLOK) != 0 {
+        ptail.clear();
+        ptail.extend_from_slice(inf_sget(&b_parm));
+        return true;
+    }
+    false
 }
 
 // ── Round-trip self-test (verification (b); not run at boot) ─────────────────
