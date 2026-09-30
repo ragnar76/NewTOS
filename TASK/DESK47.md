@@ -45,3 +45,25 @@ ist es seitdem nicht mehr — das ist eine echte Luecke, keine Formalie.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+---
+
+## Bestaetigt auf der Pi, 2026-09-30
+
+Zweite unabhaengige Beobachtung, Kern `2597951a`: Doppelklick auf
+`C:\CMDLINE.NTP` **aus unserem eigenen Desktop** — kein Kommandozeilen-Dialog,
+der Schirm wird „ganz kurz weiss und dann wieder im Desktop".
+
+Damit ist der Befund vom 2026-09-28 reproduziert und die Zuordnung gesichert:
+
+- **Kein Dialog** — das ist dieses Ticket. `opn_appl` ist nicht gebaut, also
+  startet `.NTP` mit leerer Parameterzeile.
+- **Das kurze Weiss ist kein zweiter Fehler.** Der Konsolenschirm steht
+  gemessene 25 ms einschliesslich Programmlauf ([DESK46](DESK46.md)). Das
+  Programm **laeuft** und endet; mit blossem Auge ist daraus nichts weiter zu
+  schliessen.
+
+Der Anwender hat auf Rueckfrage ausdruecklich bestaetigt, dass es **unser**
+Desktop war und nicht TeraDesk. Das ist der Unterschied, der zaehlt: TeraDesk
+wuerde bei `appt=4` selbst nach der Kommandozeile fragen (`applik.c:1390`),
+unser Desktop kann es ohne `opn_appl` nicht.

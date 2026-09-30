@@ -135,3 +135,25 @@ Laufwerke, auf der Karte sind sie richtig.
   Fenster-Popups) kennt die vier Endungen weiterhin nicht.
 - [PORT09](PORT09.md) — `PT_ARGV` bei `*.NAP` verspricht die
   ARGV-Konvention, unser `cmdargs.c` kennt sie nicht.
+
+---
+
+## Nachtrag 2026-09-30 — die Abnahme ist noch **nicht** gefahren
+
+Die Pi-Runde vom 2026-09-30 (Kern `2597951a`, Karte frisch aus
+`make-sd-image.sh`) hat die vier Endungen **aus unserem eigenen Desktop**
+geprueft, nicht aus TeraDesk. Der Anwender hat das auf Rueckfrage bestaetigt.
+
+**Das ist nicht die Abnahme dieses Tickets.** `TERADESK.INF` konfiguriert
+**TeraDesk**; unser Desktop liest sie nicht und kann sie nicht lesen. Was
+beobachtet wurde, sagt ueber die erzeugte Datei nichts aus.
+
+Was die Runde stattdessen belegt hat: `.NTP` startet aus unserem Desktop ohne
+Parameterdialog — das ist [DESK47](DESK47.md), dort bestaetigt.
+
+**Offen bleibt woertlich die Abnahme oben:** TeraDesk starten, `C:` oeffnen,
+und dort muessen `.NAP`, `.NCP` und `.NTP` ihr **Programmsymbol** tragen und
+per Doppelklick starten — bei `.NTP` mit TeraDesks eigenem
+Kommandozeilen-Dialog davor (`applik.c:1390`), bei `.NAC` mit der Weigerung
+(`startprg.c:644`). Die QEMU-Gegenprobe (Datei wird gefunden, gelesen und
+fehlerfrei geparst) traegt das Ticket bis dahin, ersetzt es aber nicht.
