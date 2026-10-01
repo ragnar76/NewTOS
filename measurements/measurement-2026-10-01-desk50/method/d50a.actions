@@ -1,0 +1,18 @@
+# DESK50 run A -- no window at boot (NEWDESK.INF #W paths empty).
+# Double-click the C drive icon (obj 9 at (0,19) 76x40, pass 0) -> do_dopen
+# from an icon; then Alt+C -> do_dopen(-'C') -> obj_get_obid.
+# IKBD: Alt 38/B8, C 2E/AE (kernel/src/keymap.rs US_NORM 0x2E -> 'c').
+100 parkbr
+400 mark A_IDLE
+600 move 38 30
+800 down
+803 up
+808 down
+811 up
+2200 mark A_OPENED
+2400 move 600 300
+2500 key 38
+2520 key 2E
+2540 key AE
+2560 key B8
+4000 mark A_ALTC

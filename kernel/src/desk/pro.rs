@@ -107,35 +107,18 @@ fn pro_exec(isgraf: bool, isover: i16, pcmd: &[u8], ptail: &[u8]) -> bool {
 /// `tail` comes in as EmuTOS hands it over: the **text** of the command tail
 /// starting at byte 1, byte 0 reserved for the length this function fills in.
 ///
-/// **The `(wh, curr)` pair is not carried, and that is the one named gap left
-/// here.** EmuTOS's second half is the *"optionally, deselect the current icon
-/// & zoom to desktop size"* step (`deskpro.c:61-62`), reached from the
-/// double-click launch (`do_open` → `do_aopen` → `pro_run(…, G.g_cwin, curr)`,
-/// `desksupp.c:986`). Since DESK43 U3 every desktop launch does come through
-/// here, so the branch is no longer unreachable — but its body, `do_wopen(FALSE,
-/// wh, curr, &G.g_desk)` (`desksupp.c:274-322`), has no counterpart in the tree
-/// yet. Adding two parameters whose only use would be a call that does not exist
-/// would be a stub; they come back with `do_wopen`.
-///
-/// **Why that is a unit of its own** (established for DESK47, which had to
-/// settle the question before touching it): `do_wopen` is not a `pro_run`
-/// helper. It has a second EmuTOS caller, `do_diropen` (`desksupp.c:454`),
-/// which in turn has four (`deskfun.c:413`, `deskmain.c:1496`,
-/// `desksupp.c:1067`, `:1156`) — it is the shared tail of *every* window open.
-/// NewTOS has no `do_diropen` either: its body is spread over
-/// [`super::main`]'s `open_dir_window_at`, `navigate_window`,
-/// `rebuild_window`, `open_root_window` and the `cnx_get` restore path, and
-/// **none** of them performs `do_wopen`'s `graf_growbox` zoom or its
-/// `act_chg(G.g_cwin, G.g_croot, curr, &gl_rfull, FALSE, FALSE)` deselect
-/// (`super::main::do_fopen`'s doc-comment records the same gap from the window
-/// side). Building `do_wopen` for this one caller would produce a function
-/// wearing the name without being it. The pieces it needs that do not exist:
-/// a `graf_growbox` wrapper in [`super`] (AES opcode 73 is implemented in
-/// `tos-api/src/aes/graf.rs`, the desktop has no binding), and a single
-/// `do_diropen` the five inlined copies above fold back into. `do_xyfix`,
-/// `obj_extent` (= `get_xywh` + the root offset), `act_chg` and `g_wlastsel`
-/// are all already there.
-pub(super) fn pro_run(isgraf: bool, cmd: &[u8], tail: &mut [u8; CMDTAILSIZE]) -> bool {
+/// `(wh, curr)` is the *"optionally, deselect the current icon & zoom to
+/// desktop size"* step (`deskpro.c:50,61-62`): `wh` is `G.g_cwin` and
+/// `curr` the launched icon for every `do_aopen` (`desksupp.c:951,986,1001`),
+/// `curr = -1` for a function key (`deskmain.c:1102`), and `wh = -1` for the
+/// console launch (`deskmain.c:753`), which skips the step. It runs whatever
+/// `pro_exec` answered, exactly as the source does — `ret` is not tested.
+/// The body is [`super::main::do_wopen`] with `new_win = FALSE` and the whole
+/// desktop as target: a `graf_growbox` from the icon out to `G.g_desk` and a
+/// redraw-less deselect of the icon (DESK50, `docs/api/desktop/desksupp-wopen.md`).
+/// A *Cancel* in `opn_appl` never gets here (`desksupp.c:986`), which is why
+/// the icon stays selected then.
+pub(super) fn pro_run(isgraf: bool, cmd: &[u8], tail: &mut [u8; CMDTAILSIZE], wh: i16, curr: i16) -> bool {
     // `tail[0] = len = strlen(tail+1);` — clamped so the length byte, the
     // text, its NUL and the CR all fit the image. EmuTOS has no such bound
     // (`G.g_work` is the same 128 bytes and it writes past on a maximal
@@ -146,5 +129,10 @@ pub(super) fn pro_run(isgraf: bool, cmd: &[u8], tail: &mut [u8; CMDTAILSIZE]) ->
     tail[0] = len as u8;
     // `tail[len+2] = 0x0D;` — "follows the nul byte, just like Atari TOS".
     tail[len + 2] = 0x0D;
-    pro_exec(isgraf, 1, cmd, tail)
+    let ret = pro_exec(isgraf, 1, cmd, tail);
+    // `if (wh != -1) do_wopen(FALSE, wh, curr, &G.g_desk);` (`:61-62`).
+    if wh != -1 {
+        super::main::do_wopen(false, wh, curr, super::g_desk());
+    }
+    ret
 }

@@ -1,0 +1,162 @@
+RB2
+NewTOS booting on rpi4
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x000000000031f000 (2748416 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f00 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-01 14:11:14
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01802000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[d50] desk icon obj 9 ch 'C' at (0,19) 76x40 state 0x0000
+[d50] desk icon obj 10 ch '\0' at (0,433) 76x40 state 0x0000
+[d50] desk icon obj 11 ch '\0' at (546,433) 76x40 state 0x0000
+[desk] desktop up (1 drives, 0 window(s) from the context)
+[h02] injector armed
+[h02] step 0 at +100 -> mouse (446,366) mb=0
+[h02] step 1 at +101 -> mouse (573,479) mb=0
+[h02] step 2 at +102 -> mouse (639,479) mb=0
+[h02] step 3 at +103 -> mouse (639,479) mb=0
+[h02] step 4 at +104 -> mouse (639,479) mb=0
+[h02] step 5 at +105 -> mouse (639,479) mb=0
+[h02] MARK A_IDLE step 6 at +400 mouse (639,479) mb=0
+[h02] step 7 at +600 -> mouse (512,352) mb=0
+[h02] step 8 at +601 -> mouse (385,225) mb=0
+[h02] step 9 at +602 -> mouse (258,98) mb=0
+[h02] step 10 at +603 -> mouse (131,30) mb=0
+[h02] step 11 at +604 -> mouse (38,30) mb=0
+[h02] step 12 at +800 -> mouse (38,30) mb=1
+[h02] step 13 at +803 -> mouse (38,30) mb=0
+[h02] step 14 at +808 -> mouse (38,30) mb=1
+[d50] do_wopen new_win=true wh=1 curr=9 cwin=0 croot=1 src=Some((0, 19, 76, 40)) dst=(48,43,544,400)
+[d50] ZOOM-HOLD 0/8 (0,19,76,40)
+[d50] ZOOM-HOLD 4/8 (24,31,310,220)
+[d50] ZOOM-HOLD 8/8 (48,43,544,400)
+[h02] step 15 at +1737 -> mouse (38,30) mb=0
+[d50] act_chg curr=9 ob_state 0x0001 -> 0x0000 dodraw=true
+[d50] item obj 12 ACC at (57,87) 76x40
+[d50] item obj 13 APPS at (141,87) 76x40
+[d50] item obj 14 AUTO at (225,87) 76x40
+[d50] item obj 15 COREMARK at (309,87) 76x40
+[d50] item obj 16 D50 at (393,87) 76x40
+[d50] item obj 17 GEMSYS at (477,87) 76x40
+[d50] item obj 18 SUB at (57,129) 76x40
+[d50] item obj 19 ARGVTEST.NAP at (141,129) 76x40
+[d50] item obj 20 BIG.NCP at (225,129) 76x40
+[d50] item obj 21 CLOCKTST.NCP at (309,129) 76x40
+[d50] item obj 22 CMDLINE.NCP at (393,129) 76x40
+[d50] item obj 23 CMDLINE.NTP at (477,129) 76x40
+[d50] item obj 24 CONFIG.TXT at (57,171) 76x40
+[d50] item obj 25 DATA.BIN at (141,171) 76x40
+[d50] item obj 26 DTACHILD.NCP at (225,171) 76x40
+[d50] item obj 27 DUMPVDI.NAP at (309,171) 76x40
+[d50] item obj 28 HELLO.NCP at (393,171) 76x40
+[d50] item obj 29 HELLO.TXT at (477,171) 76x40
+[d50] item obj 30 HELLO2.NCP at (57,213) 76x40
+[d50] item obj 31 KERNEL8.IMG at (141,213) 76x40
+[d50] item obj 32 KEYBOARD.KBD at (225,213) 76x40
+[d50] item obj 33 LIBTEST.NCP at (309,213) 76x40
+[d50] item obj 34 LYNXBOOT.IMG at (393,213) 76x40
+[d50] item obj 35 MATHTST.NCP at (477,213) 76x40
+[d50] item obj 36 NEWDESK.INF at (57,255) 76x40
+[d50] item obj 37 PHYSBASE.NCP at (141,255) 76x40
+[d50] item obj 38 PROOF.TXT at (225,255) 76x40
+[d50] item obj 39 README.TXT at (309,255) 76x40
+[d50] item obj 40 SCRFLIP.NCP at (393,255) 76x40
+[d50] item obj 41 SETJMPT.NCP at (477,255) 76x40
+[d50] item obj 42 SYSACC2.NAC at (57,297) 76x40
+[d50] item obj 43 SYSINFO.NCP at (141,297) 76x40
+[d50] item obj 44 TERADESK.INF at (225,297) 76x40
+[d50] item obj 45 VDI.TSV at (309,297) 76x40
+[d50] do_diropen C:\*.* new_win=true handle=1 -> TRUE
+[h02] MARK A_OPENED step 16 at +2200 mouse (38,30) mb=0
+[h02] step 17 at +2400 -> mouse (165,157) mb=0
+[h02] step 18 at +2401 -> mouse (292,284) mb=0
+[h02] step 19 at +2402 -> mouse (419,300) mb=0
+[h02] step 20 at +2403 -> mouse (546,300) mb=0
+[h02] step 21 at +2404 -> mouse (600,300) mb=0
+[h02] step 22 at +2500 -> mouse (600,300) mb=0
+[h02] step 23 at +2520 -> mouse (600,300) mb=0
+[d50] do_wopen new_win=true wh=2 curr=9 cwin=1 croot=2 src=Some((49, 85, 76, 40)) dst=(80,67,544,400)
+[d50] ZOOM-HOLD 0/8 (49,85,76,40)
+[d50] ZOOM-HOLD 4/8 (64,76,310,220)
+[d50] ZOOM-HOLD 8/8 (80,67,544,400)
+[h02] step 24 at +3447 -> mouse (600,300) mb=0
+[d50] act_chg curr=9 ob_state 0x0000 -> 0x0000 dodraw=true
+[h02] step 25 at +3447 -> mouse (600,300) mb=0
+[d50] item obj 46 ACC at (89,111) 76x40
+[d50] item obj 47 APPS at (173,111) 76x40
+[d50] item obj 48 AUTO at (257,111) 76x40
+[d50] item obj 49 COREMARK at (341,111) 76x40
+[d50] item obj 50 D50 at (425,111) 76x40
+[d50] item obj 51 GEMSYS at (509,111) 76x40
+[d50] item obj 52 SUB at (89,153) 76x40
+[d50] item obj 53 ARGVTEST.NAP at (173,153) 76x40
+[d50] item obj 54 BIG.NCP at (257,153) 76x40
+[d50] item obj 55 CLOCKTST.NCP at (341,153) 76x40
+[d50] item obj 56 CMDLINE.NCP at (425,153) 76x40
+[d50] item obj 57 CMDLINE.NTP at (509,153) 76x40
+[d50] item obj 58 CONFIG.TXT at (89,195) 76x40
+[d50] item obj 59 DATA.BIN at (173,195) 76x40
+[d50] item obj 60 DTACHILD.NCP at (257,195) 76x40
+[d50] item obj 61 DUMPVDI.NAP at (341,195) 76x40
+[d50] item obj 62 HELLO.NCP at (425,195) 76x40
+[d50] item obj 63 HELLO.TXT at (509,195) 76x40
+[d50] item obj 64 HELLO2.NCP at (89,237) 76x40
+[d50] item obj 65 KERNEL8.IMG at (173,237) 76x40
+[d50] item obj 66 KEYBOARD.KBD at (257,237) 76x40
+[d50] item obj 67 LIBTEST.NCP at (341,237) 76x40
+[d50] item obj 68 LYNXBOOT.IMG at (425,237) 76x40
+[d50] item obj 69 MATHTST.NCP at (509,237) 76x40
+[d50] item obj 70 NEWDESK.INF at (89,279) 76x40
+[d50] item obj 71 PHYSBASE.NCP at (173,279) 76x40
+[d50] item obj 72 PROOF.TXT at (257,279) 76x40
+[d50] item obj 73 README.TXT at (341,279) 76x40
+[d50] item obj 74 SCRFLIP.NCP at (425,279) 76x40
+[d50] item obj 75 SETJMPT.NCP at (509,279) 76x40
+[d50] item obj 76 SYSACC2.NAC at (89,321) 76x40
+[d50] item obj 77 SYSINFO.NCP at (173,321) 76x40
+[d50] item obj 78 TERADESK.INF at (257,321) 76x40
+[d50] item obj 79 VDI.TSV at (341,321) 76x40
+[d50] do_diropen C:\*.* new_win=true handle=2 -> TRUE
+[h02] MARK A_ALTC step 26 at +4000 mouse (600,300) mb=0

@@ -945,7 +945,7 @@ fn inf_text(buf: &[u8]) -> &[u8] {
 ///
 /// Applies: the `#E` view/sort/size-to-fit, the `#Q` background (`g_patcol`),
 /// the `#M`/`#T`/`#O` desktop-icon grid positions (cached for `app_blddesk`),
-/// and the `#W` window rectangles (cached for `open_dir_window`). The parsed
+/// and the `#W` window rectangles (cached for `main::win_default_rect`). The parsed
 /// image is stashed in [`SESSION`] so a later Save preserves the file-type
 /// `ANODE`s and the confirm/format prefs.
 ///

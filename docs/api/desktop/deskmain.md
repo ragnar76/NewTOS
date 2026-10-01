@@ -1256,13 +1256,13 @@ way it was saved.
    from the context would duplicate every one. Closing them in the
    epilog and rebuilding them in the prolog is the launch-path half of
    gaps G1/G2 and belongs to that rebuild.
-3. **`obj_get_obid(pth_save[0])`** — EmuTOS resolves the saved path's
-   drive letter back to a desktop object id and hands it to `win_alloc`
-   as `w_obid`. NewTOS's window open path does not carry a source object
-   (`win_alloc(handle, 0)` everywhere), and EmuTOS's own `win_free` on a
-   failed `do_diropen` has no counterpart either, because the NewTOS
-   open path has no failure signal: an unreachable saved path yields an
-   empty window, exactly as any other unreachable path does.
+3. ~~**`obj_get_obid(pth_save[0])`**~~ — **closed by DESK50
+   (2026-10-01)**: `main::cnx_get` resolves the drive letter with
+   `main::obj_get_obid`, hands it to `win_alloc` as `w_obid` and to
+   `do_diropen` as the zoom source, and `win_free`s the node when
+   `do_diropen` fails — which it now can (`pn_active`'s error code,
+   `desksupp-wopen.md`), so an unreachable saved path opens no window,
+   as in EmuTOS.
 4. **An unused slot supplies no default rectangle.** EmuTOS's
    `win_alloc` takes `cs_wnode[g_wcnt]` unconditionally, which works
    because its built-in `EMUDESK.INF` always carries four default `#W`
@@ -1668,31 +1668,32 @@ folder open reuses the window's own `WNODE`.
 `rc_copy((GRECT *)&G.g_screen[pw->w_root].ob_x, &t)` at `:1148` copies the *new*
 node's rectangle **into** `t` (EmuTOS's `rc_copy` is src → dst,
 `aes/gemrect.c`), so the new window opens at its own slot's default geometry;
-the `wind_get(WF_WXYWH)` at `:1097` only survives into the `!new_win` arm, where
+the `wind_get(WF_WXYWH)` at `:1095` only survives into the `!new_win` arm, where
 it is the damage rectangle of the redraw.
 
 | EmuTOS | NewTOS |
 |---|---|
 | `do_open` → `do_fopen(pw, curr, path, TRUE)` | `main::open_item`'s `OpenTarget::Folder` arm → `main::do_fopen(handle, spec, title, true)` |
-| `new_win == FALSE`: `pn_close` + `do_diropen(pw, FALSE, …)` | `main::navigate_window` — the same body the Close-folder "up one level" uses (EmuTOS `w_setpath` → `do_fopen(…, FALSE)`, `deskfun.c:817-824`) |
-| `new_win == TRUE`: `win_alloc` + `do_diropen(pw, TRUE, …)` | `main::open_dir_window` |
-| `do_dopen` (drive icon) | `main::open_root_window` — unchanged, still a new window |
+| `new_win == FALSE`: `pn_close` + `do_diropen(pw, FALSE, …)` | `main::do_fopen`'s same-window arm → `main::do_diropen(…, false, …)` — also what the Close-folder "up one level" reaches (EmuTOS `w_setpath` → `do_fopen(…, FALSE)`, `deskfun.c:817-824`) |
+| `new_win == TRUE`: `win_alloc` + `do_diropen(pw, TRUE, …)` | `main::win_alloc_window` + `main::do_diropen(…, true, …)` |
+| `do_dopen` (drive icon) | `main::do_dopen` — always a new window |
 | `WN_DESKTOP` (`CONF_WITH_DESKTOP_SHORTCUTS`) | not reachable: NewTOS has no `AT_ISFOLD` desktop `ANODE` (DESK30). When that lands it becomes the second `new_win = TRUE` producer in `main::do_fopen` |
 
 ### Named deviations
 
-1. **No `graf_growbox` zoom and no `act_chg` deselect of the source icon**
-   (`do_wopen`, `desksupp.c:294-322`). Neither is implemented on *any* NewTOS
-   window-open path, so this is a pre-existing gap the DESK34 change neither
-   introduces nor closes. The deselect is unobservable in the `!new_win` arm:
-   `win_bldview` rebuilds the window's item tree from the new directory, so the
-   `OBJECT` that carried `OB_SELECTED` is gone with it.
+1. ~~No `graf_growbox` zoom and no `act_chg` deselect of the source icon~~
+   (`do_wopen`, `desksupp.c:294-322`) — **closed by DESK50 (2026-10-01)**:
+   `main::do_wopen` and `main::do_diropen` exist and every window open goes
+   through them; see `desksupp-wopen.md`. The table above names the new
+   functions.
 2. **`w_cvcol` is not reset.** EmuTOS resets only `pw->w_cvrow` before
-   `do_fopen` (`desksupp.c:1258`, `deskfun.c:823`); NewTOS's `navigate_window`
-   used to reset both and now resets only `w_cvrow`, matching the source.
+   `do_fopen` (`desksupp.c:1258`, `deskfun.c:823`); NewTOS's former
+   `navigate_window` used to reset both and then only `w_cvrow`, matching the
+   source. Since DESK50 the reset sits with the two callers, where EmuTOS has
+   it (`main::open_item`'s folder arm and `main::do_close_folder`).
    `win_ocalc` clamps a horizontal offset to the new directory's column count,
    so the kept value cannot scroll a shorter listing off the end.
-3. `navigate_window` now also runs `desk_verify` — `do_diropen`'s own step
+3. The same-window path also runs `desk_verify` — `do_diropen`'s own step
    (`desksupp.c:459`), previously missing, which matters for the Close-folder
    caller too (its window is `win_ontop()`, which need not be `G.g_cwin`).
 
@@ -1743,9 +1744,9 @@ All three are `main::do_aopen_drop`'s body, which is why `process_funkey` calls
 it with `None` rather than repeating them: `pro_run` writes
 `tail[0] = strlen(tail+1) = 0` for a `NULL` tail too (`deskpro.c:56-57`).
 
-`curr = -1` in this call only suppresses `pro_run`'s `do_wopen`
-(`deskpro.c:61-62`); NewTOS launches nested and repaints on return, so there is
-nothing to suppress.
+`curr = -1` in this call suppresses the zoom and the deselect of
+`pro_run`'s `do_wopen` (`deskpro.c:61-62`, `desksupp.c:302`); NewTOS passes
+the same `-1` (DESK50).
 
 **The `opn_appl` branch is reached, and that is what `NULL` is for.** EmuTOS
 asks `isparm` precisely when `tail == NULL` (`:969-985`), which is this call's

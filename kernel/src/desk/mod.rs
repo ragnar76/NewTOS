@@ -97,6 +97,9 @@ const OP_FORM_DIAL: i16 = 51;
 const OP_FORM_ALERT: i16 = 52;
 const OP_FORM_CENTER: i16 = 54;
 const OP_GRAF_RUBBERBOX: i16 = 70;
+/// `GRAF_GROWBOX` (`aesdefs.h`) — the zoom outline `do_wopen` draws from the
+/// source icon out to the new window (`desk/desksupp.c:315`).
+const OP_GRAF_GROWBOX: i16 = 73;
 const OP_GRAF_HANDLE: i16 = 77;
 const OP_GRAF_MOUSE: i16 = 78;
 const OP_GRAF_MKSTATE: i16 = 79;
@@ -491,6 +494,26 @@ pub(super) fn graf_mkstate() -> MouseState {
     let mut a = Aes::new();
     a.call(OP_GRAF_MKSTATE, 0, 5, 0);
     MouseState { mx: a.intout[1], my: a.intout[2], buttons: a.intout[3], kstate: a.intout[4] }
+}
+
+/// `graf_growbox_grect(from, to)` (73) — the AES zoom outline from the small
+/// rectangle `from` out to the big rectangle `to` (EmuTOS
+/// `desk/gembind.c:589-600`: `GR_I1..GR_I8` = from x/y/w/h, to x/y/w/h,
+/// `AES_CTRL_CODE(GRAF_GROWBOX, 8, 1, 0)`). Its one desktop caller is
+/// [`main`]'s `do_wopen` (`desk/desksupp.c:315`), which zooms from the icon a
+/// window or a program was opened from. Returns the AES's `int_out[0]`.
+pub(super) fn graf_growbox(from: Grect, to: Grect) -> i16 {
+    let mut a = Aes::new();
+    a.intin[0] = from.x;
+    a.intin[1] = from.y;
+    a.intin[2] = from.w;
+    a.intin[3] = from.h;
+    a.intin[4] = to.x;
+    a.intin[5] = to.y;
+    a.intin[6] = to.w;
+    a.intin[7] = to.h;
+    a.call(OP_GRAF_GROWBOX, 8, 1, 0);
+    a.intout[0]
 }
 
 /// `graf_rubberbox(x, y, minw, minh)` (70) — anchor a rubber-band box at

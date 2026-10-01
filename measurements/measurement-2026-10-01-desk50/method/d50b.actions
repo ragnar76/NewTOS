@@ -1,0 +1,35 @@
+# DESK50 run B -- window C:\D50\ restored from NEWDESK.INF (#W 02 04 26 0C),
+# then: Cancel case, same-window folder open, close-folder, program launch.
+# Click points are the run's own "[d50] item obj" lines (pass 0,
+# serial/d50p0-serial.log): SUB50 (25,108) 76x40, CMDLINE.NTP (109,108),
+# HELLO.NCP (193,108); centre of the glyph = (x+38, y+12).  Cancel of
+# ADOPENAP at (388,309) from measurement-2026-09-30-desk47 RUNINFO s3.
+# Ticks are hz_200 (5 ms).  Every zoom holds 3 x 1.5 s (desk50_patch.py), so
+# steps after a zoom leave >= 1000 ticks.
+100 parkbr
+400 mark B_IDLE
+600 move 147 120
+800 down
+803 up
+808 down
+811 up
+1400 mark B_DIALOG
+1500 move 388 309
+1700 down
+1705 up
+2100 mark B_CANCELLED
+2300 move 63 120
+2500 down
+2503 up
+2508 down
+2511 up
+3900 mark B_SUB
+4100 move 27 74
+4300 down
+4305 up
+4800 mark B_UP
+5000 move 231 120
+5200 down
+5203 up
+5208 down
+5211 up

@@ -1,0 +1,11 @@
+ docs/api/desktop/_overview.md |   2 +-
+ docs/api/desktop/deskinf.md   |   6 +-
+ docs/api/desktop/deskmain.md  |  47 ++--
+ kernel/src/desk/dir.rs        |   4 +-
+ kernel/src/desk/inf.rs        |   2 +-
+ kernel/src/desk/main.rs       | 600 ++++++++++++++++++++++++++++--------------
+ kernel/src/desk/mod.rs        |  23 ++
+ kernel/src/desk/model.rs      |  45 +++-
+ kernel/src/desk/pro.rs        |  48 ++--
+ kernel/src/desk/win.rs        |   5 +-
+ 10 files changed, 517 insertions(+), 265 deletions(-)

@@ -1903,7 +1903,11 @@ The call sites are the two `do_aopen` embodiments in `kernel/src/desk/main.rs`:
 distinction is carried rather than approximated by an empty string — `None` is
 `process_funkey`, `Some` the three drop paths in `kernel/src/desk/dir.rs`.
 
-**Still missing in the same corner, and named rather than half-built:**
+**Closed by DESK50 (2026-10-01), kept here for the history:** the paragraph
+below described the state after DESK47. `do_wopen`, `do_diropen` and
+`pro_run`'s `(wh, curr)` pair are built; see `desksupp-wopen.md`.
+
+*Was missing in the same corner, and named rather than half-built:*
 `pro_run`'s `(wh, curr)` pair and `do_wopen` (`desksupp.c:274-322`). `do_wopen`
 has two callers in EmuTOS — `pro_run` (`deskpro.c:61`) and `do_diropen`
 (`desksupp.c:454`) — and `do_diropen` itself has four (`deskfun.c:413`,

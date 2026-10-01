@@ -1,6 +1,6 @@
 # DESK50 — `do_wopen`/`do_diropen` fehlen; der Fensterschwanz ist bei uns verteilt
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Fehlende EmuTOS-Funktion — abgegrenzt aus [DESK47](DESK47.md)
+Status: **IMPLEMENTIERT — HW-Abnahme offen** (2026-10-01, [Statusdatei](DESK50-STATUS-DONE.MD)) · Prioritaet: **P2** · Typ: Fehlende EmuTOS-Funktion — abgegrenzt aus [DESK47](DESK47.md)
 
 Abhaengigkeiten: [DESK47](DESK47.md) (dort als eigenes Paket erkannt), [DESK43](DESK43.md) U3 (machte den Zweig erreichbar)
 

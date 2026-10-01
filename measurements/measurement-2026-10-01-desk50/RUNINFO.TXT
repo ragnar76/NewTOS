@@ -1,0 +1,163 @@
+measurement-2026-10-01-desk50
+  DESK50 -- do_wopen / do_diropen: every window open and every program
+  launch through one tail, with graf_growbox and the act_chg deselect
+===========================================================================
+
+Basis: branch desk-rebuild, HEAD 4366422.  The change is UNCOMMITTED in the
+shared tree (method/desk50.diff = `git diff -- kernel/src/desk docs/api/desktop
+tos-api`; the two new files docs/api/desktop/desksupp-wopen.md and
+tos-api/tests/aes_graf_growbox_desk.rs are untracked and therefore not in the
+diff).  Nothing flashed, nothing ejected, no real Pi driven, nothing
+committed; no git command that writes was run on the shared tree -- the only
+ones were `git diff`, `git status` and `git show HEAD:<path>` (read only, for
+the BEFORE kernel).  /Volumes/BOOT was not touched.
+
+All instrumentation lives on SCRATCH copies of the crates under the session
+scratchpad, never in the shared tree.  The card images were built there too
+and are not copied here (no *.img in this directory).
+
+Machine: QEMU -M raspi4b -no-reboot -display none -serial file:<log>
+         -drive file=<sd>,if=sd,format=raw -qmp unix:<sock>
+         640x480 (startup log).
+Host:    macOS (Darwin 27).  No `timeout`; method/qmp_multi.py bounds every
+         run and ends the VM with QMP `quit`.
+Build:   release (`cargo xtask build --board rpi4 --release` in the scratch).
+
+Card: tools/make-sd-image.sh <img> 64 from the SHARED tree (read only; it
+writes only the image path in the scratch), then method/sd-prep-d50.sh:
+C:\NEWDESK.INF from method/newdesk-d50a.inf (no window at boot) or
+newdesk-d50b.inf (window C:\D50\ at #W 02 04 26 0C, the DESK46/47 geometry),
+and C:\D50\ = SUB50\INSIDE.TXT, CMDLINE.NTP, HELLO.NCP.
+
+Instrumentation (scratch only):
+  method/apply_injector.py   GUI04/H02 IKBD injector, script per run
+  method/desk_arm_patch.py   injector clock starts at "[desk] desktop up"
+  method/desk50_patch.py     (a) ZOOM HOLD: while graf_growbox (73) animates,
+                             frame 0, frame steps/2 and frame steps are held
+                             1.5 s each and announced on the UART as
+                             "[d50] ZOOM-HOLD i/steps (x,y,w,h)" -- the zoom
+                             takes ~0.1 s and could not be photographed
+                             otherwise.  Only graf_growbox is held, not
+                             form_dial or graf_movebox.  (b) "[d50]" trace
+                             lines in do_wopen (source/target rectangle,
+                             g_cwin/g_croot, ob_state of curr before and
+                             after act_chg) and do_diropen (path, new_win,
+                             result, the window's items with their screen
+                             extent), (c) the desktop icons at "desktop up".
+  method/make_scratch_d50.sh    AFTER kernel  = shared tree + the three above
+                             (snapshot taken before the last edits, which
+                             corrected source-line cites in comments only:
+                             `:1097` -> `:1095` in main.rs/deskmain.md)
+  method/make_scratch_head.sh   BEFORE kernel = the same, but every touched
+                             kernel/src/desk/*.rs replaced by `git show
+                             HEAD:` and WITHOUT desk50_patch.py (its anchors
+                             are DESK50 code): no [d50] lines, no hold.
+Click points are never guessed: pass 0 (serial/d50p0-serial.log) printed
+every desktop icon and window item with its extent; the Cancel point of
+ADOPENAP (388,309) is measurement-2026-09-30-desk47 RUNINFO s3.
+
+0 [EXC] / [PANIC] in all four serial logs.  fsck_msdos -n clean on all four
+images (method/fsck-result.txt; "N files, … free" is the summary line, no
+repair message).
+
+---------------------------------------------------------------------------
+1.  Run A -- a window from the drive icon, then Alt+C      (AFTER kernel)
+---------------------------------------------------------------------------
+method/d50a.actions, serial/d50a-serial.log, screendumps/a01..a09.
+
+Double-click on DISK C (obj 9 at (0,19) 76x40) -> open_item's drive arm ->
+do_dopen(9):
+
+  [d50] do_wopen new_win=true wh=1 curr=9 cwin=0 croot=1 src=Some((0, 19, 76, 40)) dst=(48,43,544,400)
+  [d50] ZOOM-HOLD 0/8 (0,19,76,40)
+  [d50] ZOOM-HOLD 4/8 (24,31,310,220)
+  [d50] ZOOM-HOLD 8/8 (48,43,544,400)
+  [d50] act_chg curr=9 ob_state 0x0001 -> 0x0000 dodraw=true
+  [d50] do_diropen C:\*.* new_win=true handle=1 -> TRUE
+
+a02/a03/a04: the dithered XOR outline at the icon, half-way, at the window
+rectangle (a03 is the clearest).  The zoom starts at the icon and ends at the
+window -- graf_growbox, not shrinkbox.
+a05: window open, DISK C **deselected** (dodraw = new_win = TRUE, the icon is
+repainted).
+
+BEFORE kernel, same script (serial/d50h-serial.log, screendumps/h01,h05,h09):
+h05 leaves DISK C **selected** after the open.  Pixel difference h05 vs a05:
+880 px, bounding box (2,30)-(54,59) = exactly the part of the icon the window
+does not cover; nothing else on the screen differs.  h01 vs a01: 0 px.
+
+Alt+C (IKBD 38 2E AE B8) -> check_alt_letter_key -> do_dopen(-'C') ->
+obj_get_obid('C') = 9:
+
+  [d50] do_wopen new_win=true wh=2 curr=9 cwin=1 croot=2 src=Some((49, 85, 76, 40)) dst=(80,67,544,400)
+  [d50] act_chg curr=9 ob_state 0x0000 -> 0x0000 dodraw=true
+  [d50] do_diropen C:\*.* new_win=true handle=2 -> TRUE
+
+The source is the C icon's rectangle offset by the CURRENT root (window 1's
+work area at (49,66)) -- do_wopen's get_xywh(G.g_screen, G.g_croot, …)
+(desksupp.c:309-312), reproduced, not corrected (spec desksupp-wopen.md,
+do_wopen step 3).  a06..a08 show it.
+h09 vs a09: 21714 px -- the second window sits at x=72 BEFORE and x=80 AFTER:
+do_wopen now runs do_xyfix on every new window's rectangle (desksupp.c:300),
+which the old open path did not; (72+8) & 0xfff0 = 80.
+
+---------------------------------------------------------------------------
+2.  Run B -- restored window, Cancel, same-window folder, close folder,
+            program launch, desktop return              (AFTER kernel)
+---------------------------------------------------------------------------
+method/d50b.actions, serial/d50b-serial.log, screendumps/b01..b18.
+
+Boot: cnx_get -> win_alloc(obj_get_obid('C')) -> do_diropen(…, TRUE, 9, …):
+  [d50] do_wopen new_win=true wh=1 curr=9 cwin=0 croot=1 src=Some((0, 19, 76, 40)) dst=(16,64,304,192)
+  b01..b03 = the zoom from DISK C to the restored C:\D50\ window, before the
+  desktop is painted (cnx_get runs inside BEG_UPDATE, deskmain.c:2053-2057).
+
+Cancel: double-click CMDLINE.NTP -> ADOPENAP (b05) -> Cancel (b06).
+  No do_wopen line between MARK B_DIALOG and MARK B_CANCELLED, and b06 shows
+  CMDLINE.NTP still selected: opn_appl returned FALSE, pro_run was never
+  reached (desksupp.c:986).  EmuTOS-conform, as DESK50.md says.
+
+Same-window folder: double-click SUB50 -> do_fopen(…, allow_new_win) without
+Alt -> pn_close + do_diropen(…, FALSE, 12, …):
+  [d50] do_wopen new_win=false wh=1 curr=12 cwin=1 croot=2 src=Some((25, 108, 76, 40)) dst=(16,106,280,127)
+  [d50] act_chg curr=12 ob_state 0x0001 -> 0x0000 dodraw=false
+  [d50] do_diropen C:\D50\SUB50\*.* new_win=false handle=1 -> TRUE
+  b07..b09: zoom from the folder icon to the window's work area; the title
+  already reads C:\D50\SUB50\ and the info line the new totals (win_sname/
+  win_sinfo/WF_NAME precede do_wopen, desksupp.c:449-454) while the old items
+  are still on screen -- the redraw follows desk_verify (:462-466).
+  b10: SUB50's contents, same window (handle 1).
+
+Close folder (close gadget, WM_CLOSED -> do_close_folder -> do_fopen(…, 0,
+…, false)):
+  [d50] do_wopen new_win=false wh=1 curr=0 (no source object: no zoom, no deselect)
+  b11: back in C:\D50\.
+
+Launch: double-click HELLO.NCP (obj 12 after the re-scan) -> open_item ->
+pro_run(…, g_cwin = 1, curr = 12) -> do_wopen(FALSE, 1, 12, &G.g_desk):
+  [d50] do_wopen new_win=false wh=1 curr=12 cwin=1 croot=2 src=Some((193, 108, 76, 40)) dst=(0,19,640,461)
+  [d50] ZOOM-HOLD 0/8 (193,108,76,40)
+  [d50] ZOOM-HOLD 4/8 (97,64,358,250)
+  [d50] ZOOM-HOLD 8/8 (0,19,640,461)
+  [d50] act_chg curr=12 ob_state 0x0001 -> 0x0000 dodraw=false
+  [shell] sh_ldapp: starting C:\D50\HELLO.NCP, sh_nextapp=0, sh_isgem=0
+  Hello from a NewTOS .NCP program!
+  b12..b14: zoom from HELLO.NCP to the whole desktop (b13 is the clearest).
+  The icon IS deselected (ob_state 0x0001 -> 0x0000) but not repainted
+  (dodraw = new_win = FALSE): on screen it stays inverted until the desktop
+  goes -- EmuTOS does exactly this (desksupp.c:316, header :282-292).  The
+  deselect is therefore proven by the serial line, not by a screendump; it
+  cannot be photographed in EmuTOS either.
+  b15..b17: the restarted desktop's cnx_get zoom, b18: desktop back.
+
+---------------------------------------------------------------------------
+3.  Not driven
+---------------------------------------------------------------------------
+* Alt-held folder open (do_fopen new_win = TRUE from a window) -- graf_mkstate
+  reads the live modifier state at the open; same code path as do_dopen's
+  new-window arm plus win_alloc_window; Pi checklist.
+* A failing do_diropen (pn_active < 0, e.g. a #W path that no longer exists):
+  the cleanup arms (win_free_window, do_dopen's act_chg redraw) are read
+  against desksupp.c:1067-1071 and deskmain.c:1496-1497, not driven.
+* STNOWIND (an eighth window) -- not driven.
+* Real Pi 4.

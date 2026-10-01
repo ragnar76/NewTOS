@@ -1,0 +1,24 @@
+== <scratch>/d50/sd-a.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 68 files, 63654 KiB free (31827 clusters)
+== <scratch>/d50/sd-b.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 68 files, 63654 KiB free (31827 clusters)
+== <scratch>/d50/sd-h.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 68 files, 63654 KiB free (31827 clusters)
+== <scratch>/d50/sd-p0.img
+   ** /dev/rdisk4s1
+   ** Phase 1 - Preparing FAT
+   ** Phase 2 - Checking Directories
+   ** Phase 3 - Checking for Orphan Clusters
+   Warning: 70 files, 63650 KiB free (31825 clusters)

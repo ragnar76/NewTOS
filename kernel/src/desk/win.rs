@@ -70,8 +70,9 @@ pub const WN_REBUILD: u16 = 0x8000;
 pub const DESKWH: i16 = 0;
 
 /// `LEN_ZPATH` (`include/sysconf.h:51`) — the maximum path length including
-/// the drive, which sizes the `WNODE` title buffer.
-const LEN_ZPATH: usize = 114;
+/// the drive, which sizes the `WNODE` title buffer and bounds `pn_open`
+/// (`desk/deskfpd.c:73-74`).
+pub(super) const LEN_ZPATH: usize = 114;
 /// Size of a window's title buffer — `char w_name[LEN_ZPATH+2]`
 /// (`desk/deskwin.h:73`, "allow for leading & trailing spaces").
 pub const W_NAME_LEN: usize = LEN_ZPATH + 2;

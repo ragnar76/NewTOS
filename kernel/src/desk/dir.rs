@@ -1977,6 +1977,7 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) -> bool {
                     &dst_dir,
                     &dst_name,
                     Some(destpath.as_bytes()),
+                    dst_obj,
                 );
             }
         }
@@ -2082,7 +2083,7 @@ fn fun_file2desk(
             // association node — so the directory choice falls to the desktop
             // flag `G.g_appdir`, which is `do_aopen`'s `else` arm
             // (`desksupp.c:903-912`).
-            super::main::do_aopen_drop(false, &pappl, false, &dst_dir, &dst_name, Some(tail.as_bytes()));
+            super::main::do_aopen_drop(false, &pappl, false, &dst_dir, &dst_name, Some(tail.as_bytes()), dobj);
             false
         }
         // "dropping file on folder - copy or move" (`:1035-1040`).
@@ -2147,6 +2148,7 @@ fn fun_desk2win(dest_wh: i16, dobj: i16, _keystate: u16) {
                     &dst_dir,
                     &dst_name,
                     Some(tail.as_bytes()),
+                    dobj,
                 );
                 return;
             }

@@ -21,10 +21,12 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use tos_api::aes::object::IconBlk;
-use tos_types::error::E_OK;
+use tos_types::error::{E_OK, EFILNF, ENMFIL};
+use tos_types::Long;
 
 use super::dosbind::{dos_sdta, dos_sfirst, dos_snext};
 use super::global::NIL;
+use super::win::LEN_ZPATH;
 
 /// FAT attribute bit marking a sub-directory (`bdosdefs.h` `FA_SUBDIR`).
 pub const FA_SUBDIR: u8 = 0x10;
@@ -273,10 +275,28 @@ impl PNode {
     /// [`PNode::p_mask`] is **left untouched** — it is a window property that
     /// survives a rescan (so File → Set-mask's own rescan keeps the mask) and a
     /// same-window navigation (EmuTOS keeps the mask via `add_one_level`).
-    pub fn pn_open(&mut self, spec: &str) {
+    ///
+    /// Returns `false` — and changes nothing — for a `spec` of
+    /// [`LEN_ZPATH`] characters or more: `if (strlen(pathname) >= LEN_ZPATH)
+    /// return NULL;` (`deskfpd.c:73-74`), the "pathname is too long" exit of
+    /// `do_diropen` (`desksupp.c:431-436`).
+    pub fn pn_open(&mut self, spec: &str) -> bool {
+        if spec.len() >= LEN_ZPATH {
+            return false;
+        }
         self.p_attr = DISPATTR;
         self.p_spec.clear();
         self.p_spec.push_str(spec);
+        self.p_flist.clear();
+        self.p_count = 0;
+        self.p_size = 0;
+        true
+    }
+
+    /// `pn_close` (EmuTOS `deskfpd.c:59-63`) — "close a particular path":
+    /// `fl_free(thepath)`, i.e. drop the file list and its totals
+    /// (`deskfpd.c:43-51`). `p_spec` and the mask stay, as they do there.
+    pub fn pn_close(&mut self) {
         self.p_flist.clear();
         self.p_count = 0;
         self.p_size = 0;
@@ -288,11 +308,24 @@ impl PNode {
     /// empty directory (or `EFILNF`/`ENMFIL`) yields an empty list, matching
     /// EmuTOS folding those errors to success. The [`PNode::p_mask`] display
     /// filter is applied to files only (folders always kept).
-    pub fn pn_active(&mut self, include_folders: bool) {
-        let (list, total) = scan_dir(&self.p_spec, self.p_attr, include_folders, &self.p_mask);
+    ///
+    /// Returns EmuTOS's `WORD`: the code the `Fsfirst`/`Fsnext` loop ended
+    /// on, with `ENMFIL` and `EFILNF` — the two ways a directory runs out —
+    /// folded to `0` (`return ((ret==ENMFIL) || (ret==EFILNF)) ? 0 : ret;`,
+    /// `deskfpd.c:297`). Anything else negative is "error reading
+    /// directory" (`EPTHNF` for a path or drive that is not there), which
+    /// is what fails `do_diropen` (`desksupp.c:439-446`). The list built up
+    /// to that point is kept, as it is there; the caller `pn_close`s.
+    pub fn pn_active(&mut self, include_folders: bool) -> Long {
+        let (list, total, rc) = scan_dir(&self.p_spec, self.p_attr, include_folders, &self.p_mask);
         self.p_count = list.len();
         self.p_size = total;
         self.p_flist = list;
+        if rc == ENMFIL || rc == EFILNF {
+            E_OK
+        } else {
+            rc
+        }
     }
 
     /// `pn_sort` — reorder [`PNode::p_flist`] by `sort` (EmuTOS
@@ -394,7 +427,7 @@ impl Default for ScreenInfo {
 /// non-`.TXT` files but never a folder — EmuTOS scans with `*.*`
 /// (`del_fname(search)`) and `wildcmp`s the mask against files. An empty mask
 /// or `*.*` disables filtering.
-fn scan_dir(spec: &str, attr: u8, include_folders: bool, mask: &str) -> (Vec<FNode>, u64) {
+fn scan_dir(spec: &str, attr: u8, include_folders: bool, mask: &str) -> (Vec<FNode>, u64, Long) {
     // A `*.*` (or empty) mask matches everything, so skip the per-file test.
     let apply_mask = !mask.is_empty() && mask != "*.*";
     let mask_b = mask.as_bytes();
@@ -426,7 +459,7 @@ fn scan_dir(spec: &str, attr: u8, include_folders: bool, mask: &str) -> (Vec<FNo
         }
         rc = dos_snext();
     }
-    (list, total)
+    (list, total, rc)
 }
 
 /// `wildcmp` (EmuTOS `util/optimize.c:244`) — does 8.3 `filename` match the TOS

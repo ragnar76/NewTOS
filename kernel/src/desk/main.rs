@@ -336,13 +336,16 @@ fn gr_bwait(po: Grect, mx: i16, my: i16, xylnpts: &[Point], xyobpts: &[Point]) -
 }
 
 /// `act_chg(wh, root, obj, pc, set, dodraw)` (EmuTOS `deskact.c:419-466`) —
-/// the state change plus, when it actually changed something, the repaint of
-/// the object's own extent clipped to `pc`.
+/// the state change plus, when it actually changed something **and** `dodraw`
+/// is set, the repaint of the object's own extent clipped to `pc`. The four
+/// `gr_drgplns` callers pass `dodraw = TRUE`; `do_wopen` passes its `new_win`
+/// (`desksupp.c:316`), so a same-window open or a program launch changes the
+/// state without painting it.
 ///
 /// Split here because [`global::with`] is not re-entrant and
 /// [`redraw::do_wredraw`] takes the desktop lock itself: the `DeskState` half
 /// is [`global::DeskState::act_chg`], the draw half is this wrapper.
-fn act_chg_draw(wh: i16, root: i16, obj: i16, pc: Grect, set: bool) {
+fn act_chg_draw(wh: i16, root: i16, obj: i16, pc: Grect, set: bool, dodraw: bool) {
     let Some(t) = global::with(|g| {
         let extent = g.obj_extent(root, obj);
         if g.act_chg(wh, obj, set) {
@@ -356,6 +359,9 @@ fn act_chg_draw(wh: i16, root: i16, obj: i16, pc: Grect, set: bool) {
     };
     // `if (dodraw && rc_intersect(pc, &t)) do_wredraw(wh, &t);` (`:457-460`) —
     // `rc_intersect` narrows `t` to the visible part before the redraw.
+    if !dodraw {
+        return;
+    }
     if let Some(t) = redraw::rc_intersect(pc, t) {
         redraw::do_wredraw(wh, t);
     }
@@ -448,7 +454,7 @@ fn gr_drgplns(
             // `:313-323` — nothing under the pointer any more: drop the
             // highlight and go round.
             if dobj == root && curr_sel != 0 {
-                act_chg_draw(curr_wh, curr_root, curr_sel, pc, false);
+                act_chg_draw(curr_wh, curr_root, curr_sel, pc, false, true);
                 curr_wh = 0;
                 curr_root = 0;
                 curr_sel = 0;
@@ -456,7 +462,7 @@ fn gr_drgplns(
             }
             // `:325-333` — the target changed: take the old one back first.
             if dobj != curr_sel && curr_sel != 0 {
-                act_chg_draw(curr_wh, curr_root, curr_sel, pc, false);
+                act_chg_draw(curr_wh, curr_root, curr_sel, pc, false, true);
                 curr_wh = 0;
                 curr_root = 0;
                 curr_sel = 0;
@@ -475,7 +481,7 @@ fn gr_drgplns(
             curr_wh = dst_wh;
             curr_root = root;
             curr_sel = dobj;
-            act_chg_draw(curr_wh, curr_root, curr_sel, pc, true);
+            act_chg_draw(curr_wh, curr_root, curr_sel, pc, true, true);
         }
 
         if !down {
@@ -485,7 +491,7 @@ fn gr_drgplns(
 
     // `:353-354` — the highlight always comes back off at the end.
     if curr_sel != 0 {
-        act_chg_draw(curr_wh, curr_root, curr_sel, pc, false);
+        act_chg_draw(curr_wh, curr_root, curr_sel, pc, false, true);
     }
 
     super::pro::desk_busy_off(); // `desk_busy_off()` (`:362`)
@@ -596,8 +602,9 @@ fn act_bdown(handle: i16, root: i16, mx: i16, my: i16) -> bool {
 enum OpenTarget {
     /// A sub-folder: its search spec + window title.
     Folder(String, String),
-    /// A drive icon: the drive letter.
-    Drive(u8),
+    /// A drive icon. `do_dopen` reads its letter from the icon itself
+    /// (`ib_char & 0x00ff`, `desksupp.c:1050-1051`).
+    Drive,
     /// A native NewTOS program to launch (ADR-018): its full NUL-terminated
     /// `C:` path, the bare filename (for a failure alert), and the native
     /// flavour that selects the launch behaviour.
@@ -691,7 +698,7 @@ fn open_item(handle: i16, obid: i16) -> bool {
                 _ => {
                     let letter = (g.g_screeninfo[obid as usize].block.ib_char & 0xFF) as u8;
                     if letter.is_ascii_uppercase() {
-                        OpenTarget::Drive(letter)
+                        OpenTarget::Drive
                     } else {
                         OpenTarget::None
                     }
@@ -733,11 +740,19 @@ fn open_item(handle: i16, obid: i16) -> bool {
         // = TRUE` (a double click goes through `do_filemenu(OPENITEM)`,
         // `deskmain.c:988,666-668`, exactly as the File→Open menu pick does).
         OpenTarget::Folder(spec, title) => {
+            // `pw->w_cvrow = 0;  /* reset slider */` (`:1258`) — on the window
+            // the folder was opened **from**, before `do_fopen` decides whether
+            // that window is reused.
+            global::with(|g| {
+                if let Some(slot) = g.win_slot(handle) {
+                    g.windows.slots[slot].w_cvrow = 0;
+                }
+            });
             do_fopen(handle, obid, &spec, &title, true);
             false // `break;` → `return FALSE` (`:1272,1277`)
         }
-        OpenTarget::Drive(letter) => {
-            open_root_window(letter); // `do_dopen(curr); break;` (`:1263-1264`)
+        OpenTarget::Drive => {
+            do_dopen(obid); // `do_dopen(curr); break;` (`:1263-1264`)
             false
         }
         OpenTarget::App { path, name, flavor } => {
@@ -760,7 +775,7 @@ fn open_item(handle: i16, obid: i16) -> bool {
             }
             // `return pro_run(isgraf, app_path, G.g_work, G.g_cwin, curr);`
             // (`:986`).
-            pro_run_native(&path, &name, flavor, &tail)
+            pro_run_native(&path, &name, flavor, &tail, obid)
         }
         OpenTarget::M68k => {
             let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
@@ -769,7 +784,7 @@ fn open_item(handle: i16, obid: i16) -> bool {
             // under the alert (EmuTOS `fm_alert`), so the desktop returns intact.
             false
         }
-        OpenTarget::Doc { name, full_path } => open_document(&name, &full_path),
+        OpenTarget::Doc { name, full_path } => open_document(&name, &full_path, obid),
         // Resolved into one of the arms above by the prologue.
         OpenTarget::Shortcut { .. } | OpenTarget::None => false,
     }
@@ -790,7 +805,7 @@ fn open_item(handle: i16, obid: i16) -> bool {
 /// double-click would.
 ///
 /// Returns `do_aopen`'s `WORD` — TRUE iff the `shel_write` was issued.
-fn open_document(name: &str, full_path: &str) -> bool {
+fn open_document(name: &str, full_path: &str, curr: i16) -> bool {
     let Some(assoc) = super::inf::lookup_association(name.as_bytes()) else {
         let text = b"[1][ No application is installed | for this document type. ][ OK ]\0";
         super::form_alert(1, text.as_ptr());
@@ -829,7 +844,7 @@ fn open_document(name: &str, full_path: &str) -> bool {
     // `return pro_run(isgraf, pa->a_pappl, G.g_work, G.g_cwin, curr);` (`:951`)
     // The `installed_datafile` arm returns before `isapp`'s `isparm` test, so
     // an association never puts `opn_appl` up: the document *is* the tail.
-    pro_run_native(&app_path, &app_name, flavor, tail.as_bytes())
+    pro_run_native(&app_path, &app_name, flavor, tail.as_bytes(), curr)
 }
 
 /// `do_aopen(pa, TRUE, curr, pathname, pname, tail)` (`desksupp.c:843-1031`)
@@ -854,7 +869,9 @@ fn open_document(name: &str, full_path: &str) -> bool {
 /// * `pro_run` (`:986`).
 ///
 /// `installed`/`pappl`/`node_appdir` are the three fields of the destination
-/// `ANODE` those steps read. `tail` is `Option` because EmuTOS's two branches
+/// `ANODE` those steps read. `curr` is `do_aopen`'s `curr`, handed on to
+/// `pro_run` for its `do_wopen` step: the object dropped on (`dst_ob`/`dobj`,
+/// `deskfun.c:967,1034,1249`), or `-1` for a function key (`deskmain.c:1102`). `tail` is `Option` because EmuTOS's two branches
 /// separate on `tail == NULL`, not on an empty string: `Some` is the command
 /// line [`dir::build_selected_path`] built, `None` is the function key's
 /// `do_aopen(pa, TRUE, -1, pathname, pfname, NULL)`.
@@ -869,6 +886,7 @@ pub(super) fn do_aopen_drop(
     dst_dir: &str,
     prog_name: &str,
     tail: Option<&[u8]>,
+    curr: i16,
 ) -> bool {
     // `if (is_installed(pa)) { … AF_APPDIR … pa->a_pappl } else { … G.g_appdir
     //  … pathname }` (`desksupp.c:884-905`).
@@ -907,7 +925,7 @@ pub(super) fn do_aopen_drop(
             };
             // `return pro_run(isgraf, app_path, G.g_work, G.g_cwin, curr);`
             // (`:986`).
-            pro_run_native(&app_path, prog_name, flavor, tail)
+            pro_run_native(&app_path, prog_name, flavor, tail, curr)
         }
         ftype::FileType::M68k => {
             let text = b"[1][ This is an m68k Atari program. | The m68k emulator is not | available yet. ][ OK ]\0";
@@ -1055,7 +1073,7 @@ fn set_launch_dir(app_dir: bool, own_path: &str) -> bool {
 /// `tail` is bytes, not a `&str`, because one of its three producers is
 /// [`super::inf::opn_appl`]'s `X`-validated edit field, which admits every
 /// character the AES's `check` lets through.
-fn pro_run_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) -> bool {
+fn pro_run_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8], curr: i16) -> bool {
     if flavor == ftype::Flavor::Accessory {
         // A desk accessory (`.NAC`) is **not** launched on demand (ACC02): the
         // AES loads it once per session from `C:\ACC\` or the root and it lives
@@ -1073,7 +1091,10 @@ fn pro_run_native(path: &str, name: &str, flavor: ftype::Flavor, tail: &[u8]) ->
     let mut work = [0u8; pro::CMDTAILSIZE];
     let n = tail.len().min(pro::CMDTAILSIZE - 3);
     work[1..1 + n].copy_from_slice(&tail[..n]);
-    pro::pro_run(isgraf(flavor), path.as_bytes(), &mut work)
+    // `pro_run(isgraf, app_path, G.g_work, G.g_cwin, curr)` — `G.g_cwin` read
+    // at the call, as the argument list evaluates it.
+    let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
+    pro::pro_run(isgraf(flavor), path.as_bytes(), &mut work, cwin, curr)
 }
 
 /// `isgraf = pa->a_flags & AF_ISCRYS;` (`desksupp.c:876`) — *"is GEM
@@ -1304,7 +1325,7 @@ fn process_funkey(funkey: u16) -> Option<bool> {
     // application, so the directory comes from its own `AF_APPDIR`/`a_pappl`;
     // `NULL` (not an empty tail) is what sends a parameter-taking program
     // through `opn_appl`.
-    Some(do_aopen_drop(true, &pa.app_path, pa.app_dir, dir, &pname, None))
+    Some(do_aopen_drop(true, &pa.app_path, pa.app_dir, dir, &pname, None, -1))
 }
 
 /// The function-key number 1..20 for `key`, or `None` if it is not a function
@@ -1417,7 +1438,9 @@ fn check_alt_letter_key(key: i16) -> bool {
         // `if (dos_sdrv(dos_gdrv()) & (1L << drv))` — EmuTOS `valid_drive`
         // (`desksupp.c:1819`), the same GEMDOS drive-map read as `app_blddesk`.
         if dos_sdrv(dos_gdrv()) & (1 << drive) != 0 {
-            open_root_window(letter);
+            // `do_dopen(-drive);  /* -ve indicates drive letter rather than
+            // obid */` (`:1157`).
+            do_dopen(-(letter as i16));
             return true;
         }
     }
@@ -1571,7 +1594,9 @@ fn do_execcli() -> bool {
     // `G.g_work[1] = '\0';` — an empty command tail. Byte 0 is the length
     // byte `pro_run` fills in, byte 1 the first text byte.
     let mut tail = [0u8; pro::CMDTAILSIZE];
-    let done = pro::pro_run(false, pro::DEF_CONSOLE, &mut tail);
+    // `pro_run(FALSE, DEF_CONSOLE, G.g_work, -1, -1)` (`deskmain.c:753`) —
+    // `wh = -1`: no icon to deselect, no zoom.
+    let done = pro::pro_run(false, pro::DEF_CONSOLE, &mut tail, -1, -1);
 
     if done {
         // `if (done && pw)` — `#if CONF_WITH_PCGEM`, which the Falcon030/TOS4
@@ -2548,6 +2573,11 @@ fn do_close_window() {
 
 /// File → Close folder (EmuTOS `CLOSITEM`, also `WM_CLOSED`) — navigate the top
 /// window up one directory level; at a drive root, close the window entirely.
+///
+/// The "up one level" arm is EmuTOS's `w_setpath` (`deskfun.c:809-825`):
+/// `pw->w_cvrow = 0;  /* must reset slider */` and `do_fopen(pw, 0, pathname,
+/// FALSE)` — `curr = 0`, so `do_wopen` neither zooms nor deselects. Its
+/// `graf_shrinkbox` from the window centre is not built (no binding yet).
 fn do_close_folder() {
     let handle = wind_get_top();
     if handle == DESKWH {
@@ -2564,7 +2594,12 @@ fn do_close_folder() {
         close_window(handle);
     } else {
         let (pspec, ptitle) = parent_spec(&spec);
-        navigate_window(handle, &pspec, &ptitle);
+        global::with(|g| {
+            if let Some(slot) = g.win_slot(handle) {
+                g.windows.slots[slot].w_cvrow = 0;
+            }
+        });
+        do_fopen(handle, 0, &pspec, &ptitle, false);
     }
 }
 
@@ -2886,10 +2921,28 @@ pub(super) fn cnx_get() -> usize {
         if path.is_empty() {
             continue;
         }
-        // `do_diropen(pw, TRUE, obid, pws->pth_save, (GRECT *)pws, TRUE)`.
+        // `WORD obid = obj_get_obid(pws->pth_save[0]);
+        //  if ((pw = win_alloc(obid))) {
+        //      pw->w_cvcol = pws->hsl_save; pw->w_cvrow = pws->vsl_save;
+        //      do_xyfix(&pws->x_save, &pws->y_save);
+        //      if (!do_diropen(pw, TRUE, obid, pws->pth_save, (GRECT *)pws, TRUE))
+        //          win_free(pw);
+        //  }` (`:1489-1499`). The scroll position is set before the view is
+        // built so `win_bldview` lays out at that offset; `do_xyfix` ran above.
+        let obid = obj_get_obid(path.as_bytes()[0]);
+        let Some((slot, handle)) = win_alloc_window(obid) else {
+            continue;
+        };
+        global::with(|g| {
+            g.windows.slots[slot].w_cvcol = cvcol;
+            g.windows.slots[slot].w_cvrow = cvrow;
+        });
         let (spec, title) = spec_and_title(&path);
-        open_dir_window_at(&spec, &title, Some(gr), cvcol, cvrow);
-        opened += 1;
+        if do_diropen(handle, true, obid, &spec, &title, gr, true) {
+            opened += 1;
+        } else {
+            win_free_window(handle);
+        }
     }
     opened
 }
@@ -2975,15 +3028,281 @@ fn sort_item(sort: super::model::Sort) -> Item {
 
 // ── Window open / close / navigate ─────────────────────────────────────────
 
-/// Open a directory window on drive `letter`'s root (`X:\`).
-pub fn open_root_window(letter: u8) {
-    let mut spec = String::new();
-    spec.push(letter as char);
-    spec.push_str(":\\*.*");
-    let mut title = String::new();
-    title.push(letter as char);
-    title.push_str(":\\");
-    open_dir_window(&spec, &title);
+/// `STNOWIND` (`desk_rsc.c:2492-2495`) — the alert `do_dopen`/`do_fopen` raise
+/// when `win_alloc` has no node left. Its own icon and button, so it goes
+/// straight to `form_alert` (`fun_alert(1, STNOWIND)` = `form_alert(1,
+/// desktop_str_addr(STNOWIND))`, `deskfun.c:75-78`).
+const STNOWIND: &[u8] =
+    b"[1][The GEM Desktop has no more|windows.  Please close a|window that you are not|using.][  OK  ]\0";
+
+/// `obj_get_obid(drive)` (EmuTOS `deskobj.c:249-261`) — the desktop icon of
+/// drive letter `drive`: the first `G_ICON` child of `DROOT` whose `ib_char`
+/// low byte is the letter, or **0** when there is none. `do_dopen` uses it for
+/// a drive opened by Alt+letter and `cnx_get` for a restored window, both to
+/// get a source object for `do_wopen`'s zoom and for `win_alloc`'s `w_obid`.
+///
+/// The walk stops at the parent the way every child walk in this file does;
+/// EmuTOS's `objnum >= 0` runs on through `DROOT`'s own siblings, which are
+/// window boxes and never `G_ICON`s, so the answer is the same.
+fn obj_get_obid(drive: u8) -> i16 {
+    global::with(|g| {
+        let mut obj = g.g_screen[DROOT as usize].ob_head;
+        while obj != NIL && obj != DROOT {
+            if g.g_screen[obj as usize].ob_type == global::G_ICON
+                && (g.g_screeninfo[obj as usize].block.ib_char & 0x00FF) as u8 == drive
+            {
+                return obj;
+            }
+            obj = g.g_screen[obj as usize].ob_next;
+        }
+        0
+    })
+    .unwrap_or(0)
+}
+
+/// `win_alloc(obid)` (EmuTOS `deskwin.c:156-190`) — a window node **and** its
+/// AES window: `if (G.g_wcnt == NUM_WNODES) return NULL;`, then
+/// `wind_create_grect(WINDOW_STYLE, &G.g_desk)`, and on failure nothing is
+/// left behind (`win_free`). [`global::DeskState::win_alloc`] is the list half
+/// only (it needs the handle), so the two are joined here. `obid` becomes
+/// `w_obid`, the icon the window was opened from (`:173`).
+///
+/// Returns the slot and the AES handle.
+fn win_alloc_window(obid: i16) -> Option<(usize, i16)> {
+    if global::with(|g| g.win_count() >= NUM_WNODES).unwrap_or(true) {
+        return None;
+    }
+    let handle = super::wind_create(WINDOW_STYLE as i16, g_desk());
+    if handle < 1 {
+        return None;
+    }
+    match global::with(|g| g.win_alloc(handle, obid)).flatten() {
+        Some(slot) => Some((slot, handle)),
+        None => {
+            super::wind_delete(handle);
+            None
+        }
+    }
+}
+
+/// `win_free(pw)` (EmuTOS `deskwin.c:141-150`) for a node whose window was
+/// created but never opened — the cleanup after a failed `do_diropen`:
+/// `wind_delete` plus the list half [`global::DeskState::win_free`].
+fn win_free_window(handle: i16) {
+    super::wind_delete(handle);
+    global::with(|g| g.win_free(handle));
+}
+
+/// The rectangle a freshly allocated node opens at — EmuTOS's
+/// `G.g_screen[pw->w_root].ob_x` after `win_alloc` copied
+/// `cs_wnode[G.g_wcnt]` into it (`deskwin.c:165-167`), which `do_dopen` and
+/// `do_fopen` hand to `do_diropen` (`desksupp.c:1067,1148`). Ours is the saved
+/// `#W` rectangle of the slot ([`super::inf::window_rect`]) or a staggered
+/// sub-rectangle of the desktop when there is none (`deskmain.md` §`cnx_get`,
+/// deviation 4). `do_wopen`'s `do_xyfix` aligns it.
+fn win_default_rect(slot: usize) -> Grect {
+    let desk = g_desk();
+    let step = (slot as i16) * 24;
+    let rw = (desk.w - 96).min(560);
+    let rh = (desk.h - 56).min(400);
+    let default_r = Grect { x: desk.x + 48 + step, y: desk.y + 24 + step, w: rw, h: rh };
+    super::inf::window_rect(slot).unwrap_or(default_r)
+}
+
+/// `do_wopen(new_win, wh, curr, pt)` (EmuTOS `desksupp.c:294-322`) — the tail
+/// every window open and every program launch share
+/// (`docs/api/desktop/desksupp-wopen.md`):
+///
+/// ```c
+/// t = *pt;
+/// do_xyfix(&t.g_x, &t.g_y);
+/// if (curr > 0) {
+///     get_xywh(G.g_screen, G.g_croot, &c.g_x, &c.g_y, &c.g_w, &c.g_h);
+///     get_xywh(G.g_screen, curr, &d.g_x, &d.g_y, &d.g_w, &d.g_h);
+///     d.g_x += c.g_x;  d.g_y += c.g_y;
+///     graf_growbox_grect(&d, &t);
+///     act_chg(G.g_cwin, G.g_croot, curr, &gl_rfull, FALSE, new_win?TRUE:FALSE);
+/// }
+/// if (new_win)
+///     wind_open_grect(wh, &t);
+/// G.g_wlastsel = wh;
+/// ```
+///
+/// The zoom source is `curr`'s rectangle offset by the **current** root
+/// (`G.g_croot`), which is [`global::DeskState::obj_extent`]; the deselect
+/// paints only when a new window opens — in the same-window case the window's
+/// file list has already been replaced, and for `pro_run` the desktop is
+/// about to end (`:282-292`). `gl_rfull` is `G.g_desk` here as at the drag
+/// loop's `gr_drgplns` call.
+pub(super) fn do_wopen(new_win: bool, wh: i16, curr: i16, pt: Grect) {
+    let mut t = pt;
+    do_xyfix(&mut t);
+
+    if curr > 0 {
+        let (cwin, croot, d) = global::with(|g| (g.g_cwin, g.g_croot, g.obj_extent(g.g_croot, curr)))
+            .unwrap_or((DESKWH, DROOT, None));
+        if let Some(d) = d {
+            super::graf_growbox(d, t);
+        }
+        act_chg_draw(cwin, croot, curr, g_desk(), false, new_win);
+    }
+
+    if new_win {
+        super::wind_open(wh, t);
+    }
+
+    global::with(|g| g.g_wlastsel = wh);
+}
+
+/// `do_diropen(pw, new_win, curr_icon, pathname, pt, redraw)` (EmuTOS
+/// `desksupp.c:422-471`) — fill window `handle`'s node from the directory
+/// `pathname` and show it. **Every** directory window goes through here:
+///
+/// | EmuTOS caller | NewTOS |
+/// |---|---|
+/// | `do_dopen` (`desksupp.c:1067`) | [`do_dopen`] |
+/// | `do_fopen` (`desksupp.c:1156`) | [`do_fopen`], both arms |
+/// | `cnx_get` (`deskmain.c:1496`) | [`cnx_get`] |
+/// | `search_display` (`deskfun.c:413`) | none — the recursive search is not built ([`do_search`]) |
+///
+/// ```c
+/// desk_busy_on();
+/// if (!pn_open(pathname, pw)) { desk_busy_off(); return FALSE; }
+/// ret = pn_active(&pw->w_pnode, TRUE);
+/// if (ret < 0) { pn_close(&pw->w_pnode); desk_busy_off(); return FALSE; }
+/// win_sname(pw); win_sinfo(pw, FALSE); wind_set(pw->w_id, WF_NAME, …);
+/// do_wopen(new_win, pw->w_id, curr_icon, pt);
+/// if (new_win) win_top(pw);
+/// desk_verify(pw->w_id, TRUE);
+/// if (redraw && !new_win) fun_msg(WM_REDRAW, pw->w_id, pt->g_x, …);
+/// desk_busy_off();
+/// return TRUE;
+/// ```
+///
+/// `title` is passed in because NewTOS titles a window with its directory
+/// rather than `win_sname`'s whole `p_spec` (named difference 1 of the spec
+/// entry). `pn_sort` follows the scan because ours is a separate step.
+/// `fun_msg(WM_REDRAW, …)` runs `hndl_msg`'s `WM_REDRAW` arm synchronously,
+/// which is `do_wredraw(handle, pt)`. On `false` the caller owns the cleanup,
+/// as in EmuTOS.
+fn do_diropen(
+    handle: i16,
+    new_win: bool,
+    curr_icon: i16,
+    pathname: &str,
+    title: &str,
+    pt: Grect,
+    redraw: bool,
+) -> bool {
+    pro::desk_busy_on();
+
+    // `if (!pn_open(pathname, pw))` — "pathname is too long".
+    let slot = global::with(|g| {
+        let slot = g.win_slot(handle)?;
+        g.windows.slots[slot].w_pnode.pn_open(pathname).then_some(slot)
+    })
+    .flatten();
+    let Some(slot) = slot else {
+        pro::desk_busy_off();
+        return false;
+    };
+
+    // `ret = pn_active(&pw->w_pnode, TRUE); if (ret < 0) { pn_close(…); … }`
+    // — "error reading directory".
+    let scanned = global::with(|g| {
+        let sort = g.sort;
+        let pn = &mut g.windows.slots[slot].w_pnode;
+        if pn.pn_active(true) < 0 {
+            pn.pn_close();
+            return None;
+        }
+        pn.pn_sort(sort);
+        Some((pn.p_count, pn.p_size))
+    })
+    .flatten();
+    let Some((count, size)) = scanned else {
+        pro::desk_busy_off();
+        return false;
+    };
+
+    // `win_sname(pw); win_sinfo(pw, FALSE); wind_set(pw->w_id, WF_NAME, …);`
+    set_window_strings(handle, slot, title, count, size);
+
+    do_wopen(new_win, handle, curr_icon, pt);
+    if new_win {
+        global::with(|g| g.win_top(handle));
+    }
+
+    // `desk_verify(pw->w_id, TRUE);` — the view for the actual work area, and
+    // this window becomes the current one.
+    let work = wind_get_work(handle);
+    if let Some(sliders) = global::with(|g| g.desk_verify(handle, work, true)).flatten() {
+        set_sliders(handle, sliders);
+    }
+
+    // `if (redraw && !new_win) fun_msg(WM_REDRAW, pw->w_id, pt…);` — a new
+    // window is painted by the AES's own `WM_REDRAW` after `wind_open`.
+    if redraw && !new_win {
+        redraw::do_wredraw(handle, pt);
+    }
+
+    pro::desk_busy_off();
+    true
+}
+
+/// `do_dopen(curr)` (EmuTOS `desksupp.c:1041-1079`) — open a window on a
+/// drive's root:
+///
+/// ```c
+/// if (curr >= 0) { pib = get_iconblk_ptr(G.g_screen, curr); drv = pib->ib_char & 0x00ff; }
+/// else           { drv = -curr; curr = obj_get_obid(drv); }
+/// if (!valid_drive(drv)) return FALSE;
+/// pw = win_alloc(curr);
+/// if (pw) {
+///     build_root_path(path, drv); set_all_files(path+3);
+///     if (!do_diropen(pw, TRUE, curr, path, &G.g_screen[pw->w_root].ob_x, TRUE)) {
+///         win_free(pw);
+///         act_chg(DESKWH, DROOT, curr, &gl_rfull, FALSE, TRUE);
+///     }
+/// } else
+///     fun_alert(1, STNOWIND);
+/// return FALSE;
+/// ```
+///
+/// `curr >= 0` is a drive icon ([`open_item`]); a negative `curr` is
+/// `-letter` from Alt+letter ([`check_alt_letter_key`], `deskmain.c:1157`).
+/// The answer is always `FALSE`, as in the source.
+pub(super) fn do_dopen(curr: i16) -> bool {
+    let (drv, curr) = if curr >= 0 {
+        let drv = global::with(|g| (g.g_screeninfo[curr as usize].block.ib_char & 0x00FF) as u8).unwrap_or(0);
+        (drv, curr)
+    } else {
+        let drv = (-curr) as u8;
+        (drv, obj_get_obid(drv))
+    };
+
+    if !valid_drive(drv) {
+        return false;
+    }
+
+    match win_alloc_window(curr) {
+        Some((slot, handle)) => {
+            // `build_root_path(path, drv); set_all_files(path+3);` → `X:\*.*`.
+            let mut path = String::new();
+            path.push(drv as char);
+            path.push_str(":\\");
+            let title = path.clone();
+            path.push_str("*.*");
+            if !do_diropen(handle, true, curr, &path, &title, win_default_rect(slot), true) {
+                win_free_window(handle);
+                act_chg_draw(DESKWH, DROOT, curr, g_desk(), false, true);
+            }
+        }
+        None => {
+            super::form_alert(1, STNOWIND.as_ptr());
+        }
+    }
+    false
 }
 
 /// `do_fopen(pw, curr, pathname, allow_new_win)` (EmuTOS
@@ -2992,35 +3311,39 @@ pub fn open_root_window(letter: u8) {
 /// in the function's own header comment (`:1084-1088`).
 ///
 /// ```c
+/// wind_get_grect(pw->w_id, WF_WXYWH, &t);                 /* :1095 */
 /// if (allow_new_win) {
 ///     graf_mkstate(&junk, &junk, &junk, &keystate);
 ///     if ((keystate & MODE_SCA) == MODE_ALT)      /* :1130-1135 */
 ///         new_win = TRUE;
 /// }
-/// if (new_win) { pw = win_alloc(curr); rc_copy(…, &t); }  /* :1141-1149 */
-/// else         { pn_close(&pw->w_pnode); }                /* :1151-1154 */
-/// do_diropen(pw, new_win, curr, app_path, &t, TRUE);      /* :1156 */
+/// if (new_win) { pw = win_alloc(curr); if (!pw) { fun_alert(1, STNOWIND); return; }
+///                rc_copy(&G.g_screen[pw->w_root].ob_x, &t); }  /* :1141-1149 */
+/// else         { pn_close(&pw->w_pnode); }                       /* :1151-1154 */
+/// if (!do_diropen(pw, new_win, curr, app_path, &t, TRUE))       /* :1156 */
+///     if (new_win) win_free(pw);
 /// ```
 ///
-/// * `new_win == FALSE` → `pn_close` frees the window's file list and
-///   `do_diropen(pw, FALSE, …)` re-fills **the same** `WNODE`: same frame, new
-///   path in the title, no `wind_open`, and a direct `WM_REDRAW` of the work
-///   area (`:453-459`). That is [`navigate_window`], which is also what the
-///   Close-folder "up one level" navigation uses — the same EmuTOS body
-///   (`w_setpath` → `do_fopen(pw, 0, pathname, FALSE)`, `deskfun.c:824`).
-/// * `new_win == TRUE` → `win_alloc` + `do_diropen(pw, TRUE, …)`, i.e. a
-///   `wind_open` of a freshly allocated node at **its own** default rectangle
-///   (`rc_copy` at `:1148` copies the new node's rect *into* `t`, so the old
-///   window's geometry is discarded). That is [`open_dir_window`].
+/// * `new_win == FALSE` → the same `WNODE` is re-filled: same frame, new path
+///   in the title, no `wind_open`, and a direct `WM_REDRAW` of the work area
+///   `t`. This is also what Close-folder's "up one level" uses
+///   ([`do_close_folder`], EmuTOS `w_setpath` → `do_fopen(pw, 0, …, FALSE)`,
+///   `deskfun.c:824`) — `curr = 0` there, so no zoom.
+/// * `new_win == TRUE` → `win_alloc` + `do_diropen(…, TRUE, …)` at the new
+///   node's **own** default rectangle (`rc_copy` copies the new node's rect
+///   *into* `t`, so the old window's geometry is discarded).
+///
+/// Both arms zoom from `curr` (`do_wopen`, when `curr > 0`) and deselect it —
+/// painted only for a new window, because in the same-window arm the item
+/// tree is rebuilt from the new directory anyway.
 ///
 /// **Two of EmuTOS's three new-window cases reach this function; the third is
-/// a separate caller.** A drive icon is `do_dopen` (`:1041-1069`), which always
-/// allocates — [`open_root_window`], unchanged. The other two are here: the
-/// Alt-held case above, and the `WN_DESKTOP` case (`:1112-1127`,
-/// `CONF_WITH_DESKTOP_SHORTCUTS`, DESK30) — a **folder shortcut** opened from
-/// the desktop surface, which always gets a new window because the "window" it
-/// was opened from is the desktop pseudo-window and has no file list to
-/// replace:
+/// a separate caller.** A drive icon is [`do_dopen`] (`:1041-1069`), which
+/// always allocates. The other two are here: the Alt-held case above, and the
+/// `WN_DESKTOP` case (`:1112-1127`, `CONF_WITH_DESKTOP_SHORTCUTS`, DESK30) — a
+/// **folder shortcut** opened from the desktop surface, which always gets a
+/// new window because the "window" it was opened from is the desktop
+/// pseudo-window and has no file list to replace:
 ///
 /// ```c
 /// if (pw->w_flags & WN_DESKTOP) {
@@ -3035,14 +3358,12 @@ pub fn open_root_window(letter: u8) {
 /// `EPTHNF` from it is how EmuTOS notices that the folder a shortcut points at
 /// has been renamed or deleted, and it is where the orphan prompt is raised
 /// ("handle renamed target of shortcut"). `curr` is the icon that prompt names.
-///
-/// Not reproduced: `do_wopen`'s `graf_growbox` zoom from the source icon to the
-/// window rect and its `act_chg(…, FALSE, FALSE)` deselect of that icon
-/// (`:294-322`). Neither is implemented on any NewTOS window-open path (a
-/// pre-existing gap, not one this function introduces); the deselect is
-/// unobservable here because the window's item tree is rebuilt from the new
-/// directory, which drops every `OB_SELECTED` with the objects that carried it.
 fn do_fopen(handle: i16, curr: i16, spec: &str, title: &str, allow_new_win: bool) {
+    // `wind_get_grect(pw->w_id, WF_WXYWH, &t);` (`:1095`) — the damage
+    // rectangle of the same-window redraw. The desktop pseudo-window has no
+    // AES window behind it; its arm always replaces `t` below.
+    let t = if handle == DESKWH { g_desk() } else { wind_get_work(handle) };
+
     let new_win = if handle == DESKWH {
         // The `WN_DESKTOP` arm (`:1112-1126`): chdir into the folder, which
         // doubles as the existence probe, then always open a new window.
@@ -3063,84 +3384,24 @@ fn do_fopen(handle: i16, curr: i16, spec: &str, title: &str, allow_new_win: bool
     };
 
     if new_win {
-        open_dir_window(spec, title);
-    } else {
-        navigate_window(handle, spec, title);
-    }
-}
-
-/// Open a new directory window for `spec` (e.g. `C:\SUB\*.*`), titled `title`,
-/// scan + sort its contents, build the view, and paint it (EmuTOS `do_diropen`
-/// + `win_bldview`). A no-op if all window slots are in use.
-fn open_dir_window(spec: &str, title: &str) {
-    open_dir_window_at(spec, title, None, 0, 0);
-}
-
-/// [`open_dir_window`] with an explicitly supplied frame rectangle and scroll
-/// position — the shape EmuTOS's `do_diropen(pw, TRUE, obid, path, pt, TRUE)`
-/// has, where `pt` is the caller's rectangle (`deskmain.c:1497`, `cnx_get`
-/// passing `(GRECT *)pws`). With `rect == None` the window takes its slot's
-/// [`super::inf::window_rect`] (EmuTOS `win_alloc`'s
-/// `cs_wnode[G.g_wcnt]` default, `deskwin.c:165`), or a staggered fallback.
-fn open_dir_window_at(spec: &str, title: &str, rect: Option<Grect>, cvcol: i16, cvrow: i16) {
-    let Some(desk) = global::with(|g| g.g_desk) else {
-        return;
-    };
-    let handle = super::wind_create(WINDOW_STYLE as i16, desk);
-    if handle < 1 {
-        return;
-    }
-    let scanned = global::with(|g| {
-        let sort = g.sort;
-        let slot = g.win_alloc(handle, 0)?;
-        {
-            let pn = &mut g.windows.slots[slot].w_pnode;
-            pn.pn_open(spec);
-            pn.pn_active(true);
-            pn.pn_sort(sort);
+        // `pw = win_alloc(curr); if (!pw) { fun_alert(1, STNOWIND); return; }
+        //  rc_copy((GRECT *)&G.g_screen[pw->w_root].ob_x, &t);` (`:1141-1149`)
+        let Some((slot, new_handle)) = win_alloc_window(curr) else {
+            super::form_alert(1, STNOWIND.as_ptr());
+            return;
+        };
+        if !do_diropen(new_handle, true, curr, spec, title, win_default_rect(slot), true) {
+            win_free_window(new_handle); // `if (new_win) win_free(pw);`
         }
-        // `pw->w_cvcol = pws->hsl_save; pw->w_cvrow = pws->vsl_save;`
-        // (`cnx_get`, `deskmain.c:1493-1494`) — the saved scroll position, set
-        // before the view is built so `win_bldview` lays out at that offset.
-        g.windows.slots[slot].w_cvcol = cvcol;
-        g.windows.slots[slot].w_cvrow = cvrow;
-        let pn = &g.windows.slots[slot].w_pnode;
-        Some((slot, pn.p_count, pn.p_size))
-    })
-    .flatten();
-    let Some((slot, count, size)) = scanned else {
-        super::wind_delete(handle);
-        return;
-    };
-
-    // Title (WF_NAME) + info line (WF_INFO), held in the node and passed by
-    // address (`win_sname`/`win_sinfo`; the AES keeps the pointer, A83).
-    set_window_strings(handle, slot, title, count, size);
-
-    // Open at the window's saved `NEWDESK.INF` rectangle for this slot, or a
-    // staggered sub-rectangle of the desktop (later windows offset so they do
-    // not exactly overlap) when the INF supplies none.
-    let step = (slot as i16) * 24;
-    let rw = (desk.w - 96).min(560);
-    let rh = (desk.h - 56).min(400);
-    let default_r = Grect { x: desk.x + 48 + step, y: desk.y + 24 + step, w: rw, h: rh };
-    let r = rect
-        .or_else(|| super::inf::window_rect(slot))
-        .unwrap_or(default_r);
-    super::wind_open(handle, r);
-
-    // Build the view for the actual work rect + push the scrollbar geometry,
-    // then make it the current window and paint everything.
-    let work = wind_get_work(handle);
-    if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
-        set_sliders(handle, sliders);
+    } else {
+        // `pn_close(&pw->w_pnode);` (`:1153`).
+        global::with(|g| {
+            if let Some(slot) = g.win_slot(handle) {
+                g.windows.slots[slot].w_pnode.pn_close();
+            }
+        });
+        do_diropen(handle, false, curr, spec, title, t, true);
     }
-    global::with(|g| g.desk_verify(handle, work, false));
-    // No desktop-side repaint: `wind_open` (above) already repainted the AES
-    // background + frame over the new window's rect and `send_redraw`d a
-    // `WM_REDRAW` for its content — drained by the event loop into
-    // `redraw::do_wredraw` once `win_bldview` (above) has laid out the items.
-    // Exactly the EmuTOS `do_diropen` → `wind_open` → AES-`WM_REDRAW` path.
 }
 
 /// Close window `handle`: AES `wind_close` + `wind_delete`, free the desktop
@@ -3160,67 +3421,6 @@ fn close_window(handle: i16) {
     // windows, so a lower window's content is not re-laid here (only observable
     // with overlapping windows; closing the single boot window reveals the
     // desktop surface, which the AES does repaint). Flagged, not masked.
-}
-
-/// `do_diropen(pw, FALSE, curr, pathname, pt, TRUE)` (EmuTOS
-/// `desksupp.c:422-467`) — re-fill window `handle`'s **existing** `WNODE` from
-/// the directory `spec`/`title`: same frame, new path. The one body behind both
-/// in-place navigations, exactly as in EmuTOS, where both reach it through
-/// `do_fopen(…, new_win = FALSE)`:
-///
-/// * Close-folder / `WM_CLOSED` "up one level" (`w_setpath`, `deskfun.c:817-824`)
-/// * opening a sub-folder in the window it lives in ([`do_fopen`], DESK34)
-///
-/// `pn_close(&pw->w_pnode)` + `pn_open` (`:1153`, `:428`) — our
-/// [`super::model::PNode::pn_open`] frees the previous file list itself — then
-/// `pn_active`, `win_sname`/`win_sinfo`/`wind_set(WF_NAME)` (`:444-446`),
-/// `do_wopen(FALSE, …)` (no `wind_open`: the frame does not move), the
-/// `desk_verify` that makes this the current window (`:459`), and the
-/// `fun_msg(WM_REDRAW, …)` of `pt` that only the `!new_win` arm sends
-/// (`:462-463`).
-///
-/// The caller resets the vertical scroll before calling — `pw->w_cvrow = 0` at
-/// `desksupp.c:1258` and `deskfun.c:823`. `w_cvcol` is **not** reset there and
-/// is not reset here either; `win_ocalc` clamps it to the new directory's
-/// column count, so a shorter listing cannot scroll off the end.
-fn navigate_window(handle: i16, spec: &str, title: &str) {
-    let scanned = global::with(|g| {
-        let sort = g.sort;
-        let slot = g.win_slot(handle)?;
-        {
-            let pn = &mut g.windows.slots[slot].w_pnode;
-            pn.pn_open(spec);
-            pn.pn_active(true);
-            pn.pn_sort(sort);
-        }
-        // `pw->w_cvrow = 0` — the caller's step in EmuTOS (`desksupp.c:1258`,
-        // `deskfun.c:823`), taken here because both of our callers want it.
-        g.windows.slots[slot].w_cvrow = 0;
-        let pn = &g.windows.slots[slot].w_pnode;
-        Some((slot, pn.p_count, pn.p_size))
-    })
-    .flatten();
-    let Some((slot, count, size)) = scanned else {
-        return;
-    };
-
-    set_window_strings(handle, slot, title, count, size);
-
-    let work = wind_get_work(handle);
-    if let Some(sliders) = global::with(|g| g.win_bldview(slot, work)) {
-        set_sliders(handle, sliders);
-    }
-    // `desk_verify(pw->w_id, TRUE)` (`desksupp.c:459`) — the window whose
-    // contents just changed becomes the current one (`g_cwin`/`g_croot`/
-    // `g_wlastsel`). `changed` is false because the view rebuild above already
-    // is `desk_verify(…, TRUE)`'s `win_bldview` half.
-    global::with(|g| g.desk_verify(handle, work, false));
-    // Same window, unchanged rect, new content: repaint this window's content
-    // directly via `do_wredraw` over its work area — EmuTOS's
-    // `fun_msg(WM_REDRAW, pw->w_id, pt)` (`:462-463`), which its event loop
-    // turns into exactly this call (`deskmain.c:1272-1278`); no geometry change
-    // and so no AES-generated `WM_REDRAW` involved.
-    redraw::do_wredraw(handle, work);
 }
 
 // ── Small helpers ──────────────────────────────────────────────────────────
