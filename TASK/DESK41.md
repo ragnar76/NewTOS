@@ -1,6 +1,6 @@
 # DESK41 — `TERADESK.INF` gehoert ins Kartenabbild, nicht auf die Karte
 
-Status: **IMPLEMENTIERT — HW-Abnahme offen** (2026-09-29) · Prioritaet: **P2** · Typ: Werkzeugkette + Ergaenzung — Pi-Runde 2026-09-25
+Status: **ERLEDIGT** (HW-Abnahme aus TeraDesk 2026-10-01, [Statusdatei](DESK41-STATUS-DONE.MD)) — implementiert 2026-09-29 · Prioritaet: **P2** · Typ: Werkzeugkette + Ergaenzung — Pi-Runde 2026-09-25
 
 Abhaengigkeiten: —
 
