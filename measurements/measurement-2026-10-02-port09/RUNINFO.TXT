@@ -1,0 +1,91 @@
+measurement-2026-10-02-port09
+  PORT09 (PT_ARGV bei *.NAP verspricht ARGV, cmdargs.c kennt es nicht)
+===========================================================================
+
+Base: branch desk-rebuild, HEAD e91a99e, tree clean before this run.
+Nothing committed, nothing flashed, SD card / /Volumes/BOOT / Pi untouched.
+No file under kernel/, tos-api/ or sdk/libc/ was changed. No *.img here.
+
+Machine: QEMU -M raspi4b, -display none, serial to a file, bounded by a
+shell kill (method/run-port09.sh = measurement-2026-09-25-port05/method/
+run-pex.sh unchanged). Card: fresh tools/make-sd-image.sh per run plus the
+probe (method/seed-port09.sh); NEWDESK.INF #Z autorun starts C:\ENVPAR.NAP.
+No injector, no click: the probe parent issues the Pexec itself.
+
+Kernel: `cargo xtask build --board rpi4 --release` (kernel/tos-api
+untouched; 64/94 rustc warnings, unchanged), kernel8.img sha256
+5b06e10c2596ec0178f5f6996b86c7a5c00c79b80e3c79736269ee6b30a7421b.
+Probes (method/build-port09.sh, recipe of port05 build-pex.sh; the SDK's
+lib_ensure re-archived sdk/gemlib/gemlib.a as stale -- an untracked build
+product, no source change):
+  ENVKID.NAP  0d9b769a7bb4ac4259366806092e32a132075027c6c2eba9af1ecbc72b4561c6
+  ENVPAR.NAP  7043d4323e4d43a97e804671f79b4f97ff1f1f2071dda00a3418cf9d4f15212a
+  ENVPARA.NAP 06c1563bb37821f88996a8226b2ef26aab3d4ad6605d658dd87c108aa796ea05
+
+
+1. WHAT IS UNDER TEST
+---------------------------------------------------------------------------
+Precondition of the ticket's step 2: does the environment a launching EL0
+program hands to Pexec (TeraDesk: startprg.c:543-567 builds it, :650-655
+sets tail[0]=127, :312 x_exec(0, name, &cl, envp)) reach the child in a
+form the child can read?
+
+method/envpar.c is TeraDesk's single-task launch in miniature: Pexec(0,
+child, tail, env), tail[0]=127 + the first 125 characters, env =
+"PATH=C:\\0ARGV=\0<child>\0" + 14 arguments (196 chars joined; one with
+blanks) + "\0". Children: method/envkid.c (prints p_env, then walks the env
+block), and the existing C:\ARGVTEST.NAP (sdk/examples/argvtest.c).
+
+
+2. RESULT: THE ENVIRONMENT DOES NOT REACH THE CHILD
+---------------------------------------------------------------------------
+serial/envkid.log:
+
+  [EPAR] 2 calling Pexec(0, C:\ENVKID.NAP, tail[0]=127, env)
+  [exec] preparing program (slot 3)
+  [EKID] 1 p_env=0x000000000209b000 p_cmdlin[0]=0x000000000000007f
+  [EKID] 2 reading the environment block at p_env
+  [EXC] synchronous (non-SVC) exception (Data Abort (lower EL)):
+        ESR=0x0000000092000006 ELR=0x00000000000010a4
+  [EXC] FAR=0x000000000209b000
+
+The first read of *p_env faults: ESR EC 0x24 (data abort from EL0), DFSC
+0b000110 = translation fault level 2, FAR == p_env. The machine does not
+come back (log ends there).
+
+Cause, read off the source: the loader stamps the env block's POOL
+PHYSICAL address into the child's BasePage --
+  tos-api/src/bdos/process/loader.rs:502-507  env_phys = alloc_env_for(..)
+  tos-api/src/bdos/process/loader.rs:675      bp.p_env = env_phys.unwrap_or(0)
+  tos-api/src/bdos/process/loader.rs:1235ff   alloc_env: mxalloc -> phys
+-- and never maps it into the child's EL0 space. The pool's PAs are mapped
+only in the kernel high half (tos-api/src/bdos/process/usermem.rs:4-8 says
+so in as many words); EL0 Malloc/Mxalloc blocks go through usermem::map
+(ADR-021), the env block does not. 0x209b000 is above the 32 MiB EL0 range
+(mmu.rs:80-87, USER_TPA_MAX_VA). The selftest that covers p_env
+(kernel/src/selftest_pexec.rs:378-397) checks the block through the KERNEL
+alias, which is why this was never seen.
+
+Same for Pexec with env == NULL (EnvSpec::Inherit, exceptions.rs:1645-1647):
+also a nonzero pool PA. Launches from our desktop / AUTO / boot launcher pass
+EnvSpec::None (kernel/src/launch.rs:70-79), p_env = 0 -- those are fine.
+
+
+3. STATUS QUO OF THE ARGUMENTS (for the record)
+---------------------------------------------------------------------------
+serial/argvtest.log, same parent launching C:\ARGVTEST.NAP: the libc
+startup (cmdargs.c) reads the tail only. argc 12: alpha-one .. juliet-ten,
+then "kilo-el" (the tail cut mid-word at 125 chars); kilo-eleven,
+lima-twelve, "mike thirteen has blanks", november-... are lost. That is
+what the ticket's acceptance would have to turn into argc 15 (argv[0] =
+"C:\ARGVTEST.NAP" + 14), and it cannot while p_env is unreadable.
+
+
+4. WHY NO LIBC CHANGE WAS MADE
+---------------------------------------------------------------------------
+An ARGV-aware __libc_parseargs must dereference p_env. Today every child
+that TeraDesk launches gets a nonzero, unmapped p_env (PT_ARGV ->
+explicit env; otherwise env NULL -> inherit), so the change would fault
+every libc program started from TeraDesk at startup -- QED included --
+exactly like ENVKID above. Per the brief: stop and report before touching
+kernel/ or tos-api/.
