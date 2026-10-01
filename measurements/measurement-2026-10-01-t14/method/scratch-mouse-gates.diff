@@ -1,0 +1,25 @@
+--- tos-api/src/vdi/mouse.rs	2026-09-26 00:35:18
++++ tos-api/src/vdi/mouse.rs	2026-10-01 20:18:20
+@@ -795,9 +795,22 @@
+ /// EmuTOS `dis_cur`: the counted-show core. Decrement the hide depth,
+ /// underflow-clamped to 0, and physically draw the cursor on the 1 → 0
+ /// transition (`vdi_mouse.c:127-141`).
++/// T14 scratch gate.
++pub static T14_PAUSE_NEXT: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
++/// T14 scratch gate.
++pub static T14_PAUSED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
++/// T14 scratch gate.
++pub static T14_RELEASE: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
++/// T14 scratch probe.
++pub fn t14_hide_count() -> i16 { HIDE_COUNT.load(Ordering::SeqCst) }
+ fn dis_cur(backend: &dyn RasterBackend) {
+     let prev = HIDE_COUNT.load(Ordering::Relaxed);
+     let new = (prev - 1).max(0);
++    // T14 SCRATCH INSTRUMENT: park the next dis_cur between load and store.
++    if T14_PAUSE_NEXT.swap(false, Ordering::SeqCst) {
++        T14_PAUSED.store(true, Ordering::SeqCst);
++        while !T14_RELEASE.load(Ordering::SeqCst) { core::hint::spin_loop(); }
++    }
+     HIDE_COUNT.store(new, Ordering::Relaxed);
+     if prev > 0 && new == 0 {
+         draw(backend);

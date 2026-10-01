@@ -28,7 +28,7 @@
 //! Each test draws the same icon/image twice, once from an even and once from
 //! an odd address, and compares the two framebuffers pixel for pixel.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use tos_api::aes::object::{render_tree_lp64, BitBlk, IconBlk, Object};
 use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
@@ -316,9 +316,23 @@ fn bitblk(data: u64) -> BitBlk {
 
 // ── the tests ─────────────────────────────────────────────────────────────
 
+/// Every object draw is bracketed by the VDI mouse cursor's hide/show
+/// (`render_tree_t` → `crate::vdi::cursor_hide`/`cursor_show`), and that
+/// cursor — its hide depth `HIDE_COUNT`, its save-under and its position
+/// (`vdi/mouse.rs`) — is one process-wide static with no locking (single-CPU
+/// trap path). Two draws overlapping on two test threads can lose a hide
+/// level, and the second draw then paints the arrow into its own frame (T14);
+/// the tests in this binary must not overlap.
+static LOCK: Mutex<()> = Mutex::new(());
+
+fn lock() -> MutexGuard<'static, ()> {
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// `draw_icon` → `blit_plane(ib_pmask)` / `blit_plane(ib_pdata)`.
 #[test]
 fn a_g_icon_with_odd_raster_pointers_draws_like_an_even_one() {
+    let _g = lock();
     let src = raster_bytes();
 
     let mut even = Aligned([0u8; ROWS * 2 + 2]);
@@ -364,6 +378,7 @@ fn a_g_icon_with_odd_raster_pointers_draws_like_an_even_one() {
 /// `blit_image` → `blit_plane(bi_pdata)`.
 #[test]
 fn a_g_image_with_an_odd_bi_pdata_draws_like_an_even_one() {
+    let _g = lock();
     let src = raster_bytes();
 
     let mut even = Aligned([0u8; ROWS * 2 + 2]);

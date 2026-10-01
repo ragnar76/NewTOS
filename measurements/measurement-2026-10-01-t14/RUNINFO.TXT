@@ -1,0 +1,31 @@
+T14 — aes_icon_unaligned_raster scheitert parallel gelegentlich
+Datum: 2026-10-01 · Basis: desk-rebuild 2e8bebc · nur Host, kein Kernel, keine Pi
+
+Was: den geteilten Zustand belegen, der zwischen den zwei Tests der Datei
+durchschlaegt.
+
+Ergebnis: der VDI-Mauszeiger. HIDE_COUNT (tos-api/src/vdi/mouse.rs:33) ist
+ein prozessweiter Static. hide() erhoeht atomar (fetch_add, :856), dis_cur()
+(:798-805) liest und schreibt getrennt (load/store). Zwei Test-Threads
+koennen so den Zaehler auf 0 bringen, waehrend einer noch zeichnet; dann malt
+draw() den ARROW (PRESET_FORMS[0]) bei park_position (63,47) in dessen
+Backend. Signatur jedes Fehlschlags: 54 Pixel Differenz in x 64..71,
+y 48..61, Pen 1 112 statt 58.
+
+Methode:
+- fails/: echte Fehlschlaege des unveraenderten Testbinaries (parallel,
+  mit und ohne Last), Rohausgabe.
+- method/scratch-mouse-gates.diff: NUR in einer Scratch-Kopie angewandt —
+  zwei Tore zwischen load und store in dis_cur, um die Reihenfolge zu
+  erzwingen. Nicht im Produktcode.
+- method/t14_repro.rs: der Reproduktionstest gegen die Scratch-Kopie.
+  Zaehler 1 -> 2 -> 3 -> 1 -> 0, jedes Mal dieselbe 54-Pixel-Signatur,
+  bitgleich mit fails/.
+
+Wiederholungen (kopierte Binaries, direkt): parallel vorher 5 Fehlschlaege
+in 11 000 Laeufen, nachher 0 in 9 000; --test-threads=1 vorher und nachher
+fehlerfrei.
+
+Entscheidung: Testfehler. HIDE_COUNT ist der zaehlende Semaphor (EmuTOS
+gl_moff, aes/object.rs:1340-1371) und auf dem Einkern-Trap-Pfad absichtlich
+ungesperrt. Fix: Riegel in tos-api/tests/aes_icon_unaligned_raster.rs.
