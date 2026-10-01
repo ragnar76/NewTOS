@@ -24,8 +24,19 @@
 //! `Pterm` the parent must be back in the run-set exactly as it was.
 
 use core::sync::atomic::Ordering;
+use std::sync::{Mutex, MutexGuard};
 
 use tos_api::bdos::process::{sched, PROCESS_TABLE};
+
+/// The process table is a process-wide static with no locking (single-CPU
+/// trap path), and `fixture()` rewrites every slot of it; `cargo test` runs
+/// this binary's tests in parallel threads, so they must not overlap (T12).
+/// One lock over every process-wide static the tests touch.
+static LOCK: Mutex<()> = Mutex::new(());
+
+fn lock() -> MutexGuard<'static, ()> {
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// Slot layout of the fixture. `PARENT` sits at a *lower* index than `CHILD`
 /// so that `pick_next(CHILD)` has to wrap around the table to find it — the
@@ -65,6 +76,7 @@ fn fixture() {
 
 #[test]
 fn blocking_child_never_yields_to_its_own_parent() {
+    let _g = lock();
     fixture();
 
     // Without the suspend this is the measured defect: the child blocks and
@@ -98,6 +110,7 @@ fn blocking_child_never_yields_to_its_own_parent() {
 
 #[test]
 fn an_awake_accessory_still_gets_the_cpu_while_the_child_blocks() {
+    let _g = lock();
     fixture();
     // The other half of the rule: withdrawing the parent must not withdraw
     // anybody else. A woken accessory is still a peer for the blocked child.
@@ -115,6 +128,7 @@ fn an_awake_accessory_still_gets_the_cpu_while_the_child_blocks() {
 
 #[test]
 fn a_stale_wake_key_cannot_re_arm_the_suspended_parent() {
+    let _g = lock();
     fixture();
     // Belt and braces: `wake` re-arms every slot whose `wait_cond` matches, so
     // a suspended parent that still carried a wake key would be put back into
@@ -134,6 +148,7 @@ fn a_stale_wake_key_cannot_re_arm_the_suspended_parent() {
 
 #[test]
 fn the_childs_pterm_puts_the_parent_back_exactly_as_it_was() {
+    let _g = lock();
     fixture();
     sched::suspend_parent_for_child(CHILD);
     sched::resume_parent_of_child(CHILD);
@@ -148,6 +163,7 @@ fn the_childs_pterm_puts_the_parent_back_exactly_as_it_was() {
 
 #[test]
 fn a_parent_that_was_never_a_peer_does_not_become_one() {
+    let _g = lock();
     fixture();
     // The kernel launcher's programs start outside the run-set (`launch.rs`
     // does not `admit`), and a program that has not yet blocked in an `evnt_*`
@@ -165,6 +181,7 @@ fn a_parent_that_was_never_a_peer_does_not_become_one() {
 
 #[test]
 fn a_child_without_a_parent_slot_is_left_alone() {
+    let _g = lock();
     fixture();
     // Desk accessories and the kernel launcher's programs have no parent slot
     // (their "parent" is an EL1 context that owns no slot). Both calls must be

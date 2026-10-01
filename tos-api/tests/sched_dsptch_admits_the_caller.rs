@@ -27,13 +27,26 @@
 //! the waiter READY — plus the property the fix must not break: a parent
 //! suspended inside `Pexec` stays out of the run-set (PORT05/ACC10).
 //!
-//! One `#[test]` function: the process table is global and `cargo test` runs a
-//! file's tests in parallel threads.
+//! The process table is global and `cargo test` runs a file's tests in
+//! parallel threads, so the test serialises on the binary's `LOCK` — the
+//! convention of the `aes_*` files that share `PROCESS_TABLE` (T12).
 
 use core::sync::atomic::Ordering;
+use std::sync::{Mutex, MutexGuard};
 
 use tos_api::bdos::process::{sched, set_current, State, NO_PARENT, PROCESS_TABLE};
 use tos_types::BasePage;
+
+/// The process table, `RUN` and the scheduler's `KERNEL_PARKED` are
+/// process-wide statics with no locking (single-CPU trap path); `cargo test`
+/// runs a binary's tests in parallel threads, so every test in this binary
+/// takes the lock first (T12). One lock over every process-wide static the
+/// tests touch.
+static LOCK: Mutex<()> = Mutex::new(());
+
+fn lock() -> MutexGuard<'static, ()> {
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// The application inside `appl_exit` — a full-screen program with no event
 /// loop, so it has never been through a blocking AES wait.
@@ -79,6 +92,7 @@ fn fixture() {
 
 #[test]
 fn dsptch_admits_a_caller_that_never_blocked() {
+    let _g = lock();
     fixture();
     assert!(
         !PROCESS_TABLE[APP].runnable.load(Ordering::Acquire),

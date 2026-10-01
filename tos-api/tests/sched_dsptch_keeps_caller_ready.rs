@@ -27,13 +27,27 @@
 //!
 //! What is asserted is the one property that distinguishes the two primitives:
 //! after a [`sched::dsptch`] the caller is still a `pick_next` candidate, after
-//! a [`sched::sleep`] it is not. One `#[test]` function, because the process
-//! table is global and `cargo test` runs a file's tests in parallel threads.
+//! a [`sched::sleep`] it is not. The process table is global and `cargo test`
+//! runs a file's tests in parallel threads, so the test serialises on the
+//! binary's `LOCK` — the convention of the `aes_*` files that share
+//! `PROCESS_TABLE` (T12).
 
 use core::sync::atomic::Ordering;
+use std::sync::{Mutex, MutexGuard};
 
 use tos_api::bdos::process::{sched, set_current, State, PROCESS_TABLE};
 use tos_types::BasePage;
+
+/// The process table, `RUN` and the scheduler's `KERNEL_PARKED` are
+/// process-wide statics with no locking (single-CPU trap path); `cargo test`
+/// runs a binary's tests in parallel threads, so every test in this binary
+/// takes the lock first (T12). One lock over every process-wide static the
+/// tests touch.
+static LOCK: Mutex<()> = Mutex::new(());
+
+fn lock() -> MutexGuard<'static, ()> {
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// The context performing the wait — an EL0 application inside `appl_exit`.
 const WAITER: usize = 4;
@@ -76,6 +90,7 @@ fn fixture() {
 
 #[test]
 fn dsptch_yields_to_the_peer_without_leaving_the_run_set() {
+    let _g = lock();
     fixture();
 
     // `all_run()`'s `dsptch()`: the accessory gets the CPU.
