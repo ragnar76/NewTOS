@@ -8,7 +8,7 @@ Abhaengigkeiten: [A110](A110.md) (erledigt)
 
 Nach einem Loeschvorgang baut `fun_rebld` das Fenster neu; die Auswahl ist
 damit weg, die Infozeile zeigt aber weiter `… 1 selected items.`
-(sichtbar in `measurement-2026-09-23-desk13/screendumps/f-deleted.png`).
+(sichtbar in `measurements/measurement-2026-09-23-desk13/screendumps/f-deleted.png`).
 
 A110 hat `win_sinfo(handle, check_selected)` an EmuTOS' fuenf Aufrufstellen
 gesetzt; `fun_rebld` ist offenbar keine davon oder ruft es mit dem falschen
@@ -40,7 +40,7 @@ stimmte nur fuer `do_diropen` (`desksupp.c:450`); `set_window_strings` hat in
 Gebaut: `win_sinfo(handle, false)` in `rebuild_window`, nach dem
 Neueinlesen und vor dem Neuzeichnen, an EmuTOS' Stelle.
 
-Messung: [`measurement-2026-09-23-desk24-desk25-desk26/`](../measurement-2026-09-23-desk24-desk25-desk26/)
+Messung: [`measurements/measurement-2026-09-23-desk24-desk25-desk26/`](../measurements/measurement-2026-09-23-desk24-desk25-desk26/)
 §4:
 
     vorher  " 5 bytes used in 1 selected items."   (d26-before-e-deleted.png)

@@ -12,7 +12,7 @@ keine Pi gefahren, nichts committet; kein
 `git checkout/restore/clean/stash/reset`.
 
 Messung:
-[`measurement-2026-09-24-desk34-desk35/`](../measurement-2026-09-24-desk34-desk35/)
+[`measurements/measurement-2026-09-24-desk34-desk35/`](../measurements/measurement-2026-09-24-desk34-desk35/)
 §3 und §4. Spezifikation: `docs/api/aes/shell-loop.md`, Abschnitt *the
 `gl_shgem` block for a GEM program launched by the built-in desktop (DESK35)*.
 Hardwarepunkt 60 in `docs/api/desktop/_hw-test-2026-09-17.md`.
@@ -148,7 +148,7 @@ Die Messung braucht ein GEM-Programm, das nur sein eigenes Fenster malt
 `v_clrwk`, das den ganzen Schirm raeumt — es haette die Reste auch im
 HEAD-Stand weggewischt), `QED.NAP` faellt fuer die zweite Haelfte aus (es
 endet ueber sein eigenes Menue). Also
-`measurement-2026-09-24-desk34-desk35/method/gemwin.c`, 6,9 KB, im Messordner
+`measurements/measurement-2026-09-24-desk34-desk35/method/gemwin.c`, 6,9 KB, im Messordner
 und nicht im Produkt.
 
 ## 7. Was offen bleibt

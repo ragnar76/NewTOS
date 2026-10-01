@@ -27,7 +27,7 @@ Regressionsbeleg per Screendump und `xtask test`.
 **Status:** ERLEDIGT (2026-09-23) — Pi-Sichtabnahme offen.
 **Artefakt:** uncommitted im Baum auf `desk-rebuild`, Basis HEAD `8e855d2`;
 Quittung [DESK10-STATUS-DONE.MD](DESK10-STATUS-DONE.MD), Belege in
-`measurement-2026-09-23-desk10/`.
+`measurements/measurement-2026-09-23-desk10/`.
 
 Neu ist [`kernel/src/desk/dosbind.rs`](../kernel/src/desk/dosbind.rs), das
 GEMDOS/BIOS-Gegenstueck zum aesbind-Block in `desk/mod.rs`, als eigenes Modul
@@ -76,7 +76,7 @@ auf beiden Seiten, gleiche Ausgabe und bytegleiches Kartenabbild**;
 Boards frisch gebaut, tos-api 64 / kernel 94, Clippy 80/125 — Delta 0, null
 Treffer in `kernel/src/desk/`.
 
-**Die Vergleichsbilder aus `measurement-2026-09-23-desk08-desk09/` taugen
+**Die Vergleichsbilder aus `measurements/measurement-2026-09-23-desk08-desk09/` taugen
 dafuer nicht mehr** — sie liegen vor `8e855d2` („kein Fenster beim Start")
 und tragen noch das Startfenster; der Vergleich ergibt 118314 Pixel, die mit
 DESK10 nichts zu tun haben. Die Paare sind daher beide auf `8e855d2`

@@ -9,7 +9,7 @@ Baum. Nichts geflasht, nichts ausgeworfen, keine reale Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset` auf dem geteilten
 Baum (nur lesendes `git show HEAD:…` fuer die „vorher"-Kopien).
 
-Messung: [`measurement-2026-09-24-arch01/`](../measurement-2026-09-24-arch01/).
+Messung: [`measurements/measurement-2026-09-24-arch01/`](../measurements/measurement-2026-09-24-arch01/).
 Quelle: ARM ARM **DDI 0487M.c** (nicht in `references/`; ueber Arms
 Dokumentendienst gelesen) — D1.4.2, D1.4.4, C6.2.157, C6.2.288, C5.2.3.
 
@@ -165,7 +165,7 @@ Delta ueberall 0. Der geteilte Zielordner enthaelt zuletzt den **rpi4**-Bau
 | `docs/ARCHITECTURE.md` | Prozessmodell: „EL0 entry is uninterruptible" mit Verweis auf QUIRK-003 |
 | `docs/STATUS.md` | Recent Decisions 2026-09-24 |
 | `TASK/ARCH01.md` | Status + `## Abschluss` |
-| `measurement-2026-09-24-arch01/` | RUNINFO, method/, serial/ (23), evidence/ (4), screendumps/ (6), manifest.sha256 |
+| `measurements/measurement-2026-09-24-arch01/` | RUNINFO, method/, serial/ (23), evidence/ (4), screendumps/ (6), manifest.sha256 |
 
 ## 9. Offen / fuer eigene Tickets
 

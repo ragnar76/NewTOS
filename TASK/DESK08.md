@@ -26,7 +26,7 @@ nach dem Schliessen bytegleich.
 ## Abschluss
 
 **Erledigt am 2026-09-23**, Quittung [DESK08-STATUS-DONE.MD](DESK08-STATUS-DONE.MD),
-Artefakte `measurement-2026-09-23-desk08-desk09/`. Aenderungen uncommitted im
+Artefakte `measurements/measurement-2026-09-23-desk08-desk09/`. Aenderungen uncommitted im
 Baum (Branch `desk-rebuild`, Basis `326ef4c`).
 
 `inf::start_dialog`/`end_dialog`/`inf_show` (EmuTOS `deskinf.c:349-402`) und

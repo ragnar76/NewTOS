@@ -62,7 +62,7 @@ die Aenderung liegt **uncommitted** im gemeinsamen Baum.
    liegt — wie bei EmuTOS — in der Funktion selbst. `fun_confirm` hatte danach
    keinen Aufrufer und keine EmuTOS-Entsprechung mehr und ist entfallen.
 
-Messung: [`measurement-2026-09-25-desk-rest/`](../measurement-2026-09-25-desk-rest/)
+Messung: [`measurements/measurement-2026-09-25-desk-rest/`](../measurements/measurement-2026-09-25-desk-rest/)
 §4, mit den Dateiwirkungen aus dem Kartenabbild zurueckgelesen. Spezifikation:
 [`docs/api/desktop/deskdir.md`](../docs/api/desktop/deskdir.md) und
 [`deskfun.md`](../docs/api/desktop/deskfun.md). Hardwarepunkt **71**.

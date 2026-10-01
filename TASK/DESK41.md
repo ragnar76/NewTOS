@@ -22,7 +22,7 @@ Die Datei registriert die Endungen in `ptype`-Bloecken:
 
 Belegt: `*.NAP` und `*.NCP` stehen darin
 (`/Volumes/Daten/Development/newtos-card-archive-2026-09-24/C-BOOT/TERADESK.INF`,
-322 Zeilen). Eine Kopie liegt in `hw-round-2026-09-24/TERADESK.INF`.
+322 Zeilen). Eine Kopie liegt in `measurements/hw-round-2026-09-24/TERADESK.INF`.
 
 ## Zwei Befunde, nicht einer
 

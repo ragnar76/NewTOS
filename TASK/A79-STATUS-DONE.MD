@@ -7,10 +7,10 @@ gefallen und umgesetzt (EmuTOS-konform, ein Look), Host- und QEMU-Belege liegen
 vor; offen ist allein die Sichtabnahme auf der echten Pi 4 (Tester/Lead).**
 Basis `desk-rebuild` @ `fd0eb98` (enthält den Nachmittagsstand `accfe8d`), gepinnte
 EmuTOS-Quelle `references/emutos` @ `1a7484ab`. Belege:
-[measurement-2026-09-20-a79/](../measurement-2026-09-20-a79/RUNINFO.TXT)
+[measurements/measurement-2026-09-20-a79/](../measurements/measurement-2026-09-20-a79/RUNINFO.TXT)
 (§ FINAL), Referenz
-[hatari-falcon-reference/README.md](../measurement-2026-09-20-a79/hatari-falcon-reference/README.md),
-Bilder [screendumps/LOOK-COMPARE.md](../measurement-2026-09-20-a79/screendumps/LOOK-COMPARE.md)
+[hatari-falcon-reference/README.md](../measurements/measurement-2026-09-20-a79/hatari-falcon-reference/README.md),
+Bilder [screendumps/LOOK-COMPARE.md](../measurements/measurement-2026-09-20-a79/screendumps/LOOK-COMPARE.md)
 und `screendumps/final-*.png`. Diese Quittung löst `A79-STATUS-UNFINISHED.MD`
 ab (Inhalt übernommen, Abschnitte 1–2 sind der Nachmittagsstand).
 
@@ -53,7 +53,7 @@ unverändert. `DISABLED`-Overlay und 1-px-Bevel bewusst nicht in diesem Ticket
 | `docs/COMPATIBILITY.md` | Nicht angefasst — erwähnte den grauen Look nie (`grep GRAY_LT|TOS4 look|Tos4Gray`: 0 Treffer). |
 | `docs/STATUS.md` | Phase-13-Zeile ergänzt, Recent-Decisions-Zeile 2026-09-20 (A79 Abschluss). |
 | `TASK/A79.md` | Status ERLEDIGT, Abschnitt „Abschluss“. |
-| `measurement-2026-09-20-a79/` | `method/make_scratch_final.sh` (ohne Look-Patch), `final_scripts.rs`, `tera-window.actions`, `teradesk-window.inf`, `newdesk-tera.inf`; `screendumps/final-*.png`, `final-compare-ref-vs-newtos.png`; `serial/final-*.log`; `build/*-final.log`; `host-tests/*final*`; `RUNINFO.TXT` § FINAL; `manifest.sha256` ergänzt; `LOOK-COMPARE.md` mit Entscheid-Hinweis. |
+| `measurements/measurement-2026-09-20-a79/` | `method/make_scratch_final.sh` (ohne Look-Patch), `final_scripts.rs`, `tera-window.actions`, `teradesk-window.inf`, `newdesk-tera.inf`; `screendumps/final-*.png`, `final-compare-ref-vs-newtos.png`; `serial/final-*.log`; `build/*-final.log`; `host-tests/*final*`; `RUNINFO.TXT` § FINAL; `manifest.sha256` ergänzt; `LOOK-COMPARE.md` mit Entscheid-Hinweis. |
 
 ## 2. Welche Prüfung lief
 

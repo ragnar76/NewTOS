@@ -37,7 +37,7 @@ Die Frage selbst steht an EmuTOS' Stelle (`deskdir.c:967-976`): hinter dem
 (`desk_rsc.c:2499-2500`, `fun_alert_merge(2, …)`), Voreinstellung `No`,
 `== 1` heisst `Yes`.
 
-Messung: [`measurement-2026-09-23-desk24-desk25-desk26/`](../measurement-2026-09-23-desk24-desk25-desk26/)
+Messung: [`measurements/measurement-2026-09-23-desk24-desk25-desk26/`](../measurements/measurement-2026-09-23-desk24-desk25-desk26/)
 §3. `Nein` laesst die Karte unveraendert (57 Dateien wie das Ausgangsabbild),
 `Ja` leert sie bis auf die Datentraegerkennung. Vorher (HEAD) wird ohne
 zweite Frage geloescht.

@@ -78,7 +78,7 @@ A107-Prozessfixture (zwei echte GEMDOS-Slots, `pterm_child_of`):
 
 Rote Zeile mit der Mutation „`release_locks_of(slot)` auskommentiert", danach
 aus der Sicherungskopie zurueckgeholt (kein `git`-Eingriff):
-`measurement-2026-09-23-a104-a110/host-tests/a110-RED-no-lock-release.txt` /
+`measurements/measurement-2026-09-23-a104-a110/host-tests/a110-RED-no-lock-release.txt` /
 `a110-GREEN-after.txt` (8/8).
 
 ---
@@ -130,7 +130,7 @@ in `hndl_button` (`deskmain.c:982-983`), `desk_clear` (`desksupp.c:150-153`),
 | `cargo xtask build --board rpi4` **und** `--board qemu-virt`, je frisch (`cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat`) | tos-api **64** / kernel **94** auf beiden, rc 0 — Delta 0 |
 | `cargo clippy -p tos-api` / `-p kernel --features board-rpi4` (beide `--target aarch64-unknown-none-softfloat`) | **80** / **125** — unveraendert; `desk/main.rs` 0 → 0, `desk/dir.rs` 0 → 0, `window.rs` 11 → 11 |
 
-### QEMU raspi4b (`measurement-2026-09-23-a104-a110/`)
+### QEMU raspi4b (`measurements/measurement-2026-09-23-a104-a110/`)
 
 A107-Methode (`method/`, Scratch-Kopie der Crates mit dem H02-Injektor,
 640x480, `-display none`, QMP-Screendump 0,3 s nach jeder Serial-Marke,
@@ -155,10 +155,10 @@ fehlte nur die Zeile. Die Groesse 0 beim Ordner ist EmuTOS-treu (`f_size`
 eines Verzeichniseintrags ist 0, und `win_sinfo` summiert es ungeprueft). Die
 A109-Geometrie ist unveraendert: `[a108] BOX1#11=(64,19,160,240)
 ENTRY0=(0,0,160,16)` in beiden Logs, identisch zu
-`measurement-2026-09-22-a107-a109/serial/desk-after-serial.log`.
+`measurements/measurement-2026-09-22-a107-a109/serial/desk-after-serial.log`.
 
 **A107-Sonde** (`a107-sd-probe.img`, `method/probe-a107.actions`), fuenf
-Marken gegen `measurement-2026-09-22-a107-a109/screendumps/probe-after-*.png`:
+Marken gegen `measurements/measurement-2026-09-22-a107-a109/screendumps/probe-after-*.png`:
 B, C, D, E **0 px**; 0 `EXC`/`PANIC`. Marke A zeigt **6779 px**, Bbox
 (120,80)-(617,319) — das ist kein Verhaltensunterschied, sondern ein
 Startrennen der Messung: bei +150 Ticks hatte der Elternprozess sein Kind hier
@@ -185,7 +185,7 @@ Marken gegen `.../tera-after-*.png`: **0 px** auf allen dreien, 0
 
 ## Artefakte
 
-`measurement-2026-09-23-a104-a110/` (`RUNINFO.TXT`, `manifest.sha256`,
+`measurements/measurement-2026-09-23-a104-a110/` (`RUNINFO.TXT`, `manifest.sha256`,
 `method/`, `build/`, `host-tests/`, `screendumps/`, `serial/`; keine `*.img`).
 Geaenderte Dateien im Baum: `tos-api/src/aes/window.rs`,
 `kernel/src/desk/{main,dir}.rs`, `tos-api/tests/aes_a96_zombie_windows.rs`,

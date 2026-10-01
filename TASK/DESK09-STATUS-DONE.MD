@@ -136,7 +136,7 @@ frische Bildkopie je Lauf; alle 0 `[EXC]`/`[PANIC]`):
 
 1. **`control`** — Serienabbild (`NEWDESK.INF` = Platzhalter), Produktkernel.
    `control-desktop.png` gegen
-   `measurement-2026-09-23-a104-a110/screendumps/desk-after-A-idle.png`:
+   `measurements/measurement-2026-09-23-a104-a110/screendumps/desk-after-A-idle.png`:
    **50 px**, alle im Mauszeiger (bbox (319,240)-(640,480); die Referenz hatte
    den Zeiger unten rechts geparkt). Keine Regression am Startbild.
 2. **`seeded`** — `NEWDESK.INF` mit `#E 9A …` (Textansicht) und zwei

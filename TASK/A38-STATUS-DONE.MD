@@ -171,7 +171,7 @@ unveraendert; meine Aenderung setzt darauf auf.
 2. **Messschiene:** `aes-r3-wind-state` gegen `EMUTOS14-AES-r3.BIN` ist der
    unabhaengige Gegenlauf des Testers. Strukturell kann er sich nicht
    verschieben — die r3-Tabelle ruft **keinen** `rsrc_*`-Opcode (0 Treffer fuer
-   `rsrc` in `measurement-2026-09-12-full-regression/aes-r3-wind-state/AES.LOG`).
+   `rsrc` in `measurements/measurement-2026-09-12-full-regression/aes-r3-wind-state/AES.LOG`).
 3. **Nicht getrieben:** der ILP32-Zweig (`relocate_blob_core_ilp32`) hat
    dieselbe Pruefung, ist aus einem Hosttest aber nicht erreichbar (er haengt
    am EL0-Prozesspfad). Heute laeuft kein ILP32-Programm.

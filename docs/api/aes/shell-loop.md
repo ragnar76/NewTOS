@@ -455,7 +455,7 @@ recorded, reported and never handed to a mode switch. `gsx_wsclear()`
 the cursor. Designed in
 [`docs/analysis/a48-shw-reschng-design-2026-09-21.md`](../../analysis/a48-shw-reschng-design-2026-09-21.md)
 §5; host tests `tos-api/tests/aes_a106_restart.rs`, QEMU evidence in
-`measurement-2026-09-22-a106/`.
+`measurements/measurement-2026-09-22-a106/`.
 
 ---
 
@@ -656,7 +656,7 @@ screen was pointer-free from the start. The `.NCP` path
 (`desk::main::launch_native`, `ftype::Flavor::Console`) predated it and only
 cleared the screen (`fbcon::clear_and_home`), so the pointer stayed on the
 text as a black smudge
-(`measurement-2026-09-23-desk06/screendumps/redraw-C-program.png`).
+(`measurements/measurement-2026-09-23-desk06/screendumps/redraw-C-program.png`).
 
 The pair `crate::shell_loop::sh_alpha_enter` / `sh_alpha_leave` is that same
 pass for a character `NORMAL_APP`: each sets `sh_isgem` the way
@@ -668,7 +668,7 @@ launch arm's order is `sh_main`'s: mode switch, `fm_error`-equivalent alert
 `sh_tographic`'s hourglass.
 
 Before/after screendumps of the text screen:
-`measurement-2026-09-24-desk22-desk23-desk28-desk29/screendumps/d22-{before,after}-C-program.png`.
+`measurements/measurement-2026-09-24-desk22-desk23-desk28-desk29/screendumps/d22-{before,after}-C-program.png`.
 
 ---
 
@@ -746,7 +746,7 @@ its restarted `deskmain` re-opens the windows from the context save area
 
 ### Measured
 
-`measurement-2026-09-24-desk34-desk35/`, §3 and §4 — QEMU raspi4b, 640×480, two
+`measurements/measurement-2026-09-24-desk34-desk35/`, §3 and §4 — QEMU raspi4b, 640×480, two
 windows open on `C:\` before the launch.
 
 * `d35-after-D-app.png`: the launched `.NAP`'s window on an otherwise empty
@@ -798,11 +798,11 @@ NewTOS's step is `crate::shell_loop::sh_gem_show`, called from
 exactly `sh_ldapp`'s position between the `sh_main` block (`:715-720`) and
 `dos_exec` (`:645`).
 
-**Measured** (`measurement-2026-09-24-desk37-desk36-desk30/`, QEMU raspi4b,
+**Measured** (`measurements/measurement-2026-09-24-desk37-desk36-desk30/`, QEMU raspi4b,
 640×480):
 
 * `d37g-after-C-app.png` vs. the EmuTOS reference
-  `measurement-2026-09-24-hatari-appbg/screendumps/emutos-bgwin-falcon-tc.png`
+  `measurements/measurement-2026-09-24-hatari-appbg/screendumps/emutos-bgwin-falcon-tc.png`
   (Hatari 2.6.1, Falcon/VGA, EmuTOS 1.4.0+): rows 0..17 white with the program
   name in black, row 18 solid black, rows 19..479 a 50 % green/white
   checkerboard — 320 green + 320 white per row in **both**, and the same

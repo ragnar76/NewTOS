@@ -377,7 +377,7 @@ pub unsafe fn clean_invalidate_dcache_range(va: usize, len: usize) {
 /// 401-row primitive on a 1920-pixel line spans 400*7680+8 = 3 072 008 bytes
 /// and costs 48 001 `dc cvac`, against at most 802 for the 3 208 bytes it
 /// actually wrote (Pi 4, `fb.clean max/call` in
-/// `measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`). Cleaning a line that is
+/// `measurements/measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`). Cleaning a line that is
 /// not dirty is cheap but not free, and the redundant work grows with the
 /// line length.
 ///

@@ -11,7 +11,7 @@ Laufs nicht archiviert war.
 
 Beleg heute von der Karte (`/Volumes/BOOT/NEWDESK.INF`, sha256
 `457a70e75015…`, mtime 2026-09-17, Kopie in
-`measurement-2026-09-09/run1-pi4/NEWDESK.INF.card-as-of-2026-09-19`):
+`measurements/measurement-2026-09-09/run1-pi4/NEWDESK.INF.card-as-of-2026-09-19`):
 
 ```
 #Q 41 40 43 40 7B 40

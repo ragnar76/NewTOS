@@ -3,7 +3,7 @@
 Stand: **fertig, mit zwei benannten Stehenbleibern** · 2026-09-26
 Baum: `desk-rebuild` @ `c2076c0` + unversionierte Änderung
 Plan: `docs/analysis/desktop-userspace-plan-v2.md` §5 U4
-Belege: `measurement-2026-09-26-desk43-u4/`
+Belege: `measurements/measurement-2026-09-26-desk43-u4/`
 
 ---
 
@@ -260,12 +260,12 @@ schreiben. **Das ist genau die Liste, die U4 als Überlebende nennt.**
    den Vergleich gegen `c2076c0` habe ich **nicht** gefahren (dafür müsste der
    HEAD-Kernel gebaut werden, und das ist der Auftrag des Testers). Erwartung:
    **0 abweichende Pixel** — diese Einheit ändert keine Zeichenoperation.
-   Methode: `method/run-boot.sh` + `measurement-2026-09-26-gui04/method/pixdiff.py`.
+   Methode: `method/run-boot.sh` + `measurements/measurement-2026-09-26-gui04/method/pixdiff.py`.
 2. **`\AUTO\`-Lauf und `.NAC`-Erkennung im Seriellprotokoll**, beide Boards,
    gegen `c2076c0` verglichen. Die Zeilen müssen **identisch** sein. Das ist
    der einzige Verhaltenspfad, den U4 wirklich anfasst.
 3. **Alt+Buchstabe → Laufwerksfenster.** Headless nur mit dem
-   Scratch-IKBD-Injektor zu fahren (`measurement-2026-09-17-h03/method`), weil
+   Scratch-IKBD-Injektor zu fahren (`measurements/measurement-2026-09-17-h03/method`), weil
    `raspi4b` in diesem Bau keinen USB-Stack hat (`[pcie] RC not present; USB
    disabled`). Erwartung: Alt-C öffnet das C:-Fenster wie vorher. Dass die
    *Werte* gleich sind, ist oben gemessen; was noch fehlt, ist der Klickweg

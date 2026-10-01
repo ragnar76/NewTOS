@@ -94,7 +94,7 @@ nicht aufloesbar = nicht registriert; Callback nur im Eigentuemerprozess).
 | `cargo run -p xtask -- test` | **804 / 0 / 1** (Basis 797/0/1) |
 | `cargo xtask build --board rpi4` frisch | rc 0, tos-api 64 / kernel 94 (Basis 64/94) |
 | Clippy rpi4 | 80 / 125 → 80 / 125; `object.rs` 16 → 16, `window.rs` 11 → 11; Testmodul 0 Treffer |
-| QEMU raspi4b (`measurement-2026-09-21-a96-a97/`) | TeraDesk per Desktop-Doppelklick: sein Hintergrundbaum (Laufwerks-/Papierkorb-Icons = ICONBLK/CICON-Raster + Labels, `G_USERDEF`-Wurzel) rendert waehrend seiner eigenen Traps durch `resolve_kva` **pixelgleich** (`tera-before-E` vs `tera-after-E` 0 px; D/G/H/I ebenfalls 0 px); 0 Exceptions |
+| QEMU raspi4b (`measurements/measurement-2026-09-21-a96-a97/`) | TeraDesk per Desktop-Doppelklick: sein Hintergrundbaum (Laufwerks-/Papierkorb-Icons = ICONBLK/CICON-Raster + Labels, `G_USERDEF`-Wurzel) rendert waehrend seiner eigenen Traps durch `resolve_kva` **pixelgleich** (`tera-before-E` vs `tera-after-E` 0 px; D/G/H/I ebenfalls 0 px); 0 Exceptions |
 
 ## Abgrenzung / Offen
 
@@ -109,7 +109,7 @@ nicht aufloesbar = nicht registriert; Callback nur im Eigentuemerprozess).
 ## Artefakte
 
 Siehe `TASK/A96-STATUS-DONE.MD` (gemeinsames Messverzeichnis
-`measurement-2026-09-21-a96-a97/`). Geaenderte Dateien:
+`measurements/measurement-2026-09-21-a96-a97/`). Geaenderte Dateien:
 `tos-api/src/aes/object.rs`, `tos-api/src/aes/window.rs`,
 `docs/api/aes/window-graphics.md`, `docs/STATUS.md`, `TASK/A97.md`, dieses
 Ticket.

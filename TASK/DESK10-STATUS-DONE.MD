@@ -91,7 +91,7 @@ Der Desktop ruft **keine** XBIOS-Funktion, deshalb gibt es keine
 **Suche vorher/nachher** (`/usr/bin/grep -rn "tos_api::bdos\|tos_api::gemdos\
 |tos_api::bios\|tos_api::xbios" kernel/src/desk/`): 11 Zeilen mit 8 echten
 Aufrufen → **4 Zeilen, alles Kommentare**. Die vollstaendige Gegenueber-
-stellung steht in `measurement-2026-09-23-desk10/RUNINFO.TXT`.
+stellung steht in `measurements/measurement-2026-09-23-desk10/RUNINFO.TXT`.
 
 ## Die zwei Stellen, an denen der Unterschied echt ist
 
@@ -177,7 +177,7 @@ in DESK09s Quittung.
    Phase 1/2/3 sauber.
 
 **Die Vergleichsbilder mussten neu aufgenommen werden, und das ist selbst ein
-Befund.** Das Ticket verwies auf `measurement-2026-09-23-desk08-desk09/`.
+Befund.** Das Ticket verwies auf `measurements/measurement-2026-09-23-desk08-desk09/`.
 Jene Bilder liegen **vor** `8e855d2` („no window at boot unless the context
 saved one") und tragen noch das Startfenster bei (48,43,544,400); der
 Vergleich ergibt 118314 Pixel in bbox (48,43,594,445) — genau dieses Fenster,
@@ -196,7 +196,7 @@ rc 0 — Basis 64/94, **Delta 0**. Clippy: kernel **125** auf beiden Boards
 
 * `kernel/src/desk/dosbind.rs` (neu), `kernel/src/desk/{dir,inf,model,app,
   main,mod}.rs` — uncommitted im Baum;
-  `measurement-2026-09-23-desk10/method/product-desk10.diff` +
+  `measurements/measurement-2026-09-23-desk10/method/product-desk10.diff` +
   `dosbind.rs.new`.
 * `docs/api/desktop/gembind.md` — neuer Abschnitt „NewTOS implementation
   notes — the desktop reaches the system only through traps (DESK10)": die
@@ -207,7 +207,7 @@ rc 0 — Basis 64/94, **Delta 0**. Clippy: kernel **125** auf beiden Boards
   Schritte).
 * `docs/STATUS.md` — Phase-14-Zeile + eine Zeile in *Recent Decisions*
   (2026-09-23).
-* `measurement-2026-09-23-desk10/` — `RUNINFO.TXT`, `method/`,
+* `measurements/measurement-2026-09-23-desk10/` — `RUNINFO.TXT`, `method/`,
   `screendumps/`, `serial/`, `inf/`, `build/`, `manifest.sha256`.
   Kein `*.img`.
 

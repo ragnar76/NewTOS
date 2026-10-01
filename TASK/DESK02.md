@@ -76,7 +76,7 @@ geloescht); nach einem **Kaltstart** von diesem Abbild steht `DMY` wieder
 vorbelegt, und die Textansicht druckt `23-09-26` statt `09-23-26` — die
 Einstellung erreicht also `format_fnode`, nicht nur den Dialog. `fsck_msdos`
 ohne Beanstandung, null `[EXC]`/`[PANIC]`. Belege:
-`measurement-2026-09-24-desk01-desk02/`.
+`measurements/measurement-2026-09-24-desk01-desk02/`.
 
 **Offene Hardwareabnahme.** Pi 4, HW-Checkliste Punkt **37**, Schritte 3-7 —
 die Doppelklickrate und die Loeschruecksprache brauchen eine echte Maus und

@@ -16,12 +16,12 @@ HEAD `23c6dbe`, **nicht committet**. Spec (Lead, uncommitted, unveraendert):
 Kein ausgelieferter Baum traegt einen FL3DBAK-`G_BUTTON`: `form_alert` und
 `fsel` setzen FL3DACT (`gemfmalt.c`, `gemfslib.c:73-146`), die desk/-Dialoge
 setzen keine 3D-Flags, TeraDesks `desktop.rsc` hat 180 `G_BUTTON`s und 0 mit
-FL3DBAK (Scan in `measurement-2026-09-20-a68-a70/RUNINFO.TXT`). A70 aendert
+FL3DBAK (Scan in `measurements/measurement-2026-09-20-a68-a70/RUNINFO.TXT`). A70 aendert
 heute keinen Dialog; die Screendumps (Kernel-Desktop-Alarm, TeraDesk-Alarm
 „Drive does not exist.“ mit FL3DACT-OK) sind vorher/nachher **0 Pixel**
 verschieden.
 
-## Tests: rot vor, gruen nach (`measurement-2026-09-20-a68-a70/host-tests/`)
+## Tests: rot vor, gruen nach (`measurements/measurement-2026-09-20-a68-a70/host-tests/`)
 
 `tos-api/tests/aes_object_3d_text_button.rs`:
 

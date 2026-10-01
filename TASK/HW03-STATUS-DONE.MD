@@ -1,7 +1,7 @@
 # HW03 — STATUS: DONE
 
 Datum: 2026-09-27 · Basis: branch `desk-rebuild`, HEAD `84baa34` ·
-Messverzeichnis: [`measurement-2026-09-27-hw03/`](../measurement-2026-09-27-hw03/)
+Messverzeichnis: [`measurements/measurement-2026-09-27-hw03/`](../measurements/measurement-2026-09-27-hw03/)
 
 Nicht committet, nichts geflasht, keine Pi gefahren, `/Volumes/BOOT` nicht
 beruehrt, kein `git checkout/restore/clean/stash/reset`.
@@ -56,7 +56,7 @@ bleibt REF02.
 * `ErrorStats` hat drei neue Felder (`card_errors`, `last_card_status`,
   `card_bits`), `error_stats()` fuellt sie.
 
-**Getrieben** (`measurement-2026-09-27-hw03/raw/03`, Abschnitt 2 der RUNINFO):
+**Getrieben** (`measurements/measurement-2026-09-27-hw03/raw/03`, Abschnitt 2 der RUNINFO):
 
     [emmc] CMD17 rejected by card: status=0x40000900 ADDRESS_ERROR (state 4)
     [emmc] CMD24 rejected by card: status=0x40000900 ADDRESS_ERROR (state 4)
@@ -301,7 +301,7 @@ danach byte-genau auf der Karte.
 
 Benutzt: derselbe Hebel, `block_count() + 4096`, jetzt als dauerhafter Teil
 des `selftest-emmc`-Laufs. Ergebnis `Err(Card)` statt `Ok(())`,
-`measurement-2026-09-27-hw03/raw/03`.
+`measurements/measurement-2026-09-27-hw03/raw/03`.
 
 ---
 

@@ -252,7 +252,7 @@ EmuTOS' terminator word describes the array the reader is scanning
 
 Evidence: host test `loader::cookie_mirror_tests`, kernel self-test
 `selftest_sysvars` check (f), `apitest` SX11–SX15
-(`measurement-2026-09-14-cookie/`).
+(`measurements/measurement-2026-09-14-cookie/`).
 
 ### Still open: the counter-direction (application → kernel)
 

@@ -12,14 +12,14 @@ ausgeworfen, keine Pi gefahren, nichts committet; kein
 unberuehrt. Die SD-Abbilder und alle Instrumentierung lagen im Job-Scratch und
 sind geloescht.
 
-Messung: [`measurement-2026-09-27-desk46/`](../measurement-2026-09-27-desk46/).
+Messung: [`measurements/measurement-2026-09-27-desk46/`](../measurements/measurement-2026-09-27-desk46/).
 
 ---
 
 ## 1. Befund 1 — **kein Defekt**, das Ticket schrumpft auf Befund 2
 
 Der Textschirm wird betreten **und** das Programm kommt zum Zeichnen. Beides
-steht im Bild: `measurement-2026-09-27-desk46/screendumps/a3-3-console.png` ist
+steht im Bild: `measurements/measurement-2026-09-27-desk46/screendumps/a3-3-console.png` ist
 der Konsolenschirm im Augenblick, in dem `C:\D46\SYSINFO.NCP` — per Doppelklick
 vom Desktop gestartet — fertig ist und bevor `sh_chgrf` zurueckschaltet. Alle
 sieben Ausgabezeilen stehen da, schwarz auf weiss.

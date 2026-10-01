@@ -7,7 +7,7 @@ Basis: Branch `desk-rebuild`, HEAD `5761465`, Aenderungen **uncommitted** im
 Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset`.
 
-Messung: [`measurement-2026-09-23-desk05/`](../measurement-2026-09-23-desk05/).
+Messung: [`measurements/measurement-2026-09-23-desk05/`](../measurements/measurement-2026-09-23-desk05/).
 Spezifikation: `docs/api/desktop/deskinf.md` (§`inf_conf`, DESK05) und
 `docs/api/desktop/deskmain.md` (§ die Kuerzel-Maschinerie, DESK05).
 
@@ -151,7 +151,7 @@ IKBD-Injektors (`method/make_scratch_desk05.sh`). Sechs Laeufe, **0
     grep -c "desk/" auf beiden Clippy-Laeufen:  0
     cargo run -p xtask -- test   932 passed / 0 failed / 1 ignored (Basis 932/0/1)
 
-Protokolle in `measurement-2026-09-23-desk05/build/`.
+Protokolle in `measurements/measurement-2026-09-23-desk05/build/`.
 
 **Kein neuer Hosttest.** Der Kuerzelpfad liegt vollstaendig in `kernel`
 (`no_std`, aarch64) und ist vom Hostlauf nicht erreichbar; `tos-api` hat kein

@@ -17,7 +17,7 @@ ohne Codeänderung schließen.
    Zeile 131 als Anker mitgenommen.
 2. Beide BINs mit `tosdiff --validate` gegen die Tabelle geprüft, und die
    SHA-256 der Tabelle in `tosdump/cases/` gegen die Kopie in
-   `measurement-2026-09-09/cases/` verglichen — identisch (`5419a709…`).
+   `measurements/measurement-2026-09-09/cases/` verglichen — identisch (`5419a709…`).
 3. Die Rohwerte **nicht** aus dem vorhandenen Diff übernommen, sondern mit einem
    eigenen, rein lesenden Recordleser (Layout aus
    `tosdump/core/tosdump.h:104-125`, Wörter big-endian nach
@@ -40,7 +40,7 @@ ohne Codeänderung schließen.
 
 ## Artefakte
 
-- `measurement-2026-09-09/diff/08-a10-wind-create-kapazitaet.txt` — Rohwerte der
+- `measurements/measurement-2026-09-09/diff/08-a10-wind-create-kapazitaet.txt` — Rohwerte der
   Fälle 131/154/170 aus beiden BINs, `--validate`-Ausgabe, SHA-256 der
   beteiligten Dateien, tosdiff-Auszug, erzeugende Befehle im Kopf.
 - `TASK/A10.md`, Abschnitt „Auswertung — 2026-09-09"; Statuszeile auf ERLEDIGT.
@@ -52,7 +52,7 @@ Eingefrorene Artefakte (`cases/*.tsv`, `*.BIN`, `*.LOG`, `MESSRUN.TXT`,
 ## Ausgeführte Prüfung
 
     $ ./tosdump/host/build/tosdiff --validate \
-          measurement-2026-09-09/run2-pi4-r2wind/AES.BIN tosdump/cases/aes-r2-wind.tsv
+          measurements/measurement-2026-09-09/run2-pi4-r2wind/AES.BIN tosdump/cases/aes-r2-wind.tsv
       → 78 records, build 70ca, case CRC AFB11C9F, accepted
     $ ./tosdump/host/build/tosdiff --validate \
           tosdump/reference/EMUTOS14-AES-r2wind.BIN tosdump/cases/aes-r2-wind.tsv

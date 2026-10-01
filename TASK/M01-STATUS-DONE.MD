@@ -18,17 +18,17 @@ unter neuer Laufkennung sichern. Keine Fensterreparatur.
 3. Durchgang-1-Ergebnisse auf der Karte gegen `run1-pi4/` verglichen: alle sechs
    Dateien bitgleich, nichts ging beim Überschreiben verloren.
 4. Lauf auf realer Pi 4 durch den Anwender; Ergebnis abgeholt.
-5. Nach `measurement-2026-09-09/run2-pi4-r2wind/` archiviert, getrennt von r1.
+5. Nach `measurements/measurement-2026-09-09/run2-pi4-r2wind/` archiviert, getrennt von r1.
 6. Validiert und gegen die TT-Referenz verglichen.
 
 ## Artefakte
 
-- `measurement-2026-09-09/run2-pi4-r2wind/AES.BIN` — 78 Records, 9392 Bytes,
+- `measurements/measurement-2026-09-09/run2-pi4-r2wind/AES.BIN` — 78 Records, 9392 Bytes,
   SHA-256 `680c03b9…`
-- `measurement-2026-09-09/run2-pi4-r2wind/AES.LOG` — SHA-256 `d18c4e32…`
-- `measurement-2026-09-09/diff/03-validate-lauf2.txt`
-- `measurement-2026-09-09/diff/04-aes-r2wind-full.txt`
-- `measurement-2026-09-09/diff/05-aes-r2wind-ohne-globals.txt`
+- `measurements/measurement-2026-09-09/run2-pi4-r2wind/AES.LOG` — SHA-256 `d18c4e32…`
+- `measurements/measurement-2026-09-09/diff/03-validate-lauf2.txt`
+- `measurements/measurement-2026-09-09/diff/04-aes-r2wind-full.txt`
+- `measurements/measurement-2026-09-09/diff/05-aes-r2wind-ohne-globals.txt`
 
 ## Ausgeführte Prüfung
 

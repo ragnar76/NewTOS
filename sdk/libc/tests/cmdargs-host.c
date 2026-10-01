@@ -136,7 +136,7 @@ main (void)
   one ("empty tail", "", none);
 
   /* The two DESK19 measurements, the tails the kernel is known to deliver
-     (measurement-2026-09-23-desk19-desk20): Parameter = Full path, and
+     (measurements/measurement-2026-09-23-desk19-desk20): Parameter = Full path, and
      Parameter = File name. */
   one ("full path", "C:\\README.TXT", full);
   one ("file name", "README.TXT", bare);

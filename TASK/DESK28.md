@@ -55,7 +55,7 @@ wieder her.
   `run_auto_folder`).
 * Spezifikation: `docs/api/emutos-boot-flow.md` §3, Abschnitt
   *The working directory an AUTO program starts in (DESK28)*.
-* Messung: `measurement-2026-09-24-desk22-desk23-desk28-desk29/` §1-2.
+* Messung: `measurements/measurement-2026-09-24-desk22-desk23-desk28-desk29/` §1-2.
   Vorher `CURDIR: drive C:\SUB` / `read "PROOF: C:\SUB"`, nachher
   `CURDIR: drive C:` / `read "PROOF: C:\ (root)"`, gleiche Karte, gleicher
   Bootvorgang, drei Dateien Unterschied.

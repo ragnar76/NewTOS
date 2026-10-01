@@ -27,7 +27,7 @@ entscheidenden Zahl.
 
 ## 1. Was die Messung hergab, als man sie auszaehlte
 
-Die 14 Bloecke aus `measurement-2026-09-25-fs04/raw/pi04-FS04.TXT` wurden
+Die 14 Bloecke aus `measurements/measurement-2026-09-25-fs04/raw/pi04-FS04.TXT` wurden
 maschinell ausgewertet. Drei Dinge kamen dabei heraus, die im Ticket noch als
 offen oder als Messfehler stehen:
 

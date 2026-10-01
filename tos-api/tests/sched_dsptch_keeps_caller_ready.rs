@@ -21,9 +21,9 @@
 //! the run-set and only `idle_wake_pass` — a key or a pointer movement — could
 //! put it back. Headless there is neither, so a program that called
 //! `appl_exit()` with a desk accessory loaded never came back from it and never
-//! reached its `Pterm` (`measurement-2026-09-26-acc10/serial/before-*.log`;
+//! reached its `Pterm` (`measurements/measurement-2026-09-26-acc10/serial/before-*.log`;
 //! the same stall for a kernel-launched program, i.e. with no `Pexec` in the
-//! picture, in `measurement-2026-09-25-port05`).
+//! picture, in `measurements/measurement-2026-09-25-port05`).
 //!
 //! What is asserted is the one property that distinguishes the two primitives:
 //! after a [`sched::dsptch`] the caller is still a `pick_next` candidate, after

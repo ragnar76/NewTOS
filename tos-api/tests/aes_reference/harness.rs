@@ -746,7 +746,7 @@ fn install_screen_buffer(backend: &MemBackend) {
 /// The "physical address" the fixture reports for the screen buffer — a
 /// page-aligned TT-RAM-looking value under 2 GiB, the kind the pool hands
 /// out on the target. Machine-dependent on every machine (the TT recorded
-/// `0x01000218`, `measurement-2026-09-12-aes-r4/`), so no reference dump
+/// `0x01000218`, `measurements/measurement-2026-09-12-aes-r4/`), so no reference dump
 /// decides it; `tests/aes_window_screen_buffer.rs` checks it by formula.
 pub const SCREEN_BUFFER_PA: u64 = 0x0100_0000;
 

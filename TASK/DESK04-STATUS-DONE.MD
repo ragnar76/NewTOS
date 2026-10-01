@@ -82,7 +82,7 @@ kann, weil sich seine Laufwerkskarte nie aendert:
   `Z:`), verliert sein Symbol;
 * Papierkorb und Drucker ueberstehen den Lauf unberuehrt.
 
-**QEMU raspi4b** (`measurement-2026-09-24-desk03-desk04/`, 640x480,
+**QEMU raspi4b** (`measurements/measurement-2026-09-24-desk03-desk04/`, 640x480,
 Scratch-Kopie mit dem IKBD-Injektor): `C:` auswaehlen → `Options → Remove
 desktop icon` (`rmv-C-removed.png`: Symbol weg, Papierkorb und Drucker
 unveraendert) → `Options → Install devices` (`rmv-D-reinstalled.png`: Symbol
@@ -104,7 +104,7 @@ und Belegpaket. Die fuer DESK04 einschlaegigen Stellen:
 (`do_optnmenu`s `IDSKITEM`-Fall, `rebuild_desktop_icons`),
 `docs/api/desktop/deskins.md` (Abschnitt `ins_devices`),
 `docs/api/desktop/_hw-test-2026-09-17.md` Punkt **38**, Schritte 0/2/3/9,
-`measurement-2026-09-24-desk03-desk04/` §3 und §8.
+`measurements/measurement-2026-09-24-desk03-desk04/` §3 und §8.
 
 ## Offen
 

@@ -520,7 +520,7 @@ not range-check `index`** — a too-large index returns `1` with a bogus pointer
 (TOS behaviour; the resource's counts bound valid indices).
 
 Two consequences of the `-1` test, both measured on the reference TT
-(`measurement-2026-09-12-aes-r4/`, `tosdump/cases/aes-r4-subfunctions.tsv`):
+(`measurements/measurement-2026-09-12-aes-r4/`, `tosdump/cases/aes-r4-subfunctions.tsv`):
 
 * **An unknown type answers `addr_out[0] = -1`, not 0.** `get_addr`'s
   `default:` arm returns `(void *)-1L` (`:170-172`) without touching

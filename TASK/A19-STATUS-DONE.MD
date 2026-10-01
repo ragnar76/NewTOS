@@ -6,7 +6,7 @@ einmal in eigene Puffer und klammert dabei auf `min(IN_LEN, I_SIZE)` bzw.
 `min(AIN_LEN, AI_SIZE)`. Fünf neue Dauertests, vier davon vorher rot. Beide
 Boards frisch gebaut, Warnungsgrundlinie unverändert. Commit `9524c42`
 (Fix) und `6019eff` (Status/Ticket), Messung
-`measurement-2026-09-14-a19/`.
+`measurements/measurement-2026-09-14-a19/`.
 
 ## Die Reihenfolge, die das Ticket verlangt: erst die Durchsicht
 
@@ -17,7 +17,7 @@ Opcode deklariert.
 
 Die vollständige Tabelle — **alle 79 Opcodes, die `crysbind` behandelt,
 auch die sauberen** — steht in
-[measurement-2026-09-14-a19/MANAGER-SURVEY.txt](../measurement-2026-09-14-a19/MANAGER-SURVEY.txt).
+[measurements/measurement-2026-09-14-a19/MANAGER-SURVEY.txt](../measurements/measurement-2026-09-14-a19/MANAGER-SURVEY.txt).
 Methode: jeder `pb.intin(N)` / `pb.intin_ptr(N)` / `pb.addrin(N)` im Baum
 maschinell erhoben (alle Indizes sind Literale, es gibt keinen gerechneten
 zu übersehen), Hilfsfunktionen ihrem Aufrufer zugeschlagen
@@ -134,7 +134,7 @@ klammert auf `I_SIZE`, ohne den Aufruf zu verkürzen.
 
 **Nach dem Fix grün:** `cargo run -p xtask -- test` → **545 passed / 0
 failed / 1 ignored** (Sollstand 540 + die fünf neuen).
-`measurement-2026-09-14-a19/host-test.log`.
+`measurements/measurement-2026-09-14-a19/host-test.log`.
 
 **Beide Boards frisch gebaut** (`--release`, je ein `touch` auf
 `tos-api/src/aes/mod.rs` davor, damit das geteilte `target/` kein „up to
@@ -160,7 +160,7 @@ Logs im Messverzeichnis.
 
 * QED und TeraDesk per `#Z`-Autorun, QMP-Screendump 30 s nach Start:
   **0 von 307 200 Bildpunkten** unterscheiden sich gegen
-  `measurement-2026-09-14-v17/qemu-tmp/` — beide Bilder bitgleich. Genau
+  `measurements/measurement-2026-09-14-v17/qemu-tmp/` — beide Bilder bitgleich. Genau
   die Erwartung des Auftrags.
 * `tosdump/cases/aes-m07-parameter.tsv` (20 Fälle, CRC `0F46665B`) — die
   Parametertabelle, die `OUT_LEN 0/1`, `IN_LEN 2` mit einem gesetzten Wert

@@ -52,14 +52,14 @@ Bearbeitet 2026-09-20, Branch `desk-rebuild`, Basis HEAD `26b0772`,
 * **`docs/STATUS.md`** — Phase-13-Zeile (datierter Eintrag in der Form der
   juengsten Eintraege; die Zeile numeriert nur die zurueckgestellten Punkte
   #51/#59/#108, nicht die gelandeten) + Zeile in „Recent Decisions“.
-* **`measurement-2026-09-20-a81/`** — RUNINFO, Screendumps, Serial,
+* **`measurements/measurement-2026-09-20-a81/`** — RUNINFO, Screendumps, Serial,
   Hosttest-Quittungen, Build-Logs, Methode (Skripte, Overlays, Kernel-Diff),
   SHA-256-Manifest. Keine `*.img`.
 
 ## Tests: rot vor, gruen nach
 
 Gegenprobe in einer Scratch-Kopie der Crates mit `window.rs`/`mod.rs` = HEAD
-`26b0772` und angehaengtem Testmodul (`measurement-2026-09-20-a81/host-tests/newdesk_root_word-RED-before.txt`,
+`26b0772` und angehaengtem Testmodul (`measurements/measurement-2026-09-20-a81/host-tests/newdesk_root_word-RED-before.txt`,
 `…-GREEN-after.txt`):
 
 | Test | vor | nach |
@@ -83,7 +83,7 @@ Testmodul oder der neuen Testdatei. Bibliothekskette: gemlib 578/578,
 cflib 129/129 (beide „failures match expected-failures.txt: 0/0/0“), QED
 und TeraDesk LINK OK mit 0 undefinierten Symbolen.
 
-## QEMU raspi4b (`measurement-2026-09-20-a81/`)
+## QEMU raspi4b (`measurements/measurement-2026-09-20-a81/`)
 
 TeraDesk per `#Z`-Autorun (INF-Dateien aus A78), 640×480, headless, QMP.
 Vorher = Scratch-Kern mit HEAD-`window.rs`/`mod.rs` + `DESKTOP.NAP` aus einer

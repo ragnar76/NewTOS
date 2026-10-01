@@ -266,8 +266,8 @@ was EmuTOS an der Stelle tut.
    nicht betroffen (der geht über `shell_loop`, nicht über `run_gem_app`).
 2. **Sonst nichts Gemessenes.** Boot, Desktopaufbau, Fensterinhalt, Menüleiste,
    Mauszeigerposition sind im raspi4b-Screendump unverändert
-   (`measurement-2026-09-14-desk/screendumps/desk-after.png` gegen
-   `measurement-2026-09-12-a37-abnahme/desk.png` — Unterschiede nur im
+   (`measurements/measurement-2026-09-14-desk/screendumps/desk-after.png` gegen
+   `measurements/measurement-2026-09-12-a37-abnahme/desk.png` — Unterschiede nur im
    Verzeichnisinhalt der Karte).
 
 ## 5. Was am Briefing falsch war

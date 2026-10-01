@@ -39,7 +39,7 @@ die Symbole bei jedem Aufruf aus der Laufwerkskarte ab, jedes vorhandene
 Laufwerk hatte also immer ein Symbol. Dass die Symboltabelle jetzt Zustand
 ist (`G.g_ahead`), gehoert zu DESK03 und ist dort beschrieben.
 
-**Geprueft:** `measurement-2026-09-24-desk03-desk04/` — nach `Remove desktop
+**Geprueft:** `measurements/measurement-2026-09-24-desk03-desk04/` — nach `Remove desktop
 icon` holt `Install devices` das Symbol zurueck, und das Bild ist hinterher
 **pixelgleich** zum Ausgangsbild (pixdiff 0). `desk::ins::selftest()` deckt
 die Faelle ab, die QEMU nicht stellen kann: mehrere fehlende Laufwerke in

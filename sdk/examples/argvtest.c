@@ -6,7 +6,7 @@
  *
  *   cmdline.c  reads the BasePage command tail `p_cmdlin` ITSELF, links no
  *              libc, and therefore proved only that the KERNEL delivers the
- *              argument (DESK19, measurement-2026-09-23-desk19-desk20);
+ *              argument (DESK19, measurements/measurement-2026-09-23-desk19-desk20);
  *   argvtest.c goes through the SDK startup -- sdk/libc/crt0.S ->
  *              __libc_parseargs (sdk/libc/newtos-arch/cmdargs.c) -> main --
  *              exactly like every ported application (QED, TeraDesk), and so

@@ -220,7 +220,7 @@ Maus inkl. Rad ✓ (GUI04), Framebuffer/VDI ✓ (alle ~70 Opcodes).
 
 | Vorschlag | Bewertung |
 |---|---|
-| **Videoplayer** | **Faellt aus.** Nicht wegen des Tons: die **Leseseite** der Karte ist gemessen **~730 KB/s** (`QED.NAP`, 502 KB in 687 ms, `measurement-2026-09-25-fs04/raw/pi05-…`). Das reicht fuer Video nicht. Ursache ist [HW04](HW04.md)/[HW05](HW05.md) — 1-Bit-Bus, Einzelblock, kein DMA |
+| **Videoplayer** | **Faellt aus.** Nicht wegen des Tons: die **Leseseite** der Karte ist gemessen **~730 KB/s** (`QED.NAP`, 502 KB in 687 ms, `measurements/measurement-2026-09-25-fs04/raw/pi05-…`). Das reicht fuer Video nicht. Ursache ist [HW04](HW04.md)/[HW05](HW05.md) — 1-Bit-Bus, Einzelblock, kein DMA |
 | **HighWire / NetSurf** | **Blockiert, aber nicht woran der Veranstalter dachte.** Er vermutet NVDI; unsere VDI ist vollstaendig. Der Blocker ist der **fehlende Netzwerkstapel** (NET01–06). HighWire liegt bereits unter `sdk/apps/highwire` und wartet genau darauf |
 | **SDL-Port** | **Der beste Vorschlag der Liste** — aber als *Unterbau*, nicht als Anwendung. Eigenes Ticket [SDL01](SDL01.md) |
 | **Doom, Spiele** | **Korrektur 2026-09-28:** Doom braucht SDL **nicht** — die Originalfassung trennt die Plattform in eigene Dateien, und wir haben Framebuffer, Tastatur und Takt. Eigener, moeglicherweise kuerzerer Weg: [PORT06](PORT06.md). Andere Spiele weiterhin ueber SDL01 |

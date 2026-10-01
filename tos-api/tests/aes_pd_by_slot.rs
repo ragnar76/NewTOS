@@ -21,7 +21,7 @@
 //!
 //! * **(a)** sixteen nested processes, each calling `appl_init` — none gets
 //!   `-1` (the measured defect: depth 9 → `-1`,
-//!   `measurement-2026-09-20-a62/serial/nest-serial.log`);
+//!   `measurements/measurement-2026-09-20-a62/serial/nest-serial.log`);
 //! * **(b)** nine programs one after another in the same slot — `appl_find`
 //!   answers for the current occupant only (EmuTOS `p_nameit` overwrites the
 //!   one `p_name` in place, `aes/gemshlib.c:633`);

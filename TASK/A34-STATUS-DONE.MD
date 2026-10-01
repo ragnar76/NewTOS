@@ -114,13 +114,13 @@ byteidentisch bestaetigt (**kein** `git checkout`/`restore`/`stash`).
 
 ## Gegenmessung
 
-`measurement-2026-09-12-qemu-r3-a34/` (AES.BIN, AES.LOG, BOOT-SERIAL.txt,
+`measurements/measurement-2026-09-12-qemu-r3-a34/` (AES.BIN, AES.LOG, BOOT-SERIAL.txt,
 DIFF-emutos-vs-newtos-640x480.txt, RUNINFO.TXT). QEMU `raspi4b`, headless,
 640x480, `#Z 01 C:\DUMPAES.NAP@`, ohne Karte und ohne Klick;
 `tosdump/cases/aes-r3-wind-state.tsv` (39 Faelle, CRC `979FAC60`) gegen
 `tosdump/reference/EMUTOS14-AES-r3.BIN`, verglichen mit
 `tosdump/host/build/tosdiff`. Vorher-Stand:
-`measurement-2026-09-12-qemu-r3-a22/`.
+`measurements/measurement-2026-09-12-qemu-r3-a22/`.
 
 ```
 case  EmuTOS          NewTOS vorher    NewTOS nachher
@@ -205,7 +205,7 @@ freigegebenen Slot (`aes/gemwmlib.c:1476-1482` — `newrect`,
 faehrt EmuTOS' `wm_close`+`wm_delete`-Schleife (`:1886-1890`) statt die Tabelle
 zu nullen; dazu traegt `wind_create` `WS_WORK` ueber seinen Slot-Reset.
 
-Gegenmessung `measurement-2026-09-12-qemu-r3-a33/` (dieselbe Tabelle, dasselbe
+Gegenmessung `measurements/measurement-2026-09-12-qemu-r3-a33/` (dieselbe Tabelle, dasselbe
 Profil):
 
 ```

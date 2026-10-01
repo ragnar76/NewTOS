@@ -78,7 +78,7 @@ unveraendert. Der dritte EmuTOS-Fall (`WN_DESKTOP`,
 `CONF_WITH_DESKTOP_SHORTCUTS`, `:1112-1127`) ist bei uns nicht erreichbar,
 weil es keinen `AT_ISFOLD`-Desktop-`ANODE` gibt (DESK30).
 
-**Abnahme (QEMU raspi4b, `measurement-2026-09-24-desk34-desk35/`, §2):**
+**Abnahme (QEMU raspi4b, `measurements/measurement-2026-09-24-desk34-desk35/`, §2):**
 Ordner `SUB` im `C:\`-Fenster geoeffnet -> Fensterslot 0 / AES-Handle 1
 bleiben, `p_spec` wechselt von `C:\*.*` auf `C:\SUB\*.*`, Titel `C:\SUB\`
 (`d34-after-C-folder.png`); dieselbe Geste auf dem HEAD-Stand oeffnete ein

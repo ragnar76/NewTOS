@@ -112,7 +112,7 @@ zusaetzlich `AF_WINDOW` (`desksupp.c:1755`) —, und unser
 Variante des zweiten Aufrufs. Die erste Suche liefert damit den Knoten, den
 die Ueberschreibung gewaehlt haette; es wird einmal gesucht.
 
-**Gemessen** (`measurement-2026-09-24-desk37-desk36-desk30/`, QEMU raspi4b
+**Gemessen** (`measurements/measurement-2026-09-24-desk37-desk36-desk30/`, QEMU raspi4b
 640x480):
 
 * `d30-after-D-shortcut.png` — `QED.NAP` aus dem `C:\`-Fenster auf die

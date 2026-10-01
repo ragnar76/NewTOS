@@ -8,7 +8,7 @@ Basis: Branch `desk-rebuild`, HEAD `9a85fd8`, Aenderungen **uncommitted** im
 Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset`.
 
-Messung: [`measurement-2026-09-23-desk19-desk20/`](../measurement-2026-09-23-desk19-desk20/).
+Messung: [`measurements/measurement-2026-09-23-desk19-desk20/`](../measurements/measurement-2026-09-23-desk19-desk20/).
 Spezifikation: `docs/api/desktop/deskfun.md` (§ *Ablegen auf ein Programm*),
 `docs/api/desktop/deskinf.md` (§ *Parameter* ist zurueck),
 `docs/api/desktop/deskmain.md` (§ `CSAVE`).

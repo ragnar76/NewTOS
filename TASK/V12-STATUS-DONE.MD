@@ -59,7 +59,7 @@ EmuTOS-treu, Kontrolltest).
   125 / tos-api 80, keine Meldung in einer geänderten Datei; `-p tos-api
   --tests`: Treffer in `harness.rs` nur `:814/:875` (`cmp_field`, vorbestehend,
   außerhalb der Hunks). Kein qemu-virt-Build (Lead).
-* QEMU raspi4b, Release-Kernel, `#Z`-Dumper (`measurement-2026-09-21-v11-v12/`):
+* QEMU raspi4b, Release-Kernel, `#Z`-Dumper (`measurements/measurement-2026-09-21-v11-v12/`):
   `tosdiff` gegen `EMUTOS14-VDI-all-falcontc.BIN` **0 von 182** (vorher 3);
   gegen den NewTOS-Dump vom Vormittag genau 54/160/161 `intout[1]`
   `0xFFDF → 0xFFFF`, sonst wortgleich. Raster gegen TT-Referenz **1 von 59**

@@ -171,7 +171,7 @@ Befund.
                     sel 999 -> x0=0x0000000000000000
   ```
 
-  (`measurement-2026-09-12-audit-flipy/GEMTRAP-SELECTOR-PROBE.txt`; die Sonde
+  (`measurements/measurement-2026-09-12-audit-flipy/GEMTRAP-SELECTOR-PROBE.txt`; die Sonde
   wurde danach von Hand entfernt, `kernel/src/lib.rs` ist byte-identisch zum
   Ausgangsstand.)
 * **Fehlerszenario, mit Aufrufer:** `vq_gdos()` ist genau der `-2`-Sondierer:
@@ -241,7 +241,7 @@ verdirbt keinem Aufrufer ein Register.
 
 ### 5b) Eigene, gegnerische Messung auf beiden Maschinen
 
-Neue Tabelle `measurement-2026-09-12-audit-flipy/vdi-audit-flipy.tsv`
+Neue Tabelle `measurements/measurement-2026-09-12-audit-flipy/vdi-audit-flipy.tsv`
 (36 Fälle, CRC `F8B45495`), gebaut, um genau die Arme zu treffen, die die
 eingefrorenen Tabellen **nicht** erreichen: jeden Fehler- und Rückfallpfad der
 Handler, die `flip_y` setzen, plus die drei von `675e311`/`1eb4e68`
@@ -316,7 +316,7 @@ Der GEM-Trap mit den Selektoren `-2`, `-1`, `999` (siehe F-1).
 
 ## 8. Belege
 
-* `measurement-2026-09-12-audit-flipy/` — neue Falltabelle, beide Rohdumps,
+* `measurements/measurement-2026-09-12-audit-flipy/` — neue Falltabelle, beide Rohdumps,
   Diff, Boot-Log, Sondenausgabe, `RUNINFO.TXT`.
 * Unverändert geblieben: `tosdump/cases/`, `tosdump/reference/`, alle
   bestehenden `measurement-*`-Verzeichnisse, sämtlicher Produktcode.

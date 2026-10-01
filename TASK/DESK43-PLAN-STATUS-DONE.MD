@@ -198,7 +198,7 @@ offen), und das Original hatte **gar keinen** Speicherschutz.
    ist eigene Arbeit und **nicht** Teil dieses Plans.
 3. **Ersetzbarkeit** — und die ist **bereits gefahren**: `#Z 01 C:\PEXPAR.NAP@`
    hat am 2026-09-25 eine EL0-Anwendung **statt** des eingebauten Desktops
-   gestartet (`measurement-2026-09-25-port05/method/newdesk-pex.inf`). Nur der
+   gestartet (`measurements/measurement-2026-09-25-port05/method/newdesk-pex.inf`). Nur der
    `DESKTOP_APP`-Arm ist noch festverdrahtet.
 4. **Mehrkern/Multitasking** — ein Desktop, der kein Prozess ist, kann nicht
    einer von mehreren sein.

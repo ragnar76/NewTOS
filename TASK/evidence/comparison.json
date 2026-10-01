@@ -1,8 +1,8 @@
 {
   "aes": {
-    "table": "measurement-2026-09-09/cases/aes-r1.tsv",
+    "table": "measurements/measurement-2026-09-09/cases/aes-r1.tsv",
     "ref": "tosdump/reference/EMUTOS14-AES.BIN",
-    "new": "measurement-2026-09-09/run1-pi4/AES.BIN",
+    "new": "measurements/measurement-2026-09-09/run1-pi4/AES.BIN",
     "blocks": {
       "67": {
         "head": "67  opcode 108  wind_calc WC_WORK kind 0, no gadgets: 1px all round",
@@ -1062,9 +1062,9 @@
     "summary": "95 of 95 cases differ"
   },
   "vdi": {
-    "table": "measurement-2026-09-09/cases/vdi-all.tsv",
+    "table": "measurements/measurement-2026-09-09/cases/vdi-all.tsv",
     "ref": "tosdump/reference/EMUTOS14-VDI-all.BIN",
-    "new": "measurement-2026-09-09/run1-pi4/VDI.BIN",
+    "new": "measurements/measurement-2026-09-09/run1-pi4/VDI.BIN",
     "blocks": {
       "29": {
         "head": "29  opcode 35  vql_attributes line attributes after the reset",
@@ -2374,9 +2374,9 @@
     "summary": "182 of 182 cases differ"
   },
   "raster": {
-    "table": "measurement-2026-09-09/cases/vdi-raster.tsv",
+    "table": "measurements/measurement-2026-09-09/cases/vdi-raster.tsv",
     "ref": "tosdump/reference/EMUTOS14-RASTER.BIN",
-    "new": "measurement-2026-09-09/run1-pi4/RASTER.BIN",
+    "new": "measurements/measurement-2026-09-09/run1-pi4/RASTER.BIN",
     "blocks": {
       "73": {
         "head": "73  opcode 110  vr_trnfm standard to device, 4 planes",

@@ -19,7 +19,7 @@ und Regressionstest korrigieren.
    Anker, nicht bewertet.
 2. Beide BINs selbst mit `tosdiff --validate` gegen die Tabelle geprüft und die
    SHA-256 der Tabelle in `tosdump/cases/` gegen die Laufkopie in
-   `measurement-2026-09-09/cases/` verglichen — identisch (`5419a709…`).
+   `measurements/measurement-2026-09-09/cases/` verglichen — identisch (`5419a709…`).
 3. Die Rohwerte **nicht** aus den vorhandenen Diffs übernommen, sondern mit
    einem eigenen, rein lesenden Recordleser direkt aus beiden BINs gelesen
    (Layout `tosdump/core/tosdump.h:19-36` und `:104-126`, Wörter big-endian nach
@@ -54,7 +54,7 @@ und Regressionstest korrigieren.
 
 ## Artefakte
 
-- `measurement-2026-09-09/diff/10-a12-wind-get-pxywh-after-open.txt` —
+- `measurements/measurement-2026-09-09/diff/10-a12-wind-get-pxywh-after-open.txt` —
   Validierungen, SHA-256, Rohwerte der Records 232/253 (plus Anker 250/259) aus
   beiden BINs, Bytevergleich des Records 253, die Quellenbelege und die elf
   Grenzfälle; erzeugende Befehle im Kopf.
@@ -69,7 +69,7 @@ unverändert. Keine `.rs`-Datei im Baum geändert; der temporäre Testaufsatz
 ## Ausgeführte Prüfung
 
     $ ./tosdump/host/build/tosdiff --validate \
-          measurement-2026-09-09/run2-pi4-r2wind/AES.BIN tosdump/cases/aes-r2-wind.tsv
+          measurements/measurement-2026-09-09/run2-pi4-r2wind/AES.BIN tosdump/cases/aes-r2-wind.tsv
       → 78 records, build 70ca, case CRC AFB11C9F, accepted
     $ ./tosdump/host/build/tosdiff --validate \
           tosdump/reference/EMUTOS14-AES-r2wind.BIN tosdump/cases/aes-r2-wind.tsv

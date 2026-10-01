@@ -70,10 +70,10 @@ Treffer in der Datei).
 ## QEMU-Smoke (raspi4b, headless, Release `--board rpi4`, QMP-Screendump)
 
 Image `tools/make-sd-image.sh` (dist/ mit cicons.rsc) + `NEWDESK.INF` `#Z`
-wie `measurement-2026-09-19-a41/part2/method/`; Marker `sh_ldapp`, Settle 15 s.
+wie `measurements/measurement-2026-09-19-a41/part2/method/`; Marker `sh_ldapp`, Settle 15 s.
 
 * TeraDesk `#Z`: kein EXC/panic; `tera-up.png` **bytegleich** (SHA-256
-  `5148fde2…`, 0 Pixel) zu `measurement-2026-09-19-a41/part2/screendumps/product1-tera-colour-icons-idle.png`.
+  `5148fde2…`, 0 Pixel) zu `measurements/measurement-2026-09-19-a41/part2/screendumps/product1-tera-colour-icons-idle.png`.
 * QED `#Z`: kein EXC/panic; `qed-up.png` **bytegleich** (SHA-256 `ec79c00a…`)
   zu `…/part2/screendumps/smoke-qed-up.png`.
 
@@ -85,7 +85,7 @@ Serial-Logs, Build-/Clippy-Logs). Keine Hardware-/Outward-Aktion, kein Commit.
 * Hosttest `tos-api/tests/aes_rsrc_gaddr_edges.rs` (6) — der eigentliche Beleg.
 * QEMU beide Boards: Boot + `svc`-Selftests + Screendumps; TeraDesk `#Z`
   (prueft `rsrc_gaddr(R_TREE, 0)` auf `cicons.rsc` — bleibt 1) und QED `#Z`
-  muessen bytegleich zu `measurement-2026-09-19-a41/part2/screendumps/` bleiben.
+  muessen bytegleich zu `measurements/measurement-2026-09-19-a41/part2/screendumps/` bleiben.
 * Kein neuer Selftest verdrahtet; nichts ist Pi4-only.
 
 ## Offen / ausserhalb des Auftrags (nicht angefasst)

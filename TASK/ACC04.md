@@ -72,7 +72,7 @@ Ereignisverwalter selbst (`gemsuper.c:139-140,160-161`), nie das Accessory.
 worin es die Titel einhaengen koennte. Unsere Titelobjekte liegen wie dort bei
 `dabox + 3 …`, `THEDESK` ist Objekt 3.
 
-**Belege.** `measurement-2026-09-25-acc02-acc04/screendumps/`:
+**Belege.** `measurements/measurement-2026-09-25-acc02-acc04/screendumps/`:
 `b-deskmenu.png` (beide Titel unter *Desk*), `c-alert.png`/`e-alert2.png`
 (`AC_OPEN` an den jeweils richtigen Slot — zwei Prozesse, zwei Menue-Ids),
 `noacc-deskmenu.png` (ohne Accessory nur *Desktop info...*, EmuTOS' `cnt = 1`);

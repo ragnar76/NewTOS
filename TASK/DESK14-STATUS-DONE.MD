@@ -125,7 +125,7 @@ Benutzerbereich. **Es wurde nichts um sein Fehlen herumgebaut.**
 * Vier QEMU-raspi4b-Laeufe (640x480, `-display none`, QMP, Injektor),
   22 Screendumps, 0 `[EXC]`/`[PANIC]`, `fsck_msdos -n` auf allen vier
   Kartenabbildern Phase 1/2/3 sauber.
-  Belege: `measurement-2026-09-23-desk14/`.
+  Belege: `measurements/measurement-2026-09-23-desk14/`.
 
 Gefahren wurden alle drei Ausgaenge: eine gueltige `.INF` wird gelesen und
 angewendet (roter Hintergrund, Symbole an den Plaetzen der Datei), eine

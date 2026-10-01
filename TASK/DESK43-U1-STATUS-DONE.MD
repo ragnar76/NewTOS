@@ -13,7 +13,7 @@ Pi gefahren, nichts committet; kein `git checkout/restore/clean/stash/reset`.
 ist geloescht. `docs/STATUS.md`, `TASK/DESK43.md` und der Plan sind unberuehrt.
 
 Messung:
-[`measurement-2026-09-26-desk43-u1/`](../measurement-2026-09-26-desk43-u1/).
+[`measurements/measurement-2026-09-26-desk43-u1/`](../measurements/measurement-2026-09-26-desk43-u1/).
 EmuTOS-Referenz: `references/emutos` @ `1a7484ab`.
 
 ---
@@ -106,12 +106,12 @@ Dgetdrv / Dsetdrv
 ```
 
 Zeile fuer Zeile gegen `deskmain.c:1950-2075`:
-[`analysis/deskmain-comparison.md`](../measurement-2026-09-26-desk43-u1/analysis/deskmain-comparison.md).
+[`analysis/deskmain-comparison.md`](../measurements/measurement-2026-09-26-desk43-u1/analysis/deskmain-comparison.md).
 
 ### 2.3 Die Abweichungen — gefunden, **nicht behoben**
 
 Zwoelf, vollstaendig in
-[`analysis/differences.md`](../measurement-2026-09-26-desk43-u1/analysis/differences.md).
+[`analysis/differences.md`](../measurements/measurement-2026-09-26-desk43-u1/analysis/differences.md).
 Die wichtigsten:
 
 * **D2 — `graf_handle` wird nie gerufen** (`deskmain.c:1956`). Genau das Loch

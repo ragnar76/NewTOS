@@ -149,7 +149,7 @@ is unticked and still needs a live run.
   and the Alt bit is now in `shift_state`) → opens that drive letter's root
   window (e.g. Alt-C → `C:\`). Confirm the correct drive opens (and no crash).
   **Driven in QEMU raspi4b 2026-09-23** (DESK13,
-  `measurement-2026-09-23-desk13/screendumps/b-altc.png`): Alt-C opens `C:\`.
+  `measurements/measurement-2026-09-23-desk13/screendumps/b-altc.png`): Alt-C opens `C:\`.
   The claim that this path was inert on the current keyboard layer — carried in
   `check_alt_letter_key`'s own comment and copied into `TASK/DESK11-STATUS-DONE.MD`
   — was **wrong**, and both copies are corrected. What is left for the Pi is a

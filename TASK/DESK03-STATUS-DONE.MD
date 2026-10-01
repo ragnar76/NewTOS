@@ -119,7 +119,7 @@ Die bisherige Regel hatte **keinen** Quellenbeleg (der Kommentar verwies auf
 `deskapp.c:721`, wo nur `IG_HARD`/`IG_FLOPPY` steht). Die neue ist zeilenweise
 belegt. Bei 640x480 mit einem Laufwerk ist der Unterschied, dass Papierkorb
 und Drucker von oben rechts in die unterste Reihe wandern — `boot-desktop.png`
-gegen `measurement-2026-09-24-desk01b/screendumps/about-A-idle.png`.
+gegen `measurements/measurement-2026-09-24-desk01b/screendumps/about-A-idle.png`.
 
 **Nebenwirkung fuer die Messmethode:** die Ecke unten rechts, auf die die
 bisherigen Desk-Laeufe den Zeiger parken (`parkbr`), haelt jetzt den Drucker.
@@ -295,7 +295,7 @@ kernel 94 auf beiden** (Basis 64/94, Delta 0). Clippy: tos-api **80**, kernel
   Schritte).
 * `docs/STATUS.md` — Phase-14-Zeile + eine Zeile in *Recent Decisions*
   (2026-09-24).
-* `measurement-2026-09-24-desk03-desk04/` — `RUNINFO.TXT`, `method/`
+* `measurements/measurement-2026-09-24-desk03-desk04/` — `RUNINFO.TXT`, `method/`
   (vier Aktionslisten + Injektortabellen + der vollstaendige Diff),
   `screendumps/`, `serial/`, `inf/`, `build/`, `manifest.sha256`.
   Kein `*.img`.

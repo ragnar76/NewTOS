@@ -84,7 +84,7 @@ begrenzter.
 
 ## Tests: rot vor, gruen nach
 
-`measurement-2026-09-23-a104-a110/host-tests/a104-RED-before-fix.txt` /
+`measurements/measurement-2026-09-23-a104-a110/host-tests/a104-RED-before-fix.txt` /
 `a104-GREEN-after-fix.txt`:
 
 | Test | vor | nach |

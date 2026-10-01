@@ -1,7 +1,7 @@
 # ACC10 — Abnahmebericht
 
 Status: **UMGESETZT, Abnahmekriterium erfuellt** (QEMU raspi4b, headless)
-Beleg: `measurement-2026-09-26-acc10/`
+Beleg: `measurements/measurement-2026-09-26-acc10/`
 Basis: `desk-rebuild`, HEAD `c141be2`, Aenderung **unverbaut im Baum** (nicht
 committet)
 
@@ -185,7 +185,7 @@ cargo run -p xtask -- test                      956 passed / 0 failed / 1 ignore
 ```
 
 Grundlinie war 64/94, 80/125 und 955/0/1 — **Warnungsdelta null**, ein Test
-mehr (der neue). Protokolle in `measurement-2026-09-26-acc10/build/`.
+mehr (der neue). Protokolle in `measurements/measurement-2026-09-26-acc10/build/`.
 
 ---
 
@@ -196,7 +196,7 @@ mehr (der neue). Protokolle in `measurement-2026-09-26-acc10/build/`.
   `C:\SYSACC2.NAC` im Spiel. Auf `qemu-virt` gibt es keine Accessories,
   dort ist `count() == 0` und die Schranke kehrt sofort zurueck (der Pfad,
   der sich nicht geaendert hat).
-* **Der Lauf, der diese Aenderung prueft:** `measurement-2026-09-26-acc10/
+* **Der Lauf, der diese Aenderung prueft:** `measurements/measurement-2026-09-26-acc10/
   method/seed-pex.sh` mit `method/newdesk-kidonly.inf`, dann
   `method/run-pex.sh`. Erwartung: `[KID] 5 appl_exit done, Pterm(0)` und
   danach `[desk] desktop up`. Vorher: Protokollende nach

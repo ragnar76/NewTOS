@@ -4,7 +4,7 @@ Weiß-Rohwort `0xFFDF` und Bit 5 (`OVERLAY_BIT`) sind isoliert: gespeichertes
 Pixelwort, Schreibkonvertierung und Readback sind je einzeln belegt und durch
 einen reproduzierbaren Hosttest getrennt. Bearbeitet 2026-09-21, Branch
 `desk-rebuild`, Basis HEAD `194b057`, **nicht committet**, nichts geflasht.
-Gemeinsames Paket mit V12 und V03 (`measurement-2026-09-21-v11-v12/`).
+Gemeinsames Paket mit V12 und V03 (`measurements/measurement-2026-09-21-v11-v12/`).
 
 ## Der Sachverhalt, beidseitig
 
@@ -32,7 +32,7 @@ transkribiert, mit `kernel/src/vdi_backend.rs`-Zeilenangaben):
 | `a_cleared_pixel_and_a_pen_0_pixel_differ_by_overlay_bit_alone` | gelöschtes Wort ⊕ Stift-0-Wort = `0x0020` | rot (`0`) | grün |
 | `pen_0_fill_then_v_get_pixel_reports_the_pseudo_palette_white_0xffdf` | Kontrolle: Stift 0 bleibt `0xFFDF` (5 Grünbits) | grün | grün |
 
-Belege: `measurement-2026-09-21-v11-v12/host-tests/overlay-bit-RED-before.txt`
+Belege: `measurements/measurement-2026-09-21-v11-v12/host-tests/overlay-bit-RED-before.txt`
 (verbatim), `overlay-bit-GREEN-after.txt`.
 
 ## Betroffene Funktionen, minimaler Eingriff (→ V12)

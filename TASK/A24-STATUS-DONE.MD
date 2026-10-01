@@ -19,8 +19,8 @@ Nicht durch Ableitung, sondern gemessen. Falltabelle
   Hatari mit `etos512de.img` (bitgleich mit dem ROM der TT-Karte), TT-Medium
   640x480/4 Planes. Das Verfahren ist **bitgleich gegen zwei echte TT-Dumps
   validiert** (`aes-r2b-rlist` 15 Faelle, `aes-r2-wind` 78 Faelle).
-* **NewTOS:** `measurement-2026-09-11-qemu-r3/` (QEMU `raspi4b`, dasselbe
-  640x480-Profil) und `measurement-2026-09-11-pi4-r3/` (echte Pi 4).
+* **NewTOS:** `measurements/measurement-2026-09-11-qemu-r3/` (QEMU `raspi4b`, dasselbe
+  640x480-Profil) und `measurements/measurement-2026-09-11-pi4-r3/` (echte Pi 4).
 
 ## Ergebnis
 

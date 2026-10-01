@@ -69,5 +69,5 @@ Ressourcentext im Modul (`[  OK  ]` wie in `desk_rsc.c`), nicht ueber
 `dir::fun_alert`, dessen Rahmen `[ OK ]` schreibt — ein alter, eigener
 Unterschied, der hier nicht mitgeschleppt wird.
 
-Messung: [`measurement-2026-09-23-desk19-desk20/`](../measurement-2026-09-23-desk19-desk20/).
+Messung: [`measurements/measurement-2026-09-23-desk19-desk20/`](../measurements/measurement-2026-09-23-desk19-desk20/).
 Empfang: [`DESK20-STATUS-DONE.MD`](DESK20-STATUS-DONE.MD).

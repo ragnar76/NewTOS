@@ -1,7 +1,7 @@
 //! `Fdelete` / `Ddelete` free the long-name slots of the entry they erase
 //! (TASK/FS01).
 //!
-//! **Where this comes from.** `measurement-2026-09-23-desk24-desk25-desk26`
+//! **Where this comes from.** `measurements/measurement-2026-09-23-desk24-desk25-desk26`
 //! emptied a whole card from the desktop and then ran `fsck_msdos -n` on the
 //! result: on the two images whose card had been emptied completely, and only
 //! on those, `fsck_msdos` died with exit 133 instead of reporting a clean

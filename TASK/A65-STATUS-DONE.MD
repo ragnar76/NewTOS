@@ -2,7 +2,7 @@
 
 `objc_draw` und `objc_change` nehmen den Mauszeiger jetzt vom Schirm, solange sie
 zeichnen. Bearbeitet 2026-09-17, Branch `desk-rebuild`, Basis HEAD `52a969b`.
-Messlauf: [`measurement-2026-09-17-a65/`](../measurement-2026-09-17-a65/RUNINFO.TXT).
+Messlauf: [`measurements/measurement-2026-09-17-a65/`](../measurements/measurement-2026-09-17-a65/RUNINFO.TXT).
 
 ## Der Fehler, beidseitig
 
@@ -75,7 +75,7 @@ sät sie nur für `planes > 8`), WEISS und SCHWARZ lösen auf dasselbe Gerätewo
 und eine Invertierung wäre unsichtbar. Das war der erste Anlauf und ist im
 Kopfkommentar der Testdatei festgehalten.
 
-Rot vor dem Fix (`measurement-2026-09-17-a65/build/newtest-RED.txt`):
+Rot vor dem Fix (`measurements/measurement-2026-09-17-a65/build/newtest-RED.txt`):
 
 ```
 Change: the AES drew through the cursor's save-under box.
@@ -110,8 +110,8 @@ Grün danach (`build/newtest-GREEN.txt`): `3 passed; 0 failed`.
 | QEMU raspi4b, serielle Protokolle | Desktop und TeraDesk identisch; QED identisch auf frischer Karte (die 48 Zeilen des ersten Vergleichs waren `C:\CLIPBRD`, das QED beim ersten Start anlegt) |
 | qemu-virt-Rauchprobe | bootet, EmuCON-Rückfall mangels Bildschirm — wie in X01 |
 
-Verfahren und Rohdaten: `measurement-2026-09-17-a65/`, Verfahrensdateien aus
-`measurement-2026-09-14-x01/method/` unverändert übernommen.
+Verfahren und Rohdaten: `measurements/measurement-2026-09-17-a65/`, Verfahrensdateien aus
+`measurements/measurement-2026-09-14-x01/method/` unverändert übernommen.
 
 ## Was die echte Pi 4 zeigen muss — Vorhersagen, nicht Messungen
 
@@ -167,7 +167,7 @@ Foto und Referenz: `docs/analysis/fsel-reference-2026-09-17/`.
   `bb_fill(MD_XOR,…)` mit `redraw = !xor_is_ok()`) — unverändert, eigener Befund.
 - **`resource-fileselector.md` erwähnt den Zeiger nicht** — unverändert.
 - **Ein Bildpunkt Versatz am geparkten Mauspfeil** gegenüber
-  `measurement-2026-09-14-x01/screendumps/apitest-after.png`: der Pfeil steht heute
+  `measurements/measurement-2026-09-14-x01/screendumps/apitest-after.png`: der Pfeil steht heute
   bei (320,240) statt (321,241). Der Versatz liegt in **beiden** Läufen dieses
   Tickets gleich vor, gehört also in die drei Tage zwischen dem 14.09. und heute,
   nicht hierher. Wer `vdi_mouse_park` liest, erwartet bei 640×480 `(639/2, 479/2)`
@@ -205,5 +205,5 @@ docs/api/aes/object-form.md                  (Spec-Zeile zu objc_change)
 docs/STATUS.md                               (Phasenzeile + Recent Decisions)
 TASK/A65.md                                  (Kopf)
 TASK/A65-STATUS-DONE.MD                      (diese Quittung)
-measurement-2026-09-17-a65/                  (Messlauf)
+measurements/measurement-2026-09-17-a65/                  (Messlauf)
 ```

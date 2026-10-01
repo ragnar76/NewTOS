@@ -9,7 +9,7 @@ Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset` auf dem gemeinsamen
 Baum.
 
-Messung: [`measurement-2026-09-23-desk06/`](../measurement-2026-09-23-desk06/).
+Messung: [`measurements/measurement-2026-09-23-desk06/`](../measurements/measurement-2026-09-23-desk06/).
 Spezifikation: `docs/api/desktop/deskpro.md` (§ NewTOS implementation notes)
 und `docs/api/desktop/deskmain.md` (§ `do_filemenu`'s `CLIITEM`, DESK06).
 
@@ -149,7 +149,7 @@ cargo clippy --features board-qemu-virt  tos-api 80 / kernel 125 (Basis 80/125)
 grep -c "desk/" auf beiden Clippy-Laeufen:  0
 ```
 
-Protokolle in `measurement-2026-09-23-desk06/build/`.
+Protokolle in `measurements/measurement-2026-09-23-desk06/build/`.
 
 QEMU raspi4b, 640x480, `-display none`, QMP-Screendumps, Injektor in der
 Kratzkopie. Vier Laeufe, **0** `[EXC]`/`[PANIC]` in allen vier Protokollen,

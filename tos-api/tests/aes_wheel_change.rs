@@ -22,7 +22,7 @@
 //! The menu guard (`if (gl_mowner == ctl_pd) return;`, `:400-402`) is not
 //! reachable from here — it needs a registered menu bar and a pointer sweep
 //! through its title row — and is measured on the target instead
-//! (`measurement-2026-09-26-gui04`, run C).
+//! (`measurements/measurement-2026-09-26-gui04`, run C).
 
 #[path = "aes_reference/harness.rs"]
 mod harness;

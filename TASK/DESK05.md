@@ -26,7 +26,7 @@ DESK02), dann bauen.
 ## Abschluss
 
 **Erledigt 2026-09-23.** Quittung: [DESK05-STATUS-DONE.MD](DESK05-STATUS-DONE.MD).
-Messung: `measurement-2026-09-23-desk05/`.
+Messung: `measurements/measurement-2026-09-23-desk05/`.
 
 Umfang aus der Quelle: `inf_conf` (`deskinf.c:1096-1246`) hinter
 `CONF_WITH_DESKTOP_CONFIG` (Vorgabe **1**, `include/config.h:1774-1776`),

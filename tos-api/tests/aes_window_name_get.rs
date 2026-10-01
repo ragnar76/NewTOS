@@ -21,7 +21,7 @@
 //! (`wind_get WF_NAME into buffer 0`, on a window whose title was set by the
 //! preceding prelude) — EmuTOS 1.4 on the reference TT recorded `int_out[0] =
 //! 0`, NewTOS answered `1`
-//! (`measurement-2026-09-13-regression/aes-m05-addrin/DIFF-vs-emutos.txt`).
+//! (`measurements/measurement-2026-09-13-regression/aes-m05-addrin/DIFF-vs-emutos.txt`).
 //!
 //! The buffer assertion is checked **before** the return code on purpose; it
 //! is the load-bearing half. "Returns 0 but writes anyway" would still be

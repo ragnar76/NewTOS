@@ -83,5 +83,5 @@ AArch64-ELF laedt (ADR-018): ein `.PRG`-Ziel bekommt die vorhandene
 m68k-Meldung, ein Ziel, dessen Name keine native Endung traegt, „This file is
 not a native NewTOS program".
 
-Messung: [`measurement-2026-09-23-desk19-desk20/`](../measurement-2026-09-23-desk19-desk20/).
+Messung: [`measurements/measurement-2026-09-23-desk19-desk20/`](../measurements/measurement-2026-09-23-desk19-desk20/).
 Empfang: [`DESK19-STATUS-DONE.MD`](DESK19-STATUS-DONE.MD).

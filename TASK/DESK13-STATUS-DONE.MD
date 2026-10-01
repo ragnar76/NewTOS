@@ -187,7 +187,7 @@ Kartenabbild wird nach dem Lauf mit `method/lsimg.py` gelesen (reiner
 FAT16-Leser, mountet nichts). Ausserdem im Serienprotokoll:
 `output_fname(...) -> Skip` bzw. `-> Ok`.
 
-Belege: `measurement-2026-09-23-desk13/` (`RUNINFO.TXT`, `method/`,
+Belege: `measurements/measurement-2026-09-23-desk13/` (`RUNINFO.TXT`, `method/`,
 `screendumps/`, `serial/`, `manifest.sha256`; keine `*.img`).
 
 ---

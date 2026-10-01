@@ -21,7 +21,7 @@ Die neu abgelegten Statusdateien haben Vorrang vor der alten Startempfehlung: M0
 
 ## Gemeinsame Arbeitsregeln
 
-- Aktuelle Messbasis: `measurement-2026-09-09/run1-pi4/`, `run2-pi4-r2wind/` und `run3-pi4-rlist/`. Ältere NewTOS-Dumps sind Historie, kein Beweis eines heutigen Fehlers. Referenzen stammen aus `tosdump/reference/EMUTOS14-*` vom Atari TT.
+- Aktuelle Messbasis: `measurements/measurement-2026-09-09/run1-pi4/`, `run2-pi4-r2wind/` und `run3-pi4-rlist/`. Ältere NewTOS-Dumps sind Historie, kein Beweis eines heutigen Fehlers. Referenzen stammen aus `tosdump/reference/EMUTOS14-*` vom Atari TT.
 - Jede Änderung bekommt zuerst ein belegtes Soll aus `docs/api/`, bei Lücken aus der gepinnten EmuTOS-Quelle gemäß `docs/SOURCE-ANALYSIS-PROTOCOL.md`. Unterschiede zur tatsächlich gemessenen EmuTOS-Version separat behandeln.
 - 1920×1080 ist das aktuelle Hardwareprofil. Breite, Höhe, Farbtiefe und Fontmetriken bleiben Geräteparameter. Tests dürfen ein zweites Profil benutzen; kein Task verlangt einen neuen Hardwaremodus. 256 logische Farbstifte sind nicht gleichbedeutend mit 8-Bit-Pixelspeicher: der Lauf meldet 16 Planes.
 - „Anderer Wert“ bedeutet nicht automatisch „Fehler“. Globals und Handles nie pauschal wegfiltern. Alternative Erwartung jeweils mit Quelle, Geräteprofil und eigener Prüfung begründen. Rohdiff unverändert behalten.

@@ -47,7 +47,7 @@ Bestaetigt und gebaut. `kernel/src/desk/dir.rs`:
   `d_doop`s rekursiver Zweig mischt weiter wortlos — das tut EmuTOS auch
   (`:626-632`), gefragt wird nur der oberste Ordner.
 
-Messung: [`measurement-2026-09-23-desk24-desk25-desk26/`](../measurement-2026-09-23-desk24-desk25-desk26/)
+Messung: [`measurements/measurement-2026-09-23-desk24-desk25-desk26/`](../measurements/measurement-2026-09-23-desk24-desk25-desk26/)
 §2. Beide Antworten am Kartenabbild nachgewiesen (`serial/cards.txt`):
 `OK` unveraendert → `C:\FOLD\{EXIST.TXT, INNER.TXT}`; `FOLD2` getippt →
 neuer Ordner `C:\FOLD2\INNER.TXT`, `C:\FOLD` unberuehrt. Vorher (HEAD)

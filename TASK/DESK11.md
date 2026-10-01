@@ -48,7 +48,7 @@ Zeile — der Kernelgroesse —, die Laufwerkszeile
 identisch, die Startbilder sind bytegleich (md5
 `a53b0a3f076d7040d0a0f92f9152e611`, pixdiff 0), und die beiden
 Kartenabbilder vergleichen sich byteweise gleich. Null `[EXC]`/`[PANIC]`.
-Belege: `measurement-2026-09-24-desk01-desk02/`.
+Belege: `measurements/measurement-2026-09-24-desk01-desk02/`.
 
 **Offene Hardwareabnahme.** Pi 4, HW-Checkliste Punkt **37**, Schritt 1:
 QEMU zeigt **ein** Laufwerk, die Karte hat **vier** (`C:`–`F:`) — genau der

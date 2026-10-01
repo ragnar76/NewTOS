@@ -40,7 +40,7 @@ Umgebung eines Bauskripts nur die eigene Kiste erreicht.
   --target aarch64-unknown-none-softfloat` vor jedem): **tos-api 64 /
   kernel 94**, Delta 0. Clippy 80/125, Delta 0.
 * QEMU raspi4b, Startschirm-Screendump: Zeile
-  `Built     : 2026-09-23 (786cd80a)` (`measurement-2026-09-23-desk12/`).
+  `Built     : 2026-09-23 (786cd80a)` (`measurements/measurement-2026-09-23-desk12/`).
 * Reproduzierbarkeit: `SOURCE_DATE_EPOCH=1700000000 cargo build -p tos-api`
   gibt `cargo:rustc-env=NEWTOS_BUILD_DATE=2023-11-14` aus.
 

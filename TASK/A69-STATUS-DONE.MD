@@ -14,7 +14,7 @@ A68/A70, Branch `desk-rebuild`, Basis HEAD `23c6dbe`, **nicht committet**.
 Spec (Lead, uncommitted, unveraendert): `object-form.md` „3D handling in
 `just_draw`“ (b).
 
-## Tests: rot vor, gruen nach (`measurement-2026-09-20-a68-a70/host-tests/`)
+## Tests: rot vor, gruen nach (`measurements/measurement-2026-09-20-a68-a70/host-tests/`)
 
 `tos-api/tests/aes_object_3d_text_button.rs`:
 
@@ -35,7 +35,7 @@ Vorher/nachher **0 Pixel Differenz** — erwartet, weil die Beschriftungen auf
 einer `backgrcol`-Tafel liegen und die alte Fuellung dieselbe Farbe hatte;
 sichtbar wird A69 erst ueber einem andersfarbigen/gemusterten Grund (Hosttest).
 Kernel-Desktop-Dialoge (`dlg.rs`/`inf.rs`/`insapp.rs`: `te_color 0x0100`, kein
-3D-Flag) und `form_alert` bleiben bytegleich. `measurement-2026-09-20-a68-a70/RUNINFO.TXT`.
+3D-Flag) und `form_alert` bleiben bytegleich. `measurements/measurement-2026-09-20-a68-a70/RUNINFO.TXT`.
 
 ## Offen
 

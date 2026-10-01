@@ -105,7 +105,7 @@ Vollstaendige Inventur aller Modul-Statics unter `tos-api/src/aes/`
 | `NIL_RECORD`, `DTNAME_TEXT`, Fonts/Muster/Icons, `MENU` (`kernel/src/desk/menu.rs:320`) | Konstante Tabellen bzw. ein Baum, dessen Haken-/Sperrzustand `men_update` bei jedem Desktopstart neu ableitet |
 | VDI (`tos-api/src/vdi/*`) | Ausserhalb des Auftrags **und** ausserhalb der EmuTOS-Sequenz an dieser Stelle: der Neustart oeffnet keine Workstation neu, weil NewTOS gar keine oeffnet/schliesst. Die `vex_*`-Vektoren (`vdi/mouse.rs:92-96`) koennten eine tote EL0-Adresse halten, werden aber von NewTOS **nie aufgerufen** (AUD-V6-002) — inert, kein Neustartrisiko. Als Nebenbefund notiert, nicht angefasst |
 
-## Hosttests (`measurement-2026-09-22-a106/host-tests/`)
+## Hosttests (`measurements/measurement-2026-09-22-a106/host-tests/`)
 
 Neu: `tos-api/tests/aes_a106_restart.rs` (3 Faelle, Referenzharness).
 
@@ -125,7 +125,7 @@ HEAD-Worktree ergibt 911/5 — die fuenf Fehler sind reine Worktree-Artefakte
 (`references/emutos/aes/gem.rsc` ist dort nicht ausgecheckt), also
 916 + 3 neue = 919, Delta = genau die neue Datei.
 
-## Build / Clippy (`measurement-2026-09-22-a106/build/`)
+## Build / Clippy (`measurements/measurement-2026-09-22-a106/build/`)
 
 | Lauf | Ergebnis |
 |---|---|

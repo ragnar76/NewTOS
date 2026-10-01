@@ -86,7 +86,7 @@ unterscheiden. A13, A14 und A16–A24 nicht anfassen.
 
 ## Artefakte
 
-- `measurement-2026-09-09/diff/13-a15-wind-get-listend-words.txt` —
+- `measurements/measurement-2026-09-09/diff/13-a15-wind-get-listend-words.txt` —
   Validierungen, SHA-256, Fallzuordnung, Rohwörter feldweise aus beiden BIN,
   Bytevergleich, die Poison-Bilanz über alle 15 Records, die Herleitung von P1
   und P2 aus der Quelle, die Herkunftsbilanz des Restwerts, die vollständigen
@@ -106,7 +106,7 @@ Keine `.rs`-Datei im Baum geändert; der temporäre Testaufsatz
 ## Ausgeführte Prüfung
 
     $ ./tosdump/host/build/tosdiff --validate \
-          measurement-2026-09-09/run3-pi4-rlist/AES.BIN tosdump/cases/aes-r2b-rlist.tsv
+          measurements/measurement-2026-09-09/run3-pi4-rlist/AES.BIN tosdump/cases/aes-r2b-rlist.tsv
       -> area AES, 15 records of 120 bytes, build 70ca, case CRC B4CC4A5A, accepted
     $ ./tosdump/host/build/tosdiff --validate \
           tosdump/reference/EMUTOS14-AES-r2brlist.BIN tosdump/cases/aes-r2b-rlist.tsv

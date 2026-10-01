@@ -2516,7 +2516,7 @@ fn calc(wtype: i16, kind: u16, r: Grect) -> Grect {
 // faces with black borders, the `IP_2PATT` stipple on the topped name and
 // `IP_1PATT` slider tracks — the picture EmuTOS itself draws on a Falcon
 // (A79, user decision 2026-09-20; reference
-// `measurement-2026-09-20-a79/hatari-falcon-reference/`). The only fixed
+// `measurements/measurement-2026-09-20-a79/hatari-falcon-reference/`). The only fixed
 // colour left in the frame is [`DROP_SHADOW_COLOR`].
 
 /// A gadget's colour word cracked for the frame draw — EmuTOS `gr_crack`
@@ -3575,7 +3575,7 @@ pub fn wind_open(pb: &Aespb) {
         //
         // Before A94 only `redraw_clip` below ran, so the old top kept its
         // topped stipple and bevels outside the new window's rectangle
-        // (`measurement-2026-09-20-a79/screendumps/final-desk-B-two.png`
+        // (`measurements/measurement-2026-09-20-a79/screendumps/final-desk-B-two.png`
         // against the Hatari reference `falcon-tc-two-windows.png`).
         //
         // **The second gate to the same call (A104).** A window that got its

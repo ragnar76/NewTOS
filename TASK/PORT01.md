@@ -18,7 +18,7 @@ aber die Datei wird nicht geoeffnet — die Anwendung sieht ihr Argument nicht.
 der den Schwanz fuer `.NAP` verwirft.
 
 **Und er kommt nachweislich an — bei einem anderen Programm.** DESK19s
-Messung (`measurement-2026-09-23-desk19-desk20/`): dieselbe Geste auf
+Messung (`measurements/measurement-2026-09-23-desk19-desk20/`): dieselbe Geste auf
 `CMDLINE.NCP` druckt
 
 ```
@@ -74,7 +74,7 @@ dienen.
 
 ## Abschluss (2026-09-25)
 
-Messung: [`measurement-2026-09-25-port01/`](../measurement-2026-09-25-port01/).
+Messung: [`measurements/measurement-2026-09-25-port01/`](../measurements/measurement-2026-09-25-port01/).
 Basis: Branch `desk-rebuild`, HEAD `45de38b`; die Aenderung liegt
 **uncommitted** im gemeinsamen Baum. Nichts geflasht, nichts ausgeworfen,
 keine Pi gefahren, nichts committet; kein
@@ -144,7 +144,7 @@ geraten (hoechstens 64 Argumente).
 Mit dem Fix **handelt** QED nach dem Argument, kann die Datei aber nicht
 lesen und meldet „Fehler beim Lesen der Datei: README.TX" — ein Zeichen zu
 kurz. Gemessen, nicht gefolgert
-(`measurement-2026-09-25-port01/serial/trace-serial.log:1033`):
+(`measurements/measurement-2026-09-25-port01/serial/trace-serial.log:1033`):
 
 ```
 [port01] Fopen len 12 path "C:\\README.TX"

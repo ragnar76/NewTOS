@@ -71,5 +71,5 @@ Desktop-Verknuepfungen (`CONF_WITH_DESKTOP_SHORTCUTS`) und
 **gleiche Zweig** ist ueber die Zuordnungsseite (`INF_AT_APPDIR`)
 beidseitig gemessen und unterscheidet sauber.
 
-Messung: [`measurement-2026-09-23-desk18/`](../measurement-2026-09-23-desk18/).
+Messung: [`measurements/measurement-2026-09-23-desk18/`](../measurements/measurement-2026-09-23-desk18/).
 Empfang: [`DESK18-STATUS-DONE.MD`](DESK18-STATUS-DONE.MD).

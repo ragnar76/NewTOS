@@ -653,7 +653,7 @@ removable drive carries its drive letter in the same place.
 `G.g_iblist[-1]`. NewTOS takes `app_parse`'s own answer for an unusable
 `a_aicon`, `IG_APPL`.
 
-Measured: `measurement-2026-09-23-desk16-desk17-desk21/`. The dialog's own
+Measured: `measurements/measurement-2026-09-23-desk16-desk17-desk21/`. The dialog's own
 serial line goes from `curr_icon=0 of 6` to `of 7` (the floppy is filtered out
 on a machine with no floppy drive — a separate, still-live NewTOS rule
 documented in `deskins.md`), four clicks on the stepper's DOWN arrow land on the

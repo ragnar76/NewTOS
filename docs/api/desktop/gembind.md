@@ -332,7 +332,7 @@ nominal for `_IDT` (`0x0000112F`), and stated at the binding.
 
 Pinned by `tos-api/tests/gemdos_ssystem_idt_cookie.rs`; measured on the board as
 `[desk13] _IDT = 0x112f via Ssystem(S_GETCOOKIE)`
-(`measurement-2026-09-23-desk13/serial/`).
+(`measurements/measurement-2026-09-23-desk13/serial/`).
 
 ### Two properties that had to be established before the rewiring
 
@@ -380,7 +380,7 @@ past it into the BIOS. `Dsetdrv(Dgetdrv())` is a deliberate no-op *as a setter*:
 passes and it stores the drive it already was (`bdos/fsmain.c:420-425`). The
 return value is the whole point.
 
-**Evidence** (`measurement-2026-09-24-desk01-desk02/`): boot logs before/after
+**Evidence** (`measurements/measurement-2026-09-24-desk01-desk02/`): boot logs before/after
 `diff` to a single line, the kernel image's own size; the drive line
 `[desk] desktop up (1 drives, 0 window(s) from the context)` is identical, the
 boot screendumps are byte-identical (md5 `a53b0a3f…`), and the SD images compare

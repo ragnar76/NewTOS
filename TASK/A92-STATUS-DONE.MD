@@ -3,7 +3,7 @@
 `evnt_multi` sampelt die Arm-Zeit-Werte erst nach einem Kopf-Pump — EmuTOS'
 `chkkbd(); forker();` (`gemevlib.c:169-170`). Bearbeitet 2026-09-21, Branch
 `desk-rebuild`, Basis HEAD `85c591e`, **nicht committet**. Ein Paket mit
-A89/A90, Messverzeichnis `measurement-2026-09-21-a89-a92/`.
+A89/A90, Messverzeichnis `measurements/measurement-2026-09-21-a89-a92/`.
 
 ## Der Sachverhalt, beidseitig
 

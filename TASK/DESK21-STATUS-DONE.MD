@@ -8,7 +8,7 @@ Basis: Branch `desk-rebuild`, HEAD `a8d4b42`, Aenderungen **uncommitted** im
 Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset`.
 
-Messung: [`measurement-2026-09-23-desk16-desk17-desk21/`](../measurement-2026-09-23-desk16-desk17-desk21/).
+Messung: [`measurements/measurement-2026-09-23-desk16-desk17-desk21/`](../measurements/measurement-2026-09-23-desk16-desk17-desk21/).
 Spezifikation: `docs/api/desktop/deskmain.md` (neuer Abschnitt
 „`BACKGRND` belongs to *View*").
 
@@ -82,7 +82,7 @@ war — unveraendert durch dieses Ticket, aber hier benannt.
 
 ## 3. Belege
 
-`measurement-2026-09-23-desk16-desk17-desk21/` — QEMU raspi4b, 640x480,
+`measurements/measurement-2026-09-23-desk16-desk17-desk21/` — QEMU raspi4b, 640x480,
 `-display none`, QMP-Screendump, scratch-Kopie mit dem H02-IKBD-Injektor,
 Karte je Lauf frisch aus `tools/make-sd-image.sh`. Die beiden Titelpunkte
 stammen aus dem seriellen Menue-Dump (`method/probe_patch.py`); der Zeiger

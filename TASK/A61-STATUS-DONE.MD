@@ -58,7 +58,7 @@ bleibt wie bisher (A-5).
 | Test | `tos-api/tests/aes_shel_write_iscr.rs` (neu, Referenz-Harness `aes_reference/harness.rs`, echter Dispatcherweg mit `control[IN_LEN] = 3`): (1) `isover` 1 → 1, 0 → 0, 7 → 7 (Wert folgt dem Wort); (2) `IN_LEN = 2` mit vergiftetem `int_in[2]` → Manager liest 0 (A19-Klammer, `gemsuper.c:431-434`) | 2/2 |
 | Spec | `docs/api/aes/scrap-shell.md` § `shel_write`: Slot-Tabelle `int_in[2]` praezisiert (fuer jeden Modus gelesen, nur `SHW_RESCHNG` verbraucht, `SHW_EXEC` ignoriert, `SHW_SHUTDOWN` liest nicht); Verhaltensabsatz um TOS-4-Kreuzreferenz (ARGV) und NewTOS-Verhalten (A61) ergaenzt | fertig |
 
-## Geprueft (Belege in `measurement-2026-09-20-a49-a61/`)
+## Geprueft (Belege in `measurements/measurement-2026-09-20-a49-a61/`)
 
 * **Rot vor / gruen nach** (`host-tests/a61-red-before.txt`,
   `a61-green-after.txt`): mit Feld+Getter, aber ohne das Lesen: beide Faelle

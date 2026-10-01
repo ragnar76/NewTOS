@@ -8,7 +8,7 @@ nur eine echte Pi 4 ausführen kann (Abschnitt 6).
 
 Gepinnte EmuTOS-Quelle: `references/emutos` @ `1a7484aba1bfba23e2c0899e243b6d8177fe41df`.
 NewTOS-Basis: `desk-rebuild`, HEAD vor der Arbeit `9bb9157`, sauberer Baum.
-Messverzeichnis: [`measurement-2026-09-14-a28/`](../measurement-2026-09-14-a28/RUNINFO.TXT).
+Messverzeichnis: [`measurements/measurement-2026-09-14-a28/`](../measurements/measurement-2026-09-14-a28/RUNINFO.TXT).
 
 ---
 
@@ -51,7 +51,7 @@ ungelesene `WM_REDRAW` in der Desktop-Schlange.
 ### Mechanismus A — die Grenze leert die Schlange
 
 Rot, mit dem Modell des HEAD-Kerns (`desktop_relinquish` = `save_windows`, kein
-`appl_exit`) — `measurement-2026-09-14-a28/host-test-red-mechanism-A.log`:
+`appl_exit`) — `measurements/measurement-2026-09-14-a28/host-test-red-mechanism-A.log`:
 
     phase 1: the desktop's queue must already be empty when it gives up the
     machine — EmuTOS drains it in appl_exit (deskmain.c:2166 -> ap_exit,

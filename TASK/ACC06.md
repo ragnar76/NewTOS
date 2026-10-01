@@ -85,7 +85,7 @@ Kopf, warum er noch nicht laufen kann. Danach ist ACC02/ACC03 pruefbar.
 ## Abschluss (2026-09-24)
 
 **Teil 1 ist gebaut und belegt, Teil 2 liegt als Quelltext vor.**
-Messung: [`measurement-2026-09-24-acc06/`](../measurement-2026-09-24-acc06/).
+Messung: [`measurements/measurement-2026-09-24-acc06/`](../measurements/measurement-2026-09-24-acc06/).
 Kurzfassung: [`ACC06-STATUS-DONE.MD`](ACC06-STATUS-DONE.MD).
 
 ### Die Nummernwahl gegen die Quelle geprueft

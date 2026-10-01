@@ -14,7 +14,7 @@ inkrementell **gruen** (Hintergrund), nach der Neuzeichnung **weiss**.
 Das ist gemessen und gegen einen Kontrolllauf abgegrenzt: derselbe
 Unterschied tritt ueber den `.NCP`-Startpfad auf, der nur dieselbe
 `redraw::redraw_desktop` ruft, also gehoert er der Rahmenzeichnung und nicht
-dem Programmstart (`measurement-2026-09-23-desk06/`, Laeufe `wdef` und
+dem Programmstart (`measurements/measurement-2026-09-23-desk06/`, Laeufe `wdef` und
 `redraw`).
 
 Zu klaeren ist, welche der beiden Zeichnungen recht hat — EmuTOS' `w_draw`/
@@ -58,7 +58,7 @@ hinterlassen hatte. Der Desktophintergrund ist ein Gruen/Weiss-Raster, weshalb
 nur zwei der vier Punkte im Diff auftauchten — bei `(592,43)` und `(48,443)`
 ist das Raster ohnehin weiss.
 
-* Beleg: `measurement-2026-09-24-desk22-desk23-desk28-desk29/` §4, Tabelle aus
+* Beleg: `measurements/measurement-2026-09-24-desk22-desk23-desk28-desk29/` §4, Tabelle aus
   `method/pixels.py` ueber alle 22 Screendumps. Der Kontrolllauf `d29` —
   fuenf Fensteroeffnungen, Toppings und Ganzschirm-Rahmenzeichnungen ohne
   jedes Loeschen — laesst alle vier Punkte von Anfang bis Ende auf dem

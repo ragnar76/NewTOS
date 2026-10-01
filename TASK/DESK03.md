@@ -39,7 +39,7 @@ mitgeliefert: die Desktop-Symboltabelle ist jetzt **Zustand** (`G.g_ahead`,
 (`deskmain.c:540-542`) — ein graues Menueelement ist EmuTOS' ganze Antwort
 darauf, es gibt keinen Alert.
 
-**Geprueft:** `measurement-2026-09-24-desk03-desk04/` (QEMU raspi4b, 640x480,
+**Geprueft:** `measurements/measurement-2026-09-24-desk03-desk04/` (QEMU raspi4b, 640x480,
 IKBD-Injektor): Menuezustand in beiden Auswahlfaellen, Entfernen (Symbol weg,
 rueckstandsfrei), der Dialog mit Schrittwerk und Typwahl, `Save desktop` +
 Kaltstart in beide Richtungen, `fsck_msdos` sauber, null `[EXC]`/`[PANIC]`.

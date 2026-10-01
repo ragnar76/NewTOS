@@ -3,7 +3,7 @@
 **Status: GEMESSEN · headless in QEMU `raspi4b` nachgestellt · nichts
 repariert** · 2026-09-29 · Basis `desk-rebuild`, HEAD `6726163`.
 
-Messbericht: `measurement-2026-09-29-port08/` (RUNINFO.TXT, drei Bildabzüge,
+Messbericht: `measurements/measurement-2026-09-29-port08/` (RUNINFO.TXT, drei Bildabzüge,
 vier Rohprotokolle, das Messgerüst als Diff, kein `*.img`).
 
 **Am NewTOS-Baum ist keine Quelltextzeile geändert.** Das Messgerüst lag
@@ -97,7 +97,7 @@ bei `rlen < sizeof(rbuf) - 1`, also bei **199** Zeichen ab. Der Text von
 `write_report()` ist bei 1920×1080 201 Zeichen plus CRLF.
 
 Die Nachbildung (`method/report-buffer-cap.py`) liefert byteweise den Schluss
-von `measurement-2026-09-28-port07/raw/pi01-BALL.LOG`:
+von `measurements/measurement-2026-09-28-port07/raw/pi01-BALL.LOG`:
 
 ```
 1920x1080 -> Fwrite length 199, tail b'pyfm -- no XBIOS screen-base cal'
@@ -159,7 +159,7 @@ mit denselben zwei Accessories, sauber. Er hat recht, und mein Satz „betrifft
 jede EL0-GEM-Anwendung" war falsch.** TeraDesk ist daraufhin unter demselben
 Gerüst bis zu seinem `appl_exit` gefahren worden (Ctrl-freie Mausskript-Folge:
 *File* → *Quit/Shutdown* → Knopf *Quit*), Belege in
-`measurement-2026-09-29-port08/round2-teradesk/`.
+`measurements/measurement-2026-09-29-port08/round2-teradesk/`.
 
 ## Die beiden Läufe nebeneinander
 

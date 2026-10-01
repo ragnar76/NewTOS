@@ -18,7 +18,7 @@
  * Deliberately **no** key pause (TASK/T13): \AUTO\ is this program's route of
  * record -- tools/make-sd-image.sh puts it there on SD_SETJMPTST_AUTO=1 and
  * TASK/T07's acceptance ran it exactly that way
- * (measurement-2026-09-21-t07/method/run.sh) -- and a key wait in \AUTO\
+ * (measurements/measurement-2026-09-21-t07/method/run.sh) -- and a key wait in \AUTO\
  * stops the boot. Its verdict is a serial line, not a screen to read.
  */
 #include <setjmp.h>

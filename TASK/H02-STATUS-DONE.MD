@@ -9,7 +9,7 @@ hebt dabei die Auswahl auf; das anschliessende *Info* findet nichts mehr und zei
 das Laufwerk. EmuTOS liefert diesen Klick nie: der Kontrollmanager besitzt die Maus
 waehrend `mn_do`, der Druck wechselt den Besitzer nicht, und die Wartung der App
 bleibt unbefriedigt. Bearbeitet 2026-09-17, Branch `desk-rebuild`, Basis HEAD
-`f79dfd2`. Messlauf: [`measurement-2026-09-17-h02/`](../measurement-2026-09-17-h02/RUNINFO.TXT).
+`f79dfd2`. Messlauf: [`measurements/measurement-2026-09-17-h02/`](../measurements/measurement-2026-09-17-h02/RUNINFO.TXT).
 **Kein Produktcode geaendert. Keine Regression von A65.**
 
 ## 1. Reproduziert in QEMU — ja
@@ -186,14 +186,14 @@ markieren, *File → Info*, Markierung muss stehen bleiben und der Dateidialog k
 
 - `w_setactive()` je App-Poll-Durchlauf (`event.rs:462`) statt je Kontrollmanager-
   Wakeup — siehe Punkt 4, sekundaer.
-- Der H03-Injektor-Diff (`measurement-2026-09-17-h03/method/`) schreibt seinen Trace
+- Der H03-Injektor-Diff (`measurements/measurement-2026-09-17-h03/method/`) schreibt seinen Trace
   ueber `console_write_bytes` auf die fbcon; die hier benutzte Fassung geht ueber eine
   zusaetzliche `Host::debug_write` nur auf die PL011 — falls der Injektor
   wiederverwendet wird, diese Fassung nehmen.
 
 ## Aufraeumen
 
-Projektbaum: `git status --short` zeigt nur `measurement-2026-09-17-h02/` und diese
+Projektbaum: `git status --short` zeigt nur `measurements/measurement-2026-09-17-h02/` und diese
 Quittung als neu; `kernel/src/host_env.rs` sha256 `287ff741…` vor und nach der
 Messung. Injektor und Trace existieren nur in der Scratch-Kopie
 (`…/scratchpad/h02/ws`, `…/ws-old`); `method/scratch-*.diff` dokumentieren sie.
@@ -206,7 +206,7 @@ Unabhaengig nachgemessen, Fix lag uncommitted in `tos-api/src/aes/{event,input,m
 (+`tos-api/tests/aes_menu_click_ownership.rs`), Basis HEAD `2d41261`. Dem
 Developer-Selbstreport oben ("kein Fix in diesem Auftrag") NICHT getraut --
 der Fix war da, wurde real gebaut und in QEMU gefahren. Volle Belege, Hashes,
-Trace-Auszuege und Screendumps: [`measurement-2026-09-17-h02/verify/RUNINFO.TXT`](../measurement-2026-09-17-h02/verify/RUNINFO.TXT).
+Trace-Auszuege und Screendumps: [`measurements/measurement-2026-09-17-h02/verify/RUNINFO.TXT`](../measurements/measurement-2026-09-17-h02/verify/RUNINFO.TXT).
 
 **PASS (Kernziel):** 3/3 neue Hosttests, 5/5 Regressionstests (`aes_button_dispatch`,
 `aes_window_drag`), `cargo run -p xtask -- test` = 560 gruen/0 rot/1 ignoriert
@@ -248,7 +248,7 @@ Nachtest auf echter Pi 4 (Datei markieren, File->Info, Markierung bleibt
 stehen) gehoeren auf die HW-Checkliste.
 
 Baum: `git status --short` zeigt vor/nach der Messung nur die vier
-Fix-Dateien plus das neue `measurement-2026-09-17-h02/verify/`-Verzeichnis.
+Fix-Dateien plus das neue `measurements/measurement-2026-09-17-h02/verify/`-Verzeichnis.
 `kernel/src/host_env.rs` sha256 identisch vor/nach (`287ff741...`). Injektor
 und Kontrollbau nur in Scratch-Kopien, keine laufenden QEMU-Prozesse, keine
 QMP-Sockets uebrig, nichts geflasht, nichts committet.

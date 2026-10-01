@@ -11,7 +11,7 @@ ausgeworfen, keine Pi gefahren, nichts committet; kein
 `git checkout/restore/clean/stash/reset`.
 
 Messung:
-[`measurement-2026-09-24-desk22-desk23-desk28-desk29/`](../measurement-2026-09-24-desk22-desk23-desk28-desk29/)
+[`measurements/measurement-2026-09-24-desk22-desk23-desk28-desk29/`](../measurements/measurement-2026-09-24-desk22-desk23-desk28-desk29/)
 §4. Spezifikation: `docs/api/aes/window-graphics.md`, Abschnitt *the drop
 shadow's four unwritten pixels (DESK23)*.
 

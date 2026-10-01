@@ -16,7 +16,7 @@
 //! entries at `(0, row · 19)` spanning the box). The kernel crate is
 //! `forced-target` AArch64 and has no host tests, so the geometry
 //! `build_menu` really builds is checked on the board (the serial dump of the
-//! registered tree in `measurement-2026-09-21-a103-a108/`, before that
+//! registered tree in `measurements/measurement-2026-09-21-a103-a108/`, before that
 //! `…-a100-a102/`); what these cases pin is the AES's behaviour on that
 //! geometry — and, for A108, the bar row it draws from it against the
 //! Falcon reference `falcon-tc-desktop.png`.

@@ -78,7 +78,7 @@ Regressionstest benennen. A13, A15 und A16–A23 nicht anfassen.
 
 ## Artefakte
 
-- `measurement-2026-09-09/diff/12-a14-wind-get-nextxywh.txt` — Validierungen,
+- `measurements/measurement-2026-09-09/diff/12-a14-wind-get-nextxywh.txt` — Validierungen,
   SHA-256, Fallzuordnung, Rohwörter feldweise aus beiden BIN, Bytevergleich,
   Soll je Fall mit Quellenbelegen, die Ursachentrennung über sechs Modelle,
   die vollständigen Hostläufe, die zwei Defekte, die benannten Fixes, die
@@ -97,7 +97,7 @@ Keine `.rs`-Datei im Baum geändert; der temporäre Testaufsatz
 ## Ausgeführte Prüfung
 
     $ ./tosdump/host/build/tosdiff --validate \
-          measurement-2026-09-09/run3-pi4-rlist/AES.BIN tosdump/cases/aes-r2b-rlist.tsv
+          measurements/measurement-2026-09-09/run3-pi4-rlist/AES.BIN tosdump/cases/aes-r2b-rlist.tsv
       -> area AES, 15 records of 120 bytes, build 70ca, case CRC B4CC4A5A, accepted
     $ ./tosdump/host/build/tosdiff --validate \
           tosdump/reference/EMUTOS14-AES-r2brlist.BIN tosdump/cases/aes-r2b-rlist.tsv

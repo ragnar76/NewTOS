@@ -1,7 +1,7 @@
 # X01 — Quittung: IMPLEMENTIERT, zwei Entscheidungen und die echte Pi offen
 
 Datum 2026-09-14 · Basis `desk-rebuild`, HEAD `a9a5f8a`, Baum vorher sauber
-· Belege [measurement-2026-09-14-x01/](../measurement-2026-09-14-x01/)
+· Belege [measurements/measurement-2026-09-14-x01/](../measurements/measurement-2026-09-14-x01/)
 
 **UNFINISHED heisst hier: die Umsetzung steht und ist in QEMU belegt.** Offen
 sind (a) zwei Entscheidungen, die ausdruecklich beim Anwender liegen, (b) drei
@@ -26,7 +26,7 @@ weiter `38`.
 
 Sechs Laeufe QEMU `raspi4b`, headless, 640x480, mit **demselben Kern**
 (`kernel8.img` sha256 `e23991f0…`): je Zustand Standarddesktop, `#Z`-Autorun
-TeraDesk, `#Z`-Autorun QED. Werkzeuge in `measurement-2026-09-14-x01/method/`.
+TeraDesk, `#Z`-Autorun QED. Werkzeuge in `measurements/measurement-2026-09-14-x01/method/`.
 
 * `C:\APITEST.LOG` **vorher**: SUPER 3 bestanden / 6 gefallen / 1
   uebersprungen — `Super(1L)` = `-32`, `Super(0L)` = `0xFFFF…FFE0`,

@@ -110,5 +110,5 @@ davon unberuehrt offen. Sie war ausdruecklich nicht Teil dieses Auftrags.
 * `cargo run -p xtask -- test`: **504 gruen / 0 rot / 4 ignoriert** (drei davon
   die A35-Tests, der vierte der bestehende Doctest).
 * Beide Boards `--release` frisch gebaut, Warnungs- und Clippy-Delta 0.
-* `measurement-2026-09-13-aesglobal/` — QED und TeraDesk bytegleich, Gegenmessung
+* `measurements/measurement-2026-09-13-aesglobal/` — QED und TeraDesk bytegleich, Gegenmessung
   `aes-m05-addrin` unveraendert.

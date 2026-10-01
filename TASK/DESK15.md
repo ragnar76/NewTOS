@@ -36,7 +36,7 @@ Rueckfall. Erst danach `ADINSWIN` (`desk_rsc.c`) und der `STICNTYP`-Zweig in
 
 Erledigt am 2026-09-23, Branch `desk-rebuild` (Basis `f206a2a`), Aenderungen
 **uncommitted** im Baum. Messung:
-[`measurement-2026-09-23-desk15/`](../measurement-2026-09-23-desk15/).
+[`measurements/measurement-2026-09-23-desk15/`](../measurements/measurement-2026-09-23-desk15/).
 
 **Die Analyse des Tickets stimmte, mit einer Einschraenkung.** Die
 Reihenfolge — erst der Leser, dann `ADINSWIN` — war richtig, und

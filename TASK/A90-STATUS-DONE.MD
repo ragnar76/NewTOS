@@ -4,7 +4,7 @@
 `evnt_multi`'s `MU_M1`/`MU_M2` eingefuehrt hat. Bearbeitet 2026-09-21,
 Branch `desk-rebuild`, Basis HEAD `85c591e`, **nicht committet**. Ein Paket
 mit A89/A92 (`TASK/A89-STATUS-DONE.MD`, `TASK/A92-STATUS-DONE.MD`),
-Messverzeichnis `measurement-2026-09-21-a89-a92/`.
+Messverzeichnis `measurements/measurement-2026-09-21-a89-a92/`.
 
 ## Der Sachverhalt, beidseitig
 

@@ -8,7 +8,7 @@ Basis: Branch `desk-rebuild`, HEAD `e2437af`, Aenderungen **uncommitted** im
 Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset`.
 
-Messung: [`measurement-2026-09-23-desk18/`](../measurement-2026-09-23-desk18/).
+Messung: [`measurements/measurement-2026-09-23-desk18/`](../measurements/measurement-2026-09-23-desk18/).
 Spezifikation: `docs/api/desktop/deskpro.md` (§ *The current-directory step*),
 `docs/api/desktop/deskinf.md` (§ *Default dir* ist zurueck),
 `docs/api/desktop/deskmain.md` (§ `CSAVE`).
@@ -147,7 +147,7 @@ FAT16-Partitionen aller zehn Abbilder ohne Fehler.
     grep -c "desk/" auf beiden Clippy-Laeufen:  0
     cargo run -p xtask -- test   938 passed / 0 failed / 1 ignored (Basis 938/0/1)
 
-Protokolle in `measurement-2026-09-23-desk18/build/`.
+Protokolle in `measurements/measurement-2026-09-23-desk18/build/`.
 
 **Kein neuer Hosttest.** Die Aenderung liegt vollstaendig in
 `kernel/src/desk/` (`no_std`, aarch64) und ist vom Hostlauf nicht erreichbar;

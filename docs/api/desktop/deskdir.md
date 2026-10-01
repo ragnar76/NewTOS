@@ -624,7 +624,7 @@ Fehler in die Zusammenfassung gehoert.
   (`desk_rsc.c:1263-1279`). Der erste Wurf hatte die 90 px des
   Zwei-Knopf-Kastens uebernommen und den mittleren zentriert — die drei
   ueberlappten sich um 23 px (im Messlauf gesehen, `screendumps/` von
-  `measurement-2026-09-23-desk13`). Die Kastenbreite kommt jetzt aus der
+  `measurements/measurement-2026-09-23-desk13`). Die Kastenbreite kommt jetzt aus der
   Knopfreihe, nicht aus den Feldern.
 * **Die Maschine ist nicht mehr dialogfrei.** Der Modulkopf behauptete, die
   Maschine (`d_doop`/`dir_op`) stelle keine Dialoge und sei darum direkt
@@ -684,7 +684,7 @@ Durchreichung folgt EmuTOS Aufrufstelle fuer Aufrufstelle:
 
 Die Frage ist **nicht** an `g_cdelepref` gebunden: *Confirm deletes* aus
 nimmt den zaehlenden Kasten weg, nicht diese Frage. Gemessen in
-`measurement-2026-09-23-desk24-desk25-desk26` §3 — `Nein` laesst die Karte
+`measurements/measurement-2026-09-23-desk24-desk25-desk26` §3 — `Nein` laesst die Karte
 unveraendert, `Ja` leert sie.
 
 ### `d_dofileren` fragt vor dem Ueberschreiben (DESK31, 2026-09-25)
@@ -724,7 +724,7 @@ ein `ok = false` wuerde am Ende die NewTOS-Zusammenfassung „Some items could
 not be processed." dazuschalten, und das ist weder ein Fehler noch EmuTOS'
 Verhalten.
 
-Gemessen in `measurement-2026-09-25-desk-rest` §4: *Stop* laesst beide Dateien
+Gemessen in `measurements/measurement-2026-09-25-desk-rest` §4: *Stop* laesst beide Dateien
 stehen, *OK* auf unveraendertem Namen ersetzt die Zieldatei — beides aus dem
 Kartenabbild zurueckgelesen.
 

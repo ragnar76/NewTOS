@@ -28,7 +28,7 @@ entscheiden nur noch, ob `ob_add` laeuft. Der Desktop-Wrapper
 | Test | `tos-api/tests/aes_object_add_return.rs` (neu, 5 Faelle ueber den Dispatcher, `AES_PARAMS(40,2,1,1,0)`): gueltiger Fall (zwei Kinder nacheinander, Links Feld fuer Feld, 1 beide Male); `parent = NIL` und `child = NIL` mit echtem Baum → 1, alle Links unveraendert; die drei r4-Faelle 550–552 exakt nachgestellt (Zeigerslot = Poison) → 1, `int_out[1]` Poison; Nullbaum → 1 | 5/5 |
 | Spec | `docs/api/aes/object-form.md` § `objc_add`: Absatz „The answer is `1` in the no-op cases too" mit Quellzeilen, r4-Faellen und NewTOS-Waechtern; Zeile in der Fehlertabelle | nachgezogen |
 
-## Geprueft (Belege in `measurement-2026-09-20-a47-a52-a55-a58/`)
+## Geprueft (Belege in `measurements/measurement-2026-09-20-a47-a52-a55-a58/`)
 
 * **Rot vor / gruen nach** (`host-tests/a55-red-before.txt`,
   `a55-green-after.txt`): vor dem Hunk fallen genau die vier Waechterfaelle

@@ -11,7 +11,7 @@ es fehlt ein Gegenmesslauf und die daran hängende Folgeentscheidung.
 |---|---|---|
 | 1 | Frischer Kernel mit FIX-01…06 auf der Karte, Abbild-Hash notiert | **erledigt** — Release `39b293a4c068…`, 783216 B, auf `/Volumes/BOOT` kopiert und per Hash gegengeprüft |
 | 2 | Die drei Punkte aus „Was noch fehlt" geprüft und belegt | **erledigt für Punkt 1 und 2**, siehe unten |
-| 3 | Pi-Lauf gegen `aes-r2b-rlist.tsv`: dieselben Fälle wie in QEMU | **erledigt** — `measurement-2026-09-11-pi4/run1-rlist-fixed/`, gefahren am 2026-09-11 |
+| 3 | Pi-Lauf gegen `aes-r2b-rlist.tsv`: dieselben Fälle wie in QEMU | **erledigt** — `measurements/measurement-2026-09-11-pi4/run1-rlist-fixed/`, gefahren am 2026-09-11 |
 | 4 | Erst danach `DROP_SHADOW_SIZE` 2 → 4 ([A23](A23.md)) | **offen**, hängt an 3 |
 
 ## Was auf echter Hardware belegt ist
@@ -35,12 +35,12 @@ jeden späteren Leser ein nicht durchgeführter Test.
 
 **Nicht ausdrücklich bestätigt** ist Punkt 3 der Liste („die bestehenden
 Screendumps müssen unverändert sein"). Stufe 6 ändert kein Pixel, nur das
-Rechteck in der Nachricht; ein Pixelvergleich gegen `measurement-2026-09-10-qemu/`
+Rechteck in der Nachricht; ein Pixelvergleich gegen `measurements/measurement-2026-09-10-qemu/`
 wäre der saubere Beleg und steht aus.
 
 ## Abnahmepunkt 3 — erledigt, war nur falsch gelesen
 
-`measurement-2026-09-11-pi4/run1-rlist-fixed/` enthält den Lauf samt fertigem
+`measurements/measurement-2026-09-11-pi4/run1-rlist-fixed/` enthält den Lauf samt fertigem
 Diff (`DIFF-gegen-TT-und-QEMU.txt`), gefahren am **2026-09-11** auf der echten
 Pi 4 (1920×1080, 16 Planes, Kernel `3c6d7a4a…` mit FIX-01…06 + A16,
 `DROP_SHADOW_SIZE = 2`):
@@ -54,7 +54,7 @@ Pi 4 (1920×1080, 16 Planes, Kernel `3c6d7a4a…` mit FIX-01…06 + A16,
   echte Hardware trifft.
 
 Full HD in QEMU liegt zusätzlich als
-`measurement-2026-09-10-qemu/run2-qemu-fhd-rlist-fixed/` vor.
+`measurements/measurement-2026-09-10-qemu/run2-qemu-fhd-rlist-fixed/` vor.
 
 **Erratum, zweites an einem Tag:** dieses Ticket hat den Punkt zunächst als
 offen geführt, weil der Lauf nicht in `A32.md` selbst vermerkt war. Er war

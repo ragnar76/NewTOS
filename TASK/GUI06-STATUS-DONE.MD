@@ -5,8 +5,8 @@ und `9731f16` liegt **kein Quelltext**, nur drei TASK-Dokumente
 (`git diff --stat d7ecec5 HEAD` = `TASK/PORT02.md`, `TASK/SDL01.md`,
 `TASK/SND01.md`) — der gemessene „Vorher"-Stand ist also wortgleich `d7ecec5`.
 
-Messverzeichnis: `measurement-2026-09-28-gui06/` (kein `*.img`).
-Der Fix als Diff: `measurement-2026-09-28-gui06/method/gui06-fix.diff`.
+Messverzeichnis: `measurements/measurement-2026-09-28-gui06/` (kein `*.img`).
+Der Fix als Diff: `measurements/measurement-2026-09-28-gui06/method/gui06-fix.diff`.
 
 **Was NICHT erledigt ist, vorweg:**
 
@@ -21,7 +21,7 @@ Der Fix als Diff: `measurement-2026-09-28-gui06/method/gui06-fix.diff`.
 ## 1. Schritt 1 des Tickets: die Zuordnung. Kein Fix davor.
 
 Die Sonde hatte beide Zähler bereits, und die vorhandene Pi-Messung
-(`measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`, 13 Blöcke bei 1920×1080)
+(`measurements/measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`, 13 Blöcke bei 1920×1080)
 ist ein natürliches Experiment: zwischen den Blöcken schwankt die Zahl der
 `dc cvac` um den Faktor **1,98**, die Neuzeichenzeit um **1,07** — und zwar
 in die falsche Richtung.

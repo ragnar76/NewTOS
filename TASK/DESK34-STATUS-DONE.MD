@@ -10,7 +10,7 @@ keine Pi gefahren, nichts committet; kein
 `git checkout/restore/clean/stash/reset`.
 
 Messung:
-[`measurement-2026-09-24-desk34-desk35/`](../measurement-2026-09-24-desk34-desk35/)
+[`measurements/measurement-2026-09-24-desk34-desk35/`](../measurements/measurement-2026-09-24-desk34-desk35/)
 §2. Spezifikation: `docs/api/desktop/deskmain.md`, Abschnitt *opening a folder
 navigates the window (DESK34)*. Hardwarepunkt 59 in
 `docs/api/desktop/_hw-test-2026-09-17.md`.

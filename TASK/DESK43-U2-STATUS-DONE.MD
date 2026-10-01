@@ -1,7 +1,7 @@
 # DESK43 / U2 — Der Zustandskanal `app_start`/`app_save` über `shel_get`/`shel_put`
 
 Status: **FERTIG, mit einem Befund gegen den Plan** · 2026-09-26 · Basis `814de2c`
-Belege: `measurement-2026-09-26-desk43-u2/`
+Belege: `measurements/measurement-2026-09-26-desk43-u2/`
 Plan: `docs/analysis/desktop-userspace-plan-v2.md` §5 U2
 Spec: `docs/api/aes/shell-loop.md` §10 · `docs/api/aes/scrap-shell.md` §2 ·
 `docs/api/desktop/deskapp.md` („`app_start()` — full AES/GEMDOS call sequence")

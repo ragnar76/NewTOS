@@ -25,7 +25,7 @@ dasselbe Wort — 0 —, und ein Wort jenseits von `OUT_LEN` erreicht ihn in
 keinem der beiden Faelle. `objc_sysvar` ist nur ueber Opcode 48 erreichbar
 (`mod.rs:588`), es gibt keinen Direktaufrufer mit eigenem Puffer.
 
-**Beleg** (`measurement-2026-09-20-a47-a52-a55-a58/host-tests/a58-evidence-*.txt`,
+**Beleg** (`measurements/measurement-2026-09-20-a47-a52-a55-a58/host-tests/a58-evidence-*.txt`,
 Scratch-Test `method/scratch_a58_evidence.rs.txt`, nach dem Lauf aus dem Baum
 entfernt): alle sieben Selektoren (1–6 und 99) je mit `OUT_LEN 3` und
 `OUT_LEN 2`, Puffer mit `0xDEAD` vergiftet —

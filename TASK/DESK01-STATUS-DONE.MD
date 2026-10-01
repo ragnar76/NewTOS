@@ -152,7 +152,7 @@ kernel **125** auf beiden (Basis 80/125), **null** Treffer in
   (`deskmain.c:885-887`).
 * `docs/api/desktop/_hw-test-2026-09-17.md` — Punkt **37**, Schritt 2.
 * `docs/STATUS.md` — Phase-14-Zeile + *Recent Decisions* (2026-09-24).
-* `measurement-2026-09-24-desk01-desk02/`.
+* `measurements/measurement-2026-09-24-desk01-desk02/`.
 
 ## Offen
 
@@ -199,7 +199,7 @@ wirkungslos verpufft.
 unveraendert, die 42 Zeichen lange Urheberzeile ist weiterhin die laengste, auf
 beiden Brettern). Bei 640x480 steht er bei (128, 31); das `OUTLINED`-Aussenrechteck
 ist (125, 28, 390, 442) — 9 px unter der Menueleiste, 10 px ueber dem Schirmrand.
-Pixelweise vermessen in `measurement-2026-09-24-desk01b/` (Rand: `draw_3d_outline`
+Pixelweise vermessen in `measurements/measurement-2026-09-24-desk01b/` (Rand: `draw_3d_outline`
 grau/weiss/weiss, dann der eigene 2-px-Rahmen, dann `GRAY_LT` = `backgrcol`;
 `OK` mit `add_3d_effect`-Fase). `about-D-closed.png` == `about-A-idle.png`,
 pixdiff **0**.

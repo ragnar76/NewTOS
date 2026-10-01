@@ -12,7 +12,7 @@
 //! 2026-09-20 there is one look only: every gadget is painted from its word,
 //! so the compiled defaults render the picture EmuTOS itself draws — measured
 //! on a Hatari Falcon with the pinned EmuTOS build,
-//! `measurement-2026-09-20-a79/hatari-falcon-reference/` (README + `shots/`).
+//! `measurements/measurement-2026-09-20-a79/hatari-falcon-reference/` (README + `shots/`).
 //! Where a case below hard-codes a colour, the expected pixel was read off
 //! `shots/falcon-tc-window-c.png` (the `C:\` window at `(16,96,304,192)`, so
 //! frame-relative `(dx,dy)` is screen `(16+dx, 96+dy)` there) or

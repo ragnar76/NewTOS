@@ -3,7 +3,7 @@
 **DONE bedeutet hier: gelandet und in QEMU raspi4b belegt; die Sichtabnahme
 auf der echten Pi 4 steht aus (Tester/Lead; nichts geflasht).** Bearbeitet
 2026-09-25 als **eine** Arbeitseinheit mit ACC02, ACC03, ACC04 und ACC05 — ein
-Messverzeichnis, `measurement-2026-09-25-acc02-acc04/`. Branch
+Messverzeichnis, `measurements/measurement-2026-09-25-acc02-acc04/`. Branch
 `desk-rebuild`, Basis HEAD `9a346a4`, nichts committet, kein
 `git checkout/restore/clean/stash/reset`.
 
@@ -13,7 +13,7 @@ Die Begruendung im Einzelnen steht im Abschnitt **Abschluss** von
 
 ## Nachweis
 
-* `measurement-2026-09-25-acc02-acc04/RUNINFO.TXT` — die Laeufe, die
+* `measurements/measurement-2026-09-25-acc02-acc04/RUNINFO.TXT` — die Laeufe, die
   Koordinaten und die zwei Defekte, die dieser Stapel an sich selbst fand.
 * `screendumps/` — zwoelf Bilder aus einem Produktstand.
 * `serial/` — vier Serienprotokolle, null `[EXC]`, null `[PANIC]`.

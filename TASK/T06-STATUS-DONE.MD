@@ -24,7 +24,7 @@ eine `cfg`-Aufrufstelle in `lib.rs`. Warnzahlen unveraendert.
 | 12 | `selftest_emmc.rs` `fmeta_test` hart | erledigt (9 Asserts mit Fallname, aufraeumen vorher, wiederholbar) |
 | 13 | Selbsttest verdrahten | erledigt: Kernel-Feature `selftest-emmc`, eine `cfg`-Stelle in `lib.rs`; QEMU gruen, Boot laeuft weiter |
 
-## Belege (`measurement-2026-09-21-t05-t06/`)
+## Belege (`measurements/measurement-2026-09-21-t05-t06/`)
 
 * `host-tests/run-host-tests.log` — `obspec_bits`, `evnt_timer_words`,
   `wind_set_addrin`, `intin_long_words` (ASan), `ptr_word_count`,

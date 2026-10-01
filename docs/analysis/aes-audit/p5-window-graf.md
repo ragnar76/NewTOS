@@ -156,7 +156,7 @@
   stand: der Wert ist über die dokumentierte API messbar, und er *wurde*
   gemessen — Fälle 331/332/439 von `tosdump/cases/aes-r4-subfunctions.tsv`
   (CRC `227422B2`), EmuTOS 1.4 auf dem TT liefert Adresse `0x01000218`, Länge
-  `40960`, `ret=1` (`measurement-2026-09-12-aes-r4/`). Eine Begründung ist
+  `40960`, `ret=1` (`measurements/measurement-2026-09-12-aes-r4/`). Eine Begründung ist
   keine Unbeobachtbarkeit. Vor allem aber war `ret=1` mit Adresse 0 die eine
   Antwort, die ein Aufrufer *nicht* von „hier ist ein Puffer, er liegt bei 0"
   unterscheiden kann.

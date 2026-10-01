@@ -57,7 +57,7 @@ Speicher-MFDB**, Palette ueber `vs_color`.
 
 Genau diese Gruppe ist im September gegen echte TT- und Falcon-Dumps geprueft
 worden: **61 von 62 Faellen wortgleich** (R02–R05,
-`measurement-2026-09-21-r05/`, Falltabelle `tosdump/cases/vdi-raster-screen.tsv`).
+`measurements/measurement-2026-09-21-r05/`, Falltabelle `tosdump/cases/vdi-raster-screen.tsv`).
 Der Bildweg ist also belegt, nicht erhofft.
 
 **Der Doppelpuffer ohne `Physbase`** ist die eine echte Entwurfsfrage: zweites

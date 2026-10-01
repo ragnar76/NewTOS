@@ -10,7 +10,7 @@ Basis: Branch `desk-rebuild`, HEAD `f206a2a`, Aenderungen **uncommitted** im
 Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset`.
 
-Messung: [`measurement-2026-09-23-desk15/`](../measurement-2026-09-23-desk15/).
+Messung: [`measurements/measurement-2026-09-23-desk15/`](../measurements/measurement-2026-09-23-desk15/).
 Spezifikation: `docs/api/desktop/deskins.md`
 (§ `install_window_icon` / `ins_icon`s `STICNTYP`-Zweig),
 `docs/api/desktop/deskwin.md` (§ `win_icalc`).
@@ -182,7 +182,7 @@ Dateiliste nicht an, beide Laeufe sehen dieselben Eintraege.
 
 ## 3. Belege
 
-`measurement-2026-09-23-desk15/` — QEMU raspi4b, 640x480, `-display none`,
+`measurements/measurement-2026-09-23-desk15/` — QEMU raspi4b, 640x480, `-display none`,
 QMP-Screendump, scratch-Kopie mit dem H02-IKBD-Injektor. **Jeder** Klickpunkt
 stammt aus einem seriellen Dump (`method/desk15_patch.py`) bzw. aus einer
 Messung am Screendump (`method/alertbox.txt`); keiner ist geraten.

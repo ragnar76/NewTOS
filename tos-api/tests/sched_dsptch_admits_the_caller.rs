@@ -13,7 +13,7 @@
 //! acquired as a *side effect* of `sleep`'s idle exit — "WAITING → READY" —
 //! so every program that had blocked in an AES wait at least once was in the
 //! run-set, and a program that never blocks was not. Measured
-//! (`measurement-2026-09-29-port08`), one bit apart at the instant of
+//! (`measurements/measurement-2026-09-29-port08`), one bit apart at the instant of
 //! `appl_exit` with two accessories loaded:
 //!
 //! ```text

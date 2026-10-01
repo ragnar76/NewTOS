@@ -4,7 +4,7 @@ TeraDesk wird nach der Rückkehr eines Kindes **nicht** vom Kernel neu geladen u
 Shell-Schleife läuft **nicht** an — TeraDesk startet **selbst ein zweites TeraDesk als
 Kind**, weil NewTOS' `shel_read` nicht den Puffer zurückgibt, den `shel_write(SHW_EXEC)`
 beschrieben hat. Bearbeitet 2026-09-18, Branch `desk-rebuild`, Basis HEAD `051e7cc`.
-Messlauf: [`measurement-2026-09-18-h05/`](../measurement-2026-09-18-h05/RUNINFO.TXT).
+Messlauf: [`measurements/measurement-2026-09-18-h05/`](../measurements/measurement-2026-09-18-h05/RUNINFO.TXT).
 **Kein Produktcode geändert.** Gepinnte EmuTOS-Quelle: `references/emutos` @
 `1a7484aba1bfba23e2c0899e243b6d8177fe41df`.
 
@@ -146,8 +146,8 @@ dann `rsrc_gaddr` von pid 1 liefert weiterhin `1` und dieselbe Adresse.
 ## Aufräumen
 
 Injektor und Traces nur in der Scratch-Kopie (`<scratchpad>/h05/ws`); Diffs unter
-`measurement-2026-09-18-h05/method/scratch-*.diff`. `git status --short` zeigt nur
-`measurement-2026-09-18-h05/` und diese Datei; `kernel/src/host_env.rs` sha256
+`measurements/measurement-2026-09-18-h05/method/scratch-*.diff`. `git status --short` zeigt nur
+`measurements/measurement-2026-09-18-h05/` und diese Datei; `kernel/src/host_env.rs` sha256
 `287ff7415805b9cf0b7efe74487a5f24dd06f121ddd61cdb5f9e2d8a15618e3e` vorher wie nachher.
 QEMU beendet, QMP-Sockets gelöscht, Images ausgehängt, `/Volumes/BOOT` nur gelesen.
 Keine Hardware-/Outward-Aktion.
@@ -155,7 +155,7 @@ Keine Hardware-/Outward-Aktion.
 ## Verifikation (Tester, 2026-09-18)
 
 Unabhängig nachgemessen, nicht nur den Developer-Selbstreport gelesen. Alle Belege
-unter [`measurement-2026-09-18-h05/verify/`](../measurement-2026-09-18-h05/verify/RUNINFO.TXT).
+unter [`measurements/measurement-2026-09-18-h05/verify/`](../measurements/measurement-2026-09-18-h05/verify/RUNINFO.TXT).
 
 **Hosttests.** `cargo test -p tos-api --test aes_shel_roundtrip` im Hauptbaum (Fix):
 **3/3 grün**. Rot-Gegenprobe in einem `git worktree` auf HEAD `f9d7608` (ohne den
@@ -198,7 +198,7 @@ Autorun hoch (`sh_ldapp: starting NEWDESK`, `[desk] desktop up (1 drives)`). Kei
 Exception, kein Panic in allen fünf QEMU-Läufen (run1, run3, drei Rauchtests).
 
 `git status --short` zeigt nur die drei Fix-/Test-Dateien plus
-`measurement-2026-09-18-h05/`; `kernel/src/host_env.rs` sha256
+`measurements/measurement-2026-09-18-h05/`; `kernel/src/host_env.rs` sha256
 `287ff7415805b9cf0b7efe74487a5f24dd06f121ddd61cdb5f9e2d8a15618e3e` vor und nach der
 Messung identisch (nur die Scratch-Kopie wurde instrumentiert). QEMU beendet, QMP-
 Sockets gelöscht, alle Image-Attaches ausgehängt, `git worktree` für die Rot-Gegenprobe

@@ -6,7 +6,7 @@ echter Pi offen** · 2026-09-28 · `plat-newtos.c` geht jetzt denselben Weg wie
 Rechteck**. Kein XBIOS 2/3/5 mehr, kein Framebuffer-Zeiger. **Am NewTOS-Baum
 ist keine einzige Quelltextzeile geändert worden.**
 
-Messbericht: `measurement-2026-09-28-port07/` (RUNINFO.TXT, NUMBERS.TXT, fünf
+Messbericht: `measurements/measurement-2026-09-28-port07/` (RUNINFO.TXT, NUMBERS.TXT, fünf
 Bildabzüge, fünf Demo-Protokolle, vier serielle Protokolle, kein `*.img`).
 
 ## Die Abnahmepunkte des Tickets
@@ -164,6 +164,6 @@ cargo clippy -p tos-api            80 warnings
 cargo clippy -p kernel (rpi4)     125 warnings
 cargo clippy -p kernel (qemu-virt) 125 warnings
 sh tools/desk-drift-probe.sh       DRIFT-PROBE TOTAL: 32
-git status --short                 nur emutos-switches.txt, hw-round-2026-09-24/
+git status --short                 nur docs/analysis/emutos-switches.txt, measurements/hw-round-2026-09-24/
                                    und dieses Messverzeichnis
 ```

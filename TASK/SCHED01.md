@@ -227,7 +227,7 @@ mehr auftreten.
 ## Hardware-Abnahme (2026-09-29)
 
 Kern `9251440d`, echte Pi 4, **ein** registriertes Accessory
-(`C:\ACC\SYSACC.NAC`). Beleg: `measurement-2026-09-29-sched01/pi-BALL.LOG`.
+(`C:\ACC\SYSACC.NAC`). Beleg: `measurements/measurement-2026-09-29-sched01/pi-BALL.LOG`.
 
 **`BALL.LOG` ist 2891 Byte und endet mit einer vollstaendigen Zeile** — vorher
 1755 Byte, mitten im Wort. Die Demo hat also ihren gesamten Bericht

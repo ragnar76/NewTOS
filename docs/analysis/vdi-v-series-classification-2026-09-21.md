@@ -3,7 +3,7 @@
 Auditor-Auswertung der Tickets `TASK/V01.md` … `TASK/V15.md`. Grundlage sind
 **drei frische Dumps derselben Tabelle** (`tosdump/cases/vdi-all.tsv`, 182 Fälle,
 CRC `D135ADAF`), alle am 2026-09-21 auf `desk-rebuild` @ `2567942` gefahren
-und in `measurement-2026-09-21-vdi-qemu/` abgelegt (`RUNINFO.TXT`,
+und in `measurements/measurement-2026-09-21-vdi-qemu/` abgelegt (`RUNINFO.TXT`,
 `manifest.sha256`):
 
 | Kürzel | Maschine | Profil | Herkunft |
@@ -33,7 +33,7 @@ TT-Diffs ist unten einem Ticket zugeordnet.
 
 ## 1. Die Tabelle — eine Zeile je Ticket und Zelle
 
-Werte aus `measurement-2026-09-21-vdi-qemu/cells.txt`. „QEMU“ = NEWTOS bei
+Werte aus `measurements/measurement-2026-09-21-vdi-qemu/cells.txt`. „QEMU“ = NEWTOS bei
 640×480; die Pi-Werte (1920×1080) stehen zum Vergleich in den Tickets.
 Testnamen: `tos-api/tests/vdi_reference/cases_v_series.rs` (grün, Binär
 `vdi_reference`) und `tos-api/tests/vdi_reference/overlay_bit.rs` (rot, Binär
@@ -176,7 +176,7 @@ Für jedes der folgenden Tickets ist derselbe Satz belegt:
 > EmuTOS 1.4 (identisches ROM) liefert für diese Zelle auf einem TT (4 Planes,
 > 16 Stifte) den Referenzwert und auf einem Falcon030 in VIDEL-Truecolor
 > (16 Planes, 256 Stifte) exakt den NewTOS-Wert
-> (`measurement-2026-09-21-vdi-qemu/DIFF-emutos-tt-vs-emutos-falcontc.txt`,
+> (`measurements/measurement-2026-09-21-vdi-qemu/DIFF-emutos-tt-vs-emutos-falcontc.txt`,
 > `cells.txt`); die Zelle ist damit nach EmuTOS' eigener Herleitung
 > (\<Zeile aus § 1\>) ein Geräteparameter, und der Hosttest
 > \<Name aus § 1\> vergleicht sie gegen die Falcon-Truecolor-Referenz

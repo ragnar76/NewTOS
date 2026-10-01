@@ -6,7 +6,7 @@ Abhaengigkeiten: — (unabhaengig von [FS04](FS04.md); dieselbe Messung, andere 
 
 ## Der Befund, gemessen
 
-Pi 4, **1920x1080**, Sonde aus `measurement-2026-09-25-fs04/`, Bericht
+Pi 4, **1920x1080**, Sonde aus `measurements/measurement-2026-09-25-fs04/`, Bericht
 `raw/pi04-FS04.TXT`. Sobald die Karte warm ist, kostet ein Fallenlassen im
 Desktop noch **267–340 ms**. Davon:
 
@@ -71,7 +71,7 @@ Zuordnung der Ersparnis auf die beiden Anteile.
 
 ### Schritt 1 — die Zuordnung, vor jedem Fix, und **ohne neuen Hardwarelauf**
 
-`measurement-2026-09-25-fs04/raw/pi04-FS04.TXT` ist selbst ein natuerliches
+`measurements/measurement-2026-09-25-fs04/raw/pi04-FS04.TXT` ist selbst ein natuerliches
 Experiment: ueber seine 13 Bloecke schwankt die Zahl der `dc cvac` um Faktor
 **1,98**, die Neuzeichenzeit um **1,07** — und in die falsche Richtung.
 

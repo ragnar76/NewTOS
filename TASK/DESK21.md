@@ -12,7 +12,7 @@ Abhaengigkeiten: —
 
 NewTOS zeigt `Set background...` als **erstes** Element von *Options*
 (`kernel/src/desk/menu.rs`, sichtbar in
-`measurement-2026-09-23-desk05/screendumps/conf-C-options.png`).
+`measurements/measurement-2026-09-23-desk05/screendumps/conf-C-options.png`).
 
 Betrifft nur die Einordnung im Menue, nicht die Kuerzelzuordnung (die ist in
 `shortcut_mapping` semantisch, nicht nach Position).
@@ -71,7 +71,7 @@ keine NewTOS-Entsprechung zu setzen, und ein `desk_all` wuerde hier jedes
 Fenster fuer eine Aenderung neu zeichnen, die keines betrifft. Die
 Fensterhintergrund-Haelfte von `ADBKGND` bleibt die Luecke, die sie war.
 
-Beleg: [`measurement-2026-09-23-desk16-desk17-desk21/`](../measurement-2026-09-23-desk16-desk17-desk21/),
+Beleg: [`measurements/measurement-2026-09-23-desk16-desk17-desk21/`](../measurements/measurement-2026-09-23-desk16-desk17-desk21/),
 beide Klappmenues vorher und nachher.
 
 Spezifikation nachgezogen: `docs/api/desktop/deskmain.md` (neuer Abschnitt).

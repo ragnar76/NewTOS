@@ -14,7 +14,7 @@ ausgeworfen, keine Pi gefahren, nichts committet; kein
 SD-Abbilder lagen im Job-Scratch und sind geloescht.
 
 Messung:
-[`measurement-2026-09-26-desk43-u3/`](../measurement-2026-09-26-desk43-u3/).
+[`measurements/measurement-2026-09-26-desk43-u3/`](../measurements/measurement-2026-09-26-desk43-u3/).
 EmuTOS-Referenz: `references/emutos`.
 
 ---
@@ -168,7 +168,7 @@ bleibt `kernel/src/lib.rs:475` (A106) unberuehrt.
 
 ## 3. Was nachgewiesen ist (headless)
 
-Alles in `measurement-2026-09-26-desk43-u3/`, QEMU `raspi4b`, 640×480,
+Alles in `measurements/measurement-2026-09-26-desk43-u3/`, QEMU `raspi4b`, 640×480,
 `-display none`, QMP-Screendumps. **0** Treffer auf `EXC|PANIC|panic` in allen
 Protokollen.
 
@@ -206,7 +206,7 @@ demselben Abbild: identische Seriellfolge, Desktopbild danach **0 Pixel**
 verschieden.
 
 **Beweispunkt 3b — A106-Restart.** Der TeraDesk-Aufbau aus
-`measurement-2026-09-22-a106` (zwei Aufloesungswechsel hintereinander): zwei
+`measurements/measurement-2026-09-22-a106` (zwei Aufloesungswechsel hintereinander): zwei
 `AES restart`-Runden, und alle sechs Vergleiche **0 Pixel** (Kaltstart vs.
 Neustart 1 vs. Neustart 2, sowie die drei Dialogstufen gegeneinander).
 

@@ -3,7 +3,7 @@
 Die Felder des Dateiauswaehlers bleiben `G_FTEXT`/`G_FBOXTEXT` und behalten ihre
 Schablone; die eigenen Puffer tragen dafuer die Rohform. Bearbeitet 2026-09-17,
 Branch `desk-rebuild`, Basis HEAD `c4b25e9`, Baum vorher sauber.
-Messlauf: [`measurement-2026-09-17-fsel/`](../measurement-2026-09-17-fsel/RUNINFO.TXT).
+Messlauf: [`measurements/measurement-2026-09-17-fsel/`](../measurements/measurement-2026-09-17-fsel/RUNINFO.TXT).
 Gemeinsam mit [A64](A64.md) bearbeitet; A64 zuerst, Begruendung in
 [A64-STATUS-DONE.MD](A64-STATUS-DONE.MD).
 
@@ -90,7 +90,7 @@ dem Nebenbefund und **nicht mitgeaendert**.
 ## Test vor Fix
 
 `tos-api/src/aes/fsel.rs`, Modul `tests`. Rote Ausgabe vollstaendig in
-[`measurement-2026-09-17-fsel/build/newtest-RED.txt`](../measurement-2026-09-17-fsel/build/newtest-RED.txt):
+[`measurements/measurement-2026-09-17-fsel/build/newtest-RED.txt`](../measurements/measurement-2026-09-17-fsel/build/newtest-RED.txt):
 
 ```
 ---- set_ted_keeps_the_formatted_type_template_and_length ----
@@ -109,16 +109,16 @@ die neuen Wandler gegen EmuTOS' eigene Beispiele im Kommentar von
 `util/optimize.c:30-41` (`SAMPLE.PRG`, `TESTPROG.C`, `TEST`, `TESTWINDOW.C`,
 `TEST.A.B.C`, `TESTTESTTEST`) und war von Anfang an gruen — die Wandler sind das
 Werkzeug, nicht der Fix. Danach alle sechs gruen, siehe
-[`newtest-GREEN.txt`](../measurement-2026-09-17-fsel/build/newtest-GREEN.txt).
+[`newtest-GREEN.txt`](../measurements/measurement-2026-09-17-fsel/build/newtest-GREEN.txt).
 
 ## Bildabnahme
 
 Referenz: `docs/analysis/fsel-reference-2026-09-17/fselectr.png`.
-Unser Abzug: `measurement-2026-09-17-fsel/screendumps/fsel-after.png`
+Unser Abzug: `measurements/measurement-2026-09-17-fsel/screendumps/fsel-after.png`
 (QEMU `raspi4b`, headless, 640x480).
 
 **Gemessen** (Programm
-[`method/compare-geometry.py`](../measurement-2026-09-17-fsel/method/compare-geometry.py),
+[`method/compare-geometry.py`](../measurements/measurement-2026-09-17-fsel/method/compare-geometry.py),
 Schwarzlaeufe je wurzelrelativer Zeile): Wurzelkasten in beiden Bildern
 **320x356**, **338 von 356** Zeilen bitgleich; die 18 uebrigen sind in
 [A64-STATUS-DONE.MD](A64-STATUS-DONE.MD) einzeln zugeordnet, keine davon eine

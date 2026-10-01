@@ -33,7 +33,7 @@ das BSS zu Datei-Nullen (memsz == filesz).
 | Spec/Docs | `docs/api/structures/basepage.md` (NewTOS-Notizen), `docs/sdk/03-first-programs.md`, `05-abi-pitfalls.md`, `07-mintlib-limits.md`, `sdk/README.md`, `sdk/build.sh` | Segmentlayout, `_base`, Transkriptzeile |
 | Status | `docs/STATUS.md` (Phase-15-Zeile + Recent Decisions 2026-09-21), `TASK/T05.md` Abschluss | |
 
-## Belege (`measurement-2026-09-21-t05-t06/`)
+## Belege (`measurements/measurement-2026-09-21-t05-t06/`)
 
 * `host-tests/xtask-test-AFTER.log` — `cargo run -p xtask -- test`: **909 passed / 0 failed / 1 ignored** (906 + 3 Ladertests).
 * `serial/apitest-serial.log` — QEMU raspi4b, `C:\AUTO\APITEST.NCP` (BATCH):
@@ -43,7 +43,7 @@ das BSS zu Datei-Nullen (memsz == filesz).
 * `screendumps/` — TeraDesk und QED per `#Z`, vorher (HEAD-Binaries aus
   `before-bin/`, SHA-256 dort) vs. nachher: **0 px** (A +5 s, B +10 s; SHA-256
   in `SHA256.txt`). `tera-*-t04inf-*`: mit den INF-Dateien des T04-Laufs,
-  gegen `measurement-2026-09-21-t04/screendumps/tera-after-A-idle.png`
+  gegen `measurements/measurement-2026-09-21-t04/screendumps/tera-after-A-idle.png`
   98 px = Mauszeiger (Injektor-Parkposition vs. Bildmitte).
 * `build/after-program-headers.txt`, `after-bin-sha256.txt` — Segmente/Hashes
   der neuen QED.NAP / DESKTOP.NAP / APITEST.NCP; `build-teradesk-AFTER.log`

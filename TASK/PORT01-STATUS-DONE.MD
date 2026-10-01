@@ -11,7 +11,7 @@ keine Pi gefahren, nichts committet; kein
 git-Kommando war das lesende `git show HEAD:sdk/libc/crt0.S`, mit dem die
 „Vorher"-Programme gebaut werden, und `git diff`).
 
-Messung: [`measurement-2026-09-25-port01/`](../measurement-2026-09-25-port01/).
+Messung: [`measurements/measurement-2026-09-25-port01/`](../measurements/measurement-2026-09-25-port01/).
 
 ---
 

@@ -59,7 +59,7 @@ returns 0“.
   blockiert nicht.
 * **`docs/STATUS.md`** — Phase-13-Zeile (datierter Eintrag) + Zeile in
   „Recent Decisions“.
-* **`measurement-2026-09-20-a75/`** — RUNINFO, Screendumps, Serial,
+* **`measurements/measurement-2026-09-20-a75/`** — RUNINFO, Screendumps, Serial,
   Hosttest-Quittungen, Build-/Clippy-Logs, Methode (Skripte, Produkt-Diff,
   Test-Diff), SHA-256-Manifest. Keine `*.img`.
 
@@ -67,7 +67,7 @@ returns 0“.
 
 Gegenprobe in einer Scratch-Kopie der Crates mit `appl.rs`/`mod.rs`/`pd.rs`
 = HEAD `27e4328` und der neuen Testdatei
-(`measurement-2026-09-20-a75/host-tests/aes_appl_read_blocks-RED-before.txt`,
+(`measurements/measurement-2026-09-20-a75/host-tests/aes_appl_read_blocks-RED-before.txt`,
 `…-GREEN-after.txt`):
 
 | Test | vor | nach |
@@ -90,7 +90,7 @@ exhausted pointer script“) — der inline-Drain der Elternqueue.
 module` `pd.rs:346`, ist vorbestehend (HEAD: `mod init_tests :337` vor
 `post_msg :383`); keiner in `appl.rs`, `mod.rs` oder den vier Testdateien.
 
-## QEMU raspi4b (`measurement-2026-09-20-a75/`)
+## QEMU raspi4b (`measurements/measurement-2026-09-20-a75/`)
 
 Injektor-Scratchkerne nach der A73-Methode (Scratch-Kopien, der Baum blieb
 unberuehrt): vorher = HEAD-`appl.rs`/`mod.rs`/`pd.rs` (Kernel-Hash

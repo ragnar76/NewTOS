@@ -36,7 +36,7 @@ wurde es berichtet und nicht behoben.
 
 Die konforme Ball-Demo **ist** der Pruefstand: sie meldet `ns/px` im Blit und
 die freilaufende Bildzeit. Vorher/Nachher ist damit eine Zahl, kein Eindruck.
-Verfahren in `measurement-2026-09-28-port07/method/`.
+Verfahren in `measurements/measurement-2026-09-28-port07/method/`.
 
 ## Auftrag
 

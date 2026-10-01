@@ -302,6 +302,6 @@ fun_mark_for_rebld(pathptr);`). Details in [`deskinf.md`](deskinf.md).
 
 ### Measured
 
-`measurement-2026-09-25-desk-rest/` §3 — all four icon types on the desktop
+`measurements/measurement-2026-09-25-desk-rest/` §3 — all four icon types on the desktop
 (`[d38] do_info(curr=…) cwin=0 atype=Disk|Trash|Printer|File`) plus the window
 item, with a screendump of each box. Pi checklist item 69.

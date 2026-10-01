@@ -10,7 +10,7 @@ keine Pi gefahren, nichts committet; kein
 `git checkout/restore/clean/stash/reset` auf dem gemeinsamen Baum.
 
 Messung:
-[`measurement-2026-09-25-desk-rest/`](../measurement-2026-09-25-desk-rest/) §5.
+[`measurements/measurement-2026-09-25-desk-rest/`](../measurements/measurement-2026-09-25-desk-rest/) §5.
 Spezifikation: [`docs/api/desktop/deskmain.md`](../docs/api/desktop/deskmain.md).
 Hardwarepunkt **70**.
 

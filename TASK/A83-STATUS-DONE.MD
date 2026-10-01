@@ -91,14 +91,14 @@ Wachstum umziehen kann.
 
 | Beleg | Ergebnis |
 |---|---|
-| `tos-api/tests/aes_window_name_pointer.rs` (T10, 79-Zeichen, NULL) | `#[ignore]` entfernt; **3/3 gruen** (`measurement-2026-09-20-a83/host-tests/aes_window_name_pointer-GREEN.txt`); rot auf der Kopie: `measurement-2026-09-20-a83-a84/host-tests/aes_window_name_pointer-RED-tree-a8d3163-include-ignored.txt` |
+| `tos-api/tests/aes_window_name_pointer.rs` (T10, 79-Zeichen, NULL) | `#[ignore]` entfernt; **3/3 gruen** (`measurements/measurement-2026-09-20-a83/host-tests/aes_window_name_pointer-GREEN.txt`); rot auf der Kopie: `measurements/measurement-2026-09-20-a83-a84/host-tests/aes_window_name_pointer-RED-tree-a8d3163-include-ignored.txt` |
 | `window.rs::live_title_tests` (In-Crate, 5 Faelle) | **5/5 gruen** (`host-tests/live_title_tests-GREEN.txt`): Eigentuemer-Mapping statt aktuellem Slot (Slot 3 und 5 bilden dieselbe VA auf „OWNER“/„OTHER“ ab, Titel = „OWNER“, Resolver nur mit Slot 3 gefragt), haengende VA → leerer Titel ohne Zugriff, String am Blockende endet dort, String ueber zwei getrennte Host-Seiten wird zusammengesetzt, `label_walk`. **Modelliert am Seam**, weil der Host keine Prozesstabelle installieren kann (`process::current()` ist null) und `resolve_kva`s `map_pa + off + VA_OFFSET` auf dem Host keine Adresse ist (Overflow im Debug-Profil) |
 | `cargo run -p xtask -- test` | **734 passed / 0 failed / 2 ignored** (Basis 727/0/4: +2 aktivierte, +5 neue) — `host-tests/xtask-test.log` |
 | `cargo xtask build --board rpi4` frisch (`cargo clean -p kernel -p tos-api --target …`) | rc 0, **tos-api 64 / kernel 94** (Basis 64/94, Delta 0) — `build/xtask-build-rpi4-fresh.log`; `kernel8.img` sha256 `e24d72eb…` (`build/kernel8-tree-sha256.txt`) |
 | Clippy rpi4 (`cargo clippy -p kernel --no-default-features --features board-rpi4`) | tos-api 81 / kernel 125 → **81 / 125** (Basis per Hand-Tausch der HEAD-Kopien der drei Dateien gemessen, `build/clippy-rpi4-baseline-HEAD-9eece19.txt`; danach zurueckgetauscht, `cmp` identisch) — `build/clippy-rpi4-tree.txt`; `cargo clippy -p tos-api --lib --tests`: lib-test 83 (81 Duplikate + 2 vorbestehende Test-only, `pd.rs` „items after a test module“ u. a.), **0 Treffer in `window.rs` ab Zeile 4839 (Testmodule) und 0 in `aes_window_name_pointer.rs`** — `build/clippy-tos-api-lib-tests.txt` |
 | qemu-virt | nicht gebaut (Lead-Vorgabe) |
 
-### QEMU raspi4b (A79-Methode, `measurement-2026-09-20-a83/`)
+### QEMU raspi4b (A79-Methode, `measurements/measurement-2026-09-20-a83/`)
 
 Scratch-Kernel aus einer rsync-Kopie der Crates mit dem H02/A46/A78-Injector
 (`method/make_scratch.sh`, Scripts `method/final_scripts.rs` = A79 desk/tera
@@ -138,7 +138,7 @@ abgelegt.
 
 ## Artefakte
 
-`measurement-2026-09-20-a83/`: `method/` (`product-a83.diff`,
+`measurements/measurement-2026-09-20-a83/`: `method/` (`product-a83.diff`,
 `make_scratch.sh`, `desk-nav.actions`, `nav_scripts.rs`, A79-Skripte),
 `build/`, `host-tests/`, `screendumps/`, `serial/`, `manifest.sha256`,
 `RUNINFO.TXT`. Geaenderte Dateien im Baum: `tos-api/src/aes/window.rs`,
@@ -295,7 +295,7 @@ fuer die Lebensdauer des Desktops.
 3. Der Befund (b) bleibt ein eigener Task (Fenster-Sweep nach Prozessende).
 
 Aufwand fuer 1 auf dem Host: die Scratch-Fassung
-`measurement-2026-09-20-a83-a84/method/scratch-a83-pointer-model-host-only.diff`
+`measurements/measurement-2026-09-20-a83-a84/method/scratch-a83-pointer-model-host-only.diff`
 (ohne Slot/`resolve_kva`, nur Host) hat 83 Diff-Zeilen und macht T10 gruen.
 
 ### Tests (Nachmittag; jetzt aktiv)
@@ -309,7 +309,7 @@ weil ein Titel ueber 79 Glyphen bei 640 px nie in das Gadget passt):
 | `a_title_longer_than_79_characters_is_not_truncated` — `#[ignore]` | rot: 100-Zeichen-Titel rendert wie die ersten 79 (Hash gleich) | gruen (86. Glyphe gemalt) |
 | `a_null_pointer_is_an_empty_title` — aktiv | gruen | gruen |
 
-Belege: `measurement-2026-09-20-a83-a84/host-tests/aes_window_name_pointer-RED-tree-a8d3163-include-ignored.txt`,
+Belege: `measurements/measurement-2026-09-20-a83-a84/host-tests/aes_window_name_pointer-RED-tree-a8d3163-include-ignored.txt`,
 `…-GREEN-under-scratch-pointer-model.txt`, `…-TREE-ignored.txt`. Die
 `#[ignore]`-Begruendung im Test verweist hierher; beim Umsetzen das Attribut
 entfernen.

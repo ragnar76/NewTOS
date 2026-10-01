@@ -1,6 +1,6 @@
 //! A95 — **the window frame, pixel for pixel against EmuTOS on a Falcon.**
 //!
-//! Reference: `measurement-2026-09-20-a79/hatari-falcon-reference/shots/
+//! Reference: `measurements/measurement-2026-09-20-a79/hatari-falcon-reference/shots/
 //! falcon-tc-window-c.png` — EmuTOS (the pinned source's own build) on a
 //! Hatari Falcon030 in 640x480 truecolor, the topped `C:\` window at screen
 //! `(16,96,304,192)`; and `falcon-tc-two-windows.png`, the **untopped** back
@@ -11,7 +11,7 @@
 //! (`w_bldactive`, `aes/gemwmlib.c:479-628`) drawn by `just_draw`
 //! (`aes/gemoblib.c:471-953`).
 //!
-//! Six deltas found by `measurement-2026-09-20-a79/RUNINFO.TXT` § FINAL, one
+//! Six deltas found by `measurements/measurement-2026-09-20-a79/RUNINFO.TXT` § FINAL, one
 //! case each (all red before the fix):
 //!
 //! 1. **Bevel width** — `add_3d_effect` draws two 1-px polylines inside the

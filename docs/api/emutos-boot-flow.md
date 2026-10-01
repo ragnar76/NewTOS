@@ -98,7 +98,7 @@ BIOS's state — boot drive, root on every drive — before each program and onc
 after the loop, which is what makes the global behave like the copy.
 
 Measured both ways with two AUTO programs, the first of which `Dsetpath`s
-(`measurement-2026-09-24-desk22-desk23-desk28-desk29/`, §2): without the step
+(`measurements/measurement-2026-09-24-desk22-desk23-desk28-desk29/`, §2): without the step
 the second program reports `C:\SUB` and reads `C:\SUB\PROOF.TXT`, with it
 `C:` and `C:\PROOF.TXT`.
 

@@ -7,7 +7,7 @@ Stand) und einmal gegen den letzten aufgezeichneten NewTOS-Vorstand
 (Regressionsfrage). Kein Produktcode angefasst, keine Diagnose gegen die
 EmuTOS-Quelle — nur Zahlen gegen Zahlen.
 
-Rohdumps, Boot-Logs und Diffs: `measurement-2026-09-12-full-regression/`.
+Rohdumps, Boot-Logs und Diffs: `measurements/measurement-2026-09-12-full-regression/`.
 Metadaten (Commit, SHA-256, Maschinenparameter): dortiges `RUNINFO.TXT`.
 
 ## Kurzantwort auf die Hauptfrage
@@ -47,15 +47,15 @@ Baum; Ursachen-Zuordnung ist Auditor-Arbeit, nicht Teil dieses Berichts.
 
 | Tabelle | Läuft durch | Profil heute | Abw. ggü. EmuTOS heute | Regressions-Basis | Abw. ggü. Vorstand | Neu aufgebrochen |
 |---|---|---|---|---|---|---|
-| `aes-r1` | ✅ 95/95, CRC ok | 640×480 + 1920×1080 | 1 Fall (167, WF_OWNER-Versionsdelta) | `measurement-2026-09-09/run1-pi4` (Full-HD) | 0 echte (nur `global[2,3,11,12]`-Rauschen) | **keiner** |
-| `aes-r2-wind` | ✅ 78/78, CRC ok | 640×480 + 1920×1080 | 2 Fälle (244/247, dieselbe Familie) | `measurement-2026-09-09/run2-pi4-r2wind` (Full-HD) | 0 echte (Rauschen + 2×`int_out[1]`, beides `ap_id`-Folge) | **keiner** |
-| `aes-r2b-rlist` | ✅ 15/15, CRC ok | 640×480 | 4 Fälle (127/133/144/204, dokumentierte P1-Stapelreste) | `measurement-2026-09-10-qemu/run3-qemu-rlist-all6` (640, **vor** den sechs Reparaturen) | 0 echte (nur `global[11,12]`-Rauschen) | **keiner** |
-| `aes-r3-wind-state` | ✅ 39/39, CRC ok | 640×480 | 7 Fälle (261/280/400/481/494/574/588, dokumentierte P1-Stapelreste) | `measurement-2026-09-12-qemu-r3-a37` (640, **nach** allen sechs Reparaturen, heute 08:51) | **0 von 39 — byte-identisch** | **keiner** |
+| `aes-r1` | ✅ 95/95, CRC ok | 640×480 + 1920×1080 | 1 Fall (167, WF_OWNER-Versionsdelta) | `measurements/measurement-2026-09-09/run1-pi4` (Full-HD) | 0 echte (nur `global[2,3,11,12]`-Rauschen) | **keiner** |
+| `aes-r2-wind` | ✅ 78/78, CRC ok | 640×480 + 1920×1080 | 2 Fälle (244/247, dieselbe Familie) | `measurements/measurement-2026-09-09/run2-pi4-r2wind` (Full-HD) | 0 echte (Rauschen + 2×`int_out[1]`, beides `ap_id`-Folge) | **keiner** |
+| `aes-r2b-rlist` | ✅ 15/15, CRC ok | 640×480 | 4 Fälle (127/133/144/204, dokumentierte P1-Stapelreste) | `measurements/measurement-2026-09-10-qemu/run3-qemu-rlist-all6` (640, **vor** den sechs Reparaturen) | 0 echte (nur `global[11,12]`-Rauschen) | **keiner** |
+| `aes-r3-wind-state` | ✅ 39/39, CRC ok | 640×480 | 7 Fälle (261/280/400/481/494/574/588, dokumentierte P1-Stapelreste) | `measurements/measurement-2026-09-12-qemu-r3-a37` (640, **nach** allen sechs Reparaturen, heute 08:51) | **0 von 39 — byte-identisch** | **keiner** |
 | `vdi-r1` | ✅ 24/24, CRC ok | 640×480 | 4 Fälle (36/37/46/59, bekannte Familien) | **keiner existiert** | n/a | n/a — Erstmessung |
 | `vdi-r2` | ✅ 120/120, CRC ok | 640×480 + 1920×1080 | 4 Fälle (46/89/140/141, bekannte Familien) | `reference/NEWTOS-VDI-r2.BIN` (Full-HD, 31. Aug) | 22 Fälle anders, **alle als Verbesserung erklärt** (`d0`/Sentinel, s. u.) | **keiner verschlechtert** |
 | `vdi-r3` | ✅ 38/38, CRC ok | 640×480 | 5 Fälle (117/119/140/142/145, bekannte Familien) | **keiner existiert** | n/a | n/a — Erstmessung |
-| `vdi-all` | ✅ 182/182, CRC ok | 640×480 + 1920×1080 | 13 Fälle (bekannte Familien, s. u.) | `measurement-2026-09-09/run1-pi4` (Full-HD) | 182 Fälle „anders“, **restlos als Handle-Artefakt der alten Mehrprogramm-Sitzung erklärt** | **keiner** |
-| `vdi-raster` | ✅ 59/59, CRC ok | 640×480 + 1920×1080 | 1 Fall (`buf_b[511]`, ein Wort) | `measurement-2026-09-09/run1-pi4` (Full-HD) | 59 Fälle „anders“, **derselbe Handle-Artefakt** | **keiner** |
+| `vdi-all` | ✅ 182/182, CRC ok | 640×480 + 1920×1080 | 13 Fälle (bekannte Familien, s. u.) | `measurements/measurement-2026-09-09/run1-pi4` (Full-HD) | 182 Fälle „anders“, **restlos als Handle-Artefakt der alten Mehrprogramm-Sitzung erklärt** | **keiner** |
+| `vdi-raster` | ✅ 59/59, CRC ok | 640×480 + 1920×1080 | 1 Fall (`buf_b[511]`, ein Wort) | `measurements/measurement-2026-09-09/run1-pi4` (Full-HD) | 59 Fälle „anders“, **derselbe Handle-Artefakt** | **keiner** |
 
 Jeder der 14 Läufe (9× 640×480, 5× zusätzlich 1920×1080) hat `all N cases ran`,
 die erwartete Datensatz-/Byteanzahl, `tosdiff --validate` akzeptiert die
@@ -67,8 +67,8 @@ drives)`).
 
 ### `aes-r3-wind-state` — die schärfste Probe, hält exakt
 
-`tosdiff cases/aes-r3-wind-state.tsv measurement-2026-09-12-qemu-r3-a37/AES.BIN
-measurement-2026-09-12-full-regression/aes-r3-wind-state/AES.BIN` meldet
+`tosdiff cases/aes-r3-wind-state.tsv measurements/measurement-2026-09-12-qemu-r3-a37/AES.BIN
+measurements/measurement-2026-09-12-full-regression/aes-r3-wind-state/AES.BIN` meldet
 **„0 of 39 cases differ“**. Der a37-Vorstand von heute 08:51 war bereits nach
 allen sechs Reparaturen genommen; zwischen 08:51 und diesem Lauf hat sich am
 AES-Fensterpfad nichts mehr geändert. Das ist die stärkste verfügbare
@@ -77,7 +77,7 @@ zum Schlechteren noch zum Besseren.
 
 ### `aes-r2b-rlist` — vor die sechs Reparaturen zurückverglichen
 
-Vorstand ist `measurement-2026-09-10-qemu/run3-qemu-rlist-all6/AES.BIN`
+Vorstand ist `measurements/measurement-2026-09-10-qemu/run3-qemu-rlist-all6/AES.BIN`
 (640×480, **vor** B1/B2/A22/A34/A33/A37). Alle 15 Fälle zeigen einen
 Unterschied, aber ausschließlich in `global[11]` (kernel-adress-abhängiges
 Wort, ändert sich mit jedem Build) und `global[12]` (`ap_3resv`,
@@ -160,7 +160,7 @@ unabhängige Verhaltensänderung.
 - `aes-r3-wind-state`: die sieben Fälle 261, 280, 400, 481, 494, 574, 588
   (EmuTOS-Dispatcher-Stapelrest) — **exakt diese sieben**, keiner mehr.
 - `aes-r2b-rlist`: die vier Fälle 127, 133, 144, 204 (Stapelreste ohne Soll) —
-  deckungsgleich mit `measurement-2026-09-11-pi4/run1-rlist-fixed/DIFF-gegen-TT-und-QEMU.txt`.
+  deckungsgleich mit `measurements/measurement-2026-09-11-pi4/run1-rlist-fixed/DIFF-gegen-TT-und-QEMU.txt`.
 - `aes-r1`/`aes-r2-wind`: die WF_OWNER-Versionsdelta-Familie (Fälle 167 bzw.
   244/247) — EmuTOS 1.4 kennt `WF_OWNER` noch nicht (kam erst nach dem
   `VERSION_1_4`-Tag, `acb7f3b4`).

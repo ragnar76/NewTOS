@@ -168,7 +168,7 @@ keinen weiteren NRSC-Blob.
   tos-api 81 / kernel 125 — Delta 0.
 * **QEMU `raspi4b`, headless, 640×480:** QED und TeraDesk gestartet, beide
   Schirme **bytegleich** zur Referenz vom 2026-09-13.
-  `measurement-2026-09-14-a35/`.
+  `measurements/measurement-2026-09-14-a35/`.
 
 ## Offen
 

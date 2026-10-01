@@ -82,7 +82,7 @@ einen Regressionstest benennen.
 
 ## Artefakte
 
-- `measurement-2026-09-09/diff/11-a13-wind-get-firstxywh.txt` —
+- `measurements/measurement-2026-09-09/diff/11-a13-wind-get-firstxywh.txt` —
   Validierungen, SHA-256, Fallzuordnung, Rohwörter feldweise aus beiden BINs,
   Soll je Fall mit Quellenbelegen, der vollständige Hostlauf, die drei
   Defekte, die benannten Fixes, der Regressionstestvorschlag und die offenen
@@ -100,7 +100,7 @@ Keine `.rs`-Datei im Baum geändert; der temporäre Testaufsatz
 ## Ausgeführte Prüfung
 
     $ ./tosdump/host/build/tosdiff --validate \
-          measurement-2026-09-09/run3-pi4-rlist/AES.BIN tosdump/cases/aes-r2b-rlist.tsv
+          measurements/measurement-2026-09-09/run3-pi4-rlist/AES.BIN tosdump/cases/aes-r2b-rlist.tsv
       → area AES, 15 records of 120 bytes, build 70ca, case CRC B4CC4A5A, accepted
     $ ./tosdump/host/build/tosdiff --validate \
           tosdump/reference/EMUTOS14-AES-r2brlist.BIN tosdump/cases/aes-r2b-rlist.tsv

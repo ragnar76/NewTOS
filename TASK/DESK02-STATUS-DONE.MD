@@ -215,7 +215,7 @@ kernel **125** auf beiden (Basis 80/125), **null** Treffer in
   „unconditionally".
 * `docs/api/desktop/_hw-test-2026-09-17.md` — Punkt **37**, Schritte 3-7.
 * `docs/STATUS.md` — Phase-14-Zeile + *Recent Decisions* (2026-09-24).
-* `measurement-2026-09-24-desk01-desk02/`.
+* `measurements/measurement-2026-09-24-desk01-desk02/`.
 
 ## Offen
 
@@ -256,7 +256,7 @@ Dialog waechst damit von **382x212** auf **390x244**; gemessen steht er bei
 Am Feldsatz, an `inf_which`/`inf_gindex`/`inf_what`, an der `#E`-Bindung und an
 den drei bewusst fehlenden Feldern aendert sich **nichts**.
 
-**Beleg:** `measurement-2026-09-24-desk01b/` — `prefs-C-prefs.png` zeigt alle
+**Beleg:** `measurements/measurement-2026-09-24-desk01b/` — `prefs-C-prefs.png` zeigt alle
 vier Gruppen als 3D-Indikatoren (unausgewaehlt erhaben, ausgewaehlt in der
 dunkleren Flaeche mit versenkter Fase und weisser Schrift, `zoom-radios.png`);
 Vorbelegung unveraendert `Yes / 3 / 24H / MDY`; `Cancel` laesst den Schirm

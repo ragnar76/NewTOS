@@ -47,7 +47,7 @@ Scratch-Injektor: der Kasten misst am Bild **(128, 111, 384, 276)** — genau
 `form_center`s Wert (`(640-384)/2 = 128`, `19 + (480-19-276)/2 = 111`) —, und
 nach `OK` ist der Schirm **bytegleich** zu dem vor dem Oeffnen (md5
 `710d7f24cc078d43e9351725a205a16e` auf beiden Seiten, pixdiff 0). Null
-`[EXC]`/`[PANIC]`. Belege: `measurement-2026-09-24-desk01-desk02/`.
+`[EXC]`/`[PANIC]`. Belege: `measurements/measurement-2026-09-24-desk01-desk02/`.
 
 **Kein Baudatum, und das ist ein Befund.** `ADDINFO` traegt `DECOPYRT` aus
 `COPYRIGHT_YEAR`; NewTOS hat **keine** Baudatums- oder Baujahrskonstante — der

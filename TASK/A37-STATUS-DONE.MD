@@ -212,7 +212,7 @@ A37. Nach (2) waere der Weg frei, sie anzugehen; heute ist sie nicht mehr die
 * Clippy: `tos-api` **81 Warnungen vorher, 81 nachher** (Delta 0); `kernel`
   125 auf beiden Boards (nicht angefasst). Keine Warnung in den neuen
   Funktionen, keine im neuen Testmodul.
-* Gegenmessung `measurement-2026-09-12-qemu-r3-a37/` (QEMU `raspi4b`, 640x480,
+* Gegenmessung `measurements/measurement-2026-09-12-qemu-r3-a37/` (QEMU `raspi4b`, 640x480,
   `#Z`-Autostart, `aes-r3-wind-state.tsv` 39 Faelle CRC `979FAC60` gegen
   `EMUTOS14-AES-r3.BIN`): **Endzustand haelt** — in den `int_out`-Nutzdaten
   weichen nur 261/280/400/481/494/574/588 ab, 14 `int_out`- und 234
@@ -410,7 +410,7 @@ Bauprodukten.
 | TeraDesk | Menueleiste `Desk File View Window Options`, zwei Disketten, Festplatte, Drucker, Papierkorb — alle Symbole sauber, `desktop.rsc` +71 B |
 | Eingebauter Desktop (ohne `#Z`) | `[desk] desktop up (1 drives)`, `C:\`-Fenster mit 24 Eintraegen, 0 Panik/Ausnahmen |
 
-Artefakte: `measurement-2026-09-12-a37-abnahme/`.
+Artefakte: `measurements/measurement-2026-09-12-a37-abnahme/`.
 
 **Nicht belegt, ehrlich benannt:** das **Erscheinungsbild** des
 Dateiselektor-Dialogs. Er braucht einen Klick, und QEMU `raspi4b` hat kein

@@ -3,7 +3,7 @@
 **Datum:** 2026-09-12 · **Rolle:** Audit (kein Produktcode geändert)
 **Gepinnte EmuTOS-Quelle:** `references/emutos` @ `1a7484aba1bfba23e2c0899e243b6d8177fe41df`
 **Referenzdump:** `tosdump/reference/EMUTOS14-AES-r3.BIN` (EmuTOS 1.4, `etos512de.img`, Hatari TT/ttmed/VGA, 640×480)
-**NewTOS-Dump:** `measurement-2026-09-11-qemu-r3/AES.BIN` (QEMU raspi4b, 640×480, Build `70ca` = HEAD `70caee2`)
+**NewTOS-Dump:** `measurements/measurement-2026-09-11-qemu-r3/AES.BIN` (QEMU raspi4b, 640×480, Build `70ca` = HEAD `70caee2`)
 **Falltabelle:** `tosdump/cases/aes-r3-wind-state.tsv`, CRC `979FAC60`, 39 Fälle
 
 ---

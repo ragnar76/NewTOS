@@ -47,7 +47,7 @@ Drei Befunde, die die Aufgabe verändert haben:
    diese Modi bereits als zurückgestellt und nennt die Entscheidung
    ausdrücklich offen.
 3. **Der Zeitstempelbeleg ist schwächer als beschrieben.** `RUNINFO.TXT` und
-   `measurement-2026-09-09/README.md` sagen „Compile-Zeit des Kernels". Der
+   `measurements/measurement-2026-09-09/README.md` sagen „Compile-Zeit des Kernels". Der
    Code setzt die Uhr aus dem **FAT-Verzeichniszeitstempel von
    `C:\KERNEL8.IMG`** — Metadatum einer Datei, von jedem Kopiervorgang neu
    gesetzt, 2-Sekunden-Auflösung, vom Host frei beschreibbar. Er bleibt Indiz,
@@ -68,6 +68,6 @@ byteweise `kernel8.img` entspricht, ob vor dem Hashzeitpunkt hineingeschrieben
 wird, was das Hashen von ~779 KB beim Boot kostet.
 
 Nicht nachgeführt: die Uhrquellen-Beschreibung in `RUNINFO.TXT` und
-`measurement-2026-09-09/README.md`. Beides sind Laufbelege; nachträgliches
+`measurements/measurement-2026-09-09/README.md`. Beides sind Laufbelege; nachträgliches
 Ändern wäre gegen die Arbeitsregeln. Eine Korrektur gehört in einen eigenen
 Task, wenn sie gewünscht ist.

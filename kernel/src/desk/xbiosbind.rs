@@ -32,7 +32,7 @@
 //! dispatcher writes into `x0` whole (`tos-api/src/xbios/keytbl.rs`, returning
 //! `emit_base as i64`). Narrowing it to `Long` truncates the kernel's high-half
 //! prefix and yields a low-half address that faults on the first dereference —
-//! measured, not assumed (`measurement-2026-09-26-desk43-u4/serial/`,
+//! measured, not assumed (`measurements/measurement-2026-09-26-desk43-u4/serial/`,
 //! `[EXC] … Data Abort … FAR=0x00000000002fcaa8` for a `KERNEL_AREA` whose real
 //! VA is `0xffff0000002fcaa8`).
 

@@ -10,7 +10,7 @@
 //! (`:1595-1598`), on any handle (`:1517-1520`). The buffer is taken **once**
 //! at AES start by `gsx_malloc` (`:108-114`, from `sh_tographic`,
 //! `aes/gemshlib.c:236`); the 1.4 ROM on the reference TT reported address
-//! `0x01000218`, length `40960` (`measurement-2026-09-12-aes-r4/`, cases 331,
+//! `0x01000218`, length `40960` (`measurements/measurement-2026-09-12-aes-r4/`, cases 331,
 //! 332 and 439 of `tosdump/cases/aes-r4-subfunctions.tsv`, CRC `227422B2`).
 //!
 //! NewTOS has the buffer since A57 (`tos_api::aes::gsxif`, design

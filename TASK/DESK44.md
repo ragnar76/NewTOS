@@ -92,5 +92,5 @@ Das kurze Aufblitzen selbst deckt sich mit der Messung aus
 [DESK46](DESK46.md): der Konsolenschirm steht **25 ms**, Programmlauf
 eingeschlossen. Mit blossem Auge ist daraus nicht zu entscheiden, ob der
 Textschirm betreten wurde — fuer `.NCP` ist das per Screendump belegt
-(`measurement-2026-09-27-desk46/screendumps/a3-3-console.png`), fuer `.NTP`
+(`measurements/measurement-2026-09-27-desk46/screendumps/a3-3-console.png`), fuer `.NTP`
 steht derselbe Nachweis aus und ist Teil von DESK47s Abnahme.

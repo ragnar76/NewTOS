@@ -22,8 +22,8 @@ WS_WORK bleiben unaktualisiert
 > und ist **nicht** Teil dieses Abschlusses.
 >
 > Beleg: `docs/analysis/aes-r3-wind-state-einordnung-2026-09-12.md`, Abschnitt 4.
-> Messartefakte: `measurement-2026-09-12-hatari-r3/`,
-> `measurement-2026-09-11-qemu-r3/`, `measurement-2026-09-11-pi4-r3/`.
+> Messartefakte: `measurements/measurement-2026-09-12-hatari-r3/`,
+> `measurements/measurement-2026-09-11-qemu-r3/`, `measurements/measurement-2026-09-11-pi4-r3/`.
 
 **Der urspruengliche Text von 2026-09-11 folgt unveraendert.** Damals galt:
 Implementierung fertig und hostverifiziert, die reale Gegenmessung fehlt —

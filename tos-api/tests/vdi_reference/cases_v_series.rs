@@ -16,7 +16,7 @@
 //! (`SPS_HICOLOR`), `DEV_TAB 639,479,…,256,…,0,…`. Same dumper binary
 //! (`tosdump/deploy-tt/DUMPVDI.PRG`, build 19b7), same table
 //! (`vdi-all.tsv`, CRC D135ADAF), same reset. Run and diffs:
-//! `measurement-2026-09-21-vdi-qemu/`.
+//! `measurements/measurement-2026-09-21-vdi-qemu/`.
 //!
 //! **What it settles.** EmuTOS itself, same ROM, TT-medium versus Falcon
 //! truecolor, differs in exactly these thirteen cases and exactly these
@@ -316,7 +316,7 @@ fn be16(b: &[u8], off: usize) -> i16 {
 /// because V15 says what `check` cannot: the handle a `v_opnvwk` returns is
 /// an **identity**, not a number to be byte-compared. On the dumper's
 /// machines it was 3 (physical 1, the dumper's own 2, this one 3 — TT,
-/// Falcon truecolor and NewTOS/QEMU alike, `measurement-2026-09-21-vdi-qemu/
+/// Falcon truecolor and NewTOS/QEMU alike, `measurements/measurement-2026-09-21-vdi-qemu/
 /// handles-vdi.txt`); in this test binary `cases_r3.rs` case 145 opens a
 /// third workstation too and never closes it, so the absolute number here
 /// depends on test order and is deliberately not asserted.

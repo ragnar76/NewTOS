@@ -1069,7 +1069,7 @@ screen already showed orders no rebuild.
 
 ### Measured
 
-QEMU raspi4b, 640×480, `measurement-2026-09-24-desk01-desk02/`: the dialog lands
+QEMU raspi4b, 640×480, `measurements/measurement-2026-09-24-desk01-desk02/`: the dialog lands
 at **(129, 143, 382, 212)** = `form_center`'s value; `Date format → DMY` + `OK`
 leaves the screen byte-identical to before the dialog opened; `Save desktop`
 writes `#E 1A 86 00 00 60` (`0x86` = `BLITTER|DAYMONTH|24HCLOCK`, both `IDT` bits
@@ -1146,7 +1146,7 @@ eine vierstellige Jahreszahl nicht abschneidet.
 Mit `_IDT = 0x112F` (24H, DMY, `/`) und EmuTOS' eigener Voreinstellung ohne
 `.INF` (`INF_E2_DEFAULT` traegt beide `IDT`-Bits, `deskapp.c:103`) druckt die
 Textansicht `23/09/26 18:55` und der Show-Info-Kasten `23/09/2026 18:55` —
-gemessen, `measurement-2026-09-23-desk13/screendumps/c-text.png` und
+gemessen, `measurements/measurement-2026-09-23-desk13/screendumps/c-text.png` und
 `e-showinfo.png`. Vorher waren es `09-23-26` und `09/23/2026`, also zwei
 verschiedene Antworten auf dieselbe Frage.
 
@@ -1305,7 +1305,7 @@ the machine line on either board. At 640 × 480 it is centred at (128, 31) and t
 10 px above the bottom edge. It fits on both board profiles; the qemu-virt
 machine name is shorter, so the box is the same size there.
 
-### Measured (`measurement-2026-09-24-desk01b/`)
+### Measured (`measurements/measurement-2026-09-24-desk01b/`)
 
 QEMU raspi4b, 640 × 480, the DESK08/09/10 scratch-copy IKBD injector.
 
@@ -1519,7 +1519,7 @@ shows its template, which is exactly what EmuTOS shows on a fresh
 icons and associations; NewTOS splits those two, so the walk is over
 `desk::inf`'s `SESSION` model, which is the half that carries `a_funkey`.
 
-Measured 2026-09-23 (`measurement-2026-09-23-desk19-desk20/`): after installing
+Measured 2026-09-23 (`measurements/measurement-2026-09-23-desk19-desk20/`): after installing
 `C:\CMDLINE.NCP` with key 7, the panel reads `F7  C:\CMDLINE.NCP______`
 (`screendumps/d20-funkey-d-conf.png`).
 
@@ -1532,7 +1532,7 @@ which is the same condition one step later (`pmdalt` null ⇒ 0).
 
 ### Measured (2026-09-23, QEMU raspi4b, 640 × 480, IKBD injector)
 
-`measurement-2026-09-23-desk05/`. ROOT (164, 105, 312, 288), `form_center` rect
+`measurements/measurement-2026-09-23-desk05/`. ROOT (164, 105, 312, 288), `form_center` rect
 (161, 102, 318, 294). Stepping `DCMNUNXT` walks Open (`^O`) → Info/Rename…
 (`^I`) → Search… (no key). *Clear all* + *Cancel* leaves the File drop-down
 **byte-identical** to before (`recover_shortcuts`); Cancel and OK-with-no-change
@@ -1617,7 +1617,7 @@ and its own `0`/`1`/`-1`.
 
 ### Measured (DESK38)
 
-`measurement-2026-09-25-desk-rest/` §3 — `DISK INFORMATION` for `C:`: label
+`measurements/measurement-2026-09-25-desk-rest/` §3 — `DISK INFORMATION` for `C:`: label
 `NEWTOS` (through the `FA_VOL` `Fsfirst`), 11 folders, 40 files, 1 597 248
 bytes used, 65 241 088 available. Pi checklist item 69, where the four real
 partitions make the `count_ffs` walk long enough to be worth watching.
@@ -1771,7 +1771,7 @@ anything reads them again.
 
 ### Measured (DESK42)
 
-`measurement-2026-09-25-desk42/`. Both trees dumped object by object at run
+`measurements/measurement-2026-09-25-desk42/`. Both trees dumped object by object at run
 time (`serial/dlg-dumps.txt`) and screendumped: `ADDISKIN` on the C: drive,
 `ADFFINFO` for `C:\README.TXT` (FILE INFORMATION) and for `C:\SUB` (FOLDER
 INFORMATION, 3 files / 0 folders / 6059 bytes), the Read-Only switch read back
@@ -1786,7 +1786,7 @@ all-blank 8.3 name (`tos-api/src/bdos/fs/dir.rs:148`, `fcb_name("")` →
 EmuTOS's `inf_file_folder` has no empty-name special case and neither does
 ours any more, so emptying the name field and pressing OK now reaches the
 defect; the pre-DESK42 NewTOS box rejected an empty name itself, which EmuTOS
-does not do. Reproduced in `measurement-2026-09-25-desk42/` §6.
+does not do. Reproduced in `measurements/measurement-2026-09-25-desk42/` §6.
 
 ---
 

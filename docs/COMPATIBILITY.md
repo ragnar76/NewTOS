@@ -164,7 +164,7 @@ from `sh_tographic`, `aes/gemshlib.c:236`), `gsx_mret` reports its address in
 `poutwds[0..1]` and its length in `poutwds[2..3]` (`:125-129`), and `wm_get`
 returns TRUE (`aes/gemwmlib.c:1563-1565`). Measured on the reference TT
 running the 1.4 ROM: address `0x01000218`, length `40960`
-(`measurement-2026-09-12-aes-r4/`, cases 331, 332 and 439 of
+(`measurements/measurement-2026-09-12-aes-r4/`, cases 331, 332 and 439 of
 `tosdump/cases/aes-r4-subfunctions.tsv`).
 
 Since A57 NewTOS has that buffer (`tos-api/src/aes/gsxif.rs`: one

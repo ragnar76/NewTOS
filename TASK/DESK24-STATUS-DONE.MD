@@ -11,7 +11,7 @@ ausgeworfen, keine Pi gefahren, nichts committet; kein
 Git-Kommando: das lesende `git show HEAD:kernel/src/desk/dir.rs`, mit dem der
 „Vorher"-Kern gebaut wird.
 
-Messung: [`measurement-2026-09-23-desk24-desk25-desk26/`](../measurement-2026-09-23-desk24-desk25-desk26/) §2.
+Messung: [`measurements/measurement-2026-09-23-desk24-desk25-desk26/`](../measurements/measurement-2026-09-23-desk24-desk25-desk26/) §2.
 Spezifikation: `docs/api/desktop/deskdir.md`.
 
 ---

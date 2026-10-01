@@ -54,7 +54,7 @@ Tabelle, die vielleicht gelaufen wäre; Absetzen kostet eine hängende Maschine.
 
 `tosdump/cases/aes-m06-sysvar.tsv` — 19 Fälle, 3 Preludes, CRC `458748F2`,
 einmalig geschrieben. Auf **beiden** Maschinen gefahren
-(`measurement-2026-09-13-m06-sysvar/`), je „all 19 cases ran", `--validate`
+(`measurements/measurement-2026-09-13-m06-sysvar/`), je „all 19 cases ran", `--validate`
 accepted.
 
 **NewTOS' `objc_sysvar` stimmt in 18 von 19 Fällen wortgleich mit EmuTOS** —
@@ -67,7 +67,7 @@ Unterschied ist der in der Tabelle **vorab deklarierte**: Fall 119
 
 ## Rückwärtskompatibilität, vierfach belegt
 
-Zahlen: `measurement-2026-09-13-m06-sysvar/BACKCOMPAT.TXT`.
+Zahlen: `measurements/measurement-2026-09-13-m06-sysvar/BACKCOMPAT.TXT`.
 
 1. Alle **elf** Tabellen unter `tosdump/cases/` mit unveränderter CRC, gleichen
    Fall-/Prelude-/Spaltenzahlen; keine der sechs AES-Tabellen braucht etwas

@@ -6,7 +6,7 @@ Elternitem und Untermenue stehen, ein Druck waehlt das Elternitem; (2) ein
 DISABLED-Titel bekommt weder Hilite noch Kasten. Bearbeitet 2026-09-21,
 Branch `desk-rebuild`, Basis HEAD `85c591e`, **nicht committet**. Ein Paket
 mit A90/A92 (`TASK/A90-STATUS-DONE.MD`, `TASK/A92-STATUS-DONE.MD`),
-gemeinsames Messverzeichnis `measurement-2026-09-21-a89-a92/`.
+gemeinsames Messverzeichnis `measurements/measurement-2026-09-21-a89-a92/`.
 
 ## Der Sachverhalt, beidseitig
 
@@ -57,7 +57,7 @@ tos-api 64 / kernel 94 (Delta 0). Clippy `-p tos-api` 80 (Delta 0; in
 `menu.rs` nur die vorbestehenden `private_interfaces`-Treffer, `gsxif.rs`/
 `event.rs`/Testdatei 0).
 
-## QEMU raspi4b (`measurement-2026-09-21-a89-a92/`)
+## QEMU raspi4b (`measurements/measurement-2026-09-21-a89-a92/`)
 
 TeraDesk per `#Z`, H02-run3 (C:-Fenster oeffnen, HELLO.TXT waehlen, File
 hovern, Info… hovern, Klick), Park unten rechts (A87 `parkbr`), vorher = HEAD

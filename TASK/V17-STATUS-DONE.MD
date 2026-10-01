@@ -137,8 +137,8 @@ mitgezogen.
 
 `tosdump/cases/aes-m07-parameter.tsv` (20 Fälle, CRC `0F46665B`, **unverändert**)
 auf QEMU `raspi4b`, headless, 640×480, nach dem Rezept aus
-`measurement-2026-09-13-regression/method/`. Artefakte:
-`measurement-2026-09-14-v17/`.
+`measurements/measurement-2026-09-13-regression/method/`. Artefakte:
+`measurements/measurement-2026-09-14-v17/`.
 
 Was `tosdiff` gegen `tosdump/reference/EMUTOS14-AES-m07.BIN` an abweichenden
 Feldern zählt, vorher gegen nachher:
@@ -157,7 +157,7 @@ QEMU-Prozess blieb stehen.
 
 ## Bildkontrolle
 
-Zwei Screendumps, dieselben zwei Anwendungen, die `measurement-2026-09-14-a35/`
+Zwei Screendumps, dieselben zwei Anwendungen, die `measurements/measurement-2026-09-14-a35/`
 aufgenommen hat, damit die Bilder vergleichbar sind — QED und TeraDesk, je über
 `#Z`-Autorun, QMP-Screendump nach 30 s. Verglichen wurde **Bildpunkt für
 Bildpunkt über alle 640×480**, nicht nach Augenschein:
@@ -225,7 +225,7 @@ nicht nach dem Ticketnamen.
 | `TASK/M07-STATUS-DONE.MD:69` | „die Mitte eines 640×480-Schirms, um eins versetzt" — liest sich als Geräteunterschied | datierter Nachtrag angehängt, der die Einordnung widerruft |
 | `docs/api/vdi/input/_mouse-packet.md`, `docs/api/vdi/_state.md` | zweideutiges `xres` (der Ursprung) | korrigiert, siehe oben |
 | **`tosdump/cases/aes-m07-parameter.tsv:39-44`** | „WHAT THESE CASES WILL DIFFER IN, **by construction and not by defect**: int_out[1..4] are the machine's own mouse position … have no reason to agree between a TT and a Pi" | **nicht korrigierbar.** Die Tabellen-CRC läuft über die ganze Datei einschliesslich Kommentaren (`tosdump/core/cases.c:234`), und `tosdiff` wie `mkrusttests` weisen jeden Dump mit abweichender CRC ab (`tosdiff.c:175,294-305`, `mkrusttests.c:520-524`). Eine Textänderung entwertete beide Messungen vom 2026-09-13. **Gemeldet, nicht geändert.** |
-| `measurement-2026-09-13-m07-parameter/RUNINFO.TXT:142-143` | „the centre of a 640x480 screen read off by one against the other. Not a finding about evnt_multi." | **nicht geändert**: die Datei sagt in ihrer zweiten Zeile „MEASUREMENT ONLY: this directory states what ran and what came back". Ein Messprotokoll rückwirkend umzuschreiben wäre schlimmer als der falsche Satz. Der neue Lauf widerspricht ihm mit Zahlen. |
+| `measurements/measurement-2026-09-13-m07-parameter/RUNINFO.TXT:142-143` | „the centre of a 640x480 screen read off by one against the other. Not a finding about evnt_multi." | **nicht geändert**: die Datei sagt in ihrer zweiten Zeile „MEASUREMENT ONLY: this directory states what ran and what came back". Ein Messprotokoll rückwirkend umzuschreiben wäre schlimmer als der falsche Satz. Der neue Lauf widerspricht ihm mit Zahlen. |
 | `docs/STATUS.md` M07-Eintrag (2026-09-13) | dieselbe Formulierung | datiertes Protokoll, nicht rückwirkend geändert; der neue Eintrag vom 2026-09-14 nennt und widerruft sie ausdrücklich |
 | `tosdump/cases/COVERAGE.md:84,122` | `vq_mouse` (124) „excluded — live pointer position; differs between two runs on one machine" | **Grenzfall, nur gemeldet.** Auf einer Maschine mit Bediener stimmt die Begründung; in einem unbeaufsichtigten Lauf ist `vq_mouse` genau die Parkposition und damit ein Sollwert. Ein Fall dafür hiesse eine neue VDI-Tabelle mit eigener CRC — Sache des Leads, nicht ungefragt. |
 
@@ -243,7 +243,7 @@ nicht nach dem Ticketnamen.
 * Warnungen, gegen die genannte Grundlinie: rustc `tos-api` **64**, `kernel`
   **94**; clippy `tos-api` **81**, `kernel` **125** — je für beide Boards
   gemessen, **Delta 0**.
-* Gegenmessung und Bildkontrolle: `measurement-2026-09-14-v17/RUNINFO.TXT`.
+* Gegenmessung und Bildkontrolle: `measurements/measurement-2026-09-14-v17/RUNINFO.TXT`.
 
 ## Was ich nicht angefasst habe
 

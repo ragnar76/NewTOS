@@ -12,12 +12,12 @@ Schritt, der es entscheidet, ist ein Lauf auf der echten Pi — den faehrt der
 Anwender, nicht ich. Deshalb `-UNFINISHED`.
 
 Basis: Branch `desk-rebuild`, HEAD `31fef0f`. Am gemeinsamen Baum wurde nichts
-geaendert ausser `measurement-2026-09-25-fs04/` und dieser Datei. Nichts
+geaendert ausser `measurements/measurement-2026-09-25-fs04/` und dieser Datei. Nichts
 geflasht, nichts ausgeworfen, keine Pi gefahren, nichts committet, kein
 `git checkout/restore/clean/stash/reset`; die SD-Karte unter `/Volumes/BOOT`
 wurde nicht beruehrt. Alle Instrumentierung liegt auf Scratch-Kopien.
 
-Messung: [`measurement-2026-09-25-fs04/`](../measurement-2026-09-25-fs04/) —
+Messung: [`measurements/measurement-2026-09-25-fs04/`](../measurements/measurement-2026-09-25-fs04/) —
 `RUNINFO.TXT` (Verfahren), `NUMBERS.TXT` (die Zahlen auf einer Seite),
 `method/` (Patches als Diff + Skripte), `raw/` (serielle Protokolle),
 `screendumps/`.
@@ -34,7 +34,7 @@ Clustergroesse und FAT-Laenge, die eine 500-MB-Partition bekommt. Der Inhalt
 von C: ist wortgleich der eines Standardabbilds, der Desktop also derselbe wie
 in jeder anderen Messung. Der Kernel meldet `[desk] desktop up (4 drives, …)`.
 
-Die Geste treibt der Scratch-IKBD-Injektor aus `measurement-2026-09-17-h03` /
+Die Geste treibt der Scratch-IKBD-Injektor aus `measurements/measurement-2026-09-17-h03` /
 `-2026-09-25-port03` (unveraendert uebernommen): Alt+C oeffnet `C:\`,
 `README.TXT` wird aufgenommen und auf das **D:-Laufwerkssymbol** gezogen, der
 `COPY FILE(S)`-Dialog mit OK beantwortet. Klickpunkte aus einem eigenen
@@ -191,12 +191,12 @@ Messung waere verloren gewesen. Die Sonde schreibt ihren Bericht deshalb jetzt
 **in eine Datei auf der Karte** — Einzelheiten in §12.
 
 Das fertige, gepruefte Abbild liegt in
-[`measurement-2026-09-25-fs04/pi-probe/kernel8-fs04probe.img`](../measurement-2026-09-25-fs04/pi-probe/).
+[`measurements/measurement-2026-09-25-fs04/pi-probe/kernel8-fs04probe.img`](../measurements/measurement-2026-09-25-fs04/pi-probe/).
 Selbst gebaut wird es so:
 
 ```
 cd <frische Kopie des Baums, NICHT der gemeinsame Baum>
-python3 measurement-2026-09-25-fs04/method/fs04_probe_patch.py . gesture
+python3 measurements/measurement-2026-09-25-fs04/method/fs04_probe_patch.py . gesture
 cargo run -p xtask --release -- build --board rpi4 --release
 ```
 
@@ -241,7 +241,7 @@ ohne sie laesst sich die gemessene Skalierung aus §6B nicht anwenden.
 
 ## 11. Aufraeumen
 
-Der gemeinsame Baum traegt nur `measurement-2026-09-25-fs04/` und diese Datei.
+Der gemeinsame Baum traegt nur `measurements/measurement-2026-09-25-fs04/` und diese Datei.
 Kein Produktcode geaendert, `TASK/FS04.md` und `docs/STATUS.md` nicht
 angefasst. Die gesamte Instrumentierung liegt auf Scratch-Kopien im
 Job-Scratchpad; die Patches sind als Diff in `method/` abgelegt, damit die
@@ -421,7 +421,7 @@ Gesamtzeit der Sektoroperation  ==  Summe ihrer fuenf Phasen
 ```
 
 zusammen mit den Stueckzahlen. Im QEMU-Lauf der umgestellten Fassung
-(`measurement-2026-09-25-fs04/raw/g08-FS04-rebased.TXT`):
+(`measurements/measurement-2026-09-25-fs04/raw/g08-FS04-rebased.TXT`):
 
 ```
 scope.check.r      n(read_one)=6 n(sectors)=6  total=2056us phases=2032us diff=23us
@@ -508,7 +508,7 @@ um aufzuraeumen, weil schon das Anlegen der Ausgabedatei eines Kommandos
 Folgen, unbeschoenigt:
 
 * Das Abbild `13707ae9…` ist **gebaut und geprueft, aber nicht abgelegt**.
-  In `measurement-2026-09-25-fs04/pi-probe/` liegt weiterhin das **alte**
+  In `measurements/measurement-2026-09-25-fs04/pi-probe/` liegt weiterhin das **alte**
   (`53bbbeab…`, gegen den alten Treiber). Es ist mit
   `STALE-DO-NOT-FLASH.TXT` und einem Banner im `README.TXT` als veraltet
   gekennzeichnet — **nicht flashen**.

@@ -10,7 +10,7 @@ Basis: Branch `desk-rebuild`, HEAD `a8d4b42`, Aenderungen **uncommitted** im
 Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset`.
 
-Messung: [`measurement-2026-09-23-desk16-desk17-desk21/`](../measurement-2026-09-23-desk16-desk17-desk21/).
+Messung: [`measurements/measurement-2026-09-23-desk16-desk17-desk21/`](../measurements/measurement-2026-09-23-desk16-desk17-desk21/).
 Spezifikation: `docs/api/desktop/deskmain.md` (neuer Abschnitt, beide
 Haelften).
 
@@ -67,7 +67,7 @@ ein modaler Dialog stehen. Der Tastenweg macht das Spiegelbild und hebt
 Kuerzelweg vorher hervor.
 
 **Also keine Codeaenderung.** Der im Ticket als Defekt zitierte Screendump
-(`measurement-2026-09-24-desk03-desk04/screendumps/ico-B-dialog.png`) zeigt
+(`measurements/measurement-2026-09-24-desk03-desk04/screendumps/ico-B-dialog.png`) zeigt
 konformes Verhalten. Trotzdem vorher **und** nachher neu gemessen, mit
 offenem Kasten und nach dem Schliessen, damit der Befund belegt auf dem Tisch
 liegt statt nur behauptet.
@@ -76,7 +76,7 @@ liegt statt nur behauptet.
 
 ## 3. Belege
 
-`measurement-2026-09-23-desk16-desk17-desk21/` — QEMU raspi4b, 640x480,
+`measurements/measurement-2026-09-23-desk16-desk17-desk21/` — QEMU raspi4b, 640x480,
 `-display none`, QMP-Screendump, scratch-Kopie mit dem H02-IKBD-Injektor,
 Karte je Lauf frisch aus `tools/make-sd-image.sh`. Jeder Klickpunkt stammt aus
 einem seriellen Dump (`method/probe_patch.py`).

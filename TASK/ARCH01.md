@@ -39,7 +39,7 @@ Genau das zeigt das Protokoll:
 Die Registerwerte passen ausschliesslich zu diesem Fenster.
 
 **Haeufigkeit:** einmal in sieben Laeufen desselben Startskripts auf
-identischer Kartenkopie (`measurement-2026-09-23-desk19-desk20/serial/`,
+identischer Kartenkopie (`measurements/measurement-2026-09-23-desk19-desk20/serial/`,
 `d19-full-serial.log` gegen `d19-full-repeat1..4-serial.log`, RUNINFO §7).
 
 **Wer betroffen ist:** *jeder* Aufrufer des Helfers — Programmstart per
@@ -80,7 +80,7 @@ CLAUDE.md: Registerverhalten nur aus der ARM ARM, nicht aus dem Gedaechtnis.
 **Die Vermutung haelt — und sie wurde ausgeloest, nicht geglaubt.** In einer
 Kopie des Baums steht zwischen `msr elr_el1, {entry}` und dem `eret` eine
 Warteschleife ueber 16.777.216 Durchlaeufe, also weit mehr als die 5 ms der
-200-Hz-Uhr (`measurement-2026-09-24-arch01/method/force_race_patch.py`).
+200-Hz-Uhr (`measurements/measurement-2026-09-24-arch01/method/force_race_patch.py`).
 Damit faellt **jeder** Start, und zwar mit genau der gemeldeten Signatur:
 
 ```
@@ -142,7 +142,7 @@ gegen den DESK19-Referenzmitschnitt zeilengleich bis auf den Uhrzeitstempel.
 qemu-virt bootet bis `[desk] desktop up`. Bau und Clippy auf beiden Boards
 ohne Delta (64/94 bzw. 80/125), Testsuite 938 / 0 / 1.
 
-Messung: [`measurement-2026-09-24-arch01/`](../measurement-2026-09-24-arch01/).
+Messung: [`measurements/measurement-2026-09-24-arch01/`](../measurements/measurement-2026-09-24-arch01/).
 Dokumentiert als **QUIRK-003** in [`docs/MEMORY.md`](../docs/MEMORY.md), plus
 die Regel im Prozessmodell ([`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)).
 Empfang: [`ARCH01-STATUS-DONE.MD`](ARCH01-STATUS-DONE.MD).

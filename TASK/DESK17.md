@@ -12,7 +12,7 @@ Abhaengigkeiten: [DESK03](DESK03.md) (erledigt)
    (`references/emutos/desk/deskmain.c:533-535`). `kernel/src/desk/menu.rs`
    hat seit DESK03 `ndesk`, aber nicht `ntrash` — *Delete* bleibt schwarz.
 2. **Der Menuetitel bleibt invertiert, solange ein Dialog offen ist**
-   (sichtbar in `measurement-2026-09-24-desk03-desk04/screendumps/ico-B-dialog.png`).
+   (sichtbar in `measurements/measurement-2026-09-24-desk03-desk04/screendumps/ico-B-dialog.png`).
    Verhalten von `hndl_menu`, aelter als DESK03: EmuTOS gibt den Titel frei,
    bevor der Dialog laeuft (`menu_tnormal` in `deskmain.c`s `hndl_menu`,
    gegen die NewTOS-Fassung zu pruefen).
@@ -55,11 +55,11 @@ zuerst, `:1240`).
 `desk::main::hndl_menu` tut bereits genau das, an genau derselben Stelle;
 `desk::main::hndl_kbd` hebt auf dem Kuerzelweg zuerst hervor. Der im Ticket
 zitierte Screendump
-(`measurement-2026-09-24-desk03-desk04/screendumps/ico-B-dialog.png`) zeigt
+(`measurements/measurement-2026-09-24-desk03-desk04/screendumps/ico-B-dialog.png`) zeigt
 also konformes Verhalten. Trotzdem vorher **und** nachher neu gemessen, mit
 offenem Kasten und nach dem Schliessen.
 
-Beleg: [`measurement-2026-09-23-desk16-desk17-desk21/`](../measurement-2026-09-23-desk16-desk17-desk21/).
+Beleg: [`measurements/measurement-2026-09-23-desk16-desk17-desk21/`](../measurements/measurement-2026-09-23-desk16-desk17-desk21/).
 *Delete* mit Papierkorb: vorher schwarz, nachher **grau**; mit Laufwerk
 (`ndesk` 1, `ntrash` 0): **schwarz**. *Open* und *Info/Rename...* bleiben in
 beiden Nachher-Bildern schwarz, die neue Sperre ist also nicht in `ILL_NOSEL`

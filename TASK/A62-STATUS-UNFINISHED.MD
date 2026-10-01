@@ -7,7 +7,7 @@ Beide Klärungspunkte des Tickets sind mit Messung beantwortet; die
 Entscheidung über den Umbau liegt beim Anwender (Bericht, Abschnitt 6).
 
 Bericht: [docs/analysis/aes-process-table-and-apid-2026-09-20.md](../docs/analysis/aes-process-table-and-apid-2026-09-20.md).
-Artefakte: [measurement-2026-09-20-a62/](../measurement-2026-09-20-a62/RUNINFO.TXT).
+Artefakte: [measurements/measurement-2026-09-20-a62/](../measurements/measurement-2026-09-20-a62/RUNINFO.TXT).
 Basis `desk-rebuild` @ `8f052b2`, gepinnte EmuTOS-Quelle `1a7484ab…`.
 
 ## 1. Punkt 1 — ab wann bricht es? Gemessen: **Verschachtelungstiefe 9, nicht acht Programme nacheinander**
@@ -61,7 +61,7 @@ und `event.rs`, nicht mit QED gezeigt). Kein Screendump nach der 16er-Kette
 
 Kein Produktcode geändert. Sonden (`nesttst.c`, `seqtst.c`, Host-Test
 `zz_a62_probe.rs`) liefen ausschließlich in einer Scratch-Kopie des Baums;
-Kopien unter `measurement-2026-09-20-a62/method|host`. `git status --short`
+Kopien unter `measurements/measurement-2026-09-20-a62/method|host`. `git status --short`
 vor der Arbeit leer, danach nur die neuen Dateien (Bericht, diese Quittung,
 A56-Quittung, Messverzeichnis); `kernel/src/host_env.rs` sha256
 `287ff7415805b9cf0b7efe74487a5f24dd06f121ddd61cdb5f9e2d8a15618e3e` vorher =
@@ -200,7 +200,7 @@ vorhanden; UNFINISHED bleibt, weil die Abnahme auf echter Pi 4 (Tester/Lead)
 und Stufe 2 (A56, berichtete Werte nach EmuTOS) ausstehen.** Kein Commit, kein
 `git checkout/restore/clean/stash`, keine Hardware-/Outward-Aktion. Basis
 `desk-rebuild` @ `86b871d`, Baum vorher sauber. Artefakte:
-[`measurement-2026-09-20-a62/fix/`](../measurement-2026-09-20-a62/fix/).
+[`measurements/measurement-2026-09-20-a62/fix/`](../measurements/measurement-2026-09-20-a62/fix/).
 
 ### 1. Was gebaut wurde (Spec `docs/api/aes/application.md` § "AES process identity and pid", Vertrag (a))
 
@@ -275,11 +275,11 @@ A41/A62-Methoden (Hashes `fix/build/kernel-and-image-hashes.txt`). Alle Läufe:
   (Fenstertabelle, eigenes Thema, wie vor dem Fix), 17. `Pexec` → −39; alle 16
   kehren regulär zurück, `[desk] desktop up (1 drives)`. Vorher: Tiefe 9–16 → −1,
   `appl_write(self)` = 0.
-- **Smoke, bytegleich** zu `measurement-2026-09-19-a41/part2/screendumps/`:
+- **Smoke, bytegleich** zu `measurements/measurement-2026-09-19-a41/part2/screendumps/`:
   `smoke-desk-up.png` 0 Pixel, `smoke-qed-up.png` 0 Pixel,
   `smoke-tera-up.png` 0 Pixel gegen `product1-tera-colour-icons-idle.png`.
 - **H05-Sequenz** (Scratch-Kopie mit dem A41/A39-Injektor, `full1.actions` aus
-  `measurement-2026-09-19-a39/method/`, Kernel `92e0947c…`): TeraDesk → HARD DISC
+  `measurements/measurement-2026-09-19-a39/method/`, Kernel `92e0947c…`): TeraDesk → HARD DISC
   C → APPS → QED → QED.NAP doppelklicken (Kind in Slot 1) → QED „Datei / Beenden"
   → Rückkehr. `serial/full1-serial.log`: `[exec] preparing program (slot 1)`,
   kein EXC. Screendumps `full1-D-before-start.png` gegen
@@ -326,7 +326,7 @@ vorhanden; die Abnahme auf echter Pi 4 (Tester/Lead) bleibt offen.** Kein
 Commit, keine Hardware-/Outward-Aktion. Basis `desk-rebuild` @ `25ff70c`
 (Stufe 1). Quittung: [A56-STATUS-DONE.MD](A56-STATUS-DONE.MD) (ersetzt
 `A56-STATUS-UNFINISHED.MD`); Artefakte
-[`measurement-2026-09-20-a56/`](../measurement-2026-09-20-a56/RUNINFO.TXT).
+[`measurements/measurement-2026-09-20-a56/`](../measurements/measurement-2026-09-20-a56/RUNINFO.TXT).
 
 Die zwei Übersetzungsstellen aus Stufe 1 tragen jetzt EmuTOS' Zahlen
 (Spec § "AES process identity and pid", Vertrag (b)):

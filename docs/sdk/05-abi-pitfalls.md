@@ -127,9 +127,9 @@ in C (`(char *)`), the read site needs `(T *)(uintptr_t)` — see the
 
 **The rest of the neighbourhood is measured, not fixed.** 20 of the 30
 `mint/*.h` typedefs still diverge between m68k and LP64
-(`measurement-2026-09-17-diskinfo/04-struct-sizes-both-toolchains.txt`).
+(`measurements/measurement-2026-09-17-diskinfo/04-struct-sizes-both-toolchains.txt`).
 Three of them are read by a built application today
-(`measurement-2026-09-17-diskinfo/08-struct-reach-survey.md`):
+(`measurements/measurement-2026-09-17-diskinfo/08-struct-reach-survey.md`):
 
 | typedef | m68k → LP64 | Reader | State |
 |---------|-------------|--------|-------|
@@ -261,7 +261,7 @@ document it was started with.
 in `parseargs()` — is m68k assembly in its other half and excluded
 (`sdk/libc/expected-failures.txt:25`). Every libc-linked program therefore saw
 no arguments whatever the launcher handed it; a file dropped on QED opened an
-empty editor (TASK/PORT01, `measurement-2026-09-25-port01/`).
+empty editor (TASK/PORT01, `measurements/measurement-2026-09-25-port01/`).
 
 **Now**: `sdk/libc/crt0.S` calls `__libc_parseargs()`
 (`sdk/libc/newtos-arch/cmdargs.c`), which builds `argc`/`argv` from the tail

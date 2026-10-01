@@ -303,7 +303,7 @@ bit set and the state `2` echoed, `0x0004_0007` reports `2` — so the boot
 log reads `[fb] alpha mode = 2`, and the allocation is unchanged
 (`640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB`).
 The desktop screendump is byte-identical to the one taken without the tag
-(`measurement-2026-09-21-v11-v12/screendumps/desk-after-idle.png`), as it
+(`measurements/measurement-2026-09-21-v11-v12/screendumps/desk-after-idle.png`), as it
 must be: QEMU never scanned the X byte out. The real-Pi acceptance is
 item 30 of `docs/api/desktop/_hw-test-2026-09-17.md`.
 

@@ -12,8 +12,8 @@ Dateinamen).
 Falltabelle `tosdump/cases/aes-r3-wind-state.tsv` (39 Faelle, CRC `979FAC60`),
 EmuTOS-Referenz `tosdump/reference/EMUTOS14-AES-r3.BIN` (ueber Hatari,
 `etos512de.img`, TT-Medium 640x480/4 Planes; Verfahren bitgleich gegen zwei
-echte TT-Dumps validiert), NewTOS in `measurement-2026-09-11-qemu-r3/` (vorher)
-und `measurement-2026-09-12-qemu-r3-a22/` (nachher) auf demselben Profil.
+echte TT-Dumps validiert), NewTOS in `measurements/measurement-2026-09-11-qemu-r3/` (vorher)
+und `measurements/measurement-2026-09-12-qemu-r3-a22/` (nachher) auf demselben Profil.
 
 ## Der Befund, und wo er sass
 
@@ -49,7 +49,7 @@ interne Darstellung, nicht die Reihenfolge und nicht das Ergebnis.
 
 ## Gegenmessung
 
-`measurement-2026-09-12-qemu-r3-a22/` (QEMU `raspi4b`, 640x480, `#Z`-Autostart,
+`measurements/measurement-2026-09-12-qemu-r3-a22/` (QEMU `raspi4b`, 640x480, `#Z`-Autostart,
 ohne Karte und ohne Klick). Gegen den Lauf vom 11.09. auf derselben Tabelle:
 
 * Weggefallene Feldunterschiede: 528 `int_out[4]`, 549 `int_out[2..4]`,
@@ -106,6 +106,6 @@ korrigiert; der Code folgt ihr jetzt.
 
 ## Beleg
 
-`measurement-2026-09-12-qemu-r3-a22/` (AES.BIN, AES.LOG, BOOT-SERIAL.txt,
+`measurements/measurement-2026-09-12-qemu-r3-a22/` (AES.BIN, AES.LOG, BOOT-SERIAL.txt,
 DIFF-emutos-vs-newtos-640x480.txt, RUNINFO.TXT),
 `docs/analysis/aes-r3-wind-state-einordnung-2026-09-12.md` Befund C.

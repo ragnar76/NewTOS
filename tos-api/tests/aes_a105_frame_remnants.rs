@@ -1,11 +1,11 @@
 //! A105 — **the window frame's remnants after A95: `W_INFO` text origin,
 //! name centring, `thumb_geom`'s axis, `changecol` on a pressed gadget.**
 //!
-//! Reference: `measurement-2026-09-20-a79/hatari-falcon-reference/shots/
+//! Reference: `measurements/measurement-2026-09-20-a79/hatari-falcon-reference/shots/
 //! falcon-tc-window-c.png` — EmuTOS on a Hatari Falcon030, 640x480
 //! truecolor, the topped `C:\` window at `(16,96,304,192)` with the info
 //! line ` 514 bytes used in 1 items.`; frame-relative `(dx,dy)` = screen
-//! `(16+dx, 96+dy)`. Read with `measurement-2026-09-21-a95/method/dumpwin.py`.
+//! `(16+dx, 96+dy)`. Read with `measurements/measurement-2026-09-21-a95/method/dumpwin.py`.
 //!
 //! 1. **`W_INFO` text origin** — `gl_ainfo` is `TE_LEFT` with `te_thickness
 //!    1` (`gl_asamp`, `aes/gemwmlib.c:154-157`), `FL3DNONE` (no growth,

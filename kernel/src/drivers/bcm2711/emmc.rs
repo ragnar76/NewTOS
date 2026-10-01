@@ -1269,7 +1269,7 @@ mod tests {
     #[test]
     fn a_millisecond_is_the_counter_frequency_over_a_thousand() {
         // The two frequencies these boards report: 54 MHz (Pi 4, measured
-        // in `measurement-2026-09-25-fs04`) and 62.5 MHz (QEMU virt).
+        // in `measurements/measurement-2026-09-25-fs04`) and 62.5 MHz (QEMU virt).
         assert_eq!(ticks_for_ms(54_000_000, 1), 54_000);
         assert_eq!(ticks_for_ms(54_000_000, 1_000), 54_000_000);
         assert_eq!(ticks_for_ms(62_500_000, 100), 6_250_000);

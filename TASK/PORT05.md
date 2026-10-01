@@ -51,7 +51,7 @@ wird: **der Lead hat `TERADESK.INF` auf der Karte veraendert** (2026-09-25,
 ~20:58). Ergaenzt wurden zwei `ptype`-Eintraege (`*.NTP` mit `appt=4`,
 `*.NAC` mit `flag=0x2001`) und vier `ftype`-Masken (`*.NAP`, `*.NCP`,
 `*.NTP`, `*.NAC`). Die Vorlage liegt unveraendert unter
-`hw-round-2026-09-24/TERADESK.INF`.
+`measurements/hw-round-2026-09-24/TERADESK.INF`.
 
 Das ist **kein Verdacht**, sondern die eine bekannte Aenderung. Ob sie
 beteiligt ist, entscheidet ein Rueckbau, nicht eine Ueberlegung.

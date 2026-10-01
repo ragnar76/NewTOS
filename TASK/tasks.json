@@ -7,7 +7,7 @@
     "scope": "Nur aes-r2-wind.tsv auf dem aktuellen Pi messen; vorhandene r1-Dateien vorher unter neuer Laufkennung sichern. Keine Fensterreparatur.",
     "accept": "78 Records, CRC AFB11C9F; BIN und LOG validiert, Kernelidentität/Startkontext protokolliert; Vergleich gegen EMUTOS14-AES-r2wind.BIN gespeichert.",
     "refs": [
-      "measurement-2026-09-09/cases/aes-r2-wind.tsv",
+      "measurements/measurement-2026-09-09/cases/aes-r2-wind.tsv",
       "tosdump/reference/EMUTOS14-AES-r2wind.BIN"
     ],
     "area": null,
@@ -24,7 +24,7 @@
     "scope": "Nur die vorhandene aes-r2b-rlist.tsv mit dem passenden AES-Dumper auf dem TT ausführen. Keine Änderung der eingefrorenen Tabelle.",
     "accept": "15 Records, CRC B4CC4A5A, BIN/LOG und EmuTOS-Version archiviert; jeder NEXT-Fall behält seinen FIRST-Vorlauf.",
     "refs": [
-      "measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
+      "measurements/measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
     ],
     "area": null,
     "cases": [],
@@ -40,7 +40,7 @@
     "scope": "Dieselbe Tabelle wie M02 auf dem aktuellen Pi ausführen; separat von M01/r1 archivieren.",
     "accept": "15 Records, CRC B4CC4A5A; BIN/LOG mit Build-Zuordnung validiert.",
     "refs": [
-      "measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
+      "measurements/measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
     ],
     "area": null,
     "cases": [],
@@ -56,8 +56,8 @@
     "scope": "Nur die Zuordnung des tatsächlich gestarteten Kernels zum Messlauf entwerfen: Abbild-Hash, Build mit Dirty-State, Dumper-Hash, Tabelle, Boot-Kontext. Kein neues Cookie ohne Prüfung des bestehenden Vertrags.",
     "accept": "Ein kurzes Format-/Transportkonzept benennt, welche Identität der laufende Kernel selbst liefern kann. Der aktuelle Zeitstempelbeleg bleibt ausdrücklich ein Indiz. Implementierung erst als eigener Nachfolgetask.",
     "refs": [
-      "measurement-2026-09-09/RUNINFO.TXT",
-      "measurement-2026-09-09/README.md"
+      "measurements/measurement-2026-09-09/RUNINFO.TXT",
+      "measurements/measurement-2026-09-09/README.md"
     ],
     "area": null,
     "cases": [],
@@ -175,7 +175,7 @@
     "cases": [],
     "deps": [],
     "status": "ERLEDIGT",
-    "extra": "Werte aus evidence/aes-full.txt und measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
+    "extra": "Werte aus evidence/aes-full.txt und measurements/measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
   },
   {
     "id": "A07",
@@ -192,7 +192,7 @@
     "cases": [],
     "deps": [],
     "status": "OFFEN",
-    "extra": "Werte aus evidence/aes-full.txt und measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
+    "extra": "Werte aus evidence/aes-full.txt und measurements/measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
   },
   {
     "id": "A08",
@@ -209,7 +209,7 @@
     "cases": [],
     "deps": [],
     "status": "ERLEDIGT",
-    "extra": "Werte aus evidence/aes-full.txt und measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
+    "extra": "Werte aus evidence/aes-full.txt und measurements/measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
   },
   {
     "id": "A09",
@@ -226,7 +226,7 @@
     "cases": [],
     "deps": [],
     "status": "ERLEDIGT",
-    "extra": "Werte aus evidence/aes-full.txt und measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
+    "extra": "Werte aus evidence/aes-full.txt und measurements/measurement-2026-09-09/run1-pi4/AES.LOG; diese Globals sind in allen 95 Records enthalten, keine 95 unabhängigen Defekte."
   },
   {
     "id": "A10",
@@ -294,7 +294,7 @@
     "accept": "M02/M03 Fall für Fall ausgewertet. Ein belegter Unterschied bekommt genau einen Regressionstest und lokalen Fix; bei Gleichheit Messlücke schließen. Erwartung aus EmuTOS w_owns und Trap-Kopierpfad.",
     "refs": [
       "docs/api/aes/window-graphics.md",
-      "measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
+      "measurements/measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
     ],
     "area": null,
     "cases": [],
@@ -314,7 +314,7 @@
     "accept": "M02/M03 Fall für Fall ausgewertet. Ein belegter Unterschied bekommt genau einen Regressionstest und lokalen Fix; bei Gleichheit Messlücke schließen. Erwartung aus EmuTOS w_owns und Trap-Kopierpfad.",
     "refs": [
       "docs/api/aes/window-graphics.md",
-      "measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
+      "measurements/measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
     ],
     "area": null,
     "cases": [],
@@ -334,7 +334,7 @@
     "accept": "M02/M03 Fall für Fall ausgewertet. Ein belegter Unterschied bekommt genau einen Regressionstest und lokalen Fix; bei Gleichheit Messlücke schließen. Erwartung aus EmuTOS w_owns und Trap-Kopierpfad.",
     "refs": [
       "docs/api/aes/window-graphics.md",
-      "measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
+      "measurements/measurement-2026-09-09/cases/aes-r2b-rlist.tsv"
     ],
     "area": null,
     "cases": [],

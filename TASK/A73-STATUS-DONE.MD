@@ -46,7 +46,7 @@ Vertrag (`menu.md:387-413`). Genau dieses Warten fehlte.
   nur die tote Hilfsfunktion `evnt_multi_poll` entfernt (dead_code-Warnung).
 * **`docs/STATUS.md`** — Phase-13-Zeile (datierter Eintrag) + Zeile in
   „Recent Decisions“.
-* **`measurement-2026-09-20-a73/`** — RUNINFO, Screendumps, Serial,
+* **`measurements/measurement-2026-09-20-a73/`** — RUNINFO, Screendumps, Serial,
   Hosttest-Quittungen, Build-/Clippy-Logs, Methode (Skripte, Actions,
   Injektor-Diff, Produkt-Diff), SHA-256-Manifest. Keine `*.img`.
 
@@ -67,7 +67,7 @@ bleibt der zweite ignorierte). `cargo xtask build --board rpi4` rustc tos-api
 vorbestehenden `private_interfaces`-Treffer auf `pub fn menu_*(pb: &Aespb)`,
 keiner in `event.rs`, im neuen Code oder in der Testdatei.
 
-## QEMU raspi4b (`measurement-2026-09-20-a73/`)
+## QEMU raspi4b (`measurements/measurement-2026-09-20-a73/`)
 
 TeraDesk per `#Z` (INF aus H02: TeraDesk-Standard, Textansicht, das
 Layout, das `rowstat.py` misst), 640×480, headless, QMP, Injektor in

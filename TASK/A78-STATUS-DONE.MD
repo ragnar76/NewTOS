@@ -7,7 +7,7 @@ bekommt **kein** `WM_REDRAW` (`moved`), die reine Verkleinerung ebenso, und
 der Fan-out (`w_update`) laeuft **von oben nach unten** in z-Reihenfolge und
 nur ueber den Bereich `[stop .. start]`. Developer-Selbstbeleg 2026-09-20,
 Branch `desk-rebuild`, Basis HEAD `b1c90fa`, **uncommitted** im Baum.
-Messlauf: [`measurement-2026-09-20-a78/`](../measurement-2026-09-20-a78/RUNINFO.TXT).
+Messlauf: [`measurements/measurement-2026-09-20-a78/`](../measurements/measurement-2026-09-20-a78/RUNINFO.TXT).
 
 ## Quelle → Code, Zweig fuer Zweig (`references/emutos` @ `1a7484ab`, `aes/gemwmlib.c`)
 
@@ -53,7 +53,7 @@ BufBackend mit `copy_rect`-Mitschnitt + Nachrichtenmitschnitt, 640×480):
 | T5b dieselbe, Bewegung nach rechts | `copy_rect (400,100,240,242)→(420,100)`, 0 `WM_REDRAW` | **rot** | gruen |
 | T6 gleiches Rechteck | 0 Pixel, 0 Nachrichten (`:1115-1116`) | **rot** (1 `WM_REDRAW`) | gruen |
 
-Rohausgaben: `measurement-2026-09-20-a78/host-tests/aes_window_move_blit-RED-before.txt`
+Rohausgaben: `measurements/measurement-2026-09-20-a78/host-tests/aes_window_move_blit-RED-before.txt`
 / `-GREEN-after.txt`.
 
 ## Pruefungen — selbst gefahren
@@ -67,8 +67,8 @@ Rohausgaben: `measurement-2026-09-20-a78/host-tests/aes_window_move_blit-RED-bef
 | QEMU raspi4b, TeraDesk per `#Z`, Injektor: Titelbalken 80 px nach unten | **nachher:** `op 105 in=(1,5,303,222,640,449)` ohne `post_msg [20,…]` — Inhalt steht an der neuen Stelle, TeraDesk zeichnet nichts nach; **vorher:** zwei `post_msg [20,…]` (Work-Rect + Damage∩Hull), TeraDesk zeichnet neu. Screendumps vorher/nachher an allen 6 Marken **0 Pixel** verschieden |
 | dito, zweiter Zug 300 px nach links (Quelle ueber den rechten Rand) | beide Kernel `post_msg [20,1,0,1,7,222,633,258]` = `((s ∪ d) ∩ gl_rfull + S) ∩ hull` — EmuTOS' Wert fuer den verweigerten Blit (`:951-957`) |
 | QEMU raspi4b, unser Desktop (`desk/` `WM_MOVED` → `WF_CXYWH`), Fenster (+30,+40) | **nachher:** `op 105 in=(1,5,80,83,544,400)` ohne `post_msg [20,…]`; **vorher:** zwei. Screendumps vorher/nachher **0 Pixel** an allen 3 Marken |
-| Idle-Screendumps gegen `measurement-2026-09-19-a46/screendumps/` | **nicht** bytegleich: 194 (Tera) bzw. 104 (Desk) Pixel, bbox nur der Zeiger-Sprite (bei uns noch an (319,239), bei A46 schon unterwegs nach (300,300) — Dump-gegen-`park`-Race der Methode); Delta fuer den **HEAD-Kernel identisch**, also kein A78-Effekt. Alles andere bytegleich |
-| `git status --short` | `M docs/api/aes/window-graphics.md`, `M tos-api/src/aes/window.rs`, `?? tos-api/tests/aes_window_move_blit.rs`, `?? measurement-2026-09-20-a78/`, `?? TASK/A78-STATUS-DONE.MD` (+ `M TASK/A78.md`) |
+| Idle-Screendumps gegen `measurements/measurement-2026-09-19-a46/screendumps/` | **nicht** bytegleich: 194 (Tera) bzw. 104 (Desk) Pixel, bbox nur der Zeiger-Sprite (bei uns noch an (319,239), bei A46 schon unterwegs nach (300,300) — Dump-gegen-`park`-Race der Methode); Delta fuer den **HEAD-Kernel identisch**, also kein A78-Effekt. Alles andere bytegleich |
+| `git status --short` | `M docs/api/aes/window-graphics.md`, `M tos-api/src/aes/window.rs`, `?? tos-api/tests/aes_window_move_blit.rs`, `?? measurements/measurement-2026-09-20-a78/`, `?? TASK/A78-STATUS-DONE.MD` (+ `M TASK/A78.md`) |
 
 ## Was offen bleibt
 

@@ -4,7 +4,7 @@ Auditor, 2026-09-20. **Untersuchung, kein Fix.** Kein Produktcode geändert
 (`git status --short` leer vor und nach der Arbeit bis auf die neuen Artefakte;
 `kernel/src/host_env.rs` sha256 `287ff741…` vorher = nachher). Sonden liefen
 in einer Scratch-Kopie des Baums; Messartefakte:
-[`measurement-2026-09-20-a62/`](../../measurement-2026-09-20-a62/RUNINFO.TXT).
+[`measurements/measurement-2026-09-20-a62/`](../../measurements/measurement-2026-09-20-a62/RUNINFO.TXT).
 
 Basis: `desk-rebuild` @ `8f052b2`. EmuTOS: `references/emutos` @
 `1a7484aba1bfba23e2c0899e243b6d8177fe41df`, Zeilennummern selbst nachgeprüft.

@@ -38,7 +38,7 @@ ist es seitdem nicht mehr — das ist eine echte Luecke, keine Formalie.
   kommt beim Programm an. `C:\\CMDLINE.NTP` gibt sie aus und ist damit der
   Selbstbeleg.
 * Screendump des **Konsolenschirms** waehrend des Laufs — der Nachweis, der
-  fuer `.NCP` bereits vorliegt (`measurement-2026-09-27-desk46/screendumps/
+  fuer `.NCP` bereits vorliegt (`measurements/measurement-2026-09-27-desk46/screendumps/
   a3-3-console.png`) und fuer `.NTP` noch aussteht.
 * Gegenprobe: `.NAP` bleibt GEM ohne Dialog, `.NCP` bleibt Konsole ohne Dialog.
 
@@ -122,7 +122,7 @@ sieben Objekte, beide `TEDINFO`s) — vorher stand dort nur der Zeilenverweis.
 
 ### Abnahme, soweit ohne Pi einloesbar
 
-`measurement-2026-09-30-desk47/` — drei QEMU-raspi4b-Laeufe mit dem
+`measurements/measurement-2026-09-30-desk47/` — drei QEMU-raspi4b-Laeufe mit dem
 Scratch-IKBD-Injektor, 0 `[EXC]`/`[PANIC]`, `fsck_msdos -n` sauber auf allen
 drei Abbildern.
 
@@ -189,4 +189,4 @@ auch auf."*
 
 Damit ist die erste Zeile der Abnahme auf echter Hardware erfuellt. Der
 Konsolen-Screendump und die Gegenproben (`.NCP`/`.NAP` ohne Kasten) liegen aus
-QEMU vor (`measurement-2026-09-30-desk47/`). **DESK47 ist erledigt.**
+QEMU vor (`measurements/measurement-2026-09-30-desk47/`). **DESK47 ist erledigt.**

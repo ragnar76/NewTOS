@@ -343,11 +343,11 @@ window covers the old top nothing of it is drawn (an empty list when it is
 fully covered). The `w_update(w_handle, &c, DESKWH, FALSE)` that follows
 (`:1222`) visits the new window alone (`bottom == top`, `:1014-1043`): its
 frame (`:1029`) and its `WM_REDRAW`; the new window's work area is left to
-that message. Reference: `measurement-2026-09-20-a79/hatari-falcon-reference/
+that message. Reference: `measurements/measurement-2026-09-20-a79/hatari-falcon-reference/
 shots/falcon-tc-two-windows.png` (the first window's band white after the
 second opened at boot); NewTOS host test
 `tos-api/tests/aes_window_open_oldtop.rs`, QEMU dumps
-`measurement-2026-09-21-a94/screendumps/`.
+`measurements/measurement-2026-09-21-a94/screendumps/`.
 
 ### A preset `WS_CURR` — which branches of `draw_change` an open can take (A104, 2026-09-23)
 
@@ -1882,12 +1882,12 @@ byte of any buffer the caller passed (TASK/A42).
   tracks, the bevel on every `FL3DACT` gadget. The evidence is EmuTOS itself
   on an emulated Falcon030 (Hatari, the pinned source's own `etos512us.img`,
   truecolor **and** 256 colours):
-  `measurement-2026-09-20-a79/hatari-falcon-reference/` (README + `shots/`);
-  NewTOS's rendering next to it: `measurement-2026-09-20-a79/screendumps/
+  `measurements/measurement-2026-09-20-a79/hatari-falcon-reference/` (README + `shots/`);
+  NewTOS's rendering next to it: `measurements/measurement-2026-09-20-a79/screendumps/
   final-compare-ref-vs-newtos.png`, remaining pixel differences (bevel width,
   name-box bevel, glyph centring, one-row/one-column bar geometry, the
   `DISABLED` overlay) listed in
-  `measurement-2026-09-20-a79/RUNINFO.TXT` § FINAL → A95; item (6) there, the
+  `measurements/measurement-2026-09-20-a79/RUNINFO.TXT` § FINAL → A95; item (6) there, the
   old top's repaint on `wind_open`, is fixed by A94 (see the `wind_open`
   entry). The one fixed
   colour left in the frame is the drop shadow (`DROP_SHADOW_COLOR`, a separate
@@ -2248,7 +2248,7 @@ byte of any buffer the caller passed (TASK/A42).
 **They are EmuTOS's, and nothing writes them.** A window whose frame was drawn
 incrementally by `wind_open` and the same window after a full repaint were
 measured to differ in two pixels
-(`measurement-2026-09-23-desk06/`, runs `wdef` and `redraw`). The premise that
+(`measurements/measurement-2026-09-23-desk06/`, runs `wdef` and `redraw`). The premise that
 one of the two draws is wrong does not survive the source.
 
 For a window at `(48,43,544,400)` with `W_BOX`'s border thickness 1
@@ -2281,5 +2281,5 @@ only two of the four pixels showed up in the diff — at `(592,43)` and
 `(48,443)` the pattern is white anyway and matches the console's white. A
 control run of five window opens, toppings and full frame repaints with no
 screen clear in between leaves all four on the desktop pattern from beginning
-to end (`measurement-2026-09-24-desk22-desk23-desk28-desk29/`, §4, table from
+to end (`measurements/measurement-2026-09-24-desk22-desk23-desk28-desk29/`, §4, table from
 `method/pixels.py`). No change was made.

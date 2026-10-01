@@ -9,7 +9,7 @@ Fasenfunktion `add_3d_effect` selbst ist dabei komplett neu gefasst worden
 WHITE/BLACK+LBLACK/LWHITE-Logik mit `icol`-Fallback). Unabhaengig verifiziert
 2026-09-18, Tester-Messung (nicht Entwickler-Selbstreport), Branch
 `desk-rebuild`, Basis HEAD `4c475e0`. Messlauf:
-[`measurement-2026-09-18-a67/`](../measurement-2026-09-18-a67/RUNINFO.TXT).
+[`measurements/measurement-2026-09-18-a67/`](../measurements/measurement-2026-09-18-a67/RUNINFO.TXT).
 
 Diese Quittung dokumentiert die **Pruefung**, nicht die Implementierung (die
 lag beim Start der Messung bereits uncommitted im Baum). Auftrag: A67
@@ -50,7 +50,7 @@ hineinkopiert, gebaut, gelaufen:
 test result: FAILED. 0 passed; 4 failed; 0 ignored
 ```
 
-Rohdaten: `measurement-2026-09-18-a67/build/newtest-current-tree-GREEN.log` /
+Rohdaten: `measurements/measurement-2026-09-18-a67/build/newtest-current-tree-GREEN.log` /
 `newtest-worktree-HEAD-RED.log`.
 
 ## Prüfungen — alle selbst gefahren, keine übernommen
@@ -64,13 +64,13 @@ Rohdaten: `measurement-2026-09-18-a67/build/newtest-current-tree-GREEN.log` /
 | QEMU raspi4b, Dateiauswähler (`fsel::preview()`-Hook, Scratch-Workspace) | **349 von 356** wurzelrelative Zeilen identisch, **7** verschieden — exakt Zeile 146, 147, 148, 161, 167, 174, 198 (Schiebereinzug + Sanduhr, beide nicht A67-Ursache) |
 | QEMU raspi4b, `form_alert` (`draw_alert`, G_BUTTON+FL3DACT), vorher/nachher | **420 von 307200** Bildpunkten verschieden, ausschließlich im Rechteck der OK/Cancel-Knöpfe (x 230–409, y 256–281) — Ursache: die neue `add_3d_effect` zeichnet 1px statt 2px Fase; Sichtprüfung (4x-Zoom) zeigt eine saubere 1-Pixel-Fase weiß oben/links, dunkel unten/rechts, kein Bildfehler |
 | QEMU raspi4b, unser Desktop, kein Autorun, vorher/nachher | **0 von 307200** Bildpunkten verschieden — keine FL3DIND/FL3DACT-Boxen an dieser Stelle |
-| QEMU raspi4b, TeraDesk per `#Z`-Autorun | **0 von 307200** Bildpunkten verschieden gegen `measurement-2026-09-17-h03/verify/screendumps/verify-run1-teradesk-startup.png` (vor dem Fix aufgenommen) — TeraDesks Start-Icons sind keine FL3DIND/FL3DACT-Boxen |
+| QEMU raspi4b, TeraDesk per `#Z`-Autorun | **0 von 307200** Bildpunkten verschieden gegen `measurements/measurement-2026-09-17-h03/verify/screendumps/verify-run1-teradesk-startup.png` (vor dem Fix aufgenommen) — TeraDesks Start-Icons sind keine FL3DIND/FL3DACT-Boxen |
 | `git status --short` | nur die zwei Fix-Dateien (`tos-api/src/aes/object.rs`, `tos-api/tests/aes_object_3d_box_border.rs`) |
 | `kernel/src/lib.rs` im Projektbaum | MD5 `5434f7b25c5641c7fab1fce0b1c98b85` vorher = nachher — unangetastet; alle temporären `fsel::preview()`/`draw_alert()`-Hooks liefen ausschließlich in Scratch-`git worktree`-Kopien, nie im Projektbaum |
 
-Verfahren, Rohdaten, Hashes: `measurement-2026-09-18-a67/RUNINFO.TXT`.
-Werkzeuge aus `measurement-2026-09-17-fsel/method/` und
-`measurement-2026-09-17-h03/method/` unverändert wiederverwendet.
+Verfahren, Rohdaten, Hashes: `measurements/measurement-2026-09-18-a67/RUNINFO.TXT`.
+Werkzeuge aus `measurements/measurement-2026-09-17-fsel/method/` und
+`measurements/measurement-2026-09-17-h03/method/` unverändert wiederverwendet.
 
 ## Ein Befund, der über das Ticket hinausgeht
 
@@ -95,7 +95,7 @@ ersetzbar.
 ## Berührte Dateien (durch diese Messung neu, kein Produktcode)
 
 ```
-measurement-2026-09-18-a67/                  (Messlauf: RUNINFO.TXT,
+measurements/measurement-2026-09-18-a67/                  (Messlauf: RUNINFO.TXT,
                                               screendumps/, serial/, compare/, build/)
 TASK/A67-STATUS-DONE.MD                      (diese Quittung)
 ```

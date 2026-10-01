@@ -11,7 +11,7 @@ keine Pi gefahren, nichts committet; kein
 `git checkout/restore/clean/stash/reset`.
 
 Messung:
-[`measurement-2026-09-24-desk37-desk36-desk30/`](../measurement-2026-09-24-desk37-desk36-desk30/)
+[`measurements/measurement-2026-09-24-desk37-desk36-desk30/`](../measurements/measurement-2026-09-24-desk37-desk36-desk30/)
 §3. Spezifikation: `docs/api/desktop/deskact.md`, Abschnitt *`gr_drgplns` —
 the drag loop, and the target highlight (DESK36)*. Hardwarepunkt **62** in
 `docs/api/desktop/_hw-test-2026-09-17.md`.

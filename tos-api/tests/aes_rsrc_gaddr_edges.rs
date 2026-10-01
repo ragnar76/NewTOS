@@ -31,7 +31,7 @@
 //! `0`/`0` by the A39 contract (`docs/api/aes/resource-fileselector.md` §1,
 //! callout item 4).
 //!
-//! Measured on the reference TT (`measurement-2026-09-12-aes-r4/`, cases
+//! Measured on the reference TT (`measurements/measurement-2026-09-12-aes-r4/`, cases
 //! 623–625 of `tosdump/cases/aes-r4-subfunctions.tsv`): `rsrc_gaddr` with
 //! type 17 / 99 / −1 answers `addr_out[0] = 0xFFFFFFFF`, `int_out[0] = 0`.
 //!

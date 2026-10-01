@@ -40,11 +40,11 @@ committet**, gemeinsam mit A93 in einem Paket.
 * **`docs/api/aes/window-graphics.md`** — Blockzitat „Redraw scope“ (Schluss)
   und Randfall 5: Waechter (A84) ja, Teilbaum (A98) ja, mit den beiden
   Testdateien; „reproduces neither“ entfernt.
-* **`docs/STATUS.md`**, **`measurement-2026-09-21-a93-a98/`** — siehe A93.
+* **`docs/STATUS.md`**, **`measurements/measurement-2026-09-21-a93-a98/`** — siehe A93.
 
 ## Tests: rot vor, gruen nach
 
-`measurement-2026-09-21-a93-a98/host-tests/aes_window_slider_subtree-RED-before.txt`
+`measurements/measurement-2026-09-21-a93-a98/host-tests/aes_window_slider_subtree-RED-before.txt`
 / `…-GREEN-after.txt`:
 
 | Test | vor | nach |

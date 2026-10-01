@@ -46,7 +46,7 @@ AtariWorks vergrößert (`:55-61`); die Alarmzahlen sind „derived by trial"
 (`gemgraf.c:395` → `gemgsxif.c:497-501`).
 
 Am Referenz-TT (4 Planes, 8×16): `640·8·16·4/8 = 40 960` — der gemessene
-Wert aus `measurement-2026-09-12-aes-r4/` (Adresse `0x01000218`, TT-RAM).
+Wert aus `measurements/measurement-2026-09-12-aes-r4/` (Adresse `0x01000218`, TT-RAM).
 
 ### 1.3 Belegung und Freigabe
 

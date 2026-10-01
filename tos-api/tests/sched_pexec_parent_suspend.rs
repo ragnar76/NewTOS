@@ -16,7 +16,7 @@
 //! blocked, `on_yield(child)` picked **the parent** — with `has_ctx == false`
 //! that is a `fresh` switch, i.e. the suspended parent was re-entered at its
 //! entry point and launched the child all over again
-//! (`measurement-2026-09-25-port05/serial/before-*.log`).
+//! (`measurements/measurement-2026-09-25-port05/serial/before-*.log`).
 //!
 //! What is asserted here is the scheduler consequence, not the bookkeeping:
 //! with the parent suspended, the blocking child's `on_yield` must reach the

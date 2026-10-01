@@ -9,7 +9,7 @@ liegt **vor** den vier gesuchten. Ursache ist QEDs eigenes Mengenmodul, das mit
 in QEMU ist der Fehler mangels Eingabe gar nicht ausloesbar.
 **Nicht committet** (der Arbeitsbaum traegt unversionierte Fremdarbeit).
 
-Belege: `measurement-2026-09-16-qed-set/`.
+Belege: `measurements/measurement-2026-09-16-qed-set/`.
 
 ## Die Antwort auf die Frage des Tickets
 
@@ -71,7 +71,7 @@ Bit. Auf LP64/Little-Endian nicht: `setincl(s,1)` setzt Byte 0 auf `0x40`, was
 als 64-Bit-Wort `0x0000000000000040` gelesen wird; `setmin` schiebt dieses Wort
 nach links, bis es `0x80000000` erreicht, und zaehlt dabei 25 statt 1.
 
-Gemessen mit `measurement-2026-09-16-qed-set/host/settest` (gleiche
+Gemessen mit `measurements/measurement-2026-09-16-qed-set/host/settest` (gleiche
 LP64-LE-Vereinbarung wie das Ziel):
 
 ```
@@ -161,7 +161,7 @@ Tabelle, aber sie stimmt jetzt auch ohne das Flag.
 
 ## Test vor Fix — die rote Ausgabe
 
-`measurement-2026-09-16-qed-set/host/settest/` vergleicht **drei** Fassungen je
+`measurements/measurement-2026-09-16-qed-set/host/settest/` vergleicht **drei** Fassungen je
 Testfall:
 
 * **ORAKEL** — die reine Definition „Menge von Elementnummern 0..1023" mit der
@@ -227,12 +227,12 @@ Defekt so lange unauffaellig bleiben.
    DEVICE vs m68k MODEL: green (0 mismatches)
 ```
 
-Nachbauen: `cd measurement-2026-09-16-qed-set/host/settest && sh build.sh &&
+Nachbauen: `cd measurements/measurement-2026-09-16-qed-set/host/settest && sh build.sh &&
 ./settest-before && ./settest-after`.
 
 ## Der QED-Bau
 
-`sdk/apps/build-qed.sh` (`measurement-2026-09-16-qed-set/build/build-qed.log`):
+`sdk/apps/build-qed.sh` (`measurements/measurement-2026-09-16-qed-set/build/build-qed.log`):
 
 ```
 QED COBJS manifest: 37 files
@@ -264,7 +264,7 @@ serial/qed-before-BOOT-SERIAL.txt gegen qed-after-BOOT-SERIAL.txt : identisch
 
 screendumps/qed-before.png gegen qed-after.png            0 von 307200 verschieden
 screendumps/qed-after.png gegen
-    measurement-2026-09-14-x01/screendumps/qed-after.png  0 von 307200 verschieden
+    measurements/measurement-2026-09-14-x01/screendumps/qed-after.png  0 von 307200 verschieden
                                                           (sha256 identisch)
 ```
 
@@ -317,7 +317,7 @@ ins Leere.
   — der im Auftrag genannte Sollstand, unveraendert (der Fix ist C).
 * `cargo xtask build --board rpi4 --release` und `--board qemu-virt --release`:
   beide Exit 0, je `tos-api` 64 + `kernel` 94 Warnungen — Delta 0 gegen den in
-  `measurement-2026-09-14-x01` protokollierten Sollstand. Vorher jeweils
+  `measurements/measurement-2026-09-14-x01` protokollierten Sollstand. Vorher jeweils
   `kernel/src/lib.rs` und `tos-api/src/lib.rs` angefasst, damit das geteilte
   Zielverzeichnis nicht „up to date" melden kann.
 * Clippy nicht gefahren und nicht noetig: es wurde **keine Zeile Rust**

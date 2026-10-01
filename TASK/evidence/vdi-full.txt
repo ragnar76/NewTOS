@@ -1,4 +1,4 @@
-$ tosdump/host/build/tosdiff measurement-2026-09-09/cases/vdi-all.tsv tosdump/reference/EMUTOS14-VDI-all.BIN measurement-2026-09-09/run1-pi4/VDI.BIN
+$ tosdump/host/build/tosdiff measurements/measurement-2026-09-09/cases/vdi-all.tsv tosdump/reference/EMUTOS14-VDI-all.BIN measurements/measurement-2026-09-09/run1-pi4/VDI.BIN
 EMUTOS14-VDI-all.BIN vs VDI.BIN -- area VDI, 182 cases from vdi-all.tsv
 
 case 29  opcode 35  vql_attributes line attributes after the reset

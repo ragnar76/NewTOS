@@ -17,7 +17,7 @@ Gepinnte Quelle bestätigt: `git -C references/emutos log -1` →
 `gemgsxif.c:44-72,98-103`, **nicht** im `TARGET_192`-Block von `include/config.h`
 — die Falle des Auftrags greift hier nicht.
 
-Gemessen auf dem 1.4-ROM (Referenz-TT über Hatari, `measurement-2026-09-12-aes-r4/`):
+Gemessen auf dem 1.4-ROM (Referenz-TT über Hatari, `measurements/measurement-2026-09-12-aes-r4/`):
 Adresse `0x01000218`, Länge `40960` = `640 · 8 · 16 · 4 / 8`, `ret = 1`.
 
 ## Welcher der zwei Ausgänge gilt — und woraus
@@ -128,7 +128,7 @@ vorhanden), drei Tests:
 
 ## Gegenmessung (ohne Hardware)
 
-Alles in `measurement-2026-09-12-a54/` (neues Verzeichnis, `RUNINFO.TXT` mit
+Alles in `measurements/measurement-2026-09-12-a54/` (neues Verzeichnis, `RUNINFO.TXT` mit
 allen Prüfsummen). QEMU `raspi4b`, headless, 640×480, FAT16-Karte aus
 `tools/make-sd-image.sh`, `#Z`-Autostart, kein Klick. Dumper
 `DUMPAES.NAP` build `70ca`, SHA `5889e9bb…` — **byte-identisch** zu dem der
@@ -138,7 +138,7 @@ SHA `5f4355b5…`. Die `AES.TSV` auf der Karte wurde nach dem Kopieren gegen
 `227422B2` im Lauf-Log bestätigt).
 
 **r4 gegen `EMUTOS14-AES-r4.BIN`** — Vergleich der Mengen abweichender Felder je
-Fall, vorher (`measurement-2026-09-12-aes-r4/newtos-qemu-raspi4b/NEWTOS-AES-r4.BIN`)
+Fall, vorher (`measurements/measurement-2026-09-12-aes-r4/newtos-qemu-raspi4b/NEWTOS-AES-r4.BIN`)
 gegen nachher:
 
 ```

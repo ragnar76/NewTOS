@@ -9,7 +9,7 @@ Basis: Branch `desk-rebuild`, HEAD `a8d4b42`, Aenderungen **uncommitted** im
 Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset`.
 
-Messung: [`measurement-2026-09-23-desk16-desk17-desk21/`](../measurement-2026-09-23-desk16-desk17-desk21/).
+Messung: [`measurements/measurement-2026-09-23-desk16-desk17-desk21/`](../measurements/measurement-2026-09-23-desk16-desk17-desk21/).
 Spezifikation: `docs/api/desktop/deskapp.md` (neuer Abschnitt
 „the built-in icon set and `app_parse`'s icon clamp"),
 `docs/api/desktop/deskins.md` (§ „The icon set"), `docs/api/desktop/deskwin.md`.
@@ -76,7 +76,7 @@ Loch benannten, sagen jetzt, was wirklich uebrig bleibt.
 
 ## 3. Belege
 
-`measurement-2026-09-23-desk16-desk17-desk21/` — QEMU raspi4b, 640x480,
+`measurements/measurement-2026-09-23-desk16-desk17-desk21/` — QEMU raspi4b, 640x480,
 `-display none`, QMP-Screendump, scratch-Kopie mit dem H02-IKBD-Injektor,
 Karte je Lauf frisch aus `tools/make-sd-image.sh`. **Jeder** Klickpunkt stammt
 aus einem seriellen Dump (`method/probe_patch.py`); keiner ist geraten.

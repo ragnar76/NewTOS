@@ -5,7 +5,7 @@ von keinem Kind bedeckt) liefert jetzt `smroot` als Item, und ein DISABLED
 Item mit angehaengtem Untermenue oeffnet es nicht mehr. Bearbeitet
 2026-09-21, Branch `desk-rebuild`, Basis HEAD `a570123`, **nicht committet**,
 nichts geflasht. Gemeinsames Paket mit A105/A108
-(`measurement-2026-09-21-a103-a108/`).
+(`measurements/measurement-2026-09-21-a103-a108/`).
 
 ## Der Sachverhalt, beidseitig
 
@@ -35,7 +35,7 @@ nichts geflasht. Gemeinsames Paket mit A105/A108
 * **`docs/api/aes/menu.md`** — Punkt 8 (smroot-Wahl, DISABLED-Item ohne
   Untermenue, Fremdbaum weiter offen).
 
-## Tests: rot vor, gruen nach (`measurement-2026-09-21-a103-a108/host-tests/`)
+## Tests: rot vor, gruen nach (`measurements/measurement-2026-09-21-a103-a108/host-tests/`)
 
 | Test | vor (HEAD `a570123`) | nach |
 |---|---|---|

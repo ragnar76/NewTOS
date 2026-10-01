@@ -1,7 +1,7 @@
 # DESK44 — Quittung: `.NTP` ist Konsole mit Parametern
 
 Stand: **fertig** · 2026-09-26 · Baum `desk-rebuild` @ `c2076c0` + unversionierte Änderung
-Belege: `measurement-2026-09-26-desk43-u4/` (gemeinsamer Messordner mit U4; DESK44 ist
+Belege: `measurements/measurement-2026-09-26-desk43-u4/` (gemeinsamer Messordner mit U4; DESK44 ist
 dort im Abschnitt „DESK44" abgehandelt)
 
 ---
@@ -70,7 +70,7 @@ Treffer und Urteil:
 | `docs/sdk/01-overview.md:47` | **dritte Kopie** — korrigiert |
 | `docs/MEMORY.md:1039` | vom Anwender bereits korrigiert — nicht angefasst |
 | `kernel/src/desk/main.rs:1020,1224`, `inf.rs:733`, `ins.rs:606`, `insapp.rs`, `docs/api/desktop/desk{ins,inf,main}.md`, `docs/api/aes/accessories.md:585`, `TASK/DESK33.md:44` | **Aussagen über EmuTOS bzw. über die klassische m68k-Familie** — sachlich richtig, `.GTP` ist dort wirklich gemeint. Unberührt |
-| `measurement-*/**.inf`, `hw-round-*/TERADESK.INF` | Messbelege bzw. `#Y 06 FF *.GTP@ @` in erzeugten INF-Dateien — Belege, nicht Behauptungen. Unberührt |
+| `measurement-*/**.inf`, `measurements/hw-round-*/TERADESK.INF` | Messbelege bzw. `#Y 06 FF *.GTP@ @` in erzeugten INF-Dateien — Belege, nicht Behauptungen. Unberührt |
 
 ## 4. Was das im Ablauf ändert
 
@@ -104,7 +104,7 @@ nein.
 **Headless nicht vorführbar** — der Weg beginnt mit einem Doppelklick, und
 `raspi4b` hat in diesem Bau keinen USB-Stack (`[pcie] RC not present; USB
 disabled`). Was der Tester fahren kann: den Scratch-IKBD-Injektor
-(`measurement-2026-09-17-h03/method`, zuletzt `measurement-2026-09-26-desk43-u3`),
+(`measurements/measurement-2026-09-17-h03/method`, zuletzt `measurements/measurement-2026-09-26-desk43-u3`),
 ein `.NTP` auf die Karte legen und den Doppelklick schicken. Erwartung:
 `[shell] sh_ldapp: starting …, sh_isgem=0` im Seriellprotokoll und ein
 **Textbildschirm** statt des Desktops im Screendump.

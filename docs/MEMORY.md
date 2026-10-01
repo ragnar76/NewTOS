@@ -2,9 +2,8 @@
 
 > **Project memory: knowledge that must persist across sessions.**
 >
-> Unlike `STATUS.md` (which tracks "what's happening now") and the
-> root-level [`memory.md`](../memory.md) (which is the coding-agent's
-> compact-survival working notes), this file records **durable
+> Unlike `STATUS.md` (which tracks "what's happening now"), this file
+> records **durable
 > project knowledge**: ADRs with their full rationale, hard-won bug
 > solutions, rejected alternatives with reasoning, hardware quirks
 > discovered during implementation, and any context that would otherwise
@@ -2293,7 +2292,7 @@ Nach `[launch] EL0: slot 0 entry 0x1000` bricht der Start gelegentlich ab:
 `enter_el0_with_resume_capture`; `SPSR` = `0`, also der von uns geschriebene
 Wert; ESR-IFSC `0x0e` = Permission Fault Level 2 — EL0, das eine Kernseite
 ausführt. Häufigkeit: **einmal in sieben** Läufen desselben Startskripts auf
-identischer Kartenkopie (`measurement-2026-09-23-desk19-desk20/`, RUNINFO §7).
+identischer Kartenkopie (`measurements/measurement-2026-09-23-desk19-desk20/`, RUNINFO §7).
 
 ### Cause
 
@@ -2355,8 +2354,8 @@ ARM ARM DDI 0487M.c (Arm Architecture Reference Manual for A-profile, EAC,
 über Arms Dokumentendienst, nicht in `references/`): D1.4.2 „Exception entry"
 (R_DQXFW, R_WTXBY), D1.4.4 „Exception return" (R_BWCFK), C6.2.157 `ERET`,
 C6.2.288 `MSR (immediate)`, C5.2.3 `DAIF`. Messung:
-`measurement-2026-09-24-arch01/` (erzwungener Fall vorher/nachher, zwanzig
-saubere Startläufe), Fundstelle `measurement-2026-09-23-desk19-desk20/`
+`measurements/measurement-2026-09-24-arch01/` (erzwungener Fall vorher/nachher, zwanzig
+saubere Startläufe), Fundstelle `measurements/measurement-2026-09-23-desk19-desk20/`
 RUNINFO §7.
 
 ### Template for new quirks

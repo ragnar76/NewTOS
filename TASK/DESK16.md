@@ -62,7 +62,7 @@ schreibt immer die Nummer, `deskapp.c:723`). EmuTOS greift auf
 `G.g_iblist[-1]`; NewTOS nimmt `app_parse`s eigene Antwort fuer ein
 unbrauchbares `a_aicon`, `IG_APPL`.
 
-Beleg: [`measurement-2026-09-23-desk16-desk17-desk21/`](../measurement-2026-09-23-desk16-desk17-desk21/).
+Beleg: [`measurements/measurement-2026-09-23-desk16-desk17-desk21/`](../measurements/measurement-2026-09-23-desk16-desk17-desk21/).
 Die serielle Zeile des Kastens geht von `curr_icon=0 of 6` auf `of 7`, vier
 Klicks auf den Pfeil nach unten landen auf dem neuen Bild, `Save desktop`
 schreibt `#M 00 00 05 FF C DISK C@ @`, ein **Kaltstart** liest es zurueck.

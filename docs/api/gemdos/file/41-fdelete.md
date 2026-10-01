@@ -230,7 +230,7 @@ nothing ever erases them. NewTOS does not write long-name slots either, but
 every card written by a modern host carries them, and leaving them behind on
 delete accumulates orphan chains: after emptying a card completely, `fsck_msdos
 -n` no longer completes (measured: it dies in phase 2 on signal 5,
-`measurement-2026-09-24-fs01/serial/fsck.txt`).
+`measurements/measurement-2026-09-24-fs01/serial/fsck.txt`).
 
 So `Fdelete` (and `Ddelete`, and the `Fcreate`-over-an-existing-file path,
 which shares `erase_entry`) now marks the 8.3 entry `0xE5` **and then** the

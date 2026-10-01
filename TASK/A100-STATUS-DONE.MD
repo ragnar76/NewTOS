@@ -42,7 +42,7 @@ A102 (ein Paket, ein Messverzeichnis).
   und hat keine Hosttests; die Geometrie, die `build_menu` wirklich baut,
   belegt der Serial-Dump des QEMU-Laufs (`[a100] THEACTIVE=… FILEBOX=…
   spec=…`), die Hosttests pinnen das AES-Verhalten auf dieser Geometrie.
-* **`measurement-2026-09-21-a100-a102/`** — RUNINFO, 24 Screendumps
+* **`measurements/measurement-2026-09-21-a100-a102/`** — RUNINFO, 24 Screendumps
   (Kernel-Desktop 8 Marken, TeraDesk 4 Marken, je vorher/nachher),
   4 Serial-Logs, Build-/Clippy-Logs, Hosttest-Quittungen, Methode
   (Skripte, Actions, Scratch-Patches, Produkt-Diff, HEAD-Kopien),

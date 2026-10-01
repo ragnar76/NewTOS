@@ -27,7 +27,7 @@ Textfenster oder durch Umschalten nach `sh_toalpha` und zurueck
 **Status:** ERLEDIGT (2026-09-23) — Pi-Sichtabnahme offen.
 **Artefakt:** uncommitted im Baum auf `desk-rebuild`, Basis HEAD `84587a5`;
 Quittung [DESK06-STATUS-DONE.MD](DESK06-STATUS-DONE.MD), Belege in
-`measurement-2026-09-23-desk06/`.
+`measurements/measurement-2026-09-23-desk06/`.
 
 ### Der Weg: `sh_toalpha`, nicht ein Textfenster
 
@@ -92,10 +92,10 @@ die die Hostsuite nicht faehrt). Beide Boards frisch gebaut
 (`cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat`
 vor **jedem**): **tos-api 64 / kernel 94** auf rpi4 **und** qemu-virt.
 Clippy **80 / 125** auf beiden, Delta 0, **null Treffer** in
-`kernel/src/desk/`. Protokolle in `measurement-2026-09-23-desk06/build/`.
+`kernel/src/desk/`. Protokolle in `measurements/measurement-2026-09-23-desk06/build/`.
 
 QEMU raspi4b, 640x480, `-display none`, QMP-Screendumps, Injektor in der
-Kratzkopie (`measurement-2026-09-23-desk06/method/`), vier Laeufe, alle ohne
+Kratzkopie (`measurements/measurement-2026-09-23-desk06/method/`), vier Laeufe, alle ohne
 `[EXC]`/`[PANIC]`, `fsck_msdos -n` auf allen drei Kartenabbildern sauber:
 
 1. **probe** — der Eintrag ist schwarz, alle anderen grau (Objektzustaende

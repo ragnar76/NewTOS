@@ -17,7 +17,7 @@ erreicht den Renderer. Kein ausgelieferter Baum traegt heute 255 (Kernelbaeume
 `-1` als i16, TeraDesk `desktop.rsc` nur `-1`/`0`), daher keine sichtbare
 Aenderung in den Screendumps.
 
-## Tests: rot vor, gruen nach (`measurement-2026-09-20-a68-a70/host-tests/`)
+## Tests: rot vor, gruen nach (`measurements/measurement-2026-09-20-a68-a70/host-tests/`)
 
 `tos-api/tests/aes_object_3d_text_button.rs` (Rig von `aes_object_3d_box_border.rs`):
 
@@ -34,7 +34,7 @@ rpi4` rustc tos-api 64 / kernel 94 (Delta 0); Clippy ohne neuen Treffer.
 Kernel-Desktop (Idle, Desk-Menue, Desktop-info-`form_alert`) und TeraDesk per
 `#Z` (sechs Zustaende bis zum Alarm) vorher (HEAD-`object.rs`) gegen nachher:
 **alle neun Paare 0 Pixel Differenz**, 0 `EXC`/`PANIC`. Einzelheiten, Hashes,
-Methode: `measurement-2026-09-20-a68-a70/RUNINFO.TXT`.
+Methode: `measurements/measurement-2026-09-20-a68-a70/RUNINFO.TXT`.
 
 ## Offen
 

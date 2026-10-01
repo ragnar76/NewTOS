@@ -33,7 +33,7 @@ zueinander passendes Paar.
 
 ## Belegt, aber bewusst nicht uebernommen
 
-Im Scratch end-to-end gezeigt (`measurement-2026-09-25-port01/method/
+Im Scratch end-to-end gezeigt (`measurements/measurement-2026-09-25-port01/method/
 cflib_normalpath_experiment.py`, eine Zeile ueber den ueberwachten
 `sdk/cflib/overlay/`-Kanal): laesst `make_normalpath` den Trenner stehen,
 fragt QED `Fopen len 13 "C:\README.TXT"` und **oeffnet die Datei**
@@ -244,7 +244,7 @@ ihr Pin bewegt wird; das gehoert in ein eigenes Ticket.
 
 ### 6. Abnahme (QEMU raspi4b, 640x480)
 
-`measurement-2026-09-25-port03/`.
+`measurements/measurement-2026-09-25-port03/`.
 
 * **Die Abnahme selbst:** `C:\README.TXT` auf `C:\QED.NAP` gezogen → QED
   oeffnet die Datei, Fenstertitel **`C:\README.TXT`**, voller Name

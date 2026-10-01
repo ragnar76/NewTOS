@@ -19,10 +19,10 @@
 //! afterwards (`:1222`) visits the new window alone (`bottom == top`,
 //! `:1014-1043`).
 //!
-//! Reference picture: `measurement-2026-09-20-a79/hatari-falcon-reference/
+//! Reference picture: `measurements/measurement-2026-09-20-a79/hatari-falcon-reference/
 //! shots/falcon-tc-two-windows.png` — after the second window opened at
 //! boot the first one's name band is white, no `IP_2PATT`, name `DISABLED`.
-//! NewTOS before this ticket (`measurement-2026-09-20-a79/screendumps/
+//! NewTOS before this ticket (`measurements/measurement-2026-09-20-a79/screendumps/
 //! final-desk-B-two.png`): the old top kept its topped stipple and bevels
 //! outside the new window's rectangle.
 //!

@@ -46,7 +46,7 @@ in der Zeile rechts der Titel), den Timer, die Tasten, und es startet kein
 Track. Die Tests sind darauf ausgelegt; ein Test auf zugestelltes
 `MU_BUTTON` waere auch gegen EmuTOS rot.
 
-## Hosttests (`measurement-2026-09-21-a87-a88/host-tests/`)
+## Hosttests (`measurements/measurement-2026-09-21-a87-a88/host-tests/`)
 
 `tos-api/tests/aes_a87_a88_menu_ctwait_popup.rs` (Harness der A73-Datei,
 `THEACTIVE` 168 px breit in der 640-px-Leiste):

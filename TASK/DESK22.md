@@ -14,7 +14,7 @@ Textschirm kommt. Der **vorhandene** `.NCP`-Startpfad
 `fbcon::clear_and_home`, und der Zeiger bleibt als schwarzer Fleck im
 Textschirm stehen.
 
-Beleg: `measurement-2026-09-23-desk06/screendumps/redraw-C-program.png`,
+Beleg: `measurements/measurement-2026-09-23-desk06/screendumps/redraw-C-program.png`,
 Fleck bei rund (100, 197). Der neue EmuCON-Weg hat das nicht
 (`cli-C-console.png` ist zeigerfrei).
 
@@ -51,7 +51,7 @@ zuruecknimmt.
 * Spezifikation: `docs/api/aes/shell-loop.md` §9, Abschnitt *NewTOS
   implementation notes — the mode switch for a character program launched by
   the built-in desktop (DESK22)*.
-* Messung: `measurement-2026-09-24-desk22-desk23-desk28-desk29/` §3,
+* Messung: `measurements/measurement-2026-09-24-desk22-desk23-desk28-desk29/` §3,
   `screendumps/d22-before-C-program.png` (Fleck bei (179,187)) gegen
   `d22-after-C-program.png` (zeigerfrei), gleiche Karte, gleiche Klickfolge.
 * Pruefung: wie DESK28 (Basiswerte unveraendert), 0 `[EXC]`/`[PANIC]`.

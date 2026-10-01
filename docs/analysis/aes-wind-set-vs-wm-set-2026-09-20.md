@@ -18,7 +18,7 @@ Zeilenangaben auf diese Staende. Aussagen ohne `Datei:Zeile` sind als
 Messbasis: `tosdump/cases/aes-r2-wind.tsv` (Faelle 301–324),
 `aes-r4-subfunctions.tsv` (Faelle 462–525), `aes-r3-wind-state.tsv`
 (`+105`-Preludes 300–333), verglichen in
-`measurement-2026-09-13-regression/aes-r{2,4}*/DIFF-vs-emutos.txt`: **kein**
+`measurements/measurement-2026-09-13-regression/aes-r{2,4}*/DIFF-vs-emutos.txt`: **kein**
 `wind_set`-Fall weicht dort ausser dem bekannten `AESGLOBAL`-Rauschen ab. Die
 Tabellen tragen keine Zeiger-, Farb- oder Handle-0-Faelle und keine
 Nachrichten/Pixel (Kopf `aes-r2-wind.tsv:65-70,90-93`) — genau dort liegen die

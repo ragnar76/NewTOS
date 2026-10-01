@@ -61,7 +61,7 @@ Die zwei `objc_delete(ROOT)`-Fälle von `aes-r4-subfunctions.tsv` (Zeilen 555,
 **Richtung 1 — die zu Unrecht Gesperrten.**
 `tosdump/cases/aes-m07-parameter.tsv`, 20 Fälle (12 × `evnt_multi`, 8 ×
 `form_error`), CRC `0F46665B`, einmalig geschrieben. Auf **beiden** Maschinen
-gefahren (`measurement-2026-09-13-m07-parameter/`): je „all 20 cases ran",
+gefahren (`measurements/measurement-2026-09-13-m07-parameter/`): je „all 20 cases ran",
 `--validate` accepted, kein Hänger, keine Panik, kein Fault.
 
 **`int_out[0]` stimmt in allen zwanzig Fällen überein.** Die Unterschiede sind
@@ -88,7 +88,7 @@ gebunden). Dieselben vier Aufrufe zweimal geschrieben:
 
 ## Rückwärtskompatibilität, vierfach belegt
 
-Zahlen: `measurement-2026-09-13-m07-parameter/BACKCOMPAT.TXT`.
+Zahlen: `measurements/measurement-2026-09-13-m07-parameter/BACKCOMPAT.TXT`.
 
 1. Alle **zwölf** Tabellen mit unveränderter CRC — und schärfer als die CRC:
    `casecheck`s **vollständige Ausgabe** (jede Fall-ID, jeder Opcode, jedes
@@ -181,7 +181,7 @@ grösse gerechnet — nur mit zwei verschiedenen Formeln:
 
 Also ein Produktdefekt, kein Maschinenwert. Repariert unter **V17**
 (`park_position`, halbiert jetzt die letzte Koordinate). Die Gegenmessung
-derselben Tabelle vom 2026-09-14 (`measurement-2026-09-14-v17/`) hat **keinen
+derselben Tabelle vom 2026-09-14 (`measurements/measurement-2026-09-14-v17/`) hat **keinen
 einzigen `int_out`-Unterschied** mehr; es bleiben genau die sechs
 `AESGLOBAL`-Wörter.
 

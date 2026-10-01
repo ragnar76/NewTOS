@@ -571,7 +571,7 @@ natives Ziel). Der zweite Fall ist genau EmuTOS' Eigenheit, dass eine
 installierte Anwendung `a_aicon = IG_APPL` **und** ihre Dokumentmaske traegt
 und `app_afind_by_name` `a_pdata` zuerst prueft (`deskapp.c:1450-1454`).
 
-Messung: `measurement-2026-09-23-desk19-desk20/` — dieselbe Karte, dieselbe
+Messung: `measurements/measurement-2026-09-23-desk19-desk20/` — dieselbe Karte, dieselbe
 Geste, ein Radioknopf Unterschied:
 `arg "C:\README.TXT"` gegen `arg "README.TXT"`.
 

@@ -5,7 +5,7 @@
 > (`kernel/src/host_env.rs`, `tos-api/src/bdos/fs/cache.rs`,
 > `tos-api/src/bios/mod.rs`). Grundlage: BCM-Datenblatt, SD Physical Layer
 > Simplified Spec, SD Host Controller Simplified Spec, und die Pi-Messung
-> `measurement-2026-09-25-fs04/raw/pi04-FS04.TXT` (14 Bloecke).
+> `measurements/measurement-2026-09-25-fs04/raw/pi04-FS04.TXT` (14 Bloecke).
 >
 > **Die Frage des Tickets — „macht die Karte uns warten, oder warten wir
 > falsch?" — ist mit *beides* beantwortet, und zwar quantitativ.** Die Karte

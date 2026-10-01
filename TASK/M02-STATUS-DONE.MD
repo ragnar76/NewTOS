@@ -24,8 +24,8 @@ ausführen. Keine Änderung der eingefrorenen Tabelle.
 - `tosdump/reference/EMUTOS14-AES-r2brlist.BIN` — 15 Records, 1832 Bytes,
   SHA-256 `e7ef0a27…`
 - `tosdump/reference/EMUTOS14-AES-r2brlist.LOG` — SHA-256 `2a4b1b7c…`
-- Arbeitskopien in `measurement-2026-09-09/reference-tt/`
-- Validierung in `measurement-2026-09-09/diff/03-validate-lauf2.txt`
+- Arbeitskopien in `measurements/measurement-2026-09-09/reference-tt/`
+- Validierung in `measurements/measurement-2026-09-09/diff/03-validate-lauf2.txt`
 
 ## Ausgeführte Prüfung
 

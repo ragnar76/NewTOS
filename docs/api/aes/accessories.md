@@ -292,7 +292,7 @@ the shell's own AESPD, which is `rlr` itself (`sh_ldapp` renames `rlr` and
 `dos_exec`s, `gemshlib.c:604-605,634-636`) — and it is decisive anywhere the
 running context is *not* guaranteed to be on the list. Reading this step as
 "the bit is left alone" is what made a NewTOS program that had never blocked in
-an AES wait hang in `appl_exit` (SCHED01, `measurement-2026-09-29-port08`:
+an AES wait hang in `appl_exit` (SCHED01, `measurements/measurement-2026-09-29-port08`:
 `s2 run=0` for a program with no event loop, `run=1` for one with).
 
 **Consequences that are contract, not mechanism:**
@@ -712,7 +712,7 @@ by direct search this session (not inferred from the ticket's framing):
 
 Where the gap list of §8 now stands, and every point where NewTOS does not do
 what EmuTOS does. Measured in
-`measurement-2026-09-25-acc02-acc04/` (QEMU raspi4b, both search locations,
+`measurements/measurement-2026-09-25-acc02-acc04/` (QEMU raspi4b, both search locations,
 `AC_OPEN`, `AC_CLOSE`, desktop-still-usable).
 
 ### 9.1 Where each piece lives
@@ -835,8 +835,8 @@ EmuTOS is in the `disp_act` branch (§3a). The caller left the cooperative
 run-set and only a key or a pointer movement (`sched::idle_wake_pass`) could
 put it back; with an accessory loaded, a program that called `appl_exit` on a
 machine nobody was touching never reached its `Pterm`. Measured on the
-kernel-launched control of `measurement-2026-09-25-port05`, i.e. with no
-`Pexec` anywhere: `measurement-2026-09-26-acc10/serial/before-*.log`.
+kernel-launched control of `measurements/measurement-2026-09-25-port05`, i.e. with no
+`Pexec` anywhere: `measurements/measurement-2026-09-26-acc10/serial/before-*.log`.
 
 What landed:
 

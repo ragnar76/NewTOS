@@ -6,7 +6,7 @@ echten Pi 4 steht aus (Tester/Lead; nichts geflasht).** Bearbeitet
 2026-09-22 zusammen mit A109 (ein Paket), Branch `desk-rebuild`, Basis HEAD
 `de487fe`, nichts committet, kein `git checkout/stash/reset` (die
 HEAD-Kopien der fuenf Produktdateien per `git show` nach
-`measurement-2026-09-22-a107-a109/method/head-de487fe/`).
+`measurements/measurement-2026-09-22-a107-a109/method/head-de487fe/`).
 
 ## Auftrag
 
@@ -117,7 +117,7 @@ Anfang von `aes::dispatch`, vor dem Opcode.
 | Build beide Boards, frisch | tos-api **64** / kernel **94**, rc 0 — Delta 0 |
 | Clippy rpi4 (Basis auf der Scratch-Kopie mit HEAD-Dateien gemessen) | tos-api **80** / kernel **125** → unveraendert; `window.rs` 11→11, `menu.rs` 10→10, `aes/mod.rs` 54→54 |
 
-### QEMU raspi4b (`measurement-2026-09-22-a107-a109/`, A108-Methode)
+### QEMU raspi4b (`measurements/measurement-2026-09-22-a107-a109/`, A108-Methode)
 
 Sondenlauf `probe` (`sd-probe` = `sd-base` + `C:\A107PAR.NAP` +
 `C:\A96ZOMB.NAP` + `#Z` fuer den Elternprozess), 640x480, `-display none`,
@@ -147,7 +147,7 @@ TeraDesk-Kontrolllauf (3 Marken): **0 px** auf allen dreien.
 
 ## Artefakte
 
-`measurement-2026-09-22-a107-a109/` (`RUNINFO.TXT`, `manifest.sha256`,
+`measurements/measurement-2026-09-22-a107-a109/` (`RUNINFO.TXT`, `manifest.sha256`,
 `method/`, `build/`, `host-tests/`, `screendumps/`, `serial/`; keine
 `*.img`). Geaenderte Dateien im Baum: `tos-api/src/aes/{mod,window,menu}.rs`,
 `tos-api/tests/aes_a96_zombie_windows.rs`, `sdk/examples/a107parent.c` (neu),

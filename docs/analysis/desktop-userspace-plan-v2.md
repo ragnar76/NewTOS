@@ -558,7 +558,7 @@ genau das, kein Boot-Risiko bei fehlender Karte, und der magische Name
 `DEF_DESKTOP` ist schon `b"NEWDESK"` (`tos-api/src/aes/shell.rs:80`).
 **Neu, und es stärkt den Punkt:** die Ersetzbarkeit ist **bereits belegt** —
 PORT05 hat mit `#Z 01 C:\PEXPAR.NAP@` eine EL0-Anwendung **statt** des
-eingebauten Desktops gefahren (`measurement-2026-09-25-port05/method/newdesk-pex.inf`).
+eingebauten Desktops gefahren (`measurements/measurement-2026-09-25-port05/method/newdesk-pex.inf`).
 Der AUTORUN-Arm kann es schon; nur der DESKTOP-Arm ist noch festverdrahtet.
 
 **Was es beweist.**
@@ -918,7 +918,7 @@ EL0-AES-Anwendung (TeraDesk, Thing). Kernel-Code kann man nicht ersetzen, nur
 neu bauen. **[M] Der Mechanismus existiert bereits und ist gefahren:**
 `#Z 01 C:\PEXPAR.NAP@` hat am 2026-09-25 eine EL0-Anwendung **statt** des
 eingebauten Desktops gestartet
-(`measurement-2026-09-25-port05/method/newdesk-pex.inf`, `shell_loop.rs:448`).
+(`measurements/measurement-2026-09-25-port05/method/newdesk-pex.inf`, `shell_loop.rs:448`).
 Nur der `DESKTOP_APP`-Arm ist noch festverdrahtet — U9 ist die letzte Zeile,
 die fehlt.
 
@@ -964,7 +964,7 @@ beides gehört in die Bewertung:
    also sollte ein Lauf **ohne** `.NAC` durchkommen — aber
    `TASK/ACC10.md` berichtet, dass ein **kernelgestartetes** Programm an
    derselben Stelle stehenbleibt, und die Kontroll-Logs
-   (`measurement-2026-09-25-port05/serial/control-kernel-launch-*.log`) stützen
+   (`measurements/measurement-2026-09-25-port05/serial/control-kernel-launch-*.log`) stützen
    das. Ich habe das nicht gefahren. **ACC10 steht deshalb als Vorbedingung von
    U3 im Graphen, nicht als Risiko.**
 3. **[A] Ob `MAX_USER_BLOCKS = 32` (`tos-api/src/bdos/process/usermem.rs`)

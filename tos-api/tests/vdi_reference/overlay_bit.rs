@@ -22,7 +22,7 @@
 //! answers `vdi-all.tsv` cases 54, 160 and 161 (`v_get_pixel` at (5,5),
 //! (0,0), (639,479) after the reset's `v_clrwk`) with `INTOUT[1] = 0xFFFF`,
 //! and cases 270/272 (a pixel drawn in pen 1) with `0x0000` —
-//! `measurement-2026-09-21-vdi-qemu/emutos-falcon-tc-hatari/`, reference
+//! `measurements/measurement-2026-09-21-vdi-qemu/emutos-falcon-tc-hatari/`, reference
 //! copy `tosdump/reference/EMUTOS14-VDI-all-falcontc.BIN`. NewTOS on QEMU
 //! `raspi4b` at the same geometry answers `0xFFDF` for the three cleared
 //! pixels (`…/newtos-qemu-raspi4b/VDI.BIN`,

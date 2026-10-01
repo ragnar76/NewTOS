@@ -6,7 +6,7 @@ Der Kernel-Desktop baut sein `ADMENU` jetzt mit `adjust_menu`s Massen: Titel
 Leistenzeile des QEMU-Dumps ist gegen die Hatari-Falcon-Referenz
 pixelgleich. Bearbeitet 2026-09-21, Branch `desk-rebuild`, Basis HEAD
 `a570123`, **nicht committet**, nichts geflasht. Gemeinsames Paket mit
-A103/A105 (`measurement-2026-09-21-a103-a108/`).
+A103/A105 (`measurements/measurement-2026-09-21-a103-a108/`).
 
 ## Der Sachverhalt, beidseitig
 

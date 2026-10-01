@@ -1,4 +1,4 @@
-$ tosdump/host/build/tosdiff measurement-2026-09-09/cases/aes-r1.tsv tosdump/reference/EMUTOS14-AES.BIN measurement-2026-09-09/run1-pi4/AES.BIN
+$ tosdump/host/build/tosdiff measurements/measurement-2026-09-09/cases/aes-r1.tsv tosdump/reference/EMUTOS14-AES.BIN measurements/measurement-2026-09-09/run1-pi4/AES.BIN
 EMUTOS14-AES.BIN vs AES.BIN -- area AES, 95 cases from aes-r1.tsv
 
 case 67  opcode 108  wind_calc WC_WORK kind 0, no gadgets: 1px all round

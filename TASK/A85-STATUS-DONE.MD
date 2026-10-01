@@ -19,7 +19,7 @@ D-104-Blockzitat, `docs/api/_discrepancies.md` D-104.
 
 ## Was gebaut ist
 
-* **`tos-api/src/aes/object.rs`** (`measurement-2026-09-20-a85/method/product-a85-object-rs.diff`):
+* **`tos-api/src/aes/object.rs`** (`measurements/measurement-2026-09-20-a85/method/product-a85-object-rs.diff`):
   * `xor_color(backend, pen)`: ≥ 16 oder ≥ `num_colors()` → WHITE; ≤ 4 Farben
     → `VDI4COMP`; sonst `VDI16COMP` (`:93-102`). `xor_is_ok(t, type, flags,
     spec, backend)` (`:107-148`): TEDINFO-`te_color` an der Baum-ABI gelesen,
@@ -65,7 +65,7 @@ D-104-Blockzitat, `docs/api/_discrepancies.md` D-104.
   jetzt die 16-zeilige Glyphzelle y 100..115.
 * **`docs/STATUS.md`** — Phase-13-Fragment + eine Zeile „Recent Decisions“
   (2026-09-20). **`TASK/A85.md`** — Status + Abschluss.
-* **`measurement-2026-09-20-a85/`** — RUNINFO, 40 Screendumps (je Lauf
+* **`measurements/measurement-2026-09-20-a85/`** — RUNINFO, 40 Screendumps (je Lauf
   vorher/nachher), 16 Serial-Logs, Build-/Clippy-Logs, Hosttest-Quittungen,
   Methode (Skripte, Aktionen, fsel-Vorschau-Patch, Produkt-Diff),
   SHA-256-Manifest. Keine `*.img`.
@@ -104,7 +104,7 @@ hohl-weissen S/W-Faelle sind pixelgleich, wie das Ticket verlangt).
 | `cargo clippy -p tos-api` | **81 → 80** (Basis per Hand-Tausch der HEAD-`object.rs` gemessen, `build/clippy-tos-api-host-BEFORE-HEAD-object-rs.txt`; `object.rs` 17 → 16: ein vorbestehendes collapsible-if im Ikonen-Zweig ist durch die neue Anweisung dahinter keines mehr); `--test aes_object_selected_xor`: 0 Treffer in der Testdatei |
 | qemu-virt | nicht gebaut (Lead) |
 
-## QEMU raspi4b (`measurement-2026-09-20-a85/`)
+## QEMU raspi4b (`measurements/measurement-2026-09-20-a85/`)
 
 A79-Methode (`make_scratch_a85.sh` = rsync der Crates + `a79_patch.py` +
 Injektor + `a78_patch2.py`; `tools/make-sd-image.sh 64` → sd-base; `sd-put.sh`
@@ -119,7 +119,7 @@ Titel-Dumps unten rechts geparkt. 0 EXC/PANIC in allen 16 Serial-Logs.
 | Kernel-Desktop File-Menue offen (`desk-*-B-file-open.png`) | **86 px**, bbox (52,0)-(104,18) = nur das Titelrechteck: Zeile y=0 (52 px) und die Spalten x=52/x=103 in y=1..17 BLACK → WHITE; Zeile y=18 (Trennlinie der Leiste) bleibt BLACK (vorher von der Vollfuellung gemalt, jetzt vom Einzug verschont) = EmuTOS' `(x+1, y+1, w-2, h-2)` |
 | … Eintrag „Search…“ gehovert (`desk2-*-C-item-hover.png`) | 86 px = derselbe Titel; der `G_STRING`-Balken **bytegleich** |
 | … nach Klick ausserhalb (`*-D-closed.png`) | **0 px** (Titel wieder normal, Trennlinie intakt) |
-| TeraDesk File-Menue offen (`tera-*-B-file-open.png`) | **82 px**, Titel 64..111 (48 + 2×17); gegen `measurement-2026-09-17-h03/screendumps/run2-shipped-a-file-menu-open.png`: 118 = 82 + 36 Zeigerpixel — Zeile 0 und die Spalten 64/111 in Zeilen 1..17 jetzt weiss, Zeile 18 in allen drei die schwarze Trennlinie |
+| TeraDesk File-Menue offen (`tera-*-B-file-open.png`) | **82 px**, Titel 64..111 (48 + 2×17); gegen `measurements/measurement-2026-09-17-h03/screendumps/run2-shipped-a-file-menu-open.png`: 118 = 82 + 36 Zeigerpixel — Zeile 0 und die Spalten 64/111 in Zeilen 1..17 jetzt weiss, Zeile 18 in allen drei die schwarze Trennlinie |
 | … „Open…“ gehovert | 82 px = Titel; der Eintrag bytegleich |
 | TeraDesk „View → Set mask…“ (`tera2-*-C-setmask.png`) | 1422 px = 82 (View-Titel, unter dem modalen Dialog noch SELECTED) + **1340 in der Listenzeile FTYPE1** (320..415 × 209..224; non-3D `G_FTEXT` 0x1100 auf der FL3DBAK-Box): vorher LWHITE (189,189,189) mit 196 weissen Glyphpixeln, nachher `~LWHITE` (66,66,66) mit denselben 196 weissen Glyphpixeln = der XOR-Balken (`vdi_line.c:494`) |
 | Desktop-Info-Alarm (`about-*-C-about-alert.png`, A68-A70-Skript) | 86 px = nur der Desk-Titel; der Alarm (FL3DACT-OK, FL3DBAK-Flaeche) **bytegleich** (Waechter) |

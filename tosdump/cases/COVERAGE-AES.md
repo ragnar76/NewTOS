@@ -120,7 +120,7 @@ cannot be told apart from a defect in the thing being measured.
 > it reads is a column of the line, so none of it needs a machine. The two
 > harmless arms are measured on both machines in
 > `cases/aes-m07-parameter.tsv` (CRC `0F46665B`, 20 cases,
-> `measurement-2026-09-13-m07-parameter/`), where `int_out[0]` agrees on all
+> `measurements/measurement-2026-09-13-m07-parameter/`), where `int_out[0]` agrees on all
 > twenty. `TASK/M07.md`, `tosdump/core/cases.h` (the parameter guard).
 
 Two entries were **dropped** from the working list after reading the source,
@@ -274,7 +274,7 @@ cover (a window's rect comes out of `gl_rfull`, which starts below it).
 
 | Opcode / field | Status | Why |
 |---|---|---|
-| `objc_sysvar` (48) | ~~excluded — safety~~ **measured 2026-09-13** | *Original reason:* `#if CONF_WITH_3D_OBJECTS`, and EmuTOS ties that flag to **AES 3.40** (`config.h:1345-1354`). The same table records **TOS 3.06 as AES 3.20**. An AES without the opcode reaches the `default` arm and pops the modal alert — a hung TT. *Superseded (M06):* the condition it named was right, the decider was wrong. Both measured machines report `ap_version 0340`, which is the rung that REQUIRES the flag, so both have the opcode. Measured on both in `cases/aes-m06-sysvar.tsv` (CRC `458748F2`, 19 cases, `measurement-2026-09-13-m06-sysvar/`); a machine that reports anything else still refuses the table, by name, before the first case. |
+| `objc_sysvar` (48) | ~~excluded — safety~~ **measured 2026-09-13** | *Original reason:* `#if CONF_WITH_3D_OBJECTS`, and EmuTOS ties that flag to **AES 3.40** (`config.h:1345-1354`). The same table records **TOS 3.06 as AES 3.20**. An AES without the opcode reaches the `default` arm and pops the modal alert — a hung TT. *Superseded (M06):* the condition it named was right, the decider was wrong. Both measured machines report `ap_version 0340`, which is the rung that REQUIRES the flag, so both have the opcode. Measured on both in `cases/aes-m06-sysvar.tsv` (CRC `458748F2`, 19 cases, `measurements/measurement-2026-09-13-m06-sysvar/`); a machine that reports anything else still refuses the table, by name, before the first case. |
 | `graf_mkstate` (79), full form | reduced to `OUT_LEN` 1 | its four words are `xrat`, `yrat`, `button`, `kstate` (`gemgrlib.c:458-464`) — where the operator last left the mouse, not an API behaviour. With `OUT_LEN` 5 an unwritten slot is indistinguishable from a written one. The return code is kept: it proves a void handler leaves `TRUE`. |
 | `evnt_dclick` (26) | excluded | its only output is `gl_dcindex` (`gemevlib.c:34`, `:308`), a user preference the desktop restores from `DESKTOP.INF`. Comparing it reports the operator's settings. Round 2 measures it properly: a prelude that *sets* a known index, then a read-back — which is what preludes are for. |
 | `wind_get` `WF_FIRSTXYWH` (11) / `WF_NEXTXYWH` (12) | excluded | `w_owns` **writes** `pwin->w_rnext` (`gemwmlib.c:1235`), so `WF_FIRSTXYWH` arms the iteration and `WF_NEXTXYWH` advances it. Order-dependent between cases and between runs — exactly what rule 3 excludes. |
@@ -297,7 +297,7 @@ cover (a window's rect comes out of `gl_rfull`, which starts below it).
 | `graf_rubbox`/`dragbox`/`mbox`/`watchbox`/`slidebox` (70-72, 75, 76) | **excluded — blocking** | they track the mouse. |
 | `graf_growbox`/`shrinkbox` (73, 74) | later | non-blocking but they **draw**, so they change the screen the VDI dump is taken against. |
 | `graf_mouse` (78) | later | changes the cursor shape and, with a custom form, takes a pointer. |
-| `scrp_read`/`write` (80, 81) | later, and **now guarded** | path pointer, and they touch the filesystem. *(M07, 2026-09-13:* the pointer is no longer merely a reason to wait — the loader REFUSES either one unless the `addr_in` column plants a buffer at `a0`, because `sc_read` writes up to `LEN_ZPATH` bytes through it and `sc_write` reads a string through it, `gemsclib.c:40-45`, `:57-62`. With a plant both run clean on both machines; `measurement-2026-09-13-m07-parameter/throwaway/`.*) |
+| `scrp_read`/`write` (80, 81) | later, and **now guarded** | path pointer, and they touch the filesystem. *(M07, 2026-09-13:* the pointer is no longer merely a reason to wait — the loader REFUSES either one unless the `addr_in` column plants a buffer at `a0`, because `sc_read` writes up to `LEN_ZPATH` bytes through it and `sc_write` reads a string through it, `gemsclib.c:40-45`, `:57-62`. With a plant both run clean on both machines; `measurements/measurement-2026-09-13-m07-parameter/throwaway/`.*) |
 | `scrp_clear` (82) | **excluded — guarded** | `#if CONF_WITH_PCGEM`; alert clearance needed. |
 | `fsel_input`/`exinput` (90, 91) | **excluded — blocking** | modal file selector. |
 | `rsrc_*` (110-114) | later | the whole point of them is `global[]` + a resource file; round 2, and they are the reason `global[]` is recorded after every call. |

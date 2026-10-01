@@ -52,7 +52,7 @@
 //! mode honoured, `vdi_reference/harness.rs`), not the kernel's
 //! (`kernel/src/vdi_backend.rs`). For those two arms the QEMU measurement
 //! against the same reference is the evidence
-//! (`measurement-2026-09-21-raster-screen/`).
+//! (`measurements/measurement-2026-09-21-raster-screen/`).
 //!
 //! **Serialisation.** The VDI keeps device-global state (handle table, `Vwk`
 //! slots, palette), and cargo runs tests on parallel threads, so every case

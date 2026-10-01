@@ -12,7 +12,7 @@ keine Pi gefahren, nichts committet, kein
 `git checkout/restore/clean/stash/reset` auf dem gemeinsamen Baum; die SD-Karte
 unter `/Volumes/BOOT` wurde nicht beruehrt.
 
-Messung: [`measurement-2026-09-25-port03/`](../measurement-2026-09-25-port03/).
+Messung: [`measurements/measurement-2026-09-25-port03/`](../measurements/measurement-2026-09-25-port03/).
 
 ---
 

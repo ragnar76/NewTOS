@@ -54,7 +54,7 @@ oder ein Ziehen mit einem anderen Fenster als Ziel (`fun_drag` → `do_aopen`,
 `deskfun.c:967,1034,1249`). Die DESK18-Begruendung „unerreichbar" war eine
 Fehllesung und ist damit widerlegt.
 
-* Beleg: `measurement-2026-09-24-desk22-desk23-desk28-desk29/` §5,
+* Beleg: `measurements/measurement-2026-09-24-desk22-desk23-desk28-desk29/` §5,
   `screendumps/d29-D-selected.png` (Auswahl im oberen Fenster, Infozeile
   „64 bytes used in 1 selected items.") gegen `d29-F-win2-back.png` (nach dem
   Fensterwechsel keine Auswahl, „424568 bytes used in 28 items."). Die

@@ -292,9 +292,9 @@ impl VdiScreen {
     /// band: one measured window-frame edge on the Pi 4 at 1920x1080 cleaned
     /// 3 072 008 bytes — 48 001 lines — for 3 208 bytes of pixels, and a
     /// whole desktop drop pushed 313-618 MB through `dc cvac` for an 8.3 MB
-    /// screen (`measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`, GUI06). A
+    /// screen (`measurements/measurement-2026-09-25-fs04/raw/pi04-FS04.TXT`, GUI06). A
     /// clean of a line that is not dirty costs about two cycles on a
-    /// Cortex-A72 (1.32 ns, measured in `measurement-2026-09-28-gui06`), so
+    /// Cortex-A72 (1.32 ns, measured in `measurements/measurement-2026-09-28-gui06`), so
     /// the 40-to-75-fold redundancy is worth removing even though it is not
     /// what made the drop slow. In QEMU's TCG the cost is a different one
     /// (~10.9 ns per operation) — do not size this from an emulator run.

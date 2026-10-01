@@ -83,7 +83,7 @@ fn gl_hbox_is_gl_hchar_plus_3_for_both_ring_fonts() {
 
 /// The geometry the reference dump was measured at (Atari TT, TT-medium).
 const TT: (u16, u16) = (640, 480);
-/// The current hardware profile (Pi 4, `measurement-2026-09-09/run1-pi4/`).
+/// The current hardware profile (Pi 4, `measurements/measurement-2026-09-09/run1-pi4/`).
 const PI4: (u16, u16) = (1920, 1080);
 
 struct Profile {
@@ -545,7 +545,7 @@ fn press_open_from(pb: &mut Aespb, x: i16, y: i16, dy: i16) -> (i16, [i16; 8]) {
 
 /// `graf_handle`'s `gl_hbox` is the rule applied to `graf_handle`'s own
 /// `gl_hchar` — and, for the 8×16 face the VDI opens with, the measured 19
-/// (`measurement-2026-09-09`, TT and Pi 4 alike; ticket acceptance 3).
+/// (`measurements/measurement-2026-09-09`, TT and Pi 4 alike; ticket acceptance 3).
 #[test]
 fn graf_handle_reports_gl_hbox_derived_from_its_own_gl_hchar() {
     let _g = lock();

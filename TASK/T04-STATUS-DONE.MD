@@ -92,7 +92,7 @@ geflasht**. Lead-Entscheide: Regel = Vertrag; `WF_SCREEN` bleibt LONG-Klasse;
 | `tos-api/tests/aes_t04_intin_long_contract.rs` | — | 3/3 (unveraendert, `b104beb`) |
 | `cargo run -p xtask -- test` | — | **906 passed / 0 failed / 1 ignored** (903 + 3 Vertragstests von `b104beb`) |
 
-Ausgaben: `measurement-2026-09-21-t04/host-tests/gemlib-host-tests-{GREEN-overlay,RED-pristine}.txt`, `xtask-test-AFTER.log`.
+Ausgaben: `measurements/measurement-2026-09-21-t04/host-tests/gemlib-host-tests-{GREEN-overlay,RED-pristine}.txt`, `xtask-test-AFTER.log`.
 
 Im Ziel-Objekt (`-O2`, exakt die Flags von `build-gemlib.sh`) war das
 `control[0]`-Ueberschreiben des Auditors real; im Host-ASan-Lauf (`-O1`,
@@ -108,7 +108,7 @@ statt vom Opcode gemeldet — deshalb beide Belege.
 | `sdk/apps/build-qed.sh` | `37/37`, `LINK OK QED.NAP`, `undefined symbols … 0` |
 | `sdk/apps/build-teradesk.sh` | `48/48`, `LINK OK DESKTOP.NAP`, `undefined symbols … 0` |
 
-Disassembly (`measurement-2026-09-21-t04/build/disassembly-evidence.txt`):
+Disassembly (`measurements/measurement-2026-09-21-t04/build/disassembly-evidence.txt`):
 `vst_arbpt32` `stp wzr, w8, [x29,#-0x2c]` (32-Bit-Nullstore in `vdi_intout`
 + `control[0] = 246` in einem Paar), Rueckgabe `ldursw x9, [x29,#-0x2c]`;
 `v_create_ctab` `stp w1, w2, [x29,#-0x28]` (zwei 32-Bit-LONGs), `control[0]
@@ -129,9 +129,9 @@ geaenderte Mitglied (`why.txt`): `mt_wind_get` `mov w9,#0x6` +
 (Basis 64/94, Delta 0; nur der Doc-Kommentar in `mod.rs` geaendert);
 `--board qemu-virt`: kernel 94, tos-api 64 (Cache). `cargo clippy -p tos-api`:
 **80 → 80**. Der Baum-`kernel8.img` ist der rpi4-Bau (bcm2711-Pfade, keine
-`qemu_virt`). Logs in `measurement-2026-09-21-t04/build/`.
+`qemu_virt`). Logs in `measurements/measurement-2026-09-21-t04/build/`.
 
-## QEMU raspi4b (`measurement-2026-09-21-t04/`)
+## QEMU raspi4b (`measurements/measurement-2026-09-21-t04/`)
 
 Methode: A79/A100-Injektor in einer Scratch-Kopie (`method/make_scratch_t04.sh`,
 kein Produktcode ersetzt — T04 aendert keinen Kernelcode), Skript

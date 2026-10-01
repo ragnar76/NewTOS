@@ -15,7 +15,7 @@ Karte unter `/Volumes/BOOT 1` wurde nicht angefasst; alle Abbilder liegen im
 Job-Scratch.
 
 Messung:
-[`measurement-2026-09-25-desk42/`](../measurement-2026-09-25-desk42/).
+[`measurements/measurement-2026-09-25-desk42/`](../measurements/measurement-2026-09-25-desk42/).
 Spezifikation:
 [`docs/api/desktop/deskinf.md`](../docs/api/desktop/deskinf.md) (§ *die zwei
 Kaesten sind die Ressourcenbaeume*, DESK42) und
@@ -53,7 +53,7 @@ Vorher: `inf_disk` 340 x 230 mit sieben `G_STRING`-Zeilen, `inf_file_folder`
 `RBUTTON`-Paar, dann `FFOK`, `FFSKIP`, `FFCNCL`.
 
 Beide Baeume werden zur Laufzeit Objekt fuer Objekt ausgegeben
-([`serial/dlg-dumps.txt`](../measurement-2026-09-25-desk42/serial/dlg-dumps.txt)),
+([`serial/dlg-dumps.txt`](../measurements/measurement-2026-09-25-desk42/serial/dlg-dumps.txt)),
 damit man sie gegen die Ressource halten kann, ohne unseren Quelltext zu lesen.
 Typ, Flaggen und Zustand stimmen Zeile fuer Zeile mit `desk_rsc.c` ueberein.
 
@@ -156,7 +156,7 @@ Das ist ein GEMDOS-Defekt und gehoert nicht in DESK42s Umfang. DESK42 macht ihn
 **erreichbar**: der bisherige NewTOS-Kasten wies einen leeren Namen selbst ab,
 was EmuTOS nicht tut, also wurde der Aufruf nie abgesetzt. **Braucht ein
 eigenes Ticket.** Beleg:
-[`measurement-2026-09-25-desk42/`](../measurement-2026-09-25-desk42/) §6, Lauf
+[`measurements/measurement-2026-09-25-desk42/`](../measurements/measurement-2026-09-25-desk42/) §6, Lauf
 `d42e` (Screendump + Kartenabzug). `fsck_msdos -n` meldet den Eintrag nicht —
 ein durchgehend leerer Name ist FAT-strukturell gueltig, nur als 8.3-Name
 unzulaessig.
@@ -179,7 +179,7 @@ unzulaessig.
   einen Baum, den es nicht mehr gibt), ebenso die DESK38-Abweichungsnotiz und
   der `fmt_time`-Absatz
 * `docs/api/desktop/desksupp-redraw.md` — dieselbe Abweichungsnotiz dort
-* `measurement-2026-09-25-desk42/` — neu
+* `measurements/measurement-2026-09-25-desk42/` — neu
 
 `docs/STATUS.md` **nicht** angefasst (Lead fuehrt es).
 

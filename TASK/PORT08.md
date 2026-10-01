@@ -20,7 +20,7 @@ bedient wird. Es ist damit **kein** Kernel-Haenger wie [PORT05](PORT05.md) oder
 ## Der zweite Beleg: die Logdatei bricht mitten im Wort ab
 
 `C:\BALL.LOG`, gesichert als
-`measurement-2026-09-28-port07/raw/pi01-BALL.LOG`: **1755 Byte, und das letzte
+`measurements/measurement-2026-09-28-port07/raw/pi01-BALL.LOG`: **1755 Byte, und das letzte
 Zeichen ist das `l` von `cal`** — kein Zeilenende, kein Abschluss, mitten im
 letzten Satz:
 
@@ -124,7 +124,7 @@ bei jedem Boot beim selben Wert.
 ## Auftrag
 
 1. **Headless nachstellen.** Die Demo laeuft in QEMU `raspi4b`
-   (`measurement-2026-09-28-port07/method/`); dort fehlte bisher nur die
+   (`measurements/measurement-2026-09-28-port07/method/`); dort fehlte bisher nur die
    Tastatur zum Beenden — der IKBD-Injektor liefert sie.
 2. **Den letzten Aufruf feststellen**, mit dem Instrument aus
    [DESK43](DESK43.md) U1: der AES-Tracer sieht seit `c141be2` jeden `svc`,

@@ -46,7 +46,7 @@ Untermenue/Popup = transienter Pool-Block je Oeffnung (EmuTOS `popup_blit`).
 ## Tests: rot vor, gruen nach
 
 Gegenprobe in einem Scratch-Worktree auf HEAD `172bca0` mit nur `gsxif.rs`,
-`mod.rs`, `harness.rs` und den Testdateien (`measurement-2026-09-20-a57/host-tests/red-before.txt`):
+`mod.rs`, `harness.rs` und den Testdateien (`measurements/measurement-2026-09-20-a57/host-tests/red-before.txt`):
 
 | Test | vor | nach |
 |---|---|---|
@@ -60,7 +60,7 @@ Gegenprobe in einem Scratch-Worktree auf HEAD `172bca0` mit nur `gsxif.rs`,
 `cargo run -p xtask -- test` **670 → 674 / 0 / 1**. Beide Boards rustc 64/94,
 Clippy 81/125 (Baseline aus HEAD-Worktree gemessen) — Delta 0.
 
-## QEMU raspi4b (`measurement-2026-09-20-a57/`)
+## QEMU raspi4b (`measurements/measurement-2026-09-20-a57/`)
 
 * `WFSCREEN.NAP` per `#Z`: `ret=1 addr=0x00400000 len=614400`, 614 400 Bytes
   durch den Zeiger geschrieben und zurueckgelesen, zweiter Aufruf gleiche

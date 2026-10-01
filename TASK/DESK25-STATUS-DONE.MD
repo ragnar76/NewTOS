@@ -9,7 +9,7 @@ Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset` auf dem gemeinsamen
 Baum.
 
-Messung: [`measurement-2026-09-23-desk24-desk25-desk26/`](../measurement-2026-09-23-desk24-desk25-desk26/) §3.
+Messung: [`measurements/measurement-2026-09-23-desk24-desk25-desk26/`](../measurements/measurement-2026-09-23-desk24-desk25-desk26/) §3.
 Spezifikation: `docs/api/desktop/deskdir.md`, `docs/api/desktop/deskfun.md`.
 
 ---
@@ -113,7 +113,7 @@ drei: `STRMVDEL` (`Cancel`/`Remove`/`Delete`), der zaehlende Kasten (an
   schreibt. Beweis: dieselbe Karte mit den 35 Waisen-Schlitzen von Hand auf
   `0xE5` gesetzt (`method/lfn_orphan_probe.py --fix`) laeuft sauber durch
   Phase 1/2/3, rc=0. Details und die noch offene Teilfrage in
-  `measurement-2026-09-23-desk24-desk25-desk26/serial/fsck.txt` §6.
+  `measurements/measurement-2026-09-23-desk24-desk25-desk26/serial/fsck.txt` §6.
   **Eigenes Ticket wert, in der GEMDOS-Dateisystemschicht.**
 * **Der `AT_ISTRSH`-Vorbau.** EmuTOS stellt `wants_to_delete_files()` voran,
   wenn `icontype_src >= 0` (`deskfun.c:1049-1051`); NewTOS haelt dort weiter

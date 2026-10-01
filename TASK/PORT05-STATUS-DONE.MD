@@ -10,7 +10,7 @@ Pi gefahren, nichts committet, kein `git checkout/restore/clean/stash/reset`
 auf dem gemeinsamen Baum; die SD-Karte unter `/Volumes/BOOT` wurde nicht
 berührt.
 
-Messung: [`measurement-2026-09-25-port05/`](../measurement-2026-09-25-port05/).
+Messung: [`measurements/measurement-2026-09-25-port05/`](../measurements/measurement-2026-09-25-port05/).
 
 ---
 
@@ -199,7 +199,7 @@ Vor dem Fix waren es in QEMU 13 (Slots 3…15) plus ein `Pexec`, das mit −39
 | `cargo clippy` `board-rpi4` / `board-qemu-virt` | 80 / 125 auf **beiden** (Grundstand, ±0) |
 | `cargo run -p xtask -- test` | **950 passed / 0 failed / 1 ignored** (944 + 6 neue) |
 
-Belege: `measurement-2026-09-25-port05/build/`.
+Belege: `measurements/measurement-2026-09-25-port05/build/`.
 
 ## 10. Verifikationsübergabe an den Tester
 

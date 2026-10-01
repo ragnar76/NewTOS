@@ -27,7 +27,7 @@ Tabelle liest sich anders, keine bestehende CRC hat sich bewegt.
 
 `tosdump/cases/aes-m05-addrin.tsv` — 5 Fälle, 5 Preludes, CRC `215A9E48`,
 einmalig geschrieben. Auf **beiden** Maschinen gefahren
-(`measurement-2026-09-12-m05-addrin/`):
+(`measurements/measurement-2026-09-12-m05-addrin/`):
 
 * EmuTOS 1.4 / Atari TT via Hatari: `all 5 cases ran`, `--validate` accepted.
 * NewTOS / QEMU `raspi4b` 640x480: `all 5 cases ran`, `--validate` accepted.
@@ -37,7 +37,7 @@ einmalig geschrieben. Auf **beiden** Maschinen gefahren
 
 ## Die Rückwärtskompatibilität, dreifach belegt
 
-Einzelheiten mit Zahlen: `measurement-2026-09-12-m05-addrin/BACKCOMPAT.TXT`.
+Einzelheiten mit Zahlen: `measurements/measurement-2026-09-12-m05-addrin/BACKCOMPAT.TXT`.
 
 1. Alle zehn Tabellen unter `tosdump/cases/` haben unveränderte CRCs und laden
    mit unveränderten Fall-, Prelude- und Spaltenzahlen.

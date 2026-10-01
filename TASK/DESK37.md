@@ -10,7 +10,7 @@ DESK35 raeumt den Schirm vor dem Start einer GEM-Anwendung. Er bleibt danach
 **weiss**. EmuTOS zeigt dort den **Desktop-Hintergrund** (bei unserer
 `#Q`-Einstellung gruen) samt Menueleiste.
 
-**Gemessen, nicht geschlossen** (`measurement-2026-09-24-hatari-appbg/`):
+**Gemessen, nicht geschlossen** (`measurements/measurement-2026-09-24-hatari-appbg/`):
 Hatari 2.6.1, Falcon/VGA, EmuTOS 1.4.0+ `etos512us.img`, Start ueber die
 `#Z`-Autorun-Zeile (also ueber den Desktop-Startweg). Zwei Laeufe, beide mit
 gruenem Hintergrund:
@@ -56,7 +56,7 @@ Ob die Menueleiste den Programmnamen zeigt, ist Teil desselben Schrittes
 (`ted->te_ptext = lcmd`) und gehoert mit gemessen.
 
 Abnahme: QED aus dem Desktop starten, Hintergrund **gruen**; Vergleichsbild
-`measurement-2026-09-24-hatari-appbg/screendumps/emutos-qed-falcon-tc.png`.
+`measurements/measurement-2026-09-24-hatari-appbg/screendumps/emutos-qed-falcon-tc.png`.
 
 ## Arbeitsregel
 
@@ -87,7 +87,7 @@ zwischen dem `sh_main`-Block (`:715-720`) und `dos_exec` (`:645`).
 `tos_api::aes::shell::sh_show` gab es bereits (der Bootpfad ruft es fuer den
 Desktop selbst); neu ist nur der Aufruf an der zweiten Stelle.
 
-**Wie nah am Hatari-Vergleichsbild** (`measurement-2026-09-24-desk37-desk36-desk30/`,
+**Wie nah am Hatari-Vergleichsbild** (`measurements/measurement-2026-09-24-desk37-desk36-desk30/`,
 QEMU raspi4b 640x480): strukturell deckungsgleich. In beiden Bildern sind die
 Zeilen 0..17 weiss mit dem Programmnamen in Schwarz, Zeile 18 durchgehend
 schwarz, die Zeilen 19..479 ein 50-%-Schachbrett aus Gruen und Weiss — 320
@@ -102,7 +102,7 @@ bei uns gegen `BGWIN.PRG` dort. Bei QED ueberschreibt QEDs eigene Leiste ihn
 sofort — in beiden Systemen.
 
 **Belege:** `d37g-after-C-app.png` gegen
-`measurement-2026-09-24-hatari-appbg/screendumps/emutos-bgwin-falcon-tc.png`,
+`measurements/measurement-2026-09-24-hatari-appbg/screendumps/emutos-bgwin-falcon-tc.png`,
 `d37q-after-D-qed.png` gegen `emutos-qed-falcon-tc.png`; `d37g-before-C-app.png`
 und `d37q-before-D-qed.png` zeigen den Defekt (alles unter der Leiste weiss).
 Spec: [docs/api/aes/shell-loop.md](../docs/api/aes/shell-loop.md) §9,

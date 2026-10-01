@@ -494,7 +494,7 @@ fi
 # whereupon load_options() throws everything away and uses built-in defaults
 # (main.c:1002-1027) — the .NAP registration with it. The body below is
 # therefore a complete, TeraDesk-written configuration: the one recovered from
-# the card (hw-round-2026-09-24/TERADESK.INF; `infv=0x0400` is the current
+# the card (measurements/hw-round-2026-09-24/TERADESK.INF; `infv=0x0400` is the current
 # CFG_VERSION, version.h:24) with the two new `ptype` blocks added.
 #
 # Both locations are written on purpose. TeraDesk resolves "teradesk.inf"

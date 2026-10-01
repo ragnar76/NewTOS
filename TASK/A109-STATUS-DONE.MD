@@ -86,7 +86,7 @@ benannt — nicht durch einen Stub verdeckt.
 | `cargo xtask build` frisch fuer **beide** Boards | tos-api **64** / kernel **94**, rc 0 — Delta 0 |
 | Clippy rpi4 | tos-api **80** / kernel **125** → unveraendert; `desk/menu.rs` 0→0, `desk/main.rs` 0→0, `window.rs` 11→11 |
 
-### QEMU raspi4b (`measurement-2026-09-22-a107-a109/`)
+### QEMU raspi4b (`measurements/measurement-2026-09-22-a107-a109/`)
 
 Kernel-Desktop (`sd-base`, ohne `#Z`), 5 Marken, 0 `EXC`/`PANIC`:
 
@@ -111,7 +111,7 @@ Kein Commit.
 
 ## Artefakte
 
-`measurement-2026-09-22-a107-a109/`. Geaenderte Dateien im Baum:
+`measurements/measurement-2026-09-22-a107-a109/`. Geaenderte Dateien im Baum:
 `kernel/src/desk/{menu,main}.rs`, `tos-api/src/aes/window.rs`,
 `tos-api/tests/{aes_a105_frame_remnants,aes_a100_a102_desk_menu_geometry}.rs`,
 `docs/api/desktop/{deskmain,deskwin}.md`,

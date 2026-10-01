@@ -224,7 +224,7 @@ danach nur den Namen; bei **vorhandener** PID nur den Namen. `pd::open`
 `ap_private` [3…] (4 B ILP32 / 8 B LP64), `ap_planes` [10], `ap_3resv` [11-12] —
 und **nichts** sonst; die Modulnotiz `:9-77` belegt das gegen `gemsuper.c:92-98`.
 Das deckt sich mit EmuTOS. Gemessen bestätigt: der Referenzlauf
-`measurement-2026-09-10-qemu/run3-qemu-rlist-all6/BOOT-SERIAL.txt` zeigt
+`measurements/measurement-2026-09-10-qemu/run3-qemu-rlist-all6/BOOT-SERIAL.txt` zeigt
 `global after appl_init 832,1,1,4419,0,0,0,0,0,0,16,17320,18,0,0` — Index 5…9
 (`ap_ptree`, `ap_rscmem`, `ap_rsclen`) sind 0.
 
@@ -391,7 +391,7 @@ Drei unabhängige Gründe:
    Warteschlange führt kein Weg zu `ib_pdata`.
 3. **Der Zeitstempel.** `tos-api/src/aes/pd.rs` wurde zuletzt am
    **2026-09-10 08:04** geändert (`stat`), also gestern früh. Der QEMU-Lauf
-   `measurement-2026-09-10-qemu/run3-qemu-rlist-all6/BOOT-SERIAL.txt` vom
+   `measurements/measurement-2026-09-10-qemu/run3-qemu-rlist-all6/BOOT-SERIAL.txt` vom
    **2026-09-11 00:31** enthält diesen Stand und bootet sauber durch
    `DUMPAES.NAP` und den Desktop.
 
@@ -497,7 +497,7 @@ des Auftrags „lesende QEMU-Nutzung".
 * dass der Paniktext nur durch einen **ungeraden** Zeiger erklärbar ist
   (Ausschluss über die Grenzen von `stride`/`rows`);
 * dass `window.rs` die einzige heute geänderte Quelldatei ist (Zeitstempel);
-* dass `measurement-2026-09-10-qemu/run3-qemu-rlist-all6` mit FIX-01…06 und dem
+* dass `measurements/measurement-2026-09-10-qemu/run3-qemu-rlist-all6` mit FIX-01…06 und dem
   A25-Fix sauber durchbootet (allerdings mit `DUMPAES.NAP`, nicht mit TeraDesk).
 
 **Nicht verifiziert (offen):**

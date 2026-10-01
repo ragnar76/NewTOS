@@ -37,7 +37,7 @@ coverage (implemented, task #51)".
 ## 3. `TASK/A64-STATUS-DONE.MD` — Randmasse Laufwerkskaesten
 
 Zeile 142 nannte „Referenz Rand 217/248, innen 218..247". Gemessen (A64s
-eigene [`compare-geometry.txt`](../measurement-2026-09-17-fsel/screendumps/compare-geometry.txt),
+eigene [`compare-geometry.txt`](../measurements/measurement-2026-09-17-fsel/screendumps/compare-geometry.txt),
 `ref =[(217, 246), …]` in 10 Zeilen; unabhaengig bestaetigt durch
 [A67-STATUS-DONE.MD](A67-STATUS-DONE.MD): „Rand 217/246, Fase 1 px auf
 218/245") ist es **217/246, innen 218..245**. Quittung **nicht**

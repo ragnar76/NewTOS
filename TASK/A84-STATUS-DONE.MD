@@ -37,14 +37,14 @@ changed“), Blockzitat „Redraw scope“, Randfall 5.
   war schon gruen).
 * **`docs/STATUS.md`** — Phase-13-Fragment (A84/A82/A83) + eine Zeile
   „Recent Decisions“ 2026-09-20.
-* **`measurement-2026-09-20-a83-a84/`** — RUNINFO, Screendumps, Serial,
+* **`measurements/measurement-2026-09-20-a83-a84/`** — RUNINFO, Screendumps, Serial,
   Hosttest-Quittungen, Build-/Clippy-Logs, Methode (Scratch-Diff),
   SHA-256-Manifest. Keine `*.img`.
 
 ## Tests: rot vor, gruen nach
 
 Gegenprobe in einer Scratch-Kopie der Crates mit `window.rs` = HEAD `a8d3163`
-(`measurement-2026-09-20-a83-a84/host-tests/aes_window_slider_guard-RED-before-HEAD-a8d3163.txt`,
+(`measurements/measurement-2026-09-20-a83-a84/host-tests/aes_window_slider_guard-RED-before-HEAD-a8d3163.txt`,
 `…-GREEN-after.txt`):
 
 | Test | vor | nach |
@@ -67,9 +67,9 @@ kernel 94**, rc 0 — Delta 0 (`build/xtask-build-rpi4.log`). Clippy
 --test aes_window_name_pointer`: 0 Treffer in den beiden Testdateien
 (`build/clippy-*.txt`). Kein qemu-virt-Build (Lead).
 
-## QEMU raspi4b (`measurement-2026-09-20-a83-a84/`)
+## QEMU raspi4b (`measurements/measurement-2026-09-20-a83-a84/`)
 
-A79-Methode unveraendert (`measurement-2026-09-20-a79/method/`:
+A79-Methode unveraendert (`measurements/measurement-2026-09-20-a79/method/`:
 `make_scratch_final.sh` → Scratch-Kern mit H02/A46/A78-Injektor, sha256
 `26b76a51…`; `tools/make-sd-image.sh 64` → sd-base; `sd-put.sh` mit
 `newdesk-tera.inf`/`teradesk-window.inf` → sd-tera; `run.sh` mit

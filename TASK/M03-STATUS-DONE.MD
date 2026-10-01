@@ -14,17 +14,17 @@ archivieren.
    überschreibt. `AES-R1.TSV`, `AES-R2.TSV`, `AES-R2B.TSV` blieben daneben
    erhalten.
 2. Lauf auf realer Pi 4 durch den Anwender; Ergebnis abgeholt.
-3. Nach `measurement-2026-09-09/run3-pi4-rlist/` archiviert.
+3. Nach `measurements/measurement-2026-09-09/run3-pi4-rlist/` archiviert.
 4. Validiert und gegen die frische TT-Referenz aus M02 verglichen.
 5. Poison-Muster geprüft, um den Listenende-Befund nicht falsch zu lesen.
 
 ## Artefakte
 
-- `measurement-2026-09-09/run3-pi4-rlist/AES.BIN` — 15 Records, 1832 Bytes,
+- `measurements/measurement-2026-09-09/run3-pi4-rlist/AES.BIN` — 15 Records, 1832 Bytes,
   SHA-256 `e0280b7d…`
-- `measurement-2026-09-09/run3-pi4-rlist/AES.LOG` — SHA-256 `9dd6c3a1…`
-- `measurement-2026-09-09/diff/06-aes-r2brlist-full.txt`
-- `measurement-2026-09-09/diff/07-aes-r2brlist-ohne-globals.txt`
+- `measurements/measurement-2026-09-09/run3-pi4-rlist/AES.LOG` — SHA-256 `9dd6c3a1…`
+- `measurements/measurement-2026-09-09/diff/06-aes-r2brlist-full.txt`
+- `measurements/measurement-2026-09-09/diff/07-aes-r2brlist-ohne-globals.txt`
 
 ## Ausgeführte Prüfung
 

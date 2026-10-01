@@ -620,7 +620,7 @@ not carried into these two.
 `desk::main::check_function_key` still falls through. Until DESK20 that was
 unobservable (no key could exist); it is a genuine hole now.
 
-Measured 2026-09-23 (`measurement-2026-09-23-desk19-desk20/`): `7` assigned
+Measured 2026-09-23 (`measurements/measurement-2026-09-23-desk19-desk20/`): `7` assigned
 and shown in *Desktop configuration*; `99` rejected with `STINVKEY` and the
 field cleared for a retry; a second application asking for `7` answered with
 `STDUPKEY` and, on OK, taking the key over.
@@ -944,7 +944,7 @@ rasters carry a character position only where EmuTOS's resource does.
 
 #### Verification
 
-`measurement-2026-09-24-desk03-desk04/`. QEMU raspi4b at 640x480 with the
+`measurements/measurement-2026-09-24-desk03-desk04/`. QEMU raspi4b at 640x480 with the
 scratch-copy IKBD injector: the Options drop-down in both selection states,
 select → *Remove desktop icon* → *Install devices* (pixel-identical to the
 start), *Install icon* with the stepper and the type radios, *Save desktop*,
@@ -1082,7 +1082,7 @@ touches the file list, so the two walks see the same entries.
 
 #### Verification
 
-`measurement-2026-09-23-desk15/`. QEMU raspi4b at 640x480 with the scratch-copy
+`measurements/measurement-2026-09-23-desk15/`. QEMU raspi4b at 640x480 with the scratch-copy
 IKBD injector: the reader (a `.NCP`/`.NAP` shows the application icon, a `.TXT`
 the document one — pixel-compared, `screendumps/icons-cmp.png`), select
 `README.TXT` → *Install icon* → `ADINSWIN` → three steps up to the trash
@@ -1156,7 +1156,7 @@ covers drives, trash and printer as well.
 
 #### Verification
 
-`measurement-2026-09-24-desk37-desk36-desk30/`, QEMU raspi4b at 640×480 with
+`measurements/measurement-2026-09-24-desk37-desk36-desk30/`, QEMU raspi4b at 640×480 with
 the scratch-copy IKBD injector:
 
 * `d30-after-D-shortcut.png` — `QED.NAP` dragged out of the `C:\` window onto

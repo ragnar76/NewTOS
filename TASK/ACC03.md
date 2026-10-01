@@ -81,7 +81,7 @@ beiden EmuTOS-Aufrufstellen: `AP_MESAG` nach dem Start (kernelseitig,
 `accs::wait_for_accs_mesag`) und `AP_ACCLOSE` in `appl_exit`
 (`gemaplib.c:255`), das dafuer ein S2-neustartfaehiger Syscall geworden ist.
 
-**Belege.** `measurement-2026-09-25-acc02-acc04/`: zwei Accessories + Desktop
+**Belege.** `measurements/measurement-2026-09-25-acc02-acc04/`: zwei Accessories + Desktop
 gleichzeitig; `screendumps/g-window.png` (Desktop neben ihnen bedienbar),
 `screendumps/h-gemwin.png`/`i-after.png` (ein GEM-Programm laeuft dazwischen und
 der Desktop kommt zurueck), `serial/acc2-serial.log` mit den

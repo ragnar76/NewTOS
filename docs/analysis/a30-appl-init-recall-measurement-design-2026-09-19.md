@@ -10,7 +10,7 @@ als `cases.c`).
 **Kurzfassung.** Der Wiederaufruf ist mit dem heutigen Dumper **sicher messbar** — ohne
 `appl_read`, ohne `appl_write`, ohne `appl_exit`, ohne Riegeländerung. Das Instrument ist
 `evnt_multi(MU_MESAG|MU_TIMER, tmcount 0)` mit gepflanztem Puffer (seit M07 erlaubt,
-`cases.c:1167-1203`, auf beiden Maschinen gefahren: `measurement-2026-09-13-m07-parameter`,
+`cases.c:1167-1203`, auf beiden Maschinen gefahren: `measurements/measurement-2026-09-13-m07-parameter`,
 Fall 69). Die Nachrichtenquelle ist `wind_open`, das dem Eigentümer genau eine `WM_REDRAW`
 einreiht (EmuTOS `gemwmlib.c:1426→1222→1030→904→862`; NewTOS `window.rs:2417→1550`). Jeder Fall
 terminiert in **beiden** Ausgängen, weil der Timer-Arm den Rückweg unabhängig von der Queue
@@ -43,7 +43,7 @@ Dumper: `tosdump/core/cases.c` (Riegel :397-560, Parameterriegel :860-1000, :104
 Fensterschranke :1289-1310, :1838-1849), `cases.h`, `runner_aes.c`, `record.h`, `tosdump.h`,
 `gem.c`, `dumpaes.c`; Tabellen `aes-r2b-rlist.tsv`, `aes-m07-parameter.tsv`,
 `aes-r4-subfunctions.tsv` (Kopf), `aes-m05-addrin.tsv` (Fälle 93-94); Messungen
-`measurement-2026-09-13-m07-parameter/{RUNINFO.TXT,DIFF-…}`,
+`measurements/measurement-2026-09-13-m07-parameter/{RUNINFO.TXT,DIFF-…}`,
 `tosdump/reference/EMUTOS14-AES-m07.LOG`; `TASK/{A06,A25,A28,A29}.md`, die A25/A28-Quittungen,
 `TASK/A25-AUDIT-BEANSTANDET.MD`, `TASK/README.md`, `docs/api/aes/{application,event}.md`,
 `docs/TOS-REFERENCE-DUMPER.md` §5-8, `tosdump/cases/COVERAGE-AES.md` (Kopf).
@@ -104,7 +104,7 @@ gesetzt, `IN_LEN 16`, `MU_TIMER` mit `MT_LOCOUNT/MT_HICOUNT == 0`, bei `MU_MESAG
 
 *Bereits gemessen:* `aes-m07-parameter.tsv:69` (`48,0,…`, `a0=0`, `!reset none`, keine Fenster)
 → `int_out[0] = 32` auf **beiden** Maschinen („nothing queued, so ev_mesag is not reached",
-`measurement-2026-09-13-m07-parameter/RUNINFO.TXT`). Damit ist der leere Zweig gemessen; der
+`measurements/measurement-2026-09-13-m07-parameter/RUNINFO.TXT`). Damit ist der leere Zweig gemessen; der
 nicht-leere Zweig (Bit 0x10 gesetzt, Rückkehr ohne Warten) ist bisher nur aus der Quelle belegt
 — Fall **C1** des Entwurfs macht daraus eine Messung, **bevor** der eigentliche Messfall gelesen
 wird.
@@ -444,7 +444,7 @@ bleiben unberührt (Abnahmepunkt 4).
 
 ### 4.2 Laufverzeichnis
 
-`measurement-2026-09-<TT>-a30-applinit/` mit `RUNINFO.TXT` (Tabelle, SHA/CRC, Dumper-Build,
+`measurements/measurement-2026-09-<TT>-a30-applinit/` mit `RUNINFO.TXT` (Tabelle, SHA/CRC, Dumper-Build,
 Kernel-SHA, **Startpfad je Lauf** und — beim Doppelklick-Lauf — die Geste aus A28-Status §7),
 Unterverzeichnisse `emutos14-tt-hatari/`, `newtos-pi4-autorun/` (`#Z`, Kontrolle für P1),
 `newtos-pi4-dblclick/` (Doppelklick mit Geste; der eigentliche A28-Ablesefall), optional

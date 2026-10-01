@@ -45,7 +45,7 @@ Punkt 8 + § `rsrc_free`, `docs/COMPATIBILITY.md` „Resource-block ownership
   `selector_tests` und `cicon_tests::blob` auf `pub(super)` gesetzt.
 * **`docs/STATUS.md`** — Phase-13-Eintrag (datiert, Form der A75-Zeile) +
   Zeile in „Recent Decisions“.
-* **`measurement-2026-09-20-a76/`** — RUNINFO, Serial, Screendumps,
+* **`measurements/measurement-2026-09-20-a76/`** — RUNINFO, Serial, Screendumps,
   Hosttest-Quittungen, Build-/Clippy-Logs, Methode (Scratch-Skripte,
   Injektor-Skript, INF-Dateien, Produkt-Diff, Scaffolding-Diff), SHA-256-
   Manifest. Keine `*.img`.
@@ -84,7 +84,7 @@ auch die AES-Haelfte.
 tos-api 81 / kernel 125 (Target) — Delta 0; `--tests`: kein Treffer in den
 geaenderten Regionen. Kein qemu-virt-Build (Vorgabe des Leads).
 
-## QEMU raspi4b (`measurement-2026-09-20-a76/`)
+## QEMU raspi4b (`measurements/measurement-2026-09-20-a76/`)
 
 A41-Teil-2-Sequenz (Injektor `quit2`: Doppelklick HARD DISC C → File →
 Quit/Shutdown → Dialog Quit → TeraDesk beendet sich → `[desk] desktop up`)
@@ -123,4 +123,4 @@ Die Nebenbeobachtung „Doppelklick oeffnet an MARK B kein Fenster" ist
 aufgeklaert: kein Produktbefund, sondern der Park-Sweep des Injektors durch
 den Menuetitel *File* — seit A73 bleibt der Kasten im OUTSIDE_STATE offen,
 der erste Druck faellt auf ein DISABLED-Item und wird verbraucht (EmuTOS
-identisch). Details in `measurement-2026-09-20-a76/RUNINFO.TXT`, Nachtrag.
+identisch). Details in `measurements/measurement-2026-09-20-a76/RUNINFO.TXT`, Nachtrag.

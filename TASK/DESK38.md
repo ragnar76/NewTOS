@@ -54,7 +54,7 @@ angefasst: EmuTOS benennt in `inf_file_folder` selbst um, in einer Schleife mit
 Schreibschutz-Attribut zurueck (`:591-609`); bei uns benennt der Aufrufer
 einmal um und die Attributzeile ist nur Anzeige.
 
-Messung: [`measurement-2026-09-25-desk-rest/`](../measurement-2026-09-25-desk-rest/)
+Messung: [`measurements/measurement-2026-09-25-desk-rest/`](../measurements/measurement-2026-09-25-desk-rest/)
 §3 — Laufwerk, Papierkorb, Drucker, Verknuepfung und Fenstereintrag, je ein
 Screendump, alle mit `cwin=0` ausser dem Fenstereintrag. Spezifikation:
 [`desksupp-redraw.md`](../docs/api/desktop/desksupp-redraw.md) und

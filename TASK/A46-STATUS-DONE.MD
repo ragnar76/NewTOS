@@ -46,7 +46,7 @@ Menues gehen bei uns durch `draw_obj`/`draw_obj_clip` → `draw_tree` →
 `kernel/src/desk/menu.rs` mit `Sep(…)` → `ob_state |= DISABLED`, `:454`) —
 der Fix greift ohne weitere Aenderung, siehe Screendumps.
 
-## Geprueft (Belege in `measurement-2026-09-19-a46/`, Manifest `manifest.sha256`)
+## Geprueft (Belege in `measurements/measurement-2026-09-19-a46/`, Manifest `manifest.sha256`)
 
 * **Rot vor / gruen nach** (`host-tests/red-before.txt`, `green-after.txt`):
   vor dem Hunk faellt genau (a) — Linienzeile 58 `._._._…` statt `.#.#.#…`,
@@ -59,7 +59,7 @@ der Fix greift ohne weitere Aenderung, siehe Screendumps.
   Boards). Baseline 64/94, 81/125 — **Delta 0**. Testdatei clippy-sauber.
 * **QEMU raspi4b, Produktkernel** (`build/kernel8-a46-product-release-rpi4.img`,
   keine Instrumentierung): `screendumps/product1-tera-idle.png` **0 Pixel**
-  Differenz zu `measurement-2026-09-19-a41/part2/screendumps/product1-tera-colour-icons-idle.png`;
+  Differenz zu `measurements/measurement-2026-09-19-a41/part2/screendumps/product1-tera-colour-icons-idle.png`;
   `screendumps/smoke-desk-up.png` **0 Pixel** zu `…/a41/part2/screendumps/smoke-desk-up.png`.
 * **TeraDesk per `#Z` + Injektor** (Scratch-Kernel, `method/menu1.actions`:
   Zeiger auf *File* (88,8)): `tera-after-C-file-menu.png` — die drei Trenner

@@ -57,7 +57,7 @@ ROOT.ob_tail = 1`) und schreibt nichts ausserhalb des Baums.
 `ob_order` ist nur ueber Opcode 45 erreichbar (`mod.rs:585`); kein Aufrufer
 im Kernel/Desktop.
 
-## Geprueft (Belege in `measurement-2026-09-20-a47-a52-a55-a58/`, `manifest.sha256`)
+## Geprueft (Belege in `measurements/measurement-2026-09-20-a47-a52-a55-a58/`, `manifest.sha256`)
 
 * **Rot vor / gruen nach** (`host-tests/a47-red-before.txt`,
   `a47-green-after.txt`): vor dem Hunk faellt genau (a) —
@@ -69,7 +69,7 @@ im Kernel/Desktop.
   Testdatei clippy-sauber.
 * **QEMU-Smoke** (`screendumps/smoke-desk-up.png`): Produktkernel, unser
   Desktop, 0 Pixel / bytegleich zu
-  `measurement-2026-09-19-a46/screendumps/smoke-desk-up.png`; Serial ohne
+  `measurements/measurement-2026-09-19-a46/screendumps/smoke-desk-up.png`; Serial ohne
   `EXC`/`panic`.
 
 ## Offen

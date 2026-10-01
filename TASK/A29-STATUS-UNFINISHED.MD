@@ -8,7 +8,7 @@ Geste, die nur eine echte Pi 4 ausführen kann (unten, Abschnitt 6).
 
 Gepinnte EmuTOS-Quelle: `references/emutos` @ `1a7484aba1bfba23e2c0899e243b6d8177fe41df`.
 NewTOS-Basis: `desk-rebuild`, HEAD vor der Arbeit `a006386`, sauberer Baum.
-Messverzeichnis: [`measurement-2026-09-14-a29/`](../measurement-2026-09-14-a29/RUNINFO.TXT).
+Messverzeichnis: [`measurements/measurement-2026-09-14-a29/`](../measurements/measurement-2026-09-14-a29/RUNINFO.TXT).
 
 ---
 
@@ -160,7 +160,7 @@ Ein **vorhandener Test wird nicht rot** — `xtask test` 545 → 546, 0 rot (der
 einzige Zuwachs ist der neue Test). `kernel/src/selftest_aes.rs` prüft an
 `appl_exit` nur den Rückgabewert 1, der unverändert ist.
 
-**Rot vor dem Fix, grün danach** (`measurement-2026-09-14-a29/host-test-red-before.log`;
+**Rot vor dem Fix, grün danach** (`measurements/measurement-2026-09-14-a29/host-test-red-before.log`;
 `tos-api/src/aes/pd.rs` dafür von Hand auf den HEAD-Stand gesetzt und wieder
 zurückkopiert, kein `git checkout`):
 
@@ -189,7 +189,7 @@ starten und enden**, über den echten `svc`-Pfad.
 
 Zwei Läufe über denselben Datenträger: einmal mit dem HEAD-Kern
 (`kernel8.img` sha256 `eeb6e505…`, byte-identisch mit dem, den
-`measurement-2026-09-14-a19` für HEAD festgehalten hat), einmal mit dem
+`measurements/measurement-2026-09-14-a19` für HEAD festgehalten hat), einmal mit dem
 reparierten (`868c34e7…`).
 
     Seriell:   chain-prefix-BOOT-SERIAL.txt == chain-postfix-BOOT-SERIAL.txt

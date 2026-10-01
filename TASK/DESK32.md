@@ -55,7 +55,7 @@ Accessory-Platzhalter `"1"`…`"6"` einschliesst. Die Platzhalter stehen darum
 auch auf ihrem Ressourcentext; sichtbar sind sie nur, wenn kein Accessory
 registriert ist, und dann verknuepft `menu_fixup` sie ohnehin nicht.
 
-Messung: [`measurement-2026-09-25-desk-rest/`](../measurement-2026-09-25-desk-rest/)
+Messung: [`measurements/measurement-2026-09-25-desk-rest/`](../measurements/measurement-2026-09-25-desk-rest/)
 §2, mit allen vier Klappmenues vorher und nachher. Spezifikation:
 [`docs/api/desktop/deskmain.md`](../docs/api/desktop/deskmain.md).
 Hardwarepunkt **72** (1920×1080).

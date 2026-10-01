@@ -4,9 +4,9 @@
 unten, nichts geaendert)** · 2026-09-19 · Auditor.
 
 Kein Produktcode angefasst: Trace nur in der Scratch-Kopie
-(`measurement-2026-09-19-a60/method/scratch-*.diff`), `kernel/src/host_env.rs`
+(`measurements/measurement-2026-09-19-a60/method/scratch-*.diff`), `kernel/src/host_env.rs`
 sha256 `287ff741…` vor und nach der Messung, `git status --short` zeigt nur
-`measurement-2026-09-19-a60/` und diese Datei als neu.
+`measurements/measurement-2026-09-19-a60/` und diese Datei als neu.
 
 ## 1. Die drei Dumps (TeraDesk, AES-pid 1, `global` = VA `0x3258c`)
 
@@ -171,7 +171,7 @@ trifft die Felder, die der Kern schreibt).
 * Die 8-Byte-Schreibung in `xrsrc_fix` nullt `ap_rsclen`/`ap_planes`
   transient — heute unbeobachtbar, mit dem Overlay weg.
 
-Artefakte: `measurement-2026-09-19-a60/` (RUNINFO.TXT, serial/, screendumps/,
+Artefakte: `measurements/measurement-2026-09-19-a60/` (RUNINFO.TXT, serial/, screendumps/,
 method/, build/, decode-*.txt, manifest.sha256).
 
 ## Fix (Developer, 2026-09-19)
@@ -180,7 +180,7 @@ Umgesetzt wie in § 4 vorgeschlagen: drei Overlay-Dateien unter
 `sdk/overlays/teradesk/` (Schattenbaum `build-teradesk.sh:104-125`), die
 vendierte Quelle `sdk/apps/teradesk/` unangetastet, kein Kernel-, tos-api-
 oder gemlib-Code beruehrt. Nachweis mit derselben Messmethode in
-`measurement-2026-09-19-a60/fix/` (RUNINFO-FIX.TXT, manifest.sha256).
+`measurements/measurement-2026-09-19-a60/fix/` (RUNINFO-FIX.TXT, manifest.sha256).
 
 ### Die drei Dateien (Diff gegen das Original = nur die genannten Hunks)
 

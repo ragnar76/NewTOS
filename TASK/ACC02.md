@@ -40,7 +40,7 @@ kommt hoch, `wait_for_accs`-Aequivalent blockiert nicht ewig.
 ## Abschluss
 
 **ERLEDIGT (2026-09-25)** — zusammen mit ACC03, ACC04 und ACC05 als **eine**
-Arbeitseinheit; ein Messverzeichnis, `measurement-2026-09-25-acc02-acc04/`.
+Arbeitseinheit; ein Messverzeichnis, `measurements/measurement-2026-09-25-acc02-acc04/`.
 
 **1. Laden im Startpfad.** `kernel/src/accs.rs` ist EmuTOS' Quartett:
 `count_accs` (`aes/geminit.c:264-284`), `load_one_acc` (`:236-257`),
@@ -74,7 +74,7 @@ uebersprungen; ein gemeinsames Budget von sechs. `kernel/src/desk/ftype.rs`
 kennt `Flavor::Accessory`, und ein Doppelklick auf ein `.NAC` startet es
 **nicht** (EmuTOS hat dafuer auch keinen Pfad) sondern sagt es.
 
-**Belege.** `measurement-2026-09-25-acc02-acc04/serial/acc2-serial.log`:
+**Belege.** `measurements/measurement-2026-09-25-acc02-acc04/serial/acc2-serial.log`:
 beide Orte geladen (`2 file(s) found, 2 process(es) started`);
 `serial/dedupe-serial.log`: gleicher Name in beiden Orten → `1 file(s) found`;
 `serial/noacc-serial.log` + `screendumps/noacc-deskmenu.png`: ohne `.NAC` keine

@@ -192,7 +192,7 @@ fn all_run() -> Option<sched::Switch> {
 /// caller out of the run-set and left it for `idle_wake_pass` to revive on a
 /// key or a pointer movement, so headless — no key, no pointer — a program
 /// that called `appl_exit` with an accessory loaded never reached its `Pterm`
-/// (ACC10, measured in `measurement-2026-09-26-acc10/`).
+/// (ACC10, measured in `measurements/measurement-2026-09-26-acc10/`).
 ///
 /// Returns `Some(switch)` when the caller must abort its syscall and yield —
 /// the wait resumes from the top when the caller's `svc` re-executes — and

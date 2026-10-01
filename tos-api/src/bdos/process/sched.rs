@@ -261,7 +261,7 @@ pub fn set_running(slot: usize) {
 /// NewTOS gives parent and child **separate** slots, and a parent that ever
 /// blocked in an `evnt_*` wait is left `runnable` by [`sleep`]'s idle exit — so
 /// without this the child's first block would hand the CPU straight back to its
-/// own suspended parent (measured: `measurement-2026-09-25-port05`, the parent
+/// own suspended parent (measured: `measurements/measurement-2026-09-25-port05`, the parent
 /// was re-entered `fresh` at its entry point and relaunched the child in a
 /// loop). Dropping the bit is what expresses "the parent is inside `Pexec`".
 ///
@@ -616,7 +616,7 @@ pub fn dsptch() -> Dispatch {
         // reached this line with `runnable == false`, handed the CPU to the
         // accessories, and `pick_next` then had no candidate to hand it back
         // to: measured, the ball demo never returned from `appl_exit` with an
-        // accessory loaded (SCHED01, `measurement-2026-09-29-port08`). Set
+        // accessory loaded (SCHED01, `measurements/measurement-2026-09-29-port08`). Set
         // before the pick, so the peer we switch to already sees the caller on
         // the list.
         //

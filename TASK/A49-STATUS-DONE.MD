@@ -39,7 +39,7 @@ gehaltener Druck haengt im Wartelauf.
 | Test | `tos-api/tests/aes_window_hotclose.rs` (neu; Harness wie `aes_menu_click_ownership.rs` mit `IDLE_CAP`, `open_window` aus `aes_window_drag.rs`; Zeiger nur ueber `pump_input`, `feed_relative`): (1) `NAME\|CLOSER\|HOTCLOSE`, Zeiger auf dem Closer (`gadget_name_at` = „closer"), Druck, dann 3× gehalten + 1× Loslassen **in der Warteschlange**: `evnt_multi(MU_MESAG\|MU_TIMER 0)` liefert `WM_CLOSED` fuer das Handle und pumpt genau **einmal** (das abschliessende `dsptch()` jedes AES-Aufrufs, `mod.rs:429-434`) — 3 von 4 Paketen bleiben liegen; (2) Druck gehalten: zwei TeraDesk-Polls (`MU_MESAG\|MU_BUTTON 0x102/3/0\|MU_KEYBD\|MU_TIMER 0`) liefern **nur** `MU_TIMER` (kein zweites `WM_CLOSED`, kein `MU_BUTTON`); Loslassen → nur `MU_TIMER`; neuer Druck → wieder `WM_CLOSED`; (3) Regression `NAME\|CLOSER`: dieselben 4 Pakete werden alle verbraucht (≥ 4 Pumps), `WM_CLOSED` kommt erst nach dem Loslassen, danach kein `MU_BUTTON` | 3/3 |
 | Spec | `docs/api/aes/window-graphics.md`: Kind-Bit-Tabelle `HOTCLOSE` mit Verhaltensabsatz (`gemctrl.c:208-214`, `:86-96`, `CONF_WITH_PCGEM`, NewTOS-Umsetzung, Hosttest, HW nur Sicht); `WM_CLOSED`-Zeile der Nachrichtentabelle; Testerwartung 8 (`graf_watchbox`) um die HOTCLOSE-Ausnahme ergaenzt | fertig |
 
-## Geprueft (Belege in `measurement-2026-09-20-a49-a61/`)
+## Geprueft (Belege in `measurements/measurement-2026-09-20-a49-a61/`)
 
 * **Rot vor / gruen nach** (`host-tests/a49-red-before.txt` mit dem ersten
   Testtext, `a49-red-before-final-text.txt` mit dem finalen Text bei per Hand

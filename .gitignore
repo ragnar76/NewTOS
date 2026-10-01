@@ -56,9 +56,9 @@ sd-card-backup-*/
 # regenerable bulk around it: the per-run SD images (64 MB each; rebuild with
 # tools/make-sd-image.sh plus the per-case staging) and the kernel binaries
 # (rebuild with `cargo xtask build --release`; their sha256 is in the report).
-measurement-*/qemu-tmp/
-measurement-*/*.img
-measurement-*/*.elf
+measurements/*/qemu-tmp/
+measurements/*/*.img
+measurements/*/*.elf
 
 # Mega-ST-style Pi 4 enclosure (STLs, build.py, version zips). Hardware for
 # running NewTOS, not NewTOS — same reasoning as the ball demo: this repo is

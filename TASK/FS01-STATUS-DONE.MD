@@ -10,7 +10,7 @@ committet; kein `git checkout/restore/clean/stash/reset` auf dem gemeinsamen
 Baum. Git wurde nur lesend benutzt (`git status`, `git diff` fuer
 `method/fs01.diff`).
 
-Messung: [`measurement-2026-09-24-fs01/`](../measurement-2026-09-24-fs01/).
+Messung: [`measurements/measurement-2026-09-24-fs01/`](../measurements/measurement-2026-09-24-fs01/).
 Spezifikation: `docs/api/gemdos/file/41-fdelete.md` (Abschnitt *FS01*) und
 `docs/api/gemdos/directory/3a-ddelete.md`.
 
@@ -131,7 +131,7 @@ Basis 80/125 → **Delta 0**. Keine einzige Warnung zeigt auf
 `find.rs:341`. `cargo clippy -p tos-api --test gemdos_fs_lfn_delete`: keine
 Warnung in der neuen Testdatei.
 
-### Abnahme in QEMU (`measurement-2026-09-24-fs01`)
+### Abnahme in QEMU (`measurements/measurement-2026-09-24-fs01`)
 
 Dieselbe DESK25-Geste, dasselbe Kartenabbild, zwei Kerne, die sich in genau
 einem Zweig unterscheiden (`method/unfix.py` auf der Scratch-Kopie):
@@ -211,7 +211,7 @@ einen eigenen Task" **nicht** mitgeaendert. Ein Ticket dafuer waere:
 | `docs/api/gemdos/directory/3a-ddelete.md` | NewTOS-Notiz *FS01* |
 | `docs/STATUS.md` | Recent-Decisions-Eintrag + Phasenzeile 09 |
 | `TASK/FS01.md` | Status + `## Abschluss` |
-| `measurement-2026-09-24-fs01/` | RUNINFO.TXT, method/, serial/, screendumps/, manifest.sha256 (kein `*.img`) |
+| `measurements/measurement-2026-09-24-fs01/` | RUNINFO.TXT, method/, serial/, screendumps/, manifest.sha256 (kein `*.img`) |
 
 **Offen:** Abnahme auf echter Pi 4 (nicht Sache dieses Tasks — keine
 Hardware angefasst). Der unabhaengige Tester faehrt die Regression.

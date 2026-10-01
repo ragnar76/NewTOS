@@ -64,7 +64,7 @@ sind darin Wort fuer Wort die Arithmetik der beiden gemlib-Overlays, damit der
 Nachweis ueber die dokumentierte API laeuft und nicht ueber ein Internum.
 
 QEMU `raspi4b`, headless, serieller Mitschnitt
-(`measurement-2026-09-12-v16/SELFTEST-GEMTRAP-before-fix.txt`):
+(`measurements/measurement-2026-09-12-v16/SELFTEST-GEMTRAP-before-fix.txt`):
 
 ```
 [gemtrap]   selector -2 leaves x0 unchanged (-2): FAIL
@@ -185,7 +185,7 @@ die beiden Funktionen waren bereits richtig und rechnen unveraendert weiter.
 | Bootgesundheit | alle fuenf Laeufe: `all N cases ran`, `tosdiff --validate` akzeptiert, **0** `[EXC]`/`PANIC`, `[desk] desktop up (1 drives)` |
 | QEMU/Hatari-Prozesse | keiner laeuft (`pgrep -f 'qemu-system-aarch64\|Hatari'` nach jedem Lauf leer) |
 
-Belege: `measurement-2026-09-12-v16/` (fuenf Laeufe mit `.BIN`/`.LOG`/
+Belege: `measurements/measurement-2026-09-12-v16/` (fuenf Laeufe mit `.BIN`/`.LOG`/
 `BOOT-SERIAL.txt`/beiden Diffs, die zwei Selftest-Mitschnitte, `RUNINFO.TXT`).
 
 ## Nicht angefasst

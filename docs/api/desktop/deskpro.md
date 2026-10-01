@@ -270,7 +270,7 @@ wrapper (`svc #2`, opcode 121, `AES_CTRL_CODE(SHEL_WRITE, 3, 1, 2)` —
 The board run's AES trace shows it as
 `[aes] pid=0 op 121 in=(1,0,1,0,0,0) out=(1,…)` =
 `shel_write(SHW_EXEC, isgem=0, isover=1, "EMUCON", tail)`
-(`measurement-2026-09-23-desk06/serial/cli-serial.log:98`).
+(`measurements/measurement-2026-09-23-desk06/serial/cli-serial.log:98`).
 
 The argument preparation this document calls out as the compatibility-
 relevant part is reproduced literally: `tail[0] = strlen(tail+1)`,

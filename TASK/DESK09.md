@@ -26,7 +26,7 @@ sichern, neu starten, Fenster steht wieder.
 ## Abschluss
 
 **Erledigt am 2026-09-23**, Quittung [DESK09-STATUS-DONE.MD](DESK09-STATUS-DONE.MD),
-Artefakte `measurement-2026-09-23-desk08-desk09/`. Aenderungen uncommitted im
+Artefakte `measurements/measurement-2026-09-23-desk08-desk09/`. Aenderungen uncommitted im
 Baum (Branch `desk-rebuild`, Basis `326ef4c`).
 
 `G.g_cnxsave` existiert als `global::CSave`/`WSave` (voller `WSAVE`-Feldsatz);

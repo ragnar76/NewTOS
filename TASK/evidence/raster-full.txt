@@ -1,4 +1,4 @@
-$ tosdump/host/build/tosdiff measurement-2026-09-09/cases/vdi-raster.tsv tosdump/reference/EMUTOS14-RASTER.BIN measurement-2026-09-09/run1-pi4/RASTER.BIN
+$ tosdump/host/build/tosdiff measurements/measurement-2026-09-09/cases/vdi-raster.tsv tosdump/reference/EMUTOS14-RASTER.BIN measurements/measurement-2026-09-09/run1-pi4/RASTER.BIN
 EMUTOS14-RASTER.BIN vs RASTER.BIN -- area VDI-RASTER, 59 cases from vdi-raster.tsv
 
 case 73  opcode 110  vr_trnfm standard to device, 4 planes

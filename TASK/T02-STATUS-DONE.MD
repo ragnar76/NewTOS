@@ -6,7 +6,7 @@ verschlucken sie nicht mehr, und ein **nicht verzeichneter** Fehlschlag haelt
 den Bau an, bevor ein beschaedigtes Archiv entsteht. Kein Erzeugnis aendert
 sich. Zusammen mit T03 in einem Wurf, weil beide dieselben Dateien beruehren.
 
-Belege: `measurement-2026-09-16-toolchain/`, Nachstellungen in `repro/`.
+Belege: `measurements/measurement-2026-09-16-toolchain/`, Nachstellungen in `repro/`.
 
 ## Der Befund, selbst nachgestellt
 

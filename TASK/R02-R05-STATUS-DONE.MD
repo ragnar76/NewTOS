@@ -1,7 +1,7 @@
 # R02, R03, R04, R05 — Quittung (2026-09-21)
 
 **Was getan wurde:** Auditor-Messdesign und -Messung
-`measurement-2026-09-21-raster-screen/` (Auswertung
+`measurements/measurement-2026-09-21-raster-screen/` (Auswertung
 `docs/analysis/raster-screen-r02-r05-2026-09-21.md`): neue Falltabelle
 `tosdump/cases/vdi-raster-screen.tsv` (62 Faelle, 41 Preludes, CRC `9780EC39`)
 mit einem begrenzten Runner-Delta (`!screen w,h,planes`, `S` als Screen-MFDB,
@@ -11,7 +11,7 @@ Drei Dumps: EmuTOS 1.4 auf Hatari Falcon030 VIDEL-Truecolor 640x480/16 Planes
 (Release-ROM und gepinnte Quelle, 0/62 verschieden; Referenz
 `tosdump/reference/EMUTOS14-RASTER-screen-falcontc.BIN`) und NewTOS auf QEMU
 raspi4b @ `c1f42ff`. Danach der Entwickler-Fix des einen Defekts und die
-Gegenmessung `measurement-2026-09-21-r05/`.
+Gegenmessung `measurements/measurement-2026-09-21-r05/`.
 
 **Ergebnis:** NewTOS stimmt mit EmuTOS auf dem Falcon in **61 von 62** Faellen
 Wort fuer Wort ueberein (512 Woerter je Puffer, beide Puffer, beide MFDBs,
@@ -61,9 +61,9 @@ die richtigen Zeilen.
 **Artefakte:** `tosdump/cases/vdi-raster-screen.tsv`,
 `tosdump/reference/EMUTOS14-RASTER-screen-falcontc.{BIN,LOG}`,
 `tos-api/tests/vdi_raster_reference/cases_screen.rs` (Binaer
-`vdi_reference_raster_screen`, 62 Tests), `measurement-2026-09-21-raster-screen/`
+`vdi_reference_raster_screen`, 62 Tests), `measurements/measurement-2026-09-21-raster-screen/`
 (Messdesign, drei Dumps, Diffs, `method/oracle.py`, `RUNINFO.TXT`),
-`measurement-2026-09-21-r05/` (Gegenmessung: `RUNINFO.TXT`, Dump, drei
+`measurements/measurement-2026-09-21-r05/` (Gegenmessung: `RUNINFO.TXT`, Dump, drei
 `tosdiff`-Laeufe, Modell, `manifest.sha256`; `newtos-qemu-raspi4b/RASTER.BIN`
 ist per Wurzel-`.gitignore` `*.bin` ignoriert — `git add -f`; kein `*.img`
 im Ordner), `docs/STATUS.md` (VDI-Zeile + Recent Decisions 2026-09-21),

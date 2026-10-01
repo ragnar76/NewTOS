@@ -96,7 +96,7 @@ Vorgängers **vervollständigt**, nicht ersetzt.
   „Zwischenstand gesichert … Abschlussprüfung folgt" am Kopf des
   Analyseabschnitts ist durch eine Abschlusszeile ersetzt. Die Abschnitte 1–6
   sind unverändert.
-- **`measurement-2026-09-09/diff/14-a23-compensation-20260910.txt`**, nur
+- **`measurements/measurement-2026-09-09/diff/14-a23-compensation-20260910.txt`**, nur
   **angehängt** („ANHANG 2026-09-10, Abschlusslauf A23"): der Ausgangslauf, die
   vollständige Ausgabe des temporären Aufsatzes für `s = 2/4/6`, die Ableitung
   der Schattenstreifen aus der Quelle, die Zuordnung der beiden Assertionen zu

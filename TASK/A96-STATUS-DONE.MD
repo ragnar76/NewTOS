@@ -6,7 +6,7 @@ echten Pi 4 steht aus (Tester/Lead; nichts geflasht).** Bearbeitet
 2026-09-21 zusammen mit A97 (ein Paket „was einen Prozess ueberlebt“),
 Branch `desk-rebuild`, Basis HEAD `1c4414a`, nichts committet, kein
 `git checkout/stash/reset` (die HEAD-Kopien fuer den Vorher-Kernel per
-`git show` nach `measurement-2026-09-21-a96-a97/method/head-1c4414a/`).
+`git show` nach `measurements/measurement-2026-09-21-a96-a97/method/head-1c4414a/`).
 
 ## Auftrag
 
@@ -92,7 +92,7 @@ Zaehler gehoeren also dem Programm und werden wie in `wm_new` auf 0 gesetzt.
 | Clippy rpi4 (`cargo clippy -p kernel --no-default-features --features board-rpi4`) | tos-api 80 / kernel 125 → **80 / 125** (Basis auf einer `git archive HEAD`-Kopie gemessen: `build/clippy-rpi4-baseline-HEAD-1c4414a.txt`); `desk/main.rs` 0 → 0, `window.rs` 11 → 11; `cargo clippy -p tos-api --lib --tests`: 0 Treffer in der neuen Testdatei — `build/clippy-*.txt` |
 | qemu-virt | nicht gebaut (Lead-Vorgabe) |
 
-### QEMU raspi4b (`measurement-2026-09-21-a96-a97/`, A87-Methode)
+### QEMU raspi4b (`measurements/measurement-2026-09-21-a96-a97/`, A87-Methode)
 
 Scratch-Kernel aus einer rsync-Kopie der Crates mit dem H02/A46/A78/A87-
 Injector (`method/make_scratch.sh`), Skripte aus `method/*.actions` per
@@ -132,7 +132,7 @@ QMP-Screendump 0,3 s nach jeder Serial-Marke; keine `*.img` abgelegt. VORHER
 
 ## Artefakte
 
-`measurement-2026-09-21-a96-a97/` (`RUNINFO.TXT`, `manifest.sha256`,
+`measurements/measurement-2026-09-21-a96-a97/` (`RUNINFO.TXT`, `manifest.sha256`,
 `method/`, `build/`, `host-tests/`, `screendumps/`, `serial/`). Geaenderte
 Dateien im Baum: `tos-api/src/aes/window.rs`, `tos-api/src/aes/object.rs`
 (A97), `kernel/src/desk/main.rs`, `tos-api/tests/aes_a96_zombie_windows.rs`

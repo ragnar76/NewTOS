@@ -2,7 +2,7 @@
 
 Datum: 2026-09-26 · Branch `desk-rebuild`, Basis HEAD `714c5bb` ·
 Änderung **uncommitted** im gemeinsamen Baum · Belege:
-[`measurement-2026-09-26-gui04/`](../measurement-2026-09-26-gui04/)
+[`measurements/measurement-2026-09-26-gui04/`](../measurements/measurement-2026-09-26-gui04/)
 
 ---
 
@@ -138,7 +138,7 @@ entfernt (sonst +1 Warnung).
 
 | Was | Wo | Zahl / Bild |
 |---|---|---|
-| Kette bis in die EL0-App | `measurement-2026-09-26-gui04/serial/run-a-wheelt.log` | `up=3 down=4 left=0 right=0 total=7` bei 8 Berichten — der eine mit `len == 3` erzeugt **nichts** |
+| Kette bis in die EL0-App | `measurements/measurement-2026-09-26-gui04/serial/run-a-wheelt.log` | `up=3 down=4 left=0 right=0 total=7` bei 8 Berichten — der eine mit `len == 3` erzeugt **nichts** |
 | Der AES-Vektor war eingetragen | dieselbe Datei | `vex_wheelv installed, mine=0x13e4 old=0xffff000000115970` (Kernel-High-Half) |
 | LP64-Zeigerslot | dieselbe Datei | `got back=0x13e4` nach dem Zurückgeben |
 | Desktop scrollt | `screendumps/b2-window.png` → `b3-scrolled.png` | 6 Detents → 6 Zeilen; `pixdiff` 9885 von 184250 Pixeln |

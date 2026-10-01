@@ -31,7 +31,7 @@ Startschirm.
 ## Abschluss
 
 **ERLEDIGT (2026-09-23).** Quittung: [DESK12-STATUS-DONE.MD](DESK12-STATUS-DONE.MD),
-Messung: `measurement-2026-09-23-desk12/`.
+Messung: `measurements/measurement-2026-09-23-desk12/`.
 
 **Die Quelle hat den Auftrag korrigiert.** Das Ticket nahm an, der
 About-Kasten solle das Baudatum zeigen. EmuTOS zeigt dort **keins**:

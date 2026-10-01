@@ -102,7 +102,7 @@ erzeugten Kartenabbild:
 * `docs/api/desktop/_hw-test-2026-09-17.md` — neuer Punkt **37**, Schritt 1.
 * `docs/STATUS.md` — Phase-14-Zeile + eine Zeile in *Recent Decisions*
   (2026-09-24).
-* `measurement-2026-09-24-desk01-desk02/` — `RUNINFO.TXT`, `method/`,
+* `measurements/measurement-2026-09-24-desk01-desk02/` — `RUNINFO.TXT`, `method/`,
   `screendumps/`, `serial/`, `inf/`, `build/`, `manifest.sha256`.
   Kein `*.img`.
 
@@ -128,6 +128,6 @@ ist nachgezogen.
 > `SC_ALT = 0x38`; der USB-HID-Bericht bildet LAlt **und** RAlt darauf ab), und
 > der AES reicht das Wort unveraendert als `EV_KRET` durch. `Alt`+`C` oeffnet
 > `C:\` — in QEMU raspi4b gefahren,
-> `measurement-2026-09-23-desk13/screendumps/b-altc.png`. Der Vermerk im
+> `measurements/measurement-2026-09-23-desk13/screendumps/b-altc.png`. Der Vermerk im
 > Quelltext und der in `docs/api/desktop/_hw-test-2026-09-17.md` sind
 > ebenfalls richtiggestellt.

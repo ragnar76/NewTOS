@@ -7,7 +7,7 @@ untereinander verkettet, der irrefuehrende Kopfkommentar ist ersetzt. Eine
 Die naheliegende Archivkette wurde zuerst gebaut, dann gemessen und dabei als
 **falsch** erwiesen; die Messung steht unten. Kein Erzeugnis aendert sich.
 
-Belege: `measurement-2026-09-16-toolchain/`, Nachstellungen in `repro/`.
+Belege: `measurements/measurement-2026-09-16-toolchain/`, Nachstellungen in `repro/`.
 
 ## Loch (a), selbst nachgestellt
 

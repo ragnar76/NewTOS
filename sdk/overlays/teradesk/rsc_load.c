@@ -25,7 +25,7 @@
  * overlay (sdk/gemlib/overlay/gem.h:101-125) reads the fields as 4 bytes at
  * the TOS offsets and provides `_AESrscfile_set` / `_AESrscmem_set` for the
  * store (C has no 32-bit pointer lvalue on LP64). Measured in QEMU on
- * 2026-09-19 (TASK/A60-STATUS-DONE.MD, measurement-2026-09-19-a60/).
+ * 2026-09-19 (TASK/A60-STATUS-DONE.MD, measurements/measurement-2026-09-19-a60/).
  * Everything else in this file is byte-identical to upstream.
  */
 

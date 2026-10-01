@@ -145,9 +145,9 @@ Konvention.
 ## Gegenmessung — Fall 102 stimmt jetzt
 
 QEMU `raspi4b`, headless, 640x480 (TT-Profil), ohne Karte, `#Z`-Autorun; Rezept
-und Skripte aus `measurement-2026-09-13-regression/method/` unveraendert
+und Skripte aus `measurements/measurement-2026-09-13-regression/method/` unveraendert
 uebernommen. Alle Kennzahlen in
-[measurement-2026-09-13-a42/RUNINFO.TXT](../measurement-2026-09-13-a42/RUNINFO.TXT).
+[measurements/measurement-2026-09-13-a42/RUNINFO.TXT](../measurements/measurement-2026-09-13-a42/RUNINFO.TXT).
 
 | | EmuTOS 1.4 (TT/Hatari) | NewTOS vorher | NewTOS nachher |
 |---|---|---|---|
@@ -181,7 +181,7 @@ unberuehrt bleibt, belegt der Hosttest byteweise, nicht diese Messung.
   `WF_NAME`/`WF_INFO`-Lesefall. Die m05-Tabelle ist keine Rust-Testquelle.
 * `cargo xtask build --board rpi4 --release` und `--board qemu-virt --release`,
   beide Exit 0, je 0 Fehler, `tos-api` 64 + `kernel` 94 Warnungen — **identisch
-  zur Grundlinie** in `measurement-2026-09-13-regression/build-*.log`.
+  zur Grundlinie** in `measurements/measurement-2026-09-13-regression/build-*.log`.
   **Echter Neubau nachgewiesen:** vor jedem der beiden Laeufe wurde
   `tos-api/src/aes/window.rs` (und `mod.rs`) angefasst, damit das geteilte
   Zielverzeichnis nicht „up to date" melden kann; beide Protokolle zeigen

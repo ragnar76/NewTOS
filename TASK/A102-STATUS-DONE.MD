@@ -1,7 +1,7 @@
 # A102 — STATUS: DONE (Hostbeleg rot/gruen + QEMU-Selbstbeleg vorher/nachher) / Pi-Sichtabnahme offen
 
 Vier Punkte, ein Paket mit A100 (Messverzeichnis
-`measurement-2026-09-21-a100-a102/`). Bearbeitet 2026-09-21, Branch
+`measurements/measurement-2026-09-21-a100-a102/`). Bearbeitet 2026-09-21, Branch
 `desk-rebuild`, Basis HEAD `022d6d0`, **nicht committet**, nichts geflasht.
 
 ## 1 — `THEACTIVE` = Summe der Titel (Kernel-Desktop)

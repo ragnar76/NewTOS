@@ -3,7 +3,7 @@
 Der Dateiauswaehler faehrt EmuTOS' `fs_start`-Durchgang jetzt vollstaendig —
 Flags **und** Geometrie, in derselben Reihenfolge. Bearbeitet 2026-09-17,
 Branch `desk-rebuild`, Basis HEAD `c4b25e9`, Baum vorher sauber.
-Messlauf: [`measurement-2026-09-17-fsel/`](../measurement-2026-09-17-fsel/RUNINFO.TXT).
+Messlauf: [`measurements/measurement-2026-09-17-fsel/`](../measurements/measurement-2026-09-17-fsel/RUNINFO.TXT).
 Gemeinsam mit [A63](A63.md) bearbeitet, wie das Ticket verlangt; A64 zuerst
 (Begruendung unten).
 
@@ -73,7 +73,7 @@ Das deckt sich mit der Vermutung des Auftrags.
 
 `tos-api/src/aes/fsel.rs`, Modul `tests` (in-crate, weil `fs_start` privat ist und
 keinen Rasterhintergrund braucht). Rote Ausgabe vollstaendig in
-[`measurement-2026-09-17-fsel/build/newtest-RED.txt`](../measurement-2026-09-17-fsel/build/newtest-RED.txt):
+[`measurements/measurement-2026-09-17-fsel/build/newtest-RED.txt`](../measurements/measurement-2026-09-17-fsel/build/newtest-RED.txt):
 
 ```
 ---- fs_start_applies_every_geometry_adjustment_of_the_3d_pass ----
@@ -93,7 +93,7 @@ assertion `left == right` failed: FTITLE te_color
 ```
 
 Danach gruen, siehe
-[`newtest-GREEN.txt`](../measurement-2026-09-17-fsel/build/newtest-GREEN.txt).
+[`newtest-GREEN.txt`](../measurements/measurement-2026-09-17-fsel/build/newtest-GREEN.txt).
 
 ## Folgeaenderung in `aes/object.rs` — eine Zeile, begruendet
 
@@ -124,7 +124,7 @@ Metrik wie unser Bau — und es zeigt den Zustand **nach** `fs_start`. Ein
 wurzelrelativer Vergleich ist damit zulaessig.
 
 Gemessen mit
-[`method/compare-geometry.py`](../measurement-2026-09-17-fsel/method/compare-geometry.py)
+[`method/compare-geometry.py`](../measurements/measurement-2026-09-17-fsel/method/compare-geometry.py)
 (Schwarzlaeufe >= 10 Punkte je wurzelrelativer Zeile, also Kastenraender ohne
 Textglyphen und ohne Dither):
 
@@ -154,10 +154,10 @@ das Programm ausschliesslich Schwarz.
 
 | | |
 |---|---|
-| Bild nachher | [`screendumps/fsel-after.png`](../measurement-2026-09-17-fsel/screendumps/fsel-after.png) (640x480) |
-| Bild, auf Referenzgroesse beschnitten | [`screendumps/fsel-after-crop326x362.png`](../measurement-2026-09-17-fsel/screendumps/fsel-after-crop326x362.png) |
-| Vergleichsausgabe | [`screendumps/compare-geometry.txt`](../measurement-2026-09-17-fsel/screendumps/compare-geometry.txt) |
-| Serielles Protokoll | [`screendumps/fsel-after-BOOT-SERIAL.txt`](../measurement-2026-09-17-fsel/screendumps/fsel-after-BOOT-SERIAL.txt) |
+| Bild nachher | [`screendumps/fsel-after.png`](../measurements/measurement-2026-09-17-fsel/screendumps/fsel-after.png) (640x480) |
+| Bild, auf Referenzgroesse beschnitten | [`screendumps/fsel-after-crop326x362.png`](../measurements/measurement-2026-09-17-fsel/screendumps/fsel-after-crop326x362.png) |
+| Vergleichsausgabe | [`screendumps/compare-geometry.txt`](../measurements/measurement-2026-09-17-fsel/screendumps/compare-geometry.txt) |
+| Serielles Protokoll | [`screendumps/fsel-after-BOOT-SERIAL.txt`](../measurements/measurement-2026-09-17-fsel/screendumps/fsel-after-BOOT-SERIAL.txt) |
 | Hosttests | 551 → **557 gruen / 0 rot / 1 ignoriert** |
 | Bau rpi4 / qemu-virt (release, frisch) | beide `rc=0`, tos-api 64 rustc, kernel 94 rustc — Grundlinie |
 | Clippy | tos-api 81, kernel 125 (beide Boards) — Grundlinie |
@@ -180,7 +180,7 @@ nachher  MD5 (kernel/src/lib.rs) = 5434f7b25c5641c7fab1fce0b1c98b85
   beide Boards).
 - Nicht committet; die Arbeit liegt im Baum (`tos-api/src/aes/fsel.rs`,
   `tos-api/src/aes/object.rs`, `docs/STATUS.md`, `TASK/`,
-  `measurement-2026-09-17-fsel/`). Der *Recent-Decisions*-Eintrag traegt deshalb
+  `measurements/measurement-2026-09-17-fsel/`). Der *Recent-Decisions*-Eintrag traegt deshalb
   noch keinen Commit-Hash.
 
 ## Erratum (2026-09-20, A72)
@@ -188,7 +188,7 @@ nachher  MD5 (kernel/src/lib.rs) = 5434f7b25c5641c7fab1fce0b1c98b85
 Zeile 142 dieser Quittung nennt „Referenz Rand 217/248, innen 218..247" fuer
 den 1-Punkt-Rahmen der Laufwerkskaesten. Das ist falsch abgeschrieben.
 Gemessen — sowohl in dieser Quittung eigener Rohdatei
-[`measurement-2026-09-17-fsel/screendumps/compare-geometry.txt`](../measurement-2026-09-17-fsel/screendumps/compare-geometry.txt)
+[`measurements/measurement-2026-09-17-fsel/screendumps/compare-geometry.txt`](../measurements/measurement-2026-09-17-fsel/screendumps/compare-geometry.txt)
 (Zeilen 4, 8, 10, 18, 26, 28, 30, 32, 34, 38: `ref =[(217, 246), …]`) als
 auch von [A67](A67-STATUS-DONE.MD) unabhaengig nachgemessen — ist der Rand
 bei **217/246**, innen **218..245** (A67: „Rand 217/246, Fase 1 px auf

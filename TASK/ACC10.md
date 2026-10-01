@@ -14,7 +14,7 @@ zurueck.**
 
 **Unabhaengig von PORT05 gemessen:** ein vom Kernel gestartetes Programm
 (kein `Pexec`) bleibt an derselben Stelle stehen, und
-`measurement-2026-09-25-port05/serial/control-kernel-launch-unfixed.log`
+`measurements/measurement-2026-09-25-port05/serial/control-kernel-launch-unfixed.log`
 gegen `...-fixed.log` sind **bis auf die Uhrzeile identisch**.
 
 ## Warum es bisher niemand gesehen hat

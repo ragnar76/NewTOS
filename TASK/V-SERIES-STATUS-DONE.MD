@@ -1,6 +1,6 @@
 # V01, V02, V04–V10, V13–V15 — Quittung (2026-09-21)
 
-**Was getan wurde:** Auditor-Messung `measurement-2026-09-21-vdi-qemu/` —
+**Was getan wurde:** Auditor-Messung `measurements/measurement-2026-09-21-vdi-qemu/` —
 drei frische Dumps der Tabelle `tosdump/cases/vdi-all.tsv` (CRC `D135ADAF`):
 EmuTOS 1.4 auf Hatari-TT (bitgleich zur echten TT-Referenz), EmuTOS 1.4 auf
 Hatari-Falcon030 in VIDEL-Truecolor (Release-ROM und gepinnter Quellstand:
@@ -14,7 +14,7 @@ Arithmetik, je mit Quellzeile (`docs/analysis/vdi-v-series-classification-2026-0
 
 **Artefakte:** `tosdump/reference/EMUTOS14-VDI-all-falcontc.{BIN,LOG}` (neu),
 `tos-api/tests/vdi_reference/cases_v_series.rs` (15 Tests gruen),
-`measurement-2026-09-21-vdi-qemu/` (Dumps, fuenf `tosdiff`-Laeufe, Zellen-
+`measurements/measurement-2026-09-21-vdi-qemu/` (Dumps, fuenf `tosdiff`-Laeufe, Zellen-
 und Handle-Auswertung, Methode `run-falcon-tc.sh`).
 
 **Offen:** echte Pi 4 (1920x1080): die Geometriezellen (V01, V06, V13, V14)

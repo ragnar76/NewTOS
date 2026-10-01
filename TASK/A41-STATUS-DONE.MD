@@ -40,12 +40,12 @@ Blob.
 |---|---|---|
 | Konverter | `tools/mkrsc.py` `convert`: **NRSC v13 (LP64) / v14 (ILP32)** — 36-Byte nativer `RSHDR` (18 LE u16, klassische Reihenfolge `rsdefs.h:16-36`, Offsets **ab Dateianfang**, `rsh_vrsn` = Quelldatei (0, bzw. 4 = `NEW_FORMAT_RSC` bei CICON — nie `& 3 == 3`), `rsh_rssize` = Abbildgroesse, `rsh_string`/`rsh_imdata` = Datenabschnitt), auf 40 gepolstert, **vor** dem NRSC-Header (jetzt bei 40; alle `off_*` ab Byte 0 — ein Bezugspunkt); `pack_rshdr` (u16-Grenze, `IS_XRSC_HEADER`-Schutz, auch von `--rshdr` genutzt — `icons.rsc` bytegleich); Grenze `RSC_CAP − 40`, laut; RSXHDR-Quelle abgewiesen | fertig |
 | Lader | `resource.rs`: `NRSC_VER_RSHDR` = 13, `RSHDR_PAD` = 40, `RSHDR_SIZE`; `nrsc_header_offset` (Magic bei 0 = v1–v12, bei 40 = v13+), `hdr()` (alle Leser eines geprueften Blobs), `rshdr_is_consistent` (7 Offsets, 7 Zaehler, `rsh_rssize` = `total_size`, `rsh_vrsn & 3 != 3`, `rsh_string`/`rsh_imdata` im Abbild); `header_is_sound`: Generation muss zum Fundort passen (v13 bei 0 / v11 bei 40 → abgewiesen). `report_load` unveraendert: `ap_rscmem` = Blob-Basis = `RSHDR`, `ap_rsclen` = `rsh_rssize`, `ap_ptree` = `ap_rscmem + rsh_trindex`. `rsrc_gaddr`, `fix_objects_coords`, `fix_cicons` in der Sache unveraendert | fertig |
-| Blobs | `tos-api/src/aes/gem_fsel.nrsc` (xtask `gen-fsel-rsc`, 5 047 B), `sdk/apps/teradesk/build/dist/{desktop.rsc 39 278, cicons.rsc 63 650}`, `sdk/apps/qed/build/qed.rsc` 41 378 — alle v13; Hashes in `measurement-2026-09-19-a41/part2/manifest.sha256` | neu konvertiert |
+| Blobs | `tos-api/src/aes/gem_fsel.nrsc` (xtask `gen-fsel-rsc`, 5 047 B), `sdk/apps/teradesk/build/dist/{desktop.rsc 39 278, cicons.rsc 63 650}`, `sdk/apps/qed/build/qed.rsc` 41 378 — alle v13; Hashes in `measurements/measurement-2026-09-19-a41/part2/manifest.sha256` | neu konvertiert |
 | Auslieferung | `sdk/apps/build-teradesk.sh` staged `cicons.rsc`; `tools/make-sd-image.sh` kopiert es (Kommentar; Logik „nur wenn in `dist/`" bleibt) | fertig |
 | Tests | `resource.rs` `rshdr_tests` (4: TeraDesks `xrsrc_gaddr`-Lesart auf dem geladenen Abbild, jeder Zweig gegen `rsrc_gaddr`; inkonsistenter Vorspann abgewiesen; Generation ↔ Fundort, v11 laedt weiter; ILP32-v14-Abbild mit 4-Byte-Slots); `tests::nrsc_field`; `tools/xtask/src/rsc_cicon_tests.rs` `check_rshdr` (v13/v14, 63 650 B); `rsc_obfix_tests.rs`/`rsc_align_tests.rs` und fuenf `tos-api/tests/aes_rsrc_*.rs` lesen den Header bei 0 oder 40 | 631 / 0 / 1 |
 | Spec/Doku | `resource-fileselector.md` (`rsrc_load`-Callout: der Vorspann-Vertrag; §5.9/§5.10/§5.11.5 Status), `docs/sdk/04-porting-anatomy.md`, `05-abi-pitfalls.md` B8 (Symptom 3 + neues Symptom 5) | nachgezogen |
 
-## Geprueft (Teil 2; Belege in `measurement-2026-09-19-a41/part2/`)
+## Geprueft (Teil 2; Belege in `measurements/measurement-2026-09-19-a41/part2/`)
 
 * **Rot vor / gruen nach** (`host-tests/`): `rshdr_tests` 3 FAILED auf dem
   Stand vor dem Umbau — `_rs_trindex[0]` bei `rsh_trindex` 0 = 39784239694
@@ -60,7 +60,7 @@ Blob.
   dem Image, TeraDesk per `#Z`:** kein EXC/panic;
   `screendumps/product1-tera-colour-icons-idle.png` — vier HARD-DISC-Farbicons
   und farbiger TRASH, **0 Pixel** Differenz zur Scratch-Shim-Referenz
-  `measurement-2026-09-19-a41/screendumps/tera2-scratch-shim-colour-icons-idle.png`,
+  `measurements/measurement-2026-09-19-a41/screendumps/tera2-scratch-shim-colour-icons-idle.png`,
   3205 Pixel (die Icons) zur Mono-Referenz.
 * **A39-Sequenz per Injektor** (Scratch-Kernel, `method/`): HARD DISC C
   doppelklicken → Fenster `C:\*.*`, Infozeile „374035 bytes used in 24
@@ -73,7 +73,7 @@ Blob.
   Geraeteform 153 600 B), beim Beenden `rsrc_free(0x400000) = 1`.
 * **QED per `#Z` (qed.rsc v13) und unser Desktop:** `smoke-qed-up.png`,
   `smoke-desk-up.png` **bytegleich** (0 Pixel) zu
-  `measurement-2026-09-19-a39/screendumps/` und Teil 1.
+  `measurements/measurement-2026-09-19-a39/screendumps/` und Teil 1.
 
 ## Beobachtet, nicht Teil des Auftrags
 

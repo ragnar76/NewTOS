@@ -7,7 +7,7 @@ Abhaengigkeiten: — · **Vorbedingung fuer [PORT06](PORT06.md) §3** (Dooms Spe
 ## Der Befund, auf echter Pi 4 gemessen
 
 Die konforme Ball-Demo (Kern `09f3e928`, 1920x1080), Protokoll
-`measurement-2026-09-28-port07/raw/pi01-BALL.LOG`:
+`measurements/measurement-2026-09-28-port07/raw/pi01-BALL.LOG`:
 
 ```
 BALL: ST-RAM top 0x00E00000, ramtop 0x2FE00000; buffers asked for alternate RAM (MX_PREFTTRAM)

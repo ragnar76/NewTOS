@@ -34,7 +34,7 @@ offenen Fenster liefern — ohne Abbruch.
 Spec: keine — der Zaehler ist kein TOS-Vertrag (kein `docs/api/`-Satz
 beschreibt ihn); die Herleitung steht im Doc-Kommentar von `bump_z`.
 
-## Geprueft (Belege in `measurement-2026-09-20-a47-a52-a55-a58/`)
+## Geprueft (Belege in `measurements/measurement-2026-09-20-a47-a52-a55-a58/`)
 
 * **Rot vor / gruen nach** (`host-tests/a52-red-before.txt`,
   `a52-green-after.txt`): vor dem Hunk `panicked at
@@ -45,7 +45,7 @@ beschreibt ihn); die Herleitung steht im Doc-Kommentar von `bump_z`.
   `needless_range_loop` in `renumber_z`, behoben); Testdatei clippy-sauber.
 * **QEMU-Smoke** (`method/run.sh`, raspi4b, Produktkernel `--release` +
   sd-base): `screendumps/smoke-desk-up.png` **0 Pixel** und bytegleich
-  (sha256 `dee57cca…`) zu `measurement-2026-09-19-a46/screendumps/smoke-desk-up.png`;
+  (sha256 `dee57cca…`) zu `measurements/measurement-2026-09-19-a46/screendumps/smoke-desk-up.png`;
   Serial ohne `EXC`/`panic`. Unterhalb von `i16::MAX` ist `bump_z` unveraendert,
   die Fensterordnung des Desktops damit auch.
 

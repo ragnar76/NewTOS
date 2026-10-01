@@ -2,7 +2,7 @@
 
 Status: **UMGESETZT, Abnahmekriterium erfuellt** (QEMU `raspi4b` + `virt`,
 headless)
-Beleg: `measurement-2026-09-29-sched01/`
+Beleg: `measurements/measurement-2026-09-29-sched01/`
 Basis: `desk-rebuild`, HEAD `3460eef`, Aenderung **unverbaut im Baum**
 (nicht committet). Nichts geflasht, nichts ausgeworfen, keine Pi gefahren,
 `/Volumes/BOOT` nicht beruehrt, kein `git checkout/restore/clean/stash/reset`.
@@ -17,7 +17,7 @@ Basis: `desk-rebuild`, HEAD `3460eef`, Aenderung **unverbaut im Baum**
 > Programmstart.
 
 Erfuellt, alles vier gemessen. Der entscheidende Ausschnitt
-(`measurement-2026-09-29-sched01/raw/ball-exit-trace.log`):
+(`measurements/measurement-2026-09-29-sched01/raw/ball-exit-trace.log`):
 
 ```
 267 >> AES op=19 appl_exit
@@ -152,7 +152,7 @@ nicht abdeckt, weil dessen Vorrichtung den Warter schon READY setzt:
 ## 4. Die fuenf Beweise
 
 Vollstaendig mit Protokollen und Bildern in
-`measurement-2026-09-29-sched01/` (RUNINFO.TXT fuehrt sie einzeln auf;
+`measurements/measurement-2026-09-29-sched01/` (RUNINFO.TXT fuehrt sie einzeln auf;
 **kein `*.img`**).
 
 | # | Was | Beleg |
@@ -215,7 +215,7 @@ Doppelklick starten:
 * **Nur auf echter Hardware:** nichts Spezifisches. Die Aenderung ist
   board-unabhaengig; wer sie auf der Pi sehen will, fuehrt Abschnitt 5 nach.
 * **Empfohlene Gegenproben:** ACC02–ACC06-Klickliste, ein `Pexec`-Lauf
-  (PEXPAR/PEXKID aus `measurement-2026-09-26-acc10/nap/`), Start aus
+  (PEXPAR/PEXKID aus `measurements/measurement-2026-09-26-acc10/nap/`), Start aus
   `\AUTO\`, Doppelklick, `#Z`.
 
 ---

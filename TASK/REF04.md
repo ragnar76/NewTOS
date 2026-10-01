@@ -143,7 +143,7 @@ ist leer. Vom Lead nachgefahren.
 ### Sweep
 
 Voller Baum, `/usr/bin/grep -rn -I` ueber 15 charakteristische Satzanfaenge.
-**Eine** verbleibende Fundstelle: `measurement-2026-09-27-hw03/RUNINFO.TXT:47`
+**Eine** verbleibende Fundstelle: `measurements/measurement-2026-09-27-hw03/RUNINFO.TXT:47`
 zitiert **einen** Satz (Bit 30) mit Quellenangabe.
 
 **Bewusst stehengelassen, mit zwei Gruenden:** Messartefakte werden nach

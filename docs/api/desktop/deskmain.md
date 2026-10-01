@@ -478,7 +478,7 @@ version-string + about-box insertion, `adjust_menu(desk_rs_trees[ADMENU])`
   `aes/gemgraf.c:412-415`). `adjust_menu` rewrites widths only
   (`:1608-1635`), so every entry sits at `row · 16` and every box is
   `n · 16` tall: on the English tree Desk 32, File 240, View 160, Options
-  192 (measured on the board, `measurement-2026-09-22-a107-a109`). NewTOS's
+  192 (measured on the board, `measurements/measurement-2026-09-22-a107-a109`). NewTOS's
   `build_menu` used `MENU_H` = 19 until A109, which made the File box 285.
 - **`install_shortcuts()`** (`:1825-1858`, called from `app_start()` after
   `menu_shortcuts[]` may have been customized): for each of the
@@ -1353,7 +1353,7 @@ box carries no version of its own either — `desk_xlate_fix` points `DEVERSN`'s
 
 ### Measured
 
-QEMU raspi4b, 640×480, `measurement-2026-09-24-desk01-desk02/`: the box lands at
+QEMU raspi4b, 640×480, `measurements/measurement-2026-09-24-desk01-desk02/`: the box lands at
 **(128, 111, 384, 276)**, which is `form_center`'s value
 (`(640-384)/2 = 128`, `19 + (480-19-276)/2 = 111`), and after `OK` the screen is
 **byte-identical** to the one before it opened (same PNG md5, 0 differing
@@ -1403,7 +1403,7 @@ Three points the source forces:
 hard-coded `Item → letter` table, and now walks `menu_shortcuts[]` through
 `shortcut_mapping[]`, skipping absent items (`:1181-1182`) and stopping on a
 matching-but-`DISABLED` one (`:1185-1188`). Measured in
-`measurement-2026-09-23-desk05/` (`Ctrl-S` still runs *Save desktop*).
+`measurements/measurement-2026-09-23-desk05/` (`Ctrl-S` still runs *Save desktop*).
 
 ---
 
@@ -1435,7 +1435,7 @@ if (done && pw) { /* CONF_WITH_PCGEM */
 from `wind_get(DESKWH, WF_TOP)`, the `win_ontop()` stand-in this file
 already uses everywhere else. Both traps are in the board trace, in EmuTOS's
 order: `op 121` then `op 127`
-(`measurement-2026-09-23-desk06/serial/wdef-serial.log:202,204`); with no
+(`measurements/measurement-2026-09-23-desk06/serial/wdef-serial.log:202,204`); with no
 window open only `op 121` appears, which is `if (done && pw)`.
 
 ### Which of the two possible screen routes, and why
@@ -1479,7 +1479,7 @@ after the nested call.
 
 ### What the board run showed
 
-`measurement-2026-09-23-desk06/`, QEMU raspi4b, 640×480, scripted IKBD:
+`measurements/measurement-2026-09-23-desk06/`, QEMU raspi4b, 640×480, scripted IKBD:
 
 - `Execute EmuCON` is the **only** black entry of the File drop-down on a
   bare desktop (`screendumps/cli-B-filemenu.png`); the serial dump of the
@@ -1516,7 +1516,7 @@ the waste basket selected. `desk::win::count_selected_desk_icons` now returns
 `Item::Delete` on `nsel >= 1 && ntrash == 0` — the `ILL_NOSEL` membership plus
 the extra guard, in that order.
 
-Measured (`measurement-2026-09-23-desk16-desk17-desk21/`): with the Trash
+Measured (`measurements/measurement-2026-09-23-desk16-desk17-desk21/`): with the Trash
 selected the entry is grey after and was black before; with a drive selected —
 `ndesk` 1, `ntrash` 0 — it stays black. *Open* and *Info/Rename...* are black in
 both after-pictures, so the new gate did not leak into `ILL_NOSEL`.
@@ -1551,7 +1551,7 @@ mirror image, highlighting the title first (`menu_tnormal(..., title, 0)`,
 (`super::menu_tnormal(menu::tree_ptr(), title_obj, true)` after the `do_*menu`
 call), and `desk::main::hndl_kbd` highlights first on the shortcut path. The
 screendump the ticket cited as the defect
-(`measurement-2026-09-24-desk03-desk04/screendumps/ico-B-dialog.png`) therefore
+(`measurements/measurement-2026-09-24-desk03-desk04/screendumps/ico-B-dialog.png`) therefore
 shows conformant behaviour. Re-measured before *and* after anyway, with the
 dialog open and after it closes: the four pictures are identical in the pair
 that matters. No code changed.
@@ -1600,7 +1600,7 @@ to set, and a `desk_all` here would repaint every window for a change that
 touched none of them. The window-background half of `ADBKGND` remains a gap,
 unchanged by DESK21.
 
-Measured: `measurement-2026-09-23-desk16-desk17-desk21/`, both drop-downs
+Measured: `measurements/measurement-2026-09-23-desk16-desk17-desk21/`, both drop-downs
 before and after.
 
 ---
@@ -1637,7 +1637,7 @@ changed. Measured: two windows on `C:\`, a file selected in the top one, one
 click in the lower one's uncovered work area — the selection is gone, and the
 AES trace shows the EmuTOS order, `wind_set(2, WF_INFO)` (that is
 `desk_clear`'s `win_sinfo`, `desksupp.c:148`) before `wind_set(1, WF_TOP)`
-(`measurement-2026-09-24-desk22-desk23-desk28-desk29/`, §5).
+(`measurements/measurement-2026-09-24-desk22-desk23-desk28-desk29/`, §5).
 
 ## NewTOS implementation notes — opening a folder navigates the window (DESK34, 2026-09-24)
 
@@ -1698,7 +1698,7 @@ it is the damage rectangle of the redraw.
 
 ### Measured
 
-`measurement-2026-09-24-desk34-desk35/`, §2 — QEMU raspi4b, 640×480. Opening
+`measurements/measurement-2026-09-24-desk34-desk35/`, §2 — QEMU raspi4b, 640×480. Opening
 `SUB` from the `C:\` window keeps desktop window slot 0 / AES handle 1 and
 changes its spec from `C:\*.*` to `C:\SUB\*.*` (serial `[probe] win slot 0
 handle 1 spec …`), with the title bar reading `C:\SUB\`
@@ -1761,7 +1761,7 @@ this one does **not** run `men_update`.
 
 ### Measured
 
-`measurement-2026-09-25-desk-rest/` §5 — QEMU raspi4b, 640×480, pointer parked
+`measurements/measurement-2026-09-25-desk-rest/` §5 — QEMU raspi4b, 640×480, pointer parked
 in the corner, no click in the whole run. With `#G 06 FF C:\ARGVTEST.NAP@
 *.XYZ@ 107 @` in `NEWDESK.INF`, F7 gives `[d33] process_funkey(7) ->
 C:\ARGVTEST.NAP appdir=true` and the program's own output; F6 gives
@@ -1796,7 +1796,7 @@ Widths now, from the source rather than from a picture: `17+3+1 = 21`,
 
 ### Measured
 
-`measurement-2026-09-25-desk-rest/` §2 — the same action list on two kernels
+`measurements/measurement-2026-09-25-desk-rest/` §2 — the same action list on two kernels
 that differ in `kernel/src/desk/menu.rs` alone. `[probe] box N abs (x,y) WxH`,
 8 px per cell: Desk 176 → 168 px (22 → 21), File 184 → 176 px (23 → 22), View
 184 px (23) and Options 240 px (30) unchanged. Screendumps of all four

@@ -3,7 +3,7 @@
 Auditor-Auswertung der Tickets `TASK/R02.md` … `TASK/R05.md`. Grundlage ist
 eine **neue Falltabelle** `tosdump/cases/vdi-raster-screen.tsv` (62 Fälle,
 41 Preludes, CRC `9780EC39`), auf `desk-rebuild` @ `c1f42ff` dreimal
-gefahren und in `measurement-2026-09-21-raster-screen/` abgelegt
+gefahren und in `measurements/measurement-2026-09-21-raster-screen/` abgelegt
 (`RUNINFO.TXT`, `manifest.sha256`):
 
 | Kürzel | Maschine | Profil | Herkunft |
@@ -311,7 +311,7 @@ Für **R02, R03, R04** ist derselbe Satz belegt:
 > Screen-Pfad ist tatsächlich gelesen: EmuTOS 1.4 auf Hatari Falcon030
 > Truecolor (beide ROMs, 0 Unterschiede) und NewTOS in QEMU raspi4b liefern
 > in allen 15 Fällen der Section dieselben 512 Wörter je Puffer
-> (`measurement-2026-09-21-raster-screen/DIFF-falcontc-rel-vs-newtos-qemu.txt`);
+> (`measurements/measurement-2026-09-21-raster-screen/DIFF-falcontc-rel-vs-newtos-qemu.txt`);
 > die Erwartungen sind durch ein unabhängiges Modell der EmuTOS-Regeln
 > bestätigt (`ORACLE-model-vs-falcontc-rel.txt`, 0/62). Hosttests:
 > `tos-api/tests/vdi_raster_reference/cases_screen.rs` (Binär

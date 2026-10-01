@@ -24,7 +24,7 @@ HEAD `53f588d`, **nicht committet, nichts geflasht**. Kein Kerneleingriff.
 | Docs | `docs/sdk/07-mintlib-limits.md` §3/§4/§6/§7, `08-porting-checklist.md`, `04-porting-anatomy.md`, `05-abi-pitfalls.md` B12, `06-image-and-testing.md`, `README.md`; `sdk/.gitignore` | nachgezogen |
 | Status | `docs/STATUS.md` (Phase-15-Zeile + Recent Decisions 2026-09-21), `TASK/T07.md` Abschluss | |
 
-## Belege (`measurement-2026-09-21-t07/`)
+## Belege (`measurements/measurement-2026-09-21-t07/`)
 
 * `host-tests/setjmp-host.txt` — 13/13 PASS, rc 0 (macOS arm64, `clang -O2 -fno-builtin`).
   Sabotage-Gegenprobe (Scratch, nicht abgelegt): ohne `ldp d8,d9` bzw. `ldp d14,d15`

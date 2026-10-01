@@ -188,7 +188,7 @@ big-endian), nicht aus den Diff-Dateien übernommen. Poison `0xDEAD` steht
 dort, wo `OUT_LEN` endet — auf beiden Maschinen identisch, was die
 Kopiergrenze selbst bestätigt.
 
-**`measurement-2026-09-12-aes-r4/` (Tabelle `aes-r4-subfunctions.tsv`, CRC
+**`measurements/measurement-2026-09-12-aes-r4/` (Tabelle `aes-r4-subfunctions.tsv`, CRC
 `227422B2`; EmuTOS 1.4 auf dem TT via Hatari gegen NewTOS QEMU raspi4b):**
 
 | Fall | Aufruf | EmuTOS `int_out[0..OUT_LEN)` | NewTOS | woher der EmuTOS-Rest stammt |
@@ -201,7 +201,7 @@ Kopiergrenze selbst bestätigt.
 | 336 / 397 / 400 / 445 / 448 | `wind_get` mit Absage (`FALSE`) | `0, `**`0, 0x0218, 0, 0xA000`** bzw. **`0x0100, 0x0218, 0, 0xA000`** | `0, 0, 0, 0, 0` | die `WF_SCREEN`-Antwort `0x01000218` / `40960` (Fälle 331/439) |
 | 568–574 | `objc_edit`, `OUT_LEN 3` (Tabelle über gemlib's 2 hinaus) | `1, 7, `**`63`** | `1, 7, `**`0`** | wieder die 63 aus dem Rechteck |
 
-**`measurement-2026-09-09/run3-pi4-rlist/` gegen `tosdump/reference/EMUTOS14-AES-r2brlist.BIN`**
+**`measurements/measurement-2026-09-09/run3-pi4-rlist/` gegen `tosdump/reference/EMUTOS14-AES-r2brlist.BIN`**
 (Tabelle `aes-r2b-rlist.tsv`, CRC `B4CC4A5A`, echter TT): die drei
 Listenende-Fälle 127, 133, 204 liefern `1, 31, 63, 0, 0` bzw. `1, 0, 19, 0, 0`
 — zwei verschiedene Wertepaare aus einem Poison-Muster in einem Lauf, auf der

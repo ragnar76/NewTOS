@@ -462,10 +462,10 @@ full per protocol):
   `rebuild_window` — that path only re-scanned, rebuilt the view and
   repainted. The re-scan throws the old `FNODE`s away, so after a delete the
   selection was gone while the info line still read `… in 1 selected items.`
-  (`measurement-2026-09-23-desk13/screendumps/f-deleted.png`). `rebuild_window`
+  (`measurements/measurement-2026-09-23-desk13/screendumps/f-deleted.png`). `rebuild_window`
   now calls `win_sinfo(handle, false)` after the re-scan and before the
   redraw, at EmuTOS's place. Before/after in
-  `measurement-2026-09-23-desk24-desk25-desk26` §4.
+  `measurements/measurement-2026-09-23-desk24-desk25-desk26` §4.
 
 ---
 
@@ -559,4 +559,4 @@ The list itself, the `#I`/`#N`/`#D` `AF_WINDOW` nodes the *Install icon* →
 *Window* dialog writes into it, and the order it is searched in are documented
 in [`deskins.md`](deskins.md) (§ `install_window_icon`).
 
-Verification: `measurement-2026-09-23-desk15/`.
+Verification: `measurements/measurement-2026-09-23-desk15/`.

@@ -63,14 +63,14 @@ ausserhalb blieben Stipple und getoppte Fase stehen.
   nennt den `wind_open`-Repaint nicht mehr (→ A94).
 * **`docs/STATUS.md`** — Phase-13-Zeile (Eintrag 2026-09-21 (A94)) + eine
   Zeile „Recent Decisions" 2026-09-21.
-* **`measurement-2026-09-21-a94/`** — `RUNINFO.TXT`, `manifest.sha256`,
+* **`measurements/measurement-2026-09-21-a94/`** — `RUNINFO.TXT`, `manifest.sha256`,
   `method/` (A79-Skripte + `tera-two.actions`, `final_scripts.rs`,
   `scratch-host_env.rs.txt`), `host-tests/`, `build/`, `screendumps/`,
   `serial/`. Keine `*.img`.
 
 ## Tests: rot vor, gruen nach
 
-`measurement-2026-09-21-a94/host-tests/aes_window_open_oldtop-RED-before-fix.txt`
+`measurements/measurement-2026-09-21-a94/host-tests/aes_window_open_oldtop-RED-before-fix.txt`
 / `…-GREEN-after-fix.txt`:
 
 | Test | vor | nach |

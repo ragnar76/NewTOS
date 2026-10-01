@@ -8,7 +8,7 @@ Basis: Branch `desk-rebuild`, HEAD `9a85fd8`, Aenderungen **uncommitted** im
 Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset`.
 
-Messung: [`measurement-2026-09-23-desk19-desk20/`](../measurement-2026-09-23-desk19-desk20/).
+Messung: [`measurements/measurement-2026-09-23-desk19-desk20/`](../measurements/measurement-2026-09-23-desk19-desk20/).
 Spezifikation: `docs/api/desktop/deskins.md` (§ `ins_app`),
 `docs/api/desktop/deskinf.md` (§ *Function keys*).
 
@@ -83,7 +83,7 @@ waeren unerreichbar gewesen. Sichtbar wurde es daran, dass `99` als `"9"`
 ankam (`get_funkey -> Some(9)`, also gueltig statt `STINVKEY`). Jetzt
 `FKEY_MAX + 1 = 3` wie `desk_rs_tedinfo[19]`; der Beleg ist
 `[d20] get_funkey(fkey="99", …) -> None`. Alle Laeufe in
-`measurement-2026-09-23-desk19-desk20/` stammen aus dem Stand **nach** dem
+`measurements/measurement-2026-09-23-desk19-desk20/` stammen aus dem Stand **nach** dem
 Fix.
 
 ## 4. Was DESK20 nicht baut

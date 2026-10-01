@@ -6,7 +6,7 @@ auf feste 32-Bit-Felder mit `packed` umgestellt und durch `_Static_assert` je
 Feldoffset **und** fuer `sizeof` an den Kern gebunden. Der Assert war vorher
 rot, gefuehrt in TeraDesks eigener Uebersetzungseinheit.
 
-Artefakte: [measurement-2026-09-17-diskinfo/](../measurement-2026-09-17-diskinfo/RUNINFO.TXT).
+Artefakte: [measurements/measurement-2026-09-17-diskinfo/](../measurements/measurement-2026-09-17-diskinfo/RUNINFO.TXT).
 
 ## Was geaendert wurde
 
@@ -68,7 +68,7 @@ Dazu drei rote Offset-Asserts (`b_total` 8==4, `b_secsiz` 16==8, `b_clsiz`
 24==12). Die Frage „welches Kopfstueck gewinnt" ist mitbeantwortet: `clang -H`
 weist genau `sdk/libc/mintlib/include/mint/ostruct.h` aus — die Stelle, an die
 `build-libc.sh` das Overlay kopiert. Volles Protokoll:
-`measurement-2026-09-17-diskinfo/01-red-static-assert-showinfo.log`.
+`measurements/measurement-2026-09-17-diskinfo/01-red-static-assert-showinfo.log`.
 
 ## Nachher
 
@@ -88,7 +88,7 @@ weist genau `sdk/libc/mintlib/include/mint/ostruct.h` aus — die Stelle, an die
   (kein Rust angefasst).
 * QEMU raspi4b headless 640x480, TeraDesk per `#Z`-Autorun: steht, keine
   Ausnahme, und gegen die zuletzt abgelegte Aufnahme
-  (`measurement-2026-09-17-a65/after/teradesk.png`) **0 von 307200**
+  (`measurements/measurement-2026-09-17-a65/after/teradesk.png`) **0 von 307200**
   Bildpunkten verschieden.
 
 ## Was offen bleibt — und warum es offen bleiben MUSS
@@ -113,7 +113,7 @@ Alle 30 typedef-Strukturen der `mint/`-Kopfstuecke selbst mit beiden
 Uebersetzern nachgemessen; die Zahlen des Tickets stimmen, nach dem Fix
 weichen **20 von 30** ab. Fuer diese 20 ist erhoben, ob sie heute von einer
 gebauten Anwendung gelesen werden — Liste mit Belegstellen in
-`measurement-2026-09-17-diskinfo/08-struct-reach-survey.md`:
+`measurements/measurement-2026-09-17-diskinfo/08-struct-reach-survey.md`:
 
 * **gelesen: 3** — `OSHEADER` (TeraDesk `gettos.c`, APITEST T04; sicher nur,
   weil `os_version` ein `unsigned short` auf 2 ist. Berichtigung zum Ticket:

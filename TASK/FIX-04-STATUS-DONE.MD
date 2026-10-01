@@ -711,7 +711,7 @@ Anwenders auf **hellgrau** geändert.
   unverändert. Das war der Zweck der Parametrisierung.
 - Gemessen am Screendump, sechs Stellen, alle gleich: 1 px schwarzer Rahmen,
   dahinter 2 px `(189,189,189)`. Beleg:
-  `measurement-2026-09-10-qemu/shadow-drawing/desktop-grey-shadow-640x480.png`.
+  `measurements/measurement-2026-09-10-qemu/shadow-drawing/desktop-grey-shadow-640x480.png`.
 
 **Abweichung von EmuTOS, bewusst.** EmuTOS nimmt `W_BOX`s Rahmenfarbe, also
 BLACK (`gr_crack` auf `ob_spec` `0x1101`, `aes/gemgraf.c:612-627`). Das ist eine

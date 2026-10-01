@@ -1,6 +1,6 @@
 # Die 64 Abweichungen der AES-Unterfunktionstabelle — Einordnung
 
-**Datum:** 2026-09-12 · **Grundlage:** `measurement-2026-09-12-aes-r4/`,
+**Datum:** 2026-09-12 · **Grundlage:** `measurements/measurement-2026-09-12-aes-r4/`,
 Falltabelle `tosdump/cases/aes-r4-subfunctions.tsv` (181 Fälle, CRC `227422B2`) ·
 **Quelle der Wahrheit:** `references/emutos` @ `1a7484aba1bfba23e2c0899e243b6d8177fe41df`
 (bestätigt: `git -C references/emutos log -1` → *Update GitHub Actions to use Node 24*,

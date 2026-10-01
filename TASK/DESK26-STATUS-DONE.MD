@@ -10,7 +10,7 @@ Baum. Nichts geflasht, nichts ausgeworfen, keine Pi gefahren, nichts
 committet; kein `git checkout/restore/clean/stash/reset` auf dem gemeinsamen
 Baum.
 
-Messung: [`measurement-2026-09-23-desk24-desk25-desk26/`](../measurement-2026-09-23-desk24-desk25-desk26/) §4.
+Messung: [`measurements/measurement-2026-09-23-desk24-desk25-desk26/`](../measurements/measurement-2026-09-23-desk24-desk25-desk26/) §4.
 Spezifikation: `docs/api/desktop/deskwin.md`, `docs/api/desktop/deskfun.md`.
 
 ---

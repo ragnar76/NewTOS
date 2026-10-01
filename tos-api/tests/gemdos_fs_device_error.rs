@@ -27,7 +27,7 @@
 //! access with the TOS code the real driver derives from R1
 //! (`docs/hardware/emmc-sd.md` §5). What is driven here is everything above
 //! the driver; the driver's own R1 evaluation is driven in QEMU
-//! (`measurement-2026-09-27-hw03`).
+//! (`measurements/measurement-2026-09-27-hw03`).
 
 mod fatvol;
 

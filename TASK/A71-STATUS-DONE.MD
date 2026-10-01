@@ -26,7 +26,7 @@ byteweise verglichen und der Fixture-Puffer auf Beschreibung geprueft.
   — der Stiftpfad brachte Weiss (Stift 0) zurueck.
 * **nach**: gruen; `xtask test` 674 / 0 / 1.
 
-## QEMU (`measurement-2026-09-20-a57/`)
+## QEMU (`measurements/measurement-2026-09-20-a57/`)
 
 TeraDesk View- und File-Tafel auf/zu (Injektor): Tafelflaeche exakt
 zurueckgeschrieben (Differenz zum Ausgangsbild = nur der Zeiger), File-Tafel

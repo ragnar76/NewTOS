@@ -400,7 +400,7 @@ hierher.
 `tosdump/cases/aes-r1.tsv`, `aes-r2-wind.tsv`, `aes-r2b-rlist.tsv`,
 `vdi-*.tsv`, `tosdump/core/*`, `tosdump/deploy-tt/*`, `tosdump/deploy-pi4/*`,
 alle `*.BIN`, `*.LOG`, `MESSRUN.TXT`, `RUNINFO.TXT`, alles unter
-`measurement-2026-09-09/` und `measurement-2026-09-10-qemu/`, `TASK/README.md`,
+`measurements/measurement-2026-09-09/` und `measurements/measurement-2026-09-10-qemu/`, `TASK/README.md`,
 `TASK/A16.md`, `TASK/A22.md`, `TASK/A24.md`, `TASK/A25*`, `TASK/evidence/**`,
 `docs/STATUS.md` und jede `.rs`-Datei. Gebaut wurde nur das Hostwerkzeug
 `tosdump/host/build/casecheck` (Bauartefakt, gitignoriert); die Statuszeilen von

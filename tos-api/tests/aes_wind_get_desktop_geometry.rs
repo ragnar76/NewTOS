@@ -47,7 +47,7 @@
 //! TT dump — at the TT's 640×480 only, and as a number-for-number comparison.
 //! That proves the values at one profile; it cannot tell "derived from the
 //! device" from "the TT's numbers, hard-coded". The Pi 4 run
-//! (`measurement-2026-09-09/run1-pi4/AES.LOG`) answered 1920/1080 and
+//! (`measurements/measurement-2026-09-09/run1-pi4/AES.LOG`) answered 1920/1080 and
 //! 1061 for the same cases, which the tickets classify as a device difference,
 //! not a defect — provided the rule holds. This file checks the *rule*, at two
 //! profiles (the TT's 640×480 and the Pi 4's 1920×1080), and checks that the
@@ -79,7 +79,7 @@ use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, 
 /// TT-medium (`tosdump/reference/EMUTOS14-AES.BIN`).
 const TT: (u16, u16) = (640, 480);
 /// The current hardware profile — the Pi 4 run
-/// (`measurement-2026-09-09/run1-pi4/`). A test profile, not a new video mode:
+/// (`measurements/measurement-2026-09-09/run1-pi4/`). A test profile, not a new video mode:
 /// the backend below only *reports* it.
 const PI4: (u16, u16) = (1920, 1080);
 

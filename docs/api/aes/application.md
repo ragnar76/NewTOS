@@ -962,7 +962,7 @@ returns are pid / 0 / 1 / -1 only.
   this line previously equated the *reported* `ap_id` with the GEMDOS
   process id (i.e. "Slot + 1"), which is not what EmuTOS reports — EmuTOS's
   `ap_id` is **0** for the whole application chain (Fall 644,
-  `measurement-2026-09-12-aes-r4/aes-r4-subfunctions.tsv`, CRC `227422B2`).
+  `measurements/measurement-2026-09-12-aes-r4/aes-r4-subfunctions.tsv`, CRC `227422B2`).
   What *is* true, and what this line was reaching for, is only that the AES
   application's *life* brackets a GEMDOS process's life
   (`appl_init`/`appl_exit` inside `Pexec`/`Pterm`) — not that its reported

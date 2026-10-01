@@ -21,7 +21,7 @@ inkl. D-093a (unveraendert).
 
 ## Was gebaut ist
 
-* **`tos-api/src/aes/object.rs`** (`measurement-2026-09-20-a99/method/product-a99-object-menu.diff`):
+* **`tos-api/src/aes/object.rs`** (`measurements/measurement-2026-09-20-a99/method/product-a99-object-menu.diff`):
   * `change_clip_t` (Koerper von `objc_change` / `change` / `change_t`): nach
     Zustandsschreiben und `redraw`-Tor: Typ (`& 0x00ff`), Flags,
     `th = sst_th(obj).max(0)`; Cursor-Klammer unveraendert (A65); dann der
@@ -67,7 +67,7 @@ inkl. D-093a (unveraendert).
   (`method/test-harness-save-under-fill-pattern-mode.diff`).
 * **`docs/STATUS.md`** — Phase-13-Fragment + eine Zeile „Recent Decisions“
   (2026-09-20). **`TASK/A99.md`** — Status + Abschluss.
-* **`measurement-2026-09-20-a99/`** — RUNINFO, 30 Screendumps (3 Szenarien ×
+* **`measurements/measurement-2026-09-20-a99/`** — RUNINFO, 30 Screendumps (3 Szenarien ×
   vorher/nachher), 6 Serial-Logs, Build-/Clippy-Logs, Hosttest-Quittungen,
   Methode (Skripte, Aktionen, Produkt-/Harness-Diff), SHA-256-Manifest. Keine
   `*.img`.
@@ -105,7 +105,7 @@ Nicelines — alle gruen.
 | `cargo clippy -p tos-api` | **80 → 80** (A85-Basis 80; `object.rs` 16 → 16, `menu.rs` 10 → 10 Treffer); `--test aes_objc_change_toggle`/`aes_screen_buffer_save_under`: 0 Warnungen |
 | qemu-virt | nicht gebaut (Lead) |
 
-## QEMU raspi4b (`measurement-2026-09-20-a99/`)
+## QEMU raspi4b (`measurements/measurement-2026-09-20-a99/`)
 
 A85/A79-Methode (`method/make_scratch_a99.sh` = rsync der Crates +
 `a79_patch.py` + Injektor mit `a99_scripts.rs`/`a99_scripts2.rs` +

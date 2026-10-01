@@ -7,7 +7,7 @@ deshalb **2 h 44 min** statt 150 ms wartet. Der Quit-Dialog erscheint nie, `quit
 wird nie gesetzt, kein `appl_exit`, kein `Pterm`, kein Rückweg zu `desk/`. Die
 Maus bewegt sich, weil `evnt_timer` in der AES-Warteschleife (`sched::sleep` →
 `pump_input`) sitzt. Bearbeitet 2026-09-17, Branch `desk-rebuild`, Basis HEAD
-`49b2c2c`. Messlauf: [`measurement-2026-09-17-h03/`](../measurement-2026-09-17-h03/RUNINFO.TXT).
+`49b2c2c`. Messlauf: [`measurements/measurement-2026-09-17-h03/`](../measurements/measurement-2026-09-17-h03/RUNINFO.TXT).
 **Kein Produktcode geändert.**
 
 ## 1. Welchen Beendigungsweg TeraDesk nimmt
@@ -95,7 +95,7 @@ will, darf das, und die AES tut es.
 **Reproduziert: ja.** Weil `raspi4b` keine Eingabe hat, wurde eine
 **Scratch-Kopie** des Workspace mit einem IKBD-Byte-Injektor (Maus-Skript in
 `pump_input`) und einem AES-Opcode-Trace gebaut
-(`measurement-2026-09-17-h03/method/scratch-kernel-injector.diff`); das
+(`measurements/measurement-2026-09-17-h03/method/scratch-kernel-injector.diff`); das
 Projektverzeichnis blieb unberührt. Skript: Zeiger auf (0,0) → *File* hovern
 (72,8) → *Quit/Shutdown* (150,235) klicken → (320,313) klicken → wackeln.
 
@@ -160,7 +160,7 @@ unverändert (`serial/run6-teradesk-fixed-evnt_timer-clean.log`):
 
 **Nein, war vorher schon so.**
 * `343b3c5` (desk/-Rückschnitt) berührt ausschließlich `kernel/src/desk/*`,
-  `docs/`, `measurement-2026-09-14-desk/` (`git show 343b3c5 --stat`); der
+  `docs/`, `measurements/measurement-2026-09-14-desk/` (`git show 343b3c5 --stat`); der
   `#Z`-Rückweg (`shell_loop.rs`, `launch.rs`, `event.rs`) ist unberührt, und der
   Hänger liegt ohnehin **vor** `Pterm` in der Anwendung. Der Rückweg selbst ist auf
   dem heutigen HEAD (inkl. `343b3c5` und A65) zweimal gemessen intakt (Gegenproben A, B).
@@ -212,9 +212,9 @@ desk/-, kein AES-Defekt. Kein Fix in diesem Auftrag.
 Projektbaum unverändert: `git status` zeigt nur das fremde, gleichzeitig
 entstehende `docs/sdk/` (nicht von H03). `kernel/src/host_env.rs` sha256
 `287ff741…` vor und nach der Messung; Injektor und Trace existieren nur in der
-Scratch-Kopie (`measurement-2026-09-17-h03/method/scratch-kernel-injector.diff`
+Scratch-Kopie (`measurements/measurement-2026-09-17-h03/method/scratch-kernel-injector.diff`
 dokumentiert sie). Keine QEMU-Prozesse, kein gemountetes Scratch-Image, Karte nur
-gelesen. Neu im Baum (unversioniert, nur Artefakte): `measurement-2026-09-17-h03/`,
+gelesen. Neu im Baum (unversioniert, nur Artefakte): `measurements/measurement-2026-09-17-h03/`,
 diese Quittung.
 
 ## Verifikation (Tester, 2026-09-17)
@@ -224,7 +224,7 @@ Kein Produktcode geaendert; einzige temporaere Instrumentierung war der vom
 Auftrag vorgegebene `scratch-kernel-injector.diff`, angewendet ausschliesslich
 in einer Scratch-Kopie (`kernel/src/host_env.rs` im Projektbaum sha256
 `287ff741...` vor und nach der Messung identisch). Artefakte:
-[`measurement-2026-09-17-h03/verify/`](../measurement-2026-09-17-h03/verify/RUNINFO.TXT).
+[`measurements/measurement-2026-09-17-h03/verify/`](../measurements/measurement-2026-09-17-h03/verify/RUNINFO.TXT).
 
 | # | Messung | Ergebnis |
 |---|---|---|

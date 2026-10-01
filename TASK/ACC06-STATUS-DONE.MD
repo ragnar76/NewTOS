@@ -11,7 +11,7 @@ keine Pi gefahren, nichts committet; kein
 `git checkout/restore/clean/stash/reset`.
 
 Messung:
-[`measurement-2026-09-24-acc06/`](../measurement-2026-09-24-acc06/).
+[`measurements/measurement-2026-09-24-acc06/`](../measurements/measurement-2026-09-24-acc06/).
 Spezifikation: `docs/api/gemdos/154-ssystem.md`, Abschnitt *NewTOS-own modes
 (2000+)*. Hardwarereferenz: `docs/hardware/mailbox-framebuffer.md` §3d.
 Hardwarepunkt **64** in `docs/api/desktop/_hw-test-2026-09-17.md`.

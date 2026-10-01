@@ -84,7 +84,7 @@ Deltas des Tickets sind geschlossen. Bearbeitet 2026-09-21, Branch
   mit `gemoblib.c:238-276, 949-950`, `gemwmlib.c:553` (korrigiert, A95).
 * **`docs/STATUS.md`** — Phase-13-Zeile (Eintrag 2026-09-21 (A95)) + eine
   Zeile „Recent Decisions" 2026-09-21.
-* **`measurement-2026-09-21-a95/`** — `RUNINFO.TXT`, `manifest.sha256`,
+* **`measurements/measurement-2026-09-21-a95/`** — `RUNINFO.TXT`, `manifest.sha256`,
   `manifest-scratch.sha256`, `method/` (A94-Skripte + `dumpwin.py`,
   `corner_compare.py`, `corner_residual.py`, `README.md`,
   `scratch-host_env.rs.txt`), `host-tests/`, `build/`, `screendumps/`,

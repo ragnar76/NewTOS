@@ -10,7 +10,7 @@ aufgehoben). Stufe 1 (Identität = Slot) ist `25ff70c`; dies ist Stufe 2.
 
 Spec: [docs/api/aes/application.md](../docs/api/aes/application.md)
 § "AES process identity and pid", Vertrag **(b)** (`86b871d`).
-Artefakte: [measurement-2026-09-20-a56/](../measurement-2026-09-20-a56/RUNINFO.TXT).
+Artefakte: [measurements/measurement-2026-09-20-a56/](../measurements/measurement-2026-09-20-a56/RUNINFO.TXT).
 Basis `desk-rebuild` @ `25ff70c`, Baum vorher sauber.
 
 ## 1. Was gebaut wurde — Stelle → Wert vorher / nachher
@@ -56,7 +56,7 @@ niemand liest; `appl_write(2)`/`(17)` → 0; **`WM_UNTOPPED`/`WM_TOPPED`
 `intercept` auf `current_pid()` zurückgesetzt schlägt genau die
 `WM_TOPPED`-Zeile fehl (`left: (1, 21, 0, 2)`, `right: (1, 21, 1, 2)`).
 
-Rot vor dem Fix (`measurement-2026-09-20-a56/host-tests/red-before-aes_pd_by_slot.txt`):
+Rot vor dem Fix (`measurements/measurement-2026-09-20-a56/host-tests/red-before-aes_pd_by_slot.txt`):
 
     every_nested_process_gets_a_descriptor_and_appl_init_never_returns_minus_one ... FAILED  (left: 1, right: 0)
     reported_values_follow_emutos ... FAILED                                                   (desktop ap_id: left 1, right 0)
@@ -95,7 +95,7 @@ Assertion mit Quelle. Tests, die alte Werte pinnten, nachgezogen:
 
 ## 5. QEMU raspi4b (Produktkernel `--release --board rpi4`, `8eee1eb3…`, keine Instrumentierung; Injektor-Kernel nur aus einer Scratch-Kopie)
 
-Alle Läufe `grep -c "EXC\|panic"` = 0. Details `measurement-2026-09-20-a56/RUNINFO.TXT`.
+Alle Läufe `grep -c "EXC\|panic"` = 0. Details `measurements/measurement-2026-09-20-a56/RUNINFO.TXT`.
 
 - **NESTTST**: Tiefe 1–16 `appl_init` = **0**, `WF_OWNER` = **0**,
   `appl_write(self)` = 1, `appl_find(NESTTST)` = **0**; 17. `Pexec` → −39; alle
@@ -135,7 +135,7 @@ Alle Läufe `grep -c "EXC\|panic"` = 0. Details `measurement-2026-09-20-a56/RUNI
   in den CALL-Records (`slot`).
 - `kernel/src/desk/mod.rs:180-186,646`: Doc-Kommentare nennen noch „pid 1"
   und `pd::by_pid(1)` (schon in Stufe 1 gemeldet).
-- `measurement-2026-09-17-h02/method/run2.actions` parkt den Zeiger auf
+- `measurements/measurement-2026-09-17-h02/method/run2.actions` parkt den Zeiger auf
   (0,0) = Menüleiste; mit dem heutigen Hover-Menü frisst das den Doppelklick.
   Für diese Messung mit `1206 move 300 300` ergänzt (`method/h02-info.actions`).
 
@@ -144,4 +144,4 @@ Alle Läufe `grep -c "EXC\|panic"` = 0. Details `measurement-2026-09-20-a56/RUNI
 Kein `git checkout/restore/clean/stash`, kein Commit, keine Hardware-/Outward-Aktion.
 QEMU-Prozesse beendet, QMP-Sockets entfernt, hdiutil-Images ausgehängt.
 Scratch nur unter dem Session-Scratchpad; Kopien der Methoden und Logs unter
-`measurement-2026-09-20-a56/`.
+`measurements/measurement-2026-09-20-a56/`.

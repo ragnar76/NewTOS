@@ -146,7 +146,7 @@ also Abschlusszusammenfassung, Palettenwiederherstellung und
 ## Die Hochrechnung ist gemessen — und sie lag um Faktor 2,4 daneben
 
 Pi-Lauf vom 2026-09-29 (Kern `9251440d`, 1920x1080),
-`measurement-2026-09-29-sched01/pi-BALL.LOG`:
+`measurements/measurement-2026-09-29-sched01/pi-BALL.LOG`:
 
 ```
 blit 75.08 ns/px + 1.41 us/call

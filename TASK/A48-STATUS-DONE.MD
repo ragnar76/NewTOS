@@ -52,7 +52,7 @@ re-enterbaren Wrapper um `sh_main` baut. Bearbeitet 2026-09-21, Branch
   `changerez()`/`nextrez()` — Modulkonvention (`gl_shgem()`) und die
   A106-Skizze im Design (§ 5) verwenden den `gl_`-Namen.
 
-## Hosttests (`measurement-2026-09-21-a48/host-tests/`)
+## Hosttests (`measurements/measurement-2026-09-21-a48/host-tests/`)
 
 | Datei | Ergebnis |
 |---|---|

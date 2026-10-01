@@ -5,7 +5,7 @@ sie kopieren (EmuTOS' `bb_set`-Ebene); `form.rs`s eigene, zu spaet sitzende
 Aussenklammer um `bb_restore` ist entfernt. Unabhaengig verifiziert
 2026-09-18, Tester-Messung (nicht Entwickler-Selbstreport), Branch
 `desk-rebuild`, Basis HEAD `a7896cf`. Messlauf:
-[`measurement-2026-09-18-a66/`](../measurement-2026-09-18-a66/RUNINFO.TXT).
+[`measurements/measurement-2026-09-18-a66/`](../measurements/measurement-2026-09-18-a66/RUNINFO.TXT).
 
 Diese Quittung dokumentiert die **Pruefung**, nicht die Implementierung
 (die lag beim Start der Messung bereits uncommitted im Baum, ohne eigenes
@@ -50,7 +50,7 @@ gebaut, gelaufen:
 
 Zweimal unabhaengig reproduziert (zwei separate Worktree-Kopien), identisch.
 Danach gruen auf dem Fix-Stand: `3 passed; 0 failed`. Rohdaten:
-`measurement-2026-09-18-a66/build/newtest-RED.txt` /
+`measurements/measurement-2026-09-18-a66/build/newtest-RED.txt` /
 `newtest-GREEN.txt`.
 
 ## Pruefungen — alle selbst gefahren, keine uebernommen
@@ -62,12 +62,12 @@ Danach gruen auf dem Fix-Stand: `3 passed; 0 failed`. Rohdaten:
 | `cargo run -p xtask -- test` | **563 bestanden / 0 gefallen / 1 uebersprungen** — Sollstand exakt |
 | rustc-Warnungen, beide Boards | tos-api **64**, kernel **94** — Sollstand, Delta 0 |
 | clippy-Warnungen, beide Boards | tos-api **81**, kernel **125** — Sollstand, Delta 0 |
-| QEMU raspi4b, TeraDesk per `#Z`-Autorun | Screendump **0 von 307200** Bildpunkten verschieden gegen `measurement-2026-09-17-h03/verify/screendumps/verify-run1-teradesk-startup.png` |
-| QEMU raspi4b, unser Desktop, kein Autorun | Screendump **24511 von 307200** Bildpunkten verschieden gegen `measurement-2026-09-17-h02/verify/screendumps/runB-desktopup-final.png` — **Icon- vs. Text-View des C:\-Fensters**, keine Geisterpfeil-Signatur, keine A66-bezogene Abweichung; die Referenz ist der Endzustand einer mehrstufigen H02-Interaktionssequenz, kein einfacher Boot-Abzug. Details und Einordnung: `measurement-2026-09-18-a66/RUNINFO.TXT` Abschnitt 4b |
+| QEMU raspi4b, TeraDesk per `#Z`-Autorun | Screendump **0 von 307200** Bildpunkten verschieden gegen `measurements/measurement-2026-09-17-h03/verify/screendumps/verify-run1-teradesk-startup.png` |
+| QEMU raspi4b, unser Desktop, kein Autorun | Screendump **24511 von 307200** Bildpunkten verschieden gegen `measurements/measurement-2026-09-17-h02/verify/screendumps/runB-desktopup-final.png` — **Icon- vs. Text-View des C:\-Fensters**, keine Geisterpfeil-Signatur, keine A66-bezogene Abweichung; die Referenz ist der Endzustand einer mehrstufigen H02-Interaktionssequenz, kein einfacher Boot-Abzug. Details und Einordnung: `measurements/measurement-2026-09-18-a66/RUNINFO.TXT` Abschnitt 4b |
 | `git status --short` | fuenf Pfade: die drei aus dem Auftrag + `docs/api/aes/object-form.md` + `docs/api/vdi/raster/_raster.md` (Spec-Zeilen zum Fix, im Auftragsvorspann nicht genannt, aber inhaltlich zum Fix gehoerig — CLAUDE.md Regel 5) |
 
-Verfahren, Rohdaten, Hashes: `measurement-2026-09-18-a66/RUNINFO.TXT`,
-Werkzeuge aus `measurement-2026-09-17-a65/method/` unveraendert
+Verfahren, Rohdaten, Hashes: `measurements/measurement-2026-09-18-a66/RUNINFO.TXT`,
+Werkzeuge aus `measurements/measurement-2026-09-17-a65/method/` unveraendert
 wiederverwendet.
 
 ## Was offen bleibt — HW-Abnahme
@@ -95,7 +95,7 @@ echten Pi 4 zu pruefen:
 ## Berührte Dateien (durch diese Messung neu, kein Produktcode)
 
 ```
-measurement-2026-09-18-a66/                  (Messlauf: RUNINFO.TXT,
+measurements/measurement-2026-09-18-a66/                  (Messlauf: RUNINFO.TXT,
                                               screendumps/, serial/, build/)
 TASK/A66-STATUS-DONE.MD                      (diese Quittung)
 ```

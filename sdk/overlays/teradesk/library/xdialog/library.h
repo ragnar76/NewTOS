@@ -37,7 +37,7 @@
  * own resource loader wrote them as 8-byte stores at @10/@14 (rsc_load.c
  * xrsrc_load); the writer and the reader disagreed, and the reader returned
  * bytes of `ap_planes`/`ap_3resv` as a pointer. Measured in QEMU on
- * 2026-09-19 (TASK/A60-STATUS-DONE.MD, measurement-2026-09-19-a60/).
+ * 2026-09-19 (TASK/A60-STATUS-DONE.MD, measurements/measurement-2026-09-19-a60/).
  *
  * C has no 32-bit pointer lvalue on LP64, so the gemlib overlay
  * (sdk/gemlib/overlay/gem.h:101-125) provides `_AESrscfile`/`_AESrscmem` as

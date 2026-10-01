@@ -102,7 +102,7 @@ Programmlauf (`crate::shell_loop::sh_gem_enter`), ihr Gegenstueck danach
 (`sh_gem_leave` = `wm_new`, `gemshlib.c:676-677`) und der
 `deskmain`-Prolog-Anteil, den `cnx_get` braucht.
 
-**Abnahme (QEMU raspi4b, `measurement-2026-09-24-desk34-desk35/`, §3/§4):**
+**Abnahme (QEMU raspi4b, `measurements/measurement-2026-09-24-desk34-desk35/`, §3/§4):**
 zwei Fenster offen, dann gestartet. `d35q-after-E-qed.png` — QED besitzt den
 Schirm, kein Fensterrest; `d35q-before-E-qed.png` — der Defekt: QEDs
 Menueleiste ueber dem eingefrorenen Desktop. `d35-after-E-back.png` — nach dem

@@ -12,7 +12,7 @@ keine Pi gefahren, nichts committet; kein
 `git checkout/restore/clean/stash/reset`.
 
 Messung:
-[`measurement-2026-09-24-desk37-desk36-desk30/`](../measurement-2026-09-24-desk37-desk36-desk30/)
+[`measurements/measurement-2026-09-24-desk37-desk36-desk30/`](../measurements/measurement-2026-09-24-desk37-desk36-desk30/)
 §2. Spezifikation: `docs/api/aes/shell-loop.md`, Abschnitt *`sh_show(fname)`,
 the screen behind a launched GEM program (DESK37)*. Hardwarepunkt **61** in
 `docs/api/desktop/_hw-test-2026-09-17.md`.
@@ -59,7 +59,7 @@ Zwei Dateien, zwei Funktionen; kein Verhalten der AES geaendert.
 ## 3. Wie nah am Hatari-Vergleichsbild
 
 Strukturell deckungsgleich. Verglichen wurden `d37g-after-C-app.png` (unseres)
-und `measurement-2026-09-24-hatari-appbg/screendumps/emutos-bgwin-falcon-tc.png`
+und `measurements/measurement-2026-09-24-hatari-appbg/screendumps/emutos-bgwin-falcon-tc.png`
 (EmuTOS 1.4.0+ auf Hatari 2.6.1, Falcon/VGA):
 
 | | Hatari/EmuTOS | NewTOS |

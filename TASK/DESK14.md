@@ -107,7 +107,7 @@ kernel 94` (Delta 0), Clippy `80 / 125` auf beiden Boards (Delta 0), null
 Treffer in `kernel/src/desk/`. Vier QEMU-raspi4b-Laeufe (640x480,
 `-display none`, QMP, Injektor), 22 Screendumps, `fsck_msdos -n` auf allen
 vier Kartenabbildern sauber, 0 `[EXC]`/`[PANIC]`.
-Belege: `measurement-2026-09-23-desk14/`.
+Belege: `measurements/measurement-2026-09-23-desk14/`.
 
 **Offen:** Pi-Sichtabnahme (HW-Punkt 41 in
 `docs/api/desktop/_hw-test-2026-09-17.md`) — 1920x1080-Optik, die vier

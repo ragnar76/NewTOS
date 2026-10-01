@@ -5,7 +5,7 @@ zuletzt geladen) statt eines globalen `static`; `terminate_inner` (`Pterm`)
 gibt beim Prozessende nur die eigenen Einträge frei. Unabhängig verifiziert
 2026-09-19, Tester-Messung (nicht Entwickler-Selbstreport), Branch
 `desk-rebuild`, Basis HEAD `fbd6856`. Messlauf:
-[`measurement-2026-09-19-a39/`](../measurement-2026-09-19-a39/RUNINFO.TXT).
+[`measurements/measurement-2026-09-19-a39/`](../measurements/measurement-2026-09-19-a39/RUNINFO.TXT).
 
 Diese Quittung dokumentiert die **Prüfung**, nicht die Implementierung (die
 lag beim Start der Messung bereits uncommitted im Baum: `tos-api/src/aes/
@@ -49,7 +49,7 @@ dort nicht (im Trace kein `op 110`/`111`). `QED.NAP` ruft `rsrc_load` über
 als Kind ist der A39-Mechanismus (TeraDesks Ressource wird vom Kind
 überschrieben/gelöscht) überhaupt beobachtbar — deshalb die Wahl im Auftrag.
 
-## Methode (Kurzform, voll unter `measurement-2026-09-19-a39/RUNINFO.TXT`)
+## Methode (Kurzform, voll unter `measurements/measurement-2026-09-19-a39/RUNINFO.TXT`)
 
 Scratch-Kopie des Baums, die drei H05-Instrument-Diffs (`aes/mod.rs`
 pid+opcode-Trace, `aes/pd.rs`, `host.rs`) trafen unverändert (`patch -p0`,
@@ -93,7 +93,7 @@ Vollbild-Menü zeigt, das in keiner bisherigen Messung koordiniert wurde.
 ## Berührte Dateien (durch diese Messung neu, kein Produktcode)
 
 ```
-measurement-2026-09-19-a39/    (Messlauf: RUNINFO.TXT, screendumps/, serial/,
+measurements/measurement-2026-09-19-a39/    (Messlauf: RUNINFO.TXT, screendumps/, serial/,
                                 build/, host-tests/, method/)
 TASK/A39-STATUS-DONE.MD        (diese Quittung)
 ```
@@ -168,10 +168,10 @@ Spec: nur der Statusabsatz des A39-Callouts („built, both stages").
 | 2 | `cargo run -p xtask -- test` | **610 bestanden / 0 gefallen / 1 uebersprungen** (Baseline 602 + 8 neue) |
 | 3 | rustc beide Boards (frisch, `cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat` vor jedem Wechsel) | tos-api **64**, kernel **94** — Delta 0 |
 | 3 | Clippy | kernel **125**, tos-api **81** — Delta 0 (die fuenf `resource.rs`-Meldungen sind die vorbestehenden `Aespb`-Sichtbarkeitswarnungen) |
-| 4 | QEMU raspi4b, **neue `DESKTOP.NAP` `fb37bb3b`** per `#Z`, A60-Instrument + Injektor (HARD DISC C doppelklicken) | Nach `rsrc_load(desktop.rsc)` Worte `4400 4000 / 0000 4000 / 3699`; erster Trap nach `load_icons`: **keine Dump-Zeile** (Worte unveraendert), Statics `0x427028/0x427000`. **Alle 91 `op 112` von pid 1 = 1** (62 vor, 29 nach `load_icons`; die 29 loesen `0x408739..0x4088ff`, alle in `desktop.rsc`). Screendump Leerlauf **bytegleich** zu `measurement-2026-09-19-a60/fix/screendumps/fix1-after-boot.png` (sha256 `fb1e8b90…`); Fenster offen mit Infozeile **„374035 bytes used in 24 items."** und Ordner-/Dokument-Icons. Kein EXCEPTION/panic. |
+| 4 | QEMU raspi4b, **neue `DESKTOP.NAP` `fb37bb3b`** per `#Z`, A60-Instrument + Injektor (HARD DISC C doppelklicken) | Nach `rsrc_load(desktop.rsc)` Worte `4400 4000 / 0000 4000 / 3699`; erster Trap nach `load_icons`: **keine Dump-Zeile** (Worte unveraendert), Statics `0x427028/0x427000`. **Alle 91 `op 112` von pid 1 = 1** (62 vor, 29 nach `load_icons`; die 29 loesen `0x408739..0x4088ff`, alle in `desktop.rsc`). Screendump Leerlauf **bytegleich** zu `measurements/measurement-2026-09-19-a60/fix/screendumps/fix1-after-boot.png` (sha256 `fb1e8b90…`); Fenster offen mit Infozeile **„374035 bytes used in 24 items."** und Ordner-/Dokument-Icons. Kein EXCEPTION/panic. |
 | 5 | Gegenprobe **alte `DESKTOP.NAP` `db31aae1`** (ohne A60), gleiche Sequenz | **Der erwartete Ausfall, keine Regression**: nach `load_icons` Worte `2870 4200 / 0070 4000` (`ap_rscmem` = `0x407000`), **alle 28 `op 112` danach = 0** (`addrout 0x0`), die 62 davor = 1; Fenster offen mit **leerer Infozeile** und generischen Disketten-Icons (die H05-Symptomatik). Beleg, dass der Selektor wirklich gelesen wird. Kein EXCEPTION/panic. |
 
-Artefakte: `measurement-2026-09-19-a39/stage2/` (RUNINFO-STAGE2.TXT, method/,
+Artefakte: `measurements/measurement-2026-09-19-a39/stage2/` (RUNINFO-STAGE2.TXT, method/,
 serial/, screendumps/, build/ mit den drei Kernel-Images, host-tests/,
 manifest.sha256).
 

@@ -46,7 +46,7 @@ Benannte Luecke, keine neue: `opn_appl`s Parameterabfrage fuer `.TTP`/`.GTP`
 (Stage A); eine `.NTP` an einer Taste startet also mit demselben leeren
 Schwanz.
 
-Abnahme: [`measurement-2026-09-25-desk-rest/`](../measurement-2026-09-25-desk-rest/)
+Abnahme: [`measurements/measurement-2026-09-25-desk-rest/`](../measurements/measurement-2026-09-25-desk-rest/)
 §5 — `#G 06 FF C:\ARGVTEST.NAP@ *.XYZ@ 107 @` in `NEWDESK.INF`, F7 gedrueckt
 mit geparktem Zeiger und ohne einen einzigen Klick:
 `[d33] process_funkey(7) -> C:\ARGVTEST.NAP appdir=true`, dann die Ausgabe des

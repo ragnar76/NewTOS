@@ -7,7 +7,7 @@ gewachsenen Zelle zentriert (und bei Ueberlaenge linksbuendig gekuerzt),
 Rahmen-Gadget folgt `changecol` (`actcolchange`). Bearbeitet 2026-09-21,
 Branch `desk-rebuild`, Basis HEAD `a570123`, **nicht committet**, nichts
 geflasht. Gemeinsames Paket mit A103/A108
-(`measurement-2026-09-21-a103-a108/`).
+(`measurements/measurement-2026-09-21-a103-a108/`).
 
 ## Der EmuTOS-Pfad (`references/emutos/aes/`)
 

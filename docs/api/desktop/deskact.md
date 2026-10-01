@@ -520,7 +520,7 @@ in the same state either way.
 `act_bdown`'s `evnt_button(0x01, 0x01, 0x00, …)` (`:681`), which drains the
 release the drag ended on, was also missing and is now taken.
 
-**Measured** (`measurement-2026-09-24-desk37-desk36-desk30/`, one gesture,
+**Measured** (`measurements/measurement-2026-09-24-desk37-desk36-desk30/`, one gesture,
 `method/d36.actions`): a plain file dragged over four targets in turn.
 
 | picture | target | highlight |

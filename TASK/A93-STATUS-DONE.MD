@@ -33,13 +33,13 @@ committet**, gemeinsam mit A98 in einem Paket.
   `WM_VSLID`) nachgezogen.
 * **`docs/STATUS.md`** — Phase-13-Fragment (A93/A98) + eine Zeile „Recent
   Decisions“ 2026-09-21.
-* **`measurement-2026-09-21-a93-a98/`** — RUNINFO, Hosttest-Quittungen
+* **`measurements/measurement-2026-09-21-a93-a98/`** — RUNINFO, Hosttest-Quittungen
   (rot/gruen), Build-/Clippy-Logs, Methode (Scratch-Skripte, Aktionen,
   Diffs, Testkopien), Screendumps, Serial, SHA-256-Manifest. Keine `*.img`.
 
 ## Tests: rot vor, gruen nach
 
-`measurement-2026-09-21-a93-a98/host-tests/aes_window_slid_rect-RED-before.txt`
+`measurements/measurement-2026-09-21-a93-a98/host-tests/aes_window_slid_rect-RED-before.txt`
 / `…-GREEN-after.txt`:
 
 | Test | vor | nach |

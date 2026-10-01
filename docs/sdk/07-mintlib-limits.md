@@ -70,7 +70,7 @@ it does not compile), so the GEMDOS calls are never issued. The buffer is
 13 checks, the register check proven by sabotage — removing the `d8–d15` or
 `x19/x20` restore fails exactly it) and on NewTOS (`sdk/examples/setjmptst.c`
 → `C:\AUTO\SETJMPT.NCP`, QEMU raspi4b serial: `setjmptst: ALL PASS (13
-checks)`, `measurement-2026-09-21-t07/`).
+checks)`, `measurements/measurement-2026-09-21-t07/`).
 
 ## 4. mintlib directories not compiled at all
 
@@ -115,7 +115,7 @@ complex multiply (`casin`, `casinh`, `cacosh`, `catanh` and the `f` forms);
 `frexp`, `ldexp`, `modf`, `fabs`, `hypot`, `cbrt`, `sqrtf`, `isnan`/`isinf`,
 … verified on NewTOS (`sdk/examples/mathtst.c` → `C:\AUTO\MATHTST.NCP`,
 QEMU raspi4b serial: `mathtst: ALL PASS (23 checks)`,
-`measurement-2026-09-21-t07/`).
+`measurements/measurement-2026-09-21-t07/`).
 
 Headers: a program includes `<math.h>` (and `<complex.h>`, `<fenv.h>`); the
 adapters in `sdk/libm/include/` map those names onto OpenLibm's
@@ -132,7 +132,7 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
 
 | Area | On NewTOS | Source |
 |------|-----------|--------|
-| `argc`/`argv` | built from the BasePage command tail `p_cmdlin` with mintlib's own rules (`argv[0]` = `""`, leading blanks skipped, split on runs of blanks/tabs, MagX single-quoting); `1` / `{"", NULL}` when the tail is empty. Host-checked by `tests/cmdargs-host.sh`, proved on the machine by `C:\ARGVTEST.NAP` (PORT01, `measurement-2026-09-25-port01/`) | `newtos-arch/cmdargs.c`, `sdk/libc/crt0.S` |
+| `argc`/`argv` | built from the BasePage command tail `p_cmdlin` with mintlib's own rules (`argv[0]` = `""`, leading blanks skipped, split on runs of blanks/tabs, MagX single-quoting); `1` / `{"", NULL}` when the tail is empty. Host-checked by `tests/cmdargs-host.sh`, proved on the machine by `C:\ARGVTEST.NAP` (PORT01, `measurements/measurement-2026-09-25-port01/`) | `newtos-arch/cmdargs.c`, `sdk/libc/crt0.S` |
 | `environ`, `getenv` | `environ` is a zero global; `getenv` finds nothing. The Atari `ARGV=` extension (arguments passed in the environment) therefore cannot occur either — every launch path passes `EnvSpec::None`, so `p_env` is 0 | `mintlib/globals.c`, crtinit excluded; `kernel/src/launch.rs`, `loader.rs` |
 | `_base` (`BASEPAGE *`) | set by `__libc_init_heap` from the basepage address crt0 hands it (TASK/T05; until then it stayed NULL and dereferencing it worked only because the basepage *is* at VA 0 — the value is still 0 today, `USER_VA_BASE`) | `newtos-arch/heap_init.c`, `sdk/libc/crt0.S`; readers: `unix/getppid.c`, `gmon.c`, TeraDesk's `environm.c` |
 | `malloc`/`free`/`realloc` | mintlib's allocator over the in-TPA arena `[_end, p_hitpa − 64 KiB)`; `ENOMEM` when exhausted, **no** `Malloc` fall-back | `newtos-arch/heap_init.c`, `unix/sbrk.c:54-71` |

@@ -41,7 +41,7 @@ nicht.
 ## Sichtbare Folge, heute schon belegt
 
 Nach *Cancel* im Parameterdialog bleibt das Programmsymbol ausgewaehlt
-(`measurement-2026-09-30-desk47/screendumps/c2-after-cancel.png`).
+(`measurements/measurement-2026-09-30-desk47/screendumps/c2-after-cancel.png`).
 
 **Das ist EmuTOS-konform und kein Fehler** — die Abwahl sitzt in `do_wopen`,
 das nur ein **erfolgreiches** `pro_run` erreicht. Es ist hier nur vermerkt,

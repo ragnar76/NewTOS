@@ -308,7 +308,7 @@ den Endzustand (Variante A, beide Stufen).
    (`rsrc_free`-Kommentar). Die Spec ist mit diesem Dokument geändert
    (`docs/api/aes/resource-fileselector.md` § `rsrc_load`).
 9. **H05-Injektorsequenz mit QED als Kind** (QEMU `raspi4b`, Methode
-   `measurement-2026-09-18-h05/method/`, `.NAP` aus TeraDesk starten und beenden):
+   `measurements/measurement-2026-09-18-h05/method/`, `.NAP` aus TeraDesk starten und beenden):
    Infozeile („… bytes used in … items") und Datei-Icons nach der Rückkehr wie vor
    dem Start; kein `rsrc_gaddr` von pid 1 mit 0 im Trace. QED ruft `rsrc_load`
    (cflib `appinit`, H05 § Verifikation), also greift A39 hier — anders als bei
