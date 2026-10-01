@@ -178,42 +178,53 @@ Do **not** suggest:
 ## Source Tree Conventions
 
 ```
-newtos/
+PiRusTOS/
 ├── CLAUDE.md                    # this file
+├── Cargo.toml                   # workspace: kernel, tos-api, tos-types, tools/xtask
+├── kernel/                      # crate: bare-metal kernel (arch/aarch64, drivers/bcm2711,
+│                                #   hal, bios, desk/ = EmuDESK rebuild, selftest_*.rs)
+├── tos-api/                     # crate: TOS syscall layer (gemdos, bdos, bios, xbios,
+│   ├── src/                     #   aes, vdi, trap.rs = trap dispatcher)
+│   └── tests/                   # host-side integration tests
+├── tos-types/                   # crate: shared on-wire types (DTA, BPB, MD, error codes)
+├── tools/                       # host tools: xtask, make-sd-image.sh, trace/probe scripts
+├── sdk/                         # app toolchain: libc, gemlib, cflib, crt0, overlays/, apps/
+├── tosdump/                     # TOS reference dumper (cases/, reference/, deploy-*)
+├── boot/rpi4/                   # RPi firmware files for the boot partition
+├── keyboards/                   # keyboard layout sources (.kbd)
 ├── docs/
-│   ├── REQUIREMENTS.md
-│   ├── ARCHITECTURE.md
-│   ├── STATUS.md
-│   └── api/                     # TOS API spec, one file per group
-│       ├── gemdos.md
-│       ├── bios.md
-│       ├── xbios.md
-│       └── _template.md
-├── phases/                      # implementation guidelines per phase
-│   ├── PHASE-01-boot-uart.md
-│   ├── PHASE-02-gemdos-console.md
-│   └── ...
-├── kernel/                      # crate: bare-metal kernel core
-│   ├── CLAUDE.md                # kernel-specific overrides
-│   ├── src/
-│   │   ├── arch/aarch64/        # boot, exceptions, MMU, IRQ
-│   │   ├── hal/                 # trait definitions for hardware
-│   │   ├── drivers/bcm2711/     # RPi4-specific HAL impls
-│   │   ├── mm/                  # memory manager
-│   │   └── sched/               # process / scheduler
-├── tos-api/                     # crate: TOS syscall layer
-│   ├── CLAUDE.md
-│   ├── src/
-│   │   ├── gemdos/
-│   │   ├── bios/
-│   │   ├── xbios/
-│   │   └── trap.rs              # trap dispatcher
-├── tos-types/                   # crate: shared types (DTA, BPB, MD, …)
-└── tools/                       # host-side tools (image builder, etc.)
+│   ├── STATUS.md, MEMORY.md, REQUIREMENTS.md, ARCHITECTURE.md, COMPATIBILITY.md, …
+│   ├── api/                     # extracted TOS API spec, one dir/file per group
+│   ├── analysis/                # dated analyses and design notes (<topic>-YYYY-MM-DD.md)
+│   ├── hardware/, sdk/, benchmarks/
+├── phases/                      # PHASE-XX-*.md implementation guidelines
+├── TASK/                        # tickets: <ID>.md + <ID>-STATUS-DONE.MD / -STATUS-UNFINISHED.MD
+├── measurements/                # evidence runs, one dir per run (see below)
+└── references/                  # gitignored external sources (EmuTOS checkout, …);
+                                 #   only references/README.md is tracked
 ```
 
-Each sub-crate may have its own `CLAUDE.md` that overrides or extends the
-rules here.
+Local, gitignored, never committed: `target/`, `Applications/`, `hardware/`,
+`graphify-out/`, `.venv/`, `sd-card-backup-*/`.
+
+**Placement rules:**
+
+- **Nothing new in the repository root.** A new file belongs in one of the
+  directories above; if none fits, ask.
+- **Measurement / evidence runs** go to
+  `measurements/measurement-YYYY-MM-DD-<ticket-ids>/` (lowercase ticket IDs,
+  joined by `-`). Typical content: `RUNINFO.TXT` (what, why, how, result),
+  `method/` (scripts, patches, action files), `serial/`, `screendumps/`.
+  Per-run SD images and kernel binaries are gitignored; record their sha256.
+- **Runs are immutable once committed.** Never edit files inside an existing
+  run directory — several carry sha256 manifests over their own files. A
+  correction is a new run or a note in the ticket.
+- Cite runs from tickets/docs/code repo-relative:
+  `measurements/measurement-…/RUNINFO.TXT`.
+- **Scratch** (temporary images, scratch kernels, probes) goes to
+  `$CLAUDE_JOB_DIR/tmp` or the session scratchpad, never the repo or shared `/tmp`.
+- Built `kernel8.img` for the card is not kept in the root; build with
+  `cargo xtask build --release` when needed.
 
 ---
 
