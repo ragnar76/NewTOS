@@ -1,0 +1,21 @@
+# DESK53 — `refresh_window` (ESC) liest nicht neu ein
+
+Status: **OFFEN** · Prioritaet: **P3** · Typ: Abweichung von EmuTOS — Nebenfund aus [DESK50](DESK50.md)
+
+Abhaengigkeiten: [DESK50](DESK50.md) (`do_wopen`/`do_diropen`, `w_obid`)
+
+## Sachverhalt
+
+In EmuTOS geht `refresh_window` (ESC, `references/emutos/desk/desksupp.c:1692`) ueber `do_fopen` mit `curr = 0` und liest das Verzeichnis neu ein. Bei uns liest es nicht neu ein und geht nicht ueber `do_fopen`. Sichtbar z.B. nach einem Dateiwechsel von aussen.
+
+Der Befund stammt aus der DESK50-Arbeit ([Statusdatei](DESK50-STATUS-DONE.MD),
+Abschnitt *Offen*) und ist **nicht nachgeprueft**. Erster Schritt: die
+EmuTOS-Stelle lesen und unseren Code dagegenhalten, bevor etwas geaendert wird.
+
+## Arbeit
+
+1. EmuTOS-Stelle lesen, Spec in `docs/api/desktop/` pruefen bzw. ergaenzen.
+2. Abweichung belegen (Quelle + QEMU-Lauf) oder als konform schliessen.
+3. 1:1 angleichen (ADR-022), ohne Umgehung.
+
+Abnahme: Verhalten wie EmuTOS, Beleg unter `measurements/`, Basislinien gehalten.

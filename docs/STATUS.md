@@ -47,7 +47,7 @@ dem Termin, X03 davor.
 - Nach dem Termin: **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`), DESK43
   U5–U10, **SND01/SND02** (Ton — zuerst ein DMA-Treiber, der auch HW05
   traegt), SDL01, PORT06 (Doom), PORT02 (zView), GUI07, HW04–HW07,
-  DESK48, REF03, FS05/FS06, ARCH02.
+  DESK48, REF03, FS05/FS06, ARCH02, DESK51–DESK56 (Nebenfunde DESK50).
 
 **Regel zur SD-Karte, seit 2026-09-30:** `tools/make-sd-image.sh` baut das
 **QEMU-Abbild**, **nicht** die echte Karte. Die physische Karte ist
