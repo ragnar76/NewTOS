@@ -118,16 +118,23 @@ pub(crate) const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude A
 /// project's own and a stamp is what tells two SD cards apart.
 pub(crate) const BUILD_STAMP: &str = tos_api::build::BUILD_STAMP;
 
-/// Friendly machine name for the current board.
+/// Friendly machine name for the current board, as the boot screen's
+/// `Machine` line prints it.
 ///
-/// **Still read by the desktop's About box** (`desk::inf::do_aboutdesk`) — the
-/// one `crate::initinfo` reference DESK43 U4 left standing, named there and in
-/// that unit's receipt. It cannot follow the three constants above, because it
-/// is not a constant: it answers from [`crate::BOARD_NAME`], and no syscall
-/// carries that answer. `_MCH` is a single fixed NewTOS marker, `0x0005_0000`
-/// on both boards (`tos-api/src/cookie.rs:143`), so a cookie read cannot tell
-/// the two apart.
-pub(crate) fn machine_name() -> &'static str {
+/// **The desktop's About box shows the same texts from its own per-board build
+/// constant** (`MACHINE_NAME` in `kernel/src/desk/inf.rs`, X03, user decision
+/// 2026-10-01) and no longer calls this function — the last `crate::initinfo`
+/// reference DESK43 U4 left standing. Same reason as the block comment above:
+/// the desktop will not have `kernel` in its dependency graph, and no syscall
+/// carries the answer (`_MCH` is a single fixed NewTOS marker, `0x0005_0000`
+/// on both boards, `tos-api/src/cookie.rs:143`). Editing a text here means
+/// editing it there too. Private to this module since X03, so no second
+/// reader can attach to it.
+///
+/// The `other => other` arm prints the raw board identifier for a board that
+/// has no friendly name yet; the desktop's copy cannot see that identifier and
+/// fails the build instead (see its doc comment).
+fn machine_name() -> &'static str {
     match crate::BOARD_NAME {
         "rpi4" => "Raspberry Pi 4 (BCM2711)",
         "qemu-virt" => "QEMU aarch64-virt",

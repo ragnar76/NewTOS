@@ -1,0 +1,4 @@
+== kernel-rpi4.elf (shared-tree release build, no injector)
+   1 Raspberry Pi 4 (BCM2711)
+== kernel-qemuvirt.elf (shared-tree release build, no injector)
+   1 QEMU aarch64-virt

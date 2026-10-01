@@ -1,0 +1,5 @@
+ docs/analysis/desktop-userspace-plan-v2.md |  7 +++-
+ docs/api/desktop/deskmain.md               | 32 +++++++++++-----
+ kernel/src/desk/inf.rs                     | 60 +++++++++++++++++++++---------
+ kernel/src/initinfo.rs                     | 25 ++++++++-----
+ 4 files changed, 86 insertions(+), 38 deletions(-)

@@ -1,0 +1,15 @@
+# X03 (qemu-virt, ramfb 1920x1080) -- Desk -> Desktop info... on both boards; the box's Machine row.
+# Same geometry as measurement-2026-09-24-desk01-desk02/method/desk-desk01.actions:
+#   menu title Desk at x 16..64, y 0..18; drop-down entry 0
+#   ("  Desktop info... ") at y 19..35.
+# The pointer is parked bottom-right (parkbr) before each screendump.
+200 parkbr 1920 1080
+1000 arm
+1100 mark A_IDLE
+1400 move 40 8
+1800 mark B_DESK_OPEN
+2100 move 60 27
+2300 down
+2303 up
+2600 parkbr 1920 1080
+3000 mark C_ABOUT

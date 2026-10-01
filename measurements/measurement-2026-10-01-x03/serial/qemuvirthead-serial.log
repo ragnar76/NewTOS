@@ -1,0 +1,111 @@
+RB1
+NewTOS booting on qemu-virt
+Phase 02 reached.
+[mm] DTB at 0x0000000048000000
+[mm] firmware: no VideoCore mailbox on this board — device tree decides
+[mm] device tree: /memory first bank: 0x0000000040000000 + 285212672 bytes (272 MiB)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000040000000..0x0000000051000000 (285212672 bytes) — source: device tree
+[mm]   kernel: 0x0000000040080000..0x0000000040316000 (2711552 bytes)
+[mm]   ST-RAM: 0x0000000040400000..0x0000000040e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000041000000..0x0000000050617000 (258043904 bytes)
+[mm]   OSrsvd: 0x0000000050617000..0x0000000051000000 (10391552 bytes)
+[mm]     heap: 0x0000000050617000..0x0000000050817000 (2097152 bytes)
+[mm]     fb  : 0x0000000050817000..0x0000000051000000 (8294400 bytes)
+[mm]   MMIO 00: 0x0000000008000000..0x0000000008010000
+[mm]   MMIO 01: 0x0000000008010000..0x0000000008020000
+[mm]   MMIO 02: 0x0000000009000000..0x0000000009001000
+[mm]   MMIO 03: 0x0000000010000000..0x000000003eff0000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=62999 used=0 free=62999 (258043904 B free)
+[mm] alloc ST-RAM frame -> 0x0000000040400000
+[mm] alloc TT-RAM frame -> 0x0000000041000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] ramfb up: 1920x1080
+[mm] BDOS pools: ST-RAM 0x40400000+10485760 TT-RAM 0x41000000+258043904
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=258043904 free=258043904 used=0 largest_free=258043904 (free_mds=1 alloc_mds=0)
+[usb] PCIe ECAM at 0x4010000000 (size 0x10000000)
+[usb] xHCI at PCI 00:02.0 → BAR0 0x10000000 (size 0x4000)
+[usb] scratchpad buffers needed: 0
+[usb] dma addrs: dcbaap=0x40e47000 crcr=0x40e470c0 erstba=0x40e472c0 dcbaa0=0x0
+[usb] reg readback: ac64=1 csz=0 dcbaap_hw=0x40e47000
+[usb] xHCI up: 16 slots enabled, 8 root ports
+[usb] root ports powered (PPC=false)
+[usb] port 1: ccs=0 ped=0 pp=1 speed=0
+[usb] port 2: ccs=0 ped=0 pp=1 speed=0
+[usb] port 3: ccs=0 ped=0 pp=1 speed=0
+[usb] port 4: ccs=0 ped=0 pp=1 speed=0
+[usb] port 5: ccs=1 ped=0 pp=1 speed=3
+[usb] port 6: ccs=1 ped=0 pp=1 speed=3
+[usb] port 7: ccs=0 ped=0 pp=1 speed=0
+[usb] port 8: ccs=0 ped=0 pp=1 speed=0
+[usb] device slot 1 (root port 5 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 1 → int-IN ep 0x81 max 8 interval 7
+[usb] HID configured: slot 1 ep 0x81 dci 3 (keyboard)
+[usb] device slot 2 (root port 6 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 2 → int-IN ep 0x81 max 4 interval 7
+[usb] HID configured: slot 2 ep 0x81 dci 3 (mouse)
+[aes] gsx_malloc: screen buffer pa=0x41000000 len=4147200 (kernel-owned, WF_SCREEN)
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (0 drives, 0 window(s) from the context)
+[h02] injector armed
+[h02] step 0 at +200 -> mouse (1086,666) mb=0
+[h02] step 1 at +201 -> mouse (1213,793) mb=0
+[h02] step 2 at +202 -> mouse (1340,920) mb=0
+[h02] step 3 at +203 -> mouse (1467,1047) mb=0
+[h02] step 4 at +204 -> mouse (1594,1079) mb=0
+[h02] step 5 at +205 -> mouse (1721,1079) mb=0
+[h02] step 6 at +206 -> mouse (1848,1079) mb=0
+[h02] step 7 at +207 -> mouse (1919,1079) mb=0
+[h02] step 8 at +208 -> mouse (1919,1079) mb=0
+[h02] step 9 at +209 -> mouse (1919,1079) mb=0
+[h02] step 10 at +210 -> mouse (1919,1079) mb=0
+[h02] step 11 at +211 -> mouse (1919,1079) mb=0
+[h02] step 12 at +212 -> mouse (1919,1079) mb=0
+[h02] step 13 at +213 -> mouse (1919,1079) mb=0
+[h02] step 14 at +214 -> mouse (1919,1079) mb=0
+[h02] step 15 at +215 -> mouse (1919,1079) mb=0
+[h02] step 16 at +1000 -> mouse (1919,1079) mb=0
+[h02] MARK A_IDLE step 17 at +1100 mouse (1919,1079) mb=0
+[h02] step 18 at +1400 -> mouse (1792,952) mb=0
+[h02] step 19 at +1401 -> mouse (1665,825) mb=0
+[h02] step 20 at +1402 -> mouse (1538,698) mb=0
+[h02] step 21 at +1403 -> mouse (1411,571) mb=0
+[h02] step 22 at +1404 -> mouse (1284,444) mb=0
+[h02] step 23 at +1405 -> mouse (1157,317) mb=0
+[h02] step 24 at +1406 -> mouse (1030,190) mb=0
+[h02] step 25 at +1407 -> mouse (903,63) mb=0
+[h02] step 26 at +1408 -> mouse (776,8) mb=0
+[h02] step 27 at +1409 -> mouse (649,8) mb=0
+[h02] step 28 at +1410 -> mouse (522,8) mb=0
+[h02] step 29 at +1411 -> mouse (395,8) mb=0
+[h02] step 30 at +1412 -> mouse (268,8) mb=0
+[h02] step 31 at +1413 -> mouse (141,8) mb=0
+[h02] step 32 at +1414 -> mouse (40,8) mb=0
+[h02] MARK B_DESK_OPEN step 33 at +1800 mouse (40,8) mb=0
+[h02] step 34 at +2100 -> mouse (60,27) mb=0
+[h02] step 35 at +2300 -> mouse (60,27) mb=1
+[h02] step 36 at +2303 -> mouse (60,27) mb=0
+[h02] step 37 at +2600 -> mouse (187,154) mb=0
+[h02] step 38 at +2601 -> mouse (314,281) mb=0
+[h02] step 39 at +2602 -> mouse (441,408) mb=0
+[h02] step 40 at +2603 -> mouse (568,535) mb=0
+[h02] step 41 at +2604 -> mouse (695,662) mb=0
+[h02] step 42 at +2605 -> mouse (822,789) mb=0
+[h02] step 43 at +2606 -> mouse (949,916) mb=0
+[h02] step 44 at +2607 -> mouse (1076,1043) mb=0
+[h02] step 45 at +2608 -> mouse (1203,1079) mb=0
+[h02] step 46 at +2609 -> mouse (1330,1079) mb=0
+[h02] step 47 at +2610 -> mouse (1457,1079) mb=0
+[h02] step 48 at +2611 -> mouse (1584,1079) mb=0
+[h02] step 49 at +2612 -> mouse (1711,1079) mb=0
+[h02] step 50 at +2613 -> mouse (1838,1079) mb=0
+[h02] step 51 at +2614 -> mouse (1919,1079) mb=0
+[h02] step 52 at +2615 -> mouse (1919,1079) mb=0
+[h02] MARK C_ABOUT step 53 at +3000 mouse (1919,1079) mb=0

@@ -181,7 +181,7 @@ ohne EmuTOS-Gegenstück** (`sh_chgrf` schaltet direkt zurück,
 | `crate::launch::run_program_with_tail` | `main.rs:1022,1090` | `pro::pro_run` → `shel_write` (**existiert schon**, `pro.rs:121`) |
 | `crate::keymap::to_ascii` | `main.rs:1478` | XBIOS `Keytbl` (0x10) — **existiert**, `tos-api/src/xbios/keytbl.rs`; EmuTOS liest `KEYTAB.shift[]`, `deskmain.c:1144-1145` |
 | `crate::fbcon::write_byte` | `main.rs:1245` | entfällt mit `console_pause_for_key` (STOP-3), sonst `Cconws` |
-| `crate::initinfo::{VERSION_STRING, machine_name, INDEPENDENCE_NOTICE, AUTHORSHIP_LINE}` | `inf.rs:2339,2341,2345,2358` | eigene Konstanten des Desktop-Crates bzw. OSHEADER/`_MCH`-Cookie (beides liegt per Prozess in der TPA, `loader.rs`) |
+| `crate::initinfo::{VERSION_STRING, machine_name, INDEPENDENCE_NOTICE, AUTHORSHIP_LINE}` | `inf.rs:2339,2341,2345,2358` | eigene Konstanten des Desktop-Crates bzw. OSHEADER/`_MCH`-Cookie (beides liegt per Prozess in der TPA, `loader.rs`) — *Nachtrag X03: die Maschinenzeile ist eine Bau-Konstante je Board, der `_MCH`-Weg traegt nicht* |
 | `crate::sync::SpinMutex` | `global.rs:18`, `inf.rs:34` | Single-Thread-EL0: `RefCell`/`Cell` |
 | `crate::kprintln` | `mod.rs:44`, `dir.rs:2558`, `inf.rs:4183,4290`, `ins.rs:1131` | `Cconws`; die vier hinter den letzten vier Stellen liegenden Selftests werden EL0-Testprogramm |
 
@@ -488,7 +488,10 @@ Bedingung: 1–5 grün, davon 1 und 2 auf echter Hardware.
 * Die vier `crate::initinfo`-Strings (`inf.rs:2339-2358`): `VERSION_STRING` und
   `AUTHORSHIP_LINE`/`INDEPENDENCE_NOTICE` werden Konstanten des Desktops,
   `machine_name()` kommt aus dem `_MCH`-Cookie, den der Loader ohnehin je
-  Prozess in die TPA legt. **Hinweis:** `kernel/src/initinfo.rs:78` verweist auf
+  Prozess in die TPA legt. *(Nachtrag X03, 2026-10-01: trifft nicht zu —
+  unser `_MCH` ist auf beiden Boards derselbe feste Marker. Umgesetzt ist
+  stattdessen eine Bau-Konstante je Board im Desktop, `MACHINE_NAME` in
+  `kernel/src/desk/inf.rs`; siehe `TASK/X03.md`.)* **Hinweis:** `kernel/src/initinfo.rs:78` verweist auf
   `crate::desk::inf::do_aboutdesk` als gemeinsame Quelle — die Begründung liegt
   also **zweimal** und muss beidseitig geändert werden.
 * `crate::kprintln` → `Cconws`; die vier unverdrahteten Selftests (`dir.rs:2557`,

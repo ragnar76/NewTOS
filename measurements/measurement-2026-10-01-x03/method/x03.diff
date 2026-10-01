@@ -1,0 +1,213 @@
+diff --git a/docs/analysis/desktop-userspace-plan-v2.md b/docs/analysis/desktop-userspace-plan-v2.md
+index ace9f6d..956559d 100644
+--- a/docs/analysis/desktop-userspace-plan-v2.md
++++ b/docs/analysis/desktop-userspace-plan-v2.md
+@@ -181,7 +181,7 @@ ohne EmuTOS-Gegenstück** (`sh_chgrf` schaltet direkt zurück,
+ | `crate::launch::run_program_with_tail` | `main.rs:1022,1090` | `pro::pro_run` → `shel_write` (**existiert schon**, `pro.rs:121`) |
+ | `crate::keymap::to_ascii` | `main.rs:1478` | XBIOS `Keytbl` (0x10) — **existiert**, `tos-api/src/xbios/keytbl.rs`; EmuTOS liest `KEYTAB.shift[]`, `deskmain.c:1144-1145` |
+ | `crate::fbcon::write_byte` | `main.rs:1245` | entfällt mit `console_pause_for_key` (STOP-3), sonst `Cconws` |
+-| `crate::initinfo::{VERSION_STRING, machine_name, INDEPENDENCE_NOTICE, AUTHORSHIP_LINE}` | `inf.rs:2339,2341,2345,2358` | eigene Konstanten des Desktop-Crates bzw. OSHEADER/`_MCH`-Cookie (beides liegt per Prozess in der TPA, `loader.rs`) |
++| `crate::initinfo::{VERSION_STRING, machine_name, INDEPENDENCE_NOTICE, AUTHORSHIP_LINE}` | `inf.rs:2339,2341,2345,2358` | eigene Konstanten des Desktop-Crates bzw. OSHEADER/`_MCH`-Cookie (beides liegt per Prozess in der TPA, `loader.rs`) — *Nachtrag X03: die Maschinenzeile ist eine Bau-Konstante je Board, der `_MCH`-Weg traegt nicht* |
+ | `crate::sync::SpinMutex` | `global.rs:18`, `inf.rs:34` | Single-Thread-EL0: `RefCell`/`Cell` |
+ | `crate::kprintln` | `mod.rs:44`, `dir.rs:2558`, `inf.rs:4183,4290`, `ins.rs:1131` | `Cconws`; die vier hinter den letzten vier Stellen liegenden Selftests werden EL0-Testprogramm |
+ 
+@@ -488,7 +488,10 @@ Bedingung: 1–5 grün, davon 1 und 2 auf echter Hardware.
+ * Die vier `crate::initinfo`-Strings (`inf.rs:2339-2358`): `VERSION_STRING` und
+   `AUTHORSHIP_LINE`/`INDEPENDENCE_NOTICE` werden Konstanten des Desktops,
+   `machine_name()` kommt aus dem `_MCH`-Cookie, den der Loader ohnehin je
+-  Prozess in die TPA legt. **Hinweis:** `kernel/src/initinfo.rs:78` verweist auf
++  Prozess in die TPA legt. *(Nachtrag X03, 2026-10-01: trifft nicht zu —
++  unser `_MCH` ist auf beiden Boards derselbe feste Marker. Umgesetzt ist
++  stattdessen eine Bau-Konstante je Board im Desktop, `MACHINE_NAME` in
++  `kernel/src/desk/inf.rs`; siehe `TASK/X03.md`.)* **Hinweis:** `kernel/src/initinfo.rs:78` verweist auf
+   `crate::desk::inf::do_aboutdesk` als gemeinsame Quelle — die Begründung liegt
+   also **zweimal** und muss beidseitig geändert werden.
+ * `crate::kprintln` → `Cconws`; die vier unverdrahteten Selftests (`dir.rs:2557`,
+diff --git a/docs/api/desktop/deskmain.md b/docs/api/desktop/deskmain.md
+index c3d480a..197940f 100644
+--- a/docs/api/desktop/deskmain.md
++++ b/docs/api/desktop/deskmain.md
+@@ -1319,17 +1319,29 @@ replaces the **content**:
+ |---|---|---|---|
+ | 0 | `G_BOX` | the box | sized to its text, see below |
+ | 1 | `G_STRING` | `- NewTOS -` | (title, centred) |
+-| 2/3 | `G_STRING` ×2 | `Version` + `NewTOS 0.1` | `initinfo::VERSION_STRING` |
+-| 4/5 | `G_STRING` ×2 | `Machine` + the board name | `initinfo::machine_name()` |
+-| 6/7 | `G_STRING` ×2 | the independence notice, split at its dash | `initinfo::INDEPENDENCE_NOTICE` |
+-| 8 | `G_STRING` | the authorship line | `initinfo::AUTHORSHIP_LINE` |
++| 2/3 | `G_STRING` ×2 | `Version` + `NewTOS 0.1` | `desk::inf::VERSION_STRING` |
++| 4/5 | `G_STRING` ×2 | `Machine` + the board name | `desk::inf::MACHINE_NAME` (per-board build constant, X03) |
++| 6/7 | `G_STRING` ×2 | the independence notice, split at its dash | `desk::inf::INDEPENDENCE_NOTICE` |
++| 8 | `G_STRING` | the authorship line | `desk::inf::AUTHORSHIP_LINE` |
+ | 9 | `G_BUTTON` | ` OK ` (`SELECTABLE\|DEFAULT\|EXIT\|LASTOB`) | = `DEOK` |
+ 
+-The three strings are **`pub(crate)` constants in `kernel/src/initinfo.rs`**, read
+-by the boot screen and by this box. That is EmuTOS's own arrangement: its About
+-box carries no version of its own either — `desk_xlate_fix` points `DEVERSN`'s
+-`ob_spec` at the BIOS `version[]` string the boot screen also prints
+-(`deskmain.c:1881`).
++The four strings are **the desktop's own constants in `kernel/src/desk/inf.rs`**;
++`kernel/src/initinfo.rs` keeps same-text copies for the boot screen. Until
++DESK43 U4 (version, notice, authorship) and X03 (machine line) the box read the
++`initinfo` symbols, on the argument that EmuTOS shares one source —
++`desk_xlate_fix` points `DEVERSN`'s `ob_spec` at the BIOS `version[]` string the
++boot screen also prints (`deskmain.c:1879`). That holds only while the desktop
++is linked with the BIOS; NewTOS's desktop is to leave the kernel's dependency
++graph, so the shared symbol is a link that move removes.
++
++The machine line has no syscall source: `_MCH` is a single fixed NewTOS marker
++(`0x0005_0000`) on both boards (`docs/api/bios/_cookie-jar.md`). Per the user
++decision of 2026-10-01 (`TASK/X03.md`) it is a **per-board build constant**,
++selected by `cfg(feature = "board-…")` — no board cookie, no `Ssystem`
++subfunction. A board feature without a line there fails the build (an
++explicit `compile_error!`), rather than showing a text that names the wrong
++machine. Accepted limit: once the desktop is built as a separate program it no
++longer sees the board feature, and the cookie-or-`Ssystem` question returns.
+ 
+ ### Named deviations
+ 
+@@ -1338,7 +1350,7 @@ box carries no version of its own either — `desk_xlate_fix` points `DEVERSN`'s
+    Easter-egg tune (`CONF_WITH_EASTER_EGG`) instead of closing. With no such
+    object the loop runs exactly once, so the three calls are `inf_show`.
+ 2. **The box is sized to its text, not to 40 fixed columns.** The machine line
+-   is board-dependent, so there is no build-time width to bake in. EmuTOS solves
++   differs per board build, so there is no single width to bake into the tree. EmuTOS solves
+    the same problem for its menus at run time (`adjust_menu`,
+    `deskmain.c:1608-1635`).
+ 3. **No build date.** `ADDINFO` has `DECOPYRT`, patched from `COPYRIGHT_YEAR`.
+diff --git a/kernel/src/desk/inf.rs b/kernel/src/desk/inf.rs
+index 166151c..f22dddb 100644
+--- a/kernel/src/desk/inf.rs
++++ b/kernel/src/desk/inf.rs
+@@ -2431,7 +2431,7 @@ impl Line {
+ /// |-----|------|--------|
+ /// | 0 | `- NewTOS -` | `ADDINFO`'s `- EmuTOS -` title (`desk_rsc.c:785-789`) |
+ /// | 2 | `Version  …` | [`VERSION_STRING`] (`DELABEL`/`DEVERSN`) |
+-/// | 3 | `Machine  …` | [`crate::initinfo::machine_name`] — the one line still reached through a kernel symbol; see the `[STOP]` note at the call site |
++/// | 3 | `Machine  …` | [`MACHINE_NAME`] — a per-board build constant (X03) |
+ /// | 5-6 | the independence notice | [`INDEPENDENCE_NOTICE`] |
+ /// | 8-9 | the EmuTOS credit | [`CREDIT_REIMPL`] / [`CREDIT_EMUTOS`] |
+ /// | 11-14 | the `'GPLed'` chain | [`CREDIT_GPL`] / [`CREDIT_DRI`] / [`CREDIT_CALDERA`] / [`CREDIT_LINEO`] |
+@@ -2440,9 +2440,9 @@ impl Line {
+ /// The blank rows 1/4/7/10/15 are `ADDINFO`'s own: it leaves char rows 3, 6, 8
+ /// and 13 empty between its blocks (`desk_rsc.c:790-866`).
+ ///
+-/// **Two readers, two copies — on purpose, since DESK43 U4.** The version, the
+-/// independence notice and the authorship line are also printed by the boot
+-/// screen. They *were* read from [`crate::initinfo`], on the argument that
++/// **Two readers, two copies — on purpose, since DESK43 U4 (the machine line
++/// since X03).** The version, the machine line, the independence notice and
++/// the authorship line are also printed by the boot screen. They *were* read from [`crate::initinfo`], on the argument that
+ /// EmuTOS shares one source (`desk_xlate_fix` points `DEVERSN->ob_spec` at the
+ /// BIOS `version[]` the boot screen prints, `deskmain.c:1880`). That argument
+ /// holds only while the desktop is linked with the BIOS, which is EmuTOS's
+@@ -2461,8 +2461,8 @@ impl Line {
+ ///   `CONF_WITH_EASTER_EGG`). With no such object the loop would run exactly
+ ///   once, so this is `inf_show(tree, ROOT)` — the same three calls.
+ /// * The box is sized to its text instead of the resource's fixed 40 columns:
+-///   the machine line is board-dependent (`initinfo::machine_name`), so there is
+-///   no build-time width to bake in. EmuTOS solves the same problem for its
++///   the machine line differs per board build ([`MACHINE_NAME`]), so there is
++///   no single width to bake into the tree. EmuTOS solves the same problem for its
+ ///   menus with the run-time `adjust_menu` (`deskmain.c:1608-1635`).
+ /// * `ADDINFO`'s copyright year is patched in at start-up from
+ ///   `COPYRIGHT_YEAR` (`deskmain.c:1892`, `obj/header.h:19`, generated by
+@@ -2493,17 +2493,9 @@ pub(super) fn do_aboutdesk() {
+     let ver_lbl = Line::new("Version");
+     let ver_val = Line::new(VERSION_STRING);
+     let mac_lbl = Line::new("Machine");
+-    // [STOP — DESK43 U4] The one line in this box still reached through a
+-    // kernel symbol. It has no syscall source: `_MCH` is a single fixed
+-    // NewTOS marker, `0x0005_0000` on **both** boards
+-    // (`tos-api/src/cookie.rs:143`, `docs/api/bios/_cookie-jar.md:136`), so a
+-    // cookie read cannot tell "Raspberry Pi 4 (BCM2711)" from "QEMU
+-    // aarch64-virt"; and the row itself is a NewTOS addition — EmuTOS's
+-    // `ADDINFO` has no Machine line at all (`desk_rsc.c:772-873`). Dropping the
+-    // row would remove the dependency for free and move the box *towards*
+-    // EmuTOS, but that is a visible change to a deliberate own feature, so it
+-    // is the user's call, not this unit's.
+-    let mac_val = Line::new(crate::initinfo::machine_name());
++    // The per-board build constant (X03); see `MACHINE_NAME` for why it is
++    // not a syscall and not a kernel symbol.
++    let mac_val = Line::new(MACHINE_NAME);
+     // The independence notice is one sentence; split it at its own dash so the
+     // box stays close to the resource's proportions instead of growing to the
+     // full 63-character line.
+@@ -2638,6 +2630,40 @@ const INDEPENDENCE_NOTICE: &str =
+ /// [`crate::initinfo::AUTHORSHIP_LINE`], same reason as above.
+ const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude AI...";
+ 
++/// The machine the desktop was built for, as the About box's `Machine` row
++/// prints it — a NewTOS addition; `ADDINFO` has no Machine line
++/// (`desk_rsc.c:772-873`).
++///
++/// **A per-board build constant** (X03, user decision 2026-10-01): the text is
++/// fixed when the kernel is compiled for a board feature, not asked for at run
++/// time. Same texts as the boot screen's `crate::initinfo::machine_name`,
++/// deliberately a second copy, for the reason in the block comment above.
++/// There is no syscall source for it: `_MCH` is one fixed NewTOS marker,
++/// `0x0005_0000` on **both** boards (`tos-api/src/cookie.rs:143`,
++/// `docs/api/bios/_cookie-jar.md:136`), so a cookie read cannot tell the Pi
++/// from QEMU; a board cookie or an `Ssystem` subfunction was considered and
++/// declined (`TASK/X03.md`).
++///
++/// **Limit, accepted in X03:** this holds only while the desktop is compiled
++/// together with the kernel and therefore sees its board feature. Once the
++/// desktop is a separately built program it no longer knows the board, and
++/// the cookie-or-`Ssystem` question has to be asked again.
++///
++/// **A board without a line here is a compile error, not a fallback.** The
++/// boot screen's `other => other` arm prints the raw board identifier, which
++/// the desktop cannot see (it has no kernel symbol to read). Any text chosen
++/// here instead would be the "one line that claims the wrong machine" the
++/// ticket rules out, so a new board feature must add its own line.
++#[cfg(feature = "board-rpi4")]
++const MACHINE_NAME: &str = "Raspberry Pi 4 (BCM2711)";
++#[cfg(feature = "board-qemu-virt")]
++const MACHINE_NAME: &str = "QEMU aarch64-virt";
++#[cfg(not(any(feature = "board-rpi4", feature = "board-qemu-virt")))]
++compile_error!(
++    "desk::inf: no About-box machine line for this board feature; add a \
++     `MACHINE_NAME` for it next to the existing ones (TASK/X03)."
++);
++
+ // The credit lines are local to this dialog for a second, older reason:
+ // EmuTOS keeps the same split — `bios/initinfo.c` prints none of the `'GPLed'`
+ // chain, only `desk_rsc.c`'s `ADDINFO` carries it.
+diff --git a/kernel/src/initinfo.rs b/kernel/src/initinfo.rs
+index 9a0747c..d18ede7 100644
+--- a/kernel/src/initinfo.rs
++++ b/kernel/src/initinfo.rs
+@@ -118,16 +118,23 @@ pub(crate) const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude A
+ /// project's own and a stamp is what tells two SD cards apart.
+ pub(crate) const BUILD_STAMP: &str = tos_api::build::BUILD_STAMP;
+ 
+-/// Friendly machine name for the current board.
++/// Friendly machine name for the current board, as the boot screen's
++/// `Machine` line prints it.
+ ///
+-/// **Still read by the desktop's About box** (`desk::inf::do_aboutdesk`) — the
+-/// one `crate::initinfo` reference DESK43 U4 left standing, named there and in
+-/// that unit's receipt. It cannot follow the three constants above, because it
+-/// is not a constant: it answers from [`crate::BOARD_NAME`], and no syscall
+-/// carries that answer. `_MCH` is a single fixed NewTOS marker, `0x0005_0000`
+-/// on both boards (`tos-api/src/cookie.rs:143`), so a cookie read cannot tell
+-/// the two apart.
+-pub(crate) fn machine_name() -> &'static str {
++/// **The desktop's About box shows the same texts from its own per-board build
++/// constant** (`MACHINE_NAME` in `kernel/src/desk/inf.rs`, X03, user decision
++/// 2026-10-01) and no longer calls this function — the last `crate::initinfo`
++/// reference DESK43 U4 left standing. Same reason as the block comment above:
++/// the desktop will not have `kernel` in its dependency graph, and no syscall
++/// carries the answer (`_MCH` is a single fixed NewTOS marker, `0x0005_0000`
++/// on both boards, `tos-api/src/cookie.rs:143`). Editing a text here means
++/// editing it there too. Private to this module since X03, so no second
++/// reader can attach to it.
++///
++/// The `other => other` arm prints the raw board identifier for a board that
++/// has no friendly name yet; the desktop's copy cannot see that identifier and
++/// fails the build instead (see its doc comment).
++fn machine_name() -> &'static str {
+     match crate::BOARD_NAME {
+         "rpi4" => "Raspberry Pi 4 (BCM2711)",
+         "qemu-virt" => "QEMU aarch64-virt",

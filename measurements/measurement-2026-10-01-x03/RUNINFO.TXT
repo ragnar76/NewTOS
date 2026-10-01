@@ -1,0 +1,120 @@
+measurement-2026-10-01-x03
+  X03 -- the About box's Machine line as a per-board build constant
+         (desk::inf::MACHINE_NAME, cfg(feature = "board-...")) instead of
+         crate::initinfo::machine_name()
+===========================================================================
+
+Basis: branch desk-rebuild, HEAD 2c0e63b. The change is UNCOMMITTED in the
+shared tree (method/x03.diff = `git diff` of the four touched files:
+kernel/src/desk/inf.rs, kernel/src/initinfo.rs, docs/api/desktop/deskmain.md,
+docs/analysis/desktop-userspace-plan-v2.md). Nothing flashed, nothing ejected,
+no real Pi driven, nothing committed. Git use on the shared tree: `git diff`,
+`git status`, `git rev-parse`, and `git show HEAD:<path>` (read only, for the
+BEFORE kernel). /Volumes/BOOT was not touched.
+
+All instrumentation lives on SCRATCH copies of the crates in the session
+scratchpad, never in the shared tree. Kernel images and the card image were
+built there and are not copied here (no *.img / *.elf in this directory).
+
+---------------------------------------------------------------------------
+0.  Machines
+---------------------------------------------------------------------------
+rpi4 build      QEMU -M raspi4b -no-reboot -display none -serial file:<log>
+                -drive file=<sd>,if=sd,format=raw -qmp unix:<sock>
+                640x480 ("[fb] VideoCore fb up: 640x480").
+                Card: tools/make-sd-image.sh <img> 64 from the shared tree
+                (read only; writes only the image in the scratch), unchanged.
+qemu-virt build the `cargo xtask run` machine line for qemu-virt:
+                -M virt,gic-version=2 -cpu cortex-a72 -m 272M -device ramfb
+                -device qemu-xhci -device usb-kbd -device usb-mouse
+                -display none -serial file:<log> -no-reboot -kernel <flat img>
+                -qmp unix:<sock>. ramfb 1920x1080 ("[fb] ramfb up: 1920x1080"),
+                no card ("[desk] desktop up (0 drives, ...)").
+                Flat image = rust-objcopy -O binary of the release ELF, as
+                xtask's cmd_run does.
+Host:           macOS. No `timeout`; method/qmp_multi.py bounds every run and
+                ends the VM with QMP `quit`. method/run.sh <raspi4b|virt> ...
+Build:          release, `cargo xtask build --board <b> --release` in the
+                scratch copy.
+
+---------------------------------------------------------------------------
+1.  Method
+---------------------------------------------------------------------------
+method/make_scratch_x03.sh   AFTER kernel = shared tree (with X03) + the
+                             H02/GUI04 IKBD injector (apply_injector.py) +
+                             the desktop-arming patch (desk_arm_patch.py),
+                             both copied unchanged from
+                             measurement-2026-10-01-desk50/method.
+method/make_scratch_head.sh  BEFORE kernel = the same, but
+                             kernel/src/desk/inf.rs and kernel/src/initinfo.rs
+                             from `git show HEAD:`.
+method/x03.actions           Desk -> "Desktop info..." at 640x480, the click
+                             points of measurement-2026-09-24-desk01-desk02
+                             (desk-desk01.actions): hover (40,8) opens the
+                             Desk drop-down, click (60,27) = entry 0.
+method/x03-virt.actions      the same with `parkbr 1920 1080`: the pointer
+                             must be parked in the corner of the 1920x1080
+                             ramfb screen before the relative moves are
+                             computed. method/gen_script.py got an optional
+                             `parkbr W H` for that (default 640 480 produces
+                             byte-identical output to the DESK50 copy --
+                             checked by diff of the generated x03_script.rs).
+Marks: A_IDLE (desktop), B_DESK_OPEN (drop-down), C_ABOUT (the box). The
+pointer is parked bottom-right before A and C.
+
+---------------------------------------------------------------------------
+2.  Result -- two boards, two lines
+---------------------------------------------------------------------------
+screendumps/rpi4-c-about.png       Machine  Raspberry Pi 4 (BCM2711)
+screendumps/qemuvirt-c-about.png   Machine  QEMU aarch64-virt
+(read off the images; same box, same other lines, form_center'd on each
+screen). a-idle / b-desk-open for both boards alongside.
+
+AFTER vs BEFORE (HEAD) kernel, same script, same card:
+  rpi4-{a,b,c}*.png     vs rpi4head-{a,b,c}*.png       0 differing pixels
+                        (c-about md5 a9ba0d0092bcc5cb3a8522c57861ab95 both)
+  qemuvirt-{a,b,c}*.png vs qemuvirthead-{a,b,c}*.png   0 differing pixels
+i.e. the texts are unchanged; only their source moved.
+
+0 [EXC] / [PANIC] in all four serial logs (serial/*-serial.log).
+
+Kernel images (sha256, scratch):
+  k8-scr-rpi4.img   444803a3d1eb4f04819493ce16e09aae9a88db2a4b122a409a9d599681c42cd4  (AFTER, injector)
+  k-scr-qv.img      8537da693530d580ece9f4d72cba531e90ed9901496ee578ac8fb7aa3749ed3f  (AFTER, injector)
+  k8-head-rpi4.img  e9f20750b46c70c885cd971cb35db0e171fa1680b4ac6815bde79eb6d9d87000  (BEFORE, injector)
+  k-head-qv.img     0c055b91dbd960735e6130bdb5b2d26330e98704717c69b2050822a2d8609f89  (BEFORE, injector)
+
+---------------------------------------------------------------------------
+3.  The string in each product ELF (shared tree, release, no injector)
+---------------------------------------------------------------------------
+method/elf-strings.txt: the rpi4 ELF contains "Raspberry Pi 4 (BCM2711)" once
+and no "QEMU aarch64-virt"; the qemu-virt ELF the reverse. (The boot screen's
+`match crate::BOARD_NAME` is const-folded, and the linker merges it with the
+desktop's identical literal.)
+  kernel-rpi4.elf      19251e5d0360c7d7507701c7939b43b57f8e8536401cec89b214124700e62dde
+  kernel-qemuvirt.elf  0384c59114d86fceb70a17434da0cd56b432b976d7a089a42b86f29e895f05bc
+
+---------------------------------------------------------------------------
+4.  A board without a line fails the build
+---------------------------------------------------------------------------
+method/missing_line_check.sh: scratch copy, the rpi4 arm of MACHINE_NAME and
+of the guard's board list re-keyed to a non-existent feature, then
+`cargo check -p kernel --features board-rpi4`. Result
+(method/missing-line-check-result.txt): exactly one error,
+  error: desk::inf: no About-box machine line for this board feature; add a
+  `MACHINE_NAME` for it next to the existing ones (TASK/X03).
+exit 101.
+
+---------------------------------------------------------------------------
+5.  Drift probe
+---------------------------------------------------------------------------
+`sh tools/desk-drift-probe.sh`: 32 -> 31. Group B now lists crate::kprintln 5
+and crate::sync 2; crate::initinfo is gone.
+
+---------------------------------------------------------------------------
+6.  Not driven
+---------------------------------------------------------------------------
+* Real Pi 4 (the line is a compile-time constant; the rpi4 ELF carries only
+  the Pi text -- section 3).
+* OK button / close of the box (unchanged code path; measured byte-identical
+  restore in measurement-2026-09-24-desk01-desk02).

@@ -1319,17 +1319,29 @@ replaces the **content**:
 |---|---|---|---|
 | 0 | `G_BOX` | the box | sized to its text, see below |
 | 1 | `G_STRING` | `- NewTOS -` | (title, centred) |
-| 2/3 | `G_STRING` ×2 | `Version` + `NewTOS 0.1` | `initinfo::VERSION_STRING` |
-| 4/5 | `G_STRING` ×2 | `Machine` + the board name | `initinfo::machine_name()` |
-| 6/7 | `G_STRING` ×2 | the independence notice, split at its dash | `initinfo::INDEPENDENCE_NOTICE` |
-| 8 | `G_STRING` | the authorship line | `initinfo::AUTHORSHIP_LINE` |
+| 2/3 | `G_STRING` ×2 | `Version` + `NewTOS 0.1` | `desk::inf::VERSION_STRING` |
+| 4/5 | `G_STRING` ×2 | `Machine` + the board name | `desk::inf::MACHINE_NAME` (per-board build constant, X03) |
+| 6/7 | `G_STRING` ×2 | the independence notice, split at its dash | `desk::inf::INDEPENDENCE_NOTICE` |
+| 8 | `G_STRING` | the authorship line | `desk::inf::AUTHORSHIP_LINE` |
 | 9 | `G_BUTTON` | ` OK ` (`SELECTABLE\|DEFAULT\|EXIT\|LASTOB`) | = `DEOK` |
 
-The three strings are **`pub(crate)` constants in `kernel/src/initinfo.rs`**, read
-by the boot screen and by this box. That is EmuTOS's own arrangement: its About
-box carries no version of its own either — `desk_xlate_fix` points `DEVERSN`'s
-`ob_spec` at the BIOS `version[]` string the boot screen also prints
-(`deskmain.c:1881`).
+The four strings are **the desktop's own constants in `kernel/src/desk/inf.rs`**;
+`kernel/src/initinfo.rs` keeps same-text copies for the boot screen. Until
+DESK43 U4 (version, notice, authorship) and X03 (machine line) the box read the
+`initinfo` symbols, on the argument that EmuTOS shares one source —
+`desk_xlate_fix` points `DEVERSN`'s `ob_spec` at the BIOS `version[]` string the
+boot screen also prints (`deskmain.c:1880`). That holds only while the desktop
+is linked with the BIOS; NewTOS's desktop is to leave the kernel's dependency
+graph, so the shared symbol is a link that move removes.
+
+The machine line has no syscall source: `_MCH` is a single fixed NewTOS marker
+(`0x0005_0000`) on both boards (`docs/api/bios/_cookie-jar.md`). Per the user
+decision of 2026-10-01 (`TASK/X03.md`) it is a **per-board build constant**,
+selected by `cfg(feature = "board-…")` — no board cookie, no `Ssystem`
+subfunction. A board feature without a line there fails the build (an
+explicit `compile_error!`), rather than showing a text that names the wrong
+machine. Accepted limit: once the desktop is built as a separate program it no
+longer sees the board feature, and the cookie-or-`Ssystem` question returns.
 
 ### Named deviations
 
@@ -1338,7 +1350,7 @@ box carries no version of its own either — `desk_xlate_fix` points `DEVERSN`'s
    Easter-egg tune (`CONF_WITH_EASTER_EGG`) instead of closing. With no such
    object the loop runs exactly once, so the three calls are `inf_show`.
 2. **The box is sized to its text, not to 40 fixed columns.** The machine line
-   is board-dependent, so there is no build-time width to bake in. EmuTOS solves
+   differs per board build, so there is no single width to bake into the tree. EmuTOS solves
    the same problem for its menus at run time (`adjust_menu`,
    `deskmain.c:1608-1635`).
 3. **No build date.** `ADDINFO` has `DECOPYRT`, patched from `COPYRIGHT_YEAR`.
