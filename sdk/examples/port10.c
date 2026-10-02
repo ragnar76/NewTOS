@@ -18,19 +18,26 @@
  *      40 + its argc, so each check proves both the arguments and that the
  *      spawn returns the child's Pterm code.
  *
- * NOT here: system() itself. mintlib's system() object also carries its POSIX
- * branch (vfork + execve + waitpid, taken when /bin/sh or $SHELL exists), and
- * vfork on TOS needs Pexec modes NewTOS does not implement -- see
- * TASK/PORT10-STATUS-UNFINISHED.MD. The TOS branch of system() is
- * spawnvp(P_WAIT, argv[0], argv) after splitting the command line, which is
- * check "spawnvp" below.
+ *   4. system() (since the sdk/libc/overlay/posix/system.c overlay: mintlib's
+ *      TOS branch only, no vfork/execve/waitpid -- TASK/PORT10, removed again
+ *      by TASK/PROC01): system(NULL) == 1; a .NCP run with arguments returns
+ *      the child's Pterm code; "> file" redirects the child's handle 1 into
+ *      a file the parent reads back; a name WITHOUT extension is looked up
+ *      with mintlib's spawnvp list (ttp, prg, tos) only, so C:\P10\P10KID
+ *      does not find P10KID.NCP (-1/ENOENT -- recorded behaviour, not a
+ *      wish); and DOOM's I_Error probe "/usr/bin/zenity --help >/dev/null
+ *      2>&1" comes back non-zero. Two checks here measure KERNEL behaviour
+ *      that system()'s redirection relies on, against EmuTOS: the child
+ *      inherits the parent's forced standard handles (bdos/proc.c
+ *      init_pd_files -> ixforce), and Fforce holds a use count so the parent's
+ *      handle 1 survives Fclose of its Fdup'd copy (bdos/fshand.c ixforce).
  *
  * Build (links libc.a):
  *     sdk/libc/build-libc.sh sdk/examples/port10kid.c sdk/libc/build/P10KID.NCP
  *     sdk/libc/build-libc.sh sdk/examples/port10.c    sdk/libc/build/P10TEST.NCP
  * Card: C:\AUTO\P10TEST.NCP, plus the child as C:\P10\P10KID.NCP and the same
  * file again as C:\P10\P10KID.NTP
- * (measurements/measurement-2026-10-02-port10/method/run-port10.sh).
+ * (measurements/measurement-2026-10-02-port10b/method/run-port10.sh).
  * Expect on the serial line: "port10: PASS ..." per check, then
  *     port10: ALL PASS (N checks)
  * No key pause: \AUTO\ is its route, and a key wait there stops the boot.
@@ -174,6 +181,63 @@ main (void)
     errno = 0;
     r = spawnvp (P_WAIT, av3[0], av3);
     verdict (r == -1 && errno == ENOENT, "spawnvp of a missing file -> -1/ENOENT", NULL);
+  }
+
+  /* 4. system(): mintlib's TOS branch (overlay posix/system.c) -> word split,
+     redirection, spawnvp(P_WAIT) -> synchronous Pexec(0). */
+  spawned ("system(NULL) (a command processor is available)", system (NULL), 1);
+  spawned ("system(\"" KID_NCP " s1 s2\")",
+	   system (KID_NCP " s1 s2"), 43);
+  spawned ("system(\"" KID_NTP " t1\") (explicit extension)",
+	   system (KID_NTP " t1"), 42);
+  {
+    /* The child writes a marker line through Fwrite(1) when its first
+       argument is "fwrite"; system_hack has Fforce'd handle 1 to the file. */
+    char line[80] = "";
+    FILE *f;
+    int r;
+    Fdelete ("C:\\P10\\SYSOUT.TXT");
+    r = system (KID_NCP " fwrite >C:\\P10\\SYSOUT.TXT");
+    spawned ("system(\"" KID_NCP " fwrite >C:\\P10\\SYSOUT.TXT\")", r, 42);
+    f = fopen ("C:\\P10\\SYSOUT.TXT", "r");
+    if (f)
+      {
+	if (!fgets (line, sizeof line, f))
+	  line[0] = 0;
+	fclose (f);
+      }
+    verdict (f != NULL && strncmp (line, "p10kid: marker via handle 1", 27) == 0,
+	     "> file: the child's handle 1 landed in C:\\P10\\SYSOUT.TXT",
+	     f ? line : "file not there");
+  }
+  {
+    /* system_hack restores handle 1 with Fforce(1, Fdup'd copy) and then
+       Fcloses that copy; on EmuTOS the Fforce holds a use count
+       (bdos/fshand.c ixforce), so handle 1 must still write afterwards. */
+    static const char probe[] = "port10: handle 1 after the redirect\r\n";
+    char d[60];
+    long r = Fwrite (1, sizeof probe - 1, probe);
+    snprintf (d, sizeof d, "Fwrite(1) returned %ld, want %ld", r,
+	      (long) (sizeof probe - 1));
+    verdict (r == (long) (sizeof probe - 1),
+	     "handle 1 still writes after system(\"... >file\")", d);
+  }
+  {
+    int r;
+    errno = 0;
+    r = system ("C:\\P10\\P10KID s3");
+    verdict (r == -1 && errno == ENOENT,
+	     "system(\"C:\\P10\\P10KID s3\") -> -1/ENOENT: spawnvp tries "
+	     "only .ttp/.prg/.tos, P10KID.NCP is not found", NULL);
+  }
+  {
+    /* doomgeneric i_system.c ZenityAvailable(), on every I_Error. */
+    char d[80];
+    int r;
+    errno = 0;
+    r = system ("/usr/bin/zenity --help >/dev/null 2>&1");
+    snprintf (d, sizeof d, "returned %d (errno %d)", r, errno);
+    verdict (r != 0, "DOOM's zenity probe -> non-zero (zenity unavailable)", d);
   }
 
   if (failed == 0)

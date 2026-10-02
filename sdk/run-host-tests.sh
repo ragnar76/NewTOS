@@ -134,6 +134,14 @@ report gmp-host $rc "mintlib tree absent or host not LP64"
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/spawn-host.log"
 report spawn-host $rc "mintlib tree absent or host not LP64"
 
+# system-host (PORT10): the posix/system.c overlay is mintlib's TOS branch
+# only -- word splitting, < > >> via Fopen/Fcreate + Fdup/Fforce around
+# spawnvp(P_WAIT), DOOM's zenity probe -> -1 -- and its object references no
+# vfork/execve/waitpid/sigaction/access/getenv any more.
+"$SDK/libc/tests/system-host.sh" > "$WORK/system-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/system-host.log"
+report system-host $rc "mintlib tree absent or host not LP64"
+
 echo
 echo "host tests: $pass passed, $fail failed, $skip skipped"
 exit $fail

@@ -1,6 +1,6 @@
 # PORT10 — libc: `system()`/`spawn*` linken nicht, `printf("%f")` stuerzt ab
 
-Status: **OFFEN** · Prioritaet: **P1** (blockiert den auslieferbaren Doom-Bau) · Typ: SDK / libc — aus [PORT06](PORT06.md)
+Status: **ERLEDIGT** (2026-10-02, [Statusdatei](PORT10-STATUS-DONE.MD); `system()` ueber SDK-Overlay bis [PROC01](PROC01.md)) · Prioritaet: **P1** (blockiert den auslieferbaren Doom-Bau) · Typ: SDK / libc — aus [PORT06](PORT06.md)
 
 Abhaengigkeiten: —
 

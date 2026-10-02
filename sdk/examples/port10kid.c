@@ -10,7 +10,9 @@
  * started by Pexec from EL0 with an environment gets a physical address that
  * is not mapped in its EL0 space (TASK/MEM03), and _spawnve always passes one.
  * Its exit code is 40 + argc, so the parent can check that Pexec's return
- * value is the child's Pterm code.
+ * value is the child's Pterm code. With "fwrite" as its first argument it
+ * also writes one marker line through Fwrite(1, ...) -- GEMDOS handle 1, which
+ * port10.c's system("... >file") has redirected with Fforce.
  *
  * Build (links libc.a):
  *     sdk/libc/build-libc.sh sdk/examples/port10kid.c sdk/libc/build/P10KID.NCP
@@ -71,5 +73,12 @@ main (int argc, char **argv)
   Cconws (", p_env ");
   put_hex (_base->p_env);
   Cconws (" (not read, TASK/MEM03)\r\n");
+  if (argc > 1 && argv[1][0] == 'f' && argv[1][1] == 'w' && argv[1][2] == 'r'
+      && argv[1][3] == 'i' && argv[1][4] == 't' && argv[1][5] == 'e'
+      && argv[1][6] == '\0')
+    {
+      static const char marker[] = "p10kid: marker via handle 1\r\n";
+      Fwrite (1, sizeof marker - 1, marker);
+    }
   return 40 + argc;
 }

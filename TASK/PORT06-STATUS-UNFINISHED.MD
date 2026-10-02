@@ -64,6 +64,25 @@ ausgelieferte Bau **heute nicht linkt** (unten, Punkt 1).
    ab), **nicht** Teil der Portierung. Entscheidung noetig: libc-Ticket
    (spawnve/spawnvp LP64 + vfork/wait4) oder ein anderer Weg — nicht in
    doomgeneric, nicht in der Plattformdatei.
+
+   > **Korrektur 2026-10-02 (PORT10), der Text oben bleibt als Stand von
+   > damals stehen:** „`I_Error` erreicht `ZenityErrorBox` auf NewTOS nie
+   > (stdout ist ein Terminal)" ist **widerlegt**. `I_Error` ruft sie, wenn
+   > `exit_gui_popup && !I_ConsoleStdout()` (doomgeneric `i_system.c:410`),
+   > und doomgenerics `I_ConsoleStdout` liefert ausserhalb von `ORIGCODE`
+   > immer 0 (`i_system.c:210-221`; das `isatty` steht im `#if
+   > ORIGCODE`-Zweig). `system()` wird also bei **jedem** `I_Error` gerufen —
+   > auch nach der timedemo-Schlusszeile, die DOOM ueber `I_Error` ausgibt.
+   > PORT06 sah das nicht, weil der `%f`-Absturz davor lag. Gemessen:
+   > `measurements/measurement-2026-10-02-port10/serial/doom-tdemo-serial.log`
+   > (Diagnose-Ersatz meldet sich nach der timedemo-Zeile) und, mit dem
+   > echten `system()`, `measurements/measurement-2026-10-02-port10b/`
+   > (`/dev/null: …`-Zeile von mintlibs `system_hack` nach der timedemo-Zeile
+   > und nach „No IWAD file was found"). Der Blocker selbst ist mit PORT10
+   > behoben: `build-doom.sh` linkt ohne Ersatz (`TASK/PORT10-STATUS-DONE.MD`).
+   > Die Begruendung im Kopf von `measurement-2026-10-02-port06/method/
+   > build-variants.sh` traegt denselben Fehler; sie bleibt als Beleg
+   > unveraendert.
 2. **Speicher:** malloc laeuft in der 4-MiB-TPA; nach Bild/BSS (~820 KiB),
    Stapel (64 KiB) und `DG_ScreenBuffer` (250 KiB) bleiben ~2961 KiB, also
    `-mb 2` (`-mb` nimmt ganze MiB; 3 passt nicht). Titel, Demos und

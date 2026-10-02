@@ -1,0 +1,14 @@
+overlay object references: __stack_chk_fail __stack_chk_guard errno free malloc perror strcpy strlen system_test_ctype system_test_Fclose system_test_Fcreate system_test_Fdup system_test_Fforce system_test_Fopen system_test_Fseek system_test_spawnvp system_test_unx2dos
+PASS  no vfork/execve/waitpid/sigaction/sigprocmask/access/getenv referenced
+PASS  system(NULL) == 1, nothing run
+PASS  plain words -> spawnvp(P_WAIT), child's code returned
+PASS  quotes group words and are stripped
+PASS  > file: Fcreate + Fdup(1) + Fforce(1) around the spawn
+PASS  >> file that exists: Fopen(2) + Fseek to the end
+PASS  >> file that does not exist: Fopen fails -> Fcreate
+PASS  < file: Fopen(0) + Fdup(0) + Fforce(0)
+PASS  DOOM's zenity probe: not found -> -1, handle 1 restored
+      (the next check makes mintlib's perror print one line)
+C:\NOPE\X.TXT: Undefined error: 0
+PASS  > file that cannot be created: 2, nothing run
+system-host: 0 of 9 checks failed

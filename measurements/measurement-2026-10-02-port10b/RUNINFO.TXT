@@ -1,0 +1,138 @@
+measurement-2026-10-02-port10b
+  PORT10, letzter Punkt: system() ueber ein SDK-Overlay (TOS-Zweig)
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 94622ad. Kein Kommit durch diesen Lauf,
+nichts geflasht, keine Pi, keine Karte, /Volumes/BOOT nicht beruehrt.
+Unter kernel/ und tos-api/ wurde KEINE Datei geaendert. Kein *.img in
+diesem Verzeichnis. Der Vorlauf measurement-2026-10-02-port10/ und
+measurement-2026-10-02-port06/ sind unveraendert; deren Skripte werden hier
+nur aufgerufen (PORT06 run-doom.sh, qmp_timed.py, newdesk-doom.inf).
+
+Entscheidung Anwender 2026-10-02: SDK-Weg. Overlay
+sdk/libc/overlay/posix/system.c = mintlibs posix/system.c ohne den
+POSIX-Zweig (/bin/sh-/$SHELL-Probe, sigaction, vfork, execve, waitpid);
+system() ist immer der TOS-Zweig system_hack -> spawnvp(P_WAIT) ->
+synchroner Pexec(0). Der Kernweg (Pexec 5/6/7, vfork) ist TASK/PROC01.
+
+Maschine: QEMU 11.0.2 -M raspi4b, -display none, serielle Ausgabe in eine
+Datei, Karte als -drive if=sd, jedes Mal frisch aus tools/make-sd-image.sh
+(make-sd-image.sh NICHT geaendert). Kern: `cargo xtask build --board rpi4
+--release`, Quellen unveraendert, tos-api 64 / kernel 94 rustc-Warnungen
+(Basislinie), kernel8.img sha256
+603578389b9e2a7cd65ccd7bc45d6f0d7828bdb83d5487b8da88bd22ac7b1a44 (gleiche
+Groesse wie im PORT10-Lauf, anderer Hash bei unveraenderten Quellen --
+nicht untersucht). clang: Apple clang 21.0.0, Ziel aarch64-unknown-none-elf;
+Host arm64 Darwin.
+
+
+0. ERGEBNIS VORWEG
+---------------------------------------------------------------------------
+  system() linkt      ja. posix__system.o referenziert nur noch _ctype,
+                      _unx2dos, errno, free, malloc, perror, spawnvp,
+                      strcpy, strlen (method/build-libc.log, Bau OK,
+                      expected-failures 9/9 unveraendert).
+  build-doom.sh       linkt OHNE Diagnose-Ersatz: 81/81, LINK OK, 0
+                      undefined (method/build-doom-delivered.log; Zugkette
+                      i_system.o -> system -> spawnvp ->
+                      spawnve/_spawnve: method/build-doom-delivered-why-system.txt).
+  DOOM timedemo       "timed 5026 gametics in 2254 realtics (78.043480 fps)",
+                      danach ruft I_Error -> ZenityErrorBox das ECHTE
+                      system(): "/dev/null: Not a directory." (mintlibs
+                      perror mit liegengebliebenem errno), DOOM endet mit
+                      rc=0, Desktop zurueck (serial/tdemo-serial.log,
+                      screendumps/41, 42).
+  DOOM ohne IWAD      "Game mode indeterminate. No IWAD file was found ...",
+                      system() -> "/dev/null: No such file or directory.",
+                      kein Haenger, kein Fehler-Abbruch, rc=0, Desktop
+                      zurueck (serial/noiwad-serial.log, screendumps/43, 44).
+  port10.c (QEMU)     27 von 29 PASS. Die 2 FAIL sind Kernverhalten, das
+                      system()s Umleitung braucht (siehe 2.) -- nicht im
+                      Overlay, nicht angefasst.
+  Hosttests           sh sdk/run-host-tests.sh: 11 passed, 0 failed,
+                      0 skipped (neu: system-host).
+  QED / TeraDesk      bauen, je 0 undefined; QED.NAP 27036f80...,
+                      DESKTOP.NAP 4bf69f03... -- byte-gleich mit dem
+                      PORT10-Nachher-Stand, keines der beiden linkt system().
+
+
+1. system() auf NewTOS (method/run-port10.sh -> serial/port10-serial.log)
+---------------------------------------------------------------------------
+sdk/examples/port10.c (C:\AUTO\P10TEST.NCP) mit den neuen system()-Pruefungen,
+Kind sdk/examples/port10kid.c (C:\P10\P10KID.NCP, gleiche Datei als
+P10KID.NTP); Exitcode des Kindes = 40 + argc.
+
+  PASS system(NULL)                              -> 1
+  PASS system("C:\P10\P10KID.NCP s1 s2")         -> 43, Kind sieht s1 s2
+  PASS system("C:\P10\P10KID.NTP t1")            -> 42
+  PASS system("C:\P10\P10KID.NCP fwrite >C:\P10\SYSOUT.TXT") -> 42
+  FAIL Umleitung: SYSOUT.TXT entsteht, bleibt aber leer; die Markierungs-
+       zeile des Kindes (Fwrite(1, ...)) steht auf der Konsole.
+  FAIL danach Fwrite(1, ...) im Elternprozess -> -37 (EIHNDL).
+  PASS system("C:\P10\P10KID s3")                -> -1 / ENOENT
+  PASS DOOMs Probe "/usr/bin/zenity --help >/dev/null 2>&1" -> 2
+  Alle 21 Pruefungen des Vorlaufs (%f, intptr_t, spawn*) weiter PASS.
+
+
+2. Die zwei FAIL -- Kernverhalten gegen EmuTOS (Quelle, nicht geraten)
+---------------------------------------------------------------------------
+  a) Das Kind erbt die umgelenkten Standardhandles nicht.
+     NewTOS: tos-api/src/bdos/process/loader.rs:676 `bp.p_uft = [-1; NUMSTD]`
+     (Doku :616 "no inherited handle redirections").
+     EmuTOS: bdos/proc.c:386-397 init_pd_files -- "inherit standard files
+     from me", ixforce(i, h, p) fuer jeden umgelenkten Standardhandle.
+  b) Fforce fuehrt keinen Benutzungszaehler.
+     system_hack stellt Handle 1 mit Fforce(1, Fdup(1)) wieder her und
+     schliesst die Kopie danach (posix/system.c, Fclose(oldout)).
+     EmuTOS: bdos/fshand.c:69-73 ixforce erhoeht sft[].f_use, der Handle
+     ueberlebt das Fclose. NewTOS: tos-api/src/bdos/fs/file.rs fforce setzt
+     nur p_uft, fclose gibt den Slot frei -> p_uft[1] zeigt ins Leere,
+     resolve() -> EIHNDL.
+  Folge: system("prog >datei") legt die Datei an, das Kind schreibt aber
+  auf die Konsole, und der Aufrufer verliert danach seine Ausgabe ueber
+  Handle 1. DOOM ist nicht betroffen: Fcreate("null:") scheitert, system_hack
+  kehrt vor jedem Fforce mit 2 zurueck. Kernarbeit, nicht Teil dieses
+  Auftrags (kernel/ und tos-api/ gesperrt) -- zur Weitergabe an den Lead.
+
+
+3. Endungen: geht system() durch die ttp/prg/tos-Liste? JA.
+---------------------------------------------------------------------------
+  Quelle: overlay posix/system.c system_hack -> spawnvp(P_WAIT, argv[0], argv);
+  overlay mintlib/spawnvp.c: _buffindfile(name, getenv("PATH"),
+  {"ttp","prg","tos"}); mintlib/buffindf.c: Name wie gegeben, dann die drei
+  Endungen, je PATH-Eintrag; hat der Name schon eine Endung, keine Liste.
+  Gemessen: system("C:\P10\P10KID s3") -> -1/ENOENT, obwohl P10KID.NCP und
+  P10KID.NTP daneben liegen; mit Endung laeuft es.
+  NICHT geaendert: die Liste ist mintlibs (TOS-Endungen). .NCP/.NTP/.NAP
+  sind NewTOS-eigene Endungen (ADR-018, mit Blick auf den spaeteren
+  m68k-Emulator fuer .PRG/.TOS/.TTP); ob sie in spawnvps Suche gehoeren, ist
+  eine Entscheidung, keine Quellenfrage -- an den Lead.
+
+
+4. Host (host/)
+---------------------------------------------------------------------------
+  host/system-host.txt   sdk/libc/tests/system-host.sh: das Overlay mit dem
+    Include-Pfad des Archivs, osbind.h zurueckgehalten, die sechs GEMDOS-
+    Aufrufe + spawnvp + _unx2dos auf Rekorder umgelegt, mintlibs eigene
+    ctype-Tabelle. 1 Symbolpruefung + 9 Verhaltenspruefungen, alle PASS:
+    system(NULL), Wortzerlegung, Anfuehrungszeichen, >, >> (vorhanden /
+    nicht vorhanden), <, DOOMs zenity-Zeile (-1 durchgereicht, Handle 1
+    zurueckgesetzt), Umleitungsdatei nicht anlegbar -> 2.
+  host/pristine-system-nm.txt  Gegenprobe: dieselbe Uebersetzung der
+    PRISTINEN Datei referenziert vfork, execve, waitpid, sigaction,
+    sigprocmask, access, getenv -- die Symbolpruefung trennt also.
+  host/run-host-tests.txt  11 / 0 / 0.
+
+
+5. Dateien in diesem Verzeichnis
+---------------------------------------------------------------------------
+  method/run-port10.sh      Bau port10/port10kid + Karte + QEMU (60 s)
+  method/run-doom.sh        build-doom.sh (DOOM_STATS=5, -timedemo demo1),
+                            dann zwei Laeufe: mit WAD, ohne WAD
+  method/seed-doom.sh       PORT06s seed-doom.sh, WAD optional
+  method/seed-auto.sh, run-serial.sh  Kopien aus measurement-...-port10/method
+  method/build-*.log        Bauprotokolle (libc, doom geliefert + tdemo,
+                            qed, teradesk)
+  serial/ screendumps/ host/  wie oben. run-doom.sh schreibt Logs und PNGs
+                            in EIN Ausgabeverzeichnis; hier nach serial/,
+                            screendumps/ und method/ einsortiert.

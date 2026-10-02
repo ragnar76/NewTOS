@@ -1,15 +1,71 @@
-# PORT10 — Quittung: `%f` und `intptr_t` behoben, `spawn*` laeuft, `system()` wartet auf eine Entscheidung
+# PORT10 — Quittung: `%f`, `intptr_t`, `spawn*` und `system()` erledigt
 
-Datum 2026-10-02 · Basis `desk-rebuild`, HEAD `160d24b` bei Beginn · Belege
+Datum 2026-10-02 · Basis `desk-rebuild`, HEAD `160d24b` bei Beginn,
+`94622ad` beim Abschluss · Belege
 [measurements/measurement-2026-10-02-port10/](../measurements/measurement-2026-10-02-port10/RUNINFO.TXT)
+(`%f`, `intptr_t`, `spawn*`) und
+[measurements/measurement-2026-10-02-port10b/](../measurements/measurement-2026-10-02-port10b/RUNINFO.TXT)
+(`system()`, DOOM ohne Ersatz).
 
-**UNFINISHED heisst hier:** Punkt 2 (`printf("%f")`) und Punkt 3
-(`intptr_t`/`uintptr_t`) sind erledigt und in QEMU `raspi4b` belegt; von
-Punkt 1 laeuft die `spawn*`-Familie (synchroner `Pexec(0)`, wie mintlib auf
-TOS ohne MiNT). **`system()` linkt weiterhin nicht**, und damit auch
-`sdk/apps/build-doom.sh` nicht. Der Rest haengt an einem Kernmerkmal, das
-NewTOS fehlt — laut Arbeitsanweisung angehalten, bevor `kernel/` oder
-`tos-api/` angefasst wird.
+**DONE heisst hier:** die Abnahme des Tickets ist erfuellt —
+`sdk/apps/build-doom.sh` linkt ohne Diagnose-Ersatz (81/81, 0 undefined),
+`sh sdk/run-host-tests.sh` 11/0/0, und `sdk/examples/port10.c` ruft auf
+NewTOS (QEMU `raspi4b`) `system()` und `printf("%f")` erfolgreich auf.
+`port10.c` meldet trotzdem **2 von 29 FAIL**: beide messen Kernverhalten,
+das `system()`s Umleitung (`>`/`<`) braucht und das von EmuTOS abweicht
+(unten „Offen", Punkt 1). Bis zur Datei unten „Entscheidung noetig" ist der
+Text der Stand vor der Anwenderentscheidung und bleibt so stehen.
+
+## Nachtrag 2026-10-02: `system()` per SDK-Overlay (Entscheidung Anwender)
+
+* **Overlay** `sdk/libc/overlay/posix/system.c` = mintlibs Datei ohne den
+  POSIX-Zweig (`/bin/sh`-/`$SHELL`-Probe, `sigaction`, `vfork`, `execve`,
+  `waitpid`); alles andere woertlich. `system()` ist immer der TOS-Zweig
+  `system_hack` → `spawnvp(P_WAIT)` → synchroner `Pexec(0)`. Abweichung von
+  mintlib nur dort, wo `/bin/sh` oder `$SHELL` existierten. Kopfkommentar
+  sagt warum und dass TASK/PROC01 das Overlay wieder entfernt.
+* **Host:** `sdk/libc/tests/system-host.{sh,c}` + `system-host-gemdos.h`,
+  in `sdk/run-host-tests.sh` verdrahtet: 1 Symbolpruefung (keine
+  POSIX-Zweig-Symbole mehr; Gegenprobe mit der Originaldatei trennt) + 9
+  Verhaltenspruefungen.
+* **Ziel:** `port10.c` +8 `system()`-Pruefungen, `port10kid.c` schreibt mit
+  Argument `fwrite` eine Zeile ueber `Fwrite(1, …)`.
+* **DOOM:** `build-doom.sh` linkt; der Hinweistext auf die Luecke ist
+  entfernt. timedemo: `timed 5026 gametics in 2254 realtics (78.043480 fps)`,
+  danach laeuft `I_Error` → `ZenityErrorBox` → echtes `system()` →
+  `/dev/null: …` (Rueckgabe 2), DOOM endet mit rc 0. Ohne IWAD: „No IWAD
+  file was found", `system()` → 2, rc 0, Desktop zurueck — kein Haenger,
+  kein Absturz.
+* **Endungen:** `system()` geht durch `spawnvp`s Liste `ttp/prg/tos`
+  (Quelle und Messung: `system("C:\P10\P10KID s3")` → `-1/ENOENT`, mit
+  `.NCP` laeuft es). Liste **nicht** geaendert — `.NCP/.NTP/.NAP` sind
+  NewTOS-eigen; ob sie hinein gehoeren, ist eine Entscheidung (Offen, 2).
+* `docs/sdk/07-mintlib-limits.md` §1/§8 neu geschrieben,
+  `sdk/libc/build-libc.sh` Kopfkommentar, `TASK/PORT06-STATUS-UNFINISHED.MD`
+  datierte Korrektur zu „`system()` wird nie erreicht".
+
+### Offen nach dem Nachtrag
+
+1. **Kern, Umleitung (EmuTOS-Abweichung, gemessen):** (a) Kinder erben
+   umgelenkte Standardhandles nicht — `tos-api/src/bdos/process/loader.rs:676`
+   `p_uft = [-1; NUMSTD]` gegen EmuTOS `bdos/proc.c:386-397`
+   `init_pd_files`/`ixforce`. (b) `Fforce` ohne Benutzungszaehler — nach
+   `Fforce(1, dup)` + `Fclose(dup)` liefert `Fwrite(1)` `EIHNDL` (-37);
+   EmuTOS `bdos/fshand.c:69-73` erhoeht `f_use`. Folge fuer
+   `system("prog >datei")`: Datei leer, Kind schreibt auf die Konsole,
+   Aufrufer verliert Handle 1. Braucht ein Kernticket (gesperrt fuer diese
+   Arbeit).
+2. **Entscheidung:** NewTOS-Endungen in `spawnvp`s Suchliste — ja/nein.
+3. mintlib-eigen, unveraendert uebernommen: `system_hack` reserviert `argv`
+   mit `argc` Plaetzen und schreibt bei einer Zeile ohne Umleitung
+   `argv[argc] = NULL` dahinter (`posix/system.c`, `malloc` vs.
+   `argv[i] = (char *)0`). Mit mintlibs `malloc` (Block vom Ende des freien
+   Stuecks, 24-Byte-Kopf) ueberschreibt das das `valid`-Wort des zuletzt
+   davor vergebenen Blocks → dessen `free` ist still wirkungslos (Leck je
+   Aufruf, kein Absturz; aus dem Quelltext, nicht gemessen). Nicht im
+   Overlay behoben (Auftrag: nur den POSIX-Zweig entfernen).
+4. `perror` in `system_hack` zeigt ein liegengebliebenes `errno`
+   (`Fcreate` per Trap-Makro setzt keins) — mintlib-Verhalten.
 
 ## Achtung: fremder Kommit mit halber PORT10-Arbeit
 

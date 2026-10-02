@@ -1,0 +1,12 @@
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(posix__system.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__unx2dos.o)	_unx2dos
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__spawnvp.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__getenv.o)	getenv
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__spawnvp.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__buffindf.o)	_buffindfile
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__spawn.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(arch__proc.o)	_exit
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__spawnve.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__spawn.o)	_spawnve
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__spawnvp.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__spawnve.o)	spawnve
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(posix__system.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(mintlib__spawnvp.o)	spawnvp
+<scratch>/doom-delivered2/obj/i_system.o	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(posix__system.o)	system
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(posix__system.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(stdio__perror.o)	perror
+<scratch>/doom-delivered2/obj/i_system.o	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(stdio__vfprintf.o)	vfprintf
+<scratch>/doom-delivered2/obj/i_system.o	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(string__strchr.o)	strchr
+/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(posix__system.o)	/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a(string__strcpy.o)	strcpy

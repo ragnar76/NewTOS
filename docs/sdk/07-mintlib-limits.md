@@ -22,7 +22,7 @@ on any failure not in it (`sdk/lib-stale.sh:229-283`). What each costs:
 | `mintlib/linea.c` | m68k inline asm — ST Line-A | Line-A (NewTOS has none) |
 | `mintlib/nf_ops.c` | m68k inline asm — ARAnyM NatFeats | `nf_init`/`nf_get_id` (an app that needs the symbols supplies its own, as the TeraDesk overlay does) |
 | `mintlib/crtinit.c` | m68k asm + two LP64 basepage casts | `environ` set-up and the `ARGV=` extension — see §5. **`argv`/`argc` and `_base` are covered**: `newtos-arch/cmdargs.c` reimplements `parseargs()`'s argument half (PORT01) and `newtos-arch/heap_init.c` sets `_base` (T05) |
-| ~~`mintlib/spawnve.c`, `spawnvp.c`~~ | compile since TASK/PORT10 (`sdk/libc/overlay/mintlib/`, `va_arg` instead of `va_list` arithmetic) | — the `spawn*` family works (synchronous `Pexec(0)`, QEMU-verified); **`system()` still does not link** — §8 |
+| ~~`mintlib/spawnve.c`, `spawnvp.c`~~ | compile since TASK/PORT10 (`sdk/libc/overlay/mintlib/`, `va_arg` instead of `va_list` arithmetic) | — the `spawn*` family works (synchronous `Pexec(0)`, QEMU-verified); `system()` links and runs since the `posix/system.c` overlay — §8 |
 | `stdio/gets.c` | `.stabs` directive rejected by the integrated assembler | `gets` |
 | `mintlib/getwd.c` | same | `getwd` (`getcwd` is available) |
 | `signal/siggetmask.c` | same | `siggetmask` |
@@ -214,19 +214,51 @@ item TASK/T07 names ("Soft-Float-Helfer sind ein eigener Punkt"). The
 
 ## 8. `system()` (TASK/PORT10, measured 2026-10-02)
 
-`system()` does **not** link: `posix/system.c` carries mintlib's POSIX branch
-(`vfork` + `execve` + `waitpid`, taken at run time only when `/bin/sh` is
-executable or `$SHELL` is set) next to the TOS branch (`system_hack`: split the
-line, `>`/`<` redirection via `Fcreate`/`Fforce`, then
-`spawnvp(P_WAIT, argv[0], argv)`). The TOS branch's pieces all exist and run
-(`sdk/examples/port10.c`); the link stops on the POSIX branch's
-`vfork` (`unix/vfork.S`, m68k, never assembled) and `__waitval`/`__waittime`
-(`unix/wait4.c` → defined in `mintlib/thread.c`, excluded). On plain TOS
-mintlib's `vfork` is `tfork()` = `Pexec(PE_CBASEPAGE)` + `Pexec(PE_GO)` on a
-basepage whose text is the parent's own code; NewTOS's `Pexec` answers modes
-5/6/7 with `EINVFN` (`tos-api/src/bdos/process/pexec.rs`), so that path needs a
-kernel feature. Decision pending (TASK/PORT10-STATUS-UNFINISHED.MD). Also
-pulled by `misc/syslog.c` (`vfork`).
+`system()` links and runs, through an overlay:
+`sdk/libc/overlay/posix/system.c` is mintlib's file **without its POSIX
+branch**. Pristine mintlib picks, at run time, the POSIX branch (`vfork` +
+`execve` + `waitpid`) when `/bin/sh` is executable or `$SHELL` is set, and the
+TOS branch (`system_hack`) otherwise. The POSIX branch cannot link here:
+`vfork` is m68k assembler (`unix/vfork.S`, never assembled) and on TOS is
+`tfork()` = `Pexec(PE_CBASEPAGE)` + `Pexec(PE_GO)` on the parent's own code,
+which NewTOS answers with `EINVFN` for modes 5/6/7
+(`tos-api/src/bdos/process/pexec.rs`); `waitpid`/`wait4` pull
+`__waitval`/`__waittime` from the excluded `mintlib/thread.c`. With the
+overlay, `system()` is always the TOS branch: split the line into words
+(`'`/`"`/`` ` `` group), `<`, `>`, `>>` redirect handles 0/1 via
+`Fopen`/`Fcreate` + `Fdup`/`Fforce`, then `spawnvp(P_WAIT, argv[0], argv)` =
+a synchronous `Pexec(0)`; the result is the child's `Pterm` code, `-1` with
+`errno` `ENOENT` when the program is not found, `2` when a redirection file
+cannot be opened. `system(NULL)` is 1. The deviation from mintlib is
+observable only where `/bin/sh` or `$SHELL` would exist. TASK/PROC01
+(`Pexec` 5/6/7, `vfork` for AArch64, `thread.c`) removes the overlay again.
+Host check `sdk/libc/tests/system-host.sh`; target check
+`sdk/examples/port10.c` (`measurements/measurement-2026-10-02-port10b/`).
+
+What a caller must know:
+
+* **No NewTOS extensions in the search.** `spawnvp` (and so `system()`) tries
+  the name as given, then mintlib's `.ttp`, `.prg`, `.tos` — never `.NCP`,
+  `.NTP`, `.NAP`. `system("C:\\P10\\P10KID")` does not find `P10KID.NCP`
+  (`-1`/`ENOENT`, measured); give the extension: `system("C:\\P10\\P10KID.NCP x")`.
+  The PATH part of the search reads `getenv("PATH")`, which is empty while
+  `environ` is (§5).
+* **Redirection does not reach the child yet (kernel).** The child's standard
+  handles are not inherited from the parent (`loader.rs` sets `p_uft` to
+  `-1`; EmuTOS `bdos/proc.c` `init_pd_files` inherits them via `ixforce`), so
+  `system("prog >file")` creates `file` but the child still writes to the
+  console. And `Fforce` keeps no use count (EmuTOS `bdos/fshand.c` `ixforce`
+  increments `f_use`): after `system_hack` restores handle 1 with
+  `Fforce(1, dup)` and closes `dup`, the caller's handle 1 is dead —
+  `Fwrite(1, …)` returns `EIHNDL` (-37), so `printf` output is lost from then
+  on. Both measured in `port10.c`; avoid `>`/`<` in `system()` lines until
+  the kernel follows EmuTOS here.
+* `/dev/null` becomes `null:` (`mintlib/unx2dos.c`, no MiNT); `Fcreate` of it
+  fails on NewTOS, so `system("... >/dev/null")` returns 2 with a `perror`
+  line and runs nothing. That is what DOOM's `I_Error` → `ZenityErrorBox`
+  probe sees: DOOM reports the error and exits normally.
+
+`misc/syslog.c` still references `vfork` and does not link.
 
 `printf("%f")` (`stdio/printf_fp.c`) printed wrong digits and could fault
 until TASK/PORT10: `stdlib/gmp-mparam.h` declared 32-bit GMP limbs while

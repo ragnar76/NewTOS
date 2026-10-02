@@ -47,6 +47,10 @@
 #                                pointer-wide on LP64 (TASK/PORT10)
 #       mintlib/spawn{ve,vp}.c   spawnl/spawnle/spawnlp via va_arg instead of
 #                                m68k va_list arithmetic (TASK/PORT10)
+#       posix/system.c           system() without mintlib's POSIX branch
+#                                (vfork/execve/waitpid): always the TOS
+#                                branch via spawnvp (TASK/PORT10; removed
+#                                again by TASK/PROC01)
 #   - sdk/libc/crt0.S: libc-aware crt0 (sets SP from p_hitpa, calls
 #     __libc_init_heap and __libc_parseargs, then main) -- distinct from
 #     sdk/crt0.S used by the libc-less examples.
