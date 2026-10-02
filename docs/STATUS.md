@@ -42,7 +42,8 @@ dem Termin; X03 ist erledigt (Driftprobe 31).
 
 - **PORT06 — Doom, vorgezogen (P1, Anwender 2026-10-02):** ein Quelltext
   fuer NewTOS und TT+Nova, nur VDI/AES/BIOS/GEMDOS; Pixelweg `vr_trnfm`
-  und EdDI `vq_scrninfo`.
+  und EdDI `vq_scrninfo`. Schritt 1 laeuft in QEMU; auslieferbarer Bau
+  wartet auf **PORT10** (libc `system()`, `printf("%f")`).
 - **DESK50** — implementiert, in QEMU belegt; Pi-Abnahme offen: Zoom vom
   Laufwerk/Ordner/Programm, Laufwerkssymbol nach dem Oeffnen abgewaehlt,
   *Cancel* im `.NTP`-Kasten.
