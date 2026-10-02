@@ -1,6 +1,6 @@
 # SER01 — Serielle Ausgabe auf der Pi abschaltbar, Vorgabe aus
 
-Status: **OFFEN** · Prioritaet: **P1** (vor dem Termin) · Typ: Kernel / Konsole — Anwenderentscheidung 2026-10-02
+Status: **ERLEDIGT** (2026-10-02, [Statusdatei](SER01-STATUS-DONE.MD); Pi-Abnahme offen) · Prioritaet: **P1** (vor dem Termin) · Typ: Kernel / Konsole — Anwenderentscheidung 2026-10-02
 
 Abhaengigkeiten: —
 
