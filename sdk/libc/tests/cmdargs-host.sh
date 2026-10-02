@@ -31,7 +31,11 @@ command -v "$CC" >/dev/null 2>&1 || { echo "error: $CC not found" >&2; exit 1; }
 W="$(mktemp -d)"
 trap 'rm -rf "$W"' EXIT
 
+# -Denviron=...: cmdargs.c publishes mintlib's `environ` (mintlib/globals.c);
+# on the host that name belongs to the C runtime, so the harness provides the
+# variable under its own name and checks it (TASK/PORT10).
 "$CC" -O2 -fno-builtin -Wall -Wextra -Wno-macro-redefined \
+      -Denviron=cmdargs_test_environ \
       -I "$MINT" -c "$LIBC/newtos-arch/cmdargs.c" -o "$W/cmdargs.o" || exit 1
 "$CC" -O2 -fno-builtin -Wall -Wextra \
       -c "$HERE/cmdargs-host.c" -o "$W/harness.o" || exit 1

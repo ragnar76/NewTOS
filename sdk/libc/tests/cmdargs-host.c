@@ -23,6 +23,11 @@
 #include <string.h>
 
 extern long __libc_parseargs (unsigned long basepage);
+
+/* mintlib's `environ` as cmdargs.c sees it (cmdargs-host.sh compiles it with
+   -Denviron=cmdargs_test_environ). Poisoned before every check that needs
+   to see it published. */
+char **cmdargs_test_environ = (char **) 1;
 extern long __libc_argc;
 extern char **__libc_argv;
 
@@ -198,6 +203,60 @@ main (void)
 	else
 	  printf ("  ok   64 arguments (127 chars)\n");
       }
+  }
+
+  /* environ (TASK/PORT10): parseargs() always publishes it, and with no
+     environment to walk it is the empty environment -- one NULL, never a
+     NULL pointer (mintlib/spawn.c `_spawnve` indexes it unconditionally). */
+  cmdargs_test_environ = (char **) 1;
+  set_tail ("");
+  __libc_parseargs ((unsigned long) (size_t) basepage);
+  if (cmdargs_test_environ == (char **) 1 || cmdargs_test_environ == NULL
+      || cmdargs_test_environ[0] != NULL)
+    {
+      failures++;
+      printf ("  FAIL environ: not published as the empty environment\n");
+    }
+  else
+    printf ("  ok   environ is the empty environment\n");
+
+  /* The tail mintlib's _spawnve (spawn.c) hands Pexec: length byte 0x7f --
+     the ARGV= signal -- then the blank-separated arguments, NUL-terminated;
+     and a non-zero p_env, because _spawnve always builds an environment.
+     That p_env is not mapped in a NewTOS child today (TASK/MEM03), so
+     parseargs() must not touch it: the field is set to an address that
+     faults on the host if it were read. */
+  {
+    static const char *const want[] = { "alpha", "beta", "gamma", NULL };
+    unsigned char *tail = &basepage[P_CMDLIN];
+    const char *s = "alpha beta gamma";
+    unsigned int poison = 0x00000010u;	/* page 0: unmapped on the host */
+    long argc;
+    int k, bad = 0;
+
+    memset (basepage, 0, sizeof basepage);
+    tail[0] = 0x7f;
+    memcpy (&tail[1], s, strlen (s) + 1);
+    memcpy (&basepage[0x2c], &poison, sizeof poison);	/* p_env */
+    cmdargs_test_environ = (char **) 1;
+    argc = __libc_parseargs ((unsigned long) (size_t) basepage);
+    if (argc != 4)
+      bad = 1;
+    for (k = 0; !bad && want[k]; k++)
+      if (strcmp (__libc_argv[k + 1], want[k]) != 0)
+	bad = 1;
+    if (!bad && __libc_argv[4] != NULL)
+      bad = 1;
+    if (cmdargs_test_environ == (char **) 1 || cmdargs_test_environ == NULL
+	|| cmdargs_test_environ[0] != NULL)
+      bad = 1;
+    if (bad)
+      {
+	failures++;
+	printf ("  FAIL spawn tail (0x7f, p_env set): argc %ld\n", argc);
+      }
+    else
+      printf ("  ok   spawn tail (0x7f, p_env set, not read)\n");
   }
 
   printf ("cmdargs-host: %s\n", failures ? "FAILED" : "all cases pass");

@@ -34,16 +34,30 @@
  *   - argv is NULL-terminated, and `__libc_argc` / `__libc_argv` carry the
  *     same pair for the mintlib members that read them (posix/wordexp.c).
  *
- * What is NOT here, and why: the environment half. `parseargs()` also walks
- * `p_env`, publishes `environ`, and honours the MWC/Atari `ARGV=` extension,
- * under which a launcher too long for the 126-byte tail passes the arguments
- * in the environment instead. On NewTOS `p_env` is 0 on every launch path that
- * exists today -- the desktop, the AUTO folder and the boot launcher all pass
- * `EnvSpec::None` (kernel/src/launch.rs, tos-api/src/bdos/process/loader.rs),
- * so `environ` stays the zero global it is documented to be
- * (docs/sdk/07-mintlib-limits.md Sec.5) and no `ARGV=` block can reach a
- * program. When an environment is wired, this file is where the ARGV=
- * extension belongs.
+ * What is NOT here, and why: the environment WALK. `parseargs()` also walks
+ * `p_env` into `environ` and honours the MWC/Atari `ARGV=` extension, under
+ * which a launcher too long for the 126-byte tail passes the arguments in the
+ * environment instead. The desktop, the AUTO folder and the boot launcher
+ * pass no environment at all -- `EnvSpec::None`, `p_env == 0`
+ * (kernel/src/launch.rs, tos-api/src/bdos/process/loader.rs). A program
+ * started by another program's `Pexec` (TeraDesk, mintlib's `system()`/
+ * `spawn*`, which always build an environment block) does get a non-zero
+ * `p_env` -- but today that is a physical address that is not mapped in the
+ * child's EL0 space (TASK/MEM03), so reading it would fault the child at
+ * start-up. The walk and the `ARGV=` extension are TASK/PORT09, blocked on
+ * MEM03; this file is where they belong once the block is reachable.
+ *
+ * What IS here of the environment half: `environ` itself. `parseargs()`
+ * always publishes it, as an array that holds at least the terminating
+ * NULL -- for `p_env == 0` exactly that one NULL ("when passing (void *)-1 as
+ * env when calling Pexec(), our environment may be NULL", crtinit.c). mintlib
+ * members rely on it: `_spawnve()` (mintlib/spawn.c) replaces a NULL `envp`
+ * by `environ` and indexes it unconditionally, so with `environ == NULL`
+ * every `spawnvp()`/`system()` read address 0 (TASK/PORT10). Until the walk
+ * exists, `environ` is that empty environment for every launch path.
+ * `free(environ)` (putenv.c) is harmless on it: mintlib's free() ignores a
+ * block without its VAL_ALLOC tag, which is what keeps crtinit's own
+ * non-malloc'ed array safe as well.
  *
  * WHERE THE RESULT LIVES. mintlib puts the argv array and the split command
  * line in the gap just above the BSS (`p_bbase + p_blen + 4`) and then starts
@@ -75,6 +89,12 @@ static char arg_chars[PDCLSIZE + 2];
 #define ARGV_MAX (1 + (PDCLSIZE / 2) + 1)
 static char *arg_vec[ARGV_MAX];
 
+/* The empty environment `parseargs()` publishes when there is no `p_env`
+   to walk: just the terminating NULL. `environ` is mintlib's own global
+   (mintlib/globals.c). */
+extern char **environ;
+static char *env_vec[1] = { NULL };
+
 /* The wire layout this file reads: p_cmdlin is the last 128 bytes of the
    256-byte BasePage (tos-types/src/basepage.rs; mint/basepage.h pins the rest
    of the offsets on both ABIs). sdk/libc/tests/cmdargs-host.c builds its test
@@ -98,8 +118,9 @@ char **__libc_argv = __libc_argv_default;
 
 /*
  * Build argc/argv from `basepage`'s command tail, publish them in
- * `__libc_argc` / `__libc_argv`, and return argc. Called once from
- * sdk/libc/crt0.S, after __libc_init_heap and before main().
+ * `__libc_argc` / `__libc_argv`, publish the (empty) `environ`, and return
+ * argc. Called once from sdk/libc/crt0.S, after __libc_init_heap and before
+ * main().
  *
  * `basepage` is passed as an integer because on NewTOS the BasePage VA is 0
  * (USER_VA_BASE) -- a perfectly valid address here, mapped by the loader, and
@@ -223,5 +244,6 @@ __libc_parseargs (unsigned long basepage)
 
   __libc_argv = arg_vec;
   __libc_argc = (long) argc;
+  environ = env_vec;
   return __libc_argc;
 }

@@ -23,8 +23,8 @@ mintlib/nf_ops.c     unknown register name 'a0'/'a1' in asm -- ARAnyM NatFeats
 
 # --- m68k inline asm / LP64 in code we DO need -------------------------------
 mintlib/crtinit.c    unknown register 'a0' + 2x LP64 basepage (int -> char*): no argv, no environ
-mintlib/spawnve.c    va_list arithmetic (m68k char* vs AArch64 struct) -- LP64 gap
-mintlib/spawnvp.c    va_list arithmetic (m68k char* vs AArch64 struct) -- LP64 gap
+# mintlib/spawnve.c, spawnvp.c: compile since TASK/PORT10 (overlay/mintlib/,
+# va_arg instead of va_list arithmetic).
 
 # --- a .stabs debug directive clang's integrated assembler rejects ------------
 # Three real libc functions are missing over a cosmetic warning directive.

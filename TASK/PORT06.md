@@ -74,6 +74,15 @@ liefe, ist nicht konform genug.
 * **Aufloesung:** auf eine kleine beschraenken — Doom zeichnet 320x200;
   ausgegeben wird klein (ggf. ganzzahlig skaliert, mittig), nicht der volle
   Schirm.
+  **Praezisiert 2026-10-02:** auf der Pi (1920x1080) wird **mit
+  4:3-Korrektur** vergroessert, Stufen einstellbar per Startparameter:
+  x2 = 640x480, x3 = 960x720, x4 = 1280x960 (waagerecht ganzzahlig,
+  senkrecht x1,2 durch Zeilenwiederholung), mittig. Vergroessert wird **nach**
+  `vr_trnfm` im Geraeteformat (Pixel verdoppeln; nur bei gepackten
+  Truecolor-Formaten, auf dem TT wird nicht vergroessert). Bildrate ist
+  zweitrangig (Anwender: „selbst 30 fps sind egal, die VDI wird spaeter
+  optimiert"); [GUI07](GUI07.md) bleibt nach dem Termin. Die Standardstufe
+  wird nach dem ersten Pi-Lauf festgelegt.
 * **TT:** Compiler `m68k-atari-mint-gcc` 7.5.0 in `/opt/cross-mint`; eine
   m68k-gemlib liegt in `sdk/gemlib/gemlib-m68k.a`. FPU (68881/68882) ggf.
   als Bauvariante; Doom rechnet im Kern Festkomma. Erster TT-Lauf in Hatari

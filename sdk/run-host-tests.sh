@@ -114,10 +114,25 @@ report setjmp-host $rc "host is not AArch64"
 
 # cmdargs-host (PORT01): newtos-arch/cmdargs.c turns the BasePage command tail
 # into the argc/argv mintlib's crtinit.c parseargs() would -- the two DESK19
-# tails, the separator rules, MagX quoting, and the densest 128-byte tail.
+# tails, the separator rules, MagX quoting, and the densest 128-byte tail;
+# since PORT10 also the published empty `environ` and _spawnve's 0x7f tail
+# with a p_env that must not be read.
 "$SDK/libc/tests/cmdargs-host.sh" > "$WORK/cmdargs-host.log" 2>&1; rc=$?
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/cmdargs-host.log"
 report cmdargs-host $rc "mintlib headers absent or host not LP64"
+
+# gmp-host (PORT10): mintlib's GMP limb width matches mp_limb_t on LP64 --
+# the 10^(2^i) table __printf_fp reads, __mpn_extract_double, mpn_mul_1
+# (the overlaid stdlib/gmp-mparam.h; with the pristine one 17 of 21 fail).
+"$SDK/libc/tests/gmp-host.sh" > "$WORK/gmp-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/gmp-host.log"
+report gmp-host $rc "mintlib tree absent or host not LP64"
+
+# spawn-host (PORT10): the LP64 spawn* overlays hand _spawnve the argv/envp
+# the m68k va_list cast did (spawnl/spawnle/spawnlp/spawnv/spawnvp).
+"$SDK/libc/tests/spawn-host.sh" > "$WORK/spawn-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/spawn-host.log"
+report spawn-host $rc "mintlib tree absent or host not LP64"
 
 echo
 echo "host tests: $pass passed, $fail failed, $skip skipped"
