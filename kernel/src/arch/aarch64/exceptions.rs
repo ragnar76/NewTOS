@@ -1854,6 +1854,11 @@ pub extern "C" fn rust_unhandled_handler(frame: &mut ExceptionFrame) {
 }
 
 fn unhandled(frame: &ExceptionFrame, kind: &str) -> ! {
+    // The fault report always leaves the machine, whatever the serial
+    // switch says (SER01: output is off on board-rpi4 without `serial=on`).
+    // Set first, so nothing printed on the way down is swallowed.
+    crate::console::force_serial_tx_on();
+
     // AES trap tracer: an unhandled fault ends the run, so this is the last
     // chance to get the trace off the machine — the same reason the panic
     // handler flushes. Runs before the diagnostics so a fault *inside* the

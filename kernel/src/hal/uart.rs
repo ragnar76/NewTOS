@@ -50,7 +50,10 @@ impl<U: Uart + ?Sized> core::fmt::Write for UartWriter<'_, U> {
         // The one choke point every `kprint!`/`kprintln!` passes through, and
         // therefore where the `usb-diag` build tees the boot log into RAM so it
         // can be written to `C:\USBDIAG.LOG` — a real Pi 4 has no serial line
-        // attached. Compiled out entirely without the feature.
+        // attached. Compiled out entirely without the feature. The capture
+        // sits above the serial output switch (`console::SerialConsole`,
+        // SER01), so the ring records the boot log even while the UART is
+        // silent.
         #[cfg(feature = "usb-diag")]
         crate::bootlog::capture(s);
         self.0.write_str(s);

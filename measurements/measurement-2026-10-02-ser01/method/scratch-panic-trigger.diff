@@ -1,0 +1,10 @@
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/lib.rs	2026-10-02 21:26:38
++++ kernel/src/lib.rs	2026-10-02 21:44:01
+@@ -353,6 +353,7 @@
+     // this finds the xHCI on the PCIe bus and reports its ports; on real
+     // Pi-4 it is a no-op until the VL805 firmware path (D7).
+     drivers::usb::init(dtb_phys);
++    panic!("SER01 scratch panic trigger (never in the shared tree)");
+ 
+     // Diagnostic build only: the enumeration is over, so put the whole boot
+     // log on the card while the machine is still healthy. This is the flush

@@ -25,7 +25,7 @@
 | 2 | raspberrypi/firmware wiki — [Mailboxes](https://github.com/raspberrypi/firmware/wiki/Mailboxes) | register offsets |
 | 3 | raspberrypi/firmware wiki — [Accessing mailboxes](https://github.com/raspberrypi/firmware/wiki/Accessing-mailboxes) | status bits, read/write procedure, channel encoding |
 | 4 | raspberrypi/firmware wiki — [Mailbox property interface](https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface) | channel 8 protocol, buffer format, tag IDs + value layouts |
-| 5 | `references/circle` (in-tree, pinned) — `include/circle/bcmpropertytags.h`, `lib/bcmframebuffer.cpp`, `lib/2dgraphics.cpp`, `addon/linux/raspberrypi-firmware.h` | virtual-offset + vsync tag ids and value layouts, the double-buffer sequence (§3b), clock-rate + temperature tag ids and value layouts (§3d) |
+| 5 | `references/circle` (in-tree, pinned) — `include/circle/bcmpropertytags.h`, `lib/bcmframebuffer.cpp`, `lib/2dgraphics.cpp`, `addon/linux/raspberrypi-firmware.h` | virtual-offset + vsync tag ids and value layouts, the double-buffer sequence (§3b), clock-rate + temperature tag ids and value layouts (§3d), command-line tag (§3e, also `lib/koptions.cpp`, `doc/cmdline.txt`) |
 
 Cross-ref (verified-pattern, tertiary): rpi bare-metal FB tutorials
 (valvers part 5), circle. **Linux is cross-reference only**, not
@@ -417,6 +417,42 @@ Driver: `kernel/src/drivers/bcm2711/mailbox.rs::get_clock_rate` /
 `::get_temperature`, both over the shared `query_id_value` helper. Consumer:
 GEMDOS `Ssystem` modes 2000/2001 through `Host::cpu_clock_hz` /
 `Host::cpu_temperature_mdeg` (`docs/api/gemdos/154-ssystem.md`).
+
+---
+
+## 3e. Command-line tag — `cmdline.txt` reaches the kernel — source #5
+
+SER01 (2026-10-02) switches the serial output with an option in
+`cmdline.txt` on the boot partition. The kernel reads that text through the
+property channel, the way the pinned in-tree `references/circle` (source #5)
+reads its own kernel options:
+
+| Item | Value | Where |
+|------|-------|-------|
+| Tag id `PROPTAG_GET_COMMAND_LINE` | `0x0005_0001` | `include/circle/bcmpropertytags.h:72`; same id `RPI_FIRMWARE_GET_COMMAND_LINE` in `addon/linux/raspberrypi-firmware.h:113` |
+| Value buffer | 2048-byte string (`TPropertyTagCommandLine::String[2048]`) | `bcmpropertytags.h:305-310` |
+| Request | no parameter bytes | `lib/koptions.cpp:53` (`GetTag(…, sizeof m_TagCommandLine)`, default `nRequestParmSize = 0`, `bcmpropertytags.h:321`), `lib/bcmpropertytags.cpp:49-71` |
+| Reply | value length = string length, **no NUL**; length 0 = no answer; a length that fills the whole buffer is rejected | `bcmpropertytags.cpp:64-68`, `koptions.cpp:58-61` |
+| Text format | options on one line, separated by a space | `doc/cmdline.txt:3-4` |
+
+That the firmware fills this tag from `cmdline.txt` is what circle's
+documentation states (`doc/cmdline.txt:3`: *"Create a file cmdline.txt on the
+SD(HC) card used for booting"*) and what `CKernelOptions` relies on
+(`lib/koptions.cpp:29-61`). The device tree's `/chosen/bootargs` is **not**
+used: circle never reads it, no local source documents what the Pi firmware
+writes there, and QEMU `raspi4b` started with `-kernel` hands over no device
+tree at all (x0 = `0x100`, no FDT magic: every raspi4b serial log says
+`[mm] device tree: no usable /memory node (blob invalid or absent)`).
+
+**Observed on QEMU `raspi4b`** (QEMU 11.0.2, 2026-10-02,
+`measurements/measurement-2026-10-02-ser01/`): the firmware model answers the
+tag with the `-append` string — `-append serial=on` switches the output on,
+no `-append` leaves it off. That makes `-append` the emulator's stand-in for
+`cmdline.txt`.
+
+Driver: `kernel/src/drivers/bcm2711/mailbox.rs::with_command_line`.
+Consumer: `kernel/src/console.rs::configure_serial_tx` with the token parser
+`kernel/src/bootargs.rs`.
 
 ---
 

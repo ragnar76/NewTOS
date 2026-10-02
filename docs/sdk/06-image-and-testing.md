@@ -141,10 +141,21 @@ cargo xtask run --board rpi4 --sd /tmp/sd.img --debug    # halted, gdbstub on :1
 
 ```
 qemu-system-aarch64 -M raspi4b -no-reboot -display none|cocoa -serial stdio \
-    -kernel kernel8.img -drive file=<sd>,if=sd,format=raw [-S -s]
+    -kernel kernel8.img -append serial=on -drive file=<sd>,if=sd,format=raw [-S -s]
 ```
 
 Facts about that machine that matter for a test:
+
+* **Serial output is off unless the boot arguments say `serial=on`**
+  (SER01, 2026-10-02). On a real Pi the switch is `cmdline.txt` on the boot
+  partition; on `raspi4b` QEMU's firmware model answers the kernel's "get
+  command line" mailbox query with the `-append` string, so every hand-made
+  run that wants a serial log needs `-append serial=on`. Without it the log
+  stays empty (a panic or fatal exception still prints). An older measurement
+  script that lacks the option gets it back without being edited by running it
+  as `PATH="$PWD/tools/qemu-serial-on:$PATH" sh <script>` — that directory's
+  `qemu-system-aarch64` adds `-append serial=on` to `-M raspi4b` runs and
+  starts the real binary.
 
 * The display is **640×480** (`[fb] VideoCore display geometry detected:
   640x480` in the serial log), the same profile as an Atari TT — which is why
@@ -172,7 +183,7 @@ tools/qmpshot.c`; it exists because `nc -U` is blocked by the agent sandbox,
 cc -o qmpshot tools/qmpshot.c
 qemu-system-aarch64 -M raspi4b -no-reboot -display none -serial file:serial.log \
     -qmp unix:/tmp/claude-501/<job>-qmp.sock,server,nowait \
-    -kernel kernel8.img -drive file=sd.img,if=sd,format=raw &
+    -kernel kernel8.img -append serial=on -drive file=sd.img,if=sd,format=raw &
 sleep 45 && ./qmpshot /tmp/claude-501/<job>-qmp.sock shot.ppm
 sips -s format png shot.ppm --out shot.png        # QEMU writes PPM
 ```

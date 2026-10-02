@@ -210,6 +210,22 @@ const BOOT_UART_DR: u64 = 0x0900_0000;
 #[cfg(feature = "board-rpi4")]
 const BOOT_UART_DR: u64 = 0xFE20_1000;
 
+/// Whether the boot stub writes its heartbeat straight to [`BOOT_UART_DR`]
+/// (`1`) or leaves it to the console (`0`).
+///
+/// `board-qemu-virt` keeps the pre-MMU write: its serial output is always on
+/// (`console::SERIAL_TX_DEFAULT`). On `board-rpi4` the output is off unless
+/// the boot arguments say `serial=on` (SER01), and the stub runs before they
+/// can be read — a direct store would put five bytes on the line the switch
+/// promises to keep silent. There the stub only computes the entry-EL digit
+/// and hands it to `kernel_main` in `x1`; `console::configure_serial_tx`
+/// replays `RB<EL>` once the switch is known to be on.
+#[cfg(feature = "board-qemu-virt")]
+const BOOT_HEARTBEAT_PRE_MMU: u64 = 1;
+/// See [`BOOT_HEARTBEAT_PRE_MMU`].
+#[cfg(feature = "board-rpi4")]
+const BOOT_HEARTBEAT_PRE_MMU: u64 = 0;
+
 /// AArch64 boot entry. Linked into `.text.boot` so the linker script
 /// places it at the start of the `.text` section, which (after the
 /// VA/LMA split, Phase 05 D1) lives at LMA = `KERNEL_PHYS`.
@@ -244,6 +260,16 @@ pub unsafe extern "C" fn _start() -> ! {
         // visible on a real serial console even if a later boot stage
         // faults silently. Primary core only (we already parked the
         // secondaries above). x20/x21 are free here.
+        //
+        // The entry EL (1/2/3) is kept in x22 (untouched below) and passed
+        // to `kernel_main` in x1. Boards whose serial output is switched
+        // (`BOOT_HEARTBEAT_PRE_MMU = 0`, board-rpi4, SER01) skip the stores
+        // and let the console replay the heartbeat once the switch is on.
+        "mrs    x22, CurrentEL",
+        "lsr    x22, x22, #2",
+        "and    x22, x22, #3",
+        "mov    x21, #{heartbeat_pre_mmu}",
+        "cbz    x21, 5f",
         "ldr    x20, ={boot_uart_dr}",
         "mov    w21, #0x52",               // 'R'
         "str    w21, [x20]",
@@ -252,15 +278,13 @@ pub unsafe extern "C" fn _start() -> ! {
         // Emit the current exception level as a digit ('1'/'2'/'3') so a
         // bare-metal boot reveals whether the firmware/QEMU handed us
         // EL1 or EL2 — the MMU bring-up below assumes EL1.
-        "mrs    x22, CurrentEL",
-        "lsr    x22, x22, #2",
-        "and    x22, x22, #3",
-        "add    w22, w22, #0x30",          // '0' + EL number
-        "str    w22, [x20]",
+        "add    w21, w22, #0x30",          // '0' + EL number
+        "str    w21, [x20]",
         "mov    w21, #0x0d",               // CR
         "str    w21, [x20]",
         "mov    w21, #0x0a",               // LF
         "str    w21, [x20]",
+        "5:",
 
         // ───── drop to EL1 if the firmware handed us EL2 ─────────
         //
@@ -391,6 +415,7 @@ pub unsafe extern "C" fn _start() -> ! {
         // Both maps point at the same physical RAM, so the same
         // machine code keeps executing.
         "mov    x0,  x19",                 // restore DTB ptr for kernel_main
+        "mov    x1,  x22",                 // entry EL (1..3) for kernel_main
         "ldr    x9,  ={kernel_main}",      // high-half VA
         "br     x9",
 
@@ -411,6 +436,7 @@ pub unsafe extern "C" fn _start() -> ! {
         sctlr_bits      = const SCTLR_BITS,
         sctlr_el1_init  = const SCTLR_EL1_INIT,
         boot_uart_dr    = const BOOT_UART_DR,
+        heartbeat_pre_mmu = const BOOT_HEARTBEAT_PRE_MMU,
         kernel_main     = sym crate::kernel_main,
     )
 }

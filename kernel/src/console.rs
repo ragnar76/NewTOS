@@ -15,15 +15,118 @@
 //! that overflows simply drops keys — the GEMDOS console functions are
 //! stateless w.r.t. lost input.
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crate::hal::uart::Uart;
 
 #[cfg(feature = "board-rpi4")]
-pub use crate::drivers::bcm2711::pl011::CONSOLE;
+use crate::drivers::bcm2711::pl011::CONSOLE as UART0;
 
 #[cfg(feature = "board-qemu-virt")]
-pub use crate::drivers::qemu_virt::pl011::CONSOLE;
+use crate::drivers::qemu_virt::pl011::CONSOLE as UART0;
+
+// ---------------------------------------------------------------------------
+// Serial output switch (SER01).
+// ---------------------------------------------------------------------------
+
+/// Whether UART0 transmits by default, before the boot arguments are read.
+///
+/// `board-rpi4`: **off**. Every kernel message and every byte a program
+/// writes to the console used to go out synchronously; with the TX FIFO full
+/// `write_byte` busy-waits (~87 us per byte at 115200 baud) and the whole
+/// system stands still — for a cable that is normally not attached. The user
+/// switches it on without a rebuild by putting `serial=on` into `cmdline.txt`
+/// (user decision 2026-10-02, `TASK/SER01.md`); see [`configure_serial_tx`].
+#[cfg(feature = "board-rpi4")]
+const SERIAL_TX_DEFAULT: bool = false;
+
+/// `board-qemu-virt`: **on**, unconditionally. The board exists only as a
+/// QEMU machine, its serial log is the measurement channel of every
+/// qemu-virt run, and there is no real hardware whose speed the UART could
+/// cost; a switch would only add a way to lose the log.
+#[cfg(feature = "board-qemu-virt")]
+const SERIAL_TX_DEFAULT: bool = true;
+
+static SERIAL_TX: AtomicBool = AtomicBool::new(SERIAL_TX_DEFAULT);
+
+/// `true` while console bytes are actually sent to UART0.
+#[inline]
+pub fn serial_tx_enabled() -> bool {
+    SERIAL_TX.load(Ordering::Relaxed)
+}
+
+/// Switch UART0 transmission on for good — the panic handler and the
+/// fatal-exception path call this before they print, so their report always
+/// leaves the machine whatever the boot arguments said. They never return,
+/// so "temporarily" and "for good" are the same thing here.
+pub fn force_serial_tx_on() {
+    SERIAL_TX.store(true, Ordering::Relaxed);
+}
+
+/// Decide the serial switch from the boot arguments. `board-rpi4`: asks the
+/// firmware for its command line (the text of `cmdline.txt`, or QEMU's
+/// `-append`) through the mailbox tag "Get command line"
+/// (`drivers::bcm2711::mailbox::with_command_line`) and switches TX on if it
+/// contains the whole token `serial=on` ([`crate::bootargs::SERIAL_ON`]).
+/// Without that token — or without any answer — the board default (off)
+/// stays.
+///
+/// Must run right after `CONSOLE.init()` and before the first `kprint!`, so
+/// nothing is sent before the decision. `entry_el` is the exception level
+/// the boot stub was entered at (`1`..`3`): on this board the stub no longer
+/// writes its pre-MMU heartbeat `RB<EL>` straight to the data register
+/// (that byte would bypass the switch), so it is replayed here, through the
+/// console, when output is on. Returns `true` if output was switched on.
+#[cfg(feature = "board-rpi4")]
+pub fn configure_serial_tx(entry_el: u64) -> bool {
+    let on = crate::drivers::bcm2711::mailbox::with_command_line(|args| {
+        crate::bootargs::has_token(args, crate::bootargs::SERIAL_ON)
+    })
+    .unwrap_or(false);
+    if on {
+        SERIAL_TX.store(true, Ordering::Relaxed);
+        let el = b'0' + (entry_el & 3) as u8;
+        for b in [b'R', b'B', el, b'\r', b'\n'] {
+            CONSOLE.write_byte(b);
+        }
+    }
+    on
+}
+
+/// The kernel console: UART0 of the active board behind the serial output
+/// switch. Every transmit path goes through here — `kprint!`/`kprintln!`
+/// (`hal::uart::UartWriter`), program console output (`host_env`), the panic
+/// handler and the self-tests — so one check covers them all. Receive,
+/// interrupt and init calls pass straight through: the switch is TX-only.
+pub struct SerialConsole;
+
+/// Board-selected console instance.
+pub static CONSOLE: SerialConsole = SerialConsole;
+
+impl Uart for SerialConsole {
+    fn init(&self) {
+        UART0.init();
+    }
+
+    #[inline]
+    fn write_byte(&self, byte: u8) {
+        if serial_tx_enabled() {
+            UART0.write_byte(byte);
+        }
+    }
+
+    fn read_byte(&self) -> Option<u8> {
+        UART0.read_byte()
+    }
+
+    fn enable_rx_interrupt(&self) {
+        UART0.enable_rx_interrupt();
+    }
+
+    fn clear_rx_interrupt(&self) {
+        UART0.clear_rx_interrupt();
+    }
+}
 
 // ---------------------------------------------------------------------------
 // RX ringbuffer (single producer = IRQ handler, single consumer = host).

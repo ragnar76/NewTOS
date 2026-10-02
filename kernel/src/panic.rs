@@ -15,6 +15,10 @@ use crate::hal::uart::{Uart, UartWriter};
 
 #[panic_handler]
 fn on_panic(info: &PanicInfo) -> ! {
+    // The panic report always leaves the machine, whatever the serial
+    // switch says (SER01: output is off on board-rpi4 without `serial=on`).
+    crate::console::force_serial_tx_on();
+
     // Best-effort: the UART might not have been initialized yet if the
     // panic happens very early. `init` is idempotent on PL011 (we re-write
     // the same registers), so calling it again is safe.

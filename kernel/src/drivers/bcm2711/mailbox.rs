@@ -441,3 +441,87 @@ pub fn get_clock_rate(clock_id: u32) -> Option<u32> {
 pub fn get_temperature(id: u32) -> Option<u32> {
     query_id_value(PROPTAG_GET_TEMPERATURE, id)
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Command-line tag: "Get command line" (0x00050001)
+// ─────────────────────────────────────────────────────────────────────
+//
+// Reference: `docs/hardware/mailbox-framebuffer.md` §3e — the boot
+// firmware hands the contents of `cmdline.txt` on the boot partition back
+// through this tag. Tag id from the pinned in-tree `references/circle`:
+// `include/circle/bcmpropertytags.h:72` (`PROPTAG_GET_COMMAND_LINE`), also
+// `addon/linux/raspberrypi-firmware.h:113`; the value struct
+// (`bcmpropertytags.h:305-310`, a 2048-byte string buffer) and the reply
+// rules (`lib/koptions.cpp:52-61`, `lib/bcmpropertytags.cpp:49-71`: no
+// request parameter, the response length is the string length, the string
+// is **not** NUL-terminated, a length of 0 or one that fills the whole
+// buffer is no usable answer) are circle's. Nothing here is from memory
+// (CLAUDE.md Rule 6).
+
+/// `PROPTAG_GET_COMMAND_LINE` — answers the firmware command line
+/// (`references/circle/include/circle/bcmpropertytags.h:72`).
+const PROPTAG_GET_COMMAND_LINE: u32 = 0x0005_0001;
+
+/// Value-buffer size offered for the command line, bytes — circle's
+/// `TPropertyTagCommandLine::String[2048]` (`bcmpropertytags.h:305-310`).
+pub const COMMAND_LINE_MAX: usize = 2048;
+
+// Word indices into `CMDLINE_BUF`.
+const C_TAG: usize = 2; // tag id
+const C_LEN: usize = 3; // value buffer size we provide, bytes
+const C_CODE: usize = 4; // request/response code
+const C_VAL: usize = 5; // value buffer: the string
+const C_END: usize = C_VAL + COMMAND_LINE_MAX / 4; // end tag
+/// Buffer length in words, rounded up so the byte length is a multiple of
+/// 16 (the property buffer's alignment unit).
+const CMDLINE_BUF_WORDS: usize = (C_END + 1 + 3) & !3;
+
+/// 16-byte-aligned property buffer for the command-line query.
+#[repr(C, align(16))]
+struct CmdlineBuf {
+    words: [u32; CMDLINE_BUF_WORDS],
+}
+static mut CMDLINE_BUF: CmdlineBuf = CmdlineBuf { words: [0; CMDLINE_BUF_WORDS] };
+
+/// Ask the firmware for its command line (the contents of `cmdline.txt`)
+/// and hand the bytes to `f`.
+///
+/// `None` means there is no usable command line: the transaction failed,
+/// the tag came back unanswered (`b31` clear — a mailbox that does not
+/// implement it), the answer was empty, or it filled the whole 2048-byte
+/// buffer and may therefore be truncated (circle rejects that case too,
+/// `lib/koptions.cpp:58-61`). The slice handed to `f` is exactly the
+/// response length; it carries no NUL.
+#[allow(clippy::deref_addrof)]
+pub fn with_command_line<R>(f: impl FnOnce(&[u8]) -> R) -> Option<R> {
+    // SAFETY: boot CPU, single-threaded; exclusive use of the static buffer.
+    unsafe {
+        {
+            let b = &mut (*core::ptr::addr_of_mut!(CMDLINE_BUF)).words;
+            b.fill(0);
+            b[0] = (CMDLINE_BUF_WORDS * 4) as u32; // total size in bytes
+            b[1] = 0; // request code
+            b[C_TAG] = PROPTAG_GET_COMMAND_LINE;
+            b[C_LEN] = COMMAND_LINE_MAX as u32;
+            b[C_CODE] = 0; // request, no parameter bytes
+            b[C_END] = 0; // end tag
+        }
+
+        let va = (&raw const CMDLINE_BUF) as usize;
+        let pa = crate::arch::aarch64::mmu::va_to_pa(va as u64) as u32;
+        if !call_property(va, pa, CMDLINE_BUF_WORDS * 4) {
+            return None;
+        }
+
+        let code = core::ptr::read_volatile((va + C_CODE * 4) as *const u32);
+        if code & TAG_RESPONSE == 0 {
+            return None;
+        }
+        let len = (code & !TAG_RESPONSE) as usize;
+        if len == 0 || len >= COMMAND_LINE_MAX {
+            return None;
+        }
+        let bytes = core::slice::from_raw_parts((va + C_VAL * 4) as *const u8, len);
+        Some(f(bytes))
+    }
+}

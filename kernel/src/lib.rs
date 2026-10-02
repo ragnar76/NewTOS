@@ -28,6 +28,8 @@ compile_error!(
 
 pub mod arch;
 pub mod bios;
+#[cfg(feature = "board-rpi4")]
+pub mod bootargs;
 pub mod console;
 pub mod drivers;
 pub mod hal;
@@ -151,8 +153,9 @@ pub const BOARD_NAME: &str = "qemu-virt";
 /// prologue interferes with the precise sequencing.
 ///
 /// `x0` carries the device-tree blob pointer from the boot stub
-/// (Phase 03 D8). The shim deliberately preserves `x0` so it reaches
-/// `kernel_main_rust` as the AAPCS64 first argument.
+/// (Phase 03 D8), `x1` the exception level the stub was entered at
+/// (SER01). The shim deliberately preserves both so they reach
+/// `kernel_main_rust` as the AAPCS64 first and second argument.
 ///
 /// Note on `MSR SP_EL1, Xt`: that encoding is `UNDEFINED` at EL1
 /// (ARM ARM C5.2.20 — SP_EL1 is writable as a system register only
@@ -189,7 +192,8 @@ pub unsafe extern "C" fn kernel_main() -> ! {
         // Step 3: switch the active SP to SP_EL0.
         "mov   x12, #0",
         "msr   spsel, x12",
-        // Step 4: enter Rust. x0 still carries the DTB pointer.
+        // Step 4: enter Rust. x0 still carries the DTB pointer, x1 the
+        // entry EL.
         "b     {rust}",
         stack_top = sym __stack_top_exclusive,
         emerg_top = sym __emerg_stack_top_exclusive,
@@ -204,7 +208,7 @@ unsafe extern "C" {
 
 /// Rust-level kernel entry. Tail-called by the [`kernel_main`] naked
 /// shim with `x0 = device-tree-blob phys addr` (or `0` if the firmware
-/// did not provide one).
+/// did not provide one) and `x1 = entry exception level` (1..3).
 ///
 /// Phase 03 D8: the DTB pointer feeds `bios::machine::layout::discover` so the
 /// memory map reflects the actual installed DRAM rather than the
@@ -213,11 +217,21 @@ unsafe extern "C" {
 // (a `-> !`), which makes the rest of this function unreachable — that is the
 // point of that build, not a defect.
 #[cfg_attr(feature = "initinfo-diag", allow(unreachable_code))]
-extern "C" fn kernel_main_rust(dtb_phys: usize) -> ! {
+extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     use crate::hal::uart::Uart;
 
     console::CONSOLE.init();
+    // SER01: on board-rpi4 the serial output stays off unless the boot
+    // arguments carry `serial=on`; decide before the first byte is printed.
+    #[cfg(feature = "board-rpi4")]
+    let serial_switched_on = console::configure_serial_tx(entry_el);
+    #[cfg(not(feature = "board-rpi4"))]
+    let _ = entry_el;
     kprintln!("NewTOS booting on {}", BOARD_NAME);
+    #[cfg(feature = "board-rpi4")]
+    if serial_switched_on {
+        kprintln!("[serial] output on: boot arguments contain `serial=on`");
+    }
     kprintln!("Phase 02 reached.");
 
     let dtb = if dtb_phys == 0 { None } else { Some(dtb_phys) };

@@ -1,0 +1,3 @@
+
+[PANIC] SER01 scratch panic trigger (never in the shared tree)
+  at kernel/src/lib.rs:356:5

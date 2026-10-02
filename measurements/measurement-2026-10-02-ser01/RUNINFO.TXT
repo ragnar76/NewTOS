@@ -1,0 +1,63 @@
+measurement-2026-10-02-ser01 -- SER01 serial output off by default on board-rpi4
+Date 2026-10-02, branch desk-rebuild, HEAD c1f504c + the uncommitted SER01
+change-set in the shared tree. QEMU 11.0.2, machine raspi4b (and virt).
+
+WHAT IS TESTED
+  board-rpi4 keeps UART0 transmit silent unless the firmware command line
+  (cmdline.txt on a real Pi; QEMU's -append on raspi4b) contains the token
+  serial=on. The kernel reads the command line with the VideoCore mailbox tag
+  0x00050001 "Get command line" (references/circle/lib/koptions.cpp:52-61,
+  include/circle/bcmpropertytags.h:72). Panic / fatal-exception output is
+  always sent (console::force_serial_tx_on).
+
+KERNELS (release, rpi4 unless noted; built in the session scratchpad)
+  k-ser01.img   shared tree with SER01            sha256 6ab34ac208823742bc17f9b4d79a0a0b4a4c693a95fdd27f67d347ee35e67a8e
+  k-head.img    `git archive HEAD` (c1f504c), no SER01
+                                                  sha256 5bee8eac8e7b5794dd5ad9a8b9bf1c19a18ee31f5bbf455b65fcbcd077d41c6a
+  k-panic.img   SER01 + method/scratch-panic-trigger.diff (panic! right after
+                drivers::usb::init; scratch copy only, never in the shared tree)
+                                                  sha256 de45c7a618ea4bff7f4457e1ead84b532648651bbd78bc86c220a7f86167734d
+  k-virt.elf    SER01, board-qemu-virt            sha256 c8bd9102f808e03c7d65f57db72ed501ece3fabda9cee6dac0044513c35b4e0a
+  Card: fresh tools/make-sd-image.sh image (scratch), sha256
+        bdf6b1d2af7ba40a2cdf4fa56b6d078462017e82748c2b1255da0f74a0959393;
+        every run boots a private copy.
+
+RUNS (method/run-ser01.sh <kernel> <card> <outdir> <tag> <APPEND|-> <dumps>)
+  1 ser01-noargs        k-ser01, no -append        serial log 0 bytes;
+                        screendumps/ser01-noargs-45s.png = desktop up
+                        (DISK C, TRASH, PRINTER, menu bar).
+  2 ser01-serial-on     k-ser01, -append serial=on serial log 2961 bytes,
+                        desktop up (ser01-serial-on-45s.png).
+  3 head-1f-baseline    k-head, no -append         serial log 2906 bytes,
+                        desktop up (head-baseline-45s.png).
+     diff (CR stripped) run 3 vs run 2: exactly one added line
+       > [serial] output on: boot arguments contain `serial=on`
+     everything else -- including the replayed "RB2" heartbeat -- is
+     byte-identical.
+  4 ser01-panic-noargs  k-panic, no -append        serial log 93 bytes, and
+                        nothing but the panic report:
+                          [PANIC] SER01 scratch panic trigger (never in the shared tree)
+                            at kernel/src/lib.rs:356:5
+                        (screen black: the panic fires before the boot screen.)
+  5 oldscript-shim      an UNEDITED pre-SER01 script,
+                        measurements/measurement-2026-10-02-port06-keys/method/run-doom.sh,
+                        started with PATH="<repo>/tools/qemu-serial-on:$PATH"
+                        (copy of the shim: method/qemu-serial-on-shim.sh) on
+                        k-ser01 -> serial/oldscript-shim-serial.log is
+                        IDENTICAL to run 2's log; screendump shows the desktop.
+  6 qemuvirt-noargs     k-virt.elf on -M virt,gic-version=2 (15 s, no QMP):
+                        log starts "RB1 / NewTOS booting on qemu-virt" and
+                        reaches "[desk] desktop up" -- qemu-virt output stays
+                        on unconditionally.
+
+HOST-SIDE NOTE (not a kernel effect)
+  In run 3 the QMP screendump returned only at t=942 s although the serial
+  log shows "[desk] desktop up" about 15 s after launch; an earlier attempt of
+  the same batch was also slow. The kernel had long finished booting; the
+  delay is in the host/QEMU QMP path. The first batch of runs 1/3/4 failed
+  outright (bash 3 `set -u` on an empty array in run-ser01.sh, fixed before
+  the reruns recorded here).
+
+NOT COVERED HERE
+  Real Pi 4: that the firmware returns cmdline.txt through tag 0x00050001 is
+  sourced from circle, not observed on our hardware. Card untouched.

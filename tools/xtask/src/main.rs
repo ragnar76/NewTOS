@@ -23,6 +23,13 @@ mod rsc_obfix_tests;
 /// as the application's C structs into NRSC v11/v12.
 #[cfg(test)]
 mod rsc_cicon_tests;
+/// SER01 — the kernel's boot-argument token parser (`serial=on`). The kernel
+/// crate cannot be built for the host, so its pure, dependency-free module is
+/// compiled here by path and its own `#[cfg(test)]` tests run with the host
+/// suite.
+#[cfg(test)]
+#[path = "../../../kernel/src/bootargs.rs"]
+mod kernel_bootargs;
 
 const KERNEL_TARGET: &str = "aarch64-unknown-none-softfloat";
 
@@ -550,6 +557,11 @@ fn cmd_run_rpi4(
     }
     // serial0 on raspi4b is the PL011 (UART0) the kernel drives.
     c.args(["-serial", "stdio", "-kernel"]).arg(&img);
+    // SER01: board-rpi4 keeps its serial output off unless the boot
+    // arguments contain `serial=on`. The kernel reads them with the mailbox
+    // tag "Get command line", which QEMU's raspi4b firmware model answers
+    // with the `-append` string — the emulator's stand-in for `cmdline.txt`.
+    c.args(["-append", "serial=on"]);
     // Attach the SD-card image (the kernel's C: drive) so the desktop sees
     // its drives + directories.
     if let Some(path) = sd {
