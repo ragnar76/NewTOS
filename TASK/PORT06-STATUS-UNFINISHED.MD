@@ -153,3 +153,35 @@ Umgesetzt nach „Praezisiert 2026-10-02". Kein Kerneingriff, nichts unter
    erreichbar und ungefahren (TT-/Hatari-Lauf).
 4. `DOOM_STATS=5` als Vorgabe ist ein Messbau; fuer die Vorfuehrung ggf.
    wieder 0 (Kostenprobe = Standbild am Anfang).
+
+## Schritt „EdDI-Weg in Doom" 2026-10-02
+
+Basis `desk-rebuild`, HEAD `cb45aae` · Belege
+[measurements/measurement-2026-10-02-port06-eddi/](../measurements/measurement-2026-10-02-port06-eddi/RUNINFO.TXT)
+
+Nur `sdk/apps/doom/doomgeneric_gem.c` geaendert. Kein Kerneingriff, nichts
+unter `kernel/`/`tos-api/`, doomgeneric unveraendert.
+
+| Punkt | Ergebnis |
+|---|---|
+| Weg | Cookie `EdDI` vorhanden (`Getcookie`, Wert nur auf Anwesenheit geprueft, **nie aufgerufen**) → `vq_scrninfo` (gemlib, `CONTRL[5]=1`, `INTIN[0]=2`). Gebaut wird direkt im Geraeteformat: format 2 + clut 2 aus den Bitnummern-Tabellen `[16..63]` (Bytes je Pixel = (planes+7)/8, Kanalbreiten `[8..10]`, 8 Bit auf n Bit gerundet, Genlock/Alpha/ungenutzt = 0); format 2 bzw. 0 + clut 1 bei 8 Planes: Stifte per `vs_color`, Pixelwert `[16+i]` (gepackt bzw. verschraenkte Planes). Danach Vergroessern wie bisher, `vro_cpyfm`. Sonst (kein Cookie, `-noeddi`, format −1/1, clut 0, Planes ≠ `vq_extnd`, unstimmige Tabelle) der `vr_trnfm`-Weg unveraendert, Grund auf der Konsole. |
+| `[14]` | gedruckt, nicht angewandt: die Bitnummern zaehlen im Pixelwert, wie die CPU ihn liest (Spec §3.2 Crazy-Dots-Beispiel: Vertauschung steckt schon in den Nummern; E3 fuer NewTOS); den Flag zusaetzlich anzuwenden hiesse doppelt tauschen. Ohne Dispatcher gibt es keine Version, und `[14]` existiert erst ab 1.10 (Enhancer 1.00 meldet 0). |
+| Eigenpruefung vor Benutzung | 256 Testfarben gemalt, per `vro_cpyfm` (ohne `vr_trnfm`) gelesen, mit den Tabellen dekodiert; Abweichung > 1 Stufe → `vr_trnfm`-Weg. Erstes Bild: jede Ausgabezeile gegen das Gebaute. |
+| **E3-Abnahme (NewTOS, QEMU raspi4b)** | „256 of 256 test colours exact, 0/0/0" in jedem Lauf; `VERIFIED via EdDI[+scale]+vro_cpyfm` fuer x1/x2/x4 auf 1920x1080 und x2 auf 640x480; Screendumps farbrichtig. **E3 = 0x02 traegt.** |
+| Rueckfall | `-noeddi` → „vr_trnfm route", `VERIFIED via vr_trnfm…` x1/x2/x4 |
+| Kosten je Bild (QEMU, 1920x1080, us) | x1: vr_trnfm-Weg c2p 672 + trnfm 1615 + cpyfm 4830 = 7117 → EdDI build 244 + cpyfm 4784 = 5028. x2: 25199 → 24892. x4: 98162 → 96569. Der `vr_trnfm`-Anteil ist weg; ab x2 ist `vro_cpyfm` der ganze Preis. |
+| timedemo demo1 (QEMU, 1920x1080) | x1 109,53 → **145,86 fps**; x2 36,58 → 38,18; x4 EdDI 10,19. (Der Kern ist seit `14d5a92` auf beiden Wegen schneller; Vergleich nur innerhalb dieser Messung.) |
+| Zweite Implementierung | m68k-DOOM (alles gelinkt, Messhilfe `method/build-doom-m68k.sh`) in Hatari: Falcon-TC + VDI-Enhancer 1.00 → EdDI-Weg, 256/256 exakt, VERIFIED, farbrichtig, ~4x schneller als der `vr_trnfm`-Weg dort (351 gegen 2543 ms je Bild). TT-low 8 Planes + Enhancer (format 0, clut 1) → EdDI-Weg verschraenkt, VERIFIED; Gewinn dort nur die 9 ms `vr_trnfm`. |
+| Fehler unterwegs | Erster Durchgang: x1 auf dem EdDI-Weg kopierte ein genulltes MFDB (`dev_mfdb` nur in `stage_trnfm` gesetzt) → Rueckleseabgleich schlug an. In `stage_cpyfm` behoben, alles neu gefahren. |
+| Grundwerte | `build-doom.sh` 81/81 LINK OK, Plattformdatei ohne Warnung; m68k `-Wall -Wextra` sauber; grep Bildschirmbasis 0; `sh sdk/run-host-tests.sh` 12/0/0. |
+
+### Offen nach diesem Schritt
+
+1. Echte Pi und echter TT/Nova: nicht gefahren. Nova-Antwort (15/16/24/32
+   Bit, Byte-Reihenfolge) weiter unbekannt; die 3-/4-Byte-Pfade und
+   packed-8 (Nova 256) sind nur im Quelltext.
+2. Der m68k-Bau ist hier eine Messhilfe im Belegordner, nicht der
+   ausgelieferte Bau (naechster PORT06-Schritt). Er braucht eine FPU
+   (`-m68020-60`) und `<math.h>` aus `sdk/libm/include`.
+3. Auf Palettengeraeten (TT) faerbt sich der Rand mit Dooms Paletteneffekten
+   mit (Stift 0 = Dooms Farbe 0) — auf beiden Wegen, schon vorher so.

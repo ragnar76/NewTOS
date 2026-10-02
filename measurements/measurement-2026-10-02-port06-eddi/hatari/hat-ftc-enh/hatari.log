@@ -1,0 +1,347 @@
+INFO : Hatari v2.6.1, compiled on:  Aug 15 2025, 14:15:19
+INFO : IPF : capsimage library version release=5 revision=1
+INFO : GEMDOS HDD emulation, C: <-> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ftc-enh/hd.
+ERROR: Microphone: SDL_OpenAudioDevice failed.
+WARN : Bus Error reading at address $20fffff, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $fffffc21, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+INFO : Strange screen size 16x480 -> aspect corrected by 32x1!
+INFO : OS clock ticks / second: 100
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                         
+
+
+
+                                                         
+
+
+
+                                                         
+
+
+
+                                                         
+
+
+
+                                                         
+
+
+
+                    ________________________________________
+
+
+
+
+
+
+                    EmuTOS Version:     1.4 
+
+
+
+                    CPU-Typ:            M68030 
+
+
+
+                    Rechner:            Atari Falcon 
+
+
+
+                    ST-RAM:             14 MB 
+
+
+
+                    Alt-RAM:            16 MB 
+
+
+
+                    GEMDOS-Laufwerke:   ABC 
+
+
+
+                    Boot-Zeit:          2026/10/02 20:32:52 
+
+
+
+                    ________________________________________
+
+
+
+
+
+
+                    Halte <Strg> = ohne AUTO/ACC
+
+
+
+                    Halte <Alt> = keine Harddisk
+
+
+
+                    DrUcke 'X' um von Laufwerk X: zu booten
+
+
+
+                    DrUcke <Esc> fUr die Textkonsole
+
+
+
+
+
+
+                       FUr Pause <Shift> gedrUckt halten    
+
+       VDI  ENHANCER V1.00        
+
+C 1992-93 by Sven & Wilfried Behne
+
+
+
+
+
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ftc-enh/hd/etc'
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x0
+
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+
+DOOM: GEM platform up -- 640x480, 16 planes, lookup table no, stage 2 = 640x480, route EdDI
+
+                           Doom Generic 0.1
+
+Z_Init: Init zone memory allocation daemon. 
+
+zone memory: 0x11fe73c, 400000 allocated for zone
+
+Using . for configuration and saves
+
+V_Init: allocate screens.
+
+M_LoadDefaults: Load system defaults.
+
+saving config in .default.cfg
+
+-iwad not specified, trying a few iwad names
+
+Trying IWAD file:doom2.wad
+
+Trying IWAD file:plutonia.wad
+
+Trying IWAD file:tnt.wad
+
+Trying IWAD file:doom.wad
+
+Trying IWAD file:doom1.wad
+
+W_Init: Init WADfiles.
+
+ adding doom1.wad
+
+WARN : have to clip 5 chars from '.savegame' extension!
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ftc-enh/hd/.savegame'
+Using ./.savegame/ for savegames
+
+===========================================================================
+
+                            DOOM Shareware
+
+===========================================================================
+
+ Doom Generic is free software, covered by the GNU General Public
+
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+
+ copies under certain conditions. See the source for more information.
+
+===========================================================================
+
+I_Init: Setting up machine state.
+
+M_Init: Init miscellaneous info.
+
+R_Init: Init DOOM refresh daemon - ...................
+
+P_Init: Init Playloop state.
+
+S_Init: Setting up sound.
+
+D_CheckNetGame: Checking network game status.
+
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+
+player 1 of 1 (1 nodes)
+
+Emulating the behavior of the 'Doom 1.9' executable.
+
+HU_Init: Setting up heads up display.
+
+ST_Init: Init status bar.
+
+DOOM: DOOM Shareware
+
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+
+I_InitGraphics: Auto-scaling factor: 1
+
+DOOM: picture 640x480 at (0,0) VERIFIED via EdDI+scale+vro_cpyfm
+
+DOOM: per frame, EdDI, stage 2 640x480: build 62812 us, vr_trnfm 0 us, scale 150714 us, vro_cpyfm 137500 us, sum 351026 us
+
+
+DOOM x2 EdDI: 12 frames/5225 ms = 2.29 fps, 435.41 ms/frame, 1 pal
+
+DOOM x2 EdDI: 12 frames/5055 ms = 2.37 fps, 421.25 ms/frame, 0 pal
+
+DOOM x2 EdDI: 11 frames/5465 ms = 2.01 fps, 496.81 ms/frame, 1 pal
+
+DOOM x2 EdDI: 8 frames/5160 ms = 1.55 fps, 645.00 ms/frame, 0 pal
+
+DOOM x2 EdDI: 8 frames/5590 ms = 1.43 fps, 698.75 ms/frame, 2 pal
+
+DOOM x2 EdDI: 7 frames/5410 ms = 1.29 fps, 772.85 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5735 ms = 1.22 fps, 819.28 ms/frame, 3 pal
+
+DOOM x2 EdDI: 7 frames/5300 ms = 1.32 fps, 757.14 ms/frame, 1 pal
+
+DOOM x2 EdDI: 7 frames/5505 ms = 1.27 fps, 786.42 ms/frame, 0 pal
+WARN : PNG screen dump saved to: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ftc-enh/shots/grab0001.png
+
+DOOM x2 EdDI: 7 frames/5745 ms = 1.21 fps, 820.71 ms/frame, 2 pal
+
+DOOM x2 EdDI: 7 frames/5715 ms = 1.22 fps, 816.42 ms/frame, 2 pal
+
+DOOM x2 EdDI: 7 frames/5240 ms = 1.33 fps, 748.57 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5355 ms = 1.30 fps, 765.00 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5355 ms = 1.30 fps, 765.00 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5380 ms = 1.30 fps, 768.57 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5565 ms = 1.25 fps, 795.00 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5345 ms = 1.30 fps, 763.57 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5390 ms = 1.29 fps, 770.00 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5060 ms = 1.38 fps, 722.85 ms/frame, 4 pal
+
+DOOM x2 EdDI: 7 frames/5165 ms = 1.35 fps, 737.85 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5700 ms = 1.22 fps, 814.28 ms/frame, 1 pal
+
+DOOM x2 EdDI: 7 frames/5210 ms = 1.34 fps, 744.28 ms/frame, 1 pal
+
+DOOM x2 EdDI: 7 frames/5265 ms = 1.32 fps, 752.14 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5680 ms = 1.23 fps, 811.42 ms/frame, 0 pal
+WARN : PNG screen dump saved to: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ftc-enh/shots/grab0002.png
+
+DOOM x2 EdDI: 7 frames/5760 ms = 1.21 fps, 822.85 ms/frame, 2 pal
+
+DOOM x2 EdDI: 7 frames/5705 ms = 1.22 fps, 815.00 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5410 ms = 1.29 fps, 772.85 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5455 ms = 1.28 fps, 779.28 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5580 ms = 1.25 fps, 797.14 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5090 ms = 1.37 fps, 727.14 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5540 ms = 1.26 fps, 791.42 ms/frame, 0 pal
+
+DOOM x2 EdDI: 6 frames/5090 ms = 1.17 fps, 848.33 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5635 ms = 1.24 fps, 805.00 ms/frame, 4 pal
+
+DOOM x2 EdDI: 7 frames/5520 ms = 1.26 fps, 788.57 ms/frame, 4 pal
+
+DOOM x2 EdDI: 6 frames/5105 ms = 1.17 fps, 850.83 ms/frame, 1 pal
+
+DOOM x2 EdDI: 6 frames/5030 ms = 1.19 fps, 838.33 ms/frame, 0 pal
+
+DOOM x2 EdDI: 6 frames/5055 ms = 1.18 fps, 842.50 ms/frame, 0 pal
+
+DOOM x2 EdDI: 6 frames/5105 ms = 1.17 fps, 850.83 ms/frame, 1 pal
+
+DOOM x2 EdDI: 6 frames/5145 ms = 1.16 fps, 857.50 ms/frame, 1 pal
+WARN : PNG screen dump saved to: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ftc-enh/shots/grab0003.png
+
+DOOM x2 EdDI: 6 frames/5280 ms = 1.13 fps, 880.00 ms/frame, 0 pal
+
+DOOM x2 EdDI: 6 frames/5145 ms = 1.16 fps, 857.50 ms/frame, 0 pal
+
+DOOM x2 EdDI: 8 frames/5560 ms = 1.43 fps, 695.00 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5130 ms = 1.36 fps, 732.85 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5240 ms = 1.33 fps, 748.57 ms/frame, 0 pal
+
+DOOM x2 EdDI: 8 frames/5530 ms = 1.44 fps, 691.25 ms/frame, 2 pal
+
+DOOM x2 EdDI: 7 frames/5135 ms = 1.36 fps, 733.57 ms/frame, 1 pal
+
+DOOM x2 EdDI: 8 frames/5370 ms = 1.48 fps, 671.25 ms/frame, 5 pal
+
+DOOM x2 EdDI: 8 frames/5680 ms = 1.40 fps, 710.00 ms/frame, 1 pal
+
+DOOM x2 EdDI: 8 frames/5450 ms = 1.46 fps, 681.25 ms/frame, 3 pal
+
+DOOM x2 EdDI: 8 frames/5610 ms = 1.42 fps, 701.25 ms/frame, 2 pal
+
+DOOM x2 EdDI: 7 frames/5575 ms = 1.25 fps, 796.42 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5675 ms = 1.23 fps, 810.71 ms/frame, 3 pal
+
+DOOM x2 EdDI: 7 frames/5725 ms = 1.22 fps, 817.85 ms/frame, 1 pal
+
+DOOM x2 EdDI: 7 frames/5765 ms = 1.21 fps, 823.57 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5685 ms = 1.23 fps, 812.14 ms/frame, 1 pal
+
+DOOM x2 EdDI: 7 frames/5785 ms = 1.21 fps, 826.42 ms/frame, 2 pal
+
+DOOM x2 EdDI: 7 frames/5695 ms = 1.22 fps, 813.57 ms/frame, 1 pal
+
+DOOM x2 EdDI: 7 frames/5435 ms = 1.28 fps, 776.42 ms/frame, 3 pal
+
+DOOM x2 EdDI: 7 frames/5325 ms = 1.31 fps, 760.71 ms/frame, 2 pal
+
+DOOM x2 EdDI: 7 frames/5570 ms = 1.25 fps, 795.71 ms/frame, 3 pal
+
+DOOM x2 EdDI: 7 frames/5180 ms = 1.35 fps, 740.00 ms/frame, 4 pal
+
+DOOM x2 EdDI: 7 frames/5100 ms = 1.37 fps, 728.57 ms/frame, 1 pal
+WARN : PNG screen dump saved to: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ftc-enh/shots/grab0004.png
+
+DOOM x2 EdDI: 7 frames/5370 ms = 1.30 fps, 767.14 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5350 ms = 1.30 fps, 764.28 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5270 ms = 1.32 fps, 752.85 ms/frame, 2 pal
+
+DOOM x2 EdDI: 7 frames/5225 ms = 1.33 fps, 746.42 ms/frame, 0 pal
+
+DOOM x2 EdDI: 7 frames/5435 ms = 1.28 fps, 776.42 ms/frame, 2 pal
+
+DOOM x2 EdDI: 7 frames/5305 ms = 1.31 fps, 757.85 ms/frame, 1 pal
+INFO : SPEED: 217.4 VBL/s (20000/92.0s), diff=0.0%

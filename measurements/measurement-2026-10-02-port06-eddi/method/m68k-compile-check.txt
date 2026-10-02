@@ -1,0 +1,4 @@
+m68k-atari-mint-gcc 7.5.0, platform file alone, -c -O2 -Wall -Wextra (stats on and off):
+DOOM_GEM_STATS=0 rc=0
+DOOM_GEM_STATS=5 rc=0
+(no diagnostics above = clean)

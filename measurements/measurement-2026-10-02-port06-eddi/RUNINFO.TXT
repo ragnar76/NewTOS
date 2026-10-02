@@ -1,0 +1,141 @@
+measurement-2026-10-02-port06-eddi
+  PORT06, Schritt "EdDI-Weg in Doom" -- Abnahmelauf fuer E3 (0x02)
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD cb45aae. Kein Kommit, nichts geflasht, keine
+Pi, kein TT, keine Karte, /Volumes/BOOT nicht beruehrt. Unter kernel/ und
+tos-api/ wurde KEINE Datei geaendert. Kein *.img in diesem Verzeichnis.
+Geaendert: sdk/apps/doom/doomgeneric_gem.c (sonst nichts im Baum ausser
+diesem Ordner und TASK/PORT06-STATUS-UNFINISHED.MD).
+
+Spec: docs/api/vdi/eddi-vq_scrninfo.md (freigegeben, E3 = 0x02).
+Kern: cargo clean -p kernel -p tos-api (release), dann
+  cargo xtask build --board rpi4 --release ("Compiling tos-api", "Compiling
+  kernel"), 64 / 94 Warnungen (Basislinie), kernel8.img sha256
+  54d78651830cbd6d4077ab6d02513948ef6d4236b4bf3f3b3d99eb6e25becee0
+QEMU 11.0.2 -M raspi4b (TCG), Methode = die des Vergroesserungsschritts
+  (method/run-qemu.sh, seed-scale.sh, launch.c, newdesk-*.inf kopiert,
+  unveraendert), neu: method/run-eddi.sh.
+DOOM.NAP aus dem ausgelieferten sdk/apps/build-doom.sh:
+  play   (DOOM_STATS=5, "-mb","2")  sha256 078419582d172de557a6a52a7ffc053678af227a3dd416669ea5478f86d05094
+         = sdk/apps/doom/build/DOOM.NAP (Endbau)
+  tdemo  (+ "-timedemo","demo1")   sha256 b03eab1b94e3bf640c3bafe473aadd72bfa5b7bf923ebb7cb726556a2e3e22f1
+WAD: Applications/doom-wad/doom1.wad (Shareware 1.9), nur auf dem Scratch-Abbild.
+
+
+0. ERGEBNIS VORWEG
+---------------------------------------------------------------------------
+* NewTOS: Cookie EdDI gefunden, vq_scrninfo meldet format 2, clut 2,
+  16 planes, r/g/b 5/5/5, bit order 0x2. Die Tabellenpruefung (256
+  Testfarben ueber vs_color + vr_recfl gemalt, per vro_cpyfm OHNE vr_trnfm
+  zurueckgelesen, mit den Bitnummern-Tabellen dekodiert): in JEDEM Lauf
+  "256 of 256 test colours exact, largest step off r/g/b 0/0/0".
+  Erstes Bild pixelgenau: "VERIFIED via EdDI[+scale]+vro_cpyfm" fuer
+  x1, x2, x4 (1920x1080) und x2 (640x480). Farben in den Screendumps
+  richtig (screendumps/a..d, t*). => E3 (0x02) ist mit diesem Lauf belegt.
+* Rueckfall -noeddi: "-noeddi -- vr_trnfm route", VERIFIED via vr_trnfm
+  fuer x1, x2, x4 (Laeufe e, f, g, t1n, t2n).
+* Zweite Implementierung: m68k-DOOM (alles gelinkt) in Hatari 2.6.1,
+  EmuTOS 1.4 Falcon-Truecolor + VDI-Enhancer 1.00 (echter EdDI, big-endian,
+  bit order 0x0): EdDI-Weg genommen, 256/256 exakt, VERIFIED pixelgenau,
+  Bild farbrichtig (hatari/hat-ftc-enh/). Dazu TT-low 8 Planes mit Enhancer
+  (format 0, clut 1 -> verschraenkte Planes): "256 pens read back as
+  listed", VERIFIED (hatari/hat-ttlow-enh/).
+
+Kosten je Bild (QEMU TCG, Kostenprobe beim ersten Bild, us), 1920x1080,
+gleicher Kern, gleiche Sitzung:
+
+  Stufe  Weg       c2p/build  vr_trnfm  scale   vro_cpyfm   Summe
+  x1     vr_trnfm     672       1615       0       4830      7117   (f)
+  x1     EdDI         244          0       0       4784      5028   (c)
+  x2     vr_trnfm     672       1615     690      22222     25199   (t2n)
+  x2     EdDI         242          0     722      23928     24892   (d)
+  x4     vr_trnfm     646       1620    1351      94545     98162   (g)
+  x4     EdDI         236          0    1333      95000     96569   (b)
+
+  Der vr_trnfm-Anteil (~1,6 ms) ist weg, c2p (~0,65 ms) wird zum
+  Tabellenbau (~0,24 ms): ~2,1 ms je Bild gespart. vro_cpyfm ist unberuehrt
+  und bleibt ab x2 der ganze Preis.
+
+timedemo demo1, 1920x1080 (ungebremst):
+  x1  EdDI 145,86 fps (1206 realtics)   vr_trnfm 109,53 fps (1606)   +33 %
+  x2  EdDI  38,18 fps (4607)            vr_trnfm  36,58 fps (4809)   +4 %
+  x4  EdDI  10,19 fps (17267)           (vr_trnfm nicht gefahren; Attract
+                                         x4 beide ~10,2 fps, Laeufe b/g)
+Attract-Schleife (5-s-Fenster): x2 640x480 EdDI ~38,4 / vr_trnfm ~36,4 fps;
+x1 beide 70 fps (Spieltakt-Grenze).
+
+ACHTUNG Vergleich mit dem Vergroesserungsschritt (14d5a92): dort x1 76,45
+fps timedemo, vr_trnfm 3095 us. Der heutige Kern ist auf demselben Weg
+schneller (vr_trnfm 1615 us, timedemo x1 vr_trnfm 109,5 fps) -- Kernaenderungen
+seit 14d5a92, nicht dieser Schritt. Vorher/nachher fuer DIESEN Schritt ist
+nur der Vergleich innerhalb dieser Messung (EdDI gegen -noeddi).
+
+Hatari (emulierter 68030, nur Groessenordnung, nicht vergleichbar mit QEMU):
+  Falcon-TC x2: EdDI build 62,8 ms, scale 150,7, cpyfm 137,5 = 351 ms;
+                vr_trnfm c2p 1170 ms + vr_trnfm 1085 ms + 150,7 + 137,5 =
+                2543 ms. Attract ~1,3 fps (EdDI) gegen ~0,32 fps.
+  TT-low x1:    EdDI build 306 ms; vr_trnfm c2p 309 + vr_trnfm 9 ms.
+                Attract EdDI ~1,85 fps, vr_trnfm ~1,80 fps (verschraenkt
+                kostet der Bitumbau auf beiden Wegen, nur die 9 ms fallen weg).
+
+
+1. LAEUFE (method/run-eddi.sh, Konsole: method/run-eddi-console.log)
+---------------------------------------------------------------------------
+  a-640-default       #Z, keine Kommandozeile        EdDI, x2
+  b-1080-default      #Z, keine Kommandozeile        EdDI, x4
+  c-1080-x1           "-scale 1"                     EdDI, x1
+  d-1080-x2           "-scale 2"                     EdDI, x2
+  e-640-noeddi        "-noeddi"                      vr_trnfm, x2
+  f-1080-noeddi-x1    "-noeddi -scale 1"             vr_trnfm, x1
+  g-1080-noeddi-x4    "-noeddi -scale 4"             vr_trnfm, x4
+  t1 / t1n / t2 / t2n / t4   timedemo, EdDI bzw. -noeddi, x1 / x2 / x4
+Screendumps je Lauf bei 35/60 s (t*: 60 s und Ende), serielle Logs
+serial/<lauf>-serial.log. 0 [EXC]/PANIC in allen Logs.
+
+Erster Durchgang (verworfen, Binaerdatei 026ffbb2...): Stufe 1 auf dem
+EdDI-Weg brach mit "the EdDI picture did not read back ... 0x0, meant
+0x7000" ab (method/firstpass-c-1080-x1-stage1-bug-serial.log). Ursache:
+dev_mfdb wurde nur in stage_trnfm() beschrieben, den der EdDI-Weg auslaesst;
+bei x1 bekam vro_cpyfm ein genulltes MFDB (fd_addr 0 = Bildschirm).
+Behoben in stage_cpyfm() (set_form vor jeder Kopie); alle obigen Laeufe
+sind mit der behobenen Datei neu gefahren.
+
+
+2. HATARI (method/run-hatari-doom.sh, method/build-doom-m68k.sh)
+---------------------------------------------------------------------------
+build-doom-m68k.sh ist eine MESSHILFE, nicht der ausgelieferte m68k-Bau:
+dasselbe Manifest, m68k-atari-mint-gcc 7.5.0 -m68020-60 -O2, cross-mint
+mintlib + sdk/gemlib/gemlib-m68k.a, <math.h> aus sdk/libm/include (die
+cross-mint-Wurzel hat keines; DOOM ruft keine libm-Funktion).
+81/81 uebersetzt, 0 Warnungen (Plattformdatei mit -Wall -Wextra),
+LINK OK (method/build-doom-m68k.log). DOOM.PRG sha256
+4e818f4768ff7c9a87499c37b6e15d3243ee9f38c35e0f3812cc767809bd9191
+("-mb","4", DOOM_STATS=5). Hatari mit --fpu 68882 (der -m68020-60-Bau
+verlangt eine FPU), 14 MiB ST-RAM, --conout 2 = DOOMs Konsole im Log.
+Bildschirmfotos ueber --cmd-fifo "hatari-shortcut screenshot".
+
+  hatari/hat-ftc-enh    Falcon-TC + Enhancer  EdDI, 256/256 exakt, VERIFIED x2
+  hatari/hat-ftc        Falcon-TC ohne        "no EdDI cookie", VERIFIED vr_trnfm x2
+  hatari/hat-ttlow-enh  TT-low + Enhancer     EdDI format 0/clut 1, VERIFIED x1
+  hatari/hat-ttlow      TT-low ohne           vr_trnfm, VERIFIED x1
+  hatari/hat-ttlow-head TT-low, Plattformdatei aus HEAD (vor diesem Schritt)
+  hatari/hat2-head, hat2-new + tt-head-vs-new-fallback.png: TT-low,
+      vr_trnfm-Weg, HEAD gegen neue Datei, 8 Fotos im 10-s-Abstand. Grund:
+      in hat-ttlow sahen zwei Fotos verstreift/fleckig aus. Beide Reihen
+      zeigen dieselben Bilder, auch das verstreifte (4. Spalte) -- also
+      Bildinhalt (vermutlich Dooms Ueberblendung), keine Folge dieses
+      Schritts. Nicht weiter untersucht.
+
+Die Bus-Error-WARN-Zeilen in den Hatari-Logs sind EmuTOS' Hardwaresonden
+beim Booten (in allen Laeufen gleich, auch ohne DOOM).
+
+
+3. GRUNDWERTE
+---------------------------------------------------------------------------
+  build-doom.sh          81/81, LINK OK, 0 undefined, Plattformdatei
+                         -Wall -Wextra ohne Warnung (method/build-doom-*.log)
+  Bildschirmbasis-grep   method/grep-screenbase.txt: 0 Treffer
+  Hosttests              method/run-host-tests.txt: 12 / 0 / 0
+  m68k Plattformdatei    method/m68k-compile-check.txt: -Wall -Wextra sauber
+  Rust                   nicht angefasst.

@@ -17,8 +17,9 @@
  * on a Falcon, under Hatari -- and inherits whatever acceleration that driver
  * has. The same source is meant to build for m68k (TT + NOVA) later; nothing
  * below depends on the CPU, the byte order or the pointer width. (Byte order
- * is doomgeneric's business, i_swap.h; this file never looks at the bytes of
- * a multi-byte value.)
+ * is doomgeneric's business, i_swap.h; the vr_trnfm route never looks at the
+ * bytes of a multi-byte value, and the EdDI route stores pixels the way the
+ * driver's description says, see THE EdDI ROUTE.)
  *
  *
  * THE PICTURE: STANDARD FORM -> vr_trnfm -> vro_cpyfm
@@ -40,8 +41,62 @@
  *             --vr_trnfm--> device form --vro_cpyfm S_ONLY--> screen
  *
  * N is the screen's plane count as the VDI reports it (vq_extnd INQ_TAB[4]).
- * This is the slower of the two routes PORT06 names; the EdDI route (compute
- * the device format directly when the driver publishes it) is a later step.
+ * This is the slower of the two routes PORT06 names, and the one that runs
+ * everywhere. The faster one follows.
+ *
+ *
+ * THE EdDI ROUTE: THE DEVICE FORM AS THE DRIVER DESCRIBES IT
+ * ---------------------------------------------------------
+ * A VDI that installs the cookie 'EdDI' (NVDI, the NOVA drivers, fVDI, the
+ * Atari VDI Enhancer, NewTOS) answers vq_scrninfo (VDI 102, CONTRL[5] = 1,
+ * INTIN[0] = 2) with a description of its device form (docs/api/vdi/
+ * eddi-vq_scrninfo.md §3). Where that description covers the screen, the
+ * frame is built in the device form directly and vr_trnfm is skipped:
+ *
+ *     indices --(devpix[])--> device form --vro_cpyfm S_ONLY--> screen
+ *
+ * Covered (§3.2, §3.5):
+ *   work_out[0] = 2 (packed pixels), [1] = 2 (HiColor/TrueColor): the pixel
+ *     is built from DOOM's RGB with the bit-number tables [16..63] -- for
+ *     red/green/blue, intensity bit k sits at pixel bit [16 + 16c + k]. The
+ *     channel widths are [8..10]; an n-bit intensity is the 8-bit one
+ *     rounded to n bits. Alpha, genlock and unused bits stay 0 (§7 E9).
+ *     (bytes per pixel = (planes + 7) / 8.) A palette change recomputes the
+ *     256 pixels; no VDI call.
+ *   work_out[0] = 2 or 0 (packed / interleaved planes), [1] = 1 (hardware
+ *     CLUT), 8 resp. 1..8 planes: DOOM's palette goes into the pens with
+ *     vs_color as on the vr_trnfm route, and the pixel of pen i is the
+ *     value the driver lists in [16 + i]. Packed is one byte per pixel;
+ *     interleaved is the Atari screen form, per 16 pixels one word per
+ *     plane, plane p carrying bit p of the pixel value, bit 15 leftmost.
+ *   Anything else -- format -1 or 1, no CLUT, an answer that contradicts
+ *   vq_extnd or does not hold together -- falls back to the vr_trnfm route,
+ *   with the reason on the console. So does a start with -noeddi.
+ *
+ * Byte order: a pixel of 2 or 4 bytes is stored the way the CPU stores a
+ * value of that size, 3 bytes in the CPU's order too, and the table's bit
+ * numbers count in that value. That is what the bit numbers mean (§3.2:
+ * numbered as the pixel read as a word from memory, the lower address on top
+ * -- which IS the CPU's reading on a 680x0; NewTOS answers the same for its
+ * native little-endian word, decision E3 = 0x02). work_out[14], the bit-order
+ * flag, therefore needs no action of its own: §3.3's swapped layouts (bit 7,
+ * e.g. Crazy Dots 0x81) arrive already folded into the bit numbers (§3.2,
+ * the Crazy Dots example), and applying the flag on top would swap twice.
+ * It only exists from EdDI 1.10, and the version is only available from the
+ * cookie's dispatcher, which this file never calls (NewTOS' cookie value is a
+ * marker, not code, E2); it is printed, not used. HighWire and zView read the
+ * tables the same way (§3.4).
+ *
+ * The cookie value is only tested for presence -- never called.
+ *
+ * Before the route is used, the description is checked against the driver
+ * itself: 256 test colours are put into the pens, painted, read back with
+ * vro_cpyfm into a device form (no vr_trnfm), and decoded with the tables.
+ * Each channel must come back within one step of the colour that was set
+ * (the VDI rounds its per-mille values on its own), resp. each pen's pixel
+ * must be the listed [16 + i]. A description that fails this is not used:
+ * the vr_trnfm route takes over, with the reason on the console. The first
+ * frame is then read back the same way and compared pixel by pixel.
  *
  *
  * THE COLOUR TABLE: MEASURED, NOT COMPUTED
@@ -91,7 +146,8 @@
  * Without the parameter the stage is DOOM_GEM_SCALE (one constant, below).
  * A stage larger than the screen steps down to the largest one that fits.
  *
- * The picture is scaled AFTER vr_trnfm, in the device form, by repeating
+ * The picture is scaled AFTER vr_trnfm (on the EdDI route: after the device
+ * form is built), in the device form, by repeating
  * whole pixels and whole rows: c2p and vr_trnfm keep working on 320x200, and
  * the copying stays out of the standard form, where one pixel is spread over
  * N planes. That needs the device form's layout, and only one kind of layout
@@ -143,8 +199,8 @@
  * fit and 2 MiB does, with ~900 KiB left for the WAD directory and stdio.
  * -mb takes whole MiB, so 2 is the largest zone this TPA can give.
  * This file's own buffers -- the
- * standard and device forms of the 320x200 picture (125 KiB each at 16
- * planes) and, when scaling, the scaled device form (out_w * out_h * bytes
+ * device form of the 320x200 picture and, on the vr_trnfm route only, its
+ * standard form (125 KiB each at 16 planes) and, when scaling,the scaled device form (out_w * out_h * bytes
  * per pixel: 2400 KiB for 1280x960 at 16 planes) -- come from GEMDOS
  * Mxalloc(MX_PREFTTRAM), Malloc as fallback: CPU-only memory, no DMA reason to
  * want ST-RAM (PORT06 "ST-RAM ist auch auf dem TT kein Thema"), and outside
@@ -156,6 +212,8 @@
 #include <string.h>
 
 #include <gem.h>
+#include <gemx.h>		/* vq_scrninfo (EdDI) */
+#include <mint/cookie.h>
 #include <mint/osbind.h>
 #include <mint/sysvars.h>
 
@@ -231,6 +289,21 @@ static uint32_t pixval[NCOLORS];	/* bit p = plane p for that colour */
 static int pixval_valid;
 static short saved_pens[NCOLORS][3];
 static int pens_saved;
+
+/* ---- the EdDI route (THE EdDI ROUTE) --------------------------------------- */
+#define SI_WORDS	280		/* vq_scrninfo writes 273 (spec §3.1) */
+#define EDDI_NONE	0		/* vr_trnfm route */
+#define EDDI_TRUE	1		/* packed, bit-number tables */
+#define EDDI_PACKED8	2		/* packed, 8 planes, CLUT pixel values */
+#define EDDI_PLANES	3		/* interleaved planes, CLUT pixel values */
+
+static int eddi;			/* EDDI_*: the route in use */
+static short si[SI_WORDS];		/* the vq_scrninfo answer */
+static int ch_n[3];			/* red/green/blue intensity bits */
+static int ch_bit[3][16];		/* pixel bit of intensity bit k */
+static uint32_t cmp_mask;		/* the pixel bits this file defines */
+static uint32_t devpix[NCOLORS];	/* device pixel per DOOM index */
+static int host_big_endian;		/* for the 3-byte pixel only */
 
 static int first_frame = 1;
 static int need_clear = 1;		/* paint the screen around the picture */
@@ -388,8 +461,14 @@ static void measure_pixvals(void)
 	pixval_valid = 1;
 }
 
+static void eddi_palette(void);
+
 static void update_palette(void)
 {
+	if (eddi != EDDI_NONE) {
+		eddi_palette();
+		return;
+	}
 	load_pens();
 	if (!has_lut || !pixval_valid)
 		measure_pixvals();
@@ -500,8 +579,402 @@ static void stage_scale(void)
 }
 
 /* ======================================================================== */
+/* The EdDI route                                                            */
+/* ======================================================================== */
+
+/* One pixel into / out of a packed device row, in the CPU's byte order (THE
+ * EdDI ROUTE). Rows start at even offsets of GEMDOS blocks; a 4-byte pixel
+ * goes through memcpy, so nothing needs more than word alignment. */
+static void put_packed(uint8_t *row, int x, uint32_t v)
+{
+	uint8_t *p;
+
+	switch (dev_bpp) {
+	case 1:
+		row[x] = (uint8_t)v;
+		break;
+	case 2:
+		((uint16_t *)row)[x] = (uint16_t)v;
+		break;
+	case 3:
+		p = row + (long)x * 3;
+		if (host_big_endian) {
+			p[0] = (uint8_t)(v >> 16);
+			p[1] = (uint8_t)(v >> 8);
+			p[2] = (uint8_t)v;
+		} else {
+			p[0] = (uint8_t)v;
+			p[1] = (uint8_t)(v >> 8);
+			p[2] = (uint8_t)(v >> 16);
+		}
+		break;
+	default:
+		memcpy(row + (long)x * 4, &v, 4);
+		break;
+	}
+}
+
+static uint32_t get_packed(const uint8_t *row, int x)
+{
+	const uint8_t *p;
+	uint32_t v;
+
+	switch (dev_bpp) {
+	case 1:
+		return row[x];
+	case 2:
+		return ((const uint16_t *)row)[x];
+	case 3:
+		p = row + (long)x * 3;
+		if (host_big_endian)
+			return ((uint32_t)p[0] << 16) | ((uint32_t)p[1] << 8) | p[2];
+		return ((uint32_t)p[2] << 16) | ((uint32_t)p[1] << 8) | p[0];
+	default:
+		memcpy(&v, row + (long)x * 4, 4);
+		return v;
+	}
+}
+
+/* Pixel x of an interleaved-planes row: per 16 pixels one word per plane,
+ * plane p = bit p of the pixel value, bit 15 the leftmost pixel. */
+static uint32_t get_planes(const uint16_t *row, int x)
+{
+	const uint16_t *grp = row + (long)(x >> 4) * nplanes;
+	uint16_t bit = (uint16_t)(0x8000u >> (x & 15));
+	uint32_t v = 0;
+	int p;
+
+	for (p = 0; p < nplanes; p++)
+		if (grp[p] & bit)
+			v |= (uint32_t)1 << p;
+	return v;
+}
+
+/* An 8-bit intensity rounded to n bits. */
+static uint32_t quant(int v8, int n)
+{
+	uint32_t max = ((uint32_t)1 << n) - 1u;
+
+	return ((uint32_t)v8 * max + 127u) / 255u;
+}
+
+/* RGB to the device pixel with the bit-number tables (EDDI_TRUE). */
+static uint32_t encode_rgb(int r, int g, int b)
+{
+	int c8[3];
+	uint32_t v = 0, q;
+	int c, k;
+
+	c8[0] = r;
+	c8[1] = g;
+	c8[2] = b;
+	for (c = 0; c < 3; c++) {
+		q = quant(c8[c], ch_n[c]);
+		for (k = 0; k < ch_n[c]; k++)
+			if ((q >> k) & 1u)
+				v |= (uint32_t)1 << ch_bit[c][k];
+	}
+	return v;
+}
+
+/* Channel c's intensity in a device pixel (EDDI_TRUE). */
+static uint32_t decode_ch(uint32_t v, int c)
+{
+	uint32_t q = 0;
+	int k;
+
+	for (k = 0; k < ch_n[c]; k++)
+		if ((v >> ch_bit[c][k]) & 1u)
+			q |= (uint32_t)1 << k;
+	return q;
+}
+
+/* Read `n` screen pixels of row `y` from column `x` as device pixels: one
+ * vro_cpyfm into a one-row device form, decoded as the description says. */
+static void read_row_dev(int x, int y, int n, uint32_t *vals)
+{
+	short pxy[8];
+	int i;
+
+	set_form(&peek_dev_mfdb, peek_dev, n, 1, 0);
+	memset(peek_dev, 0, (size_t)form_bytes_for(n, 1));
+	pxy[0] = (short)x;
+	pxy[1] = (short)y;
+	pxy[2] = (short)(x + n - 1);
+	pxy[3] = (short)y;
+	pxy[4] = 0;
+	pxy[5] = 0;
+	pxy[6] = (short)(n - 1);
+	pxy[7] = 0;
+	vro_cpyfm(vh, S_ONLY, pxy, &screen_mfdb, &peek_dev_mfdb);
+	for (i = 0; i < n; i++)
+		vals[i] = eddi == EDDI_PLANES ? get_planes(peek_dev, i)
+					      : get_packed((const uint8_t *)peek_dev, i);
+}
+
+static int eddi_refuse(const char *why)
+{
+	printf("DOOM: EdDI description not used (%s) -- vr_trnfm route\n", why);
+	return EDDI_NONE;
+}
+
+/*
+ * Ask for the device form (THE EdDI ROUTE) and decide whether this file can
+ * build it. Returns the EDDI_* route; on EDDI_TRUE ch_n/ch_bit hold the
+ * tables, on the CLUT routes devpix[] holds the pens' pixel values.
+ */
+static int eddi_query(void)
+{
+	char why[96];
+	long cookie = 0;
+	uint32_t seen = 0;
+	int c, k, b, i;
+
+	if (M_CheckParm("-noeddi") > 0) {
+		printf("DOOM: -noeddi -- vr_trnfm route\n");
+		return EDDI_NONE;
+	}
+	if (Getcookie(C_EdDI, &cookie) != C_FOUND) {
+		printf("DOOM: no EdDI cookie -- vr_trnfm route\n");
+		return EDDI_NONE;
+	}
+	/* Present is all that counts; the value is never called. */
+	memset(si, 0, sizeof(si));
+	vq_scrninfo(vh, si);
+	printf("DOOM: EdDI: format %d, clut %d, %d planes, bits r/g/b %d/%d/%d, "
+	       "bit order 0x%x\n", si[0], si[1], si[2], si[8], si[9], si[10],
+	       (unsigned)(uint16_t)si[14]);
+
+	if (si[0] == -1)
+		return eddi_refuse("format -1: not directly writable");
+	if (si[2] != nplanes) {
+		snprintf(why, sizeof(why), "%d planes, vq_extnd says %d",
+			 si[2], nplanes);
+		return eddi_refuse(why);
+	}
+
+	if (si[0] == 2 && si[1] == 2) {
+		if (nplanes < 9)
+			return eddi_refuse("truecolour with 8 planes or fewer");
+		for (c = 0; c < 3; c++) {
+			ch_n[c] = si[8 + c];
+			if (ch_n[c] < 1 || ch_n[c] > 16) {
+				snprintf(why, sizeof(why), "channel %d has %d bits",
+					 c, ch_n[c]);
+				return eddi_refuse(why);
+			}
+			for (k = 0; k < ch_n[c]; k++) {
+				b = si[16 + 16 * c + k];
+				if (b < 0 || b >= dev_bpp * 8 ||
+				    (seen & ((uint32_t)1 << b))) {
+					snprintf(why, sizeof(why), "bit table "
+						 "entry [%d] = %d", 16 + 16 * c + k, b);
+					return eddi_refuse(why);
+				}
+				seen |= (uint32_t)1 << b;
+				ch_bit[c][k] = b;
+			}
+		}
+		cmp_mask = seen;
+		return EDDI_TRUE;
+	}
+
+	if (si[1] == 1 && (si[0] == 2 || si[0] == 0)) {
+		/* 256 pens are DOOM's 256 colours; fewer planes cannot show
+		 * them, on either route. */
+		if (nplanes != 8) {
+			snprintf(why, sizeof(why), "CLUT with %d planes", nplanes);
+			return eddi_refuse(why);
+		}
+		for (i = 0; i < NCOLORS; i++) {
+			devpix[i] = (uint16_t)si[16 + i];
+			if (devpix[i] > 0xffu) {
+				snprintf(why, sizeof(why), "pen %d has pixel value 0x%lx",
+					 i, (unsigned long)devpix[i]);
+				return eddi_refuse(why);
+			}
+		}
+		cmp_mask = 0xffu;
+		return si[0] == 2 ? EDDI_PACKED8 : EDDI_PLANES;
+	}
+
+	snprintf(why, sizeof(why), "format %d with clut %d is not one this file "
+		 "builds", si[0], si[1]);
+	return eddi_refuse(why);
+}
+
+/* DOOM-independent test colours for the check: every channel runs through
+ * all 256 levels, each in a different order, so a swapped channel or a
+ * misplaced bit cannot pass by accident. */
+static void test_rgb(int i, int c8[3])
+{
+	c8[0] = i;
+	c8[1] = (i * 3) & 0xff;
+	c8[2] = (i * 11 + 128) & 0xff;
+}
+
+/* One pen to an 8-bit RGB colour; the VDI takes per-mille intensities. */
+static void set_pen(int i, int r, int g, int b)
+{
+	short rgb[3];
+
+	rgb[0] = (short)(((long)r * 1000L + 127L) / 255L);
+	rgb[1] = (short)(((long)g * 1000L + 127L) / 255L);
+	rgb[2] = (short)(((long)b * 1000L + 127L) / 255L);
+	vs_color(vh, (short)i, rgb);
+}
+
+/*
+ * The description against the driver (THE EdDI ROUTE): 256 pens painted one
+ * pixel each inside the picture rectangle, read back as device pixels. With
+ * tables, every channel must decode to the test colour within one step; with
+ * a CLUT, every pen's pixel must be the listed one. Returns 1 if it holds.
+ */
+static int eddi_check(void)
+{
+	static uint32_t got[NCOLORS];
+	short pxy[4];
+	int c8[3], worst[3] = { 0, 0, 0 };
+	int i, c, d, exact = 0;
+
+	for (i = 0; i < NCOLORS; i++) {
+		test_rgb(i, c8);
+		set_pen(i, c8[0], c8[1], c8[2]);
+		vsf_color(vh, (short)i);
+		pxy[0] = (short)(out_x + i);
+		pxy[1] = (short)out_y;
+		pxy[2] = pxy[0];
+		pxy[3] = pxy[1];
+		vr_recfl(vh, pxy);
+	}
+	read_row_dev(out_x, out_y, NCOLORS, got);
+
+	if (eddi != EDDI_TRUE) {
+		for (i = 0; i < NCOLORS; i++)
+			if ((got[i] & cmp_mask) != devpix[i]) {
+				printf("DOOM: EdDI check: pen %d reads 0x%lx, the "
+				       "description lists 0x%lx\n", i,
+				       (unsigned long)got[i], (unsigned long)devpix[i]);
+				return 0;
+			}
+		printf("DOOM: EdDI check: 256 pens read back as listed\n");
+		return 1;
+	}
+
+	for (i = 0; i < NCOLORS; i++) {
+		int same = 1;
+
+		test_rgb(i, c8);
+		for (c = 0; c < 3; c++) {
+			d = (int)decode_ch(got[i], c) - (int)quant(c8[c], ch_n[c]);
+			if (d < 0)
+				d = -d;
+			if (d > worst[c])
+				worst[c] = d;
+			if (d)
+				same = 0;
+		}
+		exact += same;
+	}
+	printf("DOOM: EdDI check: %d of 256 test colours exact, largest step "
+	       "off r/g/b %d/%d/%d\n", exact, worst[0], worst[1], worst[2]);
+	if (worst[0] > 1 || worst[1] > 1 || worst[2] > 1) {
+		for (i = 0; i < NCOLORS; i++) {
+			test_rgb(i, c8);
+			if (encode_rgb(c8[0], c8[1], c8[2]) != (got[i] & cmp_mask)) {
+				printf("DOOM: EdDI check: first difference, pen %d "
+				       "rgb %d/%d/%d: device 0x%lx, built 0x%lx\n",
+				       i, c8[0], c8[1], c8[2], (unsigned long)got[i],
+				       (unsigned long)encode_rgb(c8[0], c8[1], c8[2]));
+				break;
+			}
+		}
+		return 0;
+	}
+	return 1;
+}
+
+/* DOOM's palette for the EdDI route: with tables the pixels are computed,
+ * with a CLUT the pens are loaded and the listed pixel values stay. */
+static void eddi_palette(void)
+{
+	int i;
+
+	if (eddi == EDDI_TRUE) {
+		for (i = 0; i < NCOLORS; i++)
+			devpix[i] = encode_rgb(colors[i].r, colors[i].g, colors[i].b);
+	} else {
+		load_pens();
+	}
+}
+
+/* The whole 320x200 picture into the device form (EdDI route). */
+static void build_device_form(void)
+{
+	const uint8_t *src = (const uint8_t *)DG_ScreenBuffer;
+	uint8_t *row = (uint8_t *)dev_buf;
+	uint32_t m[16];
+	int y, x, g, k, p;
+
+	for (y = 0; y < PIC_H; y++, src += PIC_W, row += dev_stride) {
+		if (eddi == EDDI_PLANES) {
+			uint16_t *dst = (uint16_t *)row;
+			const uint8_t *s = src;
+
+			for (g = 0; g < PIC_W / 16; g++, s += 16) {
+				for (k = 0; k < 16; k++)
+					m[k] = devpix[s[k]];
+				for (p = 0; p < nplanes; p++) {
+					uint32_t w = 0;
+
+					for (k = 0; k < 16; k++)
+						w = (w << 1) | ((m[k] >> p) & 1u);
+					*dst++ = (uint16_t)w;
+				}
+			}
+		} else if (dev_bpp == 2) {
+			uint16_t *dst = (uint16_t *)row;
+
+			for (x = 0; x < PIC_W; x++)
+				dst[x] = (uint16_t)devpix[src[x]];
+		} else if (dev_bpp == 1) {
+			for (x = 0; x < PIC_W; x++)
+				row[x] = (uint8_t)devpix[src[x]];
+		} else {
+			for (x = 0; x < PIC_W; x++)
+				put_packed(row, x, devpix[src[x]]);
+		}
+	}
+}
+
+/* ======================================================================== */
 /* The one-time verification                                                 */
 /* ======================================================================== */
+
+/* The EdDI route's frame, read back as device pixels: every pixel of every
+ * output row equals the pixel built for it (in the bits this file defines). */
+static void verify_frame_eddi(void)
+{
+	static uint32_t got[PIC_W * MAX_STAGE];
+	const uint8_t *src = (const uint8_t *)DG_ScreenBuffer;
+	int y, x;
+
+	for (y = 0; y < out_h; y++) {
+		const uint8_t *line = src + ((long)y * PIC_H / out_h) * PIC_W;
+
+		read_row_dev(out_x, out_y + y, out_w, got);
+		for (x = 0; x < out_w; x++)
+			if ((got[x] & cmp_mask) != (devpix[line[x / stage]] & cmp_mask))
+				I_Error("DOOM: the EdDI picture did not read back "
+					"from the screen (stage %d, row %d, column %d: "
+					"0x%lx, meant 0x%lx) -- start with -noeddi",
+					stage, y, x, (unsigned long)got[x],
+					(unsigned long)devpix[line[x / stage]]);
+	}
+	printf("DOOM: picture %dx%d at (%d,%d) VERIFIED via EdDI%s+vro_cpyfm\n",
+	       out_w, out_h, out_x, out_y, stage > 1 ? "+scale" : "");
+	need_clear = 1;
+}
 
 static void verify_frame(void)
 {
@@ -577,10 +1050,22 @@ static void open_fail(const char *why)
 
 static void key_init(void);
 
+/* The vr_trnfm route's standard forms: the 320x200 picture and the one-row
+ * read-back form. */
+static void alloc_trnfm_forms(void)
+{
+	std_raw = alloc_fast(plane_words * nplanes * 2);
+	peek_std_raw = alloc_fast(form_bytes_for(out_w, 1));
+	if (!std_raw || !peek_std_raw)
+		open_fail("no memory for the picture forms");
+	std_buf = std_raw;
+	peek_std = peek_std_raw;
+}
+
 void DG_Init(void)
 {
 	short cw, ch, bw, bh, pxy[4];
-	long std_bytes, dev_bytes, peek_bytes;
+	long dev_bytes, peek_bytes;
 	int i, p, want;
 
 	ap_id = appl_init();
@@ -605,6 +1090,12 @@ void DG_Init(void)
 		open_fail("the VDI reports a plane count this file cannot hold");
 
 	dev_bpp = (nplanes + 7) / 8;
+	{
+		const uint16_t one = 1;
+
+		host_big_endian = *(const uint8_t *)&one == 0;
+	}
+	eddi = eddi_query();
 	if (!stage_fits(1))
 		open_fail("the screen is smaller than DOOM's 320x200 picture");
 
@@ -639,16 +1130,14 @@ void DG_Init(void)
 	out_x = (scr_w - out_w) / 2;
 	out_y = (scr_h - out_h) / 2;
 
-	/* The 320x200 standard and device forms, the scaled device form, and
-	 * the two one-row read-back forms (as wide as the output). */
-	std_bytes = plane_words * nplanes * 2;
+	/* The 320x200 device form, the scaled device form and the one-row
+	 * read-back device form (as wide as the output); the standard forms of
+	 * the vr_trnfm route only when that route runs (alloc_trnfm_forms). */
 	dev_bytes = form_bytes_for(PIC_W, PIC_H);
 	peek_bytes = form_bytes_for(out_w, 1);
-	std_raw = alloc_fast(std_bytes);
 	dev_raw = alloc_fast(dev_bytes);
 	peek_dev_raw = alloc_fast(peek_bytes);
-	peek_std_raw = alloc_fast(peek_bytes);
-	if (!std_raw || !dev_raw || !peek_dev_raw || !peek_std_raw)
+	if (!dev_raw || !peek_dev_raw)
 		open_fail("no memory for the picture forms");
 	if (stage > 1) {
 		big_raw = alloc_fast(form_bytes_for(out_w, out_h));
@@ -656,15 +1145,19 @@ void DG_Init(void)
 			open_fail("no memory for the scaled picture (try -scale 1)");
 	}
 	/* GEMDOS blocks are at least word aligned, all a form needs. */
-	std_buf = std_raw;
 	dev_buf = dev_raw;
 	big_buf = big_raw;
 	peek_dev = peek_dev_raw;
-	peek_std = peek_std_raw;
 	/* Packed rows are fd_wdwidth * 16 pixels; PIC_W and every out_w are
-	 * multiples of 16, so that is the picture's own width. */
-	dev_stride = (long)wdw * 16 * dev_bpp;
+	 * multiples of 16, so that is the picture's own width. Interleaved
+	 * rows (EDDI_PLANES) are fd_wdwidth groups of nplanes words. */
+	if (eddi == EDDI_PLANES)
+		dev_stride = (long)wdw * nplanes * 2;
+	else
+		dev_stride = (long)wdw * 16 * dev_bpp;
 	big_stride = (long)((out_w + 15) / 16) * 16 * dev_bpp;
+	if (eddi == EDDI_NONE)
+		alloc_trnfm_forms();
 	memset(&screen_mfdb, 0, sizeof(screen_mfdb));
 
 	/* Keep the pens; the palette is about to overwrite all of them. */
@@ -688,11 +1181,20 @@ void DG_Init(void)
 	vsf_interior(vh, FIS_SOLID);
 	vsf_perimeter(vh, 0);
 
+	/* The EdDI description against the driver, before it is used. */
+	if (eddi != EDDI_NONE && !eddi_check()) {
+		printf("DOOM: EdDI description does not match the screen -- "
+		       "vr_trnfm route\n");
+		eddi = EDDI_NONE;
+		alloc_trnfm_forms();
+	}
+
 	key_init();
 
 	printf("DOOM: GEM platform up -- %dx%d, %d planes, lookup table %s, "
-	       "stage %d = %dx%d\n", scr_w, scr_h, nplanes, has_lut ? "yes" : "no",
-	       stage, out_w, out_h);
+	       "stage %d = %dx%d, route %s\n", scr_w, scr_h, nplanes,
+	       has_lut ? "yes" : "no", stage, out_w, out_h,
+	       eddi == EDDI_NONE ? "vr_trnfm" : "EdDI");
 }
 
 /* The screen around the picture: black. Done before the first frame -- which
@@ -728,6 +1230,8 @@ static void stage_cpyfm(void)
 	MFDB *from = &dev_mfdb;
 	short pxy[8];
 
+	/* The EdDI route has no vr_trnfm step that would describe it. */
+	set_form(&dev_mfdb, dev_buf, PIC_W, PIC_H, 0);
 	if (stage > 1) {
 		set_form(&big_mfdb, big_buf, out_w, out_h, 0);
 		from = &big_mfdb;
@@ -765,13 +1269,17 @@ static uint32_t probe_cost(void (*step)(void))
 
 static void cost_report(void)
 {
-	uint32_t c2p = probe_cost(build_standard_form);
-	uint32_t trn = probe_cost(stage_trnfm);
+	/* EdDI route: "build" is the device form, there is no vr_trnfm. */
+	uint32_t c2p = probe_cost(eddi != EDDI_NONE ? build_device_form
+						     : build_standard_form);
+	uint32_t trn = eddi != EDDI_NONE ? 0 : probe_cost(stage_trnfm);
 	uint32_t scl = stage > 1 ? probe_cost(stage_scale) : 0;
 	uint32_t cpy = probe_cost(stage_cpyfm);
 
-	printf("DOOM: per frame, stage %d %dx%d: c2p %lu us, vr_trnfm %lu us, "
-	       "scale %lu us, vro_cpyfm %lu us, sum %lu us\n", stage, out_w, out_h,
+	printf("DOOM: per frame, %s, stage %d %dx%d: %s %lu us, vr_trnfm %lu us, "
+	       "scale %lu us, vro_cpyfm %lu us, sum %lu us\n",
+	       eddi != EDDI_NONE ? "EdDI" : "vr_trnfm", stage, out_w, out_h,
+	       eddi != EDDI_NONE ? "build" : "c2p",
 	       (unsigned long)c2p, (unsigned long)trn, (unsigned long)scl,
 	       (unsigned long)cpy, (unsigned long)(c2p + trn + scl + cpy));
 	need_clear = 1;
@@ -793,8 +1301,8 @@ static void frame_report(void)
 		 * newline on the last row would scroll the picture. Kept under
 		 * 80 columns, so it cannot wrap (and scroll) on a 640-pixel
 		 * screen either. The frame time is the mean over the window. */
-		printf("DOOM x%d: %lu frames/%lu ms = %lu.%02lu fps, %lu.%02lu ms/frame, "
-		       "%lu pal\r", stage,
+		printf("DOOM x%d%s: %lu frames/%lu ms = %lu.%02lu fps, %lu.%02lu ms/frame, "
+		       "%lu pal\r", stage, eddi != EDDI_NONE ? " EdDI" : "",
 		       (unsigned long)st_frames, (unsigned long)(span * 5u),
 		       (unsigned long)(st_frames * 200u / span),
 		       (unsigned long)((st_frames * 20000u / span) % 100u),
@@ -824,15 +1332,22 @@ void DG_DrawFrame(void)
 #endif
 	}
 
-	build_standard_form();
-	stage_trnfm();
+	if (eddi != EDDI_NONE) {
+		build_device_form();
+	} else {
+		build_standard_form();
+		stage_trnfm();
+	}
 	if (stage > 1)
 		stage_scale();
 	stage_cpyfm();
 
 	if (first_frame) {
 		first_frame = 0;
-		verify_frame();
+		if (eddi != EDDI_NONE)
+			verify_frame_eddi();
+		else
+			verify_frame();
 #if DOOM_GEM_STATS > 0
 		cost_report();
 #endif

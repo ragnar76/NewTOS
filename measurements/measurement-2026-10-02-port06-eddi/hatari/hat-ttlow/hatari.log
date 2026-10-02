@@ -1,0 +1,328 @@
+INFO : Hatari v2.6.1, compiled on:  Aug 15 2025, 14:15:19
+INFO : IPF : capsimage library version release=5 revision=1
+INFO : GEMDOS HDD emulation, C: <-> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ttlow/hd.
+INFO : max ST-RAM on real MegaSTE/TT would be 10MB due to VME, not 14MB
+WARN : Bus Error writing at address $e1fffe, PC=$e00232 addr_e3=e00232 op_e3=3305
+WARN : Bus Error reading at address $20fffff, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $fffffc21, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $ffffa200, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $fe9003c3, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $fedc03c3, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $febf03c3, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+INFO : OS clock ticks / second: 100
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                         
+
+
+
+                                                         
+
+
+
+                                                         
+
+
+
+                                                         
+
+
+
+                                                         
+
+
+
+                    ________________________________________
+
+
+
+
+
+
+                    EmuTOS Version:     1.4 
+
+
+
+                    CPU-Typ:            M68030 
+
+
+
+                    Rechner:            Atari TT 
+
+
+
+                    ST-RAM:             14 MB 
+
+
+
+                    Alt-RAM:            16 MB 
+
+
+
+                    GEMDOS-Laufwerke:   ABC 
+
+
+
+                    Boot-Zeit:          2026/10/02 20:38:24 
+
+
+
+                    ________________________________________
+
+
+
+
+
+
+                    Halte <Strg> = ohne AUTO/ACC
+
+
+
+                    Halte <Alt> = keine Harddisk
+
+
+
+                    DrUcke 'X' um von Laufwerk X: zu booten
+
+
+
+                    DrUcke <Esc> fUr die Textkonsole
+
+
+
+
+
+
+                       FUr Pause <Shift> gedrUckt halten    
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ttlow/hd/AUTO'
+
+
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ttlow/hd/etc'
+DOOM: no EdDI cookie -- vr_trnfm route
+
+DOOM: 8 planes -- the device form is not packed truecolour, no scaling (stage 1)
+
+DOOM: GEM platform up -- 320x480, 8 planes, lookup table yes, stage 1 = 320x200, route vr_trnfm
+
+                           Doom Generic 0.1
+
+Z_Init: Init zone memory allocation daemon. 
+
+zone memory: 0x11544bc, 400000 allocated for zone
+
+Using . for configuration and saves
+
+V_Init: allocate screens.
+
+M_LoadDefaults: Load system defaults.
+
+saving config in .default.cfg
+
+-iwad not specified, trying a few iwad names
+
+Trying IWAD file:doom2.wad
+
+Trying IWAD file:plutonia.wad
+
+Trying IWAD file:tnt.wad
+
+Trying IWAD file:doom.wad
+
+Trying IWAD file:doom1.wad
+
+W_Init: Init WADfiles.
+
+ adding doom1.wad
+
+WARN : have to clip 5 chars from '.savegame' extension!
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ttlow/hd/.savegame'
+Using ./.savegame/ for savegames
+
+===========================================================================
+
+                            DOOM Shareware
+
+===========================================================================
+
+ Doom Generic is free software, covered by the GNU General Public
+
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+
+ copies under certain conditions. See the source for more information.
+
+===========================================================================
+
+I_Init: Setting up machine state.
+
+M_Init: Init miscellaneous info.
+
+R_Init: Init DOOM refresh daemon - ...................
+
+P_Init: Init Playloop state.
+
+S_Init: Setting up sound.
+
+D_CheckNetGame: Checking network game status.
+
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+
+player 1 of 1 (1 nodes)
+
+Emulating the behavior of the 'Doom 1.9' executable.
+
+HU_Init: Setting up heads up display.
+
+ST_Init: Init status bar.
+
+DOOM: DOOM Shareware
+
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+
+I_InitGraphics: Auto-scaling factor: 1
+
+DOOM: picture 320x200 at (0,140) VERIFIED via vr_trnfm+vro_cpyfm
+
+DOOM: per frame, vr_trnfm, stage 1 320x200: c2p 308750 us, vr_trnfm 9054 us, scale 0 us, vro_cpyfm 18363 us, sum 336167 us
+
+
+DOOM x1: 14 frames/5240 ms = 2.67 fps, 374.28 ms/frame, 1 pal
+
+DOOM x1: 14 frames/5180 ms = 2.70 fps, 370.00 ms/frame, 0 pal
+
+DOOM x1: 12 frames/5145 ms = 2.33 fps, 428.75 ms/frame, 1 pal
+
+DOOM x1: 10 frames/5235 ms = 1.91 fps, 523.50 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5490 ms = 1.82 fps, 549.00 ms/frame, 3 pal
+
+DOOM x1: 9 frames/5145 ms = 1.74 fps, 571.66 ms/frame, 3 pal
+
+DOOM x1: 10 frames/5495 ms = 1.81 fps, 549.50 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5220 ms = 1.72 fps, 580.00 ms/frame, 2 pal
+
+DOOM x1: 9 frames/5025 ms = 1.79 fps, 558.33 ms/frame, 2 pal
+
+DOOM x1: 10 frames/5425 ms = 1.84 fps, 542.50 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5405 ms = 1.85 fps, 540.50 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5530 ms = 1.80 fps, 553.00 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5450 ms = 1.83 fps, 545.00 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5430 ms = 1.84 fps, 543.00 ms/frame, 2 pal
+WARN : PNG screen dump saved to: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ttlow/shots/grab0001.png
+
+DOOM x1: 10 frames/5330 ms = 1.87 fps, 533.00 ms/frame, 2 pal
+
+DOOM x1: 9 frames/5220 ms = 1.72 fps, 580.00 ms/frame, 2 pal
+
+DOOM x1: 10 frames/5350 ms = 1.86 fps, 535.00 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5040 ms = 1.78 fps, 560.00 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5275 ms = 1.70 fps, 586.11 ms/frame, 2 pal
+
+DOOM x1: 9 frames/5025 ms = 1.79 fps, 558.33 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5495 ms = 1.81 fps, 549.50 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5085 ms = 1.76 fps, 565.00 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5475 ms = 1.82 fps, 547.50 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5265 ms = 1.70 fps, 585.00 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5330 ms = 1.68 fps, 592.22 ms/frame, 6 pal
+
+DOOM x1: 9 frames/5300 ms = 1.69 fps, 588.88 ms/frame, 3 pal
+
+DOOM x1: 9 frames/5290 ms = 1.70 fps, 587.77 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5250 ms = 1.71 fps, 583.33 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5525 ms = 1.62 fps, 613.88 ms/frame, 2 pal
+
+DOOM x1: 9 frames/5380 ms = 1.67 fps, 597.77 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5235 ms = 1.91 fps, 523.50 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5435 ms = 1.83 fps, 543.50 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5270 ms = 1.89 fps, 527.00 ms/frame, 2 pal
+
+DOOM x1: 10 frames/5245 ms = 1.90 fps, 524.50 ms/frame, 2 pal
+WARN : PNG screen dump saved to: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ttlow/shots/grab0002.png
+
+DOOM x1: 10 frames/5130 ms = 1.94 fps, 513.00 ms/frame, 4 pal
+
+DOOM x1: 10 frames/5195 ms = 1.92 fps, 519.50 ms/frame, 4 pal
+
+DOOM x1: 10 frames/5135 ms = 1.94 fps, 513.50 ms/frame, 2 pal
+
+DOOM x1: 9 frames/5085 ms = 1.76 fps, 565.00 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5170 ms = 1.74 fps, 574.44 ms/frame, 4 pal
+
+DOOM x1: 9 frames/5180 ms = 1.73 fps, 575.55 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5195 ms = 1.73 fps, 577.22 ms/frame, 2 pal
+
+DOOM x1: 9 frames/5255 ms = 1.71 fps, 583.88 ms/frame, 2 pal
+
+DOOM x1: 9 frames/5160 ms = 1.74 fps, 573.33 ms/frame, 3 pal
+
+DOOM x1: 10 frames/5585 ms = 1.79 fps, 558.50 ms/frame, 3 pal
+
+DOOM x1: 9 frames/5055 ms = 1.78 fps, 561.66 ms/frame, 4 pal
+
+DOOM x1: 10 frames/5340 ms = 1.87 fps, 534.00 ms/frame, 3 pal
+
+DOOM x1: 10 frames/5415 ms = 1.84 fps, 541.50 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5495 ms = 1.81 fps, 549.50 ms/frame, 2 pal
+
+DOOM x1: 10 frames/5315 ms = 1.88 fps, 531.50 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5035 ms = 1.78 fps, 559.44 ms/frame, 3 pal
+
+DOOM x1: 10 frames/5205 ms = 1.92 fps, 520.50 ms/frame, 0 pal
+
+DOOM x1: 10 frames/5415 ms = 1.84 fps, 541.50 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5195 ms = 1.73 fps, 577.22 ms/frame, 0 pal
+WARN : PNG screen dump saved to: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat-ttlow/shots/grab0003.png
+
+DOOM x1: 9 frames/5140 ms = 1.75 fps, 571.11 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5350 ms = 1.68 fps, 594.44 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5320 ms = 1.69 fps, 591.11 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5195 ms = 1.73 fps, 577.22 ms/frame, 0 pal
+
+DOOM x1: 9 frames/5310 ms = 1.69 fps, 590.00 ms/frame, 1 pal
+
+DOOM x1: 10 frames/5220 ms = 1.91 fps, 522.00 ms/frame, 4 pal
+
+DOOM x1: 10 frames/5545 ms = 1.80 fps, 554.50 ms/frame, 0 pal
+INFO : SPEED: 217.7 VBL/s (20000/91.9s), diff=0.0%
