@@ -1,0 +1,154 @@
+measurement-2026-10-02-port06
+  PORT06 Schritt 1 -- DOOM auf NewTOS ueber den vr_trnfm-Weg
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 9d131c7. Kein Kommit, nichts geflasht, keine
+Pi, keine Karte, /Volumes/BOOT nicht beruehrt. Unter kernel/ und tos-api/
+wurde KEINE Datei geaendert. Kein *.img in diesem Verzeichnis.
+
+Maschine: QEMU -M raspi4b, -display none, serielle Ausgabe in eine Datei,
+Karte als -drive if=sd, QMP-screendump (method/run-doom.sh, Rezept von
+measurement-2026-09-28-port07/method/run-ball.sh; method/qmp_timed.py
+unveraendert von dort). Bildschirm 640x480x16 Planes, wie ihn die VDI meldet.
+Start headless per #Z-Autorun (method/newdesk-doom.inf: #Z 01
+C:\DOOM\DOOM.NAP@), Karte jedes Mal frisch aus tools/make-sd-image.sh, dazu
+C:\DOOM\DOOM.NAP und C:\DOOM\DOOM1.WAD (method/seed-doom.sh -- die WAD wird
+nur auf das Scratch-Abbild gelegt, make-sd-image.sh ist NICHT geaendert).
+
+Kern: `cargo xtask build --board rpi4 --release`, unveraendert,
+tos-api 64 / kernel 94 rustc-Warnungen (Basislinie),
+kernel8.img sha256 266cc71c29b425b825bcb8fd4c5793d3fc3ce2b5b50c05485e6ba003b11a2d09.
+
+WAD: Applications/doom-wad/doom1.wad, 4 196 020 Byte,
+MD5 f0cefca49926d00903cf57551d901abe (Shareware 1.9).
+doomgeneric: Applications/doomgeneric @ dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284,
+`git status` sauber (build-doom.sh prueft beides vor jedem Bau).
+
+
+0. ERGEBNIS VORWEG
+---------------------------------------------------------------------------
+  DOOM laeuft auf NewTOS: Titelbild, Wischblende, Demo-Wiedergabe,
+  timedemo demo1 bis zum Ende.
+  Bildweg: Index -> Standardform (16 Planes) -> vr_trnfm -> vro_cpyfm.
+  Ein einmaliger Rueckleseabgleich aller 200 Zeilen bestaetigt den Weg
+  ("VERIFIED via vr_trnfm+vro_cpyfm", serial/*.log).
+
+  Kosten je Bild 320x200 (QEMU, TCG, je >= 1 s wiederholt gemessen):
+      c2p (Index -> Standardform)   ~0,48 ms
+      vr_trnfm (Standard -> Geraet) ~2,98 ms
+      vro_cpyfm (Speicher -> Schirm) ~8,0  ms   (= 125 ns/px)
+  timedemo demo1 (ungebremst):  76,5 .. 82,2 fps  (serial/tdemo-serial.log)
+  Attract-Schleife (normal):    ~60 fps dargeboten (serial/stats-serial.log)
+
+  DIE AUSGELIEFERTE BAUWEISE LINKT NICHT: libc.a's system() (aus
+  doomgeneric i_system.c ZenityErrorBox) zieht spawnvp/vfork/__waittime/
+  __waitval nach, die fuer LP64 nicht gebaut werden. Gefahren wurde deshalb
+  mit einem Diagnose-Link (method/build-variants.sh + diag_system.c) --
+  siehe Abschnitt 2.
+
+
+1. WAS GEMESSEN WURDE, UND WOMIT
+---------------------------------------------------------------------------
+Drei Bauvarianten, alle mit dem ausgelieferten sdk/apps/build-doom.sh
+uebersetzt (dieselben Quellen, dieselben Flags), Link wie in Abschnitt 2:
+
+  Variante  DOOM_STATS  DOOM_ARGS                    DOOM.NAP sha256 (16)
+  play      0           -mb 2                        5a66a97639cfba2b
+  stats     5           -mb 2                        f9198c876ce3363e
+  tdemo     5           -mb 2 -timedemo demo1        3916d28c5b9dd41f
+
+play  = die ausgelieferte Konfiguration. screendumps/01..07:
+        01 Startbild (t=10), 02 DOOMs Startprotokoll auf der Konsole (t=16),
+        03 Wischblende ins Demo (t=22), 04..07 Demo-Wiedergabe (t=30..100).
+        Der Rand ist schwarz, das Bild 320x200 mittig bei (160,140).
+stats = Attract-Schleife mit Kostenprobe und 5-s-Bildratenzeile
+        (screendumps/11, 12; serial/stats-serial.log).
+tdemo = `-timedemo demo1`: DOOM spielt das Demo so schnell es kann
+        (screendumps/21, 22; serial/tdemo-serial.log).
+
+Die Kostenprobe (doomgeneric_gem.c cost_report) wiederholt jeden Schritt
+auf dem ersten Bild, bis er >= 1 s _hz_200-Zeit gelaufen ist. Grund: ein
+5-ms-Takt kann ein 15-ms-Bild nicht in seine Teile zerlegen; im Spiel
+gemessene Teilzeiten schwankten in einem Vorlauf zwischen 16 und 1016 us
+fuer dieselbe c2p-Arbeit und wurden verworfen.
+
+Die Bildrate: _hz_200 zaehlt auf NewTOS driftfrei (tos-api/src/bios/tick.rs,
+spaete Unterbrechungen werden nachgezahlt), die 5-s-Fenster sind damit
+Wanduhrzeit des Gastes.
+
+Warum "~60 fps" im Normalbetrieb: doomgeneric_Tick() zeichnet auch dann ein
+Bild, wenn kein neuer 35-Hz-Spieltakt anlag (d_loop.c TryRunTics kehrt nach
+einem realen Takt ohne Spieltakt zurueck). Die Zahl ist also "dargebotene
+Bilder", nicht Spieltakte. Die ehrliche Durchsatzzahl ist timedemo.
+
+timedemo endet in DOOM mit I_Error("timed %i gametics in %i realtics
+(%f fps)") -- dieser printf faellt in libc.a's __printf_fp (Data Abort aus
+EL0, ESR 0x92000007, ELR in __printf_fp, FAR jedes Mal ein anderer
+unabgebildeter Wert: 0x870e08, 0x1070e08). DOOMs eigene Zeile erscheint
+deshalb nie; die Bildrate kommt aus den 5-s-Zeilen davor. Der Abbruch
+liegt NACH dem letzten Demobild (ca. 5000 Bilder in ~62 s) -- ein
+libc-Defekt im %f-Pfad, nicht im Bildweg. Nicht weiter eingegrenzt.
+
+
+2. DER DIAGNOSE-LINK (warum, und warum er das Ergebnis nicht verfaelscht)
+---------------------------------------------------------------------------
+sdk/apps/build-doom.sh uebersetzt alle 81 Dateien fehlerfrei und bricht beim
+Linken ab:
+
+    undefined: __waittime __waitval spawnvp vfork
+    (aus libc.a posix__system.o / unix__wait4.o)
+
+doomgeneric ruft system() genau an einer Stelle, ZenityErrorBox
+(i_system.c:272/330), und I_Error erreicht sie nur, wenn stdout KEIN
+Terminal ist. Auf NewTOS ist isatty() fuer 0..2 immer 1
+(sdk/libc/newtos-arch/isatty.c). Fuer die Messung wird deshalb
+method/diag_system.c dazugelinkt: ein system(), das laut ablehnt (Meldung
+auf stderr, -1, ENOSYS) statt etwas vorzutaeuschen. Es liegt NUR hier im
+Messverzeichnis und ist nicht Teil der Portierung. In keinem Lauf ist die
+Meldung "DIAG: system(...) refused" erschienen.
+
+Die Luecke ist bekannt (sdk/libc/expected-failures.txt: spawnve.c,
+spawnvp.c "LP64 gap"; docs/sdk/07-mintlib-limits.md: "system() links, but
+its spawnvp is dangling") und gehoert in die libc.
+
+
+3. SPEICHER
+---------------------------------------------------------------------------
+DOOM will 6 MiB Zone per malloc (i_system.c DEFAULT_RAM/MIN_RAM 6). NewTOS'
+libc fuehrt malloc in der 4-MiB-TPA (heap_init.c). Gemessen am Bau:
+
+    _end                    0xcd080 .. 0xcd3d0   (~820 KiB Bild + BSS)
+    malloc-Arena            0x400000 - _end - 64 KiB Stapel  = ~3211 KiB
+    davon DG_ScreenBuffer   256 000 B (doomgeneric_Create, vor der Zone)
+    bleibt fuer die Zone    ~2961 KiB
+    -mb 3                   3072 KiB  -> passt NICHT
+    -mb 2                   2048 KiB  -> passt, ~900 KiB Rest
+
+Serielle Bestaetigung: "zone memory: 0x10bd18, 200000 allocated for zone"
+(= 2 MiB, in der TPA). Mit 2 MiB liefen Titel, die Demo-Wiedergabe und
+timedemo demo1 vollstaendig (E1, 5000+ Spieltakte) ohne Z_Malloc-Fehler.
+NICHT geprueft: alle neun Karten im Spiel.
+
+Die Bildpuffer der Plattform (Standard- und Geraeteform je 128 000 B,
+zwei Ruecklesezeilen) kommen per Mxalloc(MX_PREFTTRAM)/Malloc aus GEMDOS,
+also ausserhalb der TPA (EL0-Fenster, ADR-021).
+
+
+4. FARBE
+---------------------------------------------------------------------------
+vq_extnd meldet 16 Planes und INQ_TAB[5] = 0 (keine Farbtabelle), also wird
+die Umsetztabelle bei jedem Palettenwechsel neu GEMESSEN (vs_color x256,
+vr_recfl je Stift, vro_cpyfm-Rueckleser, vr_trnfm in die Standardform).
+Palettenwechsel je 5 s: 2 bis 24 (Trefferblitz, Aufsammeln).
+
+
+5. NICHT HIER ZU SEHEN
+---------------------------------------------------------------------------
+* Tastatur: raspi4b hat keine Tastatur; Eingabe (evnt_multi-Poll,
+  Umschalttasten ueber kstate, Loslassen per ausbleibender Wiederholung)
+  ist ungeprueft. Ob NewTOS ueberhaupt Tastenwiederholung liefert, ist
+  offen (tick.rs: der 50-Hz-Teil inkl. Tastenwiederholung fehlt).
+* Beenden: der Rueckweg (form_dial FMD_FINISH, Palette zurueck,
+  appl_exit) ist nicht gefahren -- timedemo endet im %f-Absturz, und
+  ein Menue-Ende braucht Tastatur.
+* Echte Pi 4 (1920x1080, Cache): nicht gefahren.

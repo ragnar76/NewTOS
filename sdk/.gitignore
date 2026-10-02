@@ -54,6 +54,14 @@
 !/apps/chaintest/*.c
 !/apps/chaintest/*.sh
 
+# ...and doom, OURS as well: the GEM platform layer for doomgeneric
+# (TASK/PORT06). The doomgeneric tree itself is vendored, untracked, under
+# Applications/doomgeneric; the build output stays excluded.
+!/apps/doom/
+/apps/doom/*
+!/apps/doom/*.c
+!/apps/doom/*.h
+
 # macOS junk that FAT round-trips create.
 .DS_Store
 ._*
