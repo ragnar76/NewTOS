@@ -85,7 +85,7 @@ Beleg [measurements/measurement-2026-10-02-port10c/](../measurements/measurement
   m68k; `__mint == 0`, also ist das die Liste, die `execvp` laeuft).
   `sdk/libc/build-libc.sh` Kopfkommentar ergaenzt.
 * **Gefunden, nicht geaendert** (anderer Zweck: Ausfuehrbits, keine
-  Namenssuche): `mintlib/quickstat.c` und das ausgeschlossene
+  Namenssuche; erledigt in Nachtrag (3) unten): `mintlib/quickstat.c` und das ausgeschlossene
   `mintlib/do_stat.c` setzen `0111` nur fuer `.app/.gtp/.ttp/.prg/.tos`,
   dazu mit Kleinbuchstaben-Vergleich — `access(X_OK)` ist fuer eine `.NCP`
   falsch (aus dem Quelltext, nicht gemessen).
@@ -106,6 +106,48 @@ Beleg [measurements/measurement-2026-10-02-port10c/](../measurements/measurement
 * `sdk/examples/port10.c`: die ENOENT-Pruefung ist jetzt eine 42-Pruefung,
   dazu `ONLYNCP` und der `LEGACY.PRG`-Koeder.
 * Doku: `docs/sdk/07-mintlib-limits.md` §8 (und Kopfzeilen).
+
+## Nachtrag 2026-10-02 (3): Ausfuehrbits fuer `.NTP`/`.NAP`/`.NCP` (Entscheidung Anwender)
+
+Beleg [measurements/measurement-2026-10-02-port10d/](../measurements/measurement-2026-10-02-port10d/RUNINFO.TXT).
+
+* **Entscheidung:** `stat()`/`access()` halten eine Datei nur fuer
+  ausfuehrbar (`0111`), wenn sie auf `.ntp`, `.nap` oder `.ncp` endet,
+  ohne Ruecksicht auf Gross/Klein. mintlibs `.app/.gtp/.ttp/.prg/.tos`
+  werden **ersetzt**, nicht ergaenzt; sie kommen mit dem Emulator hinter die
+  nativen (im Overlay kommentiert). `.NAC` ist nicht ausfuehrbar.
+* **Wo entschieden wird** (Quelltext): `mintlib/quickstat.c` `__quickstat`,
+  im `Fsfirst`-Zweig, `strrchr(_path, '.')` + `strcmp` — also nach dem Namen,
+  wie der Aufrufer ihn schreibt, nur Kleinbuchstaben. Erreicht, weil
+  `__sys_stat` (`newtos-arch/do_stat.c`) `Fstat64` (0x14b) ruft und NewTOS
+  dafuer `EINVFN` = mintlibs `-ENOSYS` liefert. Daran haengen `stat`/`lstat`
+  (`__do_stat`), `access` (`newtos-arch/access.c`), `_buffindfile`, `open`,
+  `glob`. Weitere Kopien, beide **nicht gebaut**: `mintlib/do_stat.c`
+  (dieselbe Liste, ausgeschlossen) und `mintlib/do_fstat.c` (Ausfuehrbit
+  nach m68k-Magic `0x601a`/`#!`, ausgeschlossen; `newtos-arch/do_fstat.c`
+  setzt keins).
+* **Fehler zuerst belegt:** neuer Hosttest `sdk/libc/tests/quickstat-host.sh`
+  (`quickstat-host.c`, `quickstat-host-fs.c`, `quickstat-host-gemdos.h`):
+  mintlibs `__quickstat` + `newtos-arch/access.c` ueber ein falsches
+  FAT-Verzeichnis (Grossbuchstaben, `Fsfirst` vergleicht wie GEMDOS). Mit
+  der unveraenderten Datei aus dem Tarball **15 von 27 FAIL** (`X.NCP` usw.
+  `0100644`, `x.prg` usw. `0100755`) — `host/quickstat-host-pristine.txt`.
+* **Fix (nur Overlay):** `sdk/libc/overlay/mintlib/quickstat.c` = pristine
+  plus `strcasecmp` gegen `.ntp`/`.nap`/`.ncp`; sonst woertlich.
+  `sdk/libc/build-libc.sh` Kopfkommentar ergaenzt. Danach **27 von 27**.
+* **Gemessen (QEMU raspi4b, Abschnitt 5 in `sdk/examples/port10.c`):**
+  `access(…, X_OK)` = 0 fuer `C:\P10\P10KID.NCP`, `c:\p10\p10kid.ncp`,
+  `P10KID.NTP`, `APP.NAP`; `-1`/`EACCES` fuer `LEGACY.PRG`, `legacy.prg`,
+  `ACC.NAC`, `PLAIN.TXT`; `stat()` `0100755` bzw. `0100644`. Alle 13 neuen
+  Pruefungen PASS; `port10.c` gesamt 42/44, die 2 FAIL unveraendert die
+  Kern-Umleitung (unten „Offen", Punkt 1).
+* **Hosttests:** `sh sdk/run-host-tests.sh` **12/0/0** (neu `quickstat-host`).
+* **Apps:** QED, TeraDesk, DOOM bauen, je 0 undefined. `DESKTOP.NAP`
+  byte-gleich (linkt `__quickstat` nicht); `QED.NAP` und `DOOM.NAP` aendern
+  sich (beide linken `__quickstat`). Verhalten der Apps nicht gefahren.
+* Doku: `docs/sdk/07-mintlib-limits.md` §8 (und Kopfzeilen).
+* Offen: QEDs eigener Quelltext (`src/av.c:81`) prueft `.app`/`.prg` selbst
+  — App-Code, nicht angefasst.
 
 ## Achtung: fremder Kommit mit halber PORT10-Arbeit
 

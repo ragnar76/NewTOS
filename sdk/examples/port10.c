@@ -33,13 +33,21 @@
  *      inherits the parent's forced standard handles (bdos/proc.c
  *      init_pd_files -> ixforce), and Fforce holds a use count so the parent's
  *      handle 1 survives Fclose of its Fdup'd copy (bdos/fshand.c ixforce).
+ *   5. the executable bit (user decision 2026-10-02, overlay
+ *      sdk/libc/overlay/mintlib/quickstat.c): access(path, X_OK) and
+ *      stat().st_mode & 0111 say "executable" for .NTP/.NAP/.NCP -- the FAT
+ *      names on the card are upper case, and a lower-case spelling finds
+ *      them too -- and not for .PRG (m68k, also spelled lower case, which
+ *      pristine mintlib took as executable), .NAC or a plain .TXT.
  *
  * Build (links libc.a):
  *     sdk/libc/build-libc.sh sdk/examples/port10kid.c sdk/libc/build/P10KID.NCP
  *     sdk/libc/build-libc.sh sdk/examples/port10.c    sdk/libc/build/P10TEST.NCP
  * Card: C:\AUTO\P10TEST.NCP, plus the child as C:\P10\P10KID.NCP and the same
  * file again as C:\P10\P10KID.NTP, C:\P10\ONLYNCP.NCP and C:\P10\LEGACY.PRG
- * (measurements/measurement-2026-10-02-port10c/method/run-port10.sh).
+ * (measurements/measurement-2026-10-02-port10c/method/run-port10.sh); for
+ * section 5 also C:\P10\APP.NAP, C:\P10\ACC.NAC and C:\P10\PLAIN.TXT
+ * (measurements/measurement-2026-10-02-port10d/method/run-port10.sh).
  * Expect on the serial line: "port10: PASS ..." per check, then
  *     port10: ALL PASS (N checks)
  * No key pause: \AUTO\ is its route, and a key wait there stops the boot.
@@ -52,6 +60,8 @@
 #include <limits.h>
 #include <errno.h>
 #include <process.h>
+#include <unistd.h>
+#include <sys/stat.h>
 #include <mint/osbind.h>
 
 #define KID_NCP "C:\\P10\\P10KID.NCP"
@@ -96,6 +106,35 @@ spawned (const char *what, int r, int want)
   snprintf (d, sizeof d, "returned %d, want %d (errno %d)", r, want,
 	    r < 0 ? errno : 0);
   verdict (r == want, what, d);
+}
+
+static void
+xok (const char *path, int want)
+{
+  char what[120], d[80];
+  int r, e;
+
+  errno = 0;
+  r = access (path, X_OK);
+  e = errno;
+  snprintf (what, sizeof what, "access(\"%s\", X_OK) %s", path,
+	    want ? "== 0 (executable)" : "-> -1/EACCES (not executable)");
+  snprintf (d, sizeof d, "returned %d (errno %d)", r, r ? e : 0);
+  verdict (want ? r == 0 : (r == -1 && e == EACCES), what, d);
+}
+
+static void
+xmode (const char *path, int want)
+{
+  struct stat st;
+  char what[120], d[80];
+  int r = stat (path, &st);
+
+  snprintf (what, sizeof what, "stat(\"%s\") st_mode & 0111 == %s", path,
+	    want ? "0111" : "0");
+  snprintf (d, sizeof d, "stat %d, st_mode 0%o", r, r == 0 ? (unsigned) st.st_mode : 0u);
+  verdict (r == 0 && S_ISREG (st.st_mode)
+	   && (st.st_mode & 0111) == (want ? 0111u : 0u), what, d);
 }
 
 int
@@ -250,6 +289,22 @@ main (void)
     snprintf (d, sizeof d, "returned %d (errno %d)", r, errno);
     verdict (r != 0, "DOOM's zenity probe -> non-zero (zenity unavailable)", d);
   }
+
+  /* 5. the executable bit: native extensions, case-insensitive. */
+  xok (KID_NCP, 1);
+  xok ("c:\\p10\\p10kid.ncp", 1);
+  xok (KID_NTP, 1);
+  xok ("C:\\P10\\APP.NAP", 1);
+  xok ("C:\\P10\\LEGACY.PRG", 0);
+  xok ("c:\\p10\\legacy.prg", 0);
+  xok ("C:\\P10\\ACC.NAC", 0);
+  xok ("C:\\P10\\PLAIN.TXT", 0);
+  verdict (access ("C:\\P10\\LEGACY.PRG", F_OK) == 0,
+	   "access(\"C:\\P10\\LEGACY.PRG\", F_OK) == 0 (it exists)", NULL);
+  xmode (KID_NCP, 1);
+  xmode ("c:\\p10\\app.nap", 1);
+  xmode ("C:\\P10\\LEGACY.PRG", 0);
+  xmode ("c:\\p10\\legacy.prg", 0);
 
   if (failed == 0)
     {

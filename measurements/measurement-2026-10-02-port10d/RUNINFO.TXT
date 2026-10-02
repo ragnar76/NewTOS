@@ -1,0 +1,132 @@
+measurement-2026-10-02-port10d
+  PORT10, Nachtrag (3): Ausfuehrbits von stat()/access() = .ntp/.nap/.ncp
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 0987d3f (plus die uncommitteten Aenderungen
+dieses Auftrags). Kein Kommit, nichts geflasht, keine Pi, keine Karte,
+/Volumes/BOOT nicht beruehrt. Unter kernel/ und tos-api/ wurde KEINE Datei
+geaendert. Kein *.img in diesem Verzeichnis (das QEMU-Abbild lag im
+Sitzungs-Scratchpad). measurement-2026-10-02-port10c/ ist unveraendert;
+seed-auto.sh und run-serial.sh sind Kopien von dort, run-port10.sh ist die
+dortige Fassung plus drei Kartendateien.
+
+Entscheidung Anwender 2026-10-02: mintlib setzt die Ausfuehrbits (0111)
+nur fuer die m68k-Endungen .app/.gtp/.ttp/.prg/.tos, Vergleich nur in
+Kleinbuchstaben. Auf NewTOS sind die ausfuehrbaren Endungen die nativen
+.ntp/.nap/.ncp (dieselbe Menge wie die Programmsuche seit 0987d3f), ohne
+Ruecksicht auf Gross/Klein (FAT-Namen sind gross). Ersetzen, nicht
+erweitern; die m68k-Endungen kommen mit dem Emulator hinter die nativen.
+.NAC ist nicht ausfuehrbar.
+
+Maschine: QEMU 11.0.2 -M raspi4b, -display none, serielle Ausgabe in eine
+Datei, Karte als -drive if=sd, frisch aus tools/make-sd-image.sh (nicht
+geaendert). Kern: `cargo xtask build --board rpi4 --release`, Quellen
+unveraendert, 94 kernel-Warnungen (Basislinie, method/build-kernel.log),
+kernel8.img sha256
+addaa4843629af29557e42f5be8bf2e504eb71835f0000d8345e4969ac17efe5
+(1044448 B; wieder ein anderer Hash bei unveraenderten Quellen, wie in
+port10b/c beobachtet, nicht untersucht). clang: Apple clang 21.0.0, Ziel
+aarch64-unknown-none-elf; Host arm64 Darwin.
+
+
+0. ERGEBNIS VORWEG
+---------------------------------------------------------------------------
+  Hosttest quickstat-host       pristine quickstat.c: 12 von 27 PASS,
+                                  15 FAIL (host/quickstat-host-pristine.txt)
+                                  Overlay: 27 von 27 PASS
+                                  (host/quickstat-host.txt)
+  sh sdk/run-host-tests.sh      12 passed, 0 failed, 0 skipped
+                                  (host/run-host-tests.txt)
+  QEMU, port10.c Abschnitt 5    13 von 13 PASS:
+    access("C:\P10\P10KID.NCP", X_OK)   0
+    access("c:\p10\p10kid.ncp", X_OK)   0
+    access("C:\P10\P10KID.NTP", X_OK)   0
+    access("C:\P10\APP.NAP", X_OK)      0
+    access("C:\P10\LEGACY.PRG", X_OK)   -1, errno 36 (EACCES)
+    access("c:\p10\legacy.prg", X_OK)   -1, errno 36
+    access("C:\P10\ACC.NAC", X_OK)      -1, errno 36
+    access("C:\P10\PLAIN.TXT", X_OK)    -1, errno 36
+    access("C:\P10\LEGACY.PRG", F_OK)   0 (die Datei existiert)
+    stat P10KID.NCP / app.nap           st_mode 0100755
+    stat LEGACY.PRG / legacy.prg        st_mode 0100644
+  port10.c gesamt                 42 von 44 PASS. Die 2 FAIL sind dieselben
+                                  Kernpunkte wie in port10b/c (Umleitung:
+                                  Kind erbt Fforce nicht; Fwrite(1) danach
+                                  -37) -- nicht Gegenstand, nicht angefasst.
+  QED / TeraDesk / DOOM           bauen, je 0 undefined.
+                                  vorher (HEAD-Stand, frisch gebaut):
+                                    QED.NAP     27036f80...
+                                    DESKTOP.NAP 4bf69f03...
+                                    DOOM.NAP    d527737c...
+                                  nachher:
+                                    QED.NAP     43fd6b71...  (geaendert,
+                                                linkt __quickstat)
+                                    DESKTOP.NAP 4bf69f03...  (byte-gleich,
+                                                linkt __quickstat nicht)
+                                    DOOM.NAP    7cafd701...  (geaendert,
+                                                linkt __quickstat)
+                                  Verhalten der Apps nicht gefahren.
+  libc-Bau                        615 OK / 9 skipped, expected-failures 9/9
+                                  unveraendert.
+
+
+1. Wo die Entscheidung faellt (Quelltext)
+---------------------------------------------------------------------------
+  mintlib/quickstat.c __quickstat: __sys_stat (newtos-arch/do_stat.c) ruft
+  Fstat64 (GEMDOS 0x14b); NewTOS antwortet EINVFN (-32) = mintlibs -ENOSYS
+  (include/mint/errno.h ENOSYS __KERNEL_NEG(32)), also laeuft der
+  Fsfirst-Zweig. Dort: ext = strrchr(_path, '.'), strcmp gegen
+  ".app" ".gtp" ".ttp" ".prg" ".tos" -> st_mode |= 0111. _path ist der
+  Name, wie der Aufrufer ihn schrieb.
+  Abnehmer: stat/lstat (newtos-arch/do_stat.c __do_stat = __quickstat),
+  access (newtos-arch/access.c), _buffindfile, open, glob, diraccess,
+  mkdir, rmdir, unlink, statfs.
+  Weitere Kopien, nicht gebaut (build-libc.sh EXCLUDE):
+    mintlib/do_stat.c   dieselbe Liste (ersetzt durch newtos-arch/do_stat.c)
+    mintlib/do_fstat.c  Ausfuehrbit nach m68k-Magic 0x601a / "#!" des
+                        offenen Files (ersetzt durch newtos-arch/do_fstat.c,
+                        das gar kein Ausfuehrbit setzt)
+
+
+2. Was geaendert ist (nur Overlay, keine vendorte Datei angefasst)
+---------------------------------------------------------------------------
+  sdk/libc/overlay/mintlib/quickstat.c  NEU: pristine + nur die Liste:
+      strcasecmp gegen ".ntp" ".nap" ".ncp"; Kommentar (Entscheidung,
+      m68k-Endungen spaeter hinter die nativen, .nac nicht).
+  Zielobjekt sdk/libc/build/obj/mintlib__quickstat.o (strings):
+      ".ntp" ".nap" ".ncp", keine m68k-Endung.
+
+
+3. Hosttest (host/)
+---------------------------------------------------------------------------
+  sdk/libc/tests/quickstat-host.sh baut das Overlay quickstat.c (oder mit
+  QUICKSTAT_SRC eine andere Datei) mit Include-Pfad und DEFS von
+  build-libc.sh, osbind.h zurueckgehalten, quickstat-host-gemdos.h
+  hineingezwungen (Fsfirst/Fsetdta/Fgetdta/Dgetdrv -> quickstat-host-fs.c:
+  FAT-Tabelle in Grossbuchstaben, Vergleich wie GEMDOS, __sys_stat =
+  -ENOSYS wie auf NewTOS), dazu newtos-arch/access.c und mintlibs ctype.c
+  (jeweils ohne weak_alias-Zeile). 27 Pruefungen: .NTP/.NAP/.NCP gross,
+  klein, gemischt ausfuehrbar (stat 0111 UND access X_OK); .PRG/.TOS/.TTP/
+  .APP/.GTP/.NAC gross und klein, .TXT, ohne Endung nicht; Verzeichnis
+  0755; schreibgeschuetzte .NCP 0555; fehlende Datei ENOENT.
+  Gegenprobe: QUICKSTAT_SRC = quickstat.c frisch aus
+  sdk/libc/mintlib-0.60.1.tar.xz -> 15 FAIL (9 native nicht ausfuehrbar,
+  5 kleingeschriebene m68k ausfuehrbar, RO.NCP 0444 statt 0555). Der Test
+  trennt alt von neu.
+  Ein QEMU-Lauf mit der alten libc wurde NICHT gemacht; die Gegenprobe ist
+  die des Hosttests.
+
+
+4. Dateien in diesem Verzeichnis
+---------------------------------------------------------------------------
+  method/run-port10.sh      Bau port10/port10kid + Karte (+ APP.NAP,
+                            ACC.NAC, PLAIN.TXT) + QEMU (60 s)
+  method/seed-auto.sh, run-serial.sh  Kopien aus port10c
+  method/build-libc.log, build-kernel.log, build-qed.log,
+  build-teradesk.log, build-doom.log
+  serial/port10-serial.log  der Lauf
+  host/quickstat-host.txt, quickstat-host-pristine.txt, run-host-tests.txt
+
+Aufruf:
+  bash measurements/measurement-2026-10-02-port10d/method/run-port10.sh \
+       <scratch-dir> measurements/measurement-2026-10-02-port10d/serial

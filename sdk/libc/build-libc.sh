@@ -50,6 +50,10 @@
 #       mintlib/spawn{vp,}.c, posix/execvp.c  program-name search list =
 #                                NewTOS's native { ntp, nap, ncp } instead of
 #                                { ttp, prg, tos } (user decision 2026-10-02)
+#       mintlib/quickstat.c      exec bits (0111) for the native .ntp/.nap/
+#                                .ncp, case-insensitive, instead of mintlib's
+#                                lower-case .app/.gtp/.ttp/.prg/.tos (user
+#                                decision 2026-10-02)
 #       posix/system.c           system() without mintlib's POSIX branch
 #                                (vfork/execve/waitpid): always the TOS
 #                                branch via spawnvp (TASK/PORT10; removed

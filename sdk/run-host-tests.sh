@@ -142,6 +142,14 @@ report spawn-host $rc "mintlib tree absent or host not LP64"
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/system-host.log"
 report system-host $rc "mintlib tree absent or host not LP64"
 
+# quickstat-host (PORT10, user decision 2026-10-02): the overlay
+# mintlib/quickstat.c sets the exec bits for .NTP/.NAP/.NCP in any case and no
+# longer for mintlib's m68k .app/.gtp/.ttp/.prg/.tos (nor .NAC); access(X_OK)
+# through newtos-arch/access.c agrees. With the pristine file 15 of 27 fail.
+"$SDK/libc/tests/quickstat-host.sh" > "$WORK/quickstat-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/quickstat-host.log"
+report quickstat-host $rc "mintlib tree absent or host not LP64"
+
 echo
 echo "host tests: $pass passed, $fail failed, $skip skipped"
 exit $fail

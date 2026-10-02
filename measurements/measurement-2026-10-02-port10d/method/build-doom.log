@@ -1,0 +1,13 @@
+doomgeneric : /Volumes/Daten/Development/PiRusTOS/Applications/doomgeneric @ dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284 (clean)
+clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+lld   : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+doomgeneric manifest: 80 upstream files + doomgeneric_gem.c (replaces doomgeneric_xlib.c)
+compiled OK=81  FAILED=0  (upstream files with compiler warnings: 1, see /Volumes/Daten/Development/PiRusTOS/sdk/apps/doom/build/obj/*.err)
+
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/doom/build/DOOM.NAP (664912 bytes, undefined symbols: 0)
+   text	   data	    bss	    dec	    hex	filename
+ 471528	  81152	 286496	 839176	  cce08	/Volumes/Daten/Development/PiRusTOS/sdk/apps/doom/build/DOOM.NAP
+_end = 0x00000000000cde10  -> malloc arena ~ 3208 KiB
+DOOM_ARGS  = "-mb","2"
+DOOM_STATS = 5

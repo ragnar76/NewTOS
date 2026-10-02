@@ -11,7 +11,8 @@ TASK/PORT01 added `newtos-arch/cmdargs.c` (§1, §5, §6). TASK/PORT10
 (2026-10-02) updated §1, §5, §6 and added §8: `spawnve.c`/`spawnvp.c` compile
 (9 failures now, not 11), `environ` is the empty environment, and the GMP limb
 width behind `printf("%f")` is fixed. Later the same day §8: the program-name
-search uses NewTOS's extensions (`ntp`, `nap`, `ncp`).
+search uses NewTOS's extensions (`ntp`, `nap`, `ncp`); and then the execute
+bits of `stat()`/`access()` follow the same native extensions (§8).
 
 ## 1. mintlib files that do not compile (recorded, not repaired)
 
@@ -257,10 +258,29 @@ What a caller must know:
   matches `P10KID.NCP`. Host check `sdk/libc/tests/spawn-host.sh`
   (`spawn-search-host`). The PATH part of the search reads `getenv("PATH")`,
   which is empty while `environ` is (§5).
-  Not changed: mintlib's `stat()` sets the execute bits only for
-  `.app/.gtp/.ttp/.prg/.tos`, compared case-sensitively
-  (`mintlib/quickstat.c`, its Fsfirst fallback), so `access(X_OK)` is false
-  for a `.NCP` — read from the source, not measured.
+* **The execute bits are NewTOS's too** (user decision 2026-10-02,
+  follow-up). `stat()`/`lstat()` (`__do_stat` = `__quickstat`), `access()`
+  (`newtos-arch/access.c`), `_buffindfile`, `open()` and `glob()` take
+  `st_mode` from `__quickstat`; `Fstat64` is `EINVFN` (= mintlib's
+  `-ENOSYS`) on NewTOS, so its `Fsfirst` path decides, and it sets `0111` on
+  a regular file by the extension **as the caller spelled it**. Pristine
+  mintlib: `.app/.gtp/.ttp/.prg/.tos`, `strcmp`, lower case only — a FAT
+  name `X.NCP` was not executable, `x.prg` was. The overlay
+  `sdk/libc/overlay/mintlib/quickstat.c` replaces the list with `.ntp`,
+  `.nap`, `.ncp`, compared with `strcasecmp`; the m68k extensions come back
+  with the emulator, after the native ones; `.nac` is not executable.
+  Directories keep `0755` whatever their name; `FA_RDONLY`/`FA_HIDDEN`
+  still clear the write/read bits. Measured in QEMU raspi4b:
+  `access("C:\\P10\\P10KID.NCP", X_OK)` and `access("c:\\p10\\p10kid.ncp",
+  X_OK)` are 0, `.NTP`/`.NAP` too; `LEGACY.PRG`/`legacy.prg`, `ACC.NAC`,
+  `PLAIN.TXT` are `-1`/`EACCES`; `stat().st_mode` `0100755` vs `0100644`
+  (`measurements/measurement-2026-10-02-port10d/`). Host check
+  `sdk/libc/tests/quickstat-host.sh` (27 checks; with the pristine file 15
+  fail). The other copies of the list are not built: `mintlib/do_stat.c`
+  (excluded, replaced by `newtos-arch/do_stat.c`) carries the same old list,
+  and the excluded `mintlib/do_fstat.c` set `0111` for an open file whose
+  first word is the m68k `0x601a`/`#!` magic — the lean
+  `newtos-arch/do_fstat.c` sets no execute bit for `fstat()` at all.
 * **Redirection does not reach the child yet (kernel).** The child's standard
   handles are not inherited from the parent (`loader.rs` sets `p_uft` to
   `-1`; EmuTOS `bdos/proc.c` `init_pd_files` inherits them via `ixforce`), so

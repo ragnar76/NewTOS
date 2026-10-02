@@ -1,0 +1,29 @@
+quickstat.c under test: /Volumes/Daten/Development/PiRusTOS/sdk/libc/overlay/mintlib/quickstat.c
+PASS  C:\T\TOOL.NTP        executable -- stat=0 st_mode=0100755 access(X_OK)=0 errno=0
+PASS  C:\T\GEMAPP.NAP      executable -- stat=0 st_mode=0100755 access(X_OK)=0 errno=0
+PASS  C:\T\CONS.NCP        executable -- stat=0 st_mode=0100755 access(X_OK)=0 errno=0
+PASS  c:\t\tool.ntp        executable -- stat=0 st_mode=0100755 access(X_OK)=0 errno=0
+PASS  c:\t\gemapp.nap      executable -- stat=0 st_mode=0100755 access(X_OK)=0 errno=0
+PASS  c:\t\cons.ncp        executable -- stat=0 st_mode=0100755 access(X_OK)=0 errno=0
+PASS  C:\T\Tool.Ntp        executable -- stat=0 st_mode=0100755 access(X_OK)=0 errno=0
+PASS  C:\T\GemApp.nAp      executable -- stat=0 st_mode=0100755 access(X_OK)=0 errno=0
+PASS  C:/T/CONS.nCP        executable -- stat=0 st_mode=0100755 access(X_OK)=0 errno=0
+PASS  C:\T\OLD.PRG         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  C:\T\OLD.TOS         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  C:\T\OLD.TTP         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  C:\T\OLD.APP         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  C:\T\OLD.GTP         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  C:\T\ACC.NAC         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  c:\t\old.prg         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  c:\t\old.tos         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  c:\t\old.ttp         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  c:\t\old.app         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  c:\t\old.gtp         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  c:\t\acc.nac         not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  C:\T\README.TXT      not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  c:\t\readme.txt      not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  C:\T\NOEXT           not executable -- stat=0 st_mode=0100644 access(X_OK)=-1 errno=36
+PASS  C:\T\SUB.NCP (directory) 0755 -- stat=0 st_mode=040755
+PASS  C:\T\RO.NCP read-only 0555 -- stat=0 st_mode=0100555 access(W_OK)=-1
+PASS  C:\T\NONE.NCP missing -> ENOENT -- access(F_OK)=-1 errno=33
+quickstat-host: 27 of 27 checks passed
