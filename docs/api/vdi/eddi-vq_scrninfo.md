@@ -1,7 +1,12 @@
 # EdDI-Erweiterung: Cookie `EdDI` und `vq_scrninfo` (VDI 102, Sub-Opcode 1)
 
-> **Status: ENTWURF zur Freigabe (Rule 5). Es wird nichts gebaut, bevor der
-> Anwender die Abschnitt "Entscheidungen" freigegeben hat.**
+> **Status: FREIGEGEBEN (Anwender 2026-10-02).** E1–E9 wie in §7 empfohlen;
+> **E3 = `0x02`** (Falcon-Antwort): die Bitnummern beschreiben das Pixelwort so,
+> wie die CPU es liest — auf NewTOS lesen Programm und `vro_cpyfm` dasselbe
+> native Wort, es gibt keinen Unterschied CPU↔Geraet. Beleg der Wahl: Dooms
+> EdDI-Weg liefert auf NewTOS ein farbrichtiges Bild. Die UNKNOWN-Punkte zu
+> Nova (Version, 15/16/24/32 Bit, Byte-Reihenfolge) klaert ein Messprogramm
+> `SCRNINFO.TTP` auf dem echten TT mit Nova.
 > Stand 2026-10-02. Verfasser: Researcher. Scope: nur das, was Doom
 > (TASK/PORT06, "Pixelformat, Weg 2") und eine NewTOS-Implementierung davon
 > brauchen — Cookie, Dispatcher-Opcode 0, `vq_scrninfo`, und die Einordnung der
