@@ -1,0 +1,17 @@
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/LAUNCH.NAP (95272 bytes)
+compiled OK=81  FAILED=0  (upstream files with compiler warnings: 1, see /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-play/obj/*.err)
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-play/DOOM.NAP (672776 bytes, undefined symbols: 0)
+DOOM_ARGS  = "-mb","2"
+DOOM_STATS = 5
+compiled OK=81  FAILED=0  (upstream files with compiler warnings: 1, see /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-tdemo/obj/*.err)
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-tdemo/DOOM.NAP (672808 bytes, undefined symbols: 0)
+DOOM_ARGS  = "-mb","2","-timedemo","demo1"
+DOOM_STATS = 5
+80b2f04efc26b42bca18c1a4f238523e0253ebdd86cd32e6e8776a636764d68e  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/LAUNCH.NAP
+078419582d172de557a6a52a7ffc053678af227a3dd416669ea5478f86d05094  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-play/DOOM.NAP
+b03eab1b94e3bf640c3bafe473aadd72bfa5b7bf923ebb7cb726556a2e3e22f1  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-tdemo/DOOM.NAP
+74b3ff47e898efdb83c6fc24e497e2f417fd6be5534f96af264bd6ec046c7dc2  /Volumes/Daten/Development/ball-demo/BALL.NAP
+b4719b9293cf28eb2bd69d590929c17e95c6e985d3beefbe32b012a64fbbc41e  /Volumes/Daten/Development/ball-demo/BALL.NTX
+5c48715c4d76c1ee9384e0f532b45be0141e07fa43a160fdcea74e84e3b160ab  /Volumes/Daten/Development/PiRusTOS/tosdump/build/DUMPRAST.NAP
+1cf591e37362bdda3bbb7e12bc1f24331c1a56e2d67e6759ba6eecc38e85e365  /Volumes/Daten/Development/PiRusTOS/tosdump/cases/vdi-raster-screen.tsv
+1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771  /Volumes/Daten/Development/PiRusTOS/Applications/doom-wad/doom1.wad

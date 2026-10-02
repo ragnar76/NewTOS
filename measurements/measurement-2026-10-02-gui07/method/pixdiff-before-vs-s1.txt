@@ -1,0 +1,42 @@
+a-640-default-t016.png: IDENTICAL to before | same picture as before/a-640-default-t016.png
+a-640-default-t018.png: IDENTICAL to before | same picture as before/a-640-default-t018.png
+a-640-default-t020.png: IDENTICAL to before | same picture as before/a-640-default-t020.png,a-640-default-t022.png,a-640-default-t024.png
+a-640-default-t022.png: IDENTICAL to before | same picture as before/a-640-default-t020.png,a-640-default-t022.png,a-640-default-t024.png
+a-640-default-t024.png: IDENTICAL to before | same picture as before/a-640-default-t020.png,a-640-default-t022.png,a-640-default-t024.png
+a-640-default-t026.png: differs in 123968 px, bbox x 0..639 y 0..403
+a-640-default-t028.png: differs in 146352 px, bbox x 0..639 y 0..403
+a-640-default-t030.png: differs in 135873 px, bbox x 0..639 y 29..403
+a-640-default-t032.png: differs in 236604 px, bbox x 0..639 y 0..479
+a-640-default-t034.png: differs in 177950 px, bbox x 0..639 y 0..403
+a-640-default-t036.png: differs in 183712 px, bbox x 0..639 y 0..403
+a-640-default-t038.png: differs in 182838 px, bbox x 0..639 y 0..403
+a-640-default-t040.png: differs in 141057 px, bbox x 0..639 y 16..403
+a-640-default-t042.png: differs in 208688 px, bbox x 0..639 y 0..403
+a-640-default-t044.png: differs in 181008 px, bbox x 0..639 y 0..403
+a-640-default-t046.png: differs in 143103 px, bbox x 0..639 y 0..403
+a-640-default-t048.png: differs in 204050 px, bbox x 0..639 y 0..403
+a-640-default-t050.png: differs in 191464 px, bbox x 0..639 y 0..403
+a-640-default-t052.png: differs in 179360 px, bbox x 0..639 y 0..403
+a-640-default-t054.png: differs in 145660 px, bbox x 0..639 y 0..403
+a-640-default-t056.png: differs in 179138 px, bbox x 0..639 y 0..403
+a-640-default-t058.png: differs in 202544 px, bbox x 0..639 y 0..403
+a-640-default-t060.png: differs in 76558 px, bbox x 0..639 y 0..403
+b-1080-default-t020.png: IDENTICAL to before | same picture as before/b-1080-default-t020.png
+b-1080-default-t025.png: differs in 331893 px, bbox x 113..1599 y 401..1019
+b-1080-default-t030.png: differs in 771474 px, bbox x 113..1599 y 60..957
+b-1080-default-t035.png: differs in 887852 px, bbox x 113..1599 y 60..1005
+b-1080-default-t040.png: differs in 901117 px, bbox x 113..1599 y 60..957
+b-1080-default-t045.png: differs in 871847 px, bbox x 113..1599 y 60..866
+b-1080-default-t050.png: differs in 947770 px, bbox x 113..1599 y 60..866
+b-1080-default-t055.png: differs in 1229043 px, bbox x 113..1599 y 60..1019
+b-1080-default-t060.png: differs in 954982 px, bbox x 113..1599 y 60..1019
+b-1080-default-t065.png: differs in 916368 px, bbox x 113..1599 y 60..1005
+b-1080-default-t070.png: differs in 850039 px, bbox x 113..1599 y 60..957
+ball-1080-t40.png: differs in 158376 px, bbox x 773..1786 y 128..979
+ball-1080-t70.png: differs in 168213 px, bbox x 1357..1890 y 128..1005
+ball-480-t40.png: differs in 6666 px, bbox x 507..639 y 44..425
+ball-480-t70.png: differs in 4810 px, bbox x 0..585 y 28..404
+c-1080-x1-t35.png: differs in 47729 px, bbox x 800..1119 y 440..626
+c-1080-x1-t60.png: differs in 5826 px, bbox x 800..1119 y 440..607
+d-1080-x2-t35.png: differs in 195654 px, bbox x 113..1279 y 300..772
+d-1080-x2-t60.png: differs in 91616 px, bbox x 113..1279 y 300..749

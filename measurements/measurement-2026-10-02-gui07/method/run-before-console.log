@@ -1,0 +1,194 @@
+arm before kernel 21911009f1dfd675fc2eea7603a33ef99b4e3179e59c396da3c286627b9c0ee7  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/kernel8-before.img
+seeded desk-640.img: 
+t=30.0s -> desk-640-t30.png {"return": {}}
+t=45.0s -> desk-640-t45.png {"return": {}}
+run desk-640 (640x480): rc=0
+seeded desk-1080.img: 
+t=30.0s -> desk-1080-t30.png {"return": {}}
+t=45.0s -> desk-1080-t45.png {"return": {}}
+run desk-1080 (1920x1080): rc=0
+arm before kernel 21911009f1dfd675fc2eea7603a33ef99b4e3179e59c396da3c286627b9c0ee7  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/kernel8-before.img
+seeded ball-480.img: /Volumes/Daten/Development/ball-demo/BALL.NAP=BALL.NAP /Volumes/Daten/Development/ball-demo/BALL.NTX=BALL.NTX /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/BALL.CFG=BALL.CFG /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-02-gui07/method/newdesk-ball.inf=NEWDESK.INF
+t=40.0s -> ball-480-t40.png {"return": {}}
+t=70.0s -> ball-480-t70.png {"return": {}}
+run ball-480 (640x480): rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+pulled BALL.LOG (1550 bytes)
+seeded ball-1080.img: /Volumes/Daten/Development/ball-demo/BALL.NAP=BALL.NAP /Volumes/Daten/Development/ball-demo/BALL.NTX=BALL.NTX /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/BALL.CFG=BALL.CFG /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-02-gui07/method/newdesk-ball.inf=NEWDESK.INF
+t=40.1s -> ball-1080-t40.png {"return": {}}
+t=70.1s -> ball-1080-t70.png {"return": {}}
+run ball-1080 (1920x1080): rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+pulled BALL.LOG (1558 bytes)
+arm before kernel 21911009f1dfd675fc2eea7603a33ef99b4e3179e59c396da3c286627b9c0ee7  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/kernel8-before.img
+seeded a-640-default.img: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-play/DOOM.NAP=DOOM/DOOM.NAP /Volumes/Daten/Development/PiRusTOS/Applications/doom-wad/doom1.wad=DOOM/DOOM1.WAD /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-02-gui07/method/newdesk-doom.inf=NEWDESK.INF
+t=16.0s -> a-640-default-t016.png {"return": {}}
+t=18.0s -> a-640-default-t018.png {"return": {}}
+t=20.0s -> a-640-default-t020.png {"return": {}}
+t=22.0s -> a-640-default-t022.png {"return": {}}
+t=24.0s -> a-640-default-t024.png {"return": {}}
+t=26.0s -> a-640-default-t026.png {"return": {}}
+t=28.0s -> a-640-default-t028.png {"return": {}}
+t=30.0s -> a-640-default-t030.png {"return": {}}
+t=32.0s -> a-640-default-t032.png {"return": {}}
+t=34.0s -> a-640-default-t034.png {"return": {}}
+t=36.0s -> a-640-default-t036.png {"return": {}}
+t=38.0s -> a-640-default-t038.png {"return": {}}
+t=40.0s -> a-640-default-t040.png {"return": {}}
+t=42.0s -> a-640-default-t042.png {"return": {}}
+t=44.0s -> a-640-default-t044.png {"return": {}}
+t=46.0s -> a-640-default-t046.png {"return": {}}
+t=48.0s -> a-640-default-t048.png {"return": {}}
+t=50.0s -> a-640-default-t050.png {"return": {}}
+t=52.0s -> a-640-default-t052.png {"return": {}}
+t=54.0s -> a-640-default-t054.png {"return": {}}
+t=56.0s -> a-640-default-t056.png {"return": {}}
+t=58.0s -> a-640-default-t058.png {"return": {}}
+t=60.0s -> a-640-default-t060.png {"return": {}}
+run a-640-default (640x480): rc=0
+[shell] sh_ldapp: starting C:\DOOM\DOOM.NAP, sh_nextapp=2, sh_isgem=1
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 640x480, 16 planes, lookup table no, stage 2 = 640x480, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 640x480 at (0,0) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 2 640x480: build 167 us, vr_trnfm 0 us, scale 693 us, vro_cpyfm 23372 us, sum 24232 us
+DOOM x2 EdDI: 191 frames/5025 ms = 38.00 fps, 26.30 ms/frame, 2 pal
+DOOM x2 EdDI: 189 frames/5010 ms = 37.72 fps, 26.50 ms/frame, 6 pal
+DOOM x2 EdDI: 196 frames/5000 ms = 39.20 fps, 25.51 ms/frame, 6 pal
+DOOM x2 EdDI: 186 frames/5020 ms = 37.05 fps, 26.98 ms/frame, 2 pal
+DOOM x2 EdDI: 190 frames/5020 ms = 37.84 fps, 26.42 ms/frame, 8 pal
+DOOM x2 EdDI: 191 frames/5015 ms = 38.08 fps, 26.25 ms/frame, 2 pal
+seeded b-1080-default.img: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-play/DOOM.NAP=DOOM/DOOM.NAP /Volumes/Daten/Development/PiRusTOS/Applications/doom-wad/doom1.wad=DOOM/DOOM1.WAD /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-02-gui07/method/newdesk-doom.inf=NEWDESK.INF
+t=20.1s -> b-1080-default-t020.png {"return": {}}
+t=25.1s -> b-1080-default-t025.png {"return": {}}
+t=30.0s -> b-1080-default-t030.png {"return": {}}
+t=35.1s -> b-1080-default-t035.png {"return": {}}
+t=40.0s -> b-1080-default-t040.png {"return": {}}
+t=45.0s -> b-1080-default-t045.png {"return": {}}
+t=50.0s -> b-1080-default-t050.png {"return": {}}
+t=55.1s -> b-1080-default-t055.png {"return": {}}
+t=60.0s -> b-1080-default-t060.png {"return": {}}
+t=65.0s -> b-1080-default-t065.png {"return": {}}
+t=70.0s -> b-1080-default-t070.png {"return": {}}
+run b-1080-default (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\DOOM\DOOM.NAP, sh_nextapp=2, sh_isgem=1
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, stage 4 = 1280x960, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 1280x960 at (320,60) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 4 1280x960: build 232 us, vr_trnfm 0 us, scale 1328 us, vro_cpyfm 90909 us, sum 92469 us
+DOOM x4 EdDI: 53 frames/5070 ms = 10.45 fps, 95.66 ms/frame, 2 pal
+DOOM x4 EdDI: 53 frames/5050 ms = 10.49 fps, 95.28 ms/frame, 3 pal
+DOOM x4 EdDI: 54 frames/5055 ms = 10.68 fps, 93.61 ms/frame, 5 pal
+DOOM x4 EdDI: 54 frames/5040 ms = 10.71 fps, 93.33 ms/frame, 0 pal
+DOOM x4 EdDI: 54 frames/5020 ms = 10.75 fps, 92.96 ms/frame, 8 pal
+DOOM x4 EdDI: 54 frames/5010 ms = 10.77 fps, 92.77 ms/frame, 2 pal
+seeded c-1080-x1.img: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-play/DOOM.NAP=DOOM/DOOM.NAP /Volumes/Daten/Development/PiRusTOS/Applications/doom-wad/doom1.wad=DOOM/DOOM1.WAD /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-02-gui07/method/newdesk-launch.inf=NEWDESK.INF /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/LAUNCH.NAP=LAUNCH.NAP /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/cmd-x1.txt=LAUNCH.TXT
+t=35.1s -> c-1080-x1-t35.png {"return": {}}
+t=60.0s -> c-1080-x1-t60.png {"return": {}}
+run c-1080-x1 (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\LAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+LAUNCH: system("C:\DOOM\DOOM.NAP -scale 1")
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, stage 1 = 320x200, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 320x200 at (800,440) VERIFIED via EdDI+vro_cpyfm
+DOOM: per frame, EdDI, stage 1 320x200: build 234 us, vr_trnfm 0 us, scale 0 us, vro_cpyfm 4830 us, sum 5064 us
+DOOM x1 EdDI: 339 frames/5010 ms = 67.66 fps, 14.77 ms/frame, 2 pal
+DOOM x1 EdDI: 317 frames/5000 ms = 63.40 fps, 15.77 ms/frame, 6 pal
+DOOM x1 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 6 pal
+DOOM x1 EdDI: 348 frames/5000 ms = 69.60 fps, 14.36 ms/frame, 2 pal
+DOOM x1 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 8 pal
+seeded d-1080-x2.img: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-play/DOOM.NAP=DOOM/DOOM.NAP /Volumes/Daten/Development/PiRusTOS/Applications/doom-wad/doom1.wad=DOOM/DOOM1.WAD /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-02-gui07/method/newdesk-launch.inf=NEWDESK.INF /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/LAUNCH.NAP=LAUNCH.NAP /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/cmd-x2.txt=LAUNCH.TXT
+t=35.1s -> d-1080-x2-t35.png {"return": {}}
+t=60.0s -> d-1080-x2-t60.png {"return": {}}
+run d-1080-x2 (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\LAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+LAUNCH: system("C:\DOOM\DOOM.NAP -scale 2")
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, stage 2 = 640x480, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 640x480 at (640,300) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 2 640x480: build 243 us, vr_trnfm 0 us, scale 709 us, vro_cpyfm 23928 us, sum 24880 us
+DOOM x2 EdDI: 189 frames/5020 ms = 37.64 fps, 26.56 ms/frame, 2 pal
+DOOM x2 EdDI: 185 frames/5000 ms = 37.00 fps, 27.02 ms/frame, 6 pal
+DOOM x2 EdDI: 186 frames/5005 ms = 37.16 fps, 26.90 ms/frame, 6 pal
+DOOM x2 EdDI: 188 frames/5020 ms = 37.45 fps, 26.70 ms/frame, 2 pal
+DOOM x2 EdDI: 194 frames/5025 ms = 38.60 fps, 25.90 ms/frame, 8 pal
+arm before kernel 21911009f1dfd675fc2eea7603a33ef99b4e3179e59c396da3c286627b9c0ee7  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/kernel8-before.img
+seeded t1-1080-x1.img: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-tdemo/DOOM.NAP=DOOM/DOOM.NAP /Volumes/Daten/Development/PiRusTOS/Applications/doom-wad/doom1.wad=DOOM/DOOM1.WAD /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-02-gui07/method/newdesk-launch.inf=NEWDESK.INF /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/LAUNCH.NAP=LAUNCH.NAP /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/cmd-tx1.txt=LAUNCH.TXT
+t=60.0s -> t1-x1-t60.png {"return": {}}
+t=150.0s -> t1-x1-end.png {"return": {}}
+run t1-1080-x1 (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\LAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+LAUNCH: system("C:\DOOM\DOOM.NAP -scale 1")
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, stage 1 = 320x200, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 320x200 at (800,440) VERIFIED via EdDI+vro_cpyfm
+DOOM: per frame, EdDI, stage 1 320x200: build 234 us, vr_trnfm 0 us, scale 0 us, vro_cpyfm 4902 us, sum 5136 us
+DOOM x1 EdDI: 752 frames/5000 ms = 150.40 fps, 6.64 ms/frame, 25 pal
+DOOM x1 EdDI: 722 frames/5000 ms = 144.40 fps, 6.92 ms/frame, 16 pal
+DOOM x1 EdDI: 761 frames/5000 ms = 152.20 fps, 6.57 ms/frame, 43 pal
+DOOM x1 EdDI: 756 frames/5000 ms = 151.20 fps, 6.61 ms/frame, 16 pal
+DOOM x1 EdDI: 759 frames/5005 ms = 151.64 fps, 6.59 ms/frame, 21 pal
+seeded t2-1080-x2.img: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-tdemo/DOOM.NAP=DOOM/DOOM.NAP /Volumes/Daten/Development/PiRusTOS/Applications/doom-wad/doom1.wad=DOOM/DOOM1.WAD /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-02-gui07/method/newdesk-launch.inf=NEWDESK.INF /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/LAUNCH.NAP=LAUNCH.NAP /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/cmd-tx2.txt=LAUNCH.TXT
+t=60.1s -> t2-x2-t60.png {"return": {}}
+t=330.0s -> t2-x2-end.png {"return": {}}
+run t2-1080-x2 (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\LAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+LAUNCH: system("C:\DOOM\DOOM.NAP -scale 2")
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, stage 2 = 640x480, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 640x480 at (640,300) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 2 640x480: build 232 us, vr_trnfm 0 us, scale 726 us, vro_cpyfm 23604 us, sum 24562 us
+DOOM x2 EdDI: 192 frames/5005 ms = 38.36 fps, 26.06 ms/frame, 7 pal
+DOOM x2 EdDI: 194 frames/5020 ms = 38.64 fps, 25.87 ms/frame, 6 pal
+DOOM x2 EdDI: 193 frames/5020 ms = 38.44 fps, 26.01 ms/frame, 6 pal
+DOOM x2 EdDI: 191 frames/5015 ms = 38.08 fps, 26.25 ms/frame, 6 pal
+DOOM x2 EdDI: 192 frames/5010 ms = 38.32 fps, 26.09 ms/frame, 0 pal
+seeded t4-1080-x4.img: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/doom-tdemo/DOOM.NAP=DOOM/DOOM.NAP /Volumes/Daten/Development/PiRusTOS/Applications/doom-wad/doom1.wad=DOOM/DOOM1.WAD /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-02-gui07/method/newdesk-launch.inf=NEWDESK.INF /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/apps/LAUNCH.NAP=LAUNCH.NAP /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/cmd-tx4.txt=LAUNCH.TXT
+t=60.1s -> t4-x4-t60.png {"return": {}}
+t=1020.0s -> t4-x4-end.png {"return": {}}
+run t4-1080-x4 (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\LAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+LAUNCH: system("C:\DOOM\DOOM.NAP -scale 4")
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, stage 4 = 1280x960, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 1280x960 at (320,60) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 4 1280x960: build 228 us, vr_trnfm 0 us, scale 1353 us, vro_cpyfm 96363 us, sum 97944 us
+DOOM x4 EdDI: 51 frames/5055 ms = 10.08 fps, 99.11 ms/frame, 1 pal
+DOOM x4 EdDI: 51 frames/5050 ms = 10.09 fps, 99.01 ms/frame, 2 pal
+DOOM x4 EdDI: 51 frames/5045 ms = 10.10 fps, 98.92 ms/frame, 4 pal
+DOOM x4 EdDI: 51 frames/5065 ms = 10.06 fps, 99.31 ms/frame, 0 pal
+DOOM x4 EdDI: 51 frames/5055 ms = 10.08 fps, 99.11 ms/frame, 2 pal

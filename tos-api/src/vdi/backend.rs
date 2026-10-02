@@ -357,6 +357,44 @@ pub trait RasterBackend: Sync {
     /// `bb_restore`).
     fn put_device_pixel(&self, x: i16, y: i16, argb: u32);
 
+    /// Read a horizontal run of screen pixels as **16-bit screen words**:
+    /// `out[i] = device_to_rgb565(get_device_pixel(x + i, y))` for every
+    /// `i < out.len()`, including the out-of-bounds rule — a position off the
+    /// screen (or beyond the `i16` coordinate range) reads as
+    /// `device_to_rgb565(0)`. The default implementation is exactly that
+    /// per-pixel definition.
+    ///
+    /// This is the row form of the screen side of `vro_cpyfm` Screen→Memory
+    /// and of the destination read of Memory→Screen (GUI07): one call per
+    /// row instead of two dynamically dispatched calls per pixel, so a
+    /// backend with direct framebuffer access can fetch base, stride and
+    /// bounds once per run. An override must return the identical words.
+    fn read_row_rgb565(&self, x: i16, y: i16, out: &mut [u16]) {
+        for (i, o) in out.iter_mut().enumerate() {
+            let xi = x as i32 + i as i32;
+            let px = if xi > i16::MAX as i32 { 0 } else { self.get_device_pixel(xi as i16, y) };
+            *o = self.device_to_rgb565(px);
+        }
+    }
+
+    /// Write a horizontal run of **16-bit screen words** to the screen:
+    /// `put_device_pixel(x + i, y, rgb565_to_device(src[i]))` for every
+    /// `i < src.len()`; positions off the screen are ignored. Like
+    /// [`put_device_pixel`](Self::put_device_pixel) it does not flush — the
+    /// caller batches a region and calls [`flush_rect`](Self::flush_rect)
+    /// once. The default implementation is exactly that per-pixel definition;
+    /// an override must store the identical device words (GUI07, the row
+    /// form of the `vro_cpyfm` Memory→Screen write).
+    fn write_row_rgb565(&self, x: i16, y: i16, src: &[u16]) {
+        for (i, &word) in src.iter().enumerate() {
+            let xi = x as i32 + i as i32;
+            if xi > i16::MAX as i32 {
+                break; // off the screen, and so is every later position
+            }
+            self.put_device_pixel(xi as i16, y, self.rgb565_to_device(word));
+        }
+    }
+
     /// Flush (clean to the point of coherency) the inclusive device
     /// rectangle `[x0..=x1] × [y0..=y1]`, so writes made via
     /// [`put_device_pixel`](Self::put_device_pixel) become visible to the

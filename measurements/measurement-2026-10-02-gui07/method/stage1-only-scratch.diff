@@ -1,0 +1,71 @@
+--- /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/gui07/vdi_backend.keep	2026-10-03 00:10:06
++++ kernel/src/vdi_backend.rs	2026-10-03 00:10:06
+@@ -873,68 +873,8 @@
+         // SAFETY: (x, y) is within the framebuffer bounds checked above.
+         // The caller flushes the region afterwards (see `flush_rect`).
+         unsafe { fb.pixels().add(off).write_volatile(argb) };
+-    }
+-
+-    fn read_row_rgb565(&self, x: i16, y: i16, out: &mut [u16]) {
+-        // The row form of `device_to_rgb565(get_device_pixel(x + i, y))`
+-        // (GUI07): the framebuffer is resolved, and base, stride and bounds
+-        // fetched, once per run instead of once per pixel, and the in-screen
+-        // part is one tight conversion loop. Off-screen positions read as the
+-        // conversion of `0`, exactly as `get_device_pixel` returns `0` there.
+-        let fb = active_fb();
+-        let off = device_to_word(0);
+-        let (w, h) = (fb.width() as i64, fb.height() as i64);
+-        if y < 0 || y as i64 >= h {
+-            out.fill(off);
+-            return;
+-        }
+-        let (lo, hi) = row_span(x, out.len(), w);
+-        out[..lo].fill(off);
+-        out[hi..].fill(off);
+-        if lo == hi {
+-            return;
+-        }
+-        // SAFETY: row `y` is on the screen and columns `x + lo .. x + hi`
+-        // lie in `0..width`, so every pixel is inside the pixel store.
+-        // Plain (non-volatile) loads: the store is Normal memory (WB-cacheable
+-        // on the Pi since GUI06, RAM behind ramfb on qemu-virt), the VDI trap
+-        // path is the only writer, and nothing here depends on the access
+-        // being a single-copy event — this lets the loop vectorise.
+-        let row = unsafe {
+-            fb.pixels().add(y as usize * fb.stride_px() as usize + (x as i64 + lo as i64) as usize)
+-        };
+-        for (i, o) in out[lo..hi].iter_mut().enumerate() {
+-            // SAFETY: `i < hi - lo`, inside the row segment checked above.
+-            *o = device_to_word(unsafe { row.add(i).read() });
+-        }
+     }
+ 
+-    fn write_row_rgb565(&self, x: i16, y: i16, src: &[u16]) {
+-        // The row form of `put_device_pixel(x + i, y, rgb565_to_device(src[i]))`
+-        // (GUI07); off-screen positions are ignored, as there. No flush — the
+-        // caller cleans the region once (`flush_rect`).
+-        let fb = active_fb();
+-        let (w, h) = (fb.width() as i64, fb.height() as i64);
+-        if y < 0 || y as i64 >= h {
+-            return;
+-        }
+-        let (lo, hi) = row_span(x, src.len(), w);
+-        if lo == hi {
+-            return;
+-        }
+-        // SAFETY: as in `read_row_rgb565` — every pixel `x + lo .. x + hi` of
+-        // row `y` is inside the pixel store. Plain stores (Normal memory, see
+-        // there); the cache clean in `flush_rect` is an `asm!` block without
+-        // `nomem`, so the compiler completes these stores before it.
+-        let row = unsafe {
+-            fb.pixels().add(y as usize * fb.stride_px() as usize + (x as i64 + lo as i64) as usize)
+-        };
+-        for (i, &word) in src[lo..hi].iter().enumerate() {
+-            // SAFETY: `i < hi - lo`, inside the row segment checked above.
+-            unsafe { row.add(i).write(word_to_device(word)) };
+-        }
+-    }
+-
+     fn flush_rect(&self, x0: i16, y0: i16, x1: i16, y1: i16) {
+         let fb = active_fb();
+         let (w, h) = (fb.width(), fb.height());

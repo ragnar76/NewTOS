@@ -1,0 +1,124 @@
+measurement-2026-10-02-gui07
+  GUI07: vro_cpyfm screen<->memory row-wise, no screen read where the op
+  ignores D -- before / stage 1 only / after, QEMU raspi4b
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 234564f, Arbeitsbaum zu Beginn sauber.
+Nichts committet, nichts geflasht, keine Pi, kein TT, keine Karte,
+/Volumes/BOOT* und /Volumes/NEWTOS* nicht beruehrt (alle Kartenabbilder
+werden auf einem privaten Mountpunkt neben dem Abbild eingehaengt,
+method/seed.sh, method/pull.sh). Kein *.img in diesem Verzeichnis.
+Scratch: Session-Scratchpad. Doom/sdk/ball-demo unveraendert (nur gebaut
+bzw. benutzt).
+
+Geaendert (method/gui07-change.diff):
+  tos-api/src/vdi/backend.rs   RasterBackend::read_row_rgb565 /
+                               write_row_rgb565 (Default = die
+                               Pro-Pixel-Definition)
+  tos-api/src/vdi/raster.rs    screen_to_mem / mem_to_screen / mem_to_mem
+                               zeilenweise; Mfdb::row_window/read_row/
+                               combine_row; op_ignores_dst/_src; apply_row;
+                               Hosttest-Modul gui07_tests mit den alten
+                               Pro-Pixel-Funktionen als Orakel
+  kernel/src/vdi_backend.rs    VdiScreen ueberschreibt die zwei
+                               Zeilenmethoden (Framebuffer einmal je Lauf)
+
+Kerne (je `cargo clean -p kernel -p tos-api --target
+aarch64-unknown-none-softfloat --release`, dann `cargo xtask build --board
+rpi4 --release`):
+  before  HEAD unveraendert          sha256 21911009f1dfd675fc2eea7603a33ef99b4e3179e59c396da3c286627b9c0ee7
+  s1      Scratch: neuer tos-api-Teil, die zwei Kernel-Overrides entfernt
+          (method/stage1-only-scratch.diff) = "Stufe 1 allein": S_ONLY liest
+          den Schirm nicht mehr, schreibt aber noch pro Pixel ueber zwei
+          virtuelle Aufrufe (Trait-Default). NUR Messarm, nicht geliefert.
+                                     sha256 b9323da02f7eba7083044547202c10ad1808810701bb37b32be48369f7e1f44a
+  after   geliefert                  sha256 5ec49bab26e1357c49a87d0737c135a4c1d8879c3e44988bdb0b24f869cd5b12
+
+Maschine: QEMU 11.0.2 -M raspi4b (TCG), -display none, -append serial=on,
+-global bcm2835-fb.xres/yres fuer 1920x1080 (method/run-qemu.sh).
+Ablauf: method/run-gui07.sh (prep | <arm> ... desk|rast|ball|play|tdemo).
+Alle drei Arme laufen DIESELBEN Binaerdateien (method/prep-apps.log):
+  DOOM.NAP play  078419582d172de5...  (= PORT06-EdDI-Endbau)
+  DOOM.NAP tdemo b03eab1b94e3bf64...
+  BALL.NAP       74b3ff47e898efdb...  (PORT07, konform, wie vorgefunden; hud 1)
+  DUMPRAST.NAP   5c48715c4d76c1ee...  (tosdump/build, wie vorgefunden)
+  RASTER.TSV     vdi-raster-screen.tsv, 62 Faelle, CRC 9780EC39
+Waehrend der Messlaeufe lief kein Uebersetzer (keine CPU-Konkurrenz).
+
+
+1. ERGEBNIS (QEMU TCG -- relative Zahlen, KEINE Pi-Zahlen)
+---------------------------------------------------------------------------
+Ball-Demo, ball.c blit_cost() (raw/<arm>/ball-*-BALL.LOG):
+
+               ns/px    us/Aufruf   freilaufend ms/Bild
+  640x480
+    before     82,37      2,42        1,30
+    s1         19,66      3,83        0,47
+    after      12,68      4,00        0,38      Faktor ns/px 6,5
+  1920x1080
+    before     78,40      3,02        9,76
+    s1         19,15      3,93        3,08
+    after      11,64      4,14        2,30      Faktor ns/px 6,7
+
+Doom, Kostenprobe des ersten Bildes, vro_cpyfm-Anteil (serial/<arm>/):
+
+  Stufe (Pixel)          before          s1              after
+  x1 320x200   (64000)   4830 us 75,5    848 us 13,3     379 us 5,9 ns/px
+  x2 640x480  (307200)  23928 us 77,9   4115 us 13,4    1879 us 6,1
+  x4 1280x960(1228800)  90909 us 74,0  16666 us 13,6    7730 us 6,3
+  (640x480-Schirm, x2)  23372 us        4032 us         1703 us
+  Summe je Bild x4      92469 us       18215 us         9281 us
+
+timedemo demo1, 1920x1080 (serial/<arm>/t*-serial.log):
+  x1   141,75 fps -> 411,00 fps
+  x2    38,10 fps -> 206,71 fps
+  x4    10,03 fps ->  90,63 fps
+
+Wohin die Zeit ging (relativ, TCG): von ~76 ns/px fielen ~62 ns (82 %)
+mit Stufe 1 allein -- dem Wegfall des Schirmlesens (get_device_pixel +
+device_to_rgb565: zwei virtuelle Aufrufe, je ein active_fb()-Aufloesen mit
+vier Acquire-Lasten und Grenzpruefung) bei S_ONLY. Stufe 2 (zeilenweise
+Schreiben, Basis/Zeilenabstand/Grenzen einmal je Lauf) halbiert den Rest
+noch einmal (13,4 -> 6,1 ns/px). Der feste Anteil je Aufruf stieg von
+2,4..3,0 auf 4,0..4,1 us (Stapelpuffer, Laufaufteilung) -- bei 6 ns/px
+entspricht das ~330 Pixeln, ein Rechteck lohnt sich weiterhin ab wenigen
+hundert Pixeln.
+
+
+2. VERHALTEN UNVERAENDERT
+---------------------------------------------------------------------------
+* DUMPRAST (62 Faelle, R02 Screen->Memory, R03 Memory->Screen, R04
+  Screen->Screen, R05 vrt_cpyfm) im echten Kern:
+    DIFF-falcontc-vs-before.txt   0 of 62
+    DIFF-falcontc-vs-after.txt    0 of 62
+    DIFF-before-vs-after.txt      0 of 62; RASTER.BIN before/after
+                                  byte-gleich (cmp).
+* Doom in jedem Lauf aller Arme: "EdDI check: 256 of 256 test colours
+  exact" (Schirm->Speicher) und "VERIFIED via EdDI[+scale]+vro_cpyfm"
+  (jedes Ausgabepixel per vro_cpyfm zurueckgelesen und verglichen) fuer
+  x1/x2/x4 und 640x480.
+* Screendumps (method/pixdiff-before-vs-after.txt):
+    Desktop 640x480 und 1920x1080, je t30/t45:   IDENTISCH
+    Doom 640 t16..t24 (Titelbild), b-1080 t20, c-x1 t35/t60,
+    t*-end (Desktop nach Doom), rast-640:         IDENTISCH
+    alle uebrigen Doom-/Ball-Dumps unterscheiden sich -- erwartet: beide
+    Programme laufen nach Wanduhr, der schnellere Kern zeigt zur selben
+    Sekunde ein anderes Spielbild (z. B. after/b-1080-default-t040.png
+    ist ein korrektes Spielbild, kein Fehlerbild).
+* Hosttests (method/host-tests.txt): cargo test -p tos-api -p tos-types
+  -p xtask --no-fail-fast: 980 passed / 0 failed / 1 ignored (975 + 5 neue
+  gui07_tests); vdi_raster_reference 59/59, vdi_reference_raster_screen,
+  vdi_reference 173/173 gruen. Die neuen Tests wurden mit drei
+  absichtlichen Mutationen (Spaltenrichtung, falsche Op-Menge, Ueberlappung
+  ignoriert) in einer Scratch-Kopie gegengeprueft -- jede wird gefangen.
+
+
+3. GRUNDWERTE
+---------------------------------------------------------------------------
+  rustc Release, beide Boards, frisch nach cargo clean:
+    vorher  tos-api 64 / kernel 94  (method/before-build-*.log)
+    nachher tos-api 64 / kernel 94  (method/build-after-*.log)
+  clippy kernel --lib --bins, beide Boards:
+    vorher  tos-api 80 / kernel 125; nachher 80 / 125; keine Meldung in
+    den drei geaenderten Dateien (method/clippy-after-*.log)
+  sh tools/desk-drift-probe.sh: 31 (vorher 31)
