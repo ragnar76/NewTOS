@@ -11,8 +11,20 @@
 /* NewTOS/AArch64 (TASK/PORT10): spawnlp cast its va_list to `char **' (an
  * m68k va_list points at the stacked, NULL-terminated argument array; an
  * AAPCS64 one is a structure). The arguments are now fetched with va_arg
- * into a stack array of the same shape -- see spawnve.c. spawnvp is
- * unchanged. */
+ * into a stack array of the same shape -- see spawnve.c.
+ *
+ * NewTOS (user decision 2026-10-02, TASK/PORT10): the extension list that
+ * spawnvp hands _buffindfile is NewTOS's native one, { ntp, nap, ncp },
+ * replacing mintlib's { ttp, prg, tos } position by position (ttp->ntp,
+ * prg->nap, tos->ncp). On NewTOS only the native AArch64 programs are
+ * executable; .TTP/.PRG/.TOS are m68k binaries and belong to the later m68k
+ * emulator -- when it comes, append "ttp", "prg", "tos" AFTER the native
+ * three, so a native build still wins over an m68k one of the same name.
+ * .NAC (accessory) is not a startable program and is deliberately absent.
+ * The same list stands in mintlib/spawn.c (#! interpreter lookup) and, with
+ * leading dots, in posix/execvp.c. _buffindfile appends the lower-case
+ * string; GEMDOS upper-cases names on FAT (C:\P10\P10KID.ncp finds
+ * P10KID.NCP). */
 #include <stdio.h>
 #include <stdlib.h>
 #include <process.h>
@@ -21,7 +33,7 @@
 #include <support.h>
 #include <limits.h>
 
-static char const *const extensions[] = { "ttp", "prg", "tos", NULL };
+static char const *const extensions[] = { "ntp", "nap", "ncp", NULL };
 
 #ifdef __STDC__
 int spawnvp(int mode, const char *name, char *const *argv)

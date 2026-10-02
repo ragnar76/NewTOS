@@ -1,0 +1,121 @@
+measurement-2026-10-02-port10c
+  PORT10, Nachtrag: Suchendungen von spawnvp/system() = ntp, nap, ncp
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 5e42849 (plus die uncommitteten Aenderungen
+dieses Auftrags). Kein Kommit, nichts geflasht, keine Pi, keine Karte,
+/Volumes/BOOT nicht beruehrt. Unter kernel/ und tos-api/ wurde KEINE Datei
+geaendert. Kein *.img in diesem Verzeichnis (das QEMU-Abbild lag im
+Sitzungs-Scratchpad). measurement-2026-10-02-port10b/ ist unveraendert;
+seed-auto.sh und run-serial.sh sind Kopien von dort, run-port10.sh ist die
+dortige Fassung plus zwei Kartendateien.
+
+Entscheidung Anwender 2026-10-02: die Endungsliste, mit der spawnvp (und
+damit system()) einen Namen ohne Endung aufloest, ERSETZT mintlibs
+ttp, prg, tos durch NewTOS' ntp, nap, ncp -- in dieser Reihenfolge,
+ttp->ntp, prg->nap, tos->ncp. .TTP/.PRG/.TOS sind m68k und kommen mit dem
+spaeteren m68k-Emulator HINTER die nativen drei. .NAC ist kein startbares
+Programm und kommt nicht in die Liste.
+
+Maschine: QEMU 11.0.2 -M raspi4b, -display none, serielle Ausgabe in eine
+Datei, Karte als -drive if=sd, frisch aus tools/make-sd-image.sh (nicht
+geaendert). Kern: `cargo xtask build --board rpi4 --release`, Quellen
+unveraendert, tos-api 64 / kernel 94 rustc-Warnungen (Basislinie),
+kernel8.img sha256
+bbcaeb67f4ebdca239ef1aa2487d9eb5dc8a52e9a653bf503903d4022bb7bfd1 (gleiche
+Groesse 1044448 wie in port10b, anderer Hash bei unveraenderten Quellen --
+wie dort schon beobachtet, nicht untersucht). clang: Apple clang 21.0.0,
+Ziel aarch64-unknown-none-elf; Host arm64 Darwin.
+
+
+0. ERGEBNIS VORWEG
+---------------------------------------------------------------------------
+  system("C:\P10\P10KID s3")   -> 42 (Kind: argc 2, argv[1] "s3").
+                                  In port10b: -1/ENOENT.
+  system("C:\P10\ONLYNCP s3 s4") -> 43 (nur ONLYNCP.NCP auf der Karte).
+  system("C:\P10\LEGACY s5")   -> -1/ENOENT (nur LEGACY.PRG auf der Karte,
+                                  dieselbe Datei wie das Kind: fände die
+                                  Suche .prg noch, liefe sie und gaebe 42).
+  port10.c gesamt              29 von 31 PASS. Die 2 FAIL sind dieselben
+                                  Kernpunkte wie in port10b (Umleitung:
+                                  Kind erbt Fforce nicht; Fwrite(1) danach
+                                  -37) -- nicht Gegenstand, nicht angefasst.
+  Hosttests                    sh sdk/run-host-tests.sh: 11 passed,
+                                  0 failed, 0 skipped. spawn-host jetzt
+                                  8 + 19 Pruefungen + Objektpruefung spawn.c.
+  QED / TeraDesk / DOOM        bauen, je 0 undefined. QED.NAP 27036f80...,
+                                  DESKTOP.NAP 4bf69f03... -- byte-gleich
+                                  mit port10b (keines linkt spawnvp).
+                                  DOOM.NAP d527737c... (linkt spawnvp ueber
+                                  system(), Verhalten hier nicht gefahren).
+  libc-Bau                     615 OK / 9 skipped, expected-failures 9/9
+                                  unveraendert.
+
+
+1. Was geaendert ist (nur Overlays, keine vendorte Datei angefasst)
+---------------------------------------------------------------------------
+  sdk/libc/overlay/mintlib/spawnvp.c   { "ttp","prg","tos" } ->
+                                       { "ntp","nap","ncp" }  (spawnvp,
+                                       spawnlp, system())
+  sdk/libc/overlay/mintlib/spawn.c     NEU als Overlay (pristine + nur die
+                                       Liste): dieselbe Liste fuer die
+                                       Suche des #!-Interpreters
+  sdk/libc/overlay/posix/execvp.c      NEU als Overlay (pristine + nur die
+                                       Liste): { "",.ttp,.prg,.tos,.app,.gtp }
+                                       -> { "",.ntp,.nap,.ncp }; __mint ist
+                                       auf NewTOS 0, also ist das die Liste,
+                                       die execvp laeuft
+  Zielobjekte in sdk/libc/build/obj (strings): mintlib__spawnvp.o
+  "ntp nap ncp", mintlib__spawn.o "ntp nap ncp", posix__execvp.o
+  ".ntp .nap .ncp" -- keine m68k-Endung mehr.
+
+
+2. Gross-/Kleinschreibung
+---------------------------------------------------------------------------
+_buffindfile (mintlib/buffindf.c) haengt die Endung so an, wie sie in der
+Liste steht: aus "C:\P10\P10KID" wird "C:\P10\P10KID.ntp", dann ".nap",
+".ncp". Es prueft mit __quickstat -> __sys_stat (-ENOSYS) -> Fsfirst. Der
+Kern macht daraus den FAT-Kurznamen in Grossbuchstaben
+(tos-api/src/bdos/fs/find.rs fcb_pattern, dir.rs fcb_name:
+to_ascii_uppercase fuer Name und Endung), also trifft "P10KID.ntp" den
+Eintrag P10KID.NTP. Belegt durch den Lauf (system -> 42) und im Hosttest
+(Tabelle in Grossbuchstaben, Vergleich wie GEMDOS; auch "c:\p10\p10kid"
+findet P10KID.NCP). Auf der Karte liegen P10KID.NCP und P10KID.NTP
+(dieselbe Datei); nach der Reihenfolge wird P10KID.ntp genommen -- welche
+der beiden lief, ist am Exitcode nicht unterscheidbar; die Reihenfolge
+belegt der Hosttest (TRIO -> .ntp, DUO -> .nap vor .ncp).
+
+
+3. Hosttest (host/spawn-host.txt, host/run-host-tests.txt)
+---------------------------------------------------------------------------
+sdk/libc/tests/spawn-host.sh baut zusaetzlich spawn-search-host: die
+Overlays spawnve.c + spawnvp.c + posix/execvp.c, mintlibs ECHTES
+buffindf.c (unveraendert), spawn-search-fs.c (falsches FAT-Verzeichnis
+hinter __quickstat/__execve, Grossbuchstaben, Vergleich ohne Ruecksicht
+auf Gross/Klein wie GEMDOS) und spawn-search-host.c. 19 Pruefungen:
+Name ohne Endung findet .NCP/.NTP/.NAP, Reihenfolge ntp-nap-ncp, findet
+NICHT .PRG/.TOS/.TTP/.APP/.GTP und nicht .NAC, explizite Endung (auch
+.PRG) wird wie gegeben genommen, nicht vorhandene explizite Endung ->
+ENOENT, PATH-Suche; execvp mit "" (aktuelles Verzeichnis) und PATH.
+spawn.c wird nicht gefahren (erst nach Pexec-ENOEXEC erreicht); dessen
+uebersetztes Overlay-Objekt muss genau "nap ncp ntp" und keine m68k-
+Endung enthalten.
+Gegenprobe (Liste in den drei Overlays von Hand auf die alte
+zurueckgesetzt, Dateien danach aus einer Kopie wiederhergestellt):
+13 der 19 Pruefungen FAIL plus die spawn.c-Objektpruefung -- der Test
+trennt alt von neu.
+
+
+4. Dateien in diesem Verzeichnis
+---------------------------------------------------------------------------
+  method/run-port10.sh      Bau port10/port10kid + Karte (+ ONLYNCP.NCP,
+                            LEGACY.PRG) + QEMU (60 s)
+  method/seed-auto.sh, run-serial.sh  Kopien aus port10b
+  method/build-libc.log, build-kernel.log, build-qed.log,
+  build-teradesk.log, build-doom.log
+  serial/port10-serial.log  der Lauf
+  host/run-host-tests.txt, host/spawn-host.txt
+
+Aufruf:
+  bash measurements/measurement-2026-10-02-port10c/method/run-port10.sh \
+       <scratch-dir> measurements/measurement-2026-10-02-port10c/serial

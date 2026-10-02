@@ -67,6 +67,46 @@ Text der Stand vor der Anwenderentscheidung und bleibt so stehen.
 4. `perror` in `system_hack` zeigt ein liegengebliebenes `errno`
    (`Fcreate` per Trap-Makro setzt keins) — mintlib-Verhalten.
 
+## Nachtrag 2026-10-02 (2): Suchendungen `ntp`, `nap`, `ncp` (Entscheidung Anwender)
+
+Beleg [measurements/measurement-2026-10-02-port10c/](../measurements/measurement-2026-10-02-port10c/RUNINFO.TXT).
+
+* **Entscheidung:** die Endungsliste, mit der `spawnvp` (und damit
+  `system()`) einen Namen ohne Endung aufloest, ersetzt mintlibs `ttp`,
+  `prg`, `tos` durch `ntp`, `nap`, `ncp` — Reihenfolge und Zuordnung
+  `ttp→ntp`, `prg→nap`, `tos→ncp`. Nur die nativen Programme sind auf NewTOS
+  ausfuehrbar; die m68k-Endungen kommen mit dem Emulator **hinter** die
+  nativen (in den Overlays so kommentiert). `.NAC` kommt nicht hinein.
+* **Drei Kopien der Liste, alle drei geaendert** (nur Overlays):
+  `overlay/mintlib/spawnvp.c` (`spawnvp`/`spawnlp`/`system()`),
+  `overlay/mintlib/spawn.c` (neu als Overlay, Suche des `#!`-Interpreters,
+  sonst woertlich) und `overlay/posix/execvp.c` (neu als Overlay,
+  `{ "", .ntp, .nap, .ncp }`; mintlibs `.app`/`.gtp` fallen mit weg, beide
+  m68k; `__mint == 0`, also ist das die Liste, die `execvp` laeuft).
+  `sdk/libc/build-libc.sh` Kopfkommentar ergaenzt.
+* **Gefunden, nicht geaendert** (anderer Zweck: Ausfuehrbits, keine
+  Namenssuche): `mintlib/quickstat.c` und das ausgeschlossene
+  `mintlib/do_stat.c` setzen `0111` nur fuer `.app/.gtp/.ttp/.prg/.tos`,
+  dazu mit Kleinbuchstaben-Vergleich — `access(X_OK)` ist fuer eine `.NCP`
+  falsch (aus dem Quelltext, nicht gemessen).
+* **Gross/klein:** `_buffindfile` haengt `.ntp` usw. klein an; GEMDOS macht
+  auf FAT Grossbuchstaben daraus (`tos-api/src/bdos/fs/find.rs`,
+  `dir.rs`), `P10KID.ntp` trifft `P10KID.NTP`.
+* **Gemessen (QEMU raspi4b):** `system("C:\P10\P10KID s3")` → **42** (vorher
+  `-1`/`ENOENT`); `system("C:\P10\ONLYNCP s3 s4")` → 43;
+  `system("C:\P10\LEGACY s5")` mit nur `LEGACY.PRG` (= dieselbe Datei wie
+  das Kind) → `-1`/`ENOENT`. `port10.c` 29/31, die 2 FAIL unveraendert die
+  Kern-Umleitung (unten „Offen", Punkt 1).
+* **Hosttest:** `sdk/libc/tests/spawn-host.sh` baut zusaetzlich
+  `spawn-search-host` (`spawn-search-host.c`, `spawn-search-fs.c`) ueber
+  mintlibs echtem `buffindf.c`: 19 Pruefungen + Objektpruefung `spawn.c`;
+  Gegenprobe mit der alten Liste: 13 FAIL. `sh sdk/run-host-tests.sh`
+  11/0/0. QED, TeraDesk, DOOM bauen mit 0 undefined; QED.NAP und
+  DESKTOP.NAP byte-gleich mit port10b.
+* `sdk/examples/port10.c`: die ENOENT-Pruefung ist jetzt eine 42-Pruefung,
+  dazu `ONLYNCP` und der `LEGACY.PRG`-Koeder.
+* Doku: `docs/sdk/07-mintlib-limits.md` §8 (und Kopfzeilen).
+
 ## Achtung: fremder Kommit mit halber PORT10-Arbeit
 
 Waehrend dieser Arbeit kam `685cd68` („docs(task): PORT06 scales …") in den
@@ -169,8 +209,8 @@ neu gebaut.
 * `libc.a` hat `__mpn_add`/`__mpn_sub_1` … doppelt (`fpioconst.o` und
   `mpn-inlines.o`, C99-`extern inline` aus `gmp.h`) — Link-Konflikt, sobald
   beide gezogen werden.
-* `spawnvp`s Suchendungen sind mintlibs `ttp/prg/tos`; ein Name ohne Endung
-  findet keine `.NCP`/`.NTP`/`.NAP`.
+* ~~`spawnvp`s Suchendungen sind mintlibs `ttp/prg/tos`; ein Name ohne Endung
+  findet keine `.NCP`/`.NTP`/`.NAP`.~~ Erledigt 2026-10-02, Nachtrag (2) oben.
 * Mit einem echten `system()` liefe DOOMs `ZenityAvailable` durch
   `">/dev/null"` → `"null:"` (`mintlib/unx2dos.c`) und `Fcreate` — nicht
   gefahren.

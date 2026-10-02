@@ -1,0 +1,30 @@
+PASS  spawnl, no arguments (argc 1, envp environ)
+PASS  spawnl, three arguments (argc 3, envp environ)
+PASS  spawnl, twelve arguments (registers + stack) (argc 12, envp environ)
+PASS  spawnle, environment after the NULL (argc 3, envp explicit)
+PASS  spawnle, twelve arguments then the environment (argc 12, envp explicit)
+PASS  spawnlp -> spawnvp -> spawnve(NULL env) (argc 3, envp NULL)
+PASS  spawnv (argc 3, envp environ)
+PASS  spawnvp (argc 3, envp NULL)
+spawn-host: 0 of 8 checks failed
+PASS  spawnvp C:\P10\P10KID finds P10KID.NCP (the port10b ENOENT case)  [r=42 -> C:\P10\P10KID.ncp]
+PASS  spawnvp C:\BIN\TOOL finds TOOL.NTP  [r=42 -> C:\BIN\TOOL.ntp]
+PASS  spawnvp C:\BIN\GEMAPP finds GEMAPP.NAP  [r=42 -> C:\BIN\GEMAPP.nap]
+PASS  order: TRIO.{NCP,NAP,NTP} -> .ntp first  [r=42 -> C:\BIN\TRIO.ntp]
+PASS  order: DUO.{NCP,NAP} -> .nap before .ncp  [r=42 -> C:\BIN\DUO.nap]
+PASS  lower-case name finds the upper-case FAT entry  [r=42 -> c:\p10\p10kid.ncp]
+PASS  LEGACY.{PRG,TOS,TTP,APP,GTP} only -> not found (ENOENT)  [r=-1 errno=33]
+PASS  ACC.NAC (accessory) -> not found (ENOENT)  [r=-1 errno=33]
+PASS  MIXED.{PRG,NCP} -> the native .ncp  [r=42 -> C:\OLD\MIXED.ncp]
+PASS  explicit extension .NCP is used as given  [r=42 -> C:\P10\P10KID.NCP]
+PASS  explicit extension .NTP is used as given  [r=42 -> C:\BIN\TOOL.NTP]
+PASS  explicit m68k extension .PRG is still found as given  [r=42 -> C:\OLD\LEGACY.PRG]
+PASS  explicit extension that does not exist -> ENOENT, no list appended  [r=-1 errno=33]
+PASS  PATH walk: TOOL via PATH=C:\OLD,C:\BIN finds C:\BIN\TOOL.ntp  [r=42 -> C:\BIN\TOOL.ntp]
+PASS  PATH walk: LEGACY via PATH=C:\OLD -> not found  [r=-1 errno=33]
+PASS  execvp HERE (current directory) finds HERE.NCP  [found HERE.ncp after 4 tries]
+PASS  execvp XTOOL via PATH=\XBIN finds XTOOL.NAP  [found \XBIN/XTOOL.nap after 3 tries]
+PASS  execvp XOLD (only XOLD.PRG) -> ENOENT  [r=-1 errno=33, 4 tries]
+PASS  execvp explicit XOLD.PRG via PATH is tried as given  [found \XBIN/XOLD.PRG after 1 tries]
+spawn-search-host: 0 of 19 checks failed
+PASS  overlay mintlib/spawn.c object: extension strings = { nap ncp ntp }

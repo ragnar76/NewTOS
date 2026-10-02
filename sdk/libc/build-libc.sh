@@ -47,6 +47,9 @@
 #                                pointer-wide on LP64 (TASK/PORT10)
 #       mintlib/spawn{ve,vp}.c   spawnl/spawnle/spawnlp via va_arg instead of
 #                                m68k va_list arithmetic (TASK/PORT10)
+#       mintlib/spawn{vp,}.c, posix/execvp.c  program-name search list =
+#                                NewTOS's native { ntp, nap, ncp } instead of
+#                                { ttp, prg, tos } (user decision 2026-10-02)
 #       posix/system.c           system() without mintlib's POSIX branch
 #                                (vfork/execve/waitpid): always the TOS
 #                                branch via spawnvp (TASK/PORT10; removed

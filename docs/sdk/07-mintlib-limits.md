@@ -10,7 +10,8 @@ that did not change are left as measured), and again 2026-09-25 after
 TASK/PORT01 added `newtos-arch/cmdargs.c` (§1, §5, §6). TASK/PORT10
 (2026-10-02) updated §1, §5, §6 and added §8: `spawnve.c`/`spawnvp.c` compile
 (9 failures now, not 11), `environ` is the empty environment, and the GMP limb
-width behind `printf("%f")` is fixed.
+width behind `printf("%f")` is fixed. Later the same day §8: the program-name
+search uses NewTOS's extensions (`ntp`, `nap`, `ncp`).
 
 ## 1. mintlib files that do not compile (recorded, not repaired)
 
@@ -237,12 +238,29 @@ Host check `sdk/libc/tests/system-host.sh`; target check
 
 What a caller must know:
 
-* **No NewTOS extensions in the search.** `spawnvp` (and so `system()`) tries
-  the name as given, then mintlib's `.ttp`, `.prg`, `.tos` — never `.NCP`,
-  `.NTP`, `.NAP`. `system("C:\\P10\\P10KID")` does not find `P10KID.NCP`
-  (`-1`/`ENOENT`, measured); give the extension: `system("C:\\P10\\P10KID.NCP x")`.
-  The PATH part of the search reads `getenv("PATH")`, which is empty while
-  `environ` is (§5).
+* **The search list is NewTOS's, not mintlib's** (user decision
+  2026-10-02). A name without extension is tried as given, then with `.ntp`,
+  `.nap`, `.ncp` — in that order, replacing mintlib's `.ttp`, `.prg`, `.tos`
+  position by position. On NewTOS only the native AArch64 programs are
+  executable; `.TTP`/`.PRG`/`.TOS` are m68k and belong to the later m68k
+  emulator, which will append them **after** the native three. `.NAC`
+  (accessory) is not startable and is not in the list. Overlays:
+  `sdk/libc/overlay/mintlib/spawnvp.c` (what `spawnvp`/`spawnlp`/`system()`
+  use), `mintlib/spawn.c` (the `#!` interpreter lookup) and `posix/execvp.c`
+  (`{ "", .ntp, .nap, .ncp }` — its `.app`/`.gtp` are dropped too, both m68k).
+  `system("C:\\P10\\P10KID s3")` now runs `P10KID` (exit code 42, measured,
+  `measurements/measurement-2026-10-02-port10c/`); a name whose only file is
+  `LEGACY.PRG` is `-1`/`ENOENT`. An explicit extension is used as given —
+  also an m68k one (the list does not gate what the caller names; whether
+  `Pexec` loads it is the kernel's decision, not measured here). `_buffindfile` appends
+  the lower-case string (`P10KID.ncp`); GEMDOS upper-cases names on FAT, so it
+  matches `P10KID.NCP`. Host check `sdk/libc/tests/spawn-host.sh`
+  (`spawn-search-host`). The PATH part of the search reads `getenv("PATH")`,
+  which is empty while `environ` is (§5).
+  Not changed: mintlib's `stat()` sets the execute bits only for
+  `.app/.gtp/.ttp/.prg/.tos`, compared case-sensitively
+  (`mintlib/quickstat.c`, its Fsfirst fallback), so `access(X_OK)` is false
+  for a `.NCP` — read from the source, not measured.
 * **Redirection does not reach the child yet (kernel).** The child's standard
   handles are not inherited from the parent (`loader.rs` sets `p_uft` to
   `-1`; EmuTOS `bdos/proc.c` `init_pd_files` inherits them via `ixforce`), so

@@ -23,10 +23,12 @@
  *      by TASK/PROC01): system(NULL) == 1; a .NCP run with arguments returns
  *      the child's Pterm code; "> file" redirects the child's handle 1 into
  *      a file the parent reads back; a name WITHOUT extension is looked up
- *      with mintlib's spawnvp list (ttp, prg, tos) only, so C:\P10\P10KID
- *      does not find P10KID.NCP (-1/ENOENT -- recorded behaviour, not a
- *      wish); and DOOM's I_Error probe "/usr/bin/zenity --help >/dev/null
- *      2>&1" comes back non-zero. Two checks here measure KERNEL behaviour
+ *      with spawnvp's NewTOS list (ntp, nap, ncp -- user decision
+ *      2026-10-02, replacing mintlib's ttp, prg, tos), so C:\P10\P10KID
+ *      finds P10KID.NTP/.NCP, C:\P10\ONLYNCP finds ONLYNCP.NCP, and
+ *      C:\P10\LEGACY (only LEGACY.PRG on the card) is -1/ENOENT; and DOOM's
+ *      I_Error probe "/usr/bin/zenity --help >/dev/null 2>&1" comes back
+ *      non-zero. Two checks here measure KERNEL behaviour
  *      that system()'s redirection relies on, against EmuTOS: the child
  *      inherits the parent's forced standard handles (bdos/proc.c
  *      init_pd_files -> ixforce), and Fforce holds a use count so the parent's
@@ -36,8 +38,8 @@
  *     sdk/libc/build-libc.sh sdk/examples/port10kid.c sdk/libc/build/P10KID.NCP
  *     sdk/libc/build-libc.sh sdk/examples/port10.c    sdk/libc/build/P10TEST.NCP
  * Card: C:\AUTO\P10TEST.NCP, plus the child as C:\P10\P10KID.NCP and the same
- * file again as C:\P10\P10KID.NTP
- * (measurements/measurement-2026-10-02-port10b/method/run-port10.sh).
+ * file again as C:\P10\P10KID.NTP, C:\P10\ONLYNCP.NCP and C:\P10\LEGACY.PRG
+ * (measurements/measurement-2026-10-02-port10c/method/run-port10.sh).
  * Expect on the serial line: "port10: PASS ..." per check, then
  *     port10: ALL PASS (N checks)
  * No key pause: \AUTO\ is its route, and a key wait there stops the boot.
@@ -226,9 +228,18 @@ main (void)
     int r;
     errno = 0;
     r = system ("C:\\P10\\P10KID s3");
+    spawned ("system(\"C:\\P10\\P10KID s3\") (no extension: spawnvp's "
+	     "ntp/nap/ncp list)", r, 42);
+  }
+  spawned ("system(\"C:\\P10\\ONLYNCP s3 s4\") (no extension, only .NCP "
+	   "on the card)", system ("C:\\P10\\ONLYNCP s3 s4"), 43);
+  {
+    int r;
+    errno = 0;
+    r = system ("C:\\P10\\LEGACY s5");
     verdict (r == -1 && errno == ENOENT,
-	     "system(\"C:\\P10\\P10KID s3\") -> -1/ENOENT: spawnvp tries "
-	     "only .ttp/.prg/.tos, P10KID.NCP is not found", NULL);
+	     "system(\"C:\\P10\\LEGACY s5\") -> -1/ENOENT: only LEGACY.PRG "
+	     "exists, .prg is not in the native list", NULL);
   }
   {
     /* doomgeneric i_system.c ZenityAvailable(), on every I_Error. */
