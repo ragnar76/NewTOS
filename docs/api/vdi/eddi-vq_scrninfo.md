@@ -403,8 +403,13 @@ Der Test gehoert zum spaeteren Ticket, nicht zu dieser Spec.
 * `docs/analysis/vdi-audit/truecolor-conversion-plan.md` und ADR-024 gehen
   von 16-Bit-**nativem** `u16` im MFDB aus; die Endianness-Frage (E3) ist dort
   nicht ausdruecklich beantwortet.
-* Nova-Treiber-Verhalten: ohne Quelle. **Lead 2026-10-02:** dass Hatari eine
-  Nova emuliert, ist unbelegt (bisheriger Projektstand: nein) — erst pruefen; ggf. per
+* Nova-Treiber-Verhalten: ohne Quelle. **Lead 2026-10-02, geprueft am lokalen
+  Hatari-Quellbaum** (`/Volumes/Daten/Development/RuSTari/hatari`, `4491dc0c1`):
+  Hatari emuliert **keine** Nova/ET4000; seine Grafikerweiterung ist der
+  VDI-Modus `--vdi`/`--vdi-planes` mit 1/2/4/8 Planes (`src/options.c:333-339`,
+  `src/vdi.c:128-143`) — hoehere Aufloesung mit Palette, kein Truecolor, kein
+  EdDI. Taugt fuer Dooms `vr_trnfm`-Weg bei 8 Planes; den EdDI-Weg auf einer
+  Nova prueft nur der echte TT; ggf. per
   Hatari-Beobachtung (`vq_scrninfo` dumpen) zu klaeren — nicht von mir getan.
 
 ## 9. Re-Anchor
