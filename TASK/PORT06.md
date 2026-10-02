@@ -1,6 +1,6 @@
 # PORT06 — Doom portieren: konform ueber BIOS, AES und VDI
 
-Status: **OFFEN** · Prioritaet: **P3** (nach dem OFAM-Termin) · Typ: Portierung — Anwenderwunsch 2026-09-28
+Status: **OFFEN** · Prioritaet: **P1** (vorgezogen vor den OFAM-Termin, Anwender 2026-10-02) · Typ: Portierung — Anwenderwunsch 2026-09-28
 
 Abhaengigkeiten: — (**nicht** von [SDL01](SDL01.md); siehe §2)
 
@@ -48,6 +48,40 @@ ausserhalb des Repos). Gezaehlt ueber ihre Quellen: `vro_cpyfm` 41x,
 9x — das ist die konforme Haelfte. Daneben `Vsync` 39x, `Setscreen` 21x,
 `Logbase` 18x, `Physbase` 15x — die nicht konforme. Dass sie ein `plat-tt.c`
 **und** ein `plat-pistorm.c` braucht, zeigt genau diese Trennlinie.
+
+## Entscheidungen 2026-10-02 (Anwender)
+
+**Ziel: ein Quelltext, zwei Ziele — NewTOS auf der Pi (aarch64) und ein Atari
+TT mit Nova (m68k).** Konform ueber VDI/AES/BIOS/GEMDOS; was auf dem TT nicht
+liefe, ist nicht konform genug.
+
+* **Grundlage: doomgeneric** (GPLv2), `https://github.com/ozkl/doomgeneric`,
+  Stand `dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284`, lokal in
+  `Applications/doomgeneric` (nicht eingecheckt, wie QED/TeraDesk).
+  Plattformschicht: `DG_Init`, `DG_DrawFrame`, `DG_SleepMs`,
+  `DG_GetTicksMs`, `DG_GetKey`. Die Portierung liegt in `sdk/apps/doom`.
+  Damit ist die Lizenzfrage aus §4 entschieden: die GPL-Fassung.
+* **WAD:** Shareware `doom1.wad` v1.9, `Applications/doom-wad/doom1.wad`,
+  4 196 020 Byte, MD5 `f0cefca49926d00903cf57551d901abe` (die bekannte
+  Shareware-1.9-Summe). Weitergabe erlaubt; nicht eingecheckt.
+* **Pixelformat — beide Wege bauen:**
+  1. **`vr_trnfm`** aus dem VDI-Standardformat: laeuft ueberall (TT ohne
+     Karte, Nova, NewTOS), langsamer.
+  2. **EdDI `vq_scrninfo`**, wenn der Cookie `EdDI` da ist: Doom rechnet direkt
+     ins gemeldete Geraeteformat, dann `vro_cpyfm`. NVDI/Nova-Treiber liefern
+     es; **NewTOS bekommt es als Erweiterung ueber EmuTOS hinaus** (eigene
+     Spec + eigenes Ticket, EmuTOS kennt kein EdDI).
+* **Aufloesung:** auf eine kleine beschraenken — Doom zeichnet 320x200;
+  ausgegeben wird klein (ggf. ganzzahlig skaliert, mittig), nicht der volle
+  Schirm.
+* **TT:** Compiler `m68k-atari-mint-gcc` 7.5.0 in `/opt/cross-mint`; eine
+  m68k-gemlib liegt in `sdk/gemlib/gemlib-m68k.a`. FPU (68881/68882) ggf.
+  als Bauvariante; Doom rechnet im Kern Festkomma. Erster TT-Lauf in Hatari
+  (`~/Downloads/hatari-2.6.1_macos/`, TT 256 Farben; eine Nova emuliert Hatari
+  nicht), der echte TT mit Nova durch den Anwender.
+* **Reihenfolge:** zuerst NewTOS mit dem `vr_trnfm`-Weg (geht ohne
+  Kerneleingriff), dann EdDI-Spec → NewTOS-`vq_scrninfo` → EdDI-Weg in Doom,
+  dann der m68k-Bau.
 
 ## 1. Warum es machbar ist — der Weg ist nicht nur vorhanden, sondern gemessen
 
