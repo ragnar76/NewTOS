@@ -1,0 +1,98 @@
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/host_env.rs	2026-09-30 09:55:08
++++ kernel/src/host_env.rs	2026-10-02 21:10:25
+@@ -107,6 +107,7 @@
+         // On real Pi-4 this is the sole console input source; no-op until a
+         // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        k06_inject::step(); // K06-TEMP: scripted IKBD key hold (diagnosis scaffolding)
+         core::hint::spin_loop();
+ 
+         // SAFETY: restore the caller's original DAIF mask state.
+@@ -455,4 +456,43 @@
+ /// `kernel_main`.
+ pub fn install() {
+     tos_api::host::install_host(&KERNEL_HOST_REF);
++}
++
++// K06-TEMP BEGIN -- scripted IKBD key make/break for the PORT06 key-hold
++// diagnosis (QEMU raspi4b has no USB keyboard). Feeds exactly the bytes
++// `drivers::usb::hid::keyboard_report` feeds for a held key: ONE make when the
++// key goes down, ONE break when it goes up -- a HID boot keyboard reports
++// changes only. Schedule relative to the first pump of the first EL0 program.
++pub mod k06_inject {
++    use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
++    static T0: AtomicU32 = AtomicU32::new(0);
++    static NEXT: AtomicUsize = AtomicUsize::new(0);
++    // (ticks after arm @200 Hz, byte). 0x48 = up arrow make, 0xC8 = break.
++    const SCRIPT: &[(u32, u8)] = &[
++        (3000, 0x48), (4000, 0xC8),   // hold up-arrow 5 s
++        (4600, 0x48), (5000, 0xC8),   // hold again 2 s
++    ];
++    pub fn step() {
++        if tos_api::bdos::process::RUN.load(Ordering::Acquire).is_null() {
++            return;
++        }
++        let now = tos_api::bios::tick::hz_200();
++        if T0.load(Ordering::Relaxed) == 0 {
++            T0.store(now.max(1), Ordering::Relaxed);
++            crate::kprintln!("[k06] injector armed at hz_200 {}", now);
++            return;
++        }
++        let t0 = T0.load(Ordering::Relaxed);
++        let i = NEXT.load(Ordering::Relaxed);
++        if i >= SCRIPT.len() {
++            return;
++        }
++        let (at, b) = SCRIPT[i];
++        if now.wrapping_sub(t0) >= at {
++            crate::kprintln!("[k06] feed {:#04x} at hz_200 {} (+{})", b, now, now.wrapping_sub(t0));
++            crate::ikbd::feed(b);
++            NEXT.store(i + 1, Ordering::Relaxed);
++        }
++    }
+ }
++// K06-TEMP END
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/console.rs	2026-09-04 11:44:06
++++ kernel/src/console.rs	2026-10-02 21:10:25
+@@ -173,6 +173,7 @@
+ pub fn push_rx(word: u16) {
+     #[cfg(feature = "initinfo-diag")]
+     crate::initinfo::diag::note_push(crate::initinfo::diag::PUSH_SRC_IKBD, word);
++    crate::kprintln!("[k06] push_rx {:#06x} at hz_200 {}", word, tos_api::bios::tick::hz_200()); // K06-TEMP
+     RX_RING.push(word);
+ }
+ 
+@@ -194,7 +195,9 @@
+ /// Pop one whole key word (`scancode << 8 | ascii`) for the AES event
+ /// manager, so it can deliver scancodes (arrow / function keys) to apps.
+ pub fn rx_pop_key() -> Option<u16> {
+-    RX_RING.pop()
++    let w = RX_RING.pop();
++    if let Some(w) = w { crate::kprintln!("[k06] rx_pop_key {:#06x} at hz_200 {}", w, tos_api::bios::tick::hz_200()); } // K06-TEMP
++    w
+ }
+ 
+ /// Non-destructively peek the oldest queued key word (`scancode << 8 |
+--- /Volumes/Daten/Development/PiRusTOS/sdk/apps/doom/doomgeneric_gem.c	2026-10-02 19:49:21
++++ sdk/apps/doom/doomgeneric_gem.c	2026-10-02 21:10:55
+@@ -1393,10 +1393,12 @@
+ 		repeat = 2;
+ 	hold_first_ms = (uint32_t)delay * 20u + 60u;
+ 	hold_repeat_ms = (uint32_t)repeat * 20u + 60u;
++	printf("K06 Kbrate=%04lx hold_first=%lu hold_repeat=%lu ms\n", rate & 0xffff, (unsigned long)hold_first_ms, (unsigned long)hold_repeat_ms); /* K06-TEMP */
+ }
+ 
+ static void keyq_put(int pressed, unsigned char key)
+ {
++	printf("K06 put %s key %d at %lu ms\n", pressed ? "PRESS" : "RELEASE", key, (unsigned long)DG_GetTicksMs()); /* K06-TEMP */
+ 	if (((keyq_w + 1) % KEYQ_SIZE) == keyq_r)
+ 		return;				/* full: drop, as a hardware buffer does */
+ 	keyq[keyq_w] = (uint16_t)((pressed ? 0x100 : 0) | key);
+@@ -1461,6 +1463,7 @@
+ 		now = DG_GetTicksMs();
+ 		if (ev & MU_KEYBD) {
+ 			unsigned char k = map_key(kc);
++			printf("K06 evnt MU_KEYBD kc=%04x ks=%x at %lu ms\n", (unsigned)(kc & 0xffff), ks, (unsigned long)now); /* K06-TEMP */
+ 
+ 			if (k == 0)
+ 				continue;

@@ -1,0 +1,58 @@
+measurement-2026-10-02-port06-keys -- PORT06 key-hold diagnosis (Doom stops walking)
+Date 2026-10-02, branch desk-rebuild, HEAD 1f6dbf4, shared tree unchanged.
+
+WHAT
+  One headless QEMU raspi4b run (640x480), Doom autostarted by #Z, a scripted
+  IKBD injector holds the up-arrow key for 5 s and later for 2 s. Logged:
+  kernel side every key word entering / leaving the IKBD queue
+  (console::push_rx / rx_pop_key) with hz_200; Doom side every MU_KEYBD event
+  and every press/release the platform layer hands to DOOM (keyq_put), in
+  DG_GetTicksMs (= hz_200 * 5).
+
+WHY THE INJECTOR IS FAITHFUL TO THE PI
+  The injector calls crate::ikbd::feed with 0x48 once at key-down and 0xC8
+  once at key-up -- exactly what kernel/src/drivers/usb/hid.rs:69-96
+  (keyboard_report) feeds for a held key: it diffs each boot report against
+  the previous one and emits a make only for a NEW usage, a break only for a
+  VANISHED one. A held key produces no further bytes, whether or not the
+  keyboard re-sends its unchanged report. QEMU raspi4b has no USB keyboard,
+  so the USB transport itself is NOT exercised here.
+
+INSTRUMENTATION (scratch only, never in the shared tree)
+  method/scratch-k06-instrumentation.diff  -- kernel host_env.rs (injector,
+      schedule: +3000 ticks make, +4000 break, +4600 make, +5000 break after
+      arm), console.rs (push_rx / rx_pop_key log), doomgeneric_gem.c (K06
+      printf lines). Applied to an rsync copy of the tree in the session
+      scratchpad.
+  kernel8.img (scratch, release, rpi4) sha256
+      5c6c553818bbd80b01634d4a9ac8cc0eea4160d8a8189a4f82fb3a567a646da4
+  DOOM.NAP (scratch build-doom.sh, defaults) sha256
+      32cbd34a7d33573cc6601ace2d82e33394404698486695b3030c7c850a50408f
+  Card: method/seed-doom.sh (fresh tools/make-sd-image.sh image + DOOM.NAP +
+  doom1.wad + method/newdesk-doom.inf #Z autorun), run: method/run-doom.sh
+  (QMP screendumps at 20/30/40/50 s wall clock, then quit).
+
+RESULT (serial/run1-hold-serial.log, lines after tr '\r' '\n')
+  K06 Kbrate=0f02 hold_first=360 hold_repeat=100 ms
+  [k06] feed 0x48 at hz_200 6006 (+3001)          key down
+  [k06] push_rx 0x4800 at hz_200 6006             ONE key word queued
+  [k06] rx_pop_key 0x4800 at hz_200 6006
+  K06 evnt MU_KEYBD kc=4800 ks=0 at 30030 ms
+  K06 put PRESS key 173 at 30030 ms
+  K06 put RELEASE key 173 at 30395 ms              Doom gives up after 365 ms
+  [k06] feed 0xc8 at hz_200 7005 (+4000)          key up, 5 s later: nothing queued
+  [k06] feed 0x48 at hz_200 7605 (+4600)          second hold (2 s)
+  [k06] push_rx 0x4800 at hz_200 7605
+  K06 put PRESS key 173 at 38030 ms
+  K06 put RELEASE key 173 at 38415 ms              again 385 ms
+  [k06] feed 0xc8 at hz_200 8006 (+5001)
+  => over a 5 s hold Doom receives exactly 1 key event and 0 repeats; it
+     declares the key released 365 ms after the press (hold_first_ms).
+
+  Serial traffic during Doom: after "[launch]" the only kernel lines are the
+  [k06] instrumentation lines; no [sched]/[usb]/... lines. Doom's own stats
+  line every 5 s (DOOM_STATS=5). QEMU's PL011 does not model the baud rate,
+  so the cost of serial output cannot be measured headlessly.
+
+  Screendumps: demo playback (attract mode), so the key has no visible effect
+  in the picture -- the evidence is the platform-layer log, not the image.
