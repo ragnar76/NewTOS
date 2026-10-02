@@ -1,0 +1,142 @@
+measurement-2026-10-02-port10
+  PORT10 -- libc: spawn*/system(), printf("%f"), intptr_t on LP64
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 160d24b bei Beginn (waehrend der Arbeit kam
+685cd68 hinzu, siehe TASK/PORT10-STATUS-UNFINISHED.MD "Achtung"). Kein
+Kommit durch diesen Lauf, nichts geflasht, keine Pi, keine Karte,
+/Volumes/BOOT nicht beruehrt. Unter kernel/ und tos-api/ wurde KEINE Datei
+geaendert. Kein *.img in diesem Verzeichnis.
+
+Maschine: QEMU -M raspi4b, -display none, serielle Ausgabe in eine Datei,
+Karte als -drive if=sd. Karte jedes Mal frisch aus tools/make-sd-image.sh,
+dazu die Testprogramme (method/seed-auto.sh; make-sd-image.sh ist NICHT
+geaendert). Kern: `cargo xtask build --board rpi4 --release`, unveraendert,
+tos-api 64 / kernel 94 rustc-Warnungen (Basislinie),
+kernel8.img sha256 a17e374a344033568303f360eea85d440d76fe02e50b4fc6566751e21e0f510c.
+clang: Apple clang version 21.0.0 (clang-2100.1.1.101), Ziel
+aarch64-unknown-none-elf; Host arm64 Darwin.
+
+
+0. ERGEBNIS VORWEG
+---------------------------------------------------------------------------
+  printf("%f")     BEHOBEN. Ursache: mintlibs stdlib/gmp-mparam.h sagt
+                   BITS_PER_MP_LIMB 32, mp_limb_t (stdlib/gmp.h) ist auf LP64
+                   `unsigned long` = 64 Bit. Overlay leitet die Breite aus
+                   `long` ab. Vorher "1.?00000" fuer 1.5 und Muell fuer 1e100
+                   (serial/fp-before-pristine-gmp-mparam.log), nachher exakt
+                   (serial/port10-serial.log).
+  intptr_t         BEHOBEN. intptr_t/uintptr_t 64 Bit (+ INTPTR_*/UINTPTR_MAX,
+                   PRI*PTR/SCN*PTR). QED/TeraDesk bauen, 0 undefined.
+  spawn*           LAEUFT. spawnv/spawnvp/spawnl/spawnle/spawnlp ueber
+                   synchronen Pexec(0), wie mintlib auf TOS ohne MiNT.
+  system()         LINKT WEITERHIN NICHT: vfork, __waitval, __waittime.
+                   Braucht eine Entscheidung (Kern: Pexec-Modi 5/4), siehe
+                   Statusdatei. build-doom.sh linkt deshalb noch nicht.
+  DOOM             timedemo-Schlusszeile erscheint jetzt:
+                   "timed 5026 gametics in 2302 realtics (76.416161 fps)",
+                   DOOM endet sauber, der Desktop kommt zurueck
+                   (serial/doom-tdemo-serial.log, screendumps/32). Gelinkt
+                   mit PORT06s Diagnose-system() -- und das wurde dabei
+                   AUFGERUFEN (siehe 3.).
+
+
+1. printf("%f") -- Ursache und Beleg
+---------------------------------------------------------------------------
+method/fptest.c + method/itest.c, als C:\AUTO\FPTEST.NCP / ITEST.NCP.
+
+  serial/fp-before-pristine-gmp-mparam.log  libc mit dem PRISTINEN Header:
+      1.5   -> [1.?00000]        0.1  -> [0.1?6250]
+      3.14159 -> [3.O41592]      1e-5 -> [0.00003N]
+      1e100 -> [1000000000000000031<Steuerzeichen>5"'$90' ...]
+    Ganzzahlen (%ld/%lld/%llu/%lx/%lo) und strtod("3.14159") waren schon
+    richtig.
+  serial/port10-serial.log  libc mit dem Overlay: alle Werte exakt, 1e100
+    als 10000000000000000159028911097599180468360808563945281389781327557747838772170381060813469985856815104.000000.
+
+  Host (host/): sdk/libc/tests/gmp-host.sh baut die UNVERAENDERTEN
+  mintlib-Dateien stdlib/fpioconst.c, gmp/dbl2mpn.c, gmp/mpn-mul_1.c (+
+  mpn-add_n, mpn-sub_n, mp_clz_tab) mit dem Include-Pfad des Archivs.
+    gmp-host-pristine-header.txt  17 von 21 Pruefungen FALSCH: 10^16 aus der
+      Tabelle gelesen = 0x2386f2_0000000000000000_6fc10000 statt
+      0x002386f26fc10000, __mpn_extract_double(1.5) -> 6442450944.
+    gmp-host-overlay-header.txt   21 von 21 richtig.
+  Der Absturz in PORT06 (FAR wechselnd) ist dieselbe Ursache: Tabellen und
+  Code fuer 32-Bit-Limbs auf 64-Bit-Limbs laufen ueber die Ziffernpuffer;
+  in diesem Lauf gab es mit dem Overlay keinen einzigen Abbruch, DOOMs
+  Zeile ist da.
+
+
+2. spawn* -- was laeuft, was nicht
+---------------------------------------------------------------------------
+sdk/examples/port10.c (C:\AUTO\P10TEST.NCP) startet sdk/examples/
+port10kid.c (C:\P10\P10KID.NCP, dieselbe Datei auch als P10KID.NTP). Das
+Kind meldet argc/argv, cmdlin[0], ob environ leer ist, und p_env als Zahl
+(NIE gelesen); sein Exitcode ist 40 + argc.
+
+  port10: ALL PASS (21 checks)  -- serial/port10-serial.log
+    spawnv  one two            -> 43   spawnvp (P10KID.NTP alpha) -> 42
+    spawnl  a b c              -> 44   spawnl 1..11 (Register+Stapel) -> 52
+    spawnlp (ohne Argumente)   -> 41   spawnle e1 + eigene Umgebung  -> 42
+    spawnvp auf fehlende Datei -> -1 / ENOENT
+  spawnvp(P_WAIT, argv[0], argv) ist woertlich der TOS-Zweig von system()
+  (posix/system.c system_hack) nach dem Zerlegen der Zeile.
+
+  Kind sieht: cmdlin[0] = 127 (mintlibs ARGV-Signal 0x7f), Argumente aus
+  dem Schwanz, environ leer, p_env = 0x1804000 -- eine PHYSISCHE Adresse
+  ausserhalb des EL0-Fensters (TASK/MEM03). mintlibs _spawnve baut IMMER
+  einen Umgebungsblock (mit ARGV=), also bekommt jedes per spawn*/system()
+  gestartete Kind einen nicht abgebildeten p_env. Unsere libc liest p_env
+  nicht (cmdargs.c), deshalb laeuft das Kind; ein Kind, das p_env selbst
+  liest, faellt (PORT09s envkid.log).
+
+  Host: host/spawn-host.txt (8/8; die Overlays reichen _spawnve dasselbe
+  argv/envp, das der m68k-Cast lieferte), host/cmdargs-host.txt (11/11;
+  neu: environ ist die leere Umgebung, der 0x7f-Schwanz mit gesetztem p_env
+  wird zerlegt, p_env wird nicht gelesen -- der Host faellt sonst).
+
+  system(): method/build-doom-delivered.log -- 81/81 uebersetzt, Link
+  bricht ab an genau `vfork`, `__waitval`, `__waittime` (spawnvp, der
+  PORT06-Blocker, ist weg).
+
+
+3. DOOM timedemo (method/run-doom-tdemo.sh = PORT06-Skripte unveraendert)
+---------------------------------------------------------------------------
+  serial/doom-tdemo-serial.log:
+    timed 5026 gametics in 2302 realtics (76.416161 fps)
+    DIAG: system("/usr/bin/zenity --help >/dev/null 2>&1") refused -- ...
+    [shell] sh_ldapp: 'C:\DOOM\DOOM.NAP' exited with rc=0
+  screendumps/31-timedemo-t45.png   Demo-Wiedergabe (roter Trefferblitz)
+  screendumps/32-timedemo-end-t130.png  Desktop nach dem Ende
+
+  BEFUND gegen PORT06: ZenityErrorBox wird bei JEDEM I_Error erreicht.
+  I_Error ruft sie, wenn `exit_gui_popup && !I_ConsoleStdout()`
+  (i_system.c:410), und doomgenerics I_ConsoleStdout liefert ohne
+  ORIGCODE immer 0 (i_system.c:210-221, das isatty steht im
+  #if ORIGCODE-Zweig). Nur `-nogui` unterdrueckt den Aufruf. PORT06 sah
+  ihn nicht, weil der %f-Absturz davor lag. Mit einem echten system() liefe dort der
+  TOS-Zweig: ">/dev/null" wird zu "null:" (mintlib/unx2dos.c), dann
+  spawnvp("/usr/bin/zenity") -> nicht gefunden. Nicht gefahren.
+
+
+4. QED / TeraDesk mit der neuen libc
+---------------------------------------------------------------------------
+  Vorher (libc ohne PORT10-Aenderungen, MINTLIB_REFRESH=1) und nachher
+  gebaut, gleiche Skripte:
+    QED.NAP       839b6951... -> 27036f80...   0 undefined, Warnungen gleich
+    DESKTOP.NAP   8bd5fd1f... -> 4bf69f03...   0 undefined, 2 Warnungen
+                  weniger (environm.c:57/92, Abschneiden ueber uintptr_t),
+                  keine neue (method/teradesk-warnings-before-after.diff)
+  Verhalten: nicht gefahren (Tester). Aus dem Quelltext: beide benutzen
+  getenv (environ jetzt {NULL} statt NULL -- gleiches Ergebnis), kein
+  spawn*/system/putenv; environm.c castet p_env (32 Bit) ueber uintptr_t --
+  vorher und nachher derselbe Wert.
+
+
+5. GRUNDWERTE
+---------------------------------------------------------------------------
+  sdk/run-host-tests.sh   10 passed, 0 failed, 0 skipped (host/run-host-tests.txt;
+                          vorher 8/0/0, neu gmp-host + spawn-host)
+  cargo test -p tos-api -p tos-types -p xtask --no-fail-fast
+                          964 passed / 0 failed / 1 ignored (unveraendert)
+  Builds/Clippy/Drift nicht gefahren: kernel/ und tos-api/ unberuehrt.

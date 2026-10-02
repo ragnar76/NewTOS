@@ -51,9 +51,9 @@ Original Author: Shay Gal-on
  *      otherwise coremark may fail", and core_util.c's check_data_types()
  *      enforces sizeof(ee_ptr_int) == sizeof(int *). The 68k port could use
  *      `unsigned int` because m68k is ILP32; we cannot.
- *      It is spelled __UINTPTR_TYPE__ and not uintptr_t ON PURPOSE -- see the
- *      long note at the typedef: our mintlib's <stdint.h> still carries the
- *      m68k definition and would give us a 32-bit uintptr_t.
+ *      It is spelled __UINTPTR_TYPE__ and not uintptr_t -- see the note at
+ *      the typedef: when this port was written our mintlib's <stdint.h> still
+ *      carried the m68k definition (a 32-bit uintptr_t; fixed in TASK/PORT10).
  *
  *   2. SEED_METHOD is SEED_VOLATILE, not SEED_ARG.
  *      The Atari port takes its seeds from the command line. NewTOS has no
@@ -184,7 +184,8 @@ typedef unsigned int   ee_u32;
    (__UINTPTR_TYPE__ = `long unsigned int` for aarch64-unknown-none-elf) and
    deliberately NOT from <stdint.h>.
 
-   Our mintlib's include/stdint.h still carries its m68k definition:
+   When this port was written, our mintlib's include/stdint.h still carried
+   its m68k definition:
 
        #ifdef __MSHORT__
        typedef unsigned long int uintptr_t;
@@ -192,12 +193,12 @@ typedef unsigned int   ee_u32;
        typedef unsigned int      uintptr_t;   <-- 32 bit, taken on AArch64
        #endif
 
-   i.e. on our LP64 target uintptr_t is 32 bits wide and silently truncates a
-   pointer. Using it here would make check_data_types() report an error and
-   would corrupt align_mem()'s result. That is a real libc defect that outlives
-   this benchmark, but fixing it means changing a type used across the whole
-   libc, so it is reported separately rather than smuggled in here; the port
-   layer meanwhile asks the authority (the compiler) directly. */
+   i.e. on our LP64 target uintptr_t was 32 bits wide and silently truncated a
+   pointer; using it here would have made check_data_types() report an error
+   and corrupted align_mem()'s result. TASK/PORT10 fixed the libc
+   (sdk/libc/overlay/include/stdint.h: `unsigned long' on LP64), so the two
+   spellings now agree; this one stays because it never depended on the
+   libc. */
 typedef __UINTPTR_TYPE__ ee_ptr_int;
 typedef size_t           ee_size_t;
 /* align_mem:

@@ -184,12 +184,16 @@ if [ $? -ne 0 ]; then
     grep -oE "undefined symbol: [^ ]+" "$BUILD/link.err" | awk '{print $3}' | sort -u | sed 's/^/    /'
     if grep -q "posix__system.o" "$BUILD/link.err"; then
         echo
-        echo "KNOWN LIBC GAP: doomgeneric's i_system.c (ZenityErrorBox, reached from"
-        echo "I_Error only when stdout is not a tty) calls system(). libc.a's system()"
-        echo "links against spawnvp/vfork/wait4 pieces that do not build for LP64"
-        echo "(sdk/libc/expected-failures.txt: spawnve.c/spawnvp.c; docs/sdk/"
-        echo "07-mintlib-limits.md). The fix belongs in the libc, not in doomgeneric"
-        echo "and not in this port -- see TASK/PORT06-STATUS-UNFINISHED.MD."
+        echo "KNOWN LIBC GAP: doomgeneric's i_system.c calls system() from"
+        echo "ZenityErrorBox, which I_Error reaches on every error exit unless"
+        echo "-nogui is given (I_ConsoleStdout is 0 outside ORIGCODE) -- also at the"
+        echo "timedemo end line (measured, measurements/measurement-2026-10-02-port10)."
+        echo "libc.a's system() also carries mintlib's POSIX branch, whose vfork"
+        echo "(and wait4's __waitval/__waittime) NewTOS cannot provide yet: on TOS"
+        echo "vfork is tfork = Pexec modes 5+4, which the kernel answers with EINVFN"
+        echo "(docs/sdk/07-mintlib-limits.md Sec.8). The fix belongs in the libc/kernel,"
+        echo "not in doomgeneric and not in this port -- see"
+        echo "TASK/PORT10-STATUS-UNFINISHED.MD."
     fi
     exit 1
 fi

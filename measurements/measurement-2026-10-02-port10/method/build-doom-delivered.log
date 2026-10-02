@@ -1,0 +1,28 @@
+doomgeneric : /Volumes/Daten/Development/PiRusTOS/Applications/doomgeneric @ dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284 (clean)
+gemlib.a out of date [libc/overlay] -- running build-gemlib.sh…
+  compiled OK=578  skipped=0  (of 578)
+  failures match gemlib/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/gemlib/gemlib.a (745626 bytes)
+  (full log: gemlib/build/build-gemlib.log)
+libm.a out of date [libc/overlay] -- running build-libm.sh…
+  compiled OK=175  skipped=0  (of 175)
+  failures match libm/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libm/libm.a (335790 bytes)
+  defined symbols: 279  dangling references: 16 (build/dangling.txt)
+  (full log: libm/build/build-libm.log)
+clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+lld   : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+doomgeneric manifest: 80 upstream files + doomgeneric_gem.c (replaces doomgeneric_xlib.c)
+compiled OK=81  FAILED=0  (upstream files with compiler warnings: 1, see /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/doom-plain/obj/*.err)
+LINK FAILED -- residual undefined symbols (blockers):
+    __waittime
+    __waitval
+    vfork
+
+KNOWN LIBC GAP: doomgeneric's i_system.c (ZenityErrorBox, reached from
+I_Error only when stdout is not a tty) calls system(). libc.a's system()
+links against spawnvp/vfork/wait4 pieces that do not build for LP64
+(sdk/libc/expected-failures.txt: spawnve.c/spawnvp.c; docs/sdk/
+07-mintlib-limits.md). The fix belongs in the libc, not in doomgeneric
+and not in this port -- see TASK/PORT06-STATUS-UNFINISHED.MD.

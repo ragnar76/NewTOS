@@ -1,0 +1,22 @@
+FAIL  limb width: BITS_PER_MP_LIMB=32 BYTES_PER_MP_LIMB=4 sizeof(mp_limb_t)=8
+PASS  __tens 10^(2^0): got 0x0000000000000000000000000000000a want 0x0000000000000000000000000000000a
+PASS  __tens 10^(2^1): got 0x00000000000000000000000000000064 want 0x00000000000000000000000000000064
+PASS  __tens 10^(2^2): got 0x00000000000000000000000000002710 want 0x00000000000000000000000000002710
+PASS  __tens 10^(2^3): got 0x00000000000000000000000005f5e100 want 0x00000000000000000000000005f5e100
+FAIL  __tens 10^(2^4): got 0x00000000002386f2000000006fc10000 want 0x0000000000000000002386f26fc10000
+FAIL  __tens 10^(2^5): got 0x00000000000000000000000000000000 want 0x000004ee2d6d415b85acef8100000000 (> 128 bits)
+FAIL  __mpn_extract_double(1.5): 2 limb(s), rebuilt 6442450944
+FAIL  __mpn_extract_double(0.10000000000000001): 2 limb(s), rebuilt 429496576.00000006
+FAIL  __mpn_extract_double(3.1415899999999999): 2 limb(s), rebuilt 13493018624.000002
+FAIL  __mpn_extract_double(79.123000000000005): 2 limb(s), rebuilt 339830636544
+FAIL  __mpn_extract_double(10000000000): 2 limb(s), rebuilt 4.2949668561953489e+19
+FAIL  __mpn_extract_double(1.0000000000000001e-05): 2 limb(s), rebuilt 42949.656250000007
+FAIL  __mpn_extract_double(123456789): 2 limb(s), rebuilt 5.3024278102985933e+17
+FAIL  __mpn_extract_double(1e+100): 2 limb(s), rebuilt 4.2949667699244447e+109
+FAIL  __mpn_extract_double(-2.5): 2 limb(s), rebuilt -10737418240
+FAIL  __mpn_extract_double(1.7976931348623157e+308): 2 limb(s), rebuilt inf
+FAIL  __mpn_extract_double(2.2250738585072014e-308): 2 limb(s), rebuilt 9.5566194534729613e-299
+FAIL  __mpn_extract_double(2.7813423231340017e-309): 2 limb(s), rebuilt 1.1945774316841202e-299
+FAIL  __mpn_extract_double(4.9406564584124654e-324): 2 limb(s), rebuilt 2.1219957909652723e-314
+FAIL  mpn_mul_1(x, 10): got 0x00000000000000000000000000000000 want 0x0b60b60b60b60b5ff49f49f49f49f4a0
+gmp-host: 17 of 21 checks failed

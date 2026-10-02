@@ -26,11 +26,13 @@ passed as `-isystem "$RES"` after the mintlib include path
 `/Library/Developer/CommandLineTools/usr/lib/clang/21/include`.
 
 **Header precedence matters:** `-nostdinc -I<mintlib>/include … -isystem $RES`
-means mintlib's own `stdint.h` wins over clang's. mintlib's `uintptr_t` is
-`unsigned int` on a non-`__MSHORT__` build — 32 bits on our LP64 target
-(`sdk/libc/mintlib/include/stdint.h:139-143`, documented in
-`sdk/overlays/coremark/newtos/core_portme.h:182-198`). See
-[05-abi-pitfalls.md](05-abi-pitfalls.md#p7).
+means mintlib's own `stdint.h` wins over clang's. Pristine, its `uintptr_t`
+was `unsigned int` on a non-`__MSHORT__` build — 32 bits on our LP64 target;
+since TASK/PORT10 the overlay `sdk/libc/overlay/include/stdint.h` makes
+`intptr_t`/`uintptr_t` `long` on LP64 (with `INTPTR_*`/`UINTPTR_MAX` and the
+`PRI*PTR`/`SCN*PTR` macros in `inttypes.h`). `PTRDIFF_MIN/MAX` and `SIZE_MAX`
+in the same header are still the 32-bit values. See
+[05-abi-pitfalls.md](05-abi-pitfalls.md#b7-mintlibs-stdinth-gives-a-32-bit-uintptr_t-on-our-lp64-build).
 
 ## Linker and binutils: the Rust toolchain's LLVM
 

@@ -7,7 +7,10 @@ built on 2026-09-17 (613 objects compiled, 11 failed, 6 excluded —
 `sdk/libc/build/{compiled,failed,excluded}.txt`); re-measured 2026-09-21
 after TASK/T07 added `setjmp` and the libm (§3, §4, §6 updated; the numbers
 that did not change are left as measured), and again 2026-09-25 after
-TASK/PORT01 added `newtos-arch/cmdargs.c` (§1, §5, §6).
+TASK/PORT01 added `newtos-arch/cmdargs.c` (§1, §5, §6). TASK/PORT10
+(2026-10-02) updated §1, §5, §6 and added §8: `spawnve.c`/`spawnvp.c` compile
+(9 failures now, not 11), `environ` is the empty environment, and the GMP limb
+width behind `printf("%f")` is fixed.
 
 ## 1. mintlib files that do not compile (recorded, not repaired)
 
@@ -19,7 +22,7 @@ on any failure not in it (`sdk/lib-stale.sh:229-283`). What each costs:
 | `mintlib/linea.c` | m68k inline asm — ST Line-A | Line-A (NewTOS has none) |
 | `mintlib/nf_ops.c` | m68k inline asm — ARAnyM NatFeats | `nf_init`/`nf_get_id` (an app that needs the symbols supplies its own, as the TeraDesk overlay does) |
 | `mintlib/crtinit.c` | m68k asm + two LP64 basepage casts | `environ` set-up and the `ARGV=` extension — see §5. **`argv`/`argc` and `_base` are covered**: `newtos-arch/cmdargs.c` reimplements `parseargs()`'s argument half (PORT01) and `newtos-arch/heap_init.c` sets `_base` (T05) |
-| `mintlib/spawnve.c`, `spawnvp.c` | `va_list` arithmetic that assumes m68k `char *` | `spawn*` family (`system()` links, but its `spawnvp` is dangling) |
+| ~~`mintlib/spawnve.c`, `spawnvp.c`~~ | compile since TASK/PORT10 (`sdk/libc/overlay/mintlib/`, `va_arg` instead of `va_list` arithmetic) | — the `spawn*` family works (synchronous `Pexec(0)`, QEMU-verified); **`system()` still does not link** — §8 |
 | `stdio/gets.c` | `.stabs` directive rejected by the integrated assembler | `gets` |
 | `mintlib/getwd.c` | same | `getwd` (`getcwd` is available) |
 | `signal/siggetmask.c` | same | `siggetmask` |
@@ -133,7 +136,7 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
 | Area | On NewTOS | Source |
 |------|-----------|--------|
 | `argc`/`argv` | built from the BasePage command tail `p_cmdlin` with mintlib's own rules (`argv[0]` = `""`, leading blanks skipped, split on runs of blanks/tabs, MagX single-quoting); `1` / `{"", NULL}` when the tail is empty. Host-checked by `tests/cmdargs-host.sh`, proved on the machine by `C:\ARGVTEST.NAP` (PORT01, `measurements/measurement-2026-09-25-port01/`) | `newtos-arch/cmdargs.c`, `sdk/libc/crt0.S` |
-| `environ`, `getenv` | `environ` is a zero global; `getenv` finds nothing. The Atari `ARGV=` extension (arguments passed in the environment) therefore cannot occur either — every launch path passes `EnvSpec::None`, so `p_env` is 0 | `mintlib/globals.c`, crtinit excluded; `kernel/src/launch.rs`, `loader.rs` |
+| `environ`, `getenv` | `environ` is the **empty environment** (one NULL, published by `__libc_parseargs` since TASK/PORT10 — mintlib's `_spawnve` indexes it unconditionally); `getenv` finds nothing. `p_env` is **never read**: desktop, AUTO and boot launcher pass `EnvSpec::None` (`p_env` 0), and a program started by another program's `Pexec` (TeraDesk, `spawn*`) gets a physical address that is not mapped in its EL0 space (TASK/MEM03). The walk and the `ARGV=` extension are TASK/PORT09, blocked on MEM03 | `newtos-arch/cmdargs.c`, `mintlib/globals.c`, crtinit excluded; `kernel/src/launch.rs`, `loader.rs` |
 | `_base` (`BASEPAGE *`) | set by `__libc_init_heap` from the basepage address crt0 hands it (TASK/T05; until then it stayed NULL and dereferencing it worked only because the basepage *is* at VA 0 — the value is still 0 today, `USER_VA_BASE`) | `newtos-arch/heap_init.c`, `sdk/libc/crt0.S`; readers: `unix/getppid.c`, `gmon.c`, TeraDesk's `environm.c` |
 | `malloc`/`free`/`realloc` | mintlib's allocator over the in-TPA arena `[_end, p_hitpa − 64 KiB)`; `ENOMEM` when exhausted, **no** `Malloc` fall-back | `newtos-arch/heap_init.c`, `unix/sbrk.c:54-71` |
 | `exit`/`_exit` | `Pterm(rc)` | `newtos-arch/proc.S` |
@@ -165,7 +168,7 @@ __getpwnam_r __getpwuid_r getpwuid getgrent setgrent endgrent pututline   passwd
 __sys_fstat __waittime __waitval                            other excluded/unbuilt members
 getcontext makecontext swapcontext vfork                    m68k .S never assembled
 nf_init                                                     nf_ops.c (does not compile)
-spawnlp spawnvp                                             spawnvp.c (does not compile)
+(spawnlp spawnvp: defined since TASK/PORT10 -- spawnvp.c compiles)
 socket gethostbyname                                        socket/ not compiled
 bios_table gemdos_table xbios_table yyin yyparse            syscall/ generator tools
 _end                                                        provided by sdk/newtos.ld at link
@@ -208,3 +211,25 @@ item TASK/T07 names ("Soft-Float-Helfer sind ein eigener Punkt"). The
 | `sdk/libc/tests/setjmp-host.sh` (+ `setjmp-host.c`, `setjmp-cases.h`) | `newtos-arch/setjmp.S` on the macOS/arm64 host: return values (0 / val / 1 for 0), the sigmask slot exactly as the m68k code, x19–x28 and d8–d15 restored after a longjmp out of a callee that clobbered them, nested buffers, the frame after unwinding four frames — 13 checks, exit status = failures | `setjmp-host.sh:1-29`, `setjmp-cases.h:1-19` |
 | `sdk/examples/setjmptst.c` | the same 13 checks on NewTOS through mintlib's `<setjmp.h>` (`_Static_assert(sizeof(jmp_buf) == 176)`), verdicts over `Cconws` — QEMU raspi4b `ALL PASS (13 checks)` | `:1-17` |
 | `sdk/examples/mathtst.c` | 23 libm checks against closed-form values with tolerances (`sqrt(2)`, `sin(M_PI/6)`, `pow(2,10)`, `floor(-1.5)`, `frexp(8.0)`, `atan2(1,1)`, `exp`/`log`, `fmod`, `modf`, `hypot`, `cbrt`, `sqrtf`, NaN/-inf) via `<math.h>` — QEMU raspi4b `ALL PASS (23 checks)` | `:1-15` |
+
+## 8. `system()` (TASK/PORT10, measured 2026-10-02)
+
+`system()` does **not** link: `posix/system.c` carries mintlib's POSIX branch
+(`vfork` + `execve` + `waitpid`, taken at run time only when `/bin/sh` is
+executable or `$SHELL` is set) next to the TOS branch (`system_hack`: split the
+line, `>`/`<` redirection via `Fcreate`/`Fforce`, then
+`spawnvp(P_WAIT, argv[0], argv)`). The TOS branch's pieces all exist and run
+(`sdk/examples/port10.c`); the link stops on the POSIX branch's
+`vfork` (`unix/vfork.S`, m68k, never assembled) and `__waitval`/`__waittime`
+(`unix/wait4.c` → defined in `mintlib/thread.c`, excluded). On plain TOS
+mintlib's `vfork` is `tfork()` = `Pexec(PE_CBASEPAGE)` + `Pexec(PE_GO)` on a
+basepage whose text is the parent's own code; NewTOS's `Pexec` answers modes
+5/6/7 with `EINVFN` (`tos-api/src/bdos/process/pexec.rs`), so that path needs a
+kernel feature. Decision pending (TASK/PORT10-STATUS-UNFINISHED.MD). Also
+pulled by `misc/syslog.c` (`vfork`).
+
+`printf("%f")` (`stdio/printf_fp.c`) printed wrong digits and could fault
+until TASK/PORT10: `stdlib/gmp-mparam.h` declared 32-bit GMP limbs while
+`mp_limb_t` (`unsigned long`) is 64 bits on LP64. The overlay
+`sdk/libc/overlay/stdlib/gmp-mparam.h` derives the width from `long`; host
+check `sdk/libc/tests/gmp-host.sh`.

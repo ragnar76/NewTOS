@@ -273,9 +273,11 @@ runs of blanks/tabs, MagX single-quoting honoured — and publishes
 Still true: the desktop passes an **empty** tail on a plain double-click and
 the document path only for an association or drop launch
 (`kernel/src/desk/main.rs`), and `p_env` is 0 for desktop/`AUTO` launches
-(`kernel/src/launch.rs:70-79`), so `environ`/`getenv` find nothing and the
-Atari `ARGV=` extension (arguments passed in the environment when the tail is
-too short) cannot occur. A program that must work with either route can still
+(`kernel/src/launch.rs:70-79`). `environ` is the empty environment (one
+NULL, `cmdargs.c`, TASK/PORT10) and `p_env` is never read — a child started by
+another program's `Pexec` gets an unmapped one (TASK/MEM03) — so `getenv`
+finds nothing and the Atari `ARGV=` extension (arguments passed in the
+environment when the tail is too short) is not honoured (TASK/PORT09). A program that must work with either route can still
 read the tail itself from the basepage (`p_cmdlin` at offset 0x80: length
 byte, then text — `loader.rs:680-691`) or use `shel_read`
 (`sdk/apps/chaintest/chaintest.c:41-47` shows both directions, including a
@@ -291,10 +293,16 @@ half; CoreMark's `check_data_types()` would report a size error.
 `uintptr_t` as `int`/`unsigned int` unless `__MSHORT__`; with `-nostdinc -I$MINT
 … -isystem $RES` that header shadows clang's (`core_portme.h:182-198`).
 
-**Do**: use `__UINTPTR_TYPE__`/`__INTPTR_TYPE__` (the compiler's own) or
-`unsigned long`. Today every user VA is below 4 GiB, so the truncation is
-latent — the `environm.c` overlay's `(uintptr_t)` cast works for that reason
-only. A libc-level fix is recorded as a separate defect, not done.
+**Fixed (TASK/PORT10, 2026-10-02)**: the overlay
+`sdk/libc/overlay/include/stdint.h` makes `intptr_t`/`uintptr_t` `long`/
+`unsigned long` on LP64 — the type mintlib's own `<unistd.h>` already used for
+`intptr_t` (`bits/types.h` `__intptr_t`), so the two headers no longer
+disagree by include order — and sets `INTPTR_MIN/MAX`, `UINTPTR_MAX`;
+`inttypes.h`'s `PRI*PTR`/`SCN*PTR` follow. QED and TeraDesk rebuilt: 0
+undefined, two TeraDesk `environm.c` truncation warnings gone, none new.
+**Still 32-bit in the same header**: `PTRDIFF_MIN/MAX` and `SIZE_MAX` (not
+part of the fix). Code that already spells `__UINTPTR_TYPE__` (CoreMark's
+`core_portme.h`) stays correct.
 
 ### B8. Resource files: format, alignment, and who loads them
 

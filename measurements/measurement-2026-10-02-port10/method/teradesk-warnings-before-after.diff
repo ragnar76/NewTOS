@@ -1,0 +1,9 @@
+diff -r /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/base-teradesk-err/environm.err /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/new-teradesk-err/environm.err
+1,7d0
+< /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/build/tree/environm.c:57:18: warning: cast to 'const char *' from smaller integer type 'uintptr_t' (aka 'unsigned int') [-Wint-to-pointer-cast]
+<    57 |         const char *p = (const char *)(uintptr_t)_BasPag->p_env;
+<       |                         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+< /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/build/tree/environm.c:92:18: warning: cast to 'const char *' from smaller integer type 'uintptr_t' (aka 'unsigned int') [-Wint-to-pointer-cast]
+<    92 |         const char *p = (const char *)(uintptr_t)_BasPag->p_env;                /* where is the old environment */
+<       |                         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+< 2 warnings generated.

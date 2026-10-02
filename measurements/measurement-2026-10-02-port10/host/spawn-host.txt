@@ -1,0 +1,9 @@
+PASS  spawnl, no arguments (argc 1, envp environ)
+PASS  spawnl, three arguments (argc 3, envp environ)
+PASS  spawnl, twelve arguments (registers + stack) (argc 12, envp environ)
+PASS  spawnle, environment after the NULL (argc 3, envp explicit)
+PASS  spawnle, twelve arguments then the environment (argc 12, envp explicit)
+PASS  spawnlp -> spawnvp -> spawnve(NULL env) (argc 3, envp NULL)
+PASS  spawnv (argc 3, envp environ)
+PASS  spawnvp (argc 3, envp NULL)
+spawn-host: 0 of 8 checks failed

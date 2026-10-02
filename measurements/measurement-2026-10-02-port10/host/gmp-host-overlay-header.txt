@@ -1,0 +1,22 @@
+PASS  limb width: BITS_PER_MP_LIMB=64 BYTES_PER_MP_LIMB=8 sizeof(mp_limb_t)=8
+PASS  __tens 10^(2^0): got 0x0000000000000000000000000000000a want 0x0000000000000000000000000000000a
+PASS  __tens 10^(2^1): got 0x00000000000000000000000000000064 want 0x00000000000000000000000000000064
+PASS  __tens 10^(2^2): got 0x00000000000000000000000000002710 want 0x00000000000000000000000000002710
+PASS  __tens 10^(2^3): got 0x00000000000000000000000005f5e100 want 0x00000000000000000000000005f5e100
+PASS  __tens 10^(2^4): got 0x0000000000000000002386f26fc10000 want 0x0000000000000000002386f26fc10000
+PASS  __tens 10^(2^5): got 0x000004ee2d6d415b85acef8100000000 want 0x000004ee2d6d415b85acef8100000000
+PASS  __mpn_extract_double(1.5): 1 limb(s), rebuilt 1.5
+PASS  __mpn_extract_double(0.10000000000000001): 1 limb(s), rebuilt 0.10000000000000001
+PASS  __mpn_extract_double(3.1415899999999999): 1 limb(s), rebuilt 3.1415899999999999
+PASS  __mpn_extract_double(79.123000000000005): 1 limb(s), rebuilt 79.123000000000005
+PASS  __mpn_extract_double(10000000000): 1 limb(s), rebuilt 10000000000
+PASS  __mpn_extract_double(1.0000000000000001e-05): 1 limb(s), rebuilt 1.0000000000000001e-05
+PASS  __mpn_extract_double(123456789): 1 limb(s), rebuilt 123456789
+PASS  __mpn_extract_double(1e+100): 1 limb(s), rebuilt 1e+100
+PASS  __mpn_extract_double(-2.5): 1 limb(s), rebuilt -2.5
+PASS  __mpn_extract_double(1.7976931348623157e+308): 1 limb(s), rebuilt 1.7976931348623157e+308
+PASS  __mpn_extract_double(2.2250738585072014e-308): 1 limb(s), rebuilt 2.2250738585072014e-308
+PASS  __mpn_extract_double(2.7813423231340017e-309): 1 limb(s), rebuilt 2.7813423231340017e-309
+PASS  __mpn_extract_double(4.9406564584124654e-324): 1 limb(s), rebuilt 4.9406564584124654e-324
+PASS  mpn_mul_1(x, 10): got 0x0b60b60b60b60b5ff49f49f49f49f4a0 want 0x0b60b60b60b60b5ff49f49f49f49f4a0
+gmp-host: 0 of 21 checks failed
