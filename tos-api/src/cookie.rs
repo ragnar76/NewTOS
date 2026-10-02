@@ -29,6 +29,33 @@ pub const MCH: u32 = u32::from_be_bytes(*b"_MCH");
 pub const IDT: u32 = u32::from_be_bytes(*b"_IDT");
 /// `_AKP` — keyboard / language (low word = language id).
 pub const AKP: u32 = u32::from_be_bytes(*b"_AKP");
+/// `EdDI` — the VDI answers `vq_scrninfo` (VDI 102, sub-opcode 1,
+/// `INTIN[0] == 2`). Tag `0x45644449` (mintlib `mint/cookie.h:125`
+/// `C_EdDI`). Spec: `docs/api/vdi/eddi-vq_scrninfo.md` §2; a NewTOS
+/// extension beyond EmuTOS, which has no EdDI (spec §0, E8 in
+/// `docs/COMPATIBILITY.md`).
+pub const EDDI: u32 = u32::from_be_bytes(*b"EdDI");
+
+/// Value of the [`EDDI`] cookie: a **non-callable marker**, not the address
+/// of a function dispatcher (spec §7 E2, option (b)).
+///
+/// On TOS the value is the address of an m68k dispatcher called with the
+/// opcode in `d0` (Pure C convention, spec §2). That is a register
+/// convention with no AArch64 mapping, and the NewTOS jar holds 32-bit
+/// values (`Slot::value`), so no NewTOS code address could be stored either.
+/// Programs detect EdDI by the cookie's **presence** and then call
+/// `vq_scrninfo` — that is all the in-tree consumers do (zView
+/// `zvdi/vdi.c:28`, HighWire `romvdi.c:70`; Doom does not look yet).
+///
+/// The value is chosen so that no consumer in the tree calls into it: it is
+/// **non-zero** (a `value != 0` presence test still sees the cookie) and
+/// **odd**. An odd value is never an m68k code address — `jsr` to it raises
+/// an address error — and the EdDI probe `tosdump/core/scrninfo.c` refuses
+/// to call a zero or odd value ("not a callable address"). It carries no
+/// version: the EdDI version is only ever reported by dispatcher opcode 0,
+/// which does not exist here. A program that calls the dispatcher anyway
+/// faults — the documented cost of E2 (b).
+pub const EDDI_MARKER: u32 = 0x0000_0001;
 
 #[derive(Clone, Copy)]
 struct Slot {
@@ -189,10 +216,12 @@ pub fn del(tag: u32) -> bool {
 /// Seed the NewTOS default cookie set at boot (replaces EmuTOS'
 /// `fill_cookie_jar`). Only the tags that are meaningful for NewTOS are
 /// present; the Atari-hardware cookies (`_VDO`/`_SND`/`_FDC`/`_FPU`) are
-/// deliberately omitted. Values are provisional bring-up policy.
+/// deliberately omitted. Values are provisional bring-up policy, except
+/// `EdDI`, whose value is fixed by spec decision E2 ([`EDDI_MARKER`]).
 pub fn seed_defaults(version: u32) {
     set(NTOS, version); // NewTOS identity + version
     set(MCH, 0x0005_0000); // machine id: a NewTOS-specific marker (non-Atari)
     set(IDT, 0x0000_112F); // date/time: '/' sep, DD-MM-YY, 24-hour
     set(AKP, 0x0000_0000); // keyboard language: US
+    set(EDDI, EDDI_MARKER); // VDI answers vq_scrninfo; marker, no dispatcher (E2)
 }

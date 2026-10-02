@@ -7,6 +7,11 @@
 > EdDI-Weg liefert auf NewTOS ein farbrichtiges Bild. Die UNKNOWN-Punkte zu
 > Nova (Version, 15/16/24/32 Bit, Byte-Reihenfolge) klaert ein Messprogramm
 > `SCRNINFO.TTP` auf dem echten TT mit Nova.
+> **Umgesetzt 2026-10-02** (TASK/PORT06-EDDI): `tos-api/src/vdi/eddi.rs`,
+> Cookie `tos-api/src/cookie.rs` (`EDDI`, Wert `EDDI_MARKER = 0x00000001`:
+> ungleich 0 und ungerade, also nie aufrufbar — E2 (b); kein Dispatcher, keine
+> Versionsnummer), Tests `tos-api/tests/vdi_eddi_scrninfo.rs`, Abweichung in
+> `docs/COMPATIBILITY.md`, Messung `measurements/measurement-2026-10-02-eddi/`.
 > Stand 2026-10-02. Verfasser: Researcher. Scope: nur das, was Doom
 > (TASK/PORT06, "Pixelformat, Weg 2") und eine NewTOS-Implementierung davon
 > brauchen — Cookie, Dispatcher-Opcode 0, `vq_scrninfo`, und die Einordnung der

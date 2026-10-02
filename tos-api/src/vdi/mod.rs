@@ -23,6 +23,9 @@
 pub mod backend;
 mod attributes;
 mod contour;
+/// EdDI `vq_scrninfo` (opcode 102, sub-opcode 1) — a NewTOS extension
+/// beyond EmuTOS, `docs/api/vdi/eddi-vq_scrninfo.md`.
+pub mod eddi;
 mod escape;
 /// The machine's one **alpha (text) screen**: the cursor, reverse-video flag
 /// and cell rendering that the VDI escape sub-functions *and* the BIOS
@@ -320,6 +323,12 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) -> i16 {
         backend.set_active_palette(&ext.palette);
     }
 
+    // EdDI `vq_scrninfo` rides on opcode 102 (E7: only with `CONTRL[5] == 1`
+    // and `INTIN[0] == 2`); every other opcode-102 call is `vq_extnd` exactly
+    // as in EmuTOS (`vdi_main.c:77`). Decided once, before any handler can
+    // write an output array that a caller may have aliased onto INTIN.
+    let scrninfo = opcode == 102 && eddi::is_scrninfo(&pb, backend);
+
     match opcode {
         // ── workstation close (dispatched by handle, not the vwk ref) ──
         // v_clswk (2) closes ALL virtual workstations and leaves the
@@ -335,6 +344,7 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) -> i16 {
             if let Some(vwk) = unsafe { vwk::resolve(handle) } {
                 let ncol = backend.num_colors();
                 match opcode {
+                    102 if scrninfo => eddi::vq_scrninfo(&pb),
                     102 => workstation::vq_extnd(&pb, vwk, backend),
                     14 => attributes::vs_color(&pb, vwk, ncol, backend),
                     15 => attributes::vsl_type(&pb, vwk),
@@ -415,7 +425,13 @@ pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) -> i16 {
     // [`FLIP_Y_MAGNITUDES`] for the file:line of each. Control only reaches
     // here after a handler ran: every earlier exit already returned
     // [`FLIP_Y_COORDINATES`], the value `screen()` leaves in place.
+    //
+    // `vq_scrninfo` is not one of them: EmuTOS has no EdDI, and the call
+    // reports no coordinates or magnitudes in PTSOUT, so it leaves the value
+    // `screen()` cleared (`docs/api/vdi/eddi-vq_scrninfo.md` §3.1/§3.6 define
+    // no return value).
     match opcode {
+        102 if scrninfo => FLIP_Y_COORDINATES,
         12 | 19 | 21 | 36 | 38 | 102 | 107 | 116 | 117 | 131 => FLIP_Y_MAGNITUDES,
         _ => FLIP_Y_COORDINATES,
     }

@@ -1,0 +1,101 @@
+measurement-2026-10-02-eddi
+  PORT06-EDDI -- NewTOS answers vq_scrninfo; the EdDI probe on NewTOS
+===========================================================================
+
+Basis: branch desk-rebuild, HEAD 44573a6, tree DIRTY with the PORT06-EDDI
+change set (uncommitted): tos-api/src/vdi/eddi.rs (new), tos-api/src/vdi/
+mod.rs, tos-api/src/cookie.rs, tos-api/src/bdos/process/loader.rs (comment +
+const assert), kernel/src/selftest_cookie.rs (comments), tosdump/abi/
+newtos_scrninfo.c (new), tosdump/build-scrninfo-newtos.sh (new), tosdump/
+Makefile, tosdump/core/scrninfo.h (comment), docs. Build id "4457" in the
+report header = HEAD, not the dirty tree.
+No commit, nothing flashed, no Pi, no TT, no card, /Volumes/BOOT untouched.
+No *.img in this folder.
+
+Spec: docs/api/vdi/eddi-vq_scrninfo.md (approved 2026-10-02, E1-E9 as in
+section 7, E3 = 0x02).
+Reference: measurement-2026-10-02-scrninfo/hatari-falcon-tc-enhancer/
+SCRNINFO.TXT -- VDI Enhancer 1.00 (a real EdDI) on EmuTOS 1.4, Falcon
+truecolor, Hatari 2.6.1.
+
+
+0. RESULT FIRST
+---------------------------------------------------------------------------
+  NewTOS's vq_scrninfo answer equals the Enhancer's in 272 of 273 words.
+  The one differing word is the one the spec makes different:
+
+      work_out[14]   Enhancer 0000   NewTOS 0002   (E3: Falcon bit order;
+                     the Enhancer is EdDI 1.00, [14] only exists from 1.10)
+
+  Outside the 273 words, as the spec decided:
+      cookie value   Enhancer 00023EC0 (dispatcher address)
+                     NewTOS   00000001 (E2: non-callable marker, odd)
+      dispatcher(0)  Enhancer d0 = 0100; NewTOS: not called (probe skips odd)
+      CONTRL[2]/[4]  Enhancer leaves both (5A5A); NewTOS writes 0 / 272
+                     (the dispatcher rewrites the counts on every call;
+                     272 is the documented CONTRL[4], spec 3.1)
+  Same in both: INTOUT[273..511] untouched, PTSOUT untouched.
+  Full word-by-word table: COMPARE.TXT (method/compare.py).
+
+  vq_extnd(0) and vq_extnd(1) on NewTOS are word-identical to the EmuTOS
+  Falcon-TC runs of measurement-2026-10-02-scrninfo (both with and without
+  the Enhancer), opnvwk_out/opnvwk_pts too.
+
+
+1. WHAT RAN
+---------------------------------------------------------------------------
+Kernel  : cargo xtask build --board rpi4 --release (fresh rpi4 build; the
+          log shows "Compiling kernel"), tos-api 64 / kernel 94 warnings.
+          kernel8.img sha256
+          991e58f69792277802b4b765fe8601c3d13186651f60c4b24dd882322a9b306d
+Probe   : tosdump/build-scrninfo-newtos.sh (= make scrninfo-newtos):
+          core/gem.c core/scrninfo.c abi/newtos_scrninfo.c abi/newtos_svc.c,
+          Apple clang 21.0.0, -target aarch64-unknown-none-elf -O2 -std=c99
+          -Wall -Wextra -Werror, sdk/libc libc.a, sdk/newtos.ld; 0 undefined.
+          SCRNINFO.NAP (this folder), 102 592 bytes, sha256
+          a5e21c90483c21322f0bec5f1c79c5aa4ade10f38cd2fcfc24a13afae8f84602
+          core/scrninfo.c is unchanged; only the backend is new.
+Card    : method/seed-scrninfo.sh -- fresh tools/make-sd-image.sh image (64
+          MB), plus C:\SCRNINFO.NAP and NEWDESK.INF = method/newdesk-
+          scrninfo.inf ("#Z 01 C:\SCRNINFO.NAP@" autorun, otherwise the
+          PORT06 file).
+Machine : method/run-scrninfo.sh -- qemu-system-aarch64 11.0.2 -M raspi4b
+          -no-reboot -display none -serial file, card as -drive if=sd.
+          Stopped 3 s after the probe's summary line (16 s in total).
+Report  : method/fetch-report.sh -> newtos-qemu-raspi4b/SCRNINFO.TXT,
+          sha256 940654514842a000bc03c939322d20636b45d3fc4502e7dd21ac9c9127f2d032
+Serial  : serial/newtos-qemu-raspi4b.log, 63 lines, 0 [EXC] / PANIC.
+          "SCRNINFO: EdDI present (dispatcher not called), 16 planes,
+          pixels ok -> SCRNINFO.TXT", then "exited with rc=0" and the
+          desktop comes up.
+
+
+2. OBSERVED (what the bytes say)
+---------------------------------------------------------------------------
+* Cookie jar via _p_cookies (0x5A0 -> 0x5F0, the per-process mirror):
+  NTOS 00000100, _MCH 00050000, _IDT 0000112F, _AKP 00000000,
+  EdDI 00000001; terminator value 16 (mirror capacity).
+* vq_scrninfo: format 2, clut 2, 16 planes, colours 0000/8000, line bytes 0,
+  address 0, r/g/b 5/5/5, alpha 0, genlock 1, unused 0, [14] = 2; red bits
+  11..15, green 6..10, blue 0..4, genlock bit 5, rest of 16..127 = -1,
+  128..272 = 0.
+* Pixels (section 4): v_get_pixel gives INTOUT[0] = 0000, INTOUT[1] = the
+  word (white FFDF, red F800, green 07C0, blue 001F) -- the same pair EmuTOS
+  Falcon-TC gives WITHOUT the Enhancer (the Enhancer run shows FFDF/FFFF
+  there; not part of this ticket). The device-format MFDB bytes are the
+  same words stored little-endian (DF FF, 00 F8, C0 07, 1F 00), so the
+  probe's "BEwords" lines read byte-swapped on NewTOS. Read as the CPU
+  reads them (native u16) they are FFDF/F800/07C0/001F -- the words the bit
+  tables describe (E3: "bit numbers describe the pixel word as the CPU reads
+  it"). Restore VERIFIED.
+
+
+3. NOT DRIVEN
+---------------------------------------------------------------------------
+* qemu-virt board (the probe is board-independent above the VDI backend;
+  both boards share tos-api/src/vdi/eddi.rs; release builds of both boards
+  are clean, see the ticket).
+* Real Pi 4, NVDI, a Nova card (only the user's TT can show those).
+* An ILP32 caller (vq_scrninfo moves WORD arrays only; no pointer in it).
+* A program that calls the EdDI dispatcher (E2: it would fault; none in the
+  tree does).

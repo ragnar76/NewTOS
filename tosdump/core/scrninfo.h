@@ -5,9 +5,10 @@
  * SCRNINFO.TTP records what a real EdDI implementation reports
  * (docs/api/vdi/eddi-vq_scrninfo.md, sections 2, 3 and 7/E3).  Everything it
  * asks the VDI goes through abi.h like every other tosdump program; the
- * cookie jar, the EdDI dispatcher and the date are m68k/TOS-only, so they
- * live in their own backend (abi/m68k_scrninfo.c) and nothing in core/
- * touches a supervisor address or a foreign function pointer directly.
+ * cookie jar, the EdDI dispatcher and the date are target services, so they
+ * live in their own backend (abi/m68k_scrninfo.c for TOS,
+ * abi/newtos_scrninfo.c for NewTOS) and nothing in core/ touches a
+ * supervisor address or a foreign function pointer directly.
  */
 #ifndef TOSDUMP_SCRNINFO_H
 #define TOSDUMP_SCRNINFO_H

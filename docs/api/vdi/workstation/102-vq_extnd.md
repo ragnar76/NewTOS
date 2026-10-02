@@ -138,7 +138,10 @@ dispatcher before `vq_extnd` runs.)
    different clip flags each read their own value because the write
    happens per call.
 2. **Mode is any non-zero value**, not a specific `1` — `INTIN[0] != 0`
-   selects extended mode (`:633`).
+   selects extended mode (`:633`). EmuTOS never reads `CONTRL[5]` for
+   opcode 102 (`vdi_main.c:77`). **NewTOS exception:** `CONTRL[5] == 1`
+   together with `INTIN[0] == 2` is the EdDI call `vq_scrninfo`, not mode 1
+   — see "NewTOS extension: `vq_scrninfo`" below.
 3. **`flip_y` is forced to 1** at entry (`:631`), like `init_wk`.
 
 ## Dependencies
@@ -170,6 +173,21 @@ dispatcher before `vq_extnd` runs.)
 - Index 19 must reflect the **queried** `Vwk`'s clip flag, not a global.
 - `INQ_TAB[4]`/`[5]`: **resolved 2026-09-04** — see the section below.
   NewTOS is a Falcon truecolor workstation, so `[4] = 16` and `[5] = 0`.
+
+### NewTOS extension: `vq_scrninfo` (102, sub-opcode 1) — beyond EmuTOS
+
+Spec: [`../eddi-vq_scrninfo.md`](../eddi-vq_scrninfo.md) (approved
+2026-10-02). EmuTOS has no EdDI; NewTOS installs the `EdDI` cookie and answers
+**`CONTRL[5] == 1` and `INTIN[0] == 2`** (both, E7) with the 273-word
+`vq_scrninfo` table instead of `INQ_TAB`: `INTOUT[0..=272]`, `CONTRL[4] =
+272`, `CONTRL[2] = 0`, PTSOUT untouched, `d0 = 0`. Every other opcode-102 call
+— `CONTRL[5] == 0` with any mode (including 2), or `CONTRL[5] == 1` with any
+`INTIN[0] != 2` — is `vq_extnd` exactly as specified above. Implementation:
+`tos-api/src/vdi/eddi.rs`, chosen in `tos-api/src/vdi/mod.rs` `dispatch`;
+tests `tos-api/tests/vdi_eddi_scrninfo.rs`. Recorded as a sanctioned
+deviation in `docs/COMPATIBILITY.md` (E8): a program that issues this exact
+call **without** checking the cookie got `INQ_TAB` (EmuTOS), and gets the
+EdDI table on NewTOS.
 
 ---
 

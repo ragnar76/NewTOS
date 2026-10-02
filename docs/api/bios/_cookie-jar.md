@@ -136,6 +136,7 @@ probing:
 | `_MCH` | `0x00050000` | machine id — a **NewTOS-specific, non-Atari** marker (not ST/STe/TT/Falcon) | `cookie.rs:143` |
 | `_IDT` | `0x0000112F` | date/time format: `/` separator, DD-MM-YY, 24-hour | `cookie.rs:144` |
 | `_AKP` | `0x00000000` | keyboard/language: US | `cookie.rs:145` |
+| `EdDI` | `0x00000001` | the VDI answers `vq_scrninfo`; the value is a **non-callable marker**, not a dispatcher address (E2 of [`../vdi/eddi-vq_scrninfo.md`](../vdi/eddi-vq_scrninfo.md); deviation from TOS/EmuTOS, `docs/COMPATIBILITY.md`) | `cookie.rs` `EDDI_MARKER` (2026-10-02) |
 
 Deliberately **absent** (no matching Pi hardware, `cookie.rs:139-140`): `_VDO`
 (no Shifter), `_SND` (no PSG/DMA sound), `_FDC` (no floppy controller), `_FPU`
@@ -174,7 +175,7 @@ value — a pointer would be useless to EL0 since the jar is EL1-only memory.
 
 ### Gaps vs. the contract (Step-2 candidates)
 
-- **`_CPU` / `_SND` undecided** (above) — the jar advertises 4 cookies; whether
+- **`_CPU` / `_SND` undecided** (above) — the jar advertises 5 cookies (4 before `EdDI`, 2026-10-02); whether
   to add these two is unresolved.
 - **`Setcookie` reseat** — `cookie::set` supports add/update within `JAR_CAP`,
   but no terminator-`{0, capacity}` slot is materialised in the **kernel** jar

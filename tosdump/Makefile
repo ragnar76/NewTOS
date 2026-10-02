@@ -6,7 +6,8 @@
 #   make dumpaes-newtos   DUMPAES.NAP for NewTOS on the Pi 4 (AArch64)
 #   make dumprast-m68k    DUMPRAST.PRG for TOS/EmuTOS on the TT
 #   make dumprast-newtos  DUMPRAST.NAP for NewTOS on the Pi 4 (AArch64)
-#   make scrninfo-m68k    SCRNINFO.TTP, the EdDI / vq_scrninfo probe (m68k only)
+#   make scrninfo-m68k    SCRNINFO.TTP, the EdDI / vq_scrninfo probe (TOS)
+#   make scrninfo-newtos  SCRNINFO.NAP, the same probe for NewTOS (AArch64)
 #   make host-test        the host-side suite (same as make -C host test)
 #
 # Same core sources for both; only abi/ differs (spec section 2).
@@ -39,9 +40,10 @@ SCRN_SRC := core/gem.c core/scrninfo.c abi/m68k_scrninfo.c
 BUILD := build
 
 .PHONY: all dumpvdi-m68k dumpvdi-newtos dumpaes-m68k dumpaes-newtos \
-        dumprast-m68k dumprast-newtos scrninfo-m68k host-test clean
+        dumprast-m68k dumprast-newtos scrninfo-m68k scrninfo-newtos host-test \
+        clean
 all: dumpvdi-m68k dumpvdi-newtos dumpaes-m68k dumpaes-newtos \
-     dumprast-m68k dumprast-newtos scrninfo-m68k host-test
+     dumprast-m68k dumprast-newtos scrninfo-m68k scrninfo-newtos host-test
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -80,12 +82,19 @@ $(BUILD)/DUMPRAST.NAP: $(RAST_SRC) abi/newtos_svc.c $(wildcard core/*.h) | $(BUI
 	./build-dumprast-newtos.sh $@
 
 # .TTP: it takes the report file name as its argument.  appl_init works from
-# a TOS program as well, which is all the probe needs of the AES.  m68k only:
-# it reads a TOS cookie jar and calls an m68k EdDI dispatcher.
+# a TOS program as well, which is all the probe needs of the AES.  The TOS
+# backend reads the jar via Supexec and calls an m68k EdDI dispatcher.
 scrninfo-m68k: $(BUILD)/SCRNINFO.TTP
 $(BUILD)/SCRNINFO.TTP: $(SCRN_SRC) abi/m68k_trap.c $(wildcard core/*.h) | $(BUILD)
 	$(M68K_CC) $(M68K_CFLAGS) $(SCRN_SRC) abi/m68k_trap.c -o $@
 	@$(CROSS_MINT)size $@
+
+# The NewTOS build: same core, abi/newtos_scrninfo.c + abi/newtos_svc.c.  A
+# .NAP, because it is an AES client; NewTOS' EdDI cookie is a non-callable
+# marker (spec E2), which the core does not call.
+scrninfo-newtos: $(BUILD)/SCRNINFO.NAP
+$(BUILD)/SCRNINFO.NAP: core/gem.c core/scrninfo.c abi/newtos_scrninfo.c abi/newtos_svc.c $(wildcard core/*.h) | $(BUILD)
+	./build-scrninfo-newtos.sh $@
 
 host-test:
 	@$(MAKE) --no-print-directory -C host test

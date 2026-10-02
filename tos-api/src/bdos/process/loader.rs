@@ -719,7 +719,7 @@ const COOKIE_JAR_SLOTS: u32 = 16;
 
 // The jar must hold at least the boot-seeded cookie set plus the terminator,
 // so the mirror a freshly-loaded process reads is never truncated.
-const _: () = assert!(COOKIE_JAR_SLOTS >= 5);
+const _: () = assert!(COOKIE_JAR_SLOTS >= 6); // NTOS _MCH _IDT _AKP EdDI + {0, n}
 
 /// Exclusive end of the classic low-memory system area (= jar end, 0x670).
 const SYSVAR_AREA_END: u64 = COOKIE_JAR_VA as u64 + (COOKIE_JAR_SLOTS as u64) * 8;
@@ -1022,7 +1022,7 @@ fn populate_sysvars(tpa: &mut [u8]) {
 /// last written slot is always the classic `{0, COOKIE_JAR_SLOTS}` terminator,
 /// so an application's linear scan still stops inside the window instead of
 /// running off its end. Truncation cannot happen with the boot-seeded set
-/// (4 cookies); it needs 12 further `Ssystem(S_SETCOOKIE)` calls.
+/// (5 cookies); it needs 11 further `Ssystem(S_SETCOOKIE)` calls.
 ///
 /// The terminator's `value` is the **mirror's** slot capacity, not the kernel
 /// jar's: EmuTOS' terminator word describes the array the reader is scanning

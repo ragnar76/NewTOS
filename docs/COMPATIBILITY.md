@@ -573,6 +573,44 @@ in `docs/api/aes/event.md` § "NewTOS deviation — the application does not run
 while a drop-down is open".
 
 
+**The VDI speaks EdDI: `EdDI` cookie and `vq_scrninfo`** — user decision,
+2026-10-02 (E1–E9 of `docs/api/vdi/eddi-vq_scrninfo.md` §7, approved as
+recommended; E3 = `0x02`). EmuTOS has no EdDI at all (spec §0: no hit for
+`EdDI`/`scrninfo` in `references/emutos/`); NewTOS adds it so ported programs
+can learn the 16-bit device word and fill device-format MFDBs themselves
+(Doom, PORT06 "Weg 2"; zView, HighWire already ask). What differs from
+EmuTOS, each observable:
+
+1. **The jar has an `EdDI` cookie** (`0x45644449`), seeded at boot
+   (`tos-api/src/cookie.rs` `seed_defaults`).
+2. **Its value is a marker, not a dispatcher** (E2, option b):
+   `0x00000001` — non-zero, odd. On TOS the value is the address of an m68k
+   function dispatcher (opcode in `d0`, Pure C convention); that convention
+   has no AArch64 mapping and the jar stores 32-bit values. The in-tree
+   consumers only test the cookie's presence (zView `zvdi/vdi.c:28`,
+   HighWire `romvdi.c:70`); the probe `tosdump/core/scrninfo.c` does not call
+   a zero or odd value. **A program that calls the dispatcher faults** —
+   accepted until a callable trampoline exists (E2 option a, later). There is
+   therefore no dispatcher opcode 0 and no reported EdDI version.
+3. **VDI 102 reads `CONTRL[5]`** (EmuTOS ignores it, `vdi_main.c:77`):
+   `CONTRL[5] == 1` **and** `INTIN[0] == 2` answer the 273-word
+   `vq_scrninfo` table (E7). A program issuing that exact call without
+   checking for the cookie got `INQ_TAB` on EmuTOS and gets the EdDI table
+   on NewTOS (E8); every other 102 call is unchanged.
+4. **The answer is the Falcon HiColor one**: format 2, software CLUT, 16
+   planes, 32768 colours, 5/5/5 + 1 genlock bit, red bits 11..15, green
+   6..10, blue 0..4, genlock 5, `[14] = 0x02`, `[5..7] = 0` (no accessible
+   screen line width or address, E5). It equals word for word what the VDI
+   Enhancer 1.00 (a real EdDI) reports on EmuTOS Falcon truecolor, except
+   `[14]` (Enhancer: EdDI 1.00, no `[14]`, leaves 0) and the output counts
+   (Enhancer leaves `CONTRL[2]/[4]` untouched; NewTOS writes 0 / 272) —
+   `measurements/measurement-2026-10-02-eddi/`. The genlock bit is reported
+   but programs are to leave it 0 (E9).
+
+Implementation `tos-api/src/vdi/eddi.rs`; tests
+`tos-api/tests/vdi_eddi_scrninfo.rs`. `v_opnbm`/`v_clsbm`/`v_open_bm`/
+`v_resize_bm` are **not** provided (E1).
+
 **Not sanctioned, still open:** `appl_read` on an empty queue returns 0
 instead of blocking (`tos-api/src/aes/appl.rs:434-469`; AUD-P1-007). Unlike
 the write case above, EmuTOS's read-blocks-on-empty is not itself a hang

@@ -60,12 +60,12 @@ pub fn run() {
     check(ssystem(0xFFFF, 0, 0) == E_OK, "Ssystem(-1, 0, 0) = E_OK (probe)");
     check(ssystem(0xFFFF, NTOS, 0xDEAD) == E_OK, "Ssystem(-1, .., ..) = E_OK (args ignored)");
 
-    // Seeded set: NTOS, _MCH, _IDT, _AKP (4 cookies).
+    // Seeded set: NTOS, _MCH, _IDT, _AKP, EdDI (5 cookies).
     check(ssystem(S_GETCOOKIE, NTOS, 0) == 0x0000_0100, "Getcookie(NTOS) = version 0x100");
     check(ssystem(S_GETCOOKIE, MCH, 0) == 0x0005_0000, "Getcookie(_MCH) = 0x00050000");
 
     // D-073: `tag == 0` returns the jar CAPACITY (32), not the occupied
-    // count (which is 4 here) — the fix's headline behaviour change.
+    // count (which is 5 here) — the fix's headline behaviour change.
     check(ssystem(S_GETCOOKIE, 0, 0) == JAR_CAP, "Getcookie(0) = capacity 32 (not count)");
 
     // Get-miss → EERROR (-1); unchanged, must stay distinct from EINVAL.
