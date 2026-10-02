@@ -611,6 +611,31 @@ Implementation `tos-api/src/vdi/eddi.rs`; tests
 `tos-api/tests/vdi_eddi_scrninfo.rs`. `v_opnbm`/`v_clsbm`/`v_open_bm`/
 `v_resize_bm` are **not** provided (E1).
 
+**Key auto-repeat runs in the polled input pump, not in the timer
+interrupt** — user decision 2026-10-02 (variant (b) of
+`TASK/PORT06-KEYS-DIAGNOSIS.MD`), landed as KEYS01 2026-10-03. EmuTOS
+generates the repeat in the BIOS: `do_key_repeat` runs on every 4th timer-C
+interrupt (`references/emutos/bios/ikbd.c:451-536`, `bios/vectors.S:521`) and
+re-pushes the last key until its break (`bios/ikbd.c:815-817`). NewTOS keeps
+those semantics — delay and rate from `Kbrate`'s `kb_initial`/`kb_repeat`,
+`conterm` bit 1, only the last-pressed key repeats, Home/Insert breaks stop it,
+re-conversion when the shift state changes — but runs the step in the input
+pump right after each USB poll (`kernel/src/ikbd.rs` `poll_repeat`,
+`kernel/src/key_repeat.rs`), crediting the 50 Hz steps `_hz_200` crossed since
+the previous poll. **Reason:** the Pi's USB-HID boot keyboard reports changes
+only, and its break reaches the decoder only when somebody polls; an
+interrupt-driven repeat would go on queueing words while nobody polls and
+deliver ghost keys after the release. **Observable difference:** one poll
+emits **at most one** repeat (burst guard) — a program that pumps input less
+often than every `kb_repeat` ticks sees the repeat rate drop to its poll rate,
+and a long gap without any poll leaves no backlog, where EmuTOS would have
+queued one word per `kb_repeat` ticks. Every key reader pumps (AES waits,
+blocking reads, `Bconstat` on an empty queue), so in practice the cadence is
+EmuTOS'. Spec: `docs/api/xbios/_state.md` §"Key-repeat handler",
+`docs/api/xbios/23-kbrate.md` §"Pi / BCM2711 binding"; host tests in
+`kernel/src/key_repeat.rs` (run via `tools/xtask`) and
+`tos-api/tests/xbios_kbrate_repeat_source.rs`.
+
 **Not sanctioned, still open:** `appl_read` on an empty queue returns 0
 instead of blocking (`tos-api/src/aes/appl.rs:434-469`; AUD-P1-007). Unlike
 the write case above, EmuTOS's read-blocks-on-empty is not itself a hang

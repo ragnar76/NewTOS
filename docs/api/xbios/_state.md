@@ -99,6 +99,77 @@ a query (`bios/ikbd.c:439-449`). Powerup defaults are `KB_INITIAL = 15`
 > `kb_initial = 25` / `kb_repeat = 5` and 50 Hz units. The source uses
 > 15 / 2 in 20 ms units. See D-042.
 
+### Key-repeat handler (`bios/ikbd.c:395-536`, `:777-909`)
+
+The two `Kbrate` fields are consumed by a **software** repeat in the BIOS
+keyboard layer; the IKBD's own repeat is not used. State
+(`bios/ikbd.c:425-437`): `kb_ticks` (countdown, `0` = nothing repeating),
+`kb_last` (the key word last pushed: `shifty`, scancode, ASCII) and
+`kb_last_actual` (the raw make scancode, before any conversion).
+
+| Event | EmuTOS behaviour | Source |
+|-------|------------------|--------|
+| Make of a **non-modifier** key | `kb_last_actual = scancode`; the key word is pushed into `ikbdiorec`; `kb_ticks = kb_initial` (the value at make time); `kb_last = {shifty, scancode, ascii}` | `:875,891,898-909` |
+| Make of Shift / Ctrl / Alt / CapsLock | updates `shifty` only; a running repeat **continues** | `:825-870` |
+| Break of `kb_last_actual` | `kb_ticks = 0` — repeat stops | `:815-817` |
+| Break of Home (`0x47`) or Insert (`0x52`) | `kb_ticks = 0` unconditionally (also clears `MODE_HOME`/`MODE_INSERT`) | `:807-813` |
+| Break of any other key, or of a modifier | no effect on the repeat (Alt release stops it only during Alt-numpad entry or keyboard mouse emulation) | `:778-818` |
+| Make of a *second* key while one repeats | the second key becomes `kb_last`; **only the last-pressed key repeats** — the first stays silent even though it is still held | `:875-903` |
+| 50 Hz tick (every 4th 200 Hz timer-C interrupt, `bios/vectors.S:521`, sieve `0x1111` `bios/bios.c:463`) → `do_key_repeat` | (1) if `ikbdsys` changed since `kb_last` was set: `kb_ticks = 0`; (2) if `conterm & 2` is clear: return **without** decrementing (the countdown is frozen, not reset); (3) if `kb_ticks == 0`: return; (4) `--kb_ticks`; if still `> 0`: return; (5) keyclick if `conterm & 1`; (6) if `shifty` differs from `kb_last.shifty`: re-convert `kb_last_actual` with the current `shifty` and update `kb_last`; (7) push `kb_last` into `ikbdiorec` (or repeat the mouse-emulation packet); (8) `kb_ticks = kb_repeat` | `:451-536` |
+
+Consequences that follow from the table and are part of the observable
+behaviour: the first repeat comes `kb_initial` ticks (default 15 = 300 ms,
+minus the sub-tick phase) after the make, then one every `kb_repeat` ticks
+(default 2 = 40 ms), **unbounded**, until the break; `kb_initial = 0` means no
+repeat at all, `kb_repeat = 0` means exactly one repeat; a `Kbrate` set takes
+effect for `kb_initial` at the next make and for `kb_repeat` at the next
+repeat. A full `ikbdiorec` drops the repeated word (`push_ikbdiorec`,
+`:157-173`).
+
+#### NewTOS binding — sanctioned deviation: the repeat runs in the polled input pump
+
+On the Pi the keyboard is a USB-HID boot keyboard that reports **changes
+only** (FreeMiNT sets its idle rate to "infinite",
+`references/freemint/sys/usb/src.km/udd/hid/keyboard/usb_keyboard.c:599`),
+and its reports — including every **break** — reach the decoder only when
+somebody polls the xHCI ring (`kernel::drivers::usb::poll`). A repeat driven
+from the timer interrupt, as EmuTOS does, would keep pushing words while no
+one polls and so produce ghost keys after the release (user decision
+2026-10-02, variant (b), `TASK/KEYS01.md`). NewTOS therefore runs
+`do_key_repeat` **in the input pump**, right after each USB poll: first the
+pending reports are decoded (so a break is seen), then the 50 Hz steps that
+elapsed since the previous poll are credited. Implementation:
+`kernel/src/key_repeat.rs` (state machine), `kernel/src/ikbd.rs`
+(`poll_repeat`, called from every `usb::poll` site in `kernel/src/host_env.rs`).
+
+- **Same semantics as the table**: start/stop/last-key-wins/modifier
+  re-conversion/`conterm & 2` freeze/`kb_initial` and `kb_repeat` read at the
+  same moments. The 50 Hz steps are the multiples of 4 that `_hz_200` crosses,
+  so the phase matches EmuTOS' sieve.
+- **`conterm`** is read from the running process's own `$484` (each TPA has
+  its own copy, `bdos::process::loader::populate_sysvars`); with no process
+  running (desktop, boot) the boot value `7` applies (`bios/ikbd.c:1100`).
+- **Burst guard — at most one repeat per poll.** EmuTOS would push one word
+  per `kb_repeat` ticks into the queue while the key is held, regardless of
+  whether anybody reads. With polling NewTOS cannot know *when* within a gap a
+  key was released — a break seen at the next poll may have happened right
+  after the previous one — so crediting a long gap in full would queue
+  repeats for time the key may not have been held, i.e. exactly the ghost keys
+  this binding exists to avoid. A poll therefore emits at most one repeat; the
+  remaining elapsed steps are discarded and the next repeat is due
+  `kb_repeat` ticks after that poll. While the pump runs at least once per
+  tick (every AES wait, every blocking read, every `Bconstat` on an empty
+  queue) the cadence is EmuTOS' exactly; only a caller that pumps less often
+  than every `kb_repeat` ticks sees the repeat rate drop to its own poll rate.
+- **Not modelled** (no counterpart on NewTOS): the `ikbdsys`-change stop (step
+  1 — NewTOS has no installable `ikbdsys`, `Kbdvbase` K4), the keyclick (step
+  5 — no keyclick on NewTOS at all), the mouse-emulation repeat (the decoder
+  has no keyboard mouse emulation), Alt-numpad, and the scancode rewrite of
+  `convert_scancode` (the NewTOS decoder does not rewrite scancodes; the
+  re-conversion of step 6 recomputes the ASCII through the active keymap).
+- **Overflow**: the repeated word goes through `console::push_rx` like any
+  make; a full ring drops it, as `push_ikbdiorec` does.
+
 ---
 
 ## 3. RS-232 / MIDI / IKBD `IOREC` state (`bios/iorec.h`, `bios/serport.h`, used by `Iorec` 0x0E)

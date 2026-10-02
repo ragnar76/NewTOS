@@ -201,8 +201,9 @@ static KB_RATE: AtomicU16 = AtomicU16::new((KB_INITIAL << 8) | KB_REPEAT);
 /// the Pi. This function's own contract (get/set the two settings + the
 /// packed old return) is complete and byte-identical to EmuTOS's `kbrate`,
 /// which likewise only reads/writes the two globals; the auto-repeat
-/// *effect* is produced by a separate repeat handler
-/// (`docs/api/xbios/23-kbrate.md` §Pi binding), independent of this call.
+/// *effect* is produced by the key-repeat handler (`kernel::key_repeat`,
+/// driven from `kernel::ikbd::poll_repeat`), which reads the same two fields
+/// through [`kb_rate`] (`docs/api/xbios/23-kbrate.md` §Pi binding).
 pub fn kbrate(args: &TrapArgs) -> i64 {
     let initial = args.arg_i16(0);
     let repeat = args.arg_i16(1);
@@ -219,6 +220,15 @@ pub fn kbrate(args: &TrapArgs) -> i64 {
     }
     // WORD return, sign-extended into x0.
     old as i16 as i64
+}
+
+/// The current auto-repeat timing `(initial, repeat)`, both in 20 ms units —
+/// EmuTOS' `kb_initial` / `kb_repeat` (`bios/ikbd.c:425-426`) as last set by
+/// [`kbrate`]. Read by the key-repeat handler: `initial` at each key make
+/// (`bios/ikbd.c:891`), `repeat` at each repeat (`:527`).
+pub fn kb_rate() -> (u8, u8) {
+    let v = KB_RATE.load(Ordering::Relaxed);
+    ((v >> 8) as u8, v as u8)
 }
 
 // ── Setprt (0x21) — desktop printer configuration word ────────────────────

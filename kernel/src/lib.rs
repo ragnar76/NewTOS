@@ -46,6 +46,7 @@ pub mod selftest_pexec_d4d5;
 pub mod bench;
 pub mod fbcon;
 pub mod ikbd;
+pub mod key_repeat;
 pub mod keymap;
 pub mod shell;
 pub mod selftest_aes;

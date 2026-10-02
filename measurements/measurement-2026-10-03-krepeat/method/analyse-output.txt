@@ -1,0 +1,18 @@
+== before
+hold make@7205 break@8205 (5000 ms): words=1 = 1 make + 0 repeats; first repeat None ticks after make; repeat gaps [] ticks; last word 5000 ms before break; up-arrow words between break and next make / end of log: 0
+hold make@8805 break@9205 (2000 ms): words=1 = 1 make + 0 repeats; first repeat None ticks after make; repeat gaps [] ticks; last word 2000 ms before break; up-arrow words between break and next make / end of log: 0
+Return words: 4 (4 makes injected)
+words pushed 6 popped 6
+  doom: K06 put PRESS key 173 at 36050 ms
+  doom: K06 put RELEASE key 173 at 36420 ms
+  doom: K06 put PRESS key 173 at 44055 ms
+  doom: K06 put RELEASE key 173 at 44420 ms
+== after
+hold make@7205 break@8205 (5000 ms): words=119 = 1 make + 118 repeats; first repeat 59 ticks after make; repeat gaps [8] ticks; last word 25 ms before break; up-arrow words between break and next make / end of log: 0
+hold make@8805 break@9205 (2000 ms): words=44 = 1 make + 43 repeats; first repeat 59 ticks after make; repeat gaps [8] ticks; last word 25 ms before break; up-arrow words between break and next make / end of log: 0
+Return words: 4 (4 makes injected)
+words pushed 167 popped 167
+  doom: K06 put PRESS key 173 at 36040 ms
+  doom: K06 put RELEASE key 173 at 41125 ms
+  doom: K06 put PRESS key 173 at 44045 ms
+  doom: K06 put RELEASE key 173 at 46125 ms

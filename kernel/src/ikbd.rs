@@ -14,7 +14,9 @@
 //! [`feed`] consumes one byte at a time, assembles the multi-byte
 //! mouse/joystick/clock packets, turns key make events into ASCII (US
 //! layout) → the console RX ring (`Cnecin`/`Cconin`/the shell), and
-//! relative-mouse packets → the VDI cursor.
+//! relative-mouse packets → the VDI cursor. A held non-modifier key repeats
+//! (EmuTOS' BIOS software repeat, run polled — [`poll_repeat`],
+//! [`crate::key_repeat`]).
 //!
 //! Protocol + scancode set: Atari IKBD documentation; the scancode→ASCII
 //! tables mirror EmuTOS `bios/keyboard.c` (US layout). Country layouts
@@ -23,6 +25,8 @@
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use crate::console;
+use crate::key_repeat::KeyRepeat;
+use crate::sync::SpinMutex;
 
 // ── modifier state ────────────────────────────────────────────────────
 static SHIFT: AtomicBool = AtomicBool::new(false);
@@ -159,6 +163,8 @@ fn decode_key(raw: u8) {
         return;
     }
     match code {
+        // Modifier makes and breaks only update the shift state; a running
+        // key repeat continues (EmuTOS `bios/ikbd.c:778-801,825-870`).
         SC_LSHIFT | SC_RSHIFT => SHIFT.store(make, Ordering::Relaxed),
         SC_CTRL => CTRL.store(make, Ordering::Relaxed),
         SC_ALT => ALT.store(make, Ordering::Relaxed), // AltGr for the DE layout
@@ -169,10 +175,58 @@ fn decode_key(raw: u8) {
             // Queue every make key as a word `scancode << 8 | ascii`; keys
             // with no character (arrows, function keys) carry ascii 0 so the
             // AES still sees the scancode (GEMDOS console readers skip them).
-            let ascii = to_ascii(code).unwrap_or(0);
-            console::push_rx((code as u16) << 8 | ascii as u16);
+            let word = key_word(code);
+            console::push_rx(word);
+            // It becomes the repeating key, armed with the current initial
+            // delay (EmuTOS `kbd_int` `:875,891,898-903`).
+            let (initial, _) = tos_api::xbios::system::kb_rate();
+            REPEAT.lock().make(
+                code,
+                word,
+                shift_state(),
+                initial,
+                tos_api::bios::tick::hz_200(),
+            );
         }
-        _ => {}
+        // A non-modifier break (CapsLock's included, as in EmuTOS' `default`
+        // arm): stops the repeat if it is the repeating key, or Home/Insert
+        // (`bios/ikbd.c:807-817`).
+        _ => REPEAT.lock().brk(code),
+    }
+}
+
+/// The key word `scancode << 8 | ascii` for `code` under the current
+/// modifiers (ascii 0 for keys with no character).
+fn key_word(code: u8) -> u16 {
+    let ascii = to_ascii(code).unwrap_or(0);
+    (code as u16) << 8 | ascii as u16
+}
+
+/// Key auto-repeat state (EmuTOS `kb_ticks`/`kb_last`/`kb_last_actual`).
+/// Touched only from the input pump — the decoder above (fed by
+/// `usb::poll`) and [`poll_repeat`] — never from an interrupt handler, so the
+/// lock is never contended.
+static REPEAT: SpinMutex<KeyRepeat> = SpinMutex::new(KeyRepeat::new());
+
+/// Run the key auto-repeat for this poll: credit the 50 Hz steps `_hz_200`
+/// crossed since the previous call and queue the repeating key's word if a
+/// repeat fell due — at most one per call.
+///
+/// EmuTOS runs this (`do_key_repeat`, `bios/ikbd.c:451-528`) from the
+/// timer-C interrupt. NewTOS runs it **polled**, and the caller must invoke it
+/// **after** draining the input source (`drivers::usb::poll`), so a break that
+/// arrived in the meantime has already stopped the repeat — no ghost keys
+/// after the release. Sanctioned deviation, spec `docs/api/xbios/_state.md`
+/// §"Key-repeat handler"; state machine and burst guard in
+/// [`crate::key_repeat`].
+pub fn poll_repeat() {
+    let now = tos_api::bios::tick::hz_200();
+    let conterm = tos_api::bios::chardev::current_conterm();
+    let (_, repeat) = tos_api::xbios::system::kb_rate();
+    let shifty = shift_state();
+    let word = REPEAT.lock().poll(now, conterm, shifty, repeat, key_word);
+    if let Some(word) = word {
+        console::push_rx(word);
     }
 }
 

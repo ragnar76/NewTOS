@@ -107,6 +107,9 @@ impl Host for KernelHost {
         // On real Pi-4 this is the sole console input source; no-op until a
         // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
         crate::drivers::usb::poll();
+        // Key auto-repeat runs polled, after the input above (a break has
+        // been seen) — `docs/api/xbios/_state.md` §"Key-repeat handler".
+        crate::ikbd::poll_repeat();
         core::hint::spin_loop();
 
         // SAFETY: restore the caller's original DAIF mask state.
@@ -155,6 +158,8 @@ impl Host for KernelHost {
             // but never a blocking console read. No-op until a HID device
             // is enumerated (qemu-virt uses the PL011 RX IRQ instead).
             crate::drivers::usb::poll();
+            // Key auto-repeat, polled after the input (see `pump_input`).
+            crate::ikbd::poll_repeat();
 
             if let Some(b) = crate::console::rx_pop() {
                 break b;
@@ -211,6 +216,8 @@ impl Host for KernelHost {
             // source; no-op until a HID device is enumerated (qemu-virt
             // uses the PL011 RX IRQ instead).
             crate::drivers::usb::poll();
+            // Key auto-repeat, polled after the input (see `pump_input`).
+            crate::ikbd::poll_repeat();
 
             if let Some(w) = crate::console::rx_pop_key() {
                 break w;

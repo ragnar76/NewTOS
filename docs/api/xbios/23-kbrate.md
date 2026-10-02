@@ -179,13 +179,17 @@ None (software repeat timer; the IKBD hardware repeat is not used).
 
 (Empty during Phase 00.)
 
-PHASE-07: NewTOS drives the repeat from its own timer; `Kbrate` reads/writes
-the same two byte fields with the same packed return so setup tools work.
+`Kbrate` reads/writes the two byte fields with the same packed return
+(`tos-api/src/xbios/system.rs`); the key-repeat handler
+(`kernel/src/key_repeat.rs`, KEYS01 2026-10-03) consumes them — see §"Pi /
+BCM2711 binding" for where it runs.
 
 ## Pi / BCM2711 binding
 
 > Re-points the *hardware reference* (the `kb_ticks` software repeat timer,
-> classically driven by the ~50 Hz VBL) at the NewTOS profile. The
+> driven in EmuTOS by every 4th 200 Hz timer-C interrupt, i.e. 50 Hz —
+> `bios/vectors.S:521`, `bios/ikbd.c:530-536`; an earlier revision said "the
+> ~50 Hz VBL", which was wrong) at the NewTOS profile. The
 > **contract is unchanged** if adopted — the packed
 > `(old_initial << 8) | old_repeat` return, the `< 0` per-parameter query,
 > the `& 0xFF` store, defaults `15`/`2`. Peripheral + driver: see
@@ -196,14 +200,31 @@ the same two byte fields with the same packed return so setup tools work.
   ms (`HARDWARE-PROFILE.md` §3.5, `tos-api/src/bios/mod.rs` `TICKCAL_MS=20`),
   so the defaults `15`/`2` are ≈300 ms initial / ≈40 ms repeat, exactly as
   on the Atari.
-- **Auto-repeat source on the Pi.** USB-HID does its own key-hold repeat at
-  the device/report level, but the NewTOS decoder currently emits one key
-  word per make event (`ikbd.rs:134-140` — no software repeat timer keyed off
-  `kb_initial`/`kb_repeat`). So `Kbrate`'s *stored values* have no observable
-  repeat effect yet; the repeat handler (`kb_ticks`) is unimplemented.
-- **Step-2 — not wired.** `Kbrate` (XBIOS `0x23`) is **not in the NewTOS
-  XBIOS dispatcher** (`tos-api/src/xbios/mod.rs`), so the get/set of the two
-  byte fields is not exposed (returns `EINVFN`), and no repeat timer consumes
-  them. Recorded as K-series below.
+- **Auto-repeat source on the Pi.** The USB-HID boot keyboard does **not**
+  repeat: it reports changes only (FreeMiNT even sets its idle rate to
+  "infinite", `references/freemint/sys/usb/src.km/udd/hid/keyboard/usb_keyboard.c:599`),
+  and `kernel/src/drivers/usb/hid.rs` (`keyboard_report`) turns a report into
+  a make only for a *new* usage and a break only for a *vanished* one. (An
+  earlier revision of this entry said "USB-HID does its own key-hold repeat"
+  — that was wrong; corrected 2026-10-03, KEYS01.) The repeat is therefore the
+  BIOS software repeat of EmuTOS (`bios/ikbd.c:395-536`), reimplemented with
+  the same delay/rate semantics in `kernel/src/key_repeat.rs` and driven from
+  `kernel/src/ikbd.rs` (`poll_repeat`). It reads the **same** two byte fields
+  this call sets (`tos_api::xbios::system::kb_rate`): `kb_initial` at each
+  make, `kb_repeat` at each repeat, exactly as EmuTOS reads `kb_initial`/
+  `kb_repeat`. So `Kbrate(-1,-1)` reports the values actually in use, and a
+  set changes the timing of the next make / next repeat.
+- **Where the repeat runs — sanctioned deviation.** EmuTOS runs
+  `do_key_repeat` from the 50 Hz half of the timer-C interrupt. NewTOS runs
+  it in the polled input pump, after each USB poll, crediting the 50 Hz steps
+  `_hz_200` crossed since the previous poll, at most **one** repeat per poll
+  (burst guard). Reason: on the Pi the break arrives only through polling, so
+  an interrupt-driven repeat would emit ghost keys after the release. Full
+  semantics and the burst-guard rationale: `docs/api/xbios/_state.md`
+  §"Key-repeat handler"; listed in `docs/COMPATIBILITY.md` §"Sanctioned
+  deviations".
+- **Wired.** `Kbrate` (XBIOS `0x23`) is in the dispatcher
+  (`tos-api/src/xbios/mod.rs`, `KBRATE => system::kbrate`), byte-identical to
+  `bios/ikbd.c:439-449` (packed old value, `< 0` query, `& 0xFF` store).
 - **Datasheet.** No peripheral register (software repeat timer; the ARM
   generic timer / BCM system timer provides the tick — §3.5).

@@ -305,9 +305,11 @@ BIOS/XBIOS calls, not a poke:
 
 - ~~**`hz_200` has no incrementing counter**~~ — **closed 2026-09-04**: a
   200 Hz timer interrupt now advances it and publishes it at `$4BA`
-  (`06-tickcal.md` §"The 200 Hz tick"). What remains open is the **50 Hz half**
-  of EmuTOS' timer-C sieve (`bios/vectors.S:521`): key repeat, `dosound` and
-  the `etv_timer` dispatch are still not run.
+  (`06-tickcal.md` §"The 200 Hz tick"). What remains open is the rest of the
+  **50 Hz half** of EmuTOS' timer-C sieve (`bios/vectors.S:521`): `dosound`
+  and the `etv_timer` dispatch are still not run. Key repeat runs since
+  2026-10-03 (KEYS01) — polled in the input pump, not in the interrupt; see
+  `docs/api/xbios/_state.md` §"Key-repeat handler".
 - **`etv_*` hooks stored but never invoked** (see `05-setexc.md`).
 - **`dumpflg` / `Scrdmp` unwired** (Screen S2) — nothing resets the flag because
   the call does not exist.

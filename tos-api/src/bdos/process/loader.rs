@@ -827,7 +827,7 @@ const RAMVALID_MAGIC: u32 = 0x1357_BD13;
 /// (`& 8`) requests the `Bconin` keyboard-shift-state fold
 /// (`bios/ikbd.c:279-280`); the default leaves it clear, so `Bconin` keeps
 /// returning bits 24-31 = 0 exactly as before this sysvar was populated.
-const CONTERM_DEFAULT: u8 = 7;
+pub(crate) const CONTERM_DEFAULT: u8 = 7;
 
 /// Write a 32-bit little-endian `LONG` at byte offset `off` (any alignment;
 /// the classic sysvars are 4-byte and not all 4-aligned, e.g. `sysbase`@0x4F2).

@@ -1,0 +1,81 @@
+measurement-2026-10-03-krepeat -- KEYS01 key auto-repeat, before/after
+Date 2026-10-03, branch desk-rebuild, base HEAD 3387f75, KEYS01 uncommitted.
+
+WHAT
+  Two headless QEMU raspi4b runs (640x480, -append serial=on via
+  tools/qemu-serial-on), Doom autostarted by #Z, the same scripted IKBD
+  injector in both scratch kernels:
+    before = HEAD 3387f75 (git archive) + instrumentation
+    after  = working tree with KEYS01 + the same instrumentation
+  Doom binary identical in both runs: the K06-instrumented DOOM.NAP of the
+  PORT06 diagnosis (measurement-2026-10-02-port06-keys), so only the kernel
+  differs.
+
+INJECTOR (method/apply-instrumentation.py; scratch copies only)
+  Feeds exactly what drivers/usb/hid.rs feeds for a key that goes down and
+  later up: ONE make, ONE break (a boot keyboard reports changes only).
+  It sits in pump_input right after usb::poll() -- i.e. in the "after" kernel
+  before ikbd::poll_repeat, the same place the real USB input arrives.
+  Schedule (200 Hz ticks after the first pump with an EL0 program):
+    +3000/+3200/+3400/+3600  Return make, break 10 ticks later
+                             (Doom: menu, New Game, episode, skill -> E1M1)
+    +4200 .. +5200           hold up-arrow 5 s
+    +5800 .. +6200           hold up-arrow 2 s
+  console.rs logs every key word into (push_rx) and out of (rx_pop_key) the
+  queue with hz_200. Doom's K06 lines log MU_KEYBD events and the
+  press/release it hands to the engine.
+
+FILES
+  kernel8.img before  sha256 7bc65530b011b652ad3b1e4fd0b9a103b64adbb955357e00759261b61c8b3516
+  kernel8.img after   sha256 12ca1a63d6d1cf3317b6ba78f3632ea342efce05df3154c1f27b884a9310b7ab
+  DOOM.NAP (K06)      sha256 32cbd34a7d33573cc6601ace2d82e33394404698486695b3030c7c850a50408f
+  DOOM1.WAD           sha256 1d7d43be501e67d927e415e0b8f3e29c3bf33075e859721816f652a526cac771
+  Card: method/seed-doom.sh (fresh tools/make-sd-image.sh image + DOOM.NAP +
+  WAD + method/newdesk-doom.inf #Z), one copy per run.
+  Run: PATH=tools/qemu-serial-on:$PATH bash method/run-doom.sh <kernel8.img>
+       <card> <out> <tag> 28:..png ... 52:..png  (QMP dump every second).
+  method/keys01-change.diff        the product change (git diff + new files)
+  method/scratch-krp-instrumentation-after.diff  instrumentation as applied
+  method/analyse.py, analyse-output.txt
+  method/build-after-*.log, clippy-after-*.log, host-tests.txt (after),
+  host-tests-before.txt (baseline 980/0/1 on 3387f75)
+
+RESULT (method/analyse-output.txt)
+                         before                  after
+  5 s hold, words        1 (make only)           119 = 1 make + 118 repeats
+  first repeat           --                      59 ticks = 295 ms after make
+                                                 (15 sieve steps, make 1 tick
+                                                 after a sieve boundary)
+  repeat interval        --                      8 ticks = 40 ms, constant
+  last word before break --                      25 ms
+  words after break      0                       0  (no ghost keys)
+  2 s hold, words        1                       44 = 1 + 43
+  queue in/out           6 / 6                   167 / 167 (all consumed)
+  Doom press->release    36050 -> 36420 ms       36040 -> 41125 ms
+     (5 s hold)          (370 ms, gives up)      (whole hold; release 100 ms
+                                                 after the last repeat = Doom's
+                                                 hold_repeat window)
+  Doom (2 s hold)        44055 -> 44420 ms       44045 -> 46125 ms
+
+  Late-poll case, seen by accident in both runs: the 4th Return (break
+  scheduled +3610) was only fed at +3663 because Doom was loading E1M1 and
+  did not pump for ~300 ms. In the "after" run a repeat would have been due at
+  ~+3659, but the poll that saw it decoded the break first: Return words = 4
+  (no repeat, no ghost) -- the ordering the polled design relies on.
+
+  Screendumps (screendumps/sheet-*-t035-t043.png, 9 dumps 35..43 s):
+    before: the player moves a little between t036 and t037 (~0.37 s of
+            walking) and then stands still t037..t043 while the key is held.
+    after:  the player walks from the start through the hall (t037, t038)
+            and is against a wall from t039 on; the press is held by Doom
+            until 41.1 s (log above). During the 2 s hold the player is
+            still at that wall, so t047..t050 do not change -- expected.
+  The dumps are wall-clock timed; key times are hz_200 (~5 ms ticks) --
+  hz_200 * 5 ms matches the dump second to within the QEMU start-up offset
+  (the injector armed at hz 3005 = 15 s in both runs).
+
+NOT COVERED HERE
+  The real USB path (QEMU raspi4b has no USB keyboard) -- real-Pi acceptance.
+  conterm bit 1 off and a Kbrate change at runtime are covered by host tests
+  (kernel/src/key_repeat.rs via tools/xtask; tos-api/tests/
+  xbios_kbrate_repeat_source.rs), not by a QEMU run.

@@ -196,7 +196,7 @@ typically 54 MHz, but the code never assumes it).
 
 | Atari reference | Pi-4 model today |
 |-----------------|------------------|
-| MFP timer-C fires 200 Hz IRQ; the ISR runs 50 Hz "tick" work and advances `_hz_200` | ARM generic timer (EL1 physical, PPI INTID 30) fires a 200 Hz IRQ; the ISR advances `_hz_200` — but the 50 Hz half of the sieve (key repeat, `dosound`, `etv_timer`) is still not run |
+| MFP timer-C fires 200 Hz IRQ; the ISR runs 50 Hz "tick" work and advances `_hz_200` | ARM generic timer (EL1 physical, PPI INTID 30) fires a 200 Hz IRQ; the ISR advances `_hz_200` — the 50 Hz half of the sieve is not run in the ISR: key repeat runs polled in the input pump off `_hz_200` (KEYS01), `dosound` and `etv_timer` are still not run |
 | `Tickcal` = 20 (constant, unrelated to the timer) | `Tickcal` = 20 (constant) — identical |
 
 ### The 200 Hz tick (implemented 2026-09-04)
@@ -217,14 +217,17 @@ process's `$4BA` cell in its per-process low-memory sysvar area, so
 EmuTOS, both documented in that module: the handler credits *every* elapsed
 5 ms period (so a late interrupt — IRQs are masked inside the synchronous SVC
 handler — cannot lose time, where m68k timer C does), and the **50 Hz half of
-the `timer_c_sieve`** (`bios/vectors.S:521`: key repeat, `dosound`,
-`etv_timer`) is still not run.
+the `timer_c_sieve`** (`bios/vectors.S:521`) is not run in the interrupt:
+key repeat (`kb_timerc_int`) runs polled in the input pump, stepping on the
+multiples of 4 of `_hz_200` (KEYS01, 2026-10-03; `docs/api/xbios/_state.md`
+§"Key-repeat handler"), while `dosound` and `etv_timer` are still not run.
 
 ### Gaps vs. the contract (Step-2 candidates)
 
-- **No 50 Hz tick processing.** EmuTOS' timer-C ISR runs `kb_timerc_int`,
-  `sndirq` and the `etv_timer` hook on every 4th interrupt. NewTOS has no
-  equivalent of the first two and never dispatches the third, so a program that
+- **No 50 Hz tick processing in the interrupt.** EmuTOS' timer-C ISR runs
+  `kb_timerc_int`, `sndirq` and the `etv_timer` hook on every 4th interrupt.
+  NewTOS runs the first polled in the input pump (KEYS01), has no equivalent of
+  the second and never dispatches the third, so a program that
   installs an `etv_timer` hook expecting 20 ms callbacks still gets **nothing**
   — see the `05-setexc.md` binding.
 - **`Random`'s `hz_200` auto-seed** still falls back to the frame clock,

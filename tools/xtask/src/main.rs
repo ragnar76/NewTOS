@@ -30,6 +30,12 @@ mod rsc_cicon_tests;
 #[cfg(test)]
 #[path = "../../../kernel/src/bootargs.rs"]
 mod kernel_bootargs;
+/// KEYS01 — the kernel's key auto-repeat state machine (EmuTOS
+/// `do_key_repeat`, run polled). Pure module, compiled here by path like
+/// `kernel_bootargs` so its tests run with the host suite.
+#[cfg(test)]
+#[path = "../../../kernel/src/key_repeat.rs"]
+mod kernel_key_repeat;
 
 const KERNEL_TARGET: &str = "aarch64-unknown-none-softfloat";
 

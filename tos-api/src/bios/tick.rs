@@ -37,11 +37,20 @@
 //!   timer's free-running counter lets the driver tell *how many* periods
 //!   elapsed, so a late interrupt credits all of them. The counter therefore
 //!   equals "5 ms periods since boot" and cannot drift away from wall time.
-//! * **The 50 Hz half of the sieve is not implemented here.** Keyboard repeat
-//!   (USB-HID / IKBD does its own), `dosound` (no YM2149) and the `etv_timer`
-//!   dispatch (`bios::vectors` shadows the vector but never invokes it) have
-//!   no NewTOS counterpart yet, so no sieve is run. Tracked as a gap in
-//!   `docs/api/bios/_state.md`, not silently absorbed.
+//! * **The 50 Hz half of the sieve is not run in this interrupt.**
+//!   - *Keyboard repeat* (`kb_timerc_int`) runs **polled**, in the input pump
+//!     (`kernel::ikbd::poll_repeat`, `kernel::key_repeat`): it derives the
+//!     50 Hz steps from this counter (every multiple of 4, the sieve's
+//!     phase). It cannot run here, because on the Pi the USB-HID boot
+//!     keyboard reports changes only and does **not** repeat by itself, and
+//!     its break reaches the decoder only through polling — an
+//!     interrupt-driven repeat would emit ghost keys after the release.
+//!     Sanctioned deviation, `docs/api/xbios/_state.md` §"Key-repeat handler"
+//!     (KEYS01, 2026-10-03).
+//!   - `dosound` (no YM2149) and the `etv_timer` dispatch (`bios::vectors`
+//!     shadows the vector but never invokes it) have no NewTOS counterpart
+//!     yet. Tracked as a gap in `docs/api/bios/_state.md`, not silently
+//!     absorbed.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 

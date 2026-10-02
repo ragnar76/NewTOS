@@ -1,0 +1,73 @@
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/console.rs	2026-10-02 21:26:03
++++ kernel/src/console.rs	2026-10-03 01:07:43
+@@ -276,6 +276,7 @@
+ pub fn push_rx(word: u16) {
+     #[cfg(feature = "initinfo-diag")]
+     crate::initinfo::diag::note_push(crate::initinfo::diag::PUSH_SRC_IKBD, word);
++    crate::kprintln!("[krp] push_rx {:#06x} at hz_200 {}", word, tos_api::bios::tick::hz_200()); // KRP-TEMP
+     RX_RING.push(word);
+ }
+ 
+@@ -297,7 +298,9 @@
+ /// Pop one whole key word (`scancode << 8 | ascii`) for the AES event
+ /// manager, so it can deliver scancodes (arrow / function keys) to apps.
+ pub fn rx_pop_key() -> Option<u16> {
+-    RX_RING.pop()
++    let w = RX_RING.pop();
++    if let Some(w) = w { crate::kprintln!("[krp] rx_pop_key {:#06x} at hz_200 {}", w, tos_api::bios::tick::hz_200()); } // KRP-TEMP
++    w
+ }
+ 
+ /// Non-destructively peek the oldest queued key word (`scancode << 8 |
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/host_env.rs	2026-10-03 01:03:48
++++ kernel/src/host_env.rs	2026-10-03 01:07:43
+@@ -107,6 +107,7 @@
+         // On real Pi-4 this is the sole console input source; no-op until a
+         // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        krp_inject::step(); // KRP-TEMP
+         // Key auto-repeat runs polled, after the input above (a break has
+         // been seen) — `docs/api/xbios/_state.md` §"Key-repeat handler".
+         crate::ikbd::poll_repeat();
+@@ -463,3 +464,41 @@
+ pub fn install() {
+     tos_api::host::install_host(&KERNEL_HOST_REF);
+ }
++
++// KRP-TEMP BEGIN -- scripted IKBD make/break (QEMU raspi4b has no USB keyboard)
++pub mod krp_inject {
++    use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
++    static T0: AtomicU32 = AtomicU32::new(0);
++    static NEXT: AtomicUsize = AtomicUsize::new(0);
++    const SCRIPT: &[(u32, u8)] = &[
++        (3000, 0x1C), (3010, 0x9C),
++        (3200, 0x1C), (3210, 0x9C),
++        (3400, 0x1C), (3410, 0x9C),
++        (3600, 0x1C), (3610, 0x9C),
++        (4200, 0x48), (5200, 0xC8),
++        (5800, 0x48), (6200, 0xC8),
++    ];
++    pub fn step() {
++        if tos_api::bdos::process::RUN.load(Ordering::Acquire).is_null() {
++            return;
++        }
++        let now = tos_api::bios::tick::hz_200();
++        if T0.load(Ordering::Relaxed) == 0 {
++            T0.store(now.max(1), Ordering::Relaxed);
++            crate::kprintln!("[krp] injector armed at hz_200 {}", now);
++            return;
++        }
++        let t0 = T0.load(Ordering::Relaxed);
++        let i = NEXT.load(Ordering::Relaxed);
++        if i >= SCRIPT.len() {
++            return;
++        }
++        let (at, b) = SCRIPT[i];
++        if now.wrapping_sub(t0) >= at {
++            crate::kprintln!("[krp] feed {:#04x} at hz_200 {} (+{})", b, now, now.wrapping_sub(t0));
++            crate::ikbd::feed(b);
++            NEXT.store(i + 1, Ordering::Relaxed);
++        }
++    }
++}
++// KRP-TEMP END

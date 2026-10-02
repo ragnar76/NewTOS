@@ -60,6 +60,30 @@ const CONTERM_ADDR: usize = 0x484;
 /// LONG (EmuTOS `bios/ikbd.c:279`).
 const CONTERM_SHIFT_FOLD: u8 = 0x08;
 
+/// `conterm` bit 1: keyboard auto-repeat enabled (EmuTOS `bios/ikbd.c:475`).
+pub const CONTERM_KEY_REPEAT: u8 = 0x02;
+
+/// The `conterm` byte (`$484`) in effect for the keyboard right now: the
+/// running process's own copy, or the boot value `7` (EmuTOS `kbd_init`,
+/// `bios/ikbd.c:1100`) when no process runs (boot, the built-in desktop).
+///
+/// Read through the **kernel high-half alias** of the TPA that `RUN` holds,
+/// like `bios::tick`'s `_hz_200` publish — not through the user mapping — so
+/// it is safe from any EL1 context regardless of which `TTBR0` is installed.
+/// Used by the key-repeat handler (`kernel::ikbd::poll_repeat`, conterm bit 1
+/// = [`CONTERM_KEY_REPEAT`]).
+pub fn current_conterm() -> u8 {
+    let bp = crate::bdos::process::current();
+    if bp.is_null() {
+        return crate::bdos::process::loader::CONTERM_DEFAULT;
+    }
+    // SAFETY: `RUN` is the kernel VA of a live process's TPA base (published
+    // by the loader, cleared on `Pterm` inside the IRQ-masked SVC handler);
+    // `$484` lies in its first page, in the loader-populated sysvar area
+    // (`populate_sysvars`). Same reasoning as `bios::tick::publish`.
+    unsafe { (bp as *const u8).add(CONTERM_ADDR).read_volatile() }
+}
+
 /// Pack an IKBD key word (`scancode << 8 | ascii`) into the console
 /// `Bconin`/`Cconin` return LONG: bits 0-7 = ASCII (0 for non-ASCII keys),
 /// bits 8-15 = 0, bits 16-23 = IKBD scancode. Bits 24-31 carry the keyboard
