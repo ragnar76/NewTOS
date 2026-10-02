@@ -202,7 +202,7 @@ Damit ist er **belegt statt angenommen** — und zwei Zahlen sind jetzt bekannt:
    158 nicht in 5 Bit darstellbar, von 116 im konformen **keine einzige**. Die
    Umsetztabelle fuer Dooms Palette rechnet also auf 5-5-5, nicht auf 8-8-8.
 2. **Der Preis je Bild ist die Kopie, nicht die Umrechnung.** 320x200 =
-   64 000 px x **80,49 ns** = **5,15 ms allein im `vro_cpyfm`** (18 % eines
+   64 000 px x **80,49 ns** (QEMU, nicht Pi) = **5,15 ms allein im `vro_cpyfm`** (18 % eines
    35-Hz-Taktes, 31 % eines 60-Hz-Bildes). Der Umrechnungsdurchlauf, den dieser
    Abschnitt mit „unter einer Millisekunde" veranschlagt hat, ist der
    **billige** Teil und verschwindet im Staging.

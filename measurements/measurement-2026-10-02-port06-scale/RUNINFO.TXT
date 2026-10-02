@@ -1,0 +1,163 @@
+measurement-2026-10-02-port06-scale
+  PORT06, Schritt "Vergroesserung": Stufen x1..x4 mit 4:3-Korrektur
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 14d5a92. Kein Kommit, nichts geflasht, keine
+Pi, keine Karte, /Volumes/BOOT nicht beruehrt. Unter kernel/ und tos-api/
+wurde KEINE Datei geaendert. Kein *.img in diesem Verzeichnis.
+Geaendert: sdk/apps/doom/doomgeneric_gem.c, sdk/apps/build-doom.sh.
+
+Maschine: QEMU 11.0.2 -M raspi4b (TCG), -display none, serielle Ausgabe in
+eine Datei, Karte -drive if=sd, jedes Mal frisch aus tools/make-sd-image.sh
+(nicht geaendert), WAD nur auf dem Scratch-Abbild. Bildschirm zweimal:
+  640x480    QEMU-Vorgabe
+  1920x1080  wie die echte Pi: -global bcm2835-fb.xres=1920
+             -global bcm2835-fb.yres=1080. QEMUs bcm2835-fb beantwortet die
+             Groessenabfrage des Kerns (framebuffer.rs query_physical_size)
+             mit diesen Werten; serielle Zeile "[fb] VideoCore display
+             geometry detected: 1920x1080". Kein Kerneingriff.
+Kern: `cargo xtask build --board rpi4 --release`, Quellen unveraendert,
+tos-api 64 / kernel 94 rustc-Warnungen (Basislinie), kernel8.img sha256
+483286068d37b4105bbd72869bc47ce1aad1c15d464c315234f49fd87484eb9d.
+WAD: Applications/doom-wad/doom1.wad (Shareware 1.9). doomgeneric @
+dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284, sauber (build-doom.sh prueft).
+
+Binaerdateien (beide aus dem ausgelieferten sdk/apps/build-doom.sh):
+  play   Vorgaben (DOOM_STATS=5, DOOM_ARGS "-mb","2")
+         DOOM.NAP sha256 cdac944bcb702cb98e5139f0051247c854f702682dc8bcd6afd853e215527164
+         = byte-gleich mit sdk/apps/doom/build/DOOM.NAP (Endbau, s. u.)
+  tdemo  DOOM_ARGS '"-mb","2","-timedemo","demo1"'
+         DOOM.NAP sha256 c38e6389c07c8c3e93245a157099f2610807e9349fade25888d8fa572905174c
+
+
+0. ERGEBNIS VORWEG
+---------------------------------------------------------------------------
+  Alle vier Stufen GESEHEN (Screendump) und je Bild PIXELGENAU geprueft:
+  der Rueckleseabgleich beim ersten Bild liest jede Ausgabezeile per
+  vro_cpyfm + vr_trnfm vom Schirm zurueck und vergleicht jedes Pixel mit
+  dem Soll (Spalte x/stage, Zeile y*200/out_h) -- "VERIFIED via
+  vr_trnfm+scale+vro_cpyfm" in jedem Lauf.
+
+  Stufe  Ausgabe    Lage auf 1920x1080   auf 640x480
+  x1     320x200    (800,440)            (160,140)
+  x2     640x480    (640,300)            (0,0), fuellt den Schirm
+  x3     960x720    (480,180)            passt nicht -> x2 (Meldung)
+  x4     1280x960   (320,60)             passt nicht
+  ohne -scale:  1920x1080 -> x4, 640x480 -> x2 (DOOM_GEM_SCALE = 0 =
+                groesste passende Stufe)
+
+  Kosten je Bild (QEMU TCG, Kostenprobe: jeder Schritt auf dem ersten Bild
+  wiederholt, bis >= 1 s _hz_200-Zeit; Laeufe d..g, 1920x1080), in us:
+
+  Stufe  c2p   vr_trnfm  scale  vro_cpyfm  Summe    ns/px cpyfm
+  x1     635   3095         0     7913     11643    124
+  x2     634   3076      1165    38148     43023    124
+  x3     611   2949      1392    84166     89118    122
+  x4     634   3076      1779   152857    158346    124
+
+  Bildrate:
+  Stufe  timedemo demo1 (ungebremst)          Attract-Schleife, 5-s-Fenster
+  x1     76.45 fps (5026 in 2301 realtics)    56.7 .. 60.8 fps
+  x2     22.64 fps (5026 in 7769)             22.6 .. 23.6 fps
+  x3     10.92 fps (5026 in 16111)            10.8 .. 11.1 fps
+  x4      6.38 fps (5026 in 27581)             6.1 ..  6.5 fps
+
+  Lesart: c2p und vr_trnfm bleiben auf 320x200 und sind stufenunabhaengig
+  (~3,7 ms). Das Vergroessern selbst kostet 1,2..1,8 ms. Die Zeit liegt
+  fast ganz im vro_cpyfm, und der waechst exakt mit der Pixelzahl
+  (122..124 ns/px in QEMU). Das sind QEMU-TCG-Zahlen, KEINE Pi-Zahlen.
+  PORT07 hat auf der echten Pi 80,49 ns/px fuer vro_cpyfm gemessen; was
+  das fuer x2..x4 heisst, zeigt erst der Pi-Lauf (der Bau meldet es selbst,
+  s. 3.).
+
+
+1. WIE DIE STUFE ANKOMMT (echter Kommandozeilen-Weg)
+---------------------------------------------------------------------------
+raspi4b hat keine Tastatur, also kann niemand die Parameterbox des
+Desktops ausfuellen. Stattdessen startet #Z-Autorun C:\LAUNCH.NAP
+(method/launch.c, NUR Messhilfe, nicht Teil der Portierung): Dsetpath
+\DOOM, dann system("C:\DOOM\DOOM.NAP -scale N") aus C:\LAUNCH.TXT ->
+mintlibs system_hack -> spawnvp -> Pexec(0) mit Kommandozeile -> crt0 ->
+argv. Dieselbe Basepage-Kommandozeile fuellt die Parameterbox eines .NTP.
+Laeufe ohne Launcher (a, h, i) starten DOOM.NAP direkt per #Z ohne
+Kommandozeile = Standardstufe. "LAUNCH: system() returned 65535" nach
+dem Ende: DOOMs I_Error/ZenityErrorBox-Ausgang (PORT10), DOOM selbst endet
+normal, der Desktop kommt zurueck (screendumps/t*-end.png).
+
+Laeufe (method/run-scale.sh; Konsolenausgabe method/run-scale-console.log):
+  a-640-default    #Z, keine Kommandozeile        -> x2 640x480
+  b-640-x1         "-scale 1"                     -> x1 (Rueckfall auf alt)
+  c-640-x3         "-scale 3"                     -> "does not fit ... stage 2"
+  d-1080-x1 .. g-1080-x4   "-scale 1".."-scale 4" -> x1..x4
+  h-1080-default   #Z, keine Kommandozeile        -> x4
+  i-640-charmode   #Z 00 (Zeichenmodus-Start, wie ein .NTP: sh_isgem=0,
+                   sh_toalpha vor dem Start)      -> laeuft, x2
+  t1..t4           timedemo demo1, "-scale 1".."-scale 4", 1920x1080
+Screendumps je Lauf bei t=35/60 s (t*: 60 s und Ende). Serielle Logs in
+serial/<lauf>-serial.log.
+
+
+2. WAS NICHT GEZEIGT IST
+---------------------------------------------------------------------------
+* <= 8 Planes (TT, Paletten-Modi): Der Zweig "keine Vergroesserung,
+  Stufe 1" ist nur im Quelltext; NewTOS meldet immer 16 Planes. Gezeigt
+  wird er erst im m68k-/Hatari-TT-Lauf.
+* 24/32-Planes-Kopierzweige von scale_row (dev_bpp 3/4): auf NewTOS nicht
+  erreichbar (16 Planes), ungefahren. Der Rueckleseabgleich wuerde eine
+  falsche Annahme dort mit I_Error melden.
+* Die Parameterbox selbst (Doppelklick auf DOOM.NTP, "-scale 2" tippen):
+  braucht Tastatur, nur auf der echten Pi. Gezeigt sind die beiden Haelften:
+  Kommandozeile -> argv -> Stufe (Laeufe b..g, t*) und Start im
+  Zeichenmodus (Lauf i).
+* m68k: method/m68k-compile-check.txt -- doomgeneric_gem.c uebersetzt mit
+  m68k-atari-mint-gcc 7.5.0 (-c, -Wall -Wextra) ohne Meldung; NICHT
+  gelinkt, nicht gefahren.
+
+
+3. BILDRATENZEILE (fuer den Pi-Lauf)
+---------------------------------------------------------------------------
+build-doom.sh baut jetzt standardmaessig mit DOOM_STATS=5 (vorher 0). Der
+Bau gibt auf der Konsole (= Bildschirm, und seriell gespiegelt) aus:
+  - einmal beim ersten Bild die Kostenprobe
+      "DOOM: per frame, stage N WxH: c2p .. us, vr_trnfm .. us, scale .. us,
+       vro_cpyfm .. us, sum .. us"
+    -- Preis: das erste Bild steht dafuer ~4..5 s still.
+  - alle 5 s eine Zeile, mit "\r" an derselben Stelle ueberschrieben
+    (PORT06s Weg; < 80 Spalten, damit sie auch auf 640 Pixeln nicht
+    umbricht und rollt):
+      "DOOM xN: F frames/T ms = X.XX fps, Y.YY ms/frame, P pal"
+    Auf 1920x1080 steht sie links im schwarzen Rand, teils vom Bild
+    verdeckt (screendumps/e,f,g,h); auf 640x480 bei x1 in der untersten
+    Textzeile (screendumps/b). Bei x2 auf 640x480 deckt das Bild den ganzen
+    Schirm; in den Dumps a/c/i ist die Zeile nicht zu sehen -- sie wird
+    vom naechsten Bild ueberschrieben (nicht weiter beobachtet, ob sie
+    sichtbar aufblitzt). Seriell steht sie vollstaendig.
+
+
+4. GRUNDWERTE
+---------------------------------------------------------------------------
+  build-doom.sh            81/81, LINK OK, 0 undefined; Plattformdatei mit
+                           -Wall -Wextra ohne Warnung; 1 Upstream-Warnung
+                           (p_maputl.c:849) wie vorher.
+  Bildschirmbasis-grep     method/grep-screenbase.txt: 0 Treffer
+                           (/usr/bin/grep -i -E 'setscreen|physbase|logbase'
+                           ueber doomgeneric_gem.c und build-doom.sh)
+  Hosttests                method/run-host-tests.txt: 11 / 0 / 0
+  Rust                     nicht angefasst; Release-Bau rpi4 64/94
+                           Warnungen (Basislinie), keine Builds/Clippy darueber
+                           hinaus gefahren.
+  Endbau                   sdk/apps/doom/build/DOOM.NAP sha256 cdac944b...
+                           (= play-Bau oben)
+
+
+5. DATEIEN
+---------------------------------------------------------------------------
+  method/run-scale.sh      Bau + alle Laeufe (play | tdemo | all)
+  method/run-qemu.sh       PORT06 run-doom.sh + Bildschirmgroesse
+  method/seed-scale.sh     PORT06 seed-doom.sh + INF/Launcher als Argument
+  method/launch.c          Messhilfe: system() aus C:\LAUNCH.TXT
+  method/newdesk-*.inf     #Z 01 DOOM.NAP / #Z 00 DOOM.NAP / #Z 01 LAUNCH.NAP
+  method/build-*.log, run-scale-console.log, run-host-tests.txt,
+  m68k-compile-check.txt, grep-screenbase.txt
+  qmp_timed.py wird aus measurement-2026-10-02-port06/method benutzt
+  (unveraendert).

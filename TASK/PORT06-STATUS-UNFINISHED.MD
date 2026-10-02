@@ -112,3 +112,44 @@ Kein Rust-Quelltext angefasst. Host-Tests `cargo run -p xtask -- test`:
 nicht neu gefahren (kernel/tos-api unberuehrt); der Release-Bau rpi4 fuer
 die Laeufe meldete 64/94 Warnungen. Nebenwirkung: `lib_ensure` hat
 `sdk/libm/libm.a` (unversioniertes Bauprodukt) als veraltet neu archiviert.
+
+## Schritt „Vergroesserung" 2026-10-02 — Stufen x1..x4 mit 4:3-Korrektur
+
+Basis `desk-rebuild`, HEAD `14d5a92` · Belege
+[measurements/measurement-2026-10-02-port06-scale/](../measurements/measurement-2026-10-02-port06-scale/RUNINFO.TXT)
+
+Umgesetzt nach „Praezisiert 2026-10-02". Kein Kerneingriff, nichts unter
+`kernel/`/`tos-api/`, doomgeneric unveraendert.
+
+| Punkt | Ergebnis |
+|---|---|
+| Stufen | `-scale 1` 320x200 (wie bisher), `-scale 2` 640x480, `-scale 3` 960x720, `-scale 4` 1280x960; waagerecht ganzzahlig, senkrecht Zeile y zeigt Quellzeile y*200/out_h (x1,2 je Stufe). Mittig, schwarzer Rand. |
+| Ohne Parameter | `DOOM_GEM_SCALE` (eine Konstante in `doomgeneric_gem.c`), heute `0` = groesste passende Stufe: 1920x1080 → x4, 640x480 → x2. Nach dem Pi-Lauf festlegen. Zu grosse Stufe → naechstkleinere, mit Meldung. |
+| Weg | c2p und `vr_trnfm` auf 320x200, dann Pixel-/Zeilenwiederholung im **Geraeteformat**, dann `vro_cpyfm`. Nur bei > 8 Planes (gepackt, EmuTOS `vdi_raster.c:264-267`/`vr_trnfm16`); bei ≤ 8 Planes Stufe 1. Bytes werden kopiert, nicht gedeutet — keine Byte-Order-Annahme. |
+| Pruefung | Rueckleseabgleich beim ersten Bild jetzt ueber das vergroesserte Bild, jedes Pixel: `VERIFIED via vr_trnfm+scale+vro_cpyfm` fuer x2, x3, x4 (QEMU raspi4b mit `-global bcm2835-fb.xres=1920/yres=1080`), x1 wie bisher. |
+| Kommandozeile | `main()` haengt `DOOM_GEM_ARGS` (`-mb 2`) jetzt an **jeden** Start an, hinter die gegebenen Argumente — sonst haette `-scale N` allein die 6-MiB-Zone verlangt. Erstes Vorkommen gewinnt (`M_CheckParmWithArgs`). Gefahren ueber `system()` → `Pexec(0)` mit Kommandozeile (Messhilfe `method/launch.c`). |
+| Kosten je Bild (QEMU TCG, us) | x1: c2p 635 / trnfm 3095 / scale 0 / cpyfm 7913 · x2: 634 / 3076 / 1165 / 38148 · x3: 611 / 2949 / 1392 / 84166 · x4: 634 / 3076 / 1779 / 152857. `vro_cpyfm` 122–124 ns/px, linear in der Pixelzahl. |
+| timedemo demo1 (QEMU) | x1 76,45 · x2 22,64 · x3 10,92 · x4 6,38 fps |
+| Bildratenzeile | `build-doom.sh` baut jetzt mit `DOOM_STATS=5` (vorher 0): Kostenprobe beim ersten Bild (~4–5 s Standbild) und alle 5 s `DOOM xN: … fps, … ms/frame, … pal` mit `\r` (PORT06s Weg, < 80 Spalten), seriell gespiegelt. |
+| grep Bildschirmbasis | 0 Treffer |
+| Hosttests | `sh sdk/run-host-tests.sh` 11 / 0 / 0 |
+| m68k | `doomgeneric_gem.c` uebersetzt mit `m68k-atari-mint-gcc` 7.5.0 `-Wall -Wextra` ohne Meldung (nur `-c`, nicht gelinkt) |
+
+### Offen nach diesem Schritt
+
+1. **Standardstufe** nach dem ersten Pi-Lauf festlegen (`DOOM_GEM_SCALE`).
+   Die QEMU-Zahlen sind keine Pi-Zahlen. **Korrektur Lead 2026-10-02:** auch
+   die 80,49 ns/px aus PORT07 sind eine **QEMU**-Zahl
+   (`measurements/measurement-2026-09-28-port07/RUNINFO.TXT` Z. 21-23, `GUI07.md:59`),
+   nicht auf der Pi gemessen; dieselbe Fehlzuschreibung steht im Beleg
+   `measurement-2026-10-02-port06-scale/RUNINFO.TXT:69` (Beleg bleibt unveraendert).
+   Die Pi-Zahl fuer `vro_cpyfm` gibt es noch nicht — der erste Pi-Lauf liefert sie.
+2. **Parameterbox ungeprueft:** ein Start mit Stufe geht auf NewTOS heute
+   nur ueber `.NTP` (einzige Endung mit `AF_ISPARM`, `desk/main.rs isparm`),
+   und `.NTP` startet im Zeichenmodus. Gezeigt: DOOM laeuft im
+   Zeichenmodus-Start (`#Z 00`, Lauf i) und die Kommandozeile erreicht die
+   Stufe (Laeufe b..g). Die Box selbst braucht Tastatur → echte Pi.
+3. ≤ 8 Planes und die 24/32-Planes-Kopierzweige sind auf NewTOS nicht
+   erreichbar und ungefahren (TT-/Hatari-Lauf).
+4. `DOOM_STATS=5` als Vorgabe ist ein Messbau; fuer die Vorfuehrung ggf.
+   wieder 0 (Kostenprobe = Standbild am Anfang).

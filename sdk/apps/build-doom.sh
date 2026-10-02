@@ -31,20 +31,27 @@
 #                              §3a: the colour conversion happens once, at
 #                              the end, in the platform layer)
 #   -DDOOMGENERIC_RESX=320     doomgeneric's output buffer is exactly DOOM's
-#   -DDOOMGENERIC_RESY=200     own 320x200 picture; any integer zoom is the
-#                              platform's business (doomgeneric_gem.c)
+#   -DDOOMGENERIC_RESY=200     own 320x200 picture; scaling (stages x1..x4
+#                              with 4:3 correction, start parameter -scale N)
+#                              is the platform's business (doomgeneric_gem.c
+#                              "SCALING")
 #   byte order                 doomgeneric's own mechanism (i_swap.h tests
 #                              __BYTE_ORDER__); nothing to set here, and the
 #                              later m68k build gets SYS_BIG_ENDIAN the same way.
 #
 # Environment knobs:
 #   DOOM_ARGS='"-mb","2"'      extra arguments the platform appends to argv
-#                              when the program was started without them (a
-#                              desktop / #Z start passes no command tail).
-#                              Default below; the zone size is the reason, see
+#                              on every start, after the ones given (a desktop
+#                              / #Z start passes none; a given option wins, as
+#                              DOOM takes the first occurrence). Default below;
+#                              the zone size is the reason, see
 #                              doomgeneric_gem.c "MEMORY".
-#   DOOM_STATS=<seconds>       compile in a periodic frame-time report on the
-#                              console (0 = off, the default).
+#   DOOM_STATS=<seconds>       compile in a one-time per-step cost probe (on
+#                              the first frame, ~4 s) and a frame-time report
+#                              on the console every <seconds> (0 = off).
+#                              Default 5: the first runs on the real Pi are
+#                              meant to report the frame time (PORT06
+#                              scaling step, 2026-10-02).
 #   OUT=<path>                 output file (default sdk/apps/doom/build/DOOM.NAP)
 #
 # Usage:  sdk/apps/build-doom.sh
@@ -65,7 +72,7 @@ BUILD="${BUILD:-$PORT/build}"
 OBJ="$BUILD/obj"
 OUT="${OUT:-$BUILD/DOOM.NAP}"
 DOOM_ARGS="${DOOM_ARGS:-\"-mb\",\"2\"}"
-DOOM_STATS="${DOOM_STATS:-0}"
+DOOM_STATS="${DOOM_STATS:-5}"
 mkdir -p "$OBJ"
 
 [ -d "$DGSRC" ] || { echo "error: doomgeneric source missing ($DGSRC)" >&2; exit 1; }

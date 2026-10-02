@@ -1,0 +1,2 @@
+m68k-atari-mint-gcc 7, compile only (-c), not linked:
+rc=0 (no diagnostics above = clean)
