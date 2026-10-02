@@ -1,0 +1,45 @@
+SCRNINFO.TTP auf dem TT mit Nova -- Anleitung
+=============================================
+
+Was es tut: liest den Cookie-Jar, fragt (falls vorhanden) den EdDI-Dispatcher
+nach seiner Version, fragt die VDI nach vq_extnd und vq_scrninfo, zeichnet
+32x2 Testpixel oben links (x 32..63, y 32..33), kopiert sie per vro_cpyfm in
+den eigenen Speicher und stellt die Stelle danach wieder her. Bei mehr als
+8 Planes setzt es 16 Stiftfarben kurz per vs_color und stellt sie danach
+zurueck. Es schreibt NUR die eine Textdatei, deren Namen man angibt.
+Es wartet auf keine Taste und endet nach Sekundenbruchteilen.
+
+KOPIEREN
+  SCRNINFO.TTP (aus diesem Ordner) in einen beliebigen Ordner auf dem TT,
+  z. B. C:\SCRNINFO\. Sonst nichts.
+
+AUSFUEHREN -- einmal pro Nova-Farbtiefe
+  1. Nova-Modus einstellen (Nova-Treiber/Auflösungswechsel wie gewohnt),
+     Desktop neu, so dass NVDI/Nova in genau dieser Tiefe laeuft.
+  2. SCRNINFO.TTP doppelklicken. Im Parameter-Dialog den Dateinamen fuer
+     DIESEN Lauf eintippen, dann OK:
+         2 Farben (1 Bit)        SI-01.TXT
+         16 Farben (4 Bit)       SI-04.TXT
+         256 Farben (8 Bit)      SI-08.TXT
+         32768 Farben (15 Bit)   SI-15.TXT
+         65536 Farben (16 Bit)   SI-16.TXT
+         16,7 Mio. (24 Bit)      SI-24.TXT
+         16,7 Mio. (32 Bit)      SI-32.TXT
+     Was die Karte nicht anbietet, einfach auslassen. Leer gelassen heisst
+     die Datei SCRNINFO.TXT (wuerde beim naechsten Lauf ueberschrieben).
+  3. Auf dem Bildschirm erscheint eine Zeile, z. B.
+       SCRNINFO: EdDI xxxxxxxx version 0xxx, 16 planes, scrninfo fmt 2 ...
+     Bitte notieren oder fotografieren, falls die Datei fehlt.
+  Optional, falls bequem: ein Lauf auf dem eingebauten TT-Video (ohne Nova)
+  als SI-TT.TXT.
+
+ZURUECKBRINGEN
+  Alle SI-*.TXT (Klartext). Dazu bitte notieren: NVDI-Version, Nova-Treiber-
+  Version und Kartentyp, und welche SI-Datei zu welchem Nova-Modus gehoert,
+  falls die Zuordnung nicht eindeutig ist (die Datei enthaelt Aufloesung
+  und Planes, aber nicht den Modusnamen).
+
+Wenn etwas schiefgeht
+  Bleibt der Rechner beim Aufruf haengen, ist das selbst ein Befund:
+  bitte melden, in welcher Tiefe, und ob die Bildschirmzeile noch kam.
+  Die Datei wird erst ganz am Ende geschrieben.

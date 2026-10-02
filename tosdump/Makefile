@@ -6,6 +6,7 @@
 #   make dumpaes-newtos   DUMPAES.NAP for NewTOS on the Pi 4 (AArch64)
 #   make dumprast-m68k    DUMPRAST.PRG for TOS/EmuTOS on the TT
 #   make dumprast-newtos  DUMPRAST.NAP for NewTOS on the Pi 4 (AArch64)
+#   make scrninfo-m68k    SCRNINFO.TTP, the EdDI / vq_scrninfo probe (m68k only)
 #   make host-test        the host-side suite (same as make -C host test)
 #
 # Same core sources for both; only abi/ differs (spec section 2).
@@ -31,13 +32,16 @@ AES_SRC  := $(CORE_SRC) core/runner_aes.c core/dumpaes.c
 # case is the same sequence, and stating it twice is how two runs stop being
 # comparable.
 RAST_SRC := $(CORE_SRC) core/runner.c core/runner_rast.c core/dumprast.c
+# The EdDI probe needs only the workstation handling; the cookie jar, the
+# EdDI dispatcher and the clock are TOS-only and sit in their own backend.
+SCRN_SRC := core/gem.c core/scrninfo.c abi/m68k_scrninfo.c
 
 BUILD := build
 
 .PHONY: all dumpvdi-m68k dumpvdi-newtos dumpaes-m68k dumpaes-newtos \
-        dumprast-m68k dumprast-newtos host-test clean
+        dumprast-m68k dumprast-newtos scrninfo-m68k host-test clean
 all: dumpvdi-m68k dumpvdi-newtos dumpaes-m68k dumpaes-newtos \
-     dumprast-m68k dumprast-newtos host-test
+     dumprast-m68k dumprast-newtos scrninfo-m68k host-test
 
 $(BUILD):
 	@mkdir -p $(BUILD)
@@ -74,6 +78,14 @@ $(BUILD)/DUMPRAST.PRG: $(RAST_SRC) abi/m68k_trap.c $(wildcard core/*.h) | $(BUIL
 dumprast-newtos: $(BUILD)/DUMPRAST.NAP
 $(BUILD)/DUMPRAST.NAP: $(RAST_SRC) abi/newtos_svc.c $(wildcard core/*.h) | $(BUILD)
 	./build-dumprast-newtos.sh $@
+
+# .TTP: it takes the report file name as its argument.  appl_init works from
+# a TOS program as well, which is all the probe needs of the AES.  m68k only:
+# it reads a TOS cookie jar and calls an m68k EdDI dispatcher.
+scrninfo-m68k: $(BUILD)/SCRNINFO.TTP
+$(BUILD)/SCRNINFO.TTP: $(SCRN_SRC) abi/m68k_trap.c $(wildcard core/*.h) | $(BUILD)
+	$(M68K_CC) $(M68K_CFLAGS) $(SCRN_SRC) abi/m68k_trap.c -o $@
+	@$(CROSS_MINT)size $@
 
 host-test:
 	@$(MAKE) --no-print-directory -C host test

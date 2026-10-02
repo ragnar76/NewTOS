@@ -1,0 +1,65 @@
+SCRNINFO.TTP -- EdDI / vq_scrninfo probe, build + Hatari sanity runs, 2026-10-02
+=================================================================================
+MEASUREMENT ONLY: what ran and what came back. Purpose of the probe:
+docs/api/vdi/eddi-vq_scrninfo.md (approved), UNKNOWN points of 6.1 / 7-E3,
+to be filled by a run on the user's TT with Nova (instructions: TT-ANLEITUNG.TXT).
+
+Git HEAD     : f1b10dc (desk-rebuild); probe sources UNCOMMITTED in the tree:
+               tosdump/core/scrninfo.c, tosdump/core/scrninfo.h,
+               tosdump/abi/m68k_scrninfo.c, tosdump/Makefile (target scrninfo-m68k).
+               Build id in the report header "f1b1" = HEAD, not the dirty tree.
+Build        : cd tosdump && make scrninfo-m68k
+               /opt/cross-mint/bin/m68k-atari-mint-gcc (7.5.0) -std=c99 -O2 -Wall
+               -Wextra -Werror -Icore -DTD_BIG_ENDIAN_TARGET=1 -- no warnings.
+               text 111376, data 1584, bss 65272
+Binary       : SCRNINFO.TTP (this folder) == tosdump/build/SCRNINFO.TTP
+               sha256 fd62cdf2a6304b7c26af69c7ebd066b767f71178f585d07b4b5a003a23c5ae1e
+Host tests   : make host-test -> rc 0 (unchanged suite; the probe adds no host code)
+
+Emulator     : Hatari v2.6.1, /Volumes/Daten/hatari-2.6.1_macos/Hatari.app
+               (tools/hatari-qed.sh points to ~/Downloads/..., which no longer exists)
+ROM          : /Volumes/Daten/Development/RuSTari/roms/etos512de.img (EmuTOS 1.4)
+               sha256 5805c0a4834f8935c427454785d32c59e796b11ad6802101052b84fb1eb7a745
+               (= the ROM of the earlier TT reference runs)
+Command      : method/run-hatari.sh <tag> <outdir> [enhancer]
+               headless (SDL_VIDEODRIVER=dummy), --fast-forward on, --run-vbls 3000,
+               C: = fresh GEMDOS folder per run, --auto 'C:\SCRNINFO.TTP' (no argument
+               -> default report name SCRNINFO.TXT), report copied out, C: deleted.
+               falcon-tc: method/EMUDESK-falcon-truecolor.INF as C:\EMUDESK.INF
+               ("#E 1A E0 00 1C 60", VIDEL truecolor; copied from
+               measurement-2026-09-21-vdi-qemu/method).
+"enhancer"   : additionally C:\AUTO\ENHANCER.PRG = VDI-Enhancer 1.00 (Behne&Behne),
+               Applications/z-tools/zview/_dist/goodies/Enhancer/Enhancer.prg,
+               sha256 d46fdfe4236672ab19cd25d108c886c5a669f90b9f8106a36811a5cd4e041ae5.
+               It installs an 'EdDI' cookie on the Atari VDI -- the only EdDI that
+               runs in an emulator. Used ONLY to drive the probe's EdDI path
+               (dispatcher call, vq_scrninfo); its answers are the Enhancer's on
+               EmuTOS, NOT NVDI/Nova data.
+
+Runs (console summary line from hatari.log | sha256 of SCRNINFO.TXT, first 16)
+-------------------------------------------------------------------------------
+hatari-tt-ttmed          TT 640x480x4   no EdDI, 4 planes, pixels ok         eee509f251e47c07
+hatari-tt-ttlow          TT 320x480x8   no EdDI, 8 planes, pixels ok         5f2f198d9b4e58a8
+hatari-falcon-tc         Falcon 640x480 truecolor: no EdDI, 16 planes, ok    8547fe20fd95ac5d
+hatari-tt-ttmed-enhancer   EdDI 00023EBE version 0100, 4 planes, fmt 0 clut 1 org 0000   67d97b377180edf1
+hatari-tt-ttlow-enhancer   EdDI 00023EBE version 0100, 8 planes, fmt 0 clut 1 org 0000   f935d2c1dc3ef72f
+hatari-falcon-tc-enhancer  EdDI 00023EC0 version 0100, 16 planes, fmt 2 clut 2 org 0000  984da45ade072a84
+
+Observed (no interpretation beyond what the bytes say)
+------------------------------------------------------
+* Without EdDI: "EdDI: ABSENT", dispatcher and vq_scrninfo "skipped", cookie jar
+  listed (12 entries on the TT), pixel part runs. In every run the screen area
+  re-read after the restore equals the saved copy ("restore: VERIFIED").
+* TT 4 planes: device form = word-interleaved planes; e.g. pen 1 (v_get_pixel
+  pel 000F) sets bit 14 in all four plane words of row 0 (63A3 5696 4D8D 407F).
+* Falcon truecolor 16 planes: device form = one 16-bit word per pixel, as BE
+  words: white FFDF, black 0000, red F800, green 07C0, blue 001F (bit 5 never
+  set by the VDI).
+* With the Enhancer on Falcon TC: dispatcher(0) -> d0 = 00000100; vq_scrninfo
+  format 2, clut 2, 16 planes, colours 0000/8000, r/g/b 5/5/5, genlock 1,
+  [14] = 0, red bits 11..15, green 6..10, blue 0..4, genlock bit 5 -- these
+  bit numbers match the BE-word reading of the copied pixels above. The
+  Enhancer leaves CONTRL[2] and [4] unwritten (still 5A5A) and writes nothing
+  beyond INTOUT[272] or into PTSOUT.
+* NOT driven: the report-name argument (Hatari's autorun passes none); the
+  probe on NVDI / a Nova card (only the user's TT can do that).

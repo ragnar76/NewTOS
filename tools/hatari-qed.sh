@@ -13,8 +13,8 @@
 #   Quit: F12 -> Quit, or Alt-Q.
 set -eu
 
-HATARI="/Users/ingouhlemann/Downloads/hatari-2.6.1_macos/Hatari.app/Contents/MacOS/Hatari"
-TOS="/Users/ingouhlemann/Downloads/hatari-2.6.1_macos/etos512de.img"
+HATARI="/Volumes/Daten/hatari-2.6.1_macos/Hatari.app/Contents/MacOS/Hatari"
+TOS="/Volumes/Daten/hatari-2.6.1_macos/etos512de.img"
 HD="$HOME/.nt-hatari/hd"
 
 [ -x "$HATARI" ] || { echo "Hatari not found: $HATARI" >&2; exit 1; }

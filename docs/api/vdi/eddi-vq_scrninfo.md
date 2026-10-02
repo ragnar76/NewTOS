@@ -411,10 +411,15 @@ Der Test gehoert zum spaeteren Ticket, nicht zu dieser Spec.
 * Nova-Treiber-Verhalten: ohne Quelle. **Lead 2026-10-02, geprueft am lokalen
   Hatari-Quellbaum** (`/Volumes/Daten/Development/RuSTari/hatari`, `4491dc0c1`):
   Hatari emuliert **keine** Nova/ET4000; seine Grafikerweiterung ist der
-  VDI-Modus `--vdi`/`--vdi-planes` mit 1/2/4/8 Planes (`src/options.c:333-339`,
-  `src/vdi.c:128-143`) — hoehere Aufloesung mit Palette, kein Truecolor, kein
+  VDI-Modus `--vdi`/`--vdi-planes` mit 1/2/4/8 Planes im Quellbaum
+  (`src/options.c:333-339`, `src/vdi.c:128-143`) — die **installierte**
+  Hatari 2.6.1 (`/Volumes/Daten/hatari-2.6.1_macos`) bietet laut `--help` nur 1/2/4 — hoehere Aufloesung mit Palette, kein Truecolor, kein
   EdDI. Taugt fuer Dooms `vr_trnfm`-Weg bei 8 Planes; den EdDI-Weg auf einer
-  Nova prueft nur der echte TT; ggf. per
+  Nova prueft nur der echte TT; **echte EdDI-Daten im Emulator** liefert der
+  VDI-Enhancer 1.00 aus dem Baum (`measurements/measurement-2026-10-02-scrninfo/`):
+  Falcon-Truecolor Format 2, CLUT 2, 16 Planes, 0x8000 Farben, [14]=0, Rot 11..15,
+  Gruen 6..10, Blau 0..4, Genlock 5 — passend zu den kopierten Pixeln als
+  Wort gelesen; stuetzt E3; ggf. per
   Hatari-Beobachtung (`vq_scrninfo` dumpen) zu klaeren — nicht von mir getan.
 
 ## 9. Re-Anchor
