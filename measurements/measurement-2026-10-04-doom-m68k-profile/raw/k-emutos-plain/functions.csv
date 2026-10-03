@@ -1,0 +1,285 @@
+function,category,instructions,cycles,share_cycles_pct,icache_misses,dcache_hits
+_DG_DrawFrame,platform layer (doomgeneric_gem.c),1414184565,2970646854,57.111,1325036,180961192
+_R_DrawSpan,Doom renderer,148815098,594314634,11.426,697245,24783460
+TOS ROM,TOS ROM (BIOS/VDI/AES code run by traps),151549451,568415032,10.928,4925800,9522606
+_R_DrawColumn,Doom renderer,79747648,406358290,7.812,2024526,28184858
+_memcpy,libc,16956332,147986774,2.845,1857107,15041714
+_R_RenderSegLoop,Doom renderer,12271103,91892850,1.767,4054195,1630258
+_R_DrawMaskedColumn,Doom renderer,5981747,39251818,0.755,1435771,1009002
+_R_MapPlane,Doom renderer,3495498,29461352,0.566,922899,679336
+_W_CacheLumpNum,"Doom support (zone, WAD, misc, i_*, m_*)",3206424,25397976,0.488,1297447,918297
+_R_MakeSpans,Doom renderer,4757682,23441724,0.451,610337,3185666
+_read_row,platform layer (doomgeneric_gem.c),11120568,23308572,0.448,15112,1147424
+_R_GetColumn,Doom renderer,3033678,21969090,0.422,813452,441479
+_V_DrawPatch,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",6678158,21379466,0.411,300239,1306518
+_R_DrawVisSprite,Doom renderer,4139956,17527392,0.337,614658,533903
+_R_DrawPlanes,Doom renderer,4349866,17092278,0.329,359783,729913
+_P_DivlineSide,game logic,4184986,16032170,0.308,512141,1335889
+_P_CrossSubsector,game logic,2025297,13818880,0.266,408268,435185
+_FixedMul,fixed-point (m_fixed),3077010,13468842,0.259,683054,1494333
+_R_StoreWallRange,Doom renderer,1422852,11826316,0.227,497852,252709
+_P_CrossBSPNode,game logic,2277889,11267440,0.217,284494,506859
+_R_DrawSprite,Doom renderer,2324742,10579956,0.203,166109,308069
+___divdi3,fixed-point/libgcc helper,2301185,10044096,0.193,496753,513883
+_I_FinishUpdate,"Doom support (zone, WAD, misc, i_*, m_*)",1812923,7891498,0.152,304408,1806
+_Z_ChangeTag2,"Doom support (zone, WAD, misc, i_*, m_*)",1807407,7721638,0.148,240540,681374
+_P_MobjThinker,game logic,1438721,6573018,0.126,46284,339781
+_R_PointToAngle,Doom renderer,1246030,6412398,0.123,267331,348875
+_R_ProjectSprite,Doom renderer,687294,5107938,0.098,183542,97689
+_wipe_doMelt,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",2097176,4812304,0.093,462,395038
+_R_AddLine,Doom renderer,641985,4655808,0.090,185759,107339
+_R_CheckBBox,Doom renderer,697585,4318676,0.083,191119,146241
+_P_RunThinkers,game logic,832116,4214394,0.081,150583,43110
+_FixedDiv,fixed-point (m_fixed),1067022,3851944,0.074,191415,168869
+_R_PointOnSide,Doom renderer,530384,2895964,0.056,114871,247092
+_R_ScaleFromGlobalAngle,Doom renderer,422047,2691754,0.052,107450,79611
+_P_CheckSight,game logic,423752,2665062,0.051,91866,31960
+_R_Subsector,Doom renderer,364584,2648184,0.051,119331,49233
+_V_CopyRect,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",453721,2428320,0.047,104798,50841
+_R_CheckPlane,Doom renderer,615773,2288680,0.044,58509,146567
+_R_RenderBSPNode,Doom renderer,370903,2139118,0.041,74665,63425
+_R_FindPlane,Doom renderer,386551,2130176,0.041,55659,82176
+_SlopeDiv,Doom renderer,512330,2106092,0.040,66336,153682
+_memset,libc,314298,2104344,0.040,38866,48314
+_STlib_drawNum,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",308245,1777262,0.034,66005,48167
+_V_MarkRect.part.0,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",234872,1727332,0.033,83031,110499
+_R_PointInSubsector,Doom renderer,378097,1695446,0.033,57931,25591
+_M_AddToBox,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",331584,1609256,0.031,69329,198639
+_P_LookForPlayers,game logic,295959,1485554,0.029,43264,35422
+_R_SortVisSprites,Doom renderer,378022,1483692,0.029,3967,39216
+_P_BlockLinesIterator.part.2,game logic,254028,1284918,0.025,41227,48725
+_P_SetMobjState,game logic,188542,1199446,0.023,57530,52011
+_R_ClipSolidWallSegment,Doom renderer,189710,1147230,0.022,56431,54174
+_R_DrawFuzzColumn,Doom renderer,201232,1132056,0.022,17138,50529
+_P_CheckPosition,game logic,190913,1086302,0.021,42607,23220
+_HUlib_drawTextLine,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",189495,1056182,0.020,50207,19095
+_R_PointToDist,Doom renderer,163556,1052422,0.020,49840,28139
+_R_ClearPlanes,Doom renderer,392886,1045572,0.020,3334,1198
+_vs_color,platform: gemlib (AES/VDI binding),96822,915024,0.018,35924,25808
+_R_AddSprites,Doom renderer,122842,854068,0.016,47994,23878
+_load_pens,platform layer (doomgeneric_gem.c),172172,807036,0.016,36030,7094
+_PIT_CheckLine,game logic,89245,721108,0.014,25623,47233
+_P_BlockThingsIterator.part.3,game logic,125946,655478,0.013,23158,43205
+_G_BuildTiccmd,game logic,80341,598098,0.011,24862,14317
+_wipe_shittyColMajorXform,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",259662,577646,0.011,44,54009
+_P_TryMove,game logic,67408,557038,0.011,22642,15731
+_P_PointOnDivlineSide,game logic,118352,518390,0.010,22228,43067
+_PIT_CheckThing,game logic,82390,474590,0.009,13088,19694
+_A_Look,game logic,48180,374482,0.007,23164,10469
+_R_DrawMasked,Doom renderer,57609,362326,0.007,11541,1865
+_P_SetThingPosition,game logic,52411,356910,0.007,13679,8499
+_W_ReleaseLumpNum,"Doom support (zone, WAD, misc, i_*, m_*)",42315,340094,0.007,18139,6913
+_PIT_AddLineIntercepts,game logic,43691,333812,0.006,12229,12605
+_P_UpdateSpecials,game logic,68471,327116,0.006,9275,11661
+_R_ClipPassWallSegment,Doom renderer,52584,322926,0.006,18564,18173
+_P_InterceptVector2,game logic,51874,310134,0.006,12627,19855
+_P_RecursiveSound,game logic,48264,299358,0.006,7202,17239
+_R_DrawPSprite,Doom renderer,35628,294854,0.006,11590,6370
+_G_Ticker,game logic,49085,287106,0.006,11067,9767
+_STlib_updateMultIcon,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",42850,284580,0.005,5941,34827
+_toupper,libc,49005,277778,0.005,8541,16331
+_P_XYMovement,game logic,35897,273348,0.005,14093,5715
+_ST_drawWidgets,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",39767,261812,0.005,11998,1483
+_P_UnsetThingPosition,game logic,45823,259606,0.005,9209,11439
+_A_Chase,game logic,37295,245578,0.005,12964,5546
+_get_sysvar,libc,22550,228920,0.004,20758,5710
+_P_Move,game logic,25638,201558,0.004,8891,5243
+_DG_GetKey,platform layer (doomgeneric_gem.c),27660,195440,0.004,14663,3887
+_vro_cpyfm,platform: gemlib (AES/VDI binding),19550,193950,0.004,7843,4695
+_vr_trnfm,platform: gemlib (AES/VDI binding),18768,184190,0.004,7826,3426
+_I_SetPalette,"Doom support (zone, WAD, misc, i_*, m_*)",37008,173538,0.003,121,14934
+_P_PathTraverse,game logic,35690,172148,0.003,8526,2007
+_T_Glow,game logic,41947,154088,0.003,1594,11659
+_mt_evnt_multi,platform: gemlib (AES/VDI binding),20930,153972,0.003,6884,9269
+_ST_updateWidgets,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",35282,152820,0.003,4798,5925
+_P_LineOpening,game logic,22530,152474,0.003,6296,8118
+_P_BlockThingsIterator,game logic,24882,144312,0.003,9582,8294
+_S_UpdateSounds,"Doom support (zone, WAD, misc, i_*, m_*)",26317,141522,0.003,3242,7489
+_P_PlayerThink,game logic,18997,140594,0.003,8270,6264
+_PIT_AddThingIntercepts,game logic,18948,129626,0.002,5051,5511
+_R_PointOnSegSide,Doom renderer,19918,120994,0.002,5176,6306
+_STlib_updateNum,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",14950,116056,0.002,5980,3886
+_P_CalcHeight,game logic,19377,107250,0.002,4236,5960
+_P_Ticker,game logic,12259,99524,0.002,4788,1794
+_P_InterceptVector,game logic,17686,87672,0.002,2394,7257
+_HUlib_eraseTextLine,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",9925,87174,0.002,2710,6276
+_ST_updateFaceWidget,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",12100,86874,0.002,4112,3609
+_R_SetupFrame,Doom renderer,6578,80698,0.002,2098,2092
+_R_GenerateComposite,Doom renderer,15191,76860,0.001,3265,1981
+_R_DrawPlayerSprites,Doom renderer,9700,76100,0.001,2698,315
+_R_RenderPlayerView,Doom renderer,5980,71962,0.001,5083,596
+_T_StrobeFlash,game logic,10394,71926,0.001,4803,4451
+_R_DrawColumnInCache,Doom renderer,13744,68718,0.001,2288,4852
+_P_MovePsprites,game logic,10318,63608,0.001,2621,3668
+_P_Random,game logic,9747,63374,0.001,2024,1269
+_P_ZMovement,game logic,10387,63030,0.001,2851,4313
+_vsf_color,platform: gemlib (AES/VDI binding),6450,58708,0.001,2580,1276
+_HU_Ticker,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",4981,58032,0.001,2427,3284
+_P_MovePlayer,game logic,11182,57056,0.001,2138,2716
+_G_ReadDemoTiccmd,game logic,8671,56398,0.001,2691,2206
+_P_BlockLinesIterator,game logic,11586,50754,0.001,2667,3862
+_mod_edge,platform layer (doomgeneric_gem.c),11661,49058,0.001,1197,4783
+_vr_recfl,platform: gemlib (AES/VDI binding),5418,47990,0.001,1557,1546
+_STlib_updatePercent,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",8970,47932,0.001,2395,2392
+_P_Thrust,game logic,5418,47426,0.001,1808,2989
+_P_SetPsprite,game logic,7783,46716,0.001,1923,2824
+_ST_doPaletteStuff,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",5953,46362,0.001,2924,2338
+_P_NewChaseDir,game logic,6900,44906,0.001,2170,1174
+_P_CheckMeleeRange,game logic,6279,44450,0.001,1911,1380
+_P_TraverseIntercepts,game logic,12533,43676,0.001,908,1255
+_HUlib_drawSText,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",7373,43260,0.001,1798,2034
+_P_BoxOnLineSide,game logic,6750,42830,0.001,2218,2579
+_V_DrawPatchDirect,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",4260,42588,0.001,4262,0
+_HUlib_eraseSText,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",6700,42440,0.001,1794,2872
+_P_PointOnLineSide,game logic,7360,38422,0.001,1256,3218
+_ST_Drawer,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",5382,37164,0.001,2392,884
+_I_GetEvent,"Doom support (zone, WAD, misc, i_*, m_*)",4485,36194,0.001,1499,897
+_HUlib_eraseIText,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",3289,35874,0.001,2094,1196
+_M_Drawer,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",3020,33630,0.001,1524,3615
+_M_Random,game logic,5571,32450,0.001,899,1069
+_ST_Ticker,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",2093,32270,0.001,1794,897
+_HU_Erase,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",2392,32160,0.001,2094,0
+_PTR_ShootTraverse,game logic,3544,31088,0.001,1380,1362
+_HU_Drawer,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",2392,29886,0.001,1796,1
+_STlib_updateBinIcon,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",3887,28456,0.001,1210,3585
+_R_ClearClipSegs,Doom renderer,2093,28320,0.001,1196,1
+_timesub.isra.1,libc,6438,28306,0.001,1136,673
+_T_LightFlash,game logic,5134,28046,0.001,1334,1824
+_A_WeaponReady,game logic,2991,24722,0.000,967,1188
+_S_StartSound,"Doom support (zone, WAD, misc, i_*, m_*)",3816,24644,0.000,1107,652
+_wipe_initMelt,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",8582,22900,0.000,22,529
+_Z_Malloc,"Doom support (zone, WAD, misc, i_*, m_*)",3582,22610,0.000,1030,931
+_I_GetTime,"Doom support (zone, WAD, misc, i_*, m_*)",3939,21796,0.000,4243,303
+_P_SpawnMobj,game logic,2921,21588,0.000,824,469
+_T_VerticalDoor,game logic,3297,21136,0.000,1260,1064
+_HU_dequeueChatChar,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",2093,18250,0.000,898,299
+_P_DamageMobj,game logic,2251,16116,0.000,667,467
+_S_StopSound,"Doom support (zone, WAD, misc, i_*, m_*)",3954,15822,0.000,257,202
+_P_AproxDistance,game logic,4480,15784,0.000,842,1071
+_P_ChangeSector,game logic,2457,15768,0.000,462,711
+_P_TryWalk,game logic,2922,15578,0.000,697,515
+_P_RespawnSpecials,game logic,1794,15542,0.000,301,2392
+_M_Ticker,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",1569,12554,0.000,635,299
+_DG_GetTicksMs,platform layer (doomgeneric_gem.c),2121,12374,0.000,1212,4
+_S_AdjustSoundParams.isra.0,"Doom support (zone, WAD, misc, i_*, m_*)",1972,12002,0.000,567,222
+_P_CheckMissileRange,game logic,1623,11746,0.000,636,314
+_R_ClearSprites,Doom renderer,598,10764,0.000,897,299
+_P_LineAttack,game logic,1260,10216,0.000,339,323
+_HUlib_drawIText,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",1495,9896,0.000,5,598
+_V_DrawBlock,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",1645,9172,0.000,412,10
+_localsub,libc,1472,9140,0.000,385,446
+_T_MovePlane,game logic,1606,9066,0.000,437,721
+_R_ClearDrawSegs,Doom renderer,598,8372,0.000,598,299
+_P_GunShot,game logic,1177,7828,0.000,337,136
+_isatty,libc,1184,7630,0.000,673,229
+_Z_Free,"Doom support (zone, WAD, misc, i_*, m_*)",1308,7484,0.000,285,358
+_I_UpdateSound,"Doom support (zone, WAD, misc, i_*, m_*)",1196,7176,0.000,299,299
+_time2sub,libc,1383,6840,0.000,374,91
+_P_ThingHeightClip,game logic,864,6594,0.000,288,221
+_PTR_AimTraverse,game logic,932,6506,0.000,233,370
+_I_StartTic,"Doom support (zone, WAD, misc, i_*, m_*)",299,6286,0.000,598,0
+_fwrite,libc,1093,6032,0.000,280,317
+_vfprintf,libc,1058,5950,0.000,297,161
+_HUlib_addMessageToSText,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",1640,5526,0.000,65,347
+_fread,libc,770,5142,0.000,330,330
+_P_RemoveMobj,game logic,610,4858,0.000,308,95
+_P_SpawnBlood,game logic,752,4698,0.000,203,169
+_R_PointToAngle2,Doom renderer,365,4610,0.000,291,271
+_lseek,libc,638,4362,0.000,374,223
+_P_AimLineAttack,game logic,480,4084,0.000,173,120
+_P_SpawnPuff,game logic,496,3740,0.000,160,99
+_PIT_ChangeSector,game logic,360,3540,0.000,216,109
+_S_StopChannel,"Doom support (zone, WAD, misc, i_*, m_*)",760,3356,0.000,113,273
+_fseek,libc,638,3346,0.000,143,165
+___flshfp,fixed-point/libgcc helper,675,3268,0.000,152,182
+_read,libc,440,3220,0.000,319,108
+_P_SlideMove,game logic,436,3212,0.000,139,82
+_I_StartSound,"Doom support (zone, WAD, misc, i_*, m_*)",494,3160,0.000,210,283
+_I_UpdateNoBlit,"Doom support (zone, WAD, misc, i_*, m_*)",302,2720,0.000,299,302
+___stdio_text_write,fixed-point/libgcc helper,1023,2620,0.000,28,72
+_EV_VerticalDoor,game logic,345,2514,0.000,129,81
+___stdio_check_offset,fixed-point/libgcc helper,485,2410,0.000,118,170
+_P_PlayerInSpecialSector,game logic,379,2372,0.000,94,152
+_P_AddThinker,game logic,400,2206,0.000,79,114
+_tmcomp,libc,463,2178,0.000,119,315
+_W_ReadLump,"Doom support (zone, WAD, misc, i_*, m_*)",253,2076,0.000,99,69
+_P_KillMobj,game logic,315,2068,0.000,99,62
+_A_FireShotgun,game logic,288,2054,0.000,76,24
+_init_stream,libc,310,2046,0.000,85,244
+_P_TouchSpecialThing,game logic,254,1898,0.000,81,46
+_P_UseSpecialLine,game logic,230,1832,0.000,110,60
+_A_FaceTarget,game logic,209,1800,0.000,62,77
+_A_Raise,game logic,252,1728,0.000,89,145
+_W_StdC_Read,"Doom support (zone, WAD, misc, i_*, m_*)",176,1608,0.000,77,69
+_P_FireWeapon,game logic,208,1596,0.000,88,35
+___stdio_seek,fixed-point/libgcc helper,286,1320,0.000,110,121
+_P_CheckAmmo,game logic,260,1272,0.000,60,66
+_I_SoundIsPlaying,"Doom support (zone, WAD, misc, i_*, m_*)",380,1212,0.000,37,152
+_P_BulletSlope,game logic,126,1206,0.000,60,37
+_A_FirePistol,game logic,144,1132,0.000,44,16
+_A_Lower,game logic,134,1130,0.000,80,79
+_P_CrossSpecialLine,game logic,186,1048,0.000,54,43
+_memchr,libc,343,910,0.000,14,80
+_I_GetSfxLumpNum,"Doom support (zone, WAD, misc, i_*, m_*)",100,840,0.000,60,20
+_P_RemoveThinker,game logic,140,832,0.000,35,39
+_wipe_ScreenWipe,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",107,798,0.000,35,25
+_A_Scream,game logic,125,654,0.000,37,19
+_mt_evnt_timer,platform: gemlib (AES/VDI binding),84,644,0.000,36,9
+_A_SPosAttack,game logic,117,614,0.000,30,7
+_P_NoiseAlert,game logic,56,602,0.000,24,20
+_P_SpawnMissile,game logic,66,596,0.000,24,18
+_A_ReFire,game logic,65,574,0.000,28,27
+___do_fstat,fixed-point/libgcc helper,72,526,0.000,35,9
+_P_RadiusAttack,game logic,126,514,0.000,14,13
+_flushbuf,libc,76,508,0.000,33,20
+_PIT_RadiusAttack,game logic,86,444,0.000,16,22
+_P_HitSlideLine.part.7,game logic,53,442,0.000,16,6
+_gettimeofday,libc,53,422,0.000,39,7
+_W_Read,"Doom support (zone, WAD, misc, i_*, m_*)",44,334,0.000,11,11
+_write,libc,41,332,0.000,22,17
+_I_StartFrame,"Doom support (zone, WAD, misc, i_*, m_*)",299,310,0.000,0,299
+___sys_fstat,fixed-point/libgcc helper,38,284,0.000,30,7
+_A_PosAttack,game logic,48,282,0.000,12,6
+_P_GiveAmmo,game logic,37,246,0.000,12,12
+___stdio_read,fixed-point/libgcc helper,11,238,0.000,22,0
+_A_Pain,game logic,27,234,0.000,12,5
+_P_FindLowestCeilingSurrounding,game logic,49,234,0.000,4,8
+_P_ExplodeMissile,game logic,34,216,0.000,11,3
+_PTR_SlideTraverse,game logic,28,214,0.000,7,5
+_P_GiveWeapon,game logic,30,208,0.000,13,9
+_time1,libc,24,206,0.000,10,15
+_A_Light1,game logic,32,192,0.000,8,16
+_P_CheckMissileSpawn,game logic,32,182,0.000,8,7
+_I_EndRead,"Doom support (zone, WAD, misc, i_*, m_*)",11,172,0.000,11,3
+_P_SubstNullMobj,game logic,36,168,0.000,12,24
+_wipe_EndScreen,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",16,162,0.000,8,3
+_getenv,libc,27,162,0.000,7,7
+_DG_SleepMs,platform layer (doomgeneric_gem.c),15,156,0.000,18,3
+_strlen,libc,48,146,0.000,2,11
+_fflush,libc,19,140,0.000,7,5
+_A_TroopAttack,game logic,18,138,0.000,7,2
+_time2,libc,19,132,0.000,5,10
+_mktime,libc,14,128,0.000,7,1
+_V_MarkRect,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",12,126,0.000,6,0
+_A_Light0,game logic,21,120,0.000,3,14
+_P_BringUpWeapon,game logic,24,110,0.000,4,5
+_R_FillBackScreen,Doom renderer,8,106,0.000,5,8
+_seek_to_target,libc,17,96,0.000,6,8
+_A_Light2,game logic,12,90,0.000,6,6
+_strncmp,libc,19,86,0.000,3,5
+_wipe_exitMelt,"Doom UI/video (v_video, status bar, HUD, wipe, menu)",12,84,0.000,2,1
+_time,libc,15,84,0.000,4,2
+_printf,libc,9,80,0.000,5,2
+_A_Explode,game logic,7,76,0.000,4,1
+_fstat,libc,6,72,0.000,5,2
+_I_ReadScreen,"Doom support (zone, WAD, misc, i_*, m_*)",6,68,0.000,3,1
+_getgid,libc,8,66,0.000,4,3
+_tzsetlcl,libc,8,60,0.000,3,7
+_getuid,libc,8,52,0.000,2,2
+_clock,libc,5,40,0.000,4,1
+_A_Fall,game logic,12,34,0.000,0,9
+_I_Sleep,"Doom support (zone, WAD, misc, i_*, m_*)",3,16,0.000,3,0
+_funlockfile,libc,1,10,0.000,1,1
+_I_BeginRead,"Doom support (zone, WAD, misc, i_*, m_*)",11,8,0.000,0,11
+_flockfile,libc,1,8,0.000,1,1
+_I_Tactile,"Doom support (zone, WAD, misc, i_*, m_*)",2,2,0.000,0,2

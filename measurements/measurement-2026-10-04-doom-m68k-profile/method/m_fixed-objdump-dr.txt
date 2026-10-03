@@ -1,0 +1,76 @@
+
+/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/b2/m68k/obj/m_fixed.o:     file format a.out-zero-big
+
+
+Disassembly of section .text:
+
+00000000 <_FixedMul>:
+   0:	222f 0004      	movel %sp@(4),%d1
+   4:	4c2f 1c00 0008 	mulsl %sp@(8),%d0,%d1
+   a:	3200           	movew %d0,%d1
+   c:	4841           	swap %d1
+   e:	2001           	movel %d1,%d0
+  10:	4e75           	rts
+
+00000012 <_FixedDiv>:
+  12:	2f03           	movel %d3,%sp@-
+  14:	2f02           	movel %d2,%sp@-
+  16:	202f 000c      	movel %sp@(12),%d0
+  1a:	242f 0010      	movel %sp@(16),%d2
+  1e:	2200           	movel %d0,%d1
+  20:	6d4c           	blts 6e <.L11>
+  22:	760e           	moveq #14,%d3
+  24:	e6a1           	asrl %d3,%d1
+  26:	2602           	movel %d2,%d3
+  28:	6d40           	blts 6a <.L12>
+
+0000002a <.L6>:
+  2a:	b681           	cmpl %d1,%d3
+  2c:	6e10           	bgts 3e <.L4>
+  2e:	b580           	eorl %d2,%d0
+  30:	6d48           	blts 7a <.L8>
+  32:	203c 7fff ffff 	movel #2147483647,%d0
+  38:	241f           	movel %sp@+,%d2
+  3a:	261f           	movel %sp@+,%d3
+  3c:	4e75           	rts
+
+0000003e <.L4>:
+  3e:	2200           	movel %d0,%d1
+  40:	5bc0           	smi %d0
+  42:	49c0           	extbl %d0
+  44:	4840           	swap %d0
+  46:	4841           	swap %d1
+  48:	3001           	movew %d1,%d0
+  4a:	4241           	clrw %d1
+  4c:	2f02           	movel %d2,%sp@-
+  4e:	5bc3           	smi %d3
+  50:	49c3           	extbl %d3
+  52:	2f03           	movel %d3,%sp@-
+  54:	2f01           	movel %d1,%sp@-
+  56:	2f00           	movel %d0,%sp@-
+  58:	4eb9 0000 0000 	jsr 0 <_FixedMul>
+			5a: 32	___divdi3
+  5e:	4fef 0010      	lea %sp@(16),%sp
+  62:	2001           	movel %d1,%d0
+  64:	241f           	movel %sp@+,%d2
+  66:	261f           	movel %sp@+,%d3
+  68:	4e75           	rts
+
+0000006a <.L12>:
+  6a:	4483           	negl %d3
+  6c:	60bc           	bras 2a <.L6>
+
+0000006e <.L11>:
+  6e:	4481           	negl %d1
+  70:	760e           	moveq #14,%d3
+  72:	e6a1           	asrl %d3,%d1
+  74:	2602           	movel %d2,%d3
+  76:	6cb2           	bges 2a <.L6>
+  78:	60f0           	bras 6a <.L12>
+
+0000007a <.L8>:
+  7a:	203c 8000 0000 	movel #-2147483648,%d0
+  80:	241f           	movel %sp@+,%d2
+  82:	261f           	movel %sp@+,%d3
+  84:	4e75           	rts
+	...

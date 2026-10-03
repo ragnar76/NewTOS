@@ -1,0 +1,19 @@
+_DG_DrawFrame: 2972125090 cycles, 333 instructions executed at least once
+exec-count  #insn  addr-range             cycles   share-of-DrawFrame
+ 154112000      8  1022c38-1022c46   2474186372   83.2%
+  19264000      5  1022c1c-1022c26    287521122    9.7%
+   9632000      7  1022c34-1022c52    154168072    5.2%
+   1204000     10  1022c18-1022c58     26627220    0.9%
+     60200     26  1022c0e-102308e     11255954    0.4%
+     84280     12  1023096-10230bc      8484446    0.3%
+    153600     14  1022a56-1022aaa      6668802    0.2%
+    144480      5  1022e6a-1022e76      2758218    0.1%
+TOS ROM: 281770816 cycles; hottest 256-byte pages
+  00e0f200     30729741 instr    147584762 cyc   52.4% of ROM
+  00e0d200     38953018 instr     87020386 cyc   30.9% of ROM
+  00e00c00       640320 instr      5357922 cyc    1.9% of ROM
+  00e03a00       247301 instr      4979366 cyc    1.8% of ROM
+  00e08000       299585 instr      4095974 cyc    1.5% of ROM
+  00e00d00       126076 instr      2331254 cyc    0.8% of ROM
+  00e06700        38640 instr      2246816 cyc    0.8% of ROM
+  00e07f00       176853 instr      2076996 cyc    0.7% of ROM

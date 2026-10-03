@@ -1,0 +1,131 @@
+  PORT06 -- CPU-Profil von DOOM.PRG (m68k) auf dem TT (Hatari-Profiler)
+=====================================================================
+
+Basis: Zweig desk-rebuild. Nur Messung: kein Produktcode, keine Skripte im
+Repo geaendert, kein Kommit, keine Karte, kein Pi, kein TT, docs/STATUS.md
+unberuehrt. Neu ist nur dieser Ordner. Scratch (Bauobjekte, Hatari-GEMDOS-
+Laufwerke) im Sitzungs-Scratchpad, nie /tmp-frei.
+Ergebnis: PROFILE-SUMMARY.TXT (Rangliste, Ziele). Rohdaten: raw/<lauf>/.
+
+1. WERKZEUG UND QUELLEN
+---------------------------------------------------------------------
+Hatari 2.6.1 (/Volumes/Daten/hatari-2.6.1_macos/Hatari.app), CPU-Profiler des
+eingebauten Debuggers. Dokumentation (Quelltext-Handbuch, RuSTari/hatari):
+  doc/debugger.html "Collecting profile data in the debugger" (profile on/off/
+    stats/cycles/counts/symbols/addresses/callers/save/loops; Daten werden
+    beim naechsten Betreten des Debuggers ausgewertet);
+  doc/debugger.html "Debug symbols" / "Symbols for a program under GEMDOS HD
+    emulation" (Symboltabelle des Programms; GCC: kein strip; Befehl
+    `symbols prg`);
+  doc/debugger.html "Chaining breakpoints and other actions" (Breakpoint-
+    Option `:file`, `:once`, `:trace`, `:<count>`; `--parse`).
+  src/control.c (cmd-fifo), src/debug/profilecpu.c (Ausgabeformat).
+Symbole: das a.out-PRG von m68k-atari-mint-gcc traegt seine Symboltabelle
+(Programmkopf sym-Laenge 0x1ac88); Hatari meldet "Loaded 2496 symbols (1388
+for code)", Namen MIT fuehrendem Unterstrich (_R_DrawColumn).
+
+2. BAU (method/build-doom-m68k-timedemo.log)
+---------------------------------------------------------------------
+sdk/apps/build-doom-m68k.sh UNVERAENDERT, nur per Umgebung:
+  BUILD=<scratch>/b2/m68k OUT=<scratch>/b2/DOOM.PRG DOOM_STATS=0
+  DOOM_ARGS='"-mb","6","-timedemo","demo1"'
+-> 81/81, LINK OK, 0 undefined, 678 369 B, Kopf 0x601a, Flags 0x7,
+sha256 ba08dda6deae3c717e55e3d6c738711574ab72aefe414f138bd8174e8a2d0cba.
+Das Skript haengt DOOM_ARGS an jeden Start (doomgeneric_gem.c main): so laeuft
+`-timedemo demo1` ohne Eingabe (Hatari --auto reicht keine Kommandozeile
+durch). Es ist KEIN strip-Schritt im Skript: die Symbole bleiben. DOOM_STATS=0
+(kein Kostenprobe-/fps-Code im Lauf). -timedemo spielt demo1 so schnell wie
+moeglich (jedes Tic ein Bild, kein Warten) -- gewollt fuer eine CPU-Messung.
+
+3. LAUF (method/run-profile.sh, run-matrix.sh)
+---------------------------------------------------------------------
+Maschine wie measurement-2026-10-04-doom-aspect/run-hatari-doom.sh:
+  --machine tt --tos-res ttlow --monitor vga --memsize 4 --ttram 16
+  --addr24 off --fpu 68882 --sound off --fast-forward on --conout 2
+  --tos tos306de.rom (Haupt) bzw. etos512de.img (Gegenprobe), C: = frisches
+  GEMDOS-Verzeichnis mit DOOM.PRG + DOOM1.WAD, `--auto C:\DOOM.PRG`;
+  mit Enhancer zusaetzlich C:\AUTO\ENHANCER.PRG (Behne&Behne VDI-Enhancer 1.00,
+  EdDI-Cookie; Lauf meldet "route EdDI" / ohne "route vr_trnfm", beide
+  VERIFIED). Hatari-Konfiguration des Benutzers unveraendert (nCpuLevel=3,
+  nCpuFreq=32, bCompatibleCpu=TRUE, bCycleExactCpu=TRUE).
+Steuerung ohne Eingabe, reine Breakpoint-Kette (--parse pexec.ini, Kopien in
+raw/<lauf>/*.ini):
+  pexec.ini   b GemdosOpcode = 0x4B && OsCallParam = 0x0 [:2 mit Enhancer]
+              -> program.ini        (Pexec(0) von DOOM.PRG; mit Enhancer ist
+              es das 2. Pexec, das 1. ist ENHANCER.PRG aus AUTO)
+  program.ini b pc = TEXT           -> trace.ini     (erste Anweisung)
+  trace.ini   symbols prg; b pc = _R_Init -> cfg.ini
+  cfg.ini     memwrite l _detailLevel <0|1>; memwrite l _screenblocks <3..11>
+  (trace.ini) b pc = _R_RenderPlayerView -> start.ini  (1. Bild)
+  start.ini   profile on; b pc = _R_RenderPlayerView :300 -> stop.ini
+  stop.ini    profile stats / cycles 70 / callers / addresses (Programm-Text
+              0x101a000-0x1090000 und TOS-ROM 0xe00000-0xe80000); quit
+Fenster: vom Eintritt in das erste R_RenderPlayerView bis zum 300. Treffer;
+299 abgeschlossene Aufrufe (+1 begonnen, nicht beendet). Das Fenster ist in
+allen Laeufen dasselbe Stueck demo1 (deterministisch). Wandzeit je Lauf
+~90-140 s, bei 3 parallelen Hatari-Laeufen (je eigenes Scratch-Verzeichnis).
+Beendet per `quit` aus stop.ini (nicht SIGTERM; Skript hat die Wandzeit-
+Sicherung + fifo-quit nur als Notanker, nicht ausgeloest).
+
+Bei der Zeile `b ... :1` meldet Hatari "invalid skip count": 1 darf nicht
+angegeben werden (method/run-profile.sh laesst es dann weg).
+
+4. LAEUFE (raw/)
+---------------------------------------------------------------------
+  a-plain  b-enh  c-detail  d-detail-enh  e-size8  f-size8-enh  g-size5
+  h-size5-enh  i-detail-size8  j-detail-size8-enh   -- TOS 3.06
+  k-emutos-plain  l-emutos-enh                      -- EmuTOS 1.4
+je: hatari.log.gz (volles Hatari-Protokoll inkl. profile-Ausgabe: stats,
+cycles, callers, addresses; gunzip -c), functions.csv (je Funktion: Befehle,
+Zyklen, Anteil, I-Cache-Misses, D-Cache-Treffer), categories.csv, summary.json
+(Summen, Aufrufzahlen, inklusive Zyklen aus `callers`), cmdline.txt, *.ini.
+raw/REPORT-TABLES.txt: Matrix + Gruppen + Top 25 (a-plain, b-enh, EmuTOS).
+raw/a-plain|b-enh/drawframe-breakdown.txt: _DG_DrawFrame nach Schleifen,
+TOS-ROM nach 256-Byte-Seiten.
+Auswertung: method/analyze.py (liest hatari.log[.gz], ordnet Adresse ->
+Funktion nach dem Symbol im Dump, Funktion -> Gruppe nach nm der .o-Dateien),
+method/report.py, method/drawframe-breakdown.py. Neu erzeugen:
+  python3 method/analyze.py raw/<lauf> <objdir> sdk/gemlib/gemlib-m68k.a
+(objdir = Bau-obj-Verzeichnis; im Scratch, nicht im Ordner abgelegt)
+
+5. DETAIL / FENSTERGROESSE -- WIE GESETZT
+---------------------------------------------------------------------
+Die vorgesehene Konfigurationsdatei geht nicht: doomgeneric ist mit
+`#undef ORIGCODE` gebaut (Applications/doomgeneric/doomgeneric/config.h:97),
+m_config.c:1773 LoadDefaultCollection ist unter `#if ORIGCODE` -- default.cfg
+(auch `-config`) wird NIE gelesen. Probe im Scratch: ein Bau mit
+`-config DEFAULT.CFG` und Datei `detaillevel 1` rief weiter R_DrawColumn,
+nie R_DrawColumnLow -- wirkungslos (Ergebnis nicht abgelegt, nur beobachtet;
+der Quelltextbefund steht oben). Ein ".default.cfg" haette ausserdem unter
+Hatari-GEMDOS keinen 8.3-Namen.
+Stattdessen schreibt cfg.ini die beiden Variablen (m_menu.c:77/78: detailLevel,
+screenblocks) beim Eintritt in R_Init per Debugger-`memwrite`, bevor R_Init
+R_SetViewSize(screenblocks, detailLevel) aufruft -- gleiche Wirkung wie ein
+gelesenes default.cfg, ohne Produktcode. Belegt durch die Aufrufzahlen
+(PROFILE-SUMMARY Abschnitt 2).
+screenblocks: 10 = Vorgabe (volle Breite + Statusleiste, 320x168), 8 =
+256x128, 5 = 160x80 (r_main.c:678-686).
+
+6. FESTKOMMA
+---------------------------------------------------------------------
+method/m_fixed-objdump-dr.txt: FixedMul = muls.l; FixedDiv ruft ___divdi3
+(Relokation bei 0x5a). method/nm-fixed-libgcc-symbols.txt: gelinkte libgcc-
+Mitglieder (divdi3/muldi3/udivdi3/umoddi3 stammen aus libc/printf bzw.
+FixedDiv). method/libgcc-int-helper-users.txt: m_fixed.o ist die einzige Doom-/
+Plattform-Objektdatei mit Referenz auf ein libgcc-Integerhelfer (___divdi3).
+
+7. GRENZEN (ehrlich)
+---------------------------------------------------------------------
+* Hatari-030-Zeiten sind angenaehert (siehe PROFILE-SUMMARY, Vorbehalt).
+* Der Auswertungs-Fenster-Anfang ist Spielbeginn von demo1; die einmalige
+  Erstbild-Verifikation (read_row/read_row_dev, 0,5 %) ist im Fenster
+  enthalten.
+* "Profil nach Funktion": Hatari ordnet nach dem naechsten Symbol; ROM-Code
+  hat keine Symbole (TOS-ROM ist ein Block, nur nach 256-Byte-Seiten und
+  dem `callers`-Zeitanteil von vr_trnfm/vro_cpyfm zugeordnet).
+  Zuordnung ROM-Seite -> Funktion: e0f2xx = Blit (vro_cpyfm; 147,6 Mio
+  Zyklen, in beiden Wegen gleich, deckt sich mit der inklusiven Summe aus
+  `callers` 151,9 Mio), e0d2xx = vr_trnfm (87,0 Mio, nur ohne Enhancer;
+  inklusive Summe 88,8 Mio).
+* Kein echter TT, kein Pi, keine Grafikkarte; keine Pixelansicht der
+  verkleinerten Fenster.

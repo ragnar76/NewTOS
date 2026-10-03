@@ -1,0 +1,189 @@
+DOOM.PRG (m68k, -m68030 -m68881) auf dem TT -- wo die Rechenzeit liegt
+=====================================================================
+Messung 2026-10-04, Basis desk-rebuild. Nur Messung, kein Produktcode geaendert.
+Quelle der Zahlen: Hatari-CPU-Profiler (Details RUNINFO.TXT), TT030 TT-niedrig
+320x480x8, TOS 3.06, 68882, 4 MiB ST + 16 MiB TT-RAM, Fenster = 300 Bilder von
+-timedemo demo1 (299 abgeschlossene R_RenderPlayerView-Aufrufe), je Lauf
+~1,83 Mrd Befehle / ~4,96 Mrd Zyklen.
+
+VORBEHALT: Hatari modelliert die 68030-Zeiten NUR ANGENAEHERT (Hatari-Konfig
+nCpuLevel=3, 32 MHz, bCycleExactCpu=TRUE, I-/D-Cache modelliert; TT-RAM-
+Wartezustaende, Burst, Busfreigabe usw. nicht naturgetreu). Absolute Zeiten
+(ms/Bild, fps) sind Richtwerte; die Verteilung ist belastbar, weil der
+dominante Block auch nach BEFEHLSZAHL dominiert (77,7 % aller Befehle).
+
+
+1. KERNAUSSAGE
+---------------------------------------------------------------------
+* 60 % der CPU-Zeit (und 78 % der Befehle) frisst die Chunky-to-Planar-
+  Umsetzung in DG_DrawFrame (sdk/apps/doom/doomgeneric_gem.c c2p_row bzw.
+  build_device_form) -- nicht die Engine. Im Mittel 155 Zyklen je Pixel
+  (9,9 Mio Zyklen = 310 ms je Bild bei Hatari-Modell), die innere
+  16-Schritt-Bit-fuer-Bit-Schleife (8 Befehle, 154 Mio Durchlaeufe) allein
+  50 % der gesamten Laufzeit.
+* Der VDI-Enhancer (EdDI-Weg) bringt nur -2,2 % (vr_trnfm entfaellt, 1,8 %),
+  weil derselbe Bit-Schleifen-c2p in beiden Wegen laeuft.
+* Doom-Renderer insgesamt 27 %, davon R_DrawSpan + R_DrawColumn 21 %.
+* Festkomma (FixedMul/FixedDiv/libgcc) 0,5 % -- vernachlaessigbar.
+* "detail low" und kleineres Fenster bringen je ~9 %, beide zusammen ~16 %,
+  weil sie nur den Renderer verkleinern, nicht den c2p (320x200 wird immer
+  ganz umgesetzt).
+
+
+2. MATRIX (alle TOS 3.06, TT-niedrig; Zeit je Bild nach Hatari-Modell)
+---------------------------------------------------------------------
+Lauf                    Mcyc/Bild  ms/Bild   fps  Mbefehle/Bild  gg. a-plain
+a-plain  (ohne Enh., vr_trnfm)   16,59   516,9  1,93   6,13     0,0 %
+b-enh    (mit Enh., EdDI)        16,22   505,4  1,98   5,97    -2,2 %
+c-detail (low, ohne Enh.)        15,06   469,4  2,13   5,82    -9,2 %
+d-detail-enh                     14,69   457,9  2,18   5,67   -11,4 %
+e-size8  (screenblocks 8, ohne)  15,05   469,0  2,13   5,80    -9,3 %
+f-size8-enh                      14,68   457,4  2,19   5,64   -11,5 %
+g-size5  (screenblocks 5, ohne)  13,45   419,2  2,39   5,47   -18,9 %
+h-size5-enh                      13,07   407,5  2,45   5,31   -21,2 %
+i-detail-size8 (low + 8, ohne)   14,01   436,7  2,29   5,60   -15,5 %
+j-detail-size8-enh               13,64   425,1  2,35   5,44   -17,8 %
+Gegenprobe EmuTOS 1.4 (gleiche Maschine):
+k-emutos-plain                   17,40   542,2  1,84   6,39    +4,9 %
+l-emutos-enh                     16,89   526,5  1,90   6,23    +1,9 %
+(Das Hatari-fps der Laufzeit ~1,9 deckt sich mit dem frueheren Messwert
+1,8-1,9 fps aus measurement-2026-10-03/-04 -- Gegenprobe fuer das Modell.)
+
+Kosten je Bild nach Gruppe (kcyc/Bild), TOS 3.06:
+Lauf          Plattform  Renderer  TOS-ROM  libc  Spiellogik  Rest
+a-plain         10027      4534      942    502     237       344
+b-enh            9958      4533      640    502     236       347
+c-detail        10020      3083      936    502     237       285
+e-size8         10019      3038      935    504     237       316
+g-size5         10007      1503      927    504     237       274
+i-detail-size8  10014      2062      930    503     237       268
+EmuTOS-plain    10022      4385     1901    504     230       355   (vro_cpyfm 3x teurer als in TOS 3.06)
+
+Die Plattform-Spalte (c2p) bleibt in JEDER Konfiguration bei ~10,0 Mio
+Zyklen: das ist der Grund, warum "detail low"/Fenstergroesse nur ~9/19 %
+bringen. Nachweis, dass die Einstellungen griffen: a-plain 657
+R_DrawColumn-Aufrufe/Bild; c-detail 0 R_DrawColumn / 328 R_DrawColumnLow;
+e-size8 519, g-size5 321 R_DrawColumn je Bild; Renderer 4534 -> 3083 (detail
+low) -> 3038 (size 8) -> 1503 (size 5) -> 2062 (low+8) kcyc/Bild.
+
+
+3. RANGLISTE (a-plain = TOS 3.06, ohne Enhancer; Anteil an den Zyklen)
+---------------------------------------------------------------------
+Funktion (Gruppe)                                Zyklen  Befehle  kcyc/Bild
+-- Plattformschicht (doomgeneric_gem.c) --------------------------------
+ 1 _DG_DrawFrame  [c2p, alles inline]            59,93 %  77,1 %    9940
+     davon innere Bit-Schleife (8 Befehle)       49,89 %           8274
+     davon Wort-Fuellschleife m[k]=pixval[..]     5,80 %            962
+     davon Planes-Schleife/Wort-Store             3,11 %            516
+   _read_row (Erstbild-Verifikation, einmalig)    0,47 %  0,61 %     78   (nicht je Bild)
+-- Doom-Renderer ------------------------------------------------------
+ 2 _R_DrawSpan                                   11,20 %   8,1 %    1858
+ 3 _R_DrawColumn                                  9,84 %   4,4 %    1632
+ 6 _R_RenderSegLoop                               1,84 %            306
+ 7 _R_DrawMaskedColumn                            0,75 %            124
+ 8 _R_MapPlane                                    0,65 %            107
+11 _R_MakeSpans                                   0,46 %             77
+12 _R_GetColumn                                   0,46 %             77
+14 _R_DrawVisSprite                               0,37 %             61
+15 _R_DrawPlanes                                  0,34 %             57
+19 _R_StoreWallRange 0,24 %, 20 _R_DrawSprite 0,21 %   (Gruppe gesamt 27,33 %)
+-- TOS-ROM (Trap-Code, kein Doom-Code) --------------------------------
+ 4 TOS 3.06 ROM gesamt                            5,68 %  4,0 %     942
+     vro_cpyfm (Blit, ROM-Seite e0f2xx)           2,98 %            496   -> das "vro_cpyfm-Warten"
+     vr_trnfm  (ROM-Seite e0d2xx)                 1,75 %            291   (mit Enhancer: 0)
+     Rest (BIOS/AES-Traps, Tastenpoll)            0,95 %
+-- libc ---------------------------------------------------------------
+ 5 _memcpy                                        2,97 %  0,9 %     493   (Zeilen-Verdopplung in stage_scale)
+-- Spiellogik ---------------------------------------------------------
+16 _P_DivlineSide 0,33 %, 17 _P_CrossSubsector 0,27 %, 18 _P_CrossBSPNode 0,24 %,
+25 _P_MobjThinker 0,13 %                           (Gruppe gesamt 1,43 %)
+-- Festkomma ----------------------------------------------------------
+21 _FixedMul 0,20 %, 22 ___divdi3 (libgcc) 0,20 %,   (FixedDiv selbst ~0,09 %; Gruppe 0,49 %)
+-- Doom UI/Video, Zone, WAD ---------------------------------------------
+13 _V_DrawPatch 0,42 %, 9 _W_CacheLumpNum 0,51 %, 23 _Z_ChangeTag2 0,16 %,
+24 _I_FinishUpdate 0,16 %                          (UI 0,73 %, Support 0,85 %)
+
+Gruppensummen a-plain:   Plattform 60,42 | Renderer 27,33 | TOS-ROM 5,68 |
+libc 3,03 | Spiellogik 1,43 | Zone/WAD/Misc 0,85 | UI/Video 0,73 |
+Festkomma 0,29+0,20 | gemlib 0,03.
+b-enh (EdDI) Gruppen: Plattform 61,38 | Renderer 27,95 | TOS-ROM 3,95 (nur
+noch vro_cpyfm + Rest) | libc 3,10 | Spiellogik 1,46 | ... ; Funktionsreihen
+folge identisch (DG_DrawFrame 60,87 %, R_DrawSpan 11,46 %, R_DrawColumn 10,06 %).
+Vollstaendige Listen: raw/<lauf>/functions.csv, raw/REPORT-TABLES.txt.
+
+Befehle vs. Zyklen: Hatari zaehlt beide. a-plain: 1,834 Mrd Befehle /
+4,959 Mrd Zyklen = 2,70 Zyklen/Befehl (b-enh 2,71, c-detail 2,59, size5 2,46).
+Der Renderer ist datengebunden (R_DrawSpan ~3,7, R_DrawColumn ~6,1 Zyklen/Befehl
+gegenueber c2p ~2,1).
+
+Festkomma-Frage (Aufgabe 3):
+* FixedMul kompiliert zu EINEM `muls.l` (m_fixed.o: mulsl %sp@(8),%d0,%d1, dann
+  Wort-Swap) -- kein __muldi3; ___muldi3 wird im ganzen Programm nirgends
+  aufgerufen (nur als libc-Mitglied gelinkt). ~1715 Aufrufe/Bild, ~20 Zyklen je Aufruf (Aufrufer: R_RenderSegLoop,
+  R_MapPlane, R_ScaleFromGlobalAngle, R_ProjectSprite).
+* FixedDiv ruft **libgcc ___divdi3** (m_fixed.o: `jsr` mit Relokation auf
+  ___divdi3, method/m_fixed-objdump-dr.txt Zeile 58/5a). ___divdi3 hat im
+  ganzen Programm genau einen Aufrufer: FixedDiv (m_fixed.o ist die einzige
+  Objektdatei mit Referenz, method/libgcc-int-helper-users.txt). ~115 Aufrufe/
+  Bild (FixedDiv ~91 + Randfaelle), ~293 Zyklen je Aufruf. FixedDiv inklusive
+  ___divdi3 = 0,23 % der Zeit.
+* 64-Bit-Division in heissen Pfaden: nur dieser eine, und er ist nicht heiss
+  (0,23 %). FixedDiv-Aufrufer (Aufrufe in 299 Bildern): R_ScaleFromGlobalAngle 9811,
+  R_PointToDist 5290, R_ProjectSprite 4805+4251, P_InterceptVector2 1402,
+  P_CrossSubsector 2127 -- pro Wand/Sprite/Sicht, keine pro-Pixel-Divisionen.
+  `divs.l` taucht in r_draw.o nicht auf (0 Treffer); der Span/Column-Pfad ist
+  divisionsfrei.
+
+
+4. ABGELEITETE OPTIMIERUNGSZIELE (erwarteter Gewinn = Zeitanteil, Obergrenze)
+---------------------------------------------------------------------
+Rang  Ziel                                         Zeitanteil   realistischer Gewinn
+ 1    c2p (DG_DrawFrame): 8-Plane-Umsetzung mit    59,9 %       ~54-57 % der Gesamtzeit
+      68030-tauglichem Algorithmus statt der       (a-plain)    (SCHAETZUNG, nicht gemessen:
+      16-Schritt-Bit-Schleife (Merge/Swap-c2p      60,9 % (EdDI) c2p 155 -> 8-15 Zyklen/Pixel;
+      auf Registern, long-weise, Palette zuvor                  Zeit/Bild 16,6 -> ~7,2-7,6 Mio
+      als Byte-Tabelle vorgefaltet, Zeilen                      Zyklen, ~2,2-2,3x schneller)
+      beim Schreiben doppelt ausgeben)
+      Das ist die einzige Aenderung, die die Groessenordnung bewegt.
+ 2    R_DrawSpan + R_DrawColumn (r_draw.c, nicht     21,0 %     ~8-11 % (Schleife ~15 Befehle/Pixel,
+      editierbar -> Ersatz per Link-Zeit/asm-         ( 11,2 +   davon je 2 Speicherladen der
+      Variante in der Plattformschicht, ADR-Frage)     9,8)       Basiszeiger colormap/source je Pixel;
+                                                                  56-59 Zyklen/Pixel gemessen)
+ 3    "detail low" als Voreinstellung / Fenstergroesse  9,2 %      9,2 % (detail low), 9,3 % (size 8),
+      (kein Eingriff in den Code, aber Qualitaet        je         18,9 % (size 5), 15,5 % (low+8):
+      sinkt; ORIGCODE aus => default.cfg wirkungslos,  nach       nur der Renderer schrumpft
+      siehe RUNINFO 5)                                 Messung
+ 4    memcpy-Zeilenverdopplung in stage_scale           3,0 %      ~2-3 % (Zeilen beim c2p gleich
+      (libc _memcpy)                                                zweimal schreiben bzw. movem-Kopie)
+ 5    vro_cpyfm (ROM)                                   3,0 %      kaum beeinflussbar (ROM-Blit);
+      TOS 3.06 | EmuTOS 8,3 %                                      Unterschied TOS 3.06/EmuTOS = ROM
+ 6    vr_trnfm (nur ohne Enhancer)                      1,8 %      entfaellt mit EdDI (-2,2 % gemessen);
+                                                                  nach Ziel 1 bleibt es als ~4 % relativ
+ 7    FixedMul/FixedDiv/___divdi3                       0,5 %      <= 0,4 %; FixedDiv via divs.l 64/32
+      Spiellogik                                       1,4 %      statt __divdi3 ist machbar, lohnt nicht
+ 8    Rest (Zone/WAD/UI/Spiel)                          ~3 %       -
+
+Reihenfolge nach Nutzen/Aufwand: 1 (c2p) vor allem anderen; danach 3 als
+sofortiger, codefreier Hebel, dann 2 und 4. Nach Ziel 1 verschiebt sich das
+Bild: Renderer ~60 % der Restzeit, TOS-ROM ~12 %, memcpy ~7 % -- dann lohnen
+2 und 4 deutlich mehr (Amdahl, Anteile oben beziehen sich auf den heutigen Stand).
+
+Hinweis zu Ziel 1: die Plattformschicht ist unsere Datei (sdk/apps/doom/
+doomgeneric_gem.c) und frei aenderbar; der Chunky-Eingang ist DG_ScreenBuffer
+(8 Bit, 320x200, 64000 Pixel). Das Ergebnis muss die Bitfolge wahren, die die
+VERIFIED-Pruefung (verify_frame/verify_frame_eddi) zurueckliest.
+
+
+5. WAS DIESE MESSUNG NICHT BEWEIST
+---------------------------------------------------------------------
+* Absolute Zeit auf echter TT-Hardware: TT-RAM-Zugriff, Burst, Videobus-
+  Konkurrenz um ST-RAM (Bild liegt dort) sind in Hatari nicht modelliert.
+  Echter TT kann den c2p-Anteil niedriger (schnelle Register-Schleife) und
+  den Renderer/vro_cpyfm-Anteil hoeher (Speicherbindung) zeigen.
+* NOVA/Grafikkarte, Falcon, Pi: nicht gemessen.
+* Der Fenster-Ausschnitt ist der Beginn von demo1 (erste ~300 Tics, 8,6 s
+  Spielzeit, ein Raum + Flur); andere Szenen verschieben die Renderer-
+  gegen die c2p-Anteile (c2p ist konstant je Bild).
+* Fenstergroesse: dass screenblocks/detaillevel griffen, ist an den
+  Aufrufzahlen/Zyklen nachgewiesen; die Pixel der verkleinerten Fenster
+  wurden nicht angesehen (kein Screenshot in diesem Auftrag).

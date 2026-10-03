@@ -1,0 +1,10 @@
+0001650c T _FixedMul
+0001651e T _FixedDiv
+000495c0 T ___divdi3
+000495c0 t _divdi3.o
+0006b630 T ___muldi3
+0006b630 t _muldi3.o
+0006b68c T ___udivdi3
+0006b68c t _udivdi3.o
+0006b9f0 T ___umoddi3
+0006b9f0 t _umoddi3.o

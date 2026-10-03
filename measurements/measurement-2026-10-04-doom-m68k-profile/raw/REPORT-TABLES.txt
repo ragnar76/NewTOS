@@ -1,0 +1,181 @@
+MATRIX (300-frame window = 299 completed R_RenderPlayerView calls; Hatari 030 cycle model, 32.085 MHz)
+run                      Mcyc/frame  ms/frame    fps Minstr/fr cyc/instr vs a-plain
+a-plain                       16.59     516.9   1.93      6.13      2.70       0.0%
+b-enh                         16.22     505.4   1.98      5.97      2.71      -2.2%
+c-detail                      15.06     469.4   2.13      5.82      2.59      -9.2%
+d-detail-enh                  14.69     457.9   2.18      5.67      2.59     -11.4%
+e-size8                       15.05     469.0   2.13      5.80      2.59      -9.3%
+f-size8-enh                   14.68     457.4   2.19      5.64      2.60     -11.5%
+g-size5                       13.45     419.2   2.39      5.47      2.46     -18.9%
+h-size5-enh                   13.07     407.5   2.45      5.31      2.46     -21.2%
+i-detail-size8                14.01     436.7   2.29      5.60      2.50     -15.5%
+j-detail-size8-enh            13.64     425.1   2.35      5.44      2.51     -17.8%
+k-emutos-plain                17.40     542.2   1.84      6.39      2.72       4.9%
+l-emutos-enh                  16.89     526.5   1.90      6.23      2.71       1.9%
+
+PER-FRAME COST BY GROUP (kcyc/frame) and column/span call counts per run
+run                      platform renderer  TOS ROM   libc  logic  other  DrawColumn[Low]/frame  DrawSpan[Low]/frame
+a-plain                     10027     4534      942    502    237    344       657/0                0/0       
+b-enh                        9958     4533      640    502    236    347       657/0                0/0       
+c-detail                    10020     3083      936    502    237    285         0/328              0/0       
+d-detail-enh                 9952     3082      633    502    236    286         0/328              0/0       
+e-size8                     10019     3038      935    504    237    316       519/0                0/0       
+f-size8-enh                  9947     3037      633    504    236    318       519/0                0/0       
+g-size5                     10007     1503      927    504    237    274       321/0                0/0       
+h-size5-enh                  9930     1503      625    504    236    276       321/0                0/0       
+i-detail-size8              10014     2062      930    503    237    268         0/259              0/0       
+j-detail-size8-enh           9942     2061      628    503    236    269         0/259              0/0       
+k-emutos-plain              10022     4385     1901    504    230    355       657/0                0/0       
+l-emutos-enh                 9960     4243     1600    504    230    355       657/0                0/0       
+
+== a-plain: categories
+   60.42%      10022 kcyc/frame   77.73% instr   platform layer (doomgeneric_gem.c)
+   27.33%       4534 kcyc/frame   15.21% instr   Doom renderer
+    5.68%        942 kcyc/frame    4.04% instr   TOS ROM (BIOS/VDI/AES code run by traps)
+    3.03%        502 kcyc/frame    0.95% instr   libc
+    1.43%        237 kcyc/frame    0.75% instr   game logic
+    0.85%        142 kcyc/frame    0.38% instr   Doom support (zone, WAD, misc, i_*, m_*)
+    0.73%        122 kcyc/frame    0.59% instr   Doom UI/video (v_video, status bar, HUD, wipe, menu)
+    0.29%         47 kcyc/frame    0.23% instr   fixed-point (m_fixed)
+    0.20%         33 kcyc/frame    0.13% instr   fixed-point/libgcc helper
+    0.03%          5 kcyc/frame    0.01% instr   platform: gemlib (AES/VDI binding)
+== a-plain: top 25 functions (cycles share; instr share; kcyc/frame)
+   1  59.93%  77.11%i     9940k  _DG_DrawFrame                platform layer (doomgeneric_gem.c)
+   2  11.20%   8.11%i     1858k  _R_DrawSpan                  Doom renderer
+   3   9.84%   4.35%i     1632k  _R_DrawColumn                Doom renderer
+   4   5.68%   4.04%i      942k  TOS ROM                      TOS ROM (BIOS/VDI/AES code run by traps)
+   5   2.97%   0.92%i      493k  _memcpy                      libc
+   6   1.84%   0.67%i      306k  _R_RenderSegLoop             Doom renderer
+   7   0.75%   0.33%i      124k  _R_DrawMaskedColumn          Doom renderer
+   8   0.65%   0.19%i      107k  _R_MapPlane                  Doom renderer
+   9   0.51%   0.17%i       85k  _W_CacheLumpNum              Doom support (zone, WAD, misc, i_*, m_*)
+  10   0.47%   0.61%i       78k  _read_row                    platform layer (doomgeneric_gem.c)
+  11   0.46%   0.26%i       77k  _R_MakeSpans                 Doom renderer
+  12   0.46%   0.17%i       77k  _R_GetColumn                 Doom renderer
+  13   0.42%   0.36%i       70k  _V_DrawPatch                 Doom UI/video (v_video, status bar, HUD, wipe, menu)
+  14   0.37%   0.23%i       61k  _R_DrawVisSprite             Doom renderer
+  15   0.34%   0.24%i       57k  _R_DrawPlanes                Doom renderer
+  16   0.33%   0.23%i       55k  _P_DivlineSide               game logic
+  17   0.27%   0.11%i       45k  _P_CrossSubsector            game logic
+  18   0.24%   0.12%i       40k  _P_CrossBSPNode              game logic
+  19   0.24%   0.08%i       40k  _R_StoreWallRange            Doom renderer
+  20   0.21%   0.13%i       35k  _R_DrawSprite                Doom renderer
+  21   0.20%   0.17%i       34k  _FixedMul                    fixed-point (m_fixed)
+  22   0.20%   0.13%i       33k  ___divdi3                    fixed-point/libgcc helper
+  23   0.16%   0.10%i       27k  _Z_ChangeTag2                Doom support (zone, WAD, misc, i_*, m_*)
+  24   0.16%   0.10%i       27k  _I_FinishUpdate              Doom support (zone, WAD, misc, i_*, m_*)
+  25   0.13%   0.08%i       22k  _P_MobjThinker               game logic
+
+== b-enh: categories
+   61.38%       9954 kcyc/frame   79.34% instr   platform layer (doomgeneric_gem.c)
+   27.95%       4533 kcyc/frame   15.61% instr   Doom renderer
+    3.95%        640 kcyc/frame    1.95% instr   TOS ROM (BIOS/VDI/AES code run by traps)
+    3.10%        502 kcyc/frame    0.97% instr   libc
+    1.46%        236 kcyc/frame    0.77% instr   game logic
+    0.89%        144 kcyc/frame    0.39% instr   Doom support (zone, WAD, misc, i_*, m_*)
+    0.75%        122 kcyc/frame    0.60% instr   Doom UI/video (v_video, status bar, HUD, wipe, menu)
+    0.29%         47 kcyc/frame    0.23% instr   fixed-point (m_fixed)
+    0.21%         33 kcyc/frame    0.13% instr   fixed-point/libgcc helper
+    0.03%          4 kcyc/frame    0.01% instr   platform: gemlib (AES/VDI binding)
+== b-enh: top 25 functions (cycles share; instr share; kcyc/frame)
+   1  60.87%  78.73%i     9872k  _DG_DrawFrame                platform layer (doomgeneric_gem.c)
+   2  11.46%   8.33%i     1858k  _R_DrawSpan                  Doom renderer
+   3  10.06%   4.46%i     1632k  _R_DrawColumn                Doom renderer
+   4   3.95%   1.95%i      640k  TOS ROM                      TOS ROM (BIOS/VDI/AES code run by traps)
+   5   3.04%   0.95%i      493k  _memcpy                      libc
+   6   1.88%   0.69%i      305k  _R_RenderSegLoop             Doom renderer
+   7   0.76%   0.33%i      124k  _R_DrawMaskedColumn          Doom renderer
+   8   0.66%   0.20%i      107k  _R_MapPlane                  Doom renderer
+   9   0.54%   0.18%i       88k  _W_CacheLumpNum              Doom support (zone, WAD, misc, i_*, m_*)
+  10   0.49%   0.60%i       79k  _read_row_dev                platform layer (doomgeneric_gem.c)
+  11   0.47%   0.27%i       77k  _R_MakeSpans                 Doom renderer
+  12   0.47%   0.17%i       77k  _R_GetColumn                 Doom renderer
+  13   0.43%   0.37%i       70k  _V_DrawPatch                 Doom UI/video (v_video, status bar, HUD, wipe, menu)
+  14   0.38%   0.23%i       61k  _R_DrawVisSprite             Doom renderer
+  15   0.35%   0.24%i       57k  _R_DrawPlanes                Doom renderer
+  16   0.34%   0.23%i       54k  _P_DivlineSide               game logic
+  17   0.28%   0.11%i       45k  _P_CrossSubsector            game logic
+  18   0.25%   0.13%i       40k  _P_CrossBSPNode              game logic
+  19   0.25%   0.08%i       40k  _R_StoreWallRange            Doom renderer
+  20   0.21%   0.13%i       35k  _R_DrawSprite                Doom renderer
+  21   0.21%   0.17%i       34k  _FixedMul                    fixed-point (m_fixed)
+  22   0.21%   0.13%i       33k  ___divdi3                    fixed-point/libgcc helper
+  23   0.17%   0.10%i       27k  _I_FinishUpdate              Doom support (zone, WAD, misc, i_*, m_*)
+  24   0.17%   0.10%i       27k  _Z_ChangeTag2                Doom support (zone, WAD, misc, i_*, m_*)
+  25   0.14%   0.08%i       22k  _P_MobjThinker               game logic
+
+== k-emutos-plain: categories
+   57.58%      10017 kcyc/frame   74.59% instr   platform layer (doomgeneric_gem.c)
+   25.20%       4385 kcyc/frame   14.59% instr   Doom renderer
+   10.93%       1901 kcyc/frame    7.93% instr   TOS ROM (BIOS/VDI/AES code run by traps)
+    2.90%        504 kcyc/frame    0.91% instr   libc
+    1.32%        230 kcyc/frame    0.71% instr   game logic
+    0.80%        140 kcyc/frame    0.36% instr   Doom support (zone, WAD, misc, i_*, m_*)
+    0.71%        124 kcyc/frame    0.56% instr   Doom UI/video (v_video, status bar, HUD, wipe, menu)
+    0.33%         58 kcyc/frame    0.22% instr   fixed-point (m_fixed)
+    0.19%         34 kcyc/frame    0.12% instr   fixed-point/libgcc helper
+    0.03%          5 kcyc/frame    0.01% instr   platform: gemlib (AES/VDI binding)
+== k-emutos-plain: top 25 functions (cycles share; instr share; kcyc/frame)
+   1  57.11%  73.99%i     9935k  _DG_DrawFrame                platform layer (doomgeneric_gem.c)
+   2  11.43%   7.79%i     1988k  _R_DrawSpan                  Doom renderer
+   3  10.93%   7.93%i     1901k  TOS ROM                      TOS ROM (BIOS/VDI/AES code run by traps)
+   4   7.81%   4.17%i     1359k  _R_DrawColumn                Doom renderer
+   5   2.85%   0.89%i      495k  _memcpy                      libc
+   6   1.77%   0.64%i      307k  _R_RenderSegLoop             Doom renderer
+   7   0.75%   0.31%i      131k  _R_DrawMaskedColumn          Doom renderer
+   8   0.57%   0.18%i       99k  _R_MapPlane                  Doom renderer
+   9   0.49%   0.17%i       85k  _W_CacheLumpNum              Doom support (zone, WAD, misc, i_*, m_*)
+  10   0.45%   0.25%i       78k  _R_MakeSpans                 Doom renderer
+  11   0.45%   0.58%i       78k  _read_row                    platform layer (doomgeneric_gem.c)
+  12   0.42%   0.16%i       73k  _R_GetColumn                 Doom renderer
+  13   0.41%   0.35%i       72k  _V_DrawPatch                 Doom UI/video (v_video, status bar, HUD, wipe, menu)
+  14   0.34%   0.22%i       59k  _R_DrawVisSprite             Doom renderer
+  15   0.33%   0.23%i       57k  _R_DrawPlanes                Doom renderer
+  16   0.31%   0.22%i       54k  _P_DivlineSide               game logic
+  17   0.27%   0.11%i       46k  _P_CrossSubsector            game logic
+  18   0.26%   0.16%i       45k  _FixedMul                    fixed-point (m_fixed)
+  19   0.23%   0.07%i       40k  _R_StoreWallRange            Doom renderer
+  20   0.22%   0.12%i       38k  _P_CrossBSPNode              game logic
+  21   0.20%   0.12%i       35k  _R_DrawSprite                Doom renderer
+  22   0.19%   0.12%i       34k  ___divdi3                    fixed-point/libgcc helper
+  23   0.15%   0.09%i       26k  _I_FinishUpdate              Doom support (zone, WAD, misc, i_*, m_*)
+  24   0.15%   0.09%i       26k  _Z_ChangeTag2                Doom support (zone, WAD, misc, i_*, m_*)
+  25   0.13%   0.08%i       22k  _P_MobjThinker               game logic
+
+== l-emutos-enh: categories
+   58.94%       9956 kcyc/frame   76.04% instr   platform layer (doomgeneric_gem.c)
+   25.12%       4243 kcyc/frame   14.96% instr   Doom renderer
+    9.47%       1600 kcyc/frame    6.03% instr   TOS ROM (BIOS/VDI/AES code run by traps)
+    2.98%        504 kcyc/frame    0.93% instr   libc
+    1.36%        230 kcyc/frame    0.73% instr   game logic
+    0.83%        141 kcyc/frame    0.37% instr   Doom support (zone, WAD, misc, i_*, m_*)
+    0.73%        123 kcyc/frame    0.58% instr   Doom UI/video (v_video, status bar, HUD, wipe, menu)
+    0.34%         58 kcyc/frame    0.22% instr   fixed-point (m_fixed)
+    0.20%         34 kcyc/frame    0.12% instr   fixed-point/libgcc helper
+    0.03%          4 kcyc/frame    0.01% instr   platform: gemlib (AES/VDI binding)
+== l-emutos-enh: top 25 functions (cycles share; instr share; kcyc/frame)
+   1  58.45%  75.46%i     9874k  _DG_DrawFrame                platform layer (doomgeneric_gem.c)
+   2  11.01%   7.98%i     1860k  _R_DrawSpan                  Doom renderer
+   3   9.47%   6.03%i     1600k  TOS ROM                      TOS ROM (BIOS/VDI/AES code run by traps)
+   4   7.97%   4.28%i     1346k  _R_DrawColumn                Doom renderer
+   5   2.93%   0.91%i      495k  _memcpy                      libc
+   6   1.82%   0.66%i      307k  _R_RenderSegLoop             Doom renderer
+   7   0.78%   0.32%i      131k  _R_DrawMaskedColumn          Doom renderer
+   8   0.58%   0.19%i       99k  _R_MapPlane                  Doom renderer
+   9   0.50%   0.17%i       85k  _W_CacheLumpNum              Doom support (zone, WAD, misc, i_*, m_*)
+  10   0.47%   0.57%i       79k  _read_row_dev                platform layer (doomgeneric_gem.c)
+  11   0.46%   0.26%i       78k  _R_MakeSpans                 Doom renderer
+  12   0.44%   0.16%i       74k  _R_GetColumn                 Doom renderer
+  13   0.42%   0.36%i       71k  _V_DrawPatch                 Doom UI/video (v_video, status bar, HUD, wipe, menu)
+  14   0.35%   0.22%i       58k  _R_DrawVisSprite             Doom renderer
+  15   0.34%   0.23%i       57k  _R_DrawPlanes                Doom renderer
+  16   0.32%   0.22%i       54k  _P_DivlineSide               game logic
+  17   0.27%   0.11%i       46k  _P_CrossSubsector            game logic
+  18   0.27%   0.17%i       45k  _FixedMul                    fixed-point (m_fixed)
+  19   0.23%   0.08%i       39k  _R_StoreWallRange            Doom renderer
+  20   0.22%   0.12%i       38k  _P_CrossBSPNode              game logic
+  21   0.21%   0.12%i       35k  _R_DrawSprite                Doom renderer
+  22   0.20%   0.12%i       34k  ___divdi3                    fixed-point/libgcc helper
+  23   0.16%   0.10%i       26k  _I_FinishUpdate              Doom support (zone, WAD, misc, i_*, m_*)
+  24   0.16%   0.10%i       26k  _Z_ChangeTag2                Doom support (zone, WAD, misc, i_*, m_*)
+  25   0.13%   0.08%i       22k  _P_MobjThinker               game logic

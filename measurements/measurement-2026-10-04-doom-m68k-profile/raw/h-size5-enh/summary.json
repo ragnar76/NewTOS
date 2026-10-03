@@ -1,0 +1,308 @@
+{
+ "raw": "h-size5-enh",
+ "stats_total": {
+  "instr": 1588898143,
+  "cycles": 3910931062,
+  "imiss": 20573241,
+  "dhit": 236397434
+ },
+ "dump_sum": {
+  "instr": 1588752277,
+  "cycles": 3909039528
+ },
+ "frames_R_RenderPlayerView_calls": 299,
+ "cycles_per_frame": 13073710.795986623,
+ "instr_per_frame": 5313552.765886287,
+ "categories": {
+  "platform layer (doomgeneric_gem.c)": {
+   "cycles": 2967938086,
+   "share_pct": 75.92,
+   "instr": 1417376739
+  },
+  "TOS ROM (BIOS/VDI/AES code run by traps)": {
+   "cycles": 186836604,
+   "share_pct": 4.78,
+   "instr": 34486314
+  },
+  "libc": {
+   "cycles": 150550920,
+   "share_pct": 3.85,
+   "instr": 17429230
+  },
+  "Doom renderer": {
+   "cycles": 449283118,
+   "share_pct": 11.49,
+   "instr": 85258548
+  },
+  "Doom UI/video (v_video, status bar, HUD, wipe, menu)": {
+   "cycles": 36502984,
+   "share_pct": 0.93,
+   "instr": 10812356
+  },
+  "game logic": {
+   "cycles": 70701688,
+   "share_pct": 1.81,
+   "instr": 13706264
+  },
+  "Doom support (zone, WAD, misc, i_*, m_*)": {
+   "cycles": 26831436,
+   "share_pct": 0.69,
+   "instr": 4581425
+  },
+  "fixed-point/libgcc helper": {
+   "cycles": 9384446,
+   "share_pct": 0.24,
+   "instr": 2164687
+  },
+  "fixed-point (m_fixed)": {
+   "cycles": 9757414,
+   "share_pct": 0.25,
+   "instr": 2799261
+  },
+  "platform: gemlib (AES/VDI binding)": {
+   "cycles": 1252832,
+   "share_pct": 0.03,
+   "instr": 137453
+  }
+ },
+ "calls": {
+  "_FixedDiv": 25532,
+  "_FixedMul": 298674,
+  "___divdi3": 32331,
+  "___muldi3": null,
+  "___udivdi3": null,
+  "_R_DrawColumn": 96020,
+  "_R_DrawColumnLow": null,
+  "_R_DrawSpan": null,
+  "_R_DrawSpanLow": null,
+  "_vr_trnfm": null,
+  "_vro_cpyfm": 781,
+  "_R_RenderPlayerView": 299,
+  "_DG_DrawFrame": null
+ },
+ "inclusive_cycles": {
+  "_R_RenderPlayerView": 483030526,
+  "_vr_trnfm": null,
+  "_vro_cpyfm": 152015664,
+  "_DG_DrawFrame": null,
+  "_FixedDiv": 10575642,
+  "___divdi3": 9418358,
+  "_P_Ticker": 75270308,
+  "_G_Ticker": null,
+  "_R_DrawPlanes": 175477954,
+  "_R_RenderSegLoop": 172873470,
+  "_R_DrawMasked": 73155086
+ },
+ "top": [
+  [
+   "_DG_DrawFrame",
+   "platform layer (doomgeneric_gem.c)",
+   1406531134,
+   2943304006,
+   75.29
+  ],
+  [
+   "TOS ROM",
+   "TOS ROM (BIOS/VDI/AES code run by traps)",
+   34486314,
+   186836604,
+   4.78
+  ],
+  [
+   "_memcpy",
+   "libc",
+   17036783,
+   147919334,
+   3.78
+  ],
+  [
+   "_R_DrawSpan",
+   "Doom renderer",
+   35007606,
+   135324360,
+   3.46
+  ],
+  [
+   "_R_DrawColumn",
+   "Doom renderer",
+   20710152,
+   130082100,
+   3.33
+  ],
+  [
+   "_R_RenderSegLoop",
+   "Doom renderer",
+   6160831,
+   45994878,
+   1.18
+  ],
+  [
+   "_read_row_dev",
+   "platform layer (doomgeneric_gem.c)",
+   10631976,
+   23586292,
+   0.6
+  ],
+  [
+   "_V_DrawPatch",
+   "Doom UI/video (v_video, status bar, HUD, wipe, menu)",
+   6705142,
+   21121460,
+   0.54
+  ],
+  [
+   "_R_DrawMaskedColumn",
+   "Doom renderer",
+   2950777,
+   18335514,
+   0.47
+  ],
+  [
+   "_P_DivlineSide",
+   "game logic",
+   4184986,
+   16255926,
+   0.42
+  ],
+  [
+   "_R_MapPlane",
+   "Doom renderer",
+   1656238,
+   15230056,
+   0.39
+  ],
+  [
+   "_W_CacheLumpNum",
+   "Doom support (zone, WAD, misc, i_*, m_*)",
+   1680843,
+   13739490,
+   0.35
+  ],
+  [
+   "_P_CrossSubsector",
+   "game logic",
+   2025297,
+   13567728,
+   0.35
+  ],
+  [
+   "_P_CrossBSPNode",
+   "game logic",
+   2277889,
+   12089248,
+   0.31
+  ],
+  [
+   "_R_MakeSpans",
+   "Doom renderer",
+   2367345,
+   11466526,
+   0.29
+  ],
+  [
+   "_R_GetColumn",
+   "Doom renderer",
+   1515825,
+   11437908,
+   0.29
+  ],
+  [
+   "_R_StoreWallRange",
+   "Doom renderer",
+   1321264,
+   11200426,
+   0.29
+  ],
+  [
+   "_R_DrawVisSprite",
+   "Doom renderer",
+   2150208,
+   10043752,
+   0.26
+  ],
+  [
+   "___divdi3",
+   "fixed-point/libgcc helper",
+   2161111,
+   9367704,
+   0.24
+  ],
+  [
+   "_R_DrawPlanes",
+   "Doom renderer",
+   2225243,
+   8961520,
+   0.23
+  ],
+  [
+   "_I_FinishUpdate",
+   "Doom support (zone, WAD, misc, i_*, m_*)",
+   1812923,
+   8076658,
+   0.21
+  ],
+  [
+   "_R_DrawSprite",
+   "Doom renderer",
+   1638660,
+   7669302,
+   0.2
+  ],
+  [
+   "_P_MobjThinker",
+   "game logic",
+   1438721,
+   6636788,
+   0.17
+  ],
+  [
+   "_R_PointToAngle",
+   "Doom renderer",
+   1162662,
+   6042310,
+   0.15
+  ],
+  [
+   "_FixedMul",
+   "fixed-point (m_fixed)",
+   1792224,
+   5944194,
+   0.15
+  ],
+  [
+   "_R_ProjectSprite",
+   "Doom renderer",
+   662707,
+   5178066,
+   0.13
+  ],
+  [
+   "_wipe_doMelt",
+   "Doom UI/video (v_video, status bar, HUD, wipe, menu)",
+   2092020,
+   4800830,
+   0.12
+  ],
+  [
+   "_Z_ChangeTag2",
+   "Doom support (zone, WAD, misc, i_*, m_*)",
+   956876,
+   4248824,
+   0.11
+  ],
+  [
+   "_P_RunThinkers",
+   "game logic",
+   832116,
+   4223244,
+   0.11
+  ],
+  [
+   "_R_AddLine",
+   "Doom renderer",
+   585985,
+   4148230,
+   0.11
+  ]
+ ]
+}
