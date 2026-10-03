@@ -1,0 +1,117 @@
+
+
+
+
+
+                                                         
+                                                         
+                                                         
+                                                         
+                                                         
+                    ________________________________________
+
+                    EmuTOS Version:     1.4 
+                    CPU-Typ:            M68030 
+                    Rechner:            Atari TT 
+                    ST-RAM:             14 MB 
+                    Alt-RAM:            16 MB 
+                    GEMDOS-Laufwerke:   ABC 
+                    Boot-Zeit:          2026/10/03 23:26:40 
+                    ________________________________________
+
+                    Halte <Strg> = ohne AUTO/ACC
+                    Halte <Alt> = keine Harddisk
+                    DrUcke 'X' um von Laufwerk X: zu booten
+                    DrUcke <Esc> fUr die Textkonsole
+
+                       FUr Pause <Shift> gedrUckt halten    
+
+
+DOOM: no EdDI cookie -- vr_trnfm route
+DOOM: 8 planes -- the device form is not packed truecolour, no scaling (stage 1)
+K06 Kbrate=0f02 hold_first=360 hold_repeat=100 ms
+DOOM: GEM platform up -- 320x480, 8 planes, lookup table yes, stage 1 = 320x200, route vr_trnfm
+                           Doom Generic 0.1
+Z_Init: Init zone memory allocation daemon. 
+zone memory: 0x1154370, 400000 allocated for zone
+Using . for configuration and saves
+V_Init: allocate screens.
+M_LoadDefaults: Load system defaults.
+saving config in .default.cfg
+-iwad not specified, trying a few iwad names
+Trying IWAD file:doom2.wad
+Trying IWAD file:plutonia.wad
+Trying IWAD file:tnt.wad
+Trying IWAD file:doom.wad
+Trying IWAD file:doom1.wad
+W_Init: Init WADfiles.
+ adding doom1.wad
+Using ./.savegame/ for savegames
+===========================================================================
+                            DOOM Shareware
+===========================================================================
+ Doom Generic is free software, covered by the GNU General Public
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+ copies under certain conditions. See the source for more information.
+===========================================================================
+I_Init: Setting up machine state.
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon - ...................
+P_Init: Init Playloop state.
+S_Init: Setting up sound.
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+Emulating the behavior of the 'Doom 1.9' executable.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+DOOM: DOOM Shareware
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+I_InitGraphics: Auto-scaling factor: 1
+DOOM: picture 320x200 at (0,140) VERIFIED via vr_trnfm+vro_cpyfm
+K06 evnt MU_KEYBD kc=4800 ks=0 at 16790 ms
+K06 put PRESS key 173 at 16815 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17225 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17255 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17280 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17310 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17340 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17365 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17395 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17425 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17490 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17860 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17890 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17920 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17945 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 17975 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 18005 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 18035 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 18060 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 18125 ms
+K06 evnt MU_KEYBD kc=4800 ks=0 at 18155 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 18525 ms
+K06 put PRESS key 174 at 18555 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 18580 ms
+K06 put RELEASE key 173 at 18610 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 18635 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 18665 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 18730 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19100 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19130 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19160 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19185 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19215 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19245 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19275 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19300 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19365 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19395 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19425 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19795 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19820 ms
+K06 evnt MU_KEYBD kc=4d00 ks=0 at 19850 ms
+K06 put RELEASE key 174 at 20255 ms

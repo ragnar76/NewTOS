@@ -1,0 +1,42 @@
+measurement-2026-10-03-keyseq -- hold UP, add RIGHT, release RIGHT, release UP
+Date 2026-10-03, branch desk-rebuild, HEAD 436919f (KEYS01 committed), clean tree.
+No product file touched (kernel/ tos-api/ sdk/ unchanged); scratch trees under the session scratchpad.
+
+A  NewTOS, QEMU raspi4b (-append serial=on via tools/qemu-serial-on), headless
+   scratch kernel = git archive HEAD + method/apply-instrumentation.py (same
+   injector as measurement-2026-10-03-krepeat, new SCRIPT):
+     +4200 ticks (200 Hz) UP make 0x48, +4500 RIGHT make 0x4D (1.5 s),
+     +4800 RIGHT break 0xCD (3 s), +5200 UP break 0xC8 (5 s)
+   kernel8.img sha256 274b7548d447922ee77bd0d448ac466be79b0ce2c35dba3322c2ab0403225934
+   DOOM.NAP (K06 instrumented, = krepeat) sha256 32cbd34a7d33573cc6601ace2d82e33394404698486695b3030c7c850a50408f
+   card: method/seed-doom.sh, run: method/run-doom.sh   -> serial/A-newtos-qemu-raspi4b-serial.log
+B  EmuTOS 1.4 (etos512de.img) in Hatari 2.6.1, --machine tt --tos-res ttlow, --fpu 68882, 14 MiB,
+   real time (no fast-forward), m68k DOOM.PRG = same doomgeneric_gem.c + the same K06 diff
+   (method/k06-doomgeneric_gem.diff) built with method/build-doom-m68k-k06.sh
+   (m68k-atari-mint-gcc 7.5.0, 81/81 OK, LINK OK) sha256
+   5fc44a51e4793857fb722a37b4fc022340662182bfa4bd8fcdea7ea0eeba7d2e
+   Keys through Hatari's --cmd-fifo: "hatari-event keydown|keyup <ST scancode>"
+   (hatari/src/control.c:92-99 Control_InsertKey -> IKBD_PressSTKey; fifo command
+   "hatari-event" :368). Method/run-hatari-keyseq.sh sends them 5 s after Doom's
+   "player 1 of 1" line. Wall times in hatari/inject.log: UP down 0.000, RIGHT down 1.510,
+   RIGHT up 3.002, UP up 5.010 s.   -> hatari/hatari.log (= serial/B-...), hatari.err
+   Stray "command FIFO read error" lines in an earlier run garbled the console log; the
+   final run keeps stderr in hatari.err.
+   Hatari TT-low Doom runs at ~2 fps (vr_trnfm path): its poll gaps are ~0.5 s, so the
+   times in the Doom log are READ times of buffered words, not repeat times.
+
+RESULT
+ Doom K06 log, ms of DOOM's own _hz_200 clock:
+                       A NewTOS (QEMU)             B EmuTOS (Hatari)
+  UP    PRESS          36040                       16815
+  RIGHT PRESS          37530 (UP+1490)             18555 (UP+1740, Doom poll ~2fps)
+  UP    RELEASE        37635 (RIGHT PRESS +105)    18610 (RIGHT PRESS +55)
+  RIGHT RELEASE        39150 (RIGHT break +~110)   20255 (last RIGHT word 19850, +405 = poll gap)
+  UP words seen        32 (1 make + 31 repeats, 7205..7504, first repeat +59 ticks = 295 ms,
+                          then 8 ticks = 40 ms)         20 (to 18155)
+  RIGHT words seen     32 (7505..7804, same cadence)   19 (to 19850)
+  UP words after RIGHT make     0                      0
+  UP words after RIGHT break    0                      0 (and none after the UP break)
+  UP PRESS after the RIGHT break (resume)  none        none
+ Both: UP is released ~0.1 s after RIGHT starts repeating and is never pressed again,
+ although it stays physically down 2 s (A) / ~2 s (B) after RIGHT is released.

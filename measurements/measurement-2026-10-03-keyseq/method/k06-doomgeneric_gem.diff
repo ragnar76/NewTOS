@@ -1,0 +1,23 @@
+--- /Volumes/Daten/Development/PiRusTOS/sdk/apps/doom/doomgeneric_gem.c	2026-10-02 19:49:21
++++ sdk/apps/doom/doomgeneric_gem.c	2026-10-02 21:10:55
+@@ -1393,10 +1393,12 @@
+ 		repeat = 2;
+ 	hold_first_ms = (uint32_t)delay * 20u + 60u;
+ 	hold_repeat_ms = (uint32_t)repeat * 20u + 60u;
++	printf("K06 Kbrate=%04lx hold_first=%lu hold_repeat=%lu ms\n", rate & 0xffff, (unsigned long)hold_first_ms, (unsigned long)hold_repeat_ms); /* K06-TEMP */
+ }
+ 
+ static void keyq_put(int pressed, unsigned char key)
+ {
++	printf("K06 put %s key %d at %lu ms\n", pressed ? "PRESS" : "RELEASE", key, (unsigned long)DG_GetTicksMs()); /* K06-TEMP */
+ 	if (((keyq_w + 1) % KEYQ_SIZE) == keyq_r)
+ 		return;				/* full: drop, as a hardware buffer does */
+ 	keyq[keyq_w] = (uint16_t)((pressed ? 0x100 : 0) | key);
+@@ -1461,6 +1463,7 @@
+ 		now = DG_GetTicksMs();
+ 		if (ev & MU_KEYBD) {
+ 			unsigned char k = map_key(kc);
++			printf("K06 evnt MU_KEYBD kc=%04x ks=%x at %lu ms\n", (unsigned)(kc & 0xffff), ks, (unsigned long)now); /* K06-TEMP */
+ 
+ 			if (k == 0)
+ 				continue;

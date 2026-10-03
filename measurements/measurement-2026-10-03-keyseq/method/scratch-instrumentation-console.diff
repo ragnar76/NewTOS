@@ -1,0 +1,21 @@
+--- /dev/fd/11	2026-10-03 23:29:10
++++ kernel/src/console.rs	2026-10-03 23:19:48
+@@ -276,6 +276,7 @@
+ pub fn push_rx(word: u16) {
+     #[cfg(feature = "initinfo-diag")]
+     crate::initinfo::diag::note_push(crate::initinfo::diag::PUSH_SRC_IKBD, word);
++    crate::kprintln!("[krp] push_rx {:#06x} at hz_200 {}", word, tos_api::bios::tick::hz_200()); // KRP-TEMP
+     RX_RING.push(word);
+ }
+ 
+@@ -297,7 +298,9 @@
+ /// Pop one whole key word (`scancode << 8 | ascii`) for the AES event
+ /// manager, so it can deliver scancodes (arrow / function keys) to apps.
+ pub fn rx_pop_key() -> Option<u16> {
+-    RX_RING.pop()
++    let w = RX_RING.pop();
++    if let Some(w) = w { crate::kprintln!("[krp] rx_pop_key {:#06x} at hz_200 {}", w, tos_api::bios::tick::hz_200()); } // KRP-TEMP
++    w
+ }
+ 
+ /// Non-destructively peek the oldest queued key word (`scancode << 8 |

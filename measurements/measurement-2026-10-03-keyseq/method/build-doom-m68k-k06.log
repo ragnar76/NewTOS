@@ -1,0 +1,6 @@
+gcc : m68k-atari-mint-gcc (MiNT 20230908) 7.5.0
+platform layer: -Wall -Wextra clean
+compiled OK=81 FAILED=0 (upstream files with warnings: 0)
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/keyseq/m68k/out/DOOM.PRG (675281 bytes)
+DOOM_ARGS  = "-mb","4"
+DOOM_STATS = 0
