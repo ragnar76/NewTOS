@@ -1,0 +1,146 @@
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/qemu/LAUNCH.NAP (95272 bytes)
+compiled OK=81  FAILED=0  (upstream files with compiler warnings: 1, see /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/qemu/doom-play/obj/*.err)
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/qemu/doom-play/DOOM.NAP (673608 bytes, undefined symbols: 0)
+DOOM_ARGS  = "-mb","2"
+DOOM_STATS = 5
+955449f49e8a91b8dcd9342c223b02a0f890b819f1db782b6d8bf62388abc2a9  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/qemu/doom-play/DOOM.NAP
+seeded a-640-default.img: DOOM.NAP 955449f49e8a91b8, INF newdesk-doom.inf
+t=35.0s -> a-640-default-t35.png {"return": {}}
+t=60.0s -> a-640-default-t60.png {"return": {}}
+run a-640-default (640x480): rc=0
+[shell] sh_ldapp: starting C:\DOOM\DOOM.NAP, sh_nextapp=2, sh_isgem=1
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 640x480, 16 planes, lookup table no, pixel 278x278 um, stage 2 = 640x480, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 640x480 at (0,0) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 2 640x480: build 234 us, vr_trnfm 0 us, scale 700 us, vro_cpyfm 1890 us, sum 2824 us
+DOOM x2 EdDI: 340 frames/5000 ms = 68.00 fps, 14.70 ms/frame, 2 pal
+DOOM x2 EdDI: 316 frames/5000 ms = 63.20 fps, 15.82 ms/frame, 6 pal
+DOOM x2 EdDI: 351 frames/5000 ms = 70.20 fps, 14.24 ms/frame, 6 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 8 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+seeded b-1080-default.img: DOOM.NAP 955449f49e8a91b8, INF newdesk-doom.inf
+t=35.1s -> b-1080-default-t35.png {"return": {}}
+t=60.1s -> b-1080-default-t60.png {"return": {}}
+run b-1080-default (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\DOOM\DOOM.NAP, sh_nextapp=2, sh_isgem=1
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, pixel 278x278 um, stage 4 = 1280x960, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 1280x960 at (320,60) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 4 1280x960: build 237 us, vr_trnfm 0 us, scale 1383 us, vro_cpyfm 7790 us, sum 9410 us
+DOOM x4 EdDI: 339 frames/5000 ms = 67.80 fps, 14.74 ms/frame, 2 pal
+DOOM x4 EdDI: 305 frames/5000 ms = 61.00 fps, 16.39 ms/frame, 6 pal
+DOOM x4 EdDI: 348 frames/5000 ms = 69.60 fps, 14.36 ms/frame, 6 pal
+DOOM x4 EdDI: 342 frames/5000 ms = 68.40 fps, 14.61 ms/frame, 2 pal
+DOOM x4 EdDI: 348 frames/5000 ms = 69.60 fps, 14.36 ms/frame, 8 pal
+DOOM x4 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+seeded c-1080-x1.img: DOOM.NAP 955449f49e8a91b8, INF newdesk-launch.inf, LAUNCH.NAP + LAUNCH.TXT C:\DOOM\DOOM.NAP -scale 1
+t=35.1s -> c-1080-x1-t35.png {"return": {}}
+t=60.0s -> c-1080-x1-t60.png {"return": {}}
+run c-1080-x1 (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\LAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+LAUNCH: system("C:\DOOM\DOOM.NAP -scale 1")
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, pixel 278x278 um, stage 1 = 320x200, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 320x200 at (800,440) VERIFIED via EdDI+vro_cpyfm
+DOOM: per frame, EdDI, stage 1 320x200: build 241 us, vr_trnfm 0 us, scale 0 us, vro_cpyfm 374 us, sum 615 us
+DOOM x1 EdDI: 340 frames/5010 ms = 67.86 fps, 14.73 ms/frame, 2 pal
+DOOM x1 EdDI: 317 frames/5000 ms = 63.40 fps, 15.77 ms/frame, 6 pal
+DOOM x1 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 6 pal
+DOOM x1 EdDI: 348 frames/5000 ms = 69.60 fps, 14.36 ms/frame, 2 pal
+DOOM x1 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 8 pal
+seeded d-1080-x2.img: DOOM.NAP 955449f49e8a91b8, INF newdesk-launch.inf, LAUNCH.NAP + LAUNCH.TXT C:\DOOM\DOOM.NAP -scale 2
+t=35.1s -> d-1080-x2-t35.png {"return": {}}
+t=60.0s -> d-1080-x2-t60.png {"return": {}}
+run d-1080-x2 (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\LAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+LAUNCH: system("C:\DOOM\DOOM.NAP -scale 2")
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, pixel 278x278 um, stage 2 = 640x480, route EdDI
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 640x480 at (640,300) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 2 640x480: build 243 us, vr_trnfm 0 us, scale 716 us, vro_cpyfm 1901 us, sum 2860 us
+DOOM x2 EdDI: 339 frames/5000 ms = 67.80 fps, 14.74 ms/frame, 2 pal
+DOOM x2 EdDI: 316 frames/5000 ms = 63.20 fps, 15.82 ms/frame, 6 pal
+DOOM x2 EdDI: 350 frames/5005 ms = 69.93 fps, 14.30 ms/frame, 6 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 8 pal
+seeded e-640-noeddi.img: DOOM.NAP 955449f49e8a91b8, INF newdesk-launch.inf, LAUNCH.NAP + LAUNCH.TXT C:\DOOM\DOOM.NAP -noeddi
+t=35.0s -> e-640-noeddi-t35.png {"return": {}}
+t=60.0s -> e-640-noeddi-t60.png {"return": {}}
+run e-640-noeddi (640x480): rc=0
+[shell] sh_ldapp: starting C:\LAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+LAUNCH: system("C:\DOOM\DOOM.NAP -noeddi")
+DOOM: -noeddi -- vr_trnfm route
+DOOM: GEM platform up -- 640x480, 16 planes, lookup table no, pixel 278x278 um, stage 2 = 640x480, route vr_trnfm
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 640x480 at (0,0) VERIFIED via vr_trnfm+scale+vro_cpyfm
+DOOM: per frame, vr_trnfm, stage 2 640x480: c2p 645 us, vr_trnfm 3424 us, scale 723 us, vro_cpyfm 1730 us, sum 6522 us
+DOOM x2: 340 frames/5010 ms = 67.86 fps, 14.73 ms/frame, 2 pal
+DOOM x2: 316 frames/5000 ms = 63.20 fps, 15.82 ms/frame, 6 pal
+DOOM x2: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 6 pal
+DOOM x2: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+DOOM x2: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 8 pal
+DOOM x2: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+seeded f-1080-noeddi-x1.img: DOOM.NAP 955449f49e8a91b8, INF newdesk-launch.inf, LAUNCH.NAP + LAUNCH.TXT C:\DOOM\DOOM.NAP -noeddi -scale 1
+t=35.1s -> f-1080-noeddi-x1-t35.png {"return": {}}
+t=60.1s -> f-1080-noeddi-x1-t60.png {"return": {}}
+run f-1080-noeddi-x1 (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\LAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+LAUNCH: system("C:\DOOM\DOOM.NAP -noeddi -scale 1")
+DOOM: -noeddi -- vr_trnfm route
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, pixel 278x278 um, stage 1 = 320x200, route vr_trnfm
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 320x200 at (800,440) VERIFIED via vr_trnfm+vro_cpyfm
+DOOM: per frame, vr_trnfm, stage 1 320x200: c2p 651 us, vr_trnfm 3412 us, scale 0 us, vro_cpyfm 382 us, sum 4445 us
+DOOM x1: 339 frames/5005 ms = 67.73 fps, 14.76 ms/frame, 2 pal
+DOOM x1: 316 frames/5000 ms = 63.20 fps, 15.82 ms/frame, 6 pal
+DOOM x1: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 6 pal
+DOOM x1: 348 frames/5000 ms = 69.60 fps, 14.36 ms/frame, 2 pal
+DOOM x1: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 8 pal
+DOOM x1: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+seeded g-1080-noeddi-x4.img: DOOM.NAP 955449f49e8a91b8, INF newdesk-launch.inf, LAUNCH.NAP + LAUNCH.TXT C:\DOOM\DOOM.NAP -noeddi -scale 4
+t=35.1s -> g-1080-noeddi-x4-t35.png {"return": {}}
+t=60.1s -> g-1080-noeddi-x4-t60.png {"return": {}}
+run g-1080-noeddi-x4 (1920x1080): rc=0
+[shell] sh_ldapp: starting C:\LAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+LAUNCH: system("C:\DOOM\DOOM.NAP -noeddi -scale 4")
+DOOM: -noeddi -- vr_trnfm route
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, pixel 278x278 um, stage 4 = 1280x960, route vr_trnfm
+                            DOOM Shareware
+R_Init: Init DOOM refresh daemon - ...................
+DOOM: DOOM Shareware
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+DOOM: picture 1280x960 at (320,60) VERIFIED via vr_trnfm+scale+vro_cpyfm
+DOOM: per frame, vr_trnfm, stage 4 1280x960: c2p 649 us, vr_trnfm 3412 us, scale 1373 us, vro_cpyfm 7671 us, sum 13105 us
+DOOM x4: 278 frames/5020 ms = 55.37 fps, 18.05 ms/frame, 2 pal
+DOOM x4: 264 frames/5000 ms = 52.80 fps, 18.93 ms/frame, 6 pal
+DOOM x4: 280 frames/5000 ms = 56.00 fps, 17.85 ms/frame, 6 pal
+DOOM x4: 294 frames/5000 ms = 58.80 fps, 17.00 ms/frame, 2 pal
+DOOM x4: 296 frames/5000 ms = 59.20 fps, 16.89 ms/frame, 8 pal
+DOOM x4: 293 frames/5000 ms = 58.60 fps, 17.06 ms/frame, 2 pal

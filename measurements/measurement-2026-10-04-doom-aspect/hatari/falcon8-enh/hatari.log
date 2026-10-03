@@ -1,0 +1,92 @@
+INFO : Hatari v2.6.1, compiled on:  Aug 15 2025, 14:15:19
+INFO : IPF : capsimage library version release=5 revision=1
+INFO : GEMDOS HDD emulation, C: <-> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/hd/hd-falcon8.
+ERROR: Microphone: SDL_OpenAudioDevice failed.
+WARN : Bus Error reading at address $100000c, PC=$e0042c addr_e3=e0042c op_e3=b494
+WARN : Bus Error reading at address $10fffff, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+WARN : Bus Error reading at address $fffffc21, PC=$e00d96 addr_e3=e00d96 op_e3=4a10
+INFO : Strange screen size 16x480 -> aspect corrected by 32x1!
+INFO : OS clock ticks / second: 100
+
+
+
+
+
+                                                         
+                                                         
+                                                         
+                                                         
+                                                         
+                    ________________________________________
+
+                    EmuTOS Version:     1.4 
+                    CPU-Typ:            M68030 
+                    Rechner:            Atari Falcon 
+                    ST-RAM:             14 MB 
+                    GEMDOS-Laufwerke:   ABC 
+                    Boot-Zeit:          2026/10/04 00:39:34 
+                    ________________________________________
+
+                    Halte <Strg> = ohne AUTO/ACC
+                    Halte <Alt> = keine Harddisk
+                    DrUcke 'X' um von Laufwerk X: zu booten
+                    DrUcke <Esc> fUr die Textkonsole
+
+                       FUr Pause <Shift> gedrUckt halten    
+
+       VDI  ENHANCER V1.00        
+C 1992-93 by Sven & Wilfried Behne
+
+
+
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/hd/hd-falcon8/etc'
+DOOM: EdDI: format 0, clut 1, 8 planes, bits r/g/b 6/6/6, bit order 0x0
+DOOM: EdDI check: 256 pens read back as listed
+DOOM: GEM platform up -- 640x480, 8 planes, lookup table yes, pixel 278x278 um, stage 1 = 320x200, route EdDI
+                           Doom Generic 0.1
+Z_Init: Init zone memory allocation daemon. 
+zone memory: 0x15d058, 600000 allocated for zone
+Using . for configuration and saves
+V_Init: allocate screens.
+M_LoadDefaults: Load system defaults.
+saving config in .default.cfg
+-iwad not specified, trying a few iwad names
+Trying IWAD file:doom2.wad
+Trying IWAD file:plutonia.wad
+Trying IWAD file:tnt.wad
+Trying IWAD file:doom.wad
+Trying IWAD file:doom1.wad
+W_Init: Init WADfiles.
+ adding doom1.wad
+WARN : have to clip 5 chars from '.savegame' extension!
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/hd/hd-falcon8/.savegame'
+Using ./.savegame/ for savegames
+===========================================================================
+                            DOOM Shareware
+===========================================================================
+ Doom Generic is free software, covered by the GNU General Public
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+ copies under certain conditions. See the source for more information.
+===========================================================================
+I_Init: Setting up machine state.
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon - ...................
+P_Init: Init Playloop state.
+S_Init: Setting up sound.
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+Emulating the behavior of the 'Doom 1.9' executable.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+DOOM: DOOM Shareware
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+I_InitGraphics: Auto-scaling factor: 1
+DOOM: picture 320x200 at (160,140) VERIFIED via EdDI+vro_cpyfm
+DOOM: per frame, EdDI, stage 1 320x200: build 620000 us, vr_trnfm 0 us, scale 0 us, vro_cpyfm 18796 us, sum 638796 us
+DOOM x1 EdDI: 7 frames/5200 ms = 1.34 fps, 742.85 ms/frame, 1 palDOOM x1 EdDI: 7 frames/5100 ms = 1.37 fps, 728.57 ms/frame, 0 palDOOM x1 EdDI: 7 frames/5105 ms = 1.37 fps, 729.28 ms/frame, 0 palDOOM x1 EdDI: 7 frames/5105 ms = 1.37 fps, 729.28 ms/frame, 0 palDOOM x1 EdDI: 7 frames/6275 ms = 1.11 fps, 896.42 ms/frame, 1 palDOOM x1 EdDI: 6 frames/5730 ms = 1.04 fps, 955.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5460 ms = 0.91 fps, 1092.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5325 ms = 0.93 fps, 1065.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/5610 ms = 0.89 fps, 1122.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6055 ms = 0.82 fps, 1211.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/6095 ms = 0.82 fps, 1219.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/5540 ms = 0.90 fps, 1108.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5790 ms = 0.86 fps, 1158.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5740 ms = 0.87 fps, 1148.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6150 ms = 0.81 fps, 1230.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/6130 ms = 0.81 fps, 1226.00 ms/frame, 1 palDOOM x1 EdDI: 5 frames/5585 ms = 0.89 fps, 1117.00 ms/frame, 1 palDOOM x1 EdDI: 5 frames/5615 ms = 0.89 fps, 1123.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5650 ms = 0.88 fps, 1130.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5525 ms = 0.90 fps, 1105.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5660 ms = 0.88 fps, 1132.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5625 ms = 0.88 fps, 1125.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5780 ms = 0.86 fps, 1156.00 ms/frame, 0 palWARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-04-doom-aspect/hatari/falcon8-enh/shots/grab0001.png
+DOOM x1 EdDI: 5 frames/5610 ms = 0.89 fps, 1122.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5640 ms = 0.88 fps, 1128.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5625 ms = 0.88 fps, 1125.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5575 ms = 0.89 fps, 1115.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/5515 ms = 0.90 fps, 1103.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/5605 ms = 0.89 fps, 1121.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6175 ms = 0.80 fps, 1235.00 ms/frame, 1 palDOOM x1 EdDI: 5 frames/5895 ms = 0.84 fps, 1179.00 ms/frame, 1 palDOOM x1 EdDI: 5 frames/5555 ms = 0.90 fps, 1111.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5615 ms = 0.89 fps, 1123.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5905 ms = 0.84 fps, 1181.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6065 ms = 0.82 fps, 1213.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/6215 ms = 0.80 fps, 1243.00 ms/frame, 0 palDOOM x1 EdDI: 4 frames/5090 ms = 0.78 fps, 1272.50 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5730 ms = 0.87 fps, 1146.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5645 ms = 0.88 fps, 1129.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5625 ms = 0.88 fps, 1125.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6035 ms = 0.82 fps, 1207.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5730 ms = 0.87 fps, 1146.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5445 ms = 0.91 fps, 1089.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5650 ms = 0.88 fps, 1130.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5910 ms = 0.84 fps, 1182.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6085 ms = 0.82 fps, 1217.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6130 ms = 0.81 fps, 1226.00 ms/frame, 3 palDOOM x1 EdDI: 5 frames/5965 ms = 0.83 fps, 1193.00 ms/frame, 3 palDOOM x1 EdDI: 5 frames/6290 ms = 0.79 fps, 1258.00 ms/frame, 3 palWARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-04-doom-aspect/hatari/falcon8-enh/shots/grab0002.png
+DOOM x1 EdDI: 5 frames/6205 ms = 0.80 fps, 1241.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6210 ms = 0.80 fps, 1242.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6200 ms = 0.80 fps, 1240.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6090 ms = 0.82 fps, 1218.00 ms/frame, 0 palDOOM x1 EdDI: 4 frames/5245 ms = 0.76 fps, 1311.25 ms/frame, 2 palDOOM x1 EdDI: 4 frames/5025 ms = 0.79 fps, 1256.25 ms/frame, 0 palDOOM x1 EdDI: 4 frames/5140 ms = 0.77 fps, 1285.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6345 ms = 0.78 fps, 1269.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5730 ms = 0.87 fps, 1146.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5170 ms = 0.96 fps, 1034.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5330 ms = 0.93 fps, 1066.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5735 ms = 0.87 fps, 1147.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5575 ms = 0.89 fps, 1115.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5385 ms = 0.92 fps, 1077.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/5530 ms = 0.90 fps, 1106.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5440 ms = 0.91 fps, 1088.00 ms/frame, 1 palDOOM x1 EdDI: 5 frames/5215 ms = 0.95 fps, 1043.00 ms/frame, 3 palDOOM x1 EdDI: 5 frames/5335 ms = 0.93 fps, 1067.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/5265 ms = 0.94 fps, 1053.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5435 ms = 0.91 fps, 1087.00 ms/frame, 4 palDOOM x1 EdDI: 5 frames/5055 ms = 0.98 fps, 1011.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/5240 ms = 0.95 fps, 1048.00 ms/frame, 1 palDOOM x1 EdDI: 5 frames/5860 ms = 0.85 fps, 1172.00 ms/frame, 1 palDOOM x1 EdDI: 5 frames/5905 ms = 0.84 fps, 1181.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6000 ms = 0.83 fps, 1200.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/6040 ms = 0.82 fps, 1208.00 ms/frame, 2 palDOOM x1 EdDI: 5 frames/6155 ms = 0.81 fps, 1231.00 ms/frame, 0 palDOOM x1 EdDI: 5 frames/6070 ms = 0.82 fps, 1214.00 ms/frame, 0 palWARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-04-doom-aspect/hatari/falcon8-enh/shots/grab0003.png

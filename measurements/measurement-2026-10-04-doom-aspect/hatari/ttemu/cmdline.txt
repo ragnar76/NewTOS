@@ -1,0 +1,1 @@
+hatari --machine tt --tos-res ttlow --monitor vga --memsize 4 --ttram 16 --addr24 off --tos /Volumes/Daten/Development/RuSTari/roms/etos512de.img --fpu 68882 (enhancer: no)

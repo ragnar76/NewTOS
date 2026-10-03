@@ -1,0 +1,190 @@
+measurement-2026-10-04-doom-aspect
+  PORT06, Schritt "nicht-quadratische Pixel" -- 4:3 aus der Pixelform der VDI
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 080ea34. Kein Kommit, keine Karte, keine
+Pi, kein TT. Nichts unter kernel/ oder tos-api/ geaendert, kein Rust.
+doomgeneric unveraendert (Pin dcb7a8db..., Skripte melden "clean").
+Geaendert: NUR sdk/apps/doom/doomgeneric_gem.c
+  vorher sha256 9ed9e0543b884f1d2bc13ba990b3513a7c671fd3f1923ad5be6737a49cd5a3cc
+  nachher       aecbec9cadb396d6263e74087f2659b374c104c00cc9ce59ef9515c9164df69e
+Neu: dieser Ordner, ein Abschnitt in TASK/PORT06-STATUS-UNFINISHED.MD.
+Bauskripte unveraendert.
+
+Anwenderentscheidungen 2026-10-04 (Auftrag):
+  1. nicht-quadratische Pixel: Zeilenfaktor aus der Pixelform der VDI
+     (v_opnvwk work_out[3]/[4]) und dem 4:3-Ziel; senkrecht auf jedem Geraet,
+     waagerecht nur in gepackten Formaten.
+  2. 256 Farben gepackt (EdDI format 2, clut 1): waagerecht wie Truecolor.
+  3. -scale N bleibt (groesste passende Stufe als Vorgabe).
+
+Quelle der Pixelform: DEV_TAB[3]/[4] = Pixelbreite/-hoehe in Mikrometern,
+docs/api/vdi/workstation/100-v_opnvwk.md (DEV_TAB-Tabelle, Zeilen 162-163,
+NewTOS-Werte Z. 399-400: 278/278 bei 1920x1080); EmuTOS
+bios/screen.c:872-913 get_std_pixel_size/get_pixel_size (TT/Videl:
+Breite 556 wenn V_REZ_HZ < 640 sonst 278, Hoehe 556 wenn V_REZ_VT < 400
+sonst 278). Gemessen (Startzeile): TT-niedrig 556x278 unter TOS 3.06 UND
+EmuTOS, mit und ohne Enhancer; Falcon 640x480 278x278; NewTOS 278x278 bei
+640x480 und 1920x1080.
+
+Werkzeuge: QEMU 11.0.2 -M raspi4b (TCG), Kern frisch gebaut
+(cargo xtask build --board rpi4 --release: tos-api 64 / kernel 94 Warnungen,
+Basislinie; kernel8.img sha256 14083d70539be6a2fe6e10491e4d333e3ab19bcb6d69c752aa6b41d6b3d4bf89),
+Hatari 2.6.1, ROMs tos306de.rom (TT-TOS 3.06) und etos512de.img (EmuTOS 1.4),
+VDI-Enhancer 1.00, /opt/cross-mint m68k-atari-mint-gcc 7.5.0.
+Scratch: Sitzungs-Scratchpad ($CLAUDE_JOB_DIR leer), nie /tmp.
+
+
+0. ERGEBNIS VORWEG
+---------------------------------------------------------------------------
+* Regel (doomgeneric_gem.c "SCALING"): Stufe N = WAAGERECHTER Faktor;
+  Zeilen = 240 * N * pw / ph (gerundet, mindestens 200), Ausnahme Stufe 1
+  bei quadratischen Pixeln = 320x200 ("DOOMs Bild wie es ist", 2026-10-02).
+  Waagerecht > 1 nur bei > 8 Planes oder EdDI format 2 + clut 1 (8 Bit
+  gepackt). Passt eine Stufe nicht -> naechstkleinere; Stufe 1 wird
+  notfalls in der Hoehe auf den Schirm gekuerzt (nie unter 200 Zeilen).
+* TT-niedrig (Hatari, alle 4 Varianten): 320x480 an (0,0), Bild fuellt den
+  Schirm, 4:3, VERIFIED (jede der 480 Zeilen zurueckgelesen). Vorher
+  320x200 an (0,140), flachgedrueckt (A/B im selben Lauf-Setup, unten).
+* NewTOS (QEMU raspi4b, -append serial=on), 7 Laeufe a..g wie im EdDI-
+  Schritt: Stufen, Ausgabegroessen und Positionen gleich wie vorher,
+  VERIFIED in jedem Lauf; Bounding-Boxen der Screendumps identisch zum
+  Lauf vom 2026-10-02 (method/compare-dumps-qemu.txt).
+* Falcon (Hatari): Truecolor x2 640x480 unveraendert (A/B: gleiche
+  Kosten). Falcon 640x480 256 Farben + Enhancer meldet format 0 (verschraenkt)
+  -> kein gepacktes 8-Bit-Format in Hatari; der waagerechte 8-Bit-Pfad
+  (EDDI_PACKED8, dev_bpp 1) ist UNGETESTET.
+
+
+1. NEWTOS (method/run-aspect.sh, Konsole method/run-aspect-console.log)
+---------------------------------------------------------------------------
+DOOM.NAP: sdk/apps/build-doom.sh mit DOOM_STATS=5 (Kostenprobe + fps-Zeile),
+sha256 955449f49e8a91b8dcd9342c223b02a0f890b819f1db782b6d8bf62388abc2a9.
+Methode = measurement-2026-10-02-port06-eddi (run-qemu.sh, seed-scale.sh,
+launch.c, newdesk-*.inf kopiert), run-qemu.sh mit -append serial=on.
+
+  Lauf               Start                       Weg       Ergebnis
+  a-640-default      #Z                          EdDI      stage 2 = 640x480 at (0,0) VERIFIED
+  b-1080-default     #Z                          EdDI      stage 4 = 1280x960 at (320,60) VERIFIED
+  c-1080-x1          -scale 1                    EdDI      stage 1 = 320x200 at (800,440) VERIFIED
+  d-1080-x2          -scale 2                    EdDI      stage 2 = 640x480 at (640,300) VERIFIED
+  e-640-noeddi       -noeddi                     vr_trnfm  stage 2 = 640x480 at (0,0) VERIFIED
+  f-1080-noeddi-x1   -noeddi -scale 1            vr_trnfm  stage 1 = 320x200 at (800,440) VERIFIED
+  g-1080-noeddi-x4   -noeddi -scale 4            vr_trnfm  stage 4 = 1280x960 at (320,60) VERIFIED
+
+  Alle: "pixel 278x278 um". Dieselben Stufen/Groessen/Positionen wie im
+  EdDI-Schritt (measurement-2026-10-02-port06-eddi/RUNINFO.TXT Abschnitt 1).
+  Screendumps screendumps/<lauf>-t35.png, -t60.png; serielle Logs serial/.
+  method/compare-dumps.py vergleicht mit den Dumps vom 2026-10-02:
+  Groesse und Bounding-Box des nicht-schwarzen Bereichs identisch in allen
+  14 Paaren, bis auf g-t35: Box-x0 alt 0, neu 1 -- die Box links wird von
+  der fps-Konsolenzeile bestimmt, nicht vom Bild (das beginnt bei x 320).
+  Inhalt unterscheidet sich (Attract-Demo nicht an die Wanduhr gekoppelt).
+  Die Kosten/fps sind NICHT mit dem 10-02-Lauf vergleichbar (Kern seither
+  schneller: vro_cpyfm x4 7,8 ms statt 95 ms; alle Stufen nun an der
+  70-fps-Spieltaktgrenze ausser g x4 vr_trnfm ~58 fps).
+
+
+2. HATARI (method/run-hatari-doom.sh, Kopie aus measurement-2026-10-03-doom-m68k
+   + Tag falcon8; Kontaktbogen screendumps/hatari-new-vs-base.png)
+---------------------------------------------------------------------------
+Messbau: sdk/apps/build-doom-m68k.sh mit DOOM_STATS=5, sha256
+01ef852853b285fedec2dc46179807db9eed3419c33ca4655a27493ec546d1d2
+(method/build-doom-m68k-stats5-new.log). Gegenprobe "base" = derselbe Bau
+mit der Plattformdatei VOR diesem Schritt (Datei kurz gegen die Kopie aus
+dem Scratchpad getauscht, gebaut, zurueckkopiert; sha256 danach geprueft =
+aecbec9c...), sha256 28e7871ee1a593db33ae9e5612544d692b1ff013697cc85a45440b5099942faa
+(method/build-doom-m68k-stats5-base.log). Ausgelieferter Bau (DOOM_STATS=0):
+sdk/apps/doom/build/DOOM.PRG 673 811 B, sha256
+b7aff3bfaf8babf47bdfb579f5da145994a27df3012f78d164b1cfa375b72934.
+TT: --machine tt --tos-res ttlow --monitor vga --memsize 4 --ttram 16
+--addr24 off --fpu 68882. Fotos bei 40/80/120 s Wanduhr (Foto 1 der
+TOS-3.06-Laeufe = Speichertest).
+
+  Lauf               Maschine/TOS, Enhancer  Weg       Ausgabe          Ergebnis
+  tt306-enh          TT 3.06, ja             EdDI f0   320x480 at (0,0) VERIFIED
+  tt306              TT 3.06, nein           vr_trnfm  320x480 at (0,0) VERIFIED
+  ttemu-enh          TT EmuTOS, ja           EdDI f0   320x480 at (0,0) VERIFIED
+  ttemu              TT EmuTOS, nein         vr_trnfm  320x480 at (0,0) VERIFIED
+  shipped-tt306-enh  TT 3.06, ja (DOOM.PRG ausgeliefert)   320x480 VERIFIED,
+                     Zone 0x11712b4 = TT-RAM
+  falcon-enh         Falcon TC, ja           EdDI f2c2 640x480 x2 (0,0) VERIFIED
+  falcon8-enh        Falcon 640x480x256, ja  EdDI f0   320x200 at (160,140) VERIFIED
+  base-tt306-enh     wie tt306-enh, alte Datei         320x200 at (0,140)
+  base-ttemu-enh     wie ttemu-enh, alte Datei         320x200 at (0,140)
+  base-falcon-enh    wie falcon-enh, alte Datei        640x480 x2
+
+Kosten je Bild (Kostenprobe, emulierte Zeit, us):
+  Lauf            build/c2p  vr_trnfm  scale   vro_cpyfm  Summe
+  base-tt306-enh    306250        0        0      6578    312828
+  tt306-enh         306250        0    12884     15461    334595
+  tt306             308750     9054    12820     15461    346085
+  base-ttemu-enh    306250        0        0     18611    324861
+  ttemu-enh         305000        0    13051     44130    362181
+  ttemu             307500     9054    12987     44347    373888
+  base-falcon-enh    66250        0   211000    195833    473083
+  falcon-enh         66666        0   212000    195833    474499
+  -> TT: +22 ms (TOS 3.06) bzw. +37 ms (EmuTOS) je Bild fuer 2,4x so viele
+     Zeilen; fps in den 5-s-Fenstern beider Varianten ~1,8-1,9 (Spielmotor
+     und EdDI-Aufbau dominieren). Falcon TC: unveraendert.
+  (Die Falcon-Zahlen liegen ~40 % ueber denen vom 2026-10-02 -- auf dem
+   alten wie dem neuen Stand gleich, also Umgebung/Bau, nicht dieser
+   Schritt.)
+
+falcon8 (EMUDESK-falcon-256.INF = Falcon-TC-INF mit Videl-Modus 0x1B statt
+0x1C): der Enhancer meldet "format 0, clut 1, 8 planes, bits 6/6/6" --
+verschraenkte Planes wie der Videl sie hat. Hatari bietet also KEIN
+gepacktes 8-Bit-Format mit EdDI; der waagerechte Vergroesserungspfad fuer
+256 Farben gepackt (NOVA) bleibt ungetestet. Ergebnis dort: quadratische
+Pixel, waagerecht 1:1 -> Stufe 1 = 320x200 in der Mitte (Regel, s. offen 2).
+
+
+3. GRUNDWERTE
+---------------------------------------------------------------------------
+  build-doom.sh (ausgeliefert, DOOM_STATS=0)  81/81, LINK OK, 0 undefined;
+      DOOM.NAP 672 112 B, sha256 563235c2cb486d3063019a24f9d2a065c3ab97cb2660bae88c018bcf5e5cd190;
+      einzige Compilerwarnung p_maputl.c:849 (upstream, Stand HEAD);
+      Plattformdatei ohne Meldung (method/build-doom-nap.log)
+  build-doom-m68k.sh (ausgeliefert)  81/81, 0 Warnungen, Plattformdatei
+      -Wall -Wextra clean, LINK OK, 0 undefined, Kopf-Flags 0x7
+      (method/build-doom-m68k.log)
+  Bildschirmbasis-grep  method/grep-screenbase.txt: 0 Treffer
+  Hosttests             method/run-host-tests.txt: 12 passed / 0 / 0
+  kernel/, tos-api/     unberuehrt (git status: nur doomgeneric_gem.c
+                        geaendert + dieser Ordner)
+
+
+4. METHODE / DATEIEN
+---------------------------------------------------------------------------
+  method/run-aspect.sh, run-qemu.sh, seed-scale.sh, launch.c,
+         newdesk-doom.inf, newdesk-launch.inf     NewTOS-Laeufe
+  method/run-hatari-doom.sh, EMUDESK-falcon-256.INF  Hatari-Laeufe
+  method/contact-sheet.py                          Kontaktbogen
+  method/compare-dumps.py, compare-dumps-qemu.txt  Geometrievergleich
+  method/build-*.log, run-host-tests.txt, grep-screenbase.txt
+  hatari/<lauf>/hatari.log, cmdline.txt, shots/
+  serial/<lauf>-serial.log, screendumps/
+  TT-ANLEITUNG.TXT  zweite Fassung, Abschnitt 0 = was sich geaendert hat
+
+
+5. OFFEN
+---------------------------------------------------------------------------
+1. Echter TT / NOVA nicht gefahren (TT-ANLEITUNG.TXT). Der gepackte
+   8-Bit-Pfad (EdDI format 2 + clut 1, waagerecht > 1) und die 24/32-Bit-
+   Pfade sind nur im Quelltext.
+2. Stufe 1 auf quadratischen Pixeln bleibt 320x200 unkorrigiert (Vorgabe
+   "unveraendert"). Folge auf einem quadratischen 8-Plane-Schirm ohne
+   gepacktes Format (Falcon 640x480x256, NOVA 256 ohne EdDI): 320x200
+   statt 320x240 (4:3 waere moeglich, nur senkrecht). Entscheidung des
+   Anwenders, ob Stufe 1 dort 4:3 bekommen soll.
+3. Die erste-Bild-Pruefung setzt voraus, dass die Geraeteform zeilenweise
+   liegt; scheitert sie bei senkrechter Dehnung auf einem nicht-
+   quadratischen Schirm, gibt es keinen Startparameter ohne Dehnung
+   (I_Error mit Namen statt falschem Bild).
+4. Foto 3 von ttemu-enh zeigt Pixelstoerungen (weisse/magenta Sprenkel
+   in Waenden), base-ttemu-enh Foto 3 dieselbe Art (Sprenkel in den grauen
+   Waenden) -- also in beiden Staenden der Plattformdatei, nicht durch
+   diesen Schritt. Gesehen nur unter EmuTOS + Enhancer (TOS 3.06 und
+   EmuTOS ohne Enhancer in diesen Fotos sauber); verwandt vermutlich mit den
+   "verstreiften" Fotos von 10-02 (hat-ttlow, hat2-*). Ursache unbekannt,
+   nicht untersucht (die Rueckleseprobe des ERSTEN Bildes war VERIFIED).

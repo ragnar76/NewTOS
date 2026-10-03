@@ -1,0 +1,2 @@
+$ /usr/bin/grep -rn -i -E "setscreen|physbase|logbase" sdk/apps/doom/doomgeneric_gem.c sdk/apps/build-doom.sh sdk/apps/build-doom-m68k.sh
+hits:        0

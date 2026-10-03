@@ -1,0 +1,99 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x000000000031f000 (2748416 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 1920x1080
+[fb] alpha mode = 2
+[fb] 1920x1080 pitch 7680 virtual height 2160 -> 2 screen page(s), 16200 KiB
+[fb] VideoCore fb up: 1920x1080 stride 1920px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f00 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-04 00:32:28
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01802000 len=4147200 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\DOOM\DOOM.NAP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1000
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: GEM platform up -- 1920x1080, 16 planes, lookup table no, pixel 278x278 um, stage 4 = 1280x960, route EdDI
+                           Doom Generic 0.1
+Z_Init: Init zone memory allocation daemon. 
+zone memory: 0x1107d8, 200000 allocated for zone
+Using . for configuration and saves
+V_Init: allocate screens.
+M_LoadDefaults: Load system defaults.
+saving config in .default.cfg
+-iwad not specified, trying a few iwad names
+Trying IWAD file:doom2.wad
+Trying IWAD file:plutonia.wad
+Trying IWAD file:tnt.wad
+Trying IWAD file:doom.wad
+Trying IWAD file:doom1.wad
+W_Init: Init WADfiles.
+ adding doom1.wad
+Using ./.savegame/ for savegames
+===========================================================================
+                            DOOM Shareware
+===========================================================================
+ Doom Generic is free software, covered by the GNU General Public
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+ copies under certain conditions. See the source for more information.
+===========================================================================
+I_Init: Setting up machine state.
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon - ...................
+P_Init: Init Playloop state.
+S_Init: Setting up sound.
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+Emulating the behavior of the 'Doom 1.9' executable.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+DOOM: DOOM Shareware
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+I_InitGraphics: Auto-scaling factor: 1
+DOOM: picture 1280x960 at (320,60) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 4 1280x960: build 237 us, vr_trnfm 0 us, scale 1383 us, vro_cpyfm 7790 us, sum 9410 us
+DOOM x4 EdDI: 339 frames/5000 ms = 67.80 fps, 14.74 ms/frame, 2 palDOOM x4 EdDI: 305 frames/5000 ms = 61.00 fps, 16.39 ms/frame, 6 palDOOM x4 EdDI: 348 frames/5000 ms = 69.60 fps, 14.36 ms/frame, 6 palDOOM x4 EdDI: 342 frames/5000 ms = 68.40 fps, 14.61 ms/frame, 2 palDOOM x4 EdDI: 348 frames/5000 ms = 69.60 fps, 14.36 ms/frame, 8 palDOOM x4 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 palDOOM x4 EdDI: 349 frames/5000 ms = 69.80 fps, 14.32 ms/frame, 2 palDOOM x4 EdDI: 347 frames/5000 ms = 69.40 fps, 14.40 ms/frame, 8 pal

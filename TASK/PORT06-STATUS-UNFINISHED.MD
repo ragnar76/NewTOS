@@ -215,3 +215,42 @@ Neu: `sdk/apps/build-doom-m68k.sh`. Plattformdatei, doomgeneric, `kernel/`,
 3. Hatari TT-niedrig ~1,9 fps; 306 ms je Bild sind der EdDI-Aufbau ins
    verschraenkte 8-Plane-Format (Plattformcode). Bestaetigt der echte TT
    das, ist dort der Hebel, nicht beim Compiler.
+
+## Schritt „nicht-quadratische Pixel" 2026-10-04 — 4:3 aus der Pixelform der VDI
+
+Basis `desk-rebuild`, HEAD `080ea34` · Belege
+[measurements/measurement-2026-10-04-doom-aspect/](../measurements/measurement-2026-10-04-doom-aspect/RUNINFO.TXT)
+· TT-Anleitung, zweite Fassung:
+[TT-ANLEITUNG.TXT](../measurements/measurement-2026-10-04-doom-aspect/TT-ANLEITUNG.TXT)
+(Abschnitt 0 = was sich geaendert hat)
+
+Umgesetzt nach den Anwenderentscheidungen 2026-10-04 (1. nicht-quadratische
+Pixel, 2. 256 Farben gepackt, 3. `-scale N` bleibt). Nur
+`sdk/apps/doom/doomgeneric_gem.c` geaendert; doomgeneric, Bauskripte,
+`kernel/`, `tos-api/` unberuehrt.
+
+| Punkt | Ergebnis |
+|---|---|
+| Quelle der Pixelform | `v_opnvwk` `work_out[3]/[4]` = `DEV_TAB[3]/[4]`, Pixelbreite/-hoehe in Mikrometern (`docs/api/vdi/workstation/100-v_opnvwk.md`, DEV_TAB-Tabelle; EmuTOS `bios/screen.c:872-913`). Gelesen vor `vq_extnd`, das `work_out` ueberschreibt. Kein Wert (≤ 0) → quadratisch, mit Meldung. |
+| Regel | Stufe N = **waagerechter** Faktor; Zeilen = 240·N·pw/ph (gerundet, mind. 200). Stufe 1 bei quadratischen Pixeln bleibt 320x200 („wie es ist", 2026-10-02); bei nicht-quadratischen wird auch Stufe 1 4:3. Zu grosse Stufe → naechstkleinere; Stufe 1 wird notfalls in der Hoehe auf den Schirm gekuerzt. Dokumentiert im Kopf „SCALING". |
+| Senkrecht | Zeilenwiederholung auf **jedem** Geraet und Weg (Zeilenlaenge `form_row_bytes`: ≤ 8 Planes `wd·2·planes`, gepackt `wd·16·bpp`). |
+| Waagerecht | nur gepackt: > 8 Planes (wie bisher) **und neu** EdDI format 2 + clut 1 (8 Bit gepackt, `dev_bpp` 1). Verschraenkt (format 0) und 8 Planes auf dem `vr_trnfm`-Weg: 1:1. Scheitert die EdDI-Pruefung, wird die Stufe fuer den `vr_trnfm`-Weg neu gewaehlt (`choose_stage` + `alloc_picture_forms`). |
+| TT-niedrig (Hatari: TOS 3.06 + EmuTOS, je mit/ohne Enhancer, 68882, 16 MiB TT-RAM) | „pixel 556x278 um, stage 1 = 320x480", Bild an (0,0) **fuellt den Schirm, 4:3, VERIFIED** (alle 480 Zeilen zurueckgelesen) auf EdDI- und `vr_trnfm`-Weg. Vorher 320x200 an (0,140), flach (A/B mit der alten Datei im selben Aufbau). Kosten +22 ms (TOS 3.06) / +37 ms (EmuTOS) je Bild, fps ~1,8–1,9 unveraendert. Ausgelieferte `DOOM.PRG` ebenfalls gefahren: VERIFIED, Zone im TT-RAM. |
+| NewTOS (QEMU raspi4b, `-append serial=on`) | 640x480 und 1920x1080, 7 Laeufe a..g wie im EdDI-Schritt: „pixel 278x278 um", Stufen/Groessen/Positionen **unveraendert**, VERIFIED in allen; Bounding-Boxen der Screendumps = Lauf vom 2026-10-02. 0 [EXC]/PANIC. |
+| Falcon (Hatari) | Truecolor x2 unveraendert (A/B gleiche Kosten). Falcon 640x480x256 + Enhancer meldet **format 0** (verschraenkt) → Hatari hat **kein** gepacktes 8-Bit-Format mit EdDI; der waagerechte 8-Bit-Pfad ist **ungetestet**. |
+| Grundwerte | `build-doom.sh` 81/81 LINK OK (`DOOM.NAP` 672 112 B, `563235c2…`), Plattformdatei ohne Meldung; `build-doom-m68k.sh` 81/81, `-Wall -Wextra` sauber, LINK OK (`DOOM.PRG` 673 811 B, `b7aff3bf…`, Flags 0x7); grep Bildschirmbasis 0; `sh sdk/run-host-tests.sh` 12/0/0. |
+
+### Offen nach diesem Schritt
+
+1. Echter TT / NOVA nicht gefahren (Anleitung, zweite Fassung). Gepackt
+   8 Bit (NOVA 256 mit EdDI) und 24/32 Bit nur im Quelltext.
+2. **Frage an den Anwender:** auf quadratischen Pixeln bleibt Stufe 1
+   320x200 unkorrigiert (Vorgabe „Bild unveraendert"). Auf einem
+   quadratischen 8-Plane-Schirm ohne gepacktes Format (Falcon 640x480x256,
+   NOVA 256 ohne EdDI) heisst das 320x200 statt moeglicher 320x240 (nur
+   senkrecht). Soll Stufe 1 dort 4:3 bekommen?
+3. Scheitert die Erstbildpruefung bei senkrechter Dehnung auf einem
+   nicht-quadratischen Schirm, gibt es keinen Start ohne Dehnung (I_Error
+   mit Namen statt falschem Bild).
+4. Pixelstoerungen in einem Foto unter EmuTOS + Enhancer (TT) — in alter
+   **und** neuer Datei, also nicht dieser Schritt; Ursache offen (RUNINFO 5.4).

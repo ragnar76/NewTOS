@@ -128,12 +128,28 @@
  * it -- wind_update(BEG_UPDATE/BEG_MCTRL), form_dial(FMD_START) over the full
  * screen, the mouse arrow off -- and gives it back with form_dial(FMD_FINISH),
  * which makes the AES redraw the desktop. The picture is centred on a black
- * screen; it is deliberately not stretched to the full screen.
+ * screen, at the largest whole stage that fits (SCALING); it is deliberately
+ * not stretched to the full screen beyond that.
  *
  *
- * SCALING (TASK/PORT06, user decision 2026-10-02 "Praezisiert")
+ * SCALING (TASK/PORT06, user decisions 2026-10-02 "Praezisiert" and
+ * 2026-10-04 "non-square pixels")
  * -------------------------------------------------------------
- * Four stages, chosen with the start parameter -scale N:
+ * DOOM's 320x200 picture was made for a 4:3 screen. The stage N is the
+ * HORIZONTAL factor -- every DOOM pixel N device pixels wide -- and the rows
+ * follow from the shape of a device pixel, so that the picture is 4:3 on the
+ * glass. The VDI reports that shape: DEV_TAB[3] / [4], the pixel width and
+ * height in microns, v_opnvwk work_out[3] / [4] (docs/api/vdi/workstation/
+ * 100-v_opnvwk.md, DEV_TAB table; EmuTOS bios/screen.c get_pixel_size:
+ * 278 x 278 for a 640x480 VGA mode, 556 x 278 for the TT's 320x480). With
+ * pixel width pw and height ph, a picture 320 * N pixels wide is 4:3 when
+ *
+ *     rows = 240 * N * pw / ph            (rounded; square pixels: 240 * N)
+ *
+ * and the 200 source rows are spread over them by repeating rows (output row
+ * y shows source row y * 200 / rows). Never fewer than 200 rows: dropping
+ * DOOM's rows would lose picture, so tall device pixels get at least 1:1.
+ * On square pixels that gives the stages of 2026-10-02 unchanged:
  *
  *     -scale 1    320x200   DOOM's picture as it is, no aspect correction
  *     -scale 2    640x480   } horizontally N times, vertically 1.2 * N times
@@ -143,25 +159,41 @@
  *     -scale 0    the largest stage that fits the screen (also what an
  *                 out-of-range N means)
  *
+ * Stage 1 on square pixels stays DOOM's picture as it is (2026-10-02). On
+ * non-square pixels there is no "as it is": the rows have to be resampled for
+ * any right shape, so stage 1 there is 4:3 too -- on the TT's 320x480
+ * (556 x 278 um) that is 320 wide and 240 * 2 = 480 rows, the full screen.
+ * A stage whose rows exceed the screen steps down like a too-wide one; only
+ * stage 1, which has nowhere to step to, is fitted instead: its rows are cut
+ * to the screen height (never below 200).
+ *
  * Without the parameter the stage is DOOM_GEM_SCALE (one constant, below).
  * A stage larger than the screen steps down to the largest one that fits.
  *
  * The picture is scaled AFTER vr_trnfm (on the EdDI route: after the device
- * form is built), in the device form, by repeating
- * whole pixels and whole rows: c2p and vr_trnfm keep working on 320x200, and
- * the copying stays out of the standard form, where one pixel is spread over
- * N planes. That needs the device form's layout, and only one kind of layout
- * is known without asking the driver: the pixel-packed truecolour form, one
- * pixel after the other, every pixel (planes + 7) / 8 bytes -- "interleaved
- * (for 1-8 planes) or pixel-packed (Falcon Truecolor mode)", EmuTOS
- * vdi/vdi_raster.c:264-267 and vr_trnfm16 (:190). So scaling is done only
- * with more than 8 planes. With 1-8 planes (TT, ST, a NOVA palette mode) the
- * device form is interleaved bit planes or chunky, and this file does not
- * guess which: it stays at stage 1. The first-frame read-back (below) checks
- * the scaled picture pixel by pixel, so a driver whose truecolour form is not
- * packed is refused by name, not drawn wrong. Copying a pixel copies its
- * bytes; nothing here looks at what the bytes mean, so byte order does not
- * matter.
+ * form is built), in the device form, by repeating whole pixels and whole
+ * rows: c2p and vr_trnfm keep working on 320x200, and the copying stays out
+ * of the standard form, where one pixel is spread over N planes.
+ *
+ * Rows: a device form is stored row after row ("interleaved (for 1-8 planes)
+ * or pixel-packed (Falcon Truecolor mode)", EmuTOS vdi/vdi_raster.c:264-267),
+ * every row of a w-pixel form the same number of bytes: (w + 15) / 16 words
+ * per plane with 1-8 planes -- interleaved planes and 8-bit chunky hold the
+ * same w * planes bits -- and (w + 15) / 16 * 16 pixels of (planes + 7) / 8
+ * bytes when packed (form_row_bytes). So repeating a row is a byte copy on
+ * every device, and the vertical stretch runs on every route and depth.
+ *
+ * Pixels: repeating a pixel needs the pixel to be a run of bytes, which only
+ * the packed forms are: more than 8 planes (packed truecolour, (planes + 7) /
+ * 8 bytes per pixel, EmuTOS vr_trnfm16, vdi_raster.c:190), and 8 planes where
+ * EdDI says packed pixels with a CLUT (vq_scrninfo format 2, clut 1, one byte
+ * per pixel: a NOVA 256-colour mode; docs/api/vdi/eddi-vq_scrninfo.md §3.2).
+ * Everywhere else -- interleaved planes (TT, ST, EdDI format 0), and 8 planes
+ * on the vr_trnfm route, where the driver has not said which form it uses --
+ * the horizontal factor is 1. The first-frame read-back (below) checks the
+ * scaled picture pixel by pixel, so a form that is not what this paragraph
+ * says is refused by name, not drawn wrong. Copying a pixel copies its bytes;
+ * nothing here looks at what the bytes mean, so byte order does not matter.
  *
  *
  * INPUT
@@ -263,10 +295,13 @@ static int screen_taken;		/* wind_update + form_dial pair open */
 static int scr_w, scr_h;
 static int nplanes;			/* INQ_TAB[4] */
 static int has_lut;			/* INQ_TAB[5]: colour lookup table */
+static int pix_w, pix_h;		/* DEV_TAB[3] / [4]: pixel size, microns */
 
 /* ---- the picture ---------------------------------------------------------- */
-static int stage = 1;			/* 1..MAX_STAGE, see SCALING */
-static int out_w, out_h;		/* stage_w(stage), stage_h(stage) */
+static int want_stage;			/* -scale N or DOOM_GEM_SCALE, 0..MAX_STAGE */
+static int stage = 1;			/* horizontal factor 1..MAX_STAGE, SCALING */
+static int out_w, out_h;		/* stage_w(stage), stage_h(stage) fitted */
+static int scaled;			/* out_w x out_h is not 320x200 */
 static int out_x, out_y;		/* top-left on the screen */
 static const long wdw = (PIC_W + 15) / 16;	/* fd_wdwidth, 320x200 forms */
 static const long plane_words = (long)PIC_H * ((PIC_W + 15) / 16);
@@ -276,7 +311,7 @@ static long big_stride;			/* bytes per row, scaled device form */
 static void *std_raw, *dev_raw, *big_raw;
 static uint16_t *std_buf;		/* standard form, 320x200, nplanes planes */
 static uint16_t *dev_buf;		/* device form, 320x200 */
-static void *big_buf;			/* device form, out_w x out_h (stage > 1) */
+static void *big_buf;			/* device form, out_w x out_h (scaled) */
 static MFDB std_mfdb, dev_mfdb, big_mfdb, screen_mfdb;	/* screen: fd_addr == 0 */
 
 /* ---- read-back (one row, any width up to out_w) ---------------------------- */
@@ -346,31 +381,43 @@ static void set_form(MFDB *m, void *addr, int w, int h, int stand)
 }
 
 /*
- * Bytes a device form of w x h pixels needs. With 1-8 planes that is the
- * planar size the VDI documents (h * fd_wdwidth words per plane). With more
- * planes the form is pixel-packed (SCALING), dev_bpp bytes per pixel and
- * fd_wdwidth * 16 pixels per row; for 16/24/32 planes the two sizes are the
- * same, for a 15-plane form the packed one is larger. The larger of the two
- * is taken, so neither reading can run past the end.
+ * Bytes one row of a w-pixel device form takes (SCALING, "Rows"). With 1-8
+ * planes that is the planar size the VDI documents, fd_wdwidth words per
+ * plane -- the same for 8-bit chunky. With more planes the form is
+ * pixel-packed, dev_bpp bytes per pixel and fd_wdwidth * 16 pixels per row;
+ * for 16/24/32 planes the two readings agree, for a 15-plane form the packed
+ * one is larger and is the one taken, so neither can run past the end.
  */
-static long form_bytes_for(int w, int h)
+static long form_row_bytes(int w)
 {
 	long wd = (w + 15) / 16;
-	long planar = (long)h * wd * 2 * nplanes;
-	long packed = (long)h * wd * 16 * dev_bpp;
 
-	return (nplanes > 8 && packed > planar) ? packed : planar;
+	return nplanes > 8 ? wd * 16 * dev_bpp : wd * 2 * nplanes;
 }
 
-/* The stage geometry (SCALING). */
+/* Bytes a device form of w x h pixels needs. */
+static long form_bytes_for(int w, int h)
+{
+	return (long)h * form_row_bytes(w);
+}
+
+/* The stage geometry (SCALING). Horizontal: N times. */
 static int stage_w(int s)
 {
 	return PIC_W * s;
 }
 
+/* Vertical: the rows that make 320 * s pixels of pix_w x pix_h microns a 4:3
+ * picture, at least DOOM's 200; stage 1 on square pixels is DOOM's picture
+ * as it is. Not yet fitted to the screen (see choose_stage). */
 static int stage_h(int s)
 {
-	return s == 1 ? PIC_H : PIC_H * 6 * s / 5;	/* x 1.2 * s */
+	long rows;
+
+	if (s == 1 && pix_w == pix_h)
+		return PIC_H;
+	rows = (240L * s * pix_w + pix_h / 2) / pix_h;
+	return rows < PIC_H ? PIC_H : (int)rows;
 }
 
 static int stage_fits(int s)
@@ -514,18 +561,31 @@ static void build_standard_form(void)
 }
 
 /* ======================================================================== */
-/* Scaling in the packed device form (stage > 1, more than 8 planes)         */
+/* Scaling in the device form (SCALING)                                      */
 /* ======================================================================== */
 
-/* One 320-pixel device row, every pixel `stage` times. A pixel is dev_bpp
- * bytes and is copied as bytes (two 16-bit halves for 2 and 4); the buffers
- * are GEMDOS blocks and every row starts at an even offset, so 16-bit access
- * is aligned on any CPU. */
+/* One 320-pixel device row, every pixel `stage` times. At stage 1 the row is
+ * copied whole, whatever its form. Above 1 the form is packed (choose_stage
+ * allows no other): a pixel is dev_bpp bytes and is copied as bytes (two
+ * 16-bit halves for 2 and 4); the buffers are GEMDOS blocks and every row
+ * starts at an even offset, so 16-bit access is aligned on any CPU. */
 static void scale_row(const void *srow, void *drow)
 {
 	int x, k;
 
-	if (dev_bpp == 2) {
+	if (stage == 1) {
+		memcpy(drow, srow, (size_t)dev_stride);
+	} else if (dev_bpp == 1) {
+		const uint8_t *s = srow;
+		uint8_t *d = drow;
+
+		for (x = 0; x < PIC_W; x++) {
+			uint8_t v = s[x];
+
+			for (k = 0; k < stage; k++)
+				*d++ = v;
+		}
+	} else if (dev_bpp == 2) {
 		const uint16_t *s = srow;
 		uint16_t *d = drow;
 
@@ -558,8 +618,8 @@ static void scale_row(const void *srow, void *drow)
 }
 
 /* The 320x200 device form into the out_w x out_h one: output row y shows
- * source row y * 200 / out_h, so each source row appears 1.2 * stage times
- * (2 or 3 times at stage 2); a repeated row is a copy of the one above. */
+ * source row y * 200 / out_h, so each source row appears out_h / 200 times
+ * (2 or 3 times at 480 rows); a repeated row is a copy of the one above. */
 static void stage_scale(void)
 {
 	const uint8_t *src = (const uint8_t *)dev_buf;
@@ -972,7 +1032,7 @@ static void verify_frame_eddi(void)
 					(unsigned long)devpix[line[x / stage]]);
 	}
 	printf("DOOM: picture %dx%d at (%d,%d) VERIFIED via EdDI%s+vro_cpyfm\n",
-	       out_w, out_h, out_x, out_y, stage > 1 ? "+scale" : "");
+	       out_w, out_h, out_x, out_y, scaled ? "+scale" : "");
 	need_clear = 1;
 }
 
@@ -983,24 +1043,24 @@ static void verify_frame(void)
 	int y, x;
 
 	for (y = 0; y < out_h; y++) {
-		/* The same row mapping as stage_scale (identity at stage 1). */
+		/* The same row mapping as stage_scale (identity if unscaled). */
 		const uint8_t *line = src + ((long)y * PIC_H / out_h) * PIC_W;
 
 		read_row(out_x, out_y + y, out_w, got);
 		for (x = 0; x < out_w; x++)
 			if (got[x] != pixval[line[x / stage]]) {
 				I_Error("DOOM: the picture did not read back from the "
-					"screen (stage %d, row %d, column %d: 0x%lx, "
+					"screen (%dx%d, row %d, column %d: 0x%lx, "
 					"meant 0x%lx) -- this VDI's standard form is not "
-					"the one doomgeneric_gem.c builds%s", stage, y, x,
-					(unsigned long)got[x],
+					"the one doomgeneric_gem.c builds%s", out_w, out_h,
+					y, x, (unsigned long)got[x],
 					(unsigned long)pixval[line[x / stage]],
-					stage > 1 ? ", or its truecolour device form is "
-					"not pixel-packed (start with -scale 1)" : "");
+					scaled ? ", or its device form is not stored row "
+					"by row / pixel-packed as SCALING assumes" : "");
 			}
 	}
 	printf("DOOM: picture %dx%d at (%d,%d) VERIFIED via vr_trnfm%s+vro_cpyfm\n",
-	       out_w, out_h, out_x, out_y, stage > 1 ? "+scale" : "");
+	       out_w, out_h, out_x, out_y, scaled ? "+scale" : "");
 	/* The console line may have scrolled the screen, picture included. */
 	need_clear = 1;
 }
@@ -1050,6 +1110,71 @@ static void open_fail(const char *why)
 
 static void key_init(void);
 
+/*
+ * The stage and the picture's place on the screen (SCALING), from want_stage
+ * (0 = the largest that fits), the route and the screen. Horizontal stages
+ * above 1 only in a packed form: more than 8 planes, or EdDI packed 8-bit.
+ */
+static void choose_stage(void)
+{
+	int hmax = (nplanes > 8 || eddi == EDDI_PACKED8) ? MAX_STAGE : 1;
+	int want = want_stage;
+
+	if (want > hmax) {
+		printf("DOOM: -scale %d: %d planes, not a packed form -- each "
+		       "DOOM pixel one device pixel wide (stage 1)\n", want,
+		       nplanes);
+		want = hmax;
+	}
+	stage = want == 0 ? hmax : want;
+	while (stage > 1 && !stage_fits(stage))
+		stage--;
+	if (want != 0 && stage != want)
+		printf("DOOM: stage %d (%dx%d) does not fit the %dx%d screen, "
+		       "stage %d\n", want, stage_w(want), stage_h(want),
+		       scr_w, scr_h, stage);
+	out_w = stage_w(stage);
+	out_h = stage_h(stage);
+	if (out_h > scr_h) {
+		/* Stage 1 only: nowhere to step down to, so fit the rows. */
+		printf("DOOM: %d rows for 4:3 do not fit the %d-row screen, %d "
+		       "rows\n", out_h, scr_h, scr_h);
+		out_h = scr_h;
+	}
+	scaled = out_w != PIC_W || out_h != PIC_H;
+	out_x = (scr_w - out_w) / 2;
+	out_y = (scr_h - out_h) / 2;
+}
+
+/* The 320x200 device form, the scaled device form and the one-row read-back
+ * device form (as wide as the output), for the stage just chosen; the
+ * standard forms of the vr_trnfm route only when that route runs
+ * (alloc_trnfm_forms). Called again when the stage changes. */
+static void alloc_picture_forms(void)
+{
+	if (dev_raw) { Mfree(dev_raw); dev_raw = NULL; }
+	if (big_raw) { Mfree(big_raw); big_raw = NULL; }
+	if (peek_dev_raw) { Mfree(peek_dev_raw); peek_dev_raw = NULL; }
+
+	dev_raw = alloc_fast(form_bytes_for(PIC_W, PIC_H));
+	peek_dev_raw = alloc_fast(form_bytes_for(out_w, 1));
+	if (!dev_raw || !peek_dev_raw)
+		open_fail("no memory for the picture forms");
+	if (scaled) {
+		big_raw = alloc_fast(form_bytes_for(out_w, out_h));
+		if (!big_raw)
+			open_fail("no memory for the scaled picture");
+	}
+	/* GEMDOS blocks are at least word aligned, all a form needs. */
+	dev_buf = dev_raw;
+	big_buf = big_raw;
+	peek_dev = peek_dev_raw;
+	/* PIC_W and every out_w are multiples of 16, so a row is the
+	 * picture's own width (form_row_bytes). */
+	dev_stride = form_row_bytes(PIC_W);
+	big_stride = form_row_bytes(out_w);
+}
+
 /* The vr_trnfm route's standard forms: the 320x200 picture and the one-row
  * read-back form. */
 static void alloc_trnfm_forms(void)
@@ -1065,7 +1190,6 @@ static void alloc_trnfm_forms(void)
 void DG_Init(void)
 {
 	short cw, ch, bw, bh, pxy[4];
-	long dev_bytes, peek_bytes;
 	int i, p, want;
 
 	ap_id = appl_init();
@@ -1082,6 +1206,16 @@ void DG_Init(void)
 		open_fail("v_opnvwk returned no handle");
 	scr_w = work_out[0] + 1;
 	scr_h = work_out[1] + 1;
+	/* DEV_TAB[3] / [4], the pixel size in microns (SCALING); vq_extnd
+	 * below overwrites work_out. A driver that reports none is taken to
+	 * have square pixels. */
+	pix_w = work_out[3];
+	pix_h = work_out[4];
+	if (pix_w <= 0 || pix_h <= 0) {
+		printf("DOOM: the VDI reports pixel size %dx%d -- taking square "
+		       "pixels\n", pix_w, pix_h);
+		pix_w = pix_h = 1;
+	}
 
 	vq_extnd(vh, 1, work_out);
 	nplanes = work_out[4];
@@ -1096,7 +1230,7 @@ void DG_Init(void)
 		host_big_endian = *(const uint8_t *)&one == 0;
 	}
 	eddi = eddi_query();
-	if (!stage_fits(1))
+	if (scr_w < PIC_W || scr_h < PIC_H)
 		open_fail("the screen is smaller than DOOM's 320x200 picture");
 
 	/* The stage (SCALING): -scale N, else DOOM_GEM_SCALE; 0 or a value
@@ -1110,52 +1244,9 @@ void DG_Init(void)
 		       "that fits\n", want, MAX_STAGE);
 		want = 0;
 	}
-	if (nplanes <= 8) {
-		/* Not a packed truecolour device form: no scaling. */
-		if (want != 1)
-			printf("DOOM: %d planes -- the device form is not packed "
-			       "truecolour, no scaling (stage 1)\n", nplanes);
-		stage = 1;
-	} else {
-		stage = want == 0 ? MAX_STAGE : want;
-		while (stage > 1 && !stage_fits(stage))
-			stage--;
-		if (want != 0 && stage != want)
-			printf("DOOM: stage %d (%dx%d) does not fit the %dx%d screen, "
-			       "stage %d\n", want, stage_w(want), stage_h(want),
-			       scr_w, scr_h, stage);
-	}
-	out_w = stage_w(stage);
-	out_h = stage_h(stage);
-	out_x = (scr_w - out_w) / 2;
-	out_y = (scr_h - out_h) / 2;
-
-	/* The 320x200 device form, the scaled device form and the one-row
-	 * read-back device form (as wide as the output); the standard forms of
-	 * the vr_trnfm route only when that route runs (alloc_trnfm_forms). */
-	dev_bytes = form_bytes_for(PIC_W, PIC_H);
-	peek_bytes = form_bytes_for(out_w, 1);
-	dev_raw = alloc_fast(dev_bytes);
-	peek_dev_raw = alloc_fast(peek_bytes);
-	if (!dev_raw || !peek_dev_raw)
-		open_fail("no memory for the picture forms");
-	if (stage > 1) {
-		big_raw = alloc_fast(form_bytes_for(out_w, out_h));
-		if (!big_raw)
-			open_fail("no memory for the scaled picture (try -scale 1)");
-	}
-	/* GEMDOS blocks are at least word aligned, all a form needs. */
-	dev_buf = dev_raw;
-	big_buf = big_raw;
-	peek_dev = peek_dev_raw;
-	/* Packed rows are fd_wdwidth * 16 pixels; PIC_W and every out_w are
-	 * multiples of 16, so that is the picture's own width. Interleaved
-	 * rows (EDDI_PLANES) are fd_wdwidth groups of nplanes words. */
-	if (eddi == EDDI_PLANES)
-		dev_stride = (long)wdw * nplanes * 2;
-	else
-		dev_stride = (long)wdw * 16 * dev_bpp;
-	big_stride = (long)((out_w + 15) / 16) * 16 * dev_bpp;
+	want_stage = want;
+	choose_stage();
+	alloc_picture_forms();
 	if (eddi == EDDI_NONE)
 		alloc_trnfm_forms();
 	memset(&screen_mfdb, 0, sizeof(screen_mfdb));
@@ -1181,20 +1272,24 @@ void DG_Init(void)
 	vsf_interior(vh, FIS_SOLID);
 	vsf_perimeter(vh, 0);
 
-	/* The EdDI description against the driver, before it is used. */
+	/* The EdDI description against the driver, before it is used. Without
+	 * it an 8-plane screen loses the packed form's horizontal stages, so
+	 * the stage is chosen again for the vr_trnfm route. */
 	if (eddi != EDDI_NONE && !eddi_check()) {
 		printf("DOOM: EdDI description does not match the screen -- "
 		       "vr_trnfm route\n");
 		eddi = EDDI_NONE;
+		choose_stage();
+		alloc_picture_forms();
 		alloc_trnfm_forms();
 	}
 
 	key_init();
 
 	printf("DOOM: GEM platform up -- %dx%d, %d planes, lookup table %s, "
-	       "stage %d = %dx%d, route %s\n", scr_w, scr_h, nplanes,
-	       has_lut ? "yes" : "no", stage, out_w, out_h,
-	       eddi == EDDI_NONE ? "vr_trnfm" : "EdDI");
+	       "pixel %dx%d um, stage %d = %dx%d, route %s\n", scr_w, scr_h,
+	       nplanes, has_lut ? "yes" : "no", pix_w, pix_h, stage, out_w,
+	       out_h, eddi == EDDI_NONE ? "vr_trnfm" : "EdDI");
 }
 
 /* The screen around the picture: black. Done before the first frame -- which
@@ -1232,7 +1327,7 @@ static void stage_cpyfm(void)
 
 	/* The EdDI route has no vr_trnfm step that would describe it. */
 	set_form(&dev_mfdb, dev_buf, PIC_W, PIC_H, 0);
-	if (stage > 1) {
+	if (scaled) {
 		set_form(&big_mfdb, big_buf, out_w, out_h, 0);
 		from = &big_mfdb;
 	}
@@ -1273,7 +1368,7 @@ static void cost_report(void)
 	uint32_t c2p = probe_cost(eddi != EDDI_NONE ? build_device_form
 						     : build_standard_form);
 	uint32_t trn = eddi != EDDI_NONE ? 0 : probe_cost(stage_trnfm);
-	uint32_t scl = stage > 1 ? probe_cost(stage_scale) : 0;
+	uint32_t scl = scaled ? probe_cost(stage_scale) : 0;
 	uint32_t cpy = probe_cost(stage_cpyfm);
 
 	printf("DOOM: per frame, %s, stage %d %dx%d: %s %lu us, vr_trnfm %lu us, "
@@ -1338,7 +1433,7 @@ void DG_DrawFrame(void)
 		build_standard_form();
 		stage_trnfm();
 	}
-	if (stage > 1)
+	if (scaled)
 		stage_scale();
 	stage_cpyfm();
 

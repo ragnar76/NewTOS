@@ -1,0 +1,63 @@
+INFO : Hatari v2.6.1, compiled on:  Aug 15 2025, 14:15:19
+INFO : IPF : capsimage library version release=5 revision=1
+INFO : GEMDOS HDD emulation, C: <-> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/hd/hd-tt306.
+WARN : Bus Error writing at address $41fffe, PC=$e00170 addr_e3=e00170 op_e3=3302
+INFO : OS clock ticks / second: 100
+WARN : Bus Error writing at address $ffd000e0, PC=$e001d0 addr_e3=e001d0 op_e3=33fc
+WARN : Bus Error writing at address $201fffe, PC=$e001f8 addr_e3=e001f8 op_e3=3302
+Memory Test:
+ST RAM                                 --------------------------------  4096 KB
+TT RAM                                 -------------------------------- 16384 KBWARN : xconout character '' has unknown high byte bits: 0x6100.
+
+Memory Test Complete.
+                                                                                                                                                               WARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-04-doom-aspect/hatari/tt306/shots/grab0001.png
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/hd/hd-tt306/AUTO'
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/hd/hd-tt306/etc'
+DOOM: no EdDI cookie -- vr_trnfm route
+DOOM: GEM platform up -- 320x480, 8 planes, lookup table yes, pixel 556x278 um, stage 1 = 320x480, route vr_trnfm
+                           Doom Generic 0.1
+Z_Init: Init zone memory allocation daemon. 
+zone memory: 0x11812e0, 600000 allocated for zone
+Using . for configuration and saves
+V_Init: allocate screens.
+M_LoadDefaults: Load system defaults.
+saving config in .default.cfg
+-iwad not specified, trying a few iwad names
+Trying IWAD file:doom2.wad
+Trying IWAD file:plutonia.wad
+Trying IWAD file:tnt.wad
+Trying IWAD file:doom.wad
+Trying IWAD file:doom1.wad
+W_Init: Init WADfiles.
+ adding doom1.wad
+WARN : have to clip 5 chars from '.savegame' extension!
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/aspect/hd/hd-tt306/.savegame'
+Using ./.savegame/ for savegames
+===========================================================================
+                            DOOM Shareware
+===========================================================================
+ Doom Generic is free software, covered by the GNU General Public
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+ copies under certain conditions. See the source for more information.
+===========================================================================
+I_Init: Setting up machine state.
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon - ...................
+P_Init: Init Playloop state.
+S_Init: Setting up sound.
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+Emulating the behavior of the 'Doom 1.9' executable.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+DOOM: DOOM Shareware
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+I_InitGraphics: Auto-scaling factor: 1
+DOOM: picture 320x480 at (0,0) VERIFIED via vr_trnfm+scale+vro_cpyfm
+DOOM: per frame, vr_trnfm, stage 1 320x480: c2p 308750 us, vr_trnfm 9054 us, scale 12820 us, vro_cpyfm 15461 us, sum 346085 us
+DOOM x1: 14 frames/5360 ms = 2.61 fps, 382.85 ms/frame, 1 palDOOM x1: 14 frames/5320 ms = 2.63 fps, 380.00 ms/frame, 0 palDOOM x1: 12 frames/5180 ms = 2.31 fps, 431.66 ms/frame, 1 palDOOM x1: 10 frames/5155 ms = 1.93 fps, 515.50 ms/frame, 0 palDOOM x1: 10 frames/5355 ms = 1.86 fps, 535.50 ms/frame, 3 palDOOM x1: 9 frames/5015 ms = 1.79 fps, 557.22 ms/frame, 3 palDOOM x1: 10 frames/5410 ms = 1.84 fps, 541.00 ms/frame, 0 palDOOM x1: 9 frames/5110 ms = 1.76 fps, 567.77 ms/frame, 2 palDOOM x1: 10 frames/5465 ms = 1.82 fps, 546.50 ms/frame, 2 palDOOM x1: 10 frames/5345 ms = 1.87 fps, 534.50 ms/frame, 0 palDOOM x1: 10 frames/5360 ms = 1.86 fps, 536.00 ms/frame, 0 palDOOM x1: 10 frames/5490 ms = 1.82 fps, 549.00 ms/frame, 0 palDOOM x1: 10 frames/5375 ms = 1.86 fps, 537.50 ms/frame, 0 palDOOM x1: 10 frames/5315 ms = 1.88 fps, 531.50 ms/frame, 2 palDOOM x1: 10 frames/5290 ms = 1.89 fps, 529.00 ms/frame, 2 palDOOM x1: 10 frames/5480 ms = 1.82 fps, 548.00 ms/frame, 2 palWARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-04-doom-aspect/hatari/tt306/shots/grab0002.png
+DOOM x1: 10 frames/5260 ms = 1.90 fps, 526.00 ms/frame, 0 palDOOM x1: 9 frames/5040 ms = 1.78 fps, 560.00 ms/frame, 2 palDOOM x1: 9 frames/5095 ms = 1.76 fps, 566.11 ms/frame, 0 palDOOM x1: 10 frames/5355 ms = 1.86 fps, 535.50 ms/frame, 0 palDOOM x1: 10 frames/5400 ms = 1.85 fps, 540.00 ms/frame, 0 palDOOM x1: 10 frames/5255 ms = 1.90 fps, 525.50 ms/frame, 0 palDOOM x1: 10 frames/5445 ms = 1.83 fps, 544.50 ms/frame, 0 palDOOM x1: 9 frames/5085 ms = 1.76 fps, 565.00 ms/frame, 2 palDOOM x1: 9 frames/5025 ms = 1.79 fps, 558.33 ms/frame, 6 palDOOM x1: 9 frames/5125 ms = 1.75 fps, 569.44 ms/frame, 1 palDOOM x1: 9 frames/5115 ms = 1.75 fps, 568.33 ms/frame, 0 palDOOM x1: 9 frames/5165 ms = 1.74 fps, 573.88 ms/frame, 2 palDOOM x1: 9 frames/5190 ms = 1.73 fps, 576.66 ms/frame, 0 palDOOM x1: 10 frames/5425 ms = 1.84 fps, 542.50 ms/frame, 0 palDOOM x1: 10 frames/5105 ms = 1.95 fps, 510.50 ms/frame, 0 palDOOM x1: 10 frames/5260 ms = 1.90 fps, 526.00 ms/frame, 1 palDOOM x1: 10 frames/5155 ms = 1.93 fps, 515.50 ms/frame, 1 palDOOM x1: 10 frames/5050 ms = 1.98 fps, 505.00 ms/frame, 5 palDOOM x1: 10 frames/5125 ms = 1.95 fps, 512.50 ms/frame, 3 palDOOM x1: 11 frames/5465 ms = 2.01 fps, 496.81 ms/frame, 2 palDOOM x1: 10 frames/5320 ms = 1.87 fps, 532.00 ms/frame, 2 palDOOM x1: 9 frames/5085 ms = 1.76 fps, 565.00 ms/frame, 4 palDOOM x1: 9 frames/5050 ms = 1.78 fps, 561.11 ms/frame, 0 palDOOM x1: 10 frames/5590 ms = 1.78 fps, 559.00 ms/frame, 1 palDOOM x1: 9 frames/5050 ms = 1.78 fps, 561.11 ms/frame, 2 palDOOM x1: 9 frames/5055 ms = 1.78 fps, 561.66 ms/frame, 3 palDOOM x1: 10 frames/5350 ms = 1.86 fps, 535.00 ms/frame, 2 palWARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-04-doom-aspect/hatari/tt306/shots/grab0003.png

@@ -1,0 +1,137 @@
+DOOM auf dem Atari TT (TT030 + 68882, mit oder ohne NOVA)
+===========================================================================
+Stand 2026-10-04, zweite Fassung (Schritt "nicht-quadratische Pixel",
+measurement-2026-10-04-doom-aspect). Was sich gegenueber der ersten Fassung
+(measurement-2026-10-03-doom-m68k/TT-ANLEITUNG.TXT) geaendert hat, steht in
+Abschnitt 0. Gebaut von sdk/apps/build-doom-m68k.sh, gleicher Quelltext
+wie DOOM.NAP auf NewTOS (PORT06). Diese Datei ist NUR fuer den Atari --
+auf NewTOS ist .PRG fuer den spaeteren m68k-Emulator reserviert, NewTOS
+bekommt DOOM.NAP.
+
+
+0. WAS SICH GEAENDERT HAT (gegenueber der Fassung vom 2026-10-03)
+---------------------------------------------------------------------------
+  * Das Bild FUELLT jetzt den Schirm in TT-niedrig: 320x480 statt 320x200
+    in der Mitte. Ein TT-niedrig-Pixel ist doppelt so breit wie hoch; DOOM
+    fragt die Pixelgroesse bei der VDI ab (v_opnvwk, Pixelbreite/-hoehe in
+    Mikrometern, TT-niedrig: 556 x 278) und wiederholt die Zeilen so, dass
+    das Bild 4:3 aussieht (200 Zeilen -> 480). Waagerecht bleibt es 1:1.
+    Vorher war das Bild flachgedrueckt (zu breit, zu niedrig).
+  * Die Startzeile nennt die Pixelgroesse und die Ausgabegroesse:
+      "... pixel 556x278 um, stage 1 = 320x480, route ..."
+  * -scale N heisst jetzt: N = waagerechter Faktor, die Zeilen ergeben sich
+    aus der Pixelform (Abschnitt 3). Auf einer NOVA in 256 Farben mit
+    EdDI-Treiber, der "packed pixels" meldet, darf DOOM jetzt auch
+    waagerecht vergroessern (wie bisher nur bei High/Truecolor).
+  * Neue DOOM.PRG (Groesse und Pruefsumme unten). Gefahren in Hatari (TT,
+    TOS 3.06 und EmuTOS, je mit/ohne VDI-Enhancer): 320x480, VERIFIED.
+    Bildrate in Hatari unveraendert ~1,8-1,9 Bilder/s (die Zeilen-
+    wiederholung kostet dort ~13 ms je Bild, vro_cpyfm fuer 2,4x so viele
+    Zeilen +9 ms unter TOS 3.06 bzw. +26 ms unter EmuTOS).
+
+
+1. WAS AUF DEN TT KOMMT
+---------------------------------------------------------------------------
+Beide Dateien in EINEN Ordner, z.B. C:\DOOM\ :
+
+  DOOM.PRG    aus sdk/apps/doom/build/DOOM.PRG
+              673 811 Bytes, sha256
+              b7aff3bfaf8babf47bdfb579f5da145994a27df3012f78d164b1cfa375b72934
+  DOOM1.WAD   aus Applications/doom-wad/doom1.wad (Shareware 1.9,
+              4 196 020 Bytes) -- Name in GROSSBUCHSTABEN, DOOM1.WAD
+
+DOOM sucht die WAD im aktuellen Verzeichnis; der Desktop setzt es beim
+Doppelklick auf den Ordner des Programms. DOOM kann beim Beenden eine
+Konfigurationsdatei (default.cfg) anlegen; das ist normal.
+
+Voraussetzungen:
+  * FPU: der TT hat seine 68882 immer. (Auf einem Falcon muss die 68882
+    gesteckt sein -- ohne FPU stuerzt das Programm ab.)
+  * Speicher: DOOMs Zone ist 6 MiB, dazu ~0,75 MiB Programm und einige
+    hundert KiB Puffer. Das Programm ist so markiert, dass TOS es ins
+    TT-RAM laedt und malloc() aus dem TT-RAM bedient (Programmkopf-Flags
+    0x7); ohne TT-RAM geht alles ins ST-RAM. Mit 4 MiB ST-RAM und ohne
+    TT-RAM reicht es NICHT fuer 6 MiB -> mit "-mb 2" starten (unten).
+  * Aufloesung: gefahren ist TT-niedrig (320x480, 256 Farben), Falcon
+    Truecolor und Falcon 640x480 256 Farben (alle in Hatari); andere
+    Aufloesungen (ST-niedrig 16 Farben, TT-mittel, Monochrom) sind NICHT
+    ausprobiert. Fuer den ersten Versuch bitte
+    TT-niedrig (256 Farben) bzw. auf der NOVA eine 256-Farben- oder
+    High/Truecolor-Aufloesung.
+
+
+2. STARTEN
+---------------------------------------------------------------------------
+Doppelklick auf DOOM.PRG. Ohne Parameter startet es mit "-mb 6".
+
+DOOM schreibt beim Start Textzeilen auf den Bildschirm (TOS-Konsole); sie
+stehen dort, waehrend die WAD geladen wird, und werden geloescht, sobald
+das erste Bild kommt. BITTE DIESEN STARTBILDSCHIRM FOTOGRAFIEREN (oder
+filmen) -- dort steht, welchen Weg DOOM nimmt:
+
+  mit EdDI (NOVA-Treiber, NVDI, VDI-Enhancer):
+    DOOM: EdDI: format ., clut ., .. planes, bits r/g/b ./././, bit order 0x.
+    DOOM: EdDI check: ...
+    DOOM: GEM platform up -- BxH, N planes, ..., pixel PxQ um,
+          stage S = AxB, route EdDI
+  ohne EdDI (TT-Shifter mit Atari-VDI):
+    DOOM: no EdDI cookie -- vr_trnfm route
+    DOOM: GEM platform up -- BxH, N planes, ..., pixel PxQ um,
+          stage S = AxB, route vr_trnfm
+  danach
+    zone memory: 0x........, 600000 allocated for zone
+      (Adresse >= 0x01000000 = TT-RAM, darunter = ST-RAM)
+
+Tasten: Pfeile laufen/drehen, Ctrl = feuern, Leertaste = benutzen/Tueren,
+Alternate = seitwaerts, Shift = rennen, Esc = Menue. Beenden: Esc ->
+"Quit Game" -> Y (oder F10 -> Y); danach kommt der Desktop zurueck.
+
+
+3. PARAMETER
+---------------------------------------------------------------------------
+  -mb N       Zonengroesse in MiB (Vorgabe 6). Weniger, wenn "Unable to
+              allocate N MiB of RAM for zone" kommt: z.B. -mb 2 auf einem
+              TT ohne TT-RAM.
+  -noeddi     EdDI ignorieren, den vr_trnfm-Weg erzwingen (Vergleich).
+  -scale N    Stufe 1..4 (0 = groesste passende, die Vorgabe). N ist
+              der WAAGERECHTE Faktor; die Zeilenzahl folgt aus der
+              Pixelform, die die VDI meldet, so dass das Bild 4:3 ist:
+              Zeilen = 240 * N * Pixelbreite / Pixelhoehe (mindestens 200).
+              Quadratische Pixel: 1 = 320x200 (DOOMs Bild unveraendert),
+              2 = 640x480, 3 = 960x720, 4 = 1280x960.
+              TT-niedrig (556x278): nur Stufe 1 passt, = 320x480.
+              Waagerecht > 1 nur, wo ein Pixel ein Stueck Bytes ist:
+              High/Truecolor (NOVA 15/16/24/32 Bit) und 256 Farben mit
+              EdDI "packed pixels" (NOVA 8 Bit chunky). In verschraenkten
+              Planes (TT-Shifter, EdDI format 0) und ohne EdDI bei 8 Planes
+              bleibt es 1:1 -- die Zeilen werden trotzdem wiederholt.
+              Passt eine Stufe nicht, nimmt DOOM die naechstkleinere.
+  dazu DOOMs eigene, z.B. -warp 1 1, -skill 1..5, -timedemo demo1.
+  Ein selbst angegebener Parameter gewinnt gegen die eingebauten.
+
+Wie die Parameter auf den TT kommen: aus einer Kommandozeilen-Shell
+("DOOM.PRG -mb 2"), oder ueber den Desktop, wenn er fuer das Programm den
+Typ "GEM mit Parametern" (GTP) anbietet bzw. nach Umbenennen in DOOM.GTP.
+NICHT geprueft auf TOS 3.06 -- in Hatari wurde nur der Start ohne
+Parameter gefahren. Wenn das nicht geht: ohne Parameter starten und das
+melden.
+
+
+4. WAS ICH ZURUECK BRAUCHE
+---------------------------------------------------------------------------
+  1. Startet es? Bis zum Bild / bis zur Demo? Bomben, Fehlermeldung
+     (Wortlaut oder Foto)?
+  2. Foto des Startbildschirms: die "DOOM: ..."-Zeilen (Weg EdDI oder
+     vr_trnfm, Aufloesung, Planes) und die "zone memory"-Zeile.
+  3. Mit welcher Grafik: TT-Shifter (welche Aufloesung) oder NOVA (welche
+     Karte, welcher Modus, welcher Treiber/NVDI)?
+  4. Bildrate gefuehlt: Bilder pro Sekunde geschaetzt (Demo laufen lassen,
+     ein paar Sekunden mitzaehlen). Zum Vergleich Hatari (emulierter TT,
+     nur Groessenordnung): ~1,8-1,9 Bilder/s in TT-niedrig mit EdDI.
+  4a. Fuellt das Bild in TT-niedrig den ganzen Schirm, und sehen runde
+     Dinge rund aus (z.B. die Saeulen, DOOMs Gesicht in der Statusleiste)?
+     Auf der NOVA: welche Stufe nennt die Startzeile ("stage S = AxB"),
+     und welche Pixelgroesse ("pixel PxQ um")?
+  5. Farben richtig (Vergleich mit einem DOOM-Foto)? Streifen, Versatz?
+  6. Beenden: kommt der Desktop sauber zurueck?
+  7. Speicher: wie viel ST-RAM / TT-RAM hat der TT?

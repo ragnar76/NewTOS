@@ -1,0 +1,14 @@
+a-640-default-t35.png        old (640, 480) bbox (0, 0, 640, 480)  new (640, 480) bbox (0, 0, 640, 480)  content differs
+a-640-default-t60.png        old (640, 480) bbox (0, 0, 640, 480)  new (640, 480) bbox (0, 0, 640, 480)  content differs
+b-1080-default-t35.png       old (1920, 1080) bbox (1, 60, 1600, 1020)  new (1920, 1080) bbox (1, 60, 1600, 1020)  content differs
+b-1080-default-t60.png       old (1920, 1080) bbox (1, 60, 1600, 1020)  new (1920, 1080) bbox (1, 60, 1600, 1020)  content differs
+c-1080-x1-t35.png            old (1920, 1080) bbox (1, 440, 1120, 752)  new (1920, 1080) bbox (1, 440, 1120, 752)  content differs
+c-1080-x1-t60.png            old (1920, 1080) bbox (1, 440, 1120, 752)  new (1920, 1080) bbox (1, 440, 1120, 752)  content differs
+d-1080-x2-t35.png            old (1920, 1080) bbox (1, 300, 1280, 780)  new (1920, 1080) bbox (1, 300, 1280, 780)  content differs
+d-1080-x2-t60.png            old (1920, 1080) bbox (1, 300, 1280, 780)  new (1920, 1080) bbox (1, 300, 1280, 780)  content differs
+e-640-noeddi-t35.png         old (640, 480) bbox (0, 0, 640, 480)  new (640, 480) bbox (0, 0, 640, 480)  content differs
+e-640-noeddi-t60.png         old (640, 480) bbox (0, 0, 640, 480)  new (640, 480) bbox (0, 0, 640, 480)  content differs
+f-1080-noeddi-x1-t35.png     old (1920, 1080) bbox (1, 440, 1120, 736)  new (1920, 1080) bbox (1, 440, 1120, 736)  content differs
+f-1080-noeddi-x1-t60.png     old (1920, 1080) bbox (1, 440, 1120, 736)  new (1920, 1080) bbox (1, 440, 1120, 736)  content differs
+g-1080-noeddi-x4-t35.png     old (1920, 1080) bbox (0, 60, 1600, 1020)  new (1920, 1080) bbox (1, 60, 1600, 1020)  content differs
+g-1080-noeddi-x4-t60.png     old (1920, 1080) bbox (0, 60, 1600, 1020)  new (1920, 1080) bbox (0, 60, 1600, 1020)  content differs

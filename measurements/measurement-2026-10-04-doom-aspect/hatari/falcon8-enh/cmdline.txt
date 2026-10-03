@@ -1,0 +1,1 @@
+hatari --machine falcon --monitor vga --memsize 14 --ttram 0 --tos /Volumes/Daten/Development/RuSTari/roms/etos512de.img --fpu 68882 (enhancer: enhancer)
