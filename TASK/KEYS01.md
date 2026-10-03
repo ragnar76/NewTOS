@@ -1,6 +1,6 @@
 # KEYS01 — Tastenwiederholung fehlt (Doom bleibt bei gehaltener Taste stehen)
 
-Status: **IMPLEMENTIERT (2026-10-03) — Tester- und Pi-Abnahme offen** · Prioritaet: **P1** (vor dem Termin) · Typ: Kernel / BIOS-Tastatur — aus [PORT06-KEYS-DIAGNOSIS](PORT06-KEYS-DIAGNOSIS.MD), Anwenderentscheidung 2026-10-02
+Status: **ERLEDIGT — Pi-Abnahme 2026-10-03** · Prioritaet: **P1** (vor dem Termin) · Typ: Kernel / BIOS-Tastatur — aus [PORT06-KEYS-DIAGNOSIS](PORT06-KEYS-DIAGNOSIS.MD), Anwenderentscheidung 2026-10-02
 
 Abhaengigkeiten: —
 

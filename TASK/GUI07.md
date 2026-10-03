@@ -1,6 +1,6 @@
 # GUI07 — `mem_to_screen` liest je Pixel den Bildschirm und rechnet um, auch wenn es das Ergebnis wegwirft
 
-Status: **ERLEDIGT** (2026-10-03, [Statusdatei](GUI07-STATUS-DONE.MD); vorgezogen, Pi-Zahl offen) · Prioritaet: **P2** · Typ: Durchsatz — aus [PORT07](PORT07.md), berichtet statt behoben
+Status: **ERLEDIGT** (2026-10-03, [Statusdatei](GUI07-STATUS-DONE.MD); vorgezogen; **Pi 2026-10-03: Doom x3/x4 40–75 fps** statt 7,6/4,2) · Prioritaet: **P2** · Typ: Durchsatz — aus [PORT07](PORT07.md), berichtet statt behoben
 
 Abhaengigkeiten: — · **nicht vor dem OFAM-Termin** (kein Kerneleingriff in den Zeichenpfad)
 
