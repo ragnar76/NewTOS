@@ -185,3 +185,33 @@ unter `kernel/`/`tos-api/`, doomgeneric unveraendert.
    (`-m68020-60`) und `<math.h>` aus `sdk/libm/include`.
 3. Auf Palettengeraeten (TT) faerbt sich der Rand mit Dooms Paletteneffekten
    mit (Stift 0 = Dooms Farbe 0) — auf beiden Wegen, schon vorher so.
+
+## Schritt „m68k-Doom ins SDK" 2026-10-04 — DOOM.PRG fuer den TT
+
+Basis `desk-rebuild`, HEAD `69af5e2` · Belege
+[measurements/measurement-2026-10-03-doom-m68k/](../measurements/measurement-2026-10-03-doom-m68k/RUNINFO.TXT)
+· Anleitung fuer den echten TT:
+[TT-ANLEITUNG.TXT](../measurements/measurement-2026-10-03-doom-m68k/TT-ANLEITUNG.TXT)
+
+Neu: `sdk/apps/build-doom-m68k.sh`. Plattformdatei, doomgeneric, `kernel/`,
+`tos-api/` unveraendert. `DOOM.PRG` ist nur fuer den Atari (auf NewTOS ist
+`.PRG` dem m68k-Emulator vorbehalten; NewTOS bekommt `DOOM.NAP`).
+
+| Punkt | Ergebnis |
+|---|---|
+| Skript | gleicher Pin-/Sauberkeits-Check und gleiches Manifest wie `build-doom.sh`, gleiche Plattformdatei; Objekte in `build/m68k/obj` (getrennt von `build/obj`); Ausgabe `sdk/apps/doom/build/DOOM.PRG`; `DOOM_STATS` Vorgabe 0 |
+| Bau | 81/81, 0 Warnungen (Plattformdatei `-Wall -Wextra`), LINK OK, 0 undefined; 672 211 B, sha256 `7ee3a660…`, reproduzierbar |
+| CPU/FPU | `-m68030 -m68881`: waehlt die hard-float-Multilib `m68020-60` (vom Skript geprueft, sonst Abbruch; `-msoft-float` haette stillschweigend dieselbe hard-float-libc gezogen). Gegen `-m68020-60`: dort wird `FixedMul` ein `__muldi3`-Aufruf, mit `-m68030` ein `muls.l` 32x32→64. Hatari TT: 1,911 gegen 1,847 fps (+3,5 %, Motorteil ~8 %). FPU Pflicht (libc + DOOMs float-Stellen) |
+| Programmkopf | 0x7 (fastload, TT-RAM laden, Malloc aus TT-RAM), ausdruecklich gesetzt. mintlibs malloc geht ueber GEMDOS `Malloc` (nicht `Mxalloc`), und `Malloc` gibt nur bei `PF_TTRAMMEM` TT-RAM (EmuTOS `bdos/umem.c`) |
+| Zone | `DOOM_ARGS` Vorgabe `"-mb","6"` = DOOMs eigener Wert (Vorgabe = Minimum, `i_system.c`); NewTOS' 2 MiB stammen aus dessen 4-MiB-TPA. Per `DOOM_ARGS` und `-mb N` ueberschreibbar |
+| Hatari | TT TOS 3.06 und TT EmuTOS 1.4 (4 MiB ST + 16 MiB TT-RAM), je mit/ohne VDI-Enhancer, plus Falcon-TC: Start, Weg EdDI (mit Enhancer) bzw. `vr_trnfm` (ohne), `VERIFIED`, Demo spielt. Zone in allen TT-Laeufen im TT-RAM (`0x114…`), auf dem Falcon ohne TT-RAM im ST-RAM |
+| NewTOS | `build-doom.sh` linkt, `DOOM.NAP` bytegleich (`d0cc1bb0…`) — nichts Gemeinsames geaendert |
+
+### Offen nach diesem Schritt
+
+1. Echter TT / NOVA nicht gefahren — Anleitung liegt bereit.
+2. Start mit Parametern (`-mb`, `-noeddi`, `-scale`) auf dem TT-Desktop
+   ungeprueft (Hatari `--auto` reicht keine Kommandozeile durch).
+3. Hatari TT-niedrig ~1,9 fps; 306 ms je Bild sind der EdDI-Aufbau ins
+   verschraenkte 8-Plane-Format (Plattformcode). Bestaetigt der echte TT
+   das, ist dort der Hebel, nicht beim Compiler.

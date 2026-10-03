@@ -1,0 +1,68 @@
+INFO : Hatari v2.6.1, compiled on:  Aug 15 2025, 14:15:19
+INFO : IPF : capsimage library version release=5 revision=1
+INFO : GEMDOS HDD emulation, C: <-> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat/hd-tt306.
+WARN : Bus Error writing at address $41fffe, PC=$e00170 addr_e3=e00170 op_e3=3302
+INFO : OS clock ticks / second: 100
+WARN : Bus Error writing at address $ffd000e0, PC=$e001d0 addr_e3=e001d0 op_e3=33fc
+WARN : Bus Error writing at address $201fffe, PC=$e001f8 addr_e3=e001f8 op_e3=3302
+Memory Test:
+ST RAM                                 --------------------------------  4096 KB
+TT RAM                                 -------------------------------- 16384 KBWARN : xconout character '' has unknown high byte bits: 0x6100.
+
+Memory Test Complete.
+                                                                                                                                                               WARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-03-doom-m68k/hatari/tt306-enh/shots/grab0001.png
+
+       VDI  ENHANCER V1.00        
+C 1992-93 by Sven & Wilfried Behne
+
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat/hd-tt306/etc'
+DOOM: EdDI: format 0, clut 1, 8 planes, bits r/g/b 4/4/4, bit order 0x0
+DOOM: 8 planes -- the device form is not packed truecolour, no scaling (stage 1)
+DOOM: EdDI check: 256 pens read back as listed
+DOOM: GEM platform up -- 320x480, 8 planes, lookup table yes, stage 1 = 320x200, route EdDI
+                           Doom Generic 0.1
+Z_Init: Init zone memory allocation daemon. 
+zone memory: 0x114b688, 600000 allocated for zone
+Using . for configuration and saves
+V_Init: allocate screens.
+M_LoadDefaults: Load system defaults.
+saving config in .default.cfg
+-iwad not specified, trying a few iwad names
+Trying IWAD file:doom2.wad
+Trying IWAD file:plutonia.wad
+Trying IWAD file:tnt.wad
+Trying IWAD file:doom.wad
+Trying IWAD file:doom1.wad
+W_Init: Init WADfiles.
+ adding doom1.wad
+WARN : have to clip 5 chars from '.savegame' extension!
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat/hd-tt306/.savegame'
+Using ./.savegame/ for savegames
+===========================================================================
+                            DOOM Shareware
+===========================================================================
+ Doom Generic is free software, covered by the GNU General Public
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+ copies under certain conditions. See the source for more information.
+===========================================================================
+I_Init: Setting up machine state.
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon - ...................
+P_Init: Init Playloop state.
+S_Init: Setting up sound.
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+Emulating the behavior of the 'Doom 1.9' executable.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+DOOM: DOOM Shareware
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+I_InitGraphics: Auto-scaling factor: 1
+DOOM: picture 320x200 at (0,140) VERIFIED via EdDI+vro_cpyfm
+WARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-03-doom-m68k/hatari/tt306-enh/shots/grab0002.png
+WARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-03-doom-m68k/hatari/tt306-enh/shots/grab0003.png
+WARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-03-doom-m68k/hatari/tt306-enh/shots/grab0004.png

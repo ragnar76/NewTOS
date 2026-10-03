@@ -1,0 +1,162 @@
+measurement-2026-10-03-doom-m68k
+  PORT06, Schritt "m68k-Doom ins SDK" -- DOOM.PRG fuer den TT
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD 69af5e2. Kein Kommit, keine Karte, keine
+Pi, kein TT. Nichts unter kernel/ oder tos-api/ geaendert, kein Rust.
+doomgeneric unveraendert (Pin dcb7a8db..., Skript meldet "clean").
+Neu im Baum: sdk/apps/build-doom-m68k.sh, dieser Ordner, ein Abschnitt in
+TASK/PORT06-STATUS-UNFINISHED.MD. sdk/apps/doom/doomgeneric_gem.c NICHT
+geaendert (sha256 9ed9e054...).
+
+Werkzeuge: /opt/cross-mint m68k-atari-mint-gcc 7.5.0 (MiNT 20230908),
+sdk/gemlib/gemlib-m68k.a (vorhanden, nicht neu gebaut), Hatari 2.6.1
+(/Volumes/Daten/hatari-2.6.1_macos), ROMs
+/Volumes/Daten/Development/RuSTari/roms/tos306de.rom (echtes TT-TOS 3.06)
+und etos512de.img (EmuTOS 1.4), WAD Applications/doom-wad/doom1.wad.
+Scratch: Sitzungs-Scratchpad ($CLAUDE_JOB_DIR war leer), nie /tmp.
+
+
+0. ERGEBNIS VORWEG
+---------------------------------------------------------------------------
+* sdk/apps/build-doom-m68k.sh: 81/81 uebersetzt, 0 Warnungen (Plattform-
+  datei -Wall -Wextra sauber), LINK OK, 0 undefinierte Symbole.
+  DOOM.PRG 672 211 Bytes, sha256
+  7ee3a6604cdc13e18b980a516e9e830919a235957ea39b270efdea806159a931
+  (zweimal gebaut, bytegleich), Programmkopf-Flags 0x7.
+* Ausgelieferte DOOM.PRG in Hatari, 5 Laeufe, alle: Start, Weg wie
+  erwartet, Rueckleseabgleich VERIFIED, Demo spielt (Fotos 2..4 zeigen
+  Spielszenen mit wechselnden HUD-Werten; screendumps/contact-sheet-5-runs.png):
+
+  Lauf        Maschine / TOS                  Enhancer  Weg        Zone
+  tt306-enh   TT, TOS 3.06, 4+16 MiB TT-RAM   ja        EdDI       0x114b688 TT-RAM
+  tt306       TT, TOS 3.06, 4+16 MiB TT-RAM   nein      vr_trnfm   0x115b1c8 TT-RAM
+  ttemu-enh   TT, EmuTOS 1.4, 4+16            ja        EdDI       0x1145058 TT-RAM
+  ttemu       TT, EmuTOS 1.4, 4+16            nein      vr_trnfm   0x1154b98 TT-RAM
+  falcon-enh  Falcon, EmuTOS 1.4, 14 MiB ST   ja        EdDI x2    0x216d00  ST-RAM
+
+  TT-Zeilen (alle vier TT-Laeufe gleich bis auf den Weg):
+    "320x480, 8 planes, lookup table yes, stage 1 = 320x200, route EdDI"
+      bzw. "no EdDI cookie -- vr_trnfm route"
+    "EdDI: format 0, clut 1, 8 planes, bits r/g/b 4/4/4" (Enhancer),
+    "EdDI check: 256 pens read back as listed",
+    "picture 320x200 at (0,140) VERIFIED via EdDI+vro_cpyfm" bzw.
+    "... via vr_trnfm+vro_cpyfm".
+  Falcon: "EdDI: format 2, clut 2, 16 planes, 5/5/5", "256 of 256 test
+    colours exact", "picture 640x480 at (0,0) VERIFIED via
+    EdDI+scale+vro_cpyfm".
+  "zone memory ... 600000" = 6 MiB; >= 0x01000000 ist TT-RAM: der Kopf-
+  Flag PF_TTRAMMEM wirkt auf TOS 3.06 und EmuTOS, ohne TT-RAM (Falcon)
+  faellt Malloc aufs ST-RAM zurueck.
+* NewTOS-Bau unberuehrt: sdk/apps/build-doom.sh in ein Scratch-Verzeichnis
+  gebaut, 81/81, LINK OK, 0 undefined; DOOM.NAP sha256
+  d0cc1bb0f8dbe2feaffb9fd3310ef982e8ac8b9a3f6f15ec57f206679c728fe4 =
+  bytegleich (cmp) mit sdk/apps/doom/build/DOOM.NAP vor diesem Schritt.
+  Erwartet, denn nichts Gemeinsames wurde geaendert. (Die eine
+  Compilerwarnung eines Upstream-Files im NAP-Bau ist der Stand von
+  HEAD, nicht neu.) Der m68k-Bau schreibt nach build/m68k/obj, getrennt
+  von build/obj, das build-doom.sh bei jedem Lauf leert.
+
+
+1. FLAGS UND IHRE GRUENDE (Einzelheiten im Kopf des Skripts)
+---------------------------------------------------------------------------
+CPU -m68030 -m68881:
+  * Multilib: -m68030 waehlt m68020-60 (gcc -print-multi-directory) --
+    die einzige 020+-libc/libgcc der sys-root, hard float. Das Skript
+    prueft Multilib und __HAVE_68881__ und bricht sonst ab. -msoft-float
+    waehlt DIESELBE hard-float-libc (geprueft) -> stiller ABI-Bruch, daher
+    -m68881 ausgeschrieben. -m68882 gibt es in gcc nicht.
+  * -m68030 statt -m68020-60: FixedMul (m_fixed.c, int64-Produkt >> 16)
+    wird mit -m68020-60 ein Aufruf von __muldi3 (der 060 hat kein
+    32x32->64 MULS.L in Hardware), mit -m68030 ein einziges
+    "muls.l 8(%sp),%d0:%d1" (method/m_fixed-gcc-S-*.s; im gelinkten
+    DOOM.PRG per objdump bestaetigt). TT und Falcon sind beide 030.
+  * Messung (Hatari, TT TOS 3.06 + Enhancer, DOOM_STATS=5-Bauten,
+    method/build-doom-m68k-cpuvariant.sh, gleiche 60 5-s-Fenster der
+    Attract-Demo, hatari/stats5-tt306-enh-*):
+        -m68030 -m68881   601 Bilder / 314,5 s = 1,911 fps, 523 ms/Bild
+        -m68020-60        583 Bilder / 315,6 s = 1,847 fps, 541 ms/Bild
+    +3,5 % gesamt. Kostenprobe beider Bauten: EdDI-Aufbau 306 ms,
+    vro_cpyfm 6,6 ms je Bild (Plattformcode, CPU-unabhaengig) -- der
+    Motorteil (~217 gegen ~235 ms) gewinnt ~8 %. Hatari-Zeiten nur als
+    Groessenordnung.
+  * FPU noetig: hard-float-libc (printf/scanf/strtod) und DOOMs wenige
+    float-Stellen (m_config.c float-Konfigwerte, g_game.c timedemo-fps,
+    v_video.c V_DrawMouseSpeedBox) enthalten FPU-Befehle (objdump je
+    Objekt). Jeder TT hat die 68882 (Anwender bestaetigt).
+
+Programmkopf 0x7 = --mfastload --mfastram --mfastalloc:
+  mintlibs malloc holt per GEMDOS Malloc() (unix/sbrk.c __sbrk; _split_mem
+  aus mintlib/crtinit.c beim Standard-_stksize), NICHT per Mxalloc. Malloc
+  liefert auf TOS 3/4 nur bei PF_TTRAMMEM TT-RAM (EmuTOS bdos/umem.c
+  xmalloc: MX_PREFTTRAM sonst MX_STRAM); PF_TTRAMLOAD laedt das Programm
+  ins TT-RAM (bdos/proc.c); PF_FASTLOAD loescht nur die BSS statt der
+  ganzen TPA (bdos/kpgmld.c). 0x7 schreibt der klassische cross-mint-ld
+  auch ohne Angabe (geprueft) -- also hatte schon die Messhilfe vom
+  2026-10-02 diesen Kopf; jetzt steht er ausdruecklich im Skript.
+
+Zone DOOM_ARGS '"-mb","6"':
+  NewTOS' "-mb 2" stammt aus der 4-MiB-TPA; auf dem TT gilt DOOMs eigener
+  Wert, Vorgabe = Minimum = 6 MiB (doomgeneric i_system.c
+  DEFAULT_RAM/MIN_RAM). Ausdruecklich uebergeben, weil die Plattform
+  DOOM_GEM_ARGS an jeden Start haengt und eine leere Liste ein leerer
+  Array-Initialisierer waere; Wirkung = kein -mb. Ueberschreibbar per
+  DOOM_ARGS beim Bau und per "-mb N" beim Start.
+
+DOOM_STATS Vorgabe 0 (wie build-doom.sh).
+
+
+2. LAEUFE (method/run-hatari-doom.sh)
+---------------------------------------------------------------------------
+Hatari headless (SDL dummy), --fast-forward on, --fpu 68882, --conout 2
+(DOOMs Konsole in hatari.log), GEMDOS-Laufwerk C: = frisches Scratch-
+Verzeichnis mit DOOM.PRG + DOOM1.WAD (+ AUTO\ENHANCER.PRG = VDI-Enhancer
+1.00), Start per --auto C:\DOOM.PRG, Fotos per --cmd-fifo bei 30/60/90/
+120 s Wanduhr. Kommandozeile je Lauf in hatari/<lauf>/cmdline.txt.
+TT: --machine tt --tos-res ttlow --monitor vga --memsize 4 --ttram 16
+--addr24 off. Foto 1 der TOS-3.06-Laeufe zeigt den Speichertest
+(4096 KB ST, 16384 KB TT).
+
+Ablauf-Anmerkung: Hatari 2.6.1 headless haengt nach SIGTERM (0 % CPU).
+Die Laeufe tt306-enh und tt306 liefen mit der ersten Skriptfassung
+(kill), endeten erst ueber --run-vbls; das Skript schickt seither
+"hatari-shortcut quit" ueber die FIFO und danach SIGKILL. Auf die
+Ergebnisse ohne Einfluss (Fotos und Log vorher geschrieben).
+
+Die "Bus Error"-WARN-Zeilen in den Logs sind die Hardware-Sonden von
+TOS/EmuTOS beim Booten (vor DOOM).
+
+Auffaellig, nicht untersucht: die Fotos mit Goldstich (tt306 Foto 3,
+ttemu-enh Foto 1 u.a.) sind DOOMs Aufhebe-Paletteneffekt; auf
+Palettengeraeten faerbt sich der Rand mit (bekannter offener Punkt 3 des
+EdDI-Schritts).
+
+
+3. METHODE / DATEIEN
+---------------------------------------------------------------------------
+  method/build-doom-m68k.log          ausgelieferter Bau (Endstand)
+  method/build-doom-nap.log           NewTOS-Bau zur Gegenprobe (Scratch)
+  method/build-doom-m68k-cpuvariant.sh  Messkopie des Skripts mit
+                                      CPU_OVERRIDE (Code-Teil = Skript zum
+                                      Zeitpunkt der Messung; die Kommentare
+                                      des ausgelieferten Skripts wurden
+                                      danach noch praezisiert)
+  method/build-stats5-m030.log, build-stats5-m02060.log
+  method/m_fixed-gcc-S-m68030-m68881.s, m_fixed-gcc-S-m68020-60.s
+  method/run-hatari-doom.sh
+  hatari/<lauf>/hatari.log, cmdline.txt, shots/grab000N.png
+  screendumps/contact-sheet-5-runs.png  Zeilen = tt306-enh, tt306,
+                                      ttemu-enh, ttemu, falcon-enh;
+                                      Spalten = Foto 1..4
+  TT-ANLEITUNG.TXT                    fuer den echten TT
+
+
+4. OFFEN
+---------------------------------------------------------------------------
+1. Echter TT / NOVA: nicht gefahren (TT-ANLEITUNG.TXT).
+2. Start mit Parametern auf dem TT (GTP/Shell) nicht geprueft; --auto
+   reicht keine Kommandozeile durch.
+3. ~1,9 fps im emulierten TT-niedrig; davon 306 ms je Bild der EdDI-
+   Aufbau ins verschraenkte 8-Plane-Format (Plattformcode). Wenn der echte
+   TT das bestaetigt, ist dieser Schritt der Hebel, nicht der Compiler.
+4. Andere TT-Aufloesungen (ST-niedrig 16 Farben, Mono) nicht gefahren.

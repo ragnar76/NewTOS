@@ -1,0 +1,66 @@
+INFO : Hatari v2.6.1, compiled on:  Aug 15 2025, 14:15:19
+INFO : IPF : capsimage library version release=5 revision=1
+INFO : GEMDOS HDD emulation, C: <-> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat/hd-tt306.
+WARN : Bus Error writing at address $41fffe, PC=$e00170 addr_e3=e00170 op_e3=3302
+INFO : OS clock ticks / second: 100
+WARN : Bus Error writing at address $ffd000e0, PC=$e001d0 addr_e3=e001d0 op_e3=33fc
+WARN : Bus Error writing at address $201fffe, PC=$e001f8 addr_e3=e001f8 op_e3=3302
+Memory Test:
+ST RAM                                 --------------------------------  4096 KB
+TT RAM                                 -------------------------------- 16384 KBWARN : xconout character '' has unknown high byte bits: 0x6100.
+
+Memory Test Complete.
+                                                                                                                                                               
+       VDI  ENHANCER V1.00        
+C 1992-93 by Sven & Wilfried Behne
+
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat/hd-tt306/etc'
+DOOM: EdDI: format 0, clut 1, 8 planes, bits r/g/b 4/4/4, bit order 0x0
+DOOM: 8 planes -- the device form is not packed truecolour, no scaling (stage 1)
+DOOM: EdDI check: 256 pens read back as listed
+DOOM: GEM platform up -- 320x480, 8 planes, lookup table yes, stage 1 = 320x200, route EdDI
+                           Doom Generic 0.1
+Z_Init: Init zone memory allocation daemon. 
+zone memory: 0x114bb7c, 600000 allocated for zone
+Using . for configuration and saves
+V_Init: allocate screens.
+M_LoadDefaults: Load system defaults.
+saving config in .default.cfg
+-iwad not specified, trying a few iwad names
+Trying IWAD file:doom2.wad
+Trying IWAD file:plutonia.wad
+Trying IWAD file:tnt.wad
+Trying IWAD file:doom.wad
+Trying IWAD file:doom1.wad
+W_Init: Init WADfiles.
+ adding doom1.wad
+WARN : have to clip 5 chars from '.savegame' extension!
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/hat/hd-tt306/.savegame'
+Using ./.savegame/ for savegames
+===========================================================================
+                            DOOM Shareware
+===========================================================================
+ Doom Generic is free software, covered by the GNU General Public
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+ copies under certain conditions. See the source for more information.
+===========================================================================
+I_Init: Setting up machine state.
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon - ...................
+P_Init: Init Playloop state.
+S_Init: Setting up sound.
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+Emulating the behavior of the 'Doom 1.9' executable.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+DOOM: DOOM Shareware
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+I_InitGraphics: Auto-scaling factor: 1
+DOOM: picture 320x200 at (0,140) VERIFIED via EdDI+vro_cpyfm
+DOOM: per frame, EdDI, stage 1 320x200: build 306250 us, vr_trnfm 0 us, scale 0 us, vro_cpyfm 6578 us, sum 312828 us
+DOOM x1 EdDI: 15 frames/5240 ms = 2.86 fps, 349.33 ms/frame, 1 palDOOM x1 EdDI: 15 frames/5200 ms = 2.88 fps, 346.66 ms/frame, 0 palDOOM x1 EdDI: 12 frames/5075 ms = 2.36 fps, 422.91 ms/frame, 1 palDOOM x1 EdDI: 11 frames/5415 ms = 2.03 fps, 492.27 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5235 ms = 1.91 fps, 523.50 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5195 ms = 1.92 fps, 519.50 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5230 ms = 1.91 fps, 523.00 ms/frame, 0 palDOOM x1 EdDI: 9 frames/5010 ms = 1.79 fps, 556.66 ms/frame, 3 palDOOM x1 EdDI: 10 frames/5090 ms = 1.96 fps, 509.00 ms/frame, 1 palDOOM x1 EdDI: 10 frames/5130 ms = 1.94 fps, 513.00 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5175 ms = 1.93 fps, 517.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5205 ms = 1.92 fps, 520.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5145 ms = 1.94 fps, 514.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5035 ms = 1.98 fps, 503.50 ms/frame, 4 palDOOM x1 EdDI: 10 frames/5240 ms = 1.90 fps, 524.00 ms/frame, 1 palDOOM x1 EdDI: 10 frames/5135 ms = 1.94 fps, 513.50 ms/frame, 1 palDOOM x1 EdDI: 10 frames/5175 ms = 1.93 fps, 517.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5415 ms = 1.84 fps, 541.50 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5315 ms = 1.88 fps, 531.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5130 ms = 1.94 fps, 513.00 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5200 ms = 1.92 fps, 520.00 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5090 ms = 1.96 fps, 509.00 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5465 ms = 1.82 fps, 546.50 ms/frame, 1 palDOOM x1 EdDI: 10 frames/5375 ms = 1.86 fps, 537.50 ms/frame, 5 palDOOM x1 EdDI: 10 frames/5510 ms = 1.81 fps, 551.00 ms/frame, 3 palDOOM x1 EdDI: 10 frames/5495 ms = 1.81 fps, 549.50 ms/frame, 0 palDOOM x1 EdDI: 9 frames/5005 ms = 1.79 fps, 556.11 ms/frame, 2 palDOOM x1 EdDI: 9 frames/5030 ms = 1.78 fps, 558.88 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5220 ms = 1.91 fps, 522.00 ms/frame, 0 palDOOM x1 EdDI: 11 frames/5420 ms = 2.02 fps, 492.72 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5045 ms = 1.98 fps, 504.50 ms/frame, 2 palDOOM x1 EdDI: 11 frames/5450 ms = 2.01 fps, 495.45 ms/frame, 0 palDOOM x1 EdDI: 11 frames/5375 ms = 2.04 fps, 488.63 ms/frame, 6 palDOOM x1 EdDI: 11 frames/5375 ms = 2.04 fps, 488.63 ms/frame, 4 palDOOM x1 EdDI: 11 frames/5365 ms = 2.05 fps, 487.72 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5225 ms = 1.91 fps, 522.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5355 ms = 1.86 fps, 535.50 ms/frame, 4 palDOOM x1 EdDI: 10 frames/5340 ms = 1.87 fps, 534.00 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5390 ms = 1.85 fps, 539.00 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5385 ms = 1.85 fps, 538.50 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5210 ms = 1.91 fps, 521.00 ms/frame, 4 palDOOM x1 EdDI: 10 frames/5340 ms = 1.87 fps, 534.00 ms/frame, 4 palDOOM x1 EdDI: 10 frames/5085 ms = 1.96 fps, 508.50 ms/frame, 5 palDOOM x1 EdDI: 10 frames/5160 ms = 1.93 fps, 516.00 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5150 ms = 1.94 fps, 515.00 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5155 ms = 1.93 fps, 515.50 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5240 ms = 1.90 fps, 524.00 ms/frame, 3 palDOOM x1 EdDI: 10 frames/5080 ms = 1.96 fps, 508.00 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5085 ms = 1.96 fps, 508.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5410 ms = 1.84 fps, 541.00 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5390 ms = 1.85 fps, 539.00 ms/frame, 0 palDOOM x1 EdDI: 9 frames/5045 ms = 1.78 fps, 560.55 ms/frame, 0 palDOOM x1 EdDI: 9 frames/5045 ms = 1.78 fps, 560.55 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5495 ms = 1.81 fps, 549.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5480 ms = 1.82 fps, 548.00 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5005 ms = 1.99 fps, 500.50 ms/frame, 3 palDOOM x1 EdDI: 10 frames/5235 ms = 1.91 fps, 523.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5330 ms = 1.87 fps, 533.00 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5250 ms = 1.90 fps, 525.00 ms/frame, 4 palDOOM x1 EdDI: 10 frames/5175 ms = 1.93 fps, 517.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5255 ms = 1.90 fps, 525.50 ms/frame, 2 palDOOM x1 EdDI: 10 frames/5175 ms = 1.93 fps, 517.50 ms/frame, 0 palDOOM x1 EdDI: 10 frames/5270 ms = 1.89 fps, 527.00 ms/frame, 0 palWARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-03-doom-m68k/hatari/stats5-tt306-enh-m030/shots/grab0001.png
