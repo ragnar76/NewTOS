@@ -49,9 +49,11 @@
 #   DOOM_STATS=<seconds>       compile in a one-time per-step cost probe (on
 #                              the first frame, ~4 s) and a frame-time report
 #                              on the console every <seconds> (0 = off).
-#                              Default 5: the first runs on the real Pi are
-#                              meant to report the frame time (PORT06
-#                              scaling step, 2026-10-02).
+#                              Default 0 since 2026-10-03: the Pi run gave its
+#                              numbers (40-75 fps at x3/x4) and the shipped
+#                              build must start without the probe pause or the
+#                              console line. Measurement runs pass e.g.
+#                              DOOM_STATS=5.
 #   OUT=<path>                 output file (default sdk/apps/doom/build/DOOM.NAP)
 #
 # Usage:  sdk/apps/build-doom.sh
@@ -72,7 +74,7 @@ BUILD="${BUILD:-$PORT/build}"
 OBJ="$BUILD/obj"
 OUT="${OUT:-$BUILD/DOOM.NAP}"
 DOOM_ARGS="${DOOM_ARGS:-\"-mb\",\"2\"}"
-DOOM_STATS="${DOOM_STATS:-5}"
+DOOM_STATS="${DOOM_STATS:-0}"
 mkdir -p "$OBJ"
 
 [ -d "$DGSRC" ] || { echo "error: doomgeneric source missing ($DGSRC)" >&2; exit 1; }
