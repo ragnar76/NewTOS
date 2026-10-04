@@ -12,6 +12,7 @@
 pub mod block;
 pub mod bpb;
 pub mod chardev;
+pub mod crash;
 pub mod drive;
 pub mod getmpb;
 pub mod tick;

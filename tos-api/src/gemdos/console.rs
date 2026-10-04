@@ -510,11 +510,12 @@ pub fn cconrs(args: &TrapArgs) -> Long {
 /// each byte — a pending Ctrl-C stops the write early (the rest of the
 /// string is not emitted) and defers `Pterm(-32)`.
 ///
-/// # Safety in trap context
+/// # User pointer
 ///
-/// The pointer comes from the trapping caller. PHASE-02 does not yet
-/// have user/kernel separation, so we trust the pointer. PHASE-06
-/// will add a bounds check against the calling process's TPA.
+/// `s` is read with fault-safe unprivileged loads ([`crate::uaccess`]); a
+/// pointer the caller cannot read ends the call and — through the kernel's
+/// syscall tail — the caller (EmuTOS: bus error in the trap → `dopanic` →
+/// `Pterm(-1)`, `docs/api/bios/_exception-crash.md`).
 pub fn cconws(args: &TrapArgs) -> Long {
     let mut p = args.arg_ptr(0);
     if p.is_null() {
@@ -526,23 +527,16 @@ pub fn cconws(args: &TrapArgs) -> Long {
     // 64 KiB matches TOS's effective practical limit (Cconrs buffers).
     const MAX: Long = 65_535;
     while count < MAX {
-        // SAFETY: pointer validated above; see PHASE-06 note for the
-        // future kernel/user boundary check. We use the
-        // unprivileged-load `ldtrb` so the access is checked as if
-        // EL0 made it — this both honours the user-page permissions
-        // and bypasses any PSTATE.PAN restriction the runtime
-        // applies to from-kernel user-VA reads (cortex-a72 doesn't
-        // implement PAN but the QEMU tcg path appears to enforce
-        // similar semantics, observed during Phase-06-D3 bring-up).
-        let b: u8;
-        unsafe {
-            core::arch::asm!(
-                "ldtrb {b:w}, [{p}]",
-                p = in(reg) p,
-                b = out(reg) b,
-                options(nostack, preserves_flags, readonly),
-            );
-        }
+        // `s` is a *user* pointer: read through `uaccess` (unprivileged
+        // `ldtrb`, permission-checked as EL0 — the access the trap contract
+        // calls for). A bad pointer no longer halts the machine (ARCH03 0c):
+        // the read faults recoverably, the bytes before it are already
+        // written (as on EmuTOS, whose `prt_line` takes the bus error in the
+        // middle of the string), and the syscall tail terminates the caller
+        // with the crash report — the count returned here never reaches it.
+        let Ok(b) = crate::uaccess::get_user_u8(p as u64) else {
+            break;
+        };
         if b == 0 {
             break;
         }

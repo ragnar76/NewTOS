@@ -1,0 +1,122 @@
+measurement-2026-10-05-arch03-0c -- ARCH03 stage 0c: a crashing program is
+terminated like on EmuTOS (crash report + key + Pterm(-1)); fault-safe kernel
+access to user pointers (uaccess, ldtr/sttr + PC-keyed fixup table)
+
+Date 2026-10-05, branch arch03, HEAD b0365eb (tree clean at start), 0c change
+uncommitted: method/arch03-0c-change.diff (git diff + the six new files).
+QEMU 11.0.2, host macOS (no `timeout`; runs are ended by method/drive.py).
+
+CODE UNDER TEST (shared tree)
+  tos-api/src/uaccess.rs           new: leaf routines ldtr*/sttr* + fixup table,
+                                   fault record, copy_{from,to}_user, get/put_user_u{8,16,32,64},
+                                   read_user_cstr
+  tos-api/src/bios/crash.rs        new: ESR -> EmuTOS exception message, report text
+  kernel/src/arch/aarch64/crash.rs new: report to console (screen + serial), key wait
+  kernel/src/arch/aarch64/exceptions.rs
+                                   EC 0x25 at a fixup PC -> record + resume at fixup;
+                                   EL0 sync exception -> report, key, Pterm(-1);
+                                   syscall tail kills the EL0 caller after a uaccess
+                                   fault; Pexec path/tail/env read via uaccess
+  tos-api/src/gemdos/console.rs    Cconws reads its string via uaccess
+  tos-api/src/i18n.rs              Sys::PressAnyKey
+  docs/api/bios/_exception-crash.md  spec (EmuTOS dopanic / kill_program, mapping)
+  sdk/examples/crchild.c, crashtst.c test programs
+
+TEST PROGRAMS (sdk/build.sh)
+  CRCHILD.NAP  sha256 ea5dc0671ee31c1283f34174dd279a063cd6c80875def88234997613fc5784a4
+    tail[1] selects: w = store to 0xDEAD0000 (default, no tail), u = UDF #0,
+    x = jump into Physbase() (EL0 non-executable), a = branch to text+2,
+    c = Cconws((char*)0xDEAD0000), p = Pexec(0,(char*)0xDEAD0000,"",0), o = clean
+  CRASHTST.NAP sha256 aa96361dab0c98da6f33eacfbe126b9ebb8e45a8aafe8e12ab0d29eae1be223b
+    EL0 parent: Pexec(0,"C:\CRCHILD.NAP", tail) for w u x a c p o, checks the
+    returned code (0xFFFF for crashes, 0 for o), prints PASS/FAIL.
+
+KERNELS
+  k-rpi4.img (scratch, instrumented)  4d81beb110c9fe1e4d3e5eb9915df4cdf9668613b53c3728099a0b9413e302f7
+  k-virt.img (scratch, instrumented)  5394c31046a172704edadc0759dde107af3babd871fcb438d125a7f036b9f070
+  k-prod-rpi4.img (shared tree)       cbadfcf63de7de9f45cb9c74682749198301a0873d1190c6c9981907c495f4d3
+  k-prod-virt.img (shared tree)       812d20a7ca15bc6d722743d54ee16f331755d97ef15d928b7f9d3bba54ad8963
+  Scratch = rsync copy of the shared tree + method/apply-instrumentation.py
+  (as applied: method/scratch-instrumentation.diff). The instrumentation adds
+  ONLY an input source and the virt boot launch; the code under test is the
+  shared tree's:
+    rpi4: IKBD injector after usb::poll (QEMU raspi4b has no USB keyboard and
+          the rpi4 profile drops serial RX); Space make+break once the crash
+          prompt has waited 400 ticks (crash.rs scratch static WAITING), Alt-C
+          once the program has been gone 800 ticks.
+    virt: no SD card on this board -> both programs in the RAM registry,
+          launched from the boot path at the AUTO-folder position (kernel
+          parent), before the desktop. The prompt is answered over the serial
+          line by the driver (virt = serial-console profile).
+
+CARDS (method/seed.sh, method/seed-doom.sh): fresh 64 MiB MBR+FAT16 images,
+own volume label, mounted on a private mount point. NOT tools/make-sd-image.sh
+(it writes through the fixed path /Volumes/NEWTOS). No SD card, Pi or TT used.
+  card-crashtst.img  NEWDESK.INF "#Z 01 C:\CRASHTST.NAP@"   974b309e...
+  card-crchild.img   NEWDESK.INF "#Z 01 C:\CRCHILD.NAP@"    33954ee9...
+  card-doom.img      C:\DOOM\DOOM.NAP + DOOM1.WAD, "#Z 01 C:\DOOM\DOOM.NAP@"
+
+RUNS (method/run-rpi4.sh = -M raspi4b -append serial=on, card as SD;
+      method/run-virt.sh = -M virt,gic-version=2 ... like `xtask run`;
+      method/drive.py: serial over a unix socket -> serial/<tag>-serial.log,
+      a QMP screendump 0.8 s after every crash prompt, end dump after a marker)
+
+ 1 rpi4-crashtst   scratch rpi4, #Z CRASHTST (desktop launches it, EL0 parent)
+     6 crash reports, each answered after 2 s:
+       w  Bus Error           esr=92000045 (DABT lower, DFSC 05 transl. L1, WnR) pc=0x10c4  Crash at text+c4
+       u  Illegal Instruction esr=02000000 (EC 00)                               pc=0x1084  Crash at text+84
+       x  Bus Error           esr=8200000f (IABT lower, IFSC 0f permission L3)   pc=0x400000 (no text hit)
+       a  Address Error       esr=8a000000 (EC 22 PC alignment)                  pc=0x1196  Crash at text+196
+       c  Bus Error           esr=96000005 (EC 25, kernel ldtrb in Cconws)       pc=kernel, sr=800003c5
+       p  Bus Error           esr=96000005 (EC 25, kernel ldtrb in Pexec path)   pc=kernel
+     CRASHTST: case w..p rc=0x000000000000FFFF OK, case o rc=0 OK, CRASHTST: PASS
+     -> desktop ("[desk] desktop up"), Alt-C opens the C:\ window.
+     screendumps rpi4-crashtst-crash1..6.png (report on screen), -end.png (C:\ window)
+ 2 rpi4-crchild    scratch rpi4, #Z CRCHILD (no tail = w), parent = the shell
+     1 report (crash1.png: report over the desktop backdrop), key, "sh_ldapp:
+     'C:\CRCHILD.NAP' exited", desktop up, Alt-C -> C:\ window (end.png).
+ 3 virt-run1       scratch virt: kernel-launched CRCHILD (w), then CRASHTST
+     7 reports (crash1..7.png), all codes as in run 1, CRASHTST: PASS,
+     "[desk] desktop up" afterwards (end.png).
+ 4 rpi4-crchild-product   PRODUCT rpi4 kernel (no instrumentation), #Z CRCHILD:
+     report + prompt reached (crash1.png); no key source, so the run is ended
+     at the prompt -- shows the uninstrumented path up to the wait.
+ 5 virt-product-boot      PRODUCT virt kernel boots to "[desk] desktop up".
+ 6 rpi4-doom-product      PRODUCT rpi4 kernel, Doom (sdk/apps/build-doom.sh,
+     DOOM.NAP sha256 b92e4d58c98a67109687876b83583d37e9f0b05e03a24fb943ce500ddfed94e1):
+     "DOOM: picture 640x480 at (0,0) VERIFIED via EdDI+scale+vro_cpyfm",
+     demo running (end.png, E1M1 "YOU GOT THE SHOTGUN").
+
+BASELINES (method/)
+  host-tests.txt   cargo test -p tos-api -p tos-types -p xtask --no-fail-fast
+                   1020 / 0 / 1   (baseline 1010/0/1; +5 uaccess, +5 bios::crash)
+  build-*.log      release after `cargo clean -p kernel -p tos-api --target
+                   aarch64-unknown-none-softfloat --release`, fresh per board:
+                   tos-api 64 / kernel 94 warnings, both boards (= baseline)
+  clippy-*.log     tos-api 80 / kernel 125, both feature sets (= baseline);
+                   no hit in any touched/new file
+  desk-drift-probe.txt  DRIFT-PROBE TOTAL: 31 (= baseline)
+  Fixup table checked in the release ELF: 11 entries, each the address of an
+  ldtr*/sttr* instruction -> its fixup label.
+
+OBSERVATIONS (not changed)
+  * SIMD registers are not preserved across a Pexec/Pterm round trip: the
+    parent's v0-v31 come back as the child left them (finish_terminate
+    restores GPRs only; saved_fp is used only by the cooperative switch).
+    First CRASHTST build printed rc as zeros because clang hoisted put_hex's
+    vector constants across the Pexec svc; crashtst.c's put_hex is now
+    noinline/volatile. Pre-existing, independent of 0c.
+  * The kernel-launch path (desktop #Z / AUTO / boot) enters EL0 with kernel
+    values left in x1..x30 (visible in the crash reports: ffff0000... in X3,
+    X9, X16...); the Pexec path zeroes them. Pre-existing.
+  * A store to user address 0 does not fault: page 0 is mapped UserRwExec.
+  * exceptions.rs finish_terminate: the comment calls a UART line between
+    restore_boot_ttbr0 and install_ttbr0 LOAD-BEARING (QUIRK-001); the line is
+    gone since a3c4329 (0b finding). Left unchanged. Run 1 and 3 drove this
+    exact path (child -> EL0 parent with parent_l0_pa != 0) 7 times per board
+    on QEMU 11.0.2 without the line: no wedge. Real Pi unconfirmed.
+
+NOT COVERED HERE
+  * Real Pi 4 (not touched by order).
+  * qemu-virt cannot run a #Z desktop launch (no block device on that board);
+    its crash runs use the kernel launcher from the boot path instead.

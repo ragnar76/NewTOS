@@ -210,6 +210,29 @@ pub fn probe_read32(va: u64) -> Option<u32> {
 pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     let ec = esr_ec(frame.esr);
     if ec != EC_SVC_AARCH64 && ec != EC_SVC_FROM_EL1 {
+        // Fault-safe user access (ARCH03 0c, `tos_api::uaccess`): a same-EL
+        // Data Abort on one of the listed `ldtr*`/`sttr*` instructions is a
+        // kernel access to a bad *user* pointer, not a kernel bug. Record it
+        // and resume at the instruction's fixup, which returns a failure to
+        // the Rust caller; the syscall tail then terminates the calling
+        // program like EmuTOS does (`complete_call_tail`). The fault is
+        // identified by the PC alone (0b §5: `ELR` = the `ldtr`/`sttr`).
+        if ec == EC_DABT_SAME {
+            if let Some(fixup) = tos_api::uaccess::fixup_for(frame.elr) {
+                let mut regs = [0u64; 31];
+                regs[..30].copy_from_slice(&frame.gpr);
+                regs[30] = frame.lr;
+                tos_api::uaccess::note_fault(&tos_api::uaccess::FaultRecord {
+                    far: read_far_el1(),
+                    esr: frame.esr,
+                    pc: frame.elr,
+                    pstate: frame.spsr,
+                    regs,
+                });
+                frame.elr = fixup;
+                return;
+            }
+        }
         // Recoverable MMIO probe: a same-EL Data Abort while a `probe_read32`
         // is in flight means the probed device did not respond. Flag it and
         // step `ELR` past the faulting load (all A64 instructions are 4 bytes)
@@ -220,7 +243,26 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
             frame.elr = frame.elr.wrapping_add(4);
             return;
         }
+        // A synchronous exception taken from an EL0 program (abort,
+        // undefined instruction, alignment, trapped system instruction, …)
+        // ends that program only — EmuTOS `any_vec` → `dopanic` →
+        // `kill_program` (`bios/vectors.S`, `bios/kprint.c:302-596`,
+        // `bios/panicasm.S:96-99`). EL1 exceptions stay fatal.
+        if frame.spsr & 0x1F == 0 && kill_crashed_program(frame) {
+            return;
+        }
         unhandled(frame, "synchronous (non-SVC)");
+    }
+
+    // A user-access fault recorded during an earlier call must have been
+    // consumed by that call's tail; one still pending here belongs to a call
+    // that left through a path without the tail (yield/restart). It cannot be
+    // attributed to this call, so drop it — loudly.
+    if let Some(stale) = tos_api::uaccess::take_pending_fault() {
+        crate::kprintln!(
+            "[uaccess] stale fault dropped: far=0x{:x} pc=0x{:x} esr=0x{:x}",
+            stale.far, stale.pc, stale.esr,
+        );
     }
 
     let svc_imm = (esr_iss(frame.esr) & 0xFFFF) as u16;
@@ -557,6 +599,16 @@ fn frame_arg_regs(frame: &ExceptionFrame) -> [u64; 7] {
 ///  3. On a return to EL0, deliver any pending EL0 upcall for the running
 ///     process (deliver-on-return, design §7.1 / building block 1 §6.2).
 fn complete_call_tail(frame: &mut ExceptionFrame, result: i64) {
+    // The call touched a bad user pointer (`tos_api::uaccess`): on EmuTOS the
+    // bus error in the trap handler kills the caller (`any_vec` → `dopanic`
+    // → `Pterm(-1)`, `run` still being the caller's PD, `bios/kprint.c:
+    // 587-594`); the call's own result never reaches it. Takes precedence
+    // over a deferred Ctrl-C terminate, which is then moot.
+    if let Some(rec) = tos_api::uaccess::take_pending_fault() {
+        let _ = tos_api::bdos::process::take_pending_terminate();
+        uaccess_fault_tail(frame, &rec);
+        return;
+    }
     if let Some(rc) = tos_api::bdos::process::take_pending_terminate() {
         terminate_and_redirect(frame, rc);
         return;
@@ -1232,6 +1284,97 @@ fn terminate_and_redirect(frame: &mut ExceptionFrame, rc: i32) {
     finish_terminate(frame, rc, result);
 }
 
+/// A synchronous exception taken from an EL0 program — EmuTOS `any_vec` →
+/// `dopanic` → `kill_program` (`bios/vectors.S`, `bios/kprint.c:302-596`,
+/// `bios/panicasm.S:96-99`; spec `docs/api/bios/_exception-crash.md`): print
+/// the crash report, wait for a key, terminate the program with `Pterm(-1)`.
+/// The parent (or the desktop) resumes as after any `Pterm`.
+///
+/// Returns `false` — the caller then halts as before — when the exception
+/// cannot be attributed to a process (no live slot behind `RUN`).
+fn kill_crashed_program(frame: &mut ExceptionFrame) -> bool {
+    use tos_api::bios::crash;
+
+    let Some(slot) =
+        tos_api::bdos::process::slot_for(tos_api::bdos::process::current())
+    else {
+        return false;
+    };
+    // FAR first, before anything can take another abort.
+    let far = crash::far_valid(frame.esr).then(read_far_el1);
+    let mut regs = [0u64; 31];
+    regs[..30].copy_from_slice(&frame.gpr);
+    regs[30] = frame.lr;
+    let report = crash::CrashReport {
+        kind: crash::classify(frame.esr),
+        esr: frame.esr,
+        far,
+        pc: frame.elr,
+        pstate: frame.spsr,
+        regs: &regs,
+        usp: frame.sp_el0,
+        program: super::crash::current_program(),
+    };
+    super::crash::report_and_wait(&report, slot);
+    kill_program(frame);
+    true
+}
+
+/// The syscall tail for a call that touched a bad user pointer
+/// ([`tos_api::uaccess`]). An EL0 caller is terminated with the crash report
+/// of the kernel-side fault — what EmuTOS shows for a bus error inside a
+/// trap: the supervisor PC, registers and fault address, then `Pterm(-1)` of
+/// the caller (`bios/kprint.c:587-594`). An EL1 caller handing a user-pointer
+/// API a pointer it cannot reach is a kernel bug and stays fatal, as it was
+/// before the access became recoverable.
+fn uaccess_fault_tail(frame: &mut ExceptionFrame, rec: &tos_api::uaccess::FaultRecord) {
+    use tos_api::bios::crash;
+
+    let slot = tos_api::bdos::process::slot_for(tos_api::bdos::process::current());
+    let slot = match slot {
+        Some(s) if frame.spsr & 0x1F == 0 => s,
+        _ => {
+            crate::console::force_serial_tx_on();
+            crate::kprintln!(
+                "\n[EXC] user-access fault in a kernel-initiated call: \
+                 FAR=0x{:016x} PC=0x{:016x} ESR=0x{:016x} (caller SPSR=0x{:x})",
+                rec.far, rec.pc, rec.esr, frame.spsr,
+            );
+            crate::arch::aarch64::halt();
+        }
+    };
+    let report = crash::CrashReport {
+        kind: crash::classify(rec.esr),
+        esr: rec.esr,
+        far: crash::far_valid(rec.esr).then_some(rec.far),
+        pc: rec.pc,
+        pstate: rec.pstate,
+        regs: &rec.regs,
+        usp: frame.sp_el0,
+        program: super::crash::current_program(),
+    };
+    super::crash::report_and_wait(&report, slot);
+    kill_program(frame);
+}
+
+/// EmuTOS `kill_program` (`bios/panicasm.S:96-99`): `Pterm(-1)` on behalf of
+/// the running program, through exactly the path of the program's own
+/// `Pterm` — `etv_term` hook, resource release, parent resume
+/// ([`handle_pterm`]). The `-1` is the WORD EmuTOS pushes; `handle_pterm`
+/// takes its low 16 bits (D-005), so the parent's `Pexec` sees `0xFFFF`.
+///
+/// Should termination be refused (no parent resume context — a kernel
+/// bookkeeping bug), the frame comes back unchanged and resuming it would
+/// re-run the faulting code: halt instead.
+fn kill_program(frame: &mut ExceptionFrame) {
+    let (elr, spsr) = (frame.elr, frame.spsr);
+    frame.gpr[0] = -1i64 as u64;
+    handle_pterm(frame, 0x4C);
+    if frame.elr == elr && frame.spsr == spsr {
+        unhandled(frame, "Pterm(-1) after a program crash refused");
+    }
+}
+
 /// Common tail of every process-termination path (`Pterm` / `Pterm0` /
 /// `Ptermres`, and the Ctrl-C self-terminate): copy the parent's frame
 /// snapshot back over the trap frame, restore the parent's `TTBR0`,
@@ -1567,16 +1710,6 @@ fn handle_psigreturn(frame: &mut ExceptionFrame) {
     deliver_pending_kbdvec(frame);
 }
 
-/// Read a NUL-terminated string from a user-space VA into `buf` using
-/// **unprivileged** byte loads (`ldtrb`), returning the number of
-/// bytes read (excluding the terminator). The unprivileged load makes
-/// the access permission-checked as if EL0 issued it, which is the
-/// correct contract for a TOS syscall pointer (it is a *user*
-/// pointer) and mirrors [`tos_api::gemdos::console::cconws`]. The
-/// caller's `TTBR0_EL1` must be active. The read is bounded by
-/// `buf.len()`; a missing NUL simply truncates. A genuinely bad
-/// pointer faults as an EL0 access — the caller's bug, just as a
-/// ported program passing a wild `path` to `Pexec` would fault.
 /// Read a NUL-terminated string from a **kernel** pointer (ordinary
 /// loads). Used when an EL1 caller passes `Pexec` a kernel-VA path.
 fn read_kernel_cstr(va: u64, buf: &mut [u8]) -> usize {
@@ -1594,29 +1727,18 @@ fn read_kernel_cstr(va: u64, buf: &mut [u8]) -> usize {
     n
 }
 
-fn read_user_cstr(user_va: u64, buf: &mut [u8]) -> usize {
-    let mut p = user_va;
-    let mut n = 0;
-    while n < buf.len() {
-        let b: u8;
-        // SAFETY: single unprivileged byte load; `readonly` + bounded
-        // by `buf.len()`. Provenance is the user's `path` pointer.
-        unsafe {
-            core::arch::asm!(
-                "ldtrb {b:w}, [{p}]",
-                p = in(reg) p,
-                b = out(reg) b,
-                options(nostack, preserves_flags, readonly),
-            );
-        }
-        if b == 0 {
-            break;
-        }
-        buf[n] = b;
-        n += 1;
-        p += 1;
-    }
-    n
+/// Read a NUL-terminated string from a user-space VA into `buf`, returning
+/// the number of bytes read (excluding the terminator). The read goes
+/// through [`tos_api::uaccess::read_user_cstr`] — unprivileged `ldtrb`, so it
+/// is permission-checked as if EL0 issued it (the correct contract for a TOS
+/// syscall pointer), and a bad pointer comes back as `Err` instead of
+/// halting the machine (ARCH03 0c). The caller's `TTBR0_EL1` must be active.
+/// Bounded by `buf.len()`; a missing NUL truncates.
+fn read_user_cstr(
+    user_va: u64,
+    buf: &mut [u8],
+) -> Result<usize, tos_api::uaccess::UserFault> {
+    tos_api::uaccess::read_user_cstr(user_va, buf)
 }
 
 /// Byte length of the Pexec environment scratch buffer. Bounds a
@@ -1628,27 +1750,22 @@ const ENV_BUF_LEN: usize = 512;
 /// Read a `Pexec` environment block (a sequence of NUL-terminated
 /// records ended by a **double NUL**) from a pointer into `buf`,
 /// returning the byte count **including** the terminating double NUL.
-/// `from_el0` selects unprivileged (`ldtrb`, user pointer) vs ordinary
-/// (kernel pointer) loads, exactly like the `path`/tail readers. On
-/// overflow the last two bytes are forced to NUL so the copied env is
-/// always double-NUL terminated.
-fn read_env_block(va: u64, buf: &mut [u8], from_el0: bool) -> usize {
+/// `from_el0` selects user (`tos_api::uaccess`, unprivileged `ldtrb`,
+/// fault-recovered) vs ordinary (kernel pointer) loads, exactly like the
+/// `path`/tail readers. On overflow the last two bytes are forced to NUL so
+/// the copied env is always double-NUL terminated. `Err` when a user read
+/// faulted.
+fn read_env_block(
+    va: u64,
+    buf: &mut [u8],
+    from_el0: bool,
+) -> Result<usize, tos_api::uaccess::UserFault> {
     let mut p = va;
     let mut n = 0;
     let mut prev_nul = false;
     while n < buf.len() {
         let b: u8 = if from_el0 {
-            let v: u8;
-            // SAFETY: single unprivileged byte load; bounded by buf.len().
-            unsafe {
-                core::arch::asm!(
-                    "ldtrb {v:w}, [{p}]",
-                    p = in(reg) p,
-                    v = out(reg) v,
-                    options(nostack, preserves_flags, readonly),
-                );
-            }
-            v
+            tos_api::uaccess::get_user_u8(p)?
         } else {
             // SAFETY: bounded by buf.len(); provenance is the caller's env.
             unsafe { (p as *const u8).read_volatile() }
@@ -1658,7 +1775,7 @@ fn read_env_block(va: u64, buf: &mut [u8], from_el0: bool) -> usize {
         p += 1;
         if b == 0 {
             if prev_nul {
-                return n; // double NUL: env complete, both NULs included
+                return Ok(n); // double NUL: env complete, both NULs included
             }
             prev_nul = true;
         } else {
@@ -1671,7 +1788,20 @@ fn read_env_block(va: u64, buf: &mut [u8], from_el0: bool) -> usize {
         buf[n - 1] = 0;
         buf[n - 2] = 0;
     }
-    n
+    Ok(n)
+}
+
+/// A `Pexec` argument (path, tail, environment) could not be read from the
+/// caller's memory. `Pexec` never reaches the ordinary syscall tail, so it
+/// hands the recorded fault to [`uaccess_fault_tail`] itself.
+fn pexec_user_fault(frame: &mut ExceptionFrame) {
+    match tos_api::uaccess::take_pending_fault() {
+        Some(rec) => uaccess_fault_tail(frame, &rec),
+        // The reader reported a fault the abort handler did not record —
+        // impossible by construction; never resume the caller as if the
+        // call had succeeded.
+        None => unhandled(frame, "Pexec user-access fault without a record"),
+    }
 }
 
 /// Pexec (GEMDOS 0x4B) handler. Sets up a child process and
@@ -1701,16 +1831,20 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     // TOS ABI: the access must be permission-checked as EL0, exactly
     // like `Cconws` reads its string (a kernel-VA pointer here would
     // correctly fault, and the future m68k emulator passes user VAs
-    // too). A missing NUL is bounded by the buffer size; a bad
-    // pointer faults as the caller's bug (Phase 09 adds the TPA
-    // bounds check).
+    // too). A missing NUL is bounded by the buffer size. A bad pointer is
+    // the caller's bug: the read faults recoverably (`tos_api::uaccess`)
+    // and the caller is terminated with the crash report, like the bus
+    // error EmuTOS takes in the trap (ARCH03 0c, `uaccess_fault_tail`).
     let mut path_buf = [0u8; 128];
     // A user (EL0) caller passes a user-VA `path` read with unprivileged
     // loads; a kernel (EL1) caller — e.g. the built-in shell — passes a
     // kernel pointer that must be read with ordinary loads (an `ldtrb`
     // would fault as EL0 on a kernel page).
     let path_len = if from_el0 {
-        read_user_cstr(path_user_va, &mut path_buf)
+        match read_user_cstr(path_user_va, &mut path_buf) {
+            Ok(n) => n,
+            Err(_) => return pexec_user_fault(frame),
+        }
     } else {
         read_kernel_cstr(path_user_va, &mut path_buf)
     };
@@ -1729,14 +1863,19 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
             let tlen = if tail_arg == 0 {
                 0
             } else if from_el0 {
-                read_user_cstr(tail_arg, &mut tail_buf)
+                match read_user_cstr(tail_arg, &mut tail_buf) {
+                    Ok(n) => n,
+                    Err(_) => return pexec_user_fault(frame),
+                }
             } else {
                 read_kernel_cstr(tail_arg, &mut tail_buf)
             };
             let env_spec = if env_arg == 0 {
                 EnvSpec::Inherit
             } else {
-                let elen = read_env_block(env_arg, &mut env_buf, from_el0);
+                let Ok(elen) = read_env_block(env_arg, &mut env_buf, from_el0) else {
+                    return pexec_user_fault(frame);
+                };
                 EnvSpec::Explicit(&env_buf[..elen])
             };
             (&tail_buf[..tlen], env_spec)

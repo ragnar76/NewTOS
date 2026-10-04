@@ -19,6 +19,9 @@ pub enum Sys {
     Ok,
     /// Common secondary button label.
     Cancel,
+    /// The crash-report prompt (EmuTOS `dopanic`,
+    /// `bios/kprint.c:583`: `_("\n*** Press any key to continue ***")`).
+    PressAnyKey,
 }
 
 /// UI language. Only English exists today; the variant set grows as
@@ -49,6 +52,7 @@ fn en(id: Sys) -> &'static [u8] {
     match id {
         Sys::Ok => b"OK",
         Sys::Cancel => b"Cancel",
+        Sys::PressAnyKey => b"*** Press any key to continue ***",
     }
 }
 

@@ -2,6 +2,7 @@
 //! register access, low-level halt.
 
 pub mod boot;
+pub mod crash;
 pub mod dtb;
 pub mod el0;
 pub mod exceptions;

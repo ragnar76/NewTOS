@@ -29,6 +29,7 @@ pub mod gemdos;
 pub mod i18n;
 pub mod host;
 pub mod trap;
+pub mod uaccess;
 pub mod vdi;
 pub mod xbios;
 

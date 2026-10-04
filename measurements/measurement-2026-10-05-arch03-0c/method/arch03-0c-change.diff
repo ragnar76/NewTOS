@@ -1,0 +1,1946 @@
+diff --git a/kernel/src/arch/aarch64/exceptions.rs b/kernel/src/arch/aarch64/exceptions.rs
+index 06d0bba..5dc8ec2 100644
+--- a/kernel/src/arch/aarch64/exceptions.rs
++++ b/kernel/src/arch/aarch64/exceptions.rs
+@@ -210,6 +210,29 @@ pub fn probe_read32(va: u64) -> Option<u32> {
+ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
+     let ec = esr_ec(frame.esr);
+     if ec != EC_SVC_AARCH64 && ec != EC_SVC_FROM_EL1 {
++        // Fault-safe user access (ARCH03 0c, `tos_api::uaccess`): a same-EL
++        // Data Abort on one of the listed `ldtr*`/`sttr*` instructions is a
++        // kernel access to a bad *user* pointer, not a kernel bug. Record it
++        // and resume at the instruction's fixup, which returns a failure to
++        // the Rust caller; the syscall tail then terminates the calling
++        // program like EmuTOS does (`complete_call_tail`). The fault is
++        // identified by the PC alone (0b §5: `ELR` = the `ldtr`/`sttr`).
++        if ec == EC_DABT_SAME {
++            if let Some(fixup) = tos_api::uaccess::fixup_for(frame.elr) {
++                let mut regs = [0u64; 31];
++                regs[..30].copy_from_slice(&frame.gpr);
++                regs[30] = frame.lr;
++                tos_api::uaccess::note_fault(&tos_api::uaccess::FaultRecord {
++                    far: read_far_el1(),
++                    esr: frame.esr,
++                    pc: frame.elr,
++                    pstate: frame.spsr,
++                    regs,
++                });
++                frame.elr = fixup;
++                return;
++            }
++        }
+         // Recoverable MMIO probe: a same-EL Data Abort while a `probe_read32`
+         // is in flight means the probed device did not respond. Flag it and
+         // step `ELR` past the faulting load (all A64 instructions are 4 bytes)
+@@ -220,9 +243,28 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
+             frame.elr = frame.elr.wrapping_add(4);
+             return;
+         }
++        // A synchronous exception taken from an EL0 program (abort,
++        // undefined instruction, alignment, trapped system instruction, …)
++        // ends that program only — EmuTOS `any_vec` → `dopanic` →
++        // `kill_program` (`bios/vectors.S`, `bios/kprint.c:302-596`,
++        // `bios/panicasm.S:96-99`). EL1 exceptions stay fatal.
++        if frame.spsr & 0x1F == 0 && kill_crashed_program(frame) {
++            return;
++        }
+         unhandled(frame, "synchronous (non-SVC)");
+     }
+ 
++    // A user-access fault recorded during an earlier call must have been
++    // consumed by that call's tail; one still pending here belongs to a call
++    // that left through a path without the tail (yield/restart). It cannot be
++    // attributed to this call, so drop it — loudly.
++    if let Some(stale) = tos_api::uaccess::take_pending_fault() {
++        crate::kprintln!(
++            "[uaccess] stale fault dropped: far=0x{:x} pc=0x{:x} esr=0x{:x}",
++            stale.far, stale.pc, stale.esr,
++        );
++    }
++
+     let svc_imm = (esr_iss(frame.esr) & 0xFFFF) as u16;
+ 
+     // Phase 05 EC4 sentinel — redirect a from-EL0 `svc #0xEC4` back
+@@ -557,6 +599,16 @@ fn frame_arg_regs(frame: &ExceptionFrame) -> [u64; 7] {
+ ///  3. On a return to EL0, deliver any pending EL0 upcall for the running
+ ///     process (deliver-on-return, design §7.1 / building block 1 §6.2).
+ fn complete_call_tail(frame: &mut ExceptionFrame, result: i64) {
++    // The call touched a bad user pointer (`tos_api::uaccess`): on EmuTOS the
++    // bus error in the trap handler kills the caller (`any_vec` → `dopanic`
++    // → `Pterm(-1)`, `run` still being the caller's PD, `bios/kprint.c:
++    // 587-594`); the call's own result never reaches it. Takes precedence
++    // over a deferred Ctrl-C terminate, which is then moot.
++    if let Some(rec) = tos_api::uaccess::take_pending_fault() {
++        let _ = tos_api::bdos::process::take_pending_terminate();
++        uaccess_fault_tail(frame, &rec);
++        return;
++    }
+     if let Some(rc) = tos_api::bdos::process::take_pending_terminate() {
+         terminate_and_redirect(frame, rc);
+         return;
+@@ -1232,6 +1284,97 @@ fn terminate_and_redirect(frame: &mut ExceptionFrame, rc: i32) {
+     finish_terminate(frame, rc, result);
+ }
+ 
++/// A synchronous exception taken from an EL0 program — EmuTOS `any_vec` →
++/// `dopanic` → `kill_program` (`bios/vectors.S`, `bios/kprint.c:302-596`,
++/// `bios/panicasm.S:96-99`; spec `docs/api/bios/_exception-crash.md`): print
++/// the crash report, wait for a key, terminate the program with `Pterm(-1)`.
++/// The parent (or the desktop) resumes as after any `Pterm`.
++///
++/// Returns `false` — the caller then halts as before — when the exception
++/// cannot be attributed to a process (no live slot behind `RUN`).
++fn kill_crashed_program(frame: &mut ExceptionFrame) -> bool {
++    use tos_api::bios::crash;
++
++    let Some(slot) =
++        tos_api::bdos::process::slot_for(tos_api::bdos::process::current())
++    else {
++        return false;
++    };
++    // FAR first, before anything can take another abort.
++    let far = crash::far_valid(frame.esr).then(read_far_el1);
++    let mut regs = [0u64; 31];
++    regs[..30].copy_from_slice(&frame.gpr);
++    regs[30] = frame.lr;
++    let report = crash::CrashReport {
++        kind: crash::classify(frame.esr),
++        esr: frame.esr,
++        far,
++        pc: frame.elr,
++        pstate: frame.spsr,
++        regs: &regs,
++        usp: frame.sp_el0,
++        program: super::crash::current_program(),
++    };
++    super::crash::report_and_wait(&report, slot);
++    kill_program(frame);
++    true
++}
++
++/// The syscall tail for a call that touched a bad user pointer
++/// ([`tos_api::uaccess`]). An EL0 caller is terminated with the crash report
++/// of the kernel-side fault — what EmuTOS shows for a bus error inside a
++/// trap: the supervisor PC, registers and fault address, then `Pterm(-1)` of
++/// the caller (`bios/kprint.c:587-594`). An EL1 caller handing a user-pointer
++/// API a pointer it cannot reach is a kernel bug and stays fatal, as it was
++/// before the access became recoverable.
++fn uaccess_fault_tail(frame: &mut ExceptionFrame, rec: &tos_api::uaccess::FaultRecord) {
++    use tos_api::bios::crash;
++
++    let slot = tos_api::bdos::process::slot_for(tos_api::bdos::process::current());
++    let slot = match slot {
++        Some(s) if frame.spsr & 0x1F == 0 => s,
++        _ => {
++            crate::console::force_serial_tx_on();
++            crate::kprintln!(
++                "\n[EXC] user-access fault in a kernel-initiated call: \
++                 FAR=0x{:016x} PC=0x{:016x} ESR=0x{:016x} (caller SPSR=0x{:x})",
++                rec.far, rec.pc, rec.esr, frame.spsr,
++            );
++            crate::arch::aarch64::halt();
++        }
++    };
++    let report = crash::CrashReport {
++        kind: crash::classify(rec.esr),
++        esr: rec.esr,
++        far: crash::far_valid(rec.esr).then_some(rec.far),
++        pc: rec.pc,
++        pstate: rec.pstate,
++        regs: &rec.regs,
++        usp: frame.sp_el0,
++        program: super::crash::current_program(),
++    };
++    super::crash::report_and_wait(&report, slot);
++    kill_program(frame);
++}
++
++/// EmuTOS `kill_program` (`bios/panicasm.S:96-99`): `Pterm(-1)` on behalf of
++/// the running program, through exactly the path of the program's own
++/// `Pterm` — `etv_term` hook, resource release, parent resume
++/// ([`handle_pterm`]). The `-1` is the WORD EmuTOS pushes; `handle_pterm`
++/// takes its low 16 bits (D-005), so the parent's `Pexec` sees `0xFFFF`.
++///
++/// Should termination be refused (no parent resume context — a kernel
++/// bookkeeping bug), the frame comes back unchanged and resuming it would
++/// re-run the faulting code: halt instead.
++fn kill_program(frame: &mut ExceptionFrame) {
++    let (elr, spsr) = (frame.elr, frame.spsr);
++    frame.gpr[0] = -1i64 as u64;
++    handle_pterm(frame, 0x4C);
++    if frame.elr == elr && frame.spsr == spsr {
++        unhandled(frame, "Pterm(-1) after a program crash refused");
++    }
++}
++
+ /// Common tail of every process-termination path (`Pterm` / `Pterm0` /
+ /// `Ptermres`, and the Ctrl-C self-terminate): copy the parent's frame
+ /// snapshot back over the trap frame, restore the parent's `TTBR0`,
+@@ -1567,16 +1710,6 @@ fn handle_psigreturn(frame: &mut ExceptionFrame) {
+     deliver_pending_kbdvec(frame);
+ }
+ 
+-/// Read a NUL-terminated string from a user-space VA into `buf` using
+-/// **unprivileged** byte loads (`ldtrb`), returning the number of
+-/// bytes read (excluding the terminator). The unprivileged load makes
+-/// the access permission-checked as if EL0 issued it, which is the
+-/// correct contract for a TOS syscall pointer (it is a *user*
+-/// pointer) and mirrors [`tos_api::gemdos::console::cconws`]. The
+-/// caller's `TTBR0_EL1` must be active. The read is bounded by
+-/// `buf.len()`; a missing NUL simply truncates. A genuinely bad
+-/// pointer faults as an EL0 access — the caller's bug, just as a
+-/// ported program passing a wild `path` to `Pexec` would fault.
+ /// Read a NUL-terminated string from a **kernel** pointer (ordinary
+ /// loads). Used when an EL1 caller passes `Pexec` a kernel-VA path.
+ fn read_kernel_cstr(va: u64, buf: &mut [u8]) -> usize {
+@@ -1594,29 +1727,18 @@ fn read_kernel_cstr(va: u64, buf: &mut [u8]) -> usize {
+     n
+ }
+ 
+-fn read_user_cstr(user_va: u64, buf: &mut [u8]) -> usize {
+-    let mut p = user_va;
+-    let mut n = 0;
+-    while n < buf.len() {
+-        let b: u8;
+-        // SAFETY: single unprivileged byte load; `readonly` + bounded
+-        // by `buf.len()`. Provenance is the user's `path` pointer.
+-        unsafe {
+-            core::arch::asm!(
+-                "ldtrb {b:w}, [{p}]",
+-                p = in(reg) p,
+-                b = out(reg) b,
+-                options(nostack, preserves_flags, readonly),
+-            );
+-        }
+-        if b == 0 {
+-            break;
+-        }
+-        buf[n] = b;
+-        n += 1;
+-        p += 1;
+-    }
+-    n
++/// Read a NUL-terminated string from a user-space VA into `buf`, returning
++/// the number of bytes read (excluding the terminator). The read goes
++/// through [`tos_api::uaccess::read_user_cstr`] — unprivileged `ldtrb`, so it
++/// is permission-checked as if EL0 issued it (the correct contract for a TOS
++/// syscall pointer), and a bad pointer comes back as `Err` instead of
++/// halting the machine (ARCH03 0c). The caller's `TTBR0_EL1` must be active.
++/// Bounded by `buf.len()`; a missing NUL truncates.
++fn read_user_cstr(
++    user_va: u64,
++    buf: &mut [u8],
++) -> Result<usize, tos_api::uaccess::UserFault> {
++    tos_api::uaccess::read_user_cstr(user_va, buf)
+ }
+ 
+ /// Byte length of the Pexec environment scratch buffer. Bounds a
+@@ -1628,27 +1750,22 @@ const ENV_BUF_LEN: usize = 512;
+ /// Read a `Pexec` environment block (a sequence of NUL-terminated
+ /// records ended by a **double NUL**) from a pointer into `buf`,
+ /// returning the byte count **including** the terminating double NUL.
+-/// `from_el0` selects unprivileged (`ldtrb`, user pointer) vs ordinary
+-/// (kernel pointer) loads, exactly like the `path`/tail readers. On
+-/// overflow the last two bytes are forced to NUL so the copied env is
+-/// always double-NUL terminated.
+-fn read_env_block(va: u64, buf: &mut [u8], from_el0: bool) -> usize {
++/// `from_el0` selects user (`tos_api::uaccess`, unprivileged `ldtrb`,
++/// fault-recovered) vs ordinary (kernel pointer) loads, exactly like the
++/// `path`/tail readers. On overflow the last two bytes are forced to NUL so
++/// the copied env is always double-NUL terminated. `Err` when a user read
++/// faulted.
++fn read_env_block(
++    va: u64,
++    buf: &mut [u8],
++    from_el0: bool,
++) -> Result<usize, tos_api::uaccess::UserFault> {
+     let mut p = va;
+     let mut n = 0;
+     let mut prev_nul = false;
+     while n < buf.len() {
+         let b: u8 = if from_el0 {
+-            let v: u8;
+-            // SAFETY: single unprivileged byte load; bounded by buf.len().
+-            unsafe {
+-                core::arch::asm!(
+-                    "ldtrb {v:w}, [{p}]",
+-                    p = in(reg) p,
+-                    v = out(reg) v,
+-                    options(nostack, preserves_flags, readonly),
+-                );
+-            }
+-            v
++            tos_api::uaccess::get_user_u8(p)?
+         } else {
+             // SAFETY: bounded by buf.len(); provenance is the caller's env.
+             unsafe { (p as *const u8).read_volatile() }
+@@ -1658,7 +1775,7 @@ fn read_env_block(va: u64, buf: &mut [u8], from_el0: bool) -> usize {
+         p += 1;
+         if b == 0 {
+             if prev_nul {
+-                return n; // double NUL: env complete, both NULs included
++                return Ok(n); // double NUL: env complete, both NULs included
+             }
+             prev_nul = true;
+         } else {
+@@ -1671,7 +1788,20 @@ fn read_env_block(va: u64, buf: &mut [u8], from_el0: bool) -> usize {
+         buf[n - 1] = 0;
+         buf[n - 2] = 0;
+     }
+-    n
++    Ok(n)
++}
++
++/// A `Pexec` argument (path, tail, environment) could not be read from the
++/// caller's memory. `Pexec` never reaches the ordinary syscall tail, so it
++/// hands the recorded fault to [`uaccess_fault_tail`] itself.
++fn pexec_user_fault(frame: &mut ExceptionFrame) {
++    match tos_api::uaccess::take_pending_fault() {
++        Some(rec) => uaccess_fault_tail(frame, &rec),
++        // The reader reported a fault the abort handler did not record —
++        // impossible by construction; never resume the caller as if the
++        // call had succeeded.
++        None => unhandled(frame, "Pexec user-access fault without a record"),
++    }
+ }
+ 
+ /// Pexec (GEMDOS 0x4B) handler. Sets up a child process and
+@@ -1701,16 +1831,20 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
+     // TOS ABI: the access must be permission-checked as EL0, exactly
+     // like `Cconws` reads its string (a kernel-VA pointer here would
+     // correctly fault, and the future m68k emulator passes user VAs
+-    // too). A missing NUL is bounded by the buffer size; a bad
+-    // pointer faults as the caller's bug (Phase 09 adds the TPA
+-    // bounds check).
++    // too). A missing NUL is bounded by the buffer size. A bad pointer is
++    // the caller's bug: the read faults recoverably (`tos_api::uaccess`)
++    // and the caller is terminated with the crash report, like the bus
++    // error EmuTOS takes in the trap (ARCH03 0c, `uaccess_fault_tail`).
+     let mut path_buf = [0u8; 128];
+     // A user (EL0) caller passes a user-VA `path` read with unprivileged
+     // loads; a kernel (EL1) caller — e.g. the built-in shell — passes a
+     // kernel pointer that must be read with ordinary loads (an `ldtrb`
+     // would fault as EL0 on a kernel page).
+     let path_len = if from_el0 {
+-        read_user_cstr(path_user_va, &mut path_buf)
++        match read_user_cstr(path_user_va, &mut path_buf) {
++            Ok(n) => n,
++            Err(_) => return pexec_user_fault(frame),
++        }
+     } else {
+         read_kernel_cstr(path_user_va, &mut path_buf)
+     };
+@@ -1729,14 +1863,19 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
+             let tlen = if tail_arg == 0 {
+                 0
+             } else if from_el0 {
+-                read_user_cstr(tail_arg, &mut tail_buf)
++                match read_user_cstr(tail_arg, &mut tail_buf) {
++                    Ok(n) => n,
++                    Err(_) => return pexec_user_fault(frame),
++                }
+             } else {
+                 read_kernel_cstr(tail_arg, &mut tail_buf)
+             };
+             let env_spec = if env_arg == 0 {
+                 EnvSpec::Inherit
+             } else {
+-                let elen = read_env_block(env_arg, &mut env_buf, from_el0);
++                let Ok(elen) = read_env_block(env_arg, &mut env_buf, from_el0) else {
++                    return pexec_user_fault(frame);
++                };
+                 EnvSpec::Explicit(&env_buf[..elen])
+             };
+             (&tail_buf[..tlen], env_spec)
+diff --git a/kernel/src/arch/aarch64/mod.rs b/kernel/src/arch/aarch64/mod.rs
+index 424d2b0..16976ea 100644
+--- a/kernel/src/arch/aarch64/mod.rs
++++ b/kernel/src/arch/aarch64/mod.rs
+@@ -2,6 +2,7 @@
+ //! register access, low-level halt.
+ 
+ pub mod boot;
++pub mod crash;
+ pub mod dtb;
+ pub mod el0;
+ pub mod exceptions;
+diff --git a/tos-api/src/bios/mod.rs b/tos-api/src/bios/mod.rs
+index 4debc22..585a67d 100644
+--- a/tos-api/src/bios/mod.rs
++++ b/tos-api/src/bios/mod.rs
+@@ -12,6 +12,7 @@
+ pub mod block;
+ pub mod bpb;
+ pub mod chardev;
++pub mod crash;
+ pub mod drive;
+ pub mod getmpb;
+ pub mod tick;
+diff --git a/tos-api/src/gemdos/console.rs b/tos-api/src/gemdos/console.rs
+index c6abfa8..733460f 100644
+--- a/tos-api/src/gemdos/console.rs
++++ b/tos-api/src/gemdos/console.rs
+@@ -510,11 +510,12 @@ pub fn cconrs(args: &TrapArgs) -> Long {
+ /// each byte — a pending Ctrl-C stops the write early (the rest of the
+ /// string is not emitted) and defers `Pterm(-32)`.
+ ///
+-/// # Safety in trap context
++/// # User pointer
+ ///
+-/// The pointer comes from the trapping caller. PHASE-02 does not yet
+-/// have user/kernel separation, so we trust the pointer. PHASE-06
+-/// will add a bounds check against the calling process's TPA.
++/// `s` is read with fault-safe unprivileged loads ([`crate::uaccess`]); a
++/// pointer the caller cannot read ends the call and — through the kernel's
++/// syscall tail — the caller (EmuTOS: bus error in the trap → `dopanic` →
++/// `Pterm(-1)`, `docs/api/bios/_exception-crash.md`).
+ pub fn cconws(args: &TrapArgs) -> Long {
+     let mut p = args.arg_ptr(0);
+     if p.is_null() {
+@@ -526,23 +527,16 @@ pub fn cconws(args: &TrapArgs) -> Long {
+     // 64 KiB matches TOS's effective practical limit (Cconrs buffers).
+     const MAX: Long = 65_535;
+     while count < MAX {
+-        // SAFETY: pointer validated above; see PHASE-06 note for the
+-        // future kernel/user boundary check. We use the
+-        // unprivileged-load `ldtrb` so the access is checked as if
+-        // EL0 made it — this both honours the user-page permissions
+-        // and bypasses any PSTATE.PAN restriction the runtime
+-        // applies to from-kernel user-VA reads (cortex-a72 doesn't
+-        // implement PAN but the QEMU tcg path appears to enforce
+-        // similar semantics, observed during Phase-06-D3 bring-up).
+-        let b: u8;
+-        unsafe {
+-            core::arch::asm!(
+-                "ldtrb {b:w}, [{p}]",
+-                p = in(reg) p,
+-                b = out(reg) b,
+-                options(nostack, preserves_flags, readonly),
+-            );
+-        }
++        // `s` is a *user* pointer: read through `uaccess` (unprivileged
++        // `ldtrb`, permission-checked as EL0 — the access the trap contract
++        // calls for). A bad pointer no longer halts the machine (ARCH03 0c):
++        // the read faults recoverably, the bytes before it are already
++        // written (as on EmuTOS, whose `prt_line` takes the bus error in the
++        // middle of the string), and the syscall tail terminates the caller
++        // with the crash report — the count returned here never reaches it.
++        let Ok(b) = crate::uaccess::get_user_u8(p as u64) else {
++            break;
++        };
+         if b == 0 {
+             break;
+         }
+diff --git a/tos-api/src/i18n.rs b/tos-api/src/i18n.rs
+index 916568b..e10e86d 100644
+--- a/tos-api/src/i18n.rs
++++ b/tos-api/src/i18n.rs
+@@ -19,6 +19,9 @@ pub enum Sys {
+     Ok,
+     /// Common secondary button label.
+     Cancel,
++    /// The crash-report prompt (EmuTOS `dopanic`,
++    /// `bios/kprint.c:583`: `_("\n*** Press any key to continue ***")`).
++    PressAnyKey,
+ }
+ 
+ /// UI language. Only English exists today; the variant set grows as
+@@ -49,6 +52,7 @@ fn en(id: Sys) -> &'static [u8] {
+     match id {
+         Sys::Ok => b"OK",
+         Sys::Cancel => b"Cancel",
++        Sys::PressAnyKey => b"*** Press any key to continue ***",
+     }
+ }
+ 
+diff --git a/tos-api/src/lib.rs b/tos-api/src/lib.rs
+index 0d6a5a5..4343c6e 100644
+--- a/tos-api/src/lib.rs
++++ b/tos-api/src/lib.rs
+@@ -29,6 +29,7 @@ pub mod gemdos;
+ pub mod i18n;
+ pub mod host;
+ pub mod trap;
++pub mod uaccess;
+ pub mod vdi;
+ pub mod xbios;
+ 
+--- /dev/null	2026-10-05 00:28:44
++++ docs/api/bios/_exception-crash.md	2026-10-05 00:15:34
+@@ -0,0 +1,191 @@
++# Unhandled CPU exceptions in a program — crash report and `Pterm(-1)`
++
++> ARCH03 stage 0c (2026-10-05). Source: EmuTOS @ `1a7484ab`
++> (`references/emutos`), cross-checked against FreeMiNT @ `f906416`
++> (`references/freemint`). Not a trap function: this is the behaviour of the
++> **default exception vectors** — what the OS does when a program takes a
++> CPU exception nobody handles. Plan: `docs/analysis/arch03-implementation-plan.md`
++> Frage 10/11, Stufe 0c, E11.
++
++## EmuTOS source
++
++**Primary location:** `bios/vectors.S:225` `any_vec` → `bios/kprint.c:302`
++`dopanic()` → `bios/panicasm.S:96` `kill_program`.
++
++**Installed handler / vector:** `bios/vectors.S:103` `_init_exc_vec` (called
++from `bios/bios.c:143`) points the 62 CPU vectors 2–63 at
++`deflt_vec_table` (`vectors.S:151`), one `bsr.s any_vec` per vector; the
++`bsr` return address lets `any_vec` recompute the vector number.
++
++**Helpers called:**
++- `bios/vectors.S:225-279` — `any_vec` / `dump_stack`: `move.w #0x2700,sr`,
++  saves `D0-D7/A0-A6` to `proc_dregs`/`proc_aregs`, `USP` to `proc_usp`, the
++  vector number to `proc_enum`, 16 stack words to `proc_stk`, the magic
++  `0x12345678` to `proc_lives`, switches to `panic_stack`, `jmp _dopanic`.
++- `bios/kprint.c:302-594` — `dopanic()`: prints the report, waits for a key,
++  calls `kill_program`.
++- `bios/kprint.c:265-269` — `vkcprintf`: every report line goes to the debug
++  log (`kprintf`) **and** the screen (`cprintf` → `bconout2`, `kprint.c:53-60`
++  adds a CR before each LF).
++- `bios/panicasm.S:96-99` — `kill_program`: `move.w #-1,-(sp)`,
++  `move.w #0x4C,-(sp)`, `trap #1` — i.e. `Pterm(-1)`; should it return,
++  `warm_reset` (`panicasm.S:105`).
++- `bdos/proc.c:601-618` — `xterm(UWORD rc)`: runs `etv_term`
++  (`Setexc(0x102,-1)` + `protect_v`), `run = run->p_parent`, `ixterm`
++  (resources), `run->p_dreg[0] = rc`, `termuser()`.
++
++**System variables / globals written:** the post-mortem area at `0x380`
++(`proc_lives` 0x380, `proc_dregs` 0x384, `proc_aregs` 0x3A4, `proc_enum`
++0x3C4, `proc_usp` 0x3C8, `proc_stk` 0x3CC; see `_boot-init.md` §sysvars),
++`savptr` reset to `trap_save_area` (`kprint.c:587`).
++
++**Build configuration affecting this function:** `DISPLAY_INSTRUCTION_AT_PC`
++and `DISPLAY_STACK` (`kprint.c:37-38`) are `0` — no instruction or stack words
++are printed. CPU-specific frame decoding (`mcpu`, `kprint.c:358-490`); the
++Falcon030 profile prints the 68030 bus/address-error lines.
++
++---
++
++## Source extraction summary
++
++1. **Which exceptions.** Every CPU exception whose vector still holds the
++   default (bus error 2, address error 3, illegal instruction 4, zero divide
++   5, CHK 6, TRAPV 7, privilege violation 8, trace 9, Line-A 10, Line-F 11,
++   and the rest up to 63). `any_vec` does **not** look at the S bit: an
++   exception in supervisor mode — e.g. a bus error while GEMDOS dereferences a
++   caller's pointer — takes exactly the same path.
++2. **Report** (`kprint.c:312-573`), in order:
++   - `cprintf("\033f\033v\n\n")` — hide cursor, line wrap on, two newlines;
++   - `Panic: <exc_messages[proc_enum]>` (`kprint.c:283-300`: "Bus Error",
++     "Address Error", "Illegal Instruction", "Zero Divide", "CHK
++     Instruction", "TRAPV Instruction", "Privilege Violation", "Trace",
++     "Line A Emulator", "Line F Emulator"), or
++     `Panic: Exception number %d` outside that table (`kprint.c:500`);
++   - the CPU frame: 68030 bus/address error `fw= ir= ssr=` and
++     `addr= sr= pc=` (`kprint.c:432-435`), other exceptions `sr= pc=`;
++   - a blank line, then `D0-3:`, `D4-7:`, `A0-3:`, `A4-7:` (four `%08lx`
++     each) and ` USP:`, then a blank line (`kprint.c:527-537`);
++   - if a process runs (`run`): `basepage=`, `text= data= bss=`, and
++     `Crash at text+%08lx` when the PC lies inside the text segment
++     (`kprint.c:565-573`).
++3. **Wait** (`kprint.c:575-585`): interrupts on, eat pending keys
++   (`while (bconstat2()) bconin2();`), print
++   `"\n*** Press any key to continue ***"` (screen only, translated), block
++   in `bconin2()`, print `"\n"`.
++4. **Terminate** (`kprint.c:587-594`): "we are still running with the PD of
++   the failing program, so calling Pterm() now should clean up and return
++   control to the caller" — `kill_program` → `Pterm(-1)`. The full `xterm`
++   path runs: `etv_term` hook, resource release, the parent resumes from its
++   `Pexec` with the exit code. `rc` is a `UWORD` (`xterm(UWORD rc)`), so the
++   parent's `Pexec` returns `0x0000FFFF` (NewTOS D-005).
++5. **Bad pointer in a system call.** TOS has no `EFAULT`. EmuTOS performs no
++   pointer validation; a GEMDOS/BIOS function that dereferences an
++   inaccessible caller pointer takes a bus (or address) error in supervisor
++   mode, and points 2–4 apply with `run` = the **caller**: the calling
++   program is terminated with `Pterm(-1)`, the report shows the supervisor PC
++   (no "Crash at text+" line). The call returns nothing to the program.
++   FreeMiNT agrees in substance: a kernel bus error raises `SIGBUS` on
++   `curproc` (`sys/arch/sig_mach.c:493-502`), whose default action kills it
++   with the "MEMORY VIOLATION" alert (`sys/arch/mprot.x:89-150`); its `EFAULT`
++   (`sys/mint/errno.h:328`, value −40 = TOS `EIMBA`) is only returned by
++   explicit checks (`Mfree`/`Mshrink` of a non-block, `sys/dosmem.c`), never
++   for a faulting access.
++
++---
++
++## NewTOS contract (ARCH03 0c)
++
++Observable behaviour that must match:
++
++| Item | Contract |
++|---|---|
++| Who is terminated | the program that took the exception — for a fault inside a system call, the **calling** program |
++| How | `Pterm(-1)` through the ordinary terminate path: `etv_term` hook (if installed), resources freed, parent resumes; the parent's `Pexec` returns `0x0000FFFF` |
++| Report | on the console screen and in the debug log, before termination; layout as in §2, adapted below |
++| Wait | pending keys are discarded, prompt `*** Press any key to continue ***` (`tos_api::i18n::Sys::PressAnyKey`), then one key |
++| Machine | keeps running; the desktop/parent continues and repaints |
++
++### AArch64 → m68k exception mapping (`tos_api::bios::crash::classify`)
++
++| `ESR_EL1.EC` | Condition | Reported as | m68k vector |
++|---|---|---|---|
++| `0x20/0x21` Instruction Abort, `0x24/0x25` Data Abort | `DFSC/IFSC` ≠ `0x21` (translation, permission, access flag, address size, external) | `Bus Error` | 2 |
++| same | `DFSC/IFSC` = `0x21` (alignment fault) | `Address Error` | 3 |
++| `0x22` PC alignment, `0x26` SP alignment | — | `Address Error` | 3 |
++| `0x00` unknown reason (undefined instruction), `0x0E` illegal execution state | — | `Illegal Instruction` | 4 |
++| `0x18` trapped `MSR`/`MRS`/system instruction (cache maintenance, `CTR_EL0`, `DC ZVA`, …), `0x01` trapped `WFI`/`WFE` | user mode may not execute it (`SCTLR_EL1` gates) | `Privilege Violation` | 8 |
++| anything else (e.g. `0x3C` `BRK`) | no 68k counterpart | `Exception class 0x<ec>` (the analogue of "Exception number %d") | — |
++
++Sources: ARM ARM DDI 0487 M.d D24-8643 (EC), D24-8672/8673 (IFSC),
++D24-8683…8685 (DFSC), D24-8681 / D1-7219 (`FAR` validity, `FnV`); measured on
++QEMU in `docs/analysis/arch03-stage0b-spike.md` §5.
++
++### Report layout (adapted, `tos_api::bios::crash::write_report`)
++
++```text
++<blank>
++<blank>
++Panic: Bus Error
++esr=92000046
++addr=00000000dead0000 sr=00000000 pc=0000000000001234
++<blank>
++X0-3:   <16 hex> <16 hex> <16 hex> <16 hex>
++…       (X4-7 … X24-27)
++X28-30: <16 hex> <16 hex> <16 hex>
++ USP:   <16 hex>
++<blank>
++basepage=00000000
++text=00001000 data=00002000 bss=00002100
++Crash at text+00000234
++<blank>
++*** Press any key to continue ***
++```
++
++Adaptations, each because the m68k item does not exist on AArch64: the
++`esr=` line stands where the 68030 prints its frame words (`fw= ir= ssr=`);
++`addr=` is printed when `FAR_EL1` is valid for the syndrome; `sr=` is
++`SPSR_EL1`; the 31 general registers `X0`–`X30` replace `D0-D7/A0-A6`
++(64-bit, four per line, ≤ 80 columns); ` USP:` is `SP_EL0`. For a fault in a
++system call the registers, `pc`, `sr` are the kernel's at the faulting
++`ldtr`/`sttr` (as EmuTOS shows the supervisor state), ` USP:` the caller's.
++
++### Exceptions taken by the kernel itself
++
++A synchronous exception at EL1 **outside** the fault-safe user access
++(`tos_api::uaccess`, below) remains fatal (halt with the `[EXC]` report),
++as before 0c. This is a deliberate difference from EmuTOS, where a ROM bug
++during a trap also ends in `dopanic` + `Pterm`: here it indicates corrupted
++kernel state (plan Frage 11, invariant of Stufe 0c).
++
++### Fault-safe user access (`tos_api::uaccess`)
++
++Kernel reads/writes of caller memory go through leaf routines built on
++`ldtr*`/`sttr*` (EL0 permission check, ARM ARM C6.2.245) with a fixup table
++keyed by the faulting PC. A same-EL data abort (`EC 0x25`) at a listed
++instruction is recorded and resumed at the fixup; the call stops, and the
++syscall tail terminates the **EL0** caller per §5 above. An **EL1** caller
++reaching such a fault (a kernel path passing a kernel pointer to a
++user-pointer API) halts, as before.
++
++Converted in 0c (pilot): `Cconws` (`tos-api/src/gemdos/console.rs`), the
++`Pexec` path / command tail / environment readers
++(`kernel/src/arch/aarch64/exceptions.rs` `handle_pexec`). All other kernel
++accesses to user memory are unchanged (stage 1 inventory).
++
++### Not done / open
++
++- **Post-mortem area `0x380`** (`proc_lives` …) is not written: the m68k
++  layout cannot hold 31 64-bit registers, and NewTOS' page 0 is per process.
++  Open — no known consumer.
++- **Escapes `ESC f`/`ESC v`** before the report are not emitted: the screen
++  console does not parse escape sequences (`kernel/src/fbcon.rs`).
++- **FreeMiNT "MEMORY VIOLATION" alert** (E11 recommendation) is not shown;
++  0c implements the EmuTOS text report. Open decision for the lead.
++- A program that crashes again inside its own `etv_term` handler re-enters
++  `Pterm(-1)` → `etv_term`; EmuTOS would loop, NewTOS stops at the upcall
++  nesting limit with `Pterm(-998)` (existing `deliver_upcall` rule).
++- **SError** (asynchronous) from EL0 still halts — not a synchronous
++  exception, outside 0c.
++- Writing to user address 0 does **not** fault in NewTOS today: page 0 (the
++  basepage + sysvar page) is mapped `UserRwExec` for the program
++  (`loader.rs`), unlike the supervisor-only low memory of an ST.
+--- /dev/null	2026-10-05 00:28:44
++++ kernel/src/arch/aarch64/crash.rs	2026-10-05 00:14:45
+@@ -0,0 +1,133 @@
++//! Program crash report on the console + the "press any key" wait — the
++//! output half of EmuTOS `dopanic` (`references/emutos/bios/kprint.c:302-596`),
++//! ARCH03 stage 0c. Spec: `docs/api/bios/_exception-crash.md`.
++//!
++//! The text itself is rendered by [`tos_api::bios::crash::write_report`]
++//! (host-tested); this module sends it to the console the way `kcprintf`
++//! does — the screen (`bconout2`, here [`crate::fbcon`] via the host) and the
++//! debug log (here the UART, subject to the `serial=on` switch on
++//! `board-rpi4`) — and waits for a key. Terminating the program is the
++//! caller's job ([`super::exceptions`], `Pterm(-1)` like EmuTOS
++//! `kill_program`).
++
++use core::fmt;
++
++use tos_api::bios::crash::{CrashReport, ProgramInfo};
++
++/// `fmt::Write` over the console host, adding a CR before every LF like
++/// EmuTOS' `cprintf_outc` (`bios/kprint.c:53-60`). Without a host (no console
++/// installed yet) it falls back to the UART alone.
++struct ConsoleWriter;
++
++impl fmt::Write for ConsoleWriter {
++    fn write_str(&mut self, s: &str) -> fmt::Result {
++        match tos_api::host::host() {
++            Some(h) => {
++                for &b in s.as_bytes() {
++                    if b == b'\n' {
++                        h.console_write_byte(b'\r');
++                    }
++                    h.console_write_byte(b);
++                }
++            }
++            None => {
++                use crate::hal::uart::Uart as _;
++                for &b in s.as_bytes() {
++                    if b == b'\n' {
++                        crate::console::CONSOLE.write_byte(b'\r');
++                    }
++                    crate::console::CONSOLE.write_byte(b);
++                }
++            }
++        }
++        Ok(())
++    }
++}
++
++/// The running program's basepage fields for the report, read through the
++/// kernel alias of its basepage (`RUN`). `None` when no program runs.
++pub fn current_program() -> Option<ProgramInfo> {
++    let bp = tos_api::bdos::process::current();
++    if bp.is_null() {
++        return None;
++    }
++    // SAFETY: `RUN` points at the kernel (high-half) alias of a live
++    // process's basepage; the fields are plain `LONG`s. Volatile because the
++    // program may have rewritten its basepage.
++    unsafe {
++        Some(ProgramInfo {
++            basepage: core::ptr::addr_of!((*bp).p_lowtpa).read_volatile() as u32,
++            tbase: core::ptr::addr_of!((*bp).p_tbase).read_volatile() as u32,
++            tlen: core::ptr::addr_of!((*bp).p_tlen).read_volatile() as u32,
++            dbase: core::ptr::addr_of!((*bp).p_dbase).read_volatile() as u32,
++            bbase: core::ptr::addr_of!((*bp).p_bbase).read_volatile() as u32,
++        })
++    }
++}
++
++/// Print the report, then — like `dopanic` (`kprint.c:581-585`) — eat any
++/// pending keys, show the prompt, and block until a key arrives.
++///
++/// `slot` is the dying program's process slot. A program with its own
++/// `kbdvec` hook (KEYS02) has its keyboard bytes queued for an EL0 upcall
++/// that can no longer run; EmuTOS would still call the hook from the IKBD
++/// interrupt. Here those bytes are handed to the default decoder
++/// ([`crate::ikbd::kbd_int`], what every hook chains to) so the prompt can be
++/// answered.
++pub fn report_and_wait(report: &CrashReport<'_>, slot: usize) {
++    use fmt::Write as _;
++
++    crate::kprintln!(
++        "[crash] slot {} {} esr=0x{:08x} pc=0x{:x} far={:?}",
++        slot,
++        report.kind.message().unwrap_or("exception"),
++        report.esr as u32,
++        report.pc,
++        report.far,
++    );
++    let mut w = ConsoleWriter;
++    let _ = tos_api::bios::crash::write_report(&mut w, report);
++
++    let Some(h) = tos_api::host::host() else {
++        // No console input at all: nothing could answer the prompt.
++        return;
++    };
++    // `while (bconstat2()) bconin2();`
++    drain_hook_bytes(slot);
++    while h.console_try_read_key().is_some() {
++        drain_hook_bytes(slot);
++    }
++    // `cprintf(_("\n*** Press any key to continue ***"));`
++    let _ = w.write_str("\n");
++    for &b in tos_api::i18n::sys_string(tos_api::i18n::Sys::PressAnyKey) {
++        h.console_write_byte(b);
++    }
++    // `bconin2();`
++    loop {
++        drain_hook_bytes(slot);
++        if h.console_try_read_key().is_some() {
++            break;
++        }
++        // Same wait as the blocking console read (`host_env::read_key_loop`):
++        // board-rpi4 polls the USB keyboard, so spin; elsewhere sleep until
++        // the next interrupt (the PL011 RX IRQ, the 200 Hz tick).
++        #[cfg(feature = "board-rpi4")]
++        core::hint::spin_loop();
++        #[cfg(not(feature = "board-rpi4"))]
++        // SAFETY: `wfi` only waits; a pending (even masked) IRQ wakes it.
++        unsafe {
++            core::arch::asm!("wfi", options(nomem, nostack, preserves_flags));
++        }
++    }
++    // `cprintf("\n");`
++    let _ = w.write_str("\n");
++    crate::kprintln!("[crash] slot {} key pressed, terminating with Pterm(-1)", slot);
++}
++
++/// Decode the bytes queued for `slot`'s `kbdvec` hook with the default
++/// handler (see [`report_and_wait`]).
++fn drain_hook_bytes(slot: usize) {
++    while let Some(b) = tos_api::xbios::kbdvecs::pop(slot) {
++        crate::ikbd::kbd_int(b);
++    }
++}
+--- /dev/null	2026-10-05 00:28:44
++++ tos-api/src/bios/crash.rs	2026-10-05 00:14:45
+@@ -0,0 +1,387 @@
++//! Program crash report — EmuTOS `dopanic` for AArch64 exceptions
++//! (ARCH03 stage 0c).
++//!
++//! Spec: `docs/api/bios/_exception-crash.md`. When a program takes a CPU
++//! exception the OS does not handle (on m68k: vectors 2–63 still pointing at
++//! the default `any_vec`, `references/emutos/bios/vectors.S`), EmuTOS prints a
++//! register dump on the console and in the debug log (`kcprintf`,
++//! `bios/kprint.c:302-573`), waits for a key and terminates the program with
++//! `Pterm(-1)` (`kprint.c:575-594`, `bios/panicasm.S:96-99`).
++//!
++//! This module holds the parts that do not touch hardware, so they are host
++//! testable: [`classify`] maps an `ESR_EL1` syndrome onto the m68k exception
++//! EmuTOS would have reported (`exc_messages`, `kprint.c:283-300`), and
++//! [`write_report`] renders the report text. The kernel's synchronous
++//! handler supplies the register state, prints, waits and terminates.
++
++use core::fmt;
++
++/// `ESR_ELx.EC` values this module distinguishes (ARM ARM DDI 0487 M.d,
++/// D24-8643).
++mod ec {
++    /// Unknown reason — an undefined/unallocated instruction.
++    pub const UNKNOWN: u8 = 0x00;
++    /// Trapped `WFI`/`WFE` (`SCTLR_EL1.nTWI/nTWE = 0`).
++    pub const WFX: u8 = 0x01;
++    /// Illegal Execution state (`PSTATE.IL`).
++    pub const ILLEGAL_STATE: u8 = 0x0E;
++    /// Trapped `MSR`/`MRS`/system instruction.
++    pub const SYSREG: u8 = 0x18;
++    /// Instruction Abort from a lower EL.
++    pub const IABT_LOWER: u8 = 0x20;
++    /// Instruction Abort from the same EL.
++    pub const IABT_SAME: u8 = 0x21;
++    /// PC alignment fault.
++    pub const PC_ALIGN: u8 = 0x22;
++    /// Data Abort from a lower EL.
++    pub const DABT_LOWER: u8 = 0x24;
++    /// Data Abort from the same EL.
++    pub const DABT_SAME: u8 = 0x25;
++    /// SP alignment fault.
++    pub const SP_ALIGN: u8 = 0x26;
++}
++
++/// The `DFSC`/`IFSC` value of an Alignment fault (ARM ARM D24-8684).
++const FSC_ALIGNMENT: u8 = 0x21;
++
++/// The exception class field `ESR_ELx.EC` (bits 31:26).
++#[inline]
++pub const fn esr_ec(esr: u64) -> u8 {
++    ((esr >> 26) & 0x3F) as u8
++}
++
++/// `true` for an Instruction or Data Abort, from either exception level.
++#[inline]
++pub const fn is_abort(esr: u64) -> bool {
++    matches!(
++        esr_ec(esr),
++        ec::IABT_LOWER | ec::IABT_SAME | ec::DABT_LOWER | ec::DABT_SAME
++    )
++}
++
++/// The fault status code (`DFSC`/`IFSC`, `ISS[5:0]`) of an abort, `None` for
++/// any other exception class.
++#[inline]
++pub const fn fault_status(esr: u64) -> Option<u8> {
++    if is_abort(esr) { Some((esr & 0x3F) as u8) } else { None }
++}
++
++/// Whether `FAR_EL1` holds the faulting address for this syndrome: every
++/// abort except a synchronous External abort with `FnV` (`ISS[10]`) set, and
++/// a PC alignment fault (FAR = the misaligned PC) — ARM ARM D24-8681,
++/// D1-7219.
++#[inline]
++pub const fn far_valid(esr: u64) -> bool {
++    if is_abort(esr) {
++        esr & (1 << 10) == 0
++    } else {
++        esr_ec(esr) == ec::PC_ALIGN
++    }
++}
++
++/// The exception EmuTOS would have reported — `exc_messages[]`
++/// (`bios/kprint.c:283-300`) — for an AArch64 synchronous exception.
++///
++/// The mapping follows what raised the m68k vector, not the AArch64 name:
++/// an MMU/bus fault on a data or instruction access is the 68k **bus error**
++/// (vector 2), a misaligned access/PC/SP the **address error** (vector 3,
++/// odd address), an undefined instruction the **illegal instruction**
++/// (vector 4), and an instruction that user mode may not execute
++/// (`MSR`/`MRS`/cache maintenance/`WFI` trapped by `SCTLR_EL1`) the
++/// **privilege violation** (vector 8). Anything else has no 68k counterpart
++/// and is reported by its exception class, the way EmuTOS reports a vector
++/// outside its table ("Exception number %d", `kprint.c:494-502`).
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum CrashKind {
++    /// 68k vector 2.
++    BusError,
++    /// 68k vector 3.
++    AddressError,
++    /// 68k vector 4.
++    IllegalInstruction,
++    /// 68k vector 8.
++    PrivilegeViolation,
++    /// No 68k counterpart; carries `ESR_EL1.EC`.
++    Other(u8),
++}
++
++impl CrashKind {
++    /// The m68k exception vector number (`proc_enum`) this kind stands for,
++    /// `None` for [`CrashKind::Other`].
++    pub const fn vector(self) -> Option<u8> {
++        match self {
++            CrashKind::BusError => Some(2),
++            CrashKind::AddressError => Some(3),
++            CrashKind::IllegalInstruction => Some(4),
++            CrashKind::PrivilegeViolation => Some(8),
++            CrashKind::Other(_) => None,
++        }
++    }
++
++    /// The EmuTOS message text (`exc_messages[vector]`).
++    pub const fn message(self) -> Option<&'static str> {
++        match self {
++            CrashKind::BusError => Some("Bus Error"),
++            CrashKind::AddressError => Some("Address Error"),
++            CrashKind::IllegalInstruction => Some("Illegal Instruction"),
++            CrashKind::PrivilegeViolation => Some("Privilege Violation"),
++            CrashKind::Other(_) => None,
++        }
++    }
++}
++
++/// Classify a synchronous exception syndrome — see [`CrashKind`].
++pub const fn classify(esr: u64) -> CrashKind {
++    match esr_ec(esr) {
++        ec::IABT_LOWER | ec::IABT_SAME | ec::DABT_LOWER | ec::DABT_SAME => {
++            if (esr & 0x3F) as u8 == FSC_ALIGNMENT {
++                CrashKind::AddressError
++            } else {
++                CrashKind::BusError
++            }
++        }
++        ec::PC_ALIGN | ec::SP_ALIGN => CrashKind::AddressError,
++        ec::UNKNOWN | ec::ILLEGAL_STATE => CrashKind::IllegalInstruction,
++        ec::WFX | ec::SYSREG => CrashKind::PrivilegeViolation,
++        other => CrashKind::Other(other),
++    }
++}
++
++/// The program that was running, from its basepage — EmuTOS prints these
++/// from `run` (`kprint.c:565-573`). Addresses are the program's own (user)
++/// addresses, as `LONG`s like the basepage stores them.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct ProgramInfo {
++    /// User address of the basepage.
++    pub basepage: u32,
++    /// `p_tbase`.
++    pub tbase: u32,
++    /// `p_tlen`.
++    pub tlen: u32,
++    /// `p_dbase`.
++    pub dbase: u32,
++    /// `p_bbase`.
++    pub bbase: u32,
++}
++
++/// Everything the report shows.
++#[derive(Debug, Clone, Copy)]
++pub struct CrashReport<'a> {
++    /// The classified exception.
++    pub kind: CrashKind,
++    /// `ESR_EL1` (EmuTOS shows the 68030 frame's format/status words here).
++    pub esr: u64,
++    /// The fault address, when the syndrome provides one.
++    pub far: Option<u64>,
++    /// The program counter at the exception (`ELR_EL1`).
++    pub pc: u64,
++    /// The saved processor state (`SPSR_EL1`, EmuTOS: `sr`).
++    pub pstate: u64,
++    /// `x0..x30` at the exception (EmuTOS: `D0-D7`, `A0-A7`).
++    pub regs: &'a [u64; 31],
++    /// The program's stack pointer `SP_EL0` (EmuTOS: `USP`).
++    pub usp: u64,
++    /// The running program, if there is one.
++    pub program: Option<ProgramInfo>,
++}
++
++/// Render the report text — the `kcprintf` lines of `dopanic`
++/// (`kprint.c:302-573`), up to but not including the
++/// "Press any key to continue" prompt, which the caller prints itself (it
++/// goes to the screen only, `kprint.c:581-585`). Lines end in `\n`; the
++/// console writer adds the `\r` (EmuTOS `cprintf_outc`, `kprint.c:53-60`).
++pub fn write_report<W: fmt::Write>(w: &mut W, r: &CrashReport<'_>) -> fmt::Result {
++    // `cprintf("\033f\033v\n\n")` (`kprint.c:312`): the escapes hide the
++    // cursor and enable line wrap — not escapes this console parses — then
++    // two blank lines.
++    w.write_str("\n\n")?;
++    match r.kind.message() {
++        Some(m) => writeln!(w, "Panic: {m}")?,
++        None => writeln!(w, "Panic: Exception class 0x{:02x}", esr_ec(r.esr))?,
++    }
++    // The 68030 bus/address error frame line ("fw=… ir=… ssr=…",
++    // `kprint.c:432-435`) — the AArch64 syndrome register stands in for it.
++    writeln!(w, "esr={:08x}", r.esr as u32)?;
++    match r.far {
++        Some(a) => writeln!(w, "addr={:016x} sr={:08x} pc={:016x}", a, r.pstate as u32, r.pc)?,
++        None => writeln!(w, "sr={:08x} pc={:016x}", r.pstate as u32, r.pc)?,
++    }
++    // Register dump (`kprint.c:527-537`): four per line, like "D0-3:".
++    w.write_str("\n")?;
++    let mut i = 0usize;
++    while i < 31 {
++        let last = core::cmp::min(i + 3, 30);
++        let mut label = [0u8; 8];
++        let lab = fmt_label(&mut label, i, last);
++        write!(w, "{lab:<8}")?;
++        for (k, v) in r.regs[i..=last].iter().enumerate() {
++            if k > 0 {
++                w.write_str(" ")?;
++            }
++            write!(w, "{v:016x}")?;
++        }
++        w.write_str("\n")?;
++        i += 4;
++    }
++    writeln!(w, "{:<8}{:016x}", " USP:", r.usp)?;
++    w.write_str("\n")?;
++    if let Some(p) = r.program {
++        writeln!(w, "basepage={:08x}", p.basepage)?;
++        writeln!(w, "text={:08x} data={:08x} bss={:08x}", p.tbase, p.dbase, p.bbase)?;
++        let tbase = u64::from(p.tbase);
++        if r.pc >= tbase && r.pc < tbase + u64::from(p.tlen) {
++            writeln!(w, "Crash at text+{:08x}", r.pc - tbase)?;
++        }
++    }
++    Ok(())
++}
++
++/// "X<first>-<last>:" into `buf` (at most 7 bytes: "X28-30:").
++fn fmt_label(buf: &mut [u8; 8], first: usize, last: usize) -> &str {
++    let mut n = 0;
++    let mut put = |b: u8, n: &mut usize| {
++        buf[*n] = b;
++        *n += 1;
++    };
++    put(b'X', &mut n);
++    for v in [first, last] {
++        if v >= 10 {
++            put(b'0' + (v / 10) as u8, &mut n);
++        }
++        put(b'0' + (v % 10) as u8, &mut n);
++        put(if v == first { b'-' } else { b':' }, &mut n);
++    }
++    core::str::from_utf8(&buf[..n]).unwrap_or("X:")
++}
++
++#[cfg(test)]
++mod tests {
++    extern crate std;
++    use super::*;
++    use std::string::String;
++
++    /// Build an ESR from EC + ISS (IL = 1, as for every A64 instruction).
++    const fn esr(ec: u8, iss: u32) -> u64 {
++        ((ec as u64) << 26) | (1 << 25) | iss as u64
++    }
++
++    #[test]
++    fn aborts_classify_as_bus_error_except_alignment() {
++        // 0b measurements (S0b §5): translation L0..L3, permission L2/L3.
++        for fsc in [0x04u32, 0x05, 0x06, 0x07, 0x0E, 0x0F, 0x0B, 0x10] {
++            assert_eq!(classify(esr(0x24, fsc)), CrashKind::BusError, "DABT fsc {fsc:#x}");
++            assert_eq!(classify(esr(0x20, fsc)), CrashKind::BusError, "IABT fsc {fsc:#x}");
++            assert_eq!(classify(esr(0x25, fsc | 0x40)), CrashKind::BusError, "same-EL write");
++        }
++        assert_eq!(classify(esr(0x24, 0x21)), CrashKind::AddressError);
++        assert_eq!(classify(esr(0x25, 0x21)), CrashKind::AddressError);
++    }
++
++    #[test]
++    fn other_classes_map_onto_68k_vectors() {
++        assert_eq!(classify(esr(0x00, 0)), CrashKind::IllegalInstruction);
++        assert_eq!(classify(esr(0x0E, 0)), CrashKind::IllegalInstruction);
++        assert_eq!(classify(esr(0x22, 0)), CrashKind::AddressError);
++        assert_eq!(classify(esr(0x26, 0)), CrashKind::AddressError);
++        assert_eq!(classify(esr(0x18, 0)), CrashKind::PrivilegeViolation);
++        assert_eq!(classify(esr(0x01, 0)), CrashKind::PrivilegeViolation);
++        assert_eq!(classify(esr(0x3C, 0)), CrashKind::Other(0x3C));
++        assert_eq!(CrashKind::BusError.vector(), Some(2));
++        assert_eq!(CrashKind::AddressError.vector(), Some(3));
++        assert_eq!(CrashKind::IllegalInstruction.vector(), Some(4));
++        assert_eq!(CrashKind::PrivilegeViolation.vector(), Some(8));
++        assert_eq!(CrashKind::Other(0x3C).message(), None);
++    }
++
++    #[test]
++    fn syndrome_fields() {
++        // sttr on an EL0-RO page, 0b §5: ESR ISS 0x4F (WnR + permission L3).
++        let e = esr(0x25, 0x4F);
++        assert!(is_abort(e));
++        assert_eq!(fault_status(e), Some(0x0F));
++        assert!(far_valid(e));
++        // External abort with FnV: FAR not valid.
++        assert!(!far_valid(esr(0x24, 0x10 | (1 << 10))));
++        assert!(far_valid(esr(0x22, 0)));
++        assert!(!far_valid(esr(0x00, 0)));
++        assert_eq!(fault_status(esr(0x00, 0)), None);
++    }
++
++    fn render(r: &CrashReport<'_>) -> String {
++        let mut s = String::new();
++        write_report(&mut s, r).unwrap();
++        s
++    }
++
++    #[test]
++    fn report_has_emutos_shape() {
++        let mut regs = [0u64; 31];
++        for (i, r) in regs.iter_mut().enumerate() {
++            *r = i as u64;
++        }
++        let r = CrashReport {
++            kind: CrashKind::BusError,
++            esr: esr(0x24, 0x46),
++            far: Some(0xDEAD_0000),
++            pc: 0x1234,
++            pstate: 0,
++            regs: &regs,
++            usp: 0x3F_FF00,
++            program: Some(ProgramInfo {
++                basepage: 0,
++                tbase: 0x1000,
++                tlen: 0x800,
++                dbase: 0x2000,
++                bbase: 0x2100,
++            }),
++        };
++        let s = render(&r);
++        let lines: std::vec::Vec<&str> = s.lines().collect();
++        assert_eq!(lines[0], "");
++        assert_eq!(lines[1], "");
++        assert_eq!(lines[2], "Panic: Bus Error");
++        assert_eq!(lines[3], "esr=92000046");
++        assert_eq!(lines[4], "addr=00000000dead0000 sr=00000000 pc=0000000000001234");
++        assert_eq!(lines[5], "");
++        assert_eq!(
++            lines[6],
++            "X0-3:   0000000000000000 0000000000000001 0000000000000002 0000000000000003"
++        );
++        assert!(lines[8].starts_with("X8-11:  0"), "{}", lines[8]);
++        assert_eq!(
++            lines[13],
++            "X28-30: 000000000000001c 000000000000001d 000000000000001e"
++        );
++        assert_eq!(lines[14], " USP:   00000000003fff00");
++        assert_eq!(lines[15], "");
++        assert_eq!(lines[16], "basepage=00000000");
++        assert_eq!(lines[17], "text=00001000 data=00002000 bss=00002100");
++        assert_eq!(lines[18], "Crash at text+00000234");
++        assert_eq!(lines.len(), 19);
++        // Every line fits an 80-column console.
++        assert!(lines.iter().all(|l| l.len() <= 80));
++    }
++
++    #[test]
++    fn report_without_address_or_program_or_text_hit() {
++        let regs = [0u64; 31];
++        let r = CrashReport {
++            kind: CrashKind::Other(0x3C),
++            esr: esr(0x3C, 0),
++            far: None,
++            pc: 0xFFFF_0000_0008_0000,
++            pstate: 0x3C5,
++            regs: &regs,
++            usp: 0,
++            program: Some(ProgramInfo { basepage: 0, tbase: 0x1000, tlen: 0x10, dbase: 0, bbase: 0 }),
++        };
++        let s = render(&r);
++        assert!(s.contains("Panic: Exception class 0x3c\n"));
++        assert!(s.contains("\nsr=000003c5 pc=ffff000000080000\n"));
++        assert!(!s.contains("addr="));
++        // A kernel PC is not inside the program's text: no "Crash at" line.
++        assert!(!s.contains("Crash at"));
++        let r2 = CrashReport { program: None, ..r };
++        assert!(!render(&r2).contains("basepage="));
++    }
++}
+--- /dev/null	2026-10-05 00:28:44
++++ tos-api/src/uaccess.rs	2026-10-05 00:14:45
+@@ -0,0 +1,580 @@
++//! Fault-safe kernel access to **user** memory (ARCH03 stage 0c).
++//!
++//! A TOS syscall argument that is a pointer is a pointer into the *caller's*
++//! address space. The kernel reads and writes such memory with the
++//! unprivileged load/store instructions `ldtr*`/`sttr*`: executed at EL1 with
++//! `PSTATE.UAO = 0` (the Cortex-A72 has no UAO) they are permission-checked
++//! "as if executed at EL0" (ARM ARM DDI 0487 M.d C6.2.245; plan
++//! `docs/analysis/arch03-implementation-plan.md` Frage 10, 0a/0b notes), so a
++//! kernel pointer (`AP = 00`), an address outside the caller's `TTBR0` window
++//! and an unmapped user address all fault.
++//!
++//! What this module adds over the bare instructions is **recovery**. Every
++//! `ldtr`/`sttr` below sits in a hand-written leaf routine and is listed in a
++//! fixup table `(instruction PC, fixup PC)`. The kernel's synchronous handler
++//! consults [`fixup_for`] on a same-EL data abort (`EC 0x25`); if the faulting
++//! `ELR_EL1` is one of these instructions it records the fault
++//! ([`note_fault`]) and resumes at the fixup, which returns a failure status
++//! to the Rust wrapper — instead of halting the machine. The 0b spike measured
++//! exactly this picture on QEMU (`docs/analysis/arch03-stage0b-spike.md` §5:
++//! `ELR` = the `ldtr`/`sttr` itself, `FAR` = the user VA, DFSC per level).
++//! A same-EL abort at any **other** PC is still a kernel fault and halts.
++//!
++//! ## What a fault means for the caller (EmuTOS behaviour)
++//!
++//! TOS has no `EFAULT`. On EmuTOS a GEMDOS call that dereferences a bad
++//! pointer takes a bus/address error **in supervisor mode**; the default
++//! vector (`references/emutos/bios/vectors.S` `any_vec`) runs `dopanic`
++//! (`bios/kprint.c:302-596`), which prints the crash report and calls
++//! `kill_program` → `Pterm(-1)` (`bios/panicasm.S:96-99`) — and since `run` is
++//! still the caller's PD, it is the **calling program** that is terminated
++//! (`kprint.c:587-594`). FreeMiNT does the same in substance: a kernel bus
++//! error on a user address raises `SIGBUS` on `curproc`
++//! (`references/freemint/sys/arch/sig_mach.c:493-502`), whose default action
++//! kills it. The recorded fault is therefore not turned into an error code
++//! for the program: the kernel's syscall tail picks it up with
++//! [`take_pending_fault`] and terminates the caller with the crash report
++//! (`docs/api/bios/_exception-crash.md`). The `Err` the wrappers return only
++//! lets the Rust call site stop cleanly; its value never reaches the program.
++//!
++//! On the host (unit tests) there is no EL0/EL1 split and nothing can fault
++//! recoverably, so the wrappers use ordinary loads/stores there and the
++//! fixup table is empty.
++
++use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
++
++/// A user-memory access faulted (the address was not accessible to the
++/// calling program). The details are in the record [`note_fault`] stored.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct UserFault;
++
++/// One fixup-table entry: a faulting instruction and where to resume.
++#[repr(C)]
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct FixupEntry {
++    /// Address of an `ldtr*`/`sttr*` instruction that may fault.
++    pub insn: u64,
++    /// Address execution resumes at when that instruction faults.
++    pub fixup: u64,
++}
++
++/// Look `pc` up in `table`: the fixup address if `pc` is exactly one of the
++/// listed instructions. Exact match only — `ELR_EL1` of a synchronous data
++/// abort is the faulting instruction itself (ARM ARM D1, measured in 0b §5),
++/// so a PC one instruction off is a different (kernel) fault.
++pub fn lookup_fixup(table: &[FixupEntry], pc: u64) -> Option<u64> {
++    table.iter().find(|e| e.insn == pc).map(|e| e.fixup)
++}
++
++/// The fixup for a same-EL data abort at `pc`, if `pc` is one of this
++/// module's user-access instructions.
++pub fn fixup_for(pc: u64) -> Option<u64> {
++    lookup_fixup(fixup_table(), pc)
++}
++
++// ---------------------------------------------------------------------------
++// Fault record — written by the kernel's abort handler, consumed by the
++// syscall tail.
++// ---------------------------------------------------------------------------
++
++/// Snapshot of a recovered user-access fault: what EmuTOS saves at `0x380`
++/// for `dopanic` (`bios/vectors.S` `any_vec`) — the registers at the fault,
++/// the fault address and the PC — in AArch64 terms.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct FaultRecord {
++    /// `FAR_EL1` — the user address the kernel tried to access.
++    pub far: u64,
++    /// `ESR_EL1` of the abort (`EC 0x25`, DFSC, `WnR`).
++    pub esr: u64,
++    /// `ELR_EL1` — the faulting `ldtr`/`sttr` (a kernel address).
++    pub pc: u64,
++    /// `SPSR_EL1` of the abort (the EL1 state the access ran in).
++    pub pstate: u64,
++    /// `x0..x30` at the fault.
++    pub regs: [u64; 31],
++}
++
++static FAULT_ARMED: AtomicBool = AtomicBool::new(false);
++static FAULT_FAR: AtomicU64 = AtomicU64::new(0);
++static FAULT_ESR: AtomicU64 = AtomicU64::new(0);
++static FAULT_PC: AtomicU64 = AtomicU64::new(0);
++static FAULT_PSTATE: AtomicU64 = AtomicU64::new(0);
++static FAULT_REGS: [AtomicU64; 31] = [const { AtomicU64::new(0) }; 31];
++
++/// Record a recovered user-access fault. Called by the kernel's synchronous
++/// handler right before it redirects `ELR_EL1` to the fixup. The first fault
++/// of a syscall wins: a later one (the Rust caller ignoring the `Err` and
++/// trying again) does not overwrite the report of the original.
++pub fn note_fault(rec: &FaultRecord) {
++    if FAULT_ARMED.load(Ordering::Acquire) {
++        return;
++    }
++    FAULT_FAR.store(rec.far, Ordering::Relaxed);
++    FAULT_ESR.store(rec.esr, Ordering::Relaxed);
++    FAULT_PC.store(rec.pc, Ordering::Relaxed);
++    FAULT_PSTATE.store(rec.pstate, Ordering::Relaxed);
++    for (dst, &v) in FAULT_REGS.iter().zip(rec.regs.iter()) {
++        dst.store(v, Ordering::Relaxed);
++    }
++    FAULT_ARMED.store(true, Ordering::Release);
++}
++
++/// Consume the pending fault record, if a user access faulted since the last
++/// call. The kernel calls this when a syscall returns to its caller.
++pub fn take_pending_fault() -> Option<FaultRecord> {
++    if !FAULT_ARMED.swap(false, Ordering::AcqRel) {
++        return None;
++    }
++    let mut regs = [0u64; 31];
++    for (dst, src) in regs.iter_mut().zip(FAULT_REGS.iter()) {
++        *dst = src.load(Ordering::Relaxed);
++    }
++    Some(FaultRecord {
++        far: FAULT_FAR.load(Ordering::Relaxed),
++        esr: FAULT_ESR.load(Ordering::Relaxed),
++        pc: FAULT_PC.load(Ordering::Relaxed),
++        pstate: FAULT_PSTATE.load(Ordering::Relaxed),
++        regs,
++    })
++}
++
++// ---------------------------------------------------------------------------
++// Public accessors
++// ---------------------------------------------------------------------------
++
++/// Read one byte from user address `va`.
++pub fn get_user_u8(va: u64) -> Result<u8, UserFault> {
++    let mut v = 0u8;
++    // SAFETY: `&mut v` is a valid kernel destination of the right size.
++    status(unsafe { raw::ld8(va, &mut v) }).map(|()| v)
++}
++
++/// Read a 16-bit value from user address `va` (native byte order).
++pub fn get_user_u16(va: u64) -> Result<u16, UserFault> {
++    let mut v = 0u16;
++    // SAFETY: as in [`get_user_u8`].
++    status(unsafe { raw::ld16(va, &mut v) }).map(|()| v)
++}
++
++/// Read a 32-bit value from user address `va` (native byte order).
++pub fn get_user_u32(va: u64) -> Result<u32, UserFault> {
++    let mut v = 0u32;
++    // SAFETY: as in [`get_user_u8`].
++    status(unsafe { raw::ld32(va, &mut v) }).map(|()| v)
++}
++
++/// Read a 64-bit value from user address `va` (native byte order).
++pub fn get_user_u64(va: u64) -> Result<u64, UserFault> {
++    let mut v = 0u64;
++    // SAFETY: as in [`get_user_u8`].
++    status(unsafe { raw::ld64(va, &mut v) }).map(|()| v)
++}
++
++/// Write one byte to user address `va`.
++pub fn put_user_u8(va: u64, v: u8) -> Result<(), UserFault> {
++    // SAFETY: the store goes through the unprivileged, fault-recovered path.
++    status(unsafe { raw::st8(va, u64::from(v)) })
++}
++
++/// Write a 16-bit value to user address `va` (native byte order).
++pub fn put_user_u16(va: u64, v: u16) -> Result<(), UserFault> {
++    // SAFETY: as in [`put_user_u8`].
++    status(unsafe { raw::st16(va, u64::from(v)) })
++}
++
++/// Write a 32-bit value to user address `va` (native byte order).
++pub fn put_user_u32(va: u64, v: u32) -> Result<(), UserFault> {
++    // SAFETY: as in [`put_user_u8`].
++    status(unsafe { raw::st32(va, u64::from(v)) })
++}
++
++/// Write a 64-bit value to user address `va` (native byte order).
++pub fn put_user_u64(va: u64, v: u64) -> Result<(), UserFault> {
++    // SAFETY: as in [`put_user_u8`].
++    status(unsafe { raw::st64(va, v) })
++}
++
++/// Copy `dst.len()` bytes from user address `src` into the kernel buffer
++/// `dst`. On a fault the bytes before the faulting one have been copied.
++pub fn copy_from_user(dst: &mut [u8], src: u64) -> Result<(), UserFault> {
++    // SAFETY: `dst` is a valid kernel buffer of `dst.len()` bytes.
++    let left = unsafe { raw::copy_from(dst.as_mut_ptr(), src, dst.len() as u64) };
++    if left == 0 { Ok(()) } else { Err(UserFault) }
++}
++
++/// Copy the kernel buffer `src` to user address `dst`. On a fault the bytes
++/// before the faulting one have been stored.
++pub fn copy_to_user(dst: u64, src: &[u8]) -> Result<(), UserFault> {
++    // SAFETY: `src` is a valid kernel buffer of `src.len()` bytes.
++    let left = unsafe { raw::copy_to(dst, src.as_ptr(), src.len() as u64) };
++    if left == 0 { Ok(()) } else { Err(UserFault) }
++}
++
++/// Copy a NUL-terminated string from user address `src` into `dst`,
++/// returning its length (without the NUL). Reading stops at the NUL or after
++/// `dst.len()` bytes — a missing terminator truncates (the returned length is
++/// then `dst.len()`); the NUL itself is not stored.
++pub fn read_user_cstr(src: u64, dst: &mut [u8]) -> Result<usize, UserFault> {
++    // SAFETY: `dst` is a valid kernel buffer of `dst.len()` bytes.
++    let n = unsafe { raw::strncpy_from(dst.as_mut_ptr(), src, dst.len() as u64) };
++    if n < 0 { Err(UserFault) } else { Ok(n as usize) }
++}
++
++#[inline]
++fn status(rc: u64) -> Result<(), UserFault> {
++    if rc == 0 { Ok(()) } else { Err(UserFault) }
++}
++
++// ---------------------------------------------------------------------------
++// Target implementation: leaf routines + fixup table
++// ---------------------------------------------------------------------------
++
++#[cfg(all(target_arch = "aarch64", target_os = "none"))]
++mod raw {
++    use super::FixupEntry;
++
++    // Every routine is a **leaf** (no frame, `lr` untouched), so a fixup can
++    // simply set the return value and `ret` to the Rust caller. Calling
++    // convention AAPCS64; the scratch registers used are caller-saved.
++    //
++    // Status routines return `x0 = 0` on success and `1` after a fault.
++    // `copy_*` return the number of bytes **not** copied (0 = all done);
++    // `strncpy_from` returns the string length or `-1` after a fault.
++    core::arch::global_asm!(
++        r#"
++    .pushsection .text.newtos_uaccess, "ax", %progbits
++    .balign 4
++
++    .global __uaccess_ld8
++    .type   __uaccess_ld8, %function
++__uaccess_ld8:
++.Luacc_ld8:
++    ldtrb   w2, [x0]
++    strb    w2, [x1]
++    mov     x0, #0
++    ret
++
++    .global __uaccess_ld16
++    .type   __uaccess_ld16, %function
++__uaccess_ld16:
++.Luacc_ld16:
++    ldtrh   w2, [x0]
++    strh    w2, [x1]
++    mov     x0, #0
++    ret
++
++    .global __uaccess_ld32
++    .type   __uaccess_ld32, %function
++__uaccess_ld32:
++.Luacc_ld32:
++    ldtr    w2, [x0]
++    str     w2, [x1]
++    mov     x0, #0
++    ret
++
++    .global __uaccess_ld64
++    .type   __uaccess_ld64, %function
++__uaccess_ld64:
++.Luacc_ld64:
++    ldtr    x2, [x0]
++    str     x2, [x1]
++    mov     x0, #0
++    ret
++
++    .global __uaccess_st8
++    .type   __uaccess_st8, %function
++__uaccess_st8:
++.Luacc_st8:
++    sttrb   w1, [x0]
++    mov     x0, #0
++    ret
++
++    .global __uaccess_st16
++    .type   __uaccess_st16, %function
++__uaccess_st16:
++.Luacc_st16:
++    sttrh   w1, [x0]
++    mov     x0, #0
++    ret
++
++    .global __uaccess_st32
++    .type   __uaccess_st32, %function
++__uaccess_st32:
++.Luacc_st32:
++    sttr    w1, [x0]
++    mov     x0, #0
++    ret
++
++    .global __uaccess_st64
++    .type   __uaccess_st64, %function
++__uaccess_st64:
++.Luacc_st64:
++    sttr    x1, [x0]
++    mov     x0, #0
++    ret
++
++    // Shared fixup of the status routines: report the fault.
++.Luacc_fault_status:
++    mov     x0, #1
++    ret
++
++    // x0 = dst (kernel), x1 = src (user), x2 = count
++    .global __uaccess_copy_from
++    .type   __uaccess_copy_from, %function
++__uaccess_copy_from:
++    cbz     x2, .Luacc_cf_done
++.Luacc_cf_loop:
++.Luacc_cf_insn:
++    ldtrb   w3, [x1]
++    strb    w3, [x0], #1
++    add     x1, x1, #1
++    subs    x2, x2, #1
++    b.ne    .Luacc_cf_loop
++.Luacc_cf_done:
++    // Also the fixup: x2 still counts the faulting byte as not copied.
++    mov     x0, x2
++    ret
++
++    // x0 = dst (user), x1 = src (kernel), x2 = count
++    .global __uaccess_copy_to
++    .type   __uaccess_copy_to, %function
++__uaccess_copy_to:
++    cbz     x2, .Luacc_ct_done
++.Luacc_ct_loop:
++    ldrb    w3, [x1], #1
++.Luacc_ct_insn:
++    sttrb   w3, [x0]
++    add     x0, x0, #1
++    subs    x2, x2, #1
++    b.ne    .Luacc_ct_loop
++.Luacc_ct_done:
++    mov     x0, x2
++    ret
++
++    // x0 = dst (kernel), x1 = src (user), x2 = max; returns length or -1
++    .global __uaccess_strncpy_from
++    .type   __uaccess_strncpy_from, %function
++__uaccess_strncpy_from:
++    mov     x4, #0
++.Luacc_sc_loop:
++    cmp     x4, x2
++    b.hs    .Luacc_sc_done
++.Luacc_sc_insn:
++    ldtrb   w3, [x1, #0]
++    cbz     w3, .Luacc_sc_done
++    strb    w3, [x0, x4]
++    add     x1, x1, #1
++    add     x4, x4, #1
++    b       .Luacc_sc_loop
++.Luacc_sc_done:
++    mov     x0, x4
++    ret
++.Luacc_sc_fault:
++    mov     x0, #-1
++    ret
++    .popsection
++
++    .pushsection .rodata.newtos_uaccess_fixups, "a", %progbits
++    .balign 8
++    .global __uaccess_fixups_start
++__uaccess_fixups_start:
++    .quad .Luacc_ld8,  .Luacc_fault_status
++    .quad .Luacc_ld16, .Luacc_fault_status
++    .quad .Luacc_ld32, .Luacc_fault_status
++    .quad .Luacc_ld64, .Luacc_fault_status
++    .quad .Luacc_st8,  .Luacc_fault_status
++    .quad .Luacc_st16, .Luacc_fault_status
++    .quad .Luacc_st32, .Luacc_fault_status
++    .quad .Luacc_st64, .Luacc_fault_status
++    .quad .Luacc_cf_insn, .Luacc_cf_done
++    .quad .Luacc_ct_insn, .Luacc_ct_done
++    .quad .Luacc_sc_insn, .Luacc_sc_fault
++    .global __uaccess_fixups_end
++__uaccess_fixups_end:
++    .popsection
++"#
++    );
++
++    unsafe extern "C" {
++        #[link_name = "__uaccess_ld8"]
++        pub fn ld8(src: u64, dst: *mut u8) -> u64;
++        #[link_name = "__uaccess_ld16"]
++        pub fn ld16(src: u64, dst: *mut u16) -> u64;
++        #[link_name = "__uaccess_ld32"]
++        pub fn ld32(src: u64, dst: *mut u32) -> u64;
++        #[link_name = "__uaccess_ld64"]
++        pub fn ld64(src: u64, dst: *mut u64) -> u64;
++        #[link_name = "__uaccess_st8"]
++        pub fn st8(dst: u64, v: u64) -> u64;
++        #[link_name = "__uaccess_st16"]
++        pub fn st16(dst: u64, v: u64) -> u64;
++        #[link_name = "__uaccess_st32"]
++        pub fn st32(dst: u64, v: u64) -> u64;
++        #[link_name = "__uaccess_st64"]
++        pub fn st64(dst: u64, v: u64) -> u64;
++        #[link_name = "__uaccess_copy_from"]
++        pub fn copy_from(dst: *mut u8, src: u64, n: u64) -> u64;
++        #[link_name = "__uaccess_copy_to"]
++        pub fn copy_to(dst: u64, src: *const u8, n: u64) -> u64;
++        #[link_name = "__uaccess_strncpy_from"]
++        pub fn strncpy_from(dst: *mut u8, src: u64, n: u64) -> i64;
++
++        static __uaccess_fixups_start: FixupEntry;
++        static __uaccess_fixups_end: FixupEntry;
++    }
++
++    /// The fixup table emitted by the assembly above.
++    pub fn table() -> &'static [FixupEntry] {
++        let start = &raw const __uaccess_fixups_start;
++        let end = &raw const __uaccess_fixups_end;
++        let len = (end as usize - start as usize) / core::mem::size_of::<FixupEntry>();
++        // SAFETY: the assembly emits `len` contiguous, 8-byte aligned
++        // `FixupEntry` records between the two symbols, in read-only data
++        // that lives for the whole kernel lifetime.
++        unsafe { core::slice::from_raw_parts(start, len) }
++    }
++}
++
++#[cfg(all(target_arch = "aarch64", target_os = "none"))]
++#[inline]
++fn fixup_table() -> &'static [FixupEntry] {
++    raw::table()
++}
++
++/// Host build: no EL0/EL1 split, no recoverable faults — plain accesses.
++#[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
++mod raw {
++    pub unsafe fn ld8(src: u64, dst: *mut u8) -> u64 {
++        // SAFETY: host tests pass valid host addresses.
++        unsafe { dst.write((src as *const u8).read_volatile()) };
++        0
++    }
++    pub unsafe fn ld16(src: u64, dst: *mut u16) -> u64 {
++        // SAFETY: as above.
++        unsafe { dst.write((src as *const u16).read_unaligned()) };
++        0
++    }
++    pub unsafe fn ld32(src: u64, dst: *mut u32) -> u64 {
++        // SAFETY: as above.
++        unsafe { dst.write((src as *const u32).read_unaligned()) };
++        0
++    }
++    pub unsafe fn ld64(src: u64, dst: *mut u64) -> u64 {
++        // SAFETY: as above.
++        unsafe { dst.write((src as *const u64).read_unaligned()) };
++        0
++    }
++    pub unsafe fn st8(dst: u64, v: u64) -> u64 {
++        // SAFETY: as above.
++        unsafe { (dst as *mut u8).write_volatile(v as u8) };
++        0
++    }
++    pub unsafe fn st16(dst: u64, v: u64) -> u64 {
++        // SAFETY: as above.
++        unsafe { (dst as *mut u16).write_unaligned(v as u16) };
++        0
++    }
++    pub unsafe fn st32(dst: u64, v: u64) -> u64 {
++        // SAFETY: as above.
++        unsafe { (dst as *mut u32).write_unaligned(v as u32) };
++        0
++    }
++    pub unsafe fn st64(dst: u64, v: u64) -> u64 {
++        // SAFETY: as above.
++        unsafe { (dst as *mut u64).write_unaligned(v) };
++        0
++    }
++    pub unsafe fn copy_from(dst: *mut u8, src: u64, n: u64) -> u64 {
++        // SAFETY: as above; `dst` holds `n` bytes.
++        unsafe { core::ptr::copy(src as *const u8, dst, n as usize) };
++        0
++    }
++    pub unsafe fn copy_to(dst: u64, src: *const u8, n: u64) -> u64 {
++        // SAFETY: as above; `src` holds `n` bytes.
++        unsafe { core::ptr::copy(src, dst as *mut u8, n as usize) };
++        0
++    }
++    pub unsafe fn strncpy_from(dst: *mut u8, src: u64, n: u64) -> i64 {
++        let mut i = 0u64;
++        while i < n {
++            // SAFETY: as above; bounded by `n`.
++            let b = unsafe { ((src + i) as *const u8).read_volatile() };
++            if b == 0 {
++                break;
++            }
++            // SAFETY: `dst` holds `n` bytes and `i < n`.
++            unsafe { dst.add(i as usize).write(b) };
++            i += 1;
++        }
++        i as i64
++    }
++}
++
++#[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
++#[inline]
++fn fixup_table() -> &'static [FixupEntry] {
++    &[]
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    const TABLE: [FixupEntry; 3] = [
++        FixupEntry { insn: 0xFFFF_0000_0010_0000, fixup: 0xFFFF_0000_0010_0100 },
++        FixupEntry { insn: 0xFFFF_0000_0010_0010, fixup: 0xFFFF_0000_0010_0100 },
++        FixupEntry { insn: 0xFFFF_0000_0010_0040, fixup: 0xFFFF_0000_0010_0050 },
++    ];
++
++    #[test]
++    fn lookup_hits_exact_instruction() {
++        assert_eq!(lookup_fixup(&TABLE, 0xFFFF_0000_0010_0000), Some(0xFFFF_0000_0010_0100));
++        assert_eq!(lookup_fixup(&TABLE, 0xFFFF_0000_0010_0010), Some(0xFFFF_0000_0010_0100));
++        assert_eq!(lookup_fixup(&TABLE, 0xFFFF_0000_0010_0040), Some(0xFFFF_0000_0010_0050));
++    }
++
++    #[test]
++    fn lookup_misses_neighbours_and_unrelated_pcs() {
++        // One instruction before/after a listed one is a different PC: a
++        // kernel fault there must stay fatal.
++        assert_eq!(lookup_fixup(&TABLE, 0xFFFF_0000_0010_0004), None);
++        assert_eq!(lookup_fixup(&TABLE, 0xFFFF_0000_0010_003C), None);
++        assert_eq!(lookup_fixup(&TABLE, 0), None);
++        assert_eq!(lookup_fixup(&[], 0xFFFF_0000_0010_0000), None);
++    }
++
++    #[test]
++    fn host_table_is_empty() {
++        // Nothing can fault recoverably on the host.
++        assert_eq!(fixup_for(0xFFFF_0000_0010_0000), None);
++    }
++
++    #[test]
++    fn fault_record_round_trip_and_first_fault_wins() {
++        let mut regs = [0u64; 31];
++        regs[0] = 0x1111;
++        regs[30] = 0x3030;
++        let first = FaultRecord { far: 0xDEAD_0000, esr: 0x9600_0047, pc: 0x10, pstate: 0x3C5, regs };
++        let second = FaultRecord { far: 0xBEEF, ..first };
++        // Drain anything a previous test left (tests share the statics).
++        let _ = take_pending_fault();
++        note_fault(&first);
++        note_fault(&second);
++        assert_eq!(take_pending_fault(), Some(first));
++        assert_eq!(take_pending_fault(), None);
++    }
++
++    #[test]
++    fn host_accessors_read_and_write() {
++        let s = b"PATH\0junk";
++        let mut buf = [0u8; 16];
++        assert_eq!(read_user_cstr(s.as_ptr() as u64, &mut buf), Ok(4));
++        assert_eq!(&buf[..4], b"PATH");
++        // Truncation without a NUL inside the window.
++        let mut small = [0u8; 2];
++        assert_eq!(read_user_cstr(s.as_ptr() as u64, &mut small), Ok(2));
++        let mut w = 0u32;
++        put_user_u32(&mut w as *mut u32 as u64, 0xA5A5_5A5A).unwrap();
++        assert_eq!(get_user_u32(&w as *const u32 as u64), Ok(0xA5A5_5A5A));
++    }
++}
+--- /dev/null	2026-10-05 00:28:44
++++ sdk/examples/crashtst.c	2026-10-05 00:21:14
+@@ -0,0 +1,80 @@
++/*
++ * crashtst.c -- parent driver for the ARCH03 stage-0c crash tests.
++ *
++ * Starts C:\CRCHILD.NAP once per case with `Pexec(PE_LOADGO)` and checks the
++ * exit code each child hands back:
++ *
++ *   w u x a c p   crash cases   -> 0x0000FFFF (Pterm(-1), UWORD rc, D-005)
++ *   o             clean exit    -> 0
++ *
++ * Because the parent is an EL0 program, every child's termination resumes an
++ * EL0 parent (`finish_terminate` with a parent TTBR0), and the clean child
++ * after the crashes shows that a program starts fine after a crash. Each
++ * crash waits for a key (EmuTOS `dopanic`), so a run needs one key per crash
++ * case. Prints one line per case and a final PASS/FAIL, then Pterm(0).
++ *
++ * Build: sdk/build.sh sdk/examples/crashtst.c <out>/CRASHTST.NAP
++ */
++#include <newtos.h>
++
++static NLONG Pexec(short mode, const char *path, const char *tail, const char *env)
++{
++    register NLONG x8 __asm__("x8") = 0x4B;
++    register NLONG r0 __asm__("x0") = mode;
++    register NLONG r1 __asm__("x1") = (NLONG)path;
++    register NLONG r2 __asm__("x2") = (NLONG)tail;
++    register NLONG r3 __asm__("x3") = (NLONG)env;
++    __asm__ volatile("svc #1" : "+r"(r0) : "r"(x8), "r"(r1), "r"(r2), "r"(r3) : "memory");
++    return r0;
++}
++
++/*
++ * noinline + volatile: keeps the compiler from vectorising this and hoisting
++ * its SIMD constants into main() across the Pexec `svc` -- the kernel does
++ * not preserve v0-v31 across a Pexec/Pterm round trip today (see
++ * measurement-2026-10-05-arch03-0c RUNINFO, out-of-scope observation).
++ */
++static __attribute__((noinline)) void put_hex(unsigned long v)
++{
++    volatile char buf[19];
++    int i;
++    buf[0] = '0';
++    buf[1] = 'x';
++    for (i = 0; i < 16; i++) {
++        unsigned d = (unsigned)(v >> (60 - 4 * i)) & 0xF;
++        buf[2 + i] = (char)(d < 10 ? '0' + d : 'A' + d - 10);
++    }
++    buf[18] = '\0';
++    Cconws((const char *)buf);
++}
++
++int main(void)
++{
++    static const char cases[] = "wuxacpo";
++    char tail[3];
++    char line[] = "CRASHTST: case ? rc=";
++    int i, fails = 0;
++
++    Cconws("CRASHTST: start\r\n");
++    for (i = 0; cases[i]; i++) {
++        unsigned long want = cases[i] == 'o' ? 0 : 0xFFFF;
++        NLONG rc;
++
++        tail[0] = 1;            /* command-tail length byte */
++        tail[1] = cases[i];
++        tail[2] = '\0';
++        rc = Pexec(0, "C:\\CRCHILD.NAP", tail, 0);
++
++        line[15] = cases[i];
++        Cconws(line);
++        put_hex((unsigned long)rc);
++        if ((unsigned long)rc == want) {
++            Cconws(" OK\r\n");
++        } else {
++            Cconws(" WRONG\r\n");
++            fails++;
++        }
++    }
++    Cconws(fails ? "CRASHTST: FAIL\r\n" : "CRASHTST: PASS\r\n");
++    return 0;
++}
+--- /dev/null	2026-10-05 00:28:44
++++ sdk/examples/crchild.c	2026-10-05 00:16:24
+@@ -0,0 +1,90 @@
++/*
++ * crchild.c -- a program that crashes on purpose (ARCH03 stage 0c).
++ *
++ * The first character of the command tail selects how it dies; with no tail
++ * it takes case 'w', so a bare `#Z` autorun line crashes it too:
++ *
++ *   'w'  store to the unmapped user address 0xDEAD0000   -> Bus Error
++ *        (Data Abort from EL0, translation fault)
++ *   'u'  execute an undefined instruction (UDF #0)       -> Illegal Instruction
++ *   'x'  jump into the screen memory Physbase() returns,
++ *        which is mapped non-executable for EL0          -> Bus Error
++ *        (Instruction Abort from EL0, permission fault)
++ *   'a'  branch to a misaligned address (text + 2)       -> Address Error
++ *   'c'  Cconws((char *)0xDEAD0000): the KERNEL faults on
++ *        the bad pointer inside the system call          -> Bus Error, caller killed
++ *   'p'  Pexec(0, (char *)0xDEAD0000, "", 0): the same,
++ *        in the Pexec path reader                        -> Bus Error, caller killed
++ *   'o'  no crash: print a line and Pterm(0)
++ *
++ * Expected for every crash case (docs/api/bios/_exception-crash.md, EmuTOS
++ * `dopanic` + `kill_program`): the crash report on the console, a key wait,
++ * then the program is terminated with Pterm(-1) -- the parent's Pexec gets
++ * 0x0000FFFF -- and the machine keeps running. The line after the crash
++ * ("CRCHILD: survived") must never appear.
++ *
++ * Build: sdk/build.sh sdk/examples/crchild.c <out>/CRCHILD.NAP
++ */
++#include <newtos.h>
++
++/* Offset of `p_cmdlin` in the BasePage (tos-types/src/basepage.rs). */
++#define P_CMDLIN 0x80
++
++static NLONG Pexec(short mode, const char *path, const char *tail, const char *env)
++{
++    register NLONG x8 __asm__("x8") = 0x4B;
++    register NLONG r0 __asm__("x0") = mode;
++    register NLONG r1 __asm__("x1") = (NLONG)path;
++    register NLONG r2 __asm__("x2") = (NLONG)tail;
++    register NLONG r3 __asm__("x3") = (NLONG)env;
++    __asm__ volatile("svc #1" : "+r"(r0) : "r"(x8), "r"(r1), "r"(r2), "r"(r3) : "memory");
++    return r0;
++}
++
++static void target(void)
++{
++    Cconws("CRCHILD: misaligned target reached?!\r\n");
++}
++
++int main(void)
++{
++    const unsigned char *tail = (const unsigned char *)0 + P_CMDLIN;
++    char c = tail[0] ? (char)tail[1] : 'w';
++    char line[] = "CRCHILD: case ? starting\r\n";
++
++    line[14] = c;
++    Cconws(line);
++
++    switch (c) {
++    case 'w':
++        *(volatile unsigned int *)0xDEAD0000UL = 0x12345678;
++        break;
++    case 'u':
++        __asm__ volatile(".inst 0x00000000" ::: "memory"); /* UDF #0 */
++        break;
++    case 'x': {
++        void (*fn)(void) = (void (*)(void))xbios0(2); /* Physbase */
++        fn();
++        break;
++    }
++    case 'a': {
++        unsigned long to = (unsigned long)&target + 2;
++        __asm__ volatile("blr %0" :: "r"(to) : "x30", "memory");
++        break;
++    }
++    case 'c':
++        Cconws((const char *)0xDEAD0000UL);
++        break;
++    case 'p':
++        Pexec(0, (const char *)0xDEAD0000UL, "", 0);
++        break;
++    case 'o':
++        Cconws("CRCHILD: clean exit\r\n");
++        return 0;
++    default:
++        Cconws("CRCHILD: unknown case\r\n");
++        return 2;
++    }
++    Cconws("CRCHILD: survived -- FAIL\r\n");
++    return 1;
++}
