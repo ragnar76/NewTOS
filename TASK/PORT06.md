@@ -92,6 +92,16 @@ liefe, ist nicht konform genug.
   Kerneleingriff), dann EdDI-Spec → NewTOS-`vq_scrninfo` → EdDI-Weg in Doom,
   dann der m68k-Bau.
 
+## Entscheidung 2026-10-04 — TT: Machbarkeit belegt, keine weitere Optimierung
+
+Anwender am echten TT (TT-Low): ca. 3–4 fps, „unspielbar“; spielbar waere
+erst ab ca. 20 fps — das Fuenffache, auf einem 68030/32 MHz bei 320x200 auch
+mit Assembler-Renderer nicht erreichbar (Profil:
+`measurements/measurement-2026-10-04-doom-m68k-profile/`, nach Tabellen-c2p
+`measurements/measurement-2026-10-04-doom-c2p/`). Der TT-Bau bleibt als
+**Machbarkeitsbeweis** (ein Quelltext, konform: EdDI, `kbdvec`, 4:3,
+Tabellen-c2p); keine weitere TT-Optimierung geplant. Schwerpunkt Pi.
+
 ## 1. Warum es machbar ist — der Weg ist nicht nur vorhanden, sondern gemessen
 
 Doom zeichnet in einen **eigenen 8-Bit-Palettenpuffer** (320x200) und schiebt
