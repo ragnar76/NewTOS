@@ -1,6 +1,6 @@
 # ARCH03 — Prozess- und Speicherarchitektur nach FreeMiNT: ein gemeinsamer Adressraum mit Schutzrechten
 
-Status: **OFFEN** · Prioritaet: **P1 (Planung)**, Umsetzung **nach der OFAM** · Typ: Architektur — Anwenderentscheidung 2026-10-04
+Status: **IN ARBEIT** auf Zweig `arch03` · Prioritaet: **P1** — Umsetzung **vor der OFAM** begonnen (Anwender 2026-10-04: „leg los“) · Typ: Architektur — Anwenderentscheidung 2026-10-04
 
 Abhaengigkeiten: — · blockiert spaeter: [MEM03](MEM03.md), [PROC01](PROC01.md), [PORT09](PORT09.md), LDG/SLB (zView, `docs/analysis/zview-ldg-2026-10-04.md`), Accessories/TSR, `kbdvec`-Haken fuer alle (KEYS02 D1)
 
@@ -25,3 +25,13 @@ globaler `Mxalloc`-Speicher. Anwender: „es so wie bei FreeMiNT bauen“.
    Speicherverwaltung, `Pexec` alle Modi, Migrationsschritte, Tests,
    Aufwand. → `docs/analysis/arch03-implementation-plan.md`
 3. Freigabe durch den Anwender, Umsetzung nach der OFAM.
+
+## Entscheidungen 2026-10-04 (Anwender: „leg los“)
+
+* Umsetzung beginnt sofort, auf dem eigenen Zweig **`arch03`**. Der
+  Vorfuehrstand ist als Tag **`ofam-baseline`** (16fdbc3) eingefroren; der
+  Zweig `desk-rebuild` bekommt bis zur OFAM nur Fehlerbehebungen.
+* E1–E18 aus `docs/analysis/arch03-implementation-plan.md` §6 gelten **wie
+  empfohlen**, ausser **E8b** (PRGFLAGS als ELF-Notiz — eigenes Format), das
+  dem Anwender in Stufe 0d vorgelegt wird.
+* Stufen seriell, jede einzeln lauffaehig; auf der Pi nur auf Ansage.
