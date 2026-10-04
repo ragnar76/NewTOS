@@ -1,0 +1,76 @@
+Memory Test:
+ST RAM                                 --------------------------------  4096 KB
+TT RAM                                 -------------------------------- 16384 KB
+Memory Test Complete.
+                                                                                                                                                               DOOM: no EdDI cookie -- vr_trnfm route
+DOOM: keys via kbdvec -- TOS 3.06, Kbdvbase 0000106a, kbdvec was 00e033ea
+DOOM: GEM platform up -- 320x480, 8 planes, lookup table yes, pixel 556x278 um, stage 1 = 320x480, route vr_trnfm
+                           Doom Generic 0.1
+Z_Init: Init zone memory allocation daemon. 
+zone memory: 0x1182c08, 600000 allocated for zone
+Using . for configuration and saves
+V_Init: allocate screens.
+M_LoadDefaults: Load system defaults.
+saving config in .default.cfg
+-iwad not specified, trying a few iwad names
+Trying IWAD file:doom2.wad
+Trying IWAD file:plutonia.wad
+Trying IWAD file:tnt.wad
+Trying IWAD file:doom.wad
+Trying IWAD file:doom1.wad
+W_Init: Init WADfiles.
+ adding doom1.wad
+Using ./.savegame/ for savegames
+===========================================================================
+                            DOOM Shareware
+===========================================================================
+ Doom Generic is free software, covered by the GNU General Public
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+ copies under certain conditions. See the source for more information.
+===========================================================================
+I_Init: Setting up machine state.
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon - ...................
+P_Init: Init Playloop state.
+S_Init: Setting up sound.
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+Emulating the behavior of the 'Doom 1.9' executable.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+DOOM: DOOM Shareware
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+I_InitGraphics: Auto-scaling factor: 1
+DOOM: picture 320x480 at (0,0) VERIFIED via vr_trnfm+scale+vro_cpyfm
+K02 byte 48 at 95870 ms
+K02 put PRESS key 173 at 95895 ms
+K02 byte 4d at 97375 ms
+K02 put PRESS key 174 at 97400 ms
+K02 byte cd at 98890 ms
+K02 put RELEASE key 174 at 98915 ms
+K02 byte c8 at 100830 ms
+K02 put RELEASE key 173 at 100855 ms
+K02 byte 4b at 102890 ms
+K02 put PRESS key 172 at 102915 ms
+K02 byte cb at 102945 ms
+K02 put RELEASE key 172 at 102965 ms
+K02 byte 4b at 103850 ms
+K02 put PRESS key 172 at 103875 ms
+K02 byte cb at 103905 ms
+K02 put RELEASE key 172 at 103930 ms
+K02 byte 44 at 105825 ms
+K02 put PRESS key 196 at 105850 ms
+K02 byte c4 at 105995 ms
+K02 put RELEASE key 196 at 106020 ms
+K02 byte 15 at 108890 ms
+K02 put PRESS key 122 at 108915 ms
+K02 byte 95 at 108945 ms
+K02 put RELEASE key 122 at 108970 ms
+K02 byte 2c at 109960 ms
+K02 put PRESS key 121 at 109985 ms
+K02 byte ac at 110015 ms
+K02 put RELEASE key 121 at 110040 ms

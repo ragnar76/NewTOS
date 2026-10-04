@@ -175,3 +175,16 @@ Belege: [measurements/measurement-2026-10-04-keys02-doom/](../measurements/measu
    „Blocked"-Eintrag setzt der Lead.
 5. TT TOS 3.06 hat `kbdvec` nur abgeleitet (O3, Spec). Fuer die Doom-Abnahme
    auf der TT relevant.
+
+
+## Nachtrag Lead 2026-10-04 — m68k-Seite in Hatari bestanden
+
+Nach dem Ende der binutils-Blockade hat der Lead `DOOM.PRG` (sha256 `c9d2c839…`)
+gebaut; ein Tester hat es in Hatari TT gefahren
+(`measurements/measurement-2026-10-04-keys02-tt/`): TOS 3.06 und EmuTOS 1.4
+melden „keys via kbdvec“, die Folge UP/RIGHT/RIGHT-Break/UP-Break kommt exakt an
+(UP durchgehend gedrueckt, RIGHT 1495–1515 ms bei 1500 ms injiziert), Antippen
+als Druecken+Loslassen (Aufloesung ~50 ms = Doom-Takt unter Hatari), Beenden
+haengt den Haken aus und der Desktop reagiert auf die Tastatur. `-nokbdvec`
+zeigt zum Vergleich den alten Fehler. Damit ist die Abnahme in QEMU + Hatari
+erfuellt; echte Pi und echter TT stehen aus.

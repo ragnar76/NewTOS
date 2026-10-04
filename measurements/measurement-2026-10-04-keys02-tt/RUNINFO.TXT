@@ -1,0 +1,60 @@
+measurement-2026-10-04-keys02-tt -- KEYS02 Doom side on Hatari TT (m68k DOOM.PRG, kbdvec hook)
+Date 2026-10-04, branch desk-rebuild. No product code touched; instrumentation only in
+scratch copies (method/instrument-doom.py via build-doom-instrumented.sh, as in keys02-doom).
+
+BINARIES
+  shipped   sdk/apps/doom/build/DOOM.PRG   sha256 c9d2c839693f4c6c...
+  instr.    scratch build, -warp 1 + K02 console lines    sha256 60459b8f4c46c441... (LINK OK 683720 B)
+  instr.+nokbdvec  same with "-nokbdvec" baked into DOOM_ARGS (EXTRA=...; 683828 B) sha256 e8125c9e4d8ce8fd...
+  The m68k binutils did NOT hang this time (both builds: 82 OK / 0 failed, LINK OK, 0 undefined).
+MACHINE  (method/run-hatari-tt.sh <tt306|ttemu> <shipped|keys> <PRG> <out>; drive-keys.py)
+  Hatari 2.6.1, --machine tt --tos-res ttlow --monitor vga --memsize 4 --ttram 16 --addr24 off
+  --fpu 68882, real time (no fast-forward), --auto C:\DOOM.PRG, TOS 3.06 (tos306de.rom) /
+  EmuTOS 1.4 (etos512de.img, reports TOS 2.06), keys via --cmd-fifo hatari-event keydown/keyup
+  (ST scancodes). Hatari does not exit on "hatari-shortcut quit" -> kill -9 AFTER all steps (harmless).
+  Differences to the prepared script: machine = doom-aspect settings (4+16 MiB, TT-RAM), Hatari
+  creates the FIFO itself (script's mkfifo removed), 'y' sent as 21 and 44 (US/DE), drive in python.
+
+RESULTS            TOS 3.06    EmuTOS 1.4
+ 1 shipped: starts, "keys via kbdvec"   PASS   PASS
+   TOS 3.06: "keys via kbdvec -- TOS 3.06, Kbdvbase 0000106a, kbdvec was 00e033ea"  (= O3 evidence)
+   EmuTOS:   "keys via kbdvec -- TOS 2.06 (EmuTOS), Kbdvbase 000030f8, kbdvec was 00e00eec"
+   demo plays (E1M1 demo, two shots 20 s apart differ, level progressing), first frame
+   "VERIFIED via vr_trnfm+scale+vro_cpyfm" on both. hatari/*-shipped/shots/grab0001/2.
+ 2 instrumented key sequence            PASS   PASS   (details below; hatari/*-keys/hatari.log)
+ 3 quit F10+y, hook removed, desktop    PASS   PASS
+   F10 -> byte 44, 'y' -> quit to desktop (no further K02 lines, no bombs/crash), desktop shots show the
+   desktop; ESC harmless; Alt-C opens a further C:\ window (TOS 3.06: window count 1 -> 2; EmuTOS: 0 -> 1)
+   = desktop keyboard works after the hook is removed. Shots: *-keys/shots/grab0002/3, *-shipped/grab0003/4.
+   (TOS 3.06 DE: quit key is 0x2c; the 0x15 sent first was ignored by the prompt, as designed in
+   the script; EmuTOS: 0x15 quit.)
+ 4 -nokbdvec: launcher cannot pass a command line (--auto); done instead with a scratch build with
+   "-nokbdvec" compiled into DOOM_ARGS (hatari/*-keys-nokbdvec). Console: "DOOM: -nokbdvec -- keys
+   via the AES (repeat heuristic)"; fallback behaviour as predicted (below).
+
+TIMELINE point 2 (Doom ms = DOOM's own clock; sequence offsets relative to the first make; injected
+times from inject.log)
+ event            injected   TOS3.06 Doom   EmuTOS Doom      (Doom clock at UP make: 95870 / 16090)
+ UP   PRESS         0.0        0.0 (95870)    0.0 (16090)
+ RIGHT PRESS        1.5        1.505          1.465
+ RIGHT RELEASE      3.0        3.020          2.960
+ UP   RELEASE       5.0        4.960          5.070
+ -> UP reported held from make to its own break (no release at RIGHT make/break), RIGHT exactly
+    1515 / 1495 ms (injected 1500). Doom sees every byte (K02 byte) then one put per byte.
+ LEFT tap 100 ms (inj.)  PRESS+RELEASE 50 ms apart (TOS3.06) / 55 ms (EmuTOS)
+ LEFT tap  40 ms (inj.)  55 ms (TOS3.06) / 50 ms (EmuTOS)   -> tap = press+release pair, never merged
+   or dropped; length resolution here ~50 ms = Doom poll rate under Hatari (100 vs 40 ms injected are
+   not distinguishable). F10 tap (50 ms injected) 170-175 ms, y tap 25-55 ms.
+ Make and break of the SAME tap arrive in order (every PRESS followed by RELEASE).
+ -nokbdvec fallback (same sequence): UP PRESS 0.0, RIGHT PRESS 1.45, UP RELEASE 1.585 (= RIGHT +135 ms,
+   while UP still held: the heuristic's known defect), RIGHT RELEASE 3.125, no UP press after;
+   taps last 370/410 ms (both). EmuTOS the same (UP released at RIGHT +30 ms, taps ~400-460 ms).
+   -> the kbdvec route fixes exactly what the fallback gets wrong.
+
+SCREENDUMPS were looked at (not only pixel checks): demo/game frames plausible Doom E1M1 with HUD,
+desktop frames TOS 3.06 desktop (green pattern, windows) and EmuTOS desktop (Laufwerk A/B/C, Papierkorb).
+
+NOT COVERED: real TT / real Pi (HW acceptance); other TOS versions (1.x has no kbdvec -> fallback,
+untested, no ROM used); Hatari timing is not real-time-exact (poll resolution), KEYS01 repeat
+behaviour not examined here. Fresh-boot desktop shot with no earlier window on TOS 3.06 not made
+(Alt-C evidence is the window count increase).

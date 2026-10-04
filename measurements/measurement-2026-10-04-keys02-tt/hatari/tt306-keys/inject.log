@@ -1,0 +1,26 @@
+91.799 s  console: player 1 of 1
+--- sequence start (wall 96.811)
+96.811 s  keydown 72
+98.321 s  keydown 77
+99.312 s  shot
+99.821 s  keyup 77
+101.812 s  keyup 72
+103.821 s  keydown 75
+103.921 s  keyup 75
+104.821 s  keydown 75
+104.861 s  keyup 75
+106.812 s  keydown 68
+106.871 s  keyup 68
+109.879 s  keydown 21
+109.931 s  keyup 21
+110.881 s  keydown 44
+110.931 s  keyup 44
+125.941 s  shot
+127.951 s  keydown 1
+128.001 s  keyup 1
+128.945 s  keydown 56
+129.001 s  keydown 46
+129.051 s  keyup 46
+129.101 s  keyup 56
+139.111 s  shot
+142.121 s  quit

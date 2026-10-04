@@ -1,0 +1,19 @@
+93.432 s  console: VERIFIED
+113.437 s  shot
+133.439 s  shot
+--- quit sequence
+133.439 s  keydown 68
+133.499 s  keyup 68
+136.509 s  keydown 21
+136.559 s  keyup 21
+137.509 s  keydown 44
+137.559 s  keyup 44
+152.569 s  shot
+154.572 s  keydown 1
+154.626 s  keyup 1
+155.572 s  keydown 56
+155.629 s  keydown 46
+155.679 s  keyup 46
+155.729 s  keyup 56
+165.739 s  shot
+168.749 s  quit
