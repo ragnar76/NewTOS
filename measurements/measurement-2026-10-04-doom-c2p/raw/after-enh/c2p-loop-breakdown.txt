@@ -1,0 +1,63 @@
+_c2p_row.constprop.2: 572238744 cycles in 173 instructions
+
+-- executed 4816000 times: 23 instructions 10218d4-102190e, 322184778 cycles (56.3%), 66.9 cycles and 0.03 i-cache misses per pass
+      20.3 cyc/pass   30.4%  table load (move.l/or.l (An,Dn.l))
+      17.6 cyc/pass   26.3%  pixel byte load
+       8.0 cyc/pass   12.0%  clr.l
+       7.6 cyc/pass   11.3%  lsl.l
+       5.5 cyc/pass    8.3%  add.l
+       4.9 cyc/pass    7.3%  move.l
+       2.0 cyc/pass    3.0%  bne.b
+       1.0 cyc/pass    1.5%  cmp.l
+       0.0 cyc/pass    0.0%  addaq.l
+
+-- executed 1204000 times: 57 instructions 102191e-10219b4, 192553426 cycles (33.6%), 159.9 cycles and 0.67 i-cache misses per pass
+      45.0 cyc/pass   28.1%  plane word store
+      27.4 cyc/pass   17.2%  move.l
+      24.7 cyc/pass   15.5%  eor.l
+      24.6 cyc/pass   15.4%  and.l
+       8.0 cyc/pass    5.0%  lsr.l
+       7.9 cyc/pass    5.0%  swap.w
+       7.9 cyc/pass    5.0%  lsl.l
+       5.4 cyc/pass    3.3%  clr.w
+       4.0 cyc/pass    2.5%  bne.w
+       3.0 cyc/pass    1.9%  lea.l
+       2.0 cyc/pass    1.3%  cmpa.l
+       0.0 cyc/pass    0.0%  adda.l
+
+-- executed 60200 times: 70 instructions 1021526-10219e2, 28625558 cycles (5.0%), 475.5 cycles and 21.02 i-cache misses per pass
+     167.0 cyc/pass   35.1%  move.l
+      72.0 cyc/pass   15.1%  movem.l
+      43.0 cyc/pass    9.0%  add.l
+      30.0 cyc/pass    6.3%  bge.w
+      25.0 cyc/pass    5.3%  movea.l
+      22.5 cyc/pass    4.7%  rts
+      18.0 cyc/pass    3.8%  beq.w
+      17.0 cyc/pass    3.6%  lea.l
+      16.0 cyc/pass    3.4%  addq.l
+      11.0 cyc/pass    2.3%  adda.l
+      10.0 cyc/pass    2.1%  cmp.l
+       9.0 cyc/pass    1.9%  ble.w
+       8.0 cyc/pass    1.7%  lsl.l
+       7.0 cyc/pass    1.5%  clr.l
+       6.0 cyc/pass    1.3%  sub.l
+       4.0 cyc/pass    0.8%  moveq
+       4.0 cyc/pass    0.8%  bgt.w
+       2.0 cyc/pass    0.4%  addaq.l
+       2.0 cyc/pass    0.4%  suba.l
+       1.0 cyc/pass    0.2%  movea.w
+       1.0 cyc/pass    0.2%  asr.l
+
+-- executed 301000 times: 22 instructions 10218bc-10219ca, 28393464 cycles (5.0%), 94.3 cycles and 4.81 i-cache misses per pass
+      18.0 cyc/pass   19.1%  lea.l
+      15.8 cyc/pass   16.7%  bge.w
+      13.0 cyc/pass   13.8%  move.l
+      11.3 cyc/pass   11.9%  add.l
+      11.1 cyc/pass   11.7%  movea.l
+      11.0 cyc/pass   11.7%  cmp.l
+       5.2 cyc/pass    5.5%  moveq
+       3.0 cyc/pass    3.2%  muls.l
+       2.0 cyc/pass    2.1%  bge.b
+       2.0 cyc/pass    2.1%  sub.l
+       2.0 cyc/pass    2.1%  lsl.l
+       0.0 cyc/pass    0.0%  adda.l

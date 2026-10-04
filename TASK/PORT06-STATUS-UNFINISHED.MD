@@ -254,3 +254,52 @@ Pixel, 2. 256 Farben gepackt, 3. `-scale N` bleibt). Nur
    mit Namen statt falschem Bild).
 4. Pixelstoerungen in einem Foto unter EmuTOS + Enhancer (TT) — in alter
    **und** neuer Datei, also nicht dieser Schritt; Ursache offen (RUNINFO 5.4).
+
+## Schritt „Tabellen-c2p" 2026-10-04 — Chunky-to-Planar ~5x schneller
+
+Basis `desk-rebuild`, HEAD `cd9efb0` · Belege
+[measurements/measurement-2026-10-04-doom-c2p/](../measurements/measurement-2026-10-04-doom-c2p/RUNINFO.TXT)
+(Profil-Rohdaten, Kandidatenvergleich `raw/C2P-REPORT.txt`)
+
+Umgesetzt nach der Anwenderentscheidung 2026-10-04 (Format einmal
+erkennen, Umrechnungsdaten einmal vorberechnen, je Bild nur nachschlagen
+und schreiben). Geaendert `sdk/apps/doom/doomgeneric_gem.c` (Abschnitt
+„Chunky to planar", jetzt am Dateianfang), `sdk/run-host-tests.sh`,
+`sdk/.gitignore`; neu `sdk/apps/doom/tests/c2p-host.c`. doomgeneric,
+Bauskripte, `kernel/`, `tos-api/` unberuehrt.
+
+| Punkt | Ergebnis |
+|---|---|
+| Verfahren | je 8 Planes EINE Tabelle (256 Longs, 1 KiB): Eintrag = Plane-Bits des Pixelwerts an der Stelle, die sie im Long von 4 Pixeln brauchen; 4 Pixel = `((t<<1\|t)<<1\|t)<<1\|t`; 16 Pixel = 4 Longs + 2 Merge-Durchgaenge → 8 Plane-Woerter. Zeile in Stuecken zu 64 Pixeln (Sammeln in 64-Byte-Puffer, dann Merge+Speichern). Beide Ausgaben: Standardform (`vr_trnfm`-Weg) und verschraenkt (EdDI format 0); 1..32 Planes; beliebige Breite (Rest der letzten Gruppe = 0); 16-Bit-Speicher → bytefolgenfrei |
+| Tabellen bauen | `vr_trnfm`-Weg nach jeder Messung von `pixval` (CLUT einmal, Truecolor bei Palettenwechsel), EdDI verschraenkt einmal in `DG_Init` |
+| Auswahl (Hatari, TT-niedrig, TOS 3.06) | 7 Verfahren gemessen: reine 16x4-Long-Tabelle 64,0 · klassischer 5-Durchgang-Merge 48,9 · 4 Positionstabellen 37,2 · dto. 2 Phasen 35,2 · 1 Tabelle 31,6 · **1 Tabelle + 2 Phasen 29,7** cyc/px. Grund: 1 KiB Tabelle trifft meist den 256-Byte-Datencache des 68030, zwei kurze Schleifen passen in den 256-Byte-Befehlscache (die Ein-Schleifen-Fassung verfehlte ihn 16x je 16 Pixel) |
+| c2p TT | **155 → 31 cyc/px** ohne Enhancer, **154 → 30** mit Enhancer |
+| Bildrate TT (Hatari) | **1,93 → 3,69 fps** ohne, **1,98 → 3,85 fps** mit Enhancer (−47,5 % / −48,6 % Zyklen je Bild) |
+| Neue Rangliste (ohne Enh.) | c2p 22,8 % · R_DrawSpan 21,2 % · R_DrawColumn 18,7 % · TOS-ROM 10,5 % · memcpy 5,8 %; Renderer-Gruppe jetzt 51,8 % |
+| VERIFIED | alle 11 Hatari-Laeufe (beide Wege), alle 3 NewTOS-Laeufe |
+| NewTOS (QEMU raspi4b, `serial=on`) | EdDI Truecolor 640x480 VERIFIED (kein c2p im Weg); `-noeddi` 640x480 und 1280x960: VERIFIED, c2p-Probe 645 → 351 us bzw. 649 → 346 us; fps wie vorher; Dumps: Geometrie gleich, a-640 pixelgleich |
+| Test | `c2p-host` (ASan/UBSan, `-Werror`): neue gegen alte Routine (beide alten Schleifen als Orakel), 96 000 Vergleiche, 0 Abweichungen; Mutationsprobe greift. `sh sdk/run-host-tests.sh` 13/0/0 |
+| Grundwerte | `build-doom.sh` 81/81 LINK OK, Plattformdatei ohne Meldung; `build-doom-m68k.sh` 81/81 `-Wall -Wextra clean`, LINK OK, Flags 0x7; grep Bildschirmbasis 0 |
+
+### Offen nach diesem Schritt
+
+1. **Ziel ~≤ 20 cyc/px in C nicht erreicht (31/30).** gcc 7 erzeugt je
+   Pixel `clr.l`/`move.b`/`lsl.l #2`/Lader statt `move.b (a0)+` +
+   `or.l (a1,d0.w*4)`. Umriss einer 68030-Assemblerfassung (gleiche
+   Tabelle, Register statt Puffer, `move.l`-Speicher im verschraenkten
+   Weg) in RUNINFO 4 — Schaetzung ~18–23 cyc/px, nicht geschrieben.
+2. **Frage an den Anwender:** groesserer Hebel als Assembler waere, das
+   Nachschlagen zu streichen — auf einem CLUT-Schirm mit 256 verschiedenen
+   Pixelwerten DOOMs Farbe c in den Stift legen, dessen Pixelwert c ist
+   (Index = Pixelwert, c2p liest 4 Pixel per Long, nur Merge). Aendert die
+   Stiftbelegung und die Erstbildpruefung; Schaetzung C ~17, Assembler
+   ~12 cyc/px. Gewuenscht?
+3. QEMU-Nebenbefund: die Kostenprobe des EdDI-Truecolor-Wegs schwankt mit
+   dem Link-Layout (233 ↔ 770 us bei befehlsgleicher Schleife), weil
+   `.data` direkt hinter `.text` liegt (TOS-Format): beginnt `.data` auf
+   einer Seitengrenze, ist es wieder 226 us (A/B-Beleg
+   `method/qemu-layout-ab/`). Vermuteter Mechanismus: QEMU-TCG bremst
+   Zugriffe auf Seiten, die zugleich uebersetzten Code tragen — nicht
+   nachgewiesen; auf echter Hardware nicht erwartet, nicht gemessen.
+   QEMU-Zeitmessungen von NAPs sind dadurch layoutabhaengig.
+4. Echter TT weiterhin nicht gefahren; die Hatari-Zyklen sind ein Modell.

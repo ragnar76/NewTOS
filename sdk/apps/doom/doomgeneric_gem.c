@@ -243,6 +243,181 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ======================================================================== */
+/* Chunky to planar                                                          */
+/* ======================================================================== */
+
+/*
+ * WHAT IT BUILDS. c2p_row converts `n` 8-bit indices (any n >= 0) into planar
+ * words: per 16-pixel group, plane p's word collects bit p of the 16 pixels'
+ * values, the leftmost pixel in bit 15; in a last, partial group the pixels
+ * past n are 0 in every plane. Where the words go is two strides: plane p of
+ * group g is dst[g * gs + p * ps]. The standard form is ps = plane_words,
+ * gs = 1 (one plane after the other); the interleaved device form of the
+ * EdDI route is ps = 1, gs = planes (per group one word per plane). The
+ * values come from the 256-entry table given to c2p_prepare (pixval[] on the
+ * vr_trnfm route, devpix[] on the EdDI one), up to C2P_MAX_PLANES planes.
+ *
+ * HOW (user decision 2026-10-04: the format is known once, the conversion
+ * data is computed once, a frame only looks up and writes). The value is
+ * cut into slices of 8 planes. For a slice, 4 consecutive pixels are
+ * 4 x 8 = 32 bits, one long, and c2p_prepare's table (256 longs per slice)
+ * puts a pixel's 8 plane bits where the long needs them -- the palette
+ * lookup and the bit spreading in one load. Bit b4..b0 of the long of
+ * pixels k = 0..3 holds:
+ *
+ *     b4 = NOT bit 0 of the plane number, b3 = bit 2, b2 = bit 1,
+ *     b1 b0 = 3 - k
+ *
+ * The table has the bits at b1 b0 = 0; the long is gathered as
+ * ((t[p0] << 1 | t[p1]) << 1 | t[p2]) << 1 | t[p3], which moves each pixel
+ * to its 3 - k (never out of its 4-bit field). The 16 pixels of a group give
+ * 4 longs; the one of pixels 4j..4j+3 goes into slot 3 - j. Two exchanges of
+ * the classic merge c2p then move the slot number into b3 b2 and plane bits
+ * 2, 1 into the slot number (slot bit 1 <-> b3, slot bit 0 <-> b2, one
+ * masked swap per slot pair each), after which slot r is
+ * (word of plane 2r) << 16 | (word of plane 2r + 1): b4 says which half,
+ * b3..b0 = 15 - pixel. The words are stored as 16-bit values, so the byte
+ * order of the CPU never enters.
+ *
+ * Why this shape (measured on Hatari's TT/68030 model, measurements/
+ * measurement-2026-10-04-doom-c2p/, against four per-position tables, one
+ * 16 x 4-long table per pixel and the full five-pass merge c2p): ONE 1 KiB
+ * table per slice instead of four keeps most loads in the 68030's 256-byte
+ * data cache (DOOM's neighbouring pixels repeat colours), and a row is done
+ * in chunks of 4 groups -- first the longs of 64 pixels into a 64-byte
+ * buffer, then the exchanges and stores -- so that each loop fits the
+ * 256-byte instruction cache. One loop over a group did not, and missed it
+ * ~16 times per group.
+ *
+ * c2p_prepare runs when its source table changes -- once on a CLUT screen,
+ * on every DOOM palette change where the pixel IS the colour (no CLUT) --
+ * and costs 256 * 8 bit tests per slice. The bit-by-bit routine this
+ * replaced is kept as the oracle of sdk/apps/doom/tests/c2p-host.c, which
+ * compiles only this section (DOOM_GEM_C2P_HOST_TEST).
+ */
+#define C2P_MAX_PLANES	32
+#define C2P_SLICES	(C2P_MAX_PLANES / 8)
+#define C2P_CHUNK	4		/* groups per gather pass: 64 pixels */
+
+#if defined(__GNUC__)
+#define C2P_INLINE	static inline __attribute__((always_inline))
+#else
+#define C2P_INLINE	static inline
+#endif
+
+static uint32_t c2p_tab[C2P_SLICES][256];	/* [slice][index] */
+static int c2p_planes;				/* the tables' plane count */
+
+/* The tables for `planes` planes from val[256] (bit p = plane p). */
+static void c2p_prepare(const uint32_t *val, int planes)
+{
+	int s, v, p;
+
+	for (s = 0; s < (planes + 7) / 8; s++)
+		for (v = 0; v < 256; v++) {
+			uint32_t b = (val[v] >> (8 * s)) & 0xffu, t = 0;
+
+			for (p = 0; p < 8; p++)
+				if (b & (1u << p))
+					t |= (uint32_t)1 << ((((p & 1) ^ 1) << 4) |
+							     (((p >> 2) & 1) << 3) |
+							     (((p >> 1) & 1) << 2));
+			c2p_tab[s][v] = t;
+		}
+	c2p_planes = planes;
+}
+
+/* The two exchanges (slot bit 1 <-> b3, slot bit 0 <-> b2). */
+#define C2P_MERGE(x0, x1, x2, x3, t) do {				\
+	t = ((x0 >> 8) ^ x2) & 0x00ff00ffu; x2 ^= t; x0 ^= t << 8;	\
+	t = ((x1 >> 8) ^ x3) & 0x00ff00ffu; x3 ^= t; x1 ^= t << 8;	\
+	t = ((x0 >> 4) ^ x1) & 0x0f0f0f0fu; x1 ^= t; x0 ^= t << 4;	\
+	t = ((x2 >> 4) ^ x3) & 0x0f0f0f0fu; x3 ^= t; x2 ^= t << 4;	\
+} while (0)
+
+/* The first np (< 8, or a partial group) plane words of a merged group. */
+static void c2p_store(uint16_t *d, long ps, int np, uint32_t x0, uint32_t x1,
+		      uint32_t x2, uint32_t x3)
+{
+	uint32_t x[4];
+	int p;
+
+	x[0] = x0;
+	x[1] = x1;
+	x[2] = x2;
+	x[3] = x3;
+	for (p = 0; p < np; p++)
+		d[p * ps] = (uint16_t)((p & 1) ? x[p >> 1] : x[p >> 1] >> 16);
+}
+
+/* One slice (np planes, its table tab) of a row. Inlined per call site so
+ * that ps = 1 (interleaved) gets constant store offsets. */
+C2P_INLINE void c2p_slice(const uint8_t *s, int n, uint16_t *d, long ps,
+			  long gs, const uint32_t *tab, int np)
+{
+	uint32_t buf[4 * C2P_CHUNK];
+	uint32_t x0, x1, x2, x3, t, x[4];
+	int groups = n / 16, c, ng, g, i;
+
+	for (c = 0; c < groups; c += ng) {
+		ng = groups - c < C2P_CHUNK ? groups - c : C2P_CHUNK;
+		for (i = 0; i < 4 * ng; i++, s += 4)
+			buf[i] = (((((tab[s[0]] << 1) | tab[s[1]]) << 1) |
+				   tab[s[2]]) << 1) | tab[s[3]];
+		for (g = 0; g < ng; g++, d += gs) {
+			x3 = buf[4 * g];
+			x2 = buf[4 * g + 1];
+			x1 = buf[4 * g + 2];
+			x0 = buf[4 * g + 3];
+			C2P_MERGE(x0, x1, x2, x3, t);
+			if (np == 8) {
+				d[0] = (uint16_t)(x0 >> 16);
+				d[ps] = (uint16_t)x0;
+				d[2 * ps] = (uint16_t)(x1 >> 16);
+				d[3 * ps] = (uint16_t)x1;
+				d[4 * ps] = (uint16_t)(x2 >> 16);
+				d[5 * ps] = (uint16_t)x2;
+				d[6 * ps] = (uint16_t)(x3 >> 16);
+				d[7 * ps] = (uint16_t)x3;
+			} else {
+				c2p_store(d, ps, np, x0, x1, x2, x3);
+			}
+		}
+	}
+	if (n & 15) {
+		x[0] = x[1] = x[2] = x[3] = 0;
+		for (i = 0; i < (n & 15); i++)
+			x[3 - (i >> 2)] |= tab[s[i]] << (3 - (i & 3));
+		x0 = x[0];
+		x1 = x[1];
+		x2 = x[2];
+		x3 = x[3];
+		C2P_MERGE(x0, x1, x2, x3, t);
+		c2p_store(d, ps, np, x0, x1, x2, x3);
+	}
+}
+
+/* `n` indices from src into planar words at dst (WHAT IT BUILDS). */
+static void c2p_row(const uint8_t *src, int n, uint16_t *dst, long ps, long gs)
+{
+	int s, np;
+
+	for (s = 0; s < (c2p_planes + 7) / 8; s++) {
+		uint16_t *d = dst + 8L * s * ps;
+
+		np = c2p_planes - 8 * s < 8 ? c2p_planes - 8 * s : 8;
+		if (np == 8 && ps == 1)
+			c2p_slice(src, n, d, 1, gs, c2p_tab[s], 8);
+		else if (np == 8)
+			c2p_slice(src, n, d, ps, gs, c2p_tab[s], 8);
+		else
+			c2p_slice(src, n, d, ps, gs, c2p_tab[s], np);
+	}
+}
+
+#ifndef DOOM_GEM_C2P_HOST_TEST	/* the rest of the platform layer */
+
 #include <gem.h>
 #include <gemx.h>		/* vq_scrninfo (EdDI) */
 #include <mint/cookie.h>
@@ -283,7 +458,7 @@
 #define PIC_W		DOOMGENERIC_RESX	/* 320 */
 #define PIC_H		DOOMGENERIC_RESY	/* 200 */
 #define NCOLORS		256
-#define MAX_PLANES	32			/* pixval is 32 bits wide */
+#define MAX_PLANES	C2P_MAX_PLANES		/* pixval is 32 bits wide */
 #define MAX_STAGE	4			/* 1280x960 */
 
 /* ---- AES / VDI ------------------------------------------------------------ */
@@ -506,6 +681,7 @@ static void measure_pixvals(void)
 	}
 	read_row(out_x, out_y, NCOLORS, pixval);
 	pixval_valid = 1;
+	c2p_prepare(pixval, nplanes);
 }
 
 static void eddi_palette(void);
@@ -522,42 +698,18 @@ static void update_palette(void)
 }
 
 /* ======================================================================== */
-/* Chunky to planar                                                          */
+/* The standard form (chunky to planar: top of the file)                     */
 /* ======================================================================== */
 
-/*
- * Convert `n` (a multiple of 16) indices into the standard form's row `row`:
- * for each 16-pixel group, plane p's word collects bit p of the 16 pixel
- * values, leftmost pixel in bit 15.
- */
-static void c2p_row(const uint8_t *src, int n, long row)
-{
-	uint16_t *dst = std_buf + row * wdw;
-	uint32_t m[16];
-	int g, k, p;
-
-	for (g = 0; g < n / 16; g++) {
-		for (k = 0; k < 16; k++)
-			m[k] = pixval[src[k]];
-		src += 16;
-		for (p = 0; p < nplanes; p++) {
-			uint32_t w = 0;
-
-			for (k = 0; k < 16; k++)
-				w = (w << 1) | ((m[k] >> p) & 1u);
-			dst[p * plane_words + g] = (uint16_t)w;
-		}
-	}
-}
-
-/* The whole 320x200 picture into the standard form. */
+/* The whole 320x200 picture into the standard form: one plane after the
+ * other, plane_words apart (c2p_prepare(pixval) ran in measure_pixvals). */
 static void build_standard_form(void)
 {
 	const uint8_t *src = (const uint8_t *)DG_ScreenBuffer;
 	long y;
 
 	for (y = 0; y < PIC_H; y++, src += PIC_W)
-		c2p_row(src, PIC_W, y);
+		c2p_row(src, PIC_W, std_buf + y * wdw, plane_words, 1);
 }
 
 /* ======================================================================== */
@@ -973,25 +1125,13 @@ static void build_device_form(void)
 {
 	const uint8_t *src = (const uint8_t *)DG_ScreenBuffer;
 	uint8_t *row = (uint8_t *)dev_buf;
-	uint32_t m[16];
-	int y, x, g, k, p;
+	int y, x;
 
 	for (y = 0; y < PIC_H; y++, src += PIC_W, row += dev_stride) {
 		if (eddi == EDDI_PLANES) {
-			uint16_t *dst = (uint16_t *)row;
-			const uint8_t *s = src;
-
-			for (g = 0; g < PIC_W / 16; g++, s += 16) {
-				for (k = 0; k < 16; k++)
-					m[k] = devpix[s[k]];
-				for (p = 0; p < nplanes; p++) {
-					uint32_t w = 0;
-
-					for (k = 0; k < 16; k++)
-						w = (w << 1) | ((m[k] >> p) & 1u);
-					*dst++ = (uint16_t)w;
-				}
-			}
+			/* Interleaved: per group one word per plane
+			 * (c2p_prepare(devpix) ran in DG_Init). */
+			c2p_row(src, PIC_W, (uint16_t *)row, 1, nplanes);
 		} else if (dev_bpp == 2) {
 			uint16_t *dst = (uint16_t *)row;
 
@@ -1283,6 +1423,12 @@ void DG_Init(void)
 		alloc_picture_forms();
 		alloc_trnfm_forms();
 	}
+
+	/* The interleaved route's conversion tables: its pixel values are the
+	 * listed ones and never change. (The vr_trnfm route builds them from
+	 * pixval[] whenever that is measured, measure_pixvals.) */
+	if (eddi == EDDI_PLANES)
+		c2p_prepare(devpix, nplanes);
 
 	key_init();
 
@@ -1658,3 +1804,5 @@ int main(int argc, char **argv)
 		doomgeneric_Tick();
 	return 0;
 }
+
+#endif /* DOOM_GEM_C2P_HOST_TEST */

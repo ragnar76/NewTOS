@@ -61,6 +61,10 @@
 /apps/doom/*
 !/apps/doom/*.c
 !/apps/doom/*.h
+# Its host test (the c2p oracle, run by sdk/run-host-tests.sh).
+!/apps/doom/tests/
+/apps/doom/tests/*
+!/apps/doom/tests/*.c
 
 # macOS junk that FAT round-trips create.
 .DS_Store

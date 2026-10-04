@@ -1,0 +1,248 @@
+  PORT06, Schritt "Tabellen-c2p" -- Chunky-to-Planar in DOOMs GEM-Schicht
+===========================================================================
+
+Basis: Zweig desk-rebuild, HEAD cd9efb0. Kein Kommit, keine Karte, keine Pi,
+kein TT. Nichts unter kernel/ oder tos-api/ geaendert; doomgeneric
+unveraendert (beide Bauskripte melden "clean").
+Geaendert:
+  sdk/apps/doom/doomgeneric_gem.c
+    vorher  sha256 aecbec9cadb396d6263e74087f2659b374c104c00cc9ce59ef9515c9164df69e
+    nachher sha256 9dd52c5fe8f50fa556af8e013cda653b347e26a94a19b2e13a965075dc5f3c68
+  sdk/run-host-tests.sh   (+ Test c2p-host)
+  sdk/.gitignore          (Ausnahme sdk/apps/doom/tests/*.c, sonst unversioniert)
+Neu:
+  sdk/apps/doom/tests/c2p-host.c   (Wirtstest, alte Routine als Orakel)
+  dieser Ordner; ein Abschnitt in TASK/PORT06-STATUS-UNFINISHED.MD.
+Bauskripte unveraendert.
+
+Anwenderentscheidung 2026-10-04 (Auftrag): Format einmal beim Start
+erkennen, Umrechnungsdaten einmal vorberechnen, je Bild nur nachschlagen und
+schreiben. Tabellen-c2p oder klassischer Merge-c2p -- beide messen, nach
+Hatari-Zyklen waehlen.
+
+Werkzeuge: Hatari 2.6.1 (CPU-Profiler), TT030 TT-niedrig 320x480x8,
+TOS 3.06 (tos306de.rom), 68882, 4 MiB ST + 16 MiB TT-RAM, mit/ohne
+VDI-Enhancer 1.00 -- Aufbau und Fenster EXAKT wie
+measurement-2026-10-04-doom-m68k-profile (method/run-profile.sh kopiert,
+unveraendert; FRAMES=300 -> 299 abgeschlossene Bilder von -timedemo demo1).
+QEMU 11.0.2 -M raspi4b, -append serial=on, kernel8.img sha256 14083d70...
+(= Kern des Aspect-Schritts; seit b352c4e kein Kern-/tos-api-Kommit, Baum
+dort sauber). /opt/cross-mint m68k-atari-mint-gcc 7.5.0, Apple clang 21.
+Scratch: Sitzungs-Scratchpad ($CLAUDE_JOB_DIR leer), nie /tmp, nie Repo-Wurzel.
+
+
+0. ERGEBNIS VORWEG
+---------------------------------------------------------------------------
+* c2p auf dem TT (Hatari-Modell): 155 -> 31 Zyklen/Pixel ohne Enhancer
+  (vr_trnfm-Weg, Standardform), 154 -> 30 mit Enhancer (EdDI, verschraenkt).
+  Faktor ~5.
+* Ganzes Bild: 16,59 -> 8,70 Mio Zyklen (1,93 -> 3,69 fps) ohne Enhancer,
+  16,22 -> 8,34 Mio (1,98 -> 3,85 fps) mit Enhancer: -47,5 % / -48,6 %.
+* VERIFIED (Erstbild-Rueckleseprobe, alle 480 Zeilen) auf beiden TT-Wegen,
+  in allen 11 Profil-Laeufen und auf NewTOS in allen 3 QEMU-Laeufen.
+* Das ZIEL ~<= 20 Zyklen/Pixel ERREICHT C NICHT (31 bzw. 30). Abschnitt 4:
+  wo die Zyklen liegen, Umriss einer 68030-Assemblerfassung (nicht
+  geschrieben).
+* Neue Rangliste: c2p 22,8 % (vorher 59,9 %), R_DrawSpan 21,2 %,
+  R_DrawColumn 18,7 %, TOS-ROM 10,5 %, memcpy 5,8 %. Der Doom-Renderer ist
+  jetzt die groesste Gruppe (51,8 %).
+
+
+1. GEWAEHLTES VERFAHREN UND KANDIDATEN (raw/C2P-REPORT.txt)
+---------------------------------------------------------------------------
+Alle Kandidaten in portablem C, gleicher Aufrufweg, gleiche Bauflags
+(-m68030 -m68881 -O2 -fomit-frame-pointer); Quellen method/candidates/
+variants.h, gegen das alte Verfahren gepruefte Gleichheit method/candidates/
+vt.c (Wirt, "all ok"). Kandidaten nur 8 Planes (TT), Laeufe nur ohne
+Enhancer; Gewinner danach als Produktcode verallgemeinert.
+
+  Lauf                 Verfahren                                   c2p cyc/px  fps
+  before-plain         alt: Bit-fuer-Bit (16 Schritte je Plane)       155,3   1,93
+  cand-16x4tab         reine Tabelle: je Pixelposition 0..15 eine       64,0   3,05
+                       256x4-Long-Tabelle (64 KiB), 4 OR je Pixel
+  cand-merge5          klassischer Merge-c2p: Byte-Tabelle (Palette +   48,9   3,25
+                       Bitlage), 4 Longs sammeln, 5 Merge-Durchgaenge
+  cand-4tab            je Position k=0..3 eine Long-Tabelle (4 KiB),    37,2   3,63
+                       4 Pixel = 4 OR, dann 2 Merge-Durchgaenge
+  cand-4tab2ph         wie 4tab, in 2 Phasen je 64 Pixel                35,2   3,70
+  cand-1tab            EINE Tabelle (1 KiB), Long per Schieben          31,6   3,67
+                       gesammelt ((t<<1|t)<<1|t)<<1|t, 2 Merge
+  cand-1tab2ph         1tab, in 2 Phasen je 64 Pixel (Sammeln in        29,7   3,86
+                       64-Byte-Puffer, dann Merge+Speichern)
+  after-plain (Produkt) = 1tab2ph, verallgemeinert                      31,1   3,69
+  after-enh   (Produkt, EdDI verschraenkt)                              29,9   3,85
+
+Warum 1tab2ph (Begruendung aus den Profilen, method/c2p-loop-breakdown.py):
+* Merge allein (cand-merge5) verliert, weil die Palette ohnehin nachgeschlagen
+  werden muss UND danach 5 Durchgaenge noetig sind; die Tabelle kann die
+  Bits gleich an die Stelle legen, die nach 2 Durchgaengen richtig ist.
+* 16x4-Tabelle: 4 Speicherzugriffe je Pixel, 64 KiB -- jeder Zugriff
+  verfehlt den 256-Byte-Datencache des 68030.
+* 4tab: die Tabellenlader kosten im Mittel ~11 Zyklen (Daten-Cache-
+  Fehlgriffe, 4 KiB), und die Gruppenschleife (348 Byte) passt nicht in den
+  256-Byte-Befehlscache: 16,4 Befehlscache-Fehlgriffe je 16 Pixel.
+* 1tab: EINE 1-KiB-Tabelle -> die meisten Lader treffen den Datencache
+  (DOOMs Nachbarpixel wiederholen Farben): ~5 Zyklen je Lader statt ~11.
+* 2ph: Sammelschleife (23 Befehle) und Merge-/Speicherschleife (59
+  Befehle) passen je in den Befehlscache (0,10 bzw. 0,93 Fehlgriffe je
+  Durchlauf statt 16).
+* Produkt 31,1 statt 29,7 im Kandidaten: die Verallgemeinerung (Scheiben
+  fuer > 8 Planes, Plane-Zahl < 8, Restgruppe, Zeilen-/Scheibenrahmen)
+  kostet ~1,4 Zyklen/Pixel.
+
+Hatari-Vorbehalt wie im Profil-Lauf: 68030-Zeiten nur angenaehert
+(Caches modelliert, TT-RAM-Wartezustaende/Burst nicht naturgetreu). Die
+Rangfolge der Kandidaten ruht auf Befehls- und Cache-Fehlgriffzahlen, die
+das Modell zaehlt; die absoluten fps sind Richtwerte.
+
+
+2. PRODUKTCODE (sdk/apps/doom/doomgeneric_gem.c, Abschnitt "Chunky to planar")
+---------------------------------------------------------------------------
+* c2p_prepare(val[256], planes): je 8 Planes ("Scheibe") eine Tabelle von
+  256 Longs; Eintrag v = die 8 Plane-Bits von val[v] an der Bitstelle, die
+  sie im Long von 4 Pixeln brauchen (b4 = NOT Plane-Bit 0, b3 = Plane-Bit 2,
+  b2 = Plane-Bit 1, b1b0 = 3 - Pixelposition). Laeuft wenn sich die Quelle
+  aendert: vr_trnfm-Weg nach measure_pixvals (CLUT-Schirm einmal, Truecolor
+  bei jeder Palettenaenderung), EdDI-verschraenkt einmal in DG_Init (devpix
+  bleibt fest). Kosten 256 x 8 Bittests je Scheibe.
+* c2p_row(src, n, dst, ps, gs): Plane p der Gruppe g nach dst[g*gs + p*ps].
+  Standardform (vr_trnfm-Weg): ps = plane_words, gs = 1. Verschraenkt
+  (EdDI format 0): ps = 1, gs = nplanes. Beliebige Breite n: in der letzten,
+  angebrochenen Gruppe sind Pixel jenseits n in allen Planes 0. 1..32 Planes.
+* Speichert 16-Bit-Woerter -> keine Abhaengigkeit von der Bytefolge (Pi =
+  little endian, TT = big endian, gleiche Quelle).
+* Die alte Routine bleibt als Orakel des Wirtstests (Abschnitt 3); der Test
+  uebersetzt NUR den c2p-Abschnitt der Datei (DOOM_GEM_C2P_HOST_TEST blendet
+  den GEM-Teil aus).
+
+
+3. TESTS
+---------------------------------------------------------------------------
+sdk/apps/doom/tests/c2p-host.c, in sdk/run-host-tests.sh eingehaengt (mit
+-fsanitize=address,undefined -Werror). Vergleicht neue gegen alte Routine
+(beide alten Schleifen: c2p_row Standardform und EDDI_PLANES-Zeile aus
+build_device_form, nur globale Variablen zu Parametern gemacht und die
+Restgruppe mit 0 aufgefuellt) wortgenau ueber den GANZEN Zielpuffer
+(Waechterwert 0xa5a5 -> auch Schreiben ausserhalb faellt auf), Quelle als
+exakt grosser Heap-Block (ASan faengt Ueberlesen):
+  Planes 1..32; Breiten 0..49, 63..65, 127..129, 319..321, 335;
+  Werte-Tabellen zufaellig / zufaellig 32 Bit (Streubits ueber planes) /
+  Identitaet / alle Einsen / 0; Pixel zufaellig / 0 / 255 / Rampe / 0,255
+  im Wechsel; beide Lagen. 96 000 Vergleiche, 0 Abweichungen.
+Gegenprobe (Mutation, im Scratch): 3 eingebaute Fehler (Restgruppe falsch
+geschoben, Chunk-Grenze ignoriert, Merge-Maske 1 Bit falsch) -> 57 678 /
+ASan-Abbruch / 50 384 Abweichungen: der Test greift.
+method/run-host-tests.txt: 13 passed, 0 failed, 0 skipped.
+
+
+4. WO DIE 31 ZYKLEN LIEGEN -- UND EIN 68030-ASSEMBLER-UMRISS (NICHT GESCHRIEBEN)
+---------------------------------------------------------------------------
+raw/after-plain/c2p-loop-breakdown.txt (je Pixel umgerechnet):
+  Sammeln (je 4 Pixel 67 Zyklen)              16,8 cyc/px
+    Tabellenlader 5,0 | Pixel-Bytelader 4,5 | clr.l 2,0 | lsl.l #2 1,9 |
+    add.l 1,4 | Long in den Puffer 1,2 | Schleife 0,8
+  Merge + Speichern (je 16 Pixel 174 Zyklen)  10,9 cyc/px
+    8 Wortspeicher 3,1 | eor/and/Schieben 4,1 | Puffer laden + Halbwort-
+    Extraktion (move/swap/clr.w) 2,6 | Rest 1,1
+  Chunk- und Zeilenrahmen                     ~3,0 cyc/px
+gcc 7 erzeugt fuer t[s[i]] immer clr.l + move.b + lsl.l #2 + Lader mit
+(An,Dn.l), nie den 68020+-Index mit Skalierung (An,Dn.w*4); jeder
+Pixel-Bytelader ist ein eigener move.b mit Distanz.
+
+Umriss 68030-Assembler (gleiche Tabelle, gleiche Bitlage, gleiche Pruefung
+gegen das Orakel):
+  * Sammeln, je Pixel 3 Befehle:  move.b (a0)+,d0 / or.l (a1,d0.w*4),d1 /
+    add.l d1,d1  -- d0 einmal vor der Schleife geloescht (move.b laesst das
+    obere Byte stehen), Skalierung im Adressmodus statt lsl, Postinkrement
+    statt Distanz. Erwartung nach den gemessenen Einzelzeiten: ~11 statt
+    16,8 cyc/px.
+  * Kein Puffer: 16 Pixel direkt in 4 Registern sammeln (d1-d4), 2
+    Merge-Durchgaenge in Registern (d5 Hilfe, Masken als Direktwerte),
+    Schleifenkoerper ~70 Befehle ~ 180 Byte -> passt in den 256-Byte-
+    Befehlscache, das Zwischenspeichern faellt weg (~1,2 + ~1 cyc/px).
+  * Speichern: verschraenkt (EdDI) 4 x move.l dN,(a2)+ (Plane 2r/2r+1 liegen
+    auf dem 68030 schon in Speicherreihenfolge im Long) statt 8 x swap +
+    move.w; Standardform 8 x move.w mit vorberechneten Plane-Abstaenden in
+    Adressregistern.
+  * Schaetzung (NICHT gemessen): ~18-21 cyc/px verschraenkt, ~20-23 in der
+    Standardform -- die Grenze ~20 wird damit gerade erreicht, nicht deutlich
+    unterboten.
+Der groessere Hebel waere, das Nachschlagen ganz zu streichen (siehe
+Offene Fragen in TASK/PORT06): auf einem CLUT-Schirm, dessen 256 Stifte 256
+verschiedene Pixelwerte haben (TT, gemessen), DOOMs Farbe c in den Stift
+legen, dessen Pixelwert c ist -- dann ist der Index schon der Pixelwert, der
+c2p liest 4 Pixel mit einem move.l und braucht nur noch Merge-Durchgaenge
+(Schaetzung: C ~17, Assembler ~12 cyc/px). Das aendert die Stiftbelegung
+und die Erstbildpruefung und ist eine Entwurfsentscheidung -- nicht getan.
+
+
+5. NEWTOS (QEMU raspi4b, method/run-c2p-qemu.sh, serial/, screendumps/)
+---------------------------------------------------------------------------
+DOOM.NAP aus dem gelieferten build-doom.sh mit DOOM_STATS=5 (Kostenprobe +
+fps), sha256 der Laufbauten siehe method/build-doom-play.log. Gleiche
+Laeufe/Zeitpunkte wie im Aspect-Schritt:
+  Lauf              Weg              Ergebnis                         c2p (Probe)
+  a-640-default     EdDI Truecolor   640x480 at (0,0) VERIFIED         -- (gepackt,
+                                                                         kein c2p)
+  e-640-noeddi      vr_trnfm 16 Pl.  640x480 at (0,0) VERIFIED          645 -> 351 us
+  g-1080-noeddi-x4  vr_trnfm 16 Pl.  1280x960 at (320,60) VERIFIED      649 -> 346 us
+(vorher-Werte: measurement-2026-10-04-doom-aspect/serial/). fps a/e 63-70
+wie vorher, g 53,6-58,8 (vorher 52,8-56,0). 0 [EXC]/PANIC.
+method/compare-dumps-qemu.txt: Groesse und Bounding-Box aller 6 Dumps
+gleich dem Aspect-Lauf; a-640 t35/t60 sogar pixelgleich, e/g Inhalt
+anders (Attract-Demo nicht bildgenau an die Uhr gebunden; Sichtpruefung
+e-t60 alt/neu nebeneinander: beide richtig, anderer Demo-Augenblick).
+
+QEMU-BEOBACHTUNG (nicht dieser Schritt, aber hier gestolpert):
+Die Kostenprobe meldet im EdDI-Truecolor-Lauf "build 766-782 us" statt
+233-243 -- obwohl die heisse Schleife von build_device_form (gepackt,
+dev_bpp 2) befehlsgleich ist (Disassembly verglichen). A/B in
+method/qemu-layout-ab/: alte Datei neu gelinkt 233 us; neue Datei 770 us;
+neue Datei mit 0x2c0 Byte Fuellung im Text, so dass .data wieder auf einer
+Seitengrenze beginnt (0x76000 statt 0x75d40), 226 us. Ursache also das
+LAYOUT: sdk/newtos.ld legt .data direkt hinter .text (p_dbase = p_tbase +
+p_tlen, TOS-Programmformat), die letzte Textseite teilt sich die Seite mit
+Daten. Vermuteter Mechanismus (NICHT nachgewiesen): QEMU-TCG behandelt
+Zugriffe auf Seiten mit uebersetztem Code langsam. Auf echter Hardware
+nicht erwartet, nicht gemessen; fps unveraendert. Nicht behoben (kein Produkteingriff in Linkerskript oder
+Kern in diesem Auftrag) -- nur gemeldet.
+
+
+6. GRUNDWERTE
+---------------------------------------------------------------------------
+* sdk/apps/build-doom.sh (Vorgabe): 81/81, Plattformdatei ohne Meldung
+  (doomgeneric_gem.err leer), 1 upstream-Warnung wie bisher, LINK OK,
+  DOOM.NAP 671 504 B, sha256 e2acd9cb...; method/build-doom-default.log.
+* sdk/apps/build-doom-m68k.sh (Vorgabe): 81/81, "-Wall -Wextra clean",
+  LINK OK, 0 undefined, DOOM.PRG 675 834 B, Flags 0x7, sha256 3faf08c4...;
+  method/build-doom-m68k-default.log. Timedemo-Bauten vorher/nachher:
+  method/build-doom-m68k-timedemo-{before,after}.log.
+* grep -i setscreen|physbase|logbase ueber sdk/apps/doom/*.c, tests/,
+  beide Bauskripte: 0 (method/grep-screenbase.txt).
+* sh sdk/run-host-tests.sh: 13 passed, 0 failed, 0 skipped.
+* kernel/, tos-api/: git status leer. doomgeneric: git status leer.
+
+
+7. ORDNER
+---------------------------------------------------------------------------
+raw/<lauf>/  hatari.log.gz (volles Profil), functions.csv, categories.csv,
+             summary.json, *.ini, cmdline.txt; after-*/c2p-loop-breakdown.txt
+raw/C2P-REPORT.txt  Vergleichstabelle + Rangliste (method/c2p-report.py)
+method/      run-profile.sh (unveraendert aus dem Profil-Lauf), analyze.py,
+             report.py, drawframe-breakdown.py (dto.), c2p-report.py,
+             c2p-loop-breakdown.py, run-c2p-qemu.sh + run-qemu.sh +
+             seed-scale.sh + launch.c + newdesk-*.inf (aus dem Aspect-
+             Schritt), compare-dumps.py, candidates/, qemu-layout-ab/,
+             Bau-Logs, grep, Host-Tests
+serial/, screendumps/  NewTOS-Laeufe a, e, g
+
+Neu erzeugen (TT): Kandidat/Produkt bauen (BUILD=<scratch> OUT=<scratch>/
+DOOM.PRG DOOM_STATS=0 DOOM_ARGS='"-mb","6","-timedemo","demo1"'
+sdk/apps/build-doom-m68k.sh), dann
+  FRAMES=300 method/run-profile.sh tt306 <PRG> raw/<lauf> <scratch> [enhancer]
+  python3 method/analyze.py raw/<lauf> <objdir> sdk/gemlib/gemlib-m68k.a
+  python3 method/c2p-report.py .
+Kandidaten: variants.h per #include + #define in eine Scratch-Kopie der
+Plattformdatei gehaengt (c2p_prepare/c2p_row umgelenkt), nur
+doomgeneric_gem.o neu uebersetzt und mit den Objekten des Produktbaus
+gelinkt.

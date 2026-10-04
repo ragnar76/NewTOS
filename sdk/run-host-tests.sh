@@ -150,6 +150,22 @@ report system-host $rc "mintlib tree absent or host not LP64"
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/quickstat-host.log"
 report quickstat-host $rc "mintlib tree absent or host not LP64"
 
+# --- app host tests --------------------------------------------------------------
+# c2p-host (PORT06, user decision 2026-10-04): DOOM's table chunky-to-planar
+# (sdk/apps/doom/doomgeneric_gem.c, compiled without its GEM half) equals the
+# bit-by-bit routine it replaced, kept in the test as the oracle -- 1..32
+# planes, standard and interleaved form, odd widths, under ASan/UBSan.
+# Byte-order-free by construction (16-bit stores), so no host check needed.
+DOOMT="$SDK/apps/doom/tests"
+if "$CC" -O1 -g -fsanitize=address,undefined -Wall -Wextra -Werror \
+     -o "$WORK/c2p-host" "$DOOMT/c2p-host.c" > "$WORK/c2p-host.log" 2>&1; then
+  "$WORK/c2p-host" >> "$WORK/c2p-host.log" 2>&1; rc=$?
+  [ $rc -eq 0 ] || sed 's/^/      /' "$WORK/c2p-host.log"
+  report c2p-host $rc
+else
+  echo "FAIL  c2p-host (did not build)"; sed 's/^/      /' "$WORK/c2p-host.log"; fail=$((fail+1))
+fi
+
 echo
 echo "host tests: $pass passed, $fail failed, $skip skipped"
 exit $fail

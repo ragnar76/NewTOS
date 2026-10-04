@@ -1,0 +1,2 @@
+hatari --machine tt --tos-res ttlow --monitor vga --memsize 4 --ttram 16 --addr24 off --tos /Volumes/Daten/Development/RuSTari/roms/tos306de.rom --fpu 68882 (enhancer: no) FRAMES=300 PEXECN=1 DETAIL=0 BLOCKS=10
+wall 108 s

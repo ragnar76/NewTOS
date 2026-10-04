@@ -1,0 +1,6 @@
+a-640-default-t35.png        old (640, 480) bbox (0, 0, 640, 480)  new (640, 480) bbox (0, 0, 640, 480)  IDENTICAL
+a-640-default-t60.png        old (640, 480) bbox (0, 0, 640, 480)  new (640, 480) bbox (0, 0, 640, 480)  IDENTICAL
+e-640-noeddi-t35.png         old (640, 480) bbox (0, 0, 640, 480)  new (640, 480) bbox (0, 0, 640, 480)  content differs
+e-640-noeddi-t60.png         old (640, 480) bbox (0, 0, 640, 480)  new (640, 480) bbox (0, 0, 640, 480)  content differs
+g-1080-noeddi-x4-t35.png     old (1920, 1080) bbox (1, 60, 1600, 1020)  new (1920, 1080) bbox (1, 60, 1600, 1020)  content differs
+g-1080-noeddi-x4-t60.png     old (1920, 1080) bbox (0, 60, 1600, 1020)  new (1920, 1080) bbox (0, 60, 1600, 1020)  content differs

@@ -1,0 +1,64 @@
+_c2p_row.constprop.2: 594390352 cycles in 179 instructions
+
+-- executed 4816000 times: 23 instructions 1021616-1021650, 324045726 cycles (54.5%), 67.3 cycles and 0.10 i-cache misses per pass
+      20.2 cyc/pass   30.1%  table load (move.l/or.l (An,Dn.l))
+      18.1 cyc/pass   26.9%  pixel byte load
+       8.0 cyc/pass   11.9%  clr.l
+       7.5 cyc/pass   11.2%  lsl.l
+       5.5 cyc/pass    8.2%  add.l
+       4.9 cyc/pass    7.2%  move.l
+       2.0 cyc/pass    3.0%  bne.b
+       1.0 cyc/pass    1.5%  cmp.l
+       0.0 cyc/pass    0.0%  addaq.l
+
+-- executed 1204000 times: 59 instructions 1021660-1021702, 209114868 cycles (35.2%), 173.7 cycles and 0.93 i-cache misses per pass
+      49.5 cyc/pass   28.5%  plane word store
+      27.8 cyc/pass   16.0%  move.l
+      24.9 cyc/pass   14.4%  and.l
+      24.3 cyc/pass   14.0%  eor.l
+       8.3 cyc/pass    4.8%  swap.w
+       8.0 cyc/pass    4.6%  lsr.l
+       8.0 cyc/pass    4.6%  lsl.l
+       5.4 cyc/pass    3.1%  clr.w
+       4.1 cyc/pass    2.4%  movea.l
+       4.0 cyc/pass    2.3%  bne.w
+       3.9 cyc/pass    2.3%  lea.l
+       3.4 cyc/pass    1.9%  adda.l
+       2.0 cyc/pass    1.2%  cmpa.l
+
+-- executed 301000 times: 23 instructions 10215fc-1021722, 31495778 cycles (5.3%), 104.6 cycles and 4.01 i-cache misses per pass
+      23.8 cyc/pass   22.7%  add.l
+      19.9 cyc/pass   19.0%  movea.l
+      16.8 cyc/pass   16.1%  bge.w
+      13.5 cyc/pass   12.9%  move.l
+       7.0 cyc/pass    6.7%  lea.l
+       6.0 cyc/pass    5.7%  cmp.l
+       4.2 cyc/pass    4.0%  moveq
+       4.0 cyc/pass    3.8%  sub.l
+       4.0 cyc/pass    3.8%  muls.l
+       3.4 cyc/pass    3.3%  bge.b
+       2.0 cyc/pass    1.9%  lsl.l
+
+-- executed 60200 times: 73 instructions 1021526-102174e, 27567616 cycles (4.6%), 457.9 cycles and 18.02 i-cache misses per pass
+     171.0 cyc/pass   37.3%  move.l
+      72.3 cyc/pass   15.8%  movem.l
+      40.0 cyc/pass    8.7%  movea.l
+      36.0 cyc/pass    7.9%  add.l
+      22.9 cyc/pass    5.0%  addq.l
+      17.0 cyc/pass    3.7%  lea.l
+      11.6 cyc/pass    2.5%  rts
+      11.0 cyc/pass    2.4%  adda.l
+      10.0 cyc/pass    2.2%  cmp.l
+      10.0 cyc/pass    2.2%  bge.w
+      10.0 cyc/pass    2.2%  beq.w
+       9.0 cyc/pass    2.0%  ble.w
+       8.0 cyc/pass    1.7%  lsl.l
+       7.0 cyc/pass    1.5%  clr.l
+       6.0 cyc/pass    1.3%  sub.l
+       4.0 cyc/pass    0.9%  moveq
+       4.0 cyc/pass    0.9%  bgt.w
+       2.0 cyc/pass    0.4%  asr.l
+       2.0 cyc/pass    0.4%  addaq.l
+       2.0 cyc/pass    0.4%  suba.l
+       1.0 cyc/pass    0.2%  blt.b
+       1.0 cyc/pass    0.2%  movea.w

@@ -1,0 +1,11 @@
+category,instructions,cycles,share_cycles_pct
+Doom renderer,278862275,1348512148,54.073
+platform layer (doomgeneric_gem.c),207467676,636657444,25.529
+TOS ROM (BIOS/VDI/AES code run by traps),33997646,180918618,7.255
+libc,17358230,152721650,6.124
+game logic,13703866,68711560,2.755
+"Doom support (zone, WAD, misc, i_*, m_*)",6959786,41989524,1.684
+"Doom UI/video (v_video, status bar, HUD, wipe, menu)",10759478,36681780,1.471
+fixed-point (m_fixed),4144032,16658882,0.668
+fixed-point/libgcc helper,2303719,9715936,0.390
+platform: gemlib (AES/VDI binding),137453,1312530,0.053
