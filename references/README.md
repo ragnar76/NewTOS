@@ -280,7 +280,9 @@ sources are present. The following table tracks acquisition status on
 | circle (`6177984e`)           | present               | `circle/`                     |
 | RPi 4 Boot Documentation      | TODO                  | `rpi4-boot/`                  |
 | Andre Richter Tutorials       | TODO                  | `rpi-os-tutorials/`           |
-| ARM ARM (ARMv8-A)             | TODO                  | `arm-arm/`                    |
+| ARM ARM (A-profile) DDI 0487 M.d | present (2026-10-04) | `arm-arm/DDI0487M_d_a-profile_architecture_reference_manual.pdf` |
+| Cortex-A72 MPCore TRM 100095 r0p3 issue 06 | present (2026-10-04) | `arm-arm/cortex_a72_mpcore_trm_100095_0003_06_en.pdf` |
+| ELF for the Arm 64-bit Architecture (AAELF64), abi-aa 2025Q4 | present (2026-10-04) | `arm-arm/aaelf64.pdf` |
 
 Status meanings:
 
@@ -306,8 +308,20 @@ Status meanings:
   https://www.raspberrypi.com/documentation/computers/raspberry-pi.html
 - **Andre Richter Tutorials** —
   https://github.com/rust-embedded/rust-raspberrypi-OS-tutorials
-- **ARM ARM (ARMv8-A)** — DDI 0487 from
-  https://developer.arm.com/documentation/ddi0487
+- **ARM ARM (A-profile)** — DDI 0487 from
+  https://developer.arm.com/documentation/ddi0487 ("Download"). Pinned copy:
+  edition M.d, `DDI0487M_d_a-profile_architecture_reference_manual.pdf`,
+  129 014 701 bytes, sha256
+  `80d589a4645feba6bdb9d77edfaf04d4394d5d5444a4c41f97cf4fdd20eee3d5`.
+  Cite section numbers from this edition only.
+- **Cortex-A72 MPCore TRM** — ARM 100095 from
+  https://developer.arm.com/documentation/100095 . Pinned copy: r0p3 issue
+  06, `cortex_a72_mpcore_trm_100095_0003_06_en.pdf`, 575 pages, sha256
+  `47f52c93806507962c2cd0b77991d7aebacfaae5734ac617fc45a5babdff738f`.
+- **ELF for the Arm 64-bit Architecture (AAELF64)** — from
+  https://github.com/ARM-software/abi-aa/releases (release 2025Q4,
+  `aaelf64.pdf`), sha256
+  `0f203e6b07216e84dde98bb28dbebef385fe7d911e4e82c2cec5eecdfee9c1e4`.
 - **SD Simplified Specifications** — https://www.sdcard.org/downloads/pls/
   and .../pls/archive/. Free of charge, but **not** redistributable; see
   "SD specifications" above for the terms and for the exact editions.
