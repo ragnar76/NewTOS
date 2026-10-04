@@ -141,6 +141,7 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     unsafe {
         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
             child.entry_va,
+            child.basepage_va,
             child.l0_pa,
             child.sp_el0,
             &PROCESS_TABLE[child.slot].parent_frame,

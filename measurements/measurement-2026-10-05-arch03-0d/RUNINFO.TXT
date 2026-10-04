@@ -1,0 +1,111 @@
+measurement-2026-10-05-arch03-0d -- ARCH03 stage 0d: every NewTOS program is a
+position-independent executable (ELF ET_DYN); the kernel loader applies its
+R_AARCH64_RELATIVE relocations and refuses ET_EXEC with EPLFMT (-66)
+
+Date 2026-10-05, branch arch03, HEAD abc5c6a (tree clean at start), 0d change
+uncommitted: method/arch03-0d-change.diff (git diff + the two new files).
+QEMU 11.0.2, host macOS (no `timeout`; runs end via QMP `quit`).
+No SD card, Pi or TT touched; tools/make-sd-image.sh NOT used (it writes
+through /Volumes/NEWTOS) -- method/seed-card.sh builds private images.
+
+CODE UNDER TEST (shared tree)
+  tos-api/src/bdos/process/elf.rs      ET_DYN only (ET_EXEC -> NotPositionIndependent),
+                                       e_flags == 0, PT_INTERP refused, PT_DYNAMIC recorded
+  tos-api/src/bdos/process/reloc.rs    new: DT_RELA walk + R_AARCH64_RELATIVE apply,
+                                       full validation (see the module doc)
+  tos-api/src/bdos/process/loader.rs   relocation step after streaming, before
+                                       sysvars/basepage/cache sync; LoadError::Reloc
+  kernel/src/arch/aarch64/user_entry.rs  enter_el0_with_resume_capture puts the
+                                       basepage VA into x0 (kernel-launch path)
+  kernel/src/launch.rs, selftest_*.rs  pass it; 9 selftest blobs ET_DYN; pexec /
+                                       pexec_d4d5 blobs moved from VA 0x100 to 0x1000
+                                       with PC-relative adr; etv_term handler adr
+  sdk/newtos.ld, sdk/crt0.S, sdk/libc/crt0.S, every SDK/app/tosdump build script,
+                                       tools/mk-hello-ncp.py, sdk docs
+
+TOOLCHAIN (clang = Apple clang 21.0.0, lld = rust-lld 22.1.2)
+  compile -fPIE (was -fno-pic); link -pie --no-dynamic-linker -z text
+  (was -no-pie), -z max-page-size=0x1000 --build-id=none, newtos.ld base 0x1000.
+  reloc-census.txt (method/reloc-census.sh over all 40 rebuilt programs):
+  ONLY R_AARCH64_RELATIVE appears (0 .. 1892 per program); no ABS64, GLOB_DAT,
+  JUMP_SLOT, IRELATIVE, TLS; dynamic tags RELA/RELASZ/RELAENT/RELACOUNT only
+  (no NEEDED/REL/JMPREL/TEXTREL/RELR); every image ET_DYN, e_flags 0,
+  2xLOAD + 1xDYNAMIC (HELLO.NCP: 1xLOAD, hand-built, no relocations).
+  Spike finding: with the OLD script's `/DISCARD/ *(.got)` an -fPIE weak-undef
+  GOT load was linked to read address 0; .got is now kept. Orphan placement
+  put .dynamic after .bss (BSS -> file zeros); now placed explicitly.
+
+KERNELS (kernels.sha256)
+  k-prod-*     shared tree, fresh release build (runs below)
+  k-final-*    shared tree after comment-only edits, fresh release build
+               (final baselines + smoke runs rpi4-final-*, virt-final-boot)
+  k-crash-*    scratch: + measurement-2026-10-05-arch03-0c/method/apply-instrumentation.py
+               (crash-prompt Space injector; virt: CRCHILD/CRASHTST in the RAM registry,
+                built from bin/) -> method/scratch-crash-instrumentation.diff
+  k-keys-rpi4  scratch: + measurement-2026-10-04-keys02/method/apply-instrumentation.py
+               + method/emucon-schedule.py -> method/scratch-keys-instrumentation.diff
+  k-st-virt    scratch: + method/wire-selftests.py (10 selftest calls before AUTO)
+  k-head-st-virt  the same wiring on `git archive HEAD` (pre-0d) for comparison
+
+RUNS (raspi4b: method/run-rpi4.sh / run-rpi4-drive.sh, -append serial=on;
+      virt: method/run-virt.sh; cards: method/seed-card.sh <img> <#Z path>)
+  rpi4-product-boot   k-prod, no #Z: "[desk] desktop up"
+  rpi4-teradesk       k-prod, #Z TeraDesk DESKTOP.NAP (646 relocs): TeraDesk
+                      desktop (t35.png); rpi4-final-teradesk = same on k-final
+  rpi4-qed            k-prod, #Z QED.NAP (559 relocs): QED menu bar, full screen (t30.png)
+  rpi4-doom           k-prod, #Z DOOM.NAP (1892 relocs): "DOOM: picture 640x480
+                      at (0,0) VERIFIED via EdDI+scale+vro_cpyfm", demo E1M1 (t45.png);
+                      rpi4-final-doom = same on k-final
+  rpi4-apitest        k-prod, #Z APITEST.NCP: TOTAL 106 PASS / 0 FAIL / 5 SKIP
+                      (SKIPs = no key pressed; T23/T24/T26 print FAIL rc=-33
+                      because this card has no C:\qed.rsc -- not counted in the
+                      summary, card content, not loader); T08 p_tbase=0x1000,
+                      T32 all six basepage fields consistent with _end
+  rpi4-crashtst       k-crash, #Z CRASHTST: 6 reports, all 0xFFFF, case o 0,
+                      "CRASHTST: PASS", desktop up after
+  virt-crash          k-crash virt: CRCHILD (kernel parent) + CRASHTST from the
+                      RAM registry (in-memory loader path): 7 reports, PASS, desktop up
+  rpi4-kbdvec-emucon  k-keys, #Z KBDVEC: "KBDVEC: hook saw 48 4D CD C8 1E 9E",
+                      "KBDVEC: PASS"; then Ctrl-Z -> EmuCON; "run hello2.ncp" ->
+                      "Hello from a C program built with clang!" (EL1 Pexec path);
+                      "run oldexec.ncp" -> "Cannot run program (error 66)." (t36.png);
+                      "exit" -> desktop up
+  rpi4-oldexec        k-prod, #Z OLDEXEC.NCP (deliberate ET_EXEC, method/build-oldexec.sh):
+                      "[launch] load failed: LoadFailed(Parse(NotPositionIndependent))",
+                      "sh_ldapp ... exited with rc=-66", alert "TOS error #35." (t30.png;
+                      the shell's fm_error numbering of -66, unchanged)
+  rpi4-accessory      k-prod, SEED_ACC=1 (C:\ACC\SYSACC.NAC): loaded, scheduler
+                      fresh dispatch (x0 = USER_VA_BASE), "all accessories have
+                      issued their message wait", desktop up
+  virt-product-boot   k-prod virt: desktop up; virt-final-boot = same on k-final
+  virt-selftests      k-st: d3, d6, d7, pexec, pexec_env, d4d5, sysvars, upcall,
+                      etv_term PASS; sleepwake_switch FAIL (5 checks)
+  virt-selftests-pre0d  k-head-st: pexec, pexec_env, d4d5 FAIL SegmentVaOutOfRange
+                      (the 0b finding); sleepwake_switch FAIL with the SAME 5 checks
+                      -> pre-existing, not caused by 0d
+
+BASELINES (method/)
+  host-tests.txt     cargo test -p tos-api -p tos-types -p xtask --no-fail-fast
+                     1045 / 0 / 1  (baseline 1020/0/1; +25 tests/loader_pie_reloc.rs)
+  build-*.log        release after `cargo clean -p kernel -p tos-api --target
+                     aarch64-unknown-none-softfloat --release`, fresh per board:
+                     tos-api 64 / kernel 94 (= baseline)
+  clippy-*.log       cargo clippy -p kernel --target aarch64-unknown-none-softfloat
+                     --features board-{rpi4,qemu-virt}: tos-api 80 / kernel 125 (= baseline),
+                     no hit in reloc.rs/elf.rs/loader.rs/launch.rs/selftests
+                     (the one user_entry.rs hit, unused boot_l0_phys, is pre-existing)
+  desk-drift-probe.txt  31 (= baseline)
+  sdk-host-tests.txt    sh sdk/run-host-tests.sh: 13 passed, 0 failed, 0 skipped
+
+BINARIES
+  bin/ + bin/SHA256SUMS      sdk/build.sh examples, HELLO.NCP (mk-hello-ncp.py),
+                             OLDEXEC.NCP (deliberate ET_EXEC, refusal test only)
+  repo-binaries.sha256       the rebuilt libc/gemlib/cflib/libm clients, apps,
+                             tosdump .NAPs in their usual build directories
+  reloc-census.txt           relocation census of all of them
+
+NOT COVERED HERE
+  * Real Pi 4 (not touched by order). I-cache sync after relocation is the
+    existing sync_code_cache over [TPA, image_top) -- unobservable on QEMU.
+  * qemu-virt has no SD card: the file-streamed loader path runs on raspi4b
+    only; virt exercises the in-memory (registry) path.

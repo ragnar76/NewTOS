@@ -16,21 +16,25 @@
  * Programs that do not link libc keep using the plain sdk/crt0.S, which has
  * no such dependency.
  *
- * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld), low-half
- * VA 0x0 -- the image starts at RESERVED_LOW_END = 0x1000, above the classic
- * low-memory system area the loader materialises in page 0 (B1 / Option 1):
+ * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld): the program
+ * is a position-independent executable (ELF ET_DYN, ARCH03 stage 0d) linked
+ * at 0x1000; the loader streams it into the TPA and applies its
+ * R_AARCH64_RELATIVE relocations. Stage 0 still maps the TPA at VA 0:
  *
  *     [0x000, 0x100)          BasePage (populated by the loader)
  *     [0x400, 0x670)          sysvars + OSHEADER + cookie jar (loader)
- *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata) = p_tbase/p_tlen
- *     [p_dbase, p_bbase)      PT_LOAD data (.data)         = p_dbase/p_dlen
- *     [p_bbase, _end)         .bss (zeroed by the loader)  = p_bbase/p_blen
+ *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata/.rela.dyn) = p_tbase/p_tlen
+ *     [p_dbase, p_bbase)      PT_LOAD data (.dynamic/.got/.data)      = p_dbase/p_dlen
+ *     [p_bbase, _end)         .bss (zeroed by the loader)             = p_bbase/p_blen
  *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
  *
- * On entry the loader has eret'd to EL0 at _start (linked at 0x1000) and set
- * SP_EL0 to the TPA top. We re-establish SP from the BasePage's p_hitpa
- * (32-bit LONG at basepage offset 0x04, read through a zero base register)
- * so we do not depend on the entry SP or x0.
+ * On entry the loader has eret'd to EL0 at _start (linked at 0x1000), set
+ * SP_EL0 to the TPA top and put the BasePage address in x0 (every launch
+ * path: Pexec, the kernel launcher, the scheduler's first dispatch). We take
+ * the BasePage from x0 -- never from a fixed address, because from stage 1 on
+ * it sits at the start of the program's own TPA block -- and re-establish SP
+ * from its p_hitpa (32-bit LONG at offset 0x04) rather than trust the entry
+ * SP.
  *
  * Trap ABI (kernel/src/arch/aarch64/exceptions.rs): GEMDOS = svc #1,
  * function id in x8, arguments in x0.., result in x0. Pterm = 0x4C.
@@ -40,10 +44,10 @@
     .global _start
     .type   _start, %function
 _start:
-    /* SP = basepage->p_hitpa (the mapped TPA top), read at VA 0 offset 4.
-       x19/x20 keep the two values across the calls below; nothing has to be
-       restored, because _start never returns. */
-    mov     x19, #0             /* x19 = BasePage VA (the loader puts it at 0) */
+    /* SP = basepage->p_hitpa (the mapped TPA top), offset 4 of the BasePage
+       the loader passes in x0. x19/x20 keep the two values across the calls
+       below; nothing has to be restored, because _start never returns. */
+    mov     x19, x0             /* x19 = BasePage address (loader: x0) */
     ldr     w20, [x19, #4]      /* w20 = p_hitpa (zero-extended into x20) */
     mov     sp, x20
 

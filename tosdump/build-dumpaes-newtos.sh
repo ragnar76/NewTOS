@@ -56,7 +56,7 @@ BUILD_ID="$(cd "$ROOT" && git rev-parse HEAD 2>/dev/null | cut -c1-4)"
 # AArch64 is little-endian, so the record writer swaps on write. This is the
 # only compile-time difference from the TT build (spec section 2.1).
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
+        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
         -std=c99 -Wall -Wextra -Werror
         -DTD_BIG_ENDIAN_TARGET=0 -DTD_BUILD_ID="\"$BUILD_ID\"")
 INCS=(-I"$HERE/core" -I"$MINT" -isystem "$RES")
@@ -80,11 +80,11 @@ for s in "${SRC[@]}"; do
 done
 
 "$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 \
-    -fno-pic -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
+    -fPIE -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
     -c "$LIBC/crt0.S" -o "$BUILD/crt0-newtos-aes.o" || exit 1
 
 rm -f "$OUT"
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why-newtos-aes.txt" \
     "$BUILD/crt0-newtos-aes.o" "$OBJ"/*.o "$LIBC/libc.a" \
     -o "$OUT" 2>"$BUILD/link-newtos-aes.err"

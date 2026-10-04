@@ -1,32 +1,36 @@
 /*
  * crt0.S -- NewTOS native C runtime startup (ADR-018 `.NCP` / `.NAP`).
  *
- * The NewTOS program loader (tos-api/src/bdos/process/{loader,mmu,arena}.rs)
- * maps a multi-page Transient Program Area (TPA_SIZE, 4 MiB today) for the
- * process, at low-half VA 0x0. The image is linked at RESERVED_LOW_END =
- * 0x1000 (sdk/newtos.ld), above the basepage and the classic low-memory
- * system area the loader materialises in page 0 (B1 / Option 1):
+ * The NewTOS program loader (tos-api/src/bdos/process/{loader,reloc,mmu,
+ * arena}.rs) maps a multi-page Transient Program Area (TPA_SIZE, 4 MiB today)
+ * for the process. The program is a position-independent executable (ELF
+ * ET_DYN, ARCH03 stage 0d): it is linked at 0x1000 (sdk/newtos.ld), the
+ * loader streams its segments into the TPA and applies its
+ * R_AARCH64_RELATIVE relocations for the address the TPA executes at. Stage 0
+ * still maps the TPA at VA 0, so the layout reads:
  *
  *     [0x000, 0x100)          BasePage (populated by the loader)
  *     [0x400, 0x670)          sysvars + OSHEADER + cookie jar (loader)
- *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata) = p_tbase/p_tlen
- *     [p_dbase, p_bbase)      PT_LOAD data (.data)         = p_dbase/p_dlen
- *     [p_bbase, _end)         .bss (zeroed by the loader)  = p_bbase/p_blen
+ *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata/.rela.dyn) = p_tbase/p_tlen
+ *     [p_dbase, p_bbase)      PT_LOAD data (.dynamic/.got/.data)      = p_dbase/p_dlen
+ *     [p_bbase, _end)         .bss (zeroed by the loader)             = p_bbase/p_blen
  *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
  *
  * Every TPA page is mapped user-read/write/execute. On entry the loader has:
  *
  *   - eret'd to EL0 at e_entry (this `_start`, linked at 0x1000);
  *   - set SP_EL0 to the mapped TPA top (= the basepage's p_hitpa);
- *   - put the BasePage VA (0x0) in x0 on the SVC-Pexec launch path.
+ *   - put the BasePage address in x0 -- on every launch path (Pexec, the
+ *     kernel launcher for the desktop / AUTO / #Z, the scheduler's first
+ *     dispatch of an accessory).
  *
- * We (re)establish SP from the basepage's `p_hitpa` field rather than trust
- * the entry SP: the basepage lives at a fixed VA 0, so we read p_hitpa
- * directly (independent of x0, which the kernel-launch path does not set),
- * and SP then tracks whatever TPA top the loader chose. p_hitpa is a 32-bit
- * TOS `LONG` at basepage offset 0x04; the loader guarantees it is 4-KiB /
- * 16-byte aligned. The loader zeroes the whole TPA (including .bss), so crt0
- * does not zero BSS.
+ * crt0 therefore finds the BasePage through x0, never through a fixed
+ * address: from stage 1 on the basepage sits at the start of the program's
+ * own TPA block, wherever that is. SP is (re)established from the basepage's
+ * `p_hitpa` (a 32-bit TOS `LONG` at offset 0x04, 4-KiB / 16-byte aligned)
+ * rather than trusted from entry, so it tracks whatever TPA top the loader
+ * chose. The loader zeroes the whole TPA (including .bss), so crt0 does not
+ * zero BSS.
  *
  * The trap ABI (kernel/src/arch/aarch64/exceptions.rs): GEMDOS = svc #1,
  * function id in x8, argument in x0, result in x0. Pterm = 0x4C.
@@ -37,17 +41,15 @@
     .type   _start, %function
 _start:
     /*
-     * SP = basepage->p_hitpa (the mapped TPA top). The basepage is always at
-     * VA 0, so read offset 0x04 through a zero base register — no dependency
-     * on x0, and no stack access before SP is valid.
+     * SP = basepage->p_hitpa (the mapped TPA top), read at offset 0x04 of the
+     * BasePage the loader passes in x0. No stack access before SP is valid.
      */
-    mov     x1, #0
-    ldr     w9, [x1, #4]        /* w9 = p_hitpa (zero-extended into x9) */
+    ldr     w9, [x0, #4]        /* w9 = p_hitpa (zero-extended into x9) */
     mov     sp, x9
 
     /*
-     * x0 holds the BasePage VA on the SVC-Pexec launch path; Stage-1 `main`
-     * takes no arguments, so it is ignored. Call main; its return value (w0)
+     * `main` takes no arguments in a plain (non-libc) program; x0 still
+     * holds the BasePage address, which it ignores. Its return value (w0)
      * is the exit code.
      */
     bl      main

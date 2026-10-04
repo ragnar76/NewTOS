@@ -68,7 +68,7 @@ one shape: extract + overlay → compile every file of the library's own
 manifest best-effort → compare the failure set with `expected-failures.txt` →
 archive → link a test client.
 
-| Script | Manifest | Flags (beyond the shared `-target aarch64-unknown-none-elf -ffreestanding -nostdlib -fno-pic -fno-builtin -nostdinc`) | Archive | Test client |
+| Script | Manifest | Flags (beyond the shared `-target aarch64-unknown-none-elf -ffreestanding -nostdlib -fPIE -fno-builtin -nostdinc`) | Archive | Test client |
 |--------|----------|------|---------|-------------|
 | `sdk/libc/build-libc.sh` | the directories in `DIRS` (`:109`), minus `EXCLUDE` (`:135`) and the test/skeleton names (`:151`) | `-O2 -D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -D__NO_LONG_DOUBLE_MATH` (`:101-104`); `-DVERSION="0.60.1"` for `ident.c` (`:157-161`) | `sdk/libc/libc.a` (`:221`) | `sdk/libc/tests/libtest.c` → `build/libtest.NCP` |
 | `sdk/gemlib/build-gemlib.sh` | gemlib's `SRCFILES` `COBJS`, expanded with `make` (`:129-135`) | `-O2 -D__NEWTOS__` (`:115-117`); `mt_gem.h` generated from `mt_gem.h.in` with `@MAJOR@=0 @MINOR@=44` (`:91-95`) | `sdk/gemlib/gemlib.a` (`:168`) | `sdk/gemlib/tests/gemtest.c` → `build/gemtest.NCP` |
@@ -197,7 +197,7 @@ writes (verified byte-identical to the previously hand-made file, TASK/T06).
 1. MD5-check the five benchmark translation units and `coremark.h` against
    `sdk/apps/coremark-sources.md5`; refuse to build on any mismatch (`:73-104`).
 2. `lib_ensure libc` (`:109-110`).
-3. Flags: `-O2 -fomit-frame-pointer -ffreestanding -fno-pic -fno-builtin`
+3. Flags: `-O2 -fomit-frame-pointer -ffreestanding -fPIE -fno-builtin`
    (reported by the benchmark via `-DFLAGS_STR`), `-D_GNU_SOURCE`,
    `-DITERATIONS=$ITERATIONS` (`:133-138`); include order: port dir, CoreMark
    root, mintlib, clang (`:140`).

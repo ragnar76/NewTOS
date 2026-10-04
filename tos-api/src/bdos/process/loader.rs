@@ -50,6 +50,7 @@ use crate::bdos::fs::FileImage;
 use super::arena;
 use super::elf::{self, ElfImage, LoadSegment, ParseError, PF_W, PF_X};
 use super::mmu::{self, MapError, PageFlags};
+use super::reloc::{self, RelocError};
 use super::PROCESS_TABLE;
 
 /// High-half kernel VA offset (mirror of [`super::arena`]'s constant and
@@ -105,6 +106,11 @@ pub enum LoadError {
     /// answer EmuTOS gives a header it will not load
     /// (`bdos/kpgmld.c:47-63`).
     Ilp32Unsupported,
+    /// The image's dynamic relocations could not be applied — an
+    /// unsupported relocation type or dynamic tag, or a table/place outside
+    /// the image (ARCH03 stage 0d, [`super::reloc`]). Maps to `EPLFMT`,
+    /// like every other "this file is not a program I can load" answer.
+    Reloc(RelocError),
 }
 
 /// How `Pexec` supplies the child's environment block. Mirrors the
@@ -133,6 +139,11 @@ static EMPTY_ENV: [u8; 2] = [0, 0];
 impl From<ParseError> for LoadError {
     fn from(e: ParseError) -> Self {
         Self::Parse(e)
+    }
+}
+impl From<RelocError> for LoadError {
+    fn from(e: RelocError) -> Self {
+        Self::Reloc(e)
     }
 }
 impl From<MapError> for LoadError {
@@ -199,6 +210,14 @@ const RESERVED_LOW_END: u64 = 0x1000;
 // (`[0x400, 0x800)`) below the image base.
 const _: () = assert!(BASEPAGE_RESERVED <= RESERVED_LOW_END);
 const _: () = assert!(SYSVAR_AREA_END <= RESERVED_LOW_END);
+
+// Stage 0 (ARCH03): the TPA is mapped at VA 0, so a segment's link VA is
+// also its byte offset in the TPA (`populate_and_map` streams segment `s` to
+// `tpa_bytes[s.vaddr - USER_VA_BASE]`) and the relocation step can index the
+// TPA by link VA with load base `USER_VA_BASE`. Stage 1 places the TPA at a
+// per-process address and must split "offset in the TPA" from "execution
+// address" at that point; this assertion marks the place.
+const _: () = assert!(USER_VA_BASE == 0);
 
 // The image window must leave room for both the reserved low region and the
 // minimum stack reserve inside the TPA.
@@ -270,7 +289,8 @@ static HEADER_BUF: HeaderBuf = HeaderBuf(UnsafeCell::new([0u8; HEADER_BUF_SIZE])
 /// 1. Parse the blob via [`elf::parse`].
 /// 2. For each `PT_LOAD` segment, validate it fits in the single
 ///    user page and copy file bytes into that page; zero the BSS
-///    tail (`mem_size - file_size`).
+///    tail (`mem_size - file_size`). Then apply the image's
+///    `R_AARCH64_RELATIVE` relocations ([`super::reloc`], ARCH03 0d).
 /// 3. Initialise the slot's page tables and install one mapping
 ///    `(USER_VA_BASE → user-page-phys, UserRwExec)`.
 /// 4. Return a [`LoadedImage`] ready for the caller's eret.
@@ -494,6 +514,17 @@ unsafe fn populate_and_map(
         // whole-TPA fill above, so no per-segment re-zero is needed.
         image_top = image_top.max(seg.vaddr + seg.mem_size);
     }
+
+    // Apply the image's `R_AARCH64_RELATIVE` relocations (ARCH03 stage 0d,
+    // [`super::reloc`]): every absolute data word the PIE carries becomes
+    // `load base + addend`. `tpa_bytes` is indexed by link VA (segment `s`
+    // was streamed to `tpa_bytes[s.vaddr]`, see the `USER_VA_BASE == 0`
+    // assertion next to `RESERVED_LOW_END`), and the TPA executes at
+    // `USER_VA_BASE`, so that is the load base. Done before anything else is written into the TPA
+    // and before the cache maintenance below, so the I-cache sync sees the
+    // final image. A refused relocation fails the load (`EPLFMT`); the
+    // caller frees the TPA, so a half-relocated image never runs.
+    reloc::relocate(tpa_bytes, img, USER_VA_BASE)?;
 
     // Allocate + copy the environment (EmuTOS `alloc_env`), before the
     // basepage so `p_env` is stamped in one pass. The child cookie is
@@ -1520,7 +1551,9 @@ mod basepage_segment_tests {
     use super::*;
     use crate::bdos::process::elf::{PF_R, PF_W, PF_X};
 
-    const ET_EXEC: u16 = 2;
+    // ET_DYN: the loader accepts position-independent executables only
+    // since ARCH03 stage 0d (ET_EXEC -> ParseError::NotPositionIndependent).
+    const ET_DYN: u16 = 3;
     const EM_AARCH64: u16 = 0xb7;
     const PT_LOAD: u32 = 1;
     const EHDR: usize = 64;
@@ -1539,7 +1572,7 @@ mod basepage_segment_tests {
     /// `(flags, vaddr, filesz, memsz)` per `PT_LOAD`.
     type Seg = (u32, u64, u64, u64);
 
-    /// A well-formed ELF64 AArch64 executable whose `PT_LOAD` table is
+    /// A well-formed ELF64 AArch64 PIE (`ET_DYN`) whose `PT_LOAD` table is
     /// exactly `segs`; every segment's file bytes are placed after the
     /// headers (contents irrelevant here — only the table is read).
     fn elf_with(segs: &[Seg]) -> Vec<u8> {
@@ -1550,7 +1583,7 @@ mod basepage_segment_tests {
         b[4] = 2; // ELFCLASS64
         b[5] = 1; // ELFDATA2LSB
         b[6] = 1; // EV_CURRENT
-        put16(&mut b, 16, ET_EXEC);
+        put16(&mut b, 16, ET_DYN);
         put16(&mut b, 18, EM_AARCH64);
         put32(&mut b, 20, 1);
         put64(&mut b, 24, RESERVED_LOW_END); // e_entry = first text byte

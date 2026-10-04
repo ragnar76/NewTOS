@@ -1,0 +1,40 @@
+A107PAR.NAP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+A79COLOR.NAP     type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+A96ZOMB.NAP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+BIG.NCP          type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=1 
+CMDLINE.NCP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+CMDLINE.NTP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+CRASHTST.NAP     type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+CRCHILD.NAP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+CURDIR.NCP       type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+DTACHILD.NCP     type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+HELLO.NCP        type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×LOAD] dyn=[] relocs: (none)
+HELLO2.NCP       type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+KBDVEC.NAP       type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+PHYSBASE.NCP     type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+SCRFLIP.NCP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+SYSACC.NAC       type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+SYSINFO.NCP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+WFSCREEN.NAP     type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[] relocs: (none)
+argvtest.NAP     type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=8 
+clocktest.NCP    type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=264 
+libtest.NCP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=264 
+P10KID.NCP       type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=8 
+P10TEST.NCP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=278 
+setjmptst.NCP    type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=9 
+gemtest.NCP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=12 
+cftest.NCP       type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=398 
+mathtst.NCP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=8 
+APITEST.NCP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=14 
+TESTGEM.NAP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=12 
+CHAINTST.NAP     type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=11 
+QED.NAP          type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=559 
+DESKTOP.NAP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=646 
+DOOM.NAP         type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=1892 
+CORE.NCP         type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=289 
+COREVAL.NCP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=289 
+DUMPAES.NAP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=322 
+DUMPRAST.NAP     type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=322 
+DUMPVDI.NAP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=322 
+SCRNINFO.NAP     type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=264 
+VDIDRAW.NAP      type=DYN (Shared object file)     e_flags=0x0 phdrs=[1×DYNAMIC 2×LOAD] dyn=[RELA RELACOUNT RELAENT RELASZ] relocs: R_AARCH64_RELATIVE=321 

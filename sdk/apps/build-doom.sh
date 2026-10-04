@@ -133,7 +133,7 @@ echo
 # its X11 target; none of them selects code we want (sound and networking stay
 # off through doomfeatures.h), so they are not carried over.
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
+        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
         -DCMAP256 -DDOOMGENERIC_RESX=320 -DDOOMGENERIC_RESY=200
         -Wno-macro-redefined)
 DOOM_INCS=(-I"$DGSRC" -I"$MINT" -I"$LIBM/include" -I"$LIBMTOP/include" -isystem "$RES")
@@ -204,7 +204,7 @@ fi
 # --- CRT + link ---------------------------------------------------------------
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" -c "$LIBC/crt0.S" -o "$BUILD/crt0.o" || exit 1
 rm -f "$OUT"
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$OBJ"/*.o \
     --start-group "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \

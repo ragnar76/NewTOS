@@ -50,6 +50,7 @@ pub mod mmu;
 pub mod pterm;
 pub mod pexec;
 pub mod registry;
+pub mod reloc;
 pub mod sched;
 pub mod usermem;
 

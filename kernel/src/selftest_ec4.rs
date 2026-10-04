@@ -253,6 +253,7 @@ unsafe fn drop_to_el0_and_back() {
     unsafe {
         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
             USER_VA_BASE,
+            USER_VA_BASE,
             l0_pa_for(EC4_TEST_SLOT),
             USER_STACK_TOP_EXCLUSIVE,
             parent_frame,

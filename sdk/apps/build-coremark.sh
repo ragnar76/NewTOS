@@ -130,7 +130,7 @@ echo
 # PORT_CFLAGS is what gets REPORTED (CoreMark reporting rule: "C - Compiler
 # version and flags"). Keep it to the flags that actually shape the generated
 # code; the -nostdinc/-I search path is build plumbing, not a codegen option.
-PORT_CFLAGS="-target aarch64-unknown-none-elf -O2 -fomit-frame-pointer -ffreestanding -fno-pic -fno-builtin"
+PORT_CFLAGS="-target aarch64-unknown-none-elf -O2 -fomit-frame-pointer -ffreestanding -fPIE -fno-builtin"
 FLAGS_STR="$PORT_CFLAGS"
 
 CFLAGS=(${PORT_CFLAGS} -nostdlib -nostdinc
@@ -161,7 +161,7 @@ build_one() {
         || { echo "error: assembling crt0.S failed" >&2; return 1; }
 
     rm -f "$out"
-    "$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+    "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
         --build-id=none --why-extract="$OBJ/$tag/why.txt" \
         "$OBJ/$tag/crt0.o" "$OBJ/$tag"/core_*.o "$LIBC/libc.a" \
         -o "$out" 2>"$OBJ/$tag/link.err"

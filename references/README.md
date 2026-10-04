@@ -27,7 +27,8 @@ references/
 ├── atari-st-internals/       # Abacus / Data Becker book
 ├── rpi4-boot/                # Raspberry Pi 4 boot documentation
 ├── rpi-os-tutorials/         # Andre Richter's tutorials (git submodule recommended)
-└── arm-arm/                  # ARM Architecture Reference Manual (ARMv8-A)
+├── arm-arm/                  # ARM Architecture Reference Manual (ARMv8-A)
+└── gabi/                     # System V gABI ELF chapters + Arm SYSVABI64
 ```
 
 EmuTOS source lives under `references/emutos/` as a full upstream
@@ -283,6 +284,8 @@ sources are present. The following table tracks acquisition status on
 | ARM ARM (A-profile) DDI 0487 M.d | present (2026-10-04) | `arm-arm/DDI0487M_d_a-profile_architecture_reference_manual.pdf` |
 | Cortex-A72 MPCore TRM 100095 r0p3 issue 06 | present (2026-10-04) | `arm-arm/cortex_a72_mpcore_trm_100095_0003_06_en.pdf` |
 | ELF for the Arm 64-bit Architecture (AAELF64), abi-aa 2025Q4 | present (2026-10-04) | `arm-arm/aaelf64.pdf` |
+| System V ABI gABI, ELF chapters (DRAFT 2013-06-10) | present (2026-10-05) | `gabi/ch4.*.html`, `gabi/ch5.*.html` |
+| System V ABI for the Arm 64-bit Architecture (SYSVABI64), abi-aa 2025Q4 | present (2026-10-05) | `gabi/sysvabi64.pdf` |
 
 Status meanings:
 
@@ -322,6 +325,29 @@ Status meanings:
   https://github.com/ARM-software/abi-aa/releases (release 2025Q4,
   `aaelf64.pdf`), sha256
   `0f203e6b07216e84dde98bb28dbebef385fe7d911e4e82c2cec5eecdfee9c1e4`.
+- **System V ABI — generic ELF (gABI)** — the `[SCO-ELF]` reference AAELF64
+  cites (§2.2, "http://www.sco.com/developers/gabi/"); AAELF64 6.3–6.5 defer
+  program loading and the dynamic section to it. Pinned copy: the
+  "System V Application Binary Interface - DRAFT - 10 June 2013" pages from
+  https://www.sco.com/developers/gabi/latest/ , fetched 2026-10-05 into
+  `gabi/` (ARCH03 stage 0d: `Elf64_Rela`, `ELF64_R_TYPE/SYM`, `Elf64_Dyn`,
+  `DT_*`, `PT_DYNAMIC`/`PT_INTERP`), sha256:
+  `contents.html` `860a69166779d1c2264867df76c750e21af9f9f185fd451659be64e794da18b0`,
+  `ch4.intro.html` `6362d902360f49d929e3d65bb7320392adf7adf0106e9c3d1f74649f416e72eb`,
+  `ch4.eheader.html` `7b2d4920ce3dd63ab754427d52fe2eaea7f693080b2151979ac0af89a7c9c088`,
+  `ch4.sheader.html` `0f7178d014050c3f022fbe9e269cac2bcb2e77217dc9d1fb00f6d886a2e69891`,
+  `ch4.reloc.html` `1400b40eb00c022869f81509acf2da20e49a6c0211c9712f4cf88a3a23221ffe`,
+  `ch5.intro.html` `9e0daef001866ee8a0d694dded65dbed98ab7aab402f5920509a09c622107019`,
+  `ch5.pheader.html` `656798000adc23608001017f3c126303734a441eb6b400474125ba66cfc223b9`,
+  `ch5.dynamic.html` `7e9e7587b90069398ae5830bbef0e40646a229531705cec86b69bee74e0e0602`.
+  The draft does **not** define `DT_RELACOUNT` or `DT_RELR`; cite tags from
+  this copy only.
+- **System V ABI for the Arm 64-bit Architecture (SYSVABI64)** — the
+  `[SYSVABI64]` AAELF64 6.2–6.5 now point to; from
+  https://github.com/ARM-software/abi-aa/releases (release 2025Q4,
+  `sysvabi64.pdf`, issued 2026-01-23), fetched 2026-10-05 into `gabi/`,
+  sha256 `d7ba723c811170adb4b0c9e3d366d514826754b22b5a6447e17710fefb7fcaec`.
+  §9 (p. 23): position-independent executables are `ET_DYN`.
 - **SD Simplified Specifications** — https://www.sdcard.org/downloads/pls/
   and .../pls/archive/. Free of charge, but **not** redistributable; see
   "SD specifications" above for the terms and for the exact editions.

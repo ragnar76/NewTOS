@@ -30,9 +30,12 @@ A NewTOS program is a **native AArch64 ELF64 executable**. The kernel loader
 parses the ELF directly; there is no flat-binary conversion
 (`sdk/build.sh:10-12`). The loader accepts exactly:
 
-* `ELFCLASS64`, `ELFDATA2LSB`, `ET_EXEC`, `EM_AARCH64`, `e_version = 1`,
-  `e_phentsize = 56`, at most 8 `PT_LOAD` segments
-  (`tos-api/src/bdos/process/elf.rs:15-41`, `:315-345`);
+* `ELFCLASS64`, `ELFDATA2LSB`, `ET_DYN` (a position-independent executable;
+  `ET_EXEC` is refused with `EPLFMT` since ARCH03 stage 0d), `EM_AARCH64`,
+  `e_flags = 0`, `e_version = 1`, `e_phentsize = 56`, no `PT_INTERP`, at most
+  8 `PT_LOAD` segments (`tos-api/src/bdos/process/elf.rs`);
+* dynamic relocations: only `R_AARCH64_RELATIVE` in one `DT_RELA` table,
+  applied by the loader (`tos-api/src/bdos/process/reloc.rs`);
 * every `PT_LOAD` with `0x1000 <= p_vaddr` and
   `p_vaddr + p_memsz <= 4 MiB − 64 KiB`
   (`tos-api/src/bdos/process/loader.rs:1317-1340`).

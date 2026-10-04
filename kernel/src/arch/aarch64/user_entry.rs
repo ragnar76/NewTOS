@@ -115,7 +115,8 @@ pub unsafe fn restore_boot_ttbr0() {
 }
 
 /// Drop to EL0 at `entry_va`, with the per-process L0 at `l0_pa`
-/// installed in `TTBR0_EL1` and `SP_EL0 = sp_el0`. The function
+/// installed in `TTBR0_EL1`, `SP_EL0 = sp_el0` and `x0 = basepage_va`
+/// (the process-entry contract: the child finds its basepage in `x0`). The function
 /// returns when the trap handler that fields the user's exit
 /// (`Pterm` SVC, EC4 sentinel SVC, …) rewrites the trap frame's
 /// `elr_el1` / `sp_el0` / `spsr` to the EL1 resume PC captured by
@@ -156,6 +157,7 @@ pub unsafe fn restore_boot_ttbr0() {
 #[inline(never)]
 pub unsafe fn enter_el0_with_resume_capture(
     entry_va: u64,
+    basepage_va: u64,
     l0_pa: u64,
     sp_el0: u64,
     parent_frame: &ParentFrame,
@@ -257,6 +259,14 @@ pub unsafe fn enter_el0_with_resume_capture(
             "add sp, sp, #96",
             entry      = in(reg) entry_va,
             sp         = in(reg) sp_el0,
+            // The child's `x0` at entry = its basepage VA — the NewTOS
+            // AArch64 process-entry contract the `Pexec` path already keeps
+            // (`exceptions.rs` `handle_pexec`: `frame.gpr[0] =
+            // child.basepage_va`). The SDK `crt0` reads the basepage from
+            // `x0` (ARCH03 stage 0d), so the kernel-launch path must supply
+            // it too. `inout … => _`: the EL0 excursion returns with the
+            // child's `x0`, not this value.
+            inout("x0") basepage_va => _,
             resume_pc  = in(reg) elr_ptr,
             kernel_sp  = in(reg) sp_ptr,
             kstack     = out(reg) _,

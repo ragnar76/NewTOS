@@ -97,7 +97,7 @@ done
 # would use shel_write()/AV-protocol/AES-multitasking queries that this OS does not
 # provide. Switch back to the multitasking build once step 4 is done.
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -Os
-        -fomit-frame-pointer -fno-pic -fno-builtin -nostdinc -funsigned-char
+        -fomit-frame-pointer -fPIE -fno-builtin -nostdinc -funsigned-char
         -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined)
 # Include order: shadow tree root, its xdialog + utility libs, gemlib top
 # (gem.h/portaes.h/portvdi.h/tos.h), mintlib include, the libm adapters
@@ -177,7 +177,7 @@ fi
 # memset/_ctype/__assert_fail); wrap in a group so any residual
 # back-reference between the archives still resolves.
 rm -f "$OUT"
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$OBJ"/*.o \
     --start-group "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \

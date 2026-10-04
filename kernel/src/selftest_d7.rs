@@ -63,7 +63,7 @@ pub static D7_TEST_ELF: [u8; 288] = [
     0x7F, b'E', b'L', b'F',
     2, 1, 1, 0, 0,
     0, 0, 0, 0, 0, 0, 0,
-    0x02, 0x00,              // e_type ET_EXEC
+    0x03, 0x00,              // e_type ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
     0xB7, 0x00,              // e_machine EM_AARCH64
     0x01, 0x00, 0x00, 0x00,  // e_version
     // e_entry = 0x1000 (≥ RESERVED_LOW_END after B1's linker bump)
@@ -150,6 +150,7 @@ pub fn run_d7_ptermres_test() {
     unsafe {
         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
             loaded.entry_va,
+            loaded.basepage_va,
             loaded.l0_pa,
             USER_STACK_TOP_EXCLUSIVE,
             &PROCESS_TABLE[loaded.slot].parent_frame,

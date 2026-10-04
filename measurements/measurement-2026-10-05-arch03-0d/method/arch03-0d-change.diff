@@ -1,0 +1,2532 @@
+diff --git a/docs/sdk/01-overview.md b/docs/sdk/01-overview.md
+index 9f2f787..d9b6e86 100644
+--- a/docs/sdk/01-overview.md
++++ b/docs/sdk/01-overview.md
+@@ -30,9 +30,12 @@ A NewTOS program is a **native AArch64 ELF64 executable**. The kernel loader
+ parses the ELF directly; there is no flat-binary conversion
+ (`sdk/build.sh:10-12`). The loader accepts exactly:
+ 
+-* `ELFCLASS64`, `ELFDATA2LSB`, `ET_EXEC`, `EM_AARCH64`, `e_version = 1`,
+-  `e_phentsize = 56`, at most 8 `PT_LOAD` segments
+-  (`tos-api/src/bdos/process/elf.rs:15-41`, `:315-345`);
++* `ELFCLASS64`, `ELFDATA2LSB`, `ET_DYN` (a position-independent executable;
++  `ET_EXEC` is refused with `EPLFMT` since ARCH03 stage 0d), `EM_AARCH64`,
++  `e_flags = 0`, `e_version = 1`, `e_phentsize = 56`, no `PT_INTERP`, at most
++  8 `PT_LOAD` segments (`tos-api/src/bdos/process/elf.rs`);
++* dynamic relocations: only `R_AARCH64_RELATIVE` in one `DT_RELA` table,
++  applied by the loader (`tos-api/src/bdos/process/reloc.rs`);
+ * every `PT_LOAD` with `0x1000 <= p_vaddr` and
+   `p_vaddr + p_memsz <= 4 MiB − 64 KiB`
+   (`tos-api/src/bdos/process/loader.rs:1317-1340`).
+diff --git a/docs/sdk/03-first-programs.md b/docs/sdk/03-first-programs.md
+index 8691100..7816b1a 100644
+--- a/docs/sdk/03-first-programs.md
++++ b/docs/sdk/03-first-programs.md
+@@ -35,9 +35,9 @@ $ sdk/build.sh sdk/examples/hello.c "$OUT/HELLO2.NCP"
+ clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+ lld   : rust-lld -flavor gnu
+ 
+-+ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fno-pic -fno-builtin -Wall -Wextra -I…/sdk/include -c …/sdk/crt0.S -o crt0.o
+-+ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fno-pic -fno-builtin -Wall -Wextra -I…/sdk/include -c sdk/examples/hello.c -o app.o
+-+ rust-lld -flavor gnu -T …/sdk/newtos.ld -no-pie -z max-page-size=0x1000 --build-id=none crt0.o app.o -o …/HELLO2.NCP
+++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I…/sdk/include -c …/sdk/crt0.S -o crt0.o
+++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I…/sdk/include -c sdk/examples/hello.c -o app.o
+++ rust-lld -flavor gnu -T …/sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o app.o -o …/HELLO2.NCP
+ 
+ wrote …/HELLO2.NCP (5064 bytes)
+ ```
+@@ -60,8 +60,9 @@ has no `data` segment at all (lld drops the empty one), a libc-linked one
+ always has (crt0's `argv` lives in `.data`). The loader still maps every TPA
+ page RWX; the flags feed the basepage only.
+ 
+-What `crt0.S` does before `main` (`sdk/crt0.S:34-53`): read `p_hitpa` from the
+-basepage at VA 0 (`ldr w9, [x1, #4]`), set `SP` to it, `bl main`, then
++What `crt0.S` does before `main` (`sdk/crt0.S`): read `p_hitpa` from the
++basepage whose address the loader passes in `x0` (`ldr w9, [x0, #4]`; ARCH03
++stage 0d — never a fixed address), set `SP` to it, `bl main`, then
+ `Pterm(main's return)` via `mov x8, #0x4C; svc #1`. The loader zeroes the
+ whole TPA, so there is no BSS clearing in crt0
+ (`tos-api/src/bdos/process/loader.rs:35-38`).
+@@ -103,11 +104,11 @@ directory is written:
+ 
+ ```
+ $ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fomit-frame-pointer \
+-        -fno-pic -fno-builtin -nostdinc -D_GNU_SOURCE -I"$MINT" -isystem "$RES" \
++        -fPIE -fno-builtin -nostdinc -D_GNU_SOURCE -I"$MINT" -isystem "$RES" \
+         -c hello-libc.c -o hello.o
+-$ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-pic -fno-builtin -nostdinc \
++$ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc \
+         -I"$SDK/include" -I"$MINT" -c "$SDK/libc/crt0.S" -o crt0.o
+-$ "$BIN/rust-lld" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 --build-id=none \
++$ "$BIN/rust-lld" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
+         crt0.o hello.o "$SDK/libc/libc.a" -o HELLOLIB.NCP
+ $ ls -l HELLOLIB.NCP ; llvm-nm -u HELLOLIB.NCP | grep -c .
+ 84376 bytes ; 0 undefined symbols
+@@ -248,12 +249,12 @@ Built with the **same flags as `sdk/apps/gemtest/build-gemtest.sh:65-70`**
+ 
+ ```
+ $ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -Os -fomit-frame-pointer \
+-        -fno-pic -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined \
++        -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined \
+         -I"$SDK/gemlib/gemlib-0.44.0" -I"$MINT" -isystem "$RES" -c minigem.c -o minigem.o
+ $ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -Os -fomit-frame-pointer \
+-        -fno-pic -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined \
++        -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined \
+         -I"$SDK/include" -I"$MINT" -c "$SDK/libc/crt0.S" -o crt0.o
+-$ "$BIN/rust-lld" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 --build-id=none \
++$ "$BIN/rust-lld" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
+         crt0.o minigem.o --start-group "$SDK/gemlib/gemlib.a" "$SDK/libc/libc.a" --end-group -o MINIGEM.NAP
+ $ ls -l MINIGEM.NAP ; llvm-readobj --file-headers MINIGEM.NAP | grep -E 'Class|Type|Machine|Entry'
+ 14224 bytes
+@@ -297,7 +298,11 @@ Artifacts of this run (SHA-256): `HELLO2.NCP` `c829c420…`,
+ | gemlib `.NAP` | `sdk/libc/crt0.S` | `sdk/gemlib/build-gemlib.sh:182-184` | `gemlib.a libc.a` |
+ | cflib `.NAP` | `sdk/libc/crt0.S` | `sdk/cflib/build-cflib.sh:174-178` | `--start-group cflib.a gemlib.a libc.a --end-group` |
+ 
+-The linker script is always `sdk/newtos.ld`; the link flags are always
+-`-no-pie -z max-page-size=0x1000 --build-id=none`. The `.NCP`/`.NAP` name is
++The linker script is always `sdk/newtos.ld`; every object is compiled
++`-fPIE` and the program is linked as a position-independent executable
++(`ET_DYN`, ARCH03 stage 0d) whose only dynamic relocations are
++`R_AARCH64_RELATIVE` — the kernel loader applies them and refuses an `ET_EXEC`
++image with `EPLFMT`. The link flags are always
++`-pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none`. The `.NCP`/`.NAP` name is
+ chosen by the caller — it is the same ELF either way; only the desktop's launch
+ behaviour differs ([01-overview.md](01-overview.md)).
+diff --git a/docs/sdk/04-porting-anatomy.md b/docs/sdk/04-porting-anatomy.md
+index 7e627f8..6362662 100644
+--- a/docs/sdk/04-porting-anatomy.md
++++ b/docs/sdk/04-porting-anatomy.md
+@@ -68,7 +68,7 @@ one shape: extract + overlay → compile every file of the library's own
+ manifest best-effort → compare the failure set with `expected-failures.txt` →
+ archive → link a test client.
+ 
+-| Script | Manifest | Flags (beyond the shared `-target aarch64-unknown-none-elf -ffreestanding -nostdlib -fno-pic -fno-builtin -nostdinc`) | Archive | Test client |
++| Script | Manifest | Flags (beyond the shared `-target aarch64-unknown-none-elf -ffreestanding -nostdlib -fPIE -fno-builtin -nostdinc`) | Archive | Test client |
+ |--------|----------|------|---------|-------------|
+ | `sdk/libc/build-libc.sh` | the directories in `DIRS` (`:109`), minus `EXCLUDE` (`:135`) and the test/skeleton names (`:151`) | `-O2 -D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -D__NO_LONG_DOUBLE_MATH` (`:101-104`); `-DVERSION="0.60.1"` for `ident.c` (`:157-161`) | `sdk/libc/libc.a` (`:221`) | `sdk/libc/tests/libtest.c` → `build/libtest.NCP` |
+ | `sdk/gemlib/build-gemlib.sh` | gemlib's `SRCFILES` `COBJS`, expanded with `make` (`:129-135`) | `-O2 -D__NEWTOS__` (`:115-117`); `mt_gem.h` generated from `mt_gem.h.in` with `@MAJOR@=0 @MINOR@=44` (`:91-95`) | `sdk/gemlib/gemlib.a` (`:168`) | `sdk/gemlib/tests/gemtest.c` → `build/gemtest.NCP` |
+@@ -197,7 +197,7 @@ writes (verified byte-identical to the previously hand-made file, TASK/T06).
+ 1. MD5-check the five benchmark translation units and `coremark.h` against
+    `sdk/apps/coremark-sources.md5`; refuse to build on any mismatch (`:73-104`).
+ 2. `lib_ensure libc` (`:109-110`).
+-3. Flags: `-O2 -fomit-frame-pointer -ffreestanding -fno-pic -fno-builtin`
++3. Flags: `-O2 -fomit-frame-pointer -ffreestanding -fPIE -fno-builtin`
+    (reported by the benchmark via `-DFLAGS_STR`), `-D_GNU_SOURCE`,
+    `-DITERATIONS=$ITERATIONS` (`:133-138`); include order: port dir, CoreMark
+    root, mintlib, clang (`:140`).
+diff --git a/kernel/src/arch/aarch64/user_entry.rs b/kernel/src/arch/aarch64/user_entry.rs
+index ef7b3db..fd65c5d 100644
+--- a/kernel/src/arch/aarch64/user_entry.rs
++++ b/kernel/src/arch/aarch64/user_entry.rs
+@@ -115,7 +115,8 @@ pub unsafe fn restore_boot_ttbr0() {
+ }
+ 
+ /// Drop to EL0 at `entry_va`, with the per-process L0 at `l0_pa`
+-/// installed in `TTBR0_EL1` and `SP_EL0 = sp_el0`. The function
++/// installed in `TTBR0_EL1`, `SP_EL0 = sp_el0` and `x0 = basepage_va`
++/// (the process-entry contract: the child finds its basepage in `x0`). The function
+ /// returns when the trap handler that fields the user's exit
+ /// (`Pterm` SVC, EC4 sentinel SVC, …) rewrites the trap frame's
+ /// `elr_el1` / `sp_el0` / `spsr` to the EL1 resume PC captured by
+@@ -156,6 +157,7 @@ pub unsafe fn restore_boot_ttbr0() {
+ #[inline(never)]
+ pub unsafe fn enter_el0_with_resume_capture(
+     entry_va: u64,
++    basepage_va: u64,
+     l0_pa: u64,
+     sp_el0: u64,
+     parent_frame: &ParentFrame,
+@@ -257,6 +259,14 @@ pub unsafe fn enter_el0_with_resume_capture(
+             "add sp, sp, #96",
+             entry      = in(reg) entry_va,
+             sp         = in(reg) sp_el0,
++            // The child's `x0` at entry = its basepage VA — the NewTOS
++            // AArch64 process-entry contract the `Pexec` path already keeps
++            // (`exceptions.rs` `handle_pexec`: `frame.gpr[0] =
++            // child.basepage_va`). The SDK `crt0` reads the basepage from
++            // `x0` (ARCH03 stage 0d), so the kernel-launch path must supply
++            // it too. `inout … => _`: the EL0 excursion returns with the
++            // child's `x0`, not this value.
++            inout("x0") basepage_va => _,
+             resume_pc  = in(reg) elr_ptr,
+             kernel_sp  = in(reg) sp_ptr,
+             kstack     = out(reg) _,
+diff --git a/kernel/src/launch.rs b/kernel/src/launch.rs
+index 09ee220..8941f49 100644
+--- a/kernel/src/launch.rs
++++ b/kernel/src/launch.rs
+@@ -141,6 +141,7 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
+     unsafe {
+         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
+             child.entry_va,
++            child.basepage_va,
+             child.l0_pa,
+             child.sp_el0,
+             &PROCESS_TABLE[child.slot].parent_frame,
+diff --git a/kernel/src/selftest_d3.rs b/kernel/src/selftest_d3.rs
+index f344217..59d8633 100644
+--- a/kernel/src/selftest_d3.rs
++++ b/kernel/src/selftest_d3.rs
+@@ -105,7 +105,7 @@ pub static D3_TEST_ELF: [u8; 264] = [
+     0,                       // e_ident[EI_ABIVERSION]: 0
+     0, 0, 0, 0, 0, 0, 0,     // e_ident padding (7 bytes)
+ 
+-    0x02, 0x00,              // e_type:    ET_EXEC
++    0x03, 0x00,              // e_type:    ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
+     0xB7, 0x00,              // e_machine: EM_AARCH64
+     0x01, 0x00, 0x00, 0x00,  // e_version: EV_CURRENT
+ 
+@@ -373,6 +373,7 @@ unsafe fn drop_to_el0_via_loaded(img: &LoadedImage) {
+     unsafe {
+         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
+             img.entry_va,
++            img.basepage_va,
+             img.l0_pa,
+             USER_STACK_TOP_EXCLUSIVE,
+             parent_frame,
+diff --git a/kernel/src/selftest_d6.rs b/kernel/src/selftest_d6.rs
+index 78f7981..0b719ae 100644
+--- a/kernel/src/selftest_d6.rs
++++ b/kernel/src/selftest_d6.rs
+@@ -103,7 +103,7 @@ pub static D6_TEST_ELF: [u8; 284] = [
+     0,                       // e_ident[EI_ABIVERSION]: 0
+     0, 0, 0, 0, 0, 0, 0,     // e_ident padding (7 bytes)
+ 
+-    0x02, 0x00,              // e_type:    ET_EXEC
++    0x03, 0x00,              // e_type:    ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
+     0xB7, 0x00,              // e_machine: EM_AARCH64
+     0x01, 0x00, 0x00, 0x00,  // e_version: EV_CURRENT
+ 
+@@ -253,6 +253,7 @@ unsafe fn drop_to_el0_via_pterm(img: &LoadedImage) {
+     unsafe {
+         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
+             img.entry_va,
++            img.basepage_va,
+             img.l0_pa,
+             USER_STACK_TOP_EXCLUSIVE,
+             &proc_slot.parent_frame,
+diff --git a/kernel/src/selftest_d7.rs b/kernel/src/selftest_d7.rs
+index 05a49c5..6a2f055 100644
+--- a/kernel/src/selftest_d7.rs
++++ b/kernel/src/selftest_d7.rs
+@@ -63,7 +63,7 @@ pub static D7_TEST_ELF: [u8; 288] = [
+     0x7F, b'E', b'L', b'F',
+     2, 1, 1, 0, 0,
+     0, 0, 0, 0, 0, 0, 0,
+-    0x02, 0x00,              // e_type ET_EXEC
++    0x03, 0x00,              // e_type ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
+     0xB7, 0x00,              // e_machine EM_AARCH64
+     0x01, 0x00, 0x00, 0x00,  // e_version
+     // e_entry = 0x1000 (≥ RESERVED_LOW_END after B1's linker bump)
+@@ -150,6 +150,7 @@ pub fn run_d7_ptermres_test() {
+     unsafe {
+         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
+             loaded.entry_va,
++            loaded.basepage_va,
+             loaded.l0_pa,
+             USER_STACK_TOP_EXCLUSIVE,
+             &PROCESS_TABLE[loaded.slot].parent_frame,
+diff --git a/kernel/src/selftest_ec4.rs b/kernel/src/selftest_ec4.rs
+index 6720686..a3b3fa3 100644
+--- a/kernel/src/selftest_ec4.rs
++++ b/kernel/src/selftest_ec4.rs
+@@ -252,6 +252,7 @@ unsafe fn drop_to_el0_and_back() {
+     // (static) and outlive the call.
+     unsafe {
+         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
++            USER_VA_BASE,
+             USER_VA_BASE,
+             l0_pa_for(EC4_TEST_SLOT),
+             USER_STACK_TOP_EXCLUSIVE,
+diff --git a/kernel/src/selftest_etv_term.rs b/kernel/src/selftest_etv_term.rs
+index accfd39..0b4503c 100644
+--- a/kernel/src/selftest_etv_term.rs
++++ b/kernel/src/selftest_etv_term.rs
+@@ -39,7 +39,7 @@
+ //! ```text
+ //!   Program A (image @ VA 0x1000):
+ //!     0x1000  mov  x0, #0x102     ; ETV_TERM vector number
+-//!     0x1004  mov  x1, #0x1030    ; handler VA
++//!     0x1004  adr  x1, .+0x2C     ; handler VA (0x1030), PC-relative
+ //!     0x1008  mov  x8, #0x05      ; BIOS Setexc
+ //!     0x100C  svc  #13            ; Setexc(0x102, handler)
+ //!     0x1010  mov  x0, #0x2A      ; rc = 42
+@@ -110,7 +110,7 @@ const SLOT_B: usize = 1;
+ static ETV_TERM_ELF_A: [u8; 0xC0] = [
+     // ─── ELF64 header (64 bytes) ─────────────────────────────────
+     0x7F, b'E', b'L', b'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-    0x02, 0x00,              // e_type    = ET_EXEC
++    0x03, 0x00,              // e_type    = ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
+     0xB7, 0x00,              // e_machine = EM_AARCH64
+     0x01, 0x00, 0x00, 0x00,  // e_version
+     0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_entry = 0x1000
+@@ -139,7 +139,7 @@ static ETV_TERM_ELF_A: [u8; 0xC0] = [
+ 
+     // ─── code at 0x80 (VA 0x1000) ────────────────────────────────
+     0x40, 0x20, 0x80, 0xD2,  // mov x0, #0x102
+-    0x01, 0x06, 0x82, 0xD2,  // mov x1, #0x1030
++    0x61, 0x01, 0x00, 0x10,  // adr x1, .+0x2C   (handler VA 0x1030, PC-relative)
+     0xA8, 0x00, 0x80, 0xD2,  // mov x8, #0x5
+     0xA1, 0x01, 0x00, 0xD4,  // svc #13
+     0x40, 0x05, 0x80, 0xD2,  // mov x0, #0x2a
+@@ -164,7 +164,7 @@ static ETV_TERM_ELF_A: [u8; 0xC0] = [
+ static ETV_TERM_ELF_B: [u8; 0xA0] = [
+     // ─── ELF64 header (64 bytes) ─────────────────────────────────
+     0x7F, b'E', b'L', b'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-    0x02, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00,
++    0x03, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00, // e_type ET_DYN (PIE), EM_AARCH64, EV_CURRENT
+     0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_entry = 0x1000
+     0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_phoff = 0x40
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_shoff = 0
+@@ -250,6 +250,7 @@ fn run_subtest(elf: &[u8], slot_idx: usize) -> Option<SubResult> {
+     unsafe {
+         enter_el0_with_resume_capture(
+             ENTRY_VA,
++            loaded.basepage_va,
+             loaded.l0_pa,
+             loaded.sp_el0,
+             &PROCESS_TABLE[slot_idx].parent_frame,
+diff --git a/kernel/src/selftest_pexec.rs b/kernel/src/selftest_pexec.rs
+index bda84d7..41ed974 100644
+--- a/kernel/src/selftest_pexec.rs
++++ b/kernel/src/selftest_pexec.rs
+@@ -73,7 +73,7 @@ use crate::kprintln;
+ //
+ // Code:
+ //   0x100  D2 80 00 00   movz x0, #0          ; mode = PE_LOADGO
+-//   0x104  D2 80 40 01   movz x1, #0x200      ; path = &"C\0"
++//   0x104  10 00 07 E1   adr  x1, .+0xFC      ; path = &"C\0" (PC-relative)
+ //   0x108  D2 80 00 02   movz x2, #0          ; tail
+ //   0x10C  D2 80 00 03   movz x3, #0          ; env
+ //   0x110  D2 80 09 68   movz x8, #0x4B       ; Pexec
+@@ -92,11 +92,11 @@ pub static PARENT_ELF: [u8; 514] = [
+     0x7F, b'E', b'L', b'F',
+     2, 1, 1, 0, 0,
+     0, 0, 0, 0, 0, 0, 0,
+-    0x02, 0x00,             // e_type ET_EXEC
++    0x03, 0x00,             // e_type ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
+     0xB7, 0x00,             // e_machine EM_AARCH64
+     0x01, 0x00, 0x00, 0x00, // e_version
+-    // e_entry = 0x100
+-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    // e_entry = 0x1000 (VA of the code; file offset 0x100)
++    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     // e_phoff = 0x40
+     0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     // e_shoff = 0
+@@ -114,10 +114,11 @@ pub static PARENT_ELF: [u8; 514] = [
+     0x05, 0x00, 0x00, 0x00, // p_flags PF_R | PF_X
+     // p_offset = 0x100
+     0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+-    // p_vaddr  = 0x100
+-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+-    // p_paddr  = 0x100
+-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    // p_vaddr  = 0x1000 (>= RESERVED_LOW_END; was 0x100 and failed with
++    //                    SegmentVaOutOfRange since B1 moved the image base)
++    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    // p_paddr  = 0x1000
++    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     // p_filesz = 0x102 = 258 (covers code 0x100..0x120 + name 0x200..0x202)
+     0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     // p_memsz  = 0x102
+@@ -134,7 +135,7 @@ pub static PARENT_ELF: [u8; 514] = [
+ 
+     // ─── Code at 0x100 (32 bytes, 8 instructions) ────────────────
+     0x00, 0x00, 0x80, 0xD2, // movz x0, #0           (mode = PE_LOADGO)
+-    0x01, 0x40, 0x80, 0xD2, // movz x1, #0x200       (path = "C\0")
++    0xE1, 0x07, 0x00, 0x10, // adr  x1, .+0xFC       (path = "C\0", PC-relative)
+     0x02, 0x00, 0x80, 0xD2, // movz x2, #0           (tail)
+     0x03, 0x00, 0x80, 0xD2, // movz x3, #0           (env)
+     0x68, 0x09, 0x80, 0xD2, // movz x8, #0x4B        (Pexec)
+@@ -174,8 +175,8 @@ pub static CHILD_ELF: [u8; 519] = [
+     0x7F, b'E', b'L', b'F',
+     2, 1, 1, 0, 0,
+     0, 0, 0, 0, 0, 0, 0,
+-    0x02, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00,
+-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_entry
++    0x03, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00, // e_type ET_DYN (PIE), EM_AARCH64, EV_CURRENT
++    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_entry = 0x1000
+     0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_phoff
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_shoff
+     0x00, 0x00, 0x00, 0x00,                          // e_flags
+@@ -185,8 +186,8 @@ pub static CHILD_ELF: [u8; 519] = [
+     0x01, 0x00, 0x00, 0x00, // p_type PT_LOAD
+     0x05, 0x00, 0x00, 0x00, // p_flags PF_R | PF_X
+     0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_offset = 0x100
+-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_vaddr  = 0x100
+-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_paddr
++    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_vaddr  = 0x1000
++    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_paddr
+     // p_filesz = 0x107 = 263 (covers code + 7-byte string at 0x200..0x207)
+     0x07, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     0x07, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // p_memsz
+@@ -200,14 +201,14 @@ pub static CHILD_ELF: [u8; 519] = [
+     0,0,0,0,0,0,0,0,
+ 
+     // ─── Code at 0x100 (28 bytes, 7 instructions) ────────────────
+-    //   0x100  D2 80 40 00  movz x0, #0x200      ; arg = &"Hello\n\0"
++    //   0x100  10 00 08 00  adr  x0, .+0x100     ; arg = &"Hello\n\0" (PC-relative)
+     //   0x104  D2 80 01 28  movz x8, #0x09       ; Cconws
+     //   0x108  D4 00 00 21  svc  #1
+     //   0x10C  D2 80 05 40  movz x0, #0x2A       ; rc = 42
+     //   0x110  D2 80 09 88  movz x8, #0x4C       ; Pterm
+     //   0x114  D4 00 00 21  svc  #1              ; never returns
+     //   0x118  14 00 00 00  b    .               ; safety net
+-    0x00, 0x40, 0x80, 0xD2, // movz x0, #0x200
++    0x00, 0x08, 0x00, 0x10, // adr  x0, .+0x100
+     0x28, 0x01, 0x80, 0xD2, // movz x8, #0x09 (Cconws)
+     0x21, 0x00, 0x00, 0xD4, // svc  #1
+     0x40, 0x05, 0x80, 0xD2, // movz x0, #0x2A (rc = 42)
+@@ -285,6 +286,7 @@ pub fn run_pexec_test() {
+     unsafe {
+         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
+             parent_loaded.entry_va,
++            parent_loaded.basepage_va,
+             parent_loaded.l0_pa,
+             USER_STACK_TOP_EXCLUSIVE,
+             &PROCESS_TABLE[parent_slot_idx].parent_frame,
+diff --git a/kernel/src/selftest_pexec_d4d5.rs b/kernel/src/selftest_pexec_d4d5.rs
+index ccfd80a..5fd3b30 100644
+--- a/kernel/src/selftest_pexec_d4d5.rs
++++ b/kernel/src/selftest_pexec_d4d5.rs
+@@ -46,7 +46,7 @@ use crate::selftest_pexec::CHILD_ELF;
+ //
+ // Code (function ID in x8, args x0..x3, `svc #1`):
+ //   0x100  movz x0, #3          ; mode = PE_LOAD
+-//   0x104  movz x1, #0x200      ; path = &"C\0"
++//   0x104  adr  x1, .+0xFC      ; path = &"C\0" (PC-relative)
+ //   0x108  movz x2, #0          ; tail
+ //   0x10C  movz x3, #0          ; env
+ //   0x110  movz x8, #0x4B       ; Pexec
+@@ -63,11 +63,11 @@ static PARENT_ELF: [u8; 514] = [
+     0x7F, b'E', b'L', b'F',
+     2, 1, 1, 0, 0,
+     0, 0, 0, 0, 0, 0, 0,
+-    0x02, 0x00,             // e_type ET_EXEC
++    0x03, 0x00,             // e_type ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
+     0xB7, 0x00,             // e_machine EM_AARCH64
+     0x01, 0x00, 0x00, 0x00, // e_version
+-    // e_entry = 0x100
+-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    // e_entry = 0x1000 (VA of the code; file offset 0x100)
++    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     // e_phoff = 0x40
+     0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     // e_shoff = 0
+@@ -85,10 +85,11 @@ static PARENT_ELF: [u8; 514] = [
+     0x05, 0x00, 0x00, 0x00, // p_flags PF_R | PF_X
+     // p_offset = 0x100
+     0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+-    // p_vaddr  = 0x100
+-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+-    // p_paddr  = 0x100
+-    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    // p_vaddr  = 0x1000 (>= RESERVED_LOW_END; was 0x100 and failed with
++    //                    SegmentVaOutOfRange since B1 moved the image base)
++    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
++    // p_paddr  = 0x1000
++    0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     // p_filesz = 0x102 = 258 (covers code 0x100..0x130 + name 0x200..0x202)
+     0x02, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+     // p_memsz  = 0x102
+@@ -105,7 +106,7 @@ static PARENT_ELF: [u8; 514] = [
+ 
+     // ─── Code at 0x100 (48 bytes, 12 instructions) ───────────────
+     0x60, 0x00, 0x80, 0xD2, // movz x0, #3           (mode = PE_LOAD)
+-    0x01, 0x40, 0x80, 0xD2, // movz x1, #0x200       (path = "C\0")
++    0xE1, 0x07, 0x00, 0x10, // adr  x1, .+0xFC       (path = "C\0", PC-relative)
+     0x02, 0x00, 0x80, 0xD2, // movz x2, #0           (tail)
+     0x03, 0x00, 0x80, 0xD2, // movz x3, #0           (env)
+     0x68, 0x09, 0x80, 0xD2, // movz x8, #0x4B        (Pexec)
+@@ -176,6 +177,7 @@ pub fn run_pexec_loadgo_split_test() {
+     unsafe {
+         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
+             parent_loaded.entry_va,
++            parent_loaded.basepage_va,
+             parent_loaded.l0_pa,
+             USER_STACK_TOP_EXCLUSIVE,
+             &PROCESS_TABLE[parent_slot_idx].parent_frame,
+diff --git a/kernel/src/selftest_sleepwake_switch.rs b/kernel/src/selftest_sleepwake_switch.rs
+index 4f107ba..2459c16 100644
+--- a/kernel/src/selftest_sleepwake_switch.rs
++++ b/kernel/src/selftest_sleepwake_switch.rs
+@@ -119,7 +119,7 @@ const A_SENTINEL_RESUME_ELR: u64 = 0x1010;
+ static A_ELF: [u8; 0xA0] = [
+     // ELF64 header (64 bytes)
+     0x7F, b'E', b'L', b'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-    0x02, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00,
++    0x03, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00, // e_type ET_DYN (PIE), EM_AARCH64, EV_CURRENT
+     0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_entry = 0x1000
+     0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_phoff = 0x40
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_shoff = 0
+@@ -167,7 +167,7 @@ static A_ELF: [u8; 0xA0] = [
+ static B_ELF: [u8; 0xA0] = [
+     // ELF64 header (64 bytes)
+     0x7F, b'E', b'L', b'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-    0x02, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00,
++    0x03, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00, // e_type ET_DYN (PIE), EM_AARCH64, EV_CURRENT
+     0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_entry = 0x1000
+     0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_phoff = 0x40
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_shoff = 0
+@@ -215,7 +215,7 @@ static B_ELF: [u8; 0xA0] = [
+ static PEER_ELF: [u8; 0xA8] = [
+     // ELF64 header (64 bytes)
+     0x7F, b'E', b'L', b'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+-    0x02, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00,
++    0x03, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00, // e_type ET_DYN (PIE), EM_AARCH64, EV_CURRENT
+     0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_entry = 0x1000
+     0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_phoff = 0x40
+     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_shoff = 0
+@@ -362,6 +362,7 @@ pub fn run() {
+     unsafe {
+         enter_el0_with_resume_capture(
+             a.entry_va,
++            a.basepage_va,
+             a.l0_pa,
+             a.sp_el0,
+             &PROCESS_TABLE[A_SLOT].parent_frame,
+@@ -421,6 +422,7 @@ pub fn run() {
+     unsafe {
+         enter_el0_with_resume_capture(
+             r.entry_va,
++            r.basepage_va,
+             r.l0_pa,
+             r.sp_el0,
+             &PROCESS_TABLE[R_SLOT].parent_frame,
+diff --git a/kernel/src/selftest_sysvars.rs b/kernel/src/selftest_sysvars.rs
+index afc3754..ad23403 100644
+--- a/kernel/src/selftest_sysvars.rs
++++ b/kernel/src/selftest_sysvars.rs
+@@ -106,7 +106,7 @@ static B1_TEST_ELF: [u8; 0x84] = [
+     1,                       // EV_CURRENT
+     0, 0,                    // OSABI, ABIVERSION
+     0, 0, 0, 0, 0, 0, 0,     // padding (7)
+-    0x02, 0x00,              // e_type    = ET_EXEC
++    0x03, 0x00,              // e_type    = ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
+     0xB7, 0x00,              // e_machine = EM_AARCH64
+     0x01, 0x00, 0x00, 0x00,  // e_version
+     // e_entry = 0x1000
+diff --git a/kernel/src/selftest_upcall.rs b/kernel/src/selftest_upcall.rs
+index 7c4082c..97d1bb2 100644
+--- a/kernel/src/selftest_upcall.rs
++++ b/kernel/src/selftest_upcall.rs
+@@ -111,7 +111,7 @@ static UPCALL_TEST_ELF: [u8; 0xA8] = [
+     1,                       // EV_CURRENT
+     0, 0,                    // OSABI, ABIVERSION
+     0, 0, 0, 0, 0, 0, 0,     // padding (7)
+-    0x02, 0x00,              // e_type    = ET_EXEC
++    0x03, 0x00,              // e_type    = ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
+     0xB7, 0x00,              // e_machine = EM_AARCH64
+     0x01, 0x00, 0x00, 0x00,  // e_version
+     // e_entry = 0x1000
+@@ -227,6 +227,7 @@ pub fn run() {
+     unsafe {
+         enter_el0_with_resume_capture(
+             ENTRY_VA,
++            loaded.basepage_va,
+             loaded.l0_pa,
+             loaded.sp_el0,
+             parent_frame,
+diff --git a/references/README.md b/references/README.md
+index b67a04c..db1fe5d 100644
+--- a/references/README.md
++++ b/references/README.md
+@@ -27,7 +27,8 @@ references/
+ ├── atari-st-internals/       # Abacus / Data Becker book
+ ├── rpi4-boot/                # Raspberry Pi 4 boot documentation
+ ├── rpi-os-tutorials/         # Andre Richter's tutorials (git submodule recommended)
+-└── arm-arm/                  # ARM Architecture Reference Manual (ARMv8-A)
++├── arm-arm/                  # ARM Architecture Reference Manual (ARMv8-A)
++└── gabi/                     # System V gABI ELF chapters + Arm SYSVABI64
+ ```
+ 
+ EmuTOS source lives under `references/emutos/` as a full upstream
+@@ -283,6 +284,8 @@ sources are present. The following table tracks acquisition status on
+ | ARM ARM (A-profile) DDI 0487 M.d | present (2026-10-04) | `arm-arm/DDI0487M_d_a-profile_architecture_reference_manual.pdf` |
+ | Cortex-A72 MPCore TRM 100095 r0p3 issue 06 | present (2026-10-04) | `arm-arm/cortex_a72_mpcore_trm_100095_0003_06_en.pdf` |
+ | ELF for the Arm 64-bit Architecture (AAELF64), abi-aa 2025Q4 | present (2026-10-04) | `arm-arm/aaelf64.pdf` |
++| System V ABI gABI, ELF chapters (DRAFT 2013-06-10) | present (2026-10-05) | `gabi/ch4.*.html`, `gabi/ch5.*.html` |
++| System V ABI for the Arm 64-bit Architecture (SYSVABI64), abi-aa 2025Q4 | present (2026-10-05) | `gabi/sysvabi64.pdf` |
+ 
+ Status meanings:
+ 
+@@ -322,6 +325,29 @@ Status meanings:
+   https://github.com/ARM-software/abi-aa/releases (release 2025Q4,
+   `aaelf64.pdf`), sha256
+   `0f203e6b07216e84dde98bb28dbebef385fe7d911e4e82c2cec5eecdfee9c1e4`.
++- **System V ABI — generic ELF (gABI)** — the `[SCO-ELF]` reference AAELF64
++  cites (§2.2, "http://www.sco.com/developers/gabi/"); AAELF64 6.3–6.5 defer
++  program loading and the dynamic section to it. Pinned copy: the
++  "System V Application Binary Interface - DRAFT - 10 June 2013" pages from
++  https://www.sco.com/developers/gabi/latest/ , fetched 2026-10-05 into
++  `gabi/` (ARCH03 stage 0d: `Elf64_Rela`, `ELF64_R_TYPE/SYM`, `Elf64_Dyn`,
++  `DT_*`, `PT_DYNAMIC`/`PT_INTERP`), sha256:
++  `contents.html` `860a69166779d1c2264867df76c750e21af9f9f185fd451659be64e794da18b0`,
++  `ch4.intro.html` `6362d902360f49d929e3d65bb7320392adf7adf0106e9c3d1f74649f416e72eb`,
++  `ch4.eheader.html` `7b2d4920ce3dd63ab754427d52fe2eaea7f693080b2151979ac0af89a7c9c088`,
++  `ch4.sheader.html` `0f7178d014050c3f022fbe9e269cac2bcb2e77217dc9d1fb00f6d886a2e69891`,
++  `ch4.reloc.html` `1400b40eb00c022869f81509acf2da20e49a6c0211c9712f4cf88a3a23221ffe`,
++  `ch5.intro.html` `9e0daef001866ee8a0d694dded65dbed98ab7aab402f5920509a09c622107019`,
++  `ch5.pheader.html` `656798000adc23608001017f3c126303734a441eb6b400474125ba66cfc223b9`,
++  `ch5.dynamic.html` `7e9e7587b90069398ae5830bbef0e40646a229531705cec86b69bee74e0e0602`.
++  The draft does **not** define `DT_RELACOUNT` or `DT_RELR`; cite tags from
++  this copy only.
++- **System V ABI for the Arm 64-bit Architecture (SYSVABI64)** — the
++  `[SYSVABI64]` AAELF64 6.2–6.5 now point to; from
++  https://github.com/ARM-software/abi-aa/releases (release 2025Q4,
++  `sysvabi64.pdf`, issued 2026-01-23), fetched 2026-10-05 into `gabi/`,
++  sha256 `d7ba723c811170adb4b0c9e3d366d514826754b22b5a6447e17710fefb7fcaec`.
++  §9 (p. 23): position-independent executables are `ET_DYN`.
+ - **SD Simplified Specifications** — https://www.sdcard.org/downloads/pls/
+   and .../pls/archive/. Free of charge, but **not** redistributable; see
+   "SD specifications" above for the terms and for the exact editions.
+diff --git a/sdk/README.md b/sdk/README.md
+index 57524bd..9202350 100644
+--- a/sdk/README.md
++++ b/sdk/README.md
+@@ -19,8 +19,8 @@ Pi 4. This file is only a map of the directory.
+ | Path | Purpose |
+ |------|---------|
+ | `build.sh` | freestanding `.NCP` builder (no libc): `clang -c crt0.S + source`, `rust-lld -T newtos.ld` |
+-| `crt0.S` | startup for freestanding programs: `SP = p_hitpa`, `bl main`, `Pterm` |
+-| `newtos.ld` | linker script for **every** native program: two `PT_LOAD`s from `0x1000` — `text` (R-X: `.text`+`.rodata` → `p_tbase/p_tlen`) and `data` (RW-: `.data` + `.bss` tail → `p_dbase/p_dlen`, `p_bbase/p_blen`), `_start` first, `__bss_start`/`__bss_end`/`_end` exported |
++| `crt0.S` | startup for freestanding programs: basepage from `x0`, `SP = p_hitpa`, `bl main`, `Pterm` |
++| `newtos.ld` | linker script for **every** native program, a position-independent executable (`ET_DYN`, `-fPIE` + `-pie --no-dynamic-linker -z text`; the loader applies its `R_AARCH64_RELATIVE` relocations, ARCH03 0d): two `PT_LOAD`s from `0x1000` — `text` (R-X: `.text`+dynamic metadata+`.rodata` → `p_tbase/p_tlen`) and `data` (RW-: `.dynamic`+`.got`+`.data` + `.bss` tail → `p_dbase/p_dlen`, `p_bbase/p_blen`) plus `PT_DYNAMIC`, `_start` first, `__bss_start`/`__bss_end`/`_end` exported |
+ | `include/newtos.h` | clean-room inline-asm trap helpers + `Cconws`/`Cconin`/`Pterm`/`Pterm0` |
+ | `examples/*.c` | freestanding proof programs (`hello`, `big`, `physbase`, `scrflip`, `dtachild`) installed by `tools/make-sd-image.sh` |
+ | `lib-stale.sh` | the library dependency chain (`libc → gemlib → cflib`), staleness test and failure bookkeeping shared by every script |
+diff --git a/sdk/apps/build-coremark.sh b/sdk/apps/build-coremark.sh
+index d35d97a..778e646 100755
+--- a/sdk/apps/build-coremark.sh
++++ b/sdk/apps/build-coremark.sh
+@@ -130,7 +130,7 @@ echo
+ # PORT_CFLAGS is what gets REPORTED (CoreMark reporting rule: "C - Compiler
+ # version and flags"). Keep it to the flags that actually shape the generated
+ # code; the -nostdinc/-I search path is build plumbing, not a codegen option.
+-PORT_CFLAGS="-target aarch64-unknown-none-elf -O2 -fomit-frame-pointer -ffreestanding -fno-pic -fno-builtin"
++PORT_CFLAGS="-target aarch64-unknown-none-elf -O2 -fomit-frame-pointer -ffreestanding -fPIE -fno-builtin"
+ FLAGS_STR="$PORT_CFLAGS"
+ 
+ CFLAGS=(${PORT_CFLAGS} -nostdlib -nostdinc
+@@ -161,7 +161,7 @@ build_one() {
+         || { echo "error: assembling crt0.S failed" >&2; return 1; }
+ 
+     rm -f "$out"
+-    "$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++    "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+         --build-id=none --why-extract="$OBJ/$tag/why.txt" \
+         "$OBJ/$tag/crt0.o" "$OBJ/$tag"/core_*.o "$LIBC/libc.a" \
+         -o "$out" 2>"$OBJ/$tag/link.err"
+diff --git a/sdk/apps/build-doom.sh b/sdk/apps/build-doom.sh
+index 0e3b9bf..aea9289 100755
+--- a/sdk/apps/build-doom.sh
++++ b/sdk/apps/build-doom.sh
+@@ -133,7 +133,7 @@ echo
+ # its X11 target; none of them selects code we want (sound and networking stay
+ # off through doomfeatures.h), so they are not carried over.
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
++        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
+         -DCMAP256 -DDOOMGENERIC_RESX=320 -DDOOMGENERIC_RESY=200
+         -Wno-macro-redefined)
+ DOOM_INCS=(-I"$DGSRC" -I"$MINT" -I"$LIBM/include" -I"$LIBMTOP/include" -isystem "$RES")
+@@ -204,7 +204,7 @@ fi
+ # --- CRT + link ---------------------------------------------------------------
+ "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" -c "$LIBC/crt0.S" -o "$BUILD/crt0.o" || exit 1
+ rm -f "$OUT"
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why.txt" \
+     "$BUILD/crt0.o" "$OBJ"/*.o \
+     --start-group "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
+diff --git a/sdk/apps/build-qed.sh b/sdk/apps/build-qed.sh
+index 1a2a2cf..5f73490 100755
+--- a/sdk/apps/build-qed.sh
++++ b/sdk/apps/build-qed.sh
+@@ -99,7 +99,7 @@ done
+ # -funsigned-char + -O2, and -D__NEWTOS__ to reach the retargeted GEM headers.
+ # -Wno-macro-redefined silences cflib/QED's intentional TRUE/FALSE re-defines.
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__
++        -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__
+         -Wno-macro-redefined)
+ # Include order: QED src, then cflib top (cflib.h), gemlib top (gem.h/macros.h),
+ # mintlib include (stdio.h/mintbind.h), the libm adapters (math.h -> OpenLibm's
+@@ -165,7 +165,7 @@ fi
+ # libc's memset/_ctype/__assert_fail); wrap in a group so any residual
+ # back-reference between the archives still resolves.
+ rm -f "$OUT"
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why.txt" \
+     "$BUILD/crt0.o" "$OBJ"/*.o \
+     --start-group "$CF/cflib.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
+diff --git a/sdk/apps/build-teradesk.sh b/sdk/apps/build-teradesk.sh
+index b8fc58d..c6d4abb 100755
+--- a/sdk/apps/build-teradesk.sh
++++ b/sdk/apps/build-teradesk.sh
+@@ -97,7 +97,7 @@ done
+ # would use shel_write()/AV-protocol/AES-multitasking queries that this OS does not
+ # provide. Switch back to the multitasking build once step 4 is done.
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -Os
+-        -fomit-frame-pointer -fno-pic -fno-builtin -nostdinc -funsigned-char
++        -fomit-frame-pointer -fPIE -fno-builtin -nostdinc -funsigned-char
+         -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined)
+ # Include order: shadow tree root, its xdialog + utility libs, gemlib top
+ # (gem.h/portaes.h/portvdi.h/tos.h), mintlib include, the libm adapters
+@@ -177,7 +177,7 @@ fi
+ # memset/_ctype/__assert_fail); wrap in a group so any residual
+ # back-reference between the archives still resolves.
+ rm -f "$OUT"
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why.txt" \
+     "$BUILD/crt0.o" "$OBJ"/*.o \
+     --start-group "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
+diff --git a/sdk/apps/chaintest/build-chaintest.sh b/sdk/apps/chaintest/build-chaintest.sh
+index 33c931f..4fa1855 100755
+--- a/sdk/apps/chaintest/build-chaintest.sh
++++ b/sdk/apps/chaintest/build-chaintest.sh
+@@ -63,7 +63,7 @@ done
+ 
+ # --- flags (IDENTICAL to build-teradesk.sh) ----------------------------------
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -Os
+-        -fomit-frame-pointer -fno-pic -fno-builtin -nostdinc -funsigned-char
++        -fomit-frame-pointer -fPIE -fno-builtin -nostdinc -funsigned-char
+         -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined)
+ # Include order: gemlib top (gem.h/mt_gem.h/portaes.h/portvdi.h/tos.h), mintlib
+ # include (mint/osbind.h), clang headers last.
+@@ -93,7 +93,7 @@ echo "compiled chaintest.c OK"
+ # gemlib -> libc dependency order; wrap in a group so any residual
+ # back-reference between the two archives still resolves.
+ rm -f "$OUT"
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why.txt" \
+     "$BUILD/crt0.o" "$BUILD/chaintest.o" \
+     --start-group "$GEM/gemlib.a" "$LIBC/libc.a" --end-group \
+diff --git a/sdk/build.sh b/sdk/build.sh
+index c7cb0ef..f35acf4 100755
+--- a/sdk/build.sh
++++ b/sdk/build.sh
+@@ -30,7 +30,7 @@ OUT="${2:-/tmp/HELLO2.NCP}"
+ 
+ TARGET="aarch64-unknown-none-elf"
+ CFLAGS=(-target "$TARGET" -ffreestanding -nostdlib -O2
+-        -fno-stack-protector -fno-pic -fno-builtin -Wall -Wextra
++        -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra
+         "-I$SDK_DIR/include")
+ 
+ # --- locate clang ---
+@@ -66,10 +66,11 @@ echo "+ $CLANG ${CFLAGS[*]} -c $SDK_DIR/crt0.S -o crt0.o"
+ echo "+ $CLANG ${CFLAGS[*]} -c $SRC -o app.o"
+ "$CLANG" "${CFLAGS[@]}" -c "$SRC" -o "$WORK/app.o"
+ 
+-# 3. link (no-pie static ELF at the linked VAs; single PT_LOAD via newtos.ld)
+-echo "+ $LLD -T $SDK_DIR/newtos.ld -no-pie -z max-page-size=0x1000 --build-id=none crt0.o app.o -o $OUT"
++# 3. link (position-independent ET_DYN, linked at 0x1000 via newtos.ld; the
++#    loader applies its R_AARCH64_RELATIVE relocations -- ARCH03 stage 0d)
++echo "+ $LLD -T $SDK_DIR/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o app.o -o $OUT"
+ # shellcheck disable=SC2086
+-$LLD -T "$SDK_DIR/newtos.ld" -no-pie -z max-page-size=0x1000 --build-id=none \
++$LLD -T "$SDK_DIR/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
+      "$WORK/crt0.o" "$WORK/app.o" -o "$OUT"
+ 
+ echo
+diff --git a/sdk/cflib/build-cflib.sh b/sdk/cflib/build-cflib.sh
+index f051606..9d2eff8 100755
+--- a/sdk/cflib/build-cflib.sh
++++ b/sdk/cflib/build-cflib.sh
+@@ -146,7 +146,7 @@ done
+ # (fontsel.c direct call, inline.rsh no-portab). -Wno-macro-redefined silences
+ # cflib's intentional TRUE/FALSE/min/max/abs re-defines.
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
++        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
+         -Wno-macro-redefined)
+ INCS=(-I"$TOP" -I"$GEMTOP" -I"$MINT" -isystem "$RES")
+ 
+@@ -213,7 +213,7 @@ echo
+ # --- link (crt0 + client + cflib.a + gemlib.a + libc.a) ----------------------
+ # cflib -> gemlib -> libc is the dependency order; wrap the three archives in a
+ # group so any residual back-reference between them still resolves.
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why.txt" \
+     "$BUILD/crt0.o" "$BUILD/client.o" \
+     --start-group "$CF/cflib.a" "$GEM/gemlib.a" "$LIBC/libc.a" --end-group \
+diff --git a/sdk/crt0.S b/sdk/crt0.S
+index e97d561..9294447 100644
+--- a/sdk/crt0.S
++++ b/sdk/crt0.S
+@@ -1,32 +1,36 @@
+ /*
+  * crt0.S -- NewTOS native C runtime startup (ADR-018 `.NCP` / `.NAP`).
+  *
+- * The NewTOS program loader (tos-api/src/bdos/process/{loader,mmu,arena}.rs)
+- * maps a multi-page Transient Program Area (TPA_SIZE, 4 MiB today) for the
+- * process, at low-half VA 0x0. The image is linked at RESERVED_LOW_END =
+- * 0x1000 (sdk/newtos.ld), above the basepage and the classic low-memory
+- * system area the loader materialises in page 0 (B1 / Option 1):
++ * The NewTOS program loader (tos-api/src/bdos/process/{loader,reloc,mmu,
++ * arena}.rs) maps a multi-page Transient Program Area (TPA_SIZE, 4 MiB today)
++ * for the process. The program is a position-independent executable (ELF
++ * ET_DYN, ARCH03 stage 0d): it is linked at 0x1000 (sdk/newtos.ld), the
++ * loader streams its segments into the TPA and applies its
++ * R_AARCH64_RELATIVE relocations for the address the TPA executes at. Stage 0
++ * still maps the TPA at VA 0, so the layout reads:
+  *
+  *     [0x000, 0x100)          BasePage (populated by the loader)
+  *     [0x400, 0x670)          sysvars + OSHEADER + cookie jar (loader)
+- *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata) = p_tbase/p_tlen
+- *     [p_dbase, p_bbase)      PT_LOAD data (.data)         = p_dbase/p_dlen
+- *     [p_bbase, _end)         .bss (zeroed by the loader)  = p_bbase/p_blen
++ *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata/.rela.dyn) = p_tbase/p_tlen
++ *     [p_dbase, p_bbase)      PT_LOAD data (.dynamic/.got/.data)      = p_dbase/p_dlen
++ *     [p_bbase, _end)         .bss (zeroed by the loader)             = p_bbase/p_blen
+  *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
+  *
+  * Every TPA page is mapped user-read/write/execute. On entry the loader has:
+  *
+  *   - eret'd to EL0 at e_entry (this `_start`, linked at 0x1000);
+  *   - set SP_EL0 to the mapped TPA top (= the basepage's p_hitpa);
+- *   - put the BasePage VA (0x0) in x0 on the SVC-Pexec launch path.
++ *   - put the BasePage address in x0 -- on every launch path (Pexec, the
++ *     kernel launcher for the desktop / AUTO / #Z, the scheduler's first
++ *     dispatch of an accessory).
+  *
+- * We (re)establish SP from the basepage's `p_hitpa` field rather than trust
+- * the entry SP: the basepage lives at a fixed VA 0, so we read p_hitpa
+- * directly (independent of x0, which the kernel-launch path does not set),
+- * and SP then tracks whatever TPA top the loader chose. p_hitpa is a 32-bit
+- * TOS `LONG` at basepage offset 0x04; the loader guarantees it is 4-KiB /
+- * 16-byte aligned. The loader zeroes the whole TPA (including .bss), so crt0
+- * does not zero BSS.
++ * crt0 therefore finds the BasePage through x0, never through a fixed
++ * address: from stage 1 on the basepage sits at the start of the program's
++ * own TPA block, wherever that is. SP is (re)established from the basepage's
++ * `p_hitpa` (a 32-bit TOS `LONG` at offset 0x04, 4-KiB / 16-byte aligned)
++ * rather than trusted from entry, so it tracks whatever TPA top the loader
++ * chose. The loader zeroes the whole TPA (including .bss), so crt0 does not
++ * zero BSS.
+  *
+  * The trap ABI (kernel/src/arch/aarch64/exceptions.rs): GEMDOS = svc #1,
+  * function id in x8, argument in x0, result in x0. Pterm = 0x4C.
+@@ -37,17 +41,15 @@
+     .type   _start, %function
+ _start:
+     /*
+-     * SP = basepage->p_hitpa (the mapped TPA top). The basepage is always at
+-     * VA 0, so read offset 0x04 through a zero base register — no dependency
+-     * on x0, and no stack access before SP is valid.
++     * SP = basepage->p_hitpa (the mapped TPA top), read at offset 0x04 of the
++     * BasePage the loader passes in x0. No stack access before SP is valid.
+      */
+-    mov     x1, #0
+-    ldr     w9, [x1, #4]        /* w9 = p_hitpa (zero-extended into x9) */
++    ldr     w9, [x0, #4]        /* w9 = p_hitpa (zero-extended into x9) */
+     mov     sp, x9
+ 
+     /*
+-     * x0 holds the BasePage VA on the SVC-Pexec launch path; Stage-1 `main`
+-     * takes no arguments, so it is ignored. Call main; its return value (w0)
++     * `main` takes no arguments in a plain (non-libc) program; x0 still
++     * holds the BasePage address, which it ignores. Its return value (w0)
+      * is the exit code.
+      */
+     bl      main
+diff --git a/sdk/gemlib/build-gemlib.sh b/sdk/gemlib/build-gemlib.sh
+index de922f7..f4e353a 100755
+--- a/sdk/gemlib/build-gemlib.sh
++++ b/sdk/gemlib/build-gemlib.sh
+@@ -113,7 +113,7 @@ done
+ # -O2. We add the freestanding/no-libc/-nostdinc set and the ported mintlib
+ # include path, plus -D__NEWTOS__ to select the retargeted trap path.
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
++        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
+         -Wno-macro-redefined)
+ INCS=(-I"$TOP" -I"$MINT" -isystem "$RES")
+ 
+@@ -179,7 +179,7 @@ echo
+     || { echo "client compile FAILED:"; cat "$BUILD/client.err"; exit 1; }
+ 
+ # --- link (crt0 + client + gemlib.a + libc.a via the NewTOS TPA linker script) ---
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why.txt" \
+     "$BUILD/crt0.o" "$BUILD/client.o" "$GEM/gemlib.a" "$LIBC/libc.a" -o "$OUT" 2>"$BUILD/link.err"
+ lr=$?
+diff --git a/sdk/libc/build-libc.sh b/sdk/libc/build-libc.sh
+index e4beaff..273064f 100755
+--- a/sdk/libc/build-libc.sh
++++ b/sdk/libc/build-libc.sh
+@@ -123,7 +123,7 @@ done
+ 
+ # --- flags (mintlib buildrules/configvars, retargeted) -----------------------
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc
++        -fPIE -fno-builtin -nostdinc
+         -D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -D__NO_LONG_DOUBLE_MATH
+         -Wno-macro-redefined)
+ INCS=(-I"$TOP" -I"$TOP/include" -I"$TOP/mintlib" -I"$TOP/stdlib" -isystem "$RES")
+@@ -266,7 +266,7 @@ echo
+     -c "$CLIENT" -o "$BUILD/client.o" || exit 1
+ 
+ # --- link (crt0 + client + libc.a via the NewTOS TPA linker script) ----------
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why.txt" \
+     "$BUILD/crt0.o" "$BUILD/client.o" "$LIBC/libc.a" -o "$OUT" 2>"$BUILD/link.err"
+ lr=$?
+diff --git a/sdk/libc/crt0.S b/sdk/libc/crt0.S
+index 9adf7a8..11cf9f3 100644
+--- a/sdk/libc/crt0.S
++++ b/sdk/libc/crt0.S
+@@ -16,21 +16,25 @@
+  * Programs that do not link libc keep using the plain sdk/crt0.S, which has
+  * no such dependency.
+  *
+- * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld), low-half
+- * VA 0x0 -- the image starts at RESERVED_LOW_END = 0x1000, above the classic
+- * low-memory system area the loader materialises in page 0 (B1 / Option 1):
++ * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld): the program
++ * is a position-independent executable (ELF ET_DYN, ARCH03 stage 0d) linked
++ * at 0x1000; the loader streams it into the TPA and applies its
++ * R_AARCH64_RELATIVE relocations. Stage 0 still maps the TPA at VA 0:
+  *
+  *     [0x000, 0x100)          BasePage (populated by the loader)
+  *     [0x400, 0x670)          sysvars + OSHEADER + cookie jar (loader)
+- *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata) = p_tbase/p_tlen
+- *     [p_dbase, p_bbase)      PT_LOAD data (.data)         = p_dbase/p_dlen
+- *     [p_bbase, _end)         .bss (zeroed by the loader)  = p_bbase/p_blen
++ *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata/.rela.dyn) = p_tbase/p_tlen
++ *     [p_dbase, p_bbase)      PT_LOAD data (.dynamic/.got/.data)      = p_dbase/p_dlen
++ *     [p_bbase, _end)         .bss (zeroed by the loader)             = p_bbase/p_blen
+  *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
+  *
+- * On entry the loader has eret'd to EL0 at _start (linked at 0x1000) and set
+- * SP_EL0 to the TPA top. We re-establish SP from the BasePage's p_hitpa
+- * (32-bit LONG at basepage offset 0x04, read through a zero base register)
+- * so we do not depend on the entry SP or x0.
++ * On entry the loader has eret'd to EL0 at _start (linked at 0x1000), set
++ * SP_EL0 to the TPA top and put the BasePage address in x0 (every launch
++ * path: Pexec, the kernel launcher, the scheduler's first dispatch). We take
++ * the BasePage from x0 -- never from a fixed address, because from stage 1 on
++ * it sits at the start of the program's own TPA block -- and re-establish SP
++ * from its p_hitpa (32-bit LONG at offset 0x04) rather than trust the entry
++ * SP.
+  *
+  * Trap ABI (kernel/src/arch/aarch64/exceptions.rs): GEMDOS = svc #1,
+  * function id in x8, arguments in x0.., result in x0. Pterm = 0x4C.
+@@ -40,10 +44,10 @@
+     .global _start
+     .type   _start, %function
+ _start:
+-    /* SP = basepage->p_hitpa (the mapped TPA top), read at VA 0 offset 4.
+-       x19/x20 keep the two values across the calls below; nothing has to be
+-       restored, because _start never returns. */
+-    mov     x19, #0             /* x19 = BasePage VA (the loader puts it at 0) */
++    /* SP = basepage->p_hitpa (the mapped TPA top), offset 4 of the BasePage
++       the loader passes in x0. x19/x20 keep the two values across the calls
++       below; nothing has to be restored, because _start never returns. */
++    mov     x19, x0             /* x19 = BasePage address (loader: x0) */
+     ldr     w20, [x19, #4]      /* w20 = p_hitpa (zero-extended into x20) */
+     mov     sp, x20
+ 
+diff --git a/sdk/libm/build-libm.sh b/sdk/libm/build-libm.sh
+index 63ea0d3..95c687b 100755
+--- a/sdk/libm/build-libm.sh
++++ b/sdk/libm/build-libm.sh
+@@ -30,7 +30,7 @@
+ #
+ # Flags: the shared SDK freestanding set + OpenLibm's own Make.inc CFLAGS_add
+ # for a clang build (-std=c99 -fno-builtin -fno-strict-aliasing
+-# -D__BSD_VISIBLE). Not taken from Make.inc: -fPIC (the SDK is -fno-pic),
++# -D__BSD_VISIBLE). Not taken from Make.inc: -fPIC (the SDK is -fPIE),
+ # -DASSEMBLER (only read by i387/osx_asm.h), -Wall (warnings go to the per-file
+ # .err files either way), -I ld128 (excluded above).
+ #
+@@ -119,7 +119,7 @@ done
+ 
+ # --- flags -------------------------------------------------------------------
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc
++        -fPIE -fno-builtin -nostdinc
+         -std=c99 -fno-strict-aliasing -D__BSD_VISIBLE)
+ INCS=(-I"$TOP" -I"$TOP/include" -I"$TOP/aarch64" -I"$TOP/src" -I"$MINT" -isystem "$RES")
+ 
+@@ -193,16 +193,16 @@ echo "defined symbols: $(wc -l < "$BUILD/defined.txt" | tr -d ' ')  dangling ref
+ echo
+ 
+ # --- CRT + client ------------------------------------------------------------
+-"$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-pic -fno-builtin -nostdinc \
++"$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc \
+     -I"$SDK/include" -I"$MINT" -I"$LIBC/mintlib/mintlib" \
+     -c "$LIBC/crt0.S" -o "$BUILD/crt0.o" || exit 1
+-"$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-pic -fno-builtin -nostdinc \
++"$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc \
+     -D_GNU_SOURCE \
+     -I"$MINT" -I"$LIBM/include" -I"$TOP/include" -isystem "$RES" \
+     -c "$CLIENT" -o "$BUILD/client.o" || exit 1
+ 
+ # --- link (crt0 + client + libm.a + libc.a via the NewTOS TPA linker script) --
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why.txt" \
+     "$BUILD/crt0.o" "$BUILD/client.o" \
+     --start-group "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
+diff --git a/sdk/newtos.ld b/sdk/newtos.ld
+index 85ae922..8fc041d 100644
+--- a/sdk/newtos.ld
++++ b/sdk/newtos.ld
+@@ -1,9 +1,14 @@
+ /*
+  * newtos.ld -- linker script for NewTOS native programs (`.NCP` / `.NAP`).
+  *
+- * Produces an ELF the NewTOS multi-page-TPA loader accepts. The loader
+- * (tos-api/src/bdos/process/{elf,loader,mmu,arena}.rs) maps a per-process
+- * Transient Program Area of TPA_SIZE (4 MiB today) at low-half VA 0x0:
++ * Produces a position-independent executable (ELF ET_DYN) the NewTOS
++ * multi-page-TPA loader accepts (ARCH03 stage 0d; link with
++ * `-pie --no-dynamic-linker -z text`, compile with `-fPIE`). The loader
++ * (tos-api/src/bdos/process/{elf,reloc,loader,mmu,arena}.rs) streams the
++ * segments into a per-process Transient Program Area of TPA_SIZE (4 MiB
++ * today) and applies the image's R_AARCH64_RELATIVE relocations for the
++ * address the TPA executes at. Stage 0 maps the TPA at low-half VA 0x0, so
++ * the link addresses below are also the run addresses:
+  *
+  *     [0x000, 0x100)          BasePage (populated by the loader)
+  *     [0x400, 0x670)          classic low-memory system area (sysvars +
+@@ -11,9 +16,12 @@
+  *                             by the loader (`populate_sysvars`, B1 / Option 1,
+  *                             docs/analysis/bios-audit/b1-lowmem-feasibility.md).
+  *                             `_sysbase`@0x4F2 and `_p_cookies`@0x5A0 live here.
+- *     [0x1000, p_dbase)       PT_LOAD `text` (R-X): .text + .rodata
++ *     [0x1000, p_dbase)       PT_LOAD `text` (R-X): .text + the dynamic
++ *                             metadata (.dynsym .gnu.hash .hash .dynstr
++ *                             .rela.dyn) + .rodata
+  *                             = the basepage's p_tbase / p_tlen
+- *     [p_dbase, p_bbase)      PT_LOAD `data` (RW-): (.init_array +) .data
++ *     [p_dbase, p_bbase)      PT_LOAD `data` (RW-): (.init_array +)
++ *                             .dynamic + .got + .data
+  *                             = p_dbase / p_dlen (file bytes)
+  *     [p_bbase, _end)         .bss, the NOLOAD tail of `data` (zeroed by
+  *                             the loader) = p_bbase / p_blen
+@@ -22,11 +30,17 @@
+  * The image base moved from 0x100 to 0x1000 (B1, Option 1): the classic TOS
+  * low-memory system variables live at absolute [0x400, 0x800) and must not
+  * overlap the app image, so the image now starts at the first page above the
+- * reserved low region. The BasePage stays at VA 0 (crt0 reads `p_hitpa`@0x04
+- * through the null base), so crt0/user_entry are unchanged.
++ * reserved low region. crt0 finds the BasePage through x0 (the loader passes
++ * its address on every launch path), not through a fixed address, so it
++ * keeps working once stage 1 moves the TPA away from VA 0.
+  *
+  * Loader constraints:
+- *   - ELFCLASS64, ELFDATA2LSB, ET_EXEC, EM_AARCH64, e_version = 1.
++ *   - ELFCLASS64, ELFDATA2LSB, ET_DYN, EM_AARCH64, e_version = 1,
++ *     e_flags = 0, no PT_INTERP. ET_EXEC is refused (EPLFMT).
++ *   - Dynamic relocations: only R_AARCH64_RELATIVE, in one DT_RELA table
++ *     (no DT_REL, no PLT/DT_JMPREL, no DT_NEEDED, no text relocations --
++ *     `-z text` makes the linker refuse those at build time). The PT_DYNAMIC
++ *     segment points the loader at the table.
+  *   - e_phentsize = 56 (guaranteed for ELF64). One or more PT_LOAD segments.
+  *   - Every PT_LOAD must satisfy
+  *         0x1000 <= p_vaddr  and  p_vaddr + p_memsz <= TPA_SIZE - 64 KiB
+@@ -48,6 +62,18 @@
+  * INSIDE the last section on purpose: it makes p_tbase + p_tlen == p_dbase
+  * and p_bbase + p_blen == _end hold to the byte.
+  *
++ * PIE sections. lld creates the dynamic metadata (.dynsym, .gnu.hash, .hash,
++ * .dynstr, .rela.dyn) and .dynamic / .got for every -pie link; they are named
++ * here instead of left as orphans, because orphan placement put .dynamic
++ * AFTER .bss -- which turns the BSS into file-backed zeros, the same failure
++ * as the .init_array case below. The read-only metadata goes into `text`
++ * (`.rela.dyn` must not be in a writable segment: nothing relocates the
++ * table itself), .dynamic and .got into `data` ahead of .data, so .data with
++ * its 16-byte tail ALIGN stays the last file-backed section. .got is KEPT
++ * (it used to be discarded): with -fPIE a reference to an undefined weak or
++ * an extern symbol may go through a GOT slot, and with the GOT discarded the
++ * 0d toolchain spike showed such a load reading address 0 instead.
++ *
+  * .init_array / .fini_array are placed explicitly, before .bss: as orphans
+  * lld put them AFTER .bss, which turned the whole BSS into file-backed zeros
+  * (memsz == filesz, p_blen 0). crt0 does not run them (mintlib's init_clock
+@@ -62,11 +88,13 @@ ENTRY(_start)
+ 
+ PHDRS
+ {
+-    /* R-X: .text + .rodata -> p_tbase / p_tlen. */
++    /* R-X: .text + dynamic metadata + .rodata -> p_tbase / p_tlen. */
+     text PT_LOAD FLAGS(5);
+-    /* RW-: (.init_array +) .data, .bss as the NOLOAD tail
++    /* RW-: (.init_array +) .dynamic + .got + .data, .bss as the NOLOAD tail
+        -> p_dbase / p_dlen, p_bbase / p_blen. */
+     data PT_LOAD FLAGS(6);
++    /* The dynamic array, inside `data`: where the loader finds DT_RELA. */
++    dynamic PT_DYNAMIC FLAGS(6);
+ }
+ 
+ SECTIONS
+@@ -80,6 +108,15 @@ SECTIONS
+         *(.text .text.*)
+     } :text
+ 
++    /* Read-only dynamic metadata lld emits for a PIE. Only .rela.dyn is read
++       by the loader; the symbol/hash tables are what lld insists on
++       creating for -pie (one null symbol). */
++    .dynsym   : { *(.dynsym) }   :text
++    .gnu.hash : { *(.gnu.hash) } :text
++    .hash     : { *(.hash) }     :text
++    .dynstr   : { *(.dynstr) }   :text
++    .rela.dyn : { *(.rela.dyn) *(.rela.*) } :text
++
+     .rodata : {
+         *(.rodata .rodata.*)
+         . = ALIGN(16);         /* text segment ends 16-aligned: p_dbase = p_tbase + p_tlen */
+@@ -94,6 +131,12 @@ SECTIONS
+         *(.fini_array .fini_array.*)
+     } :data
+ 
++    /* The dynamic array (also the PT_DYNAMIC segment) and the GOT, ahead of
++       .data so .data's tail ALIGN still ends the file-backed part. */
++    .dynamic : { *(.dynamic) } :data :dynamic
++    .got     : { *(.got) *(.igot) } :data
++    .got.plt : { *(.got.plt) *(.igot.plt) } :data
++
+     .data : {
+         *(.data .data.*)
+         . = ALIGN(16);         /* data file part ends 16-aligned: p_bbase = p_dbase + p_dlen */
+@@ -120,6 +163,5 @@ SECTIONS
+         *(.eh_frame*)
+         *(.ARM.exidx*)
+         *(.ARM.attributes)
+-        *(.got .got.plt)
+     }
+ }
+diff --git a/tools/mk-hello-ncp.py b/tools/mk-hello-ncp.py
+index 55dda14..2876857 100644
+--- a/tools/mk-hello-ncp.py
++++ b/tools/mk-hello-ncp.py
+@@ -6,7 +6,10 @@
+ # from there, already proven through the Pexec round-trip), so it satisfies the
+ # NewTOS ELF loader (`tos-api/src/bdos/process/{elf,loader}.rs`):
+ #
+-#   * ELFCLASS64, ELFDATA2LSB, ET_EXEC, EM_AARCH64 (0xB7), e_version=1
++#   * ELFCLASS64, ELFDATA2LSB, ET_DYN (a PIE -- the loader refuses ET_EXEC
++#     since ARCH03 stage 0d), EM_AARCH64 (0xB7), e_version=1, e_flags=0
++#   * position-independent code (the banner is addressed PC-relative), no
++#     dynamic section: there is nothing to relocate
+ #   * one PT_LOAD segment, e_phentsize=56
+ #   * segment + entry at VA 0x1000 (B1 / Option 1: the first page of the TPA
+ #     is reserved for the BasePage @0 + classic sysvars/OSHEADER/cookie-jar,
+@@ -23,7 +26,7 @@ STR_OFF = 0x1100          # VA / file offset of the banner string
+ BANNER = b"Hello from a NewTOS .NCP program!\r\n\x00"
+ 
+ # Code at 0x1000 (7 instructions, 28 bytes). Little-endian AArch64.
+-#   movz x0, #0x1100  ; x0 = &banner (STR_OFF)   (00 20 82 D2)
++#   adr  x0, .+0x100  ; x0 = &banner (STR_OFF)   (00 08 00 10)
+ #   movz x8, #0x09    ; Cconws                   (28 01 80 D2)
+ #   svc  #1                                       (21 00 00 D4)
+ #   movz x0, #0       ; rc = 0                    (00 00 80 D2)
+@@ -31,7 +34,7 @@ BANNER = b"Hello from a NewTOS .NCP program!\r\n\x00"
+ #   svc  #1                                        (21 00 00 D4)
+ #   b    .            ; safety net                (00 00 00 14)
+ CODE = bytes([
+-    0x00, 0x20, 0x82, 0xD2,
++    0x00, 0x08, 0x00, 0x10,
+     0x28, 0x01, 0x80, 0xD2,
+     0x21, 0x00, 0x00, 0xD4,
+     0x00, 0x00, 0x80, 0xD2,
+@@ -52,7 +55,7 @@ ehdr = struct.pack(
+     1,            # EI_VERSION
+     0,            # EI_OSABI
+     0,            # EI_ABIVERSION
+-    2,            # e_type    = ET_EXEC
++    3,            # e_type    = ET_DYN
+     0xB7,         # e_machine = EM_AARCH64
+     1,            # e_version
+     CODE_OFF,     # e_entry   = 0x1000
+@@ -92,7 +95,7 @@ img[STR_OFF:STR_OFF + len(BANNER)] = BANNER
+ # here rather than as a silent load error on-device.
+ assert img[:4] == b"\x7fELF"
+ assert img[4] == 2 and img[5] == 1 and img[6] == 1          # class/data/version
+-assert struct.unpack_from("<H", img, 16)[0] == 2            # ET_EXEC
++assert struct.unpack_from("<H", img, 16)[0] == 3            # ET_DYN
+ assert struct.unpack_from("<H", img, 18)[0] == 0xB7         # EM_AARCH64
+ assert struct.unpack_from("<Q", img, 24)[0] == CODE_OFF     # e_entry
+ assert struct.unpack_from("<H", img, 54)[0] == 56           # e_phentsize
+diff --git a/tos-api/src/bdos/process.rs b/tos-api/src/bdos/process.rs
+index 1dcb27d..4414d4c 100644
+--- a/tos-api/src/bdos/process.rs
++++ b/tos-api/src/bdos/process.rs
+@@ -50,6 +50,7 @@ pub mod mmu;
+ pub mod pterm;
+ pub mod pexec;
+ pub mod registry;
++pub mod reloc;
+ pub mod sched;
+ pub mod usermem;
+ 
+diff --git a/tos-api/src/bdos/process/elf.rs b/tos-api/src/bdos/process/elf.rs
+index 8def96a..68a9a78 100644
+--- a/tos-api/src/bdos/process/elf.rs
++++ b/tos-api/src/bdos/process/elf.rs
+@@ -33,15 +33,32 @@
+ //!   descriptor is class-agnostic (widened to `u64`), so the whole
+ //!   downstream loader — streaming, basepage, cache-sync — is unchanged.
+ //! - `ELFDATA2LSB` (little-endian — AArch64 default)
+-//! - `ET_EXEC` (statically-linked executable; `ET_DYN` / PIE will
+-//!   come when relocation support is needed)
+-//! - `EM_AARCH64`
+-//! - Program headers: only `PT_LOAD` entries are extracted. Other
+-//!   types (`PT_NOTE`, `PT_GNU_*`) are ignored without erroring.
++//! - `ET_DYN` only — a position-independent executable (ARCH03 stage 0d,
++//!   `docs/analysis/arch03-implementation-plan.md` Frage 3 / E7). SYSVABI64
++//!   2025Q4 §9 (p. 23): "Position-independent executables are mapped in the
++//!   same way as shared objects. They have an ELF e_type of ET_DYN." A
++//!   fixed-address `ET_EXEC` image is refused with
++//!   [`ParseError::NotPositionIndependent`] (→ `EPLFMT`): every NewTOS
++//!   program is rebuilt as PIE, and a second, non-relocating load path
++//!   would be a second loader (E7).
++//! - `EM_AARCH64` (183) and `e_flags == 0` — AAELF64 2025Q4 §5.2 (p. 13):
++//!   "There are no processor-specific flags so this field shall contain
++//!   zero."
++//! - Program headers: `PT_LOAD` entries are extracted; the (at most one)
++//!   `PT_DYNAMIC` entry is recorded for the relocation step
++//!   ([`super::reloc`]); a `PT_INTERP` entry (a program asking for a
++//!   dynamic linker, gABI "Program Interpreter") is refused. Other types
++//!   (`PT_NOTE`, `PT_GNU_*`) are ignored without erroring.
+ //! - At most [`MAX_LOAD_SEGMENTS`] (currently 8) `PT_LOAD` segments
+ //!   per image — enough for text + data + bss splits, which is all
+ //!   a typical TOS source-port produces.
+ //!
++//! The dynamic section itself is **not** read here: its bytes live inside
++//! a `PT_LOAD` segment and are interpreted after the segments have been
++//! streamed into the TPA (see [`super::reloc`]). That also keeps the
++//! `Elf64_Dyn`/`Elf64_Rela` walk away from ELF32 images, which the loader
++//! refuses before relocation.
++//!
+ //! Rejects with a precise [`ParseError`] anything that doesn't
+ //! match. No allocation, no unsafe — pure byte parsing.
+ 
+@@ -59,10 +76,15 @@ const ELFCLASS64: u8 = 2;
+ const ELFDATA2LSB: u8 = 1;
+ const EV_CURRENT: u8 = 1;
+ 
++// gABI `e_type` values (gABI 2013-06-10, ch4.eheader "ELF Header").
+ const ET_EXEC: u16 = 2;
++const ET_DYN: u16 = 3;
+ const EM_AARCH64: u16 = 0xb7;
+ 
++// gABI `p_type` values (ch5.pheader "Program Header").
+ const PT_LOAD: u32 = 1;
++const PT_DYNAMIC: u32 = 2;
++const PT_INTERP: u32 = 3;
+ 
+ /// `p_flags` bit indicating the segment is executable.
+ pub const PF_X: u32 = 0x1;
+@@ -83,6 +105,7 @@ const E_VERSION_OFF: usize = 20;
+ // e_entry / e_phoff are 8-byte words; the header is 64 bytes.
+ const E64_ENTRY_OFF: usize = 24;
+ const E64_PHOFF_OFF: usize = 32;
++const E64_FLAGS_OFF: usize = 48;
+ const E64_PHENTSIZE_OFF: usize = 54;
+ const E64_PHNUM_OFF: usize = 56;
+ const ELF64_EHDR_SIZE: usize = 64;
+@@ -101,6 +124,7 @@ const P64_MEMSZ_OFF: usize = 40;
+ // than in ELF64; the header is 52 bytes.
+ const E32_ENTRY_OFF: usize = 24;
+ const E32_PHOFF_OFF: usize = 28;
++const E32_FLAGS_OFF: usize = 36;
+ const E32_PHENTSIZE_OFF: usize = 42;
+ const E32_PHNUM_OFF: usize = 44;
+ const ELF32_EHDR_SIZE: usize = 52;
+@@ -130,6 +154,7 @@ struct ClassLayout {
+     phdr_size: u16,
+     e_entry: usize,
+     e_phoff: usize,
++    e_flags: usize,
+     e_phentsize: usize,
+     e_phnum: usize,
+     p_type: usize,
+@@ -147,6 +172,7 @@ const LAYOUT64: ClassLayout = ClassLayout {
+     phdr_size: ELF64_PHDR_SIZE,
+     e_entry: E64_ENTRY_OFF,
+     e_phoff: E64_PHOFF_OFF,
++    e_flags: E64_FLAGS_OFF,
+     e_phentsize: E64_PHENTSIZE_OFF,
+     e_phnum: E64_PHNUM_OFF,
+     p_type: P64_TYPE_OFF,
+@@ -163,6 +189,7 @@ const LAYOUT32: ClassLayout = ClassLayout {
+     phdr_size: ELF32_PHDR_SIZE,
+     e_entry: E32_ENTRY_OFF,
+     e_phoff: E32_PHOFF_OFF,
++    e_flags: E32_FLAGS_OFF,
+     e_phentsize: E32_PHENTSIZE_OFF,
+     e_phnum: E32_PHNUM_OFF,
+     p_type: P32_TYPE_OFF,
+@@ -200,11 +227,29 @@ pub struct LoadSegment {
+     pub mem_size: u64,
+ }
+ 
++/// The `PT_DYNAMIC` program header of an image — where its dynamic
++/// section (`Elf64_Dyn` array, gABI ch5.dynamic) lies. Link-time VA and
++/// sizes, exactly as in the program header; [`super::reloc`] validates
++/// that the range is backed by file bytes of a `PT_LOAD` segment before
++/// reading it.
++#[derive(Copy, Clone, Debug, Eq, PartialEq)]
++pub struct DynamicSegment {
++    /// Link-time VA of the dynamic section (`p_vaddr`).
++    pub vaddr: u64,
++    /// `p_filesz` — the bytes of the array present in the file.
++    pub file_size: u64,
++    /// `p_memsz`.
++    pub mem_size: u64,
++}
++
+ /// A parsed ELF image — header summary plus the `PT_LOAD` table.
+ #[derive(Copy, Clone, Debug)]
+ pub struct ElfImage {
+     /// User entry point (`e_entry`, AArch64 VA).
+     pub entry_va: u64,
++    /// The image's `PT_DYNAMIC` header, if it has one. A PIE without
++    /// dynamic relocations (the hand-built selftest blobs) has none.
++    pub dynamic: Option<DynamicSegment>,
+     /// `true` for `ELFCLASS32` (ILP32, 4-byte pointers/`long`), `false`
+     /// for `ELFCLASS64` (LP64). The loader records this in the process
+     /// slot so the GEM trap readers use the program's pointer width; all
+@@ -246,10 +291,26 @@ pub enum ParseError {
+     NotLittleEndian,
+     /// `EI_VERSION` or `e_version` not `EV_CURRENT`.
+     BadVersion,
+-    /// `e_type != ET_EXEC`.
++    /// `e_type` is neither `ET_DYN` nor `ET_EXEC` (a relocatable object,
++    /// a core file, …).
+     NotExecutable,
++    /// `e_type == ET_EXEC`: a fixed-address executable. NewTOS loads
++    /// position-independent executables (`ET_DYN`) only — ARCH03 E7, the
++    /// hard cut after every in-tree program was rebuilt as PIE (stage 0d).
++    NotPositionIndependent,
+     /// `e_machine != EM_AARCH64`.
+     NotAArch64,
++    /// `e_flags != 0`. AAELF64 §5.2 (p. 13): "There are no
++    /// processor-specific flags so this field shall contain zero."
++    BadFlags,
++    /// The image has a `PT_INTERP` header — it asks for a dynamic linker
++    /// (gABI ch5.dynamic "Program Interpreter"). NewTOS has none.
++    HasInterpreter,
++    /// More than one `PT_DYNAMIC` header. gABI ch5.dynamic "Dynamic
++    /// Section": the `PT_DYNAMIC` element is the segment that "contains the
++    /// .dynamic section" — one array; two would leave it ambiguous which
++    /// relocation table is meant.
++    MultipleDynamic,
+     /// `e_phentsize` is not the class's phdr size (32 for ELF32, 56 for
+     /// ELF64).
+     BadPhEntSize,
+@@ -290,7 +351,7 @@ fn read_word(b: &[u8], off: usize, wide: bool) -> Option<u64> {
+ 
+ // ─── Parser ────────────────────────────────────────────────────────
+ 
+-/// Parse an ELF32 or ELF64 AArch64 executable header.
++/// Parse an ELF32 or ELF64 AArch64 position-independent executable header.
+ ///
+ /// The `EI_CLASS` byte selects a [`ClassLayout`]; from there a single
+ /// validated loop parses either class. `header` must hold at least the
+@@ -338,8 +399,10 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
+ 
+     // ─── e_type / e_machine / e_version (fixed offsets) ─────────
+     let e_type = read_u16_le(header, E_TYPE_OFF).ok_or(ParseError::TooShort)?;
+-    if e_type != ET_EXEC {
+-        return Err(ParseError::NotExecutable);
++    match e_type {
++        ET_DYN => {}
++        ET_EXEC => return Err(ParseError::NotPositionIndependent),
++        _ => return Err(ParseError::NotExecutable),
+     }
+     let e_machine = read_u16_le(header, E_MACHINE_OFF).ok_or(ParseError::TooShort)?;
+     if e_machine != EM_AARCH64 {
+@@ -349,6 +412,10 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
+     if e_version != EV_CURRENT as u32 {
+         return Err(ParseError::BadVersion);
+     }
++    let e_flags = read_u32_le(header, layout.e_flags).ok_or(ParseError::TooShort)?;
++    if e_flags != 0 {
++        return Err(ParseError::BadFlags);
++    }
+ 
+     // ─── Header pointers (class-specific offset + width) ────────
+     let entry_va =
+@@ -371,6 +438,7 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
+         mem_size: 0,
+     }; MAX_LOAD_SEGMENTS];
+     let mut num_segments = 0usize;
++    let mut dynamic: Option<DynamicSegment> = None;
+ 
+     for i in 0..(phnum as usize) {
+         let ph_off = (phoff as usize)
+@@ -389,9 +457,31 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
+ 
+         let p_type = read_u32_le(header, ph_off + layout.p_type)
+             .ok_or(ParseError::PhdrOutOfRange)?;
+-        if p_type != PT_LOAD {
++        match p_type {
++            PT_LOAD => {}
++            PT_INTERP => return Err(ParseError::HasInterpreter),
++            PT_DYNAMIC => {
++                if dynamic.is_some() {
++                    return Err(ParseError::MultipleDynamic);
++                }
++                let vaddr = read_word(header, ph_off + layout.p_vaddr, layout.wide)
++                    .ok_or(ParseError::PhdrOutOfRange)?;
++                let file_size = read_word(header, ph_off + layout.p_filesz, layout.wide)
++                    .ok_or(ParseError::PhdrOutOfRange)?;
++                let mem_size = read_word(header, ph_off + layout.p_memsz, layout.wide)
++                    .ok_or(ParseError::PhdrOutOfRange)?;
++                if file_size > mem_size {
++                    return Err(ParseError::BadSegmentSizes);
++                }
++                dynamic = Some(DynamicSegment {
++                    vaddr,
++                    file_size,
++                    mem_size,
++                });
++                continue;
++            }
+             // PT_NOTE, PT_GNU_STACK etc. — ignore.
+-            continue;
++            _ => continue,
+         }
+ 
+         if num_segments >= MAX_LOAD_SEGMENTS {
+@@ -437,6 +527,7 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
+     // ILP32 (ELFCLASS32) flag the loader records for the GEM trap readers.
+     Ok(ElfImage {
+         entry_va,
++        dynamic,
+         is_ilp32: !layout.wide,
+         segments,
+         num_segments,
+diff --git a/tos-api/src/bdos/process/loader.rs b/tos-api/src/bdos/process/loader.rs
+index 4be9bc2..98cbdff 100644
+--- a/tos-api/src/bdos/process/loader.rs
++++ b/tos-api/src/bdos/process/loader.rs
+@@ -50,6 +50,7 @@ use crate::bdos::fs::FileImage;
+ use super::arena;
+ use super::elf::{self, ElfImage, LoadSegment, ParseError, PF_W, PF_X};
+ use super::mmu::{self, MapError, PageFlags};
++use super::reloc::{self, RelocError};
+ use super::PROCESS_TABLE;
+ 
+ /// High-half kernel VA offset (mirror of [`super::arena`]'s constant and
+@@ -105,6 +106,11 @@ pub enum LoadError {
+     /// answer EmuTOS gives a header it will not load
+     /// (`bdos/kpgmld.c:47-63`).
+     Ilp32Unsupported,
++    /// The image's dynamic relocations could not be applied — an
++    /// unsupported relocation type or dynamic tag, or a table/place outside
++    /// the image (ARCH03 stage 0d, [`super::reloc`]). Maps to `EPLFMT`,
++    /// like every other "this file is not a program I can load" answer.
++    Reloc(RelocError),
+ }
+ 
+ /// How `Pexec` supplies the child's environment block. Mirrors the
+@@ -135,6 +141,11 @@ impl From<ParseError> for LoadError {
+         Self::Parse(e)
+     }
+ }
++impl From<RelocError> for LoadError {
++    fn from(e: RelocError) -> Self {
++        Self::Reloc(e)
++    }
++}
+ impl From<MapError> for LoadError {
+     fn from(e: MapError) -> Self {
+         Self::MapPage(e)
+@@ -200,6 +211,14 @@ const RESERVED_LOW_END: u64 = 0x1000;
+ const _: () = assert!(BASEPAGE_RESERVED <= RESERVED_LOW_END);
+ const _: () = assert!(SYSVAR_AREA_END <= RESERVED_LOW_END);
+ 
++// Stage 0 (ARCH03): the TPA is mapped at VA 0, so a segment's link VA is
++// also its byte offset in the TPA (`populate_and_map` streams segment `s` to
++// `tpa_bytes[s.vaddr - USER_VA_BASE]`) and the relocation step can index the
++// TPA by link VA with load base `USER_VA_BASE`. Stage 1 places the TPA at a
++// per-process address and must split "offset in the TPA" from "execution
++// address" at that point; this assertion marks the place.
++const _: () = assert!(USER_VA_BASE == 0);
++
+ // The image window must leave room for both the reserved low region and the
+ // minimum stack reserve inside the TPA.
+ const _: () = assert!(RESERVED_LOW_END + USER_STACK_MIN < arena::TPA_SIZE);
+@@ -270,7 +289,8 @@ static HEADER_BUF: HeaderBuf = HeaderBuf(UnsafeCell::new([0u8; HEADER_BUF_SIZE])
+ /// 1. Parse the blob via [`elf::parse`].
+ /// 2. For each `PT_LOAD` segment, validate it fits in the single
+ ///    user page and copy file bytes into that page; zero the BSS
+-///    tail (`mem_size - file_size`).
++///    tail (`mem_size - file_size`). Then apply the image's
++///    `R_AARCH64_RELATIVE` relocations ([`super::reloc`], ARCH03 0d).
+ /// 3. Initialise the slot's page tables and install one mapping
+ ///    `(USER_VA_BASE → user-page-phys, UserRwExec)`.
+ /// 4. Return a [`LoadedImage`] ready for the caller's eret.
+@@ -495,6 +515,17 @@ unsafe fn populate_and_map(
+         image_top = image_top.max(seg.vaddr + seg.mem_size);
+     }
+ 
++    // Apply the image's `R_AARCH64_RELATIVE` relocations (ARCH03 stage 0d,
++    // [`super::reloc`]): every absolute data word the PIE carries becomes
++    // `load base + addend`. `tpa_bytes` is indexed by link VA (segment `s`
++    // was streamed to `tpa_bytes[s.vaddr]`, see the `USER_VA_BASE == 0`
++    // assertion next to `RESERVED_LOW_END`), and the TPA executes at
++    // `USER_VA_BASE`, so that is the load base. Done before anything else is written into the TPA
++    // and before the cache maintenance below, so the I-cache sync sees the
++    // final image. A refused relocation fails the load (`EPLFMT`); the
++    // caller frees the TPA, so a half-relocated image never runs.
++    reloc::relocate(tpa_bytes, img, USER_VA_BASE)?;
++
+     // Allocate + copy the environment (EmuTOS `alloc_env`), before the
+     // basepage so `p_env` is stamped in one pass. The child cookie is
+     // the TPA base kernel VA (= the basepage VA on the kernel side).
+@@ -1520,7 +1551,9 @@ mod basepage_segment_tests {
+     use super::*;
+     use crate::bdos::process::elf::{PF_R, PF_W, PF_X};
+ 
+-    const ET_EXEC: u16 = 2;
++    // ET_DYN: the loader accepts position-independent executables only
++    // since ARCH03 stage 0d (ET_EXEC -> ParseError::NotPositionIndependent).
++    const ET_DYN: u16 = 3;
+     const EM_AARCH64: u16 = 0xb7;
+     const PT_LOAD: u32 = 1;
+     const EHDR: usize = 64;
+@@ -1539,7 +1572,7 @@ mod basepage_segment_tests {
+     /// `(flags, vaddr, filesz, memsz)` per `PT_LOAD`.
+     type Seg = (u32, u64, u64, u64);
+ 
+-    /// A well-formed ELF64 AArch64 executable whose `PT_LOAD` table is
++    /// A well-formed ELF64 AArch64 PIE (`ET_DYN`) whose `PT_LOAD` table is
+     /// exactly `segs`; every segment's file bytes are placed after the
+     /// headers (contents irrelevant here — only the table is read).
+     fn elf_with(segs: &[Seg]) -> Vec<u8> {
+@@ -1550,7 +1583,7 @@ mod basepage_segment_tests {
+         b[4] = 2; // ELFCLASS64
+         b[5] = 1; // ELFDATA2LSB
+         b[6] = 1; // EV_CURRENT
+-        put16(&mut b, 16, ET_EXEC);
++        put16(&mut b, 16, ET_DYN);
+         put16(&mut b, 18, EM_AARCH64);
+         put32(&mut b, 20, 1);
+         put64(&mut b, 24, RESERVED_LOW_END); // e_entry = first text byte
+diff --git a/tos-api/tests/loader_ilp32_rejected.rs b/tos-api/tests/loader_ilp32_rejected.rs
+index 9613d16..e81e9a1 100644
+--- a/tos-api/tests/loader_ilp32_rejected.rs
++++ b/tos-api/tests/loader_ilp32_rejected.rs
+@@ -33,7 +33,9 @@ use tos_api::bdos::process::loader::LoadError;
+ use tos_api::bdos::process::pexec::PexecError;
+ use tos_types::error::EPLFMT;
+ 
+-const ET_EXEC: u16 = 2;
++// ET_DYN: since ARCH03 stage 0d the parser accepts position-independent
++// executables only (ET_EXEC -> NotPositionIndependent), for either class.
++const ET_DYN: u16 = 3;
+ const EM_AARCH64: u16 = 0xb7;
+ const PT_LOAD: u32 = 1;
+ const PF_R: u32 = 0x4;
+@@ -53,7 +55,7 @@ fn put64(buf: &mut [u8], off: usize, v: u64) {
+     buf[off..off + 8].copy_from_slice(&v.to_le_bytes());
+ }
+ 
+-/// A minimal but genuinely well-formed ELF32 AArch64 executable: header
++/// A minimal but genuinely well-formed ELF32 AArch64 PIE (`ET_DYN`): header
+ /// plus one `PT_LOAD` segment. Note the ELF32 phdr field order — `p_flags`
+ /// is the second-to-last field (offset 24), not right after `p_type` as in
+ /// ELF64. Getting that wrong would mis-parse rather than fail loudly.
+@@ -67,7 +69,7 @@ fn elf32_exec() -> Vec<u8> {
+     b[5] = 1; // EI_DATA  = ELFDATA2LSB
+     b[6] = 1; // EI_VERSION = EV_CURRENT
+ 
+-    put16(&mut b, 16, ET_EXEC);
++    put16(&mut b, 16, ET_DYN);
+     put16(&mut b, 18, EM_AARCH64);
+     put32(&mut b, 20, 1); // e_version
+     put32(&mut b, 24, ENTRY_VA as u32); // e_entry  (4-byte in ELF32)
+@@ -96,7 +98,7 @@ fn elf64_exec() -> Vec<u8> {
+     b[5] = 1;
+     b[6] = 1;
+ 
+-    put16(&mut b, 16, ET_EXEC);
++    put16(&mut b, 16, ET_DYN);
+     put16(&mut b, 18, EM_AARCH64);
+     put32(&mut b, 20, 1);
+     put64(&mut b, 24, ENTRY_VA); // e_entry
+diff --git a/tosdump/build-dumpaes-newtos.sh b/tosdump/build-dumpaes-newtos.sh
+index b34f3a6..0f9427f 100755
+--- a/tosdump/build-dumpaes-newtos.sh
++++ b/tosdump/build-dumpaes-newtos.sh
+@@ -56,7 +56,7 @@ BUILD_ID="$(cd "$ROOT" && git rev-parse HEAD 2>/dev/null | cut -c1-4)"
+ # AArch64 is little-endian, so the record writer swaps on write. This is the
+ # only compile-time difference from the TT build (spec section 2.1).
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
++        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
+         -std=c99 -Wall -Wextra -Werror
+         -DTD_BIG_ENDIAN_TARGET=0 -DTD_BUILD_ID="\"$BUILD_ID\"")
+ INCS=(-I"$HERE/core" -I"$MINT" -isystem "$RES")
+@@ -80,11 +80,11 @@ for s in "${SRC[@]}"; do
+ done
+ 
+ "$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 \
+-    -fno-pic -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
++    -fPIE -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
+     -c "$LIBC/crt0.S" -o "$BUILD/crt0-newtos-aes.o" || exit 1
+ 
+ rm -f "$OUT"
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why-newtos-aes.txt" \
+     "$BUILD/crt0-newtos-aes.o" "$OBJ"/*.o "$LIBC/libc.a" \
+     -o "$OUT" 2>"$BUILD/link-newtos-aes.err"
+diff --git a/tosdump/build-dumprast-newtos.sh b/tosdump/build-dumprast-newtos.sh
+index 2261647..d60983d 100755
+--- a/tosdump/build-dumprast-newtos.sh
++++ b/tosdump/build-dumprast-newtos.sh
+@@ -53,7 +53,7 @@ BUILD_ID="$(cd "$ROOT" && git rev-parse HEAD 2>/dev/null | cut -c1-4)"
+ # AArch64 is little-endian, so the record writer swaps on write. This is the
+ # only compile-time difference from the TT build (spec section 2.1).
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
++        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
+         -std=c99 -Wall -Wextra -Werror
+         -DTD_BIG_ENDIAN_TARGET=0 -DTD_BUILD_ID="\"$BUILD_ID\"")
+ INCS=(-I"$HERE/core" -I"$MINT" -isystem "$RES")
+@@ -77,11 +77,11 @@ for s in "${SRC[@]}"; do
+ done
+ 
+ "$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 \
+-    -fno-pic -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
++    -fPIE -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
+     -c "$LIBC/crt0.S" -o "$BUILD/crt0-newtos-rast.o" || exit 1
+ 
+ rm -f "$OUT"
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why-newtos-rast.txt" \
+     "$BUILD/crt0-newtos-rast.o" "$OBJ"/*.o "$LIBC/libc.a" \
+     -o "$OUT" 2>"$BUILD/link-newtos-rast.err"
+diff --git a/tosdump/build-dumpvdi-newtos.sh b/tosdump/build-dumpvdi-newtos.sh
+index 5344f5a..2709190 100755
+--- a/tosdump/build-dumpvdi-newtos.sh
++++ b/tosdump/build-dumpvdi-newtos.sh
+@@ -53,7 +53,7 @@ BUILD_ID="$(cd "$ROOT" && git rev-parse HEAD 2>/dev/null | cut -c1-4)"
+ # AArch64 is little-endian, so the record writer swaps on write. This is the
+ # only compile-time difference from the TT build (spec section 2.1).
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
++        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
+         -std=c99 -Wall -Wextra -Werror
+         -DTD_BIG_ENDIAN_TARGET=0 -DTD_BUILD_ID="\"$BUILD_ID\"")
+ INCS=(-I"$HERE/core" -I"$MINT" -isystem "$RES")
+@@ -77,11 +77,11 @@ for s in "${SRC[@]}"; do
+ done
+ 
+ "$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 \
+-    -fno-pic -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
++    -fPIE -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
+     -c "$LIBC/crt0.S" -o "$BUILD/crt0-newtos.o" || exit 1
+ 
+ rm -f "$OUT"
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why-newtos.txt" \
+     "$BUILD/crt0-newtos.o" "$OBJ"/*.o "$LIBC/libc.a" \
+     -o "$OUT" 2>"$BUILD/link-newtos.err"
+diff --git a/tosdump/build-scrninfo-newtos.sh b/tosdump/build-scrninfo-newtos.sh
+index bc8ba95..97eb357 100755
+--- a/tosdump/build-scrninfo-newtos.sh
++++ b/tosdump/build-scrninfo-newtos.sh
+@@ -56,7 +56,7 @@ BUILD_ID="$(cd "$ROOT" && git rev-parse HEAD 2>/dev/null | cut -c1-4)"
+ # matters to the record writer, which the probe does not link; the probe's
+ # "BEwords" lines assemble big-endian words from the bytes explicitly.
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
++        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
+         -std=c99 -Wall -Wextra -Werror
+         -DTD_BIG_ENDIAN_TARGET=0 -DTD_BUILD_ID="\"$BUILD_ID\"")
+ INCS=(-I"$HERE/core" -I"$MINT" -isystem "$RES")
+@@ -79,11 +79,11 @@ for s in "${SRC[@]}"; do
+ done
+ 
+ "$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 \
+-    -fno-pic -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
++    -fPIE -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
+     -c "$LIBC/crt0.S" -o "$BUILD/crt0-scrninfo-newtos.o" || exit 1
+ 
+ rm -f "$OUT"
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why-scrninfo-newtos.txt" \
+     "$BUILD/crt0-scrninfo-newtos.o" "$OBJ"/*.o "$LIBC/libc.a" \
+     -o "$OUT" 2>"$BUILD/link-scrninfo-newtos.err"
+diff --git a/tosdump/build-vdidraw-newtos.sh b/tosdump/build-vdidraw-newtos.sh
+index 9af09cb..ad8fb55 100755
+--- a/tosdump/build-vdidraw-newtos.sh
++++ b/tosdump/build-vdidraw-newtos.sh
+@@ -56,7 +56,7 @@ BUILD_ID="$(cd "$ROOT" && git rev-parse HEAD 2>/dev/null | cut -c1-4)"
+ # AArch64 is little-endian, so the record writer swaps on write. This is the
+ # only compile-time difference from the TT build (spec section 2.1).
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
++        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
+         -std=c99 -Wall -Wextra -Werror
+         -DTD_BIG_ENDIAN_TARGET=0 -DTD_BUILD_ID="\"$BUILD_ID\"")
+ INCS=(-I"$HERE/core" -I"$MINT" -isystem "$RES")
+@@ -80,11 +80,11 @@ for s in "${SRC[@]}"; do
+ done
+ 
+ "$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 \
+-    -fno-pic -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
++    -fPIE -fno-builtin -nostdinc -I"$SDK/include" -I"$MINT" -isystem "$RES" \
+     -c "$LIBC/crt0.S" -o "$BUILD/crt0-newtos.o" || exit 1
+ 
+ rm -f "$OUT"
+-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
++"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+     --build-id=none --why-extract="$BUILD/why-newtos.txt" \
+     "$BUILD/crt0-newtos.o" "$OBJ"/*.o "$LIBC/libc.a" \
+     -o "$OUT" 2>"$BUILD/link-newtos.err"
+diff --git a/tos-api/src/bdos/process/reloc.rs b/tos-api/src/bdos/process/reloc.rs
+new file mode 100644
+index 0000000..006af4c
+--- /dev/null
++++ b/tos-api/src/bdos/process/reloc.rs
+@@ -0,0 +1,319 @@
++//! Dynamic relocation of a position-independent executable (ARCH03 stage 0d).
++//!
++//! NewTOS programs are `ET_DYN` images (see [`super::elf`]). Their absolute
++//! 64-bit data words — pointer tables, GOT entries, `static` pointer
++//! initialisers — are left for the loader in a `DT_RELA` table, one
++//! `R_AARCH64_RELATIVE` entry per word. This module walks the image's
++//! dynamic section, finds that table, validates every entry and writes the
++//! relocated values into the already-streamed segments. It is the
++//! `Pexec`-time relocation EmuTOS performs for a PRG fixup table
++//! (`bdos/kpgmld.c`), done for the AArch64 ELF format; doing it in the kernel
++//! rather than in `crt0` is plan decision E8, so that a `Pexec(3)`-loaded
++//! image is complete before anyone calls into it.
++//!
++//! ## Sources
++//!
++//! * **AAELF64** 2025Q4 (`references/arm-arm/aaelf64.pdf`) §5.7.15 "Dynamic
++//!   relocations" (p. 40/41): `R_AARCH64_RELATIVE` = 1027, operation
++//!   `Delta(S) + A`; "If S is the null symbol (ELF symbol index 0) then the
++//!   adjustment is based on the segment defining the place"; `Delta(S)` for
++//!   the null symbol is "the difference between the static link address of
++//!   P and the execution address of P" (§5.7.3, p. 20); "all dynamic
++//!   relocations require that the place being relocated is an 8-byte aligned
++//!   64-bit data location in ELF64" (p. 40).
++//! * **gABI** (System V ABI draft 2013-06-10, `references/gabi/`):
++//!   `Elf64_Rela` {`r_offset`, `r_info`, `r_addend`} = 24 bytes and
++//!   `ELF64_R_SYM(i) = i >> 32`, `ELF64_R_TYPE(i) = i & 0xffffffff`
++//!   (ch4.reloc, Figure 4-23); `Elf64_Dyn` {`d_tag`, `d_un`} = 16 bytes,
++//!   `DT_NULL` ends the array, `DT_RELA`/`DT_RELASZ`/`DT_RELAENT` = 7/8/9 and
++//!   "If this element is present, the dynamic structure must also have
++//!   DT_RELASZ and DT_RELAENT elements" (ch5.dynamic, Figures 5-9/5-10);
++//!   `DT_TEXTREL` (22) and `DF_TEXTREL` (0x4 in `DT_FLAGS` = 30) announce
++//!   relocations of non-writable segments.
++//! * **SYSVABI64** 2025Q4 (`references/gabi/sysvabi64.pdf`) §9 (p. 23):
++//!   PIEs are `ET_DYN` and mapped like shared objects.
++//!
++//! `DT_RELACOUNT` is **not** used: it is in none of the pinned sources (0a,
++//! V0a H6). The loader walks the full `DT_RELASZ` range and checks the type
++//! of every entry instead.
++//!
++//! ## What is refused (→ `EPLFMT` via `LoadError::Reloc`)
++//!
++//! Anything that would need a dynamic linker or a relocation this loader
++//! does not perform: `DT_NEEDED` (a shared-library dependency), a PLT table
++//! (`DT_JMPREL`, non-zero `DT_PLTRELSZ`), implicit-addend tables (`DT_REL`,
++//! non-zero `DT_RELSZ`), text relocations (`DT_TEXTREL`, `DF_TEXTREL`), every
++//! relocation type other than `R_AARCH64_RELATIVE`, a `RELATIVE` entry
++//! against a symbol, and every entry whose place is unaligned, outside a
++//! writable `PT_LOAD` segment or inside the relocation/dynamic tables
++//! themselves. Silently skipping such an entry would leave an unrelocated
++//! pointer in the program — a crash far away from its cause.
++//!
++//! ## The image view
++//!
++//! Every function takes `image: &[u8]` indexed by **link-time VA**:
++//! `image[v]` is the byte the program was linked to find at VA `v` (the
++//! loader streams `PT_LOAD` segment `s` to `image[s.vaddr..]`). `load_base`
++//! is the execution address of link VA 0, so a byte linked at `v` executes
++//! at `load_base + v` and `Delta = load_base` for every place. Stage 0 maps
++//! the TPA at VA 0, i.e. `load_base = 0`; stage 1 will pass the TPA block
++//! address. Pure byte manipulation, no `unsafe`, host-testable.
++
++use super::elf::{ElfImage, LoadSegment, PF_W};
++
++/// `R_AARCH64_RELATIVE` (AAELF64 §5.7.15, p. 40).
++pub const R_AARCH64_RELATIVE: u32 = 1027;
++
++/// `sizeof(Elf64_Dyn)` — `Elf64_Sxword d_tag` + `Elf64_Xword/Addr d_un`.
++const DYN_ENT_SIZE: u64 = 16;
++/// `sizeof(Elf64_Rela)` — `r_offset`, `r_info`, `r_addend`, 8 bytes each.
++pub const RELA_ENT_SIZE: u64 = 24;
++
++// `d_tag` values, gABI ch5.dynamic Figure 5-10.
++const DT_NULL: i64 = 0;
++const DT_NEEDED: i64 = 1;
++const DT_PLTRELSZ: i64 = 2;
++const DT_RELA: i64 = 7;
++const DT_RELASZ: i64 = 8;
++const DT_RELAENT: i64 = 9;
++const DT_REL: i64 = 17;
++const DT_RELSZ: i64 = 18;
++const DT_TEXTREL: i64 = 22;
++const DT_JMPREL: i64 = 23;
++const DT_FLAGS: i64 = 30;
++/// `DF_TEXTREL` in `DT_FLAGS` (gABI ch5.dynamic, "DT_FLAGS values").
++const DF_TEXTREL: u64 = 0x4;
++
++/// Why an image's dynamic relocations were refused.
++#[derive(Copy, Clone, Debug, Eq, PartialEq)]
++pub enum RelocError {
++    /// The `PT_DYNAMIC` range is not 8-byte aligned, not a whole number of
++    /// `Elf64_Dyn` entries, or not backed by file bytes of a `PT_LOAD`
++    /// segment.
++    DynamicOutOfImage,
++    /// No `DT_NULL` entry inside the `PT_DYNAMIC` range.
++    DynamicUnterminated,
++    /// `DT_NEEDED`: the program depends on a shared object.
++    NeedsSharedObject,
++    /// `DT_JMPREL` or a non-zero `DT_PLTRELSZ`: a PLT relocation table.
++    PltRelocations,
++    /// `DT_REL` or a non-zero `DT_RELSZ`: an implicit-addend table.
++    RelTable,
++    /// `DT_TEXTREL` or `DF_TEXTREL`: relocations of a non-writable segment.
++    TextRelocations,
++    /// `DT_RELA` without `DT_RELASZ`/`DT_RELAENT`, or a size/entsize without
++    /// the table address (gABI: "must also have").
++    IncompleteRela,
++    /// `DT_RELAENT` is not `sizeof(Elf64_Rela)` (24).
++    BadRelaEntSize,
++    /// `DT_RELASZ` is not a multiple of the entry size.
++    BadRelaSize,
++    /// The `DT_RELA` table is unaligned or not backed by file bytes of a
++    /// `PT_LOAD` segment.
++    RelaOutOfImage,
++    /// A relocation type other than `R_AARCH64_RELATIVE`.
++    UnsupportedType(u32),
++    /// An `R_AARCH64_RELATIVE` entry naming a symbol (index ≠ 0). There is
++    /// no symbol table processing; the static linker emits index 0.
++    SymbolNotNull,
++    /// The place (`r_offset`) is not 8-byte aligned (AAELF64 p. 40).
++    PlaceMisaligned,
++    /// The 8-byte place does not lie inside a writable `PT_LOAD` segment.
++    PlaceNotWritable,
++    /// The place overlaps the relocation table or the dynamic array.
++    PlaceInTables,
++    /// `load_base + r_addend` overflows 64 bits.
++    ValueOverflow,
++}
++
++/// The located `DT_RELA` table: link-time VA and size in bytes.
++#[derive(Copy, Clone, Debug, Eq, PartialEq)]
++pub struct RelaTable {
++    /// `DT_RELA` — link-time VA of the first `Elf64_Rela`.
++    pub vaddr: u64,
++    /// `DT_RELASZ` — total size in bytes (a multiple of 24).
++    pub size: u64,
++}
++
++#[inline]
++fn rd_u64(image: &[u8], off: u64) -> Option<u64> {
++    let off = usize::try_from(off).ok()?;
++    let end = off.checked_add(8)?;
++    image
++        .get(off..end)
++        .map(|b| u64::from_le_bytes(b.try_into().unwrap_or([0; 8])))
++}
++
++/// `true` when `[va, va + len)` lies inside the **file-backed** part of a
++/// `PT_LOAD` segment (`[vaddr, vaddr + file_size)`) and inside `image`.
++fn in_file_bytes(segs: &[LoadSegment], image_len: usize, va: u64, len: u64) -> bool {
++    let Some(end) = va.checked_add(len) else {
++        return false;
++    };
++    if end > image_len as u64 {
++        return false;
++    }
++    segs.iter().any(|s| {
++        s.vaddr
++            .checked_add(s.file_size)
++            .is_some_and(|seg_end| va >= s.vaddr && end <= seg_end)
++    })
++}
++
++/// `true` when `[va, va + 8)` lies inside the memory range of a writable
++/// `PT_LOAD` segment (`[vaddr, vaddr + mem_size)`, BSS included).
++fn in_writable_segment(segs: &[LoadSegment], va: u64) -> bool {
++    let Some(end) = va.checked_add(8) else {
++        return false;
++    };
++    segs.iter().any(|s| {
++        (s.flags & PF_W) != 0
++            && s.vaddr
++                .checked_add(s.mem_size)
++                .is_some_and(|seg_end| va >= s.vaddr && end <= seg_end)
++    })
++}
++
++#[inline]
++fn overlaps(a: u64, a_len: u64, b: u64, b_len: u64) -> bool {
++    // Half-open intervals; callers pass ranges already known not to wrap.
++    a < b.saturating_add(b_len) && b < a.saturating_add(a_len)
++}
++
++/// Walk the `PT_DYNAMIC` array of `img` (already streamed into `image`) and
++/// return the `DT_RELA` table, or `None` when the image has no dynamic
++/// section or a dynamic section without relocations.
++pub fn find_rela(image: &[u8], img: &ElfImage) -> Result<Option<RelaTable>, RelocError> {
++    let Some(dynamic) = img.dynamic else {
++        return Ok(None);
++    };
++    let segs = img.segments();
++    if dynamic.vaddr % 8 != 0
++        || dynamic.file_size % DYN_ENT_SIZE != 0
++        || !in_file_bytes(segs, image.len(), dynamic.vaddr, dynamic.file_size)
++    {
++        return Err(RelocError::DynamicOutOfImage);
++    }
++
++    let mut rela: Option<u64> = None;
++    let mut relasz: Option<u64> = None;
++    let mut relaent: Option<u64> = None;
++    let mut terminated = false;
++
++    let count = dynamic.file_size / DYN_ENT_SIZE;
++    for i in 0..count {
++        let at = dynamic.vaddr + i * DYN_ENT_SIZE;
++        // In range: the whole array was checked against `image` above.
++        let tag = rd_u64(image, at).ok_or(RelocError::DynamicOutOfImage)? as i64;
++        let val = rd_u64(image, at + 8).ok_or(RelocError::DynamicOutOfImage)?;
++        match tag {
++            DT_NULL => {
++                terminated = true;
++                break;
++            }
++            DT_NEEDED => return Err(RelocError::NeedsSharedObject),
++            DT_JMPREL => return Err(RelocError::PltRelocations),
++            DT_PLTRELSZ if val != 0 => return Err(RelocError::PltRelocations),
++            DT_REL => return Err(RelocError::RelTable),
++            DT_RELSZ if val != 0 => return Err(RelocError::RelTable),
++            DT_TEXTREL => return Err(RelocError::TextRelocations),
++            DT_FLAGS if val & DF_TEXTREL != 0 => return Err(RelocError::TextRelocations),
++            DT_RELA => rela = Some(val),
++            DT_RELASZ => relasz = Some(val),
++            DT_RELAENT => relaent = Some(val),
++            // Symbol/string/hash tables, init/fini arrays, DT_DEBUG and the
++            // OS-specific tags lld adds (DT_FLAGS_1, DT_RELACOUNT,
++            // DT_GNU_HASH) carry nothing the loader has to act on.
++            _ => {}
++        }
++    }
++    if !terminated {
++        return Err(RelocError::DynamicUnterminated);
++    }
++
++    let (vaddr, size) = match (rela, relasz, relaent) {
++        (None, None, None) => return Ok(None),
++        (Some(v), Some(sz), Some(ent)) => {
++            if ent != RELA_ENT_SIZE {
++                return Err(RelocError::BadRelaEntSize);
++            }
++            (v, sz)
++        }
++        _ => return Err(RelocError::IncompleteRela),
++    };
++    if size % RELA_ENT_SIZE != 0 {
++        return Err(RelocError::BadRelaSize);
++    }
++    if size == 0 {
++        return Ok(None);
++    }
++    if vaddr % 8 != 0 || !in_file_bytes(segs, image.len(), vaddr, size) {
++        return Err(RelocError::RelaOutOfImage);
++    }
++    Ok(Some(RelaTable { vaddr, size }))
++}
++
++/// Apply every entry of `table` to `image`: write `load_base + r_addend` to
++/// the 8-byte place at link VA `r_offset`. Returns the number of entries
++/// applied. Stops at the first invalid entry; the caller discards the image
++/// on error (the loader frees the TPA), so a half-relocated image never runs.
++pub fn apply_rela(
++    image: &mut [u8],
++    img: &ElfImage,
++    table: RelaTable,
++    load_base: u64,
++) -> Result<usize, RelocError> {
++    let segs = img.segments();
++    let dyn_range = img
++        .dynamic
++        .map(|d| (d.vaddr, d.file_size))
++        .unwrap_or((0, 0));
++    let count = table.size / RELA_ENT_SIZE;
++    for i in 0..count {
++        let at = table.vaddr + i * RELA_ENT_SIZE;
++        // In range: `find_rela` checked the whole table against `image`.
++        let r_offset = rd_u64(image, at).ok_or(RelocError::RelaOutOfImage)?;
++        let r_info = rd_u64(image, at + 8).ok_or(RelocError::RelaOutOfImage)?;
++        let r_addend = rd_u64(image, at + 16).ok_or(RelocError::RelaOutOfImage)? as i64;
++
++        let r_type = (r_info & 0xffff_ffff) as u32;
++        let r_sym = r_info >> 32;
++        if r_type != R_AARCH64_RELATIVE {
++            return Err(RelocError::UnsupportedType(r_type));
++        }
++        if r_sym != 0 {
++            return Err(RelocError::SymbolNotNull);
++        }
++        if r_offset % 8 != 0 {
++            return Err(RelocError::PlaceMisaligned);
++        }
++        if !in_writable_segment(segs, r_offset)
++            || r_offset.checked_add(8).is_none_or(|e| e > image.len() as u64)
++        {
++            return Err(RelocError::PlaceNotWritable);
++        }
++        if overlaps(r_offset, 8, table.vaddr, table.size)
++            || overlaps(r_offset, 8, dyn_range.0, dyn_range.1)
++        {
++            return Err(RelocError::PlaceInTables);
++        }
++        // Delta(S) + A with S the null symbol: the execution address of
++        // link VA 0 is `load_base`, so every place moves by `load_base`.
++        let value = load_base
++            .checked_add_signed(r_addend)
++            .ok_or(RelocError::ValueOverflow)?;
++        let p = r_offset as usize;
++        image[p..p + 8].copy_from_slice(&value.to_le_bytes());
++    }
++    Ok(count as usize)
++}
++
++/// [`find_rela`] + [`apply_rela`]: relocate `image` for execution at
++/// `load_base`. Returns the number of relocations applied (0 for an image
++/// without a dynamic section or without relocations).
++pub fn relocate(image: &mut [u8], img: &ElfImage, load_base: u64) -> Result<usize, RelocError> {
++    match find_rela(image, img)? {
++        Some(table) => apply_rela(image, img, table, load_base),
++        None => Ok(0),
++    }
++}
+diff --git a/tos-api/tests/loader_pie_reloc.rs b/tos-api/tests/loader_pie_reloc.rs
+new file mode 100644
+index 0000000..ff2cfcd
+--- /dev/null
++++ b/tos-api/tests/loader_pie_reloc.rs
+@@ -0,0 +1,505 @@
++//! ARCH03 stage 0d: NewTOS loads position-independent executables (`ET_DYN`)
++//! and applies their `R_AARCH64_RELATIVE` relocations in the kernel.
++//!
++//! Sources the expectations come from:
++//! * AAELF64 2025Q4 §5.2 (p. 13): `e_flags` "shall contain zero";
++//!   §5.7.15 (p. 40/41): `R_AARCH64_RELATIVE` = 1027, `Delta(S) + A`, the
++//!   place is an 8-byte aligned 64-bit data location.
++//! * gABI 2013-06-10 ch4.reloc (`Elf64_Rela`, `ELF64_R_SYM/TYPE`) and
++//!   ch5.dynamic (`Elf64_Dyn`, `DT_RELA/RELASZ/RELAENT` = 7/8/9, "must also
++//!   have", `DT_TEXTREL` = 22, `DT_FLAGS` = 30 / `DF_TEXTREL` = 0x4).
++//! * SYSVABI64 2025Q4 §9: PIEs have `e_type == ET_DYN`.
++//! * Plan E7: `ET_EXEC` is refused once every in-tree program is PIE;
++//!   EmuTOS answers an unloadable program with `EPLFMT` (`bdos/kpgmld.c`).
++//!
++//! The synthetic image mirrors what `rust-lld -pie` produces for an SDK
++//! program (measured in stage 0d): text `PT_LOAD` (R-X) holding the
++//! `.rela.dyn` table, data `PT_LOAD` (RW-) holding `.dynamic` and the
++//! pointer words, a `PT_DYNAMIC` header over `.dynamic`, link base 0x1000.
++
++use tos_api::bdos::process::elf::{self, ParseError};
++use tos_api::bdos::process::loader::LoadError;
++use tos_api::bdos::process::pexec::PexecError;
++use tos_api::bdos::process::reloc::{self, RelocError, R_AARCH64_RELATIVE};
++use tos_types::error::EPLFMT;
++
++const ET_EXEC: u16 = 2;
++const ET_DYN: u16 = 3;
++const EM_AARCH64: u16 = 183;
++const PT_LOAD: u32 = 1;
++const PT_DYNAMIC: u32 = 2;
++const PT_INTERP: u32 = 3;
++const PF_X: u32 = 1;
++const PF_W: u32 = 2;
++const PF_R: u32 = 4;
++
++const DT_NULL: u64 = 0;
++const DT_NEEDED: u64 = 1;
++const DT_PLTRELSZ: u64 = 2;
++const DT_RELA: u64 = 7;
++const DT_RELASZ: u64 = 8;
++const DT_RELAENT: u64 = 9;
++const DT_REL: u64 = 17;
++const DT_TEXTREL: u64 = 22;
++const DT_JMPREL: u64 = 23;
++const DT_FLAGS: u64 = 30;
++const DT_RELACOUNT: u64 = 0x6fff_fff9; // lld emits it; the loader ignores it
++
++const R_AARCH64_ABS64: u32 = 257;
++const R_AARCH64_GLOB_DAT: u32 = 1025;
++const R_AARCH64_IRELATIVE: u32 = 1032;
++
++// Layout (file offset == link VA, as lld lays out an SDK program).
++const TEXT_VA: u64 = 0x1000;
++const TEXT_SZ: u64 = 0x100;
++const RELA_VA: u64 = 0x1040; // inside text
++const DATA_VA: u64 = 0x1100;
++const DYN_VA: u64 = 0x1100; // first thing in data, like .dynamic in newtos.ld
++const DYN_SLOTS: u64 = 8; // 8 × 16 bytes reserved for the dynamic array
++const WORDS_VA: u64 = DYN_VA + DYN_SLOTS * 16; // 0x1180: the pointer words
++const DATA_FILESZ: u64 = 0xC0;
++const DATA_MEMSZ: u64 = 0x140; // 0x80 BSS
++const FILE_LEN: u64 = DATA_VA + DATA_FILESZ;
++/// The TPA view the loader relocates in: index = link VA.
++const VIEW_LEN: usize = 0x2000;
++
++fn put16(b: &mut [u8], o: u64, v: u16) {
++    b[o as usize..o as usize + 2].copy_from_slice(&v.to_le_bytes());
++}
++fn put32(b: &mut [u8], o: u64, v: u32) {
++    b[o as usize..o as usize + 4].copy_from_slice(&v.to_le_bytes());
++}
++fn put64(b: &mut [u8], o: u64, v: u64) {
++    b[o as usize..o as usize + 8].copy_from_slice(&v.to_le_bytes());
++}
++fn get64(b: &[u8], o: u64) -> u64 {
++    u64::from_le_bytes(b[o as usize..o as usize + 8].try_into().unwrap())
++}
++
++/// One `Elf64_Rela`.
++#[derive(Clone, Copy)]
++struct Rela {
++    offset: u64,
++    sym: u32,
++    rtype: u32,
++    addend: i64,
++}
++fn relative(offset: u64, addend: i64) -> Rela {
++    Rela { offset, sym: 0, rtype: R_AARCH64_RELATIVE, addend }
++}
++
++/// Knobs for a synthetic PIE.
++#[derive(Clone)]
++struct Spec {
++    e_type: u16,
++    e_flags: u32,
++    interp: bool,
++    with_dynamic: bool,
++    /// `(tag, value)` pairs written before the terminating `DT_NULL`.
++    dyn_tags: Vec<(u64, u64)>,
++    /// Omit the terminating `DT_NULL` (all slots filled with this tag).
++    unterminated: bool,
++    relas: Vec<Rela>,
++    /// Override for the dynamic header's VA/size.
++    dyn_va: u64,
++    dyn_sz: u64,
++}
++
++impl Spec {
++    /// A well-formed PIE: two RELATIVE words in data.
++    fn good() -> Self {
++        let relas = vec![relative(WORDS_VA, 0x1010), relative(WORDS_VA + 8, 0x1188)];
++        let n = relas.len() as u64;
++        Spec {
++            e_type: ET_DYN,
++            e_flags: 0,
++            interp: false,
++            with_dynamic: true,
++            dyn_tags: vec![
++                (DT_RELA, RELA_VA),
++                (DT_RELASZ, n * 24),
++                (DT_RELAENT, 24),
++                (DT_RELACOUNT, n),
++            ],
++            unterminated: false,
++            relas,
++            dyn_va: DYN_VA,
++            dyn_sz: DYN_SLOTS * 16,
++        }
++    }
++    fn tag(mut self, tag: u64, val: u64) -> Self {
++        if let Some(e) = self.dyn_tags.iter_mut().find(|(t, _)| *t == tag) {
++            e.1 = val;
++        } else {
++            self.dyn_tags.push((tag, val));
++        }
++        self
++    }
++    fn without_tag(mut self, tag: u64) -> Self {
++        self.dyn_tags.retain(|(t, _)| *t != tag);
++        self
++    }
++    fn relas(mut self, relas: Vec<Rela>) -> Self {
++        let n = relas.len() as u64;
++        self.relas = relas;
++        self.tag(DT_RELASZ, n * 24)
++    }
++
++    /// The file bytes.
++    fn file(&self) -> Vec<u8> {
++        let mut b = vec![0u8; FILE_LEN as usize];
++        b[0..4].copy_from_slice(b"\x7fELF");
++        b[4] = 2; // ELFCLASS64
++        b[5] = 1; // ELFDATA2LSB
++        b[6] = 1; // EV_CURRENT
++        put16(&mut b, 16, self.e_type);
++        put16(&mut b, 18, EM_AARCH64);
++        put32(&mut b, 20, 1);
++        put64(&mut b, 24, TEXT_VA); // e_entry
++        put64(&mut b, 32, 64); // e_phoff
++        put32(&mut b, 48, self.e_flags);
++        put16(&mut b, 52, 64); // e_ehsize
++        put16(&mut b, 54, 56); // e_phentsize
++
++        let mut phdrs: Vec<(u32, u32, u64, u64, u64)> = vec![]; // type, flags, off/va, filesz, memsz
++        if self.interp {
++            phdrs.push((PT_INTERP, PF_R, 0x200, 0x10, 0x10));
++        }
++        phdrs.push((PT_LOAD, PF_R | PF_X, TEXT_VA, TEXT_SZ, TEXT_SZ));
++        phdrs.push((PT_LOAD, PF_R | PF_W, DATA_VA, DATA_FILESZ, DATA_MEMSZ));
++        if self.with_dynamic {
++            phdrs.push((PT_DYNAMIC, PF_R | PF_W, self.dyn_va, self.dyn_sz, self.dyn_sz));
++        }
++        put16(&mut b, 56, phdrs.len() as u16);
++        for (i, (t, f, va, fsz, msz)) in phdrs.iter().enumerate() {
++            let p = 64 + i as u64 * 56;
++            put32(&mut b, p, *t);
++            put32(&mut b, p + 4, *f);
++            put64(&mut b, p + 8, *va); // p_offset == p_vaddr
++            put64(&mut b, p + 16, *va);
++            put64(&mut b, p + 24, *va);
++            put64(&mut b, p + 32, *fsz);
++            put64(&mut b, p + 40, *msz);
++            put64(&mut b, p + 48, 0x1000);
++        }
++
++        // text: a recognisable byte pattern, then the rela table.
++        for i in 0..0x40u64 {
++            b[(TEXT_VA + i) as usize] = 0xC0 | (i as u8 & 0x0F);
++        }
++        for (i, r) in self.relas.iter().enumerate() {
++            let p = RELA_VA + i as u64 * 24;
++            if p + 24 > TEXT_VA + TEXT_SZ {
++                break; // tests that need many entries only claim them
++            }
++            put64(&mut b, p, r.offset);
++            put64(&mut b, p + 8, ((r.sym as u64) << 32) | r.rtype as u64);
++            put64(&mut b, p + 16, r.addend as u64);
++        }
++
++        // dynamic array at DYN_VA (only if it lies in the file).
++        if self.dyn_va == DYN_VA {
++            let mut slot = 0u64;
++            for (t, v) in &self.dyn_tags {
++                put64(&mut b, DYN_VA + slot * 16, *t);
++                put64(&mut b, DYN_VA + slot * 16 + 8, *v);
++                slot += 1;
++            }
++            if self.unterminated {
++                while slot < DYN_SLOTS {
++                    put64(&mut b, DYN_VA + slot * 16, DT_RELAENT);
++                    put64(&mut b, DYN_VA + slot * 16 + 8, 24);
++                    slot += 1;
++                }
++            } else {
++                put64(&mut b, DYN_VA + slot * 16, DT_NULL);
++            }
++        }
++        // The pointer words start out as 0, as lld leaves RELA places.
++        b
++    }
++}
++
++/// Parse + stream the segments into a TPA view the way the loader does.
++fn load(spec: &Spec) -> Result<(Vec<u8>, elf::ElfImage), ParseError> {
++    let file = spec.file();
++    let img = elf::parse(&file, file.len() as u64)?;
++    let mut view = vec![0u8; VIEW_LEN];
++    for s in img.segments() {
++        let (o, n) = (s.file_offset as usize, s.file_size as usize);
++        view[s.vaddr as usize..s.vaddr as usize + n].copy_from_slice(&file[o..o + n]);
++    }
++    Ok((view, img))
++}
++
++fn relocate(spec: &Spec, base: u64) -> Result<(Vec<u8>, usize), RelocError> {
++    let (mut view, img) = load(spec).expect("spec must parse");
++    let n = reloc::relocate(&mut view, &img, base)?;
++    Ok((view, n))
++}
++
++// ─── header checks ──────────────────────────────────────────────────────
++
++#[test]
++fn pie_parses_and_records_its_dynamic_header() {
++    let (_, img) = load(&Spec::good()).unwrap();
++    assert_eq!(img.entry_va, TEXT_VA);
++    assert_eq!(img.segments().len(), 2);
++    let d = img.dynamic.expect("PT_DYNAMIC must be recorded");
++    assert_eq!((d.vaddr, d.file_size), (DYN_VA, DYN_SLOTS * 16));
++}
++
++#[test]
++fn et_exec_is_refused_with_eplfmt() {
++    let mut s = Spec::good();
++    s.e_type = ET_EXEC;
++    let file = s.file();
++    let e = elf::parse(&file, file.len() as u64).unwrap_err();
++    assert_eq!(e, ParseError::NotPositionIndependent);
++    assert_eq!(PexecError::LoadFailed(LoadError::Parse(e)).errno(), EPLFMT);
++}
++
++#[test]
++fn other_e_type_is_not_an_executable() {
++    let mut s = Spec::good();
++    s.e_type = 1; // ET_REL
++    let file = s.file();
++    assert_eq!(elf::parse(&file, file.len() as u64).unwrap_err(), ParseError::NotExecutable);
++}
++
++#[test]
++fn nonzero_e_flags_are_refused() {
++    let mut s = Spec::good();
++    s.e_flags = 1;
++    let file = s.file();
++    assert_eq!(elf::parse(&file, file.len() as u64).unwrap_err(), ParseError::BadFlags);
++}
++
++#[test]
++fn interpreter_request_is_refused() {
++    let mut s = Spec::good();
++    s.interp = true;
++    let file = s.file();
++    assert_eq!(elf::parse(&file, file.len() as u64).unwrap_err(), ParseError::HasInterpreter);
++}
++
++// ─── valid relocation ───────────────────────────────────────────────────
++
++/// Bias 0 is stage 0 (TPA at VA 0): the place receives the addend itself —
++/// which lld does NOT store in the place, so a skipped relocation shows.
++#[test]
++fn relative_at_base_zero_writes_the_addend() {
++    let (view, n) = relocate(&Spec::good(), 0).unwrap();
++    assert_eq!(n, 2);
++    assert_eq!(get64(&view, WORDS_VA), 0x1010);
++    assert_eq!(get64(&view, WORDS_VA + 8), 0x1188);
++}
++
++/// Stage 1 will pass the TPA block address: value = base + addend.
++#[test]
++fn relative_adds_the_load_base() {
++    let base = 0x0040_0000;
++    let (view, _) = relocate(&Spec::good(), base).unwrap();
++    assert_eq!(get64(&view, WORDS_VA), base + 0x1010);
++    assert_eq!(get64(&view, WORDS_VA + 8), base + 0x1188);
++}
++
++/// Relocation touches the places and nothing else: text bytes and the
++/// rela table itself are unchanged, the rest of the data is still zero.
++#[test]
++fn relocation_only_writes_the_places() {
++    let (before, img) = load(&Spec::good()).unwrap();
++    let mut after = before.clone();
++    reloc::relocate(&mut after, &img, 0x10_0000).unwrap();
++    for (i, (a, b)) in before.iter().zip(after.iter()).enumerate() {
++        let i = i as u64;
++        let is_place = (WORDS_VA..WORDS_VA + 16).contains(&i);
++        if !is_place {
++            assert_eq!(a, b, "byte at VA 0x{i:x} changed");
++        }
++    }
++}
++
++#[test]
++fn image_without_dynamic_header_needs_no_relocation() {
++    let mut s = Spec::good();
++    s.with_dynamic = false;
++    let (view, n) = relocate(&s, 0x1234_0000).unwrap();
++    assert_eq!(n, 0);
++    assert_eq!(get64(&view, WORDS_VA), 0, "nothing may be written");
++}
++
++#[test]
++fn dynamic_without_rela_needs_no_relocation() {
++    let s = Spec::good()
++        .without_tag(DT_RELA)
++        .without_tag(DT_RELASZ)
++        .without_tag(DT_RELAENT);
++    assert_eq!(relocate(&s, 0).unwrap().1, 0);
++}
++
++/// `DT_RELACOUNT` is not in the pinned sources (0a H6); the loader walks
++/// `DT_RELASZ`. A lying count must not change the result.
++#[test]
++fn relacount_is_ignored() {
++    let s = Spec::good().tag(DT_RELACOUNT, 0);
++    let (view, n) = relocate(&s, 0).unwrap();
++    assert_eq!(n, 2);
++    assert_eq!(get64(&view, WORDS_VA + 8), 0x1188);
++}
++
++/// A place in the BSS tail of the writable segment is a legal place.
++#[test]
++fn place_in_bss_is_writable() {
++    let bss = DATA_VA + DATA_FILESZ; // 0x11C0
++    let s = Spec::good().relas(vec![relative(bss, 0x2000)]);
++    let (view, _) = relocate(&s, 0).unwrap();
++    assert_eq!(get64(&view, bss), 0x2000);
++}
++
++// ─── unsupported types / symbols ────────────────────────────────────────
++
++#[test]
++fn every_other_relocation_type_is_refused() {
++    for t in [R_AARCH64_ABS64, R_AARCH64_GLOB_DAT, R_AARCH64_IRELATIVE, 0, 1026] {
++        let mut r = relative(WORDS_VA, 0x1000);
++        r.rtype = t;
++        let s = Spec::good().relas(vec![relative(WORDS_VA + 8, 0x1000), r]);
++        assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::UnsupportedType(t));
++    }
++    assert_eq!(
++        PexecError::LoadFailed(LoadError::Reloc(RelocError::UnsupportedType(257))).errno(),
++        EPLFMT
++    );
++}
++
++#[test]
++fn relative_against_a_symbol_is_refused() {
++    let mut r = relative(WORDS_VA, 0x1000);
++    r.sym = 1;
++    let s = Spec::good().relas(vec![r]);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::SymbolNotNull);
++}
++
++// ─── bad offsets ────────────────────────────────────────────────────────
++
++#[test]
++fn misaligned_place_is_refused() {
++    let s = Spec::good().relas(vec![relative(WORDS_VA + 4, 0)]);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::PlaceMisaligned);
++}
++
++#[test]
++fn place_in_text_is_refused() {
++    let s = Spec::good().relas(vec![relative(TEXT_VA + 8, 0)]);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::PlaceNotWritable);
++}
++
++#[test]
++fn place_outside_every_segment_is_refused() {
++    // Page 0 (basepage/sysvars), the gap below the image, the first word
++    // past the writable segment's memory, far beyond the view, and the top
++    // of the address space (where `r_offset + 8` would wrap).
++    for off in [0, 0x800, DATA_VA + DATA_MEMSZ, 0x1_0000_0000, u64::MAX & !7] {
++        let s = Spec::good().relas(vec![relative(off, 0)]);
++        assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::PlaceNotWritable, "offset 0x{off:x}");
++    }
++    // The last aligned word of the segment (in its BSS) is still inside.
++    let s = Spec::good().relas(vec![relative(DATA_VA + DATA_MEMSZ - 8, 7)]);
++    assert_eq!(relocate(&s, 0).unwrap().1, 1);
++}
++
++#[test]
++fn place_inside_the_dynamic_array_is_refused() {
++    let s = Spec::good().relas(vec![relative(DYN_VA + 8, 0)]);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::PlaceInTables);
++}
++
++// ─── overflow ───────────────────────────────────────────────────────────
++
++#[test]
++fn value_overflow_is_refused() {
++    let s = Spec::good().relas(vec![relative(WORDS_VA, 0x100)]);
++    assert_eq!(relocate(&s, u64::MAX - 0x10).unwrap_err(), RelocError::ValueOverflow);
++    let s = Spec::good().relas(vec![relative(WORDS_VA, -8)]);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::ValueOverflow);
++}
++
++/// A negative addend that stays non-negative after the bias is fine
++/// (pointer arithmetic below a symbol).
++#[test]
++fn negative_addend_within_range_is_applied() {
++    let s = Spec::good().relas(vec![relative(WORDS_VA, -0x10)]);
++    let (view, _) = relocate(&s, 0x1000).unwrap();
++    assert_eq!(get64(&view, WORDS_VA), 0xFF0);
++}
++
++// ─── table / dynamic-array validation ───────────────────────────────────
++
++#[test]
++fn rela_table_outside_the_file_is_refused() {
++    for va in [0x800, DATA_VA + DATA_FILESZ, 0xFFFF_FFFF_FFFF_FFF0] {
++        let s = Spec::good().tag(DT_RELA, va);
++        assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::RelaOutOfImage, "va 0x{va:x}");
++    }
++    // A size running past the end of the file (and a size that would wrap).
++    for sz in [24 * 1000, u64::MAX / 24 * 24] {
++        let s = Spec::good().tag(DT_RELASZ, sz);
++        assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::RelaOutOfImage, "size {sz}");
++    }
++    let s = Spec::good().tag(DT_RELA, RELA_VA + 4);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::RelaOutOfImage);
++}
++
++#[test]
++fn rela_size_and_entsize_are_checked() {
++    let s = Spec::good().tag(DT_RELASZ, 40);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::BadRelaSize);
++    let s = Spec::good().tag(DT_RELAENT, 16);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::BadRelaEntSize);
++    let s = Spec::good().without_tag(DT_RELASZ);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::IncompleteRela);
++    let s = Spec::good().without_tag(DT_RELAENT);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::IncompleteRela);
++    let s = Spec::good().without_tag(DT_RELA);
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::IncompleteRela);
++}
++
++#[test]
++fn tags_needing_a_dynamic_linker_are_refused() {
++    let cases = [
++        (DT_NEEDED, 1, RelocError::NeedsSharedObject),
++        (DT_JMPREL, RELA_VA, RelocError::PltRelocations),
++        (DT_PLTRELSZ, 24, RelocError::PltRelocations),
++        (DT_REL, RELA_VA, RelocError::RelTable),
++        (DT_TEXTREL, 0, RelocError::TextRelocations),
++        (DT_FLAGS, 0x4, RelocError::TextRelocations),
++    ];
++    for (tag, val, want) in cases {
++        let s = Spec::good().tag(tag, val);
++        assert_eq!(relocate(&s, 0).unwrap_err(), want, "tag {tag}");
++    }
++    // Harmless values of the same tags pass.
++    let s = Spec::good().tag(DT_PLTRELSZ, 0).tag(DT_FLAGS, 0x8 /* DF_BIND_NOW */);
++    assert_eq!(relocate(&s, 0).unwrap().1, 2);
++}
++
++#[test]
++fn dynamic_array_without_dt_null_is_refused() {
++    let mut s = Spec::good();
++    s.unterminated = true;
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::DynamicUnterminated);
++}
++
++#[test]
++fn dynamic_array_outside_file_bytes_is_refused() {
++    // In the BSS tail: inside the segment's memory, but not file-backed.
++    let mut s = Spec::good();
++    s.dyn_va = DATA_VA + DATA_FILESZ;
++    s.dyn_sz = 0x40;
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::DynamicOutOfImage);
++    // Misaligned, and a size that is not a whole number of entries.
++    let mut s = Spec::good();
++    s.dyn_sz = 0x48;
++    assert_eq!(relocate(&s, 0).unwrap_err(), RelocError::DynamicOutOfImage);
++}

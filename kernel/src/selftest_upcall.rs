@@ -111,7 +111,7 @@ static UPCALL_TEST_ELF: [u8; 0xA8] = [
     1,                       // EV_CURRENT
     0, 0,                    // OSABI, ABIVERSION
     0, 0, 0, 0, 0, 0, 0,     // padding (7)
-    0x02, 0x00,              // e_type    = ET_EXEC
+    0x03, 0x00,              // e_type    = ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
     0xB7, 0x00,              // e_machine = EM_AARCH64
     0x01, 0x00, 0x00, 0x00,  // e_version
     // e_entry = 0x1000
@@ -227,6 +227,7 @@ pub fn run() {
     unsafe {
         enter_el0_with_resume_capture(
             ENTRY_VA,
+            loaded.basepage_va,
             loaded.l0_pa,
             loaded.sp_el0,
             parent_frame,

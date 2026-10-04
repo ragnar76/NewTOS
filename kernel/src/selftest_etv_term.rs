@@ -39,7 +39,7 @@
 //! ```text
 //!   Program A (image @ VA 0x1000):
 //!     0x1000  mov  x0, #0x102     ; ETV_TERM vector number
-//!     0x1004  mov  x1, #0x1030    ; handler VA
+//!     0x1004  adr  x1, .+0x2C     ; handler VA (0x1030), PC-relative
 //!     0x1008  mov  x8, #0x05      ; BIOS Setexc
 //!     0x100C  svc  #13            ; Setexc(0x102, handler)
 //!     0x1010  mov  x0, #0x2A      ; rc = 42
@@ -110,7 +110,7 @@ const SLOT_B: usize = 1;
 static ETV_TERM_ELF_A: [u8; 0xC0] = [
     // ─── ELF64 header (64 bytes) ─────────────────────────────────
     0x7F, b'E', b'L', b'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0x02, 0x00,              // e_type    = ET_EXEC
+    0x03, 0x00,              // e_type    = ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
     0xB7, 0x00,              // e_machine = EM_AARCH64
     0x01, 0x00, 0x00, 0x00,  // e_version
     0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_entry = 0x1000
@@ -139,7 +139,7 @@ static ETV_TERM_ELF_A: [u8; 0xC0] = [
 
     // ─── code at 0x80 (VA 0x1000) ────────────────────────────────
     0x40, 0x20, 0x80, 0xD2,  // mov x0, #0x102
-    0x01, 0x06, 0x82, 0xD2,  // mov x1, #0x1030
+    0x61, 0x01, 0x00, 0x10,  // adr x1, .+0x2C   (handler VA 0x1030, PC-relative)
     0xA8, 0x00, 0x80, 0xD2,  // mov x8, #0x5
     0xA1, 0x01, 0x00, 0xD4,  // svc #13
     0x40, 0x05, 0x80, 0xD2,  // mov x0, #0x2a
@@ -164,7 +164,7 @@ static ETV_TERM_ELF_A: [u8; 0xC0] = [
 static ETV_TERM_ELF_B: [u8; 0xA0] = [
     // ─── ELF64 header (64 bytes) ─────────────────────────────────
     0x7F, b'E', b'L', b'F', 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0x02, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00,
+    0x03, 0x00, 0xB7, 0x00, 0x01, 0x00, 0x00, 0x00, // e_type ET_DYN (PIE), EM_AARCH64, EV_CURRENT
     0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_entry = 0x1000
     0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_phoff = 0x40
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // e_shoff = 0
@@ -250,6 +250,7 @@ fn run_subtest(elf: &[u8], slot_idx: usize) -> Option<SubResult> {
     unsafe {
         enter_el0_with_resume_capture(
             ENTRY_VA,
+            loaded.basepage_va,
             loaded.l0_pa,
             loaded.sp_el0,
             &PROCESS_TABLE[slot_idx].parent_frame,

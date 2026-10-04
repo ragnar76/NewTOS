@@ -105,7 +105,7 @@ pub static D3_TEST_ELF: [u8; 264] = [
     0,                       // e_ident[EI_ABIVERSION]: 0
     0, 0, 0, 0, 0, 0, 0,     // e_ident padding (7 bytes)
 
-    0x02, 0x00,              // e_type:    ET_EXEC
+    0x03, 0x00,              // e_type:    ET_DYN (PIE; ET_EXEC is refused since ARCH03 0d)
     0xB7, 0x00,              // e_machine: EM_AARCH64
     0x01, 0x00, 0x00, 0x00,  // e_version: EV_CURRENT
 
@@ -373,6 +373,7 @@ unsafe fn drop_to_el0_via_loaded(img: &LoadedImage) {
     unsafe {
         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
             img.entry_va,
+            img.basepage_va,
             img.l0_pa,
             USER_STACK_TOP_EXCLUSIVE,
             parent_frame,

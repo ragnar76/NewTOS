@@ -35,9 +35,9 @@ $ sdk/build.sh sdk/examples/hello.c "$OUT/HELLO2.NCP"
 clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
 lld   : rust-lld -flavor gnu
 
-+ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fno-pic -fno-builtin -Wall -Wextra -I…/sdk/include -c …/sdk/crt0.S -o crt0.o
-+ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fno-pic -fno-builtin -Wall -Wextra -I…/sdk/include -c sdk/examples/hello.c -o app.o
-+ rust-lld -flavor gnu -T …/sdk/newtos.ld -no-pie -z max-page-size=0x1000 --build-id=none crt0.o app.o -o …/HELLO2.NCP
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I…/sdk/include -c …/sdk/crt0.S -o crt0.o
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I…/sdk/include -c sdk/examples/hello.c -o app.o
++ rust-lld -flavor gnu -T …/sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o app.o -o …/HELLO2.NCP
 
 wrote …/HELLO2.NCP (5064 bytes)
 ```
@@ -60,8 +60,9 @@ has no `data` segment at all (lld drops the empty one), a libc-linked one
 always has (crt0's `argv` lives in `.data`). The loader still maps every TPA
 page RWX; the flags feed the basepage only.
 
-What `crt0.S` does before `main` (`sdk/crt0.S:34-53`): read `p_hitpa` from the
-basepage at VA 0 (`ldr w9, [x1, #4]`), set `SP` to it, `bl main`, then
+What `crt0.S` does before `main` (`sdk/crt0.S`): read `p_hitpa` from the
+basepage whose address the loader passes in `x0` (`ldr w9, [x0, #4]`; ARCH03
+stage 0d — never a fixed address), set `SP` to it, `bl main`, then
 `Pterm(main's return)` via `mov x8, #0x4C; svc #1`. The loader zeroes the
 whole TPA, so there is no BSS clearing in crt0
 (`tos-api/src/bdos/process/loader.rs:35-38`).
@@ -103,11 +104,11 @@ directory is written:
 
 ```
 $ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fomit-frame-pointer \
-        -fno-pic -fno-builtin -nostdinc -D_GNU_SOURCE -I"$MINT" -isystem "$RES" \
+        -fPIE -fno-builtin -nostdinc -D_GNU_SOURCE -I"$MINT" -isystem "$RES" \
         -c hello-libc.c -o hello.o
-$ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-pic -fno-builtin -nostdinc \
+$ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc \
         -I"$SDK/include" -I"$MINT" -c "$SDK/libc/crt0.S" -o crt0.o
-$ "$BIN/rust-lld" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 --build-id=none \
+$ "$BIN/rust-lld" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
         crt0.o hello.o "$SDK/libc/libc.a" -o HELLOLIB.NCP
 $ ls -l HELLOLIB.NCP ; llvm-nm -u HELLOLIB.NCP | grep -c .
 84376 bytes ; 0 undefined symbols
@@ -248,12 +249,12 @@ Built with the **same flags as `sdk/apps/gemtest/build-gemtest.sh:65-70`**
 
 ```
 $ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -Os -fomit-frame-pointer \
-        -fno-pic -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined \
+        -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined \
         -I"$SDK/gemlib/gemlib-0.44.0" -I"$MINT" -isystem "$RES" -c minigem.c -o minigem.o
 $ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -Os -fomit-frame-pointer \
-        -fno-pic -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined \
+        -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined \
         -I"$SDK/include" -I"$MINT" -c "$SDK/libc/crt0.S" -o crt0.o
-$ "$BIN/rust-lld" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 --build-id=none \
+$ "$BIN/rust-lld" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
         crt0.o minigem.o --start-group "$SDK/gemlib/gemlib.a" "$SDK/libc/libc.a" --end-group -o MINIGEM.NAP
 $ ls -l MINIGEM.NAP ; llvm-readobj --file-headers MINIGEM.NAP | grep -E 'Class|Type|Machine|Entry'
 14224 bytes
@@ -297,7 +298,11 @@ Artifacts of this run (SHA-256): `HELLO2.NCP` `c829c420…`,
 | gemlib `.NAP` | `sdk/libc/crt0.S` | `sdk/gemlib/build-gemlib.sh:182-184` | `gemlib.a libc.a` |
 | cflib `.NAP` | `sdk/libc/crt0.S` | `sdk/cflib/build-cflib.sh:174-178` | `--start-group cflib.a gemlib.a libc.a --end-group` |
 
-The linker script is always `sdk/newtos.ld`; the link flags are always
-`-no-pie -z max-page-size=0x1000 --build-id=none`. The `.NCP`/`.NAP` name is
+The linker script is always `sdk/newtos.ld`; every object is compiled
+`-fPIE` and the program is linked as a position-independent executable
+(`ET_DYN`, ARCH03 stage 0d) whose only dynamic relocations are
+`R_AARCH64_RELATIVE` — the kernel loader applies them and refuses an `ET_EXEC`
+image with `EPLFMT`. The link flags are always
+`-pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none`. The `.NCP`/`.NAP` name is
 chosen by the caller — it is the same ELF either way; only the desktop's launch
 behaviour differs ([01-overview.md](01-overview.md)).

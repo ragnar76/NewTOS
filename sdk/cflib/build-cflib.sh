@@ -146,7 +146,7 @@ done
 # (fontsel.c direct call, inline.rsh no-portab). -Wno-macro-redefined silences
 # cflib's intentional TRUE/FALSE/min/max/abs re-defines.
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
+        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
         -Wno-macro-redefined)
 INCS=(-I"$TOP" -I"$GEMTOP" -I"$MINT" -isystem "$RES")
 
@@ -213,7 +213,7 @@ echo
 # --- link (crt0 + client + cflib.a + gemlib.a + libc.a) ----------------------
 # cflib -> gemlib -> libc is the dependency order; wrap the three archives in a
 # group so any residual back-reference between them still resolves.
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$BUILD/client.o" \
     --start-group "$CF/cflib.a" "$GEM/gemlib.a" "$LIBC/libc.a" --end-group \

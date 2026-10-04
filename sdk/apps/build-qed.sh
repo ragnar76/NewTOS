@@ -99,7 +99,7 @@ done
 # -funsigned-char + -O2, and -D__NEWTOS__ to reach the retargeted GEM headers.
 # -Wno-macro-redefined silences cflib/QED's intentional TRUE/FALSE re-defines.
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
-        -fno-pic -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__
+        -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__
         -Wno-macro-redefined)
 # Include order: QED src, then cflib top (cflib.h), gemlib top (gem.h/macros.h),
 # mintlib include (stdio.h/mintbind.h), the libm adapters (math.h -> OpenLibm's
@@ -165,7 +165,7 @@ fi
 # libc's memset/_ctype/__assert_fail); wrap in a group so any residual
 # back-reference between the archives still resolves.
 rm -f "$OUT"
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$OBJ"/*.o \
     --start-group "$CF/cflib.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \

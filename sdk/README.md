@@ -19,8 +19,8 @@ Pi 4. This file is only a map of the directory.
 | Path | Purpose |
 |------|---------|
 | `build.sh` | freestanding `.NCP` builder (no libc): `clang -c crt0.S + source`, `rust-lld -T newtos.ld` |
-| `crt0.S` | startup for freestanding programs: `SP = p_hitpa`, `bl main`, `Pterm` |
-| `newtos.ld` | linker script for **every** native program: two `PT_LOAD`s from `0x1000` — `text` (R-X: `.text`+`.rodata` → `p_tbase/p_tlen`) and `data` (RW-: `.data` + `.bss` tail → `p_dbase/p_dlen`, `p_bbase/p_blen`), `_start` first, `__bss_start`/`__bss_end`/`_end` exported |
+| `crt0.S` | startup for freestanding programs: basepage from `x0`, `SP = p_hitpa`, `bl main`, `Pterm` |
+| `newtos.ld` | linker script for **every** native program, a position-independent executable (`ET_DYN`, `-fPIE` + `-pie --no-dynamic-linker -z text`; the loader applies its `R_AARCH64_RELATIVE` relocations, ARCH03 0d): two `PT_LOAD`s from `0x1000` — `text` (R-X: `.text`+dynamic metadata+`.rodata` → `p_tbase/p_tlen`) and `data` (RW-: `.dynamic`+`.got`+`.data` + `.bss` tail → `p_dbase/p_dlen`, `p_bbase/p_blen`) plus `PT_DYNAMIC`, `_start` first, `__bss_start`/`__bss_end`/`_end` exported |
 | `include/newtos.h` | clean-room inline-asm trap helpers + `Cconws`/`Cconin`/`Pterm`/`Pterm0` |
 | `examples/*.c` | freestanding proof programs (`hello`, `big`, `physbase`, `scrflip`, `dtachild`) installed by `tools/make-sd-image.sh` |
 | `lib-stale.sh` | the library dependency chain (`libc → gemlib → cflib`), staleness test and failure bookkeeping shared by every script |

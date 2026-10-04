@@ -33,7 +33,9 @@ use tos_api::bdos::process::loader::LoadError;
 use tos_api::bdos::process::pexec::PexecError;
 use tos_types::error::EPLFMT;
 
-const ET_EXEC: u16 = 2;
+// ET_DYN: since ARCH03 stage 0d the parser accepts position-independent
+// executables only (ET_EXEC -> NotPositionIndependent), for either class.
+const ET_DYN: u16 = 3;
 const EM_AARCH64: u16 = 0xb7;
 const PT_LOAD: u32 = 1;
 const PF_R: u32 = 0x4;
@@ -53,7 +55,7 @@ fn put64(buf: &mut [u8], off: usize, v: u64) {
     buf[off..off + 8].copy_from_slice(&v.to_le_bytes());
 }
 
-/// A minimal but genuinely well-formed ELF32 AArch64 executable: header
+/// A minimal but genuinely well-formed ELF32 AArch64 PIE (`ET_DYN`): header
 /// plus one `PT_LOAD` segment. Note the ELF32 phdr field order — `p_flags`
 /// is the second-to-last field (offset 24), not right after `p_type` as in
 /// ELF64. Getting that wrong would mis-parse rather than fail loudly.
@@ -67,7 +69,7 @@ fn elf32_exec() -> Vec<u8> {
     b[5] = 1; // EI_DATA  = ELFDATA2LSB
     b[6] = 1; // EI_VERSION = EV_CURRENT
 
-    put16(&mut b, 16, ET_EXEC);
+    put16(&mut b, 16, ET_DYN);
     put16(&mut b, 18, EM_AARCH64);
     put32(&mut b, 20, 1); // e_version
     put32(&mut b, 24, ENTRY_VA as u32); // e_entry  (4-byte in ELF32)
@@ -96,7 +98,7 @@ fn elf64_exec() -> Vec<u8> {
     b[5] = 1;
     b[6] = 1;
 
-    put16(&mut b, 16, ET_EXEC);
+    put16(&mut b, 16, ET_DYN);
     put16(&mut b, 18, EM_AARCH64);
     put32(&mut b, 20, 1);
     put64(&mut b, 24, ENTRY_VA); // e_entry

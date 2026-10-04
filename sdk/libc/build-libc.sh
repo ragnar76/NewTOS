@@ -123,7 +123,7 @@ done
 
 # --- flags (mintlib buildrules/configvars, retargeted) -----------------------
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
-        -fno-pic -fno-builtin -nostdinc
+        -fPIE -fno-builtin -nostdinc
         -D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -D__NO_LONG_DOUBLE_MATH
         -Wno-macro-redefined)
 INCS=(-I"$TOP" -I"$TOP/include" -I"$TOP/mintlib" -I"$TOP/stdlib" -isystem "$RES")
@@ -266,7 +266,7 @@ echo
     -c "$CLIENT" -o "$BUILD/client.o" || exit 1
 
 # --- link (crt0 + client + libc.a via the NewTOS TPA linker script) ----------
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$BUILD/client.o" "$LIBC/libc.a" -o "$OUT" 2>"$BUILD/link.err"
 lr=$?

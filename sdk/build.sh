@@ -30,7 +30,7 @@ OUT="${2:-/tmp/HELLO2.NCP}"
 
 TARGET="aarch64-unknown-none-elf"
 CFLAGS=(-target "$TARGET" -ffreestanding -nostdlib -O2
-        -fno-stack-protector -fno-pic -fno-builtin -Wall -Wextra
+        -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra
         "-I$SDK_DIR/include")
 
 # --- locate clang ---
@@ -66,10 +66,11 @@ echo "+ $CLANG ${CFLAGS[*]} -c $SDK_DIR/crt0.S -o crt0.o"
 echo "+ $CLANG ${CFLAGS[*]} -c $SRC -o app.o"
 "$CLANG" "${CFLAGS[@]}" -c "$SRC" -o "$WORK/app.o"
 
-# 3. link (no-pie static ELF at the linked VAs; single PT_LOAD via newtos.ld)
-echo "+ $LLD -T $SDK_DIR/newtos.ld -no-pie -z max-page-size=0x1000 --build-id=none crt0.o app.o -o $OUT"
+# 3. link (position-independent ET_DYN, linked at 0x1000 via newtos.ld; the
+#    loader applies its R_AARCH64_RELATIVE relocations -- ARCH03 stage 0d)
+echo "+ $LLD -T $SDK_DIR/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o app.o -o $OUT"
 # shellcheck disable=SC2086
-$LLD -T "$SDK_DIR/newtos.ld" -no-pie -z max-page-size=0x1000 --build-id=none \
+$LLD -T "$SDK_DIR/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
      "$WORK/crt0.o" "$WORK/app.o" -o "$OUT"
 
 echo

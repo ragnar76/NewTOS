@@ -113,7 +113,7 @@ done
 # -O2. We add the freestanding/no-libc/-nostdinc set and the ported mintlib
 # include path, plus -D__NEWTOS__ to select the retargeted trap path.
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
-        -fno-pic -fno-builtin -nostdinc -D__NEWTOS__
+        -fPIE -fno-builtin -nostdinc -D__NEWTOS__
         -Wno-macro-redefined)
 INCS=(-I"$TOP" -I"$MINT" -isystem "$RES")
 
@@ -179,7 +179,7 @@ echo
     || { echo "client compile FAILED:"; cat "$BUILD/client.err"; exit 1; }
 
 # --- link (crt0 + client + gemlib.a + libc.a via the NewTOS TPA linker script) ---
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$BUILD/client.o" "$GEM/gemlib.a" "$LIBC/libc.a" -o "$OUT" 2>"$BUILD/link.err"
 lr=$?

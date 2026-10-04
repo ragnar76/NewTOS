@@ -63,7 +63,7 @@ done
 
 # --- flags (IDENTICAL to build-teradesk.sh) ----------------------------------
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -Os
-        -fomit-frame-pointer -fno-pic -fno-builtin -nostdinc -funsigned-char
+        -fomit-frame-pointer -fPIE -fno-builtin -nostdinc -funsigned-char
         -D__NEWTOS__ -D_TOS_ONLY -Wno-macro-redefined)
 # Include order: gemlib top (gem.h/mt_gem.h/portaes.h/portvdi.h/tos.h), mintlib
 # include (mint/osbind.h), clang headers last.
@@ -93,7 +93,7 @@ echo "compiled chaintest.c OK"
 # gemlib -> libc dependency order; wrap in a group so any residual
 # back-reference between the two archives still resolves.
 rm -f "$OUT"
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$BUILD/chaintest.o" \
     --start-group "$GEM/gemlib.a" "$LIBC/libc.a" --end-group \

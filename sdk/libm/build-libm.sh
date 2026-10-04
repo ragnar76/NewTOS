@@ -30,7 +30,7 @@
 #
 # Flags: the shared SDK freestanding set + OpenLibm's own Make.inc CFLAGS_add
 # for a clang build (-std=c99 -fno-builtin -fno-strict-aliasing
-# -D__BSD_VISIBLE). Not taken from Make.inc: -fPIC (the SDK is -fno-pic),
+# -D__BSD_VISIBLE). Not taken from Make.inc: -fPIC (the SDK is -fPIE),
 # -DASSEMBLER (only read by i387/osx_asm.h), -Wall (warnings go to the per-file
 # .err files either way), -I ld128 (excluded above).
 #
@@ -119,7 +119,7 @@ done
 
 # --- flags -------------------------------------------------------------------
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
-        -fno-pic -fno-builtin -nostdinc
+        -fPIE -fno-builtin -nostdinc
         -std=c99 -fno-strict-aliasing -D__BSD_VISIBLE)
 INCS=(-I"$TOP" -I"$TOP/include" -I"$TOP/aarch64" -I"$TOP/src" -I"$MINT" -isystem "$RES")
 
@@ -193,16 +193,16 @@ echo "defined symbols: $(wc -l < "$BUILD/defined.txt" | tr -d ' ')  dangling ref
 echo
 
 # --- CRT + client ------------------------------------------------------------
-"$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-pic -fno-builtin -nostdinc \
+"$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc \
     -I"$SDK/include" -I"$MINT" -I"$LIBC/mintlib/mintlib" \
     -c "$LIBC/crt0.S" -o "$BUILD/crt0.o" || exit 1
-"$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-pic -fno-builtin -nostdinc \
+"$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc \
     -D_GNU_SOURCE \
     -I"$MINT" -I"$LIBM/include" -I"$TOP/include" -isystem "$RES" \
     -c "$CLIENT" -o "$BUILD/client.o" || exit 1
 
 # --- link (crt0 + client + libm.a + libc.a via the NewTOS TPA linker script) --
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -no-pie -z max-page-size=0x1000 \
+"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$BUILD/client.o" \
     --start-group "$LIBM/libm.a" "$LIBC/libc.a" --end-group \

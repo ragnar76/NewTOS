@@ -33,14 +33,31 @@
 //!   descriptor is class-agnostic (widened to `u64`), so the whole
 //!   downstream loader — streaming, basepage, cache-sync — is unchanged.
 //! - `ELFDATA2LSB` (little-endian — AArch64 default)
-//! - `ET_EXEC` (statically-linked executable; `ET_DYN` / PIE will
-//!   come when relocation support is needed)
-//! - `EM_AARCH64`
-//! - Program headers: only `PT_LOAD` entries are extracted. Other
-//!   types (`PT_NOTE`, `PT_GNU_*`) are ignored without erroring.
+//! - `ET_DYN` only — a position-independent executable (ARCH03 stage 0d,
+//!   `docs/analysis/arch03-implementation-plan.md` Frage 3 / E7). SYSVABI64
+//!   2025Q4 §9 (p. 23): "Position-independent executables are mapped in the
+//!   same way as shared objects. They have an ELF e_type of ET_DYN." A
+//!   fixed-address `ET_EXEC` image is refused with
+//!   [`ParseError::NotPositionIndependent`] (→ `EPLFMT`): every NewTOS
+//!   program is rebuilt as PIE, and a second, non-relocating load path
+//!   would be a second loader (E7).
+//! - `EM_AARCH64` (183) and `e_flags == 0` — AAELF64 2025Q4 §5.2 (p. 13):
+//!   "There are no processor-specific flags so this field shall contain
+//!   zero."
+//! - Program headers: `PT_LOAD` entries are extracted; the (at most one)
+//!   `PT_DYNAMIC` entry is recorded for the relocation step
+//!   ([`super::reloc`]); a `PT_INTERP` entry (a program asking for a
+//!   dynamic linker, gABI "Program Interpreter") is refused. Other types
+//!   (`PT_NOTE`, `PT_GNU_*`) are ignored without erroring.
 //! - At most [`MAX_LOAD_SEGMENTS`] (currently 8) `PT_LOAD` segments
 //!   per image — enough for text + data + bss splits, which is all
 //!   a typical TOS source-port produces.
+//!
+//! The dynamic section itself is **not** read here: its bytes live inside
+//! a `PT_LOAD` segment and are interpreted after the segments have been
+//! streamed into the TPA (see [`super::reloc`]). That also keeps the
+//! `Elf64_Dyn`/`Elf64_Rela` walk away from ELF32 images, which the loader
+//! refuses before relocation.
 //!
 //! Rejects with a precise [`ParseError`] anything that doesn't
 //! match. No allocation, no unsafe — pure byte parsing.
@@ -59,10 +76,15 @@ const ELFCLASS64: u8 = 2;
 const ELFDATA2LSB: u8 = 1;
 const EV_CURRENT: u8 = 1;
 
+// gABI `e_type` values (gABI 2013-06-10, ch4.eheader "ELF Header").
 const ET_EXEC: u16 = 2;
+const ET_DYN: u16 = 3;
 const EM_AARCH64: u16 = 0xb7;
 
+// gABI `p_type` values (ch5.pheader "Program Header").
 const PT_LOAD: u32 = 1;
+const PT_DYNAMIC: u32 = 2;
+const PT_INTERP: u32 = 3;
 
 /// `p_flags` bit indicating the segment is executable.
 pub const PF_X: u32 = 0x1;
@@ -83,6 +105,7 @@ const E_VERSION_OFF: usize = 20;
 // e_entry / e_phoff are 8-byte words; the header is 64 bytes.
 const E64_ENTRY_OFF: usize = 24;
 const E64_PHOFF_OFF: usize = 32;
+const E64_FLAGS_OFF: usize = 48;
 const E64_PHENTSIZE_OFF: usize = 54;
 const E64_PHNUM_OFF: usize = 56;
 const ELF64_EHDR_SIZE: usize = 64;
@@ -101,6 +124,7 @@ const P64_MEMSZ_OFF: usize = 40;
 // than in ELF64; the header is 52 bytes.
 const E32_ENTRY_OFF: usize = 24;
 const E32_PHOFF_OFF: usize = 28;
+const E32_FLAGS_OFF: usize = 36;
 const E32_PHENTSIZE_OFF: usize = 42;
 const E32_PHNUM_OFF: usize = 44;
 const ELF32_EHDR_SIZE: usize = 52;
@@ -130,6 +154,7 @@ struct ClassLayout {
     phdr_size: u16,
     e_entry: usize,
     e_phoff: usize,
+    e_flags: usize,
     e_phentsize: usize,
     e_phnum: usize,
     p_type: usize,
@@ -147,6 +172,7 @@ const LAYOUT64: ClassLayout = ClassLayout {
     phdr_size: ELF64_PHDR_SIZE,
     e_entry: E64_ENTRY_OFF,
     e_phoff: E64_PHOFF_OFF,
+    e_flags: E64_FLAGS_OFF,
     e_phentsize: E64_PHENTSIZE_OFF,
     e_phnum: E64_PHNUM_OFF,
     p_type: P64_TYPE_OFF,
@@ -163,6 +189,7 @@ const LAYOUT32: ClassLayout = ClassLayout {
     phdr_size: ELF32_PHDR_SIZE,
     e_entry: E32_ENTRY_OFF,
     e_phoff: E32_PHOFF_OFF,
+    e_flags: E32_FLAGS_OFF,
     e_phentsize: E32_PHENTSIZE_OFF,
     e_phnum: E32_PHNUM_OFF,
     p_type: P32_TYPE_OFF,
@@ -200,11 +227,29 @@ pub struct LoadSegment {
     pub mem_size: u64,
 }
 
+/// The `PT_DYNAMIC` program header of an image — where its dynamic
+/// section (`Elf64_Dyn` array, gABI ch5.dynamic) lies. Link-time VA and
+/// sizes, exactly as in the program header; [`super::reloc`] validates
+/// that the range is backed by file bytes of a `PT_LOAD` segment before
+/// reading it.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct DynamicSegment {
+    /// Link-time VA of the dynamic section (`p_vaddr`).
+    pub vaddr: u64,
+    /// `p_filesz` — the bytes of the array present in the file.
+    pub file_size: u64,
+    /// `p_memsz`.
+    pub mem_size: u64,
+}
+
 /// A parsed ELF image — header summary plus the `PT_LOAD` table.
 #[derive(Copy, Clone, Debug)]
 pub struct ElfImage {
     /// User entry point (`e_entry`, AArch64 VA).
     pub entry_va: u64,
+    /// The image's `PT_DYNAMIC` header, if it has one. A PIE without
+    /// dynamic relocations (the hand-built selftest blobs) has none.
+    pub dynamic: Option<DynamicSegment>,
     /// `true` for `ELFCLASS32` (ILP32, 4-byte pointers/`long`), `false`
     /// for `ELFCLASS64` (LP64). The loader records this in the process
     /// slot so the GEM trap readers use the program's pointer width; all
@@ -246,10 +291,26 @@ pub enum ParseError {
     NotLittleEndian,
     /// `EI_VERSION` or `e_version` not `EV_CURRENT`.
     BadVersion,
-    /// `e_type != ET_EXEC`.
+    /// `e_type` is neither `ET_DYN` nor `ET_EXEC` (a relocatable object,
+    /// a core file, …).
     NotExecutable,
+    /// `e_type == ET_EXEC`: a fixed-address executable. NewTOS loads
+    /// position-independent executables (`ET_DYN`) only — ARCH03 E7, the
+    /// hard cut after every in-tree program was rebuilt as PIE (stage 0d).
+    NotPositionIndependent,
     /// `e_machine != EM_AARCH64`.
     NotAArch64,
+    /// `e_flags != 0`. AAELF64 §5.2 (p. 13): "There are no
+    /// processor-specific flags so this field shall contain zero."
+    BadFlags,
+    /// The image has a `PT_INTERP` header — it asks for a dynamic linker
+    /// (gABI ch5.dynamic "Program Interpreter"). NewTOS has none.
+    HasInterpreter,
+    /// More than one `PT_DYNAMIC` header. gABI ch5.dynamic "Dynamic
+    /// Section": the `PT_DYNAMIC` element is the segment that "contains the
+    /// .dynamic section" — one array; two would leave it ambiguous which
+    /// relocation table is meant.
+    MultipleDynamic,
     /// `e_phentsize` is not the class's phdr size (32 for ELF32, 56 for
     /// ELF64).
     BadPhEntSize,
@@ -290,7 +351,7 @@ fn read_word(b: &[u8], off: usize, wide: bool) -> Option<u64> {
 
 // ─── Parser ────────────────────────────────────────────────────────
 
-/// Parse an ELF32 or ELF64 AArch64 executable header.
+/// Parse an ELF32 or ELF64 AArch64 position-independent executable header.
 ///
 /// The `EI_CLASS` byte selects a [`ClassLayout`]; from there a single
 /// validated loop parses either class. `header` must hold at least the
@@ -338,8 +399,10 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
 
     // ─── e_type / e_machine / e_version (fixed offsets) ─────────
     let e_type = read_u16_le(header, E_TYPE_OFF).ok_or(ParseError::TooShort)?;
-    if e_type != ET_EXEC {
-        return Err(ParseError::NotExecutable);
+    match e_type {
+        ET_DYN => {}
+        ET_EXEC => return Err(ParseError::NotPositionIndependent),
+        _ => return Err(ParseError::NotExecutable),
     }
     let e_machine = read_u16_le(header, E_MACHINE_OFF).ok_or(ParseError::TooShort)?;
     if e_machine != EM_AARCH64 {
@@ -348,6 +411,10 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
     let e_version = read_u32_le(header, E_VERSION_OFF).ok_or(ParseError::TooShort)?;
     if e_version != EV_CURRENT as u32 {
         return Err(ParseError::BadVersion);
+    }
+    let e_flags = read_u32_le(header, layout.e_flags).ok_or(ParseError::TooShort)?;
+    if e_flags != 0 {
+        return Err(ParseError::BadFlags);
     }
 
     // ─── Header pointers (class-specific offset + width) ────────
@@ -371,6 +438,7 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
         mem_size: 0,
     }; MAX_LOAD_SEGMENTS];
     let mut num_segments = 0usize;
+    let mut dynamic: Option<DynamicSegment> = None;
 
     for i in 0..(phnum as usize) {
         let ph_off = (phoff as usize)
@@ -389,9 +457,31 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
 
         let p_type = read_u32_le(header, ph_off + layout.p_type)
             .ok_or(ParseError::PhdrOutOfRange)?;
-        if p_type != PT_LOAD {
+        match p_type {
+            PT_LOAD => {}
+            PT_INTERP => return Err(ParseError::HasInterpreter),
+            PT_DYNAMIC => {
+                if dynamic.is_some() {
+                    return Err(ParseError::MultipleDynamic);
+                }
+                let vaddr = read_word(header, ph_off + layout.p_vaddr, layout.wide)
+                    .ok_or(ParseError::PhdrOutOfRange)?;
+                let file_size = read_word(header, ph_off + layout.p_filesz, layout.wide)
+                    .ok_or(ParseError::PhdrOutOfRange)?;
+                let mem_size = read_word(header, ph_off + layout.p_memsz, layout.wide)
+                    .ok_or(ParseError::PhdrOutOfRange)?;
+                if file_size > mem_size {
+                    return Err(ParseError::BadSegmentSizes);
+                }
+                dynamic = Some(DynamicSegment {
+                    vaddr,
+                    file_size,
+                    mem_size,
+                });
+                continue;
+            }
             // PT_NOTE, PT_GNU_STACK etc. — ignore.
-            continue;
+            _ => continue,
         }
 
         if num_segments >= MAX_LOAD_SEGMENTS {
@@ -437,6 +527,7 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
     // ILP32 (ELFCLASS32) flag the loader records for the GEM trap readers.
     Ok(ElfImage {
         entry_va,
+        dynamic,
         is_ilp32: !layout.wide,
         segments,
         num_segments,
