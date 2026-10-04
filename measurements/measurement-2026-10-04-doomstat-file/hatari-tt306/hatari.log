@@ -1,0 +1,50 @@
+Memory Test:
+ST RAM                                 --------------------------------  4096 KB
+TT RAM                                 -------------------------------- 16384 KB
+Memory Test Complete.
+                                                                                                                                                               DOOM: no EdDI cookie -- vr_trnfm route
+DOOM: keys via kbdvec -- TOS 3.06, Kbdvbase 0000106a, kbdvec was 00e033ea
+DOOM: GEM platform up -- 320x480, 8 planes, lookup table yes, pixel 556x278 um, stage 1 = 320x480, route vr_trnfm
+                           Doom Generic 0.1
+Z_Init: Init zone memory allocation daemon. 
+zone memory: 0x118329c, 600000 allocated for zone
+Using . for configuration and saves
+V_Init: allocate screens.
+M_LoadDefaults: Load system defaults.
+saving config in .default.cfg
+-iwad not specified, trying a few iwad names
+Trying IWAD file:doom2.wad
+Trying IWAD file:plutonia.wad
+Trying IWAD file:tnt.wad
+Trying IWAD file:doom.wad
+Trying IWAD file:doom1.wad
+W_Init: Init WADfiles.
+ adding doom1.wad
+Using ./.savegame/ for savegames
+===========================================================================
+                            DOOM Shareware
+===========================================================================
+ Doom Generic is free software, covered by the GNU General Public
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+ copies under certain conditions. See the source for more information.
+===========================================================================
+I_Init: Setting up machine state.
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon - ...................
+P_Init: Init Playloop state.
+S_Init: Setting up sound.
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+Emulating the behavior of the 'Doom 1.9' executable.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+DOOM: DOOM Shareware
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+I_InitGraphics: Auto-scaling factor: 1
+DOOM: picture 320x480 at (0,0) VERIFIED via vr_trnfm+scale+vro_cpyfm
+DOOM: per frame, vr_trnfm, stage 1 320x480: c2p 64687 us, vr_trnfm 9054 us, scale 13116 us, vro_cpyfm 15461 us, sum 102318 us
+DOOM x1: 37 frames/5405 ms = 6.84 fps, 146.08 ms/frame, 2 palDOOM x1: 23 frames/5160 ms = 4.45 fps, 224.34 ms/frame, 2 palDOOM x1: 17 frames/5240 ms = 3.24 fps, 308.23 ms/frame, 2 palDOOM x1: 16 frames/5035 ms = 3.17 fps, 314.68 ms/frame, 1 palDOOM x1: 16 frames/5075 ms = 3.15 fps, 317.18 ms/frame, 5 palDOOM x1: 17 frames/5180 ms = 3.28 fps, 304.70 ms/frame, 0 palDOOM x1: 16 frames/5000 ms = 3.20 fps, 312.50 ms/frame, 2 palDOOM x1: 17 frames/5040 ms = 3.37 fps, 296.47 ms/frame, 4 palDOOM x1: 16 frames/5050 ms = 3.16 fps, 315.62 ms/frame, 4 palDOOM x1: 17 frames/5190 ms = 3.27 fps, 305.29 ms/frame, 0 palDOOM x1: 16 frames/5210 ms = 3.07 fps, 325.62 ms/frame, 2 pal

@@ -1,0 +1,18 @@
+DOOM: arguments:  -mb 6
+DOOM: no EdDI cookie -- vr_trnfm route
+DOOM: keys via kbdvec -- TOS 3.06, Kbdvbase 0000106a, kbdvec was 00e033ea
+DOOM: GEM platform up -- 320x480, 8 planes, lookup table yes, pixel 556x278 um, stage 1 = 320x480, route vr_trnfm
+DOOM: DOOM Shareware
+DOOM: picture 320x480 at (0,0) VERIFIED via vr_trnfm+scale+vro_cpyfm
+DOOM: per frame, vr_trnfm, stage 1 320x480: c2p 64687 us, vr_trnfm 9054 us, scale 13116 us, vro_cpyfm 15461 us, sum 102318 us
+DOOM x1: 37 frames/5405 ms = 6.84 fps, 146.08 ms/frame, 2 pal
+DOOM x1: 23 frames/5160 ms = 4.45 fps, 224.34 ms/frame, 2 pal
+DOOM x1: 17 frames/5240 ms = 3.24 fps, 308.23 ms/frame, 2 pal
+DOOM x1: 16 frames/5035 ms = 3.17 fps, 314.68 ms/frame, 1 pal
+DOOM x1: 16 frames/5075 ms = 3.15 fps, 317.18 ms/frame, 5 pal
+DOOM x1: 17 frames/5180 ms = 3.28 fps, 304.70 ms/frame, 0 pal
+DOOM x1: 16 frames/5000 ms = 3.20 fps, 312.50 ms/frame, 2 pal
+DOOM x1: 17 frames/5040 ms = 3.37 fps, 296.47 ms/frame, 4 pal
+DOOM x1: 16 frames/5050 ms = 3.16 fps, 315.62 ms/frame, 4 pal
+DOOM x1: 17 frames/5190 ms = 3.27 fps, 305.29 ms/frame, 0 pal
+DOOM x1: 16 frames/5210 ms = 3.07 fps, 325.62 ms/frame, 2 pal

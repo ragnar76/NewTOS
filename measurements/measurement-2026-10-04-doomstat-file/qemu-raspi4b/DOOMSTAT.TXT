@@ -1,0 +1,22 @@
+DOOM: arguments:  -mb 2
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: keys via kbdvec -- TOS 4.04, Kbdvbase 000009b0, kbdvec was 00000a08
+DOOM: GEM platform up -- 640x480, 16 planes, lookup table no, pixel 278x278 um, stage 2 = 640x480, route EdDI
+DOOM: DOOM Shareware
+DOOM: picture 640x480 at (0,0) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 2 640x480: build 233 us, vr_trnfm 0 us, scale 691 us, vro_cpyfm 1824 us, sum 2748 us
+DOOM x2 EdDI: 340 frames/5010 ms = 67.86 fps, 14.73 ms/frame, 2 pal
+DOOM x2 EdDI: 317 frames/5000 ms = 63.40 fps, 15.77 ms/frame, 6 pal
+DOOM x2 EdDI: 351 frames/5000 ms = 70.20 fps, 14.24 ms/frame, 6 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 8 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 8 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 2 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 12 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 12 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 6 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 12 pal
+DOOM x2 EdDI: 350 frames/5000 ms = 70.00 fps, 14.28 ms/frame, 5 pal

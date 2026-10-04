@@ -1,0 +1,12 @@
+INFO : Hatari v2.6.1, compiled on:  Aug 15 2025, 14:15:19
+INFO : IPF : capsimage library version release=5 revision=1
+INFO : GEMDOS HDD emulation, C: <-> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/doomstat-job/hat/hd-tt306.
+WARN : Bus Error writing at address $41fffe, PC=$e00170 addr_e3=e00170 op_e3=3302
+WARN : Bus Error writing at address $ffd000e0, PC=$e001d0 addr_e3=e001d0 op_e3=33fc
+WARN : Bus Error writing at address $201fffe, PC=$e001f8 addr_e3=e001f8 op_e3=3302
+WARN : xconout character '' has unknown high byte bits: 0x6100.
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/doomstat-job/hat/hd-tt306/AUTO'
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/doomstat-job/hat/hd-tt306/etc'
+WARN : have to clip 5 chars from '.savegame' extension!
+WARN : No GEMDOS dir '/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/doomstat-job/hat/hd-tt306/.savegame'
+WARN : PNG screen dump saved to: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-04-doomstat-file/hatari-tt306/shots/grab0001.png

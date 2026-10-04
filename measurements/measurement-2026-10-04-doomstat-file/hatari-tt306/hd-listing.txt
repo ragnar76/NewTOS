@@ -1,0 +1,4 @@
+total 9544
+-rwxr-xr-x@ 1 ingouhlemann  wheel   681708  4 Okt. 20:48 DOOM.PRG
+-rw-r--r--@ 1 ingouhlemann  wheel  4196020  4 Okt. 20:48 DOOM1.WAD
+-rw-r--r--@ 1 ingouhlemann  wheel     1167  4 Okt. 20:50 DOOMSTAT.TXT

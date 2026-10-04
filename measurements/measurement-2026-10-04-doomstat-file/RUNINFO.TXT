@@ -1,0 +1,52 @@
+measurement-2026-10-04-doomstat-file -- DOOM stats build writes its diagnosis lines to DOOMSTAT.TXT
+Date 2026-10-04, branch desk-rebuild (HEAD b61eea9 + uncommitted change in sdk/apps/doom/doomgeneric_gem.c,
+method/doomstat-change.diff). Kernel / tos-api untouched.
+
+CHANGE
+  doomgeneric_gem.c: every "DOOM..." line of the platform layer goes through diag(). DOOM_GEM_STATS == 0:
+  `#define diag printf` (shipped build byte-identical, below). DOOM_GEM_STATS > 0: the line goes to the
+  console exactly as before (vprintf) and is also appended to DOOMSTAT.TXT in the current directory,
+  CRLF-terminated (a trailing \n or \r becomes \r\n). Plain GEMDOS: the first line of a run Fcreates
+  (truncates) the file, each further line is Fopen(write) + Fseek(end) + Fwrite + Fclose. GEMDOS has no
+  flush call and updates the directory length only at Fclose, so "flush after each line" is done as
+  close-per-line; no handle is left open, nothing to close at exit. A failing open/write stops the file
+  for the run and says so once on the console. main() adds one FILE-ONLY line "DOOM: arguments: ..." so
+  the zone request (-mb) is recorded; the engine's own "zone memory: ..." line (i_system.c, vendored, not
+  editable) stays console-only.
+
+SHIPPED BUILDS UNCHANGED (DOOM_STATS=0), sha256 before change == after change:
+  DOOM.NAP  b92e4d58c98a67109687876b83583d37e9f0b05e03a24fb943ce500ddfed94e1  673832 B  (before = after)
+  DOOM.PRG  c9d2c839693f4c6cf74399bf3578d8927266dae6b7ac79da99bb673d8d217505  678742 B  (before = after)
+  (equal to sdk/apps/doom/build/DOOM.NAP / DOOM.PRG; logs method/build-doom-*-stats0-after.log)
+
+STATS BUILDS (DOOM_STATS=5)
+  DOOMSTAT.PRG (m68k, "-mb","6")  681708 B  sha256 3bdf73339d6c46cd2d67493367a355543263a20ca43fdccce6ade1710d4138ac
+     -> also at sdk/apps/doom/build/DOOMSTAT.PRG (gitignored)       method/build-doom-m68k-stats5.log
+     platform layer -Wall -Wextra clean; m68k toolchain did not hang (calls wrapped in perl alarm 600).
+  DOOMSTAT.NAP (NewTOS, "-mb","2") sha256 3a057b3bf40011c054de00c69b77c69c85f954c19874486aae888b2b117843c6
+     method/build-doom-nap-stats5.log, no platform-layer warnings.
+
+RUN A  Hatari 2.6.1 TT, TOS 3.06 (tos306de.rom), 4 MiB ST + 16 MiB TT-RAM, ttlow (320x480x256), real time,
+       --auto C:\DOOM.PRG, no keys (demo loop). method/run-hatari-tt-doomstat.sh: wait for the VERIFIED line
+       (93 s, TOS memory test), +60 s, screenshot, quit over cmd-fifo, kill -9 (Hatari does not exit).
+       Result: hatari-tt306/DOOMSTAT.TXT (1167 B, CRLF), startup lines + cost table + 11 stats lines.
+       hatari-tt306/hatari.log = console (--conout 2), unchanged in form.
+RUN B  QEMU raspi4b, -append serial=on, kernel8.img = `cargo xtask build --board rpi4 --release` of this
+       tree (sha256 29b9262e0bc700a2a5d8c2bfcccc809221ebb0cd80e68c3bbf564789312fa1fe); fresh card by
+       method/seed-doom.sh (from keys02-doom: make-sd-image + C:\DOOM\DOOM.NAP + DOOM1.WAD + #Z autorun);
+       method/run-qemu-doomstat.sh: dumps at 30/90 s, QMP quit, then mtools mcopy ::DOOM/DOOMSTAT.TXT.
+       Result: qemu-raspi4b/DOOMSTAT.TXT (CRLF), startup + cost table + 14 stats lines; serial log has the
+       same lines as before; fsck_msdos -n on the card after the run: rc 0 (qemu-raspi4b/fsck_msdos.txt).
+
+HOST TESTS  sh sdk/run-host-tests.sh: 13 passed, 0 failed, 0 skipped (method/run-host-tests.txt).
+
+PALETTE / CONSOLE (code reading, not measured on the NOVA)
+  CLUT routes (vr_trnfm with lookup table, EdDI clut 1 / PACKED8 / PLANES): load_pens() sets ALL 256 VDI
+  pens to DOOM's PLAYPAL via vs_color on every palette change; none is reserved, the saved pens come back
+  only in gem_close() at exit. The console (VT52) draws with fixed pixel values, i.e. hardware registers
+  that are now DOOM colours: background pen 0 = PLAYPAL[0] (0,0,0); a foreground in pen 1 / 15 / 255 =
+  PLAYPAL (31,23,11) / (63,43,27) / (167,107,107) -- dark brown on black, near-invisible. Which register the
+  NOVA/NVDI console uses is not visible from our code. The truecolour EdDI route (EDDI_TRUE) does not touch
+  pens, so this affects 256-colour screens only. Startup lines printed before the first frame are still in
+  the desktop palette, but clear_screen() wipes them with the first frame. -> CONFIRMED from the code as the
+  plausible cause; not fixed (out of scope).

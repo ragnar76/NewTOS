@@ -1,0 +1,10 @@
+ Volume in drive : is NEWTOS     
+ Volume Serial Number is 81EC-1C1D
+Directory for ::/DOOM
+
+DOOM     NAP    676576 2026-10-04  20:51 
+DOOMSTAT TXT      1536 2026-10-04  20:51 
+DOOM1    WAD   4196020 2026-10-04  20:51 
+        3 files           4 874 132 bytes
+                         60 344 320 bytes free
+

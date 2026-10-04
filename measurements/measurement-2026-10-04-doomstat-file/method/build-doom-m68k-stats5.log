@@ -1,0 +1,15 @@
+doomgeneric : /Volumes/Daten/Development/PiRusTOS/Applications/doomgeneric @ dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284 (clean)
+gcc : m68k-atari-mint-gcc (MiNT 20230908) 7.5.0
+cpu : -m68030 -m68881 -> multilib m68020-60 (/opt/cross-mint/lib/gcc/m68k-atari-mint/7/m68020-60/libgcc.a), hard float
+gemlib : /Volumes/Daten/Development/PiRusTOS/sdk/gemlib/gemlib-m68k.a
+
+doomgeneric manifest: 80 upstream files + doomgeneric_gem.c (replaces doomgeneric_xlib.c)
+platform layer: -Wall -Wextra clean
+kbdvec hook: -Wall -Wextra clean
+compiled OK=82  FAILED=0  (upstream files with compiler warnings: 0, see /Volumes/Daten/Development/PiRusTOS/sdk/apps/doom/build/m68k/obj/*.err)
+
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/doomstat-job/DOOMSTAT.PRG (681708 bytes, undefined symbols: 0)
+PRG header: magic 0x601a text 0x0006d06c data 0x0000f074 bss 0x000419cc flags 0x00000007
+            (flags: 1 fastload, 2 load into TT-RAM, 4 Malloc from TT-RAM)
+DOOM_ARGS  = "-mb","6"
+DOOM_STATS = 5

@@ -1,0 +1,344 @@
+diff --git a/sdk/apps/doom/doomgeneric_gem.c b/sdk/apps/doom/doomgeneric_gem.c
+index 79e18ba..a16b99c 100644
+--- a/sdk/apps/doom/doomgeneric_gem.c
++++ b/sdk/apps/doom/doomgeneric_gem.c
+@@ -561,6 +561,110 @@ static int need_clear = 1;		/* paint the screen around the picture */
+ static uint32_t st_t0, st_frames, st_pal;
+ #endif
+ 
++/*
++ * diag(): every line this file prints for diagnosis ("DOOM: ..."). In the
++ * shipped build (DOOM_GEM_STATS == 0) it is printf and nothing else. In a
++ * stats build the line still goes to the console unchanged and is also
++ * appended to DOOMSTAT.TXT in the current directory, CRLF-terminated (Atari
++ * text viewers), so the startup log, the cost table and the periodic frame
++ * lines can be read after the run -- on a 256-colour screen the console text
++ * is drawn in pens DOOM's palette has taken over.
++ *
++ * Plain GEMDOS (Fcreate/Fopen/Fseek/Fwrite/Fclose), as on TOS 3.06, MagiC
++ * and NewTOS alike. GEMDOS has no flush: written sectors may sit in the
++ * buffer cache and the directory entry (the file length) is updated only by
++ * Fclose. So every line is appended with open - seek to end - write - close;
++ * a crash or a power-off loses at most the line being written, and no handle
++ * stays open that exit would have to close. The first line of a run creates
++ * (truncates) the file; a failing open ends the file for the run, said once
++ * on the console.
++ */
++#if DOOM_GEM_STATS > 0
++#include <stdarg.h>
++
++#define STAT_FILE	"DOOMSTAT.TXT"
++
++static int stat_file_state;		/* 0 not yet created, 1 open-able, -1 off */
++
++static void stat_append(const char *s, long n)
++{
++	long fh, r;
++
++	if (stat_file_state < 0)
++		return;
++	if (stat_file_state == 0) {
++		fh = Fcreate(STAT_FILE, 0);
++	} else {
++		fh = Fopen(STAT_FILE, 1);		/* write only */
++		if (fh >= 0 && Fseek(0L, (short)fh, 2) < 0) {
++			Fclose((short)fh);
++			fh = -1;
++		}
++	}
++	if (fh < 0) {
++		printf("DOOM: %s cannot be %s (%ld) -- no more lines go to the "
++		       "file\n", STAT_FILE, stat_file_state ? "opened" : "created",
++		       fh);
++		stat_file_state = -1;
++		return;
++	}
++	stat_file_state = 1;
++	r = Fwrite((short)fh, n, s);
++	Fclose((short)fh);
++	if (r != n) {
++		stat_file_state = -1;
++		printf("DOOM: %s: Fwrite wrote %ld of %ld bytes -- no more lines "
++		       "go to the file\n", STAT_FILE, r, n);
++	}
++}
++
++/* One formatted line into the file only; the line ending becomes CRLF. */
++static void stat_vfile(const char *fmt, va_list ap)
++{
++	char line[512];
++	int n;
++
++	n = vsnprintf(line, sizeof(line) - 2, fmt, ap);
++	if (n < 0)
++		return;
++	if (n > (int)sizeof(line) - 3)
++		n = (int)sizeof(line) - 3;		/* cut, still one line */
++	while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r'))
++		n--;
++	line[n++] = '\r';
++	line[n++] = '\n';
++	stat_append(line, n);
++}
++
++static void stat_file(const char *fmt, ...)
++	__attribute__((format(printf, 1, 2)));
++static void stat_file(const char *fmt, ...)
++{
++	va_list ap;
++
++	va_start(ap, fmt);
++	stat_vfile(fmt, ap);
++	va_end(ap);
++}
++
++static int diag(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
++static int diag(const char *fmt, ...)
++{
++	va_list ap;
++	int r;
++
++	va_start(ap, fmt);
++	r = vprintf(fmt, ap);			/* the console, as before */
++	va_end(ap);
++	va_start(ap, fmt);
++	stat_vfile(fmt, ap);
++	va_end(ap);
++	return r;
++}
++#else
++#define diag printf
++#endif
++
+ static uint32_t ticks200(void)
+ {
+ 	return (uint32_t)get_sysvar(_hz_200);
+@@ -964,7 +1068,7 @@ static void read_row_dev(int x, int y, int n, uint32_t *vals)
+ 
+ static int eddi_refuse(const char *why)
+ {
+-	printf("DOOM: EdDI description not used (%s) -- vr_trnfm route\n", why);
++	diag("DOOM: EdDI description not used (%s) -- vr_trnfm route\n", why);
+ 	return EDDI_NONE;
+ }
+ 
+@@ -981,17 +1085,17 @@ static int eddi_query(void)
+ 	int c, k, b, i;
+ 
+ 	if (M_CheckParm("-noeddi") > 0) {
+-		printf("DOOM: -noeddi -- vr_trnfm route\n");
++		diag("DOOM: -noeddi -- vr_trnfm route\n");
+ 		return EDDI_NONE;
+ 	}
+ 	if (Getcookie(C_EdDI, &cookie) != C_FOUND) {
+-		printf("DOOM: no EdDI cookie -- vr_trnfm route\n");
++		diag("DOOM: no EdDI cookie -- vr_trnfm route\n");
+ 		return EDDI_NONE;
+ 	}
+ 	/* Present is all that counts; the value is never called. */
+ 	memset(si, 0, sizeof(si));
+ 	vq_scrninfo(vh, si);
+-	printf("DOOM: EdDI: format %d, clut %d, %d planes, bits r/g/b %d/%d/%d, "
++	diag("DOOM: EdDI: format %d, clut %d, %d planes, bits r/g/b %d/%d/%d, "
+ 	       "bit order 0x%x\n", si[0], si[1], si[2], si[8], si[9], si[10],
+ 	       (unsigned)(uint16_t)si[14]);
+ 
+@@ -1102,12 +1206,12 @@ static int eddi_check(void)
+ 	if (eddi != EDDI_TRUE) {
+ 		for (i = 0; i < NCOLORS; i++)
+ 			if ((got[i] & cmp_mask) != devpix[i]) {
+-				printf("DOOM: EdDI check: pen %d reads 0x%lx, the "
++				diag("DOOM: EdDI check: pen %d reads 0x%lx, the "
+ 				       "description lists 0x%lx\n", i,
+ 				       (unsigned long)got[i], (unsigned long)devpix[i]);
+ 				return 0;
+ 			}
+-		printf("DOOM: EdDI check: 256 pens read back as listed\n");
++		diag("DOOM: EdDI check: 256 pens read back as listed\n");
+ 		return 1;
+ 	}
+ 
+@@ -1126,13 +1230,13 @@ static int eddi_check(void)
+ 		}
+ 		exact += same;
+ 	}
+-	printf("DOOM: EdDI check: %d of 256 test colours exact, largest step "
++	diag("DOOM: EdDI check: %d of 256 test colours exact, largest step "
+ 	       "off r/g/b %d/%d/%d\n", exact, worst[0], worst[1], worst[2]);
+ 	if (worst[0] > 1 || worst[1] > 1 || worst[2] > 1) {
+ 		for (i = 0; i < NCOLORS; i++) {
+ 			test_rgb(i, c8);
+ 			if (encode_rgb(c8[0], c8[1], c8[2]) != (got[i] & cmp_mask)) {
+-				printf("DOOM: EdDI check: first difference, pen %d "
++				diag("DOOM: EdDI check: first difference, pen %d "
+ 				       "rgb %d/%d/%d: device 0x%lx, built 0x%lx\n",
+ 				       i, c8[0], c8[1], c8[2], (unsigned long)got[i],
+ 				       (unsigned long)encode_rgb(c8[0], c8[1], c8[2]));
+@@ -1209,7 +1313,7 @@ static void verify_frame_eddi(void)
+ 					stage, y, x, (unsigned long)got[x],
+ 					(unsigned long)devpix[line[x / stage]]);
+ 	}
+-	printf("DOOM: picture %dx%d at (%d,%d) VERIFIED via EdDI%s+vro_cpyfm\n",
++	diag("DOOM: picture %dx%d at (%d,%d) VERIFIED via EdDI%s+vro_cpyfm\n",
+ 	       out_w, out_h, out_x, out_y, scaled ? "+scale" : "");
+ 	need_clear = 1;
+ }
+@@ -1237,7 +1341,7 @@ static void verify_frame(void)
+ 					"by row / pixel-packed as SCALING assumes" : "");
+ 			}
+ 	}
+-	printf("DOOM: picture %dx%d at (%d,%d) VERIFIED via vr_trnfm%s+vro_cpyfm\n",
++	diag("DOOM: picture %dx%d at (%d,%d) VERIFIED via vr_trnfm%s+vro_cpyfm\n",
+ 	       out_w, out_h, out_x, out_y, scaled ? "+scale" : "");
+ 	/* The console line may have scrolled the screen, picture included. */
+ 	need_clear = 1;
+@@ -1299,7 +1403,7 @@ static void choose_stage(void)
+ 	int want = want_stage;
+ 
+ 	if (want > hmax) {
+-		printf("DOOM: -scale %d: %d planes, not a packed form -- each "
++		diag("DOOM: -scale %d: %d planes, not a packed form -- each "
+ 		       "DOOM pixel one device pixel wide (stage 1)\n", want,
+ 		       nplanes);
+ 		want = hmax;
+@@ -1308,14 +1412,14 @@ static void choose_stage(void)
+ 	while (stage > 1 && !stage_fits(stage))
+ 		stage--;
+ 	if (want != 0 && stage != want)
+-		printf("DOOM: stage %d (%dx%d) does not fit the %dx%d screen, "
++		diag("DOOM: stage %d (%dx%d) does not fit the %dx%d screen, "
+ 		       "stage %d\n", want, stage_w(want), stage_h(want),
+ 		       scr_w, scr_h, stage);
+ 	out_w = stage_w(stage);
+ 	out_h = stage_h(stage);
+ 	if (out_h > scr_h) {
+ 		/* Stage 1 only: nowhere to step down to, so fit the rows. */
+-		printf("DOOM: %d rows for 4:3 do not fit the %d-row screen, %d "
++		diag("DOOM: %d rows for 4:3 do not fit the %d-row screen, %d "
+ 		       "rows\n", out_h, scr_h, scr_h);
+ 		out_h = scr_h;
+ 	}
+@@ -1390,7 +1494,7 @@ void DG_Init(void)
+ 	pix_w = work_out[3];
+ 	pix_h = work_out[4];
+ 	if (pix_w <= 0 || pix_h <= 0) {
+-		printf("DOOM: the VDI reports pixel size %dx%d -- taking square "
++		diag("DOOM: the VDI reports pixel size %dx%d -- taking square "
+ 		       "pixels\n", pix_w, pix_h);
+ 		pix_w = pix_h = 1;
+ 	}
+@@ -1418,7 +1522,7 @@ void DG_Init(void)
+ 	if (p > 0)
+ 		want = atoi(myargv[p + 1]);
+ 	if (want < 0 || want > MAX_STAGE) {
+-		printf("DOOM: -scale %d is not a stage (1..%d), taking the largest "
++		diag("DOOM: -scale %d is not a stage (1..%d), taking the largest "
+ 		       "that fits\n", want, MAX_STAGE);
+ 		want = 0;
+ 	}
+@@ -1454,7 +1558,7 @@ void DG_Init(void)
+ 	 * it an 8-plane screen loses the packed form's horizontal stages, so
+ 	 * the stage is chosen again for the vr_trnfm route. */
+ 	if (eddi != EDDI_NONE && !eddi_check()) {
+-		printf("DOOM: EdDI description does not match the screen -- "
++		diag("DOOM: EdDI description does not match the screen -- "
+ 		       "vr_trnfm route\n");
+ 		eddi = EDDI_NONE;
+ 		choose_stage();
+@@ -1470,7 +1574,7 @@ void DG_Init(void)
+ 
+ 	key_init();
+ 
+-	printf("DOOM: GEM platform up -- %dx%d, %d planes, lookup table %s, "
++	diag("DOOM: GEM platform up -- %dx%d, %d planes, lookup table %s, "
+ 	       "pixel %dx%d um, stage %d = %dx%d, route %s\n", scr_w, scr_h,
+ 	       nplanes, has_lut ? "yes" : "no", pix_w, pix_h, stage, out_w,
+ 	       out_h, eddi == EDDI_NONE ? "vr_trnfm" : "EdDI");
+@@ -1555,7 +1659,7 @@ static void cost_report(void)
+ 	uint32_t scl = scaled ? probe_cost(stage_scale) : 0;
+ 	uint32_t cpy = probe_cost(stage_cpyfm);
+ 
+-	printf("DOOM: per frame, %s, stage %d %dx%d: %s %lu us, vr_trnfm %lu us, "
++	diag("DOOM: per frame, %s, stage %d %dx%d: %s %lu us, vr_trnfm %lu us, "
+ 	       "scale %lu us, vro_cpyfm %lu us, sum %lu us\n",
+ 	       eddi != EDDI_NONE ? "EdDI" : "vr_trnfm", stage, out_w, out_h,
+ 	       eddi != EDDI_NONE ? "build" : "c2p",
+@@ -1580,7 +1684,7 @@ static void frame_report(void)
+ 		 * newline on the last row would scroll the picture. Kept under
+ 		 * 80 columns, so it cannot wrap (and scroll) on a 640-pixel
+ 		 * screen either. The frame time is the mean over the window. */
+-		printf("DOOM x%d%s: %lu frames/%lu ms = %lu.%02lu fps, %lu.%02lu ms/frame, "
++		diag("DOOM x%d%s: %lu frames/%lu ms = %lu.%02lu fps, %lu.%02lu ms/frame, "
+ 		       "%lu pal\r", stage, eddi != EDDI_NONE ? " EdDI" : "",
+ 		       (unsigned long)st_frames, (unsigned long)(span * 5u),
+ 		       (unsigned long)(st_frames * 200u / span),
+@@ -1790,12 +1894,12 @@ static int kbd_open(void)
+ 	_KEYTAB *kt;
+ 
+ 	if (M_CheckParm("-nokbdvec") > 0) {
+-		printf("DOOM: -nokbdvec -- keys via the AES (repeat heuristic)\n");
++		diag("DOOM: -nokbdvec -- keys via the AES (repeat heuristic)\n");
+ 		return 0;
+ 	}
+ 	(void)Supexec(kbd_probe);
+ 	if (kbd_tos_version < 0x200 && !kbd_emutos) {
+-		printf("DOOM: TOS %x.%02x has no kbdvec (needs 2.00) -- keys via "
++		diag("DOOM: TOS %x.%02x has no kbdvec (needs 2.00) -- keys via "
+ 		       "the AES (repeat heuristic)\n", kbd_tos_version >> 8,
+ 		       kbd_tos_version & 0xff);
+ 		return 0;
+@@ -1803,20 +1907,20 @@ static int kbd_open(void)
+ 	kt = (_KEYTAB *)Keytbl(-1L, -1L, -1L);
+ 	table = (kbdslot_t *)Kbdvbase();
+ 	if (kt == NULL || kt->unshift == NULL || table == NULL) {
+-		printf("DOOM: no Keytbl/Kbdvbase -- keys via the AES (repeat "
++		diag("DOOM: no Keytbl/Kbdvbase -- keys via the AES (repeat "
+ 		       "heuristic)\n");
+ 		return 0;
+ 	}
+ 	kbd_unshift = (const unsigned char *)kt->unshift;
+ 	kbd_slot_want = table - 1;		/* kbdvec: the slot before */
+ 	if (Supexec(kbd_install) != 0) {
+-		printf("DOOM: Kbdvbase %08lx: kbdvec slot is 0 -- keys via the "
++		diag("DOOM: Kbdvbase %08lx: kbdvec slot is 0 -- keys via the "
+ 		       "AES (repeat heuristic)\n", (unsigned long)table);
+ 		return 0;
+ 	}
+ 	kbd_installed = 1;
+ 	atexit(kbd_close);
+-	printf("DOOM: keys via kbdvec -- TOS %x.%02x%s, Kbdvbase %08lx, "
++	diag("DOOM: keys via kbdvec -- TOS %x.%02x%s, Kbdvbase %08lx, "
+ 	       "kbdvec was %08lx\n", kbd_tos_version >> 8,
+ 	       kbd_tos_version & 0xff, kbd_emutos ? " (EmuTOS)" : "",
+ 	       (unsigned long)table, (unsigned long)kbdvec_old);
+@@ -2027,7 +2131,7 @@ int DG_GetKey(int *pressed, unsigned char *key)
+  * console, which DOOM's startup log is printed on as well. */
+ void DG_SetWindowTitle(const char *title)
+ {
+-	printf("DOOM: %s\n", title);
++	diag("DOOM: %s\n", title);
+ }
+ 
+ /* ======================================================================== */
+@@ -2055,6 +2159,21 @@ int main(int argc, char **argv)
+ 	args[n] = NULL;
+ 	argc = n;
+ 	argv = args;
++#if DOOM_GEM_STATS > 0
++	/* The file only: the arguments the engine gets, the zone size (-mb)
++	 * among them -- the engine's own "zone memory" line goes to the
++	 * console alone (i_system.c, not this file). */
++	{
++		char line[256];
++		size_t len = 0;
++
++		line[0] = '\0';
++		for (i = 0; i < argc && len + 2 < sizeof(line); i++)
++			len += (size_t)snprintf(line + len, sizeof(line) - len,
++						"%s%s", i ? " " : "", argv[i]);
++		stat_file("DOOM: arguments: %s\n", line);
++	}
++#endif
+ 
+ 	doomgeneric_Create(argc, argv);
+ 	for (;;)
