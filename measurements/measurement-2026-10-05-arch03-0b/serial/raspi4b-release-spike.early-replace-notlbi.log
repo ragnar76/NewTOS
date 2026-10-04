@@ -1,0 +1,124 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002d9000 (2461696 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[spike] early: TTBR0 identity map of DRAM (480 x 2 MiB, EL0 RW, PXN), install msr+isb ...
+[spike] early: boot identity map 0x145000 back in TTBR0, low read 0x80000 -> 0x92401c21d53800a1
+[spike] early: first stores after install survived; continuing boot
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[pcie] RC not present (no response at RC_BASE); USB disabled
+ARCH03 stage-0b spike on rpi4 -- results also on serial
+early (ADR-010 replay, replacing boot map, no TLBI): DRAM identity in TTBR0 survived the whole boot -> OK
+Q1 MIDR 410fd083 (impl 41 part d08 r0p3) MPIDR 80000000
+Q1 MMFR0 0000000000001124 PARange 4 ASIDBits 2 (16-bit) TGran4 0
+Q1 MMFR1 0000000000000000 HAFDBS 0 VMID 0 VH 0 HPDS 0 LO 0 PAN 0 XNX 0
+Q1 MMFR2 0000000000000000 CnP 0 UAO 0 VARange 0 IESB 0 BBM 0 TTL 0 E0PD 0
+Q1 PFR0 0000000000002222 ISAR0 0000000000011120
+Q1 CTR 000000008444c004 IminLine 64B DminLine 64B L1Ip 3 IDC 0 DIC 0 CWG 4 ERG 4
+Q1 CLIDR 000000000a200023 LoUU 1 LoC 2 LoUIS 1 | L1D 32K 4w 64B L1I 48K 3w 64B L2U 1024K 16w 64B
+Q1 SCTLR 0000000030d01805 TCR 00000002b5103510 (AS 0 A1 0 HPD0 0 HPD1 0)
+Q5 FB PA 0x3c100000..0x3c358000 (2400 KiB, 640x480 2pg) <2GiB:true <4GiB:true in-DRAM:false
+Q5 DRAM 0x0..0x3c000000 ST 0x400000..0xe00000 TT 0x1000000..0x3be00000
+setup: tables arena 0x1000000 (4 MiB), test block 0x1401000
+a2m-tlbi: 3 tables; install msr+tlbi ...
+a2m-tlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+   perf a2m-tlbi: 64 MiB x8 page-stride loads: 24532 us (187 ns/load) sum ad0
+a4k-tlbi: 479 tables; install msr+tlbi ...
+a4k-tlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+   perf a4k-tlbi: 64 MiB x8 page-stride loads: 19418 us (148 ns/load) sum f70
+a2m-notlbi: 3 tables; install msr+isb only ...
+a2m-notlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+a4k-notlbi: 479 tables; install msr+isb only ...
+a4k-notlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+adram-tlbi: 3 tables; install msr+tlbi ...
+adram-tlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+adram-notlbi: 3 tables; install msr+isb only ...
+adram-notlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+Q4 uacc (EL1, root with 0x1000 RW / 0x2000 RO / 0x3000 EL1-only / 0x4000 none)
+  ldtr user RW 0x1000: ok value 0x1111
+  sttr user RW 0x1000: ok value 0xdeadbeef
+  ldtr user RO 0x2000: ok value 0x2222
+  sttr user RO 0x2000: ABORT EC 0x25 ISS 0x4f DFSC 0x0f WnR 1 FAR 0x2000 ELR 0xffff00000008f770
+  ldtr EL1-only 0x3000: ABORT EC 0x25 ISS 0xf DFSC 0x0f WnR 0 FAR 0x3000 ELR 0xffff00000008f79c
+  ldtr unmapped L3 0x4000: ABORT EC 0x25 ISS 0x7 DFSC 0x07 WnR 0 FAR 0x4000 ELR 0xffff00000008f79c
+  ldtr unmapped L2 0x200000: ABORT EC 0x25 ISS 0x6 DFSC 0x06 WnR 0 FAR 0x200000 ELR 0xffff00000008f79c
+  ldtr unmapped L1 1<<38: ABORT EC 0x25 ISS 0x5 DFSC 0x05 WnR 0 FAR 0x4000000000 ELR 0xffff00000008f79c
+  ldtr unmapped L0 1<<39: ABORT EC 0x25 ISS 0x4 DFSC 0x04 WnR 0 FAR 0x8000000000 ELR 0xffff00000008f79c
+  ldtr kernel TTBR1 static: ABORT EC 0x25 ISS 0xe DFSC 0x0e WnR 0 FAR 0xffff0000001460b0 ELR 0xffff00000008f79c
+  ldr (priv) user RO 0x2000: ok value 0x2222
+  sttr result via alias: 0x5555 (want 0x5555)
+  PAN not implemented (MMFR1.PAN = 0): privileged ldr on user pages cannot be blocked
+Q3 roots A 0x1003000 B 0x1007000 share template 0x1000000; page 0 private (code at 0x100)
+sw-bracket: empty+tlbi, UART line, msr+isb, eret (QUIRK-001 bracket, production) ...
+[spike] bracket 0
+[spike] bracket 1
+[spike] bracket 2
+[spike] bracket 3
+[spike] bracket 4
+[spike] bracket 5
+[spike] bracket 6
+[spike] bracket 7
+[spike] bracket 8
+[spike] bracket 9
+[spike] bracket 10
+[spike] bracket 11
+[spike] bracket 12
+[spike] bracket 13
+[spike] bracket 14
+[spike] bracket 15
+[spike] bracket 0
+[spike] bracket 1
+[spike] bracket 2
+[spike] bracket 3
+[spike] bracket 4
+[spike] bracket 5
+[spike] bracket 6
+[spike] bracket 7
+[spike] bracket 8
+[spike] bracket 9
+[spike] bracket 10
+[spike] bracket 11
+[spike] bracket 12
+[spike] bracket 13
+[spike] bracket 14
+[spike] bracket 15
+sw-bracket: via-shared: 16/16 ok 0 wrong 0 flt  direct@0x180: 16/16 ok 0 wrong 0 flt 
+sw-arch: empty,tlbi,dsb,isb,msr,isb,eret (architectural, no bracket) ...
+sw-arch: via-shared: 16/16 ok 0 wrong 0 flt  direct@0x180: 16/16 ok 0 wrong 0 flt 
+sw-tlbi-eret: msr,isb,tlbi,dsb,eret (TLBI right before eret) ...
+sw-tlbi-eret: via-shared: 16/16 ok 0 wrong 0 flt  direct@0x180: 16/16 ok 0 wrong 0 flt 
+sw-notlbi: msr,isb,eret (no TLBI, ASID 0) ...
+sw-notlbi: via-shared: 8/16 ok 8 wrong 0 flt #1 want tag b/b0b0b0b0/2 got a/a0a0a0a0/2 direct@0x180: 8/16 ok 8 wrong 0 flt #1 want tag b/b0b0b0b0/2 got a/a0a0a0a0/0
+sw-asid: ASID 1/2 tagged, nG=1: msr,isb,eret (no TLBI) ...
+[spike] sw-asid: ASID-tagged msr ttbr0 + isb survived
+sw-asid: via-shared: 16/16 ok 0 wrong 0 flt  direct@0x180: 16/16 ok 0 wrong 0 flt 
+SPIKE DONE. Photograph the screen. The system stops here.
+[spike] halted

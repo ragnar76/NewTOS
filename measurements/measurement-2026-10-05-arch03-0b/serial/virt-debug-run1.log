@@ -1,0 +1,140 @@
+RB1
+NewTOS booting on qemu-virt
+Phase 02 reached.
+[mm] DTB at 0x0000000048000000
+[mm] firmware: no VideoCore mailbox on this board — device tree decides
+[mm] device tree: /memory first bank: 0x0000000040000000 + 285212672 bytes (272 MiB)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000040000000..0x0000000051000000 (285212672 bytes) — source: device tree
+[mm]   kernel: 0x0000000040080000..0x00000000402e9000 (2527232 bytes)
+[mm]   ST-RAM: 0x0000000040400000..0x0000000040e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000041000000..0x0000000050617000 (258043904 bytes)
+[mm]   OSrsvd: 0x0000000050617000..0x0000000051000000 (10391552 bytes)
+[mm]     heap: 0x0000000050617000..0x0000000050817000 (2097152 bytes)
+[mm]     fb  : 0x0000000050817000..0x0000000051000000 (8294400 bytes)
+[mm]   MMIO 00: 0x0000000008000000..0x0000000008010000
+[mm]   MMIO 01: 0x0000000008010000..0x0000000008020000
+[mm]   MMIO 02: 0x0000000009000000..0x0000000009001000
+[mm]   MMIO 03: 0x0000000010000000..0x000000003eff0000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=62999 used=0 free=62999 (258043904 B free)
+[mm] alloc ST-RAM frame -> 0x0000000040400000
+[mm] alloc TT-RAM frame -> 0x0000000041000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] ramfb up: 1920x1080
+[mm] BDOS pools: ST-RAM 0x40400000+10485760 TT-RAM 0x41000000+258043904
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=258043904 free=258043904 used=0 largest_free=258043904 (free_mds=1 alloc_mds=0)
+[usb] PCIe ECAM at 0x4010000000 (size 0x10000000)
+[usb] xHCI at PCI 00:02.0 → BAR0 0x10000000 (size 0x4000)
+[usb] scratchpad buffers needed: 0
+[usb] dma addrs: dcbaap=0x40e47000 crcr=0x40e470c0 erstba=0x40e472c0 dcbaa0=0x0
+[usb] reg readback: ac64=1 csz=0 dcbaap_hw=0x40e47000
+[usb] xHCI up: 16 slots enabled, 8 root ports
+[usb] root ports powered (PPC=false)
+[usb] port 1: ccs=0 ped=0 pp=1 speed=0
+[usb] port 2: ccs=0 ped=0 pp=1 speed=0
+[usb] port 3: ccs=0 ped=0 pp=1 speed=0
+[usb] port 4: ccs=0 ped=0 pp=1 speed=0
+[usb] port 5: ccs=1 ped=0 pp=1 speed=3
+[usb] port 6: ccs=1 ped=0 pp=1 speed=3
+[usb] port 7: ccs=0 ped=0 pp=1 speed=0
+[usb] port 8: ccs=0 ped=0 pp=1 speed=0
+[usb] device slot 1 (root port 5 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 1 → int-IN ep 0x81 max 8 interval 7
+[usb] HID configured: slot 1 ep 0x81 dci 3 (keyboard)
+[usb] device slot 2 (root port 6 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 2 → int-IN ep 0x81 max 4 interval 7
+[usb] HID configured: slot 2 ep 0x81 dci 3 (mouse)
+ARCH03 stage-0b spike on qemu-virt -- results also on serial
+early (ADR-010 replay): not requested
+Q1 MIDR 410fd083 (impl 41 part d08 r0p3) MPIDR 80000000
+Q1 MMFR0 0000000000001124 PARange 4 ASIDBits 2 (16-bit) TGran4 0
+Q1 MMFR1 0000000000000000 HAFDBS 0 VMID 0 VH 0 HPDS 0 LO 0 PAN 0 XNX 0
+Q1 MMFR2 0000000000000000 CnP 0 UAO 0 VARange 0 IESB 0 BBM 0 TTL 0 E0PD 0
+Q1 PFR0 0000000000000022 ISAR0 0000000000011120
+Q1 CTR 000000008444c004 IminLine 64B DminLine 64B L1Ip 3 IDC 0 DIC 0 CWG 4 ERG 4
+Q1 CLIDR 000000000a200023 LoUU 1 LoC 2 LoUIS 1 | L1D 32K 4w 64B L1I 48K 3w 64B L2U 1024K 16w 64B
+Q1 SCTLR 0000000000c5183d TCR 00000002b5103510 (AS 0 A1 0 HPD0 0 HPD1 0)
+Q5 FB PA 0x50817000..0x51000000 (8100 KiB, 1920x1080 1pg) <2GiB:true <4GiB:true in-DRAM:true
+Q5 DRAM 0x40000000..0x51000000 ST 0x40400000..0x40e00000 TT 0x41000000..0x50617000
+setup: tables arena 0x41000000 (4 MiB), test block 0x41401000
+a2m-tlbi: 4 tables; install msr+tlbi ...
+a2m-tlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+   perf a2m-tlbi: 64 MiB x8 page-stride loads: 19026 us (145 ns/load) sum 44d0
+a4k-tlbi: 132 tables; install msr+tlbi ...
+a4k-tlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+   perf a4k-tlbi: 64 MiB x8 page-stride loads: 16984 us (129 ns/load) sum 50d0
+a2m-notlbi: 4 tables; install msr+isb only ...
+a2m-notlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+a4k-notlbi: 132 tables; install msr+isb only ...
+a4k-notlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+adram-tlbi: 3 tables; install msr+tlbi ...
+adram-tlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+adram-notlbi: 3 tables; install msr+isb only ...
+adram-notlbi: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)
+Q4 uacc (EL1, root with 0x1000 RW / 0x2000 RO / 0x3000 EL1-only / 0x4000 none)
+  ldtr user RW 0x1000: ok value 0x1111
+  sttr user RW 0x1000: ok value 0xdeadbeef
+  ldtr user RO 0x2000: ok value 0x2222
+  sttr user RO 0x2000: ABORT EC 0x25 ISS 0x4f DFSC 0x0f WnR 1 FAR 0x2000 ELR 0xffff000040090c28
+  ldtr EL1-only 0x3000: ABORT EC 0x25 ISS 0xf DFSC 0x0f WnR 0 FAR 0x3000 ELR 0xffff000040090c40
+  ldtr unmapped L3 0x4000: ABORT EC 0x25 ISS 0x7 DFSC 0x07 WnR 0 FAR 0x4000 ELR 0xffff000040090c40
+  ldtr unmapped L2 0x200000: ABORT EC 0x25 ISS 0x6 DFSC 0x06 WnR 0 FAR 0x200000 ELR 0xffff000040090c40
+  ldtr unmapped L1 1<<38: ABORT EC 0x25 ISS 0x5 DFSC 0x05 WnR 0 FAR 0x4000000000 ELR 0xffff000040090c40
+  ldtr unmapped L0 1<<39: ABORT EC 0x25 ISS 0x4 DFSC 0x04 WnR 0 FAR 0x8000000000 ELR 0xffff000040090c40
+  ldtr kernel TTBR1 static: ABORT EC 0x25 ISS 0xe DFSC 0x0e WnR 0 FAR 0xffff0000401546c0 ELR 0xffff000040090c40
+  ldr (priv) user RO 0x2000: ok value 0x2222
+  sttr result via alias: 0x5555 (want 0x5555)
+  PAN not implemented (MMFR1.PAN = 0): privileged ldr on user pages cannot be blocked
+Q3 roots A 0x41004000 B 0x41008000 share template 0x41000000; page 0 private (code at 0x100)
+sw-bracket: empty+tlbi, UART line, msr+isb, eret (QUIRK-001 bracket, production) ...
+[spike] bracket 0
+[spike] bracket 1
+[spike] bracket 2
+[spike] bracket 3
+[spike] bracket 4
+[spike] bracket 5
+[spike] bracket 6
+[spike] bracket 7
+[spike] bracket 8
+[spike] bracket 9
+[spike] bracket 10
+[spike] bracket 11
+[spike] bracket 12
+[spike] bracket 13
+[spike] bracket 14
+[spike] bracket 15
+[spike] bracket 0
+[spike] bracket 1
+[spike] bracket 2
+[spike] bracket 3
+[spike] bracket 4
+[spike] bracket 5
+[spike] bracket 6
+[spike] bracket 7
+[spike] bracket 8
+[spike] bracket 9
+[spike] bracket 10
+[spike] bracket 11
+[spike] bracket 12
+[spike] bracket 13
+[spike] bracket 14
+[spike] bracket 15
+sw-bracket: via-shared: 16/16 ok 0 wrong 0 flt  direct@0x180: 16/16 ok 0 wrong 0 flt 
+sw-arch: empty,tlbi,dsb,isb,msr,isb,eret (architectural, no bracket) ...
+sw-arch: via-shared: 16/16 ok 0 wrong 0 flt  direct@0x180: 16/16 ok 0 wrong 0 flt 
+sw-tlbi-eret: msr,isb,tlbi,dsb,eret (TLBI right before eret) ...
+sw-tlbi-eret: via-shared: 16/16 ok 0 wrong 0 flt  direct@0x180: 16/16 ok 0 wrong 0 flt 
+sw-notlbi: msr,isb,eret (no TLBI, ASID 0) ...
+sw-notlbi: via-shared: 8/16 ok 8 wrong 0 flt #1 want tag b/b0b0b0b0/2 got a/a0a0a0a0/2 direct@0x180: 8/16 ok 8 wrong 0 flt #1 want tag b/b0b0b0b0/2 got a/a0a0a0a0/0
+sw-asid: ASID 1/2 tagged, nG=1: msr,isb,eret (no TLBI) ...
+[spike] sw-asid: ASID-tagged msr ttbr0 + isb survived
+sw-asid: via-shared: 16/16 ok 0 wrong 0 flt  direct@0x180: 16/16 ok 0 wrong 0 flt 
+SPIKE DONE. Photograph the screen. The system stops here.
+[spike] halted

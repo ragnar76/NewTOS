@@ -1,0 +1,1118 @@
+--- a/kernel/Cargo.toml
++++ b/kernel/Cargo.toml
+@@ -71,6 +71,8 @@
+ # handshake repair, which changes the normal build on purpose. Built with
+ # `cargo xtask build --board rpi4 --release --features usb-diag`.
+ usb-diag = []
++# ARCH03 stage-0b throwaway spike (scratch tree only).
++arch03-spike = []
+ 
+ [dependencies]
+ tos-types = { path = "../tos-types" }
+--- a/kernel/src/lib.rs
++++ b/kernel/src/lib.rs
+@@ -80,6 +80,8 @@
+ pub mod selftest_emmc;
+ pub mod vdi_backend;
+ pub mod vdi_client;
++#[cfg(feature = "arch03-spike")]
++pub mod spike_arch03;
+ 
+ // TEMPORARY debug tooling — NOT for product history. Gated behind
+ // `dbg_qedtrace::QED_SVC_TRACE`; remove the module + its exception hooks to
+@@ -217,7 +219,7 @@
+ // The `initinfo-diag` build ends the boot inside `initinfo::diag::show()`
+ // (a `-> !`), which makes the rest of this function unreachable — that is the
+ // point of that build, not a defect.
+-#[cfg_attr(feature = "initinfo-diag", allow(unreachable_code))]
++#[cfg_attr(any(feature = "initinfo-diag", feature = "arch03-spike"), allow(unreachable_code))]
+ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
+     use crate::hal::uart::Uart;
+ 
+@@ -263,6 +265,8 @@
+     // tables are mutated and TTBR0/TTBR1 swapped inside.
+     unsafe { arch::aarch64::mmu::reinstall(&map) };
+     kprintln!("[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).");
++    #[cfg(feature = "arch03-spike")]
++    spike_arch03::early(&map);
+ 
+     // Initialise the physical frame allocator (Phase 03 D4).
+     bios::machine::frames::init(&map);
+@@ -384,6 +388,9 @@
+     // serial line). See `initinfo::diag`.
+     #[cfg(feature = "initinfo-diag")]
+     initinfo::diag::show(shiftbits);
++
++    #[cfg(feature = "arch03-spike")]
++    spike_arch03::run(&map);
+ 
+     // Development self-tests are no longer invoked during the normal
+     // boot — the system goes straight to the console. They remain in the
+--- a/kernel/src/arch/aarch64/exceptions.rs
++++ b/kernel/src/arch/aarch64/exceptions.rs
+@@ -208,6 +208,10 @@
+ /// `frame.gpr[0]` so the assembly stub returns the value in `x0`.
+ #[unsafe(no_mangle)]
+ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
++    #[cfg(feature = "arch03-spike")]
++    if crate::spike_arch03::on_sync(frame) {
++        return;
++    }
+     let ec = esr_ec(frame.esr);
+     if ec != EC_SVC_AARCH64 && ec != EC_SVC_FROM_EL1 {
+         // Recoverable MMIO probe: a same-EL Data Abort while a `probe_read32`
+--- /dev/null
++++ b/kernel/src/spike_arch03.rs
+@@ -0,0 +1,1052 @@
++//! ARCH03 stage 0b — THROWAWAY measurement spike. Not product code.
++//!
++//! Built only with `--features arch03-spike`. Measures, on QEMU 11.0.2
++//! (`raspi4b`, `virt`) and on the real Pi 4, what the architecture sources
++//! cannot decide for the ARCH03 shared-address-space plan
++//! (`docs/analysis/arch03-implementation-plan.md` stage 0b,
++//! `docs/analysis/arch03-stage0a-armarm-verification.md` §11):
++//!
++//! * Q1 ID registers seen at EL1.
++//! * Q2 VA = PA user mapping of the BDOS pools in TTBR0 next to the kernel's
++//!   TTBR1 alias (ADR-010 "wall 3"), 2-MiB and 4-KiB variants, with and
++//!   without TLBI on install; plus the original ADR-010 full-DRAM variant.
++//! * Q3 per-memspace TTBR0 roots sharing the lower tables, private page 0
++//!   holding code at the same VA; switch sequences with/without TLBI,
++//!   with/without the QUIRK-001 UART bracket, TLBI right before `eret`,
++//!   and ASID-tagged roots (nG = 1).
++//! * Q4 `ldtr`/`sttr` from EL1 against user / RO / kernel-only / unmapped
++//!   addresses and the abort they raise.
++//! * Q5 framebuffer physical address against the 2-GiB / 32-bit limit.
++//!
++//! Output goes to UART **and** the framebuffer console; on board-rpi4 the
++//! screen pages (wait for a key) unless the boot args carry
++//! `spike.nopause`. Individual steps are skipped with `spike.skip=<id>`
++//! (boot args on rpi4 / QEMU raspi4b; compile-time env `SPIKE_ARGS` on both).
++
++use alloc::format;
++use alloc::string::String;
++use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering::SeqCst};
++
++use crate::arch::aarch64::exceptions::ExceptionFrame;
++use crate::arch::aarch64::mmu::VA_OFFSET;
++use crate::bios::machine::layout::MemoryMap;
++
++// ───────────────────────────── boot args ─────────────────────────────
++
++fn has_token(args: &[u8], tok: &[u8]) -> bool {
++    let end = args.iter().position(|&b| b == 0).unwrap_or(args.len());
++    args[..end].split(|b| b.is_ascii_whitespace()).any(|t| t == tok)
++}
++
++fn arg(tok: &[u8]) -> bool {
++    if let Some(env) = option_env!("SPIKE_ARGS") {
++        if has_token(env.as_bytes(), tok) {
++            return true;
++        }
++    }
++    #[cfg(feature = "board-rpi4")]
++    {
++        crate::drivers::bcm2711::mailbox::with_command_line(|a| {
++            has_token(a, tok)
++        })
++        .unwrap_or(false)
++    }
++    #[cfg(not(feature = "board-rpi4"))]
++    {
++        false
++    }
++}
++
++fn skipped(id: &str) -> bool {
++    arg(format!("spike.skip={id}").as_bytes())
++}
++
++// ───────────────────────────── output ────────────────────────────────
++
++static LINES: AtomicUsize = AtomicUsize::new(0);
++static PAUSE: AtomicBool = AtomicBool::new(false);
++
++fn rows() -> usize {
++    let (_, h) = crate::vdi_backend::dims();
++    if h == 0 { 10_000 } else { (h as usize / 16).saturating_sub(1).max(4) }
++}
++
++fn wait_key() {
++    if let Some(h) = tos_api::host::host() {
++        while h.console_try_read_key().is_some() {}
++        let _ = h.console_read_key_blocking();
++    }
++}
++
++fn raw_out(s: &str) {
++    if let Some(h) = tos_api::host::host() {
++        h.console_write_bytes(s.as_bytes());
++        h.console_write_bytes(b"\r\n");
++    } else {
++        crate::kprintln!("{}", s);
++    }
++}
++
++fn cols() -> usize {
++    let (w, _) = crate::vdi_backend::dims();
++    if w == 0 { 10_000 } else { (w as usize / 8).max(8) }
++}
++
++fn out(s: &str) {
++    let need = s.len() / cols() + 1;
++    if PAUSE.load(SeqCst) && LINES.load(SeqCst) + need + 1 > rows() {
++        raw_out("--- photograph this page, then press a key ---");
++        wait_key();
++        crate::fbcon::clear_and_home();
++        LINES.store(0, SeqCst);
++    }
++    raw_out(s);
++    LINES.fetch_add(need, SeqCst);
++}
++
++macro_rules! o {
++    ($($t:tt)*) => { out(&format!($($t)*)) };
++}
++
++// ───────────────────────────── sysregs ───────────────────────────────
++
++macro_rules! mrs {
++    ($r:literal) => {{
++        let v: u64;
++        // SAFETY: read-only system-register read at EL1.
++        unsafe { core::arch::asm!(concat!("mrs {0}, ", $r), out(reg) v, options(nomem, nostack)) };
++        v
++    }};
++}
++
++fn ccsidr(level: u64, instr: bool) -> u64 {
++    let sel = (level - 1) << 1 | instr as u64;
++    let v: u64;
++    // SAFETY: CSSELR/CCSIDR access at EL1.
++    unsafe {
++        core::arch::asm!("msr csselr_el1, {s}", "isb", "mrs {v}, ccsidr_el1",
++            s = in(reg) sel, v = out(reg) v, options(nostack));
++    }
++    v
++}
++
++fn f(v: u64, lo: u32, w: u32) -> u64 {
++    (v >> lo) & ((1u64 << w) - 1)
++}
++
++fn cache_desc(c: u64) -> String {
++    let line = 1u64 << (f(c, 0, 3) + 4);
++    let ways = f(c, 3, 10) + 1;
++    let sets = f(c, 13, 15) + 1;
++    format!("{}K {}w {}B", line * ways * sets / 1024, ways, line)
++}
++
++fn step_id() {
++    let midr = mrs!("midr_el1");
++    let mpidr = mrs!("mpidr_el1");
++    let m0 = mrs!("id_aa64mmfr0_el1");
++    let m1 = mrs!("id_aa64mmfr1_el1");
++    let m2 = mrs!("s3_0_c0_c7_2"); // ID_AA64MMFR2_EL1 (RES0 space on v8.0)
++    let pfr0 = mrs!("id_aa64pfr0_el1");
++    let isar0 = mrs!("id_aa64isar0_el1");
++    let ctr = mrs!("ctr_el0");
++    let clidr = mrs!("clidr_el1");
++    let sctlr = mrs!("sctlr_el1");
++    let tcr = mrs!("tcr_el1");
++    o!("Q1 MIDR {:08x} (impl {:02x} part {:03x} r{}p{}) MPIDR {:x}",
++        midr, f(midr, 24, 8), f(midr, 4, 12), f(midr, 20, 4), f(midr, 0, 4), mpidr);
++    o!("Q1 MMFR0 {:016x} PARange {} ASIDBits {} ({}-bit) TGran4 {}",
++        m0, f(m0, 0, 4), f(m0, 4, 4), if f(m0, 4, 4) == 2 { 16 } else { 8 }, f(m0, 28, 4));
++    o!("Q1 MMFR1 {:016x} HAFDBS {} VMID {} VH {} HPDS {} LO {} PAN {} XNX {}",
++        m1, f(m1, 0, 4), f(m1, 4, 4), f(m1, 8, 4), f(m1, 12, 4), f(m1, 16, 4),
++        f(m1, 20, 4), f(m1, 28, 4));
++    o!("Q1 MMFR2 {:016x} CnP {} UAO {} VARange {} IESB {} BBM {} TTL {} E0PD {}",
++        m2, f(m2, 0, 4), f(m2, 4, 4), f(m2, 16, 4), f(m2, 12, 4), f(m2, 52, 4),
++        f(m2, 48, 4), f(m2, 60, 4));
++    o!("Q1 PFR0 {:016x} ISAR0 {:016x}", pfr0, isar0);
++    o!("Q1 CTR {:016x} IminLine {}B DminLine {}B L1Ip {} IDC {} DIC {} CWG {} ERG {}",
++        ctr, 4u64 << f(ctr, 0, 4), 4u64 << f(ctr, 16, 4), f(ctr, 14, 2), f(ctr, 28, 1),
++        f(ctr, 29, 1), f(ctr, 24, 4), f(ctr, 20, 4));
++    let mut cl = format!("Q1 CLIDR {:016x} LoUU {} LoC {} LoUIS {} |", clidr,
++        f(clidr, 27, 3), f(clidr, 24, 3), f(clidr, 21, 3));
++    for lvl in 1..=3u64 {
++        let ctype = f(clidr, (3 * (lvl - 1)) as u32, 3);
++        if ctype == 0 {
++            continue;
++        }
++        if ctype & 2 != 0 || ctype == 4 {
++            let d = ccsidr(lvl, false);
++            cl.push_str(&format!(" L{}{} {}", lvl, if ctype == 4 { "U" } else { "D" }, cache_desc(d)));
++        }
++        if ctype & 1 != 0 {
++            let i = ccsidr(lvl, true);
++            cl.push_str(&format!(" L{}I {}", lvl, cache_desc(i)));
++        }
++    }
++    out(&cl);
++    o!("Q1 SCTLR {:016x} TCR {:016x} (AS {} A1 {} HPD0 {} HPD1 {})",
++        sctlr, tcr, f(tcr, 36, 1), f(tcr, 22, 1), f(tcr, 41, 1), f(tcr, 42, 1));
++}
++
++// ───────────────────────────── Q5 ────────────────────────────────────
++
++fn pool(kind: u8) -> (u64, u64) {
++    let (s, e) = if kind == 0 {
++        tos_api::bdos::mem::init::stram_range()
++    } else {
++        tos_api::bdos::mem::init::ttram_range()
++    };
++    (s as u32 as u64, e as u32 as u64)
++}
++
++fn step_fb(map: &MemoryMap) {
++    use crate::hal::framebuffer::Framebuffer;
++    #[cfg(feature = "board-rpi4")]
++    let fb = &crate::drivers::bcm2711::framebuffer::FRAMEBUFFER;
++    #[cfg(feature = "board-qemu-virt")]
++    let fb = &crate::drivers::qemu_virt::ramfb::FRAMEBUFFER;
++    let va = fb.mem_base() as u64;
++    let pa = va.wrapping_sub(VA_OFFSET);
++    let len = fb.pages() as u64 * fb.height() as u64 * fb.stride_px() as u64 * 4;
++    let end = pa + len;
++    o!("Q5 FB PA {:#010x}..{:#010x} ({} KiB, {}x{} {}pg) <2GiB:{} <4GiB:{} in-DRAM:{}",
++        pa, end, len / 1024, fb.width(), fb.height(), fb.pages(),
++        end <= 0x8000_0000, end <= 0x1_0000_0000,
++        pa >= map.dram.start && end <= map.dram.end);
++    let (ss, se) = pool(0);
++    let (ts, te) = pool(1);
++    o!("Q5 DRAM {:#x}..{:#x} ST {:#x}..{:#x} TT {:#x}..{:#x}",
++        map.dram.start, map.dram.end, ss, se, ts, te);
++}
++
++// ───────────────────────────── page tables ──────────────────────────
++
++const VALID: u64 = 1;
++const TABLE: u64 = 2; // also "page" at L3
++const AF: u64 = 1 << 10;
++const SH_INNER: u64 = 3 << 8;
++const AP_EL0_RW: u64 = 1 << 6; // AP[2:1] = 01
++const AP_EL0_RO: u64 = 3 << 6; // AP[2:1] = 11
++const AP_EL1_ONLY: u64 = 0;
++const NG: u64 = 1 << 11;
++const PXN: u64 = 1 << 53;
++const ADDR: u64 = 0x0000_FFFF_FFFF_F000;
++const USER_RW: u64 = VALID | AF | SH_INNER | AP_EL0_RW | PXN; // Normal WB (AttrIdx 0), UXN = 0
++const M2: u64 = 2 * 1024 * 1024;
++const K4: u64 = 4096;
++
++struct Arena {
++    next: u64,
++    end: u64,
++    start: u64,
++    used: usize,
++}
++
++impl Arena {
++    fn reset(&mut self) {
++        self.next = self.start;
++        self.used = 0;
++    }
++    fn page(&mut self) -> u64 {
++        assert!(self.next + K4 <= self.end, "spike arena exhausted");
++        let pa = self.next;
++        self.next += K4;
++        self.used += 1;
++        // SAFETY: arena memory is a kernel-owned pool block, reached through
++        // the high-half alias.
++        unsafe { core::ptr::write_bytes((pa + VA_OFFSET) as *mut u8, 0, K4 as usize) };
++        pa
++    }
++}
++
++fn ent(table: u64, idx: u64) -> *mut u64 {
++    (table + VA_OFFSET + idx * 8) as *mut u64
++}
++fn rd(table: u64, idx: u64) -> u64 {
++    // SAFETY: table is a spike-owned page.
++    unsafe { ent(table, idx).read_volatile() }
++}
++fn wr(table: u64, idx: u64, v: u64) {
++    // SAFETY: table is a spike-owned page.
++    unsafe { ent(table, idx).write_volatile(v) }
++}
++
++fn ensure(a: &mut Arena, table: u64, idx: u64) -> u64 {
++    let e = rd(table, idx);
++    if e & 3 == 3 {
++        return e & ADDR;
++    }
++    assert!(e & 1 == 0, "spike: block where a table is needed");
++    let t = a.page();
++    wr(table, idx, t | VALID | TABLE);
++    t
++}
++
++fn map_2m(a: &mut Arena, l0: u64, va: u64, pa: u64, attrs: u64) {
++    let l1 = ensure(a, l0, (va >> 39) & 511);
++    let l2 = ensure(a, l1, (va >> 30) & 511);
++    wr(l2, (va >> 21) & 511, pa | attrs);
++}
++
++fn map_4k(a: &mut Arena, l0: u64, va: u64, pa: u64, attrs: u64) {
++    let l1 = ensure(a, l0, (va >> 39) & 511);
++    let l2 = ensure(a, l1, (va >> 30) & 511);
++    let l3 = ensure(a, l2, (va >> 21) & 511);
++    wr(l3, (va >> 12) & 511, pa | attrs | TABLE);
++}
++
++fn map_range(a: &mut Arena, l0: u64, start: u64, end: u64, attrs: u64, blocks: bool) {
++    let mut p = (start + K4 - 1) & !(K4 - 1);
++    let end = end & !(K4 - 1);
++    while p < end {
++        if blocks && p % M2 == 0 && p + M2 <= end {
++            map_2m(a, l0, p, p, attrs);
++            p += M2;
++        } else {
++            map_4k(a, l0, p, p, attrs);
++            p += K4;
++        }
++    }
++}
++
++fn dsb_all() {
++    // SAFETY: barrier only.
++    unsafe { core::arch::asm!("dsb ish", options(nostack)) };
++}
++
++/// Install `ttbr` in TTBR0, optionally with a full TLBI.
++fn install(ttbr: u64, tlbi: bool) {
++    // SAFETY: TTBR0 rewrite at EL1, single CPU; tables published by dsb.
++    unsafe {
++        if tlbi {
++            core::arch::asm!("dsb ish", "msr ttbr0_el1, {t}", "tlbi vmalle1", "dsb ish", "isb",
++                t = in(reg) ttbr, options(nostack));
++        } else {
++            core::arch::asm!("dsb ish", "msr ttbr0_el1, {t}", "isb", t = in(reg) ttbr, options(nostack));
++        }
++    }
++}
++
++fn restore_empty() {
++    // SAFETY: production helper — empty root + tlbi vmalle1 + dsb + isb.
++    unsafe { crate::arch::aarch64::user_entry::restore_boot_ttbr0() };
++}
++
++fn sync_icache() {
++    // SAFETY: cache maintenance at EL1.
++    unsafe { core::arch::asm!("dsb ish", "ic iallu", "dsb ish", "isb", options(nostack)) };
++}
++
++fn clean_to_pou(va: u64, len: u64) {
++    let mut p = va & !63;
++    while p < va + len {
++        // SAFETY: mapped kernel alias.
++        unsafe { core::arch::asm!("dc cvau, {}", in(reg) p, options(nostack)) };
++        p += 64;
++    }
++}
++
++// ───────────────────────────── EL0 excursion ────────────────────────
++
++core::arch::global_asm!(
++    ".section .text.spike_el0, \"ax\"",
++    ".balign 64",
++    ".global __spike_el0_blob",
++    "__spike_el0_blob:",
++    // rw: x0 = addr, x2 = value. Returns x0 = [addr], x1 = [addr+8] after store.
++    ".global __spike_el0_rw",
++    "__spike_el0_rw:",
++    "ldr x1, [x0]",
++    "str x2, [x0, #8]",
++    "ldr x3, [x0, #8]",
++    "mov x0, x1",
++    "mov x1, x3",
++    "svc #0xA03",
++    "b .",
++    // sw: x0 = shared counter addr, x1 = private code VA (page 0).
++    // Returns x0 = tag set by the private code, x1 = word at VA 0, x2 = counter.
++    ".global __spike_el0_sw",
++    "__spike_el0_sw:",
++    "mov x5, x0",
++    "mov x7, #0",
++    "ldr x6, [x7]",
++    "blr x1",
++    "ldr x7, [x5]",
++    "add x7, x7, #1",
++    "str x7, [x5]",
++    "mov x1, x6",
++    "mov x2, x7",
++    "svc #0xA03",
++    "b .",
++    // stride: x0 = base, x1 = npages, x2 = stride, x3 = passes. Returns sum.
++    ".global __spike_el0_stride",
++    "__spike_el0_stride:",
++    "mov x4, #0",
++    "1: mov x5, x0",
++    "mov x6, x1",
++    "2: ldr x7, [x5]",
++    "add x4, x4, x7",
++    "add x5, x5, x2",
++    "subs x6, x6, #1",
++    "b.ne 2b",
++    "subs x3, x3, #1",
++    "b.ne 1b",
++    "mov x0, x4",
++    "svc #0xA03",
++    "b .",
++    ".global __spike_el0_blob_end",
++    "__spike_el0_blob_end:",
++    ".text",
++);
++
++unsafe extern "C" {
++    static __spike_el0_blob: u8;
++    static __spike_el0_rw: u8;
++    static __spike_el0_sw: u8;
++    static __spike_el0_stride: u8;
++    static __spike_el0_blob_end: u8;
++}
++
++fn sym(p: *const u8) -> u64 {
++    p as u64
++}
++
++#[repr(C)]
++struct Params {
++    entry: u64,      // 0
++    sp: u64,         // 8
++    a: [u64; 4],     // 16..48
++    ttbr_new: u64,   // 48
++    ttbr_empty: u64, // 56
++    mode: u64,       // 64
++    resume_pc: u64,  // 72
++    ksp: u64,        // 80
++}
++
++static mut P: Params = Params {
++    entry: 0, sp: 0, a: [0; 4], ttbr_new: 0, ttbr_empty: 0, mode: 0, resume_pc: 0, ksp: 0,
++};
++
++static EL0_ACTIVE: AtomicBool = AtomicBool::new(false);
++static UACC_ACTIVE: AtomicBool = AtomicBool::new(false);
++static R_ESR: AtomicU64 = AtomicU64::new(0);
++static R_FAR: AtomicU64 = AtomicU64::new(0);
++static R_ELR: AtomicU64 = AtomicU64::new(0);
++static R_FAULT: AtomicBool = AtomicBool::new(false);
++static R_X: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
++
++/// Hook from `rust_sync_handler` (first thing it does).
++pub fn on_sync(frame: &mut ExceptionFrame) -> bool {
++    let ec = (frame.esr >> 26) & 0x3F;
++    if EL0_ACTIVE.load(SeqCst) && frame.spsr & 0xF == 0 {
++        let far: u64;
++        // SAFETY: read FAR_EL1.
++        unsafe { core::arch::asm!("mrs {0}, far_el1", out(reg) far, options(nomem, nostack)) };
++        R_ESR.store(frame.esr, SeqCst);
++        R_FAR.store(far, SeqCst);
++        R_ELR.store(frame.elr, SeqCst);
++        for i in 0..4 {
++            R_X[i].store(frame.gpr[i], SeqCst);
++        }
++        R_FAULT.store(ec != 0x15, SeqCst);
++        EL0_ACTIVE.store(false, SeqCst);
++        // SAFETY: P was filled by el0_call before the eret.
++        let (pc, sp) = unsafe { ((*(&raw const P)).resume_pc, (*(&raw const P)).ksp) };
++        frame.elr = pc;
++        frame.sp_el0 = sp;
++        frame.spsr = 0x3C4; // EL1t, DAIF masked
++        return true;
++    }
++    if UACC_ACTIVE.load(SeqCst) && ec == 0x25 {
++        let far: u64;
++        // SAFETY: read FAR_EL1.
++        unsafe { core::arch::asm!("mrs {0}, far_el1", out(reg) far, options(nomem, nostack)) };
++        R_ESR.store(frame.esr, SeqCst);
++        R_FAR.store(far, SeqCst);
++        R_ELR.store(frame.elr, SeqCst);
++        R_FAULT.store(true, SeqCst);
++        frame.elr = frame.elr.wrapping_add(4);
++        return true;
++    }
++    false
++}
++
++/// Modes: 0 = TTBR0 untouched; 1 = empty root, tlbi, dsb, isb, new root, isb, eret
++/// ("architectural", no bracket); 3 = new root, isb, tlbi, dsb, eret (TLBI right
++/// before eret); 4 = new root, isb, eret (no TLBI).
++#[inline(never)]
++unsafe fn el0_call(entry: u64, sp: u64, a: [u64; 4], ttbr_new: u64, mode: u64) -> [u64; 4] {
++    let p = &raw mut P;
++    // SAFETY: single CPU, spike only.
++    unsafe {
++        (*p).entry = entry;
++        (*p).sp = sp;
++        (*p).a = a;
++        (*p).ttbr_new = ttbr_new;
++        (*p).ttbr_empty = crate::arch::aarch64::mmu::empty_l0_pa();
++        (*p).mode = mode;
++    }
++    R_FAULT.store(false, SeqCst);
++    let daif: u64 = mrs!("daif");
++    EL0_ACTIVE.store(true, SeqCst);
++    // SAFETY: see module doc; the sync hook resumes at label 1.
++    unsafe {
++        core::arch::asm!(
++            "stp x19, x20, [sp, #-96]!",
++            "stp x21, x22, [sp, #16]",
++            "stp x23, x24, [sp, #32]",
++            "stp x25, x26, [sp, #48]",
++            "stp x27, x28, [sp, #64]",
++            "stp x29, x30, [sp, #80]",
++            "adr x9, 1f",
++            "str x9, [x8, #72]",
++            "mov x9, sp",
++            "str x9, [x8, #80]",
++            "msr daifset, #0xf",
++            "msr spsel, #1",
++            "ldr x9, [x8, #8]",
++            "msr sp_el0, x9",
++            "ldr x9, [x8, #0]",
++            "msr elr_el1, x9",
++            "mov x9, #0x3c0",
++            "msr spsr_el1, x9",
++            "ldr x10, [x8, #48]",
++            "ldr x11, [x8, #56]",
++            "ldr x12, [x8, #64]",
++            "ldp x0, x1, [x8, #16]",
++            "ldp x2, x3, [x8, #32]",
++            "cmp x12, #1",
++            "b.eq 11f",
++            "cmp x12, #3",
++            "b.eq 13f",
++            "cmp x12, #4",
++            "b.eq 14f",
++            "eret",
++            "11:",
++            "dsb ish",
++            "msr ttbr0_el1, x11",
++            "tlbi vmalle1",
++            "dsb ish",
++            "isb",
++            "msr ttbr0_el1, x10",
++            "isb",
++            "eret",
++            "13:",
++            "dsb ish",
++            "msr ttbr0_el1, x10",
++            "isb",
++            "tlbi vmalle1",
++            "dsb ish",
++            "eret",
++            "14:",
++            "dsb ish",
++            "msr ttbr0_el1, x10",
++            "isb",
++            "eret",
++            "1:",
++            "ldp x19, x20, [sp]",
++            "ldp x21, x22, [sp, #16]",
++            "ldp x23, x24, [sp, #32]",
++            "ldp x25, x26, [sp, #48]",
++            "ldp x27, x28, [sp, #64]",
++            "ldp x29, x30, [sp, #80]",
++            "add sp, sp, #96",
++            in("x8") p,
++            clobber_abi("C"),
++        );
++        core::arch::asm!("msr daif, {0}", in(reg) daif, options(nomem, nostack));
++    }
++    [R_X[0].load(SeqCst), R_X[1].load(SeqCst), R_X[2].load(SeqCst), R_X[3].load(SeqCst)]
++}
++
++fn fault_str() -> String {
++    let esr = R_ESR.load(SeqCst);
++    format!("EC {:#x} ISS {:#x} DFSC {:#04x} WnR {} FAR {:#x} ELR {:#x}",
++        (esr >> 26) & 0x3F, esr & 0x1FF_FFFF, esr & 0x3F, (esr >> 6) & 1,
++        R_FAR.load(SeqCst), R_ELR.load(SeqCst))
++}
++
++// ───────────────────────────── shared state ─────────────────────────
++
++struct Ctx {
++    arena: Arena,
++    blk: u64, // page-aligned test block PA (= user VA)
++}
++
++// Test block layout (offsets from `blk`).
++const B_CODE: u64 = 0x0000; // EL0 routines
++const B_DATA: u64 = 0x1000; // rw data
++const B_SHARED: u64 = 0x2000; // shared counter
++const B_STACK_TOP: u64 = 0x8000;
++const B_PRIV_A: u64 = 0x8000;
++const B_PRIV_B: u64 = 0x9000;
++const B_P1: u64 = 0xA000; // uacc: user RW
++const B_P2: u64 = 0xB000; // uacc: user RO
++const B_P3: u64 = 0xC000; // uacc: kernel-only
++const B_LEN: u64 = 0x10000;
++
++fn kw(pa: u64) -> *mut u64 {
++    (pa + VA_OFFSET) as *mut u64
++}
++
++fn entry_of(s: *const u8) -> u64 {
++    // SAFETY: link-time symbols.
++    let base = sym(&raw const __spike_el0_blob);
++    sym(s) - base
++}
++
++fn setup(_map: &MemoryMap) -> Option<Ctx> {
++    // SAFETY: kernel-owned allocations from the BDOS pool (TT preferred).
++    let arena_raw = unsafe { tos_api::bdos::mem::traps::mxalloc((4 * 1024 * 1024 + 4096) as i32, 3) };
++    let blk_raw = unsafe { tos_api::bdos::mem::traps::mxalloc((B_LEN + 4096) as i32, 3) };
++    if arena_raw <= 0 || blk_raw <= 0 {
++        o!("setup: Mxalloc failed ({:#x}, {:#x})", arena_raw, blk_raw);
++        return None;
++    }
++    let a0 = (arena_raw as u32 as u64 + K4 - 1) & !(K4 - 1);
++    let blk = (blk_raw as u32 as u64 + K4 - 1) & !(K4 - 1);
++    // SAFETY: test block via the high-half alias.
++    unsafe {
++        core::ptr::write_bytes((blk + VA_OFFSET) as *mut u8, 0, B_LEN as usize);
++        let start = sym(&raw const __spike_el0_blob);
++        let end = sym(&raw const __spike_el0_blob_end);
++        core::ptr::copy_nonoverlapping(start as *const u8, (blk + B_CODE + VA_OFFSET) as *mut u8,
++            (end - start) as usize);
++        clean_to_pou(blk + B_CODE + VA_OFFSET, end - start);
++        // Private page-0 images: data word at 0, code at 0x100 (movz x0,#tag; ret).
++        for (off, tag) in [(B_PRIV_A, 0xAu64), (B_PRIV_B, 0xBu64)] {
++            kw(blk + off).write_volatile(0xA0A0_A0A0 + (tag - 0xA) * 0x1010_1010);
++            let code = (blk + off + 0x100 + VA_OFFSET) as *mut u32;
++            code.write_volatile(0xD280_0000 | ((tag as u32) << 5)); // movz x0, #tag
++            code.add(1).write_volatile(0xD65F_03C0); // ret
++            // Direct-entry stub at +0x180 (eret lands on the aliased VA itself,
++            // as in QUIRK-001): movz x0,#tag; movz x7,#0; ldr x1,[x7];
++            // movz x2,#0; svc #0xA03; b .
++            let d = (blk + off + 0x180 + VA_OFFSET) as *mut u32;
++            for (k, w) in [0xD280_0000 | ((tag as u32) << 5), 0xD280_0007, 0xF940_00E1,
++                0xD280_0002, 0xD401_4061, 0x1400_0000].into_iter().enumerate() {
++                d.add(k).write_volatile(w);
++            }
++            clean_to_pou(blk + off + VA_OFFSET, 0x200);
++        }
++    }
++    dsb_all();
++    sync_icache();
++    o!("setup: tables arena {:#x} (4 MiB), test block {:#x}", a0, blk);
++    Some(Ctx { arena: Arena { next: a0, end: a0 + 4 * 1024 * 1024, start: a0, used: 0 }, blk })
++}
++
++// ───────────────────────────── Q2 ───────────────────────────────────
++
++fn build_pool_root(c: &mut Ctx, blocks: bool, attrs: u64) -> u64 {
++    let l0 = c.arena.page();
++    for k in 0..2 {
++        let (s, e) = pool(k);
++        if e > s {
++            map_range(&mut c.arena, l0, s, e, attrs, blocks);
++        }
++    }
++    dsb_all();
++    l0
++}
++
++fn build_dram_root(c: &mut Ctx, map: &MemoryMap) -> u64 {
++    let l0 = c.arena.page();
++    let end = map.dram.end.min(0x1_0000_0000);
++    map_range(&mut c.arena, l0, map.dram.start, end, USER_RW, true);
++    dsb_all();
++    l0
++}
++
++fn perf(c: &Ctx, label: &str) {
++    let (ts, te) = pool(1);
++    let mib = ((te - ts) / (1024 * 1024)).min(64);
++    if mib == 0 {
++        return;
++    }
++    let npages = mib * 256;
++    let t0 = mrs!("cntpct_el0");
++    // SAFETY: TTBR0 holds the variant's root, which maps the TT pool.
++    let r = unsafe {
++        el0_call(c.blk + B_CODE + entry_of(&raw const __spike_el0_stride), c.blk + B_STACK_TOP,
++            [ts, npages, 4096, 8], 0, 0)
++    };
++    let t1 = mrs!("cntpct_el0");
++    let frq = mrs!("cntfrq_el0").max(1);
++    let us = (t1 - t0) * 1_000_000 / frq;
++    if R_FAULT.load(SeqCst) {
++        o!("   perf {label}: EL0 FAULT {}", fault_str());
++    } else {
++        o!("   perf {label}: {} MiB x8 page-stride loads: {} us ({} ns/load) sum {:x}",
++            mib, us, us * 1000 / (npages * 8), r[0] & 0xFFFF);
++    }
++}
++
++fn step_alias(c: &mut Ctx, map: &MemoryMap, id: &str, kind: u8, tlbi: bool) {
++    if skipped(id) {
++        o!("{id}: skipped");
++        return;
++    }
++    c.arena.reset();
++    let root = match kind {
++        0 => build_pool_root(c, true, USER_RW),
++        1 => build_pool_root(c, false, USER_RW),
++        _ => build_dram_root(c, map),
++    };
++    o!("{id}: {} tables; install {} ...", c.arena.used, if tlbi { "msr+tlbi" } else { "msr+isb only" });
++    install(root, tlbi);
++    // First Normal-memory stores right after the install, no Device access
++    // in between (ADR-010 wall 3: "first kernel store after install hangs").
++    let data = c.blk + B_DATA;
++    let mut bx = alloc::boxed::Box::new([0u64; 8]);
++    bx[3] = 0x1234_5678;
++    // SAFETY: alias of the test block; low-half read goes through TTBR0 VA=PA.
++    let low = unsafe {
++        kw(data).write_volatile(0x0B0B_0000_0000_0001);
++        core::hint::black_box(&mut bx);
++        (data as *const u64).read_volatile()
++    };
++    // SAFETY: EL0 excursion through the installed root.
++    let r1 = unsafe {
++        el0_call(c.blk + B_CODE + entry_of(&raw const __spike_el0_rw), c.blk + B_STACK_TOP,
++            [data, 0, 0x0E10_0000_0000_0002, 0], 0, 0)
++    };
++    let f1 = R_FAULT.load(SeqCst);
++    // SAFETY: alias read-back of the EL0 store, then a second round.
++    let back = unsafe { kw(data + 8).read_volatile() };
++    unsafe { kw(data).write_volatile(0x0B0B_0000_0000_0003) };
++    let r2 = unsafe {
++        el0_call(c.blk + B_CODE + entry_of(&raw const __spike_el0_rw), c.blk + B_STACK_TOP,
++            [data, 0, 0x0E10_0000_0000_0004, 0], 0, 0)
++    };
++    let f2 = R_FAULT.load(SeqCst);
++    let back2 = unsafe { kw(data + 8).read_volatile() };
++    let ok = !f1 && !f2 && low == 0x0B0B_0000_0000_0001 && r1[0] == 0x0B0B_0000_0000_0001
++        && back == 0x0E10_0000_0000_0002 && r2[0] == 0x0B0B_0000_0000_0003
++        && back2 == 0x0E10_0000_0000_0004 && bx[3] == 0x1234_5678;
++    if ok {
++        o!("{id}: OK (store+heap after install, EL1 low rd, 2x EL0 rw, coherent)");
++        if tlbi && kind < 2 {
++            perf(c, id);
++        }
++    } else {
++        o!("{id}: FAIL low {:x} r1 {:x} back {:x} r2 {:x} back2 {:x} f {}/{}",
++            low, r1[0], back, r2[0], back2, f1, f2);
++        if f1 || f2 {
++            o!("   {}", fault_str());
++        }
++    }
++    restore_empty();
++}
++
++// ───────────────────────────── Q3 ───────────────────────────────────
++
++/// Root for one memspace: own L0/L1/L2(first GiB)/L3([0,2MiB)), everything
++/// else shared with `tmpl`. `extra` adds 4-KiB entries in [0, 2 MiB).
++fn build_memspace(c: &mut Ctx, tmpl: u64, page0: Option<u64>, extra: &[(u64, u64, u64)]) -> u64 {
++    let l0 = c.arena.page();
++    let l1 = c.arena.page();
++    let t_l1 = rd(tmpl, 0) & ADDR;
++    for i in 0..512 {
++        wr(l1, i, rd(t_l1, i));
++    }
++    let l2 = c.arena.page();
++    let t_l2_e = rd(t_l1, 0);
++    if t_l2_e & 3 == 3 {
++        for i in 0..512 {
++            wr(l2, i, rd(t_l2_e & ADDR, i));
++        }
++    }
++    assert!(rd(l2, 0) & 1 == 0, "pool overlaps [0,2MiB)");
++    let l3 = c.arena.page();
++    if let Some(p) = page0 {
++        wr(l3, 0, p | USER_RW | NG | TABLE);
++    }
++    for &(va, pa, attrs) in extra {
++        wr(l3, va >> 12, pa | attrs | TABLE);
++    }
++    wr(l2, 0, l3 | VALID | TABLE);
++    wr(l1, 0, l2 | VALID | TABLE);
++    wr(l0, 0, l1 | VALID | TABLE);
++    dsb_all();
++    l0
++}
++
++const SW_N: u64 = 16;
++
++fn step_switch(c: &mut Ctx, roots: (u64, u64), id: &str, mode: u8) {
++    if skipped(id) {
++        o!("{id}: skipped");
++        return;
++    }
++    let desc = match mode {
++        0 => "empty+tlbi, UART line, msr+isb, eret (QUIRK-001 bracket, production)",
++        1 => "empty,tlbi,dsb,isb,msr,isb,eret (architectural, no bracket)",
++        3 => "msr,isb,tlbi,dsb,eret (TLBI right before eret)",
++        4 => "msr,isb,eret (no TLBI, ASID 0)",
++        _ => "ASID 1/2 tagged, nG=1: msr,isb,eret (no TLBI)",
++    };
++    o!("{id}: {desc} ...");
++    restore_empty();
++    let (ra, rb) = if mode == 5 { (roots.0 | 1 << 48, roots.1 | 2 << 48) } else { roots };
++    if mode == 5 {
++        // Wall 2 pre-check: the ASID-tagged msr itself.
++        install(ra, false);
++        crate::kprintln!("[spike] {id}: ASID-tagged msr ttbr0 + isb survived");
++        restore_empty();
++    }
++    let shared = c.blk + B_SHARED;
++    // SAFETY: alias.
++    unsafe { kw(shared).write_volatile(0) };
++    let mut res = String::new();
++    for direct in [false, true] {
++    let mut errs = 0u64;
++    let mut faults = 0u64;
++    let mut first = String::new();
++    for i in 0..SW_N {
++        let b = i % 2 == 1;
++        let (root, tag, word) = if b { (rb, 0xBu64, 0xB0B0_B0B0u64) } else { (ra, 0xA, 0xA0A0_A0A0) };
++        let asm_mode = match mode {
++            0 => {
++                restore_empty();
++                crate::kprintln!("[spike] bracket {i}");
++                // SAFETY: production-style install.
++                unsafe { tos_api::bdos::process::mmu::install_ttbr0(root) };
++                0
++            }
++            5 => 4,
++            m => m as u64,
++        };
++        // SAFETY: EL0 excursion; the asm installs `root` per `asm_mode`.
++        let entry = if direct { 0x180 } else { c.blk + B_CODE + entry_of(&raw const __spike_el0_sw) };
++        let r = unsafe { el0_call(entry, c.blk + B_STACK_TOP, [shared, 0x100, 0, 0], root, asm_mode) };
++        if R_FAULT.load(SeqCst) {
++            faults += 1;
++            if first.is_empty() {
++                first = format!("#{i} fault {}", fault_str());
++            }
++        } else if r[0] != tag || r[1] != word || (!direct && r[2] != i + 1) {
++            errs += 1;
++            if first.is_empty() {
++                first = format!("#{i} want tag {:x}/{:x}/{} got {:x}/{:x}/{}", tag, word, i + 1, r[0], r[1], r[2]);
++            }
++        }
++    }
++    res.push_str(&format!(" {}: {}/{} ok {} wrong {} flt {}", if direct { "direct@0x180" } else { "via-shared" },
++        SW_N - errs - faults, SW_N, errs, faults, first));
++    }
++    restore_empty();
++    o!("{id}:{res}");
++}
++
++// ───────────────────────────── Q4 ───────────────────────────────────
++
++#[derive(Clone, Copy)]
++enum Op {
++    Ldtr,
++    Sttr,
++    Ldr,
++}
++
++fn access(op: Op, va: u64, val: u64) -> (u64, bool) {
++    R_FAULT.store(false, SeqCst);
++    UACC_ACTIVE.store(true, SeqCst);
++    let mut v: u64 = 0xDEAD_BEEF;
++    // SAFETY: faults are recovered by `on_sync` (ELR += 4).
++    unsafe {
++        match op {
++            Op::Ldtr => core::arch::asm!("ldtr {v}, [{a}]", v = inout(reg) v, a = in(reg) va, options(nostack)),
++            Op::Sttr => core::arch::asm!("sttr {v}, [{a}]", v = in(reg) val, a = in(reg) va, options(nostack)),
++            Op::Ldr => core::arch::asm!("ldr {v}, [{a}]", v = inout(reg) v, a = in(reg) va, options(nostack)),
++        }
++    }
++    UACC_ACTIVE.store(false, SeqCst);
++    (v, R_FAULT.load(SeqCst))
++}
++
++fn step_uacc(c: &mut Ctx) {
++    if skipped("uacc") {
++        o!("uacc: skipped");
++        return;
++    }
++    c.arena.reset();
++    let tmpl = build_pool_root(c, true, USER_RW | NG);
++    let blk = c.blk;
++    let root = build_memspace(c, tmpl, None, &[
++        (0x1000, blk + B_P1, USER_RW),
++        (0x2000, blk + B_P2, VALID | AF | SH_INNER | AP_EL0_RO | PXN),
++        (0x3000, blk + B_P3, VALID | AF | SH_INNER | AP_EL1_ONLY | PXN),
++    ]);
++    // SAFETY: alias writes of the probe pages.
++    unsafe {
++        kw(blk + B_P1).write_volatile(0x1111);
++        kw(blk + B_P2).write_volatile(0x2222);
++        kw(blk + B_P3).write_volatile(0x3333);
++    }
++    install(root, true);
++    o!("Q4 uacc (EL1, root with 0x1000 RW / 0x2000 RO / 0x3000 EL1-only / 0x4000 none)");
++    let kstatic = (&raw const LINES) as u64;
++    let cases: [(&str, Op, u64, u64); 11] = [
++        ("ldtr user RW 0x1000", Op::Ldtr, 0x1000, 0),
++        ("sttr user RW 0x1000", Op::Sttr, 0x1008, 0x5555),
++        ("ldtr user RO 0x2000", Op::Ldtr, 0x2000, 0),
++        ("sttr user RO 0x2000", Op::Sttr, 0x2000, 0x6666),
++        ("ldtr EL1-only 0x3000", Op::Ldtr, 0x3000, 0),
++        ("ldtr unmapped L3 0x4000", Op::Ldtr, 0x4000, 0),
++        ("ldtr unmapped L2 0x200000", Op::Ldtr, 0x20_0000, 0),
++        ("ldtr unmapped L1 1<<38", Op::Ldtr, 1 << 38, 0),
++        ("ldtr unmapped L0 1<<39", Op::Ldtr, 1 << 39, 0),
++        ("ldtr kernel TTBR1 static", Op::Ldtr, kstatic, 0),
++        ("ldr (priv) user RO 0x2000", Op::Ldr, 0x2000, 0),
++    ];
++    for (name, op, va, val) in cases {
++        let (v, fault) = access(op, va, val);
++        if fault {
++            o!("  {name}: ABORT {}", fault_str());
++        } else {
++            o!("  {name}: ok value {:#x}", v);
++        }
++    }
++    // SAFETY: alias check of the sttr.
++    let st = unsafe { kw(blk + B_P1 + 8).read_volatile() };
++    o!("  sttr result via alias: {:#x} (want 0x5555)", st);
++    let m1 = mrs!("id_aa64mmfr1_el1");
++    if f(m1, 20, 4) != 0 {
++        // SAFETY: PAN present — set it, probe, clear it.
++        unsafe { core::arch::asm!(".inst 0xd500419f", options(nostack)) }; // msr pan, #1
++        let (_, f1) = access(Op::Ldr, 0x1000, 0);
++        let s1 = fault_str();
++        let (_, f2) = access(Op::Ldtr, 0x1000, 0);
++        unsafe { core::arch::asm!(".inst 0xd500409f", options(nostack)) }; // msr pan, #0
++        o!("  PAN=1: ldr user -> {} {} ; ldtr user -> {}", if f1 { "ABORT" } else { "ok" },
++            if f1 { s1 } else { String::new() }, if f2 { "ABORT" } else { "ok" });
++    } else {
++        o!("  PAN not implemented (MMFR1.PAN = 0): privileged ldr on user pages cannot be blocked");
++    }
++    restore_empty();
++}
++
++// ───────────────────────────── early (ADR-010 replay) ───────────────
++
++#[repr(C, align(4096))]
++struct Pt([u64; 512]);
++static mut E_L0: Pt = Pt([0; 512]);
++static mut E_L1: Pt = Pt([0; 512]);
++static mut E_L2: [Pt; 4] = [const { Pt([0; 512]) }; 4];
++static EARLY: AtomicU64 = AtomicU64::new(0);
++
++/// Called right after `mmu::reinstall`, before frames/heap init, when the
++/// boot args carry `spike.early` (with TLBI) or `spike.early-notlbi`: install
++/// a TTBR0 identity map of all DRAM (2-MiB blocks, EL0 RW, PXN) and leave it
++/// active through the rest of the boot — ADR-010's 2026-06-16 attempt.
++#[allow(clippy::deref_addrof)]
++pub fn early(map: &MemoryMap) {
++    // `replace` = ADR-010's exact 2026-06-16 setup: TTBR0 still holds the
++    // Stage-1 boot identity map (1-GiB blocks, EL1-only), with a live TLB
++    // entry, when the 2-MiB EL0 identity map is swapped in.
++    let (tlbi, replace) = if arg(b"spike.early") {
++        (true, false)
++    } else if arg(b"spike.early-notlbi") {
++        (false, false)
++    } else if arg(b"spike.early-replace") {
++        (true, true)
++    } else if arg(b"spike.early-replace-notlbi") {
++        (false, true)
++    } else {
++        return;
++    };
++    let va2pa = crate::arch::aarch64::mmu::va_to_pa;
++    // SAFETY: boot CPU, static tables not yet in use.
++    unsafe {
++        let l0 = &mut *(&raw mut E_L0);
++        let l1 = &mut *(&raw mut E_L1);
++        let l2 = &mut *(&raw mut E_L2);
++        let end = map.dram.end.min(0x1_0000_0000);
++        let mut p = (map.dram.start + M2 - 1) & !(M2 - 1);
++        let mut n = 0u64;
++        while p + M2 <= end {
++            l2[(p >> 30) as usize].0[((p >> 21) & 511) as usize] = p | USER_RW;
++            p += M2;
++            n += 1;
++        }
++        for i in 0..4 {
++            l1.0[i] = va2pa((&raw const l2[i]) as u64) | VALID | TABLE;
++        }
++        l0.0[0] = va2pa((&raw const *l1) as u64) | VALID | TABLE;
++        let root = va2pa((&raw const *l0) as u64);
++        crate::kprintln!("[spike] early: TTBR0 identity map of DRAM ({} x 2 MiB, EL0 RW, PXN), install {} ...",
++            n, if tlbi { "msr+tlbi" } else { "msr+isb" });
++        if replace {
++            let boot_l0: u64;
++            core::arch::asm!("ldr {o}, =__boot_l0_phys", o = out(reg) boot_l0, options(nostack));
++            install(boot_l0, true);
++            let probe = map.kernel.start;
++            let v = (probe as *const u64).read_volatile(); // low-half read via the boot map
++            crate::kprintln!("[spike] early: boot identity map {:#x} back in TTBR0, low read {:#x} -> {:#x}",
++                boot_l0, probe, v);
++        }
++        install(root, tlbi);
++        EARLY.store(1 + tlbi as u64 + 2 * replace as u64, SeqCst);
++    }
++    // The ADR-010 hang was "the first kernel Normal store after install";
++    // the static store above is one, the heap init that follows is the rest.
++    crate::kprintln!("[spike] early: first stores after install survived; continuing boot");
++}
++
++// ───────────────────────────── driver ───────────────────────────────
++
++/// Run all steps, then hold the screen and stop.
++pub fn run(map: &MemoryMap) -> ! {
++    #[cfg(feature = "board-rpi4")]
++    PAUSE.store(!arg(b"spike.nopause"), SeqCst);
++    crate::fbcon::clear_and_home();
++    LINES.store(0, SeqCst);
++    o!("ARCH03 stage-0b spike on {} -- results also on serial", crate::BOARD_NAME);
++    match EARLY.load(SeqCst) {
++        0 => o!("early (ADR-010 replay): not requested"),
++        v => o!("early (ADR-010 replay, {}{}): DRAM identity in TTBR0 survived the whole boot -> OK",
++            if v > 2 { "replacing boot map, " } else { "" },
++            if v % 2 == 0 { "with TLBI" } else { "no TLBI" }),
++    }
++    restore_empty();
++    if !skipped("id") {
++        step_id();
++    }
++    if !skipped("fb") {
++        step_fb(map);
++    }
++    let Some(mut c) = setup(map) else { halt() };
++
++    step_alias(&mut c, map, "a2m-tlbi", 0, true);
++    step_alias(&mut c, map, "a4k-tlbi", 1, true);
++    step_alias(&mut c, map, "a2m-notlbi", 0, false);
++    step_alias(&mut c, map, "a4k-notlbi", 1, false);
++    step_alias(&mut c, map, "adram-tlbi", 2, true);
++    step_alias(&mut c, map, "adram-notlbi", 2, false);
++
++    step_uacc(&mut c);
++
++    // Q3: two memspaces over one shared template (2-MiB blocks, nG = 1).
++    c.arena.reset();
++    let tmpl = build_pool_root(&mut c, true, USER_RW | NG);
++    let blk = c.blk;
++    let ra = build_memspace(&mut c, tmpl, Some(blk + B_PRIV_A), &[]);
++    let rb = build_memspace(&mut c, tmpl, Some(blk + B_PRIV_B), &[]);
++    o!("Q3 roots A {:#x} B {:#x} share template {:#x}; page 0 private (code at 0x100)", ra, rb, tmpl);
++    step_switch(&mut c, (ra, rb), "sw-bracket", 0);
++    step_switch(&mut c, (ra, rb), "sw-arch", 1);
++    step_switch(&mut c, (ra, rb), "sw-tlbi-eret", 3);
++    step_switch(&mut c, (ra, rb), "sw-notlbi", 4);
++    step_switch(&mut c, (ra, rb), "sw-asid", 5);
++
++    o!("SPIKE DONE. Photograph the screen. The system stops here.");
++    if PAUSE.load(SeqCst) {
++        wait_key();
++    }
++    halt()
++}
++
++fn halt() -> ! {
++    crate::kprintln!("[spike] halted");
++    crate::arch::aarch64::halt()
++}
