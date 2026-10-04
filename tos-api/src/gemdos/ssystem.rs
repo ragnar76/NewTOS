@@ -8,7 +8,9 @@
 //! On top of those sit NewTOS's **own** subfunctions from 2000 upwards
 //! ([`S_NEWTOS_CPUCLOCK`], [`S_NEWTOS_CPUTEMP`]) — machine facts an EL0
 //! program cannot otherwise reach, because the hardware that knows them (the
-//! BCM2711 mailbox) is kernel-only. 2000 is free: FreeMiNT's own header
+//! BCM2711 mailbox) is kernel-only — and [`S_NEWTOS_KBDVEC`] (2002), the
+//! kernel entry of the per-process default `kbdvec` stub (KEYS02,
+//! `docs/api/xbios/22-kbdvbase.md` B3/D6). 2000 is free: FreeMiNT's own header
 //! reserves 0–29, 100, `0x54f8`, 900–999 and 1000–**1999**
 //! (`references/freemint/sys/mint/ssystem.h`, the two `reserved` comments),
 //! and the highest number its dispatcher answers is the build-gated test mode
@@ -35,6 +37,10 @@ pub const S_NEWTOS_CPUCLOCK: u16 = 2000;
 /// NewTOS-own subfunction: the CPU/SoC temperature in **thousandths of a
 /// degree Celsius**.
 pub const S_NEWTOS_CPUTEMP: u16 = 2001;
+/// NewTOS-own subfunction: run the default `kbdvec` (EmuTOS `kbd_int`) for
+/// one IKBD key byte — what the `kbdvec_default` stub in every process's page
+/// 0 calls (KEYS02). Defined next to the stub in [`crate::xbios::kbdvecs`].
+pub const S_NEWTOS_KBDVEC: u16 = crate::xbios::kbdvecs::S_NEWTOS_KBDVEC;
 
 /// `Ssystem(WORD mode, LONG arg1, LONG arg2)`: `mode` in `x0`, `arg1` in
 /// `x1`, `arg2` in `x2`.
@@ -58,6 +64,7 @@ pub fn ssystem(args: &TrapArgs) -> Long {
         S_NEWTOS_CPUTEMP => {
             newtos_scalar(args, || host::host()?.cpu_temperature_mdeg())
         }
+        S_NEWTOS_KBDVEC => s_newtos_kbdvec(args),
         _ => EINVFN,
     }
 }
@@ -165,6 +172,29 @@ fn newtos_scalar(args: &TrapArgs, read: impl FnOnce() -> Option<Long>) -> Long {
     // bad pointer — the same rule as `s_getcookie`'s `arg2`.
     unsafe { write_user_long(out as *mut u8, value as u32) };
     E_OK
+}
+
+/// `S_NEWTOS_KBDVEC` (2002): `arg1` = the IKBD key byte (bit 7 = break, as
+/// `kbdvec` receives it in `x0`), `arg2` reserved, must be 0. Runs the default
+/// `kbdvec` — EmuTOS `_kbdvec` → `kbd_int(scancode)` (`bios/aciavecs.S:
+/// 372-376`, `bios/ikbd.c:725-910`) — through the host's key decoder:
+/// modifier state, the key word into the console queue, the key repeat.
+///
+/// * `E_OK` — the byte was decoded;
+/// * `EINVAL` — `arg1` is not a byte (`> 0xFF`) or `arg2 != 0`; nothing ran;
+/// * `ERROR` — this host has no keyboard decoder (a hostless build).
+///
+/// Any process may call it; the effect is exactly that of calling the default
+/// `kbdvec` it can already read from its own table, as on TOS.
+fn s_newtos_kbdvec(args: &TrapArgs) -> Long {
+    let byte = args.arg_u64(1);
+    if byte > 0xFF || args.arg_u64(2) != 0 {
+        return EINVAL;
+    }
+    match host::host() {
+        Some(h) if h.kbd_int(byte as u8) => E_OK,
+        _ => ERROR,
+    }
 }
 
 /// Write a 32-bit value to a user pointer via an unprivileged store

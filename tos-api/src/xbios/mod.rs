@@ -15,6 +15,7 @@
 //! defined contract value instead (floppy → `EUNDEV`, PSG → `0`, etc.).
 
 pub mod floppy;
+pub mod kbdvecs;
 pub mod keytbl;
 pub mod screen;
 pub mod system;
@@ -117,7 +118,7 @@ pub fn dispatch(args: &TrapArgs) -> i64 {
         // independent of printer hardware. See `docs/api/xbios/_psg-group.md`
         // (Setprt entry).
         SETPRT => system::setprt(args),
-        KBDVBASE => system::kbdvbase(),
+        KBDVBASE => kbdvecs::kbdvbase(),
         // Keyboard auto-repeat timing get/set. See `docs/api/xbios/23-kbrate.md`.
         KBRATE => system::kbrate(args),
         VSYNC => system::vsync(),

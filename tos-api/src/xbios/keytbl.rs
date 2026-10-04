@@ -92,7 +92,7 @@ static OVERRIDE: [AtomicU64; 3] = [
 #[repr(align(8))]
 struct KernelArea(UnsafeCell<[u8; KEYTBL_AREA_SIZE as usize]>);
 // SAFETY: single boot CPU, cooperative (non-preemptive) trap path — the same
-// discipline as `xbios::system::KBDVECS`.
+// discipline as `xbios::kbdvecs::KERNEL_TABLE`.
 unsafe impl Sync for KernelArea {}
 static KERNEL_AREA: KernelArea = KernelArea(UnsafeCell::new([0; KEYTBL_AREA_SIZE as usize]));
 

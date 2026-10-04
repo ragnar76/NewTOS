@@ -552,6 +552,16 @@ pub const UPCALL_MASK_AES_USERDEF: u32 = 1 << 1;
 /// two bits.
 pub const UPCALL_MASK_VEX_WHEEL: u32 = 1 << 2;
 
+/// Upcall-type mask bit for the IKBD **`kbdvec`** hook (KEYS02,
+/// `docs/api/xbios/22-kbdvbase.md` B4). Set while the program's `kbdvec`
+/// routine runs at EL0 for one scancode, cleared on its `Psigreturn`. While it
+/// is set no further `kbdvec` byte is delivered (nesting depth stays 1); the
+/// next queued byte follows on that `Psigreturn`. Not posted through
+/// [`post_upcall`] — whose single pending slot would lose a make when its break
+/// arrives in the same poll — but drained from the per-process ring in
+/// `xbios::kbdvecs`.
+pub const UPCALL_MASK_KBDVEC: u32 = 1 << 3;
+
 // ─── Parent-frame snapshot ──────────────────────────────────────────
 
 /// Index of `lr` (`x30`) in [`ParentFrame::regs`].
@@ -989,6 +999,10 @@ pub fn free_slot(idx: usize) {
     // `vex_wheelv` handler is an EL0 VA and means nothing once the address
     // space is gone (see `vdi::mouse::release_wheel_vector`).
     crate::vdi::mouse::release_wheel_vector(idx);
+    // Drop any `kbdvec` bytes still queued for this process (KEYS02, D8): the
+    // hook lived in the address space that is going away; its table and stubs
+    // in page 0 go with the TPA.
+    crate::xbios::kbdvecs::release_slot(idx);
     // State last so that any concurrent reader sees `Free` only once
     // every other field is observably reset.
     p.state.store(State::Free as u8, Ordering::Release);

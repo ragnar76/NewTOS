@@ -1,0 +1,83 @@
+measurement-2026-10-04-keys02 -- KEYS02 kernel side: Kbdvbase / kbdvec hook
+Date 2026-10-04, branch desk-rebuild, base HEAD = tree clean at start,
+KEYS02 uncommitted (method/keys02-change.diff = git diff + the three new files).
+
+WHAT
+  Two headless QEMU raspi4b runs (640x480, -append serial=on via
+  tools/qemu-serial-on), C:\KBDVEC.NAP autostarted by #Z, a scripted IKBD
+  injector in a scratch copy of the kernel (method/apply-instrumentation.py,
+  never applied to the shared tree; as applied: method/scratch-instrumentation.diff).
+    run1 = sdk/examples/kbdvec.c as committed (restores kbdvec before exit)
+    run2 = the same with the restore line removed (method/kbdvec-norestore.diff)
+           -- the D8 check: a hook left installed at exit must vanish.
+
+PROGRAM (sdk/examples/kbdvec.c, built with sdk/build.sh)
+  appl_init; p = Kbdvbase(); old = p[-1]; check no slot is 0; p[-1] = hook
+  (hook: record x0, then chain to old with x0/x1 unchanged).
+  phase A: evnt_multi(MU_KEYBD) with NO timer until the RIGHT key word, then
+           MU_KEYBD|MU_TIMER(20) until the hook saw 4 codes.
+  phase B: Bconin(2) once, then Bconstat/evnt_timer until 6 codes.
+  restore (run1 only), print, PASS/FAIL, appl_exit, Pterm.
+
+INJECTOR SCHEDULE (200 Hz ticks after arming = first pump with RUN set)
+  +400 up make 0x48, +500 right make 0x4D,
+  +600 right break 0xCD AND up break 0xC8 in the SAME poll,
+  +900 'a' make 0x1E, +920 'a' break 0x9E,
+  +2000.. Alt make, 'c' make, 'c' break, Alt break (desktop, program gone).
+  The injector runs after every usb::poll(): pump_input and both blocking
+  read loops (the KEYS01 injector froze during a blocking read).
+
+FILES
+  scratch kernel8.img  sha256 8ab7882b3198ac25417d253f9afe44539a9edbf29fb121e3ffcdfd04f0abdd78
+  KBDVEC.NAP (run1)    sha256 4f5e307bfcfd24eca9d6866642ce486d6528cc874bc5a37a04c425257df4f146
+  KBDVEC.NAP (run2)    sha256 5438927330fed8b8267f67daba5d2381bfc058ad8116809f27b93cdb6ebb6c7c
+  Card: method/seed-kbdvec.sh (fresh tools/make-sd-image.sh image + KBDVEC.NAP
+  + method/newdesk-kbdvec.inf with "#Z 01 C:\KBDVEC.NAP@").
+  Run: PATH=tools/qemu-serial-on:$PATH bash method/run-qemu.sh <kernel8.img>
+       <card> <out> <tag> 14:t14.png 18:t18.png 22:t22.png 27:t27.png 32:t32.png
+  serial/run1-restore-serial.log, serial/run2-norestore-serial.log
+  screendumps/run{1,2}-t{14,18,22,27,32}.png
+
+RESULT (serial/run1-restore-serial.log; run2 identical up to the exit)
+  KBDVEC: Kbdvbase=000009B0 kbdvec=00000A08 ikbdsys=00000A00
+  KBDVEC: table OK (no slot is 0)
+  [krp] feed 0x48 / ring <- 0x48
+  [krp] restart svc at 0x1318 x8=0x1000 x0=200      <- evnt_multi (AES, no
+  [krp] kbdvec upcall 0x48 -> 0x1780 elr=0x1318        timer) gives way (O1)
+  [krp] kbd_int 0x48                                 <- hook chained to the
+  [krp] push_rx 0x4800 / rx_pop_key 0x4800              default stub -> Ssystem(2002)
+  ... same for 0x4D ...
+  [krp] feed 0xcd, ring <- 0xcd, feed 0xc8, ring <- 0xc8   (one poll)
+  [krp] restart svc at 0x13a4 ...
+  [krp] kbdvec upcall 0xcd ... kbd_int 0xcd
+  [krp] kbdvec upcall 0xc8 ... kbd_int 0xc8          <- second byte via the
+                                                        Psigreturn chain, in order
+  [krp] restart svc at 0x13f8 x8=0x2 x0=2            <- Bconin(2) gives way
+  [krp] kbdvec upcall 0x1e ... push_rx 0x1e61 / rx_pop_key 0x1e61
+  KBDVEC: hook saw 48 4D CD C8 1E 9E                 <- exactly the 6 injected
+                                                        bytes, in order
+  KBDVEC: AES words 4800 x7, 4D00 x7                 <- make + KEYS01 repeats
+                                                        reach the BIOS queue
+                                                        (chaining works); the
+                                                        repeats do NOT reach
+                                                        the hook (ikbd.c:524)
+  KBDVEC: Bconin=001E0061
+  KBDVEC: PASS
+  [shell] sh_ldapp: 'C:\KBDVEC.NAP' exited with rc=0
+  desktop: feed 0x2e run=false -> push_rx 0x2e00 -> rx_pop_key 0x2e00 (default
+  path, no ring); screendumps run1-t27 / run2-t27: Alt-C opened the C:\ window.
+  run2 (hook NOT restored): the same -- the hook vanished with the process (D8).
+
+HOST CHECKS (method/)
+  host-tests.txt   cargo test -p tos-api -p tos-types -p xtask --no-fail-fast
+                   1010 passed / 0 failed / 1 ignored (baseline 997/0/1;
+                   +10 tos-api/tests/xbios_kbdvecs.rs, +3 key_repeat ikbdsys)
+  build-*.log      release, after cargo clean -p kernel -p tos-api:
+                   tos-api 64 / kernel 94 warnings, both boards (= baseline)
+  clippy-*.log     tos-api 80 / kernel 125, both boards (= baseline)
+  tools/desk-drift-probe.sh: 31 (= baseline)
+
+NOT COVERED HERE
+  Real Pi 4 (USB-HID keyboard) -- HW acceptance; Doom (next step, KEYS02 Doom
+  side). qemu-virt has no IKBD source, so the hook path is raspi4b-only here.
+  Cconrs / console Fread / v_string(request) do not give way (documented gap).

@@ -93,6 +93,34 @@ pub trait Host: Sync {
         }
     }
 
+    /// [`Host::console_read_key_blocking`] that **gives way** to the running
+    /// process's `kbdvec` hook (KEYS02, `docs/api/xbios/22-kbdvbase.md` B4):
+    /// `None` when bytes for that hook are queued
+    /// (`xbios::kbdvecs::pending_for_running`) — they can only be delivered on
+    /// the way back to EL0, and a hook that chains to the default `kbdvec` is
+    /// what puts the key this read waits for into the queue. The caller then
+    /// asks for a restart (`xbios::kbdvecs::request_restart`) and returns
+    /// without side effects; the trap handler rewinds the `svc`, runs the hook
+    /// and re-executes the read.
+    ///
+    /// Used by the single-key reads (`Cconin`, `Cnecin`, `Crawcin`,
+    /// `Bconin(2)`), which have no side effect before their key arrives. The
+    /// default never gives way (a hostless test has no hook to wait for).
+    fn console_read_key_restartable(&self) -> Option<u16> {
+        Some(self.console_read_key_blocking())
+    }
+
+    /// Run the default `kbdvec` — EmuTOS `kbd_int(scancode)`
+    /// (`bios/ikbd.c:725-910`), entered through `_kbdvec`
+    /// (`bios/aciavecs.S:372-376`) — for one IKBD key byte (bit 7 = break):
+    /// modifier state, key word into the console queue, key repeat. Reached
+    /// from `Ssystem(S_NEWTOS_KBDVEC)`, the call the per-process
+    /// `kbdvec_default` stub makes (KEYS02, D6). Returns `false` when this host
+    /// has no keyboard decoder (a hostless test), so the call can say so.
+    fn kbd_int(&self, _scancode: u8) -> bool {
+        false
+    }
+
     /// Advance the polled input sources once (keyboard/mouse bytes from
     /// the UART(s)), with interrupts briefly enabled. The AES event
     /// manager calls this while it polls for a wait condition: an

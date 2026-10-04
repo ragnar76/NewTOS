@@ -1,7 +1,8 @@
 # `Kbdvbase` (XBIOS 0x22) — der Tastatur-/IKBD-Vektor
 
-> **Status: FREIGEGEBEN (Anwender 2026-10-04)** — D1–D8 wie empfohlen: Tabelle je Prozess in TPA-Seite 0 bei `0x9A0` (D1); AAPCS64, `x0` = Scancode/Paketzeiger, `x1` = 0 bei `kbdvec` bis `Iorec(1)` (D2/D2a); Ring 64 Eintraege je Prozess + Upcall-Kette (D3/D3a); `ikbdsys`-Wechsel-Stopp nachbauen (D4); `drvstat` = 0 (D5); Syscall-Nummer vergibt der Lead beim Bau aus dem freien internen Bereich (D6); Minimum jetzt = `kbdvec` + gueltige Stubs in allen Slots, uebrige Haken Folgeticket, Luecke in STATUS „Blocked“ (D7); Haken verschwindet mit dem Prozess, in COMPATIBILITY.md (D8). Vorherige Kennzeichnung: ENTWURF (KEYS02, Schritt 1 / Regel 5). Nichts davon
-> ist gebaut. Teil A (EmuTOS-Referenz) ist aus dem Quelltext belegt; Teil B
+> **Status: FREIGEGEBEN (Anwender 2026-10-04)** — D1–D8 wie empfohlen: Tabelle je Prozess in TPA-Seite 0 bei `0x9A0` (D1); AAPCS64, `x0` = Scancode/Paketzeiger, `x1` = 0 bei `kbdvec` bis `Iorec(1)` (D2/D2a); Ring 64 Eintraege je Prozess + Upcall-Kette (D3/D3a); `ikbdsys`-Wechsel-Stopp nachbauen (D4); `drvstat` = 0 (D5); Syscall-Nummer vergibt der Lead beim Bau aus dem freien internen Bereich (D6); Minimum jetzt = `kbdvec` + gueltige Stubs in allen Slots, uebrige Haken Folgeticket, Luecke in STATUS „Blocked“ (D7); Haken verschwindet mit dem Prozess, in COMPATIBILITY.md (D8). Vorherige Kennzeichnung: ENTWURF (KEYS02, Schritt 1 / Regel 5). Bei der Freigabe
+> war nichts davon gebaut; **der Kernteil (D7-Minimum) ist seit 2026-10-04 gebaut —
+> Teil C** (Syscall-Nummer D6 = `Ssystem` Modus **2002**, O1 geklaert). Teil A (EmuTOS-Referenz) ist aus dem Quelltext belegt; Teil B
 > (NewTOS-Abbildung) ist ein **Vorschlag**, jede Stelle mit `ENTSCHEIDUNG D<n>`
 > braucht ein Ja/Nein des Anwenders (Liste am Ende).
 >
@@ -502,6 +503,109 @@ Stub-Rueckgabewert.
 
 ---
 
+# Teil C — Bau (KEYS02 Kernteil, 2026-10-04)
+
+Umfang = D7-Minimum. Teil B gilt mit den folgenden Festlegungen; Abweichungen
+von Teil B sind hier ausdruecklich genannt.
+
+## C1. Tabelle, Stubs, `Kbdvbase` (B1/B3)
+
+* Layout wie B1, Bereich `[0x9A0, 0xA00)` der ersten TPA-Seite
+  (`loader::KBDVECS_AREA_VA`, Groesse 0x60, 0x5A belegt). `Kbdvbase()` = `0x9B0`
+  (EL0-VA von `midivec`), `kbdvec` bei `0x9A8`, `mousexvec` bei `0x9A0`,
+  `ikbdsys` bei `0x9F0`, `drvstat`/`kbdlength` bei `0x9F8`/`0x9F9` (beide 0, D5).
+* Stubs in `[0xA00, 0xA40)` (`loader::KBDVEC_STUB_AREA_VA`):
+  `ret_stub` bei `0xA00` (`ret`), `kbdvec_default` bei `0xA08`:
+  `mov x1,x0; mov x0,#2002; mov x2,#0; mov x8,#0x154; svc #1; ret`
+  (Kodierungen mit clang/llvm-objdump geprueft).
+* Geschrieben vom Lader bei jedem Laden (`xbios::kbdvecs::write_defaults`, aus
+  `populate_and_map` neben den Upcall-Trampolinen, vor der Code-Cache-Pflege).
+* **Ergaenzung (in B1 nicht geregelt):** ein EL1-Aufrufer ohne Prozess (Desktop,
+  Boot, `RUN == null`) bekommt eine Kernel-Tabelle gleichen Layouts mit denselben
+  Vorgabewerten. Durch sie wird nie gerufen (ohne Prozess laeuft immer der
+  Standardweg); sie beantwortet nur den Zeiger — dieselbe Regel wie `Keytbl`.
+
+## C2. D6 — die Syscall-Nummer
+
+`kbdvec_default` ruft **`Ssystem(S_NEWTOS_KBDVEC = 2002, scancode, 0)`**
+(GEMDOS 0x154). Der NewTOS-eigene Bereich ist `Ssystem` 2000+
+(`docs/api/gemdos/154-ssystem.md`, belegt 2000/2001); 2002 ist die naechste freie
+Nummer. Vertrag: `arg1` = Byte (0..0xFF, sonst `EINVAL`), `arg2` = 0 (sonst
+`EINVAL`), Ergebnis `E_OK`, `ERROR` ohne Tastaturdekoder (Host ohne Dekoder).
+Die Nummer steht nur im kernel-geschriebenen Stub; kein Programm-Binaerbild
+enthaelt sie, ein Umnummerieren braeche nichts.
+
+## C3. Zustellung (B4, D3/D3a)
+
+* `ikbd::feed` → `kbdvecs::route_key(byte)` fuer jedes Byte `< 0xF6`:
+  kein laufender Prozess **oder** `kbdvec == 0xA08` → `decode_key` direkt
+  (Schnellpfad, unveraendert). Sonst Byte in den Ring des Prozess-Slots
+  (64, bei vollem Ring wird das **neueste** verworfen).
+* Zustellung (`exceptions.rs::deliver_pending_kbdvec`) an jeder Rueckkehr nach
+  EL0 (`complete_call_tail`, Resume nach Scheduler-Wechsel in `apply_switch`,
+  Resume-`Psigreturn`): ein Byte je Upcall, `x0` = Scancode, `x1` = 0,
+  Ziel = der **aktuelle** `kbdvec`-Wert, Maskenbit `UPCALL_MASK_KBDVEC = 1 << 3`.
+  Solange das Bit gesetzt ist, wird kein weiteres Byte zugestellt (Tiefe 1);
+  das naechste folgt beim `Psigreturn` des Hakens (Kette). Ein schon
+  gepostetes anderes Upcall hat Vorrang. Steht beim Zustellen wieder die
+  Vorgabe im Slot, wird das Byte direkt dekodiert.
+* **O1 — geklaert, war nicht gegeben, ist gebaut.** Eine blockierende AES-Warte
+  (`evnt_*` → `sched::sleep`) und die blockierenden Einzeltasten-Lesungen
+  (`Cconin`, `Cnecin`, `Crawcin`, `Bconin(2)`) kehrten nie nach EL0 zurueck,
+  solange keine Taste in der BIOS-Schlange lag — die legt bei einem verkettenden
+  Haken aber erst der Haken selbst hinein: Verklemmung. Jetzt **weichen sie aus**:
+  `sleep` liefert bei wartenden Ring-Bytes (vor dem Blockieren und nach dem
+  eigenen Pump) `Yield(switch_restart_for_upcall())`, die Lesungen
+  `Host::console_read_key_restartable() == None` + `kbdvecs::request_restart()`.
+  Der Trap-Handler bricht den Aufruf wie einen S2-Yield ab (`elr` auf das `svc`
+  zurueck, nichts festgeschrieben), stellt den Haken zu, und nach dessen
+  `Psigreturn` laeuft das `svc` erneut (`evnt_multi`-Zeitgrenze bleibt ueber
+  `syscall_deadline` erhalten). Gemessen in QEMU: `evnt_multi(MU_KEYBD)` **ohne**
+  Timer und `Bconin(2)` liefern die vom Haken verkettete Taste; zwei Breaks im
+  selben Poll erreichen den Haken beide, in Reihenfolge, das zweite ueber die
+  `Psigreturn`-Kette (`measurements/measurement-2026-10-04-keys02/`).
+* **Grenzen (dokumentiert, nicht gebaut):** `Cconrs`, konsolen-`Fread` und
+  `v_string` (Anfragemodus) lesen weiter ohne Ausweichen — sie haben vor dem
+  Ende bereits Wirkung (Echo, Puffer); ein Programm, das bei eingehaengtem und
+  verkettendem Haken darin wartet, haengt. Modale AES-Schleifen, die
+  `pump_input` selbst rufen (`form_do`, Menue-/Ziehschleifen), stellen erst bei
+  ihrer Rueckkehr zu (Ring 64). Ein Haken laeuft als normale AAPCS64-Funktion,
+  aber das Upcall sichert die **FP/SIMD-Register** des unterbrochenen Codes
+  nicht (gilt fuer alle Upcalls); ein Haken darf sie nicht benutzen.
+
+## C4. Wiederholung und `ikbdsys` (D4)
+
+`KeyRepeat::make` merkt sich den `ikbdsys`-Wert des laufenden Prozesses
+(`kbdvecs::current_ikbdsys`, ohne Prozess `0xA00`), `poll` stoppt bei einem
+50-Hz-Schritt mit laufender Wiederholung und anderem Wert (vor dem
+`conterm`-Test, `ikbd.c:453-472`); bei Neuumsetzung wird der Wert nachgezogen
+(`:507`). `ikbdsys` wird nie gerufen. Wiederholungen rufen `kbdvec` nicht
+(unveraendert, `ikbd.c:524`) — gemessen: der Haken sah 6 Codes, die AES 7+7
+Woerter (Make + Wiederholungen).
+
+## C5. Prozessende (D8)
+
+Tabelle und Stubs liegen in der TPA und verschwinden mit ihr; `free_slot` leert
+den Ring (`kbdvecs::release_slot`). Gemessen: ein Programm, das seinen Haken
+**nicht** zuruecksetzt, endet, und der Desktop reagiert auf Alt-C normal.
+Abweichung von EmuTOS in `docs/COMPATIBILITY.md` (Sanctioned deviations).
+
+## C6. Nicht gerufene Slots (D7-Luecke)
+
+`midivec`, `vkbderr`, `vmiderr`, `statvec`, `mousevec`, `clockvec`, `joyvec`,
+`midisys`, `ikbdsys` und `mousexvec` existieren mit `ret_stub`; ein dort
+eingehaengter Programm-Haken wird **nicht gerufen** (Maus laeuft weiter
+kernelintern ueber `vdi::feed_relative`, `mousexvec` ueber
+`bios::vectors::mousexvec`). Eintrag unter `docs/STATUS.md` "Blocked" (Lead).
+
+## C7. Belege
+
+Hosttests `tos-api/tests/xbios_kbdvecs.rs` (10), `kernel/src/key_repeat.rs`
+(+3 `ikbdsys`), QEMU-raspi4b-Lauf mit `sdk/examples/kbdvec.c`
+(`measurements/measurement-2026-10-04-keys02/RUNINFO.TXT`).
+
+---
+
 # Korrekturen an der Vorfassung (22-kbdvbase.md Phase 00) und `_state.md §1`
 
 1. **`kbdvec` fehlte komplett** (Slot bei `-4`; `aciavecs.S:129`); ebenso
@@ -544,7 +648,8 @@ Stub-Rueckgabewert.
 # Offene Punkte (nicht geklaert, bewusst nicht erraten)
 
 * **O1.** Ob der AES-Pfad nach `evnt_multi` eine Upcall-Zustellung am Rueckweg
-  hat (B4) — beim Bau pruefen.
+  hat (B4) — beim Bau pruefen. **Geklaert 2026-10-04 (C3):** am Rueckweg ja, aber
+  eine *blockierende* Warte kehrte nicht zurueck; jetzt weicht sie aus.
 * **O2.** `IOREC`-Form fuer `x1` (D2a) haengt an der Entscheidung ueber `Iorec`.
 * **O3.** TT TOS 3.06 hat `kbdvec`: nur abgeleitet (A7). Eine Messung am
   Hatari-TT (`hatari-produces-tt-references`) koennte es bestaetigen — hier nicht

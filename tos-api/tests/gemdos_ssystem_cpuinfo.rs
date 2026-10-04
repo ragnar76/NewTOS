@@ -180,9 +180,10 @@ fn the_neighbouring_mode_numbers_are_still_unimplemented() {
     rig(PI4_CLOCK_HZ, WARM_MDEG);
 
     // 1999 is the last number FreeMiNT reserves for its debug block
-    // (`sys/mint/ssystem.h`, "reserved 1000 - 1999"); 2002 is the next free
-    // NewTOS number. Neither may answer with a machine reading.
-    for mode in [1999_u64, 2002, 2999] {
+    // (`sys/mint/ssystem.h`, "reserved 1000 - 1999"); 2003 is the next free
+    // NewTOS number (2002 is `S_NEWTOS_KBDVEC` since KEYS02, tested in
+    // `xbios_kbdvecs.rs`). Neither may answer with a machine reading.
+    for mode in [1999_u64, 2003, 2999] {
         assert_eq!(
             gemdos(SSYSTEM, mode, 0, 0),
             EINVFN,

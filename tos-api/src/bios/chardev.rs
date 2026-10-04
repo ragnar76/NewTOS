@@ -178,7 +178,15 @@ unsafe fn read_user_byte(p: *const u8) -> u8 {
 /// `0` rather than blocking on serial hardware that does not exist.
 pub(crate) fn bconin_handle(handle: u16) -> Long {
     match host::host() {
-        Some(h) if is_console_in(handle) => pack_console_key(h.console_read_key_blocking()),
+        Some(h) if is_console_in(handle) => match h.console_read_key_restartable() {
+            Some(word) => pack_console_key(word),
+            None => {
+                // A `kbdvec` hook has bytes waiting: restart after it ran
+                // (KEYS02); the result is discarded by the trap handler.
+                crate::xbios::kbdvecs::request_restart();
+                0
+            }
+        },
         _ => 0,
     }
 }

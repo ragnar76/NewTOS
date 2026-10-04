@@ -462,6 +462,14 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // in [`KERNEL_PARK`] instead, with the same ELR rewind, and restored the
     // moment the accessory it yields to blocks again.
     if let Some(sw) = pending_switch {
+        // KEYS02 (O1): not a switch — the blocking wait gave way because this
+        // process's `kbdvec` hook has bytes queued. Abort the call like an S2
+        // yield (rewind to the `svc`, commit nothing) and run the hook on top
+        // of the rewound frame; its `Psigreturn` re-executes the `svc`.
+        if sw.upcall_restart {
+            restart_for_kbdvec(frame);
+            return;
+        }
         let cur = tos_api::bdos::process::sched::running_slot();
         if cur < tos_api::bdos::process::MAX_PROCESSES {
             save_yield_frame(cur, frame, true);
@@ -505,6 +513,17 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // has gone quiet — a GEM app's idle loop hammers the AES while the file
     // system does nothing, so a GEMDOS-only tail would never tick.
     tos_api::gemdos::trace::flush_if_requested();
+
+    // KEYS02: a single-key blocking read (`Cconin`/`Cnecin`/`Crawcin`/
+    // `Bconin(2)`) gave way because this process's `kbdvec` hook has bytes
+    // queued (`Host::console_read_key_restartable`). Its `result` is a
+    // placeholder: discard it, rewind to the `svc` and run the hook first.
+    // Only an EL0 caller can have hook bytes; should an EL1 caller ever see
+    // the flag, the read simply completes with its placeholder.
+    if tos_api::xbios::kbdvecs::take_restart() && frame.spsr & 0xF == 0 {
+        restart_for_kbdvec(frame);
+        return;
+    }
 
     complete_call_tail(frame, result);
 }
@@ -552,9 +571,72 @@ fn complete_call_tail(frame: &mut ExceptionFrame, result: i64) {
             if let Some(u) = tos_api::bdos::process::take_pending_upcall(slot_idx)
             {
                 deliver_upcall(frame, u);
+                return;
             }
         }
+        // Otherwise the next byte for the process's `kbdvec` hook (KEYS02).
+        deliver_pending_kbdvec(frame);
     }
+}
+
+/// Abort the current call for a `kbdvec` delivery (KEYS02, O1): rewind `elr`
+/// to the `svc` — the argument registers are still the caller's, nothing was
+/// committed — and deliver the hook's next byte on top of that frame. The
+/// hook's `Psigreturn` restores the rewound frame and the `svc` re-executes.
+/// If the ring turns out empty, the `svc` simply re-executes.
+fn restart_for_kbdvec(frame: &mut ExceptionFrame) {
+    frame.elr = frame.elr.wrapping_sub(4);
+    deliver_pending_kbdvec(frame);
+}
+
+/// Deliver the next byte queued for the running process's `kbdvec` hook as an
+/// EL0 upcall (KEYS02, `docs/api/xbios/22-kbdvbase.md` B4): `x0` = the
+/// scancode (bit 7 = break), `x1` = 0 (D2/D2a), handler = the **current**
+/// `kbdvec` slot, return through the trampoline's `Psigreturn`, which comes
+/// back here for the next byte — one byte per upcall, in arrival order.
+///
+/// Only on a return to EL0, and never while a `kbdvec` upcall is already
+/// running for this process ([`UPCALL_MASK_KBDVEC`], nesting depth 1): a
+/// syscall the hook itself makes — e.g. the `kbdvec_default` stub's — returns
+/// normally. A byte whose process put the default back before it could be
+/// delivered is decoded directly, like on the fast path. Returns whether an
+/// upcall was delivered.
+///
+/// [`UPCALL_MASK_KBDVEC`]: tos_api::bdos::process::UPCALL_MASK_KBDVEC
+fn deliver_pending_kbdvec(frame: &mut ExceptionFrame) -> bool {
+    use core::sync::atomic::Ordering;
+    use tos_api::bdos::process::{
+        current, slot_for, Disposition, UpcallDesc, PROCESS_TABLE, UPCALL_MASK_KBDVEC,
+    };
+    use tos_api::xbios::kbdvecs;
+
+    if frame.spsr & 0xF != 0 {
+        return false;
+    }
+    let Some(slot) = slot_for(current()) else {
+        return false;
+    };
+    if PROCESS_TABLE[slot].upcall_mask.load(Ordering::Acquire) & UPCALL_MASK_KBDVEC != 0 {
+        return false;
+    }
+    while let Some(byte) = kbdvecs::pop(slot) {
+        let handler = kbdvecs::kbdvec_of(slot).unwrap_or(kbdvecs::KBDVEC_DEFAULT_VA);
+        if handler == kbdvecs::KBDVEC_DEFAULT_VA {
+            crate::ikbd::kbd_int(byte);
+            continue;
+        }
+        deliver_upcall(
+            frame,
+            UpcallDesc {
+                handler_va: handler,
+                args: [u64::from(byte), 0, 0, 0],
+                mask_bit: UPCALL_MASK_KBDVEC,
+                disposition: Disposition::Resume,
+            },
+        );
+        return true;
+    }
+    false
 }
 
 /// First half of an AES userdef callout (AES-as-thread design §3.4(c)): on the
@@ -1040,6 +1122,9 @@ fn apply_switch(frame: &mut ExceptionFrame, sw: &tos_api::bdos::process::sched::
     if !sw.fresh {
         if let Some(u) = tos_api::bdos::process::take_pending_upcall(sw.slot) {
             deliver_upcall(frame, u);
+        } else {
+            // …or the next byte for its `kbdvec` hook (KEYS02).
+            deliver_pending_kbdvec(frame);
         }
     }
 }
@@ -1475,6 +1560,11 @@ fn handle_psigreturn(frame: &mut ExceptionFrame) {
     frame.spsr = ctx.spsr().load(Ordering::Acquire);
     frame.sp_el0 = ctx.sp_el0().load(Ordering::Acquire);
     ctx.clear();
+
+    // KEYS02 (B4): more bytes for the `kbdvec` hook — chain the next upcall
+    // onto the context just restored instead of resuming it, so a make and
+    // its break that arrived in one poll both reach the hook, in order.
+    deliver_pending_kbdvec(frame);
 }
 
 /// Read a NUL-terminated string from a user-space VA into `buf` using

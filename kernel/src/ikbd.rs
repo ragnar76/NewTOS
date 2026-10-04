@@ -16,7 +16,10 @@
 //! layout) → the console RX ring (`Cnecin`/`Cconin`/the shell), and
 //! relative-mouse packets → the VDI cursor. A held non-modifier key repeats
 //! (EmuTOS' BIOS software repeat, run polled — [`poll_repeat`],
-//! [`crate::key_repeat`]).
+//! [`crate::key_repeat`]). Every key byte, make and break, first passes the
+//! running process's `kbdvec` (KEYS02, `tos_api::xbios::kbdvecs`): a program
+//! hook receives it as an EL0 upcall; with the default in place the decoder
+//! ([`kbd_int`]) runs directly.
 //!
 //! Protocol + scancode set: Atari IKBD documentation; the scancode→ASCII
 //! tables mirror EmuTOS `bios/keyboard.c` (US layout). Country layouts
@@ -109,8 +112,22 @@ pub fn feed(byte: u8) {
         PKT_REMAINING.store(packet_data_len(byte), Ordering::Relaxed);
         return;
     }
-    // Otherwise it is a key scancode (bit 7 = break).
-    decode_key(byte);
+    // Otherwise it is a key scancode (bit 7 = break). EmuTOS `ikbdraw` jumps
+    // through `kbdvec` here (`bios/aciavecs.S:407-414`): the running
+    // process's hook gets the byte if it installed one (queued for EL0 upcall
+    // delivery, KEYS02); with the default still in place — or no process
+    // running — the default `kbdvec` (`kbd_int`) runs directly, as before.
+    if !tos_api::xbios::kbdvecs::route_key(byte) {
+        decode_key(byte);
+    }
+}
+
+/// The default `kbdvec` — EmuTOS `kbd_int(scancode)` (`bios/ikbd.c:725-910`)
+/// for one key byte, bit 7 = break. Called by [`feed`] on the fast path and,
+/// for a process whose hook chained to the default, from
+/// `Ssystem(S_NEWTOS_KBDVEC)` (the `kbdvec_default` stub, KEYS02 D6).
+pub fn kbd_int(raw: u8) {
+    decode_key(raw);
 }
 
 /// Apply a decoded relative-mouse event to the VDI mouse state. The byte
@@ -180,12 +197,15 @@ fn decode_key(raw: u8) {
             // It becomes the repeating key, armed with the current initial
             // delay (EmuTOS `kbd_int` `:875,891,898-903`).
             let (initial, _) = tos_api::xbios::system::kb_rate();
+            // `kb_last_ikbdsys = kbdvecs.ikbdsys` (`:902`): the repeat stops
+            // if that vector changes before the key is released (`:453`).
             REPEAT.lock().make(
                 code,
                 word,
                 shift_state(),
                 initial,
                 tos_api::bios::tick::hz_200(),
+                tos_api::xbios::kbdvecs::current_ikbdsys(),
             );
         }
         // A non-modifier break (CapsLock's included, as in EmuTOS' `default`
@@ -224,7 +244,10 @@ pub fn poll_repeat() {
     let conterm = tos_api::bios::chardev::current_conterm();
     let (_, repeat) = tos_api::xbios::system::kb_rate();
     let shifty = shift_state();
-    let word = REPEAT.lock().poll(now, conterm, shifty, repeat, key_word);
+    let ikbdsys = tos_api::xbios::kbdvecs::current_ikbdsys();
+    let word = REPEAT
+        .lock()
+        .poll(now, conterm, shifty, repeat, ikbdsys, key_word);
     if let Some(word) = word {
         console::push_rx(word);
     }

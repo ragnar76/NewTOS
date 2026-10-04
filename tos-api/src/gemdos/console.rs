@@ -219,7 +219,11 @@ const CTRL_X: u8 = 0x18;
 /// keys echo nothing (their ASCII byte is 0).
 pub fn cconin(_: &TrapArgs) -> Long {
     let h = host_or_eundev!();
-    let word = h.console_read_key_blocking();
+    let Some(word) = h.console_read_key_restartable() else {
+        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
+        crate::xbios::kbdvecs::request_restart();
+        return 0; // discarded — the trap handler re-executes the call
+    };
     let ascii = (word & 0xFF) as u8;
     if ascii == CTRL_C {
         crate::bdos::process::request_terminate(CTRLC_RC);
@@ -241,7 +245,12 @@ pub fn cconin(_: &TrapArgs) -> Long {
 /// Ctrl-C handling (a Ctrl-C byte is returned as `0x03`). Returns the
 /// packed console LONG (scancode in bits 16-23, ASCII in bits 0-7).
 pub fn crawcin(_: &TrapArgs) -> Long {
-    pack_console_key(host_or_eundev!().console_read_key_blocking())
+    let Some(word) = host_or_eundev!().console_read_key_restartable() else {
+        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
+        crate::xbios::kbdvecs::request_restart();
+        return 0; // discarded — the trap handler re-executes the call
+    };
+    pack_console_key(word)
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +263,11 @@ pub fn crawcin(_: &TrapArgs) -> Long {
 /// terminates the calling process (`Pterm(-32)`). Returns the packed
 /// console LONG (scancode in bits 16-23, ASCII in bits 0-7).
 pub fn cnecin(_: &TrapArgs) -> Long {
-    let word = host_or_eundev!().console_read_key_blocking();
+    let Some(word) = host_or_eundev!().console_read_key_restartable() else {
+        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
+        crate::xbios::kbdvecs::request_restart();
+        return 0; // discarded — the trap handler re-executes the call
+    };
     if (word & 0xFF) as u8 == CTRL_C {
         crate::bdos::process::request_terminate(CTRLC_RC);
         return 0; // value ignored — handler redirects to Pterm.

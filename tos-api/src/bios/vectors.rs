@@ -194,6 +194,9 @@ pub fn vector(num: usize) -> i64 {
 // *below* `_kbdvecs` (`aciavecs.S:127-131`), so no program can reach it
 // through the documented positive offsets. It is a BIOS-internal hand-off
 // from the keyboard decoder to the mouse driver, and that is all it is here.
+// (Since KEYS02 each process's EL0 table — `xbios::kbdvecs` — carries a
+// `mousexvec` slot at `Kbdvbase() - 16` to keep the EmuTOS layout; it holds
+// the `just_rts` stub and is never called. The live vector is this cell.)
 //
 // NewTOS' IKBD decoder lives in the kernel crate and the VDI in this one, so
 // the cell has to live on the `tos-api` side of the dependency edge; the

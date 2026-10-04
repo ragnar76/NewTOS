@@ -1,10 +1,9 @@
-//! XBIOS system group (Phase 11): `Random` / `Vsync` / `Kbdvbase`.
-//! Mirrors EmuTOS `bios/xbios.c` (`random`/`kbdvbase`) and
-//! `bios/screen.c` (`vsync`).
+//! XBIOS system group (Phase 11): `Random` / `Vsync`.
+//! Mirrors EmuTOS `bios/xbios.c` (`random`) and `bios/screen.c` (`vsync`).
+//! `Kbdvbase` lives in [`super::kbdvecs`] (KEYS02).
 //!
-//! Spec: `docs/api/xbios/{11-random,25-vsync,22-kbdvbase}.md`.
+//! Spec: `docs/api/xbios/{11-random,25-vsync}.md`.
 
-use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 
 use crate::host;
@@ -93,44 +92,6 @@ pub fn midiws() -> i64 {
 /// `0x2c`); `docs/HARDWARE-PROFILE.md` §3.2.
 pub fn bconmap() -> i64 {
     0x2c
-}
-
-/// IKBD vector table (Atari `struct kbdvecs`, 9 handler pointers).
-/// Programs read it via `Kbdvbase` and may install their own handlers.
-/// Native pointer width (not the m68k 4-byte layout); the IKBD-event
-/// dispatch through these vectors lands with the process/AES model.
-#[repr(C)]
-#[derive(Default)]
-struct KbdVecs {
-    midivec: usize,
-    vkbderr: usize,
-    vmiderr: usize,
-    statvec: usize,
-    mousevec: usize,
-    clockvec: usize,
-    joyvec: usize,
-    midisys: usize,
-    ikbdsys: usize,
-}
-
-struct KbdVecsCell(UnsafeCell<KbdVecs>);
-// SAFETY: single-CPU, IRQ-off trap path; programs poke it cooperatively.
-unsafe impl Sync for KbdVecsCell {}
-static KBDVECS: KbdVecsCell = KbdVecsCell(UnsafeCell::new(KbdVecs {
-    midivec: 0,
-    vkbderr: 0,
-    vmiderr: 0,
-    statvec: 0,
-    mousevec: 0,
-    clockvec: 0,
-    joyvec: 0,
-    midisys: 0,
-    ikbdsys: 0,
-}));
-
-/// `Kbdvbase` (0x22) — pointer to the IKBD vector table.
-pub fn kbdvbase() -> i64 {
-    KBDVECS.0.get() as i64
 }
 
 // ── YM2149 PSG group (0x1C/0x1D/0x1E/0x20) ────────────────────────────────

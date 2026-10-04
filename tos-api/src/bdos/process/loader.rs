@@ -527,6 +527,11 @@ unsafe fn populate_and_map(
     // the same window/ordering so the `sync_code_cache` below covers it too.
     write_userdef_trampoline(tpa_bytes);
 
+    // The per-process IKBD vector table and its default stubs (KEYS02,
+    // `docs/api/xbios/22-kbdvbase.md` B1/B3). Same page-0 gap, same
+    // pre-cache-maintenance ordering, so the stubs are fetchable at EL0.
+    crate::xbios::kbdvecs::write_defaults(tpa_bytes);
+
     // Make the freshly-written program bytes observable to instruction
     // fetch on real hardware (clean D-cache to PoU + invalidate I-cache
     // over the image region only). QEMU has no caches, so this is a
@@ -795,6 +800,34 @@ pub const KEYTBL_AREA_SIZE: u64 = 0x238;
 // reserved low gap, below the app image base.
 const _: () = assert!(KEYTBL_AREA_VA >= USERDEF_RET_SLOT_VA + 4);
 const _: () = assert!(KEYTBL_AREA_VA + KEYTBL_AREA_SIZE <= RESERVED_LOW_END);
+
+/// EL0 VA of the per-process **IKBD vector table** (KEYS02, spec
+/// `docs/api/xbios/22-kbdvbase.md` B1, decision D1): `mousexvec`, `kbdvec`,
+/// the nine `struct kbdvecs` slots and the `drvstat`/`kbdlength` bytes, in
+/// EmuTOS order (`bios/aciavecs.S:126-141`) with 8-byte slots. Directly above
+/// the [`KEYTBL_AREA_VA`] area, in the same page-0 gap. Written once at load
+/// by [`crate::xbios::kbdvecs::write_defaults`]; `Kbdvbase` returns
+/// `KBDVECS_AREA_VA + 0x10` (the `midivec` slot), so `kbdvec` sits at `-8`.
+/// See [`crate::xbios::kbdvecs`] for the inner layout.
+pub const KBDVECS_AREA_VA: u64 = 0x9A0;
+
+/// Size of the [`KBDVECS_AREA_VA`] table region, in bytes (0x5A used).
+pub const KBDVECS_AREA_SIZE: u64 = 0x60;
+
+/// EL0 VA of the **IKBD default stubs** (spec B3): the `ret` stub every
+/// unhooked slot points at (EmuTOS `just_rts`) and the `kbdvec_default` stub
+/// (EmuTOS `_kbdvec` → `kbd_int`). `[0xA00, 0xA40)`, page 0 (`UserRwExec`).
+pub const KBDVEC_STUB_AREA_VA: u64 = 0xA00;
+
+/// Size of the [`KBDVEC_STUB_AREA_VA`] region, in bytes.
+pub const KBDVEC_STUB_AREA_SIZE: u64 = 0x40;
+
+// The table follows the Keytbl area, the stubs follow the table; both stay in
+// the reserved low gap below the app image base.
+const _: () = assert!(KBDVECS_AREA_VA >= KEYTBL_AREA_VA + KEYTBL_AREA_SIZE);
+const _: () = assert!(KBDVECS_AREA_VA.is_multiple_of(8));
+const _: () = assert!(KBDVEC_STUB_AREA_VA >= KBDVECS_AREA_VA + KBDVECS_AREA_SIZE);
+const _: () = assert!(KBDVEC_STUB_AREA_VA + KBDVEC_STUB_AREA_SIZE <= RESERVED_LOW_END);
 
 /// OSHEADER `os_version` (+0x02): Falcon TOS 4.04. EmuTOS' own default is
 /// 0x206 (`config.h:1367-1372`); NewTOS reports 4.04 — user-pinned.

@@ -189,60 +189,17 @@ impl Host for KernelHost {
     }
 
     fn console_read_key_blocking(&self) -> u16 {
-        // Identical blocking strategy to `console_read_byte_blocking`, but
-        // pops the whole key word (`scancode << 8 | ascii`) via `rx_pop_key`
-        // — it does *not* skip scancode-only keys (ASCII 0), so arrow /
-        // function keys reach `Bconin(2)`/`Cconin` and friends. Runs inside
-        // the synchronous SVC handler with IRQs masked, so unmask + `wfi`
-        // while waiting (qemu-virt), or spin (rpi4 polls USB-HID).
-        let daif: u64;
-        // SAFETY: reading DAIF and clearing the IRQ mask are permitted
-        // at EL1; we restore DAIF before returning.
-        unsafe {
-            core::arch::asm!(
-                "mrs {0}, daif",
-                out(reg) daif,
-                options(nomem, nostack, preserves_flags),
-            );
-            core::arch::asm!(
-                "msr daifclr, #2",
-                options(nomem, nostack, preserves_flags),
-            );
-        }
+        // Never gives way: `read_key_loop(false)` only returns with a key.
+        read_key_loop(false).unwrap_or(0)
+    }
 
-        let word = loop {
-            // Drain USB-HID interrupt transfers (keyboard) → ikbd::feed →
-            // the key ring. On real Pi-4 this is the sole console input
-            // source; no-op until a HID device is enumerated (qemu-virt
-            // uses the PL011 RX IRQ instead).
-            crate::drivers::usb::poll();
-            // Key auto-repeat, polled after the input (see `pump_input`).
-            crate::ikbd::poll_repeat();
+    fn console_read_key_restartable(&self) -> Option<u16> {
+        read_key_loop(true)
+    }
 
-            if let Some(w) = crate::console::rx_pop_key() {
-                break w;
-            }
-            // rpi4 polls the USB-HID keyboard, so spin lightly (no IRQ
-            // wakes a `wfi` for CON input); qemu-virt `wfi`s until the
-            // PL011 RX IRQ.
-            #[cfg(feature = "board-rpi4")]
-            core::hint::spin_loop();
-            #[cfg(not(feature = "board-rpi4"))]
-            // SAFETY: wait for the next interrupt (the RX IRQ wakes us).
-            unsafe {
-                core::arch::asm!("wfi", options(nomem, nostack, preserves_flags));
-            }
-        };
-
-        // SAFETY: restore the caller's original DAIF mask state.
-        unsafe {
-            core::arch::asm!(
-                "msr daif, {0}",
-                in(reg) daif,
-                options(nomem, nostack, preserves_flags),
-            );
-        }
-        word
+    fn kbd_int(&self, scancode: u8) -> bool {
+        crate::ikbd::kbd_int(scancode);
+        true
     }
 
     fn monotonic_seconds(&self) -> u64 {
@@ -389,6 +346,72 @@ impl Host for KernelHost {
         use crate::drivers::bcm2711::mailbox;
         mailbox::get_temperature(mailbox::TEMPERATURE_ID).map(|mdeg| mdeg as i32)
     }
+}
+
+/// The blocking key-word read shared by [`Host::console_read_key_blocking`]
+/// and [`Host::console_read_key_restartable`]: pops the whole key word
+/// (`scancode << 8 | ascii`) via `rx_pop_key` — it does *not* skip
+/// scancode-only keys (ASCII 0), so arrow / function keys reach
+/// `Bconin(2)`/`Cconin` and friends. Runs inside the synchronous SVC handler
+/// with IRQs masked, so unmask + `wfi` while waiting (qemu-virt), or spin
+/// (rpi4 polls USB-HID).
+///
+/// With `give_way`, returns `None` as soon as the running process has bytes
+/// queued for its `kbdvec` hook (KEYS02, `docs/api/xbios/22-kbdvbase.md` B4):
+/// those are delivered on the way back to EL0, so the caller must let the trap
+/// restart instead of waiting for a key the hook itself may have to produce.
+fn read_key_loop(give_way: bool) -> Option<u16> {
+    let daif: u64;
+    // SAFETY: reading DAIF and clearing the IRQ mask are permitted
+    // at EL1; we restore DAIF before returning.
+    unsafe {
+        core::arch::asm!(
+            "mrs {0}, daif",
+            out(reg) daif,
+            options(nomem, nostack, preserves_flags),
+        );
+        core::arch::asm!(
+            "msr daifclr, #2",
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+
+    let word = loop {
+        // Drain USB-HID interrupt transfers (keyboard) → ikbd::feed →
+        // the key ring. On real Pi-4 this is the sole console input
+        // source; no-op until a HID device is enumerated (qemu-virt
+        // uses the PL011 RX IRQ instead).
+        crate::drivers::usb::poll();
+        // Key auto-repeat, polled after the input (see `pump_input`).
+        crate::ikbd::poll_repeat();
+
+        if let Some(w) = crate::console::rx_pop_key() {
+            break Some(w);
+        }
+        if give_way && tos_api::xbios::kbdvecs::pending_for_running() {
+            break None;
+        }
+        // rpi4 polls the USB-HID keyboard, so spin lightly (no IRQ
+        // wakes a `wfi` for CON input); qemu-virt `wfi`s until the
+        // PL011 RX IRQ.
+        #[cfg(feature = "board-rpi4")]
+        core::hint::spin_loop();
+        #[cfg(not(feature = "board-rpi4"))]
+        // SAFETY: wait for the next interrupt (the RX IRQ wakes us).
+        unsafe {
+            core::arch::asm!("wfi", options(nomem, nostack, preserves_flags));
+        }
+    };
+
+    // SAFETY: restore the caller's original DAIF mask state.
+    unsafe {
+        core::arch::asm!(
+            "msr daif, {0}",
+            in(reg) daif,
+            options(nomem, nostack, preserves_flags),
+        );
+    }
+    word
 }
 
 /// Adapter exposing the EMMC2 SD card as a TOS-API [`BlockDev`].

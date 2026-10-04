@@ -80,7 +80,7 @@ struct DesktopTree(UnsafeCell<[Object; 3]>);
 
 // SAFETY: single boot CPU and a cooperative (non-preemptive) trap path — the
 // same discipline as every other mutable AES/BIOS singleton in this crate
-// (e.g. `xbios::system::KBDVECS`). Writers are the boot-time [`init`] and
+// (e.g. `xbios::kbdvecs::KERNEL_TABLE`). Writers are the boot-time [`init`] and
 // [`set_aes_background`]; readers are `appl_init` and the drawing path.
 unsafe impl Sync for DesktopTree {}
 

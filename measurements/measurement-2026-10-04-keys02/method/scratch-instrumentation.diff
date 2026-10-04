@@ -1,0 +1,130 @@
+--- kernel/src/host_env.rs	2026-10-04 17:49:07
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/tree/kernel/src/host_env.rs	2026-10-04 18:07:06
+@@ -107,6 +107,7 @@
+         // On real Pi-4 this is the sole console input source; no-op until a
+         // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        krp_inject::step(); // KRP-TEMP
+         // Key auto-repeat runs polled, after the input above (a break has
+         // been seen) — `docs/api/xbios/_state.md` §"Key-repeat handler".
+         crate::ikbd::poll_repeat();
+@@ -158,6 +159,7 @@
+             // but never a blocking console read. No-op until a HID device
+             // is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+             crate::drivers::usb::poll();
++        krp_inject::step(); // KRP-TEMP
+             // Key auto-repeat, polled after the input (see `pump_input`).
+             crate::ikbd::poll_repeat();
+ 
+@@ -382,6 +384,7 @@
+         // source; no-op until a HID device is enumerated (qemu-virt
+         // uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        krp_inject::step(); // KRP-TEMP
+         // Key auto-repeat, polled after the input (see `pump_input`).
+         crate::ikbd::poll_repeat();
+ 
+@@ -485,4 +488,45 @@
+ /// `kernel_main`.
+ pub fn install() {
+     tos_api::host::install_host(&KERNEL_HOST_REF);
++}
++
++// KRP-TEMP BEGIN -- scripted IKBD make/break (QEMU raspi4b has no USB keyboard)
++pub mod krp_inject {
++    use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
++    static T0: AtomicU32 = AtomicU32::new(0);
++    static NEXT: AtomicUsize = AtomicUsize::new(0);
++    const SCRIPT: &[(u32, u8)] = &[
++        (400, 0x48), (500, 0x4D), (600, 0xCD), (600, 0xC8),
++        (900, 0x1E), (920, 0x9E),
++        (2000, 0x38), (2010, 0x2E), (2020, 0xAE), (2030, 0xB8),
++    ];
++    pub fn step() {
++        let now = tos_api::bios::tick::hz_200();
++        if T0.load(Ordering::Relaxed) == 0 {
++            if tos_api::bdos::process::RUN.load(Ordering::Acquire).is_null() {
++                return;
++            }
++            T0.store(now.max(1), Ordering::Relaxed);
++            crate::kprintln!("[krp] injector armed at hz_200 {}", now);
++            return;
++        }
++        let t0 = T0.load(Ordering::Relaxed);
++        // Every entry that is due goes out in this one poll (entries with the
++        // same time arrive together, like two changes in one HID report).
++        loop {
++            let i = NEXT.load(Ordering::Relaxed);
++            if i >= SCRIPT.len() {
++                return;
++            }
++            let (at, b) = SCRIPT[i];
++            if now.wrapping_sub(t0) < at {
++                return;
++            }
++            let run = !tos_api::bdos::process::RUN.load(Ordering::Acquire).is_null();
++            crate::kprintln!("[krp] feed {:#04x} at hz_200 {} (+{}) run={}", b, now, now.wrapping_sub(t0), run);
++            crate::ikbd::feed(b);
++            NEXT.store(i + 1, Ordering::Relaxed);
++        }
++    }
+ }
++// KRP-TEMP END
+--- kernel/src/console.rs	2026-10-02 21:26:03
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/tree/kernel/src/console.rs	2026-10-04 18:07:06
+@@ -276,6 +276,7 @@
+ pub fn push_rx(word: u16) {
+     #[cfg(feature = "initinfo-diag")]
+     crate::initinfo::diag::note_push(crate::initinfo::diag::PUSH_SRC_IKBD, word);
++    crate::kprintln!("[krp] push_rx {:#06x} at hz_200 {}", word, tos_api::bios::tick::hz_200()); // KRP-TEMP
+     RX_RING.push(word);
+ }
+ 
+@@ -297,7 +298,9 @@
+ /// Pop one whole key word (`scancode << 8 | ascii`) for the AES event
+ /// manager, so it can deliver scancodes (arrow / function keys) to apps.
+ pub fn rx_pop_key() -> Option<u16> {
+-    RX_RING.pop()
++    let w = RX_RING.pop();
++    if let Some(w) = w { crate::kprintln!("[krp] rx_pop_key {:#06x} at hz_200 {}", w, tos_api::bios::tick::hz_200()); } // KRP-TEMP
++    w
+ }
+ 
+ /// Non-destructively peek the oldest queued key word (`scancode << 8 |
+--- kernel/src/ikbd.rs	2026-10-04 18:01:49
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/tree/kernel/src/ikbd.rs	2026-10-04 18:07:06
+@@ -119,6 +119,8 @@
+     // running — the default `kbdvec` (`kbd_int`) runs directly, as before.
+     if !tos_api::xbios::kbdvecs::route_key(byte) {
+         decode_key(byte);
++    } else {
++        crate::kprintln!("[krp] ring <- {:#04x} at hz_200 {}", byte, tos_api::bios::tick::hz_200()); // KRP-TEMP
+     }
+ }
+ 
+@@ -127,6 +129,7 @@
+ /// for a process whose hook chained to the default, from
+ /// `Ssystem(S_NEWTOS_KBDVEC)` (the `kbdvec_default` stub, KEYS02 D6).
+ pub fn kbd_int(raw: u8) {
++    crate::kprintln!("[krp] kbd_int {:#04x} at hz_200 {}", raw, tos_api::bios::tick::hz_200()); // KRP-TEMP
+     decode_key(raw);
+ }
+ 
+--- kernel/src/arch/aarch64/exceptions.rs	2026-10-04 17:50:28
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/tree/kernel/src/arch/aarch64/exceptions.rs	2026-10-04 18:07:06
+@@ -585,6 +585,7 @@
+ /// hook's `Psigreturn` restores the rewound frame and the `svc` re-executes.
+ /// If the ring turns out empty, the `svc` simply re-executes.
+ fn restart_for_kbdvec(frame: &mut ExceptionFrame) {
++    crate::kprintln!("[krp] restart svc at {:#x} x8={:#x} x0={}", frame.elr.wrapping_sub(4), frame.gpr[8], frame.gpr[0]); // KRP-TEMP
+     frame.elr = frame.elr.wrapping_sub(4);
+     deliver_pending_kbdvec(frame);
+ }
+@@ -625,6 +626,7 @@
+             crate::ikbd::kbd_int(byte);
+             continue;
+         }
++        crate::kprintln!("[krp] kbdvec upcall {:#04x} -> {:#x} elr={:#x}", byte, handler, frame.elr); // KRP-TEMP
+         deliver_upcall(
+             frame,
+             UpcallDesc {

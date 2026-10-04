@@ -146,6 +146,15 @@ pub struct Switch {
     /// with `x0 = 0` and dispatches nothing. [`switch_to`] fills this from the
     /// slot's [`set_resume_restartable`] flag, recorded when the slot yielded.
     pub restartable: bool,
+    /// **Not a switch at all** (KEYS02, `docs/api/xbios/22-kbdvbase.md` B4/O1):
+    /// the blocking wait gave way because the *running* process has `kbdvec`
+    /// bytes queued for its hook. The trap handler must abort the call exactly
+    /// like an S2 yield — rewind `elr` to the `svc`, commit nothing — but stay
+    /// on this process and deliver the hook upcall on top of the rewound frame.
+    /// After the hook's `Psigreturn` the `svc` re-executes and re-checks (a key
+    /// the hook chained into the BIOS queue is now there). Built only by
+    /// [`switch_restart_for_upcall`]; every other field is meaningless then.
+    pub upcall_restart: bool,
 }
 
 /// The slot currently running (or [`NONE`]).
@@ -217,6 +226,27 @@ pub fn switch_to_kernel() -> Switch {
         sp_el0: 0,
         el1_internal: true,
         restartable: false,
+        upcall_restart: false,
+    }
+}
+
+/// The [`Switch`] that means "abort and restart this wait on the running
+/// process after its `kbdvec` hook ran" ([`Switch::upcall_restart`]). Returned
+/// by [`sleep`] when the running slot has hook bytes queued
+/// (`xbios::kbdvecs::pending`), so an `evnt_*` wait that would otherwise only
+/// return on an event the hook itself has to produce (a chained key in the
+/// BIOS queue) cannot deadlock.
+#[inline]
+pub fn switch_restart_for_upcall() -> Switch {
+    Switch {
+        slot: running_slot(),
+        fresh: false,
+        l0_pa: 0,
+        entry_va: 0,
+        sp_el0: 0,
+        el1_internal: false,
+        restartable: true,
+        upcall_restart: true,
     }
 }
 
@@ -377,6 +407,7 @@ fn switch_to(slot: usize) -> Switch {
         // How the slot last yielded — consulted only when `!fresh` to decide
         // whether the resume preserves `x0` (S2) or writes the `Pwait` 0.
         restartable: RESUME_RESTARTABLE[slot].load(Ordering::Acquire),
+        upcall_restart: false,
     }
 }
 
@@ -479,6 +510,12 @@ pub enum SleepOutcome {
 /// `cond` is built with [`wait_input`]/[`wait_mesg`]/[`wait_timer`].
 pub fn sleep(cond: u64) -> SleepOutcome {
     let cur = running_slot();
+    // KEYS02 (O1): bytes for this process's `kbdvec` hook are waiting. They
+    // are delivered only on a return to EL0, so give way before blocking —
+    // the trap handler restarts this call after the hook ran.
+    if cur < MAX_PROCESSES && crate::xbios::kbdvecs::pending(cur) != 0 {
+        return SleepOutcome::Yield(switch_restart_for_upcall());
+    }
     if cur < MAX_PROCESSES {
         // RUNNING → WAITING(cond): record the wake key and drop out of the
         // round-robin run-set (§3.1). Done before `on_yield` so `pick_next`
@@ -515,6 +552,11 @@ pub fn sleep(cond: u64) -> SleepOutcome {
         // WAITING → READY: the caller now re-evaluates its full predicate.
         PROCESS_TABLE[cur].wait_cond.store(0, Ordering::Release);
         PROCESS_TABLE[cur].runnable.store(true, Ordering::Release);
+        // KEYS02 (O1): the pump above may have queued hook bytes for this
+        // process — deliver them now rather than after the wait.
+        if crate::xbios::kbdvecs::pending(cur) != 0 {
+            return SleepOutcome::Yield(switch_restart_for_upcall());
+        }
     }
     SleepOutcome::Recheck
 }

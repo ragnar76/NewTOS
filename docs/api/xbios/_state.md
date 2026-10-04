@@ -52,12 +52,20 @@ overwriting a field (read-save-chain — no previous-vector return). The
 struct lives in BIOS BSS, process-lifetime stable.
 
 > The internal IKBD-packet state machine keeps a few private fields
-> (`ikbdstate`, `kbdlength`) adjacent to the table in `bios/aciavecs.S`;
-> those are **not** part of the 36-byte contract surface returned to
-> applications and NewTOS need not expose them.
+> (`ikbdstate`, `kbdlength`) adjacent to the table in `bios/aciavecs.S`.
+> **Correction (KEYS02):** `ikbdstate` is the Compendium's documented
+> `drvstat` and *is* contract surface; only `kbdlength` is internal
+> (`22-kbdvbase.md`, Korrekturen 3).
 
-NewTOS: preserve the 36-byte ABI. The synthetic IKBD-packet generator
-(USB-HID translator) feeds these vectors in IKBD byte format.
+**NewTOS (KEYS02, built 2026-10-04):** one table **per process**, in page 0 of
+its TPA at `0x9A0` with **8-byte** slots (LP64): `mousexvec` `0x9A0`, `kbdvec`
+`0x9A8`, the nine slots from `0x9B0` (= `Kbdvbase()`), `drvstat`/`kbdlength`
+`0x9F8`/`0x9F9` (always 0). Defaults are EL0 stubs (`ret` at `0xA00`;
+`kbdvec_default` at `0xA08` → `Ssystem(2002)` → the kernel decoder). Only
+`kbdvec` is called — as an EL0 upcall at the next syscall return, one byte per
+upcall, `x0` = scancode, `x1` = 0; the other slots are present but not called
+(documented gap). Full binding: `22-kbdvbase.md` Teil B/C; code
+`tos-api/src/xbios/kbdvecs.rs`.
 
 ---
 
@@ -168,8 +176,12 @@ elapsed since the previous poll are credited. Implementation:
   tick (every AES wait, every blocking read, every `Bconstat` on an empty
   queue) the cadence is EmuTOS' exactly; only a caller that pumps less often
   than every `kb_repeat` ticks sees the repeat rate drop to its own poll rate.
-- **Not modelled** (no counterpart on NewTOS): the `ikbdsys`-change stop (step
-  1 — NewTOS has no installable `ikbdsys`, `Kbdvbase` K4), the keyclick (step
+- **`ikbdsys`-change stop (step 1)** — modelled since KEYS02 (D4): the make
+  records the running process's `ikbdsys` slot (no process: the default
+  `0xA00`), a 50 Hz step with a key repeating and a different value stops the
+  repeat, ahead of the `conterm` test; the value is never called
+  (`22-kbdvbase.md` C4).
+- **Not modelled** (no counterpart on NewTOS): the keyclick (step
   5 — no keyclick on NewTOS at all), the mouse-emulation repeat (the decoder
   has no keyboard mouse emulation), Alt-numpad, and the scancode rewrite of
   `convert_scancode` (the NewTOS decoder does not rewrite scancodes; the

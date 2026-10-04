@@ -636,6 +636,30 @@ EmuTOS'. Spec: `docs/api/xbios/_state.md` §"Key-repeat handler",
 `kernel/src/key_repeat.rs` (run via `tools/xtask`) and
 `tos-api/tests/xbios_kbrate_repeat_source.rs`.
 
+**The IKBD vector table is per process, and a `kbdvec` hook ends with its
+process** — user decision 2026-10-04 (D1/D8 of `docs/api/xbios/22-kbdvbase.md`),
+landed as KEYS02. EmuTOS has **one** global `kbdvecs` table in BIOS BSS
+(`references/emutos/bios/aciavecs.S:126-141`); `Kbdvbase` returns its address
+(`bios/xbios.c:716-719`), and nothing in the BDOS touches it at process exit
+(`bdos/proc.c:110-140,601-618`) — a hook a program forgot to restore stays
+installed and the next key jumps into freed memory (spec A8). NewTOS keeps the
+table in page 0 of each process's own TPA (`0x9A0`, 8-byte slots,
+`tos-api/src/xbios/kbdvecs.rs`) and returns that process's EL0 VA. **Reason:** a
+hook is an EL0 address and means nothing in another process's address space
+(the same rule as `vex_wheelv`); the table goes away with the TPA, so a dangling
+hook cannot exist, and `free_slot` drops any bytes still queued for it.
+**Observable differences:** (1) a hook left installed at `Pterm` simply stops
+being called — strictly safer than EmuTOS; (2) a `Pexec` child starts with the
+default table, a parent's hook does not see the child's keys (EmuTOS: global,
+it would); (3) a TSR that installs a hook for later programs (`Ptermres`) cannot
+work; (4) the hook is not called from an interrupt but as an EL0 upcall at the
+running process's next return from a syscall, one byte per upcall in arrival
+order; blocking key waits (`evnt_*`, `Cconin`/`Cnecin`/`Crawcin`/`Bconin(2)`)
+give way and are re-executed after the hook ran. Spec:
+`docs/api/xbios/22-kbdvbase.md` Teil B/C; tests
+`tos-api/tests/xbios_kbdvecs.rs`; measurement
+`measurements/measurement-2026-10-04-keys02/`.
+
 **Not sanctioned, still open:** `appl_read` on an empty queue returns 0
 instead of blocking (`tos-api/src/aes/appl.rs:434-469`; AUD-P1-007). Unlike
 the write case above, EmuTOS's read-blocks-on-empty is not itself a hang

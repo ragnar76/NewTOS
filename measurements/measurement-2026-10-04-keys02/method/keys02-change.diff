@@ -1,0 +1,2481 @@
+diff --git a/docs/COMPATIBILITY.md b/docs/COMPATIBILITY.md
+index eb3d121..6af0aec 100644
+--- a/docs/COMPATIBILITY.md
++++ b/docs/COMPATIBILITY.md
+@@ -636,6 +636,30 @@ EmuTOS'. Spec: `docs/api/xbios/_state.md` §"Key-repeat handler",
+ `kernel/src/key_repeat.rs` (run via `tools/xtask`) and
+ `tos-api/tests/xbios_kbrate_repeat_source.rs`.
+ 
++**The IKBD vector table is per process, and a `kbdvec` hook ends with its
++process** — user decision 2026-10-04 (D1/D8 of `docs/api/xbios/22-kbdvbase.md`),
++landed as KEYS02. EmuTOS has **one** global `kbdvecs` table in BIOS BSS
++(`references/emutos/bios/aciavecs.S:126-141`); `Kbdvbase` returns its address
++(`bios/xbios.c:716-719`), and nothing in the BDOS touches it at process exit
++(`bdos/proc.c:110-140,601-618`) — a hook a program forgot to restore stays
++installed and the next key jumps into freed memory (spec A8). NewTOS keeps the
++table in page 0 of each process's own TPA (`0x9A0`, 8-byte slots,
++`tos-api/src/xbios/kbdvecs.rs`) and returns that process's EL0 VA. **Reason:** a
++hook is an EL0 address and means nothing in another process's address space
++(the same rule as `vex_wheelv`); the table goes away with the TPA, so a dangling
++hook cannot exist, and `free_slot` drops any bytes still queued for it.
++**Observable differences:** (1) a hook left installed at `Pterm` simply stops
++being called — strictly safer than EmuTOS; (2) a `Pexec` child starts with the
++default table, a parent's hook does not see the child's keys (EmuTOS: global,
++it would); (3) a TSR that installs a hook for later programs (`Ptermres`) cannot
++work; (4) the hook is not called from an interrupt but as an EL0 upcall at the
++running process's next return from a syscall, one byte per upcall in arrival
++order; blocking key waits (`evnt_*`, `Cconin`/`Cnecin`/`Crawcin`/`Bconin(2)`)
++give way and are re-executed after the hook ran. Spec:
++`docs/api/xbios/22-kbdvbase.md` Teil B/C; tests
++`tos-api/tests/xbios_kbdvecs.rs`; measurement
++`measurements/measurement-2026-10-04-keys02/`.
++
+ **Not sanctioned, still open:** `appl_read` on an empty queue returns 0
+ instead of blocking (`tos-api/src/aes/appl.rs:434-469`; AUD-P1-007). Unlike
+ the write case above, EmuTOS's read-blocks-on-empty is not itself a hang
+diff --git a/docs/STEP2-VALIDATION.md b/docs/STEP2-VALIDATION.md
+index 5cdbfdf..8c81c83 100644
+--- a/docs/STEP2-VALIDATION.md
++++ b/docs/STEP2-VALIDATION.md
+@@ -35,7 +35,7 @@
+ | K1 | ~~BUG~~ **FIXED** | **Console policy violation:** the console RX ring was fed by the USB-HID keyboard (`push_rx`) **and** the PL011 UART0, and the blocking / `pump_input` reads actively polled UART0 on real Pi-4 — so CON (handle 2) read the UART, against `HARDWARE-PROFILE.md` §3.2 (CON = USB-HID only). **Fixed (user-decided policy "UART debug-only"):** removed the two `#[cfg(board-rpi4)] { pl011_rx_poll(); }` blocks (in `pump_input` and the `console_read_byte_blocking` loop); on rpi4 CON is now fed only by `usb::poll()` → `ikbd::feed` → `push_rx`. `pl011_rx_poll()` had zero remaining callers and was **deleted** (`console.rs`), module doc updated. **Intentionally kept:** `pl011_rx_drain()` and its GIC-IRQ caller (`gic.rs:176`) — that IRQ path is the tested serial-console input on the **qemu-virt** dev target (on real Pi-4 the PL011 RX IRQ is not delivered, which is why the poll existed); removing it would break qemu-virt. | `kernel/src/console.rs`; `kernel/src/host_env.rs` |
+ | K2 | ~~BUG~~ **FIXED** | **`Bconin(2)` dropped the scancode high word.** Contract: CON returns a packed LONG with the IKBD scancode in bits 16-23, ASCII in bits 0-7 (non-ASCII keys → ASCII 0 + scancode); shift state is **not** folded in (that is `Kbshift`/`conterm & 8`). **Fixed:** added `Host::console_read_key_blocking() -> u16` (host.rs), implemented in `host_env.rs` mirroring `console_read_byte_blocking` but popping the whole key word via `rx_pop_key()` (does **not** skip ascii==0, so arrow/function keys are delivered) with the same rpi4-spin / qemu-`wfi` strategy. Added `pack_console_key(word)` (`chardev.rs`) = `((scancode as Long)<<16)|ascii` where `scancode=word>>8`, `ascii=word&0xFF`. Wired the scancode-returning console reads: `Bconin(2)` (blocking), `Cconin` (blocking, echoes the ASCII byte only, Ctrl-C on the low byte), `Cnecin` / `Crawcin` (blocking), and `Crawio(0xFF)` read side (non-blocking, via existing `console_try_read_key`). Left `Cconrs` line-input and `Fread`-from-CON on the ASCII `console_read_byte_blocking` byte stream — spec: those are byte streams, not scancode LONGs. Bit layout verified against `docs/api/bios/02-bconin.md:104-106` and `docs/api/gemdos/console/01-cconin.md:115-118`. | `tos-api/src/bios/chardev.rs`; `tos-api/src/gemdos/console.rs`; `tos-api/src/host.rs`; `kernel/src/host_env.rs` |
+ | K3 | GAP | **XBIOS keyboard group not wired.** `Initmous (0x00)`, `Iorec (0x0E)`, `Keytbl (0x10)`, `Bioskeys (0x18)`, `Ikbdws (0x19)`, `Kbrate (0x23)` have **no entry** in the XBIOS dispatcher → return `EINVFN`. Only `Kbdvbase (0x22)` is present. The keyboard/mouse work via the direct `ikbd::feed` path, but the XBIOS API surface is absent. | `tos-api/src/xbios/mod.rs:33-55` |
+-| K4 | GAP | **`Kbdvbase` table never populated / never dispatched through.** `KBDVECS` is all-zero and no boot code installs default handlers; the IKBD decoder calls `vdi::feed_relative` directly instead of dispatching through `kbdvecs.mousevec`. So `Kbdvbase()->mousevec == 0` and hooking a slot has no effect. Stable-pointer + 9-slot-layout contract holds; the dispatch-through-vectors contract does not. | `tos-api/src/xbios/system.rs:42-78` |
++| K4 | **PARTIAL (KEYS02, 2026-10-04)** | `kbdvec` is now real: per-process EL0 table at `0x9A0`, every slot a valid stub, a hooked `kbdvec` gets every make/break as an EL0 upcall and can chain (`docs/api/xbios/22-kbdvbase.md` Teil C, `tos-api/src/xbios/kbdvecs.rs`). Still open: the other eight slots + `mousexvec` are not called (`mousevec`/`joyvec`/`statvec`/`clockvec`/MIDI — follow-up tickets). Original finding: **`Kbdvbase` table never populated / never dispatched through.** `KBDVECS` is all-zero and no boot code installs default handlers; the IKBD decoder calls `vdi::feed_relative` directly instead of dispatching through `kbdvecs.mousevec`. So `Kbdvbase()->mousevec == 0` and hooking a slot has no effect. Stable-pointer + 9-slot-layout contract holds; the dispatch-through-vectors contract does not. | `tos-api/src/xbios/system.rs:42-78` |
+ | K5 | GAP | **VDI `vex_*` mouse vectors never invoked.** `vex_butv/motv/curv/wheelv` (125-127,134) and `vex_timv` (118) install/return their slots correctly, but the mouse packet path (`feed_relative`) does not call `user_but`/`user_mot`/`user_cur` in the button→motion→cursor order, and no timer tick invokes `tim_addr`. A hooked vector never fires; the AES event path uses the direct call instead. | `tos-api/src/vdi/mouse.rs:105-134,359-388` |
+ | K6 | GAP | **`cur_ms_stat` + mouse-button locator terminators missing.** `feed_relative`/`set_state` update `GCURX`/`GCURY`/`MOUSE_BT` but not `cur_ms_stat` (motion bit 5, button-change bits 6/7). So `v_locator` does not produce the `0x20`/`0x21` mouse-button terminators — only keyboard terminators. | `tos-api/src/vdi/mouse.rs:105-134`; `tos-api/src/vdi/input.rs:64-73` |
+ | K7 | ~~GAP~~ **FIXED 2026-10-03 (KEYS01)** | ~~**No software key-repeat.** The decoder emits one key word per make event; there is no `kb_ticks`-style repeat timer keyed off `kb_initial`/`kb_repeat`, so even if `Kbrate` were wired its stored values would have no observable effect.~~ EmuTOS' software repeat (`bios/ikbd.c:395-536`) reimplemented with the same delay/rate/stop semantics, reading `Kbrate`'s fields; run polled in the input pump after each USB poll (sanctioned deviation, at most one repeat per poll). | `kernel/src/key_repeat.rs`; `kernel/src/ikbd.rs` (`poll_repeat`); `kernel/src/host_env.rs`; spec `docs/api/xbios/_state.md` §"Key-repeat handler" |
+diff --git a/docs/api/gemdos/154-ssystem.md b/docs/api/gemdos/154-ssystem.md
+index ddd881b..12d7612 100644
+--- a/docs/api/gemdos/154-ssystem.md
++++ b/docs/api/gemdos/154-ssystem.md
+@@ -20,8 +20,9 @@
+ >
+ > **Plus NewTOS's own modes from 2000 upwards** (§"NewTOS-own modes (2000+)"):
+ > machine facts an EL0 program cannot reach any other way, because the hardware
+-> that knows them is kernel-only. These are *not* FreeMiNT modes and are marked
+-> as ours wherever they appear; 2000+ is a range FreeMiNT leaves free.
++> that knows them is kernel-only (2000/2001), and the kernel entry of the
++> default `kbdvec` stub (2002, KEYS02). These are *not* FreeMiNT modes and are
++> marked as ours wherever they appear; 2000+ is a range FreeMiNT leaves free.
+ 
+ > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+ > Contract (for the modes NewTOS implements): trap ID `0x154`, the `(mode,
+@@ -150,6 +151,7 @@ NewTOS identity, but that is a separate decision.
+ |------|------:|-------|-------|
+ | `S_NEWTOS_CPUCLOCK` | 2000 | machine | ARM core clock, **Hz** |
+ | `S_NEWTOS_CPUTEMP` | 2001 | machine | SoC die temperature, **1/1000 °C** |
++| `S_NEWTOS_KBDVEC` | 2002 | keyboard | run the default `kbdvec` (EmuTOS `kbd_int`) for one IKBD key byte — KEYS02, see below |
+ 
+ **Why the number block is free.** FreeMiNT's `sys/mint/ssystem.h` (@ `f906416`)
+ assigns 0–29, 100 and `0x54f8` (21752), and reserves two ranges by comment:
+@@ -166,6 +168,34 @@ load and thermal state. The jar cannot express "ask the machine now"
+ (`docs/api/bios/_cookie-jar.md`), `Ssystem` can — and FreeMiNT-compatible
+ extension is the sanctioned direction (ADR-012, `docs/MEMORY.md`).
+ 
++#### `S_NEWTOS_KBDVEC` (2002) — the default `kbdvec` (KEYS02)
++
++```
++Ssystem(2002, scancode, 0)
++```
++
++The kernel entry of the `kbdvec_default` stub every process finds in its own
++IKBD vector table (`docs/api/xbios/22-kbdvbase.md` B3/C2, decision D6). It runs
++EmuTOS' default keyboard handler, `_kbdvec` → `kbd_int(scancode)`
++(`bios/aciavecs.S:372-376`, `bios/ikbd.c:725-910`), on the kernel's decoder:
++modifier state, the key word into the console queue, the key repeat. A program
++reaches it by chaining to the old `kbdvec` (`br old`), not by calling `Ssystem`
++itself — but calling it directly has exactly the same effect, as calling the
++default `kbdvec` does on TOS.
++
++| Arg | Meaning |
++|-----|---------|
++| `arg1` | the IKBD key byte, `0..0xFF` (bit 7 = break), as `kbdvec` receives it in `x0` |
++| `arg2` | **reserved**, must be **0** |
++
++| Return | Condition |
++|--------|-----------|
++| `E_OK` (0) | the byte was decoded |
++| `EINVAL` (-25) | `arg1 > 0xFF` or `arg2 != 0`; nothing ran |
++| `ERROR` (-1) | the host has no keyboard decoder (a hostless build) |
++
++Tests: `tos-api/tests/xbios_kbdvecs.rs` (`ssystem_kbdvec_runs_the_default_decoder`).
++
+ #### Interface (both modes)
+ 
+ ```
+@@ -335,7 +365,7 @@ by `tools/make-sd-image.sh`; `SD_SYSINFO_AUTO=1` additionally puts it in
+   able to mistake a stale buffer for a reading.
+ - **Reserved `arg2`:** `Ssystem(2000, 0, 1)` and `Ssystem(2001, 0, 1)` return
+   `EINVAL` (-25) and write nothing.
+-- **Neighbouring numbers stay unimplemented:** 1999, 2002 and 2999 return
++- **Neighbouring numbers stay unimplemented:** 1999, 2003 and 2999 return
+   `EINVFN`, so the two modes cannot be reached by accident.
+ - **The probe is unaffected:** `Ssystem(-1, 0, 0)` still returns `E_OK`.
+ 
+diff --git a/docs/api/xbios/22-kbdvbase.md b/docs/api/xbios/22-kbdvbase.md
+index 080fed3..bbfd24a 100644
+--- a/docs/api/xbios/22-kbdvbase.md
++++ b/docs/api/xbios/22-kbdvbase.md
+@@ -1,7 +1,8 @@
+ # `Kbdvbase` (XBIOS 0x22) — der Tastatur-/IKBD-Vektor
+ 
+-> **Status: FREIGEGEBEN (Anwender 2026-10-04)** — D1–D8 wie empfohlen: Tabelle je Prozess in TPA-Seite 0 bei `0x9A0` (D1); AAPCS64, `x0` = Scancode/Paketzeiger, `x1` = 0 bei `kbdvec` bis `Iorec(1)` (D2/D2a); Ring 64 Eintraege je Prozess + Upcall-Kette (D3/D3a); `ikbdsys`-Wechsel-Stopp nachbauen (D4); `drvstat` = 0 (D5); Syscall-Nummer vergibt der Lead beim Bau aus dem freien internen Bereich (D6); Minimum jetzt = `kbdvec` + gueltige Stubs in allen Slots, uebrige Haken Folgeticket, Luecke in STATUS „Blocked“ (D7); Haken verschwindet mit dem Prozess, in COMPATIBILITY.md (D8). Vorherige Kennzeichnung: ENTWURF (KEYS02, Schritt 1 / Regel 5). Nichts davon
+-> ist gebaut. Teil A (EmuTOS-Referenz) ist aus dem Quelltext belegt; Teil B
++> **Status: FREIGEGEBEN (Anwender 2026-10-04)** — D1–D8 wie empfohlen: Tabelle je Prozess in TPA-Seite 0 bei `0x9A0` (D1); AAPCS64, `x0` = Scancode/Paketzeiger, `x1` = 0 bei `kbdvec` bis `Iorec(1)` (D2/D2a); Ring 64 Eintraege je Prozess + Upcall-Kette (D3/D3a); `ikbdsys`-Wechsel-Stopp nachbauen (D4); `drvstat` = 0 (D5); Syscall-Nummer vergibt der Lead beim Bau aus dem freien internen Bereich (D6); Minimum jetzt = `kbdvec` + gueltige Stubs in allen Slots, uebrige Haken Folgeticket, Luecke in STATUS „Blocked“ (D7); Haken verschwindet mit dem Prozess, in COMPATIBILITY.md (D8). Vorherige Kennzeichnung: ENTWURF (KEYS02, Schritt 1 / Regel 5). Bei der Freigabe
++> war nichts davon gebaut; **der Kernteil (D7-Minimum) ist seit 2026-10-04 gebaut —
++> Teil C** (Syscall-Nummer D6 = `Ssystem` Modus **2002**, O1 geklaert). Teil A (EmuTOS-Referenz) ist aus dem Quelltext belegt; Teil B
+ > (NewTOS-Abbildung) ist ein **Vorschlag**, jede Stelle mit `ENTSCHEIDUNG D<n>`
+ > braucht ein Ja/Nein des Anwenders (Liste am Ende).
+ >
+@@ -502,6 +503,109 @@ Stub-Rueckgabewert.
+ 
+ ---
+ 
++# Teil C — Bau (KEYS02 Kernteil, 2026-10-04)
++
++Umfang = D7-Minimum. Teil B gilt mit den folgenden Festlegungen; Abweichungen
++von Teil B sind hier ausdruecklich genannt.
++
++## C1. Tabelle, Stubs, `Kbdvbase` (B1/B3)
++
++* Layout wie B1, Bereich `[0x9A0, 0xA00)` der ersten TPA-Seite
++  (`loader::KBDVECS_AREA_VA`, Groesse 0x60, 0x5A belegt). `Kbdvbase()` = `0x9B0`
++  (EL0-VA von `midivec`), `kbdvec` bei `0x9A8`, `mousexvec` bei `0x9A0`,
++  `ikbdsys` bei `0x9F0`, `drvstat`/`kbdlength` bei `0x9F8`/`0x9F9` (beide 0, D5).
++* Stubs in `[0xA00, 0xA40)` (`loader::KBDVEC_STUB_AREA_VA`):
++  `ret_stub` bei `0xA00` (`ret`), `kbdvec_default` bei `0xA08`:
++  `mov x1,x0; mov x0,#2002; mov x2,#0; mov x8,#0x154; svc #1; ret`
++  (Kodierungen mit clang/llvm-objdump geprueft).
++* Geschrieben vom Lader bei jedem Laden (`xbios::kbdvecs::write_defaults`, aus
++  `populate_and_map` neben den Upcall-Trampolinen, vor der Code-Cache-Pflege).
++* **Ergaenzung (in B1 nicht geregelt):** ein EL1-Aufrufer ohne Prozess (Desktop,
++  Boot, `RUN == null`) bekommt eine Kernel-Tabelle gleichen Layouts mit denselben
++  Vorgabewerten. Durch sie wird nie gerufen (ohne Prozess laeuft immer der
++  Standardweg); sie beantwortet nur den Zeiger — dieselbe Regel wie `Keytbl`.
++
++## C2. D6 — die Syscall-Nummer
++
++`kbdvec_default` ruft **`Ssystem(S_NEWTOS_KBDVEC = 2002, scancode, 0)`**
++(GEMDOS 0x154). Der NewTOS-eigene Bereich ist `Ssystem` 2000+
++(`docs/api/gemdos/154-ssystem.md`, belegt 2000/2001); 2002 ist die naechste freie
++Nummer. Vertrag: `arg1` = Byte (0..0xFF, sonst `EINVAL`), `arg2` = 0 (sonst
++`EINVAL`), Ergebnis `E_OK`, `ERROR` ohne Tastaturdekoder (Host ohne Dekoder).
++Die Nummer steht nur im kernel-geschriebenen Stub; kein Programm-Binaerbild
++enthaelt sie, ein Umnummerieren braeche nichts.
++
++## C3. Zustellung (B4, D3/D3a)
++
++* `ikbd::feed` → `kbdvecs::route_key(byte)` fuer jedes Byte `< 0xF6`:
++  kein laufender Prozess **oder** `kbdvec == 0xA08` → `decode_key` direkt
++  (Schnellpfad, unveraendert). Sonst Byte in den Ring des Prozess-Slots
++  (64, bei vollem Ring wird das **neueste** verworfen).
++* Zustellung (`exceptions.rs::deliver_pending_kbdvec`) an jeder Rueckkehr nach
++  EL0 (`complete_call_tail`, Resume nach Scheduler-Wechsel in `apply_switch`,
++  Resume-`Psigreturn`): ein Byte je Upcall, `x0` = Scancode, `x1` = 0,
++  Ziel = der **aktuelle** `kbdvec`-Wert, Maskenbit `UPCALL_MASK_KBDVEC = 1 << 3`.
++  Solange das Bit gesetzt ist, wird kein weiteres Byte zugestellt (Tiefe 1);
++  das naechste folgt beim `Psigreturn` des Hakens (Kette). Ein schon
++  gepostetes anderes Upcall hat Vorrang. Steht beim Zustellen wieder die
++  Vorgabe im Slot, wird das Byte direkt dekodiert.
++* **O1 — geklaert, war nicht gegeben, ist gebaut.** Eine blockierende AES-Warte
++  (`evnt_*` → `sched::sleep`) und die blockierenden Einzeltasten-Lesungen
++  (`Cconin`, `Cnecin`, `Crawcin`, `Bconin(2)`) kehrten nie nach EL0 zurueck,
++  solange keine Taste in der BIOS-Schlange lag — die legt bei einem verkettenden
++  Haken aber erst der Haken selbst hinein: Verklemmung. Jetzt **weichen sie aus**:
++  `sleep` liefert bei wartenden Ring-Bytes (vor dem Blockieren und nach dem
++  eigenen Pump) `Yield(switch_restart_for_upcall())`, die Lesungen
++  `Host::console_read_key_restartable() == None` + `kbdvecs::request_restart()`.
++  Der Trap-Handler bricht den Aufruf wie einen S2-Yield ab (`elr` auf das `svc`
++  zurueck, nichts festgeschrieben), stellt den Haken zu, und nach dessen
++  `Psigreturn` laeuft das `svc` erneut (`evnt_multi`-Zeitgrenze bleibt ueber
++  `syscall_deadline` erhalten). Gemessen in QEMU: `evnt_multi(MU_KEYBD)` **ohne**
++  Timer und `Bconin(2)` liefern die vom Haken verkettete Taste; zwei Breaks im
++  selben Poll erreichen den Haken beide, in Reihenfolge, das zweite ueber die
++  `Psigreturn`-Kette (`measurements/measurement-2026-10-04-keys02/`).
++* **Grenzen (dokumentiert, nicht gebaut):** `Cconrs`, konsolen-`Fread` und
++  `v_string` (Anfragemodus) lesen weiter ohne Ausweichen — sie haben vor dem
++  Ende bereits Wirkung (Echo, Puffer); ein Programm, das bei eingehaengtem und
++  verkettendem Haken darin wartet, haengt. Modale AES-Schleifen, die
++  `pump_input` selbst rufen (`form_do`, Menue-/Ziehschleifen), stellen erst bei
++  ihrer Rueckkehr zu (Ring 64). Ein Haken laeuft als normale AAPCS64-Funktion,
++  aber das Upcall sichert die **FP/SIMD-Register** des unterbrochenen Codes
++  nicht (gilt fuer alle Upcalls); ein Haken darf sie nicht benutzen.
++
++## C4. Wiederholung und `ikbdsys` (D4)
++
++`KeyRepeat::make` merkt sich den `ikbdsys`-Wert des laufenden Prozesses
++(`kbdvecs::current_ikbdsys`, ohne Prozess `0xA00`), `poll` stoppt bei einem
++50-Hz-Schritt mit laufender Wiederholung und anderem Wert (vor dem
++`conterm`-Test, `ikbd.c:453-472`); bei Neuumsetzung wird der Wert nachgezogen
++(`:507`). `ikbdsys` wird nie gerufen. Wiederholungen rufen `kbdvec` nicht
++(unveraendert, `ikbd.c:524`) — gemessen: der Haken sah 6 Codes, die AES 7+7
++Woerter (Make + Wiederholungen).
++
++## C5. Prozessende (D8)
++
++Tabelle und Stubs liegen in der TPA und verschwinden mit ihr; `free_slot` leert
++den Ring (`kbdvecs::release_slot`). Gemessen: ein Programm, das seinen Haken
++**nicht** zuruecksetzt, endet, und der Desktop reagiert auf Alt-C normal.
++Abweichung von EmuTOS in `docs/COMPATIBILITY.md` (Sanctioned deviations).
++
++## C6. Nicht gerufene Slots (D7-Luecke)
++
++`midivec`, `vkbderr`, `vmiderr`, `statvec`, `mousevec`, `clockvec`, `joyvec`,
++`midisys`, `ikbdsys` und `mousexvec` existieren mit `ret_stub`; ein dort
++eingehaengter Programm-Haken wird **nicht gerufen** (Maus laeuft weiter
++kernelintern ueber `vdi::feed_relative`, `mousexvec` ueber
++`bios::vectors::mousexvec`). Eintrag unter `docs/STATUS.md` "Blocked" (Lead).
++
++## C7. Belege
++
++Hosttests `tos-api/tests/xbios_kbdvecs.rs` (10), `kernel/src/key_repeat.rs`
++(+3 `ikbdsys`), QEMU-raspi4b-Lauf mit `sdk/examples/kbdvec.c`
++(`measurements/measurement-2026-10-04-keys02/RUNINFO.TXT`).
++
++---
++
+ # Korrekturen an der Vorfassung (22-kbdvbase.md Phase 00) und `_state.md §1`
+ 
+ 1. **`kbdvec` fehlte komplett** (Slot bei `-4`; `aciavecs.S:129`); ebenso
+@@ -544,7 +648,8 @@ Stub-Rueckgabewert.
+ # Offene Punkte (nicht geklaert, bewusst nicht erraten)
+ 
+ * **O1.** Ob der AES-Pfad nach `evnt_multi` eine Upcall-Zustellung am Rueckweg
+-  hat (B4) — beim Bau pruefen.
++  hat (B4) — beim Bau pruefen. **Geklaert 2026-10-04 (C3):** am Rueckweg ja, aber
++  eine *blockierende* Warte kehrte nicht zurueck; jetzt weicht sie aus.
+ * **O2.** `IOREC`-Form fuer `x1` (D2a) haengt an der Entscheidung ueber `Iorec`.
+ * **O3.** TT TOS 3.06 hat `kbdvec`: nur abgeleitet (A7). Eine Messung am
+   Hatari-TT (`hatari-produces-tt-references`) koennte es bestaetigen — hier nicht
+diff --git a/docs/api/xbios/_state.md b/docs/api/xbios/_state.md
+index 18e69a4..4b562fb 100644
+--- a/docs/api/xbios/_state.md
++++ b/docs/api/xbios/_state.md
+@@ -52,12 +52,20 @@ overwriting a field (read-save-chain — no previous-vector return). The
+ struct lives in BIOS BSS, process-lifetime stable.
+ 
+ > The internal IKBD-packet state machine keeps a few private fields
+-> (`ikbdstate`, `kbdlength`) adjacent to the table in `bios/aciavecs.S`;
+-> those are **not** part of the 36-byte contract surface returned to
+-> applications and NewTOS need not expose them.
+-
+-NewTOS: preserve the 36-byte ABI. The synthetic IKBD-packet generator
+-(USB-HID translator) feeds these vectors in IKBD byte format.
++> (`ikbdstate`, `kbdlength`) adjacent to the table in `bios/aciavecs.S`.
++> **Correction (KEYS02):** `ikbdstate` is the Compendium's documented
++> `drvstat` and *is* contract surface; only `kbdlength` is internal
++> (`22-kbdvbase.md`, Korrekturen 3).
++
++**NewTOS (KEYS02, built 2026-10-04):** one table **per process**, in page 0 of
++its TPA at `0x9A0` with **8-byte** slots (LP64): `mousexvec` `0x9A0`, `kbdvec`
++`0x9A8`, the nine slots from `0x9B0` (= `Kbdvbase()`), `drvstat`/`kbdlength`
++`0x9F8`/`0x9F9` (always 0). Defaults are EL0 stubs (`ret` at `0xA00`;
++`kbdvec_default` at `0xA08` → `Ssystem(2002)` → the kernel decoder). Only
++`kbdvec` is called — as an EL0 upcall at the next syscall return, one byte per
++upcall, `x0` = scancode, `x1` = 0; the other slots are present but not called
++(documented gap). Full binding: `22-kbdvbase.md` Teil B/C; code
++`tos-api/src/xbios/kbdvecs.rs`.
+ 
+ ---
+ 
+@@ -168,8 +176,12 @@ elapsed since the previous poll are credited. Implementation:
+   tick (every AES wait, every blocking read, every `Bconstat` on an empty
+   queue) the cadence is EmuTOS' exactly; only a caller that pumps less often
+   than every `kb_repeat` ticks sees the repeat rate drop to its own poll rate.
+-- **Not modelled** (no counterpart on NewTOS): the `ikbdsys`-change stop (step
+-  1 — NewTOS has no installable `ikbdsys`, `Kbdvbase` K4), the keyclick (step
++- **`ikbdsys`-change stop (step 1)** — modelled since KEYS02 (D4): the make
++  records the running process's `ikbdsys` slot (no process: the default
++  `0xA00`), a 50 Hz step with a key repeating and a different value stops the
++  repeat, ahead of the `conterm` test; the value is never called
++  (`22-kbdvbase.md` C4).
++- **Not modelled** (no counterpart on NewTOS): the keyclick (step
+   5 — no keyclick on NewTOS at all), the mouse-emulation repeat (the decoder
+   has no keyboard mouse emulation), Alt-numpad, and the scancode rewrite of
+   `convert_scancode` (the NewTOS decoder does not rewrite scancodes; the
+diff --git a/kernel/src/arch/aarch64/exceptions.rs b/kernel/src/arch/aarch64/exceptions.rs
+index 7d1e0f5..06d0bba 100644
+--- a/kernel/src/arch/aarch64/exceptions.rs
++++ b/kernel/src/arch/aarch64/exceptions.rs
+@@ -462,6 +462,14 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
+     // in [`KERNEL_PARK`] instead, with the same ELR rewind, and restored the
+     // moment the accessory it yields to blocks again.
+     if let Some(sw) = pending_switch {
++        // KEYS02 (O1): not a switch — the blocking wait gave way because this
++        // process's `kbdvec` hook has bytes queued. Abort the call like an S2
++        // yield (rewind to the `svc`, commit nothing) and run the hook on top
++        // of the rewound frame; its `Psigreturn` re-executes the `svc`.
++        if sw.upcall_restart {
++            restart_for_kbdvec(frame);
++            return;
++        }
+         let cur = tos_api::bdos::process::sched::running_slot();
+         if cur < tos_api::bdos::process::MAX_PROCESSES {
+             save_yield_frame(cur, frame, true);
+@@ -506,6 +514,17 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
+     // system does nothing, so a GEMDOS-only tail would never tick.
+     tos_api::gemdos::trace::flush_if_requested();
+ 
++    // KEYS02: a single-key blocking read (`Cconin`/`Cnecin`/`Crawcin`/
++    // `Bconin(2)`) gave way because this process's `kbdvec` hook has bytes
++    // queued (`Host::console_read_key_restartable`). Its `result` is a
++    // placeholder: discard it, rewind to the `svc` and run the hook first.
++    // Only an EL0 caller can have hook bytes; should an EL1 caller ever see
++    // the flag, the read simply completes with its placeholder.
++    if tos_api::xbios::kbdvecs::take_restart() && frame.spsr & 0xF == 0 {
++        restart_for_kbdvec(frame);
++        return;
++    }
++
+     complete_call_tail(frame, result);
+ }
+ 
+@@ -552,9 +571,72 @@ fn complete_call_tail(frame: &mut ExceptionFrame, result: i64) {
+             if let Some(u) = tos_api::bdos::process::take_pending_upcall(slot_idx)
+             {
+                 deliver_upcall(frame, u);
++                return;
+             }
+         }
++        // Otherwise the next byte for the process's `kbdvec` hook (KEYS02).
++        deliver_pending_kbdvec(frame);
++    }
++}
++
++/// Abort the current call for a `kbdvec` delivery (KEYS02, O1): rewind `elr`
++/// to the `svc` — the argument registers are still the caller's, nothing was
++/// committed — and deliver the hook's next byte on top of that frame. The
++/// hook's `Psigreturn` restores the rewound frame and the `svc` re-executes.
++/// If the ring turns out empty, the `svc` simply re-executes.
++fn restart_for_kbdvec(frame: &mut ExceptionFrame) {
++    frame.elr = frame.elr.wrapping_sub(4);
++    deliver_pending_kbdvec(frame);
++}
++
++/// Deliver the next byte queued for the running process's `kbdvec` hook as an
++/// EL0 upcall (KEYS02, `docs/api/xbios/22-kbdvbase.md` B4): `x0` = the
++/// scancode (bit 7 = break), `x1` = 0 (D2/D2a), handler = the **current**
++/// `kbdvec` slot, return through the trampoline's `Psigreturn`, which comes
++/// back here for the next byte — one byte per upcall, in arrival order.
++///
++/// Only on a return to EL0, and never while a `kbdvec` upcall is already
++/// running for this process ([`UPCALL_MASK_KBDVEC`], nesting depth 1): a
++/// syscall the hook itself makes — e.g. the `kbdvec_default` stub's — returns
++/// normally. A byte whose process put the default back before it could be
++/// delivered is decoded directly, like on the fast path. Returns whether an
++/// upcall was delivered.
++///
++/// [`UPCALL_MASK_KBDVEC`]: tos_api::bdos::process::UPCALL_MASK_KBDVEC
++fn deliver_pending_kbdvec(frame: &mut ExceptionFrame) -> bool {
++    use core::sync::atomic::Ordering;
++    use tos_api::bdos::process::{
++        current, slot_for, Disposition, UpcallDesc, PROCESS_TABLE, UPCALL_MASK_KBDVEC,
++    };
++    use tos_api::xbios::kbdvecs;
++
++    if frame.spsr & 0xF != 0 {
++        return false;
++    }
++    let Some(slot) = slot_for(current()) else {
++        return false;
++    };
++    if PROCESS_TABLE[slot].upcall_mask.load(Ordering::Acquire) & UPCALL_MASK_KBDVEC != 0 {
++        return false;
++    }
++    while let Some(byte) = kbdvecs::pop(slot) {
++        let handler = kbdvecs::kbdvec_of(slot).unwrap_or(kbdvecs::KBDVEC_DEFAULT_VA);
++        if handler == kbdvecs::KBDVEC_DEFAULT_VA {
++            crate::ikbd::kbd_int(byte);
++            continue;
++        }
++        deliver_upcall(
++            frame,
++            UpcallDesc {
++                handler_va: handler,
++                args: [u64::from(byte), 0, 0, 0],
++                mask_bit: UPCALL_MASK_KBDVEC,
++                disposition: Disposition::Resume,
++            },
++        );
++        return true;
+     }
++    false
+ }
+ 
+ /// First half of an AES userdef callout (AES-as-thread design §3.4(c)): on the
+@@ -1040,6 +1122,9 @@ fn apply_switch(frame: &mut ExceptionFrame, sw: &tos_api::bdos::process::sched::
+     if !sw.fresh {
+         if let Some(u) = tos_api::bdos::process::take_pending_upcall(sw.slot) {
+             deliver_upcall(frame, u);
++        } else {
++            // …or the next byte for its `kbdvec` hook (KEYS02).
++            deliver_pending_kbdvec(frame);
+         }
+     }
+ }
+@@ -1475,6 +1560,11 @@ fn handle_psigreturn(frame: &mut ExceptionFrame) {
+     frame.spsr = ctx.spsr().load(Ordering::Acquire);
+     frame.sp_el0 = ctx.sp_el0().load(Ordering::Acquire);
+     ctx.clear();
++
++    // KEYS02 (B4): more bytes for the `kbdvec` hook — chain the next upcall
++    // onto the context just restored instead of resuming it, so a make and
++    // its break that arrived in one poll both reach the hook, in order.
++    deliver_pending_kbdvec(frame);
+ }
+ 
+ /// Read a NUL-terminated string from a user-space VA into `buf` using
+diff --git a/kernel/src/host_env.rs b/kernel/src/host_env.rs
+index 403a43d..0c4d986 100644
+--- a/kernel/src/host_env.rs
++++ b/kernel/src/host_env.rs
+@@ -189,60 +189,17 @@ impl Host for KernelHost {
+     }
+ 
+     fn console_read_key_blocking(&self) -> u16 {
+-        // Identical blocking strategy to `console_read_byte_blocking`, but
+-        // pops the whole key word (`scancode << 8 | ascii`) via `rx_pop_key`
+-        // — it does *not* skip scancode-only keys (ASCII 0), so arrow /
+-        // function keys reach `Bconin(2)`/`Cconin` and friends. Runs inside
+-        // the synchronous SVC handler with IRQs masked, so unmask + `wfi`
+-        // while waiting (qemu-virt), or spin (rpi4 polls USB-HID).
+-        let daif: u64;
+-        // SAFETY: reading DAIF and clearing the IRQ mask are permitted
+-        // at EL1; we restore DAIF before returning.
+-        unsafe {
+-            core::arch::asm!(
+-                "mrs {0}, daif",
+-                out(reg) daif,
+-                options(nomem, nostack, preserves_flags),
+-            );
+-            core::arch::asm!(
+-                "msr daifclr, #2",
+-                options(nomem, nostack, preserves_flags),
+-            );
+-        }
+-
+-        let word = loop {
+-            // Drain USB-HID interrupt transfers (keyboard) → ikbd::feed →
+-            // the key ring. On real Pi-4 this is the sole console input
+-            // source; no-op until a HID device is enumerated (qemu-virt
+-            // uses the PL011 RX IRQ instead).
+-            crate::drivers::usb::poll();
+-            // Key auto-repeat, polled after the input (see `pump_input`).
+-            crate::ikbd::poll_repeat();
++        // Never gives way: `read_key_loop(false)` only returns with a key.
++        read_key_loop(false).unwrap_or(0)
++    }
+ 
+-            if let Some(w) = crate::console::rx_pop_key() {
+-                break w;
+-            }
+-            // rpi4 polls the USB-HID keyboard, so spin lightly (no IRQ
+-            // wakes a `wfi` for CON input); qemu-virt `wfi`s until the
+-            // PL011 RX IRQ.
+-            #[cfg(feature = "board-rpi4")]
+-            core::hint::spin_loop();
+-            #[cfg(not(feature = "board-rpi4"))]
+-            // SAFETY: wait for the next interrupt (the RX IRQ wakes us).
+-            unsafe {
+-                core::arch::asm!("wfi", options(nomem, nostack, preserves_flags));
+-            }
+-        };
++    fn console_read_key_restartable(&self) -> Option<u16> {
++        read_key_loop(true)
++    }
+ 
+-        // SAFETY: restore the caller's original DAIF mask state.
+-        unsafe {
+-            core::arch::asm!(
+-                "msr daif, {0}",
+-                in(reg) daif,
+-                options(nomem, nostack, preserves_flags),
+-            );
+-        }
+-        word
++    fn kbd_int(&self, scancode: u8) -> bool {
++        crate::ikbd::kbd_int(scancode);
++        true
+     }
+ 
+     fn monotonic_seconds(&self) -> u64 {
+@@ -391,6 +348,72 @@ impl Host for KernelHost {
+     }
+ }
+ 
++/// The blocking key-word read shared by [`Host::console_read_key_blocking`]
++/// and [`Host::console_read_key_restartable`]: pops the whole key word
++/// (`scancode << 8 | ascii`) via `rx_pop_key` — it does *not* skip
++/// scancode-only keys (ASCII 0), so arrow / function keys reach
++/// `Bconin(2)`/`Cconin` and friends. Runs inside the synchronous SVC handler
++/// with IRQs masked, so unmask + `wfi` while waiting (qemu-virt), or spin
++/// (rpi4 polls USB-HID).
++///
++/// With `give_way`, returns `None` as soon as the running process has bytes
++/// queued for its `kbdvec` hook (KEYS02, `docs/api/xbios/22-kbdvbase.md` B4):
++/// those are delivered on the way back to EL0, so the caller must let the trap
++/// restart instead of waiting for a key the hook itself may have to produce.
++fn read_key_loop(give_way: bool) -> Option<u16> {
++    let daif: u64;
++    // SAFETY: reading DAIF and clearing the IRQ mask are permitted
++    // at EL1; we restore DAIF before returning.
++    unsafe {
++        core::arch::asm!(
++            "mrs {0}, daif",
++            out(reg) daif,
++            options(nomem, nostack, preserves_flags),
++        );
++        core::arch::asm!(
++            "msr daifclr, #2",
++            options(nomem, nostack, preserves_flags),
++        );
++    }
++
++    let word = loop {
++        // Drain USB-HID interrupt transfers (keyboard) → ikbd::feed →
++        // the key ring. On real Pi-4 this is the sole console input
++        // source; no-op until a HID device is enumerated (qemu-virt
++        // uses the PL011 RX IRQ instead).
++        crate::drivers::usb::poll();
++        // Key auto-repeat, polled after the input (see `pump_input`).
++        crate::ikbd::poll_repeat();
++
++        if let Some(w) = crate::console::rx_pop_key() {
++            break Some(w);
++        }
++        if give_way && tos_api::xbios::kbdvecs::pending_for_running() {
++            break None;
++        }
++        // rpi4 polls the USB-HID keyboard, so spin lightly (no IRQ
++        // wakes a `wfi` for CON input); qemu-virt `wfi`s until the
++        // PL011 RX IRQ.
++        #[cfg(feature = "board-rpi4")]
++        core::hint::spin_loop();
++        #[cfg(not(feature = "board-rpi4"))]
++        // SAFETY: wait for the next interrupt (the RX IRQ wakes us).
++        unsafe {
++            core::arch::asm!("wfi", options(nomem, nostack, preserves_flags));
++        }
++    };
++
++    // SAFETY: restore the caller's original DAIF mask state.
++    unsafe {
++        core::arch::asm!(
++            "msr daif, {0}",
++            in(reg) daif,
++            options(nomem, nostack, preserves_flags),
++        );
++    }
++    word
++}
++
+ /// Adapter exposing the EMMC2 SD card as a TOS-API [`BlockDev`].
+ #[cfg(feature = "board-rpi4")]
+ struct KernelBlock;
+diff --git a/kernel/src/ikbd.rs b/kernel/src/ikbd.rs
+index b2eef8a..6fcbfe5 100644
+--- a/kernel/src/ikbd.rs
++++ b/kernel/src/ikbd.rs
+@@ -16,7 +16,10 @@
+ //! layout) → the console RX ring (`Cnecin`/`Cconin`/the shell), and
+ //! relative-mouse packets → the VDI cursor. A held non-modifier key repeats
+ //! (EmuTOS' BIOS software repeat, run polled — [`poll_repeat`],
+-//! [`crate::key_repeat`]).
++//! [`crate::key_repeat`]). Every key byte, make and break, first passes the
++//! running process's `kbdvec` (KEYS02, `tos_api::xbios::kbdvecs`): a program
++//! hook receives it as an EL0 upcall; with the default in place the decoder
++//! ([`kbd_int`]) runs directly.
+ //!
+ //! Protocol + scancode set: Atari IKBD documentation; the scancode→ASCII
+ //! tables mirror EmuTOS `bios/keyboard.c` (US layout). Country layouts
+@@ -109,8 +112,22 @@ pub fn feed(byte: u8) {
+         PKT_REMAINING.store(packet_data_len(byte), Ordering::Relaxed);
+         return;
+     }
+-    // Otherwise it is a key scancode (bit 7 = break).
+-    decode_key(byte);
++    // Otherwise it is a key scancode (bit 7 = break). EmuTOS `ikbdraw` jumps
++    // through `kbdvec` here (`bios/aciavecs.S:407-414`): the running
++    // process's hook gets the byte if it installed one (queued for EL0 upcall
++    // delivery, KEYS02); with the default still in place — or no process
++    // running — the default `kbdvec` (`kbd_int`) runs directly, as before.
++    if !tos_api::xbios::kbdvecs::route_key(byte) {
++        decode_key(byte);
++    }
++}
++
++/// The default `kbdvec` — EmuTOS `kbd_int(scancode)` (`bios/ikbd.c:725-910`)
++/// for one key byte, bit 7 = break. Called by [`feed`] on the fast path and,
++/// for a process whose hook chained to the default, from
++/// `Ssystem(S_NEWTOS_KBDVEC)` (the `kbdvec_default` stub, KEYS02 D6).
++pub fn kbd_int(raw: u8) {
++    decode_key(raw);
+ }
+ 
+ /// Apply a decoded relative-mouse event to the VDI mouse state. The byte
+@@ -180,12 +197,15 @@ fn decode_key(raw: u8) {
+             // It becomes the repeating key, armed with the current initial
+             // delay (EmuTOS `kbd_int` `:875,891,898-903`).
+             let (initial, _) = tos_api::xbios::system::kb_rate();
++            // `kb_last_ikbdsys = kbdvecs.ikbdsys` (`:902`): the repeat stops
++            // if that vector changes before the key is released (`:453`).
+             REPEAT.lock().make(
+                 code,
+                 word,
+                 shift_state(),
+                 initial,
+                 tos_api::bios::tick::hz_200(),
++                tos_api::xbios::kbdvecs::current_ikbdsys(),
+             );
+         }
+         // A non-modifier break (CapsLock's included, as in EmuTOS' `default`
+@@ -224,7 +244,10 @@ pub fn poll_repeat() {
+     let conterm = tos_api::bios::chardev::current_conterm();
+     let (_, repeat) = tos_api::xbios::system::kb_rate();
+     let shifty = shift_state();
+-    let word = REPEAT.lock().poll(now, conterm, shifty, repeat, key_word);
++    let ikbdsys = tos_api::xbios::kbdvecs::current_ikbdsys();
++    let word = REPEAT
++        .lock()
++        .poll(now, conterm, shifty, repeat, ikbdsys, key_word);
+     if let Some(word) = word {
+         console::push_rx(word);
+     }
+diff --git a/kernel/src/key_repeat.rs b/kernel/src/key_repeat.rs
+index 6999ffe..dae6858 100644
+--- a/kernel/src/key_repeat.rs
++++ b/kernel/src/key_repeat.rs
+@@ -19,6 +19,12 @@
+ //!   emitted again — re-converted first if the shift state changed
+ //!   (`:502-508`) — and the countdown is re-armed with the **current** repeat
+ //!   interval (`kb_ticks = kb_repeat`, `:527`).
++//! * Before all of that, a tick with a key repeating stops the repeat if the
++//!   `ikbdsys` vector differs from the one recorded at the make
++//!   (`kb_last_ikbdsys`, `:453-472`, recorded `:902`, refreshed on
++//!   re-conversion `:507`) — even with `conterm & 2` clear. On NewTOS the
++//!   value is the running process's `ikbdsys` slot (`xbios::kbdvecs`, KEYS02
++//!   D4); it is only compared, never called.
+ //!
+ //! # Where it runs — the sanctioned deviation
+ //!
+@@ -62,6 +68,8 @@ pub struct KeyRepeat {
+     actual: u8,
+     /// `_hz_200` at the previous [`poll`](Self::poll) or make.
+     last_hz: u32,
++    /// The `ikbdsys` vector in force at the make (`kb_last_ikbdsys`).
++    ikbdsys: u64,
+ }
+ 
+ impl KeyRepeat {
+@@ -73,6 +81,7 @@ impl KeyRepeat {
+             shifty: 0,
+             actual: 0,
+             last_hz: 0,
++            ikbdsys: 0,
+         }
+     }
+ 
+@@ -85,9 +94,19 @@ impl KeyRepeat {
+     ///
+     /// `code` is the raw make scancode, `shifty` the shift state the word was
+     /// converted with, `initial` the current `Kbrate` initial delay, `now_hz`
+-    /// the current `_hz_200`. EmuTOS `kbd_int` `:875,891,898-903`.
+-    pub fn make(&mut self, code: u8, word: u16, shifty: u8, initial: u8, now_hz: u32) {
++    /// the current `_hz_200`, `ikbdsys` the `ikbdsys` vector in force. EmuTOS
++    /// `kbd_int` `:875,891,898-903`.
++    pub fn make(
++        &mut self,
++        code: u8,
++        word: u16,
++        shifty: u8,
++        initial: u8,
++        now_hz: u32,
++        ikbdsys: u64,
++    ) {
+         self.actual = code;
++        self.ikbdsys = ikbdsys;
+         self.ticks = u16::from(initial);
+         self.word = word;
+         self.shifty = shifty;
+@@ -110,20 +129,27 @@ impl KeyRepeat {
+     /// key word to queue, if a repeat is due — at most one per call.
+     ///
+     /// `conterm` is the running process's `$484`, `shifty` the current shift
+-    /// state, `repeat` the current `Kbrate` repeat interval. `convert` maps
+-    /// the raw scancode to a key word under the current shift state; it is
+-    /// called only when the shift state changed since the word was made
+-    /// (`bios/ikbd.c:502-508`).
++    /// state, `repeat` the current `Kbrate` repeat interval, `ikbdsys` the
++    /// `ikbdsys` vector in force now. `convert` maps the raw scancode to a key
++    /// word under the current shift state; it is called only when the shift
++    /// state changed since the word was made (`bios/ikbd.c:502-508`).
+     pub fn poll(
+         &mut self,
+         now_hz: u32,
+         conterm: u8,
+         shifty: u8,
+         repeat: u8,
++        ikbdsys: u64,
+         convert: impl FnOnce(u8) -> u16,
+     ) -> Option<u16> {
+         let steps = sieve_steps(self.last_hz, now_hz);
+         self.last_hz = now_hz;
++        if steps != 0 && self.ticks > 0 && ikbdsys != self.ikbdsys {
++            // The `ikbdsys` vector changed while a key repeats: stop now
++            // (`:453-472`), ahead of the `conterm` test.
++            self.ticks = 0;
++            return None;
++        }
+         if steps == 0 || conterm & CONTERM_REPEAT == 0 || self.ticks == 0 {
+             // No tick, repeat globally off (countdown frozen, `:475-479`), or
+             // nothing repeating (`:481-485`).
+@@ -139,6 +165,7 @@ impl KeyRepeat {
+         if shifty != self.shifty {
+             self.word = convert(self.actual);
+             self.shifty = shifty;
++            self.ikbdsys = ikbdsys; // `kb_last_ikbdsys = kbdvecs.ikbdsys` (`:507`)
+         }
+         self.ticks = u16::from(repeat);
+         Some(self.word)
+@@ -169,6 +196,8 @@ mod tests {
+     const W_UP: u16 = 0x4800;
+     const W_A: u16 = 0x1E61;
+     const W_SHIFT_A: u16 = 0x1E41;
++    /// The `ikbdsys` vector in force throughout, unless a test changes it.
++    const IK: u64 = 0xA00;
+ 
+     fn no_convert(_: u8) -> u16 {
+         panic!("convert must not be called without a shift change")
+@@ -179,7 +208,7 @@ mod tests {
+     fn run(r: &mut KeyRepeat, from: u32, to: u32, conterm: u8, repeat: u8) -> Vec<u32> {
+         let mut out = Vec::new();
+         for hz in from..=to {
+-            if r.poll(hz, conterm, 0, repeat, no_convert).is_some() {
++            if r.poll(hz, conterm, 0, repeat, IK, no_convert).is_some() {
+                 out.push(hz);
+             }
+         }
+@@ -190,7 +219,7 @@ mod tests {
+     fn delay_then_rate_with_defaults() {
+         // Make at hz 1000 (a sieve boundary), defaults 15 / 2.
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 15, 1000);
++        r.make(UP, W_UP, 0, 15, 1000, IK);
+         let hits = run(&mut r, 1001, 1200, 7, 2);
+         // First repeat 15 sieve ticks later = 60 hz ticks = 300 ms, then
+         // every 2 sieve ticks = 8 hz ticks = 40 ms.
+@@ -207,7 +236,7 @@ mod tests {
+         // the make, on the same sieve tick as a make at 1000 — EmuTOS'
+         // sub-tick phase.
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 15, 1001);
++        r.make(UP, W_UP, 0, 15, 1001, IK);
+         let hits = run(&mut r, 1002, 1100, 7, 2);
+         assert_eq!(hits[0], 1060);
+     }
+@@ -215,14 +244,14 @@ mod tests {
+     #[test]
+     fn repeated_word_is_the_make_word() {
+         let mut r = KeyRepeat::new();
+-        r.make(A, W_A, 0, 1, 0);
+-        assert_eq!(r.poll(4, 7, 0, 2, no_convert), Some(W_A));
++        r.make(A, W_A, 0, 1, 0, IK);
++        assert_eq!(r.poll(4, 7, 0, 2, IK, no_convert), Some(W_A));
+     }
+ 
+     #[test]
+     fn break_of_the_key_stops_the_repeat() {
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 15, 0);
++        r.make(UP, W_UP, 0, 15, 0, IK);
+         assert_eq!(run(&mut r, 1, 100, 7, 2).len(), 6); // 60, 68, …, 100
+         r.brk(UP);
+         assert!(!r.active());
+@@ -234,15 +263,15 @@ mod tests {
+         // The pump decodes first, then polls: a release that arrives in the
+         // same pump as the due step must not emit.
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 15, 0);
++        r.make(UP, W_UP, 0, 15, 0, IK);
+         r.brk(UP);
+-        assert_eq!(r.poll(60, 7, 0, 2, no_convert), None);
++        assert_eq!(r.poll(60, 7, 0, 2, IK, no_convert), None);
+     }
+ 
+     #[test]
+     fn break_of_another_key_does_not_stop() {
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 15, 0);
++        r.make(UP, W_UP, 0, 15, 0, IK);
+         r.brk(A);
+         r.brk(0x2A); // left shift
+         assert_eq!(run(&mut r, 1, 60, 7, 2), vec![60]);
+@@ -252,7 +281,7 @@ mod tests {
+     fn home_and_insert_breaks_always_stop() {
+         for code in [SC_HOME, SC_INSERT] {
+             let mut r = KeyRepeat::new();
+-            r.make(UP, W_UP, 0, 15, 0);
++            r.make(UP, W_UP, 0, 15, 0, IK);
+             r.brk(code);
+             assert!(!r.active(), "break {code:#x} must stop the repeat");
+         }
+@@ -261,13 +290,13 @@ mod tests {
+     #[test]
+     fn last_pressed_key_wins() {
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 15, 0);
++        r.make(UP, W_UP, 0, 15, 0, IK);
+         // Second key at hz 100 (first one still held).
+         assert_eq!(run(&mut r, 1, 99, 7, 2).len(), 5);
+-        r.make(A, W_A, 0, 15, 100);
++        r.make(A, W_A, 0, 15, 100, IK);
+         let mut words = Vec::new();
+         for hz in 101..=200 {
+-            if let Some(w) = r.poll(hz, 7, 0, 2, no_convert) {
++            if let Some(w) = r.poll(hz, 7, 0, 2, IK, no_convert) {
+                 words.push(w);
+             }
+         }
+@@ -284,7 +313,7 @@ mod tests {
+     #[test]
+     fn conterm_bit1_clear_freezes_the_countdown() {
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 15, 0);
++        r.make(UP, W_UP, 0, 15, 0, IK);
+         // 10 of 15 steps with repeat on.
+         assert!(run(&mut r, 1, 40, 7, 2).is_empty());
+         // Repeat off for a long time: nothing, and the countdown does not move.
+@@ -298,7 +327,7 @@ mod tests {
+     fn kbrate_values_are_read_at_make_and_at_repeat() {
+         // initial 5 -> first repeat after 5 steps; repeat 3 -> then every 3.
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 5, 0);
++        r.make(UP, W_UP, 0, 5, 0, IK);
+         assert_eq!(run(&mut r, 1, 40, 7, 3), vec![20, 32]);
+         // A changed repeat interval applies from the next re-arm on.
+         assert_eq!(run(&mut r, 41, 60, 7, 1), vec![44, 48, 52, 56, 60]);
+@@ -307,11 +336,11 @@ mod tests {
+     #[test]
+     fn zero_initial_means_no_repeat_and_zero_rate_means_one() {
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 0, 0);
++        r.make(UP, W_UP, 0, 0, 0, IK);
+         assert!(run(&mut r, 1, 400, 7, 2).is_empty());
+ 
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 15, 0);
++        r.make(UP, W_UP, 0, 15, 0, IK);
+         assert_eq!(run(&mut r, 1, 400, 7, 0), vec![60]);
+         assert!(!r.active());
+     }
+@@ -319,41 +348,41 @@ mod tests {
+     #[test]
+     fn long_gap_emits_at_most_one() {
+         let mut r = KeyRepeat::new();
+-        r.make(UP, W_UP, 0, 15, 0);
++        r.make(UP, W_UP, 0, 15, 0, IK);
+         // One poll 5 s later: 250 steps elapsed — one repeat, not dozens.
+-        assert_eq!(r.poll(1000, 7, 0, 2, no_convert), Some(W_UP));
++        assert_eq!(r.poll(1000, 7, 0, 2, IK, no_convert), Some(W_UP));
+         // The cadence restarts at that poll: next due 2 steps (8 hz) later.
+-        assert_eq!(r.poll(1004, 7, 0, 2, no_convert), None);
+-        assert_eq!(r.poll(1008, 7, 0, 2, no_convert), Some(W_UP));
++        assert_eq!(r.poll(1004, 7, 0, 2, IK, no_convert), None);
++        assert_eq!(r.poll(1008, 7, 0, 2, IK, no_convert), Some(W_UP));
+     }
+ 
+     #[test]
+     fn shift_change_reconverts_the_word() {
+         let mut r = KeyRepeat::new();
+-        r.make(A, W_A, 0, 1, 0);
++        r.make(A, W_A, 0, 1, 0, IK);
+         let mut seen = None;
+-        let w = r.poll(4, 7, 0x02, 2, |code| {
++        let w = r.poll(4, 7, 0x02, 2, IK, |code| {
+             seen = Some(code);
+             W_SHIFT_A
+         });
+         assert_eq!(seen, Some(A), "re-conversion starts from the raw scancode");
+         assert_eq!(w, Some(W_SHIFT_A));
+         // Same shift state again: no further conversion, same word.
+-        assert_eq!(r.poll(12, 7, 0x02, 2, no_convert), Some(W_SHIFT_A));
++        assert_eq!(r.poll(12, 7, 0x02, 2, IK, no_convert), Some(W_SHIFT_A));
+     }
+ 
+     #[test]
+     fn idle_polls_and_counter_wrap() {
+         // Nothing repeating: polls never emit, however long.
+         let mut r = KeyRepeat::new();
+-        assert_eq!(r.poll(u32::MAX - 2, 7, 0, 2, no_convert), None);
++        assert_eq!(r.poll(u32::MAX - 2, 7, 0, 2, IK, no_convert), None);
+         // A key held across the 32-bit wrap of _hz_200.
+-        r.make(UP, W_UP, 0, 15, u32::MAX - 3); // a sieve boundary
++        r.make(UP, W_UP, 0, 15, u32::MAX - 3, IK); // a sieve boundary
+         let mut hits = Vec::new();
+         let mut hz = u32::MAX - 3;
+         for _ in 0..80 {
+             hz = hz.wrapping_add(1);
+-            if r.poll(hz, 7, 0, 2, no_convert).is_some() {
++            if r.poll(hz, 7, 0, 2, IK, no_convert).is_some() {
+                 hits.push(hz);
+             }
+         }
+@@ -361,6 +390,56 @@ mod tests {
+         assert_eq!(hits.first().copied(), Some((u32::MAX - 3).wrapping_add(60)));
+     }
+ 
++    #[test]
++    fn ikbdsys_change_stops_the_repeat() {
++        // EmuTOS `do_key_repeat` `:453-472`: a different `ikbdsys` than at the
++        // make stops a running repeat at the next tick — before the `conterm`
++        // test, so even with repeat disabled — and it stays stopped.
++        const OTHER: u64 = 0x1_2340;
++        let mut r = KeyRepeat::new();
++        r.make(UP, W_UP, 0, 15, 0, IK);
++        assert!(run(&mut r, 1, 40, 7, 2).is_empty());
++        // Same vector, no tick yet: nothing happens.
++        assert_eq!(r.poll(41, 7, 0, 2, OTHER, no_convert), None);
++        assert!(r.active(), "the check runs on a tick, not on every poll");
++        // Next tick with the changed vector: stopped, nothing emitted.
++        assert_eq!(r.poll(44, 7 & !CONTERM_REPEAT, 0, 2, OTHER, no_convert), None);
++        assert!(!r.active());
++        // Putting the old vector back does not restart it.
++        let mut hits = Vec::new();
++        for hz in 45..=400 {
++            if r.poll(hz, 7, 0, 2, IK, no_convert).is_some() {
++                hits.push(hz);
++            }
++        }
++        assert!(hits.is_empty());
++    }
++
++    #[test]
++    fn ikbdsys_is_recorded_per_make() {
++        // A make under the new vector repeats normally under it
++        // (`kb_last_ikbdsys` is taken at each make, `:902`).
++        const OTHER: u64 = 0x1_2340;
++        let mut r = KeyRepeat::new();
++        r.make(UP, W_UP, 0, 15, 0, OTHER);
++        let mut hits = Vec::new();
++        for hz in 1..=60 {
++            if r.poll(hz, 7, 0, 2, OTHER, no_convert).is_some() {
++                hits.push(hz);
++            }
++        }
++        assert_eq!(hits, vec![60]);
++    }
++
++    #[test]
++    fn ikbdsys_unchanged_without_a_repeat_is_harmless() {
++        // `kb_ticks > 0` guards the check (`:453`): no key repeating, no effect.
++        let mut r = KeyRepeat::new();
++        assert_eq!(r.poll(4, 7, 0, 2, 0xDEAD, no_convert), None);
++        r.make(A, W_A, 0, 1, 4, 0xDEAD);
++        assert_eq!(r.poll(8, 7, 0, 2, 0xDEAD, no_convert), Some(W_A));
++    }
++
+     #[test]
+     fn sieve_steps_counts_boundaries() {
+         assert_eq!(sieve_steps(0, 0), 0);
+diff --git a/tos-api/src/aes/init.rs b/tos-api/src/aes/init.rs
+index cde0bfe..70d6b5a 100644
+--- a/tos-api/src/aes/init.rs
++++ b/tos-api/src/aes/init.rs
+@@ -80,7 +80,7 @@ struct DesktopTree(UnsafeCell<[Object; 3]>);
+ 
+ // SAFETY: single boot CPU and a cooperative (non-preemptive) trap path — the
+ // same discipline as every other mutable AES/BIOS singleton in this crate
+-// (e.g. `xbios::system::KBDVECS`). Writers are the boot-time [`init`] and
++// (e.g. `xbios::kbdvecs::KERNEL_TABLE`). Writers are the boot-time [`init`] and
+ // [`set_aes_background`]; readers are `appl_init` and the drawing path.
+ unsafe impl Sync for DesktopTree {}
+ 
+diff --git a/tos-api/src/bdos/process.rs b/tos-api/src/bdos/process.rs
+index feb8eec..1dcb27d 100644
+--- a/tos-api/src/bdos/process.rs
++++ b/tos-api/src/bdos/process.rs
+@@ -552,6 +552,16 @@ pub const UPCALL_MASK_AES_USERDEF: u32 = 1 << 1;
+ /// two bits.
+ pub const UPCALL_MASK_VEX_WHEEL: u32 = 1 << 2;
+ 
++/// Upcall-type mask bit for the IKBD **`kbdvec`** hook (KEYS02,
++/// `docs/api/xbios/22-kbdvbase.md` B4). Set while the program's `kbdvec`
++/// routine runs at EL0 for one scancode, cleared on its `Psigreturn`. While it
++/// is set no further `kbdvec` byte is delivered (nesting depth stays 1); the
++/// next queued byte follows on that `Psigreturn`. Not posted through
++/// [`post_upcall`] — whose single pending slot would lose a make when its break
++/// arrives in the same poll — but drained from the per-process ring in
++/// `xbios::kbdvecs`.
++pub const UPCALL_MASK_KBDVEC: u32 = 1 << 3;
++
+ // ─── Parent-frame snapshot ──────────────────────────────────────────
+ 
+ /// Index of `lr` (`x30`) in [`ParentFrame::regs`].
+@@ -989,6 +999,10 @@ pub fn free_slot(idx: usize) {
+     // `vex_wheelv` handler is an EL0 VA and means nothing once the address
+     // space is gone (see `vdi::mouse::release_wheel_vector`).
+     crate::vdi::mouse::release_wheel_vector(idx);
++    // Drop any `kbdvec` bytes still queued for this process (KEYS02, D8): the
++    // hook lived in the address space that is going away; its table and stubs
++    // in page 0 go with the TPA.
++    crate::xbios::kbdvecs::release_slot(idx);
+     // State last so that any concurrent reader sees `Free` only once
+     // every other field is observably reset.
+     p.state.store(State::Free as u8, Ordering::Release);
+diff --git a/tos-api/src/bdos/process/loader.rs b/tos-api/src/bdos/process/loader.rs
+index 70a8116..4be9bc2 100644
+--- a/tos-api/src/bdos/process/loader.rs
++++ b/tos-api/src/bdos/process/loader.rs
+@@ -527,6 +527,11 @@ unsafe fn populate_and_map(
+     // the same window/ordering so the `sync_code_cache` below covers it too.
+     write_userdef_trampoline(tpa_bytes);
+ 
++    // The per-process IKBD vector table and its default stubs (KEYS02,
++    // `docs/api/xbios/22-kbdvbase.md` B1/B3). Same page-0 gap, same
++    // pre-cache-maintenance ordering, so the stubs are fetchable at EL0.
++    crate::xbios::kbdvecs::write_defaults(tpa_bytes);
++
+     // Make the freshly-written program bytes observable to instruction
+     // fetch on real hardware (clean D-cache to PoU + invalidate I-cache
+     // over the image region only). QEMU has no caches, so this is a
+@@ -796,6 +801,34 @@ pub const KEYTBL_AREA_SIZE: u64 = 0x238;
+ const _: () = assert!(KEYTBL_AREA_VA >= USERDEF_RET_SLOT_VA + 4);
+ const _: () = assert!(KEYTBL_AREA_VA + KEYTBL_AREA_SIZE <= RESERVED_LOW_END);
+ 
++/// EL0 VA of the per-process **IKBD vector table** (KEYS02, spec
++/// `docs/api/xbios/22-kbdvbase.md` B1, decision D1): `mousexvec`, `kbdvec`,
++/// the nine `struct kbdvecs` slots and the `drvstat`/`kbdlength` bytes, in
++/// EmuTOS order (`bios/aciavecs.S:126-141`) with 8-byte slots. Directly above
++/// the [`KEYTBL_AREA_VA`] area, in the same page-0 gap. Written once at load
++/// by [`crate::xbios::kbdvecs::write_defaults`]; `Kbdvbase` returns
++/// `KBDVECS_AREA_VA + 0x10` (the `midivec` slot), so `kbdvec` sits at `-8`.
++/// See [`crate::xbios::kbdvecs`] for the inner layout.
++pub const KBDVECS_AREA_VA: u64 = 0x9A0;
++
++/// Size of the [`KBDVECS_AREA_VA`] table region, in bytes (0x5A used).
++pub const KBDVECS_AREA_SIZE: u64 = 0x60;
++
++/// EL0 VA of the **IKBD default stubs** (spec B3): the `ret` stub every
++/// unhooked slot points at (EmuTOS `just_rts`) and the `kbdvec_default` stub
++/// (EmuTOS `_kbdvec` → `kbd_int`). `[0xA00, 0xA40)`, page 0 (`UserRwExec`).
++pub const KBDVEC_STUB_AREA_VA: u64 = 0xA00;
++
++/// Size of the [`KBDVEC_STUB_AREA_VA`] region, in bytes.
++pub const KBDVEC_STUB_AREA_SIZE: u64 = 0x40;
++
++// The table follows the Keytbl area, the stubs follow the table; both stay in
++// the reserved low gap below the app image base.
++const _: () = assert!(KBDVECS_AREA_VA >= KEYTBL_AREA_VA + KEYTBL_AREA_SIZE);
++const _: () = assert!(KBDVECS_AREA_VA.is_multiple_of(8));
++const _: () = assert!(KBDVEC_STUB_AREA_VA >= KBDVECS_AREA_VA + KBDVECS_AREA_SIZE);
++const _: () = assert!(KBDVEC_STUB_AREA_VA + KBDVEC_STUB_AREA_SIZE <= RESERVED_LOW_END);
++
+ /// OSHEADER `os_version` (+0x02): Falcon TOS 4.04. EmuTOS' own default is
+ /// 0x206 (`config.h:1367-1372`); NewTOS reports 4.04 — user-pinned.
+ const OS_VERSION: u16 = 0x0404;
+diff --git a/tos-api/src/bdos/process/sched.rs b/tos-api/src/bdos/process/sched.rs
+index c442a45..45b438f 100644
+--- a/tos-api/src/bdos/process/sched.rs
++++ b/tos-api/src/bdos/process/sched.rs
+@@ -146,6 +146,15 @@ pub struct Switch {
+     /// with `x0 = 0` and dispatches nothing. [`switch_to`] fills this from the
+     /// slot's [`set_resume_restartable`] flag, recorded when the slot yielded.
+     pub restartable: bool,
++    /// **Not a switch at all** (KEYS02, `docs/api/xbios/22-kbdvbase.md` B4/O1):
++    /// the blocking wait gave way because the *running* process has `kbdvec`
++    /// bytes queued for its hook. The trap handler must abort the call exactly
++    /// like an S2 yield — rewind `elr` to the `svc`, commit nothing — but stay
++    /// on this process and deliver the hook upcall on top of the rewound frame.
++    /// After the hook's `Psigreturn` the `svc` re-executes and re-checks (a key
++    /// the hook chained into the BIOS queue is now there). Built only by
++    /// [`switch_restart_for_upcall`]; every other field is meaningless then.
++    pub upcall_restart: bool,
+ }
+ 
+ /// The slot currently running (or [`NONE`]).
+@@ -217,6 +226,27 @@ pub fn switch_to_kernel() -> Switch {
+         sp_el0: 0,
+         el1_internal: true,
+         restartable: false,
++        upcall_restart: false,
++    }
++}
++
++/// The [`Switch`] that means "abort and restart this wait on the running
++/// process after its `kbdvec` hook ran" ([`Switch::upcall_restart`]). Returned
++/// by [`sleep`] when the running slot has hook bytes queued
++/// (`xbios::kbdvecs::pending`), so an `evnt_*` wait that would otherwise only
++/// return on an event the hook itself has to produce (a chained key in the
++/// BIOS queue) cannot deadlock.
++#[inline]
++pub fn switch_restart_for_upcall() -> Switch {
++    Switch {
++        slot: running_slot(),
++        fresh: false,
++        l0_pa: 0,
++        entry_va: 0,
++        sp_el0: 0,
++        el1_internal: false,
++        restartable: true,
++        upcall_restart: true,
+     }
+ }
+ 
+@@ -377,6 +407,7 @@ fn switch_to(slot: usize) -> Switch {
+         // How the slot last yielded — consulted only when `!fresh` to decide
+         // whether the resume preserves `x0` (S2) or writes the `Pwait` 0.
+         restartable: RESUME_RESTARTABLE[slot].load(Ordering::Acquire),
++        upcall_restart: false,
+     }
+ }
+ 
+@@ -479,6 +510,12 @@ pub enum SleepOutcome {
+ /// `cond` is built with [`wait_input`]/[`wait_mesg`]/[`wait_timer`].
+ pub fn sleep(cond: u64) -> SleepOutcome {
+     let cur = running_slot();
++    // KEYS02 (O1): bytes for this process's `kbdvec` hook are waiting. They
++    // are delivered only on a return to EL0, so give way before blocking —
++    // the trap handler restarts this call after the hook ran.
++    if cur < MAX_PROCESSES && crate::xbios::kbdvecs::pending(cur) != 0 {
++        return SleepOutcome::Yield(switch_restart_for_upcall());
++    }
+     if cur < MAX_PROCESSES {
+         // RUNNING → WAITING(cond): record the wake key and drop out of the
+         // round-robin run-set (§3.1). Done before `on_yield` so `pick_next`
+@@ -515,6 +552,11 @@ pub fn sleep(cond: u64) -> SleepOutcome {
+         // WAITING → READY: the caller now re-evaluates its full predicate.
+         PROCESS_TABLE[cur].wait_cond.store(0, Ordering::Release);
+         PROCESS_TABLE[cur].runnable.store(true, Ordering::Release);
++        // KEYS02 (O1): the pump above may have queued hook bytes for this
++        // process — deliver them now rather than after the wait.
++        if crate::xbios::kbdvecs::pending(cur) != 0 {
++            return SleepOutcome::Yield(switch_restart_for_upcall());
++        }
+     }
+     SleepOutcome::Recheck
+ }
+diff --git a/tos-api/src/bios/chardev.rs b/tos-api/src/bios/chardev.rs
+index bd761c9..4eef007 100644
+--- a/tos-api/src/bios/chardev.rs
++++ b/tos-api/src/bios/chardev.rs
+@@ -178,7 +178,15 @@ unsafe fn read_user_byte(p: *const u8) -> u8 {
+ /// `0` rather than blocking on serial hardware that does not exist.
+ pub(crate) fn bconin_handle(handle: u16) -> Long {
+     match host::host() {
+-        Some(h) if is_console_in(handle) => pack_console_key(h.console_read_key_blocking()),
++        Some(h) if is_console_in(handle) => match h.console_read_key_restartable() {
++            Some(word) => pack_console_key(word),
++            None => {
++                // A `kbdvec` hook has bytes waiting: restart after it ran
++                // (KEYS02); the result is discarded by the trap handler.
++                crate::xbios::kbdvecs::request_restart();
++                0
++            }
++        },
+         _ => 0,
+     }
+ }
+diff --git a/tos-api/src/bios/vectors.rs b/tos-api/src/bios/vectors.rs
+index 270139d..f0d4b6d 100644
+--- a/tos-api/src/bios/vectors.rs
++++ b/tos-api/src/bios/vectors.rs
+@@ -194,6 +194,9 @@ pub fn vector(num: usize) -> i64 {
+ // *below* `_kbdvecs` (`aciavecs.S:127-131`), so no program can reach it
+ // through the documented positive offsets. It is a BIOS-internal hand-off
+ // from the keyboard decoder to the mouse driver, and that is all it is here.
++// (Since KEYS02 each process's EL0 table — `xbios::kbdvecs` — carries a
++// `mousexvec` slot at `Kbdvbase() - 16` to keep the EmuTOS layout; it holds
++// the `just_rts` stub and is never called. The live vector is this cell.)
+ //
+ // NewTOS' IKBD decoder lives in the kernel crate and the VDI in this one, so
+ // the cell has to live on the `tos-api` side of the dependency edge; the
+diff --git a/tos-api/src/gemdos/console.rs b/tos-api/src/gemdos/console.rs
+index b76f983..c6abfa8 100644
+--- a/tos-api/src/gemdos/console.rs
++++ b/tos-api/src/gemdos/console.rs
+@@ -219,7 +219,11 @@ const CTRL_X: u8 = 0x18;
+ /// keys echo nothing (their ASCII byte is 0).
+ pub fn cconin(_: &TrapArgs) -> Long {
+     let h = host_or_eundev!();
+-    let word = h.console_read_key_blocking();
++    let Some(word) = h.console_read_key_restartable() else {
++        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
++        crate::xbios::kbdvecs::request_restart();
++        return 0; // discarded — the trap handler re-executes the call
++    };
+     let ascii = (word & 0xFF) as u8;
+     if ascii == CTRL_C {
+         crate::bdos::process::request_terminate(CTRLC_RC);
+@@ -241,7 +245,12 @@ pub fn cconin(_: &TrapArgs) -> Long {
+ /// Ctrl-C handling (a Ctrl-C byte is returned as `0x03`). Returns the
+ /// packed console LONG (scancode in bits 16-23, ASCII in bits 0-7).
+ pub fn crawcin(_: &TrapArgs) -> Long {
+-    pack_console_key(host_or_eundev!().console_read_key_blocking())
++    let Some(word) = host_or_eundev!().console_read_key_restartable() else {
++        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
++        crate::xbios::kbdvecs::request_restart();
++        return 0; // discarded — the trap handler re-executes the call
++    };
++    pack_console_key(word)
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -254,7 +263,11 @@ pub fn crawcin(_: &TrapArgs) -> Long {
+ /// terminates the calling process (`Pterm(-32)`). Returns the packed
+ /// console LONG (scancode in bits 16-23, ASCII in bits 0-7).
+ pub fn cnecin(_: &TrapArgs) -> Long {
+-    let word = host_or_eundev!().console_read_key_blocking();
++    let Some(word) = host_or_eundev!().console_read_key_restartable() else {
++        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
++        crate::xbios::kbdvecs::request_restart();
++        return 0; // discarded — the trap handler re-executes the call
++    };
+     if (word & 0xFF) as u8 == CTRL_C {
+         crate::bdos::process::request_terminate(CTRLC_RC);
+         return 0; // value ignored — handler redirects to Pterm.
+diff --git a/tos-api/src/gemdos/ssystem.rs b/tos-api/src/gemdos/ssystem.rs
+index cf5006b..80606c1 100644
+--- a/tos-api/src/gemdos/ssystem.rs
++++ b/tos-api/src/gemdos/ssystem.rs
+@@ -8,7 +8,9 @@
+ //! On top of those sit NewTOS's **own** subfunctions from 2000 upwards
+ //! ([`S_NEWTOS_CPUCLOCK`], [`S_NEWTOS_CPUTEMP`]) — machine facts an EL0
+ //! program cannot otherwise reach, because the hardware that knows them (the
+-//! BCM2711 mailbox) is kernel-only. 2000 is free: FreeMiNT's own header
++//! BCM2711 mailbox) is kernel-only — and [`S_NEWTOS_KBDVEC`] (2002), the
++//! kernel entry of the per-process default `kbdvec` stub (KEYS02,
++//! `docs/api/xbios/22-kbdvbase.md` B3/D6). 2000 is free: FreeMiNT's own header
+ //! reserves 0–29, 100, `0x54f8`, 900–999 and 1000–**1999**
+ //! (`references/freemint/sys/mint/ssystem.h`, the two `reserved` comments),
+ //! and the highest number its dispatcher answers is the build-gated test mode
+@@ -35,6 +37,10 @@ pub const S_NEWTOS_CPUCLOCK: u16 = 2000;
+ /// NewTOS-own subfunction: the CPU/SoC temperature in **thousandths of a
+ /// degree Celsius**.
+ pub const S_NEWTOS_CPUTEMP: u16 = 2001;
++/// NewTOS-own subfunction: run the default `kbdvec` (EmuTOS `kbd_int`) for
++/// one IKBD key byte — what the `kbdvec_default` stub in every process's page
++/// 0 calls (KEYS02). Defined next to the stub in [`crate::xbios::kbdvecs`].
++pub const S_NEWTOS_KBDVEC: u16 = crate::xbios::kbdvecs::S_NEWTOS_KBDVEC;
+ 
+ /// `Ssystem(WORD mode, LONG arg1, LONG arg2)`: `mode` in `x0`, `arg1` in
+ /// `x1`, `arg2` in `x2`.
+@@ -58,6 +64,7 @@ pub fn ssystem(args: &TrapArgs) -> Long {
+         S_NEWTOS_CPUTEMP => {
+             newtos_scalar(args, || host::host()?.cpu_temperature_mdeg())
+         }
++        S_NEWTOS_KBDVEC => s_newtos_kbdvec(args),
+         _ => EINVFN,
+     }
+ }
+@@ -167,6 +174,29 @@ fn newtos_scalar(args: &TrapArgs, read: impl FnOnce() -> Option<Long>) -> Long {
+     E_OK
+ }
+ 
++/// `S_NEWTOS_KBDVEC` (2002): `arg1` = the IKBD key byte (bit 7 = break, as
++/// `kbdvec` receives it in `x0`), `arg2` reserved, must be 0. Runs the default
++/// `kbdvec` — EmuTOS `_kbdvec` → `kbd_int(scancode)` (`bios/aciavecs.S:
++/// 372-376`, `bios/ikbd.c:725-910`) — through the host's key decoder:
++/// modifier state, the key word into the console queue, the key repeat.
++///
++/// * `E_OK` — the byte was decoded;
++/// * `EINVAL` — `arg1` is not a byte (`> 0xFF`) or `arg2 != 0`; nothing ran;
++/// * `ERROR` — this host has no keyboard decoder (a hostless build).
++///
++/// Any process may call it; the effect is exactly that of calling the default
++/// `kbdvec` it can already read from its own table, as on TOS.
++fn s_newtos_kbdvec(args: &TrapArgs) -> Long {
++    let byte = args.arg_u64(1);
++    if byte > 0xFF || args.arg_u64(2) != 0 {
++        return EINVAL;
++    }
++    match host::host() {
++        Some(h) if h.kbd_int(byte as u8) => E_OK,
++        _ => ERROR,
++    }
++}
++
+ /// Write a 32-bit value to a user pointer via an unprivileged store
+ /// (`sttr`) — permission-checked as EL0, like `Cconrs`'s `sttrb`.
+ ///
+diff --git a/tos-api/src/host.rs b/tos-api/src/host.rs
+index 57ba6aa..ce5280d 100644
+--- a/tos-api/src/host.rs
++++ b/tos-api/src/host.rs
+@@ -93,6 +93,34 @@ pub trait Host: Sync {
+         }
+     }
+ 
++    /// [`Host::console_read_key_blocking`] that **gives way** to the running
++    /// process's `kbdvec` hook (KEYS02, `docs/api/xbios/22-kbdvbase.md` B4):
++    /// `None` when bytes for that hook are queued
++    /// (`xbios::kbdvecs::pending_for_running`) — they can only be delivered on
++    /// the way back to EL0, and a hook that chains to the default `kbdvec` is
++    /// what puts the key this read waits for into the queue. The caller then
++    /// asks for a restart (`xbios::kbdvecs::request_restart`) and returns
++    /// without side effects; the trap handler rewinds the `svc`, runs the hook
++    /// and re-executes the read.
++    ///
++    /// Used by the single-key reads (`Cconin`, `Cnecin`, `Crawcin`,
++    /// `Bconin(2)`), which have no side effect before their key arrives. The
++    /// default never gives way (a hostless test has no hook to wait for).
++    fn console_read_key_restartable(&self) -> Option<u16> {
++        Some(self.console_read_key_blocking())
++    }
++
++    /// Run the default `kbdvec` — EmuTOS `kbd_int(scancode)`
++    /// (`bios/ikbd.c:725-910`), entered through `_kbdvec`
++    /// (`bios/aciavecs.S:372-376`) — for one IKBD key byte (bit 7 = break):
++    /// modifier state, key word into the console queue, key repeat. Reached
++    /// from `Ssystem(S_NEWTOS_KBDVEC)`, the call the per-process
++    /// `kbdvec_default` stub makes (KEYS02, D6). Returns `false` when this host
++    /// has no keyboard decoder (a hostless test), so the call can say so.
++    fn kbd_int(&self, _scancode: u8) -> bool {
++        false
++    }
++
+     /// Advance the polled input sources once (keyboard/mouse bytes from
+     /// the UART(s)), with interrupts briefly enabled. The AES event
+     /// manager calls this while it polls for a wait condition: an
+diff --git a/tos-api/src/xbios/keytbl.rs b/tos-api/src/xbios/keytbl.rs
+index 0cba958..6978172 100644
+--- a/tos-api/src/xbios/keytbl.rs
++++ b/tos-api/src/xbios/keytbl.rs
+@@ -92,7 +92,7 @@ static OVERRIDE: [AtomicU64; 3] = [
+ #[repr(align(8))]
+ struct KernelArea(UnsafeCell<[u8; KEYTBL_AREA_SIZE as usize]>);
+ // SAFETY: single boot CPU, cooperative (non-preemptive) trap path — the same
+-// discipline as `xbios::system::KBDVECS`.
++// discipline as `xbios::kbdvecs::KERNEL_TABLE`.
+ unsafe impl Sync for KernelArea {}
+ static KERNEL_AREA: KernelArea = KernelArea(UnsafeCell::new([0; KEYTBL_AREA_SIZE as usize]));
+ 
+diff --git a/tos-api/src/xbios/mod.rs b/tos-api/src/xbios/mod.rs
+index 92f9ca1..d1983e4 100644
+--- a/tos-api/src/xbios/mod.rs
++++ b/tos-api/src/xbios/mod.rs
+@@ -15,6 +15,7 @@
+ //! defined contract value instead (floppy → `EUNDEV`, PSG → `0`, etc.).
+ 
+ pub mod floppy;
++pub mod kbdvecs;
+ pub mod keytbl;
+ pub mod screen;
+ pub mod system;
+@@ -117,7 +118,7 @@ pub fn dispatch(args: &TrapArgs) -> i64 {
+         // independent of printer hardware. See `docs/api/xbios/_psg-group.md`
+         // (Setprt entry).
+         SETPRT => system::setprt(args),
+-        KBDVBASE => system::kbdvbase(),
++        KBDVBASE => kbdvecs::kbdvbase(),
+         // Keyboard auto-repeat timing get/set. See `docs/api/xbios/23-kbrate.md`.
+         KBRATE => system::kbrate(args),
+         VSYNC => system::vsync(),
+diff --git a/tos-api/src/xbios/system.rs b/tos-api/src/xbios/system.rs
+index 030739d..c190c09 100644
+--- a/tos-api/src/xbios/system.rs
++++ b/tos-api/src/xbios/system.rs
+@@ -1,10 +1,9 @@
+-//! XBIOS system group (Phase 11): `Random` / `Vsync` / `Kbdvbase`.
+-//! Mirrors EmuTOS `bios/xbios.c` (`random`/`kbdvbase`) and
+-//! `bios/screen.c` (`vsync`).
++//! XBIOS system group (Phase 11): `Random` / `Vsync`.
++//! Mirrors EmuTOS `bios/xbios.c` (`random`) and `bios/screen.c` (`vsync`).
++//! `Kbdvbase` lives in [`super::kbdvecs`] (KEYS02).
+ //!
+-//! Spec: `docs/api/xbios/{11-random,25-vsync,22-kbdvbase}.md`.
++//! Spec: `docs/api/xbios/{11-random,25-vsync}.md`.
+ 
+-use core::cell::UnsafeCell;
+ use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
+ 
+ use crate::host;
+@@ -95,44 +94,6 @@ pub fn bconmap() -> i64 {
+     0x2c
+ }
+ 
+-/// IKBD vector table (Atari `struct kbdvecs`, 9 handler pointers).
+-/// Programs read it via `Kbdvbase` and may install their own handlers.
+-/// Native pointer width (not the m68k 4-byte layout); the IKBD-event
+-/// dispatch through these vectors lands with the process/AES model.
+-#[repr(C)]
+-#[derive(Default)]
+-struct KbdVecs {
+-    midivec: usize,
+-    vkbderr: usize,
+-    vmiderr: usize,
+-    statvec: usize,
+-    mousevec: usize,
+-    clockvec: usize,
+-    joyvec: usize,
+-    midisys: usize,
+-    ikbdsys: usize,
+-}
+-
+-struct KbdVecsCell(UnsafeCell<KbdVecs>);
+-// SAFETY: single-CPU, IRQ-off trap path; programs poke it cooperatively.
+-unsafe impl Sync for KbdVecsCell {}
+-static KBDVECS: KbdVecsCell = KbdVecsCell(UnsafeCell::new(KbdVecs {
+-    midivec: 0,
+-    vkbderr: 0,
+-    vmiderr: 0,
+-    statvec: 0,
+-    mousevec: 0,
+-    clockvec: 0,
+-    joyvec: 0,
+-    midisys: 0,
+-    ikbdsys: 0,
+-}));
+-
+-/// `Kbdvbase` (0x22) — pointer to the IKBD vector table.
+-pub fn kbdvbase() -> i64 {
+-    KBDVECS.0.get() as i64
+-}
+-
+ // ── YM2149 PSG group (0x1C/0x1D/0x1E/0x20) ────────────────────────────────
+ //
+ // The Pi/BCM2711 has no Yamaha YM2149. As on an EmuTOS build without
+diff --git a/tos-api/tests/gemdos_ssystem_cpuinfo.rs b/tos-api/tests/gemdos_ssystem_cpuinfo.rs
+index 3aa184d..52c47c2 100644
+--- a/tos-api/tests/gemdos_ssystem_cpuinfo.rs
++++ b/tos-api/tests/gemdos_ssystem_cpuinfo.rs
+@@ -180,9 +180,10 @@ fn the_neighbouring_mode_numbers_are_still_unimplemented() {
+     rig(PI4_CLOCK_HZ, WARM_MDEG);
+ 
+     // 1999 is the last number FreeMiNT reserves for its debug block
+-    // (`sys/mint/ssystem.h`, "reserved 1000 - 1999"); 2002 is the next free
+-    // NewTOS number. Neither may answer with a machine reading.
+-    for mode in [1999_u64, 2002, 2999] {
++    // (`sys/mint/ssystem.h`, "reserved 1000 - 1999"); 2003 is the next free
++    // NewTOS number (2002 is `S_NEWTOS_KBDVEC` since KEYS02, tested in
++    // `xbios_kbdvecs.rs`). Neither may answer with a machine reading.
++    for mode in [1999_u64, 2003, 2999] {
+         assert_eq!(
+             gemdos(SSYSTEM, mode, 0, 0),
+             EINVFN,
+--- /dev/null	2026-10-04 18:09:01
++++ sdk/examples/kbdvec.c	2026-10-04 17:57:54
+@@ -0,0 +1,237 @@
++/*
++ * kbdvec.c -- KEYS02 proof: a program hooks the IKBD `kbdvec`, sees every
++ * make AND break as a scancode, and chains to the old vector so the normal
++ * keyboard path (BIOS queue, AES MU_KEYBD, key repeat) keeps working.
++ *
++ *     sdk/build.sh sdk/examples/kbdvec.c /somewhere/KBDVEC.NAP
++ *
++ * Spec: docs/api/xbios/22-kbdvbase.md (A6 = what a program does, B1-B4 =
++ * the NewTOS binding). Not installed by tools/make-sd-image.sh; the KEYS02
++ * measurement seeds it onto a scratch card and starts it via #Z.
++ *
++ * ---------------------------------------------------------------------------
++ * What it does
++ * ---------------------------------------------------------------------------
++ *   appl_init
++ *   p = Kbdvbase()            XBIOS 0x22, the process's own EL0 table
++ *   old = p[-1]               the kbdvec slot, right before Kbdvbase()
++ *   check: old and the nine struct kbdvecs slots are non-zero (B3/B8)
++ *   p[-1] = hook              hook(x0 = scancode, x1 = 0): record, chain
++ *   phase A (AES, O1): evnt_multi(MU_KEYBD) with NO timer until the RIGHT
++ *       key word arrived, then MU_KEYBD|MU_TIMER until the hook saw 4 codes
++ *   phase B (blocking BIOS read): Bconin(2) once, then Bconstat until the
++ *       hook saw 6 codes
++ *   p[-1] = old               restore before exit (A6.4)
++ *   print what the hook saw and what the AES / BIOS delivered, PASS/FAIL
++ *   appl_exit, return (crt0 -> Pterm)
++ *
++ * The measurement injects: up make, right make, right break, up break, then
++ * 'a' make, 'a' break. Expected hook sequence 48 4D CD C8 1E 9E (repeats are
++ * not hook events, EmuTOS ikbd.c:524); AES words: 4800 (+ repeats) 4D00
++ * (+ repeats); Bconin 001E0061.
++ *
++ * The hook runs as an EL0 upcall at the next syscall return. It touches only
++ * integer registers -- an upcall does not save the interrupted code's
++ * FP/SIMD registers (see the KEYS02 report), so a hook must not use them.
++ */
++#include <newtos.h>
++
++/* ------------------------------------------------------------------------- */
++/* AES binding (classic parameter block, LP64 pointers), as in sysacc.c.     */
++/* ------------------------------------------------------------------------- */
++
++typedef struct {
++    short *control;
++    short *global;
++    short *intin;
++    short *intout;
++    long  *addrin;
++    long  *addrout;
++} AESPB;
++
++static short aes_control[6];
++static short aes_global[16];
++static short aes_intin[16];
++static short aes_intout[16];
++static long  aes_addrin[4];
++static long  aes_addrout[4];
++
++static void aes_trap(void *pb)
++{
++    register long x0 __asm__("x0") = 200;
++    register long x1 __asm__("x1") = (long)pb;
++    __asm__ __volatile__("svc\t#2" : "+r"(x0) : "r"(x1) : "memory", "cc");
++    (void)x0;
++}
++
++static short aes_call(short opcode, short nin, short nout, short naddrin)
++{
++    AESPB pb;
++    int i;
++    aes_control[0] = opcode;
++    aes_control[1] = nin;
++    aes_control[2] = nout;
++    aes_control[3] = naddrin;
++    aes_control[4] = 0;
++    for (i = 0; i < 16; i++)
++        aes_intout[i] = 0;
++    pb.control = aes_control;
++    pb.global  = aes_global;
++    pb.intin   = aes_intin;
++    pb.intout  = aes_intout;
++    pb.addrin  = aes_addrin;
++    pb.addrout = aes_addrout;
++    aes_trap(&pb);
++    return aes_intout[0];
++}
++
++#define MU_KEYBD 0x0001
++#define MU_TIMER 0x0020
++
++/* evnt_multi (AES 25): returns the event mask, *key = kreturn. */
++static short evnt_multi(short flags, short ms, short *key)
++{
++    static short msg[8];
++    int i;
++    for (i = 0; i < 16; i++)
++        aes_intin[i] = 0;
++    aes_intin[0] = flags;
++    aes_intin[14] = ms;         /* locount */
++    aes_intin[15] = 0;          /* hicount */
++    aes_addrin[0] = (long)msg;
++    aes_call(25, 16, 7, 1);
++    *key = aes_intout[5];
++    return aes_intout[0];
++}
++
++/* ------------------------------------------------------------------------- */
++/* Output                                                                    */
++/* ------------------------------------------------------------------------- */
++
++static void puts_(const char *s) { gemdos1(0x09, (NLONG)s); }
++
++static void hexn(char *dst, unsigned long v, int digits)
++{
++    static const char hx[] = "0123456789ABCDEF";
++    int i;
++    for (i = digits - 1; i >= 0; i--) {
++        dst[i] = hx[v & 0xF];
++        v >>= 4;
++    }
++    dst[digits] = '\0';
++}
++
++static void puthex(unsigned long v, int digits)
++{
++    char b[20];
++    hexn(b, v, digits);
++    puts_(b);
++}
++
++/* ------------------------------------------------------------------------- */
++/* The hook                                                                  */
++/* ------------------------------------------------------------------------- */
++
++typedef void (*kbdvec_fn)(long scancode, long iorec);
++
++static kbdvec_fn old_kbdvec;
++static volatile unsigned char seen[32];
++static volatile int nseen;
++
++/* kbdvec: x0 = scancode (bit 7 = break), x1 = 0 (no IOREC, D2a). Record the
++ * byte, then chain to the previous vector with unchanged arguments (A6.3). */
++static void hook(long scancode, long iorec)
++{
++    int n = nseen;
++    if (n < 32) {
++        seen[n] = (unsigned char)scancode;
++        nseen = n + 1;
++    }
++    old_kbdvec(scancode, iorec);
++}
++
++/* ------------------------------------------------------------------------- */
++
++static const unsigned char want[6] = { 0x48, 0x4D, 0xCD, 0xC8, 0x1E, 0x9E };
++
++int main(void)
++{
++    unsigned long *p;
++    unsigned short words[64];
++    int nwords = 0, i, ok, guard;
++    short key, ev;
++    long bc;
++
++    aes_call(10, 0, 1, 0);      /* appl_init */
++
++    p = (unsigned long *)xbios0(0x22);   /* Kbdvbase */
++    old_kbdvec = (kbdvec_fn)p[-1];
++    puts_("KBDVEC: Kbdvbase=");
++    puthex((unsigned long)p, 8);
++    puts_(" kbdvec=");
++    puthex((unsigned long)old_kbdvec, 8);
++    puts_(" ikbdsys=");
++    puthex(p[8], 8);
++    puts_("\r\n");
++    ok = old_kbdvec != 0;
++    for (i = 0; i < 9; i++)
++        if (p[i] == 0)
++            ok = 0;
++    puts_(ok ? "KBDVEC: table OK (no slot is 0)\r\n" : "KBDVEC: table FAIL\r\n");
++
++    p[-1] = (unsigned long)hook;
++    puts_("KBDVEC: hook installed, phase A (evnt_multi MU_KEYBD, no timer)\r\n");
++
++    /* Phase A: block in the AES with no timer until the RIGHT key word. */
++    for (;;) {
++        ev = evnt_multi(MU_KEYBD, 0, &key);
++        if ((ev & MU_KEYBD) && nwords < 64)
++            words[nwords++] = (unsigned short)key;
++        if ((ev & MU_KEYBD) && ((unsigned short)key >> 8) == 0x4D)
++            break;
++    }
++    /* …then keep consuming (repeats) until the hook saw both breaks. */
++    for (guard = 0; nseen < 4 && guard < 1000; guard++) {
++        ev = evnt_multi(MU_KEYBD | MU_TIMER, 20, &key);
++        if ((ev & MU_KEYBD) && nwords < 64)
++            words[nwords++] = (unsigned short)key;
++    }
++    puts_("KBDVEC: phase B (Bconin(2))\r\n");
++
++    /* Phase B: a blocking BIOS read. */
++    bc = bios1(0x02, 2);
++    for (guard = 0; nseen < 6 && guard < 1000; guard++) {
++        if (bios1(0x01, 2))
++            (void)bios1(0x02, 2);
++        evnt_multi(MU_TIMER, 20, &key);
++    }
++    while (bios1(0x01, 2))      /* leave nothing behind for the desktop */
++        (void)bios1(0x02, 2);
++
++    p[-1] = (unsigned long)old_kbdvec;   /* restore (A6.4) */
++
++    puts_("KBDVEC: hook saw");
++    for (i = 0; i < nseen; i++) {
++        puts_(" ");
++        puthex(seen[i], 2);
++    }
++    puts_("\r\nKBDVEC: AES words");
++    for (i = 0; i < nwords; i++) {
++        puts_(" ");
++        puthex(words[i], 4);
++    }
++    puts_("\r\nKBDVEC: Bconin=");
++    puthex((unsigned long)bc, 8);
++    puts_("\r\n");
++
++    ok = ok && nseen == 6 && ((unsigned long)bc & 0xFFFFFF) == 0x1E0061;
++    for (i = 0; i < 6 && i < nseen; i++)
++        if (seen[i] != want[i])
++            ok = 0;
++    if (nwords < 2 || words[0] != 0x4800)
++        ok = 0;
++    puts_(ok ? "KBDVEC: PASS\r\n" : "KBDVEC: FAIL\r\n");
++
++    aes_call(19, 0, 1, 0);      /* appl_exit */
++    return ok ? 0 : 1;
++}
+--- /dev/null	2026-10-04 18:09:01
++++ tos-api/src/xbios/kbdvecs.rs	2026-10-04 17:47:42
+@@ -0,0 +1,341 @@
++//! The IKBD vector table (`Kbdvbase`, XBIOS 0x22) and the `kbdvec` hook —
++//! KEYS02.
++//!
++//! Spec: `docs/api/xbios/22-kbdvbase.md` (approved 2026-10-04, decisions
++//! D1–D8). EmuTOS reference: `bios/aciavecs.S:126-141` (layout),
++//! `:146-223` (defaults), `:407-414` (`ikbdraw` → `kbdvec`), `:372-376`
++//! (`_kbdvec` → `kbd_int`), `bios/ikbd.c:451-472` (`ikbdsys`-change repeat
++//! stop).
++//!
++//! # Where the table lives (D1)
++//!
++//! Per process, in page 0 of its TPA at
++//! [`KBDVECS_AREA_VA`](crate::bdos::process::loader::KBDVECS_AREA_VA),
++//! written by the loader ([`write_defaults`]). An EL0 handler address means
++//! nothing in another address space, so the table belongs to the address
++//! space it points into, and it disappears with it (D8). `Kbdvbase` returns
++//! the EL0 VA of the `midivec` slot; `kbdvec` is the slot directly before it
++//! (8 bytes, LP64), `mousexvec` before that:
++//!
++//! ```text
++//!  +0x00 mousexvec   +0x08 kbdvec    +0x10 midivec   <- Kbdvbase()
++//!  +0x18 vkbderr     +0x20 vmiderr   +0x28 statvec   +0x30 mousevec
++//!  +0x38 clockvec    +0x40 joyvec    +0x48 midisys   +0x50 ikbdsys
++//!  +0x58 drvstat (byte, always 0, D5)                +0x59 kbdlength (byte, 0)
++//! ```
++//!
++//! # Defaults (B3)
++//!
++//! Every slot holds a valid EL0 entry point, so a program can read a slot,
++//! save it and later branch to it (chaining, A6):
++//!
++//! * [`RET_STUB_VA`] — a single `ret`, EmuTOS `just_rts`: `mousexvec`,
++//!   `midivec`, `vkbderr`, `vmiderr`, `statvec`, `mousevec`, `clockvec`,
++//!   `joyvec`, `midisys`, `ikbdsys`;
++//! * [`KBDVEC_DEFAULT_VA`] — `kbdvec`, EmuTOS `_kbdvec` → `kbd_int`: it issues
++//!   `Ssystem(S_NEWTOS_KBDVEC, scancode, 0)` (GEMDOS 0x154, mode 2002, D6),
++//!   which runs the kernel's key decoder (`Host::kbd_int`) for the byte.
++//!
++//! # What is called (D7 minimum)
++//!
++//! Only `kbdvec`. The kernel's IKBD decoder hands every key byte (`< 0xF6`,
++//! make and break) to [`route_key`]: while the running process's `kbdvec` is
++//! still [`KBDVEC_DEFAULT_VA`] — or no process runs — the decoder runs
++//! directly, exactly as before KEYS02. Otherwise the byte goes into the
++//! process's 64-entry ring (D3/D3a, overflow drops the newest byte) and the
++//! kernel delivers it to the hook as an EL0 upcall (`x0` = scancode, `x1` = 0,
++//! D2/D2a) at the next syscall return, one byte per upcall, in order. The other
++//! eight slots and `mousexvec` exist with their defaults, but a program hook
++//! installed there is **not called** — a documented gap (`docs/STATUS.md`
++//! "Blocked"), not a hidden one. `ikbdsys` is never called either (NewTOS has
++//! no ACIA interrupt, D4); only its value is read, for the repeat stop.
++
++use core::cell::UnsafeCell;
++use core::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
++
++use crate::bdos::process::loader::{
++    KBDVECS_AREA_SIZE, KBDVECS_AREA_VA, KBDVEC_STUB_AREA_SIZE, KBDVEC_STUB_AREA_VA, USER_VA_BASE,
++};
++use crate::bdos::process::{current, slot_for, MAX_PROCESSES, PROCESS_TABLE};
++
++// ─── Layout ──────────────────────────────────────────────────────────────
++
++/// Offset of `mousexvec` inside the table (`aciavecs.S:126-128`).
++pub const OFF_MOUSEXVEC: u64 = 0x00;
++/// Offset of `kbdvec` (`aciavecs.S:129`, "must be right before _kbdvecs").
++pub const OFF_KBDVEC: u64 = 0x08;
++/// Offset of `midivec` — the address `Kbdvbase` returns (`aciavecs.S:131`).
++pub const OFF_KBDVBASE: u64 = 0x10;
++/// Offset of `ikbdsys`, the ninth slot (`aciavecs.S:139`).
++pub const OFF_IKBDSYS: u64 = OFF_KBDVBASE + 8 * 8;
++/// Offset of the `drvstat` byte (`ikbdstate`, `aciavecs.S:140`; D5).
++pub const OFF_DRVSTAT: u64 = OFF_KBDVBASE + 9 * 8;
++/// Offset of the `kbdlength` byte (`aciavecs.S:141`).
++pub const OFF_KBDLENGTH: u64 = OFF_DRVSTAT + 1;
++
++const _: () = assert!(OFF_KBDLENGTH < KBDVECS_AREA_SIZE);
++
++/// EL0 VA of the `ret` stub (EmuTOS `just_rts`, `aciavecs.S:377`).
++pub const RET_STUB_VA: u64 = USER_VA_BASE + KBDVEC_STUB_AREA_VA;
++/// EL0 VA of the `kbdvec_default` stub (EmuTOS `_kbdvec`, `aciavecs.S:372-376`).
++pub const KBDVEC_DEFAULT_VA: u64 = USER_VA_BASE + KBDVEC_STUB_AREA_VA + 0x08;
++
++/// `Ssystem` mode the `kbdvec_default` stub issues — NewTOS-own block 2000+
++/// (`docs/api/gemdos/154-ssystem.md`; decision D6).
++pub const S_NEWTOS_KBDVEC: u16 = 2002;
++
++/// `ret` (encoding checked with clang/llvm-objdump).
++const RET_STUB_CODE: [u32; 1] = [0xD65F_03C0];
++
++/// The `kbdvec_default` stub. Entered like any `kbdvec` (AAPCS64, `x0` =
++/// scancode, `x1` = 0), it calls `Ssystem(2002, scancode, 0)` and returns to
++/// its caller — the upcall trampoline, or a program hook that chained to it.
++///
++/// ```text
++///   aa0003e1  mov x1, x0        ; arg1 = scancode
++///   d280fa40  mov x0, #2002     ; mode S_NEWTOS_KBDVEC
++///   d2800002  mov x2, #0        ; arg2 = 0
++///   d2802a88  mov x8, #0x154    ; Ssystem
++///   d4000021  svc #1
++///   d65f03c0  ret
++/// ```
++///
++/// Encodings checked with clang (`-target aarch64-unknown-none-elf`) +
++/// llvm-objdump.
++const KBDVEC_DEFAULT_CODE: [u32; 6] = [
++    0xAA00_03E1,
++    0xD280_FA40,
++    0xD280_0002,
++    0xD280_2A88,
++    0xD400_0021,
++    0xD65F_03C0,
++];
++
++// The stubs fit their area; the 2002 baked into the `mov` is S_NEWTOS_KBDVEC.
++const _: () = assert!(
++    KBDVEC_DEFAULT_VA - USER_VA_BASE + 4 * KBDVEC_DEFAULT_CODE.len() as u64
++        <= KBDVEC_STUB_AREA_VA + KBDVEC_STUB_AREA_SIZE
++);
++const _: () = assert!(RET_STUB_VA + 4 <= KBDVEC_DEFAULT_VA);
++const _: () = assert!((KBDVEC_DEFAULT_CODE[1] >> 5) & 0xFFFF == S_NEWTOS_KBDVEC as u32);
++
++/// The default value of slot `off` (every slot but `kbdvec` is `just_rts`).
++const fn default_of(off: u64) -> u64 {
++    if off == OFF_KBDVEC {
++        KBDVEC_DEFAULT_VA
++    } else {
++        RET_STUB_VA
++    }
++}
++
++/// Write the table with its defaults and the two stubs into a freshly loaded
++/// TPA's page 0, through the kernel alias `tpa` (the whole-TPA byte view).
++/// Called by the loader next to the upcall trampolines, before the
++/// code-cache maintenance (EmuTOS `init_acia_vecs`, `aciavecs.S:146-223`).
++pub fn write_defaults(tpa: &mut [u8]) {
++    let base = KBDVECS_AREA_VA as usize;
++    tpa[base..base + KBDVECS_AREA_SIZE as usize].fill(0);
++    let mut off = OFF_MOUSEXVEC;
++    while off <= OFF_IKBDSYS {
++        let o = base + off as usize;
++        tpa[o..o + 8].copy_from_slice(&default_of(off).to_le_bytes());
++        off += 8;
++    }
++    // `drvstat` / `kbdlength` stay 0 (D5): a packet is never observable
++    // half-received, the HID translator feeds whole reports.
++    let stub = KBDVEC_STUB_AREA_VA as usize;
++    tpa[stub..stub + KBDVEC_STUB_AREA_SIZE as usize].fill(0);
++    let mut put = |va: u64, code: &[u32]| {
++        let at = (va - USER_VA_BASE) as usize;
++        for (i, insn) in code.iter().enumerate() {
++            tpa[at + i * 4..at + i * 4 + 4].copy_from_slice(&insn.to_le_bytes());
++        }
++    };
++    put(RET_STUB_VA, &RET_STUB_CODE);
++    put(KBDVEC_DEFAULT_VA, &KBDVEC_DEFAULT_CODE);
++}
++
++// ─── The table with no process running ───────────────────────────────────
++
++/// The table an EL1 caller (the in-kernel desktop, the boot path — `RUN`
++/// names no process) gets from `Kbdvbase`: same layout, same default values.
++/// Nothing ever calls through it — with no process running the decoder always
++/// takes the default path — so it only answers the pointer (the same "kernel
++/// VA when no process runs" rule as `Keytbl`, `xbios/keytbl.rs`).
++#[repr(C, align(8))]
++struct KernelTable(UnsafeCell<[u64; (KBDVECS_AREA_SIZE / 8) as usize]>);
++// SAFETY: single boot CPU, cooperative trap path; written once, then only read.
++unsafe impl Sync for KernelTable {}
++static KERNEL_TABLE: KernelTable = KernelTable(UnsafeCell::new([
++    RET_STUB_VA,       // mousexvec
++    KBDVEC_DEFAULT_VA, // kbdvec
++    RET_STUB_VA,       // midivec
++    RET_STUB_VA,       // vkbderr
++    RET_STUB_VA,       // vmiderr
++    RET_STUB_VA,       // statvec
++    RET_STUB_VA,       // mousevec
++    RET_STUB_VA,       // clockvec
++    RET_STUB_VA,       // joyvec
++    RET_STUB_VA,       // midisys
++    RET_STUB_VA,       // ikbdsys
++    0,                 // drvstat, kbdlength, padding
++]));
++
++/// `Kbdvbase()` (XBIOS 0x22): the running process's table, as its own EL0
++/// VA of the `midivec` slot (full 64 bits in `x0`); the kernel table's address
++/// when no process runs. Stable for the life of the process.
++pub fn kbdvbase() -> i64 {
++    if slot_for(current()).is_some() {
++        (USER_VA_BASE + KBDVECS_AREA_VA + OFF_KBDVBASE) as i64
++    } else {
++        KERNEL_TABLE.0.get() as u64 as i64 + OFF_KBDVBASE as i64
++    }
++}
++
++/// Read slot `off` of process `slot`'s table through the kernel alias of its
++/// page 0 (`basepage_kva` = TPA base, as `bios::chardev::current_conterm`
++/// reads `$484`). `None` for a slot with no basepage.
++fn read_slot(slot: usize, off: u64) -> Option<u64> {
++    let bp = PROCESS_TABLE.get(slot)?.basepage_kva.load(Ordering::Acquire) as u64;
++    if bp == 0 {
++        return None;
++    }
++    let va = bp + KBDVECS_AREA_VA + off;
++    // SAFETY: `bp` is the kernel alias of a live process's mapped page 0; the
++    // table lies inside it (loader asserts) and the slot is 8-aligned. The
++    // program may rewrite it at any time, hence the volatile read.
++    Some(unsafe { (va as *const u64).read_volatile() })
++}
++
++/// The `kbdvec` slot of process `slot` (what an upcall for it jumps to).
++pub fn kbdvec_of(slot: usize) -> Option<u64> {
++    read_slot(slot, OFF_KBDVEC)
++}
++
++/// The `ikbdsys` value in force for the key-repeat stop (EmuTOS
++/// `kbdvecs.ikbdsys`, `bios/ikbd.c:453,507,903`): the running process's slot,
++/// or the default [`RET_STUB_VA`] when no process runs — every table starts
++/// with that value, so moving between the desktop and an unhooked program
++/// does not count as a change.
++pub fn current_ikbdsys() -> u64 {
++    slot_for(current())
++        .and_then(|s| read_slot(s, OFF_IKBDSYS))
++        .unwrap_or(RET_STUB_VA)
++}
++
++// ─── The per-process byte ring (D3/D3a) ──────────────────────────────────
++
++/// Ring capacity per process (D3a).
++pub const RING_LEN: usize = 64;
++
++struct Ring {
++    buf: [AtomicU8; RING_LEN],
++    /// Index of the oldest byte.
++    head: AtomicUsize,
++    /// Number of bytes queued.
++    len: AtomicUsize,
++}
++
++impl Ring {
++    const fn new() -> Self {
++        Self {
++            buf: [const { AtomicU8::new(0) }; RING_LEN],
++            head: AtomicUsize::new(0),
++            len: AtomicUsize::new(0),
++        }
++    }
++}
++
++/// One ring per process slot. Producer is the input pump (`route_key`),
++/// consumer the trap return path (`pop`); both run on the single CPU in the
++/// synchronous trap context, never in an interrupt, so they never overlap.
++static RINGS: [Ring; MAX_PROCESSES] = [const { Ring::new() }; MAX_PROCESSES];
++
++/// Append `byte` to `slot`'s ring. A full ring drops the **newest** byte
++/// (D3a) — the bytes already queued keep their order. Returns whether the
++/// byte was stored.
++pub fn push(slot: usize, byte: u8) -> bool {
++    let Some(r) = RINGS.get(slot) else {
++        return false;
++    };
++    let len = r.len.load(Ordering::Acquire);
++    if len >= RING_LEN {
++        return false;
++    }
++    let at = (r.head.load(Ordering::Acquire) + len) % RING_LEN;
++    r.buf[at].store(byte, Ordering::Release);
++    r.len.store(len + 1, Ordering::Release);
++    true
++}
++
++/// Take the oldest byte of `slot`'s ring.
++pub fn pop(slot: usize) -> Option<u8> {
++    let r = RINGS.get(slot)?;
++    let len = r.len.load(Ordering::Acquire);
++    if len == 0 {
++        return None;
++    }
++    let head = r.head.load(Ordering::Acquire);
++    let b = r.buf[head].load(Ordering::Acquire);
++    r.head.store((head + 1) % RING_LEN, Ordering::Release);
++    r.len.store(len - 1, Ordering::Release);
++    Some(b)
++}
++
++/// Bytes waiting in `slot`'s ring.
++pub fn pending(slot: usize) -> usize {
++    RINGS.get(slot).map_or(0, |r| r.len.load(Ordering::Acquire))
++}
++
++/// `true` when the running process has hook bytes waiting — the condition
++/// under which a blocking wait must give way so they can be delivered.
++pub fn pending_for_running() -> bool {
++    slot_for(current()).is_some_and(|s| pending(s) != 0)
++}
++
++/// Drop everything queued for `slot` — process exit (`free_slot`, D8): the
++/// hook and its address space are gone, the bytes have nowhere to go.
++pub fn release_slot(slot: usize) {
++    if let Some(r) = RINGS.get(slot) {
++        r.len.store(0, Ordering::Release);
++        r.head.store(0, Ordering::Release);
++    }
++}
++
++/// Decide where the key byte `byte` (`< 0xF6`, bit 7 = break) goes — EmuTOS
++/// `ikbdraw`'s jump through `kbdvec` (`aciavecs.S:407-414`).
++///
++/// Returns `false` when the caller must run the default decoder itself: no
++/// process runs, or the running process's `kbdvec` is still
++/// [`KBDVEC_DEFAULT_VA`] (the fast path — normal programs see no change).
++/// Returns `true` when the byte belongs to the program's hook: it was queued
++/// for upcall delivery (or dropped on a full ring, D3a).
++pub fn route_key(byte: u8) -> bool {
++    let Some(slot) = slot_for(current()) else {
++        return false;
++    };
++    match kbdvec_of(slot) {
++        Some(v) if v != KBDVEC_DEFAULT_VA => {
++            push(slot, byte);
++            true
++        }
++        _ => false,
++    }
++}
++
++// ─── Restart of a blocking read (delivery while waiting) ─────────────────
++
++/// Set by a blocking key read that gave way because hook bytes are waiting
++/// (see `Host::console_read_key_restartable`): the trap handler must discard
++/// the call's result, rewind the `svc`, and deliver the hook upcall first.
++static RESTART: AtomicBool = AtomicBool::new(false);
++
++/// Ask the trap handler to restart the current call after the hook ran.
++pub fn request_restart() {
++    RESTART.store(true, Ordering::Release);
++}
++
++/// Consume a [`request_restart`].
++pub fn take_restart() -> bool {
++    RESTART.swap(false, Ordering::AcqRel)
++}
+--- /dev/null	2026-10-04 18:09:01
++++ tos-api/tests/xbios_kbdvecs.rs	2026-10-04 17:55:23
+@@ -0,0 +1,438 @@
++//! KEYS02 — `Kbdvbase` (XBIOS 0x22), the per-process IKBD vector table and
++//! the `kbdvec` hook's queue.
++//!
++//! Spec: `docs/api/xbios/22-kbdvbase.md` (approved 2026-10-04, D1–D8).
++//! EmuTOS: `bios/aciavecs.S:126-141` (layout), `:146-223` (defaults),
++//! `:407-414` (`ikbdraw` → `kbdvec`), `:372-376` (`_kbdvec` → `kbd_int`).
++//!
++//! What runs on the host here: the table the loader writes, the address
++//! `Kbdvbase` returns, the decision "default `kbdvec` → decode directly /
++//! program hook → queue for upcall" (`route_key`), the queue's order and
++//! overflow rule, its drain at process exit, `Ssystem(S_NEWTOS_KBDVEC)`, the
++//! give-way of a blocking AES wait and of a blocking key read when hook bytes
++//! are waiting. The EL0 upcall delivery itself (trap frame, `Psigreturn`
++//! chain) is kernel code and is measured in QEMU
++//! (`measurements/measurement-2026-10-04-keys02/`).
++
++use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
++use std::sync::{Mutex, MutexGuard, Once};
++
++use tos_api::bdos::process::loader::KBDVECS_AREA_VA;
++use tos_api::bdos::process::{free_slot, sched, set_current, State, PROCESS_TABLE};
++use tos_api::host::Host;
++use tos_api::trap::{TrapArgs, TrapClass};
++use tos_api::xbios::kbdvecs::{
++    self, KBDVEC_DEFAULT_VA, OFF_DRVSTAT, OFF_IKBDSYS, OFF_KBDLENGTH, OFF_KBDVBASE, OFF_KBDVEC,
++    OFF_MOUSEXVEC, RET_STUB_VA, RING_LEN, S_NEWTOS_KBDVEC,
++};
++use tos_types::BasePage;
++
++// ─── rig ─────────────────────────────────────────────────────────────────
++
++/// Process table, `RUN`, the rings and the host cells are process-wide.
++static LOCK: Mutex<()> = Mutex::new(());
++
++fn lock() -> MutexGuard<'static, ()> {
++    LOCK.lock().unwrap_or_else(|e| e.into_inner())
++}
++
++/// Bytes the host's key decoder (`Host::kbd_int`) received.
++static DECODED: Mutex<Vec<u8>> = Mutex::new(Vec::new());
++/// Bytes the console echoed.
++static ECHOED: Mutex<Vec<u8>> = Mutex::new(Vec::new());
++/// `true` = this host has no key decoder (`kbd_int` answers `false`).
++static NO_DECODER: AtomicBool = AtomicBool::new(false);
++/// A key byte the next `pump_input` feeds through `route_key` (0 = none) —
++/// the stand-in for a USB report decoded inside an AES wait.
++static PUMP_FEEDS: AtomicU16 = AtomicU16::new(0);
++/// The key word the blocking reads return when they do not give way.
++const KEY_WORD: u16 = 0x1E61; // 'a'
++
++struct KbdHost;
++
++impl Host for KbdHost {
++    fn console_write_byte(&self, byte: u8) {
++        ECHOED.lock().unwrap().push(byte);
++    }
++    fn console_read_key_blocking(&self) -> u16 {
++        KEY_WORD
++    }
++    fn console_read_key_restartable(&self) -> Option<u16> {
++        // The kernel host's rule: give way while hook bytes wait.
++        if kbdvecs::pending_for_running() {
++            None
++        } else {
++            Some(KEY_WORD)
++        }
++    }
++    fn pump_input(&self) {
++        let b = PUMP_FEEDS.swap(0, Ordering::AcqRel);
++        if b != 0 {
++            let routed = kbdvecs::route_key(b as u8);
++            assert!(routed, "the rig only feeds while a hook is installed");
++        }
++    }
++    fn kbd_int(&self, scancode: u8) -> bool {
++        if NO_DECODER.load(Ordering::Acquire) {
++            return false;
++        }
++        DECODED.lock().unwrap().push(scancode);
++        true
++    }
++}
++
++static HOST: Once = Once::new();
++
++fn rig() {
++    HOST.call_once(|| {
++        let slot: &'static &'static dyn Host = Box::leak(Box::new(&KbdHost as &'static dyn Host));
++        tos_api::host::install_host(slot);
++    });
++    DECODED.lock().unwrap().clear();
++    ECHOED.lock().unwrap().clear();
++    NO_DECODER.store(false, Ordering::Release);
++    PUMP_FEEDS.store(0, Ordering::Release);
++    kbdvecs::take_restart();
++}
++
++/// A process's page 0, as the loader leaves it (only the KEYS02 part).
++struct Page0(Box<[u64; 512]>);
++
++impl Page0 {
++    fn loaded() -> Page0 {
++        let mut p = Page0(Box::new([0; 512]));
++        // SAFETY: the box is 4096 bytes long and 8-aligned.
++        let bytes = unsafe { std::slice::from_raw_parts_mut(p.0.as_mut_ptr() as *mut u8, 4096) };
++        kbdvecs::write_defaults(bytes);
++        p
++    }
++    fn bytes(&self) -> &[u8] {
++        // SAFETY: as above.
++        unsafe { std::slice::from_raw_parts(self.0.as_ptr() as *const u8, 4096) }
++    }
++    fn slot_value(&self, off: u64) -> u64 {
++        let at = (KBDVECS_AREA_VA + off) as usize;
++        u64::from_le_bytes(self.bytes()[at..at + 8].try_into().unwrap())
++    }
++    /// What a program does: `((void **)Kbdvbase())[-1] = hook`.
++    fn set_slot(&mut self, off: u64, v: u64) {
++        self.0[((KBDVECS_AREA_VA + off) / 8) as usize] = v;
++    }
++    fn kva(&self) -> *mut BasePage {
++        self.0.as_ptr() as *mut BasePage
++    }
++}
++
++const SLOT: usize = 6;
++
++/// Make `page` the running process in `SLOT` (the identity `slot_for` uses is
++/// `basepage_kva`; here it is also the storage the kernel alias reads).
++fn run(page: &Page0) {
++    for p in PROCESS_TABLE.iter() {
++        p.runnable.store(false, Ordering::Release);
++        p.wait_cond.store(0, Ordering::Release);
++        p.set_state(State::Free);
++        p.basepage_kva.store(core::ptr::null_mut(), Ordering::Release);
++    }
++    sched::set_kernel_parked(false);
++    kbdvecs::release_slot(SLOT);
++    PROCESS_TABLE[SLOT].set_state(State::Running);
++    PROCESS_TABLE[SLOT].basepage_kva.store(page.kva(), Ordering::Release);
++    set_current(page.kva());
++}
++
++fn no_process() {
++    set_current(core::ptr::null_mut());
++}
++
++fn drain(slot: usize) -> Vec<u8> {
++    std::iter::from_fn(|| kbdvecs::pop(slot)).collect()
++}
++
++fn xbios(func: u16) -> i64 {
++    tos_api::xbios::dispatch(&TrapArgs {
++        regs: [0; 8],
++        func: func as u64,
++        svc_imm: TrapClass::Xbios as u16,
++    })
++}
++
++fn gemdos(func: u16, a0: u64, a1: u64, a2: u64) -> i32 {
++    tos_api::gemdos::dispatch(&TrapArgs {
++        regs: [a0, a1, a2, 0, 0, 0, 0, 0],
++        func: func as u64,
++        svc_imm: TrapClass::Gemdos as u16,
++    })
++}
++
++fn bios(func: u16, a0: u64) -> i32 {
++    tos_api::bios::dispatch(&TrapArgs {
++        regs: [a0, 0, 0, 0, 0, 0, 0, 0],
++        func: func as u64,
++        svc_imm: TrapClass::Bios as u16,
++    }) as i32
++}
++
++const KBDVBASE: u16 = 0x22;
++const SSYSTEM: u16 = 0x154;
++const E_OK: i32 = 0;
++const ERROR: i32 = -1;
++const EINVAL: i32 = -25;
++
++/// A program's own `kbdvec` routine (any EL0 VA that is not the default).
++const HOOK: u64 = 0x0001_2340;
++
++// IKBD scancodes (bit 7 = break).
++const UP: u8 = 0x48;
++const RIGHT: u8 = 0x4D;
++const BRK: u8 = 0x80;
++
++// ─── the table ───────────────────────────────────────────────────────────
++
++#[test]
++fn loader_writes_the_table_and_the_two_stubs() {
++    let _g = lock();
++    let p = Page0::loaded();
++    // B1 layout: mousexvec, kbdvec, then the nine `struct kbdvecs` slots.
++    assert_eq!(OFF_KBDVEC, OFF_KBDVBASE - 8, "kbdvec sits right before Kbdvbase()");
++    assert_eq!(OFF_MOUSEXVEC, OFF_KBDVEC - 8, "mousexvec right before kbdvec");
++    assert_eq!(p.slot_value(OFF_KBDVEC), KBDVEC_DEFAULT_VA);
++    assert_eq!(p.slot_value(OFF_MOUSEXVEC), RET_STUB_VA);
++    for i in 0..9 {
++        assert_eq!(p.slot_value(OFF_KBDVBASE + 8 * i), RET_STUB_VA, "slot {i} is just_rts");
++    }
++    assert_eq!(OFF_IKBDSYS, OFF_KBDVBASE + 0x40);
++    // D5: drvstat and kbdlength are 0.
++    let b = p.bytes();
++    assert_eq!(b[(KBDVECS_AREA_VA + OFF_DRVSTAT) as usize], 0);
++    assert_eq!(b[(KBDVECS_AREA_VA + OFF_KBDLENGTH) as usize], 0);
++    // The stubs: `ret`, and mov x1,x0 / mov x0,#2002 / mov x2,#0 /
++    // mov x8,#0x154 / svc #1 / ret.
++    let word = |va: u64| u32::from_le_bytes(b[va as usize..va as usize + 4].try_into().unwrap());
++    assert_eq!(word(RET_STUB_VA), 0xD65F_03C0);
++    let stub: Vec<u32> = (0..6).map(|i| word(KBDVEC_DEFAULT_VA + 4 * i)).collect();
++    assert_eq!(
++        stub,
++        [0xAA00_03E1, 0xD280_FA40, 0xD280_0002, 0xD280_2A88, 0xD400_0021, 0xD65F_03C0]
++    );
++    assert_eq!(S_NEWTOS_KBDVEC, 2002);
++    // Neither stub address is 0 — every slot is a valid chain target (B8).
++    assert_ne!(RET_STUB_VA, 0);
++    assert_ne!(KBDVEC_DEFAULT_VA, 0);
++}
++
++#[test]
++fn kbdvbase_is_the_processes_own_el0_table() {
++    let _g = lock();
++    rig();
++    let p = Page0::loaded();
++    run(&p);
++    let a = xbios(KBDVBASE);
++    assert_eq!(a as u64, KBDVECS_AREA_VA + OFF_KBDVBASE, "EL0 VA of midivec");
++    assert_eq!(xbios(KBDVBASE), a, "stable");
++    // With no process (desktop, boot) a kernel table answers, same layout.
++    no_process();
++    let k = xbios(KBDVBASE) as u64;
++    assert_ne!(k, 0);
++    // SAFETY: `k - 8 .. k + 0x48` is the kernel table.
++    unsafe {
++        assert_eq!(((k - 8) as *const u64).read(), KBDVEC_DEFAULT_VA);
++        for i in 0..9 {
++            assert_eq!(((k + 8 * i) as *const u64).read(), RET_STUB_VA);
++        }
++    }
++}
++
++// ─── default vs. hooked ──────────────────────────────────────────────────
++
++#[test]
++fn default_kbdvec_and_no_process_decode_directly() {
++    let _g = lock();
++    rig();
++    let p = Page0::loaded();
++    run(&p);
++    // Default still in place: the decoder runs as before (fast path).
++    assert!(!kbdvecs::route_key(UP));
++    assert!(!kbdvecs::route_key(UP | BRK));
++    assert_eq!(kbdvecs::pending(SLOT), 0);
++    // No process: same.
++    no_process();
++    assert!(!kbdvecs::route_key(UP));
++    assert!(!kbdvecs::pending_for_running());
++}
++
++#[test]
++fn hooked_kbdvec_gets_make_and_break_in_order() {
++    let _g = lock();
++    rig();
++    let mut p = Page0::loaded();
++    p.set_slot(OFF_KBDVEC, HOOK);
++    run(&p);
++    // Four bytes in one poll — the case `post_upcall` (last writer wins)
++    // would have lost: up make, right make, right break, up break.
++    for b in [UP, RIGHT, RIGHT | BRK, UP | BRK] {
++        assert!(kbdvecs::route_key(b), "{b:#x} belongs to the hook");
++    }
++    assert!(kbdvecs::pending_for_running());
++    assert_eq!(kbdvecs::kbdvec_of(SLOT), Some(HOOK), "the upcall target");
++    assert_eq!(drain(SLOT), vec![UP, RIGHT, RIGHT | BRK, UP | BRK]);
++    assert!(DECODED.lock().unwrap().is_empty(), "nothing reached the default");
++    // Restoring the default (what a program does at exit) ends the routing.
++    p.set_slot(OFF_KBDVEC, KBDVEC_DEFAULT_VA);
++    assert!(!kbdvecs::route_key(UP));
++}
++
++#[test]
++fn full_ring_drops_the_newest_byte() {
++    let _g = lock();
++    rig();
++    let mut p = Page0::loaded();
++    p.set_slot(OFF_KBDVEC, HOOK);
++    run(&p);
++    for i in 0..RING_LEN + 6 {
++        kbdvecs::route_key((i % 0x70) as u8);
++    }
++    assert_eq!(kbdvecs::pending(SLOT), RING_LEN);
++    let got = drain(SLOT);
++    let want: Vec<u8> = (0..RING_LEN).map(|i| (i % 0x70) as u8).collect();
++    assert_eq!(got, want, "the oldest 64 survive, in order (D3a)");
++    // After draining, the ring accepts again and wraps correctly.
++    for b in [UP, UP | BRK] {
++        kbdvecs::route_key(b);
++    }
++    assert_eq!(drain(SLOT), vec![UP, UP | BRK]);
++}
++
++#[test]
++fn process_exit_drains_the_ring() {
++    let _g = lock();
++    rig();
++    let mut p = Page0::loaded();
++    p.set_slot(OFF_KBDVEC, HOOK);
++    run(&p);
++    kbdvecs::route_key(UP);
++    kbdvecs::route_key(UP | BRK);
++    assert_eq!(kbdvecs::pending(SLOT), 2);
++    no_process();
++    free_slot(SLOT); // Pterm's slot release (D8)
++    assert_eq!(kbdvecs::pending(SLOT), 0);
++    assert_eq!(kbdvecs::pop(SLOT), None);
++    // The next process in that slot starts with the defaults and routes
++    // nothing to a hook.
++    let q = Page0::loaded();
++    run(&q);
++    assert!(!kbdvecs::route_key(UP));
++}
++
++#[test]
++fn ikbdsys_value_for_the_repeat_stop() {
++    let _g = lock();
++    rig();
++    no_process();
++    assert_eq!(kbdvecs::current_ikbdsys(), RET_STUB_VA, "no process: the default");
++    let mut p = Page0::loaded();
++    run(&p);
++    assert_eq!(kbdvecs::current_ikbdsys(), RET_STUB_VA, "a fresh process: the same default");
++    p.set_slot(OFF_IKBDSYS, 0x0004_5670);
++    assert_eq!(kbdvecs::current_ikbdsys(), 0x0004_5670, "a program's own ikbdsys");
++    no_process();
++}
++
++// ─── the default `kbdvec` entry: Ssystem(2002) ───────────────────────────
++
++#[test]
++fn ssystem_kbdvec_runs_the_default_decoder() {
++    let _g = lock();
++    rig();
++    let p = Page0::loaded();
++    run(&p);
++    let m = u64::from(S_NEWTOS_KBDVEC);
++    assert_eq!(gemdos(SSYSTEM, m, u64::from(UP), 0), E_OK);
++    assert_eq!(gemdos(SSYSTEM, m, u64::from(UP | BRK), 0), E_OK);
++    assert_eq!(*DECODED.lock().unwrap(), vec![UP, UP | BRK]);
++    // Not a byte, or reserved arg2 set: refused, nothing decoded.
++    assert_eq!(gemdos(SSYSTEM, m, 0x148, 0), EINVAL);
++    assert_eq!(gemdos(SSYSTEM, m, u64::from(UP), 1), EINVAL);
++    assert_eq!(DECODED.lock().unwrap().len(), 2);
++    // A host without a key decoder says so.
++    NO_DECODER.store(true, Ordering::Release);
++    assert_eq!(gemdos(SSYSTEM, m, u64::from(UP), 0), ERROR);
++    no_process();
++}
++
++// ─── waits give way to the hook (O1) ─────────────────────────────────────
++
++#[test]
++fn aes_wait_gives_way_when_hook_bytes_are_queued() {
++    let _g = lock();
++    rig();
++    let mut p = Page0::loaded();
++    p.set_slot(OFF_KBDVEC, HOOK);
++    run(&p);
++
++    // (a) Bytes already queued when the wait starts: give way at once, the
++    // slot never goes WAITING.
++    kbdvecs::route_key(RIGHT);
++    match sched::sleep(sched::wait_input()) {
++        sched::SleepOutcome::Yield(sw) => {
++            assert!(sw.upcall_restart, "a restart for the hook, not a peer switch");
++            assert_eq!(sw.slot, SLOT);
++        }
++        sched::SleepOutcome::Recheck => panic!("queued hook bytes must end the wait"),
++    }
++    assert_eq!(PROCESS_TABLE[SLOT].wait_cond.load(Ordering::Acquire), 0);
++    drain(SLOT);
++
++    // (b) The byte arrives during the wait's own input pump: give way right
++    // after it, the slot READY again.
++    PUMP_FEEDS.store(u16::from(RIGHT | BRK), Ordering::Release);
++    match sched::sleep(sched::wait_input()) {
++        sched::SleepOutcome::Yield(sw) => assert!(sw.upcall_restart),
++        sched::SleepOutcome::Recheck => panic!("a hook byte from the pump must end the wait"),
++    }
++    assert_eq!(PROCESS_TABLE[SLOT].wait_cond.load(Ordering::Acquire), 0);
++    assert!(PROCESS_TABLE[SLOT].runnable.load(Ordering::Acquire));
++    assert_eq!(drain(SLOT), vec![RIGHT | BRK]);
++
++    // (c) Nothing for the hook: an ordinary idle pass.
++    assert!(matches!(sched::sleep(sched::wait_input()), sched::SleepOutcome::Recheck));
++    no_process();
++}
++
++#[test]
++fn single_key_reads_give_way_without_side_effects() {
++    let _g = lock();
++    rig();
++    let mut p = Page0::loaded();
++    p.set_slot(OFF_KBDVEC, HOOK);
++    run(&p);
++    const CCONIN: u16 = 0x01;
++    const CRAWCIN: u16 = 0x07;
++    const CNECIN: u16 = 0x08;
++    const BCONIN: u16 = 0x02;
++
++    // Hook byte waiting: each read asks for a restart and does nothing else
++    // (no echo, no key consumed, no Ctrl-C bookkeeping).
++    kbdvecs::route_key(UP);
++    for f in [CCONIN, CRAWCIN, CNECIN] {
++        assert_eq!(gemdos(f, 0, 0, 0), 0);
++        assert!(kbdvecs::take_restart(), "GEMDOS {f:#x} must request the restart");
++    }
++    assert_eq!(bios(BCONIN, 2), 0);
++    assert!(kbdvecs::take_restart(), "Bconin(2) must request the restart");
++    assert!(ECHOED.lock().unwrap().is_empty(), "Cconin echoed nothing");
++    assert_eq!(kbdvecs::take_restart(), false);
++
++    // After the hook ran (ring empty) the read no longer gives way.
++    drain(SLOT);
++    assert!(!kbdvecs::pending_for_running());
++    // Completing it with a process running would take the `conterm` fold's
++    // unprivileged load of the EL0 `$484`, which a host test cannot map; the
++    // completed read itself is the pre-KEYS02 path, shown here without RUN.
++    no_process();
++    assert_eq!(gemdos(CCONIN, 0, 0, 0), 0x001E_0061);
++    assert!(!kbdvecs::take_restart());
++    assert_eq!(*ECHOED.lock().unwrap(), vec![0x61]);
++    assert_eq!(bios(BCONIN, 2), 0x001E_0061);
++    assert!(!kbdvecs::take_restart());
++}

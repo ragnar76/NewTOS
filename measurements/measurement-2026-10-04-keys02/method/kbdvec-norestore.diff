@@ -1,0 +1,11 @@
+--- sdk/examples/kbdvec.c	2026-10-04 17:57:54
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/kbdvec-norestore.c	2026-10-04 18:00:34
+@@ -208,7 +208,7 @@
+     while (bios1(0x01, 2))      /* leave nothing behind for the desktop */
+         (void)bios1(0x02, 2);
+ 
+-    p[-1] = (unsigned long)old_kbdvec;   /* restore (A6.4) */
++    /* KEYS02 run 2: deliberately NOT restored (D8 check) */
+ 
+     puts_("KBDVEC: hook saw");
+     for (i = 0; i < nseen; i++) {

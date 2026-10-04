@@ -20,8 +20,9 @@
 >
 > **Plus NewTOS's own modes from 2000 upwards** (§"NewTOS-own modes (2000+)"):
 > machine facts an EL0 program cannot reach any other way, because the hardware
-> that knows them is kernel-only. These are *not* FreeMiNT modes and are marked
-> as ours wherever they appear; 2000+ is a range FreeMiNT leaves free.
+> that knows them is kernel-only (2000/2001), and the kernel entry of the
+> default `kbdvec` stub (2002, KEYS02). These are *not* FreeMiNT modes and are
+> marked as ours wherever they appear; 2000+ is a range FreeMiNT leaves free.
 
 > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
 > Contract (for the modes NewTOS implements): trap ID `0x154`, the `(mode,
@@ -150,6 +151,7 @@ NewTOS identity, but that is a separate decision.
 |------|------:|-------|-------|
 | `S_NEWTOS_CPUCLOCK` | 2000 | machine | ARM core clock, **Hz** |
 | `S_NEWTOS_CPUTEMP` | 2001 | machine | SoC die temperature, **1/1000 °C** |
+| `S_NEWTOS_KBDVEC` | 2002 | keyboard | run the default `kbdvec` (EmuTOS `kbd_int`) for one IKBD key byte — KEYS02, see below |
 
 **Why the number block is free.** FreeMiNT's `sys/mint/ssystem.h` (@ `f906416`)
 assigns 0–29, 100 and `0x54f8` (21752), and reserves two ranges by comment:
@@ -165,6 +167,34 @@ a die temperature changes between two reads, and the ARM clock changes with
 load and thermal state. The jar cannot express "ask the machine now"
 (`docs/api/bios/_cookie-jar.md`), `Ssystem` can — and FreeMiNT-compatible
 extension is the sanctioned direction (ADR-012, `docs/MEMORY.md`).
+
+#### `S_NEWTOS_KBDVEC` (2002) — the default `kbdvec` (KEYS02)
+
+```
+Ssystem(2002, scancode, 0)
+```
+
+The kernel entry of the `kbdvec_default` stub every process finds in its own
+IKBD vector table (`docs/api/xbios/22-kbdvbase.md` B3/C2, decision D6). It runs
+EmuTOS' default keyboard handler, `_kbdvec` → `kbd_int(scancode)`
+(`bios/aciavecs.S:372-376`, `bios/ikbd.c:725-910`), on the kernel's decoder:
+modifier state, the key word into the console queue, the key repeat. A program
+reaches it by chaining to the old `kbdvec` (`br old`), not by calling `Ssystem`
+itself — but calling it directly has exactly the same effect, as calling the
+default `kbdvec` does on TOS.
+
+| Arg | Meaning |
+|-----|---------|
+| `arg1` | the IKBD key byte, `0..0xFF` (bit 7 = break), as `kbdvec` receives it in `x0` |
+| `arg2` | **reserved**, must be **0** |
+
+| Return | Condition |
+|--------|-----------|
+| `E_OK` (0) | the byte was decoded |
+| `EINVAL` (-25) | `arg1 > 0xFF` or `arg2 != 0`; nothing ran |
+| `ERROR` (-1) | the host has no keyboard decoder (a hostless build) |
+
+Tests: `tos-api/tests/xbios_kbdvecs.rs` (`ssystem_kbdvec_runs_the_default_decoder`).
 
 #### Interface (both modes)
 
@@ -335,7 +365,7 @@ by `tools/make-sd-image.sh`; `SD_SYSINFO_AUTO=1` additionally puts it in
   able to mistake a stale buffer for a reading.
 - **Reserved `arg2`:** `Ssystem(2000, 0, 1)` and `Ssystem(2001, 0, 1)` return
   `EINVAL` (-25) and write nothing.
-- **Neighbouring numbers stay unimplemented:** 1999, 2002 and 2999 return
+- **Neighbouring numbers stay unimplemented:** 1999, 2003 and 2999 return
   `EINVFN`, so the two modes cannot be reached by accident.
 - **The probe is unaffected:** `Ssystem(-1, 0, 0)` still returns `E_OK`.
 
