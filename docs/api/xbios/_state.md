@@ -33,11 +33,18 @@ The keyboard/MIDI packet-handler vector table. `Kbdvbase` returns `&kbdvecs`
 | 0x04   | `vkbderr`   | IKBD ACIA overrun / error handler |
 | 0x08   | `vmiderr`   | MIDI ACIA overrun / error handler |
 | 0x0C   | `statvec`   | IKBD status packet (0xF6) handler |
-| 0x10   | `mousevec`  | IKBD mouse packet (0xF8..0xFB) handler |
+| 0x10   | `mousevec`  | IKBD mouse packet (0xF7 absolute, 0xF8..0xFB relative; `bios/aciavecs.S:488-492`) handler |
 | 0x14   | `clockvec`  | IKBD time-of-day packet (0xFC) handler |
 | 0x18   | `joyvec`    | IKBD joystick packet (0xFD..0xFF) handler |
 | 0x1C   | `midisys`   | top-level MIDI ACIA ISR |
 | 0x20   | `ikbdsys`   | top-level IKBD ACIA ISR |
+
+> **Correction (KEYS02 draft, 2026-10-04):** the table is incomplete. Directly
+> *before* offset 0x00 sits the undocumented `kbdvec` slot (TOS >= 2.0,
+> `bios/aciavecs.S:129`, called with d0 = scancode incl. bit 7 = break, a0 =
+> `ikbdiorec`), before it `mousexvec` (`CONF_WITH_EXTENDED_MOUSE`, `:126-128`);
+> after `ikbdsys` come the bytes `ikbdstate` (Compendium: `drvstat`) and
+> `kbdlength` (`:140-141`). Full analysis: `22-kbdvbase.md`.
 
 All fields are `PFVOID` (4 bytes on m68k). `Initmous` writes `mousevec`
 (`bios/mouse.c:117,120`); applications install their own handlers by
