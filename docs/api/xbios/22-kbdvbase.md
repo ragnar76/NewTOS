@@ -1,6 +1,6 @@
 # `Kbdvbase` (XBIOS 0x22) — der Tastatur-/IKBD-Vektor
 
-> **Status: ENTWURF zur Freigabe** (KEYS02, Schritt 1 / Regel 5). Nichts davon
+> **Status: FREIGEGEBEN (Anwender 2026-10-04)** — D1–D8 wie empfohlen: Tabelle je Prozess in TPA-Seite 0 bei `0x9A0` (D1); AAPCS64, `x0` = Scancode/Paketzeiger, `x1` = 0 bei `kbdvec` bis `Iorec(1)` (D2/D2a); Ring 64 Eintraege je Prozess + Upcall-Kette (D3/D3a); `ikbdsys`-Wechsel-Stopp nachbauen (D4); `drvstat` = 0 (D5); Syscall-Nummer vergibt der Lead beim Bau aus dem freien internen Bereich (D6); Minimum jetzt = `kbdvec` + gueltige Stubs in allen Slots, uebrige Haken Folgeticket, Luecke in STATUS „Blocked“ (D7); Haken verschwindet mit dem Prozess, in COMPATIBILITY.md (D8). Vorherige Kennzeichnung: ENTWURF (KEYS02, Schritt 1 / Regel 5). Nichts davon
 > ist gebaut. Teil A (EmuTOS-Referenz) ist aus dem Quelltext belegt; Teil B
 > (NewTOS-Abbildung) ist ein **Vorschlag**, jede Stelle mit `ENTSCHEIDUNG D<n>`
 > braucht ein Ja/Nein des Anwenders (Liste am Ende).
