@@ -1,0 +1,21 @@
+
+/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/nap-default/DOOM.NAP:	file format elf64-littleaarch64
+
+Disassembly of section .text:
+
+0000000000006ef8 <kbdvec_hook>:
+    6ef8:      	adrp	x8, 0x90000 <netcmds>
+    6efc:      	adrp	x10, 0x90000 <netcmds>
+    6f00:      	ldrb	w9, [x8, #0x58]
+    6f04:      	ldrb	w12, [x10, #0x5c]
+    6f08:      	add	w11, w9, #0x1
+    6f0c:      	and	w10, w11, #0x3f
+    6f10:      	cmp	w10, w12
+    6f14:      	b.eq	0x6f28 <kbdvec_hook+0x30>
+    6f18:      	nop
+    6f1c:      	adr	x11, 0x9005d <kbdvec_ring>
+    6f20:      	strb	w0, [x11, x9]
+    6f24:      	strb	w10, [x8, #0x58]
+    6f28:      	adrp	x8, 0x90000 <netcmds>
+    6f2c:      	ldr	x2, [x8, #0xa0]
+    6f30:      	br	x2

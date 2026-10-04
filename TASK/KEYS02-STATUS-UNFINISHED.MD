@@ -129,9 +129,31 @@ QEMU raspi4b (`RUNINFO.TXT`), Programm `sdk/examples/kbdvec.c`, Start per
 * **Nur echte Pi:** USB-Tastatur mit eingehaengtem Haken und Doom (naechster
   Schritt).
 
+## Doom-Seite (2026-10-04, nicht committet)
+
+Belege: [measurements/measurement-2026-10-04-keys02-doom/](../measurements/measurement-2026-10-04-keys02-doom/RUNINFO.TXT)
+
+* Doom haengt beim Start einen eigenen Haken in `kbdvec`
+  (`sdk/apps/doom/doomgeneric_gem_kbdvec.[ch]`, eingehaengt in
+  `doomgeneric_gem.c`). Der Haken verkettet immer zum alten Vektor.
+  Ausgehaengt wird per `atexit` (Beenden, `I_Error`), auf dem 680x0
+  zusaetzlich per `etv_term`.
+* `DG_GetKey` meldet Druecken/Loslassen aus Make/Break. Die alte
+  Wiederholungs-Heuristik bleibt als Rueckfall fuer TOS < 2.00 und fuer
+  den Start mit `-nokbdvec`.
+* **QEMU raspi4b: PASS.** Hoch bleibt gedrueckt vom Make bis zum Break, auch
+  ueber Rechts-Make und Rechts-Break hinweg. Antippen dauert so lange wie
+  eingespeist. Erstes Bild VERIFIED, der Desktop reagiert nach dem Beenden.
+* **O3: belegt.** TOS 3.06 hat `kbdvec` bei `Kbdvbase()-4 = $1066`
+  (ROM-`ikbdraw` bei `$E032E0`, Hatari-Debugger).
+* **Hatari mit m68k-DOOM.PRG: nicht gelaufen.** Der m68k-Bau ist auf diesem
+  Host blockiert, weil die x86_64-binutils beim Start haengen. Der m68k-Haken
+  ist geschrieben, aber noch nicht assembliert.
+
 ## Offen
 
-1. **Doom-Seite (naechster Agent):** Doom haengt sich an `kbdvec`, verkettet und
+1. **Doom-Seite:** NewTOS erledigt (siehe oben), m68k/Hatari offen (Bau blockiert).
+   Urspruenglicher Auftrag: Doom haengt sich an `kbdvec`, verkettet und
    wertet Make/Break direkt aus statt der Wiederholungs-Heuristik.
    * Der Haken darf **keine FP/SIMD-Register** benutzen, denn ein Upcall
      sichert sie nicht (siehe 3).

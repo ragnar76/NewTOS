@@ -1,0 +1,58 @@
+INFO : Hatari v2.6.1, compiled on:  Aug 15 2025, 14:15:19
+INFO : IPF : capsimage library version release=5 revision=1
+INFO : GEMDOS HDD emulation, C: <-> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/k02d/o3/hd.
+INFO : max ST-RAM on real MegaSTE/TT would be 10MB due to VME, not 14MB
+Reading debugger commands from 'o3-init.ini'...
+> b VBL = 300 :once :file o3-dump.ini
+CPU condition breakpoint 1 with 1 condition(s) added:
+	VBL = 300
+-> Break only once, and delete breakpoint afterwards.
+-> Execute debugger commands from 'o3-dump.ini' file on hit.
+1. CPU breakpoint condition(s) matched 1 times.
+	VBL = 300 :once :file o3-dump.ini
+Reading debugger commands from 'o3-dump.ini'...
+> m $1060-$1094
+00001060: 00 00 00 00 00 00 00 e0 33 ea 00 e0 37 a0 00 e0  .......α3Ω.α7á.α
+00001070: 32 ca 00 e0 32 ca 00 e0 26 b0 00 e0 26 b0 00 e0  2ט.α2ט.α&ã.α&ã.α
+00001080: 21 60 00 e0 26 b0 00 e0 32 8c 00 e0 32 9a 00 00  !`.α&ã.α2î.α2Ü..
+00001090: ff ff 00 00                                      ¯¯..
+> d $E03A96-$E03AA0
+00e03a96 203c 0000 106a           move.l #$0000106a,d0
+00e03a9c 4e75                     rts  == $230400e0
+00e03a9e 52b9 0000 04ba           addq.l #$01,$000004ba [*0000421d]
+> d $E032D0-$E032F0
+00e032d0 b1fc 0000 0eca           cmpa.l #$00000eca,a0
+00e032d6 6600 04c2                bne.w #$04c2 == $00e0379a (F)
+00e032da 4a38 108e                tst.b $0000108e.w [00]
+00e032de 6664                     bne.b #$64 == $00e03344 (F)
+00e032e0 0c00 00f6                cmp.b #$f6,d0
+00e032e4 6406                     bcc.b #$06 == $00e032ec (T)
+00e032e6 2f38 1066                move.l $00001066.w [00e033ea],-(a7) == $0000571c [00005758]
+00e032ea 4e75                     rts  == $230400e0
+00e032ec 0400 00f6                sub.b #$f6,d0
+> d $E033EA-$E03420
+00e033ea 1238 10bb                move.b $000010bb.w [00],d1
+00e033ee 0c00 002a                cmp.b #$2a,d0
+00e033f2 6608                     bne.b #$08 == $00e033fc (F)
+00e033f4 08c1 0001                bset.l #$0001,d1
+00e033f8 6000 009a                bra.w #$009a == $00e03494 (T)
+00e033fc 0c00 00aa                cmp.b #$aa,d0
+00e03400 6608                     bne.b #$08 == $00e0340a (F)
+00e03402 0881 0001                bclr.l #$0001,d1
+00e03406 6000 008c                bra.w #$008c == $00e03494 (T)
+00e0340a 0c00 0036                cmp.b #$36,d0
+00e0340e 6606                     bne.b #$06 == $00e03416 (F)
+00e03410 08c1 0000                bset.l #$0000,d1
+00e03414 607e                     bra.b #$7e == $00e03494 (T)
+00e03416 0c00 00b6                cmp.b #$b6,d0
+00e0341a 6606                     bne.b #$06 == $00e03422 (F)
+00e0341c 0881 0000                bclr.l #$0000,d1
+> quit
+Removed CPU breakpoint 1:
+	VBL = 300 :once :file o3-dump.ini
+
+----------------------------------------------------------------------
+You have entered debug mode. Type c to continue emulation, h for help.
+
+CPU=$e00c5a, VBL=300, FrameCycles=280, HBL=0, LineCycles=280, DSP=N/A
+00e00c5a 52b9 0000 0466           addq.l #$01,$00000466 [*00000116]

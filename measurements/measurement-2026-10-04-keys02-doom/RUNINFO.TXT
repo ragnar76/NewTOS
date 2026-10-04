@@ -1,0 +1,96 @@
+measurement-2026-10-04-keys02-doom -- KEYS02 Doom side: DOOM hooks kbdvec
+Date 2026-10-04, branch desk-rebuild, HEAD f147504 (KEYS02 kernel side committed
+in a912e2f), Doom-side change uncommitted: method/keys02-doom-change.diff
+(sdk/apps/doom/doomgeneric_gem.c, new doomgeneric_gem_kbdvec.[ch],
+sdk/apps/build-doom.sh, sdk/apps/build-doom-m68k.sh). kernel/ and tos-api/
+untouched.
+
+STATUS
+  A  NewTOS, QEMU raspi4b ............ DONE, PASS (runs 1 and 2 below)
+  B  O3: does TOS 3.06 have kbdvec ... DONE, YES (ROM + Hatari TT debugger)
+  C  Hatari TT, m68k DOOM.PRG ........ NOT RUN -- the m68k build is BLOCKED on
+     this host: the x86_64-only m68k-atari-mint binutils (as, nm, ld, objdump;
+     unsigned, com.apple.quarantine set) hang at exec in state U (uninterruptible,
+     kill -9 ineffective), also as a fresh copy; the arm64 cc1 runs. Signed x86_64
+     binaries run under Rosetta (arch -x86_64 /usr/bin/true OK). Not worked
+     around (it would mean stripping quarantine / bypassing Gatekeeper). Prepared:
+     method/build-doom-instrumented.sh <dir> m68k, method/run-hatari-doom-keys.sh
+     (untested). The C side compiles for m68k with gcc -S, 0 warnings
+     (method/m68k-compile-only.txt); the hand-written m68k hook text is NOT
+     assembled yet.
+
+A  NewTOS, QEMU raspi4b (-append serial=on via tools/qemu-serial-on), headless
+   scratch kernel = git archive HEAD + method/apply-instrumentation.py (the KEYS02
+   kernel-side injector, unchanged mechanism, new SCRIPT; as applied:
+   method/scratch-instrumentation.diff), build log method/scratch-build-rpi4.log.
+   DOOM = the K02-instrumented copy (method/instrument-doom.py: one console line
+   per ring byte and per event handed to DOOM; T ms = _hz_200 * 5, so T/5 is the
+   injector's hz_200), built with method/build-doom-instrumented.sh, -warp 1
+   (straight into E1M1). Card: method/seed-doom.sh (fresh make-sd-image + DOOM +
+   doom1.wad + #Z autorun). Run: method/run-qemu.sh, dumps at 25..62 s.
+     kernel8.img (scratch)       sha256 8b43b224aac732ab75d3408962007495c30e12398d480ebae6644895f3034348
+     DOOM.NAP run1 (kbdvec)      sha256 78e8c5a7bcd7bff389f100605865ca4d8d8f1e8fedbaf8cc37b75a087f31595e
+     DOOM.NAP run2 (-nokbdvec)   sha256 2598fcdeb5a0f347f598fedee4de0f16d332a3d795ff37312fda56b191fe0c1e
+     DOOM.NAP product build      sha256 b92e4d58c98a67109687876b83583d37e9f0b05e03a24fb943ce500ddfed94e1
+                                 (method/build-doom-nap.log, not instrumented, not run)
+
+   Injected (hz_200 ticks after arming; armed 3005 = DOOM start):
+     +3000 UP make, +3300 RIGHT make, +3600 RIGHT break, +4000 UP break,
+     +4400/+4420 LEFT tap (100 ms), +4600/+4608 LEFT tap (40 ms),
+     +5000/+5010 F10, +5400 'y'(0x15) make ... DOOM quits,
+     +7000.. Alt-C in the desktop.
+
+   run1 -- kbdvec route (serial/run1-kbdvec-serial.log)
+     DOOM: keys via kbdvec -- TOS 4.04, Kbdvbase 000009b0, kbdvec was 00000a08
+     event        injected (ms)   DOOM sees (ms)
+     UP    PRESS  30025           30045
+     RIGHT PRESS  31525           31530
+     RIGHT RELEASE 33025          33045
+     UP    RELEASE 35025          35050    <- UP down the WHOLE time, no release
+                                             at the RIGHT make or break
+     LEFT tap 100 ms 37025-37125  37045-37130 (85 ms)
+     LEFT tap  40 ms 38025-38065  38050-38075 (25 ms)  (resolution = DOOM's poll)
+     F10 40045 press / 40075 release; 'y' 42045 press -> quit prompt -> exit rc=0
+     Each byte: ring <- byte, evnt_multi restarted for the upcall, hook at 0x6ef8
+     (= kbdvec_hook in DOOM.NAP, method/objdump-kbdvec_hook-DOOM.NAP.txt),
+     chained to the default stub 0xa08 -> kbd_int -> push_rx: the BIOS queue and
+     the KEYS01 repeats keep working and DOOM drains them (rx_pop_key).
+     Screendumps: run1-t25 (E1M1, first frame "VERIFIED via EdDI+scale+vro_cpyfm"),
+     run1-t32/t34 (moved forward and turned), run1-t46 desktop after the quit,
+     run1-t55 Alt-C opened the C:\ window -> desktop keyboard works.
+     After the exit the remaining bytes take the default path (run=false).
+
+   run2 -- the same, started with -nokbdvec (serial/run2-nokbdvec-serial.log)
+     DOOM: -nokbdvec -- keys via the AES (repeat heuristic)
+     UP PRESS 30055, RIGHT PRESS 31540, UP RELEASE 31655 (RIGHT + 115 ms, while
+     UP is still held -- the KEYS01-SEQUENCE-CHECK behaviour), RIGHT RELEASE 33140,
+     no UP press after; taps 100 ms and 40 ms both last 370 ms in DOOM.
+
+   Host checks: method/host-tests.txt (sh sdk/run-host-tests.sh: 13 passed,
+   0 failed, 0 skipped); method/build-doom-nap.log: 82 OK / 0 failed (baseline
+   81 + the new hook file), upstream warnings 1 (= baseline), platform layer
+   and hook no warnings, "kbdvec hook: -mgeneral-regs-only, objdump: 0 FP/SIMD
+   register uses". grep Physbase|Logbase|Setscreen in sdk/apps/doom: 0.
+
+B  O3 -- TT TOS 3.06 (tos306de.rom) HAS kbdvec at Kbdvbase()-4
+   Static (ROM, base $E00000): XBIOS table at $E00E2E; entry $22 (Kbdvbase) at
+   $E03A96 = move.l #$0000106A,d0 / rts; entry $26 (Supexec) = movea.l 4(sp),a0 /
+   jmp (a0) (table identity check). ikbdraw at $E032DA:
+     tst.b $108E.w          (ikbdstate)
+     bne   in_packet
+     cmp.b #$F6,d0
+     bcc   begin_packet
+     move.l $1066.w,-(sp)   <- kbdvec = $106A - 4
+     rts                    (EmuTOS aciavecs.S:407-414, the same rts trick)
+   preceded by cmpa.l #$0ECA,a0 (a0 = the keyboard IOREC).
+   Run time: Hatari 2.6.1 TT ttlow, TOS 3.06, debugger at VBL 300
+   (method/o3-init.ini, o3-dump.ini; hatari/o3-tos306-debugger.log):
+     $1066 = $00E033EA (kbdvec), $106A.. = midivec $E037A0, vkbderr $E032CA, ...
+     $E033EA: move.b $10BB.w,d1 / cmp.b #$2A,d0 / bset #1,d1 ... (shift-state
+     update = TOS 3.06's kbd_int).
+   -> spec docs/api/xbios/22-kbdvbase.md O3 can be closed with this evidence
+      (not edited here).
+
+NOT COVERED
+  Hatari TT (TOS 3.06, EmuTOS) with the m68k DOOM.PRG -- blocked (above).
+  Real Pi 4 (USB-HID) and real TT -- HW acceptance.

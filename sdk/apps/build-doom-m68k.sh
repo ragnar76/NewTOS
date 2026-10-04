@@ -210,6 +210,17 @@ else
     echo "doomgeneric_gem.c" >> "$BUILD/failed.txt"; fail=$((fail+1))
 fi
 
+# The kbdvec hook (TASK/KEYS02): assembly inside, every register preserved;
+# the disassembly is printed for the record.
+e="$OBJ/doomgeneric_gem_kbdvec.err"
+if "$XCC" "${CFLAGS[@]}" -Wall -Wextra "${PLAT_INCS[@]}" \
+        -c "$PORT/doomgeneric_gem_kbdvec.c" -o "$OBJ/doomgeneric_gem_kbdvec.o" 2>"$e"; then
+    ok=$((ok+1))
+    if [ -s "$e" ]; then echo "kbdvec hook warnings:"; sed 's/^/    /' "$e"; else echo "kbdvec hook: -Wall -Wextra clean"; fi
+else
+    echo "doomgeneric_gem_kbdvec.c" >> "$BUILD/failed.txt"; fail=$((fail+1))
+fi
+
 echo "compiled OK=$ok  FAILED=$fail  (upstream files with compiler warnings: $warned, see $OBJ/*.err)"
 if [ "$fail" -ne 0 ]; then
     while IFS= read -r f; do

@@ -1,0 +1,333 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x0000000000320000 (2752512 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01000000+987758592
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=987758592 free=987758592 used=0 largest_free=987758592 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f00 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-04 18:29:48
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01802000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[krp] injector armed at hz_200 3005
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\DOOM\DOOM.NAP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1000
+DOOM: EdDI: format 2, clut 2, 16 planes, bits r/g/b 5/5/5, bit order 0x2
+DOOM: EdDI check: 256 of 256 test colours exact, largest step off r/g/b 0/0/0
+DOOM: keys via kbdvec -- TOS 4.04, Kbdvbase 000009b0, kbdvec was 00000a08
+DOOM: GEM platform up -- 640x480, 16 planes, lookup table no, pixel 278x278 um, stage 2 = 640x480, route EdDI
+                           Doom Generic 0.1
+Z_Init: Init zone memory allocation daemon. 
+zone memory: 0x111960, 200000 allocated for zone
+Using . for configuration and saves
+V_Init: allocate screens.
+M_LoadDefaults: Load system defaults.
+saving config in .default.cfg
+-iwad not specified, trying a few iwad names
+Trying IWAD file:doom2.wad
+Trying IWAD file:plutonia.wad
+Trying IWAD file:tnt.wad
+Trying IWAD file:doom.wad
+Trying IWAD file:doom1.wad
+W_Init: Init WADfiles.
+ adding doom1.wad
+Using ./.savegame/ for savegames
+===========================================================================
+                            DOOM Shareware
+===========================================================================
+ Doom Generic is free software, covered by the GNU General Public
+ License.  There is NO warranty; not even for MERCHANTABILITY or FITNESS
+ FOR A PARTICULAR PURPOSE. You are welcome to change and distribute
+ copies under certain conditions. See the source for more information.
+===========================================================================
+I_Init: Setting up machine state.
+M_Init: Init miscellaneous info.
+R_Init: Init DOOM refresh daemon - ...................
+P_Init: Init Playloop state.
+S_Init: Setting up sound.
+D_CheckNetGame: Checking network game status.
+startskill 2  deathmatch: 0  startmap: 1  startepisode: 1
+player 1 of 1 (1 nodes)
+Emulating the behavior of the 'Doom 1.9' executable.
+HU_Init: Setting up heads up display.
+ST_Init: Init status bar.
+DOOM: DOOM Shareware
+I_InitGraphics: framebuffer: x_res: 320, y_res: 200, x_virtual: 320, y_virtual: 200, bpp: 8
+I_InitGraphics: framebuffer: RGBA: 0000, red_off: 0, green_off: 0, blue_off: 0, transp_off: 0
+I_InitGraphics: DOOM screen size: w x h: 320 x 200
+I_InitGraphics: Auto-scaling factor: 1
+DOOM: picture 640x480 at (0,0) VERIFIED via EdDI+scale+vro_cpyfm
+[krp] feed 0x48 at hz_200 6005 (+3000) run=true
+[krp] ring <- 0x48 at hz_200 6005
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0x48 -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0x48 at hz_200 6005
+[krp] push_rx 0x4800 at hz_200 6005
+[krp] rx_pop_key 0x4800 at hz_200 6009
+K02 byte 48 at 30045 ms
+K02 put PRESS key 173 at 30045 ms
+[krp] push_rx 0x4800 at hz_200 6064
+[krp] rx_pop_key 0x4800 at hz_200 6066
+[krp] push_rx 0x4800 at hz_200 6072
+[krp] rx_pop_key 0x4800 at hz_200 6072
+[krp] push_rx 0x4800 at hz_200 6080
+[krp] rx_pop_key 0x4800 at hz_200 6083
+[krp] push_rx 0x4800 at hz_200 6088
+[krp] rx_pop_key 0x4800 at hz_200 6089
+[krp] push_rx 0x4800 at hz_200 6096
+[krp] rx_pop_key 0x4800 at hz_200 6100
+[krp] push_rx 0x4800 at hz_200 6104
+[krp] rx_pop_key 0x4800 at hz_200 6106
+[krp] push_rx 0x4800 at hz_200 6112
+[krp] rx_pop_key 0x4800 at hz_200 6112
+[krp] push_rx 0x4800 at hz_200 6120
+[krp] rx_pop_key 0x4800 at hz_200 6123
+[krp] push_rx 0x4800 at hz_200 6128
+[krp] rx_pop_key 0x4800 at hz_200 6129
+[krp] push_rx 0x4800 at hz_200 6136
+[krp] rx_pop_key 0x4800 at hz_200 6140
+[krp] push_rx 0x4800 at hz_200 6144
+[krp] rx_pop_key 0x4800 at hz_200 6146
+[krp] push_rx 0x4800 at hz_200 6152
+[krp] rx_pop_key 0x4800 at hz_200 6152
+[krp] push_rx 0x4800 at hz_200 6160
+[krp] rx_pop_key 0x4800 at hz_200 6163
+[krp] push_rx 0x4800 at hz_200 6168
+[krp] rx_pop_key 0x4800 at hz_200 6169
+[krp] push_rx 0x4800 at hz_200 6176
+[krp] rx_pop_key 0x4800 at hz_200 6180
+[krp] push_rx 0x4800 at hz_200 6184
+[krp] rx_pop_key 0x4800 at hz_200 6186
+[krp] push_rx 0x4800 at hz_200 6192
+[krp] rx_pop_key 0x4800 at hz_200 6192
+[krp] push_rx 0x4800 at hz_200 6200
+[krp] rx_pop_key 0x4800 at hz_200 6203
+[krp] push_rx 0x4800 at hz_200 6208
+[krp] rx_pop_key 0x4800 at hz_200 6209
+[krp] push_rx 0x4800 at hz_200 6216
+[krp] rx_pop_key 0x4800 at hz_200 6220
+[krp] push_rx 0x4800 at hz_200 6224
+[krp] rx_pop_key 0x4800 at hz_200 6226
+[krp] push_rx 0x4800 at hz_200 6232
+[krp] rx_pop_key 0x4800 at hz_200 6232
+[krp] push_rx 0x4800 at hz_200 6240
+[krp] rx_pop_key 0x4800 at hz_200 6243
+[krp] push_rx 0x4800 at hz_200 6248
+[krp] rx_pop_key 0x4800 at hz_200 6249
+[krp] push_rx 0x4800 at hz_200 6256
+[krp] rx_pop_key 0x4800 at hz_200 6260
+[krp] push_rx 0x4800 at hz_200 6264
+[krp] rx_pop_key 0x4800 at hz_200 6266
+[krp] push_rx 0x4800 at hz_200 6272
+[krp] rx_pop_key 0x4800 at hz_200 6272
+[krp] push_rx 0x4800 at hz_200 6280
+[krp] rx_pop_key 0x4800 at hz_200 6283
+[krp] push_rx 0x4800 at hz_200 6288
+[krp] rx_pop_key 0x4800 at hz_200 6289
+[krp] push_rx 0x4800 at hz_200 6296
+[krp] rx_pop_key 0x4800 at hz_200 6300
+[krp] push_rx 0x4800 at hz_200 6304
+[krp] feed 0x4d at hz_200 6305 (+3300) run=true
+[krp] ring <- 0x4d at hz_200 6305
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0x4d -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0x4d at hz_200 6305
+[krp] push_rx 0x4d00 at hz_200 6305
+[krp] rx_pop_key 0x4800 at hz_200 6306
+[krp] rx_pop_key 0x4d00 at hz_200 6306
+K02 byte 4d at 31530 ms
+K02 put PRESS key 174 at 31530 ms
+[krp] push_rx 0x4d00 at hz_200 6364
+[krp] rx_pop_key 0x4d00 at hz_200 6369
+[krp] push_rx 0x4d00 at hz_200 6372
+[krp] rx_pop_key 0x4d00 at hz_200 6375
+[krp] push_rx 0x4d00 at hz_200 6380
+[krp] rx_pop_key 0x4d00 at hz_200 6380
+[krp] push_rx 0x4d00 at hz_200 6390
+[krp] rx_pop_key 0x4d00 at hz_200 6392
+[krp] push_rx 0x4d00 at hz_200 6396
+[krp] rx_pop_key 0x4d00 at hz_200 6397
+[krp] push_rx 0x4d00 at hz_200 6405
+[krp] rx_pop_key 0x4d00 at hz_200 6409
+[krp] push_rx 0x4d00 at hz_200 6412
+[krp] rx_pop_key 0x4d00 at hz_200 6415
+[krp] push_rx 0x4d00 at hz_200 6420
+[krp] rx_pop_key 0x4d00 at hz_200 6420
+[krp] push_rx 0x4d00 at hz_200 6428
+[krp] rx_pop_key 0x4d00 at hz_200 6432
+[krp] push_rx 0x4d00 at hz_200 6436
+[krp] rx_pop_key 0x4d00 at hz_200 6437
+[krp] push_rx 0x4d00 at hz_200 6444
+[krp] rx_pop_key 0x4d00 at hz_200 6449
+[krp] push_rx 0x4d00 at hz_200 6452
+[krp] rx_pop_key 0x4d00 at hz_200 6455
+[krp] push_rx 0x4d00 at hz_200 6460
+[krp] rx_pop_key 0x4d00 at hz_200 6460
+[krp] push_rx 0x4d00 at hz_200 6468
+[krp] rx_pop_key 0x4d00 at hz_200 6472
+[krp] push_rx 0x4d00 at hz_200 6476
+[krp] rx_pop_key 0x4d00 at hz_200 6477
+[krp] push_rx 0x4d00 at hz_200 6484
+[krp] rx_pop_key 0x4d00 at hz_200 6489
+[krp] push_rx 0x4d00 at hz_200 6492
+[krp] rx_pop_key 0x4d00 at hz_200 6495
+[krp] push_rx 0x4d00 at hz_200 6500
+[krp] rx_pop_key 0x4d00 at hz_200 6500
+[krp] push_rx 0x4d00 at hz_200 6508
+[krp] rx_pop_key 0x4d00 at hz_200 6512
+[krp] push_rx 0x4d00 at hz_200 6516
+[krp] rx_pop_key 0x4d00 at hz_200 6517
+[krp] push_rx 0x4d00 at hz_200 6524
+[krp] rx_pop_key 0x4d00 at hz_200 6529
+[krp] push_rx 0x4d00 at hz_200 6532
+[krp] rx_pop_key 0x4d00 at hz_200 6535
+[krp] push_rx 0x4d00 at hz_200 6540
+[krp] rx_pop_key 0x4d00 at hz_200 6540
+[krp] push_rx 0x4d00 at hz_200 6548
+[krp] rx_pop_key 0x4d00 at hz_200 6552
+[krp] push_rx 0x4d00 at hz_200 6556
+[krp] rx_pop_key 0x4d00 at hz_200 6557
+[krp] push_rx 0x4d00 at hz_200 6565
+[krp] rx_pop_key 0x4d00 at hz_200 6569
+[krp] push_rx 0x4d00 at hz_200 6572
+[krp] rx_pop_key 0x4d00 at hz_200 6575
+[krp] push_rx 0x4d00 at hz_200 6580
+[krp] rx_pop_key 0x4d00 at hz_200 6580
+[krp] push_rx 0x4d00 at hz_200 6588
+[krp] rx_pop_key 0x4d00 at hz_200 6592
+[krp] push_rx 0x4d00 at hz_200 6596
+[krp] rx_pop_key 0x4d00 at hz_200 6597
+[krp] push_rx 0x4d00 at hz_200 6604
+[krp] feed 0xcd at hz_200 6605 (+3600) run=true
+[krp] ring <- 0xcd at hz_200 6605
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0xcd -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0xcd at hz_200 6605
+[krp] rx_pop_key 0x4d00 at hz_200 6609
+K02 byte cd at 33045 ms
+K02 put RELEASE key 174 at 33045 ms
+[krp] feed 0xc8 at hz_200 7005 (+4000) run=true
+[krp] ring <- 0xc8 at hz_200 7005
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0xc8 -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0xc8 at hz_200 7005
+K02 byte c8 at 35045 ms
+K02 put RELEASE key 173 at 35050 ms
+[krp] feed 0x4b at hz_200 7405 (+4400) run=true
+[krp] ring <- 0x4b at hz_200 7405
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0x4b -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0x4b at hz_200 7405
+[krp] push_rx 0x4b00 at hz_200 7405
+[krp] rx_pop_key 0x4b00 at hz_200 7409
+K02 byte 4b at 37045 ms
+K02 put PRESS key 172 at 37045 ms
+[krp] feed 0xcb at hz_200 7425 (+4420) run=true
+[krp] ring <- 0xcb at hz_200 7425
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0xcb -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0xcb at hz_200 7425
+K02 byte cb at 37130 ms
+K02 put RELEASE key 172 at 37130 ms
+[krp] feed 0x4b at hz_200 7605 (+4600) run=true
+[krp] ring <- 0x4b at hz_200 7605
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0x4b -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0x4b at hz_200 7605
+[krp] push_rx 0x4b00 at hz_200 7605
+[krp] rx_pop_key 0x4b00 at hz_200 7609
+K02 byte 4b at 38045 ms
+K02 put PRESS key 172 at 38050 ms
+[krp] feed 0xcb at hz_200 7613 (+4608) run=true
+[krp] ring <- 0xcb at hz_200 7613
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0xcb -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0xcb at hz_200 7613
+K02 byte cb at 38075 ms
+K02 put RELEASE key 172 at 38075 ms
+[krp] feed 0x44 at hz_200 8005 (+5000) run=true
+[krp] ring <- 0x44 at hz_200 8005
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0x44 -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0x44 at hz_200 8005
+[krp] push_rx 0x4400 at hz_200 8005
+[krp] rx_pop_key 0x4400 at hz_200 8009
+K02 byte 44 at 40045 ms
+K02 put PRESS key 196 at 40045 ms
+[krp] feed 0xc4 at hz_200 8015 (+5010) run=true
+[krp] ring <- 0xc4 at hz_200 8015
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0xc4 -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0xc4 at hz_200 8015
+K02 byte c4 at 40075 ms
+K02 put RELEASE key 196 at 40075 ms
+[krp] feed 0x15 at hz_200 8405 (+5400) run=true
+[krp] ring <- 0x15 at hz_200 8405
+[krp] restart svc at 0x43070 x8=0x0 x0=200
+[krp] kbdvec upcall 0x15 -> 0x6ef8 elr=0x43070
+[krp] kbd_int 0x15 at hz_200 8405
+[krp] push_rx 0x1579 at hz_200 8405
+[krp] rx_pop_key 0x1579 at hz_200 8409
+K02 byte 15 at 42045 ms
+K02 put PRESS key 121 at 42045 ms
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> slot 2
+[sched] running
+[launch] returned (program Pterm'd)
+[shell] sh_ldapp: 'C:\DOOM\DOOM.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[krp] feed 0x95 at hz_200 8415 (+5410) run=false
+[desk] desktop up (1 drives, 0 window(s) from the context)
+[krp] feed 0x2c at hz_200 8505 (+5500) run=false
+[krp] push_rx 0x2c7a at hz_200 8505
+[krp] rx_pop_key 0x2c7a at hz_200 8505
+[krp] feed 0xac at hz_200 8515 (+5510) run=false
+[krp] feed 0x38 at hz_200 10005 (+7000) run=false
+[krp] feed 0x2e at hz_200 10015 (+7010) run=false
+[krp] push_rx 0x2e00 at hz_200 10015
+[krp] rx_pop_key 0x2e00 at hz_200 10015
+[krp] feed 0xae at hz_200 10043 (+7038) run=false
+[krp] feed 0xb8 at hz_200 10043 (+7038) run=false

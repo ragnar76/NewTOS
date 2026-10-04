@@ -170,6 +170,27 @@ else
     echo "doomgeneric_gem.c" >> "$BUILD/failed.txt"; fail=$((fail+1))
 fi
 
+# The kbdvec hook (TASK/KEYS02): its own file, compiled with
+# -mgeneral-regs-only -- the kernel delivers it as an EL0 upcall that saves no
+# FP/SIMD registers (docs/api/xbios/22-kbdvbase.md C3) -- and the object is
+# checked for any v/q/d/s/h/b register all the same.
+e="$OBJ/doomgeneric_gem_kbdvec.err"
+if "$CLANG" "${CFLAGS[@]}" -mgeneral-regs-only -Wall -Wextra "${PLAT_INCS[@]}" \
+        -c "$PORT/doomgeneric_gem_kbdvec.c" -o "$OBJ/doomgeneric_gem_kbdvec.o" 2>"$e"; then
+    ok=$((ok+1))
+    if [ -s "$e" ]; then echo "kbdvec hook warnings:"; sed 's/^/    /' "$e"; fi
+    fpsimd=$("$BIN/llvm-objdump" -d --no-show-raw-insn "$OBJ/doomgeneric_gem_kbdvec.o" \
+        | grep -E '^[[:space:]]+[0-9a-f]+:' | grep -cE '[[:space:],\[]([vqdsbh][0-9]+|fpcr|fpsr)\b' || true)
+    if [ "$fpsimd" -ne 0 ]; then
+        echo "STOP: the kbdvec hook uses FP/SIMD registers ($fpsimd instructions):"
+        "$BIN/llvm-objdump" -d "$OBJ/doomgeneric_gem_kbdvec.o" | sed 's/^/    /'
+        exit 1
+    fi
+    echo "kbdvec hook: -mgeneral-regs-only, objdump: 0 FP/SIMD register uses"
+else
+    echo "doomgeneric_gem_kbdvec.c" >> "$BUILD/failed.txt"; fail=$((fail+1))
+fi
+
 echo "compiled OK=$ok  FAILED=$fail  (upstream files with compiler warnings: $warned, see $OBJ/*.err)"
 if [ "$fail" -ne 0 ]; then
     while IFS= read -r f; do

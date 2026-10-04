@@ -196,15 +196,52 @@
  * nothing here looks at what the bytes mean, so byte order does not matter.
  *
  *
- * INPUT
- * -----
- * The AES: evnt_multi(MU_KEYBD | MU_TIMER) with a zero timer, which is a
- * poll. The modifier state comes with every event (kstate), so SHIFT (run),
- * CONTROL (fire) and ALTERNATE (strafe) are true held keys. Ordinary keys
- * deliver presses only -- TOS has no key-up event outside the IKBD packet
- * vector -- so a key counts as held while its keyboard auto-repeat keeps
- * arriving and is released when the repeat stops; the timeouts come from the
- * keyboard's own repeat rate (XBIOS Kbrate). See key_poll().
+ * INPUT (TASK/KEYS02)
+ * -------------------
+ * TOS tells a program when a key goes down (GEMDOS, BIOS, AES), never when
+ * it comes up. The one place that sees both is the IKBD keyboard vector
+ * `kbdvec`, the slot right before the table XBIOS Kbdvbase() returns
+ * (docs/api/xbios/22-kbdvbase.md A2, A4: every keyboard byte, bit 7 = break).
+ * So DOOM hooks it:
+ *
+ *   * kbdvec route (the normal one). At DG_Init the hook
+ *     (doomgeneric_gem_kbdvec.c) goes into the slot. It records each make
+ *     and break byte in a small ring and chains to the previous vector, so
+ *     the BIOS queue, Kbshift and the AES go on as before (A6.3). DG_GetKey
+ *     turns the bytes into presses and releases with the real timing: a key
+ *     is down from its make to its break, however many other keys come and
+ *     go meanwhile, and a tap is a press and a release as far apart as the
+ *     finger was. Scancode to DOOM key: the special keys by scancode, every
+ *     other key by the character Keytbl()'s unshifted table gives it, so the
+ *     keyboard's own layout still decides which key is 'y'. The AES keyboard
+ *     events the chained vector still produces are read and dropped, so they
+ *     do not pile up for whoever owns the keyboard after DOOM.
+ *     The hook comes out again on every way out: atexit() (a normal quit,
+ *     I_Error -- both end in exit()), and on a 680x0 also etv_term, which
+ *     TOS runs on every Pterm, crashes included (doomgeneric_gem_kbdvec.h).
+ *     On NewTOS the hook ends with the process anyway (22-kbdvbase.md C5).
+ *
+ *   * AES route (the fallback). evnt_multi(MU_KEYBD | MU_TIMER) with a zero
+ *     timer, which is a poll. The modifier state comes with every event
+ *     (kstate), so SHIFT (run), CONTROL (fire) and ALTERNATE (strafe) are
+ *     true held keys. Ordinary keys deliver presses only, so a key counts as
+ *     held while its keyboard auto-repeat keeps arriving and is released when
+ *     the repeat stops; the timeouts come from the keyboard's own repeat rate
+ *     (XBIOS Kbrate). Only the last key pressed repeats (EmuTOS bios/ikbd.c
+ *     :399-423), so a held key "comes up" when a second one goes down
+ *     (TASK/KEYS01-SEQUENCE-CHECK.MD) -- the reason the kbdvec route exists.
+ *
+ * Which route: the kbdvec route needs TOS 2.00 or later -- "TOS < 2.00 doesn't
+ * know about this vector" -- or EmuTOS, the rule FreeMiNT applies to the OS
+ * header (references/freemint/sys/keyboard.c:1938-1941 `has_kbdvec`, version
+ * and 'ETOS' read in sys/init.c:386-401); NewTOS reports 4.04 there
+ * (kernel/src/selftest_sysvars.rs) and has the vector since KEYS02
+ * (22-kbdvbase.md C). A kbdvec slot that holds 0, or no Keytbl, also means
+ * the AES route. A start with -nokbdvec takes the AES route on purpose, for
+ * comparison. The choice is printed on the console. Not handled: FireTOS
+ * and CT60 TOS 2.xx, whose ikbdsys never calls kbdvec (freemint sys/arch/
+ * init_intr.c:104-111) -- there a hooked DOOM gets no keys from the hook;
+ * start it with -nokbdvec.
  *
  *
  * TIME
@@ -429,6 +466,7 @@ static void c2p_row(const uint8_t *src, int n, uint16_t *dst, long ps, long gs)
 #include "m_argv.h"
 #include "i_video.h"		/* colors[], palette_changed (CMAP256) */
 #include "i_system.h"		/* I_Error */
+#include "doomgeneric_gem_kbdvec.h"
 
 #ifndef CMAP256
 #error "doomgeneric_gem.c serves the CMAP256 build only (8-bit palette picture)"
@@ -1607,34 +1645,11 @@ void DG_DrawFrame(void)
 
 static uint16_t keyq[KEYQ_SIZE];	/* (pressed << 8) | doom key */
 static unsigned keyq_r, keyq_w;
+static int polled;			/* one poll per I_GetEvent pass */
 
-static struct {
-	unsigned char key;
-	uint32_t last;			/* ms of the last press/repeat */
-	int repeated;
-} held[MAX_HELD];
-static int nheld;
-
-static short mods;			/* last kstate seen */
-static uint32_t hold_first_ms, hold_repeat_ms;
-static int polled;			/* one AES poll per I_GetEvent pass */
-
-static void key_init(void)
-{
-	long rate = (long)Kbrate(-1, -1);	/* query: (delay << 8) | repeat */
-	int delay = (int)((rate >> 8) & 0xff);
-	int repeat = (int)(rate & 0xff);
-
-	/* Kbrate counts in 50 Hz ticks (20 ms). A rate of zero would mean no
-	 * repeat at all; take the TOS defaults then. The margin covers the
-	 * time between two of our polls (one game tic, 29 ms) twice over. */
-	if (delay <= 0)
-		delay = 15;
-	if (repeat <= 0)
-		repeat = 2;
-	hold_first_ms = (uint32_t)delay * 20u + 60u;
-	hold_repeat_ms = (uint32_t)repeat * 20u + 60u;
-}
+#define KBD_AES		0		/* the fallback: AES + repeat heuristic */
+#define KBD_VEC		1		/* the kbdvec hook */
+static int kbd_route;
 
 static void keyq_put(int pressed, unsigned char key)
 {
@@ -1644,12 +1659,10 @@ static void keyq_put(int pressed, unsigned char key)
 	keyq_w = (keyq_w + 1) % KEYQ_SIZE;
 }
 
-/* AES key word (scancode << 8 | ASCII) to a DOOM key; 0 = not used. */
-static unsigned char map_key(short kc)
+/* IKBD scancode (+ the character it stands for) to a DOOM key; 0 = not
+ * used. The same table on both routes. */
+static unsigned char map_key(int scan, int ascii)
 {
-	int scan = (kc >> 8) & 0xff;
-	int ascii = kc & 0xff;
-
 	switch (scan) {
 	case 0x01: return KEY_ESCAPE;
 	case 0x0e: return KEY_BACKSPACE;
@@ -1681,6 +1694,233 @@ static unsigned char map_key(short kc)
 	return 0;
 }
 
+/* ---- the kbdvec route ----------------------------------------------------- */
+
+#define SC_CTRL		0x1d
+#define SC_LSHIFT	0x2a
+#define SC_RSHIFT	0x36
+#define SC_ALT		0x38
+
+static const unsigned char *kbd_unshift;	/* Keytbl: scancode -> char */
+static unsigned char sc_down[128];		/* make seen, break not yet */
+static kbdslot_t *kbd_slot_want;		/* Supexec arguments ... */
+static unsigned kbd_tos_version;		/* ... and results */
+static int kbd_emutos;
+static int kbd_installed;
+
+/* A 32-bit OS-header cell at any (even) address, in the CPU's own order:
+ * the header is the CPU's own data on both machines, and 0x4f2 is not
+ * 4-byte aligned. */
+static uint32_t rd32(uintptr_t a)
+{
+	uint32_t v;
+
+	memcpy(&v, (const void *)a, sizeof(v));
+	return v;
+}
+
+/*
+ * Supexec: the OS version, the way FreeMiNT reads it (sys/init.c:386-401):
+ * _sysbase (0x4f2) -> OSHEADER, its os_beg (+0x08) -> the ROM's header,
+ * os_version (+0x02), p_rsv2 (+0x2c) == 'ETOS' on EmuTOS. On a 680x0 the
+ * low-memory read needs the supervisor mode; on NewTOS the sysvar page is
+ * the program's own and Supexec is a plain call (mintlib osbind.h Supexec).
+ * Offsets, not mintlib's OSHEADER: that struct has pointer members, which
+ * are 8 bytes wide on LP64.
+ */
+static long kbd_probe(void)
+{
+	uintptr_t h = (uintptr_t)rd32(0x4f2);
+
+	h = (uintptr_t)rd32(h + 0x08);
+	kbd_tos_version = *(const volatile uint16_t *)(h + 0x02);
+	kbd_emutos = rd32(h + 0x2c) == 0x45544f53UL;	/* 'ETOS' */
+	return 0;
+}
+
+/* Supexec: put the hook in. Nothing else writes the slot, and each access
+ * is one store, so no interrupt can see half a pointer. On a 680x0 the
+ * etv_term handler goes in first, so the hook is never in without it. */
+static long kbd_install(void)
+{
+	kbdslot_t old = *kbd_slot_want;
+
+	if (old == 0)
+		return -1;			/* no vector to chain to: unusable */
+	kbdvec_old = old;
+	kbdvec_r = kbdvec_w = 0;
+	kbdvec_slot = kbd_slot_want;
+#ifdef __m68k__
+	kbdvec_etv_old = *(volatile kbdslot_t *)0x408;
+	*(volatile kbdslot_t *)0x408 = (kbdslot_t)kbdvec_etv_term;
+#endif
+	*kbd_slot_want = (kbdslot_t)kbdvec_hook;
+	return 0;
+}
+
+/* Supexec: take the hook out -- only if the slot still holds it; a program
+ * that hooked in after DOOM chains to DOOM and would be cut off. Then
+ * etv_term likewise. */
+static long kbd_remove(void)
+{
+	kbdslot_t *slot = kbdvec_slot;
+
+	if (slot && *slot == (kbdslot_t)kbdvec_hook)
+		*slot = kbdvec_old;
+	kbdvec_slot = 0;
+#ifdef __m68k__
+	if (*(volatile kbdslot_t *)0x408 == (kbdslot_t)kbdvec_etv_term)
+		*(volatile kbdslot_t *)0x408 = kbdvec_etv_old;
+#endif
+	return 0;
+}
+
+static void kbd_close(void)
+{
+	if (kbd_installed) {
+		(void)Supexec(kbd_remove);
+		kbd_installed = 0;
+	}
+}
+
+/* The kbdvec route if this TOS has the vector (see INPUT), else 0. */
+static int kbd_open(void)
+{
+	kbdslot_t *table;
+	_KEYTAB *kt;
+
+	if (M_CheckParm("-nokbdvec") > 0) {
+		printf("DOOM: -nokbdvec -- keys via the AES (repeat heuristic)\n");
+		return 0;
+	}
+	(void)Supexec(kbd_probe);
+	if (kbd_tos_version < 0x200 && !kbd_emutos) {
+		printf("DOOM: TOS %x.%02x has no kbdvec (needs 2.00) -- keys via "
+		       "the AES (repeat heuristic)\n", kbd_tos_version >> 8,
+		       kbd_tos_version & 0xff);
+		return 0;
+	}
+	kt = (_KEYTAB *)Keytbl(-1L, -1L, -1L);
+	table = (kbdslot_t *)Kbdvbase();
+	if (kt == NULL || kt->unshift == NULL || table == NULL) {
+		printf("DOOM: no Keytbl/Kbdvbase -- keys via the AES (repeat "
+		       "heuristic)\n");
+		return 0;
+	}
+	kbd_unshift = (const unsigned char *)kt->unshift;
+	kbd_slot_want = table - 1;		/* kbdvec: the slot before */
+	if (Supexec(kbd_install) != 0) {
+		printf("DOOM: Kbdvbase %08lx: kbdvec slot is 0 -- keys via the "
+		       "AES (repeat heuristic)\n", (unsigned long)table);
+		return 0;
+	}
+	kbd_installed = 1;
+	atexit(kbd_close);
+	printf("DOOM: keys via kbdvec -- TOS %x.%02x%s, Kbdvbase %08lx, "
+	       "kbdvec was %08lx\n", kbd_tos_version >> 8,
+	       kbd_tos_version & 0xff, kbd_emutos ? " (EmuTOS)" : "",
+	       (unsigned long)table, (unsigned long)kbdvec_old);
+	return 1;
+}
+
+/* SHIFT, CONTROL, ALTERNATE: DOOM's run, fire and strafe. Either shift key
+ * is "shift"; the DOOM key is down while either is. */
+static int mod_key(int scan, unsigned char *key, int *down)
+{
+	switch (scan) {
+	case SC_LSHIFT:
+	case SC_RSHIFT:
+		*key = KEY_RSHIFT;
+		*down = sc_down[SC_LSHIFT] || sc_down[SC_RSHIFT];
+		return 1;
+	case SC_CTRL:
+		*key = KEY_FIRE;
+		*down = sc_down[SC_CTRL];
+		return 1;
+	case SC_ALT:
+		*key = KEY_LALT;
+		*down = sc_down[SC_ALT];
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static void vec_byte(unsigned char b)
+{
+	int scan = b & 0x7f, make = !(b & 0x80), was, now;
+	unsigned char k;
+
+	/* A make of a key that is down, or a break of one that is up (held
+	 * before DOOM started), changes nothing. */
+	if ((sc_down[scan] != 0) == make)
+		return;
+	if (mod_key(scan, &k, &was)) {
+		sc_down[scan] = (unsigned char)make;
+		(void)mod_key(scan, &k, &now);
+		if (now != was)
+			keyq_put(now, k);
+		return;
+	}
+	sc_down[scan] = (unsigned char)make;
+	k = map_key(scan, kbd_unshift[scan]);
+	if (k != 0)
+		keyq_put(make, k);
+}
+
+static void vec_poll(void)
+{
+	short msg[8], mx, my, mb, ks, kc, br;
+	int ev, guard = 32;
+
+	/* Read the AES keyboard events the chained vector produced, and drop
+	 * them. On NewTOS this call is also where the hook runs: a pending
+	 * kbdvec upcall is delivered when a syscall returns (22-kbdvbase.md
+	 * C3). */
+	do {
+		ev = evnt_multi(MU_KEYBD | MU_TIMER, 0, 0, 0,
+				0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+				msg, 0UL, &mx, &my, &mb, &ks, &kc, &br);
+	} while ((ev & MU_KEYBD) && --guard > 0);
+
+	while (kbdvec_r != kbdvec_w) {
+		unsigned char r = kbdvec_r;
+		unsigned char b = kbdvec_ring[r];		/* the byte first */
+
+		kbdvec_r = (unsigned char)((r + 1) & (KBDVEC_RING - 1));	/* then free it */
+		vec_byte(b);
+	}
+}
+
+/* ---- the AES route (fallback) --------------------------------------------- */
+
+static struct {
+	unsigned char key;
+	uint32_t last;			/* ms of the last press/repeat */
+	int repeated;
+} held[MAX_HELD];
+static int nheld;
+
+static short mods;			/* last kstate seen */
+static uint32_t hold_first_ms, hold_repeat_ms;
+
+static void aes_key_init(void)
+{
+	long rate = (long)Kbrate(-1, -1);	/* query: (delay << 8) | repeat */
+	int delay = (int)((rate >> 8) & 0xff);
+	int repeat = (int)(rate & 0xff);
+
+	/* Kbrate counts in 50 Hz ticks (20 ms). A rate of zero would mean no
+	 * repeat at all; take the TOS defaults then. The margin covers the
+	 * time between two of our polls (one game tic, 29 ms) twice over. */
+	if (delay <= 0)
+		delay = 15;
+	if (repeat <= 0)
+		repeat = 2;
+	hold_first_ms = (uint32_t)delay * 20u + 60u;
+	hold_repeat_ms = (uint32_t)repeat * 20u + 60u;
+}
+
 static void mod_edge(short now, short mask, unsigned char key)
 {
 	if ((now & mask) && !(mods & mask))
@@ -1689,7 +1929,7 @@ static void mod_edge(short now, short mask, unsigned char key)
 		keyq_put(0, key);
 }
 
-static void key_poll(void)
+static void aes_poll(void)
 {
 	short msg[8], mx, my, mb, ks = 0, kc, br;
 	uint32_t now;
@@ -1701,7 +1941,7 @@ static void key_poll(void)
 				msg, 0UL, &mx, &my, &mb, &ks, &kc, &br);
 		now = DG_GetTicksMs();
 		if (ev & MU_KEYBD) {
-			unsigned char k = map_key(kc);
+			unsigned char k = map_key((kc >> 8) & 0xff, kc & 0xff);
 
 			if (k == 0)
 				continue;
@@ -1743,6 +1983,23 @@ static void key_poll(void)
 			i++;
 		}
 	}
+}
+
+/* ---- both ------------------------------------------------------------------ */
+
+static void key_init(void)
+{
+	kbd_route = kbd_open() ? KBD_VEC : KBD_AES;
+	if (kbd_route == KBD_AES)
+		aes_key_init();
+}
+
+static void key_poll(void)
+{
+	if (kbd_route == KBD_VEC)
+		vec_poll();
+	else
+		aes_poll();
 }
 
 int DG_GetKey(int *pressed, unsigned char *key)

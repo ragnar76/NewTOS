@@ -1,0 +1,3 @@
+m68k-atari-mint-gcc 7.5.0 -m68030 -m68881 -O2 -fomit-frame-pointer -Wall -Wextra -S (cc1 only; as/ld hang on this host)
+doomgeneric_gem.c: -S OK, 0 warnings
+doomgeneric_gem_kbdvec.c: -S OK, 0 warnings (top-level asm text NOT assembled)
