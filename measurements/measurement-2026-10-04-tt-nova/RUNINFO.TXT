@@ -1,0 +1,18 @@
+TT mit NOVA -- Messung des Anwenders am echten Geraet, 2026-10-04
+====================================================================
+Maschine: Atari TT, 68030 auf 48 MHz, Systembus 16 MHz, TOS 3.06, NOVA-Karte
+(Cookies NOVA, IMNE, VSCR, EdDI; KEIN NVDI-Cookie). Uhr nicht gestellt (1989).
+Dateien von der TT-Karte (TOOLS\DOOM) unveraendert kopiert:
+
+  SCRNINFO.TXT  SCRNINFO.TTP (tosdump, build 1f6d), NOVA 640x480, 256 Farben
+  DOOMSTAT.TXT  DOOMSTAT.PRG (sha256 3bdf7333...), DOOM_STATS=5, -mb 6
+
+Kernaussagen:
+- EdDI vorhanden, Dispatcher Opcode 0 -> 0x0110 (EdDI 1.10; Spec-Annahme bestaetigt).
+- vq_scrninfo: format 2 (gepackt), clut 1, 8 planes, 256 Farben, Zeile 640 Byte,
+  [6/7] = 0xFEC0/0x0000 (Bildspeicheradresse der Karte), Bits 8/8/8 (DAC).
+  [16..271] Pixelwert je VDI-Stift: Stift 0 -> 0, Stift 1 -> 255, 2 -> 1 ... (wie
+  im v_get_pixel-Abgleich unter "4. PIXELS").
+- Doom nahm den EdDI-Weg (8 Bit gepackt), Stufe 2 = 640x480. Kosten je Bild:
+  build 34,5 ms, scale 81,5 ms, vro_cpyfm 82,7 ms = 198,7 ms Ausgabe;
+  2,4-4,1 fps. vro_cpyfm 307 KB in 82,7 ms = ~3,7 MB/s ueber die NOVA.

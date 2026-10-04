@@ -1,0 +1,11 @@
+DOOM: arguments:  -mb 6
+DOOM: EdDI: format 2, clut 1, 8 planes, bits r/g/b 8/8/8, bit order 0x0
+DOOM: EdDI check: 256 pens read back as listed
+DOOM: keys via kbdvec -- TOS 3.06, Kbdvbase 0000106a, kbdvec was 00e033ea
+DOOM: GEM platform up -- 640x480, 8 planes, lookup table yes, pixel 278x278 um, stage 2 = 640x480, route EdDI
+DOOM: DOOM Shareware
+DOOM: picture 640x480 at (0,0) VERIFIED via EdDI+scale+vro_cpyfm
+DOOM: per frame, EdDI, stage 2 640x480: build 34482 us, vr_trnfm 0 us, scale 81538 us, vro_cpyfm 82692 us, sum 198712 us
+DOOM x2 EdDI: 21 frames/5140 ms = 4.08 fps, 244.76 ms/frame, 1 pal
+DOOM x2 EdDI: 18 frames/5175 ms = 3.47 fps, 287.50 ms/frame, 1 pal
+DOOM x2 EdDI: 13 frames/5385 ms = 2.41 fps, 414.23 ms/frame, 1 pal
