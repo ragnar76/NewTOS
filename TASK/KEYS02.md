@@ -1,6 +1,6 @@
 # KEYS02 — Tastaturvektor (`Kbdvbase` / `kbdvec` / `ikbdsys`) fuer Programme (Luecke K4)
 
-Status: **ERLEDIGT** (2026-10-04, [Statusdatei](KEYS02-STATUS-DONE.MD); QEMU + Hatari bestanden, Pi/TT-Abnahme offen) · Prioritaet: **P1** (Anwender 2026-10-04: „B richtig") · Typ: Fehlende TOS-Funktion — aus [KEYS01](KEYS01.md) / [PORT06](PORT06.md)
+Status: **ERLEDIGT — Pi-Abnahme 2026-10-04** ([Statusdatei](KEYS02-STATUS-DONE.MD); TT in Hatari bestanden) · Prioritaet: **P1** (Anwender 2026-10-04: „B richtig") · Typ: Fehlende TOS-Funktion — aus [KEYS01](KEYS01.md) / [PORT06](PORT06.md)
 
 Abhaengigkeiten: [KEYS01](KEYS01.md) (Tastenwiederholung, erledigt)
 

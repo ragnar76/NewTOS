@@ -14,7 +14,7 @@ nichts darf haengen, sichtbare Fehler gehen vor Konformitaet
 **Auf echter Pi 4 abgenommen:** Boot, Desktop, TeraDesk (Start und sauberes
 Beenden), QED aus TeraDesk heraus, EmuCON, **USB-Maus samt Mausrad**,
 Dateikopieren ueber Partitionsgrenzen (FS04: 2182 → 467 ms), seit 2026-10-03 Doom (40–75 fps) und Tastenwiederholung, seit 2026-09-30
-der `.NTP`-Parameterdialog (DESK47); seit 2026-10-01 die vier nativen
+der `.NTP`-Parameterdialog (DESK47); seit 2026-10-04 Doom mit exakter Tastatur ueber `kbdvec` (KEYS02) und das Fensteroeffnen ueber `do_wopen`/`do_diropen` (DESK50); seit 2026-10-01 die vier nativen
 Endungen aus TeraDesk heraus (DESK41).
 
 **Kein P1 offen.**
@@ -44,9 +44,6 @@ dem Termin; X03 ist erledigt (Driftprobe 31).
   fuer NewTOS und TT+Nova, nur VDI/AES/BIOS/GEMDOS; Pixelweg `vr_trnfm`
   und EdDI `vq_scrninfo`. Schritt 1 laeuft in QEMU; auslieferbarer Bau
   PORT10 erledigt (Doom linkt); als Naechstes Vergroesserung x2/x3/x4.
-- **DESK50** — implementiert, in QEMU belegt; Pi-Abnahme offen: Zoom vom
-  Laufwerk/Ordner/Programm, Laufwerkssymbol nach dem Oeffnen abgewaehlt,
-  *Cancel* im `.NTP`-Kasten.
 - **MEM03** (Umgebungsblock nicht in EL0 abgebildet, latent), danach
   **PORT09** (blockiert), **DESK49**.
 - Nach dem Termin: **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`), DESK43
@@ -449,6 +446,7 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 
 | Date       | Decision                                            |
 |------------|-----------------------------------------------------|
+| 2026-10-04 | **Pi-Abnahme KEYS02 + DESK50, PORT06 abgeschlossen.** Anwender auf der echten Pi 4 (Kernel `1b00a7d5`, Stand `1e6c436`, DOOM.NAP `b92e4d58`), alle fuenf Punkte bestaetigt: Laufen + gleichzeitig Drehen haelt, Antippen dreht fein, Beenden fuehrt zum Desktop, danach normale Tastatur (Tippen/Halten) in Desktop, QED und EmuCON; DESK50: Zoom vom Laufwerk/Ordner/Programm, Laufwerkssymbol nach dem Oeffnen abgewaehlt, *Cancel* im `.NTP`-Kasten laesst das Symbol ausgewaehlt. Davor am echten TT mit NOVA gemessen (`measurements/measurement-2026-10-04-tt-nova/`): EdDI 1.10, 8 Bit gepackt, Doom 2,4–4 fps — TT bleibt Machbarkeitsbeweis. PORT06 damit erledigt. |
 | 2026-10-04 | **TT-Doom: Machbarkeit belegt, keine weitere Optimierung.** Anwender am echten TT in TT-Low: ca. 3–4 fps, unspielbar; spielbar erst ab ~20 fps, auf 68030/32 MHz auch mit Assembler-Renderer nicht erreichbar. Der TT-Bau bleibt als Beweis, dass derselbe Quelltext konform auf echter Atari-Hardware laeuft (EdDI, `kbdvec`, 4:3, Tabellen-c2p). Schwerpunkt bis zur OFAM: Pi. |
 | 2026-10-04 | **KEYS02 Doom-Seite + PORT06 TT-Arbeit.** Doom haengt sich an `kbdvec` (NewTOS 8-Byte-Slot bei −8, m68k 4-Byte bei −4), verkettet immer, haengt sich beim Ende aus (m68k zusaetzlich `etv_term`); Haken auf NewTOS mit `-mgeneral-regs-only`, Bau prueft per objdump auf FP/SIMD. QEMU: Laufen+Drehen haelt „vorwaerts“, Antippen 100 ms → 85 ms (vorher 370). Hatari TT TOS 3.06 + EmuTOS: dasselbe; **TOS 3.06 hat `kbdvec`** (Kbdvbase `$106A`, `$1066` → `kbd_int`). Davor fuer den TT: m68k-Bau im SDK (`build-doom-m68k.sh`, `-m68030 -m68881`, 6-MiB-Zone im TT-RAM), 4:3 auf nicht-quadratischen Pixeln (TT-Low fuellt 320x480), Hatari-Profil (60 % in unserer c2p) und Tabellen-c2p (155 → 31 Takte/px, TT-Low 1,9 → 3,7–3,9 fps in Hatari). Regel „Portierte App unveraendert“ gilt laut Anwender nur fuer Atari-Software, Doom darf optimiert werden. Zwischenzeitlich hingen die x86_64-m68k-binutils (Quarantaene/Gatekeeper vermutet), danach wieder normal. Commits `080ea34`, `979ffab`, `cd9efb0`, `a8f94ed`, `f01229c`, `70d9065`. Pi- und TT-Abnahme offen. |
 | 2026-10-04 | **KEYS02 Kernteil — `Kbdvbase` liefert echte `kbdvec`-Haken mit Druecken und Loslassen.** Anlass: Doom auf der Pi — Laufen+Drehen bricht ab, Antippen dreht zu weit; beides, weil TOS-Programme Loslassen nie sehen (Luecke K4). Spec neu aus EmuTOS (`aciavecs.S`, `ikbd.c`), D1–D8 vom Anwender freigegeben. Je Prozess Tabelle in TPA-Seite 0 (`0x9A0`), `kbdvec` bei −8, gueltige Stubs in allen Slots; Standard-`kbdvec` ueber `Ssystem` 2002 (`S_NEWTOS_KBDVEC`) zum bisherigen Dekoder, Verketten funktioniert. Ohne Haken unveraenderter Weg; mit Haken Ring (64) + Upcall-Kette in Reihenfolge. Wartestellen (AES, `Cconin`/`Cnecin`/`Crawcin`/`Bconin(2)`) weichen bei anstehenden Haken-Bytes aus und starten neu (sonst Verklemmung). Haken verschwinden mit dem Prozess (Abweichung, COMPATIBILITY.md). QEMU: Haken sieht `48 4D CD C8 1E 9E` in Reihenfolge, BIOS-Schlange laeuft weiter, Desktop nach Programmende ok. Lead nachgemessen: Hosttests **1010/0/1**, Bau 64/94, Clippy 80/125, Drift 31. Doom-Seite folgt. Commit `a912e2f`. |

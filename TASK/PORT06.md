@@ -1,6 +1,6 @@
 # PORT06 — Doom portieren: konform ueber BIOS, AES und VDI
 
-Status: **OFFEN** · Prioritaet: **P1** (vorgezogen vor den OFAM-Termin, Anwender 2026-10-02) · Typ: Portierung — Anwenderwunsch 2026-09-28
+Status: **ERLEDIGT — Pi-Abnahme 2026-10-04** ([Statusdatei](PORT06-STATUS-DONE.MD); TT als Machbarkeitsbeweis) · Prioritaet: **P1** (vorgezogen vor den OFAM-Termin, Anwender 2026-10-02) · Typ: Portierung — Anwenderwunsch 2026-09-28
 
 Abhaengigkeiten: — (**nicht** von [SDL01](SDL01.md); siehe §2)
 

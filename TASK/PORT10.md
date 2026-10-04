@@ -6,7 +6,7 @@ Abhaengigkeiten: —
 
 ## Sachverhalt
 
-Aus PORT06 Schritt 1 (`TASK/PORT06-STATUS-UNFINISHED.MD`,
+Aus PORT06 Schritt 1 (`TASK/PORT06-STATUS-DONE.MD`,
 `measurements/measurement-2026-10-02-port06/`):
 
 1. **`system()` linkt nicht.** mintlibs `system()` zieht `spawnvp` nach;

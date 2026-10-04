@@ -303,3 +303,13 @@ Bauskripte, `kernel/`, `tos-api/` unberuehrt.
    nachgewiesen; auf echter Hardware nicht erwartet, nicht gemessen.
    QEMU-Zeitmessungen von NAPs sind dadurch layoutabhaengig.
 4. Echter TT weiterhin nicht gefahren; die Hatari-Zyklen sind ein Modell.
+
+## Abschluss 2026-10-04 (Lead)
+
+Pi-Abnahme durch den Anwender (Kernel `1b00a7d5`, Stand `1e6c436`, DOOM.NAP
+`b92e4d58`): Doom laeuft mit 40–75 fps (x3/x4, gemessen 2026-10-03), Laufen
+und gleichzeitig Drehen haelt, Antippen dreht fein, Beenden fuehrt zurueck
+zum Desktop, danach normale Tastatur in Desktop, QED und EmuCON.
+TT: ein Quelltext laeuft konform auf echter Hardware (TOS 3.06, NOVA, EdDI
+1.10, `kbdvec`), aber mit 2,4–4 fps unspielbar; keine weitere TT-Optimierung
+(Entscheidung Anwender). Messung: `measurements/measurement-2026-10-04-tt-nova/`.

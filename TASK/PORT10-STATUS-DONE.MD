@@ -41,7 +41,7 @@ Text der Stand vor der Anwenderentscheidung und bleibt so stehen.
   `.NCP` laeuft es). Liste **nicht** geaendert — `.NCP/.NTP/.NAP` sind
   NewTOS-eigen; ob sie hinein gehoeren, ist eine Entscheidung (Offen, 2).
 * `docs/sdk/07-mintlib-limits.md` §1/§8 neu geschrieben,
-  `sdk/libc/build-libc.sh` Kopfkommentar, `TASK/PORT06-STATUS-UNFINISHED.MD`
+  `sdk/libc/build-libc.sh` Kopfkommentar, `TASK/PORT06-STATUS-DONE.MD`
   datierte Korrektur zu „`system()` wird nie erreicht".
 
 ### Offen nach dem Nachtrag
