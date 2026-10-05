@@ -209,15 +209,23 @@ pub struct Process {
     pub abi: AtomicU8,
 
     /// Kernel-side virtual address of the [`BasePage`] living at the
-    /// start of this process's TPA. Always a high-half VA; the value
-    /// has the same bits as the corresponding low-half user VA modulo
-    /// `VA_OFFSET`.
+    /// start of this process's TPA — the high-half alias ([`kalias`]) of
+    /// the process's **PD pointer** ([`pd_of`]): the user address of the
+    /// basepage, which since ARCH03 stage 1 is the start of its TPA block in
+    /// the shared address space (VA = PA). The PD pointer is the value
+    /// `Pexec(PE_LOAD)` returns, `p_parent` and `os_run` hold, and `RUN` /
+    /// `m_own` carry (EmuTOS `run`, `bdos/proc.c`).
     pub basepage_kva: AtomicPtr<BasePage>,
 
-    /// Physical address of the [`BasePage`]. Stored separately so
-    /// the page-table builder (Phase 06 D8) can install the user
-    /// mapping without re-walking the kernel translation regime.
+    /// Physical address of the [`BasePage`] — equal to its PD pointer
+    /// ([`pd_of`]) since ARCH03 stage 1 (VA = PA).
     pub basepage_pa: AtomicU64,
+
+    /// For a program loaded with `Pexec(PE_LOAD)` and not started yet: the
+    /// PD pointer of the process that loaded (and owns) it, so the slot is
+    /// released when that process ends ([`pexec::release_unstarted_of`]).
+    /// `null` otherwise.
+    pub load_owner: AtomicPtr<BasePage>,
 
     /// Phys of the per-process L0 page-table root that gets written
     /// to `TTBR0_EL1` when this process becomes [`State::Running`].
@@ -709,6 +717,7 @@ impl Process {
             abi: AtomicU8::new(Abi::Lp64 as u8),
             basepage_kva: AtomicPtr::new(ptr::null_mut()),
             basepage_pa: AtomicU64::new(0),
+            load_owner: AtomicPtr::new(ptr::null_mut()),
             l0_pa: AtomicU64::new(0),
             entry_va: AtomicU64::new(0),
             sp_el0: AtomicU64::new(0),
@@ -770,11 +779,14 @@ impl Process {
 pub static PROCESS_TABLE: [Process; MAX_PROCESSES] =
     [const { Process::empty() }; MAX_PROCESSES];
 
-/// Pointer to the [`BasePage`] of the currently-running process, or
-/// `null` while only kernel code is on the stack (boot, between
-/// `Pterm` and the next `Pexec`). Read by the SVC sync handler to
-/// stamp ownership on new BDOS allocations (Phase 06 D9 wires this
-/// into [`crate::bdos::mem::traps::current_owner`]).
+/// The **PD pointer** of the currently-running process — the user
+/// address of its [`BasePage`] ([`pd_of`], EmuTOS `run`) —
+/// or `null` while only kernel code is on the stack (boot, between `Pterm`
+/// and the next `Pexec`). Stamped into new BDOS allocations as their owner
+/// ([`crate::bdos::mem::traps::current_owner`], EmuTOS `m_own = run`).
+///
+/// A user address: kernel code reads the basepage through
+/// [`current_kva`], never by dereferencing this value.
 pub static RUN: AtomicPtr<BasePage> = AtomicPtr::new(ptr::null_mut());
 
 /// Pointer to the [`BasePage`] of the process that should run next
@@ -783,20 +795,105 @@ pub static RUN: AtomicPtr<BasePage> = AtomicPtr::new(ptr::null_mut());
 /// trap-exit path which moves it into [`RUN`] just before `eret`.
 pub static NEXTRUN: AtomicPtr<BasePage> = AtomicPtr::new(ptr::null_mut());
 
-/// Pointer to the currently-running [`BasePage`], or `null` if no
-/// user process is active. Used by [`crate::bdos::mem::traps::current_owner`]
-/// (Phase 06 D9) and by the GEMDOS dispatcher when consulting
-/// `run->p_uft[…]` standard-handle-redirection (Phase 09).
+/// The running process's PD pointer (a **user** address, see [`RUN`]), or
+/// `null` if no user process is active. An identity, not a reference:
+/// compare it, pass it to [`slot_for`], stamp it as an owner — read the
+/// basepage through [`current_kva`].
 #[inline]
 pub fn current() -> *mut BasePage {
     RUN.load(Ordering::Acquire)
 }
 
-/// Set the running-process pointer. Atomic so the SVC handler that
-/// reads [`current`] sees a consistent value at every moment.
+/// The kernel high-half alias of the running process's basepage
+/// (`run->…` in EmuTOS), or `null` if no user process is active. This is
+/// the pointer kernel code dereferences: `p_flags`, `p_xdta`, `p_uft`,
+/// `p_env`, ….
+#[inline]
+pub fn current_kva() -> *mut BasePage {
+    let bp = current();
+    if bp.is_null() {
+        bp
+    } else {
+        kalias(bp as u64) as *mut BasePage
+    }
+}
+
+/// Set the running-process pointer to the PD pointer `bp` (a user
+/// address, [`pd_of`]; `null` = no process). Atomic so the
+/// SVC handler that reads [`current`] sees a consistent value at every
+/// moment.
 #[inline]
 pub fn set_current(bp: *mut BasePage) {
     RUN.store(bp, Ordering::Release);
+}
+
+/// The kernel alias of the running process's **page 0** — its private
+/// `[0, 0x1000)`, where the system variables (`$484` `conterm`, `$4BA`
+/// `_hz_200`), the trampolines and the KEYS02 vector table live
+/// ([`mmu::page0_kva`]) — or `None` when no user process runs.
+#[inline]
+pub fn current_page0_kva() -> Option<*mut u8> {
+    slot_for(current()).and_then(mmu::page0_kva)
+}
+
+/// The PD pointer of `slot` — the user address of its basepage, what
+/// [`set_current`] takes for it — or `null` for an out-of-range slot or one
+/// without a loaded image. Derived from [`Process::basepage_kva`]
+/// ([`kva_to_user_va`]), the single record of where the basepage is.
+#[inline]
+pub fn pd_of(slot: usize) -> *mut BasePage {
+    match PROCESS_TABLE.get(slot) {
+        Some(p) => {
+            let kva = p.basepage_kva.load(Ordering::Acquire);
+            if kva.is_null() {
+                ptr::null_mut()
+            } else {
+                kva_to_user_va(kva as u64) as *mut BasePage
+            }
+        }
+        None => ptr::null_mut(),
+    }
+}
+
+// ─── Address translation (ARCH03 stage 1: VA = PA) ─────────────────
+
+/// High-half kernel VA offset (mirror of `kernel::arch::aarch64::mmu`).
+#[cfg(all(target_arch = "aarch64", target_os = "none"))]
+const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
+
+/// The kernel alias of user address `va`. Every user address is its own
+/// physical address (ARCH03 stage 1, [`mmu`]), and the kernel maps all of
+/// DRAM at `phys + VA_OFFSET`, so this is an addition — the AArch64
+/// counterpart of FreeMiNT's `prot_temp`, without a table change (plan
+/// Frage 10). It says nothing about whether `va` is *live* user memory; that
+/// is [`usermem::resolve_kva`]'s question.
+///
+/// On the host (unit tests) there is no high half: test "user" memory is
+/// ordinary host memory, so the alias is the address itself.
+#[inline]
+pub const fn kalias(va: u64) -> u64 {
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    {
+        va.wrapping_add(VA_OFFSET)
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+    {
+        va
+    }
+}
+
+/// The user address (= physical address) of kernel high-half VA `kva` —
+/// the inverse of [`kalias`]. Identity on the host, like [`kalias`].
+#[inline]
+pub const fn kva_to_user_va(kva: u64) -> u64 {
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    {
+        kva.wrapping_sub(VA_OFFSET)
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+    {
+        kva
+    }
 }
 
 /// ABI (pointer / `long` width) of the currently-running process, or
@@ -960,6 +1057,7 @@ pub fn free_slot(idx: usize) {
     p.abi.store(Abi::Lp64 as u8, Ordering::Release);
     p.basepage_kva.store(ptr::null_mut(), Ordering::Release);
     p.basepage_pa.store(0, Ordering::Release);
+    p.load_owner.store(ptr::null_mut(), Ordering::Release);
     p.l0_pa.store(0, Ordering::Release);
     p.entry_va.store(0, Ordering::Release);
     p.sp_el0.store(0, Ordering::Release);
@@ -1009,16 +1107,19 @@ pub fn free_slot(idx: usize) {
     p.state.store(State::Free as u8, Ordering::Release);
 }
 
-/// Find the slot holding `bp`, if any. Linear scan — the table is
-/// small and the lookup runs at most once per `Pterm` / per per-
-/// process trap, so the cost is negligible.
+/// Find the slot whose PD pointer is `bp` (a user address, as [`RUN`]
+/// holds it), if any — matched through its kernel alias against
+/// [`Process::basepage_kva`]. Linear scan — the table is small and the
+/// lookup runs at most once per `Pterm` / per per-process trap, so the cost
+/// is negligible.
 pub fn slot_for(bp: *mut BasePage) -> Option<usize> {
     if bp.is_null() {
         return None;
     }
+    let kva = kalias(bp as u64) as *mut BasePage;
     for (i, p) in PROCESS_TABLE.iter().enumerate() {
         if p.read_state() != State::Free
-            && p.basepage_kva.load(Ordering::Acquire) == bp
+            && p.basepage_kva.load(Ordering::Acquire) == kva
         {
             return Some(i);
         }

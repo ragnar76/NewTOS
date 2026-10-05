@@ -13,12 +13,11 @@
  *   otherwise                             -> GEMDOS Malloc() (trap).
  *
  * On NewTOS the program loader (tos-api/src/bdos/process/loader.rs) hands each
- * process a Transient Program Area [0, USER_TPA_TOP=0x400000); the image is
- * linked at RESERVED_LOW_END = 0x1000 (sdk/newtos.ld), above the basepage and
- * the classic low-memory system area the loader materialises in page 0:
+ * process a 4-MiB Transient Program Area at its own pool address B (ARCH03
+ * stage 1, VA = PA); the image is linked at RESERVED_LOW_END = 0x1000
+ * (sdk/newtos.ld) and relocated for B. Relative to B:
  *
  *     [0x000, 0x100)      BasePage
- *     [0x400, 0x670)      sysvars + OSHEADER + cookie jar (loader, B1)
  *     [0x1000, _end)      image + BSS (zeroed by the loader)
  *     [_end, p_hitpa)     free TPA -- heap grows up, stack grows down
  *
@@ -41,13 +40,13 @@
  * unix/getppid.c:22 (`_base->p_parent`), gmon.c:201,237 (`_base->p_tbase`).
  * None of those files runs mintlib's startup here (docs/sdk/07-mintlib-limits.md
  * §5: crtinit.c is not built), so `_base` stayed NULL and TeraDesk's
- * `_BasPag->p_env` (environm.c) only worked because the basepage IS at VA 0.
+ * `_BasPag->p_env` (environm.c) only worked because the basepage was at VA 0.
  * Setting it here from the value crt0 hands us makes the pointer true
- * independent of where the loader puts the basepage (TASK/T05).
+ * independent of where the loader puts the basepage (TASK/T05) -- since
+ * ARCH03 stage 1, the start of the TPA block.
  *
  * loader facts confirmed from tos-api/src/bdos/process/loader.rs:
- *   - USER_TPA_TOP = USER_VA_BASE(0) + TPA_SIZE(4 MiB) = 0x400000
- *   - bp.p_hitpa = USER_TPA_TOP           (populate_basepage)
+ *   - bp.p_hitpa = B + TPA_SIZE(4 MiB)    (populate_basepage)
  *   - "heap lives between the BSS end (p_bbase+p_blen) and the downward-
  *      growing stack" (populate_basepage doc comment)
  *   - USER_STACK_MIN = 0x1_0000 (64 KiB) top-of-TPA stack reserve

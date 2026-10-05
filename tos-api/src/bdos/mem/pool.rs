@@ -328,3 +328,58 @@ pub unsafe fn shrinkit(
     }
     0
 }
+
+/// Give the first `pad` bytes of the allocated block `m` back to the free
+/// list, so the block afterwards starts `pad` bytes later — the mirror image
+/// of [`shrinkit`], with the same "temporary allocated MD, then [`freeit`]"
+/// technique so the coalescing logic stays in one place.
+///
+/// Not an EmuTOS primitive: EmuTOS never needs a block to start on a
+/// particular boundary. NewTOS does exactly once — the program loader needs
+/// its TPA to begin on a 4-KiB page (a position-independent image keeps its
+/// link-time page offsets, ARCH03 stage 1) — and gets it with
+/// `Mxalloc(len + page)`, then this, then [`shrinkit`]. The result is an
+/// ordinary allocated block; nothing about it is observable except its
+/// address.
+///
+/// Returns `0` on success, `-1` when the meta-pool is exhausted (the block
+/// is then unchanged).
+///
+/// # Safety
+///
+/// `m` must be an allocated MD on `mp->mp_mal`; `0 < pad < m->m_length`.
+pub unsafe fn trim_front(
+    m: *mut MD,
+    mp: *mut MPB,
+    pad: Long,
+    supply: &mut dyn MdSupply,
+) -> i16 {
+    debug_assert!(!m.is_null());
+    debug_assert!(!mp.is_null());
+    debug_assert!(pad > 0);
+
+    // SAFETY: trait contract.
+    let f = unsafe { supply.xmgetmd() };
+    if f.is_null() {
+        return -1;
+    }
+    // SAFETY: `m` and `f` are valid, distinct MDs.
+    unsafe {
+        let m_start = (*m).m_start;
+        let m_len = (*m).m_length;
+        debug_assert!(pad < m_len);
+        (*f).m_start = m_start;
+        (*f).m_length = pad;
+        (*f).m_own = (*m).m_own;
+        (*f).m_link = (*mp).mp_mal;
+        (*mp).mp_mal = f;
+        (*m).m_start = m_start + pad;
+        (*m).m_length = m_len - pad;
+    }
+    // SAFETY: `f` is now an allocated MD on `mp->mp_mal`.
+    unsafe {
+        freeit(f, mp, supply);
+    }
+    0
+}
+

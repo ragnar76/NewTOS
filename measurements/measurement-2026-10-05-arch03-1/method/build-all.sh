@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# build-all.sh -- rebuild every program the stage-1 runs use, from the
+# current tree, and record their hashes (../repo-binaries.sha256,
+# ../bin/SHA256SUMS). The probes come from build-s1-tests.sh; HELLO.NCP from
+# tools/mk-hello-ncp.py; OLDEXEC.NCP (a deliberate ET_EXEC, refusal test only)
+# from build-oldexec.sh (the 0d recipe).
+set -uo pipefail
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WS="$(cd "$HERE/../../.." && pwd)"
+BIN="$HERE/../bin"
+cd "$WS"
+ex() { sh sdk/build.sh "sdk/examples/$1" "$BIN/$2" > /dev/null || { echo "FAIL $2"; exit 1; }; echo "built $2"; }
+ex a107parent.c A107PAR.NAP; ex a79color.c A79COLOR.NAP; ex a96zombie.c A96ZOMB.NAP
+ex big.c BIG.NCP; ex cmdline.c CMDLINE.NCP; cp "$BIN/CMDLINE.NCP" "$BIN/CMDLINE.NTP"
+ex crashtst.c CRASHTST.NAP; ex crchild.c CRCHILD.NAP; ex curdir.c CURDIR.NCP
+ex dtachild.c DTACHILD.NCP; ex hello.c HELLO2.NCP; ex kbdvec.c KBDVEC.NAP
+ex physbase.c PHYSBASE.NCP; ex scrflip.c SCRFLIP.NCP; ex sysacc.c SYSACC.NAC
+ex sysinfo.c SYSINFO.NCP; ex wfscreen.c WFSCREEN.NAP
+python3 tools/mk-hello-ncp.py "$BIN/HELLO.NCP" > /dev/null && echo "built HELLO.NCP"
+sh "$HERE/build-oldexec.sh" "$BIN/OLDEXEC.NCP" > /dev/null && echo "built OLDEXEC.NCP"
+sh "$HERE/build-s1-tests.sh" "$BIN"
+for s in apps/apitest/build-apitest.sh apps/build-qed.sh apps/build-teradesk.sh apps/build-doom.sh; do
+  bash "sdk/$s" > "$HERE/../checks/build-$(basename $s .sh).log" 2>&1 && echo "built via $s" || { echo "FAIL $s"; tail -20 "$HERE/../checks/build-$(basename $s .sh).log"; exit 1; }
+done
+(cd "$BIN" && shasum -a 256 *.NAP *.NCP *.NTP *.NAC | sort -k2 > SHA256SUMS)
+shasum -a 256 sdk/apps/apitest/APITEST.NCP sdk/apps/qed/build/QED.NAP sdk/apps/qed/build/qed.rsc \
+  sdk/apps/teradesk/build/dist/DESKTOP.NAP sdk/apps/doom/build/DOOM.NAP > "$HERE/../repo-binaries.sha256"
+echo done

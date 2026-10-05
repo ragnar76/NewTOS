@@ -76,11 +76,11 @@ static THEMD: ThemdCell = ThemdCell(UnsafeCell::new(ThemdPage {
 /// (EL1) caller that is the descriptor's kernel VA; for an **EL0** caller
 /// the kernel's high-half pages are unreachable, so the descriptor is
 /// published read-only (FreeMiNT `PROT_PR`,
-/// `references/freemint/sys/mint/mem.h:133`) into the calling process's
-/// address space and `mp_mfl` carries the resulting **user VA** (ADR-023).
-/// If the process's window cannot take the mapping, `mp_mfl` is left NULL —
-/// an empty free list, which the contract already defines — rather than a
-/// pointer the caller would fault on.
+/// `references/freemint/sys/mint/mem.h:133`) into the shared user address
+/// space at its own address (VA = PA, ARCH03 stage 1) and `mp_mfl` carries
+/// that **user address** (ADR-023). If the publication cannot be made,
+/// `mp_mfl` is left NULL — an empty free list, which the contract already
+/// defines — rather than a pointer the caller would fault on.
 pub fn getmpb(args: &TrapArgs) -> Long {
     let mpb = args.arg_u64(0) as *mut MPB;
     if mpb.is_null() {

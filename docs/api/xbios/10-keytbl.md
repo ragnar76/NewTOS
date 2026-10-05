@@ -236,12 +236,12 @@ sentinel and the returned pointer are preserved.
   `tos-api/src/xbios/keytbl.rs`). Both halves work:
   - **Get.** The returned `struct keytbl` and the six tables it points at are
     **materialised into the caller's own address space** on every call: into a
-    running EL0 process's reserved TPA-low region (`KEYTBL_AREA_VA` = `0x768`,
-    `tos-api/src/bdos/process/loader.rs`), written through the kernel high-half
-    alias and returned as the process's **user VA**; into a kernel static, and
-    returned as a kernel VA, when no process is running (the in-kernel desktop
-    / boot path). Same "user VA while a process runs, kernel VA otherwise" rule
-    as `Malloc` (ADR-021). This is what makes EmuTOS' desktop idiom
+    running EL0 process's own page 0 (`KEYTBL_AREA_VA` = `0x768`,
+    `tos-api/src/bdos/process/loader.rs`; page 0 is the one per-process page
+    of the shared user address space since ARCH03 stage 1), written through
+    the kernel alias of that page and returned as the process's **user VA**;
+    into a kernel static, and returned as a kernel VA, when no process is
+    running (the in-kernel desktop / boot path). This is what makes EmuTOS' desktop idiom
     `keytab = (KEYTAB *)Keytbl(-1,-1,-1); keytab->shift[…]`
     (`desk/deskmain.c:1144-1145`) work from EL0 instead of faulting.
     Pointer fields are written at the **caller's** ABI width (8 bytes LP64,

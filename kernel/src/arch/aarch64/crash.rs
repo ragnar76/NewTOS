@@ -47,11 +47,11 @@ impl fmt::Write for ConsoleWriter {
 /// The running program's basepage fields for the report, read through the
 /// kernel alias of its basepage (`RUN`). `None` when no program runs.
 pub fn current_program() -> Option<ProgramInfo> {
-    let bp = tos_api::bdos::process::current();
+    let bp = tos_api::bdos::process::current_kva();
     if bp.is_null() {
         return None;
     }
-    // SAFETY: `RUN` points at the kernel (high-half) alias of a live
+    // SAFETY: `current_kva()` is the kernel (high-half) alias of the running
     // process's basepage; the fields are plain `LONG`s. Volatile because the
     // program may have rewritten its basepage.
     unsafe {

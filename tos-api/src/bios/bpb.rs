@@ -275,12 +275,13 @@ pub fn bpb_for(drive: u16) -> Option<Bpb> {
 ///   self-tests: the kernel VA of the table entry is exactly that address.
 /// * **EL0 caller** — the kernel is linked high-half and those pages are
 ///   EL1-only, so the table is published read-only (FreeMiNT `PROT_PR`,
-///   `references/freemint/sys/mint/mem.h:133`) into the calling process's
-///   address space and the corresponding **user VA** is returned (ADR-023).
-///   All 16 entries share one page, so a program that walks every drive
-///   costs a single mapping. If the process's window cannot take the
-///   mapping the answer is `0` — the contract's "no BPB for this drive" —
-///   because a pointer the caller would fault on is not an answer.
+///   `references/freemint/sys/mint/mem.h:133`) into the shared user address
+///   space at its own address (VA = PA, ARCH03 stage 1) and that **user
+///   address** is returned (ADR-023). All 16 entries share one page, so it
+///   is one publication for every drive and every process. If the
+///   publication cannot be made the answer is `0` — the contract's "no BPB
+///   for this drive" — because a pointer the caller would fault on is not an
+///   answer.
 pub fn getbpb(drive: u16) -> i64 {
     if bpb_for(drive).is_none() {
         return 0;

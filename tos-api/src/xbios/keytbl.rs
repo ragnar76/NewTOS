@@ -23,8 +23,8 @@
 //! dereferenceable from EL0, so the struct and the six tables it points at are
 //! **materialised into the calling process's reserved TPA-low region**
 //! ([`crate::bdos::process::loader::KEYTBL_AREA_VA`]) and the returned pointer
-//! is the process's own user VA — the same "user VA while a process runs,
-//! kernel VA otherwise" rule `Malloc` follows (ADR-021). With no process
+//! is the process's own user VA (page 0 is per process, ARCH03 plan E3) —
+//! "user address while a process runs, kernel VA otherwise". With no process
 //! running (the in-kernel desktop and the boot path) the area is a kernel
 //! static and its kernel VA is returned.
 //!
@@ -58,7 +58,7 @@ use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::bdos::process::loader::{KEYTBL_AREA_SIZE, KEYTBL_AREA_VA, USER_VA_BASE};
-use crate::bdos::process::{current, current_abi, slot_for, Abi, PROCESS_TABLE};
+use crate::bdos::process::{current, current_abi, slot_for, Abi};
 use crate::host::{host, KeyTable, KeyTables, ALT_TABLE_LEN};
 use crate::trap::TrapArgs;
 
@@ -215,14 +215,10 @@ pub fn keytbl(args: &TrapArgs) -> i64 {
     //    reserved TPA-low region (written through the kernel high-half alias,
     //    read back at the low-half user VA); otherwise the kernel static.
     let (write_base, emit_base) = match slot_for(current()) {
-        Some(slot) => {
-            let bp = PROCESS_TABLE[slot].basepage_kva.load(Ordering::Acquire) as u64;
-            if bp == 0 {
-                (KERNEL_AREA.0.get() as u64, KERNEL_AREA.0.get() as u64)
-            } else {
-                (bp + KEYTBL_AREA_VA, USER_VA_BASE + KEYTBL_AREA_VA)
-            }
-        }
+        Some(slot) => match crate::bdos::process::mmu::page0_kva(slot) {
+            Some(page0) => (page0 as u64 + KEYTBL_AREA_VA, USER_VA_BASE + KEYTBL_AREA_VA),
+            None => (KERNEL_AREA.0.get() as u64, KERNEL_AREA.0.get() as u64),
+        },
         None => (KERNEL_AREA.0.get() as u64, KERNEL_AREA.0.get() as u64),
     };
 

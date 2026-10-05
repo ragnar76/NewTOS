@@ -17,22 +17,17 @@
 //! `0..4 GiB` of this range; Phase 06 replaces those with a
 //! per-process L0 on each `Pexec`.
 //!
-//! ## Per-process layout (TOS convention, Compendium "BasePage")
+//! ## Layout (ARCH03 stage 1)
 //!
-//! ```text
-//!   USER_VA_BASE  ─┐ basepage (256 bytes, see `tos-types::Basepage`)
-//!                  │ text
-//!                  │ data
-//!                  │ bss
-//!                  │ free TPA
-//!                  │ ⋮
-//!   USER_STACK_TOP ┘ EL0 stack, growing **downward**
-//! ```
-//!
-//! The TPA boundary (`p_hitpa` in the basepage) is set at process
-//! load time; the stack top is fixed by this module so source-port
-//! glue code can hand `__stack_top_inclusive_for(pid)` to the
-//! C-runtime startup without a per-process linker tweak.
+//! The low half is one address space shared by every process: each user
+//! address is its own physical address (the BDOS pools, published kernel
+//! structures, the screen), except page 0 `[0, 0x1000)`, which is per
+//! process (`tos_api::bdos::process::mmu`). A process's basepage is the start
+//! of its TPA block, the stack grows down from the TPA top (`p_hitpa`) — both
+//! are set at load time (`tos_api::bdos::process::loader`), not by this
+//! module. The constants below are the window bounds and the stack default
+//! the embedded self-test blobs (which never touch their stack) are entered
+//! with.
 //!
 //! All constants below are **pure VA values**; they do not imply any
 //! particular physical mapping. Phase 06 wires them to physical

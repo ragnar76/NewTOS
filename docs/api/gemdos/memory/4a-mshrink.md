@@ -261,22 +261,16 @@ shrinks take a fast `E_OK` path without touching the MPB. Grow → `EGSBF`,
 `len == 0` → free, bad address → `EIMBA`, MD-arena exhaustion → `ERR` (block
 untouched), all per EmuTOS.
 
-### NewTOS EL0 realization (ADR-021)
+### NewTOS: one shared address space (ARCH03 stage 1)
 
-An **EL0** caller shrinks by the **user VA** it holds — including the basepage's
-user VA `0`. The loader seeds the **TPA as block 0** of the per-process table
-(`bdos::process::usermem::seed_tpa`), so the classic crt0 `Mshrink(0, basepage,
-needed)` resolves to the TPA's pool block instead of returning `EIMBA` (the
-latent address-mismatch bug ADR-021 also fixes: the basepage VA the app holds is
-`0`, but the pool keys the block on its physical `m_start`). The trap entry
-translates the user VA to the pool key, adds the page-alignment `prefix` (the
-window base is page-aligned; the 16-byte-aligned pool block may start up to a
-page below it) to `len`, and shrinks the real pool block via the **unchanged**
-`bdos::mem::traps::mshrink`. Because the window maps exactly the block's
-page-rounded span, a shrink to a length beyond that span is `EGSBF` ("cannot
-grow"); `len == 0` frees the whole block (== `Mfree`, dropping the window
-entry). **EL1 / kernel callers** shrink the raw block directly. Discrimination:
-non-null `bdos::process::current()`, mirroring `aes::resource`.
+Every caller shrinks by the block address it holds — including a basepage,
+which since stage 1 is the start of its page-aligned TPA block (VA = PA), so
+the classic crt0 / shell idiom `Mshrink(0, basepage, needed)` names the TPA
+block directly (EmuTOS `xsetblk`, `bdos/umem.c:170`). No translation, no
+alignment prefix, no window bound: grow → `EGSBF`, `len == 0` → free (reported
+to the AES like `Mfree`), unknown address → `EIMBA`. Exercised by the
+stage-1 probe `P34PAR.NAP` (`Pexec 3` → `Mshrink` of the child's TPA →
+`Pexec 4`, `measurements/measurement-2026-10-05-arch03-1/`).
 
 ---
 

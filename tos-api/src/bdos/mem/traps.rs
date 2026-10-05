@@ -347,6 +347,96 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
     }
 }
 
+/// Allocate `amount` bytes from the pool(s) `mode` selects, as [`mxalloc`]
+/// does, but with the block **starting on an `align`-byte boundary**
+/// (`align` a power of two ≥ the pool grain). Returns the block's `m_start`
+/// (a multiple of `align`), or `0` when no pool can supply
+/// `amount + align` bytes. The block is an ordinary allocated block —
+/// `Mfree`/`Mshrink` take its address, `Pterm` reclaims it by owner.
+///
+/// Kernel-internal, not a GEMDOS function: the program loader takes the TPA
+/// with it, because a position-independent image must keep its link-time
+/// page offsets (ARCH03 stage 1). It over-allocates by `align`, gives the
+/// slack in front of the boundary back ([`pool::trim_front`]) and then the
+/// slack behind the block ([`pool::shrinkit`]).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock.
+pub unsafe fn mxalloc_aligned(amount: Long, mode: i16, align: Long) -> Long {
+    if amount <= 0 || align <= 0 || align & (align - 1) != 0 {
+        return 0;
+    }
+    let Some(want) = amount.checked_add(align) else {
+        return 0;
+    };
+    // SAFETY: caller holds the BDOS lock.
+    let raw = unsafe { mxalloc(want, mode) };
+    if raw == 0 {
+        return 0;
+    }
+    // SAFETY: caller holds the BDOS lock.
+    let mpb = unsafe { find_mpb(raw) };
+    // SAFETY: caller holds the BDOS lock; walk the allocated list.
+    let mut p = unsafe { (*mpb).mp_mal };
+    while !p.is_null() && unsafe { (*p).m_start } != raw {
+        // SAFETY: list invariant.
+        p = unsafe { (*p).m_link };
+    }
+    if p.is_null() {
+        return 0; // cannot happen: `raw` was just allocated
+    }
+    let base = (raw + align - 1) & !(align - 1);
+    let mut supply = unsafe { init::supply() };
+    if base > raw {
+        // SAFETY: `p` is on `mp_mal`; `0 < base - raw < align < m_length`.
+        if unsafe { pool::trim_front(p, mpb, base - raw, &mut supply) } < 0 {
+            // SAFETY: `p` is still the whole block at `raw`.
+            unsafe { pool::freeit(p, mpb, &mut supply) };
+            return 0;
+        }
+    }
+    let mask = PoolConfig::AARCH64.align_mask;
+    let keep = (amount + mask) & !mask;
+    // SAFETY: list invariant; `p` now starts at `base`.
+    let have = unsafe { (*p).m_length };
+    if have > keep {
+        // A failed tail split only leaves the block longer than asked.
+        // SAFETY: `p` is on `mp_mal`; `0 < keep < have`.
+        let _ = unsafe { pool::shrinkit(p, mpb, keep, &mut supply) };
+    }
+    base
+}
+
+/// Is `addr` inside a block on either pool's **allocated** list?
+///
+/// The "live user memory" test of the stage-1 shared address space
+/// ([`crate::bdos::process::usermem::resolve_kva`]): a pool address is
+/// mapped for every process, but only an allocated block is anybody's.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock (read-only list walk).
+pub unsafe fn is_allocated(addr: u64) -> bool {
+    for mpb in [init::pmd(), init::pmdalt()] {
+        if mpb.is_null() {
+            continue;
+        }
+        // SAFETY: caller holds the BDOS lock.
+        let mut p = unsafe { (*mpb).mp_mal };
+        while !p.is_null() {
+            // SAFETY: list invariant.
+            let (start, len) = unsafe { ((*p).m_start as u64, (*p).m_length as u64) };
+            if addr >= start && addr - start < len {
+                return true;
+            }
+            // SAFETY: list invariant.
+            p = unsafe { (*p).m_link };
+        }
+    }
+    false
+}
+
 /// `Malloc(amount)` — GEMDOS 0x48.
 ///
 /// Spec:

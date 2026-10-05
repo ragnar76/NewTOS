@@ -30,6 +30,16 @@
 /* Offset of `p_cmdlin` in the BasePage (tos-types/src/basepage.rs). */
 #define P_CMDLIN 0x80
 
+/* Our own BasePage: `*(_sysbase->os_run)` (OSHEADER +0x28, the pointer to
+ * the current-PD cell). Since ARCH03 stage 1 the basepage is the start of
+ * the TPA block, no longer VA 0. */
+static const unsigned char *own_basepage(void)
+{
+    unsigned long sysbase = *(volatile unsigned int *)0x4F2UL;
+    unsigned long run_cell = *(volatile unsigned int *)(sysbase + 0x28);
+    return (const unsigned char *)(unsigned long)*(volatile unsigned int *)run_cell;
+}
+
 static NLONG Pexec(short mode, const char *path, const char *tail, const char *env)
 {
     register NLONG x8 __asm__("x8") = 0x4B;
@@ -48,7 +58,7 @@ static void target(void)
 
 int main(void)
 {
-    const unsigned char *tail = (const unsigned char *)0 + P_CMDLIN;
+    const unsigned char *tail = own_basepage() + P_CMDLIN;
     char c = tail[0] ? (char)tail[1] : 'w';
     char line[] = "CRCHILD: case ? starting\r\n";
 

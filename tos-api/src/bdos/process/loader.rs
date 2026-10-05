@@ -1,43 +1,51 @@
-//! ELF-to-slot loader — multi-page TPA.
+//! ELF-to-slot loader — the TPA in the shared address space (ARCH03 stage 1).
 //!
-//! Combines [`super::elf`] (parser), [`super::arena`] (the pool-backed
-//! per-process TPA) and [`super::mmu`] (per-slot page tables) into a
-//! single function: given an ELF blob and a process slot, allocate a
-//! multi-page Transient Program Area, copy the program image into it,
-//! zero its BSS, write the [`BasePage`], and install the low-half
-//! mapping that lets EL0 fetch and run from it.
+//! Combines [`super::elf`] (parser), [`super::reloc`] (relocation),
+//! [`super::arena`] (the pool-backed TPA) and [`super::mmu`] (the process
+//! root) into a single function: given an ELF image and a process slot,
+//! take a TPA block from the BDOS pool, stream the program into it, relocate
+//! it for the address it landed at, write the [`BasePage`] at its start and
+//! the process's private page 0, and build the process root.
 //!
-//! ## TPA layout
+//! ## Layout
+//!
+//! Every user address is its own physical address (VA = PA, [`super::mmu`]),
+//! so the TPA executes where the pool put it — at its block address `B`, the
+//! process's **PD pointer** (plan §3.5, EmuTOS `p_lowtpa = p`,
+//! `bdos/proc.c:372`):
 //!
 //! ```text
-//!   USER_VA_BASE (0) ─┐ BasePage           (sizeof BasePage = 256 B)
-//!                     │ program image      (PT_LOAD segments, may span
-//!                     │                     many pages: text/rodata/data)
-//!        image_end    │ BSS                (zeroed: mem_size − file_size)
-//!                     │ heap               (free TPA, for malloc)
-//!                     │  ⋮
-//!   USER_TPA_TOP      ┘ SP_EL0 / p_hitpa   (stack grows down from here)
+//!   B + 0x000      BasePage           (sizeof BasePage = 256 B)
+//!   B + 0x100      free                (reserved, plan §3.5)
+//!   B + 0x1000     program image       (PT_LOAD segments, linked at 0x1000,
+//!                                        relocated by B — `sdk/newtos.ld`)
+//!   image_end      BSS                 (zeroed)
+//!                  heap                (free TPA, for malloc)
+//!   B + TPA_SIZE   SP_EL0 / p_hitpa    (stack grows down from here)
 //! ```
 //!
-//! The whole `[USER_VA_BASE, USER_TPA_TOP)` window (4 MiB, see
-//! [`super::arena::TPA_SIZE`]) is a single pool block mapped page-by-
-//! page into the slot's `TTBR0_EL1`. The basepage carries the TPA and
-//! segment extents (`p_lowtpa`/`p_hitpa`/`p_tbase`/…/`p_bbase`) so a
-//! libc/crt0 can find its heap and stack.
+//! `p_tbase = B + 0x1000` rather than EmuTOS' `B + 0x100` (plan §3.5): the
+//! image keeps the 4-KiB page offsets it was linked with. The basepage
+//! carries the TPA and segment extents (`p_lowtpa`/`p_hitpa`/`p_tbase`/…/
+//! `p_bbase`) so a libc/crt0 can find its heap and stack; the entry gets `B`
+//! in `x0`.
+//!
+//! Page 0 (`[0, 0x1000)`) is **per process** and not part of the TPA (plan
+//! E3, §3.1): the classic system variables, the OSHEADER, the `$5A0` cookie
+//! jar, the `os_run` cell, the upcall trampolines, the `Keytbl` area and the
+//! KEYS02 vector table live in the slot's own page ([`mmu::page0_kva`]).
 //!
 //! ## Deliberate simplifications
 //!
-//! - **Uniform `UserRwExec` pages.** Every TPA page is mapped
-//!   read/write/execute ([`super::mmu::PageFlags::UserRwExec`]) rather
-//!   than splitting `.text` RX from data/BSS/stack RW-NX. A per-segment
-//!   permission split is a later hardening step; it does not change the
-//!   observable program contract.
+//! - **The whole pool is `UserRwExec`.** No `.text` RX / data RW-NX split; a
+//!   per-segment permission split is a later hardening step and does not
+//!   change the observable program contract.
 //! - **Whole-TPA zero.** The loader zeroes the entire TPA before
 //!   copying segments, so BSS, heap and stack all start zeroed and no
 //!   stale pool contents leak into the new process. The SDK `crt0`
 //!   therefore does **not** zero BSS itself.
-//! - **Fixed TPA size.** [`USER_TPA_TOP`] is a compile-time constant;
-//!   a per-`Pexec` size (from a stack request) is a future refinement.
+//! - **Fixed TPA size** ([`arena::TPA_SIZE`], plan E9: fixed, to be made
+//!   overridable through the program flags).
 
 use core::cell::UnsafeCell;
 use core::ffi::c_void;
@@ -45,28 +53,15 @@ use core::sync::atomic::Ordering;
 
 use tos_types::{BasePage, Long, MX_PREFTTRAM, NUMSTD, PDCLSIZE, PF_STANDARD};
 
+use super::{kalias, usermem};
+
 use crate::bdos::fs::FileImage;
 
 use super::arena;
 use super::elf::{self, ElfImage, LoadSegment, ParseError, PF_W, PF_X};
-use super::mmu::{self, MapError, PageFlags};
+use super::mmu::{self, MapError};
 use super::reloc::{self, RelocError};
 use super::PROCESS_TABLE;
-
-/// High-half kernel VA offset (mirror of [`super::arena`]'s constant and
-/// `kernel::arch::aarch64::mmu::VA_OFFSET`). The whole of DRAM is mapped
-/// read/write in the high half at `phys + VA_OFFSET`, so a BDOS-pool
-/// physical address (an Atari `Long`, always in the low 2 GiB) is
-/// reachable from the kernel at this VA — which is how the loader writes
-/// a freshly-`Mxalloc`'d environment block into pool memory.
-const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
-
-/// Kernel VA that aliases physical address `pa`. Inverse of
-/// [`super::arena`]'s `va_to_pa`.
-#[inline(always)]
-const fn pa_to_kva(pa: u64) -> u64 {
-    pa.wrapping_add(VA_OFFSET)
-}
 
 /// Failure modes for [`load_to_slot`].
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -82,11 +77,10 @@ pub enum LoadError {
     /// Anything below that produces this error (B1 / Option 1).
     SegmentVaOutOfRange,
     /// A `PT_LOAD` segment's `vaddr + mem_size` overruns the usable
-    /// TPA image region (`USER_TPA_TOP - USER_STACK_MIN`), i.e. the
+    /// TPA image region (`TPA_SIZE - USER_STACK_MIN`), i.e. the
     /// program image + BSS would collide with the reserved stack.
     ProgramTooLarge,
-    /// `super::mmu::map_page` failed (validation error inside the
-    /// page-table builder).
+    /// Building the process root failed ([`super::mmu`]).
     MapPage(MapError),
     /// The environment block could not be allocated from the BDOS pool
     /// (`Mxalloc` returned 0). EmuTOS `alloc_env` failure →
@@ -158,36 +152,32 @@ impl From<MapError> for LoadError {
 pub struct LoadedImage {
     /// Process slot the image was loaded into.
     pub slot: usize,
-    /// User VA of the program's entry point (= ELF `e_entry`).
+    /// User VA of the program's entry point: the TPA base plus the ELF
+    /// `e_entry` (the image is relocated for the TPA base).
     pub entry_va: u64,
     /// Phys of `slot`'s `L0` table — feed this to
     /// [`super::mmu::install_ttbr0`] right before the `eret`.
     pub l0_pa: u64,
-    /// User VA of the [`BasePage`] populated by
-    /// [`populate_basepage`] — always equals `USER_VA_BASE` (the TPA
-    /// starts with its basepage).
+    /// The **PD pointer**: user VA of the [`BasePage`] populated by
+    /// [`populate_basepage`] = the TPA block's address `B` (VA = PA). The
+    /// child gets it in `x0`.
     pub basepage_va: u64,
-    /// Initial `SP_EL0` for the child: the mapped TPA top
-    /// ([`USER_TPA_TOP`]), 4-KiB- and 16-byte-aligned per AAPCS64.
+    /// Initial `SP_EL0` for the child: the TPA top `B + TPA_SIZE` (= the
+    /// basepage's `p_hitpa`), 4-KiB- and 16-byte-aligned per AAPCS64.
     /// The stack grows down from here; the kernel launch path sets
     /// `SP_EL0` to this and the SDK `crt0` re-derives the same value
     /// from the basepage's `p_hitpa`.
     pub sp_el0: u64,
 }
 
-/// Base of the user-space VA window and the basepage VA — every
-/// process's TPA starts here (`USER_VA_BASE + 0` holds the basepage,
-/// the program image begins at `USER_VA_BASE + sizeof(BasePage)`).
+/// Base of **page 0** — the per-process page at user VA `[0, 0x1000)` that
+/// holds the classic low-memory system area, the trampolines and the vector
+/// tables (plan E3). The page-0 VAs below (`TRAMPOLINE_VA`, …) are offsets
+/// from it. Since ARCH03 stage 1 the basepage is **not** here any more but
+/// at the start of the process's TPA block ([`LoadedImage::basepage_va`]).
 pub const USER_VA_BASE: u64 = 0x0;
 
-/// Exclusive top of the per-process TPA (= initial `SP_EL0` and the
-/// basepage's `p_hitpa`). The TPA maps `[USER_VA_BASE, USER_TPA_TOP)`;
-/// the stack grows down from here. Fixed today at
-/// `USER_VA_BASE + arena::TPA_SIZE` (4 MiB); a per-`Pexec` size would
-/// make this a per-process value carried in [`LoadedImage`].
-pub const USER_TPA_TOP: u64 = USER_VA_BASE + arena::TPA_SIZE;
-
-/// Minimum stack reserved below [`USER_TPA_TOP`]: the program image +
+/// Minimum stack reserved at the top of the TPA: the program image +
 /// BSS may not grow into this window (they would collide with the
 /// stack). The heap lives between the image top and this reserve.
 const USER_STACK_MIN: u64 = 0x1_0000;
@@ -196,28 +186,26 @@ const USER_STACK_MIN: u64 = 0x1_0000;
 /// [`BasePage`].
 const BASEPAGE_RESERVED: u64 = core::mem::size_of::<BasePage>() as u64;
 
-/// End of the per-process reserved low region: the first page (4 KiB) of the
-/// TPA holds the [`BasePage`] (`[0x000, 0x100)`) and the classic TOS
-/// low-memory system area (`[0x400, 0x670)`: sysvars + OSHEADER + cookie jar,
-/// written by [`populate_sysvars`]). ELF `PT_LOAD` segments must place
-/// themselves at or after this address so they never overlap it — the SDK
-/// links native apps here (`sdk/newtos.ld` base `0x1000`). B1 / Option 1,
-/// `docs/analysis/bios-audit/b1-lowmem-feasibility.md` §Option 1.
+/// Size of page 0 and the lowest link address a `PT_LOAD` segment may
+/// have. Page 0 holds the classic TOS low-memory system area (`[0x400,
+/// 0x670)`: sysvars + OSHEADER + cookie jar, written by [`populate_sysvars`])
+/// and the trampolines/vector tables above it; in the TPA, the same first
+/// 4 KiB hold the [`BasePage`] (`[0x000, 0x100)`) and the reserved gap above
+/// it. The SDK links native apps here (`sdk/newtos.ld` base `0x1000`). B1 /
+/// Option 1, `docs/analysis/bios-audit/b1-lowmem-feasibility.md` §Option 1.
 const RESERVED_LOW_END: u64 = 0x1000;
 
-// The reserved low region must fit inside the first TPA page (so `page 0`
-// covers the BasePage + sysvar area) and leave the classic sysvar block
-// (`[0x400, 0x800)`) below the image base.
+// The basepage fits the TPA's first 4 KiB, and the classic sysvar block
+// (`[0x400, 0x800)`) fits page 0.
 const _: () = assert!(BASEPAGE_RESERVED <= RESERVED_LOW_END);
 const _: () = assert!(SYSVAR_AREA_END <= RESERVED_LOW_END);
 
-// Stage 0 (ARCH03): the TPA is mapped at VA 0, so a segment's link VA is
-// also its byte offset in the TPA (`populate_and_map` streams segment `s` to
-// `tpa_bytes[s.vaddr - USER_VA_BASE]`) and the relocation step can index the
-// TPA by link VA with load base `USER_VA_BASE`. Stage 1 places the TPA at a
-// per-process address and must split "offset in the TPA" from "execution
-// address" at that point; this assertion marks the place.
-const _: () = assert!(USER_VA_BASE == 0);
+// A segment's link VA is its byte offset in the TPA: segment `s` is streamed
+// to `tpa_bytes[s.vaddr]`, and the TPA executes at its base `B`, so the
+// relocation load base (the execution address of link VA 0) is `B`
+// (`populate_and_map`). The image must start page-aligned in the TPA (it is
+// linked at `RESERVED_LOW_END`, a page boundary), hence the page-aligned TPA.
+const _: () = assert!(RESERVED_LOW_END.is_multiple_of(arena::TPA_ALIGN));
 
 // The image window must leave room for both the reserved low region and the
 // minimum stack reserve inside the TPA.
@@ -287,13 +275,16 @@ static HEADER_BUF: HeaderBuf = HeaderBuf(UnsafeCell::new([0u8; HEADER_BUF_SIZE])
 ///
 /// Sequence:
 /// 1. Parse the blob via [`elf::parse`].
-/// 2. For each `PT_LOAD` segment, validate it fits in the single
-///    user page and copy file bytes into that page; zero the BSS
-///    tail (`mem_size - file_size`). Then apply the image's
-///    `R_AARCH64_RELATIVE` relocations ([`super::reloc`], ARCH03 0d).
-/// 3. Initialise the slot's page tables and install one mapping
-///    `(USER_VA_BASE → user-page-phys, UserRwExec)`.
-/// 4. Return a [`LoadedImage`] ready for the caller's eret.
+/// 2. Take a page-aligned TPA block from the BDOS pool ([`arena::alloc_tpa`]).
+/// 3. Stream each `PT_LOAD` segment into it, zero the rest, and apply the
+///    image's `R_AARCH64_RELATIVE` relocations for the block address
+///    ([`super::reloc`]).
+/// 4. Write the basepage at the block start and the slot's page 0, build
+///    the slot's root ([`super::mmu::init_slot_tables`]).
+/// 5. Return a [`LoadedImage`] ready for the caller's eret.
+///
+/// This legacy 2-arg entry (the kernel-launch D3/D6/D7 selftests) hands no
+/// command tail and no environment, and gives the TPA to the child.
 ///
 /// # Safety
 ///
@@ -304,15 +295,12 @@ pub unsafe fn load_to_slot(
     elf_bytes: &[u8],
     slot: usize,
 ) -> Result<LoadedImage, LoadError> {
-    // Legacy 2-arg entry (kernel-launch D3/D6/D7 selftests): no command
-    // tail, no environment — the child's `p_cmdlin` and `p_env` stay
-    // zero, exactly as before this plumbing landed.
     // SAFETY: forwarded — same BDOS-lock / trap-context contract.
-    unsafe { load_to_slot_with(elf_bytes, slot, &[], EnvSpec::None, false) }
+    unsafe { load_to_slot_with(elf_bytes, slot, &[], EnvSpec::None, true) }
 }
 
 /// Load a FAT [`FileImage`] into `slot`, streaming each `PT_LOAD`
-/// segment straight from the file into the mapped TPA — the `Pexec`
+/// segment straight from the file into the TPA — the `Pexec`
 /// file-path entry. Segments never pass through a fixed buffer, so the
 /// program is limited only by the TPA size, not by any load-buffer cap.
 /// See [`load_to_slot_with`] for the `tail` / `env` / ownership
@@ -326,12 +314,10 @@ pub unsafe fn load_file_to_slot(
     slot: usize,
     tail: &[u8],
     env: EnvSpec<'_>,
-    env_owned_by_child: bool,
+    owned_by_child: bool,
 ) -> Result<LoadedImage, LoadError> {
     // SAFETY: forwarded — same BDOS-lock / trap-context contract.
-    unsafe {
-        load_from_source(ImageSource::File(file), slot, tail, env, env_owned_by_child)
-    }
+    unsafe { load_from_source(ImageSource::File(file), slot, tail, env, owned_by_child) }
 }
 
 /// Load an ELF blob into `slot`, additionally populating the child's
@@ -349,12 +335,14 @@ pub unsafe fn load_file_to_slot(
 ///     there (the length under the convention).
 ///   * **Environment** (`env`): allocated from the BDOS pool and copied
 ///     verbatim — EmuTOS `alloc_env` (`bdos/proc.c:413-431`). `p_env`
-///     receives the pool address of the copy.
-///   * **Ownership** (`env_owned_by_child`): when `true` (PE_LOADGO),
-///     the env block is re-tagged to the child so the child's `Pterm`
-///     frees it (`owner = p`, `bdos/proc.c:305`); when `false`
-///     (PE_LOAD) it keeps the allocating-process cookie (`owner =
-///     run`).
+///     receives the block's address, which every process can read (the
+///     pool is shared, VA = PA — MEM03).
+///   * **Ownership** (`owned_by_child`): EmuTOS `owner = (flag ==
+///     PE_LOADGO) ? p : run` (`bdos/proc.c:302-307`) for **both** the TPA and
+///     the environment. `true` (`PE_LOADGO`, and every program the kernel
+///     launches itself) tags them with the child's PD pointer, so the
+///     child's `Pterm` frees them; `false` (`PE_LOAD`) leaves them with the
+///     caller (`current_owner`), which gets the PD pointer back and decides.
 ///
 /// # Safety
 ///
@@ -364,17 +352,11 @@ pub unsafe fn load_to_slot_with(
     slot: usize,
     tail: &[u8],
     env: EnvSpec<'_>,
-    env_owned_by_child: bool,
+    owned_by_child: bool,
 ) -> Result<LoadedImage, LoadError> {
     // SAFETY: forwarded — same BDOS-lock / trap-context contract.
     unsafe {
-        load_from_source(
-            ImageSource::Memory(elf_bytes),
-            slot,
-            tail,
-            env,
-            env_owned_by_child,
-        )
+        load_from_source(ImageSource::Memory(elf_bytes), slot, tail, env, owned_by_child)
     }
 }
 
@@ -391,7 +373,7 @@ unsafe fn load_from_source(
     slot: usize,
     tail: &[u8],
     env: EnvSpec<'_>,
-    env_owned_by_child: bool,
+    owned_by_child: bool,
 ) -> Result<LoadedImage, LoadError> {
     if slot >= super::MAX_PROCESSES {
         return Err(LoadError::InvalidSlot);
@@ -433,37 +415,40 @@ unsafe fn load_from_source(
         return Err(LoadError::Ilp32Unsupported);
     }
 
-    // 2. Allocate the per-process TPA from the BDOS pool and re-tag it
-    //    to the child basepage cookie (= the TPA base kernel VA), so
-    //    the child's `Pterm` `free_all_owned` sweep reclaims it — the
-    //    EmuTOS m_own model for the basepage MD (`bdos/proc.c:305`).
+    // 2. Take the TPA block from the BDOS pool. Its address is the child's
+    //    PD pointer. `Mxalloc` stamped the caller as owner (`owner = run`);
+    //    for `PE_LOADGO` the block goes to the child (`owner = p`,
+    //    EmuTOS `bdos/proc.c:302-307`), so the child's `Pterm`
+    //    `free_all_owned` sweep reclaims it.
     // SAFETY: BDOS lock held; single-CPU pre-test.
     let tpa = unsafe { arena::alloc_tpa() }.ok_or(LoadError::NoTpaMemory)?;
-    // SAFETY: `raw_start` is on the allocated list; `base_kva` is a
-    // pointer-equality cookie only (never dereferenced by the sweep).
-    unsafe {
-        crate::bdos::mem::traps::set_owner(tpa.raw_start, tpa.base_kva.cast());
+    if owned_by_child {
+        // SAFETY: `tpa.base` is on the allocated list; the owner cookie is
+        // a pointer-equality tag, never dereferenced by the sweep.
+        unsafe {
+            crate::bdos::mem::traps::set_owner(tpa.base as Long, tpa.base as *mut c_void);
+        }
     }
 
-    // 3. Populate + map; free the TPA on any failure — no `Pterm` runs
-    //    for a load that never launched, so we must not leak the block.
+    // 3. Populate + build the root; free the TPA on any failure — no `Pterm`
+    //    runs for a load that never launched, so we must not leak the block.
     // SAFETY: BDOS lock held; `tpa` is a fresh, exclusively-owned
     // page-aligned region.
     match unsafe {
-        populate_and_map(&src, slot, &img, tail, env, env_owned_by_child, &tpa)
+        populate_and_map(&src, slot, &img, tail, env, owned_by_child, &tpa)
     } {
         Ok(loaded) => Ok(loaded),
         Err(e) => {
-            // SAFETY: BDOS lock held; `raw_start` is still allocated.
-            unsafe { arena::free_tpa(tpa.raw_start) };
+            // SAFETY: BDOS lock held; `tpa.base` is still allocated.
+            unsafe { arena::free_tpa(tpa.base as Long) };
             Err(e)
         }
     }
 }
 
 /// Stream the ELF image into `tpa`, zero its BSS, allocate the
-/// environment, write the basepage, sync the code caches, install the
-/// per-process page tables, and publish the slot metadata.
+/// environment, write the basepage and the slot's page 0, sync the code
+/// caches, build the slot's root and publish the slot metadata.
 ///
 /// Factored out of [`load_from_source`] so the caller can free the TPA
 /// on any error (the `?`/early-return points all propagate here).
@@ -471,16 +456,18 @@ unsafe fn load_from_source(
 /// # Safety
 ///
 /// Caller holds the BDOS giant lock; `tpa` is a fresh page-aligned
-/// pool region owned by the child; `slot` is bounds-checked.
+/// pool region; `slot` is bounds-checked.
 unsafe fn populate_and_map(
     src: &ImageSource<'_>,
     slot: usize,
     img: &ElfImage,
     tail: &[u8],
     env: EnvSpec<'_>,
-    env_owned_by_child: bool,
+    owned_by_child: bool,
     tpa: &arena::Tpa,
 ) -> Result<LoadedImage, LoadError> {
+    let base = tpa.base;
+
     // Whole-TPA mutable byte view via the kernel high-half alias.
     // SAFETY: the pool block backs `TPA_SIZE` contiguous bytes at
     // `base_kva`, mapped RW in the high half; single-CPU under the lock.
@@ -492,16 +479,15 @@ unsafe fn populate_and_map(
     // stale pool contents leak into the new process (see module docs).
     tpa_bytes.fill(0);
 
-    // Stream each PT_LOAD segment's file bytes directly into the mapped
-    // TPA at its VA — for a FAT file, straight from disk into the TPA VA
-    // with no fixed intermediate buffer (the segment can be any size up
-    // to the TPA). Track the highest image byte so the cache maintenance
-    // below covers exactly text+data (not the heap).
+    // Stream each PT_LOAD segment's file bytes directly into the TPA at
+    // its link VA (the byte offset in the TPA) — for a FAT file, straight
+    // from disk with no fixed intermediate buffer. Track the highest image
+    // byte so the cache maintenance below covers exactly text+data.
     let mut image_top = BASEPAGE_RESERVED;
     for seg in img.segments() {
         validate_segment(seg)?;
 
-        let dest_off = (seg.vaddr - USER_VA_BASE) as usize;
+        let dest_off = seg.vaddr as usize;
         let file_size = seg.file_size as usize;
 
         if file_size > 0 {
@@ -515,106 +501,73 @@ unsafe fn populate_and_map(
         image_top = image_top.max(seg.vaddr + seg.mem_size);
     }
 
-    // Apply the image's `R_AARCH64_RELATIVE` relocations (ARCH03 stage 0d,
-    // [`super::reloc`]): every absolute data word the PIE carries becomes
-    // `load base + addend`. `tpa_bytes` is indexed by link VA (segment `s`
-    // was streamed to `tpa_bytes[s.vaddr]`, see the `USER_VA_BASE == 0`
-    // assertion next to `RESERVED_LOW_END`), and the TPA executes at
-    // `USER_VA_BASE`, so that is the load base. Done before anything else is written into the TPA
-    // and before the cache maintenance below, so the I-cache sync sees the
-    // final image. A refused relocation fails the load (`EPLFMT`); the
-    // caller frees the TPA, so a half-relocated image never runs.
-    reloc::relocate(tpa_bytes, img, USER_VA_BASE)?;
+    // Apply the image's `R_AARCH64_RELATIVE` relocations ([`super::reloc`]):
+    // every absolute data word the PIE carries becomes `B + addend`. The
+    // view is indexed by link VA and the TPA executes at `B`, so `B` is the
+    // execution address of link VA 0 — the load base. Done before anything
+    // else is written into the TPA and before the cache maintenance below,
+    // so the I-cache sync sees the final image. A refused relocation fails
+    // the load (`EPLFMT`); the caller frees the TPA, so a half-relocated
+    // image never runs.
+    reloc::relocate(tpa_bytes, img, base)?;
 
     // Allocate + copy the environment (EmuTOS `alloc_env`), before the
-    // basepage so `p_env` is stamped in one pass. The child cookie is
-    // the TPA base kernel VA (= the basepage VA on the kernel side).
+    // basepage so `p_env` is stamped in one pass. Same owner as the TPA.
     // SAFETY: BDOS lock held.
-    let env_phys = unsafe {
-        alloc_env_for(env, tpa.base_kva as *mut c_void, env_owned_by_child)?
-    };
+    let env_addr = unsafe { alloc_env_for(env, base as *mut c_void, owned_by_child)? };
 
-    // Write the BasePage into the reserved window at the TPA start.
-    populate_basepage(tpa_bytes, img, tail, env_phys);
+    // Write the BasePage at the TPA start.
+    populate_basepage(tpa_bytes, img, tail, env_addr, base);
 
-    // Populate the classic TOS low-memory system area (sysvars + OSHEADER +
-    // cookie jar) in the reserved low region, per-process (B1 / Option 1).
-    // A 1:1-ported TOS app reads `_sysbase`@0x4F2 / `_p_cookies`@0x5A0 / the
-    // OSHEADER directly (e.g. TeraDesk `main.c:56`), so these must be a real,
-    // populated instance in the app's own EL0-VA space. Ordered before the
-    // cache maintenance below so its `dsb ish` makes the writes observable to
-    // EL0 before the process runs.
-    populate_sysvars(tpa_bytes);
+    // The process's private page 0: the classic TOS low-memory system area
+    // (sysvars + OSHEADER + cookie jar + the `os_run` cell), the upcall and
+    // `G_USERDEF` trampolines and the KEYS02 vector table (B1 / Option 1,
+    // plan E3). A 1:1-ported TOS app reads `_sysbase`@0x4F2 /
+    // `_p_cookies`@0x5A0 / the OSHEADER directly (e.g. TeraDesk
+    // `main.c:56`), so these must be a real, populated instance in the
+    // app's own address space.
+    // SAFETY: BDOS lock held; the slot's page 0 belongs to this load.
+    let page0 = unsafe { mmu::page0_bytes(slot) }.ok_or(LoadError::InvalidSlot)?;
+    page0.fill(0);
+    populate_sysvars(page0, base);
+    write_upcall_trampoline(page0);
+    write_userdef_trampoline(page0);
+    crate::xbios::kbdvecs::write_defaults(page0);
 
-    // Write the per-process EL0 upcall trampoline into the reserved
-    // low-memory gap (cooperative-kernel building block 1,
-    // docs/analysis/coop-kernel/10-upcall-signal-design.md §4). Same page-0
-    // region, same pre-cache-maintenance ordering as the sysvars, so the
-    // `sync_code_cache` below makes it observable to the EL0 fetch.
-    write_upcall_trampoline(tpa_bytes);
-
-    // Write the AES `G_USERDEF` callout stub (AES-as-thread design §4) into the
-    // same reserved low gap, directly above the resume trampoline. Written in
-    // the same window/ordering so the `sync_code_cache` below covers it too.
-    write_userdef_trampoline(tpa_bytes);
-
-    // The per-process IKBD vector table and its default stubs (KEYS02,
-    // `docs/api/xbios/22-kbdvbase.md` B1/B3). Same page-0 gap, same
-    // pre-cache-maintenance ordering, so the stubs are fetchable at EL0.
-    crate::xbios::kbdvecs::write_defaults(tpa_bytes);
-
-    // Make the freshly-written program bytes observable to instruction
-    // fetch on real hardware (clean D-cache to PoU + invalidate I-cache
-    // over the image region only). QEMU has no caches, so this is a
-    // no-op there. Cortex-A72 caches are PIPT, so by-VA maintenance via
-    // the kernel alias hits the same PA the program later fetches.
-    // SAFETY: `[base_kva, base_kva + image_top)` is live and mapped.
+    // Make the freshly-written instructions observable to instruction fetch
+    // on real hardware (clean D-cache to PoU + invalidate I-cache) — the
+    // program image and page 0's trampolines/stubs. QEMU has no caches, so
+    // this is a no-op there. Cortex-A72 caches are PIPT, so by-VA
+    // maintenance via the kernel alias hits the same PA the program later
+    // fetches.
+    // SAFETY: both ranges are live and mapped in the kernel's high half.
     unsafe {
         mmu::sync_code_cache(tpa.base_kva as usize, image_top as usize);
+        mmu::sync_code_cache(page0.as_ptr() as usize, page0.len());
     }
 
-    // Install the per-process page tables and map every TPA page into
-    // the slot's low half at `USER_VA_BASE + off`. All pages are mapped
-    // `UserRwExec` (image + heap + stack share the attribute; a per-
-    // segment RX/RW split is a later hardening step).
+    // Build the slot's root: the shared tables (pools, publications) plus
+    // its own page 0. Nothing is mapped per TPA page any more — the pool
+    // the TPA lives in is in every root from boot on (VA = PA).
     // SAFETY: slot bounds-checked; single-CPU under the lock.
-    unsafe {
-        mmu::init_slot_tables(slot)?;
-        let page_size = arena::page_size();
-        let mut off = 0u64;
-        while off < arena::TPA_SIZE {
-            mmu::map_page(
-                slot,
-                USER_VA_BASE + off,
-                tpa.base_pa + off,
-                PageFlags::UserRwExec,
-            )?;
-            off += page_size;
-        }
-    }
+    unsafe { mmu::init_slot_tables(slot)? };
 
-    // Register the TPA as the first per-process EL0 user-memory block
-    // (ADR-021): an EL0 `Mshrink`/`Mfree` of the basepage arrives as user
-    // VA 0, which must translate to the TPA's pool block (`raw_start`)
-    // instead of failing `EIMBA`. This also resets the slot's heap-window
-    // table so a reused slot starts clean.
-    // SAFETY: BDOS lock held; slot bounds-checked.
-    unsafe {
-        super::usermem::seed_tpa(slot, tpa.raw_start, tpa.base_pa, arena::TPA_SIZE);
-    }
+    // A new tenant holds no uncached screen pointer yet.
+    usermem::clear_uncached(slot);
 
     // Publish the slot metadata so `Pterm` (via `slot_for(run)`) and the
-    // trap handler can find this process. `basepage_kva` is the high-
-    // half VA of the TPA base; `basepage_pa` the low-half phys the user
-    // maps via TTBR0; `l0_pa` the page-table root the handler installs.
+    // trap handler can find this process.
     let l0_pa = mmu::l0_pa_for(slot);
+    let entry_va = base + img.entry_va;
+    let sp_el0 = base + arena::TPA_SIZE;
     let proc_slot = &PROCESS_TABLE[slot];
     proc_slot
         .basepage_kva
         .store(tpa.base_kva as *mut BasePage, Ordering::Release);
-    proc_slot.basepage_pa.store(tpa.base_pa, Ordering::Release);
+    proc_slot.basepage_pa.store(base, Ordering::Release);
     proc_slot.l0_pa.store(l0_pa, Ordering::Release);
-    proc_slot.entry_va.store(img.entry_va, Ordering::Release);
+    proc_slot.entry_va.store(entry_va, Ordering::Release);
+    proc_slot.sp_el0.store(sp_el0, Ordering::Release);
     // Record the program ABI so the GEM trap dispatch reads this
     // process's AES/VDI parameter blocks at the caller's pointer width
     // (ADR-020). Always LP64: step 1b above rejected every ELFCLASS32
@@ -626,21 +579,23 @@ unsafe fn populate_and_map(
 
     Ok(LoadedImage {
         slot,
-        entry_va: img.entry_va,
+        entry_va,
         l0_pa,
-        basepage_va: USER_VA_BASE,
-        sp_el0: USER_TPA_TOP,
+        basepage_va: base,
+        sp_el0,
     })
 }
 
 /// Write the [`BasePage`] into the reserved window at the start of the
-/// TPA (`tpa[0..sizeof(BasePage)]`).
+/// TPA (`tpa[0..sizeof(BasePage)]`). `base` is the TPA's address — the PD
+/// pointer — and every address field is relative to it (EmuTOS
+/// `init_pd_fields`, `bdos/proc.c:363-384`, and `kpgmld.c:123-145`).
 ///
 /// Sources:
-///   * `p_lowtpa` / `p_hitpa` — TPA extents: `[USER_VA_BASE,
-///     USER_TPA_TOP)`. `p_hitpa` is the multi-page TPA top, i.e. the
-///     initial stack pointer; the heap lives between the BSS end
-///     (`p_bbase + p_blen`) and the downward-growing stack.
+///   * `p_lowtpa` / `p_hitpa` — TPA extents: `[base, base + TPA_SIZE)`.
+///     `p_hitpa` is the TPA top, i.e. the initial stack pointer; the heap
+///     lives between the BSS end (`p_bbase + p_blen`) and the
+///     downward-growing stack.
 ///   * `p_tbase` / `p_tlen` — first executable `PT_LOAD` segment.
 ///   * `p_dbase` / `p_dlen` — first non-executable, writable
 ///     `PT_LOAD` segment, file portion only.
@@ -653,16 +608,17 @@ unsafe fn populate_and_map(
 ///
 /// `p_cmdlin` receives the caller's command `tail` (verbatim, truncated
 /// to 127 bytes, NUL-terminated — EmuTOS `init_pd_fields`
-/// `bdos/proc.c:378-383`); `p_env` receives the pool address of the
-/// copied environment block (`env_phys`), or `0` when none was
-/// allocated. `p_parent`, `p_curdir` and the saved-register cells are
-/// left zero (parent linkage is set by the launch path; current-dir
-/// inheritance is a Phase-08 concern).
+/// `bdos/proc.c:378-383`); `p_env` receives the address of the
+/// copied environment block (`env_addr`), or `0` when none was
+/// allocated. `p_parent` is set when the process is started (EmuTOS
+/// `proc_go`, `bdos/proc.c:541` — `pexec::set_parent`); `p_curdir` and the
+/// saved-register cells are left zero.
 fn populate_basepage(
     tpa: &mut [u8],
     img: &ElfImage,
     tail: &[u8],
-    env_phys: Option<Long>,
+    env_addr: Option<Long>,
+    base: u64,
 ) {
     let mut text_base: u64 = 0;
     let mut text_len: u64 = 0;
@@ -670,17 +626,20 @@ fn populate_basepage(
     let mut data_len: u64 = 0;
     let mut bss_base: u64 = 0;
     let mut bss_len: u64 = 0;
+    let (mut have_text, mut have_data) = (false, false);
 
     for seg in img.segments() {
         let is_x = (seg.flags & PF_X) != 0;
         let is_w = (seg.flags & PF_W) != 0;
-        if is_x && text_base == 0 {
-            text_base = seg.vaddr;
+        if is_x && !have_text {
+            have_text = true;
+            text_base = base + seg.vaddr;
             text_len = seg.file_size;
-        } else if is_w && !is_x && data_base == 0 {
-            data_base = seg.vaddr;
+        } else if is_w && !is_x && !have_data {
+            have_data = true;
+            data_base = base + seg.vaddr;
             data_len = seg.file_size;
-            bss_base = seg.vaddr + seg.file_size;
+            bss_base = base + seg.vaddr + seg.file_size;
             bss_len = seg.mem_size - seg.file_size;
         }
     }
@@ -696,19 +655,18 @@ fn populate_basepage(
     // borrow over it for the lifetime of `bp`.
     let bp = unsafe { &mut *(bp_bytes.as_mut_ptr() as *mut BasePage) };
 
-    bp.p_lowtpa = USER_VA_BASE as Long;
-    bp.p_hitpa = USER_TPA_TOP as Long;
+    bp.p_lowtpa = base as Long;
+    bp.p_hitpa = (base + arena::TPA_SIZE) as Long;
     bp.p_tbase = text_base as Long;
     bp.p_tlen = text_len as Long;
     bp.p_dbase = data_base as Long;
     bp.p_dlen = data_len as Long;
     bp.p_bbase = bss_base as Long;
     bp.p_blen = bss_len as Long;
-    bp.p_xdta = (USER_VA_BASE
-        + core::mem::offset_of!(BasePage, p_cmdlin) as u64) as Long;
+    bp.p_xdta = (base + core::mem::offset_of!(BasePage, p_cmdlin) as u64) as Long;
     bp.p_parent = 0;
     bp.p_flags = PF_STANDARD;
-    bp.p_env = env_phys.unwrap_or(0);
+    bp.p_env = env_addr.unwrap_or(0);
     bp.p_uft = [-1; NUMSTD];
     bp.p_lddrv = 0;
     bp.p_curdrv = 0;
@@ -759,6 +717,18 @@ const _: () = assert!(COOKIE_JAR_SLOTS >= 6); // NTOS _MCH _IDT _AKP EdDI + {0, 
 
 /// Exclusive end of the classic low-memory system area (= jar end, 0x670).
 const SYSVAR_AREA_END: u64 = COOKIE_JAR_VA as u64 + (COOKIE_JAR_SLOTS as u64) * 8;
+
+/// Page-0 VA of the **`os_run` cell** — the "current PD" variable OSHEADER
+/// `os_run` (+0x28) points at (EmuTOS `_run`, `bios/startup.S:110-111`).
+/// Plan Frage 12: a cell in the free part of page 0 below the OSHEADER;
+/// `0x5B8` is the first 8-byte-aligned address after the last documented
+/// system variable (`_kcl_hook` `0x5B0`, `references/emutos/tosvars.ld`,
+/// which reserves the space up to the OSHEADER for "undocumented variables").
+/// Written as 8 bytes (the PD pointer, upper half 0), so a 4-byte and an
+/// 8-byte read both yield it.
+pub const OS_RUN_CELL_VA: u64 = 0x5B8;
+
+const _: () = assert!(OS_RUN_CELL_VA >= 0x5B4 && OS_RUN_CELL_VA + 8 <= OSHEADER_VA as u64);
 
 /// EL0 VA of the per-process upcall trampoline (cooperative-kernel building
 /// block 1, `docs/analysis/coop-kernel/10-upcall-signal-design.md` §4.1).
@@ -905,10 +875,11 @@ fn wr_word(buf: &mut [u8], off: usize, v: u16) {
     buf[off..off + 2].copy_from_slice(&v.to_le_bytes());
 }
 
-/// Populate the classic TOS low-memory system area in the reserved low
-/// region of a freshly-loaded TPA (B1 / Option 1).
+/// Populate the classic TOS low-memory system area in the process's page 0
+/// (B1 / Option 1). `pd` is the process's PD pointer, for the `os_run` cell.
 ///
-/// Writes, per-process and through the kernel high-half alias `tpa`:
+/// Writes, per-process and through the kernel high-half alias `tpa` (the
+/// slot's page 0):
 ///   * an **OSHEADER instance** at [`OSHEADER_VA`]
 ///     (`docs/api/structures/osheader.md`),
 ///   * the **classic system variables** at their fixed `$400`-region
@@ -918,12 +889,10 @@ fn wr_word(buf: &mut [u8], off: usize, v: u16) {
 ///     (`docs/api/bios/_cookie-jar.md`) so `_p_cookies`@0x5A0 reaches a
 ///     well-formed jar.
 ///
-/// `tpa` is the whole-TPA byte view; every write lands in the first page,
-/// disjoint from the BasePage (`[0x000, 0x100)`) and the app image
-/// (`>= 0x1000`). Called before the code-cache maintenance in
-/// [`populate_and_map`] so its `dsb ish` makes the writes observable to EL0
-/// before the process runs.
-fn populate_sysvars(tpa: &mut [u8]) {
+/// `tpa` is the page-0 byte view. Called before the code-cache maintenance
+/// in [`populate_and_map`] so its `dsb ish` makes the writes observable to
+/// EL0 before the process runs.
+fn populate_sysvars(tpa: &mut [u8], pd: u64) {
     // ── OSHEADER instance (osheader.md; EmuTOS bios/startup.S:73-114
     //    `_os_header`) ─────────────────────────────────────────────────
     let oh = OSHEADER_VA as usize;
@@ -964,11 +933,12 @@ fn populate_sysvars(tpa: &mut [u8]) {
     // os_root (+0x20): BDOS quick-pool head (EL1-only). Left 0.
     // os_kbshift (+0x24): ptr to the kbshift byte (EL1-only). Left 0.
     // os_run (+0x28): `PD**` → the cell holding the current-PD ptr (EmuTOS
-    // startup.S:110-111, `_boot-init.md` §4). Under NewTOS Option-1
-    // single-tasking the running PD is the BasePage at USER_VA_BASE (0), and
-    // BasePage[0] (`p_lowtpa`) == 0 == that same VA, so pointing os_run at
-    // the BasePage yields the classic `*(os_run) == current-PD` contract.
-    wr_long(tpa, oh + 0x28, USER_VA_BASE as u32);
+    // startup.S:110-111, `_boot-init.md` §4). The cell is page 0's
+    // [`OS_RUN_CELL_VA`] and holds this process's PD pointer: page 0 is the
+    // process's own, and while it runs the current process is itself (plan
+    // Frage 12, ARCH03 stage 1 — the basepage is no longer at VA 0).
+    wr_long(tpa, oh + 0x28, OS_RUN_CELL_VA as u32);
+    tpa[OS_RUN_CELL_VA as usize..OS_RUN_CELL_VA as usize + 8].copy_from_slice(&pd.to_le_bytes());
     // os_dummy (+0x2C): OS signature. EmuTOS 'ETOS'; NewTOS 'NTOS'
     // (osheader.md §os_dummy).
     wr_long(tpa, oh + 0x2C, u32::from_be_bytes(*b"NTOS"));
@@ -1249,7 +1219,7 @@ fn write_userdef_trampoline(tpa: &mut [u8]) {
 /// EmuTOS `alloc_env` (`bdos/proc.c:413-431`) plus the `set_owner`
 /// hand-off (`bdos/proc.c:305-307`).
 ///
-/// `child_cookie` is the child basepage's kernel VA (the ownership tag
+/// `child_cookie` is the child's PD pointer (the ownership tag
 /// `free_all_owned` matches); `owned_by_child` selects whether the env
 /// block is re-tagged to the child (`PE_LOADGO`) or left owned by the
 /// allocating process (`PE_LOAD`).
@@ -1273,9 +1243,9 @@ unsafe fn alloc_env_for(
         }
         EnvSpec::Inherit => {
             // env == NULL → duplicate run->p_env (EmuTOS proc.c:419-420).
-            let run = crate::bdos::process::current();
-            // SAFETY: BDOS lock held; `run`/its `p_env` phys point at
-            // live pool memory when non-null.
+            let run = crate::bdos::process::current_kva();
+            // SAFETY: BDOS lock held; `run` is the running basepage's kernel
+            // alias and its `p_env` a live pool block when non-null.
             let phys = unsafe {
                 let src: &[u8] = if run.is_null() {
                     &EMPTY_ENV
@@ -1317,9 +1287,9 @@ unsafe fn alloc_env(
     if phys == 0 {
         return Err(LoadError::NoEnvMemory);
     }
-    // Copy verbatim into the pool block (reachable at phys + VA_OFFSET),
+    // Copy verbatim into the pool block (through its kernel alias),
     // zero-padding the even-rounding tail.
-    let dst = pa_to_kva(phys as u64) as *mut u8;
+    let dst = kalias(phys as u64) as *mut u8;
     // SAFETY: `dst` aliases `size` bytes of live, RW-mapped pool memory
     // (whole DRAM is linearly mapped in the high half); `img` is a
     // distinct, live slice.
@@ -1339,8 +1309,9 @@ unsafe fn alloc_env(
     Ok(phys)
 }
 
-/// Borrow the environment block living at pool physical address `penv`
-/// as a byte slice, including its terminating double-NUL. Scans for the
+/// Borrow the environment block at pool address `penv` (a user address,
+/// read through its kernel alias) as a byte slice, including its
+/// terminating double-NUL. Scans for the
 /// `\0\0` terminator, bounded by [`ENV_SCAN_LIMIT`] against a malformed
 /// (unterminated) parent env.
 ///
@@ -1349,7 +1320,7 @@ unsafe fn alloc_env(
 /// Caller holds the BDOS giant lock and `penv` addresses a live pool
 /// environment block (invariant of every `p_env` this loader writes).
 unsafe fn env_slice_from_phys(penv: Long) -> &'static [u8] {
-    let base = pa_to_kva(penv as u64) as *const u8;
+    let base = kalias(penv as u32 as u64) as *const u8;
     let mut n = 0usize;
     while n + 1 < ENV_SCAN_LIMIT {
         // SAFETY: `n + 1 < ENV_SCAN_LIMIT`; pool memory is mapped.
@@ -1373,31 +1344,28 @@ const ENV_SCAN_LIMIT: usize = 4096;
 /// Reject segments that clobber the reserved low region or overrun the
 /// usable TPA image region.
 ///
-/// A `PT_LOAD` may now span many pages; it must start at or after the
-/// reserved low region ([`RESERVED_LOW_END`], the first page above the
-/// BasePage + classic sysvars/OSHEADER/cookie-jar area — B1/Option 1) and
-/// end at or before `USER_TPA_TOP - USER_STACK_MIN`, leaving the top of the
-/// TPA for the downward-growing stack. The heap occupies whatever is left
-/// between the image top and the stack.
+/// A `PT_LOAD` (link VA = byte offset in the TPA) must start at or after
+/// [`RESERVED_LOW_END`] — the BasePage and its reserved gap occupy the
+/// TPA's first page — and end at or before `TPA_SIZE - USER_STACK_MIN`,
+/// leaving the top of the TPA for the downward-growing stack. The heap
+/// occupies whatever is left between the image top and the stack.
 fn validate_segment(seg: &LoadSegment) -> Result<(), LoadError> {
-    // VA must lie within [RESERVED_LOW_END, image_top). Segments below the
-    // reserved low region would overlap the per-process sysvar/OSHEADER area
-    // `populate_sysvars` writes (sysbase@0x4F2 etc.), so they are rejected —
-    // the SDK links native apps at RESERVED_LOW_END (`sdk/newtos.ld`).
-    let min_va = USER_VA_BASE + RESERVED_LOW_END;
-    if seg.vaddr < min_va {
+    // Segments below the reserved low region would overlap the basepage, so
+    // they are rejected — the SDK links native apps at RESERVED_LOW_END
+    // (`sdk/newtos.ld`).
+    if seg.vaddr < RESERVED_LOW_END {
         return Err(LoadError::SegmentVaOutOfRange);
     }
     let end = seg
         .vaddr
         .checked_add(seg.mem_size)
         .ok_or(LoadError::ProgramTooLarge)?;
-    if end > USER_TPA_TOP - USER_STACK_MIN {
+    if end > arena::TPA_SIZE - USER_STACK_MIN {
         return Err(LoadError::ProgramTooLarge);
     }
     // PF_R is implicit for any LOAD; PF_W and PF_X drive the text/data
-    // classification in `populate_basepage`. Every TPA page is mapped
-    // UserRwExec, so the flags don't gate the mapping decision yet — a
+    // classification in `populate_basepage`. The whole pool is mapped
+    // UserRwExec, so the flags don't gate a mapping decision — a
     // per-segment RX/RW split is a later hardening step.
     let _ = seg.flags & (PF_W | PF_X);
     Ok(())
@@ -1460,18 +1428,20 @@ mod cookie_mirror_tests {
         const TAG: u32 = u32::from_be_bytes(*b"TST1");
         const OTHER: u32 = u32::from_be_bytes(*b"TST2");
 
-        // A loaded process: a zeroed TPA page published as the slot's
-        // `basepage_kva`, exactly what `load_to_slot` publishes.
+        // A loaded process: a basepage published as the slot's
+        // `basepage_kva`, exactly what `load_to_slot` publishes; its mirror
+        // lives in the slot's page 0 (ARCH03 stage 1).
         let slot = allocate_slot().expect("a free process slot");
-        let page_box: Box<[u8; 4096]> = Box::new([0u8; 4096]);
-        let page_ptr = Box::into_raw(page_box);
+        let bp_box: Box<[u8; 4096]> = Box::new([0u8; 4096]);
+        let bp_ptr = Box::into_raw(bp_box);
         PROCESS_TABLE[slot]
             .basepage_kva
-            .store(page_ptr.cast(), Ordering::Release);
+            .store(bp_ptr.cast(), Ordering::Release);
 
         // Load time: the mirror is written once, from the jar as it is now.
-        // SAFETY: the buffer is ours for the whole test and 4096 bytes long.
-        let page: &mut [u8; 4096] = unsafe { &mut *page_ptr };
+        // SAFETY: the slot's page 0 is this test's for its whole run.
+        let page: &mut [u8; 4096] = unsafe { mmu::page0_bytes(slot) }.expect("page 0");
+        page.fill(0);
         write_cookie_jar(page);
         let before = scan(page, TAG).0;
 
@@ -1528,7 +1498,7 @@ mod cookie_mirror_tests {
         }
         free_slot(slot);
         // SAFETY: the slot no longer references the buffer; reclaim it.
-        drop(unsafe { Box::from_raw(page_ptr) });
+        drop(unsafe { Box::from_raw(bp_ptr) });
     }
 }
 
@@ -1613,7 +1583,7 @@ mod basepage_segment_tests {
         let img = elf::parse(&blob, blob.len() as u64).expect("well-formed ELF64");
         assert_eq!(img.segments().len(), segs.len(), "every PT_LOAD must be seen");
         let mut tpa = vec![0u8; RESERVED_LOW_END as usize];
-        populate_basepage(&mut tpa, &img, &[], None);
+        populate_basepage(&mut tpa, &img, &[], None, 0);
         let rd = |off: usize| u32::from_le_bytes(tpa[off..off + 4].try_into().unwrap()) as u64;
         (rd(0x08), rd(0x0C), rd(0x10), rd(0x14), rd(0x18), rd(0x1C))
     }
@@ -1661,6 +1631,47 @@ mod basepage_segment_tests {
 
         assert_eq!((tbase, tlen), (RESERVED_LOW_END, LEN));
         assert_eq!((dbase, dlen, bbase, blen), (0, 0, 0, 0), "an RWX segment carries no data fields");
+    }
+
+    /// ARCH03 stage 1: the basepage sits at the start of the TPA block `B`
+    /// (EmuTOS `p_lowtpa = p`, `bdos/proc.c:372`) and the image executes
+    /// relocated at `B + link VA`, so every address field is `B`-relative;
+    /// the lengths do not change.
+    #[test]
+    fn address_fields_are_relative_to_the_tpa_block() {
+        const B: u64 = 0x0109_7000;
+        let blob = elf_with(&[
+            (PF_R | PF_X, RESERVED_LOW_END, 0x400, 0x400),
+            (PF_R | PF_W, RESERVED_LOW_END + 0x400, 0x80, 0x100),
+        ]);
+        let img = elf::parse(&blob, blob.len() as u64).expect("well-formed ELF64");
+        let mut tpa = vec![0u8; RESERVED_LOW_END as usize];
+        populate_basepage(&mut tpa, &img, &[3, b'a', b'b', b'c'], Some(0x0200_0010), B);
+        let rd = |off: usize| u32::from_le_bytes(tpa[off..off + 4].try_into().unwrap()) as u64;
+        assert_eq!(rd(0x00), B, "p_lowtpa = the PD pointer");
+        assert_eq!(rd(0x04), B + arena::TPA_SIZE, "p_hitpa = TPA top");
+        assert_eq!((rd(0x08), rd(0x0C)), (B + 0x1000, 0x400), "p_tbase/p_tlen");
+        assert_eq!((rd(0x10), rd(0x14)), (B + 0x1400, 0x80), "p_dbase/p_dlen");
+        assert_eq!((rd(0x18), rd(0x1C)), (B + 0x1480, 0x80), "p_bbase/p_blen");
+        assert_eq!(rd(0x20), B + 0x80, "p_xdta = &p_cmdlin");
+        assert_eq!(rd(0x24), 0, "p_parent: set at launch, not at load");
+        assert_eq!(rd(0x2C), 0x0200_0010, "p_env = the environment block's address");
+        assert_eq!(&tpa[0x80..0x85], &[3, b'a', b'b', b'c', 0], "p_cmdlin");
+    }
+
+    /// The `os_run` cell (plan Frage 12): OSHEADER `os_run` points at a
+    /// page-0 cell that holds the process's own PD pointer, as an 8-byte
+    /// value so a 4- and an 8-byte read both yield it.
+    #[test]
+    fn os_run_names_the_processs_own_basepage() {
+        let mut page0 = vec![0u8; RESERVED_LOW_END as usize];
+        populate_sysvars(&mut page0, 0x0109_7000);
+        let rd32 = |off: usize| u32::from_le_bytes(page0[off..off + 4].try_into().unwrap());
+        let sysbase = rd32(0x4F2) as usize;
+        assert_eq!(sysbase, OSHEADER_VA as usize);
+        let cell = rd32(sysbase + 0x28) as usize;
+        assert_eq!(cell as u64, OS_RUN_CELL_VA);
+        assert_eq!(u64::from_le_bytes(page0[cell..cell + 8].try_into().unwrap()), 0x0109_7000);
     }
 
     /// A data segment with no BSS (`memsz == filesz`) gives `p_blen = 0`

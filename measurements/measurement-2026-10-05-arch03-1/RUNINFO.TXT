@@ -1,0 +1,99 @@
+measurement-2026-10-05-arch03-1 -- ARCH03 stage 1: one shared user address
+space (every user address = its physical address, page 0 per process),
+programs at their pool address, real PD pointers, Pexec 3+4, MEM03 closed;
+plus 1a: the loader's dynamic-tag positive list.
+
+Date 2026-10-05, branch arch03, base HEAD c806a64 (tree clean at start), stage 1
+uncommitted: method/arch03-1-change.diff (git diff + the new files).
+QEMU 11.0.2, host macOS (no `timeout`; runs end via QMP `quit`).
+No SD card, Pi or TT touched; tools/make-sd-image.sh NOT used (it writes
+through /Volumes/NEWTOS) -- method/seed-card.sh builds private images.
+
+SUB-STEPS
+  1a  reloc.rs positive list of dynamic tags (DT_RELR & every unknown tag ->
+      EPLFMT).                         checks/s1a-*, serial/s1a-*, kernel8-s1a
+  1b  the shared address space and everything that hangs on it (process mmu,
+      usermem, arena, loader, pexec, pterm, gemdos memory, AES resource/object
+      /window, XBIOS screen/keytbl/kbdvecs, BIOS conterm/hz_200, kernel
+      exceptions/launch/accs/selftests, SDK cmdline.c/crchild.c/wfscreen.c,
+      APITEST), 1c documentation.     checks/s1-*, serial/s1-*, kernel8-s1
+  serial/wip*-*: intermediate kernels during 1b (the APITEST T31 kernel data
+  abort that led to routing in-trap app trees through usermem::resolve_kva).
+
+STATIC CHECKS (method/checks.sh <label>; checks/<label>-*.txt)
+                       baseline (HEAD)   s1a        s1 (final)
+  host tests           1045/0/1          1047/0/1   1050/0/1
+  release tos-api/kernel warnings  64/94  64/94      64/94  (both boards, fresh
+                                                     after cargo clean -p kernel -p tos-api)
+  clippy tos-api/kernel 80/125 (both)    80/125     80/125 (per-file warning
+                                                     distribution identical to s1a)
+  desk-drift-probe     31                31         31
+  sdk/run-host-tests   13/0/0            13/0/0     13/0/0
+  Host-test delta: +2 loader_pie_reloc (1a), -6 gemdos::memory window-probe
+  tests (the function they tested is gone with the window), +7
+  tests/arch03_shared_space.rs, +2 loader unit tests (B-relative fields,
+  os_run cell); one resource test reworded (window entry -> live memory).
+
+KERNELS (kernels.sha256)
+  kernel8-s1 / kernel-virt-s1   shared tree, release, fresh build
+  kernel8-crash-s1 / kernel-virt-crash-s1   scratch: + 0c apply-instrumentation.py
+                                (method/scratch-crash-instrumentation.diff)
+  kernel8-keys-s1               scratch: + keys02 apply-instrumentation.py +
+                                method/emucon-schedule.py
+  kernel-virt-st-s1             scratch: + method/wire-selftests.py
+  (scratch trees: method/make-scratch.sh, never the shared tree)
+
+PROGRAMS (method/build-all.sh; bin/SHA256SUMS, repo-binaries.sha256)
+  Rebuilt from the tree. QED.NAP, DESKTOP.NAP (TeraDesk), DOOM.NAP are
+  byte-identical to stage 0d (their sources did not change). Changed: APITEST
+  (basepage via _base, el0_readable bound 2 GiB), CMDLINE.NCP/.NTP and
+  CRCHILD.NAP (basepage via *(_sysbase->os_run)), WFSCREEN.NAP (bound 2 GiB).
+  New probes (method/tests, method/build-s1-tests.sh): ENVPAR/ENVKID (MEM03),
+  P34PAR/P34KID (Pexec 3+4). P10TEST/P10KID (sdk/examples/port10*.c).
+
+RUNS (raspi4b: method/run-rpi4.sh / run-rpi4-drive.sh, -append serial=on;
+      virt: method/run-virt.sh; cards: method/seed-card.sh <img> <#Z path>)
+  s1-rpi4-desktop    no #Z: "[desk] desktop up"
+  s1-rpi4-teradesk   #Z TeraDesk: TeraDesk desktop (t35.png); TPA at 0x01097000
+  s1-rpi4-qed        #Z QED: QED menu bar, full screen (t30.png)
+  s1-rpi4-doom       #Z Doom: "DOOM: picture 640x480 at (0,0) VERIFIED via
+                     EdDI+scale+vro_cpyfm", demo running (t30/t45.png)
+  s1-rpi4-apitest    #Z APITEST: TOTAL 106 PASS / 0 FAIL / 5 SKIP (= 0d);
+                     T08 p_lowtpa=0x01097000 p_tbase=0x01098000; T32.1-7 OK;
+                     T23/T24/T26 print FAIL rc=-33 (no C:\qed.rsc on the card,
+                     not counted, as in 0d)
+  s1-rpi4-p34        #Z P34PAR: "P34: PASS" -- Pexec(3) returns the PD
+                     (0x01497000); parent reads p_lowtpa/p_tbase/p_tlen/p_hitpa/
+                     p_cmdlin/p_env through it; p_parent 0 before PE_GO;
+                     Mshrink of the child TPA; Pexec(4) = child's exit 0x34;
+                     child: *(os_run) == _base, p_parent == parent's _base, env
+                     readable, Malloc; p_parent after == parent; Pexec(4) of a
+                     finished PD = EIMBA; Mfree(child env), Mfree(child PD) = 0
+  s1-rpi4-mem03      #Z ENVPAR: child reads p_env=0x01897000 record by record
+                     (PATH=C:\, ARGV=, args with blanks): "MEM03: PASS"
+  s1-rpi4-wfscreen   #Z WFSCREEN: addr=0x01000000 (the pool block), PASS
+  s1-rpi4-physbase   #Z PHYSBASE: Physbase=Logbase=0x3C100000 (VA = PA of the
+                     framebuffer), three colour bands drawn from EL0 (t25.png)
+  s1-rpi4-cmdline    #Z CMDLINE: reads its basepage via os_run, len 0
+  s1-rpi4-acc        C:\ACC\SYSACC.NAC: loaded at TPA 0x01000000, first run by
+                     the scheduler (x0 = PD), reaches its message wait, desktop up
+  s1-rpi4-port10     #Z P10TEST: 42 of 44 PASS; the 2 failures ("> file"
+                     redirection) are the same 2 as measurement-2026-10-02-port10d
+                     (handle inheritance, PROC02) -- not caused by stage 1
+  s1-rpi4-crashtst   crash kernel, #Z CRASHTST: 6 reports, all 0xFFFF, clean
+                     child 0, "CRASHTST: PASS", desktop up
+  s1-virt-crash      crash kernel virt: CRCHILD (kernel parent) + CRASHTST from
+                     the RAM registry: 7 reports, PASS, desktop up
+  s1-rpi4-kbdvec-emucon  keys kernel: "KBDVEC: PASS"; Ctrl-Z -> EmuCON;
+                     "run hello2.ncp" -> banner; "run oldexec.ncp" -> "Cannot run
+                     program (error 66)."; exit -> desktop up
+  s1-virt-selftests  selftest kernel virt: d3, d6, d7, pexec, pexec_env, d4d5,
+                     sysvars, upcall, etv_term PASS; sleepwake_switch FAIL with
+                     the same 5 checks as before 0d (pre-existing)
+  s1-virt-desktop    virt product: desktop up ("1 shared L3 tables")
+
+NOT COVERED HERE
+  * Real Pi 4 (not touched by order). The 0b Pi run already showed VA = PA next
+    to the kernel alias, shared tables under per-process roots and 2-MiB blocks
+    working on hardware.
+  * The QUIRK-001 bracket is unchanged (out of stage 1).

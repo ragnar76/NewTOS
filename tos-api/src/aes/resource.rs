@@ -176,7 +176,8 @@
 //! Traced in QEMU `raspi4b` (`--features aes-trace`): the built-in desktop
 //! makes 28 AES calls, all with `slot = 0xFF`, none of them rsrc; TeraDesk
 //! makes 188, all EL0, 68 of them rsrc, every blob address inside the process
-//! window below `USER_TPA_MAX_VA` (32 MiB) and so exact in four bytes.
+//! window below 32 MiB then — and since ARCH03 stage 1 a pool address below
+//! 2 GiB (plan invariant I2) — and so exact in four bytes.
 //! **The one caller that does drive the EL1 load path is the host test
 //! harness** `tests/aes_rsrc_global_fields.rs`, which is not a running system
 //! — and on a 64-bit host no address is ever 32-bit representable, so that
@@ -195,7 +196,7 @@
 use super::object::{BitBlk, IconBlk, ObjTree, Object, TedInfo};
 use super::shell::PATHBUF;
 use super::Aespb;
-use crate::bdos::process::{usermem, Abi};
+use crate::bdos::process::Abi;
 use core::cell::UnsafeCell;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -625,9 +626,8 @@ struct RscEntry {
     /// entry.
     latest_unnamed: bool,
     /// Pool `m_start` of the EL0 process's `.RSC` block ([`load_into_user`]),
-    /// for `Mfree` at `rsrc_free` and to identify the `usermem` window entry
-    /// to drop; `0` for the in-place kernel path. A [`Long`] (Atari 32-bit
-    /// pool address) so it feeds `mfree` directly.
+    /// for `Mfree` at `rsrc_free`; `0` for the in-place kernel path. A
+    /// [`Long`] (Atari 32-bit pool address) so it feeds `mfree` directly.
     raw: Long,
     /// Pool `m_start` of the EL0 process's colour-icon device-form block
     /// (`desc.cicon`, [`load_into_user`]); `0` when there is none or when the
@@ -789,7 +789,7 @@ unsafe fn register(owner: usize, raw: Long, cicon_raw: Long, desc: Loaded) -> bo
 /// The process in GEMDOS slot `slot` freed the pool block `m_start` itself
 /// (an EL0 `Mfree`/`Mshrink(0)` that resolved to a `Kind::Rsc` block — the
 /// GEMDOS side of A76, `gemdos::memory`). If that key is a blob or
-/// colour-icon buffer of one of the slot's resource entries, the entry
+/// colour-icon buffer of a resource entry, the entry
 /// learns it is gone: `rsrc_free` then answers 0 for it and frees nothing
 /// under it, and process end does not free the key a second time.
 ///
@@ -803,18 +803,21 @@ unsafe fn register(owner: usize, raw: Long, cicon_raw: Long, desc: Loaded) -> bo
 /// and skips the walk over freed memory (`docs/api/gemdos/memory/49-mfree.md`
 /// § "AES resource block"; `resource-fileselector.md` A39 callout item 8).
 ///
-/// Only the entries of `slot` — the block table `Mfree` resolved the user VA
-/// through is the slot's own, so the key cannot be another process's blob
-/// (EmuTOS's no-ownership-check quirk is unreachable from EL0, where an
-/// application can only name blocks mapped into its own window).
-pub fn on_mfree(slot: usize, m_start: Long) {
+/// **Every** entry whose key it is, whoever owns it: since ARCH03 stage 1
+/// all processes share one address space, so a program can name — and, with
+/// EmuTOS' no-ownership-check `xmfree` (plan E15 adopts FreeMiNT's owner
+/// rule only in stage 2), free — another process's block. Once the key is
+/// off the allocated list it is no entry's any more, so no entry may free it
+/// again. (Before stage 1 a process could only name blocks in its own
+/// window, and the walk was limited to the caller's entries.)
+pub fn on_mfree(m_start: Long) {
     if m_start == 0 {
         return;
     }
     // SAFETY: called on the single trap path (GEMDOS `Mfree` under the BDOS
     // giant lock), no AES call in flight.
     let t = unsafe { table() };
-    for e in t.iter_mut().filter(|e| e.owner == slot) {
+    for e in t.iter_mut() {
         if e.raw == m_start && !e.blob_released {
             e.blob_released = true;
         }
@@ -828,8 +831,7 @@ pub fn on_mfree(slot: usize, m_start: Long) {
 /// — the AES side of process termination, called from `Pterm` and `Ptermres`
 /// (`bdos::process::pterm::terminate_inner`). The blobs themselves are the
 /// process's pool blocks and are reclaimed there by owner (`free_all_owned`,
-/// EmuTOS `ixterm` → `free_all_owned`, `bdos/proc.c:136`); the process's
-/// window table is re-seeded for its next tenant (`usermem::seed_tpa`). What
+/// EmuTOS `ixterm` → `free_all_owned`, `bdos/proc.c:136`). What
 /// must go here is the **descriptor**: the next program in the same GEMDOS
 /// slot has the same identity, and `appl_init` reuses the same AES descriptor
 /// (`pd::open`, A29) — without this it would inherit entries whose kernel
@@ -2103,24 +2105,15 @@ struct RscBuf(UnsafeCell<[u8; RSC_CAP]>);
 unsafe impl Sync for RscBuf {}
 static RSC_BUF: RscBuf = RscBuf(UnsafeCell::new([0u8; RSC_CAP]));
 
-// ─── Per-process EL0 resource window (folded into `usermem`, ADR-021) ─
+// ─── The EL0 resource block ─────────────────────────────────────────────
 //
 // A `svc`-dispatched (EL0) `rsrc_load` cannot use the kernel high-half
 // RSC_BUF: an EL0 app faults reading a kernel VA. EmuTOS puts the RSC in
 // the *application's* memory (`rs_readit` → `dos_alloc_anyram`,
-// gemrslib.c:775) and returns app pointers via `rs_gaddr`. NewTOS mirrors
-// that: the blob goes into a BDOS-pool block that is mapped into the
-// calling process's **EL0 heap window** (`crate::bdos::process::usermem`)
-// as a `Kind::Rsc` block — sharing one per-process window + bump cursor
-// with GEMDOS `Malloc`/`Mxalloc` — and `rsrc_gaddr` hands back the user VA.
-
-/// Kernel high-half offset (mirror of `process::{arena,loader,mmu}`): a
-/// BDOS-pool physical address `pa` is reachable from the kernel at
-/// `pa + VA_OFFSET`.
-const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
-
-/// User-page size (one 4-KiB physical frame).
-const PAGE_SIZE: u64 = usermem::PAGE_SIZE;
+// gemrslib.c:775) and returns app pointers via `rs_gaddr`. NewTOS does the
+// same: the blob goes into a BDOS-pool block of the process, whose address is
+// valid in every process (VA = PA, ARCH03 stage 1), and `rsrc_gaddr` hands
+// back addresses inside it.
 
 /// Directory of the currently-launched program (e.g. `C:\APPS\QED\`) —
 /// NewTOS's `rlr->p_appdir`, the first place `sh_find` looks
@@ -2293,8 +2286,8 @@ pub fn rsrc_load(pb: &Aespb) {
             }
         })
     } else {
-        // EL0 app caller: copy into per-process EL0-mapped memory and
-        // relocate to user VAs at the caller's OBJECT width.
+        // EL0 app caller: copy into a pool block of the process and
+        // relocate to user addresses at the caller's OBJECT width.
         unsafe { load_into_user(run, owner, buf, len, abi) }
     };
     // `rs_readit`'s "init global" (`gemrslib.c:786-788`) + `fix_trindex`'s
@@ -2309,22 +2302,22 @@ pub fn rsrc_load(pb: &Aespb) {
     pb.set_ret(i16::from(loaded.is_some()));
 }
 
-/// Place a candidate native `.RSC` blob (`src[..len]`) into the calling
-/// process's per-process resource window, register it in the list of the
-/// process with AES identity `owner` with **user** VAs — so an EL0 `rsrc_gaddr`
-/// returns dereferenceable pointers — and select it. Returns the
-/// descriptor, or `None` — leaving nothing allocated — on a bad header, no
-/// slot, an exhausted window, `ENSMEM`, a mapping error, or full resource
-/// lists.
+/// Place a candidate native `.RSC` blob (`src[..len]`) into a BDOS-pool
+/// block of the calling process, register it in the list of the process
+/// with AES identity `owner` with **user** addresses — so an EL0
+/// `rsrc_gaddr` returns dereferenceable pointers — and select it. Returns
+/// the descriptor, or `None` — leaving nothing allocated — on a bad header,
+/// no slot, `ENSMEM`, or full resource lists.
 ///
-/// Protected-memory realisation of EmuTOS `rs_readit` (gemrslib.c:775): the
-/// RSC lives in per-application memory (a BDOS-pool block, `Mxalloc`),
-/// separate from the app's TPA, reclaimed at `rsrc_free` / the process's
-/// `Pterm` (owner tag).
+/// EmuTOS `rs_readit` (gemrslib.c:775): the RSC lives in per-application
+/// memory (`dos_alloc_anyram` = `Mxalloc(len, MX_PREFTTRAM)`), separate from
+/// the app's TPA, reclaimed at `rsrc_free` / the process's `Pterm` (owner
+/// tag). Since ARCH03 stage 1 the block's address is valid in every process
+/// (VA = PA), so the blob is relocated onto the block address itself.
 ///
 /// # Safety
 /// Single-CPU trap context (the implicit BDOS giant lock); `run` is the
-/// current process basepage; `src[..len]` is a candidate blob.
+/// current process's PD pointer; `src[..len]` is a candidate blob.
 unsafe fn load_into_user(
     run: *mut BasePage,
     owner: usize,
@@ -2340,69 +2333,42 @@ unsafe fn load_into_user(
     if !unsafe { header_is_sound(src.as_ptr(), len, abi) } {
         return None;
     }
-    let slot = crate::bdos::process::slot_for(run)?;
+    crate::bdos::process::slot_for(run)?;
 
-    // Page-round the blob and allocate a page-aligned pool block (over-
-    // allocate one page so the rounded-up base fits, exactly as
-    // `arena::alloc_tpa` / the GEMDOS heap path). The block is stamped owned
-    // by the running process (`current_owner`), so its `Pterm` reclaims it
-    // even if the app exits without `rsrc_free`.
-    let pages = (len as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+    // The block is stamped owned by the running process (`current_owner`),
+    // so its `Pterm` reclaims it even if the app exits without `rsrc_free`.
     // SAFETY: single-CPU trap context holds the implicit BDOS lock.
-    let raw = unsafe {
-        crate::bdos::mem::traps::mxalloc((pages + PAGE_SIZE) as Long, MX_PREFTTRAM)
-    };
+    let raw = unsafe { crate::bdos::mem::traps::mxalloc(len as Long, MX_PREFTTRAM) };
     if raw == 0 {
         return None;
     }
-    let base_pa = (raw as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-    let base_kva = base_pa.wrapping_add(VA_OFFSET) as *mut u8;
-
-    // Map the block into the process's EL0 heap window (as a `Kind::Rsc`
-    // block) and take the user VA the blob's pointers will resolve to.
-    // SAFETY: `raw` addresses `pages + one page` live pool bytes owned by
-    // the calling process.
-    let Some(app_va) = (unsafe { usermem::map(slot, raw, pages, usermem::Kind::Rsc) })
-    else {
-        // SAFETY: `raw` is on the allocated list.
-        unsafe { crate::bdos::mem::traps::mfree(raw) };
-        return None;
-    };
+    let app_va = raw as u64;
+    let base_kva = crate::bdos::process::kalias(app_va) as *mut u8;
 
     // Copy the raw file bytes into the block via its kernel alias, then
-    // relocate offsets → user VAs (accessed through the alias, resolved to
-    // `app_va`).
-    // SAFETY: `base_kva` aliases `pages` live RW pool bytes; `src` is valid.
+    // relocate offsets → user addresses (accessed through the alias,
+    // resolved to `app_va`).
+    // SAFETY: `base_kva` aliases `len` live RW pool bytes; `src` is valid.
     unsafe {
         core::ptr::copy_nonoverlapping(src.as_ptr(), base_kva, len);
     }
     // The colour icons' device-form buffer, should the blob have any: a
-    // second pool block of the process, mapped into its window like the
-    // blob (EmuTOS's `dos_alloc_anyram`, `gemrslib.c:436`, in the
-    // application's memory) — one block for all of them ([`fix_cicons`]'s
-    // section comment). Its pool key is kept for `rsrc_free`.
+    // second pool block of the process (EmuTOS's `dos_alloc_anyram`,
+    // `gemrslib.c:436`, in the application's memory) — one block for all of
+    // them ([`fix_cicons`]'s section comment). Its pool key is kept for
+    // `rsrc_free`.
     let mut cicon_raw: Long = 0;
     let mut cicon_alloc = |bytes: usize| -> Option<(u64, u64)> {
-        let pages = (bytes as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
         // SAFETY: single-CPU trap context holds the implicit BDOS lock.
-        let raw = unsafe { crate::bdos::mem::traps::mxalloc((pages + PAGE_SIZE) as Long, MX_PREFTTRAM) };
+        let raw = unsafe { crate::bdos::mem::traps::mxalloc(bytes as Long, MX_PREFTTRAM) };
         if raw == 0 {
             return None;
         }
-        let pa = (raw as u64 + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
-        // SAFETY: `raw` addresses `pages + one page` live pool bytes owned
-        // by the calling process.
-        let Some(va) = (unsafe { usermem::map(slot, raw, pages, usermem::Kind::Rsc) }) else {
-            // SAFETY: `raw` is on the allocated list.
-            unsafe { crate::bdos::mem::traps::mfree(raw) };
-            return None;
-        };
         cicon_raw = raw;
-        Some((pa.wrapping_add(VA_OFFSET), va))
+        let va = raw as u64;
+        Some((crate::bdos::process::kalias(va), va))
     };
-    // The copy is `len` bytes long, so `len` also bounds the relocation here:
-    // the block is larger (page-rounded), but only those bytes came from the
-    // file and only they may be fixed up.
+    // The copy is `len` bytes long, so `len` also bounds the relocation.
     // SAFETY: `base_kva` holds the `len`-byte copy; header re-checked inside.
     let desc = unsafe { relocate_and_register_core(base_kva, len, app_va, abi, &mut cicon_alloc) };
     // Entering the load into the process's list can fail only when the lists
@@ -2412,23 +2378,20 @@ unsafe fn load_into_user(
     // SAFETY: single trap path.
     let desc = desc.filter(|&d| unsafe { register(owner, raw, cicon_raw, d) });
     if desc.is_none() {
-        // Drop the window entries and free the pool blocks.
         if cicon_raw != 0 {
-            usermem::free_by_mstart(slot, cicon_raw);
             // SAFETY: `cicon_raw` is on the allocated list.
             unsafe { crate::bdos::mem::traps::mfree(cicon_raw) };
         }
-        usermem::free_by_mstart(slot, raw);
         // SAFETY: `raw` is on the allocated list.
         unsafe { crate::bdos::mem::traps::mfree(raw) };
         return None;
     }
 
     // Order the blob writes (made through the kernel alias) before the app
-    // reads them at `app_va`; `usermem::map` already published the PTEs, and
-    // the window VAs were previously invalid so no TLBI is needed (QUIRK-001).
+    // reads them: the pool is mapped already (no TLB work), so a barrier is
+    // all it takes.
     // SAFETY: barrier-only.
-    unsafe { usermem::publish() };
+    unsafe { crate::bdos::process::mmu::publish_user_mappings() };
 
     desc
 }
@@ -2490,7 +2453,7 @@ fn published_name(desc: &Loaded) -> u32 {
 /// **When nothing is written, and why.** Both address fields are four bytes,
 /// so they can only name a blob that lives below 4 GiB in the caller's address
 /// space. That holds by construction for every real caller: an EL0 app's blob
-/// sits in its per-process window under `USER_TPA_MAX_VA` (32 MiB,
+/// is a pool block, below 2 GiB (ARCH03 plan invariant I2,
 /// `bdos::process::mmu`). It does **not** hold for the in-kernel path, which
 /// relocates in place in [`RSC_BUF`], a kernel high-half static: the low 32
 /// bits of such a VA are a physical address that resolves to nothing at EL1
@@ -2548,9 +2511,8 @@ unsafe fn report_load(global: *mut i16, desc: &Loaded) {
 /// to the blob the **caller's** `AESGLOBAL` names; nothing named → 0;
 /// otherwise the blob is `dos_free`d and the result is 1, or 0 if that free
 /// failed. NewTOS acts on the entry of the caller's list its `ap_rscmem`
-/// names ([`selected`]): the EL0 pool block goes back to the pool and its
-/// `usermem` window entry is dropped, and the entry leaves the process's
-/// list. An earlier load of the same process stays loaded — as on EmuTOS,
+/// names ([`selected`]): the EL0 pool block goes back to the pool, and the
+/// entry leaves the process's list. An earlier load of the same process stays loaded — as on EmuTOS,
 /// where the words keep naming the freed blob, a second `rsrc_free` fails
 /// (`:699-704`), and the earlier blob is the process's GEMDOS memory until
 /// it restores the words (TeraDesk `load_icons`) or ends (R6). A selector
@@ -2574,13 +2536,9 @@ pub fn rsrc_free(pb: &Aespb) {
     // SAFETY: single trap path.
     unsafe { table()[idx] = RscEntry::FREE };
 
-    // Return the EL0 RSC block to the pool and drop its `usermem` window
-    // entry. The window *mapping* is intentionally left in place: the app
-    // holds no live pointers after the free, and the bump cursor never
-    // re-hands the VA, so the stale mapping is never remapped (no TLBI) nor
-    // read. The block's owner tag makes a later `Pterm` a no-op for it (it is
-    // now off the allocated list, so `free_all_owned` / a second `Mfree` skip
-    // it). `raw == 0` is the in-place kernel path, which owns no pool block.
+    // Return the EL0 RSC block to the pool. Once it is off the allocated
+    // list, a later `Pterm` (`free_all_owned`) or a second `Mfree` skips it.
+    // `raw == 0` is the in-place kernel path, which owns no pool block.
     let mut rc = 1;
     // The colour icons' device-form buffer first — `rs_free`'s
     // `free_cicon_buffers` (`gemrslib.c:694-697`, `:515-536`), which frees
@@ -2591,15 +2549,12 @@ pub fn rsrc_free(pb: &Aespb) {
     if entry.cicon_raw != 0 {
         if entry.cicon_released {
             // The process freed the buffer itself (`on_mfree`, A76): the
-            // key may be someone else's block by now, so it is neither
-            // freed nor dropped from the window table here. EmuTOS's
+            // key may be someone else's block by now, so it is not freed
+            // here. EmuTOS's
             // `dos_free(cicon->col_data)` fails on the unlinked block:
             // `rc = -1` → 0 (`:531`, `:695-696`).
             rc = 0;
         } else {
-            if let Some(slot) = crate::bdos::process::slot_for(crate::bdos::process::current()) {
-                usermem::free_by_mstart(slot, entry.cicon_raw);
-            }
             // SAFETY: single-CPU trap context; `cicon_raw` came from
             // `mxalloc` in `load_into_user` and has not been freed.
             if unsafe { crate::bdos::mem::traps::mfree(entry.cicon_raw) } != 0 {
@@ -2616,15 +2571,10 @@ pub fn rsrc_free(pb: &Aespb) {
             // The process freed the blob itself (`Mfree(ap_rscmem)`,
             // `on_mfree`, A76): EmuTOS's `dos_free(rs_global->ap_rscmem)`
             // hits the double free, `EIMBA` → `rc = 0` (`gemrslib.c:
-            // 699-700`). Nothing is freed or dropped from the window table
-            // — the key is no longer this entry's.
+            // 699-700`). Nothing is freed — the key is no longer this
+            // entry's.
             rc = 0;
         } else {
-            if let Some(slot) =
-                crate::bdos::process::slot_for(crate::bdos::process::current())
-            {
-                usermem::free_by_mstart(slot, entry.raw);
-            }
             // SAFETY: single-CPU trap context (implicit BDOS lock); `raw`
             // came from `mxalloc` in `load_into_user` and has not been freed.
             if unsafe { crate::bdos::mem::traps::mfree(entry.raw) } != 0 {
@@ -3083,12 +3033,13 @@ pub(super) fn fix_chpos(raw: i16, cell: i16, is_width: bool, gl_width: i16) -> i
 // [`cicon_pixel`] computes it — expansion and transform folded into one
 // step per pixel, no intermediate standard-form buffer.
 //
-// One deviation is deliberate and stated: EmuTOS allocates one buffer per
-// icon and falls back to mono per icon when an allocation fails (`:436-449`).
-// NewTOS makes **one** allocation per resource for all its icons, because on
-// the EL0 path every allocation is a mapped block of the process's window,
-// and that table holds [`usermem::MAX_USER_BLOCKS`] (32) entries — fewer than
-// TeraDesk's 38 icons. The fallback is therefore per resource: no buffer,
+// One deviation is stated: EmuTOS allocates one buffer per icon and falls
+// back to mono per icon when an allocation fails (`:436-449`). NewTOS makes
+// **one** allocation per resource for all its icons. The reason was the
+// per-process window's 32-entry block table (fewer than TeraDesk's 38
+// icons); that table is gone since ARCH03 stage 1, so the deviation no
+// longer has a cause and is a candidate for removal (not done in stage 1,
+// which changes no AES behaviour). The fallback is therefore per resource: no buffer,
 // no colour icon, the load itself still succeeds (§5.6 point 2's shape, at
 // resource granularity). `rsrc_free` releases the one buffer
 // (`free_cicon_buffers`, `:515-536`, walks EmuTOS's many).
@@ -5020,17 +4971,17 @@ mod mfree_tests {
     //!
     //! Like [`super::selector_tests`], these need a blob whose base the four
     //! bytes of `ap_rscmem` can name — the EL0 shape of `load_into_user` — and
-    //! an entry registered under a **pool key**. The pool and the window are
-    //! the real ones: the block comes from `traps::mxalloc` on a BDOS pool
-    //! installed for this binary, the user VA from `usermem::map` as a
-    //! `Kind::Rsc` block, and `Mfree` goes through the GEMDOS trap entry
-    //! (`gemdos::memory::mfree`) with the test's process as `RUN`, exactly the
-    //! path an EL0 program takes. The only stand-in is the *access* alias:
-    //! `load_into_user` reaches the block through `raw + VA_OFFSET`, the kernel
-    //! high-half alias no host process maps, so the blob bytes live in a buffer
-    //! the test owns (the same split `relocate_and_register_core` gives the
+    //! an entry registered under a **pool key**. The pool is the real one: the
+    //! block comes from `traps::mxalloc` on a BDOS pool installed for this
+    //! binary, its address is the user address (VA = PA, ARCH03 stage 1), and
+    //! `Mfree` goes through the GEMDOS trap entry (`gemdos::memory::mfree`)
+    //! with the test's process as `RUN`, exactly the path an EL0 program
+    //! takes. The only stand-in is the *access* alias: `load_into_user`
+    //! reaches the block through its kernel alias, and the test pool's
+    //! addresses are not host memory, so the blob bytes live in a buffer the
+    //! test owns (the same split `relocate_and_register_core` gives the
     //! loader). Nothing about the accounting under test — the pool lists, the
-    //! window table, the resource entry — is faked.
+    //! resource entry — is faked.
     //!
     //! The pool is a pure bookkeeping structure (its MDs live in a static
     //! arena, never inside the managed range), so a range of `Long` addresses
@@ -5075,8 +5026,8 @@ mod mfree_tests {
     }
 
     /// A blob loaded for the running process the way `load_into_user` loads
-    /// it (see the module comment): pool block `raw`, window VA `app_va`
-    /// (`Kind::Rsc`), relocated onto `app_va`, registered under `raw` (and
+    /// it (see the module comment): pool block `raw` at user address `app_va`
+    /// (= `raw`), relocated onto `app_va`, registered under `raw` (and
     /// `cicon_raw`, when the blob has colour icons), reported into `global`.
     struct PoolLoaded {
         /// The blob's access alias (the test's buffer).
@@ -5099,25 +5050,22 @@ mod mfree_tests {
             // SAFETY: `words` holds at least `src.len()` bytes.
             unsafe { std::ptr::copy_nonoverlapping(src.as_ptr(), p, src.len()) };
 
-            let pages = (src.len() as u64 + usermem::PAGE_SIZE - 1) & !(usermem::PAGE_SIZE - 1);
+            let _ = app;
             // SAFETY: single test thread under the selector lock (the BDOS
             // lock's stand-in).
-            let raw = unsafe { traps::mxalloc((pages + usermem::PAGE_SIZE) as Long, MX_PREFTTRAM) };
+            let raw = unsafe { traps::mxalloc(src.len() as Long, MX_PREFTTRAM) };
             assert_ne!(raw, 0, "the pool must supply the blob's block");
-            // SAFETY: `raw` is a live pool block of `pages + one page` bytes.
-            let app_va = unsafe { usermem::map(app.slot, raw, pages, usermem::Kind::Rsc) }.expect("window room");
+            let app_va = raw as u64;
             assert!(app_va <= u64::from(u32::MAX), "the four bytes must be able to name the blob");
 
             let mut cicon: Vec<u16> = Vec::new();
             let mut cicon_raw: Long = 0;
             let mut cicon_va: u64 = 0;
             let mut alloc = |bytes: usize| -> Option<(u64, u64)> {
-                let pages = (bytes as u64 + usermem::PAGE_SIZE - 1) & !(usermem::PAGE_SIZE - 1);
                 // SAFETY: as above.
-                let raw = unsafe { traps::mxalloc((pages + usermem::PAGE_SIZE) as Long, MX_PREFTTRAM) };
+                let raw = unsafe { traps::mxalloc(bytes as Long, MX_PREFTTRAM) };
                 assert_ne!(raw, 0, "the pool must supply the icon buffer");
-                // SAFETY: `raw` is a live pool block of `pages + one page` bytes.
-                let va = unsafe { usermem::map(app.slot, raw, pages, usermem::Kind::Rsc) }.expect("window room");
+                let va = raw as u64;
                 cicon = vec![0u16; bytes / 2];
                 cicon_raw = raw;
                 cicon_va = va;
@@ -5131,16 +5079,14 @@ mod mfree_tests {
             assert!(unsafe { register(caller_identity(), raw, cicon_raw, desc) }, "room in the resource lists");
             // SAFETY: a 32-byte caller array.
             unsafe { report_load(global.as_mut_ptr(), &desc) };
-            assert_eq!(rscmem(global), app_va as u32, "ap_rscmem names the blob at its window VA");
+            assert_eq!(rscmem(global), app_va as u32, "ap_rscmem names the blob at its address");
             PoolLoaded { _words: words, _cicon: cicon, raw, app_va, cicon_raw, cicon_va }
         }
     }
 
-    /// A running process with a fresh window table (what the loader seeds).
+    /// A running process.
     fn running() -> Proc {
         let app = Proc::new();
-        // SAFETY: the slot is this test's; nothing of it is mapped yet.
-        unsafe { usermem::seed_tpa(app.slot, 0, 0, 0) };
         app.run();
         app
     }
@@ -5350,18 +5296,19 @@ mod mfree_tests {
         assert_eq!(pool().allocated_blocks, before.allocated_blocks);
     }
 
-    /// The window entry of a freed `Kind::Rsc` block is gone like a heap
-    /// block's: `Mshrink` of the freed VA is `EIMBA` too, and a null
-    /// `global` still names nothing.
+    /// A freed blob is gone like a heap block: it no longer resolves as live
+    /// user memory for the AES (`usermem::resolve_kva`, the reader of other
+    /// processes' trees), and a null `global` still names nothing.
     #[test]
-    fn the_freed_blobs_window_entry_is_gone() {
+    fn the_freed_blob_is_no_live_user_memory() {
         let _g = lock();
         let before = pool();
         let app = running();
         let mut g = Global::default();
         let x = PoolLoaded::load(&app, FSEL, &mut g);
+        assert!(crate::bdos::process::usermem::resolve_kva(app.slot, x.app_va).is_some(), "the loaded blob is live");
         assert_eq!(mfree(x.app_va), E_OK);
-        assert!(usermem::translate(app.slot, x.app_va).is_none(), "no block starts at the freed VA");
+        assert!(crate::bdos::process::usermem::resolve_kva(app.slot, x.app_va).is_none(), "the freed blob is not");
         assert_eq!(call(std::ptr::null_mut(), 111, 0, [0; 4]).0, 0);
         drop(app);
         assert_eq!(pool().allocated_blocks, before.allocated_blocks);

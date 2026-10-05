@@ -381,13 +381,13 @@ fn plus_shadow(r: Grect) -> Grect {
 /// `docs/api/aes/window-graphics.md`). `w_setup` starts a window at
 /// `w_pname = w_pinfo = ""` (`:215-216`): [`LiveStr::NONE`].
 ///
-/// **Address space.** NewTOS is not the flat machine EmuTOS runs on: every
-/// EL0 process has its own `TTBR0` and all TPAs sit at the same low VA
-/// (`kernel/src/arch/aarch64/el0.rs`, `bdos/process/mmu.rs`), and a frame is
-/// rebuilt from *other* processes' AES calls too — a `Pexec` child
-/// compositing its parent's windows, the desktop repainting after a child's
-/// `Pterm`. A raw dereference of the stored pointer would therefore go
-/// through whichever `TTBR0` happens to be installed. Instead the string is
+/// **Address space.** Since ARCH03 stage 1 a user address means the same in
+/// every process (VA = PA, `bdos/process/mmu.rs`), but a frame is rebuilt
+/// from *other* processes' AES calls too — a `Pexec` child compositing its
+/// parent's windows, the desktop repainting after a child's `Pterm` — and
+/// the owner may have freed the buffer meanwhile. A raw dereference of the
+/// stored pointer would go through whichever `TTBR0` happens to be
+/// installed and fault on memory nobody owns any more. Instead the string is
 /// read through **the owner's own mapping**: [`Self::slot`] records the
 /// process slot that made the `wind_set` call, and [`Self::read`] translates
 /// each page of the string with [`usermem::resolve_kva`] into the kernel
@@ -425,14 +425,10 @@ impl LiveStr {
     /// the NUL). The walk ends at the NUL, at `limit`, or at the first byte
     /// the owner has no mapping for; a NULL pointer reads as empty.
     ///
-    /// For an EL0 owner every **page** of the string is resolved once: a
-    /// block in the owner's table is page-aligned and page-rounded
-    /// (`usermem::Block`, `seed_tpa`/`map`/`expose`), so a page that contains
-    /// one byte of the string is contained in the same block whole, and its
-    /// kernel alias is contiguous (`map_pa + offset`) up to the page end.
-    /// Crossing into the next page re-resolves, which is where a string that
-    /// runs off the end of its block stops — the read never leaves the memory
-    /// the process was actually handed.
+    /// For an EL0 owner every **page** of the string is resolved once
+    /// (`usermem::resolve_kva`: live user memory → its kernel alias, which is
+    /// contiguous since VA = PA). Crossing into the next page re-resolves,
+    /// which is where a string that runs into memory nobody owns stops.
     fn read<'a>(&self, buf: &'a mut [u8], limit: usize) -> &'a [u8] {
         let n = limit.min(buf.len());
         if self.ptr == 0 {
@@ -3901,14 +3897,12 @@ pub fn wind_get(pb: &Aespb) {
     // of the BDOS pool, taken once by `gsx_malloc` from `sh_tographic`,
     // `gemshlib.c:236`).
     //
-    // Which address the caller gets depends on who asks (ADR-021/023):
-    //   * an EL0 process gets the block published into its own window,
-    //     read-write (`PROT_G`, cacheable — ordinary DRAM only the CPU
-    //     touches; `usermem::expose`), lazily on its first WF_SCREEN and the
-    //     same user VA on every later one (the mapping is idempotent per
-    //     physical page). Only a process that asks pays the window. A window
-    //     that cannot take the mapping gets FALSE: a pointer the caller would
-    //     fault on is not an answer;
+    // Which address the caller gets depends on who asks (ADR-023):
+    //   * an EL0 process gets the block's own address (`usermem::expose`):
+    //     it is a BDOS-pool block, which since ARCH03 stage 1 is in every
+    //     process's address space at VA = PA, read-write (`PROT_G` in
+    //     FreeMiNT's words). Should the publication fail, the answer is
+    //     FALSE: a pointer the caller would fault on is not an answer;
     //   * an EL1 caller (the in-kernel desktop, a selftest) gets the block's
     //     physical address — the pool address, ADR-021's "raw PA for kernel
     //     callers" — which fits the two WORDs where the high-half alias does

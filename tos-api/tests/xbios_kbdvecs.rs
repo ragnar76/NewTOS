@@ -95,20 +95,19 @@ fn rig() {
     kbdvecs::take_restart();
 }
 
-/// A process's page 0, as the loader leaves it (only the KEYS02 part).
-struct Page0(Box<[u64; 512]>);
+/// A process in `SLOT` as the loader leaves it (only the KEYS02 part): its
+/// basepage (here a box of its own, which is all `slot_for` needs) and its
+/// page 0 — since ARCH03 stage 1 the slot's own kernel page
+/// (`process::mmu::page0_kva`), separate from the basepage.
+struct Page0(Box<[u64; 32]>);
 
 impl Page0 {
     fn loaded() -> Page0 {
-        let mut p = Page0(Box::new([0; 512]));
-        // SAFETY: the box is 4096 bytes long and 8-aligned.
-        let bytes = unsafe { std::slice::from_raw_parts_mut(p.0.as_mut_ptr() as *mut u8, 4096) };
-        kbdvecs::write_defaults(bytes);
-        p
+        kbdvecs::write_defaults(page0());
+        Page0(Box::new([0; 32]))
     }
     fn bytes(&self) -> &[u8] {
-        // SAFETY: as above.
-        unsafe { std::slice::from_raw_parts(self.0.as_ptr() as *const u8, 4096) }
+        page0()
     }
     fn slot_value(&self, off: u64) -> u64 {
         let at = (KBDVECS_AREA_VA + off) as usize;
@@ -116,7 +115,8 @@ impl Page0 {
     }
     /// What a program does: `((void **)Kbdvbase())[-1] = hook`.
     fn set_slot(&mut self, off: u64, v: u64) {
-        self.0[((KBDVECS_AREA_VA + off) / 8) as usize] = v;
+        let at = (KBDVECS_AREA_VA + off) as usize;
+        page0()[at..at + 8].copy_from_slice(&v.to_le_bytes());
     }
     fn kva(&self) -> *mut BasePage {
         self.0.as_ptr() as *mut BasePage
@@ -125,8 +125,15 @@ impl Page0 {
 
 const SLOT: usize = 6;
 
+/// `SLOT`'s page 0.
+fn page0() -> &'static mut [u8; 4096] {
+    // SAFETY: the tests run one at a time under `lock()`; nothing else in this
+    // binary touches `SLOT`'s page 0.
+    unsafe { tos_api::bdos::process::mmu::page0_bytes(SLOT) }.expect("page 0")
+}
+
 /// Make `page` the running process in `SLOT` (the identity `slot_for` uses is
-/// `basepage_kva`; here it is also the storage the kernel alias reads).
+/// `basepage_kva`; the kernel reads the vector table from the slot's page 0).
 fn run(page: &Page0) {
     for p in PROCESS_TABLE.iter() {
         p.runnable.store(false, Ordering::Release);

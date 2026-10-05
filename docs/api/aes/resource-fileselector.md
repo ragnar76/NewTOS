@@ -305,9 +305,10 @@ process (`bdos/proc.c:136`, `free_all_owned`).
 >    exactly as it already does for frstr/frimg.
 > 3. **An address those four bytes cannot carry is not carried at all.** The
 >    fields are written only when the blob's base fits 32 bits. That holds by
->    construction for every real caller — an EL0 app's blob lives in its
->    per-process window below `USER_TPA_MAX_VA` (32 MiB); TeraDesk's 68 rsrc
->    calls were measured at `0x4000ac … 0x409381`. It does **not** hold for the
+>    construction for every real caller — an EL0 app's blob is a BDOS-pool
+>    block, below 2 GiB (ARCH03 stage 1: VA = PA, plan invariant I2; before
+>    that a per-process window below 32 MiB, where TeraDesk's 68 rsrc calls
+>    were measured at `0x4000ac … 0x409381`). It does **not** hold for the
 >    in-kernel path, which relocates in place in a kernel high-half static: the
 >    low 32 bits of such a VA name a physical address that resolves to nothing
 >    at EL1 (`TTBR0_EL1` maps nothing without a process). There the three stay

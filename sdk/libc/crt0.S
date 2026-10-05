@@ -19,10 +19,10 @@
  * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld): the program
  * is a position-independent executable (ELF ET_DYN, ARCH03 stage 0d) linked
  * at 0x1000; the loader streams it into the TPA and applies its
- * R_AARCH64_RELATIVE relocations. Stage 0 still maps the TPA at VA 0:
+ * R_AARCH64_RELATIVE relocations for the TPA's own pool address B (ARCH03
+ * stage 1, VA = PA). Relative to B:
  *
  *     [0x000, 0x100)          BasePage (populated by the loader)
- *     [0x400, 0x670)          sysvars + OSHEADER + cookie jar (loader)
  *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata/.rela.dyn) = p_tbase/p_tlen
  *     [p_dbase, p_bbase)      PT_LOAD data (.dynamic/.got/.data)      = p_dbase/p_dlen
  *     [p_bbase, _end)         .bss (zeroed by the loader)             = p_bbase/p_blen

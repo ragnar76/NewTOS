@@ -57,8 +57,9 @@ const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
 /// of `Physbase`'s contract ("a pointer to the screen") and violates its
 /// substance: the program faults on the first store. ADR-023 settles the
 /// class — what the kernel hands out, the caller must be able to reach — so
-/// an EL0 caller gets the framebuffer published into its own window
-/// ([`usermem::expose_attr`]) and the **user VA** back. An EL1 caller (the
+/// an EL0 caller gets the framebuffer published into the shared user address
+/// space at its own address ([`usermem::expose_attr`], VA = PA since ARCH03
+/// stage 1) and that **user address** back. An EL1 caller (the
 /// desktop, the boot self-tests, the VDI) gets the kernel VA, which is what
 /// it can reach.
 ///
@@ -87,9 +88,9 @@ const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
 ///   writes pixels and they appear, exactly as on the flat machine the API
 ///   was written for.
 ///
-/// Returns `0` when the process window cannot take the mapping — the same
-/// value the call already produces on a display-less machine, and never an
-/// address the caller would fault on.
+/// Returns `0` when the publication cannot be made — the same value the call
+/// already produces on a display-less machine, and never an address the
+/// caller would fault on.
 fn caller_view(info: &host::ScreenInfo, kva: u64) -> u64 {
     match process::slot_for(process::current()) {
         // EL1 caller: the kernel high-half VA *is* the reachable address.
@@ -170,8 +171,8 @@ pub fn getrez() -> i64 {
 /// high-half VA the display speaks.
 ///
 /// An EL0 program can only have got a screen address from `Physbase` /
-/// `Logbase`, i.e. a VA in its own window (ADR-023), possibly plus a whole
-/// number of screens — so the process's own block table is the authority
+/// `Logbase` — the published screen memory (ADR-023), possibly plus a whole
+/// number of screens — so the publication is the authority
 /// ([`usermem::resolve_kva`]). An EL1 caller holds kernel VAs; a value below
 /// [`VA_OFFSET`] from EL1 is read as a physical address, which is the other
 /// spelling of the same DRAM.

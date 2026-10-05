@@ -1,0 +1,33 @@
+diff -ru /Volumes/Daten/Development/PiRusTOS/kernel/src/lib.rs tree-st/kernel/src/lib.rs
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/lib.rs	2026-10-05 08:59:49
++++ tree-st/kernel/src/lib.rs	2026-10-05 09:41:05
+@@ -409,6 +409,29 @@
+     // Run the AUTO folder (\AUTO\*.PRG) before the GUI — EmuTOS' autoexec.
+     // No-op until the boot drive has an \AUTO\ folder with programs; an
+     // invalid/empty .PRG fails the load gracefully (no fault).
++    // D0D-TEMP BEGIN
++    kprintln!("[d0d-st] >>> selftest_d3::run_d3_elf_loader_test()");
++    selftest_d3::run_d3_elf_loader_test();
++    kprintln!("[d0d-st] >>> selftest_d6::run_d6_pterm_test()");
++    selftest_d6::run_d6_pterm_test();
++    kprintln!("[d0d-st] >>> selftest_d7::run_d7_ptermres_test()");
++    selftest_d7::run_d7_ptermres_test();
++    kprintln!("[d0d-st] >>> selftest_pexec::run_pexec_test()");
++    selftest_pexec::run_pexec_test();
++    kprintln!("[d0d-st] >>> selftest_pexec::run_pexec_env_test()");
++    selftest_pexec::run_pexec_env_test();
++    kprintln!("[d0d-st] >>> selftest_pexec_d4d5::run_pexec_loadgo_split_test()");
++    selftest_pexec_d4d5::run_pexec_loadgo_split_test();
++    kprintln!("[d0d-st] >>> selftest_sysvars::run()");
++    selftest_sysvars::run();
++    kprintln!("[d0d-st] >>> selftest_upcall::run()");
++    selftest_upcall::run();
++    kprintln!("[d0d-st] >>> selftest_etv_term::run()");
++    selftest_etv_term::run();
++    kprintln!("[d0d-st] >>> selftest_sleepwake_switch::run()");
++    selftest_sleepwake_switch::run();
++    kprintln!("[d0d-st] all selftests returned");
++    // D0D-TEMP END
+     launch::run_auto_folder();
+ 
+     // ── The AES session loop — EmuTOS `gemstart.S:86-124` `aes_restart` ──

@@ -289,13 +289,13 @@ to `bdos::mem::init::init`. GEMDOS never calls `Getmpb` to learn the free region
   measured `mp_mfl == 0xFFFF00000026D8B8` (`APITEST` check BS06 FAIL; the MD
   field checks BS07..BS10 unrunnable from EL0).
 
-  **Now:** `THEMD` occupies a page of its own and is published into the
-  calling process's EL0 window read-only — FreeMiNT `PROT_PR`
-  (`references/freemint/sys/mint/mem.h:133`) — via
+  **Now:** `THEMD` occupies a page of its own and is published read-only —
+  FreeMiNT `PROT_PR` (`references/freemint/sys/mint/mem.h:133`) — via
   `bdos::process::usermem::expose`; `mp_mfl` carries the resulting **user
-  VA** (ADR-023, same mechanism as `Getbpb`,
-  `docs/api/bios/07-getbpb.md`). An in-kernel (EL1) caller still gets the
-  kernel VA. If the process's window cannot take the mapping, `mp_mfl` is
+  address** (ADR-023, same mechanism as `Getbpb`,
+  `docs/api/bios/07-getbpb.md`; since ARCH03 stage 1 the descriptor's own
+  physical address in the shared user address space, VA = PA). An in-kernel
+  (EL1) caller still gets the kernel VA. If the publication fails, `mp_mfl` is
   left NULL — an empty free list, which this contract already defines —
   rather than a pointer the caller would fault on. Measured after the change
   on QEMU `raspi4b`: `mp_mfl = 0x00402000`, `APITEST` BS03..BS10 all PASS

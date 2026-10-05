@@ -325,14 +325,15 @@ exFAT is a Phase-09 goal (`docs/HARDWARE-PROFILE.md` §3.4).
   `0xFFFF00000026D8F4` (`APITEST` check BB18 FAIL; the field checks
   BB19..BB28 were consequently unrunnable from EL0).
 
-  **Now:** the BPB table lives in a page of its own and is published into the
-  calling process's EL0 window read-only — FreeMiNT `PROT_PR`
-  (`references/freemint/sys/mint/mem.h:133`) — via
-  `bdos::process::usermem::expose`; `Getbpb` returns the **user VA**
-  (ADR-023). All 16 entries share one page, so a program that walks every
-  drive costs one mapping. An in-kernel (EL1) caller — `bdos::fs::fat` via
+  **Now:** the BPB table lives in a page of its own and is published
+  read-only — FreeMiNT `PROT_PR` (`references/freemint/sys/mint/mem.h:133`)
+  — via `bdos::process::usermem::expose`; `Getbpb` returns the **user
+  address** (ADR-023). Since ARCH03 stage 1 (2026-10-05) that is the table's
+  own physical address, published once into the user address space all
+  processes share (VA = PA), instead of a per-process window VA. All 16
+  entries share one page, so it is one publication for every drive. An in-kernel (EL1) caller — `bdos::fs::fat` via
   `bpb_for`, the desktop, the boot self-tests — still gets the kernel VA,
-  which is what *it* can read. If a process's window cannot take the mapping,
+  which is what *it* can read. If the publication cannot be made,
   the answer is `0` (the contract's "no BPB"), never an address the caller
   would fault on. Measured after the change on QEMU `raspi4b`:
   `Getbpb(2) = 0x00401024`, `APITEST` BB17..BB28 all PASS (every BPB field

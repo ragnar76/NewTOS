@@ -67,8 +67,9 @@ use crate::selftest_ec4::{
 /// the shared sentinel resume-capture reads this slot's `parent_frame`.
 const SLOT: usize = 0;
 
-// EL0 program VAs (must match the ELF below).
-const ENTRY_VA: u64 = 0x1000;
+// EL0 program link VAs (must match the ELF below; entry = `e_entry` 0x1000).
+// The image runs relocated at its TPA block, so the handler executes at
+// `block + HANDLER_VA` (ARCH03 stage 1).
 const HANDLER_VA: u64 = 0x1020;
 /// ELR captured at the `svc #0xEC4` sentinel = the instruction after it
 /// (`b .` at 0x1014). Reaching it proves the interrupted EL0 code resumed
@@ -196,12 +197,14 @@ pub fn run() {
     // it `Running` so the SVC handler's `slot_for(current())` matches it —
     // the process really is the running one during the EL0 excursion.
     PROCESS_TABLE[SLOT].set_state(State::Running);
-    let basepage = PROCESS_TABLE[SLOT].basepage_kva.load(Ordering::Acquire);
-    set_current(basepage);
+    set_current(tos_api::bdos::process::pd_of(SLOT));
+    // The image is relocated for its TPA block (ARCH03 stage 1): a link VA
+    // `v` executes at `block + v`.
+    let handler_va = loaded.basepage_va + HANDLER_VA;
     post_upcall(
         SLOT,
         UpcallDesc {
-            handler_va: HANDLER_VA,
+            handler_va,
             args: [FLAG_ADDR, FLAG_MARKER, 0, 0],
             mask_bit: MASK_BIT,
             // Step-1 behaviour: resume the interrupted context after the
@@ -211,7 +214,7 @@ pub fn run() {
     );
     kprintln!(
         "[upcall] posted upcall: handler_va=0x{:x} args=[0x{:x},0x{:x},0,0] mask=0x{:x}",
-        HANDLER_VA, FLAG_ADDR, FLAG_MARKER, MASK_BIT,
+        handler_va, FLAG_ADDR, FLAG_MARKER, MASK_BIT,
     );
 
     // 3. Arm the shared EC4 sentinel resume-capture (our return-to-EL1 path),
@@ -226,7 +229,7 @@ pub fn run() {
     // atomics live in the static PROCESS_TABLE and outlive the round-trip.
     unsafe {
         enter_el0_with_resume_capture(
-            ENTRY_VA,
+            loaded.entry_va,
             loaded.basepage_va,
             loaded.l0_pa,
             loaded.sp_el0,
@@ -272,9 +275,11 @@ pub fn run() {
     );
     // (b) It returned via the 0x700 trampoline + Psigreturn and the interrupted
     //     EL0 code resumed to the sentinel (ELR captured = 0x1014).
+    // The image runs relocated at its TPA block (ARCH03 stage 1): link VA
+    // 0x1014 executes at `block + 0x1014`.
     check(
-        captured_elr == SENTINEL_RESUME_ELR,
-        "(b) resumed via trampoline+Psigreturn to sentinel (ELR == 0x1014)",
+        captured_elr == loaded.basepage_va + SENTINEL_RESUME_ELR,
+        "(b) resumed via trampoline+Psigreturn to sentinel (ELR == block + 0x1014)",
     );
     check(
         captured_spsr_m == 0,
@@ -303,7 +308,7 @@ pub fn run() {
 fn cleanup(slot: usize) {
     EC4_TEST_RUNNING.store(false, Ordering::Release);
     set_current(core::ptr::null_mut());
-    let bp = PROCESS_TABLE[slot].basepage_kva.load(Ordering::Acquire);
+    let bp = tos_api::bdos::process::pd_of(slot);
     if !bp.is_null() {
         // SAFETY: single-CPU pre-test; `bp` owns the slot's TPA block.
         unsafe {

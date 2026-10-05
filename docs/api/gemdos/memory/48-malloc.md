@@ -251,20 +251,16 @@ RPi4 `mem=1G` the map fits in 32 bits; above 1 GiB of TT-RAM the address is not
 representable in i32, so a low-half user window (Phase 05) is required before
 ≥ 2 GiB RPi4 configs are enabled.
 
-### NewTOS EL0 realization (ADR-021)
+### NewTOS: one shared address space (ARCH03 stage 1)
 
-`Malloc` for an **EL0** caller reads the running process's own `p_flags` and
-picks `MX_PREFTTRAM` (when `PF_TTRAMMEM` is set) or `MX_STRAM`, then follows the
-EL0 `Mxalloc` window path (see
-[`44-mxalloc.md`](44-mxalloc.md) "NewTOS EL0 realization"): allocate from the
-real pool, **map into the per-process EL0 heap window**, and return a **user VA**
-rather than a raw pool physical address. `Malloc(-1)` for EL0 is bounded to the
-largest block that path can actually hand out —
-`min(floor_page(pool-largest-free - PAGE), remaining-window-bytes)`, see
-[`44-mxalloc.md`](44-mxalloc.md) for why the page comes off. **EL1 / kernel callers** keep
-the raw physical address (the kernel sentinel PD keeps the historical
-`MX_PREFTTRAM`). Discrimination: non-null `bdos::process::current()`, mirroring
-`aes::resource`.
+`Malloc` for a running process reads that process's `p_flags` and picks
+`MX_PREFTTRAM` (when `PF_TTRAMMEM` is set) or `MX_STRAM` (EmuTOS `xmalloc`);
+a kernel caller (no process running) keeps the historical `MX_PREFTTRAM`.
+The answer is the pool block's own address, valid in every process (see
+[`44-mxalloc.md`](44-mxalloc.md) "NewTOS: one shared address space"), and
+`Malloc(-1)` is the largest free block of the selected pool(s) — EmuTOS'
+answer, no longer bounded by a per-process window (ADR-021, superseded by
+ARCH03 stage 1).
 
 ---
 

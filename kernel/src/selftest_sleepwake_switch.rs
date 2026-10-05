@@ -350,7 +350,7 @@ pub fn run() {
     PROCESS_TABLE[A_SLOT].set_state(State::Running);
     sched::admit(A_SLOT);
     sched::admit(B_SLOT);
-    set_current(PROCESS_TABLE[A_SLOT].basepage_kva.load(Ordering::Acquire));
+    set_current(tos_api::bdos::process::pd_of(A_SLOT));
     sched::set_running(A_SLOT);
 
     // 5. Phase 1: enter A; it blocks in evnt_mesag, yields to B; B enqueues A's
@@ -400,7 +400,9 @@ pub fn run() {
     post_upcall(
         A_SLOT,
         UpcallDesc {
-            handler_va: A_HANDLER_VA,
+            // The image is relocated for its TPA block: link VA →
+            // block address + link VA (ARCH03 stage 1).
+            handler_va: tos_api::bdos::process::pd_of(A_SLOT) as u64 + A_HANDLER_VA,
             args: [A_HANDLER_MARK_VA, HANDLER_MARK, 0, 0],
             mask_bit: MASK_BIT,
             disposition: Disposition::Resume,
@@ -413,7 +415,7 @@ pub fn run() {
     //    completes evnt_mesag and bounces to EL1.
     sched::admit(R_SLOT);
     PROCESS_TABLE[R_SLOT].set_state(State::Running);
-    set_current(PROCESS_TABLE[R_SLOT].basepage_kva.load(Ordering::Acquire));
+    set_current(tos_api::bdos::process::pd_of(R_SLOT));
     sched::set_running(R_SLOT);
     EC4_SENTINEL_SLOT.store(R_SLOT, Ordering::Release);
     EC4_TEST_RUNNING.store(true, Ordering::Release);
@@ -465,9 +467,10 @@ pub fn run() {
         "(2) restartable svc#2 re-executed with x0=200 (evnt_mesag RET_CODE=1)",
     );
     check(a_msg == MSG_WORD0, "(2) A received the message B posted");
+    // A's image runs relocated at its TPA block (ARCH03 stage 1).
     check(
-        captured_elr == A_SENTINEL_RESUME_ELR,
-        "(2) A resumed past its svc (sentinel ELR == 0x1010)",
+        captured_elr == a.basepage_va + A_SENTINEL_RESUME_ELR,
+        "(2) A resumed past its svc (sentinel ELR == block + 0x1010)",
     );
     check(a_depth == 0, "    upcall_depth back to 0 (push/pop balanced)");
 
@@ -490,7 +493,7 @@ fn cleanup() {
     sched::set_running(tos_api::bdos::process::MAX_PROCESSES);
     for slot in [A_SLOT, B_SLOT, R_SLOT] {
         PROCESS_TABLE[slot].runnable.store(false, Ordering::Release);
-        let bp = PROCESS_TABLE[slot].basepage_kva.load(Ordering::Acquire);
+        let bp = tos_api::bdos::process::pd_of(slot);
         if !bp.is_null() {
             // SAFETY: single-CPU pre-test; `bp` owns the slot's TPA block.
             unsafe {

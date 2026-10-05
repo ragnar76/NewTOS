@@ -30,12 +30,10 @@
 //! `svc #13` trap with the loaded process's `TTBR0` installed, so the
 //! `setexc` peek reads the app's own EL0 low memory.
 
-use core::sync::atomic::Ordering;
 
 use tos_api::bdos::process::arena;
 use tos_api::bdos::process::loader::load_to_slot;
 use tos_api::bdos::process::mmu::switch_ttbr0_kernel;
-use tos_api::bdos::process::PROCESS_TABLE;
 
 use crate::arch::aarch64::user_entry::restore_boot_ttbr0;
 use crate::kprintln;
@@ -423,7 +421,7 @@ pub fn run() {
 
 /// Free the slot's owned TPA and mark the slot free.
 fn cleanup(slot: usize) {
-    let bp = PROCESS_TABLE[slot].basepage_kva.load(Ordering::Acquire);
+    let bp = tos_api::bdos::process::pd_of(slot);
     if !bp.is_null() {
         // SAFETY: single-CPU pre-test; `bp` owns the slot's TPA block.
         unsafe {

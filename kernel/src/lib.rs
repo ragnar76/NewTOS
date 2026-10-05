@@ -779,6 +779,20 @@ fn bring_up_bdos_pools() {
         "[mm] BDOS pools: ST-RAM 0x{:08x}+{} TT-RAM 0x{:08x}+{}",
         stram_start, stram_len, ttram_start, ttram_len,
     );
+
+    // ARCH03 stage 1: enter both pools into the shared user address space at
+    // VA = PA, once, so every process sees every pool address — the TPAs,
+    // `Malloc` blocks, environments and resource blobs alike (plan Frage 2,
+    // decision E18: boot-time mapping; spike 0b and the Pi run found no
+    // aliasing wall).
+    // SAFETY: boot CPU, no trap has run; the pools were just seeded.
+    match unsafe { tos_api::bdos::process::mmu::map_pools() } {
+        Ok(()) => kprintln!(
+            "[mm] user address space: pools mapped VA = PA ({} shared L3 tables)",
+            tos_api::bdos::process::mmu::shared_l3_used(),
+        ),
+        Err(e) => panic!("[mm] mapping the BDOS pools into the user tables failed: {e:?}"),
+    }
 }
 
 /// Phase 04 D13 — dump BDOS pool accounting on the boot console.

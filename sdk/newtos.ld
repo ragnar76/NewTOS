@@ -5,17 +5,15 @@
  * multi-page-TPA loader accepts (ARCH03 stage 0d; link with
  * `-pie --no-dynamic-linker -z text`, compile with `-fPIE`). The loader
  * (tos-api/src/bdos/process/{elf,reloc,loader,mmu,arena}.rs) streams the
- * segments into a per-process Transient Program Area of TPA_SIZE (4 MiB
- * today) and applies the image's R_AARCH64_RELATIVE relocations for the
- * address the TPA executes at. Stage 0 maps the TPA at low-half VA 0x0, so
- * the link addresses below are also the run addresses:
+ * segments into a per-process Transient Program Area of TPA_SIZE (4 MiB)
+ * and applies the image's R_AARCH64_RELATIVE relocations for the address
+ * the TPA executes at. Since ARCH03 stage 1 the TPA is a page-aligned BDOS
+ * pool block at its own address B (one address space shared by every
+ * process, VA = PA); a link address `v` below runs at `B + v`:
  *
- *     [0x000, 0x100)          BasePage (populated by the loader)
- *     [0x400, 0x670)          classic low-memory system area (sysvars +
- *                             OSHEADER + cookie jar) — populated per-process
- *                             by the loader (`populate_sysvars`, B1 / Option 1,
- *                             docs/analysis/bios-audit/b1-lowmem-feasibility.md).
- *                             `_sysbase`@0x4F2 and `_p_cookies`@0x5A0 live here.
+ *     [0x000, 0x100)          BasePage (populated by the loader) -- B is the
+ *                             program's PD pointer
+ *     [0x100, 0x1000)         reserved
  *     [0x1000, p_dbase)       PT_LOAD `text` (R-X): .text + the dynamic
  *                             metadata (.dynsym .gnu.hash .hash .dynstr
  *                             .rela.dyn) + .rodata
@@ -27,12 +25,13 @@
  *                             the loader) = p_bbase / p_blen
  *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
  *
- * The image base moved from 0x100 to 0x1000 (B1, Option 1): the classic TOS
- * low-memory system variables live at absolute [0x400, 0x800) and must not
- * overlap the app image, so the image now starts at the first page above the
- * reserved low region. crt0 finds the BasePage through x0 (the loader passes
- * its address on every launch path), not through a fixed address, so it
- * keeps working once stage 1 moves the TPA away from VA 0.
+ * The classic TOS low-memory system variables (`_sysbase`@0x4F2,
+ * `_p_cookies`@0x5A0, ...) are not part of the TPA: they live in the
+ * process's own page 0, absolute VA [0x400, 0x800) (`populate_sysvars`,
+ * B1 / Option 1, plan E3). The image starts at 0x1000 so it keeps its 4-KiB
+ * page offsets relocated (adrp). crt0 finds the BasePage through x0 (the
+ * loader passes its address on every launch path), never through a fixed
+ * address.
  *
  * Loader constraints:
  *   - ELFCLASS64, ELFDATA2LSB, ET_DYN, EM_AARCH64, e_version = 1,

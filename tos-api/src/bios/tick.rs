@@ -93,10 +93,10 @@ pub fn hz_200() -> u32 {
 
 /// Mirror `value` into the running process's `_hz_200` cell.
 ///
-/// The write goes through the **kernel high-half alias** of the TPA
-/// (`bdos::process::RUN` holds the running BasePage's kernel VA), not through
-/// the user mapping — so it is independent of which `TTBR0` happens to be
-/// installed and works whether the interrupt was taken from EL0 or EL1.
+/// The write goes through the **kernel alias of the running process's page
+/// 0** (its private `[0, 0x1000)`, a static kernel page per slot), not
+/// through the user mapping — so it is independent of which `TTBR0` happens
+/// to be installed and works whether the interrupt was taken from EL0 or EL1.
 ///
 /// `$4BA` is not 4-byte aligned (it is `2 mod 4`), exactly as on m68k, hence
 /// the unaligned store. AArch64 permits unaligned accesses to Normal memory;
@@ -104,25 +104,20 @@ pub fn hz_200() -> u32 {
 /// non-atomic (`addq.l` to an odd-word address is two bus cycles), so this
 /// matches the classic contract rather than tightening it.
 fn publish(value: u32) {
-    let bp = crate::bdos::process::current();
-    if bp.is_null() {
+    let Some(page0) = crate::bdos::process::current_page0_kva() else {
         // No user process is running (kernel/EL1 code — desktop, boot);
         // nothing to mirror into. The counter itself keeps running.
         return;
-    }
-    // SAFETY: `RUN` is the kernel high-half VA of a live process's TPA base,
-    // published by the loader and cleared on `Pterm`; the TPA is at least one
-    // 4 KiB page, so `HZ_200_ADDR + 4` is inside its first page, in the
-    // loader-populated sysvar area (`populate_sysvars`) — never in the
-    // BasePage (`[0, 0x100)`) or the program image (`>= 0x1000`).
-    //
-    // The pointer cannot go stale under us: `Pterm` frees the TPA and clears
-    // `RUN` inside the synchronous SVC handler, which runs with IRQs masked
-    // (that masking *is* the BDOS mutual exclusion on this single-CPU
-    // kernel — see `gemdos::memory::maddalt`), so this handler cannot be
-    // entered between the free and the clear.
+    };
+    // SAFETY: `page0` is the running slot's page 0, a static kernel page;
+    // `HZ_200_ADDR + 4` lies inside it, in the loader-populated sysvar area
+    // (`populate_sysvars`). The page itself never goes away; the slot cannot
+    // change under us because `Pterm` clears `RUN` inside the synchronous
+    // SVC handler, which runs with IRQs masked (that masking *is* the BDOS
+    // mutual exclusion on this single-CPU kernel — see
+    // `gemdos::memory::maddalt`).
     unsafe {
-        (bp as *mut u8)
+        page0
             .add(HZ_200_ADDR)
             .cast::<u32>()
             .write_unaligned(value);

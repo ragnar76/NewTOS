@@ -210,12 +210,16 @@ aligns the two on the next vblank.
 - **The returned pointer is in the caller's address space** (ADR-023). An
   **EL1** caller — the desktop, the VDI, a boot self-test — gets the kernel
   high-half VA, which is what it can reach. An **EL0** caller gets the
-  framebuffer published into its own per-process window
-  (`usermem::expose_attr`) and the **user VA** back; the kernel VA is
-  EL1-only and a program that followed it would take a permission fault, so
-  handing it out satisfied the letter of "a pointer to the screen" and not
-  its substance. Measured on QEMU `raspi4b`: `Physbase() = 0x00400000` from
-  an EL0 `.NCP`, previously `0xFFFF0000…`.
+  framebuffer published into the user address space (`usermem::expose_attr`)
+  and the **user address** back; the kernel VA is EL1-only and a program that
+  followed it would take a permission fault, so handing it out satisfied the
+  letter of "a pointer to the screen" and not its substance. Since ARCH03
+  stage 1 (2026-10-05) the user address is the screen memory's own physical
+  address (VA = PA, the same in every process; QEMU `raspi4b`
+  `0x3C10_0000`, `virt` `0x5081_7000`, the real Pi 4 `0x3DBF_5000` —
+  `docs/analysis/arch03-stage0b-spike.md` §6), mapped with 4-KiB pages
+  because it is not 2-MiB aligned. Until then it was a per-process window VA
+  (measured `0x00400000`), and before ADR-023 `0xFFFF0000…`.
 - **The mapping is `PROT_G`** (FreeMiNT "global — any access OK",
   `references/freemint/sys/mint/mem.h:130-134`), not `PROT_PR`: the point of
   `Physbase` is that the program *writes* pixels.
@@ -229,11 +233,13 @@ aligns the two on the next vblank.
   a mapping is live the VDI backend cleans **and invalidates** its
   rectangles instead of merely cleaning them, so the two aliases with
   mismatched cacheability stay coherent (`kernel/src/vdi_backend.rs`,
-  `tos-api/src/bdos/process/usermem.rs`).
+  `tos-api/src/bdos/process/usermem.rs`). "Live" means: a process that was
+  handed the pointer is still running; the first such holder triggers a
+  clean-and-invalidate of the whole span.
 - **The published span** is `stride_bytes × height` — the whole pixel store,
-  1.17 MiB at 640×480 and 7.91 MiB at 1920×1080. It is taken from the
-  process's 16-MiB EL0 window, so a 1080p program keeps ≈ 7.7 MiB of window
-  for `Malloc`.
+  1.17 MiB at 640×480 and 7.91 MiB at 1920×1080 — entered once into the
+  shared user page tables; it no longer costs a program any `Malloc`
+  space.
 - **Format.** Linear XRGB8888 (`0xFF_RR_GG_BB`), *not* Atari bitplanes.
   Shifter-format direct-screen writers are a project non-goal (CLAUDE.md
   "Non-goals") and belong to the later m68k emulator; a program written for

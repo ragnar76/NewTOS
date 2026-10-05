@@ -203,7 +203,7 @@ fn load_one_acc(acc: &mut Acc) {
     // returned `LoadedChild` borrows nothing past this call. No command tail
     // and no environment, as EmuTOS's `pgmld` gives an accessory neither.
     let child = match unsafe {
-        process::pexec::load(&acc.path, &[], process::loader::EnvSpec::None, false)
+        process::pexec::load(&acc.path, &[], process::loader::EnvSpec::None, false, true)
     } {
         Ok(c) => c,
         Err(e) => {

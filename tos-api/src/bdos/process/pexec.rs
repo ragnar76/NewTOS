@@ -65,19 +65,19 @@ pub struct LoadedChild {
     pub entry_va: u64,
     /// Phys of the child's `L0` table — feeds `TTBR0_EL1`.
     pub l0_pa: u64,
-    /// User VA of the child's [`tos_types::BasePage`] — passed to
+    /// The child's **PD pointer** — the user VA of its
+    /// [`tos_types::BasePage`] (the start of its TPA, VA = PA) — passed to
     /// the child entry in `x0` per NewTOS's AArch64 process ABI.
     pub basepage_va: u64,
-    /// Initial `SP_EL0` for the child: the mapped TPA top
-    /// ([`super::loader::USER_TPA_TOP`]), 4-KiB / 16-byte aligned.
-    /// The kernel launch path sets `SP_EL0` to this before the eret.
+    /// Initial `SP_EL0` for the child: the TPA top (`p_hitpa`),
+    /// 4-KiB / 16-byte aligned. The kernel launch path sets `SP_EL0` to
+    /// this before the eret.
     pub sp_el0: u64,
-    /// **Opaque PD handle** the parent receives from `PE_LOAD` and
-    /// hands back to `PE_GO` (in `tail`). It is the child's
-    /// `basepage_pa` — slot-unique and `LONG`-representable (a DRAM
-    /// phys in the low 2 GiB). Per ADR-010 the parent treats it as
-    /// opaque; a dereferenceable PD waits for the shared-address-space
-    /// model on real hardware (see QUIRK-001 / ADR-010).
+    /// What `PE_LOAD` returns and `PE_GO` takes back (in `tail`): the
+    /// child's **PD pointer** (`basepage_va`) — a real basepage
+    /// address the caller can read (`p_tlen`, `p_env`, …) in the shared
+    /// address space (ARCH03 stage 1), as EmuTOS returns `(long)cur_p`
+    /// (`bdos/proc.c:360`).
     pub handle: u64,
     /// `true` for `PE_LOADGO` / `PE_GO` (kernel launches the child);
     /// `false` for `PE_LOAD` (kernel returns `handle` to the parent).
@@ -99,8 +99,10 @@ pub enum PexecError {
     /// [`allocate_slot`] returned `None` — process table is full.
     /// Mapped to `ENSMEM` (-39).
     NoSlot,
-    /// `PE_GO`'s `tail` handle did not resolve to any loaded slot.
-    /// Mapped to `EIMBA` (-40, "invalid memory block address").
+    /// `PE_GO`'s `tail` is not the PD pointer of a program loaded with
+    /// `PE_LOAD` and not yet started. Mapped to `EIMBA` (-40) — FreeMiNT's
+    /// `EFAULT` for a foreign or invalid PD (`sys/k_exec.c:378-387`), whose
+    /// value is the same −40.
     BadHandle,
     /// The ELF blob was malformed, or its image + BSS overran the
     /// per-process TPA, or the TPA/env pool allocation failed. Mapped
@@ -169,8 +171,8 @@ pub unsafe fn dispatch(
         // PE_LOADGO: load + launch, env+basepage owned by the child.
         // PE_LOAD: load only, basepage owned by the parent, returned as
         // a handle.
-        PE_LOADGO => unsafe { load(path_bytes, tail, env, true) },
-        PE_LOAD => unsafe { load(path_bytes, tail, env, false) },
+        PE_LOADGO => unsafe { load(path_bytes, tail, env, true, true) },
+        PE_LOAD => unsafe { load(path_bytes, tail, env, false, false) },
         // PE_GO: launch an already-loaded slot identified by the
         // handle (the basepage_pa a prior PE_LOAD returned).
         PE_GO => go(go_handle),
@@ -182,23 +184,23 @@ pub unsafe fn dispatch(
 }
 
 /// Load `path`'s program into a fresh slot. `launch` selects
-/// `PE_LOADGO` (true: the kernel transfers control to the child) vs
-/// `PE_LOAD` (false: the kernel returns the `handle` to the parent and
-/// leaves the slot in [`State::Loaded`]).
+/// `PE_LOADGO` (true: the kernel's `Pexec` handler transfers control to
+/// the child) vs `PE_LOAD` (false: the handler returns the PD pointer to
+/// the caller and the slot stays [`State::Loaded`]; the kernel launcher
+/// and the accessory loader also pass `false` and start the program
+/// themselves).
 ///
-/// EmuTOS ownership (`bdos/proc.c:305`, `owner = (flag==PE_LOADGO) ?
-/// p : run`): under the static-arena model there is no BDOS-pool MD to
-/// re-own yet, so ownership is expressed purely through the slot's
-/// lifetime — a `PE_LOAD` slot persists until `PE_GO` launches it (and
-/// the child eventually `Pterm`s) or the parent frees it. The
-/// `parent_slot` link is set at **launch** time (here for `PE_LOADGO`,
-/// in [`go`] for `PE_GO`) so `Pterm` returns to whoever launched it.
+/// `owned_by_child` is EmuTOS' `owner = (flag == PE_LOADGO) ? p : run`
+/// (`bdos/proc.c:302-307`) for the TPA and the environment block: `true`
+/// for `PE_LOADGO` and for every program the kernel starts itself (its
+/// `Pterm` frees them), `false` for `PE_LOAD` (the caller owns them and
+/// may `Mfree` them). The `parent_slot` link and `p_parent` are set at
+/// **launch** time ([`set_parent`] — EmuTOS `proc_go`, `bdos/proc.c:541`)
+/// so `Pterm` returns to whoever launched it.
 ///
 /// `tail` is the command-tail image copied verbatim into the child's
 /// `p_cmdlin`; `env` is the environment source (`EnvSpec::Explicit` /
-/// `Inherit`, or `None` for callers that hand down neither). For
-/// `PE_LOADGO` (`launch == true`) the env block is owned by the child
-/// (`owner = p`); for `PE_LOAD` it is owned by the launching process.
+/// `Inherit`, or `None` for callers that hand down neither).
 ///
 /// # Safety
 ///
@@ -208,6 +210,7 @@ pub unsafe fn load(
     tail: &[u8],
     env: EnvSpec<'_>,
     launch: bool,
+    owned_by_child: bool,
 ) -> Result<LoadedChild, PexecError> {
     // Resolve the program source without yet consuming a slot (so a
     // `NotFound` costs nothing): an embedded registry entry first (test
@@ -228,11 +231,11 @@ pub unsafe fn load(
     let slot_idx = allocate_slot().ok_or(PexecError::NoSlot)?;
 
     // SAFETY: slot is freshly claimed; loader populates the slot's
-    // basepage_kva / basepage_pa / l0_pa atomics, the command tail and
-    // the environment. `launch` == PE_LOADGO → env owned by the child.
+    // basepage / root / entry / stack atomics, the command tail and the
+    // environment.
     let loaded: Result<LoadedImage, LoadError> = match (blob, file) {
-        (Some(b), _) => unsafe { load_to_slot_with(b, slot_idx, tail, env, launch) },
-        (_, Some(f)) => unsafe { load_file_to_slot(f, slot_idx, tail, env, launch) },
+        (Some(b), _) => unsafe { load_to_slot_with(b, slot_idx, tail, env, owned_by_child) },
+        (_, Some(f)) => unsafe { load_file_to_slot(f, slot_idx, tail, env, owned_by_child) },
         // Unreachable: `blob`/`file` resolved above, one is always `Some`.
         (None, None) => Err(LoadError::Parse(super::elf::ParseError::TooShort)),
     };
@@ -246,14 +249,13 @@ pub unsafe fn load(
         }
     };
 
-    // Record the initial user stack pointer in the slot, so a context that
-    // starts this program through the **scheduler** rather than through the
-    // kernel launcher — a desk accessory, which is `pstart`ed and then first
-    // run by a `dsptch()` (ACC02/ACC03) — enters it on the same mapped TPA top
-    // the launcher would have used.
-    PROCESS_TABLE[loaded.slot]
-        .sp_el0
-        .store(loaded.sp_el0, Ordering::Release);
+    // `PE_LOAD`: remember whose program this is, so the slot goes away with
+    // its owner if it is never started ([`release_unstarted_of`]).
+    if !launch {
+        PROCESS_TABLE[loaded.slot]
+            .load_owner
+            .store(super::current(), Ordering::Release);
+    }
 
     Ok(LoadedChild {
         slot: loaded.slot,
@@ -261,7 +263,7 @@ pub unsafe fn load(
         l0_pa: loaded.l0_pa,
         basepage_va: loaded.basepage_va,
         sp_el0: loaded.sp_el0,
-        handle: PROCESS_TABLE[loaded.slot].basepage_pa.load(Ordering::Acquire),
+        handle: loaded.basepage_va,
         launch,
     })
 }
@@ -273,41 +275,85 @@ pub unsafe fn load(
 ///
 /// See [`load`].
 pub unsafe fn load_go(path_bytes: &[u8]) -> Result<LoadedChild, PexecError> {
-    unsafe { load(path_bytes, &[], EnvSpec::Inherit, true) }
+    unsafe { load(path_bytes, &[], EnvSpec::Inherit, true, true) }
 }
 
-/// `Pexec(PE_GO, 0, tail, 0)` — launch an already-loaded program. The
-/// `tail` is the opaque PD handle a prior `PE_LOAD` returned (the
-/// child's `basepage_pa`). Resolve it to a slot and hand the kernel a
-/// launch-mode [`LoadedChild`]; ownership is unchanged (`proc.c:535`).
+/// `Pexec(PE_GO, 0, tail, 0)` — launch an already-loaded program. `tail`
+/// is the PD pointer a prior `PE_LOAD` returned. Resolve it to its slot and
+/// hand the kernel a launch-mode [`LoadedChild`]; ownership is unchanged
+/// (EmuTOS `PE_GO` → `proc_go`, `bdos/proc.c:244-248`): the TPA and the
+/// environment stay the caller's, and what the child allocates is the
+/// child's (`run = p`), freed at its `Pterm` — plan E6.
+///
+/// The child keeps the root the loader built for it. In stage 1 every root
+/// shares the same tables except page 0, so "the caller's address space"
+/// (plan E6, FreeMiNT `FORK_SHAREVM`) is the child's too; page 0 stays the
+/// child's own so its `os_run` cell names the child and its KEYS02 table is
+/// its own (plan E3/E4).
 pub fn go(handle: u64) -> Result<LoadedChild, PexecError> {
     let slot_idx = resolve_handle(handle).ok_or(PexecError::BadHandle)?;
     let slot = &PROCESS_TABLE[slot_idx];
+    slot.load_owner.store(core::ptr::null_mut(), Ordering::Release);
     Ok(LoadedChild {
         slot: slot_idx,
         entry_va: slot.entry_va.load(Ordering::Acquire),
         l0_pa: slot.l0_pa.load(Ordering::Acquire),
-        basepage_va: super::loader::USER_VA_BASE,
-        sp_el0: super::loader::USER_TPA_TOP,
+        basepage_va: super::pd_of(slot_idx) as u64,
+        sp_el0: slot.sp_el0.load(Ordering::Acquire),
         handle,
         launch: true,
     })
 }
 
-/// Find the loaded slot whose `basepage_pa` equals `handle`. Only
-/// non-`Free` slots match.
+/// Find the slot holding a program that was loaded with `PE_LOAD` and not
+/// started yet, by its PD pointer. A desk accessory is `Loaded` too until
+/// its first dispatch, but it sits in the cooperative run-set from its
+/// `pstart` on (`aes::acc::register_process`), so it never matches.
 fn resolve_handle(handle: u64) -> Option<usize> {
     if handle == 0 {
         return None;
     }
+    (0..PROCESS_TABLE.len()).find(|&i| {
+        let p = &PROCESS_TABLE[i];
+        p.read_state() == super::State::Loaded
+            && !p.runnable.load(Ordering::Acquire)
+            && super::pd_of(i) as u64 == handle
+    })
+}
+
+/// Record the launch linkage of `child` (EmuTOS `proc_go`,
+/// `bdos/proc.c:541` — `p->p_parent = run`): the child's `p_parent`
+/// becomes the caller's PD pointer, or `0` when the caller is no process
+/// (the kernel launcher, an EL1 caller — as before stage 1).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `child` holds a loaded image.
+pub unsafe fn set_parent(child: usize, parent_pd: *mut BasePage) {
+    let kva = PROCESS_TABLE[child].basepage_kva.load(Ordering::Acquire);
+    if kva.is_null() {
+        return;
+    }
+    // SAFETY: `kva` is the kernel alias of the child's live basepage;
+    // `p_parent` is a plain 32-bit LONG (pool addresses are below 2 GiB).
+    unsafe { (*kva).p_parent = parent_pd as u64 as tos_types::Long };
+}
+
+/// Release every slot holding a program that `owner` loaded with `PE_LOAD`
+/// and never started — called when `owner` terminates. Its TPA and
+/// environment were `owner`'s blocks (`owner = run`) and go with
+/// `free_all_owned`; the slot would otherwise outlive them.
+pub fn release_unstarted_of(owner: *mut BasePage) {
+    if owner.is_null() {
+        return;
+    }
     for (i, p) in PROCESS_TABLE.iter().enumerate() {
-        if p.read_state() != super::State::Free
-            && p.basepage_pa.load(Ordering::Acquire) == handle
+        if p.read_state() == super::State::Loaded
+            && p.load_owner.load(Ordering::Acquire) == owner
         {
-            return Some(i);
+            free_slot(i);
         }
     }
-    None
 }
 
 /// Convenience accessor for the child slot's [`BasePage`] VA on the

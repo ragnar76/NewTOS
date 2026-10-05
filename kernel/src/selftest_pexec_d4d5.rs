@@ -23,7 +23,6 @@
 //!    i.e. the whole load → go → child → Pterm → parent → Pterm chain
 //!    completed and freed every slot.
 
-use core::sync::atomic::Ordering;
 
 use tos_api::bdos::mem::stats::{pool_stats, PoolKind};
 use tos_api::bdos::process::loader::load_to_slot;
@@ -168,8 +167,7 @@ pub fn run_pexec_loadgo_split_test() {
 
     let parent_slot_ref = slot(parent_slot_idx).expect("slot in range");
     parent_slot_ref.set_state(State::Running);
-    let parent_basepage = parent_slot_ref.basepage_kva.load(Ordering::Acquire);
-    set_current(parent_basepage);
+    set_current(tos_api::bdos::process::pd_of(parent_slot_idx));
 
     kprintln!("[d4d5] eret → EL0 in parent …");
     // SAFETY: pre-test, single-CPU; the parent's `parent_frame` is the

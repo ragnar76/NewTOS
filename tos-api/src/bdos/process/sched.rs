@@ -101,10 +101,9 @@ static CURRENT: AtomicUsize = AtomicUsize::new(NONE);
 static RESUME_RESTARTABLE: [AtomicBool; MAX_PROCESSES] =
     [const { AtomicBool::new(false) }; MAX_PROCESSES];
 
-/// What the SVC handler must do to switch to the next process. The user
-/// stack top and basepage VA are fixed (`el0::USER_STACK_TOP_EXCLUSIVE`,
-/// `loader::USER_VA_BASE`) — every process maps them in its own address
-/// space — so the handler supplies those constants itself.
+/// What the SVC handler must do to switch to the next process. The fresh
+/// entry's basepage (`x0`) is the slot's PD pointer (`process::pd_of`) — since
+/// ARCH03 stage 1 each process's TPA has its own address in the shared space.
 pub struct Switch {
     /// Slot to run next.
     pub slot: usize,

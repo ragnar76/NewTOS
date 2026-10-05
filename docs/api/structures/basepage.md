@@ -230,8 +230,22 @@ emulator (Phase 10+).
   EmuTOS relations hold to the byte: `p_dbase = p_tbase + p_tlen`,
   `p_bbase = p_dbase + p_dlen` (`bdos/kpgmld.c:131-132`), and
   `p_bbase + p_blen` is the linker's `_end` (TASK/T05; loader host tests
-  `basepage_segment_tests`, APITEST T32). `p_tbase` is `0x1000`, not
-  `basepage + 0x100`: page 0 also carries the classic low-memory system area
-  (B1 / Option 1). An image with a single RWX segment (no data) leaves the
-  four data/BSS fields zero.
-- `p_lowtpa` = 0 (`USER_VA_BASE`): the basepage is at VA 0 of every process.
+  `basepage_segment_tests`, APITEST T32). `p_tbase` is `basepage + 0x1000`,
+  not `basepage + 0x100`: the program is a position-independent image linked
+  at `0x1000` that keeps its 4-KiB page offsets when the loader relocates it
+  for its TPA block (ARCH03 plan §3.5). An image with a single RWX segment
+  (no data) leaves the four data/BSS fields zero.
+- **Where the basepage is (ARCH03 stage 1).** Every user address is its own
+  physical address in one address space all processes share; the basepage
+  is the start of the process's TPA block, a page-aligned BDOS-pool block
+  (EmuTOS `p_lowtpa = p`, `bdos/proc.c:372`). That address is the process's
+  **PD pointer**: `Pexec(PE_LOAD)` returns it, `p_parent` holds the parent's
+  (set when the child is started, EmuTOS `proc_go`, `bdos/proc.c:541`; `0`
+  for a program the kernel starts), the OSHEADER's `os_run` points at a
+  page-0 cell (`0x5B8`) holding it, and the entry gets it in `x0`. All
+  address fields (`p_lowtpa`, `p_hitpa`, `p_tbase`, `p_dbase`, `p_bbase`,
+  `p_xdta`, `p_env`) are addresses every process can read. Until stage 1 the
+  basepage sat at VA 0 of every process (`p_lowtpa = 0`).
+- `p_hitpa` = `p_lowtpa + 4 MiB`: the TPA has a fixed size (plan decision
+  E9 — not EmuTOS' largest free block, which would starve every other
+  process; FreeMiNT bounds its TPA the same way).

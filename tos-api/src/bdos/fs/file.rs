@@ -78,7 +78,7 @@ fn table() -> &'static mut [Option<Slot>; OPEN_FILES] {
 /// `-1`/negative = a BIOS device (NewTOS maps all to the console), `>=
 /// NUMSTD` = a redirected non-standard handle. No process → the console.
 fn uft(std: u16) -> i16 {
-    let bp = crate::bdos::process::current();
+    let bp = crate::bdos::process::current_kva();
     if bp.is_null() {
         return -1;
     }
@@ -89,7 +89,7 @@ fn uft(std: u16) -> i16 {
 
 /// Set the calling process's UFT entry (for `Fforce`).
 fn set_uft(std: u16, val: i16) {
-    let bp = crate::bdos::process::current();
+    let bp = crate::bdos::process::current_kva();
     if bp.is_null() {
         return;
     }

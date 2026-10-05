@@ -276,42 +276,24 @@ divergence, not the extracted contract. **Protection bits** (Atari bits 4+)
 remain ignored until Phase 06 introduces process privilege; recorded as a known
 divergence from Atari docs (EmuTOS already ignores them).
 
-### NewTOS EL0 realization (ADR-021)
+### NewTOS: one shared address space (ARCH03 stage 1)
 
-For an **EL0** (SVC-originated) caller, `Mxalloc` does **not** hand back a raw
-pool physical address — an EL0 app runs behind `TTBR0_EL1` and would fault
-touching one (QED's `Mxalloc` → a TT-RAM PA `0x0160a000` write fault). Instead
-the trap entry (`tos-api/src/gemdos/memory.rs`) allocates the block from the real
-ST/TT pool via the **unchanged** `bdos::mem::traps::mxalloc` — so `mode`, the
-ST/TT preference and the `pmd`/`pmdalt` split stay faithful: the block genuinely
-comes from the requested pool — then **maps it into a per-process EL0 heap
-window** (`bdos::process::usermem`, an offset map directly above the 4 MiB TPA,
-16 MiB today) and returns the **user VA** the app can dereference. Blocks are
-handed out with a fresh-VA bump cursor, so no TLBI is needed before the app's
-return `eret` (QUIRK-001). `Mxalloc(-1, mode)` for EL0 reports the largest block
-this path can actually **hand out** — bounded by what the app can map, not by
-the ~1 GiB physical pool; the one deliberate, documented contract adaptation.
-Concretely (`gemdos::memory::el0_largest_allocatable`):
+Every user address is its own physical address, and both pools are entered
+into the user page tables of every process at boot
+(`tos-api/src/bdos/process/mmu.rs`, plan
+`docs/analysis/arch03-implementation-plan.md` §3.1/§3.2, decisions E1/E18).
+`Mxalloc` therefore returns the pool block's `m_start` itself — to an EL0
+program and to a kernel caller alike — exactly as EmuTOS does, and the
+address means the same in every process (a block can be handed to a child, an
+accessory or another program by pointer). `Mxalloc(-1, mode)` is the largest
+free block of the selected pool(s) (`bdos/umem.c`), with no further bound.
+Host tests: `tos-api/tests/arch03_shared_space.rs`.
 
-```text
-min( floor_page(pool-largest-free-for-mode - PAGE), remaining-window-bytes )
-```
-
-The `- PAGE` is not cosmetic. The allocating path over-allocates **one extra
-page** so the page-aligned window base still lies inside the 16-byte-aligned
-pool block, so a request of exactly `pool-largest-free` asks the pool for
-`pool-largest-free + PAGE` and fails. Reporting the raw pool figure would break
-the property the call exists for and that EmuTOS holds: `ffit(-1,…)` returns the
-length of a real free MD and the `ffit(len,…)` on the next line succeeds
-(`bdos/umem.c:246-258`). `remaining-window-bytes`
-(`usermem::window_remaining`) is already floor-paged. A pool with less than two
-pages free therefore reports `0`, which is also `Mxalloc`'s "no block" answer —
-nothing smaller than a page can be mapped into EL0 at all. Host tests:
-`tos-api/src/gemdos/memory.rs` `mod tests`. **EL1 / kernel callers** (the desktop, the
-loader, boot init — which call `bdos::mem::traps` directly, so
-`bdos::process::current()` is null) keep the raw physical address unchanged. The
-EL0-vs-EL1 discrimination is the exact mechanism `aes::resource` uses (non-null
-`current()`).
+Until stage 1 (ADR-021) an EL0 caller got the block mapped into a per-process
+"heap window" at an address ≠ the pool address, with a one-page alignment
+slack, a 32-entry block table and a `-1` answer bounded by the remaining
+window; all of that is gone. **Protection bits** (`mode` bits 4+) remain
+ignored until stage 2 (decoded) / stage 3 (enforced), plan Frage 8.
 
 ---
 

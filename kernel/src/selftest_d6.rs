@@ -53,7 +53,6 @@
 //! (D7 Pgetpid, Pexec D8 — when it lands — etc.) builds on a
 //! verified Pterm-style round-trip.
 
-use core::sync::atomic::Ordering;
 
 use tos_api::bdos::mem::stats::{pool_stats, PoolKind};
 use tos_api::bdos::process::loader::{load_to_slot, LoadedImage};
@@ -180,8 +179,7 @@ pub fn run_d6_pterm_test() {
     //    `free_all_owned` can reap exactly the user's allocations.
     let proc_slot = slot(D6_TEST_SLOT).expect("slot index in range");
     proc_slot.set_state(State::Running);
-    let basepage_kva = proc_slot.basepage_kva.load(Ordering::Acquire);
-    set_current(basepage_kva);
+    set_current(tos_api::bdos::process::pd_of(loaded.slot));
 
     // 3. Snapshot ST-RAM pool baseline so post-Pterm can assert
     //    "the Mxalloc'd block was returned to the free list".

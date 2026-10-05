@@ -173,8 +173,7 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
     // on both the `Pterm` and the `Ptermres` path, or the next tenant would
     // inherit kernel aliases of memory that is no longer its resource. Only
     // this slot's entries; the parent's stay. The pool blocks are handled by
-    // the sweep below (or kept resident by `Ptermres`), and the slot's EL0
-    // window table is re-seeded by the next load (`usermem::seed_tpa`).
+    // the sweep below (or kept resident by `Ptermres`).
     crate::aes::resource::on_process_exit(slot_idx);
 
     // Sweep both BDOS pools for blocks owned by this process: free
@@ -188,6 +187,11 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
             free_all_owned(bp as *mut c_void)
         }
     };
+    // Programs this process loaded with `PE_LOAD` and never started lived in
+    // its blocks (EmuTOS `owner = run`); their slots go with it.
+    if !reserve {
+        super::pexec::release_unstarted_of(bp);
+    }
 
     // EmuTOS `xterm` (bdos/proc.c:609): `run = run->p_parent`. On
     // child termination the **parent** becomes the running process
@@ -203,10 +207,7 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
     if parent_slot == super::NO_PARENT {
         set_current(ptr::null_mut::<BasePage>());
     } else {
-        let parent_bp = super::PROCESS_TABLE[parent_slot as usize]
-            .basepage_kva
-            .load(Ordering::Acquire);
-        set_current(parent_bp);
+        set_current(super::pd_of(parent_slot as usize));
     }
 
     Ok(PtermResume {
@@ -226,11 +227,10 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
 /// Caller must hold the BDOS giant lock and must have already
 /// consumed the slot's `parent_frame` snapshot.
 pub unsafe fn release_slot(slot_idx: usize) {
-    // The slot's EL0 window mappings die with it. Drop the record that this
-    // process held an uncached published mapping (a `Physbase`/`Logbase`
-    // framebuffer alias), so the VDI's per-primitive flush returns to the
-    // cheaper clean-only form once no program is drawing into the screen
-    // itself (`super::usermem::uncached_shared_active`).
+    // Drop the record that this process held an uncached screen pointer (a
+    // `Physbase`/`Logbase` framebuffer address), so the VDI's per-primitive
+    // flush returns to the cheaper clean-only form once no program is
+    // drawing into the screen itself (`super::usermem::uncached_shared_active`).
     super::usermem::clear_uncached(slot_idx);
     // The slot's AES process descriptor is keyed by the slot (A62): clear its
     // flags and drain its queue, so the next tenant does not inherit a dead

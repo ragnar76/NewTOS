@@ -36,9 +36,10 @@
 //!   between two GEM programs it persists there too. Keeping it across an
 //!   alpha interlude is the safe superset and unobservable (a program can
 //!   only tell by using a freed block).
-//! * **EL0.** `wind_get(WF_SCREEN)` publishes the block into the calling
-//!   process's window lazily, read-write (`usermem::expose`, `PROT_G`,
-//!   ADR-023) — see `window.rs`.
+//! * **EL0.** `wind_get(WF_SCREEN)` hands an EL0 caller the block's own
+//!   address: a pool block, in every process's address space at VA = PA
+//!   since ARCH03 stage 1 (`usermem::expose`, `PROT_G`, ADR-023) — see
+//!   `window.rs`.
 //! * **Without the buffer** (pool exhausted at boot, or a host test without
 //!   the [`install_screen_buffer`] fixture) the alert and the drop-down fall
 //!   back to a kernel-heap copy per save — the pre-A57 behaviour — and

@@ -46,9 +46,10 @@
 //! What this does **not** cover, stated rather than glossed: a pointer that was
 //! valid during the call and unmapped before the capture. Nothing runs between
 //! the dispatch returning and the capture, and no traced opcode unmaps caller
-//! memory (`Mfree`/`Mshrink` deliberately leave the EL0 window mappings in
-//! place — `bdos/process/usermem.rs::free`), so the window is empty in this
-//! kernel. If that ever changes, C1 has to be re-argued.
+//! memory (since ARCH03 stage 1 the pools stay mapped for every process; a
+//! freed block remains readable memory, as on EmuTOS), so the window is empty
+//! in this kernel. If that ever changes (stage 3 unmaps freed blocks), C1 has
+//! to be re-argued.
 //!
 //! Reads use ordinary EL1 loads, the same access mode `bdos::fs::cstr` uses for
 //! every `Fopen`/`Fcreate` path an EL0 application passes. (`Cconws` uses the

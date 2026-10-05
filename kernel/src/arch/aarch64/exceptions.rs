@@ -781,17 +781,12 @@ fn restore_call_origin(frame: &mut ExceptionFrame) {
 }
 
 /// Read the userdef return-WORD the EL0 stub stored in the ret-slot, through
-/// the kernel high-half alias of the running process's page 0 (design §3.4(e)).
+/// the kernel alias of the process's page 0 (design §3.4(e)).
 fn read_userdef_ret_slot(slot_idx: usize) -> i16 {
-    use core::sync::atomic::Ordering;
-
-    let bp = tos_api::bdos::process::PROCESS_TABLE[slot_idx]
-        .basepage_kva
-        .load(Ordering::Acquire) as u64;
-    if bp == 0 {
+    let Some(page0) = tos_api::bdos::process::mmu::page0_kva(slot_idx) else {
         return 0;
-    }
-    let va = bp + tos_api::bdos::process::loader::USERDEF_RET_SLOT_VA;
+    };
+    let va = page0 as u64 + tos_api::bdos::process::loader::USERDEF_RET_SLOT_VA;
     // SAFETY: `va` is the kernel alias of the reserved ret-slot in the
     // process's page 0 (RW), written by the EL0 stub before its `Psigreturn`.
     unsafe { (va as *const i16).read_unaligned() }
@@ -1121,7 +1116,9 @@ fn apply_switch(frame: &mut ExceptionFrame, sw: &tos_api::bdos::process::sched::
         for i in 0..30 {
             frame.gpr[i] = 0;
         }
-        frame.gpr[0] = tos_api::bdos::process::loader::USER_VA_BASE;
+        // The process-entry contract: the basepage (PD pointer) in `x0`
+        // (`sdk/crt0.S`), as on the `Pexec` and kernel-launch paths.
+        frame.gpr[0] = tos_api::bdos::process::pd_of(sw.slot) as u64;
         frame.lr = 0;
         frame.elr = sw.entry_va;
         frame.spsr = 0; // SPSR.M = EL0t
@@ -1155,8 +1152,7 @@ fn apply_switch(frame: &mut ExceptionFrame, sw: &tos_api::bdos::process::sched::
         restore_fp_context(&PROCESS_TABLE[sw.slot].saved_fp);
     }
 
-    let bp = PROCESS_TABLE[sw.slot].basepage_kva.load(Ordering::Acquire);
-    tos_api::bdos::process::set_current(bp);
+    tos_api::bdos::process::set_current(tos_api::bdos::process::pd_of(sw.slot));
     PROCESS_TABLE[sw.slot].set_state(State::Running);
     sched::set_running(sw.slot);
 
@@ -1933,11 +1929,12 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     };
 
     // `PE_LOAD` (D4): the program is loaded but **not** launched. The
-    // parent keeps running; it receives the opaque PD handle (the
-    // child's `basepage_pa`) as the `Pexec` return value and hands it
-    // back later to `PE_GO`. No TTBR0 switch, no frame redirect — just
-    // return to the parent. The slot stays `Loaded` until `PE_GO`
-    // launches it (or the parent frees it).
+    // parent keeps running; it receives the child's PD pointer — the
+    // basepage address, readable in its own address space (ARCH03 stage 1,
+    // EmuTOS `return (long)cur_p`, `bdos/proc.c:360`) — and hands it back
+    // later to `PE_GO`. No TTBR0 switch, no frame redirect — just return to
+    // the parent. The slot stays `Loaded` until `PE_GO` launches it (or the
+    // parent terminates, `pexec::release_unstarted_of`).
     if !child.launch {
         frame.gpr[0] = child.handle;
         return;
@@ -1989,6 +1986,10 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     // restore `RUN = parent` when the child terminates (xterm's
     // `run = run->p_parent`).
     let parent_bp = tos_api::bdos::process::current();
+    // `p->p_parent = run` (EmuTOS `proc_go`, `bdos/proc.c:541`): the caller's
+    // PD pointer, or 0 when the caller is no process (an EL1 caller).
+    // SAFETY: trap context, BDOS lock implicit; the child holds a loaded image.
+    unsafe { tos_api::bdos::process::pexec::set_parent(child.slot, parent_bp) };
     match tos_api::bdos::process::slot_for(parent_bp) {
         Some(parent_slot_idx) => {
             tos_api::bdos::process::PROCESS_TABLE[child.slot]
@@ -2015,12 +2016,10 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     // A no-op when the parent owns no slot (the kernel launcher's programs).
     tos_api::bdos::process::sched::suspend_parent_for_child(child.slot);
 
-    // Set RUN to the child's basepage so subsequent BDOS-pool
+    // Set RUN to the child's PD pointer so subsequent BDOS-pool
     // allocations from the child get tagged with the right owner
-    // cookie (D9 wiring).
-    let child_basepage =
-        tos_api::bdos::process::pexec::child_basepage_kva(child.slot);
-    tos_api::bdos::process::set_current(child_basepage);
+    // cookie (D9 wiring; EmuTOS `run = p`).
+    tos_api::bdos::process::set_current(tos_api::bdos::process::pd_of(child.slot));
 
     // Switch TTBR0 from parent to child *with* a TLBI. We are in
     // kernel context here; the eret to EL0 is many instructions

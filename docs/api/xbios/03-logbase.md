@@ -180,8 +180,8 @@ PHASE-08: `Logbase` returns the current "draw" framebuffer in the swap chain;
   space**
   (see `02-physbase.md` §"Address space and cacheability"): the kernel
   high-half VA of the VideoCore pixel store for an EL1 caller, and a
-  `PROT_G`, Normal Non-Cacheable mapping of the same physical pages in the
-  process's own EL0 window for an EL0 caller — the same value `Physbase`
+  `PROT_G`, Normal Non-Cacheable user mapping of the same physical pages at
+  their own address (VA = PA, ARCH03 stage 1) for an EL0 caller — the same value `Physbase`
   returns on this single-buffer profile.
 - **Two screen pages on `board-rpi4` (rev 2026-09-05).** The VideoCore
   framebuffer is allocated with double virtual height, so the screen memory

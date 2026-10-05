@@ -193,17 +193,18 @@ pub fn kbdvbase() -> i64 {
 }
 
 /// Read slot `off` of process `slot`'s table through the kernel alias of its
-/// page 0 (`basepage_kva` = TPA base, as `bios::chardev::current_conterm`
-/// reads `$484`). `None` for a slot with no basepage.
+/// page 0 (`mmu::page0_kva`, as `bios::chardev::current_conterm` reads
+/// `$484`). `None` for a slot with no loaded image.
 fn read_slot(slot: usize, off: u64) -> Option<u64> {
-    let bp = PROCESS_TABLE.get(slot)?.basepage_kva.load(Ordering::Acquire) as u64;
-    if bp == 0 {
+    if PROCESS_TABLE.get(slot)?.basepage_kva.load(Ordering::Acquire).is_null() {
         return None;
     }
-    let va = bp + KBDVECS_AREA_VA + off;
-    // SAFETY: `bp` is the kernel alias of a live process's mapped page 0; the
-    // table lies inside it (loader asserts) and the slot is 8-aligned. The
-    // program may rewrite it at any time, hence the volatile read.
+    let page0 = crate::bdos::process::mmu::page0_kva(slot)? as u64;
+    let va = page0 + KBDVECS_AREA_VA + off;
+    // SAFETY: `page0` is the kernel alias of the process's page 0 (a static
+    // kernel page); the table lies inside it (loader asserts) and the slot is
+    // 8-aligned. The program may rewrite it at any time, hence the volatile
+    // read.
     Some(unsafe { (va as *const u64).read_volatile() })
 }
 

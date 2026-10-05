@@ -6,8 +6,9 @@
  * things, and deliberately nothing more -- it is a check, not a demo:
  *
  *   1. calls `Physbase` and `Logbase` and prints both addresses, so the log
- *      shows whether they are inside the process's own EL0 window (ADR-023)
- *      or the kernel high half (`0xFFFF...`, unreachable from EL0);
+ *      shows whether they are user addresses (ADR-023; since ARCH03 stage 1
+ *      the screen's own physical address, VA = PA) or the kernel high half
+ *      (`0xFFFF...`, unreachable from EL0);
  *   2. stores three bands of solid colour straight into that address -- a
  *      plain `*p++ = colour` loop with **no cache maintenance whatsoever**,
  *      because the pages `Physbase` publishes are mapped Normal Non-Cacheable

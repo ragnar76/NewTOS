@@ -68,6 +68,10 @@ extern char _end[];
 #define RD_UL(a)  (*(volatile unsigned long  *)(unsigned long)(a)) /* 8-byte */
 #define RD_U32(a) (*(volatile unsigned int   *)(unsigned long)(a)) /* 4-byte */
 #define RD_U16(a) (*(volatile unsigned short *)(unsigned long)(a)) /* 2-byte */
+/* A LONG of our own BasePage. Since ARCH03 stage 1 it sits at the start of
+ * our TPA block (the address crt0 hands to __libc_init_heap as `_base`), no
+ * longer at VA 0 -- page 0 holds only the system variables now. */
+#define BP_U32(off) RD_U32((unsigned long)_base + (off))
 
 static const char LOGPATH[] = "C:\\APITEST.LOG";
 static const char CFGPATH[] = "C:\\APITEST.CFG";
@@ -563,13 +567,13 @@ static int is_extended_type(unsigned int t)
 }
 
 /*
- * Exclusive top of the low-half VA range a NewTOS process can have mapped.
- * The per-process page tables provision USER_L3_COUNT (= 10) leaf tables of
- * 2 MiB each -> 20 MiB (tos-api/src/bdos/process/mmu.rs, USER_L3_COUNT /
- * USER_TPA_MAX_VA): the 4 MiB TPA at the bottom, the per-process window
- * above it. Nothing the kernel hands this process can lie beyond it.
+ * Exclusive top of the user addresses NewTOS hands out. Since ARCH03 stage 1
+ * every user address is its own physical address in the one address space
+ * all processes share, and everything a call returns -- Malloc/Mxalloc
+ * blocks, the TPA, the BIOS structures Getbpb/Getmpb point at (ADR-023), the
+ * screen -- lies below 2 GiB (plan invariant I2: positive 32-bit LONGs).
  */
-#define NEWTOS_USER_VA_TOP 0x01400000UL
+#define NEWTOS_USER_VA_TOP 0x80000000UL
 
 /*
  * Can `p` be dereferenced from EL0?
@@ -577,25 +581,15 @@ static int is_extended_type(unsigned int t)
  * The kernel's own statics are linked at 0xFFFF_0000_0000_0000 + physical
  * (kernel/src/arch/aarch64/link-rpi4.ld:24) and are EL1-only. A call that
  * hands back a pointer into kernel memory therefore gives an application an
- * address it CANNOT read -- and dereferencing it here would fault the
- * machine instead of reporting the defect. So every returned pointer is
- * range-checked before it is followed.
- *
- * A process's own low half is TWO ranges, not one: its TPA, [0x100,
- * p_hitpa), plus the per-process window above p_hitpa into which the kernel
- * maps everything it hands out -- GEMDOS Malloc/Mxalloc blocks (T18/T19
- * below write and read exactly such a VA, and it is > p_hitpa) and, per
- * ADR-023, the BIOS structures Getbpb/Getmpb point at. An earlier revision
- * of this helper tested `p < p_hitpa` alone, which is why it also rejected
- * the (perfectly readable) Malloc range; the bound is the window top.
+ * address it CANNOT read -- and dereferencing it here would kill the program
+ * instead of reporting the defect. So every returned pointer is range-checked
+ * before it is followed: a user address is below NEWTOS_USER_VA_TOP; the
+ * first 0x100 bytes of page 0 (the m68k vector area) hold nothing.
  */
 static int el0_readable(unsigned long p)
 {
-	unsigned long hitpa = (unsigned long)RD_U32(0x04UL);   /* BasePage p_hitpa */
-	if (hitpa == 0) return 0;
 	if (p < 0x100UL) return 0;
-	if (p < hitpa) return 1;                 /* inside our own TPA */
-	return p < NEWTOS_USER_VA_TOP;           /* inside the per-process window */
+	return p < NEWTOS_USER_VA_TOP;
 }
 
 /*
@@ -963,14 +957,15 @@ int main(void)
 		b_emit();
 	}
 
-	/* ---- T08: BasePage @ VA 0 (the loader populates it; image loads at
-	 *      0x1000 post-B1). p_tbase@8, p_env@0x2C, p_hitpa@4 ---- */
-	before("T08 read BasePage @VA0 (p_lowtpa/p_hitpa/p_tbase/p_env)");
+	/* ---- T08: our BasePage (the loader populates it at the start of our
+	 *      TPA block -- ARCH03 stage 1; the image follows at +0x1000).
+	 *      p_tbase@8, p_env@0x2C, p_hitpa@4 ---- */
+	before("T08 read BasePage at _base (p_lowtpa/p_hitpa/p_tbase/p_env)");
 	{
-		unsigned int lowtpa = RD_U32(0x00UL);
-		unsigned int hitpa  = RD_U32(0x04UL);
-		unsigned int tbase  = RD_U32(0x08UL);
-		unsigned int penv   = RD_U32(0x2CUL);
+		unsigned int lowtpa = BP_U32(0x00UL);
+		unsigned int hitpa  = BP_U32(0x04UL);
+		unsigned int tbase  = BP_U32(0x08UL);
+		unsigned int penv   = BP_U32(0x2CUL);
 		b_reset();
 		b_str("T08   p_lowtpa=");
 		b_hex(lowtpa, 8);
@@ -981,7 +976,7 @@ int main(void)
 		b_reset();
 		b_str("T08   p_tbase=");
 		b_hex(tbase, 8);
-		b_str(" [expect 0x00001000]  p_env=");
+		b_str(" [expect p_lowtpa+0x1000]  p_env=");
 		b_hex(penv, 8);
 		b_str(" [0=none]");
 		b_nl();
@@ -1550,12 +1545,12 @@ int main(void)
 	 *      sets it from the basepage crt0 hands it. ---- */
 	before("T32 BasePage p_tbase/p_tlen/p_dbase/p_dlen/p_bbase/p_blen vs _end");
 	{
-		unsigned long tbase = RD_U32(0x08UL);
-		unsigned long tlen  = RD_U32(0x0CUL);
-		unsigned long dbase = RD_U32(0x10UL);
-		unsigned long dlen  = RD_U32(0x14UL);
-		unsigned long bbase = RD_U32(0x18UL);
-		unsigned long blen  = RD_U32(0x1CUL);
+		unsigned long tbase = BP_U32(0x08UL);
+		unsigned long tlen  = BP_U32(0x0CUL);
+		unsigned long dbase = BP_U32(0x10UL);
+		unsigned long dlen  = BP_U32(0x14UL);
+		unsigned long bbase = BP_U32(0x18UL);
+		unsigned long blen  = BP_U32(0x1CUL);
 		unsigned long end   = (unsigned long) _end;
 
 		b_reset();
@@ -1591,7 +1586,7 @@ int main(void)
 		ck_bool(G_GEMDOS, "T32.6 p_tlen, p_dlen, p_blen all nonzero",
 			tlen != 0 && dlen != 0 && blen != 0);
 		ck_hex(G_GEMDOS, "T32.7 _base == p_lowtpa (mintlib BASEPAGE *)",
-		       (unsigned long) _base, (unsigned long) RD_U32(0x00UL));
+		       (unsigned long) _base, (unsigned long) BP_U32(0x00UL));
 	}
 
 	/* ================================================================ *

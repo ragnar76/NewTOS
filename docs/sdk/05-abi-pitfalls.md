@@ -38,34 +38,38 @@ the report).
 
 ### A2. The process address space
 
-From `tos-api/src/bdos/process/loader.rs` and `mmu.rs`:
+From `tos-api/src/bdos/process/loader.rs` and `mmu.rs` (ARCH03 stage 1: one
+address space shared by every process, every user address = its physical
+address, except page 0):
 
 ```
-VA 0x0000_0000   BasePage (256 B)                          loader.rs:170-186
-   0x0000_0400   classic sysvars ... _sysbase@0x4F2, _p_cookies@0x5A0
-   0x0000_05C0   OSHEADER (48 B)                            loader.rs:705 (OSHEADER_VA)
-   0x0000_05F0   cookie-jar mirror, 16 slots × 8 B          loader.rs:708-718
-   0x0000_0700   upcall trampolines / scratch                loader.rs:735-765
-   0x0000_0768   Keytbl area (0x238 B)                       loader.rs:789-792
-   0x0000_1000   program image (PT_LOAD), then .bss          loader.rs:195, newtos.ld:52
-   _end          libc heap arena grows up                    heap_init.c:58-74
+page 0 (per process)
+VA 0x0000_0400   classic sysvars ... _sysbase@0x4F2, _p_cookies@0x5A0
+   0x0000_05B8   os_run cell (this process's PD pointer)
+   0x0000_05C0   OSHEADER (48 B)                            loader.rs (OSHEADER_VA)
+   0x0000_05F0   cookie-jar mirror, 16 slots × 8 B
+   0x0000_0700   upcall trampolines / scratch
+   0x0000_0768   Keytbl area (0x238 B), 0x9A0 KEYS02 vector table
+
+shared (VA = PA): the BDOS pools, published kernel structures, the screen
+B                BasePage (256 B) -- B = the TPA block = the PD pointer
+B + 0x1000       program image (PT_LOAD, relocated for B), then .bss
+_end             libc heap arena grows up                    heap_init.c
    ...
-   0x003F_0000   64 KiB stack reserve (USER_STACK_MIN)       loader.rs:182
-   0x0040_0000   p_hitpa = initial SP_EL0 = TPA top (4 MiB)  loader.rs:177, arena.rs:52
-   0x0040_0000   EL0 "window": Malloc/Mxalloc blocks, the RSC blob,
-                 published kernel structures, the screen memory
-   0x0200_0000   end of mappable low-half VA (USER_L3_COUNT × 2 MiB = 32 MiB)  mmu.rs:80-87
+B + 4 MiB - 64K  64 KiB stack reserve (USER_STACK_MIN)
+B + 4 MiB        p_hitpa = initial SP_EL0 = TPA top
+elsewhere        Malloc/Mxalloc blocks (their pool addresses), the RSC
+                 blob, other processes' TPAs
 ```
 
-Every page of the TPA is mapped user-read/write/execute
-(`loader.rs:30-34`); the whole TPA is zeroed before the image is copied
-(`:35-38`). Every user VA is below 32 MiB — which is why the 32-bit fields
-of the classic TOS structures can hold a NewTOS pointer
-(`sdk/gemlib/overlay/gem.h:62-64`, `basepage.h:19`).
+The whole pool is mapped user-read/write/execute; the whole TPA is zeroed
+before the image is copied. Every user address is below 2 GiB (plan
+invariant I2) — which is why the 32-bit fields of the classic TOS structures
+can hold a NewTOS pointer (`sdk/gemlib/overlay/gem.h:62-64`, `basepage.h:19`).
 
 The basepage the loader writes is the classic 256-byte layout with 4-byte
 fields (`loader.rs` `populate_basepage`; kernel struct
-`tos-types/src/basepage.rs`): `p_hitpa = 0x400000`, `p_tbase`/`p_tlen` = the
+`tos-types/src/basepage.rs`): `p_hitpa = B + 0x400000`, `p_tbase`/`p_tlen` = the
 first executable `PT_LOAD`, `p_dbase`/`p_dlen`/`p_bbase`/`p_blen` = the first
 writable non-executable one (file part / BSS tail). Since TASK/T05
 `newtos.ld` emits exactly those two segments (`text` R-X, `data` RW- with
@@ -84,7 +88,7 @@ verbatim (length byte first).
 |----------|-----|-------|
 | stack | `SP_EL0 = p_hitpa` set by the loader and re-derived by crt0 (`sdk/crt0.S:37-42`) | grows down into the TPA; the image may not reach the top 64 KiB (`loader.rs:1330-1335`) |
 | libc `malloc` | mintlib `__sbrk` → `HeapAlloc` from the arena `[_end, p_hitpa − 64 KiB)` (`heap_init.c:58-74`, `sdk/libc/mintlib/unix/sbrk.c:30-72`); `HeapAlloc` refuses a request that would cross the live stack pointer | **the 4-MiB TPA minus image and stack**; when exhausted `sbrk` fails with `ENOMEM` — there is **no** fall-back to GEMDOS `Malloc` because `_split_mem == 0` (`sbrk.c:54-71`) |
-| GEMDOS `Malloc`/`Mxalloc` | pool block mapped into the per-process window, user VA returned (ADR-021, `tos-api/src/gemdos/memory.rs:56-118`) | the 28-MiB window, and at most **32** simultaneously mapped blocks per process (`usermem.rs:88-93`; a full table fails with `ENSMEM`, `memory.rs:115`) |
+| GEMDOS `Malloc`/`Mxalloc` | the pool block's own address, valid in every process (ARCH03 stage 1, VA = PA; `tos-api/src/gemdos/memory.rs`) | the pool itself — no per-process window or block-table limit any more |
 | kernel structures returned by pointer | published read-only into the window (ADR-023): `Getbpb`, `Getmpb`; screen memory published read/write, uncached: `Physbase`, `Logbase` | see B3 for what is still not published |
 | system variables, OSHEADER, cookie jar | materialised in page 0 of the TPA at the classic addresses (`loader.rs:861` `populate_sysvars`) | read-only in substance: the cookie mirror is rewritten from the kernel jar on every change (`loader.rs:1057-1100`); writes to the mirror do not reach the kernel |
 

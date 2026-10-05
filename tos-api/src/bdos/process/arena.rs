@@ -1,122 +1,93 @@
 //! Per-process TPA (Transient Program Area) allocation.
 //!
-//! A real compiled program (libc / gemlib / cflib app) needs far more
-//! than the 4-KiB single page the Phase-06 D3 bring-up handed out: it
-//! wants a multi-page image + zeroed BSS + a heap for `malloc` + a
-//! proper downward-growing stack. This module carves that region — one
-//! per process — from the **BDOS memory pool** (`Mxalloc`), page-
-//! aligns it, and hands the loader the addresses it needs to copy the
-//! image in and map it into the process's `TTBR0_EL1`.
+//! A real compiled program (libc / gemlib / cflib app) wants a multi-page
+//! image + zeroed BSS + a heap for `malloc` + a proper downward-growing
+//! stack. This module takes that region — one per process — from the
+//! **BDOS memory pool**, page-aligned, and hands the loader its address.
 //!
-//! ## Why the pool, not a static BSS arena
+//! ## The TPA is an ordinary pool block, at its own address
 //!
-//! The earlier interim arena reserved a fixed 4-KiB BSS page per slot.
-//! Growing that to a multi-MiB × [`super::MAX_PROCESSES`] static array
-//! would waste megabytes of always-resident BSS for slots that are
-//! usually idle. Instead the TPA is a normal BDOS allocation: it is
-//! taken on `Pexec` and returned on `Pterm`. That is also the *correct*
-//! `m_own` process-memory ownership model (EmuTOS `bdos/proc.c` — the
-//! basepage MD is one of the process-owned blocks): the loader tags the
-//! TPA block with the child's basepage cookie via
-//! [`crate::bdos::mem::traps::set_owner`], so the child's `Pterm`
-//! [`crate::bdos::mem::free_all_owned::free_all_owned`] sweep reclaims
-//! it with no special-casing — exactly like the environment block.
+//! Since ARCH03 stage 1 every user address is its own physical address
+//! (VA = PA, [`super::mmu`]) and the pools are mapped for every process from
+//! boot on, so the TPA executes where the pool put it: its block address is
+//! the process's basepage — its **PD pointer** — exactly as EmuTOS'
+//! `alloc_tpa` returns `md->m_start` and `init_pd_fields` sets `p_lowtpa =
+//! p` (`bdos/proc.c:372,445-502`). `Mshrink(basepage, …)` and `Mfree(basepage)`
+//! therefore name the block directly, and the owner tag decides who frees it:
+//! the child for `PE_LOADGO` (its `Pterm` `free_all_owned` sweep), the caller
+//! for `PE_LOAD` (EmuTOS `owner = (flag == PE_LOADGO) ? p : run`,
+//! `bdos/proc.c:302-307`).
 //!
 //! ## Size
 //!
-//! [`TPA_SIZE`] = 4 MiB. Rationale: enough for a real app's image
-//! (tens–hundreds of KiB), zeroed BSS, a `malloc` heap, and a generous
-//! stack, while staying within the per-process page-table capacity
-//! [`super::mmu::USER_TPA_MAX_VA`]. It is a compile-time constant today;
-//! a per-`Pexec` size (from a `PRGFLAGS` stack request or a caller-
-//! supplied length) is a later refinement — the loader would thread a
-//! requested size through [`alloc_tpa`] and size the L3 count to match.
+//! [`TPA_SIZE`] = 4 MiB, fixed — plan decision E9 (fixed and overridable,
+//! rather than EmuTOS' "largest free block", which would starve every other
+//! process; FreeMiNT bounds its TPA the same way with `initialmem`). The
+//! override through the program flags waits on E8b.
 //!
 //! ## Alignment
 //!
-//! `Mxalloc` returns 16-byte-aligned addresses, but page-table leaves
-//! need 4-KiB alignment. [`alloc_tpa`] over-allocates one page and
-//! rounds the base up, so the page-aligned `[base_pa, base_pa +
-//! TPA_SIZE)` window always lies inside the pool block. The block is
-//! freed by its 16-byte-aligned pool start ([`Tpa::raw_start`]).
+//! The block starts on a 4-KiB page ([`TPA_ALIGN`]): the program is linked at
+//! `0x1000` and keeps its link-time page offsets when relocated
+//! (`adrp`-relative code), so the TPA base must be page-aligned.
+//! [`crate::bdos::mem::traps::mxalloc_aligned`] gives the block that start
+//! and returns the slack to the pool, so the block holds exactly the TPA.
 
 use core::sync::atomic::Ordering;
 
 use tos_types::{Long, MX_PREFTTRAM};
 
-use super::mmu;
 use super::MAX_PROCESSES;
 
-/// Per-process TPA size in bytes (4 MiB). See the module docs for the
-/// choice; must not exceed the page-table mapping capacity.
+/// Per-process TPA size in bytes (4 MiB, plan E9).
 pub const TPA_SIZE: u64 = 4 * 1024 * 1024;
 
-const PAGE_SIZE: u64 = 4096;
+/// Alignment of the TPA block start (one 4-KiB page).
+pub const TPA_ALIGN: u64 = super::mmu::PAGE_SIZE;
 
-/// Phase-05 high-half offset. Mirror of the constant in
-/// `kernel::arch::aarch64::mmu`; a BDOS-pool physical address is
-/// reachable from the kernel at `phys + VA_OFFSET`.
-const VA_OFFSET: u64 = 0xFFFF_0000_0000_0000;
-
-// The TPA must be page-aligned-mappable and fit the per-process tables.
-const _: () = assert!(TPA_SIZE.is_multiple_of(PAGE_SIZE));
-const _: () = assert!(TPA_SIZE <= mmu::USER_TPA_MAX_VA);
-
-#[inline(always)]
-const fn pa_to_kva(pa: u64) -> u64 {
-    pa.wrapping_add(VA_OFFSET)
-}
+const _: () = assert!(TPA_SIZE.is_multiple_of(TPA_ALIGN));
 
 /// Size of a user page in bytes (= one 4-KiB physical frame).
 pub const fn page_size() -> u64 {
-    PAGE_SIZE
+    TPA_ALIGN
 }
 
-/// A page-aligned per-process TPA carved from the BDOS pool.
+/// A page-aligned per-process TPA block from the BDOS pool.
 pub struct Tpa {
-    /// Pool block start (`Mxalloc` `m_start`) — the value to hand to
-    /// [`free_tpa`] / `Mfree`. 16-byte-aligned, may be below
-    /// [`Self::base_pa`] by up to one page.
-    pub raw_start: Long,
-    /// Page-aligned base physical address. The process's `TTBR0_EL1`
-    /// maps user VA `USER_VA_BASE` (0) here.
-    pub base_pa: u64,
-    /// Kernel high-half VA aliasing [`Self::base_pa`] — the loader
-    /// copies the ELF image and writes the basepage through this.
+    /// The block's address — `m_start`, the user VA (= PA) the program
+    /// executes at and its PD pointer.
+    pub base: u64,
+    /// Kernel high-half alias of [`Self::base`] — the loader copies the
+    /// ELF image and writes the basepage through this.
     pub base_kva: *mut u8,
 }
 
-/// Allocate one page-aligned [`TPA_SIZE`] region from the BDOS pool.
+/// Take one page-aligned [`TPA_SIZE`] block from the BDOS pool.
 ///
 /// TT-RAM is preferred (`MX_PREFTTRAM`), matching the environment-block
 /// allocation and the modern `PF_TTRAMLOAD` default; it falls back to
-/// ST-RAM only if TT-RAM is exhausted. Over-allocates one page so the
-/// rounded-up page-aligned base always fits inside the block. Returns
-/// `None` on `ENSMEM`.
+/// ST-RAM only if TT-RAM is exhausted. Returns `None` on `ENSMEM`.
 ///
-/// The returned block is tagged with the *current* owner cookie by
-/// `Mxalloc`; the caller re-tags it to the child basepage via
-/// [`crate::bdos::mem::traps::set_owner`] so `Pterm` frees it.
+/// The block is tagged with the *current* owner cookie by the allocator
+/// (`owner = run`); the loader re-tags it to the child for `PE_LOADGO`.
 ///
 /// # Safety
 ///
 /// Caller holds the BDOS giant lock (or is the boot CPU pre-trap).
 pub unsafe fn alloc_tpa() -> Option<Tpa> {
-    // One extra page of slack guarantees the page-aligned base fits.
-    let want = (TPA_SIZE + PAGE_SIZE) as Long;
     // SAFETY: caller holds the BDOS lock.
-    let raw = unsafe { crate::bdos::mem::traps::mxalloc(want, MX_PREFTTRAM) };
+    let raw = unsafe {
+        crate::bdos::mem::traps::mxalloc_aligned(TPA_SIZE as Long, MX_PREFTTRAM, TPA_ALIGN as Long)
+    };
     if raw == 0 {
         return None;
     }
     // Pool addresses are positive `Long` in the low 2 GiB (BDOS `init`
     // rejects wider ranges), so this widening never sign-extends.
-    let raw_u = raw as u64;
-    let base_pa = (raw_u + PAGE_SIZE - 1) & !(PAGE_SIZE - 1);
+    let base = raw as u64;
     Some(Tpa {
-        raw_start: raw,
-        base_pa,
-        base_kva: pa_to_kva(base_pa) as *mut u8,
+        base,
+        base_kva: super::kalias(base) as *mut u8,
     })
 }
 
@@ -126,38 +97,58 @@ pub unsafe fn alloc_tpa() -> Option<Tpa> {
 ///
 /// # Safety
 ///
-/// Caller holds the BDOS giant lock and `raw_start` is a live pool
-/// block previously returned by [`alloc_tpa`].
-pub unsafe fn free_tpa(raw_start: Long) {
-    // SAFETY: caller holds the BDOS lock; `raw_start` is on the
-    // allocated list. `Mfree`'s return is `EIMBA` only for a wild
-    // address, which cannot happen for our own allocation.
-    let _ = unsafe { crate::bdos::mem::traps::mfree(raw_start) };
+/// Caller holds the BDOS giant lock and `base` is a live pool block
+/// previously returned by [`alloc_tpa`].
+pub unsafe fn free_tpa(base: Long) {
+    // SAFETY: caller holds the BDOS lock; `base` is on the allocated list.
+    // `Mfree`'s return is `EIMBA` only for a wild address, which cannot
+    // happen for our own allocation.
+    let _ = unsafe { crate::bdos::mem::traps::mfree(base) };
 }
 
-/// First-page (4-KiB) mutable view of a loaded slot's TPA, for tests
-/// that inspect the basepage the loader wrote. Reads the slot's
-/// published `basepage_kva` (the page-aligned TPA base).
+/// Page 0 of a loaded slot as a mutable byte page — the system variables,
+/// the cookie-jar mirror, the trampolines and the vector table the loader
+/// wrote ([`super::mmu::page0_kva`]). For the cookie-jar refresh and for
+/// tests that inspect the loader's page-0 image.
 ///
-/// Returns `None` for an out-of-range slot or a slot with no loaded
-/// TPA (`basepage_kva == null`).
+/// Returns `None` for an out-of-range slot or a slot with no loaded image
+/// (`basepage_kva == null`).
 ///
 /// # Safety
 ///
 /// Caller holds the BDOS giant lock for the duration of the borrow and
-/// the slot currently holds a loaded TPA.
+/// the slot currently holds a loaded image.
 pub unsafe fn page_bytes_mut(slot: usize) -> Option<&'static mut [u8; 4096]> {
     if slot >= MAX_PROCESSES {
         return None;
     }
-    let kva = super::PROCESS_TABLE[slot]
+    if super::PROCESS_TABLE[slot]
         .basepage_kva
-        .load(Ordering::Acquire);
+        .load(Ordering::Acquire)
+        .is_null()
+    {
+        return None;
+    }
+    // SAFETY: caller's lock and aliasing contract.
+    unsafe { super::mmu::page0_bytes(slot) }
+}
+
+/// The first 4 KiB of a loaded slot's **TPA** — its basepage and the
+/// reserved gap above it — as a mutable byte page, through the kernel alias
+/// of the TPA. For tests that inspect the basepage the loader wrote.
+///
+/// # Safety
+///
+/// As [`page_bytes_mut`].
+pub unsafe fn basepage_bytes_mut(slot: usize) -> Option<&'static mut [u8; 4096]> {
+    if slot >= MAX_PROCESSES {
+        return None;
+    }
+    let kva = super::PROCESS_TABLE[slot].basepage_kva.load(Ordering::Acquire);
     if kva.is_null() {
         return None;
     }
-    // SAFETY: the loader mapped `[base_kva, base_kva + TPA_SIZE)`; the
-    // first 4 KiB (basepage + start of image) is live and, by the
-    // caller's lock contract, not aliased for the borrow's lifetime.
+    // SAFETY: the loader's TPA is at least 4 KiB from `basepage_kva`; the
+    // caller's lock contract keeps the borrow unaliased.
     Some(unsafe { &mut *(kva as *mut [u8; 4096]) })
 }

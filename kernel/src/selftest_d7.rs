@@ -25,7 +25,6 @@
 //! remainder of the boot (a real TSR holds memory until reboot); no
 //! later self-test asserts the ST-RAM baseline, so this is benign.
 
-use core::sync::atomic::Ordering;
 
 use tos_api::bdos::mem::stats::{pool_stats, PoolKind};
 use tos_api::bdos::process::loader::load_to_slot;
@@ -134,8 +133,7 @@ pub fn run_d7_ptermres_test() {
 
     let proc_slot = slot(D7_TEST_SLOT).expect("slot index in range");
     proc_slot.set_state(State::Running);
-    let basepage_kva = proc_slot.basepage_kva.load(Ordering::Acquire);
-    set_current(basepage_kva);
+    set_current(tos_api::bdos::process::pd_of(loaded.slot));
 
     let pre = pool_stats(PoolKind::Stram);
     kprintln!(

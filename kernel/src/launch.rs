@@ -66,7 +66,8 @@ pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
 pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // Busy cursor while loading from disk (the desktop is still on screen).
     busy_cursor(true);
-    // Load from the registry or the FAT16 file system into a fresh slot.
+    // Load from the registry or the FAT16 file system into a fresh slot,
+    // TPA owned by the child (the shell's `PE_LOADGO`: its `Pterm` frees it).
     // No environment (`EnvSpec::None` → `p_env = 0`) — the desktop/AUTO launcher
     // hands none down, preserving the pre-env-plumbing behaviour on this
     // boot-critical path. Wiring an inherited env here waits on the
@@ -76,7 +77,7 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // SAFETY: single-CPU boot/desktop context; the BDOS is not concurrently
     // locked, and the returned `LoadedChild` borrows nothing past this call.
     let child = match unsafe {
-        process::pexec::load(path, tail, process::loader::EnvSpec::None, false)
+        process::pexec::load(path, tail, process::loader::EnvSpec::None, false, true)
     } {
         Ok(c) => c,
         Err(e) => {
@@ -129,7 +130,7 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // is handed over verbatim: it is the length-prefixed `p_cmdlin` image the
     // loader copied.
     tos_api::aes::shell::set_launch_info(path, tail);
-    set_current(s.basepage_kva.load(Ordering::Acquire));
+    set_current(process::pd_of(child.slot));
     kprintln!("[launch] EL0: slot {} entry 0x{:x}", child.slot, child.entry_va);
 
     // SAFETY: single-CPU; `parent_frame` captures this kernel resume point,

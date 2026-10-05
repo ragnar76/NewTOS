@@ -177,9 +177,11 @@ pub fn run_d3_elf_loader_test() {
     );
 
     // Sanity: the parser must have read e_entry = 0x1000.
-    if loaded.entry_va != 0x1000 {
+    // The image is relocated for its TPA block (ARCH03 stage 1): the entry
+    // is the block address plus the ELF `e_entry` (0x1000).
+    if loaded.entry_va != loaded.basepage_va + 0x1000 {
         kprintln!(
-            "[d3] === FAIL: entry_va=0x{:x} expected 0x1000 ===",
+            "[d3] === FAIL: entry_va=0x{:x} expected TPA base + 0x1000 ===",
             loaded.entry_va,
         );
         return;
@@ -245,11 +247,10 @@ pub fn run_d3_elf_loader_test() {
     // has run `free_all_owned` for this slot. Release its pool-backed TPA
     // (owned by the basepage cookie) and free the slot so the loader test
     // leaves no leaked TT-RAM behind.
-    let bp = PROCESS_TABLE[loaded.slot]
-        .basepage_kva
-        .load(Ordering::Acquire);
+    let bp = tos_api::bdos::process::pd_of(loaded.slot);
     if !bp.is_null() {
-        // SAFETY: single-CPU pre-test; `bp` owns the slot's TPA.
+        // SAFETY: single-CPU pre-test; the PD pointer `bp` owns the slot's
+        // TPA (the loader's owner tag).
         unsafe {
             tos_api::bdos::mem::free_all_owned::free_all_owned(bp.cast());
         }
@@ -272,7 +273,7 @@ fn validate_basepage(loaded: &LoadedImage) -> bool {
     // SAFETY: pre-test, single-CPU; the slot is exclusively owned
     // by this test for the duration of the function and not touched
     // by any other code path.
-    let page = match unsafe { arena::page_bytes_mut(loaded.slot) } {
+    let page = match unsafe { arena::basepage_bytes_mut(loaded.slot) } {
         Some(p) => p,
         None => {
             kprintln!("[d3]   basepage:                 FAIL (no page)");
@@ -285,13 +286,12 @@ fn validate_basepage(loaded: &LoadedImage) -> bool {
     // single-CPU).
     let bp: &BasePage = unsafe { &*(page.as_ptr() as *const BasePage) };
 
-    // p_hitpa is now the multi-page TPA top (the loader hands each
-    // process a pool-backed TPA of `arena::TPA_SIZE`), not the old
-    // single 4-KiB page top. Derive it from the loader so the two stay
-    // in sync if the TPA size changes.
-    let expected_hitpa: i32 =
-        tos_api::bdos::process::loader::USER_TPA_TOP as i32;
-    let expected_xdta: i32 = 0x80;
+    // The basepage sits at the start of the TPA block (ARCH03 stage 1), so
+    // every address field is relative to the PD pointer `base`; p_hitpa is
+    // the TPA top `base + arena::TPA_SIZE`.
+    let base = loaded.basepage_va as i32;
+    let expected_hitpa: i32 = base + arena::TPA_SIZE as i32;
+    let expected_xdta: i32 = base + 0x80;
     let expected_uft = [-1i8; 6];
 
     let p_lowtpa = bp.p_lowtpa;
@@ -306,9 +306,9 @@ fn validate_basepage(loaded: &LoadedImage) -> bool {
     let p_flags = bp.p_flags;
     let p_uft = bp.p_uft;
 
-    let lowtpa_ok = p_lowtpa == 0;
+    let lowtpa_ok = p_lowtpa == base;
     let hitpa_ok = p_hitpa == expected_hitpa;
-    let tbase_ok = p_tbase == 0x1000;
+    let tbase_ok = p_tbase == base + 0x1000;
     let tlen_ok = p_tlen == 8;
     let dbase_ok = p_dbase == 0;
     let dlen_ok = p_dlen == 0;

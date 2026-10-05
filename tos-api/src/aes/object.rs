@@ -101,13 +101,26 @@ impl ObjTree {
     /// Build an accessor over the tree at `base`, reading fields at the
     /// current execution context's ABI width.
     ///
+    /// When an EL0 process is the caller, the tree is its memory and every
+    /// address the accessor follows is resolved through that process's view
+    /// ([`Self::ua`] → [`owner_kva`]): the kernel alias of live user memory
+    /// (ARCH03 stage 1 / plan §3.6, "AES reads app trees via `kalias`"). An
+    /// address that names no live memory — an index past the end of a
+    /// malformed tree, a dangling pointer — then reads as nothing (a NIL
+    /// record, a zero field) instead of a kernel data abort on a privileged
+    /// load through `TTBR0`, which halted the machine. EmuTOS reads whatever
+    /// the flat memory holds there; with no memory behind the address that
+    /// is the closest answer the kernel can give without dying. A kernel
+    /// caller (no process running) reads raw, as before.
+    ///
     /// # Invariant
     /// `base` addresses a valid OBJECT array; every index passed to a getter/
     /// setter is in range (the GEM caller's contract, exactly as the previous
     /// `*const Object` + `tree.add(i)` code assumed).
     #[inline]
     pub(crate) fn new(base: *const Object) -> Self {
-        Self { base: base as u64, abi: current_abi(), kernel_built: false, owner: None }
+        let owner = crate::bdos::process::slot_for(crate::bdos::process::current());
+        Self { base: base as u64, abi: current_abi(), kernel_built: false, owner }
     }
 
     /// Build an accessor over a **kernel-built** tree at `base`, forcing the
@@ -489,10 +502,14 @@ impl ObjTree {
 // registers with `wind_set(DESKWH, WF_NEWDESK, …)` is the one tree the AES
 // draws **outside** its owner's trap: `w_drawdesk` runs from every other
 // process's `wind_open`/`wind_close`/move (a `Pexec` child compositing over
-// its parent's background) and from the kernel desktop's own repaint. NewTOS
-// gives every process its own `TTBR0` with the TPAs at the same low VAs
-// (`kernel/src/arch/aarch64/el0.rs`, `bdos/process/mmu.rs`), so a raw read
-// there goes through whichever tables happen to be installed.
+// its parent's background) and from the kernel desktop's own repaint. Since
+// ARCH03 stage 1 a user address means the same in every process (VA = PA,
+// `bdos/process/mmu.rs`), but a raw read is still a privileged load through
+// whichever `TTBR0` happens to be installed — and through none at all from
+// the kernel desktop — and it would follow a dangling pointer into freed or
+// unmapped memory with a kernel data abort. Since stage 1 the same holds for
+// a tree read inside its owner's trap (a malformed tree, an index past its
+// end): [`ObjTree::new`] gives an EL0 caller's tree its owner too.
 //
 // [`ObjTree::owner`] therefore names the slot whose mapping the tree lives
 // in, and every user address the drawer follows goes through [`ObjTree::ua`]
@@ -2749,14 +2766,14 @@ fn ob_user(
         // App-provided tree: `ub_code` lives in EL0 app memory. Synchronous
         // `G_USERDEF` callout via the AES fiber (AES-as-thread design §3.4/§5
         // step 2). Write the PARMBLK into the process's reserved EL0 scratch —
-        // through the kernel high-half alias `basepage_kva + PARMBLK_SCRATCH_VA`,
+        // through the kernel alias of its page 0 + `PARMBLK_SCRATCH_VA`,
         // at the tree's ABI width — then stall the fiber: the kernel runs
         // `ub_code(parmblk)` at EL0 (no PXN) and resumes us with the WORD result
         // (EmuTOS `state = ob_user(...)`, gemoblib.c:793). No live process slot
         // (e.g. an EL1 test caller reaching an app tree) falls back to the old
         // "keep the state" behaviour rather than dereferencing a null basepage.
         use crate::bdos::process::loader::{PARMBLK_SCRATCH_VA, USER_VA_BASE};
-        use crate::bdos::process::{current, slot_for, PROCESS_TABLE};
+        use crate::bdos::process::{current, mmu, slot_for};
         // A97: the callback is code in the **tree owner's** address space.
         // When an owned tree is drawn while its owner is not the current
         // process (a `Pexec` child compositing its parent's `WF_NEWDESK`
@@ -2770,17 +2787,13 @@ fn ob_user(
             }
         }
         match current_slot {
-            Some(slot) => {
-                let bp = PROCESS_TABLE[slot]
-                    .basepage_kva
-                    .load(Ordering::Acquire) as u64;
-                if bp == 0 {
-                    new_state
-                } else {
-                    // SAFETY: `bp + PARMBLK_SCRATCH_VA` is the kernel high-half
+            Some(slot) => match mmu::page0_kva(slot) {
+                None => new_state,
+                Some(page0) => {
+                    // SAFETY: `page0 + PARMBLK_SCRATCH_VA` is the kernel
                     // alias of the reserved scratch in the process's page 0,
                     // RW-mapped, ≥ 40 bytes; single-CPU under the trap.
-                    unsafe { pb.write_abi(bp + PARMBLK_SCRATCH_VA, t.abi()); }
+                    unsafe { pb.write_abi(page0 as u64 + PARMBLK_SCRATCH_VA, t.abi()); }
                     let parmblk_ptr = USER_VA_BASE + PARMBLK_SCRATCH_VA;
                     crate::aes::thread::block_for_userdef(
                         slot,
@@ -2788,7 +2801,7 @@ fn ob_user(
                         parmblk_ptr,
                     ) as u16
                 }
-            }
+            },
             None => new_state,
         }
     }

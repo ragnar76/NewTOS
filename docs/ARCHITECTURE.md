@@ -94,22 +94,32 @@ both worlds.
 - MMIO regions mapped Device-nGnRnE
 - Kernel code, data, heap, page tables
 
-### User space (TTBR0_EL1, per process)
+### User space (TTBR0_EL1, one root per process, ARCH03 stage 1)
 
-- Low virtual addresses (`0x0000_0000_xxxx_xxxx`)
-- Process TPA (Transient Program Area) per TOS convention, 4 MiB today
-  (`tos-api/src/bdos/process/{loader,arena}.rs`)
-- Basepage at TPA start, VA 0 (256 bytes per Compendium)
-- Page 0 also carries the classic low-memory system area — sysvars,
-  OSHEADER, cookie jar at `[0x400, 0x670)` — materialised per process
-  (`populate_sysvars`, B1 / Option 1)
-- The image starts at `RESERVED_LOW_END` = 0x1000: text (R-X `PT_LOAD`,
+- Low virtual addresses (`0x0000_0000_xxxx_xxxx`), **one address space
+  shared by every process**: each user address is its own physical address
+  (VA = PA) — the two BDOS pools (mapped once at boot, 2-MiB blocks where
+  possible), the published kernel structures (ADR-023) and the screen memory
+  (`tos-api/src/bdos/process/mmu.rs`; plan
+  `docs/analysis/arch03-implementation-plan.md` §3.1). FreeMiNT's model with
+  memory protection off; per-process rights come with stage 3.
+- **Page 0** `[0, 0x1000)` is the only per-process translation: the classic
+  low-memory system area — sysvars, OSHEADER, `os_run` cell, cookie jar at
+  `[0x400, 0x670)` — plus the upcall/userdef trampolines, the `Keytbl` area
+  and the KEYS02 vector table, materialised per process (`populate_sysvars`,
+  B1 / Option 1, plan E3). Each process root shares all tables below it
+  except the ones leading to its page 0.
+- Process TPA (Transient Program Area): a page-aligned BDOS-pool block, 4 MiB
+  (`tos-api/src/bdos/process/{loader,arena}.rs`, plan E9). Its address is
+  the process's **PD pointer**: the basepage (256 bytes per Compendium) sits
+  at its start.
+- The image starts at TPA + 0x1000 (`RESERVED_LOW_END`), relocated for the
+  TPA address (position-independent ELF, ARCH03 0d): text (R-X `PT_LOAD`,
   `p_tbase/p_tlen`), then data (RW- `PT_LOAD`, `p_dbase/p_dlen`) with the
   BSS as its tail (`p_bbase/p_blen`); `sdk/newtos.ld`
 - Free TPA above the BSS (`_end`): heap grows up, user stack at the top of
   the TPA (`p_hitpa`) grows down; the top 64 KiB are reserved for the stack
-- GEMDOS `Malloc`/`Mxalloc` blocks and published kernel structures are
-  mapped into the per-process window above the TPA (ADR-021 / ADR-023)
+- GEMDOS `Malloc`/`Mxalloc` return pool addresses, valid in every process
 
 ## Process Model
 

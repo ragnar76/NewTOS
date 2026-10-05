@@ -272,8 +272,7 @@ pub fn run_pexec_test() {
     // 4. Mark parent Running, publish RUN.
     let parent_slot_ref = slot(parent_slot_idx).expect("slot in range");
     parent_slot_ref.set_state(State::Running);
-    let parent_basepage = parent_slot_ref.basepage_kva.load(Ordering::Acquire);
-    set_current(parent_basepage);
+    set_current(tos_api::bdos::process::pd_of(parent_slot_idx));
 
     // 5. Drop to EL0 in parent. Parent's `Pterm` (after the Pexec
     //    round-trip) brings us back here via the kernel-launch

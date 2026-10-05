@@ -508,24 +508,42 @@ PHASE-06 D4/D5 status (2026-06-16):
   `PE_BASEPAGE` (5) / `PE_GOTHENFREE` (6) / `PE_BASEPAGEFLAGS` (7) return
   `EINVFN` for now.
 - **Loader/relocation is NewTOS-native**, not a port: NewTOS runs the loaded
-  program at **EL0 with a per-process TTBR0** (not m68k). The `gouser`/`proc_go`
+  program at **EL0** (not m68k), relocated for its TPA block (ARCH03 0d/1). The `gouser`/`proc_go`
   register set-up, `supstk`, and the `setjmp`/`bakbuf` longjmp plumbing are
   EmuTOS internals — NewTOS uses the AArch64 EL0-entry / exception-return path
   and its own error unwinding. The **basepage layout, the seven Pexec modes,
   `PRGFLAGS`, the cmdtail/env formats, and the per-mode return values are hard
   contract** and are reproduced exactly.
-- **PD-handle ABI deviation (interim).** EmuTOS's PD is a real shared,
-  dereferenceable pointer; under NewTOS's per-process-TTBR0 model every TPA maps
-  at user VA 0, so a VA-0 PD is neither unique nor parent-dereferenceable, and a
-  64-bit kernel VA does not fit the `LONG` return. `PE_LOAD` therefore returns an
-  **opaque slot handle** (the child's `basepage_pa`, slot-unique and
-  `LONG`-representable); the parent passes it back verbatim in `PE_GO`'s `tail`
-  and does **not** dereference it. The faithful dereferenceable PD requires the
-  single shared address space (ADR-010), correct for real hardware but blocked
-  on QEMU cortex-a72 TCG (QUIRK-001 + ADR-010 in `docs/MEMORY.md`); revisit on
-  RPi4 / Phase 09.
-- Ownership (`owner = (flag==PE_LOADGO) ? p : run`) is currently expressed
-  through slot lifetime only — there is no BDOS-pool MD backing the static-arena
-  TPA yet (Phase 09).
+- **PD pointers (ARCH03 stage 1, 2026-10-05).** The interim opaque handle is
+  gone. Every user address is its own physical address in one address space
+  all processes share (page 0 excepted, which is per process); a program's
+  basepage is the start of its TPA block. `PE_LOAD` returns that **real PD
+  pointer** (EmuTOS `return (long)cur_p`, `bdos/proc.c:360`), the caller
+  reads the child's basepage through it (`p_tlen`, `p_env`, `p_cmdlin`, …),
+  may `Mshrink` the child's TPA and set `p_hitpa` (the shell idiom), and
+  passes it to `PE_GO`. `PE_GO` accepts only a PD a `PE_LOAD` produced and
+  that has not run yet; anything else is `EIMBA` (−40 — FreeMiNT's `EFAULT`
+  for a foreign PD, `sys/k_exec.c:378-387`, has the same value).
+  `p_parent` is set when the child is started (EmuTOS `proc_go`,
+  `bdos/proc.c:541`): the caller's PD pointer, `0` for a kernel caller.
+  Previously (ADR-010 option b) every TPA sat at VA 0, so the PD was neither
+  unique nor dereferenceable by the parent.
+- **Ownership** (`owner = (flag == PE_LOADGO) ? p : run`, `bdos/proc.c:
+  302-307`) is real: the TPA is a BDOS-pool block (`arena::alloc_tpa`), and
+  TPA and environment are tagged with the child's PD for `PE_LOADGO` (its
+  `Pterm` frees them) and left with the caller for `PE_LOAD` (the caller
+  `Mfree`s them, or its own `Pterm` does). What a `PE_GO` child allocates is
+  the child's (`run = p`) and goes with its `Pterm` (plan E6). A `PE_LOAD`ed
+  program that is never started goes with its loader's `Pterm`
+  (`pexec::release_unstarted_of`).
+- **`PE_GO` child and address space (plan E6).** The child runs with the
+  root the loader built for it. In stage 1 every root shares all tables
+  except page 0, so the caller's memory *is* the child's; page 0 stays the
+  child's own, so its `os_run` cell names the child and its KEYS02 vector
+  table is its own (plan E3/E4). Literally sharing the caller's root, as plan
+  Frage 7 words it, would show the child the caller's page 0.
+- **Environment (MEM03).** `p_env` is the address of a pool block every
+  process can read; `env == NULL` duplicates the caller's `p_env`
+  (`bdos/proc.c:419-420`).
 - I-cache: invalidate the loaded **text range** with `dc cvau`+`ic ivau`+
   `dsb ish`+`isb` (same text-only scope as EmuTOS).

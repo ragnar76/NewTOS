@@ -87,11 +87,10 @@ use crate::arch::aarch64::user_entry::{
 use crate::kprintln;
 use crate::selftest_ec4::{EC4_SENTINEL_SLOT, EC4_TEST_RUNNING};
 
-// EL0 program VAs / data cells (must match the ELF blobs below). Both cells
-// sit in the reserved low gap `[0x670, 0x1000)` (zeroed at load, mapped
-// `UserRwExec`, disjoint from the 0x700 trampoline), read back through the
-// high-half TPA alias.
-const ENTRY_VA: u64 = 0x1000;
+// EL0 data cells (must match the ELF blobs below, whose entry is `e_entry`
+// 0x1000, relocated to the TPA block). Both cells sit in page 0's reserved
+// gap `[0x670, 0x1000)` (zeroed at load, mapped `UserRwExec`, disjoint from
+// the 0x700 trampoline), read back through the kernel alias of page 0.
 const FLAG_ADDR: u64 = 0x900;
 const RESUMED_ADDR: u64 = 0x910;
 /// Marker the etv_term handler stores at [`FLAG_ADDR`] — a match proves it
@@ -224,18 +223,16 @@ fn run_subtest(elf: &[u8], slot_idx: usize) -> Option<SubResult> {
     // (`slot_for(current())`) target it, and `terminate` finds it via `RUN`.
     let proc_slot = slot(slot_idx)?;
     proc_slot.set_state(State::Running);
-    let basepage_kva = proc_slot.basepage_kva.load(Ordering::Acquire);
-    set_current(basepage_kva);
+    set_current(tos_api::bdos::process::pd_of(slot_idx));
 
-    // Capture pointers to the two TPA data cells via the kernel high-half
-    // alias BEFORE the excursion. The success path frees the TPA (Pterm's
-    // `free_all_owned`) but leaves the block's user bytes intact (BDOS frees
-    // via separate MD structures, not by writing into the block), and no
-    // allocation runs between the eret-back and these reads on this single
-    // CPU — so the markers are still readable afterwards.
-    let flag_ptr = (basepage_kva as usize + FLAG_ADDR as usize) as *const u64;
-    let resumed_ptr =
-        (basepage_kva as usize + RESUMED_ADDR as usize) as *const u64;
+    // Capture pointers to the two page-0 data cells via the kernel alias of
+    // the slot's page 0 BEFORE the excursion. Page 0 is a static kernel page
+    // per slot: the success path releases the slot but nothing rewrites the
+    // page until the slot's next load — so the markers are still readable
+    // afterwards.
+    let page0 = tos_api::bdos::process::mmu::page0_kva(slot_idx)? as usize;
+    let flag_ptr = (page0 + FLAG_ADDR as usize) as *const u64;
+    let resumed_ptr = (page0 + RESUMED_ADDR as usize) as *const u64;
 
     // Arm the EC4 sentinel as the failure-fallback return-to-EL1 path (used
     // only if terminate-after is broken and the program resumes past `Pterm`).
@@ -249,7 +246,7 @@ fn run_subtest(elf: &[u8], slot_idx: usize) -> Option<SubResult> {
     // parent_frame atomics live in the static PROCESS_TABLE.
     unsafe {
         enter_el0_with_resume_capture(
-            ENTRY_VA,
+            loaded.entry_va,
             loaded.basepage_va,
             loaded.l0_pa,
             loaded.sp_el0,
@@ -272,7 +269,7 @@ fn run_subtest(elf: &[u8], slot_idx: usize) -> Option<SubResult> {
     // slot is still allocated — release it so a later `Pexec` can reuse it.
     if !slot_freed {
         set_current(core::ptr::null_mut());
-        let bp = proc_slot.basepage_kva.load(Ordering::Acquire);
+        let bp = tos_api::bdos::process::pd_of(slot_idx);
         if !bp.is_null() {
             // SAFETY: single-CPU; `bp` owns the slot's TPA block.
             unsafe {

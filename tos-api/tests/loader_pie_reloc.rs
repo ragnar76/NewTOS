@@ -484,6 +484,55 @@ fn tags_needing_a_dynamic_linker_are_refused() {
     assert_eq!(relocate(&s, 0).unwrap().1, 2);
 }
 
+/// ARCH03 stage 1, lead decision on the 0d `DT_RELR` finding: the dynamic
+/// array is checked against a positive list. Every tag rust-lld writes into
+/// an SDK program (measured with `llvm-readobj -d` on QED, TeraDesk, Doom,
+/// APITEST and HELLO2: FLAGS_1, DEBUG, RELA, RELASZ, RELAENT, RELACOUNT,
+/// SYMTAB, SYMENT, STRTAB, STRSZ, GNU_HASH, HASH, INIT_ARRAY, INIT_ARRAYSZ,
+/// FINI_ARRAY, FINI_ARRAYSZ) must still load.
+#[test]
+fn every_tag_lld_writes_is_on_the_positive_list() {
+    let lld_tags: [(u64, u64); 12] = [
+        (0x6fff_fffb, 0x0800_0000), // DT_FLAGS_1 = DF_1_PIE
+        (21, 0),                    // DT_DEBUG
+        (6, TEXT_VA),               // DT_SYMTAB
+        (11, 24),                   // DT_SYMENT
+        (5, TEXT_VA),               // DT_STRTAB
+        (10, 1),                    // DT_STRSZ
+        (0x6fff_fef5, TEXT_VA),     // DT_GNU_HASH
+        (4, TEXT_VA),               // DT_HASH
+        (25, WORDS_VA),             // DT_INIT_ARRAY
+        (27, 8),                    // DT_INIT_ARRAYSZ
+        (26, 0),                    // DT_FINI_ARRAY
+        (28, 0),                    // DT_FINI_ARRAYSZ
+    ];
+    for (tag, val) in lld_tags {
+        let s = Spec::good().tag(tag, val);
+        assert_eq!(relocate(&s, 0x40_0000).unwrap().1, 2, "tag 0x{tag:x} must be tolerated");
+    }
+}
+
+/// `DT_RELR` (lld `-z pack-relative-relocs`) describes relocations this
+/// loader does not perform; skipping it would start the program with
+/// unrelocated pointers. Like every tag outside the positive list it is
+/// refused — the loader answers `EPLFMT`.
+#[test]
+fn unknown_tags_such_as_dt_relr_are_refused() {
+    // 36 is DT_RELR in later gABI drafts (not the pinned 2013 one); the
+    // point is that any tag outside the list is refused, whatever its value.
+    const DT_RELR: u64 = 36;
+    for tag in [DT_RELR, 35, 12 /* DT_INIT */, 0x6000_000d, 0x7000_0001] {
+        let s = Spec::good().tag(tag, TEXT_VA);
+        assert_eq!(
+            relocate(&s, 0).unwrap_err(),
+            RelocError::UnknownTag(tag as i64),
+            "tag 0x{tag:x}"
+        );
+    }
+    let le = LoadError::Reloc(RelocError::UnknownTag(DT_RELR as i64));
+    assert_eq!(PexecError::LoadFailed(le).errno(), EPLFMT);
+}
+
 #[test]
 fn dynamic_array_without_dt_null_is_refused() {
     let mut s = Spec::good();

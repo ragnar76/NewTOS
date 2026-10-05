@@ -13,7 +13,9 @@
  *      `*(LONG *)&int_out[3]` the length (`aes/gemwmlib.c:1564`,
  *      `aes/gemgsxif.c:125-129`) -- as native 32-bit loads at the
  *      WORD-aligned slots (what TeraDesk's union and cflib do);
- *   3. checks ret == 1, address != 0 and inside the EL0 window (< 32 MiB),
+ *   3. checks ret == 1, address != 0 and a user address (< 2 GiB: since
+ *      ARCH03 stage 1 every user address is its own physical address in the
+ *      address space all processes share, plan invariant I2),
  *      length == stride16(W) * H * 2 (NewTOS' `gsx_mcalc`: one screen in
  *      device pixels, `docs/COMPATIBILITY.md`);
  *   4. writes a byte pattern over the WHOLE length through the pointer, reads
@@ -148,7 +150,7 @@ static unsigned long long_at(int word)
 }
 
 #define WF_SCREEN 17
-#define EL0_WINDOW_TOP (32ul * 1024 * 1024)
+#define EL0_WINDOW_TOP 0x80000000ul /* user addresses: < 2 GiB (ARCH03 I2) */
 
 int main(void)
 {
@@ -215,7 +217,7 @@ int main(void)
         return 1;
     }
     if (addr == 0 || addr >= EL0_WINDOW_TOP) {
-        puts_("FAIL: address is 0 or outside the EL0 window\r\n");
+        puts_("FAIL: address is 0 or not a user address\r\n");
         aes_call(19, 0, 1, 0);
         return 1;
     }

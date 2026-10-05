@@ -35,7 +35,8 @@
 //!
 //! `DT_RELACOUNT` is **not** used: it is in none of the pinned sources (0a,
 //! V0a H6). The loader walks the full `DT_RELASZ` range and checks the type
-//! of every entry instead.
+//! of every entry instead. It is on the positive list of tolerated tags
+//! (below) only because lld writes it into every program.
 //!
 //! ## What is refused (→ `EPLFMT` via `LoadError::Reloc`)
 //!
@@ -48,6 +49,10 @@
 //! writable `PT_LOAD` segment or inside the relocation/dynamic tables
 //! themselves. Silently skipping such an entry would leave an unrelocated
 //! pointer in the program — a crash far away from its cause.
+//!
+//! The dynamic array is checked against a **positive list** (ARCH03 stage 1):
+//! every tag the loader neither acts on nor knows to be inert — `DT_RELR`
+//! first among them — is refused with [`RelocError::UnknownTag`].
 //!
 //! ## The image view
 //!
@@ -84,6 +89,32 @@ const DT_FLAGS: i64 = 30;
 /// `DF_TEXTREL` in `DT_FLAGS` (gABI ch5.dynamic, "DT_FLAGS values").
 const DF_TEXTREL: u64 = 0x4;
 
+// Tags the loader accepts **and ignores** (the positive list, ARCH03 stage 1,
+// lead decision on the 0d `DT_RELR` finding). gABI ch5.dynamic Figure 5-10
+// pins the generic values:
+const DT_HASH: i64 = 4;
+const DT_STRTAB: i64 = 5;
+const DT_SYMTAB: i64 = 6;
+const DT_STRSZ: i64 = 10;
+const DT_SYMENT: i64 = 11;
+const DT_DEBUG: i64 = 21;
+const DT_INIT_ARRAY: i64 = 25;
+const DT_FINI_ARRAY: i64 = 26;
+const DT_INIT_ARRAYSZ: i64 = 27;
+const DT_FINI_ARRAYSZ: i64 = 28;
+// …and three tags no pinned source names. They lie between `DT_HIOS`
+// (0x6ffff000) and `DT_LOPROC` (0x70000000), the gABI's compatibility range
+// whose tags "do not follow these rules" (ch5.dynamic, `d_un` encoding
+// paragraph). Their values are what the SDK toolchain (rust-lld
+// 22.1.2) actually writes into every NewTOS program and what
+// `llvm-readobj -d` decodes as GNU_HASH, RELACOUNT and FLAGS_1 (measured on
+// QED/TeraDesk/Doom/APITEST/HELLO2, ARCH03 stage 1 evidence). None of them
+// asks the loader to do anything: a hash table and the relative-count hint
+// serve a dynamic linker, `DF_1_PIE` only labels the file.
+const DT_GNU_HASH: i64 = 0x6fff_fef5;
+const DT_RELACOUNT: i64 = 0x6fff_fff9;
+const DT_FLAGS_1: i64 = 0x6fff_fffb;
+
 /// Why an image's dynamic relocations were refused.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum RelocError {
@@ -101,6 +132,11 @@ pub enum RelocError {
     RelTable,
     /// `DT_TEXTREL` or `DF_TEXTREL`: relocations of a non-writable segment.
     TextRelocations,
+    /// A dynamic tag outside the loader's positive list — e.g. `DT_RELR`
+    /// (packed relative relocations, lld `-z pack-relative-relocs`), which
+    /// would leave every pointer it describes unrelocated if it were
+    /// skipped. Carries the raw `d_tag`.
+    UnknownTag(i64),
     /// `DT_RELA` without `DT_RELASZ`/`DT_RELAENT`, or a size/entsize without
     /// the table address (gABI: "must also have").
     IncompleteRela,
@@ -221,10 +257,20 @@ pub fn find_rela(image: &[u8], img: &ElfImage) -> Result<Option<RelaTable>, Relo
             DT_RELA => rela = Some(val),
             DT_RELASZ => relasz = Some(val),
             DT_RELAENT => relaent = Some(val),
-            // Symbol/string/hash tables, init/fini arrays, DT_DEBUG and the
-            // OS-specific tags lld adds (DT_FLAGS_1, DT_RELACOUNT,
-            // DT_GNU_HASH) carry nothing the loader has to act on.
-            _ => {}
+            // The positive list: symbol/string/hash tables, init/fini arrays
+            // (the program's `crt0` runs those itself), `DT_DEBUG`, a zero
+            // `DT_PLTRELSZ`/`DT_RELSZ`, a `DT_FLAGS` without `DF_TEXTREL`, and
+            // the three OS-specific tags lld adds carry nothing the loader has
+            // to act on.
+            DT_PLTRELSZ | DT_RELSZ | DT_FLAGS | DT_HASH | DT_STRTAB | DT_SYMTAB
+            | DT_STRSZ | DT_SYMENT | DT_DEBUG | DT_INIT_ARRAY | DT_FINI_ARRAY
+            | DT_INIT_ARRAYSZ | DT_FINI_ARRAYSZ | DT_GNU_HASH | DT_RELACOUNT
+            | DT_FLAGS_1 => {}
+            // Everything else is refused: a tag this loader does not know may
+            // carry work it does not do (`DT_RELR` is the case that is known
+            // to exist), and silently skipping it would start the program with
+            // unrelocated pointers.
+            other => return Err(RelocError::UnknownTag(other)),
         }
     }
     if !terminated {

@@ -74,14 +74,14 @@ static KERNEL_DTA: AtomicU64 = AtomicU64::new(0);
 /// captured DTA *address* is worthless in a trace. A plain read of
 /// `run->p_xdta` with no side effect; nothing about the search changes.
 pub(crate) fn cur_dta() -> u64 {
-    let bp = crate::bdos::process::current();
+    let bp = crate::bdos::process::current_kva();
     if bp.is_null() {
         return KERNEL_DTA.load(Ordering::Relaxed);
     }
-    // SAFETY: `current()` is the kernel high-half alias of the running
-    // process's `BasePage` (`Process::basepage_kva`), valid and mapped for
-    // as long as that process runs; we read the single `p_xdta` LONG.
-    // Zero-extended: user VAs live in `[0, TPA_SIZE)`, so the field is a
+    // SAFETY: `current_kva()` is the kernel high-half alias of the running
+    // process's `BasePage`, valid and mapped for as long as that process
+    // runs; we read the single `p_xdta` LONG. Zero-extended: user addresses
+    // are below `0x8000_0000` (ARCH03 plan invariant I2), so the field is a
     // non-negative 32-bit address.
     unsafe { (*bp).p_xdta as u32 as u64 }
 }
@@ -90,12 +90,12 @@ pub(crate) fn cur_dta() -> u64 {
 /// (`bdos/fsmain.c:405`).
 ///
 /// `p_xdta` is the on-wire basepage's 32-bit LONG, so the stored value is the
-/// low 32 bits of `addr`. Every process-originated DTA is a user VA below
-/// `USER_TPA_TOP` (4 MiB) or in the EL0 `Malloc` window (ADR-021), all well
-/// inside 32 bits; a kernel DTA can only arrive from the process-less caller
-/// above, which takes the [`KERNEL_DTA`] branch instead.
+/// low 32 bits of `addr`. Every process-originated DTA is a user address below
+/// `0x8000_0000` (ARCH03 plan invariant I2), well inside 32 bits; a kernel
+/// DTA can only arrive from the process-less caller above, which takes the
+/// [`KERNEL_DTA`] branch instead.
 fn set_cur_dta(addr: u64) {
-    let bp = crate::bdos::process::current();
+    let bp = crate::bdos::process::current_kva();
     if bp.is_null() {
         KERNEL_DTA.store(addr, Ordering::Relaxed);
         return;

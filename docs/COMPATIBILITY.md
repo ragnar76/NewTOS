@@ -212,10 +212,9 @@ its largest drop-down does not fit) gets more room, never less. Two more
 things are internal and unobservable: the block is taken once at
 `sh_tographic` and — unlike `gsx_mfree` in `sh_toalpha`
 (`aes/gemshlib.c:258`) — never freed, so its address is stable across an alpha
-interlude where EmuTOS' may move; and the EL0 view of the block is a
-per-process window VA, not one address for all processes (ADR-023, the
-bump-cursor window; a program only ever compares against the pointer it was
-given). Pop-ups and nested submenus are unchanged: a fresh ST-RAM block per
+interlude where EmuTOS' may move. (Until ARCH03 stage 1 the EL0 view of the
+block was a per-process window VA; since stage 1 it is the block's own
+address, the same for every process, as on EmuTOS.) Pop-ups and nested submenus are unchanged: a fresh ST-RAM block per
 opening, as `popup_blit` does (`aes/gemmnext.c:136-215`).
 
 
@@ -323,8 +322,9 @@ cases where the two machines differ:
    stores nothing.
 
 Why the bound stays: between the AES and the application NewTOS has the
-EL0/EL1 boundary classic TOS did not have. The resource lives in the
-process's window at a user VA and the AES reaches it through a kernel alias
+EL0/EL1 boundary classic TOS did not have. The resource lives in a pool
+block of the process (since ARCH03 stage 1 at its own address, VA = PA) and
+the AES reaches it through a kernel alias
 (`tos-api/src/aes/resource.rs`, `Slot`); an address past the table names the
 next section of the blob or, past its end, memory the blob does not own on
 either side, and address 0 is mapped on neither, so `rsrc_saddr`'s store
@@ -643,11 +643,13 @@ landed as KEYS02. EmuTOS has **one** global `kbdvecs` table in BIOS BSS
 (`bios/xbios.c:716-719`), and nothing in the BDOS touches it at process exit
 (`bdos/proc.c:110-140,601-618`) — a hook a program forgot to restore stays
 installed and the next key jumps into freed memory (spec A8). NewTOS keeps the
-table in page 0 of each process's own TPA (`0x9A0`, 8-byte slots,
+table in each process's own page 0 (`0x9A0`, 8-byte slots,
 `tos-api/src/xbios/kbdvecs.rs`) and returns that process's EL0 VA. **Reason:** a
-hook is an EL0 address and means nothing in another process's address space
-(the same rule as `vex_wheelv`); the table goes away with the TPA, so a dangling
-hook cannot exist, and `free_slot` drops any bytes still queued for it.
+hook is code of its process (the same rule as `vex_wheelv`); the table goes
+away with the process, so a dangling hook cannot exist, and `free_slot` drops
+any bytes still queued for it. (Since ARCH03 stage 1 every other user address
+is shared by all processes; the table stays per process until after stage 3,
+plan decision E4.)
 **Observable differences:** (1) a hook left installed at `Pterm` simply stops
 being called — strictly safer than EmuTOS; (2) a `Pexec` child starts with the
 default table, a parent's hook does not see the child's keys (EmuTOS: global,
@@ -670,6 +672,25 @@ for `evnt_mesag`/`evnt_multi` on the very same message pipe
 `docs/api/aes/application.md` "Blocking behaviour (A75)" as a fixable gap
 for the Developer, not listed here as a sanctioned deviation.
 
+
+**One shared user address space, page 0 per process; fixed-size TPA**
+(ARCH03 stage 1, 2026-10-05; plan `docs/analysis/arch03-implementation-plan.md`,
+decisions E1/E3/E9 as recommended). Like EmuTOS — and FreeMiNT with memory
+protection off — every user address means the same in every process: it is
+its own physical address (both pools, published kernel structures, the
+screen), `Malloc` returns `m_start`, `Pexec(PE_LOAD)` returns a real PD
+pointer, `p_parent`/`p_env` are readable by anybody, and no process is
+protected from another (that is stage 3). **Observable differences:**
+(1) page 0 `[0, 0x1000)` is per process — the system variables, the OSHEADER
+and its `os_run` cell (`0x5B8`, holding the process's own PD), the cookie-jar
+mirror, the trampolines, the `Keytbl` area and the KEYS02 table — so a pointer
+*into page 0* means something different in another process (on EmuTOS the
+area is global but supervisor-only); (2) the TPA is a fixed 4 MiB block, not
+EmuTOS' largest free block (`bdos/proc.c:460-502`) — a program's `p_hitpa` is
+`p_lowtpa + 4 MiB`, and `Malloc(-1)` right after start already reports the
+rest of the pool instead of almost nothing (FreeMiNT bounds its TPA the same
+way, `initialmem`); (3) `p_tbase` is `p_lowtpa + 0x1000`, not `+ 0x100`
+(a position-independent image keeps its link-time page offsets).
 
 ## EmuTOS is the reference, not the template
 

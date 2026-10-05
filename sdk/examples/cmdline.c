@@ -2,9 +2,12 @@
  * cmdline.c -- print the command line the launcher handed this program.
  *
  * A native NewTOS console program (`.NCP`, ADR-018). It reads its own
- * BasePage -- which the loader maps at VA 0 (sdk/crt0.S) -- and prints the
- * command tail out of `p_cmdlin` (offset 0x80, docs/api/gemdos/_basepage.md /
- * tos-types/src/basepage.rs): a length byte followed by that many characters.
+ * BasePage -- found the classic way, through the OSHEADER's `os_run` cell
+ * (`_sysbase` $4F2 -> OSHEADER +0x28 -> the current-PD cell; since ARCH03
+ * stage 1 the basepage is the start of the program's TPA block, no longer
+ * VA 0) -- and prints the command tail out of `p_cmdlin` (offset 0x80,
+ * docs/api/gemdos/_basepage.md / tos-types/src/basepage.rs): a length byte
+ * followed by that many characters.
  *
  * It is the acceptance program for DESK19 (dropping a selection on a program
  * icon is a launch with arguments, not a copy, EmuTOS deskfun.c:958-970): drop
@@ -29,6 +32,15 @@ static NLONG Dgetpath(char *b, NLONG d) { return gemdos2(0x47, (NLONG)b, d); }
 /* Offset of `p_cmdlin` in the BasePage (tos-types/src/basepage.rs). */
 #define P_CMDLIN 0x80
 
+/* Our own BasePage: `*(_sysbase->os_run)` (OSHEADER +0x28, the pointer to
+ * the current-PD cell; docs/api/structures/osheader.md). */
+static const unsigned char *own_basepage(void)
+{
+    unsigned long sysbase = *(volatile unsigned int *)0x4F2UL;
+    unsigned long run_cell = *(volatile unsigned int *)(sysbase + 0x28);
+    return (const unsigned char *)(unsigned long)*(volatile unsigned int *)run_cell;
+}
+
 /* Append a NUL-terminated string to `dst`, returning the new end index. */
 static int puts_at(char *dst, int j, const char *s)
 {
@@ -40,8 +52,8 @@ static int puts_at(char *dst, int j, const char *s)
 
 int main(void)
 {
-    /* The BasePage is at VA 0; the command tail starts at 0x80. */
-    const unsigned char *bp = (const unsigned char *)0;
+    /* Our BasePage; the command tail starts at 0x80. */
+    const unsigned char *bp = own_basepage();
     const unsigned char *tail = bp + P_CMDLIN;
     unsigned int len = tail[0];
 
