@@ -35,3 +35,15 @@ globaler `Mxalloc`-Speicher. Anwender: „es so wie bei FreeMiNT bauen“.
   empfohlen**, ausser **E8b** (PRGFLAGS als ELF-Notiz — eigenes Format), das
   dem Anwender in Stufe 0d vorgelegt wird.
 * Stufen seriell, jede einzeln lauffaehig; auf der Pi nur auf Ansage.
+
+## Entscheidungen 2026-10-05 (Anwender: „mach einfach weiter“ = Empfehlungen angenommen)
+
+* **E8b freigegeben:** PRGFLAGS als ELF-Notiz `.note.newtos.prgflags`
+  (Name „NewTOS“, Typ 1, `u32`), SDK-Standardwert, pro Programm
+  ueberschreibbar; `newtos.ld` behaelt die Notiz mit `PT_NOTE`; Lader liest
+  sie, sonst `PF_STANDARD`. Umsetzung in Stufe 2 (gebraucht von `Pexec` 7).
+* **E6/E3:** ein `Pexec`-4-Kind behaelt seine eigene Seite 0 und sieht den
+  uebrigen Speicher des Aufrufers (Stufe 1 so gebaut; Stufe 3: Wurzel des
+  Kindes = Rechte-Tabellen des Aufrufers + eigene Seite 0).
+* **Absturz-Spezifikation** `docs/api/bios/_exception-crash.md` freigegeben;
+  **E11:** EmuTOS-Absturzbericht (kein FreeMiNT-Alert).
