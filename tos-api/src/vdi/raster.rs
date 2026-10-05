@@ -1165,11 +1165,25 @@ pub fn vr_trnfm(pb: &Vdipb, backend: &dyn RasterBackend) {
         return;
     }
 
-    let planes = src.nplanes.max(0) as usize;
-    let size = (src.h as usize) * (src.wdwidth as usize); // words per plane
-    if planes == 0 || size == 0 {
+    // EmuTOS: `size = (LONG)fd_h * fd_wdwidth` words per plane and the loop
+    // counts are `LONG`s (`vdi_raster.c:299-316`): a zero or negative plane
+    // size or plane count copies nothing — after the destination's `fd_stand`
+    // has been forced, which EmuTOS does first. Computed signed and wide, so
+    // a negative `fd_h` is no overflow here either.
+    let stand_off = match abi {
+        Abi::Lp64 => 14,
+        Abi::Ilp32 => 10,
+    };
+    let size_words = i64::from(src.h) * i64::from(src.wdwidth);
+    if size_words <= 0 || src.nplanes <= 0 {
+        let new_stand: u16 = if src.stand != 0 { 0 } else { 1 };
+        if pb.space().put_u16(dst_ptr + stand_off, new_stand).is_err() {
+            pb.note_fault();
+        }
         return;
     }
+    let planes = src.nplanes as usize;
+    let size = size_words as usize; // words per plane, > 0
     let (outer, inner) = if src.stand != 0 {
         (planes, size) // standard → device
     } else {
@@ -1192,10 +1206,6 @@ pub fn vr_trnfm(pb: &Vdipb, backend: &dyn RasterBackend) {
     // ABI: 14 for LP64 (8B ptr), 10 for ILP32 (4B ptr). Written in the
     // caller's space (the dst MFDB is the caller's struct).
     let new_stand: i16 = if src.stand != 0 { 0 } else { 1 };
-    let stand_off = match abi {
-        Abi::Lp64 => 14,
-        Abi::Ilp32 => 10,
-    };
     if pb.space().put_u16(dst_ptr + stand_off, new_stand as u16).is_err() {
         pb.note_fault();
         return;

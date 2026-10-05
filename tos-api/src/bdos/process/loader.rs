@@ -51,6 +51,7 @@ use core::cell::UnsafeCell;
 use core::ffi::c_void;
 use core::sync::atomic::Ordering;
 
+use tos_types::prot_from_prgflags;
 use tos_types::{BasePage, Long, MX_PREFTTRAM, MX_STRAM, NUMSTD, PDCLSIZE, PF_STANDARD, PF_TTRAMLOAD};
 
 use super::{kalias, usermem};
@@ -428,6 +429,11 @@ unsafe fn load_from_source(
     //    `free_all_owned` sweep reclaims it.
     // SAFETY: BDOS lock held; single-CPU pre-test.
     let tpa = unsafe { arena::alloc_tpa(prgflags) }.ok_or(LoadError::NoTpaMemory)?;
+    // The TPA takes the program's protection mode (ARCH03 3b, FreeMiNT
+    // `load_region`: `alloc_region(map, len, protmode)` with the PRGFLAGS
+    // mode, `sys/memory.c:1511-1513`).
+    // SAFETY: BDOS lock held; `tpa.base` starts the block just allocated.
+    unsafe { super::memprot::set_mode(tpa.base, prot_from_prgflags(prgflags)) };
     if owned_by_child {
         // SAFETY: `tpa.base` is on the allocated list; the owner cookie is
         // a pointer-equality tag, never dereferenced by the sweep.
@@ -623,6 +629,10 @@ unsafe fn install_slot(
     proc_slot.entry_va.store(entry_va, Ordering::Release);
     proc_slot.sp_el0.store(sp_el0, Ordering::Release);
     proc_slot.set_abi(super::Abi::Lp64);
+    // The new root gets its rights (ARCH03 3b; FreeMiNT `init_page_table`,
+    // `sys/arch/mprot030.c:825-1062`).
+    // SAFETY: BDOS lock held; the slot's root is built and published.
+    unsafe { super::memprot::on_root_built(slot) };
     Ok(l0_pa)
 }
 
@@ -664,6 +674,10 @@ pub unsafe fn create_basepage(
         free_env();
         return Err(LoadError::NoTpaMemory);
     };
+    // The basepage block takes the mode its flags ask for (ARCH03 3b, as a
+    // loaded program's TPA).
+    // SAFETY: BDOS lock held; `tpa.base` starts the block just allocated.
+    unsafe { super::memprot::set_mode(tpa.base, prot_from_prgflags(flags)) };
     // `init_pd_fields`: the basepage, and only the basepage.
     // SAFETY: the block backs at least `BASEPAGE_RESERVED` bytes at its
     // kernel alias, exclusively ours under the lock.
@@ -1408,6 +1422,11 @@ pub(super) unsafe fn alloc_env(
     if phys == 0 {
         return Err(LoadError::NoEnvMemory);
     }
+    // The environment takes the program's protection mode (ARCH03 3b,
+    // FreeMiNT `create_env` with the prgflags mode and `mark_region(env,
+    // …)` after the load, `sys/memory.c:1403-1407`, `sys/k_exec.c:398`).
+    // SAFETY: BDOS lock held; `phys` starts the block just allocated.
+    unsafe { super::memprot::set_mode(phys as u32 as u64, prot_from_prgflags(prgflags)) };
     // Copy verbatim into the pool block (through its kernel alias),
     // zero-padding the even-rounding tail.
     let dst = kalias(phys as u64) as *mut u8;

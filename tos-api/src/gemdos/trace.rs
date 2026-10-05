@@ -625,7 +625,7 @@ mod imp {
                     r.flags |= flags::CAP_CLAMPED;
                 }
                 if ret == 0 {
-                    let (dta, dspace) = crate::bdos::fs::find::cur_dta_in();
+                    let (dta, dspace) = crate::bdos::fs::find::cur_dta_in(a.space);
                     // SAFETY: rule C1 — on `E_OK` this call wrote all 44 bytes
                     // at exactly this address.
                     let n2 = unsafe { copy_raw(dspace, &mut r.cap[n1..], dta, DTA_LEN) };
@@ -640,7 +640,7 @@ mod imp {
             // Fsnext (0x4F) — same DTA, same `E_OK` gate
             // (`bdos/fs/find.rs:505-511`).
             0x4F if ret == 0 => {
-                let (dta, dspace) = crate::bdos::fs::find::cur_dta_in();
+                let (dta, dspace) = crate::bdos::fs::find::cur_dta_in(a.space);
                 // SAFETY: as for Fsfirst.
                 let n = unsafe { copy_raw(dspace, &mut r.cap, dta, DTA_LEN) };
                 if n == DTA_LEN {

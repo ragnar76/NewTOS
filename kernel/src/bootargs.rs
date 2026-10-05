@@ -21,6 +21,16 @@
 /// The token that switches the serial (UART0) output on, `board-rpi4`.
 pub const SERIAL_ON: &[u8] = b"serial=on";
 
+/// The token that switches memory protection off (ARCH03 3b) — FreeMiNT's
+/// `MEM_PROT=NO` (`references/freemint/sys/bootmenu.c:207-219`). Without it
+/// every process has its own rights (`PROT_P/G/S/PR/I`).
+pub const MEMPROT_OFF: &[u8] = b"memprot=off";
+
+/// The token that makes the parent-to-child rule strict (ARCH03 E5,
+/// FreeMiNT `MPF_STRICT`, `references/freemint/sys/k_exec.c:799-806`): a
+/// child no longer keeps access to its parent's private memory.
+pub const MEMPROT_STRICT: &[u8] = b"memprot=strict";
+
 /// `true` if `args` contains `token` as a whole whitespace-delimited token.
 ///
 /// `args` ends at its first NUL byte, if any. An empty `token` never
@@ -38,6 +48,14 @@ pub fn has_token(args: &[u8], token: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn memprot_tokens_are_whole_tokens() {
+        assert!(has_token(b"serial=on memprot=off", MEMPROT_OFF));
+        assert!(!has_token(b"serial=on memprot=offx", MEMPROT_OFF));
+        assert!(has_token(b"memprot=strict\n", MEMPROT_STRICT));
+        assert!(!has_token(b"memprot=off", MEMPROT_STRICT));
+    }
 
     #[test]
     fn finds_the_token_alone_and_among_others() {

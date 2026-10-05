@@ -314,6 +314,15 @@ instead of success; a block shared with a running child is freed only after
 the child let go too. Correct programs free their own memory and are not
 affected (FreeMiNT runs them the same way).
 
+
+### NewTOS: page grain and the freed tail (ARCH03 stage 3b)
+
+With memory protection on, `len` is rounded up to a whole 4-KiB page instead
+of 16 bytes (plan E16, `44-mxalloc.md`), and the tail that goes back to the
+pool is made invalid for every process before `Mshrink` returns (FreeMiNT
+`shrink_region` marks it `PROT_I`, `sys/memory.c:1076,1097`; invariant I8).
+`Ptermres`' shrink of the TPA follows the same rule.
+
 ---
 
 ## Pi / BCM2711 binding

@@ -28,7 +28,6 @@ compile_error!(
 
 pub mod arch;
 pub mod bios;
-#[cfg(feature = "board-rpi4")]
 pub mod bootargs;
 pub mod console;
 pub mod drivers;
@@ -248,6 +247,10 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // so the mailbox is reachable here.
     let fw_dram = firmware_dram();
     report_dtb_memory(dtb);
+    // ARCH03 3b: memory protection on unless the boot arguments say
+    // `memprot=off`; decided now, while the boot arguments are reachable
+    // with the boot tables, and applied before the BDOS pools are seeded.
+    let memprot = memprot_switch(dtb);
 
     // Discover the physical memory map and dump it for visibility.
     // Pure function of the board constants, the DTB and the firmware
@@ -289,7 +292,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // ranges — `claim_remaining_pool` enforces this by allocating
     // the entire remaining contiguous run before publishing it to
     // BDOS.
-    bring_up_bdos_pools();
+    bring_up_bdos_pools(memprot);
     print_bdos_pool_stats("after init");
 
     // Install exception vectors and the TOS-API host before any SVC.
@@ -750,8 +753,42 @@ fn smoke_test_heap() {
 /// before this runs, so ST-RAM is contiguous-from-start and TT-RAM
 /// is contiguous-from-`heap_end`. Both runs satisfy
 /// `alloc_frames_contig`.
-fn bring_up_bdos_pools() {
+fn bring_up_bdos_pools((protect, strict): (bool, bool)) {
     use bios::machine::frames::{alloc_frames_contig, stats, Pool, FRAME_SIZE};
+
+    // ARCH03 3b: the protection switch, before the pools exist (their grain
+    // and their mapping depend on it), and with protection on the table
+    // arena the per-process rights are built from: one L3 per 2-MiB region
+    // of the pools (shared, non-owner rights) plus private copies for the
+    // regions where a process's rights differ (plan Frage 14). Taken from the
+    // frames before the pools claim the rest.
+    // SAFETY: boot CPU, before any pool exists.
+    unsafe { tos_api::bdos::process::memprot::configure(protect, strict) };
+    if protect {
+        let mib2 = 2 * 1024 * 1024u64;
+        let pool_bytes: u64 = [Pool::Stram, Pool::Ttram]
+            .iter()
+            .map(|&p| stats(p).free() as u64 * FRAME_SIZE)
+            .sum();
+        let shared = (pool_bytes / mib2) as usize + 2 * 2 + 16;
+        let count = (shared + PRIVATE_L3_BUDGET).min(tos_api::bdos::process::mmu::ARENA_MAX_TABLES);
+        let frame = alloc_frames_contig(Pool::Ttram, count)
+            .or_else(|| alloc_frames_contig(Pool::Stram, count))
+            .expect("memprot: no room for the page-table arena");
+        let kva = frame.pa() + arch::aarch64::mmu::VA_OFFSET;
+        // SAFETY: `count` fresh frames, mapped RW in the high half.
+        unsafe { core::ptr::write_bytes(kva as *mut u8, 0, count * FRAME_SIZE as usize) };
+        // SAFETY: boot CPU; the frames are ours for good.
+        unsafe { tos_api::bdos::process::mmu::set_table_arena(kva, count) };
+        kprintln!(
+            "[mm] memory protection ON{}: table arena 0x{:08x}+{} tables",
+            if strict { " (strict)" } else { "" },
+            frame.pa(),
+            count,
+        );
+    } else {
+        kprintln!("[mm] memory protection OFF (boot argument `memprot=off`)");
+    }
 
     let claim = |pool: Pool| -> Option<(u64, u64)> {
         let s = stats(pool);
@@ -788,10 +825,46 @@ fn bring_up_bdos_pools() {
     // SAFETY: boot CPU, no trap has run; the pools were just seeded.
     match unsafe { tos_api::bdos::process::mmu::map_pools() } {
         Ok(()) => kprintln!(
-            "[mm] user address space: pools mapped VA = PA ({} shared L3 tables)",
+            "[mm] user address space: pools mapped VA = PA ({} shared L3 tables{})",
             tos_api::bdos::process::mmu::shared_l3_used(),
+            if protect { ", 4-KiB pages, rights per process" } else { "" },
         ),
         Err(e) => panic!("[mm] mapping the BDOS pools into the user tables failed: {e:?}"),
+    }
+}
+
+/// Private L3 tables the arena holds besides the shared ones (ARCH03 3b):
+/// copies for the 2-MiB regions where a process's rights differ from
+/// everybody else's — about ten per process (TPA, heap blocks, inherited
+/// parent blocks; plan Frage 14), 64 per slot here. 4 MiB.
+const PRIVATE_L3_BUDGET: usize = 64 * tos_api::bdos::process::MAX_PROCESSES;
+
+/// The memory-protection switch from the boot arguments (ARCH03 3b):
+/// `(on, strict)`. On unless `memprot=off`; strict with `memprot=strict`
+/// (`bootargs::MEMPROT_OFF` / `MEMPROT_STRICT`). `board-rpi4` asks the
+/// firmware for its command line (`cmdline.txt`, or QEMU's `-append`), QEMU
+/// `virt` reads `/chosen/bootargs` of its device tree.
+fn memprot_switch(dtb: Option<usize>) -> (bool, bool) {
+    let decide = |args: &[u8]| {
+        (
+            !bootargs::has_token(args, bootargs::MEMPROT_OFF),
+            bootargs::has_token(args, bootargs::MEMPROT_STRICT),
+        )
+    };
+    #[cfg(feature = "board-rpi4")]
+    {
+        let _ = dtb;
+        drivers::bcm2711::mailbox::with_command_line(decide).unwrap_or((true, false))
+    }
+    #[cfg(not(feature = "board-rpi4"))]
+    {
+        let mut buf = [0u8; 256];
+        // SAFETY: the boot loader supplied the DTB pointer; still reachable
+        // through the boot tables at this point of the boot.
+        match dtb.and_then(|d| unsafe { arch::aarch64::dtb::copy_bootargs(d, &mut buf) }) {
+            Some(n) => decide(&buf[..n]),
+            None => (true, false),
+        }
     }
 }
 

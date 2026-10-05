@@ -44,6 +44,27 @@
 //! valid, which needs no TLB invalidation (ARM ARM `RXCLRD` D8-7852 /
 //! `IWZCBG` D8-7858, plan §3.2) — nothing in stage 1 is ever unmapped.
 //!
+//! ## Rights per address space (ARCH03 stage 3b)
+//!
+//! With memory protection on ([`super::memprot`]) the pools are entered as
+//! 4-KiB pages only, every entry **invalid** at boot (free memory belongs to
+//! nobody, plan invariant I8), in shared L3 tables drawn from a table arena
+//! the kernel reserves at boot ([`set_table_arena`]). The shared tables hold
+//! the **non-owner** rights of every page (FreeMiNT fills a table "as if
+//! you're a non-owner of every page" first, `sys/arch/mprot030.c:1050-1053`);
+//! a process whose rights differ somewhere in a 2-MiB region gets its own
+//! copy of that region's L3 ([`make_private`], "copy-on-differ", plan §3.2)
+//! and its L2 entry points there instead. Every slot has its own L2 for each
+//! of the four GiB, a copy of the shared template, so a private L3 is a
+//! change of one slot-owned L2 entry on both boards (V0a invariant 4: the
+//! virt pool lives in GiB 1).
+//!
+//! Table-pointer changes in an L2 entry are made break-before-make (V0a
+//! C3/C4, ARM ARM `RDDMVT` D8-7859): invalid → `dsb ish` → `tlbi vmalle1is`
+//! → `dsb ish` → new entry → `dsb ish`. Leaf changes of a **valid** entry
+//! (narrowing, and widening valid → valid) are followed by a TLB invalidation
+//! ([`flush_tlb`], ARM ARM `RSQBCS` D8-7852 — 0a correction of plan §3.2).
+//!
 //! ## Descriptor bits
 //!
 //! AArch64 stage-1 descriptor layout (ARM ARM DDI 0487 M.d, Figure D8-16 /
@@ -59,7 +80,7 @@
 //! orders the writes before it ([`publish_user_mappings`],
 //! [`install_ttbr0`]).
 
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use super::MAX_PROCESSES;
 
@@ -129,7 +150,7 @@ const fn va_to_pa(va: u64) -> u64 {
 
 /// 512-entry, 4-KiB-aligned translation table page.
 #[repr(C, align(4096))]
-struct UserTable([u64; 512]);
+pub struct UserTable([u64; 512]);
 
 impl UserTable {
     const fn zeroed() -> Self {
@@ -138,14 +159,15 @@ impl UserTable {
 }
 
 /// One process slot's private tables: its root chain down to the L3 that
-/// holds page 0. 16 KiB per slot (plan Frage 14).
+/// holds page 0, and its own L2 for every GiB. 28 KiB per slot.
 #[repr(C, align(4096))]
 struct SlotTables {
     l0: UserTable,
     l1: UserTable,
-    /// L2 for VA `[0, 1 GiB)`: entry 0 → [`Self::l3`], entries 1..511 copied
-    /// from [`SHARED_L2`]`[0]`.
-    l2: UserTable,
+    /// L2 for VA `[g GiB, g+1 GiB)`, a copy of [`SHARED_L2`]`[g]`; for GiB 0
+    /// entry 0 → [`Self::l3`]. An entry differs from the template only where
+    /// the slot has a private L3 (stage 3b, [`make_private`]).
+    l2: [UserTable; GIB_COUNT],
     /// L3 for VA `[0, 2 MiB)`: entry 0 → the slot's page 0, entries 1..511
     /// copied from [`SHARED_L3_0`].
     l3: UserTable,
@@ -160,7 +182,7 @@ static mut __USER_TABLES: [SlotTables; MAX_PROCESSES] = [const {
     SlotTables {
         l0: UserTable::zeroed(),
         l1: UserTable::zeroed(),
-        l2: UserTable::zeroed(),
+        l2: [const { UserTable::zeroed() }; GIB_COUNT],
         l3: UserTable::zeroed(),
     }
 }; MAX_PROCESSES];
@@ -168,9 +190,8 @@ static mut __USER_TABLES: [SlotTables; MAX_PROCESSES] = [const {
 /// The per-slot page-0 data pages.
 static mut PAGE0: [Page0; MAX_PROCESSES] = [const { Page0([0; 4096]) }; MAX_PROCESSES];
 
-/// The shared L2 tables: index 0 is the **template** for every slot's
-/// GiB-0 L2 (its entry 0 is unused — it is the slot's own), 1..3 are the real
-/// shared L2 tables of GiB 1..3 that every slot's L1 points at.
+/// The shared L2 **templates**, one per GiB, that every slot's own L2s copy
+/// (GiB 0's entry 0 is unused — it is the slot's own page-0 L3).
 static mut SHARED_L2: [UserTable; GIB_COUNT] = [const { UserTable::zeroed() }; GIB_COUNT];
 
 /// Template for every slot's `[0, 2 MiB)` L3 (entry 0 unused — page 0).
@@ -182,6 +203,109 @@ static mut SHARED_L3: [UserTable; SHARED_L3_COUNT] =
 
 /// Number of [`SHARED_L3`] tables handed out.
 static SHARED_L3_USED: AtomicUsize = AtomicUsize::new(0);
+
+/// Number of shared L3 tables in use, wherever they came from (the static
+/// [`SHARED_L3`] set or the arena) — the boot log figure.
+static SHARED_L3_TOTAL: AtomicUsize = AtomicUsize::new(0);
+
+// ─── Table arena (stage 3b) ──────────────────────────────────────────
+
+/// Upper bound on the arena's size in tables (64 bitmap words).
+pub const ARENA_MAX_TABLES: usize = 64 * 64;
+
+/// Kernel VA of the first arena table; `0` = no arena (protection off).
+static ARENA_KVA: AtomicU64 = AtomicU64::new(0);
+/// Number of tables in the arena.
+static ARENA_COUNT: AtomicUsize = AtomicUsize::new(0);
+/// Tables of the arena in use (bit set = taken).
+static ARENA_BITS: [AtomicU64; ARENA_MAX_TABLES / 64] =
+    [const { AtomicU64::new(0) }; ARENA_MAX_TABLES / 64];
+/// Private (per-slot) tables in use — for the boot log and the tests.
+static PRIVATE_USED: AtomicUsize = AtomicUsize::new(0);
+
+/// A **valid** leaf entry of a user table was changed since the last
+/// [`flush_tlb`] — the TLB may hold the old translation (ARM ARM `RSQBCS`
+/// D8-7852: even permission-fault entries may be cached).
+static TLB_DIRTY: AtomicBool = AtomicBool::new(false);
+
+/// Hand the user page tables a **table arena**: `count` zeroed, 4-KiB-aligned
+/// pages at kernel VA `kva` (`count` ≤ [`ARENA_MAX_TABLES`]). Protection
+/// (stage 3b) draws the pools' shared L3 tables and every private L3 from
+/// it. Called once at boot, before [`map_pools`].
+///
+/// # Safety
+///
+/// Boot CPU, before any trap. The pages are memory nobody else uses for as
+/// long as the system runs (the kernel takes them from the frame allocator
+/// before the BDOS pools claim the rest).
+pub unsafe fn set_table_arena(kva: u64, count: usize) {
+    ARENA_KVA.store(kva, Ordering::Relaxed);
+    ARENA_COUNT.store(count.min(ARENA_MAX_TABLES), Ordering::Relaxed);
+    for w in &ARENA_BITS {
+        w.store(0, Ordering::Relaxed);
+    }
+}
+
+/// Take one zeroed table from the arena.
+fn arena_alloc() -> Option<&'static mut UserTable> {
+    let base = ARENA_KVA.load(Ordering::Relaxed);
+    let count = ARENA_COUNT.load(Ordering::Relaxed);
+    if base == 0 {
+        return None;
+    }
+    for (wi, w) in ARENA_BITS.iter().enumerate() {
+        let bits = w.load(Ordering::Relaxed);
+        if bits == u64::MAX {
+            continue;
+        }
+        let bi = (!bits).trailing_zeros() as usize;
+        let idx = wi * 64 + bi;
+        if idx >= count {
+            return None;
+        }
+        w.store(bits | (1u64 << bi), Ordering::Relaxed);
+        let t = (base + (idx as u64) * PAGE_SIZE) as *mut UserTable;
+        // SAFETY: `idx < count`: one of the arena's pages, now ours.
+        let t = unsafe { &mut *t };
+        t.0 = [0; 512];
+        return Some(t);
+    }
+    None
+}
+
+/// Give a table back to the arena. A table that is not from the arena (a
+/// static one) is never given back.
+fn arena_free(t: *const UserTable) {
+    let base = ARENA_KVA.load(Ordering::Relaxed);
+    let count = ARENA_COUNT.load(Ordering::Relaxed) as u64;
+    let a = t as u64;
+    if base == 0 || a < base || a >= base + count * PAGE_SIZE {
+        return;
+    }
+    let idx = ((a - base) / PAGE_SIZE) as usize;
+    ARENA_BITS[idx / 64].fetch_and(!(1u64 << (idx % 64)), Ordering::Relaxed);
+}
+
+/// Tables of the arena still free (boot log / tests).
+pub fn arena_free_count() -> usize {
+    let count = ARENA_COUNT.load(Ordering::Relaxed);
+    let used: usize = ARENA_BITS.iter().map(|w| w.load(Ordering::Relaxed).count_ones() as usize).sum();
+    count.saturating_sub(used)
+}
+
+/// Private L3 tables in use (boot log / tests).
+pub fn private_l3_used() -> usize {
+    PRIVATE_USED.load(Ordering::Relaxed)
+}
+
+/// The table a valid table descriptor names, through the kernel alias. Our
+/// table descriptors carry no upper attribute bits ([63:59] = 0, V0a
+/// invariant 1), so everything above the low 12 bits is the address; the
+/// same arithmetic undoes [`va_to_pa`] on the host (see [`translate`]).
+#[inline]
+fn table_at(desc: u64) -> *mut UserTable {
+    (desc & !(PAGE_SIZE - 1)).wrapping_add(VA_OFFSET) as *mut UserTable
+}
 
 // ─── Public API ─────────────────────────────────────────────────────
 
@@ -325,9 +449,10 @@ pub unsafe fn page0_bytes(slot: usize) -> Option<&'static mut [u8; 4096]> {
     Some(unsafe { &mut *(p as *mut [u8; 4096]) })
 }
 
-/// Build `slot`'s root: `L0[0] → L1`, `L1[0] → L2`, `L1[1..4]` → the shared
-/// GiB-1..3 L2 tables, `L2[0] → L3`, `L2[1..]` = the GiB-0 template, `L3[0]`
-/// = the slot's page 0 (`UserRwExec`), `L3[1..]` = the `[0, 2 MiB)` template.
+/// Build `slot`'s root: `L0[0] → L1`, `L1[g]` → the slot's own L2 of GiB `g`
+/// (a copy of the shared template), `L2₀[0] → L3`, `L3[0]` = the slot's page
+/// 0 (`UserRwExec`), `L3[1..]` = the `[0, 2 MiB)` template. Private L3 tables
+/// a previous tenant of the slot held go back to the arena first.
 /// Idempotent; the page-0 *contents* are not touched (the loader writes them).
 ///
 /// # Safety
@@ -341,27 +466,53 @@ pub unsafe fn init_slot_tables(slot: usize) -> Result<(), MapError> {
     }
     let page0_pa = va_to_pa(page0_kva(slot).ok_or(MapError::InvalidSlot)? as u64);
     // SAFETY: caller's lock contract; slot bounds-checked.
+    unsafe { release_private_tables(slot) };
+    // SAFETY: caller's lock contract; slot bounds-checked.
     let t = unsafe { slot_tables(slot) };
-    // SAFETY: caller's lock contract.
-    let (tmpl_l2, tmpl_l3) = unsafe { (&shared_l2(0).0, &shared_l3_0().0) };
 
     t.l0.0 = [0; 512];
     t.l0.0[0] = table_pa(&t.l1) | D_VALID | D_TABLE;
 
     t.l1.0 = [0; 512];
-    t.l1.0[0] = table_pa(&t.l2) | D_VALID | D_TABLE;
-    for gib in 1..GIB_COUNT {
+    for gib in 0..GIB_COUNT {
+        t.l1.0[gib] = table_pa(&t.l2[gib]) | D_VALID | D_TABLE;
         // SAFETY: caller's lock contract; `gib < GIB_COUNT`.
-        let l2_pa = table_pa(unsafe { shared_l2(gib) });
-        t.l1.0[gib] = l2_pa | D_VALID | D_TABLE;
+        t.l2[gib].0 = unsafe { shared_l2(gib) }.0;
     }
+    t.l2[0].0[0] = table_pa(&t.l3) | D_VALID | D_TABLE;
 
-    t.l2.0 = *tmpl_l2;
-    t.l2.0[0] = table_pa(&t.l3) | D_VALID | D_TABLE;
-
-    t.l3.0 = *tmpl_l3;
+    // SAFETY: caller's lock contract.
+    t.l3.0 = unsafe { shared_l3_0() }.0;
     t.l3.0[0] = page0_pa | PageFlags::UserRwExec.descriptor_bits();
     Ok(())
+}
+
+/// Give every private L3 `slot` holds back to the arena and point its L2
+/// entries at the shared tables again. No TLB maintenance: the slot is not
+/// the active root ([`init_slot_tables`]'s contract) — or, from
+/// [`super::memprot`], the caller flushes.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `slot < MAX_PROCESSES`.
+pub unsafe fn release_private_tables(slot: usize) {
+    // SAFETY: caller contract.
+    let t = unsafe { slot_tables(slot) };
+    for gib in 0..GIB_COUNT {
+        for idx in 0..512 {
+            if gib == 0 && idx == 0 {
+                continue; // the slot's page-0 L3
+            }
+            // SAFETY: caller contract.
+            let tmpl = unsafe { shared_l2(gib) }.0[idx];
+            let cur = t.l2[gib].0[idx];
+            if cur != tmpl && cur & (D_VALID | D_TABLE) == D_VALID | D_TABLE {
+                t.l2[gib].0[idx] = tmpl;
+                arena_free(table_at(cur));
+                PRIVATE_USED.fetch_sub(1, Ordering::Relaxed);
+            }
+        }
+    }
 }
 
 /// Install one 4-KiB page in `slot`'s **private** `[0, 2 MiB)` L3 — page 0
@@ -395,8 +546,9 @@ pub unsafe fn map_page(
     Ok(())
 }
 
-/// Write entry `idx` of the GiB-`gib` L2: for GiB 0 into the template and
-/// into every slot's copy, otherwise into the shared table itself.
+/// Write entry `idx` of the GiB-`gib` L2 template and of every slot's copy
+/// that still follows the template there (a slot with a private L3 at `idx`
+/// keeps it — stage 3b).
 ///
 /// # Safety
 ///
@@ -405,10 +557,12 @@ pub unsafe fn map_page(
 unsafe fn set_l2(gib: usize, idx: usize, desc: u64) {
     // SAFETY: caller contract.
     unsafe {
+        let old = shared_l2(gib).0[idx];
         shared_l2(gib).0[idx] = desc;
-        if gib == 0 {
-            for slot in 0..MAX_PROCESSES {
-                slot_tables(slot).l2.0[idx] = desc;
+        for slot in 0..MAX_PROCESSES {
+            let e = &mut slot_tables(slot).l2[gib].0[idx];
+            if *e == old {
+                *e = desc;
             }
         }
     }
@@ -430,7 +584,8 @@ unsafe fn set_l3_0(idx: usize, desc: u64) {
 }
 
 /// The L3 table covering the 2-MiB region that starts at `region` (≥ 2 MiB),
-/// creating it from [`SHARED_L3`] if the L2 entry is still invalid.
+/// creating it — from the arena if there is one ([`set_table_arena`]),
+/// else from [`SHARED_L3`] — if the L2 entry is still invalid.
 ///
 /// # Safety
 ///
@@ -447,23 +602,25 @@ unsafe fn shared_l3_for(region: u64) -> Result<&'static mut UserTable, MapError>
             // it would have to split the block (break-before-make, plan §3.2).
             return Err(MapError::Conflict);
         }
-        let pa = cur & OA_MASK;
-        let n = SHARED_L3_USED.load(Ordering::Relaxed);
-        // SAFETY: the table this descriptor names is one of ours.
-        let pool = unsafe { &mut *&raw mut SHARED_L3 };
-        return pool[..n]
-            .iter_mut()
-            .find(|t| table_pa(t) == pa)
-            .ok_or(MapError::Conflict);
+        // SAFETY: a valid table descriptor in our template names one of our
+        // tables, reachable through the kernel alias.
+        return Ok(unsafe { &mut *table_at(cur) });
     }
-    let n = SHARED_L3_USED.load(Ordering::Relaxed);
-    if n >= SHARED_L3_COUNT {
-        return Err(MapError::NoTable);
-    }
-    SHARED_L3_USED.store(n + 1, Ordering::Relaxed);
-    // SAFETY: caller's lock contract; `n` was free.
-    let t = unsafe { &mut (*&raw mut SHARED_L3)[n] };
-    t.0 = [0; 512];
+    let t = match arena_alloc() {
+        Some(t) => t,
+        None => {
+            let n = SHARED_L3_USED.load(Ordering::Relaxed);
+            if n >= SHARED_L3_COUNT {
+                return Err(MapError::NoTable);
+            }
+            SHARED_L3_USED.store(n + 1, Ordering::Relaxed);
+            // SAFETY: caller's lock contract; `n` was free.
+            let t = unsafe { &mut (*&raw mut SHARED_L3)[n] };
+            t.0 = [0; 512];
+            t
+        }
+    };
+    SHARED_L3_TOTAL.fetch_add(1, Ordering::Relaxed);
     // SAFETY: caller contract; GiB-0 index 0 is excluded because `region` ≥ 2 MiB.
     unsafe { set_l2(gib, idx, table_pa(t) | D_VALID | D_TABLE) };
     Ok(t)
@@ -544,6 +701,7 @@ pub unsafe fn map_shared(va: u64, len: u64, flags: PageFlags, allow_blocks: bool
         }
         // SAFETY: caller's lock contract; `region` aligned, ≥ 2 MiB, in range.
         let t = unsafe { shared_l3_for(region)? };
+        let first = a;
         while a < stop {
             let idx = ((a - region) / PAGE_SIZE) as usize;
             let want = a | page_bits;
@@ -554,6 +712,18 @@ pub unsafe fn map_shared(va: u64, len: u64, flags: PageFlags, allow_blocks: bool
                 return Err(MapError::Conflict);
             }
             a += PAGE_SIZE;
+        }
+        // A slot with a private copy of this region (stage 3b) must see the
+        // publication as well: it is the same for everybody.
+        let lo = ((first - region) / PAGE_SIZE) as usize;
+        let hi = ((stop - region) / PAGE_SIZE) as usize;
+        for slot in 0..MAX_PROCESSES {
+            // SAFETY: caller's lock contract.
+            if let Some(p) = unsafe { slot_private_l3(slot, region) } {
+                // SAFETY: a private table of ours; only invalid entries of
+                // the shared set were just filled, so the copy follows.
+                unsafe { (&mut (*p).0)[lo..hi].copy_from_slice(&t.0[lo..hi]) };
+            }
         }
     }
     // SAFETY: barrier-only.
@@ -570,18 +740,265 @@ pub unsafe fn map_shared(va: u64, len: u64, flags: PageFlags, allow_blocks: bool
 ///
 /// Boot CPU, before any trap; the pools are initialised.
 pub unsafe fn map_pools() -> Result<(), MapError> {
+    let protect = super::memprot::enabled();
     for (start, end) in [
         crate::bdos::mem::init::stram_range(),
         crate::bdos::mem::init::ttram_range(),
     ] {
-        if end > start {
+        if end <= start {
+            continue;
+        }
+        if protect {
+            // Stage 3b: one L3 per 2-MiB region the pool touches, every pool
+            // entry invalid — nothing is allocated yet, and free memory is
+            // nobody's (I8). Rights are entered page by page as blocks are
+            // handed out ([`super::memprot`]).
+            let mut region = (start as u64) & !(L3_SPAN - 1);
+            while region < end as u64 {
+                if !(L3_SPAN..USER_VA_LIMIT).contains(&region) {
+                    return Err(MapError::VaOutOfRange);
+                }
+                // SAFETY: boot CPU; in range and aligned.
+                unsafe { shared_l3_for(region)? };
+                region += L3_SPAN;
+            }
+        } else {
             // SAFETY: boot CPU; the pool is user memory by definition.
             unsafe {
                 map_shared(start as u64, (end - start) as u64, PageFlags::UserRwExec, true)?;
             }
         }
     }
+    // SAFETY: barrier-only.
+    unsafe { publish_user_mappings() };
     Ok(())
+}
+
+// ─── Per-slot rights (stage 3b) ──────────────────────────────────────
+
+/// Span of one L3 table / 2-MiB region — the granule of [`make_private`].
+pub const REGION_SPAN: u64 = L3_SPAN;
+
+/// The shared L3 of the 2-MiB region at `region`, or `None` if the region
+/// has none (not user memory, or mapped by a block).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `region` is 2-MiB aligned.
+pub unsafe fn shared_l3(region: u64) -> Option<*mut UserTable> {
+    if !(L3_SPAN..USER_VA_LIMIT).contains(&region) {
+        return None;
+    }
+    let gib = (region / L2_SPAN) as usize;
+    let idx = ((region % L2_SPAN) / L3_SPAN) as usize;
+    // SAFETY: caller contract.
+    let cur = unsafe { shared_l2(gib).0[idx] };
+    (cur & (D_VALID | D_TABLE) == D_VALID | D_TABLE).then(|| table_at(cur))
+}
+
+/// `slot`'s private L3 of the region at `region`, if it has one.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `region` is 2-MiB aligned.
+pub unsafe fn slot_private_l3(slot: usize, region: u64) -> Option<*mut UserTable> {
+    if slot >= MAX_PROCESSES || !(L3_SPAN..USER_VA_LIMIT).contains(&region) {
+        return None;
+    }
+    let gib = (region / L2_SPAN) as usize;
+    let idx = ((region % L2_SPAN) / L3_SPAN) as usize;
+    // SAFETY: caller contract.
+    let (tmpl, cur) = unsafe { (shared_l2(gib).0[idx], slot_tables(slot).l2[gib].0[idx]) };
+    (cur != tmpl && cur & (D_VALID | D_TABLE) == D_VALID | D_TABLE).then(|| table_at(cur))
+}
+
+/// The L2 entry `slot` uses for `region`, through which an entry change is
+/// made break-before-make.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `slot`/`region` in range.
+unsafe fn slot_l2_entry(slot: usize, region: u64) -> *mut u64 {
+    let gib = (region / L2_SPAN) as usize;
+    let idx = ((region % L2_SPAN) / L3_SPAN) as usize;
+    // SAFETY: caller contract.
+    unsafe { &raw mut slot_tables(slot).l2[gib].0[idx] }
+}
+
+/// Replace a valid table descriptor with another **break-before-make**
+/// (V0a C3/C4; ARM ARM `RDDMVT` D8-7859; a table-attribute change is BBM by
+/// `IYQWJF` D8-7757): write invalid, `dsb ish`, `tlbi vmalle1is`, `dsb ish`,
+/// write the new descriptor, `dsb ish`, `isb`.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `entry` is an L2 entry of ours.
+unsafe fn replace_bbm(entry: *mut u64, new: u64) {
+    // SAFETY: caller contract — a live entry of a user table.
+    unsafe {
+        core::ptr::write_volatile(entry, 0);
+        tlbi_all_barriered();
+        core::ptr::write_volatile(entry, new);
+        publish_user_mappings();
+    }
+}
+
+/// Give `slot` its own copy of the shared L3 of `region` (copy-on-differ,
+/// plan §3.2) and return it; an existing private copy is returned as is.
+/// The caller then writes the slot's own rights into it.
+///
+/// # Errors
+///
+/// [`MapError::NoTable`] — the arena is exhausted; [`MapError::VaOutOfRange`]
+/// — the region has no shared L3.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `region` 2-MiB aligned.
+pub unsafe fn make_private(slot: usize, region: u64) -> Result<*mut UserTable, MapError> {
+    if slot >= MAX_PROCESSES {
+        return Err(MapError::InvalidSlot);
+    }
+    // SAFETY: caller contract.
+    if let Some(p) = unsafe { slot_private_l3(slot, region) } {
+        return Ok(p);
+    }
+    // SAFETY: caller contract.
+    let shared = unsafe { shared_l3(region) }.ok_or(MapError::VaOutOfRange)?;
+    let t = arena_alloc().ok_or(MapError::NoTable)?;
+    // SAFETY: `shared` is a live table of ours.
+    t.0 = unsafe { (*shared).0 };
+    PRIVATE_USED.fetch_add(1, Ordering::Relaxed);
+    let new = table_pa(t) | D_VALID | D_TABLE;
+    // SAFETY: caller contract; the slot's own L2 entry.
+    unsafe {
+        let e = slot_l2_entry(slot, region);
+        // The copy must be visible to the walker before the entry names it.
+        core::arch::asm!("dsb ish", options(nostack, preserves_flags));
+        if core::ptr::read_volatile(e) & D_VALID != 0 {
+            replace_bbm(e, new);
+        } else {
+            core::ptr::write_volatile(e, new);
+            publish_user_mappings();
+        }
+    }
+    Ok(t as *mut UserTable)
+}
+
+/// Point `slot` back at the shared L3 of `region` and free its private copy
+/// (break-before-make). Nothing to do if it has none.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `region` 2-MiB aligned.
+pub unsafe fn drop_private(slot: usize, region: u64) {
+    // SAFETY: caller contract.
+    let Some(p) = (unsafe { slot_private_l3(slot, region) }) else {
+        return;
+    };
+    let gib = (region / L2_SPAN) as usize;
+    let idx = ((region % L2_SPAN) / L3_SPAN) as usize;
+    // SAFETY: caller contract.
+    unsafe {
+        let tmpl = shared_l2(gib).0[idx];
+        replace_bbm(slot_l2_entry(slot, region), tmpl);
+    }
+    arena_free(p);
+    PRIVATE_USED.fetch_sub(1, Ordering::Relaxed);
+}
+
+/// Write leaf entry `idx` of `table` and remember whether a **valid** entry
+/// changed (then the TLB may hold the old one, [`flush_tlb`]).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `table` is a live user L3; `idx < 512`.
+pub unsafe fn set_leaf(table: *mut UserTable, idx: usize, desc: u64) {
+    // SAFETY: caller contract.
+    unsafe {
+        let e = &raw mut (*table).0[idx];
+        let old = core::ptr::read_volatile(e);
+        if old == desc {
+            return;
+        }
+        if old & D_VALID != 0 {
+            TLB_DIRTY.store(true, Ordering::Relaxed);
+        }
+        core::ptr::write_volatile(e, desc);
+    }
+}
+
+/// Read leaf entry `idx` of `table`.
+///
+/// # Safety
+///
+/// As [`set_leaf`].
+pub unsafe fn leaf(table: *const UserTable, idx: usize) -> u64 {
+    // SAFETY: caller contract.
+    unsafe { core::ptr::read_volatile(&raw const (*table).0[idx]) }
+}
+
+/// The leaf descriptor of the 4-KiB user page at `va` (VA = PA) with
+/// `flags`; `0` (invalid) for `None`.
+pub fn leaf_desc(va: u64, flags: Option<PageFlags>) -> u64 {
+    match flags {
+        Some(f) => (va & OA_MASK) | f.descriptor_bits(),
+        None => 0,
+    }
+}
+
+/// Make all table writes visible and, if a valid leaf entry changed since
+/// the last call, drop every stage-1 EL1&0 translation:
+/// `dsb ish; tlbi vmalle1is; dsb ish; isb` (ARM ARM `RSQBCS` D8-7852 — a
+/// narrowing or a valid→valid widening needs the TLBI; an invalid→valid
+/// change needs only the barrier, `RXCLRD`). The trailing `isb` (or the
+/// `eret` that follows) is the context synchronisation. All processes run
+/// with ASID 0 and every root switch invalidates the whole TLB already
+/// ([`crate::bdos::process::mmu::switch_ttbr0_kernel`], the kernel's
+/// `restore_boot_ttbr0`), so `vmalle1is` covers the active root and nothing
+/// else can be cached.
+///
+/// # Safety
+///
+/// Caller is at EL1 (barrier + TLB maintenance only).
+pub unsafe fn flush_tlb() {
+    if TLB_DIRTY.swap(false, Ordering::Relaxed) {
+        // SAFETY: caller contract.
+        unsafe { tlbi_all_barriered() };
+    } else {
+        // SAFETY: barrier-only.
+        unsafe { publish_user_mappings() };
+    }
+}
+
+/// [`flush_tlb`], invalidating unconditionally (a root was torn down).
+///
+/// # Safety
+///
+/// EL1.
+pub unsafe fn flush_tlb_always() {
+    TLB_DIRTY.store(true, Ordering::Relaxed);
+    // SAFETY: caller contract.
+    unsafe { flush_tlb() };
+}
+
+/// `dsb ish; tlbi vmalle1is; dsb ish; isb` (on the host: nothing).
+///
+/// # Safety
+///
+/// EL1.
+unsafe fn tlbi_all_barriered() {
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    // SAFETY: TLB maintenance + barriers are permitted at EL1.
+    unsafe {
+        core::arch::asm!(
+            "dsb ish",
+            "tlbi vmalle1is",
+            "dsb ish",
+            "isb",
+            options(nostack, preserves_flags),
+        );
+    }
 }
 
 /// Walk `slot`'s tables in software and return the output address and the
@@ -634,9 +1051,9 @@ pub fn page_bits(flags: PageFlags) -> u64 {
     flags.descriptor_bits()
 }
 
-/// Number of [`SHARED_L3`] tables in use (boot log / tests).
+/// Number of shared L3 tables in use (boot log / tests).
 pub fn shared_l3_used() -> usize {
-    SHARED_L3_USED.load(Ordering::Relaxed)
+    SHARED_L3_TOTAL.load(Ordering::Relaxed)
 }
 
 /// Phys address of `slot`'s L0 table — the value written to `TTBR0_EL1` via
@@ -686,6 +1103,10 @@ pub fn l0_pa_for(slot: usize) -> u64 {
 /// (Pexec) or fall through to kernel code that does **not**
 /// touch low-half VAs.
 pub unsafe fn install_ttbr0(l0_pa: u64) {
+    // Every root goes live with its rights up to date (ARCH03 3b): pending
+    // protection changes are entered before the switch.
+    // SAFETY: EL1 under the BDOS lock (the caller's single-CPU context).
+    unsafe { super::memprot::sync() };
     // SAFETY: writing TTBR0_EL1 is permitted at EL1. The `dsb ish`
     // before the install is mandatory (ARM ARM D5.10.1): the slot's
     // page-table entries were just written through cacheable kernel

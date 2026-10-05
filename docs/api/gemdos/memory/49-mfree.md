@@ -387,6 +387,17 @@ instead of success; a block shared with a running child is freed only after
 the child let go too. Correct programs free their own memory and are not
 affected (FreeMiNT runs them the same way).
 
+
+### NewTOS: freed memory is nobody's (ARCH03 stage 3b, invariant I8)
+
+With memory protection on, the pages of a block that goes back to the pool
+are made invalid for **every** process — its former owners included — before
+`Mfree` returns (FreeMiNT `free_region` → `mark_region(PROT_I)`,
+`sys/memory.c:932`), with the TLB invalidated. A program that writes a block
+after freeing it ends with the crash report (`Memory violation: free memory,
+write (translation fault …)`, `docs/api/bios/_exception-crash.md`). Closes
+MEM04. With `memprot=off` the pool stays mapped for everybody (stage 3a).
+
 ---
 
 ## Pi / BCM2711 binding

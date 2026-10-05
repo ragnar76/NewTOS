@@ -649,3 +649,18 @@ PHASE-06 D4/D5 status (2026-06-16):
   caller owns; what it allocates itself is its own (EmuTOS `run = p`) and goes
   with its `Pterm`. When the last owner frees the basepage block of a PD that
   was never started, the PD stops being startable (its slot is released).
+
+### Rights of the started process (ARCH03 stage 3b)
+
+With memory protection on (default; `memprot=off` switches it off): the TPA
+and the environment take the protection mode of the program's `PRGFLAGS`
+(FreeMiNT `sys/memory.c:1403-1407,1511-1513`, `sys/k_exec.c:398`). A
+`PE_GO` (4) child runs in its caller's memory space (plan E6, FreeMiNT
+`FORK_SHAREVM`): it and its caller reach each other's blocks, in either mode.
+Any other child started by a process (`PE_LOADGO`, `PE_GOTHENFREE`) keeps
+access to the blocks its parent's space owned when it started (plan E5,
+FreeMiNT without `MPF_STRICT`, `sys/k_exec.c:799-806`) — but not to what the
+parent allocates afterwards; with the boot argument `memprot=strict` it
+inherits nothing. A program the kernel starts (desktop, accessories)
+inherits nothing. Probe `sdk/examples/mprot3b.c`; host tests
+`tos-api/tests/arch03_3b_memprot.rs`.

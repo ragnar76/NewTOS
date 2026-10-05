@@ -171,7 +171,22 @@ pub unsafe fn attach(addr: Long, who: *mut c_void) -> Result<(), RegionError> {
     }
     let place = e.owners.iter_mut().find(|o| o.is_null()).ok_or(RegionError::Full)?;
     *place = who;
+    // The new owner's rights (ARCH03 3b, FreeMiNT `attach_region` →
+    // `mark_proc_region(PROT_P)`, `sys/memory.c:539`).
+    // SAFETY: lock held.
+    unsafe { prot_changed(addr) };
     Ok(())
+}
+
+/// The owners of the block at `addr` changed: its rights follow
+/// ([`crate::bdos::process::memprot`]).
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+unsafe fn prot_changed(addr: Long) {
+    // SAFETY: lock held.
+    unsafe { crate::bdos::process::memprot::on_owner_change(addr as u32 as u64) };
 }
 
 /// Drop `who` from the block at `addr` — FreeMiNT `detach_region`: if it was
@@ -198,6 +213,8 @@ pub unsafe fn detach(addr: Long, who: *mut c_void) -> Result<Detached, RegionErr
             if e.owners.iter().all(|o| o.is_null()) {
                 *e = EMPTY;
             }
+            // SAFETY: lock held.
+            unsafe { prot_changed(addr) };
             return Ok(Detached::Kept);
         }
     }
@@ -214,6 +231,8 @@ pub unsafe fn detach(addr: Long, who: *mut c_void) -> Result<Detached, RegionErr
             if e.owners.iter().all(|o| o.is_null()) {
                 *e = EMPTY;
             }
+            // SAFETY: lock held.
+            unsafe { prot_changed(addr) };
             return Ok(Detached::Kept);
         }
     }
@@ -269,11 +288,18 @@ pub unsafe fn detach_all(who: *mut c_void) -> usize {
     // Its further-owner places first: they never free anything.
     // SAFETY: lock held.
     for e in unsafe { table() }.iter_mut().filter(|e| e.loc != 0) {
+        let loc = e.loc;
+        let mut changed = false;
         for o in e.owners.iter_mut().filter(|o| **o == who) {
             *o = ptr::null_mut();
+            changed = true;
         }
         if e.owners.iter().all(|o| o.is_null()) {
             *e = EMPTY;
+        }
+        if changed {
+            // SAFETY: lock held.
+            unsafe { prot_changed(loc) };
         }
     }
     // Then every block it holds the tag of.
@@ -312,12 +338,19 @@ pub unsafe fn keep_resident(who: *mut c_void) -> usize {
     let tsr = traps::tsr_owner();
     // SAFETY: lock held.
     for e in unsafe { table() }.iter_mut().filter(|e| e.loc != 0) {
+        let loc = e.loc;
         let had_tsr = e.owners.contains(&tsr);
+        let mut changed = false;
         for o in e.owners.iter_mut().filter(|o| **o == who) {
             *o = if had_tsr { ptr::null_mut() } else { tsr };
+            changed = true;
         }
         if e.owners.iter().all(|o| o.is_null()) {
             *e = EMPTY;
+        }
+        if changed {
+            // SAFETY: lock held.
+            unsafe { prot_changed(loc) };
         }
     }
     let mut kept = 0;
@@ -339,12 +372,32 @@ pub unsafe fn keep_resident(who: *mut c_void) -> usize {
                             *e = EMPTY;
                         }
                     }
+                    if entry_of(table(), (*m).m_start).is_none() {
+                        // Only the resident holder owns it now: private
+                        // memory becomes global (FreeMiNT `sys_ptermres`,
+                        // `sys/k_exit.c:320-336`, ARCH03 3b).
+                        crate::bdos::process::memprot::on_resident((*m).m_start as u32 as u64);
+                    } else {
+                        prot_changed((*m).m_start);
+                    }
                 }
                 m = (*m).m_link;
             }
         }
     }
     kept
+}
+
+/// The further owners of the block at `addr` (besides `m_own`); null
+/// places are unused. All null for a block with one owner.
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+pub unsafe fn further_owners(addr: Long) -> [*mut c_void; MAX_FURTHER_OWNERS] {
+    // SAFETY: lock held.
+    let t = unsafe { table() };
+    entry_of(t, addr).map_or([ptr::null_mut(); MAX_FURTHER_OWNERS], |e| e.owners)
 }
 
 /// Number of owners of the block at `addr` (FreeMiNT's `links`): `0` if it

@@ -164,6 +164,113 @@ pub struct ProgramInfo {
     pub bbase: u32,
 }
 
+/// What the memory a faulting access hit was, with memory protection on —
+/// FreeMiNT's `berr_msg` classes (`sys/arch/mprot.x:71-80,99-111`): the mode
+/// of the block (a global block cannot cause a protection fault, so a fault
+/// there is a "hardware" one), free pool memory, or memory that protection
+/// does not control at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegionKind {
+    /// `PROT_P` — private memory of another process (or freed).
+    Private,
+    /// `PROT_S` — supervisor (kernel) memory.
+    Super,
+    /// `PROT_PR` — readable by everybody, writable by its owner.
+    Readable,
+    /// Free pool memory, or a `PROT_I` block (FreeMiNT reports both as
+    /// "free": `berr_msg[PROT_I]`).
+    Free,
+    /// Not controlled by memory protection (outside the pools, page 0, a
+    /// global block).
+    Hardware,
+}
+
+impl RegionKind {
+    /// FreeMiNT's word for it (`berr_msg`, without the padding).
+    pub const fn name(self) -> &'static str {
+        match self {
+            RegionKind::Private => "private",
+            RegionKind::Super => "super",
+            RegionKind::Readable => "readable",
+            RegionKind::Free => "free",
+            RegionKind::Hardware => "hardware",
+        }
+    }
+}
+
+/// The MMU's reason for a memory abort (ARM ARM D24-8672/8673 IFSC,
+/// D24-8683…8685 DFSC: `0b0001LL` translation, `0b0010LL` access flag,
+/// `0b0011LL` permission, LL = level).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FaultType {
+    /// No valid translation — memory protection makes another process's
+    /// `PROT_P`/`PROT_S` pages and freed pages invalid, so this is what a
+    /// protection violation of those looks like (plan §3.3, 0a).
+    Translation,
+    /// Access flag (never set clear by NewTOS — a kernel bug).
+    AccessFlag,
+    /// The translation forbids the access — a write to `PROT_PR` memory of
+    /// another process.
+    Permission,
+}
+
+/// The kind of access that faulted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    /// A data read.
+    Read,
+    /// A data write (`ESR_EL1.WnR`, D24-8682).
+    Write,
+    /// An instruction fetch.
+    Execute,
+}
+
+/// The memory-protection line of the report: what was hit and why the MMU
+/// refused (ARCH03 stage 3b, plan §3.15 / Frage 11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MemViolation {
+    /// What the address was (from the protection bookkeeping, not the MMU:
+    /// a translation fault alone cannot tell "protected" from "unmapped").
+    pub region: RegionKind,
+    /// The MMU's reason.
+    pub fault: FaultType,
+    /// The table level the fault was reported at (0–3).
+    pub level: u8,
+    /// Read, write or instruction fetch.
+    pub access: Access,
+}
+
+/// The protection line for an abort syndrome `esr` whose address lies in
+/// `region` — `None` unless `esr` is a translation, access-flag or
+/// permission fault of an Instruction/Data Abort and `region` is known
+/// (protection on).
+pub const fn mem_violation(esr: u64, region: Option<RegionKind>) -> Option<MemViolation> {
+    let Some(region) = region else {
+        return None;
+    };
+    if !is_abort(esr) {
+        return None;
+    }
+    let fsc = (esr & 0x3F) as u8;
+    let fault = match fsc >> 2 {
+        0b0001 => FaultType::Translation,
+        0b0010 => FaultType::AccessFlag,
+        0b0011 => FaultType::Permission,
+        _ => return None,
+    };
+    let access = match esr_ec(esr) {
+        ec::IABT_LOWER | ec::IABT_SAME => Access::Execute,
+        _ => {
+            if esr & (1 << 6) != 0 {
+                Access::Write
+            } else {
+                Access::Read
+            }
+        }
+    };
+    Some(MemViolation { region, fault, level: fsc & 3, access })
+}
+
 /// Everything the report shows.
 #[derive(Debug, Clone, Copy)]
 pub struct CrashReport<'a> {
@@ -183,6 +290,9 @@ pub struct CrashReport<'a> {
     pub usp: u64,
     /// The running program, if there is one.
     pub program: Option<ProgramInfo>,
+    /// With memory protection on: what the faulting access hit
+    /// ([`mem_violation`]).
+    pub violation: Option<MemViolation>,
 }
 
 /// Render the report text — the `kcprintf` lines of `dopanic`
@@ -205,6 +315,31 @@ pub fn write_report<W: fmt::Write>(w: &mut W, r: &CrashReport<'_>) -> fmt::Resul
     match r.far {
         Some(a) => writeln!(w, "addr={:016x} sr={:08x} pc={:016x}", a, r.pstate as u32, r.pc)?,
         None => writeln!(w, "sr={:08x} pc={:016x}", r.pstate as u32, r.pc)?,
+    }
+    // Memory protection (ARCH03 3b): FreeMiNT's classification of the
+    // address (`report_buserr`, `sys/arch/mprot.x:89-124`: "MEMORY
+    // VIOLATION", type, r/w) plus the MMU's reason, which tells a
+    // protected-and-invalid page (translation) from a read-only one
+    // (permission).
+    if let Some(v) = r.violation {
+        let access = match v.access {
+            Access::Read => "read",
+            Access::Write => "write",
+            Access::Execute => "execute",
+        };
+        let fault = match v.fault {
+            FaultType::Translation => "translation",
+            FaultType::AccessFlag => "access flag",
+            FaultType::Permission => "permission",
+        };
+        writeln!(
+            w,
+            "Memory violation: {} memory, {} ({} fault, level {})",
+            v.region.name(),
+            access,
+            fault,
+            v.level
+        )?;
     }
     // Register dump (`kprint.c:527-537`): four per line, like "D0-3:".
     w.write_str("\n")?;
@@ -334,6 +469,7 @@ mod tests {
                 dbase: 0x2000,
                 bbase: 0x2100,
             }),
+            violation: None,
         };
         let s = render(&r);
         let lines: std::vec::Vec<&str> = s.lines().collect();
@@ -363,6 +499,53 @@ mod tests {
     }
 
     #[test]
+    fn protection_line_tells_translation_from_permission() {
+        // EL0 write to an invalid L3 entry (another process's PROT_P page).
+        let v = mem_violation(esr(0x24, 0x47), Some(RegionKind::Private)).unwrap();
+        assert_eq!(v, MemViolation {
+            region: RegionKind::Private,
+            fault: FaultType::Translation,
+            level: 3,
+            access: Access::Write,
+        });
+        // EL0 write to a read-only L3 entry (PROT_PR of another process).
+        let v = mem_violation(esr(0x24, 0x4F), Some(RegionKind::Readable)).unwrap();
+        assert_eq!((v.fault, v.level, v.access), (FaultType::Permission, 3, Access::Write));
+        // A read; the kernel's ldtr on behalf of a caller (same EL).
+        let v = mem_violation(esr(0x25, 0x07), Some(RegionKind::Free)).unwrap();
+        assert_eq!((v.fault, v.access), (FaultType::Translation, Access::Read));
+        // An instruction fetch.
+        let v = mem_violation(esr(0x20, 0x07), Some(RegionKind::Private)).unwrap();
+        assert_eq!(v.access, Access::Execute);
+        // Protection off: no line. Alignment / external: no line.
+        assert_eq!(mem_violation(esr(0x24, 0x47), None), None);
+        assert_eq!(mem_violation(esr(0x24, 0x21), Some(RegionKind::Hardware)), None);
+        assert_eq!(mem_violation(esr(0x24, 0x10), Some(RegionKind::Hardware)), None);
+        assert_eq!(mem_violation(esr(0x00, 0), Some(RegionKind::Hardware)), None);
+    }
+
+    #[test]
+    fn report_shows_the_protection_line_after_the_address() {
+        let regs = [0u64; 31];
+        let r = CrashReport {
+            kind: CrashKind::BusError,
+            esr: esr(0x24, 0x47),
+            far: Some(0x0100_2000),
+            pc: 0x0100_5000,
+            pstate: 0,
+            regs: &regs,
+            usp: 0,
+            program: None,
+            violation: mem_violation(esr(0x24, 0x47), Some(RegionKind::Private)),
+        };
+        let s = render(&r);
+        let lines: std::vec::Vec<&str> = s.lines().collect();
+        assert_eq!(lines[4], "addr=0000000001002000 sr=00000000 pc=0000000001005000");
+        assert_eq!(lines[5], "Memory violation: private memory, write (translation fault, level 3)");
+        assert_eq!(lines[6], "");
+    }
+
+    #[test]
     fn report_without_address_or_program_or_text_hit() {
         let regs = [0u64; 31];
         let r = CrashReport {
@@ -374,6 +557,7 @@ mod tests {
             regs: &regs,
             usp: 0,
             program: Some(ProgramInfo { basepage: 0, tbase: 0x1000, tlen: 0x10, dbase: 0, bbase: 0 }),
+            violation: None,
         };
         let s = render(&r);
         assert!(s.contains("Panic: Exception class 0x3c\n"));

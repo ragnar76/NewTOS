@@ -748,3 +748,38 @@ pub fn check(dump: &[u8], case: &Case) {
         panic!("{}", msg);
     }
 }
+
+// ── not from the dump: input validation ──────────────────────────────────
+
+/// `vr_trnfm` with a negative `fd_h` (or a zero/negative plane count): EmuTOS
+/// computes the plane size as a signed `LONG` (`(LONG)fd_h * fd_wdwidth`,
+/// `vdi_raster.c:299-302`), forces the destination's `fd_stand` and then
+/// runs loops whose counts are not positive — nothing is copied. NewTOS used
+/// to widen `fd_h` to `usize` first, an overflow panic in the dev profile
+/// (ARCH03 3a observation, fixed in 3b).
+#[test]
+fn vr_trnfm_with_a_negative_height_copies_nothing_but_sets_fd_stand() {
+    let _guard = VDI_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let wk = workstation();
+    for (h, nplanes) in [(-1i16, 4i16), (-300, 1), (16, 0), (16, -2)] {
+        let mut pb = Rpb::new();
+        fill_buffer(&mut pb.bufs.a, 0x1111);
+        fill_buffer(&mut pb.bufs.b, 0x2222);
+        let b_before = pb.bufs.b;
+        let (a_addr, b_addr) = (pb.bufs.a.as_ptr() as u64, pb.bufs.b.as_ptr() as u64);
+        *pb.src = Mfdb { addr: a_addr, w: 16, h, wdwidth: 1, stand: 1, nplanes, ..Mfdb::default() };
+        *pb.dst = Mfdb { addr: b_addr, w: 16, h, wdwidth: 1, stand: 1, nplanes, ..Mfdb::default() };
+        pb.poison();
+        pb.contrl[0] = 110;
+        pb.contrl[1] = 0;
+        pb.contrl[3] = 0;
+        pb.contrl[5] = 0;
+        pb.contrl[6] = wk.handle;
+        let (s, d) = (&*pb.src as *const Mfdb as u64, &*pb.dst as *const Mfdb as u64);
+        pb.set_mfdb_ptr(0, s);
+        pb.set_mfdb_ptr(1, d);
+        pb.call();
+        assert_eq!(pb.dst.stand, 0, "h={h} planes={nplanes}: fd_stand forced to device form");
+        assert_eq!(pb.bufs.b, b_before, "h={h} planes={nplanes}: nothing copied");
+    }
+}

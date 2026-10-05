@@ -1,0 +1,22 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+marker 'MARK A_IDLE' found at 17.2s -> c5-on-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.2s -> c5-on-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.2s -> c5-on-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.2s -> c5-on-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.2s -> c5-on-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.2s -> c5-on-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.2s -> c5-on-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.2s -> c5-on-desk3a-H_DRIVE_C.png {"return": {}}
+run c5-on-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-3b/method/../screendumps/c5-on-rpi4-desk3a-serial.log
+desk3a c5-on done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+marker 'MARK A_IDLE' found at 17.2s -> c5-off-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.2s -> c5-off-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.2s -> c5-off-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.2s -> c5-off-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.2s -> c5-off-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.2s -> c5-off-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.2s -> c5-off-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.2s -> c5-off-desk3a-H_DRIVE_C.png {"return": {}}
+run c5-off-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-3b/method/../screendumps/c5-off-rpi4-desk3a-serial.log
+desk3a c5-off done

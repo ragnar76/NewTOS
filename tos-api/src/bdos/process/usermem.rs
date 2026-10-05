@@ -18,8 +18,10 @@
 //! FreeMiNT protection mode ([`tos_types::ProtMode`],
 //! `references/freemint/sys/mint/mem.h:130-134`) and returns the physical
 //! address as the pointer. Pool memory needs nothing: it is mapped already.
-//! Stage 1 has no per-process rights (FreeMiNT with `no_mem_prot`), so a
-//! publication is visible to every process, like the pools.
+//! A publication is the same for every process (it lives in the shared
+//! tables); pool memory is reached with the rights of each process since
+//! ARCH03 stage 3b ([`super::memprot`]), and a pool block that is published
+//! takes the publication's mode.
 //!
 //! [`resolve_kva`] is the reverse path, for kernel code that must follow a
 //! user pointer outside its owner's trap (the AES drawing a tree or a window
@@ -227,8 +229,18 @@ pub unsafe fn expose_attr(
     let pa = super::kva_to_user_va(kernel_va as u64);
     // Pool memory (the AES screen buffer `WF_SCREEN` hands out, for one) is
     // in every process's tables already, read/write — a publication would
-    // only try to remap it.
+    // only try to remap it. With memory protection on (ARCH03 3b) the block
+    // it lies in takes the publication's mode instead, so everybody gets the
+    // access `prot` grants (FreeMiNT `mark_region`).
     if attr == MemAttr::Cacheable && in_pool(pa, len as u64) {
+        if super::memprot::enabled() {
+            // SAFETY: caller's lock contract.
+            unsafe {
+                if let Some((start, _)) = super::memprot::block_containing(pa) {
+                    super::memprot::set_mode(start, prot);
+                }
+            }
+        }
         return Some(pa);
     }
 

@@ -46,6 +46,7 @@ use tos_types::BasePage;
 pub mod arena;
 pub mod elf;
 pub mod loader;
+pub mod memprot;
 pub mod mmu;
 pub mod pterm;
 pub mod pexec;
@@ -1099,6 +1100,11 @@ pub fn free_slot(idx: usize) {
     if idx >= MAX_PROCESSES {
         return;
     }
+    // Its private page tables and its inherited/temporary rights go first,
+    // while the slot still names its root (ARCH03 3b).
+    // SAFETY: slot release runs under the BDOS giant lock (every caller is
+    // a trap or boot path).
+    unsafe { memprot::on_slot_released(idx) };
     let p = &PROCESS_TABLE[idx];
     p.abi.store(Abi::Lp64 as u8, Ordering::Release);
     p.basepage_kva.store(ptr::null_mut(), Ordering::Release);

@@ -262,6 +262,17 @@ The answer is the pool block's own address, valid in every process (see
 answer, no longer bounded by a per-process window (ADR-021, superseded by
 ARCH03 stage 1).
 
+
+### NewTOS: rights per process (ARCH03 stage 3b)
+
+With memory protection on (default; `memprot=off` switches it off) a
+`Malloc` block takes the protection mode of the caller's `PRGFLAGS` (the
+`Mxalloc` nibble `0`, FreeMiNT `sys/dosmem.c:213-216`) — `PROT_P` for
+`PF_STANDARD`: only the caller (and the `Pexec(4)` threads of its memory
+space, and the children it starts afterwards unless `memprot=strict`) can
+reach it. The length is rounded up to a whole 4-KiB page (E16, see
+`44-mxalloc.md`).
+
 ---
 
 ## Pi / BCM2711 binding

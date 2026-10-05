@@ -87,30 +87,31 @@ pub(crate) fn cur_dta() -> u64 {
     unsafe { (*bp).p_xdta as u32 as u64 }
 }
 
-/// [`cur_dta`] and the address space the DTA lives in (ARCH03 3a): a
-/// process's `p_xdta` is a user address of that process — read and written
-/// with its rights ([`Space::User`]), whoever issues the call — and the
-/// [`KERNEL_DTA`] of the process-less EL1 desktop is a kernel address
-/// ([`Space::Kernel`]).
-pub(crate) fn cur_dta_in() -> (u64, Space) {
-    if crate::bdos::process::current_kva().is_null() {
-        (KERNEL_DTA.load(Ordering::Relaxed), Space::Kernel)
-    } else {
-        (cur_dta(), Space::User)
+/// The current DTA of a caller in `space` and the address space it lives in
+/// (ARCH03 3a/3b): a program's (`Space::User`) is its process's `p_xdta`, a
+/// user address read and written with its rights; a kernel caller's
+/// (`Space::Kernel` — the in-kernel desktop, the built-in shell) is the
+/// [`KERNEL_DTA`] cell, a kernel address — also while some process is the
+/// running one, so a kernel DTA never lands in a program's `p_xdta`.
+pub(crate) fn cur_dta_in(space: Space) -> (u64, Space) {
+    match space {
+        Space::Kernel => (KERNEL_DTA.load(Ordering::Relaxed), Space::Kernel),
+        Space::User => (cur_dta(), Space::User),
     }
 }
 
-/// Store the current DTA pointer — EmuTOS `run->p_xdta = addr`
-/// (`bdos/fsmain.c:405`).
+/// Store the current DTA pointer of a caller in `space` — EmuTOS
+/// `run->p_xdta = addr` (`bdos/fsmain.c:405`) for a program.
 ///
-/// `p_xdta` is the on-wire basepage's 32-bit LONG, so the stored value is the
-/// low 32 bits of `addr`. Every process-originated DTA is a user address below
-/// `0x8000_0000` (ARCH03 plan invariant I2), well inside 32 bits; a kernel
-/// DTA can only arrive from the process-less caller above, which takes the
-/// [`KERNEL_DTA`] branch instead.
-fn set_cur_dta(addr: u64) {
+/// `p_xdta` is the on-wire basepage's 32-bit LONG; every program's DTA is a
+/// user address below `0x8000_0000` (ARCH03 plan invariant I2), well inside
+/// 32 bits. A kernel caller's DTA is a high-half kernel address that does not
+/// fit: it goes to [`KERNEL_DTA`] whether or not a process is running —
+/// before ARCH03 3b an EL1 caller with a process current had it cut to 32
+/// bits into that process's `p_xdta`.
+fn set_cur_dta(addr: u64, space: Space) {
     let bp = crate::bdos::process::current_kva();
-    if bp.is_null() {
+    if space == Space::Kernel || bp.is_null() {
         KERNEL_DTA.store(addr, Ordering::Relaxed);
         return;
     }
@@ -124,9 +125,10 @@ fn set_cur_dta(addr: u64) {
 /// **running process's** descriptor, so a child started with `Pexec` cannot
 /// disturb its parent's DTA: the child has its own `p_xdta` (defaulted to its
 /// `p_cmdlin`, `bdos/proc.c:375`), and when it terminates `run` reverts to the
-/// parent, whose field was never touched.
+/// parent, whose field was never touched. A kernel caller keeps its own
+/// ([`set_cur_dta`]).
 pub fn fsetdta(args: &TrapArgs) -> Long {
-    set_cur_dta(args.arg_u64(0));
+    set_cur_dta(args.arg_u64(0), args.space);
     E_OK
 }
 
@@ -137,8 +139,8 @@ pub fn fsetdta(args: &TrapArgs) -> Long {
 /// the same 32-bit `p_xdta` field. A DTA set by the process-less EL1 caller is
 /// a high-half kernel VA that a `Long` return cannot carry — that caller keeps
 /// its own pointer and never reads it back (see [`KERNEL_DTA`]).
-pub fn fgetdta(_args: &TrapArgs) -> Long {
-    cur_dta() as Long
+pub fn fgetdta(args: &TrapArgs) -> Long {
+    cur_dta_in(args.space).0 as Long
 }
 
 /// Expand a `name.ext` pattern (with `*`/`?`) into the 11-byte FAT
@@ -460,7 +462,7 @@ fn get_state(space: Space, dta: u64) -> Result<(u32, u32, u8, u8, [u8; 11]), Use
 
 /// `Fsfirst` (0x4E) — begin a directory search, filling the current DTA.
 pub fn fsfirst(args: &TrapArgs) -> Long {
-    let (dta, space) = cur_dta_in();
+    let (dta, space) = cur_dta_in(args.space);
     if dta == 0 {
         return EFILNF;
     }
@@ -509,8 +511,8 @@ pub fn fsfirst(args: &TrapArgs) -> Long {
 }
 
 /// `Fsnext` (0x4F) — return the next match into the current DTA.
-pub fn fsnext(_args: &TrapArgs) -> Long {
-    let (dta, space) = cur_dta_in();
+pub fn fsnext(args: &TrapArgs) -> Long {
+    let (dta, space) = cur_dta_in(args.space);
     if dta == 0 {
         return ENMFIL;
     }

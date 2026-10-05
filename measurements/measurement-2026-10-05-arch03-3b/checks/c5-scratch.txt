@@ -1,0 +1,4 @@
+built kernel8-crash-c5.img
+built kernel-virt-crash-c5.img
+built kernel8-keys-c5.img
+built kernel-virt-st-c5.img

@@ -345,6 +345,15 @@ caller's `char **` in `addr_in[0]` — **not** through `addr_out`.
 > `addr_in[0]` (`SH_PATH`, a `char **`)**, **search string = `addr_in[1]`
 > (`SH_SRCH`)** (`aesdefs.h:611-612`, `gemsuper.c:396`). See D-054.
 
+**NewTOS (ARCH03 3b):** the AES environment is a kernel page of its own
+(`tos-api/src/aes/shell.rs` `AES_ENV`); for an EL0 caller it is published
+read-only to every process (`usermem::expose`, `PROT_PR`, ADR-023) and
+`*value` is the **published** user address, which the program can read —
+EmuTOS hands out a pointer into `ad_envrn`, readable on its flat machine.
+An in-kernel caller gets the kernel address. (Before 3b an EL0 program got
+the kernel address and crashed on reading it; probe
+`measurements/measurement-2026-10-05-arch03-3b/method/tests/envrn.c`.)
+
 ### `shel_rdef` (126) / `shel_wdef` (127) — `sh_rdef` / `sh_wdef` `#if CONF_WITH_PCGEM`
 
 **Source:** `gemsuper.c:399-404` → `aes/gemshlib.c:491-510`. **PC-GEM

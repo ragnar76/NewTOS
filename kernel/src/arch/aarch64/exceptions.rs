@@ -208,6 +208,16 @@ pub fn probe_read32(va: u64) -> Option<u32> {
 /// `frame.gpr[0]` so the assembly stub returns the value in `x0`.
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
+    sync_handler(frame);
+    // ARCH03 3b: whatever the call changed in memory ownership is in the
+    // page tables before the caller (or whoever runs next) continues. A
+    // no-op with protection off or nothing pending.
+    // SAFETY: trap context, single CPU, BDOS giant lock implicit.
+    unsafe { tos_api::bdos::process::memprot::sync() };
+}
+
+/// The body of [`rust_sync_handler`].
+fn sync_handler(frame: &mut ExceptionFrame) {
     let ec = esr_ec(frame.esr);
     if ec != EC_SVC_AARCH64 && ec != EC_SVC_FROM_EL1 {
         // Fault-safe user access (ARCH03 0c, `tos_api::uaccess`): a same-EL
@@ -1316,6 +1326,10 @@ fn kill_crashed_program(frame: &mut ExceptionFrame) -> bool {
         regs: &regs,
         usp: frame.sp_el0,
         program: super::crash::current_program(),
+        violation: crash::mem_violation(
+            frame.esr,
+            far.and_then(tos_api::bdos::process::memprot::region_kind),
+        ),
     };
     super::crash::report_and_wait(&report, slot);
     kill_program(frame);
@@ -1354,6 +1368,12 @@ fn uaccess_fault_tail(frame: &mut ExceptionFrame, rec: &tos_api::uaccess::FaultR
         regs: &rec.regs,
         usp: frame.sp_el0,
         program: super::crash::current_program(),
+        violation: crash::mem_violation(
+            rec.esr,
+            crash::far_valid(rec.esr)
+                .then_some(rec.far)
+                .and_then(tos_api::bdos::process::memprot::region_kind),
+        ),
     };
     super::crash::report_and_wait(&report, slot);
     kill_program(frame);

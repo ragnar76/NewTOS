@@ -32,6 +32,13 @@ pub struct PoolConfig {
 impl PoolConfig {
     /// 16-byte alignment, the NewTOS default for both pools.
     pub const AARCH64: Self = Self { align_mask: 15 };
+
+    /// The grain in force: [`Self::AARCH64`], or one 4-KiB page while memory
+    /// protection is on (ARCH03 3b, E16 — FreeMiNT rounds regions to its
+    /// `QUANTUM`, `sys/mint/mem.h:152`, so no page has two owners).
+    pub fn current() -> Self {
+        Self { align_mask: crate::bdos::process::memprot::pool_align_mask() }
+    }
 }
 
 /// First-fit allocator — port of `MD *ffit(long amount, MPB *mp)` in

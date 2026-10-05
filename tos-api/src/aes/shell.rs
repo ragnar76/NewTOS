@@ -148,7 +148,6 @@ struct State {
     s_tail: UnsafeCell<[u8; PATHBUF]>,   // ad_stail — its command tail
     sh_apdir: UnsafeCell<[u8; PATHBUF]>, // gemshlib.c:86-87
     buf: UnsafeCell<[u8; SHELLBUF]>,     // shel_get/shel_put settings blob
-    env: UnsafeCell<[u8; PATHBUF]>,      // environment (empty = default)
     // ── the pending resolution-change request (gemshlib.c:92-99) ─────────
     // `gl_changerez`: 0 = no change, 1 = ST/TT family, 2 = Falcon family;
     // `gl_nextrez`: the mode word for `Setscreen` (with the caller's `+2`
@@ -163,6 +162,17 @@ struct State {
 // SAFETY: single boot CPU only touches the AES.
 unsafe impl Sync for State {}
 
+/// The AES environment (EmuTOS `ad_envrn`, `aes/geminit.c:122`) that
+/// `shel_envrn` searches and points into — empty = [`DEFAULT_ENV`]. It has a
+/// page of its own because the pointer `shel_envrn` hands an EL0 program
+/// must be readable there: the page is published read-only to every process
+/// (`usermem::expose`, `PROT_PR`; ADR-023), so it may hold nothing else.
+#[repr(C, align(4096))]
+struct EnvPage(UnsafeCell<[u8; 4096]>);
+// SAFETY: single boot CPU only touches the AES.
+unsafe impl Sync for EnvPage {}
+static AES_ENV: EnvPage = EnvPage(UnsafeCell::new([0; 4096]));
+
 static S: State = State {
     scrap: UnsafeCell::new([0; PATHBUF]),
     sh_doexec: UnsafeCell::new(SHW_EXEC),
@@ -175,7 +185,6 @@ static S: State = State {
     s_tail: UnsafeCell::new([0; PATHBUF]),
     sh_apdir: UnsafeCell::new([0; PATHBUF]),
     buf: UnsafeCell::new([0; SHELLBUF]),
-    env: UnsafeCell::new([0; PATHBUF]),
     gl_changerez: UnsafeCell::new(0),
     gl_nextrez: UnsafeCell::new(0),
 };
@@ -827,7 +836,7 @@ pub(super) fn reinit() {
         (*S.s_tail.get()).fill(0);
         (*S.sh_apdir.get()).fill(0);
         (*S.buf.get()).fill(0);
-        (*S.env.get()).fill(0);
+        (*AES_ENV.0.get()).fill(0);
         // `gl_changerez = FALSE` (geminit.c:806).
         *S.gl_changerez.get() = 0;
         *S.gl_nextrez.get() = 0;
@@ -1112,10 +1121,43 @@ pub fn shel_envrn(pb: &Aespb) {
     let nlen = clen(&needle);
 
     // SAFETY: single-CPU AES; env is a stable static blob.
-    let env = unsafe { &mut *S.env.get() };
+    let env = unsafe { &mut *AES_ENV.0.get() };
     if env[0] == 0 {
         env[..DEFAULT_ENV.len()].copy_from_slice(DEFAULT_ENV);
     }
+    // Where the caller can read the environment: a kernel caller (the
+    // in-kernel desktop) at the kernel address; an EL0 program at the
+    // address of the page published read-only (EmuTOS hands out a pointer
+    // into `ad_envrn`, which every program of its flat machine can read —
+    // ARCH03 3b; before, a kernel address went into an EL0 slot).
+    let base: u64 = match pb.space() {
+        crate::uaccess::Space::Kernel => env.as_ptr() as u64,
+        crate::uaccess::Space::User => {
+            let slot = crate::bdos::process::slot_for(crate::bdos::process::current());
+            // SAFETY: the page is a `'static`, page-aligned kernel object
+            // holding only the environment; single CPU under the AES trap.
+            let published = slot.and_then(|sl| unsafe {
+                crate::bdos::process::usermem::expose(
+                    sl,
+                    env.as_ptr(),
+                    env.len(),
+                    tos_types::ProtMode::Pr,
+                )
+            });
+            match published {
+                Some(va) => va,
+                // No process, or the page cannot be published: nothing the
+                // caller could read — `*ppath = NULL`, the not-found answer.
+                None => {
+                    if pb.abi.write_ptr_in(pb.space(), pslot, 0, 0).is_err() {
+                        return;
+                    }
+                    pb.set_ret(1);
+                    return;
+                }
+            }
+        }
+    };
     // The environment is a sequence of NUL-terminated "NAME=VALUE" strings.
     let mut i = 0;
     while i < env.len() && env[i] != 0 {
@@ -1125,9 +1167,8 @@ pub fn shel_envrn(pb: &Aespb) {
         }
         let entry = &env[start..i];
         if nlen > 0 && entry.len() >= nlen && &entry[..nlen] == &needle[..nlen] {
-            // Point at the value (just past "NAME=").
-            // SAFETY: env outlives the call; the pointer is into it.
-            let value = unsafe { env.as_ptr().add(start + nlen) } as u64;
+            // Point at the value (just past "NAME="), as the caller sees it.
+            let value = base + (start + nlen) as u64;
             // pslot is the caller's non-null char* slot; store the value
             // pointer at the caller's pointer width so an ILP32 4-byte slot
             // is not overrun (LP64 stores the full 8 bytes) — in the caller's

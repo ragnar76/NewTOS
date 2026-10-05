@@ -191,3 +191,13 @@ PHASE-05: NewTOS may add a debug-build assertion that `addr` is in the calling
 process's writable range (no hard ABI change — release builds keep the "trust
 the caller" behaviour). The command-line-buffer default must be preserved for
 m68k binaries; native source ports should always call `Fsetdta` explicitly.
+
+**Kernel callers keep their own DTA (ARCH03 3b).** EmuTOS stores into
+`run->p_xdta` (`bdos/fsmain.c:403-405`); every EmuTOS caller is a process.
+NewTOS also has in-kernel (EL1) callers — the built-in desktop and shell —
+whose DTA is a high-half kernel address that the 32-bit `p_xdta` cannot hold.
+Their `Fsetdta`/`Fgetdta`/`Fsfirst`/`Fsnext` use a kernel DTA cell, chosen by
+the caller's space (`TrapArgs::space`), **also while a process is the running
+one**; before 3b such a call cut the kernel address to 32 bits into that
+process's `p_xdta`. A program's DTA is unchanged. Host test
+`tos-api/tests/arch03_3b_fsetdta.rs`.

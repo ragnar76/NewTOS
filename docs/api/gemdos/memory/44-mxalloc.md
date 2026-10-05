@@ -273,8 +273,8 @@ without committing. **Divergence to decide:** whether an unknown masked mode
 returns `EINVFN` (cleaner) or `NULL` (EmuTOS) — the earlier draft claimed
 `EINVFN`; EmuTOS returns `NULL`, so `EINVFN` would be a *deliberate* documented
 divergence, not the extracted contract. **Protection bits** (Atari bits 4+)
-remain ignored until Phase 06 introduces process privilege; recorded as a known
-divergence from Atari docs (EmuTOS already ignores them).
+are honoured since ARCH03 stage 3b with memory protection on (see "rights per
+process" below); with `memprot=off` they are ignored, as by EmuTOS.
 
 ### NewTOS: one shared address space (ARCH03 stage 1)
 
@@ -292,8 +292,33 @@ Host tests: `tos-api/tests/arch03_shared_space.rs`.
 Until stage 1 (ADR-021) an EL0 caller got the block mapped into a per-process
 "heap window" at an address ≠ the pool address, with a one-page alignment
 slack, a 32-entry block table and a `-1` answer bounded by the remaining
-window; all of that is gone. **Protection bits** (`mode` bits 4+) remain
-ignored until stage 2 (decoded) / stage 3 (enforced), plan Frage 8.
+window; all of that is gone. **Protection bits** (`mode` bits 4+): decoded
+and enforced since stage 3b (next section), plan Frage 8.
+
+
+### NewTOS: rights per process (ARCH03 stage 3b)
+
+With memory protection on (the default; boot argument `memprot=off` switches
+it off, FreeMiNT `MEM_PROT=NO`, `sys/bootmenu.c:207-219`) the protection
+nibble of `mode` is **honoured**, with FreeMiNT's encoding (`sys/dosmem.c:
+209-221`, `sys/mint/mem.h:118`): `(mode & 0xF0) >> 4` is `0` = the caller's
+`PRGFLAGS` mode, otherwise one more than the `PROT_*` value — `0x10`
+`PROT_P` (owner only), `0x20` `PROT_G` (everybody), `0x30` `PROT_S` (owner;
+no program else), `0x40` `PROT_PR` (owner read/write, everybody read),
+`0x50` `PROT_I` (nobody); above → `PROT_P`. The pool is still selected by
+bits 0–1 only. A block a **kernel** caller allocates without a nibble is
+`PROT_S` (FreeMiNT `sys/memory.c:150-159`). Bit `0x08` and `F_KEEP` are not
+evaluated (FreeMiNT has `0x08` disabled; `F_KEEP` is an open item).
+
+**Observable (sanctioned FreeMiNT deviation, plan E16):** with protection on
+both pools hand out whole 4-KiB pages — the length is rounded up to a page
+and every block starts on a page (FreeMiNT rounds to its `QUANTUM`,
+`sys/mint/mem.h:152`), so `Malloc(-1)` and the MDs `Getmpb` shows are page
+multiples. With `memprot=off` the 16-byte grain of stage 3a applies.
+
+Implementation: `tos-api/src/bdos/mem/traps.rs` `mxalloc`,
+`tos-api/src/bdos/process/memprot.rs`. Host tests:
+`tos-api/tests/arch03_3b_memprot.rs`; QEMU probe `sdk/examples/mprot3b.c`.
 
 ---
 
@@ -359,7 +384,7 @@ if it lies in the cached ST-RAM range, else `pmdalt`.
 - **Alignment differs.** NewTOS uses a **16-byte** grain for both pools
   (`PoolConfig::AARCH64`) vs. EmuTOS's 2/4-byte ST-RAM and 4-byte alt-RAM.
   Unobservable except for block sizes rounded up more.
-- **Protection bits (Atari 4+) ignored** — as EmuTOS; process privilege lands
-  in Phase 06.
+- **Protection bits (Atari 4+)** — ignored as by EmuTOS with `memprot=off`;
+  honoured with FreeMiNT's encoding since ARCH03 3b (protection on).
 - **≥ 2 GiB real-Pi-4 DRAM not fully managed** — capped to the `i32` ABI window
   pending Phase-05 address translation.

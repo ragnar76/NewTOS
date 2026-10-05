@@ -1,0 +1,4111 @@
+diff --git a/TASK/MEM04.md b/TASK/MEM04.md
+index fe81c96..910ffe5 100644
+--- a/TASK/MEM04.md
++++ b/TASK/MEM04.md
+@@ -1,6 +1,6 @@
+ # MEM04 — `usermem::free` laesst die Abbildung eines freigegebenen Blocks stehen
+ 
+-Status: **OFFEN** · Prioritaet: **P2** · Typ: Isolationsluecke — Nebenfund aus [ARCH03](ARCH03.md) Schritt 2
++Status: **ERLEDIGT mit ARCH03 Stufe 3b (2026-10-05) — bei eingeschaltetem Speicherschutz; Tester-Abnahme und Pi offen** · Prioritaet: **P2** · Typ: Isolationsluecke — Nebenfund aus [ARCH03](ARCH03.md) Schritt 2
+ 
+ Abhaengigkeiten: — (wird mit ARCH03 Stufe 1/3 ohnehin neu gebaut; bis dahin eigenstaendig)
+ 
+@@ -18,3 +18,31 @@ Zuerst gegen den Quelltext belegen (Lead hat den Fund noch nicht selbst
+ nachgelesen), Wirkung zeigen (Test: Prozess A gibt frei, B bekommt den Block,
+ A schreibt), dann Abbildung beim Freigeben entfernen (TLB-Pflege nach
+ QUIRK-001 beachten) oder bewusst bis ARCH03 zurueckstellen.
++
++## Abschluss (ARCH03 Stufe 3b, 2026-10-05)
++
++Die Stelle `usermem::free` gibt es seit Stufe 1 nicht mehr (Fenstermodell
++zurückgebaut); seit Stufe 1 waren beide Pools für jeden Prozess dauerhaft
++abgebildet, die Lücke bestand also in allgemeinerer Form weiter: nach `Mfree`
++konnte **jeder** Prozess in den freigegebenen Block schreiben.
++
++Mit Stufe 3b (Speicherschutz an, Standard) wird jeder an den Pool
++zurückgegebene Block — `Mfree`, `Mshrink`-Rest, `Pterm`-Ernte, Rest eines
++`Ptermres` — **vor der Rückkehr** für alle Prozesse ungültig gemacht, auch
++für den bisherigen Besitzer, mit TLB-Invalidierung (`memprot::on_freed`,
++FreeMiNT `free_region` → `mark_region(PROT_I)`, `sys/memory.c:932`;
++Plan-Invariante I8). Freier Poolspeicher ist ab Boot für niemanden
++abgebildet (`mmu::map_pools`).
++
++Belege: Hosttest `tos-api/tests/arch03_3b_memprot.rs`
++`malloc_takes_the_prgflags_mode_and_free_memory_is_nobodys` (A gibt frei,
++A sieht den Block nicht mehr, B bekommt dieselben Seiten, nur B sieht sie);
++QEMU-Sonde `sdk/examples/mprot3b.c` Fall `f` (Kind: `Malloc`, schreiben,
++`Mfree`, wieder schreiben → Absturzbericht `Memory violation: free memory,
++write (translation fault, level 3)`, Elternteil erhält `0x0000FFFF`) auf
++`raspi4b` und `virt`, Messung
++`measurements/measurement-2026-10-05-arch03-3b/`.
++
++**Mit `memprot=off`** (Bootargument) bleibt das Verhalten von Stufe 3a: die
++Pools sind für alle abgebildet, ein Schreiben nach `Mfree` geht durch (wie
++EmuTOS). Quittung: `TASK/ARCH03-3b-STATUS-DONE.MD`.
+diff --git a/docs/COMPATIBILITY.md b/docs/COMPATIBILITY.md
+index ddbf32a..448d05f 100644
+--- a/docs/COMPATIBILITY.md
++++ b/docs/COMPATIBILITY.md
+@@ -679,8 +679,8 @@ decisions E1/E3/E9 as recommended). Like EmuTOS — and FreeMiNT with memory
+ protection off — every user address means the same in every process: it is
+ its own physical address (both pools, published kernel structures, the
+ screen), `Malloc` returns `m_start`, `Pexec(PE_LOAD)` returns a real PD
+-pointer, `p_parent`/`p_env` are readable by anybody, and no process is
+-protected from another (that is stage 3). **Observable differences:**
++pointer, `p_parent`/`p_env` are readable by anybody, and — with memory
++protection off — no process is protected from another (stage 3b below). **Observable differences:**
+ (1) page 0 `[0, 0x1000)` is per process — the system variables, the OSHEADER
+ and its `os_run` cell (`0x5B8`, holding the process's own PD), the cookie-jar
+ mirror, the trampolines, the `Keytbl` area and the KEYS02 table — so a pointer
+@@ -729,6 +729,29 @@ by a sentinel (EmuTOS: on no list). Specs: `docs/api/gemdos/memory/
+ `31-ptermres.md`; tests `tos-api/tests/arch03_region_owners.rs`,
+ `arch03_pexec_567_ptermres.rs`.
+ 
++**Memory protection per process (FreeMiNT `PROT_P/G/S/PR/I`); page grain**
++(ARCH03 stage 3b, plan §3.2–§3.4, decisions E5/E10/E16 as recommended).
++EmuTOS has no memory protection; FreeMiNT's model is adopted
++(`sys/arch/mprot030.c`, ADR-023): every pool block has a protection mode
++(`Mxalloc` nibble with FreeMiNT's +1 encoding, else the program's `PRGFLAGS`;
++the kernel's own blocks `PROT_S`), and each process reaches a block with
++owner rights or non-owner rights. Default on; the boot argument
++`memprot=off` gives exactly stage 3a (FreeMiNT `MEM_PROT=NO`),
++`memprot=strict` FreeMiNT's `MPF_STRICT`. **Observable differences:**
++(1) a program touching another process's `PROT_P`/`PROT_S` memory, writing
++another's `PROT_PR` memory, or touching memory after `Mfree` ends with the
++crash report (+ a `Memory violation:` line) — EmuTOS lets it; (2) a
++`Pexec` 0/6 child keeps access to what its parent's space owned at its start
++(not strict), a `Pexec` 4 child shares its caller's space, resident
++(`Ptermres`) private memory becomes `PROT_G` — FreeMiNT's rules; (3) the
++pools hand out whole 4-KiB pages: lengths are rounded up to a page and
++every block starts on a page (FreeMiNT `QUANTUM`, `sys/mint/mem.h:152`), so
++`Malloc(-1)`, `Getmpb` and `Mshrink`'s effective size show page multiples
++(16 bytes with `memprot=off`). Specs: `docs/api/gemdos/memory/44-mxalloc.md`
++(rights per process), `48-malloc.md`, `49-mfree.md`, `4a-mshrink.md`,
++`docs/api/bios/_exception-crash.md` (memory protection); tests
++`tos-api/tests/arch03_3b_memprot.rs`, probe `sdk/examples/mprot3b.c`.
++
+ ## EmuTOS is the reference, not the template
+ 
+ CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that
+diff --git a/docs/api/aes/scrap-shell.md b/docs/api/aes/scrap-shell.md
+index e5a41a1..7e27b2d 100644
+--- a/docs/api/aes/scrap-shell.md
++++ b/docs/api/aes/scrap-shell.md
+@@ -345,6 +345,15 @@ caller's `char **` in `addr_in[0]` — **not** through `addr_out`.
+ > `addr_in[0]` (`SH_PATH`, a `char **`)**, **search string = `addr_in[1]`
+ > (`SH_SRCH`)** (`aesdefs.h:611-612`, `gemsuper.c:396`). See D-054.
+ 
++**NewTOS (ARCH03 3b):** the AES environment is a kernel page of its own
++(`tos-api/src/aes/shell.rs` `AES_ENV`); for an EL0 caller it is published
++read-only to every process (`usermem::expose`, `PROT_PR`, ADR-023) and
++`*value` is the **published** user address, which the program can read —
++EmuTOS hands out a pointer into `ad_envrn`, readable on its flat machine.
++An in-kernel caller gets the kernel address. (Before 3b an EL0 program got
++the kernel address and crashed on reading it; probe
++`measurements/measurement-2026-10-05-arch03-3b/method/tests/envrn.c`.)
++
+ ### `shel_rdef` (126) / `shel_wdef` (127) — `sh_rdef` / `sh_wdef` `#if CONF_WITH_PCGEM`
+ 
+ **Source:** `gemsuper.c:399-404` → `aes/gemshlib.c:491-510`. **PC-GEM
+diff --git a/docs/api/bios/_exception-crash.md b/docs/api/bios/_exception-crash.md
+index 29a8c7c..592e414 100644
+--- a/docs/api/bios/_exception-crash.md
++++ b/docs/api/bios/_exception-crash.md
+@@ -191,6 +191,54 @@ fault can be charged to a process that is not running — and a page-0 cell
+ the kernel reaches through the process's own page-0 alias (`Setexc` sysvar
+ peek/poke, `conterm`) cannot fault at all.
+ 
++### Memory protection (ARCH03 stage 3b)
++
++With per-process rights on (the default; boot argument `memprot=off`
++switches them off), an access a program may not make — another process's
++`PROT_P`/`PROT_S` memory, a write to another process's `PROT_PR` memory,
++freed pool memory — is an ordinary bus error of the program (`EC 0x24/0x20`,
++or `EC 0x25` when the kernel touches the memory with the caller's rights in
++a system call) and ends it exactly as above. The report gets **one extra
++line** right after the `addr=` line, FreeMiNT's classification of the
++address (`report_buserr`, `sys/arch/mprot.x:71-150`: "MEMORY VIOLATION",
++type, read/write) plus the MMU's reason:
++
++```text
++Memory violation: <type> memory, <read|write|execute> (<translation|permission|access flag> fault, level <0-3>)
++```
++
++* `<type>` comes from the protection bookkeeping, not from the MMU — a
++  translation fault cannot tell "protected" from "unmapped" (plan §3.3, V0a
++  §6): `private` (`PROT_P`), `super` (`PROT_S`), `readable` (`PROT_PR`),
++  `free` (free pool memory or `PROT_I`, FreeMiNT `berr_msg[PROT_I]`),
++  `hardware` (outside the pools, page 0, or a `PROT_G` block — no
++  protection fault possible there; FreeMiNT turns `global` into `hardware`,
++  `mprot.x:103-107`).
++* `<fault>` is `ESR_EL1.DFSC/IFSC` (`0b0001LL` translation, `0b0010LL`
++  access flag, `0b0011LL` permission, LL = level; ARM ARM D24-8672/8673,
++  D24-8683…8685). Non-owner `PROT_P/S/I` pages are **invalid**, so they show
++  as translation faults; a write to `PROT_PR` memory of another process is
++  the permission fault.
++* `<access>`: `ESR_EL1.WnR` (D24-8682) for data, `execute` for an
++  instruction abort.
++
++The line is only printed with protection on and only for translation,
++access-flag and permission faults (FreeMiNT reports nothing with
++`no_mem_prot`, `mprot.x:96-97`). With `memprot=off` the report is the
++stage-0c/3a report unchanged. Example (a child writing its parent's private
++block under `memprot=strict`):
++
++```text
++Panic: Bus Error
++esr=92000047
++addr=0000000001c36000 sr=00000000 pc=…
++Memory violation: private memory, write (translation fault, level 3)
++```
++
++Source: `tos_api::bios::crash::mem_violation`, `tos_api::bdos::process::
++memprot::region_kind`; probe `sdk/examples/mprot3b.c` / `mpkid.c`
++(`measurements/measurement-2026-10-05-arch03-3b`).
++
+ ### Not done / open
+ 
+ - **Post-mortem area `0x380`** (`proc_lives` …) is not written: the m68k
+@@ -198,8 +246,9 @@ peek/poke, `conterm`) cannot fault at all.
+   Open — no known consumer.
+ - **Escapes `ESC f`/`ESC v`** before the report are not emitted: the screen
+   console does not parse escape sequences (`kernel/src/fbcon.rs`).
+-- **FreeMiNT "MEMORY VIOLATION" alert** (E11 recommendation) is not shown;
+-  0c implements the EmuTOS text report. Open decision for the lead.
++- **FreeMiNT "MEMORY VIOLATION" alert** is not shown (E11: EmuTOS report,
++  no FreeMiNT alert); since stage 3b the report carries FreeMiNT's
++  classification as one text line (section above).
+ - A program that crashes again inside its own `etv_term` handler re-enters
+   `Pterm(-1)` → `etv_term`; EmuTOS would loop, NewTOS stops at the upcall
+   nesting limit with `Pterm(-998)` (existing `deliver_upcall` rule).
+diff --git a/docs/api/gemdos/dta/1a-fsetdta.md b/docs/api/gemdos/dta/1a-fsetdta.md
+index 5b811b7..06a83a7 100644
+--- a/docs/api/gemdos/dta/1a-fsetdta.md
++++ b/docs/api/gemdos/dta/1a-fsetdta.md
+@@ -191,3 +191,13 @@ PHASE-05: NewTOS may add a debug-build assertion that `addr` is in the calling
+ process's writable range (no hard ABI change — release builds keep the "trust
+ the caller" behaviour). The command-line-buffer default must be preserved for
+ m68k binaries; native source ports should always call `Fsetdta` explicitly.
++
++**Kernel callers keep their own DTA (ARCH03 3b).** EmuTOS stores into
++`run->p_xdta` (`bdos/fsmain.c:403-405`); every EmuTOS caller is a process.
++NewTOS also has in-kernel (EL1) callers — the built-in desktop and shell —
++whose DTA is a high-half kernel address that the 32-bit `p_xdta` cannot hold.
++Their `Fsetdta`/`Fgetdta`/`Fsfirst`/`Fsnext` use a kernel DTA cell, chosen by
++the caller's space (`TrapArgs::space`), **also while a process is the running
++one**; before 3b such a call cut the kernel address to 32 bits into that
++process's `p_xdta`. A program's DTA is unchanged. Host test
++`tos-api/tests/arch03_3b_fsetdta.rs`.
+diff --git a/docs/api/gemdos/memory/44-mxalloc.md b/docs/api/gemdos/memory/44-mxalloc.md
+index a50a558..f62504f 100644
+--- a/docs/api/gemdos/memory/44-mxalloc.md
++++ b/docs/api/gemdos/memory/44-mxalloc.md
+@@ -273,8 +273,8 @@ without committing. **Divergence to decide:** whether an unknown masked mode
+ returns `EINVFN` (cleaner) or `NULL` (EmuTOS) — the earlier draft claimed
+ `EINVFN`; EmuTOS returns `NULL`, so `EINVFN` would be a *deliberate* documented
+ divergence, not the extracted contract. **Protection bits** (Atari bits 4+)
+-remain ignored until Phase 06 introduces process privilege; recorded as a known
+-divergence from Atari docs (EmuTOS already ignores them).
++are honoured since ARCH03 stage 3b with memory protection on (see "rights per
++process" below); with `memprot=off` they are ignored, as by EmuTOS.
+ 
+ ### NewTOS: one shared address space (ARCH03 stage 1)
+ 
+@@ -292,8 +292,33 @@ Host tests: `tos-api/tests/arch03_shared_space.rs`.
+ Until stage 1 (ADR-021) an EL0 caller got the block mapped into a per-process
+ "heap window" at an address ≠ the pool address, with a one-page alignment
+ slack, a 32-entry block table and a `-1` answer bounded by the remaining
+-window; all of that is gone. **Protection bits** (`mode` bits 4+) remain
+-ignored until stage 2 (decoded) / stage 3 (enforced), plan Frage 8.
++window; all of that is gone. **Protection bits** (`mode` bits 4+): decoded
++and enforced since stage 3b (next section), plan Frage 8.
++
++
++### NewTOS: rights per process (ARCH03 stage 3b)
++
++With memory protection on (the default; boot argument `memprot=off` switches
++it off, FreeMiNT `MEM_PROT=NO`, `sys/bootmenu.c:207-219`) the protection
++nibble of `mode` is **honoured**, with FreeMiNT's encoding (`sys/dosmem.c:
++209-221`, `sys/mint/mem.h:118`): `(mode & 0xF0) >> 4` is `0` = the caller's
++`PRGFLAGS` mode, otherwise one more than the `PROT_*` value — `0x10`
++`PROT_P` (owner only), `0x20` `PROT_G` (everybody), `0x30` `PROT_S` (owner;
++no program else), `0x40` `PROT_PR` (owner read/write, everybody read),
++`0x50` `PROT_I` (nobody); above → `PROT_P`. The pool is still selected by
++bits 0–1 only. A block a **kernel** caller allocates without a nibble is
++`PROT_S` (FreeMiNT `sys/memory.c:150-159`). Bit `0x08` and `F_KEEP` are not
++evaluated (FreeMiNT has `0x08` disabled; `F_KEEP` is an open item).
++
++**Observable (sanctioned FreeMiNT deviation, plan E16):** with protection on
++both pools hand out whole 4-KiB pages — the length is rounded up to a page
++and every block starts on a page (FreeMiNT rounds to its `QUANTUM`,
++`sys/mint/mem.h:152`), so `Malloc(-1)` and the MDs `Getmpb` shows are page
++multiples. With `memprot=off` the 16-byte grain of stage 3a applies.
++
++Implementation: `tos-api/src/bdos/mem/traps.rs` `mxalloc`,
++`tos-api/src/bdos/process/memprot.rs`. Host tests:
++`tos-api/tests/arch03_3b_memprot.rs`; QEMU probe `sdk/examples/mprot3b.c`.
+ 
+ ---
+ 
+@@ -359,7 +384,7 @@ if it lies in the cached ST-RAM range, else `pmdalt`.
+ - **Alignment differs.** NewTOS uses a **16-byte** grain for both pools
+   (`PoolConfig::AARCH64`) vs. EmuTOS's 2/4-byte ST-RAM and 4-byte alt-RAM.
+   Unobservable except for block sizes rounded up more.
+-- **Protection bits (Atari 4+) ignored** — as EmuTOS; process privilege lands
+-  in Phase 06.
++- **Protection bits (Atari 4+)** — ignored as by EmuTOS with `memprot=off`;
++  honoured with FreeMiNT's encoding since ARCH03 3b (protection on).
+ - **≥ 2 GiB real-Pi-4 DRAM not fully managed** — capped to the `i32` ABI window
+   pending Phase-05 address translation.
+diff --git a/docs/api/gemdos/memory/48-malloc.md b/docs/api/gemdos/memory/48-malloc.md
+index 6c5019c..62e26d0 100644
+--- a/docs/api/gemdos/memory/48-malloc.md
++++ b/docs/api/gemdos/memory/48-malloc.md
+@@ -262,6 +262,17 @@ The answer is the pool block's own address, valid in every process (see
+ answer, no longer bounded by a per-process window (ADR-021, superseded by
+ ARCH03 stage 1).
+ 
++
++### NewTOS: rights per process (ARCH03 stage 3b)
++
++With memory protection on (default; `memprot=off` switches it off) a
++`Malloc` block takes the protection mode of the caller's `PRGFLAGS` (the
++`Mxalloc` nibble `0`, FreeMiNT `sys/dosmem.c:213-216`) — `PROT_P` for
++`PF_STANDARD`: only the caller (and the `Pexec(4)` threads of its memory
++space, and the children it starts afterwards unless `memprot=strict`) can
++reach it. The length is rounded up to a whole 4-KiB page (E16, see
++`44-mxalloc.md`).
++
+ ---
+ 
+ ## Pi / BCM2711 binding
+diff --git a/docs/api/gemdos/memory/49-mfree.md b/docs/api/gemdos/memory/49-mfree.md
+index 260ee97..e504a11 100644
+--- a/docs/api/gemdos/memory/49-mfree.md
++++ b/docs/api/gemdos/memory/49-mfree.md
+@@ -387,6 +387,17 @@ instead of success; a block shared with a running child is freed only after
+ the child let go too. Correct programs free their own memory and are not
+ affected (FreeMiNT runs them the same way).
+ 
++
++### NewTOS: freed memory is nobody's (ARCH03 stage 3b, invariant I8)
++
++With memory protection on, the pages of a block that goes back to the pool
++are made invalid for **every** process — its former owners included — before
++`Mfree` returns (FreeMiNT `free_region` → `mark_region(PROT_I)`,
++`sys/memory.c:932`), with the TLB invalidated. A program that writes a block
++after freeing it ends with the crash report (`Memory violation: free memory,
++write (translation fault …)`, `docs/api/bios/_exception-crash.md`). Closes
++MEM04. With `memprot=off` the pool stays mapped for everybody (stage 3a).
++
+ ---
+ 
+ ## Pi / BCM2711 binding
+diff --git a/docs/api/gemdos/memory/4a-mshrink.md b/docs/api/gemdos/memory/4a-mshrink.md
+index 5891568..5bbc8b5 100644
+--- a/docs/api/gemdos/memory/4a-mshrink.md
++++ b/docs/api/gemdos/memory/4a-mshrink.md
+@@ -314,6 +314,15 @@ instead of success; a block shared with a running child is freed only after
+ the child let go too. Correct programs free their own memory and are not
+ affected (FreeMiNT runs them the same way).
+ 
++
++### NewTOS: page grain and the freed tail (ARCH03 stage 3b)
++
++With memory protection on, `len` is rounded up to a whole 4-KiB page instead
++of 16 bytes (plan E16, `44-mxalloc.md`), and the tail that goes back to the
++pool is made invalid for every process before `Mshrink` returns (FreeMiNT
++`shrink_region` marks it `PROT_I`, `sys/memory.c:1076,1097`; invariant I8).
++`Ptermres`' shrink of the TPA follows the same rule.
++
+ ---
+ 
+ ## Pi / BCM2711 binding
+diff --git a/docs/api/gemdos/process/31-ptermres.md b/docs/api/gemdos/process/31-ptermres.md
+index 6d07d5b..71a7fd7 100644
+--- a/docs/api/gemdos/process/31-ptermres.md
++++ b/docs/api/gemdos/process/31-ptermres.md
+@@ -314,3 +314,15 @@ FreeMiNT (plan §3.8 / Frage 16).**
+   (the upcall precedes the teardown), after it in EmuTOS (`xtermres` shrinks,
+   then `xterm` calls the handler). The handler's own code is never beyond
+   `blkln` in a correct TSR, so this is not observable for one.
++
++### Memory protection (ARCH03 stage 3b)
++
++With memory protection on, every block that only the terminating program
++owned and that was `PROT_P` becomes `PROT_G` when it is kept resident, so
++every process can call the resident code and read its data — FreeMiNT
++`sys_ptermres` (`sys/k_exit.c:320-336`: "make all of the TSR's private
++memory globally accessible"). `PROT_S`/`PROT_PR` blocks keep their mode. The
++TPA's tail beyond `blkln` (rounded up to a page, E16) goes back to the pool
++and is invalid for everybody (`4a-mshrink.md`). Host test
++`tos-api/tests/arch03_3b_memprot.rs` `resident_private_memory_becomes_global`;
++QEMU: S2ALL `TSRPAR`/`TSRUSE` (`measurements/measurement-2026-10-05-arch03-3b`).
+diff --git a/docs/api/gemdos/process/4b-pexec.md b/docs/api/gemdos/process/4b-pexec.md
+index e366aa1..16706da 100644
+--- a/docs/api/gemdos/process/4b-pexec.md
++++ b/docs/api/gemdos/process/4b-pexec.md
+@@ -649,3 +649,18 @@ PHASE-06 D4/D5 status (2026-06-16):
+   caller owns; what it allocates itself is its own (EmuTOS `run = p`) and goes
+   with its `Pterm`. When the last owner frees the basepage block of a PD that
+   was never started, the PD stops being startable (its slot is released).
++
++### Rights of the started process (ARCH03 stage 3b)
++
++With memory protection on (default; `memprot=off` switches it off): the TPA
++and the environment take the protection mode of the program's `PRGFLAGS`
++(FreeMiNT `sys/memory.c:1403-1407,1511-1513`, `sys/k_exec.c:398`). A
++`PE_GO` (4) child runs in its caller's memory space (plan E6, FreeMiNT
++`FORK_SHAREVM`): it and its caller reach each other's blocks, in either mode.
++Any other child started by a process (`PE_LOADGO`, `PE_GOTHENFREE`) keeps
++access to the blocks its parent's space owned when it started (plan E5,
++FreeMiNT without `MPF_STRICT`, `sys/k_exec.c:799-806`) — but not to what the
++parent allocates afterwards; with the boot argument `memprot=strict` it
++inherits nothing. A program the kernel starts (desktop, accessories)
++inherits nothing. Probe `sdk/examples/mprot3b.c`; host tests
++`tos-api/tests/arch03_3b_memprot.rs`.
+diff --git a/kernel/src/arch/aarch64/dtb.rs b/kernel/src/arch/aarch64/dtb.rs
+index 3127c94..b8efcda 100644
+--- a/kernel/src/arch/aarch64/dtb.rs
++++ b/kernel/src/arch/aarch64/dtb.rs
+@@ -138,6 +138,77 @@ pub unsafe fn parse_memory(dtb_phys: usize) -> Option<DtbMemory> {
+     None
+ }
+ 
++/// Copy the `/chosen/bootargs` string of the device tree into `out` and
++/// return its length (without the NUL), or `None` without a DTB, a `/chosen`
++/// node or a `bootargs` property. QEMU `virt` puts its `-append` text there
++/// (Devicetree Specification v0.4 §3.6, `/chosen` `bootargs`); the result is
++/// cut at `out.len()`.
++///
++/// # Safety
++///
++/// As [`parse_memory`].
++pub unsafe fn copy_bootargs(dtb_phys: usize, out: &mut [u8]) -> Option<usize> {
++    if dtb_phys == 0 {
++        return None;
++    }
++    let base = dtb_phys as *const u8;
++    if unsafe { read_be_u32(base, 0) } != FDT_MAGIC {
++        return None;
++    }
++    let off_dt_struct = unsafe { read_be_u32(base, 8) } as usize;
++    let off_dt_strings = unsafe { read_be_u32(base, 12) } as usize;
++    let size_dt_struct = unsafe { read_be_u32(base, 36) } as usize;
++    let strings_base = unsafe { base.add(off_dt_strings) };
++    let mut p = unsafe { base.add(off_dt_struct) };
++    let end = unsafe { p.add(size_dt_struct) };
++    let mut depth: u32 = 0;
++    let mut in_chosen = false;
++    while p < end {
++        let tok = unsafe { read_be_u32(p, 0) };
++        p = unsafe { p.add(4) };
++        match tok {
++            FDT_BEGIN_NODE => {
++                let name_len = unsafe { cstr_len(p) };
++                if depth == 1 && unsafe { cstr_eq(p, b"chosen") } {
++                    in_chosen = true;
++                }
++                p = unsafe { p.add(align_up(name_len + 1, 4)) };
++                depth += 1;
++            }
++            FDT_END_NODE => {
++                if in_chosen && depth == 2 {
++                    return None;
++                }
++                if depth == 0 {
++                    return None;
++                }
++                depth -= 1;
++            }
++            FDT_PROP => {
++                let len = unsafe { read_be_u32(p, 0) } as usize;
++                let nameoff = unsafe { read_be_u32(p, 4) } as usize;
++                p = unsafe { p.add(8) };
++                let val = p;
++                p = unsafe { p.add(align_up(len, 4)) };
++                if in_chosen
++                    && depth == 2
++                    && unsafe { cstr_eq(strings_base.add(nameoff), b"bootargs") }
++                {
++                    let n = len.min(out.len());
++                    for (i, b) in out[..n].iter_mut().enumerate() {
++                        *b = unsafe { *val.add(i) };
++                    }
++                    let text = out[..n].iter().position(|&b| b == 0).unwrap_or(n);
++                    return Some(text);
++                }
++            }
++            FDT_NOP => {}
++            _ => return None,
++        }
++    }
++    None
++}
++
+ /// PCIe host-bridge config-space (ECAM) region from the device tree.
+ #[derive(Clone, Copy)]
+ pub struct DtbPcie {
+diff --git a/kernel/src/arch/aarch64/exceptions.rs b/kernel/src/arch/aarch64/exceptions.rs
+index 6be6b5a..28d982f 100644
+--- a/kernel/src/arch/aarch64/exceptions.rs
++++ b/kernel/src/arch/aarch64/exceptions.rs
+@@ -208,6 +208,16 @@ pub fn probe_read32(va: u64) -> Option<u32> {
+ /// `frame.gpr[0]` so the assembly stub returns the value in `x0`.
+ #[unsafe(no_mangle)]
+ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
++    sync_handler(frame);
++    // ARCH03 3b: whatever the call changed in memory ownership is in the
++    // page tables before the caller (or whoever runs next) continues. A
++    // no-op with protection off or nothing pending.
++    // SAFETY: trap context, single CPU, BDOS giant lock implicit.
++    unsafe { tos_api::bdos::process::memprot::sync() };
++}
++
++/// The body of [`rust_sync_handler`].
++fn sync_handler(frame: &mut ExceptionFrame) {
+     let ec = esr_ec(frame.esr);
+     if ec != EC_SVC_AARCH64 && ec != EC_SVC_FROM_EL1 {
+         // Fault-safe user access (ARCH03 0c, `tos_api::uaccess`): a same-EL
+@@ -1316,6 +1326,10 @@ fn kill_crashed_program(frame: &mut ExceptionFrame) -> bool {
+         regs: &regs,
+         usp: frame.sp_el0,
+         program: super::crash::current_program(),
++        violation: crash::mem_violation(
++            frame.esr,
++            far.and_then(tos_api::bdos::process::memprot::region_kind),
++        ),
+     };
+     super::crash::report_and_wait(&report, slot);
+     kill_program(frame);
+@@ -1354,6 +1368,12 @@ fn uaccess_fault_tail(frame: &mut ExceptionFrame, rec: &tos_api::uaccess::FaultR
+         regs: &rec.regs,
+         usp: frame.sp_el0,
+         program: super::crash::current_program(),
++        violation: crash::mem_violation(
++            rec.esr,
++            crash::far_valid(rec.esr)
++                .then_some(rec.far)
++                .and_then(tos_api::bdos::process::memprot::region_kind),
++        ),
+     };
+     super::crash::report_and_wait(&report, slot);
+     kill_program(frame);
+diff --git a/kernel/src/bootargs.rs b/kernel/src/bootargs.rs
+index d0c029d..3d33965 100644
+--- a/kernel/src/bootargs.rs
++++ b/kernel/src/bootargs.rs
+@@ -21,6 +21,16 @@
+ /// The token that switches the serial (UART0) output on, `board-rpi4`.
+ pub const SERIAL_ON: &[u8] = b"serial=on";
+ 
++/// The token that switches memory protection off (ARCH03 3b) — FreeMiNT's
++/// `MEM_PROT=NO` (`references/freemint/sys/bootmenu.c:207-219`). Without it
++/// every process has its own rights (`PROT_P/G/S/PR/I`).
++pub const MEMPROT_OFF: &[u8] = b"memprot=off";
++
++/// The token that makes the parent-to-child rule strict (ARCH03 E5,
++/// FreeMiNT `MPF_STRICT`, `references/freemint/sys/k_exec.c:799-806`): a
++/// child no longer keeps access to its parent's private memory.
++pub const MEMPROT_STRICT: &[u8] = b"memprot=strict";
++
+ /// `true` if `args` contains `token` as a whole whitespace-delimited token.
+ ///
+ /// `args` ends at its first NUL byte, if any. An empty `token` never
+@@ -39,6 +49,14 @@ pub fn has_token(args: &[u8], token: &[u8]) -> bool {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn memprot_tokens_are_whole_tokens() {
++        assert!(has_token(b"serial=on memprot=off", MEMPROT_OFF));
++        assert!(!has_token(b"serial=on memprot=offx", MEMPROT_OFF));
++        assert!(has_token(b"memprot=strict\n", MEMPROT_STRICT));
++        assert!(!has_token(b"memprot=off", MEMPROT_STRICT));
++    }
++
+     #[test]
+     fn finds_the_token_alone_and_among_others() {
+         assert!(has_token(b"serial=on", SERIAL_ON));
+diff --git a/kernel/src/lib.rs b/kernel/src/lib.rs
+index 6ae2fb0..12cf752 100644
+--- a/kernel/src/lib.rs
++++ b/kernel/src/lib.rs
+@@ -28,7 +28,6 @@ compile_error!(
+ 
+ pub mod arch;
+ pub mod bios;
+-#[cfg(feature = "board-rpi4")]
+ pub mod bootargs;
+ pub mod console;
+ pub mod drivers;
+@@ -248,6 +247,10 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
+     // so the mailbox is reachable here.
+     let fw_dram = firmware_dram();
+     report_dtb_memory(dtb);
++    // ARCH03 3b: memory protection on unless the boot arguments say
++    // `memprot=off`; decided now, while the boot arguments are reachable
++    // with the boot tables, and applied before the BDOS pools are seeded.
++    let memprot = memprot_switch(dtb);
+ 
+     // Discover the physical memory map and dump it for visibility.
+     // Pure function of the board constants, the DTB and the firmware
+@@ -289,7 +292,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
+     // ranges — `claim_remaining_pool` enforces this by allocating
+     // the entire remaining contiguous run before publishing it to
+     // BDOS.
+-    bring_up_bdos_pools();
++    bring_up_bdos_pools(memprot);
+     print_bdos_pool_stats("after init");
+ 
+     // Install exception vectors and the TOS-API host before any SVC.
+@@ -750,9 +753,43 @@ fn smoke_test_heap() {
+ /// before this runs, so ST-RAM is contiguous-from-start and TT-RAM
+ /// is contiguous-from-`heap_end`. Both runs satisfy
+ /// `alloc_frames_contig`.
+-fn bring_up_bdos_pools() {
++fn bring_up_bdos_pools((protect, strict): (bool, bool)) {
+     use bios::machine::frames::{alloc_frames_contig, stats, Pool, FRAME_SIZE};
+ 
++    // ARCH03 3b: the protection switch, before the pools exist (their grain
++    // and their mapping depend on it), and with protection on the table
++    // arena the per-process rights are built from: one L3 per 2-MiB region
++    // of the pools (shared, non-owner rights) plus private copies for the
++    // regions where a process's rights differ (plan Frage 14). Taken from the
++    // frames before the pools claim the rest.
++    // SAFETY: boot CPU, before any pool exists.
++    unsafe { tos_api::bdos::process::memprot::configure(protect, strict) };
++    if protect {
++        let mib2 = 2 * 1024 * 1024u64;
++        let pool_bytes: u64 = [Pool::Stram, Pool::Ttram]
++            .iter()
++            .map(|&p| stats(p).free() as u64 * FRAME_SIZE)
++            .sum();
++        let shared = (pool_bytes / mib2) as usize + 2 * 2 + 16;
++        let count = (shared + PRIVATE_L3_BUDGET).min(tos_api::bdos::process::mmu::ARENA_MAX_TABLES);
++        let frame = alloc_frames_contig(Pool::Ttram, count)
++            .or_else(|| alloc_frames_contig(Pool::Stram, count))
++            .expect("memprot: no room for the page-table arena");
++        let kva = frame.pa() + arch::aarch64::mmu::VA_OFFSET;
++        // SAFETY: `count` fresh frames, mapped RW in the high half.
++        unsafe { core::ptr::write_bytes(kva as *mut u8, 0, count * FRAME_SIZE as usize) };
++        // SAFETY: boot CPU; the frames are ours for good.
++        unsafe { tos_api::bdos::process::mmu::set_table_arena(kva, count) };
++        kprintln!(
++            "[mm] memory protection ON{}: table arena 0x{:08x}+{} tables",
++            if strict { " (strict)" } else { "" },
++            frame.pa(),
++            count,
++        );
++    } else {
++        kprintln!("[mm] memory protection OFF (boot argument `memprot=off`)");
++    }
++
+     let claim = |pool: Pool| -> Option<(u64, u64)> {
+         let s = stats(pool);
+         let count = s.free();
+@@ -788,13 +825,49 @@ fn bring_up_bdos_pools() {
+     // SAFETY: boot CPU, no trap has run; the pools were just seeded.
+     match unsafe { tos_api::bdos::process::mmu::map_pools() } {
+         Ok(()) => kprintln!(
+-            "[mm] user address space: pools mapped VA = PA ({} shared L3 tables)",
++            "[mm] user address space: pools mapped VA = PA ({} shared L3 tables{})",
+             tos_api::bdos::process::mmu::shared_l3_used(),
++            if protect { ", 4-KiB pages, rights per process" } else { "" },
+         ),
+         Err(e) => panic!("[mm] mapping the BDOS pools into the user tables failed: {e:?}"),
+     }
+ }
+ 
++/// Private L3 tables the arena holds besides the shared ones (ARCH03 3b):
++/// copies for the 2-MiB regions where a process's rights differ from
++/// everybody else's — about ten per process (TPA, heap blocks, inherited
++/// parent blocks; plan Frage 14), 64 per slot here. 4 MiB.
++const PRIVATE_L3_BUDGET: usize = 64 * tos_api::bdos::process::MAX_PROCESSES;
++
++/// The memory-protection switch from the boot arguments (ARCH03 3b):
++/// `(on, strict)`. On unless `memprot=off`; strict with `memprot=strict`
++/// (`bootargs::MEMPROT_OFF` / `MEMPROT_STRICT`). `board-rpi4` asks the
++/// firmware for its command line (`cmdline.txt`, or QEMU's `-append`), QEMU
++/// `virt` reads `/chosen/bootargs` of its device tree.
++fn memprot_switch(dtb: Option<usize>) -> (bool, bool) {
++    let decide = |args: &[u8]| {
++        (
++            !bootargs::has_token(args, bootargs::MEMPROT_OFF),
++            bootargs::has_token(args, bootargs::MEMPROT_STRICT),
++        )
++    };
++    #[cfg(feature = "board-rpi4")]
++    {
++        let _ = dtb;
++        drivers::bcm2711::mailbox::with_command_line(decide).unwrap_or((true, false))
++    }
++    #[cfg(not(feature = "board-rpi4"))]
++    {
++        let mut buf = [0u8; 256];
++        // SAFETY: the boot loader supplied the DTB pointer; still reachable
++        // through the boot tables at this point of the boot.
++        match dtb.and_then(|d| unsafe { arch::aarch64::dtb::copy_bootargs(d, &mut buf) }) {
++            Some(n) => decide(&buf[..n]),
++            None => (true, false),
++        }
++    }
++}
++
+ /// Phase 04 D13 — dump BDOS pool accounting on the boot console.
+ ///
+ /// Calls [`tos_api::bdos::mem::stats::pool_stats`] for both pools
+diff --git a/kernel/src/selftest_d7.rs b/kernel/src/selftest_d7.rs
+index 1cf2c5d..1ef5345 100644
+--- a/kernel/src/selftest_d7.rs
++++ b/kernel/src/selftest_d7.rs
+@@ -20,8 +20,9 @@
+ //!        (a `Pterm` would have returned it to the free list);
+ //!      * ST-RAM `allocated_blocks` is one higher and that block is owned
+ //!        by the TSR holder (`traps::is_resident`);
+-//!      * TT-RAM got the TPA back down to `blkln` (0x100): its used bytes
+-//!        dropped by `TPA_SIZE - 0x100`;
++//!      * TT-RAM got the TPA back down to `blkln` (0x100, rounded to the
++//!        pool grain — one page with memory protection on, ARCH03 E16): its
++//!        used bytes dropped by `TPA_SIZE - kept`;
+ //!      * the slot is `Free` again and `RUN` is null — the process
+ //!        terminated and control returned to the kernel driver.
+ //!
+@@ -174,8 +175,12 @@ pub fn run_d7_ptermres_test() {
+     let block_resident = post.free_bytes < pre.free_bytes;
+     let alloc_list_clean = post.allocated_blocks == pre.allocated_blocks + 1
+         && resident_blocks(PoolKind::Stram) >= 1;
++    // The kept length is blkln rounded up to the pool grain: 16 bytes, or
++    // one 4-KiB page with memory protection on (ARCH03 3b, plan E16).
++    let mask = tos_api::bdos::mem::pool::PoolConfig::current().align_mask as u64;
++    let kept = (0x100 + mask) & !mask;
+     let tpa_shrunk = (pre_tt.used_bytes - post_tt.used_bytes) as u64
+-        == tos_api::bdos::process::arena::TPA_SIZE - 0x100;
++        == tos_api::bdos::process::arena::TPA_SIZE - kept;
+     kprintln!(
+         "[d7] TT-RAM used {} -> {} (TPA shrunk to blkln)",
+         pre_tt.used_bytes, post_tt.used_bytes,
+@@ -192,7 +197,7 @@ pub fn run_d7_ptermres_test() {
+         if alloc_list_clean { "OK" } else { "FAIL" },
+     );
+     kprintln!(
+-        "[d7]   TPA shrunk to blkln (TT used -TPA+0x100):     {}",
++        "[d7]   TPA shrunk to blkln (TT used -TPA+kept):      {}",
+         if tpa_shrunk { "OK" } else { "FAIL" },
+     );
+     kprintln!(
+diff --git a/tos-api/src/aes/shell.rs b/tos-api/src/aes/shell.rs
+index 8eb14a4..b86f08b 100644
+--- a/tos-api/src/aes/shell.rs
++++ b/tos-api/src/aes/shell.rs
+@@ -148,7 +148,6 @@ struct State {
+     s_tail: UnsafeCell<[u8; PATHBUF]>,   // ad_stail — its command tail
+     sh_apdir: UnsafeCell<[u8; PATHBUF]>, // gemshlib.c:86-87
+     buf: UnsafeCell<[u8; SHELLBUF]>,     // shel_get/shel_put settings blob
+-    env: UnsafeCell<[u8; PATHBUF]>,      // environment (empty = default)
+     // ── the pending resolution-change request (gemshlib.c:92-99) ─────────
+     // `gl_changerez`: 0 = no change, 1 = ST/TT family, 2 = Falcon family;
+     // `gl_nextrez`: the mode word for `Setscreen` (with the caller's `+2`
+@@ -163,6 +162,17 @@ struct State {
+ // SAFETY: single boot CPU only touches the AES.
+ unsafe impl Sync for State {}
+ 
++/// The AES environment (EmuTOS `ad_envrn`, `aes/geminit.c:122`) that
++/// `shel_envrn` searches and points into — empty = [`DEFAULT_ENV`]. It has a
++/// page of its own because the pointer `shel_envrn` hands an EL0 program
++/// must be readable there: the page is published read-only to every process
++/// (`usermem::expose`, `PROT_PR`; ADR-023), so it may hold nothing else.
++#[repr(C, align(4096))]
++struct EnvPage(UnsafeCell<[u8; 4096]>);
++// SAFETY: single boot CPU only touches the AES.
++unsafe impl Sync for EnvPage {}
++static AES_ENV: EnvPage = EnvPage(UnsafeCell::new([0; 4096]));
++
+ static S: State = State {
+     scrap: UnsafeCell::new([0; PATHBUF]),
+     sh_doexec: UnsafeCell::new(SHW_EXEC),
+@@ -175,7 +185,6 @@ static S: State = State {
+     s_tail: UnsafeCell::new([0; PATHBUF]),
+     sh_apdir: UnsafeCell::new([0; PATHBUF]),
+     buf: UnsafeCell::new([0; SHELLBUF]),
+-    env: UnsafeCell::new([0; PATHBUF]),
+     gl_changerez: UnsafeCell::new(0),
+     gl_nextrez: UnsafeCell::new(0),
+ };
+@@ -827,7 +836,7 @@ pub(super) fn reinit() {
+         (*S.s_tail.get()).fill(0);
+         (*S.sh_apdir.get()).fill(0);
+         (*S.buf.get()).fill(0);
+-        (*S.env.get()).fill(0);
++        (*AES_ENV.0.get()).fill(0);
+         // `gl_changerez = FALSE` (geminit.c:806).
+         *S.gl_changerez.get() = 0;
+         *S.gl_nextrez.get() = 0;
+@@ -1112,10 +1121,43 @@ pub fn shel_envrn(pb: &Aespb) {
+     let nlen = clen(&needle);
+ 
+     // SAFETY: single-CPU AES; env is a stable static blob.
+-    let env = unsafe { &mut *S.env.get() };
++    let env = unsafe { &mut *AES_ENV.0.get() };
+     if env[0] == 0 {
+         env[..DEFAULT_ENV.len()].copy_from_slice(DEFAULT_ENV);
+     }
++    // Where the caller can read the environment: a kernel caller (the
++    // in-kernel desktop) at the kernel address; an EL0 program at the
++    // address of the page published read-only (EmuTOS hands out a pointer
++    // into `ad_envrn`, which every program of its flat machine can read —
++    // ARCH03 3b; before, a kernel address went into an EL0 slot).
++    let base: u64 = match pb.space() {
++        crate::uaccess::Space::Kernel => env.as_ptr() as u64,
++        crate::uaccess::Space::User => {
++            let slot = crate::bdos::process::slot_for(crate::bdos::process::current());
++            // SAFETY: the page is a `'static`, page-aligned kernel object
++            // holding only the environment; single CPU under the AES trap.
++            let published = slot.and_then(|sl| unsafe {
++                crate::bdos::process::usermem::expose(
++                    sl,
++                    env.as_ptr(),
++                    env.len(),
++                    tos_types::ProtMode::Pr,
++                )
++            });
++            match published {
++                Some(va) => va,
++                // No process, or the page cannot be published: nothing the
++                // caller could read — `*ppath = NULL`, the not-found answer.
++                None => {
++                    if pb.abi.write_ptr_in(pb.space(), pslot, 0, 0).is_err() {
++                        return;
++                    }
++                    pb.set_ret(1);
++                    return;
++                }
++            }
++        }
++    };
+     // The environment is a sequence of NUL-terminated "NAME=VALUE" strings.
+     let mut i = 0;
+     while i < env.len() && env[i] != 0 {
+@@ -1125,9 +1167,8 @@ pub fn shel_envrn(pb: &Aespb) {
+         }
+         let entry = &env[start..i];
+         if nlen > 0 && entry.len() >= nlen && &entry[..nlen] == &needle[..nlen] {
+-            // Point at the value (just past "NAME=").
+-            // SAFETY: env outlives the call; the pointer is into it.
+-            let value = unsafe { env.as_ptr().add(start + nlen) } as u64;
++            // Point at the value (just past "NAME="), as the caller sees it.
++            let value = base + (start + nlen) as u64;
+             // pslot is the caller's non-null char* slot; store the value
+             // pointer at the caller's pointer width so an ILP32 4-byte slot
+             // is not overrun (LP64 stores the full 8 bytes) — in the caller's
+diff --git a/tos-api/src/bdos/fs/find.rs b/tos-api/src/bdos/fs/find.rs
+index 2f18908..7af6dbe 100644
+--- a/tos-api/src/bdos/fs/find.rs
++++ b/tos-api/src/bdos/fs/find.rs
+@@ -87,30 +87,31 @@ pub(crate) fn cur_dta() -> u64 {
+     unsafe { (*bp).p_xdta as u32 as u64 }
+ }
+ 
+-/// [`cur_dta`] and the address space the DTA lives in (ARCH03 3a): a
+-/// process's `p_xdta` is a user address of that process — read and written
+-/// with its rights ([`Space::User`]), whoever issues the call — and the
+-/// [`KERNEL_DTA`] of the process-less EL1 desktop is a kernel address
+-/// ([`Space::Kernel`]).
+-pub(crate) fn cur_dta_in() -> (u64, Space) {
+-    if crate::bdos::process::current_kva().is_null() {
+-        (KERNEL_DTA.load(Ordering::Relaxed), Space::Kernel)
+-    } else {
+-        (cur_dta(), Space::User)
++/// The current DTA of a caller in `space` and the address space it lives in
++/// (ARCH03 3a/3b): a program's (`Space::User`) is its process's `p_xdta`, a
++/// user address read and written with its rights; a kernel caller's
++/// (`Space::Kernel` — the in-kernel desktop, the built-in shell) is the
++/// [`KERNEL_DTA`] cell, a kernel address — also while some process is the
++/// running one, so a kernel DTA never lands in a program's `p_xdta`.
++pub(crate) fn cur_dta_in(space: Space) -> (u64, Space) {
++    match space {
++        Space::Kernel => (KERNEL_DTA.load(Ordering::Relaxed), Space::Kernel),
++        Space::User => (cur_dta(), Space::User),
+     }
+ }
+ 
+-/// Store the current DTA pointer — EmuTOS `run->p_xdta = addr`
+-/// (`bdos/fsmain.c:405`).
++/// Store the current DTA pointer of a caller in `space` — EmuTOS
++/// `run->p_xdta = addr` (`bdos/fsmain.c:405`) for a program.
+ ///
+-/// `p_xdta` is the on-wire basepage's 32-bit LONG, so the stored value is the
+-/// low 32 bits of `addr`. Every process-originated DTA is a user address below
+-/// `0x8000_0000` (ARCH03 plan invariant I2), well inside 32 bits; a kernel
+-/// DTA can only arrive from the process-less caller above, which takes the
+-/// [`KERNEL_DTA`] branch instead.
+-fn set_cur_dta(addr: u64) {
++/// `p_xdta` is the on-wire basepage's 32-bit LONG; every program's DTA is a
++/// user address below `0x8000_0000` (ARCH03 plan invariant I2), well inside
++/// 32 bits. A kernel caller's DTA is a high-half kernel address that does not
++/// fit: it goes to [`KERNEL_DTA`] whether or not a process is running —
++/// before ARCH03 3b an EL1 caller with a process current had it cut to 32
++/// bits into that process's `p_xdta`.
++fn set_cur_dta(addr: u64, space: Space) {
+     let bp = crate::bdos::process::current_kva();
+-    if bp.is_null() {
++    if space == Space::Kernel || bp.is_null() {
+         KERNEL_DTA.store(addr, Ordering::Relaxed);
+         return;
+     }
+@@ -124,9 +125,10 @@ fn set_cur_dta(addr: u64) {
+ /// **running process's** descriptor, so a child started with `Pexec` cannot
+ /// disturb its parent's DTA: the child has its own `p_xdta` (defaulted to its
+ /// `p_cmdlin`, `bdos/proc.c:375`), and when it terminates `run` reverts to the
+-/// parent, whose field was never touched.
++/// parent, whose field was never touched. A kernel caller keeps its own
++/// ([`set_cur_dta`]).
+ pub fn fsetdta(args: &TrapArgs) -> Long {
+-    set_cur_dta(args.arg_u64(0));
++    set_cur_dta(args.arg_u64(0), args.space);
+     E_OK
+ }
+ 
+@@ -137,8 +139,8 @@ pub fn fsetdta(args: &TrapArgs) -> Long {
+ /// the same 32-bit `p_xdta` field. A DTA set by the process-less EL1 caller is
+ /// a high-half kernel VA that a `Long` return cannot carry — that caller keeps
+ /// its own pointer and never reads it back (see [`KERNEL_DTA`]).
+-pub fn fgetdta(_args: &TrapArgs) -> Long {
+-    cur_dta() as Long
++pub fn fgetdta(args: &TrapArgs) -> Long {
++    cur_dta_in(args.space).0 as Long
+ }
+ 
+ /// Expand a `name.ext` pattern (with `*`/`?`) into the 11-byte FAT
+@@ -460,7 +462,7 @@ fn get_state(space: Space, dta: u64) -> Result<(u32, u32, u8, u8, [u8; 11]), Use
+ 
+ /// `Fsfirst` (0x4E) — begin a directory search, filling the current DTA.
+ pub fn fsfirst(args: &TrapArgs) -> Long {
+-    let (dta, space) = cur_dta_in();
++    let (dta, space) = cur_dta_in(args.space);
+     if dta == 0 {
+         return EFILNF;
+     }
+@@ -509,8 +511,8 @@ pub fn fsfirst(args: &TrapArgs) -> Long {
+ }
+ 
+ /// `Fsnext` (0x4F) — return the next match into the current DTA.
+-pub fn fsnext(_args: &TrapArgs) -> Long {
+-    let (dta, space) = cur_dta_in();
++pub fn fsnext(args: &TrapArgs) -> Long {
++    let (dta, space) = cur_dta_in(args.space);
+     if dta == 0 {
+         return ENMFIL;
+     }
+diff --git a/tos-api/src/bdos/mem/pool.rs b/tos-api/src/bdos/mem/pool.rs
+index 03117f8..a598ad3 100644
+--- a/tos-api/src/bdos/mem/pool.rs
++++ b/tos-api/src/bdos/mem/pool.rs
+@@ -32,6 +32,13 @@ pub struct PoolConfig {
+ impl PoolConfig {
+     /// 16-byte alignment, the NewTOS default for both pools.
+     pub const AARCH64: Self = Self { align_mask: 15 };
++
++    /// The grain in force: [`Self::AARCH64`], or one 4-KiB page while memory
++    /// protection is on (ARCH03 3b, E16 — FreeMiNT rounds regions to its
++    /// `QUANTUM`, `sys/mint/mem.h:152`, so no page has two owners).
++    pub fn current() -> Self {
++        Self { align_mask: crate::bdos::process::memprot::pool_align_mask() }
++    }
+ }
+ 
+ /// First-fit allocator — port of `MD *ffit(long amount, MPB *mp)` in
+diff --git a/tos-api/src/bdos/mem/region.rs b/tos-api/src/bdos/mem/region.rs
+index 02015e6..1b9e984 100644
+--- a/tos-api/src/bdos/mem/region.rs
++++ b/tos-api/src/bdos/mem/region.rs
+@@ -171,9 +171,24 @@ pub unsafe fn attach(addr: Long, who: *mut c_void) -> Result<(), RegionError> {
+     }
+     let place = e.owners.iter_mut().find(|o| o.is_null()).ok_or(RegionError::Full)?;
+     *place = who;
++    // The new owner's rights (ARCH03 3b, FreeMiNT `attach_region` →
++    // `mark_proc_region(PROT_P)`, `sys/memory.c:539`).
++    // SAFETY: lock held.
++    unsafe { prot_changed(addr) };
+     Ok(())
+ }
+ 
++/// The owners of the block at `addr` changed: its rights follow
++/// ([`crate::bdos::process::memprot`]).
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++unsafe fn prot_changed(addr: Long) {
++    // SAFETY: lock held.
++    unsafe { crate::bdos::process::memprot::on_owner_change(addr as u32 as u64) };
++}
++
+ /// Drop `who` from the block at `addr` — FreeMiNT `detach_region`: if it was
+ /// the last owner the block is freed ([`Detached::Freed`]); if it held the
+ /// EmuTOS tag and another owner is left, that owner takes the tag.
+@@ -198,6 +213,8 @@ pub unsafe fn detach(addr: Long, who: *mut c_void) -> Result<Detached, RegionErr
+             if e.owners.iter().all(|o| o.is_null()) {
+                 *e = EMPTY;
+             }
++            // SAFETY: lock held.
++            unsafe { prot_changed(addr) };
+             return Ok(Detached::Kept);
+         }
+     }
+@@ -214,6 +231,8 @@ pub unsafe fn detach(addr: Long, who: *mut c_void) -> Result<Detached, RegionErr
+             if e.owners.iter().all(|o| o.is_null()) {
+                 *e = EMPTY;
+             }
++            // SAFETY: lock held.
++            unsafe { prot_changed(addr) };
+             return Ok(Detached::Kept);
+         }
+     }
+@@ -269,12 +288,19 @@ pub unsafe fn detach_all(who: *mut c_void) -> usize {
+     // Its further-owner places first: they never free anything.
+     // SAFETY: lock held.
+     for e in unsafe { table() }.iter_mut().filter(|e| e.loc != 0) {
++        let loc = e.loc;
++        let mut changed = false;
+         for o in e.owners.iter_mut().filter(|o| **o == who) {
+             *o = ptr::null_mut();
++            changed = true;
+         }
+         if e.owners.iter().all(|o| o.is_null()) {
+             *e = EMPTY;
+         }
++        if changed {
++            // SAFETY: lock held.
++            unsafe { prot_changed(loc) };
++        }
+     }
+     // Then every block it holds the tag of.
+     let mut freed = 0;
+@@ -312,13 +338,20 @@ pub unsafe fn keep_resident(who: *mut c_void) -> usize {
+     let tsr = traps::tsr_owner();
+     // SAFETY: lock held.
+     for e in unsafe { table() }.iter_mut().filter(|e| e.loc != 0) {
++        let loc = e.loc;
+         let had_tsr = e.owners.contains(&tsr);
++        let mut changed = false;
+         for o in e.owners.iter_mut().filter(|o| **o == who) {
+             *o = if had_tsr { ptr::null_mut() } else { tsr };
++            changed = true;
+         }
+         if e.owners.iter().all(|o| o.is_null()) {
+             *e = EMPTY;
+         }
++        if changed {
++            // SAFETY: lock held.
++            unsafe { prot_changed(loc) };
++        }
+     }
+     let mut kept = 0;
+     for mp in [pmd(), pmdalt()] {
+@@ -339,6 +372,14 @@ pub unsafe fn keep_resident(who: *mut c_void) -> usize {
+                             *e = EMPTY;
+                         }
+                     }
++                    if entry_of(table(), (*m).m_start).is_none() {
++                        // Only the resident holder owns it now: private
++                        // memory becomes global (FreeMiNT `sys_ptermres`,
++                        // `sys/k_exit.c:320-336`, ARCH03 3b).
++                        crate::bdos::process::memprot::on_resident((*m).m_start as u32 as u64);
++                    } else {
++                        prot_changed((*m).m_start);
++                    }
+                 }
+                 m = (*m).m_link;
+             }
+@@ -347,6 +388,18 @@ pub unsafe fn keep_resident(who: *mut c_void) -> usize {
+     kept
+ }
+ 
++/// The further owners of the block at `addr` (besides `m_own`); null
++/// places are unused. All null for a block with one owner.
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn further_owners(addr: Long) -> [*mut c_void; MAX_FURTHER_OWNERS] {
++    // SAFETY: lock held.
++    let t = unsafe { table() };
++    entry_of(t, addr).map_or([ptr::null_mut(); MAX_FURTHER_OWNERS], |e| e.owners)
++}
++
+ /// Number of owners of the block at `addr` (FreeMiNT's `links`): `0` if it
+ /// starts no block. For tests and diagnostics.
+ ///
+diff --git a/tos-api/src/bdos/mem/traps.rs b/tos-api/src/bdos/mem/traps.rs
+index 782854b..dc073a6 100644
+--- a/tos-api/src/bdos/mem/traps.rs
++++ b/tos-api/src/bdos/mem/traps.rs
+@@ -281,6 +281,24 @@ pub unsafe fn maddalt(start: Long, size: Long) -> Long {
+ ///
+ /// Caller holds the BDOS giant lock.
+ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
++    // ARCH03 3b: the protection nibble (FreeMiNT `m_xalloc`,
++    // `sys/dosmem.c:209-221`) — `0` takes the caller's PRGFLAGS mode; a
++    // kernel caller (no process) allocates for itself: `PROT_S`
++    // (`sys/memory.c:150-159`).
++    let prot = {
++        let run = crate::bdos::process::current_kva();
++        if run.is_null() && mode & tos_types::F_PROTMODE == 0 {
++            tos_types::ProtMode::S
++        } else {
++            let flags = if run.is_null() {
++                0
++            } else {
++                // SAFETY: `run` is the kernel alias of the running basepage.
++                unsafe { (*run).p_flags }
++            };
++            tos_types::prot_from_mxalloc(mode, flags)
++        }
++    };
+     let mode = mode & MX_MODEMASK;
+     let pmd = init::pmd();
+     let pmdalt = init::pmdalt();
+@@ -319,7 +337,7 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
+     }
+ 
+     // 4. Pool selection.
+-    let cfg = PoolConfig::AARCH64;
++    let cfg = PoolConfig::current();
+     // SAFETY: pmd / pmdalt are stable for the BDOS lock duration.
+     // Owner cookie: Phase 04 stamps every allocation as kernel-owned
+     // via `current_owner()` (see KERNEL_PD_SENTINEL above). Phase 06
+@@ -364,11 +382,15 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
+         0
+     } else {
+         // SAFETY: m is a freshly returned MD on the allocated list.
+-        let start = unsafe { (*m).m_start };
++        let (start, len) = unsafe { ((*m).m_start, (*m).m_length) };
+         // A fresh block has no further owners (a stale record of a freed
+         // block at the same address must not carry over).
+         // SAFETY: caller holds the BDOS lock.
+-        unsafe { super::region::forget(start) };
++        unsafe {
++            super::region::forget(start);
++            // Its protection mode, and its owner's rights (ARCH03 3b).
++            crate::bdos::process::memprot::on_alloc(start as u32 as u64, len as u32 as u64, prot);
++        }
+         start
+     }
+ }
+@@ -413,16 +435,21 @@ pub unsafe fn mxalloc_aligned(amount: Long, mode: i16, align: Long) -> Long {
+         return 0; // cannot happen: `raw` was just allocated
+     }
+     let base = (raw + align - 1) & !(align - 1);
++    // SAFETY: list invariant.
++    let raw_len = unsafe { (*p).m_length };
+     let mut supply = unsafe { init::supply() };
+     if base > raw {
+         // SAFETY: `p` is on `mp_mal`; `0 < base - raw < align < m_length`.
+         if unsafe { pool::trim_front(p, mpb, base - raw, &mut supply) } < 0 {
+             // SAFETY: `p` is still the whole block at `raw`.
+-            unsafe { pool::freeit(p, mpb, &mut supply) };
++            unsafe {
++                pool::freeit(p, mpb, &mut supply);
++                crate::bdos::process::memprot::on_freed(raw as u32 as u64, raw_len as u32 as u64);
++            }
+             return 0;
+         }
+     }
+-    let mask = PoolConfig::AARCH64.align_mask;
++    let mask = PoolConfig::current().align_mask;
+     let keep = (amount + mask) & !mask;
+     // SAFETY: list invariant; `p` now starts at `base`.
+     let have = unsafe { (*p).m_length };
+@@ -431,6 +458,14 @@ pub unsafe fn mxalloc_aligned(amount: Long, mode: i16, align: Long) -> Long {
+         // SAFETY: `p` is on `mp_mal`; `0 < keep < have`.
+         let _ = unsafe { pool::shrinkit(p, mpb, keep, &mut supply) };
+     }
++    // ARCH03 3b: the record follows the block to its aligned start; the
++    // slack given back on either side is invalid for everybody again.
++    // SAFETY: caller holds the BDOS lock.
++    unsafe {
++        crate::bdos::process::memprot::rekey(raw as u32 as u64, base as u32 as u64);
++        crate::bdos::process::memprot::touch(raw as u32 as u64, (raw as u32 as u64) + raw_len as u32 as u64);
++        crate::bdos::process::memprot::sync();
++    }
+     base
+ }
+ 
+@@ -544,6 +579,7 @@ pub unsafe fn set_owner(addr: Long, owner: *mut c_void) -> bool {
+             // SAFETY: `p` is a live MD on `mp_mal`.
+             unsafe {
+                 (*p).m_own = owner;
++                crate::bdos::process::memprot::on_owner_change(addr as u32 as u64);
+             }
+             return true;
+         }
+@@ -593,12 +629,16 @@ pub unsafe fn mfree(addr: Long) -> Long {
+         return EIMBA;
+     }
+ 
+-    // 4. Free — and forget the block's further owners (ARCH03 2d).
++    // 4. Free — and forget the block's further owners (ARCH03 2d) and its
++    //    rights: nobody may reach it any more (ARCH03 3b, I8).
++    // SAFETY: list invariant.
++    let len = unsafe { (*p).m_length };
+     let mut supply = unsafe { init::supply() };
+     // SAFETY: caller holds BDOS lock; `p` is an MD on `mp_mal`.
+     unsafe {
+         pool::freeit(p, mpb, &mut supply);
+         super::region::forget(addr);
++        crate::bdos::process::memprot::on_freed(addr as u32 as u64, len as u32 as u64);
+     }
+     E_OK
+ }
+@@ -658,7 +698,7 @@ pub unsafe fn mshrink(_n: i16, blk: Long, len: Long) -> Long {
+     //    overflow keeps the comparison branches deterministic; the
+     //    grow-check below will reject anything bigger than the
+     //    block's current length anyway.
+-    let mask = pool::PoolConfig::AARCH64.align_mask;
++    let mask = pool::PoolConfig::current().align_mask;
+     let len = len
+         .checked_add(mask)
+         .map(|v| v & !mask)
+@@ -680,6 +720,7 @@ pub unsafe fn mshrink(_n: i16, blk: Long, len: Long) -> Long {
+         unsafe {
+             pool::freeit(p, mpb, &mut supply);
+             super::region::forget(blk);
++            crate::bdos::process::memprot::on_freed(blk as u32 as u64, m_len as u32 as u64);
+         }
+         return E_OK;
+     }
+@@ -689,6 +730,14 @@ pub unsafe fn mshrink(_n: i16, blk: Long, len: Long) -> Long {
+     // SAFETY: caller holds BDOS lock; `p` is on `mp_mal`; `len`
+     // satisfies `0 < len <= m_len` by the checks above.
+     let rc = unsafe { pool::shrinkit(p, mpb, len, &mut supply) };
++    // The tail went back to the pool: invalid for everybody (ARCH03 3b, I8 —
++    // FreeMiNT `shrink_region` marks it `PROT_I`, `sys/memory.c:1076,1097`).
++    // SAFETY: caller holds BDOS lock.
++    unsafe {
++        let b = blk as u32 as u64;
++        crate::bdos::process::memprot::touch(b, b + m_len as u32 as u64);
++        crate::bdos::process::memprot::sync();
++    }
+     if rc < 0 {
+         ERROR
+     } else {
+diff --git a/tos-api/src/bdos/process.rs b/tos-api/src/bdos/process.rs
+index ff4be30..e241a52 100644
+--- a/tos-api/src/bdos/process.rs
++++ b/tos-api/src/bdos/process.rs
+@@ -46,6 +46,7 @@ use tos_types::BasePage;
+ pub mod arena;
+ pub mod elf;
+ pub mod loader;
++pub mod memprot;
+ pub mod mmu;
+ pub mod pterm;
+ pub mod pexec;
+@@ -1099,6 +1100,11 @@ pub fn free_slot(idx: usize) {
+     if idx >= MAX_PROCESSES {
+         return;
+     }
++    // Its private page tables and its inherited/temporary rights go first,
++    // while the slot still names its root (ARCH03 3b).
++    // SAFETY: slot release runs under the BDOS giant lock (every caller is
++    // a trap or boot path).
++    unsafe { memprot::on_slot_released(idx) };
+     let p = &PROCESS_TABLE[idx];
+     p.abi.store(Abi::Lp64 as u8, Ordering::Release);
+     p.basepage_kva.store(ptr::null_mut(), Ordering::Release);
+diff --git a/tos-api/src/bdos/process/loader.rs b/tos-api/src/bdos/process/loader.rs
+index 03e95bf..0041480 100644
+--- a/tos-api/src/bdos/process/loader.rs
++++ b/tos-api/src/bdos/process/loader.rs
+@@ -51,6 +51,7 @@ use core::cell::UnsafeCell;
+ use core::ffi::c_void;
+ use core::sync::atomic::Ordering;
+ 
++use tos_types::prot_from_prgflags;
+ use tos_types::{BasePage, Long, MX_PREFTTRAM, MX_STRAM, NUMSTD, PDCLSIZE, PF_STANDARD, PF_TTRAMLOAD};
+ 
+ use super::{kalias, usermem};
+@@ -428,6 +429,11 @@ unsafe fn load_from_source(
+     //    `free_all_owned` sweep reclaims it.
+     // SAFETY: BDOS lock held; single-CPU pre-test.
+     let tpa = unsafe { arena::alloc_tpa(prgflags) }.ok_or(LoadError::NoTpaMemory)?;
++    // The TPA takes the program's protection mode (ARCH03 3b, FreeMiNT
++    // `load_region`: `alloc_region(map, len, protmode)` with the PRGFLAGS
++    // mode, `sys/memory.c:1511-1513`).
++    // SAFETY: BDOS lock held; `tpa.base` starts the block just allocated.
++    unsafe { super::memprot::set_mode(tpa.base, prot_from_prgflags(prgflags)) };
+     if owned_by_child {
+         // SAFETY: `tpa.base` is on the allocated list; the owner cookie is
+         // a pointer-equality tag, never dereferenced by the sweep.
+@@ -623,6 +629,10 @@ unsafe fn install_slot(
+     proc_slot.entry_va.store(entry_va, Ordering::Release);
+     proc_slot.sp_el0.store(sp_el0, Ordering::Release);
+     proc_slot.set_abi(super::Abi::Lp64);
++    // The new root gets its rights (ARCH03 3b; FreeMiNT `init_page_table`,
++    // `sys/arch/mprot030.c:825-1062`).
++    // SAFETY: BDOS lock held; the slot's root is built and published.
++    unsafe { super::memprot::on_root_built(slot) };
+     Ok(l0_pa)
+ }
+ 
+@@ -664,6 +674,10 @@ pub unsafe fn create_basepage(
+         free_env();
+         return Err(LoadError::NoTpaMemory);
+     };
++    // The basepage block takes the mode its flags ask for (ARCH03 3b, as a
++    // loaded program's TPA).
++    // SAFETY: BDOS lock held; `tpa.base` starts the block just allocated.
++    unsafe { super::memprot::set_mode(tpa.base, prot_from_prgflags(flags)) };
+     // `init_pd_fields`: the basepage, and only the basepage.
+     // SAFETY: the block backs at least `BASEPAGE_RESERVED` bytes at its
+     // kernel alias, exclusively ours under the lock.
+@@ -1408,6 +1422,11 @@ pub(super) unsafe fn alloc_env(
+     if phys == 0 {
+         return Err(LoadError::NoEnvMemory);
+     }
++    // The environment takes the program's protection mode (ARCH03 3b,
++    // FreeMiNT `create_env` with the prgflags mode and `mark_region(env,
++    // …)` after the load, `sys/memory.c:1403-1407`, `sys/k_exec.c:398`).
++    // SAFETY: BDOS lock held; `phys` starts the block just allocated.
++    unsafe { super::memprot::set_mode(phys as u32 as u64, prot_from_prgflags(prgflags)) };
+     // Copy verbatim into the pool block (through its kernel alias),
+     // zero-padding the even-rounding tail.
+     let dst = kalias(phys as u64) as *mut u8;
+diff --git a/tos-api/src/bdos/process/mmu.rs b/tos-api/src/bdos/process/mmu.rs
+index 6c38f48..415bb2a 100644
+--- a/tos-api/src/bdos/process/mmu.rs
++++ b/tos-api/src/bdos/process/mmu.rs
+@@ -44,6 +44,27 @@
+ //! valid, which needs no TLB invalidation (ARM ARM `RXCLRD` D8-7852 /
+ //! `IWZCBG` D8-7858, plan §3.2) — nothing in stage 1 is ever unmapped.
+ //!
++//! ## Rights per address space (ARCH03 stage 3b)
++//!
++//! With memory protection on ([`super::memprot`]) the pools are entered as
++//! 4-KiB pages only, every entry **invalid** at boot (free memory belongs to
++//! nobody, plan invariant I8), in shared L3 tables drawn from a table arena
++//! the kernel reserves at boot ([`set_table_arena`]). The shared tables hold
++//! the **non-owner** rights of every page (FreeMiNT fills a table "as if
++//! you're a non-owner of every page" first, `sys/arch/mprot030.c:1050-1053`);
++//! a process whose rights differ somewhere in a 2-MiB region gets its own
++//! copy of that region's L3 ([`make_private`], "copy-on-differ", plan §3.2)
++//! and its L2 entry points there instead. Every slot has its own L2 for each
++//! of the four GiB, a copy of the shared template, so a private L3 is a
++//! change of one slot-owned L2 entry on both boards (V0a invariant 4: the
++//! virt pool lives in GiB 1).
++//!
++//! Table-pointer changes in an L2 entry are made break-before-make (V0a
++//! C3/C4, ARM ARM `RDDMVT` D8-7859): invalid → `dsb ish` → `tlbi vmalle1is`
++//! → `dsb ish` → new entry → `dsb ish`. Leaf changes of a **valid** entry
++//! (narrowing, and widening valid → valid) are followed by a TLB invalidation
++//! ([`flush_tlb`], ARM ARM `RSQBCS` D8-7852 — 0a correction of plan §3.2).
++//!
+ //! ## Descriptor bits
+ //!
+ //! AArch64 stage-1 descriptor layout (ARM ARM DDI 0487 M.d, Figure D8-16 /
+@@ -59,7 +80,7 @@
+ //! orders the writes before it ([`publish_user_mappings`],
+ //! [`install_ttbr0`]).
+ 
+-use core::sync::atomic::{AtomicUsize, Ordering};
++use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+ 
+ use super::MAX_PROCESSES;
+ 
+@@ -129,7 +150,7 @@ const fn va_to_pa(va: u64) -> u64 {
+ 
+ /// 512-entry, 4-KiB-aligned translation table page.
+ #[repr(C, align(4096))]
+-struct UserTable([u64; 512]);
++pub struct UserTable([u64; 512]);
+ 
+ impl UserTable {
+     const fn zeroed() -> Self {
+@@ -138,14 +159,15 @@ impl UserTable {
+ }
+ 
+ /// One process slot's private tables: its root chain down to the L3 that
+-/// holds page 0. 16 KiB per slot (plan Frage 14).
++/// holds page 0, and its own L2 for every GiB. 28 KiB per slot.
+ #[repr(C, align(4096))]
+ struct SlotTables {
+     l0: UserTable,
+     l1: UserTable,
+-    /// L2 for VA `[0, 1 GiB)`: entry 0 → [`Self::l3`], entries 1..511 copied
+-    /// from [`SHARED_L2`]`[0]`.
+-    l2: UserTable,
++    /// L2 for VA `[g GiB, g+1 GiB)`, a copy of [`SHARED_L2`]`[g]`; for GiB 0
++    /// entry 0 → [`Self::l3`]. An entry differs from the template only where
++    /// the slot has a private L3 (stage 3b, [`make_private`]).
++    l2: [UserTable; GIB_COUNT],
+     /// L3 for VA `[0, 2 MiB)`: entry 0 → the slot's page 0, entries 1..511
+     /// copied from [`SHARED_L3_0`].
+     l3: UserTable,
+@@ -160,7 +182,7 @@ static mut __USER_TABLES: [SlotTables; MAX_PROCESSES] = [const {
+     SlotTables {
+         l0: UserTable::zeroed(),
+         l1: UserTable::zeroed(),
+-        l2: UserTable::zeroed(),
++        l2: [const { UserTable::zeroed() }; GIB_COUNT],
+         l3: UserTable::zeroed(),
+     }
+ }; MAX_PROCESSES];
+@@ -168,9 +190,8 @@ static mut __USER_TABLES: [SlotTables; MAX_PROCESSES] = [const {
+ /// The per-slot page-0 data pages.
+ static mut PAGE0: [Page0; MAX_PROCESSES] = [const { Page0([0; 4096]) }; MAX_PROCESSES];
+ 
+-/// The shared L2 tables: index 0 is the **template** for every slot's
+-/// GiB-0 L2 (its entry 0 is unused — it is the slot's own), 1..3 are the real
+-/// shared L2 tables of GiB 1..3 that every slot's L1 points at.
++/// The shared L2 **templates**, one per GiB, that every slot's own L2s copy
++/// (GiB 0's entry 0 is unused — it is the slot's own page-0 L3).
+ static mut SHARED_L2: [UserTable; GIB_COUNT] = [const { UserTable::zeroed() }; GIB_COUNT];
+ 
+ /// Template for every slot's `[0, 2 MiB)` L3 (entry 0 unused — page 0).
+@@ -183,6 +204,109 @@ static mut SHARED_L3: [UserTable; SHARED_L3_COUNT] =
+ /// Number of [`SHARED_L3`] tables handed out.
+ static SHARED_L3_USED: AtomicUsize = AtomicUsize::new(0);
+ 
++/// Number of shared L3 tables in use, wherever they came from (the static
++/// [`SHARED_L3`] set or the arena) — the boot log figure.
++static SHARED_L3_TOTAL: AtomicUsize = AtomicUsize::new(0);
++
++// ─── Table arena (stage 3b) ──────────────────────────────────────────
++
++/// Upper bound on the arena's size in tables (64 bitmap words).
++pub const ARENA_MAX_TABLES: usize = 64 * 64;
++
++/// Kernel VA of the first arena table; `0` = no arena (protection off).
++static ARENA_KVA: AtomicU64 = AtomicU64::new(0);
++/// Number of tables in the arena.
++static ARENA_COUNT: AtomicUsize = AtomicUsize::new(0);
++/// Tables of the arena in use (bit set = taken).
++static ARENA_BITS: [AtomicU64; ARENA_MAX_TABLES / 64] =
++    [const { AtomicU64::new(0) }; ARENA_MAX_TABLES / 64];
++/// Private (per-slot) tables in use — for the boot log and the tests.
++static PRIVATE_USED: AtomicUsize = AtomicUsize::new(0);
++
++/// A **valid** leaf entry of a user table was changed since the last
++/// [`flush_tlb`] — the TLB may hold the old translation (ARM ARM `RSQBCS`
++/// D8-7852: even permission-fault entries may be cached).
++static TLB_DIRTY: AtomicBool = AtomicBool::new(false);
++
++/// Hand the user page tables a **table arena**: `count` zeroed, 4-KiB-aligned
++/// pages at kernel VA `kva` (`count` ≤ [`ARENA_MAX_TABLES`]). Protection
++/// (stage 3b) draws the pools' shared L3 tables and every private L3 from
++/// it. Called once at boot, before [`map_pools`].
++///
++/// # Safety
++///
++/// Boot CPU, before any trap. The pages are memory nobody else uses for as
++/// long as the system runs (the kernel takes them from the frame allocator
++/// before the BDOS pools claim the rest).
++pub unsafe fn set_table_arena(kva: u64, count: usize) {
++    ARENA_KVA.store(kva, Ordering::Relaxed);
++    ARENA_COUNT.store(count.min(ARENA_MAX_TABLES), Ordering::Relaxed);
++    for w in &ARENA_BITS {
++        w.store(0, Ordering::Relaxed);
++    }
++}
++
++/// Take one zeroed table from the arena.
++fn arena_alloc() -> Option<&'static mut UserTable> {
++    let base = ARENA_KVA.load(Ordering::Relaxed);
++    let count = ARENA_COUNT.load(Ordering::Relaxed);
++    if base == 0 {
++        return None;
++    }
++    for (wi, w) in ARENA_BITS.iter().enumerate() {
++        let bits = w.load(Ordering::Relaxed);
++        if bits == u64::MAX {
++            continue;
++        }
++        let bi = (!bits).trailing_zeros() as usize;
++        let idx = wi * 64 + bi;
++        if idx >= count {
++            return None;
++        }
++        w.store(bits | (1u64 << bi), Ordering::Relaxed);
++        let t = (base + (idx as u64) * PAGE_SIZE) as *mut UserTable;
++        // SAFETY: `idx < count`: one of the arena's pages, now ours.
++        let t = unsafe { &mut *t };
++        t.0 = [0; 512];
++        return Some(t);
++    }
++    None
++}
++
++/// Give a table back to the arena. A table that is not from the arena (a
++/// static one) is never given back.
++fn arena_free(t: *const UserTable) {
++    let base = ARENA_KVA.load(Ordering::Relaxed);
++    let count = ARENA_COUNT.load(Ordering::Relaxed) as u64;
++    let a = t as u64;
++    if base == 0 || a < base || a >= base + count * PAGE_SIZE {
++        return;
++    }
++    let idx = ((a - base) / PAGE_SIZE) as usize;
++    ARENA_BITS[idx / 64].fetch_and(!(1u64 << (idx % 64)), Ordering::Relaxed);
++}
++
++/// Tables of the arena still free (boot log / tests).
++pub fn arena_free_count() -> usize {
++    let count = ARENA_COUNT.load(Ordering::Relaxed);
++    let used: usize = ARENA_BITS.iter().map(|w| w.load(Ordering::Relaxed).count_ones() as usize).sum();
++    count.saturating_sub(used)
++}
++
++/// Private L3 tables in use (boot log / tests).
++pub fn private_l3_used() -> usize {
++    PRIVATE_USED.load(Ordering::Relaxed)
++}
++
++/// The table a valid table descriptor names, through the kernel alias. Our
++/// table descriptors carry no upper attribute bits ([63:59] = 0, V0a
++/// invariant 1), so everything above the low 12 bits is the address; the
++/// same arithmetic undoes [`va_to_pa`] on the host (see [`translate`]).
++#[inline]
++fn table_at(desc: u64) -> *mut UserTable {
++    (desc & !(PAGE_SIZE - 1)).wrapping_add(VA_OFFSET) as *mut UserTable
++}
++
+ // ─── Public API ─────────────────────────────────────────────────────
+ 
+ /// Page-flag preset — selects what the page descriptor's AP / PXN /
+@@ -325,9 +449,10 @@ pub unsafe fn page0_bytes(slot: usize) -> Option<&'static mut [u8; 4096]> {
+     Some(unsafe { &mut *(p as *mut [u8; 4096]) })
+ }
+ 
+-/// Build `slot`'s root: `L0[0] → L1`, `L1[0] → L2`, `L1[1..4]` → the shared
+-/// GiB-1..3 L2 tables, `L2[0] → L3`, `L2[1..]` = the GiB-0 template, `L3[0]`
+-/// = the slot's page 0 (`UserRwExec`), `L3[1..]` = the `[0, 2 MiB)` template.
++/// Build `slot`'s root: `L0[0] → L1`, `L1[g]` → the slot's own L2 of GiB `g`
++/// (a copy of the shared template), `L2₀[0] → L3`, `L3[0]` = the slot's page
++/// 0 (`UserRwExec`), `L3[1..]` = the `[0, 2 MiB)` template. Private L3 tables
++/// a previous tenant of the slot held go back to the arena first.
+ /// Idempotent; the page-0 *contents* are not touched (the loader writes them).
+ ///
+ /// # Safety
+@@ -341,29 +466,55 @@ pub unsafe fn init_slot_tables(slot: usize) -> Result<(), MapError> {
+     }
+     let page0_pa = va_to_pa(page0_kva(slot).ok_or(MapError::InvalidSlot)? as u64);
+     // SAFETY: caller's lock contract; slot bounds-checked.
++    unsafe { release_private_tables(slot) };
++    // SAFETY: caller's lock contract; slot bounds-checked.
+     let t = unsafe { slot_tables(slot) };
+-    // SAFETY: caller's lock contract.
+-    let (tmpl_l2, tmpl_l3) = unsafe { (&shared_l2(0).0, &shared_l3_0().0) };
+ 
+     t.l0.0 = [0; 512];
+     t.l0.0[0] = table_pa(&t.l1) | D_VALID | D_TABLE;
+ 
+     t.l1.0 = [0; 512];
+-    t.l1.0[0] = table_pa(&t.l2) | D_VALID | D_TABLE;
+-    for gib in 1..GIB_COUNT {
++    for gib in 0..GIB_COUNT {
++        t.l1.0[gib] = table_pa(&t.l2[gib]) | D_VALID | D_TABLE;
+         // SAFETY: caller's lock contract; `gib < GIB_COUNT`.
+-        let l2_pa = table_pa(unsafe { shared_l2(gib) });
+-        t.l1.0[gib] = l2_pa | D_VALID | D_TABLE;
++        t.l2[gib].0 = unsafe { shared_l2(gib) }.0;
+     }
++    t.l2[0].0[0] = table_pa(&t.l3) | D_VALID | D_TABLE;
+ 
+-    t.l2.0 = *tmpl_l2;
+-    t.l2.0[0] = table_pa(&t.l3) | D_VALID | D_TABLE;
+-
+-    t.l3.0 = *tmpl_l3;
++    // SAFETY: caller's lock contract.
++    t.l3.0 = unsafe { shared_l3_0() }.0;
+     t.l3.0[0] = page0_pa | PageFlags::UserRwExec.descriptor_bits();
+     Ok(())
+ }
+ 
++/// Give every private L3 `slot` holds back to the arena and point its L2
++/// entries at the shared tables again. No TLB maintenance: the slot is not
++/// the active root ([`init_slot_tables`]'s contract) — or, from
++/// [`super::memprot`], the caller flushes.
++///
++/// # Safety
++///
++/// Caller holds the BDOS giant lock; `slot < MAX_PROCESSES`.
++pub unsafe fn release_private_tables(slot: usize) {
++    // SAFETY: caller contract.
++    let t = unsafe { slot_tables(slot) };
++    for gib in 0..GIB_COUNT {
++        for idx in 0..512 {
++            if gib == 0 && idx == 0 {
++                continue; // the slot's page-0 L3
++            }
++            // SAFETY: caller contract.
++            let tmpl = unsafe { shared_l2(gib) }.0[idx];
++            let cur = t.l2[gib].0[idx];
++            if cur != tmpl && cur & (D_VALID | D_TABLE) == D_VALID | D_TABLE {
++                t.l2[gib].0[idx] = tmpl;
++                arena_free(table_at(cur));
++                PRIVATE_USED.fetch_sub(1, Ordering::Relaxed);
++            }
++        }
++    }
++}
++
+ /// Install one 4-KiB page in `slot`'s **private** `[0, 2 MiB)` L3 — page 0
+ /// by default; the EC4 self-test maps its single code page at VA 0 this way.
+ /// Shared memory goes through [`map_shared`] instead.
+@@ -395,8 +546,9 @@ pub unsafe fn map_page(
+     Ok(())
+ }
+ 
+-/// Write entry `idx` of the GiB-`gib` L2: for GiB 0 into the template and
+-/// into every slot's copy, otherwise into the shared table itself.
++/// Write entry `idx` of the GiB-`gib` L2 template and of every slot's copy
++/// that still follows the template there (a slot with a private L3 at `idx`
++/// keeps it — stage 3b).
+ ///
+ /// # Safety
+ ///
+@@ -405,10 +557,12 @@ pub unsafe fn map_page(
+ unsafe fn set_l2(gib: usize, idx: usize, desc: u64) {
+     // SAFETY: caller contract.
+     unsafe {
++        let old = shared_l2(gib).0[idx];
+         shared_l2(gib).0[idx] = desc;
+-        if gib == 0 {
+-            for slot in 0..MAX_PROCESSES {
+-                slot_tables(slot).l2.0[idx] = desc;
++        for slot in 0..MAX_PROCESSES {
++            let e = &mut slot_tables(slot).l2[gib].0[idx];
++            if *e == old {
++                *e = desc;
+             }
+         }
+     }
+@@ -430,7 +584,8 @@ unsafe fn set_l3_0(idx: usize, desc: u64) {
+ }
+ 
+ /// The L3 table covering the 2-MiB region that starts at `region` (≥ 2 MiB),
+-/// creating it from [`SHARED_L3`] if the L2 entry is still invalid.
++/// creating it — from the arena if there is one ([`set_table_arena`]),
++/// else from [`SHARED_L3`] — if the L2 entry is still invalid.
+ ///
+ /// # Safety
+ ///
+@@ -447,23 +602,25 @@ unsafe fn shared_l3_for(region: u64) -> Result<&'static mut UserTable, MapError>
+             // it would have to split the block (break-before-make, plan §3.2).
+             return Err(MapError::Conflict);
+         }
+-        let pa = cur & OA_MASK;
+-        let n = SHARED_L3_USED.load(Ordering::Relaxed);
+-        // SAFETY: the table this descriptor names is one of ours.
+-        let pool = unsafe { &mut *&raw mut SHARED_L3 };
+-        return pool[..n]
+-            .iter_mut()
+-            .find(|t| table_pa(t) == pa)
+-            .ok_or(MapError::Conflict);
+-    }
+-    let n = SHARED_L3_USED.load(Ordering::Relaxed);
+-    if n >= SHARED_L3_COUNT {
+-        return Err(MapError::NoTable);
+-    }
+-    SHARED_L3_USED.store(n + 1, Ordering::Relaxed);
+-    // SAFETY: caller's lock contract; `n` was free.
+-    let t = unsafe { &mut (*&raw mut SHARED_L3)[n] };
+-    t.0 = [0; 512];
++        // SAFETY: a valid table descriptor in our template names one of our
++        // tables, reachable through the kernel alias.
++        return Ok(unsafe { &mut *table_at(cur) });
++    }
++    let t = match arena_alloc() {
++        Some(t) => t,
++        None => {
++            let n = SHARED_L3_USED.load(Ordering::Relaxed);
++            if n >= SHARED_L3_COUNT {
++                return Err(MapError::NoTable);
++            }
++            SHARED_L3_USED.store(n + 1, Ordering::Relaxed);
++            // SAFETY: caller's lock contract; `n` was free.
++            let t = unsafe { &mut (*&raw mut SHARED_L3)[n] };
++            t.0 = [0; 512];
++            t
++        }
++    };
++    SHARED_L3_TOTAL.fetch_add(1, Ordering::Relaxed);
+     // SAFETY: caller contract; GiB-0 index 0 is excluded because `region` ≥ 2 MiB.
+     unsafe { set_l2(gib, idx, table_pa(t) | D_VALID | D_TABLE) };
+     Ok(t)
+@@ -544,6 +701,7 @@ pub unsafe fn map_shared(va: u64, len: u64, flags: PageFlags, allow_blocks: bool
+         }
+         // SAFETY: caller's lock contract; `region` aligned, ≥ 2 MiB, in range.
+         let t = unsafe { shared_l3_for(region)? };
++        let first = a;
+         while a < stop {
+             let idx = ((a - region) / PAGE_SIZE) as usize;
+             let want = a | page_bits;
+@@ -555,6 +713,18 @@ pub unsafe fn map_shared(va: u64, len: u64, flags: PageFlags, allow_blocks: bool
+             }
+             a += PAGE_SIZE;
+         }
++        // A slot with a private copy of this region (stage 3b) must see the
++        // publication as well: it is the same for everybody.
++        let lo = ((first - region) / PAGE_SIZE) as usize;
++        let hi = ((stop - region) / PAGE_SIZE) as usize;
++        for slot in 0..MAX_PROCESSES {
++            // SAFETY: caller's lock contract.
++            if let Some(p) = unsafe { slot_private_l3(slot, region) } {
++                // SAFETY: a private table of ours; only invalid entries of
++                // the shared set were just filled, so the copy follows.
++                unsafe { (&mut (*p).0)[lo..hi].copy_from_slice(&t.0[lo..hi]) };
++            }
++        }
+     }
+     // SAFETY: barrier-only.
+     unsafe { publish_user_mappings() };
+@@ -570,20 +740,267 @@ pub unsafe fn map_shared(va: u64, len: u64, flags: PageFlags, allow_blocks: bool
+ ///
+ /// Boot CPU, before any trap; the pools are initialised.
+ pub unsafe fn map_pools() -> Result<(), MapError> {
++    let protect = super::memprot::enabled();
+     for (start, end) in [
+         crate::bdos::mem::init::stram_range(),
+         crate::bdos::mem::init::ttram_range(),
+     ] {
+-        if end > start {
++        if end <= start {
++            continue;
++        }
++        if protect {
++            // Stage 3b: one L3 per 2-MiB region the pool touches, every pool
++            // entry invalid — nothing is allocated yet, and free memory is
++            // nobody's (I8). Rights are entered page by page as blocks are
++            // handed out ([`super::memprot`]).
++            let mut region = (start as u64) & !(L3_SPAN - 1);
++            while region < end as u64 {
++                if !(L3_SPAN..USER_VA_LIMIT).contains(&region) {
++                    return Err(MapError::VaOutOfRange);
++                }
++                // SAFETY: boot CPU; in range and aligned.
++                unsafe { shared_l3_for(region)? };
++                region += L3_SPAN;
++            }
++        } else {
+             // SAFETY: boot CPU; the pool is user memory by definition.
+             unsafe {
+                 map_shared(start as u64, (end - start) as u64, PageFlags::UserRwExec, true)?;
+             }
+         }
+     }
++    // SAFETY: barrier-only.
++    unsafe { publish_user_mappings() };
+     Ok(())
+ }
+ 
++// ─── Per-slot rights (stage 3b) ──────────────────────────────────────
++
++/// Span of one L3 table / 2-MiB region — the granule of [`make_private`].
++pub const REGION_SPAN: u64 = L3_SPAN;
++
++/// The shared L3 of the 2-MiB region at `region`, or `None` if the region
++/// has none (not user memory, or mapped by a block).
++///
++/// # Safety
++///
++/// Caller holds the BDOS giant lock; `region` is 2-MiB aligned.
++pub unsafe fn shared_l3(region: u64) -> Option<*mut UserTable> {
++    if !(L3_SPAN..USER_VA_LIMIT).contains(&region) {
++        return None;
++    }
++    let gib = (region / L2_SPAN) as usize;
++    let idx = ((region % L2_SPAN) / L3_SPAN) as usize;
++    // SAFETY: caller contract.
++    let cur = unsafe { shared_l2(gib).0[idx] };
++    (cur & (D_VALID | D_TABLE) == D_VALID | D_TABLE).then(|| table_at(cur))
++}
++
++/// `slot`'s private L3 of the region at `region`, if it has one.
++///
++/// # Safety
++///
++/// Caller holds the BDOS giant lock; `region` is 2-MiB aligned.
++pub unsafe fn slot_private_l3(slot: usize, region: u64) -> Option<*mut UserTable> {
++    if slot >= MAX_PROCESSES || !(L3_SPAN..USER_VA_LIMIT).contains(&region) {
++        return None;
++    }
++    let gib = (region / L2_SPAN) as usize;
++    let idx = ((region % L2_SPAN) / L3_SPAN) as usize;
++    // SAFETY: caller contract.
++    let (tmpl, cur) = unsafe { (shared_l2(gib).0[idx], slot_tables(slot).l2[gib].0[idx]) };
++    (cur != tmpl && cur & (D_VALID | D_TABLE) == D_VALID | D_TABLE).then(|| table_at(cur))
++}
++
++/// The L2 entry `slot` uses for `region`, through which an entry change is
++/// made break-before-make.
++///
++/// # Safety
++///
++/// Caller holds the BDOS giant lock; `slot`/`region` in range.
++unsafe fn slot_l2_entry(slot: usize, region: u64) -> *mut u64 {
++    let gib = (region / L2_SPAN) as usize;
++    let idx = ((region % L2_SPAN) / L3_SPAN) as usize;
++    // SAFETY: caller contract.
++    unsafe { &raw mut slot_tables(slot).l2[gib].0[idx] }
++}
++
++/// Replace a valid table descriptor with another **break-before-make**
++/// (V0a C3/C4; ARM ARM `RDDMVT` D8-7859; a table-attribute change is BBM by
++/// `IYQWJF` D8-7757): write invalid, `dsb ish`, `tlbi vmalle1is`, `dsb ish`,
++/// write the new descriptor, `dsb ish`, `isb`.
++///
++/// # Safety
++///
++/// Caller holds the BDOS giant lock; `entry` is an L2 entry of ours.
++unsafe fn replace_bbm(entry: *mut u64, new: u64) {
++    // SAFETY: caller contract — a live entry of a user table.
++    unsafe {
++        core::ptr::write_volatile(entry, 0);
++        tlbi_all_barriered();
++        core::ptr::write_volatile(entry, new);
++        publish_user_mappings();
++    }
++}
++
++/// Give `slot` its own copy of the shared L3 of `region` (copy-on-differ,
++/// plan §3.2) and return it; an existing private copy is returned as is.
++/// The caller then writes the slot's own rights into it.
++///
++/// # Errors
++///
++/// [`MapError::NoTable`] — the arena is exhausted; [`MapError::VaOutOfRange`]
++/// — the region has no shared L3.
++///
++/// # Safety
++///
++/// Caller holds the BDOS giant lock; `region` 2-MiB aligned.
++pub unsafe fn make_private(slot: usize, region: u64) -> Result<*mut UserTable, MapError> {
++    if slot >= MAX_PROCESSES {
++        return Err(MapError::InvalidSlot);
++    }
++    // SAFETY: caller contract.
++    if let Some(p) = unsafe { slot_private_l3(slot, region) } {
++        return Ok(p);
++    }
++    // SAFETY: caller contract.
++    let shared = unsafe { shared_l3(region) }.ok_or(MapError::VaOutOfRange)?;
++    let t = arena_alloc().ok_or(MapError::NoTable)?;
++    // SAFETY: `shared` is a live table of ours.
++    t.0 = unsafe { (*shared).0 };
++    PRIVATE_USED.fetch_add(1, Ordering::Relaxed);
++    let new = table_pa(t) | D_VALID | D_TABLE;
++    // SAFETY: caller contract; the slot's own L2 entry.
++    unsafe {
++        let e = slot_l2_entry(slot, region);
++        // The copy must be visible to the walker before the entry names it.
++        core::arch::asm!("dsb ish", options(nostack, preserves_flags));
++        if core::ptr::read_volatile(e) & D_VALID != 0 {
++            replace_bbm(e, new);
++        } else {
++            core::ptr::write_volatile(e, new);
++            publish_user_mappings();
++        }
++    }
++    Ok(t as *mut UserTable)
++}
++
++/// Point `slot` back at the shared L3 of `region` and free its private copy
++/// (break-before-make). Nothing to do if it has none.
++///
++/// # Safety
++///
++/// Caller holds the BDOS giant lock; `region` 2-MiB aligned.
++pub unsafe fn drop_private(slot: usize, region: u64) {
++    // SAFETY: caller contract.
++    let Some(p) = (unsafe { slot_private_l3(slot, region) }) else {
++        return;
++    };
++    let gib = (region / L2_SPAN) as usize;
++    let idx = ((region % L2_SPAN) / L3_SPAN) as usize;
++    // SAFETY: caller contract.
++    unsafe {
++        let tmpl = shared_l2(gib).0[idx];
++        replace_bbm(slot_l2_entry(slot, region), tmpl);
++    }
++    arena_free(p);
++    PRIVATE_USED.fetch_sub(1, Ordering::Relaxed);
++}
++
++/// Write leaf entry `idx` of `table` and remember whether a **valid** entry
++/// changed (then the TLB may hold the old one, [`flush_tlb`]).
++///
++/// # Safety
++///
++/// Caller holds the BDOS giant lock; `table` is a live user L3; `idx < 512`.
++pub unsafe fn set_leaf(table: *mut UserTable, idx: usize, desc: u64) {
++    // SAFETY: caller contract.
++    unsafe {
++        let e = &raw mut (*table).0[idx];
++        let old = core::ptr::read_volatile(e);
++        if old == desc {
++            return;
++        }
++        if old & D_VALID != 0 {
++            TLB_DIRTY.store(true, Ordering::Relaxed);
++        }
++        core::ptr::write_volatile(e, desc);
++    }
++}
++
++/// Read leaf entry `idx` of `table`.
++///
++/// # Safety
++///
++/// As [`set_leaf`].
++pub unsafe fn leaf(table: *const UserTable, idx: usize) -> u64 {
++    // SAFETY: caller contract.
++    unsafe { core::ptr::read_volatile(&raw const (*table).0[idx]) }
++}
++
++/// The leaf descriptor of the 4-KiB user page at `va` (VA = PA) with
++/// `flags`; `0` (invalid) for `None`.
++pub fn leaf_desc(va: u64, flags: Option<PageFlags>) -> u64 {
++    match flags {
++        Some(f) => (va & OA_MASK) | f.descriptor_bits(),
++        None => 0,
++    }
++}
++
++/// Make all table writes visible and, if a valid leaf entry changed since
++/// the last call, drop every stage-1 EL1&0 translation:
++/// `dsb ish; tlbi vmalle1is; dsb ish; isb` (ARM ARM `RSQBCS` D8-7852 — a
++/// narrowing or a valid→valid widening needs the TLBI; an invalid→valid
++/// change needs only the barrier, `RXCLRD`). The trailing `isb` (or the
++/// `eret` that follows) is the context synchronisation. All processes run
++/// with ASID 0 and every root switch invalidates the whole TLB already
++/// ([`crate::bdos::process::mmu::switch_ttbr0_kernel`], the kernel's
++/// `restore_boot_ttbr0`), so `vmalle1is` covers the active root and nothing
++/// else can be cached.
++///
++/// # Safety
++///
++/// Caller is at EL1 (barrier + TLB maintenance only).
++pub unsafe fn flush_tlb() {
++    if TLB_DIRTY.swap(false, Ordering::Relaxed) {
++        // SAFETY: caller contract.
++        unsafe { tlbi_all_barriered() };
++    } else {
++        // SAFETY: barrier-only.
++        unsafe { publish_user_mappings() };
++    }
++}
++
++/// [`flush_tlb`], invalidating unconditionally (a root was torn down).
++///
++/// # Safety
++///
++/// EL1.
++pub unsafe fn flush_tlb_always() {
++    TLB_DIRTY.store(true, Ordering::Relaxed);
++    // SAFETY: caller contract.
++    unsafe { flush_tlb() };
++}
++
++/// `dsb ish; tlbi vmalle1is; dsb ish; isb` (on the host: nothing).
++///
++/// # Safety
++///
++/// EL1.
++unsafe fn tlbi_all_barriered() {
++    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
++    // SAFETY: TLB maintenance + barriers are permitted at EL1.
++    unsafe {
++        core::arch::asm!(
++            "dsb ish",
++            "tlbi vmalle1is",
++            "dsb ish",
++            "isb",
++            options(nostack, preserves_flags),
++        );
++    }
++}
++
+ /// Walk `slot`'s tables in software and return the output address and the
+ /// leaf descriptor that maps user VA `va`, or `None` if `va` is not mapped
+ /// there. What the MMU would do for the process — for the boot log, the
+@@ -634,9 +1051,9 @@ pub fn page_bits(flags: PageFlags) -> u64 {
+     flags.descriptor_bits()
+ }
+ 
+-/// Number of [`SHARED_L3`] tables in use (boot log / tests).
++/// Number of shared L3 tables in use (boot log / tests).
+ pub fn shared_l3_used() -> usize {
+-    SHARED_L3_USED.load(Ordering::Relaxed)
++    SHARED_L3_TOTAL.load(Ordering::Relaxed)
+ }
+ 
+ /// Phys address of `slot`'s L0 table — the value written to `TTBR0_EL1` via
+@@ -686,6 +1103,10 @@ pub fn l0_pa_for(slot: usize) -> u64 {
+ /// (Pexec) or fall through to kernel code that does **not**
+ /// touch low-half VAs.
+ pub unsafe fn install_ttbr0(l0_pa: u64) {
++    // Every root goes live with its rights up to date (ARCH03 3b): pending
++    // protection changes are entered before the switch.
++    // SAFETY: EL1 under the BDOS lock (the caller's single-CPU context).
++    unsafe { super::memprot::sync() };
+     // SAFETY: writing TTBR0_EL1 is permitted at EL1. The `dsb ish`
+     // before the install is mandatory (ARM ARM D5.10.1): the slot's
+     // page-table entries were just written through cacheable kernel
+diff --git a/tos-api/src/bdos/process/pexec.rs b/tos-api/src/bdos/process/pexec.rs
+index eb477d4..b3c2898 100644
+--- a/tos-api/src/bdos/process/pexec.rs
++++ b/tos-api/src/bdos/process/pexec.rs
+@@ -457,6 +457,11 @@ pub unsafe fn set_parent(child: usize, parent_pd: *mut BasePage) {
+     // SAFETY: `kva` is the kernel alias of the child's live basepage;
+     // `p_parent` is a plain 32-bit LONG (pool addresses are below 2 GiB).
+     unsafe { (*kva).p_parent = parent_pd as u64 as tos_types::Long };
++    // Its rights as a started process: a `Pexec(4)` child those of the space
++    // it shares, any other child of a process the parent's blocks it
++    // inherits unless strict (ARCH03 3b, E5/E6).
++    // SAFETY: BDOS lock held (caller contract).
++    unsafe { super::memprot::on_launch(child, parent_pd) };
+ }
+ 
+ /// Release every slot holding a program that `owner` loaded with `PE_LOAD`
+diff --git a/tos-api/src/bdos/process/usermem.rs b/tos-api/src/bdos/process/usermem.rs
+index a3ff9b9..e8c19d3 100644
+--- a/tos-api/src/bdos/process/usermem.rs
++++ b/tos-api/src/bdos/process/usermem.rs
+@@ -18,8 +18,10 @@
+ //! FreeMiNT protection mode ([`tos_types::ProtMode`],
+ //! `references/freemint/sys/mint/mem.h:130-134`) and returns the physical
+ //! address as the pointer. Pool memory needs nothing: it is mapped already.
+-//! Stage 1 has no per-process rights (FreeMiNT with `no_mem_prot`), so a
+-//! publication is visible to every process, like the pools.
++//! A publication is the same for every process (it lives in the shared
++//! tables); pool memory is reached with the rights of each process since
++//! ARCH03 stage 3b ([`super::memprot`]), and a pool block that is published
++//! takes the publication's mode.
+ //!
+ //! [`resolve_kva`] is the reverse path, for kernel code that must follow a
+ //! user pointer outside its owner's trap (the AES drawing a tree or a window
+@@ -227,8 +229,18 @@ pub unsafe fn expose_attr(
+     let pa = super::kva_to_user_va(kernel_va as u64);
+     // Pool memory (the AES screen buffer `WF_SCREEN` hands out, for one) is
+     // in every process's tables already, read/write — a publication would
+-    // only try to remap it.
++    // only try to remap it. With memory protection on (ARCH03 3b) the block
++    // it lies in takes the publication's mode instead, so everybody gets the
++    // access `prot` grants (FreeMiNT `mark_region`).
+     if attr == MemAttr::Cacheable && in_pool(pa, len as u64) {
++        if super::memprot::enabled() {
++            // SAFETY: caller's lock contract.
++            unsafe {
++                if let Some((start, _)) = super::memprot::block_containing(pa) {
++                    super::memprot::set_mode(start, prot);
++                }
++            }
++        }
+         return Some(pa);
+     }
+ 
+diff --git a/tos-api/src/bios/crash.rs b/tos-api/src/bios/crash.rs
+index 4508599..e338f01 100644
+--- a/tos-api/src/bios/crash.rs
++++ b/tos-api/src/bios/crash.rs
+@@ -164,6 +164,113 @@ pub struct ProgramInfo {
+     pub bbase: u32,
+ }
+ 
++/// What the memory a faulting access hit was, with memory protection on —
++/// FreeMiNT's `berr_msg` classes (`sys/arch/mprot.x:71-80,99-111`): the mode
++/// of the block (a global block cannot cause a protection fault, so a fault
++/// there is a "hardware" one), free pool memory, or memory that protection
++/// does not control at all.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum RegionKind {
++    /// `PROT_P` — private memory of another process (or freed).
++    Private,
++    /// `PROT_S` — supervisor (kernel) memory.
++    Super,
++    /// `PROT_PR` — readable by everybody, writable by its owner.
++    Readable,
++    /// Free pool memory, or a `PROT_I` block (FreeMiNT reports both as
++    /// "free": `berr_msg[PROT_I]`).
++    Free,
++    /// Not controlled by memory protection (outside the pools, page 0, a
++    /// global block).
++    Hardware,
++}
++
++impl RegionKind {
++    /// FreeMiNT's word for it (`berr_msg`, without the padding).
++    pub const fn name(self) -> &'static str {
++        match self {
++            RegionKind::Private => "private",
++            RegionKind::Super => "super",
++            RegionKind::Readable => "readable",
++            RegionKind::Free => "free",
++            RegionKind::Hardware => "hardware",
++        }
++    }
++}
++
++/// The MMU's reason for a memory abort (ARM ARM D24-8672/8673 IFSC,
++/// D24-8683…8685 DFSC: `0b0001LL` translation, `0b0010LL` access flag,
++/// `0b0011LL` permission, LL = level).
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum FaultType {
++    /// No valid translation — memory protection makes another process's
++    /// `PROT_P`/`PROT_S` pages and freed pages invalid, so this is what a
++    /// protection violation of those looks like (plan §3.3, 0a).
++    Translation,
++    /// Access flag (never set clear by NewTOS — a kernel bug).
++    AccessFlag,
++    /// The translation forbids the access — a write to `PROT_PR` memory of
++    /// another process.
++    Permission,
++}
++
++/// The kind of access that faulted.
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub enum Access {
++    /// A data read.
++    Read,
++    /// A data write (`ESR_EL1.WnR`, D24-8682).
++    Write,
++    /// An instruction fetch.
++    Execute,
++}
++
++/// The memory-protection line of the report: what was hit and why the MMU
++/// refused (ARCH03 stage 3b, plan §3.15 / Frage 11).
++#[derive(Debug, Clone, Copy, PartialEq, Eq)]
++pub struct MemViolation {
++    /// What the address was (from the protection bookkeeping, not the MMU:
++    /// a translation fault alone cannot tell "protected" from "unmapped").
++    pub region: RegionKind,
++    /// The MMU's reason.
++    pub fault: FaultType,
++    /// The table level the fault was reported at (0–3).
++    pub level: u8,
++    /// Read, write or instruction fetch.
++    pub access: Access,
++}
++
++/// The protection line for an abort syndrome `esr` whose address lies in
++/// `region` — `None` unless `esr` is a translation, access-flag or
++/// permission fault of an Instruction/Data Abort and `region` is known
++/// (protection on).
++pub const fn mem_violation(esr: u64, region: Option<RegionKind>) -> Option<MemViolation> {
++    let Some(region) = region else {
++        return None;
++    };
++    if !is_abort(esr) {
++        return None;
++    }
++    let fsc = (esr & 0x3F) as u8;
++    let fault = match fsc >> 2 {
++        0b0001 => FaultType::Translation,
++        0b0010 => FaultType::AccessFlag,
++        0b0011 => FaultType::Permission,
++        _ => return None,
++    };
++    let access = match esr_ec(esr) {
++        ec::IABT_LOWER | ec::IABT_SAME => Access::Execute,
++        _ => {
++            if esr & (1 << 6) != 0 {
++                Access::Write
++            } else {
++                Access::Read
++            }
++        }
++    };
++    Some(MemViolation { region, fault, level: fsc & 3, access })
++}
++
+ /// Everything the report shows.
+ #[derive(Debug, Clone, Copy)]
+ pub struct CrashReport<'a> {
+@@ -183,6 +290,9 @@ pub struct CrashReport<'a> {
+     pub usp: u64,
+     /// The running program, if there is one.
+     pub program: Option<ProgramInfo>,
++    /// With memory protection on: what the faulting access hit
++    /// ([`mem_violation`]).
++    pub violation: Option<MemViolation>,
+ }
+ 
+ /// Render the report text — the `kcprintf` lines of `dopanic`
+@@ -206,6 +316,31 @@ pub fn write_report<W: fmt::Write>(w: &mut W, r: &CrashReport<'_>) -> fmt::Resul
+         Some(a) => writeln!(w, "addr={:016x} sr={:08x} pc={:016x}", a, r.pstate as u32, r.pc)?,
+         None => writeln!(w, "sr={:08x} pc={:016x}", r.pstate as u32, r.pc)?,
+     }
++    // Memory protection (ARCH03 3b): FreeMiNT's classification of the
++    // address (`report_buserr`, `sys/arch/mprot.x:89-124`: "MEMORY
++    // VIOLATION", type, r/w) plus the MMU's reason, which tells a
++    // protected-and-invalid page (translation) from a read-only one
++    // (permission).
++    if let Some(v) = r.violation {
++        let access = match v.access {
++            Access::Read => "read",
++            Access::Write => "write",
++            Access::Execute => "execute",
++        };
++        let fault = match v.fault {
++            FaultType::Translation => "translation",
++            FaultType::AccessFlag => "access flag",
++            FaultType::Permission => "permission",
++        };
++        writeln!(
++            w,
++            "Memory violation: {} memory, {} ({} fault, level {})",
++            v.region.name(),
++            access,
++            fault,
++            v.level
++        )?;
++    }
+     // Register dump (`kprint.c:527-537`): four per line, like "D0-3:".
+     w.write_str("\n")?;
+     let mut i = 0usize;
+@@ -334,6 +469,7 @@ mod tests {
+                 dbase: 0x2000,
+                 bbase: 0x2100,
+             }),
++            violation: None,
+         };
+         let s = render(&r);
+         let lines: std::vec::Vec<&str> = s.lines().collect();
+@@ -362,6 +498,53 @@ mod tests {
+         assert!(lines.iter().all(|l| l.len() <= 80));
+     }
+ 
++    #[test]
++    fn protection_line_tells_translation_from_permission() {
++        // EL0 write to an invalid L3 entry (another process's PROT_P page).
++        let v = mem_violation(esr(0x24, 0x47), Some(RegionKind::Private)).unwrap();
++        assert_eq!(v, MemViolation {
++            region: RegionKind::Private,
++            fault: FaultType::Translation,
++            level: 3,
++            access: Access::Write,
++        });
++        // EL0 write to a read-only L3 entry (PROT_PR of another process).
++        let v = mem_violation(esr(0x24, 0x4F), Some(RegionKind::Readable)).unwrap();
++        assert_eq!((v.fault, v.level, v.access), (FaultType::Permission, 3, Access::Write));
++        // A read; the kernel's ldtr on behalf of a caller (same EL).
++        let v = mem_violation(esr(0x25, 0x07), Some(RegionKind::Free)).unwrap();
++        assert_eq!((v.fault, v.access), (FaultType::Translation, Access::Read));
++        // An instruction fetch.
++        let v = mem_violation(esr(0x20, 0x07), Some(RegionKind::Private)).unwrap();
++        assert_eq!(v.access, Access::Execute);
++        // Protection off: no line. Alignment / external: no line.
++        assert_eq!(mem_violation(esr(0x24, 0x47), None), None);
++        assert_eq!(mem_violation(esr(0x24, 0x21), Some(RegionKind::Hardware)), None);
++        assert_eq!(mem_violation(esr(0x24, 0x10), Some(RegionKind::Hardware)), None);
++        assert_eq!(mem_violation(esr(0x00, 0), Some(RegionKind::Hardware)), None);
++    }
++
++    #[test]
++    fn report_shows_the_protection_line_after_the_address() {
++        let regs = [0u64; 31];
++        let r = CrashReport {
++            kind: CrashKind::BusError,
++            esr: esr(0x24, 0x47),
++            far: Some(0x0100_2000),
++            pc: 0x0100_5000,
++            pstate: 0,
++            regs: &regs,
++            usp: 0,
++            program: None,
++            violation: mem_violation(esr(0x24, 0x47), Some(RegionKind::Private)),
++        };
++        let s = render(&r);
++        let lines: std::vec::Vec<&str> = s.lines().collect();
++        assert_eq!(lines[4], "addr=0000000001002000 sr=00000000 pc=0000000001005000");
++        assert_eq!(lines[5], "Memory violation: private memory, write (translation fault, level 3)");
++        assert_eq!(lines[6], "");
++    }
++
+     #[test]
+     fn report_without_address_or_program_or_text_hit() {
+         let regs = [0u64; 31];
+@@ -374,6 +557,7 @@ mod tests {
+             regs: &regs,
+             usp: 0,
+             program: Some(ProgramInfo { basepage: 0, tbase: 0x1000, tlen: 0x10, dbase: 0, bbase: 0 }),
++            violation: None,
+         };
+         let s = render(&r);
+         assert!(s.contains("Panic: Exception class 0x3c\n"));
+diff --git a/tos-api/src/gemdos/trace.rs b/tos-api/src/gemdos/trace.rs
+index 94bfb6e..de10372 100644
+--- a/tos-api/src/gemdos/trace.rs
++++ b/tos-api/src/gemdos/trace.rs
+@@ -625,7 +625,7 @@ mod imp {
+                     r.flags |= flags::CAP_CLAMPED;
+                 }
+                 if ret == 0 {
+-                    let (dta, dspace) = crate::bdos::fs::find::cur_dta_in();
++                    let (dta, dspace) = crate::bdos::fs::find::cur_dta_in(a.space);
+                     // SAFETY: rule C1 — on `E_OK` this call wrote all 44 bytes
+                     // at exactly this address.
+                     let n2 = unsafe { copy_raw(dspace, &mut r.cap[n1..], dta, DTA_LEN) };
+@@ -640,7 +640,7 @@ mod imp {
+             // Fsnext (0x4F) — same DTA, same `E_OK` gate
+             // (`bdos/fs/find.rs:505-511`).
+             0x4F if ret == 0 => {
+-                let (dta, dspace) = crate::bdos::fs::find::cur_dta_in();
++                let (dta, dspace) = crate::bdos::fs::find::cur_dta_in(a.space);
+                 // SAFETY: as for Fsfirst.
+                 let n = unsafe { copy_raw(dspace, &mut r.cap, dta, DTA_LEN) };
+                 if n == DTA_LEN {
+diff --git a/tos-api/src/vdi/raster.rs b/tos-api/src/vdi/raster.rs
+index 4ad2e07..e878ef3 100644
+--- a/tos-api/src/vdi/raster.rs
++++ b/tos-api/src/vdi/raster.rs
+@@ -1165,11 +1165,25 @@ pub fn vr_trnfm(pb: &Vdipb, backend: &dyn RasterBackend) {
+         return;
+     }
+ 
+-    let planes = src.nplanes.max(0) as usize;
+-    let size = (src.h as usize) * (src.wdwidth as usize); // words per plane
+-    if planes == 0 || size == 0 {
++    // EmuTOS: `size = (LONG)fd_h * fd_wdwidth` words per plane and the loop
++    // counts are `LONG`s (`vdi_raster.c:299-316`): a zero or negative plane
++    // size or plane count copies nothing — after the destination's `fd_stand`
++    // has been forced, which EmuTOS does first. Computed signed and wide, so
++    // a negative `fd_h` is no overflow here either.
++    let stand_off = match abi {
++        Abi::Lp64 => 14,
++        Abi::Ilp32 => 10,
++    };
++    let size_words = i64::from(src.h) * i64::from(src.wdwidth);
++    if size_words <= 0 || src.nplanes <= 0 {
++        let new_stand: u16 = if src.stand != 0 { 0 } else { 1 };
++        if pb.space().put_u16(dst_ptr + stand_off, new_stand).is_err() {
++            pb.note_fault();
++        }
+         return;
+     }
++    let planes = src.nplanes as usize;
++    let size = size_words as usize; // words per plane, > 0
+     let (outer, inner) = if src.stand != 0 {
+         (planes, size) // standard → device
+     } else {
+@@ -1192,10 +1206,6 @@ pub fn vr_trnfm(pb: &Vdipb, backend: &dyn RasterBackend) {
+     // ABI: 14 for LP64 (8B ptr), 10 for ILP32 (4B ptr). Written in the
+     // caller's space (the dst MFDB is the caller's struct).
+     let new_stand: i16 = if src.stand != 0 { 0 } else { 1 };
+-    let stand_off = match abi {
+-        Abi::Lp64 => 14,
+-        Abi::Ilp32 => 10,
+-    };
+     if pb.space().put_u16(dst_ptr + stand_off, new_stand as u16).is_err() {
+         pb.note_fault();
+         return;
+diff --git a/tos-api/tests/vdi_raster_reference/harness.rs b/tos-api/tests/vdi_raster_reference/harness.rs
+index b896097..279faa9 100644
+--- a/tos-api/tests/vdi_raster_reference/harness.rs
++++ b/tos-api/tests/vdi_raster_reference/harness.rs
+@@ -748,3 +748,38 @@ pub fn check(dump: &[u8], case: &Case) {
+         panic!("{}", msg);
+     }
+ }
++
++// ── not from the dump: input validation ──────────────────────────────────
++
++/// `vr_trnfm` with a negative `fd_h` (or a zero/negative plane count): EmuTOS
++/// computes the plane size as a signed `LONG` (`(LONG)fd_h * fd_wdwidth`,
++/// `vdi_raster.c:299-302`), forces the destination's `fd_stand` and then
++/// runs loops whose counts are not positive — nothing is copied. NewTOS used
++/// to widen `fd_h` to `usize` first, an overflow panic in the dev profile
++/// (ARCH03 3a observation, fixed in 3b).
++#[test]
++fn vr_trnfm_with_a_negative_height_copies_nothing_but_sets_fd_stand() {
++    let _guard = VDI_LOCK.lock().unwrap_or_else(|e| e.into_inner());
++    let wk = workstation();
++    for (h, nplanes) in [(-1i16, 4i16), (-300, 1), (16, 0), (16, -2)] {
++        let mut pb = Rpb::new();
++        fill_buffer(&mut pb.bufs.a, 0x1111);
++        fill_buffer(&mut pb.bufs.b, 0x2222);
++        let b_before = pb.bufs.b;
++        let (a_addr, b_addr) = (pb.bufs.a.as_ptr() as u64, pb.bufs.b.as_ptr() as u64);
++        *pb.src = Mfdb { addr: a_addr, w: 16, h, wdwidth: 1, stand: 1, nplanes, ..Mfdb::default() };
++        *pb.dst = Mfdb { addr: b_addr, w: 16, h, wdwidth: 1, stand: 1, nplanes, ..Mfdb::default() };
++        pb.poison();
++        pb.contrl[0] = 110;
++        pb.contrl[1] = 0;
++        pb.contrl[3] = 0;
++        pb.contrl[5] = 0;
++        pb.contrl[6] = wk.handle;
++        let (s, d) = (&*pb.src as *const Mfdb as u64, &*pb.dst as *const Mfdb as u64);
++        pb.set_mfdb_ptr(0, s);
++        pb.set_mfdb_ptr(1, d);
++        pb.call();
++        assert_eq!(pb.dst.stand, 0, "h={h} planes={nplanes}: fd_stand forced to device form");
++        assert_eq!(pb.bufs.b, b_before, "h={h} planes={nplanes}: nothing copied");
++    }
++}
+diff --git a/tos-types/src/memory.rs b/tos-types/src/memory.rs
+index 249ae1d..1e7b868 100644
+--- a/tos-types/src/memory.rs
++++ b/tos-types/src/memory.rs
+@@ -167,9 +167,10 @@ pub const MX_MODEMASK: i16 = 0x03;
+ // F_PROTMODE) >> F_PROTSHIFT; else --protmode;`). So `F_PROT_G` (`0x10`) in a
+ // PRGFLAGS word is `PROT_G`, but `0x10` in an `Mxalloc` mode is `PROT_P`.
+ // [`prot_from_prgflags`] and [`prot_from_mxalloc`] are the two decoders
+-// (ARCH03 plan Frage 8). NewTOS still masks the nibble off in `Mxalloc`
+-// (`mode &= MX_MODEMASK`, ADR-021) until per-process rights take effect
+-// (ARCH03 stage 3b); the decoders exist so that step reads the ABI right.
++// (ARCH03 plan Frage 8). Since ARCH03 stage 3b `Mxalloc` decodes the nibble
++// with [`prot_from_mxalloc`] and the per-process rights enforce it
++// (`tos-api::bdos::process::memprot`); only the pool selection is still
++// `mode & MX_MODEMASK`.
+ 
+ /// Mask of the protection-mode bits in an `Mxalloc` mode word / `PRGFLAGS`
+ /// (`F_PROTMODE`, `references/freemint/sys/mint/mem.h:120`).
+diff --git a/tos-api/src/bdos/process/memprot.rs b/tos-api/src/bdos/process/memprot.rs
+new file mode 100644
+index 0000000..81e83b6
+--- /dev/null
++++ b/tos-api/src/bdos/process/memprot.rs
+@@ -0,0 +1,853 @@
++//! Memory protection per address space — FreeMiNT's `PROT_P/G/S/PR/I` on
++//! AArch64 (ARCH03 stage 3b, plan `docs/analysis/arch03-implementation-plan.md`
++//! §3.2–§3.4, §3.15, invariants I7–I10, decisions E5, E10, E15, E16).
++//!
++//! ## Model (FreeMiNT `sys/arch/mprot030.c`)
++//!
++//! Every allocated pool block carries a **protection mode** — FreeMiNT keeps
++//! it in `global_mode_table` per page (`mprot030.c:605-615`), NewTOS in a
++//! record per block ([`record`]): `Mxalloc` takes it from the mode word or
++//! the caller's `PRGFLAGS` (`sys/dosmem.c:209-221`), `Malloc` from the
++//! `PRGFLAGS` (nibble 0), a program's TPA and environment from the program's
++//! own `PRGFLAGS` (`sys/memory.c:1403-1407,1511-1513`, `sys/k_exec.c:398`),
++//! the kernel's own blocks are `PROT_S` (`sys/memory.c:150-159`).
++//!
++//! What a process may do with a page follows from the mode and whether it is
++//! an **owner** (`mark_region`, `mprot030.c:617-693`; table §3.3 of the
++//! plan):
++//!
++//! | mode | owner | everybody else |
++//! |---|---|---|
++//! | `PROT_P` | read/write/execute | invalid |
++//! | `PROT_G` | read/write/execute | read/write/execute |
++//! | `PROT_S` | read/write/execute | invalid (EL1 reaches it through the kernel alias) |
++//! | `PROT_PR` | read/write/execute | read/execute |
++//! | `PROT_I` | invalid | invalid |
++//!
++//! Free pool memory is invalid for everybody (I8, FreeMiNT `free_region` →
++//! `mark_region(PROT_I)`, `sys/memory.c:932`).
++//!
++//! **Owners** are the block's EmuTOS tag `m_own` and its further owners
++//! ([`crate::bdos::mem::region`]). A process slot counts as owner when one of
++//! them is a process of its **memory space** — itself, or, for a `Pexec(4)`
++//! child, the space it shares ([`super::Process::space_pd`], FreeMiNT
++//! `FORK_SHAREVM`, plan E6) — so a thread and its caller see each other's
++//! blocks. In addition:
++//!
++//! * **E5, not strict (default):** a child started with `Pexec` 0/6 keeps
++//!   the rights to the blocks its parent's space owned when it started
++//!   (FreeMiNT forks the region list and, unless `MPF_STRICT`, does not
++//!   revoke it on exec: `sys/k_exec.c:799-806`). The boot argument
++//!   `memprot=strict` switches this off.
++//! * **E10:** while a user routine of another process runs in the current
++//!   one (a `G_USERDEF` callout of a foreign tree), the current space may
++//!   reach the owner's blocks ([`grant_temp`]) — FreeMiNT's `prot_temp`
++//!   (`mprot030.c:775-805`).
++//! * `Ptermres`: what only the resident program owned and was `PROT_P`
++//!   becomes `PROT_G` (`sys/k_exit.c:320-336`).
++//!
++//! ## Switch
++//!
++//! The boot argument `memprot=off` (FreeMiNT `MEM_PROT=NO`,
++//! `sys/bootmenu.c:207-219`) leaves everything as in stage 3a: the pools are
++//! mapped once for everybody, block sizes keep the 16-byte grain, no record
++//! is kept. With protection on (the default) the pool grain is one page
++//! (E16, FreeMiNT `QUANTUM`, `sys/mint/mem.h:152`), so no page has two
++//! owners (I10).
++//!
++//! ## Tables
++//!
++//! Changes are collected as **dirty ranges** ([`touch`]) and slots that need
++//! a full rebuild; [`sync`] brings the tables in line — the shared L3 tables
++//! get the non-owner rights, a slot whose rights differ in a 2-MiB region gets
++//! a private copy of that region's L3 ([`mmu::make_private`]), a slot whose
++//! rights no longer differ is pointed back at the shared table
++//! ([`mmu::drop_private`]). [`sync`] runs at the end of every mutating BDOS
++//! operation, before every root is installed ([`mmu::install_ttbr0`]) and at
++//! the end of every trap, and ends with the TLB maintenance the change needs
++//! ([`mmu::flush_tlb`]).
++//!
++//! ## Concurrency
++//!
++//! Everything here runs under the BDOS giant lock (single CPU, trap / boot
++//! context), like the pools and the tables.
++
++use core::cell::UnsafeCell;
++use core::ffi::c_void;
++use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
++
++use tos_types::{BasePage, Long, ProtMode};
++
++use super::mmu::{self, PageFlags, REGION_SPAN};
++use super::{MAX_PROCESSES, PROCESS_TABLE};
++use crate::bdos::mem::init::{is_initialised, pmd, pmdalt, stram_range, ttram_range};
++
++// ─── Switch ──────────────────────────────────────────────────────────
++
++static ENABLED: AtomicBool = AtomicBool::new(false);
++static STRICT: AtomicBool = AtomicBool::new(false);
++
++/// Is memory protection on? (`false` until [`configure`], and with the boot
++/// argument `memprot=off`.)
++#[inline]
++pub fn enabled() -> bool {
++    ENABLED.load(Ordering::Relaxed)
++}
++
++/// Is the parent-to-child rule strict (`memprot=strict`, E5)?
++#[inline]
++pub fn strict() -> bool {
++    STRICT.load(Ordering::Relaxed)
++}
++
++/// Set the switch from the boot arguments. Must run before the BDOS pools
++/// are seeded and mapped (the pool grain and the pool mapping depend on it).
++///
++/// # Safety
++///
++/// Boot CPU, before any pool allocation.
++pub unsafe fn configure(enable: bool, strict_mode: bool) {
++    ENABLED.store(enable, Ordering::Relaxed);
++    STRICT.store(strict_mode, Ordering::Relaxed);
++}
++
++/// The allocation grain of the BDOS pools as an `align_mask`: one page with
++/// protection on (E16), else the stage-3a 16 bytes.
++#[inline]
++pub fn pool_align_mask() -> Long {
++    if enabled() { mmu::PAGE_SIZE as Long - 1 } else { 15 }
++}
++
++// ─── Block records ───────────────────────────────────────────────────
++
++/// One record per allocated block: at most one per MD.
++const MAX_RECORDS: usize =
++    crate::bdos::mem::mdpool::MD_BLOCK_COUNT * crate::bdos::mem::mdpool::MDS_PER_BLOCK + 2;
++
++#[derive(Copy, Clone)]
++struct Rec {
++    /// Block start (`m_start`); `0` = unused.
++    loc: u64,
++    mode: ProtMode,
++    /// Slots that inherited access at their start (E5, not strict).
++    inherit: u32,
++}
++
++const NO_REC: Rec = Rec { loc: 0, mode: ProtMode::P, inherit: 0 };
++
++struct Records(UnsafeCell<[Rec; MAX_RECORDS]>);
++// SAFETY: BDOS giant lock (single CPU).
++unsafe impl Sync for Records {}
++static RECS: Records = Records(UnsafeCell::new([NO_REC; MAX_RECORDS]));
++
++/// # Safety
++///
++/// BDOS giant lock held; no other borrow of the records alive.
++unsafe fn recs() -> &'static mut [Rec; MAX_RECORDS] {
++    // SAFETY: caller contract.
++    unsafe { &mut *RECS.0.get() }
++}
++
++fn rec_of(r: &mut [Rec; MAX_RECORDS], loc: u64) -> Option<&mut Rec> {
++    if loc == 0 {
++        return None;
++    }
++    r.iter_mut().find(|e| e.loc == loc)
++}
++
++/// Record (or re-record) the mode of the block that starts at `loc`. A stale
++/// record of a freed block at the same address is replaced. `false` only if
++/// the table is full, which cannot happen while every record names a live
++/// block (one per MD).
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn record(loc: u64, mode: ProtMode) -> bool {
++    // SAFETY: lock held.
++    let r = unsafe { recs() };
++    if let Some(e) = rec_of(r, loc) {
++        *e = Rec { loc, mode, inherit: 0 };
++        return true;
++    }
++    match r.iter_mut().find(|e| e.loc == 0) {
++        Some(e) => {
++            *e = Rec { loc, mode, inherit: 0 };
++            true
++        }
++        None => false,
++    }
++}
++
++/// The protection mode of the block that starts at `loc` (`PROT_P` for a
++/// block without a record).
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn mode_of(loc: u64) -> ProtMode {
++    // SAFETY: lock held.
++    rec_of(unsafe { recs() }, loc).map_or(ProtMode::P, |e| e.mode)
++}
++
++/// The block that starts at `old` now starts at `new` (the aligned TPA
++/// allocation gives its front slack back).
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn rekey(old: u64, new: u64) {
++    if !enabled() || old == new {
++        return;
++    }
++    // SAFETY: lock held.
++    let r = unsafe { recs() };
++    if let Some(e) = rec_of(r, new) {
++        *e = NO_REC;
++    }
++    if let Some(e) = rec_of(r, old) {
++        e.loc = new;
++    }
++}
++
++/// A block was just allocated at `[loc, loc + len)` with `mode`: record it
++/// and enter its rights. Nothing with protection off.
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn on_alloc(loc: u64, len: u64, mode: ProtMode) {
++    if !enabled() {
++        return;
++    }
++    // SAFETY: lock held.
++    unsafe {
++        record(loc, mode);
++        touch(loc, loc + len);
++        sync();
++    }
++}
++
++/// The block that started at `loc` and spanned `len` bytes went back to the
++/// pool: forget it, and make its pages invalid for everybody (I8) before
++/// anybody can be handed them again.
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn on_freed(loc: u64, len: u64) {
++    if !enabled() {
++        return;
++    }
++    // SAFETY: lock held.
++    unsafe {
++        if let Some(e) = rec_of(recs(), loc) {
++            *e = NO_REC;
++        }
++        touch(loc, loc + len);
++        sync();
++    }
++}
++
++/// Change the mode of the block that starts at `loc` (`mark_region`).
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn set_mode(loc: u64, mode: ProtMode) {
++    if !enabled() {
++        return;
++    }
++    // SAFETY: lock held.
++    unsafe {
++        match rec_of(recs(), loc) {
++            Some(e) => e.mode = mode,
++            None => {
++                record(loc, mode);
++            }
++        }
++        touch_block(loc);
++        sync();
++    }
++}
++
++/// The owners of the block at `loc` changed (attach, detach, hand-over,
++/// `set_owner`): enter the new rights.
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn on_owner_change(loc: u64) {
++    if !enabled() {
++        return;
++    }
++    // SAFETY: lock held.
++    unsafe {
++        touch_block(loc);
++        sync();
++    }
++}
++
++/// `Ptermres`: the block at `loc` now belongs to the resident holder alone;
++/// if it was private it becomes global, so every process can call into and
++/// read the resident program (FreeMiNT `sys_ptermres`, `sys/k_exit.c:320-336`:
++/// `links == 1 && PROT_P → mark_region(PROT_G)`).
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn on_resident(loc: u64) {
++    if !enabled() {
++        return;
++    }
++    // SAFETY: lock held.
++    unsafe {
++        if mode_of(loc) == ProtMode::P {
++            set_mode(loc, ProtMode::G);
++        } else {
++            on_owner_change(loc);
++        }
++    }
++}
++
++// ─── Dirty tracking ──────────────────────────────────────────────────
++
++const MAX_DIRTY: usize = 8;
++
++struct Dirty(UnsafeCell<([(u64, u64); MAX_DIRTY], usize)>);
++// SAFETY: BDOS giant lock.
++unsafe impl Sync for Dirty {}
++static DIRTY: Dirty = Dirty(UnsafeCell::new(([(0, 0); MAX_DIRTY], 0)));
++
++/// Slots whose tables need a full rebuild at the next [`sync`].
++static REBUILD: AtomicU32 = AtomicU32::new(0);
++
++/// [`sync`] is running (it must not re-enter itself).
++static SYNCING: AtomicBool = AtomicBool::new(false);
++
++/// Times a private table could not be had (arena exhausted) — boot log.
++static NO_TABLE: AtomicUsize = AtomicUsize::new(0);
++
++/// Note that the rights of `[lo, hi)` may have changed.
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn touch(lo: u64, hi: u64) {
++    if !enabled() || hi <= lo {
++        return;
++    }
++    let lo = lo & !(mmu::PAGE_SIZE - 1);
++    let hi = (hi + mmu::PAGE_SIZE - 1) & !(mmu::PAGE_SIZE - 1);
++    // SAFETY: lock held.
++    let (ranges, n) = unsafe { &mut *DIRTY.0.get() };
++    for r in ranges[..*n].iter_mut() {
++        if lo <= r.1 && hi >= r.0 {
++            r.0 = r.0.min(lo);
++            r.1 = r.1.max(hi);
++            return;
++        }
++    }
++    if *n < MAX_DIRTY {
++        ranges[*n] = (lo, hi);
++        *n += 1;
++    } else {
++        // Too many: one bounding range.
++        let r = &mut ranges[MAX_DIRTY - 1];
++        r.0 = r.0.min(lo);
++        r.1 = r.1.max(hi);
++    }
++}
++
++/// [`touch`] the whole block that starts at (or contains) `loc`.
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn touch_block(loc: u64) {
++    // SAFETY: lock held.
++    if let Some((s, e)) = unsafe { block_containing(loc) } {
++        // SAFETY: lock held.
++        unsafe { touch(s, e) };
++    }
++}
++
++/// Rebuild `slot`'s tables completely at the next [`sync`] (a new root, a
++/// changed memory space, a granted or revoked temporary right).
++pub fn mark_rebuild(slot: usize) {
++    if enabled() && slot < MAX_PROCESSES {
++        REBUILD.fetch_or(1 << slot, Ordering::Relaxed);
++    }
++}
++
++/// Bring the page tables in line with the recorded rights (see the module
++/// docs) and do the TLB maintenance the changes need. Cheap when nothing is
++/// pending.
++///
++/// # Safety
++///
++/// BDOS giant lock held; EL1 (on the target).
++pub unsafe fn sync() {
++    if !enabled() || !is_initialised() {
++        return;
++    }
++    // SAFETY: lock held; read of the pending count only.
++    if unsafe { (*DIRTY.0.get()).1 } == 0 && REBUILD.load(Ordering::Relaxed) == 0 {
++        return; // nothing pending: no table write, no barrier (the trap fast path)
++    }
++    if SYNCING.swap(true, Ordering::Acquire) {
++        return;
++    }
++    // SAFETY: lock held.
++    let (ranges, n) = unsafe { &mut *DIRTY.0.get() };
++    let rebuild = REBUILD.swap(0, Ordering::Relaxed);
++    if rebuild != 0 {
++        for (s, e) in pools() {
++            // SAFETY: lock held.
++            unsafe { refresh(s, e, rebuild) };
++        }
++    }
++    while *n > 0 {
++        *n -= 1;
++        let (lo, hi) = ranges[*n];
++        // SAFETY: lock held.
++        unsafe { refresh(lo, hi, 0) };
++    }
++    // SAFETY: EL1, barriers + TLB maintenance only.
++    unsafe { mmu::flush_tlb() };
++    SYNCING.store(false, Ordering::Release);
++}
++
++// ─── Rights ──────────────────────────────────────────────────────────
++
++/// E10 grants: `TEMP[s]` = slots whose blocks slot `s` may reach for now.
++static TEMP: [AtomicU32; MAX_PROCESSES] = [const { AtomicU32::new(0) }; MAX_PROCESSES];
++
++/// Is `slot` a process with a root (its tables built)?
++fn live(slot: usize) -> bool {
++    PROCESS_TABLE[slot].l0_pa.load(Ordering::Acquire) != 0
++}
++
++/// The memory space of `slot`: its own PD, or the PD of the space it shares
++/// as a `Pexec(4)` child.
++fn space_root(slot: usize) -> u64 {
++    let sp = PROCESS_TABLE[slot].space_pd.load(Ordering::Acquire);
++    if sp.is_null() { super::pd_of(slot) as u64 } else { sp as u64 }
++}
++
++/// For every live slot, the set of slots in its memory space.
++fn group_masks() -> [u32; MAX_PROCESSES] {
++    let mut roots = [0u64; MAX_PROCESSES];
++    let mut alive = 0u32;
++    for (s, root) in roots.iter_mut().enumerate() {
++        if live(s) {
++            *root = space_root(s);
++            alive |= 1 << s;
++        }
++    }
++    let mut g = [0u32; MAX_PROCESSES];
++    for s in 0..MAX_PROCESSES {
++        if alive & (1 << s) == 0 || roots[s] == 0 {
++            continue;
++        }
++        for t in 0..MAX_PROCESSES {
++            if alive & (1 << t) != 0 && roots[t] == roots[s] {
++                g[s] |= 1 << t;
++            }
++        }
++    }
++    g
++}
++
++/// The live slot (one with a root) whose PD pointer is `pd`. Unlike
++/// [`super::slot_for`] it does not look at the slot's state: a root exists from the
++/// moment the loader built it (some kernel launch paths — the self-tests —
++/// run a slot they never claimed), and its rights must be there before its
++/// first instruction.
++fn live_slot_of(pd: *mut c_void) -> Option<usize> {
++    if pd.is_null() {
++        return None;
++    }
++    let kva = super::kalias(pd as u64) as *mut BasePage;
++    (0..MAX_PROCESSES).find(|&s| live(s) && PROCESS_TABLE[s].basepage_kva.load(Ordering::Acquire) == kva)
++}
++
++/// The slots behind the owner cookies of a block (`m_own` + further owners).
++fn owner_slots(own: *mut c_void, further: &[*mut c_void]) -> u32 {
++    let mut m = 0u32;
++    for &o in core::iter::once(&own).chain(further.iter()) {
++        if let Some(s) = live_slot_of(o) {
++            m |= 1 << s;
++        }
++    }
++    m
++}
++
++/// What an owner of a block in `mode` may do with its pages (table §3.3).
++fn owner_flags(mode: ProtMode) -> Option<PageFlags> {
++    match mode {
++        ProtMode::I => None,
++        _ => Some(PageFlags::UserRwExec),
++    }
++}
++
++/// What everybody else may do (table §3.3, FreeMiNT `other_dt/other_s/
++/// other_wp`, `mprot030.c:400-402`).
++fn other_flags(mode: ProtMode) -> Option<PageFlags> {
++    match mode {
++        ProtMode::G => Some(PageFlags::UserRwExec),
++        ProtMode::Pr => Some(PageFlags::UserRoExec),
++        ProtMode::P | ProtMode::S | ProtMode::I => None,
++    }
++}
++
++/// Does an owner see this mode differently from everybody else?
++fn owner_differs(mode: ProtMode) -> bool {
++    matches!(mode, ProtMode::P | ProtMode::S | ProtMode::Pr)
++}
++
++/// The pool ranges, as `[start, end)`.
++fn pools() -> impl Iterator<Item = (u64, u64)> {
++    [stram_range(), ttram_range()]
++        .into_iter()
++        .filter(|&(s, e)| e > s)
++        .map(|(s, e)| (s as u64, e as u64))
++}
++
++fn in_pool(va: u64) -> bool {
++    pools().any(|(s, e)| va >= s && va < e)
++}
++
++/// One allocated block overlapping the region being refreshed.
++#[derive(Copy, Clone)]
++struct Blk {
++    mode: ProtMode,
++    owners: u32,
++    inherit: u32,
++}
++
++const NO_BLK: Blk = Blk { mode: ProtMode::P, owners: 0, inherit: 0 };
++
++/// Page → block index + 1 in the region (`0` = free pool page,
++/// [`NOT_POOL`] = not pool memory — left alone).
++const NOT_POOL: u16 = u16::MAX;
++
++struct Scratch(UnsafeCell<([Blk; MAX_RECORDS], [u16; 512])>);
++// SAFETY: BDOS giant lock.
++unsafe impl Sync for Scratch {}
++static SCRATCH: Scratch = Scratch(UnsafeCell::new(([NO_BLK; MAX_RECORDS], [0; 512])));
++
++/// Does `slot` hold owner rights on `b`?
++fn has_rights(slot: usize, b: &Blk, groups: &[u32; MAX_PROCESSES]) -> bool {
++    b.owners & groups[slot] != 0
++        || b.inherit & (1 << slot) != 0
++        || b.owners & TEMP[slot].load(Ordering::Relaxed) != 0
++}
++
++/// The leaf descriptor of pool page `va` for `slot` (`None` = the shared,
++/// non-owner pattern).
++fn page_desc(va: u64, bi: u16, blks: &[Blk], slot: Option<(usize, &[u32; MAX_PROCESSES])>) -> u64 {
++    if bi == 0 {
++        return 0; // free pool memory: nobody's (I8)
++    }
++    let b = &blks[(bi - 1) as usize];
++    let flags = match slot {
++        Some((s, groups)) if has_rights(s, b, groups) => owner_flags(b.mode),
++        _ => other_flags(b.mode),
++    };
++    mmu::leaf_desc(va, flags)
++}
++
++/// Refresh the rights of the pool pages in `[lo, hi)` for the shared tables
++/// and every live slot; slots in `full` get their whole 2-MiB regions
++/// recomputed (a rebuild).
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++unsafe fn refresh(lo: u64, hi: u64, full: u32) {
++    let groups = group_masks();
++    // SAFETY: lock held; exclusive scratch.
++    let (blks, pageb) = unsafe { &mut *SCRATCH.0.get() };
++    let mut region = lo & !(REGION_SPAN - 1);
++    while region < hi {
++        let rend = region + REGION_SPAN;
++        // SAFETY: lock held.
++        let Some(shared) = (unsafe { mmu::shared_l3(region) }) else {
++            region = rend;
++            continue;
++        };
++        // The region's blocks, and which page belongs to which.
++        let mut nb = 0usize;
++        for (i, p) in pageb.iter_mut().enumerate() {
++            *p = if in_pool(region + (i as u64) * mmu::PAGE_SIZE) { 0 } else { NOT_POOL };
++        }
++        for mp in [pmd(), pmdalt()] {
++            // SAFETY: lock held; read-only list walk.
++            let mut m = unsafe { (*mp).mp_mal };
++            while !m.is_null() && nb < blks.len() {
++                // SAFETY: list invariant.
++                let (start, len, own, next) =
++                    unsafe { ((*m).m_start as u32 as u64, (*m).m_length as u32 as u64, (*m).m_own, (*m).m_link) };
++                let end = start + len;
++                if start < rend && end > region && len > 0 {
++                    // SAFETY: lock held.
++                    let further = unsafe { crate::bdos::mem::region::further_owners(start as Long) };
++                    // SAFETY: lock held.
++                    let (mode, inherit) = match rec_of(unsafe { recs() }, start) {
++                        Some(r) => (r.mode, r.inherit),
++                        None => (ProtMode::P, 0),
++                    };
++                    blks[nb] = Blk { mode, owners: owner_slots(own, &further), inherit };
++                    nb += 1;
++                    let a = start.max(region);
++                    let z = end.min(rend);
++                    let mut va = a & !(mmu::PAGE_SIZE - 1);
++                    while va < z {
++                        let i = ((va - region) / mmu::PAGE_SIZE) as usize;
++                        if pageb[i] != NOT_POOL {
++                            pageb[i] = nb as u16;
++                        }
++                        va += mmu::PAGE_SIZE;
++                    }
++                }
++                m = next;
++            }
++        }
++        let blks = &blks[..nb];
++        // The pages of this region inside the range.
++        let i_lo = ((lo.max(region) - region) / mmu::PAGE_SIZE) as usize;
++        let i_hi = ((hi.min(rend) - region).div_ceil(mmu::PAGE_SIZE)) as usize;
++        // Shared tables: the non-owner pattern.
++        for (i, &bi) in pageb.iter().enumerate().take(i_hi).skip(i_lo) {
++            if bi == NOT_POOL {
++                continue;
++            }
++            let va = region + (i as u64) * mmu::PAGE_SIZE;
++            // SAFETY: lock held; `shared` is a live table.
++            unsafe { mmu::set_leaf(shared, i, page_desc(va, bi, blks, None)) };
++        }
++        // Every live slot.
++        for s in 0..MAX_PROCESSES {
++            if !live(s) {
++                continue;
++            }
++            let needs = blks.iter().any(|b| owner_differs(b.mode) && has_rights(s, b, &groups));
++            if !needs {
++                // SAFETY: lock held.
++                unsafe { mmu::drop_private(s, region) };
++                continue;
++            }
++            // SAFETY: lock held.
++            let had = unsafe { mmu::slot_private_l3(s, region) }.is_some();
++            // SAFETY: lock held.
++            let p = match unsafe { mmu::make_private(s, region) } {
++                Ok(p) => p,
++                Err(_) => {
++                    // No table left: the slot keeps the shared (non-owner)
++                    // rights here — it can lose access, never gain it.
++                    NO_TABLE.fetch_add(1, Ordering::Relaxed);
++                    continue;
++                }
++            };
++            let (a, z) = if !had || full & (1 << s) != 0 { (0, 512) } else { (i_lo, i_hi) };
++            for (i, &bi) in pageb.iter().enumerate().take(z).skip(a) {
++                if bi == NOT_POOL {
++                    continue;
++                }
++                let va = region + (i as u64) * mmu::PAGE_SIZE;
++                // SAFETY: lock held; `p` is the slot's private table.
++                unsafe { mmu::set_leaf(p, i, page_desc(va, bi, blks, Some((s, &groups)))) };
++            }
++        }
++        region = rend;
++    }
++}
++
++/// Times a slot could not get a private table (the arena was exhausted).
++pub fn table_shortfalls() -> usize {
++    NO_TABLE.load(Ordering::Relaxed)
++}
++
++// ─── Process events ──────────────────────────────────────────────────
++
++/// A root was (re)built for `slot` ([`super::loader`]): enter its rights.
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn on_root_built(slot: usize) {
++    if !enabled() {
++        return;
++    }
++    mark_rebuild(slot);
++    // SAFETY: lock held.
++    unsafe { sync() };
++}
++
++/// `slot` starts running, launched by the process `parent` (`null`: by the
++/// kernel) — `Pexec` 0/4/6. A `Pexec(4)` child shares its caller's space
++/// (its rights follow from [`super::Process::space_pd`]); any other child
++/// of a process inherits the rights to the blocks its parent's space owns
++/// now, unless the mode is strict (E5, FreeMiNT `sys/k_exec.c:799-806`).
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn on_launch(slot: usize, parent: *mut BasePage) {
++    if !enabled() || slot >= MAX_PROCESSES {
++        return;
++    }
++    let thread = !PROCESS_TABLE[slot].space_pd.load(Ordering::Acquire).is_null();
++    if !thread && !strict() {
++        if let Some(ps) = live_slot_of(parent.cast()) {
++            let groups = group_masks();
++            let pg = groups[ps] | (1 << ps);
++            for mp in [pmd(), pmdalt()] {
++                // SAFETY: lock held; read-only list walk.
++                let mut m = unsafe { (*mp).mp_mal };
++                while !m.is_null() {
++                    // SAFETY: list invariant.
++                    let (start, own, next) = unsafe { ((*m).m_start as u32 as u64, (*m).m_own, (*m).m_link) };
++                    // SAFETY: lock held.
++                    let further = unsafe { crate::bdos::mem::region::further_owners(start as Long) };
++                    if owner_slots(own, &further) & pg != 0 {
++                        // SAFETY: lock held.
++                        let r = unsafe { recs() };
++                        if rec_of(r, start).is_none() {
++                            // SAFETY: lock held.
++                            unsafe { record(start, ProtMode::P) };
++                        }
++                        if let Some(e) = rec_of(r, start) {
++                            e.inherit |= 1 << slot;
++                        }
++                    }
++                    m = next;
++                }
++            }
++        }
++    }
++    mark_rebuild(slot);
++    // SAFETY: lock held.
++    unsafe { sync() };
++}
++
++/// `slot` is released: its private tables go back to the arena, its
++/// inherited and temporary rights are forgotten.
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn on_slot_released(slot: usize) {
++    if !enabled() || slot >= MAX_PROCESSES {
++        return;
++    }
++    // SAFETY: lock held.
++    for e in unsafe { recs() }.iter_mut() {
++        e.inherit &= !(1 << slot);
++    }
++    TEMP[slot].store(0, Ordering::Relaxed);
++    for t in &TEMP {
++        t.fetch_and(!(1 << slot), Ordering::Relaxed);
++    }
++    REBUILD.fetch_and(!(1 << slot), Ordering::Relaxed);
++    // SAFETY: lock held.
++    unsafe {
++        mmu::release_private_tables(slot);
++        // The released root may still be the installed one until the next
++        // switch: drop what the TLB holds of it.
++        mmu::flush_tlb_always();
++    }
++}
++
++/// E10: let `slot` reach the blocks of `owner`'s memory space while a user
++/// routine of `owner` runs in `slot` (a `G_USERDEF` callout of a foreign
++/// tree) — FreeMiNT `prot_temp(loc, len, -1)` (`mprot030.c:775-805`) for
++/// the owner's regions. Revoked by [`revoke_temp`].
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn grant_temp(slot: usize, owner: usize) {
++    if !enabled() || slot >= MAX_PROCESSES || owner >= MAX_PROCESSES {
++        return;
++    }
++    let g = group_masks()[owner] | (1 << owner);
++    TEMP[slot].fetch_or(g, Ordering::Relaxed);
++    mark_rebuild(slot);
++    // SAFETY: lock held.
++    unsafe { sync() };
++}
++
++/// End every temporary right of `slot` ([`grant_temp`]).
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn revoke_temp(slot: usize) {
++    if !enabled() || slot >= MAX_PROCESSES {
++        return;
++    }
++    if TEMP[slot].swap(0, Ordering::Relaxed) != 0 {
++        mark_rebuild(slot);
++        // SAFETY: lock held.
++        unsafe { sync() };
++    }
++}
++
++// ─── Lookups ─────────────────────────────────────────────────────────
++
++/// The allocated block `[start, end)` that contains `addr`, on either pool.
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn block_containing(addr: u64) -> Option<(u64, u64)> {
++    if !is_initialised() {
++        return None;
++    }
++    for mp in [pmd(), pmdalt()] {
++        // SAFETY: lock held; read-only list walk.
++        let mut m = unsafe { (*mp).mp_mal };
++        while !m.is_null() {
++            // SAFETY: list invariant.
++            let (start, len, next) =
++                unsafe { ((*m).m_start as u32 as u64, (*m).m_length as u32 as u64, (*m).m_link) };
++            if addr >= start && addr < start + len {
++                return Some((start, start + len));
++            }
++            m = next;
++        }
++    }
++    None
++}
++
++/// What a faulting address was, for the crash report — FreeMiNT
++/// `report_buserr` (`sys/arch/mprot.x:71-124`): the mode of the block it
++/// lies in ("private", "super", "readable"; a global block is a hardware
++/// error), "free" pool memory, or memory protection does not control
++/// ("hardware"). `None` with protection off (FreeMiNT reports nothing then,
++/// `mprot.x:96-97`).
++pub fn region_kind(far: u64) -> Option<crate::bios::crash::RegionKind> {
++    use crate::bios::crash::RegionKind;
++    if !enabled() {
++        return None;
++    }
++    if !in_pool(far) {
++        return Some(RegionKind::Hardware);
++    }
++    // SAFETY: the crash path runs in the trap of the faulting program, under
++    // the BDOS lock; read-only walks.
++    unsafe {
++        match block_containing(far) {
++            None => Some(RegionKind::Free),
++            Some((start, _)) => Some(match mode_of(start) {
++                ProtMode::P => RegionKind::Private,
++                ProtMode::G => RegionKind::Hardware,
++                ProtMode::S => RegionKind::Super,
++                ProtMode::Pr => RegionKind::Readable,
++                ProtMode::I => RegionKind::Free,
++            }),
++        }
++    }
++}
+diff --git a/tos-api/tests/arch03_3b_fsetdta.rs b/tos-api/tests/arch03_3b_fsetdta.rs
+new file mode 100644
+index 0000000..058a129
+--- /dev/null
++++ b/tos-api/tests/arch03_3b_fsetdta.rs
+@@ -0,0 +1,46 @@
++//! ARCH03 stage 3b — `Fsetdta` from a kernel (EL1) caller while a process is
++//! running must not cut the kernel address to 32 bits into that process's
++//! `p_xdta` (3a observation). EmuTOS `xsetdta` stores into `run->p_xdta`
++//! (`bdos/fsmain.c:403-405`) — every EmuTOS caller is a process; NewTOS's
++//! kernel callers (the in-kernel desktop, the built-in shell) keep their own
++//! DTA cell (`bdos::fs::find`, `KERNEL_DTA`).
++
++use tos_api::bdos::fs::find;
++use tos_api::bdos::process;
++use tos_api::trap::TrapArgs;
++use tos_api::uaccess::Space;
++use tos_types::{BasePage, Long};
++
++fn args(space: Space, a0: u64) -> TrapArgs {
++    TrapArgs { regs: [a0, 0, 0, 0, 0, 0, 0, 0], func: 0x1A, svc_imm: 1, space }
++}
++
++#[test]
++fn a_kernel_dta_never_lands_in_the_running_processs_basepage() {
++    // A running process with its own DTA.
++    let slot = process::allocate_slot().expect("a slot");
++    let mut b = Box::new([0u8; 256]);
++    let user_dta: u32 = 0x0123_4080;
++    b[0x20..0x24].copy_from_slice(&user_dta.to_le_bytes()); // p_xdta
++    let bp = Box::into_raw(b) as *mut BasePage;
++    process::PROCESS_TABLE[slot].basepage_kva.store(bp, std::sync::atomic::Ordering::Release);
++    process::set_current(process::pd_of(slot));
++
++    // A kernel caller sets a high-half kernel DTA.
++    let kdta: u64 = 0xFFFF_0000_0012_3440;
++    assert_eq!(find::fsetdta(&args(Space::Kernel, kdta)), 0);
++    // SAFETY: `bp` is the live test basepage.
++    assert_eq!(unsafe { (*bp).p_xdta } as u32, user_dta, "the program's DTA is untouched");
++    assert_eq!(find::fgetdta(&args(Space::User, 0)) as u32, user_dta, "the program reads its own");
++    assert_eq!(find::fgetdta(&args(Space::Kernel, 0)), kdta as Long, "the kernel caller its own");
++
++    // The program's own Fsetdta still goes to its basepage.
++    assert_eq!(find::fsetdta(&args(Space::User, 0x0123_5000)), 0);
++    // SAFETY: as above.
++    assert_eq!(unsafe { (*bp).p_xdta } as u32, 0x0123_5000);
++
++    process::set_current(std::ptr::null_mut());
++    process::free_slot(slot);
++    // SAFETY: allocated by `Box::new` above.
++    drop(unsafe { Box::from_raw(bp as *mut [u8; 256]) });
++}
+diff --git a/tos-api/tests/arch03_3b_memprot.rs b/tos-api/tests/arch03_3b_memprot.rs
+new file mode 100644
+index 0000000..508ee61
+--- /dev/null
++++ b/tos-api/tests/arch03_3b_memprot.rs
+@@ -0,0 +1,389 @@
++//! ARCH03 stage 3b — **rights per address space** (FreeMiNT `PROT_P/G/S/PR/I`,
++//! plan `docs/analysis/arch03-implementation-plan.md` §3.2–§3.4, invariants
++//! I7–I10, decisions E5, E6, E10, E15, E16).
++//!
++//! Checked on the host, against the real pool, ownership table and page
++//! tables, with memory protection switched on for this test binary:
++//!
++//! * the rights matrix (table §3.3): owner / non-owner descriptor bits for
++//!   every mode, free memory invalid for everybody (I8 — MEM04);
++//! * table sharing: a process whose rights equal everybody else's in a
++//!   2-MiB region uses the shared L3; one whose rights differ gets its own
++//!   copy, which goes away when the difference does (copy-on-differ);
++//! * ownership transitions: `Pexec(4)` thread shares its caller's space
++//!   (E6), a `Pexec(0)` child inherits its parent's blocks unless strict
++//!   (E5), attach/detach of a further owner, `Ptermres` turns sole-owner
++//!   private memory global, temporary rights (E10), slot release;
++//! * the page grain (E16) and the crash-report classification.
++//!
++//! The pool is bookkeeping only (its addresses are never dereferenced); the
++//! basepages are host memory; the table arena is a leaked, page-aligned host
++//! buffer. One binary, one pool, one lock.
++
++use std::sync::atomic::Ordering;
++use std::sync::{Mutex, MutexGuard, Once};
++
++use tos_api::bdos::mem::{region, traps};
++use tos_api::bdos::process::mmu::{self, PageFlags};
++use tos_api::bdos::process::{self, memprot, PROCESS_TABLE};
++use tos_api::bios::crash::RegionKind;
++use tos_types::{BasePage, Long, ProtMode, MX_STRAM, MX_TTRAM};
++
++const ST_START: u64 = 0x0040_0000;
++const ST_LEN: u64 = 10 * 1024 * 1024;
++const TT_START: u64 = 0x0100_0000;
++const TT_LEN: u64 = 64 * 1024 * 1024;
++const ARENA_TABLES: usize = 512;
++
++static LOCK: Mutex<()> = Mutex::new(());
++static SETUP: Once = Once::new();
++
++#[repr(C, align(4096))]
++struct Page([u8; 4096]);
++
++fn lock() -> MutexGuard<'static, ()> {
++    let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
++    SETUP.call_once(|| {
++        let arena: Vec<Page> = (0..ARENA_TABLES).map(|_| Page([0; 4096])).collect();
++        let arena = Box::leak(arena.into_boxed_slice());
++        // SAFETY: once per binary, before the pools exist.
++        unsafe {
++            memprot::configure(true, false);
++            mmu::set_table_arena(arena.as_mut_ptr() as u64, ARENA_TABLES);
++            tos_api::bdos::mem::init::init(ST_START, ST_LEN, TT_START, TT_LEN).expect("pools");
++            mmu::map_pools().expect("the pools map");
++        }
++    });
++    g
++}
++
++/// A process the host can "run": a basepage of its own (host memory) in a
++/// claimed slot with a root.
++struct Proc {
++    slot: usize,
++    bp: *mut BasePage,
++}
++
++impl Proc {
++    fn new() -> Proc {
++        let slot = process::allocate_slot().expect("a slot");
++        let b = Box::new([0u8; 256]);
++        let bp = Box::into_raw(b) as *mut BasePage;
++        let p = &PROCESS_TABLE[slot];
++        p.basepage_kva.store(bp, Ordering::Release);
++        // SAFETY: under the lock; the slot is not an installed root.
++        unsafe { mmu::init_slot_tables(slot) }.unwrap();
++        p.l0_pa.store(mmu::l0_pa_for(slot), Ordering::Release);
++        p.set_state(process::State::Running);
++        // SAFETY: under the lock.
++        unsafe { memprot::on_root_built(slot) };
++        Proc { slot, bp }
++    }
++
++    fn pd(&self) -> *mut core::ffi::c_void {
++        process::pd_of(self.slot).cast()
++    }
++
++    /// Allocate as this process (it is `RUN` for the call).
++    fn alloc(&self, n: Long, mode: i16) -> u64 {
++        process::set_current(process::pd_of(self.slot));
++        // SAFETY: under the lock.
++        let a = unsafe { traps::mxalloc(n, mode) };
++        process::set_current(std::ptr::null_mut());
++        assert_ne!(a, 0, "allocation");
++        a as u32 as u64
++    }
++}
++
++impl Drop for Proc {
++    fn drop(&mut self) {
++        // SAFETY: under the lock.
++        unsafe { tos_api::bdos::mem::free_all_owned::free_all_owned(self.pd()) };
++        process::free_slot(self.slot);
++        // SAFETY: allocated by `Box::new` in `new`.
++        drop(unsafe { Box::from_raw(self.bp as *mut [u8; 256]) });
++    }
++}
++
++/// What `slot` may do at `va`: `None` = invalid, else the leaf's AP bits
++/// (`0b01` RW, `0b11` RO).
++fn access(slot: usize, va: u64) -> Option<u64> {
++    mmu::translate(slot, va).map(|(pa, d)| {
++        assert_eq!(pa, va, "VA = PA");
++        (d >> 6) & 0b11
++    })
++}
++
++const RW: Option<u64> = Some(0b01);
++const RO: Option<u64> = Some(0b11);
++
++#[test]
++fn rights_matrix_owner_and_others_for_every_mode() {
++    let _g = lock();
++    let a = Proc::new();
++    let b = Proc::new();
++    // Mxalloc mode nibble = PROT value + 1 (FreeMiNT `sys/dosmem.c:209-221`).
++    for (nibble, mode, owner, other) in [
++        (0x10, ProtMode::P, RW, None),
++        (0x20, ProtMode::G, RW, RW),
++        (0x30, ProtMode::S, RW, None),
++        (0x40, ProtMode::Pr, RW, RO),
++        (0x50, ProtMode::I, None, None),
++    ] {
++        let blk = a.alloc(0x2000, MX_TTRAM | nibble);
++        // SAFETY: under the lock.
++        assert_eq!(unsafe { memprot::mode_of(blk) }, mode);
++        for va in [blk, blk + 0x1FFF] {
++            assert_eq!(access(a.slot, va), owner, "owner, {mode:?}");
++            assert_eq!(access(b.slot, va), other, "other, {mode:?}");
++        }
++        // PXN on everything; owners may execute (UXN clear) as in stage 1.
++        if let Some((_, d)) = mmu::translate(a.slot, blk) {
++            assert_ne!(d & (1 << 53), 0, "PXN");
++            assert_eq!(d & (1 << 54), 0, "UXN clear");
++        }
++        // SAFETY: under the lock.
++        assert_eq!(unsafe { traps::mfree(blk as Long) }, 0);
++    }
++}
++
++#[test]
++fn malloc_takes_the_prgflags_mode_and_free_memory_is_nobodys() {
++    let _g = lock();
++    let a = Proc::new();
++    let b = Proc::new();
++    // PRGFLAGS nibble 0 = PROT_P (PF_STANDARD).
++    let blk = a.alloc(100, MX_STRAM);
++    assert_eq!(access(a.slot, blk), RW);
++    assert_eq!(access(b.slot, blk), None);
++    // MEM04 / I8: after Mfree the former owner can no longer touch it.
++    // SAFETY: under the lock.
++    assert_eq!(unsafe { traps::mfree(blk as Long) }, 0);
++    assert_eq!(access(a.slot, blk), None, "freed memory is invalid for its former owner");
++    assert_eq!(access(b.slot, blk), None);
++    // The same pages handed to b: b only.
++    let again = b.alloc(100, MX_STRAM);
++    assert_eq!(again, blk, "first fit reuses the pages");
++    assert_eq!(access(b.slot, again), RW);
++    assert_eq!(access(a.slot, again), None);
++}
++
++#[test]
++fn page_grain_with_protection_on() {
++    let _g = lock();
++    let a = Proc::new();
++    let x = a.alloc(10, MX_TTRAM);
++    let y = a.alloc(10, MX_TTRAM);
++    assert_eq!(x % 4096, 0);
++    assert_eq!(y % 4096, 0);
++    assert!(y.abs_diff(x) >= 4096, "no page has two blocks (I10)");
++    // Mshrink keeps a page grain too: shrinking 3 pages to 1 byte keeps one
++    // page and frees the rest, which becomes invalid again.
++    let z = a.alloc(3 * 4096, MX_TTRAM);
++    process::set_current(process::pd_of(a.slot));
++    // SAFETY: under the lock.
++    assert_eq!(unsafe { traps::mshrink(0, z as Long, 1) }, 0);
++    process::set_current(std::ptr::null_mut());
++    assert_eq!(access(a.slot, z), RW);
++    assert_eq!(access(a.slot, z + 4096), None, "the shrunk tail is nobody's");
++}
++
++#[test]
++fn equal_rights_share_the_table_and_different_rights_copy_it() {
++    let _g = lock();
++    let a = Proc::new();
++    let b = Proc::new();
++    let region = |va: u64| va & !(mmu::REGION_SPAN - 1);
++    // A global block: everybody sees the same → nobody needs a copy.
++    let g = a.alloc(0x1000, MX_TTRAM | 0x20);
++    // SAFETY: under the lock.
++    unsafe {
++        assert!(mmu::slot_private_l3(a.slot, region(g)).is_none());
++        assert!(mmu::slot_private_l3(b.slot, region(g)).is_none());
++    }
++    // A private block in the same region: its owner gets a copy, b does not.
++    let p = a.alloc(0x1000, MX_TTRAM);
++    assert_eq!(region(p), region(g));
++    // SAFETY: under the lock.
++    unsafe {
++        assert!(mmu::slot_private_l3(a.slot, region(p)).is_some());
++        assert!(mmu::slot_private_l3(b.slot, region(p)).is_none());
++    }
++    let used = mmu::private_l3_used();
++    // Freed: the difference is gone, so is the copy.
++    // SAFETY: under the lock.
++    unsafe {
++        assert_eq!(traps::mfree(p as Long), 0);
++        assert!(mmu::slot_private_l3(a.slot, region(p)).is_none());
++    }
++    assert_eq!(mmu::private_l3_used(), used - 1);
++    // SAFETY: under the lock.
++    unsafe { assert_eq!(traps::mfree(g as Long), 0) };
++}
++
++#[test]
++fn a_pexec4_thread_shares_its_callers_space() {
++    let _g = lock();
++    let parent = Proc::new();
++    let child = Proc::new();
++    let mine = parent.alloc(0x1000, MX_TTRAM);
++    assert_eq!(access(child.slot, mine), None);
++    // `Pexec(4)`: the child runs in its caller's memory space (E6).
++    PROCESS_TABLE[child.slot].space_pd.store(parent.pd().cast(), Ordering::Release);
++    // SAFETY: under the lock.
++    unsafe { memprot::on_launch(child.slot, parent.pd().cast()) };
++    assert_eq!(access(child.slot, mine), RW, "the thread sees its caller's memory");
++    // And the caller sees what the thread allocates (LDG).
++    let theirs = child.alloc(0x1000, MX_TTRAM);
++    assert_eq!(access(parent.slot, theirs), RW);
++    PROCESS_TABLE[child.slot].space_pd.store(std::ptr::null_mut(), Ordering::Release);
++}
++
++#[test]
++fn a_child_inherits_its_parents_blocks_unless_strict() {
++    let _g = lock();
++    let parent = Proc::new();
++    let before = parent.alloc(0x1000, MX_TTRAM);
++    let child = Proc::new();
++    // SAFETY: under the lock.
++    unsafe { memprot::on_launch(child.slot, parent.pd().cast()) };
++    assert_eq!(access(child.slot, before), RW, "E5: what the parent had at the start");
++    let after = parent.alloc(0x1000, MX_TTRAM);
++    assert_eq!(access(child.slot, after), None, "not what it allocates later");
++    // Strict mode: nothing is inherited.
++    // SAFETY: under the lock; restored below.
++    unsafe { memprot::configure(true, true) };
++    let strict_child = Proc::new();
++    // SAFETY: under the lock.
++    unsafe { memprot::on_launch(strict_child.slot, parent.pd().cast()) };
++    assert_eq!(access(strict_child.slot, before), None, "E5 strict");
++    // SAFETY: as above.
++    unsafe { memprot::configure(true, false) };
++    // The inherited right ends with the block.
++    // SAFETY: under the lock.
++    unsafe { assert_eq!(traps::mfree(before as Long), 0) };
++    assert_eq!(access(child.slot, before), None);
++}
++
++#[test]
++fn further_owners_get_and_lose_rights() {
++    let _g = lock();
++    let a = Proc::new();
++    let b = Proc::new();
++    let blk = a.alloc(0x1000, MX_TTRAM);
++    // SAFETY: under the lock.
++    unsafe { region::attach(blk as Long, b.pd()) }.unwrap();
++    assert_eq!(access(b.slot, blk), RW, "attached: an owner");
++    // SAFETY: under the lock.
++    assert_eq!(unsafe { region::detach(blk as Long, b.pd()) }, Ok(region::Detached::Kept));
++    assert_eq!(access(b.slot, blk), None, "detached: not any more");
++    assert_eq!(access(a.slot, blk), RW);
++    // `Pexec(6)` hand-over: b becomes the owner, a stops being one.
++    // SAFETY: under the lock.
++    unsafe { region::hand_over(blk as Long, a.pd(), b.pd()) }.unwrap();
++    assert_eq!(access(b.slot, blk), RW);
++    assert_eq!(access(a.slot, blk), None);
++}
++
++#[test]
++fn resident_private_memory_becomes_global() {
++    let _g = lock();
++    let tsr = Proc::new();
++    let other = Proc::new();
++    let code = tsr.alloc(0x1000, MX_TTRAM);
++    let ro = tsr.alloc(0x1000, MX_TTRAM | 0x40);
++    // SAFETY: under the lock.
++    unsafe { tos_api::bdos::mem::free_all_owned::reserve_all_owned(tsr.pd()) };
++    // FreeMiNT `sys_ptermres`: sole-owner PROT_P → PROT_G; PROT_PR stays.
++    // SAFETY: under the lock.
++    unsafe {
++        assert_eq!(memprot::mode_of(code), ProtMode::G);
++        assert_eq!(memprot::mode_of(ro), ProtMode::Pr);
++    }
++    assert_eq!(access(other.slot, code), RW, "resident code is callable by everybody");
++    assert_eq!(access(other.slot, ro), RO);
++    // SAFETY: under the lock.
++    unsafe {
++        assert_eq!(traps::mfree(code as Long), 0);
++        assert_eq!(traps::mfree(ro as Long), 0);
++    }
++}
++
++#[test]
++fn temporary_rights_for_a_foreign_callout() {
++    let _g = lock();
++    let owner = Proc::new();
++    let host = Proc::new();
++    let tree = owner.alloc(0x1000, MX_TTRAM);
++    assert_eq!(access(host.slot, tree), None);
++    // SAFETY: under the lock.
++    unsafe { memprot::grant_temp(host.slot, owner.slot) };
++    assert_eq!(access(host.slot, tree), RW, "E10: during the callout");
++    // SAFETY: under the lock.
++    unsafe { memprot::revoke_temp(host.slot) };
++    assert_eq!(access(host.slot, tree), None, "and not after it");
++}
++
++#[test]
++fn a_released_slot_gives_its_tables_back() {
++    let _g = lock();
++    let free_before = mmu::arena_free_count();
++    let a = Proc::new();
++    let _x = a.alloc(0x1000, MX_TTRAM);
++    let _y = a.alloc(0x1000, MX_STRAM);
++    assert!(mmu::arena_free_count() < free_before);
++    drop(a);
++    assert_eq!(mmu::arena_free_count(), free_before, "every private table back");
++}
++
++#[test]
++fn the_kernel_allocates_supervisor_memory() {
++    let _g = lock();
++    let a = Proc::new();
++    process::set_current(std::ptr::null_mut());
++    // SAFETY: under the lock; no running process = a kernel caller.
++    let k = unsafe { traps::mxalloc(0x1000, MX_TTRAM) } as u32 as u64;
++    assert_ne!(k, 0);
++    // SAFETY: under the lock.
++    assert_eq!(unsafe { memprot::mode_of(k) }, ProtMode::S);
++    assert_eq!(access(a.slot, k), None, "PROT_S: invalid for programs");
++    // SAFETY: under the lock.
++    unsafe { assert_eq!(traps::mfree(k as Long), 0) };
++}
++
++#[test]
++fn crash_classification_names_what_was_hit() {
++    let _g = lock();
++    let a = Proc::new();
++    let p = a.alloc(0x1000, MX_TTRAM);
++    let s = a.alloc(0x1000, MX_TTRAM | 0x30);
++    let r = a.alloc(0x1000, MX_TTRAM | 0x40);
++    let g = a.alloc(0x1000, MX_TTRAM | 0x20);
++    assert_eq!(memprot::region_kind(p + 8), Some(RegionKind::Private));
++    assert_eq!(memprot::region_kind(s), Some(RegionKind::Super));
++    assert_eq!(memprot::region_kind(r), Some(RegionKind::Readable));
++    assert_eq!(memprot::region_kind(g), Some(RegionKind::Hardware), "global: not a protection fault");
++    assert_eq!(memprot::region_kind(0xDEAD_0000), Some(RegionKind::Hardware), "outside the pools");
++    // SAFETY: under the lock.
++    unsafe { assert_eq!(traps::mfree(p as Long), 0) };
++    assert_eq!(memprot::region_kind(p), Some(RegionKind::Free));
++}
++
++#[test]
++fn publications_reach_private_copies() {
++    let _g = lock();
++    let a = Proc::new();
++    // A private block at the very end of the TT pool's last region forces a
++    // private copy of a region that also holds non-pool pages above it.
++    let blk = a.alloc(0x1000, MX_TTRAM);
++    let region = blk & !(mmu::REGION_SPAN - 1);
++    // SAFETY: under the lock.
++    assert!(unsafe { mmu::slot_private_l3(a.slot, region) }.is_some());
++    // Publish a kernel page below the pools into a region nobody has a copy
++    // of, and check the owner still sees its block and the publication.
++    let low = 0x0009_3000u64;
++    // SAFETY: under the lock; nothing is dereferenced.
++    unsafe { mmu::map_shared(low, 0x1000, PageFlags::UserRoNx, false) }.unwrap();
++    assert_eq!(access(a.slot, low), RO);
++    assert_eq!(access(a.slot, blk), RW);
++}
+diff --git a/sdk/examples/mpkid.c b/sdk/examples/mpkid.c
+new file mode 100644
+index 0000000..bc3b1d4
+--- /dev/null
++++ b/sdk/examples/mpkid.c
+@@ -0,0 +1,87 @@
++/*
++ * mpkid.c -- the child of the ARCH03 stage-3b memory-protection probe
++ * (driver: mprot3b.c). The command tail is "<case> <8 hex digits>": the
++ * case selects what the child does with the address (a block of its
++ * parent's, allocated with a given protection mode):
++ *
++ *   p  read the parent's PROT_P block      P  write it
++ *   g  read + write the parent's PROT_G block
++ *   r  read the parent's PROT_PR block     R  write it
++ *   t  read + write the parent's PROT_P block (started as a Pexec 4 thread)
++ *   f  MEM04: Malloc a page, write, Mfree it, write it again
++ *   .  nothing
++ *
++ * Exit code: 0 = the access went through and read the parent's pattern,
++ * 2 = it read something else. A refused access does not come back: the
++ * EmuTOS crash report, a key, Pterm(-1) -- the parent sees 0x0000FFFF.
++ *
++ * Build: sdk/build.sh sdk/examples/mpkid.c <out>/MPKID.NAP
++ */
++#include <newtos.h>
++
++#define P_CMDLIN 0x80
++#define PATTERN 0x50415254UL /* "PART" */
++#define MARK 0x4B494431UL    /* "KID1" */
++
++typedef unsigned long UL;
++
++static const unsigned char *own_basepage(void)
++{
++    UL sysbase = *(volatile unsigned int *)0x4F2UL;
++    UL run_cell = *(volatile unsigned int *)(sysbase + 0x28);
++    return (const unsigned char *)(UL)*(volatile unsigned int *)run_cell;
++}
++
++static UL hex8(const unsigned char *s)
++{
++    UL v = 0;
++    int i;
++    for (i = 0; i < 8; i++) {
++        unsigned char c = s[i];
++        v <<= 4;
++        if (c >= '0' && c <= '9') v |= (UL)(c - '0');
++        else if (c >= 'a' && c <= 'f') v |= (UL)(c - 'a' + 10);
++        else if (c >= 'A' && c <= 'F') v |= (UL)(c - 'A' + 10);
++    }
++    return v;
++}
++
++int main(void)
++{
++    const unsigned char *tail = own_basepage() + P_CMDLIN;
++    char c = (char)tail[1];
++    volatile unsigned int *a = (volatile unsigned int *)hex8(tail + 3);
++    UL v;
++
++    switch (c) {
++    case 'p':
++    case 'r':
++        v = *a;
++        Cconws("MPKID: read done\r\n");
++        Pterm(v == PATTERN ? 0 : 2);
++    case 'P':
++    case 'R':
++        *a = (unsigned int)MARK;
++        Cconws("MPKID: write done\r\n");
++        Pterm(0);
++    case 'g':
++    case 't':
++        v = *a;
++        *a = (unsigned int)MARK;
++        Cconws("MPKID: read+write done\r\n");
++        Pterm(v == PATTERN ? 0 : 2);
++    case 'f': {
++        volatile unsigned int *m = (volatile unsigned int *)gemdos1(0x48, 4096); /* Malloc */
++        if (!m)
++            Pterm(3);
++        *m = (unsigned int)MARK;
++        gemdos1(0x49, (NLONG)m); /* Mfree */
++        Cconws("MPKID: freed, writing again\r\n");
++        *m = (unsigned int)MARK;
++        Cconws("MPKID: write after Mfree went through\r\n");
++        Pterm(0);
++    }
++    default:
++        Pterm(0);
++    }
++}
+diff --git a/sdk/examples/mprot3b.c b/sdk/examples/mprot3b.c
+new file mode 100644
+index 0000000..a7cd246
+--- /dev/null
++++ b/sdk/examples/mprot3b.c
+@@ -0,0 +1,180 @@
++/*
++ * mprot3b.c -- driver of the ARCH03 stage-3b memory-protection probe.
++ *
++ * Allocates three blocks of its own -- PROT_P (Malloc, PRGFLAGS default),
++ * PROT_G (Mxalloc mode 0x20|3) and PROT_PR (Mxalloc mode 0x40|3) -- fills
++ * them with a pattern and starts C:\MPKID.NAP once per case with the
++ * address in the command tail (mpkid.c). It checks the child's exit code
++ * (0x0000FFFF = the child was stopped by a protection fault: EmuTOS crash
++ * report + Pterm(-1)) and, for the write cases, whether the child's write
++ * reached its memory. Afterwards it checks its own blocks once more: a
++ * refused child leaves them untouched and this process unharmed.
++ *
++ * The expected answers depend on the boot argument (FreeMiNT's
++ * MEM_PROT / MPF_STRICT), chosen at build time with -DMPROT_MODE:
++ *   0  protection on, default (E5: a Pexec 0 child keeps its parent's
++ *      blocks) -- MPROT3B.NAP
++ *   1  protection on, `memprot=strict` -- MPROTS.NAP
++ *   2  `memprot=off` (stage 3a: no protection at all) -- MPROTO.NAP
++ * In every mode: PROT_G works across processes, PROT_PR is readable, a
++ * Pexec 4 thread shares its caller's memory (E6); with protection on a
++ * block given back with Mfree can no longer be written by its former
++ * owner (MEM04).
++ *
++ * Prints one line per case and "MPROT3B: PASS"/"MPROT3B: FAIL".
++ *
++ * Build: sdk/build.sh -DMPROT_MODE=n sdk/examples/mprot3b.c <out>
++ */
++#include <newtos.h>
++
++#ifndef MPROT_MODE
++#define MPROT_MODE 0
++#endif
++#define STRICT (MPROT_MODE == 1)
++#define OFF (MPROT_MODE == 2)
++
++#define PATTERN 0x50415254UL
++#define MARK 0x4B494431UL
++#define CRASH 0xFFFFUL
++
++typedef unsigned long UL;
++
++static NLONG Pexec(short mode, const char *path, const char *tail, const char *env)
++{
++    register NLONG x8 __asm__("x8") = 0x4B;
++    register NLONG r0 __asm__("x0") = mode;
++    register NLONG r1 __asm__("x1") = (NLONG)path;
++    register NLONG r2 __asm__("x2") = (NLONG)tail;
++    register NLONG r3 __asm__("x3") = (NLONG)env;
++    __asm__ volatile("svc #1" : "+r"(r0) : "r"(x8), "r"(r1), "r"(r2), "r"(r3) : "memory");
++    return r0;
++}
++
++static __attribute__((noinline)) void put_hex(UL v)
++{
++    volatile char buf[11];
++    int i;
++    buf[0] = '0';
++    buf[1] = 'x';
++    for (i = 0; i < 8; i++) {
++        unsigned d = (unsigned)(v >> (28 - 4 * i)) & 0xF;
++        buf[2 + i] = (char)(d < 10 ? '0' + d : 'A' + d - 10);
++    }
++    buf[10] = '\0';
++    Cconws((const char *)buf);
++}
++
++static int fails;
++
++static void verdict(char c, const char *what, UL got, UL want)
++{
++    char line[] = "MPROT3B: case ? ";
++    line[14] = c;
++    Cconws(line);
++    Cconws(what);
++    Cconws(" got=");
++    put_hex(got);
++    Cconws(" want=");
++    put_hex(want);
++    if (got == want) {
++        Cconws(" OK\r\n");
++    } else {
++        Cconws(" WRONG\r\n");
++        fails++;
++    }
++}
++
++static void make_tail(char *tail, char c, UL addr)
++{
++    static const char hex[] = "0123456789abcdef";
++    int i;
++    tail[0] = 10;
++    tail[1] = c;
++    tail[2] = ' ';
++    for (i = 0; i < 8; i++)
++        tail[3 + i] = hex[(addr >> ((7 - i) * 4)) & 0xF];
++    tail[11] = '\0';
++}
++
++static UL run_kid(char c, UL addr)
++{
++    char tail[12];
++    make_tail(tail, c, addr);
++    return (UL)Pexec(0, "C:\\MPKID.NAP", tail, 0);
++}
++
++int main(void)
++{
++    volatile unsigned int *priv = (volatile unsigned int *)gemdos1(0x48, 4096);          /* Malloc */
++    volatile unsigned int *glob = (volatile unsigned int *)gemdos2(0x44, 4096, 0x20 | 3); /* Mxalloc PROT_G */
++    volatile unsigned int *rdon = (volatile unsigned int *)gemdos2(0x44, 4096, 0x40 | 3); /* Mxalloc PROT_PR */
++    char tail[12];
++    UL rc, pd;
++
++    Cconws(OFF ? "MPROT3B: start (expecting memprot=off)\r\n"
++               : STRICT ? "MPROT3B: start (expecting memprot=strict)\r\n"
++                        : "MPROT3B: start (expecting protection on, default)\r\n");
++    if (!priv || !glob || !rdon) {
++        Cconws("MPROT3B: FAIL (allocation)\r\n");
++        return 1;
++    }
++    *priv = PATTERN;
++    *glob = PATTERN;
++    *rdon = PATTERN;
++
++    /* A child reads / writes our private block: E5 (default) lets it, the
++       strict mode stops it (translation fault, "private"). */
++    rc = run_kid('p', (UL)priv);
++    verdict('p', "child reads parent PROT_P", rc, STRICT ? CRASH : 0);
++    rc = run_kid('P', (UL)priv);
++    verdict('P', "child writes parent PROT_P", rc, STRICT ? CRASH : 0);
++    verdict('P', "  parent block afterwards", *priv, STRICT ? PATTERN : MARK);
++    *priv = PATTERN;
++
++    /* PROT_G: everybody, every mode. */
++    rc = run_kid('g', (UL)glob);
++    verdict('g', "child reads+writes parent PROT_G", rc, 0);
++    verdict('g', "  parent block afterwards", *glob, MARK);
++    *glob = PATTERN;
++
++    /* PROT_PR: readable by everybody; writable by an owner only (the
++       default child inherited owner rights, E5) -- strict: permission fault. */
++    rc = run_kid('r', (UL)rdon);
++    verdict('r', "child reads parent PROT_PR", rc, 0);
++    rc = run_kid('R', (UL)rdon);
++    verdict('R', "child writes parent PROT_PR", rc, STRICT ? CRASH : 0);
++    verdict('R', "  parent block afterwards", *rdon, STRICT ? PATTERN : MARK);
++    *rdon = PATTERN;
++
++    /* Pexec 3 + 4: the child runs as a thread in our memory space (E6) and
++       sees our private block in every mode. */
++    make_tail(tail, 't', (UL)priv);
++    pd = (UL)Pexec(3, "C:\\MPKID.NAP", tail, 0);
++    if ((long)pd <= 0) {
++        verdict('t', "Pexec 3", pd, 1);
++    } else {
++        UL env = *(volatile unsigned int *)(pd + 0x2C);
++        rc = (UL)Pexec(4, 0, (const char *)pd, 0);
++        verdict('t', "Pexec 4 thread reads+writes parent PROT_P", rc, 0);
++        verdict('t', "  parent block afterwards", *priv, MARK);
++        gemdos1(0x49, (NLONG)env);
++        gemdos1(0x49, (NLONG)pd);
++    }
++    *priv = PATTERN;
++
++    /* MEM04: a block given back with Mfree is nobody's -- writing it ends
++       its former owner (translation fault, "free"); without protection the
++       write goes through (stage 3a). */
++    rc = run_kid('f', 0);
++    verdict('f', "write after Mfree", rc, OFF ? 0 : CRASH);
++
++    /* We are unharmed: our blocks still hold what we wrote. */
++    verdict('.', "own PROT_P intact", *priv, PATTERN);
++    verdict('.', "own PROT_G intact", *glob, PATTERN);
++    verdict('.', "own PROT_PR intact", *rdon, PATTERN);
++    rc = run_kid('.', 0);
++    verdict('.', "clean child", rc, 0);
++
++    Cconws(fails ? "MPROT3B: FAIL\r\n" : "MPROT3B: PASS\r\n");
++    return fails;
++}
+diff --git a/TASK/ARCH03-3b-STATUS-UNFINISHED.MD b/TASK/ARCH03-3b-STATUS-UNFINISHED.MD
+new file mode 100644
+index 0000000..d738b36
+--- /dev/null
++++ b/TASK/ARCH03-3b-STATUS-UNFINISHED.MD
+@@ -0,0 +1,155 @@
++# ARCH03 Stufe 3b — Quittung
++
++**Status: UMGESETZT bis auf einen offenen Punkt (E10-Verdrahtung, Entscheidung
++nötig) · in QEMU auf beiden Boards in allen drei Modi belegt · Abnahme durch
++den Tester offen · Pi offen** · 2026-10-05 · Zweig `arch03`, Basis HEAD
++`31dd630`, Baum vorher sauber, nichts committet · Belege
++[measurements/measurement-2026-10-05-arch03-3b/](../measurements/measurement-2026-10-05-arch03-3b/)
++(`RUNINFO.TXT`, `checks/`, `serial/`, `screendumps/`, `method/`, `bin/`).
++
++Jeder Prozess hat jetzt eigene Rechte auf den gemeinsamen Adressraum,
++FreeMiNTs `PROT_P/G/S/PR/I` (`references/freemint/sys/arch/mprot030.c`).
++Standard: an. Bootargument `memprot=off` = Stufe 3a unverändert,
++`memprot=strict` = FreeMiNTs `MPF_STRICT`.
++
++## Teilschritte
++
++| | Stand |
++|---|---|
++| 1 Schutzmodus je Block (PRGFLAGS-Notiz für TPA/Env, `Mxalloc`-Nibble, `Malloc` = PRGFLAGS), Bootschalter | fertig |
++| 2 Tabellen je Adressraum: geteilte L3 = Nicht-Besitzer-Rechte, eigene L3 wo Rechte abweichen; 4-KiB-Raster (E16); BBM/TLBI nach 0a | fertig |
++| 3 Besitzwechsel (Mfree, Mshrink, Pexec 3/4/6, Ptermres, Pterm), E5 + strict, E10, AES-kalias | fertig **außer E10-Verdrahtung** (Mechanismus gebaut + getestet, nicht angeschlossen — siehe Offen 1) |
++| 4 Schutzverletzung → EmuTOS-Absturzbericht + Zeile „Memory violation: …“ (Übersetzungs- vs. Rechtefehler, Regionstabelle entscheidet) | fertig |
++| Nebenbefunde 3a: `shel_envrn`, `vr_trnfm`, `Fsetdta` aus EL1 | fertig |
++
++**Offen gelegt:** Teilschritte 1–4 sind gemeinsam implementiert und an
++Prüfpunkten c1–c5 gemeinsam geprüft, nicht je Teilschritt einzeln (wie 3a);
++die OFF-Serie ist der Prüfpunkt für Teilschritt 1, ON/STRICT für 2–4.
++
++## Entwurfsentscheidungen (meine, offen gelegt)
++
++- **Rechte werden berechnet, nicht fortgeschrieben.** Jede Änderung
++  (Allokation, Freigabe, Besitz, Modus, Prozessstart/-ende) markiert einen
++  Adressbereich bzw. einen Slot als schmutzig; `memprot::sync()` rechnet die
++  betroffenen 2-MiB-Regionen aus Pool-Listen, Besitzern (`m_own` + weitere
++  Besitzer) und Blocksätzen neu. `sync` läuft am Ende jeder mutierenden
++  BDOS-Operation, vor jedem `install_ttbr0` und am Ende jedes Traps
++  (Schnellpfad ohne Barriere, wenn nichts ansteht).
++- **Besitzer = Speicherraum:** ein Slot hat Besitzerrechte, wenn ein Besitzer
++  des Blocks ein Prozess seines Raums ist (er selbst oder — `Pexec(4)` — der
++  Raum des Aufrufers, E6), oder der Block bei seinem Start dem Raum des
++  Elternteils gehörte (E5, nicht strikt), oder eine E10-Freigabe besteht.
++- **Tabellen:** jeder Slot hat eigene L2 für alle vier GiB (Kopien der
++  geteilten Vorlagen), damit eine private L3 auf beiden Boards eine Änderung
++  eines slot-eigenen L2-Eintrags ist (V0a-Invariante 4: virt-Pool liegt in
++  GiB 1). Pool-L3 (geteilt) und private L3 kommen aus einem Tabellen-Vorrat,
++  den der Kernel beim Booten vor den Pools aus den Frames nimmt (Pi: 1520
++  Tabellen ≈ 5,9 MiB, virt 1172), nur bei Schutz an. L2-Zeigerwechsel per
++  BBM (ungültig → `dsb ish` → `tlbi vmalle1is` → `dsb ish` → neu → `dsb`),
++  Blattänderung eines gültigen Eintrags → `tlbi vmalle1is` vor dem `eret`
++  (Pi bestätigt: keine QUIRK-001-Klammer nötig). Keine ASIDs (Stufe 4); jeder
++  Wurzelwechsel invalidiert weiter den ganzen TLB.
++- **Kernel-Blöcke `PROT_S`:** ein Kernel-Aufrufer ohne Nibble bekommt
++  `PROT_S` (FreeMiNT `sys/memory.c:150-159`). Ein Pool-Block, den der Kernel
++  per `usermem::expose` veröffentlicht (`WF_SCREEN`), nimmt den Modus der
++  Veröffentlichung an.
++- **Absturzzeile:** FreeMiNTs Klassifikation (`report_buserr`) als **eine**
++  Textzeile im EmuTOS-Bericht (E11: kein Alert), nur bei Schutz an.
++- **Default-Modus fehlender Satz:** `PROT_P` (kann nur durch einen Fehler
++  entstehen; jeder Block bekommt bei Schutz an einen Satz).
++
++## Was getan wurde
++
++| Bereich | Datei / Funktion |
++|---|---|
++| Rechte-Maschine | neu `tos-api/src/bdos/process/memprot.rs` (`configure`, `pool_align_mask`, Blocksätze `record/mode_of/rekey`, `on_alloc/on_freed/set_mode/on_owner_change/on_resident`, `touch/sync/refresh`, `on_root_built/on_launch/on_slot_released`, `grant_temp/revoke_temp`, `block_containing`, `region_kind`) |
++| Tabellen | `tos-api/src/bdos/process/mmu.rs`: `SlotTables.l2[4]`, Tabellen-Vorrat (`set_table_arena`, `arena_alloc/free`), `init_slot_tables` gibt private Tabellen frei, `set_l2` schont private Einträge, `shared_l3_for` aus Vorrat, `map_pools` (an: nur 4-KiB-Seiten, alles ungültig), `map_shared` gibt Veröffentlichungen an private Kopien weiter, `shared_l3/slot_private_l3/make_private/drop_private/replace_bbm/set_leaf/flush_tlb(_always)`, `install_ttbr0` → `sync` |
++| BDOS | `bdos/mem/traps.rs` (`mxalloc` Nibble + Satz, `mxalloc_aligned` rekey, `set_owner`, `mfree`, `mshrink` → Rechte), `pool.rs` `PoolConfig::current()` (E16), `region.rs` (Besitzwechsel → Rechte, `further_owners`, `Ptermres` P→G) |
++| Prozesse | `process.rs` `free_slot` → `on_slot_released`; `loader.rs` TPA/Env-Modus aus PRGFLAGS, `install_slot` → `on_root_built`; `pexec.rs` `set_parent` → `on_launch`; `usermem.rs` `expose` im Pool → Modus |
++| Absturz | `bios/crash.rs` `RegionKind/FaultType/Access/MemViolation/mem_violation` + Berichtszeile; `kernel/src/arch/aarch64/exceptions.rs` (beide Berichtspfade; `rust_sync_handler` → `sync` am Trap-Ende) |
++| Boot | `kernel/src/bootargs.rs` (`memprot=off`, `memprot=strict`, jetzt für alle Boards), `kernel/src/arch/aarch64/dtb.rs` `copy_bootargs` (virt: `/chosen/bootargs`), `kernel/src/lib.rs` `memprot_switch`, Vorrat in `bring_up_bdos_pools` |
++| Nebenbefunde | `aes/shell.rs` `shel_envrn` (eigene Seite `AES_ENV`, für EL0 schreibgeschützt veröffentlicht), `vdi/raster.rs` `vr_trnfm` (vorzeichenbehaftet wie EmuTOS, `fd_stand` immer gesetzt), `bdos/fs/find.rs` `fsetdta/fgetdta/fsfirst/fsnext` + `gemdos/trace.rs` (DTA nach Aufrufer-Space) |
++| Selbsttest | `kernel/src/selftest_d7.rs`: erwartete Restlänge = `blkln` auf das Pool-Raster gerundet |
++| Doku | `docs/api/gemdos/memory/{44-mxalloc,48-malloc,49-mfree,4a-mshrink}.md`, `docs/api/gemdos/process/{4b-pexec,31-ptermres}.md`, `docs/api/gemdos/dta/1a-fsetdta.md`, `docs/api/aes/scrap-shell.md`, `docs/api/bios/_exception-crash.md` (Abschnitt „Memory protection“), `docs/COMPATIBILITY.md` (sanktionierte Abweichung inkl. E16), `tos-types/src/memory.rs` Kommentar, [MEM04](MEM04.md) geschlossen |
++| Tests | `tos-api/tests/arch03_3b_memprot.rs` (13), `arch03_3b_fsetdta.rs` (1), `vdi_raster_reference/harness.rs` (1), `bios::crash` (2), `bootargs` (1) |
++| Sonden | `sdk/examples/mprot3b.c` + `mpkid.c` (3 Erwartungsvarianten), `measurements/…/method/tests/envrn.c` |
++
++## Prüfungen (Zahlen, Einzelheiten `RUNINFO.TXT`)
++
++| | 3a | c5 |
++|---|---|---|
++| Hosttests | 1104/0/1 | **1123/0/1** |
++| Release frisch, tos-api/kernel, beide Boards | 64/94 | **64/94** |
++| Clippy tos-api/kernel, beide | 76/125 | **76/125** (c1: 81 — 5 neue, behoben) |
++| Driftprobe | 31 | **31** |
++| SDK-Hosttests | 13/0/0 | **13/0/0** |
++
++QEMU c5, **ON und OFF** je: Desktop, TeraDesk, QED, APITEST-Bilder
++**bytegleich** mit 3a; APITEST 106/0/5; Doom VERIFIED (Einzelbilder
++zeitabhängig, in beiden Modi gleich unstet); PORT10 42/44 (PROC02 wie
++vorher); CRASHTST, UACC3A (26 Fälle), KBDVEC + EmuCON (bytegleich),
++Accessory-Start, virt-Desktop, virt-Selbsttests wie 3a (sleepwake dieselben
++5 FAIL), desk3a (Unterschiede nur Dateizeit/Dateizahl der Karte), ENVRN PASS.
++**MPROT3B PASS** in ON, OFF und STRICT auf `raspi4b` und `virt` (Tabelle in
++`RUNINFO.TXT`). **S2ALL:** OFF PASS; **ON FAIL in genau einer Prüfung von
++TSRPAR** (siehe Offen 2) — alle funktionalen TSR-Prüfungen bestehen.
++
++## Verhalten bei Schutzverletzung
++
++Beispiel `memprot=strict`, Kind schreibt privaten Block des Elternteils:
++`Panic: Bus Error` · `esr=92000047` · `addr=…` · **`Memory violation: private
++memory, write (translation fault, level 3)`** · Register · Taste ·
++`Pterm(-1)`, Eltern-`Pexec` = `0x0000FFFF`, Eltern unversehrt. `PROT_PR`
++schreiben → `readable memory, write (permission fault, level 3)`; Schreiben
++nach `Mfree` → `free memory, write (translation fault, level 3)`; schlechter
++Zeiger außerhalb der Pools → `hardware memory, …`.
++
++## Für den Tester
++
++- Karten: `method/seed-card.sh` (nie `tools/make-sd-image.sh`), Serie
++  `method/runs-3b.sh <label> <cards> on|off|strict`, Modus über
++  `-append` (`APPEND`-Variable der Laufskripte), Sonde `C:\MPROT3B.NAP`
++  (an) / `MPROTS.NAP` (strict) / `MPROTO.NAP` (aus) + `C:\MPKID.NAP`,
++  Crash-Kernel mit Injektor `bin/kernel8-crash-c5.img`, virt
++  `bin/kernel-virt-crash-c5.img` (wählt die Variante selbst).
++- Erwartung: „MPROT3B: PASS“ in jedem Modus; ON: ein Absturz (Fall f);
++  STRICT: vier (p, P, R, f); OFF: keiner.
++- Pi: `bin/kernel8-c5.img`; `cmdline.txt` mit `memprot=off` bzw.
++  `memprot=strict` schaltet um. Pi-Lauf nur auf Ansage.
++
++## Offen / zur Entscheidung
++
++1. **E10 nicht verdrahtet.** `memprot::grant_temp/revoke_temp` sind gebaut
++   und getestet (Hosttest `temporary_rights_for_a_foreign_callout`). Sie
++   anzuschließen heißt, in `aes/object.rs` `ob_user` die A97-Regel
++   aufzuheben („Callout nur, wenn der Baumeigentümer der laufende Prozess
++   ist“) und fremde `G_USERDEF`-Routinen im laufenden Prozess mit
++   zeitweiser Freigabe auszuführen (EmuTOS zeichnet sie; Plan Frage 9 E10a).
++   Das ändert das Zeichenverhalten **auch mit `memprot=off`** — Widerspruch
++   zur Vorgabe „Schutz aus = 3a exakt“. Ich habe deshalb nicht verdrahtet.
++   Entscheidung des Leads: (a) A97 aufheben in beiden Modi, (b) nur bei
++   Schutz an, (c) so lassen.
++2. **S2ALL/TSRPAR „TPA beyond blkln back in the pool“ unter ON.** Die
++   Prüfung misst den größten freien Block; der TPA-Rest geht zurück (D7
++   belegt es über die TT-Belegung), liegt aber nicht mehr am großen freien
++   Block an. Ursache: der Lader holt die TPA **vor** der Umgebung, EmuTOS
++   die Umgebung zuerst (`bdos/proc.c:281-292`); mit 16-Byte-Raster fielen
++   Umgebung und kleine Blöcke in den Ausrichtungsrest unter der TPA, mit
++   Seitenraster (E16) gibt es den nicht. Korrektur (Reihenfolge wie EmuTOS)
++   liegt außerhalb dieses Auftrags und verschiebt auch das OFF-Layout.
++3. Abweichung Auftrag ↔ E6: der Auftrag nennt „Pexec 4 child reads parent
++   memory (E5 default) and fails in strict mode“. Nach E6 (Anwenderentscheid
++   2026-10-05) läuft ein `Pexec(4)`-Kind im Raum des Aufrufers und sieht ihn
++   in jedem Modus (FreeMiNT `FORK_SHAREVM`). Gebaut und geprüft: `Pexec 4`
++   sieht in allen Modi; das E5/strict-Verhalten an `Pexec 0`-Kindern.
++4. `F_KEEP` (`0x4000`) im `Mxalloc`-Modus wird weiter nicht ausgewertet.
++5. Tabellen-Vorrat erschöpft → der Prozess behält dort die Nicht-Besitzer-
++   Rechte (verliert Zugriff, gewinnt nie welchen); Zähler
++   `memprot::table_shortfalls()`, noch nicht im Boot-/Statusprotokoll.
++
++## Beobachtungen außerhalb des Auftrags (unverändert)
++
++- Lader-Reihenfolge TPA vor Umgebung (Offen 2).
++- `selftest_sleepwake_switch` 5 FAIL vorbestehend.
++- Doom-Einzelbilder bei t30/t45 laufen je Lauf unterschiedlich (zeitabhängige
++  Demo), unabhängig vom Modus.

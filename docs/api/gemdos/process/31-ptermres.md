@@ -314,3 +314,15 @@ FreeMiNT (plan §3.8 / Frage 16).**
   (the upcall precedes the teardown), after it in EmuTOS (`xtermres` shrinks,
   then `xterm` calls the handler). The handler's own code is never beyond
   `blkln` in a correct TSR, so this is not observable for one.
+
+### Memory protection (ARCH03 stage 3b)
+
+With memory protection on, every block that only the terminating program
+owned and that was `PROT_P` becomes `PROT_G` when it is kept resident, so
+every process can call the resident code and read its data — FreeMiNT
+`sys_ptermres` (`sys/k_exit.c:320-336`: "make all of the TSR's private
+memory globally accessible"). `PROT_S`/`PROT_PR` blocks keep their mode. The
+TPA's tail beyond `blkln` (rounded up to a page, E16) goes back to the pool
+and is invalid for everybody (`4a-mshrink.md`). Host test
+`tos-api/tests/arch03_3b_memprot.rs` `resident_private_memory_becomes_global`;
+QEMU: S2ALL `TSRPAR`/`TSRUSE` (`measurements/measurement-2026-10-05-arch03-3b`).

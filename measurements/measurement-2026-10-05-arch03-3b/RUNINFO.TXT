@@ -1,0 +1,126 @@
+measurement-2026-10-05-arch03-3b -- ARCH03 stage 3b: memory protection per
+address space (FreeMiNT PROT_P/G/S/PR/I), boot switch memprot=off/strict,
+fault classification in the crash report, plus the three 3a side findings
+(shel_envrn, vr_trnfm, Fsetdta from EL1).
+
+Date 2026-10-05, branch arch03, base HEAD 31dd630 (tree clean at start), stage
+3b uncommitted: method/arch03-3b-change.diff (git diff + new files).
+QEMU 11.0.2, host macOS (no `timeout`; runs end via QMP `quit` / the driver).
+No SD card, Pi or TT touched; tools/make-sd-image.sh NOT used -- method/
+seed-card.sh builds private 64 MiB images in the session scratchpad.
+method/ = the 3a method (copied) + APPEND support in run-virt.sh,
+run-rpi4.sh, run-rpi4-drive.sh, run-marks.sh (boot arguments per mode),
+runs-3b.sh (series per mode), build-mprot.sh + mprot-instrumentation.py
+(the stage-3b probe; virt: from the RAM registry, the driver variant matching
+the boot argument), tests/envrn.c (shel_envrn probe, built with
+build-s2-tests.sh S2_TESTS=envrn), summarize.sh.
+
+MODES (boot argument; raspi4b always with serial=on)
+  on      (none)            protection on, default (E5 not strict)
+  off     memprot=off       stage 3a behaviour (no protection, 16-byte grain)
+  strict  memprot=strict    protection on, MPF_STRICT (E5 strict)
+
+CHECKPOINTS (labels = file prefixes in checks/ serial/ screendumps/ bin/)
+  c1     first complete build of sub-steps 1-4 + the three fixes; static checks
+         only (clippy tos-api 81: 5 new, fixed in c2).
+  c2     clippy clean; first QEMU series ON (all 15 runs). Found: virt
+         selftest d3 halted (Instruction Abort L3 at the entry) -- owner slots
+         were looked up with slot_for(), which skips slots in state Free; the
+         hand-built selftests never claim their slot. Fixed in c3
+         (memprot::live_slot_of: by root, not by state).
+  c3     virt selftests ON: D7 PTERMRES FAIL -- the test expected exactly
+         blkln=0x100 kept; with protection on the pool grain is a page (E16).
+         Test expectation made grain-aware (16 B off / 4 KiB on) in c4.
+  c4     full series ON, OFF, STRICT; desk3a ON/OFF.
+  c5     final: + sync() fast path (no barrier when nothing is pending),
+         + host tests for the vr_trnfm and Fsetdta fixes; full series ON, OFF,
+         STRICT, ENVRN probe ON/OFF, desk3a ON/OFF. Product binaries for the
+         Pi: bin/kernel8-c5.img (SHA256SUMS).
+  Sub-steps 1-4 were implemented before the first checkpoint and are checked
+  together (as 3a did); the OFF series is the sub-step-1 check ("protection
+  off = stage 3a"), the ON/STRICT series and the probe the checks of 2-4.
+
+STATIC CHECKS (method/checks.sh <label>; checks/<label>-*.txt)
+               3a(s37)   c1        c2..c4    c5
+  host tests   1104/0/1  1120/0/1  1120/0/1  1123/0/1
+  release tos-api/kernel warnings, both boards, fresh after
+               cargo clean -p kernel -p tos-api:  64/94 at every checkpoint
+  clippy tos-api/kernel (both feature sets)
+               76/125    81/125    76/125    76/125
+  desk-drift-probe 31 at every checkpoint; sdk/run-host-tests 13/0/0
+  Host-test delta (+19): tests/arch03_3b_memprot.rs 13 (rights matrix, page
+  grain, copy-on-differ table sharing, Pexec-4 space sharing, E5 inherit +
+  strict, attach/detach/hand-over, Ptermres -> PROT_G, E10 temp grant, slot
+  release returns tables, kernel blocks PROT_S, crash classification,
+  publications reach private copies), bios::crash 2 (protection line),
+  bootargs 1 (xtask), tests/arch03_3b_fsetdta.rs 1, vdi_raster harness 1
+  (counted twice: the harness is part of two test binaries).
+
+RUN SERIES c5 (method/runs-3b.sh c5 <cards> <mode>; checks/c5-<mode>-runs.txt)
+  raspi4b, product kernel, ON and OFF:
+    desktop, TeraDesk (#Z), QED (#Z), APITEST: screendumps byte-identical to
+      3a s37 in both modes (desktop-t25, teradesk-t35, qed-t30, apitest-t25,
+      apitest-t40); STRICT: desktop + TeraDesk identical too
+    Doom (#Z): VERIFIED in both modes; t30/t45 frames are timing-dependent
+      (c4: t30 identical to 3a in both modes, c5: different in both, ON != OFF
+      too) -- the demo, not the mode
+    APITEST: TOTAL 106/0/5 both modes
+    S2ALL: OFF PASS; ON "S2ALL: FAIL" from ONE check in TSRPAR, see below
+    PORT10: 42 of 44 both modes (the 2 known PROC02 failures, as 3a)
+    accessory: C:\ACC\SYSACC.NAC loaded and in its message wait, desktop up
+  raspi4b, crash kernel (IKBD injector answers the prompt): CRASHTST PASS,
+    UACC3A PASS (26 cases), MPROT3B PASS -- ON, OFF and (MPROT) STRICT
+  raspi4b, keys kernel: KBDVEC PASS + EmuCON, dumps identical to 3a, ON+OFF
+  virt crash kernel (CRCHILD, CRASHTST, UACC3A, MPROT from the RAM registry):
+    PASS in ON, OFF, STRICT
+  virt selftests: d3, pexec, d4d5, d6, d7, f1, sysvars (B1), upcall,
+    etv_term PASS; sleepwake_switch the same 5 FAIL as stage 1/2/3a -- ON and
+    OFF
+  virt product desktop up, ON and OFF
+  ENVRN probe (shel_envrn): PASS ON and OFF; on the 3a kernel the same program
+    dies with a bus error at the kernel address 0xffff00000016850d
+    (serial/base3a-rpi4-envrn-serial.log) -- the 3a defect, reproduced.
+  desk3a (in-kernel desktop file operations, F1 risk), ON and OFF: A_IDLE,
+    B_SUB, C_UP, D_SELECTED, G_RENAMED identical to 3a; E_INFO/F_TYPED differ
+    only by the file time of NOTE.TXT (card seeded at another minute),
+    H_DRIVE_C only by the item count of C:\ (the card holds the new probes).
+
+MPROT3B (sdk/examples/mprot3b.c + mpkid.c, one child per case)
+                                     ON       STRICT     OFF
+  p  child reads parent PROT_P       0        FFFF(1)    0
+  P  child writes parent PROT_P      0        FFFF(1)    0
+  g  child r+w parent PROT_G         0        0          0
+  r  child reads parent PROT_PR      0        0          0
+  R  child writes parent PROT_PR     0        FFFF(2)    0
+  t  Pexec 3+4 thread r+w PROT_P     0        0          0
+  f  write after own Mfree (MEM04)   FFFF(3)  FFFF(3)    0
+  parent's blocks intact afterwards, clean child 0: every mode
+  (1) "Memory violation: private memory, read|write (translation fault,
+      level 3)"  (2) "readable memory, write (permission fault, level 3)"
+  (3) "free memory, write (translation fault, level 3)"
+  ON: a Pexec-0 child keeps access to its parent's blocks (E5 not strict),
+  hence 0 for p/P/R.
+
+S2ALL TSR under protection ON
+  TSRPAR's check "TPA beyond blkln back in the pool (< 64 KiB kept)" compares
+  the largest TT block before and after: ON 0x39f78000 -> 0x39b76000
+  (-4 MiB-8 KiB), 3a -0x2A60. Every functional TSR check passes (resident
+  code called twice, its BSS kept, its Malloc block kept, Mfree of its blocks
+  EIMBA, a later program calls it). Cause: the loader allocates the TPA
+  BEFORE the environment (EmuTOS: environment first, bdos/proc.c:281-292);
+  with the 16-byte grain the environment and TSRRES' small block fell into the
+  TPA's front alignment slack below the TPA, with the page grain (E16) there
+  is no slack, they sit right after the TPA, and the freed TPA tail is a
+  separate hole. D7 (Ptermres selftest, TT used bytes) PASSES under ON: the
+  tail does go back to the pool. Not changed (out of scope, changes OFF
+  layout too); reported.
+
+NOT COVERED
+  * Real Pi 4 (not touched by order). Binaries: bin/kernel8-c5.img (product;
+    cmdline.txt `memprot=off` / `memprot=strict` select the mode), probes
+    MPROT3B/MPROTS/MPROTO/MPKID/ENVRN.NAP.
+  * E10 (temporary rights for a foreign G_USERDEF callout): mechanism built
+    and host-tested (memprot::grant_temp/revoke_temp), NOT wired -- the A97
+    rule in aes/object.rs ob_user still skips foreign callouts; wiring it
+    changes behaviour with protection off as well. Open for the lead.
+  * F3 with two AES clients, as in 3a.

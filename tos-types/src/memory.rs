@@ -167,9 +167,10 @@ pub const MX_MODEMASK: i16 = 0x03;
 // F_PROTMODE) >> F_PROTSHIFT; else --protmode;`). So `F_PROT_G` (`0x10`) in a
 // PRGFLAGS word is `PROT_G`, but `0x10` in an `Mxalloc` mode is `PROT_P`.
 // [`prot_from_prgflags`] and [`prot_from_mxalloc`] are the two decoders
-// (ARCH03 plan Frage 8). NewTOS still masks the nibble off in `Mxalloc`
-// (`mode &= MX_MODEMASK`, ADR-021) until per-process rights take effect
-// (ARCH03 stage 3b); the decoders exist so that step reads the ABI right.
+// (ARCH03 plan Frage 8). Since ARCH03 stage 3b `Mxalloc` decodes the nibble
+// with [`prot_from_mxalloc`] and the per-process rights enforce it
+// (`tos-api::bdos::process::memprot`); only the pool selection is still
+// `mode & MX_MODEMASK`.
 
 /// Mask of the protection-mode bits in an `Mxalloc` mode word / `PRGFLAGS`
 /// (`F_PROTMODE`, `references/freemint/sys/mint/mem.h:120`).

@@ -20,8 +20,9 @@
 //!        (a `Pterm` would have returned it to the free list);
 //!      * ST-RAM `allocated_blocks` is one higher and that block is owned
 //!        by the TSR holder (`traps::is_resident`);
-//!      * TT-RAM got the TPA back down to `blkln` (0x100): its used bytes
-//!        dropped by `TPA_SIZE - 0x100`;
+//!      * TT-RAM got the TPA back down to `blkln` (0x100, rounded to the
+//!        pool grain — one page with memory protection on, ARCH03 E16): its
+//!        used bytes dropped by `TPA_SIZE - kept`;
 //!      * the slot is `Free` again and `RUN` is null — the process
 //!        terminated and control returned to the kernel driver.
 //!
@@ -174,8 +175,12 @@ pub fn run_d7_ptermres_test() {
     let block_resident = post.free_bytes < pre.free_bytes;
     let alloc_list_clean = post.allocated_blocks == pre.allocated_blocks + 1
         && resident_blocks(PoolKind::Stram) >= 1;
+    // The kept length is blkln rounded up to the pool grain: 16 bytes, or
+    // one 4-KiB page with memory protection on (ARCH03 3b, plan E16).
+    let mask = tos_api::bdos::mem::pool::PoolConfig::current().align_mask as u64;
+    let kept = (0x100 + mask) & !mask;
     let tpa_shrunk = (pre_tt.used_bytes - post_tt.used_bytes) as u64
-        == tos_api::bdos::process::arena::TPA_SIZE - 0x100;
+        == tos_api::bdos::process::arena::TPA_SIZE - kept;
     kprintln!(
         "[d7] TT-RAM used {} -> {} (TPA shrunk to blkln)",
         pre_tt.used_bytes, post_tt.used_bytes,
@@ -192,7 +197,7 @@ pub fn run_d7_ptermres_test() {
         if alloc_list_clean { "OK" } else { "FAIL" },
     );
     kprintln!(
-        "[d7]   TPA shrunk to blkln (TT used -TPA+0x100):     {}",
+        "[d7]   TPA shrunk to blkln (TT used -TPA+kept):      {}",
         if tpa_shrunk { "OK" } else { "FAIL" },
     );
     kprintln!(

@@ -457,6 +457,11 @@ pub unsafe fn set_parent(child: usize, parent_pd: *mut BasePage) {
     // SAFETY: `kva` is the kernel alias of the child's live basepage;
     // `p_parent` is a plain 32-bit LONG (pool addresses are below 2 GiB).
     unsafe { (*kva).p_parent = parent_pd as u64 as tos_types::Long };
+    // Its rights as a started process: a `Pexec(4)` child those of the space
+    // it shares, any other child of a process the parent's blocks it
+    // inherits unless strict (ARCH03 3b, E5/E6).
+    // SAFETY: BDOS lock held (caller contract).
+    unsafe { super::memprot::on_launch(child, parent_pd) };
 }
 
 /// Release every slot holding a program that `owner` loaded with `PE_LOAD`

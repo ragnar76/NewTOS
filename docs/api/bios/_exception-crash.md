@@ -191,6 +191,54 @@ fault can be charged to a process that is not running — and a page-0 cell
 the kernel reaches through the process's own page-0 alias (`Setexc` sysvar
 peek/poke, `conterm`) cannot fault at all.
 
+### Memory protection (ARCH03 stage 3b)
+
+With per-process rights on (the default; boot argument `memprot=off`
+switches them off), an access a program may not make — another process's
+`PROT_P`/`PROT_S` memory, a write to another process's `PROT_PR` memory,
+freed pool memory — is an ordinary bus error of the program (`EC 0x24/0x20`,
+or `EC 0x25` when the kernel touches the memory with the caller's rights in
+a system call) and ends it exactly as above. The report gets **one extra
+line** right after the `addr=` line, FreeMiNT's classification of the
+address (`report_buserr`, `sys/arch/mprot.x:71-150`: "MEMORY VIOLATION",
+type, read/write) plus the MMU's reason:
+
+```text
+Memory violation: <type> memory, <read|write|execute> (<translation|permission|access flag> fault, level <0-3>)
+```
+
+* `<type>` comes from the protection bookkeeping, not from the MMU — a
+  translation fault cannot tell "protected" from "unmapped" (plan §3.3, V0a
+  §6): `private` (`PROT_P`), `super` (`PROT_S`), `readable` (`PROT_PR`),
+  `free` (free pool memory or `PROT_I`, FreeMiNT `berr_msg[PROT_I]`),
+  `hardware` (outside the pools, page 0, or a `PROT_G` block — no
+  protection fault possible there; FreeMiNT turns `global` into `hardware`,
+  `mprot.x:103-107`).
+* `<fault>` is `ESR_EL1.DFSC/IFSC` (`0b0001LL` translation, `0b0010LL`
+  access flag, `0b0011LL` permission, LL = level; ARM ARM D24-8672/8673,
+  D24-8683…8685). Non-owner `PROT_P/S/I` pages are **invalid**, so they show
+  as translation faults; a write to `PROT_PR` memory of another process is
+  the permission fault.
+* `<access>`: `ESR_EL1.WnR` (D24-8682) for data, `execute` for an
+  instruction abort.
+
+The line is only printed with protection on and only for translation,
+access-flag and permission faults (FreeMiNT reports nothing with
+`no_mem_prot`, `mprot.x:96-97`). With `memprot=off` the report is the
+stage-0c/3a report unchanged. Example (a child writing its parent's private
+block under `memprot=strict`):
+
+```text
+Panic: Bus Error
+esr=92000047
+addr=0000000001c36000 sr=00000000 pc=…
+Memory violation: private memory, write (translation fault, level 3)
+```
+
+Source: `tos_api::bios::crash::mem_violation`, `tos_api::bdos::process::
+memprot::region_kind`; probe `sdk/examples/mprot3b.c` / `mpkid.c`
+(`measurements/measurement-2026-10-05-arch03-3b`).
+
 ### Not done / open
 
 - **Post-mortem area `0x380`** (`proc_lives` …) is not written: the m68k
@@ -198,8 +246,9 @@ peek/poke, `conterm`) cannot fault at all.
   Open — no known consumer.
 - **Escapes `ESC f`/`ESC v`** before the report are not emitted: the screen
   console does not parse escape sequences (`kernel/src/fbcon.rs`).
-- **FreeMiNT "MEMORY VIOLATION" alert** (E11 recommendation) is not shown;
-  0c implements the EmuTOS text report. Open decision for the lead.
+- **FreeMiNT "MEMORY VIOLATION" alert** is not shown (E11: EmuTOS report,
+  no FreeMiNT alert); since stage 3b the report carries FreeMiNT's
+  classification as one text line (section above).
 - A program that crashes again inside its own `etv_term` handler re-enters
   `Pterm(-1)` → `etv_term`; EmuTOS would loop, NewTOS stops at the upcall
   nesting limit with `Pterm(-998)` (existing `deliver_upcall` rule).

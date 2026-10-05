@@ -679,8 +679,8 @@ decisions E1/E3/E9 as recommended). Like EmuTOS — and FreeMiNT with memory
 protection off — every user address means the same in every process: it is
 its own physical address (both pools, published kernel structures, the
 screen), `Malloc` returns `m_start`, `Pexec(PE_LOAD)` returns a real PD
-pointer, `p_parent`/`p_env` are readable by anybody, and no process is
-protected from another (that is stage 3). **Observable differences:**
+pointer, `p_parent`/`p_env` are readable by anybody, and — with memory
+protection off — no process is protected from another (stage 3b below). **Observable differences:**
 (1) page 0 `[0, 0x1000)` is per process — the system variables, the OSHEADER
 and its `os_run` cell (`0x5B8`, holding the process's own PD), the cookie-jar
 mirror, the trampolines, the `Keytbl` area and the KEYS02 table — so a pointer
@@ -728,6 +728,29 @@ by a sentinel (EmuTOS: on no list). Specs: `docs/api/gemdos/memory/
 49-mfree.md`, `4a-mshrink.md`, `docs/api/gemdos/process/4b-pexec.md`,
 `31-ptermres.md`; tests `tos-api/tests/arch03_region_owners.rs`,
 `arch03_pexec_567_ptermres.rs`.
+
+**Memory protection per process (FreeMiNT `PROT_P/G/S/PR/I`); page grain**
+(ARCH03 stage 3b, plan §3.2–§3.4, decisions E5/E10/E16 as recommended).
+EmuTOS has no memory protection; FreeMiNT's model is adopted
+(`sys/arch/mprot030.c`, ADR-023): every pool block has a protection mode
+(`Mxalloc` nibble with FreeMiNT's +1 encoding, else the program's `PRGFLAGS`;
+the kernel's own blocks `PROT_S`), and each process reaches a block with
+owner rights or non-owner rights. Default on; the boot argument
+`memprot=off` gives exactly stage 3a (FreeMiNT `MEM_PROT=NO`),
+`memprot=strict` FreeMiNT's `MPF_STRICT`. **Observable differences:**
+(1) a program touching another process's `PROT_P`/`PROT_S` memory, writing
+another's `PROT_PR` memory, or touching memory after `Mfree` ends with the
+crash report (+ a `Memory violation:` line) — EmuTOS lets it; (2) a
+`Pexec` 0/6 child keeps access to what its parent's space owned at its start
+(not strict), a `Pexec` 4 child shares its caller's space, resident
+(`Ptermres`) private memory becomes `PROT_G` — FreeMiNT's rules; (3) the
+pools hand out whole 4-KiB pages: lengths are rounded up to a page and
+every block starts on a page (FreeMiNT `QUANTUM`, `sys/mint/mem.h:152`), so
+`Malloc(-1)`, `Getmpb` and `Mshrink`'s effective size show page multiples
+(16 bytes with `memprot=off`). Specs: `docs/api/gemdos/memory/44-mxalloc.md`
+(rights per process), `48-malloc.md`, `49-mfree.md`, `4a-mshrink.md`,
+`docs/api/bios/_exception-crash.md` (memory protection); tests
+`tos-api/tests/arch03_3b_memprot.rs`, probe `sdk/examples/mprot3b.c`.
 
 ## EmuTOS is the reference, not the template
 

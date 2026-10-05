@@ -281,6 +281,24 @@ pub unsafe fn maddalt(start: Long, size: Long) -> Long {
 ///
 /// Caller holds the BDOS giant lock.
 pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
+    // ARCH03 3b: the protection nibble (FreeMiNT `m_xalloc`,
+    // `sys/dosmem.c:209-221`) — `0` takes the caller's PRGFLAGS mode; a
+    // kernel caller (no process) allocates for itself: `PROT_S`
+    // (`sys/memory.c:150-159`).
+    let prot = {
+        let run = crate::bdos::process::current_kva();
+        if run.is_null() && mode & tos_types::F_PROTMODE == 0 {
+            tos_types::ProtMode::S
+        } else {
+            let flags = if run.is_null() {
+                0
+            } else {
+                // SAFETY: `run` is the kernel alias of the running basepage.
+                unsafe { (*run).p_flags }
+            };
+            tos_types::prot_from_mxalloc(mode, flags)
+        }
+    };
     let mode = mode & MX_MODEMASK;
     let pmd = init::pmd();
     let pmdalt = init::pmdalt();
@@ -319,7 +337,7 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
     }
 
     // 4. Pool selection.
-    let cfg = PoolConfig::AARCH64;
+    let cfg = PoolConfig::current();
     // SAFETY: pmd / pmdalt are stable for the BDOS lock duration.
     // Owner cookie: Phase 04 stamps every allocation as kernel-owned
     // via `current_owner()` (see KERNEL_PD_SENTINEL above). Phase 06
@@ -364,11 +382,15 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
         0
     } else {
         // SAFETY: m is a freshly returned MD on the allocated list.
-        let start = unsafe { (*m).m_start };
+        let (start, len) = unsafe { ((*m).m_start, (*m).m_length) };
         // A fresh block has no further owners (a stale record of a freed
         // block at the same address must not carry over).
         // SAFETY: caller holds the BDOS lock.
-        unsafe { super::region::forget(start) };
+        unsafe {
+            super::region::forget(start);
+            // Its protection mode, and its owner's rights (ARCH03 3b).
+            crate::bdos::process::memprot::on_alloc(start as u32 as u64, len as u32 as u64, prot);
+        }
         start
     }
 }
@@ -413,16 +435,21 @@ pub unsafe fn mxalloc_aligned(amount: Long, mode: i16, align: Long) -> Long {
         return 0; // cannot happen: `raw` was just allocated
     }
     let base = (raw + align - 1) & !(align - 1);
+    // SAFETY: list invariant.
+    let raw_len = unsafe { (*p).m_length };
     let mut supply = unsafe { init::supply() };
     if base > raw {
         // SAFETY: `p` is on `mp_mal`; `0 < base - raw < align < m_length`.
         if unsafe { pool::trim_front(p, mpb, base - raw, &mut supply) } < 0 {
             // SAFETY: `p` is still the whole block at `raw`.
-            unsafe { pool::freeit(p, mpb, &mut supply) };
+            unsafe {
+                pool::freeit(p, mpb, &mut supply);
+                crate::bdos::process::memprot::on_freed(raw as u32 as u64, raw_len as u32 as u64);
+            }
             return 0;
         }
     }
-    let mask = PoolConfig::AARCH64.align_mask;
+    let mask = PoolConfig::current().align_mask;
     let keep = (amount + mask) & !mask;
     // SAFETY: list invariant; `p` now starts at `base`.
     let have = unsafe { (*p).m_length };
@@ -430,6 +457,14 @@ pub unsafe fn mxalloc_aligned(amount: Long, mode: i16, align: Long) -> Long {
         // A failed tail split only leaves the block longer than asked.
         // SAFETY: `p` is on `mp_mal`; `0 < keep < have`.
         let _ = unsafe { pool::shrinkit(p, mpb, keep, &mut supply) };
+    }
+    // ARCH03 3b: the record follows the block to its aligned start; the
+    // slack given back on either side is invalid for everybody again.
+    // SAFETY: caller holds the BDOS lock.
+    unsafe {
+        crate::bdos::process::memprot::rekey(raw as u32 as u64, base as u32 as u64);
+        crate::bdos::process::memprot::touch(raw as u32 as u64, (raw as u32 as u64) + raw_len as u32 as u64);
+        crate::bdos::process::memprot::sync();
     }
     base
 }
@@ -544,6 +579,7 @@ pub unsafe fn set_owner(addr: Long, owner: *mut c_void) -> bool {
             // SAFETY: `p` is a live MD on `mp_mal`.
             unsafe {
                 (*p).m_own = owner;
+                crate::bdos::process::memprot::on_owner_change(addr as u32 as u64);
             }
             return true;
         }
@@ -593,12 +629,16 @@ pub unsafe fn mfree(addr: Long) -> Long {
         return EIMBA;
     }
 
-    // 4. Free — and forget the block's further owners (ARCH03 2d).
+    // 4. Free — and forget the block's further owners (ARCH03 2d) and its
+    //    rights: nobody may reach it any more (ARCH03 3b, I8).
+    // SAFETY: list invariant.
+    let len = unsafe { (*p).m_length };
     let mut supply = unsafe { init::supply() };
     // SAFETY: caller holds BDOS lock; `p` is an MD on `mp_mal`.
     unsafe {
         pool::freeit(p, mpb, &mut supply);
         super::region::forget(addr);
+        crate::bdos::process::memprot::on_freed(addr as u32 as u64, len as u32 as u64);
     }
     E_OK
 }
@@ -658,7 +698,7 @@ pub unsafe fn mshrink(_n: i16, blk: Long, len: Long) -> Long {
     //    overflow keeps the comparison branches deterministic; the
     //    grow-check below will reject anything bigger than the
     //    block's current length anyway.
-    let mask = pool::PoolConfig::AARCH64.align_mask;
+    let mask = pool::PoolConfig::current().align_mask;
     let len = len
         .checked_add(mask)
         .map(|v| v & !mask)
@@ -680,6 +720,7 @@ pub unsafe fn mshrink(_n: i16, blk: Long, len: Long) -> Long {
         unsafe {
             pool::freeit(p, mpb, &mut supply);
             super::region::forget(blk);
+            crate::bdos::process::memprot::on_freed(blk as u32 as u64, m_len as u32 as u64);
         }
         return E_OK;
     }
@@ -689,6 +730,14 @@ pub unsafe fn mshrink(_n: i16, blk: Long, len: Long) -> Long {
     // SAFETY: caller holds BDOS lock; `p` is on `mp_mal`; `len`
     // satisfies `0 < len <= m_len` by the checks above.
     let rc = unsafe { pool::shrinkit(p, mpb, len, &mut supply) };
+    // The tail went back to the pool: invalid for everybody (ARCH03 3b, I8 —
+    // FreeMiNT `shrink_region` marks it `PROT_I`, `sys/memory.c:1076,1097`).
+    // SAFETY: caller holds BDOS lock.
+    unsafe {
+        let b = blk as u32 as u64;
+        crate::bdos::process::memprot::touch(b, b + m_len as u32 as u64);
+        crate::bdos::process::memprot::sync();
+    }
     if rc < 0 {
         ERROR
     } else {

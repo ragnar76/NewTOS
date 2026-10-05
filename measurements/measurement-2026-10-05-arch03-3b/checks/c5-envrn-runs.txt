@@ -1,0 +1,10 @@
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.wWqr8T/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.wWqr8T/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s c5-on-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run c5-on-rpi4-envrn: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.DuHSxW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.DuHSxW/ser.sock,server=on
+t=  15.0s end marker seen
+t=  17.1s c5-off-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run c5-off-rpi4-envrn: rc=0
