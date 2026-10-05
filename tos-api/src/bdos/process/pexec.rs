@@ -70,10 +70,13 @@ pub struct LoadedChild {
     /// [`tos_types::BasePage`] (the start of its TPA, VA = PA) — passed to
     /// the child entry in `x0` per NewTOS's AArch64 process ABI.
     pub basepage_va: u64,
-    /// Initial `SP_EL0` for the child: the TPA top (`p_hitpa`),
-    /// 4-KiB / 16-byte aligned. The kernel launch path sets `SP_EL0` to
-    /// this before the eret.
+    /// Initial `SP_EL0` for the child: the TPA top (`p_hitpa`), 16-byte
+    /// aligned. The kernel launch path sets `SP_EL0` to this before the eret.
     pub sp_el0: u64,
+    /// Bytes from the PD to the end of the image, BSS included
+    /// ([`LoadedImage::image_len`]) — what the accessory loader keeps of the
+    /// TPA (EmuTOS `pgmld`, `util/gemdos.c:40-43`). 0 for the go modes.
+    pub image_len: u64,
     /// What `PE_LOAD` returns and `PE_GO` takes back (in `tail`): the
     /// child's **PD pointer** (`basepage_va`) — a real basepage
     /// address the caller can read (`p_tlen`, `p_env`, …) in the shared
@@ -106,9 +109,9 @@ pub enum PexecError {
     /// No room to record the child as an owner of its basepage/environment
     /// ([`crate::bdos::mem::region`]). Mapped to `ENSMEM`.
     NoOwnerRoom,
-    /// The ELF blob was malformed, or its image + BSS overran the
-    /// per-process TPA, or the TPA/env pool allocation failed. Mapped
-    /// to `EPLFMT` (-66) for parser errors and `ENSMEM` for the
+    /// The ELF blob was malformed, or no free block holds its image + BSS
+    /// (EmuTOS `alloc_tpa` → `NULL`), or the env pool allocation failed.
+    /// Mapped to `EPLFMT` (-66) for parser errors and `ENSMEM` for the
     /// size/allocation shortfalls.
     LoadFailed(LoadError),
 }
@@ -119,8 +122,8 @@ impl PexecError {
     ///
     /// A *memory/size* shortfall maps to `ENSMEM` (EmuTOS `bdos/proc.c:295-300`:
     /// no TPA → `ENSMEM`); a malformed image / bad header maps to `EPLFMT`
-    /// (`bdos/kpgmld.c:47-63`). `ProgramTooLarge` is the image+BSS overrunning
-    /// the TPA image region — a size shortfall, so `ENSMEM`. A failed TPA pool
+    /// (`bdos/kpgmld.c:47-63`). `ProgramTooLarge` is a segment end beyond the
+    /// address range — a size shortfall, so `ENSMEM`. A failed TPA pool
     /// allocation (`NoTpaMemory`) and the env allocation shortfall
     /// (`alloc_env`, `proc.c:284-288`) are likewise `ENSMEM`. A well-formed
     /// but ILP32 image (`Ilp32Unsupported`) is a format NewTOS refuses to
@@ -218,6 +221,7 @@ unsafe fn create(flags: u32, tail: &[u8], env: EnvSpec<'_>) -> Result<LoadedChil
         l0_pa: img.l0_pa,
         basepage_va: img.basepage_va,
         sp_el0: 0,
+        image_len: img.image_len,
         handle: img.basepage_va,
         launch: false,
     })
@@ -303,6 +307,7 @@ pub unsafe fn load(
         l0_pa: loaded.l0_pa,
         basepage_va: loaded.basepage_va,
         sp_el0: loaded.sp_el0,
+        image_len: loaded.image_len,
         handle: loaded.basepage_va,
         launch,
     })
@@ -409,6 +414,7 @@ pub unsafe fn go(handle: u64, then_free: bool) -> Result<LoadedChild, PexecError
         l0_pa: slot.l0_pa.load(Ordering::Acquire),
         basepage_va: super::pd_of(slot_idx) as u64,
         sp_el0,
+        image_len: 0,
         handle,
         launch: true,
     })

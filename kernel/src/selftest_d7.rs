@@ -22,7 +22,8 @@
 //!        by the TSR holder (`traps::is_resident`);
 //!      * TT-RAM got the TPA back down to `blkln` (0x100, rounded to the
 //!        pool grain — one page with memory protection on, ARCH03 E16): its
-//!        used bytes dropped by `TPA_SIZE - kept`;
+//!        used bytes dropped by `TPA length - kept` (the TPA is the
+//!        largest free block, its length `p_hitpa - p_lowtpa`);
 //!      * the slot is `Free` again and `RUN` is null — the process
 //!        terminated and control returned to the kernel driver.
 //!
@@ -180,7 +181,7 @@ pub fn run_d7_ptermres_test() {
     let mask = tos_api::bdos::mem::pool::PoolConfig::current().align_mask as u64;
     let kept = (0x100 + mask) & !mask;
     let tpa_shrunk = (pre_tt.used_bytes - post_tt.used_bytes) as u64
-        == tos_api::bdos::process::arena::TPA_SIZE - kept;
+        == (loaded.sp_el0 - loaded.basepage_va) - kept;
     kprintln!(
         "[d7] TT-RAM used {} -> {} (TPA shrunk to blkln)",
         pre_tt.used_bytes, post_tt.used_bytes,

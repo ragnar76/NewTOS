@@ -1,0 +1,8 @@
+t=30.0s -> e1-off-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> e1-off-rpi4-tdqed-t50.png {"return": {}}
+run e1-off-rpi4-tdqed: rc=0
+t=20.0s -> e1-off-rpi4-emucon9-t20.png {"return": {}}
+t=32.0s -> e1-off-rpi4-emucon9-t32.png {"return": {}}
+t=45.0s -> e1-off-rpi4-emucon9-t45.png {"return": {}}
+t=70.0s -> e1-off-rpi4-emucon9-t70.png {"return": {}}
+run e1-off-rpi4-emucon9: rc=0

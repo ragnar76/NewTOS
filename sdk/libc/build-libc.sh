@@ -27,7 +27,9 @@
 #       setjmp.S  -> sigsetjmp/setjmp/siglongjmp/longjmp per AAPCS64 (was the
 #                    m68k mintlib/setjmp.S); jmp_buf grows to long[22] in the
 #                    overlay include/setjmp.h (TASK/T07)
-#       heap_init.c -> points mintlib's malloc arena at the free TPA region.
+#       heap_init.c -> __libc_crtinit: mintlib crtinit.c _crtinit/_acc_main
+#                    for TOS (_stksize policy, Mshrink of the TPA, malloc via
+#                    GEMDOS Malloc); called by crt0.S (ARCH03 E9).
 #       cmdargs.c -> argc/argv from the BasePage command tail p_cmdlin (the
 #                    argument half of crtinit.c parseargs(), which does not
 #                    compile here); defines __libc_argc/__libc_argv.

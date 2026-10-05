@@ -5,9 +5,10 @@
  * multi-page-TPA loader accepts (ARCH03 stage 0d; link with
  * `-pie --no-dynamic-linker -z text`, compile with `-fPIE`). The loader
  * (tos-api/src/bdos/process/{elf,reloc,loader,mmu,arena}.rs) streams the
- * segments into a per-process Transient Program Area of TPA_SIZE (4 MiB)
- * and applies the image's R_AARCH64_RELATIVE relocations for the address
- * the TPA executes at. Since ARCH03 stage 1 the TPA is a page-aligned BDOS
+ * segments into a per-process Transient Program Area -- the largest free
+ * block of the pool the PRGFLAGS choose, as EmuTOS alloc_tpa gives it
+ * (bdos/proc.c:460-502; ARCH03 E9) -- and applies the image's
+ * R_AARCH64_RELATIVE relocations for the address the TPA executes at. Since ARCH03 stage 1 the TPA is a page-aligned BDOS
  * pool block at its own address B (one address space shared by every
  * process, VA = PA); a link address `v` below runs at `B + v`:
  *
@@ -23,7 +24,8 @@
  *                             = p_dbase / p_dlen (file bytes)
  *     [p_bbase, _end)         .bss, the NOLOAD tail of `data` (zeroed by
  *                             the loader) = p_bbase / p_blen
- *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
+ *     [_end, p_hitpa)         rest of the block: crt0 Mshrinks it to
+ *                             program + stack (mintlib _crtinit)
  *
  * The classic TOS low-memory system variables (`_sysbase`@0x4F2,
  * `_p_cookies`@0x5A0, ...) are not part of the TPA: they live in the
@@ -41,9 +43,9 @@
  *     `-z text` makes the linker refuse those at build time). The PT_DYNAMIC
  *     segment points the loader at the table.
  *   - e_phentsize = 56 (guaranteed for ELF64). One or more PT_LOAD segments.
- *   - Every PT_LOAD must satisfy
- *         0x1000 <= p_vaddr  and  p_vaddr + p_memsz <= TPA_SIZE - 64 KiB
- *     (the top of the TPA is reserved for the downward-growing stack).
+ *   - Every PT_LOAD must satisfy 0x1000 <= p_vaddr; the image (up to _end)
+ *     must fit the largest free block, else Pexec answers ENSMEM (EmuTOS
+ *     alloc_tpa).
  *   - e_entry must be inside the image (>= 0x1000).
  *
  * Two PT_LOAD segments (TASK/T05), the usual ELF shape: `text` (R-X) holds
@@ -156,7 +158,7 @@ SECTIONS
     } :data
 
     /* BSS is NOLOAD (no file bytes); the loader zeroes [__bss_start,
-       __bss_end) as part of zeroing the whole TPA. It is the memsz-only tail
+       __bss_end) as part of zeroing the image span. It is the memsz-only tail
        of the `data` segment, so p_bbase + p_blen == _end. */
     __bss_start = .;
     .bss (NOLOAD) : {
@@ -166,7 +168,7 @@ SECTIONS
     } :data
     __bss_end = .;
 
-    /* First free byte of the TPA — where a heap allocator starts. */
+    /* First byte past the image: crt0 keeps [B, _end) plus its stack. */
     _end = .;
 
     /* Drop metadata the NewTOS loader neither reads nor has room for (the

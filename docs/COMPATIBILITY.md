@@ -673,9 +673,10 @@ for `evnt_mesag`/`evnt_multi` on the very same message pipe
 for the Developer, not listed here as a sanctioned deviation.
 
 
-**One shared user address space, page 0 per process; fixed-size TPA**
+**One shared user address space, page 0 per process**
 (ARCH03 stage 1, 2026-10-05; plan `docs/analysis/arch03-implementation-plan.md`,
-decisions E1/E3/E9 as recommended). Like EmuTOS — and FreeMiNT with memory
+decisions E1/E3 as recommended; E9 since 2026-10-05 EmuTOS' largest free
+block, see below). Like EmuTOS — and FreeMiNT with memory
 protection off — every user address means the same in every process: it is
 its own physical address (both pools, published kernel structures, the
 screen), `Malloc` returns `m_start`, `Pexec(PE_LOAD)` returns a real PD
@@ -685,27 +686,31 @@ protection off — no process is protected from another (stage 3b below). **Obse
 and its `os_run` cell (`0x5B8`, holding the process's own PD), the cookie-jar
 mirror, the trampolines, the `Keytbl` area and the KEYS02 table — so a pointer
 *into page 0* means something different in another process (on EmuTOS the
-area is global but supervisor-only); (2) the TPA is a fixed 4 MiB block, not
-EmuTOS' largest free block (`bdos/proc.c:460-502`) — a program's `p_hitpa` is
-`p_lowtpa + 4 MiB`, and `Malloc(-1)` right after start already reports the
-rest of the pool instead of almost nothing (FreeMiNT bounds its TPA the same
-way, `initialmem`); (3) `p_tbase` is `p_lowtpa + 0x1000`, not `+ 0x100`
-(a position-independent image keeps its link-time page offsets).
+area is global but supervisor-only); (2) `p_tbase` is `p_lowtpa + 0x1000`,
+not `+ 0x100` (a position-independent image keeps its link-time page
+offsets), and the TPA starts on a page: without memory protection the
+less-than-a-page slack in front of the largest free block stays in the pool.
+**The TPA is EmuTOS' largest free block** (ARCH03 E9, lead decision
+2026-10-05, replacing the fixed 4 MiB of stages 1–3c): `alloc_tpa`
+(`bdos/proc.c:460-502`) with its pool choice and bits 31-28 tie-break,
+`p_hitpa = p + max`; the SDK start-up code shrinks it like mintlib's
+`_crtinit` and the accessory loader like EmuTOS `pgmld`
+(`util/gemdos.c:29-47`), so `Malloc(-1)` right after start reports the rest of
+the pool, as on TOS.
 
 **`PRGFLAGS` travel in an ELF note** (ARCH03 stage 2a, plan E8b, user
 decision 2026-10-05). A NewTOS program is an ELF file, not a `0x601A` PRG, so
 there is no `h01_flags` header word; the flags are a note `"NewTOS"`/type 1/one
 `u32` under a `PT_NOTE` header, written by the SDK crt0 (default
 `PF_STANDARD`) and changed with `cargo xtask prgflags` instead of
-`PRGFLAGS.PRG`. What EmuTOS does with the flags is kept: they become `p_flags`
-and `PF_TTRAMLOAD` chooses the pool of TPA and environment
-(`bdos/proc.c:283-313,413-502`). **Observable differences:** (1) the format —
-a tool that patches the PRG header finds no such header; (2) the ST/TT
-tie-break with the bits 31-28 "would-like" quantum is not reproduced (a
-`PF_TTRAMLOAD` program gets TT-RAM whenever TT-RAM has the fixed 4-MiB TPA);
-(3) `PF_FASTLOAD` leaves no uninitialised heap — the whole TPA is zeroed
-either way. Spec: `docs/api/gemdos/process/4b-pexec.md` (NewTOS notes); tests
-`tos-api/tests/loader_prgflags.rs`.
+`PRGFLAGS.PRG`. What EmuTOS does with the flags is kept: they become `p_flags`,
+`PF_TTRAMLOAD` chooses the pool of TPA and environment with `alloc_tpa`'s
+ST/TT tie-break by the bits 31-28 quantum (`bdos/proc.c:283-313,413-502`), and
+`PF_FASTLOAD` limits the clear to the image (`bdos/kpgmld.c:212-221`; since
+E9). **Observable difference:** the format — a tool that patches the PRG
+header finds no such header. Spec: `docs/api/gemdos/process/4b-pexec.md`
+(NewTOS notes); tests `tos-api/tests/loader_prgflags.rs`,
+`tos-api/tests/arch03_e9_tpa.rs`.
 
 **Only an owner frees; a block can have several owners; resident memory stays
 on the allocated list** (ARCH03 stage 2c/2d, plan E15 and §3.4/§3.8 as

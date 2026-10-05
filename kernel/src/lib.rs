@@ -770,8 +770,16 @@ fn bring_up_bdos_pools((protect, strict): (bool, bool)) {
             .iter()
             .map(|&p| stats(p).free() as u64 * FRAME_SIZE)
             .sum();
-        let shared = (pool_bytes / mib2) as usize + 2 * 2 + 16;
-        let count = (shared + PRIVATE_L3_BUDGET).min(tos_api::bdos::process::mmu::ARENA_MAX_TABLES);
+        let regions = pool_bytes.div_ceil(mib2) as usize;
+        let shared = regions + 2 * 2 + 16;
+        // The TPA is the largest free block (E9, EmuTOS `alloc_tpa`) until its
+        // program shrinks it at start: its owner — and a second slot with the
+        // same rights (a `Pexec` 3 caller and its mode-4 child, or a
+        // non-strict child that inherits the block) — need a private copy
+        // for every region it spans. Two such sets, plus the per-process
+        // budget for everything else.
+        let count = (shared + 2 * regions + PRIVATE_L3_BUDGET)
+            .min(tos_api::bdos::process::mmu::ARENA_MAX_TABLES);
         let frame = alloc_frames_contig(Pool::Ttram, count)
             .or_else(|| alloc_frames_contig(Pool::Stram, count))
             .expect("memprot: no room for the page-table arena");
@@ -833,10 +841,11 @@ fn bring_up_bdos_pools((protect, strict): (bool, bool)) {
     }
 }
 
-/// Private L3 tables the arena holds besides the shared ones (ARCH03 3b):
-/// copies for the 2-MiB regions where a process's rights differ from
-/// everybody else's — about ten per process (TPA, heap blocks, inherited
-/// parent blocks; plan Frage 14), 64 per slot here. 4 MiB.
+/// Private L3 tables the arena holds besides the shared ones and the copies
+/// for two un-shrunk largest-block TPAs (ARCH03 3b, E9): copies for the
+/// 2-MiB regions where a process's rights differ from everybody else's once
+/// it has shrunk its TPA — about ten per process (TPA, heap blocks,
+/// inherited parent blocks; plan Frage 14), 64 per slot here. 4 MiB.
 const PRIVATE_L3_BUDGET: usize = 64 * tos_api::bdos::process::MAX_PROCESSES;
 
 /// The memory-protection switch from the boot arguments (ARCH03 3b):

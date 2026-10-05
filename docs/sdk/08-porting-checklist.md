@@ -71,8 +71,9 @@ Tick each line; every line points at the section that explains it.
       goes through a binding that splits it arithmetically, not by casting
       `&arg` to `short *` → [05 B16](05-abi-pitfalls.md#b16-gemlib-bindings-that-split-a-long-with-a-pointer-cast)
 - [ ] No `long double` arithmetic; no libm calls → [05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-there-is-no-compiler-rt), [07 §4](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all)
-- [ ] Large buffers via GEMDOS `Malloc`, not libc `malloc` (4-MiB arena)
-      → [05 B15](05-abi-pitfalls.md#b15-a-libc-malloc-that-suddenly-fails)
+- [ ] libc `malloc` grows through GEMDOS `Malloc` (mintlib's `_stksize`
+      model, ARCH03 E9); a program that needs its own heap sets `_stksize`
+      → [05 A3/B15](05-abi-pitfalls.md#b15-a-libc-malloc-that-suddenly-fails)
 - [ ] Console output strategy chosen (`.NCP` vs. log file) → [05 B14](05-abi-pitfalls.md#b14-console-output-is-not-the-desktop)
 
 ## On the image and in the machine

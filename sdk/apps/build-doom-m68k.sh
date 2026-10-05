@@ -74,8 +74,8 @@
 #   spelled out so the header does not depend on a toolchain default.
 #
 # ZONE SIZE: DOOM_ARGS default '"-mb","6"'
-#   NewTOS' "-mb 2" exists only because NewTOS' TPA is 4 MiB
-#   (doomgeneric_gem.c "MEMORY"); the TT has no such cap. 6 MiB is DOOM's own
+#   the same as the NewTOS build since ARCH03 E9 (doomgeneric_gem.c
+#   "MEMORY"; until then NewTOS' fixed 4-MiB TPA forced "-mb 2"). 6 MiB is DOOM's own
 #   value, default AND minimum (doomgeneric i_system.c DEFAULT_RAM/MIN_RAM).
 #   It is passed explicitly rather than left out because the platform appends
 #   DOOM_GEM_ARGS to every start and an empty list would be an empty array

@@ -18,35 +18,44 @@
 //! for `PE_LOAD` (EmuTOS `owner = (flag == PE_LOADGO) ? p : run`,
 //! `bdos/proc.c:302-307`).
 //!
-//! ## Size
+//! ## Size — the largest free block (EmuTOS `alloc_tpa`, plan E9)
 //!
-//! [`TPA_SIZE`] = 4 MiB, fixed — plan decision E9 (fixed rather than
-//! EmuTOS' "largest free block", which would starve every other process;
-//! FreeMiNT bounds its TPA the same way with `initialmem`). The program
-//! flags (E8b) choose its pool, not its size: no `PRGFLAGS` bit is defined
-//! that would.
+//! The TPA is the **largest free block** of the pool the program flags
+//! choose, exactly as EmuTOS `alloc_tpa` gives it (`bdos/proc.c:460-502`):
+//! `ffit(-1L, &pmd)` / `ffit(-1L, &pmdalt)` measure the largest block of each
+//! pool (`:466,476`), TT-RAM is a candidate only with `PF_TTRAMLOAD` (`:475`),
+//! a pool qualifies when its block holds what the program `needed` (`:467,
+//! 477`), the TT-RAM block is taken unless ST-RAM is the larger and TT-RAM
+//! cannot hold `needed` plus the `PRGFLAGS` bits 31-28 tie-break amount
+//! (`((flags >> 28) & 0x0f) + 1) * TPASIZE_QUANTUM`, 128 KiB, `:34,481-484`),
+//! and the whole block is allocated (`ffit(size, …)`, `:486,493`); its length
+//! becomes `p_hitpa - p_lowtpa` (`*avail`, `init_pd_fields`, `:374`). A
+//! program gives back what it does not need itself — every TOS start-up code
+//! does (`Mshrink`; the SDK's `crt0`/`crtinit` as mintlib's `_crtinit`,
+//! `mintlib/crtinit.c:227-247`), and the AES does it for an accessory
+//! (EmuTOS `pgmld`, `util/gemdos.c:29-47`).
 //!
 //! ## Alignment
 //!
 //! The block starts on a 4-KiB page ([`TPA_ALIGN`]): the program is linked at
 //! `0x1000` and keeps its link-time page offsets when relocated
-//! (`adrp`-relative code), so the TPA base must be page-aligned.
-//! [`crate::bdos::mem::traps::mxalloc_aligned`] gives the block that start
-//! and returns the slack to the pool, so the block holds exactly the TPA.
+//! (`adrp`-relative code), so the TPA base must be page-aligned. With
+//! protection on the pool grain is a page already; without it
+//! [`crate::bdos::mem::traps::mxalloc_largest`] gives the slack in front of
+//! the boundary back, so the TPA is the largest block minus less than a page.
 
 use core::sync::atomic::Ordering;
 
-use tos_types::Long;
+use tos_types::{Long, MX_STRAM, MX_TTRAM, PF_TTRAMLOAD};
 
 use super::MAX_PROCESSES;
-
-/// Per-process TPA size in bytes (4 MiB, plan E9).
-pub const TPA_SIZE: u64 = 4 * 1024 * 1024;
 
 /// Alignment of the TPA block start (one 4-KiB page).
 pub const TPA_ALIGN: u64 = super::mmu::PAGE_SIZE;
 
-const _: () = assert!(TPA_SIZE.is_multiple_of(TPA_ALIGN));
+/// EmuTOS `TPASIZE_QUANTUM` (`bdos/proc.c:34`): the unit of the `PRGFLAGS`
+/// bits 31-28 "would like to have" amount in the ST/TT-RAM tie-break.
+pub const TPASIZE_QUANTUM: u64 = 128 * 1024;
 
 /// Size of a user page in bytes (= one 4-KiB physical frame).
 pub const fn page_size() -> u64 {
@@ -58,17 +67,58 @@ pub struct Tpa {
     /// The block's address — `m_start`, the user VA (= PA) the program
     /// executes at and its PD pointer.
     pub base: u64,
+    /// The block's length — `p_hitpa - p_lowtpa` (EmuTOS `*avail`).
+    pub len: u64,
     /// Kernel high-half alias of [`Self::base`] — the loader copies the
     /// ELF image and writes the basepage through this.
     pub base_kva: *mut u8,
 }
 
-/// Take one page-aligned [`TPA_SIZE`] block from the BDOS pool.
+/// The pool EmuTOS `alloc_tpa` takes the TPA from, given the usable sizes of
+/// the largest ST-RAM and TT-RAM blocks (`st`, `alt`; `alt` 0 when there is
+/// no TT-RAM), the program's `flags` and what it `needed`
+/// (`bdos/proc.c:460-502`). `None`: neither pool can hold `needed` (`ENSMEM`).
+pub fn choose_pool(flags: u32, needed: u64, st: u64, alt: u64) -> Option<i16> {
+    let st_ok = st >= needed;
+    let mut alt_ok = flags & PF_TTRAMLOAD != 0 && alt >= needed;
+    if st_ok && alt_ok && st > alt {
+        let tpasize = (((flags >> 28) & 0x0f) as u64 + 1) * TPASIZE_QUANTUM;
+        if needed + tpasize > alt {
+            alt_ok = false; // force allocation in ST RAM
+        }
+    }
+    if alt_ok {
+        Some(MX_TTRAM)
+    } else if st_ok {
+        Some(MX_STRAM)
+    } else {
+        None
+    }
+}
+
+/// What the TPA in the largest block of `mp` would hold: the block length
+/// minus the slack up to the page boundary ([`TPA_ALIGN`]). 0 without a block.
 ///
-/// The pool follows the program's `PRGFLAGS` (EmuTOS `alloc_tpa`,
-/// `bdos/proc.c:460-502`): with `PF_TTRAMLOAD` TT-RAM is preferred
-/// (`MX_PREFTTRAM`, ST-RAM if TT-RAM cannot supply it), without it the TPA
-/// is ST-RAM only. Returns `None` on `ENSMEM`.
+/// # Safety
+///
+/// Caller holds the BDOS giant lock.
+unsafe fn usable_largest(mp: *mut tos_types::MPB) -> u64 {
+    // SAFETY: caller contract.
+    match unsafe { crate::bdos::mem::traps::largest_free_block(mp) } {
+        Some((start, len)) => {
+            let start = start as u32 as u64;
+            let slack = start.next_multiple_of(TPA_ALIGN) - start;
+            (len as u32 as u64).saturating_sub(slack)
+        }
+        None => 0,
+    }
+}
+
+/// Take the TPA — the largest free block of the pool EmuTOS `alloc_tpa`
+/// chooses ([`choose_pool`], `bdos/proc.c:460-502`) — page-aligned, for a
+/// program that `needed` bytes from its PD on (EmuTOS: `tlen + dlen + blen +
+/// sizeof(PD)`, `:291`; for `Pexec` 5/7 `sizeof(PD)`, `:220`). Returns `None`
+/// on `ENSMEM`.
 ///
 /// The block is tagged with the *current* owner cookie by the allocator
 /// (`owner = run`); the loader re-tags it to the child for `PE_LOADGO`.
@@ -76,20 +126,26 @@ pub struct Tpa {
 /// # Safety
 ///
 /// Caller holds the BDOS giant lock (or is the boot CPU pre-trap).
-pub unsafe fn alloc_tpa(prgflags: u32) -> Option<Tpa> {
-    let mode = super::loader::pool_mode(prgflags);
+pub unsafe fn alloc_tpa(prgflags: u32, needed: u64) -> Option<Tpa> {
+    use crate::bdos::mem::init::{pmd, pmdalt};
     // SAFETY: caller holds the BDOS lock.
-    let raw = unsafe {
-        crate::bdos::mem::traps::mxalloc_aligned(TPA_SIZE as Long, mode, TPA_ALIGN as Long)
-    };
-    if raw == 0 {
-        return None;
-    }
+    let (st, alt) = unsafe { (usable_largest(pmd()), usable_largest(pmdalt())) };
+    let mode = choose_pool(prgflags, needed, st, alt)?;
+    // SAFETY: caller holds the BDOS lock.
+    let (raw, len) =
+        unsafe { crate::bdos::mem::traps::mxalloc_largest(mode, TPA_ALIGN as Long) }?;
     // Pool addresses are positive `Long` in the low 2 GiB (BDOS `init`
     // rejects wider ranges), so this widening never sign-extends.
     let base = raw as u64;
+    let len = len as u32 as u64;
+    if len < needed {
+        // SAFETY: caller holds the BDOS lock; `raw` was just allocated.
+        unsafe { free_tpa(raw) };
+        return None;
+    }
     Some(Tpa {
         base,
+        len,
         base_kva: super::kalias(base) as *mut u8,
     })
 }

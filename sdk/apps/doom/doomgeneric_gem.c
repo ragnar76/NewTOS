@@ -258,22 +258,22 @@
  * MEMORY
  * ------
  * DOOM allocates its zone with malloc() (i_system.c I_ZoneBase), 6 MiB unless
- * -mb N says otherwise. NewTOS' libc runs malloc inside the 4 MiB TPA
- * (sdk/libc/newtos-arch/heap_init.c), so the 6 MiB default cannot be met
- * there; a start without a command tail therefore gets DOOM_GEM_ARGS
- * appended (build-doom.sh, default "-mb 2"). Measured 2026-10-02 (PORT06):
- * the image ends at ~0xcd400, which leaves ~3211 KiB of malloc arena below
- * the 64 KiB stack reserve; doomgeneric_Create() takes 250 KiB of it for
- * DG_ScreenBuffer before the zone is asked for, so 3 MiB (3072 KiB) does not
- * fit and 2 MiB does, with ~900 KiB left for the WAD directory and stdio.
- * -mb takes whole MiB, so 2 is the largest zone this TPA can give.
+ * -mb N says otherwise. On NewTOS the program gets the largest free block as
+ * its TPA and its start-up code shrinks it to program + stack, as mintlib's
+ * crtinit does on TOS (sdk/libc/newtos-arch/heap_init.c, ARCH03 E9); malloc
+ * then grows through GEMDOS Malloc (PF_TTRAMMEM: TT-RAM preferred), so the
+ * zone is one Malloc block of its own and DOOM's 6 MiB default fits wherever
+ * that much is free. DOOM_GEM_ARGS (build-doom.sh, default "-mb 6" -- DOOM's
+ * own value, passed explicitly as in build-doom-m68k.sh) is appended to every
+ * start; a "-mb N" given at the start wins. Until ARCH03 E9 (2026-10-05) the
+ * TPA was a fixed 4 MiB and malloc ran inside it, which capped the zone at
+ * 2 MiB ("-mb 2").
  * This file's own buffers -- the
  * device form of the 320x200 picture and, on the vr_trnfm route only, its
  * standard form (125 KiB each at 16 planes) and, when scaling,the scaled device form (out_w * out_h * bytes
  * per pixel: 2400 KiB for 1280x960 at 16 planes) -- come from GEMDOS
  * Mxalloc(MX_PREFTTRAM), Malloc as fallback: CPU-only memory, no DMA reason to
- * want ST-RAM (PORT06 "ST-RAM ist auch auf dem TT kein Thema"), and outside
- * the TPA the zone has to share.
+ * want ST-RAM (PORT06 "ST-RAM ist auch auf dem TT kein Thema").
  */
 #include <stdint.h>
 #include <stdio.h>
@@ -478,7 +478,7 @@ static void c2p_row(const uint8_t *src, int n, uint16_t *dst, long ps, long gs)
 
 /* Extra arguments for a start without a command tail; build-doom.sh sets it. */
 #ifndef DOOM_GEM_ARGS
-#define DOOM_GEM_ARGS "-mb", "2"
+#define DOOM_GEM_ARGS "-mb", "6"
 #endif
 
 /* Seconds between frame-time reports on the console; 0 = none. */
@@ -2144,8 +2144,7 @@ int main(int argc, char **argv)
 	static char *args[64];
 	int n = 0, i;
 
-	/* The zone size the engine would ask for by default does not fit this
-	 * machine's TPA (see MEMORY), so the built-in arguments are appended to
+	/* The built-in arguments (the zone size, see MEMORY) are appended to
 	 * every start -- a desktop or #Z start, which passes no command tail,
 	 * and a start with one (e.g. "-scale 2" typed into the parameter box).
 	 * They go AFTER the given ones: DOOM takes the first occurrence of an

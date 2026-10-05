@@ -210,8 +210,11 @@ static SHARED_L3_TOTAL: AtomicUsize = AtomicUsize::new(0);
 
 // ─── Table arena (stage 3b) ──────────────────────────────────────────
 
-/// Upper bound on the arena's size in tables (64 bitmap words).
-pub const ARENA_MAX_TABLES: usize = 64 * 64;
+/// Upper bound on the arena's size in tables (128 bitmap words). Room for
+/// the shared tables of 2 GiB of pools (1024), two un-shrunk largest-block
+/// TPAs' private copies (E9: a TPA is the largest free block until its
+/// program shrinks it, 2 × 1024) and the per-process budget besides.
+pub const ARENA_MAX_TABLES: usize = 128 * 64;
 
 /// Kernel VA of the first arena table; `0` = no arena (protection off).
 static ARENA_KVA: AtomicU64 = AtomicU64::new(0);

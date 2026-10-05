@@ -136,9 +136,10 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // SAFETY: single-CPU; `parent_frame` captures this kernel resume point,
     // and the program's `Pterm` restores it via the handler's SPSR.M = EL1t
     // (kernel-launched) branch — exactly as `selftest_pexec` does. The
-    // initial `SP_EL0` is the child's mapped multi-page TPA top
-    // (`child.sp_el0`); the SDK crt0 re-derives it from the basepage's
-    // p_hitpa, so a compiled program starts on a mapped stack.
+    // initial `SP_EL0` is the child's TPA top (`child.sp_el0` = `p_hitpa`; the
+    // TPA is the largest free block, EmuTOS `alloc_tpa`); the SDK start-up
+    // code moves the stack into the part of the TPA it keeps when it shrinks
+    // the block (mintlib `_crtinit`).
     unsafe {
         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
             child.entry_va,

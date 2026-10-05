@@ -20,9 +20,15 @@
 //!   B + 0x1000     program image       (PT_LOAD segments, linked at 0x1000,
 //!                                        relocated by B — `sdk/newtos.ld`)
 //!   image_end      BSS                 (zeroed)
-//!                  heap                (free TPA, for malloc)
-//!   B + TPA_SIZE   SP_EL0 / p_hitpa    (stack grows down from here)
+//!                  free TPA            (the program's to Mshrink)
+//!   p_hitpa        SP_EL0              (= B + the TPA length)
 //! ```
+//!
+//! The TPA is the largest free block of the pool the program flags choose
+//! (EmuTOS `alloc_tpa`, `bdos/proc.c:460-502`, [`arena::alloc_tpa`]); the
+//! program shrinks it at start (`Mshrink`, the SDK start-up code as mintlib's
+//! `_crtinit`), the AES-side loader of an accessory right after loading it
+//! (EmuTOS `pgmld`, `util/gemdos.c:29-47`; NewTOS `kernel/src/accs.rs`).
 //!
 //! `p_tbase = B + 0x1000` rather than EmuTOS' `B + 0x100` (plan §3.5): the
 //! image keeps the 4-KiB page offsets it was linked with. The basepage
@@ -40,26 +46,27 @@
 //! - **The whole pool is `UserRwExec`.** No `.text` RX / data RW-NX split; a
 //!   per-segment permission split is a later hardening step and does not
 //!   change the observable program contract.
-//! - **Whole-TPA zero.** The loader zeroes the entire TPA before
-//!   copying segments, so BSS, heap and stack all start zeroed and no
-//!   stale pool contents leak into the new process. The SDK `crt0`
-//!   therefore does **not** zero BSS itself.
-//! - **Fixed TPA size** ([`arena::TPA_SIZE`], plan E9: fixed, to be made
-//!   overridable through the program flags).
+//! - **Zeroing as EmuTOS `kpgmld`** (`bdos/kpgmld.c:212-221`): the
+//!   basepage page and the image span (BSS included) are always zeroed;
+//!   the rest of the TPA up to `p_hitpa` only without `PF_FASTLOAD`
+//!   ("clear the bss or the whole heap"). The SDK `crt0` therefore does
+//!   **not** zero BSS itself.
 
 use core::cell::UnsafeCell;
 use core::ffi::c_void;
 use core::sync::atomic::Ordering;
 
 use tos_types::prot_from_prgflags;
-use tos_types::{BasePage, Long, MX_PREFTTRAM, MX_STRAM, NUMSTD, PDCLSIZE, PF_STANDARD, PF_TTRAMLOAD};
+use tos_types::{
+    BasePage, Long, MX_PREFTTRAM, MX_STRAM, NUMSTD, PDCLSIZE, PF_FASTLOAD, PF_STANDARD, PF_TTRAMLOAD,
+};
 
 use super::{kalias, usermem};
 
 use crate::bdos::fs::FileImage;
 
 use super::arena;
-use super::elf::{self, ElfImage, LoadSegment, ParseError, PF_W, PF_X};
+use super::elf::{self, ElfImage, ParseError, PF_W, PF_X};
 use super::mmu::{self, MapError};
 use super::reloc::{self, RelocError};
 use super::PROCESS_TABLE;
@@ -77,9 +84,9 @@ pub enum LoadError {
     /// start at `USER_VA_BASE + RESERVED_LOW_END` (= 0x1000) or later.
     /// Anything below that produces this error (B1 / Option 1).
     SegmentVaOutOfRange,
-    /// A `PT_LOAD` segment's `vaddr + mem_size` overruns the usable
-    /// TPA image region (`TPA_SIZE - USER_STACK_MIN`), i.e. the
-    /// program image + BSS would collide with the reserved stack.
+    /// A `PT_LOAD` segment's `vaddr + mem_size` overflows the address
+    /// arithmetic. (An image that does not fit the largest free block is
+    /// [`Self::NoTpaMemory`], as EmuTOS `alloc_tpa` answers it.)
     ProgramTooLarge,
     /// Building the process root failed ([`super::mmu`]).
     MapPage(MapError),
@@ -163,12 +170,18 @@ pub struct LoadedImage {
     /// [`populate_basepage`] = the TPA block's address `B` (VA = PA). The
     /// child gets it in `x0`.
     pub basepage_va: u64,
-    /// Initial `SP_EL0` for the child: the TPA top `B + TPA_SIZE` (= the
-    /// basepage's `p_hitpa`), 4-KiB- and 16-byte-aligned per AAPCS64.
-    /// The stack grows down from here; the kernel launch path sets
-    /// `SP_EL0` to this and the SDK `crt0` re-derives the same value
-    /// from the basepage's `p_hitpa`.
+    /// Initial `SP_EL0` for the child: the TPA top (= the basepage's
+    /// `p_hitpa`), 16-byte-aligned per AAPCS64 (a page boundary with
+    /// protection on). The kernel launch path sets `SP_EL0` to this; the SDK
+    /// start-up code moves the stack into the part of the TPA it keeps
+    /// (mintlib `_crtinit`: `bp + m`).
     pub sp_el0: u64,
+    /// Bytes from the PD pointer to the end of the image (BSS included) —
+    /// what EmuTOS `pgmld` keeps of an accessory's TPA (`p_tlen + p_dlen +
+    /// p_blen + 0x100`, `util/gemdos.c:40-43`; the NewTOS image starts at
+    /// `B + 0x1000`, so it is the image end, not the sum). `sizeof(PD)` for a
+    /// `Pexec` 5/7 basepage.
+    pub image_len: u64,
 }
 
 /// Base of **page 0** — the per-process page at user VA `[0, 0x1000)` that
@@ -177,11 +190,6 @@ pub struct LoadedImage {
 /// from it. Since ARCH03 stage 1 the basepage is **not** here any more but
 /// at the start of the process's TPA block ([`LoadedImage::basepage_va`]).
 pub const USER_VA_BASE: u64 = 0x0;
-
-/// Minimum stack reserved at the top of the TPA: the program image +
-/// BSS may not grow into this window (they would collide with the
-/// stack). The heap lives between the image top and this reserve.
-const USER_STACK_MIN: u64 = 0x1_0000;
 
 /// Number of bytes at the start of the TPA reserved for the
 /// [`BasePage`].
@@ -207,10 +215,6 @@ const _: () = assert!(SYSVAR_AREA_END <= RESERVED_LOW_END);
 // (`populate_and_map`). The image must start page-aligned in the TPA (it is
 // linked at `RESERVED_LOW_END`, a page boundary), hence the page-aligned TPA.
 const _: () = assert!(RESERVED_LOW_END.is_multiple_of(arena::TPA_ALIGN));
-
-// The image window must leave room for both the reserved low region and the
-// minimum stack reserve inside the TPA.
-const _: () = assert!(RESERVED_LOW_END + USER_STACK_MIN < arena::TPA_SIZE);
 
 /// Where the program image comes from. There is **no** fixed
 /// whole-file staging buffer: only the ELF header + program-header table
@@ -416,6 +420,13 @@ unsafe fn load_from_source(
         return Err(LoadError::Ilp32Unsupported);
     }
 
+    // 1b'. Where the image ends (BSS included): what the TPA must at least
+    //     hold — EmuTOS `needed = tlen + dlen + blen + sizeof(PD)`
+    //     (`bdos/proc.c:291`); in NewTOS the image starts at `B + 0x1000`, so
+    //     it is the highest segment end. A malformed segment costs no
+    //     allocation either.
+    let image_end = image_end_of(&img)?;
+
     // 1c. The program's `PRGFLAGS` (ARCH03 E8b): the NewTOS ELF note, read
     //     before anything is allocated because the flags choose the pool of
     //     the TPA and the environment (EmuTOS `alloc_env`/`alloc_tpa` take
@@ -445,7 +456,7 @@ unsafe fn load_from_source(
     //    EmuTOS `bdos/proc.c:302-307`), so the child's `Pterm`
     //    `free_all_owned` sweep reclaims it.
     // SAFETY: BDOS lock held; single-CPU pre-test.
-    let Some(tpa) = (unsafe { arena::alloc_tpa(prgflags) }) else {
+    let Some(tpa) = (unsafe { arena::alloc_tpa(prgflags, image_end) }) else {
         // EmuTOS: "if failed, free env_ptr and return" (`bdos/proc.c:294-299`).
         free_env();
         return Err(LoadError::NoTpaMemory);
@@ -472,7 +483,7 @@ unsafe fn load_from_source(
     // SAFETY: BDOS lock held; `tpa` is a fresh, exclusively-owned
     // page-aligned region.
     match unsafe {
-        let req = ProcessSetup { tail, env_addr, prgflags };
+        let req = ProcessSetup { tail, env_addr, prgflags, image_end };
         populate_and_map(&src, slot, &img, &req, &tpa)
     } {
         Ok(loaded) => Ok(loaded),
@@ -493,6 +504,8 @@ struct ProcessSetup<'a> {
     tail: &'a [u8],
     env_addr: Option<Long>,
     prgflags: u32,
+    /// Bytes from the PD to the image end ([`image_end_of`]).
+    image_end: u64,
 }
 
 /// Stream the ELF image into `tpa`, zero its BSS, write the basepage
@@ -513,19 +526,24 @@ unsafe fn populate_and_map(
     req: &ProcessSetup<'_>,
     tpa: &arena::Tpa,
 ) -> Result<LoadedImage, LoadError> {
-    let ProcessSetup { tail, env_addr, prgflags } = *req;
+    let ProcessSetup { tail, env_addr, prgflags, image_end } = *req;
     let base = tpa.base;
 
     // Whole-TPA mutable byte view via the kernel high-half alias.
-    // SAFETY: the pool block backs `TPA_SIZE` contiguous bytes at
+    // SAFETY: the pool block backs `tpa.len` contiguous bytes at
     // `base_kva`, mapped RW in the high half; single-CPU under the lock.
     let tpa_bytes = unsafe {
-        core::slice::from_raw_parts_mut(tpa.base_kva, arena::TPA_SIZE as usize)
+        core::slice::from_raw_parts_mut(tpa.base_kva, tpa.len as usize)
     };
 
-    // Zero the whole TPA: BSS, heap and stack all start zeroed and no
-    // stale pool contents leak into the new process (see module docs).
-    tpa_bytes.fill(0);
+    // Zero as EmuTOS `kpgmld` (`bdos/kpgmld.c:212-221`, "clear the bss or the
+    // whole heap"): the basepage page and the whole image span — so the BSS,
+    // and the padding between segments, start zeroed — always; the free TPA
+    // above the image only without `PF_FASTLOAD`.
+    tpa_bytes[..image_end as usize].fill(0);
+    if prgflags & PF_FASTLOAD == 0 {
+        tpa_bytes[image_end as usize..].fill(0);
+    }
 
     // Stream each PT_LOAD segment's file bytes directly into the TPA at
     // its link VA (the byte offset in the TPA) — for a FAT file, straight
@@ -533,8 +551,6 @@ unsafe fn populate_and_map(
     // byte so the cache maintenance below covers exactly text+data.
     let mut image_top = BASEPAGE_RESERVED;
     for seg in img.segments() {
-        validate_segment(seg)?;
-
         let dest_off = seg.vaddr as usize;
         let file_size = seg.file_size as usize;
 
@@ -545,7 +561,7 @@ unsafe fn populate_and_map(
             }
         }
         // The BSS tail (`mem_size - file_size`) is already zero from the
-        // whole-TPA fill above, so no per-segment re-zero is needed.
+        // image-span fill above, so no per-segment re-zero is needed.
         image_top = image_top.max(seg.vaddr + seg.mem_size);
     }
 
@@ -560,7 +576,8 @@ unsafe fn populate_and_map(
     reloc::relocate(tpa_bytes, img, base)?;
 
     // Write the BasePage at the TPA start.
-    populate_basepage(tpa_bytes, img, tail, env_addr, base, prgflags);
+    let hitpa = base + tpa.len;
+    populate_basepage(tpa_bytes, img, tail, env_addr, base, hitpa, prgflags);
 
     // Make the freshly-written program image observable to instruction
     // fetch on real hardware (clean D-cache to PoU + invalidate I-cache).
@@ -579,7 +596,7 @@ unsafe fn populate_and_map(
     debug_assert!(!img.is_ilp32(), "step 1b must reject ELFCLASS32");
 
     let entry_va = base + img.entry_va;
-    let sp_el0 = base + arena::TPA_SIZE;
+    let sp_el0 = hitpa & !0xF;
     // SAFETY: BDOS lock held; the slot belongs to this load.
     let l0_pa = unsafe { install_slot(slot, tpa, entry_va, sp_el0)? };
 
@@ -589,6 +606,7 @@ unsafe fn populate_and_map(
         l0_pa,
         basepage_va: base,
         sp_el0,
+        image_len: image_end,
     })
 }
 
@@ -657,8 +675,9 @@ unsafe fn install_slot(
 
 /// `Pexec(PE_BASEPAGE / PE_BASEPAGEFLAGS)` — a basepage without a program
 /// (EmuTOS `xexec`, `bdos/proc.c:210-237`): the environment
-/// (`alloc_env(flags, env)`), a TPA of [`arena::TPA_SIZE`] from the pool
-/// `flags` select, the basepage at its start per `init_pd_fields`
+/// (`alloc_env(flags, env)`), the TPA — the largest free block of the pool
+/// `flags` select (`alloc_tpa((ULONG)path, sizeof(PD), &max)`, `:220`) — the
+/// basepage at its start per `init_pd_fields`
 /// (`:364-385`: zeroed, `p_lowtpa`, `p_hitpa`, `p_xdta`, `p_env`, the command
 /// tail) with `p_flags = flags`, and `slot` set up around it. Both blocks
 /// belong to the caller (the allocator stamps `run`; `set_owner(p, run)`,
@@ -689,7 +708,7 @@ pub unsafe fn create_basepage(
         }
     };
     // SAFETY: BDOS lock held.
-    let Some(tpa) = (unsafe { arena::alloc_tpa(flags) }) else {
+    let Some(tpa) = (unsafe { arena::alloc_tpa(flags, BASEPAGE_RESERVED) }) else {
         free_env();
         return Err(LoadError::NoTpaMemory);
     };
@@ -706,7 +725,7 @@ pub unsafe fn create_basepage(
     // SAFETY: `bp_bytes` is exactly one page-aligned `BasePage`.
     let bp = unsafe { &mut *(bp_bytes.as_mut_ptr() as *mut BasePage) };
     bp.p_lowtpa = tpa.base as Long;
-    bp.p_hitpa = (tpa.base + arena::TPA_SIZE) as Long;
+    bp.p_hitpa = (tpa.base + tpa.len) as Long;
     bp.p_xdta = (tpa.base + core::mem::offset_of!(BasePage, p_cmdlin) as u64) as Long;
     bp.p_env = env_addr.unwrap_or(0);
     bp.p_flags = flags;
@@ -725,6 +744,7 @@ pub unsafe fn create_basepage(
             l0_pa,
             basepage_va: tpa.base,
             sp_el0: 0,
+            image_len: BASEPAGE_RESERVED,
         }),
         Err(e) => {
             // SAFETY: BDOS lock held; both blocks are still ours.
@@ -741,7 +761,8 @@ pub unsafe fn create_basepage(
 /// `init_pd_fields`, `bdos/proc.c:363-384`, and `kpgmld.c:123-145`).
 ///
 /// Sources:
-///   * `p_lowtpa` / `p_hitpa` — TPA extents: `[base, base + TPA_SIZE)`.
+///   * `p_lowtpa` / `p_hitpa` — TPA extents: `[base, hitpa)` (`p_hitpa = p +
+///     max`, `bdos/proc.c:374`, `max` the largest block `alloc_tpa` took).
 ///     `p_hitpa` is the TPA top, i.e. the initial stack pointer; the heap
 ///     lives between the BSS end (`p_bbase + p_blen`) and the
 ///     downward-growing stack.
@@ -770,6 +791,7 @@ fn populate_basepage(
     tail: &[u8],
     env_addr: Option<Long>,
     base: u64,
+    hitpa: u64,
     prgflags: u32,
 ) {
     let mut text_base: u64 = 0;
@@ -808,7 +830,7 @@ fn populate_basepage(
     let bp = unsafe { &mut *(bp_bytes.as_mut_ptr() as *mut BasePage) };
 
     bp.p_lowtpa = base as Long;
-    bp.p_hitpa = (base + arena::TPA_SIZE) as Long;
+    bp.p_hitpa = hitpa as Long;
     bp.p_tbase = text_base as Long;
     bp.p_tlen = text_len as Long;
     bp.p_dbase = data_base as Long;
@@ -1448,10 +1470,10 @@ pub(super) unsafe fn alloc_env(img: &[u8], prgflags: u32) -> Result<Long, LoadEr
     Ok(phys)
 }
 
-/// The pool a program's environment and TPA come from, by its `PRGFLAGS`:
-/// TT-RAM preferred with `PF_TTRAMLOAD`, ST-RAM only without — EmuTOS
-/// `alloc_env` (`bdos/proc.c:425`) and `alloc_tpa` (`:460-502`, whose ST/TT
-/// tie-break by the bits 31-28 quantum is reference, not reproduced).
+/// The pool a program's environment comes from, by its `PRGFLAGS`: TT-RAM
+/// preferred with `PF_TTRAMLOAD`, ST-RAM only without — EmuTOS `alloc_env`
+/// (`bdos/proc.c:425`). The TPA's pool is [`arena::choose_pool`]'s
+/// (`alloc_tpa`, `:460-502`, with the bits 31-28 tie-break).
 pub const fn pool_mode(prgflags: u32) -> i16 {
     if prgflags & PF_TTRAMLOAD != 0 {
         MX_PREFTTRAM
@@ -1532,34 +1554,38 @@ unsafe fn env_slice_from_phys(penv: Long) -> &'static [u8] {
 /// environments (a handful of `KEY=value` records).
 const ENV_SCAN_LIMIT: usize = 4096;
 
-/// Reject segments that clobber the reserved low region or overrun the
-/// usable TPA image region.
+/// The end of the image in bytes from the PD (= the TPA offset of its last
+/// byte + 1, BSS included): EmuTOS' `needed` without the basepage term, which
+/// the NewTOS layout already contains (`bdos/proc.c:291`). The image starts at
+/// [`RESERVED_LOW_END`] at the earliest.
 ///
 /// A `PT_LOAD` (link VA = byte offset in the TPA) must start at or after
-/// [`RESERVED_LOW_END`] — the BasePage and its reserved gap occupy the
-/// TPA's first page — and end at or before `TPA_SIZE - USER_STACK_MIN`,
-/// leaving the top of the TPA for the downward-growing stack. The heap
-/// occupies whatever is left between the image top and the stack.
-fn validate_segment(seg: &LoadSegment) -> Result<(), LoadError> {
-    // Segments below the reserved low region would overlap the basepage, so
-    // they are rejected — the SDK links native apps at RESERVED_LOW_END
-    // (`sdk/newtos.ld`).
-    if seg.vaddr < RESERVED_LOW_END {
-        return Err(LoadError::SegmentVaOutOfRange);
+/// [`RESERVED_LOW_END`] — the BasePage and its reserved gap occupy the TPA's
+/// first page. How large the image may be is the TPA's business: a program
+/// the largest free block cannot hold gets `ENSMEM` from [`arena::alloc_tpa`],
+/// as from EmuTOS `alloc_tpa`.
+fn image_end_of(img: &ElfImage) -> Result<u64, LoadError> {
+    let mut end = RESERVED_LOW_END;
+    for seg in img.segments() {
+        // Segments below the reserved low region would overlap the basepage,
+        // so they are rejected — the SDK links native apps at
+        // RESERVED_LOW_END (`sdk/newtos.ld`).
+        if seg.vaddr < RESERVED_LOW_END {
+            return Err(LoadError::SegmentVaOutOfRange);
+        }
+        let e = seg
+            .vaddr
+            .checked_add(seg.mem_size)
+            .filter(|&e| e <= i32::MAX as u64)
+            .ok_or(LoadError::ProgramTooLarge)?;
+        // PF_R is implicit for any LOAD; PF_W and PF_X drive the text/data
+        // classification in `populate_basepage`. The whole pool is mapped
+        // UserRwExec, so the flags don't gate a mapping decision — a
+        // per-segment RX/RW split is a later hardening step.
+        let _ = seg.flags & (PF_W | PF_X);
+        end = end.max(e);
     }
-    let end = seg
-        .vaddr
-        .checked_add(seg.mem_size)
-        .ok_or(LoadError::ProgramTooLarge)?;
-    if end > arena::TPA_SIZE - USER_STACK_MIN {
-        return Err(LoadError::ProgramTooLarge);
-    }
-    // PF_R is implicit for any LOAD; PF_W and PF_X drive the text/data
-    // classification in `populate_basepage`. The whole pool is mapped
-    // UserRwExec, so the flags don't gate a mapping decision — a
-    // per-segment RX/RW split is a later hardening step.
-    let _ = seg.flags & (PF_W | PF_X);
-    Ok(())
+    Ok(end)
 }
 
 #[cfg(test)]
@@ -1774,7 +1800,7 @@ mod basepage_segment_tests {
         let img = elf::parse(&blob, blob.len() as u64).expect("well-formed ELF64");
         assert_eq!(img.segments().len(), segs.len(), "every PT_LOAD must be seen");
         let mut tpa = vec![0u8; RESERVED_LOW_END as usize];
-        populate_basepage(&mut tpa, &img, &[], None, 0, PF_STANDARD);
+        populate_basepage(&mut tpa, &img, &[], None, 0, 0x40_0000, PF_STANDARD);
         let rd = |off: usize| u32::from_le_bytes(tpa[off..off + 4].try_into().unwrap()) as u64;
         (rd(0x08), rd(0x0C), rd(0x10), rd(0x14), rd(0x18), rd(0x1C))
     }
@@ -1837,10 +1863,10 @@ mod basepage_segment_tests {
         ]);
         let img = elf::parse(&blob, blob.len() as u64).expect("well-formed ELF64");
         let mut tpa = vec![0u8; RESERVED_LOW_END as usize];
-        populate_basepage(&mut tpa, &img, &[3, b'a', b'b', b'c'], Some(0x0200_0010), B, PF_STANDARD);
+        populate_basepage(&mut tpa, &img, &[3, b'a', b'b', b'c'], Some(0x0200_0010), B, B + 0x0123_4000, PF_STANDARD);
         let rd = |off: usize| u32::from_le_bytes(tpa[off..off + 4].try_into().unwrap()) as u64;
         assert_eq!(rd(0x00), B, "p_lowtpa = the PD pointer");
-        assert_eq!(rd(0x04), B + arena::TPA_SIZE, "p_hitpa = TPA top");
+        assert_eq!(rd(0x04), B + 0x0123_4000, "p_hitpa = TPA top (PD + the block length)");
         assert_eq!((rd(0x08), rd(0x0C)), (B + 0x1000, 0x400), "p_tbase/p_tlen");
         assert_eq!((rd(0x10), rd(0x14)), (B + 0x1400, 0x80), "p_dbase/p_dlen");
         assert_eq!((rd(0x18), rd(0x1C)), (B + 0x1480, 0x80), "p_bbase/p_blen");

@@ -1,0 +1,22 @@
+clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+ar    : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+lld   : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+compiled OK=616  skipped=9  (of 625)
+skipped (did not compile for AArch64/LP64):
+    gmp/support.c
+    mintlib/crtinit.c
+    mintlib/getwd.c
+    mintlib/linea.c
+    mintlib/nf_ops.c
+    mintlib/syscall.c
+    signal/siggetmask.c
+    stdio/gets.c
+    tz/dumpstate.c
+failures match libc/expected-failures.txt: 9 today, 9 recorded, 0 new
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a (1308074 bytes)
+
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/libc/build/libtest.NCP (98184 bytes)
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Entry: 0x1000

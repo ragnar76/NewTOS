@@ -36,9 +36,9 @@ parses the ELF directly; there is no flat-binary conversion
   8 `PT_LOAD` segments (`tos-api/src/bdos/process/elf.rs`);
 * dynamic relocations: only `R_AARCH64_RELATIVE` in one `DT_RELA` table,
   applied by the loader (`tos-api/src/bdos/process/reloc.rs`);
-* every `PT_LOAD` with `0x1000 <= p_vaddr` and
-  `p_vaddr + p_memsz <= 4 MiB − 64 KiB`
-  (`tos-api/src/bdos/process/loader.rs:1317-1340`).
+* every `PT_LOAD` with `0x1000 <= p_vaddr`; the image must fit the largest
+  free block, which becomes the TPA (EmuTOS `alloc_tpa`; else `ENSMEM`) —
+  `tos-api/src/bdos/process/loader.rs` `image_end_of`, `arena.rs`.
 
 The file extension decides how the desktop launches the program (ADR-018,
 `docs/MEMORY.md:1004-1107`; classifier `kernel/src/desk/ftype.rs:50-70`):

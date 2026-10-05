@@ -211,6 +211,32 @@ fn load_one_acc(acc: &mut Acc) {
             return;
         }
     };
+    // `pgmld`'s second half (`util/gemdos.c:40-44`): the loader gave the
+    // accessory the largest free block as its TPA (EmuTOS `alloc_tpa`), so
+    // shrink it to "code+data+bss lengths plus basepage length" before the
+    // next accessory — or anything else — is loaded. In the NewTOS layout the
+    // image starts at `PD + 0x1000`, so that length is the image end
+    // (`LoadedChild::image_len`), not the sum. A failed shrink is `pgmld`'s
+    // `return -1`: the accessory is not started.
+    // SAFETY: single boot path, BDOS not concurrently locked; the TPA block
+    // starts at the PD pointer the loader returned and is the loader's.
+    let rc = unsafe {
+        tos_api::bdos::mem::traps::mshrink(
+            0,
+            child.basepage_va as u32 as tos_types::Long,
+            child.image_len as tos_types::Long,
+        )
+    };
+    if rc < 0 {
+        kprintln!("[acc] {} Mshrink(PD, {:#x}) failed: {}", as_str(&acc.path), child.image_len, rc);
+        // SAFETY: the slot was never started; nothing references its TPA or
+        // its environment, both owned by the child's PD (`owned_by_child`).
+        unsafe {
+            tos_api::bdos::mem::free_all_owned::free_all_owned(child.handle as *mut core::ffi::c_void);
+            process::pterm::release_slot(child.slot);
+        }
+        return;
+    }
     acc.slot = child.slot;
     let Some(s) = slot(child.slot) else {
         return;

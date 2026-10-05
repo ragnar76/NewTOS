@@ -576,13 +576,37 @@ PHASE-06 D4/D5 status (2026-06-16):
   `EPLFMT`. The value becomes `p_flags` (EmuTOS `p->p_flags = hdr.h01_flags`,
   `bdos/proc.c:313`); **no note → `PF_STANDARD`** (7), the value every program
   had before. As in EmuTOS `alloc_env`/`alloc_tpa` (`bdos/proc.c:413-502`) the
-  flags choose the pool: `PF_TTRAMLOAD` → environment and TPA from TT-RAM
-  preferred (`MX_PREFTTRAM`), otherwise ST-RAM only (`MX_STRAM`); the ST/TT
-  tie-break with bits 31-28 is not reproduced (reference, edge case 4).
-  `PF_FASTLOAD` changes nothing visible: the loader zeroes the whole TPA
-  either way, which satisfies both "heap zeroed" (flag clear) and "heap
-  undefined" (flag set). The TPA size stays the fixed 4 MiB (E9) — no flag
-  bit is defined that would change it.
+  flags choose the pool: the environment from TT-RAM preferred with
+  `PF_TTRAMLOAD` (`MX_PREFTTRAM`), otherwise ST-RAM only (`MX_STRAM`); the
+  TPA by `alloc_tpa`'s rule, ST/TT tie-break with bits 31-28 included (see
+  "TPA" below). `PF_FASTLOAD` as in EmuTOS `kpgmld` (`bdos/kpgmld.c:212-221`):
+  set → only the image (BSS included) is zeroed, clear → the whole TPA up to
+  `p_hitpa` ("clear the bss or the whole heap").
+
+  **TPA (ARCH03 E9, lead decision 2026-10-05 — EmuTOS behaviour; replaces the
+  fixed 4 MiB block of stages 1–3c).** The TPA is the **largest free block**,
+  exactly as EmuTOS `alloc_tpa` (`bdos/proc.c:460-502`) gives it:
+  `ffit(-1L, &pmd)` and, with `PF_TTRAMLOAD` and TT-RAM present,
+  `ffit(-1L, &pmdalt)` measure each pool (`:466,476`); a pool qualifies when
+  its largest block holds `needed` (`:467,477`; `needed` = image +
+  `sizeof(PD)` for modes 0/3, `:291` — in NewTOS the image end from the PD,
+  since the image starts at `PD + 0x1000`; `sizeof(PD)` for 5/7, `:220`);
+  TT-RAM is taken unless ST-RAM is larger **and** TT-RAM cannot hold
+  `needed + ((flags >> 28) + 1) × 128 KiB` (`TPASIZE_QUANTUM`, `:34,481-484`);
+  the whole block is allocated (`ffit(size, …)`, `:486,493`) and `p_hitpa =
+  p + max` (`init_pd_fields`, `:374`). NewTOS keeps one difference that a
+  program cannot observe: the block starts on a 4-KiB page (the image keeps
+  its link-time page offsets), so without memory protection — whose pool
+  grain is a page anyway — the less-than-a-page slack in front of the largest
+  block goes back to the pool and the TPA is that much shorter. No block holds
+  `needed` → `ENSMEM`, nothing stays allocated.
+  A program gives back what it does not need itself, as every TOS program
+  does: the SDK start-up code is mintlib's `_crtinit` (`sdk/libc/newtos-arch/
+  heap_init.c`, `mintlib/crtinit.c:154-247`: `_stksize`/`_heapbase` policy,
+  default MINKEEP = 64 KiB stack, `Mshrink(PD, program + stack)`, malloc
+  through GEMDOS `Malloc`); the plain `sdk/crt0.S` keeps image + 64 KiB. An
+  accessory's TPA is shrunk by its loader to image + basepage before anything
+  runs (EmuTOS `pgmld`, `util/gemdos.c:29-47`; `kernel/src/accs.rs`).
 
   **Order (ARCH03 stage 3c):** the environment is allocated **before** the
   TPA, as EmuTOS `xexec` does ("allocate the environment first, depending on
@@ -591,12 +615,12 @@ PHASE-06 D4/D5 status (2026-06-16):
   `:294-299`). Both are allocated as the caller and handed to the child for
   `PE_LOADGO` (`set_owner`, `:302-307`). The order fixes the layout: the
   environment lies below the TPA, as in EmuTOS. Until 3c the loader took the
-  TPA first (modes 5/7 already followed EmuTOS). Note: because the TPA is a
-  fixed 4 MiB block (E9) rather than EmuTOS's largest free block
-  (`alloc_tpa`, `:460-502`), what a program allocates after its start lies
-  directly behind its TPA under first fit; the tail a `Ptermres` gives back
-  is then a free block of its own, not part of the large free block behind
-  (measured, ARCH03 3c quittance).
+  TPA first (modes 5/7 already followed EmuTOS). Note: under first fit what a
+  program allocates after its start-up `Mshrink` lies directly behind the
+  part of the TPA it kept, so the tail a later `Ptermres` gives back (its
+  stack, everything past `blkln`) is a free block of its own, not part of the
+  large free block behind — in EmuTOS as here (measured in the ARCH03 3c and
+  E9 quittances).
 
   **Producing the note:** both SDK start files (`sdk/crt0.S`,
   `sdk/libc/crt0.S`) emit it with `PF_STANDARD`; a build overrides it per
@@ -610,12 +634,13 @@ PHASE-06 D4/D5 status (2026-06-16):
   * **5/7 build a basepage, load nothing.** Flags = `0` for mode 5, the raw
     `path` argument (a `ULONG`, never read as a string) for mode 7. The
     environment is `alloc_env(flags, env)` (`env == NULL` → a copy of the
-    caller's), the TPA a block of the fixed TPA size (4 MiB, E9 — EmuTOS takes
-    the largest free block, edge case 1), both from the pool `PF_TTRAMLOAD`
-    selects (no flag → ST-RAM); either shortfall is `ENSMEM` with nothing
+    caller's), the TPA the largest free block (`alloc_tpa((ULONG)path,
+    sizeof(PD), &max)`, `:220`; see "TPA" above — no `PF_TTRAMLOAD` → ST-RAM,
+    so mode 5 always takes the largest ST-RAM block and the caller shrinks
+    it); either shortfall is `ENSMEM` with nothing
     left allocated. Both blocks belong to the **caller** (`set_owner(p, run)`,
     `:229-230`). The basepage is `init_pd_fields` (`:364-385`): zeroed, then
-    `p_lowtpa = p`, `p_hitpa = p + 4 MiB`, `p_xdta = &p_cmdlin`, `p_env`, the
+    `p_lowtpa = p`, `p_hitpa = p + max`, `p_xdta = &p_cmdlin`, `p_env`, the
     command tail (`x2`, copied like the load modes); `p_flags = flags`; the
     segment fields stay 0. Standard handles, current directories and drive
     are set as the loader sets them for the load modes (`init_pd_files`

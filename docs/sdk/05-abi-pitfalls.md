@@ -53,23 +53,25 @@ VA 0x0000_0400   classic sysvars ... _sysbase@0x4F2, _p_cookies@0x5A0
 
 shared (VA = PA): the BDOS pools, published kernel structures, the screen
 B                BasePage (256 B) -- B = the TPA block = the PD pointer
+B + 0x100        reserved; crt0's start-up stack
 B + 0x1000       program image (PT_LOAD, relocated for B), then .bss
-_end             libc heap arena grows up                    heap_init.c
-   ...
-B + 4 MiB - 64K  64 KiB stack reserve (USER_STACK_MIN)
-B + 4 MiB        p_hitpa = initial SP_EL0 = TPA top
-elsewhere        Malloc/Mxalloc blocks (their pool addresses), the RSC
-                 blob, other processes' TPAs
+_end             the stack crt0 keeps (_stksize, 64 KiB default)  heap_init.c
+B + m            end of the TPA after crt0's Mshrink(B, m)
+p_hitpa          the original TPA top = B + the largest free block (E9)
+elsewhere        Malloc/Mxalloc blocks (their pool addresses; libc malloc
+                 too), the RSC blob, other processes' TPAs
 ```
 
-The whole pool is mapped user-read/write/execute; the whole TPA is zeroed
-before the image is copied. Every user address is below 2 GiB (plan
+The whole pool is mapped user-read/write/execute; the image span (BSS
+included) is zeroed before the image is copied, the rest of the TPA only
+without `PF_FASTLOAD` (EmuTOS `kpgmld`). Every user address is below 2 GiB (plan
 invariant I2) — which is why the 32-bit fields of the classic TOS structures
 can hold a NewTOS pointer (`sdk/gemlib/overlay/gem.h:62-64`, `basepage.h:19`).
 
 The basepage the loader writes is the classic 256-byte layout with 4-byte
 fields (`loader.rs` `populate_basepage`; kernel struct
-`tos-types/src/basepage.rs`): `p_hitpa = B + 0x400000`, `p_tbase`/`p_tlen` = the
+`tos-types/src/basepage.rs`): `p_hitpa = B +` the largest free block (E9),
+`p_tbase`/`p_tlen` = the
 first executable `PT_LOAD`, `p_dbase`/`p_dlen`/`p_bbase`/`p_blen` = the first
 writable non-executable one (file part / BSS tail). Since TASK/T05
 `newtos.ld` emits exactly those two segments (`text` R-X, `data` RW- with
@@ -86,8 +88,8 @@ verbatim (length byte first).
 
 | Resource | How | Limit |
 |----------|-----|-------|
-| stack | `SP_EL0 = p_hitpa` set by the loader and re-derived by crt0 (`sdk/crt0.S:37-42`) | grows down into the TPA; the image may not reach the top 64 KiB (`loader.rs:1330-1335`) |
-| libc `malloc` | mintlib `__sbrk` → `HeapAlloc` from the arena `[_end, p_hitpa − 64 KiB)` (`heap_init.c:58-74`, `sdk/libc/mintlib/unix/sbrk.c:30-72`); `HeapAlloc` refuses a request that would cross the live stack pointer | **the 4-MiB TPA minus image and stack**; when exhausted `sbrk` fails with `ENOMEM` — there is **no** fall-back to GEMDOS `Malloc` because `_split_mem == 0` (`sbrk.c:54-71`) |
+| stack | crt0 / `__libc_crtinit` keep `_stksize` bytes (mintlib default MINKEEP = 64 KiB) above the image and `Mshrink` the TPA to image + stack (`sdk/crt0.S`, `sdk/libc/newtos-arch/heap_init.c`, mintlib `crtinit.c:154-247`); an accessory gets a `Malloc`'ed stack (`_acc_main`) | `_stksize` (mintlib's rules: `-1` keep all, `0` MINKEEP, `1/2/3` quarters, `n` bytes, `-n` bytes + own heap; env `STACKSIZE`) |
+| libc `malloc` | mintlib `__sbrk` → GEMDOS `Malloc` in hunks of 8–32 KiB (larger requests one block each) with the default `_stksize` (`_split_mem`, `sbrk.c:54-73`, `malloc.c:64-95`); with `_stksize < -1`/`-1` the own heap above the image | the pool (`PF_TTRAMMEM` → TT-RAM preferred); every hunk is one BDOS block (256 MDs system-wide) |
 | GEMDOS `Malloc`/`Mxalloc` | the pool block's own address, valid in every process (ARCH03 stage 1, VA = PA; `tos-api/src/gemdos/memory.rs`) | the pool itself — no per-process window or block-table limit any more |
 | kernel structures returned by pointer | published read-only into the window (ADR-023): `Getbpb`, `Getmpb`; screen memory published read/write, uncached: `Physbase`, `Logbase` | see B3 for what is still not published |
 | system variables, OSHEADER, cookie jar | materialised in page 0 of the TPA at the classic addresses (`loader.rs:861` `populate_sysvars`) | read-only in substance: the cookie mirror is rewritten from the kernel jar on every change (`loader.rs:1057-1100`); writes to the mirror do not reach the kernel |
@@ -498,13 +500,15 @@ via `Cconws` while debugging in QEMU.
 **Symptom**: `malloc` returns `NULL` (`ENOMEM`) although the machine has
 hundreds of megabytes.
 
-**Cause**: see A3 — mintlib's heap is the in-TPA arena between `_end` and
-the stack reserve inside the 4-MiB TPA, with no fall-back to `Malloc`
-(`heap_init.c`, `sbrk.c:54-71`).
+**Cause** (until ARCH03 E9, 2026-10-05): mintlib's heap was the in-TPA arena
+between `_end` and the stack reserve inside a fixed 4-MiB TPA, with no
+fall-back to `Malloc`. Since E9 the TPA is the largest free block and the
+start-up code runs mintlib's own model — malloc through GEMDOS `Malloc`
+(see A3) — so a failing `malloc` now means the pool (or the BDOS's 256 memory
+descriptors, one per `Malloc` hunk) is exhausted.
 
-**Do**: for large buffers call GEMDOS `Malloc`/`Mxalloc` directly (up to the
-28-MiB window, at most 32 live blocks). Raising `TPA_SIZE`
-(`tos-api/src/bdos/process/arena.rs:52`) is a kernel change.
+**Do**: check `Malloc(-1)`; for many small long-lived allocations prefer one
+large block.
 
 ### B16. gemlib bindings that split a `long` with a pointer cast
 

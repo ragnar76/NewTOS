@@ -288,9 +288,11 @@ fn validate_basepage(loaded: &LoadedImage) -> bool {
 
     // The basepage sits at the start of the TPA block (ARCH03 stage 1), so
     // every address field is relative to the PD pointer `base`; p_hitpa is
-    // the TPA top `base + arena::TPA_SIZE`.
+    // the TPA top — the PD plus the largest free block the loader took
+    // (EmuTOS `p_hitpa = p + max`, `bdos/proc.c:374`), which it also reports
+    // as the initial stack pointer.
     let base = loaded.basepage_va as i32;
-    let expected_hitpa: i32 = base + arena::TPA_SIZE as i32;
+    let expected_hitpa: i32 = loaded.sp_el0 as i32;
     let expected_xdta: i32 = base + 0x80;
     let expected_uft = [-1i8; 6];
 

@@ -484,6 +484,113 @@ pub unsafe fn mxalloc_aligned(amount: Long, mode: i16, align: Long) -> Long {
     base
 }
 
+/// The largest free block of `mp` as `(m_start, m_length)` — the block
+/// EmuTOS `alloc_tpa` gets with `ffit(ffit(-1L, mp), mp)`
+/// (`bdos/proc.c:466,476,486,493`): `ffit(-1)` reports the largest length,
+/// and `ffit(length)` then takes the **first** free block at least that long,
+/// i.e. the first one of maximal length. `None` for an empty free list.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock (read-only list walk).
+pub unsafe fn largest_free_block(mp: *mut MPB) -> Option<(Long, Long)> {
+    if mp.is_null() {
+        return None;
+    }
+    let mut best: Option<(Long, Long)> = None;
+    // SAFETY: caller holds the BDOS lock.
+    let mut q = unsafe { (*mp).mp_mfl };
+    while !q.is_null() {
+        // SAFETY: list invariant.
+        let (start, len) = unsafe { ((*q).m_start, (*q).m_length) };
+        if len > 0 && best.is_none_or(|(_, l)| len > l) {
+            best = Some((start, len));
+        }
+        // SAFETY: list invariant.
+        q = unsafe { (*q).m_link };
+    }
+    best
+}
+
+/// Allocate the **whole** largest free block of one pool (`MX_STRAM` or
+/// `MX_TTRAM`), starting on an `align`-byte boundary: the program TPA of
+/// EmuTOS `alloc_tpa` (`md = ffit(size, &pmd); return md->m_start`,
+/// `bdos/proc.c:486-487,493-494`), whose length becomes `p_hitpa - p_lowtpa`
+/// (`*avail = size`, `init_pd_fields`, `:374`).
+///
+/// The block is taken with [`mxalloc`] (so it carries the caller's owner tag
+/// and its protection record like every allocation) and its front slack up to
+/// the boundary goes back to the pool ([`pool::trim_front`]) — a NewTOS step:
+/// the position-independent image keeps its link-time page offsets (ARCH03
+/// stage 1). With protection on the pool grain is already one page, so there
+/// is no slack. Returns `(m_start, m_length)` of the aligned block, or `None`
+/// when the pool has no free block longer than its slack.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock.
+pub unsafe fn mxalloc_largest(mode: i16, align: Long) -> Option<(Long, Long)> {
+    if align <= 0 || align & (align - 1) != 0 {
+        return None;
+    }
+    let mpb = match mode {
+        MX_STRAM => init::pmd(),
+        MX_TTRAM => init::pmdalt(),
+        _ => return None,
+    };
+    // SAFETY: caller holds the BDOS lock.
+    let (_, len) = unsafe { largest_free_block(mpb) }?;
+    // `ffit` rounds the amount up to the grain; a block length is a multiple
+    // of it, so this takes exactly the largest block (the first of that length).
+    let mask = PoolConfig::current().align_mask;
+    let amount = len & !mask;
+    if amount <= 0 {
+        return None;
+    }
+    // SAFETY: caller holds the BDOS lock.
+    let raw = unsafe { mxalloc(amount, mode) };
+    if raw == 0 {
+        return None;
+    }
+    // SAFETY: caller holds the BDOS lock; `raw` was just allocated on `mpb`.
+    let mut p = unsafe { (*mpb).mp_mal };
+    while !p.is_null() && unsafe { (*p).m_start } != raw {
+        // SAFETY: list invariant.
+        p = unsafe { (*p).m_link };
+    }
+    if p.is_null() {
+        return None; // cannot happen: `raw` was just allocated
+    }
+    let base = (raw + align - 1) & !(align - 1);
+    // SAFETY: list invariant.
+    let raw_len = unsafe { (*p).m_length };
+    if base > raw {
+        let mut supply = unsafe { init::supply() };
+        // SAFETY: `p` is on `mp_mal`; `base - raw < align`, and the block
+        // must keep at least one grain behind the boundary.
+        if base - raw >= raw_len || unsafe { pool::trim_front(p, mpb, base - raw, &mut supply) } < 0 {
+            // SAFETY: `p` is still the whole block at `raw`.
+            unsafe {
+                pool::freeit(p, mpb, &mut supply);
+                super::region::forget(raw);
+                crate::bdos::process::memprot::on_freed(raw as u32 as u64, raw_len as u32 as u64);
+            }
+            return None;
+        }
+        // ARCH03 3b: the record follows the block to its aligned start; the
+        // slack given back is invalid for everybody again.
+        // SAFETY: caller holds the BDOS lock.
+        unsafe {
+            crate::bdos::process::memprot::rekey(raw as u32 as u64, base as u32 as u64);
+            crate::bdos::process::memprot::touch(raw as u32 as u64, base as u32 as u64);
+            crate::bdos::process::memprot::sync();
+        }
+    }
+    // SAFETY: list invariant; `p` now starts at `base`.
+    let have = unsafe { (*p).m_length };
+    Some((base, have))
+}
+
 /// Is `addr` inside a block on either pool's **allocated** list?
 ///
 /// The "live user memory" test of the stage-1 shared address space

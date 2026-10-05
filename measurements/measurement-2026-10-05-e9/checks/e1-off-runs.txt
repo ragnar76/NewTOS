@@ -1,0 +1,153 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> e1-off-rpi4-desktop-t25.png {"return": {}}
+run e1-off-rpi4-desktop: rc=0
+t=35.0s -> e1-off-rpi4-teradesk-t35.png {"return": {}}
+run e1-off-rpi4-teradesk: rc=0
+t=30.0s -> e1-off-rpi4-qed-t30.png {"return": {}}
+run e1-off-rpi4-qed: rc=0
+t=30.0s -> e1-off-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> e1-off-rpi4-doom-t45.png {"return": {}}
+run e1-off-rpi4-doom: rc=0
+t=25.0s -> e1-off-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> e1-off-rpi4-apitest-t40.png {"return": {}}
+run e1-off-rpi4-apitest: rc=0
+t=25.0s -> e1-off-rpi4-acc-t25.png {"return": {}}
+run e1-off-rpi4-acc: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.16nwWW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.16nwWW/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s e1-off-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run e1-off-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.q3jerS/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.q3jerS/ser.sock,server=on
+t=  15.0s end marker seen
+t=  17.1s e1-off-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run e1-off-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.bIoZxc/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.bIoZxc/ser.sock,server=on
+t=  15.7s end marker seen
+t=  17.8s e1-off-rpi4-s2all-end.png {"return": {}}
+prompts seen: 0
+run e1-off-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.rXNuUo/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.rXNuUo/ser.sock,server=on
+t=  15.5s end marker seen
+t=  17.6s e1-off-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run e1-off-rpi4-port10: rc=0
+t=40.0s -> e1-off-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> e1-off-rpi4-crashtst-t70.png {"return": {}}
+run e1-off-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.vob0CE/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.vob0CE/ser.sock,server=on
+t=  15.9s e1-off-rpi4-uacc3a-crash1.png {"return": {}}
+t=  17.9s e1-off-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.0s e1-off-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.1s e1-off-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.2s e1-off-rpi4-uacc3a-crash5.png {"return": {}}
+t=  26.3s e1-off-rpi4-uacc3a-crash6.png {"return": {}}
+t=  28.4s e1-off-rpi4-uacc3a-crash7.png {"return": {}}
+t=  30.5s e1-off-rpi4-uacc3a-crash8.png {"return": {}}
+t=  32.6s e1-off-rpi4-uacc3a-crash9.png {"return": {}}
+t=  34.7s e1-off-rpi4-uacc3a-crash10.png {"return": {}}
+t=  36.8s e1-off-rpi4-uacc3a-crash11.png {"return": {}}
+t=  38.9s e1-off-rpi4-uacc3a-crash12.png {"return": {}}
+t=  41.0s e1-off-rpi4-uacc3a-crash13.png {"return": {}}
+t=  43.0s e1-off-rpi4-uacc3a-crash14.png {"return": {}}
+t=  45.1s e1-off-rpi4-uacc3a-crash15.png {"return": {}}
+t=  47.2s e1-off-rpi4-uacc3a-crash16.png {"return": {}}
+t=  49.3s e1-off-rpi4-uacc3a-crash17.png {"return": {}}
+t=  51.4s e1-off-rpi4-uacc3a-crash18.png {"return": {}}
+t=  53.5s e1-off-rpi4-uacc3a-crash19.png {"return": {}}
+t=  55.6s e1-off-rpi4-uacc3a-crash20.png {"return": {}}
+t=  57.7s e1-off-rpi4-uacc3a-crash21.png {"return": {}}
+t=  59.8s e1-off-rpi4-uacc3a-crash22.png {"return": {}}
+t=  61.9s e1-off-rpi4-uacc3a-crash23.png {"return": {}}
+t=  64.0s e1-off-rpi4-uacc3a-crash24.png {"return": {}}
+t=  66.1s e1-off-rpi4-uacc3a-crash25.png {"return": {}}
+t=  68.1s e1-off-rpi4-uacc3a-crash26.png {"return": {}}
+t=  69.3s end marker seen
+t=  77.4s e1-off-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run e1-off-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.ZxAIqU/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.ZxAIqU/ser.sock,server=on
+t=  15.1s end marker seen
+t=  23.2s e1-off-rpi4-mprot-end.png {"return": {}}
+prompts seen: 0
+run e1-off-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.dBdII5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.dBdII5/ser.sock,server=on
+t=  15.1s end marker seen
+t=  18.1s e1-off-rpi4-e10-end.png {"return": {}}
+prompts seen: 0
+run e1-off-rpi4-e10: rc=0
+t=20.0s -> e1-off-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> e1-off-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> e1-off-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run e1-off-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.jtdgBU/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.jtdgBU/ser.sock,server=on
+t=   4.0s e1-off-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s e1-off-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.8s e1-off-virt-crash-crash3.png {"return": {}}
+t=   5.8s answered prompt 3
+t=   7.2s e1-off-virt-crash-crash4.png {"return": {}}
+t=   7.2s answered prompt 4
+t=   8.6s e1-off-virt-crash-crash5.png {"return": {}}
+t=   8.6s answered prompt 5
+t=  10.0s e1-off-virt-crash-crash6.png {"return": {}}
+t=  10.0s answered prompt 6
+t=  11.4s e1-off-virt-crash-crash7.png {"return": {}}
+t=  11.4s answered prompt 7
+t=  12.8s e1-off-virt-crash-crash8.png {"return": {}}
+t=  12.8s answered prompt 8
+t=  14.2s e1-off-virt-crash-crash9.png {"return": {}}
+t=  14.2s answered prompt 9
+t=  15.6s e1-off-virt-crash-crash10.png {"return": {}}
+t=  15.6s answered prompt 10
+t=  16.9s e1-off-virt-crash-crash11.png {"return": {}}
+t=  16.9s answered prompt 11
+t=  18.3s e1-off-virt-crash-crash12.png {"return": {}}
+t=  18.3s answered prompt 12
+t=  19.8s e1-off-virt-crash-crash13.png {"return": {}}
+t=  19.8s answered prompt 13
+t=  21.2s e1-off-virt-crash-crash14.png {"return": {}}
+t=  21.2s answered prompt 14
+t=  22.6s e1-off-virt-crash-crash15.png {"return": {}}
+t=  22.6s answered prompt 15
+t=  24.0s e1-off-virt-crash-crash16.png {"return": {}}
+t=  24.0s answered prompt 16
+t=  25.3s e1-off-virt-crash-crash17.png {"return": {}}
+t=  25.3s answered prompt 17
+t=  26.7s e1-off-virt-crash-crash18.png {"return": {}}
+t=  26.7s answered prompt 18
+t=  28.1s e1-off-virt-crash-crash19.png {"return": {}}
+t=  28.1s answered prompt 19
+t=  29.5s e1-off-virt-crash-crash20.png {"return": {}}
+t=  29.5s answered prompt 20
+t=  30.8s e1-off-virt-crash-crash21.png {"return": {}}
+t=  30.8s answered prompt 21
+t=  32.2s e1-off-virt-crash-crash22.png {"return": {}}
+t=  32.2s answered prompt 22
+t=  33.6s e1-off-virt-crash-crash23.png {"return": {}}
+t=  33.6s answered prompt 23
+t=  35.0s e1-off-virt-crash-crash24.png {"return": {}}
+t=  35.0s answered prompt 24
+t=  36.3s e1-off-virt-crash-crash25.png {"return": {}}
+t=  36.3s answered prompt 25
+t=  37.7s e1-off-virt-crash-crash26.png {"return": {}}
+t=  37.7s answered prompt 26
+t=  39.1s e1-off-virt-crash-crash27.png {"return": {}}
+t=  39.1s answered prompt 27
+t=  40.2s end marker seen
+t=  41.8s e1-off-virt-crash-end.png {"return": {}}
+prompts seen: 27
+run e1-off-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.kyU8CG/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.kyU8CG/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s e1-off-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run e1-off-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.JnAnaj/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.JnAnaj/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s e1-off-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run e1-off-virt-desktop: rc=0

@@ -1,0 +1,89 @@
+measurement-2026-10-05-e9 -- ARCH03 E9 rework: the TPA is EmuTOS' largest
+free block (alloc_tpa), programs shrink it at start like mintlib's _crtinit,
+the accessory loader like EmuTOS pgmld; Doom back to its own 6 MiB zone.
+
+Date 2026-10-05, branch desk-rebuild, base HEAD 0d09343 (tree clean at
+start), change uncommitted: method/e9-change.diff (git diff + the new test).
+QEMU 11.0.2, host macOS. No SD card, Pi or TT touched; tools/make-sd-image.sh
+NOT used -- method/seed-card.sh builds private 64 MiB images in the session
+scratchpad. method/ = the 3c method (copied) + build-all.sh/build-oldexec.sh
+(stage-2 recipe + 3a/3b/3c probes), runs-e9.sh (3c series + E9MEM/E9PLAIN),
+runs-e9-extra.sh (TeraDesk -> QED via F1, EmuCON five programs),
+tdqed-keys.py + TERADESK-QED.INF, emucon-schedule-e9.py, tests/e9mem.c,
+tests/e9plain.c; tests/p567.c and tests/ownkid.c adapted (below).
+
+CHECKPOINTS
+  e1  all code changes; static checks; full series ON/OFF/STRICT + extra runs
+      + desk3a in every mode.
+  e2  one kernel comment changed after e1 (kernel/src/launch.rs); static
+      checks again; product kernel differs from e1 in 1 byte (a panic line
+      number); smoke on e2: desktop/TeraDesk/QED dumps byte-identical to e1,
+      E9MEM PASS, virt desktop up. Pi binary: bin/kernel8-e2.img.
+
+STATIC CHECKS (method/checks.sh <label>; checks/<label>-*.txt)
+               3c(c2)    e1        e2
+  host tests   1129/0/1  1135/0/1  1135/0/1   (+6: tos-api/tests/arch03_e9_tpa.rs)
+  release tos-api/kernel warnings, both boards, fresh after
+               cargo clean -p kernel -p tos-api:  64/94 at e1 and e2
+  clippy tos-api/kernel (rpi4 and qemu-virt)  76/125 at e1 and e2
+  desk-drift-probe 31; sdk/run-host-tests 13/0/0
+
+SDK REBUILT (checks/build-*.log): libc (heap_init.c/crt0.S new), gemlib,
+cflib, libm, every program in bin/ (build-all.sh), APITEST, QED, TeraDesk,
+Doom (DOOM_ARGS "-mb","6"), TESTGEM, CHAINTST, CORE/COREVAL. Hashes:
+bin/SHA256SUMS, repo-binaries.sha256.
+
+RUN SERIES e1 (runs-e9.sh + runs-e9-extra.sh; checks/e1-<mode>-*.txt), all rc=0
+                         ON              OFF             STRICT
+  desktop/TeraDesk/QED/APITEST/acc/KBDVEC dumps
+                         = 3c c1, byte for byte, in every mode
+  APITEST TOTAL          106/0/5         106/0/5         106/0/5
+  Doom                   VERIFIED, "zone memory: ..., 600000 allocated" (6 MiB) in every mode
+  accessory SYSACC       issued, desk up (loaded, Mshrunk, Malloc'ed stack)
+  E9MEM (+ its child)    PASS            PASS            PASS
+  E9PLAIN                PASS            PASS            PASS
+  TeraDesk -> F1 -> QED  QED up (dump = QED started from the desktop, every mode)
+  EmuCON 5 in a row      HELLO2, E9PLAIN PASS, E9MEM PASS (+child), HELLO2,
+                         OLDEXEC "Cannot run program (error 66)", exit -- every mode
+  PORT10                 42/44 (PROC02, as 3c)
+  CRASHTST/UACC3A/MPROT3B/E10USR  PASS in every mode, raspi4b and virt
+  virt selftests         B1, D3, D3 PEXEC, D4/D5, D6, D7 PTERMRES PASS, every mode
+  virt desktop           up, every mode
+  S2ALL                  FAIL (TSR)      PASS            FAIL (P567-6, TSR; crash kernel run)
+    (ON: first run e1 also OWN FAIL -- probe artefact, see below; rerun e1b
+     with the adapted OWNKID: only TSR fails)
+  desk3a                 A-D,G = 3c; E/F file time, H item count (new
+                         probes); ON = OFF = STRICT byte-identical
+
+TPA / Malloc(-1) (raspi4b; TT-RAM pool 0x3a458000 bytes with protection
+(table arena taken first), 0x3ae00000 without; ST-RAM 0x00a00000)
+  before (3c, fixed 4 MiB): p_hitpa - p_lowtpa = 0x00400000; S2ALL end
+         Malloc(-1) ON 0x39b76000, OFF 0x3a566590
+  after (E9): first program TPA = 0x3a3c1000 (ON/STRICT) / 0x3ad69000 (OFF)
+         = the whole largest TT block; crtinit keeps 0x13b30 (E9MEM) /
+         plain crt0 0x11680 (E9PLAIN); right after start Mxalloc(-1,TT) =
+         Malloc(-1) = 0x3a3ad000 ON / 0x3ad554d0 OFF; ST 0x00a00000 untouched.
+         The child of E9MEM gets 0x39daa000 (the largest block left).
+         S2ALL end Malloc(-1): ON 0x3a385000, OFF 0x3ad408a0, STRICT 0x3a3ae000.
+  Table arena with protection: 2472 tables (was 1517): + 2 x pool regions.
+
+PROBE ADAPTATIONS (spec changed, not weakened)
+  tests/p567.c  "5: p_hitpa == PD + 4 MiB (E9)" encoded the old decision;
+                now "p_hitpa - PD == the largest ST block" (measured before
+                Pexec 5, less env + page slack) and "nothing as large left".
+  tests/ownkid.c "Mshrink(own basepage) as co-owner" asked for
+                p_hitpa - p_lowtpa = a GROW once crt0 has shrunk the TPA
+                (EGSBF, on EmuTOS too); now Mshrink(_base, _PgmSize) -- the
+                owner rule is what is tested.
+
+TSRPAR "TPA beyond blkln back in the pool (< 64 KiB kept)" -- still FAIL
+under ON/STRICT, PASS under OFF. ON: TT largest before 0x3a39a000 after
+0x3a385000 (0x15000). TSRRES (PD 0x01a67000, blkln 0x2760) keeps image +
+the 64-KiB MINKEEP stack after its crtinit Mshrink; its Mxalloc(64) lands
+right behind that (first fit); Ptermres(blkln) frees [PD+0x3000, PD+0x13000)
+-- 64 KiB, exactly the crtinit stack -- as a free block of its own between
+the resident part and the Malloc block. The memory IS back in the pool;
+the check measures the largest block, a layout proxy. The same would
+happen on EmuTOS + mintlib (stack inside the kept TPA, first fit). OFF
+passes because with the 16-byte grain TSRRES' small blocks fit holes below.
+Not changed; lead decision (3c option a: semantic check).

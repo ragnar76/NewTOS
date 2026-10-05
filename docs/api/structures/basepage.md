@@ -246,6 +246,8 @@ emulator (Phase 10+).
   address fields (`p_lowtpa`, `p_hitpa`, `p_tbase`, `p_dbase`, `p_bbase`,
   `p_xdta`, `p_env`) are addresses every process can read. Until stage 1 the
   basepage sat at VA 0 of every process (`p_lowtpa = 0`).
-- `p_hitpa` = `p_lowtpa + 4 MiB`: the TPA has a fixed size (plan decision
-  E9 — not EmuTOS' largest free block, which would starve every other
-  process; FreeMiNT bounds its TPA the same way).
+- `p_hitpa` = `p_lowtpa` + the length of the largest free block the loader
+  took (ARCH03 E9, 2026-10-05: EmuTOS `alloc_tpa`, `bdos/proc.c:460-502`,
+  `p_hitpa = p + max` `:374`; until then a fixed 4 MiB). The SDK start-up
+  code shrinks the block at once (mintlib `_crtinit`); `p_hitpa` keeps naming
+  the original top, as on TOS (`Mshrink` never touches the basepage).

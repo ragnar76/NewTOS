@@ -1,59 +1,109 @@
 /*
- * crt0.S -- NewTOS native C runtime startup (ADR-018 `.NCP` / `.NAP`).
+ * crt0.S -- NewTOS native C runtime startup (ADR-018 `.NCP` / `.NAP` / `.NAC`).
  *
  * The NewTOS program loader (tos-api/src/bdos/process/{loader,reloc,mmu,
- * arena}.rs) maps a multi-page Transient Program Area (TPA_SIZE, 4 MiB today)
- * for the process. The program is a position-independent executable (ELF
- * ET_DYN, ARCH03 stage 0d): it is linked at 0x1000 (sdk/newtos.ld), the
- * loader streams its segments into the TPA and applies its
- * R_AARCH64_RELATIVE relocations for the address the TPA executes at -- since
- * ARCH03 stage 1 its own pool address B (VA = PA). Relative to B:
+ * arena}.rs) gives the process a Transient Program Area: the LARGEST free
+ * block of the pool its PRGFLAGS choose, exactly as EmuTOS alloc_tpa does
+ * (bdos/proc.c:460-502; ARCH03 E9). The program is a position-independent
+ * executable (ELF ET_DYN, ARCH03 stage 0d) linked at 0x1000 (sdk/newtos.ld);
+ * the loader streams its segments into the TPA and applies its
+ * R_AARCH64_RELATIVE relocations for the TPA's own pool address B (VA = PA).
+ * Relative to B:
  *
  *     [0x000, 0x100)          BasePage (populated by the loader)
- *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata/.rela.dyn) = p_tbase/p_tlen
- *     [p_dbase, p_bbase)      PT_LOAD data (.dynamic/.got/.data)      = p_dbase/p_dlen
- *     [p_bbase, _end)         .bss (zeroed by the loader)             = p_bbase/p_blen
- *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
+ *     [0x100, 0x1000)         reserved (zeroed) -- our start-up stack
+ *     [0x1000, p_dbase)       PT_LOAD text = p_tbase/p_tlen
+ *     [p_dbase, p_bbase)      PT_LOAD data = p_dbase/p_dlen
+ *     [p_bbase, _end)         .bss (zeroed by the loader) = p_bbase/p_blen
+ *     [_end, p_hitpa)         the rest of the largest free block
  *
- * Every TPA page is mapped user-read/write/execute. On entry the loader has:
+ * Like every TOS start-up code, this one gives back what it does not need,
+ * so the program does not hold all of memory and can start others (mintlib
+ * crtinit.c _crtinit, with its default _stksize = MINKEEP; this plain runtime
+ * has no heap, so it keeps the image plus a MINKEEP stack):
  *
- *   - eret'd to EL0 at e_entry (this `_start`, linked at 0x1000);
- *   - set SP_EL0 to the mapped TPA top (= the basepage's p_hitpa);
- *   - put the BasePage address in x0 -- on every launch path (Pexec, the
- *     kernel launcher for the desktop / AUTO / #Z, the scheduler's first
- *     dispatch of an accessory).
+ *     m = (_end - B) + MINKEEP;  Mshrink(0, B, m);  SP = B + m
  *
- * crt0 therefore finds the BasePage through x0, never through a fixed
- * address: from stage 1 on the basepage sits at the start of the program's
- * own TPA block, wherever that is. SP is (re)established from the basepage's
- * `p_hitpa` (a 32-bit TOS `LONG` at offset 0x04, 4-KiB / 16-byte aligned)
- * rather than trusted from entry, so it tracks whatever TPA top the loader
- * chose. The loader zeroes the whole TPA (including .bss), so crt0 does not
- * zero BSS.
+ * A desk accessory arrives with its TPA already shrunk to the image: the AES
+ * side loads it and Mshrinks it to "code+data+bss plus basepage" before
+ * anything runs (EmuTOS pgmld, util/gemdos.c:29-47; NewTOS kernel/src/accs.rs).
+ * Its p_hitpa still names the old TPA top (Mshrink never touches the
+ * basepage), so the stack must not go there. mintlib tells an accessory by
+ * its m68k entry registers (startup/crt0.S:46-57: a0 = basepage and
+ * p_parent == 0); NewTOS passes the basepage in x0 on every launch path, so
+ * this code tells it by that very state instead: the Mshrink that would keep
+ * the stack cannot GROW the block (EGSBF, -67). Then it does what mintlib's
+ * _acc_main does (crtinit.c:112-131): Malloc(MINKEEP) and run on that.
+ *
+ * Until the stack is chosen no stack is used at all; the svc handler runs on
+ * the kernel stack. x0 carries the BasePage address on entry (the loader:
+ * Pexec, the kernel launcher for the desktop / AUTO / #Z, the scheduler's
+ * first dispatch of an accessory).
  *
  * The trap ABI (kernel/src/arch/aarch64/exceptions.rs): GEMDOS = svc #1,
- * function id in x8, argument in x0, result in x0. Pterm = 0x4C.
+ * function id in x8, argument in x0.., result in x0. Mshrink = 0x4A,
+ * Malloc = 0x48, Pterm = 0x4C.
  */
+
+/* mintlib stksiz.h: keep at least this much stack. */
+#define MINKEEP     0x10000
+#define EGSBF       (-67)
+#define ENSMEM      (-39)
 
     .section .text.boot, "ax", @progbits
     .global _start
     .type   _start, %function
 _start:
-    /*
-     * SP = basepage->p_hitpa (the mapped TPA top), read at offset 0x04 of the
-     * BasePage the loader passes in x0. No stack access before SP is valid.
-     */
-    ldr     w9, [x0, #4]        /* w9 = p_hitpa (zero-extended into x9) */
+    mov     x19, x0             /* x19 = BasePage (B) */
+
+    /* m = round16(_end - B) + MINKEEP */
+    adrp    x20, _end
+    add     x20, x20, :lo12:_end
+    sub     x21, x20, x19
+    add     x21, x21, #15
+    and     x21, x21, #~15
+    add     x21, x21, #MINKEEP
+
+    /* Mshrink(0, B, m) */
+    mov     x0, #0
+    mov     x1, x19
+    mov     x2, x21
+    mov     x8, #0x4A
+    svc     #1
+    cmn     x0, #(-EGSBF)       /* rc == EGSBF? */
+    b.eq    .Lacc
+
+    /* A program: the stack is the top of the part of the TPA it keeps. */
+    add     x9, x19, x21
+    mov     sp, x9
+    b       .Lmain
+
+.Lacc:
+    /* An accessory (TPA already shrunk by the loader): mintlib _acc_main,
+       s = Malloc(_stksize); SP = s + _stksize. */
+    mov     x0, #MINKEEP
+    mov     x8, #0x48
+    svc     #1
+    cbz     x0, .Lnomem
+    add     x9, x0, #MINKEEP
+    and     x9, x9, #~15
     mov     sp, x9
 
+.Lmain:
     /*
-     * `main` takes no arguments in a plain (non-libc) program; x0 still
-     * holds the BasePage address, which it ignores. Its return value (w0)
-     * is the exit code.
+     * `main` takes no arguments in a plain (non-libc) program; x0 holds the
+     * BasePage address, which it may ignore. Its return value (w0) is the
+     * exit code.
      */
+    mov     x0, x19
     bl      main
 
     /* Pterm(main's return): GEMDOS 0x4C, rc in x0, svc #1. Never returns. */
+    mov     x8, #0x4C
+    svc     #1
+
+.Lnomem:
+    mov     x0, #ENSMEM
     mov     x8, #0x4C
     svc     #1
 

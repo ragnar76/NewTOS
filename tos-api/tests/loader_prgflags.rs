@@ -197,6 +197,8 @@ fn a_bad_note_is_an_unloadable_program() {
     }
 }
 
+/// The environment's pool (`alloc_env`); the TPA's is `arena::choose_pool`
+/// (`alloc_tpa`, with the bits 31-28 tie-break — `arch03_e9_tpa.rs`).
 #[test]
 fn the_flags_choose_the_pool_like_emutos_alloc_env_and_alloc_tpa() {
     assert_eq!(loader::pool_mode(PF_STANDARD), MX_PREFTTRAM);

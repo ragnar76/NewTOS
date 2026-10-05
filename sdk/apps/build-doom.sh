@@ -40,11 +40,12 @@
 #                              later m68k build gets SYS_BIG_ENDIAN the same way.
 #
 # Environment knobs:
-#   DOOM_ARGS='"-mb","2"'      extra arguments the platform appends to argv
+#   DOOM_ARGS='"-mb","6"'      extra arguments the platform appends to argv
 #                              on every start, after the ones given (a desktop
 #                              / #Z start passes none; a given option wins, as
-#                              DOOM takes the first occurrence). Default below;
-#                              the zone size is the reason, see
+#                              DOOM takes the first occurrence). Default:
+#                              DOOM's own zone size, 6 MiB (i_system.c
+#                              DEFAULT_RAM), as build-doom-m68k.sh; see
 #                              doomgeneric_gem.c "MEMORY".
 #   DOOM_STATS=<seconds>       compile in a one-time per-step cost probe (on
 #                              the first frame, ~4 s) and a frame-time report
@@ -73,7 +74,7 @@ LIBMTOP="$LIBM/openlibm-0.8.8"
 BUILD="${BUILD:-$PORT/build}"
 OBJ="$BUILD/obj"
 OUT="${OUT:-$BUILD/DOOM.NAP}"
-DOOM_ARGS="${DOOM_ARGS:-\"-mb\",\"2\"}"
+DOOM_ARGS="${DOOM_ARGS:-\"-mb\",\"6\"}"
 DOOM_STATS="${DOOM_STATS:-0}"
 mkdir -p "$OBJ"
 

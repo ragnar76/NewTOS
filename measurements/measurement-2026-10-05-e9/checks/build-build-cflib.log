@@ -1,0 +1,20 @@
+clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+ar    : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+lld   : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+COBJS manifest: 129 files
+compiled OK=129  skipped=0  (of 129)
+failures match cflib/expected-failures.txt: 0 today, 0 recorded, 0 new
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/cflib/cflib.a (259816 bytes)
+
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/cflib/build/cftest.NCP (162304 bytes)
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Entry: 0x1000
+
+GEM trap sites (svc #2) reachable from the linked cflib program:
+        6d4c: d4000041     	svc	#0x2
+    0000000000006dac <aes>:
+        6db4: d4000041     	svc	#0x2
+    0000000000007e98 <vdi>:
+        7ea0: d4000041     	svc	#0x2
