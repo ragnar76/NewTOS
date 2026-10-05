@@ -204,6 +204,16 @@ impl ObjTree {
         self.base
     }
 
+    /// An accessor over another tree `base` of the **same** origin — same
+    /// ABI width, same kernel-built flag, same owner mapping. The Menu
+    /// Manager reads a submenu attached to the installed bar this way: it
+    /// belongs to the client that installed the bar (`MNPPD`), not to
+    /// whoever is calling (ARCH03 3a, F3).
+    #[inline]
+    pub(crate) fn with_base(self, base: *const Object) -> Self {
+        Self { base: base as u64, ..self }
+    }
+
     #[inline]
     fn stride(self) -> u64 {
         record_stride(self.abi)
@@ -560,6 +570,38 @@ impl ObjTree {
             p = p.wrapping_add(page);
         }
         Some(base)
+    }
+
+    /// The kernel address of a `len`-byte buffer at `va` that the AES is
+    /// about to **write** for this tree — an editable field's `te_ptext`
+    /// (`objc_edit`, the form manager's edit loop) — through the owner-aware
+    /// path (ARCH03 stage 3a, F2):
+    ///
+    /// * no owner (a kernel-built tree, or the raw view of a kernel caller):
+    ///   `va` itself, as before;
+    /// * the owner is the **calling** process (its own tree, in its own
+    ///   trap): checked writable with the caller's rights and its kernel
+    ///   alias ([`Space::kptr`](crate::uaccess::Space::kptr)) — a buffer the
+    ///   program may not write is a recorded fault, and the syscall tail ends
+    ///   the program (EmuTOS: bus error in `ob_edit`'s `strcpy`);
+    /// * another process's tree (read outside its owner's trap): its alias in
+    ///   the owner's mapping ([`Self::ua_span`]), `None` (the write dropped)
+    ///   when the owner has nothing there — no fault can be charged to a
+    ///   process that is not running.
+    ///
+    /// A null `va` stays null. `None` means: do not touch the buffer.
+    pub(crate) fn wbuf(self, va: u64, len: u64) -> Option<u64> {
+        let Some(slot) = self.owner else {
+            return Some(va);
+        };
+        if va == 0 {
+            return Some(0);
+        }
+        if crate::bdos::process::slot_for(crate::bdos::process::current()) == Some(slot) {
+            crate::uaccess::Space::User.kptr(va, len.max(1), true).ok()
+        } else {
+            self.ua_span(va, len.max(1))
+        }
     }
 }
 
@@ -1934,7 +1976,15 @@ pub(crate) fn edit_field_t(t: ObjTree, obj: i16, in_char: i16, mut idx: i16, kin
     let ted = unsafe { TedInfo::read_abi(spec, t) };
     let ted = &ted;
     let txtlen = ted.te_txtlen.max(1);
-    let text = ted.te_ptext as *mut u8;
+    // The field's text buffer (`te_txtlen` bytes, the GEM contract), written
+    // in place below: its kernel address through the owner-aware path
+    // (ARCH03 3a, F2, [`ObjTree::wbuf`]) — never the raw user address. A
+    // buffer the caller may not write ends the call (and the program); one
+    // of another process that is not there is left alone.
+    let Some(text) = t.wbuf(ted.te_ptext, txtlen as u64) else {
+        return idx;
+    };
+    let text = text as *mut u8;
     let tmpl = read_cstr(t, ted.te_ptmplt);
 
     match kind {
@@ -2327,10 +2377,16 @@ pub(crate) fn abs_rect_t(t: ObjTree, obj: i16) -> (i16, i16, i16, i16) {
 /// First child of `parent` whose absolute rectangle contains `(mx, my)`,
 /// scanning only direct children; `NIL` if none. Used for menu hit-tests.
 pub(crate) fn child_at(tree: *const Object, parent: i16, mx: i16, my: i16) -> i16 {
-    let t = ObjTree::new(tree);
+    child_at_t(ObjTree::new(tree), parent, mx, my)
+}
+
+/// [`child_at`] through the caller-supplied [`ObjTree`] accessor — the Menu
+/// Manager's tracker reads the installed bar through its owner's accessor
+/// (`menu::mntree_accessor`, ARCH03 3a F3), not the current process's.
+pub(crate) fn child_at_t(t: ObjTree, parent: i16, mx: i16, my: i16) -> i16 {
     let mut c = t.head(parent);
     while c != NIL && c != parent {
-        let (x, y, w, h) = abs_rect(tree, c);
+        let (x, y, w, h) = abs_rect_t(t, c);
         if mx >= x && mx < x + w && my >= y && my < y + h {
             return c;
         }
@@ -2395,7 +2451,13 @@ pub(crate) fn draw_obj_clip(
     clip: ClipRect,
     backend: &dyn RasterBackend,
 ) {
-    let t = ObjTree::new(tree);
+    draw_obj_clip_t(ObjTree::new(tree), obj, depth, clip, backend);
+}
+
+/// [`draw_obj_clip`] through the caller-supplied [`ObjTree`] accessor (the
+/// Menu Manager's drop-down and submenu boxes, read through the bar owner's
+/// accessor — ARCH03 3a F3).
+pub(crate) fn draw_obj_clip_t(t: ObjTree, obj: i16, depth: i16, clip: ClipRect, backend: &dyn RasterBackend) {
     let (ox, oy) = abs_offset(t, obj);
     // A65: same `ob_draw` role as `draw_obj_t`, same bracket. The Menu Manager
     // already hides the cursor around its save-blit + draw pair, so this nests —

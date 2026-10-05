@@ -59,6 +59,7 @@ fn args1(a0: u64) -> TrapArgs {
         regs: [a0, 0, 0, 0, 0, 0, 0, 0],
         func: 0,
         svc_imm: 1,
+        space: tos_api::uaccess::Space::Kernel,
     }
 }
 
@@ -127,6 +128,8 @@ fn drive(script: &[u8], max: usize) -> (Option<usize>, MockIo<'_>) {
     let out = match edit_line(&mut io, max) {
         LineEdit::Done(n) => Some(n),
         LineEdit::Terminated => None,
+        // The in-memory mock never faults.
+        LineEdit::Faulted => None,
     };
     (out, io)
 }

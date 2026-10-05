@@ -73,56 +73,138 @@ mod workstation;
 
 use crate::bdos::process::Abi;
 use crate::host;
+use crate::uaccess::{Space, UserFault};
 
 /// The VDI parameter block: five pointers to WORD (`i16`) arrays
 /// (`contrl`/`intin`/`ptsin`/`intout`/`ptsout`). The five block pointers
 /// are the caller's pointer width — 8-byte for an LP64 caller, 4-byte for
 /// an ILP32 one (ADR-020) — so [`Vdipb::from_raw`] is told the caller's
 /// [`Abi`] and reads them at the right stride. The arrays they address
-/// are WORD arrays (16-bit either way), so the accessors keep plain
-/// `*mut i16`.
+/// are WORD arrays (16-bit either way).
+///
+/// **Caller space (ARCH03 stage 3a).** The block and its arrays live in the
+/// caller's address space ([`Space`]). For an EL0 program every element is
+/// read and written with its rights through [`crate::uaccess`] — at the
+/// moment the handler touches it, as EmuTOS's handlers touch the arrays in
+/// place — so a bad array pointer is a recorded user-access fault and the
+/// syscall tail ends the program, instead of a kernel abort. The block and
+/// `CONTRL[0..7]` (opcode, counts, handle: read and written by every call,
+/// `vdi_main.c`) are checked up front in [`Vdipb::from_raw`]; a bad one
+/// stops the call before any handler runs. After a fault inside a handler
+/// every further read gives 0 and every further write is dropped, so the
+/// handler runs out on inert values and the program is ended on return. An
+/// in-kernel caller's block holds kernel addresses and is used as it is.
 pub(crate) struct Vdipb {
+    /// `CONTRL[0..7]` at its **kernel** address (checked readable and
+    /// writable in [`Self::from_raw`]); `CONTRL[7..]` — the MFDB / `vex_*`
+    /// pointer slots — through [`Self::contrl_va`].
     contrl: *mut i16,
-    intin: *mut i16,
-    ptsin: *mut i16,
-    intout: *mut i16,
-    ptsout: *mut i16,
+    /// The caller's `CONTRL` base address (for the slots past index 6).
+    contrl_va: u64,
+    intin: u64,
+    ptsin: u64,
+    intout: u64,
+    ptsout: u64,
     /// The calling process's pointer-width ABI (ADR-020), recorded at
     /// construction. The raster ops need it to read the CONTRL MFDB
     /// pointers (`N_PTRINTS` = 4 LP64 / 2 ILP32) and the MFDB struct
     /// fields at the caller's width — see [`Vdipb::contrl_ptr`] and
     /// [`crate::vdi::raster`].
     abi: Abi,
+    /// Whose address space the block and its arrays are in.
+    space: Space,
+    /// A user access of this call faulted (see the type comment).
+    faulted: core::cell::Cell<bool>,
 }
+
+/// `CONTRL` words every VDI call reads or writes (`CONTRL[0..7]`: opcode,
+/// `n_ptsin`, `n_ptsout`, `n_intin`, `n_intout`, sub-opcode, handle).
+const CONTRL_FIXED: usize = 7;
 
 impl Vdipb {
     /// Build from the raw `x1` pointer to the 5-pointer block, reading
     /// the block pointers at the caller's pointer width (`abi`): 8-byte
-    /// LP64 pointers, or 4-byte (zero-extended) ILP32 pointers.
+    /// LP64 pointers, or 4-byte (zero-extended) ILP32 pointers — in the
+    /// caller's `space`, with `CONTRL[0..7]` checked readable and writable.
+    /// `Err` (fault recorded) when the program may not use them.
     ///
     /// # Safety
-    /// `ptr` must point at five consecutive valid array pointers of the
-    /// caller's width, each to a WORD array large enough for the opcode's
-    /// counts.
-    pub(crate) unsafe fn from_raw(ptr: u64, abi: Abi) -> Self {
-        // SAFETY: caller guarantees the 5-pointer block is valid and of
-        // `abi`'s width; `read_ptr` reads one such pointer per index.
-        unsafe {
-            Self {
-                contrl: abi.read_ptr(ptr, 0) as *mut i16,
-                intin: abi.read_ptr(ptr, 1) as *mut i16,
-                ptsin: abi.read_ptr(ptr, 2) as *mut i16,
-                intout: abi.read_ptr(ptr, 3) as *mut i16,
-                ptsout: abi.read_ptr(ptr, 4) as *mut i16,
-                abi,
+    /// For [`Space::Kernel`]: `ptr` must point at five consecutive valid
+    /// array pointers of the caller's width, each to a WORD array large
+    /// enough for the opcode's counts.
+    pub(crate) unsafe fn from_raw(ptr: u64, abi: Abi, space: Space) -> Result<Self, UserFault> {
+        let mut blk = [0u64; 5];
+        for (i, slot) in blk.iter_mut().enumerate() {
+            *slot = abi.read_ptr_in(space, ptr, i)?;
+        }
+        let [contrl_va, intin, ptsin, intout, ptsout] = blk;
+        let contrl = space.kptr(contrl_va, 2 * CONTRL_FIXED as u64, true)? as *mut i16;
+        Ok(Self {
+            contrl,
+            contrl_va,
+            intin,
+            ptsin,
+            intout,
+            ptsout,
+            abi,
+            space,
+            faulted: core::cell::Cell::new(false),
+        })
+    }
+
+    /// Read WORD `i` of the caller array at `base` (0 after a fault).
+    #[inline]
+    fn rd(&self, base: u64, i: usize) -> i16 {
+        if self.faulted.get() {
+            return 0;
+        }
+        match self.space.get_u16(base + 2 * i as u64) {
+            Ok(v) => v as i16,
+            Err(_) => {
+                self.faulted.set(true);
+                0
             }
         }
     }
 
+    /// Write WORD `i` of the caller array at `base` (dropped after a fault).
+    #[inline]
+    fn wr(&self, base: u64, i: usize, v: i16) {
+        if self.faulted.get() {
+            return;
+        }
+        if self.space.put_u16(base + 2 * i as u64, v as u16).is_err() {
+            self.faulted.set(true);
+        }
+    }
+
+    /// The caller's space (see [`Vdipb`]).
+    #[inline]
+    pub fn space(&self) -> Space {
+        self.space
+    }
+
+    /// Record that a user access made outside the accessors (an MFDB, its
+    /// bitmap) faulted: further reads give 0, further writes are dropped.
+    #[inline]
+    pub fn note_fault(&self) {
+        self.faulted.set(true);
+    }
+
+    /// `true` once a user access of this call has faulted.
+    #[inline]
+    pub fn faulted(&self) -> bool {
+        self.faulted.get()
+    }
+
     #[inline]
     pub fn contrl(&self, i: usize) -> i16 {
-        // SAFETY: callers index within the CONTRL array (≥ 7 WORDs).
-        unsafe { self.contrl.add(i).read() }
+        if i < CONTRL_FIXED {
+            // SAFETY: `contrl` is the checked kernel address of CONTRL[0..7].
+            unsafe { self.contrl.add(i).read() }
+        } else {
+            self.rd(self.contrl_va, i)
+        }
     }
 
     /// The calling process's pointer-width ABI (ADR-020). Used by the
@@ -140,57 +222,69 @@ impl Vdipb {
     /// is an 8-byte load (LP64) or a 4-byte zero-extended load (ILP32).
     /// Honouring `N_PTRINTS` rather than assuming the LP64 layout is what
     /// keeps an ILP32 app (QED, cflib) from mis-reading its MFDB pointers.
+    /// Read in the caller's space (0 after a fault).
     #[inline]
     pub fn contrl_ptr(&self, n: usize) -> u64 {
         let nptrints = match self.abi {
             Abi::Lp64 => 4,
             Abi::Ilp32 => 2,
         };
-        // SAFETY: a raster op's CONTRL holds ≥ 7 + (n+1)*N_PTRINTS WORDs;
-        // the packed pointer is WORD- but not pointer-aligned, so read it
-        // unaligned at the caller's width.
-        let base = unsafe { self.contrl.add(7 + n * nptrints) } as *const u8;
-        match self.abi {
-            Abi::Lp64 => unsafe { (base as *const u64).read_unaligned() },
-            Abi::Ilp32 => unsafe { (base as *const u32).read_unaligned() as u64 },
+        if self.faulted.get() {
+            return 0;
         }
+        // The packed pointer is WORD- but not pointer-aligned; the accessors
+        // read it unaligned at the caller's width.
+        let va = self.contrl_va + 2 * (7 + n * nptrints) as u64;
+        let r = match self.abi {
+            Abi::Lp64 => self.space.get_u64(va),
+            Abi::Ilp32 => self.space.get_u32(va).map(u64::from),
+        };
+        r.unwrap_or_else(|_| {
+            self.faulted.set(true);
+            0
+        })
     }
     /// Write VDI pointer slot `n` back into CONTRL at the **caller's**
     /// pointer width — the inverse of [`Vdipb::contrl_ptr`], used to return
     /// the previous routine pointer from the `vex_*` calls. gemlib reads slot
     /// `n` at CONTRL word `7 + n * N_PTRINTS`
     /// (`sdk/gemlib/gemlib-0.44.0/gem_vdiP.h:177,248`), so an LP64 caller's
-    /// `old` lives at word 11 and an ILP32 caller's at word 9.
+    /// `old` lives at word 11 and an ILP32 caller's at word 9. Written in the
+    /// caller's space (dropped after a fault).
     #[inline]
     pub fn set_contrl_ptr(&self, n: usize, v: u64) {
         let nptrints = match self.abi {
             Abi::Lp64 => 4,
             Abi::Ilp32 => 2,
         };
-        // SAFETY: a `vex_*` CONTRL holds ≥ 7 + (n+1)*N_PTRINTS WORDs (gemlib's
-        // `VDI_CNTRLMAX` = 15); the slot is WORD- but not pointer-aligned.
-        let base = unsafe { self.contrl.add(7 + n * nptrints) } as *mut u8;
-        match self.abi {
-            // SAFETY: as above.
-            Abi::Lp64 => unsafe { (base as *mut u64).write_unaligned(v) },
-            // SAFETY: as above.
-            Abi::Ilp32 => unsafe { (base as *mut u32).write_unaligned(v as u32) },
+        if self.faulted.get() {
+            return;
+        }
+        let va = self.contrl_va + 2 * (7 + n * nptrints) as u64;
+        let r = match self.abi {
+            Abi::Lp64 => self.space.put_u64(va, v),
+            Abi::Ilp32 => self.space.put_u32(va, v as u32),
+        };
+        if r.is_err() {
+            self.faulted.set(true);
         }
     }
     #[inline]
     pub fn set_contrl(&self, i: usize, v: i16) {
-        // SAFETY: see `contrl`.
-        unsafe { self.contrl.add(i).write(v) }
+        if i < CONTRL_FIXED {
+            // SAFETY: `contrl` is the checked kernel address of CONTRL[0..7].
+            unsafe { self.contrl.add(i).write(v) }
+        } else {
+            self.wr(self.contrl_va, i, v);
+        }
     }
     #[inline]
     pub fn intin(&self, i: usize) -> i16 {
-        // SAFETY: callers index within `contrl[3]` input integers.
-        unsafe { self.intin.add(i).read() }
+        self.rd(self.intin, i)
     }
     #[inline]
     pub fn ptsin(&self, i: usize) -> i16 {
-        // SAFETY: callers index within `contrl[1]*2` input coordinates.
-        unsafe { self.ptsin.add(i).read() }
+        self.rd(self.ptsin, i)
     }
     /// Write back into the caller's INTIN array.
     ///
@@ -203,18 +297,15 @@ impl Vdipb {
     /// rounded off — see [`escape::v_escape`](super::escape::v_escape).
     #[inline]
     pub fn set_intin(&self, i: usize, v: i16) {
-        // SAFETY: callers index within `contrl[3]` input integers.
-        unsafe { self.intin.add(i).write(v) }
+        self.wr(self.intin, i, v);
     }
     #[inline]
     pub fn set_intout(&self, i: usize, v: i16) {
-        // SAFETY: callers index within `contrl[4]` output integers.
-        unsafe { self.intout.add(i).write(v) }
+        self.wr(self.intout, i, v);
     }
     #[inline]
     pub fn set_ptsout(&self, i: usize, v: i16) {
-        // SAFETY: callers index within `contrl[2]*2` output coordinates.
-        unsafe { self.ptsout.add(i).write(v) }
+        self.wr(self.ptsout, i, v);
     }
 }
 
@@ -265,8 +356,28 @@ const C_HANDLE: usize = 6;
 /// `vdipb_ptr` must be a valid VDI parameter block of `abi`'s pointer
 /// width (see [`Vdipb`]).
 pub unsafe fn dispatch(vdipb_ptr: u64, abi: Abi) -> i16 {
-    // SAFETY: caller guarantees a valid parameter block of `abi`'s width.
-    let pb = unsafe { Vdipb::from_raw(vdipb_ptr, abi) };
+    // SAFETY: forwarded — a kernel-address parameter block.
+    unsafe { dispatch_in(vdipb_ptr, abi, Space::Kernel) }
+}
+
+/// [`dispatch`] for a caller whose parameter block lives in `space` (ARCH03
+/// stage 3a): the GEM trap passes the caller's [`Space`], so an EL0
+/// program's block and arrays are used with its rights ([`Vdipb`]).
+/// [`dispatch`] is this with [`Space::Kernel`], for the kernel's own callers
+/// and the host tests.
+///
+/// # Safety
+/// As [`dispatch`] for [`Space::Kernel`]; for [`Space::User`] nothing — a
+/// bad user pointer is a recorded fault, not undefined behaviour.
+pub unsafe fn dispatch_in(vdipb_ptr: u64, abi: Abi, space: Space) -> i16 {
+    // SAFETY: caller guarantees a valid parameter block of `abi`'s width
+    // (for a kernel caller); a user block is checked in its space.
+    let Ok(pb) = (unsafe { Vdipb::from_raw(vdipb_ptr, abi, space) }) else {
+        // A block or CONTRL the program may not use: EmuTOS takes the bus
+        // error before any handler runs. Fault recorded; the syscall tail
+        // ends the program. `screen()`'s `flip_y` stays 0.
+        return FLIP_Y_COORDINATES;
+    };
 
     let opcode = pb.contrl(C_OPCODE);
     // Default output counts; handlers refine them.

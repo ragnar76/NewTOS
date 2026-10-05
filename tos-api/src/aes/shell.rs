@@ -20,6 +20,7 @@
 //! Spec: [`docs/api/aes/shell-loop.md`] §7-§9, §12.
 
 use super::Aespb;
+use crate::uaccess::{Space, UserFault};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -181,39 +182,31 @@ static S: State = State {
 
 // ── small string helpers ─────────────────────────────────────────────────
 
-fn cstr_in(dst: &mut [u8], src: *const u8) {
+/// Copy the caller's NUL-terminated string at `src` into `dst` (at most
+/// `dst.len() - 1` bytes, the rest zeroed; `src == 0` leaves `dst` empty).
+/// `src` is in the caller's `space` (ARCH03 3a): `Err` — fault recorded, the
+/// call must stop — when the program cannot read it.
+fn cstr_in(space: Space, dst: &mut [u8], src: u64) -> Result<(), UserFault> {
     for b in dst.iter_mut() {
         *b = 0;
     }
-    if src.is_null() {
-        return;
+    if src == 0 {
+        return Ok(());
     }
-    // SAFETY: trusted GEM pointer to a NUL-terminated string.
-    unsafe {
-        let mut i = 0;
-        while i < dst.len() - 1 {
-            let c = *src.add(i);
-            dst[i] = c;
-            if c == 0 {
-                break;
-            }
-            i += 1;
-        }
-    }
+    let max = dst.len() - 1;
+    space.read_cstr(src, &mut dst[..max]).map(|_| ())
 }
 
-fn cstr_out(dst: *mut u8, src: &[u8]) {
-    if dst.is_null() {
-        return;
+/// Write the NUL-terminated string in `src` to the caller's buffer `dst`
+/// (`dst == 0` writes nothing), in the caller's `space` (ARCH03 3a). `Err`
+/// — fault recorded — when the program cannot write it.
+fn cstr_out(space: Space, dst: u64, src: &[u8]) -> Result<(), UserFault> {
+    if dst == 0 {
+        return Ok(());
     }
     let n = src.iter().position(|&b| b == 0).unwrap_or(src.len());
-    // SAFETY: caller buffer is large enough for the string (GEM contract).
-    unsafe {
-        for i in 0..n {
-            *dst.add(i) = src[i];
-        }
-        *dst.add(n) = 0;
-    }
+    space.copy_to(dst, &src[..n])?;
+    space.put_u8(dst + n as u64, 0)
 }
 
 fn clen(s: &[u8]) -> usize {
@@ -229,18 +222,29 @@ fn clen(s: &[u8]) -> usize {
 /// **not** a default like `C:\CLIPBRD\` (spec edge-case 1, `gemsclib.c:35-37`).
 /// Always returns `1` (`gemsclib.c:44`).
 pub fn scrp_read(pb: &Aespb) {
-    let dst = pb.addrin(0) as *mut u8;
+    let dst = pb.addrin(0);
     // SAFETY: single-CPU AES.
     let scrap = unsafe { &*S.scrap.get() };
-    cstr_out(dst, scrap);
+    if cstr_out(pb.space(), dst, scrap).is_err() {
+        return;
+    }
     pb.set_ret(1);
 }
 
 /// `scrp_write` (81) — set the clipboard directory path from `addr_in[0]`.
 pub fn scrp_write(pb: &Aespb) {
-    let src = pb.addrin(0) as *const u8;
+    let src = pb.addrin(0);
+    // Read into a scratch first, so a path the program cannot read (ARCH03
+    // 3a: the call stops, the program ends) leaves `D.g_scrap` as it was.
+    let mut path = [0u8; PATHBUF];
+    if cstr_in(pb.space(), &mut path, src).is_err() {
+        return;
+    }
     // SAFETY: single-CPU AES.
-    cstr_in(unsafe { &mut *S.scrap.get() }, src);
+    let scrap = unsafe { &mut *S.scrap.get() };
+    let n = scrap.len().min(path.len());
+    scrap.fill(0);
+    scrap[..n - 1].copy_from_slice(&path[..n - 1]);
     pb.set_ret(1);
 }
 
@@ -318,6 +322,7 @@ pub fn scrp_clear(pb: &Aespb) {
                 regs: [full.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0],
                 func: FDELETE as u64,
                 svc_imm: TRAP_GEMDOS,
+                space: crate::uaccess::Space::Kernel,
             };
             if fdelete(&args) == tos_types::error::E_OK {
                 deleted_any = true;
@@ -357,10 +362,15 @@ pub fn scrp_clear(pb: &Aespb) {
 /// Kept deliberately to avoid an unconditional 128-byte over-read of an EL0
 /// user pointer for a low-value case (spec edge-case 6).
 pub fn shel_read(pb: &Aespb) {
+    // The caller's two buffers, written in its space (ARCH03 3a); one the
+    // program may not write ends the call (and the program).
     // SAFETY: single-CPU AES.
-    unsafe {
-        cstr_out(pb.addrin(0) as *mut u8, &*S.s_cmd.get());
-        cstr_out(pb.addrin(1) as *mut u8, &*S.s_tail.get());
+    let ok = unsafe {
+        cstr_out(pb.space(), pb.addrin(0), &*S.s_cmd.get()).is_ok()
+            && cstr_out(pb.space(), pb.addrin(1), &*S.s_tail.get()).is_ok()
+    };
+    if !ok {
+        return;
     }
     pb.set_ret(1);
 }
@@ -479,8 +489,26 @@ pub fn shel_write(pb: &Aespb) {
                 *S.sh_isgem.get() = 1;
             }
             SHW_EXEC => {
-                cstr_in(&mut *S.s_cmd.get(), pb.addrin(0) as *const u8);
-                tail_in(&mut *S.s_tail.get(), pb.addrin(1) as *const u8);
+                // Command and tail read into scratches first (ARCH03 3a): a
+                // string the program cannot read ends the call (and the
+                // program) with the pending launch untouched.
+                let mut cmd = [0u8; PATHBUF];
+                let mut tail = [0u8; CMDTAILSIZE];
+                if cstr_in(pb.space(), &mut cmd, pb.addrin(0)).is_err()
+                    || tail_in(pb.space(), &mut tail, pb.addrin(1)).is_err()
+                {
+                    return;
+                }
+                {
+                    let s_cmd = &mut *S.s_cmd.get();
+                    let n = s_cmd.len().min(cmd.len());
+                    s_cmd.fill(0);
+                    s_cmd[..n - 1].copy_from_slice(&cmd[..n - 1]);
+                    let s_tail = &mut *S.s_tail.get();
+                    s_tail.fill(0);
+                    let m = s_tail.len().min(tail.len());
+                    s_tail[..m].copy_from_slice(&tail[..m]);
+                }
                 *S.sh_doexec.get() = doex;
                 // `strcmp(pcmd, DEF_CONSOLE) == 0 ? CONSOLE_APP : NORMAL_APP`
                 // (gemshlib.c:172) — the one magic name a caller can type.
@@ -533,6 +561,7 @@ fn sh_curdrvdir(ppath: &mut [u8]) {
         regs: [ppath[2..].as_mut_ptr() as u64, drive as u64 + 1, 0, 0, 0, 0, 0, 0],
         func: DGETPATH as u64,
         svc_imm: TRAP_GEMDOS,
+        space: crate::uaccess::Space::Kernel,
     };
     let _ = crate::bdos::fs::dirops::dgetpath(&args);
     if ppath[2] == 0 {
@@ -661,18 +690,15 @@ pub fn s_cmd(out: &mut [u8]) -> usize {
 /// does not over-read an EL0 user buffer the caller sized to its own tail —
 /// the same reasoning as the [`shel_read`] F8 deviation, applied to the write
 /// side.
-fn tail_in(dst: &mut [u8], src: *const u8) {
+fn tail_in(space: Space, dst: &mut [u8], src: u64) -> Result<(), UserFault> {
     dst.fill(0);
-    if src.is_null() {
-        return;
+    if src == 0 {
+        return Ok(());
     }
-    // SAFETY: trusted GEM pointer to a length-prefixed command-tail image.
-    unsafe {
-        let n = (*src as usize + 1).min(CMDTAILSIZE).min(dst.len());
-        for (i, b) in dst.iter_mut().take(n).enumerate() {
-            *b = *src.add(i);
-        }
-    }
+    // A length-prefixed command-tail image in the caller's `space` (ARCH03
+    // 3a): the length byte, then that many characters.
+    let n = (space.get_u8(src)? as usize + 1).min(CMDTAILSIZE).min(dst.len());
+    space.copy_from(&mut dst[..n], src)
 }
 
 /// Copy `ad_stail` — the length-prefixed command-tail image for the program to
@@ -825,6 +851,7 @@ fn set_drvdir(path: &[u8]) {
                 regs: [(d - b'A') as u64, 0, 0, 0, 0, 0, 0, 0],
                 func: DSETDRV as u64,
                 svc_imm: TRAP_GEMDOS,
+                space: crate::uaccess::Space::Kernel,
             };
             let _ = crate::bdos::fs::drive::dsetdrv(&args);
         }
@@ -837,6 +864,7 @@ fn set_drvdir(path: &[u8]) {
         regs: [buf.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0],
         func: DSETPATH as u64,
         svc_imm: TRAP_GEMDOS,
+        space: crate::uaccess::Space::Kernel,
     };
     let _ = crate::bdos::fs::dirops::dsetpath(&args);
 }
@@ -889,15 +917,15 @@ pub fn sh_chdef() {
 /// `shel_get` (122) — copy `int_in[0]` bytes of the shell settings buffer
 /// into `addr_in[0]`.
 pub fn shel_get(pb: &Aespb) {
-    let dst = pb.addrin(0) as *mut u8;
+    let dst = pb.addrin(0);
     let len = (pb.intin(0) as usize).min(SHELLBUF);
-    if !dst.is_null() {
-        // SAFETY: single-CPU AES; caller buffer is >= len bytes.
-        unsafe {
-            let buf = &*S.buf.get();
-            for i in 0..len {
-                *dst.add(i) = buf[i];
-            }
+    if dst != 0 {
+        // The caller's buffer of >= len bytes, written in its space (ARCH03
+        // 3a); one the program may not write ends the call (and the program).
+        // SAFETY: single-CPU AES.
+        let buf = unsafe { &*S.buf.get() };
+        if pb.space().copy_to(dst, &buf[..len]).is_err() {
+            return;
         }
     }
     pb.set_ret(1);
@@ -906,15 +934,21 @@ pub fn shel_get(pb: &Aespb) {
 /// `shel_put` (123) — write `int_in[0]` bytes from `addr_in[0]` into the
 /// shell settings buffer.
 pub fn shel_put(pb: &Aespb) {
-    let src = pb.addrin(0) as *const u8;
+    let src = pb.addrin(0);
     let len = (pb.intin(0) as usize).min(SHELLBUF);
-    if !src.is_null() {
-        // SAFETY: single-CPU AES; caller buffer is >= len bytes.
+    if src != 0 {
+        // The caller's buffer of >= len bytes, checked readable with its
+        // rights first and read through its kernel alias (ARCH03 3a), so one
+        // the program cannot read ends the call (and the program) with the
+        // shell buffer unchanged.
+        let Some(k) = pb.ubuf(src, len as u64, false) else {
+            return;
+        };
+        // SAFETY: single-CPU AES; `k..k+len` was just checked readable (or is
+        // a kernel caller's own buffer) and is reached through the kernel map.
         unsafe {
             let buf = &mut *S.buf.get();
-            for i in 0..len {
-                buf[i] = *src.add(i);
-            }
+            core::ptr::copy(k as *const u8, buf.as_mut_ptr(), len);
         }
     }
     pb.set_ret(1);
@@ -950,16 +984,20 @@ pub fn shel_put(pb: &Aespb) {
 /// does not honour wildcards, both of which EmuTOS's `dos_sfirst` tolerates;
 /// a switch to `Fsfirst` is the right long-term fix (out of scope here).
 pub fn shel_find(pb: &Aespb) {
-    let p = pb.addrin(0) as *mut u8;
-    if p.is_null() {
+    let p = pb.addrin(0);
+    if p == 0 {
         pb.set_ret(0);
         return;
     }
+    // The caller's in-out buffer, read and (on a hit) rewritten in its space
+    // (ARCH03 3a); one the program cannot use ends the call (and the program).
     let mut name = [0u8; PATHBUF];
-    cstr_in(&mut name, p);
+    if cstr_in(pb.space(), &mut name, p).is_err() {
+        return;
+    }
     let found = sh_find(&mut name);
-    if found {
-        cstr_out(p, &name);
+    if found && cstr_out(pb.space(), p, &name).is_err() {
+        return;
     }
     pb.set_ret(i16::from(found));
 }
@@ -1059,7 +1097,7 @@ pub fn sh_name(name: &[u8]) -> &[u8] {
 /// `a_shel_envrn.c:47`).
 pub fn shel_envrn(pb: &Aespb) {
     let pslot = pb.addrin(0); // char ** — address of the caller's char* slot
-    let search = pb.addrin(1) as *const u8;
+    let search = pb.addrin(1);
     // `sh_envrn` is `void`: `int_out[0]` stays `1` in every path (spec
     // edge-case 13, `gemshlib.c:296`). A null output pointer cannot receive
     // the result, but the call still reports success.
@@ -1068,7 +1106,9 @@ pub fn shel_envrn(pb: &Aespb) {
         return;
     }
     let mut needle = [0u8; 64];
-    cstr_in(&mut needle, search);
+    if cstr_in(pb.space(), &mut needle, search).is_err() {
+        return;
+    }
     let nlen = clen(&needle);
 
     // SAFETY: single-CPU AES; env is a stable static blob.
@@ -1088,18 +1128,23 @@ pub fn shel_envrn(pb: &Aespb) {
             // Point at the value (just past "NAME=").
             // SAFETY: env outlives the call; the pointer is into it.
             let value = unsafe { env.as_ptr().add(start + nlen) } as u64;
-            // SAFETY: pslot is the caller's non-null char* slot; store the
-            // value pointer at the caller's pointer width so an ILP32 4-byte
-            // slot is not overrun (LP64 stores the full 8 bytes).
-            unsafe { pb.abi.write_ptr(pslot, 0, value) };
+            // pslot is the caller's non-null char* slot; store the value
+            // pointer at the caller's pointer width so an ILP32 4-byte slot
+            // is not overrun (LP64 stores the full 8 bytes) — in the caller's
+            // space (ARCH03 3a); a slot it may not write ends the call.
+            if pb.abi.write_ptr_in(pb.space(), pslot, 0, value).is_err() {
+                return;
+            }
             pb.set_ret(1);
             return;
         }
         i += 1; // skip the NUL
     }
     // Not found → NULL (`*ppath = NULL`, `gemshlib.c:333,347`), still `1`.
-    // SAFETY: as above; a NULL of the caller's pointer width.
-    unsafe { pb.abi.write_ptr(pslot, 0, 0) };
+    // As above; a NULL of the caller's pointer width, in its space.
+    if pb.abi.write_ptr_in(pb.space(), pslot, 0, 0).is_err() {
+        return;
+    }
     pb.set_ret(1);
 }
 
@@ -1109,10 +1154,14 @@ pub fn shel_envrn(pb: &Aespb) {
 /// own storage**: they are not the pending `shel_write` launch nor the scrap
 /// directory.
 pub fn shel_rdef(pb: &Aespb) {
+    // The caller's two buffers, written in its space (ARCH03 3a).
     // SAFETY: single-CPU AES.
-    unsafe {
-        cstr_out(pb.addrin(0) as *mut u8, &*S.sh_desk.get());
-        cstr_out(pb.addrin(1) as *mut u8, &*S.sh_cdir.get());
+    let ok = unsafe {
+        cstr_out(pb.space(), pb.addrin(0), &*S.sh_desk.get()).is_ok()
+            && cstr_out(pb.space(), pb.addrin(1), &*S.sh_cdir.get()).is_ok()
+    };
+    if !ok {
+        return;
     }
     pb.set_ret(1);
 }
@@ -1126,8 +1175,13 @@ pub fn shel_rdef(pb: &Aespb) {
 pub fn shel_wdef(pb: &Aespb) {
     let mut cmd = [0u8; PATHBUF];
     let mut dir = [0u8; PATHBUF];
-    cstr_in(&mut cmd, pb.addrin(0) as *const u8);
-    cstr_in(&mut dir, pb.addrin(1) as *const u8);
+    // Both strings read in the caller's space (ARCH03 3a) before anything
+    // changes; one the program cannot read ends the call (and the program).
+    if cstr_in(pb.space(), &mut cmd, pb.addrin(0)).is_err()
+        || cstr_in(pb.space(), &mut dir, pb.addrin(1)).is_err()
+    {
+        return;
+    }
     sh_wdef(&cmd, &dir);
     pb.set_ret(1);
 }

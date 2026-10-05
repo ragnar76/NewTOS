@@ -33,10 +33,10 @@
 //!   is captured only on `E_OK`, because that is the branch in which
 //!   `put_state` + `makbuf` wrote all 44 bytes (`bdos/fs/find.rs:476-483`,
 //!   `:508-511`). A path is captured because the implementation's very first
-//!   act is `cstr(arg)` (`bdos/fs/mod.rs:23-33`).
+//!   act is `path_arg(args, i, …)` (`bdos/fs/mod.rs`).
 //! * **C2 — every read is length-bounded**, and by the *same or a tighter*
-//!   bound the implementation used: 128 bytes for a path (the `cstr` cap,
-//!   `bdos/fs/mod.rs:29`), 44 for a DTA, 16 for a `Dfree` buffer, 4 for a
+//!   bound the implementation used: 128 bytes for a path (the `path_arg` cap,
+//!   `bdos/fs/mod.rs` `PATH_ARG_MAX`), 44 for a DTA, 16 for a `Dfree` buffer, 4 for a
 //!   `Fdatime` stamp, [`CAP_LEN`] for a data head.
 //! * **C3 — a null pointer is skipped**, never dereferenced.
 //! * **C4 — the table is closed.** There is no "if it looks like a pointer,
@@ -51,11 +51,10 @@
 //! in this kernel. If that ever changes (stage 3 unmaps freed blocks), C1 has
 //! to be re-argued.
 //!
-//! Reads use ordinary EL1 loads, the same access mode `bdos::fs::cstr` uses for
-//! every `Fopen`/`Fcreate` path an EL0 application passes. (`Cconws` uses the
-//! unprivileged `ldtrb` instead — `gemdos/console.rs:526`. The distinction is
-//! about PAN, which the Cortex-A72 does not implement; using the ordinary load
-//! here is the mode already proven on this hardware by the whole file group.)
+//! Reads use the access the call itself made (ARCH03 stage 3a): the caller's
+//! [`crate::uaccess::Space`] — the unprivileged, fault-recovered loads for an
+//! EL0 program, the kernel address as it is for an in-kernel caller — and,
+//! for the DTA, the space [`crate::bdos::fs::find::cur_dta_in`] names.
 //!
 //! ## Re-entrancy: the tracer must not record its own writes
 //!
@@ -193,7 +192,7 @@ const SLOT_KERNEL: u8 = 0xFF;
 pub const CAP_LEN: usize = 160;
 
 /// Longest path/string followed, matching the 128-byte cap
-/// [`crate::bdos::fs::cstr`] itself uses (`bdos/fs/mod.rs:29`) so the tracer
+/// [`crate::bdos::fs::path_arg`] itself uses (`PATH_ARG_MAX`) so the tracer
 /// can never walk further than the implementation did.
 const MAX_PATH: usize = 128;
 
@@ -375,6 +374,7 @@ mod imp {
         capkind, flags, kind, mark, ticks, tick_hz, CallStart, Long, Rec, TrapArgs, CAPACITY,
         CAP_LEN, DTA_LEN, MAX_PATH, PROLOGUE, RECORD_SIZE, SLOT_KERNEL,
     };
+    use crate::uaccess::Space;
 
     /// No GEMDOS record for this long before an automatic flush may fire.
     /// A GEMDOS burst is a unit of work — open a window, load a file, scan a
@@ -528,25 +528,16 @@ mod imp {
     /// # Safety
     ///
     /// `src` must be a caller pointer the just-completed call itself walked
-    /// with [`crate::bdos::fs::cstr`], which stops at the same 128-byte bound
-    /// (`bdos/fs/mod.rs:29`). Reads are `read_volatile` so the compiler cannot
-    /// widen or speculate the loop past that bound.
-    unsafe fn copy_cstr(dst: &mut [u8], src: u64, max: usize) -> (usize, bool) {
+    /// with [`crate::bdos::fs::path_arg`], which stops at the same 128-byte
+    /// bound (`bdos/fs/mod.rs` `PATH_ARG_MAX`). Read in the caller's `space`
+    /// (ARCH03 3a) — the same access the call made; should it fault anyway,
+    /// nothing is captured and the fault record of the call stays first.
+    unsafe fn copy_cstr(space: Space, dst: &mut [u8], src: u64, max: usize) -> (usize, bool) {
         if src == 0 || dst.is_empty() {
             return (0, false);
         }
         let lim = max.min(dst.len() - 1);
-        let p = src as *const u8;
-        let mut n = 0;
-        while n < lim {
-            // SAFETY: `n < lim <= max`, the caller's contract bound.
-            let b = unsafe { p.add(n).read_volatile() };
-            if b == 0 {
-                break;
-            }
-            dst[n] = b;
-            n += 1;
-        }
+        let n = space.read_cstr(src, &mut dst[..lim]).unwrap_or(0);
         dst[n] = 0;
         (n + 1, n == lim)
     }
@@ -556,18 +547,17 @@ mod imp {
     /// # Safety
     ///
     /// `src..src+len` must be memory the just-completed call itself read or
-    /// wrote (rule C1); `len` is clamped to `dst.len()`.
-    unsafe fn copy_raw(dst: &mut [u8], src: u64, len: usize) -> usize {
+    /// wrote (rule C1), in `space`; `len` is clamped to `dst.len()`. A fault
+    /// (which C1 rules out) captures nothing.
+    unsafe fn copy_raw(space: Space, dst: &mut [u8], src: u64, len: usize) -> usize {
         if src == 0 {
             return 0;
         }
         let n = len.min(dst.len());
-        // SAFETY: caller's contract; `n` fits both buffers and they cannot
-        // overlap (the ring is kernel BSS, the source is caller memory).
-        unsafe {
-            core::ptr::copy_nonoverlapping(src as *const u8, dst.as_mut_ptr(), n);
+        match space.copy_from(&mut dst[..n], src) {
+            Ok(()) => n,
+            Err(_) => 0,
         }
-        n
     }
 
     /// Fill `r`'s payload for one completed GEMDOS call.
@@ -589,7 +579,7 @@ mod imp {
             // file-system trace: they explain the calls around them.
             0x09 => cap_path(r, a, 0, capkind::CONSOLE),
 
-            // Fopen / Fcreate / Fdelete / Fattrib — `cstr(arg0)` is the
+            // Fopen / Fcreate / Fdelete / Fattrib — `path_arg(arg0)` is the
             // implementation's first statement (`bdos/fs/file.rs:155,212,523,
             // 558`).
             0x3D | 0x3C | 0x41 | 0x43 => cap_path(r, a, 0, capkind::PATH),
@@ -598,16 +588,16 @@ mod imp {
             // 155`.
             0x39..=0x3B => cap_path(r, a, 0, capkind::PATH),
 
-            // Frename (0x56) — `cstr(arg1)` (source) and `cstr(arg2)`
+            // Frename (0x56) — `path_arg(arg1)` (source) and `path_arg(arg2)`
             // (destination), both read before anything else
             // (`bdos/fs/file.rs:627-634`).
             0x56 => {
                 // SAFETY: rule C1/C2 — both strings were walked by the
                 // implementation, with the same 128-byte bound, before it did
                 // anything else.
-                let (n1, c1) = unsafe { copy_cstr(&mut r.cap, a.arg_u64(1), MAX_PATH) };
+                let (n1, c1) = unsafe { copy_cstr(a.space, &mut r.cap, a.arg_u64(1), MAX_PATH) };
                 // SAFETY: as above, for the destination path.
-                let (n2, c2) = unsafe { copy_cstr(&mut r.cap[n1..], a.arg_u64(2), MAX_PATH) };
+                let (n2, c2) = unsafe { copy_cstr(a.space, &mut r.cap[n1..], a.arg_u64(2), MAX_PATH) };
                 r.cap_kind = capkind::PATH2;
                 r.cap_src = 1;
                 r.cap2_off = n1 as u16;
@@ -622,12 +612,12 @@ mod imp {
             // (`bdos/fs/dirops.rs:244-253`), so the string is always readable.
             0x47 => cap_path(r, a, 0, capkind::PATH),
 
-            // Fsfirst (0x4E) — the search path is `cstr(arg0)`
+            // Fsfirst (0x4E) — the search path is `path_arg(arg0)`
             // (`bdos/fs/find.rs:451`); the DTA is added only on `E_OK`, the
             // branch in which `put_state` + `makbuf` wrote all 44 bytes
             // (`bdos/fs/find.rs:476-483`).
             0x4E => {
-                let (n1, c1) = unsafe { copy_cstr(&mut r.cap, a.arg_u64(0), MAX_PATH) };
+                let (n1, c1) = unsafe { copy_cstr(a.space, &mut r.cap, a.arg_u64(0), MAX_PATH) };
                 r.cap_src = 0;
                 r.cap_len = n1 as u16;
                 r.cap_kind = capkind::PATH;
@@ -635,10 +625,10 @@ mod imp {
                     r.flags |= flags::CAP_CLAMPED;
                 }
                 if ret == 0 {
-                    let dta = crate::bdos::fs::find::cur_dta();
+                    let (dta, dspace) = crate::bdos::fs::find::cur_dta_in();
                     // SAFETY: rule C1 — on `E_OK` this call wrote all 44 bytes
                     // at exactly this address.
-                    let n2 = unsafe { copy_raw(&mut r.cap[n1..], dta, DTA_LEN) };
+                    let n2 = unsafe { copy_raw(dspace, &mut r.cap[n1..], dta, DTA_LEN) };
                     if n2 == DTA_LEN {
                         r.cap_kind = capkind::PATH_DTA;
                         r.cap2_off = n1 as u16;
@@ -650,9 +640,9 @@ mod imp {
             // Fsnext (0x4F) — same DTA, same `E_OK` gate
             // (`bdos/fs/find.rs:505-511`).
             0x4F if ret == 0 => {
-                let dta = crate::bdos::fs::find::cur_dta();
+                let (dta, dspace) = crate::bdos::fs::find::cur_dta_in();
                 // SAFETY: as for Fsfirst.
-                let n = unsafe { copy_raw(&mut r.cap, dta, DTA_LEN) };
+                let n = unsafe { copy_raw(dspace, &mut r.cap, dta, DTA_LEN) };
                 if n == DTA_LEN {
                     r.cap_kind = capkind::DTA;
                     r.cap_len = n as u16;
@@ -668,7 +658,7 @@ mod imp {
                 let want = (ret as usize).min(CAP_LEN);
                 // SAFETY: rule C1 — those bytes were just copied by the call
                 // itself.
-                let n = unsafe { copy_raw(&mut r.cap, a.arg_u64(2), want) };
+                let n = unsafe { copy_raw(a.space, &mut r.cap, a.arg_u64(2), want) };
                 r.cap_kind = capkind::DATA;
                 r.cap_src = 2;
                 r.cap_len = n as u16;
@@ -681,7 +671,7 @@ mod imp {
             // only (`bdos/fs/drive.rs:68-75`).
             0x36 if ret == 0 => {
                 // SAFETY: rule C1 — 16 bytes just written by the call.
-                let n = unsafe { copy_raw(&mut r.cap, a.arg_u64(0), 16) };
+                let n = unsafe { copy_raw(a.space, &mut r.cap, a.arg_u64(0), 16) };
                 r.cap_kind = capkind::DFREE;
                 r.cap_src = 0;
                 r.cap_len = n as u16;
@@ -692,7 +682,7 @@ mod imp {
             // (`bdos/fs/file.rs:786-806`).
             0x57 if ret == 0 => {
                 // SAFETY: rule C1 — the call just copied these 4 bytes.
-                let n = unsafe { copy_raw(&mut r.cap, a.arg_u64(0), 4) };
+                let n = unsafe { copy_raw(a.space, &mut r.cap, a.arg_u64(0), 4) };
                 r.cap_kind = capkind::DOSTIME;
                 r.cap_src = 0;
                 r.cap_len = n as u16;
@@ -710,7 +700,7 @@ mod imp {
     fn cap_path(r: &mut Rec, a: &TrapArgs, idx: usize, k: u8) {
         // SAFETY: rule C1/C2 — the implementation walked this same string with
         // the same 128-byte bound before doing anything else.
-        let (n, clamped) = unsafe { copy_cstr(&mut r.cap, a.arg_u64(idx), MAX_PATH) };
+        let (n, clamped) = unsafe { copy_cstr(a.space, &mut r.cap, a.arg_u64(idx), MAX_PATH) };
         if n == 0 {
             return;
         }
@@ -1088,6 +1078,7 @@ mod imp {
             regs: [path.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0],
             func: 0x3C,
             svc_imm: 1,
+            space: crate::uaccess::Space::Kernel,
         };
         let h = crate::bdos::fs::file::fcreate(&args);
         if h < 0 {
@@ -1103,6 +1094,7 @@ mod imp {
             regs: [handle, len as u64, buf, 0, 0, 0, 0, 0],
             func: 0x40,
             svc_imm: 1,
+            space: crate::uaccess::Space::Kernel,
         };
         crate::bdos::fs::file::fwrite(&args) == len as i32
     }
@@ -1112,6 +1104,7 @@ mod imp {
             regs: [handle, 0, 0, 0, 0, 0, 0, 0],
             func: 0x3E,
             svc_imm: 1,
+            space: crate::uaccess::Space::Kernel,
         };
         let _ = crate::bdos::fs::file::fclose(&args);
     }

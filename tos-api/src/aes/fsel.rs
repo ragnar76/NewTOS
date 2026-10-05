@@ -36,6 +36,7 @@ use super::object::{self, Object, ObjTree, TedInfo};
 use super::graf::gl_hbox;
 use super::{resource, Aespb};
 use crate::host::host;
+use crate::uaccess::{Space, UserFault};
 use crate::vdi::backend::RasterBackend;
 use core::cell::UnsafeCell;
 
@@ -498,62 +499,60 @@ fn set_ted(tree: *mut Object, idx: i16, ptr: *mut u8, cap: usize) {
     }
 }
 
-fn copy_in(dst: &mut [u8], src: *const u8) {
+/// Copy the caller's NUL-terminated string at `src` (in `space`, the
+/// caller's — ARCH03 3a) into `dst`, at most `dst.len() - 1` bytes, the rest
+/// zeroed. `src == 0` leaves `dst` empty. `Err` — fault recorded — when the
+/// program cannot read the string; the call must stop.
+fn copy_in(space: Space, dst: &mut [u8], src: u64) -> Result<(), UserFault> {
     for b in dst.iter_mut() {
         *b = 0;
     }
-    if src.is_null() {
-        return;
+    if src == 0 {
+        return Ok(());
     }
-    // SAFETY: trusted GEM pointer to a NUL-terminated string.
-    unsafe {
-        let mut i = 0;
-        while i < dst.len() - 1 {
-            let c = *src.add(i);
-            dst[i] = c;
-            if c == 0 {
-                break;
-            }
-            i += 1;
-        }
-    }
+    let max = dst.len() - 1;
+    space.read_cstr(src, &mut dst[..max]).map(|_| ())
 }
 
-fn write_out(dst: *mut u8, src: &[u8]) {
-    if dst.is_null() {
-        return;
+/// Write the NUL-terminated string in `src` back into the caller's buffer at
+/// `dst` (in `space`). `dst == 0` writes nothing. `Err` — fault recorded —
+/// when the program cannot write it.
+fn write_out(space: Space, dst: u64, src: &[u8]) -> Result<(), UserFault> {
+    if dst == 0 {
+        return Ok(());
     }
     let n = src.iter().position(|&b| b == 0).unwrap_or(src.len());
-    // SAFETY: caller buffer is large enough for the in-out string (GEM).
-    unsafe {
-        for i in 0..n {
-            *dst.add(i) = src[i];
-        }
-        *dst.add(n) = 0;
-    }
+    space.copy_to(dst, &src[..n])?;
+    space.put_u8(dst + n as u64, 0)
 }
 
 /// `fsel_input` (90) — no caller title, so FSTITLE shows the default
 /// "ITEM SELECTOR" (EmuTOS `fs_input(..., NULL)`, gemsuper.c:323).
 pub fn fsel_input(pb: &Aespb) {
-    run(pb, core::ptr::null());
+    run(pb, 0);
 }
 
 /// `fsel_exinput` (91) — `fsel_input` plus a caller-supplied dialog title in
 /// `addr_in[2]` (`FS_TITLE`, gemsuper.c:326 / aesdefs.h:464), shown centred in
 /// the FSTITLE caption. A null title falls back to the default "ITEM SELECTOR".
 pub fn fsel_exinput(pb: &Aespb) {
-    run(pb, pb.addrin(2) as *const u8);
+    run(pb, pb.addrin(2));
 }
 
-fn run(pb: &Aespb, label: *const u8) {
-    let path_p = pb.addrin(0) as *mut u8;
-    let sel_p = pb.addrin(1) as *mut u8;
+/// The shared body of `fsel_input`/`fsel_exinput`. The caller's path,
+/// selection and title strings are read — and the path and selection written
+/// back — in the caller's space (ARCH03 3a, [`copy_in`]/[`write_out`]); one
+/// the program cannot use ends the call (and the program) before the dialog
+/// is drawn, or — for the write-back — after it was taken down.
+fn run(pb: &Aespb, label: u64) {
+    let space = pb.space();
+    let path_p = pb.addrin(0);
+    let sel_p = pb.addrin(1);
 
     // EmuTOS `fs_input`: bail out immediately on a NULL path pointer
     // (gemfslib.c:630-631; spec resource-fileselector.md:328,411,447). The
     // dialog never opens: int_out[0] = 0 (did not run), int_out[1] = 0.
-    if path_p.is_null() {
+    if path_p == 0 {
         pb.set_intout(1, 0);
         pb.set_ret(0);
         return;
@@ -575,7 +574,9 @@ fn run(pb: &Aespb, label: *const u8) {
     // (short, non-overlapping borrows for the single-CPU AES).
     // SAFETY: single-CPU AES; the resource TEDINFOs are distinct memory.
     unsafe {
-        copy_in(&mut *SYS.dir.get(), path_p);
+        if copy_in(space, &mut *SYS.dir.get(), path_p).is_err() {
+            return;
+        }
         // EmuTOS `fs_input`: an empty path defaults to "<curdrive>:\*.*"
         // (`strcpy(pipath,"A:\\*.*"); *pipath += dos_gdrv()`,
         // gemfslib.c:634-638; spec resource-fileselector.md:446). The default
@@ -594,7 +595,9 @@ fn run(pb: &Aespb, label: *const u8) {
         // converted back on the way out.
         {
             let mut plain = [0u8; 32];
-            copy_in(&mut plain, sel_p);
+            if copy_in(space, &mut plain, sel_p).is_err() {
+                return;
+            }
             fmt_str(&plain, &mut *SYS.sel.get());
         }
         set_ted(tree, FSDIRECT, (*SYS.dir.get()).as_mut_ptr(), 96);
@@ -613,7 +616,9 @@ fn run(pb: &Aespb, label: *const u8) {
     let gl_rfs = center(tree);
     // EmuTOS `fs_input` sets the dialog title — the caller's custom label or the
     // default "ITEM SELECTOR" — and centres it (gemfslib.c:691-693).
-    apply_title(tree, label);
+    if !apply_title(tree, space, label) {
+        return;
+    }
     relist(tree); // read the directory, fill the slots + slider
     // "set clip and start form fill-in by drawing the form" — EmuTOS
     // `fm_dial(FMD_START, &gl_rcenter, &gl_rfs)` immediately before the first
@@ -629,14 +634,16 @@ fn run(pb: &Aespb, label: *const u8) {
 
     // Write the (possibly updated) path + selection back to the caller.
     // SAFETY: single-CPU AES.
+    // A buffer the program cannot write records the fault; the dialog is
+    // still taken down below, then the syscall tail ends the program.
     unsafe {
-        write_out(path_p, &*SYS.dir.get());
+        let _ = write_out(space, path_p, &*SYS.dir.get());
         // "unfmt_str(ad_fname, selname); strcpy(pisel, selname)"
         // (gemfslib.c:915-916): the caller gets the plain name back, dot
         // restored, not the template-raw form the field carries.
         let mut plain = [0u8; 16];
         unfmt_str(&*SYS.sel.get(), &mut plain);
-        write_out(sel_p, &plain);
+        let _ = write_out(space, sel_p, &plain);
     }
     // "start the redraw" — EmuTOS `fm_dial(FMD_FINISH, &gl_rcenter, &gl_rfs)`
     // (gemfslib.c:918-919), after the caller's buffers are filled and before the
@@ -953,11 +960,16 @@ fn center(tree: *mut Object) -> (i16, i16, i16, i16) {
 /// GEM.RSC blob (the `rs_str` analog). The tree is cached across calls, so
 /// ob_spec is rewritten every call — a prior custom title never leaks into a
 /// later default-title dialog.
-fn apply_title(tree: *mut Object, label: *const u8) {
+///
+/// `label` is in the caller's `space` (ARCH03 3a); `false` — fault recorded,
+/// the call must stop — when the program cannot read it.
+fn apply_title(tree: *mut Object, space: Space, label: u64) -> bool {
     // SAFETY: single-CPU AES; valid FSELECTR tree; SYS.buf holds the blob.
     unsafe {
-        let title_ptr: *const u8 = if !label.is_null() {
-            copy_in(&mut *SYS.title.get(), label);
+        let title_ptr: *const u8 = if label != 0 {
+            if copy_in(space, &mut *SYS.title.get(), label).is_err() {
+                return false;
+            }
             (*SYS.title.get()).as_ptr()
         } else {
             resource::blob_frstr(SYS.buf.get() as *const u8, ITEMSLCT)
@@ -965,6 +977,7 @@ fn apply_title(tree: *mut Object, label: *const u8) {
         (*tree.add(FSTITLE as usize)).ob_spec = title_ptr as u64;
         centre_title(tree, FSTITLE);
     }
+    true
 }
 
 /// Centre the `objnum` G_STRING caption horizontally in the root — EmuTOS

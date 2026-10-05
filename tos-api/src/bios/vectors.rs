@@ -81,11 +81,17 @@ const SYSVAR_NUM_LIMIT: usize = 0x200;
 ///    return the old value); NewTOS dispatches the `etv_*` hooks by name.
 ///  * `NVEC <= num < SYSVAR_NUM_LIMIT` — the m68k address `4 * num` lands in
 ///    the reserved low-memory **sysvar region**: peek/poke the calling
-///    process's EL0-VA `*(LONG*)(4 * num)` directly, exactly like EmuTOS'
-///    unchecked `setexc`. The kernel runs this svc handler with the app's
-///    `TTBR0` active, so an unprivileged word access reaches the app's low
-///    memory (where [`crate::bdos::process::loader`]'s `populate_sysvars`
-///    wrote `p_cookies`@0x5A0 etc.).
+///    process's `*(LONG*)(4 * num)`, exactly like EmuTOS' unchecked
+///    `setexc`. That cell is in the process's private page 0 (where
+///    [`crate::bdos::process::loader`]'s `populate_sysvars` wrote
+///    `p_cookies`@0x5A0 etc.) and is reached through the page's **kernel
+///    alias** (ARCH03 stage 3a, as `bios::tick` and `Keytbl` do) — the very
+///    cell the program sees at VA `4 * num`, without a user-mode access that
+///    could fault or depend on the installed `TTBR0`. With no process
+///    running (an in-kernel caller such as the B1 selftest, which installs a
+///    loaded image's `TTBR0` itself) the cell is reached the old way, a
+///    user-mode word access at VA `4 * num` under the installed `TTBR0` —
+///    now the fault-recovered one of [`crate::uaccess`].
 ///  * `num >= SYSVAR_NUM_LIMIT` — returns 0. NewTOS deliberately does **not**
 ///    emulate the full m68k "poke any address" corruption above the sysvar
 ///    region.
@@ -103,64 +109,34 @@ pub fn setexc(args: &TrapArgs) -> i64 {
     }
 
     // Reserved low-memory sysvar region: EmuTOS-faithful raw peek/poke of
-    // the calling process's `*(LONG*)(4 * num)` via unprivileged word
-    // access (checked as EL0, like `Cconws`'s `ldtrb`), bounded to the
-    // sysvar region so it can never corrupt arbitrary memory.
+    // the calling process's `*(LONG*)(4 * num)` through the kernel alias of
+    // its page 0, bounded to the sysvar region so it can never corrupt
+    // arbitrary memory.
     if num < SYSVAR_NUM_LIMIT {
-        let addr = (num * 4) as *mut u8;
-        // SAFETY: `4 * num < 0x800` is inside the per-process reserved low
-        // region the loader maps and populates; the unprivileged access is
-        // permission-checked as EL0 under the active app `TTBR0`.
-        let old = unsafe { read_user_long(addr) } as i32 as i64;
+        let Some(page0) = crate::bdos::process::current_page0_kva() else {
+            let va = (num * 4) as u64;
+            let Ok(old) = crate::uaccess::get_user_u32(va) else {
+                return i64::from(crate::uaccess::FAULTED);
+            };
+            if vector != -1 && crate::uaccess::put_user_u32(va, vector as u32).is_err() {
+                return i64::from(crate::uaccess::FAULTED);
+            }
+            return old as i32 as i64;
+        };
+        // SAFETY: `4 * num + 4 <= 0x800` lies inside the running process's
+        // 4-KiB page 0, a static kernel page per slot reached through its
+        // kernel alias; the access is unaligned-safe and single-CPU under
+        // the trap.
+        let cell = unsafe { page0.add(num * 4) } as *mut u32;
+        let old = unsafe { cell.read_unaligned() } as i32 as i64;
         if vector != -1 {
-            // SAFETY: as above — writable EL0 sysvar cell.
-            unsafe { write_user_long(addr, vector as u32) };
+            // SAFETY: as above — the process's own writable sysvar cell.
+            unsafe { cell.write_unaligned(vector as u32) };
         }
         return old;
     }
 
     0
-}
-
-/// Read a 32-bit `LONG` from a user (EL0) pointer via an unprivileged load
-/// (`ldtr`), so the access is permission-checked as EL0 — same contract as
-/// `Cconws`'s `ldtrb` (`crate::gemdos::console`).
-///
-/// # Safety
-///
-/// `p` must address a readable EL0 4-byte cell under the active `TTBR0`.
-#[inline]
-unsafe fn read_user_long(p: *const u8) -> u32 {
-    let v: u32;
-    // SAFETY: caller guarantees `p` readable; unprivileged word load.
-    unsafe {
-        core::arch::asm!(
-            "ldtr {v:w}, [{p}]",
-            p = in(reg) p,
-            v = out(reg) v,
-            options(nostack, preserves_flags, readonly),
-        );
-    }
-    v
-}
-
-/// Write a 32-bit `LONG` to a user (EL0) pointer via an unprivileged store
-/// (`sttr`).
-///
-/// # Safety
-///
-/// `p` must address a writable EL0 4-byte cell under the active `TTBR0`.
-#[inline]
-unsafe fn write_user_long(p: *mut u8, v: u32) {
-    // SAFETY: caller guarantees `p` writable; unprivileged word store.
-    unsafe {
-        core::arch::asm!(
-            "sttr {v:w}, [{p}]",
-            p = in(reg) p,
-            v = in(reg) v,
-            options(nostack, preserves_flags),
-        );
-    }
 }
 
 /// The handler currently installed for hook `num`, or 0 if none. NewTOS'

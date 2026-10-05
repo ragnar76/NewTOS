@@ -94,10 +94,13 @@ fn s_getcookie(args: &TrapArgs) -> Long {
 
     match value {
         Some(v) if ret != 0 => {
-            // SAFETY: `arg2` is a user pointer; the unprivileged store
-            // permission-checks it as EL0 and faults the caller (not the
-            // kernel) on a bad pointer.
-            unsafe { write_user_long(ret as *mut u8, v) };
+            // `arg2` is written in the caller's space (ARCH03 3a,
+            // `crate::uaccess`): a program's pointer with its rights — a bad
+            // one ends the call and the program, not the kernel — an
+            // in-kernel caller's as the kernel address it is.
+            if args.space.put_u32(ret, v).is_err() {
+                return crate::uaccess::FAULTED;
+            }
             E_OK
         }
         Some(v) => v as Long,
@@ -167,10 +170,11 @@ fn newtos_scalar(args: &TrapArgs, read: impl FnOnce() -> Option<Long>) -> Long {
     if out == 0 {
         return value;
     }
-    // SAFETY: `arg1` is a user pointer; the unprivileged store
-    // permission-checks it as EL0 and faults the caller (not the kernel) on a
-    // bad pointer — the same rule as `s_getcookie`'s `arg2`.
-    unsafe { write_user_long(out as *mut u8, value as u32) };
+    // `arg1` is written in the caller's space — the same rule as
+    // `s_getcookie`'s `arg2`.
+    if args.space.put_u32(out, value as u32).is_err() {
+        return crate::uaccess::FAULTED;
+    }
     E_OK
 }
 
@@ -194,22 +198,5 @@ fn s_newtos_kbdvec(args: &TrapArgs) -> Long {
     match host::host() {
         Some(h) if h.kbd_int(byte as u8) => E_OK,
         _ => ERROR,
-    }
-}
-
-/// Write a 32-bit value to a user pointer via an unprivileged store
-/// (`sttr`) — permission-checked as EL0, like `Cconrs`'s `sttrb`.
-///
-/// # Safety
-/// `p` must be a 4-byte-aligned writable user address.
-unsafe fn write_user_long(p: *mut u8, v: u32) {
-    // SAFETY: unprivileged word store; caller guarantees `p` is writable.
-    unsafe {
-        core::arch::asm!(
-            "sttr {v:w}, [{p}]",
-            p = in(reg) p,
-            v = in(reg) v,
-            options(nostack, preserves_flags),
-        );
     }
 }

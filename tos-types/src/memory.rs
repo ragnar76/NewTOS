@@ -150,21 +150,26 @@ pub const MX_MODEMASK: i16 = 0x03;
 //
 // FreeMiNT carries the mode in two encodings and NewTOS keeps both:
 //
-//   * `F_PROT_*` — the *external* encoding: the protection nibble inside an
-//     `Mxalloc` mode word and inside a program's `PRGFLAGS`
-//     (`sys/mint/mem.h:120-126`). EmuTOS ignores these bits and NewTOS still
-//     masks them off in `Mxalloc` (`mode &= MX_MODEMASK`, ADR-021) — they are
-//     defined here so the later protection work has the ABI already fixed.
+//   * `F_PROT_*` — the *external* encoding: the protection nibble of a
+//     program's `PRGFLAGS` (`sys/mint/mem.h:120-126`). EmuTOS ignores these
+//     bits — they are defined here so the protection work has the ABI fixed.
 //   * `PROT_*` / [`ProtMode`] — the *internal* encoding: the small integer
 //     FreeMiNT passes to `alloc_region()` / `mark_region()`
 //     (`sys/mint/mem.h:130-136`). This is what NewTOS's kernel-side publisher
 //     (`tos-api::bdos::process::usermem::expose`) takes today.
 //
-// The two are related by FreeMiNT's own expression
-// `(mode & F_PROTMODE) >> F_PROTSHIFT`; no decoder is defined here yet
-// because nothing decodes an `Mxalloc` mode word today (ADR-021 keeps
-// EmuTOS's `mode &= MX_MODEMASK`), and untested unused logic is worse than
-// none.
+// **The `Mxalloc` mode word uses the same nibble shifted by one** — FreeMiNT
+// `mem.h:118`: "when users call Mxalloc, they add 0x10 to what you see here".
+// In a mode word the nibble `0x00` means "the caller's PRGFLAGS mode",
+// `0x10` = `PROT_P`, `0x20` = `PROT_G`, `0x30` = `PROT_S`, `0x40` =
+// `PROT_PR`, `0x50` = `PROT_I` (`sys/dosmem.c:209-221`: `protmode = (mode &
+// F_PROTMODE) >> F_PROTSHIFT; if (protmode == 0) protmode = (memflags &
+// F_PROTMODE) >> F_PROTSHIFT; else --protmode;`). So `F_PROT_G` (`0x10`) in a
+// PRGFLAGS word is `PROT_G`, but `0x10` in an `Mxalloc` mode is `PROT_P`.
+// [`prot_from_prgflags`] and [`prot_from_mxalloc`] are the two decoders
+// (ARCH03 plan Frage 8). NewTOS still masks the nibble off in `Mxalloc`
+// (`mode &= MX_MODEMASK`, ADR-021) until per-process rights take effect
+// (ARCH03 stage 3b); the decoders exist so that step reads the ABI right.
 
 /// Mask of the protection-mode bits in an `Mxalloc` mode word / `PRGFLAGS`
 /// (`F_PROTMODE`, `references/freemint/sys/mint/mem.h:120`).
@@ -216,4 +221,95 @@ pub enum ProtMode {
     Pr = 3,
     /// `PROT_I` — invalid page.
     I = 4,
+}
+
+impl ProtMode {
+    /// The internal mode for FreeMiNT's `PROT_*` value `v`, with FreeMiNT's
+    /// fallback for anything above [`PROT_MAX_MODE`]: `PROT_P`
+    /// (`sys/dosmem.c:217-221`, "invalid protection mode changed to
+    /// private").
+    pub const fn from_prot(v: u32) -> ProtMode {
+        match v {
+            1 => ProtMode::G,
+            2 => ProtMode::S,
+            3 => ProtMode::Pr,
+            4 => ProtMode::I,
+            _ => ProtMode::P,
+        }
+    }
+}
+
+/// The protection mode a program's `PRGFLAGS` word asks for:
+/// `(memflags & F_PROTMODE) >> F_PROTSHIFT` (FreeMiNT `sys/dosmem.c:213`,
+/// the `protmode == 0` branch), unshifted — `F_PROT_G` (`0x10`) is
+/// `PROT_G` — and anything above `PROT_MAX_MODE` private (`:217-221`).
+pub const fn prot_from_prgflags(prgflags: u32) -> ProtMode {
+    ProtMode::from_prot((prgflags & F_PROTMODE as u32) >> F_PROTSHIFT)
+}
+
+/// The protection mode an `Mxalloc(size, mode)` asks for, FreeMiNT
+/// `m_xalloc` (`sys/dosmem.c:209-221`): the nibble `(mode & F_PROTMODE) >>
+/// F_PROTSHIFT`; `0` takes the caller's PRGFLAGS mode
+/// ([`prot_from_prgflags`]), anything else is **one more** than the
+/// `PROT_*` value it means (`--protmode`, `mem.h:118`), and a result above
+/// `PROT_MAX_MODE` is private. Bit `0x08` and the `F_KEEP`/`F_ALLOCZERO`
+/// bits are not part of the mode.
+pub const fn prot_from_mxalloc(mode: i16, prgflags: u32) -> ProtMode {
+    let nibble = ((mode as u16 as u32) & F_PROTMODE as u32) >> F_PROTSHIFT;
+    if nibble == 0 {
+        prot_from_prgflags(prgflags)
+    } else {
+        ProtMode::from_prot(nibble - 1)
+    }
+}
+
+#[cfg(test)]
+mod prot_tests {
+    use super::*;
+
+    #[test]
+    fn prgflags_nibble_is_the_prot_value_itself() {
+        assert_eq!(prot_from_prgflags(F_PROT_P as u32), ProtMode::P);
+        assert_eq!(prot_from_prgflags(F_PROT_G as u32), ProtMode::G);
+        assert_eq!(prot_from_prgflags(F_PROT_S as u32), ProtMode::S);
+        assert_eq!(prot_from_prgflags(F_PROT_PR as u32), ProtMode::Pr);
+        assert_eq!(prot_from_prgflags(F_PROT_I as u32), ProtMode::I);
+        // Other PRGFLAGS bits do not matter (PF_STANDARD = 7, TT-RAM bits,
+        // the F_MINALT nibble at 28..31).
+        assert_eq!(prot_from_prgflags(0x1000_0017), ProtMode::G);
+        // Above PROT_MAX_MODE → private (dosmem.c:217-221).
+        assert_eq!(prot_from_prgflags(0x50), ProtMode::P);
+        assert_eq!(prot_from_prgflags(0xF0), ProtMode::P);
+    }
+
+    #[test]
+    fn mxalloc_nibble_is_one_more_than_the_prot_value() {
+        // mem.h:118 "when users call Mxalloc, they add 0x10".
+        assert_eq!(prot_from_mxalloc(0x10, 0), ProtMode::P);
+        assert_eq!(prot_from_mxalloc(0x20, 0), ProtMode::G);
+        assert_eq!(prot_from_mxalloc(0x30, 0), ProtMode::S);
+        assert_eq!(prot_from_mxalloc(0x40, 0), ProtMode::Pr);
+        assert_eq!(prot_from_mxalloc(0x50, 0), ProtMode::I);
+        // The same bits mean something else in PRGFLAGS: 0x10 there is G.
+        assert_ne!(prot_from_mxalloc(0x10, 0), prot_from_prgflags(0x10));
+    }
+
+    #[test]
+    fn mxalloc_nibble_zero_takes_the_callers_prgflags() {
+        assert_eq!(prot_from_mxalloc(0x00, F_PROT_G as u32), ProtMode::G);
+        assert_eq!(prot_from_mxalloc(MX_TTRAM, F_PROT_PR as u32), ProtMode::Pr);
+        assert_eq!(prot_from_mxalloc(MX_PREFTTRAM, 0x0000_0007), ProtMode::P);
+    }
+
+    #[test]
+    fn mxalloc_other_bits_and_out_of_range() {
+        // LDG's `Mxalloc(size, 3 + 8 + 32)` (ldgutil.c): nibble 0x20 → PROT_G;
+        // the TT-RAM-preferred low bits and 0x08 are not the mode.
+        assert_eq!(prot_from_mxalloc(3 + 8 + 32, 0), ProtMode::G);
+        // F_KEEP (0x4000) does not change the mode.
+        assert_eq!(prot_from_mxalloc(0x4000 | 0x20, 0), ProtMode::G);
+        // 0x60..0xF0 → PROT_* 5..14 → private.
+        assert_eq!(prot_from_mxalloc(0x60, F_PROT_G as u32), ProtMode::P);
+        assert_eq!(prot_from_mxalloc(0xF0, F_PROT_G as u32), ProtMode::P);
+    }
 }

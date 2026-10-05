@@ -36,6 +36,7 @@ pub use graf::hbox_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use crate::bdos::process::Abi;
+use crate::uaccess::{Space, UserFault};
 
 /// GEMDOS slots whose tenant has ended and whose Window-Manager property has
 /// **not** been swept yet — one bit per slot (`MAX_PROCESSES` = 16, so a
@@ -195,9 +196,25 @@ pub fn reinit() {
 /// pointers; [`Aespb::from_raw`] is told the caller's [`Abi`] so it reads
 /// them at the right stride. The WORD arrays (`control`/`global`/`intin`/
 /// `intout`) are 16-bit either way, so those stay plain `*mut i16`.
+///
+/// **Caller space (ARCH03 stage 3a).** The block and every array it names
+/// are in the caller's address space ([`Space`]): an EL0 program's memory is
+/// read and written with its rights through [`crate::uaccess`] — or checked
+/// with its rights and then reached through its kernel alias
+/// ([`Space::kptr`], plan §3.6), so the AES never dereferences a user address
+/// through whatever `TTBR0` happens to be live — and a bad pointer ends the
+/// call and, through the syscall tail, the program (EmuTOS: bus error in
+/// `xif`/the manager, `docs/api/bios/_exception-crash.md`). An in-kernel
+/// caller's (the desktop's `svc`, the boot selftests) pointers are kernel
+/// addresses and are used as they are.
 pub(crate) struct Aespb {
+    /// The caller's `control` array — its **kernel** address (checked
+    /// readable for the five WORDs of fixed meaning in [`Self::from_raw`]).
     control: *mut i16,
-    global: *mut i16,
+    /// The caller's `global` array, a **caller** address: checked and
+    /// translated only by the managers that use it ([`Self::global_kptr`]) —
+    /// most calls never touch it, as in EmuTOS.
+    global: u64,
     /// The **dispatch-local** `int_in[I_SIZE]` every manager reads —
     /// EmuTOS `xif`'s own stack array (`gemsuper.c:431`). The caller's array
     /// is read exactly once, by [`Aespb::from_raw`], and only the
@@ -214,21 +231,25 @@ pub(crate) struct Aespb {
     /// EmuTOS `xif`'s own stack array (`gemsuper.c:432`). Nothing a manager
     /// stores here reaches the caller until [`Aespb::copy_intout_back`] runs.
     intout: *mut i16,
-    /// The **caller's** `intout` array. Written by exactly one place,
-    /// [`Aespb::copy_intout_back`], and only `control[OUT_LEN]` words of it.
-    caller_intout: *mut i16,
+    /// The **caller's** `intout` array (a caller address). Written by exactly
+    /// one place, [`Aespb::copy_intout_back`], and only `control[OUT_LEN]`
+    /// words of it, in the caller's space.
+    caller_intout: u64,
     /// The **dispatch-local** `addr_in[AI_SIZE]` every manager reads —
     /// EmuTOS `xif`'s own stack array (`gemsuper.c:433`). Filled by
     /// [`Aespb::from_raw`] with the `min(control[AIN_LEN], AI_SIZE)` slots
     /// the call declared, already widened from the caller's pointer width to
     /// a native address, so the accessor needs no ABI knowledge.
     addrin: *mut u64,
-    /// Base address of the caller's `addrout` LONG array — written by the
-    /// managers that return addresses (`rsrc_gaddr`, …). Element width tracks
-    /// [`Self::abi`], so this stays a raw base indexed at write time.
+    /// Base address of the caller's `addrout` LONG array (a caller address)
+    /// — written by the managers that return addresses (`rsrc_gaddr`, …).
+    /// Element width tracks [`Self::abi`], so this stays a raw base indexed
+    /// at write time, in the caller's space.
     addrout: u64,
     /// Caller pointer width, threaded from the running process.
     abi: Abi,
+    /// Whose address space the block and its arrays are in.
+    space: Space,
 }
 
 // CONTRL indices with fixed meaning (`include/aesdefs.h`).
@@ -288,58 +309,71 @@ impl Aespb {
     /// value to reproduce. [`Self::copy_intout_back`] reads a negative
     /// `OUT_LEN` the same way.
     ///
+    /// The block and the declared parts of `control`/`intin`/`addrin` are
+    /// read in the caller's `space` (see [`Aespb`]); `Err` when the program
+    /// may not read one of them — the fault is recorded and the call must
+    /// stop (the syscall tail ends the program).
+    ///
     /// # Safety
-    /// `ptr` must point at six consecutive valid array pointers of the
-    /// caller's width; the caller's `intin` must hold at least
-    /// `min(control[IN_LEN], I_SIZE)` WORDs and its `addrin` at least
-    /// `min(control[AIN_LEN], AI_SIZE)` LONGs — its own declaration.
-    /// `local_intin` / `local_intout` / `local_addrin` must be writable
-    /// `[i16; I_SIZE]` / `[i16; O_SIZE]` / `[u64; AI_SIZE]` that outlive this
-    /// `Aespb`.
+    /// For [`Space::Kernel`]: `ptr` must point at six consecutive valid array
+    /// pointers of the caller's width; the caller's `intin` must hold at
+    /// least `min(control[IN_LEN], I_SIZE)` WORDs and its `addrin` at least
+    /// `min(control[AIN_LEN], AI_SIZE)` LONGs — its own declaration. For
+    /// both spaces: `local_intin` / `local_intout` / `local_addrin` must be
+    /// writable `[i16; I_SIZE]` / `[i16; O_SIZE]` / `[u64; AI_SIZE]` that
+    /// outlive this `Aespb`.
     pub(crate) unsafe fn from_raw(
         ptr: u64,
         abi: Abi,
+        space: Space,
         local_intin: *mut i16,
         local_intout: *mut i16,
         local_addrin: *mut u64,
-    ) -> Self {
-        // SAFETY: caller guarantees the six-pointer block is valid and of
-        // `abi`'s width; `read_ptr` reads one such pointer per index.
-        unsafe {
-            let control = abi.read_ptr(ptr, 0) as *mut i16;
-            let caller_intin = abi.read_ptr(ptr, 2) as *const i16;
-            let caller_addrin = abi.read_ptr(ptr, 4);
+    ) -> Result<Self, UserFault> {
+        // The six block pointers, at the caller's width, in its space.
+        let mut blk = [0u64; 6];
+        for (i, slot) in blk.iter_mut().enumerate() {
+            *slot = abi.read_ptr_in(space, ptr, i)?;
+        }
+        let [control_va, global, caller_intin, caller_intout, caller_addrin, addrout] = blk;
+        // `control`: the five WORDs of fixed meaning (`OPCODE`, `IN_LEN`,
+        // `OUT_LEN`, `AIN_LEN`, `AOUT_LEN`), read on every call.
+        let control = space.kptr(control_va, 2 * 5, false)? as *mut i16;
 
+        // SAFETY: `control` is the checked kernel address of 5 WORDs; the
+        // locals are the caller's (`dispatch`'s) `[_; I_SIZE/AI_SIZE]`.
+        unsafe {
             // `if (IN_LEN) memcpy(int_in, …, min(IN_LEN,I_SIZE)*sizeof(WORD))`
             let declared_in = control.add(C_IN_LEN).read();
             let n = if declared_in <= 0 { 0 } else { (declared_in as usize).min(I_SIZE) };
             for i in 0..n {
-                // SAFETY: `i < I_SIZE` bounds the local write; the read is
-                // inside the `IN_LEN` words the caller declared.
-                local_intin.add(i).write(caller_intin.add(i).read());
+                // `i < I_SIZE` bounds the local write; the read is inside the
+                // `IN_LEN` words the caller declared, in its space.
+                local_intin.add(i).write(space.get_u16(caller_intin + 2 * i as u64)? as i16);
             }
 
             // `if (AIN_LEN) memcpy(addr_in, …, min(AIN_LEN,AI_SIZE)*sizeof(LONG))`
             let declared_ain = control.add(C_AIN_LEN).read();
             let m = if declared_ain <= 0 { 0 } else { (declared_ain as usize).min(AI_SIZE) };
             for i in 0..m {
-                // SAFETY: `i < AI_SIZE` bounds the local write; `read_ptr`
-                // reads one caller-width LONG inside the declared `AIN_LEN`.
-                local_addrin.add(i).write(abi.read_ptr(caller_addrin, i));
-            }
-
-            Aespb {
-                control,
-                global: abi.read_ptr(ptr, 1) as *mut i16,
-                intin: local_intin,
-                caller_intin,
-                intout: local_intout,
-                caller_intout: abi.read_ptr(ptr, 3) as *mut i16,
-                addrin: local_addrin,
-                addrout: abi.read_ptr(ptr, 5),
-                abi,
+                // `i < AI_SIZE` bounds the local write; one caller-width LONG
+                // inside the declared `AIN_LEN`, in the caller's space.
+                local_addrin.add(i).write(abi.read_ptr_in(space, caller_addrin, i)?);
             }
         }
+
+        Ok(Aespb {
+            control,
+            global,
+            intin: local_intin,
+            caller_intin: caller_intin as *const i16,
+            intout: local_intout,
+            caller_intout,
+            addrin: local_addrin,
+            addrout,
+            abi,
+            space,
+        })
     }
 
     /// `xif`'s copy-back rule (`aes/gemsuper.c:443-444`):
@@ -364,16 +398,22 @@ impl Aespb {
     /// A negative `OUT_LEN` (EmuTOS: `OUT_LEN*sizeof(WORD)` widening to a
     /// huge `size_t`) copies nothing.
     ///
+    /// The words are written in the caller's space; a word the program may
+    /// not write stops the copy (the fault is recorded, the syscall tail ends
+    /// the program).
+    ///
     /// # Safety
-    /// The caller's `intout` must hold at least `min(control[OUT_LEN],
-    /// O_SIZE)` WORDs — the caller's own declaration.
+    /// For [`Space::Kernel`]: the caller's `intout` must hold at least
+    /// `min(control[OUT_LEN], O_SIZE)` WORDs — the caller's own declaration.
     unsafe fn copy_intout_back(&self) {
         let declared = self.control(C_OUT_LEN);
         let n = if declared <= 0 { 0 } else { (declared as usize).min(O_SIZE) };
         for i in 0..n {
-            // SAFETY: `i < O_SIZE` bounds the local read; the write is inside
-            // the `OUT_LEN` words the caller declared (this method's contract).
-            unsafe { self.caller_intout.add(i).write(self.intout.add(i).read()) };
+            // SAFETY: `i < O_SIZE` bounds the local read.
+            let w = unsafe { self.intout.add(i).read() };
+            if self.space.put_u16(self.caller_intout + 2 * i as u64, w as u16).is_err() {
+                return;
+            }
         }
     }
 
@@ -543,17 +583,38 @@ impl Aespb {
         // tolerates the slot's 2-byte alignment.
         unsafe { (base as *mut u32).write_unaligned(v) }
     }
+    /// Store `v` into slot `i` of the caller's `addrout` array, at its
+    /// pointer width (ILP32 stores the low 4 bytes), in its space. A slot
+    /// the program may not write records the fault (the syscall tail then
+    /// ends the program).
     #[inline]
     #[allow(dead_code)] // used by the address-returning managers (later sub-phases)
     fn set_addrout(&self, i: usize, v: u64) {
-        // SAFETY: callers index within the addrout array; element width
-        // tracks the caller's ABI (ILP32 stores the low 4 bytes).
-        unsafe { self.abi.write_ptr(self.addrout, i, v) }
+        let _ = self.abi.write_ptr_in(self.space, self.addrout, i, v);
     }
-    /// A mutable view of the caller's `global` array (the `AESGLOBAL`).
+    /// The caller's `global` array (the 15-WORD / 30-byte `AESGLOBAL`,
+    /// `aes/gemrslib.h:15-27`) as a **kernel** address the manager may read
+    /// and write, after checking that the caller may write all 30 bytes
+    /// ([`Space::kptr`]). `None` — the fault recorded, the call must stop —
+    /// when it may not. A null `global` stays null (some managers accept
+    /// it, `rsrc_*` test for it).
     #[inline]
-    fn global_ptr(&self) -> *mut i16 {
-        self.global
+    fn global_kptr(&self) -> Option<*mut i16> {
+        self.space.kptr_or_null(self.global, 30, true).ok().map(|p| p as *mut i16)
+    }
+    /// The caller's space (see [`Aespb`]).
+    #[inline]
+    fn space(&self) -> Space {
+        self.space
+    }
+    /// A caller buffer of `len` bytes at `va` as a kernel address the
+    /// manager may use with ordinary loads/stores, after checking the
+    /// caller's rights ([`Space::kptr_or_null`]; null stays null). `None`
+    /// — fault recorded — when the program may not use it: the manager
+    /// must stop.
+    #[inline]
+    fn ubuf(&self, va: u64, len: u64, write: bool) -> Option<u64> {
+        self.space.kptr_or_null(va, len, write).ok()
     }
 }
 
@@ -590,6 +651,24 @@ pub unsafe fn dispatch(
     aespb_ptr: u64,
     abi: Abi,
 ) -> Option<crate::bdos::process::sched::Switch> {
+    // SAFETY: forwarded — a kernel-address parameter block.
+    unsafe { dispatch_in(aespb_ptr, abi, Space::Kernel) }
+}
+
+/// [`dispatch`] for a caller whose parameter block lives in `space`
+/// (ARCH03 stage 3a): the GEM trap passes the caller's [`Space`] — an EL0
+/// program's block and arrays are then read and written with its rights
+/// ([`Aespb`]). [`dispatch`] itself is this with [`Space::Kernel`], for the
+/// kernel's own callers and the host tests.
+///
+/// # Safety
+/// As [`dispatch`] for [`Space::Kernel`]; for [`Space::User`] nothing — a
+/// bad user pointer is a recorded fault, not undefined behaviour.
+pub unsafe fn dispatch_in(
+    aespb_ptr: u64,
+    abi: Abi,
+    space: Space,
+) -> Option<crate::bdos::process::sched::Switch> {
     // An EL0 `Pexec` child that ended while this caller was alive left its
     // windows / background tree / menu bar in the AES; sweep them before the
     // opcode, so this call already sees the table `sh_ldapp`'s `wm_new()`
@@ -617,16 +696,24 @@ pub unsafe fn dispatch(
     let mut local_intin = [0i16; I_SIZE];
     let mut local_intout = [0i16; O_SIZE];
     let mut local_addrin = [0u64; AI_SIZE];
-    // SAFETY: caller guarantees a valid parameter block of `abi`'s width; the
-    // three locals live until this function returns, outliving `pb`.
+    // SAFETY: caller guarantees a valid parameter block of `abi`'s width
+    // (checked in its space for an EL0 caller); the three locals live until
+    // this function returns, outliving `pb`.
     let pb = unsafe {
         Aespb::from_raw(
             aespb_ptr,
             abi,
+            space,
             local_intin.as_mut_ptr(),
             local_intout.as_mut_ptr(),
             local_addrin.as_mut_ptr(),
         )
+    };
+    // A block the program may not read: EmuTOS takes the bus error in `xif`
+    // before any manager runs. The fault is recorded; the syscall tail ends
+    // the program. Nothing else happens for this call.
+    let Ok(pb) = pb else {
+        return None;
     };
 
     // AES trap tracer (`trace`): compiled out entirely without the `aes-trace`

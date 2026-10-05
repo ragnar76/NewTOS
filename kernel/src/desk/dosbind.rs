@@ -56,13 +56,14 @@
 //!   44-byte buffer on the desktop's stack — the direct call used, because the
 //!   direct call entered `find::fsetdta` at the identical point. No change.
 //! * **Pointer arguments.** A trap from EL0 hands the kernel a *user* VA;
-//!   the desktop hands it a kernel high-half VA. The GEMDOS file surface reads
-//!   its pointers raw (`tos-api/src/bdos/fs/mod.rs:23-33` `cstr`,
-//!   `bdos/fs/file.rs:297,373` `ubuf as *const u8`) and performs **no**
-//!   address translation — `usermem::resolve_kva` is used only by the AES's
-//!   string reader and by XBIOS `Setscreen`, neither of which is on this path.
-//!   A kernel VA therefore arrives and is dereferenced unchanged. No buffer
-//!   has to move.
+//!   the desktop hands it a kernel high-half VA. Since ARCH03 stage 3a the
+//!   trap handler records which of the two a call's pointers are
+//!   (`TrapArgs::space`, from the caller's `SPSR_EL1.M`): an EL0 program's are
+//!   read and written with its rights through `tos_api::uaccess`, and this
+//!   binding's `svc` from EL1 is `Space::Kernel`, whose pointers the GEMDOS
+//!   file surface (`bdos/fs/mod.rs` `path_arg`, the `Fread`/`Fwrite` copies,
+//!   the DTA of the process-less caller) dereferences unchanged, as before.
+//!   No buffer has to move.
 
 use tos_types::Long;
 

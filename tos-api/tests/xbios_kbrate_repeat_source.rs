@@ -17,6 +17,7 @@ fn kbrate(initial: i16, repeat: i16) -> i64 {
         regs: [initial as u16 as u64, repeat as u16 as u64, 0, 0, 0, 0, 0, 0],
         func: 0x23,
         svc_imm: TrapClass::Xbios as u16,
+        space: tos_api::uaccess::Space::Kernel,
     })
 }
 

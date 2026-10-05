@@ -124,18 +124,26 @@ fn compute_cksum(buf: &[u8]) -> u16 {
 ///   whole-sector checksum is **0x1234** (executable) or **0x1235**
 ///   (non-executable — Falcon/TT TOS "hyper-compatibility", `:723-729`).
 pub fn protobt(args: &TrapArgs) -> i64 {
-    let buf_ptr = args.arg_u64(0) as *mut u8;
+    let buf_ptr = args.arg_u64(0);
     let serial = args.arg_i32(1); // LONG
     let disktype = args.arg_i16(2);
     let mut execflag = args.arg_i16(3);
-    if buf_ptr.is_null() {
+    if buf_ptr == 0 {
         return 0;
     }
 
-    // SAFETY: `buf_ptr` is the caller's 512-byte boot-sector buffer. The
-    // EL1 self-test passes kernel memory; EL0 user-pointer validation lands
-    // with the process-aware trap path (same convention as BIOS `Rwabs`).
-    let buf = unsafe { core::slice::from_raw_parts_mut(buf_ptr, SECTOR_SIZE) };
+    // `buf_ptr` is the caller's 512-byte boot-sector buffer, read and
+    // written in place: in the caller's space, checked readable and
+    // writable with the program's rights and reached through its kernel
+    // alias (ARCH03 3a, `Space::kptr`); a buffer the program may not use
+    // ends the call and the program. An in-kernel caller's buffer is a
+    // kernel address.
+    let Ok(kbuf) = args.space.kptr(buf_ptr, SECTOR_SIZE as u64, true) else {
+        return i64::from(crate::uaccess::FAULTED);
+    };
+    // SAFETY: `kbuf..kbuf+512` was just checked (or is a kernel caller's own
+    // buffer) and is reached through the kernel mapping; single-CPU trap.
+    let buf = unsafe { core::slice::from_raw_parts_mut(kbuf as *mut u8, SECTOR_SIZE) };
 
     // 1. Current executable status from the existing checksum.
     let is_exec = compute_cksum(buf) == 0x1234;

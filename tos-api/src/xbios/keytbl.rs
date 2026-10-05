@@ -197,12 +197,16 @@ pub fn keytbl(args: &TrapArgs) -> i64 {
             continue;
         }
         let mut tab = [0u8; 128];
-        // SAFETY: `p` is the caller's table pointer, which the `Keytbl`
-        // contract requires to address 128 readable bytes ("Each non-sentinel
-        // pointer must reference a 128-byte scancode→ASCII table",
-        // `docs/api/xbios/10-keytbl.md`). An EL0 caller's VA is mapped under
-        // the TTBR0 installed for this trap.
-        unsafe { core::ptr::copy_nonoverlapping(p as *const u8, tab.as_mut_ptr(), 128) };
+        // `p` is the caller's table pointer, which the `Keytbl` contract
+        // requires to address 128 readable bytes ("Each non-sentinel pointer
+        // must reference a 128-byte scancode→ASCII table",
+        // `docs/api/xbios/10-keytbl.md`). Read in the caller's space (ARCH03
+        // 3a, `crate::uaccess`): a table the program cannot read ends the
+        // call and the program, with the tables before it already installed
+        // (EmuTOS would take the bus error later, when a key is decoded).
+        if args.space.copy_from(&mut tab, p).is_err() {
+            return i64::from(crate::uaccess::FAULTED);
+        }
         h.set_key_table(*which, &tab);
         OVERRIDE[i].store(p, Ordering::Relaxed);
     }

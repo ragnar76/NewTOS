@@ -14,22 +14,42 @@ pub mod file;
 pub mod find;
 pub mod path;
 
-/// Read a NUL-terminated path string (max 128 bytes) from a raw pointer.
+use crate::trap::TrapArgs;
+use crate::uaccess::UserFault;
+
+/// Longest path a GEMDOS call reads from its caller, in bytes (without the
+/// NUL). A longer string is truncated here, as the raw reader did.
+pub(crate) const PATH_ARG_MAX: usize = 128;
+
+/// Buffer a path argument is copied into ([`path_arg`]).
+pub(crate) type PathBuf = [u8; PATH_ARG_MAX];
+
+/// Read the NUL-terminated path string of pointer argument `i` of `args`
+/// (max [`PATH_ARG_MAX`] bytes) into `buf` and return it as text.
 ///
-/// # Safety
-/// `ptr` must point to a readable NUL-terminated string. EL1 self-tests
-/// pass kernel pointers; the EL0 user-pointer path lands with the
-/// process-aware file layer.
-pub(crate) unsafe fn cstr<'a>(ptr: u64) -> Option<&'a str> {
+/// The pointer is read in the caller's space ([`TrapArgs::space`], ARCH03
+/// stage 3a): an EL0 program's path through the fault-safe unprivileged
+/// loads of [`crate::uaccess`] — a pointer it cannot read stops the call and
+/// the syscall tail ends the program (EmuTOS: bus error in the trap,
+/// `docs/api/bios/_exception-crash.md`) — and an in-kernel caller's (the
+/// desktop's `svc`, the AES fiber, the kernel's direct calls) as the kernel
+/// address it is.
+///
+/// `Ok(None)` for a null pointer or a string that is not UTF-8 — the cases
+/// the raw reader answered with `None` and each call maps to its own error
+/// code; `Err` after a fault (the code the call returns then never reaches
+/// the program).
+pub(crate) fn path_arg<'b>(
+    args: &TrapArgs,
+    i: usize,
+    buf: &'b mut PathBuf,
+) -> Result<Option<&'b str>, UserFault> {
+    let ptr = args.arg_u64(i);
     if ptr == 0 {
-        return None;
+        return Ok(None);
     }
-    let p = ptr as *const u8;
-    let mut len = 0usize;
-    while len < 128 && unsafe { *p.add(len) } != 0 {
-        len += 1;
-    }
-    core::str::from_utf8(unsafe { core::slice::from_raw_parts(p, len) }).ok()
+    let len = args.space.read_cstr(ptr, buf)?;
+    Ok(core::str::from_utf8(&buf[..len]).ok())
 }
 
 /// A resolved on-disk program file, streamable by byte offset without

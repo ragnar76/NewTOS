@@ -734,6 +734,7 @@ fn flush() {
         regs: [PATH.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0],
         func: 0x3C,
         svc_imm: 1,
+        space: tos_api::uaccess::Space::Kernel,
     };
     let h = tos_api::bdos::fs::file::fcreate(&cargs);
     if h < 0 {
@@ -747,6 +748,7 @@ fn flush() {
             regs: [handle, pro_len as u64, pro_ptr, 0, 0, 0, 0, 0],
             func: 0x40,
             svc_imm: 1,
+            space: tos_api::uaccess::Space::Kernel,
         };
         let _ = tos_api::bdos::fs::file::fwrite(&pargs);
     }
@@ -755,6 +757,7 @@ fn flush() {
         regs: [handle, len as u64, data_ptr, 0, 0, 0, 0, 0],
         func: 0x40,
         svc_imm: 1,
+        space: tos_api::uaccess::Space::Kernel,
     };
     let _ = tos_api::bdos::fs::file::fwrite(&wargs);
 
@@ -763,6 +766,7 @@ fn flush() {
         regs: [handle, 0, 0, 0, 0, 0, 0, 0],
         func: 0x3E,
         svc_imm: 1,
+        space: tos_api::uaccess::Space::Kernel,
     };
     let _ = tos_api::bdos::fs::file::fclose(&clargs);
 }

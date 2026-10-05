@@ -376,6 +376,10 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
         ],
         func: frame.gpr[8],
         svc_imm,
+        // ARCH03 stage 3a: whose address space the pointer arguments are in —
+        // an EL0 program's (accessed with its rights, `tos_api::uaccess`) or
+        // an EL1 caller's kernel addresses (the built-in desktop's `svc`).
+        space: tos_api::uaccess::Space::from_spsr(frame.spsr),
     };
 
     // TEMPORARY `svc` tracer (debug tooling, not product history). It records
@@ -428,7 +432,7 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
             const GEM_SEL_ADDR_QUERY: u64 = -1i64 as u64;
             match args.regs[0] {
                 // SAFETY: `x1` is the caller-supplied parameter block.
-                115 => i64::from(unsafe { tos_api::vdi::dispatch(args.regs[1], abi) }),
+                115 => i64::from(unsafe { tos_api::vdi::dispatch_in(args.regs[1], abi, args.space) }),
                 // SAFETY: `x1` is the caller-supplied parameter block. A
                 // blocking `evnt_*` wait may return a peer Switch (S2). The
                 // AES now runs on its dedicated EL1 fiber stack (step 1 of the
@@ -437,7 +441,7 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
                 // stack move over `dispatch` — no behaviour change in step 1.
                 200 => {
                     // SAFETY: `x1` is the caller-supplied parameter block.
-                    match unsafe { tos_api::aes::thread::call(args.regs[1], abi) } {
+                    match unsafe { tos_api::aes::thread::call(args.regs[1], abi, args.space) } {
                         tos_api::aes::thread::AesCallOutcome::Complete(sw) => {
                             pending_switch = sw;
                         }

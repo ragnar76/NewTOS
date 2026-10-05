@@ -648,9 +648,14 @@ fn set_user_form(pb: &Aespb, backend: &dyn RasterBackend) {
     if p == 0 {
         return;
     }
-    // SAFETY: GEM contract — addr_in[0] points at a 37-WORD MFORM.
-    let w = p as *const i16;
-    let word = |i: usize| unsafe { w.add(i).read() };
+    // GEM contract — addr_in[0] points at a 37-WORD MFORM — read in the
+    // caller's space (ARCH03 3a) before the form changes; one the program
+    // cannot read ends the call (and the program) with the cursor untouched.
+    let mut w = [0u8; 2 * 37];
+    if pb.space().copy_from(&mut w, p).is_err() {
+        return;
+    }
+    let word = |i: usize| i16::from_ne_bytes([w[2 * i], w[2 * i + 1]]);
     let mut mask = [0u16; 16];
     let mut data = [0u16; 16];
     for i in 0..16 {

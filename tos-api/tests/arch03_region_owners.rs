@@ -240,7 +240,7 @@ impl Drop for Proc {
 }
 
 fn gemdos(func: u64, a: [u64; 3]) -> Long {
-    let args = TrapArgs { regs: [a[0], a[1], a[2], 0, 0, 0, 0, 0], func, svc_imm: 1 };
+    let args = TrapArgs { regs: [a[0], a[1], a[2], 0, 0, 0, 0, 0], func, svc_imm: 1, space: tos_api::uaccess::Space::Kernel };
     match func {
         0x44 => tos_api::gemdos::memory::mxalloc(&args),
         0x49 => tos_api::gemdos::memory::mfree(&args),

@@ -783,9 +783,10 @@ mod imp {
         // other ~50 opcodes, i.e. the instrument would add a fault surface to
         // the very run it is measuring. Everything else records 0.
         if pb.addrout != 0 && opcode == 112 {
-            // SAFETY: as above, for the caller's `addr_out` array, which
-            // `rsrc_gaddr` writes through `set_addrout` on this same call.
-            r.addr_out0 = unsafe { pb.abi.read_ptr(pb.addrout, 0) };
+            // The caller's `addr_out` array, which `rsrc_gaddr` writes through
+            // `set_addrout` on this same call — read the way it was written,
+            // in the caller's space (ARCH03 3a); nothing on a fault.
+            r.addr_out0 = pb.abi.read_ptr_in(pb.space, pb.addrout, 0).unwrap_or(0);
         }
 
         let ret = wrd(pb.intout, 0);
@@ -808,9 +809,11 @@ mod imp {
                 m.pid = r.pid;
                 m.slot = r.slot;
                 m.addr_in0 = r.addr_in0;
-                let p = r.addr_in0 as *const i16;
+                // The 16-byte message buffer the manager just wrote, read in
+                // the caller's space (ARCH03 3a); a word that cannot be read
+                // (none: the manager wrote it) is recorded as 0.
                 for i in 0..8 {
-                    m.w[i] = wrd(p, i);
+                    m.w[i] = pb.space.get_u16(r.addr_in0 + 2 * i as u64).unwrap_or(0) as i16;
                 }
                 m.nin = 8;
                 m.opcode = m.w[0]; // the message type, for a quick scan
@@ -1200,6 +1203,7 @@ mod imp {
             regs: [path.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0],
             func: 0x3C,
             svc_imm: 1,
+            space: crate::uaccess::Space::Kernel,
         };
         let h = crate::bdos::fs::file::fcreate(&args);
         if h < 0 {
@@ -1215,6 +1219,7 @@ mod imp {
             regs: [handle, len as u64, buf, 0, 0, 0, 0, 0],
             func: 0x40,
             svc_imm: 1,
+            space: crate::uaccess::Space::Kernel,
         };
         crate::bdos::fs::file::fwrite(&args) == len as i32
     }
@@ -1224,6 +1229,7 @@ mod imp {
             regs: [handle, 0, 0, 0, 0, 0, 0, 0],
             func: 0x3E,
             svc_imm: 1,
+            space: crate::uaccess::Space::Kernel,
         };
         let _ = crate::bdos::fs::file::fclose(&args);
     }

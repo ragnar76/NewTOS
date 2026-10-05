@@ -2196,25 +2196,19 @@ pub fn app_dir(out: &mut [u8]) -> usize {
 /// environment) and then reads the resolved path. Returns 1 on success,
 /// 0 when the file is not found, is short, or does not relocate.
 pub fn rsrc_load(pb: &Aespb) {
-    let fname = pb.addrin(0) as *const u8;
-    if fname.is_null() {
+    let fname = pb.addrin(0);
+    if fname == 0 {
         pb.set_ret(0);
         return;
     }
     // `strcpy(tmprsfname, rsfname)` (`gemrslib.c:835`) — a MAXPATHLEN scratch,
-    // so `sh_find` rewrites ours and not the application's buffer.
+    // so `sh_find` rewrites ours and not the application's buffer. Read in
+    // the caller's space (ARCH03 3a); a name the program cannot read ends the
+    // call (and the program).
     let mut spec = [0u8; PATHBUF];
-    let mut nlen = 0;
-    // SAFETY: trusted GEM pointer to a NUL-terminated string.
-    unsafe {
-        while nlen < spec.len() - 1 {
-            let c = *fname.add(nlen);
-            if c == 0 {
-                break;
-            }
-            spec[nlen] = c;
-            nlen += 1;
-        }
+    let max = spec.len() - 1;
+    if pb.space().read_cstr(fname, &mut spec[..max]).is_err() {
+        return;
     }
 
     // `if (!sh_find(tmprsfname)) return FALSE;` (`gemrslib.c:836-837`).
@@ -2296,9 +2290,15 @@ pub fn rsrc_load(pb: &Aespb) {
     // `AESGLOBAL`. Only on success — EmuTOS reaches those lines only after the
     // whole file is in memory.
     if let Some(desc) = loaded {
-        // SAFETY: `global` is the caller's AESGLOBAL, the same array
-        // `appl_init` fills (`aes/appl.rs`).
-        unsafe { report_load(pb.global_ptr(), &desc) };
+        // `global` is the caller's AESGLOBAL, the same array `appl_init`
+        // fills (`aes/appl.rs`), checked writable and reached through its
+        // kernel alias (ARCH03 3a); one the program may not write ends the
+        // call and the program.
+        let Some(global) = pb.global_kptr() else {
+            return;
+        };
+        // SAFETY: as just said — a 30-byte AESGLOBAL at a kernel address.
+        unsafe { report_load(global, &desc) };
     }
     pb.set_ret(i16::from(loaded.is_some()));
 }
@@ -2527,8 +2527,13 @@ unsafe fn report_load(global: *mut i16, desc: &Loaded) {
 /// spec verification criterion resource-fileselector.md § `rsrc_free`).
 pub fn rsrc_free(pb: &Aespb) {
     let owner = caller_identity();
+    // The caller's AESGLOBAL at its checked kernel address (ARCH03 3a); one
+    // the program may not use ends the call and the program.
+    let Some(global) = pb.global_kptr() else {
+        return;
+    };
     // SAFETY: single trap path; `global` is the caller's AESGLOBAL.
-    let Some(idx) = (unsafe { selected(owner, pb.global_ptr()) }) else {
+    let Some(idx) = (unsafe { selected(owner, global) }) else {
         pb.set_ret(0);
         return;
     };
@@ -2794,13 +2799,17 @@ unsafe fn get_addr(d: &Loaded, rtype: i16, index: usize) -> Resolved {
 /// is the width of every slot `rsrc_saddr` stores into).
 ///
 /// # Safety
-/// Single trap path; `pb.global_ptr()` is null or the caller's `AESGLOBAL`;
-/// a named entry's descriptor is live until its `rsrc_free` / the process's
-/// end.
+/// Single trap path; a named entry's descriptor is live until its
+/// `rsrc_free` / the process's end. The caller's `AESGLOBAL` is reached
+/// through [`Aespb::global_kptr`] (ARCH03 3a): one the program may not use
+/// resolves to nothing, with the fault recorded (the syscall tail ends the
+/// program).
 unsafe fn resolve(pb: &Aespb, rtype: i16, index: usize) -> (&'static Loaded, Resolved) {
-    // SAFETY: forwarded from this function's contract.
+    let global = pb.global_kptr().unwrap_or(core::ptr::null_mut());
+    // SAFETY: forwarded from this function's contract; `global` is null or
+    // the checked kernel address of the caller's AESGLOBAL.
     let d: &'static Loaded = unsafe {
-        match selected(caller_identity(), pb.global_ptr()) {
+        match selected(caller_identity(), global) {
             Some(idx) => &table()[idx].desc,
             None => &Loaded::EMPTY,
         }
@@ -5023,7 +5032,7 @@ mod mfree_tests {
     /// `Mfree(addr)` as the GEMDOS trap entry takes it from the running EL0
     /// process (`gemdos/memory.rs::mfree`: user VA → pool key → pool).
     fn mfree(addr: u64) -> Long {
-        crate::gemdos::memory::mfree(&TrapArgs { regs: [addr, 0, 0, 0, 0, 0, 0, 0], func: 0x49, svc_imm: 1 })
+        crate::gemdos::memory::mfree(&TrapArgs { regs: [addr, 0, 0, 0, 0, 0, 0, 0], func: 0x49, svc_imm: 1, space: crate::uaccess::Space::Kernel })
     }
 
     /// A blob loaded for the running process the way `load_into_user` loads

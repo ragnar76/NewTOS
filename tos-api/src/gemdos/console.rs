@@ -281,47 +281,6 @@ pub fn cnecin(_: &TrapArgs) -> Long {
 // Spec: docs/api/gemdos/console/0a-cconrs.md
 // ---------------------------------------------------------------------------
 
-/// Read one byte from a **user** pointer via an unprivileged load
-/// (`ldtrb`), so the access is permission-checked as EL0 — `Cconrs`'s
-/// `p` is a user pointer (same contract as [`cconws`]).
-///
-/// # Safety
-///
-/// `p` must be a readable user address.
-#[inline]
-unsafe fn read_user_byte(p: *const u8) -> u8 {
-    let b: u8;
-    // SAFETY: caller guarantees `p` readable; unprivileged byte load.
-    unsafe {
-        core::arch::asm!(
-            "ldtrb {b:w}, [{p}]",
-            p = in(reg) p,
-            b = out(reg) b,
-            options(nostack, preserves_flags, readonly),
-        );
-    }
-    b
-}
-
-/// Write one byte to a **user** pointer via an unprivileged store
-/// (`sttrb`).
-///
-/// # Safety
-///
-/// `p` must be a writable user address.
-#[inline]
-unsafe fn write_user_byte(p: *mut u8, b: u8) {
-    // SAFETY: caller guarantees `p` writable; unprivileged byte store.
-    unsafe {
-        core::arch::asm!(
-            "sttrb {b:w}, [{p}]",
-            p = in(reg) p,
-            b = in(reg) b,
-            options(nostack, preserves_flags),
-        );
-    }
-}
-
 /// Byte-level I/O backend for the [`cconrs`] line editor, abstracted out
 /// of the trap path so the editing logic ([`edit_line`]) can be exercised
 /// by a QEMU/EL1 selftest against a scripted input + captured echo,
@@ -342,6 +301,13 @@ pub trait LineEditIo {
     /// Read back a data byte previously stored at position `i` — used by
     /// the Ctrl-R redisplay to re-echo the accumulated line.
     fn load_byte(&self, i: usize) -> u8;
+    /// `true` once a [`Self::store_byte`]/[`Self::load_byte`] could not reach
+    /// the buffer (ARCH03 3a: the caller's record is not writable/readable
+    /// for it). [`edit_line`] then stops with [`LineEdit::Faulted`]. A
+    /// backend over memory that cannot fault keeps the default `false`.
+    fn faulted(&self) -> bool {
+        false
+    }
 }
 
 /// Outcome of [`edit_line`].
@@ -352,6 +318,10 @@ pub enum LineEdit {
     /// The user pressed Ctrl-C; the caller must terminate the process
     /// (`Pterm(-32)`) and must **not** write the length byte.
     Terminated,
+    /// The record could not be written (or read back): the buffer access
+    /// faulted ([`LineEditIo::faulted`]). EmuTOS takes the bus error at the
+    /// first such byte; the caller stops the call there.
+    Faulted,
 }
 
 /// Erase one echoed character position: `BS SP BS`. NewTOS assumes a
@@ -421,11 +391,17 @@ pub fn edit_line<Io: LineEditIo>(io: &mut Io, max: usize) -> LineEdit {
                 io.echo_byte(0x0A);
                 for i in 0..len {
                     let c = io.load_byte(i);
+                    if io.faulted() {
+                        return LineEdit::Faulted;
+                    }
                     io.echo_byte(c);
                 }
             }
             _ => {
                 io.store_byte(len, b);
+                if io.faulted() {
+                    return LineEdit::Faulted;
+                }
                 len += 1;
                 io.echo_byte(b); // echo
             }
@@ -435,14 +411,19 @@ pub fn edit_line<Io: LineEditIo>(io: &mut Io, max: usize) -> LineEdit {
 }
 
 /// [`LineEditIo`] over the trap path: the installed console host + the
-/// caller's user-space record pointer `p` (`[max, len, buf…]`). Buffer
-/// bytes are read/written through unprivileged `ldtrb`/`sttrb` so the
-/// access is permission-checked as EL0, matching the `Cconrs` contract
-/// that `p` is a user pointer.
+/// caller's record pointer `p` (`[max, len, buf…]`). Buffer bytes are read
+/// and written in the caller's space (ARCH03 3a, [`crate::uaccess`]): an EL0
+/// program's record through the fault-recovered unprivileged byte accesses,
+/// permission-checked as EL0 — the `Cconrs` contract that `p` is a user
+/// pointer — an in-kernel caller's as the kernel address it is.
 struct TrapLineIo {
     host: &'static dyn crate::host::Host,
+    /// Whose address space `p` is in.
+    space: crate::uaccess::Space,
     /// The caller's length-prefixed record pointer (`p`).
-    p: *mut u8,
+    p: u64,
+    /// A buffer access faulted ([`LineEditIo::faulted`]).
+    faulted: core::cell::Cell<bool>,
 }
 
 impl LineEditIo for TrapLineIo {
@@ -453,14 +434,20 @@ impl LineEditIo for TrapLineIo {
         self.host.console_write_byte(b);
     }
     fn store_byte(&mut self, i: usize, b: u8) {
-        // SAFETY: caller bounds `i < max`, so `p + 2 + i` is within the
-        // record's buffer area; unprivileged store.
-        unsafe { write_user_byte(self.p.add(2 + i), b) };
+        // `i < max`, so `p + 2 + i` is within the record's buffer area.
+        if self.space.put_u8(self.p + 2 + i as u64, b).is_err() {
+            self.faulted.set(true);
+        }
     }
     fn load_byte(&self, i: usize) -> u8 {
-        // SAFETY: `i < len <= max`, so `p + 2 + i` was previously stored
-        // within the buffer area; unprivileged load.
-        unsafe { read_user_byte(self.p.add(2 + i)) }
+        // `i < len <= max`: a byte this call stored before.
+        self.space.get_u8(self.p + 2 + i as u64).unwrap_or_else(|_| {
+            self.faulted.set(true);
+            0
+        })
+    }
+    fn faulted(&self) -> bool {
+        self.faulted.get()
     }
 }
 
@@ -475,23 +462,30 @@ impl LineEditIo for TrapLineIo {
 /// `void`). See [`edit_line`] for the EmuTOS echo divergence.
 pub fn cconrs(args: &TrapArgs) -> Long {
     let h = host_or_eundev!();
-    let p = args.arg_ptr(0) as *mut u8;
-    if p.is_null() {
+    let p = args.arg_u64(0);
+    if p == 0 {
         return 0;
     }
-    // SAFETY: `p` is the caller-supplied user record pointer; the max
-    // length byte is read through an unprivileged load.
-    let max = unsafe { read_user_byte(p) } as usize;
-    let mut io = TrapLineIo { host: h, p };
-    let len = match edit_line(&mut io, max) {
+    // The record is in the caller's space (`TrapLineIo`); a record the
+    // program cannot read or write ends the call at the first such byte and
+    // — through the syscall tail — the program (EmuTOS: bus error in
+    // `cgets`, `docs/api/bios/_exception-crash.md`).
+    let Ok(max) = args.space.get_u8(p) else {
+        return crate::uaccess::FAULTED;
+    };
+    let mut io = TrapLineIo { host: h, space: args.space, p, faulted: core::cell::Cell::new(false) };
+    let len = match edit_line(&mut io, max as usize) {
         LineEdit::Done(n) => n,
         LineEdit::Terminated => {
             crate::bdos::process::request_terminate(CTRLC_RC);
             return 0; // value ignored — handler redirects to Pterm.
         }
+        LineEdit::Faulted => return crate::uaccess::FAULTED,
     };
-    // SAFETY: `p + 1` is the record's length byte.
-    unsafe { write_user_byte(p.add(1), len as u8) };
+    // `p + 1` is the record's length byte.
+    if args.space.put_u8(p + 1, len as u8).is_err() {
+        return crate::uaccess::FAULTED;
+    }
     0
 }
 
@@ -512,9 +506,11 @@ pub fn cconrs(args: &TrapArgs) -> Long {
 ///
 /// # User pointer
 ///
-/// `s` is read with fault-safe unprivileged loads ([`crate::uaccess`]); a
-/// pointer the caller cannot read ends the call and — through the kernel's
-/// syscall tail — the caller (EmuTOS: bus error in the trap → `dopanic` →
+/// `s` is read in the caller's space ([`crate::trap::TrapArgs::space`]):
+/// an EL0 program's pointer with fault-safe unprivileged loads
+/// ([`crate::uaccess`]), an in-kernel caller's as the kernel address it is.
+/// A pointer the program cannot read ends the call and — through the
+/// kernel's syscall tail — the caller (EmuTOS: bus error in the trap → `dopanic` →
 /// `Pterm(-1)`, `docs/api/bios/_exception-crash.md`).
 pub fn cconws(args: &TrapArgs) -> Long {
     let mut p = args.arg_ptr(0);
@@ -534,7 +530,7 @@ pub fn cconws(args: &TrapArgs) -> Long {
         // written (as on EmuTOS, whose `prt_line` takes the bus error in the
         // middle of the string), and the syscall tail terminates the caller
         // with the crash report — the count returned here never reaches it.
-        let Ok(b) = crate::uaccess::get_user_u8(p as u64) else {
+        let Ok(b) = args.space.get_u8(p as u64) else {
             break;
         };
         if b == 0 {
@@ -607,4 +603,62 @@ pub fn cauxis(_: &TrapArgs) -> Long {
 /// `Cauxos()` — returns `0` (AUX output not available).
 pub fn cauxos(_: &TrapArgs) -> Long {
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Scripted line-editor backend whose buffer becomes unreachable from
+    /// byte `fault_at` on (ARCH03 3a: the caller's record is not writable).
+    struct FaultingIo {
+        script: &'static [u8],
+        at: usize,
+        buf: [u8; 16],
+        fault_at: usize,
+        faulted: bool,
+        echoed: usize,
+    }
+
+    impl LineEditIo for FaultingIo {
+        fn read_byte(&mut self) -> u8 {
+            let b = self.script[self.at];
+            self.at += 1;
+            b
+        }
+        fn echo_byte(&mut self, _b: u8) {
+            self.echoed += 1;
+        }
+        fn store_byte(&mut self, i: usize, b: u8) {
+            if i >= self.fault_at {
+                self.faulted = true;
+            } else {
+                self.buf[i] = b;
+            }
+        }
+        fn load_byte(&self, i: usize) -> u8 {
+            self.buf[i]
+        }
+        fn faulted(&self) -> bool {
+            self.faulted
+        }
+    }
+
+    #[test]
+    fn edit_line_stops_at_the_first_store_that_faults() {
+        let mut io = FaultingIo { script: b"abcd\r", at: 0, buf: [0; 16], fault_at: 2, faulted: false, echoed: 0 };
+        assert!(matches!(edit_line(&mut io, 10), LineEdit::Faulted));
+        // 'a' and 'b' were stored and echoed; 'c' faulted and was not echoed,
+        // and no further key was read.
+        assert_eq!(&io.buf[..2], b"ab");
+        assert_eq!(io.echoed, 2);
+        assert_eq!(io.at, 3);
+    }
+
+    #[test]
+    fn edit_line_without_faults_is_unchanged() {
+        let mut io = FaultingIo { script: b"ab\x08c\r", at: 0, buf: [0; 16], fault_at: 16, faulted: false, echoed: 0 };
+        assert!(matches!(edit_line(&mut io, 10), LineEdit::Done(2)));
+        assert_eq!(&io.buf[..2], b"ac");
+    }
 }

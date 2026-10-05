@@ -731,16 +731,28 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
             if flags & MU_MESAG != 0 {
                 // SAFETY: single trap path; `by_index` hands out the live slot.
                 if let Some(src) = unsafe { pd::by_index(idx) } {
+                    // `MME_PBUFF`, checked writable for the 16-byte message
+                    // with the caller's rights once there is one to copy —
+                    // where EmuTOS's `doq` writes it (ARCH03 3a). One the
+                    // program may not write ends the call (and the program)
+                    // with the message still queued.
+                    if src.queue.pending() > 0
+                        && pbuff != 0
+                        && pb.ubuf(pbuff, 2 * pd::MSG_WORDS as u64, true).is_none()
+                    {
+                        sched::clear_deadline();
+                        return None;
+                    }
                     // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`
                     // →`doq` dequeue, `gemqueue.c:76-81`); a single pending
                     // message is just the 1-element case.
                     if let Some(msg) = src.queue.pop() {
                         if pbuff != 0 {
-                            // SAFETY: `MME_PBUFF` points at >= 16 bytes.
-                            unsafe {
-                                let p = pbuff as *mut i16;
-                                for (i, &w) in msg.iter().enumerate() {
-                                    p.add(i).write(w);
+                            // Checked just above; written in the caller's space.
+                            for (i, &w) in msg.iter().enumerate() {
+                                if pb.space().put_u16(pbuff + 2 * i as u64, w as u16).is_err() {
+                                    sched::clear_deadline();
+                                    return None;
                                 }
                             }
                         }
@@ -850,15 +862,23 @@ pub fn evnt_mesag(pb: &Aespb) -> Option<sched::Switch> {
             pb.set_ret(1);
             return None;
         };
+        // `ME_PBUFF`, checked writable for the 16-byte message with the
+        // caller's rights once there is one to copy (ARCH03 3a); one the
+        // program may not write ends the call with the message still queued.
+        if src.queue.pending() > 0
+            && dest != 0
+            && pb.ubuf(dest, 2 * pd::MSG_WORDS as u64, true).is_none()
+        {
+            return None;
+        }
         // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`→`doq` dequeue,
         // `gemqueue.c:76-81`).
         if let Some(msg) = src.queue.pop() {
             if dest != 0 {
-                // SAFETY: `ME_PBUFF` points at >= 16 bytes of storage.
-                unsafe {
-                    let p = dest as *mut i16;
-                    for (i, &w) in msg.iter().enumerate() {
-                        p.add(i).write(w);
+                // Checked just above; written in the caller's space.
+                for (i, &w) in msg.iter().enumerate() {
+                    if pb.space().put_u16(dest + 2 * i as u64, w as u16).is_err() {
+                        return None;
                     }
                 }
             }

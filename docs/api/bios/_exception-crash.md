@@ -169,8 +169,27 @@ user-pointer API) halts, as before.
 
 Converted in 0c (pilot): `Cconws` (`tos-api/src/gemdos/console.rs`), the
 `Pexec` path / command tail / environment readers
-(`kernel/src/arch/aarch64/exceptions.rs` `handle_pexec`). All other kernel
-accesses to user memory are unchanged (stage 1 inventory).
+(`kernel/src/arch/aarch64/exceptions.rs` `handle_pexec`).
+
+**ARCH03 stage 3a** converted the rest of the inventory
+(`docs/analysis/arch03-stage3-access-inventory.md`): every trap carries the
+caller's space (`TrapArgs::space`, from `SPSR_EL1.M`; an in-kernel caller —
+the desktop's `svc`, the AES fiber — passes kernel addresses and is not
+checked), and a syscall argument of an EL0 program is either read/written
+with its rights through `uaccess` or checked with its rights and then reached
+through its kernel alias (`Space::kptr`: GEMDOS paths, file/DTA/console
+buffers, `Dgetpath`/`Dfree`/`Fdatime`, `Cconrs`, `Ssystem`, `Rwabs`, `Getmpb`,
+`Setpalette`, `Protobt`, `Keytbl`, the AES and VDI parameter blocks and the
+`addr_in` buffers and strings, `AESGLOBAL`, MFDB bitmaps, `objc_edit`'s and
+`menu_text`'s target text). A bad pointer in any of them ends the calling
+program exactly as above; the probe `sdk/examples/uacc3a.c` / `uakid.c`
+drives one case per site class
+(`measurements/measurement-2026-10-05-arch03-3a`). Two deliberate cases do
+**not** crash: a pointer the AES follows *outside* its owner's trap (another
+process's tree, window title, `WF_NEWDESK` background) reads as nothing — no
+fault can be charged to a process that is not running — and a page-0 cell
+the kernel reaches through the process's own page-0 alias (`Setexc` sysvar
+peek/poke, `conterm`) cannot fault at all.
 
 ### Not done / open
 

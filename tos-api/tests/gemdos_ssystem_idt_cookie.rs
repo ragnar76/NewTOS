@@ -90,6 +90,7 @@ fn gemdos(func: u16, a0: u64, a1: u64, a2: u64) -> i32 {
         regs: [a0, a1, a2, 0, 0, 0, 0, 0],
         func: func as u64,
         svc_imm: TrapClass::Gemdos as u16,
+        space: tos_api::uaccess::Space::Kernel,
     };
     tos_api::gemdos::dispatch(&args)
 }

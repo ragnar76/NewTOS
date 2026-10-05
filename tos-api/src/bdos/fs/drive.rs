@@ -83,12 +83,14 @@ pub fn dfree(args: &TrapArgs) -> Long {
 
     // 4 LONGs: free clusters, total clusters, bytes/sector, sectors/cluster.
     let out = [free, vol.numcl, vol.recsiz, vol.clsiz];
-    // SAFETY: `buf` is the caller's 16-byte buffer (kernel buffer at EL1).
-    let p = buf as *mut u8;
+    // `buf` is the caller's 16-byte buffer, in the caller's space (ARCH03
+    // 3a, `crate::uaccess`; a kernel buffer for an EL1 caller).
+    let mut bytes = [0u8; 16];
     for (i, v) in out.iter().enumerate() {
-        unsafe {
-            p.add(i * 4).copy_from(v.to_le_bytes().as_ptr(), 4);
-        }
+        bytes[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    if args.space.copy_to(buf, &bytes).is_err() {
+        return crate::uaccess::FAULTED;
     }
     E_OK
 }

@@ -1628,7 +1628,10 @@ nicht neu erfinden sondern können das verwenden"*). The constants are taken
 verbatim from `references/freemint/sys/mint/mem.h:120-136` into
 `tos-types::memory`: the external `F_PROTMODE`/`F_PROT_P`/`F_PROT_G`/
 `F_PROT_S`/`F_PROT_PR`/`F_PROT_I`/`F_PROTSHIFT` nibble of an `Mxalloc` mode
-word, and the internal `PROT_P`/`PROT_G`/`PROT_S`/`PROT_PR`/`PROT_I` values
+word (**correction, ARCH03 stage 3a:** these are the *PRGFLAGS* values; in an
+`Mxalloc` mode word the nibble is one higher — `0x10` = `PROT_P`, `0x00` =
+"the caller's PRGFLAGS", FreeMiNT `sys/mint/mem.h:118`, `sys/dosmem.c:209-221`;
+decoders `tos_types::prot_from_prgflags`/`prot_from_mxalloc`), and the internal `PROT_P`/`PROT_G`/`PROT_S`/`PROT_PR`/`PROT_I` values
 FreeMiNT passes to `alloc_region()`, typed as `tos_types::ProtMode`. Later
 work can therefore *extend* FreeMiNT's model rather than replace ours.
 

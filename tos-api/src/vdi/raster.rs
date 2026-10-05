@@ -9,7 +9,7 @@
 //! For an **ILP32** caller `N_PTRINTS = 2`: source at `CONTRL[7..8]`,
 //! destination at `CONTRL[9..10]` (4 bytes each). Both the pointer read
 //! and the MFDB struct-field offsets shift with the ABI — see
-//! [`Vdipb::contrl_ptr`] and [`Mfdb::from_ptr`]. `fd_addr == NULL` means
+//! [`Vdipb::contrl_ptr`] and [`Mfdb::read`]. `fd_addr == NULL` means
 //! the screen device under either width.
 //!
 //! Scope: `vrt_cpyfm` with a 1-plane source (icons/sprites), all four
@@ -98,35 +98,84 @@ impl Mfdb {
     /// `fd_addr` 4B @0, fields @4/6/8/10/12. A NULL `fd_addr` (screen
     /// MFDB) reads as `addr == 0` under either width.
     ///
-    /// # Safety
-    /// `ptr` must be 0 or a valid MFDB of `abi`'s layout.
-    unsafe fn from_ptr(ptr: u64, abi: Abi) -> Self {
+    /// The struct is read in the caller's space ([`Vdipb::space`], ARCH03
+    /// stage 3a); `None` — fault recorded on `pb` — when the program may not
+    /// read it. `fd_addr` stays the caller's address: a memory MFDB's bitmap
+    /// is reached only after [`Self::bind`].
+    fn read(pb: &Vdipb, ptr: u64) -> Option<Self> {
         if ptr == 0 {
-            return Mfdb { addr: 0, w: 0, h: 0, wdwidth: 0, stand: 0, nplanes: 0 };
+            return Some(Mfdb { addr: 0, w: 0, h: 0, wdwidth: 0, stand: 0, nplanes: 0 });
         }
-        // SAFETY: caller guarantees a valid MFDB of `abi`'s layout.
-        unsafe {
-            let p = ptr as *const u8;
-            let word = |off: usize| (p.add(off) as *const i16).read_unaligned();
-            match abi {
-                Abi::Lp64 => Mfdb {
-                    addr: (p as *const u64).read_unaligned(),
-                    w: word(8),
-                    h: word(10),
-                    wdwidth: word(12),
-                    stand: word(14),
-                    nplanes: word(16),
-                },
-                Abi::Ilp32 => Mfdb {
-                    addr: (p as *const u32).read_unaligned() as u64,
-                    w: word(4),
-                    h: word(6),
-                    wdwidth: word(8),
-                    stand: word(10),
-                    nplanes: word(12),
-                },
+        if pb.faulted() {
+            return None;
+        }
+        let (aw, len) = match pb.abi() {
+            Abi::Lp64 => (8usize, 18usize),
+            Abi::Ilp32 => (4, 14),
+        };
+        let mut b = [0u8; 18];
+        if pb.space().copy_from(&mut b[..len], ptr).is_err() {
+            pb.note_fault();
+            return None;
+        }
+        let word = |off: usize| i16::from_ne_bytes([b[off], b[off + 1]]);
+        let addr = match pb.abi() {
+            Abi::Lp64 => u64::from_ne_bytes(b[..8].try_into().unwrap_or([0; 8])),
+            Abi::Ilp32 => u64::from(u32::from_ne_bytes(b[..4].try_into().unwrap_or([0; 4]))),
+        };
+        Some(Mfdb {
+            addr,
+            w: word(aw),
+            h: word(aw + 2),
+            wdwidth: word(aw + 4),
+            stand: word(aw + 6),
+            nplanes: word(aw + 8),
+        })
+    }
+
+    /// Make a **memory** MFDB's bitmap usable by the pixel walks: check that
+    /// the caller may access the `bytes` from byte `off` of its bitmap
+    /// (`write`: read and write) with its own rights, and replace `addr` by
+    /// the bitmap's kernel address (`Space::kptr`, plan §3.6 — the blit then
+    /// never dereferences a user address). A screen MFDB and an empty range
+    /// need nothing. `false` — fault recorded on `pb` — when the program may
+    /// not use the bitmap: the op must not touch it.
+    ///
+    /// Only the part the op will touch is checked (`off`/`bytes`), as EmuTOS
+    /// only touches those rows: an MFDB whose `fd_h` overstates its buffer
+    /// still works for a copy that stays inside the real buffer.
+    fn bind(&mut self, pb: &Vdipb, off: u64, bytes: u64, write: bool) -> bool {
+        if self.addr == 0 {
+            return true;
+        }
+        if bytes == 0 {
+            // Nothing will be touched; keep the address inert but kernel-side
+            // (no access follows).
+            return true;
+        }
+        match pb.space().kptr(self.addr + off, bytes, write) {
+            Ok(k) => {
+                self.addr = k - off;
+                true
+            }
+            Err(_) => {
+                pb.note_fault();
+                false
             }
         }
+    }
+
+    /// [`Self::bind`] for the whole rows `[row_lo, row_hi)` (clamped to
+    /// `0..fd_h`) of a device-format memory MFDB — the rows a `vro_cpyfm` /
+    /// `vrt_cpyfm` walk visits.
+    fn bind_rows(&mut self, pb: &Vdipb, row_lo: i32, row_hi: i32, write: bool) -> bool {
+        let lo = row_lo.max(0) as u64;
+        let hi = row_hi.min(self.h.max(0) as i32).max(0) as u64;
+        if hi <= lo {
+            return true;
+        }
+        let row_bytes = 2 * self.mem_stride_px() as u64;
+        self.bind(pb, lo * row_bytes, (hi - lo) * row_bytes, write)
     }
 
     /// Build a NewTOS 16-bit RGB565 device-format memory MFDB over a
@@ -428,11 +477,12 @@ fn rect_from_ptsin(pb: &Vdipb, base: usize) -> Rect {
 /// destination may be the **screen** (the common case: icons/sprites onto
 /// the display) or a **memory MFDB** (16-bit RGB565, AUD-V5-005).
 pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) {
-    let abi = pb.abi();
-    // SAFETY: caller-ABI MFDB-pointer convention (see module docs); the
-    // src pointer is at CONTRL[7], the dst at 7 + N_PTRINTS.
-    let (src, dst) = unsafe {
-        (Mfdb::from_ptr(pb.contrl_ptr(0), abi), Mfdb::from_ptr(pb.contrl_ptr(1), abi))
+    // Caller-ABI MFDB-pointer convention (see module docs); the src pointer
+    // is at CONTRL[7], the dst at 7 + N_PTRINTS — both MFDBs read in the
+    // caller's space (an MFDB the program cannot read ends the call).
+    let (Some(mut src), Some(mut dst)) = (Mfdb::read(pb, pb.contrl_ptr(0)), Mfdb::read(pb, pb.contrl_ptr(1)))
+    else {
+        return;
     };
     // Source must be a 1-plane memory raster (`cpy_raster:1384`,
     // `s_nxwd != 2` ⇒ reject); a screen source is not a mono form.
@@ -484,10 +534,21 @@ pub fn vrt_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend, ncol: u16) 
     let s = rect_from_ptsin(pb, 0); // source rect
     let d = rect_from_ptsin(pb, 4); // dest rect (same extent)
 
-    // SAFETY: the source MFDB describes `h * wdwidth` words at `addr`. The
-    // MFDB is the caller's, so `fd_addr` may sit at an odd address; `MonoBits`
-    // reads the words without requiring alignment.
-    let words = (src.h as usize) * (src.wdwidth as usize);
+    // The bitmaps the walk touches, checked with the caller's rights and
+    // reached through their kernel addresses (ARCH03 3a, `Mfdb::bind`): the
+    // whole mono source (the `MonoBits` view spans it) and the destination
+    // rows of a memory destination. One the program may not use ends the
+    // call before anything is drawn.
+    let words = (src.h.max(0) as usize) * (src.wdwidth.max(0) as usize);
+    if !src.bind(pb, 0, 2 * words as u64, false)
+        || (!dst.is_screen() && !dst.bind_rows(pb, d.y as i32, d.y as i32 + s.h.max(0) as i32, true))
+    {
+        return;
+    }
+    // SAFETY: the source MFDB describes `h * wdwidth` words at `addr` (now
+    // its checked kernel address). The MFDB is the caller's, so `fd_addr` may
+    // sit at an odd address; `MonoBits` reads the words without requiring
+    // alignment.
     let bits = unsafe { MonoBits::from_raw(src.addr as *const u8, words) };
     let mono = MonoSrc { bits, stride_words: src.wdwidth as u16, x: s.x, y: s.y };
 
@@ -575,11 +636,12 @@ fn mono_to_mem(dst: &Mfdb, mono: MonoSrc, dx: i16, dy: i16, w: i16, h: i16, mode
 /// is the source extent; clipping applies **only** when the destination
 /// is the screen (`_raster.md` edge case 8).
 pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
-    let abi = pb.abi();
-    // SAFETY: caller-ABI MFDB-pointer convention (see module docs); the
-    // src pointer is at CONTRL[7], the dst at 7 + N_PTRINTS.
-    let (src, dst) = unsafe {
-        (Mfdb::from_ptr(pb.contrl_ptr(0), abi), Mfdb::from_ptr(pb.contrl_ptr(1), abi))
+    // Caller-ABI MFDB-pointer convention (see module docs); the src pointer
+    // is at CONTRL[7], the dst at 7 + N_PTRINTS — both MFDBs read in the
+    // caller's space (an MFDB the program cannot read ends the call).
+    let (Some(mut src), Some(mut dst)) = (Mfdb::read(pb, pb.contrl_ptr(0)), Mfdb::read(pb, pb.contrl_ptr(1)))
+    else {
+        return;
     };
     // `INTIN[0]` carries the raster op in the low 4 bits and `PAT_FLAG`
     // (bit 4, 0x10); anything above bit 4 makes the mode invalid
@@ -622,6 +684,16 @@ pub fn vro_cpyfm(pb: &Vdipb, vwk: &Vwk, backend: &dyn RasterBackend) {
 
     let s = rect_from_ptsin(pb, 0); // source rect (extent)
     let d = rect_from_ptsin(pb, 4); // destination upper-left
+    // The memory bitmaps the copy touches — the source rows read, the
+    // destination rows written — checked with the caller's rights and reached
+    // through their kernel addresses (ARCH03 3a, `Mfdb::bind_rows`); one the
+    // program may not use ends the call before anything is copied.
+    let rows = s.h.max(0) as i32;
+    if !src.bind_rows(pb, s.y as i32, s.y as i32 + rows, false)
+        || !dst.bind_rows(pb, d.y as i32, d.y as i32 + rows, true)
+    {
+        return;
+    }
     match (src.is_screen(), dst.is_screen()) {
         // Screen→Screen: the backend block-copy (overlap-safe, cache-clean).
         (true, true) => backend.copy_rect(s, d.x, d.y, op, vwk.clip_rect()),
@@ -1057,15 +1129,19 @@ fn vr_trnfm16(src: &Mfdb, dst: &Mfdb) {
 /// Truecolor gate (`:281-294`).
 pub fn vr_trnfm(pb: &Vdipb, backend: &dyn RasterBackend) {
     let abi = pb.abi();
-    // SAFETY: caller-ABI MFDB-pointer convention (see module docs).
-    let src = unsafe { Mfdb::from_ptr(pb.contrl_ptr(0), abi) };
+    // Caller-ABI MFDB-pointer convention (see module docs); both MFDBs read
+    // in the caller's space (ARCH03 3a).
+    let Some(mut src) = Mfdb::read(pb, pb.contrl_ptr(0)) else {
+        return;
+    };
     let dst_ptr = pb.contrl_ptr(1);
     if src.addr == 0 || dst_ptr == 0 {
         return;
     }
-    // SAFETY: dst MFDB has `abi`'s layout (addr@0, …, fd_stand at
-    // `stand_off`).
-    let dst = unsafe { Mfdb::from_ptr(dst_ptr, abi) };
+    // Dst MFDB has `abi`'s layout (addr@0, …, fd_stand at `stand_off`).
+    let Some(mut dst) = Mfdb::read(pb, dst_ptr) else {
+        return;
+    };
     if dst.addr == 0 {
         return;
     }
@@ -1078,6 +1154,13 @@ pub fn vr_trnfm(pb: &Vdipb, backend: &dyn RasterBackend) {
     // (`planes() <= 8`) falls through to the planar path, exactly as EmuTOS'
     // gate does. (AUD-V5-002/003.)
     if backend.planes() > 8 && src.nplanes > 8 {
+        // Both forms hold `planesize * 16` words of the *source* geometry
+        // (`vr_trnfm16`), checked with the caller's rights and reached
+        // through their kernel addresses (ARCH03 3a).
+        let total = 2 * 16 * (src.h.max(0) as u64) * (src.wdwidth.max(0) as u64);
+        if !src.bind(pb, 0, total, false) || !dst.bind(pb, 0, total, true) {
+            return;
+        }
         vr_trnfm16(&src, &dst);
         return;
     }
@@ -1093,20 +1176,30 @@ pub fn vr_trnfm(pb: &Vdipb, backend: &dyn RasterBackend) {
         (size, planes) // device → standard
     };
 
+    // Both forms hold `size * planes` words, checked with the caller's rights
+    // and reached through their kernel addresses (ARCH03 3a); the same buffer
+    // when transforming in place.
+    let inplace = src.addr == dst.addr;
+    let form = 2u64.saturating_mul(size as u64).saturating_mul(planes as u64);
+    if !src.bind(pb, 0, form, inplace) || !dst.bind(pb, 0, form, true) {
+        return;
+    }
     let s = src.addr as *const u16;
     let d = dst.addr as *mut u16;
-    let inplace = src.addr == dst.addr;
 
     // Force the destination form opposite to the source. `fd_stand` sits
     // after `fd_addr` + three WORDs, so its byte offset shifts with the
-    // ABI: 14 for LP64 (8B ptr), 10 for ILP32 (4B ptr).
+    // ABI: 14 for LP64 (8B ptr), 10 for ILP32 (4B ptr). Written in the
+    // caller's space (the dst MFDB is the caller's struct).
     let new_stand: i16 = if src.stand != 0 { 0 } else { 1 };
     let stand_off = match abi {
         Abi::Lp64 => 14,
         Abi::Ilp32 => 10,
     };
-    // SAFETY: dst MFDB is valid; fd_stand is the WORD at `stand_off`.
-    unsafe { ((dst_ptr as *mut u8).add(stand_off) as *mut i16).write_unaligned(new_stand) };
+    if pb.space().put_u16(dst_ptr + stand_off, new_stand as u16).is_err() {
+        pb.note_fault();
+        return;
+    }
 
     if !inplace {
         // Simple transpose: read the source linearly, scatter into the

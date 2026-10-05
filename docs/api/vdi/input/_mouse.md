@@ -367,6 +367,24 @@ by `tick_int`, which also chains the old system timer vector
   `vex_butv`/`motv`/`curv`/`timv` keep their address-sentinel behaviour: their
   default action is inlined in `feed_relative`, and no consumer has asked for
   the upcall yet.
+- **ARCH03 stage 3a (F4) — deliberate no-op, re-checked against EmuTOS.**
+  EmuTOS **does** call all four: `mouse_int` jumps through `user_but` on a
+  button change with the new state in `d0` (`vdi/vdi_asm.S:283-284`), through
+  `user_mot` with the clipped position in `d0`/`d1` **and takes the
+  routine's `d0`/`d1` back as the new position** (`:359-363`, "call user to
+  modify x,y"), and through `user_cur` to draw the cursor (`:367-368`);
+  `tick_int` calls `tim_addr` on every timer tick (`vdi/vdi_misc.c:83`). All
+  of it runs in interrupt context in supervisor mode. NewTOS stores the
+  address an application installs and returns the previous one exactly, but
+  **executes none of them** — so under per-process rights (ARCH03 stage 3)
+  nothing follows from a stored EL0 address: there is no access through it.
+  The `vex_wheelv` upcall cannot simply be reused: it is fire-and-forget,
+  delivered at the owner's next return to EL0, whereas `user_mot` must hand
+  a modified coordinate pair back into the very packet being processed and
+  `tim_addr` is tick-timed. That needs an upcall contract with a return
+  channel (and an IRQ-timed delivery decision) that has not been designed;
+  it is not invented here. Open, for the lead: a program that relies on
+  `vex_butv`/`motv`/`curv`/`timv` callbacks sees none (as before 3a).
 - `vsc_form` installs the 37-WORD MFORM into the NewTOS `RasterBackend`
   sprite (`tos-api/src/vdi/mouse.rs`); the interleaved `Mcdb` layout is an
   EmuTOS detail — NewTOS may store the sprite however it likes, as long as

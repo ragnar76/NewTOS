@@ -26,10 +26,12 @@ fn dots(n: usize) -> [u8; 11] {
 
 /// `Dcreate` (0x39) — create a sub-directory.
 pub fn dcreate(args: &TrapArgs) -> Long {
-    // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
-    let pathstr = match unsafe { super::cstr(args.arg_u64(0)) } {
-        Some(p) => p,
-        None => return EPTHNF,
+    // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
+    let mut pathstr_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
+    let pathstr = match super::path_arg(args, 0, &mut pathstr_buf) {
+        Ok(Some(p)) => p,
+        Ok(None) => return EPTHNF,
+        Err(_) => return crate::uaccess::FAULTED,
     };
     // Resolve the parent directory but keep the *raw* final component, so the
     // illegal-character check runs against the user's folder name before it
@@ -119,10 +121,12 @@ fn dir_is_empty(vol: &Volume, cluster: u32) -> bool {
 
 /// `Ddelete` (0x3A) — remove an empty sub-directory.
 pub fn ddelete(args: &TrapArgs) -> Long {
-    // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
-    let pathstr = match unsafe { super::cstr(args.arg_u64(0)) } {
-        Some(p) => p,
-        None => return EPTHNF,
+    // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
+    let mut pathstr_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
+    let pathstr = match super::path_arg(args, 0, &mut pathstr_buf) {
+        Ok(Some(p)) => p,
+        Ok(None) => return EPTHNF,
+        Err(_) => return crate::uaccess::FAULTED,
     };
     let (vol, parent, name11) = match path::findit(pathstr) {
         Ok(x) => x,
@@ -161,10 +165,12 @@ pub fn ddelete(args: &TrapArgs) -> Long {
 /// Resolves `.`/`..` and stores the canonical absolute path (no drive
 /// letter). The target must be an existing directory.
 pub fn dsetpath(args: &TrapArgs) -> Long {
-    // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
-    let p = match unsafe { super::cstr(args.arg_u64(0)) } {
-        Some(p) => p,
-        None => return EPTHNF,
+    // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
+    let mut p_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
+    let p = match super::path_arg(args, 0, &mut p_buf) {
+        Ok(Some(p)) => p,
+        Ok(None) => return EPTHNF,
+        Err(_) => return crate::uaccess::FAULTED,
     };
     if p.bytes().any(|c| c == b'*' || c == b'?') {
         return EPTHNF;
@@ -249,17 +255,20 @@ pub fn dgetpath(args: &TrapArgs) -> Long {
     let drv = args.arg_u16(1);
     let drive = if drv == 0 { current_drive() } else { drv - 1 };
 
-    // SAFETY: `buf` is the caller's path buffer (>= LEN_ZPATH bytes).
-    let dst = buf as *mut u8;
+    // `buf` is the caller's path buffer (>= LEN_ZPATH bytes), in the
+    // caller's space (ARCH03 3a, `crate::uaccess`).
     if Volume::mount(drive).is_none() {
-        unsafe { *dst = 0 };
+        if args.space.put_u8(buf, 0).is_err() {
+            return crate::uaccess::FAULTED;
+        }
         return EDRIVE;
     }
     let s = path::curdir_str(drive);
-    // SAFETY: write the path bytes plus a NUL terminator.
-    unsafe {
-        core::ptr::copy_nonoverlapping(s.as_ptr(), dst, s.len());
-        *dst.add(s.len()) = 0;
+    // The path bytes plus a NUL terminator.
+    if args.space.copy_to(buf, s.as_bytes()).is_err()
+        || args.space.put_u8(buf + s.len() as u64, 0).is_err()
+    {
+        return crate::uaccess::FAULTED;
     }
     E_OK
 }

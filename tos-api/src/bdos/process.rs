@@ -184,6 +184,27 @@ impl Abi {
             Self::Ilp32 => unsafe { (base as *mut u32).add(i).write(v as u32) },
         }
     }
+
+    /// [`Self::read_ptr`] in the caller's address space `space` (ARCH03
+    /// stage 3a): an EL0 program's parameter block is read with its rights
+    /// through [`crate::uaccess`], an in-kernel caller's as the kernel
+    /// address it is. `Err` when the program may not read the slot.
+    #[inline]
+    pub fn read_ptr_in(self, space: crate::uaccess::Space, base: u64, i: usize) -> Result<u64, crate::uaccess::UserFault> {
+        match self {
+            Self::Lp64 => space.get_u64(base + 8 * i as u64),
+            Self::Ilp32 => space.get_u32(base + 4 * i as u64).map(u64::from),
+        }
+    }
+
+    /// [`Self::write_ptr`] in the caller's address space `space`.
+    #[inline]
+    pub fn write_ptr_in(self, space: crate::uaccess::Space, base: u64, i: usize, v: u64) -> Result<(), crate::uaccess::UserFault> {
+        match self {
+            Self::Lp64 => space.put_u64(base + 8 * i as u64, v),
+            Self::Ilp32 => space.put_u32(base + 4 * i as u64, v as u32),
+        }
+    }
 }
 
 // ─── Process slot ───────────────────────────────────────────────────

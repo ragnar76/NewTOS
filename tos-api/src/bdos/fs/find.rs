@@ -30,6 +30,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use super::dir::DirEntry;
 use super::fat::Volume;
 use crate::trap::TrapArgs;
+use crate::uaccess::{Space, UserFault};
 use tos_types::error::{EFILNF, ENMFIL, EPTHNF, E_OK};
 use tos_types::Long;
 
@@ -84,6 +85,19 @@ pub(crate) fn cur_dta() -> u64 {
     // are below `0x8000_0000` (ARCH03 plan invariant I2), so the field is a
     // non-negative 32-bit address.
     unsafe { (*bp).p_xdta as u32 as u64 }
+}
+
+/// [`cur_dta`] and the address space the DTA lives in (ARCH03 3a): a
+/// process's `p_xdta` is a user address of that process — read and written
+/// with its rights ([`Space::User`]), whoever issues the call — and the
+/// [`KERNEL_DTA`] of the process-less EL1 desktop is a kernel address
+/// ([`Space::Kernel`]).
+pub(crate) fn cur_dta_in() -> (u64, Space) {
+    if crate::bdos::process::current_kva().is_null() {
+        (KERNEL_DTA.load(Ordering::Relaxed), Space::Kernel)
+    } else {
+        (cur_dta(), Space::User)
+    }
 }
 
 /// Store the current DTA pointer — EmuTOS `run->p_xdta = addr`
@@ -377,85 +391,85 @@ pub fn list_dir_ex(path: &str, out: &mut [DirInfo]) -> usize {
 /// (EmuTOS `makbuf`): attribute, time, date, size, `8.3\0` name. Values
 /// are stored in native byte order (little-endian on AArch64).
 ///
-/// # Safety
-/// `dta` must point to a writable 44-byte DTA buffer.
-unsafe fn makbuf(dta: u64, e: &DirEntry) {
-    let p = dta as *mut u8;
-    unsafe {
-        *p.add(21) = e.attrib;
-        p.add(22).copy_from(e.time.to_le_bytes().as_ptr(), 2);
-        p.add(24).copy_from(e.date.to_le_bytes().as_ptr(), 2);
-        p.add(26).copy_from(e.size.to_le_bytes().as_ptr(), 4);
+/// `dta` is a 44-byte DTA in `space` ([`cur_dta_in`]); a DTA the program
+/// cannot write is a user-access fault (ARCH03 3a, [`crate::uaccess`]).
+fn makbuf(space: Space, dta: u64, e: &DirEntry) -> Result<(), UserFault> {
+    // Bytes 21..44 of the DTA: attrib, time, date, size, d_fname[14].
+    let mut out = [0u8; 23];
+    out[0] = e.attrib;
+    out[1..3].copy_from_slice(&e.time.to_le_bytes());
+    out[3..5].copy_from_slice(&e.date.to_le_bytes());
+    out[5..9].copy_from_slice(&e.size.to_le_bytes());
 
-        // d_fname: trim-padded "NAME.EXT\0" (offset 30, 14 bytes).
-        let mut name = [0u8; 14];
-        let mut n = 0;
-        for &c in &e.name[0..8] {
+    // d_fname: trim-padded "NAME.EXT\0" (offset 30, 14 bytes).
+    let name = &mut out[9..23];
+    let mut n = 0;
+    for &c in &e.name[0..8] {
+        if c == b' ' {
+            break;
+        }
+        name[n] = c;
+        n += 1;
+    }
+    if e.name[8] != b' ' {
+        name[n] = b'.';
+        n += 1;
+        for &c in &e.name[8..11] {
             if c == b' ' {
                 break;
             }
             name[n] = c;
             n += 1;
         }
-        if e.name[8] != b' ' {
-            name[n] = b'.';
-            n += 1;
-            for &c in &e.name[8..11] {
-                if c == b' ' {
-                    break;
-                }
-                name[n] = c;
-                n += 1;
-            }
-        }
-        // remaining bytes already zero (NUL terminator + pad)
-        p.add(30).copy_from(name.as_ptr(), 14);
     }
+    // remaining bytes already zero (NUL terminator + pad)
+    space.copy_to(dta + 21, &out)
 }
 
-/// Store our resume state into the DTA reserved area.
-///
-/// # Safety
-/// `dta` must point to a writable 44-byte DTA buffer.
-unsafe fn put_state(dta: u64, next_slot: u32, dir: u32, drive: u8, att: u8, pattern: &[u8; 11]) {
-    let p = dta as *mut u8;
-    unsafe {
-        p.copy_from(next_slot.to_le_bytes().as_ptr(), 4);
-        p.add(4).copy_from(dir.to_le_bytes().as_ptr(), 4);
-        *p.add(8) = drive;
-        *p.add(9) = att;
-        p.add(10).copy_from(pattern.as_ptr(), 11);
-    }
+/// Store our resume state into the DTA reserved area (bytes 0..21 of the
+/// 44-byte DTA at `dta` in `space`).
+fn put_state(
+    space: Space,
+    dta: u64,
+    next_slot: u32,
+    dir: u32,
+    drive: u8,
+    att: u8,
+    pattern: &[u8; 11],
+) -> Result<(), UserFault> {
+    let mut r = [0u8; 21];
+    r[0..4].copy_from_slice(&next_slot.to_le_bytes());
+    r[4..8].copy_from_slice(&dir.to_le_bytes());
+    r[8] = drive;
+    r[9] = att;
+    r[10..21].copy_from_slice(pattern);
+    space.copy_to(dta, &r)
 }
 
-/// Load our resume state from the DTA reserved area.
-///
-/// # Safety
-/// `dta` must point to a readable 44-byte DTA buffer previously written
-/// by [`put_state`].
-unsafe fn get_state(dta: u64) -> (u32, u32, u8, u8, [u8; 11]) {
-    let p = dta as *const u8;
-    unsafe {
-        let next = u32::from_le_bytes([*p, *p.add(1), *p.add(2), *p.add(3)]);
-        let dir = u32::from_le_bytes([*p.add(4), *p.add(5), *p.add(6), *p.add(7)]);
-        let drive = *p.add(8);
-        let att = *p.add(9);
-        let mut pat = [0u8; 11];
-        core::ptr::copy_nonoverlapping(p.add(10), pat.as_mut_ptr(), 11);
-        (next, dir, drive, att, pat)
-    }
+/// Load our resume state from the DTA reserved area (written by
+/// [`put_state`]).
+fn get_state(space: Space, dta: u64) -> Result<(u32, u32, u8, u8, [u8; 11]), UserFault> {
+    let mut r = [0u8; 21];
+    space.copy_from(&mut r, dta)?;
+    let next = u32::from_le_bytes([r[0], r[1], r[2], r[3]]);
+    let dir = u32::from_le_bytes([r[4], r[5], r[6], r[7]]);
+    let mut pat = [0u8; 11];
+    pat.copy_from_slice(&r[10..21]);
+    Ok((next, dir, r[8], r[9], pat))
 }
 
 /// `Fsfirst` (0x4E) — begin a directory search, filling the current DTA.
 pub fn fsfirst(args: &TrapArgs) -> Long {
-    let dta = cur_dta();
+    let (dta, space) = cur_dta_in();
     if dta == 0 {
         return EFILNF;
     }
-    // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
-    let path = match unsafe { crate::bdos::fs::cstr(args.arg_u64(0)) } {
-        Some(p) => p,
-        None => return EPTHNF,
+    // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
+    let mut path_buf: crate::bdos::fs::PathBuf = [0; crate::bdos::fs::PATH_ARG_MAX];
+    let path = match crate::bdos::fs::path_arg(args, 0, &mut path_buf) {
+        Ok(Some(p)) => p,
+        Ok(None) => return EPTHNF,
+        Err(_) => return crate::uaccess::FAULTED,
     };
     let att = args.arg_u16(1) as u8;
     let eff_att = if att == FA_VOL {
@@ -477,14 +491,16 @@ pub fn fsfirst(args: &TrapArgs) -> Long {
     let pattern = fcb_pattern(comp);
 
     // Mark uninitialised, then search from slot 0 of the parent directory.
-    // SAFETY: `dta` is the caller's 44-byte DTA buffer.
-    unsafe { put_state(dta, EXHAUSTED, parent, drive, eff_att, &pattern) };
+    if put_state(space, dta, EXHAUSTED, parent, drive, eff_att, &pattern).is_err() {
+        return crate::uaccess::FAULTED;
+    }
     match scan(&vol, parent, 0, &pattern, eff_att) {
         Some((entry, next)) => {
-            // SAFETY: as above.
-            unsafe {
-                put_state(dta, next, parent, drive, eff_att, &pattern);
-                makbuf(dta, &entry);
+            if put_state(space, dta, next, parent, drive, eff_att, &pattern)
+                .and_then(|()| makbuf(space, dta, &entry))
+                .is_err()
+            {
+                return crate::uaccess::FAULTED;
             }
             E_OK
         }
@@ -494,12 +510,13 @@ pub fn fsfirst(args: &TrapArgs) -> Long {
 
 /// `Fsnext` (0x4F) — return the next match into the current DTA.
 pub fn fsnext(_args: &TrapArgs) -> Long {
-    let dta = cur_dta();
+    let (dta, space) = cur_dta_in();
     if dta == 0 {
         return ENMFIL;
     }
-    // SAFETY: `dta` is the caller's 44-byte DTA buffer.
-    let (next, parent, drive, att, pattern) = unsafe { get_state(dta) };
+    let Ok((next, parent, drive, att, pattern)) = get_state(space, dta) else {
+        return crate::uaccess::FAULTED;
+    };
     if next == EXHAUSTED {
         return ENMFIL;
     }
@@ -509,16 +526,19 @@ pub fn fsnext(_args: &TrapArgs) -> Long {
     };
     match scan(&vol, parent, next, &pattern, att) {
         Some((entry, after)) => {
-            // SAFETY: as above.
-            unsafe {
-                put_state(dta, after, parent, drive, att, &pattern);
-                makbuf(dta, &entry);
+            if put_state(space, dta, after, parent, drive, att, &pattern)
+                .and_then(|()| makbuf(space, dta, &entry))
+                .is_err()
+            {
+                return crate::uaccess::FAULTED;
             }
             E_OK
         }
         None => {
-            // SAFETY: as above — mark exhausted.
-            unsafe { put_state(dta, EXHAUSTED, parent, drive, att, &pattern) };
+            // Mark exhausted.
+            if put_state(space, dta, EXHAUSTED, parent, drive, att, &pattern).is_err() {
+                return crate::uaccess::FAULTED;
+            }
             ENMFIL
         }
     }

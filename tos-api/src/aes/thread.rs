@@ -36,6 +36,7 @@
 
 use crate::bdos::process::sched::Switch;
 use crate::bdos::process::{Abi, ParentFrame};
+use crate::uaccess::Space;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
 // ─── Fiber context ──────────────────────────────────────────────────
@@ -225,7 +226,7 @@ pub struct UserdefStall {
 ///
 /// `aespb_ptr` must be a valid AES parameter block of `abi`'s pointer width
 /// — exactly [`crate::aes::dispatch`]'s contract, forwarded here.
-pub unsafe fn call(aespb_ptr: u64, abi: Abi) -> AesCallOutcome {
+pub unsafe fn call(aespb_ptr: u64, abi: Abi, space: Space) -> AesCallOutcome {
     // Reset the trampoline's result slot (a static — see `AES_DISPATCH_RESULT`).
     // SAFETY: single-CPU trap context; the fiber is not re-entrant (design §6.2).
     unsafe {
@@ -241,13 +242,26 @@ pub unsafe fn call(aespb_ptr: u64, abi: Abi) -> AesCallOutcome {
     unsafe {
         fiber_enter(
             aespb_ptr,
-            abi as u8 as u64,
+            pack_abi_space(abi, space),
             &raw mut AES_DISPATCH_RESULT,
             fiber_stack_top(),
             &raw mut AES_ENTRY_CTX,
         );
     }
     outcome_after_switch()
+}
+
+/// The caller's [`Abi`] and [`Space`] in the one `u64` the fiber entry
+/// passes to the trampoline (`x1`, `abi_raw`): the ABI in bits 0..8 (as
+/// before), bit 8 set for [`Space::Kernel`] (ARCH03 stage 3a).
+fn pack_abi_space(abi: Abi, space: Space) -> u64 {
+    abi as u8 as u64 | if space == Space::Kernel { 1 << 8 } else { 0 }
+}
+
+/// The inverse of [`pack_abi_space`].
+fn unpack_abi_space(raw: u64) -> (Abi, Space) {
+    let space = if raw & (1 << 8) != 0 { Space::Kernel } else { Space::User };
+    (Abi::from_u8(raw as u8), space)
 }
 
 /// Classify why control returned to `call`/`resume` from the fiber: a userdef
@@ -349,10 +363,10 @@ unsafe extern "C" fn fiber_dispatch_trampoline(
     abi_raw: u64,
     out: *mut Option<Switch>,
 ) {
-    let abi = Abi::from_u8(abi_raw as u8);
+    let (abi, space) = unpack_abi_space(abi_raw);
     // SAFETY: `aespb_ptr`/`abi` satisfy `dispatch`'s contract (forwarded from
     // `call`); `dispatch` now runs on the fiber stack.
-    let sw = unsafe { super::dispatch(aespb_ptr, abi) };
+    let sw = unsafe { super::dispatch_in(aespb_ptr, abi, space) };
     // SAFETY: `out` is `AES_DISPATCH_RESULT` (a live static), passed by `call`.
     unsafe { out.write(sw) };
 }

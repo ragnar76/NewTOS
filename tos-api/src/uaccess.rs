@@ -48,6 +48,12 @@ use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UserFault;
 
+/// What a call returns after a user-access fault stopped it. The value never
+/// reaches the program: the syscall tail sees the recorded fault and ends the
+/// caller instead (module comment). `EINTRN` only so that a Rust caller that
+/// propagates it treats it as a failure.
+pub const FAULTED: tos_types::Long = tos_types::error::EINTRN;
+
 /// One fixup-table entry: a faulting instruction and where to resume.
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,6 +226,309 @@ pub fn read_user_cstr(src: u64, dst: &mut [u8]) -> Result<usize, UserFault> {
     if n < 0 { Err(UserFault) } else { Ok(n as usize) }
 }
 
+// ---------------------------------------------------------------------------
+// Caller address space (ARCH03 stage 3a)
+// ---------------------------------------------------------------------------
+
+/// Whose address space the pointer arguments of a call live in.
+///
+/// A trap from an EL0 program hands the kernel **user** addresses, which are
+/// accessed with that program's rights — the unprivileged, fault-recovered
+/// routines of this module. The in-kernel callers — the built-in desktop
+/// (`kernel/src/desk/dosbind.rs`, `svc` from EL1), the AES fiber and the
+/// kernel's own services calling a GEMDOS leaf directly — hand it **kernel**
+/// addresses (high-half VAs, kernel stacks and statics), which an EL0-rights
+/// access would refuse; they are accessed as they are, exactly as before.
+/// The trap handler derives the space from `SPSR_EL1.M` of the caller
+/// ([`crate::trap::TrapArgs::space`]); every TrapArgs the kernel builds for
+/// itself says [`Space::Kernel`].
+///
+/// On the host (unit tests) both are plain host-memory accesses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Space {
+    /// The calling EL0 program's address space: `ldtr*`/`sttr*` with fixups,
+    /// a bad pointer ends the caller (module comment).
+    User,
+    /// A kernel caller passing kernel pointers: ordinary loads and stores.
+    /// A bad pointer here is a kernel bug and stays fatal.
+    Kernel,
+}
+
+impl Space {
+    /// The space of a trap's caller from its saved `SPSR_EL1`: `M[3:0] = 0`
+    /// (EL0t) is a program, anything else an EL1 caller.
+    #[inline]
+    pub const fn from_spsr(spsr: u64) -> Self {
+        if spsr & 0xF == 0 { Space::User } else { Space::Kernel }
+    }
+
+    /// `true` for [`Space::User`].
+    #[inline]
+    pub const fn is_user(self) -> bool {
+        matches!(self, Space::User)
+    }
+
+    /// Read one byte at `va`.
+    #[inline]
+    pub fn get_u8(self, va: u64) -> Result<u8, UserFault> {
+        match self {
+            Space::User => get_user_u8(va),
+            // SAFETY: a kernel caller passes a valid kernel address (enum doc).
+            Space::Kernel => Ok(unsafe { (va as *const u8).read_volatile() }),
+        }
+    }
+
+    /// Read a native-order 16-bit value at `va` (any alignment).
+    #[inline]
+    pub fn get_u16(self, va: u64) -> Result<u16, UserFault> {
+        match self {
+            Space::User => get_user_u16(va),
+            // SAFETY: as in [`Self::get_u8`].
+            Space::Kernel => Ok(unsafe { (va as *const u16).read_unaligned() }),
+        }
+    }
+
+    /// Read a native-order 32-bit value at `va` (any alignment).
+    #[inline]
+    pub fn get_u32(self, va: u64) -> Result<u32, UserFault> {
+        match self {
+            Space::User => get_user_u32(va),
+            // SAFETY: as in [`Self::get_u8`].
+            Space::Kernel => Ok(unsafe { (va as *const u32).read_unaligned() }),
+        }
+    }
+
+    /// Read a native-order 64-bit value at `va` (any alignment).
+    #[inline]
+    pub fn get_u64(self, va: u64) -> Result<u64, UserFault> {
+        match self {
+            Space::User => get_user_u64(va),
+            // SAFETY: as in [`Self::get_u8`].
+            Space::Kernel => Ok(unsafe { (va as *const u64).read_unaligned() }),
+        }
+    }
+
+    /// Write one byte at `va`.
+    #[inline]
+    pub fn put_u8(self, va: u64, v: u8) -> Result<(), UserFault> {
+        match self {
+            Space::User => put_user_u8(va, v),
+            // SAFETY: as in [`Self::get_u8`].
+            Space::Kernel => {
+                unsafe { (va as *mut u8).write_volatile(v) };
+                Ok(())
+            }
+        }
+    }
+
+    /// Write a native-order 16-bit value at `va` (any alignment).
+    #[inline]
+    pub fn put_u16(self, va: u64, v: u16) -> Result<(), UserFault> {
+        match self {
+            Space::User => put_user_u16(va, v),
+            // SAFETY: as in [`Self::get_u8`].
+            Space::Kernel => {
+                unsafe { (va as *mut u16).write_unaligned(v) };
+                Ok(())
+            }
+        }
+    }
+
+    /// Write a native-order 32-bit value at `va` (any alignment).
+    #[inline]
+    pub fn put_u32(self, va: u64, v: u32) -> Result<(), UserFault> {
+        match self {
+            Space::User => put_user_u32(va, v),
+            // SAFETY: as in [`Self::get_u8`].
+            Space::Kernel => {
+                unsafe { (va as *mut u32).write_unaligned(v) };
+                Ok(())
+            }
+        }
+    }
+
+    /// Write a native-order 64-bit value at `va` (any alignment).
+    #[inline]
+    pub fn put_u64(self, va: u64, v: u64) -> Result<(), UserFault> {
+        match self {
+            Space::User => put_user_u64(va, v),
+            // SAFETY: as in [`Self::get_u8`].
+            Space::Kernel => {
+                unsafe { (va as *mut u64).write_unaligned(v) };
+                Ok(())
+            }
+        }
+    }
+
+    /// Copy `dst.len()` bytes from `src` into the kernel buffer `dst`.
+    pub fn copy_from(self, dst: &mut [u8], src: u64) -> Result<(), UserFault> {
+        match self {
+            Space::User => copy_from_user(dst, src),
+            Space::Kernel => {
+                // SAFETY: as in [`Self::get_u8`]; `dst` is a distinct kernel
+                // buffer of `dst.len()` bytes (`copy` tolerates overlap anyway).
+                unsafe { core::ptr::copy(src as *const u8, dst.as_mut_ptr(), dst.len()) };
+                Ok(())
+            }
+        }
+    }
+
+    /// Copy the kernel buffer `src` to `dst`.
+    pub fn copy_to(self, dst: u64, src: &[u8]) -> Result<(), UserFault> {
+        match self {
+            Space::User => copy_to_user(dst, src),
+            Space::Kernel => {
+                // SAFETY: as in [`Self::copy_from`].
+                unsafe { core::ptr::copy(src.as_ptr(), dst as *mut u8, src.len()) };
+                Ok(())
+            }
+        }
+    }
+
+    /// Copy a NUL-terminated string at `src` into `dst` — [`read_user_cstr`]'s
+    /// contract (length without the NUL, truncated at `dst.len()`).
+    pub fn read_cstr(self, src: u64, dst: &mut [u8]) -> Result<usize, UserFault> {
+        match self {
+            Space::User => read_user_cstr(src, dst),
+            Space::Kernel => {
+                let mut n = 0;
+                while n < dst.len() {
+                    // SAFETY: as in [`Self::get_u8`]; bounded by `dst.len()`.
+                    let b = unsafe { ((src + n as u64) as *const u8).read_volatile() };
+                    if b == 0 {
+                        break;
+                    }
+                    dst[n] = b;
+                    n += 1;
+                }
+                Ok(n)
+            }
+        }
+    }
+
+    /// The **kernel** address through which the kernel may access the `len`
+    /// bytes at caller address `va` with ordinary loads and stores, after
+    /// checking that the caller itself may read them (and, with `write`,
+    /// write them) — plan §3.6 "kalias + check".
+    ///
+    /// For [`Space::Kernel`] the pointer is already a kernel address and is
+    /// returned as it is. For [`Space::User`] every page of the range is
+    /// probed **with the caller's rights** (an unprivileged load; for
+    /// `write`, the same byte stored back with interrupts masked, so the
+    /// probe changes nothing), and the result is the kernel high-half alias
+    /// ([`crate::bdos::process::kalias`], VA = PA) — or, for the private
+    /// page 0 (`va < 0x1000`, VA ≠ PA), the running process's own page-0
+    /// alias. The access through that address no longer depends on which
+    /// `TTBR0` is live or on user rights.
+    ///
+    /// A probe that faults is a genuine user-access fault: it is recorded
+    /// like every other one ([`note_fault`] through the abort handler) and
+    /// the syscall tail ends the caller. The one non-faulting refusal is a
+    /// range that starts in page 0 and runs past it (page 0 is not
+    /// contiguous with the shared space behind it): `Err` without a record.
+    ///
+    /// Why the caller's rights and not a region-table lookup: this is a
+    /// syscall argument, checked in the caller's own trap, so the MMU check
+    /// with its rights is the stage-3 answer itself (it also refuses a write
+    /// to a `PROT_PR` page the caller may only read, which "is this an
+    /// allocated block" cannot). Pointers followed *outside* their owner's
+    /// trap keep using [`crate::bdos::process::usermem::resolve_kva`].
+    pub fn kptr(self, va: u64, len: u64, write: bool) -> Result<u64, UserFault> {
+        match self {
+            Space::Kernel => Ok(va),
+            Space::User => user_kptr(va, len, write),
+        }
+    }
+}
+
+impl Space {
+    /// [`Self::kptr`] that leaves a null pointer null (unchecked), for the
+    /// calls whose contract allows 0 for "no buffer".
+    pub fn kptr_or_null(self, va: u64, len: u64, write: bool) -> Result<u64, UserFault> {
+        if va == 0 { Ok(0) } else { self.kptr(va, len, write) }
+    }
+}
+
+/// [`Space::kptr`] for a user range.
+fn user_kptr(va: u64, len: u64, write: bool) -> Result<u64, UserFault> {
+    const PAGE: u64 = 0x1000;
+    let probe = |a: u64| if write { probe_user_write(a) } else { get_user_u8(a).map(|_| ()) };
+    if len == 0 {
+        return Ok(alias_of(va));
+    }
+    // Every page the range touches: its first byte in the range.
+    let last = va.checked_add(len - 1);
+    probe(va)?;
+    let mut page = (va & !(PAGE - 1)).wrapping_add(PAGE);
+    match last {
+        Some(last) => {
+            while page <= last && page != 0 {
+                probe(page)?;
+                page = page.wrapping_add(PAGE);
+            }
+        }
+        // The range wraps the address space: the first page past the top is
+        // not user memory — probe the highest address so the fault is real.
+        None => probe(u64::MAX)?,
+    }
+    if va < PAGE && va + len > PAGE {
+        return Err(UserFault);
+    }
+    Ok(alias_of(va))
+}
+
+/// The kernel alias of user address `va` of the running process: page 0
+/// through the process's own page-0 frame, everything else VA = PA.
+fn alias_of(va: u64) -> u64 {
+    if va < 0x1000 {
+        if let Some(p0) = crate::bdos::process::current_page0_kva() {
+            return p0 as u64 + va;
+        }
+    }
+    crate::bdos::process::kalias(va)
+}
+
+/// Check that the caller may write the byte at `va`, without changing it:
+/// read it and store it back with the caller's rights, interrupts masked so
+/// no interrupt handler can change the byte in between.
+fn probe_user_write(va: u64) -> Result<(), UserFault> {
+    let saved = irq_mask();
+    let r = get_user_u8(va).and_then(|b| put_user_u8(va, b));
+    irq_restore(saved);
+    r
+}
+
+#[cfg(all(target_arch = "aarch64", target_os = "none"))]
+#[inline]
+fn irq_mask() -> u64 {
+    let daif: u64;
+    // SAFETY: reads DAIF and masks IRQs at EL1; restored by `irq_restore`.
+    unsafe {
+        core::arch::asm!("mrs {d}, daif", "msr daifset, #2", d = out(reg) daif,
+            options(nomem, nostack, preserves_flags));
+    }
+    daif
+}
+
+#[cfg(all(target_arch = "aarch64", target_os = "none"))]
+#[inline]
+fn irq_restore(daif: u64) {
+    // SAFETY: restores the DAIF value `irq_mask` read.
+    unsafe {
+        core::arch::asm!("msr daif, {d}", d = in(reg) daif, options(nomem, nostack, preserves_flags));
+    }
+}
+
+#[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+#[inline]
+fn irq_mask() -> u64 {
+    0
+}
+
+#[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+#[inline]
+fn irq_restore(_daif: u64) {}
+
 #[inline]
 fn status(rc: u64) -> Result<(), UserFault> {
     if rc == 0 { Ok(()) } else { Err(UserFault) }
@@ -318,11 +627,24 @@ __uaccess_st64:
     mov     x0, #1
     ret
 
-    // x0 = dst (kernel), x1 = src (user), x2 = count
+    // x0 = dst (kernel), x1 = src (user), x2 = count.
+    // Eight bytes per unprivileged load while at least eight remain (an
+    // unaligned `ldtr` is permitted on Normal memory, SCTLR_EL1.A = 0), then
+    // byte by byte. A fault in an 8-byte load counts all eight as not copied.
     .global __uaccess_copy_from
     .type   __uaccess_copy_from, %function
 __uaccess_copy_from:
     cbz     x2, .Luacc_cf_done
+.Luacc_cf_wide:
+    cmp     x2, #8
+    b.lo    .Luacc_cf_loop
+.Luacc_cf_insn8:
+    ldtr    x3, [x1]
+    str     x3, [x0], #8
+    add     x1, x1, #8
+    subs    x2, x2, #8
+    b.ne    .Luacc_cf_wide
+    b       .Luacc_cf_done
 .Luacc_cf_loop:
 .Luacc_cf_insn:
     ldtrb   w3, [x1]
@@ -331,15 +653,27 @@ __uaccess_copy_from:
     subs    x2, x2, #1
     b.ne    .Luacc_cf_loop
 .Luacc_cf_done:
-    // Also the fixup: x2 still counts the faulting byte as not copied.
+    // Also the fixup: x2 still counts the faulting bytes as not copied.
     mov     x0, x2
     ret
 
-    // x0 = dst (user), x1 = src (kernel), x2 = count
+    // x0 = dst (user), x1 = src (kernel), x2 = count; 8-byte stores first,
+    // as in `__uaccess_copy_from`.
     .global __uaccess_copy_to
     .type   __uaccess_copy_to, %function
 __uaccess_copy_to:
     cbz     x2, .Luacc_ct_done
+.Luacc_ct_wide:
+    cmp     x2, #8
+    b.lo    .Luacc_ct_loop
+    ldr     x3, [x1]
+.Luacc_ct_insn8:
+    sttr    x3, [x0]
+    add     x1, x1, #8
+    add     x0, x0, #8
+    subs    x2, x2, #8
+    b.ne    .Luacc_ct_wide
+    b       .Luacc_ct_done
 .Luacc_ct_loop:
     ldrb    w3, [x1], #1
 .Luacc_ct_insn:
@@ -386,7 +720,9 @@ __uaccess_fixups_start:
     .quad .Luacc_st16, .Luacc_fault_status
     .quad .Luacc_st32, .Luacc_fault_status
     .quad .Luacc_st64, .Luacc_fault_status
+    .quad .Luacc_cf_insn8, .Luacc_cf_done
     .quad .Luacc_cf_insn, .Luacc_cf_done
+    .quad .Luacc_ct_insn8, .Luacc_ct_done
     .quad .Luacc_ct_insn, .Luacc_ct_done
     .quad .Luacc_sc_insn, .Luacc_sc_fault
     .global __uaccess_fixups_end
@@ -562,6 +898,58 @@ mod tests {
         note_fault(&second);
         assert_eq!(take_pending_fault(), Some(first));
         assert_eq!(take_pending_fault(), None);
+    }
+
+    #[test]
+    fn space_from_spsr_el0t_is_user() {
+        assert_eq!(Space::from_spsr(0x0000_0000), Space::User); // EL0t
+        assert_eq!(Space::from_spsr(0x6000_0000), Space::User); // EL0t, flags set
+        assert_eq!(Space::from_spsr(0x0000_0004), Space::Kernel); // EL1t
+        assert_eq!(Space::from_spsr(0x0000_0005), Space::Kernel); // EL1h
+        assert_eq!(Space::from_spsr(0x0000_03C5), Space::Kernel);
+    }
+
+    #[test]
+    fn both_spaces_read_and_write_the_same_bytes_on_the_host() {
+        for sp in [Space::User, Space::Kernel] {
+            let mut w = [0u8; 24];
+            let base = w.as_mut_ptr() as u64;
+            sp.put_u8(base, 0x11).unwrap();
+            sp.put_u16(base + 1, 0x2233).unwrap(); // unaligned
+            sp.put_u32(base + 3, 0x4455_6677).unwrap();
+            sp.put_u64(base + 7, 0x8899_AABB_CCDD_EEFF).unwrap();
+            assert_eq!(sp.get_u8(base), Ok(0x11));
+            assert_eq!(sp.get_u16(base + 1), Ok(0x2233));
+            assert_eq!(sp.get_u32(base + 3), Ok(0x4455_6677));
+            assert_eq!(sp.get_u64(base + 7), Ok(0x8899_AABB_CCDD_EEFF));
+            let src: [u8; 9] = *b"ABCDEFGHI";
+            sp.copy_to(base + 15, &src).unwrap();
+            let mut back = [0u8; 9];
+            sp.copy_from(&mut back, base + 15).unwrap();
+            assert_eq!(back, src);
+            let s = b"C:\\X\0rest";
+            let mut buf = [0u8; 8];
+            assert_eq!(sp.read_cstr(s.as_ptr() as u64, &mut buf), Ok(4));
+            let mut two = [0u8; 2];
+            assert_eq!(sp.read_cstr(s.as_ptr() as u64, &mut two), Ok(2), "truncates");
+        }
+    }
+
+    #[test]
+    fn kptr_of_a_kernel_pointer_is_the_pointer() {
+        assert_eq!(Space::Kernel.kptr(0xFFFF_0000_1234_5678, 64, true), Ok(0xFFFF_0000_1234_5678));
+        assert_eq!(Space::Kernel.kptr(0, 0, false), Ok(0));
+    }
+
+    #[test]
+    fn kptr_of_user_memory_is_its_alias_after_the_probe() {
+        // Host: the alias of user memory is the address itself, and the
+        // probes are plain accesses that leave the bytes unchanged.
+        let mut buf = vec![0x5Au8; 3 * 4096];
+        let va = buf.as_mut_ptr() as u64 + 100;
+        assert_eq!(Space::User.kptr(va, 2 * 4096, true), Ok(va));
+        assert!(buf.iter().all(|&b| b == 0x5A), "a write probe changes nothing");
+        assert_eq!(Space::User.kptr(va, 0, false), Ok(va));
     }
 
     #[test]

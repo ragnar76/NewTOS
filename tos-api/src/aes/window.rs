@@ -5815,14 +5815,15 @@ mod newdesk_root_word_tests {
         fn pb(&mut self, abi: Abi) -> Aespb {
             Aespb {
                 control: self.control.as_mut_ptr(),
-                global: self.global.as_mut_ptr(),
+                global: self.global.as_mut_ptr() as u64,
                 intin: self.intin.as_mut_ptr(),
                 caller_intin: self.intin.as_ptr(),
                 intout: self.intout.as_mut_ptr(),
-                caller_intout: self.intout.as_mut_ptr(),
+                caller_intout: self.intout.as_mut_ptr() as u64,
                 addrin: self.addrin.as_mut_ptr(),
                 addrout: 0,
                 abi,
+                space: crate::uaccess::Space::Kernel,
             }
         }
     }

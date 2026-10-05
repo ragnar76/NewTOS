@@ -135,14 +135,20 @@ const STRBUF: usize = 512;
 /// `addr_in[0]` = the alert string. Returns the button pressed.
 pub fn form_alert(pb: &Aespb) {
     let defbut = pb.intin(0);
-    let palstr = pb.addrin(0) as *const u8;
-    if palstr.is_null() {
+    let palstr = pb.addrin(0);
+    if palstr == 0 {
         pb.set_ret(1);
         return;
     }
-    // SAFETY: trusted GEM pointer to a NUL-terminated alert string.
-    let s = unsafe { cstr_slice(palstr) };
-    pb.set_ret(do_alert(defbut, s, true));
+    // The NUL-terminated alert string (at most `STRBUF` bytes, the bound
+    // `cstr_slice` keeps), copied out of the caller's space before the modal
+    // loop runs (ARCH03 3a): a string the program cannot read ends the call
+    // and the program, as EmuTOS's `fm_alert` takes the bus error on it.
+    let mut text = [0u8; STRBUF];
+    let Ok(n) = pb.space().read_cstr(palstr, &mut text) else {
+        return;
+    };
+    pb.set_ret(do_alert(defbut, &text[..n], true));
 }
 
 /// Draw an alert string (`"[icon][msg][buttons]"`) without running the
@@ -423,20 +429,6 @@ fn h_mouse_buttons() -> u8 {
 
 // ── parsing helpers ─────────────────────────────────────────────────
 
-/// A `&[u8]` view of the NUL-terminated string at `p` (cap [`STRBUF`]).
-///
-/// # Safety
-/// `p` points at a NUL-terminated string the caller owns.
-unsafe fn cstr_slice(p: *const u8) -> &'static [u8] {
-    // SAFETY: GEM contract — valid NUL-terminated alert string.
-    unsafe {
-        let mut n = 0;
-        while n < STRBUF && *p.add(n) != 0 {
-            n += 1;
-        }
-        core::slice::from_raw_parts(p, n)
-    }
-}
 
 /// Locate the next `[..]` group at/after `from`. Returns
 /// `(content_start, content_end, after_close)`.

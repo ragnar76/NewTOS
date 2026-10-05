@@ -152,10 +152,12 @@ fn ofd_of(handle: u16) -> Option<&'static mut Ofd> {
 
 /// `Fopen` (0x3D) — open an existing file for reading/writing.
 pub fn fopen(args: &TrapArgs) -> Long {
-    // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
-    let path = match unsafe { super::cstr(args.arg_u64(0)) } {
-        Some(p) => p,
-        None => return EFILNF,
+    // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
+    let mut path_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
+    let path = match super::path_arg(args, 0, &mut path_buf) {
+        Ok(Some(p)) => p,
+        Ok(None) => return EFILNF,
+        Err(_) => return crate::uaccess::FAULTED,
     };
     let mode = (args.arg_u16(1) & 0x77) as u8;
 
@@ -208,10 +210,12 @@ pub fn fopen(args: &TrapArgs) -> Long {
 /// `Fcreate` (0x3C) — create (or truncate) a file and open it for
 /// writing.
 pub fn fcreate(args: &TrapArgs) -> Long {
-    // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
-    let path = match unsafe { super::cstr(args.arg_u64(0)) } {
-        Some(p) => p,
-        None => return EPTHNF,
+    // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
+    let mut path_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
+    let path = match super::path_arg(args, 0, &mut path_buf) {
+        Ok(Some(p)) => p,
+        Ok(None) => return EPTHNF,
+        Err(_) => return crate::uaccess::FAULTED,
     };
     // Mask off the sub-directory bit — Fcreate cannot make folders.
     let attr = (args.arg_u16(1) as u8) & !0x10;
@@ -304,7 +308,7 @@ pub fn fread(args: &TrapArgs) -> Long {
     // Route standard handles / redirects: a console-mapped handle reads
     // from the keyboard, a file handle reads the file (below).
     match resolve(handle) {
-        Target::Console => return console_read(len, ubuf),
+        Target::Console => return console_read(args.space, len, ubuf),
         Target::None => return EIHNDL,
         Target::File(_) => {}
     }
@@ -338,7 +342,6 @@ pub fn fread(args: &TrapArgs) -> Long {
         }
     }
 
-    let dst = ubuf as *mut u8;
     let mut byte_in_cluster = ofd.pos % clsizb;
     let mut done = 0u32;
     let mut sbuf = [0u8; SECTOR];
@@ -352,13 +355,12 @@ pub fn fread(args: &TrapArgs) -> Long {
             }
             let avail = recsiz - off_in_sec;
             let n = avail.min(want - done).min(clsizb - byte_in_cluster);
-            // SAFETY: `dst..dst+want` is the caller's buffer; `n` bytes fit.
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    sbuf.as_ptr().add(off_in_sec as usize),
-                    dst.add(done as usize),
-                    n as usize,
-                );
+            // Into the caller's buffer, in the caller's space (ARCH03 3a): a
+            // buffer the program cannot write stops the call here and the
+            // syscall tail ends the program (`crate::uaccess`).
+            let chunk = &sbuf[off_in_sec as usize..(off_in_sec + n) as usize];
+            if args.space.copy_to(ubuf + u64::from(done), chunk).is_err() {
+                return crate::uaccess::FAULTED;
             }
             done += n;
             byte_in_cluster += n;
@@ -390,7 +392,7 @@ pub fn fwrite(args: &TrapArgs) -> Long {
     // Route standard handles / redirects: a console-mapped handle writes
     // to the console, a file handle writes the file (below).
     match resolve(handle) {
-        Target::Console => return console_write(len, ubuf),
+        Target::Console => return console_write(args.space, len, ubuf),
         Target::None => return EIHNDL,
         Target::File(_) => {}
     }
@@ -409,7 +411,6 @@ pub fn fwrite(args: &TrapArgs) -> Long {
     let recsiz = vol.recsiz;
     let want = len as u32;
 
-    let src = ubuf as *const u8;
     let mut done = 0u32;
     let mut sbuf = [0u8; SECTOR];
 
@@ -441,9 +442,11 @@ pub fn fwrite(args: &TrapArgs) -> Long {
         } else {
             sbuf = [0u8; SECTOR];
         }
-        // SAFETY: `src..src+want` is the caller's buffer.
-        unsafe {
-            core::ptr::copy_nonoverlapping(src.add(done as usize), sbuf.as_mut_ptr().add(off_in_sec), n);
+        // From the caller's buffer, in the caller's space (ARCH03 3a); a
+        // buffer the program cannot read stops the call before this sector is
+        // written.
+        if args.space.copy_from(&mut sbuf[off_in_sec..off_in_sec + n], ubuf + u64::from(done)).is_err() {
+            return crate::uaccess::FAULTED;
         }
         if !vol.write_cluster_sector(cluster, sec_in_cl, &sbuf) {
             break;
@@ -555,10 +558,12 @@ fn flush_ofd(ofd: &Ofd) {
 
 /// `Fdelete` (0x41) — delete a file by path.
 pub fn fdelete(args: &TrapArgs) -> Long {
-    // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
-    let path = match unsafe { super::cstr(args.arg_u64(0)) } {
-        Some(p) => p,
-        None => return EFILNF,
+    // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
+    let mut path_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
+    let path = match super::path_arg(args, 0, &mut path_buf) {
+        Ok(Some(p)) => p,
+        Ok(None) => return EFILNF,
+        Err(_) => return crate::uaccess::FAULTED,
     };
     let (vol, parent, name11) = match path::findit(path) {
         Ok(x) => x,
@@ -621,10 +626,12 @@ fn subdir_attrib(path: &str) -> Option<u8> {
 /// `wrt = 1` sets `mod` on a **file** only (FA_VOL / FA_SUBDIR bits and any
 /// set on a folder/label are rejected with EACCDN) and returns it.
 pub fn fattrib(args: &TrapArgs) -> Long {
-    // SAFETY: caller-supplied path pointer (kernel pointer at EL1).
-    let pathstr = match unsafe { super::cstr(args.arg_u64(0)) } {
-        Some(p) => p,
-        None => return EPTHNF,
+    // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
+    let mut pathstr_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
+    let pathstr = match super::path_arg(args, 0, &mut pathstr_buf) {
+        Ok(Some(p)) => p,
+        Ok(None) => return EPTHNF,
+        Err(_) => return crate::uaccess::FAULTED,
     };
     let wrt = args.arg_u16(1);
     let mode = args.arg_u16(2) as u8;
@@ -714,14 +721,18 @@ pub fn fattrib(args: &TrapArgs) -> Long {
 /// `Frename` (0x56) — rename/move a file. `x0` = `n` (unused historical
 /// word), `x1` = source path, `x2` = destination path.
 pub fn frename(args: &TrapArgs) -> Long {
-    // SAFETY: caller-supplied path pointers (kernel pointers at EL1).
-    let src = match unsafe { super::cstr(args.arg_u64(1)) } {
-        Some(p) => p,
-        None => return EPTHNF,
+    // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
+    let mut src_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
+    let src = match super::path_arg(args, 1, &mut src_buf) {
+        Ok(Some(p)) => p,
+        Ok(None) => return EPTHNF,
+        Err(_) => return crate::uaccess::FAULTED,
     };
-    let dst = match unsafe { super::cstr(args.arg_u64(2)) } {
-        Some(p) => p,
-        None => return EPTHNF,
+    let mut dst_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
+    let dst = match super::path_arg(args, 2, &mut dst_buf) {
+        Ok(Some(p)) => p,
+        Ok(None) => return EPTHNF,
+        Err(_) => return crate::uaccess::FAULTED,
     };
 
     // Both the source and target directory portions resolve to `EPTHNF` on
@@ -881,18 +892,16 @@ pub fn fdatime(args: &TrapArgs) -> Long {
     if !dir::read_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
         return EIHNDL;
     }
-    let p = buf as *mut u8;
+    // The 4-byte DOSTIME buffer is in the caller's space (ARCH03 3a).
     if wrt == 0 {
         // Get: copy the entry's time (0x16) + date (0x18) to the buffer.
-        // SAFETY: `buf` is the caller's 4-byte DOSTIME buffer.
-        unsafe {
-            core::ptr::copy_nonoverlapping(e.as_ptr().add(0x16), p, 4);
+        if args.space.copy_to(buf, &e[0x16..0x1A]).is_err() {
+            return crate::uaccess::FAULTED;
         }
     } else {
         // Set: copy time/date from the buffer into the entry.
-        // SAFETY: as above.
-        unsafe {
-            core::ptr::copy_nonoverlapping(p as *const u8, e.as_mut_ptr().add(0x16), 4);
+        if args.space.copy_from(&mut e[0x16..0x1A], buf).is_err() {
+            return crate::uaccess::FAULTED;
         }
         dir::write_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &e);
         if let Err(code) = super::cache::flush() {
@@ -963,37 +972,41 @@ pub fn fclose(args: &TrapArgs) -> Long {
     }
 }
 
-/// Read `len` bytes from the console (keyboard) into `ubuf` — the target of
-/// a console-mapped `Fread`. Blocks until `len` bytes arrive.
-fn console_read(len: i32, ubuf: u64) -> Long {
+/// Read `len` bytes from the console (keyboard) into `ubuf` (in `space`, the
+/// caller's) — the target of a console-mapped `Fread`. Blocks until `len`
+/// bytes arrive. Each byte is stored as it arrives, so a buffer the program
+/// cannot write stops the read at the first such byte (ARCH03 3a).
+fn console_read(space: crate::uaccess::Space, len: i32, ubuf: u64) -> Long {
     if len <= 0 {
         return 0;
     }
     let Some(h) = crate::host::host() else {
         return 0;
     };
-    let dst = ubuf as *mut u8;
-    for i in 0..len as usize {
+    for i in 0..len as u64 {
         let b = h.console_read_byte_blocking();
-        // SAFETY: the caller's buffer holds >= len bytes.
-        unsafe { *dst.add(i) = b };
+        if space.put_u8(ubuf + i, b).is_err() {
+            return crate::uaccess::FAULTED;
+        }
     }
     len as Long
 }
 
-/// Write `len` bytes from `ubuf` to the console — the target of a
-/// console-mapped `Fwrite`.
-fn console_write(len: i32, ubuf: u64) -> Long {
+/// Write `len` bytes from `ubuf` (in `space`, the caller's) to the console —
+/// the target of a console-mapped `Fwrite`. The bytes before one the program
+/// cannot read are written, then the call stops (ARCH03 3a; EmuTOS takes the
+/// bus error at that byte).
+fn console_write(space: crate::uaccess::Space, len: i32, ubuf: u64) -> Long {
     if len <= 0 {
         return 0;
     }
     let Some(h) = crate::host::host() else {
         return 0;
     };
-    let src = ubuf as *const u8;
-    for i in 0..len as usize {
-        // SAFETY: the caller's buffer holds >= len bytes.
-        let b = unsafe { *src.add(i) };
+    for i in 0..len as u64 {
+        let Ok(b) = space.get_u8(ubuf + i) else {
+            return crate::uaccess::FAULTED;
+        };
         h.console_write_byte(b);
     }
     len as Long

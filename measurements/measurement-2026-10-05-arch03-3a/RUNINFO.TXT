@@ -1,0 +1,107 @@
+measurement-2026-10-05-arch03-3a -- ARCH03 stage 3a: every kernel access to
+user memory made stage-3-safe before per-process rights are switched on
+(inventory docs/analysis/arch03-stage3-access-inventory.md, F1-F5).
+
+Date 2026-10-05, branch arch03, base HEAD 54f0d32 (tree clean at start),
+stage 3a uncommitted: method/arch03-3a-change.diff (git diff + new files).
+QEMU 11.0.2, host macOS (no `timeout`; runs end via QMP `quit` / the driver).
+No SD card, Pi or TT touched; tools/make-sd-image.sh NOT used -- method/
+seed-card.sh builds private 64 MiB images in the session scratchpad.
+
+CHECKPOINTS (labels = file prefixes in checks/ serial/ screendumps/ bin/)
+  s12    sub-steps 1+2: caller space in TrapArgs (Space::from_spsr), GEMDOS
+         paths/buffers/DTA/console, Cconws on the caller space.
+         Probe cases c o n g w r W d f t .
+  s37    sub-steps 3-7 on top of s12: BIOS/XBIOS + the four ldtr/sttr sites,
+         AES/VDI parameter blocks + addr_in targets + AESGLOBAL + MFDB bitmaps,
+         objc_edit/menu_text (F2), menu tracker on mntree_accessor (F3),
+         vex_* decision documented (F4), Mxalloc/PRGFLAGS decoders.
+         Probe: all cases.
+  s37b   probe-only correction (UAKID case s: Ssystem(S_GETCOOKIE) with tag 0
+         -- the original tag '_CPU' is not in NewTOS' jar, so the call answered
+         ERROR without writing, which is correct; the probe was wrong). UACC3A
+         rerun on the s37 raspi4b crash kernel + a rebuilt virt crash kernel
+         (it embeds the probe). No product change.
+  desk3a the in-kernel desktop driven through folder/info/rename/drive-open
+         (scratch kernel of the s37 tree + DESK50 IKBD injector).
+  Sub-steps 1 and 2 were checked together (s12), and 3-7 together (s37): the
+  tree held the next sub-step's edits before its checkpoint could be taken
+  separately, and a clean split would have needed git operations on the shared
+  tree. Reported as such.
+
+STATIC CHECKS (method/checks.sh <label>; checks/<label>-*.txt)
+               base(stage 2)  s12        s37
+  host tests   1081/0/1       1094/0/1   1104/0/1
+  release tos-api/kernel warnings, both boards, fresh after
+               cargo clean -p kernel -p tos-api:   64/94 at every checkpoint
+  clippy tos-api/kernel (both feature sets)
+               80/125         80/125     76/125 (4 fewer in tos-api: the
+               removed raw-pointer loops in aes/shell.rs, aes/fsel.rs; no new)
+  desk-drift-probe            31 at every checkpoint
+  sdk/run-host-tests          13/0/0 at every checkpoint
+  Host-test delta: +4 uaccess unit tests (Space), +9 tests/arch03_3a_caller_
+  space.rs (s12); +2 gemdos::console line-editor fault tests, +4 tests/
+  arch03_3a_gem_space.rs, +4 tos-types prot decoder tests (s37).
+
+RUN SERIES (method/substep.sh -> checks.sh, build-probes.sh, scratch-kernels.sh,
+            runs-3a.sh; summaries checks/<label>-summary.txt)
+  raspi4b (-append serial=on), product kernel, both checkpoints:
+    desktop / TeraDesk (#Z) / QED (#Z) / APITEST (#Z): screendumps
+      byte-identical to stage 2 (s2e-*)
+    Doom (#Z): "VERIFIED via EdDI+scale+vro_cpyfm"; t30 identical at s37,
+      t45 differs (the demo is timing-dependent; stage 2 did not compare it)
+    APITEST: TOTAL 106 / 0 / 5
+    S2ALL: PFLAGS x2, P34, MEM03, P567, TSR, OWN, VFORK PASS -> "S2ALL: PASS"
+    PORT10: 42 of 44 (the 2 known PROC02 redirection failures)
+  raspi4b scratch kernels: CRASHTST PASS (its t40/t70 dumps differ from
+    stage 2 only by the card: Alt-C opens C:\ with 43 items / today's dates);
+    KBDVEC PASS + EmuCON ("run oldexec.ncp" -> error 66, exit) -- dumps
+    identical to stage 2.
+  virt: crash kernel CRCHILD + CRASHTST PASS + UACC3A (disk cases skipped:
+    no disk on virt); selftest kernel d3, d6, d7, pexec, pexec_env, d4d5,
+    sysvars (B1), upcall, etv_term PASS, sleepwake_switch the same 5 FAILs
+    as stage 1/2 (pre-existing); product kernel desktop up, dump identical.
+  UACC3A (bad-pointer probe, sdk/examples/uacc3a.c + uakid.c, BAD =
+    0xDEAD0000, one child per case, parent checks the Pexec code):
+      s12   c o n g w r W d f t: every case 0x0000FFFF, '.' 0 -> PASS
+            (raspi4b; virt PASS with the 5 disk cases skipped)
+      s37   all 26 cases; s FAILED (probe defect, see s37b), the other 25
+            0x0000FFFF; every crash report "Panic: Bus Error",
+            addr=00000000dead0000, pc inside .text.newtos_uaccess
+      s37b  s 0x0000FFFF -> "UACC3A: PASS" on raspi4b and virt
+    Cases: GEMDOS c Cconws, o Fopen, n Frename(dst), w Fwrite(console),
+      g Dgetpath, r Fread, W Fwrite(file), d DTA (Fsetdta+Fsfirst), f Dfree,
+      t Fdatime; k Cconrs, s Ssystem; BIOS m Getmpb, b Rwabs; XBIOS
+      P Setpalette, T Protobt, K Keytbl; AES A bad AESPB, I bad intin,
+      G bad global (appl_init), F appl_find(bad name), E objc_edit with a
+      bad te_ptext (F2), X menu_text(bad string) (F2); VDI V bad VDIPB,
+      C bad CONTRL, M vro_cpyfm screen -> MFDB with fd_addr = BAD.
+    Every crash: the EmuTOS report on screen and serial, the prompt answered
+    (raspi4b injector / virt serial Space), the child ended with Pterm(-1),
+    the EL0 parent continued, the desktop came back.
+  desk3a (method/desk3a.sh, desk3a/desk3a.actions; screendumps s37-desk3a-*):
+    window C:\D3A\ from NEWDESK.INF -> double-click SUB3A (folder opens in
+    the window, C:\D3A\SUB3A\, INSIDE.TXT) -> closer (back to C:\D3A\) ->
+    select NOTE.TXT -> Ctrl-I File information -> Esc + "REN.TXT" in the name
+    field -> Return: the file is renamed (REN.TXT in the window) -> Alt-C
+    opens C:\ (44 items). All through the in-kernel desktop's svc #1 path
+    (Space::Kernel) -- the F1 risk.
+
+METHOD CHANGES AGAINST STAGE 2
+  seed-card.sh: AppleDouble `._*` twins deleted right after the program
+    copies (with the two new probes the FAT16 root directory broke and the
+    script stopped before NEWDESK.INF -- the first s12 series therefore
+    booted every card to the plain desktop; it was discarded and rerun);
+    INF=<file> override for the desktop run.
+  apply_injector.py (from desk50): anchor moved to the current pump_input
+    poll site.
+  New: build-probes.sh, uacc-instrumentation.py, runs-3a.sh, rerun-uacc.sh,
+    desk3a.sh, run-marks.sh (desk50 run.sh + -append serial=on).
+
+NOT COVERED HERE
+  * Real Pi 4 (not touched by order).
+  * F3 with two AES clients (menu tracking of a bar owned by a process that
+    is not current): the code path is converted, but no run had a second
+    client tracking another's bar.
+  * Bad pointers that the AES follows outside their owner's trap read as
+    nothing (by design), so no probe case targets them.

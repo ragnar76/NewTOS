@@ -298,6 +298,7 @@ fn reset_etv_term() {
         regs,
         func: 0x05, // BIOS Setexc
         svc_imm: 13,
+        space: tos_api::uaccess::Space::Kernel,
     };
     setexc(&args);
 }

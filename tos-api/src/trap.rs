@@ -17,6 +17,8 @@
 
 use tos_types::Long;
 
+pub use crate::uaccess::Space;
+
 /// Trap class as identified by the SVC immediate. The classes mirror
 /// the m68k trap numbers for source-level compatibility.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -61,9 +63,24 @@ pub struct TrapArgs {
     pub func: u64,
     /// SVC immediate (= TOS trap number).
     pub svc_imm: u16,
+    /// Whose address space the pointer arguments live in (ARCH03 stage 3a):
+    /// [`Space::User`] for a trap from an EL0 program — its pointers are
+    /// accessed with its rights through [`crate::uaccess`] — and
+    /// [`Space::Kernel`] for an in-kernel caller (the built-in desktop's
+    /// `svc` from EL1, and every `TrapArgs` the kernel builds to call a leaf
+    /// function directly), whose pointers are kernel addresses. Set by the
+    /// trap handler from the caller's `SPSR_EL1.M` ([`Space::from_spsr`]).
+    pub space: Space,
 }
 
 impl TrapArgs {
+    /// A `TrapArgs` built by the kernel for its own call of a leaf function:
+    /// the pointer arguments are kernel addresses ([`Space::Kernel`]).
+    #[inline]
+    pub const fn kernel(regs: [u64; 8], func: u64, svc_imm: u16) -> Self {
+        Self { regs, func, svc_imm, space: Space::Kernel }
+    }
+
     /// Function ID truncated to its low 16 bits, matching TOS WORD width.
     #[inline]
     pub const fn func_id(&self) -> u16 {

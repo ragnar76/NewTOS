@@ -309,11 +309,19 @@ pub fn setpalette(args: &TrapArgs) -> i64 {
     if ptr == 0 {
         return 0;
     }
-    // SAFETY: caller-supplied 16-WORD palette (kernel pointer at EL1).
-    let p = ptr as *const u16;
+    // The caller's 16-WORD palette, read in the caller's space (ARCH03 3a,
+    // `crate::uaccess`) before anything changes: a table the program cannot
+    // read ends the call (and the program) with the palette untouched.
+    let mut words = [0u16; 16];
+    for (i, w) in words.iter_mut().enumerate() {
+        match args.space.get_u16(ptr + 2 * i as u64) {
+            Ok(v) => *w = v,
+            Err(_) => return i64::from(crate::uaccess::FAULTED),
+        }
+    }
     let pal = palette();
-    for (i, slot) in pal.iter_mut().enumerate() {
-        let word = unsafe { p.add(i).read() } & 0x0FFF; // STe: 0x0RGB, 4 bits/gun
+    for (i, (slot, &w)) in pal.iter_mut().zip(words.iter()).enumerate() {
+        let word = w & 0x0FFF; // STe: 0x0RGB, 4 bits/gun
         *slot = word;
         apply_to_clut(i as u16, word);
     }

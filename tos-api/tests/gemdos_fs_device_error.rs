@@ -129,6 +129,7 @@ fn rwabs_passes_the_drivers_own_code_through() {
         regs: [0, buf.as_mut_ptr() as u64, 1, 0, 2, 0, 0, 0],
         func: 0x04,
         svc_imm: tos_api::trap::TrapClass::Bios as u16,
+        space: tos_api::uaccess::Space::Kernel,
     });
     host.disk.disarm();
     assert_eq!(rc, EREADF as i64, "Rwabs read must report the driver's code");
@@ -138,6 +139,7 @@ fn rwabs_passes_the_drivers_own_code_through() {
         regs: [1, buf.as_ptr() as u64, 1, 0, 2, 0, 0, 0],
         func: 0x04,
         svc_imm: tos_api::trap::TrapClass::Bios as u16,
+        space: tos_api::uaccess::Space::Kernel,
     });
     host.disk.disarm();
     assert_eq!(rc, EWRITF as i64, "Rwabs write must report the driver's code");

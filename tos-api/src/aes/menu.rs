@@ -454,9 +454,17 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
 }
 
 /// The body of [`track`], run with the Control Manager holding the mouse.
+///
+/// The installed bar — and every submenu attached to it — is read and drawn
+/// through [`mntree_accessor`]: at the ABI and through the address space of
+/// the client that installed it (`MNPPD`), not of whoever happens to be in
+/// the AES wait while the pointer crosses the bar (ARCH03 3a, F3; the A97
+/// class of defect).
 fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16)> {
     let h = host()?;
-    let tp = tree as *const Object;
+    let mt = mntree_accessor(tree);
+    // A submenu tree of the installed bar, through the same owner accessor.
+    let sub_t = |sub: u64| mt.with_base(sub as *const Object);
     let mut cur_title = NIL;
     let mut cur_box = NIL;
     let mut cur_item = NIL;
@@ -482,11 +490,11 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
         let down = crate::vdi::mouse_buttons() & 0x01 != 0;
 
         // Title under the cursor (children of THEACTIVE).
-        let t = object::child_at(tp, THEACTIVE, mx, my);
+        let t = object::child_at_t(mt, THEACTIVE, mx, my);
         if t != NIL && t != cur_title {
             if cur_title != NIL {
                 if sub_tree != 0 {
-                    close_submenu(sub_tree, sub_box, sub_item, backend);
+                    close_submenu(sub_t(sub_tree), sub_box, sub_item, backend);
                     sub_tree = 0;
                     sub_box = NIL;
                     sub_item = NIL;
@@ -501,20 +509,20 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
                 // (`rehilite` guards on DISABLED, gemmnlib.c:471 does the same), so
                 // guard the clear identically to avoid the spurious redraw
                 // `set_state_bit` (dodraw=true) would emit on a disabled item.
-                if cur_item != NIL && (ObjTree::new(tp).state(cur_item) & DISABLED) == 0 {
-                    object::set_state_bit(tree, cur_item, SELECTED, false);
+                if cur_item != NIL && (mt.state(cur_item) & DISABLED) == 0 {
+                    object::set_state_bit_t(mt, cur_item, SELECTED, false);
                 }
-                close_box(tree, cur_title, cur_box, backend);
+                close_box(mt, cur_title, cur_box, backend);
                 cur_item = NIL;
             }
             cur_title = t;
-            cur_box = open_box(tree, t, backend);
+            cur_box = open_box(mt, t, backend);
         }
 
         if cur_box != NIL {
             // The submenu box overlaps the parent box's right edge, so check
             // the submenu first (EmuTOS gives `SUBMENU_STATE` priority).
-            let in_sub = sub_tree != 0 && point_in(sub_tree as *const Object, sub_box, mx, my);
+            let in_sub = sub_tree != 0 && point_in(sub_t(sub_tree), sub_box, mx, my);
             if in_sub {
                 // Track the highlight *inside* the submenu; the parent item
                 // stays selected (cur_item is untouched). `cur_submenu =
@@ -526,20 +534,20 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
                 // hilited by `menu_select(smtree, cur_submenu, …)` (`:474-475`,
                 // the box's interior XOR, `ob_change`) and, on a press,
                 // returned as `*pitem` (`:494-496`; A103 (1)).
-                let hit = object::child_at(sub_tree as *const Object, sub_box, mx, my);
+                let hit = object::child_at_t(sub_t(sub_tree), sub_box, mx, my);
                 let sit = if hit == NIL { sub_box } else { hit };
                 if sit != sub_item {
-                    rehilite(sub_tree as *mut Object, sub_item, sit, backend);
+                    rehilite(sub_t(sub_tree), sub_item, sit, backend);
                     sub_item = sit;
                 }
             } else {
                 // Not over the submenu: drop any submenu-item highlight but
                 // keep the submenu open while we are still on its parent item.
                 if sub_item != NIL {
-                    rehilite(sub_tree as *mut Object, sub_item, NIL, backend);
+                    rehilite(sub_t(sub_tree), sub_item, NIL, backend);
                     sub_item = NIL;
                 }
-                let it = object::child_at(tp, cur_box, mx, my);
+                let it = object::child_at_t(mt, cur_box, mx, my);
                 // Out of the *submenu* into no man's land — no title, no item
                 // — `mn_do` keeps the parent: `if (menu_state == SUBMENU_STATE)
                 // cur_item = last_item;` (`gemmnlib.c:437-438`), so
@@ -556,20 +564,20 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
                     // Item changed: close the old item's submenu, move the
                     // parent highlight, then open the new item's submenu.
                     if sub_tree != 0 {
-                        close_submenu(sub_tree, sub_box, sub_item, backend);
+                        close_submenu(sub_t(sub_tree), sub_box, sub_item, backend);
                         sub_tree = 0;
                         sub_box = NIL;
                         sub_item = NIL;
                     }
-                    rehilite(tree, cur_item, it, backend);
+                    rehilite(mt, cur_item, it, backend);
                     cur_item = it;
                     // `display_submenu` runs only inside `if (menu_select(tree,
                     // cur_item, last_item, TRUE))` (`gemmnlib.c:470-475`), and
                     // `menu_select` → `do_chg(…, chkdisabled = TRUE)` refuses a
                     // DISABLED item (`:158-160`): a disabled item with a
                     // submenu attached neither hilites nor opens it (A103 (2)).
-                    if it != NIL && (ObjTree::new(tp).state(it) & DISABLED) == 0 {
-                        if let Some((st, sb)) = open_submenu(tree, it, backend) {
+                    if it != NIL && (mt.state(it) & DISABLED) == 0 {
+                        if let Some((st, sb)) = open_submenu(mt, it, backend) {
                             sub_tree = st;
                             sub_box = sb;
                             sub_item = NIL;
@@ -585,8 +593,8 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
         // these — in "no man's land", `OUTSIDE_STATE`. `THEBAR` (the bar row)
         // only matters while no box has been dropped yet (`START_STATE`).
         let in_bar = my < gl_hbox();
-        let in_box = cur_box != NIL && point_in(tp, cur_box, mx, my);
-        let in_sub_box = sub_tree != 0 && point_in(sub_tree as *const Object, sub_box, mx, my);
+        let in_box = cur_box != NIL && point_in(mt, cur_box, mx, my);
+        let in_sub_box = sub_tree != 0 && point_in(sub_t(sub_tree), sub_box, mx, my);
         let outside = cur_title != NIL && t == NIL && !in_box && !in_sub_box;
 
         // Left-button edge over an item → the selection. `INITEM_STATE` waits
@@ -612,15 +620,15 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
                     // return is gated on the *parent* item being enabled,
                     // `:493`, which it is: a DISABLED parent never opened it).
                     crate::vdi::cursor_hide(backend);
-                    object::set_state_bit(sub_tree as *mut Object, sub_item, SELECTED, false);
-                    close_submenu(sub_tree, sub_box, NIL, backend);
-                    erase_box_inner(tree, cur_box, backend);
+                    object::set_state_bit_t(sub_t(sub_tree), sub_item, SELECTED, false);
+                    close_submenu(sub_t(sub_tree), sub_box, NIL, backend);
+                    erase_box_inner(cur_box, backend);
                     // The parent item's SELECTED bit is cleared by the same
                     // `do_chg(tree, cur_item, SELECTED, FALSE, FALSE, TRUE)`
                     // that gates the return (`gemmnlib.c:493`) — no draw, the
                     // box's pixels are already back (A103 (1)).
-                    let st = ObjTree::new(tp).state(cur_item);
-                    object::change(tree, cur_item, st & !SELECTED, false);
+                    let st = mt.state(cur_item);
+                    object::change_t(mt, cur_item, st & !SELECTED, false);
                     crate::vdi::cursor_show(backend);
                     return Some((cur_title, sub_item));
                 }
@@ -643,11 +651,11 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
                 // (`:159-160`), so `done` stays FALSE and mn_do returns 0 — the
                 // menu ABORTS, un-hiliting the title (`:510`) after pulling the
                 // box up (`:491`): the no-selection cancel path.
-                if (ObjTree::new(tp).state(cur_item) & DISABLED) != 0 {
+                if (mt.state(cur_item) & DISABLED) != 0 {
                     if sub_tree != 0 {
-                        close_submenu(sub_tree, sub_box, sub_item, backend);
+                        close_submenu(sub_t(sub_tree), sub_box, sub_item, backend);
                     }
-                    close_box(tree, cur_title, cur_box, backend);
+                    close_box(mt, cur_title, cur_box, backend);
                     return None;
                 }
                 // Undisplay the submenu first (its save holds the box's pixels
@@ -658,10 +666,10 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
                 // MN_SELECTED.
                 crate::vdi::cursor_hide(backend);
                 if sub_tree != 0 {
-                    close_submenu(sub_tree, sub_box, NIL, backend);
+                    close_submenu(sub_t(sub_tree), sub_box, NIL, backend);
                 }
-                object::set_state_bit(tree, cur_item, SELECTED, false);
-                erase_box_inner(tree, cur_box, backend);
+                object::set_state_bit_t(mt, cur_item, SELECTED, false);
+                erase_box_inner(cur_box, backend);
                 crate::vdi::cursor_show(backend);
                 return Some((cur_title, cur_item));
             } else if outside {
@@ -669,9 +677,9 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
                 // selection (`gemmnlib.c:373-374,482-511`): `menu_sr(FALSE)`,
                 // `do_chg(tree, cur_title, SELECTED, FALSE, …)`, return FALSE.
                 if sub_tree != 0 {
-                    close_submenu(sub_tree, sub_box, sub_item, backend);
+                    close_submenu(sub_t(sub_tree), sub_box, sub_item, backend);
                 }
-                close_box(tree, cur_title, cur_box, backend);
+                close_box(mt, cur_title, cur_box, backend);
                 return None;
             }
         }
@@ -703,11 +711,11 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
             // there is nothing to restore — `close_box` with `cur_box == NIL`
             // only brackets the cursor. (With `cur_menu == NIL` EmuTOS ends
             // even earlier, `:406-411`; same outcome.)
-            if (ObjTree::new(tp).state(cur_title) & DISABLED) != 0 {
+            if (mt.state(cur_title) & DISABLED) != 0 {
                 if sub_tree != 0 {
-                    close_submenu(sub_tree, sub_box, sub_item, backend);
+                    close_submenu(sub_t(sub_tree), sub_box, sub_item, backend);
                 }
-                close_box(tree, cur_title, cur_box, backend);
+                close_box(mt, cur_title, cur_box, backend);
                 return None;
             }
         }
@@ -735,9 +743,7 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
 /// inside border gets its frame inverted in the item's rows in EmuTOS too —
 /// the frame repaint that compensated for the kernel desktop's former inside
 /// border is gone (A100).
-fn rehilite(tree: *mut Object, old: i16, new: i16, backend: &dyn RasterBackend) {
-    let tp = tree as *const Object;
-    let t = ObjTree::new(tp);
+fn rehilite(t: ObjTree, old: i16, new: i16, backend: &dyn RasterBackend) {
     crate::vdi::cursor_hide(backend);
     // EmuTOS highlights and un-highlights a drop-down item only through
     // `menu_select` → `do_chg(..., chkdisabled=TRUE)` (`gemmnlib.c:196` calling
@@ -747,10 +753,10 @@ fn rehilite(tree: *mut Object, old: i16, new: i16, backend: &dyn RasterBackend) 
     // un-inverted state, and cannot leave an inverted residue when the
     // drop-down closes.
     if old != NIL && (t.state(old) & DISABLED) == 0 {
-        object::set_state_bit(tree, old, SELECTED, false);
+        object::set_state_bit_t(t, old, SELECTED, false);
     }
     if new != NIL && (t.state(new) & DISABLED) == 0 {
-        object::set_state_bit(tree, new, SELECTED, true);
+        object::set_state_bit_t(t, new, SELECTED, true);
     }
     crate::vdi::cursor_show(backend);
 }
@@ -760,9 +766,10 @@ fn rehilite(tree: *mut Object, old: i16, new: i16, backend: &dyn RasterBackend) 
 /// the interactive `track` shows mid-drag; also the primitive a future
 /// `menu_popup` builds on.
 pub fn open(tree: *mut Object, title: i16, item: i16, backend: &dyn RasterBackend) -> i16 {
-    let imenu = open_box(tree, title, backend);
+    let t = ObjTree::new(tree);
+    let imenu = open_box(t, title, backend);
     if item != NIL {
-        object::set_state_bit(tree, item, SELECTED, true);
+        object::set_state_bit_t(t, item, SELECTED, true);
     }
     imenu
 }
@@ -773,7 +780,7 @@ pub fn open(tree: *mut Object, title: i16, item: i16, backend: &dyn RasterBacken
 /// cancel path, so the save/restore round trip can be verified without a
 /// mouse (A71 host test).
 pub fn close(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBackend) {
-    close_box(tree, title, imenu, backend);
+    close_box(ObjTree::new(tree), title, imenu, backend);
 }
 
 /// Render `title`'s drop-down with `item` highlighted and, if `item` has an
@@ -783,14 +790,15 @@ pub fn close(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBack
 /// verified headlessly (QMP screendump); the *live* hover (moving the mouse
 /// into the submenu) is real-Pi4 only per project memory.
 pub fn open_submenu_static(tree: *mut Object, title: i16, item: i16, backend: &dyn RasterBackend) -> i16 {
-    open_box(tree, title, backend);
+    let t = ObjTree::new(tree);
+    open_box(t, title, backend);
     // As the track: a DISABLED item is neither hilited nor given its submenu
     // (`menu_select` → `do_chg(…, chkdisabled)`, `gemmnlib.c:158-160,470-475`).
-    if (ObjTree::new(tree as *const Object).state(item) & DISABLED) != 0 {
+    if (t.state(item) & DISABLED) != 0 {
         return NIL;
     }
-    object::set_state_bit(tree, item, SELECTED, true);
-    match open_submenu(tree, item, backend) {
+    object::set_state_bit_t(t, item, SELECTED, true);
+    match open_submenu(t, item, backend) {
         Some((_, box_obj)) => box_obj,
         None => NIL,
     }
@@ -803,16 +811,20 @@ pub fn open_submenu_static(tree: *mut Object, title: i16, item: i16, backend: &d
 /// save the pixels underneath (into [`SUBMENU_SAVE`]) and draw it. Mirrors EmuTOS
 /// `display_submenu` (`gemmnext.c:625-678`). Returns `(sub_tree_ptr, sub_box)`
 /// when a submenu was opened, `None` otherwise.
-fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Option<(u64, i16)> {
-    let slot = smib_find_parent(tree as u64, item)?;
+///
+/// The submenu tree is read through the parent's accessor origin
+/// ([`ObjTree::with_base`]): for the tracker that is the bar owner's
+/// ([`mntree_accessor`], ARCH03 3a F3).
+fn open_submenu(t: ObjTree, item: i16, backend: &dyn RasterBackend) -> Option<(u64, i16)> {
+    let slot = smib_find_parent(t.tree_ptr(), item)?;
     // SAFETY: single-CPU AES; exclusive owner of the submenu table.
     let s = unsafe { (*SUBMENU_TAB.0.get())[slot] };
     if s.sub_tree == 0 || s.sub_menu < 0 {
         return None;
     }
-    let sub_tp = s.sub_tree as *const Object;
-    let (ix, iy, iw, _ih) = object::abs_rect(tree as *const Object, item);
-    let (bx0, by0, bw, bh) = object::abs_rect(sub_tp, s.sub_menu);
+    let sub_t = t.with_base(s.sub_tree as *const Object);
+    let (ix, iy, iw, _ih) = object::abs_rect_t(t, item);
+    let (bx0, by0, bw, bh) = object::abs_rect_t(sub_t, s.sub_menu);
     let cw = crate::vdi::font::CELL_W;
     let sw = backend.width() as i16;
     let sh = backend.height() as i16;
@@ -824,7 +836,6 @@ fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Op
     }
     // y: align the submenu's start item with the parent item, then clamp below
     // the menu bar and above the bottom of the screen.
-    let sub_t = ObjTree::new(sub_tp);
     let start_off = if s.sub_start >= 0 {
         sub_t.y(s.sub_start)
     } else {
@@ -839,7 +850,7 @@ fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Op
     sub_t.set_x(s.sub_menu, sub_t.x(s.sub_menu) + (x - bx0));
     sub_t.set_y(s.sub_menu, sub_t.y(s.sub_menu) + (y - by0));
     crate::vdi::cursor_hide(backend);
-    let (fx, fy, fw, fh) = sr_rect(sub_tp, s.sub_menu, backend);
+    let (fx, fy, fw, fh) = sr_rect(sub_t, s.sub_menu, backend);
     // `blitsave = popup_blit(smobj, NULL)` (`gemmnext.c:668-671`): a fresh
     // pool block per opening, never the drop-down's screen buffer — the
     // drop-down is still down and holds it. No block, no submenu
@@ -849,7 +860,7 @@ fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Op
         return None;
     };
     SUBMENU_SAVE.put(saved);
-    object::draw_obj_clip(sub_tp, s.sub_menu, MAX_DEPTH, sr_clip(fx, fy, fw, fh), backend);
+    object::draw_obj_clip_t(sub_t, s.sub_menu, MAX_DEPTH, sr_clip(fx, fy, fw, fh), backend);
     crate::vdi::cursor_show(backend);
     Some((s.sub_tree, s.sub_menu))
 }
@@ -858,14 +869,13 @@ fn open_submenu(tree: *mut Object, item: i16, backend: &dyn RasterBackend) -> Op
 /// the pixels saved under its box ([`SUBMENU_SAVE`], the block
 /// `popup_blit` took) and release that block. Mirrors EmuTOS
 /// `undisplay_submenu` (`gemmnext.c:686-703`, `popup_blit(smobj, blitsave)`).
-fn close_submenu(sub_tree: u64, sub_box: i16, sub_item: i16, backend: &dyn RasterBackend) {
-    if sub_tree == 0 || sub_box < 0 {
+fn close_submenu(sub: ObjTree, sub_box: i16, sub_item: i16, backend: &dyn RasterBackend) {
+    if sub.tree_ptr() == 0 || sub_box < 0 {
         return;
     }
-    let sub = sub_tree as *mut Object;
     crate::vdi::cursor_hide(backend);
     if sub_item != NIL {
-        object::set_state_bit(sub, sub_item, SELECTED, false);
+        object::set_state_bit_t(sub, sub_item, SELECTED, false);
     }
     // Restore the pixels saved under the submenu box exactly (no content-
     // destroying white-erase: the saved grown rect is a superset of the draw).
@@ -877,8 +887,7 @@ fn close_submenu(sub_tree: u64, sub_box: i16, sub_item: i16, backend: &dyn Raste
 
 /// Title index → its drop-down box index (EmuTOS `menu_sub`): walk the box
 /// list under `THESCREEN.ob_tail` by the title's position.
-fn menu_sub(tree: *const Object, title: i16) -> i16 {
-    let t = ObjTree::new(tree);
+fn menu_sub(t: ObjTree, title: i16) -> i16 {
     let themenus = t.tail(THESCREEN);
     let mut imenu = t.head(themenus);
     let mut i = title - THEACTIVE;
@@ -890,8 +899,8 @@ fn menu_sub(tree: *const Object, title: i16) -> i16 {
 }
 
 /// Is device point `(mx, my)` inside object `obj`'s absolute rectangle?
-fn point_in(tree: *const Object, obj: i16, mx: i16, my: i16) -> bool {
-    let (x, y, w, h) = object::abs_rect(tree, obj);
+fn point_in(t: ObjTree, obj: i16, mx: i16, my: i16) -> bool {
+    let (x, y, w, h) = object::abs_rect_t(t, obj);
     mx >= x && mx < x + w && my >= y && my < y + h
 }
 
@@ -950,8 +959,8 @@ static SUBMENU_SAVE: SaveSlot = SaveSlot::new();
 /// `g_x -= MT; g_y -= MT; g_w += 2*MT+ADJ3DSTD; g_h += 2*MT+ADJ3DSTD`). We
 /// reproduce that superset so the saved area covers a `th<0` outward border on
 /// every side (QED's `qed.rsc` boxes) plus a shadow, and clip the draw to it.
-fn sr_rect(tree: *const Object, box_obj: i16, backend: &dyn RasterBackend) -> (i16, i16, i16, i16) {
-    let (x, y, w, h) = object::abs_rect(tree, box_obj);
+fn sr_rect(t: ObjTree, box_obj: i16, backend: &dyn RasterBackend) -> (i16, i16, i16, i16) {
+    let (x, y, w, h) = object::abs_rect_t(t, box_obj);
     let sw = backend.width() as i16;
     let sh = backend.height() as i16;
     // Grown edges: MENU_THICKNESS on left/top, MENU_THICKNESS+ADJ3DSTD on
@@ -978,18 +987,18 @@ fn sr_clip(x: i16, y: i16, w: i16, h: i16) -> ClipRect {
 /// (`:158-160`) — `mn_do` does not even call it for one (`menu_select` at
 /// `:466-467` is the same `do_chg`). Answers `NIL`: no box on screen,
 /// nothing to restore (A89).
-fn open_box(tree: *mut Object, title: i16, backend: &dyn RasterBackend) -> i16 {
-    if (ObjTree::new(tree as *const Object).state(title) & DISABLED) != 0 {
+fn open_box(t: ObjTree, title: i16, backend: &dyn RasterBackend) -> i16 {
+    if (t.state(title) & DISABLED) != 0 {
         return NIL;
     }
     crate::vdi::cursor_hide(backend);
-    object::set_state_bit(tree, title, SELECTED, true); // redraws the title highlighted
-    let imenu = menu_sub(tree as *const Object, title);
+    object::set_state_bit_t(t, title, SELECTED, true); // redraws the title highlighted
+    let imenu = menu_sub(t, title);
     // Save the box grown to its decoration (EmuTOS `menu_sr`), and clip the box
     // draw to exactly that rectangle so the save area is a superset of every
     // pixel drawn — an outward `th<0` border or an overflowing child cannot
     // paint outside the saved region, so the on-close restore is exact.
-    let (x, y, w, h) = sr_rect(tree as *const Object, imenu, backend);
+    let (x, y, w, h) = sr_rect(t, imenu, backend);
     // `menu_sr(TRUE, tree, imenu)` → `bb_save(&t)` (`gemmnlib.c:219,239`):
     // into the one AES screen buffer. An empty rectangle parks nothing — and
     // drops whatever an earlier box left, so the close restores nothing stale.
@@ -997,7 +1006,7 @@ fn open_box(tree: *mut Object, title: i16, backend: &dyn RasterBackend) -> i16 {
         Some(saved) => MENU_SAVE.put(saved),
         None => drop(MENU_SAVE.take()),
     }
-    object::draw_obj_clip(tree as *const Object, imenu, MAX_DEPTH, sr_clip(x, y, w, h), backend);
+    object::draw_obj_clip_t(t, imenu, MAX_DEPTH, sr_clip(x, y, w, h), backend);
     crate::vdi::cursor_show(backend);
     imenu
 }
@@ -1006,10 +1015,10 @@ fn open_box(tree: *mut Object, title: i16, backend: &dyn RasterBackend) -> i16 {
 /// un-highlight is `ob_change`'s XOR toggle of its rect inset by one
 /// (`gemoblib.c:1295-1304`, `gemobjop.c:44-46`), which never touches the
 /// bar's separator row — nothing to repaint there (A99).
-fn close_box(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBackend) {
+fn close_box(t: ObjTree, title: i16, imenu: i16, backend: &dyn RasterBackend) {
     crate::vdi::cursor_hide(backend);
-    erase_box_inner(tree, imenu, backend);
-    object::set_state_bit(tree, title, SELECTED, false);
+    erase_box_inner(imenu, backend);
+    object::set_state_bit_t(t, title, SELECTED, false);
     crate::vdi::cursor_show(backend);
 }
 
@@ -1018,7 +1027,7 @@ fn close_box(tree: *mut Object, title: i16, imenu: i16, backend: &dyn RasterBack
 /// of the drawn area, so this fully undoes the box — including any outward
 /// border — with no content-destroying white-erase fallback. Caller owns the
 /// cursor hide/show.
-fn erase_box_inner(_tree: *mut Object, imenu: i16, backend: &dyn RasterBackend) {
+fn erase_box_inner(imenu: i16, backend: &dyn RasterBackend) {
     if imenu == NIL {
         return;
     }
@@ -1065,8 +1074,8 @@ pub fn menu_tnormal(pb: &Aespb) {
 pub fn menu_text(pb: &Aespb) {
     let tree = pb.addrin(0) as *const Object;
     let item = pb.intin(0);
-    let src = pb.addrin(1) as *const u8;
-    if tree.is_null() || item < 0 || src.is_null() {
+    let src = pb.addrin(1);
+    if tree.is_null() || item < 0 || src == 0 {
         pb.set_ret(0);
         return;
     }
@@ -1074,8 +1083,8 @@ pub fn menu_text(pb: &Aespb) {
     // width — this is exactly the QED fault site: an ILP32 tree's `ob_spec`
     // lives at byte 12 as a u32, not at byte 16 as a u64, so the previous
     // 32-byte-stride read handed back a wild pointer.
-    let dst = ObjTree::new(tree).spec(item) as *mut u8;
-    // SAFETY: the item's ob_spec points at a writable text buffer sized by the
+    let dst = ObjTree::new(tree).spec(item);
+    // The item's ob_spec points at a writable text buffer sized by the
     // caller to hold the replacement string plus its NUL — the GEM contract,
     // exactly as EmuTOS's unbounded `strcpy((char *)ob_spec, (char *)MM_PTEXT)`
     // (gemsuper.c:183) assumes. Copy the full source string INCLUDING the
@@ -1085,17 +1094,27 @@ pub fn menu_text(pb: &Aespb) {
     // trailing bytes) — a real, if pathological, divergence; and it protected
     // nothing, since a caller whose buffer is shorter than the new string
     // overflows identically in both EmuTOS and NewTOS.
-    unsafe {
-        if !dst.is_null() {
-            let mut i = 0;
-            loop {
-                let c = *src.add(i);
-                *dst.add(i) = c;
-                if c == 0 {
-                    break;
-                }
-                i += 1;
+    //
+    // Both strings are the caller's — its source string and the text buffer
+    // of its own menu item — and are read and written in its space (ARCH03
+    // 3a, F2): byte by byte with the program's rights, so the copy stops at
+    // the first byte the program could not read or write itself, the fault
+    // is recorded, and the syscall tail ends the program (EmuTOS: bus error
+    // inside the `strcpy`). No byte goes through a raw pointer.
+    if dst != 0 {
+        let space = pb.space();
+        let mut i = 0u64;
+        loop {
+            let Ok(c) = space.get_u8(src + i) else {
+                return;
+            };
+            if space.put_u8(dst + i, c).is_err() {
+                return;
             }
+            if c == 0 {
+                break;
+            }
+            i += 1;
         }
     }
     pb.set_ret(1);
@@ -1177,27 +1196,23 @@ static ACCS: Accs = Accs {
 /// Copy the NUL-terminated title string at the caller VA `pstr` into slot
 /// `idx`'s entry of [`Accs::copies`] and return the copy's (kernel) address —
 /// see that field for why a copy exists at all. Called from
-/// [`menu_register`], where the caller's mapping is the live `TTBR0`.
-fn copy_title(idx: usize, pstr: u64) -> u64 {
+/// [`menu_register`]; the string is read in the caller's `space` (ARCH03
+/// 3a), and `Err` — fault recorded, slot `idx` left empty — when the program
+/// cannot read it.
+fn copy_title(space: crate::uaccess::Space, idx: usize, pstr: u64) -> Result<u64, crate::uaccess::UserFault> {
     // SAFETY: single-CPU AES; exclusive owner of the registry.
     let dst = unsafe { &mut (*ACCS.copies.get())[idx] };
     dst.fill(0);
     if pstr != 0 {
         // The last byte stays 0: the copy is always NUL-terminated, however
-        // long the caller's string is.
-        for (i, slot) in dst.iter_mut().take(ACC_TITLE_LEN - 1).enumerate() {
-            // SAFETY: the GEM contract — `addr_in[0]` is a NUL-terminated
-            // string in the caller's address space, which is the installed
-            // one for the duration of this trap (the same read every other
-            // string-taking AES call makes, e.g. `appl_find`).
-            let c = unsafe { (pstr as *const u8).add(i).read() };
-            if c == 0 {
-                break;
-            }
-            *slot = c;
+        // long the caller's string is. The GEM contract — `addr_in[0]` is a
+        // NUL-terminated string in the caller's address space.
+        if let Err(e) = space.read_cstr(pstr, &mut dst[..ACC_TITLE_LEN - 1]) {
+            dst.fill(0);
+            return Err(e);
         }
     }
-    dst.as_ptr() as u64
+    Ok(dst.as_ptr() as u64)
 }
 
 /// The kernel address of slot `idx`'s copied title.
@@ -1540,9 +1555,13 @@ pub fn menu_register(pb: &Aespb) {
             pb.set_ret(-1);
             return;
         };
+        // The title copy first (ARCH03 3a): a string the program cannot read
+        // ends the call (and the program) with the registry unchanged.
+        if copy_title(pb.space(), openda, pstr).is_err() {
+            return;
+        }
         title[openda] = pstr; // `D.g_acctitle[openda] = pstr` (:806)
         owner[openda] = super::appl::current_identity(); // `desk_ppd[openda] = rlr` (:805)
-        copy_title(openda, pstr);
         openda
     };
     menu_fixup(); // (:808)
@@ -1714,7 +1733,14 @@ pub fn menu_popup(pb: &Aespb) {
         pb.set_ret(0);
         return;
     };
-    // SAFETY: valid MENU (GEM contract), packed at the caller ABI width.
+    // The caller's `MENU` (pointer + four WORDs at its width), checked
+    // readable with its rights and read through its kernel alias (ARCH03 3a);
+    // one the program cannot read ends the call (and the program).
+    let Some(menu) = pb.ubuf(menu, menu_ptr_size(pb.abi) + 8, false) else {
+        return;
+    };
+    // SAFETY: valid MENU (GEM contract) at a checked kernel address, packed
+    // at the caller ABI width.
     let m = unsafe { Menu::read_abi(menu, pb.abi) };
     let (tree, box_obj, start_item) = (m.mn_tree as *mut Object, m.mn_menu, m.mn_item);
     if tree.is_null() || box_obj < 0 {
@@ -1722,6 +1748,12 @@ pub fn menu_popup(pb: &Aespb) {
         return;
     }
     let (sel, keystate) = mn_popup(tree, box_obj, start_item, xpos, ypos, backend, h);
+    // The output `MENU`, checked writable with the caller's rights and
+    // written through its kernel alias (ARCH03 3a); one the program may not
+    // write ends the call (and the program) after the pop-up is gone.
+    let Some(mdata) = pb.ubuf(mdata, menu_ptr_size(pb.abi) + 8, true) else {
+        return;
+    };
     if mdata != 0 {
         if sel >= 0 {
             // A pick (`:338-343`): `mn_tree`/`mn_menu` as input (no submenus
@@ -1823,7 +1855,6 @@ fn mn_popup_owned(
     backend: &dyn RasterBackend,
     h: &dyn crate::host::Host,
 ) -> (i16, i16) {
-    let tp = tree as *const Object;
     // `ev_button(1, 0x00ff, 0x0000, rets); /* wait for button up */`
     // (`gemmnext.c:314`): the button that opened the pop-up.
     wait_button_up(h);
@@ -1838,7 +1869,7 @@ fn mn_popup_owned(
     t.set_y(box_obj, ypos - iy);
     clamp_ypos(t, box_obj, backend);
     crate::vdi::cursor_hide(backend);
-    let (bx, by, bw, bh) = sr_rect(tp, box_obj, backend);
+    let (bx, by, bw, bh) = sr_rect(t, box_obj, backend);
     let Some(saved) = gsxif::popup_blit_save(backend, bx, by, bw, bh) else {
         // No block, no pop-up (`buf == NULL`, `:330`). The second wait
         // (`:351`) has nothing left to wait for here: the first one just
@@ -2009,12 +2040,25 @@ fn mnext_init() {
 /// `switch(flag)` with the arms 0 and 1 and **no `default`**: any other
 /// selector is a no-op that neither reads nor writes either block (A43).
 pub fn menu_settings(pb: &Aespb) {
-    let set = pb.addrin(0) as *mut MnSet;
+    let set = pb.addrin(0);
     let flag = pb.intin(0);
-    if set.is_null() {
+    if set == 0 {
         pb.set_ret(0);
         return;
     }
+    // The caller's `MN_SET`, checked with its rights — writable for a get
+    // (0), readable for a set (1) — and reached through its kernel alias
+    // (ARCH03 3a); one the program may not use ends the call (and the
+    // program). Any other selector touches neither block (A43), so nothing
+    // is checked for it.
+    let set = if matches!(flag, 0 | 1) {
+        match pb.ubuf(set, core::mem::size_of::<MnSet>() as u64, flag == 0) {
+            Some(k) => k as *mut MnSet,
+            None => return,
+        }
+    } else {
+        set as *mut MnSet
+    };
     // SAFETY: single-CPU AES; valid MN_SET (GEM contract).
     unsafe {
         let cur = &mut *SETTINGS.0.get();
@@ -2297,9 +2341,20 @@ pub fn menu_attach(pb: &Aespb) {
         pb.set_ret(0);
         return;
     }
+    // The caller's `MENU` (pointer + four WORDs at its width): written by
+    // `ME_INQUIRE`, read by `ME_ATTACH` — checked with the caller's rights for
+    // that access and handed on as its kernel alias (ARCH03 3a; null stays
+    // null). One the program may not use ends the call (and the program).
+    let msize = menu_ptr_size(pb.abi) + 8;
     let rc = match flag {
-        ME_INQUIRE => query_submenu(tree, item, mdata, pb.abi),
-        ME_ATTACH => attach_submenu(tree, item, mdata, pb.abi),
+        ME_INQUIRE => {
+            let Some(mdata) = pb.ubuf(mdata, msize, true) else { return };
+            query_submenu(tree, item, mdata, pb.abi)
+        }
+        ME_ATTACH => {
+            let Some(mdata) = pb.ubuf(mdata, msize, false) else { return };
+            attach_submenu(tree, item, mdata, pb.abi)
+        }
         ME_REMOVE => attach_submenu(tree, item, 0, pb.abi),
         _ => false, // undefined flag → FALSE (EmuTOS switch default)
     };
@@ -2469,16 +2524,16 @@ pub fn selftest_menu_sr_residue(backend: &dyn RasterBackend) -> (u32, u32) {
     };
 
     // ── P2: open + close the wide box, then check its footprint is clean.
-    let ic = open_box(tp, TITLE_C, backend);
-    close_box(tp, TITLE_C, ic, backend);
+    let ic = open_box(ObjTree::new(tp), TITLE_C, backend);
+    close_box(ObjTree::new(tp), TITLE_C, ic, backend);
     // boxC drawn extent = abs_rect grown 1 px for the th=-1 border: (319,249)..(601,431).
     let p2 = count(319, 249, 601, 431, (0, 0, 0, 0));
 
     // ── P1: drop box A, then slide to box B (close A → open B) and check that
     // no box-A pixel survives outside box B's territory.
-    let ia = open_box(tp, TITLE_A, backend);
-    close_box(tp, TITLE_A, ia, backend);
-    open_box(tp, TITLE_B, backend); // leave box B open for the screendump
+    let ia = open_box(ObjTree::new(tp), TITLE_A, backend);
+    close_box(ObjTree::new(tp), TITLE_A, ia, backend);
+    open_box(ObjTree::new(tp), TITLE_B, backend); // leave box B open for the screendump
     // boxA drawn extent = abs_rect grown 1 px: (99,39)..(301,381).
     // Exclude box B's territory generously (abs_rect grown 6 px): (34,34)..(216,176).
     let p1 = count(99, 39, 301, 381, (34, 34, 216, 176));
@@ -2771,7 +2826,7 @@ mod popup_wait_tests {
 
         host.arm(&[0, 0, 1, 1, 1, 1, 0, 0, 0]);
         crate::vdi::cursor_hide(&RASTER);
-        let (bx, by, bw, bh) = sr_rect(tp, 0, &RASTER);
+        let (bx, by, bw, bh) = sr_rect(ObjTree::new(tp), 0, &RASTER);
         let saved = gsxif::bb_save(&RASTER, bx, by, bw, bh).expect("the heap fallback saves the rectangle");
         let (picked, _keystate) = popup_shown(tree, 0, &RASTER, &host, saved);
 
@@ -2818,7 +2873,7 @@ mod popup_wait_tests {
             btn(0),
         ]);
         crate::vdi::cursor_hide(&RASTER);
-        let (bx, by, bw, bh) = sr_rect(tp, 0, &RASTER);
+        let (bx, by, bw, bh) = sr_rect(ObjTree::new(tp), 0, &RASTER);
         let saved = gsxif::bb_save(&RASTER, bx, by, bw, bh).expect("the heap fallback saves the rectangle");
         let (picked, keystate) = popup_shown(tree, 0, &RASTER, &host, saved);
 

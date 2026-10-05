@@ -310,7 +310,17 @@ pub fn call(func: u16, regs: [u64; 8]) -> i32 {
         regs,
         func: func as u64,
         svc_imm: TrapClass::Gemdos as u16,
+        space: tos_api::uaccess::Space::Kernel,
     };
+    tos_api::gemdos::dispatch(&args)
+}
+
+/// [`call`] with the caller's address space given explicitly (ARCH03 3a):
+/// [`tos_api::uaccess::Space::User`] models a trap from an EL0 program. On
+/// the host both spaces are plain host-memory accesses, so the result must be
+/// the same either way.
+pub fn call_in(space: tos_api::uaccess::Space, func: u16, regs: [u64; 8]) -> i32 {
+    let args = TrapArgs { regs, func: func as u64, svc_imm: TrapClass::Gemdos as u16, space };
     tos_api::gemdos::dispatch(&args)
 }
 

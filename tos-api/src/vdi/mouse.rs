@@ -921,6 +921,17 @@ fn swap_vector(pb: &Vdipb, slot: &AtomicU64) {
 }
 
 /// Opcode 125 — `vex_butv`: install the button-change vector.
+///
+/// The installed address is stored and returned, never executed — and the
+/// same holds for `vex_motv`, `vex_curv` and `vex_timv` — although EmuTOS
+/// calls all four from `mouse_int` / `tick_int` (`vdi/vdi_asm.S:283,359,367`,
+/// `vdi/vdi_misc.c:83`). ARCH03 stage 3a (F4) re-checked this against the
+/// source and keeps it a documented no-op: `user_mot` returns a modified
+/// position to its caller, which the fire-and-forget `vex_wheelv` upcall
+/// cannot carry, and the delivery contract for that is not designed. Since
+/// nothing is ever run or dereferenced through these slots, per-process
+/// rights change nothing for them. `docs/api/vdi/input/_mouse.md`, NewTOS
+/// implementation notes.
 pub fn vex_butv(pb: &Vdipb) {
     swap_vector(pb, &USER_BUT);
 }

@@ -1,0 +1,57 @@
+s12 = sub-steps 1+2 (TrapArgs.space; GEMDOS paths/buffers/DTA/console Fread-Fwrite, Cconws space). Probe cases: congwrWdft.
+
+s12-rpi4-apitest                    1 TOTAL 106 0 5;
+s12-rpi4-crashtst                   1 CRASHTST: PASS; 1 desktop up;
+s12-rpi4-desktop                    1 desktop up;
+s12-rpi4-doom                       1 VERIFIED via EdDI+scale+vro_cpyfm;
+s12-rpi4-kbdvec-emucon              2 desktop up; 1 KBDVEC: PASS;
+s12-rpi4-port10                     2 10: FAIL; 42 10: PASS; 1 desktop up; 1 port10: 2 of 44 checks FAILED;
+s12-rpi4-qed                       
+s12-rpi4-s2all                      1 desktop up; 1 MEM03: PASS; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; 1 VFORK: PASS;
+s12-rpi4-teradesk                  
+s12-rpi4-uacc3a                     1 desktop up; 1 UACC3A: PASS;
+s12-virt-crash                      1 CRASHTST: PASS; 1 desktop up; 1 UACC3A: PASS;
+s12-virt-desktop                    1 desktop up;
+s12-virt-selftests                  1 [sw3b] (1) appl_write woke A (READY) without resuming it (RET still sentinel): FAIL; 1 [sw3b] (2) A received the message B posted: FAIL; 1 [sw3b] (2) A resumed past its svc (sentinel ELR == block + 0x1010): FAIL; 1 [sw3b] (2) restartable svc#2 re-executed with x0=200 (evnt_mesag RET_CODE=1): FAIL; 1 [sw3b] (3) deliver-on-resume handler ran at EL0: FAIL; 1 === B1 PASS ===; 1 === D3 PASS ===; 1 === D3 PEXEC PASS ===; 1 === D4/D5 PEXEC PASS ===; 1 === D6 PASS ===; 1 === D7 PTERMRES PASS ===; 1 === F1 PEXEC TAIL+ENV PASS ===; 1 desktop up;
+
+screendumps vs stage 2 (s2e), cmp:
+  SAME s12-rpi4-apitest-t25.png
+  SAME s12-rpi4-apitest-t40.png
+  DIFF s12-rpi4-crashtst-t40.png
+  DIFF s12-rpi4-crashtst-t70.png
+  SAME s12-rpi4-desktop-t25.png
+  DIFF s12-rpi4-doom-t30.png
+  DIFF s12-rpi4-doom-t45.png
+  SAME s12-rpi4-kbdvec-emucon-t20.png
+  SAME s12-rpi4-kbdvec-emucon-t35.png
+  SAME s12-rpi4-kbdvec-emucon-t60.png
+  SAME s12-rpi4-port10-end.png
+  SAME s12-rpi4-qed-t30.png
+  SAME s12-rpi4-s2all-end.png
+  SAME s12-rpi4-teradesk-t35.png
+  NEW  s12-rpi4-uacc3a-crash1.png
+  NEW  s12-rpi4-uacc3a-crash10.png
+  NEW  s12-rpi4-uacc3a-crash2.png
+  NEW  s12-rpi4-uacc3a-crash3.png
+  NEW  s12-rpi4-uacc3a-crash4.png
+  NEW  s12-rpi4-uacc3a-crash5.png
+  NEW  s12-rpi4-uacc3a-crash6.png
+  NEW  s12-rpi4-uacc3a-crash7.png
+  NEW  s12-rpi4-uacc3a-crash8.png
+  NEW  s12-rpi4-uacc3a-crash9.png
+  NEW  s12-rpi4-uacc3a-end.png
+  DIFF s12-virt-crash-crash1.png
+  NEW  s12-virt-crash-crash10.png
+  NEW  s12-virt-crash-crash11.png
+  NEW  s12-virt-crash-crash12.png
+  DIFF s12-virt-crash-crash2.png
+  DIFF s12-virt-crash-crash3.png
+  SAME s12-virt-crash-crash4.png
+  SAME s12-virt-crash-crash5.png
+  DIFF s12-virt-crash-crash6.png
+  DIFF s12-virt-crash-crash7.png
+  NEW  s12-virt-crash-crash8.png
+  NEW  s12-virt-crash-crash9.png
+  SAME s12-virt-crash-end.png
+  SAME s12-virt-desktop-end.png
+  SAME s12-virt-selftests-end.png

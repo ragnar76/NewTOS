@@ -82,8 +82,8 @@ static THEMD: ThemdCell = ThemdCell(UnsafeCell::new(ThemdPage {
 /// `mp_mfl` is left NULL — an empty free list, which the contract already
 /// defines — rather than a pointer the caller would fault on.
 pub fn getmpb(args: &TrapArgs) -> Long {
-    let mpb = args.arg_u64(0) as *mut MPB;
-    if mpb.is_null() {
+    let mpb = args.arg_u64(0);
+    if mpb == 0 {
         return 0;
     }
     let (start, end) = stram_range();
@@ -92,9 +92,7 @@ pub fn getmpb(args: &TrapArgs) -> Long {
     // the only accessor; taking the address of the `md` field is in-bounds.
     let md = unsafe { &raw mut (*page).md };
 
-    // SAFETY: `md` is our stable static; `mpb` is the caller's writable
-    // MPB (a kernel pointer at EL1, a user VA at EL0 — the same
-    // direct-pointer contract as `Rwabs`). Single boot/trap CPU, so no
+    // SAFETY: `md` is our stable static. Single boot/trap CPU, so no
     // concurrent access to `THEMD`.
     unsafe {
         (*md).m_link = core::ptr::null_mut();
@@ -118,12 +116,18 @@ pub fn getmpb(args: &TrapArgs) -> Long {
         },
     };
 
-    // SAFETY: see above — `mpb` is the caller's writable MPB.
-    unsafe {
-        // Write only mp_mfl / mp_mal; mp_rover is preserved, exactly as
-        // EmuTOS leaves the caller's value (spec §Outputs).
-        (*mpb).mp_mfl = head;
-        (*mpb).mp_mal = core::ptr::null_mut();
+    // `mpb` is the caller's writable MPB, written in the caller's space
+    // (ARCH03 3a, `crate::uaccess`): a program's MPB with its rights — one it
+    // cannot write ends the call and the program (EmuTOS: bus error in
+    // `getmpb`) — an in-kernel caller's as the kernel address it is. Write
+    // only mp_mfl / mp_mal; mp_rover is preserved, exactly as EmuTOS leaves
+    // the caller's value (spec §Outputs).
+    let mfl = mpb + core::mem::offset_of!(MPB, mp_mfl) as u64;
+    let mal = mpb + core::mem::offset_of!(MPB, mp_mal) as u64;
+    if args.space.put_u64(mfl, head as u64).is_err()
+        || args.space.put_u64(mal, 0).is_err()
+    {
+        return crate::uaccess::FAULTED;
     }
     0
 }

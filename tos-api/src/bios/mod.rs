@@ -185,14 +185,24 @@ fn rwabs(args: &TrapArgs) -> Long {
     let len = numb * SECTOR;
     let write = r_w & RW_RW != 0;
 
-    // SAFETY: `adr` is the caller's buffer for `len` bytes. EL1 self-test
-    // passes kernel memory; EL0 user-pointer handling lands with the
-    // process-aware BIOS path.
+    // `adr` is the caller's buffer for `len` bytes, in the caller's space
+    // (ARCH03 3a): a program's buffer is checked with its rights — readable
+    // for a write to the device, writable for a read from it — and then
+    // reached through its kernel alias (`Space::kptr`, plan §3.6), so the
+    // block driver's PIO loop never touches a user address. A buffer the
+    // program may not use ends the call (and, through the syscall tail, the
+    // program — EmuTOS: bus error in `Rwabs`). An in-kernel caller's buffer
+    // is a kernel address.
+    let Ok(buf) = args.space.kptr(adr, len as u64, !write) else {
+        return crate::uaccess::FAULTED;
+    };
+    // SAFETY: `buf..buf+len` was just checked accessible (or is a kernel
+    // caller's own buffer) and is reached through the kernel mapping.
     let result = unsafe {
         if write {
-            blk.write_blocks(lba, core::slice::from_raw_parts(adr as *const u8, len))
+            blk.write_blocks(lba, core::slice::from_raw_parts(buf as *const u8, len))
         } else {
-            blk.read_blocks(lba, core::slice::from_raw_parts_mut(adr as *mut u8, len))
+            blk.read_blocks(lba, core::slice::from_raw_parts_mut(buf as *mut u8, len))
         }
     };
     // The driver's own code, passed through — EmuTOS `blkdev_rwabs` returns

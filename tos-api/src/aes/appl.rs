@@ -310,9 +310,15 @@ pub fn appl_init(pb: &Aespb) {
     // `gemsuper.c:92-98` writes, in the m68k field widths that structure
     // keeps on every ABI. No byte past index 12 is touched. See the
     // module-level ABI note.
-    // SAFETY: `global` points at a caller-allocated AESGLOBAL (the GEM
-    // caller's contract; the AESPB was built for that ABI).
-    unsafe { vals.write(pb.global_ptr()) };
+    // The caller's AESGLOBAL, checked writable with the program's rights and
+    // reached through its kernel alias (ARCH03 3a, `Aespb::global_kptr`); a
+    // `global` the program may not write ends the call (and the program).
+    let Some(global) = pb.global_kptr() else {
+        return;
+    };
+    // SAFETY: `global` is the checked kernel address of the caller's 30-byte
+    // AESGLOBAL (the GEM caller's contract; the AESPB was built for that ABI).
+    unsafe { vals.write(global) };
     pb.set_ret(pid);
 }
 
@@ -369,12 +375,11 @@ pub fn appl_find(pb: &Aespb) {
         return;
     }
     let mut name = [b' '; 8];
-    // SAFETY: addrin[0] is a caller-supplied pointer to ≥ 8 name bytes.
-    unsafe {
-        let p = name_ptr as *const u8;
-        for (i, slot) in name.iter_mut().enumerate() {
-            *slot = p.add(i).read();
-        }
+    // addrin[0] is a caller-supplied pointer to ≥ 8 name bytes, read in the
+    // caller's space (ARCH03 3a); one the program cannot read ends the call
+    // and the program.
+    if pb.space().copy_from(&mut name, name_ptr).is_err() {
+        return;
     }
     // SAFETY: single trap path.
     let pid = match unsafe { pd::find_by_name(&name) } {
@@ -440,11 +445,12 @@ pub fn appl_write(pb: &Aespb) {
     // so read whole WORDs, capped at the per-message FIFO limit.
     let words = (len_bytes / 2).min(pd::MAX_MSG_WORDS);
     let mut msg = [0i16; pd::MAX_MSG_WORDS];
-    // SAFETY: addrin[0] points at ≥ len_bytes of message data.
-    unsafe {
-        let p = buf as *const i16;
-        for (i, slot) in msg.iter_mut().take(words).enumerate() {
-            *slot = p.add(i).read();
+    // addrin[0] points at ≥ len_bytes of message data, read in the caller's
+    // space (ARCH03 3a); a buffer the program cannot read ends the call.
+    for (i, slot) in msg.iter_mut().take(words).enumerate() {
+        match pb.space().get_u16(buf + 2 * i as u64) {
+            Ok(w) => *slot = w as i16,
+            Err(_) => return,
         }
     }
     // Enqueue into the target's FIFO via the centralized poster: it appends the
@@ -507,15 +513,23 @@ pub fn appl_read(pb: &Aespb) -> Option<sched::Switch> {
             pb.set_ret(0);
             return None;
         };
+        // The destination, checked writable with the caller's rights once a
+        // message is there to copy — where EmuTOS's `doq` writes it — and
+        // reached through its kernel alias (ARCH03 3a). One the program may
+        // not write ends the call (and the program) with the message still
+        // queued.
+        if src.queue.pending() > 0 && pb.ubuf(dest, 2 * words as u64, true).is_none() {
+            return None;
+        }
         // Queue non-empty (`p_qindex > 0`, `gemqueue.c:99`): pop the FRONT of
         // the FIFO into the requested-length window (`doq` dequeue,
         // `gemqueue.c:76-81`) and complete with 1 (`azombie(e, 1)`, `:107`).
         if let Some(n) = src.queue.pop_into(&mut buf[..words]) {
-            // SAFETY: addrin[0] points at ≥ len_bytes of destination space.
-            unsafe {
-                let p = dest as *mut i16;
-                for (i, &w) in buf.iter().take(n).enumerate() {
-                    p.add(i).write(w);
+            // `dest` was checked writable for `words` WORDs just above; `n <=
+            // words`. Written in the caller's space.
+            for (i, &w) in buf.iter().take(n).enumerate() {
+                if pb.space().put_u16(dest + 2 * i as u64, w as u16).is_err() {
+                    return None;
                 }
             }
             src.flags |= pd::AP_MESAG;

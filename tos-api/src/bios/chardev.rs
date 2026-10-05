@@ -111,30 +111,24 @@ pub fn pack_console_key(word: u16) -> Long {
 /// `conterm` bit 3 is set, else `0`.
 ///
 /// Applied only while an EL0 application is the running process
-/// ([`crate::bdos::process::current`] non-null): the app's `TTBR0` is active
-/// in this BIOS/GEMDOS trap handler, so `$484` (written by the loader's
-/// `populate_sysvars`) is mapped and the unprivileged load reaches it. With
-/// **no active user context** — boot, the desktop, or an EL1 selftest, all of
-/// which run with `RUN == null` and no per-process low-memory area — the fold
-/// is skipped rather than faulting an unprivileged load into the empty
-/// `TTBR0` (`EMPTY_L0`). Gating on `RUN` (a stable atomic) rather than
+/// ([`crate::bdos::process::current`] non-null): its `$484` (written by the
+/// loader's `populate_sysvars`) is read through the **kernel alias of its
+/// page 0** ([`current_conterm`], ARCH03 stage 3a) — the same cell the
+/// program sees at VA `$484`, reached without a user-mode load, so the read
+/// can neither fault nor depend on which `TTBR0` is installed. With **no
+/// active user context** — boot, the desktop, or an EL1 selftest, all of
+/// which run with `RUN == null` and no per-process low-memory area — the
+/// fold is skipped. Gating on `RUN` (a stable atomic) rather than
 /// `SPSR_EL1` keeps the check correct across `console_read_key_blocking`'s
 /// IRQ/`wfi` wait (qemu-virt), which clobbers the saved-PSTATE register but
-/// never touches `RUN` or `TTBR0`.
+/// never touches `RUN`.
 #[inline]
 fn shift_fold() -> Long {
-    // No active user context (RUN == null) → no per-process $484; skip
-    // without touching low memory, so an EL1 caller (desktop / boot / a
-    // selftest) never faults an unprivileged load into an empty TTBR0.
+    // No active user context (RUN == null) → no per-process $484; skip.
     if crate::bdos::process::current().is_null() {
         return 0;
     }
-    // App context: read conterm via an unprivileged byte load, exactly like
-    // `setexc`'s low-memory peek (`bios/vectors.rs`) / `Cconws`'s `ldtrb`.
-    // SAFETY: $484 is inside the per-process reserved low region the loader
-    // maps + populates; the app's TTBR0 is active in this trap and the load
-    // is permission-checked as EL0.
-    let conterm = unsafe { read_user_byte(CONTERM_ADDR as *const u8) };
+    let conterm = current_conterm();
     if conterm & CONTERM_SHIFT_FOLD == 0 {
         return 0; // classic default (conterm = 7): bits 24-31 = 0
     }
@@ -142,28 +136,6 @@ fn shift_fold() -> Long {
     // 24-31, matching EmuTOS's stored `shifty` byte (`bios/ikbd.c:900,279`).
     let shift = host::host().map_or(0u8, |h| h.keyboard_shift_state());
     ((shift as u32) << 24) as Long
-}
-
-/// Read one byte from a user (EL0) pointer via an unprivileged load
-/// (`ldtrb`), so the access is permission-checked as EL0 — the same contract
-/// as `bios::vectors`'s `read_user_long` and `Cconws`'s `ldtrb`.
-///
-/// # Safety
-///
-/// `p` must address a readable EL0 byte under the active `TTBR0`.
-#[inline]
-unsafe fn read_user_byte(p: *const u8) -> u8 {
-    let b: u8;
-    // SAFETY: caller guarantees `p` readable; unprivileged byte load.
-    unsafe {
-        core::arch::asm!(
-            "ldtrb {b:w}, [{p}]",
-            p = in(reg) p,
-            b = out(reg) b,
-            options(nostack, preserves_flags, readonly),
-        );
-    }
-    b
 }
 
 /// `Bconin` core keyed by device handle — the value part of `Bconin`
