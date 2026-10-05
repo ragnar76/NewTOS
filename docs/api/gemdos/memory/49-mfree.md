@@ -398,6 +398,17 @@ after freeing it ends with the crash report (`Memory violation: free memory,
 write (translation fault …)`, `docs/api/bios/_exception-crash.md`). Closes
 MEM04. With `memprot=off` the pool stays mapped for everybody (stage 3a).
 
+### NewTOS: `F_KEEP` blocks the system inherited (ARCH03 stage 3c)
+
+A block allocated with `Mxalloc(…, F_KEEP | mode)` (`44-mxalloc.md`) whose
+last owner terminated belongs to the system (FreeMiNT: the root process,
+`sys/proc_help.c:242-258`). `Mfree` of such a block succeeds for **any**
+caller — FreeMiNT `sys_m_free` falls back to the root process's `M_KEEP`
+regions when the address is not one of the caller's (`sys/dosmem.c:365-398`)
+— and returns it to the pool (`E_OK`). Every other non-owner `Mfree` stays
+`EIMBA` (E15), including one on a kept block whose owner still lives, and on
+resident (`Ptermres`) memory. Host tests: `tos-api/tests/arch03_3c_keep.rs`.
+
 ---
 
 ## Pi / BCM2711 binding

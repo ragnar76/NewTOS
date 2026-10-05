@@ -47,3 +47,22 @@ globaler `Mxalloc`-Speicher. Anwender: „es so wie bei FreeMiNT bauen“.
   Kindes = Rechte-Tabellen des Aufrufers + eigene Seite 0).
 * **Absturz-Spezifikation** `docs/api/bios/_exception-crash.md` freigegeben;
   **E11:** EmuTOS-Absturzbericht (kein FreeMiNT-Alert).
+
+## Fortschritt (Stand 2026-10-05, Zweig `arch03`)
+
+| Stufe | Stand | Quittung / Beleg |
+|---|---|---|
+| 0a Track B | erledigt | `docs/analysis/arch03-stage0a-armarm-verification.md` |
+| 0b Spike | erledigt | `docs/analysis/arch03-stage0b-spike.md` |
+| 0c Abbruch statt Halt | umgesetzt, QEMU belegt | [ARCH03-0c-STATUS-DONE](ARCH03-0c-STATUS-DONE.MD) |
+| 0d PIE-Lader | umgesetzt, QEMU belegt | [ARCH03-0d-STATUS-DONE](ARCH03-0d-STATUS-DONE.MD) |
+| 1 gemeinsamer Raum | umgesetzt, QEMU belegt | [ARCH03-1-STATUS-DONE](ARCH03-1-STATUS-DONE.MD) |
+| 2 Pexec 5/6/7, Ptermres, Regionen | umgesetzt, QEMU belegt | [ARCH03-2-STATUS-DONE](ARCH03-2-STATUS-DONE.MD) |
+| 3a Kernelzugriff | umgesetzt, QEMU belegt | [ARCH03-3a-STATUS-DONE](ARCH03-3a-STATUS-DONE.MD) |
+| 3b Rechte je Prozess | umgesetzt, QEMU belegt; Offen 1/3/4/5 in 3c geschlossen, Offen 2 nicht | [ARCH03-3b-STATUS-UNFINISHED](ARCH03-3b-STATUS-UNFINISHED.MD) |
+| 3c E10, Lader-Reihenfolge, E6/strict, F_KEEP, Tabellenmangel | umgesetzt, QEMU belegt; **S2ALL/TSRPAR unter Schutz an/strict weiter FAIL** (Ursache E9+E16, Entscheidung nötig) | [ARCH03-3c-STATUS-UNFINISHED](ARCH03-3c-STATUS-UNFINISHED.MD) |
+| 2b FreeMiNT-Modi 100+ | offen | — |
+| 4 ASIDs | offen (optional) | — |
+
+Abnahme durch den Tester und Pi-Läufe für 0c–3c offen; Pi nur auf Ansage.
+Plan-Abschnitt „Stufe 3 wie gebaut“: `docs/analysis/arch03-implementation-plan.md`.

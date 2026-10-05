@@ -422,57 +422,82 @@ unsafe fn load_from_source(
     //     `hdr.h01_flags`, `bdos/proc.c:283,292`). No note → `PF_STANDARD`.
     let prgflags = read_prgflags(&src, &img)?.unwrap_or(PF_STANDARD);
 
-    // 2. Take the TPA block from the BDOS pool. Its address is the child's
+    // 2. The environment first, then the TPA — EmuTOS `xexec`: "allocate
+    //    the environment first, depending on memory policy" (`alloc_env`,
+    //    `bdos/proc.c:281-287`), then the basepage/TPA (`alloc_tpa`,
+    //    `:289-299`, which frees the environment again if it fails). The
+    //    order fixes the layout: the environment lies below the TPA, as in
+    //    EmuTOS (ARCH03 3c; until then the loader took the TPA first).
+    //    Both are allocated as the caller (`owner = run`) and handed to the
+    //    child below for `PE_LOADGO` (`set_owner`, `:302-307`).
+    // SAFETY: BDOS lock held.
+    let env_addr = unsafe { alloc_env_for(env, prgflags) }?;
+    let free_env = || {
+        if let Some(e) = env_addr {
+            // SAFETY: BDOS lock held; `e` is the block just allocated.
+            let _ = unsafe { crate::bdos::mem::traps::mfree(e) };
+        }
+    };
+
+    // 3. Take the TPA block from the BDOS pool. Its address is the child's
     //    PD pointer. `Mxalloc` stamped the caller as owner (`owner = run`);
     //    for `PE_LOADGO` the block goes to the child (`owner = p`,
     //    EmuTOS `bdos/proc.c:302-307`), so the child's `Pterm`
     //    `free_all_owned` sweep reclaims it.
     // SAFETY: BDOS lock held; single-CPU pre-test.
-    let tpa = unsafe { arena::alloc_tpa(prgflags) }.ok_or(LoadError::NoTpaMemory)?;
+    let Some(tpa) = (unsafe { arena::alloc_tpa(prgflags) }) else {
+        // EmuTOS: "if failed, free env_ptr and return" (`bdos/proc.c:294-299`).
+        free_env();
+        return Err(LoadError::NoTpaMemory);
+    };
     // The TPA takes the program's protection mode (ARCH03 3b, FreeMiNT
     // `load_region`: `alloc_region(map, len, protmode)` with the PRGFLAGS
     // mode, `sys/memory.c:1511-1513`).
     // SAFETY: BDOS lock held; `tpa.base` starts the block just allocated.
     unsafe { super::memprot::set_mode(tpa.base, prot_from_prgflags(prgflags)) };
     if owned_by_child {
-        // SAFETY: `tpa.base` is on the allocated list; the owner cookie is
+        // SAFETY: both blocks are on the allocated list; the owner cookie is
         // a pointer-equality tag, never dereferenced by the sweep.
         unsafe {
             crate::bdos::mem::traps::set_owner(tpa.base as Long, tpa.base as *mut c_void);
+            if let Some(e) = env_addr {
+                crate::bdos::mem::traps::set_owner(e, tpa.base as *mut c_void);
+            }
         }
     }
 
-    // 3. Populate + build the root; free the TPA on any failure — no `Pterm`
-    //    runs for a load that never launched, so we must not leak the block.
+    // 4. Populate + build the root; free the TPA and the environment on any
+    //    failure — no `Pterm` runs for a load that never launched, so we must
+    //    not leak the blocks.
     // SAFETY: BDOS lock held; `tpa` is a fresh, exclusively-owned
     // page-aligned region.
     match unsafe {
-        let req = ProcessSetup { tail, env, owned_by_child, prgflags };
+        let req = ProcessSetup { tail, env_addr, prgflags };
         populate_and_map(&src, slot, &img, &req, &tpa)
     } {
         Ok(loaded) => Ok(loaded),
         Err(e) => {
             // SAFETY: BDOS lock held; `tpa.base` is still allocated.
             unsafe { arena::free_tpa(tpa.base as Long) };
+            free_env();
             Err(e)
         }
     }
 }
 
 /// What a load gives the new process besides its image: the command tail,
-/// the environment source, who owns TPA and environment, and its
-/// `PRGFLAGS` (see [`load_to_slot_with`]).
+/// the environment block already allocated for it (EmuTOS order: before the
+/// TPA), and its `PRGFLAGS` (see [`load_to_slot_with`]).
 #[derive(Copy, Clone)]
 struct ProcessSetup<'a> {
     tail: &'a [u8],
-    env: EnvSpec<'a>,
-    owned_by_child: bool,
+    env_addr: Option<Long>,
     prgflags: u32,
 }
 
-/// Stream the ELF image into `tpa`, zero its BSS, allocate the
-/// environment, write the basepage and the slot's page 0, sync the code
-/// caches, build the slot's root and publish the slot metadata.
+/// Stream the ELF image into `tpa`, zero its BSS, write the basepage
+/// (with the environment block the caller allocated) and the slot's page 0,
+/// sync the code caches, build the slot's root and publish the slot metadata.
 ///
 /// Factored out of [`load_from_source`] so the caller can free the TPA
 /// on any error (the `?`/early-return points all propagate here).
@@ -488,7 +513,7 @@ unsafe fn populate_and_map(
     req: &ProcessSetup<'_>,
     tpa: &arena::Tpa,
 ) -> Result<LoadedImage, LoadError> {
-    let ProcessSetup { tail, env, owned_by_child, prgflags } = *req;
+    let ProcessSetup { tail, env_addr, prgflags } = *req;
     let base = tpa.base;
 
     // Whole-TPA mutable byte view via the kernel high-half alias.
@@ -533,12 +558,6 @@ unsafe fn populate_and_map(
     // the load (`EPLFMT`); the caller frees the TPA, so a half-relocated
     // image never runs.
     reloc::relocate(tpa_bytes, img, base)?;
-
-    // Allocate + copy the environment (EmuTOS `alloc_env`), before the
-    // basepage so `p_env` is stamped in one pass. Same owner as the TPA.
-    // SAFETY: BDOS lock held.
-    let env_addr =
-        unsafe { alloc_env_for(env, prgflags, base as *mut c_void, owned_by_child)? };
 
     // Write the BasePage at the TPA start.
     populate_basepage(tpa_bytes, img, tail, env_addr, base, prgflags);
@@ -662,7 +681,7 @@ pub unsafe fn create_basepage(
     }
     // EmuTOS order: the environment first, then the TPA.
     // SAFETY: BDOS lock held.
-    let env_addr = unsafe { alloc_env_for(env, flags, core::ptr::null_mut(), false)? };
+    let env_addr = unsafe { alloc_env_for(env, flags)? };
     let free_env = || {
         if let Some(e) = env_addr {
             // SAFETY: BDOS lock held; `e` is the block just allocated.
@@ -1349,30 +1368,22 @@ fn write_userdef_trampoline(tpa: &mut [u8]) {
 
 /// Resolve an [`EnvSpec`] into an optional pool address for `p_env`,
 /// allocating + copying the environment via the BDOS pool. Mirrors
-/// EmuTOS `alloc_env` (`bdos/proc.c:413-431`) plus the `set_owner`
-/// hand-off (`bdos/proc.c:305-307`).
-///
-/// `child_cookie` is the child's PD pointer (the ownership tag
-/// `free_all_owned` matches); `owned_by_child` selects whether the env
-/// block is re-tagged to the child (`PE_LOADGO`) or left owned by the
-/// allocating process (`PE_LOAD`).
+/// EmuTOS `alloc_env` (`bdos/proc.c:413-431`). The block belongs to the
+/// caller (`owner = run`); the `PE_LOADGO` hand-off to the child
+/// (`set_owner`, `bdos/proc.c:302-307`) is the loader's, once the TPA — the
+/// child's PD — exists ([`load_from_source`]).
 ///
 /// # Safety
 ///
 /// Caller holds the BDOS giant lock.
-unsafe fn alloc_env_for(
-    env: EnvSpec<'_>,
-    prgflags: u32,
-    child_cookie: *mut c_void,
-    owned_by_child: bool,
-) -> Result<Option<Long>, LoadError> {
+unsafe fn alloc_env_for(env: EnvSpec<'_>, prgflags: u32) -> Result<Option<Long>, LoadError> {
     // Materialise the source env image (including its terminating
     // double-NUL) as a byte slice, then copy it into a fresh pool block.
     match env {
         EnvSpec::None => Ok(None),
         EnvSpec::Explicit(img) => {
             // SAFETY: BDOS lock held.
-            let phys = unsafe { alloc_env(img, prgflags, child_cookie, owned_by_child)? };
+            let phys = unsafe { alloc_env(img, prgflags)? };
             Ok(Some(phys))
         }
         EnvSpec::Inherit => {
@@ -1391,7 +1402,7 @@ unsafe fn alloc_env_for(
                         env_slice_from_phys(penv)
                     }
                 };
-                alloc_env(src, prgflags, child_cookie, owned_by_child)?
+                alloc_env(src, prgflags)?
             };
             Ok(Some(phys))
         }
@@ -1407,12 +1418,7 @@ unsafe fn alloc_env_for(
 /// # Safety
 ///
 /// Caller holds the BDOS giant lock.
-pub(super) unsafe fn alloc_env(
-    img: &[u8],
-    prgflags: u32,
-    child_cookie: *mut c_void,
-    owned_by_child: bool,
-) -> Result<Long, LoadError> {
+pub(super) unsafe fn alloc_env(img: &[u8], prgflags: u32) -> Result<Long, LoadError> {
     // Round the byte count up to even; never below the 2-byte empty env.
     let size = (((img.len() + 1) & !1).max(2)) as Long;
     // EmuTOS `alloc_env`: `(flags & PF_TTRAMLOAD) ? MX_PREFTTRAM : MX_STRAM`
@@ -1437,13 +1443,6 @@ pub(super) unsafe fn alloc_env(
         core::ptr::copy_nonoverlapping(img.as_ptr(), dst, img.len());
         for i in img.len()..size as usize {
             dst.add(i).write(0);
-        }
-    }
-    // PE_LOADGO: hand ownership to the child so its `Pterm` frees it.
-    if owned_by_child {
-        // SAFETY: BDOS lock held; `phys` is on the allocated list.
-        unsafe {
-            crate::bdos::mem::traps::set_owner(phys, child_cookie);
         }
     }
     Ok(phys)

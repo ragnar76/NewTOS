@@ -214,6 +214,18 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // no-op with protection off or nothing pending.
     // SAFETY: trap context, single CPU, BDOS giant lock implicit.
     unsafe { tos_api::bdos::process::memprot::sync() };
+    // ARCH03 3c: a process whose rights could not get a private page table
+    // (the arena is exhausted) keeps the non-owner rights there — it can lose
+    // access, never gain any. Not silent: one serial line per process.
+    while let Some(r) = tos_api::bdos::process::memprot::take_shortfall_report() {
+        crate::kprintln!(
+            "[memprot] page-table arena exhausted: process slot {} (PD 0x{:08x}) keeps non-owner rights in {} region(s); shortfalls since boot {}",
+            r.slot,
+            r.pd,
+            r.of_process,
+            r.total,
+        );
+    }
 }
 
 /// The body of [`rust_sync_handler`].

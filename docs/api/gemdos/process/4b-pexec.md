@@ -584,6 +584,20 @@ PHASE-06 D4/D5 status (2026-06-16):
   undefined" (flag set). The TPA size stays the fixed 4 MiB (E9) — no flag
   bit is defined that would change it.
 
+  **Order (ARCH03 stage 3c):** the environment is allocated **before** the
+  TPA, as EmuTOS `xexec` does ("allocate the environment first, depending on
+  memory policy", `alloc_env`, `bdos/proc.c:281-287`, then `alloc_tpa`,
+  `:289-299`; a TPA that cannot be had frees the environment again,
+  `:294-299`). Both are allocated as the caller and handed to the child for
+  `PE_LOADGO` (`set_owner`, `:302-307`). The order fixes the layout: the
+  environment lies below the TPA, as in EmuTOS. Until 3c the loader took the
+  TPA first (modes 5/7 already followed EmuTOS). Note: because the TPA is a
+  fixed 4 MiB block (E9) rather than EmuTOS's largest free block
+  (`alloc_tpa`, `:460-502`), what a program allocates after its start lies
+  directly behind its TPA under first fit; the tail a `Ptermres` gives back
+  is then a free block of its own, not part of the large free block behind
+  (measured, ARCH03 3c quittance).
+
   **Producing the note:** both SDK start files (`sdk/crt0.S`,
   `sdk/libc/crt0.S`) emit it with `PF_STANDARD`; a build overrides it per
   program by assembling `crt0.S` with `-DNEWTOS_PRGFLAGS=<value>` (the build
@@ -664,3 +678,16 @@ parent allocates afterwards; with the boot argument `memprot=strict` it
 inherits nothing. A program the kernel starts (desktop, accessories)
 inherits nothing. Probe `sdk/examples/mprot3b.c`; host tests
 `tos-api/tests/arch03_3b_memprot.rs`.
+
+**`memprot=strict` and `PE_GO` (ARCH03 3c, plan E6 confirmed by the lead
+2026-10-05):** strict concerns only children that get a memory space of
+their own — `PE_LOADGO` (0) and `PE_GOTHENFREE` (6). A `PE_GO` (4) child is a
+thread in its caller's space (FreeMiNT `FORK_SHAREVM`, `sys/k_exec.c:224-231,
+421`) and sees the caller's memory in **every** mode, strict included (LDG
+needs it: the module writes into its caller's stack).
+
+**A `G_USERDEF` routine of another process (ARCH03 3c, E10 (a)):** when the
+AES draws a tree of process A while B is current (B composites A's
+`WF_NEWDESK` background), A's `ub_code` runs in B, as in EmuTOS
+(`aes/gemoblib.c:411-426`); B holds A's rights for the callout only
+(`docs/api/aes/window-graphics.md`, `WF_NEWDESK` note).

@@ -141,6 +141,13 @@ unsafe fn owning_identity(addr: Long) -> Option<*mut core::ffi::c_void> {
 unsafe fn release_as_caller(addr: Long) -> Long {
     // SAFETY: lock held (caller contract).
     let Some(who) = (unsafe { owning_identity(addr) }) else {
+        // Not the caller's: an `F_KEEP` block the system inherited may be
+        // freed by anybody (FreeMiNT `sys_m_free`, `sys/dosmem.c:365-398`).
+        // SAFETY: lock held.
+        if unsafe { region::release_kept(addr) } {
+            note_user_free(addr);
+            return E_OK;
+        }
         return EIMBA;
     };
     // SAFETY: lock held.

@@ -67,6 +67,13 @@
 //! the end of every trap, and ends with the TLB maintenance the change needs
 //! ([`mmu::flush_tlb`]).
 //!
+//! A private copy comes from the page-table arena. When the arena is empty
+//! the slot keeps the shared, non-owner rights in that region — it can lose
+//! access, never gain any — and that is counted ([`table_shortfalls`],
+//! [`table_shortfalls_of`]) and reported once per process
+//! ([`take_shortfall_report`], printed by the kernel at the end of the trap;
+//! ARCH03 3c).
+//!
 //! ## Concurrency
 //!
 //! Everything here runs under the BDOS giant lock (single CPU, trap / boot
@@ -325,8 +332,20 @@ static REBUILD: AtomicU32 = AtomicU32::new(0);
 /// [`sync`] is running (it must not re-enter itself).
 static SYNCING: AtomicBool = AtomicBool::new(false);
 
-/// Times a private table could not be had (arena exhausted) — boot log.
+/// Times a private table could not be had (arena exhausted), all slots.
 static NO_TABLE: AtomicUsize = AtomicUsize::new(0);
+
+/// Per slot: times a private table could not be had for it since its process
+/// started ([`table_shortfalls_of`]).
+static NO_TABLE_SLOT: [AtomicUsize; MAX_PROCESSES] = [const { AtomicUsize::new(0) }; MAX_PROCESSES];
+
+/// Slots with a shortfall the kernel has not reported yet
+/// ([`take_shortfall_report`]).
+static SHORT_PENDING: AtomicU32 = AtomicU32::new(0);
+
+/// Slots whose process has been reported already — once per process; cleared
+/// when the slot is released ([`on_slot_released`]).
+static SHORT_REPORTED: AtomicU32 = AtomicU32::new(0);
 
 /// Note that the rights of `[lo, hi)` may have changed.
 ///
@@ -645,8 +664,9 @@ unsafe fn refresh(lo: u64, hi: u64, full: u32) {
                 Ok(p) => p,
                 Err(_) => {
                     // No table left: the slot keeps the shared (non-owner)
-                    // rights here — it can lose access, never gain it.
-                    NO_TABLE.fetch_add(1, Ordering::Relaxed);
+                    // rights here — it can lose access, never gain it. Not
+                    // silent: counted, and reported once per process.
+                    note_shortfall(s);
                     continue;
                 }
             };
@@ -664,9 +684,58 @@ unsafe fn refresh(lo: u64, hi: u64, full: u32) {
     }
 }
 
-/// Times a slot could not get a private table (the arena was exhausted).
+/// Times a slot could not get a private table (the arena was exhausted),
+/// over all processes since boot.
 pub fn table_shortfalls() -> usize {
     NO_TABLE.load(Ordering::Relaxed)
+}
+
+/// Times `slot`'s current process could not get a private table.
+pub fn table_shortfalls_of(slot: usize) -> usize {
+    NO_TABLE_SLOT.get(slot).map_or(0, |c| c.load(Ordering::Relaxed))
+}
+
+/// Count a shortfall for `slot` and queue its report if its process has not
+/// been reported yet.
+fn note_shortfall(slot: usize) {
+    NO_TABLE.fetch_add(1, Ordering::Relaxed);
+    NO_TABLE_SLOT[slot].fetch_add(1, Ordering::Relaxed);
+    if SHORT_REPORTED.load(Ordering::Relaxed) & (1 << slot) == 0 {
+        SHORT_PENDING.fetch_or(1 << slot, Ordering::Relaxed);
+    }
+}
+
+/// A page-table shortfall to report on the serial line ([`take_shortfall_report`]).
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct ShortfallReport {
+    /// The process slot that could not get a private table.
+    pub slot: usize,
+    /// Its basepage (PD) address.
+    pub pd: u64,
+    /// Shortfalls of this process so far.
+    pub of_process: usize,
+    /// Shortfalls of all processes since boot ([`table_shortfalls`]).
+    pub total: usize,
+}
+
+/// The next process whose page tables could not get a private table and
+/// has not been reported yet — the kernel prints one line per process
+/// (`kernel/src/arch/aarch64/exceptions.rs`, end of every trap). Marks it
+/// reported: the same process is not reported again.
+pub fn take_shortfall_report() -> Option<ShortfallReport> {
+    let pending = SHORT_PENDING.load(Ordering::Relaxed);
+    if pending == 0 {
+        return None;
+    }
+    let slot = pending.trailing_zeros() as usize;
+    SHORT_PENDING.fetch_and(!(1 << slot), Ordering::Relaxed);
+    SHORT_REPORTED.fetch_or(1 << slot, Ordering::Relaxed);
+    Some(ShortfallReport {
+        slot,
+        pd: super::pd_of(slot) as u64,
+        of_process: table_shortfalls_of(slot),
+        total: table_shortfalls(),
+    })
 }
 
 // ─── Process events ──────────────────────────────────────────────────
@@ -750,6 +819,10 @@ pub unsafe fn on_slot_released(slot: usize) {
     for t in &TEMP {
         t.fetch_and(!(1 << slot), Ordering::Relaxed);
     }
+    // The next process in this slot is reported on its own.
+    NO_TABLE_SLOT[slot].store(0, Ordering::Relaxed);
+    SHORT_PENDING.fetch_and(!(1 << slot), Ordering::Relaxed);
+    SHORT_REPORTED.fetch_and(!(1 << slot), Ordering::Relaxed);
     REBUILD.fetch_and(!(1 << slot), Ordering::Relaxed);
     // SAFETY: lock held.
     unsafe {

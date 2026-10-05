@@ -188,6 +188,12 @@ pub const F_PROT_PR: i16 = 0x30;
 pub const F_PROT_I: i16 = 0x40;
 /// Bit position of the protection nibble (`F_PROTSHIFT`, `sys/mint/mem.h:127`).
 pub const F_PROTSHIFT: u32 = 4;
+/// `Mxalloc` mode bit "don't auto-free this memory" (`F_KEEP`,
+/// `sys/mint/mem.h:104-105`): when the block's last owner terminates, the
+/// block is not freed but passes to the system, and any process may then
+/// `Mfree` it (FreeMiNT `sys/dosmem.c:131-135,161-165,365-398`,
+/// `sys/proc_help.c:242-258`). Not part of the protection mode.
+pub const F_KEEP: i16 = 0x4000;
 
 /// Internal protection value — private (`PROT_P`, `sys/mint/mem.h:130`).
 pub const PROT_P: u8 = 0;

@@ -119,6 +119,14 @@ Zeiger außerhalb der Pools → `hardware memory, …`.
 
 ## Offen / zur Entscheidung
 
+> **Stand nach 3c (2026-10-05):** 1 (E10), 3 (E6 vs. strict), 4 (`F_KEEP`)
+> und 5 (Tabellenmangel) sind in Stufe 3c geschlossen. **2 ist nicht
+> geschlossen:** die Lader-Reihenfolge ist jetzt die von EmuTOS, die
+> TSRPAR-Prüfung scheitert unter Schutz an/strict aber weiter — die Ursache
+> ist nicht die Reihenfolge, sondern E9 + E16 (Messung und Begründung:
+> [ARCH03-3c-STATUS-UNFINISHED](ARCH03-3c-STATUS-UNFINISHED.MD)). Die Datei
+> bleibt deshalb „UNFINISHED“.
+
 1. **E10 nicht verdrahtet.** `memprot::grant_temp/revoke_temp` sind gebaut
    und getestet (Hosttest `temporary_rights_for_a_foreign_callout`). Sie
    anzuschließen heißt, in `aes/object.rs` `ob_user` die A97-Regel

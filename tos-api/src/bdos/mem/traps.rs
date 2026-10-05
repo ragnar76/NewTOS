@@ -126,6 +126,14 @@ pub fn is_resident(m_own: *mut c_void) -> bool {
     m_own == tsr_owner()
 }
 
+/// The kernel's owner cookie ([`KERNEL_PD_SENTINEL`]) — what a kernel
+/// caller's allocations carry, and the holder of `F_KEEP` blocks whose last
+/// owner terminated (FreeMiNT's `rootproc`, [`super::region`]).
+#[inline]
+pub fn kernel_owner() -> *mut c_void {
+    (&KERNEL_PD_SENTINEL as *const u8 as *mut u8).cast()
+}
+
 /// `true` iff `m_own` is the kernel-owned sentinel cookie.
 ///
 /// Used by Phase-06 `Pterm` cleanup to skip kernel-owned MDs cheaply
@@ -299,6 +307,9 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
             tos_types::prot_from_mxalloc(mode, flags)
         }
     };
+    // FreeMiNT `F_KEEP` (`sys/dosmem.c:131-135,237-242`): the block outlives
+    // its last owner's termination ([`super::region::mark_keep`]).
+    let keep = mode & tos_types::F_KEEP != 0;
     let mode = mode & MX_MODEMASK;
     let pmd = init::pmd();
     let pmdalt = init::pmdalt();
@@ -388,6 +399,10 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
         // SAFETY: caller holds the BDOS lock.
         unsafe {
             super::region::forget(start);
+            if keep {
+                // Cannot fail: one place per MD, every flag names a live block.
+                super::region::mark_keep(start);
+            }
             // Its protection mode, and its owner's rights (ARCH03 3b).
             crate::bdos::process::memprot::on_alloc(start as u32 as u64, len as u32 as u64, prot);
         }

@@ -307,8 +307,26 @@ nibble of `mode` is **honoured**, with FreeMiNT's encoding (`sys/dosmem.c:
 no program else), `0x40` `PROT_PR` (owner read/write, everybody read),
 `0x50` `PROT_I` (nobody); above → `PROT_P`. The pool is still selected by
 bits 0–1 only. A block a **kernel** caller allocates without a nibble is
-`PROT_S` (FreeMiNT `sys/memory.c:150-159`). Bit `0x08` and `F_KEEP` are not
-evaluated (FreeMiNT has `0x08` disabled; `F_KEEP` is an open item).
+`PROT_S` (FreeMiNT `sys/memory.c:150-159`). Bit `0x08` is not evaluated
+(FreeMiNT has it disabled, `sys/dosmem.c:226-236`).
+
+**`F_KEEP` (`0x4000`, ARCH03 stage 3c, FreeMiNT `sys/mint/mem.h:104-105`):**
+"if the owner of this block terminates, don't free this block. Instead, let
+MiNT inherit it" (`sys/dosmem.c:161-165`). The bit marks the block
+(FreeMiNT `M_KEEP`, `sys/dosmem.c:131-135`); it is not part of the
+protection mode (`:237-242`) and does not select a pool. When the process
+holding the block's **last** owner link terminates, the block is not freed
+but passes to the system (FreeMiNT attaches it to the root process,
+`sys/proc_help.c:242-258`; NewTOS: the kernel owner) with its protection
+mode unchanged; from then on **any** process may `Mfree` it by address
+(`sys/dosmem.c:365-398`, `49-mfree.md`). While an owner lives, the block
+behaves like any other (only an owner frees or shrinks it). The bit acts
+with protection on and off — it is region bookkeeping, not protection
+(FreeMiNT keeps `M_KEEP` with `MEM_PROT=NO` too). EmuTOS clears it (`mode &=
+MX_MODEMASK`, `bdos/umem.c:241`): a sanctioned FreeMiNT extension. FreeMiNT
+calls it "a special mode meant for the OS only, and may not remain available
+to user processes"; NewTOS accepts it from programs, as FreeMiNT does today.
+Host tests: `tos-api/tests/arch03_3c_keep.rs`.
 
 **Observable (sanctioned FreeMiNT deviation, plan E16):** with protection on
 both pools hand out whole 4-KiB pages — the length is rounded up to a page

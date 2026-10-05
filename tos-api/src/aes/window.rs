@@ -1267,8 +1267,9 @@ static NEWDESK_ROOT: AtomicI16 = AtomicI16::new(0);
 /// own native `g_screen`. Recorded in [`set_newdesk`] from whether a user
 /// process is running at registration time (`process::current()` non-null).
 /// Drives [`paint_bg_clip`]: an app tree is drawn as **not** kernel-built so a
-/// `G_USERDEF`'s EL0 `ub_code` is deferred by `ob_user` instead of being called
-/// at EL1 (the WF_NEWDESK crash: TeraDesk `ub_bckbox` → PXN instruction abort).
+/// `G_USERDEF`'s EL0 `ub_code` is an EL0 callout from `ob_user` instead of being
+/// called at EL1 (the WF_NEWDESK crash: TeraDesk `ub_bckbox` → PXN instruction
+/// abort).
 static NEWDESK_APP: AtomicBool = AtomicBool::new(false);
 
 /// The ABI ([`Abi`] as `u8`) of the caller that registered [`NEWDESK_TREE`],
@@ -1511,11 +1512,11 @@ fn draw_desk_tree(backend: &dyn RasterBackend, clip: ClipRect) {
         if NEWDESK_APP.load(Ordering::Acquire) {
             // App-supplied background tree (EL0 GEM app, e.g. TeraDesk): read it
             // at the ABI captured at registration and treat it as NOT
-            // kernel-built, so a `G_USERDEF`'s EL0 `ub_code` is deferred by
-            // `ob_user` rather than called at EL1 (→ PXN instruction abort at
-            // the app callback's VA, the WF_NEWDESK crash). The boxes/images of
-            // the tree still draw; the app userdef simply is not invoked (an
-            // EL0-upcall mechanism is out of scope — the goal is: no crash).
+            // kernel-built, so a `G_USERDEF`'s EL0 `ub_code` runs as an EL0
+            // callout in the current process (`ob_user`; ARCH03 3c E10: also
+            // when the registrant is not the current process, as in EmuTOS)
+            // rather than at EL1 (→ PXN instruction abort at the app
+            // callback's VA, the WF_NEWDESK crash).
             //
             // The tree is a user VA of the registrant, and this runs under
             // whatever `TTBR0` the current caller has: read it **through the

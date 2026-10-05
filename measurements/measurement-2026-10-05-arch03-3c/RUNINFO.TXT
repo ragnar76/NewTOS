@@ -1,0 +1,114 @@
+measurement-2026-10-05-arch03-3c -- ARCH03 stage 3c: E10 (a) wired (a foreign
+G_USERDEF routine runs in the current process, with the owner's rights for the
+callout), loader order like EmuTOS (environment before the TPA), E6 vs strict
+documented, Mxalloc F_KEEP after FreeMiNT, page-table arena exhaustion counted
+and reported once per process.
+
+Date 2026-10-05, branch arch03, base HEAD 884111c (tree clean at start), stage
+3c uncommitted: method/arch03-3c-change.diff (git diff + new files).
+QEMU 11.0.2, host macOS (no `timeout`; runs end via QMP `quit` / the driver).
+No SD card, Pi or TT touched; tools/make-sd-image.sh NOT used -- method/
+seed-card.sh builds private 64 MiB images in the session scratchpad.
+method/ = the 3b method (copied) + build-e10.sh, e10-instrumentation.py (the
+E10 probe from the RAM registry on virt, launched once after go_graphic),
+runs-3c.sh (the FULL series in every mode, strict included), desk3a-run.sh
+(desk3a per mode, one injector kernel), summarize.sh (+ E10/memprot lines),
+tsrpar-diag.patch (the diagnostic TSRPAR variant, scratch only).
+
+MODES (boot argument; raspi4b always with serial=on)
+  on      (none)            protection on, default (E5 not strict)
+  off     memprot=off       no protection, 16-byte grain
+  strict  memprot=strict    protection on, MPF_STRICT (E5 strict)
+
+CHECKPOINTS
+  c1  all code changes; static checks; full series on/off/strict + desk3a in
+      every mode; E10 trial runs; TSR layout diagnosis.
+  c2  comments only changed after c1 (memprot module docs, one loader
+      comment); static checks again; product kernels differ from c1 in 7
+      bytes (panic line numbers); smoke on c2: desktop, TeraDesk, QED
+      (raspi4b, ON) and virt desktop -- screendumps byte-identical to c1.
+      Pi binaries: bin/kernel8-c2.img (SHA256SUMS).
+
+STATIC CHECKS (method/checks.sh <label>; checks/<label>-*.txt)
+               3b(c5)    c1        c2
+  host tests   1123/0/1  1129/0/1  1129/0/1
+  release tos-api/kernel warnings, both boards, fresh after
+               cargo clean -p kernel -p tos-api:  64/94 at c1 and c2
+  clippy tos-api/kernel (both feature sets)    76/125 at c1 and c2
+  desk-drift-probe 31; sdk/run-host-tests 13/0/0 (c1, c2)
+  Host-test delta (+6): tests/arch03_3c_keep.rs 3 (F_KEEP: system inherits
+  the block at its last owner's Pterm, anybody frees it then, an owner frees
+  it like any block, a further owner keeps it first), arch03_3c_e10.rs 2
+  (strict child: owner rights only for the callout; the grant covers the
+  owner's whole space incl. a Pexec-4 thread's blocks),
+  arch03_3c_table_shortfall.rs 1 (small arena: counted, owner loses access,
+  reported once per process, next process in the slot reported again).
+
+RUN SERIES c1 (method/runs-3c.sh c1 <cards> <mode>; checks/c1-<mode>-runs.txt,
+summary checks/c1-summary.txt) -- every run rc=0, 16 per mode
+                         ON              OFF             STRICT
+  desktop/TeraDesk/QED/APITEST dumps    = 3b c5-on      = 3b c5-off     = 3c ON
+  APITEST TOTAL          106/0/5         106/0/5         106/0/5
+  Doom                   VERIFIED        VERIFIED        VERIFIED
+  accessory (SYSACC)     issued, desk up issued, desk up issued, desk up
+  PORT10                 42/44 (PROC02)  42/44           42/44
+  CRASHTST               PASS            PASS            PASS
+  UACC3A (26)            PASS            PASS            PASS
+  MPROT3B                PASS            PASS            PASS (4 violations)
+  E10USR (new)           PASS            PASS            PASS
+  KBDVEC + EmuCON        PASS, dumps = 3b                PASS, = ON
+  S2ALL                  FAIL (TSR)      PASS            FAIL (P567-6, TSR)
+  virt crash kernel      CRASHTST, UACC3A, MPROT3B, E10USR PASS in every mode
+  virt selftests         as 3b (the 5 sleepwake FAIL pre-existing), every mode
+  virt desktop           up              up              up
+  desk3a                 A-D,G = 3b; E/F differ only in the file time,
+                         H in the item count of C:\ (new probes) -- and
+                         ON = OFF = STRICT byte-identical
+  (CRASHTST t40/t70 dumps differ from 3b only by the card's file list;
+  Doom frames are timing-dependent, as in 3b.)
+
+E10 PROBE (sdk/examples/e10usr.c + e10kid.c; serial/c1-*-e10-serial.log,
+screendumps/c1-*-rpi4-e10-end.png: the parent's WF_NEWDESK tree, green
+pattern, the userdef box CROSSED by the routine's return value)
+                                           ON        STRICT      OFF
+  s  own repaint: routine ran in parent    yes       yes         yes
+  d  child (Pexec 3+6) repaints twice:
+     routine ran during the child          2 calls   2 calls     2 calls
+     ...in the child (os_run == child PD)  yes       yes         yes
+     pb_parm / pb_tree / pb_obj right      yes       yes         yes
+  r  child reads parent PROT_P afterwards  0         FFFF (1)    0
+  (1) "Memory violation: private memory, read (translation fault, level 3)"
+      -- the temporary right ended with the callout.
+  Baseline: the same probe on the 3b crash kernel (A97 deferral):
+  serial/base3b-on-rpi4-e10-serial.log -- case d FAIL: 0 calls during the
+  child. Discriminates.
+
+S2ALL / TSRPAR UNDER PROTECTION -- NOT FIXED BY THE LOADER ORDER
+  The loader now allocates the environment first (EmuTOS order). The TSRPAR
+  check "TPA beyond blkln back in the pool (< 64 KiB kept)" still fails with
+  protection on: TT largest block 0x39f78000 -> 0x39b76000, as in 3b.
+  Diagnosis (tsrpar-diag.patch, serial/diag-on-rpi4-tsrlayout-serial.log):
+    ON   TSRRES env 0x01e88000, PD/TPA 0x01e89000 (4 MiB), its Mxalloc(64)
+         block 0x02289000 = directly behind the TPA -> the Ptermres tail
+         0x01e8b000..0x02289000 is a free block of its own.
+    OFF  env 0x01497010 and the small block 0x01497020 in a hole below
+         (16-byte grain), the tail joins the large free block -> PASS.
+  Cause: E9 (fixed 4 MiB TPA, not EmuTOS's largest block) + E16 (page grain)
+  + first fit: what a program allocates after its start lies behind its TPA.
+  The order was never the cause (3b's guess). Decision for the lead.
+  STRICT additionally (serial/c1-strict-rpi4-s2all-crashkernel-serial.log,
+  crash kernel answers the prompts): P567 case 6 runs code from the parent's
+  PROT_P text in a Pexec-6 child, TSRRES writes the parent's PROT_P mailbox
+  -- both are Pexec-0/6 children touching parent-private memory, exactly what
+  memprot=strict forbids (FreeMiNT MPF_STRICT, k_exec.c mode 6 = no
+  FORK_SHAREVM). With the product kernel the first crash prompt waits for a
+  key, so the product strict S2ALL run ends at the prompt (timeout).
+
+NOT COVERED
+  * Real Pi 4 (not touched by order). Binaries: bin/kernel8-c2.img
+    (cmdline.txt `memprot=off` / `memprot=strict` select the mode); probes
+    E10USR/E10USRS/E10USRO/E10KID.NAP.
+  * Page-table arena exhaustion at runtime (host-tested only; the arena is
+    sized ~1520 tables on raspi4b, never exhausted in these runs: no
+    "[memprot] page-table arena exhausted" line in any log).
+  * F_KEEP at runtime (host-tested only; no probe program).

@@ -1,0 +1,60 @@
+c1-on-rpi4-acc                      1 accessories have issued; 1 desktop up; 1 memory protection ON;
+c1-on-rpi4-apitest                  1 memory protection ON; 1 TOTAL 106 0 5;
+c1-on-rpi4-crashtst                 6 [crash] slot 1 key; 1 CRASHTST: PASS; 1 desktop up; 1 memory protection ON;
+c1-on-rpi4-desk3a                   1 desktop up; 1 memory protection ON;
+c1-on-rpi4-desktop                  1 desktop up; 1 memory protection ON;
+c1-on-rpi4-doom                     1 memory protection ON; 1 VERIFIED via EdDI+scale+vro_cpyfm;
+c1-on-rpi4-e10                      1 E10USR: PASS; 1 memory protection ON;
+c1-on-rpi4-kbdvec-emucon            2 desktop up; 1 KBDVEC: PASS; 1 memory protection ON;
+c1-on-rpi4-mprot                    1 [crash] slot 1 key; 1 desktop up; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault; 1 MPROT3B: PASS;
+c1-on-rpi4-port10                   2 10: FAIL; 42 10: PASS; 1 desktop up; 1 memory protection ON; 1 port10: 2 of 44 checks FAILED;
+c1-on-rpi4-qed                      1 memory protection ON;
+c1-on-rpi4-s2all                    1 desktop up; 1 MEM03: PASS; 1 memory protection ON; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: FAIL; 1 VFORK: PASS;
+c1-on-rpi4-teradesk                 1 memory protection ON;
+c1-on-rpi4-uacc3a                   26 [crash] slot 1 key; 1 desktop up; 1 memory protection ON; 1 UACC3A: PASS;
+c1-on-virt-crash                    1 [crash] slot 0 key; 27 [crash] slot 1 key; 1 CRASHTST: PASS; 1 E10USR: PASS; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault; 1 MPROT3B: PASS; 1 UACC3A: PASS;
+c1-on-virt-desktop                  1 desktop up; 1 memory protection ON;
+c1-on-virt-selftests                1 === B1 PASS ===; 1 === D3 PASS ===; 1 === D3 PEXEC PASS ===; 1 === D4/D5 PEXEC PASS ===; 1 === D6 PASS ===; 1 === D7 PTERMRES PASS ===; 1 desktop up; 1 EL0: FAIL; 1 memory protection ON;
+c1-off-rpi4-acc                     1 accessories have issued; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+c1-off-rpi4-apitest                 1 memory protection OFF (boot argument `memprot=off`); 1 TOTAL 106 0 5;
+c1-off-rpi4-crashtst                6 [crash] slot 1 key; 1 CRASHTST: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+c1-off-rpi4-desk3a                  1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+c1-off-rpi4-desktop                 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+c1-off-rpi4-doom                    1 memory protection OFF (boot argument `memprot=off`); 1 VERIFIED via EdDI+scale+vro_cpyfm;
+c1-off-rpi4-e10                     1 E10USR: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+c1-off-rpi4-kbdvec-emucon           2 desktop up; 1 KBDVEC: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+c1-off-rpi4-mprot                   1 desktop up; 1 memory protection OFF (boot argument `memprot=off`); 1 MPROT3B: PASS;
+c1-off-rpi4-port10                  2 10: FAIL; 42 10: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`); 1 port10: 2 of 44 checks FAILED;
+c1-off-rpi4-qed                     1 memory protection OFF (boot argument `memprot=off`);
+c1-off-rpi4-s2all                   1 desktop up; 1 MEM03: PASS; 1 memory protection OFF (boot argument `memprot=off`); 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; 1 VFORK: PASS;
+c1-off-rpi4-teradesk                1 memory protection OFF (boot argument `memprot=off`);
+c1-off-rpi4-uacc3a                  26 [crash] slot 1 key; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`); 1 UACC3A: PASS;
+c1-off-virt-crash                   1 [crash] slot 0 key; 26 [crash] slot 1 key; 1 CRASHTST: PASS; 1 E10USR: PASS; 1 memory protection OFF (boot argument `memprot=off`); 1 MPROT3B: PASS; 1 UACC3A: PASS;
+c1-off-virt-desktop                 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+c1-off-virt-selftests               1 === B1 PASS ===; 1 === D3 PASS ===; 1 === D3 PEXEC PASS ===; 1 === D4/D5 PEXEC PASS ===; 1 === D6 PASS ===; 1 === D7 PTERMRES PASS ===; 1 desktop up; 1 EL0: FAIL; 1 memory protection OFF (boot argument `memprot=off`);
+c1-strict-rpi4-acc                  1 accessories have issued; 1 desktop up; 1 memory protection ON (strict);
+c1-strict-rpi4-apitest              1 memory protection ON (strict); 1 TOTAL 106 0 5;
+c1-strict-rpi4-crashtst             6 [crash] slot 1 key; 1 CRASHTST: PASS; 1 desktop up; 1 memory protection ON (strict);
+c1-strict-rpi4-desk3a               1 desktop up; 1 memory protection ON (strict);
+c1-strict-rpi4-desktop              1 desktop up; 1 memory protection ON (strict);
+c1-strict-rpi4-doom                 1 memory protection ON (strict); 1 VERIFIED via EdDI+scale+vro_cpyfm;
+c1-strict-rpi4-e10                  1 [crash] slot 1 key; 1 E10USR: PASS; 1 memory protection ON (strict); 1 Memory violation: private memory, read (translation fault;
+c1-strict-rpi4-kbdvec-emucon        2 desktop up; 1 KBDVEC: PASS; 1 memory protection ON (strict);
+c1-strict-rpi4-mprot                4 [crash] slot 1 key; 1 desktop up; 1 memory protection ON (strict); 1 Memory violation: free memory, write (translation fault; 1 Memory violation: private memory, read (translation fault; 1 Memory violation: private memory, write (translation fault; 1 Memory violation: readable memory, write (permission fault; 1 MPROT3B: PASS;
+c1-strict-rpi4-port10               2 10: FAIL; 42 10: PASS; 1 desktop up; 1 memory protection ON (strict); 1 port10: 2 of 44 checks FAILED;
+c1-strict-rpi4-qed                  1 memory protection ON (strict);
+c1-strict-rpi4-s2all-crashkernel    2 [crash] slot 2 key; 1 desktop up; 1 MEM03: PASS; 1 memory protection ON (strict); 1 Memory violation: private memory, execute (translation fault; 1 Memory violation: private memory, write (translation fault; 1 OWN: PASS; 1 P34: PASS; 1 P567: FAIL; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000002; 1 TSR: FAIL; 1 VFORK: PASS;
+c1-strict-rpi4-s2all                1 MEM03: PASS; 1 memory protection ON (strict); 1 Memory violation: private memory, execute (translation fault; 1 P34: PASS; 2 PFLAGS: PASS;
+c1-strict-rpi4-teradesk             1 memory protection ON (strict);
+c1-strict-rpi4-uacc3a               26 [crash] slot 1 key; 1 desktop up; 1 memory protection ON (strict); 1 UACC3A: PASS;
+c1-strict-virt-crash                1 [crash] slot 0 key; 31 [crash] slot 1 key; 1 CRASHTST: PASS; 1 E10USR: PASS; 1 memory protection ON (strict); 1 Memory violation: free memory, write (translation fault; 2 Memory violation: private memory, read (translation fault; 1 Memory violation: private memory, write (translation fault; 1 Memory violation: readable memory, write (permission fault; 1 MPROT3B: PASS; 1 UACC3A: PASS;
+c1-strict-virt-desktop              1 desktop up; 1 memory protection ON (strict);
+c1-strict-virt-selftests            1 === B1 PASS ===; 1 === D3 PASS ===; 1 === D3 PEXEC PASS ===; 1 === D4/D5 PEXEC PASS ===; 1 === D6 PASS ===; 1 === D7 PTERMRES PASS ===; 1 desktop up; 1 EL0: FAIL; 1 memory protection ON (strict);
+c2-on-rpi4-desktop                  1 desktop up; 1 memory protection ON;
+c2-on-rpi4-qed                      1 memory protection ON;
+c2-on-rpi4-teradesk                 1 memory protection ON;
+c2-on-virt-desktop                  1 desktop up; 1 memory protection ON;
+diag-off-rpi4-tsrlayout             1 desktop up; 1 MEM03: PASS; 1 memory protection OFF (boot argument `memprot=off`); 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; 1 VFORK: PASS;
+diag-on-rpi4-tsrlayout              1 desktop up; 1 MEM03: PASS; 1 memory protection ON; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: FAIL; 1 VFORK: PASS;
+base3b-on-rpi4-e10                  1 E10USR: case d in the child (os_run) got=0x00000000 want=0x01A87000 WRONG; 1 E10USR: case d routine ran during the child got=0x00000000 want=0x00000001 WRONG; 1 E10USR: FAIL; 1 memory protection ON;
+c1-strict-rpi4-s2all-crashkernel-* 

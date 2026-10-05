@@ -751,6 +751,21 @@ every block starts on a page (FreeMiNT `QUANTUM`, `sys/mint/mem.h:152`), so
 (rights per process), `48-malloc.md`, `49-mfree.md`, `4a-mshrink.md`,
 `docs/api/bios/_exception-crash.md` (memory protection); tests
 `tos-api/tests/arch03_3b_memprot.rs`, probe `sdk/examples/mprot3b.c`.
+Stage 3c: `memprot=strict` concerns `Pexec` 0/6 children only — a `Pexec` 4
+child shares its caller's space in every mode (E6); a `G_USERDEF` routine of
+another process runs in the current one with the owner's rights for the
+callout (E10 (a), EmuTOS behaviour, `aes/gemoblib.c:411-426`, in every mode);
+a process that cannot get a private page table keeps non-owner rights there
+and is reported once on the serial line (`[memprot] page-table arena
+exhausted …`).
+
+**`Mxalloc` `F_KEEP` (`0x4000`)** (ARCH03 stage 3c). EmuTOS clears the bit
+(`bdos/umem.c:241`); NewTOS honours it as FreeMiNT does
+(`sys/dosmem.c:131-135,161-165,365-398`, `sys/proc_help.c:242-258`): the
+block survives its last owner's termination, passes to the system and can
+then be freed by any process. In every protection mode. Spec
+`docs/api/gemdos/memory/44-mxalloc.md`, `49-mfree.md`; tests
+`tos-api/tests/arch03_3c_keep.rs`.
 
 ## EmuTOS is the reference, not the template
 

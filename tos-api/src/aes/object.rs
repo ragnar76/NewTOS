@@ -152,8 +152,8 @@ impl ObjTree {
     /// `wind_set(DESKWH, WF_NEWDESK, tree)` ([`crate::aes::window`]). Its ABI is
     /// captured at registration (the app was current then) and replayed here;
     /// and because the tree lives in EL0 app memory, a `G_USERDEF`'s `ub_code`
-    /// must be treated as an EL0 callback (`kernel_built = false` → deferred by
-    /// [`ob_user`], never called at EL1). [`Self::new`] would instead read
+    /// must be treated as an EL0 callback (`kernel_built = false` → an EL0
+    /// callout from [`ob_user`], never called at EL1). [`Self::new`] would instead read
     /// `current_abi()` at build time (wrong when the app is not current), and
     /// [`Self::lp64`] would wrongly mark the app tree kernel-built (the
     /// WF_NEWDESK-background crash: TeraDesk's `ub_bckbox` called at EL1 → PXN
@@ -531,9 +531,9 @@ impl ObjTree {
 // (the raw, trap-time view every other accessor has always had). A VA the
 // owner has no mapping for reads as nothing: a NIL record ([`NIL_RECORD`]),
 // a zero field, an empty string, a skipped raster. Nothing is dereferenced
-// through `TTBR0`, nothing is executed in a foreign address space
-// ([`ob_user`] defers the callout when the tree's owner is not the current
-// process). [`crate::aes::window::draw_desk_tree`] builds such an accessor
+// through `TTBR0`. A `G_USERDEF` routine of the owner runs in the current
+// process (EmuTOS, `gemoblib.c:411-426`), with the owner's rights for the
+// callout ([`ob_user`], ARCH03 3c E10). [`crate::aes::window::draw_desk_tree`] builds such an accessor
 // through [`render_tree_app`] with the owner recorded at registration.
 
 impl ObjTree {
@@ -1333,7 +1333,7 @@ pub unsafe fn render_tree_lp64(
 /// GEM app registered via `wind_set(DESKWH, WF_NEWDESK, tree)`: read the tree at
 /// the `abi` captured at registration and treat it as **not** kernel-built
 /// ([`ObjTree::app_at`]), so a `G_USERDEF`'s `ub_code` is an EL0 callback that
-/// [`ob_user`] defers instead of calling at EL1. This is the WF_NEWDESK-
+/// [`ob_user`] calls out to at EL0 instead of calling at EL1. This is the WF_NEWDESK-
 /// background counterpart to the ILP32-app `objc_draw`-via-SVC path
 /// ([`ObjTree::new`]): the same privilege guard, but with the ABI recorded at
 /// registration because the composite runs when the app may not be current.
@@ -1341,8 +1341,9 @@ pub unsafe fn render_tree_lp64(
 /// `owner` is the process slot the tree belongs to (`Some` for an EL0
 /// registrant, `None` for a kernel one): every address the drawer follows is
 /// then resolved through that slot's mapping ([`ObjTree::app_owned`], A97)
-/// instead of being dereferenced through whichever `TTBR0` is installed, and
-/// a `G_USERDEF` callout is made only if that slot is the current process.
+/// instead of being dereferenced through whichever `TTBR0` is installed; a
+/// `G_USERDEF` routine runs in the current process with the owner's rights
+/// for the callout (ARCH03 3c, E10).
 ///
 /// # Safety
 /// `tree` must be a valid `OBJECT` array (at `abi` width) with `start` in range
@@ -1856,8 +1857,8 @@ fn change_clip_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool, clip_overrid
             // AUD-P3-002: EmuTOS `ob_change` redraws a G_USERDEF by calling its
             // user routine with (prev=curr_state, curr=new_state) and suppresses
             // the generic object redraw (`redraw = FALSE`, gemoblib.c:1282-1284).
-            // The callback is only invoked for a kernel-built tree (see
-            // `ob_user`); an app tree's EL0 callback is deferred. A null
+            // A kernel-built tree's callback is called directly, an app
+            // tree's runs at EL0 in the current process (see `ob_user`). A null
             // `ob_spec` (no USERBLK) is left to the generic redraw below so
             // `ob_user` never dereferences null.
             G_USERDEF if spec != 0 => {
@@ -2771,15 +2772,17 @@ fn ob_format(just: i16, raw: &[u8], tmpl: &[u8], out: &mut [u8]) -> usize {
 /// rect, `ub_parm`) and invoke the user draw/change callback `ub_code(PARMBLK*)`,
 /// returning its WORD result as the object's new state.
 ///
-/// **Privilege split (AUD-P3-002).** The callback is only *invoked* when the
-/// tree is **kernel-built** ([`ObjTree::kernel_built`]) — then `ub_code` is an
-/// EL1 function at this AES code's privilege, so a direct same-privilege call is
-/// sound. For an **app-provided** tree the callback lives in the EL0 app;
-/// calling it from the EL1 AES trap handler is a cross-privilege upcall (EL1→EL0,
-/// re-entrant during the app's `svc`) for which NewTOS has no mechanism yet. In
-/// that case the PARMBLK is fully prepared but the call is **deferred** and the
-/// state returned unchanged — the upcall infrastructure is an open design
-/// decision handed to the lead (same class as the vex-vector upcall).
+/// **Privilege split (AUD-P3-002).** For a **kernel-built** tree
+/// ([`ObjTree::kernel_built`]) `ub_code` is an EL1 function at this AES code's
+/// privilege and is called directly. For an **app-provided** tree the callback
+/// is EL0 code: the PARMBLK goes into the current process's page-0 scratch and
+/// the AES fiber stalls while the kernel runs `ub_code` at EL0 in the
+/// **current** process ([`crate::aes::thread::block_for_userdef`]) — also when
+/// the tree belongs to another process (ARCH03 3c, E10 (a): EmuTOS runs it
+/// wherever the draw happens, `gemoblib.c:411-426`; with memory protection on
+/// the current space holds the owner's rights for the callout,
+/// [`crate::bdos::process::memprot::grant_temp`]). Only with no EL0 process to
+/// run it in (a kernel caller) is the state returned unchanged.
 #[allow(clippy::too_many_arguments)]
 fn ob_user(
     t: ObjTree,
@@ -2835,37 +2838,54 @@ fn ob_user(
         // (e.g. an EL1 test caller reaching an app tree) falls back to the old
         // "keep the state" behaviour rather than dereferencing a null basepage.
         use crate::bdos::process::loader::{PARMBLK_SCRATCH_VA, USER_VA_BASE};
-        use crate::bdos::process::{current, mmu, slot_for};
-        // A97: the callback is code in the **tree owner's** address space.
-        // When an owned tree is drawn while its owner is not the current
-        // process (a `Pexec` child compositing its parent's `WF_NEWDESK`
-        // background, the kernel desktop repainting), `ub_code` must not be
-        // run in the current process — the VA names something else there.
-        // The state is kept, as for a kernel caller.
-        let current_slot = slot_for(current());
-        if let Some(owner) = t.owner {
-            if current_slot != Some(owner) {
-                return new_state;
-            }
-        }
-        match current_slot {
-            Some(slot) => match mmu::page0_kva(slot) {
-                None => new_state,
-                Some(page0) => {
-                    // SAFETY: `page0 + PARMBLK_SCRATCH_VA` is the kernel
-                    // alias of the reserved scratch in the process's page 0,
-                    // RW-mapped, ≥ 40 bytes; single-CPU under the trap.
-                    unsafe { pb.write_abi(page0 as u64 + PARMBLK_SCRATCH_VA, t.abi()); }
-                    let parmblk_ptr = USER_VA_BASE + PARMBLK_SCRATCH_VA;
-                    crate::aes::thread::block_for_userdef(
-                        slot,
-                        ub.ub_code,
-                        parmblk_ptr,
-                    ) as u16
+        use crate::bdos::process::{current, memprot, mmu, slot_for};
+        // ARCH03 3c, E10 (a): the routine runs in the **current** process,
+        // whoever owns the tree — EmuTOS `call_usercode` is a plain `jsr` on
+        // the current stack (`aes/gemoblib.c:411-426`, called from `ob_user`
+        // `:433-448` and `just_draw` `:792-793`), so a `Pexec` child
+        // compositing its parent's `WF_NEWDESK` background runs the parent's
+        // `ub_code`. Since stage 1 a user address means the same in every
+        // process (VA = PA), so the owner's `ub_code`, its tree and its
+        // `ub_parm` are reachable from here. With memory protection on, the
+        // current space is granted the owner's rights for the callout and
+        // loses them afterwards (FreeMiNT `prot_temp`,
+        // `sys/arch/mprot030.c:775-805`; `memprot::grant_temp`). This lifts the
+        // A97 deferral, which existed only because before stage 1 the foreign
+        // VA named nothing in the current process.
+        let Some(slot) = slot_for(current()) else {
+            // No EL0 process to run it in (the kernel desktop or the boot
+            // path is the caller): there is no context for an EL0 callout.
+            return new_state;
+        };
+        let Some(page0) = mmu::page0_kva(slot) else {
+            return new_state;
+        };
+        // The tree owner when it is another process; a dead owner's slot has
+        // no image any more (and its tree would not have resolved).
+        let foreign = match t.owner {
+            Some(o) if o != slot => {
+                if mmu::page0_kva(o).is_none() {
+                    return new_state;
                 }
-            },
-            None => new_state,
+                Some(o)
+            }
+            _ => None,
+        };
+        // SAFETY: `page0 + PARMBLK_SCRATCH_VA` is the kernel alias of the
+        // reserved scratch in the process's page 0, RW-mapped, ≥ 40 bytes;
+        // single-CPU under the trap.
+        unsafe { pb.write_abi(page0 as u64 + PARMBLK_SCRATCH_VA, t.abi()); }
+        let parmblk_ptr = USER_VA_BASE + PARMBLK_SCRATCH_VA;
+        if let Some(owner) = foreign {
+            // SAFETY: AES trap context under the BDOS giant lock (single CPU).
+            unsafe { memprot::grant_temp(slot, owner) };
         }
+        let word = crate::aes::thread::block_for_userdef(slot, ub.ub_code, parmblk_ptr);
+        if foreign.is_some() {
+            // SAFETY: as above — the callout has returned (`Psigreturn`).
+            unsafe { memprot::revoke_temp(slot) };
+        }
+        word as u16
     }
 }
 
@@ -3356,9 +3376,9 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
         // AUD-P3-002: an application-drawn object. Fill a PARMBLK and call its
         // `ub_code` (EmuTOS `just_draw` G_USERDEF, gemoblib.c:792-794:
         // `state = ob_user(tree, obj, &t, spec, state, state)`). The returned
-        // state feeds the trailing decorations. `ob_user` only *invokes* the
-        // callback for a kernel-built (same-privilege EL1) tree; an app tree's
-        // EL0 callback is deferred (see `ob_user`). A null `ob_spec` (no USERBLK)
+        // state feeds the trailing decorations. A kernel-built tree's callback
+        // is called directly, an app tree's runs at EL0 in the current process
+        // (see `ob_user`). A null `ob_spec` (no USERBLK)
         // is left to the `_` arm so `ob_user` never dereferences null.
         G_USERDEF if ob_spec != 0 => {
             ob_state = ob_user(t, obj, x, y, w, h, ob_spec, clip, ob_state, ob_state);

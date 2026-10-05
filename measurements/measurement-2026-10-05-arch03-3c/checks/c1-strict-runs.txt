@@ -1,0 +1,159 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> c1-strict-rpi4-desktop-t25.png {"return": {}}
+run c1-strict-rpi4-desktop: rc=0
+t=35.0s -> c1-strict-rpi4-teradesk-t35.png {"return": {}}
+run c1-strict-rpi4-teradesk: rc=0
+t=30.0s -> c1-strict-rpi4-qed-t30.png {"return": {}}
+run c1-strict-rpi4-qed: rc=0
+t=30.0s -> c1-strict-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> c1-strict-rpi4-doom-t45.png {"return": {}}
+run c1-strict-rpi4-doom: rc=0
+t=25.0s -> c1-strict-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> c1-strict-rpi4-apitest-t40.png {"return": {}}
+run c1-strict-rpi4-apitest: rc=0
+t=25.0s -> c1-strict-rpi4-acc-t25.png {"return": {}}
+run c1-strict-rpi4-acc: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.PbKtd5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.PbKtd5/ser.sock,server=on
+t=  16.4s c1-strict-rpi4-s2all-crash1.png {"return": {}}
+timeout
+t= 240.1s c1-strict-rpi4-s2all-timeout.png {"return": {}}
+prompts seen: 1
+run c1-strict-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Ov1EE5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Ov1EE5/ser.sock,server=on
+t=  15.7s end marker seen
+t=  17.7s c1-strict-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run c1-strict-rpi4-port10: rc=0
+t=40.0s -> c1-strict-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> c1-strict-rpi4-crashtst-t70.png {"return": {}}
+run c1-strict-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.oPIhiX/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.oPIhiX/ser.sock,server=on
+t=  15.9s c1-strict-rpi4-uacc3a-crash1.png {"return": {}}
+t=  18.0s c1-strict-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.1s c1-strict-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.2s c1-strict-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.3s c1-strict-rpi4-uacc3a-crash5.png {"return": {}}
+t=  26.4s c1-strict-rpi4-uacc3a-crash6.png {"return": {}}
+t=  28.5s c1-strict-rpi4-uacc3a-crash7.png {"return": {}}
+t=  30.6s c1-strict-rpi4-uacc3a-crash8.png {"return": {}}
+t=  32.7s c1-strict-rpi4-uacc3a-crash9.png {"return": {}}
+t=  34.8s c1-strict-rpi4-uacc3a-crash10.png {"return": {}}
+t=  37.0s c1-strict-rpi4-uacc3a-crash11.png {"return": {}}
+t=  39.1s c1-strict-rpi4-uacc3a-crash12.png {"return": {}}
+t=  41.2s c1-strict-rpi4-uacc3a-crash13.png {"return": {}}
+t=  43.3s c1-strict-rpi4-uacc3a-crash14.png {"return": {}}
+t=  45.4s c1-strict-rpi4-uacc3a-crash15.png {"return": {}}
+t=  47.5s c1-strict-rpi4-uacc3a-crash16.png {"return": {}}
+t=  49.6s c1-strict-rpi4-uacc3a-crash17.png {"return": {}}
+t=  51.7s c1-strict-rpi4-uacc3a-crash18.png {"return": {}}
+t=  53.8s c1-strict-rpi4-uacc3a-crash19.png {"return": {}}
+t=  55.9s c1-strict-rpi4-uacc3a-crash20.png {"return": {}}
+t=  58.0s c1-strict-rpi4-uacc3a-crash21.png {"return": {}}
+t=  60.1s c1-strict-rpi4-uacc3a-crash22.png {"return": {}}
+t=  62.2s c1-strict-rpi4-uacc3a-crash23.png {"return": {}}
+t=  64.3s c1-strict-rpi4-uacc3a-crash24.png {"return": {}}
+t=  66.4s c1-strict-rpi4-uacc3a-crash25.png {"return": {}}
+t=  68.5s c1-strict-rpi4-uacc3a-crash26.png {"return": {}}
+t=  69.8s end marker seen
+t=  77.8s c1-strict-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run c1-strict-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.TKw7hW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.TKw7hW/ser.sock,server=on
+t=  15.9s c1-strict-rpi4-mprot-crash1.png {"return": {}}
+t=  18.0s c1-strict-rpi4-mprot-crash2.png {"return": {}}
+t=  20.1s c1-strict-rpi4-mprot-crash3.png {"return": {}}
+t=  22.3s c1-strict-rpi4-mprot-crash4.png {"return": {}}
+t=  23.5s end marker seen
+t=  31.5s c1-strict-rpi4-mprot-end.png {"return": {}}
+prompts seen: 4
+run c1-strict-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.hRGvb5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.hRGvb5/ser.sock,server=on
+t=  16.0s c1-strict-rpi4-e10-crash1.png {"return": {}}
+t=  17.2s end marker seen
+t=  20.2s c1-strict-rpi4-e10-end.png {"return": {}}
+prompts seen: 1
+run c1-strict-rpi4-e10: rc=0
+t=20.0s -> c1-strict-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> c1-strict-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> c1-strict-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run c1-strict-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.DySEHe/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.DySEHe/ser.sock,server=on
+t=   4.0s c1-strict-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s c1-strict-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.8s c1-strict-virt-crash-crash3.png {"return": {}}
+t=   5.8s answered prompt 3
+t=   7.2s c1-strict-virt-crash-crash4.png {"return": {}}
+t=   7.2s answered prompt 4
+t=   8.6s c1-strict-virt-crash-crash5.png {"return": {}}
+t=   8.6s answered prompt 5
+t=  10.0s c1-strict-virt-crash-crash6.png {"return": {}}
+t=  10.0s answered prompt 6
+t=  11.4s c1-strict-virt-crash-crash7.png {"return": {}}
+t=  11.4s answered prompt 7
+t=  12.9s c1-strict-virt-crash-crash8.png {"return": {}}
+t=  12.9s answered prompt 8
+t=  14.3s c1-strict-virt-crash-crash9.png {"return": {}}
+t=  14.3s answered prompt 9
+t=  15.7s c1-strict-virt-crash-crash10.png {"return": {}}
+t=  15.7s answered prompt 10
+t=  17.1s c1-strict-virt-crash-crash11.png {"return": {}}
+t=  17.1s answered prompt 11
+t=  18.5s c1-strict-virt-crash-crash12.png {"return": {}}
+t=  18.5s answered prompt 12
+t=  20.0s c1-strict-virt-crash-crash13.png {"return": {}}
+t=  20.0s answered prompt 13
+t=  21.3s c1-strict-virt-crash-crash14.png {"return": {}}
+t=  21.3s answered prompt 14
+t=  22.7s c1-strict-virt-crash-crash15.png {"return": {}}
+t=  22.7s answered prompt 15
+t=  24.1s c1-strict-virt-crash-crash16.png {"return": {}}
+t=  24.1s answered prompt 16
+t=  25.5s c1-strict-virt-crash-crash17.png {"return": {}}
+t=  25.5s answered prompt 17
+t=  26.9s c1-strict-virt-crash-crash18.png {"return": {}}
+t=  26.9s answered prompt 18
+t=  28.3s c1-strict-virt-crash-crash19.png {"return": {}}
+t=  28.3s answered prompt 19
+t=  29.7s c1-strict-virt-crash-crash20.png {"return": {}}
+t=  29.7s answered prompt 20
+t=  31.1s c1-strict-virt-crash-crash21.png {"return": {}}
+t=  31.1s answered prompt 21
+t=  32.5s c1-strict-virt-crash-crash22.png {"return": {}}
+t=  32.5s answered prompt 22
+t=  33.9s c1-strict-virt-crash-crash23.png {"return": {}}
+t=  33.9s answered prompt 23
+t=  35.3s c1-strict-virt-crash-crash24.png {"return": {}}
+t=  35.3s answered prompt 24
+t=  36.7s c1-strict-virt-crash-crash25.png {"return": {}}
+t=  36.7s answered prompt 25
+t=  38.1s c1-strict-virt-crash-crash26.png {"return": {}}
+t=  38.1s answered prompt 26
+t=  39.4s c1-strict-virt-crash-crash27.png {"return": {}}
+t=  39.4s answered prompt 27
+t=  40.9s c1-strict-virt-crash-crash28.png {"return": {}}
+t=  40.9s answered prompt 28
+t=  42.3s c1-strict-virt-crash-crash29.png {"return": {}}
+t=  42.3s answered prompt 29
+t=  43.8s c1-strict-virt-crash-crash30.png {"return": {}}
+t=  43.8s answered prompt 30
+t=  45.4s c1-strict-virt-crash-crash31.png {"return": {}}
+t=  45.4s answered prompt 31
+t=  47.2s c1-strict-virt-crash-crash32.png {"return": {}}
+t=  47.2s answered prompt 32
+t=  47.2s end marker seen
+t=  48.9s c1-strict-virt-crash-end.png {"return": {}}
+prompts seen: 32
+run c1-strict-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.lb9u7H/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.lb9u7H/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s c1-strict-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run c1-strict-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.SVrtYj/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.SVrtYj/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s c1-strict-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run c1-strict-virt-desktop: rc=0

@@ -944,11 +944,18 @@ Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
 > span only through one contiguous alias). A tree whose root record the
 > owner no longer maps counts as **not registered** (the AES fallback root
 > is drawn); an unmapped sub-struct, string or raster inside the tree is
-> drawn as nothing. A `G_USERDEF` in such a tree is called out to only if
-> the owner *is* the current process — its `ub_code` is code in the owner's
-> address space. A kernel (EL1) registrant's tree is a kernel VA and is read
-> directly. Host-tested at the resolver seam (`window.rs`
-> `newdesk_owner_tests`, the A83 method).
+> drawn as nothing. A `G_USERDEF` in such a tree is called out to in the
+> **current** process, whoever registered the tree — EmuTOS's
+> `call_usercode` is a plain `jsr` on the current stack
+> (`gemoblib.c:411-426`, from `ob_user` `:433-448`). Since ARCH03 stage 1 a
+> user address means the same in every process (VA = PA), so the owner's
+> `ub_code` is reachable; with memory protection on the current process
+> holds the owner's rights for the duration of the callout and loses them
+> afterwards (ARCH03 3c, E10 (a); FreeMiNT `prot_temp`,
+> `sys/arch/mprot030.c:775-805`). Until 3c the callout was skipped when the
+> owner was not the current process (A97). A kernel (EL1) registrant's tree
+> is a kernel VA and is read directly. Host-tested at the resolver seam
+> (`window.rs` `newdesk_owner_tests`, the A83 method).
 
 > **`WF_TOP` on the desktop handle and on a created-but-unopened handle
 > (A80, 2026-09-20).** `wm_set` runs `wm_mktop(w_handle)` whenever `w_handle !=

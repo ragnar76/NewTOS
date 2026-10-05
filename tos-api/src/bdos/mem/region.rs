@@ -119,6 +119,91 @@ unsafe fn block(addr: Long) -> Option<*mut MD> {
     None
 }
 
+// ─── F_KEEP: blocks the system inherits ──────────────────────────────
+//
+// FreeMiNT `Mxalloc(…, F_KEEP | mode)` sets `M_KEEP` on the region
+// (`sys/dosmem.c:131-135`, `sys/memory.c:794-795`): "if the owner of this
+// block terminates, don't free this block. Instead, let MiNT inherit it, so
+// it'll never be freed" (`sys/dosmem.c:161-165`). The terminating process's
+// sweep attaches such a region to the root process when it holds the last
+// link (`sys/proc_help.c:242-258`), and any process may then `Mfree` it by
+// address (`sys/dosmem.c:365-398`). NewTOS keeps the flag per block start
+// here; the system holder is the kernel owner ([`traps::kernel_owner`],
+// FreeMiNT's `rootproc`). The block's protection mode does not change.
+
+/// One place per MD: a flag names a live block (cleared by [`forget`]).
+const MAX_KEPT: usize = super::mdpool::MD_BLOCK_COUNT * super::mdpool::MDS_PER_BLOCK;
+
+struct Kept(UnsafeCell<[Long; MAX_KEPT]>);
+// SAFETY: accessed only under the BDOS giant lock (single CPU, trap path).
+unsafe impl Sync for Kept {}
+static KEPT: Kept = Kept(UnsafeCell::new([0; MAX_KEPT]));
+
+/// # Safety
+///
+/// BDOS giant lock held; no other borrow of the table alive.
+unsafe fn kept() -> &'static mut [Long; MAX_KEPT] {
+    // SAFETY: caller contract.
+    unsafe { &mut *KEPT.0.get() }
+}
+
+/// Mark the block at `addr` `F_KEEP` (FreeMiNT `M_KEEP`). `false` only if
+/// the table is full, which cannot happen while every flag names a live
+/// block (one per MD).
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+pub unsafe fn mark_keep(addr: Long) -> bool {
+    if addr == 0 {
+        return false;
+    }
+    // SAFETY: lock held.
+    let k = unsafe { kept() };
+    if k.contains(&addr) {
+        return true;
+    }
+    match k.iter_mut().find(|a| **a == 0) {
+        Some(a) => {
+            *a = addr;
+            true
+        }
+        None => false,
+    }
+}
+
+/// Was the block at `addr` allocated with `F_KEEP`?
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+pub unsafe fn is_kept(addr: Long) -> bool {
+    // SAFETY: lock held.
+    addr != 0 && unsafe { kept() }.contains(&addr)
+}
+
+/// `Mfree` of a kept block the system inherited, by any process (FreeMiNT
+/// `sys_m_free`'s fallback over the root process's `M_KEEP` regions,
+/// `sys/dosmem.c:365-398`). Frees it and returns `true` if `addr` starts
+/// such a block; `false` (nothing changes) for anything else.
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+pub unsafe fn release_kept(addr: Long) -> bool {
+    // SAFETY: lock held.
+    let Some(m) = (unsafe { block(addr) }) else {
+        return false;
+    };
+    // SAFETY: lock held; `m` is on `mp_mal`.
+    let inherited = unsafe { is_kept(addr) && traps::is_kernel_owned((*m).m_own) && links(addr) == 1 };
+    if inherited {
+        // SAFETY: lock held; `addr` starts an allocated block.
+        let _ = unsafe { traps::mfree(addr) };
+    }
+    inherited
+}
+
 fn entry_of(t: &mut [Entry; MAX_SHARED_BLOCKS], addr: Long) -> Option<&mut Entry> {
     t.iter_mut().find(|e| e.loc == addr && addr != 0)
 }
@@ -271,6 +356,11 @@ pub unsafe fn forget(addr: Long) {
     if let Some(e) = entry_of(t, addr) {
         *e = EMPTY;
     }
+    // ... and its `F_KEEP` flag.
+    // SAFETY: lock held.
+    if let Some(a) = unsafe { kept() }.iter_mut().find(|a| **a == addr && addr != 0) {
+        *a = 0;
+    }
 }
 
 /// `Pterm`: drop `who` from every block it owns — freeing what nobody else
@@ -312,9 +402,23 @@ pub unsafe fn detach_all(who: *mut c_void) -> usize {
             // SAFETY: list invariant.
             let (next, start, own) = unsafe { ((*m).m_link, (*m).m_start, (*m).m_own) };
             if own == who {
-                // SAFETY: lock held; `start` starts a block `who` owns.
-                if let Ok(Detached::Freed) = unsafe { detach(start, who) } {
-                    freed += 1;
+                // SAFETY: lock held.
+                let inherit = unsafe { is_kept(start) && links(start) == 1 };
+                if inherit {
+                    // `F_KEEP` and `who` holds the last link: the system
+                    // inherits the block instead of freeing it (FreeMiNT
+                    // `sys/proc_help.c:254-256`: `M_KEEP && links <= 1` →
+                    // `attach_region(rootproc, m)`).
+                    // SAFETY: `m` is on `mp_mal`; lock held.
+                    unsafe {
+                        (*m).m_own = traps::kernel_owner();
+                        prot_changed(start);
+                    }
+                } else {
+                    // SAFETY: lock held; `start` starts a block `who` owns.
+                    if let Ok(Detached::Freed) = unsafe { detach(start, who) } {
+                        freed += 1;
+                    }
                 }
             }
             m = next;

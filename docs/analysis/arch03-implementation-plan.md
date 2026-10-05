@@ -474,6 +474,21 @@ Jede Stufe: eigener Zweig von `desk-rebuild` (Merkregel „Agent-Worktrees start
 - **Rückrollen:** Schalter „Schutz aus“ zur Bootzeit (wie FreeMiNT `MEM_PROT=NO`, `FM/bootmenu.c:207-219` [S1]): alle `memspace` zeigen wieder auf die geteilten Tabellen — damit ist Stufe 3 zur Laufzeit abschaltbar, zusätzlich Revert.
 - **Aufwand:** 10–15 Tage.
 
+#### Stufe 3 wie gebaut (3a–3c, Stand 2026-10-05)
+
+Quittungen: `TASK/ARCH03-3a-STATUS-DONE.MD`, `TASK/ARCH03-3b-STATUS-UNFINISHED.MD`,
+`TASK/ARCH03-3c-STATUS-UNFINISHED.MD`; Belege `measurements/measurement-2026-10-05-arch03-3{a,b,c}/`.
+
+- **3a — Kernelzugriff:** jede Stelle der Inventur (`docs/analysis/arch03-stage3-access-inventory.md`) läuft über `uaccess` (Aufruferrechte, `ldtr/sttr`, Fehlerabfang) oder prüft mit Aufruferrechten und liest über den Kernel-Alias (`kalias`); ein schlechter Zeiger beendet das Programm statt den Kernel.
+- **3b — Rechte je Adressraum:** `tos-api/src/bdos/process/memprot.rs`. Rechte werden **berechnet, nicht fortgeschrieben**: Änderungen markieren Bereiche/Slots als schmutzig, `sync()` (Ende jeder mutierenden BDOS-Operation, vor jedem `install_ttbr0`, Ende jedes Traps) rechnet die 2-MiB-Regionen aus Pool-Listen, Besitzern (`m_own` + weitere Besitzer), Blocksätzen (Modus, E5-Erbe) und E10-Freigaben neu. Geteilte L3 = Nicht-Besitzer-Rechte, private L3 nur wo ein Slot abweicht (Copy-on-differ, §3.2); jeder Slot hat eigene L2 für alle vier GiB. Tabellen aus einem Vorrat, den der Kernel beim Booten vor den Pools nimmt. Seitenraster (E16) nur bei Schutz an. Bootschalter `memprot=off` (= 3a) / `memprot=strict` (E5 strikt). Schutzverletzung → EmuTOS-Absturzbericht + Zeile `Memory violation: …` (E11, kein Alert). Keine ASIDs (Stufe 4).
+- **3c — Abschluss:**
+  - **E10 (a) verdrahtet, in allen Modi:** `aes/object.rs` `ob_user` führt die `G_USERDEF`-Routine eines **fremden** Baumeigentümers im laufenden Prozess aus wie EmuTOS (`aes/gemoblib.c:411-426` `call_usercode` = `jsr` auf dem laufenden Stapel, aus `ob_user` `:433-448`, `just_draw` `:792-793`); bei Schutz an mit `memprot::grant_temp` vor und `revoke_temp` nach dem Callout (FreeMiNT `prot_temp`, `FM/arch/mprot030.c:775-805`). Die A97-Zurückstellung ist aufgehoben (sie bestand, weil vor Stufe 1 die fremde VA im laufenden Prozess nichts bedeutete). Kein Callout nur ohne EL0-Prozess (Kernel-Aufrufer). Sonde `sdk/examples/e10usr.c` + `e10kid.c`.
+  - **Lader-Reihenfolge wie EmuTOS:** Umgebung vor TPA (`ET/bdos/proc.c:281-299`); beide als Aufrufer angelegt, bei `PE_LOADGO` dem Kind übergeben (`:302-307`).
+  - **E6 vs. strict:** `memprot=strict` betrifft nur Kinder mit eigenem Raum (`Pexec` 0/6); ein `Pexec`-4-Kind teilt den Raum des Aufrufers in jedem Modus (dokumentiert in `4b-pexec.md`, `COMPATIBILITY.md`).
+  - **`F_KEEP`** (`0x4000`) nach FreeMiNT (`FM/dosmem.c:131-135,161-165,365-398`, `FM/proc_help.c:242-258`): Block überlebt den letzten Besitzer, geht an den Kernel (= `rootproc`), danach darf jeder ihn freigeben; Modus unverändert; in jedem Schutzmodus.
+  - **Tabellenvorrat erschöpft:** **Abweichung von Frage 14** („Erschöpfung → `ENSMEM` der auslösenden Allokation“): gebaut ist „der Prozess behält dort die Nicht-Besitzer-Rechte (verliert Zugriff, gewinnt nie welchen)“, gezählt (`table_shortfalls`, `table_shortfalls_of`) und einmal je Prozess seriell gemeldet (`[memprot] page-table arena exhausted …`) — Leitvorgabe 2026-10-05.
+- **Offen nach 3c:** S2ALL/TSRPAR-Prüfung „TPA beyond blkln back in the pool“ unter Schutz an/strict (Ursache E9 + E16, nicht die Lader-Reihenfolge — siehe 3c-Quittung); FreeMiNT-Modi 100+ (2b), `Mvalidate`/`Maccess`, `F_OS_SPECIAL` (nicht gebaut), Pi-Lauf.
+
 ### Stufe 4 — ASIDs und TLB-Feinpflege (optional, Hardware)
 
 - **Module:** `NT/mmu.rs` (`nG`, ASID-Zuteilung), `KA/boot.rs` (`TCR_EL1.AS` je nach `ASIDBits`), Wechselpfade.

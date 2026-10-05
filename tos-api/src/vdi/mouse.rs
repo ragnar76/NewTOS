@@ -558,9 +558,9 @@ pub fn mousex_handler(scancode: u8) {
 ///
 ///   Two properties follow from the cooperative model and are deliberate, not
 ///   oversights: (a) the vector is only called while its **owning** process is
-///   the running one — an EL0 VA names nothing in another address space, the
-///   same rule `ob_user` applies to a `G_USERDEF`'s `ub_code`
-///   (`aes/object.rs`, A97); (b) delivery happens at the next syscall return,
+///   the running one (it is delivered as an upcall into that process; unlike
+///   a `G_USERDEF`'s `ub_code`, which since ARCH03 3c E10 runs in whichever
+///   process draws, `aes/object.rs` `ob_user`); (b) delivery happens at the next syscall return,
 ///   not inside an interrupt, and a second detent arriving before the first
 ///   was delivered replaces it ([`crate::bdos::process::post_upcall`]'s
 ///   last-writer-wins contract). A true ISR-timed call needs the lower-EL IRQ
