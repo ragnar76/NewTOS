@@ -24,7 +24,7 @@ on any failure not in it (`sdk/lib-stale.sh:229-283`). What each costs:
 | `mintlib/linea.c` | m68k inline asm — ST Line-A | Line-A (NewTOS has none) |
 | `mintlib/nf_ops.c` | m68k inline asm — ARAnyM NatFeats | `nf_init`/`nf_get_id` (an app that needs the symbols supplies its own, as the TeraDesk overlay does) |
 | `mintlib/crtinit.c` | m68k asm + two LP64 basepage casts | `environ` set-up and the `ARGV=` extension — see §5. **`argv`/`argc` and `_base` are covered**: `newtos-arch/cmdargs.c` reimplements `parseargs()`'s argument half (PORT01) and `newtos-arch/heap_init.c` sets `_base` (T05) |
-| ~~`mintlib/spawnve.c`, `spawnvp.c`~~ | compile since TASK/PORT10 (`sdk/libc/overlay/mintlib/`, `va_arg` instead of `va_list` arithmetic) | — the `spawn*` family works (synchronous `Pexec(0)`, QEMU-verified); `system()` links and runs since the `posix/system.c` overlay — §8 |
+| ~~`mintlib/spawnve.c`, `spawnvp.c`~~ | compile since TASK/PORT10 (`sdk/libc/overlay/mintlib/`, `va_arg` instead of `va_list` arithmetic) | — the `spawn*` family works (synchronous `Pexec(0)`, QEMU-verified); `system()` is mintlib's own since TASK/PROC01 — §8 |
 | `stdio/gets.c` | `.stabs` directive rejected by the integrated assembler | `gets` |
 | `mintlib/getwd.c` | same | `getwd` (`getcwd` is available) |
 | `signal/siggetmask.c` | same | `siggetmask` |
@@ -45,7 +45,7 @@ tail that has no TOS analogue is dropped.
 | `mintlib/isatty.c` | `isatty.c` | `isatty(fd)` is `fd >= 0 && fd <= 2`; also carries `__open_stat[]` (`:1-16`) |
 | `unix/ioctl.c` | `ioctl.c` | forwards to `Fcntl(fd, arg, request)`; the m68k tty line-discipline path is gone (`:1-16`) |
 | `unix/access.c` | `access.c` | checks the owner `rwx` bits from `__quickstat` only; no group/passwd database (`:1-19`) |
-| `mintlib/thread.c` | — (dropped) | MiNT `tfork` threads: incompatible with the 256-byte basepage and the single-tasking model (`build-libc.sh:130-134`) |
+| ~~`mintlib/thread.c`~~ | builds since TASK/PROC01 from `sdk/libc/overlay/mintlib/thread.c` (LP64 casts for the 32-bit basepage fields only) | `tfork`, `__waitval`, `__waittime` — `vfork`'s TOS branch, `wait4` |
 
 ## 3. mintlib assembly that is never assembled
 
@@ -54,7 +54,7 @@ the core directories are therefore absent unless a shim replaces them:
 
 | Replaced by a shim | Missing — **undefined symbol if used** |
 |--------------------|----------------------------------------|
-| `string/bcopy.S`, `memset.S`, `bzero.S` → `memops.c`; `mintlib/libc_exit.S` → `proc.S`; `mintlib/getcookie.S` → `getcookie.c`; `mintlib/getsysvar.S` → `getsysvar.c`; `startup/crt0.S` → `sdk/libc/crt0.S`; **`mintlib/setjmp.S` → `setjmp.S`** (since 2026-09-21, TASK/T07 — see below) | `frexp.S`, `ldexp.S`, `modf.S` (the libm supplies `frexp`/`ldexp`/`modf` since T07, §4); `stdlib/alloca.S` (clang's `__builtin_alloca` covers `alloca()` when `<alloca.h>` maps to it — **unverified**); `unix/vfork.S`, `getcontext.S`, `makecontext.S`, `setcontext.S`, `swapcontext.S`; `mintlib/setstack.S`, `stkover.S`, `checkcpu.S`, `_mon.S`, `elfattr.S`, `_infinitydf.S`, `_normdf.S` |
+| `string/bcopy.S`, `memset.S`, `bzero.S` → `memops.c`; `mintlib/libc_exit.S` → `proc.S`; `mintlib/getcookie.S` → `getcookie.c`; `mintlib/getsysvar.S` → `getsysvar.c`; `startup/crt0.S` → `sdk/libc/crt0.S`; **`mintlib/setjmp.S` → `setjmp.S`** (since 2026-09-21, TASK/T07 — see below); **`unix/vfork.S` → `vfork.S`, `mintlib/setstack.S` → `setstack.S`** (since 2026-10-05, TASK/PROC01 — §8) | `frexp.S`, `ldexp.S`, `modf.S` (the libm supplies `frexp`/`ldexp`/`modf` since T07, §4); `stdlib/alloca.S` (clang's `__builtin_alloca` covers `alloca()` when `<alloca.h>` maps to it — **unverified**); `getcontext.S`, `makecontext.S`, `setcontext.S`, `swapcontext.S`; `stkover.S`, `checkcpu.S`, `_mon.S`, `elfattr.S`, `_infinitydf.S`, `_normdf.S` |
 
 **`setjmp`/`longjmp` (T07, 2026-09-21).** ADR-019 listed "setjmp (aarch64,
 when pulled)" (`docs/MEMORY.md:1139`); it is pulled: `sdk/libc/newtos-arch/
@@ -149,7 +149,7 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
 | `Getcookie` | over `Ssystem(S_GETCOOKIE)`; `C_FOUND`/`C_NOTFOUND` contract kept | `newtos-arch/getcookie.c` |
 | `Super`/`Supexec` | bindings without privilege — see [05](05-abi-pitfalls.md#b4) | `overlay/include/mint/osbind.h` |
 | `signal`/`raise`/`kill` | compile and link; whether NewTOS delivers signals to a process is **unverified** here (the kernel has an EL0 upcall mechanism, `loader.rs:735-765`) | — |
-| `fork`/`vfork`/`exec*` | `fork` is a weak symbol that compiles; `vfork` is dangling; `execve` links — behaviour **unverified**; NewTOS is single-tasking | — |
+| `fork`/`vfork`/`exec*` | `fork` is a weak symbol that compiles; `vfork` works (TOS branch: `tfork` = `Pexec` 5 + 4, QEMU-verified, §8); `execve` is `Pexec(200)` on TOS, which NewTOS answers `EINVFN` like EmuTOS — it fails with `ENOSYS` | `newtos-arch/vfork.S`, `mintlib/thread.c` |
 
 ## 6. References `libc.a` leaves unresolved (measured)
 
@@ -167,8 +167,9 @@ mintlib member references them; they were simply undefined.
 ```
 __divtf3 __eqtf2 __getf2 __lttf2 __multf3 __trunctfdf2      quad-float compiler-rt (long double)
 __getpwnam_r __getpwuid_r getpwuid getgrent setgrent endgrent pututline   passwd/group/utmp DB
-__sys_fstat __waittime __waitval                            other excluded/unbuilt members
-getcontext makecontext swapcontext vfork                    m68k .S never assembled
+__sys_fstat                                                 other excluded/unbuilt members
+getcontext makecontext swapcontext                          m68k .S never assembled
+(__waitval __waittime vfork: defined since TASK/PROC01 -- thread.c, vfork.S)
 nf_init                                                     nf_ops.c (does not compile)
 (spawnlp spawnvp: defined since TASK/PORT10 -- spawnvp.c compiles)
 socket gethostbyname                                        socket/ not compiled
@@ -214,28 +215,45 @@ item TASK/T07 names ("Soft-Float-Helfer sind ein eigener Punkt"). The
 | `sdk/examples/setjmptst.c` | the same 13 checks on NewTOS through mintlib's `<setjmp.h>` (`_Static_assert(sizeof(jmp_buf) == 176)`), verdicts over `Cconws` — QEMU raspi4b `ALL PASS (13 checks)` | `:1-17` |
 | `sdk/examples/mathtst.c` | 23 libm checks against closed-form values with tolerances (`sqrt(2)`, `sin(M_PI/6)`, `pow(2,10)`, `floor(-1.5)`, `frexp(8.0)`, `atan2(1,1)`, `exp`/`log`, `fmod`, `modf`, `hypot`, `cbrt`, `sqrtf`, NaN/-inf) via `<math.h>` — QEMU raspi4b `ALL PASS (23 checks)` | `:1-15` |
 
-## 8. `system()` (TASK/PORT10, measured 2026-10-02)
+## 8. `system()` and `vfork()` (TASK/PORT10, TASK/PROC01)
 
-`system()` links and runs, through an overlay:
-`sdk/libc/overlay/posix/system.c` is mintlib's file **without its POSIX
-branch**. Pristine mintlib picks, at run time, the POSIX branch (`vfork` +
-`execve` + `waitpid`) when `/bin/sh` is executable or `$SHELL` is set, and the
-TOS branch (`system_hack`) otherwise. The POSIX branch cannot link here:
-`vfork` is m68k assembler (`unix/vfork.S`, never assembled) and on TOS is
-`tfork()` = `Pexec(PE_CBASEPAGE)` + `Pexec(PE_GO)` on the parent's own code,
-which NewTOS answers with `EINVFN` for modes 5/6/7
-(`tos-api/src/bdos/process/pexec.rs`); `waitpid`/`wait4` pull
-`__waitval`/`__waittime` from the excluded `mintlib/thread.c`. With the
-overlay, `system()` is always the TOS branch: split the line into words
-(`'`/`"`/`` ` `` group), `<`, `>`, `>>` redirect handles 0/1 via
-`Fopen`/`Fcreate` + `Fdup`/`Fforce`, then `spawnvp(P_WAIT, argv[0], argv)` =
-a synchronous `Pexec(0)`; the result is the child's `Pterm` code, `-1` with
-`errno` `ENOENT` when the program is not found, `2` when a redirection file
-cannot be opened. `system(NULL)` is 1. The deviation from mintlib is
-observable only where `/bin/sh` or `$SHELL` would exist. TASK/PROC01
-(`Pexec` 5/6/7, `vfork` for AArch64, `thread.c`) removes the overlay again.
-Host check `sdk/libc/tests/system-host.sh`; target check
-`sdk/examples/port10.c` (`measurements/measurement-2026-10-02-port10b/`).
+`system()` is **mintlib's own `posix/system.c`** again (TASK/PROC01,
+2026-10-05; from 2026-10-02 to then an overlay without its POSIX branch stood
+in). mintlib picks at run time:
+
+* the **POSIX branch** when `/bin/sh` is executable or `$SHELL` is set:
+  `vfork()`, the child `execve(shell, {name, "-c", line})`, the parent
+  `waitpid()`. On NewTOS, as on EmuTOS, `execve` is `Pexec(200)` (mintlib's
+  `_spawnve(P_OVERLAY)`), which the kernel answers with `EINVFN`, so the child
+  `_exit(127)`s and `system()` returns a status with `WEXITSTATUS == 127` —
+  QEMU-verified (`measurements/measurement-2026-10-05-arch03-2/`, VFORKT);
+* the **TOS branch** (`system_hack`) otherwise — the case of every NewTOS
+  program that does not set `$SHELL` (`environ` starts empty): split the line
+  into words (`'`/`"`/`` ` `` group), `<`, `>`, `>>` redirect handles 0/1 via
+  `Fopen`/`Fcreate` + `Fdup`/`Fforce`, then `spawnvp(P_WAIT, argv[0], argv)` =
+  a synchronous `Pexec(0)`; the result is the child's `Pterm` code, `-1` with
+  `errno` `ENOENT` when the program is not found, `2` when a redirection file
+  cannot be opened. `system(NULL)` is 1.
+
+`vfork()` is `sdk/libc/newtos-arch/vfork.S`, the AArch64 port of mintlib's
+`unix/vfork.S`: with `__mint == 0` (always on NewTOS) the TOS branch,
+`tfork(newprog, save)` from `mintlib/thread.c` = `Pexec(PE_CBASEPAGE)`, then
+`Pexec(104)` (answered `EINVFN` = `-ENOSYS`), then `Pexec(PE_GO)` on code of
+the program itself. The child returns 0 from `vfork` into the caller's frame
+and runs **before** the parent continues (TOS `Pexec` is synchronous); the
+parent gets the child's pid when the child has ended, and `waitpid`/`wait4`
+deliver its exit status from `__waitval`. Differences of the port: the child
+resumes on the caller's stack pointer (AArch64 code reaches its locals through
+`sp`, m68k through `a6`), and the parent's own `tfork` call runs on a separate
+16-KiB stack so the child may use the stack below; the save area and that
+stack are static, so a `vfork` from inside a `vfork` child before it ends is
+not supported (the m68k original has the same static save area). Note from
+mintlib's `tfork` itself (unchanged): its thread child `Mfree`s its basepage's
+environment and adopts the parent's, and after the child the parent `Mfree`s
+`b->p_env` — which is then its own environment block. Host check
+`sdk/libc/tests/system-host.sh` (TOS branch, and that the object carries the
+POSIX branch); target checks `sdk/examples/port10.c` (TOS branch) and the
+ARCH03 stage-2 probe VFORKT (vfork, waitpid, POSIX branch).
 
 What a caller must know:
 
@@ -296,7 +314,9 @@ What a caller must know:
   line and runs nothing. That is what DOOM's `I_Error` → `ZenityErrorBox`
   probe sees: DOOM reports the error and exits normally.
 
-`misc/syslog.c` still references `vfork` and does not link.
+`misc/syslog.c` referenced the missing `vfork` until TASK/PROC01; every
+symbol its object references is defined in `libc.a` now (`llvm-nm`,
+2026-10-05) — syslog itself is not exercised.
 
 `printf("%f")` (`stdio/printf_fp.c`) printed wrong digits and could fault
 until TASK/PORT10: `stdlib/gmp-mparam.h` declared 32-bit GMP limbs while

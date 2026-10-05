@@ -1,9 +1,10 @@
 /*
- * system-host.c -- host harness for the system() overlay (TASK/PORT10):
- * sdk/libc/overlay/posix/system.c, mintlib's posix/system.c without its
- * POSIX branch (vfork/execve/waitpid), so system() is always mintlib's TOS
- * branch: split the line into words, redirect handle 0/1 for < > >>, then
- * spawnvp(P_WAIT, argv[0], argv).
+ * system-host.c -- host harness for mintlib's system() (TASK/PORT10,
+ * TASK/PROC01): mintlib's own posix/system.c (the PORT10 overlay without its
+ * POSIX branch is gone since TASK/PROC01). With no /bin/sh and no $SHELL --
+ * what the stubs below answer -- system() takes mintlib's TOS branch: split
+ * the line into words, redirect handle 0/1 for < > >>, then
+ * spawnvp(P_WAIT, argv[0], argv). That branch is what this harness checks.
  *
  * system-host.sh compiles the overlay with the archive's include path, but
  * with <mint/osbind.h> held back (its trap macros are `svc #1') and
@@ -34,6 +35,28 @@ extern int system (const char *);
 
 /* mintlib's errno is a plain `extern int' (include/errno.h). */
 int errno;
+
+/* --- the POSIX-branch probe and calls (renamed by system-host.sh) ----------
+ * No /bin/sh, no $SHELL: system() must stay in the TOS branch. Reaching any
+ * POSIX-branch call here is a failure (counted in main). */
+static int probe_calls, posix_calls;
+char *system_test_environ[] = { NULL };
+int system_test_access (const char *path, int mode)
+{ (void)path; (void)mode; probe_calls++; return -1; }
+char *system_test_getenv (const char *name)
+{ (void)name; probe_calls++; return NULL; }
+int system_test_vfork (void) { posix_calls++; return -1; }
+int system_test_execve (const char *p, char *const *a, char *const *e)
+{ (void)p; (void)a; (void)e; posix_calls++; return -1; }
+int system_test_waitpid (int pid, int *st, int opt)
+{ (void)pid; (void)st; (void)opt; posix_calls++; return -1; }
+int system_test_sigaction (int sig, const void *a, void *o)
+{ (void)sig; (void)a; (void)o; posix_calls++; return -1; }
+int system_test_sigprocmask (int how, const void *s, void *o)
+{ (void)how; (void)s; (void)o; posix_calls++; return -1; }
+int system_test_sigemptyset (void *s) { (void)s; posix_calls++; return 0; }
+int system_test_sigaddset (void *s, int n) { (void)s; (void)n; posix_calls++; return 0; }
+void system_test__exit (int rc) { (void)rc; posix_calls++; abort (); }
 
 /* -D_ctype=system_test_ctype: mintlib's table comes from its own
  * mintlib/ctype.c, compiled by system-host.sh with the same rename. */
@@ -264,6 +287,18 @@ main (void)
 	    system ("KID >C:\\NOPE\\X.TXT"), 2, NULL, -1, -1,
 	    "Fcreate(DOS<C:\\NOPE\\X.TXT>,0);");
   }
+
+  /* mintlib asked for /bin/sh and $SHELL once (the answer is cached in
+     `initialized'), and never went into the POSIX branch. */
+  checks++;
+  if (probe_calls == 2 && posix_calls == 0)
+    printf ("PASS  shell probe asked once (access + getenv), POSIX branch not taken\n");
+  else
+    {
+      printf ("FAIL  shell probe calls %d (want 2), POSIX-branch calls %d (want 0)\n",
+	      probe_calls, posix_calls);
+      failures++;
+    }
 
   printf ("system-host: %d of %d checks failed\n", failures, checks);
   return failures;

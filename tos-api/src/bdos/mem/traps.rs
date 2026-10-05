@@ -105,6 +105,27 @@ pub fn current_owner() -> *mut c_void {
     }
 }
 
+/// Owner cookie of memory a terminated process left resident with
+/// `Ptermres` — the system's TSR holder (ARCH03 stage 2c, plan §3.8 /
+/// Frage 16: FreeMiNT keeps a TSR's regions attached to the process in its
+/// `TSR_Q`, `sys/k_exit.c:307-336`, so they stay allocated and owned rather
+/// than become nobody's). Like [`KERNEL_PD_SENTINEL`], only its address
+/// matters; no PD can ever equal it.
+static TSR_OWNER_SENTINEL: u8 = 0;
+
+/// The owner cookie of resident (`Ptermres`) memory, see
+/// [`TSR_OWNER_SENTINEL`].
+#[inline]
+pub fn tsr_owner() -> *mut c_void {
+    (&TSR_OWNER_SENTINEL as *const u8 as *mut u8).cast()
+}
+
+/// `true` iff `m_own` is the TSR holder ([`tsr_owner`]).
+#[inline]
+pub fn is_resident(m_own: *mut c_void) -> bool {
+    m_own == tsr_owner()
+}
+
 /// `true` iff `m_own` is the kernel-owned sentinel cookie.
 ///
 /// Used by Phase-06 `Pterm` cleanup to skip kernel-owned MDs cheaply
@@ -343,7 +364,12 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
         0
     } else {
         // SAFETY: m is a freshly returned MD on the allocated list.
-        unsafe { (*m).m_start }
+        let start = unsafe { (*m).m_start };
+        // A fresh block has no further owners (a stale record of a freed
+        // block at the same address must not carry over).
+        // SAFETY: caller holds the BDOS lock.
+        unsafe { super::region::forget(start) };
+        start
     }
 }
 
@@ -567,10 +593,13 @@ pub unsafe fn mfree(addr: Long) -> Long {
         return EIMBA;
     }
 
-    // 4. Free.
+    // 4. Free — and forget the block's further owners (ARCH03 2d).
     let mut supply = unsafe { init::supply() };
     // SAFETY: caller holds BDOS lock; `p` is an MD on `mp_mal`.
-    unsafe { pool::freeit(p, mpb, &mut supply) };
+    unsafe {
+        pool::freeit(p, mpb, &mut supply);
+        super::region::forget(addr);
+    }
     E_OK
 }
 
@@ -648,7 +677,10 @@ pub unsafe fn mshrink(_n: i16, blk: Long, len: Long) -> Long {
         // Equivalent to Mfree(blk).
         let mut supply = unsafe { init::supply() };
         // SAFETY: caller holds BDOS lock; `p` is on `mp_mal`.
-        unsafe { pool::freeit(p, mpb, &mut supply) };
+        unsafe {
+            pool::freeit(p, mpb, &mut supply);
+            super::region::forget(blk);
+        }
         return E_OK;
     }
 

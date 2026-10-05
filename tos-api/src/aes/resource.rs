@@ -786,9 +786,8 @@ unsafe fn register(owner: usize, raw: Long, cicon_raw: Long, desc: Loaded) -> bo
     true
 }
 
-/// The process in GEMDOS slot `slot` freed the pool block `m_start` itself
-/// (an EL0 `Mfree`/`Mshrink(0)` that resolved to a `Kind::Rsc` block — the
-/// GEMDOS side of A76, `gemdos::memory`). If that key is a blob or
+/// A program's `Mfree`/`Mshrink(0)` returned the pool block `m_start` to
+/// the pool (the GEMDOS side of A76, `gemdos::memory`). If that key is a blob or
 /// colour-icon buffer of a resource entry, the entry
 /// learns it is gone: `rsrc_free` then answers 0 for it and frees nothing
 /// under it, and process end does not free the key a second time.
@@ -803,13 +802,15 @@ unsafe fn register(owner: usize, raw: Long, cicon_raw: Long, desc: Loaded) -> bo
 /// and skips the walk over freed memory (`docs/api/gemdos/memory/49-mfree.md`
 /// § "AES resource block"; `resource-fileselector.md` A39 callout item 8).
 ///
-/// **Every** entry whose key it is, whoever owns it: since ARCH03 stage 1
-/// all processes share one address space, so a program can name — and, with
-/// EmuTOS' no-ownership-check `xmfree` (plan E15 adopts FreeMiNT's owner
-/// rule only in stage 2), free — another process's block. Once the key is
-/// off the allocated list it is no entry's any more, so no entry may free it
-/// again. (Before stage 1 a process could only name blocks in its own
-/// window, and the walk was limited to the caller's entries.)
+/// Called only when the block has really gone back to the pool — since
+/// ARCH03 stage 2d (plan E15) a program frees only blocks it owns, and its
+/// `Mfree` drops only its own ownership; the block is freed with its last
+/// owner (`gemdos::memory`, `bdos::mem::region`). From then on the key is
+/// nobody's, so **every** entry holding it is marked, whoever registered it:
+/// no entry may free it again. (Stage 1 called this for every successful
+/// `Mfree`, by anyone, because there was no owner rule yet; before stage 1 a
+/// process could only name blocks in its own window and the walk was limited
+/// to the caller's entries.)
 pub fn on_mfree(m_start: Long) {
     if m_start == 0 {
         return;

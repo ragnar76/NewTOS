@@ -1,6 +1,6 @@
 # PROC01 — `Pexec` Modi 5, 6 und 7 fehlen (EmuTOS hat sie)
 
-Status: **OFFEN** · Prioritaet: **P2** (nach dem OFAM-Termin) · Typ: Fehlende EmuTOS-Funktion — aus [PORT10](PORT10.md)
+Status: **ERLEDIGT** (2026-10-05, mit ARCH03 Stufe 2, [Statusdatei](ARCH03-2-STATUS-DONE.MD)) · Prioritaet: **P2** (nach dem OFAM-Termin) · Typ: Fehlende EmuTOS-Funktion — aus [PORT10](PORT10.md)
 
 Abhaengigkeiten: [MEM03](MEM03.md) (Umgebungsblock in EL0; Modus 5/7 legen ebenfalls eine Umgebung an)
 
@@ -28,3 +28,21 @@ diesen Zweig (Entscheidung Anwender 2026-10-02).
 
 Abnahme: `system()` aus mintlib unveraendert; Hosttests und ein QEMU-Lauf mit
 `Pexec(5)`+`Pexec(6)`.
+
+## Erledigt (2026-10-05, ARCH03 Stufe 2)
+
+- Spec: `docs/api/gemdos/process/4b-pexec.md` (NewTOS-Notizen 2b/2d).
+- `Pexec` 5/7 legen Umgebung + Basepage an (Besitz beim Aufrufer, Slot wie
+  `PE_LOAD`), 4/6 starten sie bei `p_tbase`, 6 gibt Basepage und Umgebung an
+  das Kind (`tos-api/src/bdos/process/{loader,pexec}.rs`); die Basepage liegt
+  im gemeinsamen Adressraum (Stufe 1 statt Fenster).
+- mintlibs `vfork` nach AArch64 portiert (`sdk/libc/newtos-arch/vfork.S`,
+  dazu `setstack.S`), `mintlib/thread.c` LP64-sauber ueber
+  `sdk/libc/overlay/mintlib/thread.c` (nur Casts), das `system.c`-Overlay
+  ist entfernt — `system()` ist mintlibs unveraendertes `posix/system.c`.
+- Abnahme: Hosttests (`arch03_pexec_567_ptermres.rs`, `system-host.sh`);
+  QEMU raspi4b `P567: PASS` (Pexec 5+4, 5+6, 7) und `VFORK: PASS` (vfork,
+  waitpid, `system()` ueber den POSIX-Zweig), PORT10 unveraendert 42/44 —
+  `measurements/measurement-2026-10-05-arch03-2/`.
+- Nebenbefund (nicht behoben): mintlibs `<sys/wait.h>` liest den Status ueber
+  big-endian-Bitfelder; `WEXITSTATUS` ergibt auf AArch64 immer 0.

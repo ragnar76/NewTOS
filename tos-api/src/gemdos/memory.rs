@@ -18,14 +18,19 @@
 //! one-page alignment slack are gone.)
 //!
 //! What still depends on the caller: `Malloc` picks its pool from the
-//! running process's `PF_TTRAMMEM` flag (EmuTOS `xmalloc`), and a freed
-//! block is reported to the AES ([`crate::aes::resource::on_mfree`]), which
+//! running process's `PF_TTRAMMEM` flag (EmuTOS `xmalloc`); `Mfree` and
+//! `Mshrink` act only for an **owner** of the block (ARCH03 stage 2d, plan
+//! E15 — FreeMiNT's rule, `sys/dosmem.c:330-455`), and `Mfree` drops only the
+//! caller's ownership: the block goes back to the pool when its last owner
+//! lets go ([`crate::bdos::mem::region`]); and a block that went back to the
+//! pool is reported to the AES ([`crate::aes::resource::on_mfree`]), which
 //! may hold it as a resource blob.
 
+use crate::bdos::mem::region::{self, Detached, RegionError};
 use crate::bdos::mem::traps;
 use crate::bdos::process;
 use crate::trap::TrapArgs;
-use tos_types::error::E_OK;
+use tos_types::error::{EIMBA, E_OK};
 use tos_types::{Long, MX_PREFTTRAM, MX_STRAM, PF_TTRAMMEM};
 
 /// `Maddalt(start, size)` — GEMDOS 0x14.
@@ -101,6 +106,56 @@ pub fn malloc(args: &TrapArgs) -> Long {
     unsafe { traps::mxalloc(amount, mode) }
 }
 
+/// Which identity of the caller owns the block at `addr`: its own PD (or the
+/// kernel sentinel for an EL1 caller, [`traps::current_owner`]) first, then
+/// the memory space it shares as a `Pexec(PE_GO)` child
+/// ([`process::current_space`], plan E6). `None`: not an owner.
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+unsafe fn owning_identity(addr: Long) -> Option<*mut core::ffi::c_void> {
+    let me = traps::current_owner();
+    let space: *mut core::ffi::c_void = process::current_space().cast();
+    // SAFETY: lock held (caller contract).
+    unsafe {
+        if region::is_owner(addr, me) {
+            Some(me)
+        } else if !space.is_null() && region::is_owner(addr, space) {
+            Some(space)
+        } else {
+            None
+        }
+    }
+}
+
+/// `Mfree` semantics on behalf of the running process (E15): drop the
+/// caller's ownership of the block at `addr`; the block is freed when it was
+/// the last owner, and then the AES and the process table hear of it.
+/// `EIMBA` for an address that starts no block or a block the caller does
+/// not own.
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+unsafe fn release_as_caller(addr: Long) -> Long {
+    // SAFETY: lock held (caller contract).
+    let Some(who) = (unsafe { owning_identity(addr) }) else {
+        return EIMBA;
+    };
+    // SAFETY: lock held.
+    match unsafe { region::detach(addr, who) } {
+        Ok(Detached::Freed) => {
+            note_user_free(addr);
+            // A PD that was waiting for `Pexec` 4/6 lived in this block.
+            process::pexec::release_unstarted_at(addr as u32 as u64);
+            E_OK
+        }
+        Ok(Detached::Kept) => E_OK,
+        Err(RegionError::NoBlock | RegionError::NotOwner | RegionError::Full) => EIMBA,
+    }
+}
+
 /// Tell the AES that a program freed the block at `m` — it may be a
 /// resource blob or icon buffer `rsrc_load` registered, which is an
 /// ordinary process-owned block in EmuTOS too (`rs_readit` →
@@ -121,15 +176,14 @@ fn note_user_free(m: Long) {
 /// - `x0` = `addr` (Atari `LONG`, the block start address)
 ///
 /// `EIMBA` when `addr` starts no allocated block (EmuTOS `xmfree`,
-/// `bdos/umem.c:135-159`); no ownership check (EmuTOS).
+/// `bdos/umem.c:135-159`) — and, since ARCH03 stage 2d, when the caller is
+/// not an owner of it (plan E15, FreeMiNT `sys_m_free`'s `EFAULT`, the same
+/// −40). An owner's `Mfree` drops its ownership; the block returns to the
+/// pool with its last owner (FreeMiNT `detach_region`).
 pub fn mfree(args: &TrapArgs) -> Long {
     let addr = args.arg_i32(0);
     // SAFETY: see `mxalloc`.
-    let rc = unsafe { traps::mfree(addr) };
-    if rc == E_OK {
-        note_user_free(addr);
-    }
-    rc
+    unsafe { release_as_caller(addr) }
 }
 
 /// `Mshrink(n, blk, len)` — GEMDOS 0x4A.
@@ -145,14 +199,21 @@ pub fn mfree(args: &TrapArgs) -> Long {
 /// `blk` is a block address as `Malloc` returned it — including a basepage,
 /// which is the start of its TPA block (EmuTOS `xsetblk`, `bdos/umem.c:170`).
 /// `len == 0` frees the whole block (EmuTOS's `Mshrink(len=0) == Mfree`).
+/// Only an owner may shrink (ARCH03 stage 2d, plan E15 — FreeMiNT
+/// `sys_m_shrink` finds only the caller's regions, `sys/dosmem.c:410-455`);
+/// anyone else gets `EIMBA`, and `len == 0` follows `Mfree`'s owner rule.
 pub fn mshrink(args: &TrapArgs) -> Long {
     let n = args.arg_i16(0);
     let blk = args.arg_i32(1);
     let len = args.arg_i32(2);
     // SAFETY: see `mxalloc`.
-    let rc = unsafe { traps::mshrink(n, blk, len) };
-    if rc == E_OK && len == 0 {
-        note_user_free(blk);
+    unsafe {
+        if owning_identity(blk).is_none() {
+            return EIMBA;
+        }
+        if len == 0 {
+            return release_as_caller(blk);
+        }
+        traps::mshrink(n, blk, len)
     }
-    rc
 }

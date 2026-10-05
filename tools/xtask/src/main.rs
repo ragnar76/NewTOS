@@ -37,6 +37,13 @@ mod kernel_bootargs;
 #[path = "../../../kernel/src/key_repeat.rs"]
 mod kernel_key_repeat;
 
+/// ARCH03 E8b — the loader's ELF parser, compiled here by path (it is pure,
+/// `no_std`, dependency-free) so `xtask prgflags` reads the PRGFLAGS note
+/// exactly the way the kernel does.
+#[path = "../../../tos-api/src/bdos/process/elf.rs"]
+#[allow(dead_code)]
+mod loader_elf;
+
 const KERNEL_TARGET: &str = "aarch64-unknown-none-softfloat";
 
 fn main() -> ExitCode {
@@ -54,6 +61,7 @@ fn main() -> ExitCode {
         "build" => cmd_build(&rest),
         "gen-font" => cmd_gen_font(),
         "gen-fsel-rsc" => cmd_gen_fsel_rsc(),
+        "prgflags" => cmd_prgflags(&rest),
         "run" => cmd_run(&rest),
         "test" => cmd_test(&rest),
         "help" | "--help" | "-h" => {
@@ -85,6 +93,10 @@ Commands:
                                    resource (references/emutos/aes/gem.rsc)
                                    into the embedded native blob
                                    tos-api/src/aes/gem_fsel.nrsc
+  prgflags <file> [<value>]      — show a NewTOS program's PRGFLAGS (its
+                                   ELF note, ARCH03 E8b) or set them to
+                                   <value> (0x... or decimal) in place;
+                                   the role of Atari's PRGFLAGS.PRG
   run [--board {{rpi4|qemu-virt}}] [--release] [--window] [--debug]
       [--sd <img>] [--features a,b]
                                    — boot in QEMU (virt by default, or
@@ -611,4 +623,166 @@ fn cmd_test(args: &[String]) -> Result<(), String> {
         c.args(["--package", p]);
     }
     run(c)
+}
+
+// ── prgflags (ARCH03 E8b) ───────────────────────────────────────────────
+
+/// The PRGFLAGS note of a NewTOS program: its value and the file offset of
+/// the descriptor word. Uses the kernel's own parser ([`loader_elf`]), so a
+/// file this tool accepts is a file the loader accepts the note of.
+fn prgflags_locate(bytes: &[u8]) -> Result<(u32, usize), String> {
+    let img = loader_elf::parse(bytes, bytes.len() as u64)
+        .map_err(|e| format!("not a loadable NewTOS program: {e:?}"))?;
+    let mut found: Option<(u32, usize)> = None;
+    for seg in img.notes() {
+        let start = seg.file_offset as usize;
+        let notes = &bytes[start..start + seg.file_size as usize];
+        if let Some((v, off)) = loader_elf::find_prgflags_note(notes, seg.align)
+            .map_err(|e| format!("malformed note segment: {e:?}"))?
+        {
+            if found.is_some() {
+                return Err("two PRGFLAGS notes (the loader refuses this file)".into());
+            }
+            found = Some((v, start + off));
+        }
+    }
+    found.ok_or_else(|| {
+        "no PRGFLAGS note (link the program with the SDK crt0.S; the loader \
+         gives it PF_STANDARD)"
+            .into()
+    })
+}
+
+/// Rewrite the PRGFLAGS note value in `bytes`; returns the old value.
+fn prgflags_patch(bytes: &mut [u8], v: u32) -> Result<u32, String> {
+    let (old, at) = prgflags_locate(bytes)?;
+    bytes[at..at + 4].copy_from_slice(&v.to_le_bytes());
+    Ok(old)
+}
+
+/// The `PF_*` bits by name (EmuTOS `include/bdosdefs.h:100-103`; bits
+/// 31-28 = the TT-RAM "would-like" quantum, `bdos/proc.c:482`).
+fn prgflags_describe(v: u32) -> String {
+    let mut parts = Vec::new();
+    for (bit, name) in [(1, "PF_FASTLOAD"), (2, "PF_TTRAMLOAD"), (4, "PF_TTRAMMEM")] {
+        if v & bit != 0 {
+            parts.push(name.to_string());
+        }
+    }
+    let q = v >> 28;
+    if q != 0 {
+        parts.push(format!("TPA quantum {} (x 128 KiB)", q + 1));
+    }
+    let rest = v & 0x0FFF_FFF8;
+    if rest != 0 {
+        parts.push(format!("other bits 0x{rest:08x}"));
+    }
+    if parts.is_empty() {
+        "none".into()
+    } else {
+        parts.join(" | ")
+    }
+}
+
+fn parse_u32(s: &str) -> Result<u32, String> {
+    let r = match s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        Some(h) => u32::from_str_radix(h, 16),
+        None => s.parse::<u32>(),
+    };
+    r.map_err(|_| format!("not a 32-bit value: {s}"))
+}
+
+fn cmd_prgflags(args: &[String]) -> Result<(), String> {
+    let (file, value) = match args {
+        [f] => (f, None),
+        [f, v] => (f, Some(parse_u32(v)?)),
+        _ => return Err("usage: cargo xtask prgflags <file> [<value>]".into()),
+    };
+    let mut bytes = std::fs::read(file).map_err(|e| format!("{file}: {e}"))?;
+    match value {
+        None => {
+            let (v, _) = prgflags_locate(&bytes).map_err(|e| format!("{file}: {e}"))?;
+            println!("{file}: PRGFLAGS 0x{v:08x} ({})", prgflags_describe(v));
+        }
+        Some(v) => {
+            let old = prgflags_patch(&mut bytes, v).map_err(|e| format!("{file}: {e}"))?;
+            std::fs::write(file, &bytes).map_err(|e| format!("{file}: {e}"))?;
+            println!(
+                "{file}: PRGFLAGS 0x{old:08x} -> 0x{v:08x} ({})",
+                prgflags_describe(v)
+            );
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod prgflags_tests {
+    use super::*;
+
+    /// A minimal ET_DYN with one PT_LOAD and one PT_NOTE holding the SDK's
+    /// 24-byte note (value `v`) at file offset 0x1040.
+    fn image(v: Option<u32>) -> Vec<u8> {
+        let mut b = vec![0u8; 0x1100];
+        b[0..4].copy_from_slice(b"\x7fELF");
+        b[4] = 2;
+        b[5] = 1;
+        b[6] = 1;
+        b[16..18].copy_from_slice(&3u16.to_le_bytes());
+        b[18..20].copy_from_slice(&183u16.to_le_bytes());
+        b[20..24].copy_from_slice(&1u32.to_le_bytes());
+        b[24..32].copy_from_slice(&0x1000u64.to_le_bytes());
+        b[32..40].copy_from_slice(&64u64.to_le_bytes());
+        b[54..56].copy_from_slice(&56u16.to_le_bytes());
+        let phnum: u16 = if v.is_some() { 2 } else { 1 };
+        b[56..58].copy_from_slice(&phnum.to_le_bytes());
+        let ph = |b: &mut Vec<u8>, i: usize, t: u32, off: u64, sz: u64, al: u64| {
+            let o = 64 + i * 56;
+            b[o..o + 4].copy_from_slice(&t.to_le_bytes());
+            b[o + 8..o + 16].copy_from_slice(&off.to_le_bytes());
+            b[o + 16..o + 24].copy_from_slice(&off.to_le_bytes());
+            b[o + 32..o + 40].copy_from_slice(&sz.to_le_bytes());
+            b[o + 40..o + 48].copy_from_slice(&sz.to_le_bytes());
+            b[o + 48..o + 56].copy_from_slice(&al.to_le_bytes());
+        };
+        ph(&mut b, 0, 1, 0x1000, 0x100, 0x1000);
+        if let Some(v) = v {
+            ph(&mut b, 1, 4, 0x1040, 24, 4);
+            let n = &mut b[0x1040..0x1058];
+            n[0..4].copy_from_slice(&7u32.to_le_bytes());
+            n[4..8].copy_from_slice(&4u32.to_le_bytes());
+            n[8..12].copy_from_slice(&1u32.to_le_bytes());
+            n[12..19].copy_from_slice(b"NewTOS\0");
+            n[20..24].copy_from_slice(&v.to_le_bytes());
+        }
+        b
+    }
+
+    #[test]
+    fn reads_and_rewrites_the_note_value_in_place() {
+        let mut b = image(Some(7));
+        assert_eq!(prgflags_locate(&b), Ok((7, 0x1054)));
+        let before = b.clone();
+        assert_eq!(prgflags_patch(&mut b, 0x1000_0002), Ok(7));
+        assert_eq!(prgflags_locate(&b), Ok((0x1000_0002, 0x1054)));
+        let changed: Vec<usize> = (0..b.len()).filter(|&i| b[i] != before[i]).collect();
+        assert_eq!(changed, vec![0x1054, 0x1057], "only bytes of the value word change");
+    }
+
+    #[test]
+    fn a_file_without_the_note_is_refused() {
+        let mut b = image(None);
+        assert!(prgflags_locate(&b).is_err());
+        assert!(prgflags_patch(&mut b, 1).is_err());
+    }
+
+    #[test]
+    fn values_and_names() {
+        assert_eq!(parse_u32("0x7"), Ok(7));
+        assert_eq!(parse_u32("16"), Ok(16));
+        assert!(parse_u32("0x1_0000_0000").is_err());
+        assert_eq!(prgflags_describe(7), "PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM");
+        assert_eq!(prgflags_describe(0), "none");
+        assert_eq!(prgflags_describe(0x3000_0002), "PF_TTRAMLOAD | TPA quantum 4 (x 128 KiB)");
+    }
 }

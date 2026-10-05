@@ -1,0 +1,208 @@
+diff -ru /Volumes/Daten/Development/PiRusTOS/kernel/src/arch/aarch64/exceptions.rs tree-keys/kernel/src/arch/aarch64/exceptions.rs
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/arch/aarch64/exceptions.rs	2026-10-05 09:12:21
++++ tree-keys/kernel/src/arch/aarch64/exceptions.rs	2026-10-05 09:41:05
+@@ -637,6 +637,7 @@
+ /// hook's `Psigreturn` restores the rewound frame and the `svc` re-executes.
+ /// If the ring turns out empty, the `svc` simply re-executes.
+ fn restart_for_kbdvec(frame: &mut ExceptionFrame) {
++    crate::kprintln!("[krp] restart svc at {:#x} x8={:#x} x0={}", frame.elr.wrapping_sub(4), frame.gpr[8], frame.gpr[0]); // KRP-TEMP
+     frame.elr = frame.elr.wrapping_sub(4);
+     deliver_pending_kbdvec(frame);
+ }
+@@ -677,6 +678,7 @@
+             crate::ikbd::kbd_int(byte);
+             continue;
+         }
++        crate::kprintln!("[krp] kbdvec upcall {:#04x} -> {:#x} elr={:#x}", byte, handler, frame.elr); // KRP-TEMP
+         deliver_upcall(
+             frame,
+             UpcallDesc {
+diff -ru /Volumes/Daten/Development/PiRusTOS/kernel/src/console.rs tree-keys/kernel/src/console.rs
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/console.rs	2026-10-02 21:26:03
++++ tree-keys/kernel/src/console.rs	2026-10-05 09:41:05
+@@ -276,6 +276,7 @@
+ pub fn push_rx(word: u16) {
+     #[cfg(feature = "initinfo-diag")]
+     crate::initinfo::diag::note_push(crate::initinfo::diag::PUSH_SRC_IKBD, word);
++    crate::kprintln!("[krp] push_rx {:#06x} at hz_200 {}", word, tos_api::bios::tick::hz_200()); // KRP-TEMP
+     RX_RING.push(word);
+ }
+ 
+@@ -297,7 +298,9 @@
+ /// Pop one whole key word (`scancode << 8 | ascii`) for the AES event
+ /// manager, so it can deliver scancodes (arrow / function keys) to apps.
+ pub fn rx_pop_key() -> Option<u16> {
+-    RX_RING.pop()
++    let w = RX_RING.pop();
++    if let Some(w) = w { crate::kprintln!("[krp] rx_pop_key {:#06x} at hz_200 {}", w, tos_api::bios::tick::hz_200()); } // KRP-TEMP
++    w
+ }
+ 
+ /// Non-destructively peek the oldest queued key word (`scancode << 8 |
+diff -ru /Volumes/Daten/Development/PiRusTOS/kernel/src/host_env.rs tree-keys/kernel/src/host_env.rs
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/host_env.rs	2026-10-04 17:49:07
++++ tree-keys/kernel/src/host_env.rs	2026-10-05 09:41:05
+@@ -107,6 +107,7 @@
+         // On real Pi-4 this is the sole console input source; no-op until a
+         // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        krp_inject::step(); // KRP-TEMP
+         // Key auto-repeat runs polled, after the input above (a break has
+         // been seen) — `docs/api/xbios/_state.md` §"Key-repeat handler".
+         crate::ikbd::poll_repeat();
+@@ -158,6 +159,7 @@
+             // but never a blocking console read. No-op until a HID device
+             // is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+             crate::drivers::usb::poll();
++        krp_inject::step(); // KRP-TEMP
+             // Key auto-repeat, polled after the input (see `pump_input`).
+             crate::ikbd::poll_repeat();
+ 
+@@ -382,6 +384,7 @@
+         // source; no-op until a HID device is enumerated (qemu-virt
+         // uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        krp_inject::step(); // KRP-TEMP
+         // Key auto-repeat, polled after the input (see `pump_input`).
+         crate::ikbd::poll_repeat();
+ 
+@@ -486,3 +489,119 @@
+ pub fn install() {
+     tos_api::host::install_host(&KERNEL_HOST_REF);
+ }
++
++// KRP-TEMP BEGIN -- scripted IKBD make/break (QEMU raspi4b has no USB keyboard)
++pub mod krp_inject {
++    use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
++    static T0: AtomicU32 = AtomicU32::new(0);
++    static NEXT: AtomicUsize = AtomicUsize::new(0);
++    const SCRIPT: &[(u32, u8)] = &[
++        (400, 0x48), (500, 0x4D), (600, 0xCD), (600, 0xC8),
++        (900, 0x1E), (920, 0x9E),
++        (2000, 0x1d),
++        (2010, 0x2c),
++        (2020, 0xac),
++        (2030, 0x9d),
++        (2400, 0x13),
++        (2405, 0x93),
++        (2410, 0x16),
++        (2415, 0x96),
++        (2420, 0x31),
++        (2425, 0xb1),
++        (2430, 0x39),
++        (2435, 0xb9),
++        (2440, 0x23),
++        (2445, 0xa3),
++        (2450, 0x12),
++        (2455, 0x92),
++        (2460, 0x26),
++        (2465, 0xa6),
++        (2470, 0x26),
++        (2475, 0xa6),
++        (2480, 0x18),
++        (2485, 0x98),
++        (2490, 0x03),
++        (2495, 0x83),
++        (2500, 0x34),
++        (2505, 0xb4),
++        (2510, 0x31),
++        (2515, 0xb1),
++        (2520, 0x2e),
++        (2525, 0xae),
++        (2530, 0x19),
++        (2535, 0x99),
++        (2540, 0x1c),
++        (2545, 0x9c),
++        (3400, 0x13),
++        (3405, 0x93),
++        (3410, 0x16),
++        (3415, 0x96),
++        (3420, 0x31),
++        (3425, 0xb1),
++        (3430, 0x39),
++        (3435, 0xb9),
++        (3440, 0x18),
++        (3445, 0x98),
++        (3450, 0x26),
++        (3455, 0xa6),
++        (3460, 0x20),
++        (3465, 0xa0),
++        (3470, 0x12),
++        (3475, 0x92),
++        (3480, 0x2d),
++        (3485, 0xad),
++        (3490, 0x12),
++        (3495, 0x92),
++        (3500, 0x2e),
++        (3505, 0xae),
++        (3510, 0x34),
++        (3515, 0xb4),
++        (3520, 0x31),
++        (3525, 0xb1),
++        (3530, 0x2e),
++        (3535, 0xae),
++        (3540, 0x19),
++        (3545, 0x99),
++        (3550, 0x1c),
++        (3555, 0x9c),
++        (4400, 0x12),
++        (4405, 0x92),
++        (4410, 0x2d),
++        (4415, 0xad),
++        (4420, 0x17),
++        (4425, 0x97),
++        (4430, 0x14),
++        (4435, 0x94),
++        (4440, 0x1c),
++        (4445, 0x9c),
++    ];
++    pub fn step() {
++        let now = tos_api::bios::tick::hz_200();
++        if T0.load(Ordering::Relaxed) == 0 {
++            if tos_api::bdos::process::RUN.load(Ordering::Acquire).is_null() {
++                return;
++            }
++            T0.store(now.max(1), Ordering::Relaxed);
++            crate::kprintln!("[krp] injector armed at hz_200 {}", now);
++            return;
++        }
++        let t0 = T0.load(Ordering::Relaxed);
++        // Every entry that is due goes out in this one poll (entries with the
++        // same time arrive together, like two changes in one HID report).
++        loop {
++            let i = NEXT.load(Ordering::Relaxed);
++            if i >= SCRIPT.len() {
++                return;
++            }
++            let (at, b) = SCRIPT[i];
++            if now.wrapping_sub(t0) < at {
++                return;
++            }
++            let run = !tos_api::bdos::process::RUN.load(Ordering::Acquire).is_null();
++            crate::kprintln!("[krp] feed {:#04x} at hz_200 {} (+{}) run={}", b, now, now.wrapping_sub(t0), run);
++            crate::ikbd::feed(b);
++            NEXT.store(i + 1, Ordering::Relaxed);
++        }
++    }
++}
++// KRP-TEMP END
+diff -ru /Volumes/Daten/Development/PiRusTOS/kernel/src/ikbd.rs tree-keys/kernel/src/ikbd.rs
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/ikbd.rs	2026-10-04 18:01:49
++++ tree-keys/kernel/src/ikbd.rs	2026-10-05 09:41:05
+@@ -119,6 +119,8 @@
+     // running — the default `kbdvec` (`kbd_int`) runs directly, as before.
+     if !tos_api::xbios::kbdvecs::route_key(byte) {
+         decode_key(byte);
++    } else {
++        crate::kprintln!("[krp] ring <- {:#04x} at hz_200 {}", byte, tos_api::bios::tick::hz_200()); // KRP-TEMP
+     }
+ }
+ 
+@@ -127,6 +129,7 @@
+ /// for a process whose hook chained to the default, from
+ /// `Ssystem(S_NEWTOS_KBDVEC)` (the `kbdvec_default` stub, KEYS02 D6).
+ pub fn kbd_int(raw: u8) {
++    crate::kprintln!("[krp] kbd_int {:#04x} at hz_200 {}", raw, tos_api::bios::tick::hz_200()); // KRP-TEMP
+     decode_key(raw);
+ }
+ 

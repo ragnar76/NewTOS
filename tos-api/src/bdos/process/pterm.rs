@@ -9,7 +9,8 @@
 //!
 //!   * Walk the dying process's BDOS allocations via
 //!     [`crate::bdos::mem::free_all_owned::free_all_owned`] and
-//!     return them to both pools' free lists.
+//!     return them to both pools' free lists (`Ptermres`: keep them
+//!     resident instead, owned by the TSR holder).
 //!   * Read the dying slot's `parent_resume_pc` / `parent_kernel_sp`
 //!     atomics (captured at the time the loader / `Pexec` dropped to
 //!     EL0) so the kernel SVC handler can rewrite the trap frame
@@ -113,21 +114,32 @@ pub unsafe fn terminate(_rc: i32) -> Result<PtermResume, PtermError> {
     unsafe { terminate_inner(false) }
 }
 
-/// `Ptermres` (GEMDOS 0x31) — terminate but leave the process's
-/// `Malloc`-ed pool blocks **resident** (the TSR trick). Spec:
-/// [`docs/api/gemdos/process/03-ptermres.md`]. EmuTOS `xtermres`
-/// (`bdos/proc.c:624`) reserves the owned MDs, then chains `xterm`.
+/// `Ptermres` (GEMDOS 0x31) — terminate but leave the process's memory
+/// **resident** (the TSR trick). Spec:
+/// [`docs/api/gemdos/process/31-ptermres.md`]. EmuTOS `xtermres`
+/// (`bdos/proc.c:624-634`): `xsetblk(0, run, blkln)` — the TPA block,
+/// whose address is the PD, shrinks to `blkln` bytes, the result ignored
+/// (D-006) — then the owned blocks are reserved, then `xterm`.
 ///
-/// `blkln` (the keep-resident byte count) is accepted by the caller
-/// but has no effect under the static-arena TPA model — the whole
-/// TPA is resident regardless; what this reserves is the process's
-/// BDOS-pool allocations (see [`reserve_all_owned`]). The exit-code /
-/// parent-resume path is identical to [`terminate`].
+/// Every block the process owns — the shrunk TPA, the environment, its
+/// `Malloc` blocks — stays allocated, owned by the TSR holder
+/// ([`reserve_all_owned`], FreeMiNT's `TSR_Q`, plan §3.8), so resident
+/// code and data stay where they are and callable from every process (one
+/// shared address space). The exit-code / parent-resume path is identical
+/// to [`terminate`].
 ///
 /// # Safety
 ///
 /// Same as [`terminate`].
-pub unsafe fn terminate_resident(_rc: i32) -> Result<PtermResume, PtermError> {
+pub unsafe fn terminate_resident(blkln: i32, _rc: i32) -> Result<PtermResume, PtermError> {
+    let bp = RUN.load(Ordering::Acquire);
+    if !bp.is_null() {
+        // `xsetblk(0, run, blkln)`: same rules as `Mshrink` (len 0 frees
+        // the block, a larger len is EGSBF) — and like EmuTOS, the answer
+        // does not matter.
+        // SAFETY: BDOS giant lock held (caller contract).
+        let _ = unsafe { crate::bdos::mem::traps::mshrink(0, bp as u64 as tos_types::Long, blkln) };
+    }
     // SAFETY: forwarded.
     unsafe { terminate_inner(true) }
 }
@@ -187,11 +199,11 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
             free_all_owned(bp as *mut c_void)
         }
     };
-    // Programs this process loaded with `PE_LOAD` and never started lived in
-    // its blocks (EmuTOS `owner = run`); their slots go with it.
-    if !reserve {
-        super::pexec::release_unstarted_of(bp);
-    }
+    // Programs this process loaded with `PE_LOAD` (or built with `Pexec`
+    // 5/7) and never started lived in its blocks (EmuTOS `owner = run`);
+    // their slots go with it — on `Ptermres` too: their memory stays
+    // resident with the rest, but no process is left that could start them.
+    super::pexec::release_unstarted_of(bp);
 
     // EmuTOS `xterm` (bdos/proc.c:609): `run = run->p_parent`. On
     // child termination the **parent** becomes the running process

@@ -51,7 +51,7 @@ use core::cell::UnsafeCell;
 use core::ffi::c_void;
 use core::sync::atomic::Ordering;
 
-use tos_types::{BasePage, Long, MX_PREFTTRAM, NUMSTD, PDCLSIZE, PF_STANDARD};
+use tos_types::{BasePage, Long, MX_PREFTTRAM, MX_STRAM, NUMSTD, PDCLSIZE, PF_STANDARD, PF_TTRAMLOAD};
 
 use super::{kalias, usermem};
 
@@ -415,13 +415,19 @@ unsafe fn load_from_source(
         return Err(LoadError::Ilp32Unsupported);
     }
 
+    // 1c. The program's `PRGFLAGS` (ARCH03 E8b): the NewTOS ELF note, read
+    //     before anything is allocated because the flags choose the pool of
+    //     the TPA and the environment (EmuTOS `alloc_env`/`alloc_tpa` take
+    //     `hdr.h01_flags`, `bdos/proc.c:283,292`). No note → `PF_STANDARD`.
+    let prgflags = read_prgflags(&src, &img)?.unwrap_or(PF_STANDARD);
+
     // 2. Take the TPA block from the BDOS pool. Its address is the child's
     //    PD pointer. `Mxalloc` stamped the caller as owner (`owner = run`);
     //    for `PE_LOADGO` the block goes to the child (`owner = p`,
     //    EmuTOS `bdos/proc.c:302-307`), so the child's `Pterm`
     //    `free_all_owned` sweep reclaims it.
     // SAFETY: BDOS lock held; single-CPU pre-test.
-    let tpa = unsafe { arena::alloc_tpa() }.ok_or(LoadError::NoTpaMemory)?;
+    let tpa = unsafe { arena::alloc_tpa(prgflags) }.ok_or(LoadError::NoTpaMemory)?;
     if owned_by_child {
         // SAFETY: `tpa.base` is on the allocated list; the owner cookie is
         // a pointer-equality tag, never dereferenced by the sweep.
@@ -435,7 +441,8 @@ unsafe fn load_from_source(
     // SAFETY: BDOS lock held; `tpa` is a fresh, exclusively-owned
     // page-aligned region.
     match unsafe {
-        populate_and_map(&src, slot, &img, tail, env, owned_by_child, &tpa)
+        let req = ProcessSetup { tail, env, owned_by_child, prgflags };
+        populate_and_map(&src, slot, &img, &req, &tpa)
     } {
         Ok(loaded) => Ok(loaded),
         Err(e) => {
@@ -444,6 +451,17 @@ unsafe fn load_from_source(
             Err(e)
         }
     }
+}
+
+/// What a load gives the new process besides its image: the command tail,
+/// the environment source, who owns TPA and environment, and its
+/// `PRGFLAGS` (see [`load_to_slot_with`]).
+#[derive(Copy, Clone)]
+struct ProcessSetup<'a> {
+    tail: &'a [u8],
+    env: EnvSpec<'a>,
+    owned_by_child: bool,
+    prgflags: u32,
 }
 
 /// Stream the ELF image into `tpa`, zero its BSS, allocate the
@@ -461,11 +479,10 @@ unsafe fn populate_and_map(
     src: &ImageSource<'_>,
     slot: usize,
     img: &ElfImage,
-    tail: &[u8],
-    env: EnvSpec<'_>,
-    owned_by_child: bool,
+    req: &ProcessSetup<'_>,
     tpa: &arena::Tpa,
 ) -> Result<LoadedImage, LoadError> {
+    let ProcessSetup { tail, env, owned_by_child, prgflags } = *req;
     let base = tpa.base;
 
     // Whole-TPA mutable byte view via the kernel high-half alias.
@@ -514,11 +531,58 @@ unsafe fn populate_and_map(
     // Allocate + copy the environment (EmuTOS `alloc_env`), before the
     // basepage so `p_env` is stamped in one pass. Same owner as the TPA.
     // SAFETY: BDOS lock held.
-    let env_addr = unsafe { alloc_env_for(env, base as *mut c_void, owned_by_child)? };
+    let env_addr =
+        unsafe { alloc_env_for(env, prgflags, base as *mut c_void, owned_by_child)? };
 
     // Write the BasePage at the TPA start.
-    populate_basepage(tpa_bytes, img, tail, env_addr, base);
+    populate_basepage(tpa_bytes, img, tail, env_addr, base, prgflags);
 
+    // Make the freshly-written program image observable to instruction
+    // fetch on real hardware (clean D-cache to PoU + invalidate I-cache).
+    // QEMU has no caches, so this is a no-op there. Cortex-A72 caches are
+    // PIPT, so by-VA maintenance via the kernel alias hits the same PA the
+    // program later fetches.
+    // SAFETY: the range is live and mapped in the kernel's high half.
+    unsafe { mmu::sync_code_cache(tpa.base_kva as usize, image_top as usize) };
+
+    // Record the program ABI so the GEM trap dispatch reads this
+    // process's AES/VDI parameter blocks at the caller's pointer width
+    // (ADR-020). Always LP64: step 1b above rejected every ELFCLASS32
+    // image, so an ELF-loaded process is 8-byte-word by construction.
+    // This is not a hardcoded assumption — it is that gate's postcondition,
+    // asserted here so the two cannot drift apart.
+    debug_assert!(!img.is_ilp32(), "step 1b must reject ELFCLASS32");
+
+    let entry_va = base + img.entry_va;
+    let sp_el0 = base + arena::TPA_SIZE;
+    // SAFETY: BDOS lock held; the slot belongs to this load.
+    let l0_pa = unsafe { install_slot(slot, tpa, entry_va, sp_el0)? };
+
+    Ok(LoadedImage {
+        slot,
+        entry_va,
+        l0_pa,
+        basepage_va: base,
+        sp_el0,
+    })
+}
+
+/// Give `slot` the process around the basepage at `tpa`: its private page 0,
+/// its root, and the slot metadata `Pterm` and the trap handler find it by.
+/// Returns the root's physical address (`TTBR0_EL1`). `entry_va` 0 marks a
+/// basepage without a loaded image (`Pexec` 5/7), started at its `p_tbase`
+/// ([`super::pexec::go`]).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `slot` is claimed for this process and
+/// bounds-checked; `tpa` holds the process's basepage.
+unsafe fn install_slot(
+    slot: usize,
+    tpa: &arena::Tpa,
+    entry_va: u64,
+    sp_el0: u64,
+) -> Result<u64, LoadError> {
     // The process's private page 0: the classic TOS low-memory system area
     // (sysvars + OSHEADER + cookie jar + the `os_run` cell), the upcall and
     // `G_USERDEF` trampolines and the KEYS02 vector table (B1 / Option 1,
@@ -526,25 +590,17 @@ unsafe fn populate_and_map(
     // `_p_cookies`@0x5A0 / the OSHEADER directly (e.g. TeraDesk
     // `main.c:56`), so these must be a real, populated instance in the
     // app's own address space.
-    // SAFETY: BDOS lock held; the slot's page 0 belongs to this load.
+    // SAFETY: BDOS lock held; the slot's page 0 belongs to this process.
     let page0 = unsafe { mmu::page0_bytes(slot) }.ok_or(LoadError::InvalidSlot)?;
     page0.fill(0);
-    populate_sysvars(page0, base);
+    populate_sysvars(page0, tpa.base);
     write_upcall_trampoline(page0);
     write_userdef_trampoline(page0);
     crate::xbios::kbdvecs::write_defaults(page0);
-
-    // Make the freshly-written instructions observable to instruction fetch
-    // on real hardware (clean D-cache to PoU + invalidate I-cache) — the
-    // program image and page 0's trampolines/stubs. QEMU has no caches, so
-    // this is a no-op there. Cortex-A72 caches are PIPT, so by-VA
-    // maintenance via the kernel alias hits the same PA the program later
-    // fetches.
-    // SAFETY: both ranges are live and mapped in the kernel's high half.
-    unsafe {
-        mmu::sync_code_cache(tpa.base_kva as usize, image_top as usize);
-        mmu::sync_code_cache(page0.as_ptr() as usize, page0.len());
-    }
+    // Page 0's trampolines and stubs are code: make them visible to
+    // instruction fetch (see the image sync in `populate_and_map`).
+    // SAFETY: page 0 is live and mapped in the kernel's high half.
+    unsafe { mmu::sync_code_cache(page0.as_ptr() as usize, page0.len()) };
 
     // Build the slot's root: the shared tables (pools, publications) plus
     // its own page 0. Nothing is mapped per TPA page any more — the pool
@@ -558,32 +614,92 @@ unsafe fn populate_and_map(
     // Publish the slot metadata so `Pterm` (via `slot_for(run)`) and the
     // trap handler can find this process.
     let l0_pa = mmu::l0_pa_for(slot);
-    let entry_va = base + img.entry_va;
-    let sp_el0 = base + arena::TPA_SIZE;
     let proc_slot = &PROCESS_TABLE[slot];
     proc_slot
         .basepage_kva
         .store(tpa.base_kva as *mut BasePage, Ordering::Release);
-    proc_slot.basepage_pa.store(base, Ordering::Release);
+    proc_slot.basepage_pa.store(tpa.base, Ordering::Release);
     proc_slot.l0_pa.store(l0_pa, Ordering::Release);
     proc_slot.entry_va.store(entry_va, Ordering::Release);
     proc_slot.sp_el0.store(sp_el0, Ordering::Release);
-    // Record the program ABI so the GEM trap dispatch reads this
-    // process's AES/VDI parameter blocks at the caller's pointer width
-    // (ADR-020). Always LP64: step 1b above rejected every ELFCLASS32
-    // image, so an ELF-loaded process is 8-byte-word by construction.
-    // This is not a hardcoded assumption — it is that gate's postcondition,
-    // asserted here so the two cannot drift apart.
-    debug_assert!(!img.is_ilp32(), "step 1b must reject ELFCLASS32");
     proc_slot.set_abi(super::Abi::Lp64);
+    Ok(l0_pa)
+}
 
-    Ok(LoadedImage {
-        slot,
-        entry_va,
-        l0_pa,
-        basepage_va: base,
-        sp_el0,
-    })
+/// `Pexec(PE_BASEPAGE / PE_BASEPAGEFLAGS)` — a basepage without a program
+/// (EmuTOS `xexec`, `bdos/proc.c:210-237`): the environment
+/// (`alloc_env(flags, env)`), a TPA of [`arena::TPA_SIZE`] from the pool
+/// `flags` select, the basepage at its start per `init_pd_fields`
+/// (`:364-385`: zeroed, `p_lowtpa`, `p_hitpa`, `p_xdta`, `p_env`, the command
+/// tail) with `p_flags = flags`, and `slot` set up around it. Both blocks
+/// belong to the caller (the allocator stamps `run`; `set_owner(p, run)`,
+/// `:229-230`). Only the basepage itself is written. The slot's `entry_va` is
+/// 0: `Pexec` 4/6 start it at `p_tbase` ([`super::pexec::go`]).
+///
+/// On failure nothing stays allocated (`:216-226`).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `slot` is freshly claimed.
+pub unsafe fn create_basepage(
+    slot: usize,
+    flags: u32,
+    tail: &[u8],
+    env: EnvSpec<'_>,
+) -> Result<LoadedImage, LoadError> {
+    if slot >= super::MAX_PROCESSES {
+        return Err(LoadError::InvalidSlot);
+    }
+    // EmuTOS order: the environment first, then the TPA.
+    // SAFETY: BDOS lock held.
+    let env_addr = unsafe { alloc_env_for(env, flags, core::ptr::null_mut(), false)? };
+    let free_env = || {
+        if let Some(e) = env_addr {
+            // SAFETY: BDOS lock held; `e` is the block just allocated.
+            let _ = unsafe { crate::bdos::mem::traps::mfree(e) };
+        }
+    };
+    // SAFETY: BDOS lock held.
+    let Some(tpa) = (unsafe { arena::alloc_tpa(flags) }) else {
+        free_env();
+        return Err(LoadError::NoTpaMemory);
+    };
+    // `init_pd_fields`: the basepage, and only the basepage.
+    // SAFETY: the block backs at least `BASEPAGE_RESERVED` bytes at its
+    // kernel alias, exclusively ours under the lock.
+    let bp_bytes =
+        unsafe { core::slice::from_raw_parts_mut(tpa.base_kva, BASEPAGE_RESERVED as usize) };
+    bp_bytes.fill(0);
+    // SAFETY: `bp_bytes` is exactly one page-aligned `BasePage`.
+    let bp = unsafe { &mut *(bp_bytes.as_mut_ptr() as *mut BasePage) };
+    bp.p_lowtpa = tpa.base as Long;
+    bp.p_hitpa = (tpa.base + arena::TPA_SIZE) as Long;
+    bp.p_xdta = (tpa.base + core::mem::offset_of!(BasePage, p_cmdlin) as u64) as Long;
+    bp.p_env = env_addr.unwrap_or(0);
+    bp.p_flags = flags;
+    // Standard handles / current drive as the loader sets them for the load
+    // modes (`populate_basepage`); `init_pd_files` inheritance is PROC02.
+    bp.p_uft = [-1; NUMSTD];
+    let n = core::cmp::min(tail.len(), PDCLSIZE - 1);
+    bp.p_cmdlin[..n].copy_from_slice(&tail[..n]);
+    bp.p_cmdlin[n] = 0;
+
+    // SAFETY: BDOS lock held; `slot` is ours.
+    match unsafe { install_slot(slot, &tpa, 0, 0) } {
+        Ok(l0_pa) => Ok(LoadedImage {
+            slot,
+            entry_va: 0,
+            l0_pa,
+            basepage_va: tpa.base,
+            sp_el0: 0,
+        }),
+        Err(e) => {
+            // SAFETY: BDOS lock held; both blocks are still ours.
+            unsafe { arena::free_tpa(tpa.base as Long) };
+            free_env();
+            Err(e)
+        }
+    }
 }
 
 /// Write the [`BasePage`] into the reserved window at the start of the
@@ -603,7 +719,9 @@ unsafe fn populate_and_map(
 ///     (`mem_size - file_size`).
 ///   * `p_xdta` — points at `p_cmdlin` per Atari convention; the
 ///     program may override via `Fsetdta`.
-///   * `p_flags` — [`PF_STANDARD`] (TT-RAM-friendly modern flags).
+///   * `p_flags` — the program's `PRGFLAGS` (its ELF note, else
+///     [`PF_STANDARD`]; EmuTOS `p->p_flags = hdr.h01_flags`,
+///     `bdos/proc.c:313`).
 ///   * `p_uft` — all `-1` (no inherited handle redirections).
 ///
 /// `p_cmdlin` receives the caller's command `tail` (verbatim, truncated
@@ -619,6 +737,7 @@ fn populate_basepage(
     tail: &[u8],
     env_addr: Option<Long>,
     base: u64,
+    prgflags: u32,
 ) {
     let mut text_base: u64 = 0;
     let mut text_len: u64 = 0;
@@ -665,7 +784,7 @@ fn populate_basepage(
     bp.p_blen = bss_len as Long;
     bp.p_xdta = (base + core::mem::offset_of!(BasePage, p_cmdlin) as u64) as Long;
     bp.p_parent = 0;
-    bp.p_flags = PF_STANDARD;
+    bp.p_flags = prgflags;
     bp.p_env = env_addr.unwrap_or(0);
     bp.p_uft = [-1; NUMSTD];
     bp.p_lddrv = 0;
@@ -1229,6 +1348,7 @@ fn write_userdef_trampoline(tpa: &mut [u8]) {
 /// Caller holds the BDOS giant lock.
 unsafe fn alloc_env_for(
     env: EnvSpec<'_>,
+    prgflags: u32,
     child_cookie: *mut c_void,
     owned_by_child: bool,
 ) -> Result<Option<Long>, LoadError> {
@@ -1238,7 +1358,7 @@ unsafe fn alloc_env_for(
         EnvSpec::None => Ok(None),
         EnvSpec::Explicit(img) => {
             // SAFETY: BDOS lock held.
-            let phys = unsafe { alloc_env(img, child_cookie, owned_by_child)? };
+            let phys = unsafe { alloc_env(img, prgflags, child_cookie, owned_by_child)? };
             Ok(Some(phys))
         }
         EnvSpec::Inherit => {
@@ -1257,7 +1377,7 @@ unsafe fn alloc_env_for(
                         env_slice_from_phys(penv)
                     }
                 };
-                alloc_env(src, child_cookie, owned_by_child)?
+                alloc_env(src, prgflags, child_cookie, owned_by_child)?
             };
             Ok(Some(phys))
         }
@@ -1273,17 +1393,18 @@ unsafe fn alloc_env_for(
 /// # Safety
 ///
 /// Caller holds the BDOS giant lock.
-unsafe fn alloc_env(
+pub(super) unsafe fn alloc_env(
     img: &[u8],
+    prgflags: u32,
     child_cookie: *mut c_void,
     owned_by_child: bool,
 ) -> Result<Long, LoadError> {
     // Round the byte count up to even; never below the 2-byte empty env.
     let size = (((img.len() + 1) & !1).max(2)) as Long;
-    // PF_STANDARD carries PF_TTRAMLOAD, so `alloc_env`'s TT-RAM-preferred
-    // arm applies (`(flags & PF_TTRAMLOAD) ? MX_PREFTTRAM : MX_STRAM`).
+    // EmuTOS `alloc_env`: `(flags & PF_TTRAMLOAD) ? MX_PREFTTRAM : MX_STRAM`
+    // (`bdos/proc.c:425`).
     // SAFETY: BDOS lock held.
-    let phys = unsafe { crate::bdos::mem::traps::mxalloc(size, MX_PREFTTRAM) };
+    let phys = unsafe { crate::bdos::mem::traps::mxalloc(size, pool_mode(prgflags)) };
     if phys == 0 {
         return Err(LoadError::NoEnvMemory);
     }
@@ -1307,6 +1428,58 @@ unsafe fn alloc_env(
         }
     }
     Ok(phys)
+}
+
+/// The pool a program's environment and TPA come from, by its `PRGFLAGS`:
+/// TT-RAM preferred with `PF_TTRAMLOAD`, ST-RAM only without — EmuTOS
+/// `alloc_env` (`bdos/proc.c:425`) and `alloc_tpa` (`:460-502`, whose ST/TT
+/// tie-break by the bits 31-28 quantum is reference, not reproduced).
+pub const fn pool_mode(prgflags: u32) -> i16 {
+    if prgflags & PF_TTRAMLOAD != 0 {
+        MX_PREFTTRAM
+    } else {
+        MX_STRAM
+    }
+}
+
+/// The `PRGFLAGS` an image carries in its NewTOS note (ARCH03 E8b), or
+/// `None` without one. Reads every `PT_NOTE` from the source — for a
+/// streamed file into [`HEADER_BUF`], whose header contents the parse has
+/// already consumed — and hands it to [`elf::find_prgflags_note`].
+///
+/// # Errors
+///
+/// [`LoadError::Parse`] with [`ParseError::BadNoteSegment`] when a note
+/// segment cannot be read, or what [`elf::find_prgflags_note`] reports.
+fn read_prgflags(src: &ImageSource<'_>, img: &ElfImage) -> Result<Option<u32>, LoadError> {
+    // The note segments fit the header buffer (the parser caps them).
+    const _: () = assert!(elf::MAX_NOTE_BYTES as usize <= HEADER_BUF_SIZE);
+    let mut found: Option<u32> = None;
+    for seg in img.notes() {
+        let (start, len) = (seg.file_offset as usize, seg.file_size as usize);
+        let bytes: &[u8] = match src {
+            ImageSource::Memory(blob) => blob
+                .get(start..start + len)
+                .ok_or(LoadError::Parse(ParseError::BadNoteSegment))?,
+            ImageSource::File(_) => {
+                // SAFETY: single BDOS-locked trap path; the parse that used
+                // the buffer has returned (its result is `Copy`) and nothing
+                // else borrows it; this borrow ends with the iteration.
+                let buf = unsafe { &mut *HEADER_BUF.0.get() };
+                if !src.read_exact_at(seg.file_offset, &mut buf[..len]) {
+                    return Err(LoadError::Parse(ParseError::BadNoteSegment));
+                }
+                &buf[..len]
+            }
+        };
+        if let Some((v, _)) = elf::find_prgflags_note(bytes, seg.align)? {
+            if found.is_some() {
+                return Err(LoadError::Parse(ParseError::BadNote));
+            }
+            found = Some(v);
+        }
+    }
+    Ok(found)
 }
 
 /// Borrow the environment block at pool address `penv` (a user address,
@@ -1583,7 +1756,7 @@ mod basepage_segment_tests {
         let img = elf::parse(&blob, blob.len() as u64).expect("well-formed ELF64");
         assert_eq!(img.segments().len(), segs.len(), "every PT_LOAD must be seen");
         let mut tpa = vec![0u8; RESERVED_LOW_END as usize];
-        populate_basepage(&mut tpa, &img, &[], None, 0);
+        populate_basepage(&mut tpa, &img, &[], None, 0, PF_STANDARD);
         let rd = |off: usize| u32::from_le_bytes(tpa[off..off + 4].try_into().unwrap()) as u64;
         (rd(0x08), rd(0x0C), rd(0x10), rd(0x14), rd(0x18), rd(0x1C))
     }
@@ -1646,7 +1819,7 @@ mod basepage_segment_tests {
         ]);
         let img = elf::parse(&blob, blob.len() as u64).expect("well-formed ELF64");
         let mut tpa = vec![0u8; RESERVED_LOW_END as usize];
-        populate_basepage(&mut tpa, &img, &[3, b'a', b'b', b'c'], Some(0x0200_0010), B);
+        populate_basepage(&mut tpa, &img, &[3, b'a', b'b', b'c'], Some(0x0200_0010), B, PF_STANDARD);
         let rd = |off: usize| u32::from_le_bytes(tpa[off..off + 4].try_into().unwrap()) as u64;
         assert_eq!(rd(0x00), B, "p_lowtpa = the PD pointer");
         assert_eq!(rd(0x04), B + arena::TPA_SIZE, "p_hitpa = TPA top");

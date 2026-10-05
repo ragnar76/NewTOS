@@ -284,3 +284,10 @@ replaced by the AArch64 EL0/EL1 exception-return path; the m68k save-area layout
 matters only inside the future m68k emulator (Phase 10+). The exit-code delivery
 into the parent's `p_dreg[0]` slot remains the contract way the child's `rc`
 reaches the parent's `Pexec`.
+
+ARCH03 stage 2d (2026-10-05, plan E15): `free_all_owned` drops the process from
+every block it owns rather than freeing every block tagged with it — a block
+another owner still holds (the basepage and environment of a `Pexec` 4 child,
+whose caller owns them too) survives, and its EmuTOS tag passes to that owner.
+With one owner per block, the only case EmuTOS has, the result is identical
+(`docs/api/gemdos/memory/49-mfree.md`, "several owners").

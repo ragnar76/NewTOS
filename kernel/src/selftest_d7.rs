@@ -3,9 +3,11 @@
 //! Mirrors the D6 `Pterm` test but the user binary exits via
 //! `Ptermres(blkln, rc)` (GEMDOS 0x31) instead of `Pterm`. The
 //! distinguishing behaviour: the process's `Mxalloc`-ed pool block is
-//! **reserved** (kept resident, orphaned) rather than freed — the
-//! classic TSR trick (EmuTOS `xtermres` / `reserve_blocks`,
-//! `bdos/proc.c:624`).
+//! **kept resident** rather than freed — the classic TSR trick (EmuTOS
+//! `xtermres`, `bdos/proc.c:624-634`) — and its TPA is shrunk to `blkln`
+//! first (`xsetblk(0, run, blkln)`). Since ARCH03 stage 2c the resident
+//! blocks stay on the allocated list owned by the TSR holder (FreeMiNT
+//! `TSR_Q`, plan §3.8) instead of being unlinked as EmuTOS does.
 //!
 //! ## Pipeline
 //!
@@ -13,11 +15,13 @@
 //!    then `Ptermres(0x100, 0)`.
 //! 2. Load + launch it (kernel-launch path, same as D6).
 //! 3. After the round-trip, assert the **TSR signature** against the
-//!    pre-test ST-RAM snapshot:
-//!      * `free_bytes` is **lower** — the block stayed resident
-//!        (a `Pterm` would have returned it to the free list).
-//!      * `allocated_blocks` is back to baseline — the owning MD was
-//!        unlinked from `mp_mal` (not leaked on the allocated list).
+//!    pre-test snapshots:
+//!      * ST-RAM `free_bytes` is **lower** — the block stayed resident
+//!        (a `Pterm` would have returned it to the free list);
+//!      * ST-RAM `allocated_blocks` is one higher and that block is owned
+//!        by the TSR holder (`traps::is_resident`);
+//!      * TT-RAM got the TPA back down to `blkln` (0x100): its used bytes
+//!        dropped by `TPA_SIZE - 0x100`;
 //!      * the slot is `Free` again and `RUN` is null — the process
 //!        terminated and control returned to the kernel driver.
 //!
@@ -50,7 +54,7 @@ pub const D7_TEST_SLOT: usize = 3;
 //   0x104  movz x1, #0       ; mode = MX_STRAM
 //   0x108  movz x8, #0x44    ; Mxalloc
 //   0x10C  svc  #1           ; → x0 = MD start
-//   0x110  movz x0, #0x100   ; blkln (keep-resident size; no-op here)
+//   0x110  movz x0, #0x100   ; blkln (keep-resident size of the TPA)
 //   0x114  movz x1, #0       ; rc = 0
 //   0x118  movz x8, #0x31    ; Ptermres
 //   0x11C  svc  #1           ; never returns
@@ -107,7 +111,7 @@ pub static D7_TEST_ELF: [u8; 288] = [
     0x01, 0x00, 0x80, 0xD2,  // movz x1, #0       (mode = MX_STRAM)
     0x88, 0x08, 0x80, 0xD2,  // movz x8, #0x44    (Mxalloc)
     0x21, 0x00, 0x00, 0xD4,  // svc  #1           → x0 = MD start
-    0x00, 0x20, 0x80, 0xD2,  // movz x0, #0x100   (blkln — no-op)
+    0x00, 0x20, 0x80, 0xD2,  // movz x0, #0x100   (blkln: keep 256 bytes of the TPA)
     0x01, 0x00, 0x80, 0xD2,  // movz x1, #0       (rc = 0)
     0x28, 0x06, 0x80, 0xD2,  // movz x8, #0x31    (Ptermres)
     0x21, 0x00, 0x00, 0xD4,  // svc  #1           (never returns)
@@ -136,6 +140,7 @@ pub fn run_d7_ptermres_test() {
     set_current(tos_api::bdos::process::pd_of(loaded.slot));
 
     let pre = pool_stats(PoolKind::Stram);
+    let pre_tt = pool_stats(PoolKind::Ttram);
     kprintln!(
         "[d7] pre :  ST-RAM free={} used={} free_blocks={} alloc_blocks={}",
         pre.free_bytes, pre.used_bytes, pre.free_blocks, pre.allocated_blocks,
@@ -157,15 +162,24 @@ pub fn run_d7_ptermres_test() {
     kprintln!("[d7] returned from EL0 via Ptermres");
 
     let post = pool_stats(PoolKind::Stram);
+    let post_tt = pool_stats(PoolKind::Ttram);
     kprintln!(
         "[d7] post:  ST-RAM free={} used={} free_blocks={} alloc_blocks={}",
         post.free_bytes, post.used_bytes, post.free_blocks, post.allocated_blocks,
     );
 
     // TSR signature: the Mxalloc'd block stayed resident (free_bytes
-    // dropped) but its MD was unlinked from the allocated list.
+    // dropped), on the allocated list, owned by the TSR holder; the TPA
+    // (TT-RAM, PF_STANDARD) shrank to blkln = 0x100.
     let block_resident = post.free_bytes < pre.free_bytes;
-    let alloc_list_clean = post.allocated_blocks == pre.allocated_blocks;
+    let alloc_list_clean = post.allocated_blocks == pre.allocated_blocks + 1
+        && resident_blocks(PoolKind::Stram) >= 1;
+    let tpa_shrunk = (pre_tt.used_bytes - post_tt.used_bytes) as u64
+        == tos_api::bdos::process::arena::TPA_SIZE - 0x100;
+    kprintln!(
+        "[d7] TT-RAM used {} -> {} (TPA shrunk to blkln)",
+        pre_tt.used_bytes, post_tt.used_bytes,
+    );
     let slot_freed = proc_slot.read_state() == State::Free;
     let run_cleared = tos_api::bdos::process::current().is_null();
 
@@ -174,8 +188,12 @@ pub fn run_d7_ptermres_test() {
         if block_resident { "OK" } else { "FAIL" },
     );
     kprintln!(
-        "[d7]   allocated-list clean (MD reserved):           {}",
+        "[d7]   block stays allocated, owner = TSR holder:    {}",
         if alloc_list_clean { "OK" } else { "FAIL" },
+    );
+    kprintln!(
+        "[d7]   TPA shrunk to blkln (TT used -TPA+0x100):     {}",
+        if tpa_shrunk { "OK" } else { "FAIL" },
     );
     kprintln!(
         "[d7]   slot freed (state == Free):                   {}",
@@ -186,9 +204,31 @@ pub fn run_d7_ptermres_test() {
         if run_cleared { "OK" } else { "FAIL" },
     );
 
-    if block_resident && alloc_list_clean && slot_freed && run_cleared {
+    if block_resident && alloc_list_clean && tpa_shrunk && slot_freed && run_cleared {
         kprintln!("[d7] === D7 PTERMRES PASS ===");
     } else {
         kprintln!("[d7] === D7 PTERMRES FAIL ===");
     }
+}
+
+/// Number of blocks on `kind`'s allocated list owned by the TSR holder.
+fn resident_blocks(kind: PoolKind) -> usize {
+    let mp = match kind {
+        PoolKind::Stram => tos_api::bdos::mem::init::pmd(),
+        PoolKind::Ttram => tos_api::bdos::mem::init::pmdalt(),
+    };
+    let mut n = 0;
+    // SAFETY: boot-time selftest, single CPU, no trap in flight; read-only
+    // walk of the allocated list.
+    let mut m = unsafe { (*mp).mp_mal };
+    while !m.is_null() {
+        // SAFETY: list invariant.
+        unsafe {
+            if tos_api::bdos::mem::traps::is_resident((*m).m_own) {
+                n += 1;
+            }
+            m = (*m).m_link;
+        }
+    }
+    n
 }

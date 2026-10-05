@@ -272,6 +272,48 @@ to the AES like `Mfree`), unknown address → `EIMBA`. Exercised by the
 stage-1 probe `P34PAR.NAP` (`Pexec 3` → `Mshrink` of the child's TPA →
 `Pexec 4`, `measurements/measurement-2026-10-05-arch03-1/`).
 
+### NewTOS: several owners, and only an owner frees (ARCH03 stage 2d, plan E15)
+
+Decision E15 (user, 2026-10-04: "wie empfohlen"): **FreeMiNT's rule** — a block
+can have **several owners**, and only an owner may give it back
+(`sys/dosmem.c:330-398` `sys_m_free` → `detach_region_by_addr`,
+`sys/memory.c:512-660` `attach_region`/`detach_region`: a region has `links`;
+detaching drops the caller's link and frees the region when `links` reaches 0).
+EmuTOS frees for whoever names the address (`bdos/umem.c:135-159`, no check).
+
+- **Owners.** Every block has its EmuTOS owner tag `m_own` (the allocating
+  process's PD, the child for `Pexec` 0, the TSR holder after `Ptermres`, the
+  kernel sentinel for kernel allocations). Further owners are recorded beside
+  it (`tos-api/src/bdos/mem/region.rs`); today only `Pexec` 4/6 adds one — the
+  started child becomes an owner of its basepage block and its environment
+  (FreeMiNT `attach_region(p, env); attach_region(p, base)`,
+  `sys/k_exec.c:518-520`). A child started with `Pexec` 4 shares its caller's
+  memory space (plan E6, FreeMiNT `FORK_SHAREVM`): it counts as an owner of
+  what its caller owns.
+- **`Mfree(addr)`** by an owner drops **that** owner; the memory goes back to
+  the pool only when no owner is left (then it is reported to the AES as
+  before). By someone who is not an owner → **`EIMBA` (-40)** — FreeMiNT
+  answers `EFAULT`, whose value is the same −40. An address that starts no
+  block stays `EIMBA`.
+- **`Mshrink(blk, len)`** only by an owner (FreeMiNT `sys_m_shrink`,
+  `sys/dosmem.c:410-455`: only regions of the caller's memory space), else
+  `EIMBA`; `len == 0` is `Mfree` with the same rule.
+- **Process end** (`Pterm`) drops the process from every block it owns; a
+  block with another owner left survives, and if the process held the EmuTOS
+  tag, the next owner takes it over. With a single owner — the only case
+  EmuTOS knows — this is exactly `free_all_owned`.
+- **`Ptermres`** hands every link of the process to the TSR holder (see
+  `../process/31-ptermres.md`): nobody frees resident memory with `Mfree`.
+- **Kernel-internal frees** (the AES freeing a resource blob it loaded, the
+  loader cleaning up) are not `Mfree` calls by a program and take no owner
+  check; whatever frees a block also forgets its extra owners.
+
+**Observable difference to EmuTOS:** a program that frees (or shrinks) a block
+it does not own — another process's memory, a TSR's memory — gets `EIMBA`
+instead of success; a block shared with a running child is freed only after
+the child let go too. Correct programs free their own memory and are not
+affected (FreeMiNT runs them the same way).
+
 ---
 
 ## Pi / BCM2711 binding

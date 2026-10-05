@@ -1,0 +1,67 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> s2e-rpi4-desktop-t25.png {"return": {}}
+run s2e-rpi4-desktop: rc=0
+t=35.0s -> s2e-rpi4-teradesk-t35.png {"return": {}}
+run s2e-rpi4-teradesk: rc=0
+t=30.0s -> s2e-rpi4-qed-t30.png {"return": {}}
+run s2e-rpi4-qed: rc=0
+t=30.0s -> s2e-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> s2e-rpi4-doom-t45.png {"return": {}}
+run s2e-rpi4-doom: rc=0
+t=25.0s -> s2e-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> s2e-rpi4-apitest-t40.png {"return": {}}
+run s2e-rpi4-apitest: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Qx42IO/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Qx42IO/ser.sock,server=on
+t=  16.1s end marker seen
+t=  18.2s s2e-rpi4-s2all-end.png {"return": {}}
+prompts seen: 0
+run s2e-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.15mZav/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.15mZav/ser.sock,server=on
+t=  15.8s end marker seen
+t=  17.9s s2e-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run s2e-rpi4-port10: rc=0
+t=40.0s -> s2e-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> s2e-rpi4-crashtst-t70.png {"return": {}}
+run s2e-rpi4-crashtst: rc=0
+t=20.0s -> s2e-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> s2e-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> s2e-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run s2e-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.AuTdm9/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.AuTdm9/ser.sock,server=on
+t=   4.0s s2e-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s s2e-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.8s s2e-virt-crash-crash3.png {"return": {}}
+t=   5.8s answered prompt 3
+t=   7.2s s2e-virt-crash-crash4.png {"return": {}}
+t=   7.2s answered prompt 4
+t=   8.6s s2e-virt-crash-crash5.png {"return": {}}
+t=   8.6s answered prompt 5
+t=   9.9s s2e-virt-crash-crash6.png {"return": {}}
+t=   9.9s answered prompt 6
+t=  11.3s s2e-virt-crash-crash7.png {"return": {}}
+t=  11.3s answered prompt 7
+t=  11.5s end marker seen
+t=  17.6s s2e-virt-crash-end.png {"return": {}}
+prompts seen: 7
+run s2e-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.ewzkUK/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.ewzkUK/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s s2e-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run s2e-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.TEfUWz/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.TEfUWz/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s s2e-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run s2e-virt-desktop: rc=0

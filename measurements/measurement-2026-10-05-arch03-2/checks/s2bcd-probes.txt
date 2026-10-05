@@ -1,0 +1,21 @@
+gemlib.a out of date [libc/overlay/posix] -- running build-gemlib.sh…
+  compiled OK=578  skipped=0  (of 578)
+  failures match gemlib/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/gemlib/gemlib.a (744866 bytes)
+  (full log: gemlib/build/build-gemlib.log)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/ENVPAR.NAP (9128 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/ENVKID.NAP (9128 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/P34PAR.NAP (10384 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/P34KID.NAP (9336 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/PFLAGS1.NCP (9896 bytes) PRGFLAGS=0x10000004
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/PFLAGS2.NCP (9896 bytes) PRGFLAGS=0x10000004
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/PFLAGS2.NCP: PRGFLAGS 0x10000004 -> 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/PFLAGS2.NCP: PRGFLAGS 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/PFLAGS1.NCP: PRGFLAGS 0x10000004 (PF_TTRAMMEM | TPA quantum 2 (x 128 KiB))
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/P567.NAP (12136 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/TSRPAR.NAP (9888 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/TSRRES.NAP (8824 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/TSRUSE.NAP (8480 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/OWNPAR.NAP (10296 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/OWNKID.NAP (9160 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-2/bin/S2ALL.NAP (9232 bytes)

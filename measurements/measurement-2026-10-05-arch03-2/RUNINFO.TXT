@@ -1,0 +1,97 @@
+measurement-2026-10-05-arch03-2 -- ARCH03 stage 2: PRGFLAGS ELF note (E8b),
+Pexec 5/6/7, Ptermres with blkln and TSR-held memory, several owners per block
++ Mfree/Mshrink only by an owner (E15), mintlib vfork/thread.c on AArch64 and
+mintlib's own system() again (TASK/PROC01).
+
+Date 2026-10-05, branch arch03, base HEAD f293b66 (tree clean at start),
+stage 2 uncommitted: method/arch03-2-change.diff (git diff + the new files).
+QEMU 11.0.2, host macOS (no `timeout`; runs end via QMP `quit` / the driver).
+No SD card, Pi or TT touched; tools/make-sd-image.sh NOT used -- method/
+seed-card.sh builds private 64 MiB images in the session scratchpad.
+
+SUB-STEPS AND CHECKPOINTS (labels = file prefixes in checks/ serial/ screendumps/ bin/)
+  base   HEAD before stage 2 (static checks only)
+  s2a    a) E8b PRGFLAGS note                               full series
+  s2bc   b) Pexec 5/6/7 + c) Ptermres (c was in the tree before b was run,
+         so they share a checkpoint)                         full series
+  s2bcd  b+c+d) several owners / E15, + the fix of the s2bc finding
+                                                            full series
+  s2e    e) vfork/setstack ports, thread.c overlay, system.c overlay
+         removed; every program rebuilt against the new libc
+                                                            full series
+  s2e2   S2ALL again on the s2e kernel after a probe correction (VFORKT
+         checks status words numerically; no product change)
+
+STATIC CHECKS (method/checks.sh <label>; checks/<label>-*.txt)
+               base     s2a      s2bc     s2bcd    s2e
+  host tests   1050/0/1 1063/0/1 1070/0/1 1081/0/1 1081/0/1
+  release tos-api/kernel warnings (both boards, fresh after
+               cargo clean -p kernel -p tos-api)  64/94 at every checkpoint
+  clippy tos-api/kernel (both feature sets)       80/125 at every checkpoint
+  desk-drift-probe                               31 at every checkpoint
+  sdk/run-host-tests  13/0/0 13/0/0 13/0/0 12/1/0  13/0/0
+    (s2bcd: system-host still tested the system.c overlay that e removes --
+    the tree already held e's libc change; adapted in e)
+  Host-test delta: +10 tests/loader_prgflags.rs, +3 xtask prgflags_tests
+  (a); +7 tests/arch03_pexec_567_ptermres.rs (b/c); +11
+  tests/arch03_region_owners.rs (d).
+
+RUN SERIES (method/substep.sh -> checks.sh, scratch-kernels.sh,
+            build-s2-tests.sh, runs-s2.sh; summaries checks/<label>-summary.txt)
+  raspi4b (-append serial=on), product kernel:
+    desktop / TeraDesk (#Z) / QED (#Z) / APITEST (#Z): screendumps
+      byte-identical to stage 1 (s1-*) at s2a, s2bc, s2bcd and s2e
+    Doom (#Z): "VERIFIED via EdDI+scale+vro_cpyfm" at every checkpoint
+    APITEST: TOTAL 106 / 0 / 5 at every checkpoint
+    S2ALL (#Z, method/tests/s2all.c -- Pexec(0) of each probe):
+      s2a   PFLAGS x2, P34, MEM03 PASS
+      s2bc  + P567 FAIL: a running Pexec child's slot stayed `Loaded`, so
+            Pexec(4, its own PD) restarted P567 (stage-1 latent defect; fixed:
+            handle_pexec marks the child Running); S2ALL hit the time limit
+      s2bcd P567 PASS, TSR PASS, OWN FAIL (probe expectation, see below)
+      s2e   OWN PASS, VFORK FAIL (probe used mintlib WEXITSTATUS, see below)
+      s2e2  PFLAGS x2, P34, MEM03, P567, TSR, OWN, VFORK PASS -> "S2ALL: PASS"
+    PORT10 (#Z P10TEST): 42 of 44 at every checkpoint -- the 2 "> file"
+      redirection failures of PORT10d (TASK/PROC02, not done here); from s2e
+      on P10TEST links mintlib's own system() (TOS branch, no $SHELL)
+  raspi4b scratch kernels: CRASHTST PASS (crash kernel), KBDVEC PASS + EmuCON
+    ("run oldexec.ncp" -> error 66, exit -> desktop) at every checkpoint
+  virt: crash kernel CRCHILD + CRASHTST PASS; selftest kernel d3, d6, d7
+    (Ptermres, new semantics from s2bc on), pexec, pexec_env, d4d5, sysvars,
+    upcall, etv_term PASS, sleepwake_switch the same 5 FAILs as stage 1
+    (pre-existing); product kernel desktop up
+
+PROBES (method/tests, built by method/build-s2-tests.sh against sdk libc)
+  PFLAGS1/2  p_flags read back from the note; TPA/env pool by PF_TTRAMLOAD;
+             PFLAGS2 patched with `cargo xtask prgflags ... 0x7`
+  P567       Pexec 5 fields, pool, start at p_tbase (x0 = PD, os_run, p_parent),
+             4 leaves ownership, 7 flags from path (never read as a string),
+             6 gives memory to the child (EIMBA after), EINVFN for mode 8
+  TSRPAR/TSRRES/TSRUSE  Ptermres(blkln): resident code/data/BSS/Malloc block
+             alive and callable from the parent and from a later program;
+             TPA beyond blkln back in the pool (TT largest block 0x3a568ff0
+             -> 0x3a566590); Mfree of TSR memory = EIMBA
+  OWNPAR/OWNKID  Mfree/Mshrink of a parent block by a Pexec-0 child = EIMBA;
+             Pexec 3+4 child co-owns basepage+env and shares the caller's
+             memory space; a Pexec-4 thread frees a caller block; freed
+             unstarted PD cannot be started
+  VFORKT     vfork (child runs first, writes parent memory, _exit(42)),
+             waitpid -> pid + status 42<<8, second vfork, ST pool back,
+             system() POSIX branch with $SHELL -> status 127<<8 (execve =
+             Pexec(200) -> EINVFN, as on EmuTOS), system(NULL) == 1
+  Probe corrections (no product change): OWNKID expected a Pexec-4 child to
+  stop owning its env after one Mfree -- the spec (E6, FreeMiNT FORK_SHAREVM)
+  makes it share the caller's memory space, so the second Mfree frees; VFORKT
+  first used mintlib's WEXITSTATUS, which reads big-endian bit-fields and
+  returns 0 on AArch64 (header defect of the port, reported, not fixed).
+
+BINARIES (bin/SHA256SUMS, repo-binaries.sha256, kernels.sha256)
+  Every program rebuilt (crt0 carries the PRGFLAGS note; libc with vfork/
+  thread.c/mintlib system.c): QED.NAP, DESKTOP.NAP (TeraDesk), DOOM.NAP,
+  APITEST.NCP, all examples, the probes. HELLO.NCP is hand-built without a
+  note (loads with PF_STANDARD). kernel8-s2e.img == repo kernel8.img.
+
+NOT COVERED HERE
+  * Real Pi 4 (not touched by order).
+  * TASK/PROC02 (inherited std handles, Fforce use count): not done.
+  * The QUIRK-001 bracket is unchanged.

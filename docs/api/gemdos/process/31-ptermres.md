@@ -275,12 +275,42 @@ EmuTOS reserve effect. `pterm::terminate_resident` shares its body with
 `terminate` via a `reserve` flag, so the exit-code / parent-resume path is
 identical. The kernel handler routes GEMDOS `0x31` with `rc` from `x1` and
 `blkln` from `x0`.
-- **`blkln` is currently a no-op** under the static-arena TPA model (the basepage
-  TPA is not a BDOS MD, so `xsetblk` has nothing to shrink); what `Ptermres`
-  reserves is the process's `Malloc`ed pool blocks. Precise keep-resident sizing
-  returns once TPAs are pool-allocated (ADR-010 / Phase 09).
-- **Env block:** edge case 4 (auto-reserve of `p_env`) does not apply yet —
-  `p_env` is unset in the current basepage.
-- The orphan-MD trick requires the allocator to support MDs that live outside any
-  list while their memory stays off the free list; the current implementation
-  models this with slot lifetime.
+- *(Superseded 2026-10-05, ARCH03 stage 2c — kept for the record:)*
+  `blkln` was a no-op while the TPA was no BDOS block; the environment was not
+  reserved because `p_env` was unset.
+
+**ARCH03 stage 2c (2026-10-05) — the contract complete, ownership after
+FreeMiNT (plan §3.8 / Frage 16).**
+- **`blkln` works:** the TPA is a pool block whose address is the PD (stage 1),
+  so `xsetblk(0, run, blkln)` is `traps::mshrink(0, pd, blkln)` with exactly
+  `Mshrink`'s rules (16-byte grain, `0` frees the block, larger than the block
+  → `EGSBF`), and — D-006 — its answer is ignored
+  (`pterm::terminate_resident`). The tail beyond `blkln` is back in the pool.
+  **Caveat for TSR code:** the image starts at `p_lowtpa + 0x1000` in NewTOS
+  (not `+ 0x100`); a TSR that computes `blkln` as `0x100 + p_tlen + p_dlen +
+  p_blen` keeps 0xF00 bytes too few — `p_bbase + p_blen - p_lowtpa` is the
+  layout-independent form.
+- **Everything the process owns stays — environment included (edge case 4)
+  and its `Malloc` blocks.** Unlike EmuTOS' `reserve_blocks`, the MDs are
+  **not** unlinked: they stay on `mp_mal`, owned by the TSR holder
+  (`traps::tsr_owner`), the way FreeMiNT keeps a TSR's regions attached to the
+  process in `TSR_Q` (`sys/k_exit.c:307-336`). Contract effect is the same —
+  the memory survives, `Malloc(-1)` does not reclaim it, nothing frees it at a
+  later `Pterm` — and the kernel can still tell resident memory from free
+  memory (it is "allocated"), so the AES can read a TSR's data. **Observable
+  difference:** a program walking the `Getmpb` lists sees the resident blocks
+  on the allocated list (EmuTOS: on neither list). `Mfree`/`Mshrink` of a
+  resident block by a program is `EIMBA` (stage 2d, owner rule E15,
+  `49-mfree.md`) — as in EmuTOS, where the block is on no list at all. A block
+  the TSR shared with another owner keeps that owner, the TSR holder takes
+  the TSR's link (FreeMiNT keeps every region of the TSR's memory space).
+- **Code stays callable:** the image is not moved or unmapped (one shared
+  address space); a later process can call into it — the classic way TSRs are
+  used (measured: `measurements/measurement-2026-10-05-arch03-2/`, TSRPAR).
+- The process slot is freed as for `Pterm`; programs it had loaded with
+  `PE_LOAD` or built with `Pexec` 5/7 and never started lose their slot too
+  (their memory stays resident with the rest).
+- **Order vs. EmuTOS:** an `etv_term` handler runs before the shrink here
+  (the upcall precedes the teardown), after it in EmuTOS (`xtermres` shrinks,
+  then `xterm` calls the handler). The handler's own code is never beyond
+  `blkln` in a correct TSR, so this is not observable for one.

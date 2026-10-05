@@ -1192,8 +1192,8 @@ fn handle_pterm(frame: &mut ExceptionFrame, func: u16) {
     //   * `Pterm0`   (0x00): rc fixed at 0, no args.
     //   * `Pterm`    (0x4C): rc in `x0` (= `frame.gpr[0]`).
     //   * `Ptermres` (0x31): `Ptermres(blkln, rc)` — `blkln` in `x0`,
-    //     `rc` in `x1`. `blkln` (keep-resident size) is a no-op under
-    //     the static-arena TPA model (see `pterm::terminate_resident`).
+    //     `rc` in `x1`. `blkln` is the size the TPA is shrunk to before it
+    //     stays resident (EmuTOS `xsetblk(0, run, blkln)`, `bdos/proc.c:626`).
     //
     // The exit code is a **UWORD** (D-005): EmuTOS `xterm(UWORD rc)`
     // (`bdos/proc.c:601,616`) stores `run->p_dreg[0] = rc`, i.e. the
@@ -1205,6 +1205,8 @@ fn handle_pterm(frame: &mut ExceptionFrame, func: u16) {
         0x31 => (frame.gpr[1] & 0xFFFF) as i32,
         _ => (frame.gpr[0] & 0xFFFF) as i32,
     };
+    // `Ptermres`' keep-resident size: a LONG in `x0` (only read for 0x31).
+    let blkln = frame.gpr[0] as u32 as i32;
 
     // BIOS finding H1 (etv_term): if the app installed a real `etv_term`
     // process-terminate hook via `Setexc(0x102, handler)`, run it at EL0
@@ -1248,7 +1250,7 @@ fn handle_pterm(frame: &mut ExceptionFrame, func: u16) {
                 mask_bit: tos_api::bdos::process::UPCALL_MASK_ETV_TERM,
                 disposition: tos_api::bdos::process::Disposition::Terminate {
                     rc,
-                    reserve: func == 0x31,
+                    reserve: (func == 0x31).then_some(blkln),
                 },
             },
         );
@@ -1261,7 +1263,7 @@ fn handle_pterm(frame: &mut ExceptionFrame, func: u16) {
     let result = unsafe {
         match func {
             0x00 => tos_api::bdos::process::pterm::terminate_zero(),
-            0x31 => tos_api::bdos::process::pterm::terminate_resident(rc),
+            0x31 => tos_api::bdos::process::pterm::terminate_resident(blkln, rc),
             _ => tos_api::bdos::process::pterm::terminate(rc),
         }
     };
@@ -1677,10 +1679,9 @@ fn handle_psigreturn(frame: &mut ExceptionFrame) {
         // SAFETY: trap-context single-CPU contract; BDOS giant lock held
         // implicitly — same contract as `handle_pterm`.
         let result = unsafe {
-            if reserve {
-                tos_api::bdos::process::pterm::terminate_resident(rc)
-            } else {
-                tos_api::bdos::process::pterm::terminate(rc)
+            match reserve {
+                Some(blkln) => tos_api::bdos::process::pterm::terminate_resident(blkln, rc),
+                None => tos_api::bdos::process::pterm::terminate(rc),
             }
         };
         finish_terminate(frame, rc, result);
@@ -1811,7 +1812,7 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     use core::sync::atomic::Ordering;
 
     use tos_api::bdos::process::loader::EnvSpec;
-    use tos_api::bdos::process::pexec::{PE_LOAD, PE_LOADGO};
+    use tos_api::bdos::process::pexec::{PE_BASEPAGE, PE_BASEPAGEFLAGS, PE_LOAD, PE_LOADGO};
 
     let mode = frame.gpr[0] as u16;
     let path_user_va = frame.gpr[1];
@@ -1835,8 +1836,14 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     // A user (EL0) caller passes a user-VA `path` read with unprivileged
     // loads; a kernel (EL1) caller — e.g. the built-in shell — passes a
     // kernel pointer that must be read with ordinary loads (an `ldtrb`
-    // would fault as EL0 on a kernel page).
-    let path_len = if from_el0 {
+    // would fault as EL0 on a kernel page). Only the load modes take a
+    // path: for `PE_BASEPAGEFLAGS` the argument is the `PRGFLAGS` value, for
+    // the go modes it is unused (EmuTOS `xexec`, `bdos/proc.c:210-248`), and
+    // reading either as a string would fault on a value like 0x10000007.
+    let loads = mode == PE_LOADGO || mode == PE_LOAD;
+    let path_len = if !loads {
+        0
+    } else if from_el0 {
         match read_user_cstr(path_user_va, &mut path_buf) {
             Ok(n) => n,
             Err(_) => return pexec_user_fault(frame),
@@ -1846,16 +1853,16 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     };
     let path_bytes = &path_buf[..path_len];
 
-    // Command tail + environment. Only the **load** modes consume them;
-    // for `PE_GO` the `x2` argument is the opaque PD handle (a value,
-    // not a pointer) so we must not dereference it. `x2` = command-tail
-    // image (`init_pd_fields`), `x3` = environment (`env == 0` → inherit
-    // `run->p_env`). Both are read from the caller's address space with
-    // the same EL0/EL1 discipline as `path`.
+    // Command tail + environment. The load modes and the basepage modes
+    // (5/7) consume them; for `PE_GO`/`PE_GOTHENFREE` the `x2` argument is
+    // the PD pointer (a value here, not a string) so we must not read it.
+    // `x2` = command-tail image (`init_pd_fields`), `x3` = environment
+    // (`env == 0` → inherit `run->p_env`). Both are read from the caller's
+    // address space with the same EL0/EL1 discipline as `path`.
     let mut tail_buf = [0u8; 128];
     let mut env_buf = [0u8; ENV_BUF_LEN];
     let (tail_bytes, env_spec): (&[u8], EnvSpec) =
-        if mode == PE_LOADGO || mode == PE_LOAD {
+        if loads || mode == PE_BASEPAGE || mode == PE_BASEPAGEFLAGS {
             let tlen = if tail_arg == 0 {
                 0
             } else if from_el0 {
@@ -1892,47 +1899,28 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     // SAFETY: trap context, BDOS giant lock implicit, single-CPU.
     let result = unsafe {
         tos_api::bdos::process::pexec::dispatch(
-            mode, path_bytes, tail_arg, tail_bytes, env_spec,
+            mode, path_bytes, path_user_va, tail_arg, tail_bytes, env_spec,
         )
     };
 
     let child = match result {
         Ok(c) => c,
         Err(e) => {
-            use tos_api::bdos::process::loader::LoadError;
-            use tos_api::bdos::process::pexec::PexecError;
-            let err = match e {
-                PexecError::UnknownMode | PexecError::UnsupportedMode => {
-                    tos_types::error::EINVFN
-                }
-                PexecError::NotFound => tos_types::error::EFILNF,
-                PexecError::NoSlot => tos_types::error::ENSMEM,
-                PexecError::BadHandle => tos_types::error::EIMBA,
-                // A *memory/size* shortfall maps to `ENSMEM` (EmuTOS
-                // `bdos/proc.c:295-300`: no TPA → `ENSMEM`); a malformed
-                // image / bad header maps to `EPLFMT` (`kpgmld.c:47-63`).
-                // `ProgramTooLarge` is the image+BSS overrunning the TPA
-                // image region — a size shortfall, so `ENSMEM`. A failed
-                // TPA pool allocation (`NoTpaMemory`) and the env
-                // allocation shortfall (`alloc_env`, `proc.c:284-288`)
-                // are likewise `ENSMEM`.
-                PexecError::LoadFailed(le) => match le {
-                    LoadError::ProgramTooLarge
-                    | LoadError::NoEnvMemory
-                    | LoadError::NoTpaMemory => tos_types::error::ENSMEM,
-                    _ => tos_types::error::EPLFMT,
-                },
-            };
+            // `PexecError::errno`: a memory/size shortfall is `ENSMEM`
+            // (EmuTOS `bdos/proc.c:295-300`), a malformed image `EPLFMT`
+            // (`kpgmld.c:47-63`), an unknown mode `EINVFN`, a missing file
+            // `EFILNF`, a PD the go modes do not accept `EIMBA`.
+            let err = e.errno();
             frame.gpr[0] = err as i64 as u64;
             return;
         }
     };
 
-    // `PE_LOAD` (D4): the program is loaded but **not** launched. The
+    // `PE_LOAD` (D4) and the basepage modes 5/7: nothing is launched. The
     // parent keeps running; it receives the child's PD pointer — the
     // basepage address, readable in its own address space (ARCH03 stage 1,
-    // EmuTOS `return (long)cur_p`, `bdos/proc.c:360`) — and hands it back
-    // later to `PE_GO`. No TTBR0 switch, no frame redirect — just return to
+    // EmuTOS `return (long)cur_p` / `return (long)p`, `bdos/proc.c:360,237`)
+    // — and hands it back later to `PE_GO` / `PE_GOTHENFREE`. No TTBR0 switch, no frame redirect — just return to
     // the parent. The slot stays `Loaded` until `PE_GO` launches it (or the
     // parent terminates, `pexec::release_unstarted_of`).
     if !child.launch {
@@ -2020,6 +2008,13 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     // allocations from the child get tagged with the right owner
     // cookie (D9 wiring; EmuTOS `run = p`).
     tos_api::bdos::process::set_current(tos_api::bdos::process::pd_of(child.slot));
+    // …and the slot is a started process from here on: `Pexec` 4/6 must not
+    // take its PD for one still waiting to be started (ARCH03 2b — before,
+    // a running `Pexec` child stayed `Loaded` and `Pexec(4, its PD)` started
+    // it a second time). The kernel launcher and the scheduler mark their
+    // processes the same way (`launch.rs`, `apply_switch`).
+    tos_api::bdos::process::PROCESS_TABLE[child.slot]
+        .set_state(tos_api::bdos::process::State::Running);
 
     // Switch TTBR0 from parent to child *with* a TLBI. We are in
     // kernel context here; the eret to EL0 is many instructions

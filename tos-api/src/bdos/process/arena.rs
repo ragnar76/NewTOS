@@ -20,10 +20,11 @@
 //!
 //! ## Size
 //!
-//! [`TPA_SIZE`] = 4 MiB, fixed — plan decision E9 (fixed and overridable,
-//! rather than EmuTOS' "largest free block", which would starve every other
-//! process; FreeMiNT bounds its TPA the same way with `initialmem`). The
-//! override through the program flags waits on E8b.
+//! [`TPA_SIZE`] = 4 MiB, fixed — plan decision E9 (fixed rather than
+//! EmuTOS' "largest free block", which would starve every other process;
+//! FreeMiNT bounds its TPA the same way with `initialmem`). The program
+//! flags (E8b) choose its pool, not its size: no `PRGFLAGS` bit is defined
+//! that would.
 //!
 //! ## Alignment
 //!
@@ -35,7 +36,7 @@
 
 use core::sync::atomic::Ordering;
 
-use tos_types::{Long, MX_PREFTTRAM};
+use tos_types::Long;
 
 use super::MAX_PROCESSES;
 
@@ -64,9 +65,10 @@ pub struct Tpa {
 
 /// Take one page-aligned [`TPA_SIZE`] block from the BDOS pool.
 ///
-/// TT-RAM is preferred (`MX_PREFTTRAM`), matching the environment-block
-/// allocation and the modern `PF_TTRAMLOAD` default; it falls back to
-/// ST-RAM only if TT-RAM is exhausted. Returns `None` on `ENSMEM`.
+/// The pool follows the program's `PRGFLAGS` (EmuTOS `alloc_tpa`,
+/// `bdos/proc.c:460-502`): with `PF_TTRAMLOAD` TT-RAM is preferred
+/// (`MX_PREFTTRAM`, ST-RAM if TT-RAM cannot supply it), without it the TPA
+/// is ST-RAM only. Returns `None` on `ENSMEM`.
 ///
 /// The block is tagged with the *current* owner cookie by the allocator
 /// (`owner = run`); the loader re-tags it to the child for `PE_LOADGO`.
@@ -74,10 +76,11 @@ pub struct Tpa {
 /// # Safety
 ///
 /// Caller holds the BDOS giant lock (or is the boot CPU pre-trap).
-pub unsafe fn alloc_tpa() -> Option<Tpa> {
+pub unsafe fn alloc_tpa(prgflags: u32) -> Option<Tpa> {
+    let mode = super::loader::pool_mode(prgflags);
     // SAFETY: caller holds the BDOS lock.
     let raw = unsafe {
-        crate::bdos::mem::traps::mxalloc_aligned(TPA_SIZE as Long, MX_PREFTTRAM, TPA_ALIGN as Long)
+        crate::bdos::mem::traps::mxalloc_aligned(TPA_SIZE as Long, mode, TPA_ALIGN as Long)
     };
     if raw == 0 {
         return None;

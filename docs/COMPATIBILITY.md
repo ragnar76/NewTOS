@@ -692,6 +692,43 @@ rest of the pool instead of almost nothing (FreeMiNT bounds its TPA the same
 way, `initialmem`); (3) `p_tbase` is `p_lowtpa + 0x1000`, not `+ 0x100`
 (a position-independent image keeps its link-time page offsets).
 
+**`PRGFLAGS` travel in an ELF note** (ARCH03 stage 2a, plan E8b, user
+decision 2026-10-05). A NewTOS program is an ELF file, not a `0x601A` PRG, so
+there is no `h01_flags` header word; the flags are a note `"NewTOS"`/type 1/one
+`u32` under a `PT_NOTE` header, written by the SDK crt0 (default
+`PF_STANDARD`) and changed with `cargo xtask prgflags` instead of
+`PRGFLAGS.PRG`. What EmuTOS does with the flags is kept: they become `p_flags`
+and `PF_TTRAMLOAD` chooses the pool of TPA and environment
+(`bdos/proc.c:283-313,413-502`). **Observable differences:** (1) the format —
+a tool that patches the PRG header finds no such header; (2) the ST/TT
+tie-break with the bits 31-28 "would-like" quantum is not reproduced (a
+`PF_TTRAMLOAD` program gets TT-RAM whenever TT-RAM has the fixed 4-MiB TPA);
+(3) `PF_FASTLOAD` leaves no uninitialised heap — the whole TPA is zeroed
+either way. Spec: `docs/api/gemdos/process/4b-pexec.md` (NewTOS notes); tests
+`tos-api/tests/loader_prgflags.rs`.
+
+**Only an owner frees; a block can have several owners; resident memory stays
+on the allocated list** (ARCH03 stage 2c/2d, plan E15 and §3.4/§3.8 as
+recommended, FreeMiNT's model). EmuTOS frees a block for whoever names it
+(`bdos/umem.c:135-159`), knows one owner per block (`m_own`) and drops a
+TSR's MDs from both lists (`reserve_blocks`, `bdos/proc.c:75-89`). NewTOS keeps
+`m_own` as the first owner and adds FreeMiNT's links (`sys/memory.c:512-660`):
+a `Pexec` 4/6 child becomes an owner of its basepage and environment
+(`sys/k_exec.c:518-520`), a mode-4 child shares its caller's memory space
+(`FORK_SHAREVM`, plan E6); `Mfree` drops the caller's ownership and frees with
+the last owner; `Mfree`/`Mshrink` by a non-owner and `Pexec` 4/6 of a PD the
+caller does not own answer `EIMBA` (FreeMiNT's `EFAULT`, the same −40);
+`Ptermres` hands every link to a TSR holder, so resident memory stays
+allocated and owned. **Observable differences:** (1) freeing or shrinking
+another process's block — or a TSR's — fails with `EIMBA` (EmuTOS: succeeds;
+for a TSR's block EmuTOS answers `EIMBA` too); (2) a block shared with a
+running child goes back to the pool only after both let go; (3) a program
+walking the `Getmpb` lists finds a TSR's blocks on the allocated list, owned
+by a sentinel (EmuTOS: on no list). Specs: `docs/api/gemdos/memory/
+49-mfree.md`, `4a-mshrink.md`, `docs/api/gemdos/process/4b-pexec.md`,
+`31-ptermres.md`; tests `tos-api/tests/arch03_region_owners.rs`,
+`arch03_pexec_567_ptermres.rs`.
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

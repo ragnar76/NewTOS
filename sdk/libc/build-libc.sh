@@ -54,10 +54,12 @@
 #                                .ncp, case-insensitive, instead of mintlib's
 #                                lower-case .app/.gtp/.ttp/.prg/.tos (user
 #                                decision 2026-10-02)
-#       posix/system.c           system() without mintlib's POSIX branch
-#                                (vfork/execve/waitpid): always the TOS
-#                                branch via spawnvp (TASK/PORT10; removed
-#                                again by TASK/PROC01)
+#       mintlib/thread.c         LP64 casts for the 32-bit basepage fields
+#                                (tfork, __waitval, __waittime; TASK/PROC01)
+#   - TASK/PROC01: mintlib's vfork (unix/vfork.S) and _setstack
+#     (mintlib/setstack.S) are m68k; newtos-arch/vfork.S and setstack.S are
+#     their AArch64 retargets. With them and thread.c, posix/system.c is
+#     mintlib's own again (the PORT10 overlay without the POSIX branch is gone).
 #   - sdk/libc/crt0.S: libc-aware crt0 (sets SP from p_hitpa, calls
 #     __libc_init_heap and __libc_parseargs, then main) -- distinct from
 #     sdk/crt0.S used by the libc-less examples.
@@ -151,12 +153,11 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 # unix/access.c -> newtos-arch/access.c  (lean access; drops the Unix passwd/
 #   group DB tail getgroups->getpwuid/getgrent/setgrent/endgrent, which has no
 #   TOS analog -- pulled by tz/localtime.c's access() call)
-# mintlib/thread.c: MiNT Pxxx thread-fork (tfork) — builds a child BASEPAGE and
-# treats its fields as native pointers. Incompatible with NewTOS's LP64 256-byte
-# basepage (a 4-byte p_env is not a char*) AND with the single-tasking model; it
-# was already semantically broken on LP64 (376-byte basepage the kernel can't read)
-# and is unreferenced by any built app (QED/TeraDesk link with 0 undef). Excluded.
-EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c mintlib/thread.c unix/ioctl.c"
+# mintlib/thread.c (tfork, __waitval, __waittime) was excluded until TASK/PROC01:
+# it treated the basepage fields as native pointers, and NewTOS had no
+# Pexec 5/6/7. It builds now from the LP64 overlay (overlay/mintlib/thread.c)
+# against the kernel's Pexec 5 + 4 (ARCH03 stage 2).
+EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c unix/ioctl.c"
 is_excluded() { case " $EXCLUDE " in *" $1 "*) return 0;; esac; return 1; }
 
 echo "clang : $($CLANG --version | head -1)"
@@ -228,6 +229,13 @@ lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
 # overlay include/setjmp.h's long[22]. Host-checked by tests/setjmp-host.sh.
 "$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
     -c "$LIBC/newtos-arch/setjmp.S"    -o "$OBJ/arch__setjmp.o"   || exit 1
+# vfork (TOS branch: tfork = Pexec 5 + Pexec 4 on the caller's code) and
+# _setstack -- AArch64 retargets of mintlib's m68k unix/vfork.S and
+# mintlib/setstack.S (TASK/PROC01). vfork reads __mint and writes errno.
+"$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
+    -c "$LIBC/newtos-arch/vfork.S"     -o "$OBJ/arch__vfork.o"    || exit 1
+"$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
+    -c "$LIBC/newtos-arch/setstack.S"  -o "$OBJ/arch__setstack.o" || exit 1
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/do_fstat.c"  -o "$OBJ/arch__do_fstat.o" || exit 1
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \

@@ -227,6 +227,14 @@ pub struct Process {
     /// `null` otherwise.
     pub load_owner: AtomicPtr<BasePage>,
 
+    /// For a child started with `Pexec(PE_GO)`: the PD of the memory space
+    /// it shares — its caller's (or the caller's own space, for a thread of
+    /// a thread). FreeMiNT runs a mode-4 child as a thread in its caller's
+    /// memory space (`FORK_SHAREVM`, `sys/k_exec.c:224-231`; plan E6), so it
+    /// counts as an owner of the caller's blocks for `Mfree`/`Mshrink`
+    /// (E15, [`current_space`]). `null` for every other process.
+    pub space_pd: AtomicPtr<BasePage>,
+
     /// Phys of the per-process L0 page-table root that gets written
     /// to `TTBR0_EL1` when this process becomes [`State::Running`].
     /// `0` until Phase 06 D8 builds the tables for this process.
@@ -482,14 +490,15 @@ pub enum Disposition {
     Resume,
     /// After the handler returns, terminate the process instead of resuming:
     /// route into the standard `Pterm` teardown with exit code `rc` and,
-    /// for `Ptermres`, resident-block reservation (`reserve`). This is the
+    /// for `Ptermres`, the keep-resident teardown (`reserve`). This is the
     /// etv_term "notify before I die" contract.
     Terminate {
         /// Original `Pterm` exit code (UWORD, already masked to 16 bits).
         rc: i32,
-        /// `true` for `Ptermres` (0x31) — keep the process's owned pool
-        /// blocks resident; `false` for `Pterm`/`Pterm0`.
-        reserve: bool,
+        /// `Some(blkln)` for `Ptermres` (0x31) — shrink the TPA to `blkln`
+        /// and keep the process's memory resident; `None` for
+        /// `Pterm`/`Pterm0`.
+        reserve: Option<i32>,
     },
     /// The handler was the synchronous AES `G_USERDEF` callout (AES-as-thread
     /// design, `docs/analysis/coop-kernel/30-aes-thread-design.md` §3.4(e)): the
@@ -507,7 +516,8 @@ impl Disposition {
     /// encoding used by the pending / per-nest slots. A `0` word decodes to
     /// [`Disposition::Resume`], keeping the step-1 default a plain zero.
     const TERM_TAG: u64 = 1 << 63;
-    /// `reserve` (Ptermres) flag in the `AtomicU64` encoding.
+    /// `reserve` (Ptermres) flag in the `AtomicU64` encoding; the `blkln`
+    /// LONG sits in bits 16..48, the exit code (a UWORD) in bits 0..16.
     const RESERVE_TAG: u64 = 1 << 62;
     /// Tag bit marking a [`Disposition::UserdefReturn`] (AES-as-thread design
     /// §6.1.6). Distinct from [`Self::TERM_TAG`]; a `0` word still decodes to
@@ -521,8 +531,11 @@ impl Disposition {
             Disposition::Resume => 0,
             Disposition::Terminate { rc, reserve } => {
                 Self::TERM_TAG
-                    | if reserve { Self::RESERVE_TAG } else { 0 }
-                    | (rc as u32 as u64)
+                    | match reserve {
+                        Some(blkln) => Self::RESERVE_TAG | ((blkln as u32 as u64) << 16),
+                        None => 0,
+                    }
+                    | (rc as u32 as u64 & 0xFFFF)
             }
             Disposition::UserdefReturn => Self::USERDEF_TAG,
         }
@@ -532,8 +545,8 @@ impl Disposition {
     pub fn decode(v: u64) -> Self {
         if v & Self::TERM_TAG != 0 {
             Disposition::Terminate {
-                rc: (v & 0xFFFF_FFFF) as u32 as i32,
-                reserve: v & Self::RESERVE_TAG != 0,
+                rc: (v & 0xFFFF) as i32,
+                reserve: (v & Self::RESERVE_TAG != 0).then_some((v >> 16) as u32 as i32),
             }
         } else if v & Self::USERDEF_TAG != 0 {
             Disposition::UserdefReturn
@@ -718,6 +731,7 @@ impl Process {
             basepage_kva: AtomicPtr::new(ptr::null_mut()),
             basepage_pa: AtomicU64::new(0),
             load_owner: AtomicPtr::new(ptr::null_mut()),
+            space_pd: AtomicPtr::new(ptr::null_mut()),
             l0_pa: AtomicU64::new(0),
             entry_va: AtomicU64::new(0),
             sp_el0: AtomicU64::new(0),
@@ -825,6 +839,17 @@ pub fn current_kva() -> *mut BasePage {
 #[inline]
 pub fn set_current(bp: *mut BasePage) {
     RUN.store(bp, Ordering::Release);
+}
+
+/// The second identity the running process owns memory under: the PD of the
+/// memory space it shares when it is a `Pexec(PE_GO)` child
+/// ([`Process::space_pd`]), else `null`. `Mfree`/`Mshrink` accept a block
+/// owned by either identity (ARCH03 2d, E6/E15).
+#[inline]
+pub fn current_space() -> *mut BasePage {
+    slot_for(current())
+        .map(|s| PROCESS_TABLE[s].space_pd.load(Ordering::Acquire))
+        .unwrap_or(ptr::null_mut())
 }
 
 /// The kernel alias of the running process's **page 0** — its private
@@ -1058,6 +1083,7 @@ pub fn free_slot(idx: usize) {
     p.basepage_kva.store(ptr::null_mut(), Ordering::Release);
     p.basepage_pa.store(0, Ordering::Release);
     p.load_owner.store(ptr::null_mut(), Ordering::Release);
+    p.space_pd.store(ptr::null_mut(), Ordering::Release);
     p.l0_pa.store(0, Ordering::Release);
     p.entry_va.store(0, Ordering::Release);
     p.sp_el0.store(0, Ordering::Release);

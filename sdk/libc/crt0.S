@@ -90,3 +90,26 @@ _start:
     /* Safety net: Pterm does not return, but guard against a runaway PC. */
 1:  b       1b
     .size   _start, . - _start
+
+/*
+ * PRGFLAGS note (ARCH03 E8b; format: docs/api/gemdos/process/4b-pexec.md,
+ * NewTOS notes, "PRGFLAGS of a NewTOS program"). A NewTOS program has no
+ * PRG header, so its PRGFLAGS long travels in this ELF note: owner "NewTOS",
+ * type 1, one little-endian u32. sdk/newtos.ld keeps the section in the text
+ * segment and gives it a PT_NOTE header; the loader reads it into p_flags
+ * and picks the TPA/environment pool from PF_TTRAMLOAD. Default PF_STANDARD
+ * (7, = no note); a build overrides it with -DNEWTOS_PRGFLAGS=<value> when
+ * assembling this file (the SDK build scripts pass $PRGFLAGS), or later with
+ * `cargo xtask prgflags <file> <value>`.
+ */
+#ifndef NEWTOS_PRGFLAGS
+#define NEWTOS_PRGFLAGS 0x7     /* PF_STANDARD = PF_FASTLOAD|PF_TTRAMLOAD|PF_TTRAMMEM */
+#endif
+    .section .note.newtos.prgflags, "a", %note
+    .balign 4
+    .long   7                   /* namesz: "NewTOS\0" */
+    .long   4                   /* descsz: one u32 */
+    .long   1                   /* type: NT_NEWTOS_PRGFLAGS */
+    .asciz  "NewTOS"
+    .balign 4
+    .long   NEWTOS_PRGFLAGS

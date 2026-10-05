@@ -1,0 +1,25 @@
+host tests (pass fail ignored): 1070 0 1
+build rpi4: rc=0 tos-api=64 kernel=94  0 errors
+build qemu-virt: rc=0 tos-api=64 kernel=94  0 errors
+clippy rpi4: tos-api=80 kernel=125 
+clippy qemu-virt: tos-api=80 kernel=125 
+drift: DRIFT-PROBE TOTAL: 31
+sdk host: host tests: 13 passed, 0 failed, 0 skipped
+built kernel8-crash-s2bc.img
+built kernel-virt-crash-s2bc.img
+built kernel8-keys-s2bc.img
+built kernel-virt-st-s2bc.img
+probes built
+runs: 12 of 12 ended normally
+s2bc-rpi4-apitest                   1 TOTAL 106 0 5;
+s2bc-rpi4-crashtst                  1 CRASHTST: PASS; 1 desktop up;
+s2bc-rpi4-desktop                   1 desktop up;
+s2bc-rpi4-doom                      1 VERIFIED via EdDI+scale+vro_cpyfm;
+s2bc-rpi4-kbdvec-emucon             2 desktop up; 1 KBDVEC: PASS;
+s2bc-rpi4-port10                    2 10: FAIL; 42 10: PASS; 1 desktop up; 1 port10: 2 of 44 checks FAILED;
+s2bc-rpi4-qed                      
+s2bc-rpi4-s2all                     1 MEM03: PASS; 1 P34: PASS; 2 P567: FAIL; 2 PFLAGS: PASS;
+s2bc-rpi4-teradesk                 
+s2bc-virt-crash                     1 CRASHTST: PASS; 1 desktop up;
+s2bc-virt-desktop                   1 desktop up;
+s2bc-virt-selftests                 1 [sw3b] (1) appl_write woke A (READY) without resuming it (RET still sentinel): FAIL; 1 [sw3b] (2) A received the message B posted: FAIL; 1 [sw3b] (2) A resumed past its svc (sentinel ELR == block + 0x1010): FAIL; 1 [sw3b] (2) restartable svc#2 re-executed with x0=200 (evnt_mesag RET_CODE=1): FAIL; 1 [sw3b] (3) deliver-on-resume handler ran at EL0: FAIL; 1 === B1 PASS ===; 1 === D3 PASS ===; 1 === D3 PEXEC PASS ===; 1 === D4/D5 PEXEC PASS ===; 1 === D6 PASS ===; 1 === D7 PTERMRES PASS ===; 1 desktop up;

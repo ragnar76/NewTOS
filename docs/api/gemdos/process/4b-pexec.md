@@ -505,8 +505,8 @@ follows text+data+symbols (a 4-byte first offset, then byte deltas).
 
 PHASE-06 D4/D5 status (2026-06-16):
 - `PE_LOADGO` (0), `PE_LOAD` (3), `PE_GO` (4) implemented and verified in QEMU.
-  `PE_BASEPAGE` (5) / `PE_GOTHENFREE` (6) / `PE_BASEPAGEFLAGS` (7) return
-  `EINVFN` for now.
+  `PE_BASEPAGE` (5) / `PE_GOTHENFREE` (6) / `PE_BASEPAGEFLAGS` (7) returned
+  `EINVFN` until ARCH03 stage 2 (2026-10-05, see below).
 - **Loader/relocation is NewTOS-native**, not a port: NewTOS runs the loaded
   program at **EL0** (not m68k), relocated for its TPA block (ARCH03 0d/1). The `gouser`/`proc_go`
   register set-up, `supstk`, and the `setjmp`/`bakbuf` longjmp plumbing are
@@ -547,3 +547,105 @@ PHASE-06 D4/D5 status (2026-06-16):
   (`bdos/proc.c:419-420`).
 - I-cache: invalidate the loaded **text range** with `dc cvau`+`ic ivau`+
   `dsb ish`+`isb` (same text-only scope as EmuTOS).
+- **`PRGFLAGS` of a NewTOS program — the `prgflags` ELF note (ARCH03 stage 2,
+  plan E8b, user decision 2026-10-05).** A NewTOS program is an ELF file, not a
+  `0x601A` PRG, so it has no `h01_flags` word. Its `PRGFLAGS` travel in an ELF
+  note instead; **the format is a NewTOS definition**, not an extraction:
+
+  | field | value |
+  |---|---|
+  | section | `.note.newtos.prgflags`, `SHT_NOTE`, allocated, 4-byte aligned, inside the read-only `PT_LOAD`; covered by a `PT_NOTE` program header (`sdk/newtos.ld`) |
+  | `namesz` | 7 (`"NewTOS\0"`) |
+  | `descsz` | 4 |
+  | `type` | 1 (`NT_NEWTOS_PRGFLAGS`) |
+  | name | `"NewTOS\0"` + 1 pad byte |
+  | desc | `u32` little-endian = the `PRGFLAGS` long (`PF_*` bits as in the table above, bits 31-28 the TT-RAM "would-like" quantum) |
+
+  Entry header words are **4 bytes** (`namesz`, `descsz`, `type`), name and
+  desc padded to the `PT_NOTE`'s alignment — 4 (or 8 when `p_align` is 8).
+  This is the layout `rust-lld`/`llvm-readelf` produce and decode for ELF64
+  notes; the pinned gABI draft (`references/gabi/ch5.pheader.html`, "Note
+  Section") words ELF64 note entries as "8-byte words", which the toolchain
+  does not follow — the note is read the way the tools write it.
+
+  **Loader rules** (`tos-api/src/bdos/process/elf.rs` `prgflags_from_note`,
+  `loader.rs`): every `PT_NOTE` (at most 4, each at most 4 KiB, inside the
+  file) is read before anything is allocated; entries of any other owner or
+  type are skipped; a `"NewTOS"` type-1 entry with `descsz != 4`, a second such
+  entry, an entry running past its segment or a `p_align` other than 0/1/4/8 is
+  `EPLFMT`. The value becomes `p_flags` (EmuTOS `p->p_flags = hdr.h01_flags`,
+  `bdos/proc.c:313`); **no note → `PF_STANDARD`** (7), the value every program
+  had before. As in EmuTOS `alloc_env`/`alloc_tpa` (`bdos/proc.c:413-502`) the
+  flags choose the pool: `PF_TTRAMLOAD` → environment and TPA from TT-RAM
+  preferred (`MX_PREFTTRAM`), otherwise ST-RAM only (`MX_STRAM`); the ST/TT
+  tie-break with bits 31-28 is not reproduced (reference, edge case 4).
+  `PF_FASTLOAD` changes nothing visible: the loader zeroes the whole TPA
+  either way, which satisfies both "heap zeroed" (flag clear) and "heap
+  undefined" (flag set). The TPA size stays the fixed 4 MiB (E9) — no flag
+  bit is defined that would change it.
+
+  **Producing the note:** both SDK start files (`sdk/crt0.S`,
+  `sdk/libc/crt0.S`) emit it with `PF_STANDARD`; a build overrides it per
+  program by assembling `crt0.S` with `-DNEWTOS_PRGFLAGS=<value>` (the build
+  scripts take it from the environment variable `PRGFLAGS`), or afterwards
+  with the host tool `cargo xtask prgflags <file> [<value>]` (reads the
+  flags, or rewrites the note's value in place — the role of Atari's
+  `PRGFLAGS.PRG`; a file without the note is refused).
+- **`PE_BASEPAGE` (5), `PE_BASEPAGEFLAGS` (7), `PE_GOTHENFREE` (6) (ARCH03
+  stage 2b, TASK/PROC01; EmuTOS `bdos/proc.c:210-248`).**
+  * **5/7 build a basepage, load nothing.** Flags = `0` for mode 5, the raw
+    `path` argument (a `ULONG`, never read as a string) for mode 7. The
+    environment is `alloc_env(flags, env)` (`env == NULL` → a copy of the
+    caller's), the TPA a block of the fixed TPA size (4 MiB, E9 — EmuTOS takes
+    the largest free block, edge case 1), both from the pool `PF_TTRAMLOAD`
+    selects (no flag → ST-RAM); either shortfall is `ENSMEM` with nothing
+    left allocated. Both blocks belong to the **caller** (`set_owner(p, run)`,
+    `:229-230`). The basepage is `init_pd_fields` (`:364-385`): zeroed, then
+    `p_lowtpa = p`, `p_hitpa = p + 4 MiB`, `p_xdta = &p_cmdlin`, `p_env`, the
+    command tail (`x2`, copied like the load modes); `p_flags = flags`; the
+    segment fields stay 0. Standard handles, current directories and drive
+    are set as the loader sets them for the load modes (`init_pd_files`
+    inheritance is TASK/PROC02, the same for every mode). Only the 256-byte
+    basepage is written — the rest of the block is whatever the pool holds,
+    as in EmuTOS. Returns the PD pointer.
+  * **NewTOS bookkeeping:** the basepage gets a process slot right away, in
+    the "loaded, not started" state a `PE_LOAD` program has (owned by the
+    caller, released with the caller's `Pterm`), so mode 4/6 find it the way
+    they find a `PE_LOAD` program. No slot free → `ENSMEM` (both blocks
+    freed).
+  * **Starting a mode-5/7 basepage with 4 or 6 runs the code at `p_tbase`**
+    (EmuTOS `proc_go`, `:548`: the return address is `p->p_tbase`), read
+    from the basepage at the moment of the call — the caller has filled it in
+    (mintlib `tfork`: `p_tbase = startup`). The NewTOS entry contract is
+    unchanged: `x0` = the PD pointer (EmuTOS puts it at `4(sp)`), the other
+    registers 0, `SP_EL0` = `p_hitpa` rounded down to 16 (EmuTOS builds its
+    launch frame just below `p_hitpa`, `:544`). A program loaded with
+    `PE_LOAD` keeps starting at its ELF entry point (the SDK links `_start`
+    first, so that is its `p_tbase`; another ELF may differ), **but** its
+    stack, too, is now taken from the basepage's `p_hitpa` at the moment of
+    `Pexec` 4/6 — as EmuTOS does for every PD — not from the loader's
+    original TPA top: a caller that lowered `p_hitpa` after `Mshrink` (the
+    shell idiom) starts its child on a stack inside the memory it kept.
+  * **6 = 4 plus ownership to the child** (`set_owner(p, p); set_owner(p->
+    p_env, p)`, `:238-242`): the basepage block and the block `p_env` names
+    become the child's, so the child's `Pterm` frees them and the caller must
+    not free them afterwards. Like mode 4 it returns the child's exit code.
+  * **Who may start a PD with 4/6:** as before stage 2, only a PD that `PE_LOAD`
+    or mode 5/7 produced and that has not run (anything else is `EIMBA`).
+- **Ownership with several owners (ARCH03 stage 2d, plan E6/E15, FreeMiNT
+  `sys/k_exec.c:368-387,518-520,586-590`).** Mode 4/6 accept a PD only from
+  one of its **owners** (FreeMiNT: `addr2mem(curproc, base)`, `EFAULT` for a
+  foreign one) — otherwise `EIMBA`, the same answer as for a PD that is not
+  waiting to be started. At the start the child becomes an **owner** of its
+  basepage block and of its environment block (`attach_region`), so it may
+  `Mshrink`/`Mfree` them although `PE_LOAD`/mode 5/7 gave them to the caller
+  (`docs/api/gemdos/memory/49-mfree.md`, E15); its `Pterm` drops it again and
+  the caller still owns them (`PE_GO`: ownership unchanged, EmuTOS
+  `bdos/proc.c:244-248`). **Mode 6** additionally drops the caller (FreeMiNT
+  `mkfree` → `detach_region`): the child is left as the owner — EmuTOS'
+  `set_owner(p, p); set_owner(p->p_env, p)` (`:238-242`) — and its `Pterm`
+  frees both. A child started with mode 4 shares its caller's memory space
+  (FreeMiNT `FORK_SHAREVM`, plan E6): it counts as an owner of everything its
+  caller owns; what it allocates itself is its own (EmuTOS `run = p`) and goes
+  with its `Pterm`. When the last owner frees the basepage block of a PD that
+  was never started, the PD stops being startable (its slot is released).

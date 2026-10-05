@@ -78,6 +78,12 @@
  * (memsz == filesz, p_blen 0). crt0 does not run them (mintlib's init_clock
  * is the one entry today); placing them is a layout decision, not a promise.
  *
+ * PRGFLAGS. crt0.S emits `.note.newtos.prgflags` (owner "NewTOS", type 1,
+ * one u32, default PF_STANDARD); it is placed in `text` after .rela.dyn and
+ * covered by its own PT_NOTE header, from which the loader reads p_flags and
+ * the TPA/environment pool (ARCH03 E8b, docs/api/gemdos/process/
+ * 4b-pexec.md). A program linked without it loads with PF_STANDARD.
+ *
  * crt0's `.text.boot` is placed first so `_start` lands at 0x1000 = e_entry.
  * The linker exports `__bss_start` / `__bss_end` / `_end` so crt0 / the libc
  * can find the BSS and heap; the loader zeroes the BSS, so crt0 need not.
@@ -94,6 +100,9 @@ PHDRS
     data PT_LOAD FLAGS(6);
     /* The dynamic array, inside `data`: where the loader finds DT_RELA. */
     dynamic PT_DYNAMIC FLAGS(6);
+    /* The PRGFLAGS note (crt0.S), inside `text`: where the loader finds the
+       program's PRGFLAGS (ARCH03 E8b). */
+    note PT_NOTE FLAGS(4);
 }
 
 SECTIONS
@@ -115,6 +124,11 @@ SECTIONS
     .hash     : { *(.hash) }     :text
     .dynstr   : { *(.dynstr) }   :text
     .rela.dyn : { *(.rela.dyn) *(.rela.*) } :text
+
+    /* The program's PRGFLAGS (ARCH03 E8b, emitted by crt0.S): read-only, in
+       `text`, and the whole of the PT_NOTE segment. Every other note is
+       discarded below. */
+    .note.newtos : { KEEP(*(.note.newtos.prgflags)) } :text :note
 
     .rodata : {
         *(.rodata .rodata.*)
@@ -155,7 +169,8 @@ SECTIONS
     /* First free byte of the TPA — where a heap allocator starts. */
     _end = .;
 
-    /* Drop metadata the NewTOS loader neither reads nor has room for. */
+    /* Drop metadata the NewTOS loader neither reads nor has room for (the
+       PRGFLAGS note is kept above). */
     /DISCARD/ : {
         *(.comment)
         *(.note .note.*)

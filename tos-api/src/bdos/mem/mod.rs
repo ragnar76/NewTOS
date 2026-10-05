@@ -23,6 +23,7 @@
 //! | `init`     | D6          | Pool init from `bios::machine`     |
 //! | `traps`    | D7..D12     | `Maddalt` / `Mxalloc` / `Malloc` / `Mfree` / `Mshrink` + owner attribution |
 //! | `stats`    | D13         | Per-pool diagnostics               |
+//! | `region`   | ARCH03 2d   | Further owners of a block (links)  |
 //!
 //! Host-side unit tests for the pure pool logic are added in a
 //! separate crate when D2 lands — `tos-api` itself is
@@ -33,5 +34,6 @@ pub mod free_all_owned;
 pub mod init;
 pub mod mdpool;
 pub mod pool;
+pub mod region;
 pub mod stats;
 pub mod traps;

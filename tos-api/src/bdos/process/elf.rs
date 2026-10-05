@@ -46,9 +46,11 @@
 //!   zero."
 //! - Program headers: `PT_LOAD` entries are extracted; the (at most one)
 //!   `PT_DYNAMIC` entry is recorded for the relocation step
-//!   ([`super::reloc`]); a `PT_INTERP` entry (a program asking for a
-//!   dynamic linker, gABI "Program Interpreter") is refused. Other types
-//!   (`PT_NOTE`, `PT_GNU_*`) are ignored without erroring.
+//!   ([`super::reloc`]); `PT_NOTE` entries (at most [`MAX_NOTE_SEGMENTS`])
+//!   are recorded so the loader can read the NewTOS `PRGFLAGS` note
+//!   ([`find_prgflags_note`], ARCH03 E8b); a `PT_INTERP` entry (a program
+//!   asking for a dynamic linker, gABI "Program Interpreter") is refused.
+//!   Other types (`PT_GNU_*`) are ignored without erroring.
 //! - At most [`MAX_LOAD_SEGMENTS`] (currently 8) `PT_LOAD` segments
 //!   per image — enough for text + data + bss splits, which is all
 //!   a typical TOS source-port produces.
@@ -85,6 +87,7 @@ const EM_AARCH64: u16 = 0xb7;
 const PT_LOAD: u32 = 1;
 const PT_DYNAMIC: u32 = 2;
 const PT_INTERP: u32 = 3;
+const PT_NOTE: u32 = 4;
 
 /// `p_flags` bit indicating the segment is executable.
 pub const PF_X: u32 = 0x1;
@@ -118,6 +121,7 @@ const P64_OFFSET_OFF: usize = 8;
 const P64_VADDR_OFF: usize = 16;
 const P64_FILESZ_OFF: usize = 32;
 const P64_MEMSZ_OFF: usize = 40;
+const P64_ALIGN_OFF: usize = 48;
 
 // ── ELF32 Ehdr / Phdr layout ────────────────────────────────────────
 // e_entry / e_phoff are 4-byte words and therefore sit 4 bytes earlier
@@ -138,6 +142,7 @@ const P32_VADDR_OFF: usize = 8;
 const P32_FILESZ_OFF: usize = 16;
 const P32_MEMSZ_OFF: usize = 20;
 const P32_FLAGS_OFF: usize = 24;
+const P32_ALIGN_OFF: usize = 28;
 
 /// Per-class byte layout of the header/phdr fields the loader needs.
 ///
@@ -163,6 +168,7 @@ struct ClassLayout {
     p_vaddr: usize,
     p_filesz: usize,
     p_memsz: usize,
+    p_align: usize,
     /// `true` for ELF64 (8-byte words), `false` for ELF32 (4-byte).
     wide: bool,
 }
@@ -181,6 +187,7 @@ const LAYOUT64: ClassLayout = ClassLayout {
     p_vaddr: P64_VADDR_OFF,
     p_filesz: P64_FILESZ_OFF,
     p_memsz: P64_MEMSZ_OFF,
+    p_align: P64_ALIGN_OFF,
     wide: true,
 };
 
@@ -198,6 +205,7 @@ const LAYOUT32: ClassLayout = ClassLayout {
     p_vaddr: P32_VADDR_OFF,
     p_filesz: P32_FILESZ_OFF,
     p_memsz: P32_MEMSZ_OFF,
+    p_align: P32_ALIGN_OFF,
     wide: false,
 };
 
@@ -242,6 +250,34 @@ pub struct DynamicSegment {
     pub mem_size: u64,
 }
 
+/// Maximum number of `PT_NOTE` program headers the parser records. Our
+/// linker script emits one; the cap keeps the parser `no_alloc` and bounds
+/// the work the loader does before it allocates anything.
+pub const MAX_NOTE_SEGMENTS: usize = 4;
+
+/// Largest `PT_NOTE` segment the loader reads (bytes). The NewTOS note is
+/// 24 bytes; anything larger than this is refused rather than skipped, so
+/// a `PRGFLAGS` entry can never hide past the part that was looked at.
+pub const MAX_NOTE_BYTES: u64 = 4096;
+
+/// One `PT_NOTE` program header — where a note segment's bytes are in the
+/// file (gABI ch5.pheader "Note Section"). The loader reads them before it
+/// allocates the TPA, because the `PRGFLAGS` note picks the pool.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct NoteSegment {
+    /// `p_offset` — byte offset of the notes in the file.
+    pub file_offset: u64,
+    /// `p_filesz` — byte length of the notes.
+    pub file_size: u64,
+    /// `p_align` — the padding unit of name and descriptor (0/1 mean 4).
+    pub align: u64,
+}
+
+/// `namesz`/`name` of the NewTOS `PRGFLAGS` note (ARCH03 E8b): `"NewTOS"`.
+pub const NOTE_NAME_NEWTOS: &[u8; 7] = b"NewTOS\0";
+/// `type` of the NewTOS `PRGFLAGS` note.
+pub const NT_NEWTOS_PRGFLAGS: u32 = 1;
+
 /// A parsed ELF image — header summary plus the `PT_LOAD` table.
 #[derive(Copy, Clone, Debug)]
 pub struct ElfImage {
@@ -259,12 +295,21 @@ pub struct ElfImage {
     segments: [LoadSegment; MAX_LOAD_SEGMENTS],
     /// Number of valid entries in `segments`.
     num_segments: usize,
+    /// `PT_NOTE` headers, in program-header order.
+    notes: [NoteSegment; MAX_NOTE_SEGMENTS],
+    /// Number of valid entries in `notes`.
+    num_notes: usize,
 }
 
 impl ElfImage {
     /// Slice of the populated load segments.
     pub fn segments(&self) -> &[LoadSegment] {
         &self.segments[..self.num_segments]
+    }
+
+    /// Slice of the image's `PT_NOTE` headers.
+    pub fn notes(&self) -> &[NoteSegment] {
+        &self.notes[..self.num_notes]
     }
 
     /// `true` when the image is `ELFCLASS32` (ILP32 / GNU `-mabi=ilp32`).
@@ -322,6 +367,13 @@ pub enum ParseError {
     SegmentOutOfRange,
     /// `p_filesz > p_memsz` for a `PT_LOAD` (BSS would be negative).
     BadSegmentSizes,
+    /// More than [`MAX_NOTE_SEGMENTS`] `PT_NOTE` headers, or one larger than
+    /// [`MAX_NOTE_BYTES`], or one whose bytes are not inside the file.
+    BadNoteSegment,
+    /// A note entry that does not fit its segment, a `p_align` other than
+    /// 0/1/4/8, or a NewTOS `PRGFLAGS` note that is not exactly one `u32`
+    /// or occurs twice (ARCH03 E8b, `docs/api/gemdos/process/4b-pexec.md`).
+    BadNote,
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -439,6 +491,12 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
     }; MAX_LOAD_SEGMENTS];
     let mut num_segments = 0usize;
     let mut dynamic: Option<DynamicSegment> = None;
+    let mut notes = [NoteSegment {
+        file_offset: 0,
+        file_size: 0,
+        align: 0,
+    }; MAX_NOTE_SEGMENTS];
+    let mut num_notes = 0usize;
 
     for i in 0..(phnum as usize) {
         let ph_off = (phoff as usize)
@@ -480,7 +538,31 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
                 });
                 continue;
             }
-            // PT_NOTE, PT_GNU_STACK etc. — ignore.
+            PT_NOTE => {
+                if num_notes >= MAX_NOTE_SEGMENTS {
+                    return Err(ParseError::BadNoteSegment);
+                }
+                let file_offset = read_word(header, ph_off + layout.p_offset, layout.wide)
+                    .ok_or(ParseError::PhdrOutOfRange)?;
+                let file_size = read_word(header, ph_off + layout.p_filesz, layout.wide)
+                    .ok_or(ParseError::PhdrOutOfRange)?;
+                let align = read_word(header, ph_off + layout.p_align, layout.wide)
+                    .ok_or(ParseError::PhdrOutOfRange)?;
+                let in_file = file_offset
+                    .checked_add(file_size)
+                    .is_some_and(|end| end <= total_len);
+                if file_size > MAX_NOTE_BYTES || !in_file {
+                    return Err(ParseError::BadNoteSegment);
+                }
+                notes[num_notes] = NoteSegment {
+                    file_offset,
+                    file_size,
+                    align,
+                };
+                num_notes += 1;
+                continue;
+            }
+            // PT_GNU_STACK etc. — ignore.
             _ => continue,
         }
 
@@ -531,5 +613,90 @@ pub fn parse(header: &[u8], total_len: u64) -> Result<ElfImage, ParseError> {
         is_ilp32: !layout.wide,
         segments,
         num_segments,
+        notes,
+        num_notes,
     })
+}
+
+/// Round `v` up to a multiple of `a` (a power of two).
+#[inline]
+fn pad_to(v: usize, a: usize) -> Option<usize> {
+    v.checked_add(a - 1).map(|x| x & !(a - 1))
+}
+
+/// Where the NewTOS `PRGFLAGS` note of one `PT_NOTE` segment is: its value
+/// and the byte offset of its descriptor within `notes` (what the host tool
+/// rewrites). `None` when the segment carries no such note.
+///
+/// `notes` is the segment's bytes (`p_filesz` of them), `align` its
+/// `p_align`. Entries are 4-byte `namesz`/`descsz`/`type` words followed by
+/// the name and the descriptor, each padded to the alignment (4 for
+/// `p_align` 0/1/4, 8 for 8) — the layout `rust-lld`/`llvm-readelf` use for
+/// ELF64 notes (the format is a NewTOS definition, ARCH03 E8b; spec
+/// `docs/api/gemdos/process/4b-pexec.md` "`PRGFLAGS` of a NewTOS program").
+/// Entries of other owners or types are skipped.
+///
+/// # Errors
+///
+/// [`ParseError::BadNote`] for an entry that does not fit, an unsupported
+/// alignment, or a `"NewTOS"` type-1 entry whose descriptor is not exactly
+/// 4 bytes or that occurs twice.
+pub fn find_prgflags_note(notes: &[u8], align: u64) -> Result<Option<(u32, usize)>, ParseError> {
+    let a: usize = match align {
+        0 | 1 | 4 => 4,
+        8 => 8,
+        _ => return Err(ParseError::BadNote),
+    };
+    let mut found: Option<(u32, usize)> = None;
+    let mut off = 0usize;
+    while off < notes.len() {
+        let namesz = read_u32_le(notes, off).ok_or(ParseError::BadNote)? as usize;
+        let descsz = read_u32_le(notes, off + 4).ok_or(ParseError::BadNote)? as usize;
+        let ntype = read_u32_le(notes, off + 8).ok_or(ParseError::BadNote)?;
+        let name_off = off + 12;
+        let desc_off = pad_to(
+            name_off.checked_add(namesz).ok_or(ParseError::BadNote)?,
+            a,
+        )
+        .ok_or(ParseError::BadNote)?;
+        let desc_end = desc_off.checked_add(descsz).ok_or(ParseError::BadNote)?;
+        if desc_end > notes.len() {
+            return Err(ParseError::BadNote);
+        }
+        let name = &notes[name_off..name_off + namesz];
+        if name == NOTE_NAME_NEWTOS && ntype == NT_NEWTOS_PRGFLAGS {
+            if descsz != 4 || found.is_some() {
+                return Err(ParseError::BadNote);
+            }
+            let v = read_u32_le(notes, desc_off).ok_or(ParseError::BadNote)?;
+            found = Some((v, desc_off));
+        }
+        off = pad_to(desc_end, a).ok_or(ParseError::BadNote)?;
+    }
+    Ok(found)
+}
+
+/// The `PRGFLAGS` value an image's note segments carry — [`find_prgflags_note`]
+/// over every `PT_NOTE`, `bytes_of(seg)` supplying each segment's bytes (or
+/// `None` when they cannot be read, which is [`ParseError::BadNoteSegment`]).
+/// A second `PRGFLAGS` note in another segment is [`ParseError::BadNote`].
+///
+/// # Errors
+///
+/// As [`find_prgflags_note`], plus [`ParseError::BadNoteSegment`].
+pub fn prgflags_of<'a>(
+    img: &ElfImage,
+    mut bytes_of: impl FnMut(&NoteSegment) -> Option<&'a [u8]>,
+) -> Result<Option<u32>, ParseError> {
+    let mut found = None;
+    for seg in img.notes() {
+        let bytes = bytes_of(seg).ok_or(ParseError::BadNoteSegment)?;
+        if let Some((v, _)) = find_prgflags_note(bytes, seg.align)? {
+            if found.is_some() {
+                return Err(ParseError::BadNote);
+            }
+            found = Some(v);
+        }
+    }
+    Ok(found)
 }

@@ -18,9 +18,11 @@
  *      40 + its argc, so each check proves both the arguments and that the
  *      spawn returns the child's Pterm code.
  *
- *   4. system() (since the sdk/libc/overlay/posix/system.c overlay: mintlib's
- *      TOS branch only, no vfork/execve/waitpid -- TASK/PORT10, removed again
- *      by TASK/PROC01): system(NULL) == 1; a .NCP run with arguments returns
+ *   4. system() -- mintlib's own posix/system.c (since TASK/PROC01; from
+ *      TASK/PORT10 until then an overlay without its POSIX branch). This
+ *      program sets no $SHELL, so system() takes mintlib's TOS branch
+ *      (the POSIX branch, vfork/execve/waitpid, is covered by the ARCH03
+ *      stage-2 probe VFORKT): system(NULL) == 1; a .NCP run with arguments returns
  *      the child's Pterm code; "> file" redirects the child's handle 1 into
  *      a file the parent reads back; a name WITHOUT extension is looked up
  *      with spawnvp's NewTOS list (ntp, nap, ncp -- user decision
@@ -224,7 +226,7 @@ main (void)
     verdict (r == -1 && errno == ENOENT, "spawnvp of a missing file -> -1/ENOENT", NULL);
   }
 
-  /* 4. system(): mintlib's TOS branch (overlay posix/system.c) -> word split,
+  /* 4. system(): mintlib's TOS branch (no $SHELL, no /bin/sh) -> word split,
      redirection, spawnvp(P_WAIT) -> synchronous Pexec(0). */
   spawned ("system(NULL) (a command processor is available)", system (NULL), 1);
   spawned ("system(\"" KID_NCP " s1 s2\")",

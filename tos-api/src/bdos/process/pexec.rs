@@ -2,11 +2,10 @@
 //!
 //! Spec: [`docs/api/gemdos/process/4b-pexec.md`].
 //!
-//! Phase 06 D3 implements **mode 0 only** (`PE_LOADGO` = load and
-//! launch). The other modes (`PE_LOAD`, `PE_GO`, `PE_BASEPAGE`,
-//! `PE_GOTHENFREE`, `PE_BASEPAGEFLAGS`) belong to D4 / D5 and the
-//! per-mode dispatch returns [`PexecError::UnsupportedMode`] until
-//! they land.
+//! All EmuTOS modes: `PE_LOADGO` (0), `PE_LOAD` (3), `PE_GO` (4), and since
+//! ARCH03 stage 2 `PE_BASEPAGE` (5), `PE_GOTHENFREE` (6) and
+//! `PE_BASEPAGEFLAGS` (7) (EmuTOS `bdos/proc.c:179-361`). Anything else is
+//! [`PexecError::UnknownMode`] (`EINVFN`).
 //!
 //! ## Pipeline (PE_LOADGO)
 //!
@@ -31,7 +30,9 @@ use core::sync::atomic::Ordering;
 
 use tos_types::BasePage;
 
-use super::loader::{load_file_to_slot, load_to_slot_with, EnvSpec, LoadError, LoadedImage};
+use super::loader::{
+    create_basepage, load_file_to_slot, load_to_slot_with, EnvSpec, LoadError, LoadedImage,
+};
 use super::registry;
 use super::{allocate_slot, free_slot, PROCESS_TABLE};
 use crate::bdos::fs::FileImage;
@@ -90,9 +91,6 @@ pub enum PexecError {
     /// `mode` is not one of the documented [`PE_LOADGO`] /
     /// [`PE_LOAD`] / etc. constants. Mapped to `EINVFN` (-32).
     UnknownMode,
-    /// `mode` is documented but not yet implemented in this phase.
-    /// Mapped to `EINVFN`.
-    UnsupportedMode,
     /// `path` did not match any registered program.
     /// Mapped to `EFILNF` (-33).
     NotFound,
@@ -100,10 +98,14 @@ pub enum PexecError {
     /// Mapped to `ENSMEM` (-39).
     NoSlot,
     /// `PE_GO`'s `tail` is not the PD pointer of a program loaded with
-    /// `PE_LOAD` and not yet started. Mapped to `EIMBA` (-40) — FreeMiNT's
-    /// `EFAULT` for a foreign or invalid PD (`sys/k_exec.c:378-387`), whose
+    /// `PE_LOAD` (or a basepage of mode 5/7) and not yet started, or the
+    /// caller does not own it. Mapped to `EIMBA` (-40) — FreeMiNT's
+    /// `EFAULT` for a foreign or invalid PD (`sys/k_exec.c:372-381`), whose
     /// value is the same −40.
     BadHandle,
+    /// No room to record the child as an owner of its basepage/environment
+    /// ([`crate::bdos::mem::region`]). Mapped to `ENSMEM`.
+    NoOwnerRoom,
     /// The ELF blob was malformed, or its image + BSS overran the
     /// per-process TPA, or the TPA/env pool allocation failed. Mapped
     /// to `EPLFMT` (-66) for parser errors and `ENSMEM` for the
@@ -126,9 +128,9 @@ impl PexecError {
     pub const fn errno(self) -> i32 {
         use tos_types::error;
         match self {
-            PexecError::UnknownMode | PexecError::UnsupportedMode => error::EINVFN,
+            PexecError::UnknownMode => error::EINVFN,
             PexecError::NotFound => error::EFILNF,
-            PexecError::NoSlot => error::ENSMEM,
+            PexecError::NoSlot | PexecError::NoOwnerRoom => error::ENSMEM,
             PexecError::BadHandle => error::EIMBA,
             PexecError::LoadFailed(le) => match le {
                 LoadError::ProgramTooLarge
@@ -148,12 +150,15 @@ impl PexecError {
 /// string; caller is responsible for the bytes it hands in — Pexec does
 /// **not** scan past the slice's `len`).
 ///
-/// The pointer arguments are overloaded by mode. For the **load** modes
-/// (`PE_LOADGO` / `PE_LOAD`), `tail` is the command-tail image and `env`
-/// the environment source (both materialised by the kernel SVC handler
-/// from the caller's address space, since they are user pointers). For
-/// **`PE_GO`**, `go_handle` is the opaque PD handle a prior `PE_LOAD`
-/// returned (the child's `basepage_pa`); `tail`/`env` are unused.
+/// The pointer arguments are overloaded by mode (EmuTOS `xexec`). For the
+/// **load** modes (`PE_LOADGO` / `PE_LOAD`) and the **basepage** modes
+/// (`PE_BASEPAGE` / `PE_BASEPAGEFLAGS`), `tail` is the command-tail image and
+/// `env` the environment source (both materialised by the kernel SVC handler
+/// from the caller's address space, since they are user pointers);
+/// `path_value` is the raw `path` argument — the `PRGFLAGS` long of
+/// `PE_BASEPAGEFLAGS`. For **`PE_GO` / `PE_GOTHENFREE`**, `go_handle` is the
+/// PD pointer (the raw `tail` argument) of a program `PE_LOAD` or a basepage
+/// mode produced; `tail`/`env` are unused.
 ///
 /// # Safety
 ///
@@ -163,6 +168,7 @@ impl PexecError {
 pub unsafe fn dispatch(
     mode: u16,
     path_bytes: &[u8],
+    path_value: u64,
     go_handle: u64,
     tail: &[u8],
     env: EnvSpec<'_>,
@@ -173,14 +179,48 @@ pub unsafe fn dispatch(
         // a handle.
         PE_LOADGO => unsafe { load(path_bytes, tail, env, true, true) },
         PE_LOAD => unsafe { load(path_bytes, tail, env, false, false) },
-        // PE_GO: launch an already-loaded slot identified by the
-        // handle (the basepage_pa a prior PE_LOAD returned).
-        PE_GO => go(go_handle),
-        PE_BASEPAGE | PE_GOTHENFREE | PE_BASEPAGEFLAGS => {
-            Err(PexecError::UnsupportedMode)
-        }
+        // PE_GO / PE_GOTHENFREE: launch the PD a prior PE_LOAD or
+        // PE_BASEPAGE(FLAGS) returned; 6 hands its memory to the child.
+        PE_GO => unsafe { go(go_handle, false) },
+        PE_GOTHENFREE => unsafe { go(go_handle, true) },
+        // PE_BASEPAGE: flags 0 (EmuTOS `path = 0`, `bdos/proc.c:211`);
+        // PE_BASEPAGEFLAGS: flags = (ULONG)path (`:213`).
+        PE_BASEPAGE => unsafe { create(0, tail, env) },
+        PE_BASEPAGEFLAGS => unsafe { create(path_value as u32, tail, env) },
         _ => Err(PexecError::UnknownMode),
     }
+}
+
+/// `Pexec(PE_BASEPAGE / PE_BASEPAGEFLAGS)` — a basepage, no program
+/// ([`create_basepage`], EmuTOS `bdos/proc.c:210-237`), returned as its PD
+/// pointer. Its slot waits, like a `PE_LOAD` program's, for mode 4/6 or for
+/// the end of the caller that owns it ([`release_unstarted_of`]).
+///
+/// # Safety
+///
+/// Caller's BDOS-lock contract; see [`dispatch`].
+unsafe fn create(flags: u32, tail: &[u8], env: EnvSpec<'_>) -> Result<LoadedChild, PexecError> {
+    let slot_idx = allocate_slot().ok_or(PexecError::NoSlot)?;
+    // SAFETY: the slot is freshly claimed; BDOS lock held.
+    let img = match unsafe { create_basepage(slot_idx, flags, tail, env) } {
+        Ok(img) => img,
+        Err(e) => {
+            free_slot(slot_idx);
+            return Err(PexecError::LoadFailed(e));
+        }
+    };
+    PROCESS_TABLE[slot_idx]
+        .load_owner
+        .store(super::current(), Ordering::Release);
+    Ok(LoadedChild {
+        slot: slot_idx,
+        entry_va: 0,
+        l0_pa: img.l0_pa,
+        basepage_va: img.basepage_va,
+        sp_el0: 0,
+        handle: img.basepage_va,
+        launch: false,
+    })
 }
 
 /// Load `path`'s program into a fresh slot. `launch` selects
@@ -278,31 +318,111 @@ pub unsafe fn load_go(path_bytes: &[u8]) -> Result<LoadedChild, PexecError> {
     unsafe { load(path_bytes, &[], EnvSpec::Inherit, true, true) }
 }
 
-/// `Pexec(PE_GO, 0, tail, 0)` — launch an already-loaded program. `tail`
-/// is the PD pointer a prior `PE_LOAD` returned. Resolve it to its slot and
-/// hand the kernel a launch-mode [`LoadedChild`]; ownership is unchanged
-/// (EmuTOS `PE_GO` → `proc_go`, `bdos/proc.c:244-248`): the TPA and the
-/// environment stay the caller's, and what the child allocates is the
-/// child's (`run = p`), freed at its `Pterm` — plan E6.
+/// `Pexec(PE_GO / PE_GOTHENFREE, 0, tail, 0)` — launch an already-loaded
+/// program. `tail` is the PD pointer a prior `PE_LOAD` or `PE_BASEPAGE(FLAGS)`
+/// returned. Resolve it to its slot and hand the kernel a launch-mode
+/// [`LoadedChild`].
+///
+/// Ownership (EmuTOS `bdos/proc.c:238-248`): `PE_GO` leaves it unchanged —
+/// the TPA and the environment stay the caller's, and what the child
+/// allocates is the child's (`run = p`), freed at its `Pterm` (plan E6);
+/// `then_free` (`PE_GOTHENFREE`) first gives the basepage block and the block
+/// `p_env` names to the child (`set_owner(p, p); set_owner(p->p_env, p)`), so
+/// the child's `Pterm` frees them.
+///
+/// Where it starts: [`start_of`] — on a stack at the basepage's current
+/// `p_hitpa`, at the ELF entry of a loaded program or the `p_tbase` of a
+/// mode-5/7 basepage (EmuTOS `proc_go`, `:544,548`).
 ///
 /// The child keeps the root the loader built for it. In stage 1 every root
 /// shares the same tables except page 0, so "the caller's address space"
 /// (plan E6, FreeMiNT `FORK_SHAREVM`) is the child's too; page 0 stays the
 /// child's own so its `os_run` cell names the child and its KEYS02 table is
 /// its own (plan E3/E4).
-pub fn go(handle: u64) -> Result<LoadedChild, PexecError> {
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock.
+pub unsafe fn go(handle: u64, then_free: bool) -> Result<LoadedChild, PexecError> {
+    use crate::bdos::mem::{region, traps};
     let slot_idx = resolve_handle(handle).ok_or(PexecError::BadHandle)?;
     let slot = &PROCESS_TABLE[slot_idx];
+    // Only an owner of the PD may start it (FreeMiNT: `addr2mem(curproc,
+    // base)` → `EFAULT`, `sys/k_exec.c:372-381`; plan E15). The caller owns
+    // it as itself or through the memory space it shares (a mode-4 child).
+    let pd = handle as u32 as tos_types::Long;
+    let me = traps::current_owner();
+    let space: *mut core::ffi::c_void = super::current_space().cast();
+    // SAFETY: BDOS lock held.
+    let caller = unsafe {
+        if region::is_owner(pd, me) {
+            me
+        } else if !space.is_null() && region::is_owner(pd, space) {
+            space
+        } else {
+            return Err(PexecError::BadHandle);
+        }
+    };
+    let kva = slot.basepage_kva.load(Ordering::Acquire);
+    // SAFETY: `kva` is the kernel alias of the slot's live basepage (the
+    // slot resolved, so its image is loaded).
+    let bp = unsafe { &*kva };
+    let env = bp.p_env;
+    let (entry_va, sp_el0) = start_of(slot.entry_va.load(Ordering::Acquire), bp);
+    // The child becomes an owner of its basepage and its environment
+    // (FreeMiNT `attach_region(p, env); attach_region(p, base)`,
+    // `sys/k_exec.c:518-520`), so it may shrink/free them (E15). Mode 6 then
+    // drops the caller (`mkfree` → `detach_region`, `:586-590`) — EmuTOS'
+    // `set_owner(p, p); set_owner(p->p_env, p)` (`bdos/proc.c:238-242`).
+    let child = handle as *mut core::ffi::c_void;
+    // SAFETY: BDOS lock held. An `env` that starts no block (0, or not a
+    // pool block) has nobody to own it: `NoBlock` is not an error here.
+    unsafe {
+        for blk in [pd, env] {
+            let r = if then_free {
+                region::hand_over(blk, caller, child)
+            } else {
+                region::attach(blk, child)
+            };
+            match r {
+                Ok(()) | Err(region::RegionError::NoBlock) => {}
+                Err(_) => return Err(PexecError::NoOwnerRoom),
+            }
+        }
+    }
+    // A mode-4 child runs in its caller's memory space (plan E6, FreeMiNT
+    // `FORK_SHAREVM`): it owns what the caller owns. Mode 6 starts a process
+    // of its own (FreeMiNT forks without `FORK_SHAREVM`).
+    // An EL1 caller (no running process) lends no memory space.
+    let space_pd = if then_free || super::current().is_null() {
+        core::ptr::null_mut()
+    } else if !space.is_null() {
+        space as *mut BasePage
+    } else {
+        me as *mut BasePage
+    };
+    slot.space_pd.store(space_pd, Ordering::Release);
     slot.load_owner.store(core::ptr::null_mut(), Ordering::Release);
     Ok(LoadedChild {
         slot: slot_idx,
-        entry_va: slot.entry_va.load(Ordering::Acquire),
+        entry_va,
         l0_pa: slot.l0_pa.load(Ordering::Acquire),
         basepage_va: super::pd_of(slot_idx) as u64,
-        sp_el0: slot.sp_el0.load(Ordering::Acquire),
+        sp_el0,
         handle,
         launch: true,
     })
+}
+
+/// Where `Pexec` 4/6 start a PD (EmuTOS `proc_go`, `bdos/proc.c:536-577`):
+/// on a stack at `p_hitpa` as the basepage says **now** — the caller may
+/// have lowered it after an `Mshrink` (the shell idiom) — rounded down to 16
+/// for AAPCS64 (`:544`); at the program's ELF entry (`entry_va`, which the
+/// SDK links at `p_tbase`), or, for a basepage of mode 5/7 (`entry_va == 0`,
+/// nothing loaded), at the `p_tbase` its caller wrote (`:548`).
+pub fn start_of(entry_va: u64, bp: &BasePage) -> (u64, u64) {
+    let entry = if entry_va != 0 { entry_va } else { bp.p_tbase as u32 as u64 };
+    (entry, (bp.p_hitpa as u32 as u64) & !0xF)
 }
 
 /// Find the slot holding a program that was loaded with `PE_LOAD` and not
@@ -351,6 +471,20 @@ pub fn release_unstarted_of(owner: *mut BasePage) {
         if p.read_state() == super::State::Loaded
             && p.load_owner.load(Ordering::Acquire) == owner
         {
+            free_slot(i);
+        }
+    }
+}
+
+/// The last owner freed the block at `pd` (an `Mfree`/`Mshrink(0)` by a
+/// program): if a PD waiting for `Pexec` 4/6 lived there, it is gone — its
+/// slot is released, so nobody can start freed memory.
+pub fn release_unstarted_at(pd: u64) {
+    if pd == 0 {
+        return;
+    }
+    if let Some(i) = resolve_handle(pd) {
+        if !PROCESS_TABLE[i].load_owner.load(Ordering::Acquire).is_null() {
             free_slot(i);
         }
     }

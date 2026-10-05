@@ -1,0 +1,122 @@
+diff -ru /Volumes/Daten/Development/PiRusTOS/kernel/src/arch/aarch64/crash.rs tree/kernel/src/arch/aarch64/crash.rs
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/arch/aarch64/crash.rs	2026-10-05 08:56:29
++++ tree/kernel/src/arch/aarch64/crash.rs	2026-10-05 09:41:05
+@@ -103,6 +103,7 @@
+         h.console_write_byte(b);
+     }
+     // `bconin2();`
++    WAITING.store(tos_api::bios::tick::hz_200().max(1), core::sync::atomic::Ordering::Relaxed); // C0C-TEMP
+     loop {
+         drain_hook_bytes(slot);
+         if h.console_try_read_key().is_some() {
+@@ -119,6 +120,7 @@
+             core::arch::asm!("wfi", options(nomem, nostack, preserves_flags));
+         }
+     }
++    WAITING.store(0, core::sync::atomic::Ordering::Relaxed); // C0C-TEMP
+     // `cprintf("\n");`
+     let _ = w.write_str("\n");
+     crate::kprintln!("[crash] slot {} key pressed, terminating with Pterm(-1)", slot);
+@@ -131,3 +133,6 @@
+         crate::ikbd::kbd_int(b);
+     }
+ }
++
++/// C0C-TEMP: hz_200 when the crash prompt started waiting, 0 = not waiting.
++pub static WAITING: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+diff -ru /Volumes/Daten/Development/PiRusTOS/kernel/src/host_env.rs tree/kernel/src/host_env.rs
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/host_env.rs	2026-10-04 17:49:07
++++ tree/kernel/src/host_env.rs	2026-10-05 09:41:05
+@@ -107,6 +107,7 @@
+         // On real Pi-4 this is the sole console input source; no-op until a
+         // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        #[cfg(feature = "board-rpi4")] c0c_inject::step(); // C0C-TEMP
+         // Key auto-repeat runs polled, after the input above (a break has
+         // been seen) — `docs/api/xbios/_state.md` §"Key-repeat handler".
+         crate::ikbd::poll_repeat();
+@@ -158,6 +159,7 @@
+             // but never a blocking console read. No-op until a HID device
+             // is enumerated (qemu-virt uses the PL011 RX IRQ instead).
+             crate::drivers::usb::poll();
++        #[cfg(feature = "board-rpi4")] c0c_inject::step(); // C0C-TEMP
+             // Key auto-repeat, polled after the input (see `pump_input`).
+             crate::ikbd::poll_repeat();
+ 
+@@ -382,6 +384,7 @@
+         // source; no-op until a HID device is enumerated (qemu-virt
+         // uses the PL011 RX IRQ instead).
+         crate::drivers::usb::poll();
++        #[cfg(feature = "board-rpi4")] c0c_inject::step(); // C0C-TEMP
+         // Key auto-repeat, polled after the input (see `pump_input`).
+         crate::ikbd::poll_repeat();
+ 
+@@ -486,3 +489,43 @@
+ pub fn install() {
+     tos_api::host::install_host(&KERNEL_HOST_REF);
+ }
++
++// C0C-TEMP BEGIN -- scripted IKBD keys (QEMU raspi4b has no USB keyboard)
++#[cfg(feature = "board-rpi4")]
++pub mod c0c_inject {
++    use core::sync::atomic::{AtomicU32, Ordering};
++    static ARMED: AtomicU32 = AtomicU32::new(0);
++    static LAST_RUN: AtomicU32 = AtomicU32::new(0);
++    static ALTC: AtomicU32 = AtomicU32::new(0); // next Alt-C byte index
++    static ALTC_AT: AtomicU32 = AtomicU32::new(0);
++    const ALT_C: [u8; 4] = [0x38, 0x2E, 0xAE, 0xB8];
++    pub fn step() {
++        let now = tos_api::bios::tick::hz_200();
++        let run = !tos_api::bdos::process::RUN.load(Ordering::Acquire).is_null();
++        if run {
++            ARMED.store(1, Ordering::Relaxed);
++            LAST_RUN.store(now, Ordering::Relaxed);
++        }
++        if ARMED.load(Ordering::Relaxed) == 0 {
++            return;
++        }
++        let w = crate::arch::aarch64::crash::WAITING.load(Ordering::Relaxed);
++        if w != 0 && now.wrapping_sub(w) >= 400 {
++            crate::kprintln!("[c0c] inject Space at hz_200 {} (prompt waited {})", now, now.wrapping_sub(w));
++            crate::arch::aarch64::crash::WAITING.store(0, Ordering::Relaxed);
++            crate::ikbd::feed(0x39);
++            crate::ikbd::feed(0xB9);
++            return;
++        }
++        let i = ALTC.load(Ordering::Relaxed) as usize;
++        if !run && i < ALT_C.len() && now.wrapping_sub(LAST_RUN.load(Ordering::Relaxed)) >= 800
++            && now.wrapping_sub(ALTC_AT.load(Ordering::Relaxed)) >= 10
++        {
++            crate::kprintln!("[c0c] inject Alt-C byte {:#04x} at hz_200 {}", ALT_C[i], now);
++            crate::ikbd::feed(ALT_C[i]);
++            ALTC.store(i as u32 + 1, Ordering::Relaxed);
++            ALTC_AT.store(now, Ordering::Relaxed);
++        }
++    }
++}
++// C0C-TEMP END
+diff -ru /Volumes/Daten/Development/PiRusTOS/kernel/src/lib.rs tree/kernel/src/lib.rs
+--- /Volumes/Daten/Development/PiRusTOS/kernel/src/lib.rs	2026-10-05 08:59:49
++++ tree/kernel/src/lib.rs	2026-10-05 09:41:05
+@@ -411,6 +411,21 @@
+     // invalid/empty .PRG fails the load gracefully (no fault).
+     launch::run_auto_folder();
+ 
++    // C0C-TEMP BEGIN -- crash programs from the RAM registry (no disk on virt)
++    #[cfg(feature = "board-qemu-virt")]
++    {
++        static CRCHILD: &[u8] = include_bytes!("/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-1/bin/CRCHILD.NAP");
++        static CRASHTST: &[u8] = include_bytes!("/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-05-arch03-1/bin/CRASHTST.NAP");
++        tos_api::bdos::process::registry::register(b"C:\\CRCHILD.NAP", CRCHILD);
++        tos_api::bdos::process::registry::register(b"C:\\CRASHTST.NAP", CRASHTST);
++        kprintln!("[c0c] launch C:\\CRCHILD.NAP (no tail = case w), kernel parent");
++        let rc = launch::run_program_with_tail_rc(b"C:\\CRCHILD.NAP", &[]);
++        kprintln!("[c0c] back in the boot path after CRCHILD, launch rc={}", rc);
++        let rc = launch::run_program_with_tail_rc(b"C:\\CRASHTST.NAP", &[]);
++        kprintln!("[c0c] back in the boot path after CRASHTST, launch rc={}", rc);
++    }
++    // C0C-TEMP END
++
+     // ── The AES session loop — EmuTOS `gemstart.S:86-124` `aes_restart` ──
+     //
+     // One pass through this body is one whole AES session: the tail of

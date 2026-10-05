@@ -306,3 +306,22 @@ image with `EPLFMT`. The link flags are always
 `-pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none`. The `.NCP`/`.NAP` name is
 chosen by the caller — it is the same ELF either way; only the desktop's launch
 behaviour differs ([01-overview.md](01-overview.md)).
+
+**PRGFLAGS.** Both crt0 files emit an ELF note `.note.newtos.prgflags` (owner
+`"NewTOS"`, type 1, one `u32`) that `sdk/newtos.ld` keeps under a `PT_NOTE`
+header; the loader takes the program's `PRGFLAGS` (`p_flags`) from it and picks
+the pool of the TPA and environment by `PF_TTRAMLOAD` (ARCH03 E8b, format in
+`docs/api/gemdos/process/4b-pexec.md`). The default is `PF_STANDARD` (7). To
+build a program with other flags, assemble crt0 with
+`-DNEWTOS_PRGFLAGS=<value>` — `sdk/build.sh` does that from the environment
+variable `PRGFLAGS` (`PRGFLAGS=0x4 sdk/build.sh prog.c PROG.NCP`) — or change a
+linked file with the host tool, the counterpart of Atari's `PRGFLAGS.PRG`:
+
+```sh
+$ cargo xtask prgflags PROG.NCP           # show
+PROG.NCP: PRGFLAGS 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+$ cargo xtask prgflags PROG.NCP 0x4       # set, in place
+```
+
+A program without the note (linked with a crt0 from before ARCH03 stage 2)
+loads with `PF_STANDARD`, as before.

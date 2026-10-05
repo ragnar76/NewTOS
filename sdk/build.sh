@@ -22,6 +22,11 @@
 #     source.c    defaults to sdk/examples/hello.c
 #     output.NCP  defaults to /tmp/HELLO2.NCP
 #   e.g. sdk/build.sh sdk/examples/big.c /tmp/BIG.NCP
+#
+# PRGFLAGS: the program's PRGFLAGS long goes into crt0's ELF note (ARCH03 E8b,
+# docs/api/gemdos/process/4b-pexec.md). Default PF_STANDARD (7); set the
+# environment variable PRGFLAGS to override it for this build, e.g.
+#   PRGFLAGS=0x2 sdk/build.sh prog.c PROG.NCP     (PF_TTRAMLOAD only)
 set -euo pipefail
 
 SDK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,9 +63,11 @@ echo "clang : $("$CLANG" --version | head -1)"
 echo "lld   : $LLD"
 echo
 
-# 1. crt0
-echo "+ $CLANG ${CFLAGS[*]} -c $SDK_DIR/crt0.S -o crt0.o"
-"$CLANG" "${CFLAGS[@]}" -c "$SDK_DIR/crt0.S" -o "$WORK/crt0.o"
+# 1. crt0 (+ the PRGFLAGS note value, if overridden)
+CRT0_DEFS=()
+[ -n "${PRGFLAGS:-}" ] && CRT0_DEFS=("-DNEWTOS_PRGFLAGS=$PRGFLAGS")
+echo "+ $CLANG ${CFLAGS[*]} ${CRT0_DEFS[*]:-} -c $SDK_DIR/crt0.S -o crt0.o"
+"$CLANG" "${CFLAGS[@]}" ${CRT0_DEFS[@]+"${CRT0_DEFS[@]}"} -c "$SDK_DIR/crt0.S" -o "$WORK/crt0.o"
 
 # 2. C source
 echo "+ $CLANG ${CFLAGS[*]} -c $SRC -o app.o"
