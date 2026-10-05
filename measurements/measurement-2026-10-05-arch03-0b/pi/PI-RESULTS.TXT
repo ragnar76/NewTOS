@@ -1,0 +1,29 @@
+ARCH03 stage 0b -- real Raspberry Pi 4, 2026-10-05, spike kernel sha256 25b00e36...
+Transcribed by the lead from the user's photos (pi-photo-*.jpg).
+
+Q1 MIDR 410fd083 (impl 41 part d08 r0p3) MPIDR 80000000
+Q1 MMFR0 0000000000001124 PARange 4 ASIDBits 2 (16-bit) TGran4 0
+Q1 MMFR1 0 -> HAFDBS 0 VMID 0 VH 0 HPDS 0 LO 0 PAN 0 XNX 0
+Q1 MMFR2 0 -> CnP 0 UAO 0 VARange 0 IESB 0 BBM 0 TTL 0 E0PD 0
+Q1 PFR0 0000000000002222 ISAR0 0000000000010000
+Q1 CTR 000000008444c004 IminLine 64B DminLine 64B L1Ip 3 IDC 0 DIC 0 CWG 4 ERG 4
+Q1 CLIDR 00000000a200023 LoUU 1 LoC 2 LoUIS 1 | L1D 32K 2w 64B L1I 48K 3w 64B L2U 1024K 16w 64B
+   (Pi: L1D 2-way as the A72 TRM says; QEMU reported 4-way)
+Q1 SCTLR 0000000030d01805 TCR 00000002b5103510 (AS 0 A1 0 HPD0 0 HPD1 0)
+Q5 FB PA 0x3dbf5000..0x3ebc7000 (16200 KiB, 1920x1080 2pg) <2GiB true <4GiB true in-DRAM false
+Q5 DRAM 0x0..0x30000000 ST 0x400000..0xe00000 TT 0x1000000..0x2fe00000
+Q2 a2m-tlbi / a4k-tlbi / a2m-notlbi / a4k-notlbi / adram-tlbi / adram-notlbi: all OK
+   (store+heap after install, EL1 low rd, 2x EL0 rw, coherent); 3 / 383 tables
+   perf 64 MiB x8 page-stride loads: 2 MiB blocks 34 ns/load, 4 KiB pages 36 ns/load
+Q4 uacc: ldtr/sttr user RW ok; sttr RO -> EC 0x25 DFSC 0x0f WnR 1; ldtr EL1-only -> 0x0f;
+   unmapped L3/L2/L1/L0 -> 0x07/0x06/0x05/0x04; kernel TTBR1 -> 0x0e; privileged ldr on
+   user RO succeeds (PAN not implemented).
+Q3 sw-bracket 16/16+16/16 ok; sw-arch (no bracket) 16/16+16/16 ok; sw-tlbi-eret 16/16+16/16 ok;
+   sw-notlbi 8/16 ok 8 wrong (expected stale translations); sw-asid (ASID 1/2, nG=1, no TLBI)
+   16/16+16/16 ok.
+SPIKE DONE.
+
+Verdict: the real Pi matches QEMU 11.0.2 on every question. ADR-010 "wall 3" does not occur
+on hardware; neither the QUIRK-001 UART bracket nor "no TLBI right before eret" is needed;
+ASIDs work; 2 MiB blocks are marginally faster than 4 KiB pages; the framebuffer lies
+below 1 GiB.

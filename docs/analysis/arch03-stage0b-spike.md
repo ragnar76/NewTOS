@@ -193,3 +193,17 @@ Alle Punkte 1–4 stehen unter dem Vorbehalt des Pi-Laufs; QUIRK-001/ADR-010 in 
 - `kernel/src/arch/aarch64/exceptions.rs:1359-1375`: Kommentar nennt eine „LOAD-BEARING“ UART-Zeile zwischen `restore_boot_ttbr0` und `install_ttbr0`, die im Code seit `a3c4329` fehlt.
 - `kernel/src/selftest_pexec.rs`: `run_pexec_test` scheitert mit `SegmentVaOutOfRange` (handgebautes ELF bei VA `0x100`); unverdrahtet, daher unbemerkt.
 - QEMU `cortex-a72` meldet L1D 4-fach (`CCSIDR`), der A72-TRM 2-fach — falls künftig set/way-Pflege nach `CCSIDR` gerechnet wird, nicht an QEMU kalibrieren.
+
+
+## Pi-Ergebnis 2026-10-05 (Lead, aus den Fotos des Anwenders)
+
+Abschrift: `measurements/measurement-2026-10-05-arch03-0b/pi/PI-RESULTS.TXT`,
+Fotos daneben. Die echte Pi 4 bestaetigt QEMU 11.0.2 in jedem Punkt:
+A72 r0p3, 16-Bit-ASIDs, kein PAN/UAO/BBM; L1D 2-fach (wie TRM, QEMU meldete
+4-fach); alle sechs Abbildungsvarianten OK (ADR-010 „Wand 3“ tritt auch auf
+Hardware nicht auf); Umschalten: Klammer, Architekturfolge, TLBI vor `eret`
+und ASID je 16/16+16/16, ohne TLBI/ASID 8/16 falsch (erwartet); `ldtr/sttr`-
+Fehlerbild identisch; Bildschirmspeicher `0x3dbf5000..0x3ebc7000` (unter
+1 GiB, ausserhalb des ARM-DRAM); 2-MiB-Bloecke 34 ns/Load gegen 4 KiB 36 ns.
+Folge fuer den Plan: Pools beim Booten abbilden (E18 entfaellt), QUIRK-001-
+Klammer und Invariante I9 koennen fallen, ASIDs sind auf QEMU und Pi nutzbar.
