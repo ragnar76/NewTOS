@@ -66,3 +66,7 @@ globaler `Mxalloc`-Speicher. Anwender: „es so wie bei FreeMiNT bauen“.
 
 Abnahme durch den Tester und Pi-Läufe für 0c–3c offen; Pi nur auf Ansage.
 Plan-Abschnitt „Stufe 3 wie gebaut“: `docs/analysis/arch03-implementation-plan.md`.
+
+## Pi-Abnahme 2026-10-05
+
+Anwender: kompletter Stand `ae097d0` (Kernel `ba6172a1`, alle Programme neu gebaut) laeuft auf der echten Pi 4; nur `BALL.NAP` (externes Projekt, noch ET_EXEC) wird erwartungsgemaess mit Fehler 35 abgelehnt. Kartensicherung des Vorfuehrstands: `sd-card-backup-20261005-ofam/` (gitignored).
