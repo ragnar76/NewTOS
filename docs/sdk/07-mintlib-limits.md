@@ -12,7 +12,9 @@ TASK/PORT01 added `newtos-arch/cmdargs.c` (§1, §5, §6). TASK/PORT10
 (9 failures now, not 11), `environ` is the empty environment, and the GMP limb
 width behind `printf("%f")` is fixed. Later the same day §8: the program-name
 search uses NewTOS's extensions (`ntp`, `nap`, `ncp`); and then the execute
-bits of `stat()`/`access()` follow the same native extensions (§8).
+bits of `stat()`/`access()` follow the same native extensions (§8). TASK/PORT-WAITH
+(2026-10-06) added §9: the `<sys/wait.h>` status macros read the status word
+correctly on little-endian AArch64 (header overlay).
 
 ## 1. mintlib files that do not compile (recorded, not repaired)
 
@@ -214,6 +216,7 @@ item TASK/T07 names ("Soft-Float-Helfer sind ein eigener Punkt"). The
 | `sdk/libc/tests/setjmp-host.sh` (+ `setjmp-host.c`, `setjmp-cases.h`) | `newtos-arch/setjmp.S` on the macOS/arm64 host: return values (0 / val / 1 for 0), the sigmask slot exactly as the m68k code, x19–x28 and d8–d15 restored after a longjmp out of a callee that clobbered them, nested buffers, the frame after unwinding four frames — 13 checks, exit status = failures | `setjmp-host.sh:1-29`, `setjmp-cases.h:1-19` |
 | `sdk/examples/setjmptst.c` | the same 13 checks on NewTOS through mintlib's `<setjmp.h>` (`_Static_assert(sizeof(jmp_buf) == 176)`), verdicts over `Cconws` — QEMU raspi4b `ALL PASS (13 checks)` | `:1-17` |
 | `sdk/examples/mathtst.c` | 23 libm checks against closed-form values with tolerances (`sqrt(2)`, `sin(M_PI/6)`, `pow(2,10)`, `floor(-1.5)`, `frexp(8.0)`, `atan2(1,1)`, `exp`/`log`, `fmod`, `modf`, `hypot`, `cbrt`, `sqrtf`, NaN/-inf) via `<math.h>` — QEMU raspi4b `ALL PASS (23 checks)` | `:1-15` |
+| `sdk/libc/tests/waith-host.sh` (+ `waith-probe.c`, `waith-host.c`, `waith-host-mintbind.h`) | the `<sys/wait.h>` macros and `union wait` on known status words and through mintlib's unmodified `wait4.c`/`waitpid.c`/`wait.c` — 74 checks, exit status = failures (§9) | `waith-host.sh:1-19`, `waith-probe.c:1-20` |
 
 ## 8. `system()` and `vfork()` (TASK/PORT10, TASK/PROC01)
 
@@ -225,15 +228,21 @@ in). mintlib picks at run time:
   `vfork()`, the child `execve(shell, {name, "-c", line})`, the parent
   `waitpid()`. On NewTOS, as on EmuTOS, `execve` is `Pexec(200)` (mintlib's
   `_spawnve(P_OVERLAY)`), which the kernel answers with `EINVFN`, so the child
-  `_exit(127)`s and `system()` returns a status with `WEXITSTATUS == 127` —
-  QEMU-verified (`measurements/measurement-2026-10-05-arch03-2/`, VFORKT);
+  `_exit(127)`s and `system()` returns the `waitpid` status `127 << 8`,
+  i.e. `WEXITSTATUS == 127` — QEMU-verified as the status word
+  (`measurements/measurement-2026-10-05-arch03-2/`, VFORKT) and, since the
+  §9 header fix, through `WIFEXITED`/`WEXITSTATUS`
+  (`measurements/measurement-2026-10-06-waith/`);
 * the **TOS branch** (`system_hack`) otherwise — the case of every NewTOS
   program that does not set `$SHELL` (`environ` starts empty): split the line
   into words (`'`/`"`/`` ` `` group), `<`, `>`, `>>` redirect handles 0/1 via
   `Fopen`/`Fcreate` + `Fdup`/`Fforce`, then `spawnvp(P_WAIT, argv[0], argv)` =
   a synchronous `Pexec(0)`; the result is the child's `Pterm` code, `-1` with
   `errno` `ENOENT` when the program is not found, `2` when a redirection file
-  cannot be opened. `system(NULL)` is 1.
+  cannot be opened. `system(NULL)` is 1. Note: this is the **raw** exit code
+  (mintlib `system_hack` returns what `spawnvp(P_WAIT)` returns), not a wait
+  status — `WEXITSTATUS()` does not apply to it; `system("X 42")` is `42`, not
+  `42 << 8`. That is mintlib's TOS behaviour, unchanged.
 
 `vfork()` is `sdk/libc/newtos-arch/vfork.S`, the AArch64 port of mintlib's
 `unix/vfork.S`: with `__mint == 0` (always on NewTOS) the TOS branch,
@@ -329,3 +338,42 @@ until TASK/PORT10: `stdlib/gmp-mparam.h` declared 32-bit GMP limbs while
 `mp_limb_t` (`unsigned long`) is 64 bits on LP64. The overlay
 `sdk/libc/overlay/stdlib/gmp-mparam.h` derives the width from `long`; host
 check `sdk/libc/tests/gmp-host.sh`.
+
+## 9. `<sys/wait.h>` status macros (TASK/PORT-WAITH)
+
+The status word `wait`/`wait3`/`wait4`/`waitpid` store is an `int` built by
+mintlib's `unix/wait4.c` with plain integer arithmetic: from the kernel's
+`(pid << 16) | code` (on TOS from `__waitval`, which `tfork` sets to
+`(pid << 16) | Pexec's return`, `mintlib/thread.c:146`) it swaps the low two
+bytes, so the **exit code / stop signal is in bits 8..15, the core flag in
+bit 7, the terminating signal in bits 0..6** — the same layout
+`W_EXITCODE(ret, sig) = ret << 8 | sig` and `W_STOPCODE(sig) = sig << 8 | 0x7f`
+in the header describe. That library code is layout-correct on AArch64
+(the rebuilt `libc.a` is byte-identical with and without the fix).
+
+The macros `WIFEXITED`, `WEXITSTATUS`, `WIFSIGNALED`, `WTERMSIG`,
+`WIFSTOPPED`, `WSTOPSIG`, `WIFCOREDUMPED` and the BSD `union wait` members
+(`w_retcode`, `w_termsig`, `w_coredump`, `w_stopsig`) read the word through
+`struct __wait` bit-fields declared `junk:16, retcode:8, coredump:1,
+termsig:7`. On big-endian m68k the first field takes the most significant
+bits, which gives exactly the layout above; on little-endian AArch64
+(AAPCS64) the first field takes the least significant bits, so `retcode` sat
+in bits 16..23 and `termsig` in bits 25..31: for every status word wait4
+produces (16 bits) `WEXITSTATUS` was 0, `WIFEXITED` true and
+`WIFSIGNALED`/`WIFSTOPPED` false (found by VFORKT,
+ARCH03 stage 2e). The overlay `sdk/libc/overlay/include/sys/wait.h` declares
+the fields in reverse order when `__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__`
+— same bit positions, same `int` layout, macros unchanged; the big-endian
+branch is mintlib's text. Only the header changes; programs that use the
+macros must be recompiled (no SDK app or overlay does — QED, TeraDesk, Doom,
+cflib, gemlib checked; mintlib's own users are `sunrpc/`, `unix/test-vfork.c`
+and `test-skeleton.c`, which `build-libc.sh` does not build).
+
+Checks: host `sdk/libc/tests/waith-host.sh` (in `sdk/run-host-tests.sh`) —
+74 checks: every macro on known words (exit 0/1/42/127/255, SIGINT, SIGTERM,
+SIGSEGV + core, stopped SIGTSTP/SIGSTOP), `union wait` in both directions,
+and mintlib's unmodified `wait4.c`/`waitpid.c`/`wait.c` with the `__waitval`
+`tfork` leaves; with the pristine header 28 of the 74 fail. Target: VFORKT
+(`waitpid` after `_exit(42)` → `WEXITSTATUS == 42`, `_exit(7)` → 7, POSIX
+`system()` → `WIFEXITED && WEXITSTATUS == 127`), QEMU raspi4b,
+`measurements/measurement-2026-10-06-waith/`.

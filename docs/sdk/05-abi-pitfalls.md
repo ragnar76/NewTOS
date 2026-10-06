@@ -451,7 +451,11 @@ half; a bit-set routine answers 25 where 1 is expected.
 code that addresses the same bits both byte-wise and as hard-coded 32-bit
 big-endian words disagrees with itself on LP64/little-endian
 (`sdk/overlays/qed/set.c:7-50`); m68k `ror`/`swap` inline asm does not
-assemble (`sdk/libc/overlay/include/bits/byteswap.h:47-57`).
+assemble (`sdk/libc/overlay/include/bits/byteswap.h:47-57`); bit-fields laid
+over an `int` in big-endian order land in the wrong bits — mintlib's
+`struct __wait` made `WEXITSTATUS` 0 for every status until the overlay
+`sdk/libc/overlay/include/sys/wait.h` declared them in little-endian order
+([07 §9](07-mintlib-limits.md#9-syswaith-status-macros-taskport-waith)).
 
 **Do**: base bit-fields on `unsigned short` where the app needs 2 bytes;
 write byte-addressed code; use `__builtin_bswap32`. These are legitimate

@@ -1,0 +1,48 @@
+libc.a out of date [libc/build-libc.sh] -- running build-libc.sh…
+  compiled OK=615  skipped=9  (of 624)
+  skipped (did not compile for AArch64/LP64):
+      gmp/support.c
+      mintlib/crtinit.c
+      mintlib/getwd.c
+      mintlib/linea.c
+      mintlib/nf_ops.c
+      mintlib/syscall.c
+      signal/siggetmask.c
+      stdio/gets.c
+      tz/dumpstate.c
+  failures match libc/expected-failures.txt: 9 today, 9 recorded, 0 new
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a (1302680 bytes)
+  (full log: libc/build/build-libc.log)
+gemlib.a out of date [libc/overlay/include] -- running build-gemlib.sh…
+  compiled OK=578  skipped=0  (of 578)
+  failures match gemlib/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/gemlib/gemlib.a (744866 bytes)
+  (full log: gemlib/build/build-gemlib.log)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/ENVPAR.NAP (41920 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/ENVKID.NAP (41936 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/P34PAR.NAP (43176 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/P34KID.NAP (42128 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/PFLAGS1.NCP (42688 bytes) PRGFLAGS=0x10000004
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/PFLAGS2.NCP (42688 bytes) PRGFLAGS=0x10000004
+/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/PFLAGS2.NCP: PRGFLAGS 0x10000004 -> 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/PFLAGS2.NCP: PRGFLAGS 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/PFLAGS1.NCP: PRGFLAGS 0x10000004 (PF_TTRAMMEM | TPA quantum 2 (x 128 KiB))
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/P567.NAP (45328 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/TSRPAR.NAP (43352 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/TSRRES.NAP (41632 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/TSRUSE.NAP (41288 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/OWNPAR.NAP (43088 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/OWNKID.NAP (42048 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/VFORKT.NAP (113928 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/S2ALL.NAP (42088 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/P567S.NAP (45344 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/TSRPARS.NAP (41880 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/S2ALLS.NAP (42088 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/ATEXITP.NAP (42072 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/ATEXITK.NAP (98280 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/ACCFREE.NAP (43920 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/MDPROBE.NAP (42584 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/PPAUTO.NCP (43328 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/PPZ.NAP (46168 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/PPDESK.NAP (46200 bytes)
+built /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/probes/PPACC.NAC (43856 bytes)

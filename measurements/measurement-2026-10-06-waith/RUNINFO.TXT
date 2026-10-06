@@ -1,0 +1,84 @@
+measurement-2026-10-06-waith -- TASK/PORT-WAITH: mintlib <sys/wait.h> status
+macros on little-endian AArch64. Developer self-evidence; the Tester's
+verdict is separate. QEMU only -- no SD card, Pi or TT touched; cards are
+private 64 MiB images in the session scratchpad (method/seed-card.sh, never
+tools/make-sd-image.sh).
+
+Date 2026-10-06, branch desk-rebuild, HEAD 25980e6 plus this change
+(uncommitted). QEMU 11 raspi4b, -append serial=on (memory protection on =
+default mode; no memprot=off/strict runs), host macOS arm64.
+
+DEFECT (found by VFORKT, ARCH03 stage 2e): mintlib's include/sys/wait.h reads
+the status word through struct __wait { junk:16; retcode:8; coredump:1;
+termsig:7; } -- big-endian bit-field order. On AArch64 (little-endian,
+AAPCS64: first field = least significant bits) retcode lands in bits 16..23,
+termsig in 25..31: WEXITSTATUS == 0 and WIFEXITED == 1 for every status word.
+
+SOURCE (mintlib 0.60.1, sdk/libc/mintlib-0.60.1.tar.xz):
+  unix/wait4.c        builds *stat_loc by integer arithmetic: low two bytes
+                      of Pwaitpid/__waitval swapped -> exit code / stop signal
+                      bits 8..15, core bit 7, termsig bits 0..6; no bit-fields.
+  unix/wait.c, wait3.c, waitpid.c  call wait4; no bit-fields.
+  mintlib/thread.c:146 (overlay)  __waitval = (pid << 16) | Pexec's return.
+  include/sys/wait.h  W_EXITCODE(ret,sig) = ret<<8|sig, W_STOPCODE(sig) =
+                      sig<<8|0x7f, WCOREFLAG 0x80 -- the same layout.
+  Bit-field users in mintlib: sunrpc/key_call.c (union wait .w_retcode),
+  sunrpc/rpc_main.c, unix/test-vfork.c, test-skeleton.c -- none built by
+  build-libc.sh. tz/private.h defines its own integer WIFEXITED/WEXITSTATUS
+  only #ifndef. => only the header needs the fix; the library is layout-correct.
+  posix/system.c: POSIX branch returns the waitpid status; TOS branch
+  (system_hack) returns spawnvp's raw exit code (not a wait status) --
+  mintlib behaviour, unchanged, now documented in docs/sdk/07 §8.
+
+FIX: sdk/libc/overlay/include/sys/wait.h = pristine header + struct __wait
+fields declared termsig:7, coredump:1, retcode:8, junk:16 when
+__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__ (big-endian branch = mintlib text).
+Same bit positions, same int layout; macros unchanged.
+
+BINARIES
+  libc.a: rebuilt (compiled 615/9 skipped, failures match expected 9/9);
+    byte-IDENTICAL to before (sha256 cb2eef4b... both, checks/libc-before.sha256)
+    -- confirms no library object depends on the bit-field order.
+  Probes: all 25 of build-s2-tests.sh rebuilt (checks/build-s2-tests.txt);
+    24 byte-identical to measurement-2026-10-06-arch03-4/bin, only VFORKT.NAP
+    differs (new source method/tests/vforkt.c). bin/ keeps only what the two
+    cards need (S2ALL + its 13 probes + P10KID.NCP for seed-card); SHA256SUMS.
+  Apps: none rebuilt -- no SDK app/overlay/cflib/gemlib source uses a W*
+    macro or union wait (grep), libc.a unchanged.
+  Kernels (unchanged source): bin/KERNELS.SHA256 (kernel8-waith e43393e5...,
+    kernel-virt-waith 7ae51254...).
+
+HOST TEST sdk/libc/tests/waith-host.sh (+ waith-probe.c, waith-host.c,
+waith-host-mintbind.h), wired into sdk/run-host-tests.sh: 74 checks.
+  red  (WAITH_HEADER_DIR = pristine header): 28 of 74 FAIL
+       (checks/red-waith-host-pristine-header.txt) -- WEXITSTATUS 0 for exit
+       1/42/127/255, signal/stop words read as exited, union wait members 0,
+       w_retcode=7 -> w_status 0x70000.
+  green (overlay): 74/74 (checks/green-waith-host.txt).
+
+STATIC CHECKS (method/checks.sh waith; checks/waith-*.txt)
+                                      arch03-4 (base)  waith
+  host tests pass/fail/ignored        1165/0/1         1165/0/1
+  release warnings tos-api/kernel     64/94 both       64/94 both boards
+  clippy tos-api/kernel rpi4, virt    76/125           76/125
+  desk-drift-probe                    31               31
+  sdk/run-host-tests                  13/0/0           14/0/0 (+ waith-host)
+
+QEMU raspi4b, mode on (serial/, screendumps/)
+  waith-on-rpi4-vforkt-alone (#Z C:\VFORKT.NAP): VFORK: PASS, 19 checks ok:
+    status word 0x2a00, WIFEXITED 1, WEXITSTATUS 42, WIFSIGNALED 0,
+    WIFSTOPPED 0, union wait w_retcode 42; second vfork WEXITSTATUS 7;
+    POSIX system() -> 32512 (127<<8), WIFEXITED && WEXITSTATUS == 127.
+  waith-on-rpi4-s2all (#Z C:\S2ALL.NAP): PFLAGS1/2, P34PAR, ENVPAR, P567,
+    TSRPAR, OWNPAR, VFORKT all -> 0, "S2ALL: PASS".
+
+METHOD: method/ = measurement-2026-10-06-arch03-4/method copied; changed
+tests/vforkt.c (WIFEXITED/WEXITSTATUS/WIFSIGNALED/WIFSTOPPED/union wait
+checks instead of the info line), seed-card.sh (tolerates bin/ without
+.NTP); new waith-runs.sh = the commands of this run in order.
+Scratch note: a first seed-card attempt (before the .NTP fix) wrote an
+incomplete card to the scratchpad's cards/vforkt.img (an older scratch file
+of an earlier run in this session); the run used waith-cards/.
+
+ONLY REAL HW CAN CONFIRM: nothing kernel-side changed; the probe result on a
+Pi 4 is expected identical (pure compile-time header change).

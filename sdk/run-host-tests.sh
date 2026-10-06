@@ -151,6 +151,15 @@ report system-host $rc "mintlib tree absent or host not LP64"
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/quickstat-host.log"
 report quickstat-host $rc "mintlib tree absent or host not LP64"
 
+# waith-host (PORT-WAITH): the overlaid include/sys/wait.h -- WIFEXITED/
+# WEXITSTATUS/WIFSIGNALED/WTERMSIG/WCOREDUMP/WIFSTOPPED/WSTOPSIG and the BSD
+# `union wait' members on known status words, then through mintlib's own
+# unix/wait4.c/waitpid.c/wait.c with the __waitval tfork leaves. With the
+# pristine header (big-endian bit-field order) 28 of 74 fail.
+"$SDK/libc/tests/waith-host.sh" > "$WORK/waith-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/waith-host.log"
+report waith-host $rc "mintlib tree absent or host not little-endian LP64"
+
 # --- app host tests --------------------------------------------------------------
 # c2p-host (PORT06, user decision 2026-10-04): DOOM's table chunky-to-planar
 # (sdk/apps/doom/doomgeneric_gem.c, compiled without its GEM half) equals the

@@ -58,6 +58,10 @@
 #                                decision 2026-10-02)
 #       mintlib/thread.c         LP64 casts for the 32-bit basepage fields
 #                                (tfork, __waitval, __waittime; TASK/PROC01)
+#       include/sys/wait.h       struct __wait bit-fields in little-endian
+#                                order (same int layout: exit code bits
+#                                8..15, termsig 0..6), so WEXITSTATUS & co.
+#                                read wait4's status word (TASK/PORT-WAITH)
 #   - TASK/PROC01: mintlib's vfork (unix/vfork.S) and _setstack
 #     (mintlib/setstack.S) are m68k; newtos-arch/vfork.S and setstack.S are
 #     their AArch64 retargets. With them and thread.c, posix/system.c is
