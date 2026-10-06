@@ -284,12 +284,12 @@ runs of blanks/tabs, MagX single-quoting honoured — and publishes
 
 Still true: the desktop passes an **empty** tail on a plain double-click and
 the document path only for an association or drop launch
-(`kernel/src/desk/main.rs`), and `p_env` is 0 for desktop/`AUTO` launches
-(`kernel/src/launch.rs:70-79`). `environ` is the empty environment (one
-NULL, `cmdargs.c`, TASK/PORT10) and `p_env` is never read — a child started by
-another program's `Pexec` gets an unmapped one (TASK/MEM03) — so `getenv`
-finds nothing and the Atari `ARGV=` extension (arguments passed in the
-environment when the tail is too short) is not honoured (TASK/PORT09). A program that must work with either route can still
+(`kernel/src/desk/main.rs`). Since TASK/PORT09 (2026-10-06) the start-up also
+walks `p_env` into `environ` and honours the Atari `ARGV=` extension
+(arguments in the environment when the tail is too short; `argv[0]` is then
+the program's path), as mintlib's `parseargs()` does — including its in-place
+rewrite of the block (cut at `ARGV=`, `"PATH=\0C:\\\0"` joined to
+`"PATH=C:\\"`), see [07](07-mintlib-limits.md) §5. A program that must work with either route can still
 read the tail itself from the basepage (`p_cmdlin` at offset 0x80: length
 byte, then text — `loader.rs:680-691`) or use `shel_read`
 (`sdk/apps/chaintest/chaintest.c:41-47` shows both directions, including a

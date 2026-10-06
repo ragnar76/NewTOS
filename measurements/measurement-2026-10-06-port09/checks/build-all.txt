@@ -1,0 +1,67 @@
+built A107PAR.NAP
+built A79COLOR.NAP
+built A96ZOMB.NAP
+built BIG.NCP
+built CMDLINE.NCP
+built CRASHTST.NAP
+built CRCHILD.NAP
+built CURDIR.NCP
+built DTACHILD.NCP
+built HELLO2.NCP
+built KBDVEC.NAP
+built PHYSBASE.NCP
+built SCRFLIP.NCP
+built SYSACC.NAC
+built SYSINFO.NCP
+built WFSCREEN.NAP
+built HELLO.NCP
+built OLDEXEC.NCP
+built P10KID.NCP
+built P10TEST.NCP
+gemlib.a out of date [libc/newtos-arch] -- running build-gemlib.sh…
+  compiled OK=578  skipped=0  (of 578)
+  failures match gemlib/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/gemlib/gemlib.a (744866 bytes)
+  (full log: gemlib/build/build-gemlib.log)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/ENVPAR.NAP (42936 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/ENVKID.NAP (43240 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/P34PAR.NAP (44168 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/P34KID.NAP (43136 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/PFLAGS1.NCP (43696 bytes) PRGFLAGS=0x10000004
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/PFLAGS2.NCP (43680 bytes) PRGFLAGS=0x10000004
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/PFLAGS2.NCP: PRGFLAGS 0x10000004 -> 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/PFLAGS2.NCP: PRGFLAGS 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/PFLAGS1.NCP: PRGFLAGS 0x10000004 (PF_TTRAMMEM | TPA quantum 2 (x 128 KiB))
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/P567.NAP (46328 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/TSRPAR.NAP (44352 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/TSRRES.NAP (42640 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/TSRUSE.NAP (42280 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/OWNPAR.NAP (44104 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/OWNKID.NAP (43040 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/VFORKT.NAP (114584 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/S2ALL.NAP (43080 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/P567S.NAP (46360 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/TSRPARS.NAP (42872 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/S2ALLS.NAP (43080 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/ATEXITP.NAP (43088 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/ATEXITK.NAP (98936 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/ACCFREE.NAP (44912 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/MDPROBE.NAP (43584 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/ENVRN.NAP (44648 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/E9MEM.NAP (44800 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/PPAUTO.NCP (44320 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/PPZ.NAP (47648 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/PPDESK.NAP (47680 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/PPACC.NAC (44856 bytes)
+built E9PLAIN.NCP
+built UAKID.NAP + UACC3A.NAP (cases: all)
+built MPKID.NAP + MPROT3B/MPROTS/MPROTO.NAP
+built E10KID.NAP + E10USR/E10USRS/E10USRO.NAP
+built via apps/apitest/build-apitest.sh
+built via apps/build-qed.sh
+built via apps/build-teradesk.sh
+built via apps/build-doom.sh
+built via apps/gemtest/build-gemtest.sh
+built via apps/chaintest/build-chaintest.sh
+built via apps/build-coremark.sh
+done

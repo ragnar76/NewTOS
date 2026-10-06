@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # cmdargs-host.sh -- build and run the host harness for
-# sdk/libc/newtos-arch/cmdargs.c (__libc_parseargs: BasePage command tail ->
-# argc/argv, TASK/PORT01).
+# sdk/libc/newtos-arch/cmdargs.c (__libc_parseargs: environment block +
+# BasePage command tail -> environ, argc/argv; TASK/PORT01, TASK/PORT09).
 #
 # Two translation units on purpose: cmdargs.c needs mintlib's include path
 # (<mint/basepage.h>), the harness needs the HOST's <stdio.h>, and the two
@@ -33,9 +33,12 @@ trap 'rm -rf "$W"' EXIT
 
 # -Denviron=...: cmdargs.c publishes mintlib's `environ` (mintlib/globals.c);
 # on the host that name belongs to the C runtime, so the harness provides the
-# variable under its own name and checks it (TASK/PORT10).
+# variable under its own name and checks it (TASK/PORT10). Likewise mintlib's
+# program_invocation_name / _short_name (mintlib/program-name.c, TASK/PORT09).
 "$CC" -O2 -fno-builtin -Wall -Wextra -Wno-macro-redefined \
       -Denviron=cmdargs_test_environ \
+      -Dprogram_invocation_name=cmdargs_test_pin \
+      -Dprogram_invocation_short_name=cmdargs_test_pisn \
       -I "$MINT" -c "$LIBC/newtos-arch/cmdargs.c" -o "$W/cmdargs.o" || exit 1
 "$CC" -O2 -fno-builtin -Wall -Wextra \
       -c "$HERE/cmdargs-host.c" -o "$W/harness.o" || exit 1

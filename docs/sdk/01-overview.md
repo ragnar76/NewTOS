@@ -82,23 +82,24 @@ for TOS data structures that are 32-bit on the wire are the subject of
   (`sdk/libc/build-libc.sh` run of 2026-09-16, see
   [07-mintlib-limits.md](07-mintlib-limits.md)); the eleven that did not are
   listed with reasons in `sdk/libc/expected-failures.txt`.
-* **Command-line arguments via `argv`: yes, since 2026-09-25 (TASK/PORT01).**
-  The libc `crt0` calls `__libc_parseargs()`
-  (`sdk/libc/newtos-arch/cmdargs.c`), the argument half of mintlib's
-  `crtinit.c` `parseargs()` reimplemented for AArch64, and hands `main` the
-  `argc`/`argv` it builds from the basepage command tail (`p_cmdlin`,
-  `tos-api/src/bdos/process/loader.rs:680-691`). With an empty tail that is
-  `argc = 1`, `argv = {"", NULL}` — the TOS "program name not available"
-  convention. mintlib's own `crtinit.c` still does not build
-  (`sdk/libc/expected-failures.txt:25`), so the **environment** half of
-  `parseargs()` — `environ` and the `ARGV=` extension — is still absent; see
-  the next point. `shel_read` remains available as a second route
-  (`sdk/apps/chaintest/chaintest.c:41`).
-* **An environment, but no `environ`.** Since TASK/PPARENT every launch path
-  hands down an environment as EmuTOS does (AUTO `{0, 0}`; desktop, `#Z` and
-  accessories a copy of the AES's `"PATH=\0X:\\\0"`;
-  `docs/api/gemdos/process/_parent-and-environment.md`), but the libc does not
-  walk `p_env` into `environ` yet (TASK/PORT09).
+* **Command-line arguments via `argv`: yes, since 2026-09-25 (TASK/PORT01);
+  environment and `ARGV=` since 2026-10-06 (TASK/PORT09).** The libc `crt0`
+  calls `__libc_parseargs()` (`sdk/libc/newtos-arch/cmdargs.c`), mintlib's
+  `crtinit.c` `parseargs()` reimplemented for AArch64 (mintlib's own file
+  still does not build, `sdk/libc/expected-failures.txt:25`): `environ` comes
+  from the environment block `p_env` that every launch path hands down as
+  EmuTOS does (AUTO `{0, 0}`; desktop, `#Z` and accessories a copy of the
+  AES's `"PATH=\0X:\\\0"`, which mintlib's rule joins to `"PATH=X:\\"`;
+  `docs/api/gemdos/process/_parent-and-environment.md`), so `getenv` works;
+  `argc`/`argv` come from the Atari `ARGV=` extension when the launcher puts
+  one in the environment (mintlib's `spawn*`/`system()`, TeraDesk for a
+  `PT_ARGV` type with arguments) — any number of arguments, blanks inside an
+  argument kept, `argv[0]` = the program's path — and otherwise from the
+  basepage command tail (`p_cmdlin`, `tos-api/src/bdos/process/loader.rs`),
+  where an empty tail gives `argc = 1`, `argv = {"", NULL}` — the TOS
+  "program name not available" convention. Details in
+  [07-mintlib-limits.md](07-mintlib-limits.md) §5. `shel_read` remains
+  available as a second route (`sdk/apps/chaintest/chaintest.c:41`).
 * **No supervisor mode.** `Super` and `Supexec` exist as *bindings* that do not
   change privilege: `Super(1L)` truthfully answers "not privileged", the rest
   are no-ops with a round-trippable token; `Supexec(f)` is a plain call of

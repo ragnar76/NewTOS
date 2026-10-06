@@ -1,0 +1,23 @@
+cmdargs-host: __libc_parseargs over the BasePage command tail
+  ok   empty tail
+  ok   full path
+  ok   file name
+  ok   blank runs
+  ok   tabs
+  ok   name + line
+  ok   quoted blank
+  ok   doubled quote
+  ok   64 arguments (127 chars)
+  ok   environ is the empty environment (p_env 0)
+  ok   ARGV: 14 arguments (196 chars), tail 127
+  ok   ARGV: block cut at "ARGV=" (double NUL after PATH)
+  ok   ARGV without length byte 127 (gulam), with a value
+  ok   ARGV=NULL:2,3,5 (ARGV-blank.txt example)
+  ok   ARGV=NULL: index out of range stops the list
+  ok   mintlib spawn block (ARGV=, tail 0x7f)
+  ok   no ARGV: environ + tail argv
+  ok   no ARGV, tail length 127 (not validated without ARGV=)
+  ok   desktop PATH=\0C:\\\0 joined
+  ok   empty environment block
+  ok   limit too small -> -1, nothing written
+cmdargs-host: all cases pass

@@ -1,0 +1,131 @@
+measurement-2026-10-06-port09 -- TASK/PORT09 step 2 (user decisions
+2026-10-02: cmdargs.c learns the ARGV convention; 2026-10-06: libc-wide
+environ from p_env, mintlib parity -- needed by LDG, docs/analysis/
+ldg-after-arch03-2026-10-06.md B1). Developer self-evidence; the Tester's
+verdict is separate.
+
+Date 2026-10-06, branch desk-rebuild, HEAD 50d4131 plus this change
+(uncommitted). QEMU raspi4b, -append serial=on (+ memprot=strict where
+named), host macOS. No SD card, Pi or TT touched; tools/make-sd-image.sh NOT
+used (method/seed-card.sh, private 64 MiB images in the session scratchpad).
+Kernel source untouched (kernel8-pre.img == kernel8-port09.img, sha256
+26c6a216...).
+
+CHANGE (method/port09-change.diff)
+  sdk/libc/newtos-arch/cmdargs.c  now all of mintlib crtinit.c parseargs()
+      (crtinit.c:280-520), step for step with AArch64 pointer widths:
+      environ from p_env (entries point into the block); "ARGV=" ends the
+      environment, cut in place ('A' -> NUL), argv[0] = the string after it,
+      the arguments follow; 127 length byte NOT required (mintlib:
+      STRICTLY_COMPATIBLE_WITH_STANDARD off, crtinit.c:61-70); ARGV=NULL:i,..
+      (ARGV-blank.txt) cuts those argv entries to ""; desktop form
+      "PATH=\0C:\\\0" joined in place (crtinit.c:332-345); no ARGV= -> the
+      existing tail parser (argv[0] ""); program_invocation_name/_short_name
+      from a non-empty argv[0]. Layout = mintlib's: environ[], split tail,
+      argv[] in the TPA just above the BSS (area = 16-aligned _end), byte
+      count returned and added to the kept size m. New: worst case checked
+      against p_hitpa before writing (-1 -> "insufficient memory").
+      New split for the host harness: __libc_parse_env_args(env, cmdlin,
+      area, limit); __libc_parseargs(basepage, area, limit) reads p_env
+      (32-bit field) and calls it.
+  sdk/libc/newtos-arch/heap_init.c  m = (area - B) + parseargs' count
+      (crtinit.c:167-172); was: arrays in cmdargs.c BSS, count 0.
+  sdk/libc/crt0.S, build-libc.sh  comments only.
+  sdk/libc/tests/cmdargs-host.{c,sh}  +11 environment cases (below); the
+      old "spawn tail: p_env set, not read" case is replaced by the mintlib
+      spawn block case (p_env IS read now).
+  docs/sdk/07-mintlib-limits.md (header, §1 crtinit row, §5 argc/argv +
+      environ rows), 01-overview.md, 03-first-programs.md, 05-abi-pitfalls.md.
+
+STEP 0 -- CAN A CHILD READ p_env NOW? (before any source change)
+  serial/pre-on-rpi4-envkid: P9EPAR (= measurement-2026-10-02-port09
+  envpar.c, unchanged, child C:\P9EKID.NAP = its envkid.c) on the pre
+  kernel/libc: the child prints p_env=0x01a58000 and walks all 17 records
+  (PATH=C:\, ARGV=, C:\P9EKID.NAP, 14 arguments) -- no abort. MEM03's
+  blocker is gone (ARCH03 stage 1).
+  serial/pre-on-rpi4-argvtest: P9APAR -> C:\ARGVTEST.NAP: argc 12, the tail
+  cut at "kilo-el" (same as 2026-10-02).
+
+HOST TESTS
+  sdk/libc/tests/cmdargs-host.sh: 21 cases, all pass (checks/cmdargs-host.txt):
+  10 tail cases (PORT01/PORT10) + ARGV 14 args/196 chars/tail 127; block cut
+  at ARGV=; ARGV without 127 + with a value; ARGV=NULL:2,3,5 (ARGV-blank.txt
+  example verbatim); NULL: index out of range stops the list; mintlib
+  spawnve block; no ARGV (environ + tail argv, quoted); no ARGV + tail 127;
+  desktop PATH= join; empty block {0,0}; limit too small -> -1, nothing
+  written. Mutation check (scratch copies, not in the tree): disabling the
+  ARGV= match -> 7 FAIL lines, the desktop join -> 2, the NULL: list -> 3.
+
+STATIC CHECKS (method/checks.sh port09; checks/port09-*.txt)
+                                      base (waith)   port09
+  host tests pass/fail/ignored        1165/0/1       1165/0/1
+  release warnings tos-api/kernel     64/94 both     64/94 both boards
+  clippy tos-api/kernel rpi4, virt    76/125         76/125
+  desk-drift-probe                    31             31
+  sdk/run-host-tests                  14/0/0         14/0/0
+  cmdargs.c / heap_init.c with -Wall -Wextra for the target: 0 warnings.
+
+BINARIES
+  libc.a 615 compiled / 9 skipped (expected list), sha256 71d5d3a7...
+  (checks/libc-before.sha256 = before). All SDK programs relinked by
+  method/build-all.sh (the standard set of the earlier runs; crt0/cmdargs
+  are in libc.a, so every libc program changes): bin/SHA256SUMS (65
+  programs incl. the PORT09 probes from method/build-port09.sh),
+  repo-binaries.sha256 (libc.a, APITEST, QED, qed.rsc, TeraDesk, Doom).
+  Kernels: bin/KERNELS.SHA256 (product rpi4 = pre, product virt; crash and
+  tdkeys injector kernels from method/port09-kernels.sh, scratch copies).
+
+QEMU raspi4b (method/port09-runs.sh; serial/, screendumps/)
+  probes, memprot on AND strict (identical results):
+    envkid  P9EPAR -> P9EKID: p_env now holds only "PATH=C:\" after the
+            kid's start-up -- the block was cut at ARGV= in place, as mintlib
+            does.
+    argvtest P9APAR -> ARGVTEST.NAP: argc 15, argv[0] "C:\ARGVTEST.NAP",
+            argv[13] "mike thirteen has blanks" (one argument), argv[14]
+            "november-fourteen-is-the-last-argument", terminated (was argc 12).
+    p9par   P9PAR.NAP (#Z) + P9KID.NAP, 35 ok / 0 FAIL, "P9PAR: PASS":
+            parent's own env (AES copy joined -> environ {PATH=C:\},
+            getenv(PATH) C:\, argv[0] ""); kid cases argv14 (argc 15,
+            environ {PATH=C:\}, getenv(ARGV) NULL, short name P9KID.NAP,
+            block cut), ARGV=NULL:2, no ARGV (tail argv, environ
+            {FOO=bar,P9=yes}, program_invocation_name untouched), empty
+            block, env NULL (inherits the parent's joined block).
+  regression, memprot on: S2ALL PASS, VFORKT alone PASS, PPARENT AUTO/ACC/
+    Z/Z-KID PASS, ENVRN PASS, APITEST 106/0/5, PORT10 "ALL PASS (44
+    checks)", QED (#Z) and TeraDesk (#Z) start; TeraDesk F1 -> QED (PT_ARGV
+    type 0x2001, tdkeys kernel).
+  strict once: S2ALLS on the crash kernel: S2ALL: PASS (the crash prompts
+    are the strict denials by design, as in the earlier runs).
+  Screendumps byte-identical to measurement-2026-10-06-arch03-4 (shotcmp.py
+    port09-on- vs a4-on-): 10 same, 0 differ (apitest t25/t40, qed t30,
+    teradesk t35, tdqed t30/t50, s2all/pparent/envrn/port10 end), 6 new.
+
+PROBE ADAPTATIONS (method/tests, copies; the old run dirs are untouched)
+  envkid.c (MEM03, in S2ALL) and pparent.c (PPARENT Z/Z-KID) read the RAW
+  p_env block in main(). With mintlib's start-up that block is rewritten
+  before main() (cut at ARGV=; "PATH=\0C:\\\0" joined), exactly as on TOS
+  with mintlib; the kernel's delivery is unchanged. Unchanged probes would
+  therefore FAIL by design: envkid "ARGV= arrived"/"argument with blanks
+  arrived", pparent "own env = default_env" and "kid: env = default_env".
+  The checks now test the same delivery through what the libc made of it
+  (ARGV= consumed + argv[0]/argv[2]; raw block = the joined form + environ
+  = {PATH=X:\}). The AES PD / initial_basepage / AUTO / accessory raw-block
+  checks are unchanged (no libc walk touches those blocks).
+
+TERADESK WITH ARGUMENTS: NOT SCRIPTED. The scripted path (F1, method/
+  TERADESK-ARGV.INF: C:\ARGVTEST.NAP, flag 0x2001) launches ARGVTEST with
+  cmdlin len 0, argc 1 (serial/port09-on-rpi4-tdargv): TeraDesk drops ARGV
+  for an empty command line (applik.c:1470 `if (!cmllen || ...) argv =
+  FALSE`). Arguments need a drop/open gesture (mouse) -- no injector script
+  for that in this run. The shape TeraDesk builds with arguments
+  (environm.c make_argv_env, startprg.c:543-567/650-655) is exactly what
+  P9EPAR/P9APAR/P9PAR's argv14 case send.
+
+INVALID, KEPT FOR THE RECORD: serial/invalid-stale-card/. The first s2all
+  and vforkt runs reused cards from older runs that were lying in the
+  scratchpad's cards/ directory (old binaries; vforkt's card booted the
+  desktop). The script now uses its own port09-cards/ directory; both runs
+  were repeated on fresh cards (the logs in serial/).
+
+ONLY REAL HW CAN CONFIRM: nothing kernel-side changed; the start-up code is
+  pure EL0 C. TeraDesk-with-arguments (drop/open) is a manual gesture.

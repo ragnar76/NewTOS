@@ -117,10 +117,11 @@ $ ls -l HELLOLIB.NCP ; llvm-nm -u HELLOLIB.NCP | grep -c .
 Note the **libc crt0** (`sdk/libc/crt0.S`, not `sdk/crt0.S`): it additionally
 calls `__libc_init_heap(basepage, p_hitpa)`, which sets mintlib's `_base` and
 points `malloc` at the free TPA between `_end` and the stack reserve
-(`sdk/libc/newtos-arch/heap_init.c`), and `__libc_parseargs(basepage)`, which
-builds `argc`/`argv` from the basepage command tail
-(`sdk/libc/newtos-arch/cmdargs.c`). With no tail — a plain double-click, or an
-`AUTO` run like the one below — that is `argc = 1, argv = {"", NULL}`.
+(`sdk/libc/newtos-arch/heap_init.c`), and `__libc_parseargs()`, which builds
+`environ` from the environment block and `argc`/`argv` from its `ARGV=` part
+or else the basepage command tail (`sdk/libc/newtos-arch/cmdargs.c`). With no
+`ARGV=` and no tail — a plain double-click, or an `AUTO` run like the one
+below — that is `argc = 1, argv = {"", NULL}`.
 
 Run: the program was copied to `C:\AUTO\HELLOLIB.NCP` on a scratch image and
 booted headless in QEMU. Serial log (`[auto]`/`[launch]` lines are the

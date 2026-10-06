@@ -30,9 +30,10 @@
 #       heap_init.c -> __libc_crtinit: mintlib crtinit.c _crtinit/_acc_main
 #                    for TOS (_stksize policy, Mshrink of the TPA, malloc via
 #                    GEMDOS Malloc); called by crt0.S (ARCH03 E9).
-#       cmdargs.c -> argc/argv from the BasePage command tail p_cmdlin (the
-#                    argument half of crtinit.c parseargs(), which does not
-#                    compile here); defines __libc_argc/__libc_argv.
+#       cmdargs.c -> crtinit.c parseargs(), which does not compile here:
+#                    environ from p_env, argc/argv from its ARGV= part or the
+#                    BasePage command tail p_cmdlin, program_invocation_name;
+#                    defines __libc_argc/__libc_argv (PORT01, PORT09).
 #       getcookie.c -> Getcookie() via the Ssystem trap (was m68k getcookie.S,
 #                      which scans the _p_cookies sysvar / trap #1). Pulled by
 #                      cflib's cookie.c feature probes.

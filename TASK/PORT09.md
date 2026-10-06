@@ -1,6 +1,6 @@
 # PORT09 — `PT_ARGV` bei `*.NAP` verspricht ARGV, unser Splitter kennt es nicht
 
-Status: **BLOCKIERT** durch [MEM03](MEM03.md) (2026-10-02, [Statusdatei](PORT09-STATUS-UNFINISHED.MD)) · Anwenderentscheidung: Konvention wird umgesetzt · Prioritaet: **P3** · Typ: SDK / Startschnittstelle — Nebenfund aus [DESK41](DESK41.md)
+Status: **ERLEDIGT** 2026-10-06 ([Quittung](PORT09-STATUS-DONE.MD); vorher blockiert durch [MEM03](MEM03.md), [Statusdatei](PORT09-STATUS-UNFINISHED.MD)) · Anwenderentscheidung: Konvention wird umgesetzt · Prioritaet: **P3** · Typ: SDK / Startschnittstelle — Nebenfund aus [DESK41](DESK41.md)
 
 Abhaengigkeiten: [MEM03](MEM03.md)
 

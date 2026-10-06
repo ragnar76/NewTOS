@@ -1,146 +1,236 @@
 /*
- * cmdargs.c -- NewTOS/AArch64 command tail -> argc/argv for the C runtime.
+ * cmdargs.c -- NewTOS/AArch64 environment + command tail -> environ and
+ * argc/argv for the C runtime: mintlib's crtinit.c `parseargs()`.
  *
- * A program started from the desktop with an argument -- a file dragged onto
- * its icon, or onto a desktop shortcut for it -- receives that argument in its
- * BasePage's command tail `p_cmdlin` (offset 0x80): a length byte followed by
- * that many characters (tos-types/src/basepage.rs,
- * tos-api/src/bdos/process/loader.rs `populate_basepage`; the desktop builds
- * the image in kernel/src/desk/main.rs `build_cmd_tail`).
+ * mintlib builds `environ`, argc/argv and `program_invocation_name` in
+ * mintlib/crtinit.c `parseargs()`, called from `_crtinit()`. That file does
+ * not compile for AArch64 (m68k inline asm for the "Mshrink onto a new
+ * stack" idiom, plus the LP64 basepage casts -- sdk/libc/expected-failures.txt,
+ * docs/sdk/07-mintlib-limits.md Sec.1+5), and its `parseargs()` is `static`
+ * there and sizes its arrays in 4-byte m68k pointers (`count += 4`). So
+ * sdk/libc/crt0.S calls newtos-arch/heap_init.c `__libc_crtinit` instead, and
+ * that calls this file. The algorithm below is `parseargs()`'s, step for step,
+ * with AArch64 pointer widths; the OBSERVABLE contract is mintlib's, because
+ * ported applications are written against it (TASK/PORT01, TASK/PORT09).
  *
- * mintlib turns that tail into argc/argv in mintlib/crtinit.c `parseargs()`,
- * called from `_crtinit()`. Neither runs here: crtinit.c does not compile for
- * AArch64 (m68k inline asm for the "Mshrink onto a new stack" idiom, plus two
- * LP64 basepage casts -- sdk/libc/expected-failures.txt,
- * docs/sdk/07-mintlib-limits.md Sec.1+5), so sdk/libc/crt0.S took its place
- * and, until this file existed, called main() with a fixed
- * argc == 1 / argv == { "", NULL }. Every libc-linked program therefore saw
- * no arguments at all, whatever the launcher handed it -- which is why a file
- * dropped on QED started the editor empty (TASK/PORT01).
+ * THE ENVIRONMENT (crtinit.c:290-353). `p_env` points at the block the
+ * launcher handed down -- since TASK/PPARENT every launch path has one, as
+ * on EmuTOS (an AUTO program `{0, 0}`, the desktop's, the `#Z` program's and
+ * the accessories' a copy of the AES's `"PATH=\0X:\\\0"`, a `Pexec` child
+ * the caller's or the given block: docs/api/gemdos/process/_parent-and-
+ * environment.md), at an address every process can read (ARCH03 stage 1,
+ * VA = PA). Each NUL-terminated string up to the empty one becomes one
+ * `environ` entry, pointing INTO the block (no copy). Two in-place rewrites,
+ * both mintlib's:
  *
- * This is the argument half of `parseargs()`, reimplemented for AArch64. The
- * OBSERVABLE contract is mintlib's, because ported applications are written
- * against it -- QED's src/main.c:147-190, for one, re-assembles a file name
- * containing blanks from several argv entries because that is what this libc
- * hands it ("MagXDesk liefert Namen mit Blanks nicht ueber ARGV sondern die
- * Kommandozeile"):
+ *   - the desktop's "PATH=\0C:\\\0" form: a string without '=' that follows
+ *     one ending in '=' is appended to it ("PATH=C:\\"), and the entry is
+ *     dropped ("the desktop (and some shells) use the environment in the
+ *     wrong way", crtinit.c:332-345);
+ *   - the ARGV extension (references/freemint/doc/programmer/atari/ARGV.txt
+ *     :95-142): a string beginning "ARGV=" ends the environment -- its 'A'
+ *     is overwritten by NUL, so the block itself ends there for everybody
+ *     who reads it later, e.g. a `Pexec(.., env = NULL)` child -- and the
+ *     strings after it are the arguments, argv[0] first (the Pexec path
+ *     name). As in mintlib, the command tail's length byte 127 is NOT
+ *     required (STRICTLY_COMPATIBLE_WITH_STANDARD is off, crtinit.c:61-70:
+ *     "some applications (gulam is a notable example) ... don't set the
+ *     command byte to 127").
+ *   - `ARGV=NULL:i,j,...` (ARGV-blank.txt:12-34): the listed argv entries
+ *     are empty arguments (transferred as " "); each is cut to "" after
+ *     argc is known. An index that is not a decimal number or not below
+ *     argc ends the list (crtinit.c `bail_out`).
  *
- *   - argv[0] is "" -- the TOS "program name not available" convention
- *     (crtinit.c `*arg++ = ""`); argc counts it, so argc >= 1 always.
+ * THE COMMAND TAIL (crtinit.c:355-449), used when there is no ARGV=:
+ *
+ *   - argv[0] is "" -- the TOS "program name not available" convention;
+ *     argc counts it, so argc >= 1 always.
  *   - leading blanks/tabs of the tail are skipped;
  *   - if the first remaining character is a single quote, the MagX quoting
  *     rules apply (quoted runs keep their blanks, '' is a literal quote);
- *     otherwise the tail is split on runs of blanks/tabs;
- *   - argv is NULL-terminated, and `__libc_argc` / `__libc_argv` carry the
- *     same pair for the mintlib members that read them (posix/wordexp.c).
+ *     otherwise the tail is split on runs of blanks/tabs.
  *
- * What is NOT here, and why: the environment WALK. `parseargs()` also walks
- * `p_env` into `environ` and honours the MWC/Atari `ARGV=` extension, under
- * which a launcher too long for the 126-byte tail passes the arguments in the
- * environment instead. Since TASK/PPARENT every launch path hands down an
- * environment as EmuTOS does (an AUTO program `{0, 0}`, the desktop's and
- * the `#Z` program and the accessories a copy of the AES's
- * `"PATH=\0X:\\\0"`, a `Pexec` child the caller's or the given block --
- * docs/api/gemdos/process/_parent-and-environment.md), at a pool address
- * every process can read (ARCH03 stage 1). The walk and the `ARGV=`
- * extension are TASK/PORT09 and not built yet; this file is where they
- * belong.
+ * `program_invocation_name` / `_short_name` (crtinit.c:451-462) become
+ * argv[0] and its last path component when argv[0] is not empty, i.e. under
+ * ARGV=. argv and environ are NULL-terminated; `__libc_argc` /
+ * `__libc_argv` / `environ` carry the result for the mintlib members that
+ * read them (posix/wordexp.c, mintlib/spawn.c, stdlib/getenv.c, ...).
  *
- * What IS here of the environment half: `environ` itself. `parseargs()`
- * always publishes it, as an array that holds at least the terminating
- * NULL -- for `p_env == 0` exactly that one NULL ("when passing (void *)-1 as
- * env when calling Pexec(), our environment may be NULL", crtinit.c). mintlib
- * members rely on it: `_spawnve()` (mintlib/spawn.c) replaces a NULL `envp`
- * by `environ` and indexes it unconditionally, so with `environ == NULL`
- * every `spawnvp()`/`system()` read address 0 (TASK/PORT10). Until the walk
- * exists, `environ` is that empty environment for every launch path.
- * `free(environ)` (putenv.c) is harmless on it: mintlib's free() ignores a
- * block without its VAL_ALLOC tag, which is what keeps crtinit's own
- * non-malloc'ed array safe as well.
- *
- * WHERE THE RESULT LIVES. mintlib puts the argv array and the split command
- * line in the gap just above the BSS (`p_bbase + p_blen + 4`) and then starts
- * the malloc arena above it (crtinit.c: `_heapbase = (void *)((long)bp + m)`,
- * with `m` including parseargs' byte count). That placement cannot be copied:
- * NewTOS's `__libc_init_heap` (newtos-arch/heap_init.c) starts the arena at
- * the linker's `_end`, i.e. exactly there, so argv would sit under the heap.
- * The strings and the pointer array live in this file's BSS instead. The
- * sizes are bounded, not guessed: `p_cmdlin` is 128 bytes, so the length byte
- * is at most 127 and both split loops write at most one byte per consumed
- * character -- 127 bytes plus the two terminating NULs. The densest possible
- * argument list is one-character arguments separated by single blanks, i.e.
- * 2n-1 <= 127 characters for n arguments, so at most 64 of them -- plus
- * argv[0] and the NULL terminator, 66 slots.
+ * WHERE THE RESULT LIVES -- mintlib's place. parseargs() lays `environ[]`,
+ * the split command line and `argv[]` out in the TPA just above the BSS and
+ * returns the byte count; `_crtinit` adds it to the size it keeps
+ * (crtinit.c:167-172, `m = parseargs(bp); m += tlen + dlen + blen +
+ * sizeof(BASEPAGE)`), so the heap and the stack start above it. Here
+ * heap_init.c hands in `area` (the 16-byte aligned `_end`) and `limit`
+ * (`p_hitpa`) and adds the return value to its `m` the same way. Unlike
+ * mintlib, the worst case is checked against `limit` before anything is
+ * written, and -1 is returned when it does not fit (heap_init.c then stops
+ * with mintlib's "insufficient memory"): the number of strings in the block
+ * bounds both pointer arrays, and the tail needs at most PDCLSIZE + 2 chars.
  */
 
 #include <stddef.h>
+#include <string.h>
 #include <mint/basepage.h>
 
 /* sizeof(BASEPAGE.p_cmdlin) -- PDCLSIZE in tos-types/src/basepage.rs. */
 #define PDCLSIZE 128
 
-/* The split command line: at most PDCLSIZE-1 characters plus "\0\0". */
-static char arg_chars[PDCLSIZE + 2];
-
-/* argv[0] ("") + at most PDCLSIZE/2 arguments + the NULL terminator: n
+/* argv[0] ("") + at most PDCLSIZE/2 tail arguments + the NULL terminator: n
    one-character arguments separated by single blanks need 2n-1 <= PDCLSIZE-1
    characters, so n <= PDCLSIZE/2 = 64. */
 #define ARGV_MAX (1 + (PDCLSIZE / 2) + 1)
-static char *arg_vec[ARGV_MAX];
 
-/* The empty environment `parseargs()` publishes when there is no `p_env`
-   to walk: just the terminating NULL. `environ` is mintlib's own global
-   (mintlib/globals.c). */
+/* The split command line in the area: at most PDCLSIZE-1 characters plus
+   "\0\0", rounded up to whole pointers. */
+#define TAIL_BYTES \
+  ((PDCLSIZE + 2 + sizeof (char *) - 1) & ~(sizeof (char *) - 1))
+
+/* mintlib's own globals: `environ` (mintlib/globals.c),
+   `program_invocation_name` / `_short_name` (mintlib/program-name.c). */
 extern char **environ;
-static char *env_vec[1] = { NULL };
+extern char *program_invocation_name;
+extern char *program_invocation_short_name;
 
-/* The wire layout this file reads: p_cmdlin is the last 128 bytes of the
-   256-byte BasePage (tos-types/src/basepage.rs; mint/basepage.h pins the rest
-   of the offsets on both ABIs). sdk/libc/tests/cmdargs-host.c builds its test
-   BasePage from these two numbers. */
+/* The wire layout this file reads: p_env @ 0x2c and p_cmdlin, the last 128
+   bytes of the 256-byte BasePage (tos-types/src/basepage.rs; mint/basepage.h
+   pins the rest of the offsets on both ABIs). sdk/libc/tests/cmdargs-host.c
+   builds its test BasePage from these numbers. */
 _Static_assert (sizeof (((BASEPAGE *) 0)->p_cmdlin) == PDCLSIZE,
 		"p_cmdlin is 128 bytes");
 _Static_assert (__builtin_offsetof (BASEPAGE, p_cmdlin) == 0x80,
 		"p_cmdlin @ 0x80");
+_Static_assert (__builtin_offsetof (BASEPAGE, p_env) == 0x2c,
+		"p_env @ 0x2c");
 
 /*
  * The pair mintlib's own members expect (crtinit.c defines them upstream;
  * that file is not built here, so there is no duplicate definition).
- * `posix/wordexp.c` is the archive member that reads them.
  */
 long __libc_argc = 1;
 static char *__libc_argv_default[] = { "", NULL };
 char **__libc_argv = __libc_argv_default;
 
-/* crtinit.c's own local definition -- blank or tab, not the full <ctype.h>. */
+/* crtinit.c's own local definitions -- not the full <ctype.h>. */
 #define IS_SPACE(c) ((c) == ' ' || (c) == '\t')
+#define IS_DIGIT(c) ((c) >= '0' && (c) <= '9')
+
+/* Number of NUL-terminated strings in `env` before the empty one -- the
+   environment, ARGV= and its arguments together; 0 for no block. */
+static unsigned long
+env_strings (const char *env)
+{
+  unsigned long n = 0;
+
+  if (env == NULL)
+    return 0;
+  while (*env)
+    {
+      n++;
+      while (*env++)
+	;
+    }
+  return n;
+}
 
 /*
- * Build argc/argv from `basepage`'s command tail, publish them in
- * `__libc_argc` / `__libc_argv`, publish the (empty) `environ`, and return
- * argc. Called once from sdk/libc/crt0.S, after __libc_init_heap and before
- * main().
- *
- * `basepage` is passed as an integer because on NewTOS the BasePage VA is 0
- * (USER_VA_BASE) -- a perfectly valid address here, mapped by the loader, and
- * one that must not be mistaken for a null pointer.
+ * parseargs() proper, over an environment block `env` (NULL = none) and the
+ * 128-byte command tail image `cmdlin` (length byte first). Lays environ[],
+ * the split tail and argv[] out from `area` (pointer-aligned), publishes
+ * environ / __libc_argc / __libc_argv / program_invocation_name, and returns
+ * the number of bytes of `area` used, or -1 (nothing written, nothing
+ * published) when the worst case would pass `limit`.
  */
 long
-__libc_parseargs (unsigned long basepage)
+__libc_parse_env_args (char *env, const char *cmdlin, char *area,
+		       const char *limit)
 {
-  const BASEPAGE *bp = (const BASEPAGE *) basepage;
-  /* A private copy, so every pointer walk below stays inside our own
-     storage even where the original reads one character past `i`. */
+  unsigned long nstr = env_strings (env);
   char line[PDCLSIZE + 2];
-  const char *cmdln;
-  const char *from;
-  char *to;
+  char *from, *to, *cmdln;
+  char **envp, **arg;
+  char *null_list = NULL;
   long i;
   unsigned n;
-  unsigned argc;
+  long argc;
 
+  /* environ: at most nstr + 1, argv under ARGV=: at most nstr + 1 more,
+     without ARGV=: the tail buffer and ARGV_MAX pointers. */
+  if (area > limit
+      || (unsigned long) (limit - area)
+	 < (nstr + 2) * sizeof (char *) + TAIL_BYTES
+	   + ARGV_MAX * sizeof (char *))
+    return -1;
+
+  /* handle the environment first */
+  environ = envp = (char **) area;
+  from = env;
+  if (from)
+    {
+      while (*from)
+	{
+	  /* if we find MWC arguments, tie off environment here */
+	  if (from[0] == 'A' && from[1] == 'R' && from[2] == 'G'
+	      && from[3] == 'V' && from[4] == '=')
+	    {
+	      *envp++ = NULL;
+	      *from = '\0';
+	      from += 5;		/* skip ARGV= string */
+
+	      /* find list of empty params */
+	      if (from[0] == 'N' && from[1] == 'U' && from[2] == 'L'
+		  && from[3] == 'L' && from[4] == ':')
+		null_list = from + 5;
+
+	      while (*from++)
+		;			/* skip ARGV= value */
+	      __libc_argv = arg = envp;
+	      *arg++ = from;
+	      while (*from++)
+		;			/* skip argv[0] */
+	      goto do_argc;
+	    }
+
+	  *envp++ = from;
+	  {
+	    /* flag to indicate desktop-style arg. passing */
+	    int desktoparg = 1;
+
+	    while (*from)
+	      {
+		if (*from == '=')
+		  desktoparg = 0;
+		from++;
+	      }
+	    from++;			/* skip 0 */
+
+	    /* "PATH=\0C:\0" instead of "PATH=C:": a string without '='
+	       after one ending in '=' is appended to that one. */
+	    if (desktoparg && envp > &environ[1])
+	      {
+		char *p, *q;
+
+		q = envp[-2];		/* current one is envp[-1] */
+		while (*q)
+		  q++;
+		if (q[-1] == '=')
+		  {
+		    p = *--envp;
+		    while (*p)
+		      *q++ = *p++;
+		    *q = '\0';
+		  }
+	      }
+	  }
+	}
+    }
+  *envp++ = NULL;
+
+  /* The command tail. A private copy, so every pointer walk below stays
+     inside our own storage even where the original reads one character
+     past `i`. */
   for (n = 0; n < PDCLSIZE; n++)
-    line[n] = bp->p_cmdlin[n];
+    line[n] = cmdlin[n];
   line[PDCLSIZE] = '\0';
   line[PDCLSIZE + 1] = '\0';
 
@@ -151,7 +241,11 @@ __libc_parseargs (unsigned long basepage)
     i = PDCLSIZE - 1;
   cmdln = line + 1;
 
-  from = to = arg_chars;
+  /* room for the parsed command line, then argv after it */
+  from = to = (char *) envp;
+  envp = (char **) ((char *) envp + TAIL_BYTES);
+  __libc_argv = arg = envp;
+  *arg++ = "";			/* argv[0] not available */
 
   while (i > 0 && IS_SPACE (*cmdln))
     {
@@ -159,6 +253,8 @@ __libc_parseargs (unsigned long basepage)
       --i;
     }
 
+  /* MagXDesk only uses ARGV if the arg is longer than the 126 characters
+     of p_cmdlin; a short argument containing blanks comes quoted. */
   if (*cmdln != '\'')
     {
       /* Plain split: a run of blanks/tabs ends the current argument. */
@@ -225,24 +321,91 @@ __libc_parseargs (unsigned long basepage)
     }
 
   /* Both loops write at most one byte per consumed character, and `i` is at
-     most PDCLSIZE-1, so `to` is at most arg_chars + PDCLSIZE - 1 here and the
-     two terminators below fit. The second NUL is what stops the collect loop
-     when the tail ended without a separator. */
+     most PDCLSIZE-1, so the two terminators fit TAIL_BYTES. The second NUL
+     is what stops the collect loop when the tail ended without a
+     separator. */
   *to++ = '\0';
   *to = '\0';
 
-  argc = 0;
-  arg_vec[argc++] = "";		/* argv[0] not available */
-  while (*from != '\0' && argc + 1 < ARGV_MAX)
+do_argc:
+  /* Find out the name we have been invoked with. */
+  if (__libc_argv[0] != NULL && __libc_argv[0][0] != '\0')
     {
-      arg_vec[argc++] = (char *) from;
+      char *p;
+
+      program_invocation_name = __libc_argv[0];
+      p = strrchr (program_invocation_name, '\\');
+      if (p == NULL)
+	p = strrchr (program_invocation_name, '/');
+      if (p != NULL)
+	p++;
+      program_invocation_short_name = p == NULL ? program_invocation_name : p;
+    }
+
+  argc = 1;			/* at this point argv[0] is done */
+  while (*from)
+    {
+      *arg++ = from;
+      argc++;
       while (*from++)
 	;
     }
-  arg_vec[argc] = NULL;
+  *arg++ = NULL;
+  __libc_argc = argc;
 
-  __libc_argv = arg_vec;
-  __libc_argc = (long) argc;
-  environ = env_vec;
-  return __libc_argc;
+  /* zero empty params */
+  if (null_list)
+    {
+      while (*null_list)
+	{
+	  char *s = null_list;
+	  long idx = 0;
+
+	  while (*++null_list)	/* find ',' or '\0' */
+	    if (*null_list == ',')
+	      {
+		*null_list++ = '\0';
+		break;
+	      }
+
+	  for (;;)
+	    {
+	      if (!IS_DIGIT (*s))
+		goto bail_out;
+	      idx += *s++ - '0';
+	      if (*s)
+		idx = (idx << 3) + (idx << 1);
+	      else
+		break;
+	    }
+
+	  if (idx < argc)
+	    *(__libc_argv[idx]) = '\0';
+	  else
+	    goto bail_out;
+	}
+    }
+
+bail_out:
+  return (long) ((char *) arg - area);
+}
+
+/*
+ * `parseargs(bp)` for the start-up code: the environment at `p_env` (a
+ * 32-bit field in the wire BasePage, mint/basepage.h; 0 = none) and the
+ * command tail `p_cmdlin`. Called once from newtos-arch/heap_init.c
+ * `__libc_crtinit`, before the TPA is shrunk; see there for `area` and
+ * `limit`.
+ *
+ * `basepage` is passed as an integer because on NewTOS a BasePage address is
+ * an ordinary pool address that must not be mistaken for a pointer of
+ * another kind.
+ */
+long
+__libc_parseargs (unsigned long basepage, char *area, const char *limit)
+{
+  BASEPAGE *bp = (BASEPAGE *) basepage;
+
+  return __libc_parse_env_args ((char *) (unsigned long) bp->p_env,
+				bp->p_cmdlin, area, limit);
 }

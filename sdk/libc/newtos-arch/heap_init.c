@@ -14,8 +14,9 @@
  * image is linked at B + 0x1000 (sdk/newtos.ld), so "the program sans
  * stack/heap" -- mintlib's tlen + dlen + blen + sizeof(BASEPAGE)
  * (crtinit.c:173) -- is `_end - B` here: the same bytes plus the reserved gap.
- * argv and the split command line live in cmdargs.c's BSS (see there), so
- * parseargs adds nothing on top.
+ * On top of it come, as in mintlib (crtinit.c:167-172), the bytes parseargs
+ * lays out just above the BSS -- environ[], the split command line, argv[]
+ * (newtos-arch/cmdargs.c, TASK/PORT09) -- so heap and stack start above them.
  *
  * THE POLICY (crtinit.c:6-25,176-222), by mintlib's `_stksize`
  * (stksiz.c: default MINKEEP = 64 KiB) and `_initial_stack` (inistack.c):
@@ -74,7 +75,8 @@ extern unsigned long _PgmSize;
 extern char **environ;
 
 /* newtos-arch/cmdargs.c */
-extern long __libc_parseargs (unsigned long basepage);
+extern long __libc_parseargs (unsigned long basepage, char *area,
+			      const char *limit);
 extern char **__libc_argv;
 
 /* crtinit.c:104 -- an accessory has no name and no arguments. */
@@ -136,12 +138,20 @@ __libc_crtinit (unsigned long basepage)
 	/* its an application */
 	_app = 1;
 
-	/* argc/argv from the command tail; the arrays are in our BSS, so they
-	   add nothing to m (cmdargs.c "WHERE THE RESULT LIVES"). */
-	(void) __libc_parseargs (basepage);
+	/* m = # bytes used by environment + args (crtinit.c:167-168): parseargs
+	   lays environ[], the split command line and argv[] out above the BSS,
+	   from the 16-byte aligned `_end` (cmdargs.c "WHERE THE RESULT LIVES");
+	   -1 = they do not fit below p_hitpa. */
+	{
+		unsigned long area = ((unsigned long) _end + STACK_ALIGN) & ~(unsigned long) STACK_ALIGN;
+		long used = __libc_parseargs (basepage, (char *) area,
+					      (const char *) (unsigned long) bp->p_hitpa);
 
-	/* m = the program sans stack/heap (crtinit.c:172-174) */
-	m = (long) ((unsigned long) _end - basepage);
+		if (used < 0)
+			goto notenough;
+		/* m = the program sans stack/heap (crtinit.c:170-171) */
+		m = (long) (area - basepage) + used;
+	}
 	m = (m + STACK_ALIGN) & ~STACK_ALIGN;
 
 	/* freemem the amount of free mem accounting for MINFREE at top */

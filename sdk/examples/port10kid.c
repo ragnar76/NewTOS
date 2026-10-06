@@ -6,9 +6,9 @@
  * argc/argv as sdk/libc/newtos-arch/cmdargs.c built them from the command tail
  * mintlib's _spawnve wrote (length byte 0x7f, the ARGV= signal, then the
  * arguments), whether `environ` is the empty environment, and the raw p_env
- * value the kernel stamped. p_env is printed, NEVER dereferenced: a child
- * started by Pexec from EL0 with an environment gets a physical address that
- * is not mapped in its EL0 space (TASK/MEM03), and _spawnve always passes one.
+ * value the kernel stamped. (Written before MEM03/PORT09: the child's p_env is
+ * readable since ARCH03 stage 1, and since PORT09 cmdargs.c builds argv and
+ * environ from it like mintlib's parseargs, ARGV= included.)
  * Its exit code is 40 + argc, so the parent can check that Pexec's return
  * value is the child's Pterm code. With "fwrite" as its first argument it
  * also writes one marker line through Fwrite(1, ...) -- GEMDOS handle 1, which

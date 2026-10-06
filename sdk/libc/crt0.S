@@ -8,8 +8,8 @@
  *
  *   - the TPA is the largest free block of the pool the PRGFLAGS choose
  *     (EmuTOS alloc_tpa, bdos/proc.c:460-502; ARCH03 E9);
- *   - `__libc_crtinit` sets `_base`, builds argc/argv (`__libc_parseargs`,
- *     newtos-arch/cmdargs.c), applies mintlib's `_stksize` / `_heapbase`
+ *   - `__libc_crtinit` sets `_base`, builds environ and argc/argv
+ *     (`__libc_parseargs`, newtos-arch/cmdargs.c), applies mintlib's `_stksize` / `_heapbase`
  *     policy, Mshrinks the TPA to program + stack (crtinit.c:154-247) and
  *     returns the new stack top; an accessory -- mintlib's test,
  *     `p_parent == 0` (startup/crt0.S:52-56) -- gets a Malloc'ed stack
@@ -63,11 +63,12 @@ _start:
      * an accessory's _acc_main too, :147): main's return value goes to
      * exit(), which runs the atexit handlers in reverse order and closes
      * (flushes) every stdio stream before `_exit` -- Pterm, newtos-arch/
-     * proc.S (stdlib/exit.c:43-59). __libc_crtinit built argc/argv from the
-     * BasePage command tail p_cmdlin (newtos-arch/cmdargs.c, the argument
-     * half of crtinit.c parseargs()) and published `environ`; with an empty
-     * tail that is argc == 1 and argv == { "", NULL } -- the TOS "program
-     * name not available" convention.
+     * proc.S (stdlib/exit.c:43-59). __libc_crtinit built `environ` from the
+     * environment block p_env and argc/argv from its ARGV= part or else the
+     * BasePage command tail p_cmdlin (newtos-arch/cmdargs.c = crtinit.c
+     * parseargs()); with no ARGV= and an empty tail that is argc == 1 and
+     * argv == { "", NULL } -- the TOS "program name not available"
+     * convention.
      *
      * The rest of `__libc_main` (MiNT cookie, Pdomain, UNIXMODE, stdio
      * stream modes, stderr to the console, PATH conversion) is NOT run here,

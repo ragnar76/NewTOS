@@ -1,0 +1,6 @@
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/P9EPAR.NAP (42912 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/P9EKID.NAP (42560 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/P9APAR.NAP (42912 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/ARGVTEST.NAP (42696 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/P9PAR.NAP (44704 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-port09/bin/P9KID.NAP (47904 bytes)
