@@ -45,7 +45,7 @@ tail that has no TOS analogue is dropped.
 | `mintlib/isatty.c` | `isatty.c` | `isatty(fd)` is `fd >= 0 && fd <= 2`; also carries `__open_stat[]` (`:1-16`) |
 | `unix/ioctl.c` | `ioctl.c` | forwards to `Fcntl(fd, arg, request)`; the m68k tty line-discipline path is gone (`:1-16`) |
 | `unix/access.c` | `access.c` | checks the owner `rwx` bits from `__quickstat` only; no group/passwd database (`:1-19`) |
-| ~~`mintlib/thread.c`~~ | builds since TASK/PROC01 from `sdk/libc/overlay/mintlib/thread.c` (LP64 casts for the 32-bit basepage fields only) | `tfork`, `__waitval`, `__waittime` — `vfork`'s TOS branch, `wait4` |
+| ~~`mintlib/thread.c`~~ | builds since TASK/PROC01 from `sdk/libc/overlay/mintlib/thread.c` (LP64 casts for the 32-bit basepage fields, plus one fix: `tfork` frees the saved `Pexec(PE_CBASEPAGE)` environment instead of `b->p_env`, §8) | `tfork`, `__waitval`, `__waittime` — `vfork`'s TOS branch, `wait4` |
 
 ## 3. mintlib assembly that is never assembled
 
@@ -141,7 +141,7 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
 | `environ`, `getenv` | `environ` is the **empty environment** (one NULL, published by `__libc_parseargs` since TASK/PORT10 — mintlib's `_spawnve` indexes it unconditionally); `getenv` finds nothing. `p_env` is **never read**: desktop, AUTO and boot launcher pass `EnvSpec::None` (`p_env` 0), and a program started by another program's `Pexec` (TeraDesk, `spawn*`) gets a physical address that is not mapped in its EL0 space (TASK/MEM03). The walk and the `ARGV=` extension are TASK/PORT09, blocked on MEM03 | `newtos-arch/cmdargs.c`, `mintlib/globals.c`, crtinit excluded; `kernel/src/launch.rs`, `loader.rs` |
 | `_base` (`BASEPAGE *`) | set by `__libc_init_heap` from the basepage address crt0 hands it (TASK/T05; until then it stayed NULL and dereferencing it worked only because the basepage was at VA 0). Since ARCH03 stage 1 the basepage is the start of the TPA block, so `_base` is that address — never 0 | `newtos-arch/heap_init.c`, `sdk/libc/crt0.S`; readers: `unix/getppid.c`, `gmon.c`, TeraDesk's `environm.c` |
 | `malloc`/`free`/`realloc` | mintlib's allocator over the in-TPA arena `[_end, p_hitpa − 64 KiB)`; `ENOMEM` when exhausted, **no** `Malloc` fall-back | `newtos-arch/heap_init.c`, `unix/sbrk.c:54-71` |
-| `exit`/`_exit` | `Pterm(rc)` | `newtos-arch/proc.S` |
+| `exit`/`_exit` | `exit()` is mintlib's: atexit handlers in reverse order, then every stdio stream closed (flushed), then `_exit` = `Pterm(rc)`. A `return` from `main` goes through it: the libc `crt0` ends with `exit(main(argc, argv, environ))`, as mintlib's `__libc_main` ends (`mintlib/main.c:302`) — since post-E9 (2026-10-05); before, crt0 called `Pterm` directly and buffered output and atexit handlers were lost. The rest of `__libc_main` is not run (see `sdk/libc/crt0.S`: it breaks stdout until NewTOS `Fseek` answers 0 on a console handle as EmuTOS does) | `stdlib/exit.c:43-59`, `newtos-arch/proc.S`, `sdk/libc/crt0.S` |
 | `clock()` | reads `_hz_200` at `$4BA` through `get_sysvar` — a live 200 Hz tick (verified by `sdk/libc/tests/clocktest.c`) | `newtos-arch/getsysvar.c`, `time/clock.c` |
 | `time()`/`gettimeofday()` | GEMDOS clock via mintlib's own path (`Tgettimeofday` probe, then `Tgetdate`/`Tgettime`) — **unverified** here beyond linking | `unix/gettimeofday.c` |
 | `stat`/`fstat` times, uid/gid | zero / from attributes only | §2 |
@@ -247,10 +247,16 @@ resumes on the caller's stack pointer (AArch64 code reaches its locals through
 `sp`, m68k through `a6`), and the parent's own `tfork` call runs on a separate
 16-KiB stack so the child may use the stack below; the save area and that
 stack are static, so a `vfork` from inside a `vfork` child before it ends is
-not supported (the m68k original has the same static save area). Note from
-mintlib's `tfork` itself (unchanged): its thread child `Mfree`s its basepage's
-environment and adopts the parent's, and after the child the parent `Mfree`s
-`b->p_env` — which is then its own environment block. Host check
+not supported (the m68k original has the same static save area). **One fix
+to mintlib's `tfork`** (2026-10-06, `docs/analysis/vfork-malloc-ownership-2026-10-06.md`):
+in mintlib 0.60.1 the thread child `Mfree`s its basepage's environment and
+adopts the parent's (`b->p_env = parent->p_env`), and after the child the
+parent `Mfree`d `b->p_env` — its **own** environment, and on later forks
+whatever block had since been allocated at that address (a `malloc` hunk:
+VFORKT crashed in `exit()` under memprot=on). The overlay's `tfork` saves the
+environment pointer of the `Pexec(PE_CBASEPAGE)` basepage before starting the
+child and frees that saved pointer (both the success and the `pid < 0`
+branch). Evidence `measurements/measurement-2026-10-06-vforkt-fix/`. Host check
 `sdk/libc/tests/system-host.sh` (TOS branch, and that the object carries the
 POSIX branch); target checks `sdk/examples/port10.c` (TOS branch) and the
 ARCH03 stage-2 probe VFORKT (vfork, waitpid, POSIX branch).

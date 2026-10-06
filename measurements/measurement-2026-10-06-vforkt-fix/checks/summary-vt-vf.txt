@@ -1,0 +1,3 @@
+vt-vf-off-s2all                     1 desktop up; 1 MEM03: PASS; 1 memory protection OFF (boot argument `memprot=off`); 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; 1 VFORK: PASS;
+vt-vf-on-s2all                      1 desktop up; 1 MEM03: PASS; 1 memory protection ON; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; 1 VFORK: PASS;
+vt-vf-strict-vforkt-alone           1 desktop up; 1 memory protection ON (strict); 1 VFORK: PASS;

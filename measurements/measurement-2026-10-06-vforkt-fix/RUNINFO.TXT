@@ -1,0 +1,95 @@
+measurement-2026-10-06-vforkt-fix -- fix A for the VFORKT crash (S2ALL under
+memprot=on after the post-E9 exit() crt0): mintlib's tfork freed the
+parent's own environment (diagnosis:
+docs/analysis/vfork-malloc-ownership-2026-10-06.md,
+measurements/measurement-2026-10-06-vforkt/). Developer self-evidence; the
+Tester's verdict is separate.
+
+Date 2026-10-06, branch desk-rebuild, HEAD 65b1078 plus the uncommitted
+post-E9 changes (untouched) plus this fix. Nothing committed. QEMU raspi4b /
+virt, host macOS. No SD card, Pi or TT touched; tools/make-sd-image.sh NOT
+used (method/seed-card.sh, private 64 MiB images in the session scratchpad).
+method/ = the post-E9 method (copied unchanged) + vt-instrumentation.py (from
+measurement-2026-10-06-vforkt) + series-vf.sh + vforkt-fix.diff.
+
+CHANGE (method/vforkt-fix.diff, SDK toolchain only, no kernel change)
+  sdk/libc/overlay/mintlib/thread.c tfork(): save b->p_env (the environment
+  Pexec(PE_CBASEPAGE) created) in child_env before Pexec(PE_ASYNC_GO/PE_GO);
+  Mfree(child_env) instead of Mfree(b->p_env) in the pid >= 0 branch after
+  PE_GO and in the pid < 0 branch. mintlib 0.60.1 (sdk/libc/mintlib-0.60.1
+  .tar.xz, mintlib/thread.c) has Mfree(b->p_env) in both places; no newer
+  mintlib exists in the repo/references (references/freemint has no mintlib),
+  so there is no upstream fix to compare against.
+
+REBUILD (method/build-all.sh -> checks/build-all.log)
+  libc.a 44996e82... -> 3b4d0ee7... (lib-stale: overlay changed);
+  gemlib.a/cflib.a/libm.a byte-identical. Programs (bin/SHA256SUMS vs
+  post-e9/bin/SHA256SUMS): only VFORKT.NAP and P10TEST.NCP differ (both link
+  tfork). Apps (repo-binaries.sha256 vs post-e9): DOOM.NAP differs (links
+  tfork); QED.NAP and DESKTOP.NAP differ only by their __DATE__ string
+  ("Oct  6 2026"; neither links tfork); TESTGEM/CHAINTST/CORE/COREVAL equal.
+  Kernels: tree source = p1 (kernel/ and tos-api/ diff identical to
+  post-e9 method/poste9-change.diff); image hashes differ from p1 only by
+  the embedded build date/HEAD string. All kernels rebuilt here
+  (checks.sh vf, scratch-kernels.sh vf, desk3a-run.sh) -- bin/KERNELS.SHA256:
+    kernel8-vf.img        e450ad32...   product, rpi4 (= tree kernel8.img)
+    kernel-virt-vf.img    362215d3...   product, virt
+    kernel8-crash-vf.img  4c1816ca...   kernel-virt-crash-vf.img 688f98fd...
+    kernel8-keys-vf.img   e6c7f198...   kernel8-keys9-vf.img     446731d2...
+    kernel8-tdkeys-vf.img 1c3ad38f...   kernel8-desk3a-vf.img    919b9515...
+    kernel-virt-st-vf.img 424dbbc6...
+    kernel8-vt-vf.img     ebadb84b...   product + vt-instrumentation.py
+                                        (scratch copy only; memory trace)
+  Images/kernels are gitignored; full hashes in bin/KERNELS.SHA256.
+
+STATIC CHECKS (method/checks.sh vf -> checks/vf-*.txt)   post-E9 p1   vf
+  host tests (pass/fail/ignored)                         1138/0/1     1138/0/1
+  release warnings tos-api/kernel, both boards, fresh    64/94        64/94
+  clippy tos-api/kernel rpi4, qemu-virt                  76/125       76/125
+  desk-drift-probe                                       31           31
+  sdk/run-host-tests                                     13/0/0       13/0/0
+
+RUN SERIES (method/series-vf.sh = series-p1.sh with label vf + per mode
+S2ALL on the crash kernel and VFORKT alone; fresh cards; checks/series-vf.log,
+checks/summary-vf-<mode>.txt)
+                         ON              OFF             STRICT
+  S2ALL (product)        PASS            PASS            stops at the expected
+                                                         crash prompt (as E9/p1)
+  S2ALL crash kernel     PASS            PASS            S2ALLS PASS
+  VFORKT in S2ALL        PASS            PASS            PASS (S2ALLS)
+  VFORKT alone (#Z)      PASS            PASS            PASS
+  VFORKT "ST largest block before/after"  10485760/10485760 in every run
+                         (post-E9/diagnosis: 10485760/10477568, 8192 B lost)
+  P567S / TSRPARS        -               -               PASS (inside S2ALLS)
+  ATEXIT                 PASS            PASS            PASS
+  ACCFREE                PASS            PASS            PASS
+  MDPROBE                254 MDs, NULL after 147605 x malloc(32) (= p1, all modes)
+  E9MEM / E9PLAIN        PASS            PASS            PASS
+  APITEST TOTAL          106/0/5         106/0/5         106/0/5
+  Doom                   VERIFIED        VERIFIED        VERIFIED
+  PORT10                 42/44, the same two FAILs as p1 (all modes)
+  CRASHTST/UACC3A/MPROT3B/E10USR  PASS every mode, raspi4b and virt
+  virt selftests         B1, D3, D3 PEXEC, D4/D5, D6, D7 PTERMRES PASS
+  KBDVEC+EmuCON          PASS            PASS            FAIL once, then PASS
+                         twice (serial/vf-strict-rpi4-kbdvec-emucon-rerun{2,3}):
+                         the failing run's AES phase got 6 instead of 7 key-
+                         repeat words of 0x4D, the leftover 0x4D reached
+                         Bconin -- injector timing; KBDVEC.NAP and the keys
+                         kernel's source are unchanged by this fix.
+  Summary diff against p1 (summarize.sh): only S2ALL ON (FAIL -> PASS),
+  the new runs, and the KBDVEC flake above.
+  Screendumps vs p1: 267 byte-identical, 28 differ: desk3a E/F/H (file
+  time / new files, as p1 notes), Doom (timing), CRASHTST/UACC3A/MPROT end
+  dumps (directory listing dates of the freshly seeded card 10/06 vs 10/05;
+  register values with timer contents) -- inspected, no functional change.
+
+MEMORY TRACE (kernel8-vt-vf.img; serial/vt-vf-on-s2all, vt-vf-off-s2all,
+vt-vf-strict-vforkt-alone; checks/summary-vt-vf.txt)
+  ON, VFORKT basepage 0x01a8a000, environment 0x01a57000 (len 0x1000):
+  per vfork the child Mfree(0x400000) (its own Pexec-5 env), the parent
+  Mfree(0x400000) -> 0 (now frees it: "free 0x00400000 len=0x1000") and
+  Mfree(0x401000) (basepage). No Mfree of 0x01a57000 any more; it is freed
+  only by VFORKT's Pterm. setenv's malloc hunk lands at 0x01a58000 (not in
+  a hole of a freed environment) and is freed only at Pterm. Same pattern
+  OFF and STRICT. => the parent's environment and malloc hunk stay intact;
+  the per-vfork environment page leak of the diagnosis is gone.

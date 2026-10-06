@@ -1,0 +1,22 @@
+clang: Apple clang version 21.0.0 (clang-2100.1.1.101)
+abi  : LP64 (8-byte long/pointer, ELF64 AArch64)
+libs : gemlib.a + libc.a
+src  : /Volumes/Daten/Development/PiRusTOS/sdk/apps/gemtest/gemtest.c
+out  : /Volumes/Daten/Development/PiRusTOS/sdk/apps/gemtest/TESTGEM.NAP
+
+compiled gemtest.c OK
+
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/gemtest/TESTGEM.NAP (56416 bytes)
+    Class: 64-bit (0x2)
+    DataEncoding: LittleEndian (0x1)
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Entry: 0x1000
+
+undefined symbols in the final image (goal 0): 0
+
+GEM trap sites (svc #2) reachable from the linked program:
+    00000000000021d0 <aes>:
+        21d8: d4000041     	svc	#0x2
+    00000000000026ac <vdi>:
+        26b4: d4000041     	svc	#0x2

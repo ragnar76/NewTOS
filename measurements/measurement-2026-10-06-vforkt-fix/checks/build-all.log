@@ -1,0 +1,63 @@
+built A107PAR.NAP
+built A79COLOR.NAP
+built A96ZOMB.NAP
+built BIG.NCP
+built CMDLINE.NCP
+built CRASHTST.NAP
+built CRCHILD.NAP
+built CURDIR.NCP
+built DTACHILD.NCP
+built HELLO2.NCP
+built KBDVEC.NAP
+built PHYSBASE.NCP
+built SCRFLIP.NCP
+built SYSACC.NAC
+built SYSINFO.NCP
+built WFSCREEN.NAP
+built HELLO.NCP
+built OLDEXEC.NCP
+built P10KID.NCP
+built P10TEST.NCP
+gemlib.a out of date [libc/overlay/mintlib/thread.c] -- running build-gemlib.sh…
+  compiled OK=578  skipped=0  (of 578)
+  failures match gemlib/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/gemlib/gemlib.a (744866 bytes)
+  (full log: gemlib/build/build-gemlib.log)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/ENVPAR.NAP (41920 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/ENVKID.NAP (41920 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/P34PAR.NAP (43160 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/P34KID.NAP (42128 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/PFLAGS1.NCP (42688 bytes) PRGFLAGS=0x10000004
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/PFLAGS2.NCP (42672 bytes) PRGFLAGS=0x10000004
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/PFLAGS2.NCP: PRGFLAGS 0x10000004 -> 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/PFLAGS2.NCP: PRGFLAGS 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/PFLAGS1.NCP: PRGFLAGS 0x10000004 (PF_TTRAMMEM | TPA quantum 2 (x 128 KiB))
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/P567.NAP (45312 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/TSRPAR.NAP (43336 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/TSRRES.NAP (41632 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/TSRUSE.NAP (41272 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/OWNPAR.NAP (43088 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/OWNKID.NAP (42032 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/VFORKT.NAP (113576 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/S2ALL.NAP (42072 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/P567S.NAP (45344 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/TSRPARS.NAP (41864 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/S2ALLS.NAP (42072 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/ATEXITP.NAP (42072 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/ATEXITK.NAP (98280 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/ACCFREE.NAP (43920 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/MDPROBE.NAP (42568 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/ENVRN.NAP (43600 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-vforkt-fix/bin/E9MEM.NAP (43792 bytes)
+built E9PLAIN.NCP
+built UAKID.NAP + UACC3A.NAP (cases: all)
+built MPKID.NAP + MPROT3B/MPROTS/MPROTO.NAP
+built E10KID.NAP + E10USR/E10USRS/E10USRO.NAP
+built via apps/apitest/build-apitest.sh
+built via apps/build-qed.sh
+built via apps/build-teradesk.sh
+built via apps/build-doom.sh
+built via apps/gemtest/build-gemtest.sh
+built via apps/chaintest/build-chaintest.sh
+built via apps/build-coremark.sh
+done

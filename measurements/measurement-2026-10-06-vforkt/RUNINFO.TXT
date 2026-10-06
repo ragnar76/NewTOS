@@ -1,0 +1,70 @@
+measurement-2026-10-06-vforkt -- root cause of the VFORKT crash in S2ALL
+under memprot=on after the post-E9 crt0 change (exit(main()) instead of
+Pterm), TASK/ARCH03-POSTE9-STATUS-UNFINISHED.MD point 2. DIAGNOSIS ONLY: no
+product code changed, nothing committed. Findings:
+docs/analysis/vfork-malloc-ownership-2026-10-06.md.
+
+Date 2026-10-06, branch desk-rebuild, HEAD 65b1078 (= 2d33c69 E9 + a STATUS
+commit) plus the uncommitted post-E9 changes in the shared tree (untouched).
+QEMU raspi4b, host macOS. No SD card, Pi or TT touched; tools/make-sd-image.sh
+NOT used. Scratch (kernels, cards, scratch trees) in the session scratchpad.
+
+WHAT
+  1. A scratch kernel that logs every pool allocation and every free (all
+     paths), every user Malloc/Mxalloc/Mfree/Mshrink with result, ELR, LR
+     and the user-stack words that look like return addresses, and every
+     Pexec/Pterm entry. method/vt-instrumentation.py, applied only to
+     copies of the tree (method/make-scratch.sh of the post-E9 run):
+       kernel8-vt.img   product kernel + vt          sha256 865fb2ce77e577b9f8bb4175be8e70ba3d81a53e0eb66de2d191e55678a87b27
+       kernel8-vtc.img  post-E9 crash-kernel
+                        instrumentation (0c, uacc,
+                        mprot, e10; IKBD injector
+                        answers crash prompts) + vt  sha256 060f6c10c38fbe0d401da8961206356341b6f46ea3c4552fac0dc2a43d9417ed
+  2. VFORKT rebuilt with method/build-vforkt.sh (flags/link line of the
+     post-E9 build-s2-tests.sh, tree libc.a read-only):
+       exit() crt0 (tree)          sha256 e2c41cb5a1f4798757bfb6a4b509646341fa918de1ad0f8572066c7e867fb462
+                                   = measurement-2026-10-06-post-e9/bin/VFORKT.NAP byte for byte
+       HEAD (Pterm) crt0           sha256 8f1748583f4312c691351b10f80b8a11ecda55fbe65efca00d82517cbf7e1236
+                                   (crt0 = post-e9/red/crt0-head.S)
+  3. Cards: method/seed-card.sh (post-E9 seed-card.sh, BIN overridable,
+     default = post-e9 bin/); "old" cards carry the HEAD-crt0 VFORKT.
+  4. Address -> symbol: method/sym.py (llvm-nm of the toolchain) on
+     post-e9/bin/VFORKT.NAP; runtime address - basepage = ELF address
+     (text = basepage + 0x1000, linked at 0x1000).
+
+RUNS (method/runs-vforkt.sh; serial/<tag>-serial.log, screendumps/)
+  tag                              kernel  mode    card            result
+  vt-on-s2all                      vt      on      S2ALL           VFORKT crash, addr 0x01a57010, pc text+0xd88 (= post-E9)
+  vtc-on-s2all                     vtc     on      S2ALL           same crash, S2ALL: FAIL 1
+  vtc-on-s2all-oldcrt0             vtc     on      S2ALL, old crt0 S2ALL: PASS -- same frees, no malloc after them
+  vtc-off-s2all                    vtc     off     S2ALL           S2ALL: PASS -- env hole 16 B, hunk elsewhere
+  vtc-strict-s2alls                vtc     strict  S2ALLS          S2ALL: PASS -- env hole 1 page, hunk elsewhere
+  vtc-on-vforkt-alone              vtc     on      #Z VFORKT       PASS -- p_env == 0, Mfree(0) -> EIMBA
+  vtc-on-vforkt-alone-oldcrt0      vtc     on      #Z VFORKT old   PASS -- same
+
+RESULT (vtc-on-s2all, VFORKT basepage 0x01a8a000, S2ALL basepage 0x01a3f000)
+  * 0x01a57000 len 0x1000: VFORKT's ENVIRONMENT, allocated by S2ALL's
+    Pexec(0) (owner S2ALL, then VFORKT, freed with own=0x1a8a000).
+  * First vfork: child startup Mfree(own Pexec-5 env 0x400000) and
+    b->p_env = parent->p_env (= 0x01a57000); child Pterm(42); the PARENT's
+    tfork then Mfree(b->p_env) = Mfree(0x01a57000) -> FREED (tfork+0x1c4,
+    elr 0x1a8cbcc). VFORKT's own environment is gone.
+  * Second vfork: same Mfree(0x01a57000) -> EIMBA (nothing starts there).
+  * setenv("SHELL") -> realloc(NULL) -> malloc -> sbrk -> Malloc(0x2000)
+    -> 0x01a57000 (first fit into the freed env + the free page above it),
+    owner VFORKT (main+0x23c -> setenv+0x140 -> malloc+0xd4 -> sbrk+0x3c).
+  * Third vfork (system(), POSIX branch): child Pterm(127); the parent's
+    tfork Mfree(b->p_env) = Mfree(0x01a57000) -> FREED again: now the
+    parent's own malloc hunk, while _mchunk_free_list still points into it.
+  * main returns, exit() -> stdio init_stream+0xdc malloc(0x400) ->
+    malloc+0x44 `ldr x19,[x10,#0x10]` = q->size of the first free chunk
+    q = 0x01a57000 -> translation fault, "free memory, read".
+  No vfork child allocated or owned the faulting block; neither did any
+  Pterm free it. The status file's suspicion (child-owned Malloc hunk) is
+  refuted by this trace.
+
+SIDE FINDING (not the crash): every vfork leaves the Pexec-5 environment
+  page (0x400000, 0x401000, 0x402000) allocated until the parent ends: the
+  child's Mfree of it only detaches the child (further owner, region.rs
+  detach -> Kept); EmuTOS xmfree frees it. That is the 8192-byte "ST
+  largest block" delta VFORKT reports (2 pages after 2 vforks).

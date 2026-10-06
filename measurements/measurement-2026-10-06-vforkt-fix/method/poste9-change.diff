@@ -1,0 +1,330 @@
+diff --git a/docs/api/aes/accessories.md b/docs/api/aes/accessories.md
+index 33b1e72..6bc9157 100644
+--- a/docs/api/aes/accessories.md
++++ b/docs/api/aes/accessories.md
+@@ -723,7 +723,7 @@ what EmuTOS does. Measured in
+ | `load_one_acc` (`:236-257`) | `kernel/src/accs.rs::load_one_acc` |
+ | `load_accs` (`:309-315`), called at `:687` | `kernel/src/accs.rs::load_accs`, called from `kernel/src/lib.rs`'s session loop before `go_graphic` |
+ | `dsptch(); wait_for_accs(AP_MESAG)` (`:736-737`) | `kernel/src/accs.rs::wait_for_accs_mesag`, called after `process_inf2` and before `sh_main` |
+-| `free_accs` (`:296-303`), called at `:741` | `kernel/src/accs.rs::free_accs`, called after `sh_main` returns |
++| `free_accs` (`:296-303`), called at `:741` | `kernel/src/accs.rs::free_accs`, called after `sh_main` returns; frees all of each accessory's memory (`free_all_owned` of its PD: TPA, environment, its own `Malloc`s — what EmuTOS's `dos_free` plus the end of the `run_accs_and_desktop` process free, `bdos/proc.c:133-139`) and releases its slot (post-E9, 2026-10-05) |
+ | `wait_for_accs` (`:599-628`) | `tos-api/src/aes/acc.rs::wait_for_accs` |
+ | the DA process list (AESPD pids 2…) | `tos-api/src/aes/acc.rs` (`register_process`/`processes`) |
+ | `mn_register` (`gemmnlib.c:789-816`) | `tos-api/src/aes/menu.rs::menu_register` |
+diff --git a/docs/sdk/07-mintlib-limits.md b/docs/sdk/07-mintlib-limits.md
+index ae6342a..ad0822e 100644
+--- a/docs/sdk/07-mintlib-limits.md
++++ b/docs/sdk/07-mintlib-limits.md
+@@ -141,7 +141,7 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
+ | `environ`, `getenv` | `environ` is the **empty environment** (one NULL, published by `__libc_parseargs` since TASK/PORT10 — mintlib's `_spawnve` indexes it unconditionally); `getenv` finds nothing. `p_env` is **never read**: desktop, AUTO and boot launcher pass `EnvSpec::None` (`p_env` 0), and a program started by another program's `Pexec` (TeraDesk, `spawn*`) gets a physical address that is not mapped in its EL0 space (TASK/MEM03). The walk and the `ARGV=` extension are TASK/PORT09, blocked on MEM03 | `newtos-arch/cmdargs.c`, `mintlib/globals.c`, crtinit excluded; `kernel/src/launch.rs`, `loader.rs` |
+ | `_base` (`BASEPAGE *`) | set by `__libc_init_heap` from the basepage address crt0 hands it (TASK/T05; until then it stayed NULL and dereferencing it worked only because the basepage was at VA 0). Since ARCH03 stage 1 the basepage is the start of the TPA block, so `_base` is that address — never 0 | `newtos-arch/heap_init.c`, `sdk/libc/crt0.S`; readers: `unix/getppid.c`, `gmon.c`, TeraDesk's `environm.c` |
+ | `malloc`/`free`/`realloc` | mintlib's allocator over the in-TPA arena `[_end, p_hitpa − 64 KiB)`; `ENOMEM` when exhausted, **no** `Malloc` fall-back | `newtos-arch/heap_init.c`, `unix/sbrk.c:54-71` |
+-| `exit`/`_exit` | `Pterm(rc)` | `newtos-arch/proc.S` |
++| `exit`/`_exit` | `exit()` is mintlib's: atexit handlers in reverse order, then every stdio stream closed (flushed), then `_exit` = `Pterm(rc)`. A `return` from `main` goes through it: the libc `crt0` ends with `exit(main(argc, argv, environ))`, as mintlib's `__libc_main` ends (`mintlib/main.c:302`) — since post-E9 (2026-10-05); before, crt0 called `Pterm` directly and buffered output and atexit handlers were lost. The rest of `__libc_main` is not run (see `sdk/libc/crt0.S`: it breaks stdout until NewTOS `Fseek` answers 0 on a console handle as EmuTOS does) | `stdlib/exit.c:43-59`, `newtos-arch/proc.S`, `sdk/libc/crt0.S` |
+ | `clock()` | reads `_hz_200` at `$4BA` through `get_sysvar` — a live 200 Hz tick (verified by `sdk/libc/tests/clocktest.c`) | `newtos-arch/getsysvar.c`, `time/clock.c` |
+ | `time()`/`gettimeofday()` | GEMDOS clock via mintlib's own path (`Tgettimeofday` probe, then `Tgetdate`/`Tgettime`) — **unverified** here beyond linking | `unix/gettimeofday.c` |
+ | `stat`/`fstat` times, uid/gid | zero / from attributes only | §2 |
+diff --git a/kernel/src/accs.rs b/kernel/src/accs.rs
+index 5b7a7cd..17679d9 100644
+--- a/kernel/src/accs.rs
++++ b/kernel/src/accs.rs
+@@ -340,14 +340,33 @@ fn pwait() {
+ ///     if (acc[i].addr >= 0L) dos_free((void *)acc[i].addr);
+ /// ```
+ ///
+-/// EmuTOS's own comment (`:288-295`) is explicit that this is *not* required
+-/// for correctness — the `run_accs_and_desktop` process's termination would
+-/// free it — but that at least one real accessory (Chameleon) needs the
+-/// explicit free to run its cleanup. NewTOS has no such process to fall back
+-/// on: an accessory slot lives until something releases it, so here the step
+-/// **is** load-bearing. What EmuTOS frees with `dos_free` we release as the
+-/// whole process slot ([`process::pterm::release_slot`]), which returns the
+-/// TPA, the AES descriptor and the window/menu property of the accessory.
++/// followed, in EmuTOS, by the end of the `run_accs_and_desktop` process
++/// itself, whose `Pterm` frees everything that process owned
++/// (`ixterm` → `free_all_owned(r, &pmd)` / `&pmdalt`, `bdos/proc.c:133-139`):
++/// the accessories' environments (and TPAs — `Pexec(PE_LOAD)` makes `run`,
++/// the AES process, their owner, `bdos/proc.c:305-307`) and whatever the accessories allocated while the AES was
++/// `run` — their start-up stacks and everything else of their initialisation
++/// (`wait_for_accs`, `:579-583`). EmuTOS's own comment (`:288-295`) is
++/// explicit that `free_accs` is therefore not required for correctness, but
++/// that at least one real accessory (Chameleon) needs the explicit free.
++///
++/// NewTOS has no such process to fall back on: an accessory is a process of
++/// its own (its slot, its PD), it owns its TPA and its environment (loaded
++/// `owned_by_child`), and its `Malloc`s are its own. So the net effect of
++/// EmuTOS's two steps is reproduced per accessory with the memory half of a
++/// termination (`pterm::terminate_inner`): `dos_free(acc->addr)` is the TPA,
++/// and [`free_all_owned`] of the accessory's PD frees it together with the
++/// environment and every block the accessory allocated — what EmuTOS's
++/// process end frees. Programs it loaded with `PE_LOAD` and never started go
++/// with it ([`release_unstarted_of`]), its AES resource entries too
++/// ([`on_process_exit`]); then the slot is released
++/// ([`process::pterm::release_slot`]: the AES descriptor, the window/menu
++/// property, the page tables). A block another process also holds (ARCH03
++/// 2d links) stays allocated for that owner, as on every `Pterm`.
++///
++/// [`free_all_owned`]: tos_api::bdos::mem::free_all_owned::free_all_owned
++/// [`release_unstarted_of`]: process::pexec::release_unstarted_of
++/// [`on_process_exit`]: tos_api::aes::resource::on_process_exit
+ pub fn free_accs() {
+     // SAFETY: single restart/shutdown path, no re-entrancy.
+     let (acc, num_found) = unsafe { table() };
+@@ -357,11 +376,19 @@ pub fn free_accs() {
+         }
+         kprintln!("[acc] freeing {} (slot {})", as_str(&e.path), e.slot);
+         tos_api::aes::acc::forget_process(e.slot);
++        let pd = process::pd_of(e.slot);
++        tos_api::aes::resource::on_process_exit(e.slot);
+         // SAFETY: the accessory is not running (we are on the kernel path with
+-        // no EL0 context live) and nothing holds a reference into its TPA.
+-        unsafe {
++        // no EL0 context live), the BDOS is not concurrently locked, and
++        // nothing holds a reference into its memory; `pd` is its PD pointer
++        // (null if the slot has no image, which frees nothing).
++        let freed = unsafe {
++            let freed = tos_api::bdos::mem::free_all_owned::free_all_owned(pd as *mut core::ffi::c_void);
++            process::pexec::release_unstarted_of(pd);
+             process::pterm::release_slot(e.slot);
+-        }
++            freed
++        };
++        kprintln!("[acc] {} block(s) of {} freed", freed, as_str(&e.path));
+         e.slot = usize::MAX;
+     }
+     *acc = [Acc::EMPTY; NUM_ACCS];
+diff --git a/kernel/src/lib.rs b/kernel/src/lib.rs
+index e660419..6710b32 100644
+--- a/kernel/src/lib.rs
++++ b/kernel/src/lib.rs
+@@ -475,7 +475,8 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
+         // `free_accs(num_accs)` (`geminit.c:741`) — the session is over; give
+         // every accessory's memory back. EmuTOS can treat this as optional
+         // (its `run_accs_and_desktop` process dies and takes the memory with
+-        // it); NewTOS has no such process, so this releases the slots.
++        // it); NewTOS has no such process, so this frees each accessory's
++        // memory and releases its slot.
+         accs::free_accs();
+ 
+         if exit == tos_api::aes::shell::ShExit::Shutdown {
+diff --git a/sdk/libc/build-libc.sh b/sdk/libc/build-libc.sh
+index 64b9542..1f907eb 100755
+--- a/sdk/libc/build-libc.sh
++++ b/sdk/libc/build-libc.sh
+@@ -62,8 +62,8 @@
+ #     (mintlib/setstack.S) are m68k; newtos-arch/vfork.S and setstack.S are
+ #     their AArch64 retargets. With them and thread.c, posix/system.c is
+ #     mintlib's own again (the PORT10 overlay without the POSIX branch is gone).
+-#   - sdk/libc/crt0.S: libc-aware crt0 (sets SP from p_hitpa, calls
+-#     __libc_init_heap and __libc_parseargs, then main) -- distinct from
++#   - sdk/libc/crt0.S: libc-aware crt0 (calls __libc_crtinit, then
++#     exit(main(...)) as mintlib's __libc_main ends) -- distinct from
+ #     sdk/crt0.S used by the libc-less examples.
+ #
+ # The linker pulls only the archive members it needs, so libc.a is compiled from
+@@ -178,6 +178,14 @@ for d in $DIRS; do
+         [ -e "$c" ] || continue
+         b=$(basename "${c%.c}")
+         case "$b" in test-*|*-skeleton|ftest|xpg_basename|zdump|zic|tzselect) continue;; esac
++        # syscall/main.c is the `main` of mintlib's HOST generator (syscall/
++        # Makefile gen_objs: check generate main pars scan traps -> the tool
++        # that writes the trap bindings), never a library member: mintlib's
++        # library takes only the generated $(TRAPS) from that directory
++        # (syscall/SRCFILES). In libc.a it was a trap -- it defines `main`
++        # and a second `_stksize` (64 KiB, main.c:41), so a program without
++        # its own main, or one that looks up `_stksize`, could pull it in.
++        case "$d/$b" in syscall/main) echo "$d/$b.c" >> "$BUILD/excluded.txt"; continue;; esac
+         if is_excluded "$d/$b.c"; then echo "$d/$b.c" >> "$BUILD/excluded.txt"; continue; fi
+         o="$OBJ/${d}__${b}.o"
+         # Per-file DEFS, replicating mintlib buildrules. ident.c needs the
+diff --git a/sdk/libc/crt0.S b/sdk/libc/crt0.S
+index 0e8c360..2aa8545 100644
+--- a/sdk/libc/crt0.S
++++ b/sdk/libc/crt0.S
+@@ -14,7 +14,9 @@
+  *     returns the new stack top; an accessory, whose TPA the loader already
+  *     shrank (EmuTOS pgmld), gets a Malloc'ed stack (crtinit.c:112-131);
+  *   - malloc then grows through GEMDOS Malloc (`_split_mem`, unix/sbrk.c),
+- *     as with mintlib on TOS.
++ *     as with mintlib on TOS;
++ *   - main's return value goes to exit(), as at the end of mintlib's
++ *     `__libc_main`, so atexit handlers and the stdio flush run.
+  *
+  * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld), relative
+  * to the TPA's pool address B (ARCH03 stage 1, VA = PA):
+@@ -53,22 +55,37 @@ _start:
+     bl      __libc_crtinit
+     mov     sp, x0
+ 
+-    /* main(__libc_argc, __libc_argv). __libc_crtinit built them from the
++    /* exit(main(__libc_argc, __libc_argv, environ)) -- how mintlib's own
++     * start-up ends (mintlib/main.c:302, the last statement of
++     * `__libc_main`, which _crtinit reaches as `_main`, crtinit.c:257, and
++     * an accessory's _acc_main too, :147): main's return value goes to
++     * exit(), which runs the atexit handlers in reverse order and closes
++     * (flushes) every stdio stream before `_exit` -- Pterm, newtos-arch/
++     * proc.S (stdlib/exit.c:43-59). __libc_crtinit built argc/argv from the
+      * BasePage command tail p_cmdlin (newtos-arch/cmdargs.c, the argument
+-     * half of crtinit.c parseargs()); with an empty tail that is argc == 1
+-     * and argv == { "", NULL } -- the TOS "program name not available"
+-     * convention. main's own return value (w0) is the exit code. */
++     * half of crtinit.c parseargs()) and published `environ`; with an empty
++     * tail that is argc == 1 and argv == { "", NULL } -- the TOS "program
++     * name not available" convention.
++     *
++     * The rest of `__libc_main` (MiNT cookie, Pdomain, UNIXMODE, stdio
++     * stream modes, stderr to the console, PATH conversion) is NOT run here,
++     * as it was not before: with it, every write through stdout fails, since
++     * its text-mode stream set-up seeks on the console handle and the NewTOS
++     * Fseek answers EIHNDL there, where EmuTOS answers 0 for every handle
++     * function but read/write on a character device (bdos/bdosmain.c:
++     * 571-641). Reported (post-E9); calling `_main` waits for that fix. */
+     adrp    x0, __libc_argc
+     add     x0, x0, :lo12:__libc_argc
+     ldr     x0, [x0]
+     adrp    x1, __libc_argv
+     add     x1, x1, :lo12:__libc_argv
+     ldr     x1, [x1]
++    adrp    x2, environ
++    add     x2, x2, :lo12:environ
++    ldr     x2, [x2]
+     bl      main
+-
+-    /* Pterm(main's return): GEMDOS 0x4C, rc in x0, svc #1. Never returns. */
+-    mov     x8, #0x4C
+-    svc     #1
++    /* exit(main's return): w0 is already the argument. Never returns. */
++    bl      exit
+ 
+     /* Safety net: Pterm does not return, but guard against a runaway PC. */
+ 1:  b       1b
+=== new file tos-api/tests/post_e9_free_accs.rs
+//! Post-E9 point 3 — what `free_accs` (kernel `accs::free_accs`) relies on:
+//! dropping an accessory's PD as owner gives back **all** of its memory —
+//! the TPA its loader shrank (EmuTOS `pgmld`), its environment and the
+//! blocks it allocated itself (its `Malloc`'ed start-up stack) — while a
+//! block another process also holds stays allocated for that owner.
+//!
+//! EmuTOS (`references/emutos`, pin `1a7484ab`): `free_accs`
+//! (`aes/geminit.c:296-303`) `dos_free`s each accessory's TPA, and the end
+//! of the `run_accs_and_desktop` process frees everything else it owned
+//! (`ixterm` → `free_all_owned(r, &pmd)` / `&pmdalt`, `bdos/proc.c:133-139`;
+//! `Pexec(PE_LOAD)` makes `run` the owner of TPA and environment,
+//! `:305-307`). NewTOS reaches the same end state with
+//! `free_all_owned(accessory PD)` (the accessory owns its TPA, environment
+//! and `Malloc`s itself).
+//!
+//! The pools are bookkeeping only (never dereferenced on the host).
+
+use std::sync::{Mutex, MutexGuard, Once};
+
+use tos_api::bdos::mem::free_all_owned::free_all_owned;
+use tos_api::bdos::mem::stats::{pool_stats, PoolKind};
+use tos_api::bdos::mem::{init, region, traps};
+use tos_api::bdos::process::arena;
+use tos_types::error::E_OK;
+use tos_types::{Long, MX_TTRAM, PF_STANDARD};
+
+const ST_START: u64 = 0x0040_0000;
+const ST_LEN: u64 = 10 * 1024 * 1024;
+const TT_START: u64 = 0x0100_0000;
+const TT_LEN: u64 = 64 * 1024 * 1024;
+
+static LOCK: Mutex<()> = Mutex::new(());
+static SETUP: Once = Once::new();
+
+fn lock() -> MutexGuard<'static, ()> {
+    let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    SETUP.call_once(|| {
+        // SAFETY: once per binary, before any allocation.
+        unsafe { init::init(ST_START, ST_LEN, TT_START, TT_LEN) }.expect("the test pools");
+    });
+    g
+}
+
+/// An accessory as `load_one_acc` leaves it and as it leaves itself after
+/// its first run: environment, TPA shrunk to the image, a 64-KiB stack it
+/// `Malloc`ed (mintlib `_acc_main`). Returns (PD, env, stack).
+///
+/// # Safety
+/// Under the test lock (the BDOS lock's stand-in).
+unsafe fn an_accessory(image_len: Long) -> (Long, Long, Long) {
+    // SAFETY: under the lock.
+    unsafe {
+        let env = traps::mxalloc(0x100, MX_TTRAM);
+        assert_ne!(env, 0);
+        let tpa = arena::alloc_tpa(PF_STANDARD, image_len as u64).expect("a TPA");
+        let pd = tpa.base as Long;
+        let me = pd as u64 as *mut core::ffi::c_void;
+        assert!(traps::set_owner(pd, me));
+        assert!(traps::set_owner(env, me));
+        // `pgmld`'s Mshrink (util/gemdos.c:40-44).
+        assert_eq!(traps::mshrink(0, pd, image_len), E_OK);
+        // The accessory's own Malloc (its stack).
+        let stack = traps::mxalloc(0x1_0000, MX_TTRAM);
+        assert_ne!(stack, 0);
+        assert!(traps::set_owner(stack, me));
+        (pd, env, stack)
+    }
+}
+
+#[test]
+fn freeing_an_accessory_by_its_pd_returns_tpa_environment_and_its_mallocs() {
+    let _g = lock();
+    let tt0 = pool_stats(PoolKind::Ttram);
+    // SAFETY: under the lock.
+    let (pd, env, stack) = unsafe { an_accessory(0x6000) };
+    assert!(pool_stats(PoolKind::Ttram).used_bytes > tt0.used_bytes);
+    // SAFETY: under the lock.
+    let freed = unsafe { free_all_owned(pd as u64 as *mut core::ffi::c_void) };
+    assert_eq!(freed, 3, "TPA, environment, stack");
+    let tt1 = pool_stats(PoolKind::Ttram);
+    assert_eq!(tt1.used_bytes, tt0.used_bytes, "nothing of it left allocated");
+    assert_eq!(tt1.largest_free, tt0.largest_free, "coalesced back");
+    assert_eq!(tt1.free_blocks, tt0.free_blocks);
+    // Every block is gone: freeing again is EIMBA.
+    for b in [pd, env, stack] {
+        // SAFETY: under the lock.
+        assert_ne!(unsafe { traps::mfree(b) }, E_OK);
+    }
+}
+
+#[test]
+fn a_second_session_finds_the_same_memory_as_the_first() {
+    // What the ACCFREE QEMU probe measures: load, free, load again -> the
+    // accessory lands at the same place and the largest block is unchanged.
+    let _g = lock();
+    // SAFETY: under the lock.
+    let (pd1, _, _) = unsafe { an_accessory(0x4000) };
+    let largest1 = pool_stats(PoolKind::Ttram).largest_free;
+    // SAFETY: under the lock.
+    unsafe { free_all_owned(pd1 as u64 as *mut core::ffi::c_void) };
+    // SAFETY: under the lock.
+    let (pd2, _, _) = unsafe { an_accessory(0x4000) };
+    assert_eq!(pd2, pd1, "same place");
+    assert_eq!(pool_stats(PoolKind::Ttram).largest_free, largest1, "no leak between sessions");
+    // SAFETY: under the lock.
+    unsafe { free_all_owned(pd2 as u64 as *mut core::ffi::c_void) };
+}
+
+#[test]
+fn a_block_another_process_also_holds_stays_for_that_owner() {
+    let _g = lock();
+    let tt0 = pool_stats(PoolKind::Ttram);
+    let other = 0x0dea_d000u64 as *mut core::ffi::c_void;
+    // SAFETY: under the lock.
+    unsafe {
+        let (pd, _, _) = an_accessory(0x4000);
+        let me = pd as u64 as *mut core::ffi::c_void;
+        let shared = traps::mxalloc(0x2000, MX_TTRAM);
+        assert!(traps::set_owner(shared, me));
+        region::attach(shared, other).expect("a second owner (ARCH03 2d link)");
+        free_all_owned(me);
+        assert!(traps::is_allocated(shared as u64), "still held by the other owner");
+        assert!(region::is_owner(shared, other));
+        assert!(!region::is_owner(shared, me));
+        free_all_owned(other);
+        assert!(!traps::is_allocated(shared as u64));
+    }
+    assert_eq!(pool_stats(PoolKind::Ttram).used_bytes, tt0.used_bytes);
+}

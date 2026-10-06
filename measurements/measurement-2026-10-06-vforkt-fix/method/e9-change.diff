@@ -1,0 +1,2138 @@
+diff --git a/docs/COMPATIBILITY.md b/docs/COMPATIBILITY.md
+index eb376d8..b1330ff 100644
+--- a/docs/COMPATIBILITY.md
++++ b/docs/COMPATIBILITY.md
+@@ -673,9 +673,10 @@ for `evnt_mesag`/`evnt_multi` on the very same message pipe
+ for the Developer, not listed here as a sanctioned deviation.
+ 
+ 
+-**One shared user address space, page 0 per process; fixed-size TPA**
++**One shared user address space, page 0 per process**
+ (ARCH03 stage 1, 2026-10-05; plan `docs/analysis/arch03-implementation-plan.md`,
+-decisions E1/E3/E9 as recommended). Like EmuTOS — and FreeMiNT with memory
++decisions E1/E3 as recommended; E9 since 2026-10-05 EmuTOS' largest free
++block, see below). Like EmuTOS — and FreeMiNT with memory
+ protection off — every user address means the same in every process: it is
+ its own physical address (both pools, published kernel structures, the
+ screen), `Malloc` returns `m_start`, `Pexec(PE_LOAD)` returns a real PD
+@@ -685,27 +686,31 @@ protection off — no process is protected from another (stage 3b below). **Obse
+ and its `os_run` cell (`0x5B8`, holding the process's own PD), the cookie-jar
+ mirror, the trampolines, the `Keytbl` area and the KEYS02 table — so a pointer
+ *into page 0* means something different in another process (on EmuTOS the
+-area is global but supervisor-only); (2) the TPA is a fixed 4 MiB block, not
+-EmuTOS' largest free block (`bdos/proc.c:460-502`) — a program's `p_hitpa` is
+-`p_lowtpa + 4 MiB`, and `Malloc(-1)` right after start already reports the
+-rest of the pool instead of almost nothing (FreeMiNT bounds its TPA the same
+-way, `initialmem`); (3) `p_tbase` is `p_lowtpa + 0x1000`, not `+ 0x100`
+-(a position-independent image keeps its link-time page offsets).
++area is global but supervisor-only); (2) `p_tbase` is `p_lowtpa + 0x1000`,
++not `+ 0x100` (a position-independent image keeps its link-time page
++offsets), and the TPA starts on a page: without memory protection the
++less-than-a-page slack in front of the largest free block stays in the pool.
++**The TPA is EmuTOS' largest free block** (ARCH03 E9, lead decision
++2026-10-05, replacing the fixed 4 MiB of stages 1–3c): `alloc_tpa`
++(`bdos/proc.c:460-502`) with its pool choice and bits 31-28 tie-break,
++`p_hitpa = p + max`; the SDK start-up code shrinks it like mintlib's
++`_crtinit` and the accessory loader like EmuTOS `pgmld`
++(`util/gemdos.c:29-47`), so `Malloc(-1)` right after start reports the rest of
++the pool, as on TOS.
+ 
+ **`PRGFLAGS` travel in an ELF note** (ARCH03 stage 2a, plan E8b, user
+ decision 2026-10-05). A NewTOS program is an ELF file, not a `0x601A` PRG, so
+ there is no `h01_flags` header word; the flags are a note `"NewTOS"`/type 1/one
+ `u32` under a `PT_NOTE` header, written by the SDK crt0 (default
+ `PF_STANDARD`) and changed with `cargo xtask prgflags` instead of
+-`PRGFLAGS.PRG`. What EmuTOS does with the flags is kept: they become `p_flags`
+-and `PF_TTRAMLOAD` chooses the pool of TPA and environment
+-(`bdos/proc.c:283-313,413-502`). **Observable differences:** (1) the format —
+-a tool that patches the PRG header finds no such header; (2) the ST/TT
+-tie-break with the bits 31-28 "would-like" quantum is not reproduced (a
+-`PF_TTRAMLOAD` program gets TT-RAM whenever TT-RAM has the fixed 4-MiB TPA);
+-(3) `PF_FASTLOAD` leaves no uninitialised heap — the whole TPA is zeroed
+-either way. Spec: `docs/api/gemdos/process/4b-pexec.md` (NewTOS notes); tests
+-`tos-api/tests/loader_prgflags.rs`.
++`PRGFLAGS.PRG`. What EmuTOS does with the flags is kept: they become `p_flags`,
++`PF_TTRAMLOAD` chooses the pool of TPA and environment with `alloc_tpa`'s
++ST/TT tie-break by the bits 31-28 quantum (`bdos/proc.c:283-313,413-502`), and
++`PF_FASTLOAD` limits the clear to the image (`bdos/kpgmld.c:212-221`; since
++E9). **Observable difference:** the format — a tool that patches the PRG
++header finds no such header. Spec: `docs/api/gemdos/process/4b-pexec.md`
++(NewTOS notes); tests `tos-api/tests/loader_prgflags.rs`,
++`tos-api/tests/arch03_e9_tpa.rs`.
+ 
+ **Only an owner frees; a block can have several owners; resident memory stays
+ on the allocated list** (ARCH03 stage 2c/2d, plan E15 and §3.4/§3.8 as
+diff --git a/docs/analysis/arch03-implementation-plan.md b/docs/analysis/arch03-implementation-plan.md
+index 3dd1e5d..5d822fc 100644
+--- a/docs/analysis/arch03-implementation-plan.md
++++ b/docs/analysis/arch03-implementation-plan.md
+@@ -487,6 +487,7 @@ Quittungen: `TASK/ARCH03-3a-STATUS-DONE.MD`, `TASK/ARCH03-3b-STATUS-UNFINISHED.M
+   - **E6 vs. strict:** `memprot=strict` betrifft nur Kinder mit eigenem Raum (`Pexec` 0/6); ein `Pexec`-4-Kind teilt den Raum des Aufrufers in jedem Modus (dokumentiert in `4b-pexec.md`, `COMPATIBILITY.md`).
+   - **`F_KEEP`** (`0x4000`) nach FreeMiNT (`FM/dosmem.c:131-135,161-165,365-398`, `FM/proc_help.c:242-258`): Block überlebt den letzten Besitzer, geht an den Kernel (= `rootproc`), danach darf jeder ihn freigeben; Modus unverändert; in jedem Schutzmodus.
+   - **Tabellenvorrat erschöpft:** **Abweichung von Frage 14** („Erschöpfung → `ENSMEM` der auslösenden Allokation“): gebaut ist „der Prozess behält dort die Nicht-Besitzer-Rechte (verliert Zugriff, gewinnt nie welchen)“, gezählt (`table_shortfalls`, `table_shortfalls_of`) und einmal je Prozess seriell gemeldet (`[memprot] page-table arena exhausted …`) — Leitvorgabe 2026-10-05.
++- **E9 (nach 3c, 2026-10-05, Leitentscheidung):** die TPA ist der größte freie Block wie EmuTOS `alloc_tpa` (`ET/bdos/proc.c:460-502`, Poolwahl mit Bits-31-28-Gleichstand, `p_hitpa = p + max` `:374`), `TPA_SIZE` entfällt (`NT/arena.rs` `alloc_tpa(flags, needed)`, `choose_pool`; `traps::mxalloc_largest`); Nullen nach `kpgmld` (`PF_FASTLOAD`: nur das Bild, `ET/bdos/kpgmld.c:212-221`); SDK-Start = mintlib `_crtinit`/`_acc_main` (`sdk/libc/newtos-arch/heap_init.c`, `sdk/crt0.S`: `Mshrink(PD, Programm + Stapel)`, malloc über GEMDOS `Malloc`); Accessory-Lader schrumpft wie `pgmld` (`ET/util/gemdos.c:29-47`, `kernel/src/accs.rs`); Tabellenvorrat + 2 × Poolregionen für zwei noch nicht geschrumpfte TPAs (`kernel/src/lib.rs`, `ARENA_MAX_TABLES` 8192).
+ - **Offen nach 3c:** S2ALL/TSRPAR-Prüfung „TPA beyond blkln back in the pool“ unter Schutz an/strict (Ursache E9 + E16, nicht die Lader-Reihenfolge — siehe 3c-Quittung); FreeMiNT-Modi 100+ (2b), `Mvalidate`/`Maccess`, `F_OS_SPECIAL` (nicht gebaut), Pi-Lauf.
+ 
+ ### Stufe 4 — ASIDs und TLB-Feinpflege (optional, Hardware)
+@@ -553,7 +554,7 @@ Quittungen: `TASK/ARCH03-3a-STATUS-DONE.MD`, `TASK/ARCH03-3b-STATUS-UNFINISHED.M
+ | E7 | Alte `ET_EXEC`-Programme weiter laden? | **Nein, harter Schnitt nach Stufe 1** (Übergang nur in 0d) | alle Programme stammen aus dem Repo; ein Altpfad wäre ein zweiter Lader |
+ | E8 | Relokation im Kernel oder im `crt0`? | **Kernel** | EmuTOS/FreeMiNT-treu; `Pexec(3)` liefert ein fertiges Bild |
+ | E8b | PRGFLAGS als ELF-Notiz `"NewTOS"`/Typ 1? | **Ja** (Format ist unsere Festlegung) | Pexec-7 und Speicherschutz-Standard brauchen eine Quelle |
+-| E9 | TPA-Größe: fest (4 MiB, übersteuerbar) oder EmuTOS „größter Block“? | **Fest + übersteuerbar** | Mehrprozessbetrieb; FreeMiNT begrenzt ebenso (`initialmem`) |
++| E9 | TPA-Größe: fest (4 MiB, übersteuerbar) oder EmuTOS „größter Block“? | ~~**Fest + übersteuerbar**~~ → **Leitentscheidung 2026-10-05: EmuTOS „größter Block“** (`alloc_tpa`), Programme schrumpfen selbst (mintlib `_crtinit`), Accessories der Lader (`pgmld`) | ursprünglich: Mehrprozessbetrieb; FreeMiNT begrenzt ebenso (`initialmem`). Umgesetzt: `TASK/ARCH03-E9-STATUS-*.MD` |
+ | E10 | Fremder Userdef ab Stufe 3: zeitweise Freigabe (a) oder Verschieben zum Eigentümer (b)? | **(a)** | erhält EmuTOS' Zeichenverhalten; FreeMiNT-eigenes Mittel (`prot_temp`, SLB) |
+ | E11 | Schutzverletzung: Meldung + `Pterm(-1)` (EmuTOS) jetzt, `SIGBUS`-Handler (FreeMiNT) später? | **Ja**; Alerttext nach FreeMiNT „MEMORY VIOLATION“ | EmuTOS-treu, Upcall-Weg existiert für später |
+ | E12 | ASIDs | **Optional, nur Hardware, Stufe 4**; TLBI-Pfad bleibt Standard | QUIRK-001; Modell braucht sie nicht. **0b:** QUIRK-001-Teil entfällt auf QEMU 11.0.2 (ASIDs laufen dort, S0b §4); „nur Hardware“ ist damit keine Notwendigkeit mehr |
+diff --git a/docs/api/gemdos/process/4b-pexec.md b/docs/api/gemdos/process/4b-pexec.md
+index df85fb7..d69f0c8 100644
+--- a/docs/api/gemdos/process/4b-pexec.md
++++ b/docs/api/gemdos/process/4b-pexec.md
+@@ -576,13 +576,37 @@ PHASE-06 D4/D5 status (2026-06-16):
+   `EPLFMT`. The value becomes `p_flags` (EmuTOS `p->p_flags = hdr.h01_flags`,
+   `bdos/proc.c:313`); **no note → `PF_STANDARD`** (7), the value every program
+   had before. As in EmuTOS `alloc_env`/`alloc_tpa` (`bdos/proc.c:413-502`) the
+-  flags choose the pool: `PF_TTRAMLOAD` → environment and TPA from TT-RAM
+-  preferred (`MX_PREFTTRAM`), otherwise ST-RAM only (`MX_STRAM`); the ST/TT
+-  tie-break with bits 31-28 is not reproduced (reference, edge case 4).
+-  `PF_FASTLOAD` changes nothing visible: the loader zeroes the whole TPA
+-  either way, which satisfies both "heap zeroed" (flag clear) and "heap
+-  undefined" (flag set). The TPA size stays the fixed 4 MiB (E9) — no flag
+-  bit is defined that would change it.
++  flags choose the pool: the environment from TT-RAM preferred with
++  `PF_TTRAMLOAD` (`MX_PREFTTRAM`), otherwise ST-RAM only (`MX_STRAM`); the
++  TPA by `alloc_tpa`'s rule, ST/TT tie-break with bits 31-28 included (see
++  "TPA" below). `PF_FASTLOAD` as in EmuTOS `kpgmld` (`bdos/kpgmld.c:212-221`):
++  set → only the image (BSS included) is zeroed, clear → the whole TPA up to
++  `p_hitpa` ("clear the bss or the whole heap").
++
++  **TPA (ARCH03 E9, lead decision 2026-10-05 — EmuTOS behaviour; replaces the
++  fixed 4 MiB block of stages 1–3c).** The TPA is the **largest free block**,
++  exactly as EmuTOS `alloc_tpa` (`bdos/proc.c:460-502`) gives it:
++  `ffit(-1L, &pmd)` and, with `PF_TTRAMLOAD` and TT-RAM present,
++  `ffit(-1L, &pmdalt)` measure each pool (`:466,476`); a pool qualifies when
++  its largest block holds `needed` (`:467,477`; `needed` = image +
++  `sizeof(PD)` for modes 0/3, `:291` — in NewTOS the image end from the PD,
++  since the image starts at `PD + 0x1000`; `sizeof(PD)` for 5/7, `:220`);
++  TT-RAM is taken unless ST-RAM is larger **and** TT-RAM cannot hold
++  `needed + ((flags >> 28) + 1) × 128 KiB` (`TPASIZE_QUANTUM`, `:34,481-484`);
++  the whole block is allocated (`ffit(size, …)`, `:486,493`) and `p_hitpa =
++  p + max` (`init_pd_fields`, `:374`). NewTOS keeps one difference that a
++  program cannot observe: the block starts on a 4-KiB page (the image keeps
++  its link-time page offsets), so without memory protection — whose pool
++  grain is a page anyway — the less-than-a-page slack in front of the largest
++  block goes back to the pool and the TPA is that much shorter. No block holds
++  `needed` → `ENSMEM`, nothing stays allocated.
++  A program gives back what it does not need itself, as every TOS program
++  does: the SDK start-up code is mintlib's `_crtinit` (`sdk/libc/newtos-arch/
++  heap_init.c`, `mintlib/crtinit.c:154-247`: `_stksize`/`_heapbase` policy,
++  default MINKEEP = 64 KiB stack, `Mshrink(PD, program + stack)`, malloc
++  through GEMDOS `Malloc`); the plain `sdk/crt0.S` keeps image + 64 KiB. An
++  accessory's TPA is shrunk by its loader to image + basepage before anything
++  runs (EmuTOS `pgmld`, `util/gemdos.c:29-47`; `kernel/src/accs.rs`).
+ 
+   **Order (ARCH03 stage 3c):** the environment is allocated **before** the
+   TPA, as EmuTOS `xexec` does ("allocate the environment first, depending on
+@@ -591,12 +615,12 @@ PHASE-06 D4/D5 status (2026-06-16):
+   `:294-299`). Both are allocated as the caller and handed to the child for
+   `PE_LOADGO` (`set_owner`, `:302-307`). The order fixes the layout: the
+   environment lies below the TPA, as in EmuTOS. Until 3c the loader took the
+-  TPA first (modes 5/7 already followed EmuTOS). Note: because the TPA is a
+-  fixed 4 MiB block (E9) rather than EmuTOS's largest free block
+-  (`alloc_tpa`, `:460-502`), what a program allocates after its start lies
+-  directly behind its TPA under first fit; the tail a `Ptermres` gives back
+-  is then a free block of its own, not part of the large free block behind
+-  (measured, ARCH03 3c quittance).
++  TPA first (modes 5/7 already followed EmuTOS). Note: under first fit what a
++  program allocates after its start-up `Mshrink` lies directly behind the
++  part of the TPA it kept, so the tail a later `Ptermres` gives back (its
++  stack, everything past `blkln`) is a free block of its own, not part of the
++  large free block behind — in EmuTOS as here (measured in the ARCH03 3c and
++  E9 quittances).
+ 
+   **Producing the note:** both SDK start files (`sdk/crt0.S`,
+   `sdk/libc/crt0.S`) emit it with `PF_STANDARD`; a build overrides it per
+@@ -610,12 +634,13 @@ PHASE-06 D4/D5 status (2026-06-16):
+   * **5/7 build a basepage, load nothing.** Flags = `0` for mode 5, the raw
+     `path` argument (a `ULONG`, never read as a string) for mode 7. The
+     environment is `alloc_env(flags, env)` (`env == NULL` → a copy of the
+-    caller's), the TPA a block of the fixed TPA size (4 MiB, E9 — EmuTOS takes
+-    the largest free block, edge case 1), both from the pool `PF_TTRAMLOAD`
+-    selects (no flag → ST-RAM); either shortfall is `ENSMEM` with nothing
++    caller's), the TPA the largest free block (`alloc_tpa((ULONG)path,
++    sizeof(PD), &max)`, `:220`; see "TPA" above — no `PF_TTRAMLOAD` → ST-RAM,
++    so mode 5 always takes the largest ST-RAM block and the caller shrinks
++    it); either shortfall is `ENSMEM` with nothing
+     left allocated. Both blocks belong to the **caller** (`set_owner(p, run)`,
+     `:229-230`). The basepage is `init_pd_fields` (`:364-385`): zeroed, then
+-    `p_lowtpa = p`, `p_hitpa = p + 4 MiB`, `p_xdta = &p_cmdlin`, `p_env`, the
++    `p_lowtpa = p`, `p_hitpa = p + max`, `p_xdta = &p_cmdlin`, `p_env`, the
+     command tail (`x2`, copied like the load modes); `p_flags = flags`; the
+     segment fields stay 0. Standard handles, current directories and drive
+     are set as the loader sets them for the load modes (`init_pd_files`
+diff --git a/docs/api/structures/basepage.md b/docs/api/structures/basepage.md
+index de95c07..97f87aa 100644
+--- a/docs/api/structures/basepage.md
++++ b/docs/api/structures/basepage.md
+@@ -246,6 +246,8 @@ emulator (Phase 10+).
+   address fields (`p_lowtpa`, `p_hitpa`, `p_tbase`, `p_dbase`, `p_bbase`,
+   `p_xdta`, `p_env`) are addresses every process can read. Until stage 1 the
+   basepage sat at VA 0 of every process (`p_lowtpa = 0`).
+-- `p_hitpa` = `p_lowtpa + 4 MiB`: the TPA has a fixed size (plan decision
+-  E9 — not EmuTOS' largest free block, which would starve every other
+-  process; FreeMiNT bounds its TPA the same way).
++- `p_hitpa` = `p_lowtpa` + the length of the largest free block the loader
++  took (ARCH03 E9, 2026-10-05: EmuTOS `alloc_tpa`, `bdos/proc.c:460-502`,
++  `p_hitpa = p + max` `:374`; until then a fixed 4 MiB). The SDK start-up
++  code shrinks the block at once (mintlib `_crtinit`); `p_hitpa` keeps naming
++  the original top, as on TOS (`Mshrink` never touches the basepage).
+diff --git a/docs/sdk/01-overview.md b/docs/sdk/01-overview.md
+index d9b6e86..36a64bc 100644
+--- a/docs/sdk/01-overview.md
++++ b/docs/sdk/01-overview.md
+@@ -36,9 +36,9 @@ parses the ELF directly; there is no flat-binary conversion
+   8 `PT_LOAD` segments (`tos-api/src/bdos/process/elf.rs`);
+ * dynamic relocations: only `R_AARCH64_RELATIVE` in one `DT_RELA` table,
+   applied by the loader (`tos-api/src/bdos/process/reloc.rs`);
+-* every `PT_LOAD` with `0x1000 <= p_vaddr` and
+-  `p_vaddr + p_memsz <= 4 MiB − 64 KiB`
+-  (`tos-api/src/bdos/process/loader.rs:1317-1340`).
++* every `PT_LOAD` with `0x1000 <= p_vaddr`; the image must fit the largest
++  free block, which becomes the TPA (EmuTOS `alloc_tpa`; else `ENSMEM`) —
++  `tos-api/src/bdos/process/loader.rs` `image_end_of`, `arena.rs`.
+ 
+ The file extension decides how the desktop launches the program (ADR-018,
+ `docs/MEMORY.md:1004-1107`; classifier `kernel/src/desk/ftype.rs:50-70`):
+diff --git a/docs/sdk/05-abi-pitfalls.md b/docs/sdk/05-abi-pitfalls.md
+index 5f5805d..07d4e39 100644
+--- a/docs/sdk/05-abi-pitfalls.md
++++ b/docs/sdk/05-abi-pitfalls.md
+@@ -53,23 +53,25 @@ VA 0x0000_0400   classic sysvars ... _sysbase@0x4F2, _p_cookies@0x5A0
+ 
+ shared (VA = PA): the BDOS pools, published kernel structures, the screen
+ B                BasePage (256 B) -- B = the TPA block = the PD pointer
++B + 0x100        reserved; crt0's start-up stack
+ B + 0x1000       program image (PT_LOAD, relocated for B), then .bss
+-_end             libc heap arena grows up                    heap_init.c
+-   ...
+-B + 4 MiB - 64K  64 KiB stack reserve (USER_STACK_MIN)
+-B + 4 MiB        p_hitpa = initial SP_EL0 = TPA top
+-elsewhere        Malloc/Mxalloc blocks (their pool addresses), the RSC
+-                 blob, other processes' TPAs
++_end             the stack crt0 keeps (_stksize, 64 KiB default)  heap_init.c
++B + m            end of the TPA after crt0's Mshrink(B, m)
++p_hitpa          the original TPA top = B + the largest free block (E9)
++elsewhere        Malloc/Mxalloc blocks (their pool addresses; libc malloc
++                 too), the RSC blob, other processes' TPAs
+ ```
+ 
+-The whole pool is mapped user-read/write/execute; the whole TPA is zeroed
+-before the image is copied. Every user address is below 2 GiB (plan
++The whole pool is mapped user-read/write/execute; the image span (BSS
++included) is zeroed before the image is copied, the rest of the TPA only
++without `PF_FASTLOAD` (EmuTOS `kpgmld`). Every user address is below 2 GiB (plan
+ invariant I2) — which is why the 32-bit fields of the classic TOS structures
+ can hold a NewTOS pointer (`sdk/gemlib/overlay/gem.h:62-64`, `basepage.h:19`).
+ 
+ The basepage the loader writes is the classic 256-byte layout with 4-byte
+ fields (`loader.rs` `populate_basepage`; kernel struct
+-`tos-types/src/basepage.rs`): `p_hitpa = B + 0x400000`, `p_tbase`/`p_tlen` = the
++`tos-types/src/basepage.rs`): `p_hitpa = B +` the largest free block (E9),
++`p_tbase`/`p_tlen` = the
+ first executable `PT_LOAD`, `p_dbase`/`p_dlen`/`p_bbase`/`p_blen` = the first
+ writable non-executable one (file part / BSS tail). Since TASK/T05
+ `newtos.ld` emits exactly those two segments (`text` R-X, `data` RW- with
+@@ -86,8 +88,8 @@ verbatim (length byte first).
+ 
+ | Resource | How | Limit |
+ |----------|-----|-------|
+-| stack | `SP_EL0 = p_hitpa` set by the loader and re-derived by crt0 (`sdk/crt0.S:37-42`) | grows down into the TPA; the image may not reach the top 64 KiB (`loader.rs:1330-1335`) |
+-| libc `malloc` | mintlib `__sbrk` → `HeapAlloc` from the arena `[_end, p_hitpa − 64 KiB)` (`heap_init.c:58-74`, `sdk/libc/mintlib/unix/sbrk.c:30-72`); `HeapAlloc` refuses a request that would cross the live stack pointer | **the 4-MiB TPA minus image and stack**; when exhausted `sbrk` fails with `ENOMEM` — there is **no** fall-back to GEMDOS `Malloc` because `_split_mem == 0` (`sbrk.c:54-71`) |
++| stack | crt0 / `__libc_crtinit` keep `_stksize` bytes (mintlib default MINKEEP = 64 KiB) above the image and `Mshrink` the TPA to image + stack (`sdk/crt0.S`, `sdk/libc/newtos-arch/heap_init.c`, mintlib `crtinit.c:154-247`); an accessory gets a `Malloc`'ed stack (`_acc_main`) | `_stksize` (mintlib's rules: `-1` keep all, `0` MINKEEP, `1/2/3` quarters, `n` bytes, `-n` bytes + own heap; env `STACKSIZE`) |
++| libc `malloc` | mintlib `__sbrk` → GEMDOS `Malloc` in hunks of 8–32 KiB (larger requests one block each) with the default `_stksize` (`_split_mem`, `sbrk.c:54-73`, `malloc.c:64-95`); with `_stksize < -1`/`-1` the own heap above the image | the pool (`PF_TTRAMMEM` → TT-RAM preferred); every hunk is one BDOS block (256 MDs system-wide) |
+ | GEMDOS `Malloc`/`Mxalloc` | the pool block's own address, valid in every process (ARCH03 stage 1, VA = PA; `tos-api/src/gemdos/memory.rs`) | the pool itself — no per-process window or block-table limit any more |
+ | kernel structures returned by pointer | published read-only into the window (ADR-023): `Getbpb`, `Getmpb`; screen memory published read/write, uncached: `Physbase`, `Logbase` | see B3 for what is still not published |
+ | system variables, OSHEADER, cookie jar | materialised in page 0 of the TPA at the classic addresses (`loader.rs:861` `populate_sysvars`) | read-only in substance: the cookie mirror is rewritten from the kernel jar on every change (`loader.rs:1057-1100`); writes to the mirror do not reach the kernel |
+@@ -498,13 +500,15 @@ via `Cconws` while debugging in QEMU.
+ **Symptom**: `malloc` returns `NULL` (`ENOMEM`) although the machine has
+ hundreds of megabytes.
+ 
+-**Cause**: see A3 — mintlib's heap is the in-TPA arena between `_end` and
+-the stack reserve inside the 4-MiB TPA, with no fall-back to `Malloc`
+-(`heap_init.c`, `sbrk.c:54-71`).
++**Cause** (until ARCH03 E9, 2026-10-05): mintlib's heap was the in-TPA arena
++between `_end` and the stack reserve inside a fixed 4-MiB TPA, with no
++fall-back to `Malloc`. Since E9 the TPA is the largest free block and the
++start-up code runs mintlib's own model — malloc through GEMDOS `Malloc`
++(see A3) — so a failing `malloc` now means the pool (or the BDOS's 256 memory
++descriptors, one per `Malloc` hunk) is exhausted.
+ 
+-**Do**: for large buffers call GEMDOS `Malloc`/`Mxalloc` directly (up to the
+-28-MiB window, at most 32 live blocks). Raising `TPA_SIZE`
+-(`tos-api/src/bdos/process/arena.rs:52`) is a kernel change.
++**Do**: check `Malloc(-1)`; for many small long-lived allocations prefer one
++large block.
+ 
+ ### B16. gemlib bindings that split a `long` with a pointer cast
+ 
+diff --git a/docs/sdk/08-porting-checklist.md b/docs/sdk/08-porting-checklist.md
+index 569612a..ed164f7 100644
+--- a/docs/sdk/08-porting-checklist.md
++++ b/docs/sdk/08-porting-checklist.md
+@@ -71,8 +71,9 @@ Tick each line; every line points at the section that explains it.
+       goes through a binding that splits it arithmetically, not by casting
+       `&arg` to `short *` → [05 B16](05-abi-pitfalls.md#b16-gemlib-bindings-that-split-a-long-with-a-pointer-cast)
+ - [ ] No `long double` arithmetic; no libm calls → [05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-there-is-no-compiler-rt), [07 §4](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all)
+-- [ ] Large buffers via GEMDOS `Malloc`, not libc `malloc` (4-MiB arena)
+-      → [05 B15](05-abi-pitfalls.md#b15-a-libc-malloc-that-suddenly-fails)
++- [ ] libc `malloc` grows through GEMDOS `Malloc` (mintlib's `_stksize`
++      model, ARCH03 E9); a program that needs its own heap sets `_stksize`
++      → [05 A3/B15](05-abi-pitfalls.md#b15-a-libc-malloc-that-suddenly-fails)
+ - [ ] Console output strategy chosen (`.NCP` vs. log file) → [05 B14](05-abi-pitfalls.md#b14-console-output-is-not-the-desktop)
+ 
+ ## On the image and in the machine
+diff --git a/kernel/src/accs.rs b/kernel/src/accs.rs
+index f3da227..5b7a7cd 100644
+--- a/kernel/src/accs.rs
++++ b/kernel/src/accs.rs
+@@ -211,6 +211,32 @@ fn load_one_acc(acc: &mut Acc) {
+             return;
+         }
+     };
++    // `pgmld`'s second half (`util/gemdos.c:40-44`): the loader gave the
++    // accessory the largest free block as its TPA (EmuTOS `alloc_tpa`), so
++    // shrink it to "code+data+bss lengths plus basepage length" before the
++    // next accessory — or anything else — is loaded. In the NewTOS layout the
++    // image starts at `PD + 0x1000`, so that length is the image end
++    // (`LoadedChild::image_len`), not the sum. A failed shrink is `pgmld`'s
++    // `return -1`: the accessory is not started.
++    // SAFETY: single boot path, BDOS not concurrently locked; the TPA block
++    // starts at the PD pointer the loader returned and is the loader's.
++    let rc = unsafe {
++        tos_api::bdos::mem::traps::mshrink(
++            0,
++            child.basepage_va as u32 as tos_types::Long,
++            child.image_len as tos_types::Long,
++        )
++    };
++    if rc < 0 {
++        kprintln!("[acc] {} Mshrink(PD, {:#x}) failed: {}", as_str(&acc.path), child.image_len, rc);
++        // SAFETY: the slot was never started; nothing references its TPA or
++        // its environment, both owned by the child's PD (`owned_by_child`).
++        unsafe {
++            tos_api::bdos::mem::free_all_owned::free_all_owned(child.handle as *mut core::ffi::c_void);
++            process::pterm::release_slot(child.slot);
++        }
++        return;
++    }
+     acc.slot = child.slot;
+     let Some(s) = slot(child.slot) else {
+         return;
+diff --git a/kernel/src/launch.rs b/kernel/src/launch.rs
+index ed19af6..d3af04d 100644
+--- a/kernel/src/launch.rs
++++ b/kernel/src/launch.rs
+@@ -136,9 +136,10 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
+     // SAFETY: single-CPU; `parent_frame` captures this kernel resume point,
+     // and the program's `Pterm` restores it via the handler's SPSR.M = EL1t
+     // (kernel-launched) branch — exactly as `selftest_pexec` does. The
+-    // initial `SP_EL0` is the child's mapped multi-page TPA top
+-    // (`child.sp_el0`); the SDK crt0 re-derives it from the basepage's
+-    // p_hitpa, so a compiled program starts on a mapped stack.
++    // initial `SP_EL0` is the child's TPA top (`child.sp_el0` = `p_hitpa`; the
++    // TPA is the largest free block, EmuTOS `alloc_tpa`); the SDK start-up
++    // code moves the stack into the part of the TPA it keeps when it shrinks
++    // the block (mintlib `_crtinit`).
+     unsafe {
+         crate::arch::aarch64::user_entry::enter_el0_with_resume_capture(
+             child.entry_va,
+diff --git a/kernel/src/lib.rs b/kernel/src/lib.rs
+index 12cf752..e660419 100644
+--- a/kernel/src/lib.rs
++++ b/kernel/src/lib.rs
+@@ -770,8 +770,16 @@ fn bring_up_bdos_pools((protect, strict): (bool, bool)) {
+             .iter()
+             .map(|&p| stats(p).free() as u64 * FRAME_SIZE)
+             .sum();
+-        let shared = (pool_bytes / mib2) as usize + 2 * 2 + 16;
+-        let count = (shared + PRIVATE_L3_BUDGET).min(tos_api::bdos::process::mmu::ARENA_MAX_TABLES);
++        let regions = pool_bytes.div_ceil(mib2) as usize;
++        let shared = regions + 2 * 2 + 16;
++        // The TPA is the largest free block (E9, EmuTOS `alloc_tpa`) until its
++        // program shrinks it at start: its owner — and a second slot with the
++        // same rights (a `Pexec` 3 caller and its mode-4 child, or a
++        // non-strict child that inherits the block) — need a private copy
++        // for every region it spans. Two such sets, plus the per-process
++        // budget for everything else.
++        let count = (shared + 2 * regions + PRIVATE_L3_BUDGET)
++            .min(tos_api::bdos::process::mmu::ARENA_MAX_TABLES);
+         let frame = alloc_frames_contig(Pool::Ttram, count)
+             .or_else(|| alloc_frames_contig(Pool::Stram, count))
+             .expect("memprot: no room for the page-table arena");
+@@ -833,10 +841,11 @@ fn bring_up_bdos_pools((protect, strict): (bool, bool)) {
+     }
+ }
+ 
+-/// Private L3 tables the arena holds besides the shared ones (ARCH03 3b):
+-/// copies for the 2-MiB regions where a process's rights differ from
+-/// everybody else's — about ten per process (TPA, heap blocks, inherited
+-/// parent blocks; plan Frage 14), 64 per slot here. 4 MiB.
++/// Private L3 tables the arena holds besides the shared ones and the copies
++/// for two un-shrunk largest-block TPAs (ARCH03 3b, E9): copies for the
++/// 2-MiB regions where a process's rights differ from everybody else's once
++/// it has shrunk its TPA — about ten per process (TPA, heap blocks,
++/// inherited parent blocks; plan Frage 14), 64 per slot here. 4 MiB.
+ const PRIVATE_L3_BUDGET: usize = 64 * tos_api::bdos::process::MAX_PROCESSES;
+ 
+ /// The memory-protection switch from the boot arguments (ARCH03 3b):
+diff --git a/kernel/src/selftest_d3.rs b/kernel/src/selftest_d3.rs
+index a1a1973..4afe0a8 100644
+--- a/kernel/src/selftest_d3.rs
++++ b/kernel/src/selftest_d3.rs
+@@ -288,9 +288,11 @@ fn validate_basepage(loaded: &LoadedImage) -> bool {
+ 
+     // The basepage sits at the start of the TPA block (ARCH03 stage 1), so
+     // every address field is relative to the PD pointer `base`; p_hitpa is
+-    // the TPA top `base + arena::TPA_SIZE`.
++    // the TPA top — the PD plus the largest free block the loader took
++    // (EmuTOS `p_hitpa = p + max`, `bdos/proc.c:374`), which it also reports
++    // as the initial stack pointer.
+     let base = loaded.basepage_va as i32;
+-    let expected_hitpa: i32 = base + arena::TPA_SIZE as i32;
++    let expected_hitpa: i32 = loaded.sp_el0 as i32;
+     let expected_xdta: i32 = base + 0x80;
+     let expected_uft = [-1i8; 6];
+ 
+diff --git a/kernel/src/selftest_d7.rs b/kernel/src/selftest_d7.rs
+index 1ef5345..a25c80a 100644
+--- a/kernel/src/selftest_d7.rs
++++ b/kernel/src/selftest_d7.rs
+@@ -22,7 +22,8 @@
+ //!        by the TSR holder (`traps::is_resident`);
+ //!      * TT-RAM got the TPA back down to `blkln` (0x100, rounded to the
+ //!        pool grain — one page with memory protection on, ARCH03 E16): its
+-//!        used bytes dropped by `TPA_SIZE - kept`;
++//!        used bytes dropped by `TPA length - kept` (the TPA is the
++//!        largest free block, its length `p_hitpa - p_lowtpa`);
+ //!      * the slot is `Free` again and `RUN` is null — the process
+ //!        terminated and control returned to the kernel driver.
+ //!
+@@ -180,7 +181,7 @@ pub fn run_d7_ptermres_test() {
+     let mask = tos_api::bdos::mem::pool::PoolConfig::current().align_mask as u64;
+     let kept = (0x100 + mask) & !mask;
+     let tpa_shrunk = (pre_tt.used_bytes - post_tt.used_bytes) as u64
+-        == tos_api::bdos::process::arena::TPA_SIZE - kept;
++        == (loaded.sp_el0 - loaded.basepage_va) - kept;
+     kprintln!(
+         "[d7] TT-RAM used {} -> {} (TPA shrunk to blkln)",
+         pre_tt.used_bytes, post_tt.used_bytes,
+diff --git a/sdk/apps/build-doom-m68k.sh b/sdk/apps/build-doom-m68k.sh
+index 3bb1b54..8aad6dc 100755
+--- a/sdk/apps/build-doom-m68k.sh
++++ b/sdk/apps/build-doom-m68k.sh
+@@ -74,8 +74,8 @@
+ #   spelled out so the header does not depend on a toolchain default.
+ #
+ # ZONE SIZE: DOOM_ARGS default '"-mb","6"'
+-#   NewTOS' "-mb 2" exists only because NewTOS' TPA is 4 MiB
+-#   (doomgeneric_gem.c "MEMORY"); the TT has no such cap. 6 MiB is DOOM's own
++#   the same as the NewTOS build since ARCH03 E9 (doomgeneric_gem.c
++#   "MEMORY"; until then NewTOS' fixed 4-MiB TPA forced "-mb 2"). 6 MiB is DOOM's own
+ #   value, default AND minimum (doomgeneric i_system.c DEFAULT_RAM/MIN_RAM).
+ #   It is passed explicitly rather than left out because the platform appends
+ #   DOOM_GEM_ARGS to every start and an empty list would be an empty array
+diff --git a/sdk/apps/build-doom.sh b/sdk/apps/build-doom.sh
+index aea9289..9e2f1d0 100755
+--- a/sdk/apps/build-doom.sh
++++ b/sdk/apps/build-doom.sh
+@@ -40,11 +40,12 @@
+ #                              later m68k build gets SYS_BIG_ENDIAN the same way.
+ #
+ # Environment knobs:
+-#   DOOM_ARGS='"-mb","2"'      extra arguments the platform appends to argv
++#   DOOM_ARGS='"-mb","6"'      extra arguments the platform appends to argv
+ #                              on every start, after the ones given (a desktop
+ #                              / #Z start passes none; a given option wins, as
+-#                              DOOM takes the first occurrence). Default below;
+-#                              the zone size is the reason, see
++#                              DOOM takes the first occurrence). Default:
++#                              DOOM's own zone size, 6 MiB (i_system.c
++#                              DEFAULT_RAM), as build-doom-m68k.sh; see
+ #                              doomgeneric_gem.c "MEMORY".
+ #   DOOM_STATS=<seconds>       compile in a one-time per-step cost probe (on
+ #                              the first frame, ~4 s) and a frame-time report
+@@ -73,7 +74,7 @@ LIBMTOP="$LIBM/openlibm-0.8.8"
+ BUILD="${BUILD:-$PORT/build}"
+ OBJ="$BUILD/obj"
+ OUT="${OUT:-$BUILD/DOOM.NAP}"
+-DOOM_ARGS="${DOOM_ARGS:-\"-mb\",\"2\"}"
++DOOM_ARGS="${DOOM_ARGS:-\"-mb\",\"6\"}"
+ DOOM_STATS="${DOOM_STATS:-0}"
+ mkdir -p "$OBJ"
+ 
+diff --git a/sdk/apps/doom/doomgeneric_gem.c b/sdk/apps/doom/doomgeneric_gem.c
+index a16b99c..f39d98c 100644
+--- a/sdk/apps/doom/doomgeneric_gem.c
++++ b/sdk/apps/doom/doomgeneric_gem.c
+@@ -258,22 +258,22 @@
+  * MEMORY
+  * ------
+  * DOOM allocates its zone with malloc() (i_system.c I_ZoneBase), 6 MiB unless
+- * -mb N says otherwise. NewTOS' libc runs malloc inside the 4 MiB TPA
+- * (sdk/libc/newtos-arch/heap_init.c), so the 6 MiB default cannot be met
+- * there; a start without a command tail therefore gets DOOM_GEM_ARGS
+- * appended (build-doom.sh, default "-mb 2"). Measured 2026-10-02 (PORT06):
+- * the image ends at ~0xcd400, which leaves ~3211 KiB of malloc arena below
+- * the 64 KiB stack reserve; doomgeneric_Create() takes 250 KiB of it for
+- * DG_ScreenBuffer before the zone is asked for, so 3 MiB (3072 KiB) does not
+- * fit and 2 MiB does, with ~900 KiB left for the WAD directory and stdio.
+- * -mb takes whole MiB, so 2 is the largest zone this TPA can give.
++ * -mb N says otherwise. On NewTOS the program gets the largest free block as
++ * its TPA and its start-up code shrinks it to program + stack, as mintlib's
++ * crtinit does on TOS (sdk/libc/newtos-arch/heap_init.c, ARCH03 E9); malloc
++ * then grows through GEMDOS Malloc (PF_TTRAMMEM: TT-RAM preferred), so the
++ * zone is one Malloc block of its own and DOOM's 6 MiB default fits wherever
++ * that much is free. DOOM_GEM_ARGS (build-doom.sh, default "-mb 6" -- DOOM's
++ * own value, passed explicitly as in build-doom-m68k.sh) is appended to every
++ * start; a "-mb N" given at the start wins. Until ARCH03 E9 (2026-10-05) the
++ * TPA was a fixed 4 MiB and malloc ran inside it, which capped the zone at
++ * 2 MiB ("-mb 2").
+  * This file's own buffers -- the
+  * device form of the 320x200 picture and, on the vr_trnfm route only, its
+  * standard form (125 KiB each at 16 planes) and, when scaling,the scaled device form (out_w * out_h * bytes
+  * per pixel: 2400 KiB for 1280x960 at 16 planes) -- come from GEMDOS
+  * Mxalloc(MX_PREFTTRAM), Malloc as fallback: CPU-only memory, no DMA reason to
+- * want ST-RAM (PORT06 "ST-RAM ist auch auf dem TT kein Thema"), and outside
+- * the TPA the zone has to share.
++ * want ST-RAM (PORT06 "ST-RAM ist auch auf dem TT kein Thema").
+  */
+ #include <stdint.h>
+ #include <stdio.h>
+@@ -478,7 +478,7 @@ static void c2p_row(const uint8_t *src, int n, uint16_t *dst, long ps, long gs)
+ 
+ /* Extra arguments for a start without a command tail; build-doom.sh sets it. */
+ #ifndef DOOM_GEM_ARGS
+-#define DOOM_GEM_ARGS "-mb", "2"
++#define DOOM_GEM_ARGS "-mb", "6"
+ #endif
+ 
+ /* Seconds between frame-time reports on the console; 0 = none. */
+@@ -2144,8 +2144,7 @@ int main(int argc, char **argv)
+ 	static char *args[64];
+ 	int n = 0, i;
+ 
+-	/* The zone size the engine would ask for by default does not fit this
+-	 * machine's TPA (see MEMORY), so the built-in arguments are appended to
++	/* The built-in arguments (the zone size, see MEMORY) are appended to
+ 	 * every start -- a desktop or #Z start, which passes no command tail,
+ 	 * and a start with one (e.g. "-scale 2" typed into the parameter box).
+ 	 * They go AFTER the given ones: DOOM takes the first occurrence of an
+diff --git a/sdk/crt0.S b/sdk/crt0.S
+index 7dfc67a..88397cf 100644
+--- a/sdk/crt0.S
++++ b/sdk/crt0.S
+@@ -1,62 +1,112 @@
+ /*
+- * crt0.S -- NewTOS native C runtime startup (ADR-018 `.NCP` / `.NAP`).
++ * crt0.S -- NewTOS native C runtime startup (ADR-018 `.NCP` / `.NAP` / `.NAC`).
+  *
+  * The NewTOS program loader (tos-api/src/bdos/process/{loader,reloc,mmu,
+- * arena}.rs) maps a multi-page Transient Program Area (TPA_SIZE, 4 MiB today)
+- * for the process. The program is a position-independent executable (ELF
+- * ET_DYN, ARCH03 stage 0d): it is linked at 0x1000 (sdk/newtos.ld), the
+- * loader streams its segments into the TPA and applies its
+- * R_AARCH64_RELATIVE relocations for the address the TPA executes at -- since
+- * ARCH03 stage 1 its own pool address B (VA = PA). Relative to B:
++ * arena}.rs) gives the process a Transient Program Area: the LARGEST free
++ * block of the pool its PRGFLAGS choose, exactly as EmuTOS alloc_tpa does
++ * (bdos/proc.c:460-502; ARCH03 E9). The program is a position-independent
++ * executable (ELF ET_DYN, ARCH03 stage 0d) linked at 0x1000 (sdk/newtos.ld);
++ * the loader streams its segments into the TPA and applies its
++ * R_AARCH64_RELATIVE relocations for the TPA's own pool address B (VA = PA).
++ * Relative to B:
+  *
+  *     [0x000, 0x100)          BasePage (populated by the loader)
+- *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata/.rela.dyn) = p_tbase/p_tlen
+- *     [p_dbase, p_bbase)      PT_LOAD data (.dynamic/.got/.data)      = p_dbase/p_dlen
+- *     [p_bbase, _end)         .bss (zeroed by the loader)             = p_bbase/p_blen
+- *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
++ *     [0x100, 0x1000)         reserved (zeroed) -- our start-up stack
++ *     [0x1000, p_dbase)       PT_LOAD text = p_tbase/p_tlen
++ *     [p_dbase, p_bbase)      PT_LOAD data = p_dbase/p_dlen
++ *     [p_bbase, _end)         .bss (zeroed by the loader) = p_bbase/p_blen
++ *     [_end, p_hitpa)         the rest of the largest free block
+  *
+- * Every TPA page is mapped user-read/write/execute. On entry the loader has:
++ * Like every TOS start-up code, this one gives back what it does not need,
++ * so the program does not hold all of memory and can start others (mintlib
++ * crtinit.c _crtinit, with its default _stksize = MINKEEP; this plain runtime
++ * has no heap, so it keeps the image plus a MINKEEP stack):
+  *
+- *   - eret'd to EL0 at e_entry (this `_start`, linked at 0x1000);
+- *   - set SP_EL0 to the mapped TPA top (= the basepage's p_hitpa);
+- *   - put the BasePage address in x0 -- on every launch path (Pexec, the
+- *     kernel launcher for the desktop / AUTO / #Z, the scheduler's first
+- *     dispatch of an accessory).
++ *     m = (_end - B) + MINKEEP;  Mshrink(0, B, m);  SP = B + m
+  *
+- * crt0 therefore finds the BasePage through x0, never through a fixed
+- * address: from stage 1 on the basepage sits at the start of the program's
+- * own TPA block, wherever that is. SP is (re)established from the basepage's
+- * `p_hitpa` (a 32-bit TOS `LONG` at offset 0x04, 4-KiB / 16-byte aligned)
+- * rather than trusted from entry, so it tracks whatever TPA top the loader
+- * chose. The loader zeroes the whole TPA (including .bss), so crt0 does not
+- * zero BSS.
++ * A desk accessory arrives with its TPA already shrunk to the image: the AES
++ * side loads it and Mshrinks it to "code+data+bss plus basepage" before
++ * anything runs (EmuTOS pgmld, util/gemdos.c:29-47; NewTOS kernel/src/accs.rs).
++ * Its p_hitpa still names the old TPA top (Mshrink never touches the
++ * basepage), so the stack must not go there. mintlib tells an accessory by
++ * its m68k entry registers (startup/crt0.S:46-57: a0 = basepage and
++ * p_parent == 0); NewTOS passes the basepage in x0 on every launch path, so
++ * this code tells it by that very state instead: the Mshrink that would keep
++ * the stack cannot GROW the block (EGSBF, -67). Then it does what mintlib's
++ * _acc_main does (crtinit.c:112-131): Malloc(MINKEEP) and run on that.
++ *
++ * Until the stack is chosen no stack is used at all; the svc handler runs on
++ * the kernel stack. x0 carries the BasePage address on entry (the loader:
++ * Pexec, the kernel launcher for the desktop / AUTO / #Z, the scheduler's
++ * first dispatch of an accessory).
+  *
+  * The trap ABI (kernel/src/arch/aarch64/exceptions.rs): GEMDOS = svc #1,
+- * function id in x8, argument in x0, result in x0. Pterm = 0x4C.
++ * function id in x8, argument in x0.., result in x0. Mshrink = 0x4A,
++ * Malloc = 0x48, Pterm = 0x4C.
+  */
+ 
++/* mintlib stksiz.h: keep at least this much stack. */
++#define MINKEEP     0x10000
++#define EGSBF       (-67)
++#define ENSMEM      (-39)
++
+     .section .text.boot, "ax", @progbits
+     .global _start
+     .type   _start, %function
+ _start:
+-    /*
+-     * SP = basepage->p_hitpa (the mapped TPA top), read at offset 0x04 of the
+-     * BasePage the loader passes in x0. No stack access before SP is valid.
+-     */
+-    ldr     w9, [x0, #4]        /* w9 = p_hitpa (zero-extended into x9) */
++    mov     x19, x0             /* x19 = BasePage (B) */
++
++    /* m = round16(_end - B) + MINKEEP */
++    adrp    x20, _end
++    add     x20, x20, :lo12:_end
++    sub     x21, x20, x19
++    add     x21, x21, #15
++    and     x21, x21, #~15
++    add     x21, x21, #MINKEEP
++
++    /* Mshrink(0, B, m) */
++    mov     x0, #0
++    mov     x1, x19
++    mov     x2, x21
++    mov     x8, #0x4A
++    svc     #1
++    cmn     x0, #(-EGSBF)       /* rc == EGSBF? */
++    b.eq    .Lacc
++
++    /* A program: the stack is the top of the part of the TPA it keeps. */
++    add     x9, x19, x21
++    mov     sp, x9
++    b       .Lmain
++
++.Lacc:
++    /* An accessory (TPA already shrunk by the loader): mintlib _acc_main,
++       s = Malloc(_stksize); SP = s + _stksize. */
++    mov     x0, #MINKEEP
++    mov     x8, #0x48
++    svc     #1
++    cbz     x0, .Lnomem
++    add     x9, x0, #MINKEEP
++    and     x9, x9, #~15
+     mov     sp, x9
+ 
++.Lmain:
+     /*
+-     * `main` takes no arguments in a plain (non-libc) program; x0 still
+-     * holds the BasePage address, which it ignores. Its return value (w0)
+-     * is the exit code.
++     * `main` takes no arguments in a plain (non-libc) program; x0 holds the
++     * BasePage address, which it may ignore. Its return value (w0) is the
++     * exit code.
+      */
++    mov     x0, x19
+     bl      main
+ 
+     /* Pterm(main's return): GEMDOS 0x4C, rc in x0, svc #1. Never returns. */
+     mov     x8, #0x4C
+     svc     #1
+ 
++.Lnomem:
++    mov     x0, #ENSMEM
++    mov     x8, #0x4C
++    svc     #1
++
+     /* Safety net: Pterm does not return, but guard against a runaway PC. */
+ 1:  b       1b
+     .size   _start, . - _start
+diff --git a/sdk/libc/build-libc.sh b/sdk/libc/build-libc.sh
+index 09f5f51..64b9542 100755
+--- a/sdk/libc/build-libc.sh
++++ b/sdk/libc/build-libc.sh
+@@ -27,7 +27,9 @@
+ #       setjmp.S  -> sigsetjmp/setjmp/siglongjmp/longjmp per AAPCS64 (was the
+ #                    m68k mintlib/setjmp.S); jmp_buf grows to long[22] in the
+ #                    overlay include/setjmp.h (TASK/T07)
+-#       heap_init.c -> points mintlib's malloc arena at the free TPA region.
++#       heap_init.c -> __libc_crtinit: mintlib crtinit.c _crtinit/_acc_main
++#                    for TOS (_stksize policy, Mshrink of the TPA, malloc via
++#                    GEMDOS Malloc); called by crt0.S (ARCH03 E9).
+ #       cmdargs.c -> argc/argv from the BasePage command tail p_cmdlin (the
+ #                    argument half of crtinit.c parseargs(), which does not
+ #                    compile here); defines __libc_argc/__libc_argv.
+diff --git a/sdk/libc/crt0.S b/sdk/libc/crt0.S
+index 7d45f88..0e8c360 100644
+--- a/sdk/libc/crt0.S
++++ b/sdk/libc/crt0.S
+@@ -1,40 +1,40 @@
+ /*
+- * crt0.S -- NewTOS C runtime startup for libc-linked programs (`.NCP`).
++ * crt0.S -- NewTOS C runtime startup for libc-linked programs (`.NCP`/`.NAP`).
+  *
+- * This is the libc variant of sdk/crt0.S: identical TPA/SP setup, plus the
+- * two steps mintlib's own startup (startup/crt0.S + crtinit.c, neither of
+- * which builds for AArch64) would take before main:
++ * This is the libc variant of sdk/crt0.S. mintlib's own startup
++ * (startup/crt0.S + mintlib/crtinit.c) does not build for AArch64 (m68k
++ * assembly); this file is its startup/crt0.S and newtos-arch/heap_init.c
++ * (`__libc_crtinit`) its crtinit.c `_crtinit` / `_acc_main`:
+  *
+- *   __libc_init_heap(basepage, p_hitpa)  -- sets mintlib's `_base` (the
+- *       BASEPAGE pointer mintlib's crt0 stores at start, startup/crt0.S:69)
+- *       and points the malloc arena at the free TPA region
+- *       (sdk/libc/newtos-arch/heap_init.c);
+- *   __libc_parseargs(basepage)           -- builds argc/argv from the
+- *       BasePage command tail p_cmdlin, the argument half of crtinit.c's
+- *       parseargs() (sdk/libc/newtos-arch/cmdargs.c).
++ *   - the TPA is the largest free block of the pool the PRGFLAGS choose
++ *     (EmuTOS alloc_tpa, bdos/proc.c:460-502; ARCH03 E9);
++ *   - `__libc_crtinit` sets `_base`, builds argc/argv (`__libc_parseargs`,
++ *     newtos-arch/cmdargs.c), applies mintlib's `_stksize` / `_heapbase`
++ *     policy, Mshrinks the TPA to program + stack (crtinit.c:154-247) and
++ *     returns the new stack top; an accessory, whose TPA the loader already
++ *     shrank (EmuTOS pgmld), gets a Malloc'ed stack (crtinit.c:112-131);
++ *   - malloc then grows through GEMDOS Malloc (`_split_mem`, unix/sbrk.c),
++ *     as with mintlib on TOS.
+  *
+- * Programs that do not link libc keep using the plain sdk/crt0.S, which has
+- * no such dependency.
+- *
+- * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld): the program
+- * is a position-independent executable (ELF ET_DYN, ARCH03 stage 0d) linked
+- * at 0x1000; the loader streams it into the TPA and applies its
+- * R_AARCH64_RELATIVE relocations for the TPA's own pool address B (ARCH03
+- * stage 1, VA = PA). Relative to B:
++ * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld), relative
++ * to the TPA's pool address B (ARCH03 stage 1, VA = PA):
+  *
+  *     [0x000, 0x100)          BasePage (populated by the loader)
+- *     [0x1000, p_dbase)       PT_LOAD text (.text/.rodata/.rela.dyn) = p_tbase/p_tlen
+- *     [p_dbase, p_bbase)      PT_LOAD data (.dynamic/.got/.data)      = p_dbase/p_dlen
+- *     [p_bbase, _end)         .bss (zeroed by the loader)             = p_bbase/p_blen
+- *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
++ *     [0x100, 0x1000)         reserved (zeroed) -- the start-up stack below
++ *     [0x1000, p_dbase)       PT_LOAD text = p_tbase/p_tlen
++ *     [p_dbase, p_bbase)      PT_LOAD data = p_dbase/p_dlen
++ *     [p_bbase, _end)         .bss (zeroed by the loader) = p_bbase/p_blen
++ *     [_end, p_hitpa)         the rest of the largest free block
++ *
++ * The start-up stack. mintlib runs `_crtinit` on a temporary stack at
++ * p_hitpa (startup/crt0.S:70-73) and an accessory's on its command line
++ * (:59). Here one place serves both: the reserved gap above the BasePage,
++ * which lies in the TPA a program keeps and in the image an accessory's
++ * loader keeps, whatever the PRGFLAGS and whoever shrinks the block.
+  *
+- * On entry the loader has eret'd to EL0 at _start (linked at 0x1000), set
+- * SP_EL0 to the TPA top and put the BasePage address in x0 (every launch
+- * path: Pexec, the kernel launcher, the scheduler's first dispatch). We take
+- * the BasePage from x0 -- never from a fixed address, because from stage 1 on
+- * it sits at the start of the program's own TPA block -- and re-establish SP
+- * from its p_hitpa (32-bit LONG at offset 0x04) rather than trust the entry
+- * SP.
++ * On entry the loader has eret'd to EL0 at _start (linked at 0x1000) and put
++ * the BasePage address in x0 (every launch path: Pexec, the kernel launcher,
++ * the scheduler's first dispatch).
+  *
+  * Trap ABI (kernel/src/arch/aarch64/exceptions.rs): GEMDOS = svc #1,
+  * function id in x8, arguments in x0.., result in x0. Pterm = 0x4C.
+@@ -44,43 +44,26 @@
+     .global _start
+     .type   _start, %function
+ _start:
+-    /* SP = basepage->p_hitpa (the mapped TPA top), offset 4 of the BasePage
+-       the loader passes in x0. x19/x20 keep the two values across the calls
+-       below; nothing has to be restored, because _start never returns. */
+     mov     x19, x0             /* x19 = BasePage address (loader: x0) */
+-    ldr     w20, [x19, #4]      /* w20 = p_hitpa (zero-extended into x20) */
+-    mov     sp, x20
++    add     x9, x19, #0x1000    /* start-up stack: top of the reserved gap */
++    mov     sp, x9
+ 
+-    /* __libc_init_heap(basepage, p_hitpa) — sets mintlib's `_base` and points
+-       the malloc arena at the free TPA region. Needs a valid SP (set above). */
++    /* new SP = __libc_crtinit(basepage) -- the TPA is shrunk on return. */
+     mov     x0, x19
+-    mov     x1, x20
+-    bl      __libc_init_heap
++    bl      __libc_crtinit
++    mov     sp, x0
+ 
+-    /* Set up argc/argv for main(int argc, char **argv).
+-     *
+-     * The launcher (kernel enter_el0_with_resume_capture) sets only ELR /
+-     * SP_EL0 / the TTBR0 tables — it does NOT pass argc/argv in registers, so
+-     * without this main() would inherit garbage: argc = the leftover x0 from
+-     * the void __libc_init_heap (~4 MiB, i.e. >= 2) and argv = 0, so
+-     * `if (argc > 1) ... argv[1]` faults dereferencing (char**)0 + 1.
+-     *
+-     * A program launched with an argument — a file dragged onto its icon or
+-     * onto a desktop shortcut — gets that argument in the BasePage command
+-     * tail p_cmdlin. mintlib builds argv from it in crtinit.c parseargs(),
+-     * which is not compiled here (m68k asm elsewhere in the same file); the
+-     * argument half of it is reimplemented in
+-     * sdk/libc/newtos-arch/cmdargs.c as __libc_parseargs(), which publishes
+-     * __libc_argc / __libc_argv and returns argc. With an empty tail that is
+-     * argc == 1 and argv == { "", NULL } — the TOS "program name not
+-     * available" convention (crtinit.c's `*arg++ = ""`), i.e. exactly what
+-     * this crt0 used to hardcode. main's own return value (w0) is the exit
+-     * code. */
+-    mov     x0, x19
+-    bl      __libc_parseargs            /* x0 = argc */
++    /* main(__libc_argc, __libc_argv). __libc_crtinit built them from the
++     * BasePage command tail p_cmdlin (newtos-arch/cmdargs.c, the argument
++     * half of crtinit.c parseargs()); with an empty tail that is argc == 1
++     * and argv == { "", NULL } -- the TOS "program name not available"
++     * convention. main's own return value (w0) is the exit code. */
++    adrp    x0, __libc_argc
++    add     x0, x0, :lo12:__libc_argc
++    ldr     x0, [x0]
+     adrp    x1, __libc_argv
+     add     x1, x1, :lo12:__libc_argv
+-    ldr     x1, [x1]                    /* x1 = argv */
++    ldr     x1, [x1]
+     bl      main
+ 
+     /* Pterm(main's return): GEMDOS 0x4C, rc in x0, svc #1. Never returns. */
+diff --git a/sdk/libc/newtos-arch/heap_init.c b/sdk/libc/newtos-arch/heap_init.c
+index d487918..b281c9c 100644
+--- a/sdk/libc/newtos-arch/heap_init.c
++++ b/sdk/libc/newtos-arch/heap_init.c
+@@ -1,93 +1,201 @@
+ /*
+- * heap_init.c -- NewTOS/AArch64 C-runtime heap initialisation.
++ * heap_init.c -- NewTOS/AArch64 C-runtime start-up: mintlib's crtinit.c
++ * `_crtinit` / `_acc_main` for the TOS case.
+  *
+- * mintlib's malloc (mintlib/malloc.c) draws memory from __sbrk (unix/sbrk.c).
+- * __sbrk has two modes selected by the globals _split_mem / _heapbase:
++ * mintlib/crtinit.c does not compile for AArch64 (m68k inline asm for the
++ * "Mshrink onto a new stack" idiom, docs/sdk/07-mintlib-limits.md), so
++ * sdk/libc/crt0.S calls `__libc_crtinit` instead, on a start-up stack in the
++ * reserved gap above the BasePage, and moves the stack to the address it
++ * returns. Everything else is mintlib's own rules, cited per line.
+  *
+- *   _split_mem == 0 && _heapbase != NULL  -> HeapAlloc(): carve from an
+- *                                            in-process arena [_heapbase ..
+- *                                            _heapbase + _stksize), growing up
+- *                                            towards the downward stack (the
+- *                                            classic "keep all of memory"
+- *                                            model, crtinit.c _stksize == -1).
+- *   otherwise                             -> GEMDOS Malloc() (trap).
++ * THE TPA. The NewTOS loader gives a program the LARGEST free block of the
++ * pool its PRGFLAGS choose, as EmuTOS alloc_tpa does (bdos/proc.c:460-502;
++ * ARCH03 E9), with the BasePage at its start B and p_hitpa at its end. The
++ * image is linked at B + 0x1000 (sdk/newtos.ld), so "the program sans
++ * stack/heap" -- mintlib's tlen + dlen + blen + sizeof(BASEPAGE)
++ * (crtinit.c:173) -- is `_end - B` here: the same bytes plus the reserved gap.
++ * argv and the split command line live in cmdargs.c's BSS (see there), so
++ * parseargs adds nothing on top.
+  *
+- * On NewTOS the program loader (tos-api/src/bdos/process/loader.rs) hands each
+- * process a 4-MiB Transient Program Area at its own pool address B (ARCH03
+- * stage 1, VA = PA); the image is linked at RESERVED_LOW_END = 0x1000
+- * (sdk/newtos.ld) and relocated for B. Relative to B:
++ * THE POLICY (crtinit.c:6-25,176-222), by mintlib's `_stksize`
++ * (stksiz.c: default MINKEEP = 64 KiB) and `_initial_stack` (inistack.c):
+  *
+- *     [0x000, 0x100)      BasePage
+- *     [0x1000, _end)      image + BSS (zeroed by the loader)
+- *     [_end, p_hitpa)     free TPA -- heap grows up, stack grows down
++ *     _stksize      keep                                 malloc from
++ *       -1          all of memory but MINFREE            own heap above the image
++ *        0          MINKEEP stack                        GEMDOS Malloc (_split_mem)
++ *      1/2/3        1/4, 1/2, 3/4 of the free memory     GEMDOS Malloc (_split_mem)
++ *      other        that many bytes                      GEMDOS Malloc (_split_mem)
++ *     < -1          |_stksize|                           own heap above the image
+  *
+- * so we run malloc entirely from that free region: no GEMDOS Malloc dependency
+- * and no reliance on the kernel's per-process heap allocator.  We set
+- * _heapbase = _end (linker symbol, first free byte) and _stksize to the size
+- * of the free region minus a stack reserve, with _split_mem = 0.  __sbrk's
+- * HeapAlloc then guards every request against the live stack pointer, so the
+- * reserve is only a soft upper bound.
++ * then `Mshrink(B, m)` with m = program + stack, and the stack at B + m
++ * (crtinit.c:212-247). With the default, malloc goes to GEMDOS Malloc first
++ * and to nothing else (`_heapbase` stays NULL): unix/sbrk.c:54-73.
+  *
+- * crt0 (sdk/libc/crt0.S) calls this once, before main, passing the BasePage
+- * address (the base register it read p_hitpa through) and p_hitpa (the
+- * mapped TPA top = initial SP).
++ * ACCESSORIES. The AES side shrinks an accessory's TPA to "code+data+bss plus
++ * basepage" right after loading it (EmuTOS pgmld, util/gemdos.c:29-47;
++ * kernel/src/accs.rs), and the basepage's p_hitpa keeps naming the old top.
++ * mintlib recognises an accessory by its m68k entry registers (startup/
++ * crt0.S:46-62); NewTOS hands the BasePage over in x0 on every path, so the
++ * accessory is recognised by that state itself: the Mshrink that would keep
++ * the stack cannot grow the block (EGSBF). It then does what `_acc_main`
++ * does (crtinit.c:112-149): a Malloc'ed stack of `_stksize` (MINKEEP for 0
++ * and -1), `_app = 0`, malloc through GEMDOS Malloc, argv = { "", NULL }.
+  *
+- * `_base` (mintlib/globals.c:33, `BASEPAGE *_base`) is what mintlib's own
+- * m68k crt0 stores first thing at program start (startup/crt0.S:69,
+- * `movel %a0, _base`) and what its readers dereference: crtinit.c:167
+- * (`bp = _base`, the p_tlen/p_dlen/p_blen sum and p_hitpa for the Mshrink
+- * idiom), unix/getpid.c:21 (`(long)_base >> 8` when Pgetpid is absent),
+- * unix/getppid.c:22 (`_base->p_parent`), gmon.c:201,237 (`_base->p_tbase`).
+- * None of those files runs mintlib's startup here (docs/sdk/07-mintlib-limits.md
+- * §5: crtinit.c is not built), so `_base` stayed NULL and TeraDesk's
+- * `_BasPag->p_env` (environm.c) only worked because the basepage was at VA 0.
+- * Setting it here from the value crt0 hands us makes the pointer true
+- * independent of where the loader puts the basepage (TASK/T05) -- since
+- * ARCH03 stage 1, the start of the TPA block.
+- *
+- * loader facts confirmed from tos-api/src/bdos/process/loader.rs:
+- *   - bp.p_hitpa = B + TPA_SIZE(4 MiB)    (populate_basepage)
+- *   - "heap lives between the BSS end (p_bbase+p_blen) and the downward-
+- *      growing stack" (populate_basepage doc comment)
+- *   - USER_STACK_MIN = 0x1_0000 (64 KiB) top-of-TPA stack reserve
+- *      (loader.rs, validate_segment)
++ * `_base` (mintlib/globals.c:33) is what mintlib's m68k crt0 stores first
++ * (startup/crt0.S:58,69) and what its readers dereference: crtinit.c:167,
++ * unix/getpid.c:21, unix/getppid.c:22, gmon.c:201,237, TeraDesk's
++ * `_BasPag->p_env` (environm.c).
+  */
+ 
+ #include <stddef.h>
++#include <stdlib.h>
+ #include <mint/basepage.h>
++#include <mint/osbind.h>
++
++/* mintlib/stksiz.h */
++#define MINFREE	(8L * 1024L)		/* free at least this much mem on top */
++#define MINKEEP (64L * 1024L)		/* keep at least this much mem on stack */
++
++/* GEMDOS: Mshrink cannot grow a block (EmuTOS bdos/umem.c xsetblk). */
++#define EGSBF	(-67L)
+ 
+-/* Provided by the NewTOS linker script (sdk/newtos.ld): first free TPA byte,
+-   just above the zeroed BSS (== the basepage's p_bbase + p_blen). */
++/* First byte past the image, BSS included (sdk/newtos.ld). */
+ extern char _end[];
+ 
+-/* Defined in mintlib: heapbase.c (_heapbase), stksiz.c (_stksize),
+-   globals.c (_split_mem, _base). We only initialise them here. */
++/* mintlib: heapbase.c, stksiz.c, inistack.c, globals.c. */
+ extern void *_heapbase;
+ extern long _stksize;
++extern long _initial_stack;
+ extern short _split_mem;
++extern short _app;
++extern unsigned long _PgmSize;
++extern char **environ;
+ 
+-/* Keep this much of the top of the TPA for the downward-growing stack; matches
+-   the loader's USER_STACK_MIN reservation. HeapAlloc's live-SP check is the
+-   real collision guard, this is only the advertised heap ceiling. */
+-#define NEWTOS_STACK_RESERVE (64UL * 1024UL)
++/* newtos-arch/cmdargs.c */
++extern long __libc_parseargs (unsigned long basepage);
++extern char **__libc_argv;
+ 
+-void
+-__libc_init_heap (unsigned long basepage, unsigned long p_hitpa)
++/* crtinit.c:104 -- an accessory has no name and no arguments. */
++static char *acc_argv[] = { "", NULL };
++
++/* AAPCS64 wants a 16-byte aligned stack; mintlib rounds to 4 (m68k). */
++#define STACK_ALIGN 15L
++
++/* crtinit.c:112-149 `_acc_main`, up to the stack switch: returns the top of
++   a Malloc'ed stack of `stksize` (the program's `_stksize` before the
++   application policy touched it). */
++static unsigned long
++acc_main (long stksize)
+ {
+-	unsigned long base = (unsigned long) _end;
+-	unsigned long avail;
++	char *s;
+ 
+-	/* The BASEPAGE pointer mintlib's readers expect (see the header). */
+-	_base = (BASEPAGE *) basepage;
++	_stksize = stksize;
++	if (_stksize == 0 || _stksize == -1L)
++		_stksize = MINKEEP;
++	if (_stksize < 0)
++		_stksize = -_stksize;
++	if ((s = getenv ("STACKSIZE")) != 0)
++		_stksize = atoi (s);
++	_stksize = (_stksize + STACK_ALIGN) & ~STACK_ALIGN;
+ 
+-	/* Run malloc from the in-TPA arena, never from GEMDOS Malloc. */
++	/* Not the application model: malloc from GEMDOS Malloc
++	   (globals.c / heapbase.c defaults). */
+ 	_split_mem = 0;
+-	_heapbase = (void *) base;
++	_heapbase = NULL;
++
++	s = (char *) Malloc (_stksize);
++	if (s == NULL || (long) s < 0) {
++		(void) Cconws ("Fatal error: insufficient memory\r\n");
++		Pterm (-1);
++	}
++
++	/* this is an accessory */
++	_app = 0;
++	__libc_argv = acc_argv;
++	environ = acc_argv;
++
++	return ((unsigned long) s + (unsigned long) _stksize) & ~(unsigned long) STACK_ALIGN;
++}
++
++unsigned long
++__libc_crtinit (unsigned long basepage)
++{
++	BASEPAGE *bp = (BASEPAGE *) basepage;
++	long stksize0 = _stksize;
++	long m, freemem, rc;
++	char *s;
++
++	_base = bp;
++
++	/* its an application */
++	_app = 1;
++
++	/* argc/argv from the command tail; the arrays are in our BSS, so they
++	   add nothing to m (cmdargs.c "WHERE THE RESULT LIVES"). */
++	(void) __libc_parseargs (basepage);
++
++	/* m = the program sans stack/heap (crtinit.c:172-174) */
++	m = (long) ((unsigned long) _end - basepage);
++	m = (m + STACK_ALIGN) & ~STACK_ALIGN;
++
++	/* freemem the amount of free mem accounting for MINFREE at top */
++	if ((freemem = (long) bp->p_hitpa - (long) bp - MINFREE - m) <= 0L)
++		goto notenough;
++
++	if (_initial_stack) {
++		_heapbase = (void *) ((long) bp + m);
++		_stksize = _initial_stack;
++	} else {
++		if (_stksize >= -1L)
++			/* malloc from Malloc first, then from own heap */
++			_split_mem = 1;
++	}
++
++	if (_stksize == -1L) {
++		_stksize = freemem;
++		_heapbase = (void *) ((long) bp + m);
++	} else if (_stksize == 0L) {	/* free all but MINKEEP */
++		_stksize = MINKEEP;
++	} else if (_stksize == 1L) {	/* keep 1/4, free 3/4 */
++		_stksize = freemem >> 2;
++	} else if (_stksize == 2L) {	/* keep 1/2, free 1/2 */
++		_stksize = freemem >> 1;
++	} else if (_stksize == 3L) {	/* keep 3/4, free 1/4 */
++		_stksize = freemem - (freemem >> 2);
++	} else {
++		if (_stksize < -1L) {	/* keep |_stksize|, use heap for mallocs */
++			_stksize = -_stksize;
++			_heapbase = (void *) ((long) bp + m);
++		}
++	}
++
++	if ((s = getenv ("STACKSIZE")) != 0)
++		_stksize = atoi (s);
++
++	/* make m the total number of bytes including stack */
++	_stksize = _stksize & ~STACK_ALIGN;
++	m += _stksize;
++
++	/* make sure there's enough room for the stack */
++	if (((long) bp + m) > ((long) bp->p_hitpa - MINFREE))
++		goto notenough;
++
++	/* shrink the TPA (crtinit.c:227-247) */
++	rc = Mshrink (bp, m);
++	if (rc == EGSBF)
++		/* the block is already smaller than the basepage says: an
++		   accessory, shrunk by its loader (see the header) */
++		return acc_main (stksize0);
++
++	/* keep length of program area */
++	_PgmSize = m;
+ 
+-	if (p_hitpa <= base + NEWTOS_STACK_RESERVE)
+-		avail = 0;                       /* pathologically small TPA */
+-	else
+-		avail = p_hitpa - base - NEWTOS_STACK_RESERVE;
++	/* the new stack: bp + m, minus mintlib's "some unused space for buggy
++	   OS" (crtinit.c:236) */
++	return (basepage + (unsigned long) m - 64) & ~(unsigned long) STACK_ALIGN;
+ 
+-	_stksize = (long) avail;
++notenough:
++	(void) Cconws ("Fatal error: insufficient memory\r\n");
++	Pterm (-1);
++	return 0;	/* not reached */
+ }
+diff --git a/sdk/newtos.ld b/sdk/newtos.ld
+index 0fb09c1..7ac2b97 100644
+--- a/sdk/newtos.ld
++++ b/sdk/newtos.ld
+@@ -5,9 +5,10 @@
+  * multi-page-TPA loader accepts (ARCH03 stage 0d; link with
+  * `-pie --no-dynamic-linker -z text`, compile with `-fPIE`). The loader
+  * (tos-api/src/bdos/process/{elf,reloc,loader,mmu,arena}.rs) streams the
+- * segments into a per-process Transient Program Area of TPA_SIZE (4 MiB)
+- * and applies the image's R_AARCH64_RELATIVE relocations for the address
+- * the TPA executes at. Since ARCH03 stage 1 the TPA is a page-aligned BDOS
++ * segments into a per-process Transient Program Area -- the largest free
++ * block of the pool the PRGFLAGS choose, as EmuTOS alloc_tpa gives it
++ * (bdos/proc.c:460-502; ARCH03 E9) -- and applies the image's
++ * R_AARCH64_RELATIVE relocations for the address the TPA executes at. Since ARCH03 stage 1 the TPA is a page-aligned BDOS
+  * pool block at its own address B (one address space shared by every
+  * process, VA = PA); a link address `v` below runs at `B + v`:
+  *
+@@ -23,7 +24,8 @@
+  *                             = p_dbase / p_dlen (file bytes)
+  *     [p_bbase, _end)         .bss, the NOLOAD tail of `data` (zeroed by
+  *                             the loader) = p_bbase / p_blen
+- *     [_end, p_hitpa)         free TPA: heap grows up, stack grows down
++ *     [_end, p_hitpa)         rest of the block: crt0 Mshrinks it to
++ *                             program + stack (mintlib _crtinit)
+  *
+  * The classic TOS low-memory system variables (`_sysbase`@0x4F2,
+  * `_p_cookies`@0x5A0, ...) are not part of the TPA: they live in the
+@@ -41,9 +43,9 @@
+  *     `-z text` makes the linker refuse those at build time). The PT_DYNAMIC
+  *     segment points the loader at the table.
+  *   - e_phentsize = 56 (guaranteed for ELF64). One or more PT_LOAD segments.
+- *   - Every PT_LOAD must satisfy
+- *         0x1000 <= p_vaddr  and  p_vaddr + p_memsz <= TPA_SIZE - 64 KiB
+- *     (the top of the TPA is reserved for the downward-growing stack).
++ *   - Every PT_LOAD must satisfy 0x1000 <= p_vaddr; the image (up to _end)
++ *     must fit the largest free block, else Pexec answers ENSMEM (EmuTOS
++ *     alloc_tpa).
+  *   - e_entry must be inside the image (>= 0x1000).
+  *
+  * Two PT_LOAD segments (TASK/T05), the usual ELF shape: `text` (R-X) holds
+@@ -156,7 +158,7 @@ SECTIONS
+     } :data
+ 
+     /* BSS is NOLOAD (no file bytes); the loader zeroes [__bss_start,
+-       __bss_end) as part of zeroing the whole TPA. It is the memsz-only tail
++       __bss_end) as part of zeroing the image span. It is the memsz-only tail
+        of the `data` segment, so p_bbase + p_blen == _end. */
+     __bss_start = .;
+     .bss (NOLOAD) : {
+@@ -166,7 +168,7 @@ SECTIONS
+     } :data
+     __bss_end = .;
+ 
+-    /* First free byte of the TPA — where a heap allocator starts. */
++    /* First byte past the image: crt0 keeps [B, _end) plus its stack. */
+     _end = .;
+ 
+     /* Drop metadata the NewTOS loader neither reads nor has room for (the
+diff --git a/tos-api/src/bdos/mem/traps.rs b/tos-api/src/bdos/mem/traps.rs
+index 3a5fab7..b00052d 100644
+--- a/tos-api/src/bdos/mem/traps.rs
++++ b/tos-api/src/bdos/mem/traps.rs
+@@ -484,6 +484,113 @@ pub unsafe fn mxalloc_aligned(amount: Long, mode: i16, align: Long) -> Long {
+     base
+ }
+ 
++/// The largest free block of `mp` as `(m_start, m_length)` — the block
++/// EmuTOS `alloc_tpa` gets with `ffit(ffit(-1L, mp), mp)`
++/// (`bdos/proc.c:466,476,486,493`): `ffit(-1)` reports the largest length,
++/// and `ffit(length)` then takes the **first** free block at least that long,
++/// i.e. the first one of maximal length. `None` for an empty free list.
++///
++/// # Safety
++///
++/// Caller holds the BDOS giant lock (read-only list walk).
++pub unsafe fn largest_free_block(mp: *mut MPB) -> Option<(Long, Long)> {
++    if mp.is_null() {
++        return None;
++    }
++    let mut best: Option<(Long, Long)> = None;
++    // SAFETY: caller holds the BDOS lock.
++    let mut q = unsafe { (*mp).mp_mfl };
++    while !q.is_null() {
++        // SAFETY: list invariant.
++        let (start, len) = unsafe { ((*q).m_start, (*q).m_length) };
++        if len > 0 && best.is_none_or(|(_, l)| len > l) {
++            best = Some((start, len));
++        }
++        // SAFETY: list invariant.
++        q = unsafe { (*q).m_link };
++    }
++    best
++}
++
++/// Allocate the **whole** largest free block of one pool (`MX_STRAM` or
++/// `MX_TTRAM`), starting on an `align`-byte boundary: the program TPA of
++/// EmuTOS `alloc_tpa` (`md = ffit(size, &pmd); return md->m_start`,
++/// `bdos/proc.c:486-487,493-494`), whose length becomes `p_hitpa - p_lowtpa`
++/// (`*avail = size`, `init_pd_fields`, `:374`).
++///
++/// The block is taken with [`mxalloc`] (so it carries the caller's owner tag
++/// and its protection record like every allocation) and its front slack up to
++/// the boundary goes back to the pool ([`pool::trim_front`]) — a NewTOS step:
++/// the position-independent image keeps its link-time page offsets (ARCH03
++/// stage 1). With protection on the pool grain is already one page, so there
++/// is no slack. Returns `(m_start, m_length)` of the aligned block, or `None`
++/// when the pool has no free block longer than its slack.
++///
++/// # Safety
++///
++/// Caller holds the BDOS giant lock.
++pub unsafe fn mxalloc_largest(mode: i16, align: Long) -> Option<(Long, Long)> {
++    if align <= 0 || align & (align - 1) != 0 {
++        return None;
++    }
++    let mpb = match mode {
++        MX_STRAM => init::pmd(),
++        MX_TTRAM => init::pmdalt(),
++        _ => return None,
++    };
++    // SAFETY: caller holds the BDOS lock.
++    let (_, len) = unsafe { largest_free_block(mpb) }?;
++    // `ffit` rounds the amount up to the grain; a block length is a multiple
++    // of it, so this takes exactly the largest block (the first of that length).
++    let mask = PoolConfig::current().align_mask;
++    let amount = len & !mask;
++    if amount <= 0 {
++        return None;
++    }
++    // SAFETY: caller holds the BDOS lock.
++    let raw = unsafe { mxalloc(amount, mode) };
++    if raw == 0 {
++        return None;
++    }
++    // SAFETY: caller holds the BDOS lock; `raw` was just allocated on `mpb`.
++    let mut p = unsafe { (*mpb).mp_mal };
++    while !p.is_null() && unsafe { (*p).m_start } != raw {
++        // SAFETY: list invariant.
++        p = unsafe { (*p).m_link };
++    }
++    if p.is_null() {
++        return None; // cannot happen: `raw` was just allocated
++    }
++    let base = (raw + align - 1) & !(align - 1);
++    // SAFETY: list invariant.
++    let raw_len = unsafe { (*p).m_length };
++    if base > raw {
++        let mut supply = unsafe { init::supply() };
++        // SAFETY: `p` is on `mp_mal`; `base - raw < align`, and the block
++        // must keep at least one grain behind the boundary.
++        if base - raw >= raw_len || unsafe { pool::trim_front(p, mpb, base - raw, &mut supply) } < 0 {
++            // SAFETY: `p` is still the whole block at `raw`.
++            unsafe {
++                pool::freeit(p, mpb, &mut supply);
++                super::region::forget(raw);
++                crate::bdos::process::memprot::on_freed(raw as u32 as u64, raw_len as u32 as u64);
++            }
++            return None;
++        }
++        // ARCH03 3b: the record follows the block to its aligned start; the
++        // slack given back is invalid for everybody again.
++        // SAFETY: caller holds the BDOS lock.
++        unsafe {
++            crate::bdos::process::memprot::rekey(raw as u32 as u64, base as u32 as u64);
++            crate::bdos::process::memprot::touch(raw as u32 as u64, base as u32 as u64);
++            crate::bdos::process::memprot::sync();
++        }
++    }
++    // SAFETY: list invariant; `p` now starts at `base`.
++    let have = unsafe { (*p).m_length };
++    Some((base, have))
++}
++
+ /// Is `addr` inside a block on either pool's **allocated** list?
+ ///
+ /// The "live user memory" test of the stage-1 shared address space
+diff --git a/tos-api/src/bdos/process/arena.rs b/tos-api/src/bdos/process/arena.rs
+index c59faf4..c84cdd3 100644
+--- a/tos-api/src/bdos/process/arena.rs
++++ b/tos-api/src/bdos/process/arena.rs
+@@ -18,35 +18,44 @@
+ //! for `PE_LOAD` (EmuTOS `owner = (flag == PE_LOADGO) ? p : run`,
+ //! `bdos/proc.c:302-307`).
+ //!
+-//! ## Size
++//! ## Size — the largest free block (EmuTOS `alloc_tpa`, plan E9)
+ //!
+-//! [`TPA_SIZE`] = 4 MiB, fixed — plan decision E9 (fixed rather than
+-//! EmuTOS' "largest free block", which would starve every other process;
+-//! FreeMiNT bounds its TPA the same way with `initialmem`). The program
+-//! flags (E8b) choose its pool, not its size: no `PRGFLAGS` bit is defined
+-//! that would.
++//! The TPA is the **largest free block** of the pool the program flags
++//! choose, exactly as EmuTOS `alloc_tpa` gives it (`bdos/proc.c:460-502`):
++//! `ffit(-1L, &pmd)` / `ffit(-1L, &pmdalt)` measure the largest block of each
++//! pool (`:466,476`), TT-RAM is a candidate only with `PF_TTRAMLOAD` (`:475`),
++//! a pool qualifies when its block holds what the program `needed` (`:467,
++//! 477`), the TT-RAM block is taken unless ST-RAM is the larger and TT-RAM
++//! cannot hold `needed` plus the `PRGFLAGS` bits 31-28 tie-break amount
++//! (`((flags >> 28) & 0x0f) + 1) * TPASIZE_QUANTUM`, 128 KiB, `:34,481-484`),
++//! and the whole block is allocated (`ffit(size, …)`, `:486,493`); its length
++//! becomes `p_hitpa - p_lowtpa` (`*avail`, `init_pd_fields`, `:374`). A
++//! program gives back what it does not need itself — every TOS start-up code
++//! does (`Mshrink`; the SDK's `crt0`/`crtinit` as mintlib's `_crtinit`,
++//! `mintlib/crtinit.c:227-247`), and the AES does it for an accessory
++//! (EmuTOS `pgmld`, `util/gemdos.c:29-47`).
+ //!
+ //! ## Alignment
+ //!
+ //! The block starts on a 4-KiB page ([`TPA_ALIGN`]): the program is linked at
+ //! `0x1000` and keeps its link-time page offsets when relocated
+-//! (`adrp`-relative code), so the TPA base must be page-aligned.
+-//! [`crate::bdos::mem::traps::mxalloc_aligned`] gives the block that start
+-//! and returns the slack to the pool, so the block holds exactly the TPA.
++//! (`adrp`-relative code), so the TPA base must be page-aligned. With
++//! protection on the pool grain is a page already; without it
++//! [`crate::bdos::mem::traps::mxalloc_largest`] gives the slack in front of
++//! the boundary back, so the TPA is the largest block minus less than a page.
+ 
+ use core::sync::atomic::Ordering;
+ 
+-use tos_types::Long;
++use tos_types::{Long, MX_STRAM, MX_TTRAM, PF_TTRAMLOAD};
+ 
+ use super::MAX_PROCESSES;
+ 
+-/// Per-process TPA size in bytes (4 MiB, plan E9).
+-pub const TPA_SIZE: u64 = 4 * 1024 * 1024;
+-
+ /// Alignment of the TPA block start (one 4-KiB page).
+ pub const TPA_ALIGN: u64 = super::mmu::PAGE_SIZE;
+ 
+-const _: () = assert!(TPA_SIZE.is_multiple_of(TPA_ALIGN));
++/// EmuTOS `TPASIZE_QUANTUM` (`bdos/proc.c:34`): the unit of the `PRGFLAGS`
++/// bits 31-28 "would like to have" amount in the ST/TT-RAM tie-break.
++pub const TPASIZE_QUANTUM: u64 = 128 * 1024;
+ 
+ /// Size of a user page in bytes (= one 4-KiB physical frame).
+ pub const fn page_size() -> u64 {
+@@ -58,17 +67,58 @@ pub struct Tpa {
+     /// The block's address — `m_start`, the user VA (= PA) the program
+     /// executes at and its PD pointer.
+     pub base: u64,
++    /// The block's length — `p_hitpa - p_lowtpa` (EmuTOS `*avail`).
++    pub len: u64,
+     /// Kernel high-half alias of [`Self::base`] — the loader copies the
+     /// ELF image and writes the basepage through this.
+     pub base_kva: *mut u8,
+ }
+ 
+-/// Take one page-aligned [`TPA_SIZE`] block from the BDOS pool.
++/// The pool EmuTOS `alloc_tpa` takes the TPA from, given the usable sizes of
++/// the largest ST-RAM and TT-RAM blocks (`st`, `alt`; `alt` 0 when there is
++/// no TT-RAM), the program's `flags` and what it `needed`
++/// (`bdos/proc.c:460-502`). `None`: neither pool can hold `needed` (`ENSMEM`).
++pub fn choose_pool(flags: u32, needed: u64, st: u64, alt: u64) -> Option<i16> {
++    let st_ok = st >= needed;
++    let mut alt_ok = flags & PF_TTRAMLOAD != 0 && alt >= needed;
++    if st_ok && alt_ok && st > alt {
++        let tpasize = (((flags >> 28) & 0x0f) as u64 + 1) * TPASIZE_QUANTUM;
++        if needed + tpasize > alt {
++            alt_ok = false; // force allocation in ST RAM
++        }
++    }
++    if alt_ok {
++        Some(MX_TTRAM)
++    } else if st_ok {
++        Some(MX_STRAM)
++    } else {
++        None
++    }
++}
++
++/// What the TPA in the largest block of `mp` would hold: the block length
++/// minus the slack up to the page boundary ([`TPA_ALIGN`]). 0 without a block.
+ ///
+-/// The pool follows the program's `PRGFLAGS` (EmuTOS `alloc_tpa`,
+-/// `bdos/proc.c:460-502`): with `PF_TTRAMLOAD` TT-RAM is preferred
+-/// (`MX_PREFTTRAM`, ST-RAM if TT-RAM cannot supply it), without it the TPA
+-/// is ST-RAM only. Returns `None` on `ENSMEM`.
++/// # Safety
++///
++/// Caller holds the BDOS giant lock.
++unsafe fn usable_largest(mp: *mut tos_types::MPB) -> u64 {
++    // SAFETY: caller contract.
++    match unsafe { crate::bdos::mem::traps::largest_free_block(mp) } {
++        Some((start, len)) => {
++            let start = start as u32 as u64;
++            let slack = start.next_multiple_of(TPA_ALIGN) - start;
++            (len as u32 as u64).saturating_sub(slack)
++        }
++        None => 0,
++    }
++}
++
++/// Take the TPA — the largest free block of the pool EmuTOS `alloc_tpa`
++/// chooses ([`choose_pool`], `bdos/proc.c:460-502`) — page-aligned, for a
++/// program that `needed` bytes from its PD on (EmuTOS: `tlen + dlen + blen +
++/// sizeof(PD)`, `:291`; for `Pexec` 5/7 `sizeof(PD)`, `:220`). Returns `None`
++/// on `ENSMEM`.
+ ///
+ /// The block is tagged with the *current* owner cookie by the allocator
+ /// (`owner = run`); the loader re-tags it to the child for `PE_LOADGO`.
+@@ -76,20 +126,26 @@ pub struct Tpa {
+ /// # Safety
+ ///
+ /// Caller holds the BDOS giant lock (or is the boot CPU pre-trap).
+-pub unsafe fn alloc_tpa(prgflags: u32) -> Option<Tpa> {
+-    let mode = super::loader::pool_mode(prgflags);
++pub unsafe fn alloc_tpa(prgflags: u32, needed: u64) -> Option<Tpa> {
++    use crate::bdos::mem::init::{pmd, pmdalt};
+     // SAFETY: caller holds the BDOS lock.
+-    let raw = unsafe {
+-        crate::bdos::mem::traps::mxalloc_aligned(TPA_SIZE as Long, mode, TPA_ALIGN as Long)
+-    };
+-    if raw == 0 {
+-        return None;
+-    }
++    let (st, alt) = unsafe { (usable_largest(pmd()), usable_largest(pmdalt())) };
++    let mode = choose_pool(prgflags, needed, st, alt)?;
++    // SAFETY: caller holds the BDOS lock.
++    let (raw, len) =
++        unsafe { crate::bdos::mem::traps::mxalloc_largest(mode, TPA_ALIGN as Long) }?;
+     // Pool addresses are positive `Long` in the low 2 GiB (BDOS `init`
+     // rejects wider ranges), so this widening never sign-extends.
+     let base = raw as u64;
++    let len = len as u32 as u64;
++    if len < needed {
++        // SAFETY: caller holds the BDOS lock; `raw` was just allocated.
++        unsafe { free_tpa(raw) };
++        return None;
++    }
+     Some(Tpa {
+         base,
++        len,
+         base_kva: super::kalias(base) as *mut u8,
+     })
+ }
+diff --git a/tos-api/src/bdos/process/loader.rs b/tos-api/src/bdos/process/loader.rs
+index 04585a4..e2697b5 100644
+--- a/tos-api/src/bdos/process/loader.rs
++++ b/tos-api/src/bdos/process/loader.rs
+@@ -20,10 +20,16 @@
+ //!   B + 0x1000     program image       (PT_LOAD segments, linked at 0x1000,
+ //!                                        relocated by B — `sdk/newtos.ld`)
+ //!   image_end      BSS                 (zeroed)
+-//!                  heap                (free TPA, for malloc)
+-//!   B + TPA_SIZE   SP_EL0 / p_hitpa    (stack grows down from here)
++//!                  free TPA            (the program's to Mshrink)
++//!   p_hitpa        SP_EL0              (= B + the TPA length)
+ //! ```
+ //!
++//! The TPA is the largest free block of the pool the program flags choose
++//! (EmuTOS `alloc_tpa`, `bdos/proc.c:460-502`, [`arena::alloc_tpa`]); the
++//! program shrinks it at start (`Mshrink`, the SDK start-up code as mintlib's
++//! `_crtinit`), the AES-side loader of an accessory right after loading it
++//! (EmuTOS `pgmld`, `util/gemdos.c:29-47`; NewTOS `kernel/src/accs.rs`).
++//!
+ //! `p_tbase = B + 0x1000` rather than EmuTOS' `B + 0x100` (plan §3.5): the
+ //! image keeps the 4-KiB page offsets it was linked with. The basepage
+ //! carries the TPA and segment extents (`p_lowtpa`/`p_hitpa`/`p_tbase`/…/
+@@ -40,26 +46,27 @@
+ //! - **The whole pool is `UserRwExec`.** No `.text` RX / data RW-NX split; a
+ //!   per-segment permission split is a later hardening step and does not
+ //!   change the observable program contract.
+-//! - **Whole-TPA zero.** The loader zeroes the entire TPA before
+-//!   copying segments, so BSS, heap and stack all start zeroed and no
+-//!   stale pool contents leak into the new process. The SDK `crt0`
+-//!   therefore does **not** zero BSS itself.
+-//! - **Fixed TPA size** ([`arena::TPA_SIZE`], plan E9: fixed, to be made
+-//!   overridable through the program flags).
++//! - **Zeroing as EmuTOS `kpgmld`** (`bdos/kpgmld.c:212-221`): the
++//!   basepage page and the image span (BSS included) are always zeroed;
++//!   the rest of the TPA up to `p_hitpa` only without `PF_FASTLOAD`
++//!   ("clear the bss or the whole heap"). The SDK `crt0` therefore does
++//!   **not** zero BSS itself.
+ 
+ use core::cell::UnsafeCell;
+ use core::ffi::c_void;
+ use core::sync::atomic::Ordering;
+ 
+ use tos_types::prot_from_prgflags;
+-use tos_types::{BasePage, Long, MX_PREFTTRAM, MX_STRAM, NUMSTD, PDCLSIZE, PF_STANDARD, PF_TTRAMLOAD};
++use tos_types::{
++    BasePage, Long, MX_PREFTTRAM, MX_STRAM, NUMSTD, PDCLSIZE, PF_FASTLOAD, PF_STANDARD, PF_TTRAMLOAD,
++};
+ 
+ use super::{kalias, usermem};
+ 
+ use crate::bdos::fs::FileImage;
+ 
+ use super::arena;
+-use super::elf::{self, ElfImage, LoadSegment, ParseError, PF_W, PF_X};
++use super::elf::{self, ElfImage, ParseError, PF_W, PF_X};
+ use super::mmu::{self, MapError};
+ use super::reloc::{self, RelocError};
+ use super::PROCESS_TABLE;
+@@ -77,9 +84,9 @@ pub enum LoadError {
+     /// start at `USER_VA_BASE + RESERVED_LOW_END` (= 0x1000) or later.
+     /// Anything below that produces this error (B1 / Option 1).
+     SegmentVaOutOfRange,
+-    /// A `PT_LOAD` segment's `vaddr + mem_size` overruns the usable
+-    /// TPA image region (`TPA_SIZE - USER_STACK_MIN`), i.e. the
+-    /// program image + BSS would collide with the reserved stack.
++    /// A `PT_LOAD` segment's `vaddr + mem_size` overflows the address
++    /// arithmetic. (An image that does not fit the largest free block is
++    /// [`Self::NoTpaMemory`], as EmuTOS `alloc_tpa` answers it.)
+     ProgramTooLarge,
+     /// Building the process root failed ([`super::mmu`]).
+     MapPage(MapError),
+@@ -163,12 +170,18 @@ pub struct LoadedImage {
+     /// [`populate_basepage`] = the TPA block's address `B` (VA = PA). The
+     /// child gets it in `x0`.
+     pub basepage_va: u64,
+-    /// Initial `SP_EL0` for the child: the TPA top `B + TPA_SIZE` (= the
+-    /// basepage's `p_hitpa`), 4-KiB- and 16-byte-aligned per AAPCS64.
+-    /// The stack grows down from here; the kernel launch path sets
+-    /// `SP_EL0` to this and the SDK `crt0` re-derives the same value
+-    /// from the basepage's `p_hitpa`.
++    /// Initial `SP_EL0` for the child: the TPA top (= the basepage's
++    /// `p_hitpa`), 16-byte-aligned per AAPCS64 (a page boundary with
++    /// protection on). The kernel launch path sets `SP_EL0` to this; the SDK
++    /// start-up code moves the stack into the part of the TPA it keeps
++    /// (mintlib `_crtinit`: `bp + m`).
+     pub sp_el0: u64,
++    /// Bytes from the PD pointer to the end of the image (BSS included) —
++    /// what EmuTOS `pgmld` keeps of an accessory's TPA (`p_tlen + p_dlen +
++    /// p_blen + 0x100`, `util/gemdos.c:40-43`; the NewTOS image starts at
++    /// `B + 0x1000`, so it is the image end, not the sum). `sizeof(PD)` for a
++    /// `Pexec` 5/7 basepage.
++    pub image_len: u64,
+ }
+ 
+ /// Base of **page 0** — the per-process page at user VA `[0, 0x1000)` that
+@@ -178,11 +191,6 @@ pub struct LoadedImage {
+ /// at the start of the process's TPA block ([`LoadedImage::basepage_va`]).
+ pub const USER_VA_BASE: u64 = 0x0;
+ 
+-/// Minimum stack reserved at the top of the TPA: the program image +
+-/// BSS may not grow into this window (they would collide with the
+-/// stack). The heap lives between the image top and this reserve.
+-const USER_STACK_MIN: u64 = 0x1_0000;
+-
+ /// Number of bytes at the start of the TPA reserved for the
+ /// [`BasePage`].
+ const BASEPAGE_RESERVED: u64 = core::mem::size_of::<BasePage>() as u64;
+@@ -208,10 +216,6 @@ const _: () = assert!(SYSVAR_AREA_END <= RESERVED_LOW_END);
+ // linked at `RESERVED_LOW_END`, a page boundary), hence the page-aligned TPA.
+ const _: () = assert!(RESERVED_LOW_END.is_multiple_of(arena::TPA_ALIGN));
+ 
+-// The image window must leave room for both the reserved low region and the
+-// minimum stack reserve inside the TPA.
+-const _: () = assert!(RESERVED_LOW_END + USER_STACK_MIN < arena::TPA_SIZE);
+-
+ /// Where the program image comes from. There is **no** fixed
+ /// whole-file staging buffer: only the ELF header + program-header table
+ /// pass through a small buffer ([`HEADER_BUF`]); every `PT_LOAD` payload
+@@ -416,6 +420,13 @@ unsafe fn load_from_source(
+         return Err(LoadError::Ilp32Unsupported);
+     }
+ 
++    // 1b'. Where the image ends (BSS included): what the TPA must at least
++    //     hold — EmuTOS `needed = tlen + dlen + blen + sizeof(PD)`
++    //     (`bdos/proc.c:291`); in NewTOS the image starts at `B + 0x1000`, so
++    //     it is the highest segment end. A malformed segment costs no
++    //     allocation either.
++    let image_end = image_end_of(&img)?;
++
+     // 1c. The program's `PRGFLAGS` (ARCH03 E8b): the NewTOS ELF note, read
+     //     before anything is allocated because the flags choose the pool of
+     //     the TPA and the environment (EmuTOS `alloc_env`/`alloc_tpa` take
+@@ -445,7 +456,7 @@ unsafe fn load_from_source(
+     //    EmuTOS `bdos/proc.c:302-307`), so the child's `Pterm`
+     //    `free_all_owned` sweep reclaims it.
+     // SAFETY: BDOS lock held; single-CPU pre-test.
+-    let Some(tpa) = (unsafe { arena::alloc_tpa(prgflags) }) else {
++    let Some(tpa) = (unsafe { arena::alloc_tpa(prgflags, image_end) }) else {
+         // EmuTOS: "if failed, free env_ptr and return" (`bdos/proc.c:294-299`).
+         free_env();
+         return Err(LoadError::NoTpaMemory);
+@@ -472,7 +483,7 @@ unsafe fn load_from_source(
+     // SAFETY: BDOS lock held; `tpa` is a fresh, exclusively-owned
+     // page-aligned region.
+     match unsafe {
+-        let req = ProcessSetup { tail, env_addr, prgflags };
++        let req = ProcessSetup { tail, env_addr, prgflags, image_end };
+         populate_and_map(&src, slot, &img, &req, &tpa)
+     } {
+         Ok(loaded) => Ok(loaded),
+@@ -493,6 +504,8 @@ struct ProcessSetup<'a> {
+     tail: &'a [u8],
+     env_addr: Option<Long>,
+     prgflags: u32,
++    /// Bytes from the PD to the image end ([`image_end_of`]).
++    image_end: u64,
+ }
+ 
+ /// Stream the ELF image into `tpa`, zero its BSS, write the basepage
+@@ -513,19 +526,24 @@ unsafe fn populate_and_map(
+     req: &ProcessSetup<'_>,
+     tpa: &arena::Tpa,
+ ) -> Result<LoadedImage, LoadError> {
+-    let ProcessSetup { tail, env_addr, prgflags } = *req;
++    let ProcessSetup { tail, env_addr, prgflags, image_end } = *req;
+     let base = tpa.base;
+ 
+     // Whole-TPA mutable byte view via the kernel high-half alias.
+-    // SAFETY: the pool block backs `TPA_SIZE` contiguous bytes at
++    // SAFETY: the pool block backs `tpa.len` contiguous bytes at
+     // `base_kva`, mapped RW in the high half; single-CPU under the lock.
+     let tpa_bytes = unsafe {
+-        core::slice::from_raw_parts_mut(tpa.base_kva, arena::TPA_SIZE as usize)
++        core::slice::from_raw_parts_mut(tpa.base_kva, tpa.len as usize)
+     };
+ 
+-    // Zero the whole TPA: BSS, heap and stack all start zeroed and no
+-    // stale pool contents leak into the new process (see module docs).
+-    tpa_bytes.fill(0);
++    // Zero as EmuTOS `kpgmld` (`bdos/kpgmld.c:212-221`, "clear the bss or the
++    // whole heap"): the basepage page and the whole image span — so the BSS,
++    // and the padding between segments, start zeroed — always; the free TPA
++    // above the image only without `PF_FASTLOAD`.
++    tpa_bytes[..image_end as usize].fill(0);
++    if prgflags & PF_FASTLOAD == 0 {
++        tpa_bytes[image_end as usize..].fill(0);
++    }
+ 
+     // Stream each PT_LOAD segment's file bytes directly into the TPA at
+     // its link VA (the byte offset in the TPA) — for a FAT file, straight
+@@ -533,8 +551,6 @@ unsafe fn populate_and_map(
+     // byte so the cache maintenance below covers exactly text+data.
+     let mut image_top = BASEPAGE_RESERVED;
+     for seg in img.segments() {
+-        validate_segment(seg)?;
+-
+         let dest_off = seg.vaddr as usize;
+         let file_size = seg.file_size as usize;
+ 
+@@ -545,7 +561,7 @@ unsafe fn populate_and_map(
+             }
+         }
+         // The BSS tail (`mem_size - file_size`) is already zero from the
+-        // whole-TPA fill above, so no per-segment re-zero is needed.
++        // image-span fill above, so no per-segment re-zero is needed.
+         image_top = image_top.max(seg.vaddr + seg.mem_size);
+     }
+ 
+@@ -560,7 +576,8 @@ unsafe fn populate_and_map(
+     reloc::relocate(tpa_bytes, img, base)?;
+ 
+     // Write the BasePage at the TPA start.
+-    populate_basepage(tpa_bytes, img, tail, env_addr, base, prgflags);
++    let hitpa = base + tpa.len;
++    populate_basepage(tpa_bytes, img, tail, env_addr, base, hitpa, prgflags);
+ 
+     // Make the freshly-written program image observable to instruction
+     // fetch on real hardware (clean D-cache to PoU + invalidate I-cache).
+@@ -579,7 +596,7 @@ unsafe fn populate_and_map(
+     debug_assert!(!img.is_ilp32(), "step 1b must reject ELFCLASS32");
+ 
+     let entry_va = base + img.entry_va;
+-    let sp_el0 = base + arena::TPA_SIZE;
++    let sp_el0 = hitpa & !0xF;
+     // SAFETY: BDOS lock held; the slot belongs to this load.
+     let l0_pa = unsafe { install_slot(slot, tpa, entry_va, sp_el0)? };
+ 
+@@ -589,6 +606,7 @@ unsafe fn populate_and_map(
+         l0_pa,
+         basepage_va: base,
+         sp_el0,
++        image_len: image_end,
+     })
+ }
+ 
+@@ -657,8 +675,9 @@ unsafe fn install_slot(
+ 
+ /// `Pexec(PE_BASEPAGE / PE_BASEPAGEFLAGS)` — a basepage without a program
+ /// (EmuTOS `xexec`, `bdos/proc.c:210-237`): the environment
+-/// (`alloc_env(flags, env)`), a TPA of [`arena::TPA_SIZE`] from the pool
+-/// `flags` select, the basepage at its start per `init_pd_fields`
++/// (`alloc_env(flags, env)`), the TPA — the largest free block of the pool
++/// `flags` select (`alloc_tpa((ULONG)path, sizeof(PD), &max)`, `:220`) — the
++/// basepage at its start per `init_pd_fields`
+ /// (`:364-385`: zeroed, `p_lowtpa`, `p_hitpa`, `p_xdta`, `p_env`, the command
+ /// tail) with `p_flags = flags`, and `slot` set up around it. Both blocks
+ /// belong to the caller (the allocator stamps `run`; `set_owner(p, run)`,
+@@ -689,7 +708,7 @@ pub unsafe fn create_basepage(
+         }
+     };
+     // SAFETY: BDOS lock held.
+-    let Some(tpa) = (unsafe { arena::alloc_tpa(flags) }) else {
++    let Some(tpa) = (unsafe { arena::alloc_tpa(flags, BASEPAGE_RESERVED) }) else {
+         free_env();
+         return Err(LoadError::NoTpaMemory);
+     };
+@@ -706,7 +725,7 @@ pub unsafe fn create_basepage(
+     // SAFETY: `bp_bytes` is exactly one page-aligned `BasePage`.
+     let bp = unsafe { &mut *(bp_bytes.as_mut_ptr() as *mut BasePage) };
+     bp.p_lowtpa = tpa.base as Long;
+-    bp.p_hitpa = (tpa.base + arena::TPA_SIZE) as Long;
++    bp.p_hitpa = (tpa.base + tpa.len) as Long;
+     bp.p_xdta = (tpa.base + core::mem::offset_of!(BasePage, p_cmdlin) as u64) as Long;
+     bp.p_env = env_addr.unwrap_or(0);
+     bp.p_flags = flags;
+@@ -725,6 +744,7 @@ pub unsafe fn create_basepage(
+             l0_pa,
+             basepage_va: tpa.base,
+             sp_el0: 0,
++            image_len: BASEPAGE_RESERVED,
+         }),
+         Err(e) => {
+             // SAFETY: BDOS lock held; both blocks are still ours.
+@@ -741,7 +761,8 @@ pub unsafe fn create_basepage(
+ /// `init_pd_fields`, `bdos/proc.c:363-384`, and `kpgmld.c:123-145`).
+ ///
+ /// Sources:
+-///   * `p_lowtpa` / `p_hitpa` — TPA extents: `[base, base + TPA_SIZE)`.
++///   * `p_lowtpa` / `p_hitpa` — TPA extents: `[base, hitpa)` (`p_hitpa = p +
++///     max`, `bdos/proc.c:374`, `max` the largest block `alloc_tpa` took).
+ ///     `p_hitpa` is the TPA top, i.e. the initial stack pointer; the heap
+ ///     lives between the BSS end (`p_bbase + p_blen`) and the
+ ///     downward-growing stack.
+@@ -770,6 +791,7 @@ fn populate_basepage(
+     tail: &[u8],
+     env_addr: Option<Long>,
+     base: u64,
++    hitpa: u64,
+     prgflags: u32,
+ ) {
+     let mut text_base: u64 = 0;
+@@ -808,7 +830,7 @@ fn populate_basepage(
+     let bp = unsafe { &mut *(bp_bytes.as_mut_ptr() as *mut BasePage) };
+ 
+     bp.p_lowtpa = base as Long;
+-    bp.p_hitpa = (base + arena::TPA_SIZE) as Long;
++    bp.p_hitpa = hitpa as Long;
+     bp.p_tbase = text_base as Long;
+     bp.p_tlen = text_len as Long;
+     bp.p_dbase = data_base as Long;
+@@ -1448,10 +1470,10 @@ pub(super) unsafe fn alloc_env(img: &[u8], prgflags: u32) -> Result<Long, LoadEr
+     Ok(phys)
+ }
+ 
+-/// The pool a program's environment and TPA come from, by its `PRGFLAGS`:
+-/// TT-RAM preferred with `PF_TTRAMLOAD`, ST-RAM only without — EmuTOS
+-/// `alloc_env` (`bdos/proc.c:425`) and `alloc_tpa` (`:460-502`, whose ST/TT
+-/// tie-break by the bits 31-28 quantum is reference, not reproduced).
++/// The pool a program's environment comes from, by its `PRGFLAGS`: TT-RAM
++/// preferred with `PF_TTRAMLOAD`, ST-RAM only without — EmuTOS `alloc_env`
++/// (`bdos/proc.c:425`). The TPA's pool is [`arena::choose_pool`]'s
++/// (`alloc_tpa`, `:460-502`, with the bits 31-28 tie-break).
+ pub const fn pool_mode(prgflags: u32) -> i16 {
+     if prgflags & PF_TTRAMLOAD != 0 {
+         MX_PREFTTRAM
+@@ -1532,34 +1554,38 @@ unsafe fn env_slice_from_phys(penv: Long) -> &'static [u8] {
+ /// environments (a handful of `KEY=value` records).
+ const ENV_SCAN_LIMIT: usize = 4096;
+ 
+-/// Reject segments that clobber the reserved low region or overrun the
+-/// usable TPA image region.
++/// The end of the image in bytes from the PD (= the TPA offset of its last
++/// byte + 1, BSS included): EmuTOS' `needed` without the basepage term, which
++/// the NewTOS layout already contains (`bdos/proc.c:291`). The image starts at
++/// [`RESERVED_LOW_END`] at the earliest.
+ ///
+ /// A `PT_LOAD` (link VA = byte offset in the TPA) must start at or after
+-/// [`RESERVED_LOW_END`] — the BasePage and its reserved gap occupy the
+-/// TPA's first page — and end at or before `TPA_SIZE - USER_STACK_MIN`,
+-/// leaving the top of the TPA for the downward-growing stack. The heap
+-/// occupies whatever is left between the image top and the stack.
+-fn validate_segment(seg: &LoadSegment) -> Result<(), LoadError> {
+-    // Segments below the reserved low region would overlap the basepage, so
+-    // they are rejected — the SDK links native apps at RESERVED_LOW_END
+-    // (`sdk/newtos.ld`).
+-    if seg.vaddr < RESERVED_LOW_END {
+-        return Err(LoadError::SegmentVaOutOfRange);
+-    }
+-    let end = seg
+-        .vaddr
+-        .checked_add(seg.mem_size)
+-        .ok_or(LoadError::ProgramTooLarge)?;
+-    if end > arena::TPA_SIZE - USER_STACK_MIN {
+-        return Err(LoadError::ProgramTooLarge);
++/// [`RESERVED_LOW_END`] — the BasePage and its reserved gap occupy the TPA's
++/// first page. How large the image may be is the TPA's business: a program
++/// the largest free block cannot hold gets `ENSMEM` from [`arena::alloc_tpa`],
++/// as from EmuTOS `alloc_tpa`.
++fn image_end_of(img: &ElfImage) -> Result<u64, LoadError> {
++    let mut end = RESERVED_LOW_END;
++    for seg in img.segments() {
++        // Segments below the reserved low region would overlap the basepage,
++        // so they are rejected — the SDK links native apps at
++        // RESERVED_LOW_END (`sdk/newtos.ld`).
++        if seg.vaddr < RESERVED_LOW_END {
++            return Err(LoadError::SegmentVaOutOfRange);
++        }
++        let e = seg
++            .vaddr
++            .checked_add(seg.mem_size)
++            .filter(|&e| e <= i32::MAX as u64)
++            .ok_or(LoadError::ProgramTooLarge)?;
++        // PF_R is implicit for any LOAD; PF_W and PF_X drive the text/data
++        // classification in `populate_basepage`. The whole pool is mapped
++        // UserRwExec, so the flags don't gate a mapping decision — a
++        // per-segment RX/RW split is a later hardening step.
++        let _ = seg.flags & (PF_W | PF_X);
++        end = end.max(e);
+     }
+-    // PF_R is implicit for any LOAD; PF_W and PF_X drive the text/data
+-    // classification in `populate_basepage`. The whole pool is mapped
+-    // UserRwExec, so the flags don't gate a mapping decision — a
+-    // per-segment RX/RW split is a later hardening step.
+-    let _ = seg.flags & (PF_W | PF_X);
+-    Ok(())
++    Ok(end)
+ }
+ 
+ #[cfg(test)]
+@@ -1774,7 +1800,7 @@ mod basepage_segment_tests {
+         let img = elf::parse(&blob, blob.len() as u64).expect("well-formed ELF64");
+         assert_eq!(img.segments().len(), segs.len(), "every PT_LOAD must be seen");
+         let mut tpa = vec![0u8; RESERVED_LOW_END as usize];
+-        populate_basepage(&mut tpa, &img, &[], None, 0, PF_STANDARD);
++        populate_basepage(&mut tpa, &img, &[], None, 0, 0x40_0000, PF_STANDARD);
+         let rd = |off: usize| u32::from_le_bytes(tpa[off..off + 4].try_into().unwrap()) as u64;
+         (rd(0x08), rd(0x0C), rd(0x10), rd(0x14), rd(0x18), rd(0x1C))
+     }
+@@ -1837,10 +1863,10 @@ mod basepage_segment_tests {
+         ]);
+         let img = elf::parse(&blob, blob.len() as u64).expect("well-formed ELF64");
+         let mut tpa = vec![0u8; RESERVED_LOW_END as usize];
+-        populate_basepage(&mut tpa, &img, &[3, b'a', b'b', b'c'], Some(0x0200_0010), B, PF_STANDARD);
++        populate_basepage(&mut tpa, &img, &[3, b'a', b'b', b'c'], Some(0x0200_0010), B, B + 0x0123_4000, PF_STANDARD);
+         let rd = |off: usize| u32::from_le_bytes(tpa[off..off + 4].try_into().unwrap()) as u64;
+         assert_eq!(rd(0x00), B, "p_lowtpa = the PD pointer");
+-        assert_eq!(rd(0x04), B + arena::TPA_SIZE, "p_hitpa = TPA top");
++        assert_eq!(rd(0x04), B + 0x0123_4000, "p_hitpa = TPA top (PD + the block length)");
+         assert_eq!((rd(0x08), rd(0x0C)), (B + 0x1000, 0x400), "p_tbase/p_tlen");
+         assert_eq!((rd(0x10), rd(0x14)), (B + 0x1400, 0x80), "p_dbase/p_dlen");
+         assert_eq!((rd(0x18), rd(0x1C)), (B + 0x1480, 0x80), "p_bbase/p_blen");
+diff --git a/tos-api/src/bdos/process/mmu.rs b/tos-api/src/bdos/process/mmu.rs
+index 415bb2a..eab31e8 100644
+--- a/tos-api/src/bdos/process/mmu.rs
++++ b/tos-api/src/bdos/process/mmu.rs
+@@ -210,8 +210,11 @@ static SHARED_L3_TOTAL: AtomicUsize = AtomicUsize::new(0);
+ 
+ // ─── Table arena (stage 3b) ──────────────────────────────────────────
+ 
+-/// Upper bound on the arena's size in tables (64 bitmap words).
+-pub const ARENA_MAX_TABLES: usize = 64 * 64;
++/// Upper bound on the arena's size in tables (128 bitmap words). Room for
++/// the shared tables of 2 GiB of pools (1024), two un-shrunk largest-block
++/// TPAs' private copies (E9: a TPA is the largest free block until its
++/// program shrinks it, 2 × 1024) and the per-process budget besides.
++pub const ARENA_MAX_TABLES: usize = 128 * 64;
+ 
+ /// Kernel VA of the first arena table; `0` = no arena (protection off).
+ static ARENA_KVA: AtomicU64 = AtomicU64::new(0);
+diff --git a/tos-api/src/bdos/process/pexec.rs b/tos-api/src/bdos/process/pexec.rs
+index b3c2898..2b60737 100644
+--- a/tos-api/src/bdos/process/pexec.rs
++++ b/tos-api/src/bdos/process/pexec.rs
+@@ -70,10 +70,13 @@ pub struct LoadedChild {
+     /// [`tos_types::BasePage`] (the start of its TPA, VA = PA) — passed to
+     /// the child entry in `x0` per NewTOS's AArch64 process ABI.
+     pub basepage_va: u64,
+-    /// Initial `SP_EL0` for the child: the TPA top (`p_hitpa`),
+-    /// 4-KiB / 16-byte aligned. The kernel launch path sets `SP_EL0` to
+-    /// this before the eret.
++    /// Initial `SP_EL0` for the child: the TPA top (`p_hitpa`), 16-byte
++    /// aligned. The kernel launch path sets `SP_EL0` to this before the eret.
+     pub sp_el0: u64,
++    /// Bytes from the PD to the end of the image, BSS included
++    /// ([`LoadedImage::image_len`]) — what the accessory loader keeps of the
++    /// TPA (EmuTOS `pgmld`, `util/gemdos.c:40-43`). 0 for the go modes.
++    pub image_len: u64,
+     /// What `PE_LOAD` returns and `PE_GO` takes back (in `tail`): the
+     /// child's **PD pointer** (`basepage_va`) — a real basepage
+     /// address the caller can read (`p_tlen`, `p_env`, …) in the shared
+@@ -106,9 +109,9 @@ pub enum PexecError {
+     /// No room to record the child as an owner of its basepage/environment
+     /// ([`crate::bdos::mem::region`]). Mapped to `ENSMEM`.
+     NoOwnerRoom,
+-    /// The ELF blob was malformed, or its image + BSS overran the
+-    /// per-process TPA, or the TPA/env pool allocation failed. Mapped
+-    /// to `EPLFMT` (-66) for parser errors and `ENSMEM` for the
++    /// The ELF blob was malformed, or no free block holds its image + BSS
++    /// (EmuTOS `alloc_tpa` → `NULL`), or the env pool allocation failed.
++    /// Mapped to `EPLFMT` (-66) for parser errors and `ENSMEM` for the
+     /// size/allocation shortfalls.
+     LoadFailed(LoadError),
+ }
+@@ -119,8 +122,8 @@ impl PexecError {
+     ///
+     /// A *memory/size* shortfall maps to `ENSMEM` (EmuTOS `bdos/proc.c:295-300`:
+     /// no TPA → `ENSMEM`); a malformed image / bad header maps to `EPLFMT`
+-    /// (`bdos/kpgmld.c:47-63`). `ProgramTooLarge` is the image+BSS overrunning
+-    /// the TPA image region — a size shortfall, so `ENSMEM`. A failed TPA pool
++    /// (`bdos/kpgmld.c:47-63`). `ProgramTooLarge` is a segment end beyond the
++    /// address range — a size shortfall, so `ENSMEM`. A failed TPA pool
+     /// allocation (`NoTpaMemory`) and the env allocation shortfall
+     /// (`alloc_env`, `proc.c:284-288`) are likewise `ENSMEM`. A well-formed
+     /// but ILP32 image (`Ilp32Unsupported`) is a format NewTOS refuses to
+@@ -218,6 +221,7 @@ unsafe fn create(flags: u32, tail: &[u8], env: EnvSpec<'_>) -> Result<LoadedChil
+         l0_pa: img.l0_pa,
+         basepage_va: img.basepage_va,
+         sp_el0: 0,
++        image_len: img.image_len,
+         handle: img.basepage_va,
+         launch: false,
+     })
+@@ -303,6 +307,7 @@ pub unsafe fn load(
+         l0_pa: loaded.l0_pa,
+         basepage_va: loaded.basepage_va,
+         sp_el0: loaded.sp_el0,
++        image_len: loaded.image_len,
+         handle: loaded.basepage_va,
+         launch,
+     })
+@@ -409,6 +414,7 @@ pub unsafe fn go(handle: u64, then_free: bool) -> Result<LoadedChild, PexecError
+         l0_pa: slot.l0_pa.load(Ordering::Acquire),
+         basepage_va: super::pd_of(slot_idx) as u64,
+         sp_el0,
++        image_len: 0,
+         handle,
+         launch: true,
+     })
+diff --git a/tos-api/tests/loader_prgflags.rs b/tos-api/tests/loader_prgflags.rs
+index 5c9c84d..3ced505 100644
+--- a/tos-api/tests/loader_prgflags.rs
++++ b/tos-api/tests/loader_prgflags.rs
+@@ -197,6 +197,8 @@ fn a_bad_note_is_an_unloadable_program() {
+     }
+ }
+ 
++/// The environment's pool (`alloc_env`); the TPA's is `arena::choose_pool`
++/// (`alloc_tpa`, with the bits 31-28 tie-break — `arch03_e9_tpa.rs`).
+ #[test]
+ fn the_flags_choose_the_pool_like_emutos_alloc_env_and_alloc_tpa() {
+     assert_eq!(loader::pool_mode(PF_STANDARD), MX_PREFTTRAM);
+diff --git a/tos-api/tests/arch03_e9_tpa.rs b/tos-api/tests/arch03_e9_tpa.rs
+new file mode 100644
+index 0000000..432097f
+--- /dev/null
++++ b/tos-api/tests/arch03_e9_tpa.rs
+@@ -0,0 +1,193 @@
++//! ARCH03 E9 — the TPA is the **largest free block**, as EmuTOS `alloc_tpa`
++//! gives it (lead decision 2026-10-05, superseding "fixed 4 MiB").
++//!
++//! Sources the expectations come from (EmuTOS `references/emutos`, pin
++//! `1a7484ab`):
++//! * `bdos/proc.c:460-502` `alloc_tpa`: `ffit(-1L, &pmd)` / `ffit(-1L,
++//!   &pmdalt)` measure each pool (`:466,476`); TT-RAM only with
++//!   `PF_TTRAMLOAD` (`:475`); a pool qualifies when its largest block holds
++//!   `needed` (`:467,477`); TT-RAM wins unless ST-RAM is larger and TT-RAM
++//!   cannot hold `needed` + `((flags >> 28) + 1) * TPASIZE_QUANTUM`
++//!   (`:34,481-484`); the **whole** block is taken (`ffit(size, …)`,
++//!   `:486,493`) and its size is `*avail` → `p_hitpa = p + max` (`:374`);
++//! * `bdos/proc.c:220,291`: `needed` = `sizeof(PD)` for `Pexec` 5/7, image +
++//!   `sizeof(PD)` for a load;
++//! * `bdos/umem.c` `xsetblk`: what the program gives back is an ordinary free
++//!   block again, so the next program's TPA is the remainder.
++//!
++//! The pools are bookkeeping only (never dereferenced on the host; `kalias`
++//! is the identity here and `alloc_tpa` only computes it).
++
++use std::sync::{Mutex, MutexGuard, Once};
++
++use tos_api::bdos::mem::stats::{pool_stats, PoolKind};
++use tos_api::bdos::mem::{init, traps};
++use tos_api::bdos::process::arena::{self, TPASIZE_QUANTUM, TPA_ALIGN};
++use tos_types::error::E_OK;
++use tos_types::{Long, MX_STRAM, MX_TTRAM, PF_FASTLOAD, PF_STANDARD, PF_TTRAMLOAD, PF_TTRAMMEM};
++
++const ST_START: u64 = 0x0040_0000;
++const ST_LEN: u64 = 10 * 1024 * 1024;
++const TT_START: u64 = 0x0100_0000;
++const TT_LEN: u64 = 64 * 1024 * 1024;
++
++static LOCK: Mutex<()> = Mutex::new(());
++static SETUP: Once = Once::new();
++
++fn lock() -> MutexGuard<'static, ()> {
++    let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
++    SETUP.call_once(|| {
++        // SAFETY: once per binary, before any allocation.
++        unsafe { init::init(ST_START, ST_LEN, TT_START, TT_LEN) }.expect("the test pools");
++    });
++    g
++}
++
++fn largest(kind: PoolKind) -> u64 {
++    pool_stats(kind).largest_free as u64
++}
++
++// ── the pool choice (pure) ──────────────────────────────────────────────
++
++#[test]
++fn without_pf_ttramload_the_tpa_is_st_ram_whatever_tt_ram_has() {
++    let k = 128 * 1024u64;
++    assert_eq!(arena::choose_pool(0, k, 10 << 20, 900 << 20), Some(MX_STRAM));
++    assert_eq!(arena::choose_pool(PF_FASTLOAD | PF_TTRAMMEM, k, 10 << 20, 900 << 20), Some(MX_STRAM));
++    assert_eq!(arena::choose_pool(0, 11 << 20, 10 << 20, 900 << 20), None, "ST too small: ENSMEM");
++}
++
++#[test]
++fn with_pf_ttramload_tt_ram_wins_unless_st_is_larger_and_tt_misses_the_quantum() {
++    let n = 0x10_0000u64; // needed: 1 MiB
++    // TT larger or equal: TT.
++    assert_eq!(arena::choose_pool(PF_STANDARD, n, 10 << 20, 900 << 20), Some(MX_TTRAM));
++    assert_eq!(arena::choose_pool(PF_TTRAMLOAD, n, 4 << 20, 4 << 20), Some(MX_TTRAM));
++    // ST larger, TT holds needed + 1 quantum (bits 31-28 = 0): still TT.
++    assert_eq!(arena::choose_pool(PF_TTRAMLOAD, n, 8 << 20, n + TPASIZE_QUANTUM), Some(MX_TTRAM));
++    // ...one byte less: ST ("force allocation in ST RAM", proc.c:483).
++    assert_eq!(arena::choose_pool(PF_TTRAMLOAD, n, 8 << 20, n + TPASIZE_QUANTUM - 1), Some(MX_STRAM));
++    // Bits 31-28 = 0xF: 16 quanta = 2 MiB on top of needed.
++    let f = PF_TTRAMLOAD | 0xF000_0000;
++    assert_eq!(arena::choose_pool(f, n, 8 << 20, n + 16 * TPASIZE_QUANTUM), Some(MX_TTRAM));
++    assert_eq!(arena::choose_pool(f, n, 8 << 20, n + 16 * TPASIZE_QUANTUM - 1), Some(MX_STRAM));
++    // Only TT holds it: TT, whatever the quantum.
++    assert_eq!(arena::choose_pool(f, 9 << 20, 8 << 20, 9 << 20), Some(MX_TTRAM));
++    // Neither: ENSMEM.
++    assert_eq!(arena::choose_pool(PF_TTRAMLOAD, 9 << 20, 8 << 20, 1 << 20), None);
++    // No TT-RAM at all (alt = 0): ST.
++    assert_eq!(arena::choose_pool(PF_STANDARD, n, 8 << 20, 0), Some(MX_STRAM));
++}
++
++// ── the block (bookkeeping pools) ───────────────────────────────────────
++
++#[test]
++fn the_tpa_is_the_whole_largest_block_and_the_next_one_gets_what_is_given_back() {
++    let _g = lock();
++    let tt0 = largest(PoolKind::Ttram);
++    let used0 = pool_stats(PoolKind::Ttram).used_bytes;
++    // SAFETY: under the lock (the BDOS lock's stand-in).
++    let a = unsafe { arena::alloc_tpa(PF_STANDARD, 0x4000) }.expect("a TPA");
++    assert_eq!(a.base % TPA_ALIGN, 0, "page-aligned");
++    assert!(a.base >= TT_START && a.base < TT_START + TT_LEN, "PF_TTRAMLOAD: TT-RAM");
++    assert_eq!(a.len, tt0, "p_hitpa - p_lowtpa = the largest TT block (EmuTOS *avail)");
++    assert_eq!(largest(PoolKind::Ttram), 0, "nothing left in TT-RAM until it shrinks");
++    assert_eq!(pool_stats(PoolKind::Ttram).used_bytes as u64, used0 as u64 + tt0);
++    // The program keeps 64 KiB (its crt0's Mshrink) ...
++    // SAFETY: under the lock.
++    assert_eq!(unsafe { traps::mshrink(0, a.base as Long, 0x1_0000) }, E_OK);
++    // ... and the next program's TPA is the rest, right behind it.
++    // SAFETY: under the lock.
++    let b = unsafe { arena::alloc_tpa(PF_STANDARD, 0x4000) }.expect("a second TPA");
++    assert_eq!(b.base, a.base + 0x1_0000);
++    assert_eq!(b.len, tt0 - 0x1_0000);
++    // SAFETY: under the lock; both are live blocks of ours.
++    unsafe {
++        arena::free_tpa(b.base as Long);
++        arena::free_tpa(a.base as Long);
++    }
++    assert_eq!(largest(PoolKind::Ttram), tt0, "both back, coalesced");
++}
++
++#[test]
++fn without_pf_ttramload_the_largest_st_block_page_aligned_slack_returned() {
++    let _g = lock();
++    let st0 = largest(PoolKind::Stram);
++    let free_blocks0 = pool_stats(PoolKind::Stram).free_blocks;
++    // Misalign the next free ST byte (the 16-byte grain without protection).
++    // SAFETY: under the lock.
++    let small = unsafe { traps::mxalloc(48, MX_STRAM) };
++    assert_ne!(small, 0);
++    // SAFETY: under the lock.
++    let t = unsafe { arena::alloc_tpa(PF_FASTLOAD | PF_TTRAMMEM, 0x100) }.expect("an ST TPA");
++    assert!(t.base >= ST_START && t.base < ST_START + ST_LEN, "no PF_TTRAMLOAD: ST-RAM");
++    assert_eq!(t.base % TPA_ALIGN, 0);
++    let slack = t.base - (small as u64 + 48);
++    assert!(slack > 0 && slack < TPA_ALIGN, "the TPA starts on the next page");
++    assert_eq!(t.len, st0 - 48 - slack, "the rest of the largest block");
++    assert_eq!(largest(PoolKind::Stram), slack, "only the slack in front is free");
++    // SAFETY: under the lock.
++    unsafe {
++        arena::free_tpa(t.base as Long);
++        assert_eq!(traps::mfree(small), E_OK);
++    }
++    assert_eq!(largest(PoolKind::Stram), st0);
++    assert_eq!(pool_stats(PoolKind::Stram).free_blocks, free_blocks0);
++}
++
++#[test]
++fn a_program_the_largest_block_cannot_hold_is_ensmem_and_costs_nothing() {
++    let _g = lock();
++    let st = pool_stats(PoolKind::Stram);
++    let tt = pool_stats(PoolKind::Ttram);
++    // SAFETY: under the lock.
++    assert!(unsafe { arena::alloc_tpa(PF_STANDARD, TT_LEN + 1) }.is_none());
++    // SAFETY: under the lock.
++    assert!(unsafe { arena::alloc_tpa(0, ST_LEN + 1) }.is_none());
++    assert_eq!(pool_stats(PoolKind::Stram).used_bytes, st.used_bytes);
++    assert_eq!(pool_stats(PoolKind::Ttram).used_bytes, tt.used_bytes);
++    // A PF_TTRAMLOAD program too big for TT-RAM but not for ST-RAM gets
++    // ST-RAM (proc.c: st_ram_available, alt not).
++    let big = largest(PoolKind::Ttram);
++    // SAFETY: under the lock.
++    let a = unsafe { arena::alloc_tpa(PF_STANDARD, 0x2000) }.expect("TT TPA");
++    assert_eq!(a.len, big);
++    // TT-RAM is full now; the next PF_TTRAMLOAD program lands in ST-RAM.
++    // SAFETY: under the lock.
++    let b = unsafe { arena::alloc_tpa(PF_STANDARD, 0x2000) }.expect("ST TPA");
++    assert!(b.base >= ST_START && b.base < ST_START + ST_LEN);
++    // SAFETY: under the lock.
++    unsafe {
++        arena::free_tpa(b.base as Long);
++        arena::free_tpa(a.base as Long);
++    }
++}
++
++#[test]
++fn the_largest_free_block_is_the_first_of_maximal_length() {
++    let _g = lock();
++    // Carve TT-RAM into [A 1 MiB][hole 4 MiB][B 1 MiB][hole 4 MiB][C rest].
++    // SAFETY: under the lock.
++    unsafe {
++        let a = traps::mxalloc(1 << 20, MX_TTRAM);
++        let h1 = traps::mxalloc(4 << 20, MX_TTRAM);
++        let b = traps::mxalloc(1 << 20, MX_TTRAM);
++        let h2 = traps::mxalloc(4 << 20, MX_TTRAM);
++        let rest = traps::mxalloc((TT_LEN - (10 << 20)) as Long, MX_TTRAM);
++        assert!(a != 0 && h1 != 0 && b != 0 && h2 != 0 && rest != 0);
++        assert_eq!(traps::mfree(h1), E_OK);
++        assert_eq!(traps::mfree(h2), E_OK);
++        assert_eq!(
++            traps::largest_free_block(init::pmdalt()),
++            Some((h1, 4 << 20)),
++            "ffit(ffit(-1)) takes the first block of the largest length"
++        );
++        let t = arena::alloc_tpa(PF_STANDARD, 0x2000).expect("TPA");
++        assert_eq!((t.base, t.len), (h1 as u64, 4 << 20));
++        arena::free_tpa(t.base as Long);
++        for blk in [a, b, rest] {
++            assert_eq!(traps::mfree(blk), E_OK);
++        }
++    }
++    assert_eq!(largest(PoolKind::Ttram), TT_LEN);
++}
