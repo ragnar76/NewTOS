@@ -1,0 +1,4 @@
+PASS T.JPG at (277,227) 64x48: compared 2896, mismatched 0, masked 176
+PASS T.PI1 at (149,151) 320x200: compared 63824, mismatched 0, masked 176
+PASS T4.IMG at (277,227) 64x48: compared 2896, mismatched 0, masked 176
+TOTAL strict: 3 PASS, 0 FAIL

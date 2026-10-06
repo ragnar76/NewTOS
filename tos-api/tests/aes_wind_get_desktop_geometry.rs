@@ -111,8 +111,10 @@ impl RasterBackend for Profile {
     fn query_color(&self, i: u16) -> (u16, u16, u16) {
         panic!("unexpected palette read")
     }
-    fn set_active_palette(&self, p: &[u16; 256]) {
-        panic!("unexpected palette switch")
+    fn set_active_palette(&self, _p: &[u16; 256]) {
+        // Every VDI call on an open workstation selects its pseudo-palette
+        // (`tos-api/src/vdi/mod.rs`); the AES's own `gsx_init` set-up calls
+        // (`gemgraf.c:405-422`) are such calls. Nothing is drawn with it.
     }
     fn pel_to_device16(&self, p: Pel) -> u16 {
         panic!("unexpected pixel conversion")
@@ -320,6 +322,9 @@ fn start_at(w: u16, h: u16) -> (Desk, i16) {
     });
     PROFILE.width.store(w, Ordering::Relaxed);
     PROFILE.height.store(h, Ordering::Relaxed);
+    // The session's workstation open (`gsx_init`, `geminit.c:675`), whose
+    // handle `graf_handle` reports — on the screen just switched to.
+    tos_api::aes::gsxif::gsx_init();
     tos_api::aes::window::wm_init();
 
     let hbox = gl_hbox();

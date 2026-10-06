@@ -1,6 +1,6 @@
 # PROC02 — Kind erbt umgelenkte Standardhandles nicht; `Fforce` zaehlt keine Benutzung
 
-Status: **OFFEN** · Prioritaet: **P2** (nach dem OFAM-Termin) · Typ: Abweichung von EmuTOS — aus [PORT10](PORT10.md)
+Status: **ERLEDIGT** 2026-10-06 ([Quittung](PROC02-STATUS-DONE.MD)) · Prioritaet: **P2** (nach dem OFAM-Termin) · Typ: Abweichung von EmuTOS — aus [PORT10](PORT10.md)
 
 Abhaengigkeiten: —
 

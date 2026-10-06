@@ -587,7 +587,9 @@ pub(super) fn gl_hbox() -> i16 {
 /// plus the system-font cell metrics in `int_out[1..4]` (EmuTOS
 /// gemsuper.c:287-293).
 pub fn graf_handle(pb: &Aespb) {
-    pb.set_ret(1); // gl_handle: the physical VDI workstation the AES draws through
+    // gl_handle: the physical workstation the AES's own `v_opnwk` opened at
+    // session start (`gsx_wsopen`, gemgsxif.c:169-186) — a real, open one.
+    pb.set_ret(super::gsxif::gl_handle());
     pb.set_intout(1, gl_wchar()); // gl_wchar: system-font cell width
     pb.set_intout(2, gl_hchar()); // gl_hchar: system-font cell height
     // gl_wbox / gl_hbox: the *unadjusted* gadget box unit (gemsuper.c:290-291)

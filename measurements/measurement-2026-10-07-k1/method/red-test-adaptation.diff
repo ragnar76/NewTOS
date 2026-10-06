@@ -1,0 +1,11 @@
+102,103c102
+<     tos_api::aes::gsxif::gsx_wsclose();
+<     tos_api::aes::gsxif::gsx_init();
+---
+>     // HEAD (pre-K1): the AES has no session workstation open/close step.
+180c179
+<     tos_api::aes::gsxif::gsx_wsclose();
+---
+>     v.call(2, h, &[]); // v_clswk, what gsx_wsclose issues
+186d184
+<     tos_api::aes::gsxif::gsx_init();

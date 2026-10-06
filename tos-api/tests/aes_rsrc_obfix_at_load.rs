@@ -92,8 +92,10 @@ impl RasterBackend for Profile {
     fn query_color(&self, i: u16) -> (u16, u16, u16) {
         panic!("unexpected palette read")
     }
-    fn set_active_palette(&self, p: &[u16; 256]) {
-        panic!("unexpected palette switch")
+    fn set_active_palette(&self, _p: &[u16; 256]) {
+        // Every VDI call on an open workstation selects its pseudo-palette
+        // (`tos-api/src/vdi/mod.rs`); the AES's own `gsx_init` set-up calls
+        // (`gemgraf.c:405-422`) are such calls. Nothing is drawn with it.
     }
     fn pel_to_device16(&self, p: Pel) -> u16 {
         panic!("unexpected pixel conversion")
@@ -177,7 +179,12 @@ static LOCK: Mutex<()> = Mutex::new(());
 static INSTALL: Once = Once::new();
 
 fn lock() -> MutexGuard<'static, ()> {
-    INSTALL.call_once(|| tos_api::host::install_host(&HOST_REF));
+    INSTALL.call_once(|| {
+        tos_api::host::install_host(&HOST_REF);
+        // The AES session's workstation open (`gsx_init`, `geminit.c:675`),
+        // whose handle `graf_handle` reports.
+        tos_api::aes::gsxif::gsx_init();
+    });
     LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 

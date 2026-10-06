@@ -1,0 +1,22 @@
+# K1 -- EmuDESK drag outline (the desktop's only VDI drawing, gr_drgplns via
+# kernel/src/desk/vdibind.rs, which since K1 draws on the AES's workstation
+# gl_handle instead of a virtual workstation of its own). Card and desktop as
+# evb-desk.actions (newdesk-evb-desk.inf, no #Z). Press on the C drive icon
+# (38,30), drag it without releasing over the empty desktop -- the dotted
+# XOR outline must follow -- then back onto the icon and release (a
+# self-drop, EmuTOS cancels it, deskact.c:666-670; nothing is written).
+# Ticks hz_200 after "[desk] desktop up" (desk-arm-m3.py).
+100 parkbr
+400 mark A_IDLE
+600 move 38 30
+800 down
+900 drag 200 200
+1300 mark B_DRAG_200_200
+1500 drag 320 140
+1900 mark C_DRAG_320_140
+2100 drag 38 30
+2400 mark D_BACK
+2600 up
+3000 mark E_RELEASED
+3200 parkbr
+3600 mark END

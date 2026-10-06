@@ -500,18 +500,22 @@ The two outline point lists are `G.g_xyicon`/`G.g_xytext`, built by
 `app_start` (`deskapp.c:988-1011`) and now carried in `DeskState`;
 `DRAG_BOX_WIDTH` is `2 + LEN_ZNODE + 1 + LEN_ZEXT` = 14.
 
-**The desktop needed a VDI binding for this, and that is the one named
-deviation.** `gr_plns` draws the outline with `gsx_pline` → `gsx_xline`, i.e.
-`vsl_udsty` + `v_pline` per segment in `MD_XOR` (`aes/gemgraf.c:140-182`),
-on the workstation EmuTOS's desktop *shares* with the AES — it may, because
-the ROM desktop is linked into the AES. NewTOS's desktop reaches the system
-only through traps, and NewTOS's AES has no VDI workstation to share (it paints
-through the raster backend directly, so nothing ever calls `v_opnwk`). The new
-`kernel/src/desk/vdibind.rs` therefore opens the desktop's **own** virtual
-workstation the way every NewTOS GEM application does — `graf_handle` (AES 77)
-→ `v_opnvwk` — and sets `vsl_type(7)` + `vsl_udsty(0xffff)` on it, which in
-EmuTOS is part of the AES's workstation set-up (`gsx_start`,
-`aes/gemgraf.c:420-422`). `gr_bwait` re-establishes the clip and the write mode
+**The desktop needed a VDI binding for this.** `gr_plns` draws the outline
+with `gsx_pline` → `gsx_xline`, i.e. `vsl_udsty` + `v_pline` per segment in
+`MD_XOR` (`aes/gemgraf.c:140-182`), on the workstation EmuTOS's desktop
+*shares* with the AES — it may, because the ROM desktop is linked into the AES.
+NewTOS's desktop reaches the system only through traps, so
+`kernel/src/desk/vdibind.rs` makes the same VDI calls over the VDI trap, on
+the handle `graf_handle` reports (`deskmain.c:1956`, `gl_handle`): the AES's
+own physical workstation, opened at session start
+(`tos_api::aes::gsxif::gsx_init`, EmuTOS `gsx_wsopen`,
+`aes/gemgsxif.c:169-186`), whose `vsl_type(7)` + `vsl_udsty(0xffff)` set-up
+is the AES's (`gsx_start`, `aes/gemgraf.c:420-422`). *Correction (K1,
+2026-10-07):* until then NewTOS's AES opened no workstation (handle 1 was
+never open), and the desktop opened its own virtual one — a named deviation
+that, from the first drag on, kept virtual handle 2 taken for the rest of the
+session, so a program started afterwards got handle 3 from its first
+`v_opnvwk`; both are gone. `gr_bwait` re-establishes the clip and the write mode
 on every pass, which is what EmuTOS's own comment at `deskact.c:211-214`
 demands anyway. One further collapse: `gsx_attr`'s `gl_mode`/`gl_lcolor` cache
 (`:205-240`) is not reproduced — it saves VDI calls and leaves the workstation

@@ -189,9 +189,27 @@ allocation and no free-handle scan; the physical handle is fixed).
   `work_in[0]` resolution change is honoured only insofar as the board
   supports it. Bring-up uses one fixed mode, so `newrez` is effectively
   ignored and `DEV_TAB[0,1]` reflect the live framebuffer size.
-- The physical workstation is opened once at graphics init and stays open
-  for the system lifetime; `v_clswk` is effectively a no-op (see
-  [`101-v_clsvwk`](101-v_clsvwk.md)).
+- **Who opens it, and when (K1, 2026-10-07).** As in EmuTOS, the AES opens
+  the physical workstation at the start of every AES session — `gsx_init` →
+  `gsx_wsopen` (`aes/gemgsxif.c:169-186,267-270`), called from
+  `run_accs_and_desktop` (`aes/geminit.c:675`) — and keeps the handle in
+  `gl_handle`, which `graf_handle` returns (`aes/gemsuper.c:287-293`). The
+  session end closes it with `v_clswk` (`gsx_wsclose`, `geminit.c:749`),
+  which frees every virtual workstation and keeps handle 1
+  (`vdi_control.c:573-590`). NewTOS: `tos_api::aes::gsxif::gsx_init` /
+  `gsx_wsclose`, called from the kernel's AES session loop
+  (`kernel/src/lib.rs`). *Correction:* this note used to say the physical
+  workstation is "opened once at graphics init and stays open for the system
+  lifetime" — nothing ever called `v_opnwk`, so handle 1 was closed and
+  every call on the `graf_handle` handle was a VDI no-op (zView M4 K1,
+  `measurements/measurement-2026-10-06-zview-m4/checks/k1-evidence.txt`).
+- `v_opnwk`'s `vwk_ptr[2..] = NULL` (`vdi_control.c:544-545`) is **not**
+  reproduced by `vwk::open_physical` (open point, not part of K1). In the
+  AES's own sequence it only shows when a virtual workstation is still open
+  at the first session start (an AUTO program that never called
+  `v_clsvwk`); a later session opens after `v_clswk` closed them all. A
+  program calling `v_opnwk` itself while virtual workstations are open can
+  tell too.
 - The `init_colors`/`timer_init`/`vdimouse_init`/`esc_init` bring-up
   sequence is **reference**; NewTOS runs the equivalent framebuffer /
   input / console init, not the EmuTOS routines.

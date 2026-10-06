@@ -379,9 +379,11 @@ pub fn init() {
 /// `gsx_init`'s `vex_wheelv(aes_wheel, &old_wheelv)`
 /// (`aes/gemgsxif.c:288-292`): claim the VDI's mouse-wheel vector for the
 /// AES, so a wheel detent reaches [`super::input::wheel_change`]. EmuTOS does
-/// this inside `gsx_init`, i.e. as part of `gem_main`'s bring-up; NewTOS
-/// opens no AES-owned workstation of its own, so it hangs off the same
-/// `gem_main` prologue this module already is. Idempotent, and it never
+/// this inside `gsx_init`, right after opening the AES's workstation; NewTOS
+/// opens that workstation per session ([`super::gsxif::gsx_init`]) but
+/// installs the wheel vector once here, in the `gem_main` prologue — the
+/// VDI's `wheel_init` is one-shot (`vdi/mouse.rs`), so the order against the
+/// workstation open does not matter. Idempotent, and it never
 /// overrides a vector an application installed
 /// ([`crate::vdi::mouse::install_aes_wheel`]).
 fn install_wheel_vector() {

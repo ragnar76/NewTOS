@@ -1,0 +1,157 @@
+measurement-2026-10-07-k1 -- zView M4 blocker K1: the AES opens a real
+physical VDI workstation at session start and graf_handle returns it
+(EmuTOS gsx_init / gsx_wsopen / gsx_start / gsx_wsclose). Developer
+self-evidence; the Tester's verdict is separate.
+
+Date 2026-10-07, branch desk-rebuild, HEAD 81d0949 plus this change,
+uncommitted (method/k1-change.diff). QEMU raspi4b, -append serial=on
+(+ memprot=strict where named), memprot default on, one QEMU at a time,
+host macOS. No SD card, Pi or TT touched. Scratch (kernels, cards, target
+dirs) in the session scratchpad.
+
+RESULT IN ONE LINE
+  graf_handle now names VDI handle 1, opened by the AES's own v_opnwk at
+  every session start; vq_extnd on it answers (planes 16 / colours 256 on the
+  Pi framebuffer). Product ZVIEW.NAP (unchanged, sha256 9c6497ad... = the
+  M4 build): 15/15 samples pixel-exact memprot on, 3/3 strict; T.PI1 (Bus
+  Error before) displays. Regressions: EmuDESK, drag outline, TeraDesk, QED,
+  APITEST byte-identical to the HEAD kernel; LDGDEMO (WinDom) changes on
+  purpose -- WinDom now sees app.color 256 and draws its DRAW3D buttons on
+  the grey actcol background (WinDom userdef.c:390-400).
+
+EMUTOS (pinned tree 1a7484ab)
+  aes/geminit.c:675        run_accs_and_desktop: gsx_init() before load_accs
+  aes/gemgsxif.c:267-270   gsx_init: gsx_wsopen(); gsx_start(); ...
+  aes/gemgsxif.c:169-186   gsx_wsopen: intin[0]=screen_rez()+2 (FALCON_REZ+2),
+                           intin[1..9]=1, intin[10]=2, intout[45]=VsetMode(-1),
+                           v_opnwk(intin, &gl_handle, &gl_ws)
+  aes/gemgraf.c:383-428    gsx_start: vqt_attributes, vst_height(ws_chminh),
+                           vst_height(ws_chmaxh), vsl_type(7), vsl_width(1),
+                           vsl_udsty(0xffff)
+  aes/gemsuper.c:287-293   graf_handle: ret = gl_handle
+  aes/geminit.c:749        gsx_wsclose() = v_clswk (gemgsxif.c:191-194)
+  vdi/vdi_control.c:420    v_opnvwk: free-slot scan from VDI_PHYS_HANDLE+1
+  vdi/vdi_control.c:544    v_opnwk: CONTRL[6] = VDI_PHYS_HANDLE (1)
+  vdi/vdi_control.c:573-590 v_clswk: frees handles 2.., keeps 1
+  desk/deskmain.c:1956     the desktop keeps graf_handle's gl_handle and
+                           draws on it (no v_opnvwk of its own)
+
+CHANGE (method/k1-change.diff)
+  tos-api/src/aes/gsxif.rs   GL_HANDLE/gl_handle(), gsx_init() (wsopen +
+      gsx_start's VDI calls through the VDI dispatcher, kernel-space LP64
+      block), gsx_wsclose(); module doc
+  tos-api/src/aes/graf.rs    graf_handle returns gsxif::gl_handle() (was a
+      constant 1 for a handle nothing had opened)
+  kernel/src/lib.rs          session loop: gsx_init() before load_accs,
+      gsx_wsclose() after free_accs (also on the shutdown path)
+  kernel/src/desk/vdibind.rs the desktop draws on graf_handle's handle (the
+      AES's workstation); its own v_opnvwk + vsl_type/vsl_udsty removed (the
+      named deviation whose reason -- handle 1 never open -- is gone)
+  kernel/src/desk/mod.rs, tos-api/src/aes/init.rs   doc comments only
+  docs/api/aes/window-graphics.md  graf_handle: gl_handle contract + NewTOS
+      binding; docs/api/aes/shell-loop.md  session open/close;
+  docs/api/vdi/workstation/01-v_opnwk.md  who opens it, correction of the
+      "opened once at graphics init" note, open point vwk_ptr[2..]=NULL;
+  docs/api/desktop/deskact.md  the deviation paragraph replaced
+  tests: tos-api/tests/aes_k1_gl_handle.rs (new, 3 tests); the AES-start step
+      gsx_init() added to the rigs that call graf_handle
+      (aes_reference/harness.rs context(), aes_menu_bar_height.rs,
+      aes_wind_get_desktop_geometry.rs, aes_rsrc_obfix_at_load.rs); the two
+      metadata-only test backends accept set_active_palette (every VDI call
+      on an open workstation selects its palette; nothing is drawn)
+
+HOST TESTS RED BEFORE / GREEN AFTER
+  checks/red-before-HEAD-81d0949.txt: aes_k1_gl_handle.rs against
+  `git archive HEAD` (scratch), with the session steps HEAD does not have
+  replaced (method/red-test-adaptation.diff: no gsx_init; v_clswk issued
+  directly): 3/3 FAIL -- vq_extnd(graf_handle,1) answers 0 INTOUT words;
+  vql_attributes on it untouched (poison); v_clswk on the closed handle 1
+  does nothing, virtual handle 2 stays open.  After: 3/3 pass.
+
+STATIC CHECKS (method/checks.sh final -> checks/final-*)
+  host tests 1175/0/1 (baseline 1172/0/1, +3 new)
+  release builds rpi4 + qemu-virt (fresh, cargo clean -p kernel -p tos-api):
+    warnings tos-api 64 / kernel 94 (= baseline), 0 errors
+  clippy rpi4 / qemu-virt: tos-api 76 / kernel 125 (= baseline); 0 hits in
+    gsxif.rs, graf.rs, init.rs, vdibind.rs, desk/mod.rs (lib.rs: only the
+    pre-existing "lint level defined here" note of #![warn(missing_docs)])
+  desk drift probe 31 (= baseline); SDK host tests 16/0/0 (= baseline)
+  VDI reference suites (vdi_reference, vdi_reference_raster_screen,
+    vdi_reference_overlay_bit) and AES reference (aes_reference): all pass,
+    no reference cell changed (the VDI harness opens v_opnwk itself and is
+    untouched; the AES harness now runs gsx_init before appl_init, as the
+    dumper's machine did -- case 216 graf_handle = 1 matches the reference)
+
+KERNELS (method/make-kernels.sh; not kept)
+  kernel8-evb.img (K1 tree, rpi4 release)  a35f5067ecdb2e8e... (= checks.sh
+    kernel8-final.img and the xtask release build); used as kernel8.img for
+    zv-runs.sh
+  kinj-evb-{acc,desk,tera,qed,desk-drag}.img  K1 tree + IKBD injector
+  head-kinj-evb-{desk,tera,qed,desk-drag}.img HEAD 81d0949 (git archive) +
+    the same injector
+  sha256 in checks/kernels-sha256.txt
+
+ZVIEW ACCEPTANCE (method/zv-runs.sh on / strict; check-all.sh)
+  Card: tools/make-sd-image.sh <scratch>/base.img 64 (QEMU only), per run a
+  private copy (#Z C:\ZVLAUNCH.NAP + C:\ZVARG.TXT), product ZVIEW.NAP from
+  sdk/zview/build/dist (byte-identical to measurement-2026-10-06-zview-m4/
+  bin/ZVIEW). Expected pictures: sdk/zview/build/samples/expected/*.rgb,
+  T.JPG = ../measurement-2026-10-06-zview-m4/checks/T.JPG.jpgref.rgb.
+  memprot on  (checks/on-shotcheck.txt):     15 PASS, 0 FAIL
+  memprot strict (checks/strict-shotcheck.txt): T.JPG T.PI1 T4.IMG 3 PASS
+  Every run: ZVLAUNCH rc=0, no crash line in serial/. on-t-pi1 (320x200
+  DEGAS) shows the picture where the M4 product run took a Bus Error.
+
+REGRESSION (method/evb-runs.sh; checks/regr-shotcmp.txt,
+deskdrag-shotcmp.txt)
+  desk   EmuDESK, C:\ window, APPS folder, View > Show as text:
+         6/6 dumps byte-identical to the HEAD kernel (head-desk-*)
+  deskdrag (new script method/evb-desk-drag.actions): press on DISK C, drag
+         over the desktop, back, release (self-drop): the dotted XOR outline
+         follows (deskdrag-B/C), nothing remains after the release;
+         6/6 byte-identical to HEAD -- the outline is the same on the AES's
+         workstation as on the old virtual one
+  tera   TeraDesk (#Z): 4/4 identical to HEAD
+  qed    QED (#Z), Datei > Neuer Text -> "Namenlos" window: 4/4 identical
+         to HEAD
+  api    APITEST (#Z): TOTAL 106/0/5 (= baseline); 2/2 dumps identical to
+         measurement-2026-10-06-aes-evbutton api-*
+  accept LDGDEMO.NAP (WinDom client), evb-acc.actions, on and strict: client
+         exits rc=0; on = strict (10/10 identical). Against
+         aes-evbutton's acc-on: 5 identical, 5 differ, all inside the
+         dialog's button row (238,261)-(398,277): "Compute" and "Close" are
+         drawn on a grey background instead of white. Cause: WinDom's
+         ApplInit now reads app.color = 256 (was 0) from vq_extnd on the
+         graf_handle handle; draw_background (WinDom userdef.c:390-400)
+         fills DRAW3D objects with CONF(app)->actcol when app.color >= 16,
+         white only below. This is the intended K1 effect -- the 16-colour+
+         path every WinDom program takes on EmuTOS (Falcon TC: 256 colours)
+         -- not a regression. Crop comparison not kept (scratch).
+
+NOT DONE / OPEN
+  - vdi v_opnwk does not clear vwk_ptr[2..] (vdi_control.c:544-545) -- named
+    in 01-v_opnwk.md as an open point; outside K1.
+  - qemu-virt: not booted in QEMU here (build + clippy only). On a board
+    without a framebuffer the VDI never reaches v_opnwk, so graf_handle
+    reports 0 (EmuTOS always has a screen).
+  - zView browser / fsel / save / animation / slideshow / AV: not driven
+    (as in M4). Real Pi: not run (no HW actions by workers).
+  - tosdump QEMU dumps (#Z autorun) not re-run; the host reference suites
+    are the comparison used.
+
+method/ FILES
+  copied unchanged from measurement-2026-10-06-zview-m4/method: qmp_timed.py,
+    newdesk-template.inf, check-shot.py, check-all.sh
+  copied with a stated change: run-rpi4.sh (= zview-m4's, OUTDIR/SERDIR),
+    zv-runs.sh (kernel = K1 tree; ZVLAUNCH/PLPROBE from zview-m4's bin/)
+  copied unchanged from measurement-2026-10-06-aes-evbutton/method:
+    apply-injector-m3.py, desk-arm-m3.py, drive-m3.py, gen_script.py,
+    run-rpi4-drive-m3.sh, seed-card.sh, seed-card-a4.sh, shotcmp.py,
+    make-kernels.sh, evb-acc/desk/desk3a/qed/tera.actions,
+    newdesk-evb-desk.inf, TERADESK.INF, desk3a/
+  copied with a stated change: evb-runs.sh (part deskdrag added; the first
+    invocation's trailing "unexpected EOF" in the scratch log came from that
+    edit landing while it ran -- after its last part, api, had finished),
+    checks.sh (release images to IMGDIR=<scratch>, not bin/)
+  this run: evb-desk-drag.actions, k1-change.diff, red-test-adaptation.diff
+  SHA256SUMS: every file of this run except itself.

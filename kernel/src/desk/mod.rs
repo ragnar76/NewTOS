@@ -561,10 +561,10 @@ pub(super) fn evnt_dclick(rate: i16, setit: bool) -> i16 {
     a.intout[0]
 }
 
-/// `graf_handle()` (77) — the AES's VDI workstation handle, plus the system
-/// font's cell metrics the desktop does not use here. The input handle of the
-/// `v_opnvwk` in [`vdibind`], exactly as `gsx_init` uses it
-/// (`aes/gemgraf.c:432-437`).
+/// `graf_handle()` (77) — the AES's VDI workstation handle `gl_handle`, plus
+/// the system font's cell metrics the desktop does not use here. The desktop
+/// draws its drag outline on that workstation ([`vdibind`]), as EmuTOS's
+/// `deskmain` keeps it in its own `gl_handle` (`deskmain.c:1956`).
 pub(super) fn graf_handle() -> i16 {
     let mut a = Aes::new();
     a.call(OP_GRAF_HANDLE, 0, 5, 0);

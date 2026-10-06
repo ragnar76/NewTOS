@@ -1,0 +1,835 @@
+diff --git a/docs/api/aes/shell-loop.md b/docs/api/aes/shell-loop.md
+index 46a7634..0772db4 100644
+--- a/docs/api/aes/shell-loop.md
++++ b/docs/api/aes/shell-loop.md
+@@ -446,6 +446,16 @@ module), `kernel::desk::reset()` (the desktop is a program that restarts,
+ unreachable on this profile for the same reason it is on a Falcon
+ (`can_shutdown()` FALSE, `bios/bios.c:754-770`).
+ 
++Each session opens the AES's VDI workstation first and closes it last, as
++`run_accs_and_desktop` does: `gsx_init()` (`geminit.c:675`, `v_opnwk` →
++`gl_handle`, then `gsx_start`'s line/text set-up) before `load_accs`, and
++`gsx_wsclose()` (`:749`, `v_clswk`) after `free_accs` — on the shutdown
++path too, since EmuTOS closes before returning out of
++`run_accs_and_desktop`. NewTOS: `tos_api::aes::gsxif::{gsx_init,
++gsx_wsclose}` in `kernel/src/lib.rs`'s session loop; contract and
++consequences in [`window-graphics.md` § `graf_handle`](./window-graphics.md)
++(K1, 2026-10-07).
++
+ The one step of `gem_main` that stays absent is the physical mode switch
+ (`Setscreen`/`Vsetmode`, `geminit.c:778-793`): the framebuffer is
+ negotiated once at boot (ADR-017 rev 2, D-101), so `gl_nextrez` is
+diff --git a/docs/api/aes/window-graphics.md b/docs/api/aes/window-graphics.md
+index 018d14d..c5f8b27 100644
+--- a/docs/api/aes/window-graphics.md
++++ b/docs/api/aes/window-graphics.md
+@@ -1369,6 +1369,44 @@ globals set at AES start-up (`gemgraf.c:40-52`, `405-415`): `int_out[0]` =
+ `gl_hbox = gl_hchar+3`). An application calls this once to learn the AES VDI
+ handle, then issues VDI calls on it.
+ 
++**`gl_handle` is a real, open workstation.** It is the `CONTRL[6]` the VDI
++answered to the AES's own `v_opnwk` (`gsx_wsopen`, `gemgsxif.c:169-186`,
++`v_opnwk(intin, &gl_handle, &gl_ws)`), run by `gsx_init`
++(`gemgsxif.c:267-270`) at the start of every AES session
++(`run_accs_and_desktop`, `geminit.c:675`, before the accessories load) — i.e.
++`VDI_PHYS_HANDLE` = **1** (`vdi_control.c:542-544`). `gsx_start`
++(`gemgraf.c:383-428`) then sets that workstation up: `vqt_attributes`, the
++two `vst_height` calls (`ws_chminh`, then back to the current height,
++`:405-410`), `vsl_type(7)`, `vsl_width(1)`, `vsl_udsty(0xffff)`
++(`:420-422`). Consequences an application observes:
++
++- every VDI call on the `graf_handle` handle is answered — `vq_extnd(h, 0)`
++  returns `DEV_TAB` (`[13]` colours, `[0]/[1]` the screen size) and
++  `vq_extnd(h, 1)` `INQ_TAB` (`[4]` the plane count). WinDom's `ApplInit`
++  (`appl_init.c:42-46`) takes `app.nplanes`/`app.color` from exactly these
++  two calls on the `graf_handle` handle;
++- the first `v_opnvwk` of a program gets handle **2** (the free-slot scan
++  starts at `VDI_PHYS_HANDLE + 1`, `vdi_control.c:420`) — the desktop draws
++  on `gl_handle` itself (`deskmain.c:1956`), it holds no virtual
++  workstation of its own;
++- the workstation is closed (`gsx_wsclose` → `v_clswk`, `gemgsxif.c:191-194`)
++  when the session ends (`geminit.c:749`), which closes every virtual
++  workstation and leaves the physical one open (`vdi_control.c:573-590`).
++
++**NewTOS binding.** `tos_api::aes::gsxif::gsx_init` / `gsx_wsclose`, called
++by the kernel's AES session loop (`kernel/src/lib.rs`) at the
++`geminit.c:675`/`:749` positions; `graf_handle` returns
++`gsxif::gl_handle()`. `gl_handle` is 0 until the first `gsx_init`, as
++EmuTOS's zeroed BSS global is. Two `gsx_init` steps are not VDI calls on
++`gl_handle` here: `gsx_setmb` (the button/motion vectors are the AES's
++`user_but`/`user_mot`, called directly by the VDI mouse feed,
++`tos-api/src/vdi/mouse.rs`) and `vex_wheelv`
++(installed once at boot, `aes::init::install_wheel_vector`); `gsx_wsopen`'s
++`intout[45] = VsetMode(-1)` is not passed — NewTOS has no `VsetMode` and its
++`v_opnwk` switches no mode (`../vdi/workstation/01-v_opnwk.md`). The AES's
++own metrics (`gl_wchar`…`gl_hbox`, `gl_nplanes`) are derived from the same
++font ring and backend the VDI answers from, not read back through the trap.
++
+ ### `graf_mouse` (78) — set the mouse cursor
+ 
+ **Source:** `gemsuper.c:294-303` → `gr_mouse` (`gemgrlib.c:419-455`). If the
+diff --git a/docs/api/desktop/deskact.md b/docs/api/desktop/deskact.md
+index 5ec117c..043e7b2 100644
+--- a/docs/api/desktop/deskact.md
++++ b/docs/api/desktop/deskact.md
+@@ -500,18 +500,22 @@ The two outline point lists are `G.g_xyicon`/`G.g_xytext`, built by
+ `app_start` (`deskapp.c:988-1011`) and now carried in `DeskState`;
+ `DRAG_BOX_WIDTH` is `2 + LEN_ZNODE + 1 + LEN_ZEXT` = 14.
+ 
+-**The desktop needed a VDI binding for this, and that is the one named
+-deviation.** `gr_plns` draws the outline with `gsx_pline` → `gsx_xline`, i.e.
+-`vsl_udsty` + `v_pline` per segment in `MD_XOR` (`aes/gemgraf.c:140-182`),
+-on the workstation EmuTOS's desktop *shares* with the AES — it may, because
+-the ROM desktop is linked into the AES. NewTOS's desktop reaches the system
+-only through traps, and NewTOS's AES has no VDI workstation to share (it paints
+-through the raster backend directly, so nothing ever calls `v_opnwk`). The new
+-`kernel/src/desk/vdibind.rs` therefore opens the desktop's **own** virtual
+-workstation the way every NewTOS GEM application does — `graf_handle` (AES 77)
+-→ `v_opnvwk` — and sets `vsl_type(7)` + `vsl_udsty(0xffff)` on it, which in
+-EmuTOS is part of the AES's workstation set-up (`gsx_start`,
+-`aes/gemgraf.c:420-422`). `gr_bwait` re-establishes the clip and the write mode
++**The desktop needed a VDI binding for this.** `gr_plns` draws the outline
++with `gsx_pline` → `gsx_xline`, i.e. `vsl_udsty` + `v_pline` per segment in
++`MD_XOR` (`aes/gemgraf.c:140-182`), on the workstation EmuTOS's desktop
++*shares* with the AES — it may, because the ROM desktop is linked into the AES.
++NewTOS's desktop reaches the system only through traps, so
++`kernel/src/desk/vdibind.rs` makes the same VDI calls over the VDI trap, on
++the handle `graf_handle` reports (`deskmain.c:1956`, `gl_handle`): the AES's
++own physical workstation, opened at session start
++(`tos_api::aes::gsxif::gsx_init`, EmuTOS `gsx_wsopen`,
++`aes/gemgsxif.c:169-186`), whose `vsl_type(7)` + `vsl_udsty(0xffff)` set-up
++is the AES's (`gsx_start`, `aes/gemgraf.c:420-422`). *Correction (K1,
++2026-10-07):* until then NewTOS's AES opened no workstation (handle 1 was
++never open), and the desktop opened its own virtual one — a named deviation
++that, from the first drag on, kept virtual handle 2 taken for the rest of the
++session, so a program started afterwards got handle 3 from its first
++`v_opnvwk`; both are gone. `gr_bwait` re-establishes the clip and the write mode
+ on every pass, which is what EmuTOS's own comment at `deskact.c:211-214`
+ demands anyway. One further collapse: `gsx_attr`'s `gl_mode`/`gl_lcolor` cache
+ (`:205-240`) is not reproduced — it saves VDI calls and leaves the workstation
+diff --git a/docs/api/vdi/workstation/01-v_opnwk.md b/docs/api/vdi/workstation/01-v_opnwk.md
+index 976ab18..53c77e8 100644
+--- a/docs/api/vdi/workstation/01-v_opnwk.md
++++ b/docs/api/vdi/workstation/01-v_opnwk.md
+@@ -189,9 +189,27 @@ allocation and no free-handle scan; the physical handle is fixed).
+   `work_in[0]` resolution change is honoured only insofar as the board
+   supports it. Bring-up uses one fixed mode, so `newrez` is effectively
+   ignored and `DEV_TAB[0,1]` reflect the live framebuffer size.
+-- The physical workstation is opened once at graphics init and stays open
+-  for the system lifetime; `v_clswk` is effectively a no-op (see
+-  [`101-v_clsvwk`](101-v_clsvwk.md)).
++- **Who opens it, and when (K1, 2026-10-07).** As in EmuTOS, the AES opens
++  the physical workstation at the start of every AES session — `gsx_init` →
++  `gsx_wsopen` (`aes/gemgsxif.c:169-186,267-270`), called from
++  `run_accs_and_desktop` (`aes/geminit.c:675`) — and keeps the handle in
++  `gl_handle`, which `graf_handle` returns (`aes/gemsuper.c:287-293`). The
++  session end closes it with `v_clswk` (`gsx_wsclose`, `geminit.c:749`),
++  which frees every virtual workstation and keeps handle 1
++  (`vdi_control.c:573-590`). NewTOS: `tos_api::aes::gsxif::gsx_init` /
++  `gsx_wsclose`, called from the kernel's AES session loop
++  (`kernel/src/lib.rs`). *Correction:* this note used to say the physical
++  workstation is "opened once at graphics init and stays open for the system
++  lifetime" — nothing ever called `v_opnwk`, so handle 1 was closed and
++  every call on the `graf_handle` handle was a VDI no-op (zView M4 K1,
++  `measurements/measurement-2026-10-06-zview-m4/checks/k1-evidence.txt`).
++- `v_opnwk`'s `vwk_ptr[2..] = NULL` (`vdi_control.c:544-545`) is **not**
++  reproduced by `vwk::open_physical` (open point, not part of K1). In the
++  AES's own sequence it only shows when a virtual workstation is still open
++  at the first session start (an AUTO program that never called
++  `v_clsvwk`); a later session opens after `v_clswk` closed them all. A
++  program calling `v_opnwk` itself while virtual workstations are open can
++  tell too.
+ - The `init_colors`/`timer_init`/`vdimouse_init`/`esc_init` bring-up
+   sequence is **reference**; NewTOS runs the equivalent framebuffer /
+   input / console init, not the EmuTOS routines.
+diff --git a/kernel/src/desk/mod.rs b/kernel/src/desk/mod.rs
+index 49b58b6..839fb2e 100644
+--- a/kernel/src/desk/mod.rs
++++ b/kernel/src/desk/mod.rs
+@@ -561,10 +561,10 @@ pub(super) fn evnt_dclick(rate: i16, setit: bool) -> i16 {
+     a.intout[0]
+ }
+ 
+-/// `graf_handle()` (77) — the AES's VDI workstation handle, plus the system
+-/// font's cell metrics the desktop does not use here. The input handle of the
+-/// `v_opnvwk` in [`vdibind`], exactly as `gsx_init` uses it
+-/// (`aes/gemgraf.c:432-437`).
++/// `graf_handle()` (77) — the AES's VDI workstation handle `gl_handle`, plus
++/// the system font's cell metrics the desktop does not use here. The desktop
++/// draws its drag outline on that workstation ([`vdibind`]), as EmuTOS's
++/// `deskmain` keeps it in its own `gl_handle` (`deskmain.c:1956`).
+ pub(super) fn graf_handle() -> i16 {
+     let mut a = Aes::new();
+     a.call(OP_GRAF_HANDLE, 0, 5, 0);
+diff --git a/kernel/src/desk/vdibind.rs b/kernel/src/desk/vdibind.rs
+index 8480225..b8c5355 100644
+--- a/kernel/src/desk/vdibind.rs
++++ b/kernel/src/desk/vdibind.rs
+@@ -13,22 +13,19 @@
+ //! same calls are made where a GEM application makes them: over the VDI
+ //! trap.
+ //!
+-//! **The one deviation, and its reason.** EmuTOS's desktop draws on the
+-//! AES's *own* workstation — `gr_bwait` even carries the comment "Since the
++//! **The workstation is the AES's own.** EmuTOS's desktop draws on the
++//! AES's workstation `gl_handle`, which it learns from `graf_handle`
++//! (`deskmain.c:1956`) — `gr_bwait` even carries the comment "Since the
+ //! desktop and the AES currently share the same VDI workstation, we have to
+ //! reset the clipping and drawing mode here" (`deskact.c:212-215`). NewTOS's
+-//! AES has no VDI workstation to share: it paints through the raster backend
+-//! directly, and nothing ever calls `v_opnwk`, so handle 1 is not open. The
+-//! desktop therefore opens its **own virtual** workstation, the way every
+-//! NewTOS GEM application does (`graf_handle` → `v_opnvwk`, the sequence the
+-//! SDK programs use). Observably this is the same thing: one workstation,
+-//! writing into the physical screen, whose clip and write mode this module
+-//! sets before every use — which is what EmuTOS's comment demands anyway.
+-//!
+-//! `vsl_type(7)` + `vsl_udsty(0xffff)` are part of that open, because in
+-//! EmuTOS they are part of the AES's workstation set-up (`gsx_start`,
+-//! `aes/gemgraf.c:420-422`) and `gsx_xline` relies on the user-defined line
+-//! style being the active one.
++//! AES opens that physical workstation at session start
++//! (`tos_api::aes::gsxif::gsx_init`, EmuTOS `gsx_wsopen`,
++//! `aes/gemgsxif.c:169-186`), so this module draws on the `graf_handle`
++//! handle directly and opens no workstation of its own (K1, 2026-10-07; it
++//! used to open a virtual one while handle 1 was never opened). The line
++//! style `gsx_xline` relies on — `vsl_type(7)` with a solid
++//! `vsl_udsty(0xffff)` — is the AES's set-up of that workstation
++//! (`gsx_start`, `aes/gemgraf.c:420-422`), not this module's.
+ 
+ use core::sync::atomic::{AtomicI16, Ordering};
+ 
+@@ -36,10 +33,8 @@ use super::global::{Grect, Point};
+ 
+ // VDI opcodes (`tos-api/src/vdi/mod.rs` dispatch table).
+ const OP_V_PLINE: i16 = 6;
+-const OP_VSL_TYPE: i16 = 15;
+ const OP_VSL_COLOR: i16 = 17;
+ const OP_VSWR_MODE: i16 = 32;
+-const OP_V_OPNVWK: i16 = 100;
+ const OP_VSL_UDSTY: i16 = 113;
+ const OP_VS_CLIP: i16 = 129;
+ 
+@@ -51,14 +46,12 @@ const OP_VS_CLIP: i16 = 129;
+ pub(super) const MD_XOR: i16 = 3;
+ /// `BLACK` (`obdefs.h:44`) — the pen `gr_bwait` complements with.
+ pub(super) const BLACK: i16 = 1;
+-/// VDI line type 7 — user-defined style, the one `vsl_udsty` feeds
+-/// (`aes/gemgraf.c:420`).
+-const USERLINE: i16 = 7;
+ /// A solid 16-bit user line-style mask (`aes/gemgraf.c:162,421`).
+ const SOLID_MASK: i16 = -1; // 0xffff
+ 
+-/// The desktop's virtual VDI workstation handle, or 0 while it has not been
+-/// opened yet. Opened lazily on first use (the first drag) and cleared by
++/// The AES's workstation handle as the desktop learned it from
++/// `graf_handle` (`deskmain.c:1956`'s `gl_handle`), or 0 while it has not
++/// been asked yet. Asked lazily on first use (the first drag) and cleared by
+ /// [`reset`] when the AES is restarted under us.
+ static HANDLE: AtomicI16 = AtomicI16::new(0);
+ 
+@@ -111,51 +104,30 @@ impl Vdi {
+     }
+ }
+ 
+-/// The desktop's workstation handle, opening it on first use.
++/// The AES's workstation handle, asked for on first use — `graf_handle`
++/// (AES 77), as `deskmain` does at desktop start (`deskmain.c:1956`).
+ ///
+-/// `graf_handle` (AES 77) first, as every GEM binding does — it reports the
+-/// handle the AES draws through, which `v_opnvwk` takes as its input handle
+-/// (`aes/gemgraf.c:437`, `gsx_init`'s `v_opnvwk(…, &gl_handle, …)`).
+-/// Returns 0 when the VDI answered with no free handle (`contrl[6] = 0`,
+-/// `vdi_control.c:425-427`), which every wrapper below treats as "draw
+-/// nothing". On a board with **no raster backend** the VDI returns before it
+-/// reaches `v_opnvwk` at all (`tos-api/src/vdi/mod.rs:277-281`) and leaves
+-/// `contrl[6]` at the input handle, so a handle is cached that is not open —
+-/// harmless, because every later call takes that same early exit and draws
+-/// nothing. Such a board also never gets here: without a raster backend
+-/// `sh_ldapp`'s `DESKTOP_APP` arm runs the console instead of the desktop,
+-/// so no drag can start.
++/// Returns 0 when the AES has no workstation (`gl_handle` still 0: no raster
++/// backend, so `gsx_init`'s `v_opnwk` never reached a handler), which every
++/// wrapper below treats as "draw nothing". Such a board also never gets
++/// here: without a raster backend `sh_ldapp`'s `DESKTOP_APP` arm runs the
++/// console instead of the desktop, so no drag can start.
+ fn handle() -> i16 {
+     let h = HANDLE.load(Ordering::Relaxed);
+     if h > 0 {
+         return h;
+     }
+-    let mut v = Vdi::new();
+-    // `work_in`: 10 device-default attribute words + coordinate type 2
+-    // (raster coordinates), the standard GEM `v_opnvwk` input.
+-    for slot in v.intin[..10].iter_mut() {
+-        *slot = 1;
+-    }
+-    v.intin[10] = 2;
+-    v.call(OP_V_OPNVWK, 0, 11, super::graf_handle());
+-    let nh = v.contrl[6];
++    let nh = super::graf_handle();
+     if nh <= 0 {
+         return 0;
+     }
+     HANDLE.store(nh, Ordering::Relaxed);
+-    // `gsx_start`'s line-style set-up (`aes/gemgraf.c:420-422`).
+-    let mut v = Vdi::new();
+-    v.intin[0] = USERLINE;
+-    v.call(OP_VSL_TYPE, 0, 1, nh);
+-    let mut v = Vdi::new();
+-    v.intin[0] = SOLID_MASK;
+-    v.call(OP_VSL_UDSTY, 0, 1, nh);
+     nh
+ }
+ 
+ /// Forget the workstation handle. Called from [`super::reset`] on the AES
+-/// restart path (A106), after which the VDI handle table no longer holds
+-/// this desktop's slot; the next drag opens a fresh one.
++/// restart path (A106): the desktop is a program that restarts and asks
++/// `graf_handle` again (`deskmain.c:1956`), on the next drag.
+ pub(super) fn reset() {
+     HANDLE.store(0, Ordering::Relaxed);
+ }
+diff --git a/kernel/src/lib.rs b/kernel/src/lib.rs
+index da720f3..d0a9ac3 100644
+--- a/kernel/src/lib.rs
++++ b/kernel/src/lib.rs
+@@ -482,6 +482,14 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
+     // `SHW_SHUTDOWN`, so the `halt()` below is as unreachable as EmuTOS'
+     // `Pterm0` after `ui_start`, and just as deliberately present.
+     loop {
++        // `gsx_init()` (EmuTOS `run_accs_and_desktop`, `geminit.c:675`) — the
++        // AES opens the physical VDI workstation (`v_opnwk` → `gl_handle`,
++        // `aes/gemgsxif.c:169-186`) and sets it up (`gsx_start`,
++        // `aes/gemgraf.c:383-428`). `graf_handle` reports this handle, so a
++        // program's VDI calls on it are answered, and its first `v_opnvwk`
++        // gets handle 2. Before the accessories load, as in EmuTOS.
++        tos_api::aes::gsxif::gsx_init();
++
+         // `load_accs(num_accs)` (EmuTOS `run_accs_and_desktop`,
+         // `geminit.c:687`) — discover up to `NUM_ACCS` `.NAC` desk accessories
+         // in `C:\ACC\` and the boot drive's root and load each into a process
+@@ -530,6 +538,12 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
+         // memory and releases its slot.
+         accs::free_accs();
+ 
++        // `gsx_wsclose()` (`geminit.c:749`) — `v_clswk` on `gl_handle`: every
++        // virtual workstation of the session is closed, the physical one
++        // stays (`vdi/vdi_control.c:573-590`). On the shutdown path too, as
++        // EmuTOS closes before `run_accs_and_desktop` returns.
++        tos_api::aes::gsxif::gsx_wsclose();
++
+         if exit == tos_api::aes::shell::ShExit::Shutdown {
+             break;
+         }
+diff --git a/tos-api/src/aes/graf.rs b/tos-api/src/aes/graf.rs
+index b8b6077..bc5e39f 100644
+--- a/tos-api/src/aes/graf.rs
++++ b/tos-api/src/aes/graf.rs
+@@ -587,7 +587,9 @@ pub(super) fn gl_hbox() -> i16 {
+ /// plus the system-font cell metrics in `int_out[1..4]` (EmuTOS
+ /// gemsuper.c:287-293).
+ pub fn graf_handle(pb: &Aespb) {
+-    pb.set_ret(1); // gl_handle: the physical VDI workstation the AES draws through
++    // gl_handle: the physical workstation the AES's own `v_opnwk` opened at
++    // session start (`gsx_wsopen`, gemgsxif.c:169-186) — a real, open one.
++    pb.set_ret(super::gsxif::gl_handle());
+     pb.set_intout(1, gl_wchar()); // gl_wchar: system-font cell width
+     pb.set_intout(2, gl_hchar()); // gl_hchar: system-font cell height
+     // gl_wbox / gl_hbox: the *unadjusted* gadget box unit (gemsuper.c:290-291)
+diff --git a/tos-api/src/aes/gsxif.rs b/tos-api/src/aes/gsxif.rs
+index 1164a9d..e202366 100644
+--- a/tos-api/src/aes/gsxif.rs
++++ b/tos-api/src/aes/gsxif.rs
+@@ -1,4 +1,21 @@
+-//! The one AES screen-save buffer — EmuTOS `aes/gemgsxif.c`'s `gl_tmp` /
++//! The AES's VDI workstation (`gl_handle`) and its one screen-save buffer —
++//! the two pieces of EmuTOS `aes/gemgsxif.c` NewTOS keeps.
++//!
++//! # The workstation
++//!
++//! [`gsx_init`] is EmuTOS `gsx_init`'s workstation half (`:267-270`):
++//! `gsx_wsopen` opens the **physical** workstation (`v_opnwk`, `:169-186`)
++//! and keeps the handle in `gl_handle`, `gsx_start` (`gemgraf.c:383-428`)
++//! sets it up. [`graf_handle`](super::graf::graf_handle) reports that handle
++//! (`gemsuper.c:287-293`), so every VDI call an application makes on it is
++//! answered (`vq_extnd`'s `DEV_TAB`/`INQ_TAB`), and the first `v_opnvwk`
++//! gets handle 2 (`vdi_control.c:420`). [`gsx_wsclose`] is the session end's
++//! `v_clswk` (`:191-194`, `geminit.c:749`). Spec:
++//! `docs/api/aes/window-graphics.md` § `graf_handle`.
++//!
++//! # The screen-save buffer
++//!
++//! EmuTOS `aes/gemgsxif.c`'s `gl_tmp` /
+ //! `gl_mlen` and the calls around it: `gsx_malloc` (`:108-114`), `gsx_mret`
+ //! (`:125-129`), `bb_save`/`bb_restore` (`:383-392` → `bb_set`, `:320-380`)
+ //! — plus the **transient** per-opening block `popup_blit`
+@@ -45,13 +62,165 @@
+ //!   back to a kernel-heap copy per save — the pre-A57 behaviour — and
+ //!   `WF_SCREEN` answers FALSE (`docs/COMPATIBILITY.md`, A54).
+ 
+-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
++use core::sync::atomic::{AtomicI16, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+ 
+ use tos_types::{Long, MX_PREFTTRAM, MX_STRAM};
+ 
+ use crate::bdos::process::usermem::PAGE_SIZE;
+ use crate::vdi::backend::{ClipRect, RasterBackend};
+ 
++// ── the workstation: `gl_handle` ────────────────────────────────────────
++
++/// EmuTOS `gl_handle` (`gemgraf.c:52`): the physical workstation handle the
++/// AES's `v_opnwk` got back. A zeroed global until the first [`gsx_init`],
++/// as EmuTOS's BSS one is.
++static GL_HANDLE: AtomicI16 = AtomicI16::new(0);
++
++/// `gl_handle` — what `graf_handle` returns in `int_out[0]`
++/// (`gemsuper.c:292`).
++pub fn gl_handle() -> i16 {
++    GL_HANDLE.load(Ordering::Relaxed)
++}
++
++// VDI opcodes the AES issues on its workstation (`aes/gemgsxif.h`,
++// `vdi/vdi_main.c` jump table).
++const OPEN_WORKSTATION: i16 = 1;
++const CLOSE_WORKSTATION: i16 = 2;
++const SET_CHAR_HEIGHT: i16 = 12;
++const SET_LINE_TYPE: i16 = 15;
++const SET_LINE_WIDTH: i16 = 16;
++const INQ_TEXT_ATTRIBUTES: i16 = 38;
++const SET_UD_LINE_STYLE: i16 = 113;
++
++/// `FALCON_REZ` (`include/biosdefs.h:127`): `screen_rez()` on a VIDEL
++/// machine (`gemgsxif.c:160-166`), the Falcon030/TOS4 target profile.
++const FALCON_REZ: i16 = 3;
++
++/// The AES's VDI parameter arrays (EmuTOS's file-scope `contrl`/`intin`/
++/// `ptsin`/`intout`/`ptsout`), on the stack of the one caller. `intout` is
++/// sized like EmuTOS's `WS` (`gemgsxif.h`): 45 `INTOUT` words, `v_opnwk`'s
++/// `PTSOUT` landing in separate `ptsout` here.
++struct Gsx {
++    contrl: [i16; 12],
++    intin: [i16; 16],
++    ptsin: [i16; 8],
++    intout: [i16; 57],
++    ptsout: [i16; 12],
++}
++
++impl Gsx {
++    fn new() -> Self {
++        Self { contrl: [0; 12], intin: [0; 16], ptsin: [0; 8], intout: [0; 57], ptsout: [0; 12] }
++    }
++
++    /// `gsx_ncode(code, n, m)` (`gemgsxif.c:133-140`): opcode, `PTSIN` and
++    /// `INTIN` counts, `contrl[6] = gl_handle`, then the VDI trap (`gsx2`).
++    /// The AES is EL1 code here, so the trap is the VDI dispatcher called
++    /// with a kernel-space LP64 parameter block — what the trap handler
++    /// itself calls (`kernel/src/arch/aarch64/exceptions.rs`, selector 115).
++    fn ncode(&mut self, code: i16, n: i16, m: i16) {
++        self.contrl = [0; 12];
++        self.contrl[0] = code;
++        self.contrl[1] = n;
++        self.contrl[3] = m;
++        self.contrl[6] = gl_handle();
++        let block: [u64; 5] = [
++            self.contrl.as_mut_ptr() as u64,
++            self.intin.as_mut_ptr() as u64,
++            self.ptsin.as_mut_ptr() as u64,
++            self.intout.as_mut_ptr() as u64,
++            self.ptsout.as_mut_ptr() as u64,
++        ];
++        // SAFETY: a kernel-space LP64 parameter block whose five arrays are
++        // fields of `self` and outlive the call; every VDI handler bounds
++        // its accesses by the counts this block carries (≤ 57/12 words out).
++        let _flip_y = unsafe { crate::vdi::dispatch(block.as_ptr() as u64, crate::bdos::process::Abi::Lp64) };
++    }
++
++    /// `gsx_1code(code, value)` (`gemgsxif.c:151-155`).
++    fn code1(&mut self, code: i16, value: i16) {
++        self.intin[0] = value;
++        self.ncode(code, 0, 1);
++    }
++
++    /// `vst_height(height, …)` (`gemgsxif.c:590-600`).
++    fn vst_height(&mut self, height: i16) {
++        self.ptsin[0] = 0;
++        self.ptsin[1] = height;
++        self.ncode(SET_CHAR_HEIGHT, 1, 0);
++    }
++}
++
++/// `gsx_init`'s workstation half (`gemgsxif.c:267-270`): `gsx_wsopen` then
++/// `gsx_start`. Run by the kernel's AES session loop at the start of every
++/// session, before the accessories load (`run_accs_and_desktop`,
++/// `geminit.c:675`).
++///
++/// **`gsx_wsopen`** (`:169-186`): `work_in[0] = screen_rez() + 2`
++/// (`FALCON_REZ + 2` on the VIDEL profile), `work_in[1..9] = 1`,
++/// `work_in[10] = 2` (raster coordinates), `v_opnwk(intin, &gl_handle,
++/// &gl_ws)`. EmuTOS also pre-loads `intout[45] = VsetMode(-1)` — the Videl
++/// mode `v_opnwk` reads back on the Falcon path (`vdi_control.c:517-525`);
++/// NewTOS has no `VsetMode` and its `v_opnwk` switches no mode
++/// (`docs/api/vdi/workstation/01-v_opnwk.md`), so nothing is passed there.
++///
++/// **`gsx_start`** (`gemgraf.c:383-428`), its VDI calls on `gl_handle`:
++/// `gsx_textsize` (`vqt_attributes`, `gemgsxif.c:505-512`) for the current
++/// character height, `vst_height(ws_chminh)` — `ws_chminh` is `SIZ_TAB[1]`
++/// from the open, `gl_ws`'s `PTSOUT[1]` — and `vst_height` back to the
++/// current height (`:405-410`), then `vsl_type(7)`, `vsl_width(1)`,
++/// `vsl_udsty(0xffff)` (`:420-422`). Its global variables (`gl_width`,
++/// `gl_wchar` … `gl_rmenu`, `gl_nplanes`) are derived in this AES from the
++/// same backend and font ring the VDI answers from (`graf.rs`, `window.rs`),
++/// so they are not read back through the trap here.
++///
++/// The rest of `gsx_init` is elsewhere: `gsx_setmb` is the VDI mouse feed
++/// calling [`super::user_but`]/[`super::user_mot`] directly, `vex_wheelv`
++/// is `init::install_wheel_vector`, and `MOUSE_STATE`'s `xrat`/`yrat` seed
++/// is the input module's own state.
++///
++/// Without a raster backend the VDI returns before any handler
++/// (`tos-api/src/vdi/mod.rs`), `contrl[6]` stays the input `gl_handle`, and
++/// no workstation is open — the same "draw nothing" state such a board is
++/// in everywhere else.
++pub fn gsx_init() {
++    let mut g = Gsx::new();
++
++    // gsx_wsopen
++    g.intin[0] = FALCON_REZ + 2;
++    for slot in g.intin[1..10].iter_mut() {
++        *slot = 1;
++    }
++    g.intin[10] = 2; // device coordinate space
++    g.ncode(OPEN_WORKSTATION, 0, 11);
++    GL_HANDLE.store(g.contrl[6], Ordering::Relaxed);
++    let ws_chminh = g.ptsout[1]; // gl_ws.ws_chminh = SIZ_TAB[1]
++
++    // gsx_start: the two text-height calls (`gemgraf.c:405-410`)
++    g.ncode(INQ_TEXT_ATTRIBUTES, 0, 0); // gsx_textsize
++    let ws_chmaxh = g.ptsout[1]; // gl_hptschar, saved as ws_chmaxh
++    g.vst_height(ws_chminh);
++    g.vst_height(ws_chmaxh); // "must restore the current font height"
++
++    // gsx_start: the line set-up (`gemgraf.c:420-422`)
++    g.code1(SET_LINE_TYPE, 7);
++    g.ptsin[0] = 1;
++    g.ptsin[1] = 0;
++    g.ncode(SET_LINE_WIDTH, 1, 0); // vsl_width(1), `gemgsxif.c:653-658`
++    g.code1(SET_UD_LINE_STYLE, -1); // 0xffff
++}
++
++/// `gsx_wsclose` (`gemgsxif.c:191-194`): `v_clswk` on `gl_handle`, run by
++/// the kernel's AES session loop when the session ends (`geminit.c:749`).
++/// The VDI closes every virtual workstation and keeps the physical one
++/// (`vdi_control.c:573-590`); `gl_handle` keeps its value, as EmuTOS's
++/// does, and the next session's [`gsx_init`] opens it again.
++pub fn gsx_wsclose() {
++    Gsx::new().ncode(CLOSE_WORKSTATION, 0, 0);
++}
++
++// ── the screen-save buffer ────────────────────────────────────────────────
++
+ /// Kernel high-half offset (mirror of `process::{arena,loader,usermem}` and
+ /// `aes::resource`): a BDOS-pool physical address `pa` is reachable from the
+ /// kernel at `pa + VA_OFFSET`.
+diff --git a/tos-api/src/aes/init.rs b/tos-api/src/aes/init.rs
+index 70d6b5a..ddc1ec3 100644
+--- a/tos-api/src/aes/init.rs
++++ b/tos-api/src/aes/init.rs
+@@ -379,9 +379,11 @@ pub fn init() {
+ /// `gsx_init`'s `vex_wheelv(aes_wheel, &old_wheelv)`
+ /// (`aes/gemgsxif.c:288-292`): claim the VDI's mouse-wheel vector for the
+ /// AES, so a wheel detent reaches [`super::input::wheel_change`]. EmuTOS does
+-/// this inside `gsx_init`, i.e. as part of `gem_main`'s bring-up; NewTOS
+-/// opens no AES-owned workstation of its own, so it hangs off the same
+-/// `gem_main` prologue this module already is. Idempotent, and it never
++/// this inside `gsx_init`, right after opening the AES's workstation; NewTOS
++/// opens that workstation per session ([`super::gsxif::gsx_init`]) but
++/// installs the wheel vector once here, in the `gem_main` prologue — the
++/// VDI's `wheel_init` is one-shot (`vdi/mouse.rs`), so the order against the
++/// workstation open does not matter. Idempotent, and it never
+ /// overrides a vector an application installed
+ /// ([`crate::vdi::mouse::install_aes_wheel`]).
+ fn install_wheel_vector() {
+diff --git a/tos-api/tests/aes_menu_bar_height.rs b/tos-api/tests/aes_menu_bar_height.rs
+index c38a29b..4599d3d 100644
+--- a/tos-api/tests/aes_menu_bar_height.rs
++++ b/tos-api/tests/aes_menu_bar_height.rs
+@@ -468,6 +468,9 @@ fn start_at(w: u16, h: u16) -> Aespb {
+     HOST.clear();
+     HOST.raster.width.store(w, Ordering::Relaxed);
+     HOST.raster.height.store(h, Ordering::Relaxed);
++    // The session's workstation open (`gsx_init`, `geminit.c:675`), whose
++    // handle `graf_handle` reports — on the screen just switched to.
++    tos_api::aes::gsxif::gsx_init();
+     tos_api::aes::window::wm_init();
+     let mut pb = Aespb::new();
+     pb.call(OP_APPL_INIT, 0, 1, 0);
+diff --git a/tos-api/tests/aes_reference/harness.rs b/tos-api/tests/aes_reference/harness.rs
+index eaa066e..7f559a7 100644
+--- a/tos-api/tests/aes_reference/harness.rs
++++ b/tos-api/tests/aes_reference/harness.rs
+@@ -690,6 +690,11 @@ pub fn context() -> &'static Context {
+         let host = host_only();
+         install_screen_buffer(&host.raster);
+ 
++        // The AES session start the dumper ran under: `gsx_init`
++        // (`geminit.c:675`) opens the physical workstation whose handle
++        // `graf_handle` reports, before any application exists.
++        tos_api::aes::gsxif::gsx_init();
++
+         let mut pb = Pb::new();
+         pb.poison();
+         pb.call(10, 0, 1, 0, 0); // appl_init
+diff --git a/tos-api/tests/aes_rsrc_obfix_at_load.rs b/tos-api/tests/aes_rsrc_obfix_at_load.rs
+index c697ad1..1ed18f9 100644
+--- a/tos-api/tests/aes_rsrc_obfix_at_load.rs
++++ b/tos-api/tests/aes_rsrc_obfix_at_load.rs
+@@ -92,8 +92,10 @@ impl RasterBackend for Profile {
+     fn query_color(&self, i: u16) -> (u16, u16, u16) {
+         panic!("unexpected palette read")
+     }
+-    fn set_active_palette(&self, p: &[u16; 256]) {
+-        panic!("unexpected palette switch")
++    fn set_active_palette(&self, _p: &[u16; 256]) {
++        // Every VDI call on an open workstation selects its pseudo-palette
++        // (`tos-api/src/vdi/mod.rs`); the AES's own `gsx_init` set-up calls
++        // (`gemgraf.c:405-422`) are such calls. Nothing is drawn with it.
+     }
+     fn pel_to_device16(&self, p: Pel) -> u16 {
+         panic!("unexpected pixel conversion")
+@@ -177,7 +179,12 @@ static LOCK: Mutex<()> = Mutex::new(());
+ static INSTALL: Once = Once::new();
+ 
+ fn lock() -> MutexGuard<'static, ()> {
+-    INSTALL.call_once(|| tos_api::host::install_host(&HOST_REF));
++    INSTALL.call_once(|| {
++        tos_api::host::install_host(&HOST_REF);
++        // The AES session's workstation open (`gsx_init`, `geminit.c:675`),
++        // whose handle `graf_handle` reports.
++        tos_api::aes::gsxif::gsx_init();
++    });
+     LOCK.lock().unwrap_or_else(|e| e.into_inner())
+ }
+ 
+diff --git a/tos-api/tests/aes_wind_get_desktop_geometry.rs b/tos-api/tests/aes_wind_get_desktop_geometry.rs
+index 62ac223..7d686f3 100644
+--- a/tos-api/tests/aes_wind_get_desktop_geometry.rs
++++ b/tos-api/tests/aes_wind_get_desktop_geometry.rs
+@@ -111,8 +111,10 @@ impl RasterBackend for Profile {
+     fn query_color(&self, i: u16) -> (u16, u16, u16) {
+         panic!("unexpected palette read")
+     }
+-    fn set_active_palette(&self, p: &[u16; 256]) {
+-        panic!("unexpected palette switch")
++    fn set_active_palette(&self, _p: &[u16; 256]) {
++        // Every VDI call on an open workstation selects its pseudo-palette
++        // (`tos-api/src/vdi/mod.rs`); the AES's own `gsx_init` set-up calls
++        // (`gemgraf.c:405-422`) are such calls. Nothing is drawn with it.
+     }
+     fn pel_to_device16(&self, p: Pel) -> u16 {
+         panic!("unexpected pixel conversion")
+@@ -320,6 +322,9 @@ fn start_at(w: u16, h: u16) -> (Desk, i16) {
+     });
+     PROFILE.width.store(w, Ordering::Relaxed);
+     PROFILE.height.store(h, Ordering::Relaxed);
++    // The session's workstation open (`gsx_init`, `geminit.c:675`), whose
++    // handle `graf_handle` reports — on the screen just switched to.
++    tos_api::aes::gsxif::gsx_init();
+     tos_api::aes::window::wm_init();
+ 
+     let hbox = gl_hbox();
+diff --git a/tos-api/tests/aes_k1_gl_handle.rs b/tos-api/tests/aes_k1_gl_handle.rs
+new file mode 100644
+index 0000000..ef1cf86
+--- /dev/null
++++ b/tos-api/tests/aes_k1_gl_handle.rs
+@@ -0,0 +1,189 @@
++//! K1 (zView M4) — the AES owns a real, open physical workstation, and
++//! `graf_handle` reports it.
++//!
++//! EmuTOS (pinned tree `1a7484aba1bfba23e2c0899e243b6d8177fe41df`): at the
++//! start of every AES session `run_accs_and_desktop` calls `gsx_init`
++//! (`aes/geminit.c:675`), whose `gsx_wsopen` opens the physical workstation
++//! with `v_opnwk(intin, &gl_handle, &gl_ws)` (`aes/gemgsxif.c:169-186`) and
++//! whose `gsx_start` sets it up (`aes/gemgraf.c:383-428`); `graf_handle`
++//! returns `gl_handle` (`aes/gemsuper.c:287-293`); the session ends with
++//! `gsx_wsclose` → `v_clswk` (`geminit.c:749`, `gemgsxif.c:191-194`), which
++//! frees every virtual workstation and keeps the physical one
++//! (`vdi/vdi_control.c:573-590`). The first `v_opnvwk` scans from
++//! `VDI_PHYS_HANDLE + 1` (`vdi_control.c:420`).
++//!
++//! The defect this pins: `graf_handle` answered 1 while nothing had ever
++//! opened handle 1, so `vq_extnd(graf_handle, …)` wrote nothing and WinDom's
++//! `ApplInit` (`appl_init.c:42-46`) read `app.nplanes = app.color = 0`
++//! (`measurements/measurement-2026-10-06-zview-m4/checks/k1-evidence.txt`).
++//! Spec: `docs/api/aes/window-graphics.md` § `graf_handle`.
++
++#![allow(dead_code)]
++
++#[path = "aes_reference/harness.rs"]
++mod harness;
++
++use harness::{host_only, Pb, AES_LOCK, POISON, SCREEN_COLORS, SCREEN_H, SCREEN_PLANES, SCREEN_W};
++use tos_api::bdos::process::Abi;
++
++const OP_APPL_INIT: i16 = 10;
++const OP_GRAF_HANDLE: i16 = 77;
++
++const V_OPNVWK: i16 = 100;
++const VQ_EXTND: i16 = 102;
++const VQL_ATTRIBUTES: i16 = 35;
++const VQT_ATTRIBUTES: i16 = 38;
++
++fn lock() -> std::sync::MutexGuard<'static, ()> {
++    AES_LOCK.lock().unwrap_or_else(|e| e.into_inner())
++}
++
++/// A VDI parameter block (kernel space, LP64), every array poisoned before
++/// each call so an unanswered call is visible as untouched poison.
++struct Vdi {
++    contrl: Box<[i16; 16]>,
++    intin: Box<[i16; 16]>,
++    ptsin: Box<[i16; 16]>,
++    intout: Box<[i16; 64]>,
++    ptsout: Box<[i16; 16]>,
++    block: Box<[u64; 5]>,
++}
++
++impl Vdi {
++    fn new() -> Vdi {
++        let mut v = Vdi {
++            contrl: Box::new([0; 16]),
++            intin: Box::new([0; 16]),
++            ptsin: Box::new([0; 16]),
++            intout: Box::new([0; 64]),
++            ptsout: Box::new([0; 16]),
++            block: Box::new([0; 5]),
++        };
++        v.block[0] = v.contrl.as_ptr() as u64;
++        v.block[1] = v.intin.as_ptr() as u64;
++        v.block[2] = v.ptsin.as_ptr() as u64;
++        v.block[3] = v.intout.as_ptr() as u64;
++        v.block[4] = v.ptsout.as_ptr() as u64;
++        v
++    }
++
++    /// Opcode `op` on `handle` with `intin` as the INTIN words.
++    fn call(&mut self, op: i16, handle: i16, intin: &[i16]) {
++        self.contrl.fill(POISON);
++        self.intout.fill(POISON);
++        self.ptsout.fill(POISON);
++        self.contrl[0] = op;
++        self.contrl[1] = 0;
++        self.contrl[3] = intin.len() as i16;
++        self.contrl[5] = 0;
++        self.contrl[6] = handle;
++        self.intin[..intin.len()].copy_from_slice(intin);
++        // SAFETY: the five arrays outlive the call and hold every count the
++        // VDI writes for these opcodes (≤ 45 INTOUT, 12 PTSOUT words).
++        unsafe { tos_api::vdi::dispatch(self.block.as_ptr() as u64, Abi::Lp64) };
++    }
++
++    /// `v_opnvwk(work_in = 1 × 10, 2)` on `handle`; the new handle.
++    fn v_opnvwk(&mut self, handle: i16) -> i16 {
++        self.call(V_OPNVWK, handle, &[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2]);
++        self.contrl[6]
++    }
++
++    /// `vq_extnd(handle, mode)`.
++    fn vq_extnd(&mut self, handle: i16, mode: i16) {
++        self.call(VQ_EXTND, handle, &[mode]);
++    }
++}
++
++/// A fresh AES session on the harness host (640×480, 4 planes): close the
++/// previous one as `geminit.c:749` does, open the next as `:675` does.
++fn new_session() {
++    host_only();
++    tos_api::aes::gsxif::gsx_wsclose();
++    tos_api::aes::gsxif::gsx_init();
++}
++
++/// `graf_handle()` → `int_out[0]`.
++fn graf_handle() -> i16 {
++    let mut pb = Pb::new();
++    pb.poison();
++    pb.call(OP_GRAF_HANDLE, 0, 5, 0, 0);
++    pb.intout[0]
++}
++
++/// WinDom's `ApplInit` (`appl_init.c:42-46`), call for call: `appl_init`,
++/// `graf_handle`, then `vq_extnd(aeshdl, 1)` → `work_out[4]` = planes and
++/// `vq_extnd(aeshdl, 0)` → `work_out[13]` = colours. Both answer, and the
++/// answer is the screen's.
++#[test]
++fn graf_handle_names_an_open_workstation_that_answers_vq_extnd() {
++    let _g = lock();
++    new_session();
++
++    let mut pb = Pb::new();
++    pb.poison();
++    pb.call(OP_APPL_INIT, 0, 1, 0, 0);
++    assert!(pb.intout[0] >= 0, "appl_init failed ({})", pb.intout[0]);
++
++    let aeshdl = graf_handle();
++    assert_eq!(aeshdl, 1, "gl_handle is VDI_PHYS_HANDLE (vdi_control.c:544)");
++
++    let mut v = Vdi::new();
++    v.vq_extnd(aeshdl, 1);
++    assert_eq!(v.contrl[4], 45, "vq_extnd(aeshdl, 1) must answer 45 INTOUT words");
++    assert_eq!(v.intout[4], SCREEN_PLANES as i16, "INQ_TAB[4] = v_planes (app.nplanes)");
++
++    v.vq_extnd(aeshdl, 0);
++    assert_eq!(v.contrl[4], 45, "vq_extnd(aeshdl, 0) must answer 45 INTOUT words");
++    assert_eq!(v.intout[13], SCREEN_COLORS as i16, "DEV_TAB[13] = colours (app.color)");
++    assert_eq!(v.intout[0], SCREEN_W as i16 - 1, "DEV_TAB[0] = xres");
++    assert_eq!(v.intout[1], SCREEN_H as i16 - 1, "DEV_TAB[1] = yres");
++}
++
++/// `gsx_start`'s set-up of the AES's workstation (`gemgraf.c:405-422`):
++/// `vsl_type(7)`, `vsl_width(1)`, and the text height restored to the
++/// current one after the `ws_chminh` excursion — i.e. the height a freshly
++/// opened workstation has.
++#[test]
++fn gsx_start_leaves_the_aes_line_and_text_setup_on_its_workstation() {
++    let _g = lock();
++    new_session();
++    let h = graf_handle();
++
++    let mut v = Vdi::new();
++    v.call(VQL_ATTRIBUTES, h, &[]);
++    assert_eq!(v.intout[0], 7, "vsl_type(7) (gemgraf.c:420)");
++    assert_eq!(v.ptsout[0], 1, "vsl_width(1) (gemgraf.c:421)");
++
++    v.call(VQT_ATTRIBUTES, h, &[]);
++    let aes_height = (v.ptsout[0], v.ptsout[1], v.ptsout[2], v.ptsout[3]);
++    let fresh = v.v_opnvwk(h);
++    assert!(fresh > 0);
++    v.call(VQT_ATTRIBUTES, fresh, &[]);
++    let fresh_height = (v.ptsout[0], v.ptsout[1], v.ptsout[2], v.ptsout[3]);
++    assert_eq!(aes_height, fresh_height, "vst_height(ws_chmaxh) restores the current height (:409-410)");
++}
++
++/// Handle numbering: the first `v_opnvwk` of a session is 2, the next 3;
++/// the session end's `v_clswk` frees them and keeps the physical one, and
++/// the next session hands out 2 again.
++#[test]
++fn the_first_v_opnvwk_of_a_session_is_handle_2_and_the_session_end_frees_it() {
++    let _g = lock();
++    new_session();
++    let h = graf_handle();
++
++    let mut v = Vdi::new();
++    assert_eq!(v.v_opnvwk(h), 2, "the free-slot scan starts at VDI_PHYS_HANDLE + 1 (vdi_control.c:420)");
++    assert_eq!(v.v_opnvwk(h), 3);
++
++    tos_api::aes::gsxif::gsx_wsclose();
++    v.vq_extnd(2, 1);
++    assert_eq!(v.intout[4], POISON, "v_clswk closed virtual handle 2 (vdi_control.c:579-584)");
++    v.vq_extnd(h, 1);
++    assert_eq!(v.intout[4], SCREEN_PLANES as i16, "v_clswk keeps the physical workstation");
++
++    tos_api::aes::gsxif::gsx_init();
++    assert_eq!(graf_handle(), 1);
++    assert_eq!(v.v_opnvwk(h), 2, "the next session starts numbering at 2 again");
++}

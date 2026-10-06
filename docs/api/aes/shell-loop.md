@@ -446,6 +446,16 @@ module), `kernel::desk::reset()` (the desktop is a program that restarts,
 unreachable on this profile for the same reason it is on a Falcon
 (`can_shutdown()` FALSE, `bios/bios.c:754-770`).
 
+Each session opens the AES's VDI workstation first and closes it last, as
+`run_accs_and_desktop` does: `gsx_init()` (`geminit.c:675`, `v_opnwk` →
+`gl_handle`, then `gsx_start`'s line/text set-up) before `load_accs`, and
+`gsx_wsclose()` (`:749`, `v_clswk`) after `free_accs` — on the shutdown
+path too, since EmuTOS closes before returning out of
+`run_accs_and_desktop`. NewTOS: `tos_api::aes::gsxif::{gsx_init,
+gsx_wsclose}` in `kernel/src/lib.rs`'s session loop; contract and
+consequences in [`window-graphics.md` § `graf_handle`](./window-graphics.md)
+(K1, 2026-10-07).
+
 The one step of `gem_main` that stays absent is the physical mode switch
 (`Setscreen`/`Vsetmode`, `geminit.c:778-793`): the framebuffer is
 negotiated once at boot (ADR-017 rev 2, D-101), so `gl_nextrez` is

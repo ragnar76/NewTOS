@@ -1,4 +1,21 @@
-//! The one AES screen-save buffer — EmuTOS `aes/gemgsxif.c`'s `gl_tmp` /
+//! The AES's VDI workstation (`gl_handle`) and its one screen-save buffer —
+//! the two pieces of EmuTOS `aes/gemgsxif.c` NewTOS keeps.
+//!
+//! # The workstation
+//!
+//! [`gsx_init`] is EmuTOS `gsx_init`'s workstation half (`:267-270`):
+//! `gsx_wsopen` opens the **physical** workstation (`v_opnwk`, `:169-186`)
+//! and keeps the handle in `gl_handle`, `gsx_start` (`gemgraf.c:383-428`)
+//! sets it up. [`graf_handle`](super::graf::graf_handle) reports that handle
+//! (`gemsuper.c:287-293`), so every VDI call an application makes on it is
+//! answered (`vq_extnd`'s `DEV_TAB`/`INQ_TAB`), and the first `v_opnvwk`
+//! gets handle 2 (`vdi_control.c:420`). [`gsx_wsclose`] is the session end's
+//! `v_clswk` (`:191-194`, `geminit.c:749`). Spec:
+//! `docs/api/aes/window-graphics.md` § `graf_handle`.
+//!
+//! # The screen-save buffer
+//!
+//! EmuTOS `aes/gemgsxif.c`'s `gl_tmp` /
 //! `gl_mlen` and the calls around it: `gsx_malloc` (`:108-114`), `gsx_mret`
 //! (`:125-129`), `bb_save`/`bb_restore` (`:383-392` → `bb_set`, `:320-380`)
 //! — plus the **transient** per-opening block `popup_blit`
@@ -45,12 +62,164 @@
 //!   back to a kernel-heap copy per save — the pre-A57 behaviour — and
 //!   `WF_SCREEN` answers FALSE (`docs/COMPATIBILITY.md`, A54).
 
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicI16, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use tos_types::{Long, MX_PREFTTRAM, MX_STRAM};
 
 use crate::bdos::process::usermem::PAGE_SIZE;
 use crate::vdi::backend::{ClipRect, RasterBackend};
+
+// ── the workstation: `gl_handle` ────────────────────────────────────────
+
+/// EmuTOS `gl_handle` (`gemgraf.c:52`): the physical workstation handle the
+/// AES's `v_opnwk` got back. A zeroed global until the first [`gsx_init`],
+/// as EmuTOS's BSS one is.
+static GL_HANDLE: AtomicI16 = AtomicI16::new(0);
+
+/// `gl_handle` — what `graf_handle` returns in `int_out[0]`
+/// (`gemsuper.c:292`).
+pub fn gl_handle() -> i16 {
+    GL_HANDLE.load(Ordering::Relaxed)
+}
+
+// VDI opcodes the AES issues on its workstation (`aes/gemgsxif.h`,
+// `vdi/vdi_main.c` jump table).
+const OPEN_WORKSTATION: i16 = 1;
+const CLOSE_WORKSTATION: i16 = 2;
+const SET_CHAR_HEIGHT: i16 = 12;
+const SET_LINE_TYPE: i16 = 15;
+const SET_LINE_WIDTH: i16 = 16;
+const INQ_TEXT_ATTRIBUTES: i16 = 38;
+const SET_UD_LINE_STYLE: i16 = 113;
+
+/// `FALCON_REZ` (`include/biosdefs.h:127`): `screen_rez()` on a VIDEL
+/// machine (`gemgsxif.c:160-166`), the Falcon030/TOS4 target profile.
+const FALCON_REZ: i16 = 3;
+
+/// The AES's VDI parameter arrays (EmuTOS's file-scope `contrl`/`intin`/
+/// `ptsin`/`intout`/`ptsout`), on the stack of the one caller. `intout` is
+/// sized like EmuTOS's `WS` (`gemgsxif.h`): 45 `INTOUT` words, `v_opnwk`'s
+/// `PTSOUT` landing in separate `ptsout` here.
+struct Gsx {
+    contrl: [i16; 12],
+    intin: [i16; 16],
+    ptsin: [i16; 8],
+    intout: [i16; 57],
+    ptsout: [i16; 12],
+}
+
+impl Gsx {
+    fn new() -> Self {
+        Self { contrl: [0; 12], intin: [0; 16], ptsin: [0; 8], intout: [0; 57], ptsout: [0; 12] }
+    }
+
+    /// `gsx_ncode(code, n, m)` (`gemgsxif.c:133-140`): opcode, `PTSIN` and
+    /// `INTIN` counts, `contrl[6] = gl_handle`, then the VDI trap (`gsx2`).
+    /// The AES is EL1 code here, so the trap is the VDI dispatcher called
+    /// with a kernel-space LP64 parameter block — what the trap handler
+    /// itself calls (`kernel/src/arch/aarch64/exceptions.rs`, selector 115).
+    fn ncode(&mut self, code: i16, n: i16, m: i16) {
+        self.contrl = [0; 12];
+        self.contrl[0] = code;
+        self.contrl[1] = n;
+        self.contrl[3] = m;
+        self.contrl[6] = gl_handle();
+        let block: [u64; 5] = [
+            self.contrl.as_mut_ptr() as u64,
+            self.intin.as_mut_ptr() as u64,
+            self.ptsin.as_mut_ptr() as u64,
+            self.intout.as_mut_ptr() as u64,
+            self.ptsout.as_mut_ptr() as u64,
+        ];
+        // SAFETY: a kernel-space LP64 parameter block whose five arrays are
+        // fields of `self` and outlive the call; every VDI handler bounds
+        // its accesses by the counts this block carries (≤ 57/12 words out).
+        let _flip_y = unsafe { crate::vdi::dispatch(block.as_ptr() as u64, crate::bdos::process::Abi::Lp64) };
+    }
+
+    /// `gsx_1code(code, value)` (`gemgsxif.c:151-155`).
+    fn code1(&mut self, code: i16, value: i16) {
+        self.intin[0] = value;
+        self.ncode(code, 0, 1);
+    }
+
+    /// `vst_height(height, …)` (`gemgsxif.c:590-600`).
+    fn vst_height(&mut self, height: i16) {
+        self.ptsin[0] = 0;
+        self.ptsin[1] = height;
+        self.ncode(SET_CHAR_HEIGHT, 1, 0);
+    }
+}
+
+/// `gsx_init`'s workstation half (`gemgsxif.c:267-270`): `gsx_wsopen` then
+/// `gsx_start`. Run by the kernel's AES session loop at the start of every
+/// session, before the accessories load (`run_accs_and_desktop`,
+/// `geminit.c:675`).
+///
+/// **`gsx_wsopen`** (`:169-186`): `work_in[0] = screen_rez() + 2`
+/// (`FALCON_REZ + 2` on the VIDEL profile), `work_in[1..9] = 1`,
+/// `work_in[10] = 2` (raster coordinates), `v_opnwk(intin, &gl_handle,
+/// &gl_ws)`. EmuTOS also pre-loads `intout[45] = VsetMode(-1)` — the Videl
+/// mode `v_opnwk` reads back on the Falcon path (`vdi_control.c:517-525`);
+/// NewTOS has no `VsetMode` and its `v_opnwk` switches no mode
+/// (`docs/api/vdi/workstation/01-v_opnwk.md`), so nothing is passed there.
+///
+/// **`gsx_start`** (`gemgraf.c:383-428`), its VDI calls on `gl_handle`:
+/// `gsx_textsize` (`vqt_attributes`, `gemgsxif.c:505-512`) for the current
+/// character height, `vst_height(ws_chminh)` — `ws_chminh` is `SIZ_TAB[1]`
+/// from the open, `gl_ws`'s `PTSOUT[1]` — and `vst_height` back to the
+/// current height (`:405-410`), then `vsl_type(7)`, `vsl_width(1)`,
+/// `vsl_udsty(0xffff)` (`:420-422`). Its global variables (`gl_width`,
+/// `gl_wchar` … `gl_rmenu`, `gl_nplanes`) are derived in this AES from the
+/// same backend and font ring the VDI answers from (`graf.rs`, `window.rs`),
+/// so they are not read back through the trap here.
+///
+/// The rest of `gsx_init` is elsewhere: `gsx_setmb` is the VDI mouse feed
+/// calling [`super::user_but`]/[`super::user_mot`] directly, `vex_wheelv`
+/// is `init::install_wheel_vector`, and `MOUSE_STATE`'s `xrat`/`yrat` seed
+/// is the input module's own state.
+///
+/// Without a raster backend the VDI returns before any handler
+/// (`tos-api/src/vdi/mod.rs`), `contrl[6]` stays the input `gl_handle`, and
+/// no workstation is open — the same "draw nothing" state such a board is
+/// in everywhere else.
+pub fn gsx_init() {
+    let mut g = Gsx::new();
+
+    // gsx_wsopen
+    g.intin[0] = FALCON_REZ + 2;
+    for slot in g.intin[1..10].iter_mut() {
+        *slot = 1;
+    }
+    g.intin[10] = 2; // device coordinate space
+    g.ncode(OPEN_WORKSTATION, 0, 11);
+    GL_HANDLE.store(g.contrl[6], Ordering::Relaxed);
+    let ws_chminh = g.ptsout[1]; // gl_ws.ws_chminh = SIZ_TAB[1]
+
+    // gsx_start: the two text-height calls (`gemgraf.c:405-410`)
+    g.ncode(INQ_TEXT_ATTRIBUTES, 0, 0); // gsx_textsize
+    let ws_chmaxh = g.ptsout[1]; // gl_hptschar, saved as ws_chmaxh
+    g.vst_height(ws_chminh);
+    g.vst_height(ws_chmaxh); // "must restore the current font height"
+
+    // gsx_start: the line set-up (`gemgraf.c:420-422`)
+    g.code1(SET_LINE_TYPE, 7);
+    g.ptsin[0] = 1;
+    g.ptsin[1] = 0;
+    g.ncode(SET_LINE_WIDTH, 1, 0); // vsl_width(1), `gemgsxif.c:653-658`
+    g.code1(SET_UD_LINE_STYLE, -1); // 0xffff
+}
+
+/// `gsx_wsclose` (`gemgsxif.c:191-194`): `v_clswk` on `gl_handle`, run by
+/// the kernel's AES session loop when the session ends (`geminit.c:749`).
+/// The VDI closes every virtual workstation and keeps the physical one
+/// (`vdi_control.c:573-590`); `gl_handle` keeps its value, as EmuTOS's
+/// does, and the next session's [`gsx_init`] opens it again.
+pub fn gsx_wsclose() {
+    Gsx::new().ncode(CLOSE_WORKSTATION, 0, 0);
+}
+
+// ── the screen-save buffer ────────────────────────────────────────────────
 
 /// Kernel high-half offset (mirror of `process::{arena,loader,usermem}` and
 /// `aes::resource`): a BDOS-pool physical address `pa` is reachable from the

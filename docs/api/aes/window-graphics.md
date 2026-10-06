@@ -1369,6 +1369,44 @@ globals set at AES start-up (`gemgraf.c:40-52`, `405-415`): `int_out[0]` =
 `gl_hbox = gl_hchar+3`). An application calls this once to learn the AES VDI
 handle, then issues VDI calls on it.
 
+**`gl_handle` is a real, open workstation.** It is the `CONTRL[6]` the VDI
+answered to the AES's own `v_opnwk` (`gsx_wsopen`, `gemgsxif.c:169-186`,
+`v_opnwk(intin, &gl_handle, &gl_ws)`), run by `gsx_init`
+(`gemgsxif.c:267-270`) at the start of every AES session
+(`run_accs_and_desktop`, `geminit.c:675`, before the accessories load) — i.e.
+`VDI_PHYS_HANDLE` = **1** (`vdi_control.c:542-544`). `gsx_start`
+(`gemgraf.c:383-428`) then sets that workstation up: `vqt_attributes`, the
+two `vst_height` calls (`ws_chminh`, then back to the current height,
+`:405-410`), `vsl_type(7)`, `vsl_width(1)`, `vsl_udsty(0xffff)`
+(`:420-422`). Consequences an application observes:
+
+- every VDI call on the `graf_handle` handle is answered — `vq_extnd(h, 0)`
+  returns `DEV_TAB` (`[13]` colours, `[0]/[1]` the screen size) and
+  `vq_extnd(h, 1)` `INQ_TAB` (`[4]` the plane count). WinDom's `ApplInit`
+  (`appl_init.c:42-46`) takes `app.nplanes`/`app.color` from exactly these
+  two calls on the `graf_handle` handle;
+- the first `v_opnvwk` of a program gets handle **2** (the free-slot scan
+  starts at `VDI_PHYS_HANDLE + 1`, `vdi_control.c:420`) — the desktop draws
+  on `gl_handle` itself (`deskmain.c:1956`), it holds no virtual
+  workstation of its own;
+- the workstation is closed (`gsx_wsclose` → `v_clswk`, `gemgsxif.c:191-194`)
+  when the session ends (`geminit.c:749`), which closes every virtual
+  workstation and leaves the physical one open (`vdi_control.c:573-590`).
+
+**NewTOS binding.** `tos_api::aes::gsxif::gsx_init` / `gsx_wsclose`, called
+by the kernel's AES session loop (`kernel/src/lib.rs`) at the
+`geminit.c:675`/`:749` positions; `graf_handle` returns
+`gsxif::gl_handle()`. `gl_handle` is 0 until the first `gsx_init`, as
+EmuTOS's zeroed BSS global is. Two `gsx_init` steps are not VDI calls on
+`gl_handle` here: `gsx_setmb` (the button/motion vectors are the AES's
+`user_but`/`user_mot`, called directly by the VDI mouse feed,
+`tos-api/src/vdi/mouse.rs`) and `vex_wheelv`
+(installed once at boot, `aes::init::install_wheel_vector`); `gsx_wsopen`'s
+`intout[45] = VsetMode(-1)` is not passed — NewTOS has no `VsetMode` and its
+`v_opnwk` switches no mode (`../vdi/workstation/01-v_opnwk.md`). The AES's
+own metrics (`gl_wchar`…`gl_hbox`, `gl_nplanes`) are derived from the same
+font ring and backend the VDI answers from, not read back through the trap.
+
 ### `graf_mouse` (78) — set the mouse cursor
 
 **Source:** `gemsuper.c:294-303` → `gr_mouse` (`gemgrlib.c:419-455`). If the

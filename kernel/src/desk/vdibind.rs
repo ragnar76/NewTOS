@@ -13,22 +13,19 @@
 //! same calls are made where a GEM application makes them: over the VDI
 //! trap.
 //!
-//! **The one deviation, and its reason.** EmuTOS's desktop draws on the
-//! AES's *own* workstation — `gr_bwait` even carries the comment "Since the
+//! **The workstation is the AES's own.** EmuTOS's desktop draws on the
+//! AES's workstation `gl_handle`, which it learns from `graf_handle`
+//! (`deskmain.c:1956`) — `gr_bwait` even carries the comment "Since the
 //! desktop and the AES currently share the same VDI workstation, we have to
 //! reset the clipping and drawing mode here" (`deskact.c:212-215`). NewTOS's
-//! AES has no VDI workstation to share: it paints through the raster backend
-//! directly, and nothing ever calls `v_opnwk`, so handle 1 is not open. The
-//! desktop therefore opens its **own virtual** workstation, the way every
-//! NewTOS GEM application does (`graf_handle` → `v_opnvwk`, the sequence the
-//! SDK programs use). Observably this is the same thing: one workstation,
-//! writing into the physical screen, whose clip and write mode this module
-//! sets before every use — which is what EmuTOS's comment demands anyway.
-//!
-//! `vsl_type(7)` + `vsl_udsty(0xffff)` are part of that open, because in
-//! EmuTOS they are part of the AES's workstation set-up (`gsx_start`,
-//! `aes/gemgraf.c:420-422`) and `gsx_xline` relies on the user-defined line
-//! style being the active one.
+//! AES opens that physical workstation at session start
+//! (`tos_api::aes::gsxif::gsx_init`, EmuTOS `gsx_wsopen`,
+//! `aes/gemgsxif.c:169-186`), so this module draws on the `graf_handle`
+//! handle directly and opens no workstation of its own (K1, 2026-10-07; it
+//! used to open a virtual one while handle 1 was never opened). The line
+//! style `gsx_xline` relies on — `vsl_type(7)` with a solid
+//! `vsl_udsty(0xffff)` — is the AES's set-up of that workstation
+//! (`gsx_start`, `aes/gemgraf.c:420-422`), not this module's.
 
 use core::sync::atomic::{AtomicI16, Ordering};
 
@@ -36,10 +33,8 @@ use super::global::{Grect, Point};
 
 // VDI opcodes (`tos-api/src/vdi/mod.rs` dispatch table).
 const OP_V_PLINE: i16 = 6;
-const OP_VSL_TYPE: i16 = 15;
 const OP_VSL_COLOR: i16 = 17;
 const OP_VSWR_MODE: i16 = 32;
-const OP_V_OPNVWK: i16 = 100;
 const OP_VSL_UDSTY: i16 = 113;
 const OP_VS_CLIP: i16 = 129;
 
@@ -51,14 +46,12 @@ const OP_VS_CLIP: i16 = 129;
 pub(super) const MD_XOR: i16 = 3;
 /// `BLACK` (`obdefs.h:44`) — the pen `gr_bwait` complements with.
 pub(super) const BLACK: i16 = 1;
-/// VDI line type 7 — user-defined style, the one `vsl_udsty` feeds
-/// (`aes/gemgraf.c:420`).
-const USERLINE: i16 = 7;
 /// A solid 16-bit user line-style mask (`aes/gemgraf.c:162,421`).
 const SOLID_MASK: i16 = -1; // 0xffff
 
-/// The desktop's virtual VDI workstation handle, or 0 while it has not been
-/// opened yet. Opened lazily on first use (the first drag) and cleared by
+/// The AES's workstation handle as the desktop learned it from
+/// `graf_handle` (`deskmain.c:1956`'s `gl_handle`), or 0 while it has not
+/// been asked yet. Asked lazily on first use (the first drag) and cleared by
 /// [`reset`] when the AES is restarted under us.
 static HANDLE: AtomicI16 = AtomicI16::new(0);
 
@@ -111,51 +104,30 @@ impl Vdi {
     }
 }
 
-/// The desktop's workstation handle, opening it on first use.
+/// The AES's workstation handle, asked for on first use — `graf_handle`
+/// (AES 77), as `deskmain` does at desktop start (`deskmain.c:1956`).
 ///
-/// `graf_handle` (AES 77) first, as every GEM binding does — it reports the
-/// handle the AES draws through, which `v_opnvwk` takes as its input handle
-/// (`aes/gemgraf.c:437`, `gsx_init`'s `v_opnvwk(…, &gl_handle, …)`).
-/// Returns 0 when the VDI answered with no free handle (`contrl[6] = 0`,
-/// `vdi_control.c:425-427`), which every wrapper below treats as "draw
-/// nothing". On a board with **no raster backend** the VDI returns before it
-/// reaches `v_opnvwk` at all (`tos-api/src/vdi/mod.rs:277-281`) and leaves
-/// `contrl[6]` at the input handle, so a handle is cached that is not open —
-/// harmless, because every later call takes that same early exit and draws
-/// nothing. Such a board also never gets here: without a raster backend
-/// `sh_ldapp`'s `DESKTOP_APP` arm runs the console instead of the desktop,
-/// so no drag can start.
+/// Returns 0 when the AES has no workstation (`gl_handle` still 0: no raster
+/// backend, so `gsx_init`'s `v_opnwk` never reached a handler), which every
+/// wrapper below treats as "draw nothing". Such a board also never gets
+/// here: without a raster backend `sh_ldapp`'s `DESKTOP_APP` arm runs the
+/// console instead of the desktop, so no drag can start.
 fn handle() -> i16 {
     let h = HANDLE.load(Ordering::Relaxed);
     if h > 0 {
         return h;
     }
-    let mut v = Vdi::new();
-    // `work_in`: 10 device-default attribute words + coordinate type 2
-    // (raster coordinates), the standard GEM `v_opnvwk` input.
-    for slot in v.intin[..10].iter_mut() {
-        *slot = 1;
-    }
-    v.intin[10] = 2;
-    v.call(OP_V_OPNVWK, 0, 11, super::graf_handle());
-    let nh = v.contrl[6];
+    let nh = super::graf_handle();
     if nh <= 0 {
         return 0;
     }
     HANDLE.store(nh, Ordering::Relaxed);
-    // `gsx_start`'s line-style set-up (`aes/gemgraf.c:420-422`).
-    let mut v = Vdi::new();
-    v.intin[0] = USERLINE;
-    v.call(OP_VSL_TYPE, 0, 1, nh);
-    let mut v = Vdi::new();
-    v.intin[0] = SOLID_MASK;
-    v.call(OP_VSL_UDSTY, 0, 1, nh);
     nh
 }
 
 /// Forget the workstation handle. Called from [`super::reset`] on the AES
-/// restart path (A106), after which the VDI handle table no longer holds
-/// this desktop's slot; the next drag opens a fresh one.
+/// restart path (A106): the desktop is a program that restarts and asks
+/// `graf_handle` again (`deskmain.c:1956`), on the next drag.
 pub(super) fn reset() {
     HANDLE.store(0, Ordering::Relaxed);
 }

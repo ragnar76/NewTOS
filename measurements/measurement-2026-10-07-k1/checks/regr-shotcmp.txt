@@ -1,0 +1,17 @@
+== desk- vs head-desk-
+desk- vs head-desk-: same=6 diff=0 missing=0
+== tera- vs head-tera-
+tera- vs head-tera-: same=4 diff=0 missing=0
+== qed- vs head-qed-
+qed- vs head-qed-: same=4 diff=0 missing=0
+== acc-on- vs acc-strict-
+acc-on- vs acc-strict-: same=10 diff=0 missing=0
+== acc-on- vs evbutton acc-on-
+DIFF S00_WINDOW.png
+DIFF S02_ALERT_GONE.png
+DIFF S04_ALERT_GONE2.png
+DIFF S05B_ALERT_GONE3.png
+DIFF S06_VALUE_TYPED.png
+acc-on- vs acc-on-: same=5 diff=5 missing=0
+== api- vs evbutton api-
+api- vs api-: same=2 diff=0 missing=0

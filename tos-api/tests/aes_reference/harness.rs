@@ -690,6 +690,11 @@ pub fn context() -> &'static Context {
         let host = host_only();
         install_screen_buffer(&host.raster);
 
+        // The AES session start the dumper ran under: `gsx_init`
+        // (`geminit.c:675`) opens the physical workstation whose handle
+        // `graf_handle` reports, before any application exists.
+        tos_api::aes::gsxif::gsx_init();
+
         let mut pb = Pb::new();
         pb.poison();
         pb.call(10, 0, 1, 0, 0); // appl_init

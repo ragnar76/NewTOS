@@ -468,6 +468,9 @@ fn start_at(w: u16, h: u16) -> Aespb {
     HOST.clear();
     HOST.raster.width.store(w, Ordering::Relaxed);
     HOST.raster.height.store(h, Ordering::Relaxed);
+    // The session's workstation open (`gsx_init`, `geminit.c:675`), whose
+    // handle `graf_handle` reports — on the screen just switched to.
+    tos_api::aes::gsxif::gsx_init();
     tos_api::aes::window::wm_init();
     let mut pb = Aespb::new();
     pb.call(OP_APPL_INIT, 0, 1, 0);

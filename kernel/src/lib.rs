@@ -482,6 +482,14 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // `SHW_SHUTDOWN`, so the `halt()` below is as unreachable as EmuTOS'
     // `Pterm0` after `ui_start`, and just as deliberately present.
     loop {
+        // `gsx_init()` (EmuTOS `run_accs_and_desktop`, `geminit.c:675`) — the
+        // AES opens the physical VDI workstation (`v_opnwk` → `gl_handle`,
+        // `aes/gemgsxif.c:169-186`) and sets it up (`gsx_start`,
+        // `aes/gemgraf.c:383-428`). `graf_handle` reports this handle, so a
+        // program's VDI calls on it are answered, and its first `v_opnvwk`
+        // gets handle 2. Before the accessories load, as in EmuTOS.
+        tos_api::aes::gsxif::gsx_init();
+
         // `load_accs(num_accs)` (EmuTOS `run_accs_and_desktop`,
         // `geminit.c:687`) — discover up to `NUM_ACCS` `.NAC` desk accessories
         // in `C:\ACC\` and the boot drive's root and load each into a process
@@ -529,6 +537,12 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
         // it); NewTOS has no such process, so this frees each accessory's
         // memory and releases its slot.
         accs::free_accs();
+
+        // `gsx_wsclose()` (`geminit.c:749`) — `v_clswk` on `gl_handle`: every
+        // virtual workstation of the session is closed, the physical one
+        // stays (`vdi/vdi_control.c:573-590`). On the shutdown path too, as
+        // EmuTOS closes before `run_accs_and_desktop` returns.
+        tos_api::aes::gsxif::gsx_wsclose();
 
         if exit == tos_api::aes::shell::ShExit::Shutdown {
             break;
