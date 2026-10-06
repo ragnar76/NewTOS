@@ -1,0 +1,22 @@
+# WinDom source pin for sdk/windom/build-windom.sh (TASK/LDG-M3).
+#
+# windom-1.21.3.zip = WinDom 1.21.3 (November 2004, Dominique Bereziat &
+#   Arnaud Bercegeay), downloaded unchanged on 2026-10-06 from
+#   https://downloads.sourceforge.net/project/windom/windom/1.21.3/windom-1.21.3.zip
+#   SourceForge publishes SHA-1 77e31fa7264857c52d114fd06e79217dd90fda8f and
+#   MD5 bf5088fbe0a58cd9969474b6a441a59b for it; both match. Its 397 files are
+#   byte-identical to Applications/windom-1.21.3 (diff -r, 2026-10-06).
+#
+# patches/zview-windom-1.21.3.patch = the patch zView's build instructions
+#   require ("Download & compile & install windom 1.21.3 after applying the
+#   patch", zview/howto_build/howto.txt step 2), copied unchanged from
+#   https://github.com/mikrosk/z-tools  zview/howto_build/windom-1.21.3.patch
+#   (last changed in commit a556a6887fc031bfa30decfddd52023c8e703b75,
+#   2011-10-22; checkout at 04805b77d6fc246ee507c8c5e2317b58b1a531e4 in
+#   Applications/z-tools). 134 lines: ApplWrite/ApplSet read their variadic
+#   WORDs as int (gcc4 va_arg promotion), av_ping copies the AV name into
+#   app.pipe, and three cast-as-lvalue lines that gcc4 rejects.
+#
+# License: GNU LGPL 2.1 (windom-1.21.3/COPYRIGHT, README, every source header).
+ad53a3d854520c3b784e602c0c360cc8ad50a03c5fc54f4321cc246a3f186a7f  windom-1.21.3.zip
+71b52776a068ca5a153e9b90709e44c6045bf2e5bb3f139d04da74751540a787  patches/zview-windom-1.21.3.patch

@@ -25,6 +25,7 @@ Repository revision the documentation was written against:
 | [09-port-material.md](09-port-material.md) | What source material we hold, in which version, under which licence — and the age trap a frozen third-party library is |
 | [10-ldg-modules.md](10-ldg-modules.md) | LDG run-time libraries as native `.NLD` modules: libldg, building a module, loading it from a client, what is not there (TSR, `ldg_callback`, search path) — TASK/LDG-M1 |
 | [11-codec-libraries.md](11-codec-libraries.md) | zlib, libpng, libjpeg (IJG), giflib, libexif as static NewTOS libraries for zView's codecs: versions, pins, how to link, which codec needs what, the LIBTEST.NCP round-trip test — TASK/LDG-M2 |
+| [12-windom.md](12-windom.md) | WinDom 1.21.3 (+ zView's patch) as `libwindom1.a`: pin, flags, the 10 LP64/endianness overlays, the LP64 sweep, LDG's WinDom demo client, open problems (mouse clicks, module heap) — TASK/LDG-M3 |
 
 ## Thirty-second version
 
@@ -39,6 +40,8 @@ sdk/cflib/build-cflib.sh   [client.c] [out.NCP]   # builds cflib.a, links client
 sdk/libm/build-libm.sh     [client.c] [out.NCP]   # builds libm.a (OpenLibm), links client + libc
 sdk/ldg/build-ldg.sh                               # libldg.a (LDG r133, tarball + overlay/)
 sdk/ldg/build-ldg-demo.sh                          # EX_LIB.NLD (LDG demo module) + LDGTEST.NCP
+sdk/windom/build-windom.sh                         # libwindom1.a (WinDom 1.21.3 + zView patch, 12)
+sdk/ldg/build-ldg-client.sh                        # LDGDEMO.NAP (LDG's WinDom demo client) + POPUP.NLD
 sdk/zlib/build-zlib.sh  sdk/libpng/build-libpng.sh  sdk/libjpeg/build-libjpeg.sh
 sdk/giflib/build-giflib.sh  sdk/libexif/build-libexif.sh   # codec libraries (11)
 sdk/examples/libtest/build-libtest.sh              # LIBTEST.NCP (their round-trip test)
@@ -53,7 +56,7 @@ cargo xtask run --board rpi4 --sd /tmp/sd.img       # add --window to see the sc
 
 The one rule that governs every port: **the application source is not
 edited**. Every change lives in `sdk/overlays/<app>/` (or in the library
-overlays `sdk/{libc,gemlib,cflib,libm,ldg,libjpeg,libexif}/overlay/`) and is layered over the
+overlays `sdk/{libc,gemlib,cflib,libm,ldg,libjpeg,libexif,windom}/overlay/`) and is layered over the
 pristine tree at build time. The only exception is genuine m68k assembly, which must be
 retargeted. See [04-porting-anatomy.md](04-porting-anatomy.md).
 

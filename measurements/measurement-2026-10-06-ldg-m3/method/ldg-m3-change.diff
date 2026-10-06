@@ -1,0 +1,1061 @@
+diff --git a/docs/sdk/10-ldg-modules.md b/docs/sdk/10-ldg-modules.md
+index 1265869..368ee2c 100644
+--- a/docs/sdk/10-ldg-modules.md
++++ b/docs/sdk/10-ldg-modules.md
+@@ -27,9 +27,11 @@ address space (`docs/api/gemdos/process/4b-pexec.md`, `PE_GO`).
+ | Headers | `sdk/ldg/ldg-r133/include/ldg.h` (extracted tree) | `build-ldg.sh` |
+ | Overlays | `sdk/ldg/overlay/src/devel/{ldgload.c,ldgutil.c}` | — |
+ | Demo module + acceptance client | `sdk/ldg/build/EX_LIB.NLD`, `sdk/ldg/build/LDGTEST.NCP` | `sdk/ldg/build-ldg-demo.sh` |
++| LDG's own WinDom demo client + its second module (TASK/LDG-M3) | `sdk/ldg/build/client/dist/LDGDEMO/` (`CLIENT/LDGDEMO.NAP`, `CLIENT/CLIENT.RSC`, `LIBS/EX_LIB.NLD`, `LIBS/POPUP.NLD`) | `sdk/ldg/build-ldg-client.sh` ([12](12-windom.md)) |
+ 
+-The two overlays are the only source differences (each file's header says
+-why, with file:line):
++The two overlays below are the only source differences of `libldg.a` (each
++file's header says why, with file:line); `demo/client/client.c` has a third,
++for the demo client only (module suffix `.ldg` → `.nld`, TASK/LDG-M3):
+ 
+ * `ldgload.c` — `BASEPAGE.p_env` is a fixed 32-bit field in the SDK
+   (`sdk/libc/overlay/include/mint/basepage.h`), so the one assignment to a
+@@ -97,6 +99,7 @@ own — `sdk/examples/ldgtest.c` does.
+ | **Environment copy ≤ 512 bytes** | `ldg_load` passes `OFFSETLDG=<addr>` followed by a copy of the client's environment to `Pexec(3)`; the kernel reads at most `ENV_BUF_LEN = 512` bytes of it and truncates the rest silently (`kernel/src/arch/aarch64/exceptions.rs:1781`). `OFFSETLDG` comes first, so loading is unaffected; the module just sees a shortened environment |
+ | **64 KiB stack kept per loaded module** | mintlib's `_crtinit` keeps `_stksize` (default `MINKEEP` = 64 KiB, `sdk/libc/newtos-arch/heap_init.c:63`) in the module block; module functions run on the **client's** stack, so it is unused. Original mintlib behaviour, kept on purpose (lead decision Q6) — a module may set its own `_stksize` |
+ | **Module `Malloc`s during `main()` are freed at its `Pterm`** | As on TOS: memory the module allocates in `main()` belongs to the module and is released when `Pexec(4)` returns. Memory allocated later, inside a function the client calls, belongs to the client |
++| **Open defect (TASK/LDG-M3, B2): a module's `malloc` after loading reads freed memory** | The row above has a consequence the libc hides: the module's `exit()` closes stdio (`__fcloseall` → `fclose` → `init_stream` `malloc` + `free`), so the module's own static free list (`_mchunk_free_list`) ends `main()` pointing into a hunk its `Pterm` frees. The next `malloc` inside the module (called by the client) faults under `memprot=on` (POPUP.NLD `__get_bkgr`, `measurements/measurement-2026-10-06-ldg-m3/`) and corrupts/hangs with `memprot=off`. `EX_LIB.NLD` does not `malloc` and is unaffected. Fix location (libc, libldg or kernel) not decided |
+ | `Pwait()` | LDG calls MiNT's `Pwait` (0x109) after `Pexec(4)` and ignores the result; NewTOS answers `EINVFN` — harmless |
+ 
+ ## 5. Testing
+diff --git a/docs/sdk/README.md b/docs/sdk/README.md
+index b5145aa..0aae498 100644
+--- a/docs/sdk/README.md
++++ b/docs/sdk/README.md
+@@ -25,6 +25,7 @@ Repository revision the documentation was written against:
+ | [09-port-material.md](09-port-material.md) | What source material we hold, in which version, under which licence — and the age trap a frozen third-party library is |
+ | [10-ldg-modules.md](10-ldg-modules.md) | LDG run-time libraries as native `.NLD` modules: libldg, building a module, loading it from a client, what is not there (TSR, `ldg_callback`, search path) — TASK/LDG-M1 |
+ | [11-codec-libraries.md](11-codec-libraries.md) | zlib, libpng, libjpeg (IJG), giflib, libexif as static NewTOS libraries for zView's codecs: versions, pins, how to link, which codec needs what, the LIBTEST.NCP round-trip test — TASK/LDG-M2 |
++| [12-windom.md](12-windom.md) | WinDom 1.21.3 (+ zView's patch) as `libwindom1.a`: pin, flags, the 10 LP64/endianness overlays, the LP64 sweep, LDG's WinDom demo client, open problems (mouse clicks, module heap) — TASK/LDG-M3 |
+ 
+ ## Thirty-second version
+ 
+@@ -39,6 +40,8 @@ sdk/cflib/build-cflib.sh   [client.c] [out.NCP]   # builds cflib.a, links client
+ sdk/libm/build-libm.sh     [client.c] [out.NCP]   # builds libm.a (OpenLibm), links client + libc
+ sdk/ldg/build-ldg.sh                               # libldg.a (LDG r133, tarball + overlay/)
+ sdk/ldg/build-ldg-demo.sh                          # EX_LIB.NLD (LDG demo module) + LDGTEST.NCP
++sdk/windom/build-windom.sh                         # libwindom1.a (WinDom 1.21.3 + zView patch, 12)
++sdk/ldg/build-ldg-client.sh                        # LDGDEMO.NAP (LDG's WinDom demo client) + POPUP.NLD
+ sdk/zlib/build-zlib.sh  sdk/libpng/build-libpng.sh  sdk/libjpeg/build-libjpeg.sh
+ sdk/giflib/build-giflib.sh  sdk/libexif/build-libexif.sh   # codec libraries (11)
+ sdk/examples/libtest/build-libtest.sh              # LIBTEST.NCP (their round-trip test)
+@@ -53,7 +56,7 @@ cargo xtask run --board rpi4 --sd /tmp/sd.img       # add --window to see the sc
+ 
+ The one rule that governs every port: **the application source is not
+ edited**. Every change lives in `sdk/overlays/<app>/` (or in the library
+-overlays `sdk/{libc,gemlib,cflib,libm,ldg,libjpeg,libexif}/overlay/`) and is layered over the
++overlays `sdk/{libc,gemlib,cflib,libm,ldg,libjpeg,libexif,windom}/overlay/`) and is layered over the
+ pristine tree at build time. The only exception is genuine m68k assembly, which must be
+ retargeted. See [04-porting-anatomy.md](04-porting-anatomy.md).
+ 
+diff --git a/sdk/.gitignore b/sdk/.gitignore
+index 0d04364..93dd490 100644
+--- a/sdk/.gitignore
++++ b/sdk/.gitignore
+@@ -45,6 +45,12 @@
+ /libexif/build/
+ /libexif/libexif.a
+ /examples/libtest/build/
++# WinDom (TASK/LDG-M3): extracted+patched tree, build dir, archive, staged
++# headers -- all regenerated by sdk/windom/build-windom.sh.
++/windom/windom-*/
++/windom/build/
++/windom/libwindom1.a
++/windom/include/
+ **/*.o
+ *.NCP
+ *.NAP
+diff --git a/sdk/lib-stale.sh b/sdk/lib-stale.sh
+index 1e0fe26..72ee2d7 100755
+--- a/sdk/lib-stale.sh
++++ b/sdk/lib-stale.sh
+@@ -65,6 +65,12 @@
+ #             plain branches off libc like ldg. Same tarball rule as ldg:
+ #             vendor-lib.sh re-extracts when the tarball is newer than the
+ #             extracted tree.
++#   libwindom1.a  sdk/windom/overlay/, sdk/windom/build-windom.sh,
++#             sdk/windom/windom-1.21.3.zip, patches/ (zView's patch),
++#             windom-sources.sha256, sdk/vendor-lib.sh   + all of gemlib's
++#             (WinDom, TASK/LDG-M3: compiled against gemlib's and mintlib's
++#             headers, so its chain is libc -> gemlib -> windom, like cflib;
++#             build-windom.sh re-extracts zip + patch + overlay on every run)
+ #
+ # NOT watched, deliberately:
+ #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
+@@ -137,6 +143,7 @@ lib_archive() {
+     libjpeg) printf '%s\n' "$LIB_SDK/libjpeg/libjpeg.a" ;;
+     giflib)  printf '%s\n' "$LIB_SDK/giflib/libgif.a" ;;
+     libexif) printf '%s\n' "$LIB_SDK/libexif/libexif.a" ;;
++    windom)  printf '%s\n' "$LIB_SDK/windom/libwindom1.a" ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+ }
+@@ -148,7 +155,7 @@ lib_builder() {
+     cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
+     libm)   printf '%s\n' "$LIB_SDK/libm/build-libm.sh" ;;
+     ldg)    printf '%s\n' "$LIB_SDK/ldg/build-ldg.sh" ;;
+-    zlib|libpng|libjpeg|giflib|libexif)
++    zlib|libpng|libjpeg|giflib|libexif|windom)
+             printf '%s\n' "$LIB_SDK/$1/build-$1.sh" ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+@@ -168,6 +175,7 @@ lib_chain() {
+     libjpeg) printf 'libc\nlibjpeg\n' ;;
+     giflib)  printf 'libc\ngiflib\n' ;;
+     libexif) printf 'libc\nlibm\nlibexif\n' ;;
++    windom)  printf 'libc\ngemlib\nwindom\n' ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+ }
+@@ -237,6 +245,16 @@ lib_inputs() {
+         if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
+       done
+       ;;
++    windom)
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/windom/overlay"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/windom/build-windom.sh"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/windom/windom-sources.sha256"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/windom/patches"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/vendor-lib.sh"
++      for _t in "$LIB_SDK"/windom/windom-*.zip; do
++        if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
++      done
++      ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+   return 0
+--- /dev/null
++++ b/docs/sdk/12-windom.md
+@@ -0,0 +1,144 @@
++# 12 — WinDom 1.21.3: the GEM window library zView is written against
++
++Stand 2026-10-06, TASK/LDG-M3. Why WinDom: zView links `-lwindom1`
++(`Applications/z-tools/zview/Makefile:15`, `general.h:30` includes
++`<windom1.h>`), and LDG's demo client is a WinDom program
++(`demo/client/client.c:11`). Design input: `docs/analysis/zview-ldg-2026-10-04.md`
++(P-WINDOM). Evidence for every "verified" below:
++`measurements/measurement-2026-10-06-ldg-m3/RUNINFO.TXT`.
++
++WinDom (Dominique Bereziat & Arnaud Bercegeay, LGPL 2.1) is a static GEM
++library: windowed forms, menus in windows, toolbars, frames, extended object
++types drawn as `G_USERDEF`, its own config file. It is pure C (no assembler).
++
++## 1. The pieces
++
++| What | Where |
++|---|---|
++| Pinned source | `sdk/windom/windom-1.21.3.zip` — the SourceForge release, unchanged (SHA-1/MD5 match SourceForge; 397 files, byte-identical to `Applications/windom-1.21.3`); hashes, origin, licence in `sdk/windom/windom-sources.sha256` |
++| zView's patch | `sdk/windom/patches/zview-windom-1.21.3.patch` — zView's `howto_build/windom-1.21.3.patch`, unchanged (z-tools commit `a556a68`): variadic WORDs read as `int`, `av_ping` copies the name into `app.pipe`, three gcc-4 cast-lvalue fixes |
++| Build | `sdk/windom/build-windom.sh` (also via `lib_ensure windom`, chain libc → gemlib → windom, `sdk/lib-stale.sh`) — every run: extract zip, apply patch, copy `overlay/`, compile `src/files.mak`'s `KERNEL` list (198 files), archive |
++| Archive | `sdk/windom/libwindom1.a` (the name zView links, howto step 3) |
++| Headers | `sdk/windom/include/` — `windom1.h` **and** `windom.h` (the same patched file), `av.h`, `scancode.h` |
++| Overlays | `sdk/windom/overlay/src/*.c` — 10 files, §3 |
++
++Link order for a WinDom program (what `sdk/ldg/build-ldg-client.sh` uses):
++
++```sh
++--start-group sdk/windom/libwindom1.a [sdk/ldg/libldg.a] sdk/gemlib/gemlib.a \
++              sdk/libm/libm.a sdk/libc/libc.a --end-group
++```
++
++with `-I sdk/windom/include` before gemlib's and mintlib's include
++directories. Resource files go through the kernel's `rsrc_load`
++(`RsrcLoad`, `rsrc_load.c:47-73`), so they are converted with
++`tools/mkrsc.py convert` like any other application's ([05](05-abi-pitfalls.md) B8);
++`RsrcLoad` then reads `rsh_ntree` from the converted file's native `RSHDR`
++preamble.
++
++## 2. Flags (no source change)
++
++| Flag | Why |
++|---|---|
++| WinDom's own `gcc.mak` set: `-fomit-frame-pointer -DMODIF_XEDIT -Wall -Wmissing-prototypes -Winline -Wshadow -Wpointer-arith -Wcast-qual -Waggregate-return` | the upstream build |
++| `-D__NEWTOS__` | gemlib's retargeted trap path |
++| `-fsigned-char` | WinDom was written for m68k compilers, whose `char` is signed; AArch64's is unsigned. Keeps every `char` comparison as upstream ran it (library-internal; programs keep the app flags) |
++| `-D__RSXHDR` | `globals.h:244-264` declares WinDom's own `RSXHDR`; gemlib 0.44 (newer than the 0.43 WinDom targets) declares one too behind this guard. No WinDom source uses either |
++| `-Wno-error=int-conversion`, `=implicit-function-declaration`, `=incompatible-function-pointer-types` | clang ≥ 15 makes these errors; gcc of WinDom's/zView's time warned. Sites and why each is value-correct on LP64: header of `build-windom.sh` (the three `long = pointer` stores zView's patch leaves; `strcpy`/`strcmp` without `<string.h>`; an `int` userdef routine in a `short` slot) |
++| `-Wno-header-guard` | one upstream typo, `globals.h:29-30` |
++| `SOURCE_DATE_EPOCH` = the release's time stamp | `globals.c:35-44` stores `__DATE__`/`__TIME__`; pinned so two builds are byte-identical |
++
++Build result: 198 files, 0 failures, 16 files with warnings (120 lines, all
++upstream: 60 `-Wmissing-braces` in the `.rsh` initialisers, 17 `-Wshadow`,
++17 `-Wmissing-prototypes`, …; list in the run's `checks/build-windom.txt`).
++
++## 3. Overlays (10 files, each with a header comment: upstream line, change, reason)
++
++| File | Kind | What |
++|---|---|---|
++| `src/evnt_windom.c` | endianness + width | `MN_SELECTED` tree pointer: `*(OBJECT**)&evnt.buff[5]` → `msg[5]<<16 \| msg[6]` (AES 4 layout, WinDom's own senders use `ADR()` = hi, lo) |
++| `src/av_init.c` | endianness + width | `VA_PROTOSTATUS` server name `*(char **)&msg[6]` → hi/lo (it read 4 bytes past the 8-WORD buffer) |
++| `src/shel_write.c` | endianness + width | `VA_START` command pointer store `*(char **)&msg[3]` → hi/lo |
++| `src/debug_windom.c` | endianness + width | `AP_DEBUG` pointer store `*(char **)&buff[4]` → hi/lo |
++| `src/cookieptr.c` | LP64 sysvar | `_p_cookies` read 4 bytes, not 8 ([05](05-abi-pitfalls.md) B2) |
++| `src/set_cookie.c` | LP64 + NewTOS contract | jar walk (8-byte read, 16-byte stride, writes into the page-0 mirror) → `Getcookie` + `Ssystem(S_SETCOOKIE)` |
++| `src/new_cookie.c` | LP64 + NewTOS contract | same; one recorded difference: an existing tag is updated, not shadowed |
++| `src/vq_tos.c` | LP64 sysvar | `_sysbase` read 4 bytes, not 8 |
++| `src/cicon.c` | LP64 | 32-bit device pixel stored as `ULONG` (8 bytes) → 4-byte store (the 32-plane path; today's 16-plane VDI takes the 2-byte one) |
++| `src/objc_str3d.c` | endianness | `te_color` bit-field view declared LSB-first on a 2-byte unit (upstream order would paint the border colour) |
++
++The pointer-in-message overlays use the **32-bit hi/lo word pair**, the
++protocol's own layout; that is enough because every NewTOS user address is
++below 2 GiB ([05](05-abi-pitfalls.md) A2). A NewTOS-wide convention for
++pointers in inter-application messages (AV, BubbleGEM, VA_START) does not
++exist yet; this is the protocol-faithful choice.
++
++## 4. The LP64 sweep (what was looked at, and what was left alone)
++
++Classes searched over all 198 compiled files (pristine tree + patch):
++
++* **`(long)`/`(LONG)`/`(ULONG)` casts — 76 lines in `src/*.c`.** 16
++  `wind_get.c` + 2 `wind_set.c`: `WindGet`/`WindSet` pass pointers as two
++  WORDs (hi, lo) by arithmetic — correct below 2 GiB. 15 `rsrc_gaddr.c`:
++  `*(long*)addr = (long)ptr` — `long` is pointer-wide on LP64. 20 value
++  arithmetic (slider/frame/scroll maths, `w_getbkgr.c` size) — width-neutral.
++  9 pointer→`long` stores into `ub_parm`/`wp_spec`/`ob_spec.index`
++  (`menu_attach.c:55`, `objc_dup.c:96,104,129`, `rsrc_userdraw.c:87`,
++  `xrsrc.c:152,182`, `cicon.c:118,205`) — the fields are `long`, correct. 1
++  `vq_tos.c` — overlay. 2 `appl_tplay` records (`mouse_objc.c:38`,
++  `snd_mubutton.c:44`, `long rec[2]`) — the kernel's `appl_tplay` plays
++  nothing yet (TASK/A45), so the record layout is not observable; open.
++  1 `bubble_conf.c:32` (a 32-bit BHLP cookie value), 1 debug print, 3
++  Sozobon-only macros (`cicon.c:70-72`, not compiled), 6 in `rsrc_xload.c`
++  (below).
++* **Type-punned reads/writes of WORD arrays** (`*(T*)&x[n]`): 6 sites — the
++  4 message overlays above, `cicon.c:298,610,614` (byte views of a
++  `memcpy`'d device pixel, same address both ways — endian-neutral).
++* **Absolute low-memory addresses**: `$5A0`, `$4F2` — overlays.
++* **Bit-fields**: `objc_str3d.c` (overlay); `vq_winx.c:38-41` and
++  `cookie.h:47` (`struct _config_icfs`) are read only when a WinX / ICFS
++  cookie exists, which NewTOS does not publish — left alone, latent.
++* **Foreign-system structures behind cookies** (`cookie.h`: `MAGX_INFOS`,
++  `AESVARS`, `N_AESINFO`, `NVDI_STRUC`, `BGEM`; `LTMF` byte offset
++  `userdef.c:255`): `long`/pointer layouts of MagiC, N.AES, NVDI, BubbleGEM,
++  Let 'em Fly. Reached only when the cookie exists; none is published on
++  NewTOS. Left alone, latent.
++* **Varargs**: zView's patch fixed `ApplWrite`/`ApplSet`; `ObjcAttach`,
++  `WindFind`, `FrameSet`, `ConfInquire` read `int`/pointer-sized `va_arg`s —
++  correct. (`objc_attach.c:118-119` reads a `data` argument that callers like
++  the demo client do not pass — upstream behaviour, harmless while `data` is
++  unused.)
++* **Inline/m68k assembler**: none.
++
++**`RsrcXload` (`rsrc_xload.c`) is not exercised and not changed.** It reads
++a resource file into memory and relocates it in place, i.e. it expects the
++file's structures to be the program's structures. A classic Atari `.RSC`
++(big-endian, 24-byte `OBJECT`) can never work that way on AArch64; a file
++converted with `tools/mkrsc.py convert --rshdr` (native `RSHDR`, LP64
++structures — what TeraDesk's own loader reads) matches its pointer
++arithmetic for resources **without** colour icons (`--rshdr` refuses those;
++the `NRSHDR` extension `rsrc_xload.c:162-168` uses `unsigned long`).
++**Unverified** — no program in M3/M4 calls `RsrcXload` (zView and the demo
++client use `RsrcLoad`).
++
++## 5. What runs (verified in QEMU raspi4b, memprot on and strict)
++
++LDG's demo client, unmodified apart from the `.nld` suffix overlay
++([10](10-ldg-modules.md)), as `C:\LDGDEMO\CLIENT\LDGDEMO.NAP`
++(`sdk/ldg/build-ldg-client.sh`): `ApplInit`, `RsrcLoad`,
++`RsrcXtype(TRUE)` (WinDom's extended types as userdefs, incl. its built-in
++colour icons through `RsrcFixCicon` on the 16-plane VDI), the
++`FormBegin`/`FormEnd` load dialog while both modules load, `FormCreate` of the
++"LDG Client" window, WinDom's keyboard shortcuts (Alt+underlined letter,
++Return = DEFAULT), editing the Value field, `FormAlert(mathinfo())` —
++`information()` from `EX_LIB.NLD` ("Example of math library!!!") — and the
++`AP_TERM` shutdown (`ldg_close` ×2, `RsrcFree`, `ApplExit`, `exit(0)`). On
++and strict screendumps are pixel-identical.
++
++## 6. Known problems (open, not fixed in M3)
++
++| # | What | Where | Effect |
++|---|---|---|---|
++| B1 | `evnt_multi`/`evnt_button` report `EV_MB` = the **live** button after the double-click window; EmuTOS reports the state of the event (`bchange` sets `button = gl_bdesired`, `ev_rets` returns it or `pr_button`, `aes/geminput.c:155-180,328-345`, `aes/gemevlib.c:42-58`) | kernel, `tos-api/src/aes/event.rs` `fill_rets` | WinDom acts on a click only if `evnt.mbut & 1` (`evnt_windom.c:334`) with `bclicks 258`: **every normal mouse click on a WinDom form, toolbar or window menu is dropped**; a press held longer than the double-click window works. Kernel change — reported, not made |
++| B2 | an LDG module's `exit()` closes stdio (`__fcloseall` → `fclose` → `__flshfp` → `init_stream` → `malloc` → `free`); the hunk is Malloc'd by the module's own process and freed when `Pexec(4)` returns, but the module's static `_mchunk_free_list` keeps pointing into it | libc + LDG module model ([10](10-ldg-modules.md) §4) | the module's next `malloc`, called from the client, reads freed memory: memprot on → Bus Error in the module's `malloc` (POPUP.NLD `__get_bkgr`); memprot off → hang. Every module that mallocs after loading is affected (all zView codecs) |
++| — | the text caret of `objc_edit` ignores `te_just` (EmuTOS `gr_just` in `pxl_rect`, `aes/gemobed.c:180-182`) | kernel, `tos-api/src/aes/object.rs` `edit_field_t` | caret 18 px left of the text end in the demo's centred field; cosmetic |
+--- /dev/null
++++ b/sdk/ldg/build-ldg-client.sh
+@@ -0,0 +1,122 @@
++#!/usr/bin/env bash
++#
++# build-ldg-client.sh -- build LDG's WinDom-based demo client and its second
++# demo module (TASK/LDG-M3, the M3 acceptance: "the unmodified demo/client
++# runs against EX_LIB.NLD"):
++#
++#   LDGDEMO.NAP  <LDG>/demo/client/client.c (overlay: module suffix only, see
++#                sdk/ldg/overlay/demo/client/client.c) + the demo's two
++#                bindings <LDG>/demo/libs/exlibbnd.c and popupbnd.c,
++#                unmodified, linked against WinDom (sdk/windom/libwindom1.a),
++#                libldg.a, gemlib.a, libm.a, libc.a -- the link line of
++#                demo/client/Makefile.mint (LDLIBS = -lldg -lwindom -lgem)
++#   POPUP.NLD    <LDG>/demo/libs/popup.c, unmodified, the module the client
++#                opens second (its __popup draws the "Functions" pop-up)
++#   EX_LIB.NLD   built by build-ldg-demo.sh (M1), copied
++#   client.rsc   <LDG>/demo/client/client.rsc converted by tools/mkrsc.py for
++#                the kernel's rsrc_load (WinDom's RsrcLoad calls rsrc_load,
++#                then reads rsh_ntree from the file's RSHDR -- the native
++#                RSHDR preamble of the NRSC v13 image, 05-abi-pitfalls B8)
++#
++# The client opens its modules RELATIVE to its own directory
++# ("..\libs\ex_lib.nld", client.c:173-174), and its resource by bare name, so
++# the output is staged as the demo's own tree:
++#
++#   build/client/dist/LDGDEMO/CLIENT/LDGDEMO.NAP, CLIENT.RSC
++#   build/client/dist/LDGDEMO/LIBS/EX_LIB.NLD, POPUP.NLD
++#
++# <LDG> = sdk/ldg/ldg-r133 (extracted + overlaid by build-ldg.sh). Flags: the
++# app set of build-ldg-demo.sh. -fsigned-char is NOT used here: the client and
++# popup.c are compiled like every other ported application; only WinDom keeps
++# its m68k signedness inside the library (build-windom.sh).
++#
++# Usage:  sdk/ldg/build-ldg-client.sh
++set -uo pipefail
++
++SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
++LDGDIR="$SDK/ldg"
++TOP="$LDGDIR/ldg-r133"
++LIBC="$SDK/libc"
++GEM="$SDK/gemlib"
++LIBM="$SDK/libm"
++WD="$SDK/windom"
++GEMTOP="$GEM/gemlib-0.44.0"
++LIBMTOP="$LIBM/openlibm-0.8.8"
++BUILD="$LDGDIR/build/client"
++OBJ="$BUILD/obj"
++DIST="$BUILD/dist/LDGDEMO"
++mkdir -p "$OBJ"
++
++# --- libraries: libc -> gemlib -> windom, libc -> libm, libc -> ldg ----------
++. "$SDK/lib-stale.sh"
++lib_ensure windom || exit 1
++lib_ensure libm   || exit 1
++lib_ensure ldg    || exit 1
++MINT="$LIBC/mintlib/include"
++for d in "$MINT" "$GEMTOP" "$LIBMTOP" "$TOP" "$WD/include"; do
++  [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
++done
++# EX_LIB.NLD is M1's module; its script also re-links LDGTEST.NCP.
++"$LDGDIR/build-ldg-demo.sh" > "$BUILD/build-ldg-demo.log" 2>&1 || {
++  echo "error: build-ldg-demo.sh failed:" >&2; sed 's/^/    /' "$BUILD/build-ldg-demo.log" >&2; exit 1; }
++
++# --- toolchain ---------------------------------------------------------------
++CLANG="${CLANG:-clang}"
++command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
++RES="$($CLANG -print-resource-dir)/include"
++SYSROOT="$(rustc --print sysroot 2>/dev/null)"
++BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++LLD="${LLD:-$BIN/rust-lld}"
++NM="$BIN/llvm-nm"
++READOBJ="$BIN/llvm-readobj"
++[ -x "$LLD" ] || { echo "error: missing LLVM tool: $LLD" >&2; exit 1; }
++
++CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
++        -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__
++        -Wno-macro-redefined)
++# WinDom's staged headers first (windom.h), then LDG's, the demo's module
++# headers (<ldg/ex_lib.h>, <ldg/popup.h> live in demo/libs/), the client's own
++# directory (client.h), gemlib, mintlib, OpenLibm.
++INCS=(-I"$WD/include" -I"$TOP/include" -I"$TOP/demo/libs" -I"$TOP/demo/client"
++      -I"$GEMTOP" -I"$MINT" -I"$LIBM/include" -I"$LIBMTOP/include" -isystem "$RES")
++
++rm -f "$OBJ"/*.o "$OBJ"/*.err
++cc() { # cc <src> <obj>
++  if ! "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" -c "$1" -o "$OBJ/$2" 2>"$OBJ/${2%.o}.err"; then
++    echo "error: $1 did not compile:" >&2; sed 's/^/    /' "$OBJ/${2%.o}.err" >&2; exit 1
++  fi
++  if [ -s "$OBJ/${2%.o}.err" ]; then
++    echo "  warnings in $(basename "$1"):"; sed 's/^/      /' "$OBJ/${2%.o}.err"
++  fi
++}
++[ -e "$LDGDIR/overlay/demo/client/client.c" ] && echo "  overlay: demo/client/client.c (from sdk/ldg/overlay/)"
++cc "$TOP/demo/client/client.c"  client.o
++cc "$TOP/demo/libs/exlibbnd.c"  exlibbnd.o
++cc "$TOP/demo/libs/popupbnd.c"  popupbnd.o
++cc "$TOP/demo/libs/popup.c"     popup.o
++"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" -c "$LIBC/crt0.S" -o "$OBJ/crt0.o" || exit 1
++
++link() { # link <out> <objs...>
++  local out=$1; shift
++  if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
++      --build-id=none "$OBJ/crt0.o" "$@" \
++      --start-group "$WD/libwindom1.a" "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
++      -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
++    echo "error: link of $(basename "$out") failed:" >&2
++    sed 's/^/    /' "$BUILD/link-$(basename "$out").err" >&2; exit 1
++  fi
++  echo "LINK OK -> $out ($(wc -c < "$out" | tr -d ' ') bytes)"
++  "$READOBJ" --file-headers "$out" | grep -E '^ *Type:'
++  echo "  undefined symbols (goal 0): $("$NM" -u "$out" 2>/dev/null | grep -c . || true)"
++}
++link "$BUILD/LDGDEMO.NAP" "$OBJ/client.o" "$OBJ/exlibbnd.o" "$OBJ/popupbnd.o"
++link "$BUILD/POPUP.NLD"   "$OBJ/popup.o"
++
++# --- the demo's directory tree -----------------------------------------------
++rm -rf "$BUILD/dist"; mkdir -p "$DIST/CLIENT" "$DIST/LIBS"
++cp "$BUILD/LDGDEMO.NAP" "$DIST/CLIENT/LDGDEMO.NAP"
++python3 "$SDK/../tools/mkrsc.py" convert "$TOP/demo/client/client.rsc" "$DIST/CLIENT/CLIENT.RSC" || exit 1
++cp "$LDGDIR/build/EX_LIB.NLD" "$DIST/LIBS/EX_LIB.NLD"
++cp "$BUILD/POPUP.NLD" "$DIST/LIBS/POPUP.NLD"
++echo "dist -> $DIST"
++( cd "$BUILD/dist" && find LDGDEMO -type f | sort | sed 's/^/    /' )
+--- /dev/null
++++ b/sdk/windom/build-windom.sh
+@@ -0,0 +1,135 @@
++#!/usr/bin/env bash
++#
++# build-windom.sh -- build WinDom 1.21.3 (Dominique Bereziat & Arnaud
++# Bercegeay, LGPL 2.1), the GEM window library zView is written against, into
++# a NewTOS/AArch64 static library sdk/windom/libwindom1.a (TASK/LDG-M3,
++# docs/analysis/zview-ldg-2026-10-04.md P-WINDOM).
++#
++# SOURCE PIN: sdk/windom/windom-1.21.3.zip, the upstream SourceForge release,
++# plus zView's patch sdk/windom/patches/zview-windom-1.21.3.patch (origin,
++# hashes, license: windom-sources.sha256). zView's howto_build/howto.txt
++# step 2-3: "compile & install windom 1.21.3 after applying the patch. Rename
++# libwindom.a -> libwindom1.a, same for the header file (windom.h ->
++# windom1.h)". This script does exactly that: the archive is libwindom1.a and
++# the staged header directory sdk/windom/include/ holds windom1.h AND
++# windom.h (the LDG demo client and other WinDom programs include
++# <windom.h>), both the same patched file, plus WinDom's av.h and scancode.h.
++#
++# Every run re-extracts the pristine zip, applies the zView patch, then copies
++# sdk/windom/overlay/ over the tree -- so the compiled tree is always exactly
++# "zip + patch + overlay" (no stale overlay can survive its removal).
++#
++# What is compiled: WinDom's OWN object list for gcc, src/files.mak
++#   WINDOMOBJ = $(KERNEL) $(EXTRAOBJ)      (gcc.mak: EXTRAOBJ is empty)
++# with gcc.mak's flags: -O2 -fomit-frame-pointer, its warning set, -I../include
++# -DMODIF_XEDIT. WinDom has no assembler sources.
++#
++# Overlays (sdk/windom/overlay/, mirroring the WinDom tree; each file's header
++# says what and why with file:line) -- the LP64 corrections that headers and
++# flags cannot make. The list and their kinds are in docs/sdk/12-windom.md.
++#
++# Flags: the SDK's freestanding AArch64 set (sdk/vendor-lib.sh VL_CFLAGS),
++# -D__NEWTOS__ (gemlib's retargeted trap path), and -fsigned-char: WinDom was
++# written for and tested with m68k compilers, whose plain char is SIGNED
++# (Pure C, Sozobon, gcc m68k); AArch64's is unsigned. Keeping the original
++# signedness keeps every char comparison as the authors ran it.
++#
++# Usage:  sdk/windom/build-windom.sh
++# Output: sdk/windom/libwindom1.a; headers: -I sdk/windom/include
++#         (compile programs with gemlib's and mintlib's include dirs too)
++set -uo pipefail
++
++SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
++LIBDIR="$SDK/windom"
++VER="1.21.3"
++TOP="$LIBDIR/windom-$VER"
++BUILD="$LIBDIR/build"
++OUT="$LIBDIR/libwindom1.a"
++INC="$LIBDIR/include"
++SUMS="$LIBDIR/windom-sources.sha256"
++PATCH="$LIBDIR/patches/zview-windom-$VER.patch"
++mkdir -p "$BUILD"
++
++. "$SDK/lib-stale.sh"
++. "$SDK/vendor-lib.sh"
++lib_ensure gemlib || exit 1
++MINT="$SDK/libc/mintlib/include"
++GEMTOP="$SDK/gemlib/gemlib-0.44.0"
++for d in "$MINT" "$GEMTOP"; do
++  [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
++done
++
++# --- pristine zip + zView patch + overlay, fresh every run -------------------
++vl_extract "$LIBDIR/windom-$VER.zip" "$SUMS" "$TOP" "windom-$VER" 1 || exit 1
++want="$(sed -e 's/#.*//' "$SUMS" | awk -v f="patches/$(basename "$PATCH")" '$2==f{print $1}')"
++have="$(shasum -a 256 "$PATCH" | awk '{print $1}')"
++if [ -z "$want" ] || [ "$want" != "$have" ]; then
++  echo "error: $(basename "$PATCH") SHA-256 $have does not match $(basename "$SUMS") ($want)" >&2
++  exit 1
++fi
++echo "applying zView's $(basename "$PATCH") (sha256 verified)…"
++( cd "$TOP" && patch -p1 --no-backup-if-mismatch -s < "$PATCH" ) || { echo "error: zView patch did not apply" >&2; exit 1; }
++vl_overlay "$LIBDIR/overlay" "$TOP" || exit 1
++
++# --- staged headers ------------------------------------------------------------
++rm -rf "$INC"; mkdir -p "$INC"
++cp "$TOP/include/windom.h" "$INC/windom.h"
++cp "$TOP/include/windom.h" "$INC/windom1.h"     # howto.txt step 3
++cp "$TOP/include/av.h" "$TOP/include/scancode.h" "$INC/"
++
++vl_toolchain || exit 1
++
++# --- WinDom's own object list (src/files.mak KERNEL; EXTRAOBJ empty for gcc) --
++objs="$(awk '/^KERNEL=/{f=1; sub(/^KERNEL=/,"")} f{print; if ($0 !~ /\\[[:space:]]*$/) exit}' "$TOP/src/files.mak" \
++        | tr ' \t\\' '\n\n\n' | grep '\.o$')"
++[ -n "$objs" ] || { echo "error: could not read KERNEL from $TOP/src/files.mak" >&2; exit 1; }
++SRCS=()
++for o in $objs; do SRCS[${#SRCS[@]}]="src/${o%.o}.c"; done
++echo "WinDom sources (files.mak KERNEL): ${#SRCS[@]}"
++
++# gcc.mak: WARN = -Wall -Wmissing-prototypes -Winline -Wshadow -Wpointer-arith
++# -Wcast-qual -Waggregate-return; CFLAGS = -O2 -fomit-frame-pointer $(WARN)
++# -I../include -DMODIF_XEDIT.
++#
++# -D__RSXHDR: src/globals.h:244-264 declares WinDom's own RSXHDR (the
++# extended-RSC header); gemlib 0.44, newer than the gemlib 0.43 WinDom 1.21.3
++# was written against (INSTALL), declares one too (mt_gem.h:2177-2205) behind
++# the guard __RSXHDR, which exists for exactly this case. Defining the guard
++# keeps WinDom's declaration and skips gemlib's. No WinDom source uses either
++# (grep RSXHDR src/*.c: no hit), and windom.h -- what programs include -- does
++# not include globals.h, so programs are unaffected.
++#
++# Three diagnostics that clang >= 15 turns into ERRORS are, as in the gcc of
++# WinDom's and zView's time, kept as WARNINGS (still printed in the log):
++#   -Wint-conversion           a pointer stored into a `long` field. This is
++#        what zView's patch itself produces: it removes gcc-4-rejected
++#        cast-as-lvalue forms and leaves plain `long = pointer` assignments
++#        (objc_dup.c:136, objc_string.c:81 wp_spec = char *; popup.c:90
++#        ub_parm = W_PARM *). On LP64 a `long` is 64 bits wide, so the value
++#        is kept whole -- the field types (W_PARM.wp_spec, USERBLK.ub_parm)
++#        are exactly the ones that must hold a pointer.
++#   -Wimplicit-function-declaration  strcpy (vqt_xname2.c:45,
++#        bubble_call.c:56) and strcmp (font_name2id.c:40) used without
++#        <string.h>. The implicit `int f()` passes the pointer arguments
++#        unchanged in x0/x1; strcpy's return value is not used at either
++#        site and strcmp's is an int, so nothing is truncated.
++#   -Wincompatible-function-pointer-types  cicon.c:204 stores
++#        `int xdraw_cicon(PARMBLK *)` into USERBLK.ub_code (declared
++#        `short (*)(PARMBLK *)`). The AES reads the WORD result from w0's
++#        low half, which is the same register either way.
++# -Wno-header-guard: one upstream typo, globals.h:29-30 (#ifndef
++# __WINDOM_GLOBAL__ / #define __WINDOW_GLOBAL__), reported once per file.
++LIB_CFLAGS=(-D__NEWTOS__ -D__RSXHDR -fsigned-char -fomit-frame-pointer -DMODIF_XEDIT
++            -Wall -Wmissing-prototypes -Winline -Wshadow -Wpointer-arith
++            -Wcast-qual -Waggregate-return
++            -Wno-error=int-conversion -Wno-error=implicit-function-declaration
++            -Wno-error=incompatible-function-pointer-types -Wno-header-guard)
++LIB_INCS=(-I"$TOP/include" -I"$TOP/src" -I"$GEMTOP" -I"$MINT")
++# Reproducible archive: globals.c:35-44 stores __DATE__/__TIME__ in the
++# public `WinDom` version record (struct w_version). clang takes both from
++# SOURCE_DATE_EPOCH; it is pinned to the release's own time stamp (the zip's
++# top directory, 2004-11-24 22:09:16, read as UTC), so two builds are
++# byte-identical and WinDom.date says when the sources were released.
++export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1101334156}"
++vl_compile "$TOP" "$BUILD/obj" "${SRCS[@]}" || exit 1
++vl_archive "$OUT" "$BUILD/obj" "$BUILD" || exit 1
+--- /dev/null
++++ b/sdk/windom/windom-sources.sha256
+@@ -0,0 +1,22 @@
++# WinDom source pin for sdk/windom/build-windom.sh (TASK/LDG-M3).
++#
++# windom-1.21.3.zip = WinDom 1.21.3 (November 2004, Dominique Bereziat &
++#   Arnaud Bercegeay), downloaded unchanged on 2026-10-06 from
++#   https://downloads.sourceforge.net/project/windom/windom/1.21.3/windom-1.21.3.zip
++#   SourceForge publishes SHA-1 77e31fa7264857c52d114fd06e79217dd90fda8f and
++#   MD5 bf5088fbe0a58cd9969474b6a441a59b for it; both match. Its 397 files are
++#   byte-identical to Applications/windom-1.21.3 (diff -r, 2026-10-06).
++#
++# patches/zview-windom-1.21.3.patch = the patch zView's build instructions
++#   require ("Download & compile & install windom 1.21.3 after applying the
++#   patch", zview/howto_build/howto.txt step 2), copied unchanged from
++#   https://github.com/mikrosk/z-tools  zview/howto_build/windom-1.21.3.patch
++#   (last changed in commit a556a6887fc031bfa30decfddd52023c8e703b75,
++#   2011-10-22; checkout at 04805b77d6fc246ee507c8c5e2317b58b1a531e4 in
++#   Applications/z-tools). 134 lines: ApplWrite/ApplSet read their variadic
++#   WORDs as int (gcc4 va_arg promotion), av_ping copies the AV name into
++#   app.pipe, and three cast-as-lvalue lines that gcc4 rejects.
++#
++# License: GNU LGPL 2.1 (windom-1.21.3/COPYRIGHT, README, every source header).
++ad53a3d854520c3b784e602c0c360cc8ad50a03c5fc54f4321cc246a3f186a7f  windom-1.21.3.zip
++71b52776a068ca5a153e9b90709e44c6045bf2e5bb3f139d04da74751540a787  patches/zview-windom-1.21.3.patch
+# ==== overlays: diff against the pristine zip + zView patch (WinDom) / the pinned LDG r133 tarball (client.c)
+--- windom-1.21.3+zview-patch/src/av_init.c
++++ sdk/windom/overlay/src/av_init.c
+@@ -24,6 +24,26 @@
+  *   $Revision: 1.1 $
+  */
+ 
++/*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/windom/build-windom.sh). The
++ * base is windom-1.21.3/src/av_init.c WITH zView's patch applied (av_ping
++ * copies the client name into app.pipe -- kept). ONE change, at upstream
++ * line 82 (line 83 after zView's patch), in av_ping():
++ *
++ *   upstream:  strcpy( __av_server, *(char **)&msg[6]);
++ *   here:      strcpy( __av_server, (char *)(((unsigned long)(UWORD)msg[6]
++ *                                            << 16) | (UWORD)msg[7]));
++ *
++ * Why: VA_PROTOSTATUS carries the server's name as a 32-bit address in
++ * msg[6] (high WORD) and msg[7] (low WORD) -- the AV protocol's layout, and
++ * the one WinDom's own ADR(p) macro (windom.h) writes for AV_PROTOKOLL just
++ * above. On the 68k the 4-byte load at &msg[6] is that value. On LP64
++ * little-endian AArch64 it is an 8-byte load of msg[6..9] -- 4 bytes past
++ * the end of the 8-WORD local buffer -- with the two WORDs swapped. User
++ * addresses are below 2 GiB on NewTOS (docs/sdk/05-abi-pitfalls.md A2).
++ */
++
++
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <string.h>
+@@ -79,7 +99,7 @@
+ 		__av_status[0] = msg[3];
+ 		__av_status[1] = msg[4];
+ 		__av_status[2] = msg[5];
+-		strcpy( __av_server, *(char **)&msg[6]);
++		strcpy( __av_server, (char *)(((unsigned long)(UWORD)msg[6] << 16) | (UWORD)msg[7]));
+ 		return 1;
+ 	} else
+ 		return 0;
+--- windom-1.21.3+zview-patch/src/cicon.c
++++ sdk/windom/overlay/src/cicon.c
+@@ -23,9 +23,33 @@
+  *   $Author: bercegeay $
+  *   $Date: 2003/02/24 20:30:15 $
+  *   $Revision: 1.1 $
++ */
++
++/*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/windom/build-windom.sh). The
++ * pristine file is windom-1.21.3/src/cicon.c (zView's patch does not touch
++ * it). ONE change, at upstream line 621, in std_to_byte(), the 4-bytes-
++ * per-pixel case:
++ *
++ *   upstream:  ((ULONG *)new_data)[pos++] = farbtbl2[color];
++ *   here:      ((unsigned int *)new_data)[pos++] = (unsigned int)farbtbl2[color];
++ *
++ * Why: a 32-bit device pixel is 4 bytes, and ULONG is `unsigned long`
++ * (wportab.h) -- 8 bytes on LP64. The upstream store therefore writes 8
++ * bytes per pixel at an 8-byte stride: the icon comes out at half density
++ * and the conversion runs past the end of the col_data block. farbtbl2[]
++ * (cicon.h, also ULONG) only stores a device pixel: xfill_farbtbl() zeroes
++ * the slot and memcpy()s the `xpixelbytes` device bytes to its first bytes
++ * (upstream :277-278), and the 2- and 3-byte cases read those same first
++ * bytes back (:610, :614-617). Taking the slot's low 32 bits on a
++ * little-endian machine is exactly those first 4 bytes, in memory order, so
++ * the store writes the device bytes unchanged -- what the 68k code does.
++ * Not reached on today's VDI (16 planes -> xpixelbytes 2); it is the case a
++ * 32-plane workstation would take.
+  */
+ 
+ 
++
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <string.h>
+@@ -618,7 +642,7 @@
+ 					break;
+ 
+ 				case 4:
+-					((ULONG *)new_data)[pos++] = farbtbl2[color];
++					((unsigned int *)new_data)[pos++] = (unsigned int)farbtbl2[color];
+ 					break;
+ 			}
+ 		}
+--- windom-1.21.3+zview-patch/src/cookieptr.c
++++ sdk/windom/overlay/src/cookieptr.c
+@@ -24,8 +24,26 @@
+  *   $Revision: 1.1 $
+  */
+ 
++/*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/windom/build-windom.sh). The
++ * pristine file is windom-1.21.3/src/cookieptr.c (zView's patch does not
++ * touch it). ONE change, at upstream line 30:
++ *
++ *   upstream:  return *((long *)0x5a0);
++ *   here:      return (long)*((volatile unsigned int *)0x5a0);
++ *
++ * Why: _p_cookies at $5A0 is a 4-byte LONG. On LP64 `long` is 8 bytes, so
++ * the upstream load fuses it with the sysvar at $5A4 (ramtop); measured
++ * 0x3BE00000000005F0 (docs/sdk/05-abi-pitfalls.md B2). The 4-byte load
++ * returns the jar mirror's address (0x5F0), as on the 68k. Since the
++ * set_cookie.c/new_cookie.c overlays no WinDom code calls __cookieptr (the
++ * only other caller, get_cookie.c's non-MiNTLib branch, is not compiled);
++ * the function stays exported and correct.
++ */
++
++
+ #include "globals.h"
+ 
+ long __cookieptr(void) { 
+-	return *((long *)0x5a0); 
++	return (long)*((volatile unsigned int *)0x5a0);
+ }
+--- windom-1.21.3+zview-patch/src/debug_windom.c
++++ sdk/windom/overlay/src/debug_windom.c
+@@ -24,7 +24,24 @@
+  *   $Revision: 1.1 $
+  */
+ 
++/*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/windom/build-windom.sh). The
++ * pristine file is windom-1.21.3/src/debug_windom.c (zView's patch does not
++ * touch it). ONE change, at upstream line 63, in the AP_DEBUG message:
++ *
++ *   upstream:  *(char **)&evnt.buff[4] = debug;
++ *   here:      evnt.buff[4] = (INT16)((unsigned long)debug >> 16);
++ *              evnt.buff[5] = (INT16)(unsigned long)debug;
++ *
++ * Why: the 68k store puts the 32-bit address in buff[4] (high WORD) and
++ * buff[5] (low WORD), the layout every other pointer in a WinDom message
++ * has (ADR(p) = hi, lo, windom.h). On LP64 little-endian AArch64 the same
++ * expression is an 8-byte store over buff[4..7], low WORD first. User
++ * addresses are below 2 GiB on NewTOS (docs/sdk/05-abi-pitfalls.md A2).
++ */
+ 
++
++
+ #include <stdarg.h>	
+ #include <stdio.h>
+ #include <string.h>
+@@ -60,7 +77,8 @@
+ 				evnt.buff[1] = app.id;
+ 				evnt.buff[2] = 0;
+ 				evnt.buff[3] = wglb.front?wglb.front->handle:0;
+-				*(char **)&evnt.buff[4] = debug;
++				evnt.buff[4] = (INT16)((unsigned long)debug >> 16);
++				evnt.buff[5] = (INT16)(unsigned long)debug;
+ 				appl_write( id, 16, evnt.buff);
+ 				/* On attend la r�ponse */
+ 				do {
+--- windom-1.21.3+zview-patch/src/evnt_windom.c
++++ sdk/windom/overlay/src/evnt_windom.c
+@@ -25,6 +25,29 @@
+  *   $Revision: 1.5 $
+  */
+ 
++/*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/windom/build-windom.sh). The
++ * pristine file is windom-1.21.3/src/evnt_windom.c with zView's patch (which
++ * does not touch it). ONE change, at upstream line 56:
++ *
++ *   upstream:  win->menu.root == *(OBJECT**) &evnt.buff[5]
++ *   here:      win->menu.root == (OBJECT *)(((unsigned long)(UWORD)evnt.buff[5]
++ *                                            << 16) | (UWORD)evnt.buff[6])
++ *
++ * Why: an MN_SELECTED message carries the menu tree as a 32-bit address in
++ * two WORDs, high WORD in msg[5], low WORD in msg[6] (AES 4 convention;
++ * EmuTOS gemctrl.c:355-358, docs/api/aes/menu.md "msg[5..7]"), and WinDom's
++ * own senders write it that way too (ADR(menu) = hi, lo: menu_execcmd.c:95,
++ * mnscroll.c:252,413). On the big-endian 68k a 4-byte load at &buff[5] is
++ * exactly hi<<16|lo. On LP64 little-endian AArch64 the same expression is an
++ * 8-byte load of buff[5..8] -- past the end of the 8-WORD message into
++ * EVNTvar's next fields -- with the WORDs in the wrong order, so a window
++ * menu's MN_SELECTED would never find its window. The arithmetic form is
++ * the 68k meaning spelled portably; every NewTOS user address is below
++ * 2 GiB (docs/sdk/05-abi-pitfalls.md A2), so 32 bits carry it whole.
++ */
++
++
+ #include <stddef.h>
+ #include <stdlib.h>
+ #include "av.h"
+@@ -53,7 +76,7 @@
+ 		msg = EvntFind( NULL, MN_SELECTED);
+ 		/* We have to find the target window */
+ 		for( win = wglb.first; win; win=win->next) {
+-			if( win->menu.root == *(OBJECT**) &evnt.buff[5]) {
++			if( win->menu.root == (OBJECT *)(((unsigned long)(UWORD)evnt.buff[5] << 16) | (UWORD)evnt.buff[6])) {
+ 				msg = EvntFind( win, MN_SELECTED);
+ 				break;
+ 			}
+--- windom-1.21.3+zview-patch/src/new_cookie.c
++++ sdk/windom/overlay/src/new_cookie.c
+@@ -24,6 +24,27 @@
+  *   $Revision: 1.1 $
+  */
+ 
++/*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/windom/build-windom.sh). The
++ * pristine file is windom-1.21.3/src/new_cookie.c (zView's patch does not
++ * touch it). The body of new_cookie() (upstream lines 42-62) appends a slot
++ * to the jar by hand; here it asks the jar's owner:
++ *
++ *   return Ssystem(S_SETCOOKIE, id, value) == 0 ? 1 : 0;
++ *
++ * Why: the same three defects as set_cookie.c (see its header; 05-abi-
++ * pitfalls.md B2): an 8-byte read of _p_cookies, a 16-byte stride over
++ * 8-byte jar slots, and a write into the per-process page-0 mirror that
++ * never reaches the kernel jar get_cookie() reads. S_SETCOOKIE adds the
++ * cookie (FreeMiNT semantics, tos-api/src/gemdos/ssystem.rs) and fails only
++ * on an invalid tag or a full jar -- the upstream "no room" case returns 0
++ * as before. One difference, recorded rather than hidden: when the tag is
++ * ALREADY in the jar, upstream appends a second, shadowed slot (get_cookie
++ * keeps finding the old value) while S_SETCOOKIE updates the one slot.
++ * new_cookie() has no caller inside WinDom.
++ */
++
++
+ #ifdef __PUREC__
+ 	/* Pure C poss�de des librairies non standard */
+ 	#include <tos.h>
+@@ -39,24 +60,9 @@
+ #include <stdlib.h>
+ #include "globals.h"
+ 
++#include <mint/mintbind.h>
++#include <mint/ssystem.h>
++
+ int new_cookie (long id, long value) {
+-	long *cookiejar = (long *)Supexec (__cookieptr);
+-	int  act_row = 0;
+-	
+-	if (cookiejar) {		
+-		while (*cookiejar) {
+-			cookiejar+=2;
+-			act_row++;
+-		}
+-		
+-		if (act_row < cookiejar[1]) {
+-			cookiejar[2] = cookiejar[0];
+-			cookiejar[3] = cookiejar[1];
+-			
+-			*cookiejar++ = id;
+-			*cookiejar++ = value;
+-			return(1);
+-		}
+-	}
+-	return(0);
++	return (Ssystem(S_SETCOOKIE, id, value) == 0) ? 1 : 0;
+ }
+--- windom-1.21.3+zview-patch/src/objc_str3d.c
++++ sdk/windom/overlay/src/objc_str3d.c
+@@ -24,17 +24,41 @@
+  *   $Revision: 1.1 $
+  */
+ 
++/*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/windom/build-windom.sh). The
++ * pristine file is windom-1.21.3/src/objc_str3d.c (zView's patch does not
++ * touch it). ONE change, upstream lines 32-38: `struct objcolor`, the
++ * bit-field view ObjcStr3d() lays over TEDINFO.te_color to set its fill
++ * colour, is declared in little-endian order on an `unsigned short`:
++ *
++ *   upstream:  unsigned borderc:4, textc:4, opaque:1, pattern:3, fillc:4
++ *   here:      unsigned short fillc:4, pattern:3, opaque:1, textc:4, borderc:4
++ *
++ * Why: te_color is one WORD -- border colour bits 15-12, text colour 11-8,
++ * opaque 7, pattern 6-4, fill colour 3-0. m68k compilers allocate bit-fields
++ * from the most significant bit, so the upstream order hits exactly those
++ * bits. clang on little-endian AArch64 allocates from the least significant
++ * bit: the upstream order lands borderc on bits 3-0 and fillc on bits
++ * 15-12, so `color->fillc = 8` would paint the BORDER colour instead of the
++ * fill. Listing the fields from the low end puts every field back on its
++ * documented bits, and the 2-byte unit keeps the view inside te_color (an
++ * `unsigned` unit is 4 bytes and would reach into te_thickness; the same
++ * kind of correction gemlib's BFOBSPEC needed:
++ * sdk/gemlib/overlay/mt_gem.h.in, docs/sdk/05-abi-pitfalls.md B8/B11).
++ */
++
++
+ #include <stddef.h>
+ #include <stdlib.h>
+ #include "globals.h"
+ #include "cookie.h"
+ 
+ struct objcolor {
+-	unsigned borderc:4;
+-	unsigned textc  :4;
+-	unsigned opaque :1;
+-	unsigned pattern:3;
+-	unsigned fillc  :4;
++	unsigned short fillc  :4;
++	unsigned short pattern:3;
++	unsigned short opaque :1;
++	unsigned short textc  :4;
++	unsigned short borderc:4;
+ };
+ 
+ void ObjcStr3d( OBJECT *tree) {
+--- windom-1.21.3+zview-patch/src/set_cookie.c
++++ sdk/windom/overlay/src/set_cookie.c
+@@ -24,6 +24,32 @@
+  *   $Revision: 1.1 $
+  */
+ 
++/*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/windom/build-windom.sh). The
++ * pristine file is windom-1.21.3/src/set_cookie.c (zView's patch does not
++ * touch it). The body of set_cookie() (upstream lines 42-56) walks the jar
++ * itself; here it goes through the jar's owner instead:
++ *
++ *   found  = Getcookie(cookie, &old) == C_FOUND      (mintlib, SDK libc)
++ *   if found && value != 0:  Ssystem(S_SETCOOKIE, cookie, value)
++ *   return found ? 1 : 0                             (unchanged contract)
++ *
++ * Why (docs/sdk/05-abi-pitfalls.md B2): the upstream walk reads _p_cookies
++ * with an 8-byte load (`*(long *)0x5a0` in __cookieptr: fuses _p_cookies
++ * with the next sysvar on LP64) and steps the jar with a 16-byte stride
++ * (`long` = 8 bytes; a jar slot is two 32-bit LONGs), so it finds nothing
++ * or reads past the terminator. Even a correct walk would only write the
++ * per-process page-0 MIRROR of the jar, which the kernel rewrites from its
++ * own jar and never reads back (loader.rs populate_sysvars) -- and WinDom's
++ * get_cookie() (get_cookie.c, __MINTLIB__ branch, compiled here) reads the
++ * kernel jar through Getcookie(), so it would not see the change. The jar's
++ * contract on NewTOS is Ssystem S_GETCOOKIE/S_SETCOOKIE
++ * (tos-api/src/gemdos/ssystem.rs); that is what is used. Callers: the
++ * BubbleGEM paths (bubble_call.c:50,63, bubble_modal.c:50,88), reached only
++ * when a BubbleGEM server is running.
++ */
++
++
+ #ifdef __PUREC__
+ 	/* Pure C poss�de des librairies non standard */
+ 	#include <tos.h>
+@@ -39,18 +65,16 @@
+ #include <stdlib.h>
+ #include "globals.h"
+ 
++#include <mint/mintbind.h>
++#include <mint/ssystem.h>
++#include <mint/cookie.h>
++
+ int set_cookie(long cookie, long value) {
+-	long *cookiejar = (long *)Supexec (__cookieptr);
+-	
+-	if (cookiejar) {
+-		while (*cookiejar) {
+-			if (*cookiejar==cookie) {
+-				if (value)
+-					*++cookiejar = value;
+-				return( 1);
+-			}
+-			cookiejar += 2;
+-		}
+-	}
+-	return( 0);
++	long old;
++
++	if (Getcookie(cookie, &old) != C_FOUND)
++		return( 0);
++	if (value)
++		(void)Ssystem(S_SETCOOKIE, cookie, value);
++	return( 1);
+ }
+--- windom-1.21.3+zview-patch/src/shel_write.c
++++ sdk/windom/overlay/src/shel_write.c
+@@ -24,7 +24,28 @@
+  *   $Revision: 1.2 $
+  */
+ 
++/*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/windom/build-windom.sh). The
++ * pristine file is windom-1.21.3/src/shel_write.c (zView's patch does not
++ * touch it). ONE change, at upstream line 65, in ShelWrite()'s VA_START
++ * branch:
++ *
++ *   upstream:  *(char **)&msg[3] = file;
++ *   here:      msg[3] = (INT16)((unsigned long)file >> 16);
++ *              msg[4] = (INT16)(unsigned long)file;
++ *
++ * Why: VA_START carries the command line as a 32-bit address, high WORD in
++ * msg[3], low WORD in msg[4] (AV protocol; WinDom's own call_stguide.c:42
++ * sends VA_START with ADR(app.pipe) = hi, lo). On the 68k the 4-byte store
++ * at &msg[3] writes exactly that. On LP64 little-endian AArch64 it is an
++ * 8-byte store over msg[3..6] with the low WORD first -- a receiver reading
++ * the protocol's hi/lo pair gets the halves swapped. User addresses are
++ * below 2 GiB on NewTOS (docs/sdk/05-abi-pitfalls.md A2). The following
++ * msg[5..7] = 0 stores are unchanged.
++ */
+ 
++
++
+ #include <stdio.h>
+ #include <string.h>
+ #include <ctype.h>
+@@ -62,7 +83,8 @@
+ 			msg[0] = VA_START;
+ 			msg[1] = app.id;
+ 			msg[2] = 0;
+-			*(char **)&msg[3] = file;
++			msg[3] = (INT16)((unsigned long)file >> 16);
++			msg[4] = (INT16)(unsigned long)file;
+ 		    msg[5] = 0;
+     	    msg[6] = 0;
+     	    msg[7] = 0;
+--- windom-1.21.3+zview-patch/src/vq_tos.c
++++ sdk/windom/overlay/src/vq_tos.c
+@@ -24,6 +24,25 @@
+  *   $Revision: 1.3 $
+  */
+ 
++/*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/windom/build-windom.sh). The
++ * pristine file is windom-1.21.3/src/vq_tos.c (zView's patch does not touch
++ * it). ONE change, at upstream line 64, in syshead():
++ *
++ *   upstream:  return (long)*((SYSHDR **)0x04f2L);
++ *   here:      return (long)*((volatile unsigned int *)0x04f2L);
++ *
++ * Why: _sysbase at $4F2 is a 4-byte pointer on every TOS. On LP64 a
++ * `SYSHDR *` is 8 bytes, so the upstream load fuses _sysbase with the two
++ * WORDs after it and vq_tos() would dereference a wild address. The 4-byte
++ * load yields the OSHEADER the loader materialises in page 0 (0x5C0,
++ * docs/sdk/05-abi-pitfalls.md A2/A3). vq_tos() then reads os_version at
++ * offset 2, which mintlib's OSHEADER has at the same offset on LP64 (only
++ * fields from `reseth` on move: 05-abi-pitfalls.md B1). Caller: fsel.c:494
++ * (the file-selector title needs TOS >= 1.04).
++ */
++
++
+ #include <stdlib.h>
+ #include "globals.h"
+ 
+@@ -61,7 +80,7 @@
+ 
+ static 
+ long syshead( void) {
+-	return (long)*((SYSHDR **)0x04f2L);
++	return (long)*((volatile unsigned int *)0x04f2L);
+ }
+ 
+ /*
+--- ldg-r133/demo/client/client.c
++++ sdk/ldg/overlay/demo/client/client.c
+@@ -1,4 +1,22 @@
+ /*
++ * NewTOS/AArch64 overlay (TASK/LDG-M3, sdk/ldg/build-ldg-client.sh). The
++ * pristine file is <LDG r133>/demo/client/client.c. The ONLY change: the
++ * module file names the client opens end in ".nld" instead of ".ldg" --
++ * four string literals, upstream lines 153, 155 (LdgQuit) and 173-174
++ * (main):
++ *
++ *   upstream:  "..\\libs\\ex_lib.ldg"   "..\\libs\\popup.ldg"
++ *   here:      "..\\libs\\ex_lib.nld"   "..\\libs\\popup.nld"
++ *
++ * Why: a native LDG module is a NewTOS ELF and is named .NLD; .LDG is
++ * reserved for m68k modules and the later emulator (ADR-018 amendment
++ * 2026-10-06, docs/MEMORY.md, item 2). Item 4 of that amendment settles
++ * clients that name modules by suffix: a toolchain overlay, the application
++ * source stays pristine -- this file. The suffix is the only thing a C
++ * program cannot be told from outside; every line of client logic, the
++ * relative "..\\libs\\" layout included, is upstream's.
++ */
++/*
+  * LDG 2.xx demo program
+  *
+  * Example of LDG-client (using WinDom & Gemlib 43) 
+@@ -150,9 +168,9 @@
+ 	if( FormAlert( 1, "[1][A library has shutdowned|Reload it?][Yes|No]") == 1) {
+ 		LoadLDGinit();
+ 		if( ldg == ldg_math)
+-			ldg_math  = LoadLDG( "..\\libs\\ex_lib.ldg", init_ldg_math);
++			ldg_math  = LoadLDG( "..\\libs\\ex_lib.nld", init_ldg_math);
+ 		else if( ldg == ldg_popup)
+-			ldg_popup = LoadLDG( "..\\libs\\popup.ldg", init_ldg_popup);
++			ldg_popup = LoadLDG( "..\\libs\\popup.nld", init_ldg_popup);
+ 		LoadLDGexit();
+ 	}
+ }
+@@ -170,8 +188,8 @@
+ 
+ 	/* Loading librairies */
+ 	LoadLDGinit();
+-	ldg_math  = LoadLDG( "..\\libs\\ex_lib.ldg", init_ldg_math);
+-	ldg_popup = LoadLDG( "..\\libs\\popup.ldg", init_ldg_popup);
++	ldg_math  = LoadLDG( "..\\libs\\ex_lib.nld", init_ldg_math);
++	ldg_popup = LoadLDG( "..\\libs\\popup.nld", init_ldg_popup);
+ 	LoadLDGexit();
+ 
+ 	/* Create dialog */
+# not shown (verbatim copies, hashes in sdk/windom/windom-sources.sha256):
+#   sdk/windom/windom-1.21.3.zip  ad53a3d854520c3b784e602c0c360cc8ad50a03c5fc54f4321cc246a3f186a7f
+#   sdk/windom/patches/zview-windom-1.21.3.patch  71b52776a068ca5a153e9b90709e44c6045bf2e5bb3f139d04da74751540a787

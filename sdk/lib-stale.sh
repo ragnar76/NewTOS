@@ -65,6 +65,12 @@
 #             plain branches off libc like ldg. Same tarball rule as ldg:
 #             vendor-lib.sh re-extracts when the tarball is newer than the
 #             extracted tree.
+#   libwindom1.a  sdk/windom/overlay/, sdk/windom/build-windom.sh,
+#             sdk/windom/windom-1.21.3.zip, patches/ (zView's patch),
+#             windom-sources.sha256, sdk/vendor-lib.sh   + all of gemlib's
+#             (WinDom, TASK/LDG-M3: compiled against gemlib's and mintlib's
+#             headers, so its chain is libc -> gemlib -> windom, like cflib;
+#             build-windom.sh re-extracts zip + patch + overlay on every run)
 #
 # NOT watched, deliberately:
 #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
@@ -137,6 +143,7 @@ lib_archive() {
     libjpeg) printf '%s\n' "$LIB_SDK/libjpeg/libjpeg.a" ;;
     giflib)  printf '%s\n' "$LIB_SDK/giflib/libgif.a" ;;
     libexif) printf '%s\n' "$LIB_SDK/libexif/libexif.a" ;;
+    windom)  printf '%s\n' "$LIB_SDK/windom/libwindom1.a" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -148,7 +155,7 @@ lib_builder() {
     cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
     libm)   printf '%s\n' "$LIB_SDK/libm/build-libm.sh" ;;
     ldg)    printf '%s\n' "$LIB_SDK/ldg/build-ldg.sh" ;;
-    zlib|libpng|libjpeg|giflib|libexif)
+    zlib|libpng|libjpeg|giflib|libexif|windom)
             printf '%s\n' "$LIB_SDK/$1/build-$1.sh" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
@@ -168,6 +175,7 @@ lib_chain() {
     libjpeg) printf 'libc\nlibjpeg\n' ;;
     giflib)  printf 'libc\ngiflib\n' ;;
     libexif) printf 'libc\nlibm\nlibexif\n' ;;
+    windom)  printf 'libc\ngemlib\nwindom\n' ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -234,6 +242,16 @@ lib_inputs() {
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/vendor-lib.sh"
       for _t in "$LIB_SDK/$1"/*.tar.*; do
         case "$_t" in *.asc) continue ;; esac
+        if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
+      done
+      ;;
+    windom)
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/windom/overlay"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/windom/build-windom.sh"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/windom/windom-sources.sha256"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/windom/patches"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/vendor-lib.sh"
+      for _t in "$LIB_SDK"/windom/windom-*.zip; do
         if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
       done
       ;;

@@ -1,0 +1,156 @@
+measurement-2026-10-06-ldg-m3 -- TASK/LDG-M3: WinDom 1.21.3 (+ zView's
+patch) ported as the static SDK library sdk/windom/libwindom1.a, and LDG's
+WinDom demo client (demo/client/client.c) built as LDGDEMO.NAP against it,
+loading EX_LIB.NLD and POPUP.NLD through libldg. Design input:
+docs/analysis/zview-ldg-2026-10-04.md (P-WINDOM). Developer self-evidence; the
+Tester's verdict is separate.
+
+Date 2026-10-06, branch desk-rebuild, HEAD d7fdec0 plus this change
+(uncommitted, method/ldg-m3-change.diff). QEMU raspi4b, -append serial=on
+(+ memprot=strict where named), host macOS. No SD card, Pi or TT touched;
+tools/make-sd-image.sh NOT run -- cards from method/seed-card.sh (copied from
+measurement-2026-10-06-ldg-m1), private 64 MiB images in the session
+scratchpad. Kernel source untouched (no Rust change): kernel8-m3.img is HEAD's
+kernel; the interactive runs use scratch copies with an input injector only
+(method/apply-injector-m3.py; QEMU raspi4b has no input path).
+
+CHANGE (no kernel, no tos-api, no libc/gemlib change)
+  sdk/windom/windom-1.21.3.zip      upstream SourceForge release, unchanged
+      (SHA-1 77e31fa7..., MD5 bf5088fb... = SourceForge's; 397 files
+      byte-identical to Applications/windom-1.21.3); sha256 + origin +
+      licence (LGPL 2.1) in sdk/windom/windom-sources.sha256
+  sdk/windom/patches/zview-windom-1.21.3.patch   zView's howto patch,
+      unchanged (github.com/mikrosk/z-tools a556a68)
+  sdk/windom/build-windom.sh        zip + patch + overlay -> 198 files of
+      src/files.mak KERNEL -> libwindom1.a; include/ = windom1.h + windom.h
+      (+ av.h, scancode.h); flags see docs/sdk/12-windom.md section 2
+  sdk/windom/overlay/src/           10 overlays (section OVERLAYS)
+  sdk/lib-stale.sh                  library `windom` (chain libc -> gemlib ->
+      windom; zip, patch, sums, overlay, script, vendor-lib.sh watched)
+  sdk/.gitignore                    windom tree/build/archive/include
+  sdk/ldg/build-ldg-client.sh       LDGDEMO.NAP (client.c + the demo's
+      exlibbnd.c/popupbnd.c, unmodified) + POPUP.NLD (popup.c, unmodified) +
+      CLIENT.RSC (tools/mkrsc.py convert) in the demo's own tree
+  sdk/ldg/overlay/demo/client/client.c   module suffix .ldg -> .nld (four
+      literals, ADR-018 amendment item 4); nothing else
+  docs/sdk/12-windom.md (new), docs/sdk/10-ldg-modules.md, docs/sdk/README.md
+
+OVERLAYS (each file's header: upstream line, change, reason)
+  endianness+width (pointer as 32-bit hi/lo WORD pair in a GEM message):
+    evnt_windom.c:56 (MN_SELECTED tree), av_init.c:82 (VA_PROTOSTATUS),
+    shel_write.c:65 (VA_START), debug_windom.c:63 (AP_DEBUG)
+  LP64 sysvar width: cookieptr.c:30 ($5A0), vq_tos.c:64 ($4F2)
+  LP64 + NewTOS jar contract: set_cookie.c, new_cookie.c (Getcookie +
+    Ssystem(S_SETCOOKIE) instead of walking/writing the page-0 mirror)
+  LP64: cicon.c:621 (32-bit device pixel stored through an 8-byte ULONG)
+  endianness: objc_str3d.c:32-38 (te_color bit-field order)
+  + client.c (suffix). Code-level delta of all 11: method/ldg-m3-change.diff
+  ("# ==== overlays" part, against zip+patch / the r133 tarball).
+  Flags instead of source changes: -fsigned-char, -D__RSXHDR,
+  -Wno-error={int-conversion,implicit-function-declaration,
+  incompatible-function-pointer-types}, -Wno-header-guard,
+  SOURCE_DATE_EPOCH (reproducible __DATE__/__TIME__ in globals.c).
+
+BUILD (checks/build-windom.txt, checks/build-ldg-client.txt,
+       checks/lib-ensure-converge.txt)
+  libwindom1.a: compiled OK=198 FAILED=0, 16 files with warnings (120
+  upstream warnings, classes in docs/sdk/12-windom.md); 305 defined symbols.
+  LDGDEMO.NAP 299464 B, POPUP.NLD 52696 B: ET_DYN, 0 undefined symbols, only
+  R_AARCH64_RELATIVE (597 / 67). Two consecutive builds byte-identical
+  (libwindom1.a ffaee068..., LDGDEMO.NAP dbcb481c...); lib_ensure windom/ldg
+  converge (second run builds nothing). libldg.a and EX_LIB.NLD byte-identical
+  to measurement-2026-10-06-ldg-m1 (repo-binaries.sha256).
+  Rust: not touched. HEAD rpi4 release kernel built in a private target dir
+  for the runs: warnings tos-api 64 / kernel 94 (unchanged baseline).
+  SDK host tests: 15 passed, 0 failed, 0 skipped (checks/sdk-host-tests.txt),
+  = baseline.
+
+QEMU raspi4b RUNS (method/ldg-m3-runs.sh <scratch> probe accept popup trace
+regr; kernels method/make-scratch-kernels.sh; serial/, screendumps/)
+  probe-on (HEAD kernel, no input): screendumps/probe-on-t20/t35.png --
+    the "LDG Client" WinDom form window (Functions: [Info], Value field,
+    [Compute] [Close] with WinDom's underlined shortcuts) after the load
+    dialog; both modules loaded (two "[exec] preparing program" lines, no
+    error alert). Rendered plausibly; NOT compared against a reference
+    (WinDom on Hatari would be the oracle).
+  m3c-on, m3c-strict (ACCEPTANCE, method/m3c.actions), all marks reached,
+    client exits rc=0 back to the desktop; on vs strict: all 9 screendumps
+    pixel-identical.
+    S01_INFO_ALERT_KBD   Alt+C -> compute() -> FormAlert(mathinfo()):
+                         "Example of math library!!!" = EX_LIB.NLD's
+                         information() (ex_lib.c:49-50), called through
+                         ldg_find's pointer from the WinDom client
+    S03_INFO_ALERT_LONGPRESS  same alert through WinDom's MOUSE path (press
+                         held 0.8 s, longer than the double-click window)
+    S05_SHORTCLICK       a normal click on Compute: nothing (finding B1)
+    S06_VALUE_TYPED      Esc 1 2 3 -> "Value: 123______" (frm_keyhd ->
+                         objc_edit)
+    END_CLOSED           Return = DEFAULT Close -> WM_CLOSED -> std_dstry ->
+                         AP_TERM -> ApTerm (ldg_close x2, RsrcFree,
+                         ApplExit, exit(0)); "[shell] ... exited with rc=0",
+                         desktop up
+  m3a-trace-on (finding B1, AES trace kernel; checks/m3a-trace-excerpt.txt):
+    record 104 short click: evnt_multi bclk=258 bmask=3 bstate=0 fired
+    BUTTON with mb=0x00 (mb_or=0x01: the press was seen) -> WinDom goes
+    straight back to evnt_multi; record 107 long press: mb=0x01 -> objc_find
+    (obj 3 = Compute) ... form_alert.
+  m3b-on (finding B2, method/m3b.actions): Alt+F -> call_popup -> POPUP.NLD
+    __popup -> __get_bkgr -> malloc: "Bus Error ... Memory violation: free
+    memory, read" pc=0x1abdc74 (= POPUP.NLD malloc+0x44 at basepage
+    0x1abb000), far=0x1ad9010, x10=0x1ad9000 = _mchunk_free_list.next
+    (screendumps/m3b-on-S03_POPUP.png). 0x1ad9000 is the first page after
+    POPUP's Mshrink'd TPA (0x1abb000 + _end 0xd610 + args + 64 KiB stack):
+    a hunk only the module itself can have Malloc'd during its Pexec(4) run;
+    its only malloc callers then are stdio's init_stream, reached from
+    exit -> fcloseall -> fclose -> __flshfp (llvm-objdump call graph of
+    POPUP.NLD); fclose's free puts the chunk on the module's static free
+    list, the module's Pterm frees the hunk. A memprot=off run of the same
+    script (debugging, not kept) did not fault but hung inside the pop-up
+    (no further AES call) -- use of freed memory either way.
+  REGRESSION, memprot on, HEAD kernel: APITEST TOTAL 106/0/5 (= M1);
+    QED (#Z) and TeraDesk (#Z) start ([shell] sh_ldapp lines); screendumps
+    vs measurement-2026-10-06-ldg-m1 (method/shotcmp.py): apitest 2 same,
+    qed 1 same, teradesk 1 same, 0 differ.
+
+FINDINGS (open; no kernel change made -- STOP rule of the task)
+  B1 kernel AES: evnt_multi/evnt_button return EV_MB = the live button
+     state after the double-click window (tos-api/src/aes/event.rs fill_rets
+     -> vdi::mouse_buttons()). EmuTOS reports the event's state: b_delay
+     forks bchange(gl_bdesired, gl_bclick) (aes/geminput.c:155-180), bchange
+     sets button = new and posts it (:328-345), ev_rets returns button or, after a second
+     transition, pr_button (aes/gemevlib.c:42-58) -- i.e. "down" for a
+     click; docs/api/aes/event.md:259-266 states the same. Effect: WinDom
+     drops every normal click on forms/toolbars/window menus
+     (evnt_windom.c:334 `mwin && evnt.mbut & 0x01`).
+  B2 LDG module heap (libc + module model, docs/sdk/10-ldg-modules.md): the
+     module's exit-time stdio close leaves its malloc free list pointing into
+     a hunk its own Pterm frees; every later malloc inside the module (called
+     by the client) uses freed memory. Blocks POPUP.NLD here and every zView
+     codec in M4. Fix location undecided (libc / libldg / kernel ownership).
+  O1 (cosmetic, kernel AES): objc_edit's caret ignores te_just -- EmuTOS
+     pxl_rect applies gr_just (aes/gemobed.c:180-182); NewTOS edit_field_t
+     draws at ox + find_pos*8 (tos-api/src/aes/object.rs). Visible in
+     probe-on-t35.png / m3c-*-S06: caret 18 px left in the centred field.
+
+NOT DONE / ONLY REAL HW
+  sinus()/cosinus() through the client UI (needs POPUP.NLD's pop-up: B2;
+  and mouse clicks: B1). The math path itself is M1's (LDGTEST, 69 checks).
+  RsrcXload (WinDom's own .RSC loader) not exercised (docs/sdk/12-windom.md
+  section 4). Real Pi: not run (no HW actions by workers).
+
+method/ FILES
+  seed-card.sh, run-rpi4.sh, qmp_timed.py, shotcmp.py, newdesk-template.inf,
+  TERADESK.INF  copied unchanged from measurement-2026-10-06-ldg-m1/method
+  gen_script.py copied unchanged from measurement-2026-10-01-desk50/method
+  drive-m3.py   drive.py of ldg-m1 + screendump on "[m3] MARK <name> step"
+  run-rpi4-drive-m3.sh  run-rpi4-drive.sh of ldg-m1, calling drive-m3.py
+  apply-injector-m3.py, make-scratch-kernels.sh, ldg-m3-runs.sh,
+  m3a/m3b/m3c.actions   this run (the .actions comment lines were corrected
+  after the runs -- line numbers only; the generated scripts are identical,
+  gen_script.py ignores comments)
+  ldg-m3-change.diff    the change (tracked-file diffs, new files, overlay
+  deltas)
+
+BINARIES
+  bin/SHA256SUMS (LDGDEMO tree, DTACHILD.NCP), bin/KERNELS.SHA256 (kernels
+  not kept), repo-binaries.sha256 (libraries, zip, patch, apps).

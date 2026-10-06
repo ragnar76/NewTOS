@@ -27,9 +27,11 @@ address space (`docs/api/gemdos/process/4b-pexec.md`, `PE_GO`).
 | Headers | `sdk/ldg/ldg-r133/include/ldg.h` (extracted tree) | `build-ldg.sh` |
 | Overlays | `sdk/ldg/overlay/src/devel/{ldgload.c,ldgutil.c}` | — |
 | Demo module + acceptance client | `sdk/ldg/build/EX_LIB.NLD`, `sdk/ldg/build/LDGTEST.NCP` | `sdk/ldg/build-ldg-demo.sh` |
+| LDG's own WinDom demo client + its second module (TASK/LDG-M3) | `sdk/ldg/build/client/dist/LDGDEMO/` (`CLIENT/LDGDEMO.NAP`, `CLIENT/CLIENT.RSC`, `LIBS/EX_LIB.NLD`, `LIBS/POPUP.NLD`) | `sdk/ldg/build-ldg-client.sh` ([12](12-windom.md)) |
 
-The two overlays are the only source differences (each file's header says
-why, with file:line):
+The two overlays below are the only source differences of `libldg.a` (each
+file's header says why, with file:line); `demo/client/client.c` has a third,
+for the demo client only (module suffix `.ldg` → `.nld`, TASK/LDG-M3):
 
 * `ldgload.c` — `BASEPAGE.p_env` is a fixed 32-bit field in the SDK
   (`sdk/libc/overlay/include/mint/basepage.h`), so the one assignment to a
@@ -97,6 +99,7 @@ own — `sdk/examples/ldgtest.c` does.
 | **Environment copy ≤ 512 bytes** | `ldg_load` passes `OFFSETLDG=<addr>` followed by a copy of the client's environment to `Pexec(3)`; the kernel reads at most `ENV_BUF_LEN = 512` bytes of it and truncates the rest silently (`kernel/src/arch/aarch64/exceptions.rs:1781`). `OFFSETLDG` comes first, so loading is unaffected; the module just sees a shortened environment |
 | **64 KiB stack kept per loaded module** | mintlib's `_crtinit` keeps `_stksize` (default `MINKEEP` = 64 KiB, `sdk/libc/newtos-arch/heap_init.c:63`) in the module block; module functions run on the **client's** stack, so it is unused. Original mintlib behaviour, kept on purpose (lead decision Q6) — a module may set its own `_stksize` |
 | **Module `Malloc`s during `main()` are freed at its `Pterm`** | As on TOS: memory the module allocates in `main()` belongs to the module and is released when `Pexec(4)` returns. Memory allocated later, inside a function the client calls, belongs to the client |
+| **Open defect (TASK/LDG-M3, B2): a module's `malloc` after loading reads freed memory** | The row above has a consequence the libc hides: the module's `exit()` closes stdio (`__fcloseall` → `fclose` → `init_stream` `malloc` + `free`), so the module's own static free list (`_mchunk_free_list`) ends `main()` pointing into a hunk its `Pterm` frees. The next `malloc` inside the module (called by the client) faults under `memprot=on` (POPUP.NLD `__get_bkgr`, `measurements/measurement-2026-10-06-ldg-m3/`) and corrupts/hangs with `memprot=off`. `EX_LIB.NLD` does not `malloc` and is unaffected. Fix location (libc, libldg or kernel) not decided |
 | `Pwait()` | LDG calls MiNT's `Pwait` (0x109) after `Pexec(4)` and ignores the result; NewTOS answers `EINVFN` — harmless |
 
 ## 5. Testing

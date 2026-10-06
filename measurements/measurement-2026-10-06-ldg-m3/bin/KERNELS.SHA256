@@ -1,0 +1,6 @@
+# kernels of the runs (not kept: *.img is gitignored; rebuild with method/make-scratch-kernels.sh)
+# kernel8-m3.img = HEAD d7fdec0, board-rpi4 release, unmodified; kinj-* = scratch copy + apply-injector-m3.py
+8f8ed48fbe11f5154225f9cf5a0edb60ace0efc5aa10f2700d3bc404787f97f2  kernel8-m3.img
+2bc5cba00166e5f2871e9a4e5c1cffa872a4c5e6a1e672a8eb211141086225c8  kinj-m3c.img
+6ff33020ab1d36792e6103afbc6982141b5cf5bb892dd567d71b4787b977306c  kinj-m3b.img
+f82d507dcf73f97d0209e911b5028df623ec79aa2177647ec49d393a70dfc5da  kinj-m3a-trace.img

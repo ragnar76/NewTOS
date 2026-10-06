@@ -1,0 +1,24 @@
+# TASK/LDG-M3 run A (finding B1, with the AES trace kernel) -- a SHORT mouse
+# click on [Compute] and then a LONG press (0.8 s) on it. WinDom passes
+# bclicks 258 / bmask 3 / bstate 0 to evnt_multi (globals.c EVNTvar evnt) and
+# acts on a button event only if `evnt.mbut & 0x01` (evnt_windom.c:334).
+# Expected on NewTOS: the short click returns EV_MB = 0 (released by the end
+# of the double-click window) and is dropped; the long press returns EV_MB = 1
+# and opens the info alert. The client's Pterm (Return twice: alert OK, then
+# the DEFAULT button Close) writes C:\AESTRACE.BIN.
+# Window geometry from probe-on-t35.png: Compute (236..303, 259..278).
+100 parkbr
+1600 mark S00_WINDOW
+1700 move 269 268
+1800 down
+1806 up
+2400 mark S01_SHORTCLICK
+2600 down
+2760 up
+3200 mark S02_LONGPRESS
+3800 key 1C
+3806 key 9C
+4200 mark S03_ALERT_GONE
+4400 key 1C
+4406 key 9C
+5200 mark END_CLOSED
