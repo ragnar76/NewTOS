@@ -46,6 +46,22 @@ pub fn set_boot_drive() {
     }
 }
 
+/// The boot drive, EmuTOS `bootdev` (`bios/bios.c:798-799`): the first
+/// drive of the BIOS drive map (NewTOS boots from the first hard disk, `C:`),
+/// or the current drive when no drive is mounted at all. The one derivation
+/// behind the `bootdev` system variable (`$446`) every process sees
+/// (`bdos/process/loader.rs` `populate_sysvars`) and the drive letter of the
+/// default environment `"PATH=\0X:\\\0"` (`bios/bios.c:626-636`,
+/// [`crate::bdos::process::standin`]).
+pub fn boot_drive() -> u16 {
+    let drvbits = bios_drive::drvbits();
+    if drvbits != 0 {
+        drvbits.trailing_zeros() as u16
+    } else {
+        current_drive()
+    }
+}
+
 /// `Dgetdrv` (0x19) — return the current drive (0 = A:).
 pub fn dgetdrv(_args: &TrapArgs) -> Long {
     CUR_DRIVE.load(Ordering::Relaxed) as Long

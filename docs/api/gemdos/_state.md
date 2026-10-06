@@ -47,8 +47,10 @@ load time. So a `Pexec(3)` (load, don't go) basepage has `p_parent == 0` until i
 is actually launched via `Pexec(4/6)`. `Pterm` walks exactly one link
 (`run = run->p_parent`) to return control; the exit code is stored into the
 **parent's** saved-D0 slot `p_parent->p_dreg[0]` (offset 0x68). The boot process
-has `p_parent == NULL`; EmuTOS does not guard a `Pterm` from it (would deref
-NULL). **Contract:** `p_parent` at offset 0x24 and `p_dreg[0]` at 0x68 are the
+(`initial_basepage`, `bdos/bdosmain.c:78`) has `p_parent == NULL`; EmuTOS does
+not guard a `Pterm` from it (would deref NULL). The AES and the AUTO programs
+are its children, the desktop and its programs the AES's
+([`process/_parent-and-environment.md`](./process/_parent-and-environment.md)). **Contract:** `p_parent` at offset 0x24 and `p_dreg[0]` at 0x68 are the
 observable way a child's exit code reaches its parent's `Pexec`. The full
 basepage byte layout is in `docs/api/structures/basepage.md` and
 `docs/api/gemdos/process/4b-pexec.md` (PD table).

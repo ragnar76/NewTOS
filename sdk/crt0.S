@@ -29,11 +29,14 @@
  * anything runs (EmuTOS pgmld, util/gemdos.c:29-47; NewTOS kernel/src/accs.rs).
  * Its p_hitpa still names the old TPA top (Mshrink never touches the
  * basepage), so the stack must not go there. mintlib tells an accessory by
- * its m68k entry registers (startup/crt0.S:46-57: a0 = basepage and
- * p_parent == 0); NewTOS passes the basepage in x0 on every launch path, so
- * this code tells it by that very state instead: the Mshrink that would keep
- * the stack cannot GROW the block (EGSBF, -67). Then it does what mintlib's
- * _acc_main does (crtinit.c:112-131): Malloc(MINKEEP) and run on that.
+ * its entry state (startup/crt0.S:46-57): the basepage in a0 (0 for a
+ * program) and p_parent == 0 -- an accessory is loaded with Pexec(PE_LOAD)
+ * and never started by proc_go, the only writer of p_parent (EmuTOS
+ * bdos/proc.c:370,541). NewTOS passes the basepage in x0 on every launch
+ * path, so the test is p_parent == 0 (since TASK/PPARENT every other start
+ * has a non-zero p_parent, docs/api/gemdos/process/_parent-and-environment.md).
+ * An accessory then does what mintlib's _acc_main does (crtinit.c:112-131):
+ * Malloc(MINKEEP) and run on that -- no Mshrink.
  *
  * Until the stack is chosen no stack is used at all; the svc handler runs on
  * the kernel stack. x0 carries the BasePage address on entry (the loader:
@@ -47,14 +50,19 @@
 
 /* mintlib stksiz.h: keep at least this much stack. */
 #define MINKEEP     0x10000
-#define EGSBF       (-67)
 #define ENSMEM      (-39)
+/* BASEPAGE p_parent (tos-types/src/basepage.rs, a 32-bit field) */
+#define P_PARENT    0x24
 
     .section .text.boot, "ax", @progbits
     .global _start
     .type   _start, %function
 _start:
     mov     x19, x0             /* x19 = BasePage (B) */
+
+    /* mintlib startup/crt0.S:52-56: p_parent == 0 -> an accessory */
+    ldr     w9, [x19, #P_PARENT]
+    cbz     w9, .Lacc
 
     /* m = round16(_end - B) + MINKEEP */
     adrp    x20, _end
@@ -64,14 +72,13 @@ _start:
     and     x21, x21, #~15
     add     x21, x21, #MINKEEP
 
-    /* Mshrink(0, B, m) */
+    /* Mshrink(0, B, m) -- the result is ignored, as mintlib ignores it
+       (crtinit.c:227-247) */
     mov     x0, #0
     mov     x1, x19
     mov     x2, x21
     mov     x8, #0x4A
     svc     #1
-    cmn     x0, #(-EGSBF)       /* rc == EGSBF? */
-    b.eq    .Lacc
 
     /* A program: the stack is the top of the part of the TPA it keeps. */
     add     x9, x19, x21
@@ -79,7 +86,7 @@ _start:
     b       .Lmain
 
 .Lacc:
-    /* An accessory (TPA already shrunk by the loader): mintlib _acc_main,
+    /* An accessory (TPA already shrunk by its loader): mintlib _acc_main,
        s = Malloc(_stksize); SP = s + _stksize. */
     mov     x0, #MINKEEP
     mov     x8, #0x48

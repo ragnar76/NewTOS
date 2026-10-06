@@ -81,7 +81,13 @@ EmuTOS relations `p_dbase = p_tbase + p_tlen`, `p_bbase = p_dbase + p_dlen`,
 on the machine). Before T05 the single `FLAGS(7)` segment left the four
 data/BSS fields **zero** — a program without `.data`/`.bss` (the hand-crafted
 `tools/mk-hello-ncp.py` HELLO.NCP) still gets that. `p_xdta` = `&p_cmdlin`,
-`p_env` = 0 unless a `Pexec` caller supplied one, `p_cmdlin` = the tail
+`p_env` = the environment every process gets as on EmuTOS (an AUTO program
+`{0, 0}`, a desktop / `#Z` program and an accessory the AES's
+`"PATH=\0X:\\\0"`, a `Pexec` child its caller's or the given block),
+`p_parent` = the PD that started it — a readable stand-in PD for the AUTO,
+desktop and `#Z` starts, 0 only for an accessory, which is how the start-up
+code tells one (TASK/PPARENT,
+`docs/api/gemdos/process/_parent-and-environment.md`), `p_cmdlin` = the tail
 verbatim (length byte first).
 
 ### A3. What a program gets, and from where

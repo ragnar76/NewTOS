@@ -409,10 +409,37 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // EmuTOS shows its AUTO programs on the console before the GUI.
     fbcon::clear_and_home();
 
+    // The two PDs EmuTOS's `run` is while kernel code is on the stack
+    // (TASK/PPARENT, `tos_api::bdos::process::standin`): `initial_basepage`
+    // (`bdos/bdosmain.c:337-347`, with `Dsetdrv(bootdev)` at `bios/bios.c:827`)
+    // and the AES PD with its copy of `default_env` (`init_default_environment`,
+    // `bios/bios.c:626-636,828`; the PD itself `:862-865`). Built here, where
+    // the boot drive is known and no program has run yet, and published
+    // read-only to every process, so the AUTO programs below already find
+    // `initial_basepage` as their `p_parent` and its empty environment.
+    // SAFETY: boot CPU, before the first program; pools and user tables exist.
+    match unsafe { tos_api::bdos::process::standin::init(tos_api::bdos::fs::drive::boot_drive()) } {
+        Some(va) => kprintln!(
+            "[proc] stand-in PDs: initial_basepage 0x{:08x}, AES PD 0x{:08x} (read-only to all)",
+            va,
+            tos_api::bdos::process::standin::aes_pd() as u64,
+        ),
+        None => kprintln!(
+            "[proc] stand-in PDs NOT published: programs cannot read their p_parent chain"
+        ),
+    }
+
     // Run the AUTO folder (\AUTO\*.PRG) before the GUI — EmuTOS' autoexec.
     // No-op until the boot drive has an \AUTO\ folder with programs; an
     // invalid/empty .PRG fails the load gracefully (no fault).
     launch::run_auto_folder();
+
+    // The AES starts — EmuTOS `exec_os` after `autoexec` (`bios/bios.c:
+    // 855-866`): from here on the kernel's `run` is the AES PD, the parent and
+    // the environment source of the desktop's, the `#Z` and the EmuCON
+    // programs and of the accessories' environments (`aes/gemshlib.c:645`,
+    // `util/gemdos.c:34`; TASK/PPARENT).
+    tos_api::bdos::process::standin::enter_aes();
 
     // ── The AES session loop — EmuTOS `gemstart.S:86-124` `aes_restart` ──
     //

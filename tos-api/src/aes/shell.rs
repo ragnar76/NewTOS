@@ -24,9 +24,6 @@ use crate::uaccess::{Space, UserFault};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-/// Built-in environment used when the shell buffer is empty.
-const DEFAULT_ENV: &[u8] = b"PATH=C:\\;\0\0";
-
 /// `MAXPATHLEN` (`include/sysconf.h:51-55`: `LEN_ZPATH + LEN_ZFNAME + 1`) —
 /// the size EmuTOS gives every fully-qualified path scratch buffer, from
 /// `D.s_cmd` (`gemlib.h:122`) to `rs_load`'s `tmprsfname` (`gemrslib.c:46`).
@@ -161,17 +158,6 @@ struct State {
 }
 // SAFETY: single boot CPU only touches the AES.
 unsafe impl Sync for State {}
-
-/// The AES environment (EmuTOS `ad_envrn`, `aes/geminit.c:122`) that
-/// `shel_envrn` searches and points into — empty = [`DEFAULT_ENV`]. It has a
-/// page of its own because the pointer `shel_envrn` hands an EL0 program
-/// must be readable there: the page is published read-only to every process
-/// (`usermem::expose`, `PROT_PR`; ADR-023), so it may hold nothing else.
-#[repr(C, align(4096))]
-struct EnvPage(UnsafeCell<[u8; 4096]>);
-// SAFETY: single boot CPU only touches the AES.
-unsafe impl Sync for EnvPage {}
-static AES_ENV: EnvPage = EnvPage(UnsafeCell::new([0; 4096]));
 
 static S: State = State {
     scrap: UnsafeCell::new([0; PATHBUF]),
@@ -836,7 +822,9 @@ pub(super) fn reinit() {
         (*S.s_tail.get()).fill(0);
         (*S.sh_apdir.get()).fill(0);
         (*S.buf.get()).fill(0);
-        (*AES_ENV.0.get()).fill(0);
+        // `ad_envrn`: `aes_restart` only points it at the AES PD's `p_env`
+        // again (`gemstart.S:90-96`); the block is untouched. NewTOS's is the
+        // AES-PD stand-in's (`bdos::process::standin`), which nothing resets.
         // `gl_changerez = FALSE` (geminit.c:806).
         *S.gl_changerez.get() = 0;
         *S.gl_nextrez.get() = 0;
@@ -980,13 +968,11 @@ pub fn shel_put(pb: &Aespb) {
 ///   `C:\` which ignored the current drive (`gemshlib.c:434-442`).
 /// * (4) each path in the AES `PATH=` environment (`gemshlib.c:445-460`).
 ///
-/// **Step (4) skipped (documented, not faked).** NewTOS has no
-/// loader-populated AES `PATH=` environment: `shel_envrn` reads an internal
-/// hardcoded default (`"PATH=C:\;"`), not a real per-process AES environment
-/// (audit P6-010). Iterating that stand-in would only add a redundant `C:\`
-/// search (already covered by step (3)) while building on the faked env, so
-/// step (4) is omitted until a real AES environment exists — rather than
-/// inventing a PATH mechanism. Steps (1)-(3) are implemented in full.
+/// **Step (4) not implemented (open).** The AES environment it would read
+/// exists since TASK/PPARENT — EmuTOS's `default_env` `"PATH=\0X:\\\0"` in
+/// the AES-PD stand-in (`bdos::process::standin`); the `PATH=` walk itself
+/// (`gemshlib.c:445-460`, with the NUL after `PATH=` skipped) has not been
+/// built. Steps (1)-(3) are implemented in full.
 ///
 /// **Note:** using `read_file` as the existence probe (kept from steps 2-3) is
 /// fragile versus a proper `Fsfirst` check — it fails a directory match and
@@ -1071,7 +1057,7 @@ pub fn sh_find(spec: &mut [u8]) -> bool {
             }
         }
     }
-    // (4) AES PATH= — skipped: no loader-populated AES environment (see doc).
+    // (4) AES PATH= — not implemented (see doc).
     false
 }
 
@@ -1120,43 +1106,25 @@ pub fn shel_envrn(pb: &Aespb) {
     }
     let nlen = clen(&needle);
 
-    // SAFETY: single-CPU AES; env is a stable static blob.
-    let env = unsafe { &mut *AES_ENV.0.get() };
-    if env[0] == 0 {
-        env[..DEFAULT_ENV.len()].copy_from_slice(DEFAULT_ENV);
-    }
-    // Where the caller can read the environment: a kernel caller (the
-    // in-kernel desktop) at the kernel address; an EL0 program at the
-    // address of the page published read-only (EmuTOS hands out a pointer
-    // into `ad_envrn`, which every program of its flat machine can read —
-    // ARCH03 3b; before, a kernel address went into an EL0 slot).
+    // `ad_envrn` is the AES PD's `p_env` (EmuTOS `aes/gemstart.S:78-96`):
+    // the AES-PD stand-in's environment, a copy of `default_env`
+    // (`bios/bios.c:626-636`; TASK/PPARENT, `bdos::process::standin`). Where
+    // the caller can read it: a kernel caller (the in-kernel desktop) at the
+    // kernel address; an EL0 program at the stand-in page's address, which
+    // the kernel published read-only to every process at boot (EmuTOS hands
+    // out a pointer into `ad_envrn`, which every program of its flat machine
+    // can read — ARCH03 3b). Before the stand-ins exist there is no AES
+    // environment: `*ppath = NULL`, the not-found answer.
+    let Some((env, user_va)) = crate::bdos::process::standin::aes_env() else {
+        if pb.abi.write_ptr_in(pb.space(), pslot, 0, 0).is_err() {
+            return;
+        }
+        pb.set_ret(1);
+        return;
+    };
     let base: u64 = match pb.space() {
         crate::uaccess::Space::Kernel => env.as_ptr() as u64,
-        crate::uaccess::Space::User => {
-            let slot = crate::bdos::process::slot_for(crate::bdos::process::current());
-            // SAFETY: the page is a `'static`, page-aligned kernel object
-            // holding only the environment; single CPU under the AES trap.
-            let published = slot.and_then(|sl| unsafe {
-                crate::bdos::process::usermem::expose(
-                    sl,
-                    env.as_ptr(),
-                    env.len(),
-                    tos_types::ProtMode::Pr,
-                )
-            });
-            match published {
-                Some(va) => va,
-                // No process, or the page cannot be published: nothing the
-                // caller could read — `*ppath = NULL`, the not-found answer.
-                None => {
-                    if pb.abi.write_ptr_in(pb.space(), pslot, 0, 0).is_err() {
-                        return;
-                    }
-                    pb.set_ret(1);
-                    return;
-                }
-            }
-        }
+        crate::uaccess::Space::User => user_va,
     };
     // The environment is a sequence of NUL-terminated "NAME=VALUE" strings.
     let mut i = 0;

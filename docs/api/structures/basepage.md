@@ -80,9 +80,22 @@ over the command line.**
 
 ### `p_parent` (0x24)
 
-The PD that called `Pexec` to load this one, or `NULL` for the boot
-process (initial AESPRG). On `Pterm`/`Pterm0`/`Ptermres`, control
-returns to `p_parent`'s context.
+The PD that was `run` when this one was **started** — written only by
+`proc_go` (`bdos/proc.c:541`, `p->p_parent = run`); `init_pd_fields`
+zeroes it before (`bdos/proc.c:370`). So: an AUTO program and the AES
+get `&initial_basepage` (`bios/bios.c:685-695,855-866`,
+`bdos/bdosmain.c:337-342`), the desktop and every program it or the
+`#Z` line starts get the AES PD (`aes/gemshlib.c:569-580,645`), a desk
+accessory — loaded with `PE_LOAD`, never `proc_go`ed — keeps **0**
+(`util/gemdos.c:29-47`), a `Pexec` child gets its caller's PD.
+`initial_basepage` itself has `p_parent == 0`. mintlib tells an
+accessory by `p_parent == 0` (`startup/crt0.S:52-56`). On
+`Pterm`/`Pterm0`/`Ptermres`, control returns to `p_parent`'s context.
+
+NewTOS: the two PDs the kernel has no process for are stand-ins in a
+published read-only kernel page — see
+[`../gemdos/process/_parent-and-environment.md`](../gemdos/process/_parent-and-environment.md)
+(TASK/PPARENT, Way A).
 
 ### `p_flags` (0x28)
 
@@ -105,7 +118,14 @@ verbatim.
 
 Pointer to a NUL-terminated chain of `KEY=value\0` strings, with a
 double-NUL terminator. Inherited from parent unless `Pexec` was called
-with a non-NULL env argument.
+with a non-NULL env argument. **Every** process gets one (`alloc_env`
+runs for every load and basepage mode, `bdos/proc.c:215,283,413-432`):
+an AUTO program a copy of `initial_basepage`'s empty `{0, 0}`
+(`bdos/bdosmain.c:81,341`), the AES a copy of `default_env`
+`"PATH=\0X:\\\0\0"` (`bios/bios.c:77-80,626-636,862`), the desktop,
+its programs and the accessories a copy of the AES's (`ad_envrn`,
+`aes/gemstart.S:78-96`, `aes/gemshlib.c:645`, `util/gemdos.c:34`). Details:
+[`../gemdos/process/_parent-and-environment.md`](../gemdos/process/_parent-and-environment.md).
 
 ### `p_uft[6]` (0x30)
 
@@ -240,8 +260,9 @@ emulator (Phase 10+).
   is the start of the process's TPA block, a page-aligned BDOS-pool block
   (EmuTOS `p_lowtpa = p`, `bdos/proc.c:372`). That address is the process's
   **PD pointer**: `Pexec(PE_LOAD)` returns it, `p_parent` holds the parent's
-  (set when the child is started, EmuTOS `proc_go`, `bdos/proc.c:541`; `0`
-  for a program the kernel starts), the OSHEADER's `os_run` points at a
+  (set when the child is started, EmuTOS `proc_go`, `bdos/proc.c:541`; for
+  a program the kernel starts the `initial_basepage` / AES-PD stand-in,
+  TASK/PPARENT — `0` before it), the OSHEADER's `os_run` points at a
   page-0 cell (`0x5B8`) holding it, and the entry gets it in `x0`. All
   address fields (`p_lowtpa`, `p_hitpa`, `p_tbase`, `p_dbase`, `p_bbase`,
   `p_xdta`, `p_env`) are addresses every process can read. Until stage 1 the

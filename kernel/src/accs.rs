@@ -200,10 +200,14 @@ fn same_name(a: &[u8; LEN_ZFNAME], b: &[u8]) -> bool {
 /// beyond the serial line, and the boot carries on.
 fn load_one_acc(acc: &mut Acc) {
     // SAFETY: single boot path; the BDOS is not concurrently locked and the
-    // returned `LoadedChild` borrows nothing past this call. No command tail
-    // and no environment, as EmuTOS's `pgmld` gives an accessory neither.
+    // returned `LoadedChild` borrows nothing past this call. No command tail,
+    // and `env == NULL` as EmuTOS's `pgmld` passes it (`Pexec(PE_LOAD, pname,
+    // "", NULL)`, `util/gemdos.c:34`): a copy of `run->p_env`, `run` being the
+    // AES PD (`bdos/proc.c:419-420`) — here the AES-PD stand-in's environment
+    // (TASK/PPARENT). `p_parent` stays the loader's 0: an accessory is never
+    // `proc_go`ed (`bdos/proc.c:370,541`), which is how mintlib tells one.
     let child = match unsafe {
-        process::pexec::load(&acc.path, &[], process::loader::EnvSpec::None, false, true)
+        process::pexec::load(&acc.path, &[], process::loader::EnvSpec::Inherit, false, true)
     } {
         Ok(c) => c,
         Err(e) => {

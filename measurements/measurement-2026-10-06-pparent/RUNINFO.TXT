@@ -1,0 +1,104 @@
+measurement-2026-10-06-pparent -- TASK/PPARENT (user decision 2026-10-06,
+"Way A"): kernel-launched programs get EmuTOS's p_parent through two
+stand-in PDs (initial_basepage, AES PD), every process gets an environment
+as EmuTOS alloc_env gives it, shel_envrn searches the AES PD's environment,
+and the SDK start-up code uses mintlib's accessory test (p_parent == 0)
+instead of the EGSBF heuristic. Developer self-evidence; the Tester's
+verdict is separate.
+
+Date 2026-10-06, branch desk-rebuild, HEAD a79384a plus this change
+(uncommitted). QEMU raspi4b / virt, host macOS. No SD card, Pi or TT
+touched; tools/make-sd-image.sh NOT used (method/seed-card.sh, private
+64 MiB images in the session scratchpad; make-scratch.sh now excludes
+'sd-card-backup-*'). QEMU sockets in /private/tmp/claude-501/<mktemp> as in
+the earlier runs (a unix socket path must stay < 104 bytes; the session
+scratchpad path is longer), removed after each run.
+
+Spec: docs/api/gemdos/process/_parent-and-environment.md (EmuTOS
+1a7484ab: bdos/proc.c:370,413-432,541; bdos/bdosmain.c:78,81,337-347;
+bios/bios.c:77-80,626-636,685-695,827-828,855-866; aes/gemshlib.c:569-580,
+645; aes/gemstart.S:78-96; util/gemdos.c:29-47; mintlib startup/crt0.S:46-62).
+
+METHOD (method/ = measurement-2026-10-06-vforkt-fix/method copied, then)
+  tests/pparent.c   NEW probe, one source, four builds (build-s2-tests.sh):
+                    PPAUTO.NCP (C:\AUTO\), PPZ.NAP (#Z; runs itself as a
+                    Pexec child, tail = its PD), PPDESK.NAP (desktop
+                    double-click, C:\PPD\), PPACC.NAC (libc accessory).
+                    Prints its PD, p_parent, p_env (+ bytes), follows the
+                    parent chain (stand-ins only), checks _app, shel_envrn.
+  tests/envrn.c     the 3b probe, expectation changed to EmuTOS's
+                    default_env (gemlib's mt_shel_envrn steps over the NUL
+                    after "PATH=", a_shel_envrn.c:40-50: program sees "C:\").
+  pp-run.sh         per mode: pparent card (AUTO + SYSACC.NAC + PPACC.NAC +
+                    #Z PPZ.NAP + child) and ENVRN (#Z).
+  ppdesk-run.sh, ppdesk/  desktop double-click launch (desk3a injector
+                    machinery, window C:\PPD\, actions ppdesk.actions).
+  series-pp.sh      pp-run + ppdesk + the full post-E9 series (runs-poste9:
+                    desktop, TeraDesk, QED, Doom, APITEST, accessory, E9MEM,
+                    E9PLAIN, S2ALL, PORT10, CRASHTST, UACC3A, MPROT, E10,
+                    KBDVEC+EmuCON, TeraDesk->QED, EmuCON five programs,
+                    ATEXIT, ACCFREE, MDPROBE, strict S2ALLS, virt crash/
+                    selftests/desktop) + desk3a + S2ALL crash kernel +
+                    VFORKT alone, modes on/off/strict.
+  red-run.sh        the pparent card on the PRE-change kernel
+                    (measurement-2026-10-06-vforkt-fix/bin/kernel8-vf.img,
+                    read only).
+  checks.sh pp / ppfinal (final tree, after a comment-only edit in
+                    exceptions.rs: kernel images byte-identical to pp).
+
+STATIC CHECKS                       vforkt-fix      pp / ppfinal
+  host tests pass/fail/ignored      1138/0/1        1145/0/1 (+7 new:
+                                                    standin 2 unit,
+                                                    tests/pparent_standin.rs 5)
+  release warnings tos-api/kernel   64/94 both      64/94 both boards
+  clippy tos-api/kernel rpi4, virt  76/125          76/125 (per-file counts
+                                                    identical)
+  desk-drift-probe                  31              31
+  sdk/run-host-tests                13/0/0          13/0/0
+
+BINARIES: bin/SHA256SUMS (all SDK programs relinked: both crt0 changed; only
+HELLO.NCP/OLDEXEC.NCP unchanged), repo-binaries.sha256 (APITEST, QED,
+TeraDesk, Doom rebuilt), bin/KERNELS.SHA256:
+  kernel8-pp.img      70727a5d...  product rpi4 (= kernel8-ppfinal.img)
+  kernel-virt-pp.img  1b79a078...  product virt (= kernel-virt-ppfinal.img)
+  + crash/keys/keys9/tdkeys/desk3a/ppdesk injector kernels, virt st/crash.
+
+PROBE RESULTS (serial/pp-<mode>-rpi4-{pparent,ppdesk,envrn}-serial.log)
+  boot: "[proc] stand-in PDs: initial_basepage 0x00240000, AES PD 0x00240100
+  (read-only to all)" (product kernel; the ppdesk injector kernel's page is
+  at 0x00241000 -- other kernel image).
+                               ON      OFF     STRICT
+  AUTO   p_parent=initial, env {0,0}, initial: p_parent 0, flags 7,
+         p_env->double_nul, p_uft -1,-1,-2,-3,-1,-1       PASS PASS PASS
+  ACC    (libc) _app 0, p_parent 0, env = PATH=\0C:\\\0\0 PASS PASS PASS
+         SYSACC.NAC (plain crt0): loads, issues its message wait (all modes)
+  Z      (#Z) p_parent=AES PD 0x00240100, AES PD: p_lowtpa self, flags 7,
+         p_xdta self+0x80, env PATH=\0C:\\\0\0; grandparent initial (p_parent
+         0, double_nul); own env a copy; shel_envrn -> 0x00240216 (= AES
+         p_env + 5, +1 by gemlib)                         PASS PASS PASS
+  Z-KID  (Pexec child) p_parent = caller's PD, env copy   PASS PASS PASS
+  DESK   (double-click) same checks as Z + its kid        PASS PASS PASS
+  ENVRN  (#Z, EL0 shel_envrn)                              PASS PASS PASS
+  RED (pre-change kernel, new binaries): AUTO/ACC/Z/Z-KID all FAIL -- p_parent
+  0 and no environment; the new crt0 then takes AUTO/#Z programs for
+  accessories (_app 0). => new SDK binaries REQUIRE a PPARENT kernel.
+
+REGRESSION SERIES (checks/summary-pp-<mode>.txt vs vforkt-fix
+checks/summary-vf-<mode>.txt): every run line identical in all three modes
+(S2ALL, S2ALLS, VFORKT, ACCFREE, ATEXIT, APITEST 106/0/5, Doom VERIFIED,
+PORT10 42/44 same two FAILs, CRASHTST/UACC3A/MPROT/E10 raspi4b+virt, virt
+selftests, E9MEM/E9PLAIN, EmuCON five programs, KBDVEC); the only
+differences are the new runs and the strict KBDVEC+EmuCON line (vforkt-fix
+FAIL once/PASS on rerun, injector timing; here PASS first time).
+Screendumps vs vforkt-fix: 95 byte-identical (desktop, TeraDesk, QED,
+APITEST, accessory, TeraDesk->QED, ...), 12 new, 205 differ: crash reports
+(UACC3A, CRASHTST, MPROT, E10, virt crash -- PD/register addresses shifted by
+the program's environment block, kernel pc by the new code; verdicts equal),
+CRASHTST/desk3a directory listings (dates, the four new probes on the card),
+Doom (timing), EmuCON t45 (E9MEM addresses). Inspected samples, no
+functional change.
+Expected, EmuTOS-conformant shifts: every #Z/desktop program and accessory
+now owns an environment block (one page with memprot on): ACCFREE free TT
+0x3a395000 (was 0x3a397000), "[acc] 3 block(s) ... freed" (was 2: TPA,
+environment, stack); MDPROBE NULL after 147021 x malloc(32) (was 147605,
+one MD less: the program's environment); ACCFREE still PASS.

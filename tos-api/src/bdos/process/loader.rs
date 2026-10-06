@@ -128,9 +128,13 @@ pub enum EnvSpec<'a> {
     /// `envsize` bytes (`bdos/proc.c:150`).
     Explicit(&'a [u8]),
     /// `env == NULL`: duplicate the parent's `run->p_env`
-    /// (`bdos/proc.c:419-420`). The root process carries an empty
-    /// double-NUL env (`bdos/bdosmain.c:341`), so with no running parent
-    /// (or a parent whose `p_env` is 0) the child inherits an empty env.
+    /// (`bdos/proc.c:419-420`). With no running process `run` is the
+    /// kernel's stand-in PD ([`super::standin::kernel_run_env`],
+    /// TASK/PPARENT): `initial_basepage`'s empty double-NUL env
+    /// (`bdos/bdosmain.c:341`) before the AES, the AES environment
+    /// (`default_env`, `bios/bios.c:626-636`) after it. A parent whose
+    /// `p_env` is 0, or a kernel with no stand-ins yet, hands down the empty
+    /// env.
     Inherit,
 }
 
@@ -1137,12 +1141,7 @@ fn populate_sysvars(tpa: &mut [u8], pd: u64) {
     // bootdev ($446): default boot drive (bios.c:798-799). NewTOS boots from
     // the first available hard disk (C:), i.e. the lowest set bit in the
     // drive map (drive.rs FIRST_HD == C: == 2).
-    let drvbits = crate::bios::drive::drvbits();
-    let bootdev = if drvbits != 0 {
-        drvbits.trailing_zeros() as u16
-    } else {
-        crate::bdos::fs::drive::current_drive()
-    };
+    let bootdev = crate::bdos::fs::drive::boot_drive();
     wr_word(tpa, 0x446, bootdev);
     // cmdload ($482): load COMMAND.PRG instead of the ROM shell when != 0;
     // boot-config flag, default 0 (ROM-shell path, EmuTOS `bios.c:850` gate,
@@ -1165,7 +1164,7 @@ fn populate_sysvars(tpa: &mut [u8], pd: u64) {
     // the *running* process's copy fresh (`bios::tick::advance` → `publish`).
     wr_long(tpa, crate::bios::tick::HZ_200_ADDR, crate::bios::tick::hz_200());
     // drvbits ($4C2): physical drive bitmap (Drvmap, blkdev_init).
-    wr_long(tpa, 0x4C2, drvbits);
+    wr_long(tpa, 0x4C2, crate::bios::drive::drvbits());
     // sysbase ($4F2): pointer to the OSHEADER (bios.c:358) — the field whose
     // absence crashed TeraDesk (`*(long*)0x4F2`). Adjacent shell_p@0x4F6 is
     // left 0, so an LP64 8-byte read of $4F2 still yields OSHEADER_VA.
@@ -1410,24 +1409,39 @@ unsafe fn alloc_env_for(env: EnvSpec<'_>, prgflags: u32) -> Result<Option<Long>,
         }
         EnvSpec::Inherit => {
             // env == NULL → duplicate run->p_env (EmuTOS proc.c:419-420).
-            let run = crate::bdos::process::current_kva();
-            // SAFETY: BDOS lock held; `run` is the running basepage's kernel
-            // alias and its `p_env` a live pool block when non-null.
+            // SAFETY: BDOS lock held; `current_kva` is the running basepage's
+            // kernel alias or null.
             let phys = unsafe {
-                let src: &[u8] = if run.is_null() {
-                    &EMPTY_ENV
-                } else {
-                    let penv = (*run).p_env;
-                    if penv == 0 {
-                        &EMPTY_ENV
-                    } else {
-                        env_slice_from_phys(penv)
-                    }
-                };
+                let src = inherited_env(crate::bdos::process::current_kva());
                 alloc_env(src, prgflags)?
             };
             Ok(Some(phys))
         }
+    }
+}
+
+/// What `alloc_env(flags, NULL)` copies (EmuTOS `bdos/proc.c:419-421`):
+/// `run->p_env` up to and with its double NUL. `run` is the running
+/// process's basepage (kernel alias); with no running process (`null`) it is
+/// the kernel's stand-in PD (TASK/PPARENT, [`super::standin::kernel_run_env`]):
+/// `initial_basepage`'s `double_nul` before the AES, the AES environment
+/// after it. A `p_env` of 0, or no stand-ins yet, gives the empty env.
+///
+/// # Safety
+///
+/// `run` is null or the kernel alias of a live basepage whose `p_env` is 0
+/// or a readable environment block.
+pub(super) unsafe fn inherited_env(run: *const BasePage) -> &'static [u8] {
+    if run.is_null() {
+        return super::standin::kernel_run_env().unwrap_or(&EMPTY_ENV);
+    }
+    // SAFETY: caller contract.
+    let penv = unsafe { (*run).p_env };
+    if penv == 0 {
+        &EMPTY_ENV
+    } else {
+        // SAFETY: caller contract — a readable block.
+        unsafe { env_slice_from_phys(penv) }
     }
 }
 

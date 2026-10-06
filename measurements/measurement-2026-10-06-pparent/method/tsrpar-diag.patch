@@ -1,0 +1,15 @@
+--- method/tests/tsrpar.c	2026-10-05 14:48:11
++++ /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/tsrdiag/m/tests/tsrpar.c	2026-10-05 14:58:39
+@@ -24,6 +24,12 @@
+ 	puthex(mb[1]);
+ 	Cconws(" blkln=");
+ 	puthex(mb[2]);
++	Cconws(" mallocblk=");
++	puthex(mb[3]);
++	Cconws(" env=");
++	puthex(*(volatile unsigned int *)((unsigned long)mb[1] + 0x2C));
++	Cconws(" parentPD=");
++	puthex((unsigned long)_base);
+ 	Cconws("\r\n");
+ 	if (rc != 0x31 || !mb[0]) {
+ 		Cconws("TSR: FAIL\r\n");

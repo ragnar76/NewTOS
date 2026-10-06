@@ -2011,7 +2011,9 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     // `run = run->p_parent`).
     let parent_bp = tos_api::bdos::process::current();
     // `p->p_parent = run` (EmuTOS `proc_go`, `bdos/proc.c:541`): the caller's
-    // PD pointer, or 0 when the caller is no process (an EL1 caller).
+    // PD pointer, or, when the caller is no process (an EL1 caller such as
+    // EmuCON's `run`), the stand-in PD that is EmuTOS's `run` there — the AES
+    // PD once the AES runs (TASK/PPARENT, `pexec::set_parent`).
     // SAFETY: trap context, BDOS lock implicit; the child holds a loaded image.
     unsafe { tos_api::bdos::process::pexec::set_parent(child.slot, parent_bp) };
     match tos_api::bdos::process::slot_for(parent_bp) {

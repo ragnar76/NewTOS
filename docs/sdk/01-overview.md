@@ -94,9 +94,11 @@ for TOS data structures that are 32-bit on the wire are the subject of
   `parseargs()` — `environ` and the `ARGV=` extension — is still absent; see
   the next point. `shel_read` remains available as a second route
   (`sdk/apps/chaintest/chaintest.c:41`).
-* **No environment.** The desktop and `AUTO` launchers pass
-  `EnvSpec::None`, so `p_env = 0` (`kernel/src/launch.rs:70-79`,
-  `loader.rs:675`).
+* **An environment, but no `environ`.** Since TASK/PPARENT every launch path
+  hands down an environment as EmuTOS does (AUTO `{0, 0}`; desktop, `#Z` and
+  accessories a copy of the AES's `"PATH=\0X:\\\0"`;
+  `docs/api/gemdos/process/_parent-and-environment.md`), but the libc does not
+  walk `p_env` into `environ` yet (TASK/PORT09).
 * **No supervisor mode.** `Super` and `Supexec` exist as *bindings* that do not
   change privilege: `Super(1L)` truthfully answers "not privileged", the rest
   are no-ops with a round-trippable token; `Supexec(f)` is a plain call of

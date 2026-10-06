@@ -67,17 +67,19 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // Busy cursor while loading from disk (the desktop is still on screen).
     busy_cursor(true);
     // Load from the registry or the FAT16 file system into a fresh slot,
-    // TPA owned by the child (the shell's `PE_LOADGO`: its `Pterm` frees it).
-    // No environment (`EnvSpec::None` → `p_env = 0`) — the desktop/AUTO launcher
-    // hands none down, preserving the pre-env-plumbing behaviour on this
-    // boot-critical path. Wiring an inherited env here waits on the
-    // process-ownership model (Phase 09) so the block is reclaimed at the
-    // program's `Pterm`. The command `tail` is copied into the child's
-    // `p_cmdlin` (offset 0x80) by the loader.
+    // TPA and environment owned by the child (the shell's `PE_LOADGO`: its
+    // `Pterm` frees them). The environment is `run->p_env`'s copy, as EmuTOS
+    // gives it (`alloc_env`, `bdos/proc.c:413-432`): the AUTO runner passes
+    // `NULL` while `run` is `initial_basepage` (`bios/bios.c:693`) — `{0, 0}`;
+    // `sh_ldapp` passes `ad_envrn`, the AES PD's `p_env` (`aes/gemshlib.c:645`,
+    // `aes/gemstart.S:78-96`). Both are `EnvSpec::Inherit` with no running
+    // process: the kernel's stand-in `run` (TASK/PPARENT,
+    // `tos_api::bdos::process::standin`). The command `tail` is copied into
+    // the child's `p_cmdlin` (offset 0x80) by the loader.
     // SAFETY: single-CPU boot/desktop context; the BDOS is not concurrently
     // locked, and the returned `LoadedChild` borrows nothing past this call.
     let child = match unsafe {
-        process::pexec::load(path, tail, process::loader::EnvSpec::None, false, true)
+        process::pexec::load(path, tail, process::loader::EnvSpec::Inherit, false, true)
     } {
         Ok(c) => c,
         Err(e) => {
@@ -130,6 +132,12 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // is handed over verbatim: it is the length-prefixed `p_cmdlin` image the
     // loader copied.
     tos_api::aes::shell::set_launch_info(path, tail);
+    // `proc_go`: `p->p_parent = run` (`bdos/proc.c:541`) — `run` is kernel
+    // code here, so the stand-in PD of this moment: `initial_basepage` for an
+    // AUTO program (`bios/bios.c:693`), the AES PD for the desktop's and the
+    // `#Z` program (`aes/gemshlib.c:645`; TASK/PPARENT).
+    // SAFETY: single-CPU kernel context; the slot holds the loaded image.
+    unsafe { process::pexec::set_kernel_parent(child.slot) };
     set_current(process::pd_of(child.slot));
     kprintln!("[launch] EL0: slot {} entry 0x{:x}", child.slot, child.entry_va);
 

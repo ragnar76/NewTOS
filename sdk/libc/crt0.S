@@ -11,8 +11,10 @@
  *   - `__libc_crtinit` sets `_base`, builds argc/argv (`__libc_parseargs`,
  *     newtos-arch/cmdargs.c), applies mintlib's `_stksize` / `_heapbase`
  *     policy, Mshrinks the TPA to program + stack (crtinit.c:154-247) and
- *     returns the new stack top; an accessory, whose TPA the loader already
- *     shrank (EmuTOS pgmld), gets a Malloc'ed stack (crtinit.c:112-131);
+ *     returns the new stack top; an accessory -- mintlib's test,
+ *     `p_parent == 0` (startup/crt0.S:52-56) -- gets a Malloc'ed stack
+ *     (crtinit.c:112-131) and keeps the TPA its loader already shrank
+ *     (EmuTOS pgmld);
  *   - malloc then grows through GEMDOS Malloc (`_split_mem`, unix/sbrk.c),
  *     as with mintlib on TOS;
  *   - main's return value goes to exit(), as at the end of mintlib's

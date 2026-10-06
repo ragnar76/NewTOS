@@ -345,13 +345,23 @@ caller's `char **` in `addr_in[0]` — **not** through `addr_out`.
 > `addr_in[0]` (`SH_PATH`, a `char **`)**, **search string = `addr_in[1]`
 > (`SH_SRCH`)** (`aesdefs.h:611-612`, `gemsuper.c:396`). See D-054.
 
-**NewTOS (ARCH03 3b):** the AES environment is a kernel page of its own
-(`tos-api/src/aes/shell.rs` `AES_ENV`); for an EL0 caller it is published
-read-only to every process (`usermem::expose`, `PROT_PR`, ADR-023) and
-`*value` is the **published** user address, which the program can read —
-EmuTOS hands out a pointer into `ad_envrn`, readable on its flat machine.
-An in-kernel caller gets the kernel address. (Before 3b an EL0 program got
-the kernel address and crashed on reading it; probe
+**NewTOS (ARCH03 3b, TASK/PPARENT):** `ad_envrn` is the AES PD's `p_env`
+(EmuTOS `aes/gemstart.S:78-96`), so since PPARENT the environment searched is
+the AES-PD stand-in's: `default_env` = `"PATH=\0X:\\\0\0"` (12 bytes, X =
+the boot drive, `bios/bios.c:77-80,626-636`) in the stand-in page
+(`tos-api/src/bdos/process/standin.rs`,
+[`../gemdos/process/_parent-and-environment.md`](../gemdos/process/_parent-and-environment.md)).
+That page is published read-only to every process (`usermem::expose`,
+`PROT_PR`, ADR-023) and for an EL0 caller `*value` is the **published** user
+address, which the program can read — EmuTOS hands out a pointer into
+`ad_envrn`, readable on its flat machine. An in-kernel caller gets the kernel
+address. With EmuTOS's environment `shel_envrn(&p, "PATH=")` points at the NUL
+after `"PATH="` (the value is the next string, `"X:\"` — the TOS quirk
+`sh_find` skips, `aes/gemshlib.c:448-455`; gemlib's `mt_shel_envrn` steps
+over it for `"PATH="` itself, `sdk/gemlib/gemlib-0.44.0/a_shel_envrn.c:40-50`,
+so a gemlib program sees `"X:\"`). Before PPARENT the AES
+environment was a built-in `"PATH=C:\;"` with no EmuTOS source. (Before 3b
+an EL0 program got the kernel address and crashed on reading it; probe
 `measurements/measurement-2026-10-05-arch03-3b/method/tests/envrn.c`.)
 
 ### `shel_rdef` (126) / `shel_wdef` (127) — `sh_rdef` / `sh_wdef` `#if CONF_WITH_PCGEM`

@@ -34,12 +34,17 @@
  * ACCESSORIES. The AES side shrinks an accessory's TPA to "code+data+bss plus
  * basepage" right after loading it (EmuTOS pgmld, util/gemdos.c:29-47;
  * kernel/src/accs.rs), and the basepage's p_hitpa keeps naming the old top.
- * mintlib recognises an accessory by its m68k entry registers (startup/
- * crt0.S:46-62); NewTOS hands the BasePage over in x0 on every path, so the
- * accessory is recognised by that state itself: the Mshrink that would keep
- * the stack cannot grow the block (EGSBF). It then does what `_acc_main`
- * does (crtinit.c:112-149): a Malloc'ed stack of `_stksize` (MINKEEP for 0
- * and -1), `_app = 0`, malloc through GEMDOS Malloc, argv = { "", NULL }.
+ * mintlib recognises an accessory in startup/crt0.S:46-62: the basepage in
+ * a0 (for a program a0 is 0) AND `p_parent == 0` -- an accessory is loaded
+ * with Pexec(PE_LOAD) and never started by proc_go, the only writer of
+ * p_parent (EmuTOS bdos/proc.c:370,541). NewTOS hands the BasePage over in
+ * x0 on every path, so the first half always holds and the test is
+ * `p_parent == 0`; since TASK/PPARENT every other start has a non-zero
+ * p_parent, as on EmuTOS (docs/api/gemdos/process/_parent-and-environment.md).
+ * An accessory then goes straight to what `_acc_main` does
+ * (crtinit.c:112-149): a Malloc'ed stack of `_stksize` (MINKEEP for 0 and
+ * -1), `_app = 0`, malloc through GEMDOS Malloc, argv = { "", NULL } -- no
+ * parseargs, no Mshrink.
  *
  * `_base` (mintlib/globals.c:33) is what mintlib's m68k crt0 stores first
  * (startup/crt0.S:58,69) and what its readers dereference: crtinit.c:167,
@@ -55,9 +60,6 @@
 /* mintlib/stksiz.h */
 #define MINFREE	(8L * 1024L)		/* free at least this much mem on top */
 #define MINKEEP (64L * 1024L)		/* keep at least this much mem on stack */
-
-/* GEMDOS: Mshrink cannot grow a block (EmuTOS bdos/umem.c xsetblk). */
-#define EGSBF	(-67L)
 
 /* First byte past the image, BSS included (sdk/newtos.ld). */
 extern char _end[];
@@ -82,8 +84,7 @@ static char *acc_argv[] = { "", NULL };
 #define STACK_ALIGN 15L
 
 /* crtinit.c:112-149 `_acc_main`, up to the stack switch: returns the top of
-   a Malloc'ed stack of `stksize` (the program's `_stksize` before the
-   application policy touched it). */
+   a Malloc'ed stack of `stksize` (the program's `_stksize`). */
 static unsigned long
 acc_main (long stksize)
 {
@@ -121,11 +122,16 @@ unsigned long
 __libc_crtinit (unsigned long basepage)
 {
 	BASEPAGE *bp = (BASEPAGE *) basepage;
-	long stksize0 = _stksize;
-	long m, freemem, rc;
+	long m, freemem;
 	char *s;
 
+	/* startup/crt0.S:52-58: `_base` first, for both kinds */
 	_base = bp;
+
+	/* startup/crt0.S:52-56: "test parent basepage pointer -- for accs, it
+	   must be 0" (the a0 half is always true here, see the header) */
+	if (bp->p_parent == 0)
+		return acc_main (_stksize);
 
 	/* its an application */
 	_app = 1;
@@ -180,12 +186,8 @@ __libc_crtinit (unsigned long basepage)
 	if (((long) bp + m) > ((long) bp->p_hitpa - MINFREE))
 		goto notenough;
 
-	/* shrink the TPA (crtinit.c:227-247) */
-	rc = Mshrink (bp, m);
-	if (rc == EGSBF)
-		/* the block is already smaller than the basepage says: an
-		   accessory, shrunk by its loader (see the header) */
-		return acc_main (stksize0);
+	/* shrink the TPA (crtinit.c:227-247; mintlib ignores the result) */
+	(void) Mshrink (bp, m);
 
 	/* keep length of program area */
 	_PgmSize = m;

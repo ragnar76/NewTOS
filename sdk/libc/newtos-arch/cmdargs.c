@@ -37,15 +37,14 @@
  * What is NOT here, and why: the environment WALK. `parseargs()` also walks
  * `p_env` into `environ` and honours the MWC/Atari `ARGV=` extension, under
  * which a launcher too long for the 126-byte tail passes the arguments in the
- * environment instead. The desktop, the AUTO folder and the boot launcher
- * pass no environment at all -- `EnvSpec::None`, `p_env == 0`
- * (kernel/src/launch.rs, tos-api/src/bdos/process/loader.rs). A program
- * started by another program's `Pexec` (TeraDesk, mintlib's `system()`/
- * `spawn*`, which always build an environment block) does get a non-zero
- * `p_env` -- but today that is a physical address that is not mapped in the
- * child's EL0 space (TASK/MEM03), so reading it would fault the child at
- * start-up. The walk and the `ARGV=` extension are TASK/PORT09, blocked on
- * MEM03; this file is where they belong once the block is reachable.
+ * environment instead. Since TASK/PPARENT every launch path hands down an
+ * environment as EmuTOS does (an AUTO program `{0, 0}`, the desktop's and
+ * the `#Z` program and the accessories a copy of the AES's
+ * `"PATH=\0X:\\\0"`, a `Pexec` child the caller's or the given block --
+ * docs/api/gemdos/process/_parent-and-environment.md), at a pool address
+ * every process can read (ARCH03 stage 1). The walk and the `ARGV=`
+ * extension are TASK/PORT09 and not built yet; this file is where they
+ * belong.
  *
  * What IS here of the environment half: `environ` itself. `parseargs()`
  * always publishes it, as an array that holds at least the terminating

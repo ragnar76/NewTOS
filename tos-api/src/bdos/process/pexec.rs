@@ -244,7 +244,8 @@ unsafe fn create(flags: u32, tail: &[u8], env: EnvSpec<'_>) -> Result<LoadedChil
 ///
 /// `tail` is the command-tail image copied verbatim into the child's
 /// `p_cmdlin`; `env` is the environment source (`EnvSpec::Explicit` /
-/// `Inherit`, or `None` for callers that hand down neither).
+/// `Inherit`; `None` only for the legacy self-test loads — EmuTOS gives every
+/// process an environment, `alloc_env`, `bdos/proc.c:413-432`).
 ///
 /// # Safety
 ///
@@ -449,25 +450,57 @@ fn resolve_handle(handle: u64) -> Option<usize> {
 
 /// Record the launch linkage of `child` (EmuTOS `proc_go`,
 /// `bdos/proc.c:541` — `p->p_parent = run`): the child's `p_parent`
-/// becomes the caller's PD pointer, or `0` when the caller is no process
-/// (the kernel launcher, an EL1 caller — as before stage 1).
+/// becomes the caller's PD pointer, or, when the caller is no process (an
+/// EL1 caller such as the in-kernel EmuCON), the stand-in PD that is
+/// EmuTOS's `run` there ([`write_parent`], TASK/PPARENT). The rights the
+/// child inherits follow the **real** caller: none from a kernel caller.
 ///
 /// # Safety
 ///
 /// Caller holds the BDOS giant lock; `child` holds a loaded image.
 pub unsafe fn set_parent(child: usize, parent_pd: *mut BasePage) {
-    let kva = PROCESS_TABLE[child].basepage_kva.load(Ordering::Acquire);
-    if kva.is_null() {
-        return;
-    }
-    // SAFETY: `kva` is the kernel alias of the child's live basepage;
-    // `p_parent` is a plain 32-bit LONG (pool addresses are below 2 GiB).
-    unsafe { (*kva).p_parent = parent_pd as u64 as tos_types::Long };
+    // SAFETY: caller contract.
+    unsafe { write_parent(child, parent_pd) };
     // Its rights as a started process: a `Pexec(4)` child those of the space
     // it shares, any other child of a process the parent's blocks it
     // inherits unless strict (ARCH03 3b, E5/E6).
     // SAFETY: BDOS lock held (caller contract).
     unsafe { super::memprot::on_launch(child, parent_pd) };
+}
+
+/// `p_parent` of a program the **kernel launcher** starts (`kernel/src/
+/// launch.rs`: the AUTO folder, the desktop's and the `#Z` program — EmuTOS
+/// `Pexec(PE_LOADGO)` from the BIOS, `bios/bios.c:693`, and `dos_exec` from
+/// the AES, `aes/gemshlib.c:645`): `run` there is kernel code, so the
+/// child's parent is the stand-in PD of that moment —
+/// [`super::standin::kernel_run`]: `initial_basepage` before the AES, the
+/// AES PD after it (TASK/PPARENT). Only the basepage field: the launcher
+/// changes no rights (a kernel caller lends none).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `child` holds a loaded image.
+pub unsafe fn set_kernel_parent(child: usize) {
+    // SAFETY: caller contract.
+    unsafe { write_parent(child, core::ptr::null_mut()) };
+}
+
+/// `p->p_parent = run` (EmuTOS `proc_go`, `bdos/proc.c:541`) with NewTOS's
+/// `run`: `parent_pd`, or — `null`, no process is running — the stand-in PD
+/// [`super::standin::kernel_run`] (still `0` before the stand-ins exist).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `child` holds a loaded image.
+unsafe fn write_parent(child: usize, parent_pd: *mut BasePage) {
+    let kva = PROCESS_TABLE[child].basepage_kva.load(Ordering::Acquire);
+    if kva.is_null() {
+        return;
+    }
+    let run = if parent_pd.is_null() { super::standin::kernel_run() } else { parent_pd };
+    // SAFETY: `kva` is the kernel alias of the child's live basepage;
+    // `p_parent` is a plain 32-bit LONG (user addresses are below 4 GiB).
+    unsafe { (*kva).p_parent = run as u64 as tos_types::Long };
 }
 
 /// Release every slot holding a program that `owner` loaded with `PE_LOAD`

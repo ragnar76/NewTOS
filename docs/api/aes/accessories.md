@@ -721,6 +721,7 @@ what EmuTOS does. Measured in
 |---|---|
 | `count_accs` (`geminit.c:264-284`) | `kernel/src/accs.rs::count_accs` |
 | `load_one_acc` (`:236-257`) | `kernel/src/accs.rs::load_one_acc` |
+| `pgmld` → `Pexec(PE_LOAD, pname, "", NULL)` (`util/gemdos.c:29-47`): environment = a copy of `run->p_env` = the AES's `ad_envrn` (`bdos/proc.c:413-432`); never `proc_go`ed, so `p_parent == 0` (`bdos/proc.c:370,541`) | `load_one_acc` loads with `EnvSpec::Inherit`, which with no running process copies the AES-PD stand-in's environment; `p_parent` stays the loader's 0 (TASK/PPARENT, `docs/api/gemdos/process/_parent-and-environment.md`) |
 | `load_accs` (`:309-315`), called at `:687` | `kernel/src/accs.rs::load_accs`, called from `kernel/src/lib.rs`'s session loop before `go_graphic` |
 | `dsptch(); wait_for_accs(AP_MESAG)` (`:736-737`) | `kernel/src/accs.rs::wait_for_accs_mesag`, called after `process_inf2` and before `sh_main` |
 | `free_accs` (`:296-303`), called at `:741` | `kernel/src/accs.rs::free_accs`, called after `sh_main` returns; frees all of each accessory's memory (`free_all_owned` of its PD: TPA, environment, its own `Malloc`s — what EmuTOS's `dos_free` plus the end of the `run_accs_and_desktop` process free, `bdos/proc.c:133-139`) and releases its slot (post-E9, 2026-10-05) |

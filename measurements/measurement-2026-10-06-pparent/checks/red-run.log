@@ -1,0 +1,7 @@
+e450ad323a25547b4653cab1342418786b36e1899730e6cbfa73d9172e33340d  /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-pparent/method/../../measurement-2026-10-06-vforkt-fix/bin/kernel8-vf.img
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.ozxWEH/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.ozxWEH/ser.sock,server=on
+t=  15.4s end marker seen
+t=  18.4s red-vf-on-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run red-vf-on-rpi4-pparent: rc=0

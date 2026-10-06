@@ -1,0 +1,54 @@
+--- a/sdk/libc/overlay/mintlib/thread.c
++++ b/sdk/libc/overlay/mintlib/thread.c
+@@ -8,6 +8,15 @@
+  * __waittime -- is mintlib's code unchanged. tfork's `arg` travels in the
+  * 32-bit p_dlen as in mintlib; vfork passes an address below 2 GiB there.
+  *
++ * One behavioural fix (TASK/ARCH03 post-E9, VFORKT crash): on the TOS path
++ * mintlib 0.60.1's tfork frees b->p_env after Pexec(PE_GO), but the child's
++ * startup has already Mfree'd its own Pexec(5) environment and overwritten
++ * b->p_env with parent->p_env -- so the parent freed its OWN environment, and
++ * on later forks whatever block had since been allocated at that address
++ * (e.g. a malloc hunk). tfork now saves the Pexec(5) environment pointer
++ * before starting the child and frees that saved pointer instead.
++ * Analysis: docs/analysis/vfork-malloc-ownership-2026-10-06.md.
++ *
+  * tfork(function, argument): starts a new thread of execution running
+  * in the same address space. The new thread gets its own 4K stack,
+  * and starts at the address in "function" with "argument" on the stack,
+@@ -90,6 +99,7 @@
+ 	long now;
+ 	int i;
+ 	long stacksize = THREAD_STACKSIZE;
++	__UINT32_TYPE__ child_env;	/* NewTOS fix, see the header comment */
+ 
+ 	b = (BASEPAGE *)Pexec(PE_CBASEPAGE, 0L, "", 0L);
+ 	if ((long)b <= 0)
+@@ -100,6 +110,11 @@
+ 	b->p_dlen = arg;
+ 	b->p_blen = stacksize;
+ 	b->p_hitpa = (__UINT32_TYPE__)(__UINTPTR_TYPE__)(((char *)b) + stacksize + sizeof(*b));
++	/* NewTOS fix (not in mintlib 0.60.1): the child's startup() replaces
++	 * b->p_env with the parent's environment, so remember the environment
++	 * Pexec(PE_CBASEPAGE) created -- that is the block to free below.
++	 */
++	child_env = b->p_env;
+ 
+ 	pid = Pexec(PE_ASYNC_GO, 0L, b, 0L);
+ 	if (pid == -ENOSYS)
+@@ -133,13 +148,13 @@
+ 			__waittime = _clock() - now;
+ 			_childtime += __waittime;
+ 			/* child already terminated, but memory of basepage & env is still owned by us */
+-			(void)Mfree(b->p_env);	/* free the memory */
++			(void)Mfree(child_env);	/* free the memory (was b->p_env, see above) */
+ 			(void)Mfree(b);
+ 		}
+ 	}
+ 	if (pid < 0)
+ 	{
+-		(void)Mfree(b->p_env);	/* free the memory */
++		(void)Mfree(child_env);	/* free the memory (was b->p_env, see above) */
+ 		(void)Mfree(b);
+ 	}
+ 	/* memory of basepage & env is now owned by child */

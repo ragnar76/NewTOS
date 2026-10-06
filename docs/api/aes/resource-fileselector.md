@@ -196,8 +196,10 @@ process (`bdos/proc.c:136`, `free_all_owned`).
 > copies `addr_in[0]` into a `MAXPATHLEN` scratch and runs
 > `aes::shell::sh_find` on it — `findfile`'s stages (1) application directory
 > + name portion, (2) the spec **unchanged**, (3) `\<name>` on the **current**
-> drive; stage (4), the AES `PATH=`, is documented-absent for want of a
-> loader-populated AES environment (see `sh_find` in
+> drive; stage (4), the AES `PATH=`, is not implemented — the AES
+> environment it would read exists since TASK/PPARENT (EmuTOS `default_env`,
+> [`../gemdos/process/_parent-and-environment.md`](../gemdos/process/_parent-and-environment.md)),
+> the stage itself is open (see `sh_find` in
 > [`scrap-shell.md`](./scrap-shell.md)). The previous fixed
 > `C:\GEMSYS\RSC\<name>` / `C:\<name>` search — which could not resolve a
 > qualified path at all — is gone; `C:\GEMSYS\RSC\` had no EmuTOS counterpart
@@ -1549,7 +1551,7 @@ as success — an empty list, not an error (`gemfslib.c:330-336,733-754`).
 > object. The `sh_find`-based "not found" mechanism in the `rsrc_load`
 > criterion now holds too (2026-09-11): `rsrc_load` runs the real `sh_find`,
 > so the `int_out[0] = 0` outcome comes from the same four-stage search — bar
-> stage (4), the AES `PATH=`, which NewTOS has no environment for. The
+> stage (4), the AES `PATH=`, which is not implemented yet. The
 > `rsrc_load` `ob_fix` criterion holds since A40 (2026-09-19): a loaded
 > NRSC v9/v10 resource is converted at load with the live metrics by the
 > same `rs_obfix` that `rsrc_obfix` runs; an earlier `mkrsc.py` pre-converted

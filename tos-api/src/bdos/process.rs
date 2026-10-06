@@ -53,6 +53,7 @@ pub mod pexec;
 pub mod registry;
 pub mod reloc;
 pub mod sched;
+pub mod standin;
 pub mod usermem;
 
 // ─── Bounds + state encoding ────────────────────────────────────────

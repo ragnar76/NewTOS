@@ -1,0 +1,7 @@
+built kernel8-crash-pp.img
+built kernel-virt-crash-pp.img
+built kernel8-keys-pp.img
+built kernel-virt-st-pp.img
+built kernel8-tdkeys-pp.img
+built kernel8-keys9-pp.img
+rc=0

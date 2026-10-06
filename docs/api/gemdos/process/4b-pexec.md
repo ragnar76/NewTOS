@@ -525,7 +525,10 @@ PHASE-06 D4/D5 status (2026-06-16):
   that has not run yet; anything else is `EIMBA` (−40 — FreeMiNT's `EFAULT`
   for a foreign PD, `sys/k_exec.c:378-387`, has the same value).
   `p_parent` is set when the child is started (EmuTOS `proc_go`,
-  `bdos/proc.c:541`): the caller's PD pointer, `0` for a kernel caller.
+  `bdos/proc.c:541`): the caller's PD pointer; for a kernel caller (no
+  running process) the stand-in PD that is EmuTOS's `run` there — the
+  `initial_basepage` stand-in before the AES starts, the AES-PD stand-in
+  after (TASK/PPARENT, see below). Until PPARENT it was `0`.
   Previously (ADR-010 option b) every TPA sat at VA 0, so the PD was neither
   unique nor dereferenceable by the parent.
 - **Ownership** (`owner = (flag == PE_LOADGO) ? p : run`, `bdos/proc.c:
@@ -545,6 +548,18 @@ PHASE-06 D4/D5 status (2026-06-16):
 - **Environment (MEM03).** `p_env` is the address of a pool block every
   process can read; `env == NULL` duplicates the caller's `p_env`
   (`bdos/proc.c:419-420`).
+- **Kernel-launched programs: `p_parent` and environment (TASK/PPARENT,
+  2026-10-06, Way A).** Spec:
+  [`_parent-and-environment.md`](./_parent-and-environment.md). The kernel
+  launcher (`kernel/src/launch.rs`: AUTO, desktop, `#Z`) and the accessory
+  loader (`kernel/src/accs.rs`) now load with `env == NULL` semantics
+  (`EnvSpec::Inherit`), and with no running process the inherited
+  environment is that of the kernel's `run` stand-in: an AUTO program gets
+  `{0, 0}`, a desktop / `#Z` program and an accessory the AES environment
+  `"PATH=\0X:\\\0\0"` (EmuTOS `default_env`, `bios/bios.c:626-636`). The
+  launcher writes `p_parent` as `proc_go` would (`initial_basepage` /
+  AES-PD stand-in); an accessory keeps 0. Before PPARENT kernel launches had
+  `p_env = 0` and `p_parent = 0`.
 - I-cache: invalidate the loaded **text range** with `dc cvau`+`ic ivau`+
   `dsb ish`+`isb` (same text-only scope as EmuTOS).
 - **`PRGFLAGS` of a NewTOS program — the `prgflags` ELF note (ARCH03 stage 2,
