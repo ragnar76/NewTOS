@@ -24,6 +24,7 @@ Repository revision the documentation was written against:
 | [08-porting-checklist.md](08-porting-checklist.md) | The short, tickable list for porting an application |
 | [09-port-material.md](09-port-material.md) | What source material we hold, in which version, under which licence — and the age trap a frozen third-party library is |
 | [10-ldg-modules.md](10-ldg-modules.md) | LDG run-time libraries as native `.NLD` modules: libldg, building a module, loading it from a client, what is not there (TSR, `ldg_callback`, search path) — TASK/LDG-M1 |
+| [11-codec-libraries.md](11-codec-libraries.md) | zlib, libpng, libjpeg (IJG), giflib, libexif as static NewTOS libraries for zView's codecs: versions, pins, how to link, which codec needs what, the LIBTEST.NCP round-trip test — TASK/LDG-M2 |
 
 ## Thirty-second version
 
@@ -38,6 +39,9 @@ sdk/cflib/build-cflib.sh   [client.c] [out.NCP]   # builds cflib.a, links client
 sdk/libm/build-libm.sh     [client.c] [out.NCP]   # builds libm.a (OpenLibm), links client + libc
 sdk/ldg/build-ldg.sh                               # libldg.a (LDG r133, tarball + overlay/)
 sdk/ldg/build-ldg-demo.sh                          # EX_LIB.NLD (LDG demo module) + LDGTEST.NCP
+sdk/zlib/build-zlib.sh  sdk/libpng/build-libpng.sh  sdk/libjpeg/build-libjpeg.sh
+sdk/giflib/build-giflib.sh  sdk/libexif/build-libexif.sh   # codec libraries (11)
+sdk/examples/libtest/build-libtest.sh              # LIBTEST.NCP (their round-trip test)
 sdk/apps/build-qed.sh                              # QED.NAP
 sdk/apps/build-teradesk.sh                         # DESKTOP.NAP + dist/
 sdk/apps/build-coremark.sh                         # CORE.NCP, COREVAL.NCP
@@ -49,7 +53,7 @@ cargo xtask run --board rpi4 --sd /tmp/sd.img       # add --window to see the sc
 
 The one rule that governs every port: **the application source is not
 edited**. Every change lives in `sdk/overlays/<app>/` (or in the library
-overlays `sdk/{libc,gemlib,cflib,libm,ldg}/overlay/`) and is layered over the
+overlays `sdk/{libc,gemlib,cflib,libm,ldg,libjpeg,libexif}/overlay/`) and is layered over the
 pristine tree at build time. The only exception is genuine m68k assembly, which must be
 retargeted. See [04-porting-anatomy.md](04-porting-anatomy.md).
 
@@ -67,9 +71,11 @@ sdk/
 ├── cflib/                cflib-21 port (tarball + overlay/)
 ├── libm/                 OpenLibm 0.8.8 port (tarball + overlay/ + include/ math.h adapters), T07
 ├── ldg/                  LDG r133 devel library port (tarball + overlay/), .NLD demo + client, LDG-M1
+├── zlib/ libpng/ libjpeg/ giflib/ libexif/   codec libraries for zView (release tarball + config overlay), LDG-M2
+├── vendor-lib.sh         shared build steps of those five
 ├── overlays/{qed,teradesk,coremark}/   per-application overlays
 ├── apps/                 build scripts + vendored app trees (untracked)
-└── examples/             freestanding example programs
+└── examples/             example programs (examples/libtest/: the codec-library test, LDG-M2)
 tools/make-sd-image.sh    builds the FAT16 SD image, installs the binaries
 tools/mkrsc.py            converts classic .RSC files to the native format
 ```

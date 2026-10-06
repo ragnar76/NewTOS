@@ -1,0 +1,9 @@
+# libpng source pin for sdk/libpng/build-libpng.sh (TASK/LDG-M2).
+#
+# libpng-1.6.59.tar.xz = upstream release, downloaded unchanged on 2026-10-06
+#   from https://download.sourceforge.net/libpng/libpng-1.6.59.tar.xz
+#   (the download linked from http://www.libpng.org/pub/png/libpng.html).
+#   Its SHA-1 32ddc25d5ed4c28afdaf2f8a613144656d7d8f78 matches the one
+#   SourceForge lists for libpng16/1.6.59/libpng-1.6.59.tar.xz.
+# License: PNG Reference Library License version 2 (libpng-1.6.59/LICENSE).
+d80dd2a38a37f803cb9b6ac7b14bd6e74ddc3b654780a8380bdf93523fdb4389  libpng-1.6.59.tar.xz

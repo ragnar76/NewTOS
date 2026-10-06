@@ -1,0 +1,14 @@
+82b2996ef60dbd926981d287ee51fbca28531fd0470f29eea1c52660a6e3b0a0  sdk/zlib/libz.a
+978335452b490c11dc6e0bc88a9bed2616d4c7071adf86dec5dc02c34e6df2af  sdk/libpng/libpng.a
+7ffca140daedc1f9f253f75f9f8f44ed6c6f15106bd62535b1692045e93e908f  sdk/libjpeg/libjpeg.a
+0837b0a7cf243a2502e1b2966f590e530e8da7e3cf8d7ee0994b37fcc389ed56  sdk/giflib/libgif.a
+73bfc99d6e4311695b93d0fde819e6d9b7811e3b8fac1b70e918a92a85e40785  sdk/libexif/libexif.a
+d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3  sdk/zlib/zlib-1.3.2.tar.xz
+d80dd2a38a37f803cb9b6ac7b14bd6e74ddc3b654780a8380bdf93523fdb4389  sdk/libpng/libpng-1.6.59.tar.xz
+04705c110cb2469caa79fb71fba3d7bf834914706e9641a4589485c1f832565b  sdk/libjpeg/jpegsrc.v9f.tar.gz
+b65b66b99f0424b93525f987386f22fc5efb9da2bfc92ad4a532249aaffbab0e  sdk/giflib/giflib-6.1.3.tar.gz
+4a055ed6575e61ca46c3172be3c753cc16c9becd0f99ec71d58dd0e471476c0c  sdk/libexif/libexif-0.6.26.tar.xz
+71d5d3a7eedf20c8765ecc97b1e2b7e21538989c8d1a2c6d32032b0cf1f4e87d  sdk/libc/libc.a
+9368931193619f9d602382ad94cb2903ded7cb682d7429a094e857b282538c2c  sdk/libm/libm.a
+b97920f267a31461b2970fdf7a9e05b99341872e84830c66aadb724b91d35724  sdk/examples/libtest/libtest-data.h
+a37351540e3bc773ddc3ed14c7b25f3623a5988508c2aab2d1c21d6e37043ad6  sdk/examples/libtest/libtest-ref.h

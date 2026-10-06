@@ -1,0 +1,7 @@
+# libjpeg (IJG) source pin for sdk/libjpeg/build-libjpeg.sh (TASK/LDG-M2).
+#
+# jpegsrc.v9f.tar.gz = IJG release 9f (14-Jan-2024), downloaded unchanged on
+#   2026-10-06 from https://www.ijg.org/files/jpegsrc.v9f.tar.gz . IJG
+#   publishes neither a signature nor a checksum; this hash is the pin.
+# License: the IJG license (jpeg-9f/README, "LEGAL ISSUES").
+04705c110cb2469caa79fb71fba3d7bf834914706e9641a4589485c1f832565b  jpegsrc.v9f.tar.gz

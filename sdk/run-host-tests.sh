@@ -176,6 +176,16 @@ else
   echo "FAIL  c2p-host (did not build)"; sed 's/^/      /' "$WORK/c2p-host.log"; fail=$((fail+1))
 fi
 
+# libtest-host (LDG-M2): the codec libraries (zlib, libpng, libjpeg, giflib,
+# libexif) built for the host from the same pinned trees + config overlays;
+# their results must reproduce the committed host references
+# (sdk/examples/libtest/libtest-ref.h) bit for bit and match the independent
+# Python references (libtest-data.h). Builds the target archives first if they
+# are stale (lib_ensure), since the host build reads their source lists.
+"$SDK/examples/libtest/make-ref.sh" --check > "$WORK/libtest-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || sed 's/^/      /' "$WORK/libtest-host.log"
+report libtest-host $rc
+
 echo
 echo "host tests: $pass passed, $fail failed, $skip skipped"
 exit $fail

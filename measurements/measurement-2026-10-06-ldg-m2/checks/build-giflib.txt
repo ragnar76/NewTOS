@@ -1,0 +1,8 @@
+extracting pristine giflib-6.1.3 from giflib-6.1.3.tar.gz (sha256 verified)…
+clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+ar    : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+
+compiled OK=8  FAILED=0  (files with warnings: 0)
+
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/giflib/libgif.a (46778 bytes)
+defined symbols: 62  external references: 18 (build/external.txt: libc/libm/other-library symbols the archive needs)

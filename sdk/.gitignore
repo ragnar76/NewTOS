@@ -28,6 +28,23 @@
 /ldg/ldg-r133/
 /ldg/build/
 /ldg/libldg.a
+# zView codec libraries (TASK/LDG-M2): extracted trees, build dirs, archives.
+/zlib/zlib-*/
+/zlib/build/
+/zlib/libz.a
+/libpng/libpng-*/
+/libpng/build/
+/libpng/libpng.a
+/libjpeg/jpeg-*/
+/libjpeg/build/
+/libjpeg/libjpeg.a
+/giflib/giflib-*/
+/giflib/build/
+/giflib/libgif.a
+/libexif/libexif-*/
+/libexif/build/
+/libexif/libexif.a
+/examples/libtest/build/
 **/*.o
 *.NCP
 *.NAP

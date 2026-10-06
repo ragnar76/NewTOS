@@ -55,6 +55,16 @@
 #             headers only, a third branch off libc like libm; the tarball is
 #             watched because build-ldg.sh re-extracts when it is newer than
 #             the extracted tree -- the PORT03 rule below)
+#   zlib, libpng, libjpeg, giflib, libexif   (TASK/LDG-M2: the third-party
+#             libraries of zView's codecs) -- each: its overlay/, its
+#             build-<lib>.sh, its pinned tarball + <lib>-sources.sha256, and
+#             the shared sdk/vendor-lib.sh; + all of libc's. libpng is
+#             compiled against zlib.h and OpenLibm's math.h (pngpriv.h), so
+#             its chain is libc -> zlib -> libm -> libpng; libexif needs
+#             math.h too (libc -> libm -> libexif); libjpeg and giflib are
+#             plain branches off libc like ldg. Same tarball rule as ldg:
+#             vendor-lib.sh re-extracts when the tarball is newer than the
+#             extracted tree.
 #
 # NOT watched, deliberately:
 #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
@@ -122,6 +132,11 @@ lib_archive() {
     cflib)  printf '%s\n' "$LIB_SDK/cflib/cflib.a" ;;
     libm)   printf '%s\n' "$LIB_SDK/libm/libm.a" ;;
     ldg)    printf '%s\n' "$LIB_SDK/ldg/libldg.a" ;;
+    zlib)    printf '%s\n' "$LIB_SDK/zlib/libz.a" ;;
+    libpng)  printf '%s\n' "$LIB_SDK/libpng/libpng.a" ;;
+    libjpeg) printf '%s\n' "$LIB_SDK/libjpeg/libjpeg.a" ;;
+    giflib)  printf '%s\n' "$LIB_SDK/giflib/libgif.a" ;;
+    libexif) printf '%s\n' "$LIB_SDK/libexif/libexif.a" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -133,6 +148,8 @@ lib_builder() {
     cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
     libm)   printf '%s\n' "$LIB_SDK/libm/build-libm.sh" ;;
     ldg)    printf '%s\n' "$LIB_SDK/ldg/build-ldg.sh" ;;
+    zlib|libpng|libjpeg|giflib|libexif)
+            printf '%s\n' "$LIB_SDK/$1/build-$1.sh" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -146,6 +163,11 @@ lib_chain() {
     cflib)  printf 'libc\ngemlib\ncflib\n' ;;
     libm)   printf 'libc\nlibm\n' ;;
     ldg)    printf 'libc\nldg\n' ;;
+    zlib)    printf 'libc\nzlib\n' ;;
+    libpng)  printf 'libc\nzlib\nlibm\nlibpng\n' ;;
+    libjpeg) printf 'libc\nlibjpeg\n' ;;
+    giflib)  printf 'libc\ngiflib\n' ;;
+    libexif) printf 'libc\nlibm\nlibexif\n' ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -201,6 +223,19 @@ lib_inputs() {
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/build-ldg.sh"
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/ldg-svn-r133.tar.xz"
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/ldg-sources.sha256"
+      ;;
+    zlib|libpng|libjpeg|giflib|libexif)
+      # The pinned tarball is globbed in the library's directory (its
+      # detached .asc signature skipped): the version lives in ONE place,
+      # build-<lib>.sh (cflib's reasoning).
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/$1/overlay"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/$1/build-$1.sh"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/$1/$1-sources.sha256"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/vendor-lib.sh"
+      for _t in "$LIB_SDK/$1"/*.tar.*; do
+        case "$_t" in *.asc) continue ;; esac
+        if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
+      done
       ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac

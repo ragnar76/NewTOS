@@ -1,0 +1,2542 @@
+diff --git a/docs/sdk/README.md b/docs/sdk/README.md
+index ff472d0..b5145aa 100644
+--- a/docs/sdk/README.md
++++ b/docs/sdk/README.md
+@@ -24,6 +24,7 @@ Repository revision the documentation was written against:
+ | [08-porting-checklist.md](08-porting-checklist.md) | The short, tickable list for porting an application |
+ | [09-port-material.md](09-port-material.md) | What source material we hold, in which version, under which licence — and the age trap a frozen third-party library is |
+ | [10-ldg-modules.md](10-ldg-modules.md) | LDG run-time libraries as native `.NLD` modules: libldg, building a module, loading it from a client, what is not there (TSR, `ldg_callback`, search path) — TASK/LDG-M1 |
++| [11-codec-libraries.md](11-codec-libraries.md) | zlib, libpng, libjpeg (IJG), giflib, libexif as static NewTOS libraries for zView's codecs: versions, pins, how to link, which codec needs what, the LIBTEST.NCP round-trip test — TASK/LDG-M2 |
+ 
+ ## Thirty-second version
+ 
+@@ -38,6 +39,9 @@ sdk/cflib/build-cflib.sh   [client.c] [out.NCP]   # builds cflib.a, links client
+ sdk/libm/build-libm.sh     [client.c] [out.NCP]   # builds libm.a (OpenLibm), links client + libc
+ sdk/ldg/build-ldg.sh                               # libldg.a (LDG r133, tarball + overlay/)
+ sdk/ldg/build-ldg-demo.sh                          # EX_LIB.NLD (LDG demo module) + LDGTEST.NCP
++sdk/zlib/build-zlib.sh  sdk/libpng/build-libpng.sh  sdk/libjpeg/build-libjpeg.sh
++sdk/giflib/build-giflib.sh  sdk/libexif/build-libexif.sh   # codec libraries (11)
++sdk/examples/libtest/build-libtest.sh              # LIBTEST.NCP (their round-trip test)
+ sdk/apps/build-qed.sh                              # QED.NAP
+ sdk/apps/build-teradesk.sh                         # DESKTOP.NAP + dist/
+ sdk/apps/build-coremark.sh                         # CORE.NCP, COREVAL.NCP
+@@ -49,7 +53,7 @@ cargo xtask run --board rpi4 --sd /tmp/sd.img       # add --window to see the sc
+ 
+ The one rule that governs every port: **the application source is not
+ edited**. Every change lives in `sdk/overlays/<app>/` (or in the library
+-overlays `sdk/{libc,gemlib,cflib,libm,ldg}/overlay/`) and is layered over the
++overlays `sdk/{libc,gemlib,cflib,libm,ldg,libjpeg,libexif}/overlay/`) and is layered over the
+ pristine tree at build time. The only exception is genuine m68k assembly, which must be
+ retargeted. See [04-porting-anatomy.md](04-porting-anatomy.md).
+ 
+@@ -67,9 +71,11 @@ sdk/
+ ├── cflib/                cflib-21 port (tarball + overlay/)
+ ├── libm/                 OpenLibm 0.8.8 port (tarball + overlay/ + include/ math.h adapters), T07
+ ├── ldg/                  LDG r133 devel library port (tarball + overlay/), .NLD demo + client, LDG-M1
++├── zlib/ libpng/ libjpeg/ giflib/ libexif/   codec libraries for zView (release tarball + config overlay), LDG-M2
++├── vendor-lib.sh         shared build steps of those five
+ ├── overlays/{qed,teradesk,coremark}/   per-application overlays
+ ├── apps/                 build scripts + vendored app trees (untracked)
+-└── examples/             freestanding example programs
++└── examples/             example programs (examples/libtest/: the codec-library test, LDG-M2)
+ tools/make-sd-image.sh    builds the FAT16 SD image, installs the binaries
+ tools/mkrsc.py            converts classic .RSC files to the native format
+ ```
+diff --git a/sdk/.gitignore b/sdk/.gitignore
+index 454b7af..0d04364 100644
+--- a/sdk/.gitignore
++++ b/sdk/.gitignore
+@@ -28,6 +28,23 @@
+ /ldg/ldg-r133/
+ /ldg/build/
+ /ldg/libldg.a
++# zView codec libraries (TASK/LDG-M2): extracted trees, build dirs, archives.
++/zlib/zlib-*/
++/zlib/build/
++/zlib/libz.a
++/libpng/libpng-*/
++/libpng/build/
++/libpng/libpng.a
++/libjpeg/jpeg-*/
++/libjpeg/build/
++/libjpeg/libjpeg.a
++/giflib/giflib-*/
++/giflib/build/
++/giflib/libgif.a
++/libexif/libexif-*/
++/libexif/build/
++/libexif/libexif.a
++/examples/libtest/build/
+ **/*.o
+ *.NCP
+ *.NAP
+diff --git a/sdk/lib-stale.sh b/sdk/lib-stale.sh
+index 9866e5f..1e0fe26 100755
+--- a/sdk/lib-stale.sh
++++ b/sdk/lib-stale.sh
+@@ -55,6 +55,16 @@
+ #             headers only, a third branch off libc like libm; the tarball is
+ #             watched because build-ldg.sh re-extracts when it is newer than
+ #             the extracted tree -- the PORT03 rule below)
++#   zlib, libpng, libjpeg, giflib, libexif   (TASK/LDG-M2: the third-party
++#             libraries of zView's codecs) -- each: its overlay/, its
++#             build-<lib>.sh, its pinned tarball + <lib>-sources.sha256, and
++#             the shared sdk/vendor-lib.sh; + all of libc's. libpng is
++#             compiled against zlib.h and OpenLibm's math.h (pngpriv.h), so
++#             its chain is libc -> zlib -> libm -> libpng; libexif needs
++#             math.h too (libc -> libm -> libexif); libjpeg and giflib are
++#             plain branches off libc like ldg. Same tarball rule as ldg:
++#             vendor-lib.sh re-extracts when the tarball is newer than the
++#             extracted tree.
+ #
+ # NOT watched, deliberately:
+ #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
+@@ -122,6 +132,11 @@ lib_archive() {
+     cflib)  printf '%s\n' "$LIB_SDK/cflib/cflib.a" ;;
+     libm)   printf '%s\n' "$LIB_SDK/libm/libm.a" ;;
+     ldg)    printf '%s\n' "$LIB_SDK/ldg/libldg.a" ;;
++    zlib)    printf '%s\n' "$LIB_SDK/zlib/libz.a" ;;
++    libpng)  printf '%s\n' "$LIB_SDK/libpng/libpng.a" ;;
++    libjpeg) printf '%s\n' "$LIB_SDK/libjpeg/libjpeg.a" ;;
++    giflib)  printf '%s\n' "$LIB_SDK/giflib/libgif.a" ;;
++    libexif) printf '%s\n' "$LIB_SDK/libexif/libexif.a" ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+ }
+@@ -133,6 +148,8 @@ lib_builder() {
+     cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
+     libm)   printf '%s\n' "$LIB_SDK/libm/build-libm.sh" ;;
+     ldg)    printf '%s\n' "$LIB_SDK/ldg/build-ldg.sh" ;;
++    zlib|libpng|libjpeg|giflib|libexif)
++            printf '%s\n' "$LIB_SDK/$1/build-$1.sh" ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+ }
+@@ -146,6 +163,11 @@ lib_chain() {
+     cflib)  printf 'libc\ngemlib\ncflib\n' ;;
+     libm)   printf 'libc\nlibm\n' ;;
+     ldg)    printf 'libc\nldg\n' ;;
++    zlib)    printf 'libc\nzlib\n' ;;
++    libpng)  printf 'libc\nzlib\nlibm\nlibpng\n' ;;
++    libjpeg) printf 'libc\nlibjpeg\n' ;;
++    giflib)  printf 'libc\ngiflib\n' ;;
++    libexif) printf 'libc\nlibm\nlibexif\n' ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+ }
+@@ -202,6 +224,19 @@ lib_inputs() {
+       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/ldg-svn-r133.tar.xz"
+       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/ldg-sources.sha256"
+       ;;
++    zlib|libpng|libjpeg|giflib|libexif)
++      # The pinned tarball is globbed in the library's directory (its
++      # detached .asc signature skipped): the version lives in ONE place,
++      # build-<lib>.sh (cflib's reasoning).
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/$1/overlay"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/$1/build-$1.sh"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/$1/$1-sources.sha256"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/vendor-lib.sh"
++      for _t in "$LIB_SDK/$1"/*.tar.*; do
++        case "$_t" in *.asc) continue ;; esac
++        if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
++      done
++      ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+   return 0
+diff --git a/sdk/run-host-tests.sh b/sdk/run-host-tests.sh
+index f3ff5c6..c699401 100755
+--- a/sdk/run-host-tests.sh
++++ b/sdk/run-host-tests.sh
+@@ -176,6 +176,16 @@ else
+   echo "FAIL  c2p-host (did not build)"; sed 's/^/      /' "$WORK/c2p-host.log"; fail=$((fail+1))
+ fi
+ 
++# libtest-host (LDG-M2): the codec libraries (zlib, libpng, libjpeg, giflib,
++# libexif) built for the host from the same pinned trees + config overlays;
++# their results must reproduce the committed host references
++# (sdk/examples/libtest/libtest-ref.h) bit for bit and match the independent
++# Python references (libtest-data.h). Builds the target archives first if they
++# are stale (lib_ensure), since the host build reads their source lists.
++"$SDK/examples/libtest/make-ref.sh" --check > "$WORK/libtest-host.log" 2>&1; rc=$?
++[ $rc -eq 0 ] || sed 's/^/      /' "$WORK/libtest-host.log"
++report libtest-host $rc
++
+ echo
+ echo "host tests: $pass passed, $fail failed, $skip skipped"
+ exit $fail
+--- /dev/null
++++ b/TASK/LDG-M2-STATUS-DONE.MD
+@@ -0,0 +1,69 @@
++# LDG-M2 — Quittung: Fremdbibliotheken der zView-Codecs als statische NewTOS-Bibliotheken
++
++Datum 2026-10-06 · Basis `desk-rebuild`, HEAD `6a925cc`, Baum vorher sauber
++· nicht committet · Belege [measurements/measurement-2026-10-06-ldg-m2/](../measurements/measurement-2026-10-06-ldg-m2/RUNINFO.TXT)
++· Grundlage [docs/analysis/zview-ldg-2026-10-04.md](../docs/analysis/zview-ldg-2026-10-04.md) §1–2,
++[docs/analysis/ldg-after-arch03-2026-10-06.md](../docs/analysis/ldg-after-arch03-2026-10-06.md)
++
++Umfang: was die fünf Demo-Codecs brauchen. BMP/TGA keine Fremdbibliothek;
++GIF → giflib; PNG → libpng + zlib (+ libm, vorhanden); JPEG → libjpeg +
++**libexif** (`plugins/jpg/Makefile: -ljpeg -lexif -lm`, `jpgldg.c:374-458`).
++Daher fünf Bibliotheken, nicht vier.
++
++## Umsetzung
++
++| Bibliothek | Version | Tarball (Herkunft/Prüfung in `<lib>-sources.sha256`) | Archiv | Konfiguration |
++|---|---|---|---|---|
++| zlib | 1.3.2 | `sdk/zlib/zlib-1.3.2.tar.xz` 1,32 MB + `.asc` (Signatur gut) | `libz.a` 119 582 B | `zconf.h` aus `zconf.h.in` mit den zwei sed-Zeilen von `configure` |
++| libpng | 1.6.59 | `sdk/libpng/libpng-1.6.59.tar.xz` 1,07 MB (SHA-1 = SourceForge) | `libpng.a` 299 780 B | `scripts/pnglibconf.h.prebuilt` (INSTALL); NEON-Filter an (Upstream-Vorgabe) |
++| libjpeg (IJG) | 9f | `sdk/libjpeg/jpegsrc.v9f.tar.gz` 1,08 MB (IJG veröffentlicht keine Prüfsumme) | `libjpeg.a` 310 244 B | `overlay/jconfig.h`, `jmemnobs` |
++| giflib | 6.1.3 | `sdk/giflib/giflib-6.1.3.tar.gz` 0,47 MB (SHA-1 = SourceForge) | `libgif.a` 46 778 B | keine |
++| libexif | 0.6.26 | `sdk/libexif/libexif-0.6.26.tar.xz` 1,34 MB + `.asc` (Signatur gut) | `libexif.a` 389 618 B | `overlay/config.h` (kein NLS, `localtime_r`) |
++
++* **Quellen unverändert.** Was sonst `configure` schreibt, liegt als
++  kommentierter Konfigurationskopf im `overlay/` (libjpeg, libexif) bzw. wird
++  mit Upstreams eigenem Schritt erzeugt (zlib, libpng). Quellenlisten werden
++  aus den eigenen Makefiles der Bibliotheken gelesen. Jede nicht übersetzbare
++  Datei stoppt den Bau.
++* **Bau:** `sdk/<lib>/build-<lib>.sh`, gemeinsame Schritte in
++  `sdk/vendor-lib.sh`; Flags = SDK-Freestanding-Satz mit `-fPIE` + die
++  Warnflags der jeweiligen Bibliothek. In `sdk/lib-stale.sh` als `zlib`,
++  `libpng` (Kette libc → zlib → libm → libpng), `libjpeg`, `giflib`,
++  `libexif` (libc → libm → libexif); Tarball, Pin-Datei, Overlay, Skript und
++  `vendor-lib.sh` beobachtet. `sdk/.gitignore` erweitert.
++* **Test** `sdk/examples/libtest/`: `libtest.c` (38 Prüfungen, Host und
++  Ziel aus einer Quelle), `gen-data.py` (14 Testdateien + Python-Referenzen
++  → `libtest-data.h`), `make-ref.sh` (dieselben Quellen für den Host gebaut
++  → `libtest-ref.h`; `--check` = SDK-Host-Test), `build-libtest.sh`
++  (`LIBTEST.NCP`).
++* **SDK-Host-Tests:** `sdk/run-host-tests.sh` um `libtest-host` ergänzt.
++* **Doku:** `docs/sdk/11-codec-libraries.md` (Versionen, Pins, Linkzeile,
++  Bedarf je Codec, Test), `docs/sdk/README.md`.
++* **Kernel, tos-api, libc: nicht berührt.**
++
++## Abnahme
++
++* Bau: 15/18/46/8/25 Dateien, 0 Fehler, warnfrei bis auf eine
++  Upstream-Warnung in libexif (`-Wswitch`, dokumentiert). Zwei frische Bauten
++  bytegleich; alle externen Referenzen lösen in libc/libm/libz auf;
++  `lib_ensure` konvergiert.
++* QEMU raspi4b, `\AUTO\LIBTEST.NCP`: **`libtest: ALL PASS (38 checks)`** unter
++  memprot **on** und **strict**. Alle 16 Python- und 24 Host-Referenzen
++  bitgleich getroffen.
++* SDK-Host-Tests **15/0/0** (vorher 14/0/0; neu `libtest-host`).
++  Gegenprobe: manipulierte Referenz → `--check` schlägt fehl.
++* Rust-Prüfungen nicht nötig (kein Rust berührt).
++
++## Offen / für M4
++
++* `libshare` (alle Codecs), Codec-Overlays. Syntaxprobe der unveränderten
++  `pngldg.c`/`gifldg.c`/`jpgldg.c` gegen die neuen Köpfe: keine
++  Bibliotheks-API-Abweichung; `jpgldg.c` speichert `FILE *` ohne Cast in
++  `int32 _priv_var` (`:469,592,702,750`) — LP64-Fall fürs Codec-Overlay.
++* Weitere Bibliotheken, falls mehr als die Demo-Codecs: **tiff** → libtiff +
++  liblzma (+ libjpeg, zlib vorhanden); **zView-PDF** → freetype + xpdf (C++).
++  Die übrigen Codecs (degas, neochrome, eureka, godpaint, img) brauchen
++  keine; img hat m68k-Assembler (`xp32.S`).
++* `LIBTEST.NCP` ist nicht in `tools/make-sd-image.sh` eingetragen (nicht
++  verlangt; die Läufe nutzen `method/seed-card-libtest.sh`).
++* `docs/STATUS.md`-Eintrag steht aus (Lead, wie bei M1).
+--- /dev/null
++++ b/docs/sdk/11-codec-libraries.md
+@@ -0,0 +1,130 @@
++# 11 — Image codec libraries: zlib, libpng, libjpeg, giflib, libexif
++
++Stand 2026-10-06, TASK/LDG-M2. Why these five: zView's codecs
++(`Applications/z-tools/zview/plugins/<fmt>/Makefile`) and
++`docs/analysis/zview-ldg-2026-10-04.md` §1–2. Evidence for every "verified"
++below: `measurements/measurement-2026-10-06-ldg-m2/RUNINFO.TXT`.
++
++All five are **upstream release tarballs, unmodified**, pinned by SHA-256,
++built into static AArch64 archives for NewTOS programs and `.NLD` modules
++(PIE: compiled `-fPIE`, so they link into a `-pie -z text` image with
++`R_AARCH64_RELATIVE` relocations only). What a target needs that `configure`
++would normally write is a config header in the library's `overlay/`, each
++answer commented; nothing else is changed.
++
++## 1. The libraries
++
++| Library | Version | Pinned tarball (origin, hashes, licence in `<lib>-sources.sha256`) | Archive | Build script | Config |
++|---|---|---|---|---|---|
++| zlib | 1.3.2 | `sdk/zlib/zlib-1.3.2.tar.xz` (+ `.asc`, signature checked) | `sdk/zlib/libz.a` | `sdk/zlib/build-zlib.sh` | `zconf.h` generated from `zconf.h.in` with configure's two seds (unistd/stdarg) |
++| libpng | 1.6.59 | `sdk/libpng/libpng-1.6.59.tar.xz` | `sdk/libpng/libpng.a` | `sdk/libpng/build-libpng.sh` | upstream `scripts/pnglibconf.h.prebuilt`; AArch64 NEON filters on (upstream default) |
++| libjpeg (IJG) | 9f | `sdk/libjpeg/jpegsrc.v9f.tar.gz` | `sdk/libjpeg/libjpeg.a` | `sdk/libjpeg/build-libjpeg.sh` | `sdk/libjpeg/overlay/jconfig.h`; memory manager `jmemnobs` |
++| giflib | 6.1.3 | `sdk/giflib/giflib-6.1.3.tar.gz` | `sdk/giflib/libgif.a` | `sdk/giflib/build-giflib.sh` | none (bundled `openbsd-reallocarray.c`) |
++| libexif | 0.6.26 | `sdk/libexif/libexif-0.6.26.tar.xz` (+ `.asc`, signature checked) | `sdk/libexif/libexif.a` | `sdk/libexif/build-libexif.sh` | `sdk/libexif/overlay/config.h` (no NLS, `localtime_r`) |
++
++Version choice: the current upstream release of each, checked against what
++the codecs call. `prerequisites.txt` names only zlib 1.2.8; giflib must be
++≥ 5.1 (two-argument `DGifOpenFileName`/`DGifCloseFile`, `gifldg.c:104,345`) —
++6.x changed only `EGifSpew()`, which no codec calls; libpng 1.6, IJG and
++libexif are used through their long-stable classic APIs.
++
++Each build script reads the library's **own** source list (zlib `Makefile.in`
++OBJZ/OBJG, libpng `Makefile.am` incl. the `PNG_ARM_NEON` block, IJG
++`Makefile.am` LIBSOURCES, giflib `Makefile` SOURCES, libexif `Makefile.am` +
++the four maker-note `Makefile-files`), so a version bump cannot silently drop
++or add a file. Any file that does not compile stops the build — there is no
++expected-failure list for these libraries. The shared steps (verify +
++extract, overlay, compile, archive) are in `sdk/vendor-lib.sh`.
++
++Rebuild rules (`sdk/lib-stale.sh`, `lib_ensure <name>`): each archive is
++rebuilt when its overlay, build script, pin file, tarball or
++`sdk/vendor-lib.sh` — or anything libc watches — is newer. Chains:
++`zlib`: libc → zlib; `libpng`: libc → zlib → libm → libpng (png.h needs
++zlib.h, pngpriv.h needs OpenLibm's `math.h`); `libexif`: libc → libm →
++libexif; `libjpeg`, `giflib`: libc → lib. `<LIB>_REFRESH=1` (e.g.
++`LIBPNG_REFRESH=1`) forces a re-extract; a newer tarball does so on its own.
++Two consecutive builds produce byte-identical archives.
++
++Known upstream warning (left visible): libexif `exif-entry.c:1243/1267/1280`
++`-Wswitch` on the GPS tag `#define`s. All other libraries build warning-free
++with their own warning flags.
++
++## 2. Linking a program against them
++
++The worked example is `sdk/examples/libtest/build-libtest.sh`. In short:
++
++```sh
++# headers (extracted trees; run the build scripts or lib_ensure first)
++-I sdk/zlib/zlib-1.3.2        # zlib.h zconf.h
++-I sdk/libpng/libpng-1.6.59   # png.h pngconf.h pnglibconf.h
++-I sdk/libjpeg/jpeg-9f        # jpeglib.h jconfig.h jmorecfg.h jerror.h
++-I sdk/giflib/giflib-6.1.3    # gif_lib.h
++-I sdk/libexif/libexif-0.6.26 # #include <libexif/exif-data.h>
++-I sdk/libm/include -I sdk/libm/openlibm-0.8.8/include   # math.h, if the program uses it
++-I sdk/libc/mintlib/include
++
++# archives, one group, before libm/libc
++--start-group sdk/libpng/libpng.a sdk/zlib/libz.a sdk/libjpeg/libjpeg.a \
++              sdk/giflib/libgif.a sdk/libexif/libexif.a \
++              sdk/libm/libm.a sdk/libc/libc.a --end-group
++```
++
++In a build script: `. sdk/lib-stale.sh; lib_ensure libpng; lib_ensure libjpeg; …`.
++The flags are the app set (`-target aarch64-unknown-none-elf -ffreestanding
++-nostdlib -O2 -fPIE -fno-builtin -nostdinc -funsigned-char`,
++`-Wno-macro-redefined` for the clang-`float.h`/OpenLibm `INFINITY` pair).
++Include `<stdio.h>` before `<jpeglib.h>` (IJG rule).
++
++Per codec (zView `plugins/*/Makefile`):
++
++| Codec | Needs (besides libldg, libshare, libc) |
++|---|---|
++| png | libpng, zlib, libm |
++| jpg | libjpeg, libexif, libm |
++| gif | giflib |
++| bmp, tga, degas, neochrome, eureka, godpaint, img | none |
++| tiff | libtiff, libjpeg, zlib, **liblzma**, libm — not built (M2 scope ends at the demo codecs) |
++
++zView itself links `-lpng -lz` too, and `-lfreetype` only for PDF (xpdf).
++
++## 3. The test: LIBTEST.NCP
++
++`sdk/examples/libtest/`:
++
++| File | Role |
++|---|---|
++| `libtest.c` | the test; host and target from one source |
++| `gen-data.py` | makes the 14 test files (PNG by its own encoder: every filter type, Adam7, palette+tRNS, 16-bit, 1-bit, gray+alpha; JPEG/GIF via Pillow; EXIF APP1 with a thumbnail built byte by byte) and the **Python references** → `libtest-data.h` |
++| `make-ref.sh` | builds the same pinned sources for the host, runs `libtest.c` there → **host references** `libtest-ref.h`; `--check` = SDK host test `libtest-host` |
++| `build-libtest.sh` | target build → `sdk/examples/libtest/build/LIBTEST.NCP` |
++
++38 checks: zlib (crc32/adler32 vs Python, compress2/uncompress, a Python-made
++stream inflated, gz file round trip), libpng (six decodes to RGBA8 exactly as
++`pngldg.c` asks, `png_get_text`, write + read back), libjpeg (baseline 4:2:0,
++progressive 4:4:4, grayscale, EXIF/COM markers, `jpeg_mem_src` = file decode,
++encode + decode back), libexif (tag text as `jpgldg.c` formats it, thumbnail
++bytes and pixels), giflib (plain, interlaced + transparency + comment,
++2-frame animation, read with `gifldg.c`'s record loop). Results are CRC-32
++(own implementation, not zlib's) + length. PNG, GIF, the inflated stream,
++the EXIF thumbnail and crc32/adler32 have a Python reference computed without
++the libraries; JPEG pixels only a host reference (Pillow uses libjpeg-turbo,
++whose chroma upsampling differs from IJG 9).
++
++Verified (RUNINFO): QEMU raspi4b, `\AUTO\LIBTEST.NCP`, memprot on and strict:
++`libtest: ALL PASS (38 checks)`; host `make-ref.sh --check` likewise.
++
++Run it yourself: put `LIBTEST.NCP` into `C:\AUTO\` (or start it from the
++desktop); it writes and deletes `LT_*.TMP`/`LT_Z.GZ` in the current directory.
++
++## 4. Not here
++
++- `libshare` (every codec's `libshare_init/exit`), libtiff/liblzma, freetype —
++  later milestones.
++- The codecs themselves: a syntax probe of `pngldg.c`/`gifldg.c`/`jpgldg.c`
++  against these headers shows **no library API mismatch**, but `jpgldg.c`
++  assigns a `FILE *` to the `int32` field `_priv_var` and back without a
++  cast (`jpgldg.c:469,592,702,750`): clang rejects that (`-Wint-conversion`
++  is an error), and it truncates if `int32` is made 32-bit as
++  `zview-ldg-2026-10-04.md` §1.3 suggests — a codec-side LP64 issue for M4
++  (`measurements/measurement-2026-10-06-ldg-m2/checks/codec-syntax-probe.txt`).
++- Shared/SLB variants: everything is static.
+--- /dev/null
++++ b/sdk/examples/libtest/build-libtest.sh
+@@ -0,0 +1,74 @@
++#!/usr/bin/env bash
++#
++# build-libtest.sh -- build LIBTEST.NCP, the TASK/LDG-M2 acceptance test of
++# the codec libraries (zlib, libpng, libjpeg, giflib, libexif), for NewTOS.
++# See libtest.c for what it checks and where its references come from
++# (gen-data.py -> libtest-data.h, make-ref.sh -> libtest-ref.h).
++#
++# It is also the worked example of how a program links these libraries
++# (docs/sdk/11-codec-libraries.md): the app flag set of build-qed.sh, the
++# headers of each extracted tree, and the archives in dependency order
++#   libpng.a libz.a libjpeg.a libgif.a libexif.a libm.a libc.a
++# inside one --start-group/--end-group.
++#
++# Usage:  sdk/examples/libtest/build-libtest.sh
++# Output: sdk/examples/libtest/build/LIBTEST.NCP (headless; prints
++#         "libtest: ALL PASS (N checks)" over Cconws; writes and removes its
++#         LT_*.TMP / LT_Z.GZ scratch files in the current directory)
++set -uo pipefail
++
++HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++SDK="$(cd "$HERE/../.." && pwd)"
++BUILD="$HERE/build"
++OUT="$BUILD/LIBTEST.NCP"
++mkdir -p "$BUILD"
++
++. "$SDK/lib-stale.sh"
++for l in zlib libpng libjpeg giflib libexif; do lib_ensure "$l" || exit 1; done
++
++MINT="$SDK/libc/mintlib/include"
++LIBMTOP="$SDK/libm/openlibm-0.8.8"
++ZTOP="$SDK/zlib/zlib-1.3.2"
++PTOP="$SDK/libpng/libpng-1.6.59"
++JTOP="$SDK/libjpeg/jpeg-9f"
++GTOP="$SDK/giflib/giflib-6.1.3"
++ETOP="$SDK/libexif/libexif-0.6.26"
++for d in "$MINT" "$LIBMTOP" "$ZTOP" "$PTOP" "$JTOP" "$GTOP" "$ETOP"; do
++  [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
++done
++
++CLANG="${CLANG:-clang}"
++RES="$($CLANG -print-resource-dir)/include"
++SYSROOT="$(rustc --print sysroot 2>/dev/null)"
++BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++LLD="${LLD:-$BIN/rust-lld}"
++NM="$BIN/llvm-nm"
++READOBJ="$BIN/llvm-readobj"
++[ -x "$LLD" ] || { echo "error: missing LLVM tool: $LLD" >&2; exit 1; }
++
++# The app flag set (sdk/apps/build-qed.sh, sdk/ldg/build-ldg-demo.sh).
++CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
++        -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__
++        -Wno-macro-redefined -Wall)
++INCS=(-I"$HERE" -I"$ZTOP" -I"$PTOP" -I"$JTOP" -I"$GTOP" -I"$ETOP"
++      -I"$MINT" -I"$SDK/libm/include" -I"$LIBMTOP/include" -isystem "$RES")
++
++rm -f "$BUILD"/*.o "$OUT"
++"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" -c "$HERE/libtest.c" -o "$BUILD/libtest.o" 2>"$BUILD/libtest.err" ||
++  { echo "error: libtest.c did not compile:" >&2; sed 's/^/    /' "$BUILD/libtest.err" >&2; exit 1; }
++if [ -s "$BUILD/libtest.err" ]; then echo "  warnings in libtest.c:"; sed 's/^/      /' "$BUILD/libtest.err"; fi
++"$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc \
++    -I"$SDK/include" -I"$MINT" -c "$SDK/libc/crt0.S" -o "$BUILD/crt0.o" || exit 1
++
++if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
++    --build-id=none "$BUILD/crt0.o" "$BUILD/libtest.o" \
++    --start-group "$SDK/libpng/libpng.a" "$SDK/zlib/libz.a" "$SDK/libjpeg/libjpeg.a" \
++                  "$SDK/giflib/libgif.a" "$SDK/libexif/libexif.a" \
++                  "$SDK/libm/libm.a" "$SDK/libc/libc.a" --end-group \
++    -o "$OUT" 2>"$BUILD/link.err"; then
++  echo "error: link of LIBTEST.NCP failed:" >&2; sed 's/^/    /' "$BUILD/link.err" >&2; exit 1
++fi
++echo "LINK OK -> $OUT ($(wc -c < "$OUT" | tr -d ' ') bytes)"
++"$READOBJ" --file-headers "$OUT" | grep -E '^ *Type:'
++echo "  undefined symbols (goal 0): $("$NM" -u "$OUT" 2>/dev/null | grep -c . || true)"
++echo "  relocation types: $("$READOBJ" -r "$OUT" | awk '/R_AARCH64/{print $2}' | sort | uniq -c | tr '\n' ' ')"
+--- /dev/null
++++ b/sdk/examples/libtest/gen-data.py
+@@ -0,0 +1,365 @@
++#!/usr/bin/env python3
++"""gen-data.py -- generate the embedded test data of LIBTEST.NCP and its
++independent (Python-side) reference values (TASK/LDG-M2).
++
++Writes sdk/examples/libtest/libtest-data.h:
++  - every test file as a C byte array (libtest.c writes them to disk and
++    decodes them through the libraries' FILE/path APIs, as zView's codecs do);
++  - PY_REFS: CRC-32 + length of what a correct decoder MUST produce, computed
++    here WITHOUT the libraries under test:
++      zlib   CRC-32/Adler-32 of a buffer libtest.c generates with the same LCG,
++             and the inflated output of a stream made by Python's zlib;
++      PNG    the RGBA8 pixels the files were encoded FROM (our own little PNG
++             encoder below, every filter type 0-4 per row, Adam7 too), mapped
++             the way png_set_expand/strip_16/gray_to_rgb/add_alpha define it;
++      GIF    the colour-index raster and the global colour table, read back
++             by Pillow (an independent decoder) resp. parsed from the bytes;
++      EXIF   the thumbnail bytes we embedded ourselves.
++    JPEG pixels have no Python reference: Pillow decodes with libjpeg-turbo,
++    whose chroma upsampling differs from IJG 9's DCT-domain scaling. Those
++    values come from the same IJG 9f sources built for the HOST
++    (make-ref.sh -> libtest-ref.h). The Pillow decode is compared only for
++    information (max abs difference printed here).
++
++Deterministic: no timestamps, fixed seeds. Run: python3 gen-data.py
++(Pillow required; tested with Pillow 12.3.0).
++"""
++import io
++import os
++import struct
++import zlib
++
++from PIL import Image
++
++HERE = os.path.dirname(os.path.abspath(__file__))
++
++
++def crc(b):
++    return zlib.crc32(bytes(b)) & 0xFFFFFFFF
++
++
++# ---------------------------------------------------------------- zlib -----
++def lcg_text(n, seed):
++    """Must match libtest.c lcg_text()."""
++    alpha = b"NewTOS zlib round trip ABCDEFGH\n"   # 32 symbols
++    x = seed
++    out = bytearray(n)
++    for i in range(n):
++        x = (x * 1103515245 + 12345) & 0xFFFFFFFF
++        out[i] = alpha[(x >> 16) & 31]
++    return bytes(out)
++
++
++ZBUF_LEN = 70000 + 123
++ZBUF_SEED = 0x2A2A1234
++
++
++def adler32(b):
++    return zlib.adler32(b) & 0xFFFFFFFF
++
++
++# ----------------------------------------------------------------- PNG -----
++def png_chunk(t, d):
++    return struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
++
++
++def paeth(a, b, c):
++    p = a + b - c
++    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
++    if pa <= pb and pa <= pc:
++        return a
++    if pb <= pc:
++        return b
++    return c
++
++
++def filter_row(ft, row, prev, bpp):
++    out = bytearray([ft])
++    for i, x in enumerate(row):
++        a = row[i - bpp] if i >= bpp else 0
++        b = prev[i] if prev is not None else 0
++        c = prev[i - bpp] if (prev is not None and i >= bpp) else 0
++        if ft == 0:
++            v = x
++        elif ft == 1:
++            v = x - a
++        elif ft == 2:
++            v = x - b
++        elif ft == 3:
++            v = x - ((a + b) >> 1)
++        else:
++            v = x - paeth(a, b, c)
++        out.append(v & 0xFF)
++    return out
++
++
++def pack_row(pix, depth, chans):
++    """pix: list of sample tuples -> packed bytes (big-endian 16-bit)."""
++    if depth == 16:
++        return b"".join(struct.pack(">H", s) for p in pix for s in p)
++    if depth == 8:
++        return bytes(s for p in pix for s in p)
++    out = bytearray()
++    acc, nbits = 0, 0
++    for p in pix:
++        for s in p:
++            acc = (acc << depth) | s
++            nbits += depth
++            if nbits == 8:
++                out.append(acc)
++                acc, nbits = 0, 0
++    if nbits:
++        out.append(acc << (8 - nbits))
++    return bytes(out)
++
++
++ADAM7 = [(0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4),
++         (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2)]
++
++
++def make_png(w, h, ctype, depth, img, interlace=False, palette=None, trns=None, text=None):
++    chans = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[ctype]
++    bpp = max(1, chans * depth // 8)
++    raw = bytearray()
++    rowno = 0
++    passes = ADAM7 if interlace else [(0, 0, 1, 1)]
++    for (x0, y0, dx, dy) in passes:
++        prev = None
++        for y in range(y0, h, dy):
++            pix = [img[y][x] for x in range(x0, w, dx)]
++            if not pix:
++                continue
++            row = pack_row(pix, depth, chans)
++            raw += filter_row(rowno % 5, row, prev, bpp)   # every filter type
++            prev = row
++            rowno += 1
++    out = b"\x89PNG\r\n\x1a\n"
++    out += png_chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, depth, ctype, 0, 0, 1 if interlace else 0))
++    if palette:
++        out += png_chunk(b"PLTE", bytes(c for rgb in palette for c in rgb))
++    if trns:
++        out += png_chunk(b"tRNS", bytes(trns))
++    if text:
++        out += png_chunk(b"tEXt", text[0] + b"\0" + text[1])
++    out += png_chunk(b"IDAT", zlib.compress(bytes(raw), 9))
++    out += png_chunk(b"IEND", b"")
++    return out
++
++
++def expect_rgba(w, h, ctype, depth, img, palette=None, trns=None):
++    """What libpng delivers with png_set_expand + strip_16 + gray_to_rgb +
++    add_alpha(0xff, after) -- the transforms libtest.c (and zView's
++    pngldg.c, minus add_alpha) request."""
++    out = bytearray()
++    for y in range(h):
++        for x in range(w):
++            p = img[y][x]
++            if ctype == 3:
++                r, g, b = palette[p[0]]
++                a = trns[p[0]] if (trns and p[0] < len(trns)) else 255
++            else:
++                def s8(v):
++                    if depth == 16:
++                        return v >> 8                        # strip_16 = high byte
++                    if depth < 8:
++                        return v * 255 // ((1 << depth) - 1)  # bit replication
++                    return v
++                if ctype == 0:
++                    r = g = b = s8(p[0]); a = 255
++                elif ctype == 4:
++                    r = g = b = s8(p[0]); a = s8(p[1])
++                elif ctype == 2:
++                    r, g, b = (s8(v) for v in p); a = 255
++                else:
++                    r, g, b, a = (s8(v) for v in p)
++            out += bytes((r, g, b, a))
++    return bytes(out)
++
++
++def pattern(w, h, f):
++    return [[f(x, y) for x in range(w)] for y in range(h)]
++
++
++# ---------------------------------------------------------------- JPEG -----
++def rgb_image(w, h, seed):
++    im = Image.new("RGB", (w, h))
++    px = im.load()
++    for y in range(h):
++        for x in range(w):
++            px[x, y] = ((x * 255 // max(1, w - 1) + seed) & 255,
++                        (y * 255 // max(1, h - 1)) & 255,
++                        ((x ^ y) * 13 + seed * 3) & 255)
++    return im
++
++
++def tiff_entry(tag, typ, count, value_or_off):
++    return struct.pack("<HHI", tag, typ, count) + value_or_off
++
++
++def build_exif(thumb):
++    """'Exif\\0\\0' + little-endian TIFF: IFD0 (Make, Model, Orientation,
++    XResolution, YResolution, ResolutionUnit, DateTime) -> IFD1 (Compression,
++    JPEGInterchangeFormat/-Length = the thumbnail)."""
++    make, model, dt = b"NewTOS\0", b"LIBTEST.NCP\0", b"2026:10:06 12:34:56\0"
++    n0, n1 = 7, 3
++    ifd0 = 8
++    ifd0_size = 2 + 12 * n0 + 4
++    data0 = ifd0 + ifd0_size                     # out-of-line values of IFD0
++    off_make = data0
++    off_model = off_make + len(make)
++    off_dt = off_model + len(model)
++    off_xres = off_dt + len(dt)
++    off_yres = off_xres + 8
++    ifd1 = off_yres + 8
++    ifd1_size = 2 + 12 * n1 + 4
++    off_thumb = ifd1 + ifd1_size
++    t = b"II*\0" + struct.pack("<I", ifd0)
++    t += struct.pack("<H", n0)
++    t += tiff_entry(0x010F, 2, len(make), struct.pack("<I", off_make))
++    t += tiff_entry(0x0110, 2, len(model), struct.pack("<I", off_model))
++    t += tiff_entry(0x0112, 3, 1, struct.pack("<HH", 1, 0))
++    t += tiff_entry(0x011A, 5, 1, struct.pack("<I", off_xres))
++    t += tiff_entry(0x011B, 5, 1, struct.pack("<I", off_yres))
++    t += tiff_entry(0x0128, 3, 1, struct.pack("<HH", 2, 0))
++    t += tiff_entry(0x0132, 2, len(dt), struct.pack("<I", off_dt))
++    t += struct.pack("<I", ifd1)
++    t += make + model + dt + struct.pack("<II", 72, 1) + struct.pack("<II", 300, 4)
++    assert len(t) == ifd1
++    t += struct.pack("<H", n1)
++    t += tiff_entry(0x0103, 3, 1, struct.pack("<HH", 6, 0))
++    t += tiff_entry(0x0201, 4, 1, struct.pack("<I", off_thumb))
++    t += tiff_entry(0x0202, 4, 1, struct.pack("<I", len(thumb)))
++    t += struct.pack("<I", 0)
++    assert len(t) == off_thumb
++    t += thumb
++    return b"Exif\0\0" + t
++
++
++# ----------------------------------------------------------------- GIF -----
++def gif_gct(b):
++    flags = b[10]
++    if not flags & 0x80:
++        return b""
++    n = 2 << (flags & 7)
++    return b[13:13 + 3 * n]
++
++
++def main():
++    files = []     # (name, bytes)
++    refs = []      # (name, crc, len)
++
++    # zlib
++    zb = lcg_text(ZBUF_LEN, ZBUF_SEED)
++    refs.append(("Z.crc32", zlib.crc32(zb) & 0xFFFFFFFF, len(zb)))
++    refs.append(("Z.adler32", adler32(zb), len(zb)))
++    zsrc = (b"The quick brown fox jumps over the lazy dog. " * 300) + bytes(range(256)) * 8
++    files.append(("ZPY", zlib.compress(zsrc, 9)))
++    refs.append(("Z.inflate-py", crc(zsrc), len(zsrc)))
++
++    # PNG
++    p1 = pattern(37, 23, lambda x, y: ((x * 7) & 255, (y * 11) & 255, (x * y) & 255))
++    p2 = pattern(29, 19, lambda x, y: ((x * 9) & 255, (y * 13) & 255, ((x + y) * 5) & 255, (x * 17 + y * 3) & 255))
++    pal = [((i * 21) & 255, (255 - i * 19) & 255, (i * 47) & 255) for i in range(12)]
++    trns = [0, 64, 128, 192, 255]
++    p3 = pattern(31, 17, lambda x, y: (((x // 3) + y) % 12,))
++    p4 = pattern(13, 11, lambda x, y: (((x * 5003) + (y * 977)) & 0xFFFF,))
++    p5 = pattern(21, 9, lambda x, y: (((x ^ y) >> 1) & 1,))
++    p6 = pattern(15, 10, lambda x, y: (((x * 16) + y) & 255, (y * 25) & 255))
++    cases = [
++        ("P1", 37, 23, 2, 8, p1, False, None, None, (b"Comment", b"NewTOS libtest")),
++        ("P2", 29, 19, 6, 8, p2, True, None, None, None),
++        ("P3", 31, 17, 3, 4, p3, True, pal, trns, None),
++        ("P4", 13, 11, 0, 16, p4, False, None, None, None),
++        ("P5", 21, 9, 0, 1, p5, False, None, None, None),
++        ("P6", 15, 10, 4, 8, p6, False, None, None, None),
++    ]
++    for (n, w, h, ct, d, img, il, pl, tr, tx) in cases:
++        data = make_png(w, h, ct, d, img, il, pl, tr, tx)
++        files.append((n, data))
++        exp = expect_rgba(w, h, ct, d, img, pl, tr)
++        refs.append((n + ".rgba", crc(exp), len(exp)))
++        # Pillow cross-check of the encoder (independent decoder): must agree
++        # wherever Pillow's conversion is defined the same way (not 16-bit).
++        if d != 16:
++            pim = Image.open(io.BytesIO(data)).convert("RGBA").tobytes()
++            assert pim == exp, "Pillow disagrees with the expected RGBA of " + n
++
++    # JPEG (pixel references from the host build of IJG 9f, see header)
++    def jpg(im, **kw):
++        b = io.BytesIO()
++        im.save(b, "JPEG", **kw)
++        return b.getvalue()
++    files.append(("J1", jpg(rgb_image(45, 29, 7), quality=85, subsampling=2)))
++    files.append(("J2", jpg(rgb_image(33, 21, 99), quality=92, subsampling=0, progressive=True)))
++    files.append(("J3", jpg(rgb_image(27, 19, 50).convert("L"), quality=75)))
++    thumb = jpg(rgb_image(8, 8, 3), quality=80)
++    exif = build_exif(thumb)
++    files.append(("J4", jpg(rgb_image(24, 16, 21), quality=90, exif=exif,
++                            comment=b"NewTOS libtest comment")))
++    refs.append(("E.thumb", crc(thumb), len(thumb)))
++
++    # GIF
++    def gif(im, **kw):
++        b = io.BytesIO()
++        im.save(b, "GIF", **kw)
++        return b.getvalue()
++    gpal = []
++    for i in range(32):
++        gpal += [(i * 8) & 255, (255 - i * 7) & 255, (i * 37) & 255]
++    g1 = Image.new("P", (41, 27)); g1.putpalette(gpal)
++    g1.putdata([((x * 3 + y * 5) % 32) for y in range(27) for x in range(41)])
++    g2 = Image.new("P", (23, 31)); g2.putpalette(gpal[:48])
++    g2.putdata([((x + 2 * y) % 16) for y in range(31) for x in range(23)])
++    g3a = Image.new("P", (16, 12)); g3a.putpalette(gpal[:24])
++    g3a.putdata([((x // 2 + y) % 8) for y in range(12) for x in range(16)])
++    g3b = Image.new("P", (16, 12)); g3b.putpalette(gpal[:24])
++    g3b.putdata([((x + y // 2) % 8) for y in range(12) for x in range(16)])
++    files.append(("G1", gif(g1, interlace=False, optimize=False)))
++    files.append(("G2", gif(g2, interlace=True, optimize=False, transparency=3, comment=b"NewTOS gif")))
++    files.append(("G3", gif(g3a, save_all=True, append_images=[g3b], duration=100, loop=0,
++                            interlace=False, optimize=False)))
++    for n in ("G1", "G2", "G3"):
++        data = dict(files)[n]
++        im = Image.open(io.BytesIO(data))
++        im.seek(0)
++        assert im.mode == "P", n
++        idx = im.tobytes()
++        refs.append((n + ".index", crc(idx), len(idx)))
++        gct = gif_gct(data)
++        refs.append((n + ".gct", crc(gct), len(gct)))
++
++    # Pillow vs (later) IJG: informational only.
++    for n in ("J1", "J2", "J3", "J4"):
++        im = Image.open(io.BytesIO(dict(files)[n]))
++        print("info: Pillow (libjpeg-turbo) decode of %s: %s %dx%d" % (n, im.mode, im.size[0], im.size[1]))
++
++    # ---- write the header
++    out = []
++    out.append("/* libtest-data.h -- GENERATED by gen-data.py (TASK/LDG-M2). Do not edit.")
++    out.append(" * Test files embedded in LIBTEST.NCP and their Python-side references")
++    out.append(" * (see gen-data.py for what each reference is computed from). */")
++    out.append("#define ZBUF_LEN %du" % ZBUF_LEN)
++    out.append("#define ZBUF_SEED 0x%08Xu" % ZBUF_SEED)
++    for (n, data) in files:
++        out.append("static const unsigned char d_%s[%d] = {" % (n, len(data)))
++        for i in range(0, len(data), 16):
++            out.append("  " + ",".join("0x%02x" % c for c in data[i:i + 16]) + ",")
++        out.append("};")
++    out.append("static const struct blob { const char *name; const unsigned char *p; unsigned long len; } blobs[] = {")
++    for (n, data) in files:
++        out.append('  { "%s", d_%s, sizeof d_%s },' % (n, n, n))
++    out.append("  { 0, 0, 0 }")
++    out.append("};")
++    out.append("static const struct ref py_refs[] = {")
++    for (n, c, l) in refs:
++        out.append('  { "%s", 0x%08xu, %du },' % (n, c, l))
++    out.append("  { 0, 0, 0 }")
++    out.append("};")
++    with open(os.path.join(HERE, "libtest-data.h"), "w") as f:
++        f.write("\n".join(out) + "\n")
++    print("wrote libtest-data.h: %d files, %d python references, %d bytes of data"
++          % (len(files), len(refs), sum(len(d) for _, d in files)))
++
++
++if __name__ == "__main__":
++    main()
+--- /dev/null
++++ b/sdk/examples/libtest/libtest-ref.h
+@@ -0,0 +1,31 @@
++/* libtest-ref.h -- GENERATED by make-ref.sh (TASK/LDG-M2). Do not edit.
++ * Results of libtest.c built for the HOST against the same pinned library
++ * sources; the target build must reproduce them bit for bit. */
++static const struct ref host_refs[] = {
++  { "Z.deflate-stream", 0xfc319ad6u, 44615u },
++  { "Z.inflate-py", 0x40302f26u, 15548u },
++  { "P1.rgba", 0x4844468bu, 3404u },
++  { "P2.rgba", 0x3474b152u, 2204u },
++  { "P3.rgba", 0x4f3f9ee2u, 2108u },
++  { "P4.rgba", 0xfde817afu, 572u },
++  { "P5.rgba", 0xe1881a5du, 756u },
++  { "P6.rgba", 0xbe2d783du, 600u },
++  { "PW.file", 0x9c6941ffu, 350u },
++  { "J1.pixels", 0xb564ae12u, 3915u },
++  { "J2.pixels", 0xb4fd1f23u, 2079u },
++  { "J3.pixels", 0xb23678f1u, 513u },
++  { "J4.pixels", 0x0df7c584u, 1152u },
++  { "JE.file", 0x52d0502bu, 907u },
++  { "JE.pixels", 0x9c1e5037u, 2880u },
++  { "E.text", 0x57fe58dfu, 315u },
++  { "E.thumb", 0xc8bdefecu, 668u },
++  { "E.thumb.pixels", 0x88378a50u, 192u },
++  { "G1.index", 0xda31da8bu, 1107u },
++  { "G1.gct", 0xb8e3fbf7u, 96u },
++  { "G2.index", 0xb1ac2102u, 713u },
++  { "G2.gct", 0xfc0814f5u, 48u },
++  { "G3.index", 0x727f42f2u, 192u },
++  { "G3.gct", 0xd821ee9du, 24u },
++  { 0, 0, 0 }
++};
++/* 38 results, 0 failures while generating */
+--- /dev/null
++++ b/sdk/examples/libtest/libtest.c
+@@ -0,0 +1,882 @@
++/*
++ * libtest.c -- LDG milestone M2 acceptance test (TASK/LDG-M2): the five
++ * third-party libraries zView's codecs need -- zlib 1.3.2, libpng 1.6.59,
++ * IJG libjpeg 9f, giflib 6.1.3, libexif 0.6.26 -- built UNMODIFIED as NewTOS
++ * static libraries, exercised with real round trips on bundled test files.
++ *
++ * Every test file is embedded (libtest-data.h, generated by gen-data.py),
++ * written to the current directory and decoded through the same FILE / path
++ * entry points zView's codecs use (png_init_io, jpeg_stdio_src,
++ * DGifOpenFileName, exif_data_new_from_data on the saved APP1 marker), so
++ * mintlib's stdio/open/lseek are exercised too. Each result is reduced to a
++ * CRC-32 (own bitwise implementation, NOT zlib's, so a zlib defect cannot
++ * hide in the checksum) plus a length, and compared with
++ *   - py_refs[]   (libtest-data.h): computed by gen-data.py without the
++ *                 libraries under test (see its header), and/or
++ *   - host_refs[] (libtest-ref.h): the same library sources built for the
++ *                 host, running this very file (make-ref.sh).
++ * A result must match every reference that exists for it, and must have at
++ * least one. Checks that are pure self-consistency (decode == source after a
++ * write round trip, memory decode == file decode, ...) are marked "self".
++ *
++ *   zlib    crc32()/adler32() of an LCG buffer; compress2 -> uncompress round
++ *           trip (+ the compressed stream's CRC vs host); inflate a stream
++ *           made by Python's zlib; gzwrite -> gzread through a file.
++ *   libpng  six PNGs (RGB8 with tEXt, RGBA8 Adam7, palette-4 Adam7 + tRNS,
++ *           gray-16, gray-1, gray+alpha; every filter type on every image)
++ *           decoded to RGBA8 the way pngldg.c reads (expand, strip_16,
++ *           gray_to_rgb, interlace handling, png_read_row); png_get_text;
++ *           an RGB image written with all filters and read back.
++ *   libjpeg baseline 4:2:0, progressive 4:4:4, grayscale, and one with EXIF +
++ *           COM markers, decoded via jpeg_stdio_src (J1 also via
++ *           jpeg_mem_src); a synthetic image encoded via jpeg_stdio_dest and
++ *           decoded back.
++ *   giflib  plain, interlaced + transparency + comment, 2-frame animation,
++ *           read with the record loop of gifldg.c (DGifGetRecordType /
++ *           DGifGetImageDesc / DGifGetLine with the interlace offsets /
++ *           DGifGetExtension[Next]).
++ *   libexif the J4 APP1 marker: tag names + values as jpgldg.c formats them,
++ *           and the embedded thumbnail (exifData->data) decoded with libjpeg.
++ *
++ * Output (target): one "libtest: PASS|FAIL <name> ..." line per check over
++ * Cconws and the verdict "libtest: ALL PASS (N checks)" or "libtest: FAIL (k
++ * of N checks failed)". Host: the same on stdout; with -DLIBTEST_EMIT the
++ * host build prints the host_refs[] table instead (make-ref.sh).
++ *
++ * Build: sdk/examples/libtest/build-libtest.sh (target),
++ *        sdk/examples/libtest/make-ref.sh      (host references).
++ */
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <setjmp.h>
++#include <zlib.h>
++#include <png.h>
++#include <jpeglib.h>
++#include <gif_lib.h>
++#include <libexif/exif-data.h>
++#include <libexif/exif-utils.h>
++#ifndef LIBTEST_HOST
++#include <mint/osbind.h>
++#endif
++
++struct ref { const char *name; unsigned long crc; unsigned long len; };
++#include "libtest-data.h"
++#ifndef LIBTEST_EMIT
++#include "libtest-ref.h"
++#endif
++
++/* ---------------------------------------------------------------- output */
++static void
++out(const char *s)
++{
++#ifdef LIBTEST_HOST
++	fputs(s, stdout);
++#else
++	Cconws(s);
++#endif
++}
++
++static unsigned checks, failed;
++
++static void
++verdict(const char *name, int ok, const char *detail)
++{
++	char line[256];
++	checks++;
++	if (!ok)
++		failed++;
++#ifdef LIBTEST_EMIT
++	if (!ok) {
++		snprintf(line, sizeof line, "/* FAIL %s %s */\n", name, detail ? detail : "");
++		out(line);
++	}
++	return;
++#endif
++	snprintf(line, sizeof line, "libtest: %s %s%s%s\r\n", ok ? "PASS" : "FAIL", name,
++	         detail ? " " : "", detail ? detail : "");
++	out(line);
++}
++
++static void
++info(const char *s)
++{
++#ifndef LIBTEST_EMIT
++	out("libtest: info ");
++	out(s);
++	out("\r\n");
++#else
++	(void)s;
++#endif
++}
++
++/* CRC-32 (IEEE 802.3, reflected, poly 0xEDB88320) -- deliberately not zlib's. */
++static unsigned long
++crc32_own(const unsigned char *p, unsigned long n)
++{
++	unsigned long c = 0xFFFFFFFFul;
++	unsigned long i;
++	int k;
++	for (i = 0; i < n; i++) {
++		c ^= p[i];
++		for (k = 0; k < 8; k++)
++			c = (c >> 1) ^ (0xEDB88320ul & (0ul - (c & 1)));
++	}
++	return (c ^ 0xFFFFFFFFul) & 0xFFFFFFFFul;
++}
++
++static const struct ref *
++find_ref(const struct ref *t, const char *name)
++{
++	for (; t && t->name; t++)
++		if (strcmp(t->name, name) == 0)
++			return t;
++	return NULL;
++}
++
++/* result: compare <name>'s CRC/length with every reference that exists.
++ * EMIT (host reference run): print the host_refs[] line, and still check
++ * against the Python reference so a host-side defect cannot become a
++ * reference. */
++static void
++result(const char *name, const unsigned char *p, unsigned long n)
++{
++	unsigned long c = crc32_own(p, n);
++	const struct ref *py = find_ref(py_refs, name);
++	char d[160];
++#ifdef LIBTEST_EMIT
++	const struct ref *h = NULL;
++	snprintf(d, sizeof d, "  { \"%s\", 0x%08lxu, %luu },\n", name, c, n);
++	out(d);
++#else
++	const struct ref *h = find_ref(host_refs, name);
++#endif
++	int ok = (h || py);
++#ifdef LIBTEST_EMIT
++	ok = 1;
++#endif
++	if (h && (h->crc != c || h->len != n)) ok = 0;
++	if (py && (py->crc != c || py->len != n)) ok = 0;
++	snprintf(d, sizeof d, "crc=%08lx len=%lu [%s%s%s]", c, n,
++	         py ? "py" : "", (py && h) ? "+" : "", h ? "host" : "");
++	if (!ok) {
++		if (!h && !py)
++			snprintf(d + strlen(d), sizeof d - strlen(d), " NO REFERENCE");
++		if (py && (py->crc != c || py->len != n))
++			snprintf(d + strlen(d), sizeof d - strlen(d), " want(py) %08lx/%lu", py->crc, py->len);
++		if (h && (h->crc != c || h->len != n))
++			snprintf(d + strlen(d), sizeof d - strlen(d), " want(host) %08lx/%lu", h->crc, h->len);
++	}
++	verdict(name, ok, d);
++}
++
++static void
++self(const char *name, int ok, const char *detail)
++{
++	char n[64];
++	snprintf(n, sizeof n, "%s (self)", name);
++	verdict(n, ok, detail);
++}
++
++static const struct blob *
++blob(const char *name)
++{
++	const struct blob *b;
++	for (b = blobs; b->name; b++)
++		if (strcmp(b->name, name) == 0)
++			return b;
++	return NULL;
++}
++
++/* Write an embedded file to disk as <name>.TMP; returns the file name. */
++static const char *
++put_file(const char *name)
++{
++	static char fn[32];
++	const struct blob *b = blob(name);
++	FILE *f;
++	snprintf(fn, sizeof fn, "LT_%s.TMP", name);
++	if (!b) return NULL;
++	f = fopen(fn, "wb");
++	if (!f) return NULL;
++	if (fwrite(b->p, 1, b->len, f) != b->len) { fclose(f); return NULL; }
++	if (fclose(f) != 0) return NULL;
++	return fn;
++}
++
++static unsigned char *
++slurp(const char *fn, unsigned long *len)
++{
++	FILE *f = fopen(fn, "rb");
++	unsigned char *p = NULL;
++	unsigned long n = 0, cap = 0;
++	size_t r;
++	if (!f) return NULL;
++	for (;;) {
++		if (n == cap) {
++			unsigned char *q;
++			cap = cap ? cap * 2 : 4096;
++			q = realloc(p, cap);
++			if (!q) { free(p); fclose(f); return NULL; }
++			p = q;
++		}
++		r = fread(p + n, 1, cap - n, f);
++		if (r == 0) break;
++		n += r;
++	}
++	fclose(f);
++	*len = n;
++	return p;
++}
++
++/* ------------------------------------------------------------------ zlib */
++static void
++lcg_text(unsigned char *buf, unsigned long n, unsigned long seed)
++{
++	static const char alpha[] = "NewTOS zlib round trip ABCDEFGH\n";   /* 32 */
++	unsigned long x = seed & 0xFFFFFFFFul, i;
++	for (i = 0; i < n; i++) {
++		x = (x * 1103515245ul + 12345ul) & 0xFFFFFFFFul;
++		buf[i] = (unsigned char)alpha[(x >> 16) & 31];
++	}
++}
++
++static void
++test_zlib(void)
++{
++	unsigned char *src = malloc(ZBUF_LEN), *cmp, *back;
++	uLongf clen, blen;
++	unsigned long v;
++	const struct blob *b;
++	int rc;
++	char d[96];
++	gzFile gz;
++
++	snprintf(d, sizeof d, "zlibVersion()=%s ZLIB_VERSION=%s", zlibVersion(), ZLIB_VERSION);
++	info(d);
++	if (!src) { verdict("Z.alloc", 0, NULL); return; }
++	lcg_text(src, ZBUF_LEN, ZBUF_SEED);
++
++	/* crc32 / adler32: reduce the 32-bit value to bytes so result() can
++	 * compare it (the reference stores the value itself as "crc"). */
++	v = crc32(0L, Z_NULL, 0);
++	v = crc32(v, src, ZBUF_LEN);
++	{
++		const struct ref *r = find_ref(py_refs, "Z.crc32");
++		snprintf(d, sizeof d, "crc32()=%08lx want %08lx", v, r ? r->crc : 0ul);
++		verdict("Z.crc32", r && r->crc == v && r->len == ZBUF_LEN, d);
++	}
++	v = adler32(0L, Z_NULL, 0);
++	v = adler32(v, src, ZBUF_LEN);
++	{
++		const struct ref *r = find_ref(py_refs, "Z.adler32");
++		snprintf(d, sizeof d, "adler32()=%08lx want %08lx", v, r ? r->crc : 0ul);
++		verdict("Z.adler32", r && r->crc == v && r->len == ZBUF_LEN, d);
++	}
++
++	/* compress2 -> uncompress */
++	clen = compressBound(ZBUF_LEN);
++	cmp = malloc(clen);
++	back = malloc(ZBUF_LEN);
++	if (!cmp || !back) { verdict("Z.alloc", 0, NULL); free(src); free(cmp); free(back); return; }
++	rc = compress2(cmp, &clen, src, ZBUF_LEN, 6);
++	snprintf(d, sizeof d, "rc=%d %lu -> %lu bytes", rc, (unsigned long)ZBUF_LEN, (unsigned long)clen);
++	self("Z.compress2", rc == Z_OK && clen < ZBUF_LEN * 3 / 4, d);
++	if (rc == Z_OK)
++		result("Z.deflate-stream", cmp, clen);
++	blen = ZBUF_LEN;
++	rc = uncompress(back, &blen, cmp, clen);
++	snprintf(d, sizeof d, "rc=%d len=%lu", rc, (unsigned long)blen);
++	self("Z.uncompress==source", rc == Z_OK && blen == ZBUF_LEN && memcmp(back, src, ZBUF_LEN) == 0, d);
++
++	/* a stream made by another deflate implementation (Python's zlib) */
++	b = blob("ZPY");
++	{
++		uLongf ol = 32768;
++		unsigned char *o = malloc(ol);
++		if (o && b) {
++			rc = uncompress(o, &ol, b->p, b->len);
++			if (rc == Z_OK)
++				result("Z.inflate-py", o, ol);
++			else {
++				snprintf(d, sizeof d, "uncompress rc=%d", rc);
++				verdict("Z.inflate-py", 0, d);
++			}
++		}
++		free(o);
++	}
++
++	/* gz file round trip (open/write/lseek/read through mintlib) */
++	gz = gzopen("LT_Z.GZ", "wb9");
++	rc = gz ? gzwrite(gz, src, ZBUF_LEN) : -1;
++	rc = (rc == (int)ZBUF_LEN) && gz && gzclose(gz) == Z_OK;
++	if (!rc) {
++		verdict("Z.gzwrite", 0, NULL);
++	} else {
++		int n;
++		memset(back, 0, ZBUF_LEN);
++		gz = gzopen("LT_Z.GZ", "rb");
++		n = gz ? gzread(gz, back, ZBUF_LEN) : -1;
++		snprintf(d, sizeof d, "gzread=%d eof=%d", n, gz ? gzeof(gz) : -1);
++		if (gz) gzclose(gz);
++		self("Z.gzwrite->gzread==source", n == (int)ZBUF_LEN && memcmp(back, src, ZBUF_LEN) == 0, d);
++	}
++	remove("LT_Z.GZ");
++	free(src); free(cmp); free(back);
++}
++
++/* ---------------------------------------------------------------- libpng */
++static void
++png_quiet(png_structp p, png_const_charp m)
++{
++	(void)p; (void)m;
++}
++
++static void
++test_png_file(const char *name)
++{
++	char n[32], d[160];
++	const char *fn = put_file(name);
++	FILE *f;
++	png_structp png = NULL;
++	png_infop pi = NULL;
++	unsigned char *img = NULL;
++	png_uint_32 w, h, y;
++	int ct, bd, il, passes, p;
++	png_size_t rb;
++
++	snprintf(n, sizeof n, "%s.rgba", name);
++	if (!fn || !(f = fopen(fn, "rb"))) { verdict(n, 0, "cannot write/open test file"); return; }
++	png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, png_quiet);
++	pi = png ? png_create_info_struct(png) : NULL;
++	if (!png || !pi) { verdict(n, 0, "create"); fclose(f); return; }
++	if (setjmp(png_jmpbuf(png))) {
++		png_destroy_read_struct(&png, &pi, NULL);
++		free(img); fclose(f); remove(fn);
++		verdict(n, 0, "libpng error (longjmp)");
++		return;
++	}
++	png_init_io(png, f);
++	png_read_info(png, pi);
++	w = png_get_image_width(png, pi);
++	h = png_get_image_height(png, pi);
++	ct = png_get_color_type(png, pi);
++	bd = png_get_bit_depth(png, pi);
++	il = png_get_interlace_type(png, pi);
++	png_set_expand(png);
++	png_set_strip_16(png);
++	png_set_gray_to_rgb(png);
++	if (!(ct & PNG_COLOR_MASK_ALPHA) && !png_get_valid(png, pi, PNG_INFO_tRNS))
++		png_set_add_alpha(png, 0xff, PNG_FILLER_AFTER);
++	passes = png_set_interlace_handling(png);
++	png_read_update_info(png, pi);
++	rb = png_get_rowbytes(png, pi);
++	snprintf(d, sizeof d, "%lux%lu type %d depth %d interlace %d passes %d rowbytes %lu channels %d",
++	         (unsigned long)w, (unsigned long)h, ct, bd, il, passes, (unsigned long)rb,
++	         png_get_channels(png, pi));
++	info(d);
++	if (rb != (png_size_t)w * 4) {
++		png_destroy_read_struct(&png, &pi, NULL); fclose(f); remove(fn);
++		verdict(n, 0, "rowbytes != width*4");
++		return;
++	}
++	img = calloc(h, rb);
++	for (p = 0; p < passes; p++)
++		for (y = 0; y < h; y++)
++			png_read_row(png, img + y * rb, NULL);
++	png_read_end(png, pi);
++	if (strcmp(name, "P1") == 0) {
++		png_textp t = NULL;
++		int nt = png_get_text(png, pi, &t, NULL);
++		int ok = nt == 1 && strcmp(t[0].key, "Comment") == 0 && strcmp(t[0].text, "NewTOS libtest") == 0;
++		snprintf(d, sizeof d, "png_get_text: %d entr%s, \"%s\"=\"%s\"", nt, nt == 1 ? "y" : "ies",
++		         nt > 0 ? t[0].key : "", nt > 0 ? t[0].text : "");
++		self("P1.tEXt", ok, d);
++	}
++	png_destroy_read_struct(&png, &pi, NULL);
++	fclose(f);
++	remove(fn);
++	result(n, img, (unsigned long)h * rb);
++	free(img);
++}
++
++static void
++test_png_write(void)
++{
++	const png_uint_32 w = 19, h = 13;
++	unsigned char src[19 * 13 * 3], *back = NULL, *file;
++	png_structp png;
++	png_infop pi;
++	png_uint_32 x, y;
++	unsigned long flen;
++	FILE *f;
++	char d[96];
++	const char *fn = "LT_PW.TMP";
++
++	for (y = 0; y < h; y++)
++		for (x = 0; x < w; x++) {
++			src[(y * w + x) * 3 + 0] = (unsigned char)(x * 13 + y);
++			src[(y * w + x) * 3 + 1] = (unsigned char)(y * 19);
++			src[(y * w + x) * 3 + 2] = (unsigned char)((x * y) ^ 0x5a);
++		}
++	f = fopen(fn, "wb");
++	png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, png_quiet);
++	pi = png ? png_create_info_struct(png) : NULL;
++	if (!f || !png || !pi) { verdict("PW.write", 0, "create"); if (f) fclose(f); return; }
++	if (setjmp(png_jmpbuf(png))) {
++		png_destroy_write_struct(&png, &pi);
++		fclose(f);
++		verdict("PW.write", 0, "libpng error (longjmp)");
++		return;
++	}
++	png_init_io(png, f);
++	png_set_IHDR(png, pi, w, h, 8, PNG_COLOR_TYPE_RGB, PNG_INTERLACE_NONE,
++	             PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
++	png_set_filter(png, PNG_FILTER_TYPE_BASE, PNG_ALL_FILTERS);
++	png_write_info(png, pi);
++	for (y = 0; y < h; y++)
++		png_write_row(png, src + y * w * 3);
++	png_write_end(png, pi);
++	png_destroy_write_struct(&png, &pi);
++	fclose(f);
++
++	file = slurp(fn, &flen);
++	if (!file) { verdict("PW.file", 0, "cannot read back"); return; }
++	result("PW.file", file, flen);
++	free(file);
++
++	/* read it back, untransformed RGB8 */
++	f = fopen(fn, "rb");
++	png = png_create_read_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, png_quiet);
++	pi = png ? png_create_info_struct(png) : NULL;
++	if (!f || !png || !pi) { verdict("PW.read", 0, "create"); if (f) fclose(f); return; }
++	if (setjmp(png_jmpbuf(png))) {
++		png_destroy_read_struct(&png, &pi, NULL);
++		fclose(f); free(back);
++		verdict("PW.read", 0, "libpng error (longjmp)");
++		return;
++	}
++	png_init_io(png, f);
++	png_read_info(png, pi);
++	back = malloc(w * h * 3);
++	for (y = 0; y < h; y++)
++		png_read_row(png, back + y * w * 3, NULL);
++	png_read_end(png, pi);
++	png_destroy_read_struct(&png, &pi, NULL);
++	fclose(f);
++	remove(fn);
++	snprintf(d, sizeof d, "%lu-byte PNG", flen);
++	self("PW.write->read==source", memcmp(back, src, sizeof src) == 0, d);
++	free(back);
++}
++
++static void
++test_png(void)
++{
++	char d[96];
++	snprintf(d, sizeof d, "png_get_libpng_ver()=%s PNG_LIBPNG_VER_STRING=%s",
++	         png_get_libpng_ver(NULL), PNG_LIBPNG_VER_STRING);
++	info(d);
++	test_png_file("P1");
++	test_png_file("P2");
++	test_png_file("P3");
++	test_png_file("P4");
++	test_png_file("P5");
++	test_png_file("P6");
++	test_png_write();
++}
++
++/* --------------------------------------------------------------- libjpeg */
++struct jerr { struct jpeg_error_mgr pub; jmp_buf jb; };
++
++static void
++j_errjmp(j_common_ptr c)
++{
++	longjmp(((struct jerr *)c->err)->jb, 1);
++}
++
++static void
++j_quiet(j_common_ptr c, int lvl)
++{
++	(void)c; (void)lvl;
++}
++
++#define M_EXIF (JPEG_APP0 + 1)
++
++static unsigned char *exif_app1;         /* J4's APP1, for the libexif test */
++static unsigned long exif_app1_len;
++
++/* Decode <fn> (or, with mem != NULL, the memory buffer) the way jpgldg.c
++ * does; returns the pixels, sets *n. */
++static unsigned char *
++jpeg_decode(const char *label, FILE *f, const unsigned char *mem, unsigned long mlen,
++            int keep_markers, unsigned long *n, char *d, size_t dl)
++{
++	struct jpeg_decompress_struct cinfo;
++	struct jerr je;
++	unsigned char *img = NULL;
++	JSAMPROW row;
++	unsigned long stride;
++
++	(void)label;
++	cinfo.err = jpeg_std_error(&je.pub);
++	je.pub.error_exit = j_errjmp;
++	je.pub.emit_message = j_quiet;
++	if (setjmp(je.jb)) {
++		jpeg_destroy_decompress(&cinfo);
++		free(img);
++		snprintf(d, dl, "libjpeg error");
++		return NULL;
++	}
++	jpeg_create_decompress(&cinfo);
++	if (mem)
++		jpeg_mem_src(&cinfo, (unsigned char *)mem, mlen);
++	else
++		jpeg_stdio_src(&cinfo, f);
++	if (keep_markers) {
++		jpeg_save_markers(&cinfo, JPEG_COM, 0xffff);
++		jpeg_save_markers(&cinfo, M_EXIF, 0xffff);
++	}
++	jpeg_read_header(&cinfo, TRUE);
++	if (keep_markers) {
++		jpeg_saved_marker_ptr m;
++		int com = 0;
++		for (m = cinfo.marker_list; m; m = m->next) {
++			if (m->marker == JPEG_COM && m->data_length == 22 &&
++			    memcmp(m->data, "NewTOS libtest comment", 22) == 0)
++				com = 1;
++			if (m->marker == M_EXIF && !exif_app1) {
++				exif_app1 = malloc(m->data_length);
++				if (exif_app1) {
++					memcpy(exif_app1, m->data, m->data_length);
++					exif_app1_len = m->data_length;
++				}
++			}
++		}
++		self("J4.COM-marker", com, NULL);
++	}
++	if (cinfo.num_components == 3 || cinfo.jpeg_color_space == JCS_YCbCr)
++		cinfo.out_color_space = JCS_RGB;
++	jpeg_start_decompress(&cinfo);
++	stride = (unsigned long)cinfo.output_width * cinfo.output_components;
++	img = malloc(stride * cinfo.output_height);
++	while (cinfo.output_scanline < cinfo.output_height) {
++		row = img + cinfo.output_scanline * stride;
++		jpeg_read_scanlines(&cinfo, &row, 1);
++	}
++	snprintf(d, dl, "%ux%u x%d %s%s", cinfo.output_width, cinfo.output_height,
++	         cinfo.output_components, cinfo.progressive_mode ? "progressive" : "baseline",
++	         cinfo.arith_code ? " arith" : "");
++	*n = stride * cinfo.output_height;
++	jpeg_finish_decompress(&cinfo);
++	jpeg_destroy_decompress(&cinfo);
++	return img;
++}
++
++static void
++test_jpeg_file(const char *name, int markers)
++{
++	char n[32], d[96];
++	unsigned long len;
++	unsigned char *img;
++	const char *fn = put_file(name);
++	FILE *f = fn ? fopen(fn, "rb") : NULL;
++
++	snprintf(n, sizeof n, "%s.pixels", name);
++	if (!f) { verdict(n, 0, "cannot write/open test file"); return; }
++	img = jpeg_decode(name, f, NULL, 0, markers, &len, d, sizeof d);
++	fclose(f);
++	remove(fn);
++	if (!img) { verdict(n, 0, d); return; }
++	info(d);
++	result(n, img, len);
++	if (strcmp(name, "J1") == 0) {
++		const struct blob *b = blob("J1");
++		unsigned long l2;
++		unsigned char *m = jpeg_decode("J1mem", NULL, b->p, b->len, 0, &l2, d, sizeof d);
++		self("J1.mem_src==stdio_src", m && l2 == len && memcmp(m, img, len) == 0, d);
++		free(m);
++	}
++	free(img);
++}
++
++static void
++test_jpeg_encode(void)
++{
++	struct jpeg_compress_struct cinfo;
++	struct jerr je;
++	const int w = 40, h = 24;
++	unsigned char src[40 * 24 * 3], *file, *img;
++	JSAMPROW row;
++	FILE *f;
++	unsigned long flen, len;
++	int x, y;
++	char d[96];
++	const char *fn = "LT_JE.TMP";
++
++	for (y = 0; y < h; y++)
++		for (x = 0; x < w; x++) {
++			src[(y * w + x) * 3 + 0] = (unsigned char)(x * 6);
++			src[(y * w + x) * 3 + 1] = (unsigned char)(255 - y * 10);
++			src[(y * w + x) * 3 + 2] = (unsigned char)(((x / 8 + y / 8) & 1) ? 200 : 40);
++		}
++	f = fopen(fn, "wb");
++	if (!f) { verdict("JE.file", 0, "cannot create"); return; }
++	cinfo.err = jpeg_std_error(&je.pub);
++	je.pub.error_exit = j_errjmp;
++	je.pub.emit_message = j_quiet;
++	if (setjmp(je.jb)) {
++		jpeg_destroy_compress(&cinfo);
++		fclose(f);
++		verdict("JE.file", 0, "libjpeg error");
++		return;
++	}
++	jpeg_create_compress(&cinfo);
++	jpeg_stdio_dest(&cinfo, f);
++	cinfo.image_width = w;
++	cinfo.image_height = h;
++	cinfo.input_components = 3;
++	cinfo.in_color_space = JCS_RGB;
++	jpeg_set_defaults(&cinfo);
++	jpeg_set_quality(&cinfo, 90, TRUE);
++	jpeg_start_compress(&cinfo, TRUE);
++	while (cinfo.next_scanline < cinfo.image_height) {
++		row = src + cinfo.next_scanline * w * 3;
++		jpeg_write_scanlines(&cinfo, &row, 1);
++	}
++	jpeg_finish_compress(&cinfo);
++	jpeg_destroy_compress(&cinfo);
++	fclose(f);
++
++	file = slurp(fn, &flen);
++	if (!file) { verdict("JE.file", 0, "cannot read back"); return; }
++	result("JE.file", file, flen);
++	free(file);
++	f = fopen(fn, "rb");
++	img = f ? jpeg_decode("JE", f, NULL, 0, 0, &len, d, sizeof d) : NULL;
++	if (f) fclose(f);
++	remove(fn);
++	if (!img) { verdict("JE.pixels", 0, d); return; }
++	result("JE.pixels", img, len);
++	{
++		/* lossy: just a sanity bound on the error */
++		unsigned long i, maxd = 0;
++		for (i = 0; i < len && i < sizeof src; i++) {
++			int e = (int)img[i] - (int)src[i];
++			if (e < 0) e = -e;
++			if ((unsigned long)e > maxd) maxd = e;
++		}
++		snprintf(d, sizeof d, "max |decoded-source| = %lu (bound 64)", maxd);
++		self("JE.decode~source", len == sizeof src && maxd <= 64, d);
++	}
++	free(img);
++}
++
++static void
++test_jpeg(void)
++{
++	char d[64];
++	snprintf(d, sizeof d, "JPEG_LIB_VERSION=%d (%d%c)", JPEG_LIB_VERSION,
++	         JPEG_LIB_VERSION_MAJOR, 'a' + JPEG_LIB_VERSION_MINOR - 1);
++	info(d);
++	test_jpeg_file("J1", 0);
++	test_jpeg_file("J2", 0);
++	test_jpeg_file("J3", 0);
++	test_jpeg_file("J4", 1);
++	test_jpeg_encode();
++}
++
++/* ---------------------------------------------------------------- libexif */
++static void
++test_exif(void)
++{
++	ExifData *ed;
++	int i, l, make_ok = 0;
++	char value[1024 + 256];
++	char *text;
++	size_t tl = 0, cap = 8192;
++	char d[128];
++
++	if (!exif_app1) { verdict("E.app1", 0, "J4 had no APP1 marker"); return; }
++	ed = exif_data_new_from_data(exif_app1, exif_app1_len);
++	if (!ed) { verdict("E.parse", 0, "exif_data_new_from_data == NULL"); return; }
++	text = malloc(cap);
++	text[0] = 0;
++	/* jpgldg.c:379-405, verbatim in substance */
++	for (i = 0; i < EXIF_IFD_COUNT; i++) {
++		ExifContent *content = ed->ifd[i];
++		for (l = 0; l < (int)content->count; l++) {
++			ExifEntry *e = content->entries[l];
++			size_t len;
++			sprintf(value, "%s", exif_tag_get_name(e->tag));
++			strcat(value, ": ");
++			len = strlen(value);
++			exif_entry_get_value(e, &value[len], sizeof(value) - len);
++			if (strcmp(value, "Make: NewTOS") == 0)
++				make_ok = 1;
++			len = strlen(value);
++			if (tl + len + 2 < cap) {
++				memcpy(text + tl, value, len);
++				tl += len;
++				text[tl++] = '\n';
++				text[tl] = 0;
++			}
++			info(value);
++		}
++	}
++	snprintf(d, sizeof d, "\"Make: NewTOS\" %s", make_ok ? "found" : "MISSING");
++	self("E.Make", make_ok, d);
++	result("E.text", (unsigned char *)text, tl);
++	free(text);
++
++	/* the thumbnail: exifData->data, decoded like decompress_thumbnail_image */
++	if (!ed->data || !ed->size) {
++		verdict("E.thumb", 0, "no thumbnail");
++	} else {
++		unsigned long n;
++		unsigned char *img;
++		result("E.thumb", ed->data, ed->size);
++		img = jpeg_decode("thumb", NULL, ed->data, ed->size, 0, &n, d, sizeof d);
++		if (!img)
++			verdict("E.thumb.pixels", 0, d);
++		else
++			result("E.thumb.pixels", img, n);
++		free(img);
++	}
++	exif_data_unref(ed);
++	free(exif_app1);
++	exif_app1 = NULL;
++}
++
++/* ---------------------------------------------------------------- giflib */
++static void
++test_gif_file(const char *name, int want_images, int want_interlace, const char *want_comment)
++{
++	static const int off[] = { 0, 4, 2, 1 }, jmp[] = { 8, 8, 4, 2 };
++	char n[32], d[160];
++	const char *fn = put_file(name);
++	GifFileType *gif;
++	GifRecordType rec;
++	int err = 0, images = 0, ext_gce = 0, comment_ok = want_comment ? 0 : 1, il = -1;
++	unsigned char *first = NULL;
++	unsigned long first_len = 0;
++	ColorMapObject *gct;
++
++	snprintf(n, sizeof n, "%s.index", name);
++	if (!fn) { verdict(n, 0, "cannot write test file"); return; }
++	gif = DGifOpenFileName(fn, &err);
++	if (!gif) {
++		snprintf(d, sizeof d, "DGifOpenFileName error %d (%s)", err, GifErrorString(err));
++		verdict(n, 0, d); remove(fn); return;
++	}
++	gct = gif->SColorMap;
++	do {
++		if (DGifGetRecordType(gif, &rec) == GIF_ERROR) break;
++		if (rec == IMAGE_DESC_RECORD_TYPE) {
++			int W, H, row, col, i, j;
++			unsigned char *buf;
++			if (DGifGetImageDesc(gif) == GIF_ERROR) break;
++			W = gif->Image.Width; H = gif->Image.Height;
++			row = gif->Image.Top; col = gif->Image.Left;
++			buf = calloc((size_t)W * H, 1);
++			if (!buf) break;
++			if (images == 0) il = gif->Image.Interlace ? 1 : 0;
++			if (gif->Image.Interlace) {
++				for (i = 0; i < 4; i++)
++					for (j = off[i]; j < H; j += jmp[i])
++						if (DGifGetLine(gif, buf + (size_t)j * W, W) != GIF_OK) goto bad;
++			} else {
++				for (j = 0; j < H; j++)
++					if (DGifGetLine(gif, buf + (size_t)j * W, W) != GIF_OK) goto bad;
++			}
++			(void)row; (void)col;
++			if (images == 0) { first = buf; first_len = (unsigned long)W * H; }
++			else free(buf);
++			images++;
++			continue;
++bad:
++			free(buf);
++			break;
++		} else if (rec == EXTENSION_RECORD_TYPE) {
++			int code;
++			GifByteType *block;
++			if (DGifGetExtension(gif, &code, &block) == GIF_ERROR) break;
++			if (code == GRAPHICS_EXT_FUNC_CODE) ext_gce++;
++			if (code == COMMENT_EXT_FUNC_CODE && want_comment && block &&
++			    block[0] == strlen(want_comment) &&
++			    memcmp(block + 1, want_comment, block[0]) == 0)
++				comment_ok = 1;
++			while (block) {
++				if (DGifGetExtensionNext(gif, &block) == GIF_ERROR) { block = NULL; break; }
++			}
++		}
++	} while (rec != TERMINATE_RECORD_TYPE);
++	snprintf(d, sizeof d, "images %d (want %d), interlace %d (want %d), GCE %d, comment %s, last error %d",
++	         images, want_images, il, want_interlace, ext_gce,
++	         want_comment ? (comment_ok ? "ok" : "MISSING") : "-", gif->Error);
++	self(name, rec == TERMINATE_RECORD_TYPE && images == want_images && il == want_interlace &&
++	     comment_ok, d);
++	if (first)
++		result(n, first, first_len);
++	else
++		verdict(n, 0, "no image decoded");
++	snprintf(n, sizeof n, "%s.gct", name);
++	if (gct) {
++		unsigned char cm[256 * 3];
++		int i;
++		for (i = 0; i < gct->ColorCount && i < 256; i++) {
++			cm[i * 3 + 0] = gct->Colors[i].Red;
++			cm[i * 3 + 1] = gct->Colors[i].Green;
++			cm[i * 3 + 2] = gct->Colors[i].Blue;
++		}
++		result(n, cm, (unsigned long)i * 3);
++	} else {
++		verdict(n, 0, "no global colour table");
++	}
++	DGifCloseFile(gif, &err);
++	free(first);
++	remove(fn);
++}
++
++static void
++test_gif(void)
++{
++	char d[64];
++	snprintf(d, sizeof d, "GIFLIB %d.%d.%d", GIFLIB_MAJOR, GIFLIB_MINOR, GIFLIB_RELEASE);
++	info(d);
++	test_gif_file("G1", 1, 0, NULL);
++	test_gif_file("G2", 1, 1, "NewTOS gif");
++	test_gif_file("G3", 2, 0, NULL);
++}
++
++int
++main(void)
++{
++	char d[64];
++#ifdef LIBTEST_EMIT
++	out("/* libtest-ref.h -- GENERATED by make-ref.sh (TASK/LDG-M2). Do not edit.\n"
++	    " * Results of libtest.c built for the HOST against the same pinned library\n"
++	    " * sources; the target build must reproduce them bit for bit. */\n"
++	    "static const struct ref host_refs[] = {\n");
++#else
++	out("libtest: start (zlib, libpng, libjpeg, giflib, libexif)\r\n");
++#endif
++	test_zlib();
++	test_png();
++	test_jpeg();
++	test_exif();
++	test_gif();
++#ifdef LIBTEST_EMIT
++	out("  { 0, 0, 0 }\n};\n");
++	snprintf(d, sizeof d, "/* %u results, %u failures while generating */\n", checks, failed);
++	out(d);
++	return failed != 0;
++#else
++	if (failed == 0)
++		snprintf(d, sizeof d, "libtest: ALL PASS (%u checks)\r\n", checks);
++	else
++		snprintf(d, sizeof d, "libtest: FAIL (%u of %u checks failed)\r\n", failed, checks);
++	out(d);
++	return failed != 0;
++#endif
++}
+--- /dev/null
++++ b/sdk/examples/libtest/make-ref.sh
+@@ -0,0 +1,92 @@
++#!/usr/bin/env bash
++#
++# make-ref.sh -- host side of LIBTEST (TASK/LDG-M2): build the SAME pinned
++# library sources (zlib, libpng, libjpeg, giflib, libexif -- the trees the
++# target build scripts extracted, with the same overlay/config headers and
++# the same per-library source lists, read from their build/compiled.txt) with
++# the host compiler, then build libtest.c for the host and
++#
++#   make-ref.sh            regenerate libtest-ref.h (host_refs[]): libtest.c
++#                          with -DLIBTEST_EMIT prints every result; a result
++#                          that disagrees with a Python reference
++#                          (libtest-data.h) or a failing self-check aborts --
++#                          a host defect must not become a reference.
++#   make-ref.sh --check    regenerate into a temp file and require it to be
++#                          identical to the committed libtest-ref.h, then run
++#                          the normal (non-emit) host libtest against both
++#                          reference tables. Exit 0 = pass. This is the SDK
++#                          host test (sdk/run-host-tests.sh runs it).
++#
++# Why a host build is the reference for JPEG: see gen-data.py (Pillow decodes
++# with libjpeg-turbo, which upsamples chroma differently from IJG 9). For the
++# lossless formats the host build is a second reference next to Python's.
++# The host should be LP64 little-endian (macOS/arm64 here; on arm64 libpng's
++# NEON filters are compiled on both sides, as on the target).
++#
++# Requires: the five target libraries built once (this script runs lib_ensure
++# for them, which extracts the trees), a host cc. Scratch objects go to
++# sdk/examples/libtest/build/host (gitignored).
++set -uo pipefail
++
++HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++SDK="$(cd "$HERE/../.." && pwd)"
++CC="${CC:-cc}"
++MODE="${1:-}"
++OUT="$HERE/build/host"
++mkdir -p "$OUT"
++
++. "$SDK/lib-stale.sh"
++for l in zlib libpng libjpeg giflib libexif; do lib_ensure "$l" >&2 || exit 1; done
++
++ZTOP="$SDK/zlib/zlib-1.3.2"
++PTOP="$SDK/libpng/libpng-1.6.59"
++JTOP="$SDK/libjpeg/jpeg-9f"
++GTOP="$SDK/giflib/giflib-6.1.3"
++ETOP="$SDK/libexif/libexif-0.6.26"
++
++hostlib() { # hostlib <name> <top> <compiled.txt> <cflags...>
++  local name=$1 top=$2 list=$3; shift 3
++  local d="$OUT/$name" c o
++  rm -rf "$d"; mkdir -p "$d"
++  [ -s "$list" ] || { echo "error: $list missing/empty (target build of $name did not run)" >&2; return 1; }
++  while IFS= read -r c; do
++    o="$d/$(printf '%s' "${c%.c}" | tr '/' '_').o"
++    "$CC" -O2 -w "$@" -c "$top/$c" -o "$o" || { echo "error: host compile of $name/$c failed" >&2; return 1; }
++  done < "$list"
++  rm -f "$OUT/lib$name.a"
++  ar cr "$OUT/lib$name.a" "$d"/*.o || return 1
++}
++
++hostlib z    "$ZTOP" "$SDK/zlib/build/compiled.txt"    -I"$ZTOP"                     || exit 1
++hostlib png  "$PTOP" "$SDK/libpng/build/compiled.txt"  -I"$PTOP" -I"$ZTOP"           || exit 1
++hostlib jpeg "$JTOP" "$SDK/libjpeg/build/compiled.txt" -I"$JTOP"                     || exit 1
++hostlib gif  "$GTOP" "$SDK/giflib/build/compiled.txt"  -std=gnu99 -I"$GTOP"          || exit 1
++hostlib exif "$ETOP" "$SDK/libexif/build/compiled.txt" -I"$ETOP"                     || exit 1
++
++INCS=(-I"$HERE" -I"$ZTOP" -I"$PTOP" -I"$JTOP" -I"$GTOP" -I"$ETOP")
++LIBS=("$OUT/libpng.a" "$OUT/libz.a" "$OUT/libjpeg.a" "$OUT/libgif.a" "$OUT/libexif.a" -lm)
++
++"$CC" -O2 -Wall -DLIBTEST_HOST -DLIBTEST_EMIT "${INCS[@]}" "$HERE/libtest.c" "${LIBS[@]}" \
++      -o "$OUT/libtest-emit" || exit 1
++( cd "$OUT" && ./libtest-emit ) > "$OUT/libtest-ref.h"; rc=$?
++if [ $rc -ne 0 ]; then
++  echo "error: host reference run reported failures (see the FAIL comments):" >&2
++  grep FAIL "$OUT/libtest-ref.h" >&2
++  exit 1
++fi
++
++if [ "$MODE" = "--check" ]; then
++  if ! cmp -s "$OUT/libtest-ref.h" "$HERE/libtest-ref.h"; then
++    echo "FAIL: host references differ from the committed libtest-ref.h:" >&2
++    diff "$HERE/libtest-ref.h" "$OUT/libtest-ref.h" >&2
++    exit 1
++  fi
++  "$CC" -O2 -Wall -DLIBTEST_HOST "${INCS[@]}" "$HERE/libtest.c" "${LIBS[@]}" -o "$OUT/libtest" || exit 1
++  ( cd "$OUT" && ./libtest ) > "$OUT/libtest.log"; rc=$?
++  tail -1 "$OUT/libtest.log"
++  [ $rc -eq 0 ] || { grep FAIL "$OUT/libtest.log" >&2; exit 1; }
++  exit 0
++fi
++
++cp "$OUT/libtest-ref.h" "$HERE/libtest-ref.h"
++echo "wrote $HERE/libtest-ref.h ($(grep -c '^  { "' "$HERE/libtest-ref.h") host references)"
+--- /dev/null
++++ b/sdk/giflib/build-giflib.sh
+@@ -0,0 +1,58 @@
++#!/usr/bin/env bash
++#
++# build-giflib.sh -- build giflib (Eric S. Raymond et al., MIT license) into a
++# NewTOS/AArch64 static library sdk/giflib/libgif.a (TASK/LDG-M2). Needed by
++# zView's GIF codec (plugins/gif/Makefile: -lgif; gifldg.c uses the giflib 5
++# decoder API: DGifOpenFileName(name, &err), DGifGetRecordType,
++# DGifGetImageDesc, DGifGetLine, DGifGetExtension/-Next,
++# DGifCloseFile(gif, &err) -- the two-argument forms exist since giflib 5.1).
++#
++# SOURCE PIN: sdk/giflib/giflib-6.1.3.tar.gz, upstream release (origin and
++# hashes in giflib-sources.sha256). giflib 6 changed only EGifSpew()'s
++# signature (NEWS, "Version 6.1.1"), which the codec does not call; the
++# decoder entry points above are identical to 5.1/5.2 (gif_lib.h).
++#
++# What is compiled: giflib's own Makefile SOURCES list
++#   dgif_lib.c egif_lib.c gifalloc.c gif_err.c gif_font.c gif_hash.c
++#   openbsd-reallocarray.c quantize.c
++# with giflib's own CFLAGS (-std=gnu99 -Wall -O2; -fPIC there is for its
++# shared library, the SDK's -fPIE replaces it). HAVE_REALLOCARRAY is NOT
++# defined: mintlib has no reallocarray(), so giflib's bundled
++# openbsd-reallocarray.c is used, which is the Makefile's default. All
++# sources unmodified; no overlay.
++#
++# Usage:  sdk/giflib/build-giflib.sh    (GIFLIB_REFRESH=1 forces a re-extract)
++# Output: sdk/giflib/libgif.a; headers for programs: -I sdk/giflib/giflib-6.1.3
++#         (gif_lib.h)
++set -uo pipefail
++
++SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
++LIBDIR="$SDK/giflib"
++VER="6.1.3"
++TOP="$LIBDIR/giflib-$VER"
++BUILD="$LIBDIR/build"
++OUT="$LIBDIR/libgif.a"
++mkdir -p "$BUILD"
++
++. "$SDK/lib-stale.sh"
++. "$SDK/vendor-lib.sh"
++lib_ensure libc || exit 1
++MINT="$SDK/libc/mintlib/include"
++[ -d "$MINT" ] || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
++
++vl_extract "$LIBDIR/giflib-$VER.tar.gz" "$LIBDIR/giflib-sources.sha256" "$TOP" "giflib-$VER" "${GIFLIB_REFRESH:-0}" || exit 1
++vl_overlay "$LIBDIR/overlay" "$TOP" || exit 1
++
++vl_toolchain || exit 1
++
++# Source list read from giflib's own Makefile (SOURCES, continuation lines).
++srcs="$(awk '/^SOURCES = /{f=1} f{print; if ($0 !~ /\\$/) exit}' "$TOP/Makefile" \
++        | sed -e 's/^SOURCES = //' | tr ' \t\\' '\n\n\n' | grep '\.c$')"
++[ -n "$srcs" ] || { echo "error: could not read SOURCES from $TOP/Makefile" >&2; exit 1; }
++SRCS=()
++for c in $srcs; do SRCS[${#SRCS[@]}]="$c"; done
++
++LIB_CFLAGS=(-std=gnu99 -Wall)
++LIB_INCS=(-I"$TOP" -I"$MINT")
++vl_compile "$TOP" "$BUILD/obj" "${SRCS[@]}" || exit 1
++vl_archive "$OUT" "$BUILD/obj" "$BUILD" || exit 1
+--- /dev/null
++++ b/sdk/giflib/giflib-sources.sha256
+@@ -0,0 +1,8 @@
++# giflib source pin for sdk/giflib/build-giflib.sh (TASK/LDG-M2).
++#
++# giflib-6.1.3.tar.gz = upstream release (2026-04-12), downloaded unchanged on
++#   2026-10-06 from https://download.sourceforge.net/giflib/giflib-6.1.3.tar.gz
++#   Its SHA-1 5bc9aa3e5188d1828b5df8aed81720273952b2d4 matches the one
++#   SourceForge lists for giflib-6.x/giflib-6.1.3.tar.gz.
++# License: MIT (giflib-6.1.3/COPYING).
++b65b66b99f0424b93525f987386f22fc5efb9da2bfc92ad4a532249aaffbab0e  giflib-6.1.3.tar.gz
+--- /dev/null
++++ b/sdk/libexif/build-libexif.sh
+@@ -0,0 +1,82 @@
++#!/usr/bin/env bash
++#
++# build-libexif.sh -- build libexif (Lutz Mueller et al., LGPL 2.1 or later)
++# into a NewTOS/AArch64 static library sdk/libexif/libexif.a (TASK/LDG-M2).
++# Needed by zView's JPEG codec (plugins/jpg/Makefile: -ljpeg -lexif -lm;
++# jpgldg.c:374-458 parses the APP1 marker with exif_data_new_from_data,
++# walks the entries and formats them with exif_tag_get_name /
++# exif_entry_get_value for the image-info text, exif_data_unref).
++#
++# SOURCE PIN: sdk/libexif/libexif-0.6.26.tar.xz, upstream release (origin,
++# signature check and hashes in libexif-sources.sha256). The four calls the
++# codec makes have been stable since 0.6.x; 0.6.26 is the current release.
++#
++# What is compiled: libexif's own lists, libexif/Makefile.am
++#   libexif_la_SOURCES (exif-byte-order.c ... exif-gps-ifd.c)
++#   + the four maker-note convenience libraries it links in, from
++#     canon/ fuji/ olympus/ pentax/ Makefile-files (libmnote-*_la_SOURCES)
++#   (apple/ is NOT built upstream either: Makefile.am comments its include
++#   out, "apple makernote currently cannot save itself").
++# Flags: libexif's own warning set (configure.ac:288, GCC branch:
++# -Wall -Wmissing-declarations -Wmissing-prototypes) and its include dirs
++# (top_srcdir, top_builddir). All sources unmodified.
++#
++# Overlay (sdk/libexif/overlay/):
++#   config.h   configure's output for this target, written by hand from
++#              config.h.in, every answer commented (no NLS, localtime_r, ...)
++#
++# libexif calls sqrt/pow/fabs (exif-entry.c: rational formatting), so it is
++# compiled against OpenLibm's math.h and programs link libm.a.
++#
++# Usage:  sdk/libexif/build-libexif.sh   (LIBEXIF_REFRESH=1 forces a re-extract)
++# Output: sdk/libexif/libexif.a; headers for programs:
++#         -I sdk/libexif/libexif-0.6.26 (#include <libexif/exif-data.h>)
++#         link: libexif.a libm.a libc.a
++set -uo pipefail
++
++SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
++LIBDIR="$SDK/libexif"
++VER="0.6.26"
++TOP="$LIBDIR/libexif-$VER"
++BUILD="$LIBDIR/build"
++OUT="$LIBDIR/libexif.a"
++mkdir -p "$BUILD"
++
++. "$SDK/lib-stale.sh"
++. "$SDK/vendor-lib.sh"
++lib_ensure libm || exit 1
++MINT="$SDK/libc/mintlib/include"
++LIBMTOP="$SDK/libm/openlibm-0.8.8"
++for d in "$MINT" "$LIBMTOP"; do
++  [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
++done
++
++vl_extract "$LIBDIR/libexif-$VER.tar.xz" "$LIBDIR/libexif-sources.sha256" "$TOP" "libexif-$VER" "${LIBEXIF_REFRESH:-0}" || exit 1
++vl_overlay "$LIBDIR/overlay" "$TOP" || exit 1
++
++vl_toolchain || exit 1
++
++# Source lists read from libexif's own automake files (see header). Paths in
++# libexif/Makefile.am are relative to libexif/.
++am_list() { # am_list <file> <variable>  -- .c entries of a (continued) variable
++  awk -v v="$2" '$0 ~ "^"v"[[:space:]]*=" {f=1} f{print; if ($0 !~ /\\$/) exit}' "$1" \
++    | sed -e "s/^$2[[:space:]]*=//" | tr ' \t\\' '\n\n\n' | grep '\.c$'
++}
++main="$(am_list "$TOP/libexif/Makefile.am" libexif_la_SOURCES)"
++mnote=""
++for m in canon fuji olympus pentax; do
++  mnote="$mnote $(am_list "$TOP/libexif/$m/Makefile-files" "libmnote_${m}_la_SOURCES")"
++done
++[ -n "$main" ] && [ -n "$(echo $mnote)" ] || { echo "error: could not read the source lists from $TOP/libexif" >&2; exit 1; }
++SRCS=()
++for c in $main $mnote; do SRCS[${#SRCS[@]}]="libexif/$c"; done
++
++# One upstream warning remains and is left visible on purpose: exif-entry.c
++# :1243/1267/1280 -Wswitch "case value not in enumerated type 'ExifTag'" --
++# the GPS tags are plain #defines (exif-tag.h:176-183) whose values are not
++# ExifTag enumerators; the switch still compares the integer tag number, so
++# it behaves as written. Upstream source, not changed here.
++LIB_CFLAGS=(-Wall -Wmissing-declarations -Wmissing-prototypes)
++LIB_INCS=(-I"$TOP" -I"$MINT" -I"$SDK/libm/include" -I"$LIBMTOP/include")
++vl_compile "$TOP" "$BUILD/obj" "${SRCS[@]}" || exit 1
++vl_archive "$OUT" "$BUILD/obj" "$BUILD" || exit 1
+--- /dev/null
++++ b/sdk/libexif/libexif-sources.sha256
+@@ -0,0 +1,12 @@
++# libexif source pin for sdk/libexif/build-libexif.sh (TASK/LDG-M2).
++#
++# libexif-0.6.26.tar.xz = upstream release, downloaded unchanged on 2026-10-06
++#   from https://github.com/libexif/libexif/releases/download/v0.6.26/libexif-0.6.26.tar.xz
++# libexif-0.6.26.tar.xz.asc = its detached signature from the same release.
++#   Checked 2026-10-06: "good signature" from Marcus Meissner
++#   <meissner@suse.de>, key 7C4AFD61D8AAE7570796A5172209D6902F969C95 (key
++#   fetched from keyserver.ubuntu.com; not web-of-trust certified).
++# License: LGPL 2.1 or later (libexif-0.6.26/COPYING; SPDX headers say
++#   LGPL-2.0-or-later).
++4a055ed6575e61ca46c3172be3c753cc16c9becd0f99ec71d58dd0e471476c0c  libexif-0.6.26.tar.xz
++d6e5398949eaac7182f4dd25e6aed653fc646253d77eddf3b0a09852cec47a42  libexif-0.6.26.tar.xz.asc
+--- /dev/null
++++ b/sdk/libexif/overlay/config.h
+@@ -0,0 +1,65 @@
++/* config.h for libexif 0.6.26 on NewTOS/AArch64 (TASK/LDG-M2).
++ *
++ * WHY THIS FILE EXISTS: libexif's config.h is not part of the release; its
++ * ./configure writes it from config.h.in (AC_CONFIG_HEADERS, configure.ac:13).
++ * We do not run configure for a freestanding cross target, so this is
++ * config.h.in with every answer filled in for aarch64-unknown-none-elf +
++ * mintlib, each with its reason. The library sources stay unmodified.
++ * Only ENABLE_NLS, GETTEXT_PACKAGE and HAVE_LOCALTIME_R/_S are read by the
++ * library sources (grep over libexif/); the rest is kept so the file is a
++ * complete config.h.
++ */
++
++/* No gettext: libexif's i18n.h then maps _(), dgettext() and
++ * bindtextdomain() to the untranslated strings (English tag names/values --
++ * what zView's JPEG codec shows in its info window). */
++/* #undef ENABLE_NLS */
++
++/* configure.ac:252 GP_GETTEXT_HACK([${PACKAGE}-${LIBEXIF_CURRENT_MIN}]) with
++ * LIBEXIF_CURRENT=15, LIBEXIF_AGE=3 (configure.ac:66-72). Without NLS it is
++ * only the (discarded) first argument of bindtextdomain(), but it must be
++ * defined for exif-tag.c & co. to compile. */
++#define GETTEXT_PACKAGE "libexif-12"
++
++/* mintlib declares and implements localtime_r() (time.h:202, in libc.a);
++ * exif-entry.c:1723 prefers it to localtime(). localtime_s is Windows. */
++#define HAVE_LOCALTIME_R 1
++/* #undef HAVE_LOCALTIME_S */
++
++/* Standard headers mintlib provides. */
++#define HAVE_INTTYPES_H 1
++#define HAVE_STDINT_H 1
++#define HAVE_STDIO_H 1
++#define HAVE_STDLIB_H 1
++#define HAVE_STRINGS_H 1
++#define HAVE_STRING_H 1
++#define HAVE_SYS_STAT_H 1
++#define HAVE_SYS_TYPES_H 1
++#define HAVE_UNISTD_H 1
++#define STDC_HEADERS 1
++
++/* Not available / not applicable on NewTOS. */
++/* #undef HAVE_CFLOCALECOPYCURRENT */
++/* #undef HAVE_CFPREFERENCESCOPYAPPVALUE */
++/* #undef HAVE_DCGETTEXT */
++/* #undef HAVE_DLFCN_H */
++/* #undef HAVE_GETTEXT */
++/* #undef HAVE_ICONV */
++/* #undef ICONV_CONST */
++
++/* AC_INIT, configure.ac:7-11. */
++#define PACKAGE "libexif"
++#define PACKAGE_BUGREPORT "libexif-devel@lists.sourceforge.net"
++#define PACKAGE_NAME "EXIF library"
++#define PACKAGE_STRING "EXIF library 0.6.26"
++#define PACKAGE_TARNAME "libexif"
++#define PACKAGE_URL "https://libexif.github.io/"
++#define PACKAGE_VERSION "0.6.26"
++#define VERSION "0.6.26"
++
++/* #undef LT_OBJDIR */
++/* #undef _FILE_OFFSET_BITS */
++/* #undef _LARGE_FILES */
++/* #undef _TIME_BITS */
++/* #undef __MINGW_USE_VC2005_COMPAT */
++/* "inline" is a keyword for clang in the C dialect used; no remap. */
+--- /dev/null
++++ b/sdk/libjpeg/build-libjpeg.sh
+@@ -0,0 +1,63 @@
++#!/usr/bin/env bash
++#
++# build-libjpeg.sh -- build the Independent JPEG Group's libjpeg (IJG
++# license) into a NewTOS/AArch64 static library sdk/libjpeg/libjpeg.a
++# (TASK/LDG-M2). Needed by zView's JPEG codec (plugins/jpg/Makefile: -ljpeg
++# -lexif -lm; jpgldg.c decodes through jpeg_stdio_src and its own source
++# manager, saves COM/APP1 markers for EXIF, and encodes through
++# jpeg_stdio_dest). plugins/libs.txt names http://www.ijg.org/ as the source.
++#
++# SOURCE PIN: sdk/libjpeg/jpegsrc.v9f.tar.gz, IJG release 9f (origin and hash
++# in libjpeg-sources.sha256). The codec uses only the classic v6b-era API, so
++# any IJG release fits; 9f is the current one.
++#
++# What is compiled: IJG's own library list, Makefile.am
++#   LIBSOURCES = jaricom.c ... jmemmgr.c @MEMORYMGR@.c
++# with @MEMORYMGR@ = jmemnobs (configure.ac: "If no -enable-maxmem, use
++# jmemnobs" -- malloc/free, no temporary files). All sources unmodified.
++#
++# Overlay (sdk/libjpeg/overlay/):
++#   jconfig.h   configure's output for this target, written by hand from
++#               jconfig.cfg, every answer commented (CHAR_IS_UNSIGNED on
++#               AArch64, jmemnobs, ...)
++#
++# Usage:  sdk/libjpeg/build-libjpeg.sh   (LIBJPEG_REFRESH=1 forces a re-extract)
++# Output: sdk/libjpeg/libjpeg.a; headers for programs: -I sdk/libjpeg/jpeg-9f
++#         (jpeglib.h, jconfig.h, jmorecfg.h, jerror.h); programs include
++#         <stdio.h> before <jpeglib.h> (IJG rule)
++set -uo pipefail
++
++SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
++LIBDIR="$SDK/libjpeg"
++VER="9f"
++TOP="$LIBDIR/jpeg-$VER"
++BUILD="$LIBDIR/build"
++OUT="$LIBDIR/libjpeg.a"
++mkdir -p "$BUILD"
++
++. "$SDK/lib-stale.sh"
++. "$SDK/vendor-lib.sh"
++lib_ensure libc || exit 1
++MINT="$SDK/libc/mintlib/include"
++[ -d "$MINT" ] || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
++
++vl_extract "$LIBDIR/jpegsrc.v$VER.tar.gz" "$LIBDIR/libjpeg-sources.sha256" "$TOP" "jpeg-$VER" "${LIBJPEG_REFRESH:-0}" || exit 1
++vl_overlay "$LIBDIR/overlay" "$TOP" || exit 1
++
++vl_toolchain || exit 1
++
++# Source list read from IJG's own Makefile.am (LIBSOURCES, continuation lines),
++# @MEMORYMGR@ resolved to configure's default.
++srcs="$(awk '/^LIBSOURCES = /{f=1} f{print; if ($0 !~ /\\$/) exit}' "$TOP/Makefile.am" \
++        | sed -e 's/^LIBSOURCES = //' -e 's/@MEMORYMGR@/jmemnobs/' | tr ' \t\\' '\n\n\n' | grep '\.c$')"
++[ -n "$srcs" ] || { echo "error: could not read LIBSOURCES from $TOP/Makefile.am" >&2; exit 1; }
++SRCS=()
++for c in $srcs; do SRCS[${#SRCS[@]}]="$c"; done
++
++# -Wall, not -W -Wall: IJG's own build sets no warning flags at all, and -W
++# adds only -Wunused-parameter (42 hits, all the IJG method-table signatures
++# whose implementations ignore an argument, e.g. jmemnobs.c). -Wall is clean.
++LIB_CFLAGS=(-Wall)
++LIB_INCS=(-I"$TOP" -I"$MINT")
++vl_compile "$TOP" "$BUILD/obj" "${SRCS[@]}" || exit 1
++vl_archive "$OUT" "$BUILD/obj" "$BUILD" || exit 1
+--- /dev/null
++++ b/sdk/libjpeg/libjpeg-sources.sha256
+@@ -0,0 +1,7 @@
++# libjpeg (IJG) source pin for sdk/libjpeg/build-libjpeg.sh (TASK/LDG-M2).
++#
++# jpegsrc.v9f.tar.gz = IJG release 9f (14-Jan-2024), downloaded unchanged on
++#   2026-10-06 from https://www.ijg.org/files/jpegsrc.v9f.tar.gz . IJG
++#   publishes neither a signature nor a checksum; this hash is the pin.
++# License: the IJG license (jpeg-9f/README, "LEGAL ISSUES").
++04705c110cb2469caa79fb71fba3d7bf834914706e9641a4589485c1f832565b  jpegsrc.v9f.tar.gz
+--- /dev/null
++++ b/sdk/libjpeg/overlay/jconfig.h
+@@ -0,0 +1,62 @@
++/* jconfig.h for NewTOS/AArch64 (TASK/LDG-M2).
++ *
++ * WHY THIS FILE EXISTS: IJG's jconfig.h is not part of the release; it is
++ * written by ./configure from jconfig.cfg (or copied by hand from one of the
++ * jconfig.* templates, see install.txt). We do not run configure for a
++ * freestanding cross target, so this is jconfig.cfg with every answer filled
++ * in for aarch64-unknown-none-elf + mintlib, each one stated with its reason.
++ * The library sources stay unmodified.
++ */
++
++#define HAVE_PROTOTYPES         /* ISO C compiler */
++#define HAVE_UNSIGNED_CHAR
++#define HAVE_UNSIGNED_SHORT
++/* #undef void */
++/* #undef const */
++
++/* Plain char is UNSIGNED on AArch64 (AAPCS64; clang defines
++ * __CHAR_UNSIGNED__ for aarch64-unknown-none-elf). configure's test program
++ * would find the same. It only matters when HAVE_UNSIGNED_CHAR is NOT defined
++ * (jmorecfg.h:72-79, 165-174, 186-194); with HAVE_UNSIGNED_CHAR, as here,
++ * JSAMPLE/JOCTET/UINT8 are unsigned char either way. Set for accuracy. */
++#define CHAR_IS_UNSIGNED
++
++#define HAVE_STDDEF_H           /* mintlib has <stddef.h> (via clang's) */
++#define HAVE_STDLIB_H           /* mintlib <stdlib.h>, declares getenv() */
++/* #undef HAVE_LOCALE_H */      /* used by cjpeg/djpeg only, not the library */
++/* #undef NEED_BSD_STRINGS */   /* mintlib has <string.h> with memcpy/memset */
++/* #undef NEED_SYS_TYPES_H */   /* size_t comes from <stddef.h> */
++/* #undef NEED_FAR_POINTERS */  /* flat 64-bit address space */
++/* #undef NEED_SHORT_EXTERNAL_NAMES */
++/* #undef INCOMPLETE_TYPES_BROKEN */
++
++/* "boolean" stays jmorecfg.h's default (int); the _WIN32 block of
++ * jconfig.cfg does not apply. */
++
++#ifdef JPEG_INTERNALS
++
++/* >> on a negative signed value is arithmetic on AArch64 (ASR); clang
++ * guarantees it. */
++/* #undef RIGHT_SHIFT_IS_UNSIGNED */
++/* #undef INLINE */             /* jmorecfg.h's default */
++/* Memory manager: jmemnobs.c (configure's default without --enable-maxmem,
++ * configure.ac "MEMORYMGR='jmemnobs'"): plain malloc/free, no temp files.
++ * DEFAULT_MAX_MEM / NO_MKTEMP only matter for jmemansi/jmemname. */
++/* #undef DEFAULT_MAX_MEM */
++/* #undef NO_MKTEMP */
++
++#endif /* JPEG_INTERNALS */
++
++#ifdef JPEG_CJPEG_DJPEG
++/* The command-line tools are not built for NewTOS; jconfig.cfg's defaults are
++ * kept so that the file is a complete jconfig.h. */
++#define BMP_SUPPORTED
++#define GIF_SUPPORTED
++#define PPM_SUPPORTED
++/* #undef RLE_SUPPORTED */
++#define TARGA_SUPPORTED
++/* #undef TWO_FILE_COMMANDLINE */
++/* #undef NEED_SIGNAL_CATCHER */
++/* #undef DONT_USE_B_MODE */
++/* #undef PROGRESS_REPORT */
++#endif /* JPEG_CJPEG_DJPEG */
+--- /dev/null
++++ b/sdk/libpng/build-libpng.sh
+@@ -0,0 +1,85 @@
++#!/usr/bin/env bash
++#
++# build-libpng.sh -- build libpng (PNG Reference Library License v2) into a
++# NewTOS/AArch64 static library sdk/libpng/libpng.a (TASK/LDG-M2). Needed by
++# zView's PNG codec (plugins/png/Makefile: -lpng -lm -lz; pngldg.c uses the
++# classic read API: png_create_read_struct, png_init_io, png_read_info,
++# png_set_expand/strip_16/gray_to_rgb/interlace_handling, png_read_row,
++# png_get_text) and by zView itself (zview/Makefile: -lpng -lz).
++#
++# SOURCE PIN: sdk/libpng/libpng-1.6.59.tar.xz, upstream release (origin and
++# hashes in libpng-sources.sha256). Any libpng 1.6 provides the API the codec
++# uses; 1.6.59 is the current release.
++#
++# What is compiled: libpng's own source list, Makefile.am
++#   libpng16_la_SOURCES = png.c pngerror.c pngget.c pngmem.c pngpread.c
++#     pngread.c pngrio.c pngrtran.c pngrutil.c pngset.c pngtrans.c pngwio.c
++#     pngwrite.c pngwtran.c pngwutil.c
++#   + (if PNG_ARM_NEON) arm/arm_init.c arm/filter_neon_intrinsics.c
++#     arm/palette_neon_intrinsics.c
++# The NEON part is upstream's DEFAULT on AArch64: pngpriv.h sets
++# PNG_ARM_NEON_OPT=2 (compile-time on, no run-time CPU check -- arm_init.c
++# forbids PNG_ARM_NEON_CHECK_SUPPORTED on ARM64) when __ARM_NEON is defined,
++# which clang does for aarch64-unknown-none-elf. EL0 programs use FP/SIMD
++# already (libm), so nothing is switched off here.
++#
++# pnglibconf.h is upstream's scripts/pnglibconf.h.prebuilt, copied unchanged
++# -- the step INSTALL ("cp scripts/pnglibconf.h.prebuilt pnglibconf.h")
++# prescribes for builds without configure. It enables the full default
++# feature set incl. STDIO (png_init_io) and SETJMP (png_jmpbuf), both of
++# which the codec uses and mintlib provides. All sources unmodified; no
++# overlay.
++#
++# Usage:  sdk/libpng/build-libpng.sh     (LIBPNG_REFRESH=1 forces a re-extract)
++# Output: sdk/libpng/libpng.a; headers for programs:
++#         -I sdk/libpng/libpng-1.6.59 (png.h, pngconf.h, pnglibconf.h)
++#         -I sdk/zlib/zlib-1.3.2      (png.h includes zlib.h)
++#         (libpng itself is compiled against OpenLibm's math.h as well)
++#         link: libpng.a libz.a libm.a libc.a
++set -uo pipefail
++
++SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
++LIBDIR="$SDK/libpng"
++VER="1.6.59"
++TOP="$LIBDIR/libpng-$VER"
++ZTOP="$SDK/zlib/zlib-1.3.2"
++BUILD="$LIBDIR/build"
++OUT="$LIBDIR/libpng.a"
++mkdir -p "$BUILD"
++
++. "$SDK/lib-stale.sh"
++. "$SDK/vendor-lib.sh"
++lib_ensure zlib || exit 1
++lib_ensure libm || exit 1          # pngpriv.h includes <math.h> (floating-point gamma)
++MINT="$SDK/libc/mintlib/include"
++LIBMTOP="$SDK/libm/openlibm-0.8.8"
++for d in "$MINT" "$ZTOP" "$LIBMTOP"; do
++  [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
++done
++
++vl_extract "$LIBDIR/libpng-$VER.tar.xz" "$LIBDIR/libpng-sources.sha256" "$TOP" "libpng-$VER" "${LIBPNG_REFRESH:-0}" || exit 1
++vl_overlay "$LIBDIR/overlay" "$TOP" || exit 1
++cp "$TOP/scripts/pnglibconf.h.prebuilt" "$TOP/pnglibconf.h" || exit 1
++
++vl_toolchain || exit 1
++
++# Source list read from libpng's own Makefile.am: the base list, then the
++# PNG_ARM_NEON block (see header).
++am="$TOP/Makefile.am"
++base="$(awk '/^libpng@PNGLIB_MAJOR@@PNGLIB_MINOR@_la_SOURCES = /{f=1} f{print; if ($0 !~ /\\$/) exit}' "$am" \
++        | tr ' \t\\' '\n\n\n' | grep '\.c$')"
++neon="$(awk '/^if PNG_ARM_NEON$/{f=1;next} f&&/^endif/{exit} f{print}' "$am" \
++        | tr ' \t\\' '\n\n\n' | grep '\.c$')"
++[ -n "$base" ] && [ -n "$neon" ] || { echo "error: could not read the source lists from $am" >&2; exit 1; }
++SRCS=()
++for c in $base $neon; do SRCS[${#SRCS[@]}]="$c"; done
++
++# -Wno-macro-redefined: pngpriv.h includes both <float.h> (clang's, which
++# defines INFINITY/NAN for C23) and OpenLibm's <math.h> (which defines them
++# again, equivalently). The same clash is why the app builds pass this flag
++# (sdk/ldg/build-ldg-demo.sh, build-qed.sh); it is a header-pair artefact, not
++# a libpng finding.
++LIB_CFLAGS=(-W -Wall -Wno-macro-redefined)
++LIB_INCS=(-I"$TOP" -I"$ZTOP" -I"$MINT" -I"$SDK/libm/include" -I"$LIBMTOP/include")
++vl_compile "$TOP" "$BUILD/obj" "${SRCS[@]}" || exit 1
++vl_archive "$OUT" "$BUILD/obj" "$BUILD" || exit 1
+--- /dev/null
++++ b/sdk/libpng/libpng-sources.sha256
+@@ -0,0 +1,9 @@
++# libpng source pin for sdk/libpng/build-libpng.sh (TASK/LDG-M2).
++#
++# libpng-1.6.59.tar.xz = upstream release, downloaded unchanged on 2026-10-06
++#   from https://download.sourceforge.net/libpng/libpng-1.6.59.tar.xz
++#   (the download linked from http://www.libpng.org/pub/png/libpng.html).
++#   Its SHA-1 32ddc25d5ed4c28afdaf2f8a613144656d7d8f78 matches the one
++#   SourceForge lists for libpng16/1.6.59/libpng-1.6.59.tar.xz.
++# License: PNG Reference Library License version 2 (libpng-1.6.59/LICENSE).
++d80dd2a38a37f803cb9b6ac7b14bd6e74ddc3b654780a8380bdf93523fdb4389  libpng-1.6.59.tar.xz
+--- /dev/null
++++ b/sdk/vendor-lib.sh
+@@ -0,0 +1,142 @@
++# vendor-lib.sh -- the steps shared by the build scripts of the vendored
++# third-party libraries that zView's codecs need (TASK/LDG-M2): zlib, libpng,
++# libjpeg (IJG), giflib, libexif. Sourced, not executed.
++#
++# Each of those libraries is built the way the other ported libraries are
++# (sdk/ldg/build-ldg.sh is the model): a PRISTINE upstream release tarball,
++# pinned by SHA-256 in <lib>-sources.sha256 next to it, is extracted, our
++# overlay/ (configuration headers only -- the library sources stay
++# unmodified) is copied over it, the library's OWN source list is compiled
++# with the SDK's freestanding AArch64 flags against mintlib's headers, and
++# the objects are archived into a static library. What differs per library
++# (source list, defines, include dirs, which upstream file becomes the config
++# header) stays in the library's build script; what is the same for all five
++# lives here once, so the five scripts cannot drift apart.
++#
++# The dependency/staleness declaration for these libraries is in
++# sdk/lib-stale.sh like for every other library; this file is one of the
++# inputs it watches for each of them.
++#
++# Functions (all return non-zero on failure; callers run with `set -uo
++# pipefail` and `|| exit 1`):
++#   vl_toolchain                  CLANG, RES, AR, NM; prints the versions
++#   vl_extract <tarball> <sums> <top> <inner> <refresh>
++#                                 verify the tarball against <sums>, extract
++#                                 its top directory <inner> as <top> when
++#                                 <refresh>=1, <top> is absent, or the tarball
++#                                 is newer than <top> (PORT03: a version swap
++#                                 must not leave the old sources compiled)
++#   vl_overlay <overlay> <top>    copy overlay/ over the extracted tree
++#   vl_compile <top> <objdir> <src...>
++#                                 compile each <src> (relative to <top>) with
++#                                 VL_CFLAGS + the caller's LIB_CFLAGS/LIB_INCS
++#                                 arrays; prints the "compiled OK=" block that
++#                                 lib_ensure echoes; ANY failure stops the
++#                                 build (there is no expected-failure list for
++#                                 these libraries: all of them are portable C)
++#   vl_archive <out> <objdir> <builddir>
++#                                 archive, list defined + dangling symbols
++
++VL_SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"       # .../sdk
++
++# The SDK's freestanding set, identical to sdk/ldg/build-ldg.sh and the app
++# builds (build-qed.sh): AArch64 ELF, no host headers, -fPIE because every
++# NewTOS program and .NLD module is linked -pie (newtos.ld, R_AARCH64_RELATIVE
++# only, -z text) and these archives are linked into them.
++VL_CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
++           -fPIE -fno-builtin -nostdinc)
++
++vl_toolchain() {
++  CLANG="${CLANG:-clang}"
++  command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; return 1; }
++  RES="$($CLANG -print-resource-dir)/include"
++  local sysroot bin
++  sysroot="$(rustc --print sysroot 2>/dev/null)"
++  bin="$sysroot/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++  AR="${AR:-$bin/llvm-ar}"
++  NM="$bin/llvm-nm"
++  [ -x "$AR" ] || { echo "error: missing LLVM tool: $AR" >&2; return 1; }
++  [ -x "$NM" ] || { echo "error: missing LLVM tool: $NM" >&2; return 1; }
++  echo "clang : $($CLANG --version | head -1)"
++  echo "ar    : $AR"
++  echo
++  return 0
++}
++
++vl_extract() {
++  local tarball=$1 sums=$2 top=$3 inner=$4 refresh=$5 want have tmp
++  if [ "$refresh" = "1" ] || [ ! -d "$top" ] || [ "$tarball" -nt "$top" ]; then
++    [ -f "$tarball" ] || { echo "error: pristine tarball $tarball missing" >&2; return 1; }
++    want="$(sed -e 's/#.*//' "$sums" | awk -v f="$(basename "$tarball")" '$2==f{print $1}')"
++    have="$(shasum -a 256 "$tarball" | awk '{print $1}')"
++    if [ -z "$want" ] || [ "$want" != "$have" ]; then
++      echo "error: $(basename "$tarball") SHA-256 $have does not match $(basename "$sums") ($want)" >&2
++      return 1
++    fi
++    echo "extracting pristine $inner from $(basename "$tarball") (sha256 verified)…"
++    rm -rf "$top"
++    tmp="$(mktemp -d)"
++    tar xf "$tarball" -C "$tmp" || { rm -rf "$tmp"; return 1; }
++    [ -d "$tmp/$inner" ] || { echo "error: $(basename "$tarball") has no top directory $inner" >&2; rm -rf "$tmp"; return 1; }
++    mv "$tmp/$inner" "$top"
++    rm -rf "$tmp"
++    touch "$top"
++  fi
++  return 0
++}
++
++vl_overlay() {
++  local overlay=$1 top=$2
++  [ -d "$overlay" ] || return 0
++  ( cd "$overlay" && find . -type f ! -name '._*' ! -name '.DS_Store' -print0 | while IFS= read -r -d '' f; do
++      mkdir -p "$top/$(dirname "$f")"
++      cp "$f" "$top/$f"
++      echo "  overlay: ${f#./}"
++    done )
++}
++
++vl_compile() {
++  local top=$1 objdir=$2; shift 2
++  local c o base ok=0 fail=0 warn=0
++  local build; build="$(dirname "$objdir")"
++  mkdir -p "$objdir"
++  rm -f "$objdir"/*.o "$objdir"/*.err
++  : > "$build/compiled.txt"; : > "$build/failed.txt"
++  for c in "$@"; do
++    base="$(printf '%s' "${c%.c}" | tr '/' '_')"
++    o="$objdir/$base.o"
++    if "$CLANG" "${VL_CFLAGS[@]}" ${LIB_CFLAGS[@]+"${LIB_CFLAGS[@]}"} \
++         ${LIB_INCS[@]+"${LIB_INCS[@]}"} -isystem "$RES" \
++         -c "$top/$c" -o "$o" 2>"$objdir/$base.err"; then
++      echo "$c" >> "$build/compiled.txt"; ok=$((ok+1))
++      if [ -s "$objdir/$base.err" ]; then
++        warn=$((warn+1)); echo "  warnings in $c:"; sed 's/^/      /' "$objdir/$base.err"
++      fi
++    else
++      echo "$c" >> "$build/failed.txt"; fail=$((fail+1)); rm -f "$o"
++    fi
++  done
++  echo "compiled OK=$ok  FAILED=$fail  (files with warnings: $warn)"
++  echo
++  if [ "$fail" -ne 0 ]; then
++    echo "STOP: sources that did not compile (fix the configuration overlay or the toolchain):"
++    while IFS= read -r c; do
++      echo "  === $c ==="
++      sed 's/^/      /' "$objdir/$(printf '%s' "${c%.c}" | tr '/' '_').err" | head -20
++    done < "$build/failed.txt"
++    return 1
++  fi
++  return 0
++}
++
++vl_archive() {
++  local out=$1 objdir=$2 build=$3
++  rm -f "$out"
++  "$AR" cr "$out" "$objdir"/*.o || return 1
++  echo "archived -> $out ($(wc -c < "$out" | tr -d ' ') bytes)"
++  "$NM" --defined-only -g "$out" 2>/dev/null | awk 'NF>=3 && $1 !~ /:$/ {print $NF}' | sort -u > "$build/defined.txt"
++  "$NM" -u "$out" 2>/dev/null | awk 'NF>=2 && $1 !~ /:$/ && $NF !~ /:$/ {print $NF}' | sort -u > "$build/undefined.txt"
++  comm -23 "$build/undefined.txt" "$build/defined.txt" > "$build/external.txt"
++  echo "defined symbols: $(wc -l < "$build/defined.txt" | tr -d ' ')  external references: $(wc -l < "$build/external.txt" | tr -d ' ') (build/external.txt: libc/libm/other-library symbols the archive needs)"
++  return 0
++}
+--- /dev/null
++++ b/sdk/zlib/build-zlib.sh
+@@ -0,0 +1,68 @@
++#!/usr/bin/env bash
++#
++# build-zlib.sh -- build zlib (Jean-loup Gailly & Mark Adler, zlib license)
++# into a NewTOS/AArch64 static library sdk/zlib/libz.a (TASK/LDG-M2).
++# Needed by zView's PNG codec (plugins/png/Makefile: -lpng -lm -lz) and by
++# libpng itself.
++#
++# SOURCE PIN: sdk/zlib/zlib-1.3.2.tar.xz, the upstream release from
++# https://zlib.net/zlib-1.3.2.tar.xz (detached signature zlib-1.3.2.tar.xz.asc
++# from the same place, verified 2026-10-06 against Mark Adler's key
++# 5ED46A6721D365587791E2AA783FCD8E58BCAFBA). SHA-256 in zlib-sources.sha256.
++# z-tools/prerequisites.txt names zlib 1.2.8; 1.3.2 is the current release and
++# keeps that API (zView/libpng only use compress/inflate/crc32 entry points).
++#
++# What is compiled: zlib's own object list, Makefile.in
++#   OBJZ = adler32 crc32 deflate infback inffast inflate inftrees trees zutil
++#   OBJG = compress uncompr gzclose gzlib gzread gzwrite
++# All sources unmodified. zconf.h is GENERATED from the pristine zconf.h.in
++# with exactly the two edits zlib's ./configure makes on a target that has
++# <unistd.h> and <stdarg.h> (configure, "check for unistd.h"/"check for
++# stdarg.h": `#if HAVE_UNISTD_H-0 ... may be` -> `#if 1 ... was`). mintlib has
++# both; with Z_HAVE_UNISTD_H z_off_t is mintlib's off_t (32-bit, TOS file
++# offsets) for the library and every program that includes zlib.h alike.
++# No overlay.
++#
++# Usage:  sdk/zlib/build-zlib.sh     (ZLIB_REFRESH=1 forces a re-extract)
++# Output: sdk/zlib/libz.a; headers for programs: -I sdk/zlib/zlib-1.3.2
++#         (zlib.h, zconf.h)
++set -uo pipefail
++
++SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
++LIBDIR="$SDK/zlib"
++VER="1.3.2"
++TOP="$LIBDIR/zlib-$VER"
++BUILD="$LIBDIR/build"
++OUT="$LIBDIR/libz.a"
++mkdir -p "$BUILD"
++
++. "$SDK/lib-stale.sh"
++. "$SDK/vendor-lib.sh"
++lib_ensure libc || exit 1
++MINT="$SDK/libc/mintlib/include"
++[ -d "$MINT" ] || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
++
++vl_extract "$LIBDIR/zlib-$VER.tar.xz" "$LIBDIR/zlib-sources.sha256" "$TOP" "zlib-$VER" "${ZLIB_REFRESH:-0}" || exit 1
++vl_overlay "$LIBDIR/overlay" "$TOP" || exit 1
++
++# zconf.h from zconf.h.in, configure's two seds verbatim (see header).
++sed -e "/^#if HAVE_UNISTD_H-0.* may be/s/ HAVE_UNISTD_H-0\(.*\) may be/ 1\1 was/" \
++    -e "/^#if HAVE_STDARG_H-0.* may be/s/ HAVE_STDARG_H-0\(.*\) may be/ 1\1 was/" \
++    "$TOP/zconf.h.in" > "$TOP/zconf.h"
++grep -q '^#if 1 .*was set to #if 1 by ./configure' "$TOP/zconf.h" ||
++  { echo "error: zconf.h generation did not apply (zconf.h.in changed?)" >&2; exit 1; }
++[ "$(grep -c 'was set to #if 1 by ./configure' "$TOP/zconf.h")" -eq 2 ] ||
++  { echo "error: expected exactly 2 configure edits in zconf.h" >&2; exit 1; }
++
++vl_toolchain || exit 1
++
++# Source list read from zlib's own Makefile.in (OBJZ + OBJG).
++objs="$(sed -n 's/^OBJ[ZG][[:space:]]*=[[:space:]]*//p' "$TOP/Makefile.in" | tr ' ' '\n' | grep '\.o$')"
++[ -n "$objs" ] || { echo "error: could not read OBJZ/OBJG from $TOP/Makefile.in" >&2; exit 1; }
++SRCS=()
++for o in $objs; do SRCS[${#SRCS[@]}]="${o%.o}.c"; done
++
++LIB_CFLAGS=(-W -Wall)
++LIB_INCS=(-I"$TOP" -I"$MINT")
++vl_compile "$TOP" "$BUILD/obj" "${SRCS[@]}" || exit 1
++vl_archive "$OUT" "$BUILD/obj" "$BUILD" || exit 1
+--- /dev/null
++++ b/sdk/zlib/zlib-sources.sha256
+@@ -0,0 +1,11 @@
++# zlib source pin for sdk/zlib/build-zlib.sh (TASK/LDG-M2).
++#
++# zlib-1.3.2.tar.xz = upstream release, downloaded unchanged on 2026-10-06 from
++#   https://zlib.net/zlib-1.3.2.tar.xz
++# zlib-1.3.2.tar.xz.asc = its detached signature from the same place. Checked
++#   2026-10-06: "good signature" from Mark Adler <madler@alumni.caltech.edu>,
++#   key 5ED46A6721D365587791E2AA783FCD8E58BCAFBA (key fetched from
++#   keyserver.ubuntu.com; not web-of-trust certified).
++# License: zlib license (zlib-1.3.2/LICENSE, header of zlib.h).
++d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3  zlib-1.3.2.tar.xz
++03ce710347e2f84fa7ed0a6ae6a93467b08031a3022fc296da40220a83b96667  zlib-1.3.2.tar.xz.asc

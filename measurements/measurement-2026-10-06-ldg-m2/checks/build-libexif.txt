@@ -1,0 +1,29 @@
+extracting pristine libexif-0.6.26 from libexif-0.6.26.tar.xz (sha256 verified)…
+  overlay: config.h
+clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+ar    : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+
+  warnings in libexif/exif-entry.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/libexif/libexif-0.6.26/libexif/exif-entry.c:1243:7: warning: case value not in enumerated type 'ExifTag' [-Wswitch]
+       1243 |         case EXIF_TAG_GPS_VERSION_ID:
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libexif/libexif-0.6.26/libexif/exif-tag.h:176:40: note: expanded from macro 'EXIF_TAG_GPS_VERSION_ID'
+        176 | #define EXIF_TAG_GPS_VERSION_ID        0x0000
+            |                                        ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libexif/libexif-0.6.26/libexif/exif-entry.c:1267:7: warning: case value not in enumerated type 'ExifTag' [-Wswitch]
+       1267 |         case EXIF_TAG_GPS_ALTITUDE_REF:
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libexif/libexif-0.6.26/libexif/exif-tag.h:181:40: note: expanded from macro 'EXIF_TAG_GPS_ALTITUDE_REF'
+        181 | #define EXIF_TAG_GPS_ALTITUDE_REF      0x0005
+            |                                        ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libexif/libexif-0.6.26/libexif/exif-entry.c:1280:7: warning: case value not in enumerated type 'ExifTag' [-Wswitch]
+       1280 |         case EXIF_TAG_GPS_TIME_STAMP:
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libexif/libexif-0.6.26/libexif/exif-tag.h:183:40: note: expanded from macro 'EXIF_TAG_GPS_TIME_STAMP'
+        183 | #define EXIF_TAG_GPS_TIME_STAMP        0x0007
+            |                                        ^
+      3 warnings generated.
+compiled OK=25  FAILED=0  (files with warnings: 1)
+
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libexif/libexif.a (389618 bytes)
+defined symbols: 143  external references: 30 (build/external.txt: libc/libm/other-library symbols the archive needs)

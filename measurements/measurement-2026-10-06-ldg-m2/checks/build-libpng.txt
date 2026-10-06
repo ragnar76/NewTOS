@@ -1,0 +1,8 @@
+extracting pristine libpng-1.6.59 from libpng-1.6.59.tar.xz (sha256 verified)…
+clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+ar    : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+
+compiled OK=18  FAILED=0  (files with warnings: 0)
+
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libpng/libpng.a (299780 bytes)
+defined symbols: 395  external references: 36 (build/external.txt: libc/libm/other-library symbols the archive needs)

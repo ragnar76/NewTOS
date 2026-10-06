@@ -1,0 +1,68 @@
+libtest: start (zlib, libpng, libjpeg, giflib, libexif)
+libtest: info zlibVersion()=1.3.2 ZLIB_VERSION=1.3.2
+libtest: PASS Z.crc32 crc32()=1d41054a want 1d41054a
+libtest: PASS Z.adler32 adler32()=1c7a2ae4 want 1c7a2ae4
+libtest: PASS Z.compress2 (self) rc=0 70123 -> 44615 bytes
+libtest: PASS Z.deflate-stream crc=fc319ad6 len=44615 [host]
+libtest: PASS Z.uncompress==source (self) rc=0 len=70123
+libtest: PASS Z.inflate-py crc=40302f26 len=15548 [py+host]
+libtest: PASS Z.gzwrite->gzread==source (self) gzread=70123 eof=0
+libtest: info png_get_libpng_ver()=1.6.59 PNG_LIBPNG_VER_STRING=1.6.59
+libtest: info 37x23 type 2 depth 8 interlace 0 passes 1 rowbytes 148 channels 4
+libtest: PASS P1.tEXt (self) png_get_text: 1 entry, "Comment"="NewTOS libtest"
+libtest: PASS P1.rgba crc=4844468b len=3404 [py+host]
+libtest: info 29x19 type 6 depth 8 interlace 1 passes 7 rowbytes 116 channels 4
+libtest: PASS P2.rgba crc=3474b152 len=2204 [py+host]
+libtest: info 31x17 type 3 depth 4 interlace 1 passes 7 rowbytes 124 channels 4
+libtest: PASS P3.rgba crc=4f3f9ee2 len=2108 [py+host]
+libtest: info 13x11 type 0 depth 16 interlace 0 passes 1 rowbytes 52 channels 4
+libtest: PASS P4.rgba crc=fde817af len=572 [py+host]
+libtest: info 21x9 type 0 depth 1 interlace 0 passes 1 rowbytes 84 channels 4
+libtest: PASS P5.rgba crc=e1881a5d len=756 [py+host]
+libtest: info 15x10 type 4 depth 8 interlace 0 passes 1 rowbytes 60 channels 4
+libtest: PASS P6.rgba crc=be2d783d len=600 [py+host]
+libtest: PASS PW.file crc=9c6941ff len=350 [host]
+libtest: PASS PW.write->read==source (self) 350-byte PNG
+libtest: info JPEG_LIB_VERSION=90 (9f)
+libtest: info 45x29 x3 baseline
+libtest: PASS J1.pixels crc=b564ae12 len=3915 [host]
+libtest: PASS J1.mem_src==stdio_src (self) 45x29 x3 baseline
+libtest: info 33x21 x3 progressive
+libtest: PASS J2.pixels crc=b4fd1f23 len=2079 [host]
+libtest: info 27x19 x1 baseline
+libtest: PASS J3.pixels crc=b23678f1 len=513 [host]
+libtest: PASS J4.COM-marker (self)
+libtest: info 24x16 x3 baseline
+libtest: PASS J4.pixels crc=0df7c584 len=1152 [host]
+libtest: PASS JE.file crc=52d0502b len=907 [host]
+libtest: PASS JE.pixels crc=9c1e5037 len=2880 [host]
+libtest: PASS JE.decode~source (self) max |decoded-source| = 56 (bound 64)
+libtest: info Make: NewTOS
+libtest: info Model: LIBTEST.NCP
+libtest: info Orientation: Top-left
+libtest: info XResolution: 72
+libtest: info YResolution: 75.0
+libtest: info ResolutionUnit: Inch
+libtest: info DateTime: 2026:10:06 12:34:56
+libtest: info Compression: JPEG compression
+libtest: info XResolution: 72
+libtest: info YResolution: 72
+libtest: info ResolutionUnit: Inch
+libtest: info ExifVersion: Exif Version 2.1
+libtest: info FlashpixVersion: FlashPix Version 1.0
+libtest: info ColorSpace: Uncalibrated
+libtest: PASS E.Make (self) "Make: NewTOS" found
+libtest: PASS E.text crc=57fe58df len=315 [host]
+libtest: PASS E.thumb crc=c8bdefec len=668 [py+host]
+libtest: PASS E.thumb.pixels crc=88378a50 len=192 [host]
+libtest: info GIFLIB 6.1.3
+libtest: PASS G1 (self) images 1 (want 1), interlace 0 (want 0), GCE 0, comment -, last error 0
+libtest: PASS G1.index crc=da31da8b len=1107 [py+host]
+libtest: PASS G1.gct crc=b8e3fbf7 len=96 [py+host]
+libtest: PASS G2 (self) images 1 (want 1), interlace 1 (want 1), GCE 1, comment ok, last error 0
+libtest: PASS G2.index crc=b1ac2102 len=713 [py+host]
+libtest: PASS G2.gct crc=fc0814f5 len=48 [py+host]
+libtest: PASS G3 (self) images 2 (want 2), interlace 0 (want 0), GCE 2, comment -, last error 0
+libtest: PASS G3.index crc=727f42f2 len=192 [py+host]
+libtest: PASS G3.gct crc=d821ee9d len=24 [py+host]
+libtest: ALL PASS (38 checks)

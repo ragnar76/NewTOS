@@ -1,0 +1,12 @@
+# libexif source pin for sdk/libexif/build-libexif.sh (TASK/LDG-M2).
+#
+# libexif-0.6.26.tar.xz = upstream release, downloaded unchanged on 2026-10-06
+#   from https://github.com/libexif/libexif/releases/download/v0.6.26/libexif-0.6.26.tar.xz
+# libexif-0.6.26.tar.xz.asc = its detached signature from the same release.
+#   Checked 2026-10-06: "good signature" from Marcus Meissner
+#   <meissner@suse.de>, key 7C4AFD61D8AAE7570796A5172209D6902F969C95 (key
+#   fetched from keyserver.ubuntu.com; not web-of-trust certified).
+# License: LGPL 2.1 or later (libexif-0.6.26/COPYING; SPDX headers say
+#   LGPL-2.0-or-later).
+4a055ed6575e61ca46c3172be3c753cc16c9becd0f99ec71d58dd0e471476c0c  libexif-0.6.26.tar.xz
+d6e5398949eaac7182f4dd25e6aed653fc646253d77eddf3b0a09852cec47a42  libexif-0.6.26.tar.xz.asc
