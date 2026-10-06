@@ -1,0 +1,199 @@
+measurement-2026-10-06-zview-m4 -- TASK/ZVIEW-M4: zView (LDG version,
+z-tools 04805b7) and ten of its codecs ported to NewTOS as ZVIEW.NAP +
+CODECS\*.NLD, without the PDF module. Developer self-evidence; the Tester's
+verdict is separate.
+
+Date 2026-10-06/07, branch desk-rebuild, HEAD 353777d plus this change,
+uncommitted. QEMU raspi4b, -append serial=on (+ memprot=strict where named),
+one QEMU at a time, host macOS. No SD card, Pi or TT touched. No Rust, kernel
+or tos-api source changed: kernel8.img = HEAD's board-rpi4 release kernel
+(method/make-kernel.sh, built in the session scratch, sha256
+b2c365fb47924b4d0d32f0fb9ad52fbc08d2f33bebe7811b9c299c7815e3ed93; rpi4
+release warnings tos-api 64 / kernel 94 = baseline). Card: tools/make-sd-image.sh <scratch>/base.img
+64 (QEMU image only; installs C:\ZVIEW\ incl. SAMPLES\), per run a private copy
+patched with mtools (method/zv-runs.sh: NEWDESK.INF #Z, ZVLAUNCH.NAP,
+ZVARG.TXT, APITEST.NCP).
+
+RESULT IN ONE LINE
+  Built and linked clean (ZVIEW.NAP + 10 codecs, 0 undefined, libshare-only
+  allocator in every codec, byte-identical rebuild); zView starts, loads all
+  ten codecs and decodes; it does NOT show pictures because of kernel finding
+  K1 (graf_handle's VDI workstation never opened -> WinDom app.nplanes = 0),
+  and crashes for pictures wider than 128 px for the same reason. With a
+  diagnostic build that only supplies the two values WinDom could not read,
+  every sample is pixel-exact (15/15 memprot on, 4/4 strict). STOPPED there:
+  K1 is a kernel change, not made.
+
+CHANGE (all SDK/tools/docs; file list -- tracked edits in
+method/zview-m4-tracked-changes.diff)
+  sdk/zview/z-tools-04805b7.tar.xz      source pin (git archive subset of
+      z-tools 04805b7; command, origin, licence: zview-sources.sha256)
+  sdk/zview/zview-sources.sha256
+  sdk/zview/build-zview.sh              build (shadow tree + overlays, flags,
+      link, map check, _stksize patch, RSC, dist, samples)
+  sdk/zview/include/zview-ints.h        types2b.h widths via HAVE_INTS_DEFINED
+  sdk/zview/overlay/zview/...           12 overlays (docs/sdk/13-zview.md §3):
+      plugins.c (.nld), main.c + winimg.c (PDF call sites), av_prot.c
+      (VA_START hi/lo), degas/neochrome/godpaint/eureka/img (big-endian
+      headers/palettes/pixels), img/xp32.c (m68k xp32.S -> AArch64 C),
+      jpg/jpgldg.c (FILE * in int32, long cookie values), jpg/jpgdsp.c (m68k
+      register-call macros -> C calls)
+  sdk/zview/samples/gen-samples.py      15 synthesised samples + references
+  sdk/.gitignore                        /zview/z-tools-*/, /zview/build/
+  tools/make-sd-image.sh                C:\ZVIEW\ (+ SAMPLES\) if built
+  docs/sdk/13-zview.md (new), README.md, 11-codec-libraries.md (pointers),
+  12-windom.md (K1 row)
+
+BUILD (checks/build-zview.txt, build-warnings.txt, codec-link-maps.txt)
+  zView: 53 files (Makefile OBJ minus pdf_load.o winpdf.o, plus
+  ztask/gmem.c), 0 failures; ZVIEW.NAP 500272 B, 0 undefined; _stksize
+  65536 -> 524288 (zview/Makefile STACKSIZE 512k). Codecs: BMP DEGAS
+  EUREKA GIF GODPAINT IMG JPG NEO PNG TGA, 0 undefined each; every link map
+  pulls libshare.a(calloc chdir libshare malloc realloc sbrk) and none of
+  libc.a's allocator members (ls_check_module_map). tiff not built (needs
+  libtiff + liblzma). 11 files with upstream warnings (left visible).
+  Two builds byte-identical (bin/SHA256SUMS = second build).
+  SDK host tests: 16 passed, 0 failed, 0 skipped (= baseline; no new test).
+
+HOW ZVIEW IS STARTED WITH A FILE
+  #Z cannot pass arguments, so C:\ZVLAUNCH.NAP (method/zvlaunch.c, test
+  helper) reads C:\ZVARG.TXT and calls shel_write(SHW_EXEC, 1, 0,
+  "C:\ZVIEW\ZVIEW.NAP", tail) after Dsetpath(C:\ZVIEW). The Dsetpath is
+  needed: EmuTOS' sh_write saves the CALLER's directory as the new
+  program's start directory (aes/gemshlib.c:173-175, sh_curdrvdir(sh_apdir)),
+  NewTOS does the same. The first launcher version omitted it: zView started
+  in C:\, zview_path "C:", no C:\codecs -> its own "can't load the plugins"
+  alert (method/plprobe.c, first run: "zview_path=[C:]", "chdir([C:\codecs])
+  = -1"); faithful behaviour, launcher fixed. Second plprobe run
+  (serial/plprobe-serial.log): zview_path C:\ZVIEW, chdir ok, opendir/readdir
+  list the ten *.nld, ldg_open(BMP.NLD) ok, plugin_init found, infos "BMP".
+
+FINDING K1 (kernel AES/VDI, blocks the acceptance; checks/k1-evidence.txt)
+  graf_handle returns 1 (tos-api/src/aes/graf.rs:590, EmuTOS gl_handle);
+  NewTOS never opens VDI handle 1 (kernel/src/desk/vdibind.rs:16-26), so
+  vwk::resolve(1) fails and the VDI treats every call on it as a no-op
+  (tos-api/src/vdi/mod.rs:416-422). EmuTOS opens it at AES start
+  (aes/gemgsxif.c:169-185 gsx_wsopen -> v_opnwk(…, &gl_handle, …)).
+  VQPROBE.NAP (method/vqprobe.c): vq_extnd(1, 0|1) leaves work_out
+  untouched; on a v_opnvwk handle it answers planes 16.
+  WinDom ApplInit (appl_init.c:42-46) therefore sets app.color = 0,
+  app.nplanes = 0 in every WinDom program; zView builds its picture MFDBs
+  with app.nplanes planes (pic_load.c:34): fd_nplanes 0 (ZVIEW-DBG.NAP,
+  serial/alt-dbg1-serial.log "np=0"), 256-byte buffer (mfdb.c:35), LnSize 0
+  (pic_load.c:109). Effects measured:
+    probe-t24-bmp  (product, 64x48 BMP): window with the right info line
+                   "64x48x24", content grey (LWHITE), toolbar empty
+    probe-t-pi1    (product, 320x200 DEGAS): Bus Error at text+0x17b60 =
+                   WinDom DataSearch+8, FAR 0xf800f800f800f800 = four red
+                   RGB565 pixels -- the 640-byte rows overrun the 256-byte
+                   block into WinDom's window data list
+  Fix belongs in the kernel (open a physical workstation for gl_handle as
+  EmuTOS does, or resolve handle 1 to the screen device). NOT done (task
+  rule: no kernel changes; STOP and report). Toolchain workaround in WinDom
+  rejected: it would hide a kernel/EmuTOS divergence every WinDom program
+  hits.
+
+DIAGNOSTIC BUILD (bin/ZVIEW-K1DIAG.NAP, method/diag/k1diag-main.diff,
+method/diag/dbuild.sh): the product objects with main.c recompiled from the
+overlay plus one block after ApplInit(): app.color/app.nplanes from
+vq_extnd(app.handle, 0|1) (WinDom's own virtual workstation) and the
+FLG_NOPAL branch appl_init.c:47-51; prints "DIAG-K1: app.nplanes=16
+app.color=256" (also visible on the menu-bar row of its screendumps). Used
+ONLY to verify the codecs/overlays past K1; not shipped.
+
+PIXEL CHECKS (method/check-shot.py, check-all.sh)
+  Exact RGB comparison of the whole decoded picture located in the QMP
+  screendump. Expected screen colour = 5 bits per gun expanded (c<<3)|(c>>2)
+  (zvdi/raster.c raster_16/dither_16, zvdi/color.c cnvpal_high;
+  tos-api/src/vdi/eddi.rs device word; kernel/src/vdi_backend.rs
+  expand5to8); references: sdk/zview/samples/gen-samples.py (decoded as the
+  codec sources read the formats; sha256 checks/expected-sha256.txt),
+  JPEG: method/jpgref.c = the pinned IJG 9f built for the host, decoded with
+  jpgldg.c's settings (IFAST, no fancy upsampling) -> checks/T.JPG.jpgref.rgb.
+  Masked: the mouse sprite the kernel draws into the framebuffer at the boot
+  position, x 319-329 / y 239-254 (footprint measured on the plain desktop of
+  screendumps/alt-vqprobe-t30.png); 176 px of a picture are masked when it
+  covers the screen centre.
+  diag, memprot on (checks/diag-on-shotcheck.txt): 15/15 PASS, 0 mismatched
+    T24.BMP T8.BMP T24.TGA TRLE.TGA TRGB.PNG TPAL.PNG T.GIF T.JPG (64x48
+    each, 2896 px compared), T.PI1 T.PC1 T.NEO (320x200, 63824 px), T.GOD
+    T.RAW T4.IMG (XIMG 4 planes, xp32 pp_4_to_24) T1.IMG (mono, pp_1_to_8)
+  diag, memprot strict (checks/diag-strict-shotcheck.txt): 4/4 PASS
+    T.JPG T.PI1 T4.IMG T.GIF
+  T.GIF was run twice (the first loop's run-rpi4 left its card copy and no
+  "run" line); the second screendump is byte-identical to the first.
+  zView's toolbar icons (ICONS\*.GOD via GODPAINT.NLD) render in every diag
+  screendump.
+
+PRIVATE PHOTO (user-supplied, 1932x2576 JPEG; it and every derivative and
+screendump stay in the session scratch, NOT in this directory)
+  method/gen-photo-variants.py (no image data in it) -> 270x360 P.JPG P.PNG
+  P.BMP P.TGA(RLE) P.GIF P.GOD P.RAW P8.IMG(XIMG 8 planes) + 320x200 16-colour
+  P.PI1 P.NEO (STe palette). diag build, memprot on:
+    9/10 PASS pixel-exact (97024 resp. 63824 px each): JPG PNG BMP GIF GOD
+    RAW P8.IMG PI1 NEO
+    1 FAIL: P.TGA (RLE), first faulty rows 84, 93, 114, 134, 158 (1-3 px at
+    the line end), from row 216 on whole lines -- upstream defect U1 below.
+  Screendump sha256 (scratch:photo-out/, one per variant, zView window with
+  the photo):
+    ad120a1dbc65389eefc2c5d02c995a0c81dcf1e3c8a609c5b9121f472ab0aaf7  P.JPG
+    3ddbc5b92ee16b1ab6566eb6cf7be18de405143b266a733b17a35b828bb397f7  P.PNG
+    02b220a475b8940b511cbd345b77b2f01228eccf1adfd580617dcefc6e16d585  P.BMP
+    4d15c6549413edb90b169d39a7126e7bc1ecff558d6f9fd5e10a0ba97dd48822  P.TGA (U1 band visible)
+    c0588ed4e727792d0d58e4ff3540b30c957eecd18adaaf9dbacdc30e397a172f  P.GIF
+    cccccde4c3d6e4eafeb0bb0ad3eafdf184e5055e32aacfcd5355a14fa389c8a7  P.GOD
+    9ffe9fb9460ea1283cad1a73ed70d20bfcaee9ebde1835b20b35e5b73f8a5037  P.RAW
+    7230ce4dab0de6488b649af8f1d0bc0bb0bf5daadb3c0aec17febec2058bd0ca  P8.IMG
+    e176171c6ef99771e9bff693f19475c25acca14a5a275992c18acce3beea9398  P.PI1
+    d50569417ee7d7c9902531be09495f7d4b2dbb869ad1da2fa2a95769b8b9079d  P.NEO
+
+FINDING U1 (upstream zView TGA codec, not changed)
+  tgaldg.c fill_img_buf (:304-327): img_buf holds 2*line_size bytes and is
+  refilled only when img_buf_offset >= half of it; nothing checks that the
+  next line's packets are all in the buffer. After a line just under half
+  (no refill), a following line longer than the bytes left reads stale
+  buffer bytes. A model of exactly that logic over P.TGA's packet sizes
+  predicts underruns at rows 84, 93, 114, 134, 158, ... = the first faulty
+  rows on the screen. Synthetic reproduction (in the repo):
+  method/gen-tga-refill.py -> bin/TREFILL.TGA (270x48, lines of 806 and
+  820 bytes alternating; Pillow decodes it to checks/TREFILL.TGA.rgb), model:
+  underrun from row 2; run file-on-trefill-tga: zView ends with libshare's
+  "malloc.c:256: free: Assertion `s == r' failed" (heap corrupted by the
+  stale-data decode), desktop returns (screendumps/file-on-trefill-tga-t30.png).
+  Pure C, endian-neutral -- the same on the 68k. Atari source unmodified.
+
+REGRESSION (HEAD kernel, memprot on)
+  APITEST (#Z): TOTAL 106/0/5 (= M3 baseline), serial/regr-on-apitest-serial.log
+  QED (#Z) and TeraDesk (#Z) start; regr-on-qed-t30.png, regr-on-teradesk-t35.png,
+  regr-on-apitest-t40.png pixel-identical to measurement-2026-10-06-ldg-m3
+  (m3-on-*.png).
+
+NOT DONE / OPEN
+  K1 (kernel) -- the acceptance "open each image and check the pixels" holds
+    only for the diagnostic build; the product build needs K1 fixed, then the
+    on/strict runs repeat with bin/ZVIEW/ZVIEW.NAP (method/zv-runs.sh on /
+    strict; check-all.sh).
+  Browser window, File > Open (fsel), save dialog / encoders (GodPaint,
+    JPEG), animated GIF, slideshow, AV/VA_START, preferences: not driven.
+  memprot=off: not run. Real Pi: not run (no HW actions by workers).
+  TIFF codec, PDF module: not built (docs/sdk/13-zview.md §4/§5).
+
+method/ FILES
+  copied unchanged from measurement-2026-10-06-ldg-m3/method: qmp_timed.py,
+    newdesk-template.inf
+  copied with a stated change: run-rpi4.sh (OUTDIR/SERDIR override so the
+    private photo runs write to scratch)
+  this run: make-kernel.sh, zv-runs.sh (parts plprobe, alt, diag, photo,
+    file, probe, on, strict, regr), zvlaunch.c + build-zvlaunch.sh,
+    plprobe.c, vqprobe.c, check-shot.py, check-all.sh, jpgref.c + jpgref.sh,
+    gen-photo-variants.py, gen-tga-refill.py, diag/ (dbuild.sh,
+    k1diag-main.diff, dbg-winimg.diff), zview-m4-tracked-changes.diff
+  The samples generator is sdk/zview/samples/gen-samples.py (deterministic;
+  bin/SAMPLES = its output, checks/samples-sha256.txt).
+
+BINARIES
+  bin/ZVIEW/ (= sdk/zview/build/dist/ZVIEW, product), bin/SAMPLES/,
+  bin/ZVLAUNCH.NAP, PLPROBE.NAP, VQPROBE.NAP (probes), ZVIEW-DBG.NAP,
+  ZVIEW-K1DIAG.NAP (diagnostic builds), TREFILL.TGA; bin/SHA256SUMS.
+  Kernel not kept (sha256 above).
+  SHA256SUMS (top level): every file of this run outside bin/, except itself.

@@ -337,6 +337,28 @@ else
   echo "note: sdk/ldg/build/{EX_LIB.NLD,LDGTEST.NCP} not built; LDG proof skipped"
 fi
 
+# zView (TASK/ZVIEW-M4) — the z-tools image viewer, LDG version, built UNMODIFIED
+# apart from its toolchain overlays (sdk/zview/build-zview.sh,
+# docs/sdk/13-zview.md), WITHOUT the PDF module. C:\ZVIEW\ holds ZVIEW.NAP,
+# ZVIEW.RSC, ICONS\*.GOD (the browser icons, read through the GodPaint codec)
+# and CODECS\*.NLD (ten native LDG codecs: bmp degas eureka gif godpaint img jpg
+# neo png tga) -- zView looks for "codecs" beside itself (plugins.c:56-60).
+# C:\ZVIEW\SAMPLES\ gets one synthesised sample per codec path
+# (sdk/zview/samples/gen-samples.py). Start ZVIEW.NAP by double-click (opens
+# with its menu bar; File > Open), or with a file argument (main.c:164-165).
+ZV_DIST="$SCRIPT_DIR/../sdk/zview/build/dist/ZVIEW"
+if [ -f "$ZV_DIST/ZVIEW.NAP" ]; then
+  mkdir -p "$V/ZVIEW"
+  cp -R "$ZV_DIST/" "$V/ZVIEW/"
+  if [ -d "$SCRIPT_DIR/../sdk/zview/build/samples/IMAGES" ]; then
+    mkdir -p "$V/ZVIEW/SAMPLES"
+    cp "$SCRIPT_DIR/../sdk/zview/build/samples/IMAGES/"* "$V/ZVIEW/SAMPLES/"
+  fi
+  echo "installed C:\\ZVIEW\\ (zView: ZVIEW.NAP, ZVIEW.RSC, ICONS\\, CODECS\\*.NLD, SAMPLES\\)"
+else
+  echo "note: sdk/zview/build/dist/ZVIEW not built; zView skipped (run sdk/zview/build-zview.sh)"
+fi
+
 # CoreMark 1.0 (EEMBC) — the CPU benchmark, built UNMODIFIED apart from its own
 # porting layer (sdk/overlays/coremark/newtos/), which is what CoreMark's run
 # rules put under the porter's control. Two executables, because NewTOS has no

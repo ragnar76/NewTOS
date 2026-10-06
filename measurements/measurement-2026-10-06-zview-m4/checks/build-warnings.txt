@@ -1,0 +1,151 @@
+zview/catalog/catalog_other_event.c: 1 warning(s)
+    sdk/zview/build/tree/zview/catalog/catalog_other_event.c:98:6: warning: explicitly assigning value of variable of type 'WINDOW *' (aka 'struct _window *') to itself [-Wself-assign]
+       98 |         win = win; // for prevent compiler warning
+          |         ~~~ ^ ~~~
+    1 warning generated.
+zview/catalog/catalog_keyb.c: 2 warning(s)
+    sdk/zview/build/tree/zview/catalog/catalog_keyb.c:19:89: warning: illegal character encoding in string literal [-Winvalid-source-encoding]
+       19 | static const char allowed_char[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ<82><8A><88><89><87><80><90><A1><8D><8B><8C><97><96><A3><81><85><A0><83><84><86><91><81><94><A4><8F><92><A5>0123456789 &\"'(<DD>!)-_`<9C>^[]*{},?;.:/=+%#|@~<>";
+          |                                                                                         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    sdk/zview/build/tree/zview/catalog/catalog_keyb.c:19:132: warning: illegal character encoding in string literal [-Winvalid-source-encoding]
+       19 | static const char allowed_char[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ<82><8A><88><89><87><80><90><A1><8D><8B><8C><97><96><A3><81><85><A0><83><84><86><91><81><94><A4><8F><92><A5>0123456789 &\"'(<DD>!)-_`<9C>^[]*{},?;.:/=+%#|@~<>";
+          |                                                                                                                                                                                                                     ^~~~     ~~~~
+    2 warnings generated.
+zview/catalog/catalog_mouse.c: 2 warning(s)
+    sdk/zview/build/tree/zview/catalog/catalog_mouse.c:39:22: warning: variable 'old_x' set but not used [-Wunused-but-set-variable]
+       39 |         int16           x, y, w, h, old_x, old_entry = 0, old_y, i = 0, nb_click, in_txt = 0, in_icn = 0, in_frame_border = 0, in_browser = 0; 
+          |                                     ^
+    sdk/zview/build/tree/zview/catalog/catalog_mouse.c:39:44: warning: variable 'old_y' set but not used [-Wunused-but-set-variable]
+       39 |         int16           x, y, w, h, old_x, old_entry = 0, old_y, i = 0, nb_click, in_txt = 0, in_icn = 0, in_frame_border = 0, in_browser = 0; 
+          |                                                           ^
+    2 warnings generated.
+zview/zvdi/dither.c: 9 warning(s)
+    sdk/zview/build/tree/zview/zvdi/dither.c:19:40: warning: use of unary operator that may be intended as compound assignment (-=)
+       19 |         dth[0] =  ( err[0] <= -254 ? ( err[0] =- 127) : err[0] >= +254 ? ( err[0] =+ 127) : ( err[0] >>= 1));
+          |                                               ^~
+    sdk/zview/build/tree/zview/zvdi/dither.c:19:76: warning: use of unary operator that may be intended as compound assignment (+=)
+       19 |         dth[0] =  ( err[0] <= -254 ? ( err[0] =- 127) : err[0] >= +254 ? ( err[0] =+ 127) : ( err[0] >>= 1));
+          |                                                                                   ^~
+    sdk/zview/build/tree/zview/zvdi/dither.c:21:40: warning: use of unary operator that may be intended as compound assignment (-=)
+       21 |         dth[1] =  ( err[1] <= -254 ? ( err[1] =- 127) : err[1] >= +254 ? ( err[1] =+ 127) : ( err[1] >>= 1));
+          |                                               ^~
+    sdk/zview/build/tree/zview/zvdi/dither.c:21:76: warning: use of unary operator that may be intended as compound assignment (+=)
+       21 |         dth[1] =  ( err[1] <= -254 ? ( err[1] =- 127) : err[1] >= +254 ? ( err[1] =+ 127) : ( err[1] >>= 1));
+          |                                                                                   ^~
+    sdk/zview/build/tree/zview/zvdi/dither.c:39:40: warning: use of unary operator that may be intended as compound assignment (-=)
+       39 |         dth[0] =  ( err[0] <= -254 ? ( err[0] =- 127) : err[0] >= +254 ? ( err[0] =+ 127) : ( err[0] >>= 1));
+          |                                               ^~
+    sdk/zview/build/tree/zview/zvdi/dither.c:39:76: warning: use of unary operator that may be intended as compound assignment (+=)
+       39 |         dth[0] =  ( err[0] <= -254 ? ( err[0] =- 127) : err[0] >= +254 ? ( err[0] =+ 127) : ( err[0] >>= 1));
+          |                                                                                   ^~
+    sdk/zview/build/tree/zview/zvdi/dither.c:41:40: warning: use of unary operator that may be intended as compound assignment (-=)
+       41 |         dth[1] =  ( err[1] <= -254 ? ( err[1] =- 127) : err[1] >= +254 ? ( err[1] =+ 127) : ( err[1] >>= 1));
+          |                                               ^~
+    sdk/zview/build/tree/zview/zvdi/dither.c:41:76: warning: use of unary operator that may be intended as compound assignment (+=)
+       41 |         dth[1] =  ( err[1] <= -254 ? ( err[1] =- 127) : err[1] >= +254 ? ( err[1] =+ 127) : ( err[1] >>= 1));
+          |                                                                                   ^~
+    sdk/zview/build/tree/zview/zvdi/dither.c:57:76: warning: use of unary operator that may be intended as compound assignment (+=)
+       57 |         dth[0] =  ( err[0] <= -254 ? ( err[0] = -127) : err[0] >= +254 ? ( err[0] =+ 127) : ( err[0] >>= 1));
+          |                                                                                   ^~
+    9 warnings generated.
+zview/chrono.c: 2 warning(s)
+    sdk/zview/build/tree/zview/chrono.c:26:10: warning: cast to 'void *' from smaller integer type 'int32' (aka 'int') [-Wint-to-void-pointer-cast]
+       26 |         Super(( void *)oldssp);
+          |               ^~~~~~~~~~~~~~~
+    sdk/libc/mintlib/include/mint/osbind.h:542:28: note: expanded from macro 'Super'
+      542 |         long __super_arg = (long)(ptr);                                 \
+          |                                   ^~~
+    sdk/zview/build/tree/zview/chrono.c:46:11: warning: cast to 'void *' from smaller integer type 'int32' (aka 'int') [-Wint-to-void-pointer-cast]
+       46 |         Super(( void *)oldssp);
+          |               ^~~~~~~~~~~~~~~
+    sdk/libc/mintlib/include/mint/osbind.h:542:28: note: expanded from macro 'Super'
+      542 |         long __super_arg = (long)(ptr);                                 \
+          |                                   ^~~
+    2 warnings generated.
+zview/plugins.c: 1 warning(s)
+    sdk/zview/build/tree/zview/plugins.c:87:31: warning: incompatible pointer types passing 'int32 *' (aka 'int *') to parameter of type 'long *' [-Wincompatible-pointer-types]
+       87 |                 if( ldg_cookie( LDG_COOKIE, ( int32*)&cook))    
+          |                                             ^~~~~~~~~~~~~~
+    sdk/ldg/ldg-r133/include/ldg.h:159:31: note: passing argument to parameter here
+      159 | int     ldg_cookie      ( long, long *);
+          |                                       ^
+    1 warning generated.
+zview/save_dialog.c: 1 warning(s)
+    sdk/zview/build/tree/zview/save_dialog.c:177:7: warning: misleading indentation; statement is not part of the previous 'for' [-Wmisleading-indentation]
+      177 |                                                 target_file_name[i] = '\0';
+          |                                                 ^
+    sdk/zview/build/tree/zview/save_dialog.c:174:6: note: previous statement is here
+      174 |                                         for ( i = 0; i < source_name_len; i++)  
+          |                                         ^
+    1 warning generated.
+zview/progress.c: 1 warning(s)
+    sdk/zview/build/tree/zview/progress.c:26:10: warning: variable 'form' set but not used [-Wunused-but-set-variable]
+       26 |         W_FORM *form;
+          |                 ^
+    1 warning generated.
+zview/ztext.c: 17 warning(s)
+    sdk/zview/build/tree/zview/ztext.c:15:31: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                  ^
+    sdk/zview/build/tree/zview/ztext.c:15:36: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                          ^
+    sdk/zview/build/tree/zview/ztext.c:15:43: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                                    ^
+    sdk/zview/build/tree/zview/ztext.c:15:48: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                                            ^
+    sdk/zview/build/tree/zview/ztext.c:15:55: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                                                      ^
+    sdk/zview/build/tree/zview/ztext.c:15:60: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                                                              ^
+    sdk/zview/build/tree/zview/ztext.c:15:73: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                                                                              ^
+    sdk/zview/build/tree/zview/ztext.c:15:80: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                                                                                        ^
+    sdk/zview/build/tree/zview/ztext.c:15:85: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                                                                                                ^
+    sdk/zview/build/tree/zview/ztext.c:15:92: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                                                                                                          ^
+    sdk/zview/build/tree/zview/ztext.c:15:97: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       15 |                                         {'Y', 'y'}, {'Z', 'z'}, {'<9A>', '<81>'}, {'<90>', '<82>'}, {'<8E>', '<84>'}, {0xb6, '<85>'}, {'<8F>', '<86>'}, {'<80>', '<87>'},
+          |                                                                                                                                                                  ^
+    sdk/zview/build/tree/zview/ztext.c:16:7: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       16 |                                         {'<92>', '<91>'}, {'<99>', '<94>'}, {'<A5>', '<A4>'}, {0xb7, 0xb0}, {0xb8, 0xb1}, {0xb2, 0xb3}, {0xb5, 0xb4} };
+          |                                          ^
+    sdk/zview/build/tree/zview/ztext.c:16:12: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       16 |                                         {'<92>', '<91>'}, {'<99>', '<94>'}, {'<A5>', '<A4>'}, {0xb7, 0xb0}, {0xb8, 0xb1}, {0xb2, 0xb3}, {0xb5, 0xb4} };
+          |                                                  ^
+    sdk/zview/build/tree/zview/ztext.c:16:19: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       16 |                                         {'<92>', '<91>'}, {'<99>', '<94>'}, {'<A5>', '<A4>'}, {0xb7, 0xb0}, {0xb8, 0xb1}, {0xb2, 0xb3}, {0xb5, 0xb4} };
+          |                                                            ^
+    sdk/zview/build/tree/zview/ztext.c:16:24: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       16 |                                         {'<92>', '<91>'}, {'<99>', '<94>'}, {'<A5>', '<A4>'}, {0xb7, 0xb0}, {0xb8, 0xb1}, {0xb2, 0xb3}, {0xb5, 0xb4} };
+          |                                                                    ^
+    sdk/zview/build/tree/zview/ztext.c:16:31: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       16 |                                         {'<92>', '<91>'}, {'<99>', '<94>'}, {'<A5>', '<A4>'}, {0xb7, 0xb0}, {0xb8, 0xb1}, {0xb2, 0xb3}, {0xb5, 0xb4} };
+          |                                                                              ^
+    sdk/zview/build/tree/zview/ztext.c:16:36: warning: illegal character encoding in character literal [-Winvalid-source-encoding]
+       16 |                                         {'<92>', '<91>'}, {'<99>', '<94>'}, {'<A5>', '<A4>'}, {0xb7, 0xb0}, {0xb8, 0xb1}, {0xb2, 0xb3}, {0xb5, 0xb4} };
+          |                                                                                      ^
+    17 warnings generated.
+zview/jpg_dialog.c: 1 warning(s)
+    sdk/zview/build/tree/zview/jpg_dialog.c:41:13: warning: unused function 'jpg_option_show_preview' [-Wunused-function]
+       41 | static void jpg_option_show_preview( WINDOW *win, int16 obj_index) 
+          |             ^~~~~~~~~~~~~~~~~~~~~~~
+    1 warning generated.
+zview/plugins/bmp/bmpldg.c: 1 warning(s)
+    sdk/zview/build/tree/zview/plugins/bmp/bmpldg.c:256:5: warning: array index 2 is past the end of the array (that has type 'uint8[2]' (aka 'unsigned char[2]')) [-Warray-bounds]
+      256 |                                 buff[2] = line_buffer[j] & 0x0f;
+          |                                 ^    ~
+    sdk/zview/build/tree/zview/plugins/bmp/bmpldg.c:208:2: note: array 'buff' declared here
+      208 |         uint8 buff[2], *line_buffer = ( uint8*)info->_priv_ptr;
+          |         ^
+    1 warning generated.

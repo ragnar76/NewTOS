@@ -26,6 +26,7 @@ Repository revision the documentation was written against:
 | [10-ldg-modules.md](10-ldg-modules.md) | LDG run-time libraries as native `.NLD` modules: libldg, building a module, loading it from a client, what is not there (TSR, `ldg_callback`, search path) — TASK/LDG-M1; libshare 0.1.1 as the allocator of every module (licence unclear, §6) — TASK/LDG-M3-B2 |
 | [11-codec-libraries.md](11-codec-libraries.md) | zlib, libpng, libjpeg (IJG), giflib, libexif as static NewTOS libraries for zView's codecs: versions, pins, how to link, which codec needs what, the LIBTEST.NCP round-trip test — TASK/LDG-M2 |
 | [12-windom.md](12-windom.md) | WinDom 1.21.3 (+ zView's patch) as `libwindom1.a`: pin, flags, the 10 LP64/endianness overlays, the LP64 sweep, LDG's WinDom demo client, open problems (mouse clicks, module heap) — TASK/LDG-M3 |
+| [13-zview.md](13-zview.md) | zView (LDG version) as `ZVIEW.NAP` + ten codec modules `CODECS\*.NLD`, without PDF: pin, build rules, the 12 overlays (endianness, two m68k-asm retargets, `.NLD`, PDF omission), samples, what is verified, open kernel blocker K1 (`graf_handle` workstation not open) — TASK/ZVIEW-M4 |
 
 ## Thirty-second version
 

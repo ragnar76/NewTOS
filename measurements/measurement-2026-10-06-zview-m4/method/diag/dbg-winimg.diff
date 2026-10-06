@@ -1,0 +1,3 @@
+467a468,469
+> 	{ char b[300]; uint16 *pp=(uint16*)picture->fd_addr;
+> 	  sprintf(b,"DBG redraw: work %d,%d %dx%d pic %p w=%d h=%d wd=%d st=%d np=%d xy=%d,%d,%d,%d -> %d,%d,%d,%d px0=%04x %04x %04x %04x\r\n", xw,yw,ww,hw,(void*)picture->fd_addr,picture->fd_w,picture->fd_h,picture->fd_wdwidth,picture->fd_stand,picture->fd_nplanes,xy[0],xy[1],xy[2],xy[3],xy[4],xy[5],xy[6],xy[7], pp?pp[0]:0, pp?pp[8]:0, pp?pp[16]:0, pp?pp[64*30]:0); Cconws(b); }

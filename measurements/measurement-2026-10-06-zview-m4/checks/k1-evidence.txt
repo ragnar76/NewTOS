@@ -1,0 +1,35 @@
+K1 evidence (measurement-2026-10-06-zview-m4), HEAD kernel b2c365fb..., memprot on
+
+1. VQPROBE.NAP (method/vqprobe.c) in zView's start context, serial/alt-vqprobe-serial.log:
+   VQPROBE: vq_extnd(aeshdl,0) handle=1 wo[0]=-7 wo[1]=-7 wo[4]=-7 wo[13]=-7 wo[39]=-7
+   VQPROBE: vq_extnd(aeshdl,1) handle=1 wo[0]=-7 wo[1]=-7 wo[4]=-7 wo[13]=-7 wo[39]=-7
+   VQPROBE: v_opnvwk handle=2 wo[0]=639 wo[1]=479 wo[4]=278 wo[13]=256 wo[39]=0
+   VQPROBE: vq_extnd(vhandle,1) handle=2 wo[0]=4 wo[1]=1 wo[4]=16 wo[13]=0 wo[39]=0
+   -> graf_handle returns 1; vq_extnd(1, 0|1) writes no output (wo[] keeps the -7 fill);
+      the same call on a v_opnvwk handle answers (planes 16).
+
+2. Product ZVIEW.NAP + WinDom: instrumented winimg.c (method/diag/dbg-winimg.diff, bin/ZVIEW-DBG.NAP), serial/alt-dbg1-serial.log:
+   DBG redraw: work 277,227 64x49 pic 0x1d3ede0 w=64 h=48 wd=4 st=0 np=0 xy=0,0,63,47 -> 277,227,340,274 px0=f800 07e0 001f c69c
+   -> the picture MFDB has fd_nplanes 0 (pic_load.c:34 n_planes = app.nplanes; WinDom appl_init.c:45-46
+      app.nplanes = work_out[4] of vq_extnd(app.aeshdl, 1)); first-row pixels f800/07e0/001f are the decoded red/green/blue bars.
+
+3. Diagnostic build bin/ZVIEW-K1DIAG.NAP (method/diag/k1diag-main.diff: after ApplInit, app.nplanes/app.color
+   from vq_extnd on WinDom's virtual workstation app.handle, plus the FLG_NOPAL branch appl_init.c:47-51):
+   DIAG-K1: app.nplanes=16 app.color=256 (from v_opnvwk handle 2)
+   -> every sample pixel-exact: checks/diag-on-shotcheck.txt.
+
+4. Product ZVIEW.NAP (bin/ZVIEW/ZVIEW.NAP) opening the 320x200 C:\ZVIEW\SAMPLES\T.PI1, memprot on,
+   serial/probe-t-pi1-serial.log, screendumps/probe-t-pi1-t*.png:
+   [crash] slot 2 Bus Error esr=0x92000004 pc=0x1a7eb60 far=Some(17870556004450629632)
+   
+   
+   Panic: Bus Error
+   esr=92000004
+   addr=f800f800f800f800 sr=a0000000 pc=0000000001a7eb60
+   text+0x17b60 = VA 0x18b60 = WinDom DataSearch+0x8 (llvm-nm -n on ZVIEW.NAP, .text at VA 0x1000).
+   FAR = 0xf800f800f800f800 = four red RGB565 pixels (DEGAS colour 1 = 0x0F00 -> 0xF800):
+   with app.nplanes 0 the picture MFDB is 0 planes, init_mfdb allocates (wdwidth*2*0*h)+256 = 256 bytes
+   (mfdb.c:35) and LnSize = wdwidth*0 = 0 (pic_load.c:109), so each 320-pixel row (640 bytes) is written
+   over the same 256-byte block and past it -- the overrun lands in WinDom's window data list,
+   DataSearch then follows a pixel word as a pointer. Same picture with the K1 diagnostic build:
+   pixel-exact (checks/diag-on-shotcheck.txt, T.PI1).

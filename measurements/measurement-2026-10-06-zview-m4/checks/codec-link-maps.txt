@@ -1,0 +1,20 @@
+== link-BMP.NLD.map
+libshare.a(calloc.o) libshare.a(chdir.o) libshare.a(libshare.o) libshare.a(malloc.o) libshare.a(realloc.o) libshare.a(sbrk.o) 
+== link-DEGAS.NLD.map
+libshare.a(calloc.o) libshare.a(chdir.o) libshare.a(libshare.o) libshare.a(malloc.o) libshare.a(realloc.o) libshare.a(sbrk.o) 
+== link-EUREKA.NLD.map
+libshare.a(calloc.o) libshare.a(chdir.o) libshare.a(libshare.o) libshare.a(malloc.o) libshare.a(realloc.o) libshare.a(sbrk.o) 
+== link-GIF.NLD.map
+libshare.a(calloc.o) libshare.a(chdir.o) libshare.a(libshare.o) libshare.a(malloc.o) libshare.a(realloc.o) libshare.a(sbrk.o) 
+== link-GODPAINT.NLD.map
+libshare.a(calloc.o) libshare.a(chdir.o) libshare.a(libshare.o) libshare.a(malloc.o) libshare.a(realloc.o) libshare.a(sbrk.o) 
+== link-IMG.NLD.map
+libshare.a(calloc.o) libshare.a(chdir.o) libshare.a(libshare.o) libshare.a(malloc.o) libshare.a(realloc.o) libshare.a(sbrk.o) 
+== link-JPG.NLD.map
+libshare.a(calloc.o) libshare.a(chdir.o) libshare.a(libshare.o) libshare.a(malloc.o) libshare.a(realloc.o) libshare.a(sbrk.o) 
+== link-NEO.NLD.map
+libshare.a(calloc.o) libshare.a(chdir.o) libshare.a(libshare.o) libshare.a(malloc.o) libshare.a(realloc.o) libshare.a(sbrk.o) 
+== link-PNG.NLD.map
+libshare.a(calloc.o) libshare.a(chdir.o) libshare.a(libshare.o) libshare.a(malloc.o) libshare.a(realloc.o) libshare.a(sbrk.o) 
+== link-TGA.NLD.map
+libshare.a(calloc.o) libshare.a(chdir.o) libshare.a(libshare.o) libshare.a(malloc.o) libshare.a(realloc.o) libshare.a(sbrk.o) 

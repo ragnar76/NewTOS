@@ -1,0 +1,16 @@
+102a103,117
+> 	{	/* DIAGNOSTIC ONLY (measurement-2026-10-06-zview-m4, finding K1): NewTOS
+> 		   answers nothing on graf_handle's workstation 1, so WinDom's ApplInit
+> 		   (appl_init.c:43-46) left app.nplanes/app.color at 0. Ask the same
+> 		   device through WinDom's own virtual workstation instead. */
+> 		short wo[57]; char b[120];
+> 		vq_extnd( app.handle, 0, wo); app.color = wo[13];
+> 		vq_extnd( app.handle, 1, wo); app.nplanes = wo[4];
+> 		if( app.nplanes > 8) {	/* appl_init.c:47-51, the branch ApplInit would have taken */
+> 			ApplSet( APS_FLAG, FLG_NOPAL, 1);
+> 			free( app.palette);
+> 			app.palette = NULL;
+> 		}
+> 		sprintf( b, "DIAG-K1: app.nplanes=%d app.color=%d (from v_opnvwk handle %d)\r\n", app.nplanes, app.color, app.handle);
+> 		Cconws( b);
+> 	}

@@ -1,0 +1,24 @@
+# zView source pin for sdk/zview/build-zview.sh (TASK/ZVIEW-M4).
+#
+# z-tools-04805b7.tar.xz = a subset of the z-tools repository at commit
+#   04805b77d6fc246ee507c8c5e2317b58b1a531e4 (2024-09-12, "Update README.md")
+#   of https://github.com/mikrosk/z-tools (zView 1.0.1 LDG version, Zorro /
+#   Miro Kropacek), checked out in Applications/z-tools. Made with
+#     git archive --format=tar --prefix=z-tools-04805b7/ 04805b7 \
+#       README.md prerequisites.txt common.mak common zview \
+#       ztask/gmem.c ztask/gmem.h \
+#       ':(exclude)zview/_dist/fonts' ':(exclude)zview/_dist/goodies' \
+#       ':(exclude)zview/_dist/doc/hypview' | xz -9e
+#   (xz 5.8.3). Every file in it is byte-identical to the commit. Left out:
+#   the PDF fonts (zview/_dist/fonts, xpdf only), third-party goodies
+#   (m68k binaries) and the HypView viewer -- none is built or installed.
+#   ztask/gmem.{c,h} are in because zView's sources include "gmem.h" and call
+#   gmalloc/grealloc/gfree, which its own build takes from xpdf's goo library
+#   (zview/Makefile:12-15,35); xpdf is the PDF module NewTOS leaves out, and
+#   z-tools' own C version of that API (ztask/gmem.c, same authors, same
+#   repository) stands in for it unchanged.
+#
+# License: zView GNU GPL (source headers, e.g. zview/general.h:1-17;
+#   zview/_dist/doc/copying.gpl); each codec directory carries the GNU LGPL
+#   2.1 (zview/plugins/<codec>/copyright).
+ce9d7d88709f6754b70239bc86395b99cbea99ee49abc08861740ac5221a997d  z-tools-04805b7.tar.xz
