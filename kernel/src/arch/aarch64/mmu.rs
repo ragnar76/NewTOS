@@ -160,6 +160,55 @@ pub fn empty_l0_pa() -> u64 {
     va_to_pa((&raw const EMPTY_L0) as u64)
 }
 
+/// `TCR_EL1.AS` — ASID size: 0 = 8 bit, 1 = 16 bit (ARM ARM D24-9917).
+const TCR_AS: u64 = 1 << 36;
+
+/// Size the ASID for ARCH03 stage 4 (per-process ASIDs, boot argument
+/// `asid=on`): read `ID_AA64MMFR0_EL1.ASIDBits` ([7:4]; `0b0010` = 16 bits,
+/// `0b0000` = 8 bits, ARM ARM D24-9247; Cortex-A72: `0x2`, TRM Table 4-35)
+/// and, for 16 bits, set `TCR_EL1.AS` (otherwise the upper 8 ASID bits are
+/// treated as 0, D24-9917). Returns `(width in bits, ASIDBits field)`.
+///
+/// `TCR_EL1.AS` is one of the fields "permitted to be cached in a TLB"
+/// (D24.2.193): after the write and its synchronisation the TLB is
+/// invalidated (`RVNRFW`, D8-7858) — `msr; isb; tlbi vmalle1; dsb ish; isb`.
+/// Only `AS` changes; every other field keeps the boot value, so the running
+/// translation is undisturbed. Left alone (8 bits, boot `TCR_EL1`) when
+/// ASIDs are off.
+///
+/// # Safety
+///
+/// Boot CPU, after [`reinstall`] (`TTBR0_EL1` = the empty root, ASID 0),
+/// before any process root is installed.
+pub unsafe fn size_asids() -> (u32, u64) {
+    let mmfr0: u64;
+    // SAFETY: ID_AA64MMFR0_EL1 is readable at EL1.
+    unsafe {
+        core::arch::asm!("mrs {}, id_aa64mmfr0_el1", out(reg) mmfr0,
+            options(nomem, nostack, preserves_flags));
+    }
+    let field = (mmfr0 >> 4) & 0xF;
+    if field != 0b0010 {
+        return (8, field);
+    }
+    // SAFETY: EL1; only TCR_EL1.AS changes (see above), followed by the
+    // synchronisation and the invalidation the ARM ARM requires.
+    unsafe {
+        let tcr: u64;
+        core::arch::asm!("mrs {}, tcr_el1", out(reg) tcr, options(nomem, nostack, preserves_flags));
+        core::arch::asm!(
+            "msr tcr_el1, {t}",
+            "isb",
+            "tlbi vmalle1",
+            "dsb ish",
+            "isb",
+            t = in(reg) tcr | TCR_AS,
+            options(nostack, preserves_flags),
+        );
+    }
+    (16, field)
+}
+
 // ─────────────────────────────────────────────────────────────────────
 // Table construction
 // ─────────────────────────────────────────────────────────────────────

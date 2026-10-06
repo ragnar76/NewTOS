@@ -1,0 +1,34 @@
+a4-on-asid-rpi4-acc                 1 accessories have issued; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+a4-on-asid-rpi4-accfree             2 accessories have issued; 1 ACCFREE: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+a4-on-asid-rpi4-apitest             1 ASIDs ON: 16-bit ; 1 memory protection ON; 1 TOTAL 106 0 5;
+a4-on-asid-rpi4-asidperf-counters   11 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+a4-on-asid-rpi4-asidperf            11 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+a4-on-asid-rpi4-asidstr             1 [crash] slot 2 key; 10 ASIDACC: PASS; 1 ASIDs ON: 16-bit ; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault;
+a4-on-asid-rpi4-atexit              1 ASIDs ON: 16-bit ; 1 ATEXIT: PASS; 1 desktop up; 1 memory protection ON;
+a4-on-asid-rpi4-crashtst            6 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 CRASHTST: PASS; 1 desktop up; 1 memory protection ON;
+a4-on-asid-rpi4-desk3a              1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+a4-on-asid-rpi4-desktop             1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+a4-on-asid-rpi4-doom                1 ASIDs ON: 16-bit ; 1 memory protection ON; 1 VERIFIED via EdDI+scale+vro_cpyfm;
+a4-on-asid-rpi4-e10                 1 ASIDs ON: 16-bit ; 1 E10USR: PASS; 1 memory protection ON;
+a4-on-asid-rpi4-e9mem               1 ASIDs ON: 16-bit ; 1 desktop up; 2 E9MEM: PASS; 1 memory protection ON;
+a4-on-asid-rpi4-e9plain             1 ASIDs ON: 16-bit ; 1 desktop up; 1 E9PLAIN: PASS; 1 memory protection ON;
+a4-on-asid-rpi4-emucon9             1 ASIDs ON: 16-bit ; 2 desktop up; 2 E9MEM: PASS; 1 E9PLAIN: PASS; 1 KBDVEC: PASS; 1 memory protection ON;
+a4-on-asid-rpi4-envrn               1 ASIDs ON: 16-bit ; 1 desktop up; 1 ENVRN: PASS; 1 memory protection ON;
+a4-on-asid-rpi4-kbdvec-emucon       1 ASIDs ON: 16-bit ; 2 desktop up; 1 KBDVEC: PASS; 1 memory protection ON;
+a4-on-asid-rpi4-mdprobe             1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+a4-on-asid-rpi4-mprot               1 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault; 1 MPROT3B: PASS;
+a4-on-asid-rpi4-port10-rerun        44 10: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON; 1 port10: ALL PASS (44 checks);
+a4-on-asid-rpi4-port10              1 10: FAIL; 43 10: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON; 1 port10: 1 of 44 checks FAILED;
+a4-on-asid-rpi4-pparent             1 ACC: PASS; 1 accessories have issued; 1 ASIDs ON: 16-bit ; 1 AUTO: PASS; 1 desktop up; 1 KID: PASS; 1 memory protection ON; 1 Z: PASS;
+a4-on-asid-rpi4-ppdesk              1 ASIDs ON: 16-bit ; 1 DESK: PASS; 2 desktop up; 1 KID: PASS; 1 memory protection ON;
+a4-on-asid-rpi4-qed                 1 ASIDs ON: 16-bit ; 1 memory protection ON;
+a4-on-asid-rpi4-s2all-crashkernel   1 ASIDs ON: 16-bit ; 1 desktop up; 1 MEM03: PASS; 1 memory protection ON; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; 1 VFORK: PASS;
+a4-on-asid-rpi4-s2all               1 ASIDs ON: 16-bit ; 1 desktop up; 1 MEM03: PASS; 1 memory protection ON; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; 1 VFORK: PASS;
+a4-on-asid-rpi4-tdqed               1 ASIDs ON: 16-bit ; 1 memory protection ON;
+a4-on-asid-rpi4-teradesk            1 ASIDs ON: 16-bit ; 1 memory protection ON;
+a4-on-asid-rpi4-uacc3a              26 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON; 1 UACC3A: PASS;
+a4-on-asid-rpi4-vforkt-alone        1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON; 1 VFORK: PASS;
+a4-on-asid-virt-asidstr             1 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault;
+a4-on-asid-virt-crash               1 [crash] slot 0 key; 27 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 CRASHTST: PASS; 1 E10USR: PASS; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault; 1 MPROT3B: PASS; 1 UACC3A: PASS;
+a4-on-asid-virt-desktop             1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+a4-on-asid-virt-selftests           1 === B1 PASS ===; 1 === D3 PASS ===; 1 === D3 PEXEC PASS ===; 1 === D4/D5 PEXEC PASS ===; 1 === D6 PASS ===; 1 === D7 PTERMRES PASS ===; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;

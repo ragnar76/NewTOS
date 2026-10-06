@@ -123,7 +123,10 @@ high half (`TTBR1_EL1`), untouched.
   half-measure that still carries per-process TTBR0 swaps (and thus
   QUIRK-001) and the 64-bit-VA-vs-LONG problem. Rejected.
 - **Per-process ASIDs:** wedges QEMU worse (QUIRK-001); does not by
-  itself solve the LONG-pointer problem. Rejected.
+  itself solve the LONG-pointer problem. Rejected. *(2026-10-06: rejected
+  as a fix for the address-space model only; since ARCH03 stage 4 they
+  exist as an optional switch-cost optimisation, `asid=on`, see QUIRK-001
+  update.)*
 
 ### Implementation note — Stage-0 prerequisite (discovered 2026-06-16)
 
@@ -2092,7 +2095,7 @@ Format: `QUIRK-NNN`, dated, with severity (low / medium / high / critical).
 **Date discovered:** 2026-06-16
 **Severity:** High (blocks `Pexec`/`Pterm` round-trip under QEMU)
 **Phase / context:** PHASE-06 D3/D6 — `Pexec(PE_LOADGO)` parent/child round-trip
-**Status:** Worked around (interim); permanent fix = per-process ASIDs
+**Status:** Worked around (interim); permanent fix = per-process ASIDs — built 2026-10-06 behind `asid=on` (default off until the Pi run), see the update below
 
 ### Symptom
 
@@ -2150,6 +2153,23 @@ be validated on real RPi4 / a newer QEMU, not against this model.
 
 So: **do not re-attempt ASIDs to "fix" QUIRK-001** — that is solved by
 the barrier. Keep the barrier; it is correct on both targets.
+
+**Update 2026-10-06 (ARCH03 stage 4):** the ASID wedge is gone on QEMU
+11.0.2 and does not exist on the real Pi 4 (ARCH03 0b, S0b §4 + Pi result).
+Per-process ASIDs are now built — **behind the boot argument `asid=on`,
+default off** (`asid=tiny` = 3 ASIDs per generation, the rollover test):
+`nG` on every user leaf, `TCR_EL1.AS` from `ID_AA64MMFR0_EL1.ASIDBits`,
+one ASID per slot tenancy with generations (`tos-api/src/bdos/process/asid.rs`),
+switch = tagged `msr ttbr0_el1` without TLBI, narrowing by `TLBI VAE1IS`/
+`VAAE1IS`, rollover `VMALLE1IS` with the empty root/ASID 0 installed.
+With the flag off the TLBI-on-every-switch path above is unchanged. The
+UART bracket prints stay in both modes (still diagnostic output; dropping
+them is a separate step after the Pi run). **QEMU caveat:** QEMU does not
+keep TLB entries of an inactive ASID observable — a deliberately broken
+kernel without the per-VA invalidation still passes the inactive-ASID
+probe on QEMU, only the same-ASID case (MPROT `f`) catches it. Retention
+across ASIDs is therefore verifiable only on the Pi.
+Evidence: `measurements/measurement-2026-10-06-arch03-4/RUNINFO.TXT`.
 
 ### Why this is hard to rediscover
 

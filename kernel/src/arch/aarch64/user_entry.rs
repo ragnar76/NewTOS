@@ -100,6 +100,25 @@ fn boot_l0_phys() -> u64 {
 /// low-half VAs raise a translation fault until the next per-process install.
 pub unsafe fn restore_boot_ttbr0() {
     let empty_l0 = crate::arch::aarch64::mmu::empty_l0_pa();
+    if tos_api::bdos::process::mmu::asids_enabled() {
+        // ARCH03 stage 4 (`asid=on`): every process root carries its own
+        // ASID and the empty root ASID 0, so nothing of the dying or
+        // departing root can be matched under the next one — no TLBI
+        // (ARM ARM Example D8-1, D8-7700; V0a B8). What a torn-down root left
+        // behind is retired with its ASID (`mmu::flush_tlb_slot_released`,
+        // `mmu::init_slot_tables`).
+        // SAFETY: writing TTBR0_EL1 is permitted at EL1.
+        unsafe {
+            core::arch::asm!(
+                "dsb ishst",
+                "msr ttbr0_el1, {ttbr0}",
+                "isb",
+                ttbr0 = in(reg) empty_l0,
+                options(nostack, preserves_flags),
+            );
+        }
+        return;
+    }
     // SAFETY: writing TTBR0_EL1 + TLBI is permitted at EL1.
     unsafe {
         core::arch::asm!(

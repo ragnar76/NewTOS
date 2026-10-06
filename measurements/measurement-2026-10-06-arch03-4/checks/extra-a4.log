@@ -1,0 +1,153 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card on check 1: rewrote /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/cards/rerun-on/mnt/P10/ONLYNCP.NCP
+card on ok (check 2)
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.siGDPo/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.siGDPo/ser.sock,server=on
+t=  16.9s end marker seen
+t=  19.0s a4-on-rpi4-port10-rerun-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-port10-rerun: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card on-asid check 1: rewrote /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/cards/rerun-on-asid/mnt/P10/ONLYNCP.NCP
+card on-asid ok (check 2)
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.tY0MbM/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.tY0MbM/ser.sock,server=on
+t=  16.7s end marker seen
+t=  18.7s a4-on-asid-rpi4-port10-rerun-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-port10-rerun: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card off-asid check 1: rewrote /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/cards/rerun-off-asid/mnt/P10/ONLYNCP.NCP
+card off-asid ok (check 2)
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.WAY4BE/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.WAY4BE/ser.sock,server=on
+t=  15.6s end marker seen
+t=  17.7s a4-off-asid-rpi4-port10-rerun-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-port10-rerun: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card strict-asid check 1: rewrote /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/cards/rerun-strict-asid/mnt/P10/ONLYNCP.NCP
+card strict-asid ok (check 2)
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.yS4s4Q/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.yS4s4Q/ser.sock,server=on
+t=  16.7s end marker seen
+t=  18.7s a4-strict-asid-rpi4-port10-rerun-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-port10-rerun: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card on-tiny check 1: rewrote /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/cards/rerun-on-tiny/mnt/P10/ONLYNCP.NCP
+card on-tiny ok (check 2)
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.sWCOFA/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.sWCOFA/ser.sock,server=on
+t=  16.7s end marker seen
+t=  18.7s a4-on-tiny-rpi4-port10-rerun-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-port10-rerun: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.h0K7Os/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.h0K7Os/ser.sock,server=on
+t=  15.6s end marker seen
+t=  18.6s a4-on-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.u8Abk5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.u8Abk5/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s a4-on-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-envrn: rc=0
+=== off-tiny Di.  6 Okt. 2026 19:14:57 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.C2F5u2/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.C2F5u2/ser.sock,server=on
+t=  15.5s end marker seen
+t=  18.5s a4-off-tiny-rpi4-asidstr-end.png {"return": {}}
+prompts seen: 0
+run a4-off-tiny-rpi4-asidstr: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.HyCGGV/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.HyCGGV/ser.sock,server=on
+t=  15.8s end marker seen
+t=  18.9s a4-off-tiny-rpi4-asidperf-counters-end.png {"return": {}}
+prompts seen: 0
+run a4-off-tiny-rpi4-asidperf-counters: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.TDYyCP/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.TDYyCP/ser.sock,server=on
+t=  15.8s end marker seen
+t=  18.8s a4-off-tiny-rpi4-asidperf-end.png {"return": {}}
+prompts seen: 0
+run a4-off-tiny-rpi4-asidperf: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.sv3WpS/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.sv3WpS/ser.sock,server=on
+t=   3.4s end marker seen
+t=   5.5s a4-off-tiny-virt-asidstr-end.png {"return": {}}
+prompts seen: 0
+run a4-off-tiny-virt-asidstr: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.aZ1X4f/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.aZ1X4f/ser.sock,server=on
+t=  15.9s end marker seen
+t=  17.9s a4-off-tiny-rpi4-s2all-crashkernel-end.png {"return": {}}
+prompts seen: 0
+run a4-off-tiny-rpi4-s2all-crashkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.apN2G6/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.apN2G6/ser.sock,server=on
+t=  15.1s end marker seen
+t=  18.1s a4-off-tiny-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run a4-off-tiny-rpi4-vforkt-alone: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.7etg7S/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.7etg7S/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s a4-off-tiny-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run a4-off-tiny-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.5yNUof/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.5yNUof/ser.sock,server=on
+t=  15.0s end marker seen
+t=  17.1s a4-off-tiny-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run a4-off-tiny-rpi4-envrn: rc=0
+=== strict-tiny Di.  6 Okt. 2026 19:18:00 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.zXmH7C/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.zXmH7C/ser.sock,server=on
+t=  25.3s a4-strict-tiny-rpi4-asidstr-crash1.png {"return": {}}
+t=  26.7s end marker seen
+t=  29.7s a4-strict-tiny-rpi4-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-strict-tiny-rpi4-asidstr: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.hYUsRd/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.hYUsRd/ser.sock,server=on
+t=  31.2s end marker seen
+t=  34.2s a4-strict-tiny-rpi4-asidperf-counters-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-tiny-rpi4-asidperf-counters: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.rAcnWo/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.rAcnWo/ser.sock,server=on
+t=  29.6s end marker seen
+t=  32.6s a4-strict-tiny-rpi4-asidperf-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-tiny-rpi4-asidperf: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.39gD8Z/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.39gD8Z/ser.sock,server=on
+t=   5.5s a4-strict-tiny-virt-asidstr-crash1.png {"return": {}}
+t=   5.5s answered prompt 1
+t=   5.7s end marker seen
+t=   7.8s a4-strict-tiny-virt-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-strict-tiny-virt-asidstr: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.JppBCK/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.JppBCK/ser.sock,server=on
+t=  17.0s a4-strict-tiny-rpi4-s2alls-crashkernel-crash1.png {"return": {}}
+t=  19.4s a4-strict-tiny-rpi4-s2alls-crashkernel-crash2.png {"return": {}}
+t=  21.4s end marker seen
+t=  23.4s a4-strict-tiny-rpi4-s2alls-crashkernel-end.png {"return": {}}
+prompts seen: 2
+run a4-strict-tiny-rpi4-s2alls-crashkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.z9qxLk/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.z9qxLk/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s a4-strict-tiny-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-tiny-rpi4-vforkt-alone: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.vF5KSt/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.vF5KSt/ser.sock,server=on
+t=  15.5s end marker seen
+t=  18.5s a4-strict-tiny-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-tiny-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.5Euoew/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.5Euoew/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-strict-tiny-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-tiny-rpi4-envrn: rc=0
+=== done Di.  6 Okt. 2026 19:21:52 CEST
+ALLDONE

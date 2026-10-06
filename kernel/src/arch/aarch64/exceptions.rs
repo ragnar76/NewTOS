@@ -1999,9 +1999,13 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
             options(nomem, nostack, preserves_flags),
         );
     }
+    // Only the root's address (BADDR): with ARCH03 stage-4 ASIDs on,
+    // TTBR0_EL1[63:48] carries the parent's ASID, which the restore
+    // (`install_ttbr0`) derives from the root again. With ASIDs off the
+    // upper bits are 0 and this is the value as read.
     tos_api::bdos::process::PROCESS_TABLE[child.slot]
         .parent_l0_pa
-        .store(parent_ttbr0, Ordering::Release);
+        .store(parent_ttbr0 & 0x0000_FFFF_FFFF_FFFF, Ordering::Release);
 
     // Record the kernel-side parent linkage (EmuTOS `proc_go`,
     // bdos/proc.c:541 — `p->p_parent = run`). `RUN` still points at

@@ -44,6 +44,7 @@ use core::sync::atomic::{
 use tos_types::BasePage;
 
 pub mod arena;
+pub mod asid;
 pub mod elf;
 pub mod loader;
 pub mod memprot;

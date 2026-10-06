@@ -1,0 +1,166 @@
+measurement-2026-10-06-arch03-4 -- ARCH03 stage 4: per-process ASIDs and TLB
+fine maintenance, behind the boot argument asid=on (default off). Developer
+self-evidence; the Tester's verdict is separate. QEMU only -- no SD card, Pi
+or TT touched.
+
+Date 2026-10-06, branch desk-rebuild, HEAD c0ed62b plus this change
+(uncommitted). QEMU 11 raspi4b (-append serial=on [+ memprot=off|strict]
+[+ asid=on|asid=tiny]) and virt (-append [memprot=..] [asid=..]), host macOS.
+Cards: method/seed-card.sh, private 64 MiB images in the session scratchpad
+(never tools/make-sd-image.sh; make-scratch.sh excludes 'sd-card-backup-*').
+Instrumented kernels only from scratch copies (make-scratch.sh), never the
+shared tree.
+
+SPEC / AUTHORITY: docs/analysis/arch03-implementation-plan.md (Frage 15,
+section 3.2, Stufe 4, E12; new: "Stufe 4 wie gebaut"); ARM ARM DDI 0487 M.d
+(references/arm-arm): RSCBSR/RQGKGF/RCHVGJ/IHGKKC D8-7853/7854, ASID size
+D8-7855 + TCR_EL1.AS D24-9917 ("Any of the bits in TCR_EL1 ... permitted to be
+cached in a TLB", D24.2.193; RVNRFW D8-7858), TLBI scope RPMNQC/RFKSVM/RVMSWQ/
+RZSXRQ/RDRCZZ D8-7867..7869 (re-read in this session), Example D8-1 D8-7700;
+Cortex-A72 TRM Table 4-35 (ASIDBits 0x2). V0a B4-B8, C5-C7.
+
+CODE (files):
+  tos-api/src/bdos/process/asid.rs   NEW: Allocator (ASID per slot tenancy,
+                                     generations, retire), Queue/Inval (owed
+                                     TLBI VAE1IS/VAAE1IS, Xt operand)
+  tos-api/src/bdos/process/mmu.rs    nG on user leaves (asid on), configure_asids,
+                                     asids_enabled, asid_stats, install_tagged
+                                     (tagged msr, rollover flush with empty root/
+                                     ASID 0), owe_inval, set_leaf(va, owner),
+                                     flush_tlb per VA, replace_bbm/drop_private
+                                     per ASID, flush_tlb_slot_released, retire in
+                                     init_slot_tables; ASIDs off: unchanged path
+  tos-api/src/bdos/process/memprot.rs set_leaf call sites, on_slot_released
+  tos-api/src/bdos/process.rs        mod asid
+  kernel/src/arch/aarch64/mmu.rs     size_asids (ID_AA64MMFR0_EL1.ASIDBits ->
+                                     TCR_EL1.AS, then tlbi vmalle1)
+  kernel/src/arch/aarch64/user_entry.rs restore_boot_ttbr0: asid on -> no TLBI
+  kernel/src/arch/aarch64/exceptions.rs handle_pexec: parent_l0_pa without the
+                                     ASID bits of TTBR0_EL1
+  kernel/src/lib.rs                  asid_switch/boot_switch (memprot_switch now
+                                     shares the boot-argument reader), configure
+                                     after reinstall, before any user table
+  kernel/src/bootargs.rs             ASID_ON "asid=on", ASID_TINY "asid=tiny"
+  tests: tos-api/tests/arch03_4_asid_alloc.rs (8), arch03_4_asid_on.rs (2),
+         asid.rs unit tests (2), bootargs test (1)  -> +13 host tests
+DOCS: plan "Stufe 4 wie gebaut" + E12 row; docs/MEMORY.md QUIRK-001 (status
+line + update 2026-10-06), ADR-010 ASID bullet note; TASK/ARCH03.md row 4.
+
+STATIC CHECKS (checks/a4-*.txt = after the code; checks/a4-final-*.txt = after
+the last doc-comment edit, identical counts)
+                                      proc02 (base)  arch03-4
+  host tests pass/fail/ignored        1152/0/1       1165/0/1 (+13 new)
+  release warnings tos-api/kernel     64/94 both     64/94 both boards
+  clippy tos-api/kernel rpi4, virt    76/125         76/125 (per-file counts
+                                                     identical to proc02)
+  desk-drift-probe                    31             31
+  sdk/run-host-tests                  13/0/0         13/0/0
+  Kernels: bin/KERNELS.SHA256. kernel8-a4/kernel-virt-a4 = the series
+  kernels; *-a4-final differ from them in 7 bytes of rodata only (panic
+  Location line numbers after the 15-line module-doc addition in mmu.rs).
+
+METHOD (method/ = measurement-2026-10-06-proc02/method copied, plus):
+  mode.sh            mode string <on|off|strict>[-asid|-tiny] -> BASE, A4, AV,
+                     APPEND; the proc02 run scripts (pp-run, ppdesk-run,
+                     runs-poste9, runs-e9, runs-e9-extra, desk3a-run) source it
+                     instead of their own case blocks
+  series-arch03-4.sh the full proc02 series per mode for
+                     on off strict on-asid off-asid strict-asid on-tiny,
+                     + asid-runs.sh per mode
+  asid-runs.sh       ASIDSTR (crash-prompt kernel with counters), ASIDPERF on
+                     the counter kernel and on the product kernel, virt ASIDSTR
+  extra-tiny.sh      off-tiny/strict-tiny: ASID probes, S2ALL(S), VFORKT, PPARENT
+  rerun-port10.sh    PORT10 again on a verified card (see CARD DEFECT)
+  neg-runs.sh        negative controls
+  asid-kernels.sh    kernel8-asidk (0c injector + counters), kernel-virt-asidk
+                     (counters + ASIDSTR from the RAM registry), the two
+                     negative-control kernels
+  asid-instrumentation.py  SWCOST-TEMP CNTVCT counters around the TTBR0
+                     primitives in exceptions.rs; --virt-launch; --neg-notlbi;
+                     --neg-noinval
+  build-asid.sh, tests/asid*.{c,h}  probes ASIDKID/ASIDACC/ASIDSTR(O)/ASIDPERF(PRFO)
+  drive.py --stamp   host-time-stamped serial copy (<tag>-stamped.log)
+  summarize.sh       + "ASIDs ON" and ASID WRONG lines
+  swcost-analyze.py, shotcmp.py  analysis
+  Programs: bin/ = proc02 bin/ (SHA256SUMS verified OK) + the six ASID probes;
+  repo-binaries.sha256 identical to proc02.
+
+PROBES (method/tests): page 0 is the one VA with a different PA per process;
+each process keeps a marker in a free page-0 cell (0xFF8) and checks it after
+switches. ASIDSTR: A 32x Pexec child (fresh page 0 must read 0, parent cell
+intact), B 4 chains of 6 generations, C inactive-ASID narrowing (a Pexec 3+4
+thread Mfree's the victim's page while the victim sleeps; protection on ->
+victim stopped 0xFFFF, off -> write goes through), D 200x evnt_timer(1) with
+the accessory ASIDACC (checks its own page 0 on every wake, prints every 300
+wakes). ASIDPERF: no C, 64/4x6/400 iterations, for timing.
+
+RESULTS -- series (checks/summary-a4-<mode>.txt, compare whitespace-normalised)
+  on/off/strict (ASIDs off) vs proc02: identical apart from the new ASID
+  probe lines (all PASS) -- except PORT10 in mode on (see CARD DEFECT).
+  <base>-asid vs <base>, on-tiny vs on: identical apart from the "ASIDs ON"
+  boot line -- except PORT10 (CARD DEFECT). Everything else PASS in all seven
+  series modes: desktop, TeraDesk, QED, Doom VERIFIED, APITEST 106/0/5, accessory,
+  E9MEM/E9PLAIN, S2ALL (S2ALLS strict), CRASHTST, UACC3A, MPROT3B, E10USR,
+  KBDVEC+EmuCON, TeraDesk->QED, EmuCON 9, ATEXIT, ACCFREE, MDPROBE, PPARENT,
+  PPDESK, ENVRN, desk3a, VFORKT, virt crash/selftests (B1 D3 D3-PEXEC D4/D5
+  D6 D7)/desktop, ASIDSTR (rpi4 + virt), ASIDPERF, ASIDACC bad=0.
+  off-tiny/strict-tiny (extra-tiny.sh): ASIDSTR, ASIDPERF, S2ALL(S), VFORKT,
+  PPARENT, ENVRN all PASS.
+  Forced rollover: the counter lines show 80 generations (rpi4 ASIDPERF) and
+  31 (virt ASIDSTR) per run with asid=tiny, every check PASS.
+
+CARD DEFECT (host side, not the kernel): in modes on, on-asid, off-asid,
+strict-asid, on-tiny the seeded card held C:\P10\ONLYNCP.NCP with 0 bytes
+(after the macOS FAT unmount -- the file had its size while mounted; reproduced
+by hand), so Pexec answered EPLFMT (errno 66) and PORT10 reported 1 of 44.
+rerun-port10.sh checks the card after the unmount and re-writes a short file:
+PORT10 ALL PASS (44) in all five modes (serial/a4-<mode>-rpi4-port10-rerun-*).
+proc02's cards did not show it; the cause in the macOS FAT driver is not
+investigated (out of scope).
+ORPHAN: a first series start was stopped after 20 s; one of its child
+scripts ran the mode-on PPARENT run once more in parallel (timed out, its
+screendump was deleted). PPARENT/ENVRN for mode on were run again afterwards
+(serial/a4-on-rpi4-pparent/envrn-* are the clean reruns, PASS).
+
+NEGATIVE CONTROLS (neg-runs.sh, deliberately broken kernels)
+  neg-notlbi (ASIDs off, no TLBI in restore_boot_ttbr0, memprot=off):
+    ASIDSTR FAIL -- part D 101/200 waits with a foreign page 0, ASIDACC
+    bad=101/300. Parts A/B do not see it on QEMU (the child's own pool pages
+    evict the page-0 entry from QEMU's soft TLB) -- part D is the QEMU-
+    sensitive check.
+  neg-noinval (asid=on, no per-VA invalidation): MPROT3B FAIL in case 'f'
+    (write after its own Mfree goes through -- same ASID); ASIDSTR PASS --
+    the inactive-ASID case (part C) is NOT observable on QEMU.
+
+SWITCH COST (checks/swcost-a4.txt; QEMU, indicative only; CNTVCT 62.5 MHz,
+counter kernel; per call of the TTBR0 primitive, UART lines between them not
+included; install includes memprot::sync)
+                 restore_boot_ttbr0   install_ttbr0   wall A/B/D s (product)
+  on             3.76 us              1.68 us         15.17/2.87/0.40
+  on-asid        4.08 us              5.84 us         11.96/2.27/0.40
+  on-tiny        3.98 us              9.83 us (80 rollovers)
+  off            2.08 us              1.39 us          0.33/0.06/0.40
+  off-asid       2.05 us              3.50 us          0.34/0.06/0.40
+  strict(-asid)  3.63 / 4.09 us       1.70 / 5.86 us  14.77 / 11.89 (A)
+  On QEMU a switch with ASIDs is MORE expensive: restore_boot_ttbr0 without
+  its TLBI costs the same as with it, and the install grows by ~2 us -- every
+  ASID change of TTBR0 apparently costs QEMU a soft-TLB flush [Schluss, from
+  these numbers and neg-noinval; QEMU source not pinned]. Part A with
+  protection on is ~20 % faster with ASIDs (per-VA invalidations instead of
+  vmalle1is in memprot::sync). The benefit on hardware is unmeasured.
+  Baseline check: ASIDPERF on the proc02 kernel (mode on):
+  A 13.8 s -- the ~200 ms per Pexec with protection on predates stage 4
+  (serial/baseline-proc02kernel-on-rpi4-asidperf-*).
+
+SCREENDUMPS (checks/shots-*.txt): <base> vs <base>-asid / on-tiny: 90-103
+byte-identical per mode; differing classes only: crash reports (kernel
+register values), CRASHTST/MPROT directory windows (file times), Doom
+(timing), UACC3A crash screens, EmuCON 9 E9MEM line (16-byte kept size; the
+same jitter occurs between ASIDs-off runs: proc02-off 0x17de0, a4-off
+0x17dd0). proc02 vs a4 (ASIDs off) differ in the same classes plus desk3a
+E_INFO/F_TYPED/H_DRIVE_C (file times).
+
+ONLY THE REAL PI 4 CAN CONFIRM: TLB retention across ASIDs (inactive-ASID
+invalidation, ASIDSTR part C / page 0 kept under another ASID), the
+TCR_EL1.AS change at run time, the rollover flush on hardware, the switch
+cost/benefit, Pi run of the regression set with asid=on and asid=tiny.

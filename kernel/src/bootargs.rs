@@ -31,6 +31,17 @@ pub const MEMPROT_OFF: &[u8] = b"memprot=off";
 /// child no longer keeps access to its parent's private memory.
 pub const MEMPROT_STRICT: &[u8] = b"memprot=strict";
 
+/// The token that switches per-process ASIDs on (ARCH03 stage 4,
+/// `docs/analysis/arch03-implementation-plan.md` Stufe 4, E12): every root
+/// is installed with an ASID of its own and an address-space switch drops no
+/// TLB entries. Off without it (the TLBI-on-every-switch path).
+pub const ASID_ON: &[u8] = b"asid=on";
+
+/// The rollover test hook of stage 4: ASIDs on, but only four numbers per
+/// generation (three usable), so that ASID generations roll over after
+/// every few process starts — the path that otherwise needs 65 535 of them.
+pub const ASID_TINY: &[u8] = b"asid=tiny";
+
 /// `true` if `args` contains `token` as a whole whitespace-delimited token.
 ///
 /// `args` ends at its first NUL byte, if any. An empty `token` never
@@ -55,6 +66,15 @@ mod tests {
         assert!(!has_token(b"serial=on memprot=offx", MEMPROT_OFF));
         assert!(has_token(b"memprot=strict\n", MEMPROT_STRICT));
         assert!(!has_token(b"memprot=off", MEMPROT_STRICT));
+    }
+
+    #[test]
+    fn asid_tokens_are_whole_tokens() {
+        assert!(has_token(b"serial=on asid=on memprot=off", ASID_ON));
+        assert!(!has_token(b"serial=on asid=only", ASID_ON));
+        assert!(!has_token(b"asid=tiny", ASID_ON));
+        assert!(has_token(b"asid=tiny\r\n", ASID_TINY));
+        assert!(!has_token(b"asid=on", ASID_TINY));
     }
 
     #[test]

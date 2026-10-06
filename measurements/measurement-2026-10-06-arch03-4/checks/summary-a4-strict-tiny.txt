@@ -1,0 +1,8 @@
+a4-strict-tiny-rpi4-asidperf-counters  11 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON (strict);
+a4-strict-tiny-rpi4-asidperf        11 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON (strict);
+a4-strict-tiny-rpi4-asidstr         1 [crash] slot 2 key; 10 ASIDACC: PASS; 1 ASIDs ON: 16-bit ; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection ON (strict); 1 Memory violation: free memory, write (translation fault;
+a4-strict-tiny-rpi4-envrn           1 ASIDs ON: 16-bit ; 1 desktop up; 1 ENVRN: PASS; 1 memory protection ON (strict);
+a4-strict-tiny-rpi4-pparent         1 ACC: PASS; 1 accessories have issued; 1 ASIDs ON: 16-bit ; 1 AUTO: PASS; 1 desktop up; 1 KID: PASS; 1 memory protection ON (strict); 1 Z: PASS;
+a4-strict-tiny-rpi4-s2alls-crashkernel  2 [crash] slot 2 key; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 MEM03: PASS; 1 memory protection ON (strict); 1 Memory violation: private memory, execute (translation fault; 1 Memory violation: private memory, write (translation fault; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; 1 VFORK: PASS;
+a4-strict-tiny-rpi4-vforkt-alone    1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON (strict); 1 VFORK: PASS;
+a4-strict-tiny-virt-asidstr         1 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection ON (strict); 1 Memory violation: free memory, write (translation fault;

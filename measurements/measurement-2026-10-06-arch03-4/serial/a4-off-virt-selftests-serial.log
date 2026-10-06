@@ -1,0 +1,196 @@
+RB1
+NewTOS booting on qemu-virt
+Phase 02 reached.
+[mm] DTB at 0x0000000048000000
+[mm] firmware: no VideoCore mailbox on this board — device tree decides
+[mm] device tree: /memory first bank: 0x0000000040000000 + 285212672 bytes (272 MiB)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000040000000..0x0000000051000000 (285212672 bytes) — source: device tree
+[mm]   kernel: 0x0000000040080000..0x00000000402d0000 (2424832 bytes)
+[mm]   ST-RAM: 0x0000000040400000..0x0000000040e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000041000000..0x0000000050617000 (258043904 bytes)
+[mm]   OSrsvd: 0x0000000050617000..0x0000000051000000 (10391552 bytes)
+[mm]     heap: 0x0000000050617000..0x0000000050817000 (2097152 bytes)
+[mm]     fb  : 0x0000000050817000..0x0000000051000000 (8294400 bytes)
+[mm]   MMIO 00: 0x0000000008000000..0x0000000008010000
+[mm]   MMIO 01: 0x0000000008010000..0x0000000008020000
+[mm]   MMIO 02: 0x0000000009000000..0x0000000009001000
+[mm]   MMIO 03: 0x0000000010000000..0x000000003eff0000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=62999 used=0 free=62999 (258043904 B free)
+[mm] alloc ST-RAM frame -> 0x0000000040400000
+[mm] alloc TT-RAM frame -> 0x0000000041000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] ramfb up: 1920x1080
+[mm] memory protection OFF (boot argument `memprot=off`)
+[mm] BDOS pools: ST-RAM 0x40400000+10485760 TT-RAM 0x41000000+258043904
+[mm] user address space: pools mapped VA = PA (1 shared L3 tables)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=258043904 free=258043904 used=0 largest_free=258043904 (free_mds=1 alloc_mds=0)
+[usb] PCIe ECAM at 0x4010000000 (size 0x10000000)
+[usb] xHCI at PCI 00:02.0 → BAR0 0x10000000 (size 0x4000)
+[usb] scratchpad buffers needed: 0
+[usb] dma addrs: dcbaap=0x40e47000 crcr=0x40e470c0 erstba=0x40e472c0 dcbaa0=0x0
+[usb] reg readback: ac64=1 csz=0 dcbaap_hw=0x40e47000
+[usb] xHCI up: 16 slots enabled, 8 root ports
+[usb] root ports powered (PPC=false)
+[usb] port 1: ccs=0 ped=0 pp=1 speed=0
+[usb] port 2: ccs=0 ped=0 pp=1 speed=0
+[usb] port 3: ccs=0 ped=0 pp=1 speed=0
+[usb] port 4: ccs=0 ped=0 pp=1 speed=0
+[usb] port 5: ccs=1 ped=0 pp=1 speed=3
+[usb] port 6: ccs=1 ped=0 pp=1 speed=3
+[usb] port 7: ccs=0 ped=0 pp=1 speed=0
+[usb] port 8: ccs=0 ped=0 pp=1 speed=0
+[usb] device slot 1 (root port 5 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 1 → int-IN ep 0x81 max 8 interval 7
+[usb] HID configured: slot 1 ep 0x81 dci 3 (keyboard)
+[usb] device slot 2 (root port 6 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 2 → int-IN ep 0x81 max 4 interval 7
+[usb] HID configured: slot 2 ep 0x81 dci 3 (mouse)
+[proc] stand-in PDs: initial_basepage 0x40246000, AES PD 0x40246100 (read-only to all)
+[d0d-st] >>> selftest_d3::run_d3_elf_loader_test()
+
+[d3] === Phase 06 D3 ELF loader test ===
+[d3] loaded slot 1: entry_va=0x0000000041001000 l0_pa=0x000000004024f000
+[d3] eret → EL0 at entry_va …
+[d3] returned from EL0 to EL1 resume PC
+[d3]   captured SP_EL0 = 0x0000fffffffff000  (expected 0x0000fffffffff000)  OK
+[d3]   captured ELR    = 0x0000000041001004  (expected 0x0000000041001004)  OK
+[d3]   SPSR.M (saved)  = 0x0  (expected 0x0 = EL0t)  OK
+[d3]   running flag cleared by handler:  OK
+[d3]   bp.p_lowtpa = 0x41000000 p_hitpa  = 0x50617000  OK
+[d3]   bp.p_tbase  = 0x41001000 p_tlen   = 0x00000008  OK
+[d3]   bp.p_dbase  = 0x00000000 p_dlen   = 0x00000000  OK
+[d3]   bp.p_bbase  = 0x00000000 p_blen   = 0x00000000  OK
+[d3]   bp.p_xdta   = 0x41000080 p_flags  = 0x00000007  OK
+[d3]   bp.p_uft    = [-1,-1,-2,-3,-1,-1]            OK
+[d3] === D3 PASS ===
+[d0d-st] >>> selftest_d6::run_d6_pterm_test()
+
+[d6] === Phase 06 D6 Pterm test ===
+[d6] loaded slot 2: entry_va=0x0000000041001000 l0_pa=0x0000000040256000
+[d6] pre :  ST-RAM free=10485760 used=0 free_blocks=1 alloc_blocks=0
+[d6] eret → EL0 at entry_va …
+[d6] returned from EL0 via Pterm
+[d6] post:  ST-RAM free=10485760 used=0 free_blocks=1 alloc_blocks=0
+[d6]   pool baseline restored:                      OK
+[d6]   slot freed (state == Free):                  OK
+[d6]   RUN cleared (current() == null):             OK
+[d6] === D6 PASS ===
+[d0d-st] >>> selftest_d7::run_d7_ptermres_test()
+
+[d7] === Phase 06 D7 Ptermres test ===
+[d7] loaded slot 3: entry_va=0x0000000041001000 l0_pa=0x000000004025d000
+[d7] pre :  ST-RAM free=10485760 used=0 free_blocks=1 alloc_blocks=0
+[d7] eret → EL0 at entry_va …
+[d7] returned from EL0 via Ptermres
+[d7] post:  ST-RAM free=10485504 used=256 free_blocks=1 alloc_blocks=1
+[d7] TT-RAM used 258043904 -> 256 (TPA shrunk to blkln)
+[d7]   block kept resident (free_bytes dropped):     OK
+[d7]   block stays allocated, owner = TSR holder:    OK
+[d7]   TPA shrunk to blkln (TT used -TPA+kept):      OK
+[d7]   slot freed (state == Free):                   OK
+[d7]   RUN cleared (current() == null):              OK
+[d7] === D7 PTERMRES PASS ===
+[d0d-st] >>> selftest_pexec::run_pexec_test()
+
+[d3] === Phase 06 D3 Pexec test ===
+[d3] pre :  ST-RAM free=10485504 used=256 alloc_blocks=1
+[d3] parent loaded slot 0: entry=0x41002000 l0_pa=0x40248000
+[d3] eret → EL0 in parent …
+[exec] preparing program (slot 1)
+[exec] launching
+Hello
+[d3] returned from EL0 (parent Pterm'd)
+[d3] post:  ST-RAM free=10485504 used=256 alloc_blocks=1
+[d3]   pool baseline restored:                      OK
+[d3]   RUN cleared (current() == null):             OK
+[d3] === D3 PEXEC PASS ===
+[d0d-st] >>> selftest_pexec::run_pexec_env_test()
+
+[f1] === Pexec command-tail + environment test ===
+[f1]   p_cmdlin[0]=5 text="HELLO" NUL@6          OK
+[f1]   p_env=0x41000100 (!=0 & content match)         OK
+[f1] === F1 PEXEC TAIL+ENV PASS ===
+[d0d-st] >>> selftest_pexec_d4d5::run_pexec_loadgo_split_test()
+
+[d4d5] === Phase 06 D4/D5 Pexec(PE_LOAD)+PE_GO test ===
+[d4d5] pre :  ST-RAM free=10485504 used=256 alloc_blocks=1
+[d4d5] parent loaded slot 0: entry=0x40402000 l0_pa=0x40248000
+[d4d5] eret → EL0 in parent …
+[d4d5] returned from EL0 (parent Pterm'd)
+[d4d5] post:  ST-RAM free=10485504 used=256 alloc_blocks=1
+[d4d5]   pool baseline restored:                    OK
+[d4d5]   RUN cleared (current() == null):           OK
+[d4d5] === D4/D5 PEXEC PASS ===
+[d0d-st] >>> selftest_sysvars::run()
+
+[b1] === B1 low-memory sysvars + OSHEADER + $5A0 test ===
+[b1] loaded slot 0: entry_va=0x40402000 l0_pa=0x0000000040248000
+[b1]   (a) _sysbase@0x4F2 == OSHEADER VA 0x5C0: OK
+[b1]   (a) _sysbase 8-byte read == 0x5C0 (LP64 idiom): OK
+[b1]   (a) OSHEADER.os_version == 0x0404: OK
+[b1]   (b) _p_cookies@0x5A0 == jar VA 0x5F0: OK
+[b1]   (b) jar[0].tag == NTOS (kernel jar mirrored): OK
+[b1]   (d) conterm@0x484 == 7 (ikbd.c:1100): OK
+[b1]   (d) cmdload@0x482 == 0 (ROM-shell default): OK
+[b1]   (d) dumpflg@0x4EE == -1 (bios.c:357): OK
+[b1]   (e) OSHEADER.os_beg == OSHEADER VA (startup.S:88-89): OK
+[b1]   (e) OSHEADER.os_end == ST-RAM pool start (biosdefs.h:52): OK
+[b1]   (e) end_os@0x4FA == ST-RAM pool start (biosmem.c:66): OK
+[b1]   (e) membot@0x432 == end_os (biosmem.c:67): OK
+[b1]   (e) memtop@0x436 == ST-RAM pool end (biosmem.c:72): OK
+[b1]   (e) phystop@0x42E == memtop (no screen carve-out): OK
+[b1]   (e) memtop - end_os == ST-RAM pool size: OK
+[b1]   (e) ramtop@0x5A4 == TT-RAM pool end (memory2.c:119): OK
+[b1]   (e) ramvalid@0x5A8 == RAMVALID_MAGIC (memory2.c:124): OK
+[b1]   (f) Ssystem(S_SETCOOKIE, 'B1TS') == E_OK: OK
+[b1]   (f) $5A0 mirror carries a cookie set after load: OK
+[b1]   (f) Ssystem(S_DELCOOKIE, 'B1TS') == E_OK: OK
+[b1]   (f) $5A0 mirror drops a cookie deleted after load: OK
+[b1]   (f) the refresh leaves the seeded NTOS cookie intact: OK
+[b1]   (f) mirror still ends in the {0, capacity} terminator: OK
+[b1]   (c) Setexc(0x168, -1) == jar base 0x5F0: OK
+[b1] === B1 PASS ===
+[d0d-st] >>> selftest_upcall::run()
+
+[upcall] === EL0 upcall / signal-delivery test (building block 1) ===
+[upcall] loaded slot 0: entry_va=0x40402000 l0_pa=0x0000000040248000 sp_el0=0x40e00000
+[upcall] posted upcall: handler_va=0x40402020 args=[0x900,0x5555aaaadeadbeef,0,0] mask=0x1
+[upcall] eret -> EL0 (Sversion; upcall delivered on return) …
+[upcall] returned from EL0; TTBR0 restored
+[upcall]   (a) handler ran at EL0 with correct args (flag@0x900 == marker): OK
+[upcall]   (b) resumed via trampoline+Psigreturn to sentinel (ELR == block + 0x1014): OK
+[upcall]   (b) sentinel saw an EL0 return (SPSR.M == EL0t): OK
+[upcall]   (c) original syscall x0 intact after resume (== 0x3000): OK
+[upcall]       upcall_depth back to 0 (push/pop balanced): OK
+[upcall]       upcall_mask cleared by Psigreturn: OK
+[upcall] === upcall PASS ===
+[d0d-st] >>> selftest_etv_term::run()
+
+[etvterm] === etv_term process-terminate hook test (coop-kernel step 2) ===
+[etvterm] A: install etv_term via Setexc(0x102,handler), then Pterm(42) …
+[etvterm]   (a) etv_term handler ran at EL0 (flag@0x900 == 0x1234): OK
+[etvterm]   (b) process did NOT resume the Pterm caller (resumed@0x910 == 0): OK
+[etvterm]   (b) process terminated: slot freed: OK
+[etvterm]   (b) process terminated: RUN cleared: OK
+[etvterm] B: no handler (sentinel), Pterm(42) terminates directly …
+[etvterm]   (c) no handler fired (flag@0x900 == 0): OK
+[etvterm]   (c) process did NOT resume the Pterm caller (resumed@0x910 == 0): OK
+[etvterm]   (c) terminated directly: slot freed (no fault): OK
+[etvterm]   (c) terminated directly: RUN cleared: OK
+[etvterm] === etv_term PASS ===
+[d0d-st] >>> selftest_sleepwake_switch::run()
+
+[sw3b] === step-3b S2 switch + deliver-on-resume test ===
+[sw3b] === FAIL: load B: NoTpaMemory ===
+[d0d-st] all selftests returned
+[aes] gsx_malloc: screen buffer pa=0x40401000 len=4147200 (kernel-owned, WF_SCREEN)
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (0 drives, 0 window(s) from the context)

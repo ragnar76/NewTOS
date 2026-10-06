@@ -63,7 +63,7 @@ globaler `Mxalloc`-Speicher. Anwender: „es so wie bei FreeMiNT bauen“.
 | 3c E10, Lader-Reihenfolge, E6/strict, F_KEEP, Tabellenmangel | umgesetzt, QEMU belegt; **S2ALL/TSRPAR unter Schutz an/strict weiter FAIL** (Ursache E9+E16, Entscheidung nötig) | [ARCH03-3c-STATUS-UNFINISHED](ARCH03-3c-STATUS-UNFINISHED.MD) |
 | E9 TPA = größter Block (EmuTOS), Start-Mshrink wie mintlib | umgesetzt, QEMU belegt (ON/OFF/STRICT); TSRPAR-Layoutprüfung weiter Entscheidung | [ARCH03-E9-STATUS-DONE](ARCH03-E9-STATUS-DONE.MD) |
 | 2b FreeMiNT-Modi 100+ | offen | — |
-| 4 ASIDs | offen (optional) | — |
+| 4 ASIDs + TLB-Feinpflege | umgesetzt hinter Bootargument `asid=on` (Standard aus), QEMU belegt (alle Schutzmodi × ASID aus/an/tiny); Pi offen | [ARCH03-4-STATUS-DONE](ARCH03-4-STATUS-DONE.MD) |
 
 Abnahme durch den Tester und Pi-Läufe für 0c–3c offen; Pi nur auf Ansage.
 Plan-Abschnitt „Stufe 3 wie gebaut“: `docs/analysis/arch03-implementation-plan.md`.

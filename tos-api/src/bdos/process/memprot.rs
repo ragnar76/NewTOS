@@ -644,7 +644,7 @@ unsafe fn refresh(lo: u64, hi: u64, full: u32) {
             }
             let va = region + (i as u64) * mmu::PAGE_SIZE;
             // SAFETY: lock held; `shared` is a live table.
-            unsafe { mmu::set_leaf(shared, i, page_desc(va, bi, blks, None)) };
+            unsafe { mmu::set_leaf(shared, i, page_desc(va, bi, blks, None), va, None) };
         }
         // Every live slot.
         for s in 0..MAX_PROCESSES {
@@ -677,7 +677,7 @@ unsafe fn refresh(lo: u64, hi: u64, full: u32) {
                 }
                 let va = region + (i as u64) * mmu::PAGE_SIZE;
                 // SAFETY: lock held; `p` is the slot's private table.
-                unsafe { mmu::set_leaf(p, i, page_desc(va, bi, blks, Some((s, &groups)))) };
+                unsafe { mmu::set_leaf(p, i, page_desc(va, bi, blks, Some((s, &groups))), va, Some(s)) };
             }
         }
         region = rend;
@@ -828,8 +828,8 @@ pub unsafe fn on_slot_released(slot: usize) {
     unsafe {
         mmu::release_private_tables(slot);
         // The released root may still be the installed one until the next
-        // switch: drop what the TLB holds of it.
-        mmu::flush_tlb_always();
+        // switch: drop what the TLB holds of it (stage 4: retire its ASID).
+        mmu::flush_tlb_slot_released(slot);
     }
 }
 

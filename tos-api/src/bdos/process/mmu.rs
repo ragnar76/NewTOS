@@ -65,6 +65,21 @@
 //! (narrowing, and widening valid → valid) are followed by a TLB invalidation
 //! ([`flush_tlb`], ARM ARM `RSQBCS` D8-7852 — 0a correction of plan §3.2).
 //!
+//! ## ASIDs (stage 4, boot argument `asid=on`; off by default)
+//!
+//! Off: every root runs with ASID 0 and the kernel drops the whole TLB on
+//! every address-space switch (`restore_boot_ttbr0`), as since Phase 06.
+//! On ([`configure_asids`], plan Stufe 4 / E12): every user leaf has `nG = 1`,
+//! every root is installed with an ASID of its own ([`install_ttbr0`] →
+//! [`install_tagged`]; numbers from [`super::asid::Allocator`], one per slot
+//! *tenancy*, generations with a full flush on rollover), and a switch drops
+//! nothing. A narrowing then owes invalidations by VA: `TLBI VAAE1IS` for a
+//! shared table's page, `TLBI VAE1IS` with the owner's ASID for a private one
+//! ([`set_leaf`], [`flush_tlb`]); a slot L2 entry's break-before-make takes
+//! `TLBI VAE1IS` for the region with the slot's ASID ([`replace_bbm`]); a torn
+//! down or rebuilt root retires its ASID (`TLBI ASIDE1IS`,
+//! [`flush_tlb_slot_released`], [`init_slot_tables`]).
+//!
 //! ## Descriptor bits
 //!
 //! AArch64 stage-1 descriptor layout (ARM ARM DDI 0487 M.d, Figure D8-16 /
@@ -132,6 +147,11 @@ const D_ATTRIDX_NORMAL: u64 = 0 << 2;
 const D_ATTRIDX_NC: u64 = 2 << 2;
 const D_PXN: u64 = 1 << 53; // EL1 must not execute
 const D_UXN: u64 = 1 << 54; // EL0 must not execute
+/// Not-global (bit 11, ARM ARM Table D8-52 / `RQGKGF` D8-7854): the leaf
+/// applies to the current ASID only. Set on every user leaf when ASIDs are on
+/// (stage 4, [`configure_asids`]); with ASIDs off every root runs with ASID 0
+/// and each switch drops the whole TLB, so the bit stays clear as before.
+const D_NG: u64 = 1 << 11;
 
 /// Output-address field of a 4-KiB page / table descriptor (bits 47:12).
 const OA_MASK: u64 = 0x0000_FFFF_FFFF_F000;
@@ -230,6 +250,129 @@ static PRIVATE_USED: AtomicUsize = AtomicUsize::new(0);
 /// [`flush_tlb`] — the TLB may hold the old translation (ARM ARM `RSQBCS`
 /// D8-7852: even permission-fault entries may be cached).
 static TLB_DIRTY: AtomicBool = AtomicBool::new(false);
+
+// ─── ASIDs (stage 4) ─────────────────────────────────────────────────
+
+/// ASIDs on (boot argument `asid=on`/`asid=tiny`, [`configure_asids`]).
+static ASID_ON: AtomicBool = AtomicBool::new(false);
+
+/// PA of the kernel's empty no-process L0 — what `TTBR0_EL1` holds (with
+/// ASID 0) while the whole TLB is dropped on an ASID rollover.
+static EMPTY_L0_PA: AtomicU64 = AtomicU64::new(0);
+
+struct AsidState(core::cell::UnsafeCell<(super::asid::Allocator, super::asid::Queue)>);
+// SAFETY: touched only under the BDOS giant lock (single CPU, trap / boot
+// context), like the tables themselves.
+unsafe impl Sync for AsidState {}
+static ASIDS: AsidState = AsidState(core::cell::UnsafeCell::new((
+    super::asid::Allocator::new(),
+    super::asid::Queue::new(),
+)));
+
+/// # Safety
+///
+/// BDOS giant lock held; no other borrow alive.
+#[allow(clippy::mut_from_ref)]
+unsafe fn asid_state() -> &'static mut (super::asid::Allocator, super::asid::Queue) {
+    // SAFETY: caller contract.
+    unsafe { &mut *ASIDS.0.get() }
+}
+
+/// Are per-process ASIDs on? Off unless the kernel called
+/// [`configure_asids`] at boot.
+#[inline]
+pub fn asids_enabled() -> bool {
+    ASID_ON.load(Ordering::Relaxed)
+}
+
+/// Switch ASIDs on (ARCH03 stage 4): every user leaf gets `nG = 1`, every
+/// root is installed with an ASID of its own and **without** a TLB
+/// invalidation, and a page-table change invalidates by VA (and ASID) instead
+/// of the whole TLB. `limit` = numbers per generation (2^ASID width;
+/// smaller only as a test of the rollover path); `empty_l0_pa` = the kernel's
+/// empty root, installed with ASID 0 around a rollover's full flush. The
+/// kernel has set `TCR_EL1.AS` to match `limit` before.
+///
+/// # Safety
+///
+/// Boot CPU, before any user table is built ([`map_pools`]) and before any
+/// root is installed.
+pub unsafe fn configure_asids(limit: u32, empty_l0_pa: u64) {
+    // SAFETY: boot CPU, no trap yet.
+    unsafe { asid_state() }.0.configure(limit);
+    EMPTY_L0_PA.store(empty_l0_pa, Ordering::Relaxed);
+    ASID_ON.store(true, Ordering::Relaxed);
+}
+
+/// ASID statistics `(generation, rollovers, assigned, limit)` — boot log,
+/// measurements.
+pub fn asid_stats() -> (u32, u32, u64, u32) {
+    // SAFETY: reads only, under the caller's single-CPU context.
+    let a = unsafe { &(*ASIDS.0.get()).0 };
+    (a.generation(), a.rollovers(), a.assigned(), a.limit())
+}
+
+/// The ASID `slot`'s root currently carries, if it holds one of the current
+/// generation (otherwise the TLB holds nothing of its present tables).
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+unsafe fn current_asid(slot: usize) -> Option<u16> {
+    // SAFETY: caller contract.
+    unsafe { asid_state() }.0.current(slot)
+}
+
+/// Owe the invalidation of the page at `va` in the table of `owner`
+/// (`None` = a shared table, every ASID). Nothing is owed for a slot without
+/// a current ASID.
+///
+/// # Safety
+///
+/// BDOS giant lock held; ASIDs on.
+unsafe fn owe_inval(va: u64, owner: Option<usize>) {
+    use super::asid::Inval;
+    // SAFETY: caller contract.
+    let (alloc, queue) = unsafe { asid_state() };
+    match owner {
+        None => queue.push(Inval::AllAsids { va }),
+        Some(s) => {
+            if let Some(asid) = alloc.current(s) {
+                queue.push(Inval::Asid { asid, va });
+            }
+        }
+    }
+}
+
+/// The slot whose root `l0_pa` is, if any ([`l0_pa_for`] inverted).
+fn slot_of_l0(l0_pa: u64) -> Option<usize> {
+    // Compare the table-address fields only: `l0_pa` may come from a
+    // `TTBR0_EL1` read with the ASID in [63:48] (and on the host the wrapping
+    // `va_to_pa` carries bits above 47 that both sides then lose alike).
+    let base = l0_pa_for(0) & OA_MASK;
+    let size = core::mem::size_of::<SlotTables>() as u64;
+    let off = (l0_pa & OA_MASK).wrapping_sub(base);
+    (off.is_multiple_of(size) && off / size < MAX_PROCESSES as u64).then_some((off / size) as usize)
+}
+
+/// `slot`'s tables are rebuilt for a new tenant or torn down: its ASID is
+/// retired (never matched again in this generation) and its entries are
+/// dropped (`TLBI ASIDE1IS` — hygiene, the retirement alone keeps them from
+/// being used). No-op with ASIDs off.
+///
+/// # Safety
+///
+/// BDOS giant lock held; EL1.
+unsafe fn retire_asid(slot: usize) {
+    if !asids_enabled() {
+        return;
+    }
+    // SAFETY: caller contract.
+    if let Some(asid) = unsafe { asid_state() }.0.retire(slot) {
+        // SAFETY: EL1, TLB maintenance + barriers.
+        unsafe { tlbi_asid(asid) };
+    }
+}
 
 /// Hand the user page tables a **table arena**: `count` zeroed, 4-KiB-aligned
 /// pages at kernel VA `kva` (`count` ≤ [`ARENA_MAX_TABLES`]). Protection
@@ -358,8 +501,9 @@ pub enum PageFlags {
 impl PageFlags {
     /// The attribute bits of an L3 page descriptor with these flags.
     fn descriptor_bits(self) -> u64 {
-        let core = D_VALID | D_PAGE_L3 | D_AF | D_SH_INNER | D_ATTRIDX_NORMAL | D_PXN;
-        let nc_core = D_VALID | D_PAGE_L3 | D_AF | D_SH_NON | D_ATTRIDX_NC | D_PXN;
+        let ng = if asids_enabled() { D_NG } else { 0 };
+        let core = D_VALID | D_PAGE_L3 | D_AF | D_SH_INNER | D_ATTRIDX_NORMAL | D_PXN | ng;
+        let nc_core = D_VALID | D_PAGE_L3 | D_AF | D_SH_NON | D_ATTRIDX_NC | D_PXN | ng;
         match self {
             Self::UserRwExec => core | D_AP_USER_RW,
             Self::UserRoExec => core | D_AP_USER_RO,
@@ -468,6 +612,10 @@ pub unsafe fn init_slot_tables(slot: usize) -> Result<(), MapError> {
         return Err(MapError::InvalidSlot);
     }
     let page0_pa = va_to_pa(page0_kva(slot).ok_or(MapError::InvalidSlot)? as u64);
+    // Stage 4: the new tenant must not meet the old one's TLB entries — its
+    // root gets a fresh ASID at the next install.
+    // SAFETY: caller's lock contract; slot bounds-checked.
+    unsafe { retire_asid(slot) };
     // SAFETY: caller's lock contract; slot bounds-checked.
     unsafe { release_private_tables(slot) };
     // SAFETY: caller's lock contract; slot bounds-checked.
@@ -833,10 +981,32 @@ unsafe fn slot_l2_entry(slot: usize, region: u64) -> *mut u64 {
 /// `IYQWJF` D8-7757): write invalid, `dsb ish`, `tlbi vmalle1is`, `dsb ish`,
 /// write the new descriptor, `dsb ish`, `isb`.
 ///
+/// With ASIDs on (stage 4) the entry is `slot`'s own, so only `slot`'s
+/// translations can hold it: the invalidation is `TLBI VAE1IS` for the
+/// region's address with the slot's ASID — non-global entries **of any
+/// lookup level** for that address (`RVMSWQ`, D8-7868), which includes the
+/// cached L2 descriptor that covers the whole region; not a `…L` variant
+/// (`RDRCZZ`). A slot without a current ASID has nothing in the TLB.
+///
 /// # Safety
 ///
-/// Caller holds the BDOS giant lock; `entry` is an L2 entry of ours.
-unsafe fn replace_bbm(entry: *mut u64, new: u64) {
+/// Caller holds the BDOS giant lock; `entry` is `slot`'s L2 entry for the
+/// 2-MiB region at `region`.
+unsafe fn replace_bbm(entry: *mut u64, new: u64, slot: usize, region: u64) {
+    if asids_enabled() {
+        // SAFETY: caller contract — a live entry of `slot`'s table.
+        unsafe {
+            core::ptr::write_volatile(entry, 0);
+            if let Some(asid) = current_asid(slot) {
+                tlbi_va_asid_barriered(super::asid::Inval::Asid { asid, va: region }.operand());
+            } else {
+                publish_user_mappings();
+            }
+            core::ptr::write_volatile(entry, new);
+            publish_user_mappings();
+        }
+        return;
+    }
     // SAFETY: caller contract — a live entry of a user table.
     unsafe {
         core::ptr::write_volatile(entry, 0);
@@ -879,7 +1049,7 @@ pub unsafe fn make_private(slot: usize, region: u64) -> Result<*mut UserTable, M
         // The copy must be visible to the walker before the entry names it.
         core::arch::asm!("dsb ish", options(nostack, preserves_flags));
         if core::ptr::read_volatile(e) & D_VALID != 0 {
-            replace_bbm(e, new);
+            replace_bbm(e, new, slot, region);
         } else {
             core::ptr::write_volatile(e, new);
             publish_user_mappings();
@@ -904,19 +1074,39 @@ pub unsafe fn drop_private(slot: usize, region: u64) {
     // SAFETY: caller contract.
     unsafe {
         let tmpl = shared_l2(gib).0[idx];
-        replace_bbm(slot_l2_entry(slot, region), tmpl);
+        if asids_enabled() && current_asid(slot).is_some() {
+            // Stage 4: the leaves the slot cached from its private copy stay
+            // tagged with its ASID after the region points at the shared
+            // table again; owe their invalidation where the two differ
+            // (the BBM below only drops the region's table descriptor).
+            let shared = (tmpl & (D_VALID | D_TABLE) == D_VALID | D_TABLE).then(|| table_at(tmpl));
+            for i in 0..512 {
+                let mine = core::ptr::read_volatile(&raw const (*p).0[i]);
+                let theirs = shared.map_or(0, |t| core::ptr::read_volatile(&raw const (*t).0[i]));
+                if mine & D_VALID != 0 && mine != theirs {
+                    owe_inval(region + (i as u64) * PAGE_SIZE, Some(slot));
+                }
+            }
+        }
+        replace_bbm(slot_l2_entry(slot, region), tmpl, slot, region);
     }
     arena_free(p);
     PRIVATE_USED.fetch_sub(1, Ordering::Relaxed);
 }
 
-/// Write leaf entry `idx` of `table` and remember whether a **valid** entry
-/// changed (then the TLB may hold the old one, [`flush_tlb`]).
+/// Write leaf entry `idx` of `table` — the page at user VA `va` — and
+/// remember whether a **valid** entry changed (then the TLB may hold the old
+/// one, [`flush_tlb`]). `owner` names the slot whose private table it is;
+/// `None` = a shared table, walked by every root without a private copy of
+/// the region. With ASIDs off any such change makes the next [`flush_tlb`]
+/// drop the whole TLB; with ASIDs on (stage 4) it owes the invalidation of
+/// just that page — for every ASID (shared) or for the owner's ASID.
 ///
 /// # Safety
 ///
-/// Caller holds the BDOS giant lock; `table` is a live user L3; `idx < 512`.
-pub unsafe fn set_leaf(table: *mut UserTable, idx: usize, desc: u64) {
+/// Caller holds the BDOS giant lock; `table` is a live user L3 (`owner`'s
+/// private one, or a shared one for `None`); `idx < 512`.
+pub unsafe fn set_leaf(table: *mut UserTable, idx: usize, desc: u64, va: u64, owner: Option<usize>) {
     // SAFETY: caller contract.
     unsafe {
         let e = &raw mut (*table).0[idx];
@@ -925,7 +1115,11 @@ pub unsafe fn set_leaf(table: *mut UserTable, idx: usize, desc: u64) {
             return;
         }
         if old & D_VALID != 0 {
-            TLB_DIRTY.store(true, Ordering::Relaxed);
+            if asids_enabled() {
+                owe_inval(va, owner);
+            } else {
+                TLB_DIRTY.store(true, Ordering::Relaxed);
+            }
         }
         core::ptr::write_volatile(e, desc);
     }
@@ -955,16 +1149,37 @@ pub fn leaf_desc(va: u64, flags: Option<PageFlags>) -> u64 {
 /// `dsb ish; tlbi vmalle1is; dsb ish; isb` (ARM ARM `RSQBCS` D8-7852 — a
 /// narrowing or a valid→valid widening needs the TLBI; an invalid→valid
 /// change needs only the barrier, `RXCLRD`). The trailing `isb` (or the
-/// `eret` that follows) is the context synchronisation. All processes run
-/// with ASID 0 and every root switch invalidates the whole TLB already
-/// ([`crate::bdos::process::mmu::switch_ttbr0_kernel`], the kernel's
+/// `eret` that follows) is the context synchronisation. With ASIDs off all
+/// processes run with ASID 0 and every root switch invalidates the whole TLB
+/// already ([`crate::bdos::process::mmu::switch_ttbr0_kernel`], the kernel's
 /// `restore_boot_ttbr0`), so `vmalle1is` covers the active root and nothing
 /// else can be cached.
+///
+/// With ASIDs on (stage 4) other roots' entries survive a switch, so the
+/// owed invalidations are issued by VA: `TLBI VAAE1IS` for a shared table's
+/// page, `TLBI VAE1IS` with the owner's ASID for a private one (any lookup
+/// level, `RZSXRQ`/`RVMSWQ` D8-7868/7869), then `dsb ish; isb`. More than
+/// [`super::asid::QUEUE_CAP`] owed → `vmalle1is`.
 ///
 /// # Safety
 ///
 /// Caller is at EL1 (barrier + TLB maintenance only).
 pub unsafe fn flush_tlb() {
+    if asids_enabled() {
+        // SAFETY: the caller's lock contract (BDOS, single CPU).
+        let (ops, overflow) = unsafe { asid_state() }.1.take();
+        if overflow {
+            // SAFETY: caller contract.
+            unsafe { tlbi_all_barriered() };
+        } else if ops.as_slice().is_empty() {
+            // SAFETY: barrier-only.
+            unsafe { publish_user_mappings() };
+        } else {
+            // SAFETY: caller contract.
+            unsafe { tlbi_ops_barriered(ops.as_slice()) };
+        }
+        return;
+    }
     if TLB_DIRTY.swap(false, Ordering::Relaxed) {
         // SAFETY: caller contract.
         unsafe { tlbi_all_barriered() };
@@ -985,6 +1200,28 @@ pub unsafe fn flush_tlb_always() {
     unsafe { flush_tlb() };
 }
 
+/// `slot`'s root was torn down (its private tables went back to the arena,
+/// [`release_private_tables`]): drop what the TLB holds of it. ASIDs off: the
+/// whole TLB ([`flush_tlb_always`], as before). ASIDs on: the slot's ASID is
+/// retired — no root carries it again in this generation — and its entries
+/// dropped (`TLBI ASIDE1IS`), then the owed invalidations are issued.
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; EL1.
+pub unsafe fn flush_tlb_slot_released(slot: usize) {
+    if !asids_enabled() {
+        // SAFETY: caller contract.
+        unsafe { flush_tlb_always() };
+        return;
+    }
+    // SAFETY: caller contract.
+    unsafe {
+        retire_asid(slot);
+        flush_tlb();
+    }
+}
+
 /// `dsb ish; tlbi vmalle1is; dsb ish; isb` (on the host: nothing).
 ///
 /// # Safety
@@ -1002,6 +1239,152 @@ unsafe fn tlbi_all_barriered() {
             options(nostack, preserves_flags),
         );
     }
+}
+
+/// `dsb ish; tlbi vae1is|vaae1is …; dsb ish; isb` for the owed
+/// invalidations (on the host: nothing).
+///
+/// # Safety
+///
+/// EL1.
+unsafe fn tlbi_ops_barriered(ops: &[super::asid::Inval]) {
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    // SAFETY: TLB maintenance + barriers are permitted at EL1.
+    unsafe {
+        core::arch::asm!("dsb ish", options(nostack, preserves_flags));
+        for op in ops {
+            let xt = op.operand();
+            match op {
+                super::asid::Inval::AllAsids { .. } => {
+                    core::arch::asm!("tlbi vaae1is, {}", in(reg) xt, options(nostack, preserves_flags));
+                }
+                super::asid::Inval::Asid { .. } => {
+                    core::arch::asm!("tlbi vae1is, {}", in(reg) xt, options(nostack, preserves_flags));
+                }
+            }
+        }
+        core::arch::asm!("dsb ish", "isb", options(nostack, preserves_flags));
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+    let _ = ops;
+}
+
+/// `dsb ish; tlbi vae1is, xt; dsb ish; isb` (on the host: nothing).
+///
+/// # Safety
+///
+/// EL1.
+unsafe fn tlbi_va_asid_barriered(xt: u64) {
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    // SAFETY: TLB maintenance + barriers are permitted at EL1.
+    unsafe {
+        core::arch::asm!(
+            "dsb ish",
+            "tlbi vae1is, {xt}",
+            "dsb ish",
+            "isb",
+            xt = in(reg) xt,
+            options(nostack, preserves_flags),
+        );
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+    let _ = xt;
+}
+
+/// `dsb ish; tlbi aside1is, xt; dsb ish; isb` — the non-global final-level
+/// entries of `asid` (`RFKSVM`, D8-7868) (on the host: nothing).
+///
+/// # Safety
+///
+/// EL1.
+unsafe fn tlbi_asid(asid: u16) {
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    // SAFETY: TLB maintenance + barriers are permitted at EL1.
+    unsafe {
+        core::arch::asm!(
+            "dsb ish",
+            "tlbi aside1is, {xt}",
+            "dsb ish",
+            "isb",
+            xt = in(reg) (asid as u64) << 48,
+            options(nostack, preserves_flags),
+        );
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+    let _ = asid;
+}
+
+/// Write `TTBR0_EL1` = `l0_pa` tagged with the ASID of the slot it belongs to
+/// (ASID 0 for any other root, e.g. the empty one) — stage 4's switch: no TLB
+/// invalidation, because the kernel's own (TTBR1) leaves are global and every
+/// other root's entries carry another ASID (ARM ARM Example D8-1, D8-7700;
+/// V0a B8). `dsb ish` first so the walker sees the table writes, `isb` after
+/// (context synchronisation). If the slot needs a new ASID and the numbers
+/// ran out (a new generation), the whole TLB is dropped first — with the
+/// empty root and ASID 0 in `TTBR0_EL1`, so that no entry of a stale-generation
+/// ASID can be walked in again between the flush and the switch.
+///
+/// # Safety
+///
+/// EL1, BDOS giant lock held; ASIDs on; `l0_pa` a fully built root.
+unsafe fn install_tagged(l0_pa: u64) {
+    let asid = match slot_of_l0(l0_pa) {
+        Some(slot) => {
+            // SAFETY: caller contract.
+            let (asid, rolled) = unsafe { asid_state() }.0.assign(slot);
+            if rolled {
+                // SAFETY: EL1; the empty root maps nothing.
+                unsafe { rollover_flush() };
+            }
+            asid
+        }
+        None => super::asid::NO_ASID,
+    };
+    let ttbr0 = (l0_pa & OA_MASK) | ((asid as u64) << 48);
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    // SAFETY: writing TTBR0_EL1 is permitted at EL1 (caller contract).
+    unsafe {
+        core::arch::asm!(
+            "dsb ish",
+            "msr ttbr0_el1, {ttbr0}",
+            "isb",
+            ttbr0 = in(reg) ttbr0,
+            options(nostack, preserves_flags),
+        );
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+    let _ = ttbr0;
+}
+
+/// A new ASID generation: park `TTBR0_EL1` on the empty root with ASID 0,
+/// then `tlbi vmalle1is` (every ASID, every level — `RPMNQC` D8-7867/7868; not
+/// `ASIDE1`, V0a C6), `dsb ish`, `isb`. The owed per-VA invalidations are
+/// covered by it and dropped.
+///
+/// # Safety
+///
+/// EL1, BDOS giant lock held.
+unsafe fn rollover_flush() {
+    let empty = EMPTY_L0_PA.load(Ordering::Relaxed);
+    // SAFETY: caller contract; the queue is ours under the lock.
+    let _ = unsafe { asid_state() }.1.take();
+    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
+    // SAFETY: writing TTBR0_EL1 + TLB maintenance are permitted at EL1.
+    unsafe {
+        core::arch::asm!(
+            "dsb ish",
+            "msr ttbr0_el1, {empty}",
+            "isb",
+            "tlbi vmalle1is",
+            "dsb ish",
+            "isb",
+            empty = in(reg) empty,
+            options(nostack, preserves_flags),
+        );
+    }
+    #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
+    let _ = empty;
+    TLB_DIRTY.store(false, Ordering::Relaxed);
 }
 
 /// Walk `slot`'s tables in software and return the output address and the
@@ -1090,15 +1473,14 @@ pub fn l0_pa_for(slot: usize) -> u64 {
 /// handler does exactly that on every process exit, so any later
 /// `Pexec` install starts from an empty EL0 TLB.
 ///
-/// **All processes run with ASID 0.** Per-process ASIDs would be the
-/// architecturally correct way to distinguish the VA-aliased address
-/// spaces (Phase-06 D3 loads every TPA at VA `0x100`), but QEMU's
-/// cortex-a72 TCG model (11.0.0) *wedges on the ASID-tagged TTBR0
-/// write itself* — verified: tagging EC4's install with a non-zero
-/// ASID hangs at the `msr`/`isb`. The QUIRK-001 wedge is purely a
-/// QEMU artifact (real PIPT caches never alias), so ASIDs are not
-/// needed to fix it; they are deferred to real-hardware multitasking
-/// (TLB efficiency). See QUIRK-001 in `docs/MEMORY.md`.
+/// **ASIDs off (the default): all processes run with ASID 0.** QEMU
+/// 11.0.0's cortex-a72 TCG model wedged on the ASID-tagged TTBR0 write
+/// (QUIRK-001); 11.0.2 and the real Pi 4 do not (ARCH03 0b, S0b §4).
+///
+/// **ASIDs on (ARCH03 stage 4, boot argument `asid=on`):** the root is
+/// installed with the slot's own ASID and the switch needs no invalidation
+/// at all ([`install_tagged`]); the kernel's `restore_boot_ttbr0` then
+/// skips its TLBI too.
 ///
 /// # Safety
 ///
@@ -1110,6 +1492,12 @@ pub unsafe fn install_ttbr0(l0_pa: u64) {
     // protection changes are entered before the switch.
     // SAFETY: EL1 under the BDOS lock (the caller's single-CPU context).
     unsafe { super::memprot::sync() };
+    if asids_enabled() {
+        // Stage 4: the root's own ASID, no invalidation (see `install_tagged`).
+        // SAFETY: caller contract.
+        unsafe { install_tagged(l0_pa) };
+        return;
+    }
     // SAFETY: writing TTBR0_EL1 is permitted at EL1. The `dsb ish`
     // before the install is mandatory (ARM ARM D5.10.1): the slot's
     // page-table entries were just written through cacheable kernel
@@ -1295,6 +1683,12 @@ pub unsafe fn clean_invalidate_dcache_range(va: usize, len: usize) {
 /// TTBR0 — those become invalid the instant the new TTBR0 is
 /// observed.
 pub unsafe fn switch_ttbr0_kernel(l0_pa: u64) {
+    if asids_enabled() {
+        // Stage 4: the root's own ASID makes the invalidation unnecessary.
+        // SAFETY: caller contract (EL1, single CPU).
+        unsafe { install_tagged(l0_pa) };
+        return;
+    }
     // SAFETY: writing TTBR0_EL1 + TLBI is permitted at EL1; the
     // DSB pair brackets the invalidate per ARM ARM B5.2.
     unsafe {

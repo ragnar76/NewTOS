@@ -251,6 +251,8 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // `memprot=off`; decided now, while the boot arguments are reachable
     // with the boot tables, and applied before the BDOS pools are seeded.
     let memprot = memprot_switch(dtb);
+    // ARCH03 stage 4: per-process ASIDs (`asid=on`), off by default.
+    let asid = asid_switch(dtb);
 
     // Discover the physical memory map and dump it for visibility.
     // Pure function of the board constants, the DTB and the firmware
@@ -266,6 +268,28 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // tables are mutated and TTBR0/TTBR1 swapped inside.
     unsafe { arch::aarch64::mmu::reinstall(&map) };
     kprintln!("[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).");
+
+    // ARCH03 stage 4: with `asid=on` size the ASID (TCR_EL1.AS from
+    // ID_AA64MMFR0_EL1.ASIDBits) and switch the user tables to nG leaves and
+    // ASID-tagged roots — before any user table entry exists. Off: nothing
+    // changes (TCR_EL1 as booted, ASID 0, TLBI on every switch).
+    if let Some(tiny) = asid {
+        // SAFETY: boot CPU; TTBR0 holds the empty root (reinstall), no
+        // process root has been built or installed.
+        let (bits, field) = unsafe { arch::aarch64::mmu::size_asids() };
+        let limit = if tiny { 4 } else { 1u32 << bits };
+        // SAFETY: boot CPU, before `map_pools` and any root install.
+        unsafe {
+            tos_api::bdos::process::mmu::configure_asids(limit, arch::aarch64::mmu::empty_l0_pa())
+        };
+        kprintln!(
+            "[mm] ASIDs ON: {}-bit (ID_AA64MMFR0_EL1.ASIDBits=0x{:x}), {} per generation{}",
+            bits,
+            field,
+            limit - 1,
+            if tiny { " (asid=tiny: rollover test)" } else { "" },
+        );
+    }
 
     // Initialise the physical frame allocator (Phase 03 D4).
     bios::machine::frames::init(&map);
@@ -878,20 +902,41 @@ const PRIVATE_L3_BUDGET: usize = 64 * tos_api::bdos::process::MAX_PROCESSES;
 
 /// The memory-protection switch from the boot arguments (ARCH03 3b):
 /// `(on, strict)`. On unless `memprot=off`; strict with `memprot=strict`
-/// (`bootargs::MEMPROT_OFF` / `MEMPROT_STRICT`). `board-rpi4` asks the
-/// firmware for its command line (`cmdline.txt`, or QEMU's `-append`), QEMU
-/// `virt` reads `/chosen/bootargs` of its device tree.
+/// (`bootargs::MEMPROT_OFF` / `MEMPROT_STRICT`).
 fn memprot_switch(dtb: Option<usize>) -> (bool, bool) {
-    let decide = |args: &[u8]| {
+    boot_switch(dtb, (true, false), |args: &[u8]| {
         (
             !bootargs::has_token(args, bootargs::MEMPROT_OFF),
             bootargs::has_token(args, bootargs::MEMPROT_STRICT),
         )
-    };
+    })
+}
+
+/// Per-process ASIDs from the boot arguments (ARCH03 stage 4): `None` = off
+/// (the default, the TLBI-on-every-switch path); `Some(false)` = on
+/// (`asid=on`); `Some(true)` = on with four numbers per generation
+/// (`asid=tiny`, the rollover test hook).
+fn asid_switch(dtb: Option<usize>) -> Option<bool> {
+    boot_switch(dtb, None, |args: &[u8]| {
+        if bootargs::has_token(args, bootargs::ASID_TINY) {
+            Some(true)
+        } else if bootargs::has_token(args, bootargs::ASID_ON) {
+            Some(false)
+        } else {
+            None
+        }
+    })
+}
+
+/// Read the boot arguments once and `decide` on them; `default` when there
+/// are none. `board-rpi4` asks the firmware for its command line
+/// (`cmdline.txt`, or QEMU's `-append`), QEMU `virt` reads `/chosen/bootargs`
+/// of its device tree. Boot CPU, while the boot tables still reach the DTB.
+fn boot_switch<R>(dtb: Option<usize>, default: R, decide: impl FnOnce(&[u8]) -> R) -> R {
     #[cfg(feature = "board-rpi4")]
     {
         let _ = dtb;
-        drivers::bcm2711::mailbox::with_command_line(decide).unwrap_or((true, false))
+        drivers::bcm2711::mailbox::with_command_line(decide).unwrap_or(default)
     }
     #[cfg(not(feature = "board-rpi4"))]
     {
@@ -900,7 +945,7 @@ fn memprot_switch(dtb: Option<usize>) -> (bool, bool) {
         // through the boot tables at this point of the boot.
         match dtb.and_then(|d| unsafe { arch::aarch64::dtb::copy_bootargs(d, &mut buf) }) {
             Some(n) => decide(&buf[..n]),
-            None => (true, false),
+            None => default,
         }
     }
 }

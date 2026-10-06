@@ -1,0 +1,1821 @@
+=== on Di.  6 Okt. 2026 16:39:10 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.syNfkN/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.syNfkN/ser.sock,server=on
+t=  16.0s end marker seen
+t=  19.0s a4-on-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.dhipBE/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.dhtimeout
+t= 300.0s a4-on-rpi4-pparent-timeout.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.M5wQAZ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.M5wQAZ/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s a4-on-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-envrn: rc=0
+ppdesk: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-on-rpi4-ppdesk-serial.log
+ppdesk a4-on done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> a4-on-rpi4-desktop-t25.png {"return": {}}
+run a4-on-rpi4-desktop: rc=0
+t=35.0s -> a4-on-rpi4-teradesk-t35.png {"return": {}}
+run a4-on-rpi4-teradesk: rc=0
+t=30.0s -> a4-on-rpi4-qed-t30.png {"return": {}}
+run a4-on-rpi4-qed: rc=0
+t=30.0s -> a4-on-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> a4-on-rpi4-doom-t45.png {"return": {}}
+run a4-on-rpi4-doom: rc=0
+t=25.0s -> a4-on-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> a4-on-rpi4-apitest-t40.png {"return": {}}
+run a4-on-rpi4-apitest: rc=0
+t=25.0s -> a4-on-rpi4-acc-t25.png {"return": {}}
+run a4-on-rpi4-acc: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.O5Sblj/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.O5Sblj/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.3s a4-on-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Tgx55a/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Tgx55a/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-on-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.38tFJv/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.38tFJv/ser.sock,server=on
+t=  17.6s end marker seen
+t=  19.6s a4-on-rpi4-s2all-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.gw68Pn/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.gw68Pn/ser.sock,server=on
+t=  16.8s end marker seen
+t=  18.8s a4-on-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-port10: rc=0
+t=40.0s -> a4-on-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> a4-on-rpi4-crashtst-t70.png {"return": {}}
+run a4-on-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.ZObogf/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.ZObogf/ser.sock,server=on
+t=  16.1s a4-on-rpi4-uacc3a-crash1.png {"return": {}}
+t=  18.3s a4-on-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.5s a4-on-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.7s a4-on-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.9s a4-on-rpi4-uacc3a-crash5.png {"return": {}}
+t=  27.1s a4-on-rpi4-uacc3a-crash6.png {"return": {}}
+t=  29.3s a4-on-rpi4-uacc3a-crash7.png {"return": {}}
+t=  31.5s a4-on-rpi4-uacc3a-crash8.png {"return": {}}
+t=  33.8s a4-on-rpi4-uacc3a-crash9.png {"return": {}}
+t=  36.0s a4-on-rpi4-uacc3a-crash10.png {"return": {}}
+t=  38.2s a4-on-rpi4-uacc3a-crash11.png {"return": {}}
+t=  40.4s a4-on-rpi4-uacc3a-crash12.png {"return": {}}
+t=  42.6s a4-on-rpi4-uacc3a-crash13.png {"return": {}}
+t=  44.8s a4-on-rpi4-uacc3a-crash14.png {"return": {}}
+t=  47.0s a4-on-rpi4-uacc3a-crash15.png {"return": {}}
+t=  49.3s a4-on-rpi4-uacc3a-crash16.png {"return": {}}
+t=  51.5s a4-on-rpi4-uacc3a-crash17.png {"return": {}}
+t=  53.7s a4-on-rpi4-uacc3a-crash18.png {"return": {}}
+t=  55.9s a4-on-rpi4-uacc3a-crash19.png {"return": {}}
+t=  58.1s a4-on-rpi4-uacc3a-crash20.png {"return": {}}
+t=  60.3s a4-on-rpi4-uacc3a-crash21.png {"return": {}}
+t=  62.5s a4-on-rpi4-uacc3a-crash22.png {"return": {}}
+t=  64.7s a4-on-rpi4-uacc3a-crash23.png {"return": {}}
+t=  67.0s a4-on-rpi4-uacc3a-crash24.png {"return": {}}
+t=  69.2s a4-on-rpi4-uacc3a-crash25.png {"return": {}}
+t=  71.4s a4-on-rpi4-uacc3a-crash26.png {"return": {}}
+t=  72.7s end marker seen
+t=  80.8s a4-on-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run a4-on-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.bvNEpl/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.bvNEpl/ser.sock,server=on
+t=  16.9s a4-on-rpi4-mprot-crash1.png {"return": {}}
+t=  18.2s end marker seen
+t=  26.3s a4-on-rpi4-mprot-end.png {"return": {}}
+prompts seen: 1
+run a4-on-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.a7wnAQ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.a7wnAQ/ser.sock,server=on
+t=  15.5s end marker seen
+t=  18.5s a4-on-rpi4-e10-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-e10: rc=0
+t=20.0s -> a4-on-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> a4-on-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> a4-on-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run a4-on-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.gvljc5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.gvljc5/ser.sock,server=on
+t=   4.0s a4-on-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s a4-on-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.9s a4-on-virt-crash-crash3.png {"return": {}}
+t=   5.9s answered prompt 3
+t=   7.3s a4-on-virt-crash-crash4.png {"return": {}}
+t=   7.3s answered prompt 4
+t=   8.7s a4-on-virt-crash-crash5.png {"return": {}}
+t=   8.7s answered prompt 5
+t=  10.1s a4-on-virt-crash-crash6.png {"return": {}}
+t=  10.1s answered prompt 6
+t=  11.5s a4-on-virt-crash-crash7.png {"return": {}}
+t=  11.5s answered prompt 7
+t=  13.1s a4-on-virt-crash-crash8.png {"return": {}}
+t=  13.1s answered prompt 8
+t=  14.5s a4-on-virt-crash-crash9.png {"return": {}}
+t=  14.5s answered prompt 9
+t=  15.9s a4-on-virt-crash-crash10.png {"return": {}}
+t=  15.9s answered prompt 10
+t=  17.3s a4-on-virt-crash-crash11.png {"return": {}}
+t=  17.3s answered prompt 11
+t=  18.7s a4-on-virt-crash-crash12.png {"return": {}}
+t=  18.7s answered prompt 12
+t=  20.2s a4-on-virt-crash-crash13.png {"return": {}}
+t=  20.2s answered prompt 13
+t=  21.7s a4-on-virt-crash-crash14.png {"return": {}}
+t=  21.7s answered prompt 14
+t=  23.1s a4-on-virt-crash-crash15.png {"return": {}}
+t=  23.1s answered prompt 15
+t=  24.6s a4-on-virt-crash-crash16.png {"return": {}}
+t=  24.6s answered prompt 16
+t=  26.0s a4-on-virt-crash-crash17.png {"return": {}}
+t=  26.0s answered prompt 17
+t=  27.4s a4-on-virt-crash-crash18.png {"return": {}}
+t=  27.4s answered prompt 18
+t=  28.8s a4-on-virt-crash-crash19.png {"return": {}}
+t=  28.8s answered prompt 19
+t=  30.2s a4-on-virt-crash-crash20.png {"return": {}}
+t=  30.2s answered prompt 20
+t=  31.7s a4-on-virt-crash-crash21.png {"return": {}}
+t=  31.7s answered prompt 21
+t=  33.1s a4-on-virt-crash-crash22.png {"return": {}}
+t=  33.1s answered prompt 22
+t=  34.5s a4-on-virt-crash-crash23.png {"return": {}}
+t=  34.5s answered prompt 23
+t=  35.9s a4-on-virt-crash-crash24.png {"return": {}}
+t=  35.9s answered prompt 24
+t=  37.3s a4-on-virt-crash-crash25.png {"return": {}}
+t=  37.3s answered prompt 25
+t=  38.7s a4-on-virt-crash-crash26.png {"return": {}}
+t=  38.7s answered prompt 26
+t=  40.1s a4-on-virt-crash-crash27.png {"return": {}}
+t=  40.1s answered prompt 27
+t=  42.2s a4-on-virt-crash-crash28.png {"return": {}}
+t=  42.2s answered prompt 28
+t=  42.8s end marker seen
+t=  44.4s a4-on-virt-crash-end.png {"return": {}}
+prompts seen: 28
+run a4-on-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.x9YpLX/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.x9YpLX/ser.sock,server=on
+t=   3.3s end marker seen
+t=   9.3s a4-on-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run a4-on-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.sBK6xf/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.sBK6xf/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s a4-on-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run a4-on-virt-desktop: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=30.0s -> a4-on-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> a4-on-rpi4-tdqed-t50.png {"return": {}}
+run a4-on-rpi4-tdqed: rc=0
+t=20.0s -> a4-on-rpi4-emucon9-t20.png {"return": {}}
+t=32.0s -> a4-on-rpi4-emucon9-t32.png {"return": {}}
+t=45.0s -> a4-on-rpi4-emucon9-t45.png {"return": {}}
+t=70.0s -> a4-on-rpi4-emucon9-t70.png {"return": {}}
+run a4-on-rpi4-emucon9: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.t9ofIs/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.t9ofIs/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.3s a4-on-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-atexit: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.6BWp3t/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.6BWp3t/ser.sock,server=on
+t=  15.4s end marker seen
+t=  17.5s a4-on-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.3yHzNA/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.3yHzNA/ser.sock,server=on
+t=  17.6s end marker seen
+t=  19.6s a4-on-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-mdprobe: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+marker 'MARK A_IDLE' found at 17.3s -> a4-on-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.3s -> a4-on-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.2s -> a4-on-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.3s -> a4-on-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.2s -> a4-on-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.2s -> a4-on-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.3s -> a4-on-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.3s -> a4-on-desk3a-H_DRIVE_C.png {"return": {}}
+run a4-on-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-on-rpi4-desk3a-serial.log
+desk3a a4-on done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.sIGE3n/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.sIGE3n/ser.sock,server=on
+t=  17.7s end marker seen
+t=  19.7s a4-on-rpi4-s2all-crashkernel-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-s2all-crashkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.r81Cn4/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.r81Cn4/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s a4-on-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-vforkt-alone: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Kk9Pu4/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Kk9Pu4/ser.sock,server=on
+t=  27.9s a4-on-rpi4-asidstr-crash1.png {"return": {}}
+t=  29.3s end marker seen
+t=  32.3s a4-on-rpi4-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-on-rpi4-asidstr: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.POViby/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.POViby/ser.sock,server=on
+t=  34.8s end marker seen
+t=  37.8s a4-on-rpi4-asidperf-counters-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-asidperf-counters: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.9Ab1QO/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.9Ab1QO/ser.sock,server=on
+t=  33.6s end marker seen
+t=  36.6s a4-on-rpi4-asidperf-end.png {"return": {}}
+prompts seen: 0
+run a4-on-rpi4-asidperf: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.FBywGd/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.FBywGd/ser.sock,server=on
+t=   5.6s a4-on-virt-asidstr-crash1.png {"return": {}}
+t=   5.6s answered prompt 1
+t=   5.8s end marker seen
+t=   7.9s a4-on-virt-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-on-virt-asidstr: rc=0
+=== off Di.  6 Okt. 2026 17:00:57 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.9vmn6q/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.9vmn6q/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s a4-off-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Wam484/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Wam484/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-off-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-envrn: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-off-ppdesk-A_IDLE.png {"return": {}}
+marker 'MARK B_BACK' found at 35.2s -> a4-off-ppdesk-B_BACK.png {"return": {}}
+run a4-off-rpi4-ppdesk: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-off-rpi4-ppdesk-serial.log
+ppdesk a4-off done
+t=25.0s -> a4-off-rpi4-desktop-t25.png {"return": {}}
+run a4-off-rpi4-desktop: rc=0
+t=35.0s -> a4-off-rpi4-teradesk-t35.png {"return": {}}
+run a4-off-rpi4-teradesk: rc=0
+t=30.0s -> a4-off-rpi4-qed-t30.png {"return": {}}
+run a4-off-rpi4-qed: rc=0
+t=30.0s -> a4-off-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> a4-off-rpi4-doom-t45.png {"return": {}}
+run a4-off-rpi4-doom: rc=0
+t=25.0s -> a4-off-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> a4-off-rpi4-apitest-t40.png {"return": {}}
+run a4-off-rpi4-apitest: rc=0
+t=25.0s -> a4-off-rpi4-acc-t25.png {"return": {}}
+run a4-off-rpi4-acc: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.oR65id/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.oR65id/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-off-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.OOjGcb/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.OOjGcb/ser.sock,server=on
+t=  15.0s end marker seen
+t=  17.1s a4-off-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.4zfKEt/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.4zfKEt/ser.sock,server=on
+t=  15.8s end marker seen
+t=  17.9s a4-off-rpi4-s2all-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.lcXzFF/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.lcXzFF/ser.sock,server=on
+t=  15.6s end marker seen
+t=  17.6s a4-off-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-port10: rc=0
+t=40.0s -> a4-off-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> a4-off-rpi4-crashtst-t70.png {"return": {}}
+run a4-off-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.O1BbDD/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.O1BbDD/ser.sock,server=on
+t=  15.9s a4-off-rpi4-uacc3a-crash1.png {"return": {}}
+t=  17.9s a4-off-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.0s a4-off-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.1s a4-off-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.2s a4-off-rpi4-uacc3a-crash5.png {"return": {}}
+t=  26.3s a4-off-rpi4-uacc3a-crash6.png {"return": {}}
+t=  28.4s a4-off-rpi4-uacc3a-crash7.png {"return": {}}
+t=  30.5s a4-off-rpi4-uacc3a-crash8.png {"return": {}}
+t=  32.6s a4-off-rpi4-uacc3a-crash9.png {"return": {}}
+t=  34.7s a4-off-rpi4-uacc3a-crash10.png {"return": {}}
+t=  36.8s a4-off-rpi4-uacc3a-crash11.png {"return": {}}
+t=  38.9s a4-off-rpi4-uacc3a-crash12.png {"return": {}}
+t=  41.0s a4-off-rpi4-uacc3a-crash13.png {"return": {}}
+t=  43.1s a4-off-rpi4-uacc3a-crash14.png {"return": {}}
+t=  45.1s a4-off-rpi4-uacc3a-crash15.png {"return": {}}
+t=  47.2s a4-off-rpi4-uacc3a-crash16.png {"return": {}}
+t=  49.3s a4-off-rpi4-uacc3a-crash17.png {"return": {}}
+t=  51.4s a4-off-rpi4-uacc3a-crash18.png {"return": {}}
+t=  53.5s a4-off-rpi4-uacc3a-crash19.png {"return": {}}
+t=  55.6s a4-off-rpi4-uacc3a-crash20.png {"return": {}}
+t=  57.7s a4-off-rpi4-uacc3a-crash21.png {"return": {}}
+t=  59.8s a4-off-rpi4-uacc3a-crash22.png {"return": {}}
+t=  61.9s a4-off-rpi4-uacc3a-crash23.png {"return": {}}
+t=  64.0s a4-off-rpi4-uacc3a-crash24.png {"return": {}}
+t=  66.1s a4-off-rpi4-uacc3a-crash25.png {"return": {}}
+t=  68.2s a4-off-rpi4-uacc3a-crash26.png {"return": {}}
+t=  69.4s end marker seen
+t=  77.4s a4-off-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run a4-off-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Z3tdGe/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Z3tdGe/ser.sock,server=on
+t=  15.1s end marker seen
+t=  23.1s a4-off-rpi4-mprot-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.ZT4Jar/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.ZT4Jar/ser.sock,server=on
+t=  15.1s end marker seen
+t=  18.1s a4-off-rpi4-e10-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-e10: rc=0
+t=20.0s -> a4-off-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> a4-off-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> a4-off-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run a4-off-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.y83C5f/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.y83C5f/ser.sock,server=on
+t=   4.0s a4-off-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s a4-off-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.8s a4-off-virt-crash-crash3.png {"return": {}}
+t=   5.8s answered prompt 3
+t=   7.2s a4-off-virt-crash-crash4.png {"return": {}}
+t=   7.2s answered prompt 4
+t=   8.6s a4-off-virt-crash-crash5.png {"return": {}}
+t=   8.6s answered prompt 5
+t=   9.9s a4-off-virt-crash-crash6.png {"return": {}}
+t=   9.9s answered prompt 6
+t=  11.3s a4-off-virt-crash-crash7.png {"return": {}}
+t=  11.3s answered prompt 7
+t=  12.8s a4-off-virt-crash-crash8.png {"return": {}}
+t=  12.8s answered prompt 8
+t=  14.1s a4-off-virt-crash-crash9.png {"return": {}}
+t=  14.1s answered prompt 9
+t=  15.5s a4-off-virt-crash-crash10.png {"return": {}}
+t=  15.5s answered prompt 10
+t=  16.9s a4-off-virt-crash-crash11.png {"return": {}}
+t=  16.9s answered prompt 11
+t=  18.2s a4-off-virt-crash-crash12.png {"return": {}}
+t=  18.2s answered prompt 12
+t=  19.7s a4-off-virt-crash-crash13.png {"return": {}}
+t=  19.7s answered prompt 13
+t=  21.1s a4-off-virt-crash-crash14.png {"return": {}}
+t=  21.1s answered prompt 14
+t=  22.5s a4-off-virt-crash-crash15.png {"return": {}}
+t=  22.5s answered prompt 15
+t=  23.9s a4-off-virt-crash-crash16.png {"return": {}}
+t=  23.9s answered prompt 16
+t=  25.2s a4-off-virt-crash-crash17.png {"return": {}}
+t=  25.2s answered prompt 17
+t=  26.6s a4-off-virt-crash-crash18.png {"return": {}}
+t=  26.6s answered prompt 18
+t=  28.0s a4-off-virt-crash-crash19.png {"return": {}}
+t=  28.0s answered prompt 19
+t=  29.3s a4-off-virt-crash-crash20.png {"return": {}}
+t=  29.3s answered prompt 20
+t=  30.7s a4-off-virt-crash-crash21.png {"return": {}}
+t=  30.7s answered prompt 21
+t=  32.1s a4-off-virt-crash-crash22.png {"return": {}}
+t=  32.1s answered prompt 22
+t=  33.5s a4-off-virt-crash-crash23.png {"return": {}}
+t=  33.5s answered prompt 23
+t=  34.8s a4-off-virt-crash-crash24.png {"return": {}}
+t=  34.8s answered prompt 24
+t=  36.2s a4-off-virt-crash-crash25.png {"return": {}}
+t=  36.2s answered prompt 25
+t=  37.6s a4-off-virt-crash-crash26.png {"return": {}}
+t=  37.6s answered prompt 26
+t=  38.9s a4-off-virt-crash-crash27.png {"return": {}}
+t=  38.9s answered prompt 27
+t=  40.0s end marker seen
+t=  41.6s a4-off-virt-crash-end.png {"return": {}}
+prompts seen: 27
+run a4-off-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.NPH5pW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.NPH5pW/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s a4-off-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run a4-off-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Z98Evo/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Z98Evo/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s a4-off-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run a4-off-virt-desktop: rc=0
+t=30.0s -> a4-off-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> a4-off-rpi4-tdqed-t50.png {"return": {}}
+run a4-off-rpi4-tdqed: rc=0
+t=20.0s -> a4-off-rpi4-emucon9-t20.png {"return": {}}
+t=32.0s -> a4-off-rpi4-emucon9-t32.png {"return": {}}
+t=45.0s -> a4-off-rpi4-emucon9-t45.png {"return": {}}
+t=70.0s -> a4-off-rpi4-emucon9-t70.png {"return": {}}
+run a4-off-rpi4-emucon9: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.AbhOtx/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.AbhOtx/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-off-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-atexit: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.dRlwA4/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.dRlwA4/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-off-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Gw0O2C/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Gw0O2C/ser.sock,server=on
+t=  17.3s end marker seen
+t=  19.3s a4-off-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-mdprobe: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-off-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.2s -> a4-off-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.2s -> a4-off-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.2s -> a4-off-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.2s -> a4-off-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.2s -> a4-off-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.2s -> a4-off-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.2s -> a4-off-desk3a-H_DRIVE_C.png {"return": {}}
+run a4-off-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-off-rpi4-desk3a-serial.log
+desk3a a4-off done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Blu2OQ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Blu2OQ/ser.sock,server=on
+t=  15.9s end marker seen
+t=  17.9s a4-off-rpi4-s2all-crashkernel-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-s2all-crashkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.KEs7vZ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.KEs7vZ/ser.sock,server=on
+t=  15.1s end marker seen
+t=  18.1s a4-off-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-vforkt-alone: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.SVqcgr/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.SVqcgr/ser.sock,server=on
+t=  15.5s end marker seen
+t=  18.5s a4-off-rpi4-asidstr-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-asidstr: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.wVtKpn/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.wVtKpn/ser.sock,server=on
+t=  15.9s end marker seen
+t=  18.9s a4-off-rpi4-asidperf-counters-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-asidperf-counters: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.lm8gmZ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.lm8gmZ/ser.sock,server=on
+t=  15.8s end marker seen
+t=  18.9s a4-off-rpi4-asidperf-end.png {"return": {}}
+prompts seen: 0
+run a4-off-rpi4-asidperf: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.ikJsiW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.ikJsiW/ser.sock,server=on
+t=   3.4s end marker seen
+t=   5.5s a4-off-virt-asidstr-end.png {"return": {}}
+prompts seen: 0
+run a4-off-virt-asidstr: rc=0
+=== strict Di.  6 Okt. 2026 17:18:13 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.XYGKVx/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.XYGKVx/ser.sock,server=on
+t=  15.6s end marker seen
+t=  18.6s a4-strict-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.qXMCze/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.qXMCze/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s a4-strict-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-envrn: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-strict-ppdesk-A_IDLE.png {"return": {}}
+marker 'MARK B_BACK' found at 35.2s -> a4-strict-ppdesk-B_BACK.png {"return": {}}
+run a4-strict-rpi4-ppdesk: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-strict-rpi4-ppdesk-serial.log
+ppdesk a4-strict done
+t=25.0s -> a4-strict-rpi4-desktop-t25.png {"return": {}}
+run a4-strict-rpi4-desktop: rc=0
+t=35.0s -> a4-strict-rpi4-teradesk-t35.png {"return": {}}
+run a4-strict-rpi4-teradesk: rc=0
+t=30.0s -> a4-strict-rpi4-qed-t30.png {"return": {}}
+run a4-strict-rpi4-qed: rc=0
+t=30.0s -> a4-strict-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> a4-strict-rpi4-doom-t45.png {"return": {}}
+run a4-strict-rpi4-doom: rc=0
+t=25.0s -> a4-strict-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> a4-strict-rpi4-apitest-t40.png {"return": {}}
+run a4-strict-rpi4-apitest: rc=0
+t=25.0s -> a4-strict-rpi4-acc-t25.png {"return": {}}
+run a4-strict-rpi4-acc: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.aupyrm/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.aupyrm/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.3s a4-strict-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.TDJFZf/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.TDJFZf/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-strict-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.EnZNrf/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.EnZNrf/ser.sock,server=on
+t=  17.2s a4-strict-rpi4-s2all-crash1.png {"return": {}}
+timeout
+t= 240.3s a4-strict-rpi4-s2all-timeout.png {"return": {}}
+prompts seen: 1
+run a4-strict-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.eXxYXR/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.eXxYXR/ser.sock,server=on
+t=  16.9s end marker seen
+t=  18.9s a4-strict-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-port10: rc=0
+t=40.0s -> a4-strict-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> a4-strict-rpi4-crashtst-t70.png {"return": {}}
+run a4-strict-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.g90sll/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.g90sll/ser.sock,server=on
+t=  16.1s a4-strict-rpi4-uacc3a-crash1.png {"return": {}}
+t=  18.3s a4-strict-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.5s a4-strict-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.7s a4-strict-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.9s a4-strict-rpi4-uacc3a-crash5.png {"return": {}}
+t=  27.1s a4-strict-rpi4-uacc3a-crash6.png {"return": {}}
+t=  29.3s a4-strict-rpi4-uacc3a-crash7.png {"return": {}}
+t=  31.6s a4-strict-rpi4-uacc3a-crash8.png {"return": {}}
+t=  33.8s a4-strict-rpi4-uacc3a-crash9.png {"return": {}}
+t=  36.0s a4-strict-rpi4-uacc3a-crash10.png {"return": {}}
+t=  38.2s a4-strict-rpi4-uacc3a-crash11.png {"return": {}}
+t=  40.5s a4-strict-rpi4-uacc3a-crash12.png {"return": {}}
+t=  42.7s a4-strict-rpi4-uacc3a-crash13.png {"return": {}}
+t=  44.9s a4-strict-rpi4-uacc3a-crash14.png {"return": {}}
+t=  47.1s a4-strict-rpi4-uacc3a-crash15.png {"return": {}}
+t=  49.3s a4-strict-rpi4-uacc3a-crash16.png {"return": {}}
+t=  51.5s a4-strict-rpi4-uacc3a-crash17.png {"return": {}}
+t=  53.8s a4-strict-rpi4-uacc3a-crash18.png {"return": {}}
+t=  56.0s a4-strict-rpi4-uacc3a-crash19.png {"return": {}}
+t=  58.2s a4-strict-rpi4-uacc3a-crash20.png {"return": {}}
+t=  60.4s a4-strict-rpi4-uacc3a-crash21.png {"return": {}}
+t=  62.6s a4-strict-rpi4-uacc3a-crash22.png {"return": {}}
+t=  64.8s a4-strict-rpi4-uacc3a-crash23.png {"return": {}}
+t=  67.1s a4-strict-rpi4-uacc3a-crash24.png {"return": {}}
+t=  69.3s a4-strict-rpi4-uacc3a-crash25.png {"return": {}}
+t=  71.5s a4-strict-rpi4-uacc3a-crash26.png {"return": {}}
+t=  72.8s end marker seen
+t=  80.9s a4-strict-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run a4-strict-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.fm3lFO/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.fm3lFO/ser.sock,server=on
+t=  16.1s a4-strict-rpi4-mprot-crash1.png {"return": {}}
+t=  18.2s a4-strict-rpi4-mprot-crash2.png {"return": {}}
+t=  20.7s a4-strict-rpi4-mprot-crash3.png {"return": {}}
+t=  23.1s a4-strict-rpi4-mprot-crash4.png {"return": {}}
+t=  24.5s end marker seen
+t=  32.6s a4-strict-rpi4-mprot-end.png {"return": {}}
+prompts seen: 4
+run a4-strict-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.XoBpUN/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.XoBpUN/ser.sock,server=on
+t=  16.3s a4-strict-rpi4-e10-crash1.png {"return": {}}
+t=  17.5s end marker seen
+t=  20.5s a4-strict-rpi4-e10-end.png {"return": {}}
+prompts seen: 1
+run a4-strict-rpi4-e10: rc=0
+t=20.0s -> a4-strict-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> a4-strict-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> a4-strict-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run a4-strict-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.n64wLE/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.n64wLE/ser.sock,server=on
+t=   4.0s a4-strict-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s a4-strict-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.9s a4-strict-virt-crash-crash3.png {"return": {}}
+t=   5.9s answered prompt 3
+t=   7.3s a4-strict-virt-crash-crash4.png {"return": {}}
+t=   7.3s answered prompt 4
+t=   8.7s a4-strict-virt-crash-crash5.png {"return": {}}
+t=   8.7s answered prompt 5
+t=  10.1s a4-strict-virt-crash-crash6.png {"return": {}}
+t=  10.1s answered prompt 6
+t=  11.5s a4-strict-virt-crash-crash7.png {"return": {}}
+t=  11.5s answered prompt 7
+t=  13.1s a4-strict-virt-crash-crash8.png {"return": {}}
+t=  13.1s answered prompt 8
+t=  14.5s a4-strict-virt-crash-crash9.png {"return": {}}
+t=  14.5s answered prompt 9
+t=  15.9s a4-strict-virt-crash-crash10.png {"return": {}}
+t=  15.9s answered prompt 10
+t=  17.3s a4-strict-virt-crash-crash11.png {"return": {}}
+t=  17.3s answered prompt 11
+t=  18.7s a4-strict-virt-crash-crash12.png {"return": {}}
+t=  18.7s answered prompt 12
+t=  20.2s a4-strict-virt-crash-crash13.png {"return": {}}
+t=  20.2s answered prompt 13
+t=  21.7s a4-strict-virt-crash-crash14.png {"return": {}}
+t=  21.7s answered prompt 14
+t=  23.1s a4-strict-virt-crash-crash15.png {"return": {}}
+t=  23.1s answered prompt 15
+t=  24.5s a4-strict-virt-crash-crash16.png {"return": {}}
+t=  24.5s answered prompt 16
+t=  25.9s a4-strict-virt-crash-crash17.png {"return": {}}
+t=  25.9s answered prompt 17
+t=  27.3s a4-strict-virt-crash-crash18.png {"return": {}}
+t=  27.3s answered prompt 18
+t=  28.7s a4-strict-virt-crash-crash19.png {"return": {}}
+t=  28.7s answered prompt 19
+t=  30.1s a4-strict-virt-crash-crash20.png {"return": {}}
+t=  30.1s answered prompt 20
+t=  31.5s a4-strict-virt-crash-crash21.png {"return": {}}
+t=  31.5s answered prompt 21
+t=  32.9s a4-strict-virt-crash-crash22.png {"return": {}}
+t=  32.9s answered prompt 22
+t=  34.3s a4-strict-virt-crash-crash23.png {"return": {}}
+t=  34.3s answered prompt 23
+t=  35.7s a4-strict-virt-crash-crash24.png {"return": {}}
+t=  35.7s answered prompt 24
+t=  37.1s a4-strict-virt-crash-crash25.png {"return": {}}
+t=  37.1s answered prompt 25
+t=  38.5s a4-strict-virt-crash-crash26.png {"return": {}}
+t=  38.5s answered prompt 26
+t=  40.0s a4-strict-virt-crash-crash27.png {"return": {}}
+t=  40.0s answered prompt 27
+t=  41.5s a4-strict-virt-crash-crash28.png {"return": {}}
+t=  41.5s answered prompt 28
+t=  42.9s a4-strict-virt-crash-crash29.png {"return": {}}
+t=  42.9s answered prompt 29
+t=  44.5s a4-strict-virt-crash-crash30.png {"return": {}}
+t=  44.5s answered prompt 30
+t=  46.1s a4-strict-virt-crash-crash31.png {"return": {}}
+t=  46.1s answered prompt 31
+t=  47.9s a4-strict-virt-crash-crash32.png {"return": {}}
+t=  47.9s answered prompt 32
+t=  48.0s end marker seen
+t=  49.7s a4-strict-virt-crash-end.png {"return": {}}
+prompts seen: 32
+run a4-strict-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.84tWeT/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.84tWeT/ser.sock,server=on
+t=   3.3s end marker seen
+t=   9.3s a4-strict-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.pPWWhP/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.pPWWhP/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s a4-strict-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-virt-desktop: rc=0
+t=30.0s -> a4-strict-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> a4-strict-rpi4-tdqed-t50.png {"return": {}}
+run a4-strict-rpi4-tdqed: rc=0
+t=20.0s -> a4-strict-rpi4-emucon9-t20.png {"return": {}}
+t=32.0s -> a4-strict-rpi4-emucon9-t32.png {"return": {}}
+t=45.0s -> a4-strict-rpi4-emucon9-t45.png {"return": {}}
+t=70.0s -> a4-strict-rpi4-emucon9-t70.png {"return": {}}
+run a4-strict-rpi4-emucon9: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.RXoiW5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.RXoiW5/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.3s a4-strict-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-atexit: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.yfr1XW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.yfr1XW/ser.sock,server=on
+t=  15.4s end marker seen
+t=  17.5s a4-strict-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.wpzWWs/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.wpzWWs/ser.sock,server=on
+t=  17.6s end marker seen
+t=  19.6s a4-strict-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-mdprobe: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.VvXmOI/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.VvXmOI/ser.sock,server=on
+t=  17.1s a4-strict-rpi4-s2alls-crashkernel-crash1.png {"return": {}}
+t=  19.5s a4-strict-rpi4-s2alls-crashkernel-crash2.png {"return": {}}
+t=  21.7s end marker seen
+t=  23.7s a4-strict-rpi4-s2alls-crashkernel-end.png {"return": {}}
+prompts seen: 2
+run a4-strict-rpi4-s2alls-crashkernel: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-strict-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.2s -> a4-strict-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.2s -> a4-strict-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.2s -> a4-strict-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.2s -> a4-strict-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.2s -> a4-strict-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.2s -> a4-strict-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.2s -> a4-strict-desk3a-H_DRIVE_C.png {"return": {}}
+run a4-strict-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-strict-rpi4-desk3a-serial.log
+desk3a a4-strict done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.uWYlo7/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.uWYlo7/ser.sock,server=on
+t=  17.1s a4-strict-rpi4-s2alls-crashkernel-crash1.png {"return": {}}
+t=  19.5s a4-strict-rpi4-s2alls-crashkernel-crash2.png {"return": {}}
+t=  21.7s end marker seen
+t=  23.7s a4-strict-rpi4-s2alls-crashkernel-end.png {"return": {}}
+prompts seen: 2
+run a4-strict-rpi4-s2alls-crashkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.dA1bd4/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.dA1bd4/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s a4-strict-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-vforkt-alone: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.29ixoX/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.29ixoX/ser.sock,server=on
+t=  27.7s a4-strict-rpi4-asidstr-crash1.png {"return": {}}
+t=  29.1s end marker seen
+t=  32.1s a4-strict-rpi4-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-strict-rpi4-asidstr: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Zahp9c/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Zahp9c/ser.sock,server=on
+t=  35.4s end marker seen
+t=  38.4s a4-strict-rpi4-asidperf-counters-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-asidperf-counters: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.RgQnOf/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.RgQnOf/ser.sock,server=on
+t=  33.2s end marker seen
+t=  36.2s a4-strict-rpi4-asidperf-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-rpi4-asidperf: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.5iNpKo/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.5iNpKo/ser.sock,server=on
+t=   5.7s a4-strict-virt-asidstr-crash1.png {"return": {}}
+t=   5.7s answered prompt 1
+t=   5.9s end marker seen
+t=   8.0s a4-strict-virt-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-strict-virt-asidstr: rc=0
+=== on-asid Di.  6 Okt. 2026 17:40:55 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.6SErZp/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.6SErZp/ser.sock,server=on
+t=  15.5s end marker seen
+t=  18.5s a4-on-asid-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.6re84l/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.6re84l/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-on-asid-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-envrn: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-on-asid-ppdesk-A_IDLE.png {"return": {}}
+marker 'MARK B_BACK' found at 35.2s -> a4-on-asid-ppdesk-B_BACK.png {"return": {}}
+run a4-on-asid-rpi4-ppdesk: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-on-asid-rpi4-ppdesk-serial.log
+ppdesk a4-on-asid done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> a4-on-asid-rpi4-desktop-t25.png {"return": {}}
+run a4-on-asid-rpi4-desktop: rc=0
+t=35.0s -> a4-on-asid-rpi4-teradesk-t35.png {"return": {}}
+run a4-on-asid-rpi4-teradesk: rc=0
+t=30.0s -> a4-on-asid-rpi4-qed-t30.png {"return": {}}
+run a4-on-asid-rpi4-qed: rc=0
+t=30.0s -> a4-on-asid-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> a4-on-asid-rpi4-doom-t45.png {"return": {}}
+run a4-on-asid-rpi4-doom: rc=0
+t=25.0s -> a4-on-asid-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> a4-on-asid-rpi4-apitest-t40.png {"return": {}}
+run a4-on-asid-rpi4-apitest: rc=0
+t=25.0s -> a4-on-asid-rpi4-acc-t25.png {"return": {}}
+run a4-on-asid-rpi4-acc: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.BJOedY/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.BJOedY/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s a4-on-asid-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.N5fChs/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.N5fChs/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-on-asid-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.C0FCIr/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.C0FCIr/ser.sock,server=on
+t=  17.2s end marker seen
+t=  19.3s a4-on-asid-rpi4-s2all-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Fun1cB/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Fun1cB/ser.sock,server=on
+t=  16.5s end marker seen
+t=  18.6s a4-on-asid-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-port10: rc=0
+t=40.0s -> a4-on-asid-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> a4-on-asid-rpi4-crashtst-t70.png {"return": {}}
+run a4-on-asid-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.pfm22y/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.pfm22y/ser.sock,server=on
+t=  16.0s a4-on-asid-rpi4-uacc3a-crash1.png {"return": {}}
+t=  18.2s a4-on-asid-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.4s a4-on-asid-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.6s a4-on-asid-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.8s a4-on-asid-rpi4-uacc3a-crash5.png {"return": {}}
+t=  27.0s a4-on-asid-rpi4-uacc3a-crash6.png {"return": {}}
+t=  29.1s a4-on-asid-rpi4-uacc3a-crash7.png {"return": {}}
+t=  31.3s a4-on-asid-rpi4-uacc3a-crash8.png {"return": {}}
+t=  33.6s a4-on-asid-rpi4-uacc3a-crash9.png {"return": {}}
+t=  35.8s a4-on-asid-rpi4-uacc3a-crash10.png {"return": {}}
+t=  38.0s a4-on-asid-rpi4-uacc3a-crash11.png {"return": {}}
+t=  40.2s a4-on-asid-rpi4-uacc3a-crash12.png {"return": {}}
+t=  42.4s a4-on-asid-rpi4-uacc3a-crash13.png {"return": {}}
+t=  44.5s a4-on-asid-rpi4-uacc3a-crash14.png {"return": {}}
+t=  46.7s a4-on-asid-rpi4-uacc3a-crash15.png {"return": {}}
+t=  48.9s a4-on-asid-rpi4-uacc3a-crash16.png {"return": {}}
+t=  51.1s a4-on-asid-rpi4-uacc3a-crash17.png {"return": {}}
+t=  53.3s a4-on-asid-rpi4-uacc3a-crash18.png {"return": {}}
+t=  55.5s a4-on-asid-rpi4-uacc3a-crash19.png {"return": {}}
+t=  57.7s a4-on-asid-rpi4-uacc3a-crash20.png {"return": {}}
+t=  59.9s a4-on-asid-rpi4-uacc3a-crash21.png {"return": {}}
+t=  62.1s a4-on-asid-rpi4-uacc3a-crash22.png {"return": {}}
+t=  64.3s a4-on-asid-rpi4-uacc3a-crash23.png {"return": {}}
+t=  66.5s a4-on-asid-rpi4-uacc3a-crash24.png {"return": {}}
+t=  68.7s a4-on-asid-rpi4-uacc3a-crash25.png {"return": {}}
+t=  70.8s a4-on-asid-rpi4-uacc3a-crash26.png {"return": {}}
+t=  72.1s end marker seen
+t=  80.3s a4-on-asid-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run a4-on-asid-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.aCrU0s/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.aCrU0s/ser.sock,server=on
+t=  16.7s a4-on-asid-rpi4-mprot-crash1.png {"return": {}}
+t=  18.0s end marker seen
+t=  26.1s a4-on-asid-rpi4-mprot-end.png {"return": {}}
+prompts seen: 1
+run a4-on-asid-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.jKOzdE/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.jKOzdE/ser.sock,server=on
+t=  15.4s end marker seen
+t=  18.5s a4-on-asid-rpi4-e10-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-e10: rc=0
+t=20.0s -> a4-on-asid-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> a4-on-asid-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> a4-on-asid-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run a4-on-asid-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.mA8REU/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.mA8REU/ser.sock,server=on
+t=   4.0s a4-on-asid-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s a4-on-asid-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.9s a4-on-asid-virt-crash-crash3.png {"return": {}}
+t=   5.9s answered prompt 3
+t=   7.3s a4-on-asid-virt-crash-crash4.png {"return": {}}
+t=   7.3s answered prompt 4
+t=   8.7s a4-on-asid-virt-crash-crash5.png {"return": {}}
+t=   8.7s answered prompt 5
+t=  10.2s a4-on-asid-virt-crash-crash6.png {"return": {}}
+t=  10.2s answered prompt 6
+t=  11.6s a4-on-asid-virt-crash-crash7.png {"return": {}}
+t=  11.6s answered prompt 7
+t=  13.1s a4-on-asid-virt-crash-crash8.png {"return": {}}
+t=  13.1s answered prompt 8
+t=  14.6s a4-on-asid-virt-crash-crash9.png {"return": {}}
+t=  14.6s answered prompt 9
+t=  16.0s a4-on-asid-virt-crash-crash10.png {"return": {}}
+t=  16.0s answered prompt 10
+t=  17.4s a4-on-asid-virt-crash-crash11.png {"return": {}}
+t=  17.4s answered prompt 11
+t=  18.8s a4-on-asid-virt-crash-crash12.png {"return": {}}
+t=  18.8s answered prompt 12
+t=  20.3s a4-on-asid-virt-crash-crash13.png {"return": {}}
+t=  20.3s answered prompt 13
+t=  21.8s a4-on-asid-virt-crash-crash14.png {"return": {}}
+t=  21.8s answered prompt 14
+t=  23.2s a4-on-asid-virt-crash-crash15.png {"return": {}}
+t=  23.2s answered prompt 15
+t=  24.6s a4-on-asid-virt-crash-crash16.png {"return": {}}
+t=  24.6s answered prompt 16
+t=  26.0s a4-on-asid-virt-crash-crash17.png {"return": {}}
+t=  26.0s answered prompt 17
+t=  27.5s a4-on-asid-virt-crash-crash18.png {"return": {}}
+t=  27.5s answered prompt 18
+t=  28.9s a4-on-asid-virt-crash-crash19.png {"return": {}}
+t=  28.9s answered prompt 19
+t=  30.3s a4-on-asid-virt-crash-crash20.png {"return": {}}
+t=  30.3s answered prompt 20
+t=  31.7s a4-on-asid-virt-crash-crash21.png {"return": {}}
+t=  31.7s answered prompt 21
+t=  33.1s a4-on-asid-virt-crash-crash22.png {"return": {}}
+t=  33.1s answered prompt 22
+t=  34.6s a4-on-asid-virt-crash-crash23.png {"return": {}}
+t=  34.6s answered prompt 23
+t=  36.0s a4-on-asid-virt-crash-crash24.png {"return": {}}
+t=  36.0s answered prompt 24
+t=  37.4s a4-on-asid-virt-crash-crash25.png {"return": {}}
+t=  37.4s answered prompt 25
+t=  38.8s a4-on-asid-virt-crash-crash26.png {"return": {}}
+t=  38.8s answered prompt 26
+t=  40.3s a4-on-asid-virt-crash-crash27.png {"return": {}}
+t=  40.3s answered prompt 27
+t=  42.3s a4-on-asid-virt-crash-crash28.png {"return": {}}
+t=  42.3s answered prompt 28
+t=  42.9s end marker seen
+t=  44.5s a4-on-asid-virt-crash-end.png {"return": {}}
+prompts seen: 28
+run a4-on-asid-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.3Kmq9Q/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.3Kmq9Q/ser.sock,server=on
+t=   3.3s end marker seen
+t=   9.3s a4-on-asid-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.LBwusk/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.LBwusk/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s a4-on-asid-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-virt-desktop: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=30.0s -> a4-on-asid-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> a4-on-asid-rpi4-tdqed-t50.png {"return": {}}
+run a4-on-asid-rpi4-tdqed: rc=0
+t=20.0s -> a4-on-asid-rpi4-emucon9-t20.png {"return": {}}
+t=32.0s -> a4-on-asid-rpi4-emucon9-t32.png {"return": {}}
+t=45.0s -> a4-on-asid-rpi4-emucon9-t45.png {"return": {}}
+t=70.0s -> a4-on-asid-rpi4-emucon9-t70.png {"return": {}}
+run a4-on-asid-rpi4-emucon9: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.T4CmWd/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.T4CmWd/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s a4-on-asid-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-atexit: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.GHmBZW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.GHmBZW/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.4s a4-on-asid-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.1bJ9o9/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.1bJ9o9/ser.sock,server=on
+t=  17.8s end marker seen
+t=  19.8s a4-on-asid-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-mdprobe: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-on-asid-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.2s -> a4-on-asid-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.2s -> a4-on-asid-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.2s -> a4-on-asid-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.2s -> a4-on-asid-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.2s -> a4-on-asid-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.2s -> a4-on-asid-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.2s -> a4-on-asid-desk3a-H_DRIVE_C.png {"return": {}}
+run a4-on-asid-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-on-asid-rpi4-desk3a-serial.log
+desk3a a4-on-asid done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.FkT4La/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.FkT4La/ser.sock,server=on
+t=  17.3s end marker seen
+t=  19.4s a4-on-asid-rpi4-s2all-crashkernel-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-s2all-crashkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.IfbJPH/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.IfbJPH/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s a4-on-asid-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-vforkt-alone: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.GLdjmw/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.GLdjmw/ser.sock,server=on
+t=  25.4s a4-on-asid-rpi4-asidstr-crash1.png {"return": {}}
+t=  26.8s end marker seen
+t=  29.8s a4-on-asid-rpi4-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-on-asid-rpi4-asidstr: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.lHtRb2/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.lHtRb2/ser.sock,server=on
+t=  31.1s end marker seen
+t=  34.1s a4-on-asid-rpi4-asidperf-counters-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-asidperf-counters: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.orh2XQ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.orh2XQ/ser.sock,server=on
+t=  29.8s end marker seen
+t=  32.8s a4-on-asid-rpi4-asidperf-end.png {"return": {}}
+prompts seen: 0
+run a4-on-asid-rpi4-asidperf: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.FxNINe/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.FxNINe/ser.sock,server=on
+t=   5.5s a4-on-asid-virt-asidstr-crash1.png {"return": {}}
+t=   5.5s answered prompt 1
+t=   5.7s end marker seen
+t=   7.8s a4-on-asid-virt-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-on-asid-virt-asidstr: rc=0
+=== off-asid Di.  6 Okt. 2026 18:01:53 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Xn7yi5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Xn7yi5/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s a4-off-asid-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.iB0RE9/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.iB0RE9/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-off-asid-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-envrn: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-off-asid-ppdesk-A_IDLE.png {"return": {}}
+marker 'MARK B_BACK' found at 35.2s -> a4-off-asid-ppdesk-B_BACK.png {"return": {}}
+run a4-off-asid-rpi4-ppdesk: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-off-asid-rpi4-ppdesk-serial.log
+ppdesk a4-off-asid done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> a4-off-asid-rpi4-desktop-t25.png {"return": {}}
+run a4-off-asid-rpi4-desktop: rc=0
+t=35.0s -> a4-off-asid-rpi4-teradesk-t35.png {"return": {}}
+run a4-off-asid-rpi4-teradesk: rc=0
+t=30.0s -> a4-off-asid-rpi4-qed-t30.png {"return": {}}
+run a4-off-asid-rpi4-qed: rc=0
+t=30.0s -> a4-off-asid-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> a4-off-asid-rpi4-doom-t45.png {"return": {}}
+run a4-off-asid-rpi4-doom: rc=0
+t=25.0s -> a4-off-asid-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> a4-off-asid-rpi4-apitest-t40.png {"return": {}}
+run a4-off-asid-rpi4-apitest: rc=0
+t=25.0s -> a4-off-asid-rpi4-acc-t25.png {"return": {}}
+run a4-off-asid-rpi4-acc: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.aLQK92/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.aLQK92/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-off-asid-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.9rufSy/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.9rufSy/ser.sock,server=on
+t=  15.0s end marker seen
+t=  17.1s a4-off-asid-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Pmr4Wh/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Pmr4Wh/ser.sock,server=on
+t=  15.9s end marker seen
+t=  17.9s a4-off-asid-rpi4-s2all-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.JziY4Z/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.JziY4Z/ser.sock,server=on
+t=  15.6s end marker seen
+t=  17.6s a4-off-asid-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-port10: rc=0
+t=40.0s -> a4-off-asid-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> a4-off-asid-rpi4-crashtst-t70.png {"return": {}}
+run a4-off-asid-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.dxzneK/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.dxzneK/ser.sock,server=on
+t=  15.9s a4-off-asid-rpi4-uacc3a-crash1.png {"return": {}}
+t=  17.9s a4-off-asid-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.0s a4-off-asid-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.1s a4-off-asid-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.2s a4-off-asid-rpi4-uacc3a-crash5.png {"return": {}}
+t=  26.3s a4-off-asid-rpi4-uacc3a-crash6.png {"return": {}}
+t=  28.4s a4-off-asid-rpi4-uacc3a-crash7.png {"return": {}}
+t=  30.5s a4-off-asid-rpi4-uacc3a-crash8.png {"return": {}}
+t=  32.6s a4-off-asid-rpi4-uacc3a-crash9.png {"return": {}}
+t=  34.7s a4-off-asid-rpi4-uacc3a-crash10.png {"return": {}}
+t=  36.7s a4-off-asid-rpi4-uacc3a-crash11.png {"return": {}}
+t=  38.8s a4-off-asid-rpi4-uacc3a-crash12.png {"return": {}}
+t=  40.9s a4-off-asid-rpi4-uacc3a-crash13.png {"return": {}}
+t=  43.0s a4-off-asid-rpi4-uacc3a-crash14.png {"return": {}}
+t=  45.1s a4-off-asid-rpi4-uacc3a-crash15.png {"return": {}}
+t=  47.2s a4-off-asid-rpi4-uacc3a-crash16.png {"return": {}}
+t=  49.3s a4-off-asid-rpi4-uacc3a-crash17.png {"return": {}}
+t=  51.4s a4-off-asid-rpi4-uacc3a-crash18.png {"return": {}}
+t=  53.5s a4-off-asid-rpi4-uacc3a-crash19.png {"return": {}}
+t=  55.6s a4-off-asid-rpi4-uacc3a-crash20.png {"return": {}}
+t=  57.6s a4-off-asid-rpi4-uacc3a-crash21.png {"return": {}}
+t=  59.7s a4-off-asid-rpi4-uacc3a-crash22.png {"return": {}}
+t=  61.8s a4-off-asid-rpi4-uacc3a-crash23.png {"return": {}}
+t=  63.9s a4-off-asid-rpi4-uacc3a-crash24.png {"return": {}}
+t=  66.0s a4-off-asid-rpi4-uacc3a-crash25.png {"return": {}}
+t=  68.1s a4-off-asid-rpi4-uacc3a-crash26.png {"return": {}}
+t=  69.3s end marker seen
+t=  77.3s a4-off-asid-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run a4-off-asid-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.uNoSdC/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.uNoSdC/ser.sock,server=on
+t=  15.1s end marker seen
+t=  23.2s a4-off-asid-rpi4-mprot-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.10Kb7N/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.10Kb7N/ser.sock,server=on
+t=  15.1s end marker seen
+t=  18.1s a4-off-asid-rpi4-e10-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-e10: rc=0
+t=20.0s -> a4-off-asid-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> a4-off-asid-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> a4-off-asid-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run a4-off-asid-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.iL1qC7/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.iL1qC7/ser.sock,server=on
+t=   4.0s a4-off-asid-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s a4-off-asid-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.8s a4-off-asid-virt-crash-crash3.png {"return": {}}
+t=   5.8s answered prompt 3
+t=   7.2s a4-off-asid-virt-crash-crash4.png {"return": {}}
+t=   7.2s answered prompt 4
+t=   8.6s a4-off-asid-virt-crash-crash5.png {"return": {}}
+t=   8.6s answered prompt 5
+t=  10.0s a4-off-asid-virt-crash-crash6.png {"return": {}}
+t=  10.0s answered prompt 6
+t=  11.3s a4-off-asid-virt-crash-crash7.png {"return": {}}
+t=  11.3s answered prompt 7
+t=  12.8s a4-off-asid-virt-crash-crash8.png {"return": {}}
+t=  12.8s answered prompt 8
+t=  14.2s a4-off-asid-virt-crash-crash9.png {"return": {}}
+t=  14.2s answered prompt 9
+t=  15.6s a4-off-asid-virt-crash-crash10.png {"return": {}}
+t=  15.6s answered prompt 10
+t=  17.0s a4-off-asid-virt-crash-crash11.png {"return": {}}
+t=  17.0s answered prompt 11
+t=  18.3s a4-off-asid-virt-crash-crash12.png {"return": {}}
+t=  18.3s answered prompt 12
+t=  19.8s a4-off-asid-virt-crash-crash13.png {"return": {}}
+t=  19.8s answered prompt 13
+t=  21.2s a4-off-asid-virt-crash-crash14.png {"return": {}}
+t=  21.2s answered prompt 14
+t=  22.6s a4-off-asid-virt-crash-crash15.png {"return": {}}
+t=  22.6s answered prompt 15
+t=  24.0s a4-off-asid-virt-crash-crash16.png {"return": {}}
+t=  24.0s answered prompt 16
+t=  25.4s a4-off-asid-virt-crash-crash17.png {"return": {}}
+t=  25.4s answered prompt 17
+t=  26.7s a4-off-asid-virt-crash-crash18.png {"return": {}}
+t=  26.7s answered prompt 18
+t=  28.1s a4-off-asid-virt-crash-crash19.png {"return": {}}
+t=  28.1s answered prompt 19
+t=  29.5s a4-off-asid-virt-crash-crash20.png {"return": {}}
+t=  29.5s answered prompt 20
+t=  30.8s a4-off-asid-virt-crash-crash21.png {"return": {}}
+t=  30.8s answered prompt 21
+t=  32.2s a4-off-asid-virt-crash-crash22.png {"return": {}}
+t=  32.2s answered prompt 22
+t=  33.6s a4-off-asid-virt-crash-crash23.png {"return": {}}
+t=  33.6s answered prompt 23
+t=  35.0s a4-off-asid-virt-crash-crash24.png {"return": {}}
+t=  35.0s answered prompt 24
+t=  36.3s a4-off-asid-virt-crash-crash25.png {"return": {}}
+t=  36.3s answered prompt 25
+t=  37.7s a4-off-asid-virt-crash-crash26.png {"return": {}}
+t=  37.7s answered prompt 26
+t=  39.1s a4-off-asid-virt-crash-crash27.png {"return": {}}
+t=  39.1s answered prompt 27
+t=  40.2s end marker seen
+t=  41.8s a4-off-asid-virt-crash-end.png {"return": {}}
+prompts seen: 27
+run a4-off-asid-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.RLJU2h/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.RLJU2h/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s a4-off-asid-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.GQ6HYG/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.GQ6HYG/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s a4-off-asid-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-virt-desktop: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=30.0s -> a4-off-asid-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> a4-off-asid-rpi4-tdqed-t50.png {"return": {}}
+run a4-off-asid-rpi4-tdqed: rc=0
+t=20.0s -> a4-off-asid-rpi4-emucon9-t20.png {"return": {}}
+t=32.0s -> a4-off-asid-rpi4-emucon9-t32.png {"return": {}}
+t=45.0s -> a4-off-asid-rpi4-emucon9-t45.png {"return": {}}
+t=70.0s -> a4-off-asid-rpi4-emucon9-t70.png {"return": {}}
+run a4-off-asid-rpi4-emucon9: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.tdE2xs/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.tdE2xs/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-off-asid-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-atexit: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.q8kyPA/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.q8kyPA/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-off-asid-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.RFFkv8/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.RFFkv8/ser.sock,server=on
+t=  17.3s end marker seen
+t=  19.4s a4-off-asid-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-mdprobe: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-off-asid-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.2s -> a4-off-asid-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.2s -> a4-off-asid-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.2s -> a4-off-asid-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.2s -> a4-off-asid-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.2s -> a4-off-asid-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.2s -> a4-off-asid-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.2s -> a4-off-asid-desk3a-H_DRIVE_C.png {"return": {}}
+run a4-off-asid-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-off-asid-rpi4-desk3a-serial.log
+desk3a a4-off-asid done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.8Y0dB6/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.8Y0dB6/ser.sock,server=on
+t=  15.9s end marker seen
+t=  17.9s a4-off-asid-rpi4-s2all-crashkernel-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-s2all-crashkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.QSTO5d/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.QSTO5d/ser.sock,server=on
+t=  15.1s end marker seen
+t=  18.1s a4-off-asid-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-vforkt-alone: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.YOE13N/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.YOE13N/ser.sock,server=on
+t=  15.5s end marker seen
+t=  18.5s a4-off-asid-rpi4-asidstr-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-asidstr: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.BDol2y/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.BDol2y/ser.sock,server=on
+t=  15.8s end marker seen
+t=  18.8s a4-off-asid-rpi4-asidperf-counters-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-asidperf-counters: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.VtsHq4/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.VtsHq4/ser.sock,server=on
+t=  15.9s end marker seen
+t=  18.9s a4-off-asid-rpi4-asidperf-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-rpi4-asidperf: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.uIGQFJ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.uIGQFJ/ser.sock,server=on
+t=   3.4s end marker seen
+t=   5.5s a4-off-asid-virt-asidstr-end.png {"return": {}}
+prompts seen: 0
+run a4-off-asid-virt-asidstr: rc=0
+=== strict-asid Di.  6 Okt. 2026 18:21:54 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.mrVyRE/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.mrVyRE/ser.sock,server=on
+t=  15.5s end marker seen
+t=  18.6s a4-strict-asid-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.AR1K73/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.AR1K73/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-strict-asid-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-envrn: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-strict-asid-ppdesk-A_IDLE.png {"return": {}}
+marker 'MARK B_BACK' found at 35.2s -> a4-strict-asid-ppdesk-B_BACK.png {"return": {}}
+run a4-strict-asid-rpi4-ppdesk: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-strict-asid-rpi4-ppdesk-serial.log
+ppdesk a4-strict-asid done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> a4-strict-asid-rpi4-desktop-t25.png {"return": {}}
+run a4-strict-asid-rpi4-desktop: rc=0
+t=35.0s -> a4-strict-asid-rpi4-teradesk-t35.png {"return": {}}
+run a4-strict-asid-rpi4-teradesk: rc=0
+t=30.0s -> a4-strict-asid-rpi4-qed-t30.png {"return": {}}
+run a4-strict-asid-rpi4-qed: rc=0
+t=30.0s -> a4-strict-asid-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> a4-strict-asid-rpi4-doom-t45.png {"return": {}}
+run a4-strict-asid-rpi4-doom: rc=0
+t=25.0s -> a4-strict-asid-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> a4-strict-asid-rpi4-apitest-t40.png {"return": {}}
+run a4-strict-asid-rpi4-apitest: rc=0
+t=25.0s -> a4-strict-asid-rpi4-acc-t25.png {"return": {}}
+run a4-strict-asid-rpi4-acc: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.CDPdho/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.CDPdho/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s a4-strict-asid-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.0DlbeV/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.0DlbeV/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-strict-asid-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.VBd0xJ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.VBd0xJ/ser.sock,server=on
+t=  16.9s a4-strict-asid-rpi4-s2all-crash1.png {"return": {}}
+timeout
+t= 240.1s a4-strict-asid-rpi4-s2all-timeout.png {"return": {}}
+prompts seen: 1
+run a4-strict-asid-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.QgTYeJ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.QgTYeJ/ser.sock,server=on
+t=  16.5s end marker seen
+t=  18.6s a4-strict-asid-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-port10: rc=0
+t=40.0s -> a4-strict-asid-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> a4-strict-asid-rpi4-crashtst-t70.png {"return": {}}
+run a4-strict-asid-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.NBBSZW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.NBBSZW/ser.sock,server=on
+t=  16.0s a4-strict-asid-rpi4-uacc3a-crash1.png {"return": {}}
+t=  18.2s a4-strict-asid-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.4s a4-strict-asid-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.6s a4-strict-asid-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.8s a4-strict-asid-rpi4-uacc3a-crash5.png {"return": {}}
+t=  27.0s a4-strict-asid-rpi4-uacc3a-crash6.png {"return": {}}
+t=  29.2s a4-strict-asid-rpi4-uacc3a-crash7.png {"return": {}}
+t=  31.3s a4-strict-asid-rpi4-uacc3a-crash8.png {"return": {}}
+t=  33.5s a4-strict-asid-rpi4-uacc3a-crash9.png {"return": {}}
+t=  35.7s a4-strict-asid-rpi4-uacc3a-crash10.png {"return": {}}
+t=  37.9s a4-strict-asid-rpi4-uacc3a-crash11.png {"return": {}}
+t=  40.1s a4-strict-asid-rpi4-uacc3a-crash12.png {"return": {}}
+t=  42.3s a4-strict-asid-rpi4-uacc3a-crash13.png {"return": {}}
+t=  44.5s a4-strict-asid-rpi4-uacc3a-crash14.png {"return": {}}
+t=  46.7s a4-strict-asid-rpi4-uacc3a-crash15.png {"return": {}}
+t=  48.9s a4-strict-asid-rpi4-uacc3a-crash16.png {"return": {}}
+t=  51.1s a4-strict-asid-rpi4-uacc3a-crash17.png {"return": {}}
+t=  53.3s a4-strict-asid-rpi4-uacc3a-crash18.png {"return": {}}
+t=  55.5s a4-strict-asid-rpi4-uacc3a-crash19.png {"return": {}}
+t=  57.7s a4-strict-asid-rpi4-uacc3a-crash20.png {"return": {}}
+t=  59.9s a4-strict-asid-rpi4-uacc3a-crash21.png {"return": {}}
+t=  62.1s a4-strict-asid-rpi4-uacc3a-crash22.png {"return": {}}
+t=  64.3s a4-strict-asid-rpi4-uacc3a-crash23.png {"return": {}}
+t=  66.5s a4-strict-asid-rpi4-uacc3a-crash24.png {"return": {}}
+t=  68.7s a4-strict-asid-rpi4-uacc3a-crash25.png {"return": {}}
+t=  70.9s a4-strict-asid-rpi4-uacc3a-crash26.png {"return": {}}
+t=  72.2s end marker seen
+t=  80.3s a4-strict-asid-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run a4-strict-asid-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.B8TFAd/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.B8TFAd/ser.sock,server=on
+t=  16.0s a4-strict-asid-rpi4-mprot-crash1.png {"return": {}}
+t=  18.2s a4-strict-asid-rpi4-mprot-crash2.png {"return": {}}
+t=  20.6s a4-strict-asid-rpi4-mprot-crash3.png {"return": {}}
+t=  22.9s a4-strict-asid-rpi4-mprot-crash4.png {"return": {}}
+t=  24.2s end marker seen
+t=  32.4s a4-strict-asid-rpi4-mprot-end.png {"return": {}}
+prompts seen: 4
+run a4-strict-asid-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.mUz3qx/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.mUz3qx/ser.sock,server=on
+t=  16.2s a4-strict-asid-rpi4-e10-crash1.png {"return": {}}
+t=  17.4s end marker seen
+t=  20.5s a4-strict-asid-rpi4-e10-end.png {"return": {}}
+prompts seen: 1
+run a4-strict-asid-rpi4-e10: rc=0
+t=20.0s -> a4-strict-asid-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> a4-strict-asid-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> a4-strict-asid-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run a4-strict-asid-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.rXznNd/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.rXznNd/ser.sock,server=on
+t=   4.0s a4-strict-asid-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s a4-strict-asid-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.9s a4-strict-asid-virt-crash-crash3.png {"return": {}}
+t=   5.9s answered prompt 3
+t=   7.3s a4-strict-asid-virt-crash-crash4.png {"return": {}}
+t=   7.3s answered prompt 4
+t=   8.7s a4-strict-asid-virt-crash-crash5.png {"return": {}}
+t=   8.7s answered prompt 5
+t=  10.1s a4-strict-asid-virt-crash-crash6.png {"return": {}}
+t=  10.1s answered prompt 6
+t=  11.5s a4-strict-asid-virt-crash-crash7.png {"return": {}}
+t=  11.5s answered prompt 7
+t=  13.0s a4-strict-asid-virt-crash-crash8.png {"return": {}}
+t=  13.0s answered prompt 8
+t=  14.4s a4-strict-asid-virt-crash-crash9.png {"return": {}}
+t=  14.4s answered prompt 9
+t=  15.8s a4-strict-asid-virt-crash-crash10.png {"return": {}}
+t=  15.8s answered prompt 10
+t=  17.2s a4-strict-asid-virt-crash-crash11.png {"return": {}}
+t=  17.2s answered prompt 11
+t=  18.6s a4-strict-asid-virt-crash-crash12.png {"return": {}}
+t=  18.6s answered prompt 12
+t=  20.1s a4-strict-asid-virt-crash-crash13.png {"return": {}}
+t=  20.1s answered prompt 13
+t=  21.5s a4-strict-asid-virt-crash-crash14.png {"return": {}}
+t=  21.5s answered prompt 14
+t=  22.9s a4-strict-asid-virt-crash-crash15.png {"return": {}}
+t=  22.9s answered prompt 15
+t=  24.3s a4-strict-asid-virt-crash-crash16.png {"return": {}}
+t=  24.3s answered prompt 16
+t=  25.7s a4-strict-asid-virt-crash-crash17.png {"return": {}}
+t=  25.7s answered prompt 17
+t=  27.1s a4-strict-asid-virt-crash-crash18.png {"return": {}}
+t=  27.1s answered prompt 18
+t=  28.5s a4-strict-asid-virt-crash-crash19.png {"return": {}}
+t=  28.5s answered prompt 19
+t=  29.9s a4-strict-asid-virt-crash-crash20.png {"return": {}}
+t=  29.9s answered prompt 20
+t=  31.3s a4-strict-asid-virt-crash-crash21.png {"return": {}}
+t=  31.3s answered prompt 21
+t=  32.7s a4-strict-asid-virt-crash-crash22.png {"return": {}}
+t=  32.7s answered prompt 22
+t=  34.1s a4-strict-asid-virt-crash-crash23.png {"return": {}}
+t=  34.1s answered prompt 23
+t=  35.4s a4-strict-asid-virt-crash-crash24.png {"return": {}}
+t=  35.4s answered prompt 24
+t=  36.8s a4-strict-asid-virt-crash-crash25.png {"return": {}}
+t=  36.8s answered prompt 25
+t=  38.2s a4-strict-asid-virt-crash-crash26.png {"return": {}}
+t=  38.2s answered prompt 26
+t=  39.6s a4-strict-asid-virt-crash-crash27.png {"return": {}}
+t=  39.6s answered prompt 27
+t=  41.1s a4-strict-asid-virt-crash-crash28.png {"return": {}}
+t=  41.1s answered prompt 28
+t=  42.5s a4-strict-asid-virt-crash-crash29.png {"return": {}}
+t=  42.5s answered prompt 29
+t=  44.1s a4-strict-asid-virt-crash-crash30.png {"return": {}}
+t=  44.1s answered prompt 30
+t=  45.6s a4-strict-asid-virt-crash-crash31.png {"return": {}}
+t=  45.6s answered prompt 31
+t=  47.5s a4-strict-asid-virt-crash-crash32.png {"return": {}}
+t=  47.5s answered prompt 32
+t=  47.5s end marker seen
+t=  49.2s a4-strict-asid-virt-crash-end.png {"return": {}}
+prompts seen: 32
+run a4-strict-asid-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.MAx3MW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.MAx3MW/ser.sock,server=on
+t=   3.3s end marker seen
+t=   9.4s a4-strict-asid-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.xMIjvy/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.xMIjvy/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s a4-strict-asid-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-virt-desktop: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=30.0s -> a4-strict-asid-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> a4-strict-asid-rpi4-tdqed-t50.png {"return": {}}
+run a4-strict-asid-rpi4-tdqed: rc=0
+t=20.0s -> a4-strict-asid-rpi4-emucon9-t20.png {"return": {}}
+t=32.0s -> a4-strict-asid-rpi4-emucon9-t32.png {"return": {}}
+t=45.0s -> a4-strict-asid-rpi4-emucon9-t45.png {"return": {}}
+t=70.0s -> a4-strict-asid-rpi4-emucon9-t70.png {"return": {}}
+run a4-strict-asid-rpi4-emucon9: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.1TpmMF/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.1TpmMF/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s a4-strict-asid-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-atexit: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.qE0ukR/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.qE0ukR/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.4s a4-strict-asid-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.fJyywM/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.fJyywM/ser.sock,server=on
+t=  17.8s end marker seen
+t=  19.8s a4-strict-asid-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-mdprobe: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.ja7dIM/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.ja7dIM/ser.sock,server=on
+t=  17.0s a4-strict-asid-rpi4-s2alls-crashkernel-crash1.png {"return": {}}
+t=  19.4s a4-strict-asid-rpi4-s2alls-crashkernel-crash2.png {"return": {}}
+t=  21.4s end marker seen
+t=  23.5s a4-strict-asid-rpi4-s2alls-crashkernel-end.png {"return": {}}
+prompts seen: 2
+run a4-strict-asid-rpi4-s2alls-crashkernel: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-strict-asid-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.2s -> a4-strict-asid-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.2s -> a4-strict-asid-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.2s -> a4-strict-asid-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.2s -> a4-strict-asid-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.2s -> a4-strict-asid-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.2s -> a4-strict-asid-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.2s -> a4-strict-asid-desk3a-H_DRIVE_C.png {"return": {}}
+run a4-strict-asid-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-strict-asid-rpi4-desk3a-serial.log
+desk3a a4-strict-asid done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.XIiqHc/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.XIiqHc/ser.sock,server=on
+t=  17.0s a4-strict-asid-rpi4-s2alls-crashkernel-crash1.png {"return": {}}
+t=  19.3s a4-strict-asid-rpi4-s2alls-crashkernel-crash2.png {"return": {}}
+t=  21.4s end marker seen
+t=  23.4s a4-strict-asid-rpi4-s2alls-crashkernel-end.png {"return": {}}
+prompts seen: 2
+run a4-strict-asid-rpi4-s2alls-crashkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.zceHSl/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.zceHSl/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s a4-strict-asid-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-vforkt-alone: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.tTdMs3/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.tTdMs3/ser.sock,server=on
+t=  25.4s a4-strict-asid-rpi4-asidstr-crash1.png {"return": {}}
+t=  26.8s end marker seen
+t=  29.9s a4-strict-asid-rpi4-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-strict-asid-rpi4-asidstr: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.8ENxLw/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.8ENxLw/ser.sock,server=on
+t=  31.3s end marker seen
+t=  34.3s a4-strict-asid-rpi4-asidperf-counters-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-asidperf-counters: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.l9s2zF/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.l9s2zF/ser.sock,server=on
+t=  29.7s end marker seen
+t=  32.7s a4-strict-asid-rpi4-asidperf-end.png {"return": {}}
+prompts seen: 0
+run a4-strict-asid-rpi4-asidperf: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.JwPfok/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.JwPfok/ser.sock,server=on
+t=   5.5s a4-strict-asid-virt-asidstr-crash1.png {"return": {}}
+t=   5.5s answered prompt 1
+t=   5.7s end marker seen
+t=   7.8s a4-strict-asid-virt-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-strict-asid-virt-asidstr: rc=0
+=== on-tiny Di.  6 Okt. 2026 18:47:17 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.quyVkh/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.quyVkh/ser.sock,server=on
+t=  15.5s end marker seen
+t=  18.5s a4-on-tiny-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Qb9Fbu/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Qb9Fbu/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-on-tiny-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-envrn: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-on-tiny-ppdesk-A_IDLE.png {"return": {}}
+marker 'MARK B_BACK' found at 35.2s -> a4-on-tiny-ppdesk-B_BACK.png {"return": {}}
+run a4-on-tiny-rpi4-ppdesk: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-on-tiny-rpi4-ppdesk-serial.log
+ppdesk a4-on-tiny done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> a4-on-tiny-rpi4-desktop-t25.png {"return": {}}
+run a4-on-tiny-rpi4-desktop: rc=0
+t=35.0s -> a4-on-tiny-rpi4-teradesk-t35.png {"return": {}}
+run a4-on-tiny-rpi4-teradesk: rc=0
+t=30.0s -> a4-on-tiny-rpi4-qed-t30.png {"return": {}}
+run a4-on-tiny-rpi4-qed: rc=0
+t=30.0s -> a4-on-tiny-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> a4-on-tiny-rpi4-doom-t45.png {"return": {}}
+run a4-on-tiny-rpi4-doom: rc=0
+t=25.0s -> a4-on-tiny-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> a4-on-tiny-rpi4-apitest-t40.png {"return": {}}
+run a4-on-tiny-rpi4-apitest: rc=0
+t=25.0s -> a4-on-tiny-rpi4-acc-t25.png {"return": {}}
+run a4-on-tiny-rpi4-acc: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Sz0mqU/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Sz0mqU/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s a4-on-tiny-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.j9oSHL/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.j9oSHL/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s a4-on-tiny-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.Ac2wwh/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.Ac2wwh/ser.sock,server=on
+t=  17.3s end marker seen
+t=  19.3s a4-on-tiny-rpi4-s2all-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.5mVTcW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.5mVTcW/ser.sock,server=on
+t=  16.5s end marker seen
+t=  18.6s a4-on-tiny-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-port10: rc=0
+t=40.0s -> a4-on-tiny-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> a4-on-tiny-rpi4-crashtst-t70.png {"return": {}}
+run a4-on-tiny-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.7KrDeR/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.7KrDeR/ser.sock,server=on
+t=  16.0s a4-on-tiny-rpi4-uacc3a-crash1.png {"return": {}}
+t=  18.2s a4-on-tiny-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.4s a4-on-tiny-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.6s a4-on-tiny-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.8s a4-on-tiny-rpi4-uacc3a-crash5.png {"return": {}}
+t=  27.0s a4-on-tiny-rpi4-uacc3a-crash6.png {"return": {}}
+t=  29.2s a4-on-tiny-rpi4-uacc3a-crash7.png {"return": {}}
+t=  31.4s a4-on-tiny-rpi4-uacc3a-crash8.png {"return": {}}
+t=  33.6s a4-on-tiny-rpi4-uacc3a-crash9.png {"return": {}}
+t=  35.8s a4-on-tiny-rpi4-uacc3a-crash10.png {"return": {}}
+t=  38.0s a4-on-tiny-rpi4-uacc3a-crash11.png {"return": {}}
+t=  40.2s a4-on-tiny-rpi4-uacc3a-crash12.png {"return": {}}
+t=  42.4s a4-on-tiny-rpi4-uacc3a-crash13.png {"return": {}}
+t=  44.5s a4-on-tiny-rpi4-uacc3a-crash14.png {"return": {}}
+t=  46.7s a4-on-tiny-rpi4-uacc3a-crash15.png {"return": {}}
+t=  48.9s a4-on-tiny-rpi4-uacc3a-crash16.png {"return": {}}
+t=  51.1s a4-on-tiny-rpi4-uacc3a-crash17.png {"return": {}}
+t=  53.3s a4-on-tiny-rpi4-uacc3a-crash18.png {"return": {}}
+t=  55.5s a4-on-tiny-rpi4-uacc3a-crash19.png {"return": {}}
+t=  57.6s a4-on-tiny-rpi4-uacc3a-crash20.png {"return": {}}
+t=  59.8s a4-on-tiny-rpi4-uacc3a-crash21.png {"return": {}}
+t=  62.0s a4-on-tiny-rpi4-uacc3a-crash22.png {"return": {}}
+t=  64.2s a4-on-tiny-rpi4-uacc3a-crash23.png {"return": {}}
+t=  66.4s a4-on-tiny-rpi4-uacc3a-crash24.png {"return": {}}
+t=  68.6s a4-on-tiny-rpi4-uacc3a-crash25.png {"return": {}}
+t=  70.7s a4-on-tiny-rpi4-uacc3a-crash26.png {"return": {}}
+t=  72.0s end marker seen
+t=  80.2s a4-on-tiny-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run a4-on-tiny-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.yKqZNH/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.yKqZNH/ser.sock,server=on
+t=  16.7s a4-on-tiny-rpi4-mprot-crash1.png {"return": {}}
+t=  18.0s end marker seen
+t=  26.1s a4-on-tiny-rpi4-mprot-end.png {"return": {}}
+prompts seen: 1
+run a4-on-tiny-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.ZPqAOT/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.ZPqAOT/ser.sock,server=on
+t=  15.4s end marker seen
+t=  18.4s a4-on-tiny-rpi4-e10-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-e10: rc=0
+t=20.0s -> a4-on-tiny-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> a4-on-tiny-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> a4-on-tiny-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run a4-on-tiny-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.vqZyKW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.vqZyKW/ser.sock,server=on
+t=   4.0s a4-on-tiny-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s a4-on-tiny-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.9s a4-on-tiny-virt-crash-crash3.png {"return": {}}
+t=   5.9s answered prompt 3
+t=   7.3s a4-on-tiny-virt-crash-crash4.png {"return": {}}
+t=   7.3s answered prompt 4
+t=   8.7s a4-on-tiny-virt-crash-crash5.png {"return": {}}
+t=   8.7s answered prompt 5
+t=  10.1s a4-on-tiny-virt-crash-crash6.png {"return": {}}
+t=  10.1s answered prompt 6
+t=  11.5s a4-on-tiny-virt-crash-crash7.png {"return": {}}
+t=  11.5s answered prompt 7
+t=  13.0s a4-on-tiny-virt-crash-crash8.png {"return": {}}
+t=  13.0s answered prompt 8
+t=  14.4s a4-on-tiny-virt-crash-crash9.png {"return": {}}
+t=  14.4s answered prompt 9
+t=  15.8s a4-on-tiny-virt-crash-crash10.png {"return": {}}
+t=  15.8s answered prompt 10
+t=  17.2s a4-on-tiny-virt-crash-crash11.png {"return": {}}
+t=  17.2s answered prompt 11
+t=  18.6s a4-on-tiny-virt-crash-crash12.png {"return": {}}
+t=  18.6s answered prompt 12
+t=  20.1s a4-on-tiny-virt-crash-crash13.png {"return": {}}
+t=  20.1s answered prompt 13
+t=  21.5s a4-on-tiny-virt-crash-crash14.png {"return": {}}
+t=  21.5s answered prompt 14
+t=  22.9s a4-on-tiny-virt-crash-crash15.png {"return": {}}
+t=  22.9s answered prompt 15
+t=  24.3s a4-on-tiny-virt-crash-crash16.png {"return": {}}
+t=  24.3s answered prompt 16
+t=  25.8s a4-on-tiny-virt-crash-crash17.png {"return": {}}
+t=  25.8s answered prompt 17
+t=  27.2s a4-on-tiny-virt-crash-crash18.png {"return": {}}
+t=  27.2s answered prompt 18
+t=  28.6s a4-on-tiny-virt-crash-crash19.png {"return": {}}
+t=  28.6s answered prompt 19
+t=  30.0s a4-on-tiny-virt-crash-crash20.png {"return": {}}
+t=  30.0s answered prompt 20
+t=  31.3s a4-on-tiny-virt-crash-crash21.png {"return": {}}
+t=  31.3s answered prompt 21
+t=  32.7s a4-on-tiny-virt-crash-crash22.png {"return": {}}
+t=  32.7s answered prompt 22
+t=  34.1s a4-on-tiny-virt-crash-crash23.png {"return": {}}
+t=  34.1s answered prompt 23
+t=  35.5s a4-on-tiny-virt-crash-crash24.png {"return": {}}
+t=  35.5s answered prompt 24
+t=  36.9s a4-on-tiny-virt-crash-crash25.png {"return": {}}
+t=  36.9s answered prompt 25
+t=  38.3s a4-on-tiny-virt-crash-crash26.png {"return": {}}
+t=  38.3s answered prompt 26
+t=  39.7s a4-on-tiny-virt-crash-crash27.png {"return": {}}
+t=  39.7s answered prompt 27
+t=  41.8s a4-on-tiny-virt-crash-crash28.png {"return": {}}
+t=  41.8s answered prompt 28
+t=  42.3s end marker seen
+t=  44.0s a4-on-tiny-virt-crash-end.png {"return": {}}
+prompts seen: 28
+run a4-on-tiny-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.kqp6Yk/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.kqp6Yk/ser.sock,server=on
+t=   3.3s end marker seen
+t=   9.4s a4-on-tiny-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.qcOjgI/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.qcOjgI/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s a4-on-tiny-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-virt-desktop: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=30.0s -> a4-on-tiny-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> a4-on-tiny-rpi4-tdqed-t50.png {"return": {}}
+run a4-on-tiny-rpi4-tdqed: rc=0
+t=20.0s -> a4-on-tiny-rpi4-emucon9-t20.png {"return": {}}
+t=32.0s -> a4-on-tiny-rpi4-emucon9-t32.png {"return": {}}
+t=45.0s -> a4-on-tiny-rpi4-emucon9-t45.png {"return": {}}
+t=70.0s -> a4-on-tiny-rpi4-emucon9-t70.png {"return": {}}
+run a4-on-tiny-rpi4-emucon9: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.c9SVi8/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.c9SVi8/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s a4-on-tiny-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-atexit: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.qACeYT/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.qACeYT/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.4s a4-on-tiny-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.ycA6AV/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.ycA6AV/ser.sock,server=on
+t=  17.8s end marker seen
+t=  19.8s a4-on-tiny-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-mdprobe: rc=0
+marker 'MARK A_IDLE' found at 17.2s -> a4-on-tiny-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.2s -> a4-on-tiny-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.2s -> a4-on-tiny-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.2s -> a4-on-tiny-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.2s -> a4-on-tiny-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.2s -> a4-on-tiny-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.2s -> a4-on-tiny-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.3s -> a4-on-tiny-desk3a-H_DRIVE_C.png {"return": {}}
+run a4-on-tiny-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/../screendumps/a4-on-tiny-rpi4-desk3a-serial.log
+desk3a a4-on-tiny done
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.cDtRRY/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.cDtRRY/ser.sock,server=on
+t=  17.4s end marker seen
+t=  19.4s a4-on-tiny-rpi4-s2all-crashkernel-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-s2all-crashkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.MOaKCP/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.MOaKCP/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s a4-on-tiny-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-vforkt-alone: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.3UBihf/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.3UBihf/ser.sock,server=on
+t=  25.3s a4-on-tiny-rpi4-asidstr-crash1.png {"return": {}}
+t=  26.7s end marker seen
+t=  29.7s a4-on-tiny-rpi4-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-on-tiny-rpi4-asidstr: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.rywTFp/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.rywTFp/ser.sock,server=on
+t=  31.4s end marker seen
+t=  34.4s a4-on-tiny-rpi4-asidperf-counters-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-asidperf-counters: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.9lNj0L/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.9lNj0L/ser.sock,server=on
+t=  29.6s end marker seen
+t=  32.6s a4-on-tiny-rpi4-asidperf-end.png {"return": {}}
+prompts seen: 0
+run a4-on-tiny-rpi4-asidperf: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/a31.mgTQ1M/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/a31.mgTQ1M/ser.sock,server=on
+t=   5.5s a4-on-tiny-virt-asidstr-crash1.png {"return": {}}
+t=   5.5s answered prompt 1
+t=   5.8s end marker seen
+t=   7.8s a4-on-tiny-virt-asidstr-end.png {"return": {}}
+prompts seen: 1
+run a4-on-tiny-virt-asidstr: rc=0
+=== done Di.  6 Okt. 2026 19:08:14 CEST

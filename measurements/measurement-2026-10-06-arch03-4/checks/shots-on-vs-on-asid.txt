@@ -1,0 +1,11 @@
+DIFF rpi4-crashtst-t40.png
+DIFF rpi4-crashtst-t70.png
+DIFF rpi4-doom-t30.png
+DIFF rpi4-doom-t45.png
+DIFF rpi4-mprot-end.png
+DIFF rpi4-uacc3a-crash10.png
+DIFF rpi4-uacc3a-end.png
+DIFF virt-crash-crash1.png
+DIFF virt-crash-crash2.png
+DIFF virt-crash-crash3.png
+a4-on- vs a4-on-asid-: same=98 diff=10 missing=0
