@@ -375,3 +375,18 @@ Compare against the pin table above. A mismatch means you are reading a
 different edition than the citations in `docs/` were written against —
 that, not a missing file, is the failure mode that produced audit finding
 S1.
+
+---
+
+## libshare (Arnaud Bercegeay) — added 2026-10-06
+
+`references/libshare/` (gitignored, like the rest). Needed by the zView LDG
+codecs (`-lshare`, `libshare_init/exit`). Analysis: `docs/analysis/libshare-2026-10-06.md`.
+
+| Subdir / file | Origin | sha256 |
+|---|---|---|
+| `libshare-0.1.1.tgz` (original release 0.1.1, 2005-05-02; contains sources + prebuilt m68k `libshare.a` + test) | http://arnaud.bercegeay.free.fr/libshare/libshare-0.1.1.tgz (fetched 2026-10-06) | `2a6c58aaf0e99e2ac14c652b4333a504405fdef90e5a007878fc69750e2bdecb` |
+| `orig-0.1.1/` | extracted from the tgz | — |
+| `th-otto-zview-plugins-libshare/` (11 files, in-tree copy, 2 small patches vs. original) | https://github.com/th-otto/zview/tree/master/zview/plugins/libshare, repo HEAD `1cf03620ec3517f9a9a88e0d4f56cdabdf186ee7` at fetch time (fetched 2026-10-06) | per file, see `shasum -a 256` in that dir (e.g. libshare.c `788273ee…1d`, libshare.h `eb80c8e6…0f`) |
+
+No license text in the sources; see the analysis file.

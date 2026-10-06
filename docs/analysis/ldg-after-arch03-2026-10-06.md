@@ -17,7 +17,7 @@ Pfadkürzel: `LDG` = `Applications/ldg-src/ldg` (SVN r133, gitignoriert, per `cu
 2. **Blocker B1 (Toolchain, nicht Kernel):** `ldg_init()` holt die Client-Adresse über `getenv("OFFSETLDG")` (`DEV/ldglib.c:134-137`). Die NewTOS-libc **läuft den Environment-Block nicht in `environ` ab**: `environ` ist für jeden Start das leere Array `{NULL}` (`sdk/libc/newtos-arch/cmdargs.c:37-57,95,246`; der Walk heißt dort „TASK/PORT09 and not built yet“). `getenv` liefert im Modul also `NULL`, `ldg_init` gibt `-1` zurück, das Modul ruft `appl_init()/form_alert()` statt sich zu melden. Ohne Lösung von B1 gibt es kein M1.
 3. **Die vier LDG-Quellen sind nicht LP64-/AArch64-tauglich, aber mit kleinen, abgegrenzten Overlays (Muster `sdk/overlays/*`):** `BASEPAGE.p_env` ist im SDK ein festes 32-Bit-Feld (`sdk/libc/overlay/include/mint/basepage.h:30-47`) → `ldgload.c` bekommt harte Int-zu-Zeiger-Fehler; `ldg_cookie` liest `*(long*)0x5a0` roh (`DEV/ldgutil.c:53-69`), auf LP64 mit 32-Bit-Jar-Einträgen falsch; `ldg_cpush` führt ein m68k-Opcode-Array aus (`ldgutil.c:205-225`); der GCC-Build hängt `stdcallgcc.o` (m68k-Assembler) an (`DEV/gcc.mak`, `EXTRAOBJS`).
 4. **Kein I-Cache-Handlungsbedarf im Client.** Der Kernel macht `dc cvau`/`ic ivau` nach dem Relokieren (`NT/loader.rs:599`, `NT/mmu.rs:1564-1608`); die EL0-Frage (`SCTLR_EL1.UCI`) aus ALT ist damit gegenstandslos, solange kein Modul selbst Code erzeugt (V0a E1/E3/E13 in `docs/analysis/arch03-stage0a-armarm-verification.md:97-99,181`). Das ist die Pi-Hauptprüfung (Abschnitt 8).
-5. **`libshare`: Quelltext nirgends vorhanden** (Abschnitt 5). Für M1 nicht gebraucht (`ex_lib` ruft es nicht). `Applications/ldg-src/ldg/src/share/` ist **nicht** libshare (Falle, Abschnitt 5).
+5. **`libshare`: Quelltext nirgends vorhanden** (Abschnitt 5; **ueberholt**, siehe [libshare-2026-10-06.md](libshare-2026-10-06.md)). Für M1 nicht gebraucht (`ex_lib` ruft es nicht). `Applications/ldg-src/ldg/src/share/` ist **nicht** libshare (Falle, Abschnitt 5).
 6. **Korrektur an ALT §3.0:** `LDG/src/options.h` und `LDG/src/version.h` **liegen im Baum** (`LDG_NUM 0x0235`, `VERSION "2.35"`: `LDG/src/version.h`). ALT nannte sie fehlend.
 7. **Aufwand M1** [Schätzung]: 3–4 Arbeitstage (B1 0,5–1; libldg bauen + Overlays 1; Modul + Probe 0,5–1; Image/ADR 0,5; QEMU-Fehlersuche 1).
 
@@ -159,6 +159,9 @@ Zusätzlich [gelesen]: `Pexec` prüft **keine Dateiendung** (`NT/pexec.rs:266-27
 ---
 
 ## 5. `libshare`
+
+> **Nachtrag 2026-10-06:** Der libshare-Quelltext ist gefunden (Arnaud Bercegeay, 0.1.1; `references/libshare/`). Abschnitt 5 und Frage 7 sind damit ueberholt, siehe [libshare-2026-10-06.md](libshare-2026-10-06.md).
+
 
 **Suche (diese Sitzung):** Volltext (`grep -rIl`, ohne Binärdateien) über `Applications/`, `references/`, `docs/`, `sdk/`; Binärsuche (`grep -rla`) über `Applications/{ldg-2,ldg-src,windom-1.21.3,mintlib-src,pml-2.03,cflib-git}`; Dateinamen-Suche (`find -iname '*libshare*'`) über das ganze Volume (Treffer nur Qt-Bibliothek einer fremden App); der tho-otto-Spiegel `/Volumes/Daten/tho-otto-backu` (Dateinamen; `ldg-20171014.tar.xz` Inhaltsliste: `src/share/{internal.c,internal.h,backward.h}`; die zView-Archive dort enthalten Binärpakete). **Ergebnis: kein `libshare`-Quelltext, kein Header `libshare.h`, keine Bibliothek vorhanden.** Treffer auf den Namen nur in den zView-Quellen, `prerequisites.txt` und unseren Dokumenten.
 
