@@ -390,3 +390,6 @@ codecs (`-lshare`, `libshare_init/exit`). Analysis: `docs/analysis/libshare-2026
 | `th-otto-zview-plugins-libshare/` (11 files, in-tree copy, 2 small patches vs. original) | https://github.com/th-otto/zview/tree/master/zview/plugins/libshare, repo HEAD `1cf03620ec3517f9a9a88e0d4f56cdabdf186ee7` at fetch time (fetched 2026-10-06) | per file, see `shasum -a 256` in that dir (e.g. libshare.c `788273ee…1d`, libshare.h `eb80c8e6…0f`) |
 
 No license text in the sources; see the analysis file.
+Since TASK/LDG-M3-B2 the same tgz (identical sha256) is pinned in the SDK as
+`sdk/libshare/libshare-0.1.1.tgz` and built by `sdk/libshare/build-libshare.sh`;
+the copy here stays the reference.

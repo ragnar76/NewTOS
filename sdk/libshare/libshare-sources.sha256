@@ -1,0 +1,28 @@
+# libshare source pin for sdk/libshare/build-libshare.sh (TASK/LDG-M3-B2).
+#
+# libshare-0.1.1.tgz = the original release 0.1.1 (2005-05-02) by Arnaud
+#   Bercegeay, downloaded unchanged on 2026-10-06 from
+#   http://arnaud.bercegeay.free.fr/libshare/libshare-0.1.1.tgz
+#   (139392 bytes; the web page's link text says "libshare-0.1.0.tgz", the
+#   archive's README says 0.1.1 -- docs/analysis/libshare-2026-10-06.md 5.5).
+#   Same file as references/libshare/libshare-0.1.1.tgz (references/README.md).
+#   The archive also holds a PREBUILT m68k libshare.a and m68k test binaries
+#   (test/test.ldg, test/test.tos); build-libshare.sh deletes them right after
+#   extraction -- nothing m68k is ever linked or installed from it.
+#
+# LICENCE: UNCLEAR. The archive has no licence file and no licence header in
+#   any source. The only statement is the web page footer "Copyright (c)
+#   2004-2005 Arnaud BERCEGEAY". chdir.c says "By ERS: it's in the public
+#   domain"; malloc.c, calloc.c, realloc.c and sbrk.c are marked "from the TOS
+#   GCC library" (the ERS / Heat-n-Serve lineage that mintlib's allocator also
+#   comes from). Ported anyway by user decision 2026-10-06 (the original,
+#   unmodified, LP64/target changes as overlays); the user will ask the author
+#   (bercegeay at atari dot org) about the licence. Until that is answered,
+#   do not publish binaries that contain libshare as if its licence were known.
+#   Also recorded in docs/sdk/10-ldg-modules.md section 6.
+#
+# For comparison only (NOT used): th-otto's in-tree copy in zview
+#   (zview/plugins/libshare, references/libshare/th-otto-zview-plugins-libshare)
+#   differs by include paths, sbrk(size_t) -> sbrk(intptr_t) and warning fixes
+#   in libshare_dummy.
+2a6c58aaf0e99e2ac14c652b4333a504405fdef90e5a007878fc69750e2bdecb  libshare-0.1.1.tgz

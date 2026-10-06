@@ -1,0 +1,39 @@
+== sha256 before
+e99142062d22fd7554b8fcd82345bc8230156995902058bbfa395aac6d76b2b5  libshare/libshare.a
+a8cc3e32e73015d8394374a148a1e2d2a7a2f86bfb8754133673cff07f1bbbfe  ldg/build/EX_LIB.NLD
+bb12b45a9d0848a6dddba5eca2a45cbbb0ad44fbf9906ebbd9c94f175e618f78  ldg/build/client/POPUP.NLD
+eb91d06622fa1a1167f1df495ae963106fca040a3034be2f61b03fd6a4b6ed94  ldg/build/LDGTEST.NCP
+dbcb481cbde82073ef294a6899d5ace5961143da0997f42a20685f1c5d6a20c0  ldg/build/client/LDGDEMO.NAP
+== LIBSHARE_REFRESH=1 build-libshare.sh
+extracting pristine libshare-0.1.1 from libshare-0.1.1.tgz (sha256 verified)…
+  overlay: calloc.c
+  overlay: malloc.c
+  overlay: sbrk.c
+
+compiled OK=7  FAILED=0  (files with warnings: 0)
+
+compiled mintlib/posix_memalign.c with -D__malloc=malloc (addition, see header)
+
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a (18750 bytes)
+defined symbols: 27  external references: 18 (build/external.txt: libc/libm/other-library symbols the archive needs)
+exported: __ind_lst_free __ind_lst_malloc __lst_free __lst_malloc_addr __lst_malloc_size __memalign __posix_memalign __sbrk_has_been_called _mallocChunkSize _malloczero aligned_alloc calloc chdir free libshare_createshm libshare_deleteshm libshare_dummy libshare_exit libshare_getshm libshare_init libshare_mchunk_free_list malloc memalign posix_memalign realloc sbrk static_mblock 
+== build-ldg-client.sh (1)
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/client/LDGDEMO.NAP (299464 bytes)
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/client/POPUP.NLD (55880 bytes)
+  allocator: libshare only (malloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+== build-ldg-client.sh (2)
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/client/LDGDEMO.NAP (299464 bytes)
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/client/POPUP.NLD (55880 bytes)
+  allocator: libshare only (malloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/EX_LIB.NLD (57232 bytes)
+  allocator: libshare only (malloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/LDGTEST.NCP (118312 bytes)
+== sha256 after
+e99142062d22fd7554b8fcd82345bc8230156995902058bbfa395aac6d76b2b5  libshare/libshare.a
+a8cc3e32e73015d8394374a148a1e2d2a7a2f86bfb8754133673cff07f1bbbfe  ldg/build/EX_LIB.NLD
+bb12b45a9d0848a6dddba5eca2a45cbbb0ad44fbf9906ebbd9c94f175e618f78  ldg/build/client/POPUP.NLD
+eb91d06622fa1a1167f1df495ae963106fca040a3034be2f61b03fd6a4b6ed94  ldg/build/LDGTEST.NCP
+dbcb481cbde82073ef294a6899d5ace5961143da0997f42a20685f1c5d6a20c0  ldg/build/client/LDGDEMO.NAP
+libshare.a out of date [libshare/overlay/sbrk.c] -- running build-libshare.sh…
+  compiled OK=7  FAILED=0  (files with warnings: 0)
+  (full log: libshare/build/build-libshare.log)

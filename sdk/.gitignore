@@ -51,6 +51,11 @@
 /windom/build/
 /windom/libwindom1.a
 /windom/include/
+# libshare (TASK/LDG-M3-B2): extracted tree, build dir, archive -- regenerated
+# by sdk/libshare/build-libshare.sh from the pinned tgz + overlay/.
+/libshare/libshare-*/
+/libshare/build/
+/libshare/libshare.a
 **/*.o
 *.NCP
 *.NAP

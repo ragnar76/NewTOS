@@ -1,0 +1,74 @@
+# TASK/LDG-M3 run B -- LDGDEMO.NAP driven by KEYBOARD shortcuts plus mouse
+# only inside POPUP.NLD's pop-up. Reason: run A showed that every mouse click
+# on the WinDom form is dropped -- evnt_multi reports EV_MB = 0 for a click
+# that completed inside the double-click window (WinDom bclicks 258), and
+# WinDom only acts on `evnt.mbut & 1` (evnt_windom.c:334). That is a kernel
+# AES deviation from EmuTOS ev_rets/bchange (reported, not fixed here).
+# WinDom's own keyboard path: Alt+<underlined letter> (frm_keybd_ev.c) and
+# Return = DEFAULT object (frm_keyhd.c). POPUP.NLD's __popup waits with
+# bclicks 1 and does not test the button word, so its clicks work.
+# IKBD make codes: Alt 38, C 2E, F 21, Return 1C, Esc 01, '0' 0B, '.' 34,
+# '5' 06; break = make | 0x80.
+# Pop-up rows (popup opens at BUT_POPUP, x 329.., y 205..): Sinus y~237,
+# Cosinus y~253.
+100 parkbr
+1600 mark S00_WINDOW
+1700 key 38
+1705 key 2E
+1710 key AE
+1730 key B8
+2300 mark S01_INFO_ALERT
+2400 key 1C
+2406 key 9C
+2800 mark S02_ALERT_GONE
+2900 key 38
+2905 key 21
+2910 key A1
+2930 key B8
+3400 mark S03_POPUP
+3500 move 394 237
+3700 mark S04_POPUP_SIN
+3800 down
+3806 up
+4200 mark S05_SINUS_SET
+4300 key 01
+4306 key 81
+4320 key 0B
+4326 key 8B
+4340 key 34
+4346 key B4
+4360 key 06
+4366 key 86
+4600 mark S06_VALUE_TYPED
+4700 key 38
+4705 key 2E
+4710 key AE
+4730 key B8
+5200 mark S07_RESULT_SIN
+5300 key 38
+5305 key 21
+5310 key A1
+5330 key B8
+5800 mark S08_POPUP2
+5900 move 394 253
+6100 mark S09_POPUP_COS
+6200 down
+6206 up
+6600 mark S10_COSINUS_SET
+6700 key 01
+6706 key 81
+6720 key 0B
+6726 key 8B
+6740 key 34
+6746 key B4
+6760 key 06
+6766 key 86
+7000 mark S11_VALUE_TYPED2
+7100 key 38
+7105 key 2E
+7110 key AE
+7130 key B8
+7600 mark S12_RESULT_COS
+7700 key 1C
+7706 key 9C
+8300 mark END_CLOSED

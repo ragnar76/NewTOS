@@ -13,6 +13,17 @@
 # Pexec(3) and relocates its R_AARCH64_RELATIVE entries (PROC LibFunc[] holds
 # absolute function pointers in .data; -z text keeps relocations out of .text).
 #
+# libshare (TASK/LDG-M3-B2): EX_LIB.NLD is a module, so it is linked with
+# sdk/libshare/libshare.a FIRST in its archive group -- the link zView's
+# codecs use (`-lshare -lldg`). LDG's own demo makefiles do not link it for
+# ex_lib; that is a toolchain decision taken here, not a source change: with
+# mintlib's malloc the module's exit() leaves its free list pointing into a
+# hunk its own Pterm frees (measurements/measurement-2026-10-06-ldg-b2,
+# EX_LIB: latent, it never mallocs again; POPUP.NLD: Bus Error). The link map
+# is checked (sdk/libshare/libshare-link.sh): no mintlib allocator member may
+# be pulled. LDGTEST.NCP is a client (a normal program) and keeps libc's
+# malloc.
+#
 # Sources, all UNMODIFIED:
 #   EX_LIB.NLD   <LDG>/demo/libs/ex_lib.c
 #   LDGTEST.NCP  sdk/examples/ldgtest.c (ours) + <LDG>/demo/libs/exlibbnd.c
@@ -38,11 +49,13 @@ BUILD="$LDGDIR/build"
 DOBJ="$BUILD/demo"
 mkdir -p "$DOBJ"
 
-# --- libraries: libc -> gemlib, libc -> libm, libc -> ldg ---------------------
+# --- libraries: libc -> gemlib, libc -> libm, libc -> ldg -> libshare --------
 . "$SDK/lib-stale.sh"
-lib_ensure gemlib || exit 1
-lib_ensure libm   || exit 1
-lib_ensure ldg    || exit 1
+. "$SDK/libshare/libshare-link.sh"
+lib_ensure gemlib   || exit 1
+lib_ensure libm     || exit 1
+lib_ensure ldg      || exit 1
+lib_ensure libshare || exit 1
 MINT="$LIBC/mintlib/include"
 for d in "$MINT" "$GEMTOP" "$LIBMTOP" "$TOP"; do
   [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
@@ -80,18 +93,24 @@ cc "$TOP/demo/libs/exlibbnd.c" exlibbnd.o
 cc "$SDK/examples/ldgtest.c"   ldgtest.o
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" -c "$LIBC/crt0.S" -o "$DOBJ/crt0.o" || exit 1
 
-link() { # link <out> <objs...>
-  local out=$1; shift
+link() { # link <module|client> <out> <objs...>
+  local kind=$1 out=$2; shift 2
+  local share=() map="$BUILD/link-$(basename "$out").map"
+  # A module links libshare.a first in the group (see the header).
+  [ "$kind" = module ] && share=("$SDK/libshare/libshare.a")
   if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
       --build-id=none "$DOBJ/crt0.o" "$@" \
-      --start-group "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
-      -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
+      --start-group ${share[@]+"${share[@]}"} "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
+      -Map="$map" -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
     echo "error: link of $(basename "$out") failed:" >&2
     sed 's/^/    /' "$BUILD/link-$(basename "$out").err" >&2; exit 1
   fi
   echo "LINK OK -> $out ($(wc -c < "$out" | tr -d ' ') bytes)"
   "$READOBJ" --file-headers "$out" | grep -E '^ *Type:'
   echo "  undefined symbols (goal 0): $("$NM" -u "$out" 2>/dev/null | grep -c . || true)"
+  if [ "$kind" = module ]; then
+    ls_check_module_map "$map" "$(basename "$out")" || { rm -f "$out"; exit 1; }
+  fi
 }
-link "$BUILD/EX_LIB.NLD"  "$DOBJ/ex_lib.o"
-link "$BUILD/LDGTEST.NCP" "$DOBJ/ldgtest.o" "$DOBJ/exlibbnd.o"
+link module "$BUILD/EX_LIB.NLD"  "$DOBJ/ex_lib.o"
+link client "$BUILD/LDGTEST.NCP" "$DOBJ/ldgtest.o" "$DOBJ/exlibbnd.o"

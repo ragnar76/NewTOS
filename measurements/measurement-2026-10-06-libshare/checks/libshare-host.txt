@@ -1,0 +1,18 @@
+ok    struct mem_chunk = 24 bytes {valid@0, next@8, size@16}, BORDER_EXTRA 32 (LP64)
+ok    static_mblock 0x102858418 aligned to __alignof__(struct mem_chunk) = 8 (overlay malloc.c:51)
+ok    first exit-path stdio buffer (malloc(1024)) = 0x10285c018 lies in static_mblock [0x102858418, +16384)
+ok    buffer 8-byte aligned (MALLOC_ALIGNMENT)
+ok    no system block for it (ldg_Malloc calls: 0, sbrk called: 0)
+ok    freeing it empties the static block; libshare drops it from its list (malloc.c:271-289)
+ok    second exit-path buffer = 0x7afb007c00 from ldg_Malloc while the MODULE runs (owner module)
+ok    libshare's free() returns that hunk with ldg_Free before the Pterm (ldg_Free calls: 1)
+ok    after the module's Pterm the free list references no freed memory (0 nodes, code 0)
+ok    malloc(0x46c0) in client context -> 0x7afb027940 from ldg_Malloc, owned by the client (2 system block(s))
+ok    second malloc(100) = 0x7afb0278c0, free list consistent
+ok    freeing both returns the now empty hunk with ldg_Free (ldg_Free calls: 2), list consistent
+ok    calloc(10, 100) returns 1000 zero bytes (overlay calloc.c:25 bzero)
+ok    realloc to 30000 keeps the contents
+ok    free list consistent at the end
+
+libshare-host: 15 checks, 0 failed
+rc=0

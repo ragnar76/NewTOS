@@ -1,0 +1,102 @@
+--- exceptions.orig.rs	2026-10-06 23:52:24
++++ instrdiff/kernel/src/arch/aarch64/exceptions.rs	2026-10-06 23:52:24
+@@ -433,6 +433,8 @@
+ 
+     // Result is the full 64-bit `x0` value: GEMDOS returns a sign-
+     // extended `Long`, but BIOS `Getbpb` returns a native 64-bit pointer.
++    let b2_gem = matches!(class, TrapClass::Gemdos); // B2-TEMP
++    let (b2_fn, b2_a0, b2_a1, b2_a2) = (frame.gpr[8] as u16, frame.gpr[0], frame.gpr[1], frame.gpr[2]); // B2-TEMP
+     let result: i64 = match class {
+         TrapClass::Gemdos => tos_api::gemdos::dispatch(&args) as i64,
+         // GEM trap (#2): shared by the VDI and the AES. `x0` is the
+@@ -510,6 +512,7 @@
+         // XBIOS (Trap 14): screen group (Physbase/Logbase/Getrez/...).
+         TrapClass::Xbios => tos_api::xbios::dispatch(&args),
+     };
++    if b2_gem && matches!(b2_fn, 0x44 | 0x48 | 0x49 | 0x4A) { b2::mem(frame, b2_fn, b2_a0, b2_a1, b2_a2, result); } // B2-TEMP
+ 
+     // Mid-syscall cooperative yield (S2 restartable block, design §4.3 + §8.2
+     // sub-step 3): a blocking `evnt_*` wait found a runnable peer and returned
+@@ -1286,6 +1289,7 @@
+     // No app handler installed → terminate directly (unchanged path).
+     // SAFETY: trap-context single-CPU contract; the BDOS giant lock
+     // is held implicitly while we execute the handler.
++    let b2_dying = tos_api::bdos::process::current() as u64; b2::pterm_pre(b2_dying, func); // B2-TEMP
+     let result = unsafe {
+         match func {
+             0x00 => tos_api::bdos::process::pterm::terminate_zero(),
+@@ -1293,6 +1297,7 @@
+             _ => tos_api::bdos::process::pterm::terminate(rc),
+         }
+     };
++    b2::pterm_post(b2_dying); // B2-TEMP
+ 
+     finish_terminate(frame, rc, result);
+ }
+@@ -1845,6 +1850,7 @@
+ /// receives the GEMDOS error code; the parent's SVC observes a
+ /// negative `Long`, just like every other GEMDOS error path.
+ fn handle_pexec(frame: &mut ExceptionFrame) {
++    crate::kprintln!("[b2] Pexec mode={:#x} x1={:#x} x2={:#x} run={:#x}", frame.gpr[0], frame.gpr[1], frame.gpr[2], tos_api::bdos::process::current() as u64); // B2-TEMP
+     use core::sync::atomic::Ordering;
+ 
+     use tos_api::bdos::process::loader::EnvSpec;
+@@ -2171,3 +2177,58 @@
+     }
+     crate::arch::aarch64::halt();
+ }
++
++// B2-TEMP BEGIN -- audit instrumentation (measurement-2026-10-06-ldg-b2)
++mod b2 {
++    use super::ExceptionFrame;
++    static mut LOG: [(u64, u64); 64] = [(0, 0); 64];
++    static mut N: usize = 0;
++    fn chain(fp0: u64) -> [u64; 8] {
++        let mut ra = [0u64; 8];
++        let mut fp = fp0;
++        for r in ra.iter_mut() {
++            if fp == 0 || fp & 7 != 0 || fp >= 0x1_0000_0000 { break; }
++            let nfp = match tos_api::uaccess::get_user_u64(fp) { Ok(v) => v, Err(_) => break };
++            let lr = match tos_api::uaccess::get_user_u64(fp + 8) { Ok(v) => v, Err(_) => break };
++            *r = lr;
++            fp = nfp;
++        }
++        ra
++    }
++    pub fn mem(frame: &ExceptionFrame, f: u16, a0: u64, a1: u64, a2: u64, res: i64) {
++        let run = tos_api::bdos::process::current() as u64;
++        let from_el0 = frame.spsr & 0xF == 0;
++        let ra = if from_el0 { chain(frame.gpr[29]) } else { [0; 8] };
++        crate::kprintln!("[b2] fn={:#x} a0={:#x} a1={:#x} a2={:#x} -> {:#x} run={:#x} el0={} elr={:#x} lr={:#x} ra={:x?}",
++            f, a0, a1, a2, res, run, from_el0, frame.elr, frame.lr, ra);
++        if (f == 0x48 || f == 0x44) && res > 0 && run != 0 {
++            // SAFETY: single CPU, trap context.
++            unsafe {
++                if N < 64 { LOG[N] = (run, res as u64); N += 1; }
++            }
++        }
++    }
++    fn rd(va: u64) -> u64 {
++        // fault-safe unprivileged load (Pterm comes from EL0)
++        tos_api::uaccess::get_user_u64(va).unwrap_or(0xDEAD_DEAD)
++    }
++    pub fn pterm_pre(run: u64, func: u16) {
++        if run == 0 { return; }
++        crate::kprintln!("[b2] Pterm func={:#x} run={:#x} libshare_free_list.next@POPUP={:#x} @EX_LIB={:#x}",
++            func, run, rd(run + 0x8ae8), rd(run + 0x9a60));
++    }
++    pub fn pterm_post(run: u64) {
++        if run == 0 { return; }
++        // SAFETY: single CPU, trap context, BDOS lock implicit.
++        unsafe {
++            for i in 0..N {
++                let (r, a) = LOG[i];
++                if r == run {
++                    crate::kprintln!("[b2]   after Pterm of {:#x}: block {:#x} still allocated = {}",
++                        run, a, tos_api::bdos::mem::traps::is_allocated(a));
++                }
++            }
++        }
++    }
++}
++// B2-TEMP END

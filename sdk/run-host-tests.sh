@@ -186,6 +186,16 @@ fi
 [ $rc -eq 0 ] || sed 's/^/      /' "$WORK/libtest-host.log"
 report libtest-host $rc
 
+# --- LDG module allocator -------------------------------------------------------
+# libshare-host (LDG-M3-B2): libshare's malloc as the SDK builds it (pinned
+# 0.1.1 + overlay/) serves a module's exit-time stdio buffer from its static
+# BSS block, asks the system for nothing during the module's own run, and
+# leaves no free-list node in memory the module's Pterm frees; later blocks
+# come from ldg_Malloc in the caller's context.
+"$SDK/libshare/tests/libshare-host.sh" > "$WORK/libshare-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/libshare-host.log"
+report libshare-host $rc "libshare tree / mintlib headers absent or host not LP64"
+
 echo
 echo "host tests: $pass passed, $fail failed, $skip skipped"
 exit $fail

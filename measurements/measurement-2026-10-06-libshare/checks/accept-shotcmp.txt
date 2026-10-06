@@ -1,0 +1,9 @@
+S00_WINDOW on-vs-strict=SAME on-vs-aes-evbutton/acc-on=SAME
+S01_INFO_ALERT_KBD on-vs-strict=SAME on-vs-aes-evbutton/acc-on=SAME
+S02_ALERT_GONE on-vs-strict=SAME on-vs-aes-evbutton/acc-on=SAME
+S03_INFO_ALERT_LONGPRESS on-vs-strict=SAME on-vs-aes-evbutton/acc-on=SAME
+S04_ALERT_GONE2 on-vs-strict=SAME on-vs-aes-evbutton/acc-on=SAME
+S05_SHORTCLICK on-vs-strict=SAME on-vs-aes-evbutton/acc-on=SAME
+S06_VALUE_TYPED on-vs-strict=SAME on-vs-aes-evbutton/acc-on=DIFF
+END_CLOSED on-vs-strict=SAME on-vs-aes-evbutton/acc-on=DIFF
+end on-vs-strict=SAME on-vs-aes-evbutton/acc-on=DIFF

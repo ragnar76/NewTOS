@@ -1,0 +1,34 @@
+=== link-EX_LIB.NLD.map (sdk/ldg/build/)
+allocator-related members:
+    libshare.a(malloc.o)
+    libshare.a(sbrk.o)
+libshare input sections:
+                438c             438c      554     4         /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a(malloc.o):(.text)
+                48e0             48e0       d0     4         /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a(sbrk.o):(.text)
+                9a48             9a48       28     8         /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a(malloc.o):(.data)
+                e0f8             e0f8     43d8     8         /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a(malloc.o):(.bss)
+               124d0            124d0        4     4         /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a(sbrk.o):(.bss)
+=== client/link-POPUP.NLD.map (sdk/ldg/build/)
+allocator-related members:
+    libshare.a(malloc.o)
+    libshare.a(sbrk.o)
+libshare input sections:
+                183c             183c      554     4         /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a(malloc.o):(.text)
+                1d90             1d90       d0     4         /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a(sbrk.o):(.text)
+                8ad0             8ad0       28     8         /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a(malloc.o):(.data)
+                92a0             92a0     43d8     8         /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a(malloc.o):(.bss)
+                d678             d678        4     4         /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a(sbrk.o):(.bss)
+=== llvm-nm EX_LIB.NLD (allocator symbols)
+    00000000000045e0 T free
+    0000000000009a58 D libshare_mchunk_free_list
+    00000000000043ac T malloc
+    00000000000048e0 T sbrk
+    000000000000e110 B static_mblock
+    (absent above = not linked)
+=== llvm-nm client/POPUP.NLD (allocator symbols)
+    0000000000001a90 T free
+    0000000000008ae0 D libshare_mchunk_free_list
+    000000000000185c T malloc
+    0000000000001d90 T sbrk
+    00000000000092b8 B static_mblock
+    (absent above = not linked)

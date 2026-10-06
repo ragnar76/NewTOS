@@ -71,6 +71,14 @@
 #             (WinDom, TASK/LDG-M3: compiled against gemlib's and mintlib's
 #             headers, so its chain is libc -> gemlib -> windom, like cflib;
 #             build-windom.sh re-extracts zip + patch + overlay on every run)
+#   libshare.a  sdk/libshare/overlay/, sdk/libshare/build-libshare.sh,
+#             sdk/libshare/libshare-0.1.1.tgz + libshare-sources.sha256,
+#             sdk/vendor-lib.sh   + all of ldg's (and so libc's)
+#             (libshare, TASK/LDG-M3-B2: the allocator of every LDG module,
+#             compiled against mintlib's headers and LDG's ldg.h, so its
+#             chain is libc -> ldg -> libshare; it also compiles mintlib's
+#             mintlib/posix_memalign.c, which libc's watch covers. Same
+#             tarball rule as the codec libraries)
 #
 # NOT watched, deliberately:
 #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
@@ -144,6 +152,7 @@ lib_archive() {
     giflib)  printf '%s\n' "$LIB_SDK/giflib/libgif.a" ;;
     libexif) printf '%s\n' "$LIB_SDK/libexif/libexif.a" ;;
     windom)  printf '%s\n' "$LIB_SDK/windom/libwindom1.a" ;;
+    libshare) printf '%s\n' "$LIB_SDK/libshare/libshare.a" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -155,7 +164,7 @@ lib_builder() {
     cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
     libm)   printf '%s\n' "$LIB_SDK/libm/build-libm.sh" ;;
     ldg)    printf '%s\n' "$LIB_SDK/ldg/build-ldg.sh" ;;
-    zlib|libpng|libjpeg|giflib|libexif|windom)
+    zlib|libpng|libjpeg|giflib|libexif|windom|libshare)
             printf '%s\n' "$LIB_SDK/$1/build-$1.sh" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
@@ -176,6 +185,7 @@ lib_chain() {
     giflib)  printf 'libc\ngiflib\n' ;;
     libexif) printf 'libc\nlibm\nlibexif\n' ;;
     windom)  printf 'libc\ngemlib\nwindom\n' ;;
+    libshare) printf 'libc\nldg\nlibshare\n' ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -252,6 +262,15 @@ lib_inputs() {
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/windom/patches"
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/vendor-lib.sh"
       for _t in "$LIB_SDK"/windom/windom-*.zip; do
+        if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
+      done
+      ;;
+    libshare)
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libshare/overlay"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libshare/build-libshare.sh"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libshare/libshare-sources.sha256"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/vendor-lib.sh"
+      for _t in "$LIB_SDK"/libshare/libshare-*.tgz; do
         if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
       done
       ;;

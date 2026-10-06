@@ -1,0 +1,12 @@
+# Kernels of this run (not kept; scratch builds by method/make-kernels.sh,
+# board-rpi4, release). No Rust source was changed by TASK/LDG-M3-B2.
+# Build 1, tree HEAD e429e29 -- used by the runs ldg, popup, accept, instr, regr:
+0aa4f48cf181cc71789df330a9a516d71a1dda1f1a3fbdf17edd5bb1dc87934b  kernel8-ls.img
+d2c3fc12356456f59072fe81d93a40ecfff9fc4130b4501ffb82c7f23d90602c  kinj-m3b.img
+362d3dce0b5ea16a707f18d27c8b18464b6cf6a77766b80a7b8f52c5210dda6c  kinj-m3c.img
+ca190165775d934a2f24df429a235cb699f791a55d2975158d3757ef21dc96eb  kinj-ls-instr.img
+# Build 2, tree HEAD 1f894cf (e429e29 + a TASK/ docs commit only; the kernel
+# embeds the git revision and build date, tos-api/build.rs, hence new hashes)
+# -- used by the run accept2:
+c9267ed5211697996dc17fff10747e9dbd1826f453c0960d4a5fd3206b36c262  kernel8-ls.img
+8d5e767b57a49f77d4546668c1f9502fd6053cd2ef0829c090f1ee3948dbadd1  kinj-evb-acc.img

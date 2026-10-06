@@ -1,0 +1,1140 @@
+# TASK/LDG-M3-B2 change set, base 1f894cf (uncommitted)
+# ==== tracked files (git diff)
+diff --git a/docs/analysis/ldg-after-arch03-2026-10-06.md b/docs/analysis/ldg-after-arch03-2026-10-06.md
+index 5204421..e0aa888 100644
+--- a/docs/analysis/ldg-after-arch03-2026-10-06.md
++++ b/docs/analysis/ldg-after-arch03-2026-10-06.md
+@@ -121,6 +121,8 @@ Bewertung: **ok** = vorhanden und belegt · **Lücke** · **offen** = nur durch
+ | 15 | `ldg_close` → `ldg_unload` | `Mfree(p_env)`, `Mfree(baspag)`; Aufrufer ist Besitzer; `Mfree` einer nie gestarteten PD gibt zusätzlich den Slot frei (`NT/pexec.rs:526-535`) | **ok**; `p_env`-Cast wie Zeile 2 |
+ | 16 | `ldg_cookie` (jede `ldg_open/find/close/error`-Funktion beginnt damit, `ldgapp.c:34,46,67,95`) | `Supexec(cookieptr)` ist im SDK ein einfacher Aufruf (`sdk/libc/overlay/include/mint/osbind.h:813`); `cookieptr` liest `*(long*)0x5a0` (8 Byte) — im NewTOS-Page-0 sind das 4 Byte `_p_cookies` plus die nächsten 4 Byte (`COOKIE_JAR_VA = 0x5F0`, Einträge zu je zwei **32-Bit**-Wörtern: `NT/loader.rs:1291-1313`) → **falscher Jar-Zeiger, Zugriff auf ungültige Adresse** | **Lücke G3** — schon der erste `ldg_open` stürzt ab, **auch ohne TSR** |
+ 
++> **Nachtrag 2026-10-06 zu Zeile 11 (TASK/LDG-M3-B2):** „Modul-eigene `Malloc`s (Besitzer = Modul) werden frei — wie im Original … **ok**“ stimmt für den Kernel, aber die Folge für den Modul-Heap fehlt: das `exit()` des Moduls holt per mintlib-`malloc` stdio-Puffer, die Freiliste des Moduls zeigt danach in einen beim `Pterm` freigegebenen Block, und das nächste `malloc` im Modul (vom Client gerufen) liest freien Speicher — Befund B2 (`docs/analysis/ldg-module-malloc-2026-10-06.md`, gemessen `measurements/measurement-2026-10-06-ldg-b2/`). Behoben im SDK durch libshare in jedem `.NLD` (`docs/sdk/10-ldg-modules.md` §6, `measurements/measurement-2026-10-06-libshare/`), nicht im Kernel.
++
+ Zusätzlich [gelesen]: `Pexec` prüft **keine Dateiendung** (`NT/pexec.rs:266-275`); `.NLD` wird daher vom Kernel wie jede andere ELF-Datei geladen. Der Desktop klassifiziert unbekannte Endungen als Dokument (`kernel/src/desk/ftype.rs:91-96`, `_ => FileType::Doc`) — ein Doppelklick auf `.NLD` startet nichts.
+ 
+ ---
+diff --git a/docs/analysis/libshare-2026-10-06.md b/docs/analysis/libshare-2026-10-06.md
+index f5d9f8a..1b601c7 100644
+--- a/docs/analysis/libshare-2026-10-06.md
++++ b/docs/analysis/libshare-2026-10-06.md
+@@ -53,6 +53,9 @@ th-otto-Fassung vs. Original (diff): nur Include-Pfade (`<ldg.h>` → `"../../ld
+   2. **Eigene `libshare.h` + Dummy-`libshare_init/exit`** mit exakt den zwei Prototypen (`void libshare_init(void)`, `void libshare_exit(void)`), weil die Originale ebenfalls leer sind (`libshare.c:35-58`). Das ist **belegt äquivalent in der Wirkung der zwei Aufrufe**, ersetzt aber **nicht** die Allokator-Ersetzung; ob die gebraucht wird, ist offen. SHM-/Debug-Symbole werden von den Codecs nicht referenziert [gelesen: `grep libshare` über `Applications/z-tools/zview/plugins` zeigt nur die zwei Symbole + Include].
+ * Der Header darf wegen unklarer Lizenz (§1 Nr. 5) vorerst nur als Interface nachgebaut werden (zwei Prototypen), nicht kopiert; Entscheidung beim Lead.
+ 
++> **Korrektur 2026-10-06 (TASK/LDG-M3-B2), der Text oben bleibt als Stand der Recherche stehen.**
++> Die [Schluss]-Aussage „Der libshare-Zweck … ist unter NewTOS **nicht deckungsgleich**: Module sind normale PIE-Programme mit libc-`crt0` und eigenem Heap“ ist **widerlegt**. Gerade weil ein Modul ein normales mintlib-Programm mit eigenem Heap ist, das per `Pexec(4)` einmal läuft und dessen eigene Blöcke beim `Pterm` frei werden (EmuTOS-Besitzmodell, `ET/bdos/proc.c:92-101,136-140`), hinterlässt sein `exit()` eine Freiliste in freigegebenen Speicher (Befund B2, `docs/analysis/ldg-module-malloc-2026-10-06.md` §3.2, gemessen `measurements/measurement-2026-10-06-ldg-b2/`). libshare ist dafür das passende Mittel und ist seit LDG-M3-B2 im SDK (`sdk/libshare/`, unverändertes Original 0.1.1 + drei Overlays, in jedes `.NLD` gelinkt; `docs/sdk/10-ldg-modules.md` §6; Beleg `measurements/measurement-2026-10-06-libshare/`). Auch Weg 1 oben („scheitert voraussichtlich an `lib.h`/32-Bit-Annahmen“) traf nicht zu: `_heapbase/_split_mem/_stksize/__libc_unix_names` gibt es in `sdk/libc`, `struct mem_chunk` hat unter LP64 dasselbe Layout wie mintlibs eigene (`malloc_int.h`); nötig waren nur `sbrk(intptr_t)`, `__bzero` → `bzero` und die Ausrichtung von `static_mblock`. Weg 2 (leere `libshare_init/exit`) wäre ein Stub ohne die eigentliche Wirkung gewesen.
++
+ ## 5. Offene Fragen
+ 
+ 1. **Lizenz** der Quelltexte (keine Angabe; Teile ERS-public-domain/mintlib-Herkunft). Rückfrage an den Autor oder Lead-Entscheid, ob ein Clean-Room-Ersatz der zwei Funktionen genügt.
+diff --git a/docs/sdk/10-ldg-modules.md b/docs/sdk/10-ldg-modules.md
+index 368ee2c..8435072 100644
+--- a/docs/sdk/10-ldg-modules.md
++++ b/docs/sdk/10-ldg-modules.md
+@@ -1,6 +1,7 @@
+ # 10 — LDG modules (`.NLD`): building and loading native LDG libraries
+ 
+-Stand 2026-10-06, TASK/LDG-M1. Design and evidence trail:
++Stand 2026-10-06, TASK/LDG-M1 (section 6 and the libshare rows: TASK/LDG-M3-B2,
++`measurements/measurement-2026-10-06-libshare/RUNINFO.TXT`). Design and evidence trail:
+ `docs/analysis/ldg-after-arch03-2026-10-06.md` (the mechanism, file:line for
+ every step), `measurements/measurement-2026-10-06-ldg-m1/RUNINFO.TXT` (the
+ QEMU runs this page's "verified" statements rest on).
+@@ -28,6 +29,7 @@ address space (`docs/api/gemdos/process/4b-pexec.md`, `PE_GO`).
+ | Overlays | `sdk/ldg/overlay/src/devel/{ldgload.c,ldgutil.c}` | — |
+ | Demo module + acceptance client | `sdk/ldg/build/EX_LIB.NLD`, `sdk/ldg/build/LDGTEST.NCP` | `sdk/ldg/build-ldg-demo.sh` |
+ | LDG's own WinDom demo client + its second module (TASK/LDG-M3) | `sdk/ldg/build/client/dist/LDGDEMO/` (`CLIENT/LDGDEMO.NAP`, `CLIENT/CLIENT.RSC`, `LIBS/EX_LIB.NLD`, `LIBS/POPUP.NLD`) | `sdk/ldg/build-ldg-client.sh` ([12](12-windom.md)) |
++| `libshare.a` — the allocator every module is linked with (libshare 0.1.1, TASK/LDG-M3-B2, section 6) | `sdk/libshare/libshare.a`; pin `sdk/libshare/libshare-0.1.1.tgz` + `libshare-sources.sha256`; overlays `sdk/libshare/overlay/{sbrk,calloc,malloc}.c`; header `sdk/libshare/libshare-0.1.1/libshare.h` | `sdk/libshare/build-libshare.sh` (also via `lib_ensure libshare`: chain libc → ldg → libshare) |
+ 
+ The two overlays below are the only source differences of `libldg.a` (each
+ file's header says why, with file:line); `demo/client/client.c` has a third,
+@@ -56,13 +58,22 @@ The link line `build-ldg-demo.sh` uses for `ex_lib`:
+ ```sh
+ rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text \
+     -z max-page-size=0x1000 --build-id=none crt0.o ex_lib.o \
+-    --start-group sdk/ldg/libldg.a sdk/gemlib/gemlib.a sdk/libm/libm.a \
+-                  sdk/libc/libc.a --end-group -o EX_LIB.NLD
++    --start-group sdk/libshare/libshare.a sdk/ldg/libldg.a sdk/gemlib/gemlib.a \
++                  sdk/libm/libm.a sdk/libc/libc.a --end-group \
++    -Map=link-EX_LIB.NLD.map -o EX_LIB.NLD
+ ```
+ 
+ compiled with the application flag set of `sdk/apps/build-qed.sh` and the
+-include path `-I sdk/ldg/ldg-r133/include` before gemlib's and mintlib's. A
+-client links the same archives (it needs `libldg.a` for `ldg_open` & Co.).
++include path `-I sdk/ldg/ldg-r133/include` before gemlib's and mintlib's.
++**`libshare.a` comes first in the group** — `-lshare -lldg`, as zView's codec
++makefiles link — so that its `malloc/free/realloc/calloc/sbrk/chdir/memalign`
++win over libc's; the map is then checked by `ls_check_module_map`
++(`sdk/libshare/libshare-link.sh`), which stops the build if any of libc's
++allocator members (`mintlib__malloc.o`, `…calloc.o`, `…realloc.o`,
++`…posix_memalign.o`, `unix__sbrk.o`) was pulled next to libshare's. Why a
++module needs libshare: section 6. A **client** links the same archives
++**without** `libshare.a` (it needs `libldg.a` for `ldg_open` & Co. and keeps
++libc's malloc).
+ 
+ * `PROC` tables with function pointers in `.data` are fine: they become
+   `R_AARCH64_RELATIVE` entries, which the kernel applies when it loads the
+@@ -94,12 +105,13 @@ own — `sdk/examples/ldgtest.c` does.
+ | **No LDG TSR (`ldg.prg`), no `LDGM` cookie** | Every `ldg_open` loads the module again (no sharing, no reference count, no `LDG_NOT_SHARED`/`LDG_RESIDENT`/`LDG_LOCKED` handling — those are TSR features, `ldgcook.c`). `ldg_error()` always returns `LDG_NO_TSR` (-11, `ldgapp.c:103`): detect failure by `ldg_open` returning `NULL`. `ldg_libpath` returns `LDG_NO_TSR` |
+ | **No library search path** | Without the TSR `ldg_open` passes the name straight to `Pexec(3)` (`ldgapp.c:37-38`): give an absolute path, or `chdir` to the module's directory and pass the bare name (as zView does) |
+ | **No `ldg_callback`** | `stdcall.s` is m68k assembly and is not built; the symbol does not exist in `libldg.a`, so a program that calls it fails to **link** (lead decision 2026-10-06; no stub) |
+-| **No libshare** | Not needed by plain modules (`ex_lib`); zView's codecs link it (`docs/analysis/libshare-2026-10-06.md`) — later milestone |
++| **libshare in every module** (since TASK/LDG-M3-B2; until then this row read "No libshare — not needed by plain modules", which was wrong for every module that mallocs) | Each `.NLD` is linked with `sdk/libshare/libshare.a` first (section 2), also `EX_LIB.NLD` and `POPUP.NLD`, whose LDG makefiles do not link it. Why and what it does: section 6 |
+ | **One client per module** | The module block is `PROT_P`, owned by the client that loaded it; another process cannot call into it under `memprot=on/strict` |
+ | **Environment copy ≤ 512 bytes** | `ldg_load` passes `OFFSETLDG=<addr>` followed by a copy of the client's environment to `Pexec(3)`; the kernel reads at most `ENV_BUF_LEN = 512` bytes of it and truncates the rest silently (`kernel/src/arch/aarch64/exceptions.rs:1781`). `OFFSETLDG` comes first, so loading is unaffected; the module just sees a shortened environment |
+ | **64 KiB stack kept per loaded module** | mintlib's `_crtinit` keeps `_stksize` (default `MINKEEP` = 64 KiB, `sdk/libc/newtos-arch/heap_init.c:63`) in the module block; module functions run on the **client's** stack, so it is unused. Original mintlib behaviour, kept on purpose (lead decision Q6) — a module may set its own `_stksize` |
+ | **Module `Malloc`s during `main()` are freed at its `Pterm`** | As on TOS: memory the module allocates in `main()` belongs to the module and is released when `Pexec(4)` returns. Memory allocated later, inside a function the client calls, belongs to the client |
+-| **Open defect (TASK/LDG-M3, B2): a module's `malloc` after loading reads freed memory** | The row above has a consequence the libc hides: the module's `exit()` closes stdio (`__fcloseall` → `fclose` → `init_stream` `malloc` + `free`), so the module's own static free list (`_mchunk_free_list`) ends `main()` pointing into a hunk its `Pterm` frees. The next `malloc` inside the module (called by the client) faults under `memprot=on` (POPUP.NLD `__get_bkgr`, `measurements/measurement-2026-10-06-ldg-m3/`) and corrupts/hangs with `memprot=off`. `EX_LIB.NLD` does not `malloc` and is unaffected. Fix location (libc, libldg or kernel) not decided |
++| **B2 (closed by libshare, TASK/LDG-M3-B2): with libc's malloc a module's `malloc` after loading read freed memory** | The row above has a consequence libc's malloc hides: the module's `exit()` closes stdio (`__fcloseall` → `fclose` → `init_stream` `malloc` + `free`), so the module's own static free list (`_mchunk_free_list`) ended `main()` pointing into a hunk its `Pterm` frees; the next `malloc` inside the module (called by the client) faulted under `memprot=on` (POPUP.NLD `__get_bkgr`, `measurements/measurement-2026-10-06-ldg-m3/`, cause chain `…-ldg-b2/`) and double-used/hung with `memprot=off`. `EX_LIB.NLD` had the same dangling list (latent — it never mallocs again; this row said "unaffected" until LDG-M3-B2). With libshare: section 6 |
++| **Residual (libshare, as on the reference)** | Memory a module mallocs during its **own** run (`main()`/`exit()`) beyond libshare's 16 KiB static block, and does **not** free before returning, still comes from `ldg_Malloc` with the module as owner, is freed at its `Pterm`, and libshare's list keeps pointing into it. LDG's rule for module authors stands: allocate in the module's functions (client context), use `ldg_Malloc` & Co. for memory exchanged with the client (`guides/src/ldg.u:1047-1051`, `guides/src/mem.stg:44-52`) |
+ | `Pwait()` | LDG calls MiNT's `Pwait` (0x109) after `Pexec(4)` and ignores the result; NewTOS answers `EINVFN` — harmless |
+ 
+ ## 5. Testing
+@@ -115,3 +127,79 @@ especially a **re-loaded** — module is fetched correctly: QEMU has no caches
+ (`loader.rs:594-597`), so the I-cache maintenance in `Pexec(3)` is exercised
+ only on a Pi. `LDGTEST`'s reload step (close, open again, often at the same
+ address) is the case to watch there.
++
++## 6. libshare: the allocator of every module (TASK/LDG-M3-B2)
++
++**Licence: unclear.** libshare 0.1.1 has no licence file and no licence
++header in any source; the only statement is the web page footer "Copyright
++(c) 2004-2005 Arnaud BERCEGEAY" (http://arnaud.bercegeay.free.fr/libshare/).
++`chdir.c` says "By ERS: it's in the public domain"; `malloc.c`, `calloc.c`,
++`realloc.c`, `sbrk.c` are marked "from the TOS GCC library" (the lineage of
++mintlib's allocator). It is ported by user decision 2026-10-06 (the original,
++LP64/target changes as overlays); **the user will ask the author** about the
++licence. Until that is answered, do not publish binaries that contain it as if
++its licence were known. Same note in `sdk/libshare/libshare-sources.sha256`.
++
++**Why a module needs it.** A module is a mintlib program that LDG starts once
++with `Pexec(4)` and that then lives on inside its client. Memory it gets
++during that run belongs to the module and is freed at its `Pterm` (as on
++EmuTOS, `bdos/proc.c:92-101,136-140`). libc's malloc keeps a static free list
++and takes its memory with GEMDOS `Malloc`: the stdio buffers `exit()` mallocs
++and frees leave that list pointing into a hunk the `Pterm` frees — finding B2
++(section 4; `docs/analysis/ldg-module-malloc-2026-10-06.md`). libshare
++replaces `malloc/free/realloc/calloc/sbrk/chdir` (its `lib.h`: "a dirty patch
++to make LDG compiled against mintlib shareable"):
++
++* the **first** block is a static 16 KiB array in the module's BSS
++  (`malloc.c:50-52,120-126`) — part of the module's TPA, which the client
++  owns, so it survives the module's `Pterm`;
++* every further block comes from `sbrk` → `ldg_Malloc` (`sbrk.c:68-75`), i.e.
++  GEMDOS `Mxalloc` in the context of whoever runs — the **client** once the
++  module is loaded and the client calls into it;
++* `free` hands a hunk that became completely free back with `ldg_Free`
++  (`malloc.c:239-252,271-289`). (libc's mintlib 0.60.1 `free` does not merge a
++  freed chunk that is the last one in the list — `if (q && …)`,
++  `sdk/libc/mintlib/mintlib/malloc.c:190` — so the exit-path hunk is never
++  returned and stays referenced; libshare's copy lacks that `q &&`.)
++
++Measured on the modules of this tree (`measurements/measurement-2026-10-06-libshare`,
++instrumented scratch kernel): during a module's `Pexec(4)` run `exit()`
++closes stderr then stdout; the first buffer lands in the static block, which
++libshare then drops from its list (empty static block, `malloc.c:271-289`);
++the second gets a 16 KiB hunk via `Mxalloc` (owner: the module), which
++libshare's `free` returns with `Mfree` **before** the `Pterm`. At the `Pterm`
++the module's `libshare_mchunk_free_list.next` is 0. `POPUP.NLD`'s
++`__get_bkgr` then mallocs in the client's context (`Mxalloc(0x8000)`, owner
++the client) and frees it in `__put_bkgr`; the pop-up works under
++`memprot=on`, `strict` and `off`.
++
++**What is built** (`sdk/libshare/build-libshare.sh`): libshare's own object
++list (`makefile:28`) with its own flags (`makefile:17-26`), against mintlib's
++headers and `ldg.h`; the tarball's prebuilt m68k `libshare.a` and test
++binaries are deleted after extraction and never used. Three overlays, each
++with line and reason in its header:
++
++| File | Change | Reason |
++|---|---|---|
++| `sbrk.c:61` | `sbrk(size_t)` → `sbrk(intptr_t)` | mintlib 0.60.1 `<unistd.h>:934` declares `intptr_t`; the pristine file does not compile (th-otto's copy has the same change) |
++| `calloc.c:25` | `__bzero` → `bzero` | the SDK's libc defines only `bzero` (`sdk/libc/newtos-arch/memops.c:70-74`), no `__bzero` — undefined symbol otherwise |
++| `malloc.c:51` | `static_mblock` aligned like `struct mem_chunk` | LP64: compiled pristine the array sits at `.bss+0x11`; the chunk header holds 8-byte fields and malloc hands out pointers into it |
++
++Plus **one addition**: mintlib's own `mintlib/posix_memalign.c`
++(`memalign`, `posix_memalign`, `aligned_alloc`), unmodified, compiled with
++`-D__malloc=malloc` into `libshare.a`. In mintlib 0.60.1 those call
++`__malloc` (`posix_memalign.c:22,25`), the strong name of libc's allocator,
++which libshare (2004) does not replace; without the addition a module calling
++them would run two allocators. libc's `valloc` calls `memalign` and so lands
++on libshare's too. Link probe: `measurements/measurement-2026-10-06-libshare/checks/link-probes.txt`.
++
++**`libshare_init()` / `libshare_exit()`** are in the archive and do nothing
++in 0.1.1 (`libshare.c:36-58`); zView's codecs call them. The SHM functions
++(`libshare_getshm/createshm/deleteshm`) are experimental in the original
++("recommended to NOT use them", README) and unreachable on a single-TOS
++system (`has_shm()` returns 0, `gl_shm.c:66-81`).
++
++**Tests:** `sdk/libshare/tests/libshare-host.sh` (run by
++`sdk/run-host-tests.sh`) — the module run / Pterm / client sequence against a
++model of `ldg_Malloc`/`ldg_Free` and owner-based freeing, 15 checks.
++
+diff --git a/docs/sdk/12-windom.md b/docs/sdk/12-windom.md
+index ec9e4de..3407da3 100644
+--- a/docs/sdk/12-windom.md
++++ b/docs/sdk/12-windom.md
+@@ -140,5 +140,5 @@ and strict screendumps are pixel-identical.
+ | # | What | Where | Effect |
+ |---|---|---|---|
+ | B1 | `evnt_multi`/`evnt_button` report `EV_MB` = the **live** button after the double-click window; EmuTOS reports the state of the event (`bchange` sets `button = gl_bdesired`, `ev_rets` returns it or `pr_button`, `aes/geminput.c:155-180,328-345`, `aes/gemevlib.c:42-58`) | kernel, `tos-api/src/aes/event.rs` `fill_rets` | WinDom acts on a click only if `evnt.mbut & 1` (`evnt_windom.c:334`) with `bclicks 258`: **every normal mouse click on a WinDom form, toolbar or window menu is dropped**; a press held longer than the double-click window works. Kernel change — reported, not made |
+-| B2 | an LDG module's `exit()` closes stdio (`__fcloseall` → `fclose` → `__flshfp` → `init_stream` → `malloc` → `free`); the hunk is Malloc'd by the module's own process and freed when `Pexec(4)` returns, but the module's static `_mchunk_free_list` keeps pointing into it | libc + LDG module model ([10](10-ldg-modules.md) §4) | the module's next `malloc`, called from the client, reads freed memory: memprot on → Bus Error in the module's `malloc` (POPUP.NLD `__get_bkgr`); memprot off → hang. Every module that mallocs after loading is affected (all zView codecs) |
++| B2 | an LDG module's `exit()` closes stdio (`__fcloseall` → `fclose` → `__flshfp` → `init_stream` → `malloc` → `free`); the hunk is Malloc'd by the module's own process and freed when `Pexec(4)` returns, but the module's static `_mchunk_free_list` keeps pointing into it | libc + LDG module model ([10](10-ldg-modules.md) §4) | the module's next `malloc`, called from the client, reads freed memory: memprot on → Bus Error in the module's `malloc` (POPUP.NLD `__get_bkgr`); memprot off → hang. Every module that mallocs after loading is affected (all zView codecs). **Closed by TASK/LDG-M3-B2:** every `.NLD` is now linked with libshare ([10](10-ldg-modules.md) §6); the pop-up works under memprot on/strict/off (`measurements/measurement-2026-10-06-libshare/`) |
+ | — | the text caret of `objc_edit` ignores `te_just` (EmuTOS `gr_just` in `pxl_rect`, `aes/gemobed.c:180-182`) | kernel, `tos-api/src/aes/object.rs` `edit_field_t` | caret 18 px left of the text end in the demo's centred field; cosmetic |
+diff --git a/docs/sdk/README.md b/docs/sdk/README.md
+index 0aae498..4965f7c 100644
+--- a/docs/sdk/README.md
++++ b/docs/sdk/README.md
+@@ -23,7 +23,7 @@ Repository revision the documentation was written against:
+ | [07-mintlib-limits.md](07-mintlib-limits.md) | What the ported mintlib does not provide, derived from `sdk/libc/expected-failures.txt` and the test programs; `setjmp` and the libm (OpenLibm) since T07 |
+ | [08-porting-checklist.md](08-porting-checklist.md) | The short, tickable list for porting an application |
+ | [09-port-material.md](09-port-material.md) | What source material we hold, in which version, under which licence — and the age trap a frozen third-party library is |
+-| [10-ldg-modules.md](10-ldg-modules.md) | LDG run-time libraries as native `.NLD` modules: libldg, building a module, loading it from a client, what is not there (TSR, `ldg_callback`, search path) — TASK/LDG-M1 |
++| [10-ldg-modules.md](10-ldg-modules.md) | LDG run-time libraries as native `.NLD` modules: libldg, building a module, loading it from a client, what is not there (TSR, `ldg_callback`, search path) — TASK/LDG-M1; libshare 0.1.1 as the allocator of every module (licence unclear, §6) — TASK/LDG-M3-B2 |
+ | [11-codec-libraries.md](11-codec-libraries.md) | zlib, libpng, libjpeg (IJG), giflib, libexif as static NewTOS libraries for zView's codecs: versions, pins, how to link, which codec needs what, the LIBTEST.NCP round-trip test — TASK/LDG-M2 |
+ | [12-windom.md](12-windom.md) | WinDom 1.21.3 (+ zView's patch) as `libwindom1.a`: pin, flags, the 10 LP64/endianness overlays, the LP64 sweep, LDG's WinDom demo client, open problems (mouse clicks, module heap) — TASK/LDG-M3 |
+ 
+@@ -39,6 +39,7 @@ sdk/gemlib/build-gemlib.sh [client.c] [out.NCP]   # builds gemlib.a, links clien
+ sdk/cflib/build-cflib.sh   [client.c] [out.NCP]   # builds cflib.a, links client
+ sdk/libm/build-libm.sh     [client.c] [out.NCP]   # builds libm.a (OpenLibm), links client + libc
+ sdk/ldg/build-ldg.sh                               # libldg.a (LDG r133, tarball + overlay/)
++sdk/libshare/build-libshare.sh                     # libshare.a (libshare 0.1.1, every .NLD links it; 10 §6)
+ sdk/ldg/build-ldg-demo.sh                          # EX_LIB.NLD (LDG demo module) + LDGTEST.NCP
+ sdk/windom/build-windom.sh                         # libwindom1.a (WinDom 1.21.3 + zView patch, 12)
+ sdk/ldg/build-ldg-client.sh                        # LDGDEMO.NAP (LDG's WinDom demo client) + POPUP.NLD
+@@ -56,7 +57,7 @@ cargo xtask run --board rpi4 --sd /tmp/sd.img       # add --window to see the sc
+ 
+ The one rule that governs every port: **the application source is not
+ edited**. Every change lives in `sdk/overlays/<app>/` (or in the library
+-overlays `sdk/{libc,gemlib,cflib,libm,ldg,libjpeg,libexif,windom}/overlay/`) and is layered over the
++overlays `sdk/{libc,gemlib,cflib,libm,ldg,libshare,libjpeg,libexif,windom}/overlay/`) and is layered over the
+ pristine tree at build time. The only exception is genuine m68k assembly, which must be
+ retargeted. See [04-porting-anatomy.md](04-porting-anatomy.md).
+ 
+diff --git a/references/README.md b/references/README.md
+index 13681bd..748531a 100644
+--- a/references/README.md
++++ b/references/README.md
+@@ -390,3 +390,6 @@ codecs (`-lshare`, `libshare_init/exit`). Analysis: `docs/analysis/libshare-2026
+ | `th-otto-zview-plugins-libshare/` (11 files, in-tree copy, 2 small patches vs. original) | https://github.com/th-otto/zview/tree/master/zview/plugins/libshare, repo HEAD `1cf03620ec3517f9a9a88e0d4f56cdabdf186ee7` at fetch time (fetched 2026-10-06) | per file, see `shasum -a 256` in that dir (e.g. libshare.c `788273ee…1d`, libshare.h `eb80c8e6…0f`) |
+ 
+ No license text in the sources; see the analysis file.
++Since TASK/LDG-M3-B2 the same tgz (identical sha256) is pinned in the SDK as
++`sdk/libshare/libshare-0.1.1.tgz` and built by `sdk/libshare/build-libshare.sh`;
++the copy here stays the reference.
+diff --git a/sdk/.gitignore b/sdk/.gitignore
+index 93dd490..1f19d8c 100644
+--- a/sdk/.gitignore
++++ b/sdk/.gitignore
+@@ -51,6 +51,11 @@
+ /windom/build/
+ /windom/libwindom1.a
+ /windom/include/
++# libshare (TASK/LDG-M3-B2): extracted tree, build dir, archive -- regenerated
++# by sdk/libshare/build-libshare.sh from the pinned tgz + overlay/.
++/libshare/libshare-*/
++/libshare/build/
++/libshare/libshare.a
+ **/*.o
+ *.NCP
+ *.NAP
+diff --git a/sdk/ldg/build-ldg-client.sh b/sdk/ldg/build-ldg-client.sh
+index c71bcc7..9957754 100755
+--- a/sdk/ldg/build-ldg-client.sh
++++ b/sdk/ldg/build-ldg-client.sh
+@@ -11,7 +11,23 @@
+ #                libldg.a, gemlib.a, libm.a, libc.a -- the link line of
+ #                demo/client/Makefile.mint (LDLIBS = -lldg -lwindom -lgem)
+ #   POPUP.NLD    <LDG>/demo/libs/popup.c, unmodified, the module the client
+-#                opens second (its __popup draws the "Functions" pop-up)
++#                opens second (its __popup draws the "Functions" pop-up);
++#                linked with sdk/libshare/libshare.a FIRST in its group
++#                although popup.mint:10 links only -lgem -lldg (TASK/
++#                LDG-M3-B2, a toolchain decision, the source is unchanged):
++#                popup.c:74 calls malloc() inside a function the client
++#                calls, which LDG's own rules forbid (guides/src/ldg.u:
++#                1047-1051, guides/src/mem.stg:44-52: use ldg_Malloc &
++#                Co.) -- with mintlib's malloc the
++#                module's exit() leaves its free list pointing into a hunk
++#                its own Pterm frees, and that malloc reads freed memory
++#                (Bus Error under memprot=on, hang under off;
++#                measurements/measurement-2026-10-06-ldg-b2). On the
++#                reference it fails silently the same way. libshare's
++#                malloc serves the exit-time buffer from a static block in
++#                the module's BSS and later blocks via ldg_Malloc in the
++#                caller's context. The link map is checked
++#                (sdk/libshare/libshare-link.sh).
+ #   EX_LIB.NLD   built by build-ldg-demo.sh (M1), copied
+ #   client.rsc   <LDG>/demo/client/client.rsc converted by tools/mkrsc.py for
+ #                the kernel's rsrc_load (WinDom's RsrcLoad calls rsrc_load,
+@@ -47,11 +63,13 @@ OBJ="$BUILD/obj"
+ DIST="$BUILD/dist/LDGDEMO"
+ mkdir -p "$OBJ"
+ 
+-# --- libraries: libc -> gemlib -> windom, libc -> libm, libc -> ldg ----------
++# --- libraries: libc -> gemlib -> windom, libc -> libm, libc -> ldg -> libshare
+ . "$SDK/lib-stale.sh"
+-lib_ensure windom || exit 1
+-lib_ensure libm   || exit 1
+-lib_ensure ldg    || exit 1
++. "$SDK/libshare/libshare-link.sh"
++lib_ensure windom   || exit 1
++lib_ensure libm     || exit 1
++lib_ensure ldg      || exit 1
++lib_ensure libshare || exit 1
+ MINT="$LIBC/mintlib/include"
+ for d in "$MINT" "$GEMTOP" "$LIBMTOP" "$TOP" "$WD/include"; do
+   [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
+@@ -96,21 +114,27 @@ cc "$TOP/demo/libs/popupbnd.c"  popupbnd.o
+ cc "$TOP/demo/libs/popup.c"     popup.o
+ "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" -c "$LIBC/crt0.S" -o "$OBJ/crt0.o" || exit 1
+ 
+-link() { # link <out> <objs...>
+-  local out=$1; shift
++link() { # link <module|client> <out> <objs...>
++  local kind=$1 out=$2; shift 2
++  local share=() map="$BUILD/link-$(basename "$out").map"
++  # A module links libshare.a first in the group (see the header).
++  [ "$kind" = module ] && share=("$SDK/libshare/libshare.a")
+   if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+       --build-id=none "$OBJ/crt0.o" "$@" \
+-      --start-group "$WD/libwindom1.a" "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
+-      -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
++      --start-group ${share[@]+"${share[@]}"} "$WD/libwindom1.a" "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
++      -Map="$map" -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
+     echo "error: link of $(basename "$out") failed:" >&2
+     sed 's/^/    /' "$BUILD/link-$(basename "$out").err" >&2; exit 1
+   fi
+   echo "LINK OK -> $out ($(wc -c < "$out" | tr -d ' ') bytes)"
+   "$READOBJ" --file-headers "$out" | grep -E '^ *Type:'
+   echo "  undefined symbols (goal 0): $("$NM" -u "$out" 2>/dev/null | grep -c . || true)"
++  if [ "$kind" = module ]; then
++    ls_check_module_map "$map" "$(basename "$out")" || { rm -f "$out"; exit 1; }
++  fi
+ }
+-link "$BUILD/LDGDEMO.NAP" "$OBJ/client.o" "$OBJ/exlibbnd.o" "$OBJ/popupbnd.o"
+-link "$BUILD/POPUP.NLD"   "$OBJ/popup.o"
++link client "$BUILD/LDGDEMO.NAP" "$OBJ/client.o" "$OBJ/exlibbnd.o" "$OBJ/popupbnd.o"
++link module "$BUILD/POPUP.NLD"   "$OBJ/popup.o"
+ 
+ # --- the demo's directory tree -----------------------------------------------
+ rm -rf "$BUILD/dist"; mkdir -p "$DIST/CLIENT" "$DIST/LIBS"
+diff --git a/sdk/ldg/build-ldg-demo.sh b/sdk/ldg/build-ldg-demo.sh
+index d49410a..09df24a 100755
+--- a/sdk/ldg/build-ldg-demo.sh
++++ b/sdk/ldg/build-ldg-demo.sh
+@@ -13,6 +13,17 @@
+ # Pexec(3) and relocates its R_AARCH64_RELATIVE entries (PROC LibFunc[] holds
+ # absolute function pointers in .data; -z text keeps relocations out of .text).
+ #
++# libshare (TASK/LDG-M3-B2): EX_LIB.NLD is a module, so it is linked with
++# sdk/libshare/libshare.a FIRST in its archive group -- the link zView's
++# codecs use (`-lshare -lldg`). LDG's own demo makefiles do not link it for
++# ex_lib; that is a toolchain decision taken here, not a source change: with
++# mintlib's malloc the module's exit() leaves its free list pointing into a
++# hunk its own Pterm frees (measurements/measurement-2026-10-06-ldg-b2,
++# EX_LIB: latent, it never mallocs again; POPUP.NLD: Bus Error). The link map
++# is checked (sdk/libshare/libshare-link.sh): no mintlib allocator member may
++# be pulled. LDGTEST.NCP is a client (a normal program) and keeps libc's
++# malloc.
++#
+ # Sources, all UNMODIFIED:
+ #   EX_LIB.NLD   <LDG>/demo/libs/ex_lib.c
+ #   LDGTEST.NCP  sdk/examples/ldgtest.c (ours) + <LDG>/demo/libs/exlibbnd.c
+@@ -38,11 +49,13 @@ BUILD="$LDGDIR/build"
+ DOBJ="$BUILD/demo"
+ mkdir -p "$DOBJ"
+ 
+-# --- libraries: libc -> gemlib, libc -> libm, libc -> ldg ---------------------
++# --- libraries: libc -> gemlib, libc -> libm, libc -> ldg -> libshare --------
+ . "$SDK/lib-stale.sh"
+-lib_ensure gemlib || exit 1
+-lib_ensure libm   || exit 1
+-lib_ensure ldg    || exit 1
++. "$SDK/libshare/libshare-link.sh"
++lib_ensure gemlib   || exit 1
++lib_ensure libm     || exit 1
++lib_ensure ldg      || exit 1
++lib_ensure libshare || exit 1
+ MINT="$LIBC/mintlib/include"
+ for d in "$MINT" "$GEMTOP" "$LIBMTOP" "$TOP"; do
+   [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
+@@ -80,18 +93,24 @@ cc "$TOP/demo/libs/exlibbnd.c" exlibbnd.o
+ cc "$SDK/examples/ldgtest.c"   ldgtest.o
+ "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" -c "$LIBC/crt0.S" -o "$DOBJ/crt0.o" || exit 1
+ 
+-link() { # link <out> <objs...>
+-  local out=$1; shift
++link() { # link <module|client> <out> <objs...>
++  local kind=$1 out=$2; shift 2
++  local share=() map="$BUILD/link-$(basename "$out").map"
++  # A module links libshare.a first in the group (see the header).
++  [ "$kind" = module ] && share=("$SDK/libshare/libshare.a")
+   if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+       --build-id=none "$DOBJ/crt0.o" "$@" \
+-      --start-group "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
+-      -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
++      --start-group ${share[@]+"${share[@]}"} "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
++      -Map="$map" -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
+     echo "error: link of $(basename "$out") failed:" >&2
+     sed 's/^/    /' "$BUILD/link-$(basename "$out").err" >&2; exit 1
+   fi
+   echo "LINK OK -> $out ($(wc -c < "$out" | tr -d ' ') bytes)"
+   "$READOBJ" --file-headers "$out" | grep -E '^ *Type:'
+   echo "  undefined symbols (goal 0): $("$NM" -u "$out" 2>/dev/null | grep -c . || true)"
++  if [ "$kind" = module ]; then
++    ls_check_module_map "$map" "$(basename "$out")" || { rm -f "$out"; exit 1; }
++  fi
+ }
+-link "$BUILD/EX_LIB.NLD"  "$DOBJ/ex_lib.o"
+-link "$BUILD/LDGTEST.NCP" "$DOBJ/ldgtest.o" "$DOBJ/exlibbnd.o"
++link module "$BUILD/EX_LIB.NLD"  "$DOBJ/ex_lib.o"
++link client "$BUILD/LDGTEST.NCP" "$DOBJ/ldgtest.o" "$DOBJ/exlibbnd.o"
+diff --git a/sdk/lib-stale.sh b/sdk/lib-stale.sh
+index 72ee2d7..8ef1208 100755
+--- a/sdk/lib-stale.sh
++++ b/sdk/lib-stale.sh
+@@ -71,6 +71,14 @@
+ #             (WinDom, TASK/LDG-M3: compiled against gemlib's and mintlib's
+ #             headers, so its chain is libc -> gemlib -> windom, like cflib;
+ #             build-windom.sh re-extracts zip + patch + overlay on every run)
++#   libshare.a  sdk/libshare/overlay/, sdk/libshare/build-libshare.sh,
++#             sdk/libshare/libshare-0.1.1.tgz + libshare-sources.sha256,
++#             sdk/vendor-lib.sh   + all of ldg's (and so libc's)
++#             (libshare, TASK/LDG-M3-B2: the allocator of every LDG module,
++#             compiled against mintlib's headers and LDG's ldg.h, so its
++#             chain is libc -> ldg -> libshare; it also compiles mintlib's
++#             mintlib/posix_memalign.c, which libc's watch covers. Same
++#             tarball rule as the codec libraries)
+ #
+ # NOT watched, deliberately:
+ #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
+@@ -144,6 +152,7 @@ lib_archive() {
+     giflib)  printf '%s\n' "$LIB_SDK/giflib/libgif.a" ;;
+     libexif) printf '%s\n' "$LIB_SDK/libexif/libexif.a" ;;
+     windom)  printf '%s\n' "$LIB_SDK/windom/libwindom1.a" ;;
++    libshare) printf '%s\n' "$LIB_SDK/libshare/libshare.a" ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+ }
+@@ -155,7 +164,7 @@ lib_builder() {
+     cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
+     libm)   printf '%s\n' "$LIB_SDK/libm/build-libm.sh" ;;
+     ldg)    printf '%s\n' "$LIB_SDK/ldg/build-ldg.sh" ;;
+-    zlib|libpng|libjpeg|giflib|libexif|windom)
++    zlib|libpng|libjpeg|giflib|libexif|windom|libshare)
+             printf '%s\n' "$LIB_SDK/$1/build-$1.sh" ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+@@ -176,6 +185,7 @@ lib_chain() {
+     giflib)  printf 'libc\ngiflib\n' ;;
+     libexif) printf 'libc\nlibm\nlibexif\n' ;;
+     windom)  printf 'libc\ngemlib\nwindom\n' ;;
++    libshare) printf 'libc\nldg\nlibshare\n' ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+ }
+@@ -255,6 +265,15 @@ lib_inputs() {
+         if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
+       done
+       ;;
++    libshare)
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libshare/overlay"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libshare/build-libshare.sh"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libshare/libshare-sources.sha256"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/vendor-lib.sh"
++      for _t in "$LIB_SDK"/libshare/libshare-*.tgz; do
++        if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
++      done
++      ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+   return 0
+diff --git a/sdk/run-host-tests.sh b/sdk/run-host-tests.sh
+index c699401..d2c8885 100755
+--- a/sdk/run-host-tests.sh
++++ b/sdk/run-host-tests.sh
+@@ -186,6 +186,16 @@ fi
+ [ $rc -eq 0 ] || sed 's/^/      /' "$WORK/libtest-host.log"
+ report libtest-host $rc
+ 
++# --- LDG module allocator -------------------------------------------------------
++# libshare-host (LDG-M3-B2): libshare's malloc as the SDK builds it (pinned
++# 0.1.1 + overlay/) serves a module's exit-time stdio buffer from its static
++# BSS block, asks the system for nothing during the module's own run, and
++# leaves no free-list node in memory the module's Pterm frees; later blocks
++# come from ldg_Malloc in the caller's context.
++"$SDK/libshare/tests/libshare-host.sh" > "$WORK/libshare-host.log" 2>&1; rc=$?
++[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/libshare-host.log"
++report libshare-host $rc "libshare tree / mintlib headers absent or host not LP64"
++
+ echo
+ echo "host tests: $pass passed, $fail failed, $skip skipped"
+ exit $fail
+# ==== new files (sdk/libshare, text only; libshare-0.1.1.tgz = pinned tarball, sha256 in libshare-sources.sha256)
+--- /dev/null	2026-10-06 23:55:28
++++ sdk/libshare/build-libshare.sh	2026-10-06 23:26:11
+@@ -0,0 +1,119 @@
++#!/usr/bin/env bash
++#
++# build-libshare.sh -- build libshare 0.1.1 (Arnaud Bercegeay, 2004-2005;
++# LICENCE UNCLEAR, see libshare-sources.sha256) into a NewTOS/AArch64 static
++# library sdk/libshare/libshare.a: the allocator every LDG module (.NLD) is
++# linked with (TASK/LDG-M3-B2, docs/analysis/ldg-module-malloc-2026-10-06.md
++# option A).
++#
++# WHY MODULES NEED IT. A module is a mintlib program that LDG starts once with
++# Pexec(4) and that then lives on inside its client. mintlib's malloc keeps a
++# static free list and gets its memory with GEMDOS Malloc, i.e. owned by
++# whoever runs at that moment. The module's own exit() closes stdio
++# (fcloseall -> fclose -> __flshfp -> init_stream: malloc(BUFSIZ) + free), so
++# the hunk is the MODULE's, its Pterm frees it -- EmuTOS free_all_owned,
++# bdos/proc.c:92-101,136-140 -- and the module's free list goes on pointing
++# into it. The next malloc inside the module (called by the client) reads
++# freed memory: Bus Error under memprot=on, double use / hang under off
++# (measurements/measurement-2026-10-06-ldg-b2/RUNINFO.TXT). libshare's malloc
++# takes its FIRST block from a static 16 KiB array in the module's BSS
++# (malloc.c:50-52,120-126), which lives in the TPA the client owns and
++# survives the module's Pterm, and gets every further block through
++# ldg_Malloc (sbrk.c:68-75), i.e. in the context of the caller -- the client
++# once the module is loaded. That is what zView's codecs link it for
++# (`LIB = -lshare -lldg`).
++#
++# SOURCE PIN: sdk/libshare/libshare-0.1.1.tgz, the original release, sha256
++# in libshare-sources.sha256 (origin URL and the licence note there). The
++# archive's prebuilt m68k libshare.a and m68k test binaries are deleted after
++# extraction.
++#
++# What is compiled: libshare's own object list, makefile:28
++#   OBJ = libshare.o gl_shm.o calloc.o chdir.o malloc.o realloc.o sbrk.o
++# with its own flags, makefile:17-26 (-O2 -fomit-frame-pointer -Wall
++# -Wmissing-prototypes -Winline -Wshadow -Wpointer-arith -Wcast-qual
++# -Waggregate-return), against mintlib's headers and LDG's ldg.h (libshare's
++# makefile relies on both being installed system headers).
++#
++# Overlays (sdk/libshare/overlay/, each file's header gives line and reason):
++#   sbrk.c:61    sbrk(size_t) -> sbrk(intptr_t): mintlib 0.60.1's <unistd.h>
++#   calloc.c:25  __bzero -> bzero: the SDK's libc has no __bzero
++#   malloc.c:51  static_mblock aligned like struct mem_chunk (LP64)
++# libshare.c, gl_shm.c, chdir.c, realloc.c, lib.h, libshare.h unmodified.
++#
++# ONE ADDITION, NOT FROM LIBSHARE: mintlib's own mintlib/posix_memalign.c
++# (memalign, posix_memalign, aligned_alloc), compiled unmodified with
++# -D__malloc=malloc into this archive. Reason: in mintlib 0.60.1 those
++# functions call `__malloc` (posix_memalign.c:22,25), the strong name of
++# mintlib's allocator, which libshare (written in 2004) does not replace;
++# a module calling them would pull mintlib's malloc.o next to libshare's and
++# run two allocators again. With this member first in the link, memalign &
++# Co. -- and libc's valloc.c, which calls memalign -- use libshare's malloc.
++# The block layout it relies on is identical (struct mem_chunk, VAL_ALLOC:
++# libshare lib.h:16-27 = mintlib malloc_int.h:5-17, same source lineage), and
++# libshare's free() ignores the VAL_ALLOC+1 marker it writes, as mintlib's
++# does (libshare malloc.c:204, mintlib mintlib/malloc.c:158). The build checks that the module
++# links contain none of mintlib's allocator members (libshare-link.sh).
++#
++# Usage:  sdk/libshare/build-libshare.sh   (LIBSHARE_REFRESH=1 forces a re-extract)
++# Output: sdk/libshare/libshare.a; header for modules: -I sdk/libshare/libshare-0.1.1
++#         (libshare.h). Link it FIRST in a module's archive group, before
++#         libldg.a and libc.a (sdk/ldg/build-ldg-demo.sh, build-ldg-client.sh).
++set -uo pipefail
++
++SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
++LIBDIR="$SDK/libshare"
++VER="0.1.1"
++TOP="$LIBDIR/libshare-$VER"
++BUILD="$LIBDIR/build"
++OUT="$LIBDIR/libshare.a"
++mkdir -p "$BUILD"
++
++. "$SDK/lib-stale.sh"
++. "$SDK/vendor-lib.sh"
++# libc -> ldg -> libshare: compiled against mintlib's headers and ldg.h.
++lib_ensure ldg || exit 1
++MINTTOP="$SDK/libc/mintlib"
++MINT="$MINTTOP/include"
++LDGINC="$SDK/ldg/ldg-r133/include"
++for d in "$MINT" "$LDGINC"; do
++  [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
++done
++
++vl_extract "$LIBDIR/libshare-$VER.tgz" "$LIBDIR/libshare-sources.sha256" "$TOP" "libshare-$VER" "${LIBSHARE_REFRESH:-0}" || exit 1
++# Never ship the archive's m68k binaries: the prebuilt libshare.a (which
++# carries the name of our output) and the test programs.
++rm -f "$TOP/libshare.a" "$TOP/test/test.ldg" "$TOP/test/test.tos"
++vl_overlay "$LIBDIR/overlay" "$TOP" || exit 1
++
++vl_toolchain || exit 1
++
++# Source list read from libshare's own makefile (OBJ = ...).
++objs="$(sed -n 's/^OBJ[[:space:]]*=[[:space:]]*//p' "$TOP/makefile")"
++[ -n "$objs" ] || { echo "error: could not read OBJ from $TOP/makefile" >&2; exit 1; }
++SRCS=()
++for o in $objs; do SRCS[${#SRCS[@]}]="${o%.o}.c"; done
++
++LIB_CFLAGS=(-fomit-frame-pointer -Wall -Wmissing-prototypes -Winline -Wshadow
++            -Wpointer-arith -Wcast-qual -Waggregate-return)
++LIB_INCS=(-I"$TOP" -I"$LDGINC" -I"$MINT")
++vl_compile "$TOP" "$BUILD/obj" "${SRCS[@]}" || exit 1
++
++# The addition: mintlib's posix_memalign.c on libshare's malloc, compiled with
++# build-libc.sh's own flags and include path (it is a libc-internal file).
++PM="$MINTTOP/mintlib/posix_memalign.c"
++[ -f "$PM" ] || { echo "error: $PM missing (run sdk/libc/build-libc.sh)" >&2; exit 1; }
++if "$CLANG" "${VL_CFLAGS[@]}" -D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE \
++     -D__NO_LONG_DOUBLE_MATH -Wno-macro-redefined -D__malloc=malloc \
++     -I"$MINTTOP" -I"$MINT" -I"$MINTTOP/mintlib" -I"$MINTTOP/stdlib" -isystem "$RES" \
++     -c "$PM" -o "$BUILD/obj/mintlib_posix_memalign.o" 2>"$BUILD/obj/mintlib_posix_memalign.err"; then
++  echo "compiled mintlib/posix_memalign.c with -D__malloc=malloc (addition, see header)"
++  [ -s "$BUILD/obj/mintlib_posix_memalign.err" ] && sed 's/^/      /' "$BUILD/obj/mintlib_posix_memalign.err"
++else
++  echo "error: mintlib/posix_memalign.c did not compile:" >&2
++  sed 's/^/    /' "$BUILD/obj/mintlib_posix_memalign.err" >&2; exit 1
++fi
++echo
++
++vl_archive "$OUT" "$BUILD/obj" "$BUILD" || exit 1
++echo "exported: $(tr '\n' ' ' < "$BUILD/defined.txt")"
+--- /dev/null	2026-10-06 23:55:28
++++ sdk/libshare/libshare-sources.sha256	2026-10-06 23:24:59
+@@ -0,0 +1,28 @@
++# libshare source pin for sdk/libshare/build-libshare.sh (TASK/LDG-M3-B2).
++#
++# libshare-0.1.1.tgz = the original release 0.1.1 (2005-05-02) by Arnaud
++#   Bercegeay, downloaded unchanged on 2026-10-06 from
++#   http://arnaud.bercegeay.free.fr/libshare/libshare-0.1.1.tgz
++#   (139392 bytes; the web page's link text says "libshare-0.1.0.tgz", the
++#   archive's README says 0.1.1 -- docs/analysis/libshare-2026-10-06.md 5.5).
++#   Same file as references/libshare/libshare-0.1.1.tgz (references/README.md).
++#   The archive also holds a PREBUILT m68k libshare.a and m68k test binaries
++#   (test/test.ldg, test/test.tos); build-libshare.sh deletes them right after
++#   extraction -- nothing m68k is ever linked or installed from it.
++#
++# LICENCE: UNCLEAR. The archive has no licence file and no licence header in
++#   any source. The only statement is the web page footer "Copyright (c)
++#   2004-2005 Arnaud BERCEGEAY". chdir.c says "By ERS: it's in the public
++#   domain"; malloc.c, calloc.c, realloc.c and sbrk.c are marked "from the TOS
++#   GCC library" (the ERS / Heat-n-Serve lineage that mintlib's allocator also
++#   comes from). Ported anyway by user decision 2026-10-06 (the original,
++#   unmodified, LP64/target changes as overlays); the user will ask the author
++#   (bercegeay at atari dot org) about the licence. Until that is answered,
++#   do not publish binaries that contain libshare as if its licence were known.
++#   Also recorded in docs/sdk/10-ldg-modules.md section 6.
++#
++# For comparison only (NOT used): th-otto's in-tree copy in zview
++#   (zview/plugins/libshare, references/libshare/th-otto-zview-plugins-libshare)
++#   differs by include paths, sbrk(size_t) -> sbrk(intptr_t) and warning fixes
++#   in libshare_dummy.
++2a6c58aaf0e99e2ac14c652b4333a504405fdef90e5a007878fc69750e2bdecb  libshare-0.1.1.tgz
+--- /dev/null	2026-10-06 23:55:28
++++ sdk/libshare/libshare-link.sh	2026-10-06 23:26:45
+@@ -0,0 +1,39 @@
++# libshare-link.sh -- the link-time check for LDG modules (.NLD) linked with
++# libshare (TASK/LDG-M3-B2). Sourced, not executed.
++#
++# A module must run on ONE allocator, libshare's (build-libshare.sh says why).
++# The archive order makes that so -- libshare.a first in the group, so its
++# malloc/free/realloc/calloc/sbrk/chdir/memalign members win the lazy
++# resolution over libc.a's -- but nothing in the linker would complain if a
++# reference to a name only mintlib's allocator defines (__malloc, __free,
++# _mchunk_free_list, __mallocChunkSize, ...) dragged mintlib's malloc.o in
++# next to libshare's: mintlib's malloc/free are weak, libshare's strong, so the
++# link succeeds and two free lists run side by side. This check reads the
++# linker map and fails the build in that case.
++#
++#   ls_check_module_map <map file> <module name>
++#     fails (non-zero) when the map lists any of libc.a's allocator members --
++#     mintlib/malloc.c, calloc.c, realloc.c, posix_memalign.c, unix/sbrk.c
++#     (mintlib__malloc.o, ...) -- or when libshare.a's malloc.o is absent;
++#     prints the libshare members the module did pull.
++
++LS_MINTLIB_ALLOC_MEMBERS="mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o"
++
++ls_check_module_map() {
++  local map=$1 name=$2 m bad=0 pulled
++  [ -f "$map" ] || { echo "error: link map $map missing" >&2; return 1; }
++  for m in $LS_MINTLIB_ALLOC_MEMBERS; do
++    if grep -q "libc\.a($m)" "$map"; then
++      echo "error: $name pulls mintlib's allocator member libc.a($m) next to libshare (see sdk/libshare/libshare-link.sh)" >&2
++      bad=1
++    fi
++  done
++  if ! grep -q "libshare\.a(malloc\.o)" "$map"; then
++    echo "error: $name does not contain libshare.a(malloc.o) -- is libshare.a first in the archive group?" >&2
++    bad=1
++  fi
++  [ $bad -eq 0 ] || return 1
++  pulled="$(grep -o 'libshare\.a([^)]*)' "$map" | sed 's/.*(\(.*\))/\1/' | sort -u | tr '\n' ' ')"
++  echo "  allocator: libshare only ($pulled); none of libc.a's $LS_MINTLIB_ALLOC_MEMBERS"
++  return 0
++}
+--- /dev/null	2026-10-06 23:55:28
++++ sdk/libshare/tests/libshare-host.sh	2026-10-06 23:29:34
+@@ -0,0 +1,49 @@
++#!/usr/bin/env bash
++#
++# libshare-host.sh -- build and run the host harness for the libshare
++# allocator as the SDK builds it (TASK/LDG-M3-B2): the overlaid
++# sdk/libshare/libshare-0.1.1/{malloc,sbrk,calloc,realloc,chdir}.c, compiled
++# for the host with mintlib's headers, against libshare-host.c (host headers),
++# which models ldg_Malloc/ldg_Free and a Pterm that frees by owner. See the
++# header of libshare-host.c for what is proved.
++#
++# The libshare names that the host C library also has are renamed on the
++# libshare side only (malloc, free, calloc, realloc, sbrk, errno,
++# getpagesize -> ut_*), so the harness keeps the host's allocator.
++#
++# Exit status: the number of failed checks (0 = all passed); 77 = skipped
++# (the extracted libshare tree or mintlib's headers are missing, or the host
++# is not LP64); 1 = did not build.
++set -uo pipefail
++
++HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"          # .../sdk/libshare/tests
++SDK="$(cd "$HERE/../.." && pwd)"                               # .../sdk
++TOP="$SDK/libshare/libshare-0.1.1"
++MINT="$SDK/libc/mintlib/include"
++LDGINC="$SDK/ldg/ldg-r133/include"
++
++CC="${CC:-cc}"
++command -v "$CC" >/dev/null 2>&1 || { echo "error: $CC not found" >&2; exit 1; }
++for d in "$TOP" "$MINT" "$LDGINC"; do
++  [ -d "$d" ] || { echo "libshare-host: skipped -- $d missing; run sdk/libshare/build-libshare.sh"; exit 77; }
++done
++
++W="$(mktemp -d)"
++trap 'rm -rf "$W"' EXIT
++
++REN=(-Dmalloc=ut_malloc -Dfree=ut_free -Dcalloc=ut_calloc -Drealloc=ut_realloc
++     -Dsbrk=ut_sbrk -Derrno=ut_errno -Dgetpagesize=ut_getpagesize)
++# -O2 -fno-builtin as in the SDK build, so the code is compiled the way it is
++# on the target (no memset/malloc folding).
++for f in malloc sbrk calloc realloc chdir; do
++  "$CC" -O2 -fno-builtin -w "${REN[@]}" -I "$TOP" -I "$LDGINC" -I "$MINT" \
++        -c "$TOP/$f.c" -o "$W/$f.o" || exit 1
++done
++"$CC" -O2 -fno-builtin -Wall -I "$TOP" -I "$MINT" \
++      -c "$HERE/libshare-host-layout.c" -o "$W/layout.o" || exit 1
++"$CC" -O2 -fno-builtin -Wall -Wextra \
++      -c "$HERE/libshare-host.c" -o "$W/harness.o" || exit 1
++"$CC" "$W"/*.o -o "$W/libshare-host" || exit 1
++
++"$W/libshare-host"
++exit $?
+--- /dev/null	2026-10-06 23:55:28
++++ sdk/libshare/tests/libshare-host.c	2026-10-06 23:43:49
+@@ -0,0 +1,297 @@
++/*
++ * libshare-host.c -- host harness for the libshare allocator as the SDK
++ * builds it (sdk/libshare/build-libshare.sh: libshare 0.1.1 + overlay/),
++ * TASK/LDG-M3-B2.
++ *
++ * WHAT IT PROVES. The lifetime property finding B2 is about
++ * (docs/analysis/ldg-module-malloc-2026-10-06.md): an LDG module runs once
++ * as its own process (Pexec 4); its exit() closes stdio, which mallocs a
++ * BUFSIZ buffer and frees it again (mintlib stdio/fclose.c:37-44,
++ * internals.c:55-80); the module's Pterm then frees every block the MODULE
++ * owns (EmuTOS bdos/proc.c:92-101,136-140); afterwards the client calls
++ * module functions that malloc again (POPUP.NLD __get_bkgr). With mintlib's
++ * malloc the module's static free list ends up pointing into a freed hunk
++ * (measured: measurements/measurement-2026-10-06-ldg-b2). With libshare:
++ *
++ *   1. exit() closes the two write streams, stderr then stdout
++ *      (fcloseall walks __stdio_head = &__stderr -> stdout -> stdin,
++ *      stdio-globals.c:68-72), each malloc(BUFSIZ) + free. The first buffer
++ *      comes from libshare's static_mblock (the module's BSS, i.e. its TPA,
++ *      which the CLIENT owns). Freeing it empties the block, and libshare
++ *      then drops the block from its list for good (malloc.c:271-289: the
++ *      border chunk is unlinked, the static block is never ldg_Free'd and
++ *      static_block_returned stays 1). The second buffer therefore gets a
++ *      hunk through sbrk -> ldg_Malloc while the MODULE runs -- but
++ *      libshare's free() hands that hunk back with ldg_Free as soon as it is
++ *      empty (malloc.c:271-289), i.e. before the Pterm. Measured the same way
++ *      on the target: Mxalloc(0x4000) + Mfree of that block inside the
++ *      module's Pexec(4) run, free list head 0 at its Pterm
++ *      (measurements/measurement-2026-10-06-libshare, ls-instr-on).
++ *   2. after the module's Pterm the free list references no freed memory;
++ *   3. later mallocs (client context) get their block through ldg_Malloc,
++ *      owned by the caller, and the free list stays inside live memory;
++ *      a hunk that becomes completely free is returned with ldg_Free;
++ *   4. calloc zeroes, realloc keeps the contents (libshare's own files).
++ *
++ * The system side is modelled here: ldg_Malloc/ldg_Free (libldg, which on
++ * the target end in GEMDOS Mxalloc/Mfree) record every block with the
++ * "process" that was running when it was requested, and pterm() frees the
++ * blocks of a process the way free_all_owned does. Freed blocks are only
++ * marked and poisoned (0xDE), never returned to the host allocator, so the
++ * checks can look at them without undefined behaviour.
++ *
++ * libshare's sources are compiled with mintlib's headers (they need
++ * <compiler.h>, <osbind.h>, <ldg.h>), this file with the host's; the names
++ * malloc/free/calloc/realloc/sbrk/errno/getpagesize are renamed to ut_* on
++ * the libshare side (libshare-host.sh) so they do not replace the host C
++ * library's. The struct layout both sides agree on is pinned by
++ * libshare-host-layout.c, compiled with libshare's own lib.h.
++ *
++ * Build + run: sdk/libshare/tests/libshare-host.sh (sdk/run-host-tests.sh
++ * calls it). Exit status: number of failed checks; 77 = skipped.
++ */
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++/* libshare, renamed (libshare-host.sh) */
++extern void *ut_malloc (size_t);
++extern void ut_free (void *);
++extern void *ut_calloc (size_t, size_t);
++extern void *ut_realloc (void *, size_t);
++extern char static_mblock[];
++extern int __sbrk_has_been_called;
++
++/* lib.h:16-25 mirrored; checked against libshare-host-layout.c */
++struct ut_chunk
++{
++  long valid;
++  struct ut_chunk *next;
++  unsigned long size;
++};
++extern struct ut_chunk libshare_mchunk_free_list;
++extern const unsigned long ut_chunk_size, ut_chunk_off_valid, ut_chunk_off_next,
++  ut_chunk_off_size, ut_chunk_align, ut_border_extra;
++
++#define SIZEOF_STATIC_MBLOCK 16384L	/* malloc.c:50 */
++#define BUFSIZ_MINTLIB 1024		/* mintlib include/stdio.h:243 */
++#define GET_BKGR_SIZE 0x46c0		/* POPUP.NLD __get_bkgr, ldg-b2 run */
++
++/* The mintlib globals libshare reads (lib.h:9-12), set the way the SDK's
++   start-up leaves them in a module: heap_init.c, default _stksize = MINKEEP
++   -> _split_mem = 1, _heapbase = NULL. */
++void *_heapbase = NULL;
++short _split_mem = 1;
++long _stksize = 64L * 1024L;
++int __libc_unix_names = 0;
++int ut_errno;
++int ut_getpagesize (void) { return 8192; }
++
++void
++__assert_fail (const char *a, const char *f, unsigned int l, const char *fn)
++{
++  printf ("FAIL  libshare assert(%s) at %s:%u (%s)\n", a, f, l, fn ? fn : "?");
++  exit (1);
++}
++
++/* chdir.c's helpers (not exercised here, but the object is linked whole) */
++int _enoent (const char *p) { (void) p; return 0; }
++int _unx2dos (const char *u, char *d, size_t n) { strncpy (d, u, n); return 0; }
++
++/* ---- the system side: blocks with owners -------------------------------- */
++enum { NONE = 0, MODULE = 1, CLIENT = 2 };
++static int run = NONE;		/* EmuTOS `run`: who allocates right now */
++
++struct blk { char *p; long size; int owner; int freed; };
++static struct blk blks[64];
++static int nblk, n_ldg_malloc, n_ldg_free;
++
++void *
++ldg_Malloc (long size)
++{
++  char *p;
++  if (nblk == (int) (sizeof blks / sizeof blks[0]))
++    return NULL;
++  p = aligned_alloc (4096, (size_t) ((size + 4095) & ~4095L));
++  if (!p)
++    return NULL;
++  memset (p, 0xA5, (size_t) size);	/* not zero: calloc must zero */
++  blks[nblk].p = p;
++  blks[nblk].size = size;
++  blks[nblk].owner = run;
++  blks[nblk].freed = 0;
++  nblk++;
++  n_ldg_malloc++;
++  return p;
++}
++
++int
++ldg_Free (void *m)
++{
++  int i;
++  n_ldg_free++;
++  for (i = 0; i < nblk; i++)
++    if (blks[i].p == m && !blks[i].freed)
++      {
++        blks[i].freed = 1;
++        memset (blks[i].p, 0xDE, (size_t) blks[i].size);
++        return 0;
++      }
++  printf ("FAIL  ldg_Free(%p): not a live ldg_Malloc block\n", m);
++  exit (1);
++}
++
++/* Pterm of `owner`: free everything it owns (EmuTOS free_all_owned). */
++static void
++pterm (int owner)
++{
++  int i;
++  for (i = 0; i < nblk; i++)
++    if (blks[i].owner == owner && !blks[i].freed)
++      {
++        blks[i].freed = 1;
++        memset (blks[i].p, 0xDE, (size_t) blks[i].size);
++      }
++}
++
++static int
++in_freed_block (const void *a)
++{
++  int i;
++  for (i = 0; i < nblk; i++)
++    if (blks[i].freed && (const char *) a >= blks[i].p
++        && (const char *) a < blks[i].p + blks[i].size)
++      return 1;
++  return 0;
++}
++
++static int
++live_block_of (const void *a)
++{
++  int i;
++  for (i = 0; i < nblk; i++)
++    if (!blks[i].freed && (const char *) a >= blks[i].p
++        && (const char *) a < blks[i].p + blks[i].size)
++      return i;
++  return -1;
++}
++
++static int
++in_static (const void *a, size_t n)
++{
++  return (const char *) a >= static_mblock
++    && (const char *) a + n <= static_mblock + SIZEOF_STATIC_MBLOCK;
++}
++
++/* Every node of libshare's free list must be in the static block or in a
++   live ldg_Malloc block; the walk stops at the first node that is not (its
++   `next` would be read from freed memory -- the B2 fault). */
++static int
++free_list_dangling (int *nodes)
++{
++  const struct ut_chunk *q;
++  int n = 0;
++  for (q = libshare_mchunk_free_list.next; q; q = q->next)
++    {
++      if (in_freed_block (q))
++        return 1;
++      if (!in_static (q, sizeof *q) && live_block_of (q) < 0)
++        return 2;
++      if (++n > 1000)
++        return 3;		/* a cycle */
++    }
++  if (nodes)
++    *nodes = n;
++  return 0;
++}
++
++static int failures, checks;
++#define CHECK(cond, ...) do { checks++; if (cond) { printf ("ok    "); } \
++  else { failures++; printf ("FAIL  "); } printf (__VA_ARGS__); printf ("\n"); } while (0)
++
++int
++main (void)
++{
++  char *buf, *bkgr, *small, *c, *r;
++  int i, d, nodes = -1, b;
++
++  if (sizeof (long) != 8 || sizeof (void *) != 8)
++    {
++      printf ("libshare-host: skipped -- host is not LP64\n");
++      return 77;
++    }
++
++  /* layout: harness mirror == libshare's lib.h as compiled */
++  CHECK (ut_chunk_size == sizeof (struct ut_chunk)
++         && ut_chunk_off_valid == 0 && ut_chunk_off_next == 8
++         && ut_chunk_off_size == 16 && ut_border_extra == 32,
++         "struct mem_chunk = 24 bytes {valid@0, next@8, size@16}, BORDER_EXTRA 32 (LP64)");
++  CHECK (((unsigned long) static_mblock & (ut_chunk_align - 1)) == 0,
++         "static_mblock %p aligned to __alignof__(struct mem_chunk) = %lu (overlay malloc.c:51)",
++         (void *) static_mblock, ut_chunk_align);
++
++  /* ---- 1. the module's own run (Pexec 4): exit() -> fcloseall: fclose
++     (stderr), fclose(stdout) -> __flshfp -> init_stream malloc + free */
++  run = MODULE;
++  buf = ut_malloc (BUFSIZ_MINTLIB);	/* stderr's buffer */
++  CHECK (buf != NULL && in_static (buf, BUFSIZ_MINTLIB),
++         "first exit-path stdio buffer (malloc(%d)) = %p lies in static_mblock [%p, +16384)",
++         BUFSIZ_MINTLIB, (void *) buf, (void *) static_mblock);
++  CHECK (((unsigned long) buf & 7) == 0, "buffer 8-byte aligned (MALLOC_ALIGNMENT)");
++  CHECK (n_ldg_malloc == 0 && __sbrk_has_been_called == 0,
++         "no system block for it (ldg_Malloc calls: %d, sbrk called: %d)",
++         n_ldg_malloc, __sbrk_has_been_called);
++  memset (buf, 'x', BUFSIZ_MINTLIB);
++  ut_free (buf);			/* fclose: free(stream->__buffer) */
++  CHECK (libshare_mchunk_free_list.next == NULL,
++         "freeing it empties the static block; libshare drops it from its list (malloc.c:271-289)");
++  buf = ut_malloc (BUFSIZ_MINTLIB);	/* stdout's buffer */
++  b = buf ? live_block_of (buf) : -1;
++  CHECK (buf != NULL && b >= 0 && blks[b].owner == MODULE && n_ldg_malloc == 1,
++         "second exit-path buffer = %p from ldg_Malloc while the MODULE runs (owner module)", (void *) buf);
++  memset (buf, 'y', BUFSIZ_MINTLIB);
++  ut_free (buf);
++  CHECK (n_ldg_free == 1 && b >= 0 && blks[b].freed,
++         "libshare's free() returns that hunk with ldg_Free before the Pterm (ldg_Free calls: %d)",
++         n_ldg_free);
++  pterm (MODULE);			/* the module's Pterm */
++  d = free_list_dangling (&nodes);
++  CHECK (d == 0, "after the module's Pterm the free list references no freed memory (%d nodes, code %d)",
++         nodes, d);
++
++  /* ---- 2. the client calls into the module (POPUP __popup -> __get_bkgr) */
++  run = CLIENT;
++  bkgr = ut_malloc (GET_BKGR_SIZE);
++  b = bkgr ? live_block_of (bkgr) : -1;
++  CHECK (bkgr != NULL && n_ldg_malloc == 2 && b >= 0 && blks[b].owner == CLIENT,
++         "malloc(0x%x) in client context -> %p from ldg_Malloc, owned by the client (%d system block(s))",
++         GET_BKGR_SIZE, (void *) bkgr, n_ldg_malloc);
++  if (bkgr)
++    memset (bkgr, 0x5A, GET_BKGR_SIZE);
++  small = ut_malloc (100);
++  CHECK (small != NULL && free_list_dangling (NULL) == 0,
++         "second malloc(100) = %p, free list consistent", (void *) small);
++  ut_free (bkgr);
++  ut_free (small);
++  CHECK (free_list_dangling (NULL) == 0 && n_ldg_free == 2,
++         "freeing both returns the now empty hunk with ldg_Free (ldg_Free calls: %d), list consistent",
++         n_ldg_free);
++
++  /* ---- 3. calloc / realloc (libshare calloc.c, realloc.c) ---------------- */
++  c = ut_calloc (10, 100);
++  for (i = 0; c && i < 1000 && c[i] == 0; i++)
++    ;
++  CHECK (c != NULL && i == 1000, "calloc(10, 100) returns 1000 zero bytes (overlay calloc.c:25 bzero)");
++  memcpy (c, "libshare", 9);
++  r = ut_realloc (c, 30000);
++  CHECK (r != NULL && memcmp (r, "libshare", 9) == 0,
++         "realloc to 30000 keeps the contents");
++  ut_free (r);
++  CHECK (free_list_dangling (NULL) == 0, "free list consistent at the end");
++
++  /* ---- 4. the client terminates: its blocks go; nothing of the module's
++     list may point there any more than the client's own does. */
++  pterm (CLIENT);
++  printf ("\nlibshare-host: %d checks, %d failed\n", checks, failures);
++  return failures;
++}
+--- /dev/null	2026-10-06 23:55:28
++++ sdk/libshare/tests/libshare-host-layout.c	2026-10-06 23:29:33
+@@ -0,0 +1,16 @@
++/*
++ * libshare-host-layout.c -- compiled with libshare's own lib.h (mintlib's
++ * include path) next to the overlaid libshare sources, so the host harness
++ * (libshare-host.c, host headers) can check that its mirror of
++ * `struct mem_chunk` and the static block size match what libshare was
++ * compiled with. Part of sdk/libshare/tests/libshare-host.sh.
++ */
++#include <stddef.h>
++#include "lib.h"
++
++const unsigned long ut_chunk_size = sizeof (struct mem_chunk);
++const unsigned long ut_chunk_off_valid = offsetof (struct mem_chunk, valid);
++const unsigned long ut_chunk_off_next = offsetof (struct mem_chunk, next);
++const unsigned long ut_chunk_off_size = offsetof (struct mem_chunk, size);
++const unsigned long ut_chunk_align = __alignof__ (struct mem_chunk);
++const unsigned long ut_border_extra = BORDER_EXTRA;
+# ==== overlays against the pristine tgz sources
+--- references/libshare/orig-0.1.1/libshare-0.1.1/sbrk.c	2004-02-19 22:29:51
++++ sdk/libshare/overlay/sbrk.c	2026-10-06 23:52:09
+@@ -1,4 +1,20 @@
+ /*
++ * NewTOS overlay of libshare-0.1.1/sbrk.c (TASK/LDG-M3-B2). One change:
++ *
++ *   sbrk.c:61   sbrk (size_t n)  ->  sbrk (intptr_t n)
++ *
++ * Reason (target): the mintlib the SDK's libc is built from (0.60.1)
++ * declares `extern void *sbrk (__intptr_t __delta)` in <unistd.h>:934, which
++ * sbrk.c includes; the 2004 mintlib libshare was written against used
++ * size_t. With the pristine line the file does not compile ("conflicting
++ * types for 'sbrk'"). The same change is in th-otto's in-tree copy
++ * (zview/plugins/libshare/sbrk.c:61). Behaviour is unchanged for every caller
++ * in libshare (malloc.c:129 passes a positive page-rounded size); n reaches
++ * ldg_Malloc(long), sbrk.c:73, as before.
++ * Everything below this comment is the original file, byte for byte, except
++ * that one line.
++ */
++/*
+  *  libshare: a dirty patch to make LDG compiled against mintlib shareable
+  *
+  *  by Arnaud BERCEGEAY (Feb 2004)
+@@ -58,7 +74,7 @@
+ 
+ /* provided for compilers with sizeof(int) == 2 */
+ void *
+-sbrk (size_t n)
++sbrk (intptr_t n)
+ {
+ 	void *rval;
+ 	
+--- references/libshare/orig-0.1.1/libshare-0.1.1/calloc.c	2004-02-17 20:26:00
++++ sdk/libshare/overlay/calloc.c	2026-10-06 23:25:28
+@@ -1,4 +1,19 @@
+ /*
++ * NewTOS overlay of libshare-0.1.1/calloc.c (TASK/LDG-M3-B2). One change:
++ *
++ *   calloc.c:25   __bzero (r, total)  ->  bzero (r, total)
++ *
++ * Reason (target): the SDK's libc has no `__bzero`. mintlib's m68k
++ * string/bzero.S exported bzero, __bzero and _bzero; its AArch64 replacement
++ * sdk/libc/newtos-arch/memops.c defines only `bzero` (memops.c:70-74) although
++ * its header comment lists all three. With the pristine line the archive
++ * leaves `__bzero` undefined and every module that pulls calloc fails to
++ * link. `bzero` is the same operation (memops.c: memset(dest, 0, n)), and
++ * libshare's own malloc.c:180 already calls `bzero`.
++ * Everything below this comment is the original file, byte for byte, except
++ * that one line.
++ */
++/*
+  *  libshare: a dirty patch to make LDG compiled against mintlib shareable
+  *
+  *  by Arnaud BERCEGEAY (Feb 2004)
+@@ -22,7 +37,7 @@
+ 
+ 	r = malloc (total);
+ 	if (r != NULL)
+-		__bzero (r, total);
++		bzero (r, total);
+ 
+ 	return r;
+ }
+--- references/libshare/orig-0.1.1/libshare-0.1.1/malloc.c	2004-02-23 21:25:05
++++ sdk/libshare/overlay/malloc.c	2026-10-06 23:25:18
+@@ -1,4 +1,23 @@
+ /*
++ * NewTOS overlay of libshare-0.1.1/malloc.c (TASK/LDG-M3-B2). One change:
++ *
++ *   malloc.c:51   char static_mblock[SIZEOF_STATIC_MBLOCK];
++ *             ->  the same array, aligned like struct mem_chunk
++ *
++ * Reason (LP64): malloc.c:125 uses the array as the first `struct mem_chunk`
++ * (lib.h:16-25: long, pointer, unsigned long -- 8-byte members on LP64) and
++ * hands out pointers into it. A plain char array only has to be 1-byte
++ * aligned; on m68k gcc put every object on an even address, which is all a
++ * long needs there. On AArch64 clang does not: compiled pristine, the array
++ * sits at .bss+0x11 of malloc.o (llvm-readobj --symbols), so the first block
++ * and every pointer malloc returns from it would be misaligned for the
++ * 8-byte fields. Aligned to __alignof__(struct mem_chunk) (8) the block keeps
++ * mintlib's MALLOC_ALIGNMENT (sdk/libc/mintlib/mintlib/malloc_int.h:3) --
++ * the same alignment the SDK's libc malloc gives.
++ * Everything below this comment is the original file, byte for byte, except
++ * that one line.
++ */
++/*
+  *  libshare: a dirty patch to make LDG compiled against mintlib shareable
+  *
+  *  by Arnaud BERCEGEAY (Feb 2004)
+@@ -48,7 +67,7 @@
+ 
+ /* [libshare] */
+ #define SIZEOF_STATIC_MBLOCK 16384L
+-char static_mblock[SIZEOF_STATIC_MBLOCK];
++char static_mblock[SIZEOF_STATIC_MBLOCK] __attribute__ ((aligned (__alignof__ (struct mem_chunk))));
+ static int static_block_returned = 0;
+ 
+ /* [libshare] debug */

@@ -1,0 +1,4 @@
+apitest-t25 SAME as M3
+apitest-t40 SAME as M3
+qed-t30 SAME as M3
+teradesk-t35 SAME as M3

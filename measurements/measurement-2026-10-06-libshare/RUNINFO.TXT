@@ -1,0 +1,193 @@
+measurement-2026-10-06-libshare -- TASK/LDG-M3-B2: libshare 0.1.1 (Arnaud
+Bercegeay) ported into the SDK as the allocator of every LDG module (.NLD),
+closing zView M3 blocker B2 (a module's exit() leaves its malloc free list
+pointing into a hunk its own Pterm frees). Option A of
+docs/analysis/ldg-module-malloc-2026-10-06.md. Developer self-evidence; the
+Tester's verdict is separate.
+
+Date 2026-10-06, branch desk-rebuild, HEAD e429e29 (1f894cf during the last
+run, a TASK/ docs commit only) plus this change, uncommitted
+(method/libshare-change.diff). QEMU raspi4b, -append serial=on (+ memprot=off
+/strict where named), host macOS. No SD card, Pi or TT touched;
+tools/make-sd-image.sh NOT run -- cards from method/seed-card.sh (copied
+unchanged from measurement-2026-10-06-ldg-m3), private 64 MiB images in the
+session scratchpad. No Rust source changed: every kernel is HEAD's; the
+interactive runs use scratch copies with the M3 IKBD injector (input source
+only) and, for one run, the B2 serial instrumentation (prints only).
+
+LICENCE: UNCLEAR (no licence file/header; web page footer "Copyright (c)
+2004-2005 Arnaud BERCEGEAY"; chdir.c "By ERS: it's in the public domain";
+allocator files "from the TOS GCC library"). Ported by user decision
+2026-10-06; the user will ask the author. Recorded in
+sdk/libshare/libshare-sources.sha256 and docs/sdk/10-ldg-modules.md section 6.
+
+CHANGE (no kernel, no tos-api, no libc/libldg source change)
+  sdk/libshare/libshare-0.1.1.tgz    the original release, unchanged (sha256
+      2a6c58aa...bdecb = references/libshare/libshare-0.1.1.tgz); origin URL +
+      licence note in sdk/libshare/libshare-sources.sha256. Its prebuilt m68k
+      libshare.a and test binaries are deleted right after extraction.
+  sdk/libshare/build-libshare.sh     libshare's own OBJ list (makefile:28) +
+      flags (makefile:17-26) -> libshare.a; + mintlib's own
+      mintlib/posix_memalign.c compiled unmodified with -D__malloc=malloc
+      (memalign/posix_memalign/aligned_alloc on libshare's malloc; in mintlib
+      0.60.1 they call __malloc directly and would pull libc's allocator)
+  sdk/libshare/overlay/{sbrk,calloc,malloc}.c   3 one-line overlays, header
+      with original file:line and reason each:
+        sbrk.c:61    sbrk(size_t) -> sbrk(intptr_t)  (mintlib 0.60.1
+                     <unistd.h>:934; pristine does not compile)
+        calloc.c:25  __bzero -> bzero  (SDK libc has no __bzero)
+        malloc.c:51  static_mblock aligned like struct mem_chunk (LP64:
+                     pristine at .bss+0x11 of malloc.o)
+  sdk/libshare/libshare-link.sh      ls_check_module_map: reads a module's
+      link map, fails the build if libc.a's allocator members
+      (mintlib__malloc.o, __calloc.o, __realloc.o, __posix_memalign.o,
+      unix__sbrk.o) were pulled next to libshare, or libshare's malloc.o is
+      missing
+  sdk/libshare/tests/libshare-host.{sh,c}, libshare-host-layout.c   host test
+  sdk/lib-stale.sh                   library `libshare` (chain libc -> ldg ->
+      libshare; tgz, sums, overlay, script, vendor-lib.sh watched)
+  sdk/ldg/build-ldg-demo.sh          EX_LIB.NLD: libshare.a first in the
+      group, -Map, map check; LDGTEST.NCP (client) unchanged
+  sdk/ldg/build-ldg-client.sh        POPUP.NLD likewise (toolchain decision:
+      popup.mint:10 links only -lgem -lldg; popup.c:74 mallocs inside a
+      client-called function, against LDG's own rule guides/src/ldg.u:
+      1047-1051, mem.stg:44-52); LDGDEMO.NAP (client) unchanged
+  sdk/run-host-tests.sh (+libshare-host), sdk/.gitignore
+  docs: sdk/10-ldg-modules.md (pieces, link line, limits rows, new section 6
+      incl. licence note), sdk/12-windom.md (B2 row: closed), sdk/README.md,
+      analysis/libshare-2026-10-06.md (section 4 correction note, history
+      kept), analysis/ldg-after-arch03-2026-10-06.md (note to table row 11),
+      references/README.md (SDK pin)
+
+LP64 / mintlib-internals review (sources read; result)
+  lib.h: _heapbase, _split_mem (short), _stksize (long), __libc_unix_names
+    exist in the SDK libc with these types (mintlib heapbase.c, globals.c,
+    stksiz.c); _enoent, _unx2dos exist. struct mem_chunk {long; ptr;
+    unsigned long} = 24 bytes, identical to libc's malloc_int.h, BORDER_EXTRA
+    32 (host test checks the layout). (long) casts in malloc.c/realloc.c:
+    long = pointer width on LP64 -> fine. sbrk(intptr_t): overlay. ldg_Malloc
+    (long): fine. static_mblock alignment: overlay. gl_shm.c: strpid[3]
+    overflow for pid >= 100 in get_shmfilename -- unreachable (has_shm()
+    returns 0, the SHM branch is dead; README: experimental), left as is.
+  checks/module-link-maps.txt: EX_LIB.NLD and POPUP.NLD pull
+    libshare.a(malloc.o) + (sbrk.o) and NO libc allocator member; nm shows
+    malloc/free/sbrk (T), libshare_mchunk_free_list, static_mblock, no
+    __malloc/_mchunk_free_list.
+  checks/link-probes.txt (method/link-probe.sh): a module calling malloc,
+    calloc, realloc, memalign, posix_memalign, aligned_alloc, valloc, sbrk,
+    chdir links ONLY libshare members (+ libc's valloc.o, which calls
+    libshare's memalign); a module naming mintlib's __malloc pulls
+    libc.a(mintlib__malloc.o) + (unix__sbrk.o) -- the linker accepts it,
+    ls_check_module_map rejects it ("build would stop").
+
+BUILD (checks/build-libshare-and-modules.txt)
+  libshare.a: compiled OK=7 FAILED=0, 0 warnings with libshare's own -W set;
+  + posix_memalign.o; 27 defined symbols. LIBSHARE_REFRESH=1 rebuild
+  byte-identical (e9914206...); lib_ensure converges (touching an overlay
+  rebuilds once, the second call builds nothing). EX_LIB.NLD 57232 B
+  (a8cc3e32...), POPUP.NLD 55880 B (bb12b45a...): 0 undefined symbols; two
+  builds byte-identical. Clients LDGTEST.NCP (eb91d066...) and LDGDEMO.NAP
+  (dbcb481c...) byte-identical to before the change.
+  Rust: not touched. Scratch rpi4 release kernel: warnings tos-api 64 /
+  kernel 94 (= baseline).
+  SDK host tests: 16 passed, 0 failed, 0 skipped (checks/sdk-host-tests.txt;
+  baseline 15/0/0 + the new libshare-host).
+
+HOST TEST (checks/libshare-host.txt, 15/15)
+  sdk/libshare/tests/libshare-host.sh: the overlaid libshare sources against
+  a model of ldg_Malloc/ldg_Free with owners and an owner-based Pterm:
+  module run (exit: stderr then stdout buffer, malloc(1024)+free each) ->
+  first buffer inside static_mblock, no system block for it; the static block
+  is then dropped from the list (libshare malloc.c:271-289); second buffer
+  from ldg_Malloc owned by the module, returned with ldg_Free before the
+  Pterm; after the Pterm no free-list node in freed memory; client-context
+  malloc(0x46c0) from ldg_Malloc owned by the client; calloc zeroes,
+  realloc keeps contents.
+  Sensitivity (checks/libshare-host-sensitivity-no-static-block.txt): the
+  same harness on a scratch copy with the static block disabled fails 6 of
+  15 -- the static-block checks are not vacuous. The "no dangling node after
+  Pterm" check passes there too: libshare's free() returns an empty hunk
+  (no `q &&` in its merge-before test), whereas libc's mintlib 0.60.1 free()
+  does not merge the last chunk (`if (q && s >= r ...)`,
+  sdk/libc/mintlib/mintlib/malloc.c:190), which is why the B2 hunk stayed
+  referenced.
+
+QEMU raspi4b RUNS (method/ls-runs.sh <scratch> ldg popup accept accept2
+                   instr regr; kernels method/make-kernels.sh)
+  ldg     \AUTO\LDGTEST.NCP: memprot=off, on, strict -> "ldgtest: ALL PASS
+          (69 checks)" x3 (serial/ls-{off,on,strict}-ldgauto-serial.log)
+  popup   LDGDEMO.NAP, method/m3b.actions (M3's B2 script, unchanged):
+          Alt+C info alert; Alt+F -> POPUP.NLD __popup: the pop-up appears
+          (Informations / Sinus / Cosinus, S03/S04), pick Sinus, Esc "0.5",
+          Alt+C -> "Value: 0.479426" (sin 0.5, S07); again Cosinus ->
+          "0.877583" (cos 0.5, S12); Return -> Close -> exit rc=0, desktop
+          (END_CLOSED, end). No bus error, no crash prompt. memprot on,
+          strict and OFF: all 15 screendumps pixel-identical across the three
+          modes (checks/popup-on-strict-off-shotcmp.txt) -- off no longer
+          hangs.
+          Seen in S08/S09: in the SECOND pop-up the "Informations" row is
+          empty. Not a NewTOS defect: client.c:75/78/81 (upstream) strcpy
+          "Sinus"/"Cosinus" into BUT_POPUP's string "Info" (5 bytes); in
+          client.rsc that string is directly followed by "  Informations"
+          (offsets 517/522; converted CLIENT.RSC 929/934), so the copy's NUL
+          lands on its first byte. Same on the reference (same .rsc layout).
+  accept  method/m3c.actions on/strict: identical to each other and to the
+          post-B1 acceptance of measurement-2026-10-06-aes-evbutton up to
+          S05; from S06 on m3c (written before B1 was fixed) no longer
+          matches the client (the short click now opens the alert, so the
+          typed keys go to the alert and the client stays open) -- script
+          drift, not a regression; hence:
+  accept2 method/evb-acc.actions (copied unchanged from
+          measurement-2026-10-06-aes-evbutton): on and strict, all 10
+          screendumps pixel-identical to each other AND to that run's acc-on
+          (checks/accept2-shotcmp.txt); client exits rc=0.
+  instr   m3b.actions on the instrumented kernel (method/apply-ls-instr.py
+          = ldg-b2's apply-b2-instr.py with the libshare free-list offsets;
+          diff method/ls-instr-exceptions.diff), memprot on;
+          serial/ls-instr-on-serial.log, checks/ls-instr-on-callchains.txt.
+          Screendumps identical to popup-on (15/15).
+          EX_LIB.NLD Pexec(4) run (PD 0x1a9c000), lines 61-65:
+            Mshrink; Mxalloc(0x4000,3) -> 0x1abf000 owner the module, chain
+            _start -> exit -> fcloseall -> fclose -> __flshfp (-> malloc ->
+            sbrk -> ldg_Malloc); Mfree(0x1abf000) by the module itself;
+            Pterm: libshare_free_list.next = 0 (read at the EX_LIB layout).
+          POPUP.NLD (PD 0x1ac0000), lines 75-79: the same, Mxalloc ->
+            0x1ae3000, Mfree by the module, Pterm: free_list.next = 0.
+          So the module's malloc DOES call the system once during its own
+          run -- for stdout's buffer, after stderr's buffer used and retired
+          the 16 KiB static block -- but frees it itself before the Pterm;
+          what B2 needs (no free-list node in memory the Pterm frees) holds.
+          Client context (run 0x1a40000): POPUP __popup -> __get_bkgr ->
+            Mxalloc(0x8000) -> 0x1ae3000 owner the client, Mfree in
+            __put_bkgr (lines 97/105 and 124/131 for the second pop-up).
+  regr    HEAD kernel, memprot on: APITEST TOTAL 106/0/5 (= M3/B1 baseline;
+          a first attempt without bin/DTACHILD.NCP on the card gave 105/0/6,
+          T29.3 "child did not run" -- the card lacked APITEST's helper,
+          DTACHILD.NCP copied unchanged from ldg-m3/bin and re-run);
+          QED (#Z) and TeraDesk (#Z) start; screendumps byte-identical to
+          measurement-2026-10-06-ldg-m3 (checks/regr-shotcmp-vs-m3.txt, 4/4).
+
+NOT DONE / ONLY REAL HW
+  Real Pi: not run (no HW actions by workers). Nothing here depends on
+  caches beyond what LDGTEST/M3 already exercise.
+  EmuTOS/Hatari counter-run with an m68k mintlib POPUP.LDG + libshare: not
+  done (B2 analysis open point (a)).
+  The residual case (a module mallocing > 16 KiB in its own main()/exit()
+  and keeping it) is documented, not exercised.
+
+method/ FILES
+  copied unchanged from measurement-2026-10-06-ldg-m3/method: seed-card.sh,
+    run-rpi4.sh, run-rpi4-drive-m3.sh, drive-m3.py, qmp_timed.py,
+    shotcmp.py, newdesk-template.inf, TERADESK.INF, gen_script.py,
+    apply-injector-m3.py, m3b.actions, m3c.actions
+  copied unchanged from measurement-2026-10-06-aes-evbutton/method:
+    evb-acc.actions
+  copied with a stated change from measurement-2026-10-06-ldg-b2/method:
+    apply-ls-instr.py (free-list offsets), symbolize-b2.py (module dir)
+  this run: make-kernels.sh, ls-runs.sh, link-probe.sh, memalign-probe.c,
+    internal-probe.c, ls-instr-exceptions.diff, libshare-change.diff
+
+BINARIES
+  bin/SHA256SUMS (EX_LIB.NLD, LDGTEST.NCP, LDGDEMO tree, DTACHILD.NCP),
+  bin/KERNELS.SHA256 (kernels not kept). SHA256SUMS (top level): every file
+  of this run except itself.

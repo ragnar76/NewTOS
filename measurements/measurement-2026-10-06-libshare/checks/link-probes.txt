@@ -1,0 +1,43 @@
+=== memalign-probe
+linker: OK
+allocator members in the map:
+    libc.a(mintlib__valloc.o)
+    libshare.a(calloc.o)
+    libshare.a(chdir.o)
+    libshare.a(malloc.o)
+    libshare.a(mintlib_posix_memalign.o)
+    libshare.a(realloc.o)
+    libshare.a(sbrk.o)
+symbols:
+    0000000000001878 W aligned_alloc
+    0000000000001128 T calloc
+    000000000000115c T chdir
+    0000000000001510 T free
+    00000000000077d8 D libshare_mchunk_free_list
+    00000000000012dc T malloc
+    0000000000001878 W memalign
+    0000000000001810 W posix_memalign
+    00000000000018e4 T realloc
+    0000000000001a38 T sbrk
+    0000000000007f18 B static_mblock
+    0000000000003b2c W valloc
+  allocator: libshare only (calloc.o chdir.o malloc.o mintlib_posix_memalign.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+map check: PASS
+=== internal-probe
+linker: OK
+allocator members in the map:
+    libc.a(mintlib__malloc.o)
+    libc.a(unix__sbrk.o)
+    libshare.a(malloc.o)
+    libshare.a(sbrk.o)
+symbols:
+    0000000000002a20 T __malloc
+    0000000000007830 D _mchunk_free_list
+    00000000000012bc T free
+    00000000000077c0 D libshare_mchunk_free_list
+    0000000000001088 T malloc
+    00000000000015bc T sbrk
+    0000000000007f18 B static_mblock
+error: internal-probe pulls mintlib's allocator member libc.a(mintlib__malloc.o) next to libshare (see sdk/libshare/libshare-link.sh)
+error: internal-probe pulls mintlib's allocator member libc.a(unix__sbrk.o) next to libshare (see sdk/libshare/libshare-link.sh)
+map check: FAIL (build would stop)

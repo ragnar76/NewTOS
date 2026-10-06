@@ -11,7 +11,23 @@
 #                libldg.a, gemlib.a, libm.a, libc.a -- the link line of
 #                demo/client/Makefile.mint (LDLIBS = -lldg -lwindom -lgem)
 #   POPUP.NLD    <LDG>/demo/libs/popup.c, unmodified, the module the client
-#                opens second (its __popup draws the "Functions" pop-up)
+#                opens second (its __popup draws the "Functions" pop-up);
+#                linked with sdk/libshare/libshare.a FIRST in its group
+#                although popup.mint:10 links only -lgem -lldg (TASK/
+#                LDG-M3-B2, a toolchain decision, the source is unchanged):
+#                popup.c:74 calls malloc() inside a function the client
+#                calls, which LDG's own rules forbid (guides/src/ldg.u:
+#                1047-1051, guides/src/mem.stg:44-52: use ldg_Malloc &
+#                Co.) -- with mintlib's malloc the
+#                module's exit() leaves its free list pointing into a hunk
+#                its own Pterm frees, and that malloc reads freed memory
+#                (Bus Error under memprot=on, hang under off;
+#                measurements/measurement-2026-10-06-ldg-b2). On the
+#                reference it fails silently the same way. libshare's
+#                malloc serves the exit-time buffer from a static block in
+#                the module's BSS and later blocks via ldg_Malloc in the
+#                caller's context. The link map is checked
+#                (sdk/libshare/libshare-link.sh).
 #   EX_LIB.NLD   built by build-ldg-demo.sh (M1), copied
 #   client.rsc   <LDG>/demo/client/client.rsc converted by tools/mkrsc.py for
 #                the kernel's rsrc_load (WinDom's RsrcLoad calls rsrc_load,
@@ -47,11 +63,13 @@ OBJ="$BUILD/obj"
 DIST="$BUILD/dist/LDGDEMO"
 mkdir -p "$OBJ"
 
-# --- libraries: libc -> gemlib -> windom, libc -> libm, libc -> ldg ----------
+# --- libraries: libc -> gemlib -> windom, libc -> libm, libc -> ldg -> libshare
 . "$SDK/lib-stale.sh"
-lib_ensure windom || exit 1
-lib_ensure libm   || exit 1
-lib_ensure ldg    || exit 1
+. "$SDK/libshare/libshare-link.sh"
+lib_ensure windom   || exit 1
+lib_ensure libm     || exit 1
+lib_ensure ldg      || exit 1
+lib_ensure libshare || exit 1
 MINT="$LIBC/mintlib/include"
 for d in "$MINT" "$GEMTOP" "$LIBMTOP" "$TOP" "$WD/include"; do
   [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
@@ -96,21 +114,27 @@ cc "$TOP/demo/libs/popupbnd.c"  popupbnd.o
 cc "$TOP/demo/libs/popup.c"     popup.o
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" -c "$LIBC/crt0.S" -o "$OBJ/crt0.o" || exit 1
 
-link() { # link <out> <objs...>
-  local out=$1; shift
+link() { # link <module|client> <out> <objs...>
+  local kind=$1 out=$2; shift 2
+  local share=() map="$BUILD/link-$(basename "$out").map"
+  # A module links libshare.a first in the group (see the header).
+  [ "$kind" = module ] && share=("$SDK/libshare/libshare.a")
   if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
       --build-id=none "$OBJ/crt0.o" "$@" \
-      --start-group "$WD/libwindom1.a" "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
-      -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
+      --start-group ${share[@]+"${share[@]}"} "$WD/libwindom1.a" "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
+      -Map="$map" -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
     echo "error: link of $(basename "$out") failed:" >&2
     sed 's/^/    /' "$BUILD/link-$(basename "$out").err" >&2; exit 1
   fi
   echo "LINK OK -> $out ($(wc -c < "$out" | tr -d ' ') bytes)"
   "$READOBJ" --file-headers "$out" | grep -E '^ *Type:'
   echo "  undefined symbols (goal 0): $("$NM" -u "$out" 2>/dev/null | grep -c . || true)"
+  if [ "$kind" = module ]; then
+    ls_check_module_map "$map" "$(basename "$out")" || { rm -f "$out"; exit 1; }
+  fi
 }
-link "$BUILD/LDGDEMO.NAP" "$OBJ/client.o" "$OBJ/exlibbnd.o" "$OBJ/popupbnd.o"
-link "$BUILD/POPUP.NLD"   "$OBJ/popup.o"
+link client "$BUILD/LDGDEMO.NAP" "$OBJ/client.o" "$OBJ/exlibbnd.o" "$OBJ/popupbnd.o"
+link module "$BUILD/POPUP.NLD"   "$OBJ/popup.o"
 
 # --- the demo's directory tree -----------------------------------------------
 rm -rf "$BUILD/dist"; mkdir -p "$DIST/CLIENT" "$DIST/LIBS"
