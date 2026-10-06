@@ -1,0 +1,122 @@
+measurement-2026-10-06-aes-evbutton -- TASK/LDG-M3-B1: two AES deviations
+from EmuTOS found in zView M3 (TASK/LDG-M3-STATUS-UNFINISHED.MD,
+measurement-2026-10-06-ldg-m3):
+  B1  evnt_multi/evnt_button/evnt_mouse reported EV_MB (and EV_MX/EV_MY) from
+      the live state instead of EmuTOS's state at the event (ev_rets,
+      aes/gemevlib.c:42-58; mtrans/pr_* maintained by bchange,
+      aes/geminput.c:329-345; window close b_delay :155-171). WinDom dropped
+      every normal click (evnt_windom.c:334 `evnt.mbut & 1`).
+  O1  objc_edit's caret ignored te_just (EmuTOS pxl_rect -> gr_just,
+      aes/gemobed.c:180-190, aes/gemgraf.c:567-589).
+Developer self-evidence; the Tester's verdict is separate.
+
+Date 2026-10-06, branch desk-rebuild, HEAD e47bbd2 plus this change
+(uncommitted, method/evbutton-change.diff). QEMU raspi4b, -append serial=on
+(memprot default = on; + memprot=strict where named), host macOS. No SD card,
+Pi or TT touched; tools/make-sd-image.sh NOT run -- private 64 MiB cards in the
+session scratchpad (method/seed-card.sh from ldg-m3, method/seed-card-a4.sh
+from arch03-4 with BIN made explicit). Interactive runs use scratch-copy
+kernels with the ldg-m3 IKBD injector (method/apply-injector-m3.py, unchanged;
+method/desk-arm-m3.py arms it at "[desk] desktop up" for the EmuDESK runs);
+the injector only adds an input source.
+
+CHANGE (tos-api only; kernel/, libc, SDK untouched)
+  tos-api/src/aes/input.rs   b_click compares against gl_btrue and, while the
+      click window is open, only counts entries into gl_bdesired (gl_bclick);
+      new bchange (mtrans++, pr_button/pr_mclick/pr_xrat/pr_yrat, button,
+      mclick); b_arm/b_disarm + b_expire = the window close (count + the
+      second bchange(gl_btrue,1)); mchange's forced expiry applied after the
+      xrat update (forks run after mchange); ev_rets() (record if mtrans>1,
+      else live; mtrans=0); pending_transition() for the quick check; reinit
+      clears the new state.
+  tos-api/src/aes/event.rs   fill_rets -> input::ev_rets (EV_MB from the AES
+      `button`/pr_button, no longer the raw VDI byte); evnt_mouse overwrites
+      EV_MB with the live button (gemevlib.c:127); evnt_multi quick check tries
+      (mtrans>1 && downorup(pr_button)) first, owner + entry only, EV_BRET =
+      pr_mclick (gemevlib.c:190-194).
+  internal waits consume transitions like their EmuTOS ev_* counterparts:
+      graf.rs mouse_down (gr_stilldn), window.rs watchbox/gr_stilldn/elevator
+      release + Control Manager press on a frame gadget or untopped window,
+      form.rs (fm_do key/press, form_alert key/press, wait_up), fsel.rs (fm_do
+      key/press), menu.rs (end of mn_do track, pop-up press, ev_button
+      up-waits).
+  tos-api/src/aes/object.rs  new pxl_rect (gr_just on te_ptmplt in te_font,
+      + ch_pos * gl_wchar); edit_field_t draws the caret there.
+  tos-api/tests/aes_ev_rets_state_at_event.rs  7 host tests (new).
+  docs/api/aes/event.md  new section "The button state an event reports
+      (mtrans / pr_*) -- contract" + 2 verification criteria;
+  docs/api/aes/object-form.md  objc_edit "Where the caret is drawn -- pxl_rect".
+
+HOST TESTS RED BEFORE / GREEN AFTER
+  checks/red-before-HEAD-e47bbd2.txt: the new test file against `git archive
+  HEAD` (scratch): 5 of 7 FAIL (short click EV_MB 0, desk single/double click
+  EV_MB 0, click-between-calls not delivered, evnt_button EV_MB 0, caret
+  (116,102) for TE_LEFT -- y rounding, and x for RIGHT/CNTR). Two are guards
+  that pass at HEAD too (long press = live state; release consumed by
+  graf_rubberbox not reported again); the latter was checked to FAIL with
+  the change when graf.rs's ev_rets call is removed (scratch edit, restored
+  by hand from a copy).
+  After: 7/7 (checks/final-host-tests.txt).
+
+STATIC CHECKS (method/checks.sh, from arch03-4; checks/b1-* first pass,
+checks/final-* on the final tree)
+  host tests 1172/0/1 (baseline 1165/0/1, +7 new); release builds rpi4 and
+  qemu-virt warnings tos-api 64 / kernel 94 (= baseline); clippy rpi4/virt
+  tos-api 76 / kernel 125 (= baseline); drift 31 (= baseline); SDK host tests
+  15/0/0. Per-file clippy counts of the eight touched tos-api/src/aes files
+  equal arch03-4's a4-final-clippy-rpi4.txt (input/event/graf 0, form 8,
+  fsel 5, menu 10, object 16, window 11). Release images of checks.sh in
+  bin/ (not kept, hashes in bin/KERNELS.SHA256 with the run kernels; the
+  run kernels live in the session scratchpad). kernel8-evb.img (the
+  plain kernel of the api run; the injector kernels are built from a copy of the same sources) is
+  byte-identical to checks.sh's kernel8-final.img (418d3805...).
+
+QEMU RUNS (method/make-kernels.sh <S>; method/evb-runs.sh <S> accept desk
+desk3a tera qed api; baseline injector kernels from `git archive HEAD` with
+SRC=<tree> PFX=head-, runs with KP=head-; kernel hashes bin/KERNELS.SHA256)
+  accept (LDGDEMO.NAP, WinDom client; method/evb-acc.actions = ldg-m3's m3c
+    with step 3 changed), memprot on and strict, rc=0, client exits rc=0:
+    S05_SHORTCLICK: a 30 ms click on Compute now opens the
+      "Example of math library!!!" alert (ldg-m3: nothing) -- B1 fixed.
+    S00/S02/S04/S06: the Value-field caret sits right after the text
+      ("000000000|", "123|") -- 18 px right of ldg-m3's, the only differing
+      pixels (checks/shots-compare.txt) -- O1.
+    on vs strict: all 9 dumps identical.
+    POPUP path (B2) not exercised -- still open, not part of this task.
+  desk (EmuDESK, evb-desk.actions): double click drive C -> C:\ window;
+    double click APPS -> C:\APPS\; hover View, click "Show as text" ->
+    text listing. Identical to the HEAD kernel run, every dump.
+  desk3a (arch03-4's stage-3a script: folder double click, closer, select,
+    Ctrl-I info dialog with typing into the name field, rename, Alt-C):
+    identical to the HEAD kernel run, every dump.
+  tera (TeraDesk #Z, 0x102/3/0 wait): single click selects TRASH, double
+    click on the first HARD DISC opens C:\*.* -- identical to HEAD.
+  qed (QED #Z): hover "Datei", click "Neuer Text" -> "Namenlos" window --
+    identical to HEAD except qed-END.png bbox (24,61,27,79) = QED's text
+    cursor cell (on at HEAD, off here; QED blinks it from MU_TIMER) --
+    PLAUSIBLE blink phase, Q02 taken earlier is identical.
+  api (APITEST #Z, no input): TOTAL 106/0/5 (= ldg-m3), both dumps identical
+    to ldg-m3's.
+  Note: macOS's file system is case-insensitive, so <tag>-END.png is the
+  driver's final "end" dump (it overwrote the END mark dump; both are taken
+  at the end marker, 0.4-0.6 s apart).
+
+NOT DONE / OPEN
+  - curfld's caret extent (y-3, gl_hchar+6 rows) and XOR mode
+    (aes/gemobed.c:198-216) are not reproduced -- the caret position is,
+    its height/mode are unchanged (black, gl_hchar rows).
+  - count_clicks gives each further click its own full window; EmuTOS extends
+    the open window by 3 ticks per click (gl_bdely += 3, geminput.c:122) and
+    returns the event only at the window's end. Pre-existing, unchanged.
+  - Real Pi: not run (no HW actions by workers).
+
+method/ FILES
+  copied unchanged: seed-card.sh run-rpi4.sh run-rpi4-drive-m3.sh drive-m3.py
+    qmp_timed.py shotcmp.py gen_script.py apply-injector-m3.py
+    newdesk-template.inf TERADESK.INF (ldg-m3); checks.sh, desk3a/
+    (arch03-4: the stage-3a script and card files);
+    newdesk-evb-desk.inf = desk50's newdesk-d50a.inf
+  seed-card-a4.sh  arch03-4's seed-card.sh, BIN explicit
+  new: make-kernels.sh evb-runs.sh desk-arm-m3.py evb-acc.actions
+    evb-desk.actions evb-desk3a.actions (= desk3a/desk3a.actions)
+    evb-tera.actions evb-qed.actions evbutton-change.diff

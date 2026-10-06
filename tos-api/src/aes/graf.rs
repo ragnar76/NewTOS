@@ -112,8 +112,18 @@ pub(super) fn gsx_xbox(x: i16, y: i16, w: i16, h: i16, backend: &dyn RasterBacke
     outline(x, y, w, h, BLACK, backend, clip);
 }
 
+/// The poll behind every drag/watch loop here — EmuTOS `gr_stilldn`'s
+/// `ev_multi(MU_KEYBD | MU_BUTTON | MU_M1, …, 0x0001ff00L, …)`
+/// (`aes/gemgrlib.c:47-73`), which returns `MU_BUTTON` once the button is up.
+/// That return runs `ev_rets` (`aes/gemevlib.c:268`), so the release the loop
+/// ends on is consumed there and not reported again by the application's next
+/// event ([`super::input::ev_rets`]).
 fn mouse_down() -> bool {
-    crate::vdi::mouse_buttons() & 0x01 != 0
+    let down = crate::vdi::mouse_buttons() & 0x01 != 0;
+    if !down {
+        let _ = super::input::ev_rets();
+    }
+    down
 }
 
 /// EmuTOS `mul_div_round` (util/miscasm.S): `mult1 * mult2 / divisor`, rounded

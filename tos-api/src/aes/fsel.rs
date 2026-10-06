@@ -1064,6 +1064,10 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
     loop {
         // Keyboard: route to the focused editable field.
         if let Some(w) = h.console_try_read_key() {
+            // `fs_input` runs the dialog through `fm_do` (`aes/gemfslib.c:718`),
+            // whose `ev_multi` returning `MU_KEYBD` ends in `ev_rets`
+            // (`aes/gemevlib.c:268`): pending button transitions are cleared.
+            let _ = super::input::ev_rets();
             match (w & 0xff) as u8 {
                 b'\r' | b'\n' => {
                     // Enter: re-list if the path was edited, else confirm.
@@ -1088,6 +1092,9 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
 
         let cur = crate::vdi::mouse_buttons();
         if cur & 0x01 != 0 && prev & 0x01 == 0 {
+            // `fm_do`'s `ev_multi` returned `MU_BUTTON` on this press; its
+            // `ev_rets` (`aes/gemevlib.c:268`) consumed it.
+            let _ = super::input::ev_rets();
             let (mx, my) = crate::vdi::mouse_position();
             let hit = object::hit_test_t(t, 0, MAX_DEPTH, mx, my);
             let now = h.monotonic_millis();

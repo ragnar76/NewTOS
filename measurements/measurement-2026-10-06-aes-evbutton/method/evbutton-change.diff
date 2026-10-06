@@ -1,0 +1,1556 @@
+diff --git a/docs/api/aes/event.md b/docs/api/aes/event.md
+index 32d5d4c..7ba655e 100644
+--- a/docs/api/aes/event.md
++++ b/docs/api/aes/event.md
+@@ -265,6 +265,66 @@ and the delivered `msg[0] == AC_CLOSE` it also sets `AP_ACCLOSE`.
+ when a button transition is pending (`mtrans > 1`), otherwise the live
+ `xrat`/`yrat`/`button`; `EV_KS` is always the live `kstate` (`gemevlib.c:42-58`).
+ 
++### The button state an event reports (`mtrans` / `pr_*`) — contract (LDG-M3 B1, 2026-10-06)
++
++The *values* `EV_MX`/`EV_MY`/`EV_MB` (and `EV_BRET` of the quick check) are
++contract; the globals that produce them are reference. How EmuTOS produces them:
++
++* **`bchange(new, clicks)` publishes one button transition**
++  (`aes/geminput.c:329-345`): `mtrans++; pr_button = button; pr_mclick =
++  mclick; pr_xrat = xrat; pr_yrat = yrat; button = new; mclick = clicks;` —
++  the state *before* the transition is recorded, `mtrans` counts transitions.
++* **`ev_rets` clears the count** (`mtrans = 0`, `gemevlib.c:57`). It runs at
++  the end of **every** `ev_button` (`:91`), `ev_mouse` (`:126`) and `ev_multi`
++  (`:268`) — also the AES-internal ones: `fm_do` (`gemfmlib.c:256,312-317`),
++  `gr_stilldn` (`gemgrlib.c:62-66`, i.e. `gr_watchbox`/`gr_dragbox`/
++  `gr_rubwind`/`gr_slidebox`), `mn_do` (`gemmnlib.c:597`), the pop-up
++  (`gemmnext.c:268,314,351`) and the Control Manager's own loop
++  (`gemctrl.c:456-462`). A click the AES consumed itself is therefore not
++  reported again by the application's next event.
++* **When the transitions are published.** `b_click` (`geminput.c:110-147`)
++  publishes a change at once (`forkq(bchange, MAKE_ULONG(state, 1))`) unless a
++  waiter asks for more than one click and the change is a press
++  (`gl_bpend && state`): then it opens the button-delay window
++  (`gl_bdesired = state; gl_bclick = 1; gl_bdely = gl_dclick`), counts
++  further entries into `gl_bdesired` while it is open, and publishes nothing.
++  When the window closes — by the tick countdown or by a move of more than ±2
++  pixels (`mchange` → `b_delay(gl_bdely)`, `:365-368`) — `b_delay` publishes
++  `bchange(gl_bdesired, gl_bclick)` and, if the button is no longer in that
++  state, `bchange(gl_btrue, 1)` (`:155-171`).
++* **Consequence — the contract.** A click (press + release) whose release falls
++  inside the double-click window is published as two transitions at the
++  window's close, so the event that reports it has `mtrans == 2` and returns
++  **`EV_MB` = the pressed button** (`pr_button`), with `EV_MX/EV_MY` = the
++  pointer at the release. A press held past the window is one transition: the
++  event reports the live state, button still down. A double click reports
++  `EV_BRET = 2` and `EV_MB` = down. `evnt_mouse` alone overwrites `EV_MB`
++  with the live `button` (`gemevlib.c:127`); its `EV_MX/EV_MY` follow
++  `ev_rets` like the others.
++* **The quick check uses the record first.** `ev_multi`'s owner-only quick
++  check tries `(mtrans > 1) && downorup(pr_button, buparm)` before
++  `downorup(button, buparm)` (`gemevlib.c:188-198`) and reports `pr_mclick`
++  for it: a click made while the application was not waiting (both
++  transitions published between two calls) still satisfies its next wait for
++  the press, with the recorded click count and no new click window.
++
++WinDom handles a click only when `evnt.mbut & 1`
++(`sdk/windom/overlay/src/evnt_windom.c:334`); with the live state (0 after the
++window) every normal click on a WinDom form was dropped.
++
++**NewTOS mapping** (`tos-api/src/aes/input.rs`, `event.rs`). `b_click`,
++`bchange`, `ev_rets` and the window close are reproduced with EmuTOS's state
++(`gl_btrue`, `gl_bdesired`, `gl_bclick`, `mclick`, `mtrans`, `pr_*`). One
++structural difference, same result: our Event Manager opens the click window
++in `count_clicks` *after* it has seen the press, so the opening press is
++published at once with a count of 1 and the window's close only sets its real
++count (`mclick = gl_bclick`) and publishes the true state if it differs — the
++same two transitions in the same order. The AES-internal waits listed above
++call `ev_rets` at the point their EmuTOS counterpart's `ev_*` returns
++(the press or key in `fm_do`/fsel/`form_alert`, the release in the
++`gr_stilldn` loops and `ev_button` up-waits, the end of the menu track, the
++press on a frame gadget or an untopped window in the Control Manager).
++
+ ### NewTOS deviation — the application does not run while a drop-down is open (A91, 2026-09-23)
+ 
+ **EmuTOS.** The Control Manager is a *process*:
+@@ -538,6 +598,15 @@ dispatcher's unsupported-opcode → `-1` path (see [`_dispatcher.md`](./_dispatc
+ - **`evnt_multi` mouse block:** on any fired event, `int_out[1]`/`int_out[2]`
+   hold the current (or transition-time) mouse x/y, `int_out[3]` the button
+   state, `int_out[4]` the shift state (`gemevlib.c:42-58,268`).
++- **Click reported with the button down:** `evnt_multi(MU_BUTTON, 0x0102, 3,
++  0)` (or the desktop's `2, 1, 1`) with one press + release inside the click
++  window returns `MU_BUTTON`, `EV_BRET = 1`, **`EV_MB = 1`** and the click
++  position; an immediately following 0-ms poll returns `MU_TIMER` only and the
++  live `EV_MB = 0` (`gemevlib.c:42-58`, `geminput.c:155-171,329-345`).
++- **Click between two calls:** press + release published while no wait is armed;
++  the next `evnt_multi(MU_BUTTON|MU_TIMER, 0x0102, 3, 0)` with a 0-ms timer
++  reports `MU_BUTTON` with `EV_BRET = pr_mclick = 1` and `EV_MB = 1`
++  (`gemevlib.c:190-194`).
+ - **`evnt_button` double-click:** with `int_in[0] = 2` (clicks=2, enter),
+   `int_in[1] = 1` (mask=left), `int_in[2] = 1` (state=down), two presses inside
+   the current click window (`gl_dcrates[gl_dcindex]` ms) return `2` in
+diff --git a/docs/api/aes/object-form.md b/docs/api/aes/object-form.md
+index 6b64fba..335730c 100644
+--- a/docs/api/aes/object-form.md
++++ b/docs/api/aes/object-form.md
+@@ -686,6 +686,22 @@ after position `new_pos`. Cannot reorder `ROOT` → `FALSE`.
+ Cursor→template mapping is via `find_pos` (raw-string index → template
+ index, landing before an `_`). Text is capped at `te_txtlen-2` data chars.
+ 
++**Where the caret is drawn — `pxl_rect`** (`gemobed.c:180-190`, LDG-M3 O1,
++2026-10-06): the field's absolute box (`ob_actxywh`) is passed through
++`gr_just(te_just, te_font, te_ptmplt, w, h, &o)` (`gemgraf.c:567-589`) — the
++**template** is measured in the TEDINFO's font (`gsx_tcalc`, `:480-497`: width
++`min(w, strlen(te_ptmplt) * ch_width)`, height `min(h, ch_height)`), the
++origin moves down by `(slack_h + 1) / 2` and, per `te_just`, right by
++`(slack_w + 1) / 2` (`TE_CNTR`) or `slack_w` (`TE_RIGHT`), each only when the
++slack is positive — exactly the placement of the field's text. The caret cell
++is then at `x = o.x + ch_pos * gl_wchar` (always the normal font's width),
++`y = o.y`, with `ch_pos = find_pos(te_ptmplt, idx)`. `curfld` draws it as an
++XOR vertical line from `y - 3` over `gl_hchar + 6` rows (`:198-216`).
++NewTOS (`tos-api/src/aes/object.rs` `pxl_rect`) takes the origin exactly so;
++the bar it draws there is still the `gl_hchar`-high black one — the
++`-3/+6` extent and the XOR mode are not reproduced (open, see the receipt of
++LDG-M3-B1).
++
+ ### `objc_change` (47)
+ 
+ **Source:** `gemsuper.c:228-231`. The arm sets the clip rect from
+diff --git a/tos-api/src/aes/event.rs b/tos-api/src/aes/event.rs
+index 9e88e80..8812698 100644
+--- a/tos-api/src/aes/event.rs
++++ b/tos-api/src/aes/event.rs
+@@ -172,14 +172,23 @@ fn menu_intercept(idx: usize) -> bool {
+     }
+ }
+ 
+-/// Fill the shared event return slots from the current input state:
+-/// `EV_MX`/`EV_MY` (mouse x/y), `EV_MB` (button bitmask), `EV_KS`
+-/// (keyboard shift state) — the `ev_rets` block at `int_out[1..4]`.
++/// Fill the shared event return slots — EmuTOS `ev_rets` (`aes/gemevlib.c:
++/// 42-58`), the block at `int_out[1..4]`: `EV_MX`/`EV_MY`/`EV_MB` are the
++/// pointer position and button state **at the event** — the state recorded
++/// before the last button transition when more than one transition was
++/// published since the previous event return, else the live state
++/// ([`super::input::ev_rets`], which also clears the count) — and `EV_KS` the
++/// live keyboard shift state.
++///
++/// A click whose release falls inside the double-click window therefore
++/// reports `EV_MB` = the pressed button, not the released one: the window's
++/// close publishes the press and the release together (`b_delay`,
++/// `aes/geminput.c:155-171`), `mtrans` is 2, and `pr_button` is the press.
+ fn fill_rets(pb: &Aespb) {
+-    let (mx, my) = crate::vdi::mouse_position();
++    let (mx, my, mb) = super::input::ev_rets();
+     pb.set_intout(1, mx); // EV_MX
+     pb.set_intout(2, my); // EV_MY
+-    pb.set_intout(3, crate::vdi::mouse_buttons() as i16); // EV_MB
++    pb.set_intout(3, mb as i16); // EV_MB
+     pb.set_intout(4, shift_state()); // EV_KS
+ }
+ 
+@@ -451,6 +460,9 @@ pub fn evnt_mouse(pb: &Aespb) -> Option<sched::Switch> {
+         }
+     }
+     fill_rets(pb);
++    // `rets[2] = button;   /* always use current button state */`
++    // (`ev_mouse`, `aes/gemevlib.c:127`).
++    pb.set_intout(3, super::input::button() as i16); // EV_MB
+     pb.set_ret(1);
+     None
+ }
+@@ -583,6 +595,12 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
+         // (`aes/gemctrl.c:92`). It equals the raw VDI byte otherwise.
+         let arm_own = super::input::own_mouse();
+         let arm_mb = super::input::button();
++        // The recorded state the quick check tries first: `(mtrans > 1) &&
++        // downorup(pr_button, buparm)` (`aes/gemevlib.c:190`) — a press and
++        // its release both published since the previous event return (a click
++        // made while the application was busy) still satisfy a wait for the
++        // press. Sampled at arm time with the level above.
++        let arm_pending = super::input::pending_transition();
+         // The pointer position **at arm time**, for the same reason: `amouse`
+         // tests a rectangle wait exactly once, against the position at the
+         // instant `ev_multi` arms it (`aes/geminput.c:575-576`), before the
+@@ -675,7 +693,20 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
+                 } else {
+                     (super::input::own_mouse(), super::input::button())
+                 };
+-                if (own || pass == 0) && downorup(mb, b_flgclks, b_mask, b_state) {
++                // The quick check's first arm, on the recorded state:
++                // `if ((mtrans > 1) && downorup(pr_button, buparm)) { what |=
++                // MU_BUTTON; prets[5] = pr_mclick; }` (`aes/gemevlib.c:
++                // 190-194`) — owner only, entry only, and the count is the
++                // recorded one: no click window is opened for it.
++                let pr_hit = if pass == 0 && arm_own {
++                    arm_pending.filter(|&(prb, _)| downorup(prb, b_flgclks, b_mask, b_state))
++                } else {
++                    None
++                };
++                if let Some((_, pr_mclick)) = pr_hit {
++                    clicks = pr_mclick;
++                    fired |= MU_BUTTON;
++                } else if (own || pass == 0) && downorup(mb, b_flgclks, b_mask, b_state) {
+                     clicks = if own {
+                         // Resolve the *real* click count (single vs. double)
+                         // inside the double-click window — the same counter
+diff --git a/tos-api/src/aes/form.rs b/tos-api/src/aes/form.rs
+index 8102ea7..75b3c05 100644
+--- a/tos-api/src/aes/form.rs
++++ b/tos-api/src/aes/form.rs
+@@ -392,6 +392,9 @@ fn modal_loop(
+     loop {
+         // keyboard
+         if let Some(c) = h.console_try_read() {
++            // `fm_do`'s `ev_multi` returned `MU_KEYBD`; its `ev_rets`
++            // (`aes/gemevlib.c:268`) clears the pending button transitions.
++            let _ = super::input::ev_rets();
+             match c {
+                 // EmuTOS fm_keybd RETURN → find_obj(DEFLT): Enter fires the
+                 // DEFAULT button only when one exists (defbut in [1..numbut]).
+@@ -409,6 +412,9 @@ fn modal_loop(
+         // mouse: left-button press edge → hit-test, then watch the button
+         let cur = h_mouse_buttons();
+         if cur & 0x01 != 0 && prev_btn & 0x01 == 0 {
++            // `fm_do`'s `ev_multi` returned `MU_BUTTON` on this press
++            // (`aes/gemfmlib.c:312-317`); its `ev_rets` consumed it.
++            let _ = super::input::ev_rets();
+             let (mx, my) = crate::vdi::mouse_position();
+             let hit = object::hit_test_t(t, 0, 16, mx, my);
+             if hit >= first_btn && hit < first_btn + numbut {
+@@ -602,6 +608,10 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
+ 
+         // ── keyboard event ─────────────────────────────────────────────
+         if let Some(w) = h.console_try_read_key() {
++            // `fm_do`'s `ev_multi` returned `MU_KEYBD` (`aes/gemfmlib.c:
++            // 312-317`); its `ev_rets` (`aes/gemevlib.c:268`) clears the
++            // pending button transitions.
++            let _ = super::input::ev_rets();
+             let thechar = w as i16; // scancode << 8 | ascii (EV_KRET)
+             // fm_keybd handles RETURN/ARROW navigation; a residual character is
+             // passed to the edit field (EmuTOS fm_do:320-325). `next_obj` is the
+@@ -638,6 +648,11 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
+                 } else {
+                     1
+                 };
++                // `fm_do`'s `ev_multi` returned `MU_BUTTON` on this press —
++                // after its click window, when it counted one
++                // (`aes/gemfmlib.c:312-317`); its `ev_rets` consumed what was
++                // published up to then.
++                let _ = super::input::ev_rets();
+                 let (c, no) = fm_button(tree, hit, clks);
+                 cont = c;
+                 next_obj = no;
+@@ -1049,6 +1064,9 @@ fn wait_up() {
+         while crate::vdi::mouse_buttons() & 0x01 != 0 {
+             h.pump_input();
+         }
++        // `ev_button(1, 0x00001, 0x0000, rets)` (`aes/gemfmlib.c:256`) ends
++        // in `ev_rets`, which consumes the release.
++        let _ = super::input::ev_rets();
+     }
+ }
+ 
+diff --git a/tos-api/src/aes/fsel.rs b/tos-api/src/aes/fsel.rs
+index 359f52d..b2829e9 100644
+--- a/tos-api/src/aes/fsel.rs
++++ b/tos-api/src/aes/fsel.rs
+@@ -1064,6 +1064,10 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
+     loop {
+         // Keyboard: route to the focused editable field.
+         if let Some(w) = h.console_try_read_key() {
++            // `fs_input` runs the dialog through `fm_do` (`aes/gemfslib.c:718`),
++            // whose `ev_multi` returning `MU_KEYBD` ends in `ev_rets`
++            // (`aes/gemevlib.c:268`): pending button transitions are cleared.
++            let _ = super::input::ev_rets();
+             match (w & 0xff) as u8 {
+                 b'\r' | b'\n' => {
+                     // Enter: re-list if the path was edited, else confirm.
+@@ -1088,6 +1092,9 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
+ 
+         let cur = crate::vdi::mouse_buttons();
+         if cur & 0x01 != 0 && prev & 0x01 == 0 {
++            // `fm_do`'s `ev_multi` returned `MU_BUTTON` on this press; its
++            // `ev_rets` (`aes/gemevlib.c:268`) consumed it.
++            let _ = super::input::ev_rets();
+             let (mx, my) = crate::vdi::mouse_position();
+             let hit = object::hit_test_t(t, 0, MAX_DEPTH, mx, my);
+             let now = h.monotonic_millis();
+diff --git a/tos-api/src/aes/graf.rs b/tos-api/src/aes/graf.rs
+index 4ff27dd..b8b6077 100644
+--- a/tos-api/src/aes/graf.rs
++++ b/tos-api/src/aes/graf.rs
+@@ -112,8 +112,18 @@ pub(super) fn gsx_xbox(x: i16, y: i16, w: i16, h: i16, backend: &dyn RasterBacke
+     outline(x, y, w, h, BLACK, backend, clip);
+ }
+ 
++/// The poll behind every drag/watch loop here — EmuTOS `gr_stilldn`'s
++/// `ev_multi(MU_KEYBD | MU_BUTTON | MU_M1, …, 0x0001ff00L, …)`
++/// (`aes/gemgrlib.c:47-73`), which returns `MU_BUTTON` once the button is up.
++/// That return runs `ev_rets` (`aes/gemevlib.c:268`), so the release the loop
++/// ends on is consumed there and not reported again by the application's next
++/// event ([`super::input::ev_rets`]).
+ fn mouse_down() -> bool {
+-    crate::vdi::mouse_buttons() & 0x01 != 0
++    let down = crate::vdi::mouse_buttons() & 0x01 != 0;
++    if !down {
++        let _ = super::input::ev_rets();
++    }
++    down
+ }
+ 
+ /// EmuTOS `mul_div_round` (util/miscasm.S): `mult1 * mult2 / divisor`, rounded
+diff --git a/tos-api/src/aes/input.rs b/tos-api/src/aes/input.rs
+index 395d8f4..380e729 100644
+--- a/tos-api/src/aes/input.rs
++++ b/tos-api/src/aes/input.rs
+@@ -19,8 +19,21 @@
+ //! the button change through the fork queue into a per-process event-block list
+ //! (`post_button`, `:463-483`); our Event Manager polls the live VDI button byte
+ //! instead, so the delivery half has no counterpart. What *is* observable
+-//! through that difference — which process may act on the sampled level, and how
+-//! long a click window stays open — is exactly what this module keeps.
++//! through that difference — which process may act on the sampled level, how
++//! long a click window stays open, and the button state an event *reports* —
++//! is exactly what this module keeps.
++//!
++//! **The state at the event (`mtrans`/`pr_*`).** `bchange` records, for every
++//! button transition it publishes, the state *before* it — `pr_button`,
++//! `pr_mclick`, `pr_xrat`/`pr_yrat` — and counts the transitions in `mtrans`
++//! (`aes/geminput.c:333-345`); `ev_rets` reports that recorded state whenever
++//! more than one transition has happened since the last event return, and the
++//! live state otherwise, then clears the count (`aes/gemevlib.c:42-58`). A
++//! click whose release lands inside the double-click window is published as
++//! two transitions at once when the window closes (`b_delay`,
++//! `aes/geminput.c:155-171`), so its event reports the button **down**. That
++//! is [`bchange`], [`ev_rets`] and the window close [`b_expire`] here; see
++//! `docs/api/aes/event.md` "The button state an event reports".
+ //!
+ //! **The Control Manager's two locks over the mouse.** Beside `gl_mowner` this
+ //! module also carries the Control Manager's `gl_ctmown` (`aes/gemctrl.c:50`),
+@@ -94,10 +107,43 @@ static CT_MSGUP: AtomicBool = AtomicBool::new(false);
+ /// which a further click still joins the current gesture
+ /// (`aes/geminput.c:59-60`). EmuTOS counts it down in ticks; our Event Manager
+ /// holds the deadline in `count_clicks`, so the shared state is just "open",
+-/// and `b_delay(gl_bdely)` — the forced expiry `mchange` performs — is
+-/// [`b_delay`] clearing it.
++/// and both ways it closes — the countdown and the forced expiry `mchange`
++/// performs with `b_delay(gl_bdely)` — are [`b_expire`] clearing it.
+ static GL_BDELY: AtomicBool = AtomicBool::new(false);
+ 
++/// EmuTOS `gl_btrue` — the true (physical) button state as `b_click` last saw
++/// it (`aes/geminput.c:144-145`). Equal to [`BUTTON`] except while a
++/// button-delay window is open (the changes inside it are not published until
++/// it closes) and after [`ct_msgup_hotclose`] faked the AES's `button` up.
++static GL_BTRUE: AtomicU8 = AtomicU8::new(0);
++
++/// EmuTOS `gl_bdesired` — the state the open delay window counts entries into
++/// (`aes/geminput.c:137`): the press that opened it.
++static GL_BDESIRED: AtomicU8 = AtomicU8::new(0);
++
++/// EmuTOS `gl_bclick` — the number of times the window's desired state was
++/// entered while it was open, the opening press included
++/// (`aes/geminput.c:121-122,136`).
++static GL_BCLICK: AtomicI16 = AtomicI16::new(0);
++
++/// EmuTOS `mclick` — the click count of the last published transition
++/// (`aes/geminput.c:343`).
++static MCLICK: AtomicI16 = AtomicI16::new(0);
++
++/// EmuTOS `mtrans` — button transitions published since the last event return
++/// (`bchange`'s `mtrans++`, `aes/geminput.c:337`; `ev_rets`'s `mtrans = 0`,
++/// `aes/gemevlib.c:57`). Only "more than one" is observable: it selects the
++/// recorded `pr_*` state over the live one.
++static MTRANS: AtomicI16 = AtomicI16::new(0);
++
++/// EmuTOS `pr_button`/`pr_mclick`/`pr_xrat`/`pr_yrat` — the AES's button,
++/// click count and pointer position as they stood just before the last
++/// published transition (`aes/geminput.c:338-341`).
++static PR_BUTTON: AtomicU8 = AtomicU8::new(0);
++static PR_MCLICK: AtomicI16 = AtomicI16::new(0);
++static PR_XRAT: AtomicI16 = AtomicI16::new(0);
++static PR_YRAT: AtomicI16 = AtomicI16::new(0);
++
+ /// The input layer's share of an AES restart (A106, [`super::reinit`]).
+ ///
+ /// Two EmuTOS steps, in `gem_main`/`run_accs_and_desktop` order:
+@@ -116,9 +162,23 @@ static GL_BDELY: AtomicBool = AtomicBool::new(false);
+ /// [`GL_CTMOWN`] and [`CT_MSGUP`] are the Control Manager's two track locks
+ /// (`gemctrl.c:50`, `:100-101`); a session that ended mid-track must not
+ /// leave either standing for the next one.
++///
++/// The window's `gl_btrue`/`gl_bdesired`/`gl_bclick` are the same
++/// `geminit.c:661-664` set; `mclick`, `mtrans` and the `pr_*` record go back
++/// to their power-up zero with `xrat`/`yrat`, so no transition of the ended
++/// session is reported by the next one's first event.
+ pub(super) fn reinit() {
+     BUTTON.store(0, Ordering::Relaxed);
+     GL_BDELY.store(false, Ordering::Relaxed);
++    GL_BTRUE.store(0, Ordering::Relaxed);
++    GL_BDESIRED.store(0, Ordering::Relaxed);
++    GL_BCLICK.store(0, Ordering::Relaxed);
++    MCLICK.store(0, Ordering::Relaxed);
++    MTRANS.store(0, Ordering::Relaxed);
++    PR_BUTTON.store(0, Ordering::Relaxed);
++    PR_MCLICK.store(0, Ordering::Relaxed);
++    PR_XRAT.store(0, Ordering::Relaxed);
++    PR_YRAT.store(0, Ordering::Relaxed);
+     XRAT.store(0, Ordering::Relaxed);
+     YRAT.store(0, Ordering::Relaxed);
+     GL_MOWNER_APP.store(true, Ordering::Relaxed);
+@@ -129,12 +189,52 @@ pub(super) fn reinit() {
+ // ── the two VDI mouse-interrupt vectors ────────────────────────────────────
+ 
+ /// `user_but` — the AES's button-change handler, EmuTOS `b_click`
+-/// (`aes/geminput.c:110-140`) plus the ownership decision `bchange` makes from
+-/// it (`:333-335`).
++/// (`aes/geminput.c:110-147`).
+ ///
+ /// `new` is the new button bitmask in VDI convention (bit 0 = left), the `d0`
+ /// the VDI passes to `user_but` (`vdi/vdi_asm.S:270-284`). Like `b_click` this
+-/// ignores anything that is not a change of state.
++/// ignores anything that is not a change of the **true** state `gl_btrue`
++/// (`:113`). While a button-delay window is open the change is only counted —
++/// an entry into the window's desired state increments `gl_bclick`
++/// (`:117-123`) — and published when the window closes ([`b_expire`]);
++/// otherwise it is published at once, `forkq(bchange, MAKE_ULONG(state, 1))`
++/// (`:141-142`), here a direct [`bchange`] call.
++///
++/// EmuTOS opens the window *in* `b_click`, on the press itself, when a waiter
++/// asks for more than one click (`if (gl_bpend && state)`, `:133-140`), and
++/// publishes that press only when the window closes. Our Event Manager has
++/// seen the press by the time it opens the window ([`b_arm`] from
++/// `event::count_clicks`), so here the press is published at once with a
++/// count of 1 and the window's close only corrects that count and publishes
++/// the true state if it differs — the same two `bchange`s, in the same order,
++/// that EmuTOS's `b_delay` forks (`:160-170`).
++pub(crate) fn b_click(new: u8) {
++    // "ignore it unless it represents a change" (aes/geminput.c:112-113)
++    if new == GL_BTRUE.load(Ordering::Relaxed) {
++        return;
++    }
++    if GL_BDELY.load(Ordering::Relaxed) {
++        // "if the change is into the desired state, increment cnt"
++        // (aes/geminput.c:119-123). The `gl_bdely += 3` extension has no
++        // counterpart: `event::count_clicks` gives each further click its own
++        // full window.
++        if new == GL_BDESIRED.load(Ordering::Relaxed) {
++            GL_BCLICK.fetch_add(1, Ordering::Relaxed);
++        }
++    } else {
++        let (x, y) = crate::vdi::mouse_position();
++        bchange(new, 1, x, y);
++    }
++    // "update true state of the mouse" (aes/geminput.c:144-145)
++    GL_BTRUE.store(new, Ordering::Relaxed);
++}
++
++/// EmuTOS `bchange` (`aes/geminput.c:329-345`) — publish one button
++/// transition: `new` becomes the AES's `button`, with `clicks` as its click
++/// count, and the state it replaces is recorded for [`ev_rets`]. `(x, y)` is
++/// the AES's pointer position at that moment (`xrat`/`yrat`); the VDI cursor
++/// position is used, which the packet carrying the change has not moved yet
++/// (`user_but` runs before the position is touched, `vdi/vdi_asm.S:261-284`).
+ ///
+ /// On the 0 → left-down edge `bchange` recomputes the mouse owner from the
+ /// pointer position: `if (!gl_ctmown && (new == MB_DOWN) && (button == 0))
+@@ -152,20 +252,26 @@ pub(super) fn reinit() {
+ /// the Event Manager's quick check for the application (`rlr == gl_mowner`,
+ /// `aes/gemevlib.c:185`) does not see that press — the H02 leak of the menu
+ /// click as `MU_BUTTON` (`TASK/H02-STATUS-DONE.MD` §4).
+-pub(crate) fn b_click(new: u8) {
+-    // "ignore it unless it represents a change" (aes/geminput.c:113)
+-    let prev = BUTTON.swap(new, Ordering::Relaxed);
+-    if new == prev {
+-        return;
+-    }
++fn bchange(new: u8, clicks: i16, x: i16, y: i16) {
++    let button = BUTTON.load(Ordering::Relaxed);
+     // `if (!gl_ctmown && (new == MB_DOWN) && (button == 0)) gl_mowner = chkown();`
+     // (aes/geminput.c:334-335)
+-    if !GL_CTMOWN.load(Ordering::Relaxed) && new == MB_DOWN && prev == 0 {
+-        let (x, y) = crate::vdi::mouse_position();
++    if !GL_CTMOWN.load(Ordering::Relaxed) && new == MB_DOWN && button == 0 {
+         // chkown: +1 → gl_cowner, 0 → D.w_win[0].w_owner (both the app at
+         // single-app), −1 → ctl_pd.
+         GL_MOWNER_APP.store(super::window::chk_ctrl(x, y) >= 0, Ordering::Relaxed);
+     }
++    // `mtrans++; pr_button = button; pr_mclick = mclick; pr_xrat = xrat;
++    // pr_yrat = yrat; button = new; mclick = clicks;` (aes/geminput.c:337-343).
++    // Saturating: only "> 1" is ever read, and a C `WORD` overflow is no
++    // contract.
++    let _ = MTRANS.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |m| Some(m.saturating_add(1)));
++    PR_BUTTON.store(button, Ordering::Relaxed);
++    PR_MCLICK.store(MCLICK.load(Ordering::Relaxed), Ordering::Relaxed);
++    PR_XRAT.store(x, Ordering::Relaxed);
++    PR_YRAT.store(y, Ordering::Relaxed);
++    BUTTON.store(new, Ordering::Relaxed);
++    MCLICK.store(clicks, Ordering::Relaxed);
+ }
+ 
+ /// `user_mot` — the AES's motion handler, EmuTOS `mchange`
+@@ -195,9 +301,10 @@ pub(crate) fn b_click(new: u8) {
+ pub(crate) fn mchange(rx: i16, ry: i16) {
+     let dx = XRAT.load(Ordering::Relaxed) - rx;
+     let dy = YRAT.load(Ordering::Relaxed) - ry;
+-    if bdely_pending() && (dx > 2 || dx < -2 || dy > 2 || dy < -2) {
+-        b_delay();
+-    }
++    // `b_delay(gl_bdely)` forks the window's `bchange`s; they run after this
++    // `mchange` has finished (the fork ring is FIFO), so they see the new
++    // `xrat`/`yrat` — hence the expiry is applied at the end, below.
++    let expire = bdely_pending() && (dx > 2 || dx < -2 || dy > 2 || dy < -2);
+ 
+     // "xrat, yrat hold true" (aes/geminput.c:371)
+     XRAT.store(rx, Ordering::Relaxed);
+@@ -212,6 +319,10 @@ pub(crate) fn mchange(rx: i16, ry: i16) {
+     {
+         GL_MOWNER_APP.store(false, Ordering::Relaxed);
+     }
++
++    if expire {
++        b_expire(rx, ry);
++    }
+ }
+ 
+ // ── what the Event Manager consults ────────────────────────────────────────
+@@ -310,8 +421,10 @@ pub(super) fn ct_msgup_busy() -> bool {
+ /// the top window's owner at once ([`w_setactive`]), and the application's
+ /// `ev_multi` quick check / `abutton` (`aes/gemevlib.c:185-200`,
+ /// `aes/geminput.c:549`) see no press. The physical release is then a
+-/// non-change for [`b_click`] (as it is for `bchange`, which finds `button`
+-/// already 0); the next press re-synchronises everything.
++/// change of the true state `gl_btrue` for [`b_click`], which publishes it,
++/// and `bchange` finds `button` already 0 — the release is counted in
++/// `mtrans` with `pr_button = 0`, nothing else moves; the next press
++/// re-synchronises everything.
+ pub(super) fn ct_msgup_hotclose() {
+     BUTTON.store(0, Ordering::Relaxed);
+ }
+@@ -325,18 +438,24 @@ pub(super) fn button() -> u8 {
+     BUTTON.load(Ordering::Relaxed)
+ }
+ 
+-/// Open the button-delay window — EmuTOS `gl_bdely = gl_dclick` in `b_click`
+-/// (`aes/geminput.c:140`). EmuTOS opens it only when someone is waiting for
+-/// more than one click *and* the change is a press (`if (gl_bpend && state)`,
+-/// `:133`); the caller applies both conditions.
++/// Open the button-delay window — EmuTOS `gl_bclick = 1; gl_bdesired =
++/// state; gl_bdely = gl_dclick;` in `b_click` (`aes/geminput.c:135-140`).
++/// EmuTOS opens it only when someone is waiting for more than one click *and*
++/// the change is a press (`if (gl_bpend && state)`, `:133`); the caller
++/// applies both conditions. The desired state is the true state the press
++/// left, which [`b_click`] has already published (see there).
+ pub(super) fn b_arm() {
++    GL_BDESIRED.store(GL_BTRUE.load(Ordering::Relaxed), Ordering::Relaxed);
++    GL_BCLICK.store(1, Ordering::Relaxed);
+     GL_BDELY.store(true, Ordering::Relaxed);
+ }
+ 
+ /// Close the button-delay window normally — the `gl_bdely` countdown reaching
+ /// zero (`b_delay`, `aes/geminput.c:155-171`), here the counting loop finishing.
++/// A window that the pointer already closed ([`mchange`]) is not closed twice.
+ pub(super) fn b_disarm() {
+-    GL_BDELY.store(false, Ordering::Relaxed);
++    let (x, y) = crate::vdi::mouse_position();
++    b_expire(x, y);
+ }
+ 
+ /// Is a button-delay window open? EmuTOS `if (gl_bdely)`
+@@ -345,11 +464,63 @@ pub(super) fn bdely_pending() -> bool {
+     GL_BDELY.load(Ordering::Relaxed)
+ }
+ 
+-/// `b_delay(gl_bdely)` — subtract the whole remaining delay, so it expires now
+-/// (`aes/geminput.c:155-171`, called that way from `mchange`, `:368`). The
+-/// clicks accumulated so far are what the waiter gets.
+-fn b_delay() {
+-    GL_BDELY.store(false, Ordering::Relaxed);
++/// The delay window closing — `b_delay` once `gl_bdely` reaches zero
++/// (`aes/geminput.c:155-171`), whether by the countdown ([`b_disarm`]) or by
++/// `mchange`'s `b_delay(gl_bdely)` (`:365-368`). EmuTOS then publishes
++/// `bchange(gl_bdesired, gl_bclick)` and, if the button no longer is in that
++/// state, `bchange(gl_btrue, 1)` (`:160-170`). The first of the two has
++/// already been published here with a count of 1 when the window opened
++/// ([`b_click`]), so it only gets its real count; the second is published as
++/// in EmuTOS. A click released inside the window therefore leaves two
++/// transitions behind — `mtrans > 1` with `pr_button` = the press — which is
++/// what [`ev_rets`] reports. `(x, y)` is the pointer position at the close.
++fn b_expire(x: i16, y: i16) {
++    if !GL_BDELY.swap(false, Ordering::Relaxed) {
++        return;
++    }
++    MCLICK.store(GL_BCLICK.load(Ordering::Relaxed), Ordering::Relaxed);
++    let btrue = GL_BTRUE.load(Ordering::Relaxed);
++    if btrue != GL_BDESIRED.load(Ordering::Relaxed) {
++        bchange(btrue, 1, x, y);
++    }
++}
++
++/// EmuTOS `ev_rets` (`aes/gemevlib.c:42-58`), the mouse half: the pointer
++/// position and button state an event reports — the state recorded before the
++/// last published transition (`pr_xrat`/`pr_yrat`/`pr_button`) when more than
++/// one transition has been published since the last event return
++/// (`mtrans > 1`), else the live `xrat`/`yrat`/`button` — then `mtrans = 0`.
++///
++/// Every AES-internal wait whose EmuTOS counterpart is an `ev_multi`/
++/// `ev_button` (the Form Manager's `fm_do`, `gr_stilldn`, `mn_do`, the
++/// pop-up's `handle_popup`, the Control Manager's own loop) consumes the
++/// transitions it returns on in EmuTOS; those call this too and drop the
++/// result, so a click the AES itself acted on is not reported again by the
++/// application's next event. The live position is the VDI cursor's, as
++/// everywhere else in the Event Manager.
++pub(super) fn ev_rets() -> (i16, i16, u8) {
++    let r = if MTRANS.load(Ordering::Relaxed) > 1 {
++        (
++            PR_XRAT.load(Ordering::Relaxed),
++            PR_YRAT.load(Ordering::Relaxed),
++            PR_BUTTON.load(Ordering::Relaxed),
++        )
++    } else {
++        let (x, y) = crate::vdi::mouse_position();
++        (x, y, BUTTON.load(Ordering::Relaxed))
++    };
++    MTRANS.store(0, Ordering::Relaxed);
++    r
++}
++
++/// `ev_multi`'s quick check on the recorded state, `if ((mtrans > 1) &&
++/// downorup(pr_button, buparm)) { … prets[5] = pr_mclick; }`
++/// (`aes/gemevlib.c:190-194`): `Some((pr_button, pr_mclick))` while more than
++/// one transition is pending, else `None`. Read-only — the count is cleared
++/// by the [`ev_rets`] that ends the call.
++pub(super) fn pending_transition() -> Option<(u8, i16)> {
++    (MTRANS.load(Ordering::Relaxed) > 1)
++        .then(|| (PR_BUTTON.load(Ordering::Relaxed), PR_MCLICK.load(Ordering::Relaxed)))
+ }
+ 
+ // ── the mouse wheel (CONF_WITH_EXTENDED_MOUSE) ─────────────────────────────
+diff --git a/tos-api/src/aes/menu.rs b/tos-api/src/aes/menu.rs
+index f7c268e..438eb64 100644
+--- a/tos-api/src/aes/menu.rs
++++ b/tos-api/src/aes/menu.rs
+@@ -450,6 +450,12 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
+     super::input::ct_mouse(true);
+     let r = track_owned(tree, backend);
+     super::input::ct_mouse(false);
++    // `mn_do` leaves on the `ev_multi` that returned the selecting or
++    // cancelling event (`aes/gemmnlib.c:597-690`); every one of its returns
++    // ran `ev_rets` (`aes/gemevlib.c:268`), so the transitions of the track
++    // are consumed and none of them is reported by the application's next
++    // event.
++    let _ = super::input::ev_rets();
+     r
+ }
+ 
+@@ -1887,6 +1893,9 @@ fn wait_button_up(h: &dyn crate::host::Host) {
+     while crate::vdi::mouse_buttons() & 0x01 != 0 {
+         h.pump_input();
+     }
++    // `ev_button` ends in `ev_rets` (`aes/gemevlib.c:91`), which consumes the
++    // release.
++    let _ = super::input::ev_rets();
+ }
+ 
+ /// The pop-up on screen: draw the box over `saved` (the pixels under it,
+@@ -1932,6 +1941,9 @@ fn popup_shown(
+             cur_item = it;
+         }
+         if crate::vdi::mouse_buttons() & 0x01 != 0 {
++            // `handle_popup`'s `ev_multi(MU_M1|MU_BUTTON, …)` returned the
++            // press (`aes/gemmnext.c:268`); its `ev_rets` consumed it.
++            let _ = super::input::ev_rets();
+             result = cur_item; // NIL when pressed outside any item → cancel
+             // `keystate = rets[3]` of the `ev_multi` that returned `MU_BUTTON`
+             // (`gemmnext.c:272`): the shift state at the press, not at the
+diff --git a/tos-api/src/aes/object.rs b/tos-api/src/aes/object.rs
+index 89e089c..d3eb03a 100644
+--- a/tos-api/src/aes/object.rs
++++ b/tos-api/src/aes/object.rs
+@@ -2011,16 +2011,58 @@ pub(crate) fn edit_field_t(t: ObjTree, obj: i16, in_char: i16, mut idx: i16, kin
+         draw_tree(t, obj, 0, ox - t.x(obj), oy - t.y(obj), clip, backend);
+         if kind != ED_END {
+             // Caret at the template-relative column (EmuTOS `find_pos`): a
+-            // 1-px black bar the height of the text.
++            // 1-px black bar the height of the text, at `pxl_rect`'s origin.
+             let col = find_pos(tmpl, idx);
+-            let cy = oy + (t.height(obj) - crate::vdi::font::CELL_H) / 2;
+-            backend.fill_rect(ox + col * crate::vdi::font::CELL_W, cy, 1, crate::vdi::font::CELL_H, BLACK, clip);
++            let (cx, cy) = pxl_rect(ted, tmpl, ox, oy, t.width(obj), t.height(obj), col);
++            backend.fill_rect(cx, cy, 1, crate::vdi::font::CELL_H, BLACK, clip);
+         }
+         show_cursor_after_draw(backend);
+     }
+     idx
+ }
+ 
++/// EmuTOS `pxl_rect` (`aes/gemobed.c:180-190`) — the screen origin of the
++/// caret cell at template column `ch_pos` of the field whose absolute box is
++/// `(ox, oy, w, h)`:
++///
++/// ```c
++/// ob_actxywh(tree, obj, &o);
++/// gr_just(edblk.te_just, edblk.te_font, edblk.te_ptmplt, o.g_w, o.g_h, &o);
++/// pt->g_x = o.g_x + (ch_pos * gl_wchar);
++/// pt->g_y = o.g_y;
++/// ```
++///
++/// `gr_just` (`aes/gemgraf.c:567-589`) measures the **template** in the
++/// TEDINFO's font with `gsx_tcalc` (`:480-497`: width `min(w, n * ch_width)`,
++/// height `min(h, ch_height)`), centres it vertically and justifies it
++/// horizontally per `te_just` — each only when there is slack, the half-margin
++/// rounded up — exactly as [`gr_gtext`] places the field's text. The column
++/// step is always `gl_wchar`, the normal font's cell, as in EmuTOS.
++fn pxl_rect(ted: &TedInfo, tmpl: &[u8], ox: i16, oy: i16, w: i16, h: i16, ch_pos: i16) -> (i16, i16) {
++    let fnt = AesFont::from_te_font(ted.te_font);
++    // gsx_tcalc on the template.
++    let textw = w.min((tmpl.len() as i16).saturating_mul(fnt.cell_w()));
++    let texth = h.min(fnt.cell_h());
++    // gr_just.
++    let mut x = ox;
++    let mut y = oy;
++    let slack_h = h - texth;
++    if slack_h > 0 {
++        y += (slack_h + 1) / 2;
++    }
++    let slack_w = w - textw;
++    if slack_w > 0 {
++        match ted.te_just {
++            TE_CNTR => x += (slack_w + 1) / 2,
++            TE_RIGHT => x += slack_w,
++            // EmuTOS's `if (TE_CNTR) … else if (TE_RIGHT) …` leaves TE_LEFT
++            // and any other value at the box origin.
++            _ => {}
++        }
++    }
++    (x + ch_pos * crate::vdi::font::CELL_W, y)
++}
++
+ // Arrow scancodes in the key word's high byte (EmuTOS `scancode.h`).
+ const SC_LEFT: u8 = 0x4B;
+ const SC_RIGHT: u8 = 0x4D;
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index 0684209..d5d9508 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -4981,6 +4981,9 @@ fn watchbox(r: Grect, ch: u16, ink: Ink, backend: &dyn RasterBackend) -> bool {
+             was_in = now_in;
+         }
+         if crate::vdi::mouse_buttons() & 0x01 == 0 {
++            // `gr_watchbox` ends on `gr_stilldn`'s `ev_multi` returning the
++            // release (`aes/gemgrlib.c:62-70,352`), whose `ev_rets` consumes it.
++            let _ = super::input::ev_rets();
+             break;
+         }
+         h.pump_input();
+@@ -5002,6 +5005,9 @@ fn watchbox(r: Grect, ch: u16, ink: Ink, backend: &dyn RasterBackend) -> bool {
+ fn gr_stilldn(x: i16, y: i16, h: &'static dyn Host) -> bool {
+     loop {
+         if crate::vdi::mouse_buttons() & 0x01 == 0 {
++            // The `ev_multi` returning `MU_BUTTON` ran `ev_rets`
++            // (`aes/gemevlib.c:268`): the release is consumed here.
++            let _ = super::input::ev_rets();
+             return false;
+         }
+         let (mx, my) = crate::vdi::mouse_position();
+@@ -5287,6 +5293,10 @@ fn drag_elevator(w: &mut Window, vert: bool, backend: &dyn RasterBackend) -> i16
+         }
+         crate::vdi::cursor_show(backend);
+         if crate::vdi::mouse_buttons() & 0x01 == 0 {
++            // `gr_slidebox` → `gr_dragbox` → `gr_wait` → `gr_stilldn`
++            // (`aes/gemgrlib.c:182,262,451`): its `ev_multi` returning the
++            // release ran `ev_rets`, which consumes it.
++            let _ = super::input::ev_rets();
+             break;
+         }
+         h.pump_input();
+@@ -5462,6 +5472,9 @@ pub fn intercept() {
+     // made the owner's `WF_TOP` a no-op on an already-topped window — and the
+     // repaint it triggered took the window's content with it.
+     if handle != get_top() {
++        // `ctlmgr`'s `ev_multi` returned on this press (`aes/gemctrl.c:456-
++        // 462`); its `ev_rets` consumed the transition (`aes/gemevlib.c:268`).
++        let _ = super::input::ev_rets();
+         let old_top = get_top();
+         msg[0] = WM_TOPPED;
+         wait_release();
+@@ -5484,6 +5497,13 @@ pub fn intercept() {
+     // carry the `WS_CURR` `y, w, h` in `msg[5..7]` (A93).
+     let ws_curr = w.curr;
+     let gad = gadget_at(w, mx, my);
++    // A press on a frame gadget is the Control Manager's: `ctlmgr`'s
++    // `ev_multi` returned on it (`aes/gemctrl.c:456-462`) and its `ev_rets`
++    // consumed the transition (`aes/gemevlib.c:268`). A press in the work area
++    // (`Gadget::None`) belongs to the application and is left for it.
++    if !matches!(gad, Gadget::None) {
++        let _ = super::input::ev_rets();
++    }
+     match gad {
+         Gadget::Closer => {
+             // `HOTCLOSE`: `message = WM_CLOSED; break;` — no `gr_watchbox`, the
+diff --git a/tos-api/tests/aes_ev_rets_state_at_event.rs b/tos-api/tests/aes_ev_rets_state_at_event.rs
+new file mode 100644
+index 0000000..6c9b98e
+--- /dev/null
++++ b/tos-api/tests/aes_ev_rets_state_at_event.rs
+@@ -0,0 +1,764 @@
++//! LDG-M3 B1 + O1 — the button state an event *reports*, and the `objc_edit`
++//! caret's justification.
++//!
++//! **B1 — `ev_rets` (`aes/gemevlib.c:42-58`).** Every `evnt_button` /
++//! `evnt_multi` / `evnt_mouse` return fills `EV_MX/EV_MY/EV_MB` from the state
++//! recorded before the last published button transition (`pr_xrat`/`pr_yrat`/
++//! `pr_button`) when more than one transition was published since the previous
++//! event return (`mtrans > 1`), else from the live state, and clears the count.
++//! `bchange` maintains the record (`aes/geminput.c:329-345`). A waiter that asks
++//! for more than one click opens the button-delay window on the press
++//! (`b_click`, `:133-140`); a release inside it is published together with the
++//! press when the window closes (`b_delay`, `:155-171`), so the click is
++//! reported with the button **down** — what WinDom tests before it handles a
++//! click (`evnt.mbut & 1`, `sdk/windom/overlay/src/evnt_windom.c:334`).
++//! `ev_multi`'s quick check also tries the recorded state first
++//! (`(mtrans > 1) && downorup(pr_button, buparm)`, `aes/gemevlib.c:190-194`),
++//! so a click made between two event calls is still delivered.
++//!
++//! **O1 — `pxl_rect` (`aes/gemobed.c:180-190`).** The caret column starts at
++//! the field origin justified by `gr_just(te_just, te_font, te_ptmplt, w, h)`
++//! (`aes/gemgraf.c:567-589`), plus `ch_pos * gl_wchar`.
++//!
++//! Spec: `docs/api/aes/event.md` "The button state an event reports";
++//! `docs/api/aes/object.md` `objc_edit`. Harness copied from
++//! `aes_menu_click_ownership.rs`.
++
++#![allow(clippy::too_many_arguments)]
++
++use std::collections::VecDeque;
++use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
++use std::sync::{Mutex, OnceLock};
++
++use tos_api::bdos::process::Abi;
++use tos_api::host::Host;
++use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
++
++const SCREEN_W: u16 = 640;
++const SCREEN_H: u16 = 480;
++
++// ── a raster backend over a real pixel buffer ──────────────────────────────
++
++struct BufBackend {
++    px: Mutex<Vec<u32>>,
++    palette: Mutex<[u16; 256]>,
++    req: Mutex<[(u16, u16, u16); 256]>,
++}
++
++impl BufBackend {
++    fn new() -> Self {
++        BufBackend {
++            px: Mutex::new(vec![0; SCREEN_W as usize * SCREEN_H as usize]),
++            palette: Mutex::new([0; 256]),
++            req: Mutex::new([(0, 0, 0); 256]),
++        }
++    }
++
++    fn inside(x: i16, y: i16) -> bool {
++        x >= 0 && y >= 0 && (x as i32) < SCREEN_W as i32 && (y as i32) < SCREEN_H as i32
++    }
++
++    fn idx(x: i16, y: i16) -> usize {
++        y as usize * SCREEN_W as usize + x as usize
++    }
++
++    fn put(&self, x: i16, y: i16, v: u32, clip: ClipRect) {
++        if !Self::inside(x, y) {
++            return;
++        }
++        if let Some((x0, y0, x1, y1)) = clip.clamp_to(SCREEN_W, SCREEN_H) {
++            let (xi, yi) = (x as i32, y as i32);
++            if xi < x0 || xi > x1 || yi < y0 || yi > y1 {
++                return;
++            }
++        }
++        self.px.lock().unwrap()[Self::idx(x, y)] = v;
++    }
++}
++
++impl RasterBackend for BufBackend {
++    fn width(&self) -> u16 {
++        SCREEN_W
++    }
++    fn height(&self) -> u16 {
++        SCREEN_H
++    }
++    fn num_colors(&self) -> u16 {
++        256
++    }
++    fn planes(&self) -> u16 {
++        16
++    }
++    fn set_color(&self, index: u16, r: u16, g: u16, b: u16) {
++        if (index as usize) < 256 {
++            self.req.lock().unwrap()[index as usize] = (r, g, b);
++        }
++    }
++    fn query_color(&self, index: u16) -> (u16, u16, u16) {
++        if (index as usize) < 256 {
++            self.req.lock().unwrap()[index as usize]
++        } else {
++            (0, 0, 0)
++        }
++    }
++    fn set_active_palette(&self, palette: &[u16; 256]) {
++        *self.palette.lock().unwrap() = *palette;
++    }
++    fn pel_to_device16(&self, pel: Pel) -> u16 {
++        self.palette.lock().unwrap()[pel as usize]
++    }
++    fn device_to_rgb565(&self, argb: u32) -> u16 {
++        let (r, g, b) = ((argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF);
++        (((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)) as u16
++    }
++    fn rgb565_to_device(&self, px: u16) -> u32 {
++        let (r5, g6, b5) = ((px >> 11) & 0x1F, (px >> 5) & 0x3F, px & 0x1F);
++        let r = ((r5 << 3) | (r5 >> 2)) as u32;
++        let g = ((g6 << 2) | (g6 >> 4)) as u32;
++        let b = ((b5 << 3) | (b5 >> 2)) as u32;
++        (r << 16) | (g << 8) | b
++    }
++    fn read_pixel(&self, x: i16, y: i16) -> Pel {
++        if !Self::inside(x, y) {
++            return 0;
++        }
++        let v = self.px.lock().unwrap()[Self::idx(x, y)];
++        let want = self.device_to_rgb565(v);
++        let pal = *self.palette.lock().unwrap();
++        pal.iter().position(|&p| p == want).unwrap_or(0) as Pel
++    }
++    fn fill_rect(&self, x: i16, y: i16, w: i16, h: i16, pel: Pel, clip: ClipRect) {
++        let v = self.rgb565_to_device(self.pel_to_device16(pel));
++        for yy in y..y.saturating_add(h) {
++            for xx in x..x.saturating_add(w) {
++                self.put(xx, yy, v, clip);
++            }
++        }
++    }
++    fn abline(
++        &self,
++        x0: i16,
++        y0: i16,
++        x1: i16,
++        y1: i16,
++        pel: Pel,
++        _mode: WriteMode,
++        clip: ClipRect,
++        mask: u16,
++        _last: bool,
++    ) -> u16 {
++        let v = self.rgb565_to_device(self.pel_to_device16(pel));
++        let (mut x, mut y) = (x0 as i32, y0 as i32);
++        let (dx, dy) = ((x1 as i32 - x).abs(), -(y1 as i32 - y).abs());
++        let (sx, sy) = (if x < x1 as i32 { 1 } else { -1 }, if y < y1 as i32 { 1 } else { -1 });
++        let mut err = dx + dy;
++        let mut m = mask;
++        loop {
++            if m & 0x8000 != 0 {
++                self.put(x as i16, y as i16, v, clip);
++            }
++            m = m.rotate_left(1);
++            if x == x1 as i32 && y == y1 as i32 {
++                break;
++            }
++            let e2 = 2 * err;
++            if e2 >= dy {
++                err += dy;
++                x += sx;
++            }
++            if e2 <= dx {
++                err += dx;
++                y += sy;
++            }
++        }
++        m
++    }
++    fn fill_pattern(&self, x: i16, y: i16, w: i16, h: i16, fill: PatternFill, clip: ClipRect) {
++        let fg = self.rgb565_to_device(self.pel_to_device16(fill.fg));
++        let bg = self.rgb565_to_device(self.pel_to_device16(fill.bg));
++        for yy in y..y.saturating_add(h) {
++            let row = fill.pattern[(yy.rem_euclid(16)) as usize % fill.pattern.len()];
++            for xx in x..x.saturating_add(w) {
++                let bit = row & (0x8000u16 >> (xx.rem_euclid(16) as u16));
++                self.put(xx, yy, if bit != 0 { fg } else { bg }, clip);
++            }
++        }
++    }
++    fn draw_glyph_sized(
++        &self,
++        x: i16,
++        y: i16,
++        glyph: &[u8],
++        cell_w: i16,
++        cell_h: i16,
++        fg: Pel,
++        _mode: WriteMode,
++        clip: ClipRect,
++    ) {
++        let v = self.rgb565_to_device(self.pel_to_device16(fg));
++        for row in 0..cell_h {
++            let byte = glyph.get(row as usize).copied().unwrap_or(0);
++            for col in 0..cell_w.min(8) {
++                if byte & (0x80 >> col) != 0 {
++                    self.put(x + col, y + row, v, clip);
++                }
++            }
++        }
++    }
++    fn blit_mono(&self, dst: Rect, src: MonoSrc, fg: Pel, bg: Pel, _m: WriteMode, clip: ClipRect) {
++        let f = self.rgb565_to_device(self.pel_to_device16(fg));
++        let b = self.rgb565_to_device(self.pel_to_device16(bg));
++        for row in 0..dst.h {
++            for col in 0..dst.w {
++                let (sx, sy) = (src.x + col, src.y + row);
++                let wi = (sy as usize) * src.stride_words as usize + (sx as usize) / 16;
++                let w = src.bits.word(wi).unwrap_or(0);
++                let bit = w & (0x8000u16 >> (sx.rem_euclid(16)) as u16);
++                self.put(dst.x + col, dst.y + row, if bit != 0 { f } else { b }, clip);
++            }
++        }
++    }
++    fn copy_rect(&self, src: Rect, dx: i16, dy: i16, _op: u8, clip: ClipRect) {
++        let mut tmp = Vec::with_capacity((src.w as usize) * (src.h as usize));
++        {
++            let px = self.px.lock().unwrap();
++            for row in 0..src.h {
++                for col in 0..src.w {
++                    let (sx, sy) = (src.x + col, src.y + row);
++                    tmp.push(if Self::inside(sx, sy) { px[Self::idx(sx, sy)] } else { 0 });
++                }
++            }
++        }
++        for row in 0..src.h {
++            for col in 0..src.w {
++                let v = tmp[(row as usize) * (src.w as usize) + col as usize];
++                self.put(dx + col, dy + row, v, clip);
++            }
++        }
++    }
++    fn get_device_pixel(&self, x: i16, y: i16) -> u32 {
++        if Self::inside(x, y) {
++            self.px.lock().unwrap()[Self::idx(x, y)]
++        } else {
++            0
++        }
++    }
++    fn put_device_pixel(&self, x: i16, y: i16, argb: u32) {
++        if Self::inside(x, y) {
++            self.px.lock().unwrap()[Self::idx(x, y)] = argb;
++        }
++    }
++    fn flush_rect(&self, _x0: i16, _y0: i16, _x1: i16, _y1: i16) {}
++}
++
++// ── the host: input advances only in `pump_input`, as on the board ─────────
++
++/// One synthetic mouse packet, in the form the VDI's `mouse_int` receives it.
++#[derive(Copy, Clone, Debug)]
++struct Packet {
++    dx: i16,
++    dy: i16,
++    /// VDI convention: bit 0 = left, bit 1 = right.
++    buttons: u8,
++}
++
++struct ScriptHost {
++    raster: BufBackend,
++    script: Mutex<VecDeque<Packet>>,
++    /// Milliseconds; advanced by `pump_input` alone.
++    clock: AtomicU64,
++    /// Consecutive pumps that found the script empty. A tracking loop that
++    /// never sees the event it waits for would otherwise spin forever inside
++    /// the trap; the cap turns that into a failing assertion.
++    idle: AtomicUsize,
++}
++
++/// Pumps on an empty script before the harness gives up. `count_clicks` may
++/// legitimately run a whole double-click window (≤ 450 pumps) on an empty
++/// script, so the cap sits well above that.
++const IDLE_CAP: usize = 20_000;
++
++impl ScriptHost {
++    fn new() -> Self {
++        ScriptHost {
++            raster: BufBackend::new(),
++            script: Mutex::new(VecDeque::new()),
++            clock: AtomicU64::new(0),
++            idle: AtomicUsize::new(0),
++        }
++    }
++    fn push(&self, p: Packet) {
++        self.script.lock().unwrap().push_back(p);
++    }
++    fn clear(&self) {
++        self.script.lock().unwrap().clear();
++        self.idle.store(0, Ordering::Relaxed);
++    }
++}
++
++impl Host for ScriptHost {
++    fn console_write_byte(&self, _byte: u8) {}
++    fn console_try_read_key(&self) -> Option<u16> {
++        None
++    }
++    fn raster(&self) -> Option<&dyn RasterBackend> {
++        Some(&self.raster)
++    }
++    fn monotonic_millis(&self) -> u64 {
++        self.clock.load(Ordering::Relaxed)
++    }
++    fn pump_input(&self) {
++        self.clock.fetch_add(1, Ordering::Relaxed);
++        let next = self.script.lock().unwrap().pop_front();
++        match next {
++            Some(p) => {
++                self.idle.store(0, Ordering::Relaxed);
++                tos_api::vdi::feed_relative(p.dx, p.dy, p.buttons, &self.raster);
++            }
++            None => {
++                let n = self.idle.fetch_add(1, Ordering::Relaxed) + 1;
++                assert!(
++                    n < IDLE_CAP,
++                    "the AES is still waiting after {n} pumps on an exhausted mouse script: \
++                     the event it waits for never came (pointer {:?}, buttons {:#04x})",
++                    tos_api::vdi::mouse_position(),
++                    tos_api::vdi::mouse_buttons()
++                );
++            }
++        }
++    }
++}
++
++// SAFETY: every mutable field is behind a Mutex / atomic.
++unsafe impl Sync for ScriptHost {}
++unsafe impl Send for ScriptHost {}
++
++// ── AES parameter block ────────────────────────────────────────────────────
++
++const ABI: Abi = Abi::Lp64;
++
++struct Aespb {
++    contrl: Box<[i16; 8]>,
++    global: Box<[i16; 16]>,
++    intin: Box<[i16; 16]>,
++    intout: Box<[i16; 16]>,
++    addrin: Box<[u64; 4]>,
++    addrout: Box<[u64; 4]>,
++    block: Box<[u64; 6]>,
++}
++
++impl Aespb {
++    fn new() -> Aespb {
++        let mut pb = Aespb {
++            contrl: Box::new([0; 8]),
++            global: Box::new([0; 16]),
++            intin: Box::new([0; 16]),
++            intout: Box::new([0; 16]),
++            addrin: Box::new([0; 4]),
++            addrout: Box::new([0; 4]),
++            block: Box::new([0; 6]),
++        };
++        pb.block[0] = pb.contrl.as_ptr() as u64;
++        pb.block[1] = pb.global.as_ptr() as u64;
++        pb.block[2] = pb.intin.as_ptr() as u64;
++        pb.block[3] = pb.intout.as_ptr() as u64;
++        pb.block[4] = pb.addrin.as_ptr() as u64;
++        pb.block[5] = pb.addrout.as_ptr() as u64;
++        pb
++    }
++
++    /// Issue one AES call, exactly as the GEM-trap handler does.
++    fn call(&mut self, opcode: i16, in_len: i16, out_len: i16, ain_len: i16) {
++        self.contrl[0] = opcode;
++        self.contrl[1] = in_len;
++        self.contrl[2] = out_len;
++        self.contrl[3] = ain_len;
++        self.contrl[4] = 0;
++        self.intout.fill(0);
++        // SAFETY: `block` holds six live pointers to arrays owned by `self`,
++        // each larger than any opcode issued here declares.
++        unsafe { tos_api::aes::dispatch(self.block.as_ptr() as u64, ABI) };
++    }
++}
++
++fn install(host: &'static ScriptHost) {
++    let href: &'static &'static dyn Host = Box::leak(Box::new(host as &'static dyn Host));
++    tos_api::host::install_host(href);
++}
++
++/// Seed the backend's pseudo-palette the way the VDI dispatcher does
++/// (`ACTIVE_PALETTE`, `kernel/src/vdi_backend.rs:11-21`): EmuTOS'
++/// `videl_palette1` for pens 0..15 as RGB555-in-565 words, so `read_pixel`
++/// round-trips the pens the menu draws with.
++fn seed_palette(b: &BufBackend) {
++    const VIDEL1: [(u16, u16, u16); 16] = [
++        (1000, 1000, 1000), (0, 0, 0), (1000, 0, 0), (0, 1000, 0),
++        (0, 0, 1000), (0, 1000, 1000), (1000, 1000, 0), (1000, 0, 1000),
++        (733, 733, 733), (533, 533, 533), (667, 0, 0), (0, 667, 0),
++        (0, 0, 667), (0, 667, 667), (667, 667, 0), (667, 0, 667),
++    ];
++    let mut pal = [0u16; 256];
++    for (i, (r, g, bl)) in VIDEL1.iter().enumerate() {
++        let c5 = |v: u16| ((v as u32 * 31 + 500) / 1000) as u16;
++        pal[i] = (c5(*r) << 11) | (c5(*g) << 6) | c5(*bl);
++    }
++    *b.palette.lock().unwrap() = pal;
++}
++
++// ── the menu tree ──────────────────────────────────────────────────────────
++
++/// A GEM `OBJECT` at the kernel/LP64 record width (`tos-api/src/aes/object.rs:31`).
++#[repr(C)]
++#[derive(Copy, Clone)]
++struct Obj {
++    next: i16,
++    head: i16,
++    tail: i16,
++    otype: u16,
++    flags: u16,
++    state: u16,
++    spec: u64,
++    x: i16,
++    y: i16,
++    w: i16,
++    h: i16,
++}
++
++const G_FTEXT: u16 = 29;
++const EDITABLE: u16 = 0x0008;
++const LASTOB: u16 = 0x0020;
++
++const MU_BUTTON: i16 = 0x0002;
++const MU_MESAG: i16 = 0x0010;
++const MU_TIMER: i16 = 0x0020;
++const MU_KEYBD: i16 = 0x0001;
++
++/// The default double-click index 3 = 275 ms (`gl_dcrates`,
++/// `aes/gemevlib.c:33`); every pump advances the clock by 1 ms, so this many
++/// empty pumps close the window with room to spare.
++const PAST_WINDOW: usize = 400;
++
++static SERIAL: Mutex<()> = Mutex::new(());
++static RIG: OnceLock<&'static ScriptHost> = OnceLock::new();
++
++fn rig() -> &'static ScriptHost {
++    RIG.get_or_init(|| {
++        let host: &'static ScriptHost = Box::leak(Box::new(ScriptHost::new()));
++        install(host);
++        seed_palette(&host.raster);
++        host
++    })
++}
++
++/// `graf_mkstate` — one AES call, one `pump_input`.
++fn graf_mkstate(pb: &mut Aespb) -> (i16, i16, i16) {
++    pb.call(79, 0, 5, 0);
++    (pb.intout[1], pb.intout[2], pb.intout[3])
++}
++
++/// Consume every queued packet, one AES call each.
++fn drain(host: &'static ScriptHost, pb: &mut Aespb) {
++    for _ in 0..256 {
++        if host.script.lock().unwrap().is_empty() {
++            return;
++        }
++        graf_mkstate(pb);
++    }
++}
++
++/// Walk the pointer to `(tx, ty)`, buttons up.
++fn move_to(host: &'static ScriptHost, pb: &mut Aespb, tx: i16, ty: i16) {
++    drain(host, pb);
++    for _ in 0..200 {
++        let (cx, cy) = tos_api::vdi::mouse_position();
++        if (cx, cy) == (tx, ty) {
++            break;
++        }
++        host.push(Packet { dx: (tx - cx).clamp(-32, 32), dy: (ty - cy).clamp(-32, 32), buttons: 0 });
++        graf_mkstate(pb);
++    }
++    assert_eq!(tos_api::vdi::mouse_position(), (tx, ty), "move_to did not reach its target");
++}
++
++/// A fresh application on an empty desktop (no menu bar, no window), pointer
++/// parked at (320, 300), buttons up, every pending transition consumed by one
++/// event return.
++fn fresh() -> (&'static ScriptHost, Aespb) {
++    let host = rig();
++    host.clear();
++    let mut pb = Aespb::new();
++    pb.call(10, 0, 1, 0); // appl_init
++    pb.intin.fill(0);
++    pb.call(109, 0, 1, 0); // wind_new
++    move_to(host, &mut pb, 320, 300);
++    // One 0-ms poll: its `ev_rets` clears whatever the set-up published.
++    evnt_multi(&mut pb, MU_TIMER, 0, 0, 0);
++    (host, pb)
++}
++
++/// `evnt_multi(flags, clicks, mask, state)` with a 0-ms timer (only used when
++/// `flags` has `MU_TIMER`). Returns `(fired, EV_MX, EV_MY, EV_MB, EV_BRET)`.
++fn evnt_multi(pb: &mut Aespb, flags: i16, clicks: i16, mask: i16, state: i16) -> (i16, i16, i16, i16, i16) {
++    let mut buf = Box::new([0i16; 8]);
++    pb.intin.fill(0);
++    pb.intin[0] = flags;
++    pb.intin[1] = clicks;
++    pb.intin[2] = mask;
++    pb.intin[3] = state;
++    pb.addrin[0] = buf.as_mut_ptr() as u64;
++    pb.call(25, 16, 7, 1);
++    pb.addrin[0] = 0;
++    (pb.intout[0], pb.intout[1], pb.intout[2], pb.intout[3], pb.intout[6])
++}
++
++/// Queue a short click at the current position: press, `hold` packets held,
++/// release, then `PAST_WINDOW` empty packets so the window can close.
++fn queue_click(host: &'static ScriptHost, hold: usize) {
++    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
++    for _ in 0..hold {
++        host.push(Packet { dx: 0, dy: 0, buttons: 1 });
++    }
++    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
++}
++
++/// **B1, the zView M3 case.** WinDom's default wait (`bclick = 258`: bflag 1 +
++/// up to two clicks, `sdk/windom/windom-1.21.3/demo/main.c:198`) — the same
++/// shape as TeraDesk's `0x0102, 3, 0`. A short click whose release falls
++/// inside the double-click window must come back as one click **with
++/// `EV_MB` = left down**, at the click's position.
++#[test]
++fn short_click_in_window_reports_button_down() {
++    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb) = fresh();
++    move_to(host, &mut pb, 200, 150);
++    queue_click(host, 3);
++    let (fired, mx, my, mb, bret) = evnt_multi(&mut pb, MU_MESAG | MU_BUTTON | MU_KEYBD, 0x0102, 3, 0);
++    eprintln!("short click: fired={fired:#06x} mx={mx} my={my} mb={mb:#x} bret={bret}");
++    assert_eq!(fired & MU_BUTTON, MU_BUTTON, "the click must fire MU_BUTTON");
++    assert_eq!(bret, 1, "one click inside the window");
++    assert_eq!(tos_api::vdi::mouse_buttons() & 1, 0, "the release has happened");
++    assert_eq!(
++        mb & 1,
++        1,
++        "EV_MB must be the state at the event — pr_button, the press — because the \
++         window published the press and the release together (mtrans = 2; \
++         aes/gemevlib.c:44-48, aes/geminput.c:155-171, :337-342)"
++    );
++    assert_eq!((mx, my), (200, 150), "EV_MX/EV_MY = pr_xrat/pr_yrat, the click position");
++
++    // `ev_rets` cleared the count: the next poll reports the live state, and
++    // no second MU_BUTTON comes from the recorded one.
++    let (fired2, _, _, mb2, _) = evnt_multi(&mut pb, MU_BUTTON | MU_TIMER, 0x0102, 3, 0);
++    assert_eq!(fired2, MU_TIMER, "the click was consumed by the first event; fired = {fired2:#06x}");
++    assert_eq!(mb2 & 1, 0, "the next event reports the live, released button");
++}
++
++/// The desktop's own wait (`evnt_multi(…, 0x02, 0x01, 0x01, …)`,
++/// `desk/deskmain.c:2088`): a single click in the window reports `EV_MB` = 1
++/// and one click; a double click reports two, also with the button down.
++#[test]
++fn desk_wait_single_and_double_click_report_button_down() {
++    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb) = fresh();
++    queue_click(host, 2);
++    let (fired, _, _, mb, bret) = evnt_multi(&mut pb, MU_MESAG | MU_BUTTON | MU_KEYBD, 2, 1, 1);
++    eprintln!("desk single: fired={fired:#06x} mb={mb:#x} bret={bret}");
++    assert_eq!((fired & MU_BUTTON, bret, mb & 1), (MU_BUTTON, 1, 1), "single click");
++
++    // Double click: press, release, press, release — all inside the window.
++    drain(host, &mut pb);
++    queue_click(host, 2);
++    queue_click(host, 2);
++    let (fired, _, _, mb, bret) = evnt_multi(&mut pb, MU_MESAG | MU_BUTTON | MU_KEYBD, 2, 1, 1);
++    eprintln!("desk double: fired={fired:#06x} mb={mb:#x} bret={bret}");
++    assert_eq!(fired & MU_BUTTON, MU_BUTTON, "double click fires MU_BUTTON");
++    assert_eq!(bret, 2, "a double click must still count as two");
++    assert_eq!(mb & 1, 1, "and is reported with the button down");
++    drain(host, &mut pb);
++    let (fired2, ..) = evnt_multi(&mut pb, MU_BUTTON | MU_TIMER, 2, 1, 1);
++    assert_eq!(fired2, MU_TIMER, "no stray button event after the double click; fired = {fired2:#06x}");
++}
++
++/// A press held past the window is one transition: `mtrans` stays 1 and the
++/// event reports the live state — the button still down (`aes/gemevlib.c:50-53`).
++#[test]
++fn long_press_reports_live_state() {
++    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb) = fresh();
++    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
++    for _ in 0..PAST_WINDOW {
++        host.push(Packet { dx: 0, dy: 0, buttons: 1 });
++    }
++    let (fired, _, _, mb, bret) = evnt_multi(&mut pb, MU_BUTTON, 0x0102, 3, 0);
++    eprintln!("long press: fired={fired:#06x} mb={mb:#x} bret={bret}");
++    assert_eq!((fired, bret, mb & 1), (MU_BUTTON, 1, 1));
++    host.clear();
++    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
++    drain(host, &mut pb);
++}
++
++/// A click made while the application was not waiting (between two event
++/// calls) is two published transitions; the next `evnt_multi`'s quick check
++/// finds the press in the record (`(mtrans > 1) && downorup(pr_button, …)`,
++/// `aes/gemevlib.c:190-194`) and delivers it with its recorded click count
++/// and `EV_MB` = the press.
++#[test]
++fn click_between_calls_is_delivered_from_the_record() {
++    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb) = fresh();
++    move_to(host, &mut pb, 250, 260);
++    queue_click(host, 1);
++    drain(host, &mut pb); // the app is busy: graf_mkstate only
++    assert_eq!(tos_api::vdi::mouse_buttons() & 1, 0);
++    let (fired, mx, my, mb, bret) = evnt_multi(&mut pb, MU_BUTTON | MU_TIMER, 0x0102, 3, 0);
++    eprintln!("busy click: fired={fired:#06x} mx={mx} my={my} mb={mb:#x} bret={bret}");
++    assert_eq!(fired & MU_BUTTON, MU_BUTTON, "the recorded press satisfies the wait");
++    assert_eq!(bret, 1, "EV_BRET = pr_mclick");
++    assert_eq!((mx, my, mb & 1), (250, 260, 1), "EV_MX/EV_MY/EV_MB = the recorded state");
++    let (fired2, ..) = evnt_multi(&mut pb, MU_BUTTON | MU_TIMER, 0x0102, 3, 0);
++    assert_eq!(fired2, MU_TIMER, "delivered once; fired = {fired2:#06x}");
++}
++
++/// `evnt_button` (`ev_button`, `aes/gemevlib.c:84-94`) ends in the same
++/// `ev_rets`: a click in the window reports `EV_MB` = 1 in `int_out[3]`.
++#[test]
++fn evnt_button_reports_button_down() {
++    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb) = fresh();
++    queue_click(host, 2);
++    pb.intin.fill(0);
++    pb.intin[0] = 2;
++    pb.intin[1] = 1;
++    pb.intin[2] = 1;
++    pb.call(21, 3, 5, 0);
++    let (ret, mb) = (pb.intout[0], pb.intout[3]);
++    eprintln!("evnt_button: ret={ret} mb={mb:#x}");
++    assert_eq!((ret, mb & 1), (1, 1));
++}
++
++/// A click the AES consumed itself must not be reported again. Here the press
++/// is published while the application is busy and its release inside
++/// `graf_rubberbox`, whose `gr_stilldn` returns on it through `ev_multi` →
++/// `ev_rets` (`aes/gemgrlib.c:47-73`) — so the next event finds no recorded
++/// press.
++#[test]
++fn release_consumed_by_graf_wait_is_not_reported_again() {
++    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb) = fresh();
++    host.push(Packet { dx: 0, dy: 0, buttons: 1 });
++    drain(host, &mut pb);
++    assert_eq!(tos_api::vdi::mouse_buttons() & 1, 1);
++    host.push(Packet { dx: 3, dy: 3, buttons: 1 });
++    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
++    pb.intin.fill(0);
++    pb.intin[0] = 320;
++    pb.intin[1] = 300;
++    pb.call(70, 4, 3, 0); // graf_rubberbox
++    assert_eq!(tos_api::vdi::mouse_buttons() & 1, 0);
++    let (fired, ..) = evnt_multi(&mut pb, MU_BUTTON | MU_TIMER, 1, 1, 1);
++    assert_eq!(fired, MU_TIMER, "the press+release was graf_rubberbox's; fired = {fired:#06x}");
++}
++
++// ── O1: the objc_edit caret ────────────────────────────────────────────────
++
++/// Byte layout of the LP64 `TEDINFO`: three 8-byte pointers, then eight WORDs.
++#[repr(C)]
++struct Ted {
++    ptext: u64,
++    ptmplt: u64,
++    pvalid: u64,
++    font: i16,
++    fontid: i16,
++    just: i16,
++    color: i16,
++    fontsize: i16,
++    thickness: i16,
++    txtlen: i16,
++    tmplen: i16,
++}
++
++const FIELD: (i16, i16, i16, i16) = (100, 100, 200, 21);
++
++/// The caret's top-left pixel after `objc_edit(ED_INIT)` on a `G_FTEXT` field
++/// with text "AB" and template "________" (8 cells = 64 px), found as the
++/// pixels `ED_INIT` changes over an `ED_END` redraw of the same field.
++fn caret_origin(just: i16) -> (i16, i16) {
++    let host = rig();
++    host.clear();
++    let mut text = Box::new(*b"AB\0\0\0\0\0\0\0");
++    let tmpl: &'static [u8] = b"________\0";
++    let valid: &'static [u8] = b"XXXXXXXX\0";
++    let ted = Box::new(Ted {
++        ptext: text.as_mut_ptr() as u64,
++        ptmplt: tmpl.as_ptr() as u64,
++        pvalid: valid.as_ptr() as u64,
++        font: 3,
++        fontid: 0,
++        just,
++        color: 0x1180,
++        fontsize: 0,
++        thickness: 0,
++        txtlen: 9,
++        tmplen: 9,
++    });
++    let (fx, fy, fw, fh) = FIELD;
++    let mut tree = Box::new([
++        Obj { next: -1, head: 1, tail: 1, otype: 20, flags: 0, state: 0, spec: 0, x: 0, y: 0, w: 640, h: 480 },
++        Obj {
++            next: 0,
++            head: -1,
++            tail: -1,
++            otype: G_FTEXT,
++            flags: EDITABLE | LASTOB,
++            state: 0,
++            spec: &*ted as *const Ted as u64,
++            x: fx,
++            y: fy,
++            w: fw,
++            h: fh,
++        },
++    ]);
++    let mut pb = Aespb::new();
++    pb.call(10, 0, 1, 0); // appl_init
++    let mut edit = |pb: &mut Aespb, kind: i16, idx: i16| {
++        pb.intin.fill(0);
++        pb.intin[0] = 1;
++        pb.intin[2] = idx;
++        pb.intin[3] = kind;
++        pb.addrin[0] = tree.as_mut_ptr() as u64;
++        pb.call(46, 4, 2, 1);
++        pb.intout[1]
++    };
++    // A sentinel ground, so a transparent field still shows the caret.
++    host.raster.px.lock().unwrap().fill(0x00AB_CDEF);
++    edit(&mut pb, 3, 2); // ED_END: field only, no caret
++    let before = host.raster.px.lock().unwrap().clone();
++    let idx = edit(&mut pb, 1, 0); // ED_INIT: field + caret at the end of "AB"
++    assert_eq!(idx, 2, "ED_INIT puts the index at the end of the text");
++    let after = host.raster.px.lock().unwrap().clone();
++    let mut min = (i16::MAX, i16::MAX);
++    for (i, (a, b)) in before.iter().zip(after.iter()).enumerate() {
++        if a != b {
++            let (x, y) = ((i % SCREEN_W as usize) as i16, (i / SCREEN_W as usize) as i16);
++            min = (min.0.min(x), min.1.min(y));
++        }
++    }
++    drop(text);
++    min
++}
++
++/// `pxl_rect` (`aes/gemobed.c:180-190`): `gr_just(te_just, te_font,
++/// te_ptmplt, w, h)` then `+ ch_pos * gl_wchar`. Template width 64 in a
++/// 200-wide field leaves 136 px of slack; the 21-px height leaves 5, centred
++/// rounding up: `(5 + 1) / 2 = 3` (`aes/gemgraf.c:571-584`).
++#[test]
++fn objc_edit_caret_follows_te_just() {
++    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (fx, fy, ..) = FIELD;
++    let ch_pos = 2 * 8;
++    for (just, name, dx) in [(0, "TE_LEFT", 0), (1, "TE_RIGHT", 136), (2, "TE_CNTR", 68)] {
++        let got = caret_origin(just);
++        eprintln!("{name}: caret at {got:?}");
++        assert_eq!(got, (fx + dx + ch_pos, fy + 3), "{name}: caret origin");
++    }
++}

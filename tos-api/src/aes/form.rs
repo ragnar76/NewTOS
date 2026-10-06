@@ -392,6 +392,9 @@ fn modal_loop(
     loop {
         // keyboard
         if let Some(c) = h.console_try_read() {
+            // `fm_do`'s `ev_multi` returned `MU_KEYBD`; its `ev_rets`
+            // (`aes/gemevlib.c:268`) clears the pending button transitions.
+            let _ = super::input::ev_rets();
             match c {
                 // EmuTOS fm_keybd RETURN → find_obj(DEFLT): Enter fires the
                 // DEFAULT button only when one exists (defbut in [1..numbut]).
@@ -409,6 +412,9 @@ fn modal_loop(
         // mouse: left-button press edge → hit-test, then watch the button
         let cur = h_mouse_buttons();
         if cur & 0x01 != 0 && prev_btn & 0x01 == 0 {
+            // `fm_do`'s `ev_multi` returned `MU_BUTTON` on this press
+            // (`aes/gemfmlib.c:312-317`); its `ev_rets` consumed it.
+            let _ = super::input::ev_rets();
             let (mx, my) = crate::vdi::mouse_position();
             let hit = object::hit_test_t(t, 0, 16, mx, my);
             if hit >= first_btn && hit < first_btn + numbut {
@@ -602,6 +608,10 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
 
         // ── keyboard event ─────────────────────────────────────────────
         if let Some(w) = h.console_try_read_key() {
+            // `fm_do`'s `ev_multi` returned `MU_KEYBD` (`aes/gemfmlib.c:
+            // 312-317`); its `ev_rets` (`aes/gemevlib.c:268`) clears the
+            // pending button transitions.
+            let _ = super::input::ev_rets();
             let thechar = w as i16; // scancode << 8 | ascii (EV_KRET)
             // fm_keybd handles RETURN/ARROW navigation; a residual character is
             // passed to the edit field (EmuTOS fm_do:320-325). `next_obj` is the
@@ -638,6 +648,11 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
                 } else {
                     1
                 };
+                // `fm_do`'s `ev_multi` returned `MU_BUTTON` on this press —
+                // after its click window, when it counted one
+                // (`aes/gemfmlib.c:312-317`); its `ev_rets` consumed what was
+                // published up to then.
+                let _ = super::input::ev_rets();
                 let (c, no) = fm_button(tree, hit, clks);
                 cont = c;
                 next_obj = no;
@@ -1049,6 +1064,9 @@ fn wait_up() {
         while crate::vdi::mouse_buttons() & 0x01 != 0 {
             h.pump_input();
         }
+        // `ev_button(1, 0x00001, 0x0000, rets)` (`aes/gemfmlib.c:256`) ends
+        // in `ev_rets`, which consumes the release.
+        let _ = super::input::ev_rets();
     }
 }
 

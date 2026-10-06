@@ -1,0 +1,50 @@
+   Compiling tos-api v0.1.0 (/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/head/tos-api)
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.21s
+     Running tests/aes_ev_rets_state_at_event.rs (/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/head/target/debug/deps/aes_ev_rets_state_at_event-3d28581fb6860576)
+running 7 tests
+test objc_edit_caret_follows_te_just ... FAILED
+test release_consumed_by_graf_wait_is_not_reported_again ... ok
+test click_between_calls_is_delivered_from_the_record ... FAILED
+test desk_wait_single_and_double_click_report_button_down ... FAILED
+test evnt_button_reports_button_down ... FAILED
+test long_press_reports_live_state ... ok
+test short_click_in_window_reports_button_down ... FAILED
+failures:
+---- objc_edit_caret_follows_te_just stdout ----
+TE_LEFT: caret at (116, 102)
+thread 'objc_edit_caret_follows_te_just' (9446334) panicked at tos-api/tests/aes_ev_rets_state_at_event.rs:762:9:
+assertion `left == right` failed: TE_LEFT: caret origin
+  left: (116, 102)
+ right: (116, 103)
+---- click_between_calls_is_delivered_from_the_record stdout ----
+busy click: fired=0x0020 mx=250 my=260 mb=0x0 bret=0
+thread 'click_between_calls_is_delivered_from_the_record' (9446330) panicked at tos-api/tests/aes_ev_rets_state_at_event.rs:615:5:
+assertion `left == right` failed: the recorded press satisfies the wait
+  left: 0
+ right: 2
+---- desk_wait_single_and_double_click_report_button_down stdout ----
+desk single: fired=0x0002 mb=0x0 bret=1
+thread 'desk_wait_single_and_double_click_report_button_down' (9446331) panicked at tos-api/tests/aes_ev_rets_state_at_event.rs:566:5:
+assertion `left == right` failed: single click
+  left: (2, 1, 0)
+ right: (2, 1, 1)
+---- evnt_button_reports_button_down stdout ----
+evnt_button: ret=1 mb=0x0
+thread 'evnt_button_reports_button_down' (9446332) panicked at tos-api/tests/aes_ev_rets_state_at_event.rs:636:5:
+assertion `left == right` failed
+  left: (1, 0)
+ right: (1, 1)
+---- short_click_in_window_reports_button_down stdout ----
+short click: fired=0x0002 mx=200 my=150 mb=0x0 bret=1
+thread 'short_click_in_window_reports_button_down' (9446336) panicked at tos-api/tests/aes_ev_rets_state_at_event.rs:540:5:
+assertion `left == right` failed: EV_MB must be the state at the event — pr_button, the press — because the window published the press and the release together (mtrans = 2; aes/gemevlib.c:44-48, aes/geminput.c:155-171, :337-342)
+  left: 0
+ right: 1
+failures:
+    click_between_calls_is_delivered_from_the_record
+    desk_wait_single_and_double_click_report_button_down
+    evnt_button_reports_button_down
+    objc_edit_caret_follows_te_just
+    short_click_in_window_reports_button_down
+test result: FAILED. 2 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+error: test failed, to rerun pass `--test aes_ev_rets_state_at_event`

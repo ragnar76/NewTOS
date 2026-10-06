@@ -2011,14 +2011,56 @@ pub(crate) fn edit_field_t(t: ObjTree, obj: i16, in_char: i16, mut idx: i16, kin
         draw_tree(t, obj, 0, ox - t.x(obj), oy - t.y(obj), clip, backend);
         if kind != ED_END {
             // Caret at the template-relative column (EmuTOS `find_pos`): a
-            // 1-px black bar the height of the text.
+            // 1-px black bar the height of the text, at `pxl_rect`'s origin.
             let col = find_pos(tmpl, idx);
-            let cy = oy + (t.height(obj) - crate::vdi::font::CELL_H) / 2;
-            backend.fill_rect(ox + col * crate::vdi::font::CELL_W, cy, 1, crate::vdi::font::CELL_H, BLACK, clip);
+            let (cx, cy) = pxl_rect(ted, tmpl, ox, oy, t.width(obj), t.height(obj), col);
+            backend.fill_rect(cx, cy, 1, crate::vdi::font::CELL_H, BLACK, clip);
         }
         show_cursor_after_draw(backend);
     }
     idx
+}
+
+/// EmuTOS `pxl_rect` (`aes/gemobed.c:180-190`) — the screen origin of the
+/// caret cell at template column `ch_pos` of the field whose absolute box is
+/// `(ox, oy, w, h)`:
+///
+/// ```c
+/// ob_actxywh(tree, obj, &o);
+/// gr_just(edblk.te_just, edblk.te_font, edblk.te_ptmplt, o.g_w, o.g_h, &o);
+/// pt->g_x = o.g_x + (ch_pos * gl_wchar);
+/// pt->g_y = o.g_y;
+/// ```
+///
+/// `gr_just` (`aes/gemgraf.c:567-589`) measures the **template** in the
+/// TEDINFO's font with `gsx_tcalc` (`:480-497`: width `min(w, n * ch_width)`,
+/// height `min(h, ch_height)`), centres it vertically and justifies it
+/// horizontally per `te_just` — each only when there is slack, the half-margin
+/// rounded up — exactly as [`gr_gtext`] places the field's text. The column
+/// step is always `gl_wchar`, the normal font's cell, as in EmuTOS.
+fn pxl_rect(ted: &TedInfo, tmpl: &[u8], ox: i16, oy: i16, w: i16, h: i16, ch_pos: i16) -> (i16, i16) {
+    let fnt = AesFont::from_te_font(ted.te_font);
+    // gsx_tcalc on the template.
+    let textw = w.min((tmpl.len() as i16).saturating_mul(fnt.cell_w()));
+    let texth = h.min(fnt.cell_h());
+    // gr_just.
+    let mut x = ox;
+    let mut y = oy;
+    let slack_h = h - texth;
+    if slack_h > 0 {
+        y += (slack_h + 1) / 2;
+    }
+    let slack_w = w - textw;
+    if slack_w > 0 {
+        match ted.te_just {
+            TE_CNTR => x += (slack_w + 1) / 2,
+            TE_RIGHT => x += slack_w,
+            // EmuTOS's `if (TE_CNTR) … else if (TE_RIGHT) …` leaves TE_LEFT
+            // and any other value at the box origin.
+            _ => {}
+        }
+    }
+    (x + ch_pos * crate::vdi::font::CELL_W, y)
 }
 
 // Arrow scancodes in the key word's high byte (EmuTOS `scancode.h`).

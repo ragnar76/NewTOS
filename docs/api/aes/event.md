@@ -265,6 +265,66 @@ and the delivered `msg[0] == AC_CLOSE` it also sets `AP_ACCLOSE`.
 when a button transition is pending (`mtrans > 1`), otherwise the live
 `xrat`/`yrat`/`button`; `EV_KS` is always the live `kstate` (`gemevlib.c:42-58`).
 
+### The button state an event reports (`mtrans` / `pr_*`) — contract (LDG-M3 B1, 2026-10-06)
+
+The *values* `EV_MX`/`EV_MY`/`EV_MB` (and `EV_BRET` of the quick check) are
+contract; the globals that produce them are reference. How EmuTOS produces them:
+
+* **`bchange(new, clicks)` publishes one button transition**
+  (`aes/geminput.c:329-345`): `mtrans++; pr_button = button; pr_mclick =
+  mclick; pr_xrat = xrat; pr_yrat = yrat; button = new; mclick = clicks;` —
+  the state *before* the transition is recorded, `mtrans` counts transitions.
+* **`ev_rets` clears the count** (`mtrans = 0`, `gemevlib.c:57`). It runs at
+  the end of **every** `ev_button` (`:91`), `ev_mouse` (`:126`) and `ev_multi`
+  (`:268`) — also the AES-internal ones: `fm_do` (`gemfmlib.c:256,312-317`),
+  `gr_stilldn` (`gemgrlib.c:62-66`, i.e. `gr_watchbox`/`gr_dragbox`/
+  `gr_rubwind`/`gr_slidebox`), `mn_do` (`gemmnlib.c:597`), the pop-up
+  (`gemmnext.c:268,314,351`) and the Control Manager's own loop
+  (`gemctrl.c:456-462`). A click the AES consumed itself is therefore not
+  reported again by the application's next event.
+* **When the transitions are published.** `b_click` (`geminput.c:110-147`)
+  publishes a change at once (`forkq(bchange, MAKE_ULONG(state, 1))`) unless a
+  waiter asks for more than one click and the change is a press
+  (`gl_bpend && state`): then it opens the button-delay window
+  (`gl_bdesired = state; gl_bclick = 1; gl_bdely = gl_dclick`), counts
+  further entries into `gl_bdesired` while it is open, and publishes nothing.
+  When the window closes — by the tick countdown or by a move of more than ±2
+  pixels (`mchange` → `b_delay(gl_bdely)`, `:365-368`) — `b_delay` publishes
+  `bchange(gl_bdesired, gl_bclick)` and, if the button is no longer in that
+  state, `bchange(gl_btrue, 1)` (`:155-171`).
+* **Consequence — the contract.** A click (press + release) whose release falls
+  inside the double-click window is published as two transitions at the
+  window's close, so the event that reports it has `mtrans == 2` and returns
+  **`EV_MB` = the pressed button** (`pr_button`), with `EV_MX/EV_MY` = the
+  pointer at the release. A press held past the window is one transition: the
+  event reports the live state, button still down. A double click reports
+  `EV_BRET = 2` and `EV_MB` = down. `evnt_mouse` alone overwrites `EV_MB`
+  with the live `button` (`gemevlib.c:127`); its `EV_MX/EV_MY` follow
+  `ev_rets` like the others.
+* **The quick check uses the record first.** `ev_multi`'s owner-only quick
+  check tries `(mtrans > 1) && downorup(pr_button, buparm)` before
+  `downorup(button, buparm)` (`gemevlib.c:188-198`) and reports `pr_mclick`
+  for it: a click made while the application was not waiting (both
+  transitions published between two calls) still satisfies its next wait for
+  the press, with the recorded click count and no new click window.
+
+WinDom handles a click only when `evnt.mbut & 1`
+(`sdk/windom/overlay/src/evnt_windom.c:334`); with the live state (0 after the
+window) every normal click on a WinDom form was dropped.
+
+**NewTOS mapping** (`tos-api/src/aes/input.rs`, `event.rs`). `b_click`,
+`bchange`, `ev_rets` and the window close are reproduced with EmuTOS's state
+(`gl_btrue`, `gl_bdesired`, `gl_bclick`, `mclick`, `mtrans`, `pr_*`). One
+structural difference, same result: our Event Manager opens the click window
+in `count_clicks` *after* it has seen the press, so the opening press is
+published at once with a count of 1 and the window's close only sets its real
+count (`mclick = gl_bclick`) and publishes the true state if it differs — the
+same two transitions in the same order. The AES-internal waits listed above
+call `ev_rets` at the point their EmuTOS counterpart's `ev_*` returns
+(the press or key in `fm_do`/fsel/`form_alert`, the release in the
+`gr_stilldn` loops and `ev_button` up-waits, the end of the menu track, the
+press on a frame gadget or an untopped window in the Control Manager).
+
 ### NewTOS deviation — the application does not run while a drop-down is open (A91, 2026-09-23)
 
 **EmuTOS.** The Control Manager is a *process*:
@@ -538,6 +598,15 @@ dispatcher's unsupported-opcode → `-1` path (see [`_dispatcher.md`](./_dispatc
 - **`evnt_multi` mouse block:** on any fired event, `int_out[1]`/`int_out[2]`
   hold the current (or transition-time) mouse x/y, `int_out[3]` the button
   state, `int_out[4]` the shift state (`gemevlib.c:42-58,268`).
+- **Click reported with the button down:** `evnt_multi(MU_BUTTON, 0x0102, 3,
+  0)` (or the desktop's `2, 1, 1`) with one press + release inside the click
+  window returns `MU_BUTTON`, `EV_BRET = 1`, **`EV_MB = 1`** and the click
+  position; an immediately following 0-ms poll returns `MU_TIMER` only and the
+  live `EV_MB = 0` (`gemevlib.c:42-58`, `geminput.c:155-171,329-345`).
+- **Click between two calls:** press + release published while no wait is armed;
+  the next `evnt_multi(MU_BUTTON|MU_TIMER, 0x0102, 3, 0)` with a 0-ms timer
+  reports `MU_BUTTON` with `EV_BRET = pr_mclick = 1` and `EV_MB = 1`
+  (`gemevlib.c:190-194`).
 - **`evnt_button` double-click:** with `int_in[0] = 2` (clicks=2, enter),
   `int_in[1] = 1` (mask=left), `int_in[2] = 1` (state=down), two presses inside
   the current click window (`gl_dcrates[gl_dcindex]` ms) return `2` in

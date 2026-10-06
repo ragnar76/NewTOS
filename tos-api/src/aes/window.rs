@@ -4981,6 +4981,9 @@ fn watchbox(r: Grect, ch: u16, ink: Ink, backend: &dyn RasterBackend) -> bool {
             was_in = now_in;
         }
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
+            // `gr_watchbox` ends on `gr_stilldn`'s `ev_multi` returning the
+            // release (`aes/gemgrlib.c:62-70,352`), whose `ev_rets` consumes it.
+            let _ = super::input::ev_rets();
             break;
         }
         h.pump_input();
@@ -5002,6 +5005,9 @@ fn watchbox(r: Grect, ch: u16, ink: Ink, backend: &dyn RasterBackend) -> bool {
 fn gr_stilldn(x: i16, y: i16, h: &'static dyn Host) -> bool {
     loop {
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
+            // The `ev_multi` returning `MU_BUTTON` ran `ev_rets`
+            // (`aes/gemevlib.c:268`): the release is consumed here.
+            let _ = super::input::ev_rets();
             return false;
         }
         let (mx, my) = crate::vdi::mouse_position();
@@ -5287,6 +5293,10 @@ fn drag_elevator(w: &mut Window, vert: bool, backend: &dyn RasterBackend) -> i16
         }
         crate::vdi::cursor_show(backend);
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
+            // `gr_slidebox` → `gr_dragbox` → `gr_wait` → `gr_stilldn`
+            // (`aes/gemgrlib.c:182,262,451`): its `ev_multi` returning the
+            // release ran `ev_rets`, which consumes it.
+            let _ = super::input::ev_rets();
             break;
         }
         h.pump_input();
@@ -5462,6 +5472,9 @@ pub fn intercept() {
     // made the owner's `WF_TOP` a no-op on an already-topped window — and the
     // repaint it triggered took the window's content with it.
     if handle != get_top() {
+        // `ctlmgr`'s `ev_multi` returned on this press (`aes/gemctrl.c:456-
+        // 462`); its `ev_rets` consumed the transition (`aes/gemevlib.c:268`).
+        let _ = super::input::ev_rets();
         let old_top = get_top();
         msg[0] = WM_TOPPED;
         wait_release();
@@ -5484,6 +5497,13 @@ pub fn intercept() {
     // carry the `WS_CURR` `y, w, h` in `msg[5..7]` (A93).
     let ws_curr = w.curr;
     let gad = gadget_at(w, mx, my);
+    // A press on a frame gadget is the Control Manager's: `ctlmgr`'s
+    // `ev_multi` returned on it (`aes/gemctrl.c:456-462`) and its `ev_rets`
+    // consumed the transition (`aes/gemevlib.c:268`). A press in the work area
+    // (`Gadget::None`) belongs to the application and is left for it.
+    if !matches!(gad, Gadget::None) {
+        let _ = super::input::ev_rets();
+    }
     match gad {
         Gadget::Closer => {
             // `HOTCLOSE`: `message = WM_CLOSED; break;` — no `gr_watchbox`, the

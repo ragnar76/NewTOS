@@ -1,0 +1,46 @@
+# pixel comparison (PIL ImageChops.difference bbox); written by the session, method in RUNINFO
+## acceptance: memprot=on vs strict
+acc-on vs acc-strict S00_WINDOW                              same
+acc-on vs acc-strict S01_INFO_ALERT_KBD                      same
+acc-on vs acc-strict S02_ALERT_GONE                          same
+acc-on vs acc-strict S03_INFO_ALERT_LONGPRESS                same
+acc-on vs acc-strict S04_ALERT_GONE2                         same
+acc-on vs acc-strict S05_SHORTCLICK                          same
+acc-on vs acc-strict S05B_ALERT_GONE3                        same
+acc-on vs acc-strict S06_VALUE_TYPED                         same
+acc-on vs acc-strict END_CLOSED                              same
+## acceptance vs measurement-2026-10-06-ldg-m3 m3c-on (HEAD kernel, same steps up to S04; S06/END after the changed step 3)
+acc-on vs m3c-on S00_WINDOW                                  DIFF bbox=(362, 229, 381, 245)
+acc-on vs m3c-on S01_INFO_ALERT_KBD                          same
+acc-on vs m3c-on S02_ALERT_GONE                              DIFF bbox=(362, 229, 381, 245)
+acc-on vs m3c-on S03_INFO_ALERT_LONGPRESS                    same
+acc-on vs m3c-on S04_ALERT_GONE2                             DIFF bbox=(362, 229, 381, 245)
+acc-on vs m3c-on S06_VALUE_TYPED                             DIFF bbox=(314, 229, 333, 245)
+acc-on vs m3c-on END_CLOSED                                  same
+## regression: change vs HEAD e47bbd2 (same injector script, same card)
+desk-A_IDLE.png vs head-desk-A_IDLE.png                      same
+desk-B_DRIVE_OPEN.png vs head-desk-B_DRIVE_OPEN.png          same
+desk-C_FOLDER_OPEN.png vs head-desk-C_FOLDER_OPEN.png        same
+desk-D_VIEW_OPEN.png vs head-desk-D_VIEW_OPEN.png            same
+desk-END.png vs head-desk-END.png                            same
+desk-E_MENU_CLICKED.png vs head-desk-E_MENU_CLICKED.png      same
+desk3a-A_IDLE.png vs head-desk3a-A_IDLE.png                  same
+desk3a-B_SUB.png vs head-desk3a-B_SUB.png                    same
+desk3a-C_UP.png vs head-desk3a-C_UP.png                      same
+desk3a-D_SELECTED.png vs head-desk3a-D_SELECTED.png          same
+desk3a-E_INFO.png vs head-desk3a-E_INFO.png                  same
+desk3a-F_TYPED.png vs head-desk3a-F_TYPED.png                same
+desk3a-G_RENAMED.png vs head-desk3a-G_RENAMED.png            same
+desk3a-H_DRIVE_C.png vs head-desk3a-H_DRIVE_C.png            same
+desk3a-end.png vs head-desk3a-end.png                        same
+qed-END.png vs head-qed-END.png                              DIFF bbox=(24, 61, 27, 79)
+qed-Q00_UP.png vs head-qed-Q00_UP.png                        same
+qed-Q01_DATEI_OPEN.png vs head-qed-Q01_DATEI_OPEN.png        same
+qed-Q02_ITEM_CLICKED.png vs head-qed-Q02_ITEM_CLICKED.png    same
+tera-END.png vs head-tera-END.png                            same
+tera-T00_DESK.png vs head-tera-T00_DESK.png                  same
+tera-T01_TRASH_SELECTED.png vs head-tera-T01_TRASH_SELECTED.png same
+tera-T02_DRIVE_OPEN.png vs head-tera-T02_DRIVE_OPEN.png      same
+## APITEST vs measurement-2026-10-06-ldg-m3 (HEAD kernel)
+api-t25 vs m3-on-apitest-t25                                 same
+api-t40 vs m3-on-apitest-t40                                 same

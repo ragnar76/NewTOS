@@ -172,14 +172,23 @@ fn menu_intercept(idx: usize) -> bool {
     }
 }
 
-/// Fill the shared event return slots from the current input state:
-/// `EV_MX`/`EV_MY` (mouse x/y), `EV_MB` (button bitmask), `EV_KS`
-/// (keyboard shift state) — the `ev_rets` block at `int_out[1..4]`.
+/// Fill the shared event return slots — EmuTOS `ev_rets` (`aes/gemevlib.c:
+/// 42-58`), the block at `int_out[1..4]`: `EV_MX`/`EV_MY`/`EV_MB` are the
+/// pointer position and button state **at the event** — the state recorded
+/// before the last button transition when more than one transition was
+/// published since the previous event return, else the live state
+/// ([`super::input::ev_rets`], which also clears the count) — and `EV_KS` the
+/// live keyboard shift state.
+///
+/// A click whose release falls inside the double-click window therefore
+/// reports `EV_MB` = the pressed button, not the released one: the window's
+/// close publishes the press and the release together (`b_delay`,
+/// `aes/geminput.c:155-171`), `mtrans` is 2, and `pr_button` is the press.
 fn fill_rets(pb: &Aespb) {
-    let (mx, my) = crate::vdi::mouse_position();
+    let (mx, my, mb) = super::input::ev_rets();
     pb.set_intout(1, mx); // EV_MX
     pb.set_intout(2, my); // EV_MY
-    pb.set_intout(3, crate::vdi::mouse_buttons() as i16); // EV_MB
+    pb.set_intout(3, mb as i16); // EV_MB
     pb.set_intout(4, shift_state()); // EV_KS
 }
 
@@ -451,6 +460,9 @@ pub fn evnt_mouse(pb: &Aespb) -> Option<sched::Switch> {
         }
     }
     fill_rets(pb);
+    // `rets[2] = button;   /* always use current button state */`
+    // (`ev_mouse`, `aes/gemevlib.c:127`).
+    pb.set_intout(3, super::input::button() as i16); // EV_MB
     pb.set_ret(1);
     None
 }
@@ -583,6 +595,12 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
         // (`aes/gemctrl.c:92`). It equals the raw VDI byte otherwise.
         let arm_own = super::input::own_mouse();
         let arm_mb = super::input::button();
+        // The recorded state the quick check tries first: `(mtrans > 1) &&
+        // downorup(pr_button, buparm)` (`aes/gemevlib.c:190`) — a press and
+        // its release both published since the previous event return (a click
+        // made while the application was busy) still satisfy a wait for the
+        // press. Sampled at arm time with the level above.
+        let arm_pending = super::input::pending_transition();
         // The pointer position **at arm time**, for the same reason: `amouse`
         // tests a rectangle wait exactly once, against the position at the
         // instant `ev_multi` arms it (`aes/geminput.c:575-576`), before the
@@ -675,7 +693,20 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                 } else {
                     (super::input::own_mouse(), super::input::button())
                 };
-                if (own || pass == 0) && downorup(mb, b_flgclks, b_mask, b_state) {
+                // The quick check's first arm, on the recorded state:
+                // `if ((mtrans > 1) && downorup(pr_button, buparm)) { what |=
+                // MU_BUTTON; prets[5] = pr_mclick; }` (`aes/gemevlib.c:
+                // 190-194`) — owner only, entry only, and the count is the
+                // recorded one: no click window is opened for it.
+                let pr_hit = if pass == 0 && arm_own {
+                    arm_pending.filter(|&(prb, _)| downorup(prb, b_flgclks, b_mask, b_state))
+                } else {
+                    None
+                };
+                if let Some((_, pr_mclick)) = pr_hit {
+                    clicks = pr_mclick;
+                    fired |= MU_BUTTON;
+                } else if (own || pass == 0) && downorup(mb, b_flgclks, b_mask, b_state) {
                     clicks = if own {
                         // Resolve the *real* click count (single vs. double)
                         // inside the double-click window — the same counter

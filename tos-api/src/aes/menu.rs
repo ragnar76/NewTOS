@@ -450,6 +450,12 @@ pub fn track(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i16
     super::input::ct_mouse(true);
     let r = track_owned(tree, backend);
     super::input::ct_mouse(false);
+    // `mn_do` leaves on the `ev_multi` that returned the selecting or
+    // cancelling event (`aes/gemmnlib.c:597-690`); every one of its returns
+    // ran `ev_rets` (`aes/gemevlib.c:268`), so the transitions of the track
+    // are consumed and none of them is reported by the application's next
+    // event.
+    let _ = super::input::ev_rets();
     r
 }
 
@@ -1887,6 +1893,9 @@ fn wait_button_up(h: &dyn crate::host::Host) {
     while crate::vdi::mouse_buttons() & 0x01 != 0 {
         h.pump_input();
     }
+    // `ev_button` ends in `ev_rets` (`aes/gemevlib.c:91`), which consumes the
+    // release.
+    let _ = super::input::ev_rets();
 }
 
 /// The pop-up on screen: draw the box over `saved` (the pixels under it,
@@ -1932,6 +1941,9 @@ fn popup_shown(
             cur_item = it;
         }
         if crate::vdi::mouse_buttons() & 0x01 != 0 {
+            // `handle_popup`'s `ev_multi(MU_M1|MU_BUTTON, …)` returned the
+            // press (`aes/gemmnext.c:268`); its `ev_rets` consumed it.
+            let _ = super::input::ev_rets();
             result = cur_item; // NIL when pressed outside any item → cancel
             // `keystate = rets[3]` of the `ev_multi` that returned `MU_BUTTON`
             // (`gemmnext.c:272`): the shift state at the press, not at the

@@ -686,6 +686,22 @@ after position `new_pos`. Cannot reorder `ROOT` → `FALSE`.
 Cursor→template mapping is via `find_pos` (raw-string index → template
 index, landing before an `_`). Text is capped at `te_txtlen-2` data chars.
 
+**Where the caret is drawn — `pxl_rect`** (`gemobed.c:180-190`, LDG-M3 O1,
+2026-10-06): the field's absolute box (`ob_actxywh`) is passed through
+`gr_just(te_just, te_font, te_ptmplt, w, h, &o)` (`gemgraf.c:567-589`) — the
+**template** is measured in the TEDINFO's font (`gsx_tcalc`, `:480-497`: width
+`min(w, strlen(te_ptmplt) * ch_width)`, height `min(h, ch_height)`), the
+origin moves down by `(slack_h + 1) / 2` and, per `te_just`, right by
+`(slack_w + 1) / 2` (`TE_CNTR`) or `slack_w` (`TE_RIGHT`), each only when the
+slack is positive — exactly the placement of the field's text. The caret cell
+is then at `x = o.x + ch_pos * gl_wchar` (always the normal font's width),
+`y = o.y`, with `ch_pos = find_pos(te_ptmplt, idx)`. `curfld` draws it as an
+XOR vertical line from `y - 3` over `gl_hchar + 6` rows (`:198-216`).
+NewTOS (`tos-api/src/aes/object.rs` `pxl_rect`) takes the origin exactly so;
+the bar it draws there is still the `gl_hchar`-high black one — the
+`-3/+6` extent and the XOR mode are not reproduced (open, see the receipt of
+LDG-M3-B1).
+
 ### `objc_change` (47)
 
 **Source:** `gemsuper.c:228-231`. The arm sets the clip rect from
