@@ -1,0 +1,116 @@
+measurement-2026-10-06-post-e9 -- follow-up fixes after ARCH03 E9 (lead
+decisions 1-5 + the MD probe). Developer self-evidence; the Tester's verdict
+is separate.
+
+Date 2026-10-05 (evening; directory named for the lead's 2026-10-06),
+branch desk-rebuild, base HEAD 2d33c69 (E9 committed, tree clean at start),
+changes uncommitted: method/poste9-change.diff (git diff + the new test).
+QEMU 11.0.2, host macOS. No SD card, Pi or TT touched; tools/make-sd-image.sh
+NOT used (method/seed-card.sh builds private 64 MiB images in the session
+scratchpad). method/ = the E9 method (copied) + runs-poste9.sh,
+series-p1.sh, build-all.sh (+E9MEM/E9PLAIN, which the E9 copy did not build),
+scratch-kernels.sh (+tdkeys/keys9 kernels), build-s2-tests.sh (+strict
+variants and the new probes), tests/{atexitp,atexitk,accfree,mdprobe}.c,
+tests/{tsrpar,tsrres,p567,s2all}.c changed (below).
+
+CHECKPOINT p1 = everything below. Product kernel bin/kernel8-p1.img
+(34f5ee52...) = tree kernel8.img; kernel code changed only in
+kernel/src/accs.rs (+ a comment in kernel/src/lib.rs). The libc crt0 was
+changed once more after the p1 static checks (exit(main()) instead of _main,
+see diag-libc-main/); that file is SDK-only, the kernel was not rebuilt, the
+SDK host tests were re-run (p2-sdk-host.txt).
+
+POINT 1 (p_parent like EmuTOS, accessory detection back to mintlib's rule)
+  NOT DONE -- stopped as instructed: EmuTOS' parent of a desktop/#Z launch
+  is the AES process' PD, of an AUTO program &initial_basepage; NewTOS has
+  neither (desk/ and the AES run in the kernel, RUN = null). Options in the
+  status file. EGSBF detection unchanged.
+
+POINT 2 (libc crt0 calls exit())
+  sdk/libc/crt0.S: exit(main(__libc_argc, __libc_argv, environ)).
+  First tried: crt0 -> mintlib _main (= __libc_main, which ends in
+  exit(main())). That broke every stdout write (EBADF): diag-libc-main/
+  (README.TXT + 9 runs). Cause: NewTOS Fseek on a console handle answers
+  EIHNDL, EmuTOS 0 (bdos/bdosmain.c:571-641). Not fixed (out of scope).
+  ATEXITP/ATEXITK: PASS in on/off/strict ("main-body;atexit-handler;" in
+  the file, exit code 7, the unterminated stdout line appears).
+  Red: ATEXITK built with the HEAD crt0 (red/) -> file empty, FAIL
+  (serial/red-headcrt0-on-rpi4-atexit-serial.log).
+  SIDE EFFECT: S2ALL under protection ON: VFORKT crashes in its exit()
+  (malloc walking a free list into freed pool memory, 0x01a57010, PC in
+  __malloc, x0 = 0x400 = BUFSIZ -> a stdio buffer during fcloseall).
+  Deterministic (also on the crash kernel: serial/p1-on-rpi4-s2all-
+  crashkernel-serial.log, S2ALL: FAIL 1). The same S2ALL with a VFORKT
+  linked against the HEAD crt0 passes (serial/red-headcrt0vforkt-on-rpi4-
+  s2all-crashkernel-serial.log). VFORKT alone as #Z: no crash (layout).
+  OFF and STRICT (S2ALLS): VFORK PASS. Suspected cause in the status file
+  (a vfork child's malloc hunk is Malloc'ed by -- and freed with -- the
+  child, while the parent's malloc lists still point into it).
+
+POINT 3 (free_accs releases the accessories' memory)
+  kernel/src/accs.rs free_accs: AES resource entries, free_all_owned(PD)
+  (TPA, environment, the accessory's own Malloc blocks), unstarted PE_LOAD
+  children, then release_slot. Serial: "[acc] 2 block(s) of
+  C:\ACC\SYSACC.NAC freed" (TPA + Malloc'ed stack; no environment, EnvSpec::None).
+  ACCFREE (#Z, two AES sessions via shel_write(SHW_RESCHNG)): total free
+  ST/TT memory of session 2 == session 1 -> PASS on/off/strict.
+  Red: same card on the E9 kernel (kernel8-e2.img): TT total 0x3a397000 ->
+  0x3a385000 (0x12000 = image + 64 KiB stack leaked per session) -> FAIL
+  (serial/red-e2-on-rpi4-accfree-serial.log).
+  Host test tos-api/tests/post_e9_free_accs.rs (3).
+
+POINT 4 (S2ALL TSRPAR semantic layout check)
+  tests/tsrpar.c: "a free block starts at PD + blkln" (Mxalloc(S, 3) with
+  S = PD + _PgmSize - pageup(PD + blkln) until a block lands at/above
+  PD + blkln; must be PD+blkln rounded to 16 B or to a page). TSRRES
+  reports _PgmSize (mb[4]). ON: block at 0x01a79000 (= pageup) after 1
+  Mxalloc; OFF: at 0x010ce560 (= 16-byte rounding). TSR: PASS both.
+  Strict variants: P567S (case 6 expects Pterm(-1), shared untouched),
+  TSRPARS (TSRRES denied the mailbox -> Pterm(-1)), S2ALLS runs them.
+  S2ALL: OFF PASS; ON FAIL only by VFORKT (point 2 side effect, TSR PASS);
+  STRICT: S2ALLS on the crash kernel PASS (both denials as expected).
+
+POINT 5 (libc.a without syscall__main.o)
+  sdk/libc/build-libc.sh skips syscall/main.c (logged in excluded.txt).
+  libc.a: 0 syscall__main members (4 other syscall/ generator objects remain,
+  none linked). No why.txt of any SDK build references a syscall__ member
+  (11 files).
+
+MD PROBE (tests/mdprobe.c, MDPROBE.NAP; on/off/strict identical)
+  free MDs at start 254; malloc(32) x 100/1k/10k/50k/100k blocks use
+  1/3/19/87/173 MDs; malloc returns NULL after 147605 blocks
+  (4723360 bytes payload) with ALL 254 MDs used, while ~930 MB were free.
+
+STATIC CHECKS (checks/p1-*.txt)       E9 base      p1
+  host tests                            1135/0/1     1138/0/1 (+3)
+  release warnings tos-api/kernel, both boards, fresh after
+    cargo clean -p kernel -p tos-api    64/94        64/94
+  clippy tos-api/kernel rpi4, qemu-virt 76/125       76/125
+  desk-drift-probe                      31           31
+  sdk/run-host-tests                    13/0/0       13/0/0 (p1 and p2)
+
+SDK REBUILT: libc (twice: crt0), gemlib, cflib, libm, every program in
+bin/ (build-all.sh + the probes), APITEST, QED, TeraDesk, Doom, TESTGEM,
+CHAINTST, CORE/COREVAL. Hashes: bin/SHA256SUMS, repo-binaries.sha256.
+
+RUN SERIES p1 (series-p1.sh = runs-poste9.sh + desk3a-run.sh per mode;
+checks/series-p1.log; method/summarize.sh p1-<mode>)
+                         ON              OFF             STRICT
+  desktop/TeraDesk/QED/APITEST/acc/tdqed/KBDVEC+EmuCON dumps
+                         = E9 e1 byte for byte (all three modes)
+  APITEST TOTAL          106/0/5         106/0/5         106/0/5
+  Doom                   VERIFIED        VERIFIED        VERIFIED (frames differ by timing)
+  TeraDesk -> F1 -> QED  QED up          QED up          QED up (= E9)
+  EmuCON 5 in a row      KBDVEC, E9PLAIN, E9MEM (+child) PASS, OLDEXEC refused (all modes)
+  E9MEM / E9PLAIN        PASS            PASS            PASS
+  ATEXIT                 PASS            PASS            PASS
+  ACCFREE                PASS            PASS            PASS
+  MDPROBE                254 MDs exhausted at 147605 x malloc(32) (all modes)
+  CRASHTST/UACC3A/MPROT3B/E10USR  PASS every mode, raspi4b and virt
+  virt selftests         B1, D3, D3 PEXEC, D4/D5, D6, D7 PTERMRES PASS, every mode
+  virt desktop           up, every mode
+  PORT10                 42/44 (as E9)
+  S2ALL                  FAIL (VFORKT    PASS            product S2ALL stops at the
+                         exit crash)                     expected crash prompt (as E9);
+                                                         S2ALLS crash kernel: PASS
+  desk3a                 A-D,G = E9; E/F file time, H new files; ON = OFF = STRICT

@@ -340,14 +340,33 @@ fn pwait() {
 ///     if (acc[i].addr >= 0L) dos_free((void *)acc[i].addr);
 /// ```
 ///
-/// EmuTOS's own comment (`:288-295`) is explicit that this is *not* required
-/// for correctness — the `run_accs_and_desktop` process's termination would
-/// free it — but that at least one real accessory (Chameleon) needs the
-/// explicit free to run its cleanup. NewTOS has no such process to fall back
-/// on: an accessory slot lives until something releases it, so here the step
-/// **is** load-bearing. What EmuTOS frees with `dos_free` we release as the
-/// whole process slot ([`process::pterm::release_slot`]), which returns the
-/// TPA, the AES descriptor and the window/menu property of the accessory.
+/// followed, in EmuTOS, by the end of the `run_accs_and_desktop` process
+/// itself, whose `Pterm` frees everything that process owned
+/// (`ixterm` → `free_all_owned(r, &pmd)` / `&pmdalt`, `bdos/proc.c:133-139`):
+/// the accessories' environments (and TPAs — `Pexec(PE_LOAD)` makes `run`,
+/// the AES process, their owner, `bdos/proc.c:305-307`) and whatever the accessories allocated while the AES was
+/// `run` — their start-up stacks and everything else of their initialisation
+/// (`wait_for_accs`, `:579-583`). EmuTOS's own comment (`:288-295`) is
+/// explicit that `free_accs` is therefore not required for correctness, but
+/// that at least one real accessory (Chameleon) needs the explicit free.
+///
+/// NewTOS has no such process to fall back on: an accessory is a process of
+/// its own (its slot, its PD), it owns its TPA and its environment (loaded
+/// `owned_by_child`), and its `Malloc`s are its own. So the net effect of
+/// EmuTOS's two steps is reproduced per accessory with the memory half of a
+/// termination (`pterm::terminate_inner`): `dos_free(acc->addr)` is the TPA,
+/// and [`free_all_owned`] of the accessory's PD frees it together with the
+/// environment and every block the accessory allocated — what EmuTOS's
+/// process end frees. Programs it loaded with `PE_LOAD` and never started go
+/// with it ([`release_unstarted_of`]), its AES resource entries too
+/// ([`on_process_exit`]); then the slot is released
+/// ([`process::pterm::release_slot`]: the AES descriptor, the window/menu
+/// property, the page tables). A block another process also holds (ARCH03
+/// 2d links) stays allocated for that owner, as on every `Pterm`.
+///
+/// [`free_all_owned`]: tos_api::bdos::mem::free_all_owned::free_all_owned
+/// [`release_unstarted_of`]: process::pexec::release_unstarted_of
+/// [`on_process_exit`]: tos_api::aes::resource::on_process_exit
 pub fn free_accs() {
     // SAFETY: single restart/shutdown path, no re-entrancy.
     let (acc, num_found) = unsafe { table() };
@@ -357,11 +376,19 @@ pub fn free_accs() {
         }
         kprintln!("[acc] freeing {} (slot {})", as_str(&e.path), e.slot);
         tos_api::aes::acc::forget_process(e.slot);
+        let pd = process::pd_of(e.slot);
+        tos_api::aes::resource::on_process_exit(e.slot);
         // SAFETY: the accessory is not running (we are on the kernel path with
-        // no EL0 context live) and nothing holds a reference into its TPA.
-        unsafe {
+        // no EL0 context live), the BDOS is not concurrently locked, and
+        // nothing holds a reference into its memory; `pd` is its PD pointer
+        // (null if the slot has no image, which frees nothing).
+        let freed = unsafe {
+            let freed = tos_api::bdos::mem::free_all_owned::free_all_owned(pd as *mut core::ffi::c_void);
+            process::pexec::release_unstarted_of(pd);
             process::pterm::release_slot(e.slot);
-        }
+            freed
+        };
+        kprintln!("[acc] {} block(s) of {} freed", freed, as_str(&e.path));
         e.slot = usize::MAX;
     }
     *acc = [Acc::EMPTY; NUM_ACCS];

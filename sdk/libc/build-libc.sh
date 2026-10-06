@@ -62,8 +62,8 @@
 #     (mintlib/setstack.S) are m68k; newtos-arch/vfork.S and setstack.S are
 #     their AArch64 retargets. With them and thread.c, posix/system.c is
 #     mintlib's own again (the PORT10 overlay without the POSIX branch is gone).
-#   - sdk/libc/crt0.S: libc-aware crt0 (sets SP from p_hitpa, calls
-#     __libc_init_heap and __libc_parseargs, then main) -- distinct from
+#   - sdk/libc/crt0.S: libc-aware crt0 (calls __libc_crtinit, then
+#     exit(main(...)) as mintlib's __libc_main ends) -- distinct from
 #     sdk/crt0.S used by the libc-less examples.
 #
 # The linker pulls only the archive members it needs, so libc.a is compiled from
@@ -178,6 +178,14 @@ for d in $DIRS; do
         [ -e "$c" ] || continue
         b=$(basename "${c%.c}")
         case "$b" in test-*|*-skeleton|ftest|xpg_basename|zdump|zic|tzselect) continue;; esac
+        # syscall/main.c is the `main` of mintlib's HOST generator (syscall/
+        # Makefile gen_objs: check generate main pars scan traps -> the tool
+        # that writes the trap bindings), never a library member: mintlib's
+        # library takes only the generated $(TRAPS) from that directory
+        # (syscall/SRCFILES). In libc.a it was a trap -- it defines `main`
+        # and a second `_stksize` (64 KiB, main.c:41), so a program without
+        # its own main, or one that looks up `_stksize`, could pull it in.
+        case "$d/$b" in syscall/main) echo "$d/$b.c" >> "$BUILD/excluded.txt"; continue;; esac
         if is_excluded "$d/$b.c"; then echo "$d/$b.c" >> "$BUILD/excluded.txt"; continue; fi
         o="$OBJ/${d}__${b}.o"
         # Per-file DEFS, replicating mintlib buildrules. ident.c needs the

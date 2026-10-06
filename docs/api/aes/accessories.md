@@ -723,7 +723,7 @@ what EmuTOS does. Measured in
 | `load_one_acc` (`:236-257`) | `kernel/src/accs.rs::load_one_acc` |
 | `load_accs` (`:309-315`), called at `:687` | `kernel/src/accs.rs::load_accs`, called from `kernel/src/lib.rs`'s session loop before `go_graphic` |
 | `dsptch(); wait_for_accs(AP_MESAG)` (`:736-737`) | `kernel/src/accs.rs::wait_for_accs_mesag`, called after `process_inf2` and before `sh_main` |
-| `free_accs` (`:296-303`), called at `:741` | `kernel/src/accs.rs::free_accs`, called after `sh_main` returns |
+| `free_accs` (`:296-303`), called at `:741` | `kernel/src/accs.rs::free_accs`, called after `sh_main` returns; frees all of each accessory's memory (`free_all_owned` of its PD: TPA, environment, its own `Malloc`s — what EmuTOS's `dos_free` plus the end of the `run_accs_and_desktop` process free, `bdos/proc.c:133-139`) and releases its slot (post-E9, 2026-10-05) |
 | `wait_for_accs` (`:599-628`) | `tos-api/src/aes/acc.rs::wait_for_accs` |
 | the DA process list (AESPD pids 2…) | `tos-api/src/aes/acc.rs` (`register_process`/`processes`) |
 | `mn_register` (`gemmnlib.c:789-816`) | `tos-api/src/aes/menu.rs::menu_register` |

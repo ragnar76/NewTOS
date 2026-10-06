@@ -14,7 +14,9 @@
  *     returns the new stack top; an accessory, whose TPA the loader already
  *     shrank (EmuTOS pgmld), gets a Malloc'ed stack (crtinit.c:112-131);
  *   - malloc then grows through GEMDOS Malloc (`_split_mem`, unix/sbrk.c),
- *     as with mintlib on TOS.
+ *     as with mintlib on TOS;
+ *   - main's return value goes to exit(), as at the end of mintlib's
+ *     `__libc_main`, so atexit handlers and the stdio flush run.
  *
  * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld), relative
  * to the TPA's pool address B (ARCH03 stage 1, VA = PA):
@@ -53,22 +55,37 @@ _start:
     bl      __libc_crtinit
     mov     sp, x0
 
-    /* main(__libc_argc, __libc_argv). __libc_crtinit built them from the
+    /* exit(main(__libc_argc, __libc_argv, environ)) -- how mintlib's own
+     * start-up ends (mintlib/main.c:302, the last statement of
+     * `__libc_main`, which _crtinit reaches as `_main`, crtinit.c:257, and
+     * an accessory's _acc_main too, :147): main's return value goes to
+     * exit(), which runs the atexit handlers in reverse order and closes
+     * (flushes) every stdio stream before `_exit` -- Pterm, newtos-arch/
+     * proc.S (stdlib/exit.c:43-59). __libc_crtinit built argc/argv from the
      * BasePage command tail p_cmdlin (newtos-arch/cmdargs.c, the argument
-     * half of crtinit.c parseargs()); with an empty tail that is argc == 1
-     * and argv == { "", NULL } -- the TOS "program name not available"
-     * convention. main's own return value (w0) is the exit code. */
+     * half of crtinit.c parseargs()) and published `environ`; with an empty
+     * tail that is argc == 1 and argv == { "", NULL } -- the TOS "program
+     * name not available" convention.
+     *
+     * The rest of `__libc_main` (MiNT cookie, Pdomain, UNIXMODE, stdio
+     * stream modes, stderr to the console, PATH conversion) is NOT run here,
+     * as it was not before: with it, every write through stdout fails, since
+     * its text-mode stream set-up seeks on the console handle and the NewTOS
+     * Fseek answers EIHNDL there, where EmuTOS answers 0 for every handle
+     * function but read/write on a character device (bdos/bdosmain.c:
+     * 571-641). Reported (post-E9); calling `_main` waits for that fix. */
     adrp    x0, __libc_argc
     add     x0, x0, :lo12:__libc_argc
     ldr     x0, [x0]
     adrp    x1, __libc_argv
     add     x1, x1, :lo12:__libc_argv
     ldr     x1, [x1]
+    adrp    x2, environ
+    add     x2, x2, :lo12:environ
+    ldr     x2, [x2]
     bl      main
-
-    /* Pterm(main's return): GEMDOS 0x4C, rc in x0, svc #1. Never returns. */
-    mov     x8, #0x4C
-    svc     #1
+    /* exit(main's return): w0 is already the argument. Never returns. */
+    bl      exit
 
     /* Safety net: Pterm does not return, but guard against a runaway PC. */
 1:  b       1b

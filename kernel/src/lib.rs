@@ -475,7 +475,8 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
         // `free_accs(num_accs)` (`geminit.c:741`) — the session is over; give
         // every accessory's memory back. EmuTOS can treat this as optional
         // (its `run_accs_and_desktop` process dies and takes the memory with
-        // it); NewTOS has no such process, so this releases the slots.
+        // it); NewTOS has no such process, so this frees each accessory's
+        // memory and releases its slot.
         accs::free_accs();
 
         if exit == tos_api::aes::shell::ShExit::Shutdown {
