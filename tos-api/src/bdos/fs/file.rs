@@ -2,9 +2,11 @@
 //!
 //! Spec: `docs/api/gemdos/file/{3d-fopen,3f-fread,42-fseek,3e-fclose}.md`.
 //! Mirrors the EmuTOS `bdos/fsopnclo.c` + `bdos/fsio.c` model in reduced
-//! form: a global open-file table (the SFT) holding one [`Ofd`] per open
-//! handle. Handles `>= NUMSTD` (6) index this table; standard handles
-//! `0..5` and the per-process handle map arrive with the process model.
+//! form: a global open-file table (the SFT, `f_ofd`/`f_own`/`f_use`) whose
+//! entries point at [`Ofd`]s — one OFD may be shared (`Fdup`). Handles
+//! `>= NUMSTD` (6) index this table; standard handles `0..5` map through the
+//! running PD's `p_uft[]` (`Fforce`, inherited by `Pexec`, closed by `Pterm`;
+//! `docs/api/gemdos/_state.md` §2, TASK/PROC02).
 //!
 //! Read-only / root-directory only for this deliverable: paths resolve a
 //! drive letter and a single 8.3 component in the volume root (sub-
@@ -24,7 +26,7 @@ use tos_types::Long;
 const SECTOR: usize = 512;
 /// Number of reserved standard handles (0..5); first real handle is 6.
 const NUMSTD: u16 = 6;
-/// Open-file table size (EmuTOS `OPNFILES`).
+/// Open-file table size (EmuTOS `OPNFILES` is 75).
 const OPEN_FILES: usize = 16;
 /// `FA_RO` read-only attribute bit.
 const FA_RO: u8 = 0x01;
@@ -53,30 +55,109 @@ struct Ofd {
     mode: u8,
     /// The directory entry needs a flush (size / start cluster changed).
     dirty: bool,
+    /// The OFD is on its directory's open-file list (`o_dnode->d_files`):
+    /// put there when the file is opened (`makopn`, `bdos/fsopnclo.c:294-295`),
+    /// taken off by the first full `ixclose` (`:552-566`). A later `ixclose`
+    /// of the same OFD — a handle shared through `Fforce`, `Fdup` or
+    /// inheritance — finds it gone and answers `EINTRN`.
+    listed: bool,
 }
 
-/// One open-file-table entry: a real open file, or a `Fdup`'d redirect that
-/// forwards to a captured target handle/device (for saving a standard
-/// handle's mapping across `Fforce`).
+/// What an `sft[]` entry points at — EmuTOS `f_ofd`: no OFD (`NULL`), a BIOS
+/// character device (a negative handle stored in the pointer), or an OFD
+/// (here an index into `Tables::ofds`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FOfd {
+    Null,
+    Bios(i16),
+    File(usize),
+}
+
+impl FOfd {
+    /// `(OFD *)(long)h` for a standard handle's BIOS mapping `h <= 0`
+    /// (`bdos/fshand.c:118`): `0` is the `NULL` pointer.
+    fn bios(h: i16) -> FOfd {
+        if h < 0 { FOfd::Bios(h) } else { FOfd::Null }
+    }
+}
+
+/// One `sft[]` entry — EmuTOS `FTAB` (`bdos/fs.h:307-312`).
 #[derive(Clone, Copy)]
-enum Slot {
-    File(Ofd),
-    Redirect(i16),
+struct Ftab {
+    /// `f_ofd`.
+    ofd: FOfd,
+    /// `f_own`: the PD (user address) that opened / duplicated the handle;
+    /// `None` is EmuTOS's `NULL` — the entry is free (`!sft[i].f_own`).
+    own: Option<u64>,
+    /// `f_use`: the use count (`Fforce` and inheritance add one,
+    /// `bdos/fshand.c:73`).
+    use_: i16,
 }
 
-struct FileTable(UnsafeCell<[Option<Slot>; OPEN_FILES]>);
+const FREE: Ftab = Ftab { ofd: FOfd::Null, own: None, use_: 0 };
+
+/// EmuTOS `NUMHANDLES` with this table's size: standard + non-standard.
+const NUMHANDLES: usize = NUMSTD as usize + OPEN_FILES;
+
+struct Tables {
+    /// `sft[OPNFILES]` — handle `h >= NUMSTD` is `sft[h - NUMSTD]`.
+    sft: [Ftab; OPEN_FILES],
+    /// The OFDs the `sft[]` entries point at; one OFD may be shared by several
+    /// entries (`Fdup`), and lives while any entry points at it (`sftdel`).
+    ofds: [Option<Ofd>; OPEN_FILES],
+}
+
+struct FileTable(UnsafeCell<Tables>);
 // SAFETY: accessed only from the single-CPU, IRQ-off trap path.
 unsafe impl Sync for FileTable {}
-static FILES: FileTable = FileTable(UnsafeCell::new([None; OPEN_FILES]));
+static FILES: FileTable =
+    FileTable(UnsafeCell::new(Tables { sft: [FREE; OPEN_FILES], ofds: [None; OPEN_FILES] }));
 
-fn table() -> &'static mut [Option<Slot>; OPEN_FILES] {
+fn sft() -> &'static mut [Ftab; OPEN_FILES] {
     // SAFETY: single trap path; never concurrently borrowed.
-    unsafe { &mut *FILES.0.get() }
+    unsafe { &mut (*FILES.0.get()).sft }
+}
+
+fn ofds() -> &'static mut [Option<Ofd>; OPEN_FILES] {
+    // SAFETY: single trap path; never concurrently borrowed.
+    unsafe { &mut (*FILES.0.get()).ofds }
+}
+
+/// EmuTOS `run` as an owner: the running PD, or — kernel code with no
+/// running process — the stand-in PD that is `run` there (TASK/PPARENT; `0`
+/// before the stand-ins exist).
+fn run_pd() -> u64 {
+    let r = crate::bdos::process::current();
+    if r.is_null() {
+        crate::bdos::process::standin::kernel_run() as u64
+    } else {
+        r as u64
+    }
+}
+
+/// Claim a free `sft[]` entry for `run` with `f_use = 1` and the given
+/// `f_ofd` (`opnfil`, `bdos/fsopnclo.c:341-349`; `xdup`, `bdos/fshand.c:
+/// 100-120`). Returns its index, or `None` when every entry is owned.
+fn claim_sft(ofd: FOfd) -> Option<usize> {
+    let i = sft().iter().position(|e| e.own.is_none())?;
+    sft()[i] = Ftab { ofd, own: Some(run_pd()), use_: 1 };
+    Some(i)
+}
+
+/// Open `ofd` on a new handle: a fresh OFD (listed on its directory) and a
+/// claimed `sft[]` entry. `None` when the table is full (`ENHNDL`).
+fn open_handle(ofd: Ofd) -> Option<Long> {
+    // Every OFD is pointed at by at least one entry, so a free entry means a
+    // free OFD slot.
+    let j = ofds().iter().position(Option::is_none)?;
+    let i = claim_sft(FOfd::File(j))?;
+    ofds()[j] = Some(ofd);
+    Some((i as u16 + NUMSTD) as Long)
 }
 
 /// The calling process's UFT entry for standard handle `std` (0..NUMSTD):
-/// `-1`/negative = a BIOS device (NewTOS maps all to the console), `>=
-/// NUMSTD` = a redirected non-standard handle. No process → the console.
+/// negative = a BIOS device, `>= NUMSTD` = a redirected non-standard handle.
+/// No process → the console.
 fn uft(std: u16) -> i16 {
     let bp = crate::bdos::process::current_kva();
     if bp.is_null() {
@@ -87,7 +168,7 @@ fn uft(std: u16) -> i16 {
     unsafe { (*bp).p_uft.get(std as usize).copied().unwrap_or(-1) as i16 }
 }
 
-/// Set the calling process's UFT entry (for `Fforce`).
+/// Set the calling process's UFT entry (`Fclose` of a standard handle).
 fn set_uft(std: u16, val: i16) {
     let bp = crate::bdos::process::current_kva();
     if bp.is_null() {
@@ -101,52 +182,69 @@ fn set_uft(std: u16, val: i16) {
     }
 }
 
+/// `sft[h - NUMSTD].f_ofd` for a value `h` taken from a `p_uft[]` entry
+/// `> 0` — `NULL` for a value that names no entry (`1..NUMSTD`, which
+/// `Fforce` never stores, or one past the table).
+fn sft_ofd(h: i16) -> FOfd {
+    if h < NUMSTD as i16 {
+        return FOfd::Null;
+    }
+    sft().get((h - NUMSTD as i16) as usize).map_or(FOfd::Null, |e| e.ofd)
+}
+
+/// EmuTOS `getofd` (`bdos/fsmain.c:474-486`) via `syshnd` (`:457-466`): a
+/// non-standard handle names its entry; a standard handle its `p_uft[]`
+/// value if that is `> 0`, else it has no OFD. Answers the entry's `f_ofd`.
+fn getofd(h: i16) -> FOfd {
+    if h < 0 || h as usize >= NUMHANDLES {
+        return FOfd::Null;
+    }
+    let n = if h >= NUMSTD as i16 {
+        h - NUMSTD as i16
+    } else {
+        let t = uft(h as u16);
+        if t > 0 { t - NUMSTD as i16 } else { t }
+    };
+    if n < 0 {
+        return FOfd::Null;
+    }
+    sft().get(n as usize).map_or(FOfd::Null, |e| e.ofd)
+}
+
 /// The final I/O target a handle resolves to.
 enum Target {
-    /// The console (any default / device-mapped standard handle).
+    /// The console (a BIOS device — NewTOS maps every one to the console).
     Console,
-    /// The open-file-table slot holding the file's `Ofd`.
+    /// The OFD (index into `Tables::ofds`) the handle's entry points at.
     File(usize),
     /// An invalid handle.
     None,
 }
 
-/// Resolve a handle to its I/O target, following the per-process UFT (for
-/// standard handles) and `Fdup` redirect chains (bounded against cycles).
+/// Resolve a handle to its I/O target as the dispatcher does for the
+/// handle-based functions (`bdos/bdosmain.c:572-591`): a non-standard handle
+/// takes its entry's `f_ofd`; a standard handle its `p_uft[]` value — `> 0`
+/// the entry it was forced to, else the BIOS handle itself (`0`: none).
 fn resolve(handle: u16) -> Target {
-    let mut t: i16 = if handle < NUMSTD {
-        uft(handle)
+    let numl = if handle >= NUMSTD {
+        sft().get((handle - NUMSTD) as usize).map_or(FOfd::Null, |e| e.ofd)
     } else {
-        handle as i16
+        let h = uft(handle);
+        if h > 0 { sft_ofd(h) } else { FOfd::bios(h) }
     };
-    for _ in 0..8 {
-        if t < 0 {
-            return Target::Console; // a BIOS device → the console
-        }
-        if (t as u16) < NUMSTD {
-            t = uft(t as u16); // a standard-handle target → follow the UFT
-            continue;
-        }
-        let slot = (t as u16 - NUMSTD) as usize;
-        match table().get(slot).and_then(|s| *s) {
-            Some(Slot::File(_)) => return Target::File(slot),
-            Some(Slot::Redirect(inner)) => t = inner,
-            None => return Target::None,
-        }
+    match numl {
+        FOfd::Null => Target::None,
+        FOfd::Bios(_) => Target::Console,
+        FOfd::File(j) => Target::File(j),
     }
-    Target::None
 }
 
 /// Resolve a handle to its open `Ofd` (a file), or `None` for the console /
 /// an invalid handle. Used by the file-only ops (`Fseek`, `Fdatime`, …).
 fn ofd_of(handle: u16) -> Option<&'static mut Ofd> {
-    let slot = match resolve(handle) {
-        Target::File(s) => s,
-        _ => return None,
-    };
-    match table().get_mut(slot)?.as_mut()? {
-        Slot::File(ofd) => Some(ofd),
-        Slot::Redirect(_) => None,
+    match resolve(handle) {
+        Target::File(j) => ofds().get_mut(j)?.as_mut(),
+        _ => None,
     }
 }
 
@@ -189,11 +287,7 @@ pub fn fopen(args: &TrapArgs) -> Long {
         None => return EFILNF,
     };
 
-    let slot = match table().iter().position(Option::is_none) {
-        Some(s) => s,
-        None => return ENHNDL,
-    };
-    table()[slot] = Some(Slot::File(Ofd {
+    open_handle(Ofd {
         vol,
         drive,
         dir_start: parent,
@@ -203,8 +297,9 @@ pub fn fopen(args: &TrapArgs) -> Long {
         pos: 0,
         mode,
         dirty: false,
-    }));
-    (slot as u16 + NUMSTD) as Long
+        listed: true,
+    })
+    .unwrap_or(ENHNDL)
 }
 
 /// `Fcreate` (0x3C) — create (or truncate) a file and open it for
@@ -281,11 +376,7 @@ pub fn fcreate(args: &TrapArgs) -> Long {
         return code;
     }
 
-    let slot = match table().iter().position(Option::is_none) {
-        Some(s) => s,
-        None => return ENHNDL,
-    };
-    table()[slot] = Some(Slot::File(Ofd {
+    open_handle(Ofd {
         vol,
         drive,
         dir_start: parent,
@@ -295,8 +386,9 @@ pub fn fcreate(args: &TrapArgs) -> Long {
         pos: 0,
         mode: 0x01, // write access
         dirty: false,
-    }));
-    (slot as u16 + NUMSTD) as Long
+        listed: true,
+    })
+    .unwrap_or(ENHNDL)
 }
 
 /// `Fread` (0x3F) — read `len` bytes from a handle into a buffer.
@@ -537,10 +629,15 @@ fn erase_entry(vol: &Volume, start: u32, slot: u32, start_cluster: u32) {
 /// shared SFT, the desktop's single active process), so it always takes the
 /// owning-process branch and closes the handle.
 fn close_open_file(dir_start: u32, dir_slot: u32) {
-    for s in table().iter_mut() {
-        if let Some(Slot::File(ofd)) = s {
-            if ofd.dir_start == dir_start && ofd.dir_slot == dir_slot {
-                *s = None;
+    for j in 0..OPEN_FILES {
+        let hit = matches!(ofds()[j], Some(o) if o.dir_start == dir_start && o.dir_slot == dir_slot);
+        if !hit {
+            continue;
+        }
+        ofds()[j] = None;
+        for e in sft().iter_mut() {
+            if e.ofd == FOfd::File(j) {
+                *e = FREE;
             }
         }
     }
@@ -935,40 +1032,121 @@ pub fn fseek(args: &TrapArgs) -> Long {
     ofd.pos as Long
 }
 
-/// `Fclose` (0x3E) — close a handle.
+/// `Fclose` (0x3E) — close a handle (EmuTOS `xclose`,
+/// `bdos/fsopnclo.c:426-496`; spec `docs/api/gemdos/file/3e-fclose.md`).
 pub fn fclose(args: &TrapArgs) -> Long {
-    let h = args.arg_i16(0);
+    xclose(args.arg_i16(0))
+}
+
+/// EmuTOS `xclose`: a negative handle is a good close of a character device;
+/// a standard handle reverts to its `default_handle` and the handle it was
+/// forced to is closed; a non-standard entry mapped to a BIOS device only
+/// loses a use; anything else is a real close (`ixclose`) that loses a use,
+/// and the entry goes at zero (`sftdel`).
+fn xclose(h: i16) -> Long {
     if h < 0 {
-        return E_OK; // BIOS character device: no-op
+        return E_OK; // always a good close on a character device
     }
-    let handle = h as u16;
-    if handle < NUMSTD {
-        return E_OK; // standard handle: nothing to free yet
+    if h as usize >= NUMHANDLES {
+        return EIHNDL;
     }
-    let slot = (handle - NUMSTD) as usize;
-    match table().get_mut(slot) {
-        Some(s @ Some(_)) => {
-            // Flush the directory entry (size / start cluster) if writes
-            // changed it, then write back dirty cached sectors. A `Fdup`
-            // redirect entry holds no file, so it is just released.
-            let mut err = E_OK;
-            if let Some(Slot::File(ofd)) = s {
-                if ofd.dirty {
-                    flush_ofd(ofd);
-                }
-                // The close is where the file's length and time reach the
-                // card. A failure here means the file on the card is not
-                // the file the application wrote, so it is the result of
-                // `Fclose` — the handle is released either way, exactly as
-                // EmuTOS' `xclose` runs its buffer flush before returning.
-                if let Err(code) = super::cache::flush() {
-                    err = code;
-                }
-            }
-            *s = None;
-            err
+    let mut h = h;
+    if h < NUMSTD as i16 {
+        let h0 = uft(h as u16); // remember old mapping
+        let default = crate::bdos::process::standin::DEFAULT_HANDLE[h as usize];
+        set_uft(h as u16, default as i16); // revert to default
+        h = h0;
+        if h < 0 {
+            return E_OK;
         }
-        _ => EIHNDL,
+        if h < NUMSTD as i16 {
+            return EIHNDL; // "can't happen" (bug in Fforce()?)
+        }
+    } else {
+        let e = &mut sft()[(h - NUMSTD as i16) as usize];
+        if let FOfd::Bios(_) = e.ofd {
+            e.use_ -= 1;
+            if e.use_ == 0 {
+                *e = FREE;
+            }
+            return E_OK;
+        }
+    }
+
+    let FOfd::File(j) = getofd(h) else {
+        return EIHNDL;
+    };
+    let rc = ixclose(j);
+
+    let n = (h - NUMSTD as i16) as usize;
+    sft()[n].use_ -= 1;
+    if sft()[n].use_ == 0 {
+        sftdel(n);
+    }
+    rc
+}
+
+/// EmuTOS `ixclose(fd, 0)` (`bdos/fsopnclo.c:511-581`): write a dirty
+/// directory entry back, take the OFD off its directory's open-file list —
+/// `EINTRN` if it is no longer there (an earlier close of a handle sharing it
+/// took it off), returned before the buffer flush — then write back every
+/// dirty buffer. A write-back failure is the result: the file on the card is
+/// not the file the application wrote (EmuTOS unwinds with the BIOS code,
+/// `bdos/fs.h:60`); the caller releases the handle either way.
+fn ixclose(j: usize) -> Long {
+    let Some(ofd) = ofds()[j].as_mut() else {
+        return EIHNDL;
+    };
+    if ofd.dirty {
+        flush_ofd(ofd);
+        ofd.dirty = false;
+    }
+    if !ofd.listed {
+        return EINTRN; // some kind of internal error
+    }
+    ofd.listed = false;
+    match super::cache::flush() {
+        Ok(()) => E_OK,
+        Err(code) => code,
+    }
+}
+
+/// EmuTOS `sftdel` (`bdos/fsopnclo.c:380-410`): clear the entry, and free its
+/// OFD unless another entry still points at it (`sftofdsrch`).
+fn sftdel(n: usize) {
+    let ofd = sft()[n].ofd;
+    sft()[n] = FREE;
+    if let FOfd::File(j) = ofd {
+        if !sft().iter().any(|e| e.ofd == ofd) {
+            ofds()[j] = None;
+        }
+    }
+}
+
+/// The file half of EmuTOS `ixterm` (`bdos/proc.c:116-123`), for the
+/// process `r` that terminates (`Pterm`, `Pterm0`, `Ptermres`): close every
+/// standard handle it redirected to a file (`p_uft[i] > 0`), then every
+/// `sft[]` entry it owns.
+///
+/// # Safety
+///
+/// `r` is the user address of a live basepage (its kernel alias readable).
+pub unsafe fn close_process_files(r: *mut tos_types::BasePage) {
+    if r.is_null() {
+        return;
+    }
+    let kva = crate::bdos::process::kalias(r as u64) as *const tos_types::BasePage;
+    // SAFETY: caller contract.
+    let uft = unsafe { (*kva).p_uft };
+    for h in uft {
+        if h > 0 {
+            let _ = xclose(h as i16);
+        }
+    }
+    for i in 0..OPEN_FILES {
+        if sft()[i].own == Some(r as u64) {
+            let _ = xclose((i + NUMSTD as usize) as i16);
+        }
     }
 }
 
@@ -1012,45 +1190,76 @@ fn console_write(space: crate::uaccess::Space, len: i32, ubuf: u64) -> Long {
     len as Long
 }
 
-/// `Fdup` (0x45) — duplicate the current mapping of standard handle `h`
-/// (0..NUMSTD) into a fresh non-standard handle, so a program can save it
-/// before redirecting with `Fforce` (EmuTOS `xdup`). Returns the new
-/// handle, `EIHNDL` for a non-standard `h`, or `ENHNDL` when the table is
-/// full.
+/// `Fdup` (0x45) — duplicate standard handle `h` (0..NUMSTD) into a fresh
+/// non-standard handle (EmuTOS `xdup`, `bdos/fshand.c:93-123`): the first
+/// entry without an owner becomes `run`'s with `f_use = 1` and the current
+/// mapping — the OFD of the entry `h` is forced to (shared, no use taken on
+/// that entry), or `h`'s BIOS handle. Returns the new handle, `EIHNDL` for a
+/// non-standard `h`, `ENHNDL` when every entry is owned.
 pub fn fdup(args: &TrapArgs) -> Long {
     let h = args.arg_i16(0);
-    if h < 0 || h as u16 >= NUMSTD {
-        return EIHNDL; // only standard handles may be duplicated
+    if h < 0 || h >= NUMSTD as i16 {
+        return EIHNDL; // only dup standard
     }
-    let captured = uft(h as u16);
-    let slot = match table().iter().position(Option::is_none) {
-        Some(s) => s,
-        None => return ENHNDL,
-    };
-    table()[slot] = Some(Slot::Redirect(captured));
-    (slot as u16 + NUMSTD) as Long
+    let t = uft(h as u16);
+    let ofd = if t > 0 { sft_ofd(t) } else { FOfd::bios(t) };
+    match claim_sft(ofd) {
+        Some(i) => (i as u16 + NUMSTD) as Long,
+        None => ENHNDL,
+    }
 }
 
-/// `Fforce` (0x46) — redirect standard handle `std` (0..NUMSTD) to source
-/// handle `h` (a non-standard handle `>= NUMSTD`, or a negative BIOS
-/// device) by rewriting the process UFT (EmuTOS `xforce`). Returns `E_OK`,
-/// or `EIHNDL` for a bad `std`, a standard-handle source, or a source that
-/// references no live table entry.
+/// `Fforce` (0x46) — redirect standard handle `std` of `run` to `h`
+/// (EmuTOS `xforce` = `ixforce(std, h, run)`, `bdos/fshand.c:32-35`).
 pub fn fforce(args: &TrapArgs) -> Long {
-    let std = args.arg_i16(0);
-    let h = args.arg_i16(1);
-    if std < 0 || std as u16 >= NUMSTD {
-        return EIHNDL;
+    let bp = crate::bdos::process::current_kva();
+    // SAFETY: `current_kva` is the running process's live basepage or null.
+    unsafe { ixforce(args.arg_i16(0), args.arg_i16(1), bp) }
+}
+
+/// EmuTOS `ixforce` (`bdos/fshand.c:46-77`): validate the standard handle
+/// `std`; a BIOS handle `h < 0` is stored as is; a non-standard `h` must have
+/// an OFD — if its entry is mapped to a BIOS device that handle is stored,
+/// otherwise `h` itself and the entry gains a use. Whatever `p_uft[std]`
+/// mapped before is not released. Also the launcher's hook
+/// ([`crate::bdos::process::loader::init_pd_files`]).
+///
+/// `p` is the kernel alias of the PD to change; null (kernel code with no
+/// running process — the stand-ins are read-only) validates only: nothing is
+/// stored and no use is taken.
+///
+/// # Safety
+///
+/// `p` is null or a live basepage.
+pub unsafe fn ixforce(std: i16, h: i16, p: *mut tos_types::BasePage) -> Long {
+    if std < 0 || std >= NUMSTD as i16 {
+        return EIHNDL; // validate standard handle
     }
-    if h >= 0 && (h as u16) < NUMSTD {
-        return EIHNDL; // cannot force to another standard handle
+    let store = |v: i16| {
+        if !p.is_null() {
+            // SAFETY: caller contract; `std` is in 0..NUMSTD.
+            unsafe { (*p).p_uft[std as usize] = v as i8 };
+        }
+    };
+    if h < 0 {
+        store(h); // a BIOS handle: just store it as-is
+        return E_OK;
     }
-    if h >= NUMSTD as i16 {
-        let slot = (h as u16 - NUMSTD) as usize;
-        if table().get(slot).and_then(|s| *s).is_none() {
-            return EIHNDL;
+    if h < NUMSTD as i16 {
+        return EIHNDL; // validate the non-std handle
+    }
+    match getofd(h) {
+        FOfd::Null => EIHNDL, // the non-std handle does not exist
+        FOfd::Bios(fh) => {
+            store(fh);
+            E_OK
+        }
+        FOfd::File(_) => {
+            if !p.is_null() {
+                store(h);
+                sft()[(h - NUMSTD as i16) as usize].use_ += 1;
+            }
+            E_OK
         }
     }
-    set_uft(std as u16, h);
-    E_OK
 }

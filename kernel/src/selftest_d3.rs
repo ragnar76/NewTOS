@@ -294,7 +294,10 @@ fn validate_basepage(loaded: &LoadedImage) -> bool {
     let base = loaded.basepage_va as i32;
     let expected_hitpa: i32 = loaded.sp_el0 as i32;
     let expected_xdta: i32 = base + 0x80;
-    let expected_uft = [-1i8; 6];
+    // `init_pd_files` (`bdos/proc.c:391-398`): a kernel load inherits the
+    // stand-in `run`'s handles — `default_handle` (`bdos/console.c:60-68`,
+    // TASK/PROC02).
+    let expected_uft = tos_api::bdos::process::standin::DEFAULT_HANDLE;
 
     let p_lowtpa = bp.p_lowtpa;
     let p_hitpa = bp.p_hitpa;
@@ -346,7 +349,7 @@ fn validate_basepage(loaded: &LoadedImage) -> bool {
         if xdta_ok && flags_ok { "OK" } else { "FAIL" },
     );
     kprintln!(
-        "[d3]   bp.p_uft    = [-1; 6]                        {}",
+        "[d3]   bp.p_uft    = [-1,-1,-2,-3,-1,-1]            {}",
         if uft_ok { "OK" } else { "FAIL" },
     );
 

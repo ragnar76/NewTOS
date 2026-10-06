@@ -1,0 +1,7 @@
+built kernel8-crash-proc02.img
+built kernel-virt-crash-proc02.img
+built kernel8-keys-proc02.img
+built kernel-virt-st-proc02.img
+built kernel8-tdkeys-proc02.img
+built kernel8-keys9-proc02.img
+rc=0

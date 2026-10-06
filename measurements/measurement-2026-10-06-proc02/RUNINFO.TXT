@@ -1,0 +1,74 @@
+measurement-2026-10-06-proc02 -- TASK/PROC02: a child inherits the caller's
+redirected standard handles (EmuTOS init_pd_files -> ixforce), Fforce takes a
+use count, Fclose/Pterm follow xclose/ixterm. Developer self-evidence; the
+Tester's verdict is separate.
+
+Date 2026-10-06, branch desk-rebuild, HEAD 5cfb1b2 plus this change
+(uncommitted). QEMU 11 raspi4b (-append serial=on [+ memprot=off|strict]) and
+virt, host macOS. No SD card, Pi or TT touched; tools/make-sd-image.sh NOT
+used (method/seed-card.sh, private 64 MiB images in the session scratchpad,
+make-scratch.sh excludes 'sd-card-backup-*'). Injector/crash/selftest kernels
+from scratch copies of the tree (method/scratch-kernels.sh, desk3a-run.sh,
+ppdesk-run.sh), never applied to the shared tree.
+
+SPEC (EmuTOS 1a7484ab): bdos/proc.c:110-123 (ixterm), :235,345-350,387-399
+(init_pd_files); bdos/fshand.c:32-35,46-77 (xforce/ixforce), :93-123 (xdup);
+bdos/fsopnclo.c:341-349 (opnfil), :362-410 (sftofdsrch/sftdel), :426-496
+(xclose), :511-581 (ixclose, d_files unlink :552-566 -> EINTRN on the
+second close of a shared OFD); bdos/fsmain.c:457-486 (syshnd/getofd);
+bdos/bdosmain.c:572-591 (handle resolution); bdos/console.c:60-68,132-135.
+Changed: docs/api/gemdos/_state.md §2 (new "Handle lifecycle"),
+file/3e-fclose.md, file/45-fdup.md (correction: closing the original does
+NOT dangle the Fdup copy -- sftdel keeps the OFD while another entry points
+at it), file/46-fforce.md, process/4b-pexec.md, process/4c-pterm.md.
+
+CODE: tos-api/src/bdos/fs/file.rs (sft[] = f_ofd/f_own/f_use over a separate
+OFD table, OFD 'listed' flag; fclose=xclose, ixclose, sftdel, fdup=xdup,
+fforce/ixforce, getofd/syshnd, close_process_files = ixterm file half),
+process/loader.rs (init_pd_files after a successful load and after
+create_basepage; p_uft zeroed like bzero until then), process/pterm.rs
+(close_process_files before the memory sweep), process/standin.rs
+(DEFAULT_HANDLE pub, kernel_run_uft), kernel/src/selftest_d3.rs (expects
+default_handle for a kernel load -- the stand-in's handles).
+
+METHOD: method/ = measurement-2026-10-06-pparent/method copied, plus
+  series-proc02.sh   series-pp.sh with label proc02 (PPARENT probes, desktop
+                     double-click, runs-poste9 = desktop, TeraDesk, QED, Doom,
+                     APITEST, accessory, E9MEM/E9PLAIN, S2ALL, PORT10,
+                     CRASHTST, UACC3A, MPROT, E10, KBDVEC+EmuCON,
+                     TeraDesk->QED, EmuCON five programs, ATEXIT, ACCFREE,
+                     MDPROBE, strict S2ALLS, virt crash/selftests/desktop;
+                     desk3a; S2ALL(S) on the crash kernel; VFORKT alone).
+  proc02_red_tmp.rs  the red run's test variant (dispatcher-level tests only).
+  User programs: bin/ = pparent bin/ programs (no SDK change), SHA256SUMS
+  verified OK; repo-binaries.sha256 (APITEST, QED, TeraDesk, Doom) verified
+  OK against the tree. Kernels: bin/KERNELS.SHA256 (kernel8-proc02.img
+  13895670..., kernel-virt-proc02.img 56e40ea9...).
+
+HOST TESTS (tos-api/tests/proc02_handle_lifecycle.rs, 7 tests)
+  red: checks/red-host-compile.txt (new entry points missing),
+       checks/red-host-runtime.txt (old code, 4 dispatcher-level tests: all
+       FAIL -- e.g. p_uft[1] after restore = 10 not -1; Fwrite(saved dup) -37)
+  green: 7/7.
+
+STATIC CHECKS (checks/proc02-*.txt)    pparent        proc02
+  host tests pass/fail/ignored          1145/0/1       1152/0/1 (+7)
+  release warnings tos-api/kernel       64/94 both     64/94 both boards
+  clippy tos-api/kernel rpi4, virt      76/125         76/125 (per-file
+                                                       counts identical)
+  desk-drift-probe                      31             31
+  sdk/run-host-tests                    13/0/0         13/0/0
+
+QEMU
+  smoke (serial/smoke-on-rpi4-port10): port10: ALL PASS (44 checks).
+  Series (checks/summary-proc02-<mode>.txt vs pparent summary-pp-<mode>.txt,
+  whitespace-normalised): in all three modes the ONLY differing line is
+  PORT10: "2 of 44 checks FAILED" -> "ALL PASS (44 checks)". Everything else
+  identical (S2ALL/S2ALLS, VFORKT, ACCFREE, ATEXIT, APITEST 106/0/5, Doom
+  VERIFIED, PPARENT/PPDESK/ENVRN, CRASHTST/UACC3A/MPROT/E10, virt selftests
+  incl. D3 with the new p_uft expectation, EmuCON, KBDVEC).
+  Screendumps (checks/screendump-compare.txt): 165 byte-identical
+  (desktop, TeraDesk, QED, APITEST, TeraDesk->QED, accessory, ...), 147
+  differ, all inspected by class: crash reports (UACC3A, virt crash -- kernel
+  register addresses), desk3a E_INFO/F_TYPED and CRASHTST/MPROT directory
+  windows (file times), Doom (timing). No functional difference.

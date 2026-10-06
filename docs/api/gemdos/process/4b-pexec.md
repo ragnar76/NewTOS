@@ -347,7 +347,9 @@ program is **loaded without relocation** rather than rejected
    (`p_uft[i] > 0`) are duplicated into the child via `ixforce` (bumping the
    `sft[]` use count so both share the file); non-redirected entries are copied
    verbatim. Every non-zero `p_curdir[i]` bumps `dirtbl[dn].use`; `p_curdrv` is
-   copied (`bdos/proc.c:392-409`). Parent and child then diverge.
+   copied (`bdos/proc.c:387-410`). Parent and child then diverge. It runs only
+   once the PD is complete — after a successful load (`:350`), for 5/7 after
+   `init_pd_fields` (`:235`) — so a failed `Pexec` takes no use count.
 
 8. **Ownership split (modes 0 vs 3) and the `PE_GOTHENFREE` hand-off.**
    `owner = (flag==PE_LOADGO) ? p : run` (`bdos/proc.c:305`). For `PE_LOAD` the
@@ -560,6 +562,18 @@ PHASE-06 D4/D5 status (2026-06-16):
   launcher writes `p_parent` as `proc_go` would (`initial_basepage` /
   AES-PD stand-in); an accessory keeps 0. Before PPARENT kernel launches had
   `p_env = 0` and `p_parent = 0`.
+- **Standard handles (TASK/PROC02, 2026-10-06).** `init_pd_files`'s handle
+  half (`bdos/proc.c:391-398`) runs for every PD the loader completes —
+  `Pexec` 0/3 and the kernel launches after the image is in place, 5/7 after
+  the slot is set up (`loader::init_pd_files`): a caller's `p_uft[i] > 0` is
+  `ixforce`d into the child (`f_use + 1`), every other value copied. With no
+  running process the source is the kernel's `run` stand-in, whose
+  `p_uft` is `default_handle`, so AUTO/desktop/`#Z` programs and accessories
+  now start with `-1,-1,-2,-3,-1,-1` (before: six `-1`; `Fread`/`Fwrite` treat
+  every negative handle as the console, so nothing visible changes there).
+  `p_curdir[]`/`p_curdrv` stay out: the current drive and paths are global in
+  NewTOS, not per PD. A child's `Pterm` closes its redirected standard handles
+  and the `sft[]` entries it owns (`ixterm`, `docs/api/gemdos/process/4c-pterm.md`).
 - I-cache: invalidate the loaded **text range** with `dc cvau`+`ic ivau`+
   `dsb ish`+`isb` (same text-only scope as EmuTOS).
 - **`PRGFLAGS` of a NewTOS program — the `prgflags` ELF note (ARCH03 stage 2,
@@ -658,8 +672,7 @@ PHASE-06 D4/D5 status (2026-06-16):
     `p_lowtpa = p`, `p_hitpa = p + max`, `p_xdta = &p_cmdlin`, `p_env`, the
     command tail (`x2`, copied like the load modes); `p_flags = flags`; the
     segment fields stay 0. Standard handles, current directories and drive
-    are set as the loader sets them for the load modes (`init_pd_files`
-    inheritance is TASK/PROC02, the same for every mode). Only the 256-byte
+    are inherited as for the load modes (`init_pd_files`, below). Only the 256-byte
     basepage is written — the rest of the block is whatever the pool holds,
     as in EmuTOS. Returns the PD pointer.
   * **NewTOS bookkeeping:** the basepage gets a process slot right away, in

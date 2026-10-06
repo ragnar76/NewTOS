@@ -45,8 +45,10 @@ pub const AES_ENV_SIZE: usize = 12;
 /// `H_Aux`, `H_Print`, `H_Console`, `H_Console` (`bdos/console.h:23-25`) —
 /// what `stdhdl_init` puts into `initial_basepage.p_uft`
 /// (`bdos/console.c:107-112`) and `init_pd_files` copies into the AES PD
-/// (`bdos/proc.c:390-398`, a handle `<= 0` is copied as is).
-const DEFAULT_HANDLE: [i8; NUMSTD] = [-1, -1, -2, -3, -1, -1];
+/// (`bdos/proc.c:390-398`, a handle `<= 0` is copied as is). `Fclose` of a
+/// standard handle reverts it to this (`get_default_handle`,
+/// `bdos/console.c:132-135`, `bdos/fsopnclo.c:453`).
+pub const DEFAULT_HANDLE: [i8; NUMSTD] = [-1, -1, -2, -3, -1, -1];
 
 /// Offset of the AES PD in the page.
 const AES_OFFSET: usize = 0x100;
@@ -238,6 +240,21 @@ pub fn aes_pd() -> *mut BasePage {
 /// starts holds (`proc_go`, `bdos/proc.c:541`).
 pub fn kernel_run() -> *mut BasePage {
     if KERNEL_RUN.load(Ordering::Acquire) == RUN_AES { aes_pd() } else { initial_basepage() }
+}
+
+/// The standard handles of [`kernel_run`] — what `init_pd_files` inherits
+/// when the caller is the kernel (`bdos/proc.c:391-398`, TASK/PROC02). Both
+/// stand-ins hold `default_handle` (`stdhdl_init`, `bdos/bdosmain.c:347`;
+/// the AES PD copies it). Before [`init`] it is still `default_handle`:
+/// EmuTOS's `run` is `initial_basepage` with those handles from BDOS
+/// initialisation on, before any program exists.
+pub fn kernel_run_uft() -> [i8; NUMSTD] {
+    if !ready() {
+        return DEFAULT_HANDLE;
+    }
+    // SAFETY: written only by `init` (boot); shared reads afterwards.
+    let p = unsafe { &*PAGE.0.get() };
+    if KERNEL_RUN.load(Ordering::Acquire) == RUN_AES { p.aes.p_uft } else { p.initial.p_uft }
 }
 
 /// The environment of [`kernel_run`] as the kernel reads it — what

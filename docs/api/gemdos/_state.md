@@ -144,8 +144,39 @@ value `> 0` becomes `sft[value - NUMSTD]`, a value `<= 0` stays a BIOS handle
 `Fforce` rewires a standard slot and bumps `f_use` for file mappings. See the
 per-function specs under `docs/api/gemdos/file/`.
 
-NewTOS: per-process file table in the kernel; standard handles 0..5
-short-circuit to the console/serial/printer layer without touching the SFT.
+### Handle lifecycle across `Pexec` / `Pterm` (TASK/PROC02)
+
+- **Inheritance** — `init_pd_files` (`bdos/proc.c:387-399`), run for every
+  new PD (`Pexec` 0/3 after a successful load, `:350`; 5/7, `:235`): for each
+  standard handle of `run`, a value `> 0` is `ixforce(i, h, p)`d into the
+  child (so `sft[h-NUMSTD].f_use++`, `bdos/fshand.c:66-74`), every other value
+  is copied verbatim. A redirected stdout therefore stays redirected in the
+  child, and the file stays open until both have closed it.
+- **Termination** — `ixterm` (`bdos/proc.c:110-123`): every `p_uft[i] > 0` of
+  the dying PD is `xclose`d, then every `sft[]` entry with `f_own == r`.
+- **Re-forcing does not release.** `ixforce` overwrites `p_uft[std]` without
+  closing or decrementing what it mapped before (`bdos/fshand.c:46-77`); the
+  use count that `Fforce`/inheritance took stays until a `Fclose` of the
+  standard handle (`xclose` reverts and closes, `bdos/fsopnclo.c:450-458`) or
+  until the owner's `ixterm`.
+- **A shared OFD is listed once.** `ixclose(fd, 0)` unlinks the OFD from its
+  directory's `d_files` list (`bdos/fsopnclo.c:552-566`); a later `ixclose` of
+  the same OFD (the second close of a handle `Fforce` or inheritance shared)
+  writes the dirty directory entry, finds no list entry and returns `EINTRN`
+  without flushing the buffers. `xclose` decrements `f_use` either way
+  (`:492-493`); `sftdel` frees the OFD only when no other `sft[]` entry
+  points at it (`sftofdsrch`, `:362-410`).
+
+NewTOS (TASK/PROC02): `sft[]` entries (`f_ofd`, `f_own`, `f_use`) and the
+OFDs they point at are separate tables in `tos-api/src/bdos/fs/file.rs`; an
+OFD carries a `listed` flag for its `d_files` membership. `f_own` is the
+running PD, or — kernel code with no running process — the stand-in PD that
+is EmuTOS's `run` there (`standin::kernel_run`, TASK/PPARENT). A negative
+`p_uft`/`f_ofd` (BIOS handle) still resolves to the console for
+`Fread`/`Fwrite` (no AUX/PRN device in the profile). The dispatcher's
+redirection of the character functions (`Cconout` & co. through
+`p_uft[]`, `bdos/bdosmain.c:498-568`) is not implemented: they always use the
+console.
 
 ---
 

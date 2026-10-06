@@ -175,7 +175,18 @@ missing from `d_files`, and the negative-handle no-op (`E_OK` for `h < 0`).
    (`bdos/fsopnclo.c:530-579`). `CL_DIR`/`CL_FULL` are internal partial-close
    flags; public `Fclose` uses part `0` (full close).
 
-6. **Directory lengths are stored as zero on disk.** When closing with `CL_DIR`
+6. **Second close of a shared OFD → `EINTRN`, no flush.** `ixclose(fd, 0)`
+   unlinks the OFD from `o_dnode->d_files` (`bdos/fsopnclo.c:552-566`). An OFD
+   shared by several handles — `Fforce`d onto a standard handle, inherited by
+   a child (`init_pd_files`), or `Fdup`ed — is therefore unlinked by the first
+   close; every later close still writes a dirty directory entry
+   (`:530-550`), then finds no list entry and returns `EINTRN` (-65) **before**
+   the buffer flush (`:576-579`). `xclose` decrements `f_use` regardless
+   (`:492-493`). In the mintlib `system("prog >file")` sequence the child's
+   `Pterm` performs the first close, so the parent's `Fclose(outfd)` returns
+   `EINTRN` (ignored by `system`).
+
+7. **Directory lengths are stored as zero on disk.** When closing with `CL_DIR`
    the on-disk `f_fileln` is forced to 0 (`bdos/fsopnclo.c:542-543`); regular
    files get the archive bit set instead.
 
@@ -227,3 +238,14 @@ missing from `d_files`, and the negative-handle no-op (`E_OK` for `h < 0`).
 
 PHASE-05: identical SFT / `p_uft[]` semantics; the flush ordering (directory
 entry before data) is a crash-consistency contract worth preserving.
+
+TASK/PROC02 (2026-10-06): `tos-api/src/bdos/fs/file.rs` `fclose` follows
+`xclose` (`bdos/fsopnclo.c:426-496`): negative → `E_OK`; `h >= NUMHANDLES`
+(here `NUMSTD + OPEN_FILES` = 22) → `EIHNDL`; a standard handle reverts to
+`default_handle[h]` (`-1,-1,-2,-3,-1,-1`) and closes what it mapped; a
+BIOS-mapped entry only loses a use; otherwise `ixclose` (dirty directory
+entry; `EINTRN` if the OFD is no longer listed; buffer flush, whose failure
+is the result) and `f_use - 1`, `sftdel` at zero (the OFD goes with the last
+entry that points at it). Before PROC02 every close released the slot at
+once, so a handle `Fforce`d onto a standard handle died with the first
+`Fclose` (PORT10: `Fwrite(1)` → `EIHNDL` after `system("… >file")`).

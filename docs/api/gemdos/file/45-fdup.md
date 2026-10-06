@@ -47,11 +47,17 @@ handle points at a BIOS character device (`p_uft[h] <= 0`, negative), it stores
 that negative BIOS handle in `f_ofd`. It sets `f_use = 1` and returns
 `i + NUMSTD`.
 
-A subtle, deliberately-preserved quirk: when the duplicate shares a file OFD, it
-does **not** increment the source SFT entry's `f_use`. So closing the original
-handle can free the OFD while the duplicate still points at it — a dangling
-reference. Well-behaved programs close the duplicate first. (Contrast `Fforce`,
-which *does* bump `f_use` when it maps a standard handle to a file.)
+When the duplicate shares a file OFD, it does **not** increment the source SFT
+entry's `f_use` — it is a second `sft[]` entry with its own `f_use = 1`
+pointing at the same OFD. Closing the original therefore releases the
+original's entry, but **not** the OFD: `sftdel` frees an OFD only when no other
+`sft[]` entry points at it (`sftofdsrch`, `bdos/fsopnclo.c:362-410`). (Correction
+2026-10-06, TASK/PROC02: an earlier draft called this a dangling reference; it
+is not.) What the first close does do is unlink the OFD from its directory's
+open-file list (`ixclose`, `bdos/fsopnclo.c:552-566`), so the close of the
+second handle that shares it returns `EINTRN` without flushing the buffers —
+see `3e-fclose.md`. (Contrast `Fforce`, which bumps `f_use` of the *same* entry
+when it maps a standard handle to a file.)
 
 ---
 
@@ -131,9 +137,10 @@ which *does* bump `f_use` when it maps a standard handle to a file.)
 
 2. **Shared OFD without refcount bump.** When the standard handle maps to a file
    (`p_uft[h] > 0`), `Fdup` copies the OFD pointer but leaves the source's
-   `f_use` untouched (`bdos/fshand.c:115-118`). Closing the original then frees
-   the OFD, dangling the duplicate. Preserved TOS quirk; close the duplicate
-   first.
+   `f_use` untouched (`bdos/fshand.c:115-118`). The OFD outlives a close of the
+   original as long as the duplicate's entry points at it (`sftdel` →
+   `sftofdsrch`, `bdos/fsopnclo.c:396`); the second of the two closes returns
+   `EINTRN` (the OFD is no longer on `d_files`, `bdos/fsopnclo.c:552-566`).
 
 3. **BIOS device pass-through.** If the standard handle maps to a BIOS device
    (`p_uft[h] <= 0`), the negative handle is stored verbatim in `f_ofd`
@@ -191,6 +198,12 @@ which *does* bump `f_use` when it maps a standard handle to a file.)
 
 (Empty during Phase 00.)
 
-PHASE-05/06: identical SFT model. The "shared OFD without refcount bump"
-dangling behaviour is a deliberate bug-compat item for m68k binaries; native
-source ports should follow the close-duplicate-first idiom.
+PHASE-05/06: identical SFT model.
+
+TASK/PROC02 (2026-10-06): `tos-api/src/bdos/fs/file.rs` `fdup` claims the first
+`sft[]` entry with no owner, owner = the running PD (kernel caller: the
+stand-in PD, TASK/PPARENT), `f_use = 1`, and copies the mapping as EmuTOS:
+`p_uft[h] > 0` → the source entry's OFD reference (shared, no bump), else the
+negative BIOS handle (`0` → no OFD). Before PROC02 the duplicate was a
+redirect to the captured handle *number*, which followed later changes of the
+source entry instead of sharing its OFD.

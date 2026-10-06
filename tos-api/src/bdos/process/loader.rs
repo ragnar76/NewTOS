@@ -490,7 +490,14 @@ unsafe fn load_from_source(
         let req = ProcessSetup { tail, env_addr, prgflags, image_end };
         populate_and_map(&src, slot, &img, &req, &tpa)
     } {
-        Ok(loaded) => Ok(loaded),
+        Ok(loaded) => {
+            // "the program has been correctly loaded in memory, and more I/O
+            // errors cannot occur, so it is safe now to finish initializing
+            // the new process" (EmuTOS `xexec`, `bdos/proc.c:345-350`).
+            // SAFETY: BDOS lock held; the basepage is live at its alias.
+            unsafe { init_pd_files(tpa.base_kva as *mut BasePage) };
+            Ok(loaded)
+        }
         Err(e) => {
             // SAFETY: BDOS lock held; `tpa.base` is still allocated.
             unsafe { arena::free_tpa(tpa.base as Long) };
@@ -733,28 +740,67 @@ pub unsafe fn create_basepage(
     bp.p_xdta = (tpa.base + core::mem::offset_of!(BasePage, p_cmdlin) as u64) as Long;
     bp.p_env = env_addr.unwrap_or(0);
     bp.p_flags = flags;
-    // Standard handles / current drive as the loader sets them for the load
-    // modes (`populate_basepage`); `init_pd_files` inheritance is PROC02.
-    bp.p_uft = [-1; NUMSTD];
+    // The standard handles are `init_pd_files`'s, below, once the slot exists.
     let n = core::cmp::min(tail.len(), PDCLSIZE - 1);
     bp.p_cmdlin[..n].copy_from_slice(&tail[..n]);
     bp.p_cmdlin[n] = 0;
 
     // SAFETY: BDOS lock held; `slot` is ours.
     match unsafe { install_slot(slot, &tpa, 0, 0) } {
-        Ok(l0_pa) => Ok(LoadedImage {
-            slot,
-            entry_va: 0,
-            l0_pa,
-            basepage_va: tpa.base,
-            sp_el0: 0,
-            image_len: BASEPAGE_RESERVED,
-        }),
+        Ok(l0_pa) => {
+            // `init_pd_files(p)` (`bdos/proc.c:235`), after the PD is complete.
+            // SAFETY: BDOS lock held; the basepage is live at its alias.
+            unsafe { init_pd_files(tpa.base_kva as *mut BasePage) };
+            Ok(LoadedImage {
+                slot,
+                entry_va: 0,
+                l0_pa,
+                basepage_va: tpa.base,
+                sp_el0: 0,
+                image_len: BASEPAGE_RESERVED,
+            })
+        }
         Err(e) => {
             // SAFETY: BDOS lock held; both blocks are still ours.
             unsafe { arena::free_tpa(tpa.base as Long) };
             free_env();
             Err(e)
+        }
+    }
+}
+
+/// The standard-handle half of EmuTOS `init_pd_files` (`bdos/proc.c:387-399`)
+/// for the new PD `p` (kernel alias): "inherit standard files from me" —
+/// each standard handle of `run` that is `> 0` (redirected to a file) is
+/// [`ixforce`](crate::bdos::fs::file::ixforce)d into `p`, so the child shares
+/// the file and its entry counts the use; every other value is copied. `run`
+/// is the running process, or with none the kernel's stand-in PD
+/// ([`super::standin::kernel_run_uft`], TASK/PPARENT). Runs once the PD is
+/// complete, so a load that fails takes no use (`bdos/proc.c:235,345-350`).
+///
+/// The rest of `init_pd_files` — `p_curdir[]` / `p_curdrv` (`:401-409`) — has
+/// no counterpart: NewTOS keeps the current drive and paths globally, not per
+/// PD (TASK/PROC02).
+///
+/// # Safety
+///
+/// Caller holds the BDOS giant lock; `p` is the kernel alias of a live
+/// basepage that is not the running one.
+pub unsafe fn init_pd_files(p: *mut BasePage) {
+    let run = crate::bdos::process::current_kva();
+    let from = if run.is_null() {
+        super::standin::kernel_run_uft()
+    } else {
+        // SAFETY: the running process's live basepage.
+        unsafe { (*run).p_uft }
+    };
+    for (i, &h) in from.iter().enumerate() {
+        if h > 0 {
+            // SAFETY: caller contract — `p` is a live basepage.
+            let _ = unsafe { crate::bdos::fs::file::ixforce(i as i16, h as i16, p) };
+        } else {
+            // SAFETY: as above.
+            unsafe { (*p).p_uft[i] = h };
         }
     }
 }
@@ -780,7 +826,9 @@ pub unsafe fn create_basepage(
 ///   * `p_flags` — the program's `PRGFLAGS` (its ELF note, else
 ///     [`PF_STANDARD`]; EmuTOS `p->p_flags = hdr.h01_flags`,
 ///     `bdos/proc.c:313`).
-///   * `p_uft` — all `-1` (no inherited handle redirections).
+///   * `p_uft` — zero here (EmuTOS `bzero`, `bdos/proc.c:370`); the
+///     caller's handles are inherited by [`init_pd_files`] once the load has
+///     succeeded.
 ///
 /// `p_cmdlin` receives the caller's command `tail` (verbatim, truncated
 /// to 127 bytes, NUL-terminated — EmuTOS `init_pd_fields`
@@ -845,7 +893,9 @@ fn populate_basepage(
     bp.p_parent = 0;
     bp.p_flags = prgflags;
     bp.p_env = env_addr.unwrap_or(0);
-    bp.p_uft = [-1; NUMSTD];
+    // `p_uft` stays as `init_pd_fields`'s `bzero` left it until
+    // `init_pd_files` fills it (a handle `ixforce` refuses keeps the 0).
+    bp.p_uft = [0; NUMSTD];
     bp.p_lddrv = 0;
     bp.p_curdrv = 0;
 

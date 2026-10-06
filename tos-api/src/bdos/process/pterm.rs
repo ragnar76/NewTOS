@@ -22,9 +22,11 @@
 //!   * The user-term handler at exception number `0x102` (Compendium
 //!     `Setexc(0x102, -1)`). Phase 09 introduces the per-process
 //!     exception handler table.
-//!   * Standard / non-standard file-handle cleanup (`p_uft[]`,
-//!     `sft[]`). Phase 08 lands the file-system stack.
-//!   * `dirtbl[]` decrement. Same Phase-08 dependency.
+//!   * `dirtbl[]` decrement — NewTOS keeps no per-PD current directories.
+//!
+//! The file half of `ixterm` (`p_uft[]` redirections and owned `sft[]`
+//! entries, `bdos/proc.c:116-123`) runs since TASK/PROC02
+//! ([`crate::bdos::fs::file::close_process_files`]).
 //!
 //! Until those phases land the cleanup is "memory-only" — but for
 //! the D6 selftest (single user `Mxalloc` followed by `Pterm`) that
@@ -187,6 +189,12 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
     // this slot's entries; the parent's stay. The pool blocks are handled by
     // the sweep below (or kept resident by `Ptermres`).
     crate::aes::resource::on_process_exit(slot_idx);
+
+    // `ixterm` (`bdos/proc.c:116-123`): close the standard handles it
+    // redirected to files, then every `sft[]` entry it owns — before its
+    // memory goes, as EmuTOS orders it (TASK/PROC02).
+    // SAFETY: BDOS lock held; `bp` is the dying process's live basepage.
+    unsafe { crate::bdos::fs::file::close_process_files(bp) };
 
     // Sweep both BDOS pools for blocks owned by this process: free
     // them (`Pterm`) or reserve them as resident (`Ptermres`).

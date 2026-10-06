@@ -291,3 +291,11 @@ another owner still holds (the basepage and environment of a `Pexec` 4 child,
 whose caller owns them too) survives, and its EmuTOS tag passes to that owner.
 With one owner per block, the only case EmuTOS has, the result is identical
 (`docs/api/gemdos/memory/49-mfree.md`, "several owners").
+
+TASK/PROC02 (2026-10-06): the file half of `ixterm` (`bdos/proc.c:116-123`) —
+`xclose` of every `p_uft[i] > 0`, then of every `sft[]` entry owned by the
+dying PD — runs in `terminate_inner` (`Pterm`, `Pterm0`, `Ptermres`) before
+the memory sweep (`file::close_process_files`). Before PROC02 files a process
+left open stayed open after its `Pterm`. The current-directory half
+(`decr_curdir_usage`) has no counterpart: NewTOS keeps no per-PD current
+directories.

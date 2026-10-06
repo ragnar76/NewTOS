@@ -158,7 +158,22 @@ children inherit the parent's table at `Pexec` time and diverge thereafter.
 
 6. **`ixforce` is the launcher hook.** The 3-arg form is called internally to
    set up a child process's standard handles before it runs — not reachable as a
-   user syscall.
+   user syscall. `init_pd_files` (`bdos/proc.c:387-399`) calls it for every
+   standard handle of `run` that is `> 0`, so the child shares the file and
+   `f_use` counts it; values `<= 0` are copied without a call.
+
+7. **The previous mapping is not released.** `ixforce` overwrites
+   `p_uft[std]` without closing or decrementing whatever it mapped before
+   (`bdos/fshand.c:46-77`). The use count a `Fforce(1, fh)` took stays on `fh`
+   after `Fforce(1, saved)` restores the old mapping; it is given back by a
+   `Fclose(1)` while the mapping is in place, or by the owner's `Pterm`
+   (`ixterm`, `bdos/proc.c:121-123`).
+
+8. **Restore idiom.** `saved = Fdup(1); Fforce(1, fh); …; Fforce(1, saved);
+   Fclose(saved);` leaves `p_uft[1]` holding the **BIOS handle** `saved` was
+   mapped to (`f_ofd < 0` propagates, `bdos/fshand.c:68-69`), so closing
+   `saved` afterwards does not disturb handle 1 (mintlib `system()`,
+   `sdk/libc/mintlib/posix/system.c:326-340`).
 
 ---
 
@@ -208,3 +223,12 @@ children inherit the parent's table at `Pexec` time and diverge thereafter.
 PHASE-06: the process-launch path uses `ixforce` to wire the child's std
 handles. The refcount semantics — bump for file mappings, no bump for
 BIOS-mapped non-std sources — are contract for correct close balancing.
+
+TASK/PROC02 (2026-10-06): `tos-api/src/bdos/fs/file.rs` `ixforce(std, h, p)`
+follows `bdos/fshand.c:46-77` line for line (validation order, BIOS
+propagation, `f_use++`), `fforce` is `ixforce(std, h, run)`. With no running
+process (kernel caller) nothing is written and no use is taken — the stand-in
+PDs are read-only. The loader's `init_pd_files` calls `ixforce` for the
+child (`docs/api/gemdos/process/4b-pexec.md`, edge case 7). Before PROC02
+`Fforce` kept no use count and the loader gave every child `-1` in all six
+handles.

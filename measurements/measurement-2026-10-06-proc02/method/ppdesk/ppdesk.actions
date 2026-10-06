@@ -1,0 +1,16 @@
+# TASK/PPARENT desktop launch: window C:\PPD\ restored from NEWDESK.INF (the
+# desk3a geometry, #W 02 04 26 0C), its only item PPDESK.NAP at the first
+# slot, glyph centre (63,120) (desk3a's SUB3A slot). A double-click starts it
+# the EmuTOS way (shel_write + desktop exit, sh_ldapp NORMAL_APP,
+# kernel/src/shell_loop.rs); the program prints "PPARENT DESK: PASS|FAIL" on
+# the serial line and ends; the desktop comes back.
+# Ticks hz_200 (5 ms) after "[desk] desktop up".
+100 parkbr
+400 mark A_IDLE
+600 move 63 120
+800 down
+803 up
+808 down
+811 up
+1000 parkbr
+4000 mark B_BACK
