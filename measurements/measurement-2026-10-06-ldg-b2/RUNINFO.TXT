@@ -1,0 +1,64 @@
+measurement-2026-10-06-ldg-b2 -- Auditor run for finding B2 of TASK/LDG-M3
+(LDG module heap: the module's exit-time stdio malloc leaves its static
+malloc free list pointing into a hunk its own Pterm frees). Diagnosis only:
+no product code changed, nothing committed. Analysis:
+docs/analysis/ldg-module-malloc-2026-10-06.md.
+
+Date 2026-10-06, branch desk-rebuild, HEAD 2d8cc9f, shared tree untouched
+(git status: only this run directory and the analysis file are new).
+QEMU raspi4b, host macOS. No SD card, Pi or TT touched; tools/make-sd-image.sh
+NOT run. Card: method/seed-b2.sh -> private 64 MiB raw image in the session
+scratchpad (C:\LDGDEMO\ only + NEWDESK.INF #Z C:\LDGDEMO\CLIENT\LDGDEMO.NAP).
+
+PROGRAMS (unchanged, taken from measurement-2026-10-06-ldg-m3/bin/LDGDEMO)
+  1c467347e2ee26a11d0bdb24d0c1de85431b975ac58f457a0ab7fa7e2b7e9c0f  EX_LIB.NLD
+  7ef22e7791c3a3d800ba2c974895ee117667b45ff0d320cf5530bb5406359f4e  POPUP.NLD
+  dbcb481cbde82073ef294a6899d5ace5961143da0997f42a20685f1c5d6a20c0  LDGDEMO.NAP
+
+KERNEL (scratch, not kept)
+  method/build-b2-kernel.sh <scratch>: rsync copy of Cargo.toml Cargo.lock
+  rust-toolchain.toml kernel tos-api tos-types tools; + the M3 IKBD injector
+  (method/apply-injector-m3.py, method/m3b.actions -- copied unchanged from
+  measurement-2026-10-06-ldg-m3/method; input source only); + method/
+  apply-b2-instr.py (serial prints only; resulting diff of the one touched
+  file: method/b2-instr-exceptions.diff). board-rpi4, --release.
+  113380f0bfd14ed48ce376aaf47cabc0ea22d97237bedbdd40669e6387f20202  kinj-b2.img
+  The instrumentation prints, per GEMDOS Malloc/Mxalloc/Mfree/Mshrink: args,
+  result, run (owner PD), ELR/LR and up to 8 return addresses from the EL0
+  frame-pointer chain (tos_api::uaccess::get_user_u64, fault-safe); per Pexec
+  its mode/args; per Pterm the dying PD, _mchunk_free_list.next of both NLD
+  layouts (POPUP link VA 0x83d8, EX_LIB 0x9278; runtime = basepage + link VA)
+  and, after the sweep, whether each block that PD Malloc'd is still
+  allocated (tos_api::bdos::mem::traps::is_allocated).
+
+RUNS (method/run-rpi4-drive-m3.sh + drive-m3.py, copied unchanged from M3)
+  b2-on   APPEND=serial=on, script m3b.actions, end at MARK S03_POPUP
+          serial/b2-on-serial.log, screendumps/b2-on-*.png
+  b2-off  APPEND="serial=on memprot=off", end at MARK S05_SINUS_SET,
+          --timeout 90 (hit: the app hangs) -> b2-off-timeout.png
+  Symbolized call chains: method/symbolize-b2.py -> checks/b2-*-callchains.txt
+
+RESULT
+  b2-on (log lines):
+    71  Pexec mode 4 of POPUP (PD 0x1abb000) by the client (0x1a40000)
+    75  Malloc(0x2000) -> 0x1ad9000, run = 0x1abb000 (the module); chain
+        POPUP.NLD _start+0x44 -> exit+0x4c -> fcloseall+0x64 -> fclose+0x54
+        -> __flshfp+0x9c -> init_stream+0xe0 -> malloc+0xd8 -> sbrk+0x40
+    76  Pterm of 0x1abb000: _mchunk_free_list.next = 0x1ad9000
+    77  after the sweep: block 0x1ad9000 still allocated = false
+    95+ Bus Error pc=0x1abdc74 (POPUP malloc+0x44, reading q->size) far
+        0x1ad9010, x10 = 0x1ad9000, "Memory violation: free memory, read"
+        (screendumps/b2-on-crash1.png = the M3 crash, same registers)
+    62-64  EX_LIB.NLD: the same chain, hunk 0x1aba000, free_list.next =
+        0x1aba000, freed at its Pterm (latent: EX_LIB never mallocs again)
+  b2-off:
+    75-76  POPUP's exit-path hunk 0x112b6c0, head of its free list at Pterm
+    95  client context, POPUP __popup+0x158 -> __get_bkgr+0x80 -> malloc ->
+        sbrk -> Malloc(0x6000) -> 0x112b6c0: the SAME block the module's
+        free list still references (double use); no AES call follows, the
+        pop-up never appears (b2-off-timeout.png). Cycle mechanism: analysis
+        section 2.3 (derived from mintlib malloc.c, not read from memory).
+
+CLEANUP
+  Shared tree not modified (instrumentation lived only in the scratch copy).
+  Scratch kernels/cards/target dirs in the session scratchpad, not kept.
