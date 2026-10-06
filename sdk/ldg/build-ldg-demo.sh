@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#
+# build-ldg-demo.sh -- build LDG's demo library ex_lib as a native LDG module
+# EX_LIB.NLD and the M1 acceptance client LDGTEST.NCP (TASK/LDG-M1,
+# docs/analysis/ldg-after-arch03-2026-10-06.md section 7 steps S3/S4).
+#
+# A .NLD is built exactly like a program (G5 of the design): PIE, the SDK's
+# crt0.S (PRGFLAGS note PF_STANDARD) and newtos.ld, linked against libldg.a,
+# gemlib.a (ex_lib's main() calls appl_init/form_alert when it is started
+# without OFFSETLDG), libm.a (sin, cos) and libc.a. The only difference is the
+# file name: `.NLD` = native LDG library (ADR-018 addendum, docs/MEMORY.md),
+# not startable from the desktop. The kernel loads it through LDG's own
+# Pexec(3) and relocates its R_AARCH64_RELATIVE entries (PROC LibFunc[] holds
+# absolute function pointers in .data; -z text keeps relocations out of .text).
+#
+# Sources, all UNMODIFIED:
+#   EX_LIB.NLD   <LDG>/demo/libs/ex_lib.c
+#   LDGTEST.NCP  sdk/examples/ldgtest.c (ours) + <LDG>/demo/libs/exlibbnd.c
+#                (the demo's binding, init_ldg_math) with the demo client
+#                header <LDG>/demo/libs/ldg/ex_lib.h
+# <LDG> = sdk/ldg/ldg-r133, extracted by build-ldg.sh from the pinned tarball.
+#
+# Usage:  sdk/ldg/build-ldg-demo.sh
+# Output: sdk/ldg/build/EX_LIB.NLD, sdk/ldg/build/LDGTEST.NCP
+#         (tools/make-sd-image.sh copies them to C:\LDG\EX_LIB.NLD and
+#         C:\LDGTEST.NCP, plus \AUTO\LDGTEST.NCP on SD_LDGTEST_AUTO=1)
+set -uo pipefail
+
+SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
+LDGDIR="$SDK/ldg"
+TOP="$LDGDIR/ldg-r133"
+LIBC="$SDK/libc"
+GEM="$SDK/gemlib"
+LIBM="$SDK/libm"
+GEMTOP="$GEM/gemlib-0.44.0"
+LIBMTOP="$LIBM/openlibm-0.8.8"
+BUILD="$LDGDIR/build"
+DOBJ="$BUILD/demo"
+mkdir -p "$DOBJ"
+
+# --- libraries: libc -> gemlib, libc -> libm, libc -> ldg ---------------------
+. "$SDK/lib-stale.sh"
+lib_ensure gemlib || exit 1
+lib_ensure libm   || exit 1
+lib_ensure ldg    || exit 1
+MINT="$LIBC/mintlib/include"
+for d in "$MINT" "$GEMTOP" "$LIBMTOP" "$TOP"; do
+  [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
+done
+
+# --- toolchain ---------------------------------------------------------------
+CLANG="${CLANG:-clang}"
+command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+RES="$($CLANG -print-resource-dir)/include"
+SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
+LLD="${LLD:-$BIN/rust-lld}"
+NM="$BIN/llvm-nm"
+READOBJ="$BIN/llvm-readobj"
+[ -x "$LLD" ] || { echo "error: missing LLVM tool: $LLD" >&2; exit 1; }
+
+# --- flags (the app set of build-qed.sh) -------------------------------------
+CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+        -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__
+        -Wno-macro-redefined)
+INCS=(-I"$TOP/include" -I"$TOP/demo/libs/ldg" -I"$GEMTOP" -I"$MINT"
+      -I"$LIBM/include" -I"$LIBMTOP/include" -isystem "$RES")
+
+rm -f "$DOBJ"/*.o "$DOBJ"/*.err "$BUILD/EX_LIB.NLD" "$BUILD/LDGTEST.NCP"
+cc() { # cc <src> <obj>
+  if ! "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" -c "$1" -o "$DOBJ/$2" 2>"$DOBJ/${2%.o}.err"; then
+    echo "error: $1 did not compile:" >&2; sed 's/^/    /' "$DOBJ/${2%.o}.err" >&2; exit 1
+  fi
+  if [ -s "$DOBJ/${2%.o}.err" ]; then
+    echo "  warnings in $(basename "$1"):"; sed 's/^/      /' "$DOBJ/${2%.o}.err"
+  fi
+}
+cc "$TOP/demo/libs/ex_lib.c"   ex_lib.o
+cc "$TOP/demo/libs/exlibbnd.c" exlibbnd.o
+cc "$SDK/examples/ldgtest.c"   ldgtest.o
+"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" -c "$LIBC/crt0.S" -o "$DOBJ/crt0.o" || exit 1
+
+link() { # link <out> <objs...>
+  local out=$1; shift
+  if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+      --build-id=none "$DOBJ/crt0.o" "$@" \
+      --start-group "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
+      -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
+    echo "error: link of $(basename "$out") failed:" >&2
+    sed 's/^/    /' "$BUILD/link-$(basename "$out").err" >&2; exit 1
+  fi
+  echo "LINK OK -> $out ($(wc -c < "$out" | tr -d ' ') bytes)"
+  "$READOBJ" --file-headers "$out" | grep -E '^ *Type:'
+  echo "  undefined symbols (goal 0): $("$NM" -u "$out" 2>/dev/null | grep -c . || true)"
+}
+link "$BUILD/EX_LIB.NLD"  "$DOBJ/ex_lib.o"
+link "$BUILD/LDGTEST.NCP" "$DOBJ/ldgtest.o" "$DOBJ/exlibbnd.o"

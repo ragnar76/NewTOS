@@ -49,6 +49,12 @@
 #             (OpenLibm, TASK/T07: compiled against mintlib's headers, linked
 #             with libc.a; gemlib and cflib do not depend on it, so it is a
 #             second branch off libc, not a link in the gemlib/cflib chain)
+#   libldg.a  sdk/ldg/overlay/, sdk/ldg/build-ldg.sh,           + all of libc's
+#             sdk/ldg/ldg-svn-r133.tar.xz + ldg-sources.sha256
+#             (LDG's devel library, TASK/LDG-M1: compiled against mintlib's
+#             headers only, a third branch off libc like libm; the tarball is
+#             watched because build-ldg.sh re-extracts when it is newer than
+#             the extracted tree -- the PORT03 rule below)
 #
 # NOT watched, deliberately:
 #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
@@ -115,6 +121,7 @@ lib_archive() {
     gemlib) printf '%s\n' "$LIB_SDK/gemlib/gemlib.a" ;;
     cflib)  printf '%s\n' "$LIB_SDK/cflib/cflib.a" ;;
     libm)   printf '%s\n' "$LIB_SDK/libm/libm.a" ;;
+    ldg)    printf '%s\n' "$LIB_SDK/ldg/libldg.a" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -125,6 +132,7 @@ lib_builder() {
     gemlib) printf '%s\n' "$LIB_SDK/gemlib/build-gemlib.sh" ;;
     cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
     libm)   printf '%s\n' "$LIB_SDK/libm/build-libm.sh" ;;
+    ldg)    printf '%s\n' "$LIB_SDK/ldg/build-ldg.sh" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -137,6 +145,7 @@ lib_chain() {
     gemlib) printf 'libc\ngemlib\n' ;;
     cflib)  printf 'libc\ngemlib\ncflib\n' ;;
     libm)   printf 'libc\nlibm\n' ;;
+    ldg)    printf 'libc\nldg\n' ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -186,6 +195,12 @@ lib_inputs() {
     libm)
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libm/overlay"
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libm/build-libm.sh"
+      ;;
+    ldg)
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/overlay"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/build-ldg.sh"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/ldg-svn-r133.tar.xz"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/ldg-sources.sha256"
       ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac

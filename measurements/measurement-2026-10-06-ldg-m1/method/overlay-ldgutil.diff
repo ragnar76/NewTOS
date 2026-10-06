@@ -1,0 +1,104 @@
+--- Applications/ldg-src/ldg/src/devel/ldgutil.c	2026-10-04 21:39:32
++++ sdk/ldg/overlay/src/devel/ldgutil.c	2026-10-06 20:49:08
+@@ -22,6 +22,39 @@
+  * Patch Coldfire Vincent Riviere
+  */
+ 
++/*
++ * NewTOS overlay (AArch64/LP64 retarget; built by sdk/ldg/build-ldg.sh, the
++ * pristine file is src/devel/ldgutil.c of sdk/ldg/ldg-svn-r133.tar.xz).
++ * Two functions differ from the pristine ldgutil.c; everything else is
++ * byte-identical.
++ *
++ * 1. ldg_cookie (ldgutil.c:53-70). The original reads the _p_cookies sysvar
++ *    as `*(long *)0x5a0` under Supexec and walks the jar as pairs of `long`.
++ *    On LP64 a `long` is 8 bytes while the jar pointer and every jar entry
++ *    are 32-bit words (tos-api/src/bdos/process/loader.rs, cookie jar
++ *    setup), so the raw access yields a wrong jar pointer and a wrong
++ *    stride. NewTOS exposes the jar through Ssystem(S_GETCOOKIE); mintlib's
++ *    Getcookie() (sdk/libc/newtos-arch/getcookie.c) is that call. The
++ *    function keeps its LDG contract: 1 and *value = cookie value on a hit,
++ *    0 on a miss (value untouched on a miss, as in the original loop).
++ *
++ * 2. ldg_cpush (ldgutil.c:205-225). The original executes a data array of
++ *    m68k opcodes (NOP; CPUSHA BC; RTS) through Supexec when the _CPU cookie
++ *    is > 30 -- m68k assembly, the one case the toolchain may retarget. On
++ *    NewTOS the kernel already makes a loaded program's code visible to
++ *    instruction fetch inside Pexec(3): loader.rs calls
++ *    mmu::sync_code_cache (tos-api/src/bdos/process/loader.rs:599; DC CVAU,
++ *    DSB ISH, IC IVAU, DSB ISH, ISB in tos-api/src/bdos/process/mmu.rs:1564),
++ *    exactly as EmuTOS (bdos/proc.c:352-356) and FreeMiNT (k_exec.c:686-687)
++ *    do -- ldgload.c:146 itself notes "Pexec(3) should flush the caches
++ *    internally". EL0 could not do the I-cache part anyway: SCTLR_EL1.UCI
++ *    is left clear (kernel/src/arch/aarch64/boot.rs:189-198), so IC IVAU at
++ *    EL0 traps (docs/analysis/arch03-stage0a-armarm-verification.md, E1).
++ *    ldg_cpush therefore has nothing left to do and is an empty function;
++ *    the symbol stays because ldgload.c and clients call it (ldg.h:165-167).
++ */
++#include <mint/cookie.h>
++
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdarg.h>
+@@ -50,23 +83,16 @@
+  * @TODO : get a better version of get_cookie (from WinDom or Ssytem()'s Mint)
+  */
+ 
+-static long cookieptr(void) { 
+-  return *((long *)0x5a0); 
+-}
+-
+ int	ldg_cookie (long cookie, long *value) {
+-  long *cookiejar = (long *)Supexec (cookieptr);
+-  
+-  if (cookiejar) {
+-    while (*cookiejar) {
+-      if (*cookiejar==cookie) {
+-	if (value) *value = *++cookiejar;
+-				return( 1);
+-      }
+-      cookiejar += 2;
+-    }
++  long v;
++
++  /* NewTOS: the jar is read through Ssystem(S_GETCOOKIE) via Getcookie(),
++   * see the overlay note at the top of this file (item 1). */
++  if (Getcookie(cookie, &v) == C_FOUND) {
++    if (value) *value = v;
++    return( 1);
+   }
+-	return( 0);
++  return( 0);
+ }
+ 
+ /*
+@@ -202,26 +228,10 @@
+  * 1er mouture le 17 avril 2002 par Arnaud BERCEGEAY <bercegeay@atari.org>
+  */
+ 
+-static unsigned short do_cpush[] = {
+-	0x4E71, /* NOP         ; 1er nop utile pour certains 68040 */
+-	0xF4F8, /* CPUSHA BC   ; vidage des caches data & instruction */
+-	0x4E75  /* RTS         ; fin de la procedure */
+-};
+-
+-#define CPU_COOKIE 0x5F435055UL  /* _CPU */
+-
+ void ldg_cpush(void) {
+-	static int initialized = 0;
+-	static long _cpu = 0L;
+-
+-	if (!initialized) {
+-		ldg_cookie( CPU_COOKIE, &_cpu);
+-		_cpu &= 0xFFFF;
+-		initialized = 1;
+-	}
+-
+-	if (_cpu > 30)
+-		Supexec( (long (*)())do_cpush);
++	/* NewTOS: intentionally empty -- the kernel synchronised the caches
++	 * for the loaded image inside Pexec(3), see the overlay note at the
++	 * top of this file (item 2). */
+ }
+ 
+ #endif

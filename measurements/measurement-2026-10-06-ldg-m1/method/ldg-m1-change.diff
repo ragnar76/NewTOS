@@ -1,0 +1,1360 @@
+diff --git a/docs/MEMORY.md b/docs/MEMORY.md
+index 7ede4ba..780e11f 100644
+--- a/docs/MEMORY.md
++++ b/docs/MEMORY.md
+@@ -1085,6 +1085,33 @@ take a second `menu_register` slot and enter a second, unreachable message
+ loop. EmuTOS's desktop has no launch path for an `.ACC` either; it simply
+ cannot reach the case, while ours can. See `docs/api/aes/accessories.md` §9.
+ 
++### Amendment 2026-10-06 — `.NLD`, the native LDG library
++
++User decision 2026-10-06 (LDG design `docs/analysis/ldg-after-arch03-2026-10-06.md`
++§9 Q3, recorded by the lead; implemented in TASK/LDG-M1):
++
++1. **`.NLD` = native LDG library** (LDG = "GEM Dynamical Libraries"). It is a
++   native NewTOS ELF built exactly like a program (PIE, `sdk/libc/crt0.S`,
++   `sdk/newtos.ld`; `sdk/ldg/build-ldg-demo.sh`), but it is **not a program a
++   user starts**: a client loads it through libldg's `ldg_open` → `Pexec`
++   5/3/4, the module's `main()` only hands its descriptor back via
++   `OFFSETLDG`, and the client then calls its functions directly. Started
++   without a client, an LDG module just says so (`ex_lib.c:66-69`:
++   `form_alert` "This program is a LDG library").
++2. **The m68k counterpart `.LDG` is reserved for the later emulator**, by the
++   same reasoning as `.PRG`/`.ACC`: a classic `.LDG` is m68k code that `Pexec`
++   cannot run natively, and the emulator must be able to claim the suffix.
++3. **The desktop keeps the default `Doc` class for `.NLD`** — no new
++   `FileType`/`Flavor`. `kernel/src/desk/ftype.rs::classify` already maps any
++   unknown suffix to `FileType::Doc` (`_ => FileType::Doc`), so a double-click
++   starts nothing. The kernel does not look at suffixes when loading
++   (`Pexec` has no extension check), so nothing kernel-side is needed either.
++4. The `N_P` pattern ("middle letter = role") does not fit `.NLD` (`N` + `LD`
++   for LDG); the name follows the m68k suffix instead, as `.NAC` follows
++   `.ACC`. Clients that search for modules by suffix (zView's `plugins.c`
++   compares the last three characters with `"ldg"`) get a toolchain overlay
++   for `.NLD`; the application source stays pristine (ADR-019 overlay rule).
++
+ ### Routing
+ 
+ - **Double-click / File→Open** on a file (`open_item`):
+diff --git a/docs/sdk/README.md b/docs/sdk/README.md
+index e166bf2..faa19f8 100644
+--- a/docs/sdk/README.md
++++ b/docs/sdk/README.md
+@@ -23,6 +23,7 @@ Repository revision the documentation was written against:
+ | [07-mintlib-limits.md](07-mintlib-limits.md) | What the ported mintlib does not provide, derived from `sdk/libc/expected-failures.txt` and the test programs; `setjmp` and the libm (OpenLibm) since T07 |
+ | [08-porting-checklist.md](08-porting-checklist.md) | The short, tickable list for porting an application |
+ | [09-port-material.md](09-port-material.md) | What source material we hold, in which version, under which licence — and the age trap a frozen third-party library is |
++| [10-ldg-modules.md](10-ldg-modules.md) | LDG run-time libraries as native `.NLD` modules: libldg, building a module, loading it from a client, what is not there (TSR, `ldg_callback`, search path) — TASK/LDG-M1 |
+ 
+ ## Thirty-second version
+ 
+@@ -35,6 +36,8 @@ sdk/libc/build-libc.sh   [client.c] [out.NCP]     # builds libc.a, links client
+ sdk/gemlib/build-gemlib.sh [client.c] [out.NCP]   # builds gemlib.a, links client
+ sdk/cflib/build-cflib.sh   [client.c] [out.NCP]   # builds cflib.a, links client
+ sdk/libm/build-libm.sh     [client.c] [out.NCP]   # builds libm.a (OpenLibm), links client + libc
++sdk/ldg/build-ldg.sh                               # libldg.a (LDG r133, tarball + overlay/)
++sdk/ldg/build-ldg-demo.sh                          # EX_LIB.NLD (LDG demo module) + LDGTEST.NCP
+ sdk/apps/build-qed.sh                              # QED.NAP
+ sdk/apps/build-teradesk.sh                         # DESKTOP.NAP + dist/
+ sdk/apps/build-coremark.sh                         # CORE.NCP, COREVAL.NCP
+@@ -63,6 +66,7 @@ sdk/
+ ├── gemlib/               gemlib-0.44.0 port (tarball + overlay/)
+ ├── cflib/                cflib-21 port (tarball + overlay/)
+ ├── libm/                 OpenLibm 0.8.8 port (tarball + overlay/ + include/ math.h adapters), T07
++├── ldg/                  LDG r133 devel library port (tarball + overlay/), .NLD demo + client, LDG-M1
+ ├── overlays/{qed,teradesk,coremark}/   per-application overlays
+ ├── apps/                 build scripts + vendored app trees (untracked)
+ └── examples/             freestanding example programs
+diff --git a/sdk/.gitignore b/sdk/.gitignore
+index bc13a96..454b7af 100644
+--- a/sdk/.gitignore
++++ b/sdk/.gitignore
+@@ -25,9 +25,13 @@
+ /libm/openlibm-0.8.8/
+ /libm/build/
+ /libm/libm.a
++/ldg/ldg-r133/
++/ldg/build/
++/ldg/libldg.a
+ **/*.o
+ *.NCP
+ *.NAP
++*.NLD
+ 
+ # App source trees under /apps/ stay vendored (big; third-party — QED compiles
+ # UNMODIFIED). Build scripts + tests directly in /apps/ ARE tracked. Our own LP64
+diff --git a/sdk/lib-stale.sh b/sdk/lib-stale.sh
+index 8a3b8ab..9866e5f 100755
+--- a/sdk/lib-stale.sh
++++ b/sdk/lib-stale.sh
+@@ -49,6 +49,12 @@
+ #             (OpenLibm, TASK/T07: compiled against mintlib's headers, linked
+ #             with libc.a; gemlib and cflib do not depend on it, so it is a
+ #             second branch off libc, not a link in the gemlib/cflib chain)
++#   libldg.a  sdk/ldg/overlay/, sdk/ldg/build-ldg.sh,           + all of libc's
++#             sdk/ldg/ldg-svn-r133.tar.xz + ldg-sources.sha256
++#             (LDG's devel library, TASK/LDG-M1: compiled against mintlib's
++#             headers only, a third branch off libc like libm; the tarball is
++#             watched because build-ldg.sh re-extracts when it is newer than
++#             the extracted tree -- the PORT03 rule below)
+ #
+ # NOT watched, deliberately:
+ #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
+@@ -115,6 +121,7 @@ lib_archive() {
+     gemlib) printf '%s\n' "$LIB_SDK/gemlib/gemlib.a" ;;
+     cflib)  printf '%s\n' "$LIB_SDK/cflib/cflib.a" ;;
+     libm)   printf '%s\n' "$LIB_SDK/libm/libm.a" ;;
++    ldg)    printf '%s\n' "$LIB_SDK/ldg/libldg.a" ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+ }
+@@ -125,6 +132,7 @@ lib_builder() {
+     gemlib) printf '%s\n' "$LIB_SDK/gemlib/build-gemlib.sh" ;;
+     cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
+     libm)   printf '%s\n' "$LIB_SDK/libm/build-libm.sh" ;;
++    ldg)    printf '%s\n' "$LIB_SDK/ldg/build-ldg.sh" ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+ }
+@@ -137,6 +145,7 @@ lib_chain() {
+     gemlib) printf 'libc\ngemlib\n' ;;
+     cflib)  printf 'libc\ngemlib\ncflib\n' ;;
+     libm)   printf 'libc\nlibm\n' ;;
++    ldg)    printf 'libc\nldg\n' ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+ }
+@@ -187,6 +196,12 @@ lib_inputs() {
+       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libm/overlay"
+       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libm/build-libm.sh"
+       ;;
++    ldg)
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/overlay"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/build-ldg.sh"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/ldg-svn-r133.tar.xz"
++      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/ldg/ldg-sources.sha256"
++      ;;
+     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
+   esac
+   return 0
+diff --git a/tools/make-sd-image.sh b/tools/make-sd-image.sh
+index cc952c0..6fc4d42 100755
+--- a/tools/make-sd-image.sh
++++ b/tools/make-sd-image.sh
+@@ -312,6 +312,31 @@ else
+   echo "note: sdk/libm/build/mathtst.NCP not built; C:\\MATHTST.NCP skipped"
+ fi
+ 
++# LDG proof (TASK/LDG-M1): EX_LIB.NLD is LDG's unmodified demo library ex_lib
++# built as a native LDG module (`.NLD`, ADR-018 addendum: not startable by
++# double-click -- the desktop shows it as a document); LDGTEST.NCP is the
++# headless client that loads it through libldg's real mechanism (ldg_open ->
++# Pexec 5/3/4), calls sinus()/cosinus() and closes it, one PASS/FAIL line per
++# check over Cconws -- see sdk/examples/ldgtest.c. The client opens the
++# module as C:\LDG\EX_LIB.NLD and by the relative name after Dsetpath(\LDG),
++# so the module must sit exactly there. Copied in if already built
++# (`sdk/ldg/build-ldg-demo.sh`). Set SD_LDGTEST_AUTO=1 to also drop the client
++# into \AUTO\ for a serial-verifiable run (no key pause).
++LDG_NLD="$SCRIPT_DIR/../sdk/ldg/build/EX_LIB.NLD"
++LDGTEST_NCP="$SCRIPT_DIR/../sdk/ldg/build/LDGTEST.NCP"
++if [ -f "$LDG_NLD" ] && [ -f "$LDGTEST_NCP" ]; then
++  mkdir -p "$V/LDG"
++  cp "$LDG_NLD" "$V/LDG/EX_LIB.NLD"
++  cp "$LDGTEST_NCP" "$V/LDGTEST.NCP"
++  echo "installed C:\\LDG\\EX_LIB.NLD + C:\\LDGTEST.NCP (LDG proof)"
++  if [ "${SD_LDGTEST_AUTO:-0}" = "1" ]; then
++    cp "$LDGTEST_NCP" "$V/AUTO/LDGTEST.NCP"
++    echo "  + \\AUTO\\LDGTEST.NCP (runs at boot)"
++  fi
++else
++  echo "note: sdk/ldg/build/{EX_LIB.NLD,LDGTEST.NCP} not built; LDG proof skipped"
++fi
++
+ # CoreMark 1.0 (EEMBC) — the CPU benchmark, built UNMODIFIED apart from its own
+ # porting layer (sdk/overlays/coremark/newtos/), which is what CoreMark's run
+ # rules put under the porter's control. Two executables, because NewTOS has no
+--- /dev/null
++++ b/docs/sdk/10-ldg-modules.md
+@@ -0,0 +1,114 @@
++# 10 — LDG modules (`.NLD`): building and loading native LDG libraries
++
++Stand 2026-10-06, TASK/LDG-M1. Design and evidence trail:
++`docs/analysis/ldg-after-arch03-2026-10-06.md` (the mechanism, file:line for
++every step), `measurements/measurement-2026-10-06-ldg-m1/RUNINFO.TXT` (the
++QEMU runs this page's "verified" statements rest on).
++
++LDG ("GEM Dynamical Libraries", Landemarre/Bereziat/Bercegeay, LGPL 2.1) is
++the Atari way of loading a library at run time: the library is an ordinary
++program that a client loads with `Pexec(3)` ("load, don't go"), starts once
++with `Pexec(4)` so that its `main()` can hand back a descriptor, and whose
++functions the client then calls directly through pointers. zView's codecs are
++LDG modules; that is why NewTOS has it.
++
++On NewTOS this runs **through LDG's own client code, unchanged in logic** —
++there is no NewTOS loader for LDG. The kernel's `Pexec` loads and relocates
++the module, makes its code visible to instruction fetch, leaves the module
++block owned by the client, and runs `Pexec(4)` as a thread in the client's
++address space (`docs/api/gemdos/process/4b-pexec.md`, `PE_GO`).
++
++## 1. The pieces
++
++| What | Where | Built by |
++|---|---|---|
++| LDG source, pinned | `sdk/ldg/ldg-svn-r133.tar.xz` (SVN r133, sha256 in `sdk/ldg/ldg-sources.sha256`, per-file manifest `ldg-svn-r133.files.sha256`) | — |
++| `libldg.a` (client + module side: `ldg_open/find/close/error`, `ldg_init`, `ldg_getpath`, `ldg_Malloc` & Co.) | `sdk/ldg/libldg.a` | `sdk/ldg/build-ldg.sh` (also via `lib_ensure ldg`, `sdk/lib-stale.sh`) |
++| Headers | `sdk/ldg/ldg-r133/include/ldg.h` (extracted tree) | `build-ldg.sh` |
++| Overlays | `sdk/ldg/overlay/src/devel/{ldgload.c,ldgutil.c}` | — |
++| Demo module + acceptance client | `sdk/ldg/build/EX_LIB.NLD`, `sdk/ldg/build/LDGTEST.NCP` | `sdk/ldg/build-ldg-demo.sh` |
++
++The two overlays are the only source differences (each file's header says
++why, with file:line):
++
++* `ldgload.c` — `BASEPAGE.p_env` is a fixed 32-bit field in the SDK
++  (`sdk/libc/overlay/include/mint/basepage.h`), so the one assignment to a
++  `char *` gets a `(char *)(uintptr_t)` cast.
++* `ldgutil.c` — `ldg_cookie` reads the jar through `Getcookie()`
++  (`Ssystem(S_GETCOOKIE)`) instead of `*(long *)0x5a0` (8 bytes on LP64,
++  the jar holds 32-bit words); `ldg_cpush` is empty because the kernel
++  already synchronised the caches inside `Pexec(3)`
++  (`tos-api/src/bdos/process/loader.rs:599`).
++
++`ldgapp.c` and `ldglib.c` compile unmodified.
++
++## 2. Building a module
++
++An LDG module is built **exactly like a program** — PIE, `sdk/libc/crt0.S`,
++`sdk/newtos.ld` — and only the name differs: **`.NLD`** (ADR-018 amendment
++2026-10-06 in `docs/MEMORY.md`; `.LDG` stays reserved for m68k modules and the
++later emulator). Its `main()` calls `ldg_init(&descriptor)` and returns.
++
++The link line `build-ldg-demo.sh` uses for `ex_lib`:
++
++```sh
++rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text \
++    -z max-page-size=0x1000 --build-id=none crt0.o ex_lib.o \
++    --start-group sdk/ldg/libldg.a sdk/gemlib/gemlib.a sdk/libm/libm.a \
++                  sdk/libc/libc.a --end-group -o EX_LIB.NLD
++```
++
++compiled with the application flag set of `sdk/apps/build-qed.sh` and the
++include path `-I sdk/ldg/ldg-r133/include` before gemlib's and mintlib's. A
++client links the same archives (it needs `libldg.a` for `ldg_open` & Co.).
++
++* `PROC` tables with function pointers in `.data` are fine: they become
++  `R_AARCH64_RELATIVE` entries, which the kernel applies when it loads the
++  module. `-z text` keeps relocations out of `.text` (any other relocation
++  type makes `Pexec` fail with `EPLFMT`, `tos-api/src/bdos/process/reloc.rs`).
++* `ldg_init` finds the client through `getenv("OFFSETLDG")`. That works since
++  TASK/PORT09 (the libc start-up builds `environ` from `p_env`); before it,
++  every module failed here.
++* A module needs no special `PRGFLAGS`: the default `PF_STANDARD` gives a
++  `PROT_P` block whose owner is the **client** that loaded it.
++
++## 3. Loading one (client side)
++
++```c
++LDG *ldg = ldg_open("C:\\LDG\\EX_LIB.NLD", aes_global);   /* or a bare name after chdir */
++double (*sinus)(Real *) = ldg_find("sinus", ldg);
++...
++ldg_close(ldg, aes_global);
++```
++
++`ldg_open` reads only `gl[2]` (the AES id, stored in `ldg->id`), so a client
++that runs before the AES (an `\AUTO\` `.NCP`) may pass a zeroed array of its
++own — `sdk/examples/ldgtest.c` does.
++
++## 4. Limits (what is not there, and what that means)
++
++| Limit | Consequence |
++|---|---|
++| **No LDG TSR (`ldg.prg`), no `LDGM` cookie** | Every `ldg_open` loads the module again (no sharing, no reference count, no `LDG_NOT_SHARED`/`LDG_RESIDENT`/`LDG_LOCKED` handling — those are TSR features, `ldgcook.c`). `ldg_error()` always returns `LDG_NO_TSR` (-11, `ldgapp.c:103`): detect failure by `ldg_open` returning `NULL`. `ldg_libpath` returns `LDG_NO_TSR` |
++| **No library search path** | Without the TSR `ldg_open` passes the name straight to `Pexec(3)` (`ldgapp.c:37-38`): give an absolute path, or `chdir` to the module's directory and pass the bare name (as zView does) |
++| **No `ldg_callback`** | `stdcall.s` is m68k assembly and is not built; the symbol does not exist in `libldg.a`, so a program that calls it fails to **link** (lead decision 2026-10-06; no stub) |
++| **No libshare** | Not needed by plain modules (`ex_lib`); zView's codecs link it (`docs/analysis/libshare-2026-10-06.md`) — later milestone |
++| **One client per module** | The module block is `PROT_P`, owned by the client that loaded it; another process cannot call into it under `memprot=on/strict` |
++| **Environment copy ≤ 512 bytes** | `ldg_load` passes `OFFSETLDG=<addr>` followed by a copy of the client's environment to `Pexec(3)`; the kernel reads at most `ENV_BUF_LEN = 512` bytes of it and truncates the rest silently (`kernel/src/arch/aarch64/exceptions.rs:1781`). `OFFSETLDG` comes first, so loading is unaffected; the module just sees a shortened environment |
++| **64 KiB stack kept per loaded module** | mintlib's `_crtinit` keeps `_stksize` (default `MINKEEP` = 64 KiB, `sdk/libc/newtos-arch/heap_init.c:63`) in the module block; module functions run on the **client's** stack, so it is unused. Original mintlib behaviour, kept on purpose (lead decision Q6) — a module may set its own `_stksize` |
++| **Module `Malloc`s during `main()` are freed at its `Pterm`** | As on TOS: memory the module allocates in `main()` belongs to the module and is released when `Pexec(4)` returns. Memory allocated later, inside a function the client calls, belongs to the client |
++| `Pwait()` | LDG calls MiNT's `Pwait` (0x109) after `Pexec(4)` and ignores the result; NewTOS answers `EINVFN` — harmless |
++
++## 5. Testing
++
++`tools/make-sd-image.sh` installs `C:\LDG\EX_LIB.NLD` and `C:\LDGTEST.NCP`
++when `sdk/ldg/build-ldg-demo.sh` has been run (QEMU image only), and
++`SD_LDGTEST_AUTO=1` additionally puts the client into `\AUTO\`. Its serial
++verdict line is `ldgtest: ALL PASS (N checks)` or `ldgtest: FAIL (k of N
++checks failed)`; the checks are listed at the top of `sdk/examples/ldgtest.c`.
++
++**Only real hardware can confirm** that the code of a freshly loaded — and
++especially a **re-loaded** — module is fetched correctly: QEMU has no caches
++(`loader.rs:594-597`), so the I-cache maintenance in `Pexec(3)` is exercised
++only on a Pi. `LDGTEST`'s reload step (close, open again, often at the same
++address) is the case to watch there.
+--- /dev/null
++++ b/sdk/examples/ldgtest.c
+@@ -0,0 +1,324 @@
++/*
++ * ldgtest.c -- LDG milestone M1 acceptance client (TASK/LDG-M1,
++ * docs/analysis/ldg-after-arch03-2026-10-06.md section 7, lead decision Q4).
++ *
++ * A minimal headless LDG client: it loads LDG's demo library ex_lib -- built
++ * UNMODIFIED as the native module C:\LDG\EX_LIB.NLD -- through the real LDG
++ * mechanism of libldg.a (ldg_open -> ldg_load -> Pexec 5/3/4 + OFFSETLDG in
++ * the module's environment, no TSR, no custom loader), binds its functions
++ * with the demo's own, unmodified binding demo/libs/exlibbnd.c
++ * (init_ldg_math), calls them and closes the library again. What it checks:
++ *
++ *   - ldg_open by absolute path: the LDG descriptor the module filled in its
++ *     ldg_init() (magic 'LDGM', version 0x0101, 3 functions, info string,
++ *     LDG protocol 0x0235, basepage, path). A non-NULL result already proves
++ *     the module found OFFSETLDG with getenv() -- the libc environ walk of
++ *     PORT09 in a Pexec(3)/(4)-started module.
++ *   - ldg_find for the three exported names (and NULL for an unknown name);
++ *     each pointer lies inside the module's TPA.
++ *   - information(), sinus(), cosinus() through the pointers, compared with
++ *     the client's own libm and with closed-form values (sin(pi/6) = 0.5).
++ *   - ldg_close returns 0 and the largest free block (Malloc(-1)) is back to
++ *     its value before the open.
++ *   - ldg_open by a relative name after Dsetpath("\LDG"), as zView does it
++ *     (plugins.c chdir + bare name); ldg->path is then built by ldg_load from
++ *     Dgetdrv/Dgetpath.
++ *   - reopen after close (the reload may land at the same address -- printed,
++ *     not judged: First-Fit decides), and a second open while the first is
++ *     still open (no TSR -> loaded again, a different descriptor; both work).
++ *   - at the end the largest free block equals the one at the start.
++ *
++ * Output: one "ldgtest: PASS|FAIL ..." line per check over Cconws and the
++ * verdict line "ldgtest: ALL PASS (N checks)" or "ldgtest: FAIL (k of N
++ * checks failed)" -- the serial line a headless QEMU run waits for. Floating
++ * point is printed with a fixed-point printer of its own (as
++ * sdk/examples/mathtst.c does), not through stdio's float formatting. No key
++ * pause: it runs as \AUTO\LDGTEST.NCP (tools/make-sd-image.sh,
++ * SD_LDGTEST_AUTO=1).
++ *
++ * Build: sdk/ldg/build-ldg-demo.sh (also builds EX_LIB.NLD).
++ */
++#include <math.h>
++#include <string.h>
++#include <stdint.h>
++#include <mint/osbind.h>
++#include <mint/basepage.h>
++#include <gem.h>
++#include <ldg.h>
++#include <ex_lib.h>          /* LDG demo/libs/ldg/ex_lib.h: Real, sinus, ... */
++
++#define LIB_ABS   "C:\\LDG\\EX_LIB.NLD"
++#define LIB_DIR   "\\LDG"
++#define LIB_REL   "EX_LIB.NLD"
++
++static unsigned checks, failed;
++
++static void
++put_dec(unsigned long n)
++{
++	char buf[24];
++	int i = sizeof buf - 1;
++
++	buf[i] = '\0';
++	do {
++		buf[--i] = (char)('0' + n % 10);
++		n /= 10;
++	} while (n);
++	Cconws(&buf[i]);
++}
++
++static void
++put_hex(unsigned long n)
++{
++	char buf[20];
++	int i = sizeof buf - 1;
++
++	buf[i] = '\0';
++	do {
++		buf[--i] = "0123456789abcdef"[n & 15];
++		n >>= 4;
++	} while (n);
++	buf[--i] = 'x';
++	buf[--i] = '0';
++	Cconws(&buf[i]);
++}
++
++static void
++put_long(long n)
++{
++	if (n < 0) { Cconws("-"); put_dec((unsigned long)-n); }
++	else put_dec((unsigned long)n);
++}
++
++/* prints v with six decimals; NaN/inf spelled out (mathtst.c's printer) */
++static void
++put_double(double v)
++{
++	unsigned long ip, frac;
++
++	if (isnan(v)) { Cconws("nan"); return; }
++	if (isinf(v)) { Cconws(v < 0 ? "-inf" : "inf"); return; }
++	if (v < 0) { Cconws("-"); v = -v; }
++	ip = (unsigned long)v;
++	frac = (unsigned long)((v - (double)ip) * 1000000.0 + 0.5);
++	if (frac >= 1000000) { ip++; frac -= 1000000; }
++	put_dec(ip);
++	Cconws(".");
++	{
++		char f[7];
++		int i;
++		for (i = 5; i >= 0; i--) { f[i] = (char)('0' + frac % 10); frac /= 10; }
++		f[6] = '\0';
++		Cconws(f);
++	}
++}
++
++static int
++check(const char *name, int ok)
++{
++	checks++;
++	if (!ok)
++		failed++;
++	Cconws("ldgtest: ");
++	Cconws(ok ? "PASS " : "FAIL ");
++	Cconws(name);
++	Cconws("\r\n");
++	return ok;
++}
++
++static int
++check_dbl(const char *name, double got, double want, double tol)
++{
++	int ok = fabs(got - want) <= tol;
++
++	checks++;
++	if (!ok)
++		failed++;
++	Cconws("ldgtest: ");
++	Cconws(ok ? "PASS " : "FAIL ");
++	Cconws(name);
++	Cconws(" = ");
++	put_double(got);
++	Cconws(" (want ");
++	put_double(want);
++	Cconws(")\r\n");
++	return ok;
++}
++
++static void
++note(const char *what, unsigned long v)
++{
++	Cconws("ldgtest: info ");
++	Cconws(what);
++	Cconws(" ");
++	put_hex(v);
++	Cconws("\r\n");
++}
++
++static long
++largest_free(void)
++{
++	return Malloc(-1L);
++}
++
++/* The client's AES global array: ldg_open() reads only gl[2] (the AES id,
++ * stored in ldg->id, ldgapp.c:38 / ldgload.c:174). This client runs before
++ * the AES (\AUTO\), so it has no application id; the array stays zero. */
++static short gl[15];
++
++/* volatile so the client's reference values are computed at run time by the
++ * client's own libm, not folded by the compiler. */
++static volatile double half = 0.5, sixth_pi = M_PI / 6.0;
++
++/* The function pointers exlibbnd.c's init_ldg_math() filled must point into
++ * the module's TPA (basepage .. p_hitpa). */
++static int
++in_module(LDG *ldg, void *fn)
++{
++	BASEPAGE *bp = (BASEPAGE *)ldg->baspag;
++	uintptr_t lo = (uintptr_t)bp, hi = (uintptr_t)bp->p_hitpa;
++
++	return (uintptr_t)fn > lo && (uintptr_t)fn < hi;
++}
++
++/* Bind and call the three functions of an open ex_lib. */
++static void
++exercise(const char *tag, LDG *ldg)
++{
++	Real r;
++	char name[80];
++
++	init_ldg_math(ldg);
++	strcpy(name, tag); strcat(name, ": ldg_find(information/sinus/cosinus) != NULL");
++	if (!check(name, mathinfo != NULL && sinus != NULL && cosinus != NULL))
++		return;
++	note("sinus at", (unsigned long)(uintptr_t)sinus);
++	strcpy(name, tag); strcat(name, ": function pointers inside the module TPA");
++	check(name, in_module(ldg, (void *)mathinfo) && in_module(ldg, (void *)sinus)
++	      && in_module(ldg, (void *)cosinus));
++	strcpy(name, tag); strcat(name, ": information() text");
++	check(name, strcmp(mathinfo(), "[1][Example of math library!!!][Ok]") == 0);
++	r.value = half;
++	strcpy(name, tag); strcat(name, ": sinus(0.5) vs client sin(0.5)");
++	check_dbl(name, sinus(&r), sin(half), 1e-12);
++	strcpy(name, tag); strcat(name, ": sinus(0.5) vs 0.479426");
++	check_dbl(name, sinus(&r), 0.479425538604203, 1e-12);
++	r.value = half;
++	strcpy(name, tag); strcat(name, ": cosinus(0.5) vs client cos(0.5)");
++	check_dbl(name, cosinus(&r), cos(half), 1e-12);
++	r.value = sixth_pi;
++	strcpy(name, tag); strcat(name, ": sinus(pi/6) vs 0.5");
++	check_dbl(name, sinus(&r), 0.5, 1e-12);
++}
++
++/* Check the descriptor ex_lib's ldg_init() filled (ex_lib.c:40-47). */
++static int
++check_descriptor(const char *tag, LDG *ldg, const char *path)
++{
++	char name[80];
++
++	strcpy(name, tag); strcat(name, ": ldg_open != NULL");
++	if (!check(name, ldg != NULL)) {
++		Cconws("ldgtest: info ldg_error() = ");
++		put_long(ldg_error());
++		Cconws(" (without the LDG TSR always LDG_NO_TSR, ldgapp.c:103)\r\n");
++		return 0;
++	}
++	note("ldg at", (unsigned long)(uintptr_t)ldg);
++	note("basepage at", (unsigned long)(uintptr_t)ldg->baspag);
++	strcpy(name, tag); strcat(name, ": magic 'LDGM'");
++	check(name, ldg->magic == LDG_COOKIE);
++	strcpy(name, tag); strcat(name, ": vers 0x0101, num 3, vers_ldg 0x0235");
++	check(name, ldg->vers == 0x0101 && ldg->num == 3 && ldg->vers_ldg == 0x0235);
++	strcpy(name, tag); strcat(name, ": infos text");
++	check(name, ldg->infos != NULL
++	      && strcmp(ldg->infos, "Example of library with floating parameters.") == 0);
++	strcpy(name, tag); strcat(name, ": flags 0 + LDG_STDCALL, no close");
++	check(name, ldg->flags == LDG_STDCALL && ldg->close == NULL);
++	strcpy(name, tag); strcat(name, ": baspag set, path ");
++	strcat(name, path);
++	check(name, ldg->baspag != NULL && strcmp(ldg->path, path) == 0);
++	if (strcmp(ldg->path, path) != 0) {
++		Cconws("ldgtest: info ldg->path = ");
++		Cconws(ldg->path);
++		Cconws("\r\n");
++	}
++	return 1;
++}
++
++int
++main(void)
++{
++	LDG *a, *b, *c;
++	long free0, free1, free_end;
++	void *base_a = NULL;
++	char cwd[128];
++
++	Cconws("ldgtest: LDG M1 client (ex_lib as " LIB_ABS ")\r\n");
++	free0 = largest_free();
++	note("largest free block at start", (unsigned long)free0);
++
++	/* 1. absolute path */
++	a = ldg_open(LIB_ABS, gl);
++	if (check_descriptor("abs", a, LIB_ABS)) {
++		base_a = a->baspag;
++		exercise("abs", a);
++		check("abs: ldg_find(unknown) == NULL", ldg_find("tangens", a) == NULL);
++		check("abs: ldg_close == 0", ldg_close(a, gl) == 0);
++	}
++	free1 = largest_free();
++	note("largest free block after close", (unsigned long)free1);
++	check("abs: largest free block back to start value", free1 == free0);
++
++	/* 2. relative name after Dsetpath, as zView's plugins.c does it */
++	Dsetdrv(2);
++	check("rel: Dsetpath(\\LDG) == 0", Dsetpath(LIB_DIR) == 0);
++	cwd[0] = '\0';
++	Dgetpath(cwd, 0);
++	Cconws("ldgtest: info cwd ");
++	Cconws(cwd);
++	Cconws("\r\n");
++	b = ldg_open(LIB_REL, gl);
++	if (check_descriptor("rel", b, LIB_ABS)) {
++		exercise("rel", b);
++		check("rel: ldg_close == 0", ldg_close(b, gl) == 0);
++	}
++	Dsetpath("\\");
++	check("rel: largest free block back to start value", largest_free() == free0);
++
++	/* 3. reload after close; then a second open while the first is open */
++	b = ldg_open(LIB_ABS, gl);
++	if (check_descriptor("reload", b, LIB_ABS)) {
++		Cconws("ldgtest: info reload basepage ");
++		Cconws(b->baspag == base_a ? "== " : "!= ");
++		Cconws("first load's (First-Fit decides; not a verdict)\r\n");
++		exercise("reload", b);
++		c = ldg_open(LIB_ABS, gl);
++		if (check_descriptor("second", c, LIB_ABS)) {
++			check("second: different descriptor and basepage",
++			      c != b && c->baspag != b->baspag);
++			exercise("second", c);
++			/* the first one still works with the second loaded */
++			exercise("reload-again", b);
++			check("second: ldg_close == 0", ldg_close(c, gl) == 0);
++		}
++		check("reload: ldg_close == 0", ldg_close(b, gl) == 0);
++	}
++
++	free_end = largest_free();
++	note("largest free block at end", (unsigned long)free_end);
++	check("end: largest free block back to start value", free_end == free0);
++
++	if (failed) {
++		Cconws("ldgtest: FAIL (");
++		put_dec(failed);
++		Cconws(" of ");
++		put_dec(checks);
++		Cconws(" checks failed)\r\n");
++	} else {
++		Cconws("ldgtest: ALL PASS (");
++		put_dec(checks);
++		Cconws(" checks)\r\n");
++	}
++	return (int)failed;
++}
+--- /dev/null
++++ b/sdk/ldg/build-ldg.sh
+@@ -0,0 +1,140 @@
++#!/usr/bin/env bash
++#
++# build-ldg.sh -- build LDG's client/module library (the "devel" part of LDG,
++# Olivier Landemarre, Dominique Bereziat & Arnaud Bercegeay, LGPL 2.1) into a
++# NewTOS/AArch64 libldg.a, the way the other ported libraries are built:
++# pristine tarball + overlay/ + this script (TASK/LDG-M1,
++# docs/analysis/ldg-after-arch03-2026-10-06.md section 4 G2).
++#
++# SOURCE PIN: sdk/ldg/ldg-svn-r133.tar.xz is the LDG tree that was used, SVN
++# trunk r133 (Applications/ldg-src, crawled read-only with curl on
++# 2026-10-04, no svn client -- Applications/ldg-src/SOURCE.txt). Its SHA-256
++# and the per-file manifest of the tree are in ldg-sources.sha256 /
++# ldg-svn-r133.files.sha256. th-otto's ldg-20171014 (with ldg-cross.patch and
++# ldg-pwait.patch) was NOT compared; that is an open point of TASK/LDG-M1.
++#
++# What is compiled: LDG's own object list, src/devel/common.mak
++#   OBJS = ldgapp.o ldglib.o ldgutil.o ldgload.o $(EXTRAOBJS)
++# WITHOUT gcc.mak's EXTRAOBJS = stdcallgcc.o: stdcall.s is m68k assembly
++# (register-preserving trampolines for Pure C / Sozobon callers and
++# ldg_callback()). libldg.a for NewTOS therefore has NO ldg_callback symbol
++# (lead decision Q5, 2026-10-06: "not present", no stub); a program that
++# calls it fails to link instead of misbehaving at run time.
++#
++# Overlays (sdk/ldg/overlay/, mirroring the LDG tree; each file says why):
++#   src/devel/ldgload.c  p_env (32-bit basepage field) -> pointer cast
++#   src/devel/ldgutil.c  ldg_cookie via Getcookie(); ldg_cpush empty (the
++#                        kernel syncs the caches inside Pexec(3))
++# ldgapp.c and ldglib.c compile unmodified.
++#
++# Flags: the shared SDK freestanding set + LDG's own gcc.mak CFLAGS
++# (-fomit-frame-pointer -W -Wall -O2 -I../../include -I.. -I.).
++#
++# Usage:  sdk/ldg/build-ldg.sh      (LDG_REFRESH=1 forces a re-extract)
++# Output: sdk/ldg/libldg.a; headers for programs: sdk/ldg/ldg-r133/include
++set -uo pipefail
++
++SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
++LDGDIR="$SDK/ldg"
++LIBC="$SDK/libc"
++TOP="$LDGDIR/ldg-r133"                                       # extracted tree
++TARBALL="$LDGDIR/ldg-svn-r133.tar.xz"
++SUMS="$LDGDIR/ldg-sources.sha256"
++OVERLAY="$LDGDIR/overlay"
++BUILD="$LDGDIR/build"
++OBJ="$BUILD/obj"
++OUT="$LDGDIR/libldg.a"
++mkdir -p "$OBJ"
++
++# --- ensure the ported mintlib libc is present -------------------------------
++# libldg.a is compiled against mintlib's headers (osbind.h, mintbind.h,
++# mint/basepage.h, mint/cookie.h) and linked with libc.a.
++. "$SDK/lib-stale.sh"
++lib_ensure libc || exit 1
++MINT="$LIBC/mintlib/include"
++[ -d "$MINT" ] || { echo "error: mintlib headers missing ($MINT); run build-libc.sh" >&2; exit 1; }
++
++# --- ensure the LDG source tree is present (verify + extract + overlay) -------
++# Re-extract when forced, when the tree is absent, or when the tarball is
++# newer than the tree (a changed pin must not leave the old sources in use --
++# the PORT03 lesson recorded in sdk/lib-stale.sh, lib_inputs).
++if [ "${LDG_REFRESH:-0}" = "1" ] || [ ! -d "$TOP" ] || [ "$TARBALL" -nt "$TOP" ]; then
++  [ -f "$TARBALL" ] || { echo "error: pristine tarball $TARBALL missing" >&2; exit 1; }
++  want="$(sed -e 's/#.*//' "$SUMS" | awk -v f="$(basename "$TARBALL")" '$2==f{print $1}')"
++  have="$(shasum -a 256 "$TARBALL" | awk '{print $1}')"
++  if [ -z "$want" ] || [ "$want" != "$have" ]; then
++    echo "error: $(basename "$TARBALL") SHA-256 $have does not match $(basename "$SUMS") ($want)" >&2
++    exit 1
++  fi
++  echo "extracting pristine LDG r133 from $(basename "$TARBALL") (sha256 verified)…"
++  rm -rf "$TOP"
++  tmp="$(mktemp -d)"
++  tar xJf "$TARBALL" -C "$tmp" || { rm -rf "$tmp"; exit 1; }
++  mv "$tmp/ldg" "$TOP"
++  rmdir "$tmp" 2>/dev/null || true
++  touch "$TOP"
++fi
++if [ -d "$OVERLAY" ]; then
++  ( cd "$OVERLAY" && find . -type f ! -name '._*' ! -name '.DS_Store' -print0 | while IFS= read -r -d '' f; do
++      mkdir -p "$TOP/$(dirname "$f")"
++      cp "$f" "$TOP/$f"
++    done )
++fi
++
++# --- toolchain ---------------------------------------------------------------
++CLANG="${CLANG:-clang}"
++command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
++RES="$($CLANG -print-resource-dir)/include"
++SYSROOT="$(rustc --print sysroot 2>/dev/null)"
++BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++AR="${AR:-$BIN/llvm-ar}"
++NM="$BIN/llvm-nm"
++[ -x "$AR" ] || { echo "error: missing LLVM tool: $AR" >&2; exit 1; }
++
++# --- flags -------------------------------------------------------------------
++DEVEL="$TOP/src/devel"
++CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
++        -fPIE -fno-builtin -nostdinc
++        -fomit-frame-pointer -W -Wall)
++INCS=(-I"$TOP/include" -I"$TOP/src" -I"$DEVEL" -I"$MINT" -isystem "$RES")
++
++echo "clang : $($CLANG --version | head -1)"
++echo "ar    : $AR"
++echo
++
++# --- compile: LDG's own OBJS list (src/devel/common.mak), no EXTRAOBJS -------
++OBJS_LIST="$(sed -n 's/^OBJS[[:space:]]*=[[:space:]]*//p' "$DEVEL/common.mak" | sed 's/\$(EXTRAOBJS)//')"
++[ -n "$OBJS_LIST" ] || { echo "error: could not read OBJS from $DEVEL/common.mak" >&2; exit 1; }
++rm -f "$OBJ"/*.o "$OBJ"/*.err
++: > "$BUILD/compiled.txt"; : > "$BUILD/failed.txt"
++ok=0; fail=0; warn=0
++for o in $OBJS_LIST; do
++  c="${o%.o}.c"
++  if [ -e "$OVERLAY/src/devel/$c" ]; then echo "  overlay: src/devel/$c (from sdk/ldg/overlay/)"; fi
++  if "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" -c "$DEVEL/$c" -o "$OBJ/$o" 2>"$OBJ/${o%.o}.err"; then
++    echo "$c" >> "$BUILD/compiled.txt"; ok=$((ok+1))
++    if [ -s "$OBJ/${o%.o}.err" ]; then
++      warn=$((warn+1)); echo "  warnings in $c:"; sed 's/^/      /' "$OBJ/${o%.o}.err"
++    fi
++  else
++    echo "$c" >> "$BUILD/failed.txt"; fail=$((fail+1)); rm -f "$OBJ/$o"
++  fi
++done
++echo "compiled OK=$ok  FAILED=$fail  (files with warnings: $warn)"
++if [ "$fail" -ne 0 ]; then
++  echo
++  echo "STOP: LDG sources that did not compile (fix the toolchain or the overlay):"
++  while IFS= read -r f; do
++    echo "  === $f ==="
++    sed 's/^/      /' "$OBJ/${f%.c}.err" | head -20
++  done < "$BUILD/failed.txt"
++  exit 1
++fi
++
++# --- archive -----------------------------------------------------------------
++rm -f "$OUT"
++"$AR" cr "$OUT" "$OBJ"/*.o || exit 1
++echo "archived -> $OUT ($(wc -c < "$OUT" | tr -d ' ') bytes)"
++"$NM" --defined-only -g "$OUT" 2>/dev/null | awk 'NF>=3 {print $NF}' | sort -u > "$BUILD/defined.txt"
++echo "exported symbols: $(tr '\n' ' ' < "$BUILD/defined.txt")"
++echo
+--- /dev/null
++++ b/sdk/ldg/build-ldg-demo.sh
+@@ -0,0 +1,97 @@
++#!/usr/bin/env bash
++#
++# build-ldg-demo.sh -- build LDG's demo library ex_lib as a native LDG module
++# EX_LIB.NLD and the M1 acceptance client LDGTEST.NCP (TASK/LDG-M1,
++# docs/analysis/ldg-after-arch03-2026-10-06.md section 7 steps S3/S4).
++#
++# A .NLD is built exactly like a program (G5 of the design): PIE, the SDK's
++# crt0.S (PRGFLAGS note PF_STANDARD) and newtos.ld, linked against libldg.a,
++# gemlib.a (ex_lib's main() calls appl_init/form_alert when it is started
++# without OFFSETLDG), libm.a (sin, cos) and libc.a. The only difference is the
++# file name: `.NLD` = native LDG library (ADR-018 addendum, docs/MEMORY.md),
++# not startable from the desktop. The kernel loads it through LDG's own
++# Pexec(3) and relocates its R_AARCH64_RELATIVE entries (PROC LibFunc[] holds
++# absolute function pointers in .data; -z text keeps relocations out of .text).
++#
++# Sources, all UNMODIFIED:
++#   EX_LIB.NLD   <LDG>/demo/libs/ex_lib.c
++#   LDGTEST.NCP  sdk/examples/ldgtest.c (ours) + <LDG>/demo/libs/exlibbnd.c
++#                (the demo's binding, init_ldg_math) with the demo client
++#                header <LDG>/demo/libs/ldg/ex_lib.h
++# <LDG> = sdk/ldg/ldg-r133, extracted by build-ldg.sh from the pinned tarball.
++#
++# Usage:  sdk/ldg/build-ldg-demo.sh
++# Output: sdk/ldg/build/EX_LIB.NLD, sdk/ldg/build/LDGTEST.NCP
++#         (tools/make-sd-image.sh copies them to C:\LDG\EX_LIB.NLD and
++#         C:\LDGTEST.NCP, plus \AUTO\LDGTEST.NCP on SD_LDGTEST_AUTO=1)
++set -uo pipefail
++
++SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"      # .../sdk
++LDGDIR="$SDK/ldg"
++TOP="$LDGDIR/ldg-r133"
++LIBC="$SDK/libc"
++GEM="$SDK/gemlib"
++LIBM="$SDK/libm"
++GEMTOP="$GEM/gemlib-0.44.0"
++LIBMTOP="$LIBM/openlibm-0.8.8"
++BUILD="$LDGDIR/build"
++DOBJ="$BUILD/demo"
++mkdir -p "$DOBJ"
++
++# --- libraries: libc -> gemlib, libc -> libm, libc -> ldg ---------------------
++. "$SDK/lib-stale.sh"
++lib_ensure gemlib || exit 1
++lib_ensure libm   || exit 1
++lib_ensure ldg    || exit 1
++MINT="$LIBC/mintlib/include"
++for d in "$MINT" "$GEMTOP" "$LIBMTOP" "$TOP"; do
++  [ -d "$d" ] || { echo "error: $d missing (library build did not extract it)" >&2; exit 1; }
++done
++
++# --- toolchain ---------------------------------------------------------------
++CLANG="${CLANG:-clang}"
++command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
++RES="$($CLANG -print-resource-dir)/include"
++SYSROOT="$(rustc --print sysroot 2>/dev/null)"
++BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++LLD="${LLD:-$BIN/rust-lld}"
++NM="$BIN/llvm-nm"
++READOBJ="$BIN/llvm-readobj"
++[ -x "$LLD" ] || { echo "error: missing LLVM tool: $LLD" >&2; exit 1; }
++
++# --- flags (the app set of build-qed.sh) -------------------------------------
++CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
++        -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__
++        -Wno-macro-redefined)
++INCS=(-I"$TOP/include" -I"$TOP/demo/libs/ldg" -I"$GEMTOP" -I"$MINT"
++      -I"$LIBM/include" -I"$LIBMTOP/include" -isystem "$RES")
++
++rm -f "$DOBJ"/*.o "$DOBJ"/*.err "$BUILD/EX_LIB.NLD" "$BUILD/LDGTEST.NCP"
++cc() { # cc <src> <obj>
++  if ! "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" -c "$1" -o "$DOBJ/$2" 2>"$DOBJ/${2%.o}.err"; then
++    echo "error: $1 did not compile:" >&2; sed 's/^/    /' "$DOBJ/${2%.o}.err" >&2; exit 1
++  fi
++  if [ -s "$DOBJ/${2%.o}.err" ]; then
++    echo "  warnings in $(basename "$1"):"; sed 's/^/      /' "$DOBJ/${2%.o}.err"
++  fi
++}
++cc "$TOP/demo/libs/ex_lib.c"   ex_lib.o
++cc "$TOP/demo/libs/exlibbnd.c" exlibbnd.o
++cc "$SDK/examples/ldgtest.c"   ldgtest.o
++"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" -c "$LIBC/crt0.S" -o "$DOBJ/crt0.o" || exit 1
++
++link() { # link <out> <objs...>
++  local out=$1; shift
++  if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
++      --build-id=none "$DOBJ/crt0.o" "$@" \
++      --start-group "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
++      -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then
++    echo "error: link of $(basename "$out") failed:" >&2
++    sed 's/^/    /' "$BUILD/link-$(basename "$out").err" >&2; exit 1
++  fi
++  echo "LINK OK -> $out ($(wc -c < "$out" | tr -d ' ') bytes)"
++  "$READOBJ" --file-headers "$out" | grep -E '^ *Type:'
++  echo "  undefined symbols (goal 0): $("$NM" -u "$out" 2>/dev/null | grep -c . || true)"
++}
++link "$BUILD/EX_LIB.NLD"  "$DOBJ/ex_lib.o"
++link "$BUILD/LDGTEST.NCP" "$DOBJ/ldgtest.o" "$DOBJ/exlibbnd.o"
+--- /dev/null
++++ b/sdk/ldg/ldg-sources.sha256
+@@ -0,0 +1,15 @@
++# LDG (GEM Dynamical Libraries) source pin for sdk/ldg/build-ldg.sh (TASK/LDG-M1).
++#
++# ldg-svn-r133.tar.xz = the tree in Applications/ldg-src/ldg, i.e. SVN trunk
++# r133 of https://svn.code.sf.net/p/ldg/code/trunk/ldg/ , fetched read-only on
++# 2026-10-04 by crawling the directory listings with curl (no svn client;
++# trunk/CVSROOT and trunk/htdocs not fetched; Applications/ldg-src/SOURCE.txt).
++# Packed unchanged on 2026-10-06 (top directory ldg/, 212 files, bsdtar
++# --no-xattrs, uid/gid 0, xz -9e). The per-file SHA-256 manifest of the tree is
++# ldg-svn-r133.files.sha256 (paths relative to the tarball root, check with
++# `cd <dir holding ldg/> && shasum -a 256 -c ldg-svn-r133.files.sha256`); its
++# own SHA-256 is c17c7320dbb2fc5a8bda8add19be3a1ec46d49d7dfd7619f1c2e5711fea72efd.
++#
++# NOT compared: th-otto's ldg-20171014 (ldg-cross.patch, ldg-pwait.patch).
++# License: LGPL 2.1 (ldg/COPYRIGHT, file headers).
++1b5b6bd2aac298b3f8314bc9af3274ac51b5cadc778436b3efa9873c31ff2dc8  ldg-svn-r133.tar.xz
+--- /dev/null
++++ b/sdk/ldg/overlay/src/devel/ldgload.c
+@@ -0,0 +1,235 @@
++/*
++ * LDG : Gem Dynamical Libraries
++ * Copyright (c) 1997-2010 Olivier Landemarre, Dominique Bereziat & Arnaud Bercegeay
++ *
++ * Low-level functions to load and unload a LDG-library
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ *
++ * $Id$
++ */
++
++ /*   13 fev 2010 : Patch from Mikro  : Fix memory protection issue + some clean up       */
++
++/*
++ * NewTOS overlay (LP64 ABI correction; built by sdk/ldg/build-ldg.sh, the
++ * pristine file is src/devel/ldgload.c of sdk/ldg/ldg-svn-r133.tar.xz).
++ *
++ * The ONLY change vs. the pristine ldgload.c is the read of the dummy
++ * basepage's environment pointer at ldgload.c:76 (`ldg_global_env =
++ * module->p_env`). With the SDK's LP64 basepage.h overlay
++ * (sdk/libc/overlay/include/mint/basepage.h:30-47) p_env is a fixed 32-bit
++ * field, so assigning it to a `char *` is an int->pointer conversion
++ * (-Wint-conversion, a default ERROR under this clang). It is cast through
++ * `(char *)(uintptr_t)` -- NewTOS EL0 VAs are < 2^32, so the 32-bit value is
++ * the full environment VA (same fix as sdk/overlays/teradesk/environm.c).
++ *
++ * The other p_env uses (ldgload.c:133,162,169,204) need no change: they only
++ * pass the value to Mfree(), whose binding converts its argument to `long`
++ * (sdk/libc/overlay/include/mint/osbind.h, `Mfree`), so the zero-extended
++ * 32-bit address reaches the trap unchanged. LDG logic is otherwise untouched.
++ */
++#include <stdint.h>
++
++#include <string.h>
++#include <stdlib.h>
++#include <stdio.h>
++#if defined(__PUREC__) || defined(__VBCC__)
++#include <tos.h>
++/*#ifndef BASEPAGE
++#define	BASEPAGE BASPAG
++#endif*/
++#endif
++#if defined(__GNUC__) || defined(__SOZOBONX__)
++# if (__GNUC__ > 2) || ( __GNUC_MINOR__ > 8 )
++#  include <mint/basepage.h>
++# else
++#  include <basepage.h>
++# endif
++# include <osbind.h>
++# include <mintbind.h>
++#endif
++
++#include "../options.h"
++#include "../../include/ldg.h"
++#include "global.h"
++
++/*
++ * Charger un module et retourne l'adresse
++ * de la structure LDG du module.
++ * apid: id du lanceur.
++ */
++
++
++
++
++
++LDG *ldg_load( int apid, const char *path) {
++	LDG *ldg = NULL;
++	BASEPAGE *module=NULL;
++	char *offsetxt, smallbloc[24], *mbloc=NULL;
++  char *ldg_global_env=NULL;
++	long size_env;
++
++	/* 
++	 * L'adresse du descripteur de la lib (LDG) 
++	 * est fournit par la librairie (peut etre un
++	 * programme en memoire protegee) et est transmise
++	 * entre lib et client via une variable d'environnement !
++	 */
++   
++	module = (BASEPAGE *)Pexec( 5, NULL, "", NULL);  /* pour recuperer l'environnment du programme appelant on cree un basepage bidon */
++	if(module)
++	{
++   	ldg_global_env = (char *)(uintptr_t)module->p_env;  /* recuperation de l'environnement */
++    
++    if(ldg_global_env)
++		{	char *env;
++			size_env=0L;
++			env = ldg_global_env; 
++			while(*env)
++			{
++				while (*env)
++				{
++					size_env++;
++					env++;
++				}
++				env++;
++				size_env++;
++			}
++			if(size_env)
++			{
++				mbloc=(char *)Malloc(size_env+24);
++			}
++		}
++	}
++  
++	if(mbloc)
++	{
++		offsetxt = mbloc;
++	}
++	else
++	{
++		offsetxt = smallbloc;
++	}
++#ifdef __GNUC__
++	sprintf(offsetxt,"OFFSETLDG=%ld%c%c",(long)&ldg,'\0','\0');
++#else
++	strcpy(offsetxt,"OFFSETLDG=");
++  	ltoa( (long)&ldg, offsetxt+10, 10);
++  	offsetxt[strlen( offsetxt) + 1] = '\0';
++#endif
++	if(mbloc)
++	{	/* recopie de l'environnement */
++		char *pt, *env;
++		pt = offsetxt;
++		env = ldg_global_env;
++		while (*pt) pt++;
++		pt++;
++		while(*env)
++		{
++			while (*env)
++			{
++				*pt++ = *env++;
++			}
++			*pt++ = *env++;
++		}
++		*pt = 0;
++	}
++	if(module)
++	{
++		Mfree( module->p_env);
++    Mfree( module);
++		module=NULL;
++	}
++	module = (BASEPAGE *)Pexec( 3, (char *)path, NULL, offsetxt); /* Load, don't go */
++	if(mbloc) Mfree(mbloc);
++	if( (long)module < 0L) {
++		set_error( LDG_ERR_EXEC);
++		return NULL;	/* echec de Pexec */
++	}
++	
++	/* Vider les caches */
++#ifndef __mcoldfire__
++	/* Why is this necessary? Pexec(3) should flush the caches internally. */
++	/* Anyway, this is never necessary on modern ColdFire operating systems. */
++	ldg_cpush();  
++#endif
++
++	(void) Pexec( 4, NULL, module, NULL); /* Just go */
++
++	/* Vider les caches */
++#ifndef __mcoldfire__
++	/* Why is this necessary? The caches were flushed before Pexec(4). */
++	ldg_cpush();  
++#endif
++	Pwait();
++
++	if(ldg==NULL)  {
++    	set_error( LDG_BAD_FORMAT);
++    	Mfree( module->p_env);
++    	Mfree( module);
++    	return NULL;	/* Pas une librairie */
++	}
++
++	if( ldg -> magic != LDG_COOKIE) {
++ 		set_error( LDG_BAD_FORMAT);
++    	Mfree( module->p_env);
++    	Mfree( module);
++    	return NULL;	/* mauvais format de librairie */
++  	}
++  	
++	ldg -> id = (short)(apid&0xFFFF);    /* contient maintenant l'id du lanceur */
++	ldg -> baspag = module;
++	
++	/* depuis version 1.00 */
++ 	if( ldg -> vers_ldg >= 0x100) {
++ 		if( !strrchr( path, '\\')) {
++ 			char currpath[PATHLEN];
++			
++			currpath[0]=Dgetdrv()+'A';
++			currpath[1]=':';
++			currpath[2]='\\';
++			currpath[3]='\0';
++			Dgetpath( currpath+2, 0);
++			strncpy( ldg->path, currpath, PATHLEN-1);
++			strcat( ldg->path,"\\");
++			strcat( ldg->path, path); 
++		}
++		else
++			strncpy( ldg->path,path,PATHLEN-1);
++	}
++	return ldg;
++}
++
++/*
++ * Enlever un module de la m�moire
++ */
++
++int ldg_unload( LDG *ldg) {
++	if( ldg) {
++		if( ldg->close) (*ldg->close)();
++		Mfree( ((BASEPAGE *)ldg->baspag)->p_env);
++		Mfree( ldg->baspag);
++		/* At this point we can't use 'ldg' structure anymore.
++		 * Formally we've released only ldg->baspag but 'ldg' points
++		 * to static LDG struct in the module, i.e. it's part of
++		 * process TPA which was just released.
++		 */
++	}
++	return 0;
++}
++
++/* EOF */
+--- /dev/null
++++ b/sdk/ldg/overlay/src/devel/ldgutil.c
+@@ -0,0 +1,239 @@
++/*
++ * LDG : Gem Dynamical Libraries
++ * Copyright (c) 1997-2004 Olivier Landemarre, Dominique Bereziat & Arnaud Bercegeay
++ *
++ * Some usefull functions (for LDG kernel & client application)
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
++ *
++ * $Id$
++ * Patch Coldfire Vincent Riviere
++ */
++
++/*
++ * NewTOS overlay (AArch64/LP64 retarget; built by sdk/ldg/build-ldg.sh, the
++ * pristine file is src/devel/ldgutil.c of sdk/ldg/ldg-svn-r133.tar.xz).
++ * Two functions differ from the pristine ldgutil.c; everything else is
++ * byte-identical.
++ *
++ * 1. ldg_cookie (ldgutil.c:53-70). The original reads the _p_cookies sysvar
++ *    as `*(long *)0x5a0` under Supexec and walks the jar as pairs of `long`.
++ *    On LP64 a `long` is 8 bytes while the jar pointer and every jar entry
++ *    are 32-bit words (tos-api/src/bdos/process/loader.rs, cookie jar
++ *    setup), so the raw access yields a wrong jar pointer and a wrong
++ *    stride. NewTOS exposes the jar through Ssystem(S_GETCOOKIE); mintlib's
++ *    Getcookie() (sdk/libc/newtos-arch/getcookie.c) is that call. The
++ *    function keeps its LDG contract: 1 and *value = cookie value on a hit,
++ *    0 on a miss (value untouched on a miss, as in the original loop).
++ *
++ * 2. ldg_cpush (ldgutil.c:205-225). The original executes a data array of
++ *    m68k opcodes (NOP; CPUSHA BC; RTS) through Supexec when the _CPU cookie
++ *    is > 30 -- m68k assembly, the one case the toolchain may retarget. On
++ *    NewTOS the kernel already makes a loaded program's code visible to
++ *    instruction fetch inside Pexec(3): loader.rs calls
++ *    mmu::sync_code_cache (tos-api/src/bdos/process/loader.rs:599; DC CVAU,
++ *    DSB ISH, IC IVAU, DSB ISH, ISB in tos-api/src/bdos/process/mmu.rs:1564),
++ *    exactly as EmuTOS (bdos/proc.c:352-356) and FreeMiNT (k_exec.c:686-687)
++ *    do -- ldgload.c:146 itself notes "Pexec(3) should flush the caches
++ *    internally". EL0 could not do the I-cache part anyway: SCTLR_EL1.UCI
++ *    is left clear (kernel/src/arch/aarch64/boot.rs:189-198), so IC IVAU at
++ *    EL0 traps (docs/analysis/arch03-stage0a-armarm-verification.md, E1).
++ *    ldg_cpush therefore has nothing left to do and is an empty function;
++ *    the symbol stays because ldgload.c and clients call it (ldg.h:165-167).
++ */
++#include <mint/cookie.h>
++
++#include <string.h>
++#include <stdlib.h>
++#include <stdarg.h>
++#include <stdio.h>
++#include "../version.h"
++#include "../options.h"
++#include "../../include/ldg.h"
++#include "global.h"
++
++/*#include <gem.h>*/
++#if defined(__PUREC__) || defined(__VBCC__)
++#include <tos.h>
++#endif
++#if defined(__GNUC__) || defined(__SOZOBONX__)
++#include <osbind.h>
++#define BASPAG	BASEPAGE
++#endif
++
++struct _ldg_version ldg_version = { LDG_NAME, LDG_NUM};
++
++#define MagX_COOKIE     0x4D616758L	/* 'MagX' */
++#define MiNT_COOKIE     0x4D694E54L	/* 'MiNT' */
++
++
++/*
++ * @TODO : get a better version of get_cookie (from WinDom or Ssytem()'s Mint)
++ */
++
++int	ldg_cookie (long cookie, long *value) {
++  long v;
++
++  /* NewTOS: the jar is read through Ssystem(S_GETCOOKIE) via Getcookie(),
++   * see the overlay note at the top of this file (item 1). */
++  if (Getcookie(cookie, &v) == C_FOUND) {
++    if (value) *value = v;
++    return( 1);
++  }
++  return( 0);
++}
++
++/*
++ * Gestion des erreurs : le code erreur est
++ * �crit dans le champ du cookie LDGM d�di� �
++ * cet usage.
++ */
++
++void set_error( int code) {
++	LDG_INFOS *cook;
++	
++	if( ldg_cookie( LDG_COOKIE, (long*)&cook) && cook->version >= 0x0210)
++		cook->error = (short)(code&0xFFFF);
++}
++
++#if 0
++/*
++ *	Fonction de d�bugage 
++ *  nouvelle version : si la chaine <format> est
++ *	au format d'une alerte GEM, on utilisera form_alert
++ */
++
++void ldg_debug( char *format, ...) {
++	char *path, debug[255];
++	va_list arglist;
++	FILE *log;
++	
++	/* Provisoire, on pourrait aussi utiliser le cookie
++	 * car �a serait plus souple */
++	shel_envrn( &path, "LDG_DEBUG=");
++
++	/* format */
++	if( format) {
++		va_start( arglist, format);
++		vsprintf( debug, format, arglist);
++		va_end( arglist);
++		if( *format == '[')
++			form_alert( 1, debug);
++		else {
++			log = fopen( path, "a");
++			if( log) fputs( debug, log);
++		} 
++	} else {
++		log = fopen( path, "w");
++		if(log)	fclose( log);
++	}
++}
++
++#endif
++
++void *ldg_Malloc( long size) { 
++	void *bloc = 0L; 
++	static short flag = 0;	/* vaut 1,-1 ou 0 */
++	if( flag == 0) {
++
++	union {
++#ifdef __SOZOBONX__
++		struct {
++			unsigned minor:8;
++			unsigned major:8;
++		} braker;
++#else
++		struct {
++			unsigned int minor:8;
++			unsigned int major:8;
++		} braker;
++#endif
++		short all;
++	} versn;
++		
++		versn.all = (short)Sversion();
++		/* Mxalloc() � partir de GEMDOS 0 r�vision 19 */
++		/* flag = ((versn.braker.major>0) || (versn.braker.minor>=0x19))?1:-1; */
++		/* Franchement il y a aucune difference */
++
++		if((versn.braker.major>0) || (versn.braker.minor>=0x19))		
++			flag = -1;
++		else 
++			flag=1;
++ 	}
++	if( flag == -1) {
++		if( ldg_cookie( MagX_COOKIE, NULL) || ldg_cookie( MiNT_COOKIE, NULL))
++		/* allocation globale pr�f�rentiellement en TT Ram */
++    		bloc = (void *)Mxalloc( size, 3+8+32);
++		else
++			bloc = (void *)Mxalloc( size, 3);
++	} else
++		bloc = (void *)Malloc( size);
++	return( bloc);
++}
++
++void *ldg_Calloc(long count,long size) { 
++	void *bloc = 0L; 
++	char *pt = 0L; 
++	long i, taille;
++  
++	taille = count*size;
++	bloc = ldg_Malloc( taille);
++	if(bloc != 0L) {
++		pt = (char *)bloc;
++		for( i= 0L; i < taille; i++)
++			*pt++ = 0;
++	}
++	return( bloc);
++}
++
++void *ldg_Realloc( void *oldblk, long oldsize, long newsize) {
++	void *newblk;
++	
++	newblk = ldg_Malloc( newsize);
++	if( newblk) {
++		memcpy( newblk, oldblk, oldsize);
++		ldg_Free( oldblk);
++		return newblk;
++	}
++	return NULL;
++}
++
++int ldg_Free(void *memory) {
++	return( Mfree(memory));
++}
++
++#ifndef __mcoldfire__
++
++/*
++ *  ldg_cpush
++ *
++ * vidage des caches data et instruction du processeur
++ * par l'appel � la fonction asm "cpush".
++ * ce code peut etre appel� � partir du 68040 et doit �tre
++ * ex�cut� en mode superviseur (d'o� l'utilisation de Supexec).
++ *
++ * 1er mouture le 17 avril 2002 par Arnaud BERCEGEAY <bercegeay@atari.org>
++ */
++
++void ldg_cpush(void) {
++	/* NewTOS: intentionally empty -- the kernel synchronised the caches
++	 * for the loaded image inside Pexec(3), see the overlay note at the
++	 * top of this file (item 2). */
++}
++
++#endif
++
++/* EOF */

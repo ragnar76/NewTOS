@@ -1,0 +1,6 @@
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/EX_LIB.NLD (54048 bytes)
+  Type: SharedObject (0x3)
+  undefined symbols (goal 0): 0
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/LDGTEST.NCP (118312 bytes)
+  Type: SharedObject (0x3)
+  undefined symbols (goal 0): 0

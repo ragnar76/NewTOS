@@ -25,9 +25,13 @@
 /libm/openlibm-0.8.8/
 /libm/build/
 /libm/libm.a
+/ldg/ldg-r133/
+/ldg/build/
+/ldg/libldg.a
 **/*.o
 *.NCP
 *.NAP
+*.NLD
 
 # App source trees under /apps/ stay vendored (big; third-party — QED compiles
 # UNMODIFIED). Build scripts + tests directly in /apps/ ARE tracked. Our own LP64

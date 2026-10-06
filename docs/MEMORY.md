@@ -1085,6 +1085,33 @@ take a second `menu_register` slot and enter a second, unreachable message
 loop. EmuTOS's desktop has no launch path for an `.ACC` either; it simply
 cannot reach the case, while ours can. See `docs/api/aes/accessories.md` §9.
 
+### Amendment 2026-10-06 — `.NLD`, the native LDG library
+
+User decision 2026-10-06 (LDG design `docs/analysis/ldg-after-arch03-2026-10-06.md`
+§9 Q3, recorded by the lead; implemented in TASK/LDG-M1):
+
+1. **`.NLD` = native LDG library** (LDG = "GEM Dynamical Libraries"). It is a
+   native NewTOS ELF built exactly like a program (PIE, `sdk/libc/crt0.S`,
+   `sdk/newtos.ld`; `sdk/ldg/build-ldg-demo.sh`), but it is **not a program a
+   user starts**: a client loads it through libldg's `ldg_open` → `Pexec`
+   5/3/4, the module's `main()` only hands its descriptor back via
+   `OFFSETLDG`, and the client then calls its functions directly. Started
+   without a client, an LDG module just says so (`ex_lib.c:66-69`:
+   `form_alert` "This program is a LDG library").
+2. **The m68k counterpart `.LDG` is reserved for the later emulator**, by the
+   same reasoning as `.PRG`/`.ACC`: a classic `.LDG` is m68k code that `Pexec`
+   cannot run natively, and the emulator must be able to claim the suffix.
+3. **The desktop keeps the default `Doc` class for `.NLD`** — no new
+   `FileType`/`Flavor`. `kernel/src/desk/ftype.rs::classify` already maps any
+   unknown suffix to `FileType::Doc` (`_ => FileType::Doc`), so a double-click
+   starts nothing. The kernel does not look at suffixes when loading
+   (`Pexec` has no extension check), so nothing kernel-side is needed either.
+4. The `N_P` pattern ("middle letter = role") does not fit `.NLD` (`N` + `LD`
+   for LDG); the name follows the m68k suffix instead, as `.NAC` follows
+   `.ACC`. Clients that search for modules by suffix (zView's `plugins.c`
+   compares the last three characters with `"ldg"`) get a toolchain overlay
+   for `.NLD`; the application source stays pristine (ADR-019 overlay rule).
+
 ### Routing
 
 - **Double-click / File→Open** on a file (`open_item`):

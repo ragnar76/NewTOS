@@ -1,0 +1,15 @@
+# LDG (GEM Dynamical Libraries) source pin for sdk/ldg/build-ldg.sh (TASK/LDG-M1).
+#
+# ldg-svn-r133.tar.xz = the tree in Applications/ldg-src/ldg, i.e. SVN trunk
+# r133 of https://svn.code.sf.net/p/ldg/code/trunk/ldg/ , fetched read-only on
+# 2026-10-04 by crawling the directory listings with curl (no svn client;
+# trunk/CVSROOT and trunk/htdocs not fetched; Applications/ldg-src/SOURCE.txt).
+# Packed unchanged on 2026-10-06 (top directory ldg/, 212 files, bsdtar
+# --no-xattrs, uid/gid 0, xz -9e). The per-file SHA-256 manifest of the tree is
+# ldg-svn-r133.files.sha256 (paths relative to the tarball root, check with
+# `cd <dir holding ldg/> && shasum -a 256 -c ldg-svn-r133.files.sha256`); its
+# own SHA-256 is c17c7320dbb2fc5a8bda8add19be3a1ec46d49d7dfd7619f1c2e5711fea72efd.
+#
+# NOT compared: th-otto's ldg-20171014 (ldg-cross.patch, ldg-pwait.patch).
+# License: LGPL 2.1 (ldg/COPYRIGHT, file headers).
+1b5b6bd2aac298b3f8314bc9af3274ac51b5cadc778436b3efa9873c31ff2dc8  ldg-svn-r133.tar.xz

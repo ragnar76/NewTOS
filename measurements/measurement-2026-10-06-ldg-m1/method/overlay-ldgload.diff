@@ -1,0 +1,38 @@
+--- Applications/ldg-src/ldg/src/devel/ldgload.c	2026-10-04 21:39:32
++++ sdk/ldg/overlay/src/devel/ldgload.c	2026-10-06 20:48:52
+@@ -23,6 +23,26 @@
+ 
+  /*   13 fev 2010 : Patch from Mikro  : Fix memory protection issue + some clean up       */
+ 
++/*
++ * NewTOS overlay (LP64 ABI correction; built by sdk/ldg/build-ldg.sh, the
++ * pristine file is src/devel/ldgload.c of sdk/ldg/ldg-svn-r133.tar.xz).
++ *
++ * The ONLY change vs. the pristine ldgload.c is the read of the dummy
++ * basepage's environment pointer at ldgload.c:76 (`ldg_global_env =
++ * module->p_env`). With the SDK's LP64 basepage.h overlay
++ * (sdk/libc/overlay/include/mint/basepage.h:30-47) p_env is a fixed 32-bit
++ * field, so assigning it to a `char *` is an int->pointer conversion
++ * (-Wint-conversion, a default ERROR under this clang). It is cast through
++ * `(char *)(uintptr_t)` -- NewTOS EL0 VAs are < 2^32, so the 32-bit value is
++ * the full environment VA (same fix as sdk/overlays/teradesk/environm.c).
++ *
++ * The other p_env uses (ldgload.c:133,162,169,204) need no change: they only
++ * pass the value to Mfree(), whose binding converts its argument to `long`
++ * (sdk/libc/overlay/include/mint/osbind.h, `Mfree`), so the zero-extended
++ * 32-bit address reaches the trap unchanged. LDG logic is otherwise untouched.
++ */
++#include <stdint.h>
++
+ #include <string.h>
+ #include <stdlib.h>
+ #include <stdio.h>
+@@ -73,7 +93,7 @@
+ 	module = (BASEPAGE *)Pexec( 5, NULL, "", NULL);  /* pour recuperer l'environnment du programme appelant on cree un basepage bidon */
+ 	if(module)
+ 	{
+-   	ldg_global_env = module->p_env;  /* recuperation de l'environnement */
++   	ldg_global_env = (char *)(uintptr_t)module->p_env;  /* recuperation de l'environnement */
+     
+     if(ldg_global_env)
+ 		{	char *env;

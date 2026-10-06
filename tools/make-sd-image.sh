@@ -312,6 +312,31 @@ else
   echo "note: sdk/libm/build/mathtst.NCP not built; C:\\MATHTST.NCP skipped"
 fi
 
+# LDG proof (TASK/LDG-M1): EX_LIB.NLD is LDG's unmodified demo library ex_lib
+# built as a native LDG module (`.NLD`, ADR-018 addendum: not startable by
+# double-click -- the desktop shows it as a document); LDGTEST.NCP is the
+# headless client that loads it through libldg's real mechanism (ldg_open ->
+# Pexec 5/3/4), calls sinus()/cosinus() and closes it, one PASS/FAIL line per
+# check over Cconws -- see sdk/examples/ldgtest.c. The client opens the
+# module as C:\LDG\EX_LIB.NLD and by the relative name after Dsetpath(\LDG),
+# so the module must sit exactly there. Copied in if already built
+# (`sdk/ldg/build-ldg-demo.sh`). Set SD_LDGTEST_AUTO=1 to also drop the client
+# into \AUTO\ for a serial-verifiable run (no key pause).
+LDG_NLD="$SCRIPT_DIR/../sdk/ldg/build/EX_LIB.NLD"
+LDGTEST_NCP="$SCRIPT_DIR/../sdk/ldg/build/LDGTEST.NCP"
+if [ -f "$LDG_NLD" ] && [ -f "$LDGTEST_NCP" ]; then
+  mkdir -p "$V/LDG"
+  cp "$LDG_NLD" "$V/LDG/EX_LIB.NLD"
+  cp "$LDGTEST_NCP" "$V/LDGTEST.NCP"
+  echo "installed C:\\LDG\\EX_LIB.NLD + C:\\LDGTEST.NCP (LDG proof)"
+  if [ "${SD_LDGTEST_AUTO:-0}" = "1" ]; then
+    cp "$LDGTEST_NCP" "$V/AUTO/LDGTEST.NCP"
+    echo "  + \\AUTO\\LDGTEST.NCP (runs at boot)"
+  fi
+else
+  echo "note: sdk/ldg/build/{EX_LIB.NLD,LDGTEST.NCP} not built; LDG proof skipped"
+fi
+
 # CoreMark 1.0 (EEMBC) — the CPU benchmark, built UNMODIFIED apart from its own
 # porting layer (sdk/overlays/coremark/newtos/), which is what CoreMark's run
 # rules put under the porter's control. Two executables, because NewTOS has no

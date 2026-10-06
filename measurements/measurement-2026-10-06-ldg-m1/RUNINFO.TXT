@@ -1,0 +1,119 @@
+measurement-2026-10-06-ldg-m1 -- TASK/LDG-M1: LDG's demo library ex_lib as a
+native .NLD, loaded through the REAL LDG mechanism (libldg ldg_open ->
+ldg_load -> Pexec 5/3/4 + OFFSETLDG, no custom loader, no TSR), sinus()
+called. Design: docs/analysis/ldg-after-arch03-2026-10-06.md section 7
+(S2-S7); lead decisions Q2-Q9 of 2026-10-06. Developer self-evidence; the
+Tester's verdict is separate.
+
+Date 2026-10-06, branch desk-rebuild, HEAD 6141514 plus this change
+(uncommitted, method/ldg-m1-change.diff). QEMU raspi4b, -append serial=on
+(+ memprot=off|strict where named), host macOS. No SD card, Pi or TT
+touched; tools/make-sd-image.sh NOT run (it mounts at the fixed
+/Volumes/NEWTOS) -- cards from method/seed-card.sh (copied from
+measurement-2026-10-06-port09), private 64 MiB images in the session
+scratchpad. Kernel source untouched: bin/kernel8-ldgm1.img is HEAD's kernel
+(its hash differs from port09's kernel only because the banner embeds the
+commit id, "NewTOS 0.1 2026-10-06 (6141514e)").
+
+CHANGE (no kernel, no libc change)
+  sdk/ldg/ldg-svn-r133.tar.xz       pristine LDG tree (SVN r133 =
+      Applications/ldg-src/ldg, 212 files), sha256 1b5b6bd2... in
+      sdk/ldg/ldg-sources.sha256; per-file manifest
+      sdk/ldg/ldg-svn-r133.files.sha256 (checked: 212/212 OK against a fresh
+      extract). ldg-20171014 (th-otto) NOT compared -- open.
+  sdk/ldg/overlay/src/devel/ldgload.c  p_env -> (char *)(uintptr_t) at :76
+      (method/overlay-ldgload.diff)
+  sdk/ldg/overlay/src/devel/ldgutil.c  ldg_cookie via Getcookie();
+      ldg_cpush empty (kernel syncs in Pexec(3), loader.rs:599)
+      (method/overlay-ldgutil.diff)
+  sdk/ldg/build-ldg.sh               libldg.a = common.mak OBJS without
+      stdcallgcc.o (no ldg_callback symbol, Q5)
+  sdk/ldg/build-ldg-demo.sh          EX_LIB.NLD (ex_lib.c unmodified) +
+      LDGTEST.NCP (sdk/examples/ldgtest.c + demo exlibbnd.c unmodified)
+  sdk/lib-stale.sh                   library `ldg` (chain libc -> ldg)
+  sdk/.gitignore                     ldg-r133/, build/, libldg.a, *.NLD
+  sdk/examples/ldgtest.c             the M1 client (69 checks)
+  tools/make-sd-image.sh             C:\LDG\EX_LIB.NLD + C:\LDGTEST.NCP,
+      SD_LDGTEST_AUTO=1 -> \AUTO\ (syntax-checked, not run, see above)
+  docs/sdk/10-ldg-modules.md (new), docs/sdk/README.md, docs/MEMORY.md
+      (ADR-018 amendment .NLD)
+
+BUILD (checks/build-ldg.txt, checks/build-ldg-demo.txt)
+  libldg.a: compiled OK=4 FAILED=0, 0 files with warnings (-W -Wall, LDG's
+  own gcc.mak flags). EX_LIB.NLD 54048 B / LDGTEST.NCP 118312 B, ET_DYN,
+  0 undefined symbols; EX_LIB.NLD has 63 relocations, all
+  R_AARCH64_RELATIVE. ldgtest.c with -Wall -Wextra: 0 warnings. Two
+  consecutive builds byte-identical; lib_ensure converges (2nd run builds
+  nothing). The first lib_ensure also rebuilt gemlib.a and libm.a, stale
+  against sdk/libc/build-libc.sh (PORT09) -- same sources, nothing changed
+  by this task.
+
+STATIC CHECKS (method/checks.sh ldgm1; checks/ldgm1-*.txt)
+                                      port09 base   ldgm1
+  host tests pass/fail/ignored        1165/0/1      1165/0/1
+  release warnings tos-api/kernel     64/94 both    64/94 both boards
+  clippy tos-api/kernel rpi4, virt    76/125        76/125
+  desk-drift-probe                    31            31
+  sdk/run-host-tests                  14/0/0        14/0/0
+
+QEMU raspi4b (method/ldg-runs.sh; serial/, screendumps/)
+  LDGTEST in \AUTO\ (before the AES), card ldgauto:
+    memprot=off     "ldgtest: ALL PASS (69 checks)"
+    memprot on      "ldgtest: ALL PASS (69 checks)"
+    memprot=strict  "ldgtest: ALL PASS (69 checks)"
+  LDGTEST via #Z from the desktop (GEM-side parent environment), on:
+                    "ldgtest: ALL PASS (69 checks)", back on the desktop
+                    (screendumps/ldgm1-on-rpi4-ldgz-end.png)
+  What the 69 checks cover (sdk/examples/ldgtest.c header): ldg_open by
+    absolute path, descriptor (magic LDGM, vers 0x0101, num 3, vers_ldg
+    0x0235, infos text, flags = LDG_STDCALL, close NULL, path); ldg_find of
+    the three names via the demo's exlibbnd.c, unknown name -> NULL;
+    pointers inside the module TPA; information() text; sinus(0.5) =
+    0.479426 vs the client's sin(0.5) and the constant (tol 1e-12),
+    cosinus(0.5), sinus(pi/6) = 0.5; ldg_close == 0; largest free block
+    (Malloc(-1)) back to its start value; relative name after
+    Dsetpath(\LDG) (ldg->path = C:\LDG\EX_LIB.NLD built by ldg_load);
+    reload after close; a second open while the first is open (different
+    descriptor and basepage, both work); final largest free block = start.
+  getenv in a Pexec(3)/(4)-started module (PORT09 S1): proven by every
+    successful ldg_open -- ldg_init() returns -1 and never writes the
+    client's `ldg` without getenv("OFFSETLDG").
+  Addresses (on, AUTO): module basepage 0x19d3000 on the first, the
+    relative and the reload open (reload lands at the SAME address --
+    the I-cache case for the Pi); the second simultaneous load 0x19f2000.
+    Largest free block 0x3a42e000 at start, after every close and at end.
+  Negative, on (card ldgneg, no C:\LDG\EX_LIB.NLD): ldg_open -> NULL for
+    all three opens, ldg_error() -11 (LDG_NO_TSR, by design without TSR),
+    largest free block unchanged, "ldgtest: FAIL (4 of 7 checks failed)"
+    as expected, boot continues to the desktop. Shows the client reports a
+    missing module and the Pexec(3) error path leaks nothing.
+
+REGRESSION, memprot on (method/ldg-runs.sh regr; same kernel)
+  S2ALL: PASS (probes rebuilt from this tree by method/build-s2-tests.sh,
+    method/tests = port09's updated copies)
+  APITEST: summary identical to port09 (TOTAL 106/0/5)
+  QED (#Z) and TeraDesk (#Z) start ([shell] sh_ldapp lines)
+  Screendumps vs measurement-2026-10-06-port09 (method/shotcmp.py
+    ldgm1-on- vs port09-on-): 5 same, 0 differ (apitest t25/t40, qed t30,
+    teradesk t35, s2all end); 3 new (ldg runs).
+
+INVALID, KEPT FOR THE RECORD: serial/invalid-missing-dtachild/,
+  screendumps/invalid-missing-dtachild/. The first APITEST card lacked
+  C:\DTACHILD.NCP (port09's card had it from build-all.sh, this run's bin
+  did not), so T29.3 SKIPped ("child did not run", 105/0/6). DTACHILD.NCP
+  was built (sdk/build.sh sdk/examples/dtachild.c) and APITEST repeated on
+  a fresh card: 106/0/5, identical to port09.
+
+BINARIES
+  bin/SHA256SUMS (probes, LDGTEST.NCP, EX_LIB.NLD, DTACHILD.NCP),
+  bin/KERNELS.SHA256 (kernel8-ldgm1.img f2685526..., kernel-virt-ldgm1.img
+  380d59b4...), repo-binaries.sha256 (libldg.a, tarball, libc.a = port09's
+  71d5d3a7..., gemlib.a, libm.a, APITEST, QED, TeraDesk, Doom).
+
+ONLY REAL HW CAN CONFIRM
+  I-cache coherence of a freshly loaded and especially a RE-loaded module:
+  QEMU has no caches (loader.rs:594-597). LDGTEST's reload lands at the
+  same basepage as the first load (0x19d3000 here), so it is exactly the
+  stale-I-cache case; a stale line would show as a wrong sinus/cosinus
+  value or a crash in the reload/relative steps. Also open there: the
+  kernel-alias maintenance argument (PIPT, loader.rs:594-598) and asid=on.
