@@ -1,0 +1,3 @@
+file    ::/Apps/QED/QEDT.TXT: b'fs08\r\nab\r\n'
+ok      both saves on the card
+HOSTCHECK: PASS

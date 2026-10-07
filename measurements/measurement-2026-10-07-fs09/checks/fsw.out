@@ -1,0 +1,27 @@
+=== fsw-on
+FSWRITE: PASS
+FSWRITE.LOG extracted
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 99 files, 126092 KiB free (63046 clusters)
+== fsck_msdos -n s2
+Warning: 30 files, 99598 KiB free (49799 clusters)
+run fsw-on done
+=== fsw-off
+FSWRITE: PASS
+FSWRITE.LOG extracted
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 99 files, 126092 KiB free (63046 clusters)
+== fsck_msdos -n s2
+Warning: 30 files, 99598 KiB free (49799 clusters)
+run fsw-off done
+=== fsw-tiny
+FSWRITE: PASS
+FSWRITE.LOG extracted
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 99 files, 126092 KiB free (63046 clusters)
+== fsck_msdos -n s2
+Warning: 30 files, 99598 KiB free (49799 clusters)
+run fsw-tiny done

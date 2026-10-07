@@ -1,0 +1,171 @@
+measurement-2026-10-07-fs09 -- TASK/FS09 (user decision 2026-10-07): a large
+block READ cache after FreeMiNT block_IO, LRU, configurable size, write-through
+(HW03), invalidated with a new partition scan. Developer self-evidence; the
+Tester's verdict is separate.
+
+Date 2026-10-07, branch desk-rebuild. Code state: HEAD 48b7f54 plus this change
+(uncommitted); during the run the lead committed 3ec1983 (docs/measurements
+only, FS08 part 4 Pi log) -- the tracked edits are method/fs09-change.diff
+against that. QEMU 11 raspi4b, -append "serial=on memprot=on [bcache=...]",
+one QEMU at a time, only our own pid killed (host has no `timeout`). No SD
+card, Pi or TT touched; nothing copied to any card (real cards were mounted:
+BOOT/NEWTOS1-3/TT -- tools/make-sd-image.sh was only run after checking that
+no /Volumes/NEWTOS existed; its D: is resolved by device). Scratch (kernels,
+base cards, run clones, traces, injector trees) in the session scratchpad,
+deleted at the end; ONE base card per content (base.img, base-fsb.img,
+base-api.img, base-s2all.img), every run on an APFS clone (cp -c) deleted after
+the run, sha256 in checks/*.card-sha256 and checks/hashes.txt.
+
+SPEC (written first)
+  docs/analysis/fs09-block-cache-2026-10-07.md -- FreeMiNT @ f906416
+  sys/block_IO.c (+ mint/block_IO.h, cnf_mint.c, fatfs.c, bios.c) with
+  file:line, and the NewTOS design: placement, unit, LRU, memory, size,
+  linear-read share, write-through coherence, invalidation, Rwabs flags.
+  Notes added to docs/api/bios/04-rwabs.md, 07-getbpb.md, 09-mediach.md.
+
+DESIGN (short; reasons in the spec)
+  * One cache UNDER every access to the card: tos-api/src/bios/bcache.rs,
+    bcache::device() wraps Host::block(); the five callers in tos-api
+    (Rwabs, MBR scan, Getbpb x2, the BDOS buffer lists incl. the fsio direct
+    transfers) go through it. Key = absolute device LBA, so logical and
+    physical Rwabs share one copy. (FreeMiNT sits above Rwabs and lets a
+    program's Rwabs pass by -- named deviation.)
+  * Unit 512 B (FreeMiNT CHUNK_SIZE), exact fetch of each miss run with ONE
+    device request (bio_l_read), NO read-ahead (bio_pre_read is empty in
+    FreeMiNT), exact LRU.
+  * Linear-read share 5 % (FreeMiNT DEFAULT_PERC): a miss run is inserted
+    only if run*100 <= pct*capacity.
+  * Write-through: device first; a confirmed write <= 32 KiB updates/inserts
+    its sectors (bio_small_write), a larger one drops the range first
+    (bio_large_write), a failed one drops the range.
+  * Invalidate: bios::mount() (new partition scan). Mediach is constant 0
+    (non-removable card); Getbpb does not invalidate (as FreeMiNT).
+  * Memory: own range at the bottom of the OS reserve at the top of DRAM
+    (layout.rs block_cache), outside ST-RAM/TT-RAM, below heap/framebuffer
+    (those keep their addresses), 2-MiB steps, at most half of TT-RAM;
+    board-rpi4 only. Default 32 MiB (FreeMiNT 128 KB ~ 3 % of a 4-MB ST ->
+    ~30 MiB of the ~950 MiB NewTOS manages on a Pi 4). Boot arguments
+    bcache=<KiB> (0 = off) and bcachepct=<0..100>; boot line "[bcache] ...".
+
+CODE
+  NEW  tos-api/src/bios/bcache.rs           BlockCache (arena layout, hash,
+       LRU, read/write/invalidate), the system instance, device()
+  tos-api/src/bios/mod.rs                   pub mod bcache; mount() drops the
+       cache; Rwabs through bcache::device()
+  tos-api/src/bios/bpb.rs, drive.rs, bdos/fs/cache.rs   through device()
+  kernel/src/bios/machine/layout.rs         discover(.., block_cache_bytes),
+       MemoryMap::block_cache, BLOCK_CACHE_GRANULE
+  kernel/src/bootargs.rs                    BCACHE, BCACHE_PCT, Setting,
+       numeric_setting + test
+  kernel/src/lib.rs                         bcache_switch, install_block_cache,
+       memory-map line "bcach"
+  TESTS NEW tos-api/tests/bios_bcache.rs (16: hit/miss, one request per miss
+       run, LRU order, linear share, small/large/failed write incl. partial
+       overlap and an aborted multi-block write, failed read, invalidation,
+       partial-sector pass-through, three 6000-step random sequences with
+       failing reads/writes checked against the card)
+       tos-api/tests/gemdos_fs_bcache.rs (5: GEMDOS re-read with 0 device
+       requests, partly cached fragmented file reads only the gaps, Fwrite
+       write-through + cache + card byte-exact, logical/physical Rwabs share
+       one copy, bios::mount drops the cache)
+  Mutation check (scratch edit, reverted by hand): with the write-path cache
+  update disabled 5 of the 16 bios_bcache tests fail (incl. all three random
+  sequences).
+
+STATIC CHECKS (method/checks.sh v1 -> checks/v1-*.txt)
+                                   baseline (lead)   this change
+  host tests pass/fail/ignored     1205/0/1          1227/0/1 (+16 +5 +1)
+  release warnings tos-api/kernel  64/94 both        64/94 both boards
+  clippy tos-api/kernel rpi4, virt 76/125            76/125 (no new)
+  desk-drift-probe                 31                31
+  SDK host tests                   18/0/0            18/0/0
+
+FSBENCH (method/run-fsbench-trace.sh: serial on QEMU stdout + SD trace on its
+stderr into ONE file, split per FSBENCH progress line by phase-counts.py;
+C:\AUTO\FSBENCH.NCP 2eeeb400... = the binary on the Pi card; base-fsb.img)
+read commands (CMD17+CMD18), checks/fsb-*-phases.txt:
+  cache            L1-3 cold  L1-3 warm   total   blocks read
+  off (bcache=0)      75 711     75 721   151 492   548 939  (= FS08 part 4)
+  8 MiB               72 717     72 727   145 490   449 588
+  16 MiB              46 642     46 655    93 343   183 517
+  32 MiB (default)    45 878         10    45 933    46 113
+  dataset D:\FSBENCH = 22 MB (23 406 592 B). The 10 "warm" commands of the
+  default run are FSBENCH writing C:\FSBENCH.LOG after the warm pass (no
+  progress line separates them; 26 CMD24 + 6 CMD25 in the same phase) -- the
+  warm reads themselves cost 0 commands. A cache smaller than the dataset
+  barely helps the warm pass: FSBENCH re-reads everything in the same order,
+  the textbook LRU worst case (the oldest = the next needed sector is always
+  the one evicted); FreeMiNT's time-stamp LRU behaves the same. The cold pass
+  gains anyway (L1 classes overlap, L2 reads every file four times).
+  Every run: summary 100 reads crc ok, D:\FSBENCH 10/10 OK against
+  SHA256SUMS, fsck_msdos -n C: D: clean. fsb-pkg = bin/kernel8.img (the
+  package) -- same counts as fsb-default.
+
+ZVIEW STARTED TWICE (method/deskzv2.actions, prep-card.sh zv2: EmuDESK with
+the window C:\ZVIEW\; double-click ZVIEW.NAP, File > Quit, double-click again;
+SD trace with host time stamps split per [m3] MARK, mark-counts.py)
+  read commands (blocks)   1st start (B_ZV1_UP)   2nd start (D_ZV2_UP)
+  off (bcache=0)                296 (3624)             291 (3619)
+  on (32 MiB, 5 %)              104 (3325)               0 (0)
+  tiny (2 MiB, 100 %)           104 (3325)               0 (0)
+  Writes (ZVIEW.INF on Quit) identical in all three: 5 + 7 CMD24.
+
+GUI WRITE/READ REGRESSION (method/gui-fs09.sh; injector kernels
+make-inj.sh over THIS tree; on = default, off = bcache=0, tiny = bcache=2048
+bcachepct=100 -- 2 MiB, every run inserted: eviction during the writes)
+  run      read cmds off -> on (tiny)   CMD24/CMD25/blocks written (all equal)
+  deskw    192 -> 117 (117)             124/101/1292     HOSTCHECK PASS x3
+  qedw     286 ->  40 (40)               19/0/19         HOSTCHECK PASS x3
+  teraw    284 ->  66 (66)               31/19/771       HOSTCHECK PASS x3
+  zvw      566 -> 307 (308)               0/0/0          BIG.JPG decoded x3
+  deskzv2  660 -> 129 (129)              12/0/12
+  The "off" counts equal FS08 part 4's (zvw 566, teraw 284): bcache=0 is the
+  pre-FS09 path. fsck_msdos -n C: D: clean after all 15 runs; 0 [EXC]/PANIC/
+  "Memory violation" lines. Screendumps: 37 of 40 byte-identical on/off/tiny
+  (checks/gui-screendumps-on-off-tiny.txt); the 3 differing are dump timing
+  only -- teraw T00 (mouse pointer mid park sweep), deskzv2 B/D (zView's
+  File menu already dropped vs not yet, the injector moves to it 0.5 s after
+  the mark). screendumps/ = the "on" set + the four FSBENCH pages.
+
+FSWRITE (measurement-2026-10-07-fat-curcl tool: Fwrite sizes 1..65536 and
+whole-file, patches across cluster/record boundaries, append, copies,
+Frename, Fdelete, Ddelete on C: and D:, checked in the program AND on the host
+against a Python model) on / off / tiny:
+  FSWRITE PASS, HOSTCHECK PASS, fsck_msdos -n C: D: clean -- all three.
+  (Card images differ in file time stamps, not content.)
+
+APITEST / S2ALL (method/runs-headless.sh, cards seeded with seed-card.sh,
+programs measurement-2026-10-06-vforkt-fix/bin, APITEST sdk/apps/apitest)
+  APITEST TOTAL 106/0/5; S2ALL: PASS; fsck clean.
+
+NOT DONE HERE
+  - Real Pi 4 (workers take no hardware action): bin/ package below.
+  - qemu-virt: built and clippy'd, not booted (no block device, no cache).
+  - Full Tester series (strict mode, Doom, PORT10, accessories, ...).
+  - QEMU times are not representative (no card latency modelled).
+
+PI PACKAGE  bin/kernel8.img sha256 706bab02d09396330d0530e6b69b32c95300c69777e6c0c3272d5e13b58c9b86
+  = checks.sh v1 release build of the tree (`cargo xtask build --board rpi4
+  --release`; *.img gitignored). It differs from kernel8-fx.img (894b074d...,
+  the kernel of every QEMU run above, built in the scratch target dir) in
+  exactly 8 bytes: the embedded build rev 48b7f54c -> 3ec1983d (cmp -l);
+  fsb-pkg re-ran FSBENCH with it: identical counts, 100/100 crc ok, fsck
+  clean. bin/LIESMICH.TXT (German: what changes, expectations, FSBENCH cold
+  vs warm, zView second start, how to set/disable the cache), bin/SHA256SUMS.
+  Not copied to any card.
+
+method/ FILES
+  this run: run-fsbench-trace.sh, phase-counts.py, mark-counts.py,
+    gui-fs09.sh, deskzv2.actions, desk/newdesk-zv2.inf, fs09-change.diff
+  copied from measurement-2026-10-07-fat-curcl/method, unchanged: prep-base.sh,
+    qmp_on_marker.py, fswrite.c, build-fswrite.sh, fswrite-check.py,
+    run-fswrite.sh, gen-pattern.py, card-check.py, deskw.actions; checks.sh
+    (header comment line only); trace-counts.py (accepts the -msg
+    timestamp=on prefix)
+  copied from measurement-2026-10-07-stdiobuf/method: make-inj.sh,
+    apply-injector-m3.py, desk-arm-m3.py, gen_script.py, newdesk-template.inf,
+    zvw.actions, qedw.actions, teraw.actions, runs-headless.sh, seed-card.sh,
+    TERADESK.INF, desk/ unchanged; prep-card.sh (kind zv2 added), run-gui.sh
+    (trace with -msg timestamp=on, per-mark counts), drive-m3.py (--stamp
+    writes absolute epoch seconds)
+  SHA256SUMS: every file of this run except itself and bin/.

@@ -1,0 +1,474 @@
+diff --git a/docs/api/bios/04-rwabs.md b/docs/api/bios/04-rwabs.md
+index 2b0e4c1..334a8a9 100644
+--- a/docs/api/bios/04-rwabs.md
++++ b/docs/api/bios/04-rwabs.md
+@@ -366,6 +366,15 @@ impls. Sector size is 512 throughout. The `r_w` flag bits map onto a
+ must be reproduced for m68k-binary compatibility (Phase 10) but may be
+ NewTOS-native for source ports.
+ 
++FS09 (2026-10-07, FreeMiNT extension): every request reaches the card through
++the block read cache `tos-api/src/bios/bcache.rs`
++(`docs/analysis/fs09-block-cache-2026-10-07.md`). Keyed by the absolute LBA,
++so logical and physical (`RW_NOTRANSLATE`) requests share one copy; reads may
++be answered from RAM, writes go to the card first (write-through) and only a
++confirmed write updates the cache (≤ 32 KiB) or drops the range (larger, or
++failed). Return values and error codes are unchanged; `RW_NORETRIES` /
++`RW_NOMEDIACH` do not affect the cache (§2.8 there).
++
+ ---
+ 
+ ## Pi / BCM2711 binding
+diff --git a/docs/api/bios/07-getbpb.md b/docs/api/bios/07-getbpb.md
+index ed81153..91926a3 100644
+--- a/docs/api/bios/07-getbpb.md
++++ b/docs/api/bios/07-getbpb.md
+@@ -239,6 +239,13 @@ matching EmuTOS; FAT32/exFAT partitions return NULL from `Getbpb` and are
+ reached through a NewTOS-native path instead. Note `Getbpb`'s result is a full
+ 64-bit pointer in `x0` for native callers.
+ 
++FS09 (2026-10-07): the boot sector is read through the block read cache
++(`docs/analysis/fs09-block-cache-2026-10-07.md` §2.7). `Getbpb` itself does not
++invalidate the cache — as in FreeMiNT, where invalidation follows a detected
++media change (`fatfs_dskchng` → `bio_free_di`) and `Getbpb` is only the re-read
++after it. Every write to the card passes the cache, so the cached boot sector
++is the card's.
++
+ ---
+ 
+ ## Pi / BCM2711 binding
+diff --git a/docs/api/bios/09-mediach.md b/docs/api/bios/09-mediach.md
+index 5fd03c1..e42b7fe 100644
+--- a/docs/api/bios/09-mediach.md
++++ b/docs/api/bios/09-mediach.md
+@@ -221,6 +221,12 @@ hot-plug events. Both feed a per-drive `mediachange` flag with the same
+ latch/reset contract (`Mediach` reads the latch; `Getbpb` clears it). The
+ `EUNDEV`-on-invalid-drive and negative-error pass-through must be preserved.
+ 
++FS09 (2026-10-07): when `Mediach` ever reports a change, the block read cache
++must drop that medium's sectors as well (FreeMiNT `fatfs_dskchng` →
++`bio_free_di` → `bio_invalidate`; `docs/analysis/fs09-block-cache-2026-10-07.md`
++§2.7). Today `Mediach` is constant 0 and the only invalidation point is
++`bios::mount()` (new partition scan).
++
+ ---
+ 
+ ## Pi / BCM2711 binding
+diff --git a/kernel/src/bios/machine/layout.rs b/kernel/src/bios/machine/layout.rs
+index 1a46acd..4b95189 100644
+--- a/kernel/src/bios/machine/layout.rs
++++ b/kernel/src/bios/machine/layout.rs
+@@ -141,9 +141,17 @@ pub const KERNEL_HEAP_RESERVE: u64 = 2 * 1024 * 1024;
+ /// Pi 4 the VideoCore owns it and the reservation is zero.
+ pub const FRAMEBUFFER_RESERVE: u64 = board::FRAMEBUFFER_RESERVE;
+ 
+-/// Total bytes taken off the top of DRAM for kernel-owned buffers.
++/// Total bytes taken off the top of DRAM for the fixed kernel-owned buffers
++/// (heap, framebuffer). The block read cache comes on top of this, sized at
++/// boot ([`discover`]'s `block_cache_bytes`).
+ pub const OS_RESERVE_BYTES: u64 = KERNEL_HEAP_RESERVE + FRAMEBUFFER_RESERVE;
+ 
++/// Granule of the block-cache reserve (FS09): 2 MiB. The reserve lowers the
++/// top of the TT-RAM pool by its size; whole 2-MiB steps keep that edge on the
++/// 2-MiB alignment it had before, so no 2-MiB region the user tables cover can
++/// straddle pool and cache (`tos-api` `bdos::process::mmu::map_pools`).
++pub const BLOCK_CACHE_GRANULE: u64 = 2 * 1024 * 1024;
++
+ /// Inclusive-exclusive physical address range.
+ #[derive(Clone, Copy, Debug)]
+ pub struct PhysRange {
+@@ -190,14 +198,21 @@ pub struct MemoryMap {
+     /// The NewTOS equivalent of EmuTOS' `balloc_stram(size, TRUE)`
+     /// lowering `memtop` below `phystop`
+     /// (`references/emutos/bios/biosmem.c:88-131`). Contains
+-    /// [`MemoryMap::kernel_heap`] and [`MemoryMap::framebuffer`].
++    /// [`MemoryMap::kernel_heap`], [`MemoryMap::framebuffer`] and
++    /// [`MemoryMap::block_cache`].
+     pub os_reserve: PhysRange,
+-    /// Arena for the kernel heap, the low part of
+-    /// [`MemoryMap::os_reserve`].
++    /// Arena for the kernel heap, in [`MemoryMap::os_reserve`] above the
++    /// block cache.
+     pub kernel_heap: PhysRange,
+     /// Framebuffer store, the high part of [`MemoryMap::os_reserve`].
+     /// Empty on `board-rpi4`, where the VideoCore owns the framebuffer.
+     pub framebuffer: PhysRange,
++    /// Arena of the block read cache (FS09,
++    /// `docs/analysis/fs09-block-cache-2026-10-07.md` §2.4), the **low** part
++    /// of [`MemoryMap::os_reserve`], below the heap — so heap and framebuffer
++    /// keep the addresses they had without a cache. Empty when no cache was
++    /// asked for (`board-qemu-virt`, `bcache=0`).
++    pub block_cache: PhysRange,
+     /// The full DRAM range the kernel manages. Equal to what
+     /// [`MemoryMap::dram_source`] reported, minus any tail the TT-RAM
+     /// pool cannot cover (see [`MemoryMap::dram_unmanaged`]).
+@@ -470,7 +485,12 @@ fn plausible(r: &DramReport) -> bool {
+ ///
+ /// Pure function of board constants, linker symbols, the parsed DTB and
+ /// the caller-supplied firmware report. No allocation, no MMIO.
+-pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
++///
++/// `block_cache_bytes` is the size the block read cache asks for (FS09); it is
++/// rounded **up** to [`BLOCK_CACHE_GRANULE`] and capped at half of what would
++/// otherwise be TT-RAM, so a large request can never take the pool away. The
++/// size actually reserved is [`MemoryMap::block_cache`].
++pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>, block_cache_bytes: u64) -> MemoryMap {
+     // ---- DRAM extent: firmware, then DTB, then board default. ----
+     let mut dram = PhysRange::new(board::DRAM_START, board::DRAM_END);
+     let mut dram_source = DramSource::BoardDefault;
+@@ -552,10 +572,20 @@ pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
+     // whole number of frames, so `pool_top` is frame-aligned too.
+     debug_assert!(dram.end.is_multiple_of(4096));
+     debug_assert!(OS_RESERVE_BYTES.is_multiple_of(4096));
+-    let pool_top = dram.end.saturating_sub(OS_RESERVE_BYTES).max(stram_slot_end);
++    let fixed_bottom = dram.end.saturating_sub(OS_RESERVE_BYTES).max(stram_slot_end);
++    // FS09 block read cache: below the fixed buffers, in 2-MiB steps, at most
++    // half of what TT-RAM would otherwise be (rounded down to the granule).
++    let cache_max =
++        (fixed_bottom.saturating_sub(stram_slot_end) / 2) / BLOCK_CACHE_GRANULE * BLOCK_CACHE_GRANULE;
++    let cache_bytes = block_cache_bytes
++        .div_ceil(BLOCK_CACHE_GRANULE)
++        .saturating_mul(BLOCK_CACHE_GRANULE)
++        .min(cache_max);
++    let pool_top = fixed_bottom - cache_bytes;
+     let os_reserve = PhysRange::new(pool_top, dram.end);
++    let block_cache = PhysRange::new(pool_top, fixed_bottom);
+     let kernel_heap =
+-        PhysRange::new(pool_top, pool_top.saturating_add(KERNEL_HEAP_RESERVE));
++        PhysRange::new(fixed_bottom, fixed_bottom.saturating_add(KERNEL_HEAP_RESERVE));
+     let framebuffer = PhysRange::new(
+         kernel_heap.end,
+         kernel_heap.end.saturating_add(FRAMEBUFFER_RESERVE),
+@@ -583,6 +613,7 @@ pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
+         os_reserve,
+         kernel_heap,
+         framebuffer,
++        block_cache,
+         dram,
+         dram_source,
+         dram_unmanaged,
+diff --git a/kernel/src/bootargs.rs b/kernel/src/bootargs.rs
+index e17b64c..135f81c 100644
+--- a/kernel/src/bootargs.rs
++++ b/kernel/src/bootargs.rs
+@@ -55,6 +55,58 @@ pub const EMMC_COMPAT: &[u8] = b"emmc=compat";
+ /// and sets it (mailbox "Get max clock rate" / "Set clock rate").
+ pub const CPUCLK_FIRMWARE: &[u8] = b"cpuclk=firmware";
+ 
++/// The size of the block read cache in KiB (FS09): `bcache=<KiB>`, `0` = off.
++/// FreeMiNT's `CACHE=` / `FS_CACHE_SIZE=` (`references/freemint/sys/
++/// cnf_mint.c:97,128`), but a boot argument: the cache's memory is carved off
++/// the top of DRAM before the memory pools exist and before the card is read
++/// (`docs/analysis/fs09-block-cache-2026-10-07.md` §2.4).
++pub const BCACHE: &[u8] = b"bcache=";
++
++/// The share of the block cache one linear read may fill, in percent (FS09):
++/// `bcachepct=<0..100>` — FreeMiNT's `PERCENTAGE=` / `FS_CACHE_PERCENTAGE=`
++/// (`cnf_mint.c:109,129`).
++pub const BCACHE_PCT: &[u8] = b"bcachepct=";
++
++/// What the boot arguments say about one numeric setting.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum Setting {
++    /// No token with this prefix: the built-in default applies.
++    Default,
++    /// The first such token, a decimal number within the allowed maximum.
++    Given(u32),
++    /// The first such token is not a decimal number, or above the maximum:
++    /// the default applies, and the boot line says so.
++    Invalid,
++}
++
++/// Look up the numeric setting `prefix<n>` (e.g. `bcache=8192`) in `args`.
++///
++/// Tokens are split as for [`has_token`]; the **first** token that starts with
++/// `prefix` decides. `n` is ASCII decimal digits only (no sign, no unit, no
++/// blanks), at most `max`.
++pub fn numeric_setting(args: &[u8], prefix: &[u8], max: u32) -> Setting {
++    if prefix.is_empty() {
++        return Setting::Default;
++    }
++    let end = args.iter().position(|&b| b == 0).unwrap_or(args.len());
++    let Some(tok) = args[..end]
++        .split(|b| b.is_ascii_whitespace())
++        .find(|t| t.starts_with(prefix))
++    else {
++        return Setting::Default;
++    };
++    let digits = &tok[prefix.len()..];
++    if digits.is_empty() || digits.len() > 10 || !digits.iter().all(u8::is_ascii_digit) {
++        return Setting::Invalid;
++    }
++    let v = digits.iter().fold(0u64, |a, &d| a * 10 + u64::from(d - b'0'));
++    if v > u64::from(max) {
++        Setting::Invalid
++    } else {
++        Setting::Given(v as u32)
++    }
++}
++
+ /// `true` if `args` contains `token` as a whole whitespace-delimited token.
+ ///
+ /// `args` ends at its first NUL byte, if any. An empty `token` never
+@@ -111,6 +163,28 @@ mod tests {
+         assert!(!has_token(b"serial=on emmc=compat", CPUCLK_FIRMWARE));
+     }
+ 
++    #[test]
++    fn numeric_settings_parse_strictly() {
++        let max = 262_144;
++        assert_eq!(numeric_setting(b"serial=on memprot=on", BCACHE, max), Setting::Default);
++        assert_eq!(numeric_setting(b"serial=on bcache=8192", BCACHE, max), Setting::Given(8192));
++        assert_eq!(numeric_setting(b"bcache=0\r\n", BCACHE, max), Setting::Given(0));
++        assert_eq!(numeric_setting(b"bcache=262144", BCACHE, max), Setting::Given(262_144));
++        assert_eq!(numeric_setting(b"bcache=262145", BCACHE, max), Setting::Invalid);
++        assert_eq!(numeric_setting(b"bcache=99999999999", BCACHE, max), Setting::Invalid);
++        assert_eq!(numeric_setting(b"bcache=", BCACHE, max), Setting::Invalid);
++        assert_eq!(numeric_setting(b"bcache=8M", BCACHE, max), Setting::Invalid);
++        assert_eq!(numeric_setting(b"bcache=-1", BCACHE, max), Setting::Invalid);
++        // The first token decides; another prefix is not this one.
++        assert_eq!(numeric_setting(b"bcache=16 bcache=32", BCACHE, max), Setting::Given(16));
++        assert_eq!(numeric_setting(b"bcachepct=50", BCACHE, max), Setting::Default);
++        assert_eq!(numeric_setting(b"bcachepct=50", BCACHE_PCT, 100), Setting::Given(50));
++        assert_eq!(numeric_setting(b"bcachepct=101", BCACHE_PCT, 100), Setting::Invalid);
++        assert_eq!(numeric_setting(b"xbcache=5", BCACHE, max), Setting::Default);
++        assert_eq!(numeric_setting(b"quiet\0bcache=5", BCACHE, max), Setting::Default);
++        assert_eq!(numeric_setting(b"bcache=5", b"", max), Setting::Default);
++    }
++
+     #[test]
+     fn finds_the_token_alone_and_among_others() {
+         assert!(has_token(b"serial=on", SERIAL_ON));
+diff --git a/kernel/src/lib.rs b/kernel/src/lib.rs
+index 3238399..a26e0ea 100644
+--- a/kernel/src/lib.rs
++++ b/kernel/src/lib.rs
+@@ -258,11 +258,14 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
+     // the boot already runs at the final clock.
+     #[cfg(feature = "board-rpi4")]
+     raise_arm_clock(dtb);
++    // FS09: the size of the block read cache (`bcache=` / `bcachepct=`);
++    // its memory is carved off the top of DRAM with the other OS buffers.
++    let bcache = bcache_switch(dtb);
+ 
+     // Discover the physical memory map and dump it for visibility.
+     // Pure function of the board constants, the DTB and the firmware
+     // answer above (no MMIO, no allocation of its own).
+-    let map = bios::machine::layout::discover(dtb, fw_dram);
++    let map = bios::machine::layout::discover(dtb, fw_dram, u64::from(bcache.kib) * 1024);
+     print_memory_map(&map);
+ 
+     // Replace the Stage-1 boot tables (1-GiB blocks, both TTBRs
+@@ -355,6 +358,9 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
+     drivers::bcm2711::emmc::set_compat(boot_switch(dtb, false, |args: &[u8]| {
+         bootargs::has_token(args, bootargs::EMMC_COMPAT)
+     }));
++    // FS09: the block read cache under every access to the card, installed
++    // before the first sector is read (`bios::mount`).
++    install_block_cache(&map, &bcache);
+     #[cfg(feature = "board-rpi4")]
+     // SAFETY: boot CPU; VideoCore firmware has released the card.
+     if unsafe { drivers::bcm2711::emmc::init() } {
+@@ -691,6 +697,9 @@ fn print_memory_map(map: &bios::machine::layout::MemoryMap) {
+     // Kernel-owned buffers, off the top of DRAM and outside both pools —
+     // EmuTOS' `balloc_stram(size, TRUE)` / lowered `memtop`.
+     print_range("OSrsvd", &map.os_reserve);
++    if !map.block_cache.is_empty() {
++        print_range("  bcach", &map.block_cache);
++    }
+     print_range("  heap", &map.kernel_heap);
+     if !map.framebuffer.is_empty() {
+         print_range("  fb", &map.framebuffer);
+@@ -937,6 +946,79 @@ fn memprot_switch(dtb: Option<usize>) -> (bool, bool) {
+     })
+ }
+ 
++/// FS09 block read cache settings, from the boot arguments.
++struct BcacheCfg {
++    /// Size asked for, KiB (0 = off).
++    kib: u32,
++    /// Linear-read share, percent.
++    pct: u32,
++    /// What `bcache=` said.
++    kib_arg: bootargs::Setting,
++    /// What `bcachepct=` said.
++    pct_arg: bootargs::Setting,
++}
++
++/// The block read cache settings (FS09, `docs/analysis/fs09-block-cache-
++/// 2026-10-07.md` §2.4): `bcache=<KiB>` (0 = off, default
++/// [`tos_api::bios::bcache::DEFAULT_KIB`]) and `bcachepct=<0..100>` (default
++/// [`tos_api::bios::bcache::DEFAULT_PCT`], FreeMiNT's 5 %). An invalid value
++/// keeps the default. `board-qemu-virt` has no block device: no cache.
++fn bcache_switch(dtb: Option<usize>) -> BcacheCfg {
++    use bootargs::{numeric_setting, Setting, BCACHE, BCACHE_PCT};
++    use tos_api::bios::bcache::{DEFAULT_KIB, DEFAULT_PCT, MAX_KIB};
++    if !cfg!(feature = "board-rpi4") {
++        return BcacheCfg { kib: 0, pct: DEFAULT_PCT, kib_arg: Setting::Default, pct_arg: Setting::Default };
++    }
++    let (kib_arg, pct_arg) = boot_switch(dtb, (Setting::Default, Setting::Default), |args: &[u8]| {
++        (numeric_setting(args, BCACHE, MAX_KIB), numeric_setting(args, BCACHE_PCT, 100))
++    });
++    let kib = match kib_arg {
++        Setting::Given(v) => v,
++        Setting::Default | Setting::Invalid => DEFAULT_KIB,
++    };
++    let pct = match pct_arg {
++        Setting::Given(v) => v,
++        Setting::Default | Setting::Invalid => DEFAULT_PCT,
++    };
++    BcacheCfg { kib, pct, kib_arg, pct_arg }
++}
++
++/// Hand the reserved arena to the block cache and log one `[bcache]` line.
++fn install_block_cache(map: &bios::machine::layout::MemoryMap, cfg: &BcacheCfg) {
++    use bootargs::Setting;
++    let src = |s: Setting| match s {
++        Setting::Default => "default",
++        Setting::Given(_) => "boot argument",
++        Setting::Invalid => "INVALID boot argument ignored, default",
++    };
++    if !cfg!(feature = "board-rpi4") {
++        kprintln!("[bcache] FS09 block read cache: none (no block device on this board)");
++        return;
++    }
++    let r = map.block_cache;
++    if r.is_empty() {
++        kprintln!("[bcache] FS09 block read cache: OFF (bcache=0, {})", src(cfg.kib_arg));
++        return;
++    }
++    let va = (r.start + arch::aarch64::mmu::VA_OFFSET) as *mut u8;
++    // SAFETY: `discover` reserved `r` for the cache alone, outside both pools
++    // and the other OS buffers; the high-half alias is EL1-only Normal memory
++    // (the reserve stays inside `map.dram`). Nothing else ever touches it.
++    match unsafe { tos_api::bios::bcache::install(va, r.len() as usize, cfg.pct) } {
++        Some(s) => kprintln!(
++            "[bcache] FS09 block read cache: {} KiB at 0x{:x} (asked {} KiB, {}), {} sectors of 512 B, linear-read share {} % ({}), write-through",
++            r.len() / 1024,
++            r.start,
++            cfg.kib,
++            src(cfg.kib_arg),
++            s.slots,
++            cfg.pct,
++            src(cfg.pct_arg),
++        ),
++        None => kprintln!("[bcache] FS09 block read cache: reserve of {} bytes unusable, cache OFF", r.len()),
++    }
++}
++
+ /// Per-process ASIDs from the boot arguments (ARCH03 stage 4): `None` = off
+ /// (the default, the TLBI-on-every-switch path); `Some(false)` = on
+ /// (`asid=on`); `Some(true)` = on with four numbers per generation
+diff --git a/tos-api/src/bdos/fs/cache.rs b/tos-api/src/bdos/fs/cache.rs
+index 88c78d3..7b4773e 100644
+--- a/tos-api/src/bdos/fs/cache.rs
++++ b/tos-api/src/bdos/fs/cache.rs
+@@ -49,7 +49,6 @@ use tos_types::error::{EUNDEV, E_OK};
+ use tos_types::Long;
+ 
+ use crate::bios::block::BlockDev;
+-use crate::host;
+ 
+ /// Buffers per list. EmuTOS has `NUMBUFS = 2` (`bdos/fsbuf.c:26`), sized for
+ /// ST RAM; the count is not part of the contract (`_state.md` §3), so NewTOS
+@@ -181,8 +180,9 @@ static WB_RETRIES: AtomicU32 = AtomicU32::new(0);
+ /// automatically. Their data is still in the cache and still dirty.
+ static WB_EXHAUSTED: AtomicU32 = AtomicU32::new(0);
+ 
++/// The card, through the block cache (FS09) that sits below these lists.
+ fn block() -> Option<&'static dyn BlockDev> {
+-    host::host().and_then(|h| h.block())
++    crate::bios::bcache::device()
+ }
+ 
+ fn lists() -> &'static mut [List; 2] {
+diff --git a/tos-api/src/bios/bpb.rs b/tos-api/src/bios/bpb.rs
+index 23fe558..4cd2151 100644
+--- a/tos-api/src/bios/bpb.rs
++++ b/tos-api/src/bios/bpb.rs
+@@ -10,7 +10,6 @@ use tos_types::ProtMode;
+ 
+ use super::drive;
+ use crate::bdos::process::{self, usermem};
+-use crate::host;
+ 
+ /// BIOS Parameter Block (fixed Atari ABI, 18 bytes).
+ #[repr(C)]
+@@ -234,7 +233,7 @@ pub fn geometry(drive: u16) -> Option<Geometry> {
+         return None;
+     }
+     let part = drive::resolve(drive)?;
+-    let blk = host::host().and_then(|h| h.block())?;
++    let blk = crate::bios::bcache::device()?;
+     let mut sec = [0u8; 512];
+     if blk.read_blocks(part.start_lba as u64, &mut sec).is_err() {
+         return None;
+@@ -250,7 +249,7 @@ pub fn bpb_for(drive: u16) -> Option<Bpb> {
+         return None;
+     }
+     let part = drive::resolve(drive)?;
+-    let blk = host::host().and_then(|h| h.block())?;
++    let blk = crate::bios::bcache::device()?;
+     let mut sec = [0u8; 512];
+     if blk.read_blocks(part.start_lba as u64, &mut sec).is_err() {
+         return None;
+diff --git a/tos-api/src/bios/drive.rs b/tos-api/src/bios/drive.rs
+index 98b495a..f56bb48 100644
+--- a/tos-api/src/bios/drive.rs
++++ b/tos-api/src/bios/drive.rs
+@@ -8,8 +8,6 @@
+ 
+ use core::cell::UnsafeCell;
+ 
+-use crate::host;
+-
+ const MAX_DRIVES: usize = 16;
+ /// First hard-disk drive letter (`C:`); A:/B: are reserved for floppies.
+ const FIRST_HD: usize = 2;
+@@ -55,7 +53,7 @@ fn entry(sec: &[u8; 512], i: usize) -> (u8, u32, u32) {
+ /// then walked, appending each logical volume. A device with no MBR
+ /// partitions (a "super-floppy" FAT image) is mounted whole as `C:`.
+ pub fn mount() -> usize {
+-    let blk = match host::host().and_then(|h| h.block()) {
++    let blk = match crate::bios::bcache::device() {
+         Some(b) => b,
+         None => return 0,
+     };
+diff --git a/tos-api/src/bios/mod.rs b/tos-api/src/bios/mod.rs
+index 567a993..331f573 100644
+--- a/tos-api/src/bios/mod.rs
++++ b/tos-api/src/bios/mod.rs
+@@ -9,6 +9,7 @@
+ //! Native AArch64 ABI (as for GEMDOS): function id in `x8`, arguments in
+ //! `x0..`, result in `x0`.
+ 
++pub mod bcache;
+ pub mod block;
+ pub mod bpb;
+ pub mod chardev;
+@@ -28,8 +29,15 @@ pub mod vectors;
+ /// EmuTOS handles by clearing `drvsel` and freeing the drive's `DMD`
+ /// (`bdos/bdosmain.c:456-482`) — so every drive is logged out here and will
+ /// re-read its boot sector on the next access.
++///
++/// The block cache goes with it as well (FS09, `bcache`): a new scan is a new
++/// mapping of the card, so every cached sector is dropped before the MBR is
++/// read again — FreeMiNT invalidates its cache when a drive's mapping changes
++/// (`bio_set_lshift`, `bio_free_di`; `docs/analysis/fs09-block-cache-2026-10-07.md`
++/// §2.7).
+ pub fn mount() -> usize {
+     crate::bdos::fs::fat::log_out_all();
++    bcache::invalidate_all();
+     drive::mount()
+ }
+ 
+@@ -152,7 +160,9 @@ fn rwabs(args: &TrapArgs) -> Long {
+         Some(p) => p,
+         None => return EUNDEV,
+     };
+-    let blk = match host::host().and_then(|h| h.block()) {
++    // Through the block cache (FS09): logical and physical requests are both
++    // keyed by the absolute LBA, so the two modes share one coherent copy.
++    let blk = match bcache::device() {
+         Some(b) => b,
+         None => return EUNDEV,
+     };

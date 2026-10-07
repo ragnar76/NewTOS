@@ -1,0 +1,5 @@
+segment ending at       CMD17  CMD18 rd cmds  blk rd  CMD24  CMD25 blk wr
+T00_UP                     33     12      45     722      0      0      0
+T03_COPIED                 11      1      12     315     12     15    316
+T04_FOLDERCOPY_CONFIRM      1      0       1       1      0      0      0
+T05_FOLDER_COPIED           4      4       8     440     19      4    455

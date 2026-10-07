@@ -366,6 +366,15 @@ impls. Sector size is 512 throughout. The `r_w` flag bits map onto a
 must be reproduced for m68k-binary compatibility (Phase 10) but may be
 NewTOS-native for source ports.
 
+FS09 (2026-10-07, FreeMiNT extension): every request reaches the card through
+the block read cache `tos-api/src/bios/bcache.rs`
+(`docs/analysis/fs09-block-cache-2026-10-07.md`). Keyed by the absolute LBA,
+so logical and physical (`RW_NOTRANSLATE`) requests share one copy; reads may
+be answered from RAM, writes go to the card first (write-through) and only a
+confirmed write updates the cache (≤ 32 KiB) or drops the range (larger, or
+failed). Return values and error codes are unchanged; `RW_NORETRIES` /
+`RW_NOMEDIACH` do not affect the cache (§2.8 there).
+
 ---
 
 ## Pi / BCM2711 binding

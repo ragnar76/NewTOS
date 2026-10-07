@@ -1,0 +1,7 @@
+segment ending at       CMD17  CMD18 rd cmds  blk rd  CMD24  CMD25 blk wr
+Q00_UP                    122     12     134    1070      7      0      7
+Q01_NEW                     7      0       7       7      0      0      0
+Q03_FSEL                   12      0      12      12      0      0      0
+Q05_SAVED                  60      0      60      60      5      0      5
+Q07_SAVED_AGAIN            61      0      61      61      7      0      7
+Q08_QUIT                   12      0      12      12      0      0      0

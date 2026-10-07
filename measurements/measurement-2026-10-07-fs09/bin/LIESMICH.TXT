@@ -1,0 +1,81 @@
+FS09 -- Block-Lese-Cache nach FreeMiNT block_IO
+==============================================
+
+Kernel: kernel8.img   sha256 706bab02d09396330d0530e6b69b32c95300c69777e6c0c3272d5e13b58c9b86
+        (release, board-rpi4, Stand desk-rebuild 3ec1983 + FS09, nicht committet)
+Nichts davon ist auf eine Karte kopiert. Kopieren nur auf Ansage des Anwenders.
+
+WAS SICH AENDERT (nur innen; Rueckgabewerte und Dateiinhalte bleiben gleich)
+  * Unter allen Kartenzugriffen (GEMDOS, BIOS Rwabs logisch und physisch,
+    Getbpb) liegt jetzt ein Lese-Cache im RAM, Vorgabe 32 MB. Was einmal
+    gelesen wurde, kommt beim naechsten Mal aus dem RAM statt von der Karte
+    (zuletzt benutzt bleibt, aeltestes faellt raus).
+  * Schreiben geht wie bisher SOFORT auf die Karte (Durchschreiben); erst
+    danach wird der Cache angeglichen. Ein Schreibfehler wirft die
+    betroffenen Sektoren aus dem Cache, die naechste Lesung fragt die Karte.
+  * Eine einzelne Lesung, die mehr als 5 % des Caches (Vorgabe: ~1,6 MB) neu
+    holen muesste, wird nicht in den Cache uebernommen -- wie bei FreeMiNT,
+    damit ein riesiges Kopieren den Cache nicht leerfegt.
+  * Der Cache-Speicher liegt ausserhalb von ST-RAM und TT-RAM: der Startschirm
+    zeigt 32 MB weniger TT-RAM als bisher. Das ist gewollt.
+
+WAS ZU ERWARTEN IST (Pi nicht gemessen; QEMU zaehlt Kartenkommandos, nicht Zeit)
+  * FSBENCH in QEMU, Lesekommandos (alle 100 Lesungen "crc ok"):
+        Cache          kalt (L1-L3)   warm (L1-L3)
+        aus (bcache=0)      75 711         75 721
+        8 MB                72 717         72 727
+        16 MB               46 642         46 655
+        32 MB (Vorgabe)     45 878              0   (*)
+    (*) gezaehlt 10 -- das ist FSBENCH, das danach sein Protokoll auf C:
+    schreibt; die Lesungen selbst kommen alle aus dem RAM.
+    Der FSBENCH-Datensatz ist 22 MB gross. Passt er nicht ganz in den Cache,
+    hilft der Cache beim zweiten Durchgang kaum: FSBENCH liest alles in
+    derselben Reihenfolge wieder, und der Cache hat genau das Aelteste schon
+    verdraengt. Deshalb die Vorgabe 32 MB.
+  * Auf der Pi heisst das fuer den WARMEN Durchgang: L1, L2 und L3 sollten
+    nur noch Speicher-Kopierzeit zeigen -- die 10-MB-Datei im Millisekunden-
+    statt Sekundenbereich (bisher 875 ms "ganz"; L1 1 Sektor/Aufruf bisher
+    11 s, jetzt nur noch die Aufrufkosten). Auch der KALTE Durchgang wird
+    schneller, weil FSBENCH dieselben Daten innerhalb des Durchgangs mehrfach
+    liest (L1-Klassen ueberlappen, L2 liest jede Datei viermal).
+  * zView zweimal starten (QEMU, vom Desktop, Datei-Menue > Quit dazwischen):
+        Lesekommandos      1. Start   2. Start
+        Cache aus             296        291
+        Cache an              104          0
+    Der zweite Start laedt Programm und alle 10 Codecs aus dem RAM. Auf der
+    Pi sollte die Pause beim zweiten zView-Start (Maus steht, INPUT01) fast
+    ganz verschwinden; der erste Start bleibt wie bisher.
+
+VERGLEICHSLAUF MIT FSBENCH (macht der Lead auf Ansage)
+  1. kernel8.img auf die Boot-Partition kopieren.
+  2. C:\AUTO\FSBENCH.NC in C:\AUTO\FSBENCH.NCP umbenennen (es ist dasselbe
+     FSBENCH wie beim stdio-Lauf, sha256 2eeeb400...; D:\FSBENCH\ mit den
+     10 Testdateien muss noch da sein).
+  3. Booten, Seiten fotografieren wie bisher (Taste je Seite). Interessant
+     ist der Vergleich kalt gegen warm auf jeder Seite.
+  4. Gegenprobe ohne Cache: eine Zeile cmdline.txt (s. u.) mit bcache=0,
+     nochmal booten und fotografieren -- dann muessen kalt und warm wieder
+     gleich sein wie beim stdio-Lauf. Danach bcache=0 wieder entfernen.
+  5. C:\FSBENCH.LOG zurueckgeben, danach C:\AUTO\FSBENCH.NCP wieder in
+     FSBENCH.NC umbenennen (parken).
+  Dazu zView zweimal starten (Doppelklick, Datei > Quit, nochmal
+  Doppelklick) und auf die Wartezeit beim zweiten Mal achten.
+
+CACHE EINSTELLEN ODER ABSCHALTEN (cmdline.txt auf der Boot-Partition)
+  Ohne cmdline.txt gilt die Vorgabe (32 MB, 5 %). cmdline.txt ist EINE Zeile,
+  Eintraege durch Leerzeichen getrennt, z. B.:
+      bcache=0                 Cache aus (verhaelt sich wie der Kernel vorher)
+      bcache=65536             64 MB Cache (Angabe in KB, 2-MB-Schritte,
+                               hoechstens 262144 = 256 MB)
+      bcachepct=100            jede Lesung darf in den Cache (FreeMiNT
+                               PERCENTAGE=; Vorgabe 5)
+      serial=on bcache=16384   wie gewohnt kombinierbar
+  Ein ungueltiger Wert (z. B. "bcache=8M") wird ignoriert, es gilt die
+  Vorgabe. Mit serial=on steht die Einstellung in der Bootzeile
+  "[bcache] FS09 block read cache: ...".
+
+WENN ETWAS SCHIEFGEHT
+  * Dateien falsch gelesen/geschrieben, Desktop meldet Fehler -> erst
+    bcache=0 in cmdline.txt probieren (zeigt, ob es der Cache ist), sonst
+    vorherigen Kernel zurueckkopieren und melden (Foto/Log).
+  * Danach am Mac: fsck_msdos -n auf C: und D: (nur lesen).

@@ -1,0 +1,41 @@
+t=84.4s marker #1 -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/shots/fsb-8m-page-1.png {"return": {}}
+t=87.4s marker #2 -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/shots/fsb-8m-page-2.png {"return": {}}
+t=90.7s marker #3 -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/shots/fsb-8m-page-3.png {"return": {}}
+t=93.7s marker #4 -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/shots/fsb-8m-page-4.png {"return": {}}
+phase         CMD17    CMD18  rd cmds  blk read  CMD24  CMD25  blk wr
+boot             15       23       38       192      0      0       0
+L1 cold       20480      160    20640     40960      0      0       0
+L2 cold       45861     5442    51303    137945      0      0       0
+L3 cold          55      719      774     45771      0      0       0
+L1 warm       20480      160    20640     40960      0      0       0
+L2 warm       45857     5442    51299    137941      0      0       0
+L3 warm          69      719      788     45785     26      6      43
+end               4        4        8        34      0      0       0
+L1-3 cold     66396     6321    72717    224676
+L1-3 warm     66406     6321    72727    224686
+total        132821    12669   145490    449588     26      6      43
+merged log 35653849 bytes (deleted)
+FSBENCH.LOG extracted
+== fsck_msdos -n s1
+** /dev/rdisk7s1
+** Phase 1 - Preparing FAT
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Orphan Clusters
+Warning: 97 files, 126268 KiB free (63134 clusters)
+== fsck_msdos -n s2
+** /dev/rdisk7s2
+** Phase 1 - Preparing FAT
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Orphan Clusters
+Warning: 15 files, 107864 KiB free (53932 clusters)
+K010_1.DAT: OK
+K010_2.DAT: OK
+K010_3.DAT: OK
+K100_1.DAT: OK
+K100_2.DAT: OK
+K100_3.DAT: OK
+M001_1.DAT: OK
+M001_2.DAT: OK
+M010_1.DAT: OK
+M010_2.DAT: OK
+run fsb-8m done

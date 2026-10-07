@@ -258,11 +258,14 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // the boot already runs at the final clock.
     #[cfg(feature = "board-rpi4")]
     raise_arm_clock(dtb);
+    // FS09: the size of the block read cache (`bcache=` / `bcachepct=`);
+    // its memory is carved off the top of DRAM with the other OS buffers.
+    let bcache = bcache_switch(dtb);
 
     // Discover the physical memory map and dump it for visibility.
     // Pure function of the board constants, the DTB and the firmware
     // answer above (no MMIO, no allocation of its own).
-    let map = bios::machine::layout::discover(dtb, fw_dram);
+    let map = bios::machine::layout::discover(dtb, fw_dram, u64::from(bcache.kib) * 1024);
     print_memory_map(&map);
 
     // Replace the Stage-1 boot tables (1-GiB blocks, both TTBRs
@@ -355,6 +358,9 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     drivers::bcm2711::emmc::set_compat(boot_switch(dtb, false, |args: &[u8]| {
         bootargs::has_token(args, bootargs::EMMC_COMPAT)
     }));
+    // FS09: the block read cache under every access to the card, installed
+    // before the first sector is read (`bios::mount`).
+    install_block_cache(&map, &bcache);
     #[cfg(feature = "board-rpi4")]
     // SAFETY: boot CPU; VideoCore firmware has released the card.
     if unsafe { drivers::bcm2711::emmc::init() } {
@@ -691,6 +697,9 @@ fn print_memory_map(map: &bios::machine::layout::MemoryMap) {
     // Kernel-owned buffers, off the top of DRAM and outside both pools —
     // EmuTOS' `balloc_stram(size, TRUE)` / lowered `memtop`.
     print_range("OSrsvd", &map.os_reserve);
+    if !map.block_cache.is_empty() {
+        print_range("  bcach", &map.block_cache);
+    }
     print_range("  heap", &map.kernel_heap);
     if !map.framebuffer.is_empty() {
         print_range("  fb", &map.framebuffer);
@@ -935,6 +944,79 @@ fn memprot_switch(dtb: Option<usize>) -> (bool, bool) {
             bootargs::has_token(args, bootargs::MEMPROT_STRICT),
         )
     })
+}
+
+/// FS09 block read cache settings, from the boot arguments.
+struct BcacheCfg {
+    /// Size asked for, KiB (0 = off).
+    kib: u32,
+    /// Linear-read share, percent.
+    pct: u32,
+    /// What `bcache=` said.
+    kib_arg: bootargs::Setting,
+    /// What `bcachepct=` said.
+    pct_arg: bootargs::Setting,
+}
+
+/// The block read cache settings (FS09, `docs/analysis/fs09-block-cache-
+/// 2026-10-07.md` §2.4): `bcache=<KiB>` (0 = off, default
+/// [`tos_api::bios::bcache::DEFAULT_KIB`]) and `bcachepct=<0..100>` (default
+/// [`tos_api::bios::bcache::DEFAULT_PCT`], FreeMiNT's 5 %). An invalid value
+/// keeps the default. `board-qemu-virt` has no block device: no cache.
+fn bcache_switch(dtb: Option<usize>) -> BcacheCfg {
+    use bootargs::{numeric_setting, Setting, BCACHE, BCACHE_PCT};
+    use tos_api::bios::bcache::{DEFAULT_KIB, DEFAULT_PCT, MAX_KIB};
+    if !cfg!(feature = "board-rpi4") {
+        return BcacheCfg { kib: 0, pct: DEFAULT_PCT, kib_arg: Setting::Default, pct_arg: Setting::Default };
+    }
+    let (kib_arg, pct_arg) = boot_switch(dtb, (Setting::Default, Setting::Default), |args: &[u8]| {
+        (numeric_setting(args, BCACHE, MAX_KIB), numeric_setting(args, BCACHE_PCT, 100))
+    });
+    let kib = match kib_arg {
+        Setting::Given(v) => v,
+        Setting::Default | Setting::Invalid => DEFAULT_KIB,
+    };
+    let pct = match pct_arg {
+        Setting::Given(v) => v,
+        Setting::Default | Setting::Invalid => DEFAULT_PCT,
+    };
+    BcacheCfg { kib, pct, kib_arg, pct_arg }
+}
+
+/// Hand the reserved arena to the block cache and log one `[bcache]` line.
+fn install_block_cache(map: &bios::machine::layout::MemoryMap, cfg: &BcacheCfg) {
+    use bootargs::Setting;
+    let src = |s: Setting| match s {
+        Setting::Default => "default",
+        Setting::Given(_) => "boot argument",
+        Setting::Invalid => "INVALID boot argument ignored, default",
+    };
+    if !cfg!(feature = "board-rpi4") {
+        kprintln!("[bcache] FS09 block read cache: none (no block device on this board)");
+        return;
+    }
+    let r = map.block_cache;
+    if r.is_empty() {
+        kprintln!("[bcache] FS09 block read cache: OFF (bcache=0, {})", src(cfg.kib_arg));
+        return;
+    }
+    let va = (r.start + arch::aarch64::mmu::VA_OFFSET) as *mut u8;
+    // SAFETY: `discover` reserved `r` for the cache alone, outside both pools
+    // and the other OS buffers; the high-half alias is EL1-only Normal memory
+    // (the reserve stays inside `map.dram`). Nothing else ever touches it.
+    match unsafe { tos_api::bios::bcache::install(va, r.len() as usize, cfg.pct) } {
+        Some(s) => kprintln!(
+            "[bcache] FS09 block read cache: {} KiB at 0x{:x} (asked {} KiB, {}), {} sectors of 512 B, linear-read share {} % ({}), write-through",
+            r.len() / 1024,
+            r.start,
+            cfg.kib,
+            src(cfg.kib_arg),
+            s.slots,
+            cfg.pct,
+            src(cfg.pct_arg),
+        ),
+        None => kprintln!("[bcache] FS09 block read cache: reserve of {} bytes unusable, cache OFF", r.len()),
+    }
 }
 
 /// Per-process ASIDs from the boot arguments (ARCH03 stage 4): `None` = off

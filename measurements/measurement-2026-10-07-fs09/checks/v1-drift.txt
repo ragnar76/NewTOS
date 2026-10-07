@@ -1,0 +1,16 @@
+NewTOS desktop drift probe — /Volumes/Daten/Development/PiRusTOS @ 3ec1983 (10 modified file(s))
+
+A  kernel/src/desk/ -> tos_api::                            20 code line(s)
+    tos_api::aes::object                                    12
+    tos_api::vdi::font                                       8
+
+B  kernel/src/desk/ -> crate:: (kernel internals)            7 code line(s)
+    crate::kprintln                                          5
+    crate::sync                                              2
+
+C  kernel/ -> desk module (outside kernel/src/desk/)         4 code line(s)
+    crate::desk                                              2
+    desk::reset                                              1
+    mod desk                                                 1
+
+DRIFT-PROBE TOTAL: 31

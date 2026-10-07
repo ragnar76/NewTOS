@@ -8,8 +8,6 @@
 
 use core::cell::UnsafeCell;
 
-use crate::host;
-
 const MAX_DRIVES: usize = 16;
 /// First hard-disk drive letter (`C:`); A:/B: are reserved for floppies.
 const FIRST_HD: usize = 2;
@@ -55,7 +53,7 @@ fn entry(sec: &[u8; 512], i: usize) -> (u8, u32, u32) {
 /// then walked, appending each logical volume. A device with no MBR
 /// partitions (a "super-floppy" FAT image) is mounted whole as `C:`.
 pub fn mount() -> usize {
-    let blk = match host::host().and_then(|h| h.block()) {
+    let blk = match crate::bios::bcache::device() {
         Some(b) => b,
         None => return 0,
     };

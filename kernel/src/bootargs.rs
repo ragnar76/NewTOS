@@ -55,6 +55,58 @@ pub const EMMC_COMPAT: &[u8] = b"emmc=compat";
 /// and sets it (mailbox "Get max clock rate" / "Set clock rate").
 pub const CPUCLK_FIRMWARE: &[u8] = b"cpuclk=firmware";
 
+/// The size of the block read cache in KiB (FS09): `bcache=<KiB>`, `0` = off.
+/// FreeMiNT's `CACHE=` / `FS_CACHE_SIZE=` (`references/freemint/sys/
+/// cnf_mint.c:97,128`), but a boot argument: the cache's memory is carved off
+/// the top of DRAM before the memory pools exist and before the card is read
+/// (`docs/analysis/fs09-block-cache-2026-10-07.md` §2.4).
+pub const BCACHE: &[u8] = b"bcache=";
+
+/// The share of the block cache one linear read may fill, in percent (FS09):
+/// `bcachepct=<0..100>` — FreeMiNT's `PERCENTAGE=` / `FS_CACHE_PERCENTAGE=`
+/// (`cnf_mint.c:109,129`).
+pub const BCACHE_PCT: &[u8] = b"bcachepct=";
+
+/// What the boot arguments say about one numeric setting.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Setting {
+    /// No token with this prefix: the built-in default applies.
+    Default,
+    /// The first such token, a decimal number within the allowed maximum.
+    Given(u32),
+    /// The first such token is not a decimal number, or above the maximum:
+    /// the default applies, and the boot line says so.
+    Invalid,
+}
+
+/// Look up the numeric setting `prefix<n>` (e.g. `bcache=8192`) in `args`.
+///
+/// Tokens are split as for [`has_token`]; the **first** token that starts with
+/// `prefix` decides. `n` is ASCII decimal digits only (no sign, no unit, no
+/// blanks), at most `max`.
+pub fn numeric_setting(args: &[u8], prefix: &[u8], max: u32) -> Setting {
+    if prefix.is_empty() {
+        return Setting::Default;
+    }
+    let end = args.iter().position(|&b| b == 0).unwrap_or(args.len());
+    let Some(tok) = args[..end]
+        .split(|b| b.is_ascii_whitespace())
+        .find(|t| t.starts_with(prefix))
+    else {
+        return Setting::Default;
+    };
+    let digits = &tok[prefix.len()..];
+    if digits.is_empty() || digits.len() > 10 || !digits.iter().all(u8::is_ascii_digit) {
+        return Setting::Invalid;
+    }
+    let v = digits.iter().fold(0u64, |a, &d| a * 10 + u64::from(d - b'0'));
+    if v > u64::from(max) {
+        Setting::Invalid
+    } else {
+        Setting::Given(v as u32)
+    }
+}
+
 /// `true` if `args` contains `token` as a whole whitespace-delimited token.
 ///
 /// `args` ends at its first NUL byte, if any. An empty `token` never
@@ -109,6 +161,28 @@ mod tests {
         assert!(!has_token(b"cpuclk=", CPUCLK_FIRMWARE));
         assert!(!has_token(b"cpuclk=max", CPUCLK_FIRMWARE));
         assert!(!has_token(b"serial=on emmc=compat", CPUCLK_FIRMWARE));
+    }
+
+    #[test]
+    fn numeric_settings_parse_strictly() {
+        let max = 262_144;
+        assert_eq!(numeric_setting(b"serial=on memprot=on", BCACHE, max), Setting::Default);
+        assert_eq!(numeric_setting(b"serial=on bcache=8192", BCACHE, max), Setting::Given(8192));
+        assert_eq!(numeric_setting(b"bcache=0\r\n", BCACHE, max), Setting::Given(0));
+        assert_eq!(numeric_setting(b"bcache=262144", BCACHE, max), Setting::Given(262_144));
+        assert_eq!(numeric_setting(b"bcache=262145", BCACHE, max), Setting::Invalid);
+        assert_eq!(numeric_setting(b"bcache=99999999999", BCACHE, max), Setting::Invalid);
+        assert_eq!(numeric_setting(b"bcache=", BCACHE, max), Setting::Invalid);
+        assert_eq!(numeric_setting(b"bcache=8M", BCACHE, max), Setting::Invalid);
+        assert_eq!(numeric_setting(b"bcache=-1", BCACHE, max), Setting::Invalid);
+        // The first token decides; another prefix is not this one.
+        assert_eq!(numeric_setting(b"bcache=16 bcache=32", BCACHE, max), Setting::Given(16));
+        assert_eq!(numeric_setting(b"bcachepct=50", BCACHE, max), Setting::Default);
+        assert_eq!(numeric_setting(b"bcachepct=50", BCACHE_PCT, 100), Setting::Given(50));
+        assert_eq!(numeric_setting(b"bcachepct=101", BCACHE_PCT, 100), Setting::Invalid);
+        assert_eq!(numeric_setting(b"xbcache=5", BCACHE, max), Setting::Default);
+        assert_eq!(numeric_setting(b"quiet\0bcache=5", BCACHE, max), Setting::Default);
+        assert_eq!(numeric_setting(b"bcache=5", b"", max), Setting::Default);
     }
 
     #[test]

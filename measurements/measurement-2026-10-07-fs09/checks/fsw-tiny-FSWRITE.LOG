@@ -1,0 +1,36 @@
+==== FSWRITE (TASK/FS08 part 2) -- GEMDOS write path ====
+ok  write  D:\FSW\A00.DAT                0 B, Fread 512
+ok  write  D:\FSW\A01.DAT                1 B, Fread 333
+ok  write  D:\FSW\A02.DAT              511 B, Fread 512
+ok  write  D:\FSW\A03.DAT              512 B, Fread 100
+ok  write  D:\FSW\A04.DAT              513 B, Fread 512
+ok  write  D:\FSW\A05.DAT             4095 B, Fread 4096
+ok  write  D:\FSW\A06.DAT             8192 B, Fread 333
+ok  write  D:\FSW\A07.DAT             8193 B, Fread 65536
+ok  write  D:\FSW\A08.DAT            65539 B, Fread 512
+ok  write  D:\FSW\A09.DAT            65539 B, Fread 4096
+ok  write  D:\FSW\A10.DAT           200003 B, Fread 0
+ok  write  D:\FSW\A11.DAT          1048653 B, Fread 1000
+ok  write  D:\FSW\A12.DAT          1048653 B, Fread 512
+ok  write  D:\FSW\A13.DAT          3000000 B, Fread 0
+ok  write  C:\FSWC\B00.DAT          100003 B, Fread 4096
+ok  patch  D:\FSW\A11.DAT          1048653 B, Fread 4096
+ok  patch  D:\FSW\A11.DAT          1048653 B, Fread 4096
+ok  patch  D:\FSW\A13.DAT          3001000 B, Fread 4096
+ok  patch  D:\FSW\A13.DAT          3001000 B, Fread 4096
+ok  copy   D:\FSW\SUB\COPY13.DAT   3001000 B, Fread 65536
+ok  copy   C:\FSWC\B01.DAT          100003 B, Fread 512
+ok  move   D:\FSW\SUB\MOVED05.DAT     4095 B, Fread 100
+ok  final  D:\FSW\A00.DAT                0 B, Fread 65536
+ok  final  D:\FSW\A01.DAT                1 B, Fread 65536
+ok  final  D:\FSW\A03.DAT              512 B, Fread 65536
+ok  final  D:\FSW\A04.DAT              513 B, Fread 65536
+ok  final  D:\FSW\A06.DAT             8192 B, Fread 65536
+ok  final  D:\FSW\A08.DAT            65539 B, Fread 65536
+ok  final  D:\FSW\A09.DAT            65539 B, Fread 65536
+ok  final  D:\FSW\A10.DAT           200003 B, Fread 65536
+ok  final  D:\FSW\A11.DAT          1048653 B, Fread 65536
+ok  final  D:\FSW\A12.DAT          1048653 B, Fread 65536
+ok  final  D:\FSW\A13.DAT          3001000 B, Fread 65536
+ok  final  C:\FSWC\B00.DAT          100003 B, Fread 65536
+FSWRITE: PASS

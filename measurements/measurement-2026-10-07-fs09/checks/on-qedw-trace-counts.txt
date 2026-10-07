@@ -1,0 +1,8 @@
+CMD17  29
+CMD18  11
+CMD24  19
+CMD25  0
+CMD12  11
+read commands (CMD17+CMD18)   40
+blocks read  (sdcard_read_block)  961
+blocks written (sdcard_write_block) 19

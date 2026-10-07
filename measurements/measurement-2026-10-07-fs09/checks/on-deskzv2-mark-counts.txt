@@ -1,0 +1,5 @@
+segment ending at       CMD17  CMD18 rd cmds  blk rd  CMD24  CMD25 blk wr
+A_IDLE                     20      4      24      50      0      0      0
+B_ZV1_UP                   59     45     104    3325      0      0      0
+C_DESK_AGAIN                1      0       1       1      5      0      5
+E_DESK_FINAL                0      0       0       0      7      0      7

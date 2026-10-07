@@ -10,7 +10,6 @@ use tos_types::ProtMode;
 
 use super::drive;
 use crate::bdos::process::{self, usermem};
-use crate::host;
 
 /// BIOS Parameter Block (fixed Atari ABI, 18 bytes).
 #[repr(C)]
@@ -234,7 +233,7 @@ pub fn geometry(drive: u16) -> Option<Geometry> {
         return None;
     }
     let part = drive::resolve(drive)?;
-    let blk = host::host().and_then(|h| h.block())?;
+    let blk = crate::bios::bcache::device()?;
     let mut sec = [0u8; 512];
     if blk.read_blocks(part.start_lba as u64, &mut sec).is_err() {
         return None;
@@ -250,7 +249,7 @@ pub fn bpb_for(drive: u16) -> Option<Bpb> {
         return None;
     }
     let part = drive::resolve(drive)?;
-    let blk = host::host().and_then(|h| h.block())?;
+    let blk = crate::bios::bcache::device()?;
     let mut sec = [0u8; 512];
     if blk.read_blocks(part.start_lba as u64, &mut sec).is_err() {
         return None;

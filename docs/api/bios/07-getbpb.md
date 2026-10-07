@@ -239,6 +239,13 @@ matching EmuTOS; FAT32/exFAT partitions return NULL from `Getbpb` and are
 reached through a NewTOS-native path instead. Note `Getbpb`'s result is a full
 64-bit pointer in `x0` for native callers.
 
+FS09 (2026-10-07): the boot sector is read through the block read cache
+(`docs/analysis/fs09-block-cache-2026-10-07.md` §2.7). `Getbpb` itself does not
+invalidate the cache — as in FreeMiNT, where invalidation follows a detected
+media change (`fatfs_dskchng` → `bio_free_di`) and `Getbpb` is only the re-read
+after it. Every write to the card passes the cache, so the cached boot sector
+is the card's.
+
 ---
 
 ## Pi / BCM2711 binding

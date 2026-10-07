@@ -49,7 +49,6 @@ use tos_types::error::{EUNDEV, E_OK};
 use tos_types::Long;
 
 use crate::bios::block::BlockDev;
-use crate::host;
 
 /// Buffers per list. EmuTOS has `NUMBUFS = 2` (`bdos/fsbuf.c:26`), sized for
 /// ST RAM; the count is not part of the contract (`_state.md` §3), so NewTOS
@@ -181,8 +180,9 @@ static WB_RETRIES: AtomicU32 = AtomicU32::new(0);
 /// automatically. Their data is still in the cache and still dirty.
 static WB_EXHAUSTED: AtomicU32 = AtomicU32::new(0);
 
+/// The card, through the block cache (FS09) that sits below these lists.
 fn block() -> Option<&'static dyn BlockDev> {
-    host::host().and_then(|h| h.block())
+    crate::bios::bcache::device()
 }
 
 fn lists() -> &'static mut [List; 2] {

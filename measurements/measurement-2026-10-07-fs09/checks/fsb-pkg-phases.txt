@@ -1,0 +1,12 @@
+phase         CMD17    CMD18  rd cmds  blk read  CMD24  CMD25  blk wr
+boot             15       23       38       192      0      0       0
+L1 cold       20480        0    20480     20480      0      0       0
+L2 cold       25398        0    25398     25398      0      0       0
+L3 cold           0        0        0         0      0      0       0
+L1 warm           0        0        0         0      0      0       0
+L2 warm           0        0        0         0      0      0       0
+L3 warm          10        0       10        10     26      6      43
+end               3        4        7        33      0      0       0
+L1-3 cold     45878        0    45878     45878
+L1-3 warm        10        0       10        10
+total         45906       27    45933     46113     26      6      43

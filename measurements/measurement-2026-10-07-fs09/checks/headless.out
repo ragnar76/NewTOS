@@ -1,0 +1,8 @@
+run fx-api: rc=0
+== fsck_msdos -n s1
+Warning: 84 files, 57552 KiB free (28776 clusters)
+TOTAL      106   0     5     
+run fx-s2all: rc=0
+== fsck_msdos -n s1
+Warning: 83 files, 57566 KiB free (28783 clusters)
+S2ALL: PASS

@@ -1,0 +1,218 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002d1000 (2428928 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] memory protection ON: table arena 0x01000000+2472 tables
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x019a8000+977633280
+[mm] user address space: pools mapped VA = PA (472 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=977633280 free=977633280 used=0 largest_free=977633280 (free_mds=1 alloc_mds=0)
+[bcache] FS09 block read cache: OFF (bcache=0, boot argument)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-07 15:54:34
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[proc] stand-in PDs: initial_basepage 0x00248000, AES PD 0x00248100 (read-only to all)
+[auto] running C:\AUTO\FSBENCH.NCP
+[launch] EL0: slot 0 entry 0x19aa000
+
+FSBENCH (FS08): calibrating clock...
+L1 cold Rwabs 10K    1 sec/call
+L1 cold Rwabs 10K  128 sec/call
+L1 cold Rwabs 100K   1 sec/call
+L1 cold Rwabs 100K 128 sec/call
+L1 cold Rwabs 1M     1 sec/call
+L1 cold Rwabs 1M   128 sec/call
+L1 cold Rwabs 10M    1 sec/call
+L1 cold Rwabs 10M  128 sec/call
+L2 cold K010_1.DAT
+L2 cold K010_2.DAT
+L2 cold K010_3.DAT
+L2 cold K100_1.DAT
+L2 cold K100_2.DAT
+L2 cold K100_3.DAT
+L2 cold M001_1.DAT
+L2 cold M001_2.DAT
+L2 cold M010_1.DAT
+L2 cold M010_2.DAT
+L3 cold K010_1.DAT
+L3 cold K010_2.DAT
+L3 cold K010_3.DAT
+L3 cold K100_1.DAT
+L3 cold K100_2.DAT
+L3 cold K100_3.DAT
+L3 cold M001_1.DAT
+L3 cold M001_2.DAT
+L3 cold M010_1.DAT
+L3 cold M010_2.DAT
+L1 warm Rwabs 10K    1 sec/call
+L1 warm Rwabs 10K  128 sec/call
+L1 warm Rwabs 100K   1 sec/call
+L1 warm Rwabs 100K 128 sec/call
+L1 warm Rwabs 1M     1 sec/call
+L1 warm Rwabs 1M   128 sec/call
+L1 warm Rwabs 10M    1 sec/call
+L1 warm Rwabs 10M  128 sec/call
+L2 warm K010_1.DAT
+L2 warm K010_2.DAT
+L2 warm K010_3.DAT
+L2 warm K100_1.DAT
+L2 warm K100_2.DAT
+L2 warm K100_3.DAT
+L2 warm M001_1.DAT
+L2 warm M001_2.DAT
+L2 warm M010_1.DAT
+L2 warm M010_2.DAT
+L3 warm K010_1.DAT
+L3 warm K010_2.DAT
+L3 warm K010_3.DAT
+L3 warm K100_1.DAT
+L3 warm K100_2.DAT
+L3 warm K100_3.DAT
+L3 warm M001_1.DAT
+L3 warm M001_2.DAT
+L3 warm M010_1.DAT
+L3 warm M010_2.DAT
+
+==== FSBENCH (TASK/FS08) -- read path, layer by layer, D:\FSBENCH ====
+kernel: GEMDOS Sversion 3000, OSHEADER os_version 4.04 os_date 10072026
+        CPU clock 700 MHz; build rev: boot screen only
+clock: _hz_200 5 ms, edge sync + spin interpolation (CNTVCT_EL0 off at EL0)
+       spins/tick 440709 (254807..500132), empty measurement 0.000..1.091 ms
+D: BPB recsiz 512 clsiz 4 clsizb 2048 datrec 545 numcl 65368 flags 1
+L1 BIOS Lrwabs(read, D:) from sector 545 (512 B units, no GEMDOS/FAT/cache)
+class      bytes pass  sec/call  calls         ms    KB/s   ms/call
+10K        10240 cold         1     20      7.874    1269     0.393
+10K        10240 cold       128      1      4.482    2231     4.482
+100K      102400 cold         1    200      33.40    2993     0.167
+100K      102400 cold       128      2      34.09    2932     17.04
+1M       1048576 cold         1   2048      362.9    2821     0.177
+1M       1048576 cold       128     16      330.5    3098     20.65
+10M     10485760 cold         1  20480       3493    2930     0.170
+10M     10485760 cold       128    160       3149    3251     19.68
+10K        10240 warm         1     20      2.411    4146     0.120
+10K        10240 warm       128      1      3.710    2694     3.710
+100K      102400 warm         1    200      28.71    3482     0.143
+100K      102400 warm       128      2      26.08    3833     13.04
+1M       1048576 warm         1   2048      251.9    4064     0.123
+1M       1048576 warm       128     16      236.7    4324     14.79
+10M     10485760 warm         1  20480       2461    4160     0.120
+10M     10485760 warm       128    160       2286    4478     14.28
+(no key wait: C:\FSBNOKEY.FLG / -n; 3 s pause)
+L2 GEMDOS cold  (ms; Fopen/Fclose of the 512 B round; KB/s below)
+file          size Fsfirst  Fopen Fclose |   512 B    4 KB   64 KB   whole crc
+K010_1.DAT    10240   3.129  0.181  0.141 |   7.772   3.384   2.443   4.044 ok
+                                     KB/s |    1286    2954    4093    2472
+K010_2.DAT    10240   1.144  0.131  2.549 |   4.500   3.660   2.187   4.490 ok
+                                     KB/s |    2222    2731    4571    2226
+K010_3.DAT    10240   0.000  0.000  0.355 |   3.937   7.721   4.486   3.619 ok
+                                     KB/s |    2539    1295    2228    2762
+K100_1.DAT   102400   0.000  0.000  0.000 |   35.00   33.93   27.88   42.35 ok
+                                     KB/s |    2857    2946    3586    2360
+K100_2.DAT   102400   0.000  0.000  0.000 |   37.92   33.97   33.41   33.40 ok
+                                     KB/s |    2637    2943    2992    2994
+K100_3.DAT   102400   2.898  1.027  0.010 |   37.05   34.13   33.39   33.38 ok
+                                     KB/s |    2698    2929    2994    2995
+M001_1.DAT  1048576   0.000  3.318  0.000 |   358.4   342.2   354.4   312.8 ok
+                                     KB/s |    2857    2991    2888    3273
+M001_2.DAT  1048576   0.000  0.000  1.290 |   353.7   333.3   319.4   319.4 ok
+                                     KB/s |    2895    3071    3205    3205
+M010_1.DAT 10485760   0.000  0.000  1.923 |    3518    3328    3188    3171 ok
+                                     KB/s |    2909    3076    3211    3228
+M010_2.DAT 10485760   0.000  0.150  0.000 |    3587    2640    2330    2333 ok
+                                     KB/s |    2854    3878    4394    4387
+(no key wait: C:\FSBNOKEY.FLG / -n; 3 s pause)
+L2 GEMDOS warm  (ms; Fopen/Fclose of the 512 B round; KB/s below)
+file          size Fsfirst  Fopen Fclose |   512 B    4 KB   64 KB   whole crc
+K010_1.DAT    10240   0.000  0.000  0.000 |   3.671   3.745   2.336   2.487 ok
+                                     KB/s |    2723    2670    4279    4020
+K010_2.DAT    10240   0.000  1.679  0.367 |   2.406   2.416   3.644   3.711 ok
+                                     KB/s |    4154    4137    2744    2694
+K010_3.DAT    10240   0.000  1.089  0.000 |   3.717   2.416   3.708   2.350 ok
+                                     KB/s |    2689    4137    2696    4254
+K100_1.DAT   102400   0.000  0.442  1.051 |   27.74   25.00   24.98   27.37 ok
+                                     KB/s |    3604    4000    4002    3652
+K100_2.DAT   102400   0.000  0.368  0.000 |   25.00   25.00   25.00   25.00 ok
+                                     KB/s |    4000    4000    4000    4000
+K100_3.DAT   102400   0.307  1.519  0.000 |   27.41   25.40   32.27   25.00 ok
+                                     KB/s |    3647    3936    3098    4000
+M001_1.DAT  1048576   0.000  0.637  0.442 |   252.8   233.9   240.0   240.0 ok
+                                     KB/s |    4049    4377    4266    4266
+M001_2.DAT  1048576   1.392  0.951  0.000 |   258.8   241.7   241.7   235.1 ok
+                                     KB/s |    3956    4235    4235    4354
+M010_1.DAT 10485760   0.000  0.000  1.064 |    2507    2360    2340    2335 ok
+                                     KB/s |    4083    4338    4376    4385
+M010_2.DAT 10485760   0.000  0.000  0.207 |    2450    2396    2371    2356 ok
+                                     KB/s |    4179    4272    4317    4345
+(no key wait: C:\FSBNOKEY.FLG / -n; 3 s pause)
+L3 stdio fopen(rb) / fread(buf,1,1024) / fclose  (ms; st_blksize 32768)
+file           size pass   fopen     fread    KB/s freads fclose  crc
+K010_1.DAT     10240 cold   1.809     2.562    3902     11  1.775  ok
+K010_2.DAT     10240 cold   0.000     3.684    2714     11  0.000  ok
+K010_3.DAT     10240 cold   0.000     2.351    4253     11  0.000  ok
+K100_1.DAT    102400 cold   0.000     25.00    4000    101  1.052  ok
+K100_2.DAT    102400 cold   1.423     25.17    3971    101  0.000  ok
+K100_3.DAT    102400 cold   0.000     26.58    3760    101  0.974  ok
+M001_1.DAT   1048576 cold   0.000     239.0    4284   1025  0.000  ok
+M001_2.DAT   1048576 cold   0.000     237.6    4309   1025  0.000  ok
+M010_1.DAT  10485760 cold   0.000      2323    4406  10241  0.000  ok
+M010_2.DAT  10485760 cold   1.068      2341    4373  10241  0.241  ok
+K010_1.DAT     10240 warm   0.000     3.667    2726     11  0.000  ok
+K010_2.DAT     10240 warm   0.227     9.465    1056     11  2.096  ok
+K010_3.DAT     10240 warm   0.417     2.430    4114     11  0.000  ok
+K100_1.DAT    102400 warm   0.000     25.00    4000    101  0.000  ok
+K100_2.DAT    102400 warm   0.000     25.32    3949    101  0.197  ok
+K100_3.DAT    102400 warm   0.000     25.24    3961    101  0.000  ok
+M001_1.DAT   1048576 warm   0.000     245.9    4164   1025  0.000  ok
+M001_2.DAT   1048576 warm   0.000     222.7    4597   1025  0.000  ok
+M010_1.DAT  10485760 warm   0.000      2348    4359  10241  1.046  ok
+M010_2.DAT  10485760 warm   0.000      2326    4401  10241  0.000  ok
+summary: 100 reads crc ok, 0 bad, 0 missing/failed (L2+L3, both passes)
+==== FSBENCH end ====
+(no key wait: C:\FSBNOKEY.FLG / -n; 3 s pause)
+FSBENCH: log appended to C:\FSBENCH.LOG
+[launch] returned (program Pterm'd)
+[auto] 1 AUTO program(s) run
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x19aa000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x19ad000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x019ae000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (2 drives, 0 window(s) from the context)

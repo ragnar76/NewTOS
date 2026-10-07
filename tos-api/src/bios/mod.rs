@@ -9,6 +9,7 @@
 //! Native AArch64 ABI (as for GEMDOS): function id in `x8`, arguments in
 //! `x0..`, result in `x0`.
 
+pub mod bcache;
 pub mod block;
 pub mod bpb;
 pub mod chardev;
@@ -28,8 +29,15 @@ pub mod vectors;
 /// EmuTOS handles by clearing `drvsel` and freeing the drive's `DMD`
 /// (`bdos/bdosmain.c:456-482`) — so every drive is logged out here and will
 /// re-read its boot sector on the next access.
+///
+/// The block cache goes with it as well (FS09, `bcache`): a new scan is a new
+/// mapping of the card, so every cached sector is dropped before the MBR is
+/// read again — FreeMiNT invalidates its cache when a drive's mapping changes
+/// (`bio_set_lshift`, `bio_free_di`; `docs/analysis/fs09-block-cache-2026-10-07.md`
+/// §2.7).
 pub fn mount() -> usize {
     crate::bdos::fs::fat::log_out_all();
+    bcache::invalidate_all();
     drive::mount()
 }
 
@@ -152,7 +160,9 @@ fn rwabs(args: &TrapArgs) -> Long {
         Some(p) => p,
         None => return EUNDEV,
     };
-    let blk = match host::host().and_then(|h| h.block()) {
+    // Through the block cache (FS09): logical and physical requests are both
+    // keyed by the absolute LBA, so the two modes share one coherent copy.
+    let blk = match bcache::device() {
         Some(b) => b,
         None => return EUNDEV,
     };

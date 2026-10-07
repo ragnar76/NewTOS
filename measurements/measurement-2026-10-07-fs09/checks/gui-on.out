@@ -1,0 +1,53 @@
+=== on-deskw (serial=on memprot=on)
+run on-deskw: rc=0
+read commands (CMD17+CMD18)   117
+blocks read  (sdcard_read_block)  650
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 99 files, 126094 KiB free (63047 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0
+=== on-qedw (serial=on memprot=on)
+run on-qedw: rc=0
+read commands (CMD17+CMD18)   40
+blocks read  (sdcard_read_block)  961
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 98 files, 126388 KiB free (63194 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0
+=== on-teraw (serial=on memprot=on)
+run on-teraw: rc=0
+read commands (CMD17+CMD18)   66
+blocks read  (sdcard_read_block)  1478
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 103 files, 125718 KiB free (62859 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0
+=== on-zvw (serial=on memprot=on)
+run on-zvw: rc=0
+read commands (CMD17+CMD18)   307
+blocks read  (sdcard_read_block)  7941
+== fsck_msdos -n s1
+Warning: 98 files, 124126 KiB free (62063 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0
+=== on-deskzv2 (serial=on memprot=on)
+run on-deskzv2: rc=0
+read commands (CMD17+CMD18)   129
+blocks read  (sdcard_read_block)  3376
+== fsck_msdos -n s1
+Warning: 95 files, 126394 KiB free (63197 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0

@@ -221,6 +221,12 @@ hot-plug events. Both feed a per-drive `mediachange` flag with the same
 latch/reset contract (`Mediach` reads the latch; `Getbpb` clears it). The
 `EUNDEV`-on-invalid-drive and negative-error pass-through must be preserved.
 
+FS09 (2026-10-07): when `Mediach` ever reports a change, the block read cache
+must drop that medium's sectors as well (FreeMiNT `fatfs_dskchng` →
+`bio_free_di` → `bio_invalidate`; `docs/analysis/fs09-block-cache-2026-10-07.md`
+§2.7). Today `Mediach` is constant 0 and the only invalidation point is
+`bios::mount()` (new partition scan).
+
 ---
 
 ## Pi / BCM2711 binding

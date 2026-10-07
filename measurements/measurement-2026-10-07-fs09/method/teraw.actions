@@ -1,0 +1,35 @@
+# FS08 part 2 write regression, TeraDesk (#Z C:\Apps\TERADESK\DESKTOP.NAP;
+# prep-card.sh tera). Double-click drive C (195,38) opens the C:\ window
+# (fx-teraexp: ACC/APPS/AUTO/COREMARK in row 1, ZVIEW (347,250) in row 2,
+# DUMPVDI.NAP (430,300) in row 3). Drag DUMPVDI.NAP (156048 B) onto ZVIEW =
+# file copy; drag COREMARK onto APPS = folder copy; each confirmed with Return.
+# Ticks hz_200 after the injector arms (first EL0 program = the first
+# accessory); TeraDesk gets 3600 ticks. IKBD Return 1C / 9C.
+100 parkbr
+3600 mark T00_UP
+3700 move 195 38
+3800 down
+3803 up
+3808 down
+3811 up
+5000 mark T01_C_OPEN
+5200 move 430 298
+5400 down
+5500 drag 400 280
+5600 drag 347 250
+5800 up
+6800 mark T02_COPY_CONFIRM
+7000 key 1C
+7006 key 9C
+8600 mark T03_COPIED
+8800 move 590 205
+9000 down
+9100 drag 520 205
+9200 drag 430 205
+9400 up
+10400 mark T04_FOLDERCOPY_CONFIRM
+10600 key 1C
+10606 key 9C
+12600 mark T05_FOLDER_COPIED
+12800 parkbr
+13200 mark END

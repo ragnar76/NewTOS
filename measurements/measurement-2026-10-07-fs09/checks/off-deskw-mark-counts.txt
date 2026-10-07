@@ -1,0 +1,7 @@
+segment ending at       CMD17  CMD18 rd cmds  blk rd  CMD24  CMD25 blk wr
+A_IDLE                     27      6      33      63      0      0      0
+C_COPIED                   20     77      97     604     31     24    615
+E_MOVED                     0      0       0       0      2      0      2
+G_DELETED                   0      0       0       0     15      0     15
+I_FOLDER_COPIED            37     24      61     621     58     77    642
+K_FOLDER_DELETED            1      0       1       1     18      0     18

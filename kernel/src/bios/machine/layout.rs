@@ -141,8 +141,16 @@ pub const KERNEL_HEAP_RESERVE: u64 = 2 * 1024 * 1024;
 /// Pi 4 the VideoCore owns it and the reservation is zero.
 pub const FRAMEBUFFER_RESERVE: u64 = board::FRAMEBUFFER_RESERVE;
 
-/// Total bytes taken off the top of DRAM for kernel-owned buffers.
+/// Total bytes taken off the top of DRAM for the fixed kernel-owned buffers
+/// (heap, framebuffer). The block read cache comes on top of this, sized at
+/// boot ([`discover`]'s `block_cache_bytes`).
 pub const OS_RESERVE_BYTES: u64 = KERNEL_HEAP_RESERVE + FRAMEBUFFER_RESERVE;
+
+/// Granule of the block-cache reserve (FS09): 2 MiB. The reserve lowers the
+/// top of the TT-RAM pool by its size; whole 2-MiB steps keep that edge on the
+/// 2-MiB alignment it had before, so no 2-MiB region the user tables cover can
+/// straddle pool and cache (`tos-api` `bdos::process::mmu::map_pools`).
+pub const BLOCK_CACHE_GRANULE: u64 = 2 * 1024 * 1024;
 
 /// Inclusive-exclusive physical address range.
 #[derive(Clone, Copy, Debug)]
@@ -190,14 +198,21 @@ pub struct MemoryMap {
     /// The NewTOS equivalent of EmuTOS' `balloc_stram(size, TRUE)`
     /// lowering `memtop` below `phystop`
     /// (`references/emutos/bios/biosmem.c:88-131`). Contains
-    /// [`MemoryMap::kernel_heap`] and [`MemoryMap::framebuffer`].
+    /// [`MemoryMap::kernel_heap`], [`MemoryMap::framebuffer`] and
+    /// [`MemoryMap::block_cache`].
     pub os_reserve: PhysRange,
-    /// Arena for the kernel heap, the low part of
-    /// [`MemoryMap::os_reserve`].
+    /// Arena for the kernel heap, in [`MemoryMap::os_reserve`] above the
+    /// block cache.
     pub kernel_heap: PhysRange,
     /// Framebuffer store, the high part of [`MemoryMap::os_reserve`].
     /// Empty on `board-rpi4`, where the VideoCore owns the framebuffer.
     pub framebuffer: PhysRange,
+    /// Arena of the block read cache (FS09,
+    /// `docs/analysis/fs09-block-cache-2026-10-07.md` §2.4), the **low** part
+    /// of [`MemoryMap::os_reserve`], below the heap — so heap and framebuffer
+    /// keep the addresses they had without a cache. Empty when no cache was
+    /// asked for (`board-qemu-virt`, `bcache=0`).
+    pub block_cache: PhysRange,
     /// The full DRAM range the kernel manages. Equal to what
     /// [`MemoryMap::dram_source`] reported, minus any tail the TT-RAM
     /// pool cannot cover (see [`MemoryMap::dram_unmanaged`]).
@@ -470,7 +485,12 @@ fn plausible(r: &DramReport) -> bool {
 ///
 /// Pure function of board constants, linker symbols, the parsed DTB and
 /// the caller-supplied firmware report. No allocation, no MMIO.
-pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
+///
+/// `block_cache_bytes` is the size the block read cache asks for (FS09); it is
+/// rounded **up** to [`BLOCK_CACHE_GRANULE`] and capped at half of what would
+/// otherwise be TT-RAM, so a large request can never take the pool away. The
+/// size actually reserved is [`MemoryMap::block_cache`].
+pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>, block_cache_bytes: u64) -> MemoryMap {
     // ---- DRAM extent: firmware, then DTB, then board default. ----
     let mut dram = PhysRange::new(board::DRAM_START, board::DRAM_END);
     let mut dram_source = DramSource::BoardDefault;
@@ -552,10 +572,20 @@ pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
     // whole number of frames, so `pool_top` is frame-aligned too.
     debug_assert!(dram.end.is_multiple_of(4096));
     debug_assert!(OS_RESERVE_BYTES.is_multiple_of(4096));
-    let pool_top = dram.end.saturating_sub(OS_RESERVE_BYTES).max(stram_slot_end);
+    let fixed_bottom = dram.end.saturating_sub(OS_RESERVE_BYTES).max(stram_slot_end);
+    // FS09 block read cache: below the fixed buffers, in 2-MiB steps, at most
+    // half of what TT-RAM would otherwise be (rounded down to the granule).
+    let cache_max =
+        (fixed_bottom.saturating_sub(stram_slot_end) / 2) / BLOCK_CACHE_GRANULE * BLOCK_CACHE_GRANULE;
+    let cache_bytes = block_cache_bytes
+        .div_ceil(BLOCK_CACHE_GRANULE)
+        .saturating_mul(BLOCK_CACHE_GRANULE)
+        .min(cache_max);
+    let pool_top = fixed_bottom - cache_bytes;
     let os_reserve = PhysRange::new(pool_top, dram.end);
+    let block_cache = PhysRange::new(pool_top, fixed_bottom);
     let kernel_heap =
-        PhysRange::new(pool_top, pool_top.saturating_add(KERNEL_HEAP_RESERVE));
+        PhysRange::new(fixed_bottom, fixed_bottom.saturating_add(KERNEL_HEAP_RESERVE));
     let framebuffer = PhysRange::new(
         kernel_heap.end,
         kernel_heap.end.saturating_add(FRAMEBUFFER_RESERVE),
@@ -583,6 +613,7 @@ pub fn discover(dtb_phys: Option<usize>, fw: Option<DramReport>) -> MemoryMap {
         os_reserve,
         kernel_heap,
         framebuffer,
+        block_cache,
         dram,
         dram_source,
         dram_unmanaged,

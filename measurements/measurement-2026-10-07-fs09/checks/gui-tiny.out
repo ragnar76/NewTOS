@@ -1,0 +1,53 @@
+=== tiny-deskw (serial=on memprot=on bcache=2048 bcachepct=100)
+run tiny-deskw: rc=0
+read commands (CMD17+CMD18)   117
+blocks read  (sdcard_read_block)  650
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 99 files, 126094 KiB free (63047 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+[bcache] FS09 block read cache: 2048 KiB at 0x3bc00000 (asked 2048 KiB, boot argument), 3854 sectors of 512 B, linear-read share 100 % (boot argument), write-through
+exceptions in serial: 0
+=== tiny-qedw (serial=on memprot=on bcache=2048 bcachepct=100)
+run tiny-qedw: rc=0
+read commands (CMD17+CMD18)   40
+blocks read  (sdcard_read_block)  961
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 98 files, 126388 KiB free (63194 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+[bcache] FS09 block read cache: 2048 KiB at 0x3bc00000 (asked 2048 KiB, boot argument), 3854 sectors of 512 B, linear-read share 100 % (boot argument), write-through
+exceptions in serial: 0
+=== tiny-teraw (serial=on memprot=on bcache=2048 bcachepct=100)
+run tiny-teraw: rc=0
+read commands (CMD17+CMD18)   66
+blocks read  (sdcard_read_block)  1478
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 103 files, 125718 KiB free (62859 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+[bcache] FS09 block read cache: 2048 KiB at 0x3bc00000 (asked 2048 KiB, boot argument), 3854 sectors of 512 B, linear-read share 100 % (boot argument), write-through
+exceptions in serial: 0
+=== tiny-zvw (serial=on memprot=on bcache=2048 bcachepct=100)
+run tiny-zvw: rc=0
+read commands (CMD17+CMD18)   308
+blocks read  (sdcard_read_block)  7942
+== fsck_msdos -n s1
+Warning: 98 files, 124126 KiB free (62063 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+[bcache] FS09 block read cache: 2048 KiB at 0x3bc00000 (asked 2048 KiB, boot argument), 3854 sectors of 512 B, linear-read share 100 % (boot argument), write-through
+exceptions in serial: 0
+=== tiny-deskzv2 (serial=on memprot=on bcache=2048 bcachepct=100)
+run tiny-deskzv2: rc=0
+read commands (CMD17+CMD18)   129
+blocks read  (sdcard_read_block)  3376
+== fsck_msdos -n s1
+Warning: 95 files, 126394 KiB free (63197 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+[bcache] FS09 block read cache: 2048 KiB at 0x3bc00000 (asked 2048 KiB, boot argument), 3854 sectors of 512 B, linear-read share 100 % (boot argument), write-through
+exceptions in serial: 0
