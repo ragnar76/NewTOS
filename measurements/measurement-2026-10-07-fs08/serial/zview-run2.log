@@ -1,0 +1,167 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002f4000 (2572288 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] memory protection ON: table arena 0x01000000+2472 tables
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x019a8000+977633280
+[mm] user address space: pools mapped VA = PA (472 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=977633280 free=977633280 used=0 largest_free=977633280 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f00 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-07 08:35:16
+[pcie] RC not present (no response at RC_BASE); USB disabled
+==== FS08 block 1 : t=1523 ms since boot, span 1523 ms ====
+CNTFRQ 62500000 Hz
+emmc M1 SLOTISR_VER=0x24020000 CAPABILITIES=0x052134b4 (base 52 MHz) CONTROL0=0x00000f00 (DWIDTH4=0 HS=0) CONTROL1=0x000e0207 div=2
+emmc M1 mailbox EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+previous report write 0 ms (not in any number here)
+svc  gemdos n=0 0ms max=0ms  vdi n=307 5ms max=0ms  aes n=0 0ms max=0ms  bios n=0 0ms max=0ms  xbios n=0 0ms max=0ms
+fread n=0 req=0KB got=0KB time=0ms max=0ms  => 0 KB/s inside Fread
+fread sizes <=512:0 <=2K:0 <=4K:0 <=16K:0 <=64K:0 <=1M:0 >1M:0
+fat chain-walk from file start: 0 fat_entry  per-cluster advance: 0  fat_entry total 3 (cache misses inside 1)  cluster 0 B
+cache hit=7 miss=5
+blk read calls=7 sectors=7 | write calls=0 sectors=0
+emmc read_one n=7 total=1ms avg=241us min=94us max=838us errors=0
+emmc read phases avg us: dat_inhibit=4 cmd17=168 read_rdy=2 pio=60 data_done=1
+emmc write_one n=0 total=0ms max=0us
+pexec n=0 total=0ms
+pump_input n=2700896 own time=554ms max=120us | longest gap 0ms at t=1514ms | gaps>100ms 0 >500ms 0 >1s 0 sum 0ms
+irq timer=300 uart=0 other=0
+gemdos ops (op:n/ms/maxms):
+events (0 , lost 0):
+==== end block 1 ====
+
+[proc] stand-in PDs: initial_basepage 0x0026b000, AES PD 0x0026b100 (read-only to all)
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x19aa000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x19ad000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x019ae000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\ZVLAUNCH.NAP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1a67000
+ZVLAUNCH: shel_write(SHW_EXEC, C:\ZVIEW\ZVIEW.NAP, " C:\PHOTO\BIG.JPG")
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> slot 2
+[sched] running
+[launch] returned (program Pterm'd)
+[shell] sh_ldapp: 'C:\ZVLAUNCH.NAP' exited with rc=0
+[shell] sh_ldapp: starting C:\ZVIEW\ZVIEW.NAP, sh_nextapp=0, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: true
+[launch] EL0: slot 2 entry 0x1a67000
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+==== FS08 block 2 : t=19732 ms since boot, span 18199 ms ====
+previous report write 9 ms (not in any number here)
+svc  gemdos n=2633 1335ms max=23ms  vdi n=1807 10ms max=2ms  aes n=1587 1505ms max=19ms  bios n=0 0ms max=0ms  xbios n=1 0ms max=0ms
+fread n=2230 req=2246KB got=2244KB time=1050ms max=3ms  => 2136 KB/s inside Fread
+fread sizes <=512:2 <=2K:2222 <=4K:5 <=16K:1 <=64K:0 <=1M:0 >1M:0
+fat chain-walk from file start: 615495 fat_entry  per-cluster advance: 2232  fat_entry total 618924 (cache misses inside 2379)  cluster 4096 B
+cache hit=616858 miss=10459
+blk read calls=10459 sectors=10459 | write calls=0 sectors=0
+emmc read_one n=10459 total=1202ms avg=114us min=78us max=820us errors=0
+emmc read phases avg us: dat_inhibit=0 cmd17=73 read_rdy=0 pio=39 data_done=0
+emmc write_one n=0 total=0ms max=0us
+pexec n=30 total=1242ms
+pump_input n=29761738 own time=6342ms max=93us | longest gap 1504ms at t=15441ms | gaps>100ms 3 >500ms 1 >1s 1 sum 1808ms
+irq timer=3371 uart=0 other=0
+gemdos ops (op:n/ms/maxms): 09:3/0/0 0e:4/0/0 19:13/0/0 1a:36/0/0 2f:18/0/0 30:11/0/0 3b:3/1/0 3d:9/3/1 3e:29/0/0 3f:2230/1050/3 42:16/0/0 44:20/0/0 47:12/0/0 48:17/0/0 49:49/4/0 4a:12/266/23 4e:6/2/1 4f:12/1/0
+events (40 , lost 0):
+ t=15254ms FILE C:\ZVARG.TXT freads=1 bytes=18 req=125..125 t_fread=0ms sectors=1 emmc=0ms open..close=0ms
+ t=15431ms FILE zview.rsc freads=1 bytes=36 req=36..36 t_fread=0ms sectors=1 emmc=0ms open..close=0ms
+ t=15442ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=15450ms PEXEC mode=3 bmp.nld handler=54ms sectors=76 emmc=9ms
+ t=15504ms PEXEC mode=4  handler=42ms sectors=0 emmc=0ms
+ t=15572ms PEXEC mode=5  handler=5ms sectors=0 emmc=0ms
+ t=15578ms PEXEC mode=3 godpaint.nld handler=54ms sectors=81 emmc=9ms
+ t=15633ms PEXEC mode=4  handler=41ms sectors=0 emmc=0ms
+ t=15701ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=15707ms PEXEC mode=3 png.nld handler=125ms sectors=720 emmc=79ms
+ t=15832ms PEXEC mode=4  handler=42ms sectors=0 emmc=0ms
+ t=15900ms PEXEC mode=5  handler=5ms sectors=0 emmc=0ms
+ t=15906ms PEXEC mode=3 jpg.nld handler=185ms sectors=1316 emmc=137ms
+ t=16092ms PEXEC mode=4  handler=42ms sectors=0 emmc=0ms
+ t=16160ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=16167ms PEXEC mode=3 neo.nld handler=55ms sectors=84 emmc=9ms
+ t=16222ms PEXEC mode=4  handler=42ms sectors=0 emmc=0ms
+ t=16290ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=16297ms PEXEC mode=3 eureka.nld handler=55ms sectors=85 emmc=9ms
+ t=16352ms PEXEC mode=4  handler=42ms sectors=0 emmc=0ms
+ t=16420ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=16426ms PEXEC mode=3 img.nld handler=56ms sectors=93 emmc=10ms
+ t=16483ms PEXEC mode=4  handler=42ms sectors=0 emmc=0ms
+ t=16551ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=16558ms PEXEC mode=3 gif.nld handler=58ms sectors=110 emmc=12ms
+ t=16616ms PEXEC mode=4  handler=42ms sectors=0 emmc=0ms
+ t=16684ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=16690ms PEXEC mode=3 degas.nld handler=56ms sectors=85 emmc=9ms
+ t=16747ms PEXEC mode=4  handler=42ms sectors=0 emmc=0ms
+ t=16814ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=16821ms PEXEC mode=3 tga.nld handler=55ms sectors=84 emmc=9ms
+ t=16877ms PEXEC mode=4  handler=42ms sectors=0 emmc=0ms
+ t=15441ms GAP no pump_input for 1504ms: svc=243ms gemdos=1484ms emmc=300ms freads=0 pexec=30 sectors=2753 => user/other=1261ms
+ t=16946ms FILE icons\folder.god freads=1 bytes=2054 req=2054..2054 t_fread=0ms sectors=6 emmc=0ms open..close=0ms
+ t=16948ms FILE icons\image.god freads=1 bytes=2054 req=2054..2054 t_fread=0ms sectors=5 emmc=0ms open..close=0ms
+ t=16950ms FILE icons\file.god freads=1 bytes=2054 req=2054..2054 t_fread=0ms sectors=6 emmc=0ms open..close=0ms
+ t=16951ms FILE icons\prg.god freads=1 bytes=2054 req=2054..2054 t_fread=0ms sectors=5 emmc=0ms open..close=0ms
+ t=16953ms FILE icons\pdf.god freads=1 bytes=2054 req=2054..2054 t_fread=0ms sectors=6 emmc=0ms open..close=0ms
+ t=16953ms FILE icons\small.god freads=1 bytes=14342 req=14342..14342 t_fread=3ms sectors=30 emmc=3ms open..close=3ms
+ t=16963ms FILE C:\PHOTO\BIG.JPG freads=2222 bytes=2273801 req=1024..1024 t_fread=1043ms sectors=6599 emmc=782ms open..close=1268ms
+==== end block 2 ====
+

@@ -1,0 +1,8 @@
+
+==== FREADBEN (FS08) ====
+file C:\FS08TEST.BIN, 4194304 bytes
+    512 B/Fread:  2940 ms  1393 KB/s  8193 calls 4194304 B 000fb88f
+   4096 B/Fread:  1300 ms  3150 KB/s  1025 calls 4194304 B 000fb88f
+  65536 B/Fread:   960 ms  4266 KB/s    65 calls 4194304 B 000fb88f
+4194304 B/Fread:   920 ms  4452 KB/s     2 calls 4194304 B 000fb88f
+==== end ====

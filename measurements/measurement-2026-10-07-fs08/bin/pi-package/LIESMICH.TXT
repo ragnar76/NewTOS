@@ -1,0 +1,41 @@
+FS08 / INPUT01 -- Messpaket fuer die echte Pi 4
+================================================
+
+Was es ist: ein Messkernel (verhaelt sich wie der normale Kernel von
+desk-rebuild e2dfeef, zaehlt aber jede Dateilesung bis hinunter zum
+einzelnen SD-Kommando und wie lange die Maus nicht abgefragt wurde) und ein
+kleines Lese-Testprogramm. Ergebnis landet als Text in C:\FS08.TXT und
+C:\FREADBEN.LOG. Keine serielle Leitung noetig.
+
+Dateien
+-------
+  kernel8-fs08probe.img  -> als kernel8.img auf die Bootpartition
+                            (vorher das bisherige kernel8.img sichern,
+                            z.B. als kernel8-orig.img)
+  FREADBEN.NCP           -> C:\  (Wurzel)
+  FS08TEST.BIN           -> C:\  (4 MiB Testdatei, genau dieser Name)
+  BIG.JPG                -> C:\  (2,2 MB Testbild, 1932x2576)
+
+Ablauf (bitte in dieser Reihenfolge)
+------------------------------------
+ 1. Pi starten, warten bis der Desktop steht.
+ 2. C: oeffnen, FREADBEN.NCP doppelklicken. Es liest FS08TEST.BIN viermal
+    (mit 512 B, 4 KB, 64 KB und "alles auf einmal"); das kann zusammen
+    etwa eine halbe Minute dauern. Wenn "Press a key." erscheint:
+    Bildschirm fotografieren, dann eine Taste druecken.
+ 3. zView wie gewohnt starten. Mit der Stoppuhr messen, wie lange die Maus
+    stehen bleibt. Danach 3 Sekunden nichts tun.
+ 4. In zView C:\BIG.JPG oeffnen. Stoppuhr: vom Bestaetigen bis das Bild
+    zu sehen ist. Danach 3 Sekunden nichts tun.
+ 5. Eines Ihrer eigenen "langsamen" Bilder oeffnen (Name und Groesse
+    notieren), Zeit stoppen, danach 3 Sekunden nichts tun.
+ 6. zView beenden, auf dem Desktop 3 Sekunden warten, Pi ausschalten.
+ 7. Zurueckschicken: C:\FS08.TXT, C:\FREADBEN.LOG, das Foto aus Schritt 2
+    und die drei Stoppuhrzeiten (Maus bei Start, BIG.JPG, eigenes Bild).
+ 8. Das gesicherte kernel8-orig.img wieder als kernel8.img einsetzen.
+
+Hinweis: Der Messkernel schreibt seinen Bericht immer dann nach C:\FS08.TXT,
+wenn 1,5 Sekunden lang nichts von der Karte gelesen wurde. Das kann eine
+kurze Stockung verursachen; sie steht im Bericht selbst als "previous report
+write" und ist aus allen anderen Zahlen herausgerechnet. Deshalb nach jedem
+Schritt 3 Sekunden warten.

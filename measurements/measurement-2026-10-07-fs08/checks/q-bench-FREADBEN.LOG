@@ -1,0 +1,8 @@
+
+==== FREADBEN (FS08) ====
+file C:\FS08TEST.BIN, 4194304 bytes
+chunk     512 B:  4194304 bytes in  2915 ms,   8193 Fread calls ->  1405 KB/s  (sum 000fb88f)
+chunk    4096 B:  4194304 bytes in  1320 ms,   1025 Fread calls ->  3103 KB/s  (sum 000fb88f)
+chunk   65536 B:  4194304 bytes in  1000 ms,     65 Fread calls ->  4096 KB/s  (sum 000fb88f)
+chunk 4194304 B:  4194304 bytes in   960 ms,      2 Fread calls ->  4266 KB/s  (sum 000fb88f)
+==== end ====

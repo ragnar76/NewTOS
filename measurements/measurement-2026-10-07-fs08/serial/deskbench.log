@@ -1,0 +1,86 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002f4000 (2572288 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] memory protection ON: table arena 0x01000000+2472 tables
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x019a8000+977633280
+[mm] user address space: pools mapped VA = PA (472 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=977633280 free=977633280 used=0 largest_free=977633280 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f00 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-07 08:35:16
+[pcie] RC not present (no response at RC_BASE); USB disabled
+==== FS08 block 1 : t=1522 ms since boot, span 1522 ms ====
+CNTFRQ 62500000 Hz
+emmc M1 SLOTISR_VER=0x24020000 CAPABILITIES=0x052134b4 (base 52 MHz) CONTROL0=0x00000f00 (DWIDTH4=0 HS=0) CONTROL1=0x000e0207 div=2
+emmc M1 mailbox EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+previous report write 0 ms (not in any number here)
+svc  gemdos n=0 0ms max=0ms  vdi n=307 5ms max=0ms  aes n=0 0ms max=0ms  bios n=0 0ms max=0ms  xbios n=0 0ms max=0ms
+fread n=0 req=0KB got=0KB time=0ms max=0ms  => 0 KB/s inside Fread
+fread sizes <=512:0 <=2K:0 <=4K:0 <=16K:0 <=64K:0 <=1M:0 >1M:0
+fat chain-walk from file start: 0 fat_entry  per-cluster advance: 0  fat_entry total 3 (cache misses inside 1)  cluster 0 B
+cache hit=7 miss=5
+blk read calls=7 sectors=7 | write calls=0 sectors=0
+emmc read_one n=7 total=1ms avg=258us min=94us max=945us errors=0
+emmc read phases avg us: dat_inhibit=4 cmd17=183 read_rdy=2 pio=61 data_done=1
+emmc write_one n=0 total=0ms max=0us
+pexec n=0 total=0ms
+pump_input n=2888366 own time=549ms max=116us | longest gap 0ms at t=654ms | gaps>100ms 0 >500ms 0 >1s 0 sum 0ms
+irq timer=300 uart=0 other=0
+gemdos ops (op:n/ms/maxms):
+events (0 , lost 0):
+==== end block 1 ====
+
+[proc] stand-in PDs: initial_basepage 0x0026b000, AES PD 0x0026b100 (read-only to all)
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x19aa000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x19ad000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x019ae000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\FREADBEN.NCP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1a67000
+
+==== FREADBEN (FS08) ====
+file C:\FS08TEST.BIN, 4194304 bytes
+    512 B/Fread:  2940 ms  1393 KB/s  8193 calls 4194304 B 000fb88f
+   4096 B/Fread:  1300 ms  3150 KB/s  1025 calls 4194304 B 000fb88f
+  65536 B/Fread:   960 ms  4266 KB/s    65 calls 4194304 B 000fb88f
+4194304 B/Fread:   920 ms  4452 KB/s     2 calls 4194304 B 000fb88f
+==== end ====
+Press a key.

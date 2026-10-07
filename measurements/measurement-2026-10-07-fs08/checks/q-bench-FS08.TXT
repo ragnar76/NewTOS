@@ -1,0 +1,45 @@
+==== FS08 block 1 : t=1523 ms since boot, span 1523 ms ====
+CNTFRQ 62500000 Hz
+emmc M1 SLOTISR_VER=0x24020000 CAPABILITIES=0x052134b4 (base 52 MHz) CONTROL0=0x00000f00 (DWIDTH4=0 HS=0) CONTROL1=0x000e0207 div=2
+emmc M1 mailbox EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+previous report write 0 ms (not in any number here)
+svc  gemdos n=0 0ms max=0ms  vdi n=307 5ms max=0ms  aes n=0 0ms max=0ms  bios n=0 0ms max=0ms  xbios n=0 0ms max=0ms
+fread n=0 req=0KB got=0KB time=0ms max=0ms  => 0 KB/s inside Fread
+fread sizes <=512:0 <=2K:0 <=4K:0 <=16K:0 <=64K:0 <=1M:0 >1M:0
+fat chain-walk from file start: 0 fat_entry  per-cluster advance: 0  fat_entry total 3 (cache misses inside 1)  cluster 0 B
+cache hit=7 miss=5
+blk read calls=7 sectors=7 | write calls=0 sectors=0
+emmc read_one n=7 total=1ms avg=237us min=90us max=828us errors=0
+emmc read phases avg us: dat_inhibit=4 cmd17=163 read_rdy=2 pio=59 data_done=1
+emmc write_one n=0 total=0ms max=0us
+pexec n=0 total=0ms
+pump_input n=2796734 own time=550ms max=116us | longest gap 0ms at t=579ms | gaps>100ms 0 >500ms 0 >1s 0 sum 0ms
+irq timer=299 uart=0 other=0
+gemdos ops (op:n/ms/maxms):
+events (0 , lost 0):
+==== end block 1 ====
+
+==== FS08 block 2 : t=22981 ms since boot, span 21448 ms ====
+previous report write 9 ms (not in any number here)
+svc  gemdos n=9328 6203ms max=959ms  vdi n=0 0ms max=0ms  aes n=73 5ms max=2ms  bios n=0 0ms max=0ms  xbios n=0 0ms max=0ms
+fread n=9286 req=20549KB got=16384KB time=6171ms max=959ms  => 2655 KB/s inside Fread
+fread sizes <=512:8194 <=2K:0 <=4K:1025 <=16K:0 <=64K:65 <=1M:0 >1M:2
+fat chain-walk from file start: 4746240 fat_entry  per-cluster advance: 11265  fat_entry total 4757579 (cache misses inside 4579)  cluster 4096 B
+cache hit=4753058 miss=37583
+blk read calls=37583 sectors=37583 | write calls=11 sectors=11
+emmc read_one n=37583 total=4239ms avg=112us min=76us max=806us errors=0
+emmc read phases avg us: dat_inhibit=0 cmd17=72 read_rdy=0 pio=37 data_done=0
+emmc write_one n=11 total=1ms max=110us
+pexec n=0 total=0ms
+pump_input n=32164303 own time=6253ms max=174us | longest gap 6443ms at t=15031ms | gaps>100ms 1 >500ms 1 >1s 1 sum 6443ms
+irq timer=3960 uart=0 other=0
+gemdos ops (op:n/ms/maxms): 09:7/2/0 0e:1/0/0 19:1/0/0 3c:1/0/0 3d:7/1/0 3e:9/0/0 3f:9286/6171/959 40:7/3/2 42:1/0/0 48:4/0/0 49:1/0/0 4a:1/17/17
+events (6 , lost 0):
+ t=15131ms FILE C:\FS08TEST.BIN freads=8193 bytes=4194304 req=512..512 t_fread=2895ms sectors=10052 emmc=1189ms open..close=2914ms
+ t=18047ms FILE C:\FS08TEST.BIN freads=1025 bytes=4194304 req=4096..4096 t_fread=1316ms sectors=9745 emmc=1094ms open..close=1319ms
+ t=19367ms FILE C:\FS08TEST.BIN freads=65 bytes=4194304 req=65536..65536 t_fread=1000ms sectors=8833 emmc=977ms open..close=1001ms
+ t=20370ms FILE C:\FS08TEST.BIN freads=2 bytes=4194304 req=4194304..4194304 t_fread=959ms sectors=8705 emmc=947ms open..close=960ms
+ t=15031ms GAP no pump_input for 6443ms: svc=6203ms gemdos=6198ms emmc=4240ms freads=9285 pexec=0 sectors=37581 => user/other=240ms
+ t=21481ms FILE C:\NEWDESK.INF freads=1 bytes=375 req=512..512 t_fread=0ms sectors=1 emmc=0ms open..close=0ms
+==== end block 2 ====
+

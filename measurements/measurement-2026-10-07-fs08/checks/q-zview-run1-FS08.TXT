@@ -1,0 +1,79 @@
+==== FS08 block 1 : t=1522 ms since boot, span 1522 ms ====
+CNTFRQ 62500000 Hz
+emmc M1 SLOTISR_VER=0x24020000 CAPABILITIES=0x052134b4 (base 52 MHz) CONTROL0=0x00000f00 (DWIDTH4=0 HS=0) CONTROL1=0x000e0207 div=2
+emmc M1 mailbox EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+previous report write 0 ms (not in any number here)
+svc  gemdos n=0 0ms max=0ms  vdi n=307 5ms max=0ms  aes n=0 0ms max=0ms  bios n=0 0ms max=0ms  xbios n=0 0ms max=0ms
+fread n=0 req=0KB got=0KB time=0ms max=0ms  => 0 KB/s inside Fread
+fread sizes <=512:0 <=2K:0 <=4K:0 <=16K:0 <=64K:0 <=1M:0 >1M:0
+fat chain-walk from file start: 0 fat_entry  per-cluster advance: 0  fat_entry total 3 (cache misses inside 1)  cluster 0 B
+cache hit=7 miss=5
+blk read calls=7 sectors=7 | write calls=0 sectors=0
+emmc read_one n=7 total=1ms avg=206us min=116us max=549us errors=0
+emmc read phases avg us: dat_inhibit=4 cmd17=127 read_rdy=2 pio=66 data_done=1
+emmc write_one n=0 total=0ms max=0us
+pexec n=0 total=0ms
+pump_input n=2673554 own time=557ms max=122us | longest gap 0ms at t=1433ms | gaps>100ms 0 >500ms 0 >1s 0 sum 0ms
+irq timer=300 uart=0 other=0
+gemdos ops (op:n/ms/maxms):
+events (0 , lost 0):
+==== end block 1 ====
+
+==== FS08 block 2 : t=19715 ms since boot, span 18183 ms ====
+previous report write 9 ms (not in any number here)
+svc  gemdos n=2633 1337ms max=23ms  vdi n=1807 10ms max=2ms  aes n=1587 1505ms max=19ms  bios n=0 0ms max=0ms  xbios n=1 0ms max=0ms
+fread n=2230 req=2246KB got=2244KB time=1051ms max=3ms  => 2134 KB/s inside Fread
+fread sizes <=512:2 <=2K:2222 <=4K:5 <=16K:1 <=64K:0 <=1M:0 >1M:0
+fat chain-walk from file start: 615495 fat_entry  per-cluster advance: 2232  fat_entry total 618924 (cache misses inside 2379)  cluster 4096 B
+cache hit=616858 miss=10459
+blk read calls=10459 sectors=10459 | write calls=0 sectors=0
+emmc read_one n=10459 total=1199ms avg=114us min=78us max=760us errors=0
+emmc read phases avg us: dat_inhibit=0 cmd17=72 read_rdy=0 pio=39 data_done=0
+emmc write_one n=0 total=0ms max=0us
+pexec n=30 total=1226ms
+pump_input n=29721306 own time=6361ms max=86us | longest gap 1487ms at t=15441ms | gaps>100ms 3 >500ms 1 >1s 1 sum 1791ms
+irq timer=3375 uart=0 other=0
+gemdos ops (op:n/ms/maxms): 09:3/0/0 0e:4/0/0 19:13/0/0 1a:36/0/0 2f:18/0/0 30:11/0/0 3b:3/1/0 3d:9/3/1 3e:29/0/0 3f:2230/1051/3 42:16/0/0 44:20/0/0 47:12/0/0 48:17/0/0 49:49/4/0 4a:12/267/23 4e:6/2/1 4f:12/1/0
+events (40 , lost 0):
+ t=15254ms FILE C:\ZVARG.TXT freads=1 bytes=18 req=125..125 t_fread=0ms sectors=1 emmc=0ms open..close=0ms
+ t=15432ms FILE zview.rsc freads=1 bytes=36 req=36..36 t_fread=0ms sectors=1 emmc=0ms open..close=0ms
+ t=15443ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=15451ms PEXEC mode=3 bmp.nld handler=54ms sectors=76 emmc=8ms
+ t=15505ms PEXEC mode=4  handler=43ms sectors=0 emmc=0ms
+ t=15574ms PEXEC mode=5  handler=5ms sectors=0 emmc=0ms
+ t=15580ms PEXEC mode=3 godpaint.nld handler=54ms sectors=81 emmc=9ms
+ t=15635ms PEXEC mode=4  handler=41ms sectors=0 emmc=0ms
+ t=15702ms PEXEC mode=5  handler=5ms sectors=0 emmc=0ms
+ t=15708ms PEXEC mode=3 png.nld handler=122ms sectors=720 emmc=76ms
+ t=15831ms PEXEC mode=4  handler=42ms sectors=0 emmc=0ms
+ t=15898ms PEXEC mode=5  handler=5ms sectors=0 emmc=0ms
+ t=15905ms PEXEC mode=3 jpg.nld handler=183ms sectors=1316 emmc=136ms
+ t=16088ms PEXEC mode=4  handler=41ms sectors=0 emmc=0ms
+ t=16155ms PEXEC mode=5  handler=5ms sectors=0 emmc=0ms
+ t=16161ms PEXEC mode=3 neo.nld handler=55ms sectors=84 emmc=9ms
+ t=16217ms PEXEC mode=4  handler=41ms sectors=0 emmc=0ms
+ t=16283ms PEXEC mode=5  handler=5ms sectors=0 emmc=0ms
+ t=16289ms PEXEC mode=3 eureka.nld handler=55ms sectors=85 emmc=9ms
+ t=16344ms PEXEC mode=4  handler=41ms sectors=0 emmc=0ms
+ t=16411ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=16418ms PEXEC mode=3 img.nld handler=55ms sectors=93 emmc=10ms
+ t=16473ms PEXEC mode=4  handler=41ms sectors=0 emmc=0ms
+ t=16541ms PEXEC mode=5  handler=6ms sectors=0 emmc=0ms
+ t=16547ms PEXEC mode=3 gif.nld handler=57ms sectors=110 emmc=12ms
+ t=16605ms PEXEC mode=4  handler=40ms sectors=0 emmc=0ms
+ t=16671ms PEXEC mode=5  handler=5ms sectors=0 emmc=0ms
+ t=16677ms PEXEC mode=3 degas.nld handler=55ms sectors=85 emmc=9ms
+ t=16733ms PEXEC mode=4  handler=41ms sectors=0 emmc=0ms
+ t=16800ms PEXEC mode=5  handler=5ms sectors=0 emmc=0ms
+ t=16806ms PEXEC mode=3 tga.nld handler=54ms sectors=84 emmc=9ms
+ t=16861ms PEXEC mode=4  handler=41ms sectors=0 emmc=0ms
+ t=15441ms GAP no pump_input for 1487ms: svc=241ms gemdos=1466ms emmc=294ms freads=0 pexec=30 sectors=2753 => user/other=1245ms
+ t=16929ms FILE icons\folder.god freads=1 bytes=2054 req=2054..2054 t_fread=0ms sectors=6 emmc=0ms open..close=0ms
+ t=16931ms FILE icons\image.god freads=1 bytes=2054 req=2054..2054 t_fread=0ms sectors=5 emmc=0ms open..close=0ms
+ t=16933ms FILE icons\file.god freads=1 bytes=2054 req=2054..2054 t_fread=0ms sectors=6 emmc=0ms open..close=0ms
+ t=16933ms FILE icons\prg.god freads=1 bytes=2054 req=2054..2054 t_fread=0ms sectors=5 emmc=0ms open..close=0ms
+ t=16935ms FILE icons\pdf.god freads=1 bytes=2054 req=2054..2054 t_fread=0ms sectors=6 emmc=0ms open..close=0ms
+ t=16936ms FILE icons\small.god freads=1 bytes=14342 req=14342..14342 t_fread=3ms sectors=30 emmc=3ms open..close=3ms
+ t=16946ms FILE C:\PHOTO\BIG.JPG freads=2222 bytes=2273801 req=1024..1024 t_fread=1044ms sectors=6599 emmc=784ms open..close=1268ms
+==== end block 2 ====
+

@@ -1,0 +1,82 @@
+measurement-2026-10-07-fs08 -- TASK/FS08 (SD read slow on the Pi) + TASK/INPUT01
+(mouse freezes at zView start): per-layer counting of a zView image load and a
+plain Fread bench in QEMU, plus a measurement package for the real Pi 4.
+Diagnosis only. Analysis: docs/analysis/fs08-sd-read-2026-10-07.md
+
+Base: branch desk-rebuild, HEAD e2dfeef, shared tree UNCHANGED (all
+instrumentation lives in a scratch copy under the session scratchpad; no
+git checkout/restore/clean/stash/reset, no commit). No SD card, Pi or TT
+touched. QEMU 11 `-M raspi4b`, `-append serial=on`, one QEMU at a time,
+bounded by qmp_timed.py + kill (macOS has no `timeout`).
+
+WHAT WAS DONE
+  1. method/fs08probe.rs + method/fs08_probe_patch.py (diff: method/fs08-probe.diff)
+     instrument a scratch copy of the tree:
+       GEMDOS dispatcher  per-opcode n/time/max; Fread request-size histogram,
+                          per-handle record (name from Fopen, Freads, bytes,
+                          sectors and EMMC time inside its Freads, open..close)
+       Fread              chain-walk steps from the file start vs per-cluster
+                          advance; cluster size
+       FAT                fat_entry calls and the cache misses they cause
+       cache              hits/misses (block deltas)
+       block driver       read/write calls and sectors
+       EMMC read_one      total + five phases (dat_inhibit, cmd17, read_rdy,
+                          pio, data_done); write_one total; errors
+       Pexec              per call: mode, path, handler time, sectors, EMMC time
+       pump_input         count, own time, every gap > 200 ms with what ran in it
+                          (svc time, GEMDOS time, EMMC time, Freads, Pexecs)
+       IRQs               timer / PL011 / other
+       M1                 SLOTISR_VER, CAPABILITIES, CONTROL0/1, mailbox clocks
+     Report: appended to C:\FS08.TXT (and UART), one block whenever the file
+     system has been idle 1.5 s -- flushed from the trap tail after a GEM call or
+     from pump_input on a private 64 KiB stack (never on the AES fiber stack,
+     never nested in a GEMDOS call); the flush's own cost is excluded and shown
+     in the next block as "previous report write".
+     Build: method/make-probe-kernel.sh (board-rpi4, release, scratch target).
+     Reproducible: two builds -> same sha256 (below).
+  2. method/freadben.c -> FREADBEN.NCP (build-freadben.sh, links the existing
+     sdk/libc/libc.a, does not rebuild it): reads one file with Fread 512 B,
+     4 KiB, 64 KiB and one call, times with _hz_200, KB/s to screen and
+     C:\FREADBEN.LOG. -DNOWAIT variant for the QEMU AUTO run.
+  3. method/gen-test-files.py (deterministic): FS08TEST.BIN 4 MiB, BIG.JPG
+     1932x2576 synthetic photo, 2 273 801 B.
+  4. QEMU runs, method/run-fs08.sh on a 256 MiB card from tools/make-sd-image.sh
+     (FAT16, 4 KiB clusters, scratch only) + mtools:
+       bench      FREADBEN (NOWAIT) from C:\AUTO   -> checks/q-bench-*.{TXT,LOG}
+       deskbench  interactive FREADBEN via #Z from the desktop (as the user will)
+                                                    -> checks/q-deskbench-FREADBEN.LOG,
+                                                       screendumps/q-freadben-console.png
+       zview x2   ZVLAUNCH.NAP (measurement-2026-10-06-zview-m4/bin) via #Z opens
+                  C:\PHOTO\BIG.JPG                 -> checks/q-zview-run{1,2}-FS08.TXT,
+                                                       screendumps/q-zview-big-jpg.png
+     0 [EXC]/[PANIC] in all four serial logs (serial/).
+
+RESULTS (QEMU; counts deterministic, both zview runs identical; times NOT
+representative of the Pi)
+  zView BIG.JPG: 2222 Fread of exactly 1024 B (mintlib stdio, st_blksize=1024),
+    6599 sectors for 4441 data sectors (+49 %), 615 495 FAT chain-walk steps.
+  zView start: one input gap 1487 ms (run 2: 1504) covering the 30 Pexec calls
+    of the 10 codecs, 2753 sectors; no other gap > 200 ms.
+  Bench 4 MiB: sectors 10052 / 9745 / 8833 / 8705 for 512 B / 4 KiB / 64 KiB /
+    one call (data = 8192); chain-walk steps 4 746 240 = exact closed-form sum.
+  IRQs during the whole zView run: timer only (uart 0, other 0).
+  Driver: CONTROL0=0x00000f00 (1-bit, no HS), CONTROL1 div=2 -> 13 MHz (QEMU).
+
+PI PACKAGE (bin/pi-package/, sha256 in bin/SHA256SUMS; NOT copied to any card)
+  kernel8-fs08probe.img  1d1ffa9ed9a85636474e446e037947b4a16d74cda45a81d38c07ca3273cb7e37
+  FREADBEN.NCP           dd1db1f5b900ec281c8a058f762e32fc4479e93e43ef081088ddbccac9a6124d
+  FS08TEST.BIN           b6d4a16b7b1aebe4c9f084a5657e85e214204e5a02fe3d6e46f2858f9c8d383b
+  BIG.JPG                26ab5f8a928156e94a689b36d43583ab7c657d4dda887c68fb29e4df89605d26
+  LIESMICH.TXT           user step list (German)
+  *.img and *.BIN are gitignored; regenerate with make-probe-kernel.sh /
+  gen-test-files.py (both deterministic).
+  The Pi has no serial capture by default: the probe writes C:\FS08.TXT,
+  FREADBEN writes C:\FREADBEN.LOG, both appended.
+
+NOT DONE / OPEN
+  * Nothing about EMMC2 timing on the real Pi beyond the FS04 numbers
+    (measurement-2026-09-25-fs04/raw/pi05: read_one avg 644 us) -- that is what
+    the package is for.
+  * Why Pexec costs 41-46 ms per call without I/O in QEMU: not investigated.
+  * The interactive FREADBEN waits in Cconin; the probe flushes only after the
+    user returns to the desktop (read_key_loop does not call pump_input).
