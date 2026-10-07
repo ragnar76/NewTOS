@@ -49,17 +49,11 @@ pub const ASID_TINY: &[u8] = b"asid=tiny";
 /// allows, and moves multi-sector requests with one `CMD18`/`CMD25`.
 pub const EMMC_COMPAT: &[u8] = b"emmc=compat";
 
-/// The ARM clock switches (FS08 part 3). The default leaves the ARM core to
-/// the firmware, which raises the clock under load by itself: CoreMark on the
-/// real Pi scored ~7300-7400 both before and after part 3 (about 1.5 GHz),
-/// while "Get clock rate" read 600 MHz when idle, and pinning the maximum only
-/// raised the temperature (user, 2026-10-07). `cpuclk=max` asks the firmware
-/// for the ARM clock's maximum rate at boot and sets it (mailbox "Get max
-/// clock rate" / "Set clock rate"); `cpuclk=firmware` is the explicit form of
-/// the default and stays accepted.
+/// The fallback switch of the ARM clock (FS08 part 3): `cpuclk=firmware`
+/// leaves the ARM core at the rate the boot firmware started it with. Without
+/// it the kernel asks the firmware for the ARM clock's maximum rate at boot
+/// and sets it (mailbox "Get max clock rate" / "Set clock rate").
 pub const CPUCLK_FIRMWARE: &[u8] = b"cpuclk=firmware";
-/// See [`CPUCLK_FIRMWARE`]: pin the ARM clock at the firmware maximum.
-pub const CPUCLK_MAX: &[u8] = b"cpuclk=max";
 
 /// The size of the block read cache in KiB (FS09): `bcache=<KiB>`, `0` = off.
 /// FreeMiNT's `CACHE=` / `FS_CACHE_SIZE=` (`references/freemint/sys/
@@ -167,8 +161,6 @@ mod tests {
         assert!(!has_token(b"cpuclk=", CPUCLK_FIRMWARE));
         assert!(!has_token(b"cpuclk=max", CPUCLK_FIRMWARE));
         assert!(!has_token(b"serial=on emmc=compat", CPUCLK_FIRMWARE));
-        assert!(has_token(b"serial=on cpuclk=max", CPUCLK_MAX));
-        assert!(!has_token(b"cpuclk=maximum", CPUCLK_MAX));
     }
 
     #[test]
