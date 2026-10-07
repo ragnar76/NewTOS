@@ -1,0 +1,128 @@
+measurement-2026-10-07-fsbench -- TASK/FS08 (SD reads slow on the real Pi 4):
+FSBENCH.NCP, a layer-by-layer read bench that runs from C:\AUTO\ before the
+AES/desktop, plus the package for the real Pi. Measuring tool only; no kernel
+or tos-api change. Analysis context: docs/analysis/fs08-sd-read-2026-10-07.md,
+earlier run measurements/measurement-2026-10-07-fs08/RUNINFO.TXT.
+
+Base: branch desk-rebuild, HEAD f932809, kernel/tos-api UNCHANGED. No SD
+card, Pi or TT touched; nothing copied to any card. QEMU 11 `-M raspi4b`,
+`-append "serial=on memprot=on"`, one QEMU at a time, bounded by
+method/qmp_on_marker.py + kill of our own pid (macOS has no `timeout`).
+
+USER METHOD (2026-10-07)
+  Measure each layer of the path card -> program separately, bottom-up, as an
+  AUTO program BEFORE AES/desktop (no GUI/mouse in the path), fixed file
+  sizes, test files on the SECOND partition (D:, NEWTOS1, empty on the real
+  card) so nothing on C: can be harmed; reads only.
+
+SOURCES (tracked, in the SDK)
+  sdk/examples/fsbench.c                    the program
+  sdk/examples/fsbench/build-fsbench.sh     build: clang + crt0 + sdk/libc/libc.a
+                                            (lib_ensure libc); reproducible
+  sdk/examples/fsbench/gen-fsbench-files.py the 10 test files, MANIFEST.TXT,
+                                            SHA256SUMS, fsbench-manifest.h;
+                                            deterministic (SHA-256 counter stream)
+  sdk/examples/fsbench/fsbench-manifest.h   generated, embedded in FSBENCH.NCP
+  tools/make-sd-image.sh                    new opt-in SD_FSBENCH_D=<dir>
+                                            (QEMU image only): two FAT16
+                                            partitions C:/D: + D:\FSBENCH\.
+                                            Default layout unchanged.
+                                            (method/make-sd-image-SD_FSBENCH_D.diff)
+
+WHAT EACH LAYER CALLS (exactly)
+  setup  Getbpb(3) once (D:'s BPB: recsiz, clsiz, datrec, numcl);
+         Malloc(10 MiB + 64 KiB) read buffer; Fsetdta(own 44-byte DTA).
+  L1     Lrwabs(0 /*read*/, buf, n, sector, 3 /*D:*/) -- logical BIOS read,
+         no GEMDOS, no FAT, no sector cache. Contiguous range from D:'s first
+         data sector (datrec, in 512-B units), byte size = file class
+         (10 KiB, 100 KiB, 1 MiB, 10 MiB); once n=1 per call, once n=128 per
+         call (last call shorter). Never a write. Reports ms, KB/s, ms/call.
+  L2     per file D:\FSBENCH\<name>: Fsfirst(path,0) timed (DTA length checked
+         against the manifest); then 4 rounds, each
+           Fopen(path,0) | loop Fread(h, chunk, buf+total) | Fclose(h)
+         with chunk = 512, 4096, 65536 and the whole file in ONE call; the
+         loop stops at a short read or when total == size; each of the three
+         calls timed separately; CRC-32 computed after the timed region.
+  L3     per file: fopen(path,"rb") | loop fread(buf+total,1,1024,fp) until
+         a short read | fclose -- default mintlib stdio buffering (BUFSIZ =
+         st_blksize = 1024, the zView pattern); each timed; CRC-32 after.
+  Pass 1 = cold (first after boot), pass 2 = warm: L1, L2, L3, then again.
+  Nothing is printed while a region is timed except one progress line per
+  step BETWEEN regions; C:\FSBENCH.LOG and C:\FSBNOKEY.FLG are touched only
+  after both passes (C: shares the GEMDOS sector cache with D:).
+
+CLOCK
+  CNTVCT_EL0 is NOT usable at EL0: the kernel never writes CNTKCTL_EL1 (no
+  hit for cntkctl in kernel/src), so EL0PCTEN/EL0VCTEN are not set by us
+  (QEMU resets them to 0; real HW: architecturally UNKNOWN) -> an EL0 read
+  would trap. FSBENCH therefore uses _hz_200 (0x4BA, 5 ms; the kernel credits
+  ticks missed while a long SVC ran with IRQs masked, drivers/timer.rs
+  handle_irq), refined: every timed region starts on a tick edge, and after
+  it a spin loop counts to the next edge; elapsed =
+  (t1 - t0 + 1) * 5 ms - spins_left / L * 5 ms, L = median of 9 calibrated
+  ticks. The clock's own error bar is printed: 16 empty measurements
+  ("empty measurement a..b ms"). In QEMU the spin rate varies by ~2x
+  (295933..603561 spins/tick), so the empty measurement reaches 0.7..2.8 ms
+  and sub-ms values (Fsfirst/Fopen/Fclose, also the 0.000 entries = clamped)
+  mean nothing there. On the Pi the same line tells how far the sub-tick
+  values can be trusted; values >= ~50 ms are tick-accurate either way.
+
+OUTPUT
+  Screen (Cconws), 4 pages <= 26 lines x <= 79 columns (QEMU console is
+  80x30): 1 header + L1, 2 L2 cold, 3 L2 warm, 4 L3 cold+warm + summary.
+  Between pages "-- photo, then press a key ... --" + Cconin; skipped
+  (3 s pause instead, for screendumps) when C:\FSBNOKEY.FLG exists or argv[1]
+  is "-n" -- the IKBD injector does not run during Cconin.
+  C:\FSBENCH.LOG: the same 4 pages + "# L2 detail" lines (Fopen/Fread/Fclose
+  of every round), appended. Header: Sversion, OSHEADER os_version/os_date,
+  CPU clock (Ssystem 2000), D: BPB. The kernel build rev is NOT readable from
+  EL0 (only on the boot screen) -> LIESMICH asks for a photo of it.
+  Missing D: / missing files: reported (MISSING, fopen failed, Getbpb = 0),
+  the run continues.
+
+QEMU RUNS (method/run-fsbench-qemu.sh <scratch> <case>; 256 MiB card from
+tools/make-sd-image.sh with SD_FSBENCH_D, C: and D: 128 MiB FAT16, 2 KiB
+clusters; C:\AUTO\FSBENCH.NCP + C:\FSBNOKEY.FLG via mtools; kernel = board-rpi4
+release of the UNCHANGED tree, own CARGO_TARGET_DIR, two builds identical)
+  run3     full set              checks/q-run3-FSBENCH.LOG, screendumps/run3-page-{1..4}.png
+           100 reads crc ok, 0 bad, 0 missing; ~300 s in QEMU
+  missing  K010_2, M010_1, M010_2 deleted from D:   checks/q-missing-FSBENCH.LOG
+           70 ok, 0 bad, 12 missing/failed -> reported, run continued
+  nod      default single-partition card, no D:     checks/q-nod-FSBENCH.LOG
+           "Getbpb(D:) = 0 ... L1 skipped", all files MISSING (Fsfirst -34)
+  All: 0 [EXC]/[PANIC] in serial/; fsck_msdos -n clean on C: and D:
+  (checks/q-*-fsck.txt); D:\FSBENCH\ read back after run3 = SHA256SUMS
+  (checks/q-run3-Dcheck.txt) -- the bench changed nothing on D:.
+  (run1/run2 in scratch: same table shape, all CRC ok; only fixed 80-col
+  overflow and calibration median between them.)
+
+QEMU TIMINGS ARE NOT REPRESENTATIVE (QEMU models no card latency, its spin
+rate jitters). Plausibility only, run3:
+  L1 Rwabs ~4.3-4.8 MB/s, 1 vs 128 sectors per call about equal (no command
+     latency in QEMU -- on the Pi this pair is THE number: CMD17 per sector).
+  L2 10 MiB: 512 B 31-32 s / 4 KiB 7.9 s / 64 KiB 2.7 s / whole 2.3 s --
+     the quadratic per-Fread chain walk of FS08 §2.2 (2 KiB clusters here).
+  L3 10 MiB with 1 KiB fread: ~19.8 s (10241 freads).
+
+PI PACKAGE  bin/pi-package/ (sha256 in bin/pi-package/SHA256SUMS; NOT copied
+to any card -- the lead copies on the user's word)
+  AUTO/FSBENCH.NCP     -> C:\AUTO\   2362d3fb39d5b12b882770fc83aa2ac054c1aad0688356c480b620bea674cf18
+  FSBENCH/*.DAT (10)   -> D:\FSBENCH\   (M001_*/M010_* gitignored, .gitignore
+                          here; regenerate byte-identically with
+                          gen-fsbench-files.py)
+  FSBENCH/MANIFEST.TXT    sizes + CRC-32 (reference only)
+  LIESMICH.TXT            German step list: copy, boot, wait, photograph each
+                          page, send back C:\FSBENCH.LOG, then park
+                          C:\AUTO\FSBENCH.NCP -> FSBENCH.NC
+  Expected Pi runtime ~5-15 min (~270 MB read in total at ~0.8 MB/s from FS04).
+  Scratch kernel for the QEMU runs (not shipped): kernel8.img sha256
+  d3884c1b30f52fdbc08621eaa9ee1de95ac369b85f6aa662e2b2a0acba97d043.
+
+OPEN
+  * Real-card D: format: if NEWTOS1 is not FAT16 the bench says so
+    (Getbpb = 0) -- itself a finding (memory note: FAT16-vs-FAT32 open).
+  * On the Pi, L2/L3 at 512 B / 1 KiB on 10 MiB files include the quadratic
+    chain walk; with D:'s real cluster size (printed in the BPB line) it can
+    take minutes per file -- expected, that is part of what is measured.
+  * D: of the QEMU image carries a .Spotlight-V100 directory (macOS writes it
+    on mount); harmless for the bench.

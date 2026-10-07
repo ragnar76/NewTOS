@@ -40,8 +40,30 @@ cleanup() { hdiutil detach "$DEV" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 # One MBR FAT16 partition spanning the whole disk, mounted at /Volumes/$VOL.
-diskutil partitionDisk "$DEV" 1 MBR "MS-DOS FAT16" "$VOL" 100% >/dev/null
+#
+# Opt-in, QEMU image only: SD_FSBENCH_D=<dir> splits the card into TWO FAT16
+# partitions -- C: (NEWTOS, half) and D: (NEWTOS1, the rest) -- and copies the
+# FSBENCH test files from <dir> into D:\FSBENCH\ (TASK/FS08; the files come
+# from sdk/examples/fsbench/gen-fsbench-files.py). Use a size of >= 128 MiB.
+# Without the variable the layout is the unchanged single partition.
+if [ -n "${SD_FSBENCH_D:-}" ]; then
+  diskutil partitionDisk "$DEV" 2 MBR "MS-DOS FAT16" "$VOL" 50% "MS-DOS FAT16" "${VOL}1" R >/dev/null
+else
+  diskutil partitionDisk "$DEV" 1 MBR "MS-DOS FAT16" "$VOL" 100% >/dev/null
+fi
 V="/Volumes/${VOL}"
+if [ -n "${SD_FSBENCH_D:-}" ]; then
+  VD="$(diskutil info "${DEV}s2" | sed -n 's/^ *Mount Point: *//p')"
+  [ -d "$VD" ] || { echo "error: D: (${DEV}s2) not mounted" >&2; exit 1; }
+  mdutil -i off "$VD" >/dev/null 2>&1 || true
+  mkdir -p "$VD/FSBENCH"
+  for f in "$SD_FSBENCH_D"/*.DAT; do cp "$f" "$VD/FSBENCH/"; done
+  echo "  + D:\\FSBENCH\\ ($(ls "$VD/FSBENCH" | wc -l | tr -d ' ') files from $SD_FSBENCH_D)"
+  rm -rf "$VD/.Spotlight-V100" "$VD/.fseventsd" "$VD/.Trashes" "$VD/.TemporaryItems" 2>/dev/null || true
+  dot_clean -m "$VD" 2>/dev/null || true
+  sync
+  diskutil unmount "${DEV}s2" >/dev/null
+fi
 
 # Populate with sample content (CR/LF line ends, TOS-style). The names
 # deliberately include worst-case 12-char 8.3 filenames (KEYBOARD.KBD,
@@ -911,7 +933,7 @@ cleanup
 trap - EXIT
 
 # Sanity-check the MBR: partition 0 must be type 0x06 (FAT16), 0x55AA present.
-python3 - "$IMG" <<'PY'
+python3 - "$IMG" ${SD_FSBENCH_D:+fsbench} <<'PY'
 import sys, struct
 d = open(sys.argv[1], 'rb').read(512)
 assert d[510] == 0x55 and d[511] == 0xAA, "missing 0x55AA MBR signature"
@@ -920,6 +942,12 @@ start = struct.unpack('<I', d[0x1BE + 8:0x1BE + 12])[0]
 count = struct.unpack('<I', d[0x1BE + 12:0x1BE + 16])[0]
 assert typ == 0x06, f"partition type 0x{typ:02x}, expected 0x06 (FAT16)"
 print(f"OK: MBR FAT16 partition type=0x{typ:02x} start_lba={start} sectors={count}")
+if len(sys.argv) > 2:
+    typ2 = d[0x1CE + 4]
+    start2 = struct.unpack('<I', d[0x1CE + 8:0x1CE + 12])[0]
+    count2 = struct.unpack('<I', d[0x1CE + 12:0x1CE + 16])[0]
+    assert typ2 == 0x06, f"D: partition type 0x{typ2:02x}, expected 0x06 (FAT16)"
+    print(f"OK: MBR FAT16 partition 2 (D:) type=0x{typ2:02x} start_lba={start2} sectors={count2}")
 PY
 
 echo "done: ${IMG}"

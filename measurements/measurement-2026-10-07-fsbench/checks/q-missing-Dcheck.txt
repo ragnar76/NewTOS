@@ -1,0 +1,14 @@
+K010_1.DAT: OK
+shasum: K010_2.DAT: No such file or directory
+K010_2.DAT: FAILED open or read
+K010_3.DAT: OK
+K100_1.DAT: OK
+K100_2.DAT: OK
+K100_3.DAT: OK
+M001_1.DAT: OK
+M001_2.DAT: OK
+shasum: M010_1.DAT: No such file or directory
+M010_1.DAT: FAILED open or read
+shasum: M010_2.DAT: No such file or directory
+M010_2.DAT: FAILED open or read
+shasum: WARNING: 3 listed files could not be read

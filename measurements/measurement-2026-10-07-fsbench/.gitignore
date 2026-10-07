@@ -1,0 +1,4 @@
+# 1 MiB / 10 MiB test files: regenerable byte-identically with
+# sdk/examples/fsbench/gen-fsbench-files.py (sha256 in bin/pi-package/SHA256SUMS).
+bin/pi-package/FSBENCH/M001_*.DAT
+bin/pi-package/FSBENCH/M010_*.DAT

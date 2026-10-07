@@ -1,0 +1,78 @@
+FSBENCH (FS08) -- Lesemessung Schicht fuer Schicht, fuer die echte Pi 4
+=======================================================================
+
+Was es ist: ein kleines Konsolenprogramm (FSBENCH.NCP), das beim Start aus
+C:\AUTO\ laeuft -- also BEVOR AES und Desktop da sind (keine Maus, keine
+Fenster im Weg). Es liest ausschliesslich, es schreibt nichts auf D:. Es misst
+denselben Lesepfad dreimal, jeweils eine Schicht hoeher:
+
+  L1  BIOS Rwabs   rohe Sektoren von D: (an GEMDOS und FAT vorbei),
+                   1 Sektor je Aufruf und 128 Sektoren je Aufruf
+  L2  GEMDOS       Fsfirst, Fopen, Fread mit 512 B / 4 KB / 64 KB /
+                   ganze Datei, Fclose
+  L3  libc stdio   fopen / fread zu je 1 KB / fclose (so liest zView)
+
+Alles zweimal: "cold" (erster Durchlauf nach dem Einschalten) und "warm".
+Jede gelesene Datei wird per CRC-32 geprueft.
+
+Kernel: der normale Kernel, der jetzt auf der Karte ist -- kein Messkernel.
+
+Dateien in diesem Paket
+-----------------------
+  AUTO\FSBENCH.NCP        -> C:\AUTO\FSBENCH.NCP
+  FSBENCH\K010_1.DAT ...  -> D:\FSBENCH\  (alle 10 .DAT-Dateien, 22,3 MB:
+     3 x 10 KB, 3 x 100 KB, 2 x 1 MB, 2 x 10 MB)
+  FSBENCH\MANIFEST.TXT    Groessen + CRC-32 (nur zum Nachlesen; nicht noetig
+                          auf der Karte -- FSBENCH kennt die Werte selbst)
+  SHA256SUMS              Pruefsummen aller Dateien
+
+D: ist die ZWEITE Partition der Karte (Name NEWTOS1, bisher leer).
+
+Kopieren (am Mac)
+-----------------
+ 1. Karte in den Mac. Auf NEWTOS1 (= D:) einen Ordner FSBENCH anlegen und
+    die 10 .DAT-Dateien hineinkopieren. Die Namen genau so lassen.
+ 2. FSBENCH.NCP in den Ordner AUTO auf der ersten Partition (= C:) kopieren.
+ 3. Auf C: KEINE Datei FSBNOKEY.FLG anlegen (die schaltet das Warten auf
+    eine Taste ab; nur fuer den Test in QEMU gedacht).
+ 4. Optional im Terminal: dot_clean -m /Volumes/NEWTOS1 (raeumt die
+    ._-Dateien des Mac weg; FSBENCH stoert sich aber nicht daran).
+ 5. Karte auswerfen, in die Pi.
+
+Messen
+------
+ 6. Pi einschalten. Nach dem Kernelstart erscheint
+      FSBENCH (FS08): calibrating clock...
+    und dann je Schritt eine Zeile (L1 cold ..., L2 cold K010_1.DAT, ...).
+    Das dauert auf der Pi voraussichtlich 5 bis 15 Minuten (zusammen werden
+    rund 270 MB gelesen). Bitte nichts anfassen.
+ 7. Danach erscheint die Tabelle in 4 Seiten. Unter jeder Seite steht
+      -- photo, then press a key for the next page --
+    Jede Seite fotografieren, dann eine Taste druecken.
+    Seite 1: Kopf (Kernel, Uhr, BPB von D:) + L1 BIOS
+    Seite 2: L2 GEMDOS cold     Seite 3: L2 GEMDOS warm
+    Seite 4: L3 stdio cold + warm, Zusammenfassung
+ 8. Nach der letzten Taste startet der Desktop wie gewohnt.
+
+Zurueckschicken
+---------------
+ 9. C:\FSBENCH.LOG (enthaelt dieselben 4 Seiten plus Detailzeilen "# L2
+    detail"; bei jedem Lauf wird angehaengt) und die 4 Fotos.
+    Bitte auch ein Foto oder die Zeile "Built" vom Startbildschirm, damit
+    feststeht, welcher Kernel gemessen hat (das Programm selbst kann die
+    Kernel-Revision nicht auslesen).
+
+Danach
+------
+10. FSBENCH.NCP parken: C:\AUTO\FSBENCH.NCP in FSBENCH.NC umbenennen (am
+    Mac oder auf dem Desktop). Sonst laeuft die Messung bei jedem Start.
+    D:\FSBENCH\ darf liegen bleiben (wird nur gelesen).
+
+Hinweise
+--------
+ - Sollte D: auf der Karte nicht FAT16 sein, meldet Seite 1
+   "Getbpb(D:) = 0" und L2/L3 melden die Dateien als MISSING. Das ist dann
+   selbst ein Befund -- bitte trotzdem Fotos + Log schicken.
+ - "cold" gilt nur fuer den ersten Lauf nach dem Einschalten.
+ - Die Zeiten aus QEMU sind NICHT aussagekraeftig; deshalb diese Messung
+   auf der echten Pi.
