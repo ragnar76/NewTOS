@@ -1,0 +1,180 @@
+1791414056.235635	RB2
+1791414056.235788	NewTOS booting on rpi4
+1791414056.235871	[serial] output on: boot arguments contain `serial=on`
+1791414056.235893	Phase 02 reached.
+1791414056.236163	[mm] DTB at 0x0000000000000100
+1791414056.236519	[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+1791414056.236602	[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+1791414056.236802	[mm] device tree: no usable /memory node (blob invalid or absent)
+1791414056.237859	[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+1791414056.238075	[mm] memory map:
+1791414056.238164	[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+1791414056.238275	[mm]   kernel: 0x0000000000080000..0x00000000002da000 (2465792 bytes)
+1791414056.238335	[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+1791414056.238396	[mm]   TT-RAM: 0x0000000001000000..0x0000000039e00000 (954204160 bytes)
+1791414056.238442	[mm]   OSrsvd: 0x0000000039e00000..0x000000003c000000 (35651584 bytes)
+1791414056.238514	[mm]     bcach: 0x0000000039e00000..0x000000003be00000 (33554432 bytes)
+1791414056.238573	[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+1791414056.238620	[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+1791414056.238670	[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+1791414056.238704	[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+1791414056.239014	[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+1791414056.239225	[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+1791414056.239289	[mm] frames TT-RAM: total=232960 used=0 free=232960 (954204160 B free)
+1791414056.239383	[mm] alloc ST-RAM frame -> 0x0000000000400000
+1791414056.239555	[mm] alloc TT-RAM frame -> 0x0000000001000000
+1791414056.239691	[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+1791414056.240317	[mm] heap smoke OK
+1791414056.240398	[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+1791414056.240543	[fb] VideoCore display geometry detected: 640x480
+1791414056.240769	[fb] alpha mode = 2
+1791414056.240888	[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+1791414056.240956	[fb] VideoCore fb up: 640x480 stride 640px
+1791414056.244269	[mm] memory protection ON: table arena 0x01000000+2424 tables
+1791414056.246484	[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01978000+944275456
+1791414056.247415	[mm] user address space: pools mapped VA = PA (456 shared L3 tables, 4-KiB pages, rights per process)
+1791414056.247588	[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+1791414056.247708	[mm] BDOS TT-RAM after init: total=944275456 free=944275456 used=0 largest_free=944275456 (free_mds=1 alloc_mds=0)
+1791414056.249058	[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+1791414056.250293	[emmc] SD card on controller @ 0xffff0000fe300000
+1791414056.250484	[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+1791414056.250547	[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+1791414056.250617	[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+1791414056.250735	[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+1791414056.250970	[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+1791414056.255464	[clock] seeded from kernel8.img: 2026-10-08 00:37:58
+1791414056.256648	[pcie] RC not present (no response at RC_BASE); USB disabled
+1791414071.266006	[proc] stand-in PDs: initial_basepage 0x00251000, AES PD 0x00251100 (read-only to all)
+1791414071.307937	[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x197a000)
+1791414071.338536	[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1980000)
+1791414071.338580	[acc] 2 file(s) found, 2 process(es) started
+1791414071.338989	[aes] gsx_malloc: screen buffer pa=0x01984000 len=614400 (kernel-owned, WF_SCREEN)
+1791414071.339927	[sched] switch -> slot 0
+1791414071.339986	[sched] running
+1791414071.341672	[sched] switch -> slot 1
+1791414071.341696	[sched] running
+1791414071.342148	[sched] switch -> kernel client
+1791414071.342296	[acc] all accessories have issued their message wait
+1791414071.344751	[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+1791414071.487315	[desk] desktop up (1 drives, 1 window(s) from the context)
+1791414071.487371	[m3] injector armed at hz_200 3047
+1791414071.985789	[m3] step 0 at +100 -> mouse (446,366) mb=0
+1791414071.989174	[m3] step 1 at +101 -> mouse (573,479) mb=0
+1791414071.995281	[m3] step 2 at +102 -> mouse (639,479) mb=0
+1791414071.999837	[m3] step 3 at +103 -> mouse (639,479) mb=0
+1791414072.005957	[m3] step 4 at +104 -> mouse (639,479) mb=0
+1791414072.010526	[m3] step 5 at +105 -> mouse (639,479) mb=0
+1791414073.486271	[m3] MARK A_IDLE step 6 at +400 mouse (639,479) mb=0
+1791414074.485655	[m3] step 7 at +600 -> mouse (512,352) mb=0
+1791414074.489570	[m3] step 8 at +601 -> mouse (385,225) mb=0
+1791414074.494006	[m3] step 9 at +602 -> mouse (258,165) mb=0
+1791414074.501607	[m3] step 10 at +603 -> mouse (131,165) mb=0
+1791414074.504672	[m3] step 11 at +604 -> mouse (63,165) mb=0
+1791414075.485754	[m3] step 12 at +800 -> mouse (63,165) mb=1
+1791414075.499969	[m3] step 13 at +803 -> mouse (63,165) mb=0
+1791414075.526121	[m3] step 14 at +808 -> mouse (63,165) mb=1
+1791414075.539336	[m3] step 15 at +811 -> mouse (63,165) mb=0
+1791414075.935462	[sched] switch -> slot 0
+1791414075.935564	[sched] running
+1791414075.935598	[sched] switch -> slot 1
+1791414075.935631	[sched] running
+1791414075.935678	[sched] switch -> kernel client
+1791414075.937728	[shell] sh_ldapp: starting C:\ZVIEW\ZVIEW.NAP, sh_nextapp=0, sh_isgem=1
+1791414076.051952	[acc] launching with 2 accessory(s); AC_CLOSE seen by all: true
+1791414076.052150	[launch] EL0: slot 2 entry 0x1a3d000
+1791414076.125699	[exec] preparing program (slot 3)
+1791414076.125702	[exec] launching
+1791414076.182213	[exec] preparing program (slot 3)
+1791414076.182217	[exec] launching
+1791414076.294029	[exec] preparing program (slot 3)
+1791414076.294076	[exec] launching
+1791414076.462393	[exec] preparing program (slot 3)
+1791414076.462398	[exec] launching
+1791414076.519121	[exec] preparing program (slot 3)
+1791414076.519170	[exec] launching
+1791414076.576244	[exec] preparing program (slot 3)
+1791414076.576278	[exec] launching
+1791414076.634026	[exec] preparing program (slot 3)
+1791414076.634065	[exec] launching
+1791414076.693592	[exec] preparing program (slot 3)
+1791414076.693594	[exec] launching
+1791414076.751265	[exec] preparing program (slot 3)
+1791414076.751268	[exec] launching
+1791414076.808898	[exec] preparing program (slot 3)
+1791414076.808902	[exec] launching
+1791414091.484812	[m3] MARK B_ZV1_UP step 16 at +4000 mouse (63,165) mb=0
+1791414091.992696	[m3] step 17 at +4100 -> mouse (76,38) mb=0
+1791414091.992702	[m3] step 18 at +4101 -> mouse (76,8) mb=0
+1791414093.485329	[m3] step 19 at +4400 -> mouse (104,135) mb=0
+1791414093.489573	[m3] step 20 at +4401 -> mouse (104,203) mb=0
+1791414094.484894	[m3] step 21 at +4600 -> mouse (104,203) mb=1
+1791414094.491638	[sched] switch -> slot 0
+1791414094.491685	[sched] running
+1791414094.491687	[sched] switch -> slot 1
+1791414094.491688	[sched] running
+1791414094.491746	[sched] switch -> slot 2
+1791414094.491747	[sched] running
+1791414094.492394	[launch] returned (program Pterm'd)
+1791414094.492524	[shell] sh_ldapp: 'C:\ZVIEW\ZVIEW.NAP' exited with rc=0
+1791414094.493553	[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+1791414094.617059	[m3] step 22 at +4626 -> mouse (104,203) mb=0
+1791414094.621169	[desk] desktop up (1 drives, 1 window(s) from the context)
+1791414101.486026	[m3] MARK C_DESK_AGAIN step 23 at +6000 mouse (104,203) mb=0
+1791414102.486239	[m3] step 24 at +6200 -> mouse (147,165) mb=0
+1791414103.485686	[m3] step 25 at +6400 -> mouse (147,165) mb=1
+1791414103.499787	[m3] step 26 at +6403 -> mouse (147,165) mb=0
+1791414103.525671	[m3] step 27 at +6408 -> mouse (147,165) mb=1
+1791414103.540968	[m3] step 28 at +6411 -> mouse (147,165) mb=0
+1791414103.929580	[sched] switch -> slot 0
+1791414103.929661	[sched] running
+1791414103.929664	[sched] switch -> slot 1
+1791414103.929665	[sched] running
+1791414103.929666	[sched] switch -> kernel client
+1791414103.931293	[shell] sh_ldapp: starting C:\ZVIEW\ZVIEW.NAP, sh_nextapp=0, sh_isgem=1
+1791414103.965056	[acc] launching with 2 accessory(s); AC_CLOSE seen by all: true
+1791414103.965061	[launch] EL0: slot 2 entry 0x1a3d000
+1791414104.021226	[exec] preparing program (slot 3)
+1791414104.021269	[exec] launching
+1791414104.070041	[exec] preparing program (slot 3)
+1791414104.070044	[exec] launching
+1791414104.120447	[exec] preparing program (slot 3)
+1791414104.120450	[exec] launching
+1791414104.171876	[exec] preparing program (slot 3)
+1791414104.171915	[exec] launching
+1791414104.220928	[exec] preparing program (slot 3)
+1791414104.220931	[exec] launching
+1791414104.270355	[exec] preparing program (slot 3)
+1791414104.270409	[exec] launching
+1791414104.320543	[exec] preparing program (slot 3)
+1791414104.320546	[exec] launching
+1791414104.371899	[exec] preparing program (slot 3)
+1791414104.371903	[exec] launching
+1791414104.421554	[exec] preparing program (slot 3)
+1791414104.421557	[exec] launching
+1791414104.472553	[exec] preparing program (slot 3)
+1791414104.472559	[exec] launching
+1791414119.484889	[m3] MARK D_ZV2_UP step 29 at +9600 mouse (147,165) mb=0
+1791414119.993505	[m3] step 30 at +9700 -> mouse (76,38) mb=0
+1791414119.993512	[m3] step 31 at +9702 -> mouse (76,8) mb=0
+1791414121.485160	[m3] step 32 at +10000 -> mouse (104,135) mb=0
+1791414121.489331	[m3] step 33 at +10001 -> mouse (104,203) mb=0
+1791414122.484990	[m3] step 34 at +10200 -> mouse (104,203) mb=1
+1791414122.490224	[sched] switch -> slot 0
+1791414122.490269	[sched] running
+1791414122.490271	[sched] switch -> slot 1
+1791414122.490311	[sched] running
+1791414122.490350	[sched] switch -> slot 2
+1791414122.490352	[sched] running
+1791414122.490816	[launch] returned (program Pterm'd)
+1791414122.490881	[shell] sh_ldapp: 'C:\ZVIEW\ZVIEW.NAP' exited with rc=0
+1791414122.491936	[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+1791414122.615054	[m3] step 35 at +10226 -> mouse (104,203) mb=0
+1791414122.619129	[desk] desktop up (1 drives, 1 window(s) from the context)
+1791414129.485019	[m3] MARK E_DESK_FINAL step 36 at +11600 mouse (104,203) mb=0
+1791414130.485592	[m3] step 37 at +11800 -> mouse (231,330) mb=0
+1791414130.489945	[m3] step 38 at +11801 -> mouse (358,457) mb=0
+1791414130.495984	[m3] step 39 at +11802 -> mouse (485,479) mb=0
+1791414130.500584	[m3] step 40 at +11803 -> mouse (612,479) mb=0
+1791414130.505176	[m3] step 41 at +11804 -> mouse (639,479) mb=0
+1791414130.509778	[m3] step 42 at +11805 -> mouse (639,479) mb=0
+1791414131.485885	[m3] MARK END step 43 at +12000 mouse (639,479) mb=0

@@ -1,0 +1,116 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:ser.sock,server=on
+t=  23.5s acc-on-S00_WINDOW.png {"return": {}}
+t=  27.5s acc-on-S01_INFO_ALERT_KBD.png {"return": {}}
+t=  33.5s acc-on-S02_ALERT_GONE.png {"return": {}}
+t=  37.6s acc-on-S03_INFO_ALERT_LONGPRESS.png {"return": {}}
+t=  43.5s acc-on-S04_ALERT_GONE2.png {"return": {}}
+t=  47.0s acc-on-S05_SHORTCLICK.png {"return": {}}
+t=  50.5s acc-on-S05B_ALERT_GONE3.png {"return": {}}
+t=  54.0s acc-on-S06_VALUE_TYPED.png {"return": {}}
+t=  60.6s end marker seen
+t=  61.0s acc-on-END_CLOSED.png {"return": {}}
+t=  62.7s acc-on-end.png {"return": {}}
+prompts seen: 0
+run acc-on: rc=0
+qemu-system-aarch64: -serial unix:ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:ser.sock,server=on
+t=  23.5s acc-strict-S00_WINDOW.png {"return": {}}
+t=  27.5s acc-strict-S01_INFO_ALERT_KBD.png {"return": {}}
+t=  33.5s acc-strict-S02_ALERT_GONE.png {"return": {}}
+t=  37.5s acc-strict-S03_INFO_ALERT_LONGPRESS.png {"return": {}}
+t=  43.5s acc-strict-S04_ALERT_GONE2.png {"return": {}}
+t=  47.0s acc-strict-S05_SHORTCLICK.png {"return": {}}
+t=  50.5s acc-strict-S05B_ALERT_GONE3.png {"return": {}}
+t=  54.0s acc-strict-S06_VALUE_TYPED.png {"return": {}}
+t=  60.6s end marker seen
+t=  61.0s acc-strict-END_CLOSED.png {"return": {}}
+t=  62.7s acc-strict-end.png {"return": {}}
+prompts seen: 0
+run acc-strict: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:ser.sock,server=on
+t=  17.5s desk-A_IDLE.png {"return": {}}
+t=  26.5s desk-B_DRIVE_OPEN.png {"return": {}}
+t=  35.5s desk-C_FOLDER_OPEN.png {"return": {}}
+t=  38.5s desk-D_VIEW_OPEN.png {"return": {}}
+t=  44.5s desk-E_MENU_CLICKED.png {"return": {}}
+t=  47.1s end marker seen
+t=  47.5s desk-END.png {"return": {}}
+t=  48.1s desk-end.png {"return": {}}
+prompts seen: 0
+run desk: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:ser.sock,server=on
+t=  23.5s tera-T00_DESK.png {"return": {}}
+t=  27.5s tera-T01_TRASH_SELECTED.png {"return": {}}
+t=  36.5s tera-T02_DRIVE_OPEN.png {"return": {}}
+t=  39.1s end marker seen
+t=  39.5s tera-END.png {"return": {}}
+t=  40.2s tera-end.png {"return": {}}
+prompts seen: 0
+run tera: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:ser.sock,server=on
+t=  23.6s qed-Q00_UP.png {"return": {}}
+t=  25.6s qed-Q01_DATEI_OPEN.png {"return": {}}
+t=  32.6s qed-Q02_ITEM_CLICKED.png {"return": {}}
+t=  35.2s end marker seen
+t=  35.6s qed-END.png {"return": {}}
+t=  36.2s qed-end.png {"return": {}}
+prompts seen: 0
+run qed: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:ser.sock,server=on
+t=  17.8s desk3a-A_IDLE.png {"return": {}}
+t=  25.8s desk3a-B_SUB.png {"return": {}}
+t=  32.8s desk3a-C_UP.png {"return": {}}
+t=  37.8s desk3a-D_SELECTED.png {"return": {}}
+t=  43.8s desk3a-E_INFO.png {"return": {}}
+t=  47.8s desk3a-F_TYPED.png {"return": {}}
+t=  54.8s desk3a-G_RENAMED.png {"return": {}}
+t=  63.2s end marker seen
+t=  63.8s desk3a-H_DRIVE_C.png {"return": {}}
+t=  64.2s desk3a-end.png {"return": {}}
+prompts seen: 0
+run desk3a: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> api-t25.png {"return": {}}
+t=40.0s -> api-t40.png {"return": {}}
+run api: rc=0
+qemu-system-aarch64: -serial unix:ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:ser.sock,server=on
+t=  46.2s zv-dclick-Z02_BROWSER.png {"return": {}}
+t=  58.7s zv-dclick-Z06_ZVIEW_DIR.png {"return": {}}
+t=  86.3s zv-dclick-Z07_SAMPLES.png {"return": {}}
+t=  87.1s end marker seen
+t=  88.1s zv-dclick-END.png {"return": {}}
+t=  89.1s zv-dclick-end.png {"return": {}}
+prompts seen: 0
+run zv-dclick: rc=0
+b615ab661fc2a68942b677f765e0ae076ba2d5457a412f999499a2e7a92a5e51  run-zv-dclick.img (deleted)
+qemu-system-aarch64: -serial unix:ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:ser.sock,server=on
+t=  31.3s zv-browser-Z00_IDLE.png {"return": {}}
+t=  33.2s zv-browser-Z01_MENU.png {"return": {}}
+t=  46.1s zv-browser-Z02_BROWSER.png {"return": {}}
+t=  61.2s zv-browser-Z03_LATER.png {"return": {}}
+t=  67.7s zv-browser-Z04_SELECTED.png {"return": {}}
+t=  76.3s zv-browser-Z05_TREE.png {"return": {}}
+t=  77.1s end marker seen
+t=  78.1s zv-browser-END.png {"return": {}}
+t=  79.1s zv-browser-end.png {"return": {}}
+prompts seen: 0
+run zv-browser: rc=0
+f3871fdf5a3e1c4fd537d49292495ed633312500ab357048559e6e34158f34ce  run-zv-browser.img (deleted)
+qemu-system-aarch64: -serial unix:ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:ser.sock,server=on
+t=  31.2s zv-quit-Z00_IDLE.png {"return": {}}
+t=  33.2s zv-quit-Z01_MENU.png {"return": {}}
+t=  46.2s zv-quit-Z02_BROWSER.png {"return": {}}
+t=  48.2s zv-quit-Z03_FILEMENU.png {"return": {}}
+t=  49.7s zv-quit-Z04_ONQUIT.png {"return": {}}
+t=  56.2s zv-quit-Z05_AFTERQUIT.png {"return": {}}
+t=  57.1s end marker seen
+t=  58.1s zv-quit-END.png {"return": {}}
+t=  59.1s zv-quit-end.png {"return": {}}
+prompts seen: 0
+run zv-quit: rc=0
+65e4d1c05b6a45f3c365696de012a14bf04727660da18aafc43050a40483e3a6  run-zv-quit.img (deleted)
+=== group A done

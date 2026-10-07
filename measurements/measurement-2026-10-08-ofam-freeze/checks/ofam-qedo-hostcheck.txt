@@ -1,0 +1,3 @@
+original   : b'A note for the stage-3a desktop run.\r\n'
+after run  : b'ab\r\nA note for the stage-3a desktop run.\r\n'
+HOSTCHECK: PASS

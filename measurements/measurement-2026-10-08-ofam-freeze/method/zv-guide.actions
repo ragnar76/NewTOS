@@ -1,0 +1,24 @@
+# ZVIEW04 cross-check of the cause: with the browser open, a DIFFERENT desktop
+# menu pick -- the first row under "Help" = MENU_BAR_GUIDE 51 (zview.rsh;
+# menu.c:654 Menu_show_help, the ST-Guide call, which has nothing to show on
+# the QEMU card) -- goes through the same WinDom MN_SELECTED routing as Quit.
+# Observable: whether WinDom's desktop MN_SELECTED callback (MenuHandle,
+# menu.c:687) ran -- it un-highlights the title. HEAD: "Help" stays inverted;
+# fixed kernel: normal. (Run tags *-zv-guide; the kernels were built as
+# *-kinj-zv-about.img from this file under its first name.)
+100 parkbr
+3000 mark A00_IDLE
+3100 move 76 8
+3400 mark A01_MENU
+3500 move 100 28
+3700 down
+3703 up
+6000 mark A02_BROWSER
+6100 move 240 8
+6400 mark A03_HELPMENU
+6500 move 260 28
+6800 down
+6803 up
+8000 mark A04_AFTERABOUT
+8100 parkbr
+8400 mark END

@@ -1,0 +1,6 @@
+== fsck_msdos -n s1
+** /dev/rdisk7s1
+** Phase 1 - Preparing FAT
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Orphan Clusters
+Warning: 99 files, 58654 KiB free (29327 clusters)

@@ -1,0 +1,11 @@
+# FS08 part 2 read regression, zView (#Z ZVLAUNCH -> C:\ZVIEW\ZVIEW.NAP with
+# C:\PHOTO\BIG.JPG, 2 273 801 B, read by the JPEG codec in 1 KiB stdio
+# Freads; prep-card.sh zview). Marks only, then Esc (01) and END.
+100 parkbr
+4000 mark S00
+8000 mark S01
+12000 mark S02
+16000 mark S03
+16200 key 01
+16206 key 81
+17000 mark END

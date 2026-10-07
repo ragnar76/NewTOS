@@ -1,0 +1,22 @@
+# OFAM freeze: EmuDESK with the window C:\APPS\BALL\ restored (newdesk-ball.inf), BALL.NAP the only item.
+# Double-click it (63,120) -> the ball demo (Setscreen page flips, own palette); screendumps over ~20 s;
+# then any key ends it (ball.c:4945 "Quit on any key" via Bconstat) -> desktop back.
+# Ticks hz_200 after "[desk] desktop up" (desk-arm-m3.py).
+100 parkbr
+400 mark A_IDLE
+600 move 63 120
+800 down
+803 up
+808 down
+811 up
+1600 mark B_T1
+2400 mark C_T2
+3200 mark D_T3
+4400 mark E_T4
+6000 mark F_T5
+8000 mark G_T6
+9000 key 39
+9006 key B9
+10000 mark H_AFTER_KEY
+11000 mark I_LATER
+11400 mark END

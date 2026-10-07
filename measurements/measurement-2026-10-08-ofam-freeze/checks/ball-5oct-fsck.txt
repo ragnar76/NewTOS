@@ -1,0 +1,5 @@
+** /dev/rdisk7s1
+** Phase 1 - Preparing FAT
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Orphan Clusters
+Warning: 99 files, 60784 KiB free (30392 clusters)

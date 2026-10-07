@@ -1,0 +1,14 @@
+# ZVIEW04 control: File > Quit WITHOUT the browser (zView's start state, no
+# window). Expected: zView exits, the desktop comes back.
+100 parkbr
+3000 mark Q00_IDLE
+3100 move 76 8
+3400 mark Q01_FILEMENU
+3500 move 100 204
+3700 mark Q02_ONQUIT
+3800 down
+3803 up
+6000 mark Q03_AFTERQUIT
+9000 mark Q04_LATER
+9100 parkbr
+9400 mark END

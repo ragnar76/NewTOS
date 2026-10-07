@@ -1,0 +1,1733 @@
+diff --git a/docs/api/desktop/_hw-test-2026-09-17.md b/docs/api/desktop/_hw-test-2026-09-17.md
+index 9a30e43..78cd386 100644
+--- a/docs/api/desktop/_hw-test-2026-09-17.md
++++ b/docs/api/desktop/_hw-test-2026-09-17.md
+@@ -1515,6 +1515,14 @@ beim Hinueberfahren, kein Klick noetig).
+    ist der andere Prozess, der antwortet; ein Eintrag, der nichts tut, ist ein
+    Fehler.
+ 
++**Stand SYSINFO01 (2026-10-07):** mit dem neuen `SYSACC.NAC` heisst der
++Eintrag ` System Info`, und statt des Kaestchens oeffnet sich der Dialog
++*NewTOS System Information* (Gruppen System, Display, Memory protection, SD
++card, Input / output; `OK` schliesst). Punkt 3 gilt sinngemaess fuer die Zeilen
++*CPU clock*, *Measured* und *Temperature*; auf der Pi muss *Measured* einen Wert
++zeigen (QEMU beantwortet den Tag nicht: `not available`). Beleg und
++QEMU-Bilder: `measurements/measurement-2026-10-07-sysinfo/RUNINFO.TXT`.
++
+ ---
+ 
+ ## 67. ACC03 — der Desktop bleibt neben den Accessories bedienbar
+diff --git a/docs/api/gemdos/154-ssystem.md b/docs/api/gemdos/154-ssystem.md
+index 12d7612..54356cb 100644
+--- a/docs/api/gemdos/154-ssystem.md
++++ b/docs/api/gemdos/154-ssystem.md
+@@ -20,8 +20,9 @@
+ >
+ > **Plus NewTOS's own modes from 2000 upwards** (§"NewTOS-own modes (2000+)"):
+ > machine facts an EL0 program cannot reach any other way, because the hardware
+-> that knows them is kernel-only (2000/2001), and the kernel entry of the
+-> default `kbdvec` stub (2002, KEYS02). These are *not* FreeMiNT modes and are
++> that knows them is kernel-only (2000/2001), the kernel entry of the
++> default `kbdvec` stub (2002, KEYS02), and the effective system settings a
++> system-information tool shows (2003–2019, SYSINFO01). These are *not* FreeMiNT modes and are
+ > marked as ours wherever they appear; 2000+ is a range FreeMiNT leaves free.
+ 
+ > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+@@ -152,6 +153,23 @@ NewTOS identity, but that is a separate decision.
+ | `S_NEWTOS_CPUCLOCK` | 2000 | machine | ARM core clock, **Hz** |
+ | `S_NEWTOS_CPUTEMP` | 2001 | machine | SoC die temperature, **1/1000 °C** |
+ | `S_NEWTOS_KBDVEC` | 2002 | keyboard | run the default `kbdvec` (EmuTOS `kbd_int`) for one IKBD key byte — KEYS02, see below |
++| `S_NEWTOS_CPUMEAS` | 2003 | machine | ARM core clock **measured** by the firmware, Hz — SYSINFO01, see §"System-information modes" |
++| `S_NEWTOS_CPUPOLICY` | 2004 | machine | ARM clock policy in effect (firmware / fixed at maximum) |
++| `S_NEWTOS_MEMPROT` | 2005 | kernel | memory protection in effect (off / on / strict) |
++| `S_NEWTOS_ASID` | 2006 | kernel | address-space IDs in effect (off / on / test) |
++| `S_NEWTOS_SDMODE` | 2007 | storage | SD transfer mode in effect (fast / compatibility) |
++| `S_NEWTOS_SDBUS` | 2008 | storage | SD data-bus width negotiated with the card, bits |
++| `S_NEWTOS_BCACHE` | 2009 | storage | block read cache size, KiB (0 = off) |
++| `S_NEWTOS_BCACHEPCT` | 2010 | storage | block cache share one linear read may fill, percent |
++| `S_NEWTOS_STRAM` | 2011 | memory | ST-RAM pool size, KiB |
++| `S_NEWTOS_TTRAM` | 2012 | memory | TT-RAM pool size, KiB (0 = none) |
++| `S_NEWTOS_SCRWIDTH` | 2013 | display | framebuffer width, pixels |
++| `S_NEWTOS_SCRHEIGHT` | 2014 | display | framebuffer height, pixels |
++| `S_NEWTOS_SCRDEPTH` | 2015 | display | framebuffer depth, bits per pixel |
++| `S_NEWTOS_GPUMEM` | 2016 | display | VideoCore (GPU) memory, KiB |
++| `S_NEWTOS_KEYBOARD` | 2017 | input | source of the active keyboard layout |
++| `S_NEWTOS_SERIAL` | 2018 | console | serial console output on / off |
++| `S_NEWTOS_KVERSION` | 2019 | kernel | kernel version + build stamp, **string** into the caller's buffer |
+ 
+ **Why the number block is free.** FreeMiNT's `sys/mint/ssystem.h` (@ `f906416`)
+ assigns 0–29, 100 and `0x54f8` (21752), and reserves two ranges by comment:
+@@ -246,6 +264,95 @@ answer both tags, with the fixed values 700 000 000 Hz and 25 000 m°C — those
+ are the emulator's numbers, faithfully reported, and only a real Pi 4 shows a
+ clock that moves and a die that warms up.
+ 
++#### System-information modes (2003–2019) — SYSINFO01
++
++The settings and machine facts a system-information tool shows (the SYSACC desk
++accessory, `sdk/examples/sysacc.c`, TASK/SYSINFO01). Every mode reports the
++**effective** state the kernel runs with — what the boot code actually did with
++the boot arguments (`cmdline.txt`, `kernel/src/bootargs.rs`) and what the
++hardware actually negotiated — never the text of a configuration file. A
++program that wants to show `memprot=strict` learns "strict" only if the kernel
++really runs strict.
++
++**Interface of the scalar modes 2003–2018** — exactly the one of 2000/2001
++(§"Interface (both modes)" below): `arg1` = pointer to a 32-bit LONG that
++receives the value, or 0 for the value in the returned LONG; `arg2` reserved,
++must be 0 (`EINVAL` before anything is read, nothing written); `ERROR` (-1)
++when the value is unknown on this machine (nothing written). No value of these
++modes can reach `0xFFFF_FFFF`, but the pointer form remains the recommended
++one, for the same reason as there.
++
++| Mode | Value | Answer (`E_OK` / returned LONG) | `ERROR` when | Source of the effective state |
++|------|------:|---------------------------------|--------------|-------------------------------|
++| `S_NEWTOS_CPUMEAS` | 2003 | the ARM clock the firmware **measured**, Hz — *"the true/actual clock rate … which respects clamping, throttling and clock divider limitations"*, where 2000 answers *"the last requested value"* | the firmware does not answer tag `0x0003_0047` or answers rate 0; no VideoCore (`qemu-virt`, hostless) | `Host::cpu_clock_measured_hz` → mailbox "Get clock rate measured" `0x0003_0047`, clock id 3 (`docs/hardware/mailbox-framebuffer.md` §3f; `references/rpi4-boot/firmware-wiki-mailbox-property-interface.md`), live per call |
++| `S_NEWTOS_CPUPOLICY` | 2004 | **0** = the firmware controls the ARM clock (no `cpuclk=max`, or `cpuclk=firmware`); **1** = fixed at the firmware maximum (`cpuclk=max`, "Set clock rate" answered); **2** = `cpuclk=max` asked, but the firmware reported no maximum or did not answer "Set clock rate" — the clock stayed with the firmware | the board has no clock control (`qemu-virt`, hostless) | `Host::cpu_clock_policy`, recorded by the kernel's boot step `raise_arm_clock` (FS08 part 3) |
++| `S_NEWTOS_MEMPROT` | 2005 | **0** = off (`memprot=off`); **1** = on (default); **2** = on and strict (`memprot=strict`, FreeMiNT `MPF_STRICT`). `memprot=off memprot=strict` is off: strict has no effect without protection | — (always known once GEMDOS runs) | `tos_api::bdos::process::memprot::{enabled, strict}` (ARCH03 3b/E5) |
++| `S_NEWTOS_ASID` | 2006 | **0** = off (default; TLB dropped on every address-space switch); **1** = on (`asid=on`); **2** = test mode (`asid=tiny`: ASIDs on, four numbers per generation — the rollover test) | — | `tos_api::bdos::process::mmu::{asids_enabled, asid_stats}`, the generation limit `ASID_TEST_LIMIT` (ARCH03 stage 4) |
++| `S_NEWTOS_SDMODE` | 2007 | **0** = fast mode (multi-block `CMD18`/`CMD25`, 4-bit bus where the card offers it — FS08); **1** = compatibility mode (`emmc=compat`: 1-bit bus, one `CMD17`/`CMD24` per sector) | no SD card initialised, or a board without the SD driver (`qemu-virt`, hostless) | `Host::sd_card_mode` → `kernel::drivers::bcm2711::emmc` (`COMPAT`) |
++| `S_NEWTOS_SDBUS` | 2008 | the data-bus width the driver and the card actually use, in bits: **1** or **4**. Fast mode with a card whose SCR lists no 4-bit bus (or whose `ACMD6` failed) answers 1 | as 2007 | `Host::sd_card_mode` → `emmc` (`BUS_4BIT`, set only after `ACMD6` succeeded and the host was switched) |
++| `S_NEWTOS_BCACHE` | 2009 | the memory given to the block read cache, **KiB**; **0** = no cache (`bcache=0`, or a board without a block device) | — | `tos_api::bios::bcache` (FS09): the arena handed to `install`, the same number as the boot line `[bcache] … N KiB at …` |
++| `S_NEWTOS_BCACHEPCT` | 2010 | the share of the cache one linear read may fill, percent (`bcachepct=`, default 5) | no cache installed | `tos_api::bios::bcache::stats().pct` |
++| `S_NEWTOS_STRAM` | 2011 | the ST-RAM pool the BDOS manages, **KiB** (`end − start` as seeded at boot; the memory `Malloc`/`Mxalloc` can hand out, the extent `phystop` closes) | GEMDOS memory not initialised | `tos_api::bdos::mem::init::stram_range` |
++| `S_NEWTOS_TTRAM` | 2012 | the TT-RAM (alt-RAM) pool as seeded at boot, **KiB**; **0** = the machine has none (EmuTOS `ramtop == NULL`). A later `Maddalt` region does not count, as it does not move `ramtop` | as 2011 | `tos_api::bdos::mem::init::ttram_range` |
++| `S_NEWTOS_SCRWIDTH` | 2013 | width of the hardware framebuffer, pixels | no display up | `Host::screen().width` (the framebuffer the kernel allocated from the VideoCore) |
++| `S_NEWTOS_SCRHEIGHT` | 2014 | height, pixels | as 2013 | `Host::screen().height` |
++| `S_NEWTOS_SCRDEPTH` | 2015 | bits per pixel of the hardware framebuffer (32 = the XRGB8888 scan-out). This is the framebuffer, not the VDI workstation's colour model | as 2013 | `Host::screen().bpp` |
++| `S_NEWTOS_GPUMEM` | 2016 | the memory the firmware gives the VideoCore (`gpu_mem` split), **KiB** | the firmware did not answer "Get VC memory"; no VideoCore | `Host::gpu_memory_bytes` → mailbox "Get VC memory" `0x0001_0006` (§3a), read once at boot with "Get ARM memory" — the split cannot change while the machine runs |
++| `S_NEWTOS_KEYBOARD` | 2017 | where the active layout came from: **0** = built-in US (the default, or `#K us`); **1** = built-in German (`#K de` in `NEWDESK.INF`); **2** = loaded from `C:\KEYBOARD.KBD`; **3** = changed since by a program (XBIOS `Keytbl` replaced a table with different contents) | the board has no keyboard translator (hostless) | `Host::keyboard_layout` → `kernel::keymap` |
++| `S_NEWTOS_SERIAL` | 2018 | **0** = serial console output off; **1** = on (`serial=on` on `board-rpi4`; always on on `board-qemu-virt`, whose serial log is its only console) | hostless | `Host::serial_console` → `kernel::console::serial_tx_enabled` (SER01) |
++
++**`S_NEWTOS_KVERSION` (2019) — the kernel version string.** The string form of
++FreeMiNT's `S_KNAME` (900, `sys/ssystem.c:572-576` → `strncpy_f`,
++`sys/libkern/strncpy_f.c:47-56`):
++
++```
++Ssystem(2019, char *buf, LONG len)
++```
++
++| Arg | Meaning |
++|-----|---------|
++| `arg1` | the caller's buffer |
++| `arg2` | its size in bytes (a signed LONG) |
++
++The kernel copies at most `len − 1` characters of the version string and always
++terminates with a NUL — `strncpy_f`'s rule; `len <= 0` writes nothing and is
++still `E_OK`. The string is the OS name and version followed by the build stamp,
++`"NewTOS 0.1 2026-10-07 (c50a9c9)"` — the same two texts the boot screen prints
++as *Version* and *Built* (`kernel/src/initinfo.rs` `VERSION_STRING`,
++`tos_api::build::BUILD_STAMP`). It is shorter than 64 bytes.
++
++| Return | Condition |
++|--------|-----------|
++| `E_OK` (0) | copied (or `len <= 0`: nothing to copy) |
++| `EINVAL` (-25) | `arg1 == 0` with `len > 0` (FreeMiNT would write to address 0; NewTOS refuses) |
++| `ERROR` (-1) | the host reports no version (hostless) |
++
++**Not a number from the boot arguments.** Every scalar above is the state the
++kernel ended up in: a `bcache=` value that was refused keeps the default and
++2009 reports the default; `emmc=` on a board whose card did not initialise is
++`ERROR`, not "fast"; `cpuclk=max` that the firmware did not grant is 2, not 1.
++Where a fact is not known on a board, the answer is `ERROR` — the same rule as
++2000/2001.
++
++**Board table (SYSINFO01):**
++
++| Mode | `board-rpi4` (real Pi 4 / QEMU `raspi4b`) | `board-qemu-virt` | hostless (unit test) |
++|------|-------------------------------------------|-------------------|----------------------|
++| 2003 | firmware answer (QEMU: whatever its model answers, or `ERROR`) | `ERROR` | `ERROR` |
++| 2004 | 0 / 1 / 2 | `ERROR` | `ERROR` |
++| 2005, 2006 | value | value | value |
++| 2007, 2008 | value with a card, else `ERROR` | `ERROR` | `ERROR` |
++| 2009 | KiB | 0 | 0 |
++| 2010 | percent, `ERROR` with `bcache=0` | `ERROR` | `ERROR` |
++| 2011, 2012 | KiB | KiB | `ERROR` until `bdos::mem::init` |
++| 2013–2015 | framebuffer | framebuffer if a display is up | `ERROR` |
++| 2016 | firmware answer | `ERROR` | `ERROR` |
++| 2017 | 0–3 | 0–3 | `ERROR` |
++| 2018 | 0 / 1 | 1 | `ERROR` |
++| 2019 | string | string | `ERROR` |
++
++Tests: `tos-api/tests/gemdos_ssystem_sysinfo.rs`.
++
+ ---
+ 
+ ## `S_GETCOOKIE` (mode 8) — `get_cookie(NULL, arg1, (ulong *)arg2)`
+diff --git a/kernel/src/desk/inf.rs b/kernel/src/desk/inf.rs
+index f22dddb..4de918b 100644
+--- a/kernel/src/desk/inf.rs
++++ b/kernel/src/desk/inf.rs
+@@ -2612,10 +2612,13 @@ const ADDINFO_BOX_SPEC: u64 = (2 << 16) | 0x1100;
+ ///
+ /// **Deliberately the same text as [`crate::initinfo::VERSION_STRING`], and
+ /// deliberately a second copy of it.** See the block comment above for why the
+-/// shared symbol cannot survive the move. There is no NewTOS syscall that
+-/// reports this string: the `NTOS` cookie carries a *number*
+-/// (`0x0000_0100`, `tos-api/src/cookie.rs:142`) with no defined rendering, and
+-/// `Sversion` reports the GEMDOS version, not the OS name.
++/// shared symbol cannot survive the move. The `NTOS` cookie carries a
++/// *number* (`0x0000_0100`, `tos-api/src/cookie.rs:142`) with no defined
++/// rendering, and `Sversion` reports the GEMDOS version, not the OS name.
++/// Since SYSINFO01, `Ssystem(S_NEWTOS_KVERSION)` (2019,
++/// `docs/api/gemdos/154-ssystem.md`) hands programs this string followed by
++/// the build stamp; this desktop does not ask for it (it is compiled with the
++/// kernel), a separately built one could.
+ const VERSION_STRING: &str = "NewTOS 0.1";
+ 
+ /// The project's independence notice — the NewTOS counterpart of the
+diff --git a/kernel/src/drivers/bcm2711/emmc.rs b/kernel/src/drivers/bcm2711/emmc.rs
+index 6a01e9c..b9125c5 100644
+--- a/kernel/src/drivers/bcm2711/emmc.rs
++++ b/kernel/src/drivers/bcm2711/emmc.rs
+@@ -619,6 +619,18 @@ fn compat() -> bool {
+     COMPAT.load(Ordering::Relaxed)
+ }
+ 
++/// The transfer setup the initialised card actually runs with —
++/// `(compat, bus width in bits)` — or `None` while no card is up
++/// (`Ssystem(S_NEWTOS_SDMODE / S_NEWTOS_SDBUS)`, SYSINFO01). The width is 4
++/// only once [`init`] switched both the card (`ACMD6`) and the host to the
++/// 4-bit bus; fast mode with a card that offers no 4-bit bus stays at 1.
++pub fn transfer_mode() -> Option<(bool, u8)> {
++    if !SDCARD.ready.load(Ordering::Acquire) {
++        return None;
++    }
++    Some((compat(), if BUS_4BIT.load(Ordering::Relaxed) { 4 } else { 1 }))
++}
++
+ /// Print failures on the console? Off while [`init`] probes the controller
+ /// bases — a slot without a card answers every response command with a
+ /// command timeout, and that is the probe doing its job.
+diff --git a/kernel/src/host_env.rs b/kernel/src/host_env.rs
+index 0c4d986..be6d906 100644
+--- a/kernel/src/host_env.rs
++++ b/kernel/src/host_env.rs
+@@ -5,6 +5,9 @@
+ //! stubbed out (returning `None` / `false`) until the IRQ-driven
+ //! ringbuffer in PHASE-02 D5 lands.
+ 
++#[cfg(feature = "board-rpi4")]
++use core::sync::atomic::Ordering;
++
+ use tos_api::Host;
+ 
+ use crate::console::CONSOLE;
+@@ -346,6 +349,80 @@ impl Host for KernelHost {
+         use crate::drivers::bcm2711::mailbox;
+         mailbox::get_temperature(mailbox::TEMPERATURE_ID).map(|mdeg| mdeg as i32)
+     }
++
++    /// `board-rpi4`: "Get clock rate measured" for the ARM clock, live per
++    /// call for the same reason as [`Host::cpu_clock_hz`].
++    #[cfg(feature = "board-rpi4")]
++    fn cpu_clock_measured_hz(&self) -> Option<u32> {
++        use crate::drivers::bcm2711::mailbox;
++        mailbox::get_clock_rate_measured(mailbox::CLOCK_ID_ARM)
++    }
++
++    /// `board-rpi4`: what `raise_arm_clock` did at boot ([`record_cpu_clock_policy`]).
++    #[cfg(feature = "board-rpi4")]
++    fn cpu_clock_policy(&self) -> Option<tos_api::host::CpuClockPolicy> {
++        use tos_api::host::CpuClockPolicy;
++        match CPU_CLOCK_POLICY.load(Ordering::Relaxed) {
++            0 => Some(CpuClockPolicy::Firmware),
++            1 => Some(CpuClockPolicy::FixedMax),
++            2 => Some(CpuClockPolicy::MaxRefused),
++            _ => None,
++        }
++    }
++
++    /// `board-rpi4`: the SD driver's transfer setup, `None` without a card.
++    #[cfg(feature = "board-rpi4")]
++    fn sd_card_mode(&self) -> Option<tos_api::host::SdCardMode> {
++        crate::drivers::bcm2711::emmc::transfer_mode()
++            .map(|(compat, bus_width)| tos_api::host::SdCardMode { compat, bus_width })
++    }
++
++    /// `board-rpi4`: the VideoCore memory the firmware reported at boot
++    /// ([`record_gpu_memory`]); the `gpu_mem` split is fixed while the
++    /// machine runs.
++    #[cfg(feature = "board-rpi4")]
++    fn gpu_memory_bytes(&self) -> Option<u64> {
++        match GPU_MEMORY_BYTES.load(Ordering::Relaxed) {
++            u64::MAX => None,
++            b => Some(b),
++        }
++    }
++
++    fn keyboard_layout(&self) -> Option<tos_api::host::KeyboardLayout> {
++        Some(crate::keymap::source())
++    }
++
++    fn serial_console(&self) -> Option<bool> {
++        Some(crate::console::serial_tx_enabled())
++    }
++
++    fn os_version(&self) -> Option<&'static str> {
++        Some(crate::initinfo::VERSION_STRING)
++    }
++}
++
++/// `raise_arm_clock`'s outcome as `CpuClockPolicy as u8`; `u8::MAX` = not
++/// decided (the boot step has not run).
++#[cfg(feature = "board-rpi4")]
++static CPU_CLOCK_POLICY: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(u8::MAX);
++
++/// Record what the boot step did with the ARM clock (`cpuclk=`, FS08 part 3)
++/// for `Ssystem(S_NEWTOS_CPUPOLICY)`.
++#[cfg(feature = "board-rpi4")]
++pub fn record_cpu_clock_policy(p: tos_api::host::CpuClockPolicy) {
++    CPU_CLOCK_POLICY.store(p as u8, Ordering::Relaxed);
++}
++
++/// The VideoCore memory from the firmware's "Get VC memory" answer at boot;
++/// `u64::MAX` = not reported.
++#[cfg(feature = "board-rpi4")]
++static GPU_MEMORY_BYTES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(u64::MAX);
++
++/// Record the VideoCore memory size the firmware reported at boot, for
++/// `Ssystem(S_NEWTOS_GPUMEM)`.
++#[cfg(feature = "board-rpi4")]
++pub fn record_gpu_memory(bytes: u64) {
++    GPU_MEMORY_BYTES.store(bytes, Ordering::Relaxed);
+ }
+ 
+ /// The blocking key-word read shared by [`Host::console_read_key_blocking`]
+diff --git a/kernel/src/initinfo.rs b/kernel/src/initinfo.rs
+index d18ede7..acc0bc5 100644
+--- a/kernel/src/initinfo.rs
++++ b/kernel/src/initinfo.rs
+@@ -84,9 +84,10 @@ const INFO_LENGTH: i16 = 40;
+ // (`docs/analysis/desktop-userspace-plan-v2.md` §6.4, measure 1), so the shared
+ // symbol is exactly the kind of link that move removes. The desktop's copies
+ // live at `kernel/src/desk/inf.rs`, next to the About box's other literals,
+-// and name this comment. Editing one means editing both — there is no syscall
+-// that reports an OS *name* string (the `NTOS` cookie is a number,
+-// `tos-api/src/cookie.rs:142`; `Sversion` is the GEMDOS version).
++// and name this comment. Editing one means editing both (the `NTOS` cookie is
++// a number, `tos-api/src/cookie.rs:142`; `Sversion` is the GEMDOS version).
++// Programs get `VERSION_STRING` + the build stamp through
++// `Ssystem(S_NEWTOS_KVERSION)` (2019, SYSINFO01, via `Host::os_version`).
+ 
+ /// The NewTOS version string, as the boot screen's `Version` line prints it.
+ /// The desktop's About box shows the same text from its own constant — see the
+diff --git a/kernel/src/keymap.rs b/kernel/src/keymap.rs
+index 580fae3..336dc96 100644
+--- a/kernel/src/keymap.rs
++++ b/kernel/src/keymap.rs
+@@ -15,8 +15,9 @@
+ //! a hand-rolled `Sync` over an `UnsafeCell` (like the console ring).
+ 
+ use core::cell::UnsafeCell;
++use core::sync::atomic::{AtomicU8, Ordering};
+ 
+-use tos_api::host::{KeyTable, KeyTables, ALT_TABLE_LEN};
++use tos_api::host::{KeyTable, KeyTables, KeyboardLayout, ALT_TABLE_LEN};
+ 
+ /// Maximum AltGr `(scancode, ascii)` override pairs per shift level.
+ const ALTGR_MAX: usize = 16;
+@@ -194,6 +195,22 @@ struct Active {
+ unsafe impl Sync for Active {}
+ static ACTIVE: Active = Active { layout: UnsafeCell::new(US) };
+ 
++/// Where the active layout came from (`KeyboardLayout as u8`), for
++/// `Ssystem(S_NEWTOS_KEYBOARD)` (SYSINFO01). Starts as the compiled-in US
++/// default, like [`ACTIVE`].
++static SOURCE: AtomicU8 = AtomicU8::new(KeyboardLayout::BuiltinUs as u8);
++
++/// Where the active layout came from: a built-in, `C:\KEYBOARD.KBD`, or a
++/// program's `Keytbl` since.
++pub fn source() -> KeyboardLayout {
++    match SOURCE.load(Ordering::Relaxed) {
++        0 => KeyboardLayout::BuiltinUs,
++        1 => KeyboardLayout::BuiltinGerman,
++        2 => KeyboardLayout::File,
++        _ => KeyboardLayout::ChangedByProgram,
++    }
++}
++
+ #[inline]
+ fn active() -> &'static Layout {
+     // SAFETY: single-CPU; the layout is only replaced during boot init,
+@@ -204,12 +221,13 @@ fn active() -> &'static Layout {
+ /// Install a built-in layout by name (`"us"` / `"de"`); returns whether the
+ /// name was recognised.
+ pub fn select_builtin(name: &[u8]) -> bool {
+-    let lay = match name {
+-        b"us" | b"US" => US,
+-        b"de" | b"DE" => DE,
++    let (lay, src) = match name {
++        b"us" | b"US" => (US, KeyboardLayout::BuiltinUs),
++        b"de" | b"DE" => (DE, KeyboardLayout::BuiltinGerman),
+         _ => return false,
+     };
+     install(lay);
++    SOURCE.store(src as u8, Ordering::Relaxed);
+     true
+ }
+ 
+@@ -253,10 +271,16 @@ pub fn set_table(which: KeyTable, table: &[u8; 128]) {
+     // SAFETY: single-CPU cooperative path; the active layout is only mutated
+     // here and during boot init, never concurrently with a decode.
+     let lay = unsafe { &mut *ACTIVE.layout.get() };
+-    match which {
+-        KeyTable::Norm => lay.norm = *table,
+-        KeyTable::Shft => lay.shft = *table,
+-        KeyTable::Caps => lay.caps = *table,
++    let slot = match which {
++        KeyTable::Norm => &mut lay.norm,
++        KeyTable::Shft => &mut lay.shft,
++        KeyTable::Caps => &mut lay.caps,
++    };
++    // A program that hands back the table it read changes nothing; only
++    // different contents make the layout "changed by a program".
++    if slot != table {
++        *slot = *table;
++        SOURCE.store(KeyboardLayout::ChangedByProgram as u8, Ordering::Relaxed);
+     }
+ }
+ 
+@@ -412,5 +436,6 @@ pub fn load_kbd(blob: &[u8]) -> bool {
+         }
+     }
+     install(lay);
++    SOURCE.store(KeyboardLayout::File as u8, Ordering::Relaxed);
+     true
+ }
+diff --git a/kernel/src/lib.rs b/kernel/src/lib.rs
+index 580b85a..e7effc4 100644
+--- a/kernel/src/lib.rs
++++ b/kernel/src/lib.rs
+@@ -285,7 +285,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
+         // SAFETY: boot CPU; TTBR0 holds the empty root (reinstall), no
+         // process root has been built or installed.
+         let (bits, field) = unsafe { arch::aarch64::mmu::size_asids() };
+-        let limit = if tiny { 4 } else { 1u32 << bits };
++        let limit = if tiny { tos_api::bdos::process::mmu::ASID_TEST_LIMIT } else { 1u32 << bits };
+         // SAFETY: boot CPU, before `map_pools` and any root install.
+         unsafe {
+             tos_api::bdos::process::mmu::configure_asids(limit, arch::aarch64::mmu::empty_l0_pa())
+@@ -621,10 +621,14 @@ fn firmware_dram() -> Option<bios::machine::layout::DramReport> {
+         );
+     }
+     match report.vc {
+-        Some(r) => kprintln!(
+-            "[mm] firmware: VC memory: 0x{:016x} + {} bytes ({} MiB)",
+-            r.base, r.size, r.size / (1024 * 1024),
+-        ),
++        Some(r) => {
++            kprintln!(
++                "[mm] firmware: VC memory: 0x{:016x} + {} bytes ({} MiB)",
++                r.base, r.size, r.size / (1024 * 1024),
++            );
++            // SYSINFO01: `Ssystem(S_NEWTOS_GPUMEM)` reports this split.
++            host_env::record_gpu_memory(r.size);
++        }
+         None => kprintln!("[mm] firmware: VC memory: not reported"),
+     }
+ 
+@@ -1087,7 +1091,9 @@ fn raise_arm_clock(dtb: Option<usize>) {
+     });
+     let before = mailbox::get_clock_rate(CLOCK_ID_ARM);
+     let temp = Soc(mailbox::get_temperature(TEMPERATURE_ID));
++    use tos_api::host::CpuClockPolicy;
+     if firmware_only {
++        host_env::record_cpu_clock_policy(CpuClockPolicy::Firmware);
+         kprintln!(
+             "[clock] ARM {} MHz left to the firmware (no `cpuclk=max`) ({})",
+             Mhz(before),
+@@ -1096,10 +1102,12 @@ fn raise_arm_clock(dtb: Option<usize>) {
+         return;
+     }
+     let Some(max) = mailbox::get_max_clock_rate(CLOCK_ID_ARM) else {
++        host_env::record_cpu_clock_policy(CpuClockPolicy::MaxRefused);
+         kprintln!("[clock] ARM {} MHz kept: firmware reports no max rate ({})", Mhz(before), temp);
+         return;
+     };
+     if mailbox::set_clock_rate(CLOCK_ID_ARM, max, false).is_none() {
++        host_env::record_cpu_clock_policy(CpuClockPolicy::MaxRefused);
+         kprintln!(
+             "[clock] ARM {} MHz kept: Set clock rate not answered (max {}, {})",
+             Mhz(before),
+@@ -1108,6 +1116,7 @@ fn raise_arm_clock(dtb: Option<usize>) {
+         );
+         return;
+     }
++    host_env::record_cpu_clock_policy(CpuClockPolicy::FixedMax);
+     let after = mailbox::get_clock_rate(CLOCK_ID_ARM);
+     let measured = mailbox::get_clock_rate_measured(CLOCK_ID_ARM);
+     kprintln!(
+diff --git a/sdk/examples/sysacc.c b/sdk/examples/sysacc.c
+index 5d882ce..5219f21 100644
+--- a/sdk/examples/sysacc.c
++++ b/sdk/examples/sysacc.c
+@@ -1,16 +1,26 @@
+ /*
+- * sysacc.c -- ACC06 part 2: the desk accessory that shows the machine's ARM
+- * clock and die temperature in a `form_alert` box.
++ * sysacc.c -- SYSINFO01: the "System Info" desk accessory, version 1.
+  *
+- * The accessory half of the ACC06 pair (SYSINFO.NCP is the console half).
++ * A read-only GEM dialog that shows the state the kernel actually runs with:
++ * the machine (CPU clock, temperature, kernel version, ST-RAM / TT-RAM), the
++ * memory protection and address-space IDs, the SD card's transfer mode and
++ * the block cache, the CPU clock policy, the display, the keyboard layout and
++ * the serial console. Every value is asked from the kernel through NewTOS's
++ * own Ssystem subfunctions (GEMDOS 0x154, modes 2000-2019,
++ * docs/api/gemdos/154-ssystem.md) at the moment the dialog opens -- it is the
++ * EFFECTIVE state (what the boot code did with cmdline.txt, what the card
++ * negotiated), never the text of a configuration file. A value the kernel
++ * does not know is shown as "not available", never as an invented number.
+  *
+- * FILE EXTENSION: `.NAC` (ADR-018, decided in ACC05). Our own programs carry
+- * `.NAP` (GEM) and `.NCP` (console) so that the later m68k emulator can own
+- * `.PRG`/`.TOS`/`.TTP`/`.ACC`; a native AArch64 desk accessory gets `.NAC` for
+- * the same reason. The AES scans two locations for it at session start,
+- * `C:\ACC\*.NAC` first and then `C:\*.NAC` (docs/api/aes/accessories.md §7),
+- * and a `.NAC` is never launched by double-click -- it is loaded once and runs
+- * for the whole session.
++ * History: ACC06 built it as one form_alert with the ARM clock and the die
++ * temperature (Ssystem 2000/2001); SYSINFO01 (2026-10-07) turned it into this
++ * dialog. Editing comes later: each value is an object of its own in a fixed
++ * value column, so a later version can turn it into a selectable control
++ * (pop-up button, radio buttons) without moving the layout.
++ *
++ * FILE EXTENSION: `.NAC` (ADR-018, ACC05): a native AArch64 desk accessory.
++ * The AES loads it once from C:\ACC\*.NAC and C:\*.NAC at session start
++ * (docs/api/aes/accessories.md section 7); it is never double-clicked.
+  *
+  *     sdk/build.sh sdk/examples/sysacc.c /somewhere/SYSACC.NAC
+  *
+@@ -20,31 +30,38 @@
+  * What it does
+  * ---------------------------------------------------------------------------
+  *   appl_init                       -> our application id
+- *   menu_register(id, " NewTOS System")
++ *   menu_register(id, " System Info")
+  *   forever:
+  *       evnt_mesag
+- *       AC_OPEN  (40) with our menu id -> read the two values, show the box
++ *       AC_OPEN  (40) with our menu id -> read the values, run the dialog
+  *       AC_CLOSE (41)                  -> nothing to tear down; keep running
+  *
+- * An accessory never terminates, so there is no `appl_exit` and no `return`
+- * out of the loop.
++ * An accessory never terminates, so there is no appl_exit and no return out
++ * of the loop.
+  *
+- * The box is a single `form_alert` (lead decision, 2026-09-24): one AES call,
+- * no object tree of our own, the best chance of working the day the framework
+- * lands. A window version is a later ticket.
++ * The dialog is the classic modal sequence (EmuTOS gemfmlib.c / the AES
++ * reference): wind_update(BEG_UPDATE), form_center, form_dial(FMD_START),
++ * objc_draw, form_do, form_dial(FMD_FINISH), wind_update(END_UPDATE). The
++ * object tree is built in code -- the accessory is freestanding (no libc, no
++ * rsrc_load), and a tree in its own memory is what form_alert's caller-less
++ * kernel tree is not: something the next version can edit in place.
+  *
+- *     [i] NewTOS System
+- *         ARM clock : 1500.0 MHz
+- *         CPU temp  : 47.2 C
+- *         [  OK  ]
++ * Look: the AES 3D style (memory note aes-dialog-3d-look; the same flags
++ * form_alert uses, tos-api/src/aes/form.rs): the root is an OUTLINED G_BOX
++ * with FL3DBAK (the grey 3D panel), the OK button a DEFAULT|EXIT G_BUTTON
++ * with FL3DACT. Groups are framed G_IBOXes. 8x16 system font, the whole
++ * dialog is 612 x 324 pixels -- it fits a 640 x 480 screen with its menu bar.
+  *
+  * Calls used, all against docs/api/ and the EmuTOS AES:
+  *   appl_init       AES  10
+- *   menu_register   AES  35   tos-api/src/aes/menu.rs
+- *   evnt_mesag      AES  23   tos-api/src/aes/event.rs
+- *   form_alert      AES  52   tos-api/src/aes/form.rs
+- *   Ssystem         GEMDOS 0x154, modes 2000/2001
+- *                             docs/api/gemdos/154-ssystem.md
++ *   evnt_mesag      AES  23
++ *   menu_register   AES  35
++ *   objc_draw       AES  42
++ *   form_do         AES  50
++ *   form_dial       AES  51
++ *   form_center     AES  54
++ *   wind_update     AES 107
++ *   Ssystem         GEMDOS 0x154, modes 2000-2019
+  */
+ #include <newtos.h>
+ 
+@@ -65,16 +82,36 @@ static inline NLONG gemdos3(NLONG fn, NLONG a0, NLONG a1, NLONG a2)
+     return r0;
+ }
+ 
+-#define SSYSTEM            0x154
+-#define S_NEWTOS_CPUCLOCK  2000
+-#define S_NEWTOS_CPUTEMP   2001
+-#define E_OK               0L
++#define SSYSTEM 0x154
++#define E_OK    0L
++
++/* NewTOS-own Ssystem modes (docs/api/gemdos/154-ssystem.md). */
++#define S_NEWTOS_CPUCLOCK   2000 /* ARM clock, requested rate, Hz      */
++#define S_NEWTOS_CPUTEMP    2001 /* SoC temperature, 1/1000 C          */
++#define S_NEWTOS_CPUMEAS    2003 /* ARM clock, measured, Hz            */
++#define S_NEWTOS_CPUPOLICY  2004 /* 0 firmware, 1 max, 2 max refused   */
++#define S_NEWTOS_MEMPROT    2005 /* 0 off, 1 on, 2 strict              */
++#define S_NEWTOS_ASID       2006 /* 0 off, 1 on, 2 test                */
++#define S_NEWTOS_SDMODE     2007 /* 0 fast, 1 compatibility            */
++#define S_NEWTOS_SDBUS      2008 /* bus width, bits                    */
++#define S_NEWTOS_BCACHE     2009 /* block cache, KiB (0 = off)         */
++#define S_NEWTOS_BCACHEPCT  2010 /* linear-read share, percent         */
++#define S_NEWTOS_STRAM      2011 /* ST-RAM pool, KiB                   */
++#define S_NEWTOS_TTRAM      2012 /* TT-RAM pool, KiB (0 = none)        */
++#define S_NEWTOS_SCRWIDTH   2013 /* framebuffer width, px              */
++#define S_NEWTOS_SCRHEIGHT  2014 /* framebuffer height, px             */
++#define S_NEWTOS_SCRDEPTH   2015 /* framebuffer bits per pixel         */
++#define S_NEWTOS_GPUMEM     2016 /* VideoCore memory, KiB              */
++#define S_NEWTOS_KEYBOARD   2017 /* 0 US, 1 German, 2 file, 3 changed  */
++#define S_NEWTOS_SERIAL     2018 /* 0 off, 1 on                        */
++#define S_NEWTOS_KVERSION   2019 /* version string into a buffer       */
+ 
+ /* The kernel delivers the pointer form with one 32-bit store, so the target
+- * is an `int` (32 bit under our LP64 app ABI), never a `long`. */
+-static NLONG sys_value(NLONG mode, int *out)
++ * is an `int` (32 bit under our LP64 app ABI), never a `long`. Returns 1 and
++ * fills *out when the kernel knows the value, 0 otherwise. */
++static int sys_value(NLONG mode, int *out)
+ {
+-    return gemdos3(SSYSTEM, mode, (NLONG)out, 0);
++    return gemdos3(SSYSTEM, mode, (NLONG)out, 0) == E_OK;
+ }
+ 
+ /* ------------------------------------------------------------------------- */
+@@ -131,13 +168,107 @@ static short aes_call(short opcode, short nin, short nout, short naddrin)
+ #define AC_OPEN   40
+ #define AC_CLOSE  41
+ 
++/* form_dial / wind_update codes (EmuTOS include/aesdefs.h). */
++#define FMD_START    0
++#define FMD_FINISH   3
++#define END_UPDATE   0
++#define BEG_UPDATE   1
++
++/* ------------------------------------------------------------------------- */
++/* The object tree.                                                           */
++/* ------------------------------------------------------------------------- */
++
++/* The 32-byte native (LP64) GEM OBJECT: ob_spec is 8 bytes at offset 16
++ * (tools/mkrsc.py, tos-api/src/aes/object.rs). */
++typedef struct {
++    short          ob_next, ob_head, ob_tail;
++    unsigned short ob_type, ob_flags, ob_state;
++    unsigned long  ob_spec;
++    short          ob_x, ob_y, ob_width, ob_height;
++} OBJECT;
++
++/* Object types / flags / states (EmuTOS include/aesdefs.h, form.rs). */
++#define G_BOX      20
++#define G_IBOX     25
++#define G_BUTTON   26
++#define G_STRING   28
++
++#define SELECTABLE 0x0001
++#define DEFAULT    0x0002
++#define EXIT       0x0004
++#define LASTOB     0x0020
++#define FL3DBAK    0x0400
++#define FL3DACT    0x0600
++
++#define SELECTED   0x0001
++#define OUTLINED   0x0010
++
++/* Box ob_spec: thickness in bits 16..23 (signed), then the colour word
++ * (frame colour 1 = black in bits 12..15, text colour 1 in 8..11). The root
++ * carries form_alert's spec, 1 << 16; a group frame is -1 (one pixel inside)
++ * in black, hollow. */
++#define ROOT_SPEC  (1UL << 16)
++#define FRAME_SPEC (0x00FF1100UL)
++
++/* Geometry, pixels (the 8x16 system font). */
++#define CW 8
++#define CH 16
++#define LABEL_CHARS 12
++#define VALUE_CHARS 21
++#define VALUE_LEN   (VALUE_CHARS + 1)
++#define PAD 8                                   /* inside a group frame */
++#define GROUP_W (PAD + LABEL_CHARS * CW + PAD + VALUE_CHARS * CW + PAD) /* 288 */
++#define MARGIN 12
++#define DIALOG_W (MARGIN + GROUP_W + MARGIN + GROUP_W + MARGIN)          /* 612 */
++#define ROW 16
++
++#define MAX_OBJ 64
++
++static OBJECT tree[MAX_OBJ];
++static int nobj;
++static short ok_button;
++
++/* Append an object under `parent` (-1 = the root) and link it as the
++ * parent's last child: ob_next of a last child points back at the parent,
++ * the classic GEM tree linkage. Coordinates are relative to the parent. */
++static short add(short parent, unsigned short type, unsigned short flags,
++                 unsigned short state, unsigned long spec,
++                 short x, short y, short w, short h)
++{
++    short idx = (short)nobj++;
++    OBJECT *o = &tree[idx];
++
++    o->ob_next = -1;
++    o->ob_head = -1;
++    o->ob_tail = -1;
++    o->ob_type = type;
++    o->ob_flags = flags;
++    o->ob_state = state;
++    o->ob_spec = spec;
++    o->ob_x = x;
++    o->ob_y = y;
++    o->ob_width = w;
++    o->ob_height = h;
++
++    if (parent >= 0) {
++        OBJECT *p = &tree[parent];
++        if (p->ob_head < 0)
++            p->ob_head = idx;
++        else
++            tree[p->ob_tail].ob_next = idx;
++        p->ob_tail = idx;
++        o->ob_next = parent;
++    }
++    return idx;
++}
++
+ /* ------------------------------------------------------------------------- */
+ /* Text building -- no libc in a freestanding native program.                 */
+ /* ------------------------------------------------------------------------- */
+ 
+ static int sapp(char *dst, int j, const char *s)
+ {
+-    while (*s)
++    while (*s && j < VALUE_LEN - 1)
+         dst[j++] = *s++;
+     dst[j] = '\0';
+     return j;
+@@ -150,7 +281,7 @@ static int napp(char *dst, int j, long v)
+     unsigned long u;
+ 
+     if (v < 0) {
+-        dst[j++] = '-';
++        j = sapp(dst, j, "-");
+         u = (unsigned long)(-v);
+     } else {
+         u = (unsigned long)v;
+@@ -159,7 +290,7 @@ static int napp(char *dst, int j, long v)
+         tmp[i++] = (char)('0' + (int)(u % 10));
+         u /= 10;
+     } while (u);
+-    while (i)
++    while (i && j < VALUE_LEN - 1)
+         dst[j++] = tmp[--i];
+     dst[j] = '\0';
+     return j;
+@@ -168,63 +299,314 @@ static int napp(char *dst, int j, long v)
+ /* `v / div` with one decimal, rounding down -- no floating point here. */
+ static int fix1app(char *dst, int j, long v, long div)
+ {
++    char d[2];
+     long rest;
+ 
+     if (v < 0) {
+-        dst[j++] = '-';
++        j = sapp(dst, j, "-");
+         v = -v;
+     }
+     rest = v % div;
+     j = napp(dst, j, v / div);
+-    dst[j++] = '.';
+-    dst[j++] = (char)('0' + (int)((rest / (div / 10)) % 10));
+-    dst[j] = '\0';
+-    return j;
++    d[0] = (char)('0' + (int)((rest / (div / 10)) % 10));
++    d[1] = '\0';
++    j = sapp(dst, j, ".");
++    return sapp(dst, j, d);
+ }
+ 
+-/*
+- * Build the alert string. Each of the two lines either carries its value or
+- * says plainly that this board cannot measure it -- a machine that has no
+- * sensor must not be given a number.
+- *
+- * EmuTOS caps an alert at 5 message lines of 40 characters
+- * (`MAX_LINENUM`/`MAX_LINELEN`, gem_rsc.h; tos-api/src/aes/form.rs:128-130);
+- * three short lines stay well inside that.
+- */
+-static void build_alert(char *dst)
++/* A size given in KiB as "N MB" (whole MiB), or "N KB" below one MiB. */
++static void size_text(char *dst, long kib)
+ {
+-    int hz = 0, mdeg = 0;
+     int j;
++    if (kib >= 1024) {
++        j = napp(dst, 0, kib / 1024);
++        sapp(dst, j, " MB");
++    } else {
++        j = napp(dst, 0, kib);
++        sapp(dst, j, " KB");
++    }
++}
++
++static const char NA[] = "not available";
+ 
+-    j = sapp(dst, 0, "[1][NewTOS System|");
++/* ------------------------------------------------------------------------- */
++/* The rows.                                                                  */
++/* ------------------------------------------------------------------------- */
+ 
+-    if (sys_value(S_NEWTOS_CPUCLOCK, &hz) == E_OK) {
+-        j = sapp(dst, j, "ARM clock : ");
+-        j = fix1app(dst, j, (long)hz, 1000000L);
+-        j = sapp(dst, j, " MHz");
++enum {
++    V_KERNEL,
++    V_CLOCK, V_MEASURED, V_POLICY, V_TEMP, V_STRAM, V_TTRAM,
++    V_RES, V_DEPTH, V_GPUMEM,
++    V_MEMPROT, V_ASID,
++    V_SDMODE, V_SDBUS, V_BCACHE, V_BCACHEPCT,
++    V_KEYBOARD, V_SERIAL,
++    V_COUNT
++};
++
++static char value[V_COUNT][VALUE_LEN];
++static char kernel_text[48];
++
++/* Ask the kernel for every value; called on each AC_OPEN, so the clock and
++ * the temperature are the readings of that moment. */
++static void read_values(void)
++{
++    int v, w, h;
++    int j;
++
++    /* Kernel version: Ssystem 2019 copies at most len-1 characters + NUL. */
++    if (gemdos3(SSYSTEM, S_NEWTOS_KVERSION, (NLONG)kernel_text,
++                (NLONG)sizeof(kernel_text)) != E_OK)
++        sapp(kernel_text, 0, NA);
++
++    /* CPU clock: the rate the firmware was asked for (2000) and the rate it
++     * measured (2003). */
++    if (sys_value(S_NEWTOS_CPUCLOCK, &v)) {
++        j = fix1app(value[V_CLOCK], 0, v, 1000000L);
++        sapp(value[V_CLOCK], j, " MHz requested");
++    } else {
++        sapp(value[V_CLOCK], 0, NA);
++    }
++    if (sys_value(S_NEWTOS_CPUMEAS, &v)) {
++        j = fix1app(value[V_MEASURED], 0, v, 1000000L);
++        sapp(value[V_MEASURED], j, " MHz");
+     } else {
+-        j = sapp(dst, j, "ARM clock : not available");
++        sapp(value[V_MEASURED], 0, NA);
+     }
+-    j = sapp(dst, j, "|");
++    if (sys_value(S_NEWTOS_CPUPOLICY, &v))
++        sapp(value[V_POLICY], 0,
++             v == 1 ? "Fixed at maximum" :
++             v == 2 ? "Firmware (max denied)" : "Firmware-controlled");
++    else
++        sapp(value[V_POLICY], 0, NA);
+ 
+-    if (sys_value(S_NEWTOS_CPUTEMP, &mdeg) == E_OK) {
+-        j = sapp(dst, j, "CPU temp  : ");
+-        j = fix1app(dst, j, (long)mdeg, 1000L);
+-        j = sapp(dst, j, " C");
++    /* Temperature, 1/1000 degree C; 0xF8 is the degree sign of the Atari
++     * character set. */
++    if (sys_value(S_NEWTOS_CPUTEMP, &v)) {
++        j = fix1app(value[V_TEMP], 0, v, 1000L);
++        sapp(value[V_TEMP], j, " \xF8""C");
+     } else {
+-        j = sapp(dst, j, "CPU temp  : not available");
++        sapp(value[V_TEMP], 0, NA);
+     }
+ 
+-    sapp(dst, j, "][  OK  ]");
++    if (sys_value(S_NEWTOS_STRAM, &v))
++        size_text(value[V_STRAM], v);
++    else
++        sapp(value[V_STRAM], 0, NA);
++    if (sys_value(S_NEWTOS_TTRAM, &v)) {
++        if (v == 0)
++            sapp(value[V_TTRAM], 0, "none");
++        else
++            size_text(value[V_TTRAM], v);
++    } else {
++        sapp(value[V_TTRAM], 0, NA);
++    }
++
++    /* Display: the framebuffer the kernel runs. */
++    if (sys_value(S_NEWTOS_SCRWIDTH, &w) && sys_value(S_NEWTOS_SCRHEIGHT, &h)) {
++        j = napp(value[V_RES], 0, w);
++        j = sapp(value[V_RES], j, " x ");
++        napp(value[V_RES], j, h);
++    } else {
++        sapp(value[V_RES], 0, NA);
++    }
++    if (sys_value(S_NEWTOS_SCRDEPTH, &v)) {
++        j = napp(value[V_DEPTH], 0, v);
++        sapp(value[V_DEPTH], j, v >= 24 ? "-bit truecolour" : "-bit");
++    } else {
++        sapp(value[V_DEPTH], 0, NA);
++    }
++    if (sys_value(S_NEWTOS_GPUMEM, &v))
++        size_text(value[V_GPUMEM], v);
++    else
++        sapp(value[V_GPUMEM], 0, NA);
++
++    /* Memory protection and address-space IDs. */
++    if (sys_value(S_NEWTOS_MEMPROT, &v))
++        sapp(value[V_MEMPROT], 0, v == 2 ? "Strict" : v == 1 ? "On" : "Off");
++    else
++        sapp(value[V_MEMPROT], 0, NA);
++    if (sys_value(S_NEWTOS_ASID, &v))
++        sapp(value[V_ASID], 0, v == 2 ? "Test (rollover)" : v == 1 ? "On" : "Off");
++    else
++        sapp(value[V_ASID], 0, NA);
++
++    /* SD card and block cache. */
++    if (sys_value(S_NEWTOS_SDMODE, &v))
++        sapp(value[V_SDMODE], 0, v ? "Compatibility" : "Fast (multi-block)");
++    else
++        sapp(value[V_SDMODE], 0, NA);
++    if (sys_value(S_NEWTOS_SDBUS, &v)) {
++        j = napp(value[V_SDBUS], 0, v);
++        sapp(value[V_SDBUS], j, "-bit");
++    } else {
++        sapp(value[V_SDBUS], 0, NA);
++    }
++    if (sys_value(S_NEWTOS_BCACHE, &v)) {
++        if (v == 0)
++            sapp(value[V_BCACHE], 0, "Off");
++        else
++            size_text(value[V_BCACHE], v);
++    } else {
++        sapp(value[V_BCACHE], 0, NA);
++    }
++    if (sys_value(S_NEWTOS_BCACHEPCT, &v)) {
++        j = napp(value[V_BCACHEPCT], 0, v);
++        sapp(value[V_BCACHEPCT], j, " %");
++    } else {
++        /* No cache, no share: say so rather than a percentage of nothing. */
++        sapp(value[V_BCACHEPCT], 0, "-");
++    }
++
++    /* Keyboard and serial console. */
++    if (sys_value(S_NEWTOS_KEYBOARD, &v))
++        sapp(value[V_KEYBOARD], 0,
++             v == 0 ? "US (built-in)" :
++             v == 1 ? "German (built-in)" :
++             v == 2 ? "KEYBOARD.KBD" : "Changed by program");
++    else
++        sapp(value[V_KEYBOARD], 0, NA);
++    if (sys_value(S_NEWTOS_SERIAL, &v))
++        sapp(value[V_SERIAL], 0, v ? "On" : "Off");
++    else
++        sapp(value[V_SERIAL], 0, NA);
++}
++
++/* One "label  value" row inside a group, row index `r` below its heading.
++ * The value is its own object in the value column -- the slot a later
++ * version turns into a control. */
++static void row(short group, int r, const char *label, int v)
++{
++    short y = (short)(PAD + ROW + r * ROW);
++    add(group, G_STRING, 0, 0, (unsigned long)label,
++        PAD, y, LABEL_CHARS * CW, CH);
++    add(group, G_STRING, 0, 0, (unsigned long)value[v],
++        PAD + LABEL_CHARS * CW + PAD, y, VALUE_CHARS * CW, CH);
++}
++
++/* A framed group of `rows` rows with a heading line; returns its index. */
++static short group(short root, short x, short y, int rows, const char *title)
++{
++    short g = add(root, G_IBOX, 0, 0, FRAME_SPEC, x, y, GROUP_W,
++                  (short)(PAD + ROW + rows * ROW + PAD));
++    add(g, G_STRING, 0, 0, (unsigned long)title, PAD, PAD - 4,
++        (short)(GROUP_W - 2 * PAD), CH);
++    return g;
++}
++
++static void build_tree(void)
++{
++    short root, g;
++    short top, lx, rx, ly, ry;
++
++    nobj = 0;
++    root = add(-1, G_BOX, FL3DBAK, OUTLINED, ROOT_SPEC, 0, 0, DIALOG_W, 0);
++
++    add(root, G_STRING, 0, 0, (unsigned long)"NewTOS System Information",
++        (short)((DIALOG_W - 25 * CW) / 2), 8, 25 * CW, CH);
++    add(root, G_STRING, 0, 0, (unsigned long)"Kernel",
++        MARGIN + PAD, 32, LABEL_CHARS * CW, CH);
++    add(root, G_STRING, 0, 0, (unsigned long)kernel_text,
++        MARGIN + PAD + LABEL_CHARS * CW + PAD, 32, 47 * CW, CH);
++
++    top = 56;
++    lx = MARGIN;
++    rx = MARGIN + GROUP_W + MARGIN;
++
++    /* Left column: System, Display. */
++    ly = top;
++    g = group(root, lx, ly, 6, "System");
++    row(g, 0, "CPU clock", V_CLOCK);
++    row(g, 1, "Measured", V_MEASURED);
++    row(g, 2, "Clock policy", V_POLICY);
++    row(g, 3, "Temperature", V_TEMP);
++    row(g, 4, "ST-RAM", V_STRAM);
++    row(g, 5, "TT-RAM", V_TTRAM);
++    ly = (short)(ly + tree[g].ob_height + 8);
++    g = group(root, lx, ly, 3, "Display");
++    row(g, 0, "Resolution", V_RES);
++    row(g, 1, "Colour depth", V_DEPTH);
++    row(g, 2, "GPU memory", V_GPUMEM);
++    ly = (short)(ly + tree[g].ob_height);
++
++    /* Right column: Memory protection, SD card, Input / output. */
++    ry = top;
++    g = group(root, rx, ry, 2, "Memory protection");
++    row(g, 0, "Protection", V_MEMPROT);
++    row(g, 1, "Address IDs", V_ASID);
++    ry = (short)(ry + tree[g].ob_height + 8);
++    g = group(root, rx, ry, 4, "SD card");
++    row(g, 0, "Transfer", V_SDMODE);
++    row(g, 1, "Bus width", V_SDBUS);
++    row(g, 2, "Block cache", V_BCACHE);
++    row(g, 3, "Cache share", V_BCACHEPCT);
++    ry = (short)(ry + tree[g].ob_height + 8);
++    g = group(root, rx, ry, 2, "Input / output");
++    row(g, 0, "Keyboard", V_KEYBOARD);
++    row(g, 1, "Serial port", V_SERIAL);
++    ry = (short)(ry + tree[g].ob_height);
++
++    if (ry > ly)
++        ly = ry;
++    ok_button = add(root, G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, 0,
++                    (unsigned long)"OK",
++                    (short)((DIALOG_W - 10 * CW) / 2), (short)(ly + 12),
++                    10 * CW, CH + 6);
++    tree[root].ob_height = (short)(ly + 12 + CH + 6 + 12);
++    tree[nobj - 1].ob_flags |= LASTOB;
++}
++
++/* Run the dialog once: the classic modal sequence. */
++static void show_dialog(void)
++{
++    short x, y, w, h;
++    short exitobj;
++
++    read_values();
++    build_tree();
++
++    aes_intin[0] = BEG_UPDATE;
++    aes_call(107, 1, 1, 0); /* wind_update */
++
++    aes_addrin[0] = (long)tree;
++    aes_call(54, 0, 5, 1); /* form_center */
++    x = aes_intout[1];
++    y = aes_intout[2];
++    w = aes_intout[3];
++    h = aes_intout[4];
++
++    aes_intin[0] = FMD_START;
++    aes_intin[1] = x; aes_intin[2] = y; aes_intin[3] = w; aes_intin[4] = h;
++    aes_intin[5] = x; aes_intin[6] = y; aes_intin[7] = w; aes_intin[8] = h;
++    aes_call(51, 9, 1, 0); /* form_dial */
++
++    aes_intin[0] = 0;  /* start at the root */
++    aes_intin[1] = 8;  /* depth */
++    aes_intin[2] = x; aes_intin[3] = y; aes_intin[4] = w; aes_intin[5] = h;
++    aes_addrin[0] = (long)tree;
++    aes_call(42, 6, 1, 1); /* objc_draw */
++
++    aes_intin[0] = 0;  /* no editable field */
++    aes_addrin[0] = (long)tree;
++    exitobj = (short)(aes_call(50, 1, 1, 1) & 0x7FFF); /* form_do */
++    if (exitobj >= 0 && exitobj < nobj)
++        tree[exitobj].ob_state &= (unsigned short)~SELECTED;
++
++    aes_intin[0] = FMD_FINISH;
++    aes_intin[1] = x; aes_intin[2] = y; aes_intin[3] = w; aes_intin[4] = h;
++    aes_intin[5] = x; aes_intin[6] = y; aes_intin[7] = w; aes_intin[8] = h;
++    aes_call(51, 9, 1, 0); /* form_dial */
++
++    aes_intin[0] = END_UPDATE;
++    aes_call(107, 1, 1, 0); /* wind_update */
++    aes_addrin[0] = 0;
+ }
+ 
+ /* The accessory's entry in the Desk menu. A leading space is the classic
+  * look: the drop-down puts no padding of its own in front of the title. */
+-static const char acc_title[] = " NewTOS System";
++static const char acc_title[] = " System Info";
+ 
+ int main(void)
+ {
+-    char alert[200];
+     short msg[8];
+     short apid, menu_id;
+     int i;
+@@ -261,15 +643,12 @@ int main(void)
+          * EmuTOS's, not a typo here.
+          */
+         if (msg[0] == AC_OPEN && msg[4] == menu_id) {
+-            build_alert(alert);
+-            aes_intin[0] = 1;            /* default button = OK */
+-            aes_addrin[0] = (long)alert;
+-            aes_call(52, 1, 1, 1);       /* form_alert */
+-            aes_addrin[0] = 0;
++            show_dialog();
+         } else if (msg[0] == AC_CLOSE && msg[3] == menu_id) {
+-            /* The application that was running is going away. This accessory
+-             * owns no window and no allocation, so there is nothing to close
+-             * -- but it must keep running and keep listening. */
++            /* The application that was running is going away. The dialog is
++             * modal and closed before this message can be read, and the
++             * accessory owns no window and no allocation -- nothing to close,
++             * but it must keep running and keep listening. */
+         }
+     }
+ }
+diff --git a/tools/make-sd-image.sh b/tools/make-sd-image.sh
+index f7d2c1d..87b96b0 100755
+--- a/tools/make-sd-image.sh
++++ b/tools/make-sd-image.sh
+@@ -243,9 +243,9 @@ else
+ fi
+ 
+ # ACC05 / ACC02: the desk accessories. SYSACC.NAC is the accessory half of the
+-# ACC06 pair (SYSINFO.NCP above is the console half): it registers " NewTOS
+-# System" under *Desk* and answers AC_OPEN with a form_alert showing the ARM
+-# clock and the die temperature.
++# ACC06 pair (SYSINFO.NCP above is the console half): it registers " System
++# Info" under *Desk* and answers AC_OPEN with the SYSINFO01 dialog (clock,
++# temperature, memory, protection, SD card, display, keyboard, serial).
+ #
+ # Installed in BOTH search locations so one card exercises both halves of the
+ # two-place scan (docs/api/aes/accessories.md §7.3): C:\ACC\SYSACC.NAC is
+diff --git a/tos-api/src/bdos/process/mmu.rs b/tos-api/src/bdos/process/mmu.rs
+index 95ecd2a..b516cef 100644
+--- a/tos-api/src/bdos/process/mmu.rs
++++ b/tos-api/src/bdos/process/mmu.rs
+@@ -253,6 +253,12 @@ static TLB_DIRTY: AtomicBool = AtomicBool::new(false);
+ 
+ // ─── ASIDs (stage 4) ─────────────────────────────────────────────────
+ 
++/// ASID numbers per generation in the rollover test mode (boot argument
++/// `asid=tiny`): four, three of them usable. Hardware ASIDs are 8 or 16 bits
++/// wide (`ID_AA64MMFR0_EL1.ASIDBits`), so a generation limit of 4 is this mode
++/// and nothing else — `Ssystem(S_NEWTOS_ASID)` reports it as "test".
++pub const ASID_TEST_LIMIT: u32 = 4;
++
+ /// ASIDs on (boot argument `asid=on`/`asid=tiny`, [`configure_asids`]).
+ static ASID_ON: AtomicBool = AtomicBool::new(false);
+ 
+diff --git a/tos-api/src/bios/bcache.rs b/tos-api/src/bios/bcache.rs
+index 730728f..a1f2697 100644
+--- a/tos-api/src/bios/bcache.rs
++++ b/tos-api/src/bios/bcache.rs
+@@ -518,6 +518,12 @@ unsafe impl Sync for Global {}
+ 
+ static GLOBAL: Global = Global(UnsafeCell::new(None));
+ 
++/// Bytes of memory the installed cache was given (its arena), 0 without a
++/// cache. Kept beside [`GLOBAL`] because the cache itself only knows its slot
++/// count, and the arena — what the boot line `[bcache] … N KiB at …` and
++/// `Ssystem(S_NEWTOS_BCACHE)` report — is that plus the slot metadata.
++static ARENA_BYTES: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
++
+ fn cache() -> Option<&'static mut BlockCache> {
+     // SAFETY: single trap path; the reference does not outlive one request.
+     unsafe { (*GLOBAL.0.get()).as_mut() }
+@@ -539,14 +545,23 @@ pub unsafe fn install(arena: *mut u8, bytes: usize, pct: u32) -> Option<Stats> {
+     // SAFETY: forwarded contract.
+     let c = unsafe { BlockCache::new(arena, bytes, pct) };
+     let s = c.as_ref().map(|c| c.stats());
++    ARENA_BYTES.store(if s.is_some() { bytes } else { 0 }, core::sync::atomic::Ordering::Relaxed);
+     // SAFETY: single trap path / boot CPU.
+     unsafe { *GLOBAL.0.get() = c };
+     s
+ }
+ 
++/// Bytes of memory the installed cache occupies (the arena handed to
++/// [`install`]), 0 without a cache — the size `Ssystem(S_NEWTOS_BCACHE)`
++/// reports (`docs/api/gemdos/154-ssystem.md`, SYSINFO01).
++pub fn arena_bytes() -> usize {
++    ARENA_BYTES.load(core::sync::atomic::Ordering::Relaxed)
++}
++
+ /// Remove the system's cache; [`device`] passes everything straight through
+ /// again. The arena is no longer used afterwards.
+ pub fn uninstall() {
++    ARENA_BYTES.store(0, core::sync::atomic::Ordering::Relaxed);
+     // SAFETY: single trap path / boot CPU.
+     unsafe { *GLOBAL.0.get() = None };
+ }
+diff --git a/tos-api/src/gemdos/ssystem.rs b/tos-api/src/gemdos/ssystem.rs
+index db6e4d2..2a558ee 100644
+--- a/tos-api/src/gemdos/ssystem.rs
++++ b/tos-api/src/gemdos/ssystem.rs
+@@ -8,9 +8,11 @@
+ //! On top of those sit NewTOS's **own** subfunctions from 2000 upwards
+ //! ([`S_NEWTOS_CPUCLOCK`], [`S_NEWTOS_CPUTEMP`]) — machine facts an EL0
+ //! program cannot otherwise reach, because the hardware that knows them (the
+-//! BCM2711 mailbox) is kernel-only — and [`S_NEWTOS_KBDVEC`] (2002), the
++//! BCM2711 mailbox) is kernel-only — [`S_NEWTOS_KBDVEC`] (2002), the
+ //! kernel entry of the per-process default `kbdvec` stub (KEYS02,
+-//! `docs/api/xbios/22-kbdvbase.md` B3/D6). 2000 is free: FreeMiNT's own header
++//! `docs/api/xbios/22-kbdvbase.md` B3/D6), and the system-information modes
++//! 2003–2019 ([`S_NEWTOS_CPUMEAS`] … [`S_NEWTOS_KVERSION`], SYSINFO01): the
++//! effective settings the kernel runs with. 2000 is free: FreeMiNT's own header
+ //! reserves 0–29, 100, `0x54f8`, 900–999 and 1000–**1999**
+ //! (`references/freemint/sys/mint/ssystem.h`, the two `reserved` comments),
+ //! and the highest number its dispatcher answers is the build-gated test mode
+@@ -42,6 +44,46 @@ pub const S_NEWTOS_CPUTEMP: u16 = 2001;
+ /// 0 calls (KEYS02). Defined next to the stub in [`crate::xbios::kbdvecs`].
+ pub const S_NEWTOS_KBDVEC: u16 = crate::xbios::kbdvecs::S_NEWTOS_KBDVEC;
+ 
++// SYSINFO01: the effective system settings a system-information tool shows
++// (`docs/api/gemdos/154-ssystem.md` §"System-information modes (2003–2019)").
++// Scalars 2003–2018 share the 2000/2001 interface ([`newtos_scalar`]); 2019 is
++// a string ([`s_newtos_kversion`]).
++
++/// The ARM clock the firmware measured, Hz.
++pub const S_NEWTOS_CPUMEAS: u16 = 2003;
++/// The ARM clock policy in effect: 0 firmware, 1 fixed at max, 2 max refused.
++pub const S_NEWTOS_CPUPOLICY: u16 = 2004;
++/// Memory protection in effect: 0 off, 1 on, 2 strict.
++pub const S_NEWTOS_MEMPROT: u16 = 2005;
++/// Address-space IDs in effect: 0 off, 1 on, 2 test (`asid=tiny`).
++pub const S_NEWTOS_ASID: u16 = 2006;
++/// SD transfer mode in effect: 0 fast, 1 compatibility (`emmc=compat`).
++pub const S_NEWTOS_SDMODE: u16 = 2007;
++/// SD data-bus width negotiated with the card, bits.
++pub const S_NEWTOS_SDBUS: u16 = 2008;
++/// Block read cache size, KiB (0 = off).
++pub const S_NEWTOS_BCACHE: u16 = 2009;
++/// Block cache share of one linear read, percent.
++pub const S_NEWTOS_BCACHEPCT: u16 = 2010;
++/// ST-RAM pool size, KiB.
++pub const S_NEWTOS_STRAM: u16 = 2011;
++/// TT-RAM pool size, KiB (0 = none).
++pub const S_NEWTOS_TTRAM: u16 = 2012;
++/// Framebuffer width, pixels.
++pub const S_NEWTOS_SCRWIDTH: u16 = 2013;
++/// Framebuffer height, pixels.
++pub const S_NEWTOS_SCRHEIGHT: u16 = 2014;
++/// Framebuffer depth, bits per pixel.
++pub const S_NEWTOS_SCRDEPTH: u16 = 2015;
++/// VideoCore (GPU) memory, KiB.
++pub const S_NEWTOS_GPUMEM: u16 = 2016;
++/// Source of the active keyboard layout: 0 US, 1 German, 2 file, 3 changed.
++pub const S_NEWTOS_KEYBOARD: u16 = 2017;
++/// Serial console output: 0 off, 1 on.
++pub const S_NEWTOS_SERIAL: u16 = 2018;
++/// Kernel version + build stamp, a string into the caller's buffer.
++pub const S_NEWTOS_KVERSION: u16 = 2019;
++
+ /// `Ssystem(WORD mode, LONG arg1, LONG arg2)`: `mode` in `x0`, `arg1` in
+ /// `x1`, `arg2` in `x2`.
+ pub fn ssystem(args: &TrapArgs) -> Long {
+@@ -65,10 +107,94 @@ pub fn ssystem(args: &TrapArgs) -> Long {
+             newtos_scalar(args, || host::host()?.cpu_temperature_mdeg())
+         }
+         S_NEWTOS_KBDVEC => s_newtos_kbdvec(args),
++        S_NEWTOS_KVERSION => s_newtos_kversion(args),
++        mode @ S_NEWTOS_CPUMEAS..=S_NEWTOS_SERIAL => newtos_scalar(args, || sysinfo_value(mode)),
+         _ => EINVFN,
+     }
+ }
+ 
++/// The value of one scalar system-information mode (2003–2018), or `None`
++/// when this machine does not know it (`docs/api/gemdos/154-ssystem.md`
++/// §"System-information modes"). Every answer is the state the kernel runs
++/// with — read from the module that holds it, or from the host for facts that
++/// live in the kernel's drivers and boot decisions.
++fn sysinfo_value(mode: u16) -> Option<Long> {
++    use crate::bdos::mem::init as pools;
++    use crate::bdos::process::{memprot, mmu};
++    let kib = |bytes: u64| (bytes / 1024) as Long;
++    match mode {
++        S_NEWTOS_CPUMEAS => host::host()?.cpu_clock_measured_hz().map(|hz| hz as Long),
++        S_NEWTOS_CPUPOLICY => host::host()?.cpu_clock_policy().map(|p| p as Long),
++        S_NEWTOS_MEMPROT => Some(match (memprot::enabled(), memprot::strict()) {
++            (false, _) => 0,
++            (true, false) => 1,
++            (true, true) => 2,
++        }),
++        S_NEWTOS_ASID => Some(if !mmu::asids_enabled() {
++            0
++        } else if mmu::asid_stats().3 == mmu::ASID_TEST_LIMIT {
++            2
++        } else {
++            1
++        }),
++        S_NEWTOS_SDMODE => host::host()?.sd_card_mode().map(|m| m.compat as Long),
++        S_NEWTOS_SDBUS => host::host()?.sd_card_mode().map(|m| m.bus_width as Long),
++        S_NEWTOS_BCACHE => Some(kib(crate::bios::bcache::arena_bytes() as u64)),
++        S_NEWTOS_BCACHEPCT => crate::bios::bcache::stats().map(|s| s.pct as Long),
++        S_NEWTOS_STRAM | S_NEWTOS_TTRAM => {
++            if !pools::is_initialised() {
++                return None;
++            }
++            let (start, end) =
++                if mode == S_NEWTOS_STRAM { pools::stram_range() } else { pools::ttram_range() };
++            Some(kib((end as u32).wrapping_sub(start as u32) as u64))
++        }
++        S_NEWTOS_SCRWIDTH => host::host()?.screen().map(|s| s.width as Long),
++        S_NEWTOS_SCRHEIGHT => host::host()?.screen().map(|s| s.height as Long),
++        S_NEWTOS_SCRDEPTH => host::host()?.screen().map(|s| s.bpp as Long),
++        S_NEWTOS_GPUMEM => host::host()?.gpu_memory_bytes().map(kib),
++        S_NEWTOS_KEYBOARD => host::host()?.keyboard_layout().map(|k| k as Long),
++        S_NEWTOS_SERIAL => host::host()?.serial_console().map(Long::from),
++        _ => None,
++    }
++}
++
++/// `S_NEWTOS_KVERSION` (2019): `arg1` = the caller's buffer, `arg2` = its
++/// size in bytes (signed). FreeMiNT's `S_KNAME` rule (`sys/ssystem.c:572-576`
++/// → `strncpy_f`, `sys/libkern/strncpy_f.c:47-56`): at most `len - 1`
++/// characters and always a NUL; `len <= 0` writes nothing and is `E_OK`. A
++/// null buffer with `len > 0` is `EINVAL` (FreeMiNT would write to address 0).
++/// The string is the host's OS version and the build stamp, e.g.
++/// `"NewTOS 0.1 2026-10-07 (c50a9c9)"`; `ERROR` without one.
++fn s_newtos_kversion(args: &TrapArgs) -> Long {
++    let buf = args.arg_u64(1);
++    let len = args.arg_i32(2);
++    let Some(name) = host::host().and_then(|h| h.os_version()) else {
++        return ERROR;
++    };
++    if len <= 0 {
++        return E_OK;
++    }
++    if buf == 0 {
++        return EINVAL;
++    }
++    let mut text = [0u8; 96];
++    let mut n = 0;
++    for part in [name.as_bytes(), b" ", crate::build::BUILD_STAMP.as_bytes()] {
++        let take = part.len().min(text.len() - 1 - n);
++        text[n..n + take].copy_from_slice(&part[..take]);
++        n += take;
++    }
++    let n = n.min(len as usize - 1);
++    // The NUL right after the copied characters (the cut may fall inside
++    // the text).
++    text[n] = 0;
++    if args.space.copy_to(buf, &text[..n + 1]).is_err() {
++        return crate::uaccess::FAULTED;
++    }
++    E_OK
++}
++
+ /// `S_GETCOOKIE` (8). `arg1` = tag, `arg2` = pointer to a LONG (or 0).
+ /// `tag == 0` → jar **capacity** (total slot count, not the occupied
+ /// count); small `tag` (high word 0) → the 1-based Nth cookie's tag
+diff --git a/tos-api/src/host.rs b/tos-api/src/host.rs
+index ce5280d..e921590 100644
+--- a/tos-api/src/host.rs
++++ b/tos-api/src/host.rs
+@@ -267,6 +267,97 @@ pub trait Host: Sync {
+     fn cpu_temperature_mdeg(&self) -> Option<i32> {
+         None
+     }
++
++    // ── SYSINFO01: the effective system settings (`Ssystem` 2003–2019) ──
++    //
++    // The facts below live in the kernel (drivers, boot decisions) and not in
++    // `tos-api`; each is the state the kernel actually ended up in, never the
++    // text of a boot argument. A host that does not know one keeps the
++    // default `None`, which `Ssystem` turns into `ERROR`
++    // (`docs/api/gemdos/154-ssystem.md` §"System-information modes").
++
++    /// The ARM core clock as the firmware **measured** it, in Hz — mailbox
++    /// "Get clock rate measured" (`0x0003_0047`), where
++    /// [`Host::cpu_clock_hz`] answers the last *requested* rate. Live per
++    /// call; `None` without a VideoCore or without an answer.
++    fn cpu_clock_measured_hz(&self) -> Option<u32> {
++        None
++    }
++
++    /// What the boot code did with the ARM clock (`cpuclk=`, FS08 part 3), or
++    /// `None` on a board without clock control.
++    fn cpu_clock_policy(&self) -> Option<CpuClockPolicy> {
++        None
++    }
++
++    /// The SD card's transfer mode and negotiated bus width, or `None` when
++    /// no card was initialised (or the board has no SD driver).
++    fn sd_card_mode(&self) -> Option<SdCardMode> {
++        None
++    }
++
++    /// The memory the firmware gives the VideoCore (the `gpu_mem` split), in
++    /// bytes, or `None` when the firmware did not report it.
++    fn gpu_memory_bytes(&self) -> Option<u64> {
++        None
++    }
++
++    /// Where the active keyboard layout came from, or `None` without a
++    /// keyboard translator.
++    fn keyboard_layout(&self) -> Option<KeyboardLayout> {
++        None
++    }
++
++    /// `Some(true)` while console output goes to the serial port,
++    /// `Some(false)` while it is switched off, `None` without a serial
++    /// console.
++    fn serial_console(&self) -> Option<bool> {
++        None
++    }
++
++    /// The OS name and version as the boot screen prints it
++    /// (`"NewTOS 0.1"`), or `None` (hostless). `Ssystem(S_NEWTOS_KVERSION)`
++    /// appends the build stamp ([`crate::build::BUILD_STAMP`]).
++    fn os_version(&self) -> Option<&'static str> {
++        None
++    }
++}
++
++/// What the boot code did with the ARM core clock (`cpuclk=`, FS08 part 3) —
++/// `Ssystem(S_NEWTOS_CPUPOLICY)`.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum CpuClockPolicy {
++    /// The firmware controls the clock (the default, or `cpuclk=firmware`).
++    Firmware = 0,
++    /// Pinned at the firmware's maximum rate (`cpuclk=max`, granted).
++    FixedMax = 1,
++    /// `cpuclk=max` was asked, but the firmware reported no maximum or did
++    /// not answer "Set clock rate": the clock stayed with the firmware.
++    MaxRefused = 2,
++}
++
++/// The SD card's effective transfer setup — `Ssystem(S_NEWTOS_SDMODE)` and
++/// `Ssystem(S_NEWTOS_SDBUS)`.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub struct SdCardMode {
++    /// `emmc=compat`: 1-bit bus, one single-block command per sector.
++    pub compat: bool,
++    /// Data-bus width the driver and the card use, in bits (1 or 4).
++    pub bus_width: u8,
++}
++
++/// Where the active keyboard layout came from — `Ssystem(S_NEWTOS_KEYBOARD)`.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum KeyboardLayout {
++    /// The built-in US table (the default, or `#K us`).
++    BuiltinUs = 0,
++    /// The built-in German table (`#K de` in `NEWDESK.INF`).
++    BuiltinGerman = 1,
++    /// Loaded from `C:\KEYBOARD.KBD`.
++    File = 2,
++    /// A program has since replaced a table (XBIOS `Keytbl`) with different
++    /// contents.
++    ChangedByProgram = 3,
+ }
+ 
+ /// Bytes reserved for one AltGr override array. EmuTOS's non-`DUAL_KEYBOARD`
+diff --git a/tos-api/tests/gemdos_ssystem_cpuinfo.rs b/tos-api/tests/gemdos_ssystem_cpuinfo.rs
+index 603169c..8468f2f 100644
+--- a/tos-api/tests/gemdos_ssystem_cpuinfo.rs
++++ b/tos-api/tests/gemdos_ssystem_cpuinfo.rs
+@@ -181,10 +181,11 @@ fn the_neighbouring_mode_numbers_are_still_unimplemented() {
+     rig(PI4_CLOCK_HZ, WARM_MDEG);
+ 
+     // 1999 is the last number FreeMiNT reserves for its debug block
+-    // (`sys/mint/ssystem.h`, "reserved 1000 - 1999"); 2003 is the next free
++    // (`sys/mint/ssystem.h`, "reserved 1000 - 1999"); 2020 is the next free
+     // NewTOS number (2002 is `S_NEWTOS_KBDVEC` since KEYS02, tested in
+-    // `xbios_kbdvecs.rs`). Neither may answer with a machine reading.
+-    for mode in [1999_u64, 2003, 2999] {
++    // `xbios_kbdvecs.rs`; 2003-2019 are the SYSINFO01 modes, tested in
++    // `gemdos_ssystem_sysinfo.rs`). Neither may answer with a machine reading.
++    for mode in [1999_u64, 2020, 2999] {
+         assert_eq!(
+             gemdos(SSYSTEM, mode, 0, 0),
+             EINVFN,
+diff --git a/tos-api/tests/gemdos_ssystem_sysinfo.rs b/tos-api/tests/gemdos_ssystem_sysinfo.rs
+new file mode 100644
+index 0000000..969e64c
+--- /dev/null
++++ b/tos-api/tests/gemdos_ssystem_sysinfo.rs
+@@ -0,0 +1,278 @@
++//! **SYSINFO01** — `Ssystem` 2003–2019 at the GEMDOS trap boundary: the
++//! effective system settings a system-information tool (the SYSACC desk
++//! accessory) shows.
++//!
++//! Spec: `docs/api/gemdos/154-ssystem.md` §"System-information modes
++//! (2003–2019)". Pinned here, above the [`Host`] boundary and on the
++//! `tos-api` modules that hold the rest of the state:
++//!
++//! 1. every scalar mode answers in the call's own LONG (`arg1 == 0`) and
++//!    through the caller's LONG (`arg1 != 0` → `E_OK`);
++//! 2. a fact the host does not know is `ERROR`, and nothing is written;
++//! 3. `arg2 != 0` is `EINVAL` for every scalar mode, before anything is read;
++//! 4. the kernel-module states (memory protection, ASIDs, block cache, pools)
++//!    are reported as switched, including the "strict only with protection"
++//!    and "ASID test mode" rules;
++//! 5. 2019 copies with FreeMiNT's `strncpy_f` rule (`len - 1` characters, NUL
++//!    always, `len <= 0` writes nothing);
++//! 6. 2020 is not a mode (`EINVFN`).
++
++use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
++use std::sync::{Mutex, MutexGuard, Once};
++
++use tos_api::bdos::process::{memprot, mmu};
++use tos_api::host::{CpuClockPolicy, Host, KeyboardLayout, ScreenInfo, SdCardMode};
++use tos_api::trap::{TrapArgs, TrapClass};
++
++const SSYSTEM: u16 = 0x154;
++const S_NEWTOS_CPUMEAS: u64 = 2003;
++const S_NEWTOS_CPUPOLICY: u64 = 2004;
++const S_NEWTOS_MEMPROT: u64 = 2005;
++const S_NEWTOS_ASID: u64 = 2006;
++const S_NEWTOS_SDMODE: u64 = 2007;
++const S_NEWTOS_SDBUS: u64 = 2008;
++const S_NEWTOS_BCACHE: u64 = 2009;
++const S_NEWTOS_BCACHEPCT: u64 = 2010;
++const S_NEWTOS_STRAM: u64 = 2011;
++const S_NEWTOS_TTRAM: u64 = 2012;
++const S_NEWTOS_SCRWIDTH: u64 = 2013;
++const S_NEWTOS_SCRHEIGHT: u64 = 2014;
++const S_NEWTOS_SCRDEPTH: u64 = 2015;
++const S_NEWTOS_GPUMEM: u64 = 2016;
++const S_NEWTOS_KEYBOARD: u64 = 2017;
++const S_NEWTOS_SERIAL: u64 = 2018;
++const S_NEWTOS_KVERSION: u64 = 2019;
++
++const E_OK: i32 = 0;
++const ERROR: i32 = -1;
++const EINVAL: i32 = -25;
++const EINVFN: i32 = -32;
++
++/// The scalar modes whose answer comes from the host.
++const HOST_MODES: [u64; 11] = [
++    S_NEWTOS_CPUMEAS,
++    S_NEWTOS_CPUPOLICY,
++    S_NEWTOS_SDMODE,
++    S_NEWTOS_SDBUS,
++    S_NEWTOS_SCRWIDTH,
++    S_NEWTOS_SCRHEIGHT,
++    S_NEWTOS_SCRDEPTH,
++    S_NEWTOS_GPUMEM,
++    S_NEWTOS_KEYBOARD,
++    S_NEWTOS_SERIAL,
++    S_NEWTOS_KVERSION,
++];
++
++/// Does the stand-in host know its facts? One switch for all of them, so the
++/// present and the absent case run in one process.
++static KNOWS: AtomicBool = AtomicBool::new(true);
++/// The measured clock it reports, Hz.
++static MEASURED_HZ: AtomicI64 = AtomicI64::new(1_499_998_000);
++
++static RIG: Mutex<()> = Mutex::new(());
++
++/// A board whose kernel knows every fact (`KNOWS`), or none of them.
++struct InfoHost;
++
++impl Host for InfoHost {
++    fn console_write_byte(&self, _byte: u8) {}
++
++    fn screen(&self) -> Option<ScreenInfo> {
++        KNOWS.load(Ordering::Relaxed).then_some(ScreenInfo {
++            base: 0x10_0000,
++            phys_base: 0x10_0000,
++            mem_base: 0x10_0000,
++            mem_bytes: 1920 * 1080 * 4,
++            width: 1920,
++            height: 1080,
++            bpp: 32,
++            stride_bytes: 1920 * 4,
++            size_bytes: 1920 * 1080 * 4,
++        })
++    }
++
++    fn cpu_clock_measured_hz(&self) -> Option<u32> {
++        KNOWS.load(Ordering::Relaxed).then(|| MEASURED_HZ.load(Ordering::Relaxed) as u32)
++    }
++
++    fn cpu_clock_policy(&self) -> Option<CpuClockPolicy> {
++        KNOWS.load(Ordering::Relaxed).then_some(CpuClockPolicy::MaxRefused)
++    }
++
++    fn sd_card_mode(&self) -> Option<SdCardMode> {
++        KNOWS.load(Ordering::Relaxed).then_some(SdCardMode { compat: false, bus_width: 4 })
++    }
++
++    fn gpu_memory_bytes(&self) -> Option<u64> {
++        KNOWS.load(Ordering::Relaxed).then_some(76 * 1024 * 1024)
++    }
++
++    fn keyboard_layout(&self) -> Option<KeyboardLayout> {
++        KNOWS.load(Ordering::Relaxed).then_some(KeyboardLayout::BuiltinGerman)
++    }
++
++    fn serial_console(&self) -> Option<bool> {
++        KNOWS.load(Ordering::Relaxed).then_some(false)
++    }
++
++    fn os_version(&self) -> Option<&'static str> {
++        KNOWS.load(Ordering::Relaxed).then_some("NewTOS 0.1")
++    }
++}
++
++static HOST: Once = Once::new();
++
++fn rig(knows: bool) -> MutexGuard<'static, ()> {
++    let g = RIG.lock().unwrap_or_else(|e| e.into_inner());
++    HOST.call_once(|| {
++        let slot: &'static &'static dyn Host = Box::leak(Box::new(&InfoHost as &'static dyn Host));
++        tos_api::host::install_host(slot);
++    });
++    KNOWS.store(knows, Ordering::Relaxed);
++    g
++}
++
++fn gemdos(a0: u64, a1: u64, a2: u64) -> i32 {
++    let args = TrapArgs {
++        regs: [a0, a1, a2, 0, 0, 0, 0, 0],
++        func: SSYSTEM as u64,
++        svc_imm: TrapClass::Gemdos as u16,
++        space: tos_api::uaccess::Space::Kernel,
++    };
++    tos_api::gemdos::dispatch(&args)
++}
++
++/// One scalar mode, both forms; they must agree. Returns the value.
++fn both_forms(mode: u64) -> i32 {
++    let direct = gemdos(mode, 0, 0);
++    let mut out: i32 = 0x5A5A_5A5A;
++    assert_eq!(gemdos(mode, &mut out as *mut i32 as u64, 0), E_OK, "mode {mode}: pointer form");
++    assert_eq!(out, direct, "mode {mode}: pointer form and returned LONG agree");
++    direct
++}
++
++#[test]
++fn host_facts_come_back_in_both_forms() {
++    let _g = rig(true);
++    assert_eq!(both_forms(S_NEWTOS_CPUMEAS), 1_499_998_000, "measured clock, Hz");
++    assert_eq!(both_forms(S_NEWTOS_CPUPOLICY), 2, "cpuclk=max refused by the firmware");
++    assert_eq!(both_forms(S_NEWTOS_SDMODE), 0, "fast mode");
++    assert_eq!(both_forms(S_NEWTOS_SDBUS), 4, "4-bit bus negotiated");
++    assert_eq!(both_forms(S_NEWTOS_SCRWIDTH), 1920);
++    assert_eq!(both_forms(S_NEWTOS_SCRHEIGHT), 1080);
++    assert_eq!(both_forms(S_NEWTOS_SCRDEPTH), 32);
++    assert_eq!(both_forms(S_NEWTOS_GPUMEM), 76 * 1024, "VideoCore memory in KiB");
++    assert_eq!(both_forms(S_NEWTOS_KEYBOARD), 1, "built-in German");
++    assert_eq!(both_forms(S_NEWTOS_SERIAL), 0, "serial console off");
++}
++
++#[test]
++fn unknown_host_facts_are_error_and_write_nothing() {
++    let _g = rig(false);
++    for mode in HOST_MODES {
++        if mode == S_NEWTOS_KVERSION {
++            continue; // string form, below
++        }
++        assert_eq!(gemdos(mode, 0, 0), ERROR, "mode {mode}: unknown -> ERROR, no invented number");
++        let mut out: i32 = 0x1234_5678;
++        assert_eq!(gemdos(mode, &mut out as *mut i32 as u64, 0), ERROR, "mode {mode}");
++        assert_eq!(out, 0x1234_5678, "mode {mode}: nothing written");
++    }
++    let mut buf = [0xEEu8; 8];
++    assert_eq!(gemdos(S_NEWTOS_KVERSION, buf.as_mut_ptr() as u64, 8), ERROR);
++    assert_eq!(buf, [0xEE; 8], "no version, nothing written");
++}
++
++#[test]
++fn arg2_is_refused_for_every_scalar_mode_before_anything_is_read() {
++    let _g = rig(true);
++    for mode in 2003..=2018u64 {
++        let mut out: i32 = 0x0BAD_F00D;
++        assert_eq!(gemdos(mode, &mut out as *mut i32 as u64, 1), EINVAL, "mode {mode}: arg2 != 0");
++        assert_eq!(out, 0x0BAD_F00D, "mode {mode}: nothing written");
++    }
++}
++
++#[test]
++fn memory_protection_and_asids_report_the_switch_in_effect() {
++    let _g = rig(true);
++    // SAFETY: this binary seeds no pools under these switches; the switch is
++    // only read back.
++    unsafe { memprot::configure(false, false) };
++    assert_eq!(both_forms(S_NEWTOS_MEMPROT), 0, "memprot=off");
++    unsafe { memprot::configure(true, false) };
++    assert_eq!(both_forms(S_NEWTOS_MEMPROT), 1, "on (default)");
++    unsafe { memprot::configure(true, true) };
++    assert_eq!(both_forms(S_NEWTOS_MEMPROT), 2, "memprot=strict");
++    unsafe { memprot::configure(false, true) };
++    assert_eq!(both_forms(S_NEWTOS_MEMPROT), 0, "strict without protection is off");
++
++    assert_eq!(both_forms(S_NEWTOS_ASID), 0, "ASIDs off until configured");
++    // SAFETY: no user table exists in this binary.
++    unsafe { mmu::configure_asids(mmu::ASID_TEST_LIMIT, 0x7000) };
++    assert_eq!(both_forms(S_NEWTOS_ASID), 2, "asid=tiny: test mode");
++    unsafe { mmu::configure_asids(1 << 16, 0x7000) };
++    assert_eq!(both_forms(S_NEWTOS_ASID), 1, "asid=on, 16-bit ASIDs");
++}
++
++#[test]
++fn block_cache_reports_its_arena_and_share_or_off() {
++    let _g = rig(true);
++    tos_api::bios::bcache::uninstall();
++    assert_eq!(both_forms(S_NEWTOS_BCACHE), 0, "no cache: 0 KiB = off");
++    assert_eq!(gemdos(S_NEWTOS_BCACHEPCT, 0, 0), ERROR, "no cache, no share");
++
++    const BYTES: usize = 2 << 20;
++    let arena: &'static mut [u64] = Box::leak(vec![0u64; BYTES / 8].into_boxed_slice());
++    // SAFETY: leaked, the cache's for the life of the binary.
++    unsafe { tos_api::bios::bcache::install(arena.as_mut_ptr().cast(), BYTES, 7) }.expect("installs");
++    assert_eq!(both_forms(S_NEWTOS_BCACHE), 2048, "the arena, KiB (not the slot data)");
++    assert_eq!(both_forms(S_NEWTOS_BCACHEPCT), 7);
++
++    tos_api::bios::bcache::uninstall();
++    assert_eq!(both_forms(S_NEWTOS_BCACHE), 0);
++    assert_eq!(gemdos(S_NEWTOS_BCACHEPCT, 0, 0), ERROR);
++}
++
++#[test]
++fn pool_sizes_are_error_before_init_then_kib() {
++    let _g = rig(true);
++    if !tos_api::bdos::mem::init::is_initialised() {
++        assert_eq!(gemdos(S_NEWTOS_STRAM, 0, 0), ERROR, "no GEMDOS memory yet");
++        assert_eq!(gemdos(S_NEWTOS_TTRAM, 0, 0), ERROR);
++        // SAFETY: once per binary; the host test never touches the bytes.
++        unsafe { tos_api::bdos::mem::init::init(0x0040_0000, 10 << 20, 0x0100_0000, 64 << 20) }
++            .expect("pools");
++    }
++    assert_eq!(both_forms(S_NEWTOS_STRAM), 10 * 1024);
++    assert_eq!(both_forms(S_NEWTOS_TTRAM), 64 * 1024);
++}
++
++#[test]
++fn version_string_follows_strncpy_f() {
++    let _g = rig(true);
++    let full = format!("NewTOS 0.1 {}", tos_api::build::BUILD_STAMP);
++    assert!(full.len() < 64, "documented: shorter than 64 bytes");
++
++    let mut buf = [0xEEu8; 64];
++    assert_eq!(gemdos(S_NEWTOS_KVERSION, buf.as_mut_ptr() as u64, 64), E_OK);
++    let n = buf.iter().position(|&b| b == 0).expect("NUL-terminated");
++    assert_eq!(&buf[..n], full.as_bytes());
++
++    let mut small = [0xEEu8; 8];
++    assert_eq!(gemdos(S_NEWTOS_KVERSION, small.as_mut_ptr() as u64, 7), E_OK);
++    assert_eq!(&small[..7], b"NewTOS\0", "len - 1 characters and a NUL");
++    assert_eq!(small[7], 0xEE, "nothing past len");
++
++    let mut none = [0xEEu8; 4];
++    assert_eq!(gemdos(S_NEWTOS_KVERSION, none.as_mut_ptr() as u64, 0), E_OK, "len 0");
++    assert_eq!(gemdos(S_NEWTOS_KVERSION, none.as_mut_ptr() as u64, (-5i64) as u64), E_OK);
++    assert_eq!(none, [0xEE; 4], "len <= 0 writes nothing");
++    assert_eq!(gemdos(S_NEWTOS_KVERSION, 0, 16), EINVAL, "null buffer");
++}
++
++#[test]
++fn the_block_ends_at_2019() {
++    let _g = rig(true);
++    assert_eq!(gemdos(2020, 0, 0), EINVFN);
++}

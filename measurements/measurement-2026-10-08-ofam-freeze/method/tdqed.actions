@@ -1,0 +1,10 @@
+# OFAM freeze: TeraDesk (#Z C:\Apps\TERADESK\DESKTOP.NAP) with TERADESK-QED.INF (F1 = C:\APPS\QED\QED.NAP,
+# measurement-2026-10-06-arch03-4): F1 (IKBD 3B) -> TeraDesk Pexecs QED (a child launch from a GEM app).
+# Ticks hz_200 after TeraDesk's first poll (as evb-tera.actions).
+100 parkbr
+1600 mark T00_DESK
+1800 key 3B
+1806 key BB
+6500 mark T01_QED
+7000 parkbr
+7400 mark END

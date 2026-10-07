@@ -1,0 +1,36 @@
+# FS09: zView started twice from EmuDESK (prep-card.sh zv2: window C:\ZVIEW\
+# restored from NEWDESK.INF). Double-click ZVIEW.NAP (63,165) -> zView loads
+# its 10 codecs (Pexec 3 each) and shows its menu; File (76,8) > Quit
+# (104,203) -> back on the desktop. zView writes C:\ZVIEW\ZVIEW.INF when it
+# quits, so the window now holds six items and ZVIEW.NAP has moved one slot
+# right: the second double-click goes to (147,165). The SD commands of
+# each start are counted per segment (mark-counts.py): B_ZV1_UP = first
+# start, D_ZV2_UP = second start. Ticks hz_200 after "[desk] desktop up"
+# (desk-arm-m3.py). A double click = down/up/down/up 3-5 ticks apart
+# (measurement-2026-10-07-zview02 evb-desk.actions).
+100 parkbr
+400 mark A_IDLE
+600 move 63 165
+800 down
+803 up
+808 down
+811 up
+4000 mark B_ZV1_UP
+4100 move 76 8
+4400 move 104 203
+4600 down
+4603 up
+6000 mark C_DESK_AGAIN
+6200 move 147 165
+6400 down
+6403 up
+6408 down
+6411 up
+9600 mark D_ZV2_UP
+9700 move 76 8
+10000 move 104 203
+10200 down
+10203 up
+11600 mark E_DESK_FINAL
+11800 parkbr
+12000 mark END

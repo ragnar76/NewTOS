@@ -1,0 +1,34 @@
+=== ofam-deskw (serial=on memprot=on)
+run ofam-deskw: rc=0
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 99 files, 60624 KiB free (30312 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0
+=== ofam-qedw (serial=on memprot=on)
+run ofam-qedw: rc=0
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 98 files, 60918 KiB free (30459 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0
+=== ofam-teraw (serial=on memprot=on)
+run ofam-teraw: rc=0
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 103 files, 60248 KiB free (30124 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0
+/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/measurements/measurement-2026-10-06-zview-m4/bin/ZVLAUNCH.NAP: No such file or directory
+=== ofam-zvw (serial=on memprot=on)
+run ofam-zvw: rc=0
+== fsck_msdos -n s1
+Warning: 94 files, 60926 KiB free (30463 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0
+=== ofam-deskzv2 (serial=on memprot=on)
+run ofam-deskzv2: rc=0
+== fsck_msdos -n s1
+Warning: 95 files, 60924 KiB free (30462 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0

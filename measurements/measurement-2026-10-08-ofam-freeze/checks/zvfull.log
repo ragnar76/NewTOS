@@ -1,0 +1,6 @@
+=== ofam-zvfull (serial=on memprot=on)
+run ofam-zvfull: rc=0
+== fsck_msdos -n s1
+Warning: 99 files, 58654 KiB free (29327 clusters)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+exceptions in serial: 0

@@ -1,0 +1,139 @@
+1791413788.108743	RB2
+1791413788.108948	NewTOS booting on rpi4
+1791413788.109053	[serial] output on: boot arguments contain `serial=on`
+1791413788.109102	Phase 02 reached.
+1791413788.109466	[mm] DTB at 0x0000000000000100
+1791413788.109970	[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+1791413788.110076	[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+1791413788.110308	[mm] device tree: no usable /memory node (blob invalid or absent)
+1791413788.111742	[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+1791413788.112067	[mm] memory map:
+1791413788.112206	[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+1791413788.112346	[mm]   kernel: 0x0000000000080000..0x00000000002da000 (2465792 bytes)
+1791413788.112432	[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+1791413788.112517	[mm]   TT-RAM: 0x0000000001000000..0x0000000039e00000 (954204160 bytes)
+1791413788.112591	[mm]   OSrsvd: 0x0000000039e00000..0x000000003c000000 (35651584 bytes)
+1791413788.112690	[mm]     bcach: 0x0000000039e00000..0x000000003be00000 (33554432 bytes)
+1791413788.112763	[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+1791413788.112839	[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+1791413788.112909	[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+1791413788.112956	[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+1791413788.113393	[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+1791413788.113664	[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+1791413788.113757	[mm] frames TT-RAM: total=232960 used=0 free=232960 (954204160 B free)
+1791413788.116480	[mm] alloc ST-RAM frame -> 0x0000000000400000
+1791413788.116484	[mm] alloc TT-RAM frame -> 0x0000000001000000
+1791413788.116485	[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+1791413788.116486	[mm] heap smoke OK
+1791413788.116488	[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+1791413788.116489	[fb] VideoCore display geometry detected: 640x480
+1791413788.116490	[fb] alpha mode = 2
+1791413788.116491	[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+1791413788.116492	[fb] VideoCore fb up: 640x480 stride 640px
+1791413788.120062	[mm] memory protection ON: table arena 0x01000000+2424 tables
+1791413788.122718	[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01978000+944275456
+1791413788.123845	[mm] user address space: pools mapped VA = PA (456 shared L3 tables, 4-KiB pages, rights per process)
+1791413788.124062	[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+1791413788.124197	[mm] BDOS TT-RAM after init: total=944275456 free=944275456 used=0 largest_free=944275456 (free_mds=1 alloc_mds=0)
+1791413788.125805	[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+1791413788.127274	[emmc] SD card on controller @ 0xffff0000fe300000
+1791413788.127452	[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+1791413788.127534	[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+1791413788.127603	[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+1791413788.127739	[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+1791413788.128003	[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+1791413788.132595	[clock] seeded from kernel8.img: 2026-10-08 00:37:58
+1791413788.133408	[pcie] RC not present (no response at RC_BASE); USB disabled
+1791413803.142510	[proc] stand-in PDs: initial_basepage 0x00251000, AES PD 0x00251100 (read-only to all)
+1791413803.190104	[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x197a000)
+1791413803.225629	[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1980000)
+1791413803.225634	[acc] 2 file(s) found, 2 process(es) started
+1791413803.226108	[aes] gsx_malloc: screen buffer pa=0x01984000 len=614400 (kernel-owned, WF_SCREEN)
+1791413803.227236	[sched] switch -> slot 0
+1791413803.227263	[sched] running
+1791413803.228152	[m3] injector armed at hz_200 3020
+1791413803.228942	[sched] switch -> slot 1
+1791413803.228967	[sched] running
+1791413803.229411	[sched] switch -> kernel client
+1791413803.229546	[acc] all accessories have issued their message wait
+1791413803.232241	[shell] sh_ldapp: starting C:\Apps\QED\QED.NAP, sh_nextapp=2, sh_isgem=1
+1791413803.335927	[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+1791413803.336051	[launch] EL0: slot 2 entry 0x1a3d000
+1791413803.727671	[m3] step 0 at +100 -> mouse (446,366) mb=0
+1791413803.731559	[m3] step 1 at +101 -> mouse (573,479) mb=0
+1791413803.737621	[m3] step 2 at +102 -> mouse (639,479) mb=0
+1791413803.742184	[m3] step 3 at +103 -> mouse (639,479) mb=0
+1791413803.746728	[m3] step 4 at +104 -> mouse (639,479) mb=0
+1791413803.751337	[m3] step 5 at +105 -> mouse (639,479) mb=0
+1791413821.227001	[m3] MARK Q00_UP step 6 at +3600 mouse (639,479) mb=0
+1791413822.227271	[m3] step 7 at +3800 -> mouse (639,479) mb=0
+1791413822.277237	[m3] step 8 at +3810 -> mouse (639,479) mb=0
+1791413822.326732	[m3] step 9 at +3820 -> mouse (639,479) mb=0
+1791413822.377083	[m3] step 10 at +3830 -> mouse (639,479) mb=0
+1791413826.226830	[m3] MARK Q01_NEW step 11 at +4600 mouse (639,479) mb=0
+1791413827.227855	[m3] step 12 at +4800 -> mouse (639,479) mb=0
+1791413827.256966	[m3] step 13 at +4806 -> mouse (639,479) mb=0
+1791413827.327192	[m3] step 14 at +4820 -> mouse (639,479) mb=0
+1791413827.357758	[m3] step 15 at +4826 -> mouse (639,479) mb=0
+1791413827.426367	[m3] step 16 at +4840 -> mouse (639,479) mb=0
+1791413827.456594	[m3] step 17 at +4846 -> mouse (639,479) mb=0
+1791413827.526906	[m3] step 18 at +4860 -> mouse (639,479) mb=0
+1791413827.555885	[m3] step 19 at +4866 -> mouse (639,479) mb=0
+1791413827.627599	[m3] step 20 at +4880 -> mouse (639,479) mb=0
+1791413827.656607	[m3] step 21 at +4886 -> mouse (639,479) mb=0
+1791413830.226978	[m3] MARK Q02_TYPED step 22 at +5400 mouse (639,479) mb=0
+1791413831.227158	[m3] step 23 at +5600 -> mouse (639,479) mb=0
+1791413831.277114	[m3] step 24 at +5610 -> mouse (639,479) mb=0
+1791413831.326959	[m3] step 25 at +5620 -> mouse (639,479) mb=0
+1791413831.375772	[m3] step 26 at +5630 -> mouse (639,479) mb=0
+1791413837.228159	[m3] MARK Q03_FSEL step 27 at +6800 mouse (639,479) mb=0
+1791413838.226445	[m3] step 28 at +7000 -> mouse (639,479) mb=0
+1791413838.255759	[m3] step 29 at +7006 -> mouse (639,479) mb=0
+1791413838.326672	[m3] step 30 at +7020 -> mouse (639,479) mb=0
+1791413838.357135	[m3] step 31 at +7026 -> mouse (639,479) mb=0
+1791413838.427002	[m3] step 32 at +7040 -> mouse (639,479) mb=0
+1791413838.457406	[m3] step 33 at +7046 -> mouse (639,479) mb=0
+1791413838.525544	[m3] step 34 at +7060 -> mouse (639,479) mb=0
+1791413838.556903	[m3] step 35 at +7066 -> mouse (639,479) mb=0
+1791413838.625338	[m3] step 36 at +7080 -> mouse (639,479) mb=0
+1791413838.655125	[m3] step 37 at +7086 -> mouse (639,479) mb=0
+1791413838.725522	[m3] step 38 at +7100 -> mouse (639,479) mb=0
+1791413838.757216	[m3] step 39 at +7106 -> mouse (639,479) mb=0
+1791413838.826559	[m3] step 40 at +7120 -> mouse (639,479) mb=0
+1791413838.855617	[m3] step 41 at +7126 -> mouse (639,479) mb=0
+1791413838.926024	[m3] step 42 at +7140 -> mouse (639,479) mb=0
+1791413838.957702	[m3] step 43 at +7146 -> mouse (639,479) mb=0
+1791413839.026305	[m3] step 44 at +7160 -> mouse (639,479) mb=0
+1791413839.055598	[m3] step 45 at +7166 -> mouse (639,479) mb=0
+1791413842.226426	[m3] MARK Q04_NAME step 46 at +7800 mouse (639,479) mb=0
+1791413843.225574	[m3] step 47 at +8000 -> mouse (639,479) mb=0
+1791413843.256434	[m3] step 48 at +8006 -> mouse (639,479) mb=0
+1791413850.227037	[m3] MARK Q05_SAVED step 49 at +9400 mouse (639,479) mb=0
+1791413851.226001	[m3] step 50 at +9600 -> mouse (639,479) mb=0
+1791413851.256424	[m3] step 51 at +9606 -> mouse (639,479) mb=0
+1791413851.326668	[m3] step 52 at +9620 -> mouse (639,479) mb=0
+1791413851.357117	[m3] step 53 at +9626 -> mouse (639,479) mb=0
+1791413851.427308	[m3] step 54 at +9640 -> mouse (639,479) mb=0
+1791413851.456276	[m3] step 55 at +9646 -> mouse (639,479) mb=0
+1791413854.226454	[m3] MARK Q06_EDITED step 56 at +10200 mouse (639,479) mb=0
+1791413855.226369	[m3] step 57 at +10400 -> mouse (639,479) mb=0
+1791413855.276636	[m3] step 58 at +10410 -> mouse (639,479) mb=0
+1791413855.326309	[m3] step 59 at +10420 -> mouse (639,479) mb=0
+1791413855.376775	[m3] step 60 at +10430 -> mouse (639,479) mb=0
+1791413861.226330	[m3] MARK Q07_SAVED_AGAIN step 61 at +11600 mouse (639,479) mb=0
+1791413862.226429	[m3] step 62 at +11800 -> mouse (639,479) mb=0
+1791413862.276603	[m3] step 63 at +11810 -> mouse (639,479) mb=0
+1791413862.280590	[sched] switch -> slot 0
+1791413862.280595	[sched] running
+1791413862.280846	[sched] switch -> slot 1
+1791413862.280847	[sched] running
+1791413862.280911	[sched] switch -> slot 2
+1791413862.280947	[sched] running
+1791413862.283188	[launch] returned (program Pterm'd)
+1791413862.283365	[shell] sh_ldapp: 'C:\Apps\QED\QED.NAP' exited with rc=0
+1791413862.284272	[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+1791413862.292578	[desk] desktop up (1 drives, 0 window(s) from the context)
+1791413862.326873	[m3] step 64 at +11820 -> mouse (639,479) mb=0
+1791413862.375789	[m3] step 65 at +11830 -> mouse (639,479) mb=0
+1791413868.227292	[m3] MARK Q08_QUIT step 66 at +13000 mouse (639,479) mb=0
+1791413870.227069	[m3] MARK END step 67 at +13400 mouse (639,479) mb=0

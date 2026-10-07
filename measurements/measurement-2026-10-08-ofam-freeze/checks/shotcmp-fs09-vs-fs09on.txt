@@ -1,0 +1,20 @@
+MISSING on-qedo-END.png
+MISSING on-qedo-Q00_UP.png
+MISSING on-qedo-Q01_FSEL.png
+MISSING on-qedo-Q02_OPENED.png
+MISSING on-qedo-Q03_EDITED.png
+MISSING on-qedo-Q04_SAVED.png
+MISSING on-qedo-Q05_QUIT.png
+DIFF qedw-Q03_FSEL.png
+DIFF qedw-Q04_NAME.png
+DIFF teraw-END.png
+DIFF teraw-T01_C_OPEN.png
+DIFF teraw-T03_COPIED.png
+DIFF teraw-T05_FOLDER_COPIED.png
+MISSING on-zvfull-END.png
+MISSING on-zvfull-F00_FULLSCREEN.png
+MISSING on-zvfull-F01_AFTER_ESC.png
+MISSING on-zvfull-F02_FILEMENU.png
+MISSING on-zvfull-F03_AFTER_QUIT.png
+MISSING on-zvfull-S00_IMAGE.png
+ofam- vs on-: same=34 diff=6 missing=13

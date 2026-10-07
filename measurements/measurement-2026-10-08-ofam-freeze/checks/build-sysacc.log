@@ -1,0 +1,8 @@
+clang : Apple clang version 21.0.0 (clang-2100.1.1.101)
+lld   : rust-lld -flavor gnu
+
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include  -c /Volumes/Daten/Development/PiRusTOS/sdk/crt0.S -o crt0.o
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include -c sdk/examples/sysacc.c -o app.o
++ rust-lld -flavor gnu -T /Volumes/Daten/Development/PiRusTOS/sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o app.o -o /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/pbin/SYSACC.NAC
+
+wrote /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/pbin/SYSACC.NAC (16056 bytes)

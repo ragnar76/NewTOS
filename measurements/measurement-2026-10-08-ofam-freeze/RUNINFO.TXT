@@ -1,0 +1,96 @@
+measurement-2026-10-08-ofam-freeze -- Tester run: freeze check of the Atari-meeting demo state ("ofam-2026").
+Date 2026-10-08, branch desk-rebuild, HEAD 10b1d302 (tree clean; nothing in the product tree was changed).
+QEMU raspi4b, -append serial=on, memprot default (on); strict where named; one QEMU at a time, host macOS.
+No SD card, Pi or TT touched. Scratch (kernels, one base card per content, run clones, targets, sockets)
+in the session scratchpad; run clones (cp -c) deleted after each run, sha256 in checks/sha256-scratch-images.txt
+and checks/*.card-sha256; scratch deleted at the end (size reported by the Tester).
+
+KERNEL (the Pi kernel to tag)
+  cargo xtask build --board rpi4 --release  ->  kernel8.img  sha256
+    435dfb80b2c48756436c00f64a4aced74bb207a165fbe3e035f823beb46e5e0f   (bin/kernel8.img, gitignored)
+  banner: "NewTOS 0.1 2026-10-07 (10b1d302)"; identical bytes from the scratch cargo build (kernel8-evb.img).
+  board-qemu-virt release (objcopy of target/.../kernel) 19b2a8d05d701ccae3dd9336965d01d084c9e3881ed174e98fda13047d2683bf
+    (built, NOT booted).
+  The earlier Pi kernel 55eddb8f... (HEAD 8435cd2 + ZVIEW04 fix state) differs: it carries another commit hash in
+  the banner and the MN_SELECTED fix 6d9eb6c is in this HEAD.
+  The root kernel8.img (gitignored) was overwritten by checks.sh (xtask build) and restored to 55eddb8f afterwards.
+
+PROGRAMS (rebuilt from the tree with the current libc; checks/program-hashes.txt)
+  Same as the card package (stdiobuf SHA256SUMS + sysinfo SYSACC): CORE.NCP, COREVAL.NCP, DOOM.NAP, ZVIEW.NAP,
+  all 10 codecs (*.NLD), SYSACC.NAC.
+  DIFFERENT: QED.NAP ec0d0832... (card f27a77cd...), DESKTOP.NAP f0bf950c... (card 59963b65...).
+  Same size, same sources (git log f14942c..HEAD -- sdk touches only fsbench/do_fstat/sysacc, nothing QED/TeraDesk);
+  the only text difference is the __DATE__ string ("Oct  7 2026" -> "Oct  8 2026"): the linker's string merging
+  places it elsewhere in .rodata, so the ADRP/ADD constants shift (791 / 837 differing bytes). Behaviourally the
+  same (all runs below used the new builds). The card needs NO program update.
+
+VERDICT TABLE (details below the table; every row = a run listed in "RUNS")
+  PASS  host tests 1249/0/1
+  PASS  release build rpi4 + qemu-virt: tos-api 64 / kernel 94, 0 errors
+  PASS  clippy rpi4 + qemu-virt: tos-api 76 / kernel 125
+  PASS  desk drift probe 31;  SDK host tests 18/0/0
+  PASS  EmuDESK: open drive C:, open folder, View menu "Show as text" (evb-desk)
+  PASS  EmuDESK folder navigation, selection, File Information dialog + typing (objc_edit), rename (desk3a)
+  PASS  EmuDESK Desk menu: " System Info" -> NewTOS System Information dialog, Return closes (sysinfo desk)
+  PASS  EmuDESK copy/move/delete file + folder copy/delete, fsck clean, host byte-check PASS (deskw)
+  PASS  TeraDesk start, trash select, drive window (tera); copy file + folder, host check PASS, fsck clean (teraw)
+  PASS  QED from TeraDesk (F1 via TERADESK-QED.INF): QED menu bar comes up (tdqed)
+  PASS  System Info accessory from TeraDesk and from QED (sysinfo tera/qed)
+  PASS  QED menu (evb-qed); new text / Save as / edit / save / quit, host check PASS, fsck clean (qedw)
+  PASS  QED OPEN existing file C:\APPS\QED\NOTE.TXT, edit, save, quit: host check PASS (ab\r\n + original), fsck clean (qedo)
+  PASS  zView: start, browser (File>Browser), tree expander, tile select (zv-browser)
+  PASS  zView: double-click folder (short and held second press) (zv-dclick)
+  PASS  zView: open image C:\PHOTO\BIG.JPG (1932x2576x24); toolbar full screen -> Esc -> File>Quit (zvfull)
+  PASS  zView File>Quit with the browser open (zv-quit): exits rc=0, desktop back
+  PASS  zView started twice from EmuDESK (deskzv2)
+  PASS  LDGDEMO popup + Compute alert + typing + close, memprot on and strict (acc-on, acc-strict)
+  PASS  DOOM start (demo plays ~60 s), Esc menu, Up/Return/Y quit -> exits rc=0, desktop back; fsck clean (doom)
+  PASS  CoreMark: COREVAL "Correct operation validated" (seedcrc 0x18f2, crclist 0xe3c1, crcmatrix 0x0747,
+        crcstate 0x8d84, crcfinal 0x0956); CORE performance run validated (0xe9f5/0xe714/0x1fd7/0x8e3a/0x33ff) -- AUTO
+  PASS  APITEST TOTAL 106/0/5 (BC26-BC30 skipped: no key pressed, as always)
+  PASS  PORT10 44/44 (ALL PASS (44 checks), 0 FAIL)
+  FAIL  S2ALL: "S2ALL: FAIL 0x00000001" -- ONLY ENVPAR (MEM03: "ARGV= arrived", "an argument with blanks arrived",
+        "child read its environment rc 1 != 0x42"); PFLAGS1/2, P34, P567, TSR, OWN, VFORK all ok. KNOWN, NOT NEW: identical
+        to measurement-2026-10-07-stdiobuf (stale probe expectation since PORT09: mintlib start-up cuts ARGV= in place).
+  PASS  memprot=strict: EmuDESK (desk-strict), zView browser (zv-browser-strict), APITEST 106/0/5 (api-strict)
+  PASS  BALL.NAP (5 Oct build) from the desktop as C:\APPS\BALL\BALL.NAP: runs, exits on a key, desktop back
+  PASS  BALL.NAP rebuilt against the current SDK: same
+  0 [EXC]/PANIC/"Memory violation" in all 40 serial logs of this run; every card fsck_msdos -n clean (phases 1-3).
+
+RUNS (all on the HEAD kernel; injector kernels = scratch copy of HEAD + a key/mouse script, board-rpi4 release;
+  sha256 in checks/kernels-sha256.txt)
+  Group A = measurement-2026-10-07-zview04 method (regr-all.sh without the head-/fix- pair; method/ofam-groupA.sh):
+    acc-on, acc-strict, desk, tera, qed, desk3a, api, zv-dclick, zv-browser, zv-quit.
+    Screendump compare against zview04's fix- dumps (checks/shotcmp-vs-zview04-fix.txt): 58 identical, 5 differ:
+    desk-E_MENU_CLICKED / desk-END (file time stamps 08/10/26 00:40 vs 07/10/26 23:59), desk3a-E_INFO / F_TYPED
+    (clock time in the Info dialog), qed-END (caret blink phase). Viewed: no other change.
+  Group B = measurement-2026-10-07-sysinfo method (si-desk, si-tera, si-qed), cards from tools/make-sd-image.sh 64 MiB.
+  Group C = measurement-2026-10-07-fs09 gui-fs09.sh (TRACE off): deskw, qedw, teraw, zvw, deskzv2; added here:
+    zvfull.actions (zView full screen + Esc + Quit), qedo.actions + qedo-check.py (QED opens an existing file),
+    first zvw attempt had a wrong WS path (ZVLAUNCH missing) and was repeated (checks/fs09-gui.log shows it).
+    fs09 on- dumps compared: 34 identical, 6 differ (qedw Q03/Q04: file selector lists drive C only on this 64 MiB
+    one-partition card vs C+D on fs09's 256 MiB card; teraw: "bytes used" figures of a different base card).
+  Group D (own, in method/): ofam-tdqed.sh, ofam-doom.sh (+ doom.actions: first attempt F10+Y did not raise the
+    quit prompt in the DOOM build, kept in checks/doom-first-attempt/; Up+Return+Y works), ofam-serial.sh (CoreMark,
+    PORT10 via AUTO, serial verdict), ofam-s2all.sh, ofam-strict.sh, ofam-ball.sh, ofam-fsck.sh (desk3a + DOOM re-run
+    with the clone kept for fsck).
+  A scratch-run of sysinfo-runs.sh left its three run clones undeleted (its own old run script); deleted by hand
+  (checks/sysinfo-run-images-sha256.txt); sysinfo's old run script then replaced by zview04's cp -c/delete version.
+  The sysinfo desk run removed the shared cards/desk.img (evb base); it was re-seeded before the strict desk run.
+
+BALL DEMO (/Volumes/Daten/Development/ball-demo, not modified; copy built in scratch)
+  BALL.NAP 5 Oct (sha256 014b4a55...) WORKS AS IS on this kernel: started by double-click from EmuDESK window
+  C:\APPS\BALL\ (BALL.CFG + BALL.NTX in C:\ root, where ball.c reads them), 60 fps, 0 dropped frames in BALL.LOG
+  (checks/ball-5oct-BALL.LOG), textured ball + room + reflection visible in all dumps, any key ends it
+  (rc=0), desktop returns, fsck clean.
+  Rebuild (NEWTOS_SDK default, build-ball.sh into scratch): 129080 B vs 96864 B (9cd3a932...); also runs: same picture,
+  60 fps, 0 dropped, exit ok (checks/ball-rebuilt-BALL.LOG). No rebuild is needed.
+  Difference seen in the two BALL.LOGs: the 5 Oct binary's buffers (asked MX_PREFTTRAM) came from ST-RAM ("/ST"),
+  the rebuilt one's from alternate RAM ("/alt"); the 9 Sep Pi log shows "/alt". Both .note.newtos PRGFLAGS = 7.
+  No visible effect; cause not investigated.
+
+NOT VERIFIED / OPEN
+  - Real Pi4: HDMI, USB-HID, cache coherence (Non-Cacheable FB), QUIRK-001 are QEMU-invisible; keyboard/mouse input
+    here is the scratch injector; performance numbers (CoreMark, ball fps) are QEMU's.
+  - qemu-virt kernel built but not booted.
+  - ball demo: real-HW timing/tearing not testable.

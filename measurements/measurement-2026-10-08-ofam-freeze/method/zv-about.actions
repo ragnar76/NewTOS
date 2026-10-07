@@ -1,0 +1,20 @@
+# ZVIEW04 cross-check of the cause: with the browser open, zView > About
+# (MENU_BAR_ABOUT 10, first row under the "zView" title; menu.c:637
+# Menu_about) -- the same WinDom MN_SELECTED routing as Quit. Expected: HEAD
+# nothing (title stays inverted), fixed kernel the About window opens.
+100 parkbr
+3000 mark A00_IDLE
+3100 move 76 8
+3400 mark A01_MENU
+3500 move 100 28
+3700 down
+3703 up
+6000 mark A02_BROWSER
+6100 move 44 8
+6400 mark A03_ZVIEWMENU
+6500 move 60 28
+6800 down
+6803 up
+8000 mark A04_AFTERABOUT
+8100 parkbr
+8400 mark END

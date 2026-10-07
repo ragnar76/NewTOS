@@ -1,0 +1,145 @@
+1791413668.213940	RB2
+1791413668.214187	NewTOS booting on rpi4
+1791413668.214296	[serial] output on: boot arguments contain `serial=on`
+1791413668.214334	Phase 02 reached.
+1791413668.214693	[mm] DTB at 0x0000000000000100
+1791413668.215197	[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+1791413668.215331	[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+1791413668.215585	[mm] device tree: no usable /memory node (blob invalid or absent)
+1791413668.216987	[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+1791413668.217297	[mm] memory map:
+1791413668.217428	[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+1791413668.217575	[mm]   kernel: 0x0000000000080000..0x00000000002da000 (2465792 bytes)
+1791413668.217656	[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+1791413668.217740	[mm]   TT-RAM: 0x0000000001000000..0x0000000039e00000 (954204160 bytes)
+1791413668.217819	[mm]   OSrsvd: 0x0000000039e00000..0x000000003c000000 (35651584 bytes)
+1791413668.217917	[mm]     bcach: 0x0000000039e00000..0x000000003be00000 (33554432 bytes)
+1791413668.218000	[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+1791413668.218079	[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+1791413668.218153	[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+1791413668.218199	[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+1791413668.218582	[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+1791413668.218830	[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+1791413668.218932	[mm] frames TT-RAM: total=232960 used=0 free=232960 (954204160 B free)
+1791413668.219041	[mm] alloc ST-RAM frame -> 0x0000000000400000
+1791413668.219243	[mm] alloc TT-RAM frame -> 0x0000000001000000
+1791413668.219428	[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+1791413668.220237	[mm] heap smoke OK
+1791413668.220313	[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+1791413668.220472	[fb] VideoCore display geometry detected: 640x480
+1791413668.220744	[fb] alpha mode = 2
+1791413668.220894	[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+1791413668.220989	[fb] VideoCore fb up: 640x480 stride 640px
+1791413668.225066	[mm] memory protection ON: table arena 0x01000000+2424 tables
+1791413668.227736	[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01978000+944275456
+1791413668.228860	[mm] user address space: pools mapped VA = PA (456 shared L3 tables, 4-KiB pages, rights per process)
+1791413668.229084	[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+1791413668.229222	[mm] BDOS TT-RAM after init: total=944275456 free=944275456 used=0 largest_free=944275456 (free_mds=1 alloc_mds=0)
+1791413668.230812	[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+1791413668.232179	[emmc] SD card on controller @ 0xffff0000fe300000
+1791413668.232372	[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+1791413668.232447	[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+1791413668.232520	[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+1791413668.232651	[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+1791413668.232921	[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+1791413668.237635	[clock] seeded from kernel8.img: 2026-10-08 00:37:58
+1791413668.238441	[pcie] RC not present (no response at RC_BASE); USB disabled
+1791413683.247220	[proc] stand-in PDs: initial_basepage 0x00251000, AES PD 0x00251100 (read-only to all)
+1791413683.288710	[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x197a000)
+1791413683.320167	[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1980000)
+1791413683.320172	[acc] 2 file(s) found, 2 process(es) started
+1791413683.320565	[aes] gsx_malloc: screen buffer pa=0x01984000 len=614400 (kernel-owned, WF_SCREEN)
+1791413683.321559	[sched] switch -> slot 0
+1791413683.321607	[sched] running
+1791413683.323318	[sched] switch -> slot 1
+1791413683.323343	[sched] running
+1791413683.323805	[sched] switch -> kernel client
+1791413683.323951	[acc] all accessories have issued their message wait
+1791413683.326680	[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+1791413683.469073	[desk] desktop up (1 drives, 1 window(s) from the context)
+1791413683.469143	[m3] injector armed at hz_200 3047
+1791413683.968175	[m3] step 0 at +100 -> mouse (446,366) mb=0
+1791413683.972020	[m3] step 1 at +101 -> mouse (573,479) mb=0
+1791413683.976607	[m3] step 2 at +102 -> mouse (639,479) mb=0
+1791413683.982712	[m3] step 3 at +103 -> mouse (639,479) mb=0
+1791413683.985577	[m3] step 4 at +104 -> mouse (639,479) mb=0
+1791413683.993145	[m3] step 5 at +105 -> mouse (639,479) mb=0
+1791413685.466559	[m3] MARK A_IDLE step 6 at +400 mouse (639,479) mb=0
+1791413686.466600	[m3] step 7 at +600 -> mouse (512,352) mb=0
+1791413686.470657	[m3] step 8 at +601 -> mouse (385,225) mb=0
+1791413686.478238	[m3] step 9 at +602 -> mouse (258,120) mb=0
+1791413686.481347	[m3] step 10 at +603 -> mouse (147,120) mb=0
+1791413687.468085	[m3] step 11 at +800 -> mouse (147,120) mb=1
+1791413687.965919	[m3] step 12 at +900 -> mouse (120,120) mb=1
+1791413688.467130	[m3] step 13 at +1000 -> mouse (63,120) mb=1
+1791413689.467758	[m3] step 14 at +1200 -> mouse (63,120) mb=0
+1791413694.466669	[m3] MARK B_COPY_CONFIRM step 15 at +2200 mouse (63,120) mb=0
+1791413695.467019	[m3] step 16 at +2400 -> mouse (63,120) mb=0
+1791413695.584111	[m3] step 17 at +2423 -> mouse (63,120) mb=0
+1791413705.466612	[m3] MARK C_COPIED step 18 at +4400 mouse (63,120) mb=0
+1791413706.467852	[m3] step 19 at +4600 -> mouse (190,120) mb=0
+1791413706.470949	[m3] step 20 at +4601 -> mouse (231,120) mb=0
+1791413706.967746	[m3] step 21 at +4700 -> mouse (231,120) mb=0
+1791413707.467412	[m3] step 22 at +4800 -> mouse (231,120) mb=1
+1791413707.966911	[m3] step 23 at +4900 -> mouse (150,120) mb=1
+1791413708.467399	[m3] step 24 at +5000 -> mouse (63,120) mb=1
+1791413709.466753	[m3] step 25 at +5200 -> mouse (63,120) mb=0
+1791413709.967429	[m3] step 26 at +5300 -> mouse (63,120) mb=0
+1791413714.467318	[m3] MARK D_MOVE_CONFIRM step 27 at +6200 mouse (63,120) mb=0
+1791413715.466539	[m3] step 28 at +6400 -> mouse (63,120) mb=0
+1791413715.496634	[m3] step 29 at +6406 -> mouse (63,120) mb=0
+1791413723.467596	[m3] MARK E_MOVED step 30 at +8000 mouse (63,120) mb=0
+1791413724.466985	[m3] step 31 at +8200 -> mouse (147,120) mb=0
+1791413725.467186	[m3] step 32 at +8400 -> mouse (147,120) mb=1
+1791413725.481959	[m3] step 33 at +8403 -> mouse (147,120) mb=0
+1791413726.467028	[m3] step 34 at +8600 -> mouse (274,247) mb=0
+1791413726.471384	[m3] step 35 at +8601 -> mouse (401,374) mb=0
+1791413726.477451	[m3] step 36 at +8602 -> mouse (528,479) mb=0
+1791413726.482023	[m3] step 37 at +8603 -> mouse (639,479) mb=0
+1791413726.486669	[m3] step 38 at +8604 -> mouse (639,479) mb=0
+1791413726.491631	[m3] step 39 at +8605 -> mouse (639,479) mb=0
+1791413727.466391	[m3] step 40 at +8800 -> mouse (639,479) mb=0
+1791413727.516863	[m3] step 41 at +8810 -> mouse (639,479) mb=0
+1791413727.567193	[m3] step 42 at +8820 -> mouse (639,479) mb=0
+1791413727.617546	[m3] step 43 at +8830 -> mouse (639,479) mb=0
+1791413732.466431	[m3] MARK F_DELETE_CONFIRM step 44 at +9800 mouse (639,479) mb=0
+1791413733.466763	[m3] step 45 at +10000 -> mouse (639,479) mb=0
+1791413733.497240	[m3] step 46 at +10006 -> mouse (639,479) mb=0
+1791413741.466921	[m3] MARK G_DELETED step 47 at +11600 mouse (639,479) mb=0
+1791413742.467252	[m3] step 48 at +11800 -> mouse (512,352) mb=0
+1791413742.471127	[m3] step 49 at +11801 -> mouse (385,225) mb=0
+1791413742.475445	[m3] step 50 at +11802 -> mouse (258,120) mb=0
+1791413742.481786	[m3] step 51 at +11803 -> mouse (131,120) mb=0
+1791413742.486217	[m3] step 52 at +11804 -> mouse (63,120) mb=0
+1791413743.467971	[m3] step 53 at +12000 -> mouse (63,120) mb=1
+1791413743.967645	[m3] step 54 at +12100 -> mouse (50,60) mb=1
+1791413744.467559	[m3] step 55 at +12200 -> mouse (38,30) mb=1
+1791413745.467226	[m3] step 56 at +12400 -> mouse (38,30) mb=0
+1791413750.466740	[m3] MARK H_FOLDERCOPY_CONFIRM step 57 at +13400 mouse (38,30) mb=0
+1791413751.466320	[m3] step 58 at +13600 -> mouse (38,30) mb=0
+1791413751.531566	[m3] step 59 at +13613 -> mouse (38,30) mb=0
+1791413763.467105	[m3] MARK I_FOLDER_COPIED step 60 at +16000 mouse (38,30) mb=0
+1791413764.467001	[m3] step 61 at +16200 -> mouse (63,120) mb=0
+1791413765.466749	[m3] step 62 at +16400 -> mouse (63,120) mb=1
+1791413765.481394	[m3] step 63 at +16403 -> mouse (63,120) mb=0
+1791413766.466905	[m3] step 64 at +16600 -> mouse (190,247) mb=0
+1791413766.471227	[m3] step 65 at +16601 -> mouse (317,374) mb=0
+1791413766.476246	[m3] step 66 at +16602 -> mouse (444,479) mb=0
+1791413766.481932	[m3] step 67 at +16603 -> mouse (571,479) mb=0
+1791413766.485280	[m3] step 68 at +16604 -> mouse (639,479) mb=0
+1791413766.492541	[m3] step 69 at +16605 -> mouse (639,479) mb=0
+1791413767.467376	[m3] step 70 at +16800 -> mouse (639,479) mb=0
+1791413767.517718	[m3] step 71 at +16810 -> mouse (639,479) mb=0
+1791413767.566627	[m3] step 72 at +16820 -> mouse (639,479) mb=0
+1791413767.617088	[m3] step 73 at +16830 -> mouse (639,479) mb=0
+1791413772.466886	[m3] MARK J_FOLDERDEL_CONFIRM step 74 at +17800 mouse (639,479) mb=0
+1791413773.467682	[m3] step 75 at +18000 -> mouse (639,479) mb=0
+1791413773.497682	[m3] step 76 at +18006 -> mouse (639,479) mb=0
+1791413783.466059	[m3] MARK K_FOLDER_DELETED step 77 at +20000 mouse (639,479) mb=0
+1791413784.466455	[m3] step 78 at +20200 -> mouse (639,479) mb=0
+1791413784.472426	[m3] step 79 at +20201 -> mouse (639,479) mb=0
+1791413784.476625	[m3] step 80 at +20202 -> mouse (639,479) mb=0
+1791413784.482727	[m3] step 81 at +20203 -> mouse (639,479) mb=0
+1791413784.485831	[m3] step 82 at +20204 -> mouse (639,479) mb=0
+1791413784.491947	[m3] step 83 at +20205 -> mouse (639,479) mb=0
+1791413786.466956	[m3] MARK END step 84 at +20600 mouse (639,479) mb=0
