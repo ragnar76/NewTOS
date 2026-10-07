@@ -1,0 +1,24 @@
+FS08 on the real Pi 4 -- FSBENCH, layer by layer (2026-10-07)
+
+What: FSBENCH.NCP (sdk/examples/fsbench.c, e3fe82a) from C:\AUTO before the
+AES, reading D:\FSBENCH (10 files, 10 KB..10 MB) through BIOS Lrwabs (L1),
+GEMDOS Fread (L2) and stdio fread (L3), cold and warm. Run by the user on the
+real Pi 4; kernel d3884c1b (HEAD f932809, release). D: = NEWTOS1, FAT16,
+recsiz 512, 8 KiB clusters, datrec 511. Clock: _hz_200 + spin interpolation.
+
+Files: FSBENCH.LOG (copied from C:\ of the card), photo-page1-L1.jpg (user's
+photo of page 1).
+
+Result (all 100 reads CRC ok):
+- L1 BIOS: ~630-760 KB/s, about 0.66-0.79 ms per sector, IDENTICAL for 1 and
+  128 sectors per call -> every sector is one card command; the limit sits in
+  the driver/card path, below FAT and GEMDOS.
+- L2 GEMDOS, 64 KB / whole-file reads: ~700 KB/s = L1 -> FAT/GEMDOS add almost
+  nothing for large reads. Small reads on large files cost extra: 10 MB with
+  512 B Freads 25.0 s vs 14.5 s whole-file (+73 %), 4 KB 17.1 s (+18 %) --
+  the per-Fread cluster-chain walk from the file start (fs08 analysis U2).
+- L3 stdio (1 KB freads, how zView reads): 10 MB 20.8 s (+44 %), 1 MB ~+10 %.
+- Header: "CPU clock 600 MHz" (Ssystem 2000 = mailbox ARM clock): the ARM core
+  runs at the firmware's low clock, not 1500 MHz.
+- Open: Fopen/Fclose read exactly 3.00 ms from the middle of the cold pass on
+  (0.002 ms before) -- a real fixed delay or a clock artefact; not explained.
