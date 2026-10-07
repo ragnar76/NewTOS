@@ -23,7 +23,7 @@ Endungen aus TeraDesk heraus (DESK41).
 
 | | |
 |---|---|
-| Hosttests | **1201 / 0 / 1** |
+| Hosttests | **1205 / 0 / 1** |
 | Bau, beide Boards | `tos-api` **64**, `kernel` **94** |
 | Clippy, beide Feature-Saetze | **76 / 125** |
 | `sh tools/desk-drift-probe.sh` | **31** |
@@ -445,6 +445,7 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 
 | Date       | Decision                                            |
 |------------|-----------------------------------------------------|
+| 2026-10-07 | **ZVIEW02 — Doppelklick-Fenster laeuft am AES-Tick wie EmuTOS (`ae0e8c6`).** zView wartet mit 20-ms-Timer und `bclick 0x102`; unser `count_clicks` endete an der Timer-Frist, Doppelklick auf Ordnerkachel waehlte nur aus. Jetzt EmuTOS-Modell `b_delay`/`gl_bpend`/`abutton`/`post_button`, +3 Ticks je Klick (`geminput.c:121-171,463-483`, `gemasync.c:96-114,217-243`); Klick wird wie bei EmuTOS ein Fenster (~220 ms) spaeter gemeldet. zView oeffnet Ordner per Doppelklick; EmuDESK/TeraDesk/QED/LDGDEMO-Klicklaeufe bytegleich zu HEAD (`measurements/measurement-2026-10-07-zview02/`). Hosttests 1205/0/1. A111 Punkt 1 erledigt, Punkt 2 offen. Pi: Klickgefuehl pruefen. |
 | 2026-10-07 | **ZVIEW01 — zView-Browser zeigt Namen (`c8f0bff`).** zViews eigener Text-Renderer (`custom_font.c:159-205`) legt Glyphenzeilen byteweise ins erste Byte eines WORDs — auf AArch64 die falsche Haelfte, `vrt_cpyfm(MD_TRANS)` kopierte leere Spalten. VDI liest wie EmuTOS (`vdi_raster.c:1241-1243`), Klasse B11; Toolchain-Overlay, zView unveraendert. Hosttest ueber 255 Glyphen rot/gruen, QEMU zeigt Namen (`measurements/measurement-2026-10-07-zview01/`). Neu: ZVIEW02 (Doppelklick auf Ordnerkachel waehlt nur aus). |
 | 2026-10-07 | **FS08 Teil 3 — ARM-Takt beim Booten auf das Firmware-Maximum (`f67f954`).** Pi meldete 600 MHz: mit `force_turbo=0` erwartet die Firmware einen Takt-Regler im OS. Jetzt Get max clock rate (`0x00030004`) → Set clock rate (`0x00038002`, skip turbo = 0) → Rueckmessung, eine Bootzeile `[clock] ARM vorher -> nachher MHz`; Rueckfall `cpuclk=firmware`. Quellen: Firmware-Wiki Mailbox-Property-Interface, config.txt-Overclocking-Doku (`references/rpi4-boot/`, `docs/hardware/mailbox-framebuffer.md` §3f). QEMU unveraendert (Firmware-Modell fest 700 MHz). Pi-Lauf ausstehend; Kontrolle ueber FSBENCH-Kopf und `spins/tick`. Hosttests 1201/0/1. |
 | 2026-10-07 | **FS08 Teil 2 — Datei-I/O wie EmuTOS: aktueller Cluster je Datei, Sektoren direkt in den Programmpuffer, FAT-/Datenpuffer getrennt (`5f62fa0`).** Transfer-Engine nach EmuTOS `xrw`/`usrio`/`ixlseek` (`bdos/fsio.c:33-426`), Puffer nach `bdos/fsbuf.c`; FAT einmal je neuem Cluster statt Kettenlauf ab Dateianfang; ganze Sektoren als ein Blockauftrag ueber zusammenhaengende Cluster. Durchschreiben nach jedem `Fwrite` (HW03) bleibt als benannte Abweichung. QEMU-Trace FSBENCH: gelesene Sektoren 1 221 462 → 548 939 (angefordert 548 152), Lesekommandos 1 176 324 → 195 769; Schreibweg, Desktop, QED, TeraDesk, zView, S2ALL, APITEST unveraendert, fsck sauber (`measurements/measurement-2026-10-07-fat-curcl/`). Hosttests 1195/0/1. Offen: `dir_nth_sector` laeuft Unterverzeichnis-Ketten weiter je Sektor ab; Pi-Zeiten ausstehend. |
