@@ -1,0 +1,62 @@
+# ZVPROF run B (1920x1080, card + 8 photo JPEGs 2048x1536 in C:\ZVIEW\SAMPLES): browser, zview,
+# samples (23 thumbnails), open+close t.jpg, x01.jpg, x05.jpg, parent folder, samples again.
+100 parkhd
+3100 move 76 8
+3500 move 100 28
+3700 down
+3703 up
+6000 mark B02_BROWSER_C
+6100 move 1106 110
+6300 down
+6303 up
+6308 down
+6311 up
+9000 mark B03_ZVIEW
+9100 move 470 110
+9300 down
+9303 up
+9308 down
+9311 up
+16000 mark B04_SAMPLES
+16100 move 470 110
+16300 down
+16303 up
+16308 down
+16311 up
+19000 mark B05_TJPG
+19100 move 927 472
+19300 down
+19303 up
+20000 mark B06_TJPG_CLOSED
+20100 move 258 214
+20300 down
+20303 up
+20308 down
+20311 up
+25000 mark B07_X01
+25100 move 11 30
+25300 down
+25303 up
+26500 mark B08_X01_CLOSED
+26600 move 682 214
+26800 down
+26803 up
+26808 down
+26811 up
+31000 mark B09_X05
+31100 move 11 30
+31300 down
+31303 up
+32500 mark B10_X05_CLOSED
+32600 move 148 52
+32800 down
+32803 up
+35000 mark B11_PARENT
+35100 move 470 110
+35300 down
+35303 up
+35308 down
+35311 up
+42000 mark B12_SAMPLES_AGAIN
+42100 parkhd
+42400 mark END

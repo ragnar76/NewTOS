@@ -1,0 +1,37 @@
+# ZVPROF 1920x1080 explore 3
+100 parkhd
+3100 move 76 8
+3500 move 100 28
+3700 down
+3703 up
+6000 mark B02_BROWSER_C
+6100 move 1106 110
+6300 down
+6303 up
+6308 down
+6311 up
+9000 mark B03_ZVIEW
+9100 move 470 110
+9300 down
+9303 up
+9308 down
+9311 up
+15000 mark B04_SAMPLES
+15100 move 470 110
+15300 down
+15303 up
+15308 down
+15311 up
+19000 mark B05_TJPG
+19100 move 927 472
+19300 down
+19303 up
+20000 mark B06_TJPG_CLOSED
+20100 move 258 214
+20300 down
+20303 up
+20308 down
+20311 up
+26000 mark B07_X01
+26100 parkhd
+26400 mark END

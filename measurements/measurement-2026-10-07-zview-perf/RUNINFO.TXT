@@ -1,0 +1,80 @@
+measurement-2026-10-07-zview-perf -- "zView works but feels sluggish" (user,
+real Pi 4, kernel 8f2a3b3b = HEAD 0b2e05a). Diagnosis only: where does the
+time go, layer by layer. Analysis: docs/analysis/zview-sluggish-2026-10-07.md
+
+Base: branch desk-rebuild, HEAD 0b2e05a, shared tree UNCHANGED. All
+instrumentation in a scratch copy under the session scratchpad (deleted at
+the end); no git checkout/restore/clean/stash/reset, no commit. No SD card,
+Pi or TT touched. QEMU 11.0.2 -M raspi4b, -append serial=on, one QEMU at a
+time; host macOS (no `timeout`, runs bounded by drive-m3.py --timeout).
+
+WHAT WAS DONE
+  1. Profiler ZVPROF (method/zvprof.rs, applied by method/zvprof_patch.py;
+     resulting change vs HEAD: method/zvprof-applied.diff). Per trap: class +
+     function number (GEMDOS fn, VDI opcode, AES opcode, BIOS/XBIOS fn),
+     count, EL1 time split into "waiting" (inside sched::sleep or a
+     pump_input spin loop) and "work", max work, pixels written, memprot sync
+     time. EL0 time between traps (runs > 50 ms as events). memprot::sync and
+     memprot::refresh (time, pages). Pexec loader phases (alloc, zero + bytes,
+     read, relocate, basepage, icache, install_slot, memprot). Backend
+     primitives (n, pixels/bytes, time). Input-pump gaps (= pointer frozen on
+     the Pi, USB is polled only there), click latency (first press ->
+     evnt_multi MU_BUTTON/MU_MESAG return), evnt_multi return kinds.
+     Report: C:\PROFILE.TXT, one block ("segment") after 2.5 s without heavy
+     work (or at the latest 30 s), first block of a boot truncates the file;
+     write time excluded from all numbers. method/zvprof-sum.py sums
+     segments.
+  2. QEMU runs with the scratch IKBD injector (method/apply-injector-m3.py,
+     gen_script.py + new `parkhd` op), zView via #Z on a cp -c clone of
+     tools/make-sd-image.sh <S>/base.img 64 (dist ZVIEW.NAP), clone deleted:
+       vga  640x480, method/zp-vga.actions: File>Browser (C:\), dclick zview,
+            dclick samples (15 synthetic samples), dclick t.jpg, close it,
+            4x down arrow, 1x slider track, parent (green arrow), samples again
+       hd   1920x1080 (-global bcm2835-fb.xres=1920 -global
+            bcm2835-fb.yres=1080), C:\ZVIEW\SAMPLES + 8 photo JPEGs
+            2048x1536 (370-450 KB, method/gen-photos.py, deterministic),
+            method/zp-hd.actions: browser, zview, samples (23 thumbnails),
+            open/close t.jpg, x01.jpg, x05.jpg, parent, samples again
+     Every step reached its target (screendumps/*-contact-sheet.png and the
+     per-mark PNGs). 0 [EXC]/[PANIC] in serial/*-serial.log.
+     Kernels: kinj-zp-vga sha256 db1f23ff2c2dc4baa02343276ec1d6229b618776a15d5e95f6bcdd6b8d5fa2fe
+              kinj-zp-hd  sha256 ab40fe791de826b42084625dbb4f0b45507372aaa58fa0b9fab6e7053e066470
+     (scratch, not kept). checks/hdx3-PROFILE.TXT = an exploration run of
+     the hd scenario up to x01 (same probe minus the MU_MESAG click latency).
+  3. Pi package bin/: kernel8.img = ZVPROF without injector, release
+     board-rpi4, sha256 0ae86f5f54c557196351cd435360c8a7f475197b590d31b979f761d5dc304e0f;
+     smoke-booted in QEMU raspi4b to "[desk] desktop up", PROFILE.TXT
+     written. bin/LIESMICH.TXT = the user's fixed scenario S0..S11.
+
+RESULTS (QEMU; times relative only, counts and proportions informative)
+  zView start (hd seg 2): EL1 work 1607 ms of which memprot sync 1381 ms
+    (refresh over 17.4 M pages); 30 Pexec (10 codecs x mode 5/3/4) 1321 ms
+    + 11 Mshrink 260 ms, memprot inside 1069 + 259 ms; pointer frozen
+    1589 ms in one gap. TPA = largest block ~916 MB; zero phase 0 ms (67-80
+    KB zeroed, PF_FASTLOAD) -- the TPA-zeroing suspicion is refuted.
+  Pexec during browsing: 0. Codecs are loaded once at start.
+  Clicks: double click -> MU_BUTTON 260-275 ms, single click 200-214 ms,
+    window gadget (arrow/closer) -> MU_MESAG 200-215 ms, every time.
+  Thumbnails (hd seg 5, first visit): 8 photos -> 8 gaps of 154-172 ms,
+    each EL0 ~63 ms + Fread ~100 ms; Fread total 784 ms/560 calls (QEMU
+    SD). Second visit (seg 13): EL0 513 ms (zView decodes again, no
+    thumbnail cache), Fread 4 ms (FS09 block cache).
+  Drawing at 1920x1080: fill_pattern 127 M px 189 ms, dcache clean 148 MB
+    43 ms over the whole hd run; per folder view ~46-48 M px of v_gdp.
+    Image window x01: vro_cpyfm 1.86 M px 11.6 ms. Scroll (vga seg 7, 4
+    arrows): EL1 work 18 ms total.
+  evnt_multi: ~0.1-0.25 ms work per return (zView polls every 20 ms);
+    3 isolated returns with 34-45 ms "work", px=0, around gadget clicks --
+    not resolved (probably a wait loop the probe does not recognise).
+
+FILES
+  method/   zvprof.rs zvprof_patch.py zvprof-applied.diff zvprof-sum.py
+            gen_script.py apply-injector-m3.py drive-m3.py
+            run-rpi4-drive-m3.sh (QEMU_EXTRA + PROFILE.TXT extraction)
+            zp-runs.sh mk-inj.sh final-runs.sh newdesk-template.inf
+            gen-photos.py zp-vga.actions zp-hd.actions zp-hd-explore3.actions
+  serial/   vga-/hd- serial + stamped logs
+  checks/   vga-/hd-PROFILE.TXT (raw), vga-/hd-SUMMARY.TXT (zvprof-sum.py),
+            hdx3-PROFILE.TXT
+  screendumps/ vga-*.png, hd-B04_SAMPLES.png, hd-B07_X01.png, contact sheets
+  bin/      kernel8.img (gitignored, sha256 above), LIESMICH.TXT

@@ -1,0 +1,56 @@
+# ZVPROF run A (640x480, standard card): browser, zview, samples, open+close t.jpg,
+# scroll (4x down arrow, 1x track), parent folder, samples again. hz_200 ticks after zView's first trap.
+100 parkbr
+3100 move 76 8
+3500 move 100 28
+3700 down
+3703 up
+6000 mark A02_BROWSER_C
+6100 move 470 318
+6300 down
+6303 up
+6308 down
+6311 up
+9000 mark A03_ZVIEW
+9100 move 470 110
+9300 down
+9303 up
+9308 down
+9311 up
+14000 mark A04_SAMPLES
+14100 move 470 110
+14300 down
+14303 up
+14308 down
+14311 up
+18000 mark A05_TJPG
+18100 move 287 171
+18300 down
+18303 up
+19500 mark A06_TJPG_CLOSED
+19600 move 627 443
+19800 down
+19803 up
+20200 down
+20203 up
+20600 down
+20603 up
+21000 down
+21003 up
+22000 mark A07_SCROLLED
+22100 move 627 300
+22300 down
+22303 up
+23500 mark A08_PAGED
+23600 move 148 52
+23800 down
+23803 up
+26000 mark A09_PARENT
+26100 move 470 110
+26300 down
+26303 up
+26308 down
+26311 up
+31000 mark A10_SAMPLES_AGAIN
+31100 parkbr
+31400 mark END

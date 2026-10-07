@@ -1,0 +1,166 @@
+seg  t_start..t_end(ms)    span   EL0   EL1work  wait  memprot  gaps>100/>500  longest_gap  clicks(avg)  reason
+  1        0..19405     19405    27     1570   2478    1449     3/1        1548 ms  0(0)  2.5 s quiet
+  2    19429..36191     16761    14       27  16717       0     0/0          11 ms  1(1)  2.5 s quiet
+  3    36202..49218     13015     5       16  13001       0     0/0           6 ms  1(261)  2.5 s quiet
+  4    49228..64489     15261    23       78  15150       1     0/0           9 ms  1(260)  2.5 s quiet
+  5    64496..89218     24722    11       22  24687       0     0/0           6 ms  1(261)  2.5 s quiet
+  6    89230..109179    19949     6       17  19930       0     0/0           6 ms  1(200)  2.5 s quiet
+  7   109184..122679    13494    14       18  13455       0     0/0           8 ms  4(201)  2.5 s quiet
+  8   122685..129178     6493     1        1   6490       0     0/0           0 ms  1(202)  2.5 s quiet
+  9   129182..136679     7497     3        7   7490       0     0/0           2 ms  1(200)  2.5 s quiet
+ 10   136685..149218    12533    11       23  12500       1     0/0           6 ms  1(261)  2.5 s quiet
+
+sum: span 149130 ms, EL0 115 ms, EL1 work 1779 ms, EL1 waiting 131898 ms, rest 15343 ms, memprot 1451 ms over 19727776 pages, pointer-frozen gaps>100ms 1849 ms
+
+ops summed, sorted by EL1 work:
+  class  op     name               n        work_ms   wait_ms  maxwork_ms  memprot_ms  pixels
+  gemdos 0x04b  Pexec              30         1293.7       0.0      172.3     1030.2  0
+  gemdos 0x04a  Mshrink            11          241.8       0.0       23.2      241.5  0
+  aes    0x019  evnt_multi         6467         53.0  131899.0       18.2        0.0  182467
+  gemdos 0x03f  Fread              877          41.3       0.0        7.3        0.0  0
+  vdi    0x00b  v_gdp              136          17.5       0.0        1.6        0.0  10193735
+  aes    0x068  wind_get           6904         16.6       1.5        0.1        0.0  0
+  vdi    0x079  vrt_cpyfm          5518         14.7       0.0        0.4        0.0  262344
+  vdi    0x06d  vro_cpyfm          770          11.8       0.0        3.1        0.0  458642
+  aes    0x06a  wind_find          6467         10.2       1.1        0.0        0.0  0
+  aes    0x04e  graf_mouse         214           9.3       0.0        0.1        0.0  50140
+  gemdos 0x049  Mfree              90            8.1       0.0        0.8        5.0  0
+  aes    0x06e  rsrc_load          1             7.1       0.0        7.1        0.0  0
+  vdi    0x006  v_pline            1001          6.9       0.0        0.2        0.0  0
+  aes    0x069  wind_set           101           6.1       0.1        1.0        0.0  396656
+  aes    0x065  wind_open          3             5.4       0.0        2.5        0.0  322910
+  gemdos 0x04e  Fsfirst            101           2.1       0.0        0.4        0.0  0
+  vdi    0x008  v_gtext            21            2.0       0.0        0.8        0.0  0
+  vdi    0x011  vsl_color          1326          1.7       0.0        0.0        0.0  0
+  gemdos 0x04c  Pterm              10            1.6       0.0        0.6        0.3  0
+  gemdos 0x03d  Fopen              35            1.5       0.0        0.3        0.0  0
+  aes    0x066  wind_close         2             1.5       0.0        0.8        0.0  104479
+  gemdos 0x044  Mxalloc            56            1.3       0.0        0.0        1.0  0
+  aes    0x02a  objc_draw          14            1.2       0.0        0.5        0.0  42280
+  vdi    0x064  v_opnvwk           5             1.1       0.0        0.9        0.0  0
+  aes    0x01e  menu_bar           1             1.1       0.0        1.1        0.0  24673
+  vdi    0x003  v_clrwk            1             1.0       0.0        1.0        0.0  0
+  gemdos 0x048  Malloc             25            1.0       0.0        0.2        0.6  0
+  vdi    0x06e  vr_trnfm           256           0.9       0.0        0.2        0.0  0
+  gemdos 0x04f  Fsnext             102           0.9       0.0        0.1        0.0  0
+  aes    0x00a  appl_init          3             0.6       0.0        0.5        0.0  0
+  vdi    0x066  vq_extnd           4             0.6       0.0        0.3        0.0  0
+  vdi    0x00e  vs_color           260           0.5       0.0        0.1        0.0  0
+  vdi    0x072  vr_recfl           77            0.5       0.0        0.2        0.0  16976
+  vdi    0x081  vs_clip            249           0.5       0.0        0.0        0.0  0
+  aes    0x017  evnt_mesag         2             0.4       0.0        0.3        0.0  0
+  gemdos 0x04d  Pwait              1             0.4       0.0        0.4        0.0  0
+  gemdos 0x11a  Psigreturn         50            0.4       0.0        0.1        0.0  0
+  aes    0x06c  wind_calc          203           0.4       0.0        0.1        0.0  0
+  aes    0x02b  objc_find          7             0.4       0.0        0.2        0.0  0
+  gemdos 0x154  Ssystem            279           0.3       0.0        0.1        0.0  0
+  gemdos 0x03e  Fclose             55            0.3       0.0        0.2        0.0  0
+  vdi    0x009  v_fillarea         40            0.3       0.0        0.3        0.0  476
+  aes    0x072  rsrc_obfix         24            0.2       0.0        0.1        0.0  0
+  aes    0x07c  shel_find          1             0.2       0.0        0.2        0.0  0
+  aes    0x023  menu_register      2             0.2       0.0        0.2        0.0  0
+  aes    0x07d  shel_envrn         4             0.2       0.0        0.1        0.0  0
+  vdi    0x01a  vq_color           2             0.1       0.0        0.1        0.0  0
+  other  0x000  fault/unknown      2             0.1       0.0        0.1        0.0  0
+  aes    0x070  rsrc_gaddr         40            0.1       0.0        0.1        0.0  0
+  vdi    0x017  vsf_interior       77            0.1       0.0        0.0        0.0  0
+  vdi    0x019  vsf_color          206           0.1       0.0        0.0        0.0  0
+  aes    0x00d  appl_find          4             0.1       0.0        0.1        0.0  0
+  gemdos 0x01a  Fsetdta            406           0.1       0.0        0.0        0.0  0
+  aes    0x020  menu_ienable       32            0.1       0.0        0.1        0.0  0
+  aes    0x064  wind_create        3             0.1       0.0        0.1        0.0  0
+  aes    0x021  menu_tnormal       1             0.1       0.0        0.1        0.0  1135
+  gemdos 0x042  Fseek              76            0.1       0.0        0.1        0.0  0
+  aes    0x06b  wind_update        180           0.1       0.0        0.0        0.0  0
+  aes    0x00c  appl_write         4             0.1       0.0        0.1        0.0  0
+  aes    0x02f  objc_change        1             0.1       0.0        0.1        0.0  0
+
+backend primitives summed:
+  fill_pattern           n=416       px/bytes=10702291     17.9 ms
+  fill_rect              n=33595     px/bytes=1468892      14.8 ms
+  dcache clean (bytes)   n=37712     px/bytes=19095736     10.1 ms
+  abline                 n=3740      px/bytes=0            7.2 ms
+  copy_rect(scr->scr)    n=2         px/bytes=254820       5.9 ms
+  blit_mono              n=5518      px/bytes=262344       1.8 ms
+  glyph                  n=1068      px/bytes=0            1.4 ms
+  write_row565           n=4408      px/bytes=250414       0.7 ms
+  flush_rect             n=343       px/bytes=0            0.3 ms
+  read_row565            n=540       px/bytes=46852        0.1 ms
+  put_device_pixel       n=55552     px/bytes=55552        0.0 ms
+  get_device_pixel       n=55808     px/bytes=55808        0.0 ms
+
+events:
+[seg 1] t=15182 GAP 153 ms without input pump: EL0 0 ms, EL1 work 16 ms, px 629635, biggest trap gemdos 0x4a Mshrink 15 ms
+[seg 1] t=15360 PEXEC mode 5  total 6 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 5 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=15368 PEXEC mode 3 bmp.nld total 58 ms: alloc 25 zero 0 (69 KB of TPA 920312 KB) read 6 reloc 0 basepage 0 icache 0 slot 11 memprot-sync 49 ms (us: 25040 33 6450 16 5 26 11915)
+[seg 1] t=15368 LONG gemdos 0x4b Pexec work=58 ms wait=0 ms px=0 memprot=49 ms sleeps=0
+[seg 1] t=15427 PEXEC mode 4  total 47 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 47 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=15427 LONG gemdos 0x4b Pexec work=47 ms wait=0 ms px=0 memprot=47 ms sleeps=0
+[seg 1] t=15499 PTERM fn 0x4c
+[seg 1] t=15500 PEXEC mode 5  total 5 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 5 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=15506 PEXEC mode 3 godpaint.nld total 57 ms: alloc 25 zero 0 (67 KB of TPA 920172 KB) read 5 reloc 0 basepage 0 icache 0 slot 11 memprot-sync 49 ms (us: 25260 26 5647 12 2 28 11818)
+[seg 1] t=15506 LONG gemdos 0x4b Pexec work=57 ms wait=0 ms px=0 memprot=49 ms sleeps=0
+[seg 1] t=15563 PEXEC mode 4  total 48 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 48 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=15563 LONG gemdos 0x4b Pexec work=48 ms wait=0 ms px=0 memprot=48 ms sleeps=0
+[seg 1] t=15637 PTERM fn 0x4c
+[seg 1] t=15637 PEXEC mode 5  total 5 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 5 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=15643 PEXEC mode 3 png.nld total 119 ms: alloc 25 zero 0 (371 KB of TPA 920036 KB) read 67 reloc 0 basepage 0 icache 0 slot 12 memprot-sync 49 ms (us: 25014 144 67268 30 2 115 12126)
+[seg 1] t=15643 LONG gemdos 0x4b Pexec work=119 ms wait=0 ms px=0 memprot=49 ms sleeps=0
+[seg 1] t=15763 PEXEC mode 4  total 47 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 47 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=15763 LONG gemdos 0x4b Pexec work=47 ms wait=0 ms px=0 memprot=47 ms sleeps=0
+[seg 1] t=15834 PTERM fn 0x4c
+[seg 1] t=15835 PEXEC mode 5  total 5 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 5 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=15841 PEXEC mode 3 jpg.nld total 172 ms: alloc 25 zero 0 (653 KB of TPA 919596 KB) read 119 reloc 0 basepage 0 icache 0 slot 12 memprot-sync 49 ms (us: 25496 270 119154 208 2 195 12070)
+[seg 1] t=15841 LONG gemdos 0x4b Pexec work=172 ms wait=0 ms px=0 memprot=49 ms sleeps=0
+[seg 1] t=16013 PEXEC mode 4  total 47 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 47 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16013 LONG gemdos 0x4b Pexec work=47 ms wait=0 ms px=0 memprot=47 ms sleeps=0
+[seg 1] t=16086 PTERM fn 0x4c
+[seg 1] t=16086 PEXEC mode 5  total 5 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 5 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16093 PEXEC mode 3 neo.nld total 56 ms: alloc 25 zero 0 (67 KB of TPA 918872 KB) read 5 reloc 0 basepage 0 icache 0 slot 11 memprot-sync 49 ms (us: 25116 27 5692 12 1 22 11908)
+[seg 1] t=16093 LONG gemdos 0x4b Pexec work=56 ms wait=0 ms px=0 memprot=49 ms sleeps=0
+[seg 1] t=16150 PEXEC mode 4  total 47 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 47 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16150 LONG gemdos 0x4b Pexec work=47 ms wait=0 ms px=0 memprot=47 ms sleeps=0
+[seg 1] t=16221 PTERM fn 0x4c
+[seg 1] t=16222 PEXEC mode 5  total 5 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 5 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16228 PEXEC mode 3 eureka.nld total 56 ms: alloc 24 zero 0 (69 KB of TPA 918736 KB) read 5 reloc 0 basepage 0 icache 0 slot 11 memprot-sync 48 ms (us: 24889 26 5968 10 0 23 11814)
+[seg 1] t=16228 LONG gemdos 0x4b Pexec work=56 ms wait=0 ms px=0 memprot=48 ms sleeps=0
+[seg 1] t=16285 PEXEC mode 4  total 47 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 47 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16285 LONG gemdos 0x4b Pexec work=47 ms wait=0 ms px=0 memprot=47 ms sleeps=0
+[seg 1] t=16356 PTERM fn 0x4c
+[seg 1] t=16356 PEXEC mode 5  total 6 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 5 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16362 PEXEC mode 3 img.nld total 58 ms: alloc 25 zero 0 (72 KB of TPA 918596 KB) read 6 reloc 0 basepage 0 icache 0 slot 11 memprot-sync 49 ms (us: 25898 28 6840 13 2 24 11840)
+[seg 1] t=16362 LONG gemdos 0x4b Pexec work=58 ms wait=0 ms px=0 memprot=49 ms sleeps=0
+[seg 1] t=16421 PEXEC mode 4  total 48 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 48 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16421 LONG gemdos 0x4b Pexec work=48 ms wait=0 ms px=0 memprot=48 ms sleeps=0
+[seg 1] t=16494 PTERM fn 0x4c
+[seg 1] t=16494 PEXEC mode 5  total 5 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 5 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16501 PEXEC mode 3 gif.nld total 59 ms: alloc 25 zero 0 (80 KB of TPA 918452 KB) read 8 reloc 0 basepage 0 icache 0 slot 11 memprot-sync 49 ms (us: 25096 34 8657 12 0 27 11966)
+[seg 1] t=16501 LONG gemdos 0x4b Pexec work=59 ms wait=0 ms px=0 memprot=49 ms sleeps=0
+[seg 1] t=16561 PEXEC mode 4  total 48 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 48 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16561 LONG gemdos 0x4b Pexec work=48 ms wait=0 ms px=0 memprot=48 ms sleeps=0
+[seg 1] t=16633 PTERM fn 0x4c
+[seg 1] t=16633 PEXEC mode 5  total 5 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 5 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16640 PEXEC mode 3 degas.nld total 57 ms: alloc 25 zero 0 (68 KB of TPA 918300 KB) read 6 reloc 0 basepage 0 icache 0 slot 11 memprot-sync 49 ms (us: 25200 26 6022 12 1 22 11860)
+[seg 1] t=16640 LONG gemdos 0x4b Pexec work=57 ms wait=0 ms px=0 memprot=49 ms sleeps=0
+[seg 1] t=16697 PEXEC mode 4  total 47 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 47 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16697 LONG gemdos 0x4b Pexec work=47 ms wait=0 ms px=0 memprot=47 ms sleeps=0
+[seg 1] t=16769 PTERM fn 0x4c
+[seg 1] t=16769 PEXEC mode 5  total 6 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 5 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16776 PEXEC mode 3 tga.nld total 58 ms: alloc 25 zero 0 (68 KB of TPA 918160 KB) read 5 reloc 0 basepage 0 icache 0 slot 11 memprot-sync 50 ms (us: 25901 26 5959 10 2 22 11986)
+[seg 1] t=16776 LONG gemdos 0x4b Pexec work=58 ms wait=0 ms px=0 memprot=50 ms sleeps=0
+[seg 1] t=16834 PEXEC mode 4  total 47 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 47 ms (us: 0 0 0 0 0 0 0)
+[seg 1] t=16834 LONG gemdos 0x4b Pexec work=47 ms wait=0 ms px=0 memprot=47 ms sleeps=0
+[seg 1] t=16906 PTERM fn 0x4c
+[seg 1] t=15359 GAP 1548 ms without input pump: EL0 19 ms, EL1 work 1529 ms, px 353, biggest trap gemdos 0x4b Pexec 172 ms
+[seg 2] t=33678 CLICK press->evnt_multi return 1 ms clicks=0 fired=0x30
+[seg 3] t=46679 CLICK press->evnt_multi return 261 ms clicks=2 fired=0x2
+[seg 4] t=61679 CLICK press->evnt_multi return 260 ms clicks=2 fired=0x2
+[seg 5] t=86678 CLICK press->evnt_multi return 261 ms clicks=2 fired=0x2
+[seg 6] t=106679 CLICK press->evnt_multi return 200 ms clicks=0 fired=0x10
+[seg 7] t=114178 CLICK press->evnt_multi return 202 ms clicks=0 fired=0x10
+[seg 7] t=116179 CLICK press->evnt_multi return 200 ms clicks=0 fired=0x10
+[seg 7] t=118178 CLICK press->evnt_multi return 201 ms clicks=0 fired=0x10
+[seg 7] t=120179 CLICK press->evnt_multi return 201 ms clicks=0 fired=0x10
+[seg 8] t=126678 CLICK press->evnt_multi return 202 ms clicks=0 fired=0x10
+[seg 9] t=134179 CLICK press->evnt_multi return 200 ms clicks=1 fired=0x2
+[seg 10] t=146678 CLICK press->evnt_multi return 261 ms clicks=2 fired=0x2

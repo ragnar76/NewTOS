@@ -1,0 +1,1268 @@
+//! ZVPROF -- SCRATCH-ONLY profiler (measurement-2026-10-07-zview-perf).
+//! Never part of the product tree. Applied by zvprof_patch.py to a scratch
+//! copy of the NewTOS tree.
+//!
+//! What it measures (CNTPCT ticks, converted on output):
+//!   * every trap (svc) -- class + function number (GEMDOS fn, VDI opcode,
+//!     AES opcode, BIOS/XBIOS fn), count, EL1 time, of which "waiting"
+//!     (inside sched::sleep, or a pump_input spin loop), the rest = "work";
+//!     max work, pixels written by the backend, memprot sync time;
+//!   * EL0 time between traps (from an EL0 return to the next EL0 trap),
+//!     EL0 runs > 50 ms as events;
+//!   * input-pump gaps (pump_input not called = pointer frozen on the Pi);
+//!   * memprot::sync time; Pexec loader phases; backend primitive counts;
+//!   * click latency: first press of a gesture -> evnt_multi MU_BUTTON return.
+//! Output: C:\PROFILE.TXT, one appended block ("segment") whenever the
+//! system has been quiet (no heavy work) for 2.5 s after activity, at the
+//! latest every 30 s, and on a program's Pterm; the same text goes to the
+//! serial line when serial TX is on. The report write is excluded from all
+//! numbers. Single CPU; IRQ path touches only atomics.
+
+#![allow(dead_code)]
+#![allow(static_mut_refs)]
+
+use core::cell::UnsafeCell;
+use core::fmt::Write;
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering::Relaxed};
+
+use crate::trap::TrapArgs;
+
+// ---------------------------------------------------------------- time
+#[inline(always)]
+pub fn now() -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let v: u64;
+        unsafe { core::arch::asm!("isb", "mrs {0}, cntpct_el0", out(reg) v, options(nomem, nostack)) };
+        v
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        0
+    }
+}
+pub fn frq() -> u64 {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let v: u64;
+        unsafe { core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) v, options(nomem, nostack)) };
+        if v == 0 { 1 } else { v }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        1
+    }
+}
+fn ms(t: u64) -> u64 {
+    t.saturating_mul(1_000) / frq()
+}
+fn us(t: u64) -> u64 {
+    t.saturating_mul(1_000_000) / frq()
+}
+fn ms_t(m: u64) -> u64 {
+    frq() / 1000 * m
+}
+
+// ---------------------------------------------------------------- op index
+pub const C_GEMDOS: usize = 0;
+pub const C_VDI: usize = 1;
+pub const C_AES: usize = 2;
+pub const C_BIOS: usize = 3;
+pub const C_XBIOS: usize = 4;
+pub const C_OTHER: usize = 5;
+const BASE: [usize; 7] = [0, 512, 768, 1024, 1088, 1280, 1281];
+pub const NOPS: usize = 1281;
+const CLS: [&str; 6] = ["gemdos", "vdi", "aes", "bios", "xbios", "other"];
+fn idx(cls: usize, op: usize) -> usize {
+    let span = BASE[cls + 1] - BASE[cls];
+    BASE[cls] + op.min(span - 1)
+}
+fn cls_of(i: usize) -> (usize, usize) {
+    let mut c = 0;
+    while c < 5 && i >= BASE[c + 1] {
+        c += 1;
+    }
+    (c, i - BASE[c])
+}
+fn name_of(i: usize) -> &'static str {
+    let (c, op) = cls_of(i);
+    match c {
+        C_GEMDOS => match op {
+            0x00 => "Pterm0", 0x01 => "Cconin", 0x02 => "Cconout", 0x06 => "Crawio", 0x07 => "Crawcin",
+            0x08 => "Cnecin", 0x09 => "Cconws", 0x0B => "Cconis", 0x0E => "Dsetdrv", 0x19 => "Dgetdrv",
+            0x1A => "Fsetdta", 0x20 => "Super", 0x2A => "Tgetdate", 0x2C => "Tgettime", 0x2F => "Fgetdta",
+            0x30 => "Sversion", 0x31 => "Ptermres", 0x36 => "Dfree", 0x39 => "Dcreate", 0x3A => "Ddelete",
+            0x3B => "Dsetpath", 0x3C => "Fcreate", 0x3D => "Fopen", 0x3E => "Fclose", 0x3F => "Fread",
+            0x40 => "Fwrite", 0x41 => "Fdelete", 0x42 => "Fseek", 0x43 => "Fattrib", 0x44 => "Mxalloc",
+            0x45 => "Fdup", 0x46 => "Fforce", 0x47 => "Dgetpath", 0x48 => "Malloc", 0x49 => "Mfree",
+            0x4A => "Mshrink", 0x4B => "Pexec", 0x4C => "Pterm", 0x4D => "Pwait", 0x4E => "Fsfirst",
+            0x4F => "Fsnext", 0x56 => "Frename", 0x57 => "Fdatime", 0xFF => "Syield", 0x104 => "Fcntl",
+            0x10B => "Pgetpid", 0x119 => "Pdomain", 0x11A => "Psigreturn", 0x124 => "Dpathconf",
+            0x128 => "Dopendir", 0x129 => "Dreaddir", 0x12A => "Drewinddir", 0x12B => "Dclosedir",
+            0x12C => "Fxattr", 0x142 => "Dxreaddir", 0x154 => "Ssystem", _ => "",
+        },
+        C_VDI => match op {
+            1 => "v_opnwk", 2 => "v_clswk", 3 => "v_clrwk", 5 => "v_escape", 6 => "v_pline", 7 => "v_pmarker",
+            8 => "v_gtext", 9 => "v_fillarea", 11 => "v_gdp", 12 => "vst_height", 14 => "vs_color",
+            15 => "vsl_type", 16 => "vsl_width", 17 => "vsl_color", 18 => "vsm_type", 20 => "vsm_color",
+            21 => "vst_font", 22 => "vst_color", 23 => "vsf_interior", 24 => "vsf_style", 25 => "vsf_color",
+            26 => "vq_color", 32 => "vswr_mode", 35 => "vql_attributes", 38 => "vqt_attributes",
+            39 => "vst_alignment", 100 => "v_opnvwk", 101 => "v_clsvwk", 102 => "vq_extnd",
+            104 => "vsf_perimeter", 105 => "v_get_pixel", 106 => "vst_effects", 107 => "vst_point",
+            108 => "vsl_ends", 109 => "vro_cpyfm", 110 => "vr_trnfm", 111 => "vsc_form", 112 => "vsf_udpat",
+            113 => "vsl_udsty", 114 => "vr_recfl", 116 => "vqt_extent", 117 => "vqt_width",
+            119 => "vst_load_fonts", 120 => "vst_unload_fonts", 121 => "vrt_cpyfm", 122 => "v_show_c",
+            123 => "v_hide_c", 124 => "vq_mouse", 128 => "vq_key_s", 129 => "vs_clip", 130 => "vqt_name",
+            131 => "vqt_fontinfo", 255 => "(no opcode)", _ => "",
+        },
+        C_AES => match op {
+            10 => "appl_init", 11 => "appl_read", 12 => "appl_write", 13 => "appl_find", 19 => "appl_exit",
+            20 => "evnt_keybd", 21 => "evnt_button", 22 => "evnt_mouse", 23 => "evnt_mesag",
+            24 => "evnt_timer", 25 => "evnt_multi", 26 => "evnt_dclick", 30 => "menu_bar",
+            31 => "menu_icheck", 32 => "menu_ienable", 33 => "menu_tnormal", 34 => "menu_text",
+            35 => "menu_register", 36 => "menu_popup", 40 => "objc_add", 41 => "objc_delete",
+            42 => "objc_draw", 43 => "objc_find", 44 => "objc_offset", 45 => "objc_order", 46 => "objc_edit",
+            47 => "objc_change", 48 => "objc_sysvar", 50 => "form_do", 51 => "form_dial", 52 => "form_alert",
+            53 => "form_error", 54 => "form_center", 55 => "form_keybd", 56 => "form_button",
+            70 => "graf_rubberbox", 71 => "graf_dragbox", 72 => "graf_movebox", 73 => "graf_growbox",
+            74 => "graf_shrinkbox", 75 => "graf_watchbox", 76 => "graf_slidebox", 77 => "graf_handle",
+            78 => "graf_mouse", 79 => "graf_mkstate", 80 => "scrp_read", 81 => "scrp_write",
+            90 => "fsel_input", 91 => "fsel_exinput", 100 => "wind_create", 101 => "wind_open",
+            102 => "wind_close", 103 => "wind_delete", 104 => "wind_get", 105 => "wind_set",
+            106 => "wind_find", 107 => "wind_update", 108 => "wind_calc", 109 => "wind_new",
+            110 => "rsrc_load", 111 => "rsrc_free", 112 => "rsrc_gaddr", 113 => "rsrc_saddr",
+            114 => "rsrc_obfix", 120 => "shel_read", 121 => "shel_write", 122 => "shel_get",
+            123 => "shel_put", 124 => "shel_find", 125 => "shel_envrn", 130 => "appl_getinfo",
+            255 => "(no opcode)", _ => "",
+        },
+        C_BIOS => match op {
+            1 => "Bconstat", 2 => "Bconin", 3 => "Bconout", 4 => "Rwabs", 5 => "Setexc", 6 => "Tickcal",
+            7 => "Getbpb", 8 => "Bcostat", 9 => "Mediach", 10 => "Drvmap", 11 => "Kbshift", _ => "",
+        },
+        C_XBIOS => match op {
+            2 => "Physbase", 3 => "Logbase", 4 => "Getrez", 5 => "Setscreen", 7 => "Setcolor",
+            17 => "Random", 23 => "Gettime", 37 => "Vsync", 38 => "Supexec", 64 => "Blitmode",
+            88 => "VsetMode", 89 => "mon_type", _ => "",
+        },
+        _ => "fault/unknown",
+    }
+}
+
+// ---------------------------------------------------------------- state
+#[derive(Clone, Copy)]
+struct Op {
+    n: u64,
+    tot: u64,
+    idle: u64,
+    maxw: u64,
+    pix: u64,
+    mp: u64,
+    sleeps: u64,
+}
+const OP0: Op = Op { n: 0, tot: 0, idle: 0, maxw: 0, pix: 0, mp: 0, sleeps: 0 };
+
+pub const P_FILL: u8 = 0;
+pub const P_PATTERN: u8 = 1;
+pub const P_ABLINE: u8 = 2;
+pub const P_GLYPH: u8 = 3;
+pub const P_BLITMONO: u8 = 4;
+pub const P_COPYRECT: u8 = 5;
+pub const P_READROW: u8 = 6;
+pub const P_WRITEROW: u8 = 7;
+pub const P_FLUSHRECT: u8 = 8;
+pub const P_CLEAN: u8 = 9;
+pub const P_PUTPIX: u8 = 10;
+pub const P_GETPIX: u8 = 11;
+const NPRIM: usize = 12;
+const PRIM: [&str; NPRIM] = [
+    "fill_rect", "fill_pattern", "abline", "glyph", "blit_mono", "copy_rect(scr->scr)", "read_row565",
+    "write_row565", "flush_rect", "dcache clean (bytes)", "put_device_pixel", "get_device_pixel",
+];
+#[derive(Clone, Copy)]
+struct Prim {
+    n: u64,
+    px: u64,
+    t: u64,
+}
+const PR0: Prim = Prim { n: 0, px: 0, t: 0 };
+
+const K_LONG: u8 = 1;
+const K_EL0: u8 = 2;
+const K_PEXEC: u8 = 3;
+const K_GAP: u8 = 4;
+const K_CLICK: u8 = 5;
+const K_PTERM: u8 = 6;
+#[derive(Clone, Copy)]
+struct Ev {
+    t: u64,
+    kind: u8,
+    v: [u64; 12],
+    name: [u8; 40],
+    nlen: u8,
+}
+const EV0: Ev = Ev { t: 0, kind: 0, v: [0; 12], name: [0; 40], nlen: 0 };
+const NEV: usize = 240;
+
+struct Seg {
+    ops: [Op; NOPS],
+    prim: [Prim; NPRIM],
+    start: u64,
+    el0_t: u64,
+    el0_n: u64,
+    el0_max: u64,
+    work: [u64; 6],
+    idle: u64,
+    excl: u64,
+    mp_n: u64,
+    mp_t: u64,
+    mp_max: u64,
+    rf_n: u64,
+    rf_t: u64,
+    rf_pages: u64,
+    pump_n: u64,
+    gaps: [u64; 5],
+    gap_max: u64,
+    gap_sum: u64,
+    clk: [u64; 6],
+    clk_n: u64,
+    clk_sum: u64,
+    clk_max: u64,
+    evm: [u64; 6],
+    px_n: u64,
+    px_t: u64,
+    ev: [Ev; NEV],
+    nev: usize,
+    lost: u64,
+}
+const SEG0: Seg = Seg {
+    ops: [OP0; NOPS],
+    prim: [PR0; NPRIM],
+    start: 0,
+    el0_t: 0,
+    el0_n: 0,
+    el0_max: 0,
+    work: [0; 6],
+    idle: 0,
+    excl: 0,
+    mp_n: 0,
+    mp_t: 0,
+    mp_max: 0,
+    rf_n: 0,
+    rf_t: 0,
+    rf_pages: 0,
+    pump_n: 0,
+    gaps: [0; 5],
+    gap_max: 0,
+    gap_sum: 0,
+    clk: [0; 6],
+    clk_n: 0,
+    clk_sum: 0,
+    clk_max: 0,
+    evm: [0; 6],
+    px_n: 0,
+    px_t: 0,
+    ev: [EV0; NEV],
+    nev: 0,
+    lost: 0,
+};
+
+struct G {
+    depth: u32,
+    lost_exit: u64,
+    t_in: u64,
+    cur_idx: usize,
+    cur_cls: usize,
+    cur_set: bool,
+    idle_cur: u64,
+    excl_cur: u64,
+    pix_cur: u64,
+    mp_cur: u64,
+    sleeps_cur: u64,
+    trap_seq: u64,
+    last_exit: u64,
+    last_exit_el0: bool,
+    last_idx: usize,
+    pend_burst: usize, // NEV = none
+    sleep_depth: u32,
+    sleep_excl0: u64,
+    last_pump_end: u64,
+    last_pump_seq: u64,
+    mono_el0: u64,
+    mono_work: u64,
+    mono_px: u64,
+    snap_el0: u64,
+    snap_work: u64,
+    snap_px: u64,
+    gap_worst_idx: usize,
+    gap_worst: u64,
+    press_t: u64,
+    px_active: bool,
+    px_t0: u64,
+    px_mode: u64,
+    px_ph: [u64; 7],
+    px_zero: u64,
+    px_tpa: u64,
+    px_name: [u8; 40],
+    px_nlen: u8,
+    px_mp0: u64,
+    last_act: u64,
+    dirty: bool,
+    force: bool,
+    flushing: bool,
+    first_done: bool,
+    last_flush_dt: u64,
+    seg_no: u64,
+    out: [u8; 160 * 1024],
+    olen: usize,
+}
+
+struct Cell<T>(UnsafeCell<T>);
+unsafe impl<T> Sync for Cell<T> {}
+static SEGC: Cell<Seg> = Cell(UnsafeCell::new(SEG0));
+static CUMC: Cell<[Op; NOPS]> = Cell(UnsafeCell::new([OP0; NOPS]));
+static GC: Cell<G> = Cell(UnsafeCell::new(G {
+    depth: 0,
+    lost_exit: 0,
+    t_in: 0,
+    cur_idx: 0,
+    cur_cls: 0,
+    cur_set: false,
+    idle_cur: 0,
+    excl_cur: 0,
+    pix_cur: 0,
+    mp_cur: 0,
+    sleeps_cur: 0,
+    trap_seq: 0,
+    last_exit: 0,
+    last_exit_el0: false,
+    last_idx: 0,
+    pend_burst: NEV,
+    sleep_depth: 0,
+    sleep_excl0: 0,
+    last_pump_end: 0,
+    last_pump_seq: 0,
+    mono_el0: 0,
+    mono_work: 0,
+    mono_px: 0,
+    snap_el0: 0,
+    snap_work: 0,
+    snap_px: 0,
+    gap_worst_idx: 0,
+    gap_worst: 0,
+    press_t: 0,
+    px_active: false,
+    px_t0: 0,
+    px_mode: 0,
+    px_ph: [0; 7],
+    px_zero: 0,
+    px_tpa: 0,
+    px_name: [0; 40],
+    px_nlen: 0,
+    px_mp0: 0,
+    last_act: 0,
+    dirty: false,
+    force: false,
+    flushing: false,
+    first_done: false,
+    last_flush_dt: 0,
+    seg_no: 0,
+    out: [0; 160 * 1024],
+    olen: 0,
+}));
+fn g() -> &'static mut G {
+    unsafe { &mut *GC.0.get() }
+}
+fn seg() -> &'static mut Seg {
+    unsafe { &mut *SEGC.0.get() }
+}
+fn cum() -> &'static mut [Op; NOPS] {
+    unsafe { &mut *CUMC.0.get() }
+}
+
+static IRQ_N: AtomicU64 = AtomicU64::new(0);
+static IRQ_T: AtomicU64 = AtomicU64::new(0);
+/// Serial-only writer installed by the kernel (`fn(&[u8])` as usize).
+pub static SERIAL_OUT: AtomicUsize = AtomicUsize::new(0);
+
+fn act(t: u64) {
+    let s = g();
+    s.last_act = t;
+    s.dirty = true;
+}
+fn copy_name(dst: &mut [u8; 40], src: &[u8]) -> u8 {
+    let s = if src.len() > 40 { &src[src.len() - 40..] } else { src };
+    dst[..s.len()].copy_from_slice(s);
+    s.len() as u8
+}
+fn push(kind: u8, t: u64, v: [u64; 12], name: &[u8]) -> usize {
+    let sg = seg();
+    if sg.nev >= NEV {
+        sg.lost += 1;
+        return NEV;
+    }
+    let mut e = Ev { t, kind, v, name: [0; 40], nlen: 0 };
+    e.nlen = copy_name(&mut e.name, name);
+    sg.ev[sg.nev] = e;
+    sg.nev += 1;
+    sg.nev - 1
+}
+
+// ---------------------------------------------------------------- trap hooks
+/// At the top of `rust_sync_handler`. Returns true for the outermost trap.
+pub fn trap_enter(spsr: u64, esr: u64, x0: u64, x8: u64) -> bool {
+    let s = g();
+    if s.flushing {
+        return false;
+    }
+    let from_el0 = spsr & 0xF == 0;
+    if s.depth > 0 {
+        if from_el0 {
+            // cannot be nested: a previous trap left without the exit hook
+            s.lost_exit += 1;
+            s.depth = 0;
+        } else {
+            s.depth += 1;
+            return false;
+        }
+    }
+    s.depth = 1;
+    let t = now();
+    s.trap_seq += 1;
+    let ec = esr >> 26;
+    let (cls, op, set) = if ec == 0x15 {
+        match esr & 0xFFFF {
+            1 => (C_GEMDOS, (x8 & 0x1FF) as usize, true),
+            2 => match x0 {
+                115 => (C_VDI, 255, false),
+                200 => (C_AES, 255, false),
+                _ => (C_OTHER, 0, true),
+            },
+            13 => (C_BIOS, (x8 & 0x3F) as usize, true),
+            14 => (C_XBIOS, (x8 % 192) as usize, true),
+            _ => (C_OTHER, 0, true),
+        }
+    } else {
+        (C_OTHER, 0, true)
+    };
+    s.cur_cls = cls;
+    s.cur_idx = idx(cls, op);
+    s.cur_set = set;
+    s.idle_cur = 0;
+    s.excl_cur = 0;
+    s.pix_cur = 0;
+    s.mp_cur = 0;
+    s.sleeps_cur = 0;
+    s.pend_burst = NEV;
+    if from_el0 && s.last_exit_el0 && s.last_exit != 0 {
+        let d = t.wrapping_sub(s.last_exit);
+        let sg = seg();
+        sg.el0_t += d;
+        sg.el0_n += 1;
+        if d > sg.el0_max {
+            sg.el0_max = d;
+        }
+        s.mono_el0 += d;
+        if d > ms_t(3) {
+            act(t);
+        }
+        if d > ms_t(50) {
+            let li = s.last_idx as u64;
+            s.pend_burst = push(K_EL0, s.last_exit, [d, li, s.cur_idx as u64, 0, 0, 0, 0, 0, 0, 0, 0, 0], b"");
+        }
+    }
+    s.t_in = t;
+    true
+}
+
+/// VDI / AES dispatcher: the opcode of the current trap.
+pub fn set_op(cls: usize, op: usize) {
+    let s = g();
+    if s.depth != 1 || s.cur_set || s.cur_cls != cls || s.flushing {
+        return;
+    }
+    s.cur_idx = idx(cls, op);
+    s.cur_set = true;
+    if s.pend_burst < NEV {
+        seg().ev[s.pend_burst].v[2] = s.cur_idx as u64;
+    }
+}
+
+/// At the very end of `rust_sync_handler` (after memprot sync).
+pub fn trap_exit(outer: bool, spsr_after: u64) {
+    let s = g();
+    if !outer {
+        if s.depth > 1 {
+            s.depth -= 1;
+        }
+        return;
+    }
+    if s.depth != 1 {
+        return;
+    }
+    let t = now();
+    let dt = t.wrapping_sub(s.t_in).saturating_sub(s.excl_cur);
+    let idle = s.idle_cur.min(dt);
+    let work = dt - idle;
+    let sg = seg();
+    let o = &mut sg.ops[s.cur_idx];
+    o.n += 1;
+    o.tot += dt;
+    o.idle += idle;
+    if work > o.maxw {
+        o.maxw = work;
+    }
+    o.pix += s.pix_cur;
+    o.mp += s.mp_cur;
+    o.sleeps += s.sleeps_cur;
+    sg.work[s.cur_cls] += work;
+    sg.idle += idle;
+    s.mono_work += work;
+    if work > s.gap_worst {
+        s.gap_worst = work;
+        s.gap_worst_idx = s.cur_idx;
+    }
+    if work > ms_t(3) {
+        act(t);
+    }
+    if work > ms_t(30) {
+        push(
+            K_LONG,
+            s.t_in,
+            [s.cur_idx as u64, work, idle, s.pix_cur, s.mp_cur, s.sleeps_cur, 0, 0, 0, 0, 0, 0],
+            b"",
+        );
+    }
+    s.last_idx = s.cur_idx;
+    s.last_exit = now();
+    s.last_exit_el0 = spsr_after & 0xF == 0;
+    s.depth = 0;
+}
+
+pub fn irq_done(t0: u64) {
+    IRQ_N.fetch_add(1, Relaxed);
+    IRQ_T.fetch_add(now().wrapping_sub(t0), Relaxed);
+}
+
+// sched::sleep
+pub fn sleep_begin() -> u64 {
+    let s = g();
+    s.sleep_depth += 1;
+    if s.sleep_depth == 1 {
+        s.sleep_excl0 = s.excl_cur;
+    }
+    now()
+}
+pub fn sleep_end(t0: u64) {
+    let s = g();
+    if s.sleep_depth > 0 {
+        s.sleep_depth -= 1;
+    }
+    if s.sleep_depth == 0 && s.depth == 1 && !s.flushing {
+        let d = now().wrapping_sub(t0).saturating_sub(s.excl_cur - s.sleep_excl0);
+        s.idle_cur += d;
+        s.sleeps_cur += 1;
+    }
+}
+
+// memprot::sync
+pub fn mp_done(t0: u64) {
+    let s = g();
+    if s.flushing {
+        return;
+    }
+    let d = now().wrapping_sub(t0);
+    if d > frq() / 500_000 {
+        let sg = seg();
+        sg.mp_n += 1;
+        sg.mp_t += d;
+        if d > sg.mp_max {
+            sg.mp_max = d;
+        }
+        s.mp_cur += d;
+    }
+}
+
+/// memprot::refresh (the page-table rewrite of a range)
+pub fn rf_done(t0: u64, lo: u64, hi: u64) {
+    if g().flushing {
+        return;
+    }
+    let sg = seg();
+    sg.rf_n += 1;
+    sg.rf_t += now().wrapping_sub(t0);
+    sg.rf_pages += hi.saturating_sub(lo) / 4096;
+}
+
+// pump_input
+pub fn pump_begin() -> u64 {
+    maybe_flush_from_pump();
+    now()
+}
+pub fn pump_end(t0: u64) {
+    let s = g();
+    if s.flushing {
+        return;
+    }
+    let t1 = now();
+    let sg = seg();
+    sg.pump_n += 1;
+    // a pump spin loop inside a trap (menu/form/graf tracking, wait_button_up)
+    if s.depth == 1 && s.sleep_depth == 0 {
+        if s.last_pump_seq == s.trap_seq && t0.wrapping_sub(s.last_pump_end) < ms_t(2) {
+            s.idle_cur += t1.wrapping_sub(s.last_pump_end);
+        } else {
+            s.idle_cur += t1.wrapping_sub(t0);
+        }
+    }
+    if s.last_pump_end != 0 {
+        let gap = t0.wrapping_sub(s.last_pump_end);
+        if gap > ms_t(100) {
+            sg.gaps[0] += 1;
+            sg.gap_sum += gap;
+        }
+        if gap > ms_t(250) {
+            sg.gaps[1] += 1;
+        }
+        if gap > ms_t(500) {
+            sg.gaps[2] += 1;
+        }
+        if gap > ms_t(1000) {
+            sg.gaps[3] += 1;
+        }
+        if gap > ms_t(2000) {
+            sg.gaps[4] += 1;
+        }
+        if gap > sg.gap_max {
+            sg.gap_max = gap;
+        }
+        if gap > ms_t(150) {
+            push(
+                K_GAP,
+                s.last_pump_end,
+                [
+                    gap,
+                    s.mono_el0 - s.snap_el0,
+                    s.mono_work - s.snap_work,
+                    s.mono_px - s.snap_px,
+                    s.gap_worst_idx as u64,
+                    s.gap_worst,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                ],
+                b"",
+            );
+        }
+    }
+    s.snap_el0 = s.mono_el0;
+    s.snap_work = s.mono_work;
+    s.snap_px = s.mono_px;
+    s.gap_worst = 0;
+    s.last_pump_end = t1;
+    s.last_pump_seq = s.trap_seq;
+}
+
+// backend primitives
+pub struct P(u8, u64);
+impl P {
+    #[inline(always)]
+    pub fn new(k: u8) -> P {
+        P(k, now())
+    }
+}
+impl Drop for P {
+    #[inline(always)]
+    fn drop(&mut self) {
+        let s = g();
+        if s.flushing {
+            return;
+        }
+        let p = &mut seg().prim[self.0 as usize];
+        p.n += 1;
+        p.t += now().wrapping_sub(self.1);
+    }
+}
+/// pixels (or bytes for the clean) of the running primitive.
+pub fn prim_px(k: u8, px: u64) {
+    let s = g();
+    if s.flushing {
+        return;
+    }
+    seg().prim[k as usize].px += px;
+    if matches!(k, P_FILL | P_PATTERN | P_BLITMONO | P_COPYRECT | P_WRITEROW | P_PUTPIX) {
+        s.pix_cur += px;
+        s.mono_px += px;
+    }
+}
+pub fn prim_cnt(k: u8) {
+    let s = g();
+    if s.flushing {
+        return;
+    }
+    let p = &mut seg().prim[k as usize];
+    p.n += 1;
+    p.px += 1;
+    if k == P_PUTPIX {
+        s.pix_cur += 1;
+        s.mono_px += 1;
+    }
+}
+
+// clicks
+pub fn press() {
+    let s = g();
+    let t = now();
+    if s.press_t == 0 || t.wrapping_sub(s.press_t) > ms_t(1000) {
+        s.press_t = t;
+    }
+    act(t);
+}
+pub fn evm_ret(fired: u16, clicks: i16) {
+    let s = g();
+    if s.flushing {
+        return;
+    }
+    let sg = seg();
+    let b = if fired == 0x20 {
+        0
+    } else if fired & 2 != 0 {
+        1
+    } else if fired & 0x10 != 0 {
+        2
+    } else if fired & 1 != 0 {
+        3
+    } else if fired & 0xC != 0 {
+        4
+    } else {
+        5
+    };
+    sg.evm[b] += 1;
+    // a press answered by MU_BUTTON (app click) or by MU_MESAG (window
+    // gadget -> WM_* message, menu -> MN_SELECTED)
+    if fired & 0x12 != 0 && s.press_t != 0 {
+        let t = now();
+        let lat = t.wrapping_sub(s.press_t);
+        s.press_t = 0;
+        if lat > ms_t(3000) {
+            return; // a press some other consumer (menu, window frame) took
+        }
+        sg.clk_n += 1;
+        sg.clk_sum += lat;
+        if lat > sg.clk_max {
+            sg.clk_max = lat;
+        }
+        let m = ms(lat);
+        let k = if m < 100 {
+            0
+        } else if m < 200 {
+            1
+        } else if m < 300 {
+            2
+        } else if m < 500 {
+            3
+        } else if m < 1000 {
+            4
+        } else {
+            5
+        };
+        sg.clk[k] += 1;
+        push(K_CLICK, t - lat, [lat, clicks as u64, fired as u64, 0, 0, 0, 0, 0, 0, 0, 0, 0], b"");
+    }
+}
+
+// Pexec
+pub fn px_begin(mode: u16) {
+    let s = g();
+    s.px_active = true;
+    s.px_t0 = now();
+    s.px_mode = mode as u64;
+    s.px_ph = [0; 7];
+    s.px_zero = 0;
+    s.px_tpa = 0;
+    s.px_nlen = 0;
+    s.px_mp0 = seg().mp_t;
+}
+pub fn px_name(p: &[u8]) {
+    let s = g();
+    s.px_nlen = copy_name(&mut s.px_name, p);
+}
+/// phase k: 0 env+TPA alloc, 1 zero, 2 read segments, 3 relocate, 4 basepage, 5 cache sync, 6 install slot
+pub fn px_phase(k: usize, t0: u64) {
+    let s = g();
+    if s.px_active && k < 7 {
+        s.px_ph[k] += now().wrapping_sub(t0);
+    }
+}
+pub fn px_zero(bytes: u64, tpa: u64) {
+    let s = g();
+    s.px_zero += bytes;
+    s.px_tpa = tpa;
+}
+pub fn px_done() {
+    let s = g();
+    if !s.px_active {
+        return;
+    }
+    s.px_active = false;
+    let t = now();
+    let d = t.wrapping_sub(s.px_t0);
+    let sg = seg();
+    sg.px_n += 1;
+    sg.px_t += d;
+    act(t);
+    let p = s.px_ph;
+    let n = s.px_nlen as usize;
+    let nm = s.px_name;
+    push(
+        K_PEXEC,
+        s.px_t0,
+        [s.px_mode, d, p[0], p[1], p[2], p[3], p[4], p[5], p[6], s.px_zero, s.px_tpa, sg.mp_t.wrapping_sub(s.px_mp0)],
+        &nm[..n],
+    );
+}
+pub fn on_pterm(func: u16) {
+    push(K_PTERM, now(), [func as u64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], b"");
+}
+
+// ---------------------------------------------------------------- report
+struct W;
+impl Write for W {
+    fn write_str(&mut self, x: &str) -> core::fmt::Result {
+        let s = g();
+        for &b in x.as_bytes() {
+            if b == b'\n' {
+                if s.olen + 2 <= s.out.len() {
+                    s.out[s.olen] = b'\r';
+                    s.out[s.olen + 1] = b'\n';
+                    s.olen += 2;
+                }
+            } else if s.olen < s.out.len() {
+                s.out[s.olen] = b;
+                s.olen += 1;
+            }
+        }
+        Ok(())
+    }
+}
+fn ms3(t: u64) -> (u64, u64) {
+    // milliseconds with one decimal
+    let tenth = t.saturating_mul(10_000) / frq();
+    (tenth / 10, tenth % 10)
+}
+
+fn write_ops(w: &mut W, ops: &[Op; NOPS], title: &str) {
+    let _ = writeln!(w, "{}", title);
+    let _ = writeln!(
+        w,
+        "  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps"
+    );
+    // selection sort over the used entries by work, descending
+    let mut used = [0u16; NOPS];
+    let mut k = 0;
+    for i in 0..NOPS {
+        if ops[i].n > 0 {
+            used[k] = i as u16;
+            k += 1;
+        }
+    }
+    for a in 0..k {
+        let mut best = a;
+        for b in a + 1..k {
+            let wb = ops[used[b] as usize].tot - ops[used[b] as usize].idle;
+            let wa = ops[used[best] as usize].tot - ops[used[best] as usize].idle;
+            if wb > wa {
+                best = b;
+            }
+        }
+        used.swap(a, best);
+    }
+    for j in 0..k {
+        let i = used[j] as usize;
+        let o = ops[i];
+        let (c, op) = cls_of(i);
+        let (wm, wd) = ms3(o.tot - o.idle);
+        let (im, id) = ms3(o.idle);
+        let (xm, xd) = ms3(o.maxw);
+        let (pm, pd) = ms3(o.mp);
+        let _ = writeln!(
+            w,
+            "  {:<6} {:#05x} {:<18} {:<8} {:>7}.{} {:>8}.{} {:>9}.{} {:>9}.{}  {:<8} {}",
+            CLS[c], op, name_of(i), o.n, wm, wd, im, id, xm, xd, pm, pd, o.pix, o.sleeps
+        );
+    }
+}
+
+fn format_block(reason: &str) {
+    let mut w = W;
+    let s = g();
+    let sg = seg();
+    let t = now();
+    let span = t.wrapping_sub(sg.start);
+    s.seg_no += 1;
+    let _ = writeln!(
+        w,
+        "==== ZVPROF segment {} : t={}..{} ms since boot, span {} ms, closed by {} ====",
+        s.seg_no,
+        ms(sg.start),
+        ms(t),
+        ms(span),
+        reason
+    );
+    if s.seg_no == 1 {
+        let _ = writeln!(w, "CNTFRQ {} Hz", frq());
+    }
+    let _ = writeln!(w, "previous report write {} ms (excluded from all numbers)", ms(s.last_flush_dt));
+    let wsum: u64 = sg.work.iter().sum();
+    let _ = writeln!(
+        w,
+        "time: EL0 {} ms (runs {}, longest {} ms) | EL1 trap work {} ms [gemdos {} vdi {} aes {} bios {} xbios {} other {}] | EL1 waiting in traps {} ms | rest (outside traps) {} ms",
+        ms(sg.el0_t),
+        sg.el0_n,
+        ms(sg.el0_max),
+        ms(wsum),
+        ms(sg.work[0]),
+        ms(sg.work[1]),
+        ms(sg.work[2]),
+        ms(sg.work[3]),
+        ms(sg.work[4]),
+        ms(sg.work[5]),
+        ms(sg.idle),
+        ms(span.saturating_sub(sg.el0_t + wsum + sg.idle + sg.excl))
+    );
+    let _ = writeln!(
+        w,
+        "irq since boot n={} t={} ms | memprot sync (with work) n={} t={} ms max={} us, of which refresh n={} t={} ms over {} pages | lost trap exits {}",
+        IRQ_N.load(Relaxed),
+        ms(IRQ_T.load(Relaxed)),
+        sg.mp_n,
+        ms(sg.mp_t),
+        us(sg.mp_max),
+        sg.rf_n,
+        ms(sg.rf_t),
+        sg.rf_pages,
+        s.lost_exit
+    );
+    let _ = writeln!(
+        w,
+        "input pump n={} | gaps without pump (pointer frozen) >100ms {} >250ms {} >500ms {} >1s {} >2s {} | longest {} ms | sum of gaps>100ms {} ms",
+        sg.pump_n,
+        sg.gaps[0],
+        sg.gaps[1],
+        sg.gaps[2],
+        sg.gaps[3],
+        sg.gaps[4],
+        ms(sg.gap_max),
+        ms(sg.gap_sum)
+    );
+    let _ = writeln!(
+        w,
+        "clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n={} avg {} ms max {} ms | <100 {} <200 {} <300 {} <500 {} <1000 {} >=1000 {}",
+        sg.clk_n,
+        if sg.clk_n > 0 { ms(sg.clk_sum) / sg.clk_n } else { 0 },
+        ms(sg.clk_max),
+        sg.clk[0],
+        sg.clk[1],
+        sg.clk[2],
+        sg.clk[3],
+        sg.clk[4],
+        sg.clk[5]
+    );
+    let _ = writeln!(
+        w,
+        "evnt_multi returns: timer-only {} button {} message {} key {} mouse-rect {} other {}",
+        sg.evm[0], sg.evm[1], sg.evm[2], sg.evm[3], sg.evm[4], sg.evm[5]
+    );
+    let _ = writeln!(w, "pexec n={} total {} ms", sg.px_n, ms(sg.px_t));
+    let _ = writeln!(w, "backend primitives (time includes nested clean):");
+    for k in 0..NPRIM {
+        let p = sg.prim[k];
+        if p.n > 0 {
+            let (a, b) = ms3(p.t);
+            let _ = writeln!(w, "  {:<22} n={:<9} px/bytes={:<11} {}.{} ms", PRIM[k], p.n, p.px, a, b);
+        }
+    }
+    write_ops(&mut w, &sg.ops, "ops of this segment, sorted by EL1 work:");
+    let _ = writeln!(w, "events ({}, lost {}):", sg.nev, sg.lost);
+    for i in 0..sg.nev {
+        let e = sg.ev[i];
+        let nm = core::str::from_utf8(&e.name[..e.nlen as usize]).unwrap_or("?");
+        match e.kind {
+            K_LONG => {
+                let (c, op) = cls_of(e.v[0] as usize);
+                let _ = writeln!(
+                    w,
+                    " t={} LONG {} {:#x} {} work={} ms wait={} ms px={} memprot={} ms sleeps={}",
+                    ms(e.t),
+                    CLS[c],
+                    op,
+                    name_of(e.v[0] as usize),
+                    ms(e.v[1]),
+                    ms(e.v[2]),
+                    e.v[3],
+                    ms(e.v[4]),
+                    e.v[5]
+                );
+            }
+            K_EL0 => {
+                let (c1, o1) = cls_of(e.v[1] as usize);
+                let (c2, o2) = cls_of(e.v[2] as usize);
+                let _ = writeln!(
+                    w,
+                    " t={} EL0 run {} ms after {} {:#x} {} -> before {} {:#x} {}",
+                    ms(e.t),
+                    ms(e.v[0]),
+                    CLS[c1],
+                    o1,
+                    name_of(e.v[1] as usize),
+                    CLS[c2],
+                    o2,
+                    name_of(e.v[2] as usize)
+                );
+            }
+            K_PEXEC => {
+                let _ = writeln!(
+                    w,
+                    " t={} PEXEC mode {} {} total {} ms: alloc {} zero {} ({} KB of TPA {} KB) read {} reloc {} basepage {} icache {} slot {} memprot-sync {} ms (us: {} {} {} {} {} {} {})",
+                    ms(e.t),
+                    e.v[0],
+                    nm,
+                    ms(e.v[1]),
+                    ms(e.v[2]),
+                    ms(e.v[3]),
+                    e.v[9] / 1024,
+                    e.v[10] / 1024,
+                    ms(e.v[4]),
+                    ms(e.v[5]),
+                    ms(e.v[6]),
+                    ms(e.v[7]),
+                    ms(e.v[8]),
+                    ms(e.v[11]),
+                    us(e.v[2]),
+                    us(e.v[3]),
+                    us(e.v[4]),
+                    us(e.v[5]),
+                    us(e.v[6]),
+                    us(e.v[7]),
+                    us(e.v[8])
+                );
+            }
+            K_GAP => {
+                let (c, op) = cls_of(e.v[4] as usize);
+                let _ = writeln!(
+                    w,
+                    " t={} GAP {} ms without input pump: EL0 {} ms, EL1 work {} ms, px {}, biggest trap {} {:#x} {} {} ms",
+                    ms(e.t),
+                    ms(e.v[0]),
+                    ms(e.v[1]),
+                    ms(e.v[2]),
+                    e.v[3],
+                    CLS[c],
+                    op,
+                    name_of(e.v[4] as usize),
+                    ms(e.v[5])
+                );
+            }
+            K_CLICK => {
+                let _ = writeln!(
+                    w,
+                    " t={} CLICK press->evnt_multi return {} ms clicks={} fired={:#x}",
+                    ms(e.t),
+                    ms(e.v[0]),
+                    e.v[1],
+                    e.v[2]
+                );
+            }
+            K_PTERM => {
+                let _ = writeln!(w, " t={} PTERM fn {:#x}", ms(e.t), e.v[0]);
+            }
+            _ => {}
+        }
+    }
+    let _ = writeln!(w, "==== end segment {} ====", s.seg_no);
+    let _ = writeln!(w);
+}
+
+static PATH: &[u8] = b"C:\\PROFILE.TXT\0";
+fn kargs(regs: [u64; 8], func: u64) -> TrapArgs {
+    TrapArgs { regs, func, svc_imm: 1, space: crate::uaccess::Space::Kernel }
+}
+fn write_out(create: bool) {
+    use crate::bdos::fs::file;
+    let s = g();
+    let mut h = if create { -1 } else { file::fopen(&kargs([PATH.as_ptr() as u64, 1, 0, 0, 0, 0, 0, 0], 0x3D)) };
+    if h < 0 {
+        h = file::fcreate(&kargs([PATH.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0], 0x3C));
+        if h < 0 {
+            return;
+        }
+    } else {
+        let _ = file::fseek(&kargs([0, h as u64, 2, 0, 0, 0, 0, 0], 0x42));
+    }
+    let _ = file::fwrite(&kargs([h as u64, s.olen as u64, s.out.as_ptr() as u64, 0, 0, 0, 0, 0], 0x40));
+    let _ = file::fclose(&kargs([h as u64, 0, 0, 0, 0, 0, 0, 0], 0x3E));
+}
+
+fn ready() -> Option<&'static str> {
+    let s = g();
+    if s.flushing || !s.dirty || s.px_active {
+        return None;
+    }
+    let t = now();
+    if s.force {
+        return Some("program end (Pterm)");
+    }
+    let quiet = t.wrapping_sub(s.last_act);
+    if quiet >= ms_t(2500) {
+        return Some("2.5 s quiet");
+    }
+    if t.wrapping_sub(seg().start) >= ms_t(30_000) && quiet >= ms_t(300) {
+        return Some("30 s limit");
+    }
+    None
+}
+
+fn do_flush(reason: &str) {
+    let t = now();
+    let s = g();
+    let total = s.force;
+    s.flushing = true;
+    s.olen = 0;
+    format_block(reason);
+    // merge into the cumulative table
+    {
+        let c = cum();
+        let sg = seg();
+        for i in 0..NOPS {
+            let a = sg.ops[i];
+            let b = &mut c[i];
+            b.n += a.n;
+            b.tot += a.tot;
+            b.idle += a.idle;
+            b.maxw = b.maxw.max(a.maxw);
+            b.pix += a.pix;
+            b.mp += a.mp;
+            b.sleeps += a.sleeps;
+        }
+    }
+    if total {
+        let mut w = W;
+        write_ops(&mut w, cum(), "==== ZVPROF cumulative since boot (all segments), sorted by EL1 work ====");
+        let _ = writeln!(w, "==== end cumulative ====");
+        let _ = writeln!(w);
+    }
+    let f = SERIAL_OUT.load(Relaxed);
+    if f != 0 {
+        let fp: fn(&[u8]) = unsafe { core::mem::transmute::<usize, fn(&[u8])>(f) };
+        fp(&s.out[..s.olen]);
+    }
+    let create = !s.first_done;
+    s.first_done = true;
+    write_out(create);
+    // reset the segment (big array: field-wise)
+    {
+        let sg = seg();
+        for o in sg.ops.iter_mut() {
+            *o = OP0;
+        }
+        sg.prim = [PR0; NPRIM];
+        sg.el0_t = 0;
+        sg.el0_n = 0;
+        sg.el0_max = 0;
+        sg.work = [0; 6];
+        sg.idle = 0;
+        sg.excl = 0;
+        sg.mp_n = 0;
+        sg.mp_t = 0;
+        sg.mp_max = 0;
+        sg.rf_n = 0;
+        sg.rf_t = 0;
+        sg.rf_pages = 0;
+        sg.pump_n = 0;
+        sg.gaps = [0; 5];
+        sg.gap_max = 0;
+        sg.gap_sum = 0;
+        sg.clk = [0; 6];
+        sg.clk_n = 0;
+        sg.clk_sum = 0;
+        sg.clk_max = 0;
+        sg.evm = [0; 6];
+        sg.px_n = 0;
+        sg.px_t = 0;
+        sg.nev = 0;
+        sg.lost = 0;
+    }
+    s.dirty = false;
+    s.force = false;
+    let t2 = now();
+    let d = t2.wrapping_sub(t);
+    s.last_flush_dt = d;
+    s.excl_cur += d;
+    seg().start = t2;
+    seg().excl = 0;
+    // the flush is not an input gap, nor EL0 time
+    s.last_pump_end = t2;
+    s.snap_el0 = s.mono_el0;
+    s.snap_work = s.mono_work;
+    s.snap_px = s.mono_px;
+    s.flushing = false;
+}
+
+/// Trap tail (kernel exception stack, dispatch finished).
+pub fn maybe_flush_tail() {
+    let s = g();
+    if s.depth != 1 {
+        return;
+    }
+    if let Some(r) = ready() {
+        do_flush(r);
+    }
+}
+
+#[repr(C, align(16))]
+struct FlushStack([u8; 64 * 1024]);
+static FLUSH_STACK: Cell<FlushStack> = Cell(UnsafeCell::new(FlushStack([0; 64 * 1024])));
+static PUMP_REASON: AtomicUsize = AtomicUsize::new(0);
+extern "C" fn flush_tramp() {
+    let r = match PUMP_REASON.load(Relaxed) {
+        1 => "program end (Pterm)",
+        2 => "2.5 s quiet",
+        _ => "30 s limit",
+    };
+    do_flush(r);
+}
+/// Start of pump_input: flush from inside an AES wait (on a private stack;
+/// the AES fiber stack must not carry the FAT write path).
+fn maybe_flush_from_pump() {
+    let s = g();
+    if s.depth != 1 || s.sleep_depth == 0 || s.cur_cls != C_AES {
+        return;
+    }
+    let Some(r) = ready() else { return };
+    PUMP_REASON.store(
+        if r.starts_with("program") {
+            1
+        } else if r.starts_with("2.5") {
+            2
+        } else {
+            3
+        },
+        Relaxed,
+    );
+    #[cfg(target_arch = "aarch64")]
+    unsafe {
+        let top = (FLUSH_STACK.0.get() as usize) + 64 * 1024;
+        core::arch::asm!(
+            "mov x20, sp",
+            "mov sp, {stk}",
+            "blr {f}",
+            "mov sp, x20",
+            stk = in(reg) top,
+            f = in(reg) flush_tramp as extern "C" fn() as usize,
+            out("x20") _,
+            clobber_abi("C"),
+        );
+    }
+}

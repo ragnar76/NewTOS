@@ -1,0 +1,66 @@
+ZVPROF -- Messkernel fuer "zView traege" (2026-10-07)
+=====================================================
+
+Was ist das?
+  kernel8.img in diesem Ordner ist der normale NewTOS-Kernel (Stand 0b2e05a,
+  release, board-rpi4) plus ein Messwerkzeug. Er verhaelt sich wie der
+  Kernel 8f2a3b3b, misst aber nebenher, wofuer die Zeit draufgeht:
+  jeden Systemaufruf (GEMDOS/AES/VDI/BIOS/XBIOS), die Rechenzeit der
+  Programme, Pexec, Speicherschutz, Zeichnen, und wie lange die Maus
+  "steht". Ergebnis: Datei C:\PROFILE.TXT. Kein serielles Kabel noetig.
+  sha256 kernel8.img:
+  0ae86f5f54c557196351cd435360c8a7f475197b590d31b979f761d5dc304e0f
+
+Einspielen
+  1. Auf der Karte (Boot-Partition) den vorhandenen kernel8.img in
+     kernel8.org umbenennen.
+  2. Diesen kernel8.img dorthin kopieren.
+  3. Karte in die Pi, einschalten.
+
+Ablauf (bitte genau so, mit Stoppuhr)
+  WICHTIG: Zwischen den Schritten jeweils ca. 5 Sekunden NICHTS anklicken
+  (Maus bewegen ist erlaubt). In diesen Pausen schreibt der Kernel einen
+  Abschnitt nach C:\PROFILE.TXT -- so laesst sich jeder Schritt einzeln
+  zuordnen. Die Stoppuhrzeiten bitte notieren (Schritt-Nummer + Sekunden).
+
+  S0  Desktop ist da. 5 s warten.
+  S1  zView per Doppelklick starten. Stoppuhr: Doppelklick bis Menueleiste
+      von zView da ist UND die Maus sich wieder fluessig bewegt. 5 s warten.
+  S2  Menue File > Browser. Stoppuhr: Klick bis Browser vollstaendig
+      gezeichnet. 5 s warten.
+  S3  Doppelklick auf den Bilderordner (der mit ca. 15 Bildern, den Sie
+      sonst benutzen). Stoppuhr: Doppelklick bis ALLE Vorschaubilder
+      sichtbar. Bitte notieren: Wie viele Bilder, welche Formate, ungefaehre
+      Groesse (z.B. "15 JPEG Fotos, je ca. 3 MB"). 5 s warten.
+  S4  Viermal (einzeln, langsam) auf den Rollpfeil "runter" rechts unten im
+      Browser klicken. Notieren: reagiert jeder Klick sofort oder mit
+      Verzoegerung? 5 s warten.
+  S5  Einmal in die graue Rollleiste (unterhalb des Schiebers) klicken.
+      5 s warten.
+  S6  Doppelklick auf ein Bild. Stoppuhr: bis Bild ganz da. 5 s warten.
+  S7  Bildfenster mit dem Schliessfeld (links oben) schliessen. 5 s warten.
+  S8  Den gruenen Pfeil nach oben (Elternordner) in der Werkzeugleiste
+      anklicken. 5 s warten.
+  S9  Denselben Bilderordner noch einmal doppelklicken. Stoppuhr wie S3.
+      5 s warten.
+  S10 zView beenden (File > Quit). 5 s auf dem Desktop warten.
+  S11 Ausschalten (Strom ab erst, wenn die Maus 5 s still auf dem Desktop war).
+
+  Falls etwas haengt: bitte notieren bei welchem Schritt und wie lange;
+  trotzdem bis S11 weitermachen und die Datei mitbringen.
+
+Zurueckgeben
+  - C:\PROFILE.TXT von der Karte (am Mac: Laufwerk C = erste
+    FAT-Partition; die Datei liegt im Wurzelverzeichnis).
+  - Die notierten Stoppuhrzeiten S1..S9 und die Angaben zum Bilderordner.
+
+Zurueck auf den normalen Kernel
+  kernel8.img loeschen, kernel8.org wieder in kernel8.img umbenennen.
+
+Hinweise
+  - Der Messkernel schreibt nach jeder Ruhepause einen Abschnitt; die
+    Schreibzeit wird aus allen Zahlen herausgerechnet. Waehrend des
+    Schreibens kann die Maus kurz stocken -- das ist das Messwerkzeug,
+    nicht zView.
+  - Bei jedem Neustart beginnt PROFILE.TXT neu (die alte Datei wird
+    ueberschrieben). Also: nur EIN Durchlauf, dann Karte auslesen.
